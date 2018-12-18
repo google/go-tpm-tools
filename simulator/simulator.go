@@ -21,7 +21,7 @@ package simulator
 // building with cgo: -Wno-unused-variable is to work around a cgo bug and
 // -Wno-strict-aliasing is due to unsafe pointer math in the TPM simulator.
 
-// #cgo CFLAGS: -DTPM_POSIX -DVTPM=NO -DUSE_BIT_FIELD_STRUCTURES=NO -Wall -Wno-expansion-to-defined -Wno-self-assign -Wno-unused-variable -Wno-strict-aliasing -Wnested-externs -Wsign-compare
+// #cgo CFLAGS: -DTPM_POSIX -DVTPM=NO -DUSE_BIT_FIELD_STRUCTURES=NO -DUSE_DA_USED=NO -Wall -Wno-expansion-to-defined -Wno-self-assign -Wno-unused-variable -Wno-strict-aliasing -Wnested-externs -Wsign-compare
 // #cgo LDFLAGS: -lcrypto -lpthread -lrt
 //
 // #include <stdlib.h>
