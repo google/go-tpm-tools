@@ -17,8 +17,12 @@
 package simulator
 
 import (
+	"crypto/rsa"
+	"io"
+	"math/big"
 	"testing"
 
+	"github.com/google/go-tpm-tools/tpm2tools"
 	"github.com/google/go-tpm/tpm2"
 )
 
@@ -30,18 +34,42 @@ func getSimulator(t *testing.T) *Simulator {
 	return simulator
 }
 
-func TestReset(t *testing.T) {
+func getEKModulus(t *testing.T, rwc io.ReadWriteCloser) *big.Int {
+	ek, err := tpm2tools.EndorsementKeyRSA(rwc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ek.Close()
+
+	return ek.PublicKey().(*rsa.PublicKey).N
+}
+
+func TestResetDoesntChangeEK(t *testing.T) {
 	s := getSimulator(t)
 	defer s.Close()
+
+	modulus1 := getEKModulus(t, s)
 	if err := s.Reset(); err != nil {
 		t.Fatal(err)
 	}
+	modulus2 := getEKModulus(t, s)
+
+	if modulus1.Cmp(modulus2) != 0 {
+		t.Fatal("Reset() should not change the EK")
+	}
 }
-func TestManufactureReset(t *testing.T) {
+func TestManufactureResetChangesEK(t *testing.T) {
 	s := getSimulator(t)
 	defer s.Close()
+
+	modulus1 := getEKModulus(t, s)
 	if err := s.ManufactureReset(); err != nil {
 		t.Fatal(err)
+	}
+	modulus2 := getEKModulus(t, s)
+
+	if modulus1.Cmp(modulus2) == 0 {
+		t.Fatal("ManufactureReset() should change the EK")
 	}
 }
 
