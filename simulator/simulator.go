@@ -26,11 +26,18 @@ package simulator
 //
 // #include <stdlib.h>
 // #include "Tpm.h"
+//
+// void sync_seeds() {
+//     NV_SYNC_PERSISTENT(EPSeed);
+//     NV_SYNC_PERSISTENT(SPSeed);
+//     NV_SYNC_PERSISTENT(PPSeed);
+// }
 import "C"
 import (
 	"bytes"
 	"errors"
 	"fmt"
+	"math/rand"
 	"sync"
 	"unsafe"
 
@@ -71,6 +78,23 @@ func Get() (*Simulator, error) {
 	}
 	inUse = true
 	return simulator, nil
+}
+
+// GetWithFixedSeed behaves like Get() expect that all of the internal
+// hierarchy seeds are derived from the input seed.
+func GetWithFixedSeed(seed int64) (*Simulator, error) {
+	r := rand.New(rand.NewSource(seed))
+	s, err := Get()
+	if err != nil {
+		return nil, err
+	}
+
+	// The first two bytes of the seed encode the size (so we don't overwrite)
+	r.Read(C.gp.EPSeed[2:])
+	r.Read(C.gp.SPSeed[2:])
+	r.Read(C.gp.PPSeed[2:])
+	C.sync_seeds()
+	return s, nil
 }
 
 // Reset the TPM as if the host computer had rebooted.
