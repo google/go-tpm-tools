@@ -1,7 +1,6 @@
 package tpm2tools
 
 import (
-	"bytes"
 	"testing"
 
 	"github.com/google/go-tpm-tools/simulator"
@@ -25,19 +24,11 @@ func TestNameMatchesPublicArea(t *testing.T) {
 	defer s.Close()
 	defer ek.Close()
 
-	pubEncoded, err := ek.pubArea.Encode()
+	matches, err := ek.Name().MatchesPublic(ek.pubArea)
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	hashFn, err := ek.pubArea.NameAlg.HashConstructor()
-	if err != nil {
-		t.Fatal(err)
-	}
-	hash := hashFn()
-
-	hash.Write(pubEncoded)
-	if !bytes.Equal(hash.Sum(nil), ek.Name().Value) {
+	if !matches {
 		t.Fatal("Returned name and computed name do not match")
 	}
 }
