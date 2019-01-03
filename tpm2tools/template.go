@@ -38,7 +38,7 @@ func DefaultEKTemplateRSA() tpm2.Public {
 			},
 			KeyBits:    2048,
 			Exponent:   0,
-			ModulusRaw: make([]byte, 256),
+			ModulusRaw: make([]byte, 256), // public.unique must be all zeros
 		},
 	}
 }
@@ -59,7 +59,7 @@ func AIKTemplateRSA(nonce [256]byte) tpm2.Public {
 			},
 			KeyBits:    2048,
 			Exponent:   0,
-			ModulusRaw: nonce[:],
+			ModulusRaw: nonce[:], // Use public.unique to generate distinct keys
 		},
 	}
 }
