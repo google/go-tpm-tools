@@ -10,6 +10,7 @@ import (
 )
 
 func getEK(t *testing.T) (*simulator.Simulator, *Key) {
+	t.Helper()
 	simulator, err := simulator.Get()
 	if err != nil {
 		t.Fatal(err)

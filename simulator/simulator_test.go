@@ -27,6 +27,7 @@ import (
 )
 
 func getSimulator(t *testing.T) *Simulator {
+	t.Helper()
 	simulator, err := Get()
 	if err != nil {
 		t.Fatal(err)
@@ -35,6 +36,7 @@ func getSimulator(t *testing.T) *Simulator {
 }
 
 func getEKModulus(t *testing.T, rwc io.ReadWriteCloser) *big.Int {
+	t.Helper()
 	ek, err := tpm2tools.EndorsementKeyRSA(rwc)
 	if err != nil {
 		t.Fatal(err)
