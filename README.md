@@ -4,7 +4,11 @@ This repository contains various tools designed for use with
 [Go-TPM](https://github.com/google/go-tpm):
   - [simulator](https://godoc.org/github.com/google/go-tpm-tools/simulator):
     Allows the [IBM TPM2 simulator](https://sourceforge.net/projects/ibmswtpm2/)
-    to be used with Go-TPM
+    to be used with Go-TPM.
+  - [tpm2tools](https://godoc.org/github.com/google/go-tpm-tools/tpm2tools):
+    Useful abstractions and utility functions for using TPM2. The goal of this
+    package is to handle complex TPM functionality (sessions, authorization,
+    activating credentials, etc...) for the user, presenting a simplified API.
 
 ## Legal
 
