@@ -80,9 +80,10 @@ func Get() (*Simulator, error) {
 	return simulator, nil
 }
 
-// GetWithFixedSeed behaves like Get() expect that all of the internal
-// hierarchy seeds are derived from the input seed.
-func GetWithFixedSeed(seed int64) (*Simulator, error) {
+// GetWithFixedSeedInsecure behaves like Get() expect that all of the internal
+// hierarchy seeds are derived from the input seed. Note that this function
+// compromises the security of the keys/seeds and should only be used for tests.
+func GetWithFixedSeedInsecure(seed int64) (*Simulator, error) {
 	r := rand.New(rand.NewSource(seed))
 	s, err := Get()
 	if err != nil {
