@@ -101,7 +101,7 @@ func TestFixedSeedExpectedModulus(t *testing.T) {
 
 	modulus := getEKModulus(t, s)
 	if modulus.Cmp(zeroSeedModulus()) != 0 {
-		t.Fatalf("Got %v expected %v", modulus, zeroSeedModulus())
+		t.Fatalf("getEKModulus() = %v, want %v", modulus, zeroSeedModulus())
 	}
 }
 
