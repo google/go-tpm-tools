@@ -93,7 +93,7 @@ func zeroSeedModulus() *big.Int {
 }
 
 func TestFixedSeedExpectedModulus(t *testing.T) {
-	s, err := GetWithFixedSeed(0)
+	s, err := GetWithFixedSeedInsecure(0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +106,7 @@ func TestFixedSeedExpectedModulus(t *testing.T) {
 }
 
 func TestDifferentSeedDifferentModulus(t *testing.T) {
-	s, err := GetWithFixedSeed(1)
+	s, err := GetWithFixedSeedInsecure(1)
 	if err != nil {
 		t.Fatal(err)
 	}
