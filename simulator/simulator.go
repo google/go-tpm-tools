@@ -32,6 +32,12 @@ package simulator
 //     NV_SYNC_PERSISTENT(SPSeed);
 //     NV_SYNC_PERSISTENT(PPSeed);
 // }
+//
+// // This terrible (and quite unsafe) pointer magic is mandated by the TCG TPM2
+// // Specification, Part 4 (code), section 9.17.4.2.
+// const char* fail_function_name() {
+// 	   return (const char*)(uintptr_t)s_failFunction;
+// }
 import "C"
 import (
 	"bytes"
@@ -185,14 +191,11 @@ func runCommand(cmd []byte) ([]byte, error) {
 	// As long as NO_FAIL_TRACE is not defined, debug error information is
 	// written to certain global variables on internal failure.
 	if C.g_inFailureMode == C.TRUE {
-		if C.s_failFunction == 0 {
-			return nil, errors.New("internal failure (NO_FAIL_TRACE)")
+		if functionName := C.fail_function_name(); functionName != nil {
+			return nil, fmt.Errorf("internal failure: %s, line %d, code %d",
+				C.GoString(functionName), C.s_failLine, C.s_failCode)
 		}
-		// This terrible (and quite unsafe) pointer magic is mandated by the
-		// TCG TPM2 Specification, Part 4 (code), section 9.17.4.2.
-		functionName := (*C.char)(unsafe.Pointer(uintptr(C.s_failFunction)))
-		return nil, fmt.Errorf("internal failure: %s, line %d, code %d",
-			C.GoString(functionName), C.s_failLine, C.s_failCode)
+		return nil, errors.New("internal failure (NO_FAIL_TRACE)")
 	}
 	if response != unsafe.Pointer(responsePtr) {
 		panic("Response pointer shouldn't be modified on success")
