@@ -1,0 +1,100 @@
+package tpm2tools
+
+import (
+    "crypto/rand"
+    "crypto/rsa"
+    "testing"
+
+    "github.com/google/go-tpm/tpm2"
+
+    "github.com/google/go-tpm-tools/simulator"
+)
+
+const (
+    // How many keys/handles can the simulator contain at once.
+    maxHandles = 3
+)
+
+func loadRandomExternalKey(t *testing.T, simulator *simulator.Simulator) {
+    pk, err := rsa.GenerateKey(rand.Reader, 2048)
+    if err != nil {
+        t.Fatal(err)
+    }
+    public := tpm2.Public{
+            Type:       tpm2.AlgRSA,
+            NameAlg:    tpm2.AlgSHA1,
+            Attributes: tpm2.FlagSign | tpm2.FlagSensitiveDataOrigin | tpm2.FlagUserWithAuth,
+            RSAParameters: &tpm2.RSAParams{
+                Sign: &tpm2.SigScheme{
+                    Alg:  tpm2.AlgRSASSA,
+                    Hash: tpm2.AlgSHA1,
+                },
+                KeyBits:  2048,
+                Exponent: uint32(pk.PublicKey.E),
+                Modulus:  pk.PublicKey.N,
+            },
+        }
+    private := tpm2.Private{
+        Type:      tpm2.AlgRSA,
+        Sensitive: pk.Primes[0].Bytes(),
+    }
+    _, _, err = tpm2.LoadExternal(simulator, public, private, tpm2.HandleNull)
+    if err != nil {
+        t.Fatal(err)
+    }
+}
+    
+
+func TestFlushActiveHandles(t *testing.T) {
+    simulator, err := simulator.Get()
+    if err != nil {
+        t.Fatal(err)
+    }
+    defer simulator.Close()
+
+    // Loads then flushes 1, 2, ...maxHandles handles.
+    for i := 0; i <= maxHandles; i++ {
+        for j := 0; j < i; j++ {
+            loadRandomExternalKey(t, simulator)
+        } 
+        err = FlushActiveHandles(simulator)
+        if err != nil {
+            t.Fatal(err)
+        }
+    }
+
+    // Ensure there are no active handles after all that.
+    h, err := activeHandles(simulator)
+    if err != nil {
+        t.Fatal(err)
+    }
+    if len(h) != 0 {
+        t.Fatal("Bah this should be empty!")
+    }
+}
+
+func TestActiveHandles(t *testing.T) {
+    simulator, err := simulator.Get()
+    if err != nil {
+        t.Fatal(err)
+    }
+    defer simulator.Close()
+
+    i := 0
+    for {
+        h, err := activeHandles(simulator)
+        if err != nil {
+            t.Fatal(err)
+        }
+        if len(h) != i {
+            t.Errorf("activeHandle mismatch got: %d; want: %d", len(h), i)
+        }
+        if i < maxHandles {
+            i++
+            loadRandomExternalKey(t, simulator)
+        } else {
+            break
+        }
+        
+    }
+}
