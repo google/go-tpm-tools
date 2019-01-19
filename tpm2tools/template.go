@@ -63,3 +63,16 @@ func AIKTemplateRSA(nonce [256]byte) tpm2.Public {
 		},
 	}
 }
+
+// SRKTemplateRSA returns a sane Storage Root Key (SRK) template.
+// This is based upon the advice in the TCG's TPM v2.0 Provisioning Guidance.
+func SRKTemplateRSA() tpm2.Public {
+	template := DefaultEKTemplateRSA()
+	template.Attributes |= tpm2.FlagUserWithAuth
+	template.Attributes &= ^tpm2.FlagAdminWithPolicy
+	template.Attributes |= tpm2.FlagNoDA
+
+	template.AuthPolicy = nil
+
+	return template
+}
