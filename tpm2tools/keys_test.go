@@ -6,26 +6,16 @@ import (
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpmutil"
 
-	"github.com/google/go-tpm-tools/simulator"
+	"github.com/google/go-tpm-tools/internal"
 )
 
-func getEK(t *testing.T) (*simulator.Simulator, *Key) {
-	t.Helper()
-	simulator, err := simulator.Get()
-	if err != nil {
-		t.Fatal(err)
-	}
-	key, err := EndorsementKeyRSA(simulator)
-	if err != nil {
-		simulator.Close()
-		t.Fatal(err)
-	}
-	return simulator, key
-}
-
 func TestNameMatchesPublicArea(t *testing.T) {
-	s, ek := getEK(t)
-	defer s.Close()
+	rwc := internal.GetTPM(t)
+	defer rwc.Close()
+	ek, err := EndorsementKeyRSA(rwc)
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer ek.Close()
 
 	matches, err := ek.Name().MatchesPublic(ek.pubArea)
@@ -37,15 +27,14 @@ func TestNameMatchesPublicArea(t *testing.T) {
 	}
 }
 
-func TestCreateSigningKeysInAllHierarchies(t *testing.T) {
-	simulator, err := simulator.Get()
-	if err != nil {
-		t.Fatal(err)
-	}
-
+func TestCreateSigningKeysInHierarchies(t *testing.T) {
+	rwc := internal.GetTPM(t)
+	defer rwc.Close()
 	template := AIKTemplateRSA([256]byte{})
-	for _, hierarchy := range []tpmutil.Handle{tpm2.HandleOwner, tpm2.HandleEndorsement, tpm2.HandlePlatform, tpm2.HandleNull} {
-		key, err := NewKey(simulator, hierarchy, template)
+
+	// We are not authorized to create keys in the Platform Hierarchy
+	for _, hierarchy := range []tpmutil.Handle{tpm2.HandleOwner, tpm2.HandleEndorsement, tpm2.HandleNull} {
+		key, err := NewKey(rwc, hierarchy, template)
 		if err != nil {
 			t.Errorf("Hierarchy %+v: %s", hierarchy, err)
 		} else {
