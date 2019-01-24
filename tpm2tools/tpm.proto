@@ -1,0 +1,10 @@
+syntax = "proto3";
+
+package tpm2tools;
+
+// SealedBytes stores the result of a TPM2_Seal. The private portion (priv) has
+// already been encrypted and is no longer sensitive.
+message SealedBytes {
+  bytes priv = 1;
+  bytes pub = 2;
+}
