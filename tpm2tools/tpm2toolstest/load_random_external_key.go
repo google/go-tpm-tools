@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/google/go-tpm-tools/simulator"
-	"github.com/samdamana/go-tpm/tpm2"
+	"github.com/google/go-tpm/tpm2"
 )
 
 // LoadRandomExternalKey loads a randomly generated external key into the

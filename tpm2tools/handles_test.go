@@ -3,15 +3,14 @@ package tpm2tools
 import (
 	"testing"
 
-	"github.com/samdamana/go-tpm-tools/tpm2tools/tpm2toolstest"
-	"github.com/samdamana/go-tpm/tpm2"
+	"github.com/google/go-tpm-tools/tpm2tools/tpm2toolstest"
+	"github.com/google/go-tpm/tpm2"
 
 	"github.com/google/go-tpm-tools/simulator"
 )
 
 const (
-	// How many handles we will create within the simulator. This also appears
-	// to be the maximum number of key entries before errors.
+	// Maximum number of handles to keys tests can create within a simulator.
 	maxHandles = 3
 )
 

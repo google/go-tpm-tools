@@ -6,8 +6,8 @@ import (
 	"io"
 	"log"
 
-	"github.com/samdamana/go-tpm-tools/tpm2tools"
-	"github.com/samdamana/go-tpm/tpm2"
+	"github.com/google/go-tpm-tools/tpm2tools"
+	"github.com/google/go-tpm/tpm2"
 )
 
 var (

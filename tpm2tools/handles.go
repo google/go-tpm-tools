@@ -5,8 +5,8 @@ import (
 	"io"
 	"math"
 
+	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpmutil"
-	"github.com/samdamana/go-tpm/tpm2"
 )
 
 // Handles returns a slice of tpmutil.Handle objects of all handles within
