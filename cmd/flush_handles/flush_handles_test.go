@@ -70,6 +70,6 @@ func TestFlush(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(h) != 0 {
-		t.Fatalf("Simulator should be empty of transient handles; got: %d", len(h))
+		t.Fatalf("Simulator should be empty of transient handles; got: %d; want: 0", len(h))
 	}
 }
