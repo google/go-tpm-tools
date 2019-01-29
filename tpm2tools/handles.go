@@ -26,7 +26,7 @@ func Handles(rw io.ReadWriter, handleType tpm2.HandleType) ([]tpmutil.Handle, er
 	for i, v := range vals {
 		handle, ok := v.(tpmutil.Handle)
 		if !ok {
-			return nil, fmt.Errorf("unable to assert type tpmutil.Handle of value %v", v)
+			return nil, fmt.Errorf("unable to assert type tpmutil.Handle of value %#v", v)
 		}
 		handles[i] = handle
 	}

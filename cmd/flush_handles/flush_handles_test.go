@@ -47,7 +47,7 @@ func TestHandleTypesFromFlags(t *testing.T) {
 	}
 }
 
-func TestFlushHandlesOfType(t *testing.T) {
+func TestFlush(t *testing.T) {
 	simulator, err := simulator.Get()
 	if err != nil {
 		t.Fatal(err)
@@ -59,7 +59,7 @@ func TestFlushHandlesOfType(t *testing.T) {
 		for j := 0; j < i; j++ {
 			tpm2toolstest.LoadRandomExternalKey(t, simulator)
 		}
-		if err = flushHandlesOfType(simulator, tpm2.HandleTypeTransient); err != nil {
+		if err = flush(simulator, tpm2.HandleTypeTransient); err != nil {
 			t.Fatal(err)
 		}
 	}
