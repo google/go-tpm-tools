@@ -20,7 +20,7 @@ func LoadRandomExternalKey(t *testing.T, simulator *simulator.Simulator) {
 	public := tpm2.Public{
 		Type:       tpm2.AlgRSA,
 		NameAlg:    tpm2.AlgSHA1,
-		Attributes: tpm2.FlagSign | tpm2.FlagSensitiveDataOrigin | tpm2.FlagUserWithAuth,
+		Attributes: tpm2.FlagSign | tpm2.FlagUserWithAuth,
 		RSAParameters: &tpm2.RSAParams{
 			Sign: &tpm2.SigScheme{
 				Alg:  tpm2.AlgRSASSA,
