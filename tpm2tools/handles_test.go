@@ -3,10 +3,9 @@ package tpm2tools
 import (
 	"testing"
 
+	"github.com/google/go-tpm-tools/simulator"
 	"github.com/google/go-tpm-tools/tpm2tools/tpm2toolstest"
 	"github.com/google/go-tpm/tpm2"
-
-	"github.com/google/go-tpm-tools/simulator"
 )
 
 const (

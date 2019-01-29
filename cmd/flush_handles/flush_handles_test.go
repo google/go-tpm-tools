@@ -1,6 +1,8 @@
 package main
 
 import (
+	"flag"
+	"reflect"
 	"testing"
 
 	"github.com/google/go-tpm-tools/simulator"
@@ -16,36 +18,31 @@ const (
 
 func TestHandleTypesFromFlags(t *testing.T) {
 	for _, test := range []struct {
-		flushTransientFlag     bool
-		flushLoadedSessionFlag bool
-		flushSavedSessionFlag  bool
-		flushAllTypesFlag      bool
+		flushTransientFlag     string
+		flushLoadedSessionFlag string
+		flushSavedSessionFlag  string
+		flushAllTypesFlag      string
 		want                   []tpm2.HandleType
 	}{
-		{false, false, false, false, []tpm2.HandleType{}},
-		{true, false, false, false, []tpm2.HandleType{tpm2.HandleTypeTransient}},
-		{false, true, false, false, []tpm2.HandleType{tpm2.HandleTypeLoadedSession}},
-		{false, false, true, false, []tpm2.HandleType{tpm2.HandleTypeSavedSession}},
-		{false, true, true, false, []tpm2.HandleType{tpm2.HandleTypeLoadedSession, tpm2.HandleTypeSavedSession}},
-		{true, true, false, false, []tpm2.HandleType{tpm2.HandleTypeTransient, tpm2.HandleTypeLoadedSession}},
-		{true, false, true, false, []tpm2.HandleType{tpm2.HandleTypeTransient, tpm2.HandleTypeSavedSession}},
-		{true, true, true, false, []tpm2.HandleType{tpm2.HandleTypeTransient, tpm2.HandleTypeLoadedSession, tpm2.HandleTypeSavedSession}},
-		{false, false, false, true, []tpm2.HandleType{tpm2.HandleTypeTransient, tpm2.HandleTypeLoadedSession, tpm2.HandleTypeSavedSession}},
+		{"f", "f", "f", "f", []tpm2.HandleType{}},
+		{"t", "f", "f", "f", []tpm2.HandleType{tpm2.HandleTypeTransient}},
+		{"f", "t", "f", "f", []tpm2.HandleType{tpm2.HandleTypeLoadedSession}},
+		{"f", "f", "t", "f", []tpm2.HandleType{tpm2.HandleTypeSavedSession}},
+		{"f", "t", "t", "f", []tpm2.HandleType{tpm2.HandleTypeLoadedSession, tpm2.HandleTypeSavedSession}},
+		{"t", "t", "f", "f", []tpm2.HandleType{tpm2.HandleTypeTransient, tpm2.HandleTypeLoadedSession}},
+		{"t", "f", "t", "f", []tpm2.HandleType{tpm2.HandleTypeTransient, tpm2.HandleTypeSavedSession}},
+		{"t", "t", "t", "f", []tpm2.HandleType{tpm2.HandleTypeTransient, tpm2.HandleTypeLoadedSession, tpm2.HandleTypeSavedSession}},
+		{"f", "f", "f", "t", []tpm2.HandleType{tpm2.HandleTypeTransient, tpm2.HandleTypeLoadedSession, tpm2.HandleTypeSavedSession}},
 	} {
 		// Overwrite flag pointer values.
-		flushTransient = &test.flushTransientFlag
-		flushLoadedSession = &test.flushLoadedSessionFlag
-		flushSavedSession = &test.flushSavedSessionFlag
-		flushAllTypes = &test.flushAllTypesFlag
+		flag.Set("flush-transient", test.flushTransientFlag)
+		flag.Set("flush-loaded-session", test.flushLoadedSessionFlag)
+		flag.Set("flush-saved-session", test.flushSavedSessionFlag)
+		flag.Set("flush-all-types", test.flushAllTypesFlag)
 
 		got := handleTypesFromFlags()
-		if len(got) != len(test.want) {
-			t.Fatalf("got length (%d) not equal to want length (%d). got: %v; want: %v", len(got), len(test.want), got, test.want)
-		}
-		for i, v := range got {
-			if v != test.want[i] {
-				t.Fatalf("got %v; want %v;", got, test.want)
-			}
+		if !reflect.DeepEqual(got, test.want) {
+			t.Fatalf("got %v; want %v;", got, test.want)
 		}
 	}
 }
@@ -62,8 +59,7 @@ func TestFlushHandlesOfType(t *testing.T) {
 		for j := 0; j < i; j++ {
 			tpm2toolstest.LoadRandomExternalKey(t, simulator)
 		}
-		err = flushHandlesOfType(simulator, tpm2.HandleTypeTransient)
-		if err != nil {
+		if err = flushHandlesOfType(simulator, tpm2.HandleTypeTransient); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -74,6 +70,6 @@ func TestFlushHandlesOfType(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(h) != 0 {
-		t.Fatal("Simulator should be empty of transient handles.")
+		t.Fatalf("Simulator should be empty of transient handles; got: %d", len(h))
 	}
 }

@@ -12,6 +12,7 @@ import (
 // LoadRandomExternalKey loads a randomly generated external key into the
 // TPM simulator. If any errors occur, calls t.Fatal() on the passed testing.T.
 func LoadRandomExternalKey(t *testing.T, simulator *simulator.Simulator) {
+	t.Helper()
 	pk, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		t.Fatal(err)
@@ -34,8 +35,7 @@ func LoadRandomExternalKey(t *testing.T, simulator *simulator.Simulator) {
 		Type:      tpm2.AlgRSA,
 		Sensitive: pk.Primes[0].Bytes(),
 	}
-	_, _, err = tpm2.LoadExternal(simulator, public, private, tpm2.HandleNull)
-	if err != nil {
+	if _, _, err = tpm2.LoadExternal(simulator, public, private, tpm2.HandleNull); err != nil {
 		t.Fatal(err)
 	}
 }
