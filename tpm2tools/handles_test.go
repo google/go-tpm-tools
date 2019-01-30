@@ -15,6 +15,16 @@ const (
 func TestHandles(t *testing.T) {
 	rwc := internal.GetTPM(t)
 	defer rwc.Close()
+	// Cleanup the transient handles before exiting the test
+	defer func() {
+		h, err := Handles(rwc, tpm2.HandleTypeTransient)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, handle := range h {
+			tpm2.FlushContext(rwc, handle)
+		}
+	}()
 
 	for i := 0; i <= maxHandles; i++ {
 		h, err := Handles(rwc, tpm2.HandleTypeTransient)
