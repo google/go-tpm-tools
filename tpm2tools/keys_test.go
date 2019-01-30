@@ -70,3 +70,19 @@ func BenchmarkStorageRootKeyRSA(b *testing.B) {
 		key.Close()
 	}
 }
+
+func BenchmarkNullSigningKeyRSA(b *testing.B) {
+	b.StopTimer()
+	rwc := internal.GetTPM(b)
+	defer rwc.Close()
+
+	template := AIKTemplateRSA([256]byte{})
+	b.StartTimer()
+	for n := 0; n < b.N; n++ {
+		key, err := NewKey(rwc, tpm2.HandleNull, template)
+		if err != nil {
+			b.Fatal(err)
+		}
+		key.Close()
+	}
+}
