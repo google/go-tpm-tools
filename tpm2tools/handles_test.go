@@ -3,8 +3,8 @@ package tpm2tools
 import (
 	"testing"
 
+	"github.com/google/go-tpm-tools/internal"
 	"github.com/google/go-tpm-tools/simulator"
-	"github.com/google/go-tpm-tools/tpm2tools/tpm2toolstest"
 	"github.com/google/go-tpm/tpm2"
 )
 
@@ -28,7 +28,7 @@ func TestHandles(t *testing.T) {
 			t.Errorf("Handles mismatch got: %d; want: %d", len(h), i)
 		}
 		if i < maxHandles {
-			tpm2toolstest.LoadRandomExternalKey(t, simulator)
+			internal.LoadRandomExternalKey(t, simulator)
 		}
 	}
 }

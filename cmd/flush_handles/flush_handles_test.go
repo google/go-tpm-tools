@@ -5,9 +5,9 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/google/go-tpm-tools/internal"
 	"github.com/google/go-tpm-tools/simulator"
 	"github.com/google/go-tpm-tools/tpm2tools"
-	"github.com/google/go-tpm-tools/tpm2tools/tpm2toolstest"
 	"github.com/google/go-tpm/tpm2"
 )
 
@@ -57,7 +57,7 @@ func TestFlush(t *testing.T) {
 	// Loads then flushes 1, 2, ...maxHandles transient handles.
 	for i := 0; i <= maxHandles; i++ {
 		for j := 0; j < i; j++ {
-			tpm2toolstest.LoadRandomExternalKey(t, simulator)
+			internal.LoadRandomExternalKey(t, simulator)
 		}
 		if err = flush(simulator, tpm2.HandleTypeTransient); err != nil {
 			t.Fatal(err)
