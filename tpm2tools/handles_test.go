@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/google/go-tpm-tools/internal"
-	"github.com/google/go-tpm-tools/simulator"
 	"github.com/google/go-tpm/tpm2"
 )
 
@@ -14,13 +13,11 @@ const (
 )
 
 func TestHandles(t *testing.T) {
-	simulator, err := simulator.Get()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer simulator.Close()
+	rwc := internal.GetTPM(t)
+	defer rwc.Close()
+
 	for i := 0; i <= maxHandles; i++ {
-		h, err := Handles(simulator, tpm2.HandleTypeTransient)
+		h, err := Handles(rwc, tpm2.HandleTypeTransient)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -28,7 +25,7 @@ func TestHandles(t *testing.T) {
 			t.Errorf("Handles mismatch got: %d; want: %d", len(h), i)
 		}
 		if i < maxHandles {
-			internal.LoadRandomExternalKey(t, simulator)
+			internal.LoadRandomExternalKey(t, rwc)
 		}
 	}
 }

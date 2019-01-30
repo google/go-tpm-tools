@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/google/go-tpm-tools/internal"
-	"github.com/google/go-tpm-tools/simulator"
 	"github.com/google/go-tpm-tools/tpm2tools"
 	"github.com/google/go-tpm/tpm2"
 )
@@ -48,28 +47,25 @@ func TestHandleTypesFromFlags(t *testing.T) {
 }
 
 func TestFlush(t *testing.T) {
-	simulator, err := simulator.Get()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer simulator.Close()
+	rwc := internal.GetTPM(t)
+	defer rwc.Close()
 
 	// Loads then flushes 1, 2, ...maxHandles transient handles.
 	for i := 0; i <= maxHandles; i++ {
 		for j := 0; j < i; j++ {
-			internal.LoadRandomExternalKey(t, simulator)
+			internal.LoadRandomExternalKey(t, rwc)
 		}
-		if err = flush(simulator, tpm2.HandleTypeTransient); err != nil {
+		if err := flush(rwc, tpm2.HandleTypeTransient); err != nil {
 			t.Fatal(err)
 		}
 	}
 
 	// Ensure there are no active handles after all that.
-	h, err := tpm2tools.Handles(simulator, tpm2.HandleTypeTransient)
+	h, err := tpm2tools.Handles(rwc, tpm2.HandleTypeTransient)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(h) != 0 {
-		t.Fatalf("Simulator should be empty of transient handles; got: %d; want: 0", len(h))
+		t.Fatalf("TPM should be empty of transient handles; got: %d; want: 0", len(h))
 	}
 }

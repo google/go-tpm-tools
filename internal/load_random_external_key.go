@@ -3,9 +3,9 @@ package internal
 import (
 	"crypto/rand"
 	"crypto/rsa"
+	"io"
 	"testing"
 
-	"github.com/google/go-tpm-tools/simulator"
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpmutil"
 )
@@ -13,7 +13,7 @@ import (
 // LoadRandomExternalKey loads a randomly generated external key into the
 // TPM simulator and returns its' handle. If any errors occur, calls Fatal()
 // on the passed testing.TB.
-func LoadRandomExternalKey(tb testing.TB, simulator *simulator.Simulator) tpmutil.Handle {
+func LoadRandomExternalKey(tb testing.TB, rw io.ReadWriter) tpmutil.Handle {
 	tb.Helper()
 	pk, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
@@ -37,7 +37,7 @@ func LoadRandomExternalKey(tb testing.TB, simulator *simulator.Simulator) tpmuti
 		Type:      tpm2.AlgRSA,
 		Sensitive: pk.Primes[0].Bytes(),
 	}
-	handle, _, err := tpm2.LoadExternal(simulator, public, private, tpm2.HandleNull)
+	handle, _, err := tpm2.LoadExternal(rw, public, private, tpm2.HandleNull)
 	if err != nil {
 		tb.Fatal(err)
 	}
