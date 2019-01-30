@@ -13,7 +13,7 @@ import (
 
 func TestSeal(t *testing.T) {
 	rwc := internal.GetTPM(t)
-	defer rwc.Close()
+	defer checkedClose(t, rwc)
 
 	key, err := StorageRootKeyRSA(rwc)
 	if err != nil {
@@ -53,7 +53,7 @@ func TestSeal(t *testing.T) {
 
 func TestComputeSessionAuth(t *testing.T) {
 	rwc := internal.GetTPM(t)
-	defer rwc.Close()
+	defer checkedClose(t, rwc)
 
 	pcrList := []int{1, 7}
 
@@ -85,7 +85,7 @@ func TestComputeSessionAuth(t *testing.T) {
 
 func TestSelfReseal(t *testing.T) {
 	rwc := internal.GetTPM(t)
-	defer rwc.Close()
+	defer checkedClose(t, rwc)
 
 	key, err := StorageRootKeyRSA(rwc)
 	if err != nil {
@@ -143,7 +143,7 @@ func computePCRValue(base []byte, extensions [][]byte) []byte {
 
 func TestComputePCRValue(t *testing.T) {
 	rwc := internal.GetTPM(t)
-	defer rwc.Close()
+	defer checkedClose(t, rwc)
 
 	pcrNum := 23
 	extensions := [][]byte{
@@ -178,7 +178,7 @@ func TestComputePCRValue(t *testing.T) {
 
 func TestReseal(t *testing.T) {
 	rwc := internal.GetTPM(t)
-	defer rwc.Close()
+	defer checkedClose(t, rwc)
 
 	key, err := StorageRootKeyRSA(rwc)
 	if err != nil {

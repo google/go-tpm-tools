@@ -1,17 +1,43 @@
 package tpm2tools
 
 import (
+	"io"
 	"testing"
 
+	"github.com/google/go-tpm-tools/internal"
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpmutil"
-
-	"github.com/google/go-tpm-tools/internal"
 )
+
+// checkedClose closes the simluator and asserts that there were no leaked handles.
+func checkedClose(tb testing.TB, rwc io.ReadWriteCloser) {
+	types := []tpm2.HandleType{
+		tpm2.HandleTypeLoadedSession,
+		tpm2.HandleTypeSavedSession
+		tpm2.HandleTypeTransient,
+	}
+	handles := []tpmutil.Handle{}
+	for _, t := range types {
+		h, err := Handles(rwc, t)
+		if err != nil {
+			tb.Fatalf("failed to fetch handles of type %v: %v", t, err)
+		}
+		handles = append(handles, h...)
+	}
+
+	err := rwc.Close()
+	if err != nil {
+		tb.Fatalf("failed to close simulator: %v", err)
+	}
+
+	if len(handles) != 0 {
+		tb.Fatalf("tests leaked handles: %v", handles)
+	}
+}
 
 func TestNameMatchesPublicArea(t *testing.T) {
 	rwc := internal.GetTPM(t)
-	defer rwc.Close()
+	defer checkedClose(t, rwc)
 	ek, err := EndorsementKeyRSA(rwc)
 	if err != nil {
 		t.Fatal(err)
@@ -29,7 +55,7 @@ func TestNameMatchesPublicArea(t *testing.T) {
 
 func TestCreateSigningKeysInHierarchies(t *testing.T) {
 	rwc := internal.GetTPM(t)
-	defer rwc.Close()
+	defer checkedClose(t, rwc)
 	template := AIKTemplateRSA([256]byte{})
 
 	// We are not authorized to create keys in the Platform Hierarchy
