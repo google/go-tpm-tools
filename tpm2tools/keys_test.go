@@ -75,7 +75,6 @@ func BenchmarkNullSigningKeyRSA(b *testing.B) {
 	b.StopTimer()
 	rwc := internal.GetTPM(b)
 	defer rwc.Close()
-
 	template := AIKTemplateRSA([256]byte{})
 	b.StartTimer()
 	for n := 0; n < b.N; n++ {
