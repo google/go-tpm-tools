@@ -38,6 +38,13 @@ func StorageRootKeyRSA(rw io.ReadWriter) (*Key, error) {
 // template stored at the provided nvdata index. This is useful for TPMs which
 // have a preinstalled AIK template.
 func EndorsementKeyFromNvIndex(rw io.ReadWriter, idx uint32) (*Key, error) {
+	return KeyFromNvIndex(rw, tpm2.HandleEndorsement, idx)
+}
+
+// KeyFromNvIndex generates and loads a key under the provided parent
+// (possibly a hierarchy root tpm2.Handle{Owner|Endorsement|Platform|Null})
+// using the template stored at the provided nvdata index.
+func KeyFromNvIndex(rw io.ReadWriter, parent tpmutil.Handle, idx uint32) (*Key, error) {
 	data, err := tpm2.NVRead(rw, tpmutil.Handle(idx))
 	if err != nil {
 		return nil, fmt.Errorf("read error at index %d: %v", idx, err)
@@ -46,7 +53,7 @@ func EndorsementKeyFromNvIndex(rw io.ReadWriter, idx uint32) (*Key, error) {
 	if err != nil {
 		return nil, fmt.Errorf("index %d data was not a TPM key template: %v", idx, err)
 	}
-	return NewKey(rw, tpm2.HandleEndorsement, template)
+	return NewKey(rw, parent, template)
 }
 
 // NewKey generates a key from the template and loads that key into the TPM
