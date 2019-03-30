@@ -55,8 +55,12 @@ func TestFlush(t *testing.T) {
 		for j := 0; j < i; j++ {
 			internal.LoadRandomExternalKey(t, rwc)
 		}
-		if err := flush(rwc, tpm2.HandleTypeTransient); err != nil {
+		n, err := flush(rwc, tpm2.HandleTypeTransient)
+		if err != nil {
 			t.Fatal(err)
+		}
+		if n != i {
+			t.Errorf("Flushed %d handles, expected %d", n, i)
 		}
 	}
 

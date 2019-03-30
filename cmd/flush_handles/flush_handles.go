@@ -31,7 +31,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("%v", err)
 	}
-	fmt.Println("%d handles successfully flushed", n)
+	fmt.Printf("%d handles successfully flushed\n", n)
 }
 
 // handleTypeFromFlags parses flag values and returns a slice of
