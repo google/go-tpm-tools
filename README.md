@@ -18,7 +18,7 @@ use with [Go-TPM](https://github.com/google/go-tpm):
     with this tool allows users to address this problem with out rebooting
     their machine.
   - `get_key`: a command line tool for querying TPM2 public keys. This tool can
-    use either the default key template or a template in NVRAM to retrive PEM
+    use either the default key template or a template in NVRAM to retrieve PEM
     formatted public keys specific to a user's TPM.
 
 ## Legal
