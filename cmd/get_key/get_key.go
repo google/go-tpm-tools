@@ -16,11 +16,15 @@ import (
 
 var (
 	tpmPath   = flag.String("tpm-path", "/dev/tpm0", "Path to a TPM character device or socket.")
-	hierarchy = flag.String("hierarchy", "endorsement", "Hierarchy to use for the key. Valid options are endorsement, platform, owner, and null.")
-	index     = flag.Uint("template-index", 0, "NVRAM index of the key template; if zero, the default RSA EK/SRK template is used")
+	hierarchy = flag.String("hierarchy", "endorsement", "Hierarchy of the requested key. Valid options are endorsement,\nplatform, owner, and null.")
+	index     = flag.Uint("template-index", 0, "NVRAM index of the key template. If this flag is not given,\nthe default RSA EK/SRK template is used.")
 )
 
 func main() {
+	flag.Usage = func() {
+		fmt.Fprintf(flag.CommandLine.Output(), "%s - Write PEM formatted TPM public keys to stdout\n\n", os.Args[0])
+		flag.PrintDefaults()
+	}
 	flag.Parse()
 
 	rwc, err := tpm2.OpenTPM(*tpmPath)
@@ -38,6 +42,10 @@ func main() {
 	if err := writeKey(key.PublicKey()); err != nil {
 		log.Fatalf("Failed to write public key: %v", err)
 	}
+}
+
+func usage() {
+
 }
 
 func getKey(rw io.ReadWriter, name string, idx uint32) (*tpm2tools.Key, error) {
