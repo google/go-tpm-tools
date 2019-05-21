@@ -1,3 +1,5 @@
+// Package internal provides helper methods for testing. It should never be
+// included in non-test libraries/binaries.
 package internal
 
 import (
