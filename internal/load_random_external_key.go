@@ -39,7 +39,7 @@ func LoadRandomExternalKey(tb testing.TB, rw io.ReadWriter) tpmutil.Handle {
 	}
 	handle, _, err := tpm2.LoadExternal(rw, public, private, tpm2.HandleNull)
 	if err != nil {
-		tb.Fatal(err)
+		tb.Error(err)
 	}
 	return handle
 }

@@ -10,7 +10,7 @@ import (
 	"github.com/google/go-tpm-tools/simulator"
 )
 
-var useTBS = flag.Bool("use_tbs", false, "Run the tests against the Windows TBS. Value of false (default) will run tests against the simulator.")
+var useTBS = flag.Bool("use-tbs", false, "Run the tests against the Windows TBS. Value of false (default) will run tests against the simulator.")
 
 // GetTPM is a cross-platform testing helper function that retrives the
 // appropriate TPM device from the flags passed into "go test".
