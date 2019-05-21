@@ -1,10 +1,12 @@
 package tpm2tools
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/google/go-tpm-tools/internal"
 	"github.com/google/go-tpm/tpm2"
+	"github.com/google/go-tpm/tpmutil"
 )
 
 const (
@@ -14,18 +16,25 @@ const (
 
 func TestHandles(t *testing.T) {
 	rwc := internal.GetTPM(t)
-	defer rwc.Close()
+	defer CheckedClose(t, rwc)
 
-	for i := 0; i <= maxHandles; i++ {
-		h, err := Handles(rwc, tpm2.HandleTypeTransient)
+	expected := make([]tpmutil.Handle, 0)
+	for i := 0; i < maxHandles; i++ {
+		expected = append(expected, internal.LoadRandomExternalKey(t, rwc))
+
+		handles, err := Handles(rwc, tpm2.HandleTypeTransient)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(h) != i {
-			t.Errorf("Handles mismatch got: %d; want: %d", len(h), i)
+		if !reflect.DeepEqual(handles, expected) {
+			t.Errorf("Handles mismatch got: %v; want: %v", handles, expected)
 		}
-		if i < maxHandles {
-			internal.LoadRandomExternalKey(t, rwc)
+	}
+
+	// Don't leak our handles
+	for _, handle := range expected {
+		if err := tpm2.FlushContext(rwc, handle); err != nil {
+			t.Error(err)
 		}
 	}
 }
