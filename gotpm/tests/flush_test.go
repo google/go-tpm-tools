@@ -12,7 +12,7 @@ import (
 
 func TestFlushNothing(t *testing.T) {
 	rwc := internal.GetTPM(t)
-	defer rwc.Close()
+	defer tpm2tools.CheckedClose(t, rwc)
 	cmd.ExternalTPM = rwc
 
 	cmd.RootCmd.SetArgs([]string{"flush", "all", "--quiet"})
@@ -23,7 +23,7 @@ func TestFlushNothing(t *testing.T) {
 
 func TestFlush(t *testing.T) {
 	rwc := internal.GetTPM(t)
-	defer rwc.Close()
+	defer tpm2tools.CheckedClose(t, rwc)
 	cmd.ExternalTPM = rwc
 
 	cmd.RootCmd.SetArgs([]string{"flush", "transient", "--quiet"})

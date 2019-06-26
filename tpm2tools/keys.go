@@ -66,25 +66,25 @@ func KeyFromNvIndex(rw io.ReadWriter, parent tpmutil.Handle, idx uint32) (*Key, 
 //   - Does not have its usage locked to specific PCR values
 //   - Usable with empty authorization sessions (i.e. doesn't need a password)
 func NewKey(rw io.ReadWriter, parent tpmutil.Handle, template tpm2.Public) (key *Key, err error) {
-	key = &Key{rw: rw}
-	var pubArea, creationData, name []byte
-
-	if parent == tpm2.HandleOwner || parent == tpm2.HandleEndorsement ||
-		parent == tpm2.HandlePlatform || parent == tpm2.HandleNull {
-		key.handle, pubArea, creationData, key.creationHash, key.ticket, name, err =
-			tpm2.CreatePrimaryEx(rw, parent, tpm2.PCRSelection{}, "", "", template)
-		if err != nil {
-			return
-		}
-	} else {
+	if parent != tpm2.HandleOwner && parent != tpm2.HandleEndorsement &&
+		parent != tpm2.HandlePlatform && parent != tpm2.HandleNull {
 		// TODO add support for normal objects with Create() and Load()
-		return nil, fmt.Errorf("unsupported parent handle: %x", parent)
+		err = fmt.Errorf("unsupported parent handle: %x", parent)
+		return
 	}
 
-	// Prevent leaking the handle on failure
+	handle, pubArea, creationData, creationHash, ticket, name, err :=
+		tpm2.CreatePrimaryEx(rw, parent, tpm2.PCRSelection{}, "", "", template)
+	if err != nil {
+		return
+	}
+
+	key = &Key{rw: rw, handle: handle, creationHash: creationHash, ticket: ticket}
+	// Do not leak the key, only use bare returns in this function.
 	defer func() {
 		if err != nil {
 			key.Close()
+			key = nil
 		}
 	}()
 
@@ -92,7 +92,8 @@ func NewKey(rw io.ReadWriter, parent tpmutil.Handle, template tpm2.Public) (key 
 		return
 	}
 	if key.pubArea.Type != tpm2.AlgRSA {
-		return nil, fmt.Errorf("keys of type %v are not yet supported", key.pubArea.Type)
+		err = fmt.Errorf("keys of type %v are not yet supported", key.pubArea.Type)
+		return
 	}
 	key.pubKey = &rsa.PublicKey{
 		N: key.pubArea.RSAParameters.Modulus,
@@ -113,9 +114,9 @@ func NewKey(rw io.ReadWriter, parent tpmutil.Handle, template tpm2.Public) (key 
 	if err != nil {
 		return
 	}
-	if hashFn().Size() != len(key.name.Digest.Value) {
-		return nil, fmt.Errorf("expected name buffer of length %d, got %d",
-			hashFn().Size(), len(key.name.Digest.Value))
+	if lenDigest := len(key.name.Digest.Value); lenDigest != hashFn().Size() {
+		err = fmt.Errorf("got len(digest) of %d, expected %d", lenDigest, hashFn().Size())
+		return
 	}
 	return
 }

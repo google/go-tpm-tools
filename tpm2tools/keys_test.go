@@ -11,7 +11,7 @@ import (
 
 func TestNameMatchesPublicArea(t *testing.T) {
 	rwc := internal.GetTPM(t)
-	defer rwc.Close()
+	defer CheckedClose(t, rwc)
 	ek, err := EndorsementKeyRSA(rwc)
 	if err != nil {
 		t.Fatal(err)
@@ -29,7 +29,7 @@ func TestNameMatchesPublicArea(t *testing.T) {
 
 func TestCreateSigningKeysInHierarchies(t *testing.T) {
 	rwc := internal.GetTPM(t)
-	defer rwc.Close()
+	defer CheckedClose(t, rwc)
 	template := AIKTemplateRSA([256]byte{})
 
 	// We are not authorized to create keys in the Platform Hierarchy
@@ -46,7 +46,7 @@ func TestCreateSigningKeysInHierarchies(t *testing.T) {
 func BenchmarkEndorsementKeyRSA(b *testing.B) {
 	b.StopTimer()
 	rwc := internal.GetTPM(b)
-	defer rwc.Close()
+	defer CheckedClose(b, rwc)
 	b.StartTimer()
 	for n := 0; n < b.N; n++ {
 		key, err := EndorsementKeyRSA(rwc)
@@ -60,7 +60,7 @@ func BenchmarkEndorsementKeyRSA(b *testing.B) {
 func BenchmarkStorageRootKeyRSA(b *testing.B) {
 	b.StopTimer()
 	rwc := internal.GetTPM(b)
-	defer rwc.Close()
+	defer CheckedClose(b, rwc)
 	b.StartTimer()
 	for n := 0; n < b.N; n++ {
 		key, err := StorageRootKeyRSA(rwc)
@@ -74,7 +74,7 @@ func BenchmarkStorageRootKeyRSA(b *testing.B) {
 func BenchmarkNullSigningKeyRSA(b *testing.B) {
 	b.StopTimer()
 	rwc := internal.GetTPM(b)
-	defer rwc.Close()
+	defer CheckedClose(b, rwc)
 	template := AIKTemplateRSA([256]byte{})
 	b.StartTimer()
 	for n := 0; n < b.N; n++ {
