@@ -14,15 +14,26 @@
  * the License.
  */
 
-// Package simulator provides a go-tpm interface to the IBM TPM2 simulator.
+// Package simulator provides a go interface to the Microsoft TPM2 simulator.
 package simulator
 
-// CFLAGS and LDFLAGS modified from upstream Makefile to get the library
-// building with cgo: -Wno-unused-variable is to work around a cgo bug and
-// -Wno-strict-aliasing is due to unsafe pointer math in the TPM simulator.
-
-// #cgo CFLAGS: -DTPM_POSIX -DVTPM=NO -DUSE_BIT_FIELD_STRUCTURES=NO -DUSE_DA_USED=NO -Wall -Wno-expansion-to-defined -Wno-self-assign -Wno-unused-variable -Wno-strict-aliasing -Wnested-externs -Wsign-compare
-// #cgo LDFLAGS: -lcrypto -lpthread -lrt
+// // Directories containing .h files in the simulator source
+// #cgo CFLAGS: -I ms-tpm-20-ref/TPMCmd/Platform/include
+// #cgo CFLAGS: -I ms-tpm-20-ref/TPMCmd/Platform/include/prototypes
+// #cgo CFLAGS: -I ms-tpm-20-ref/TPMCmd/tpm/include
+// #cgo CFLAGS: -I ms-tpm-20-ref/TPMCmd/tpm/include/prototypes
+// // Allows simulator.c to import files without repeating the source repo path.
+// #cgo CFLAGS: -I ms-tpm-20-ref/TPMCmd/Platform/src
+// #cgo CFLAGS: -I ms-tpm-20-ref/TPMCmd/tpm/src
+// // We want to store the NVDATA in memory, not on a file.
+// #cgo CFLAGS: -DVTPM=NO -DSIMULATION=NO
+// // Flags from ms-tpm-20-ref/TPMCmd/configure.ac
+// #cgo CFLAGS: -std=gnu11 -Wall -Wformat-security -fstack-protector-all -fPIC
+// // CGO Generates bad code, silence the warnings from it.
+// #cgo CFLAGS: -Wall -Wno-unused-variable
+// // Link against the system OpenSSL
+// #cgo CFLAGS: -DHASH_LIB=Ossl -DSYM_LIB=Ossl -DMATH_LIB=Ossl
+// #cgo LDFLAGS: -lcrypto
 //
 // #include <stdlib.h>
 // #include "Tpm.h"
@@ -31,12 +42,6 @@ package simulator
 //     NV_SYNC_PERSISTENT(EPSeed);
 //     NV_SYNC_PERSISTENT(SPSeed);
 //     NV_SYNC_PERSISTENT(PPSeed);
-// }
-//
-// // This terrible (and quite unsafe) pointer magic is mandated by the TCG TPM2
-// // Specification, Part 4 (code), section 9.17.4.2.
-// const char* fail_function_name() {
-// 	   return (const char*)(uintptr_t)s_failFunction;
 // }
 import "C"
 import (
@@ -100,7 +105,6 @@ func GetWithFixedSeedInsecure(seed int64) (*Simulator, error) {
 	r.Read(C.gp.EPSeed[2:])
 	r.Read(C.gp.SPSeed[2:])
 	r.Read(C.gp.PPSeed[2:])
-	C.sync_seeds()
 	return s, nil
 }
 
@@ -191,11 +195,7 @@ func runCommand(cmd []byte) ([]byte, error) {
 	// As long as NO_FAIL_TRACE is not defined, debug error information is
 	// written to certain global variables on internal failure.
 	if C.g_inFailureMode == C.TRUE {
-		if functionName := C.fail_function_name(); functionName != nil {
-			return nil, fmt.Errorf("internal failure: %s, line %d, code %d",
-				C.GoString(functionName), C.s_failLine, C.s_failCode)
-		}
-		return nil, errors.New("internal failure (NO_FAIL_TRACE)")
+		return nil, errors.New("unknown internal failure")
 	}
 	if response != unsafe.Pointer(responsePtr) {
 		panic("Response pointer shouldn't be modified on success")
