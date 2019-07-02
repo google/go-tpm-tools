@@ -1,0 +1,3 @@
+[submodule "simulator/ms-tpm-20-ref"]
+	path = simulator/ms-tpm-20-ref
+	url = https://github.com/microsoft/ms-tpm-20-ref.git
