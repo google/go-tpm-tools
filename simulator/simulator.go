@@ -25,12 +25,12 @@ package simulator
 // // Allows simulator.c to import files without repeating the source repo path.
 // #cgo CFLAGS: -I ms-tpm-20-ref/TPMCmd/Platform/src
 // #cgo CFLAGS: -I ms-tpm-20-ref/TPMCmd/tpm/src
-// // We want to store the NVDATA in memory, not on a file.
-// #cgo CFLAGS: -DVTPM=NO -DSIMULATION=NO
+// // Store NVDATA in memory, and we don't care about updates to failedTries.
+// #cgo CFLAGS: -DVTPM=NO -DSIMULATION=NO -DUSE_DA_USED=NO
 // // Flags from ms-tpm-20-ref/TPMCmd/configure.ac
 // #cgo CFLAGS: -std=gnu11 -Wall -Wformat-security -fstack-protector-all -fPIC
-// // CGO Generates bad code, silence the warnings from it.
-// #cgo CFLAGS: -Wall -Wno-unused-variable
+// // Silence known warnings from the reference code and CGO code.
+// #cgo CFLAGS: -Wno-missing-braces -Wno-empty-body -Wno-unused-variable
 // // Link against the system OpenSSL
 // #cgo CFLAGS: -DHASH_LIB=Ossl -DSYM_LIB=Ossl -DMATH_LIB=Ossl
 // #cgo LDFLAGS: -lcrypto
