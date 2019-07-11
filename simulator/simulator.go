@@ -17,41 +17,14 @@
 // Package simulator provides a go interface to the Microsoft TPM2 simulator.
 package simulator
 
-// // Directories containing .h files in the simulator source
-// #cgo CFLAGS: -I ms-tpm-20-ref/TPMCmd/Platform/include
-// #cgo CFLAGS: -I ms-tpm-20-ref/TPMCmd/Platform/include/prototypes
-// #cgo CFLAGS: -I ms-tpm-20-ref/TPMCmd/tpm/include
-// #cgo CFLAGS: -I ms-tpm-20-ref/TPMCmd/tpm/include/prototypes
-// // Allows simulator.c to import files without repeating the source repo path.
-// #cgo CFLAGS: -I ms-tpm-20-ref/TPMCmd/Platform/src
-// #cgo CFLAGS: -I ms-tpm-20-ref/TPMCmd/tpm/src
-// // Store NVDATA in memory, and we don't care about updates to failedTries.
-// #cgo CFLAGS: -DVTPM=NO -DSIMULATION=NO -DUSE_DA_USED=NO
-// // Flags from ms-tpm-20-ref/TPMCmd/configure.ac
-// #cgo CFLAGS: -std=gnu11 -Wall -Wformat-security -fstack-protector-all -fPIC
-// // Silence known warnings from the reference code and CGO code.
-// #cgo CFLAGS: -Wno-missing-braces -Wno-empty-body -Wno-unused-variable
-// // Link against the system OpenSSL
-// #cgo CFLAGS: -DHASH_LIB=Ossl -DSYM_LIB=Ossl -DMATH_LIB=Ossl
-// #cgo LDFLAGS: -lcrypto
-//
-// #include <stdlib.h>
-// #include "Tpm.h"
-//
-// void sync_seeds() {
-//     NV_SYNC_PERSISTENT(EPSeed);
-//     NV_SYNC_PERSISTENT(SPSeed);
-//     NV_SYNC_PERSISTENT(PPSeed);
-// }
-import "C"
 import (
 	"bytes"
 	"errors"
 	"fmt"
 	"math/rand"
 	"sync"
-	"unsafe"
 
+	"github.com/google/go-tpm-tools/simulator/internal"
 	"github.com/google/go-tpm/tpm2"
 )
 
@@ -95,16 +68,12 @@ func Get() (*Simulator, error) {
 // hierarchy seeds are derived from the input seed. Note that this function
 // compromises the security of the keys/seeds and should only be used for tests.
 func GetWithFixedSeedInsecure(seed int64) (*Simulator, error) {
-	r := rand.New(rand.NewSource(seed))
 	s, err := Get()
 	if err != nil {
 		return nil, err
 	}
 
-	// The first two bytes of the seed encode the size (so we don't overwrite)
-	r.Read(C.gp.EPSeed[2:])
-	r.Read(C.gp.SPSeed[2:])
-	r.Read(C.gp.PPSeed[2:])
+	internal.SetSeeds(rand.New(rand.NewSource(seed)))
 	return s, nil
 }
 
@@ -128,7 +97,7 @@ func (s *Simulator) ManufactureReset() error {
 // Write executes the command specified by commandBuffer. The command response
 // can be retrieved with a subsequent call to Read().
 func (s *Simulator) Write(commandBuffer []byte) (int, error) {
-	resp, err := runCommand(commandBuffer)
+	resp, err := internal.RunCommand(commandBuffer)
 	if err != nil {
 		return 0, err
 	}
@@ -150,17 +119,13 @@ func (s *Simulator) Close() error {
 }
 
 func (s *Simulator) on(manufactureReset bool) error {
-	// Setup the simulator to receive commands
-	C._plat__Signal_PowerOn()
-	C._plat__Signal_Reset()
-	C._plat__SetNvAvail()
-	C._plat__Signal_PhysicalPresenceOn()
+	internal.On()
 	if manufactureReset {
-		if rc := C.TPM_Manufacture(1); rc != C.TPM_RC_SUCCESS {
-			return fmt.Errorf("manufacture reset failed: code %x", rc)
+		if err := internal.ManufactureReset(); err != nil {
+			return err
 		}
 	}
-	// TPM2_Setup must be the first command the TPM receives
+	// TPM2_Startup must be the first command the TPM receives.
 	if err := tpm2.Startup(s, tpm2.StartupClear); err != nil {
 		return fmt.Errorf("startup: %v", err)
 	}
@@ -168,37 +133,11 @@ func (s *Simulator) on(manufactureReset bool) error {
 }
 
 func (s *Simulator) off() error {
-	// TPM2_Shutdown must be the first command the TPM receives. We call
+	// TPM2_Shutdown must be the last command the TPM receives. We call
 	// Shutdown with StartupClear to simulate a full reboot.
 	if err := tpm2.Shutdown(s, tpm2.StartupClear); err != nil {
 		return fmt.Errorf("shutdown: %v", err)
 	}
-	C._plat__Signal_PhysicalPresenceOff()
-	C._plat__ClearNvAvail()
-	C._plat__Signal_PowerOff()
+	internal.Off()
 	return nil
-}
-
-func runCommand(cmd []byte) ([]byte, error) {
-	responseSize := C.uint32_t(C.MAX_RESPONSE_SIZE)
-	// _plat__RunCommand takes the response buffer as a uint8_t** instead of as
-	// a uint8_t*. As Cgo bans go pointers to go pointers, we must allocate the
-	// response buffer with malloc().
-	response := C.malloc(C.size_t(responseSize))
-	defer C.free(response)
-	// Make a copy of the response pointer, so we can be sure _plat__RunCommand
-	// doesn't modify the pointer (it _is_ expected to modify the buffer).
-	responsePtr := (*C.uint8_t)(response)
-
-	C._plat__RunCommand(C.uint32_t(len(cmd)), (*C.uint8_t)(&cmd[0]),
-		&responseSize, &responsePtr)
-	// As long as NO_FAIL_TRACE is not defined, debug error information is
-	// written to certain global variables on internal failure.
-	if C.g_inFailureMode == C.TRUE {
-		return nil, errors.New("unknown internal failure")
-	}
-	if response != unsafe.Pointer(responsePtr) {
-		panic("Response pointer shouldn't be modified on success")
-	}
-	return C.GoBytes(response, C.int(responseSize)), nil
 }
