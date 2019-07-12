@@ -3,9 +3,8 @@
 This repository contains various libraries and a command line tool designed for
 use with [Go-TPM](https://github.com/google/go-tpm):
   - [simulator](https://godoc.org/github.com/google/go-tpm-tools/simulator):
-    a Go library allowing the
-    [IBM TPM2 simulator](https://sourceforge.net/projects/ibmswtpm2/)
-    to be used with Go-TPM.
+    Go bindings to the Microsoft's
+    [TPM2 simulator](https://sourceforge.net/projects/ibmswtpm2/).
   - [tpm2tools](https://godoc.org/github.com/google/go-tpm-tools/tpm2tools):
     a Go library providing useful abstractions and utility functions for using a
     TPM2. The goal of this library is to handle complex TPM functionality
