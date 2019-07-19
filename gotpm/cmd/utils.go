@@ -11,6 +11,7 @@ var (
 	output  string
 	input   string
 	nvIndex uint32
+	pcrs    []int
 )
 
 // Disable the "help" subcommand (and just use the -h/--help flags).
@@ -23,19 +24,25 @@ func hideHelp(cmd *cobra.Command) {
 // Lets this command specify an output file, for use with dataOutput().
 func addOutputFlag(cmd *cobra.Command) {
 	cmd.PersistentFlags().StringVar(&output, "output", "",
-		"output file for TPM data (defaults to stdout)")
+		"output file (defaults to stdout)")
 }
 
 // Lets this command specify an input file, for use with dataInput().
 func addInputFlag(cmd *cobra.Command) {
 	cmd.PersistentFlags().StringVar(&input, "input", "",
-		"input file for TPM data (defaults to stdin)")
+		"input file (defaults to stdin)")
 }
 
 // Lets this command specify an NVDATA index, for use with nvIndex.
 func addIndexFlag(cmd *cobra.Command) {
 	cmd.PersistentFlags().Uint32Var(&nvIndex, "index", 0,
 		"NVDATA index, cannot be 0")
+}
+
+// Lets this command specify some number of PCR arguments, check if in range.
+func addPCRsFlag(cmd *cobra.Command) {
+	cmd.PersistentFlags().IntSliceVar(&pcrs, "pcrs", nil,
+		"Comma separated list of PCR numbers")
 }
 
 // alwaysError implements io.ReadWriter by always returning an error
