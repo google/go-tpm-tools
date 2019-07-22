@@ -8,7 +8,7 @@ import (
 )
 
 // Calculations from Credential_Profile_EK_V2.0, section 2.1.5.3 - authPolicy
-func defaultAuthPolicy() []byte {
+func defaultEKAuthPolicy() []byte {
 	buf, err := tpmutil.Pack(tpm2.CmdPolicySecret, tpm2.HandleEndorsement)
 	if err != nil {
 		panic(err)
@@ -20,26 +20,43 @@ func defaultAuthPolicy() []byte {
 	return digest2[:]
 }
 
+func defaultEKAttributes() tpm2.KeyProp {
+	// The EK is a storage key that must use session-based authorization.
+	return (tpm2.FlagStorageDefault | tpm2.FlagAdminWithPolicy) & ^tpm2.FlagUserWithAuth
+}
+
+func defaultSRKAttributes() tpm2.KeyProp {
+	// FlagNoDA doesn't do anything (as the AuthPolicy is nil). However, this is
+	// what Windows does, and we don't want to conflict.
+	return tpm2.FlagStorageDefault | tpm2.FlagNoDA
+}
+
+func defaultSymScheme() *tpm2.SymScheme {
+	return &tpm2.SymScheme{
+		Alg:     tpm2.AlgAES,
+		KeyBits: 128,
+		Mode:    tpm2.AlgCFB,
+	}
+}
+
+func defaultRSADecrypt() *tpm2.RSAParams {
+	return &tpm2.RSAParams{
+		Symmetric:  defaultSymScheme(),
+		KeyBits:    2048,
+		ModulusRaw: make([]byte, 256), // public.unique must be all zeros
+	}
+}
+
 // DefaultEKTemplateRSA returns the default Endorsement Key (EK) template as
 // specified in Credential_Profile_EK_V2.0, section 2.1.5.1 - authPolicy.
 // https://trustedcomputinggroup.org/wp-content/uploads/Credential_Profile_EK_V2.0_R14_published.pdf
 func DefaultEKTemplateRSA() tpm2.Public {
 	return tpm2.Public{
-		Type:    tpm2.AlgRSA,
-		NameAlg: tpm2.AlgSHA256,
-		Attributes: tpm2.FlagFixedTPM | tpm2.FlagFixedParent | tpm2.FlagSensitiveDataOrigin |
-			tpm2.FlagAdminWithPolicy | tpm2.FlagRestricted | tpm2.FlagDecrypt,
-		AuthPolicy: defaultAuthPolicy(),
-		RSAParameters: &tpm2.RSAParams{
-			Symmetric: &tpm2.SymScheme{
-				Alg:     tpm2.AlgAES,
-				KeyBits: 128,
-				Mode:    tpm2.AlgCFB,
-			},
-			KeyBits:    2048,
-			Exponent:   0,
-			ModulusRaw: make([]byte, 256), // public.unique must be all zeros
-		},
+		Type:          tpm2.AlgRSA,
+		NameAlg:       tpm2.AlgSHA256,
+		Attributes:    defaultEKAttributes(),
+		AuthPolicy:    defaultEKAuthPolicy(),
+		RSAParameters: defaultRSADecrypt(),
 	}
 }
 
@@ -64,15 +81,13 @@ func AIKTemplateRSA(nonce [256]byte) tpm2.Public {
 	}
 }
 
-// SRKTemplateRSA returns a sane Storage Root Key (SRK) template.
+// SRKTemplateRSA returns a standard Storage Root Key (SRK) template.
 // This is based upon the advice in the TCG's TPM v2.0 Provisioning Guidance.
 func SRKTemplateRSA() tpm2.Public {
-	template := DefaultEKTemplateRSA()
-	template.Attributes |= tpm2.FlagUserWithAuth
-	template.Attributes &= ^tpm2.FlagAdminWithPolicy
-	template.Attributes |= tpm2.FlagNoDA
-
-	template.AuthPolicy = nil
-
-	return template
+	return tpm2.Public{
+		Type:          tpm2.AlgRSA,
+		NameAlg:       tpm2.AlgSHA256,
+		Attributes:    defaultSRKAttributes(),
+		RSAParameters: defaultRSADecrypt(),
+	}
 }
