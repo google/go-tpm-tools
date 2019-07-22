@@ -1,0 +1,44 @@
+syntax = "proto3";
+
+package proto;
+
+enum ObjectType {
+  OBJECT_INVALID = 0x0000;
+  RSA = 0x0001;
+  KEYEDHASH = 0x0008;
+  ECC = 0x0023;
+  SYMCIPHER = 0x0025;
+}
+
+enum HashAlgo {
+  HASH_INVALID = 0x0000;
+  SHA1 = 0x0004;
+  SHA256 = 0x000B;
+  SHA384 = 0x000C;
+  SHA512 = 0x000D;
+  SM3_256 = 0x0012;
+  SHA3_256 = 0x0027;
+  SHA3_384 = 0x0028;
+  SHA3_512 = 0x0029;
+}
+
+enum AsymSignAlgo {
+  ASYM_INVALID = 0x0000;
+  RSASSA = 0x0014;
+  RSAPSS = 0x0016;
+  ECDSA = 0x0018;
+  ECDAA = 0x001A;
+  SM2 = 0x001B;
+  ECSCHNORR = 0x001C;
+}
+
+// SealedBytes stores the result of a TPM2_Seal. The private portion (priv) has
+// already been encrypted and is no longer sensitive. The hash algorithm is
+// assumed to be SHA256.
+message SealedBytes {
+  bytes priv = 1;
+  bytes pub = 2;
+  repeated int32 pcrs = 3;
+  HashAlgo hash = 4;
+  ObjectType srk = 5;
+}
