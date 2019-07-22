@@ -9,6 +9,8 @@ import (
 
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpmutil"
+
+	"github.com/google/go-tpm-tools/proto"
 )
 
 // Key wraps an active TPM2 key. Users of Key should be sure to call Close()
@@ -143,38 +145,54 @@ func (k *Key) Close() {
 	tpm2.FlushContext(k.rw, k.handle)
 }
 
-// SealedBytes stores the result of a TPM2_Seal. The private portion (priv) has
-// already been encrypted and is no longer sensitive.
-type SealedBytes struct {
-	priv []byte
-	pub  []byte
-}
-
 // Seal seals the sensitive byte buffer to the provided PCRs under the owner
 // hierarchy using the SHA256 versions of the provided PCRs.
 // The Key k is used as the parent key.
-func (k *Key) Seal(pcrs []int, sensitive []byte) (SealedBytes, error) {
+func (k *Key) Seal(pcrs []int, sensitive []byte) (*proto.SealedBytes, error) {
 	auth, err := getPCRSessionAuth(k.rw, pcrs)
 	if err != nil {
-		return SealedBytes{}, fmt.Errorf("could not get pcr session auth: %v", err)
+		return nil, fmt.Errorf("could not get pcr session auth: %v", err)
 	}
 
-	return sealHelper(k.rw, k.Handle(), auth, sensitive)
+	sb, err := sealHelper(k.rw, k.Handle(), auth, sensitive)
+	if err != nil {
+		return nil, err
+	}
+	for _, pcr := range pcrs {
+		sb.Pcrs = append(sb.Pcrs, int32(pcr))
+	}
+	sb.Hash = proto.HashAlgo_SHA256
+	sb.Srk = proto.ObjectType(k.pubArea.Type)
+	return sb, nil
 }
 
-func sealHelper(rw io.ReadWriter, parentHandle tpmutil.Handle, auth []byte, sensitive []byte) (SealedBytes, error) {
+func sealHelper(rw io.ReadWriter, parentHandle tpmutil.Handle, auth []byte, sensitive []byte) (*proto.SealedBytes, error) {
 	priv, pub, err := tpm2.Seal(rw, parentHandle, "", "", auth, sensitive)
 	if err != nil {
-		return SealedBytes{}, fmt.Errorf("failed to seal data: %v", err)
+		return nil, fmt.Errorf("failed to seal data: %v", err)
 	}
-	return SealedBytes{priv, pub}, nil
+
+	sb := proto.SealedBytes{}
+	sb.Priv = priv
+	sb.Pub = pub
+	return &sb, nil
 }
 
 // Unseal takes a private/public pair of buffers and attempts to reverse the
 // sealing process under the owner hierarchy using the SHA256 versions of the
 // provided PCRs.
 // The Key k is used as the parent key.
-func (k *Key) Unseal(pcrs []int, in SealedBytes) ([]byte, error) {
+func (k *Key) Unseal(in *proto.SealedBytes) ([]byte, error) {
+	if in.Srk != proto.ObjectType(k.pubArea.Type) {
+		return nil, fmt.Errorf("Expected key of type %v, got %v", in.Srk, k.pubArea.Type)
+	}
+	if in.Hash != proto.HashAlgo_SHA256 {
+		return nil, fmt.Errorf("Only SHA256 PCRs are currently supported")
+	}
+	var pcrs []int
+	for _, pcr := range in.Pcrs {
+		pcrs = append(pcrs, int(pcr))
+	}
 	session, err := createPCRSession(k.rw, pcrs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unseal: %v", err)
@@ -185,8 +203,8 @@ func (k *Key) Unseal(pcrs []int, in SealedBytes) ([]byte, error) {
 		k.rw,
 		k.Handle(),
 		/*parentPassword=*/ "",
-		in.pub,
-		in.priv)
+		in.Pub,
+		in.Priv)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load sealed object: %v", err)
 	}
@@ -199,23 +217,27 @@ func (k *Key) Unseal(pcrs []int, in SealedBytes) ([]byte, error) {
 // produced by the PCR state in pcrs. Similar to seal and unseal, this acts on
 // the SHA256 PCRs and uses the owner hierarchy.
 // The Key k is used as the parent key.
-func (k *Key) Reseal(pcrs map[int][]byte, in SealedBytes) (SealedBytes, error) {
-	pcrNums := make([]int, 0, len(pcrs))
-	for key := range pcrs {
-		pcrNums = append(pcrNums, key)
-	}
-
-	sensitive, err := k.Unseal(pcrNums, in)
+func (k *Key) Reseal(pcrs map[int][]byte, in *proto.SealedBytes) (*proto.SealedBytes, error) {
+	sensitive, err := k.Unseal(in)
 	if err != nil {
-		return SealedBytes{}, fmt.Errorf("failed to unseal: %v", err)
+		return nil, fmt.Errorf("failed to unseal: %v", err)
 	}
 
 	auth, err := computePCRSessionAuth(pcrs)
 	if err != nil {
-		return SealedBytes{}, fmt.Errorf("failed to compute pcr session auth: %v", err)
+		return nil, fmt.Errorf("failed to compute pcr session auth: %v", err)
 	}
 
-	return sealHelper(k.rw, k.Handle(), auth, sensitive)
+	sb, err := sealHelper(k.rw, k.Handle(), auth, sensitive)
+	if err != nil {
+		return nil, err
+	}
+	for pcr := range pcrs {
+		sb.Pcrs = append(sb.Pcrs, int32(pcr))
+	}
+	sb.Hash = in.Hash
+	sb.Srk = in.Srk
+	return sb, nil
 }
 
 type tpmsPCRSelection struct {

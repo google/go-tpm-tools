@@ -30,7 +30,7 @@ func TestSeal(t *testing.T) {
 		t.Fatalf("failed to seal: %v", err)
 	}
 
-	unseal, err := key.Unseal(pcrList, sealed)
+	unseal, err := key.Unseal(sealed)
 	if err != nil {
 		t.Fatalf("failed to unseal: %v", err)
 	}
@@ -45,7 +45,7 @@ func TestSeal(t *testing.T) {
 	}
 
 	// unseal should not succeed.
-	_, err = key.Unseal(pcrList, sealed)
+	_, err = key.Unseal(sealed)
 	if err == nil {
 		t.Fatalf("unseal should have caused an error: %v", err)
 	}
@@ -111,7 +111,7 @@ func TestSelfReseal(t *testing.T) {
 		t.Fatalf("failed to seal: %v", err)
 	}
 
-	unseal, err := key.Unseal(pcrList, sealed)
+	unseal, err := key.Unseal(sealed)
 	if err != nil {
 		t.Fatalf("failed to unseal: %v", err)
 	}
@@ -124,7 +124,7 @@ func TestSelfReseal(t *testing.T) {
 		t.Fatalf("failed to reseal: %v", err)
 	}
 
-	unseal, err = key.Unseal(pcrList, sealed)
+	unseal, err = key.Unseal(sealed)
 	if err != nil {
 		t.Fatalf("unseal failed: %v", err)
 	}
@@ -205,7 +205,7 @@ func TestReseal(t *testing.T) {
 		t.Fatalf("failed to seal: %v", err)
 	}
 
-	unseal, err := key.Unseal(pcrList, sealed)
+	unseal, err := key.Unseal(sealed)
 	if err != nil {
 		t.Fatalf("failed to unseal: %v", err)
 	}
@@ -225,7 +225,7 @@ func TestReseal(t *testing.T) {
 	}
 
 	// unseal should not succeed since pcr has not been extended.
-	_, err = key.Unseal(pcrList, sealed)
+	_, err = key.Unseal(sealed)
 	if err == nil {
 		t.Fatalf("unseal should have failed: %v", err)
 	}
@@ -237,7 +237,7 @@ func TestReseal(t *testing.T) {
 		}
 	}
 
-	unseal, err = key.Unseal(pcrList, sealed)
+	unseal, err = key.Unseal(sealed)
 	if err != nil {
 		t.Fatalf("failed to unseal: %v", err)
 	}
