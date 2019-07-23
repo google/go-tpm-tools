@@ -2,7 +2,6 @@ package tpm2tools
 
 import (
 	"crypto"
-	"crypto/rsa"
 	"crypto/sha256"
 	"fmt"
 	"io"
@@ -16,14 +15,11 @@ import (
 // Key wraps an active TPM2 key. Users of Key should be sure to call Close()
 // when finished using the Key, so that the underlying TPM handle can be freed.
 type Key struct {
-	rw           io.ReadWriter
-	handle       tpmutil.Handle
-	pubArea      tpm2.Public
-	pubKey       crypto.PublicKey
-	creationData *tpm2.CreationData
-	creationHash []byte
-	ticket       *tpm2.Ticket
-	name         tpm2.Name
+	rw      io.ReadWriter
+	handle  tpmutil.Handle
+	pubArea tpm2.Public
+	pubKey  crypto.PublicKey
+	name    tpm2.Name
 }
 
 // EndorsementKeyRSA generates and loads a key from DefaultEKTemplateRSA.
@@ -75,16 +71,16 @@ func NewKey(rw io.ReadWriter, parent tpmutil.Handle, template tpm2.Public) (key 
 		return
 	}
 
-	handle, pubArea, creationData, creationHash, ticket, name, err :=
+	handle, pubArea, _, _, _, _, err :=
 		tpm2.CreatePrimaryEx(rw, parent, tpm2.PCRSelection{}, "", "", template)
 	if err != nil {
 		return
 	}
 
-	key = &Key{rw: rw, handle: handle, creationHash: creationHash, ticket: ticket}
+	key = &Key{rw: rw, handle: handle}
 	// Do not leak the key, only use bare returns in this function.
 	defer func() {
-		if err != nil {
+		if key != nil && err != nil {
 			key.Close()
 			key = nil
 		}
@@ -93,31 +89,10 @@ func NewKey(rw io.ReadWriter, parent tpmutil.Handle, template tpm2.Public) (key 
 	if key.pubArea, err = tpm2.DecodePublic(pubArea); err != nil {
 		return
 	}
-	if key.pubArea.Type != tpm2.AlgRSA {
-		err = fmt.Errorf("keys of type %v are not yet supported", key.pubArea.Type)
+	if key.pubKey, err = key.pubArea.Key(); err != nil {
 		return
 	}
-	key.pubKey = &rsa.PublicKey{
-		N: key.pubArea.RSAParameters.Modulus,
-		E: int(key.pubArea.RSAParameters.Exponent),
-	}
-	if key.creationData, err = tpm2.DecodeCreationData(creationData); err != nil {
-		return
-	}
-
-	key.name = tpm2.Name{Digest: &tpm2.HashValue{}}
-	n, err := tpmutil.Unpack(name, &key.name.Digest.Alg)
-	if err != nil {
-		return
-	}
-	key.name.Digest.Value = name[n:]
-
-	hashFn, err := key.name.Digest.Alg.HashConstructor()
-	if err != nil {
-		return
-	}
-	if lenDigest := len(key.name.Digest.Value); lenDigest != hashFn().Size() {
-		err = fmt.Errorf("got len(digest) of %d, expected %d", lenDigest, hashFn().Size())
+	if key.name, err = key.pubArea.Name(); err != nil {
 		return
 	}
 	return
