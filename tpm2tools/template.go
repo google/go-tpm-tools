@@ -47,6 +47,20 @@ func defaultRSADecrypt() *tpm2.RSAParams {
 	}
 }
 
+func defaultECCDecrypt() *tpm2.ECCParams {
+	return &tpm2.ECCParams{
+		Symmetric:  defaultSymScheme(),
+		CurveID: tpm2.CurveNISTP256,
+		PointRaw: &tpm2.ECPointRaw {
+			X: make([]byte, 32),
+			Y: make([]byte, 32),
+		},
+		KDF: &tpm2.KDFScheme{
+			Alg: tpm2.AlgNull,
+		},
+	}
+}
+
 // DefaultEKTemplateRSA returns the default Endorsement Key (EK) template as
 // specified in Credential_Profile_EK_V2.0, section 2.1.5.1 - authPolicy.
 // https://trustedcomputinggroup.org/wp-content/uploads/Credential_Profile_EK_V2.0_R14_published.pdf
@@ -57,6 +71,19 @@ func DefaultEKTemplateRSA() tpm2.Public {
 		Attributes:    defaultEKAttributes(),
 		AuthPolicy:    defaultEKAuthPolicy(),
 		RSAParameters: defaultRSADecrypt(),
+	}
+}
+
+// DefaultEKTemplateECC returns the default Endorsement Key (EK) template as
+// specified in Credential_Profile_EK_V2.0, section 2.1.5.2 - authPolicy.
+// https://trustedcomputinggroup.org/wp-content/uploads/Credential_Profile_EK_V2.0_R14_published.pdf
+func DefaultEKTemplateECC() tpm2.Public {
+	return tpm2.Public{
+		Type:          tpm2.AlgECC,
+		NameAlg:       tpm2.AlgSHA256,
+		Attributes:    defaultEKAttributes(),
+		AuthPolicy:    defaultEKAuthPolicy(),
+		ECCParameters: defaultECCDecrypt(),
 	}
 }
 

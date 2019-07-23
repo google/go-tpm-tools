@@ -27,6 +27,11 @@ func EndorsementKeyRSA(rw io.ReadWriter) (*Key, error) {
 	return NewKey(rw, tpm2.HandleEndorsement, DefaultEKTemplateRSA())
 }
 
+// EndorsementKeyECC generates and loads a key from DefaultEKTemplateECC.
+func EndorsementKeyECC(rw io.ReadWriter) (*Key, error) {
+	return NewKey(rw, tpm2.HandleEndorsement, DefaultEKTemplateECC())
+}
+
 // StorageRootKeyRSA generates and loads a key from SRKTemplateRSA.
 func StorageRootKeyRSA(rw io.ReadWriter) (*Key, error) {
 	return NewKey(rw, tpm2.HandleOwner, SRKTemplateRSA())
