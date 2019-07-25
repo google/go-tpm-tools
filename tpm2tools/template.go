@@ -39,7 +39,7 @@ func defaultSymScheme() *tpm2.SymScheme {
 	}
 }
 
-func defaultRSADecrypt() *tpm2.RSAParams {
+func defaultRSAParams() *tpm2.RSAParams {
 	return &tpm2.RSAParams{
 		Symmetric:  defaultSymScheme(),
 		KeyBits:    2048,
@@ -47,16 +47,13 @@ func defaultRSADecrypt() *tpm2.RSAParams {
 	}
 }
 
-func defaultECCDecrypt() *tpm2.ECCParams {
+func defaultECCParams() *tpm2.ECCParams {
 	return &tpm2.ECCParams{
 		Symmetric:  defaultSymScheme(),
 		CurveID: tpm2.CurveNISTP256,
 		Point: tpm2.ECPoint {
 			XRaw: make([]byte, 32),
 			YRaw: make([]byte, 32),
-		},
-		KDF: &tpm2.KDFScheme{
-			Alg: tpm2.AlgNull,
 		},
 	}
 }
@@ -70,7 +67,7 @@ func DefaultEKTemplateRSA() tpm2.Public {
 		NameAlg:       tpm2.AlgSHA256,
 		Attributes:    defaultEKAttributes(),
 		AuthPolicy:    defaultEKAuthPolicy(),
-		RSAParameters: defaultRSADecrypt(),
+		RSAParameters: defaultRSAParams(),
 	}
 }
 
@@ -83,7 +80,7 @@ func DefaultEKTemplateECC() tpm2.Public {
 		NameAlg:       tpm2.AlgSHA256,
 		Attributes:    defaultEKAttributes(),
 		AuthPolicy:    defaultEKAuthPolicy(),
-		ECCParameters: defaultECCDecrypt(),
+		ECCParameters: defaultECCParams(),
 	}
 }
 
@@ -115,7 +112,7 @@ func SRKTemplateRSA() tpm2.Public {
 		Type:          tpm2.AlgRSA,
 		NameAlg:       tpm2.AlgSHA256,
 		Attributes:    defaultSRKAttributes(),
-		RSAParameters: defaultRSADecrypt(),
+		RSAParameters: defaultRSAParams(),
 	}
 }
 
@@ -126,6 +123,6 @@ func SRKTemplateECC() tpm2.Public {
 		Type:          tpm2.AlgECC,
 		NameAlg:       tpm2.AlgSHA256,
 		Attributes:    defaultSRKAttributes(),
-		ECCParameters: defaultECCDecrypt(),
+		ECCParameters: defaultECCParams(),
 	}
 }

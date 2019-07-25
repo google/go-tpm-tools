@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"testing"
+	"io"
 
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpmutil"
@@ -15,41 +16,33 @@ func TestSeal(t *testing.T) {
 	rwc := internal.GetTPM(t)
 	defer CheckedClose(t, rwc)
 
-	type SRKey struct {
-		name string
-		key *Key
+	tests := []struct {
+		name   string
+		getSRK func(io.ReadWriter) (*Key, error)
+	}{
+			{"RSA", StorageRootKeyRSA},
+			{"ECC", StorageRootKeyECC},
 	}
-	keys := []SRKey{};
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
 
-	key, err := StorageRootKeyECC(rwc)
-	if err != nil {
-		t.Fatalf("can't create ECC srk from template: %v", err)
-	}
-	keys = append(keys, SRKey{name: "ECC", key: key})
-	key, err = StorageRootKeyRSA(rwc)
-	if err != nil {
-		t.Fatalf("can't create RSA srk from template: %v", err)
-	}
-	keys = append(keys, SRKey{name: "RSA", key: key})
-	
-	defer func() {
-		for _, k := range keys {
-			k.key.Close()
-		}
-	} ()
+			srk, err := test.getSRK(rwc)
 
-	for _, k := range keys {
-		t.Run(k.name, func(t *testing.T) {
+			if err != nil {
+				t.Fatalf("can't create %s srk from template: %v", test.name, err)
+			}
+			defer srk.Close()
+
 			secret := []byte("test")
 			pcrList := []int{7, 23}
 			pcrToExtend := tpmutil.Handle(23)
 		
-			sealed, err := k.key.Seal(pcrList, secret)
+			sealed, err := srk.Seal(pcrList, secret)
 			if err != nil {
 				t.Fatalf("failed to seal: %v", err)
 			}
 		
-			unseal, err := k.key.Unseal(sealed)
+			unseal, err := srk.Unseal(sealed)
 			if err != nil {
 				t.Fatalf("failed to unseal: %v", err)
 			}
@@ -64,7 +57,7 @@ func TestSeal(t *testing.T) {
 			}
 		
 			// unseal should not succeed.
-			_, err = k.key.Unseal(sealed)
+			_, err = srk.Unseal(sealed)
 			if err == nil {
 				t.Fatalf("unseal should have caused an error: %v", err)
 			}
