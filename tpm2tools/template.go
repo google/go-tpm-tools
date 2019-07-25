@@ -75,7 +75,6 @@ func AIKTemplateRSA(nonce [256]byte) tpm2.Public {
 				Hash: tpm2.AlgSHA256,
 			},
 			KeyBits:    2048,
-			Exponent:   0,
 			ModulusRaw: nonce[:], // Use public.unique to generate distinct keys
 		},
 	}
