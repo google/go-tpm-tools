@@ -31,8 +31,8 @@ func LoadRandomExternalKey(tb testing.TB, rw io.ReadWriter) tpmutil.Handle {
 				Hash: tpm2.AlgSHA1,
 			},
 			KeyBits:  2048,
-			Exponent: uint32(pk.PublicKey.E),
-			Modulus:  pk.PublicKey.N,
+			ExponentRaw: uint32(pk.PublicKey.E),
+			ModulusRaw:  pk.PublicKey.N.Bytes(),
 		},
 	}
 	private := tpm2.Private{
