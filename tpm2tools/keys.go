@@ -37,6 +37,10 @@ func StorageRootKeyRSA(rw io.ReadWriter) (*Key, error) {
 	return NewKey(rw, tpm2.HandleOwner, SRKTemplateRSA())
 }
 
+func StorageRootKeyECC(rw io.ReadWriter) (*Key, error) {
+	return NewKey(rw, tpm2.HandleOwner, SRKTemplateECC())
+}
+
 // EndorsementKeyFromNvIndex generates and loads an endorsement key using the
 // template stored at the provided nvdata index. This is useful for TPMs which
 // have a preinstalled AIK template.

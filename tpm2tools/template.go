@@ -51,9 +51,9 @@ func defaultECCDecrypt() *tpm2.ECCParams {
 	return &tpm2.ECCParams{
 		Symmetric:  defaultSymScheme(),
 		CurveID: tpm2.CurveNISTP256,
-		PointRaw: &tpm2.ECPointRaw {
-			X: make([]byte, 32),
-			Y: make([]byte, 32),
+		Point: tpm2.ECPoint {
+			XRaw: make([]byte, 32),
+			YRaw: make([]byte, 32),
 		},
 		KDF: &tpm2.KDFScheme{
 			Alg: tpm2.AlgNull,
@@ -116,5 +116,16 @@ func SRKTemplateRSA() tpm2.Public {
 		NameAlg:       tpm2.AlgSHA256,
 		Attributes:    defaultSRKAttributes(),
 		RSAParameters: defaultRSADecrypt(),
+	}
+}
+
+// SRKTemplateECC returns a standard Storage Root Key (SRK) template.
+// This is based upon the advice in the TCG's TPM v2.0 Provisioning Guidance.
+func SRKTemplateECC() tpm2.Public {
+	return tpm2.Public{
+		Type:          tpm2.AlgECC,
+		NameAlg:       tpm2.AlgSHA256,
+		Attributes:    defaultSRKAttributes(),
+		ECCParameters: defaultECCDecrypt(),
 	}
 }
