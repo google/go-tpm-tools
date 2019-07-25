@@ -3,8 +3,8 @@ package tpm2tools
 import (
 	"bytes"
 	"crypto/sha256"
-	"testing"
 	"io"
+	"testing"
 
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpmutil"
@@ -20,14 +20,12 @@ func TestSeal(t *testing.T) {
 		name   string
 		getSRK func(io.ReadWriter) (*Key, error)
 	}{
-			{"RSA", StorageRootKeyRSA},
-			{"ECC", StorageRootKeyECC},
+		{"RSA", StorageRootKeyRSA},
+		{"ECC", StorageRootKeyECC},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-
 			srk, err := test.getSRK(rwc)
-
 			if err != nil {
 				t.Fatalf("can't create %s srk from template: %v", test.name, err)
 			}
@@ -36,12 +34,12 @@ func TestSeal(t *testing.T) {
 			secret := []byte("test")
 			pcrList := []int{7, 23}
 			pcrToExtend := tpmutil.Handle(23)
-		
+
 			sealed, err := srk.Seal(pcrList, secret)
 			if err != nil {
 				t.Fatalf("failed to seal: %v", err)
 			}
-		
+
 			unseal, err := srk.Unseal(sealed)
 			if err != nil {
 				t.Fatalf("failed to unseal: %v", err)
@@ -49,16 +47,14 @@ func TestSeal(t *testing.T) {
 			if !bytes.Equal(secret, unseal) {
 				t.Fatalf("unsealed (%v) not equal to secret (%v)", unseal, secret)
 			}
-		
+
 			extension := bytes.Repeat([]byte{0xAA}, sha256.Size)
-			err = tpm2.PCRExtend(rwc, pcrToExtend, tpm2.AlgSHA256, extension, "")
-			if err != nil {
+			if err = tpm2.PCRExtend(rwc, pcrToExtend, tpm2.AlgSHA256, extension, ""); err != nil {
 				t.Fatalf("failed to extend pcr: %v", err)
 			}
-		
+
 			// unseal should not succeed.
-			_, err = srk.Unseal(sealed)
-			if err == nil {
+			if _, err = srk.Unseal(sealed); err == nil {
 				t.Fatalf("unseal should have caused an error: %v", err)
 			}
 		})

@@ -49,9 +49,9 @@ func defaultRSAParams() *tpm2.RSAParams {
 
 func defaultECCParams() *tpm2.ECCParams {
 	return &tpm2.ECCParams{
-		Symmetric:  defaultSymScheme(),
-		CurveID: tpm2.CurveNISTP256,
-		Point: tpm2.ECPoint {
+		Symmetric: defaultSymScheme(),
+		CurveID:   tpm2.CurveNISTP256,
+		Point: tpm2.ECPoint{
 			XRaw: make([]byte, 32),
 			YRaw: make([]byte, 32),
 		},
