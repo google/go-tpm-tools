@@ -39,11 +39,22 @@ func defaultSymScheme() *tpm2.SymScheme {
 	}
 }
 
-func defaultRSADecrypt() *tpm2.RSAParams {
+func defaultRSAParams() *tpm2.RSAParams {
 	return &tpm2.RSAParams{
 		Symmetric:  defaultSymScheme(),
 		KeyBits:    2048,
 		ModulusRaw: make([]byte, 256), // public.unique must be all zeros
+	}
+}
+
+func defaultECCParams() *tpm2.ECCParams {
+	return &tpm2.ECCParams{
+		Symmetric: defaultSymScheme(),
+		CurveID:   tpm2.CurveNISTP256,
+		Point: tpm2.ECPoint{
+			XRaw: make([]byte, 32),
+			YRaw: make([]byte, 32),
+		},
 	}
 }
 
@@ -56,7 +67,20 @@ func DefaultEKTemplateRSA() tpm2.Public {
 		NameAlg:       tpm2.AlgSHA256,
 		Attributes:    defaultEKAttributes(),
 		AuthPolicy:    defaultEKAuthPolicy(),
-		RSAParameters: defaultRSADecrypt(),
+		RSAParameters: defaultRSAParams(),
+	}
+}
+
+// DefaultEKTemplateECC returns the default Endorsement Key (EK) template as
+// specified in Credential_Profile_EK_V2.0, section 2.1.5.2 - authPolicy.
+// https://trustedcomputinggroup.org/wp-content/uploads/Credential_Profile_EK_V2.0_R14_published.pdf
+func DefaultEKTemplateECC() tpm2.Public {
+	return tpm2.Public{
+		Type:          tpm2.AlgECC,
+		NameAlg:       tpm2.AlgSHA256,
+		Attributes:    defaultEKAttributes(),
+		AuthPolicy:    defaultEKAuthPolicy(),
+		ECCParameters: defaultECCParams(),
 	}
 }
 
@@ -87,6 +111,17 @@ func SRKTemplateRSA() tpm2.Public {
 		Type:          tpm2.AlgRSA,
 		NameAlg:       tpm2.AlgSHA256,
 		Attributes:    defaultSRKAttributes(),
-		RSAParameters: defaultRSADecrypt(),
+		RSAParameters: defaultRSAParams(),
+	}
+}
+
+// SRKTemplateECC returns a standard Storage Root Key (SRK) template.
+// This is based upon the advice in the TCG's TPM v2.0 Provisioning Guidance.
+func SRKTemplateECC() tpm2.Public {
+	return tpm2.Public{
+		Type:          tpm2.AlgECC,
+		NameAlg:       tpm2.AlgSHA256,
+		Attributes:    defaultSRKAttributes(),
+		ECCParameters: defaultECCParams(),
 	}
 }

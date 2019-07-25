@@ -57,6 +57,20 @@ func BenchmarkEndorsementKeyRSA(b *testing.B) {
 	}
 }
 
+func BenchmarkEndorsementKeyECC(b *testing.B) {
+	b.StopTimer()
+	rwc := internal.GetTPM(b)
+	defer CheckedClose(b, rwc)
+	b.StartTimer()
+	for n := 0; n < b.N; n++ {
+		key, err := EndorsementKeyECC(rwc)
+		if err != nil {
+			b.Fatal(err)
+		}
+		key.Close()
+	}
+}
+
 func BenchmarkStorageRootKeyRSA(b *testing.B) {
 	b.StopTimer()
 	rwc := internal.GetTPM(b)

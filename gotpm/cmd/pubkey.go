@@ -109,7 +109,14 @@ func getKey(rw io.ReadWriter, hierarchy tpmutil.Handle, algo tpm2.Algorithm) (*t
 			return nil, fmt.Errorf("There is no default RSA key for this hierarchy")
 		}
 	case tpm2.AlgECC:
-		return nil, fmt.Errorf("ECDSA keys are not yet supported")
+		switch hierarchy {
+		case tpm2.HandleEndorsement:
+			return tpm2tools.EndorsementKeyECC(rw)
+		case tpm2.HandleOwner:
+			return tpm2tools.StorageRootKeyECC(rw)
+		default:
+			return nil, fmt.Errorf("There is no default ECC key for this hierarchy")
+		}
 	default:
 		panic("Unreachable")
 	}

@@ -3,6 +3,7 @@ package tpm2tools
 import (
 	"bytes"
 	"crypto/sha256"
+	"io"
 	"testing"
 
 	"github.com/google/go-tpm/tpm2"
@@ -15,39 +16,48 @@ func TestSeal(t *testing.T) {
 	rwc := internal.GetTPM(t)
 	defer CheckedClose(t, rwc)
 
-	key, err := StorageRootKeyRSA(rwc)
-	if err != nil {
-		t.Fatalf("can't create srk from template: %v", err)
+	tests := []struct {
+		name   string
+		getSRK func(io.ReadWriter) (*Key, error)
+	}{
+		{"RSA", StorageRootKeyRSA},
+		{"ECC", StorageRootKeyECC},
 	}
-	defer key.Close()
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			srk, err := test.getSRK(rwc)
+			if err != nil {
+				t.Fatalf("can't create %s srk from template: %v", test.name, err)
+			}
+			defer srk.Close()
 
-	secret := []byte("test")
-	pcrList := []int{7, 23}
-	pcrToExtend := tpmutil.Handle(23)
+			secret := []byte("test")
+			pcrList := []int{7, 23}
+			pcrToExtend := tpmutil.Handle(23)
 
-	sealed, err := key.Seal(pcrList, secret)
-	if err != nil {
-		t.Fatalf("failed to seal: %v", err)
-	}
+			sealed, err := srk.Seal(pcrList, secret)
+			if err != nil {
+				t.Fatalf("failed to seal: %v", err)
+			}
 
-	unseal, err := key.Unseal(sealed)
-	if err != nil {
-		t.Fatalf("failed to unseal: %v", err)
-	}
-	if !bytes.Equal(secret, unseal) {
-		t.Fatalf("unsealed (%v) not equal to secret (%v)", unseal, secret)
-	}
+			unseal, err := srk.Unseal(sealed)
+			if err != nil {
+				t.Fatalf("failed to unseal: %v", err)
+			}
+			if !bytes.Equal(secret, unseal) {
+				t.Fatalf("unsealed (%v) not equal to secret (%v)", unseal, secret)
+			}
 
-	extension := bytes.Repeat([]byte{0xAA}, sha256.Size)
-	err = tpm2.PCRExtend(rwc, pcrToExtend, tpm2.AlgSHA256, extension, "")
-	if err != nil {
-		t.Fatalf("failed to extend pcr: %v", err)
-	}
+			extension := bytes.Repeat([]byte{0xAA}, sha256.Size)
+			if err = tpm2.PCRExtend(rwc, pcrToExtend, tpm2.AlgSHA256, extension, ""); err != nil {
+				t.Fatalf("failed to extend pcr: %v", err)
+			}
 
-	// unseal should not succeed.
-	_, err = key.Unseal(sealed)
-	if err == nil {
-		t.Fatalf("unseal should have caused an error: %v", err)
+			// unseal should not succeed.
+			if _, err = srk.Unseal(sealed); err == nil {
+				t.Fatalf("unseal should have caused an error: %v", err)
+			}
+		})
 	}
 }
 
