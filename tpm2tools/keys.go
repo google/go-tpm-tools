@@ -37,6 +37,7 @@ func StorageRootKeyRSA(rw io.ReadWriter) (*Key, error) {
 	return NewKey(rw, tpm2.HandleOwner, SRKTemplateRSA())
 }
 
+// StorageRootKeyECC generates and loads a key from SRKTemplateECC.
 func StorageRootKeyECC(rw io.ReadWriter) (*Key, error) {
 	return NewKey(rw, tpm2.HandleOwner, SRKTemplateECC())
 }
