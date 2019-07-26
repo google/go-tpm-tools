@@ -1,6 +1,8 @@
 package tpm2tools
 
 import (
+	"io"
+	"reflect"
 	"testing"
 
 	"github.com/google/go-tpm/tpm2"
@@ -43,59 +45,120 @@ func TestCreateSigningKeysInHierarchies(t *testing.T) {
 	}
 }
 
-func BenchmarkEndorsementKeyRSA(b *testing.B) {
-	b.StopTimer()
-	rwc := internal.GetTPM(b)
-	defer CheckedClose(b, rwc)
-	b.StartTimer()
-	for n := 0; n < b.N; n++ {
-		key, err := EndorsementKeyRSA(rwc)
-		if err != nil {
-			b.Fatal(err)
-		}
-		key.Close()
+func TestCachedRSAKeys(t *testing.T) {
+	rwc := internal.GetTPM(t)
+	defer CheckedClose(t, rwc)
+	tests := []struct {
+		name   string
+		getKey func(io.ReadWriter) (*Key, error)
+	}{
+		{"SRK", StorageRootKeyRSA},
+		{"EK", EndorsementKeyRSA},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			// Get the key the first time and persist
+			srk, err := test.getKey(rwc)
+			if err != nil {
+				t.Fatal(err)
+			}
+			pub := srk.PublicKey()
+			if tpm2.FlushContext(rwc, srk.Handle()) == nil {
+				t.Error("Trying to flush persistent keys should fail.")
+			}
+
+			// Get the cached key (should be the same)
+			srk, err = test.getKey(rwc)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(srk.PublicKey(), pub) {
+				t.Errorf("Expected pub key: %v got: %v", pub, srk.PublicKey())
+			}
+
+			// We should still get the same key if we evict the handle
+			if err := tpm2.EvictControl(rwc, "", tpm2.HandleOwner, srk.Handle(), srk.Handle()); err != nil {
+				t.Errorf("Evicting control failed: %v", err)
+			}
+			srk, err = test.getKey(rwc)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(srk.PublicKey(), pub) {
+				t.Errorf("Expected pub key: %v got: %v", pub, srk.PublicKey())
+			}
+		})
 	}
 }
 
-func BenchmarkEndorsementKeyECC(b *testing.B) {
-	b.StopTimer()
-	rwc := internal.GetTPM(b)
-	defer CheckedClose(b, rwc)
-	b.StartTimer()
-	for n := 0; n < b.N; n++ {
-		key, err := EndorsementKeyECC(rwc)
-		if err != nil {
-			b.Fatal(err)
-		}
-		key.Close()
+func TestKeyCreation(t *testing.T) {
+	rwc := internal.GetTPM(t)
+	defer CheckedClose(t, rwc)
+
+	tests := []struct {
+		name   string
+		getKey func(io.ReadWriter) (*Key, error)
+	}{
+		{"SRK-ECC", StorageRootKeyECC},
+		{"EK-ECC", EndorsementKeyECC},
+		{"SRK-RSA", StorageRootKeyRSA},
+		{"EK-RSA", EndorsementKeyRSA},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			key, err := test.getKey(rwc)
+			if err != nil {
+				t.Fatal(err)
+			}
+			key.Close()
+		})
 	}
 }
 
-func BenchmarkStorageRootKeyRSA(b *testing.B) {
-	b.StopTimer()
+func BenchmarkKeyCreation(b *testing.B) {
 	rwc := internal.GetTPM(b)
 	defer CheckedClose(b, rwc)
-	b.StartTimer()
-	for n := 0; n < b.N; n++ {
-		key, err := StorageRootKeyRSA(rwc)
-		if err != nil {
-			b.Fatal(err)
-		}
-		key.Close()
-	}
-}
 
-func BenchmarkNullSigningKeyRSA(b *testing.B) {
-	b.StopTimer()
-	rwc := internal.GetTPM(b)
-	defer CheckedClose(b, rwc)
-	template := AIKTemplateRSA([256]byte{})
-	b.StartTimer()
-	for n := 0; n < b.N; n++ {
-		key, err := NewKey(rwc, tpm2.HandleNull, template)
-		if err != nil {
-			b.Fatal(err)
-		}
-		key.Close()
+	benchmarks := []struct {
+		name   string
+		getKey func(io.ReadWriter) (*Key, error)
+	}{
+		{"SRK-ECC", StorageRootKeyECC},
+		{"EK-ECC", EndorsementKeyECC},
+		{"SRK-RSA-Cached", StorageRootKeyRSA},
+		{"EK-RSA-Cached", EndorsementKeyRSA},
+		{"SRK-RSA", func(rw io.ReadWriter) (*Key, error) {
+			return NewKey(rw, tpm2.HandleEndorsement, SRKTemplateRSA())
+		}},
+		{"EK-RSA", func(rw io.ReadWriter) (*Key, error) {
+			return NewKey(rw, tpm2.HandleOwner, DefaultEKTemplateRSA())
+		}},
+		{"AIK-RSA-Null", func(rw io.ReadWriter) (*Key, error) {
+			template := AIKTemplateRSA([256]byte{})
+			return NewKey(rw, tpm2.HandleNull, template)
+		}},
+	}
+
+	for _, bm := range benchmarks {
+		b.Run(bm.name, func(b *testing.B) {
+			// Don't count time to populate the cache
+			b.StopTimer()
+			key, err := bm.getKey(rwc)
+			if err != nil {
+				b.Fatal(err)
+			}
+			key.Close()
+			b.StartTimer()
+
+			for i := 0; i < b.N; i++ {
+				key, err := bm.getKey(rwc)
+				if err != nil {
+					b.Fatal(err)
+				}
+				key.Close()
+			}
+		})
 	}
 }
