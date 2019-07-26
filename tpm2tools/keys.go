@@ -24,7 +24,7 @@ type Key struct {
 
 // EndorsementKeyRSA generates and loads a key from DefaultEKTemplateRSA.
 func EndorsementKeyRSA(rw io.ReadWriter) (*Key, error) {
-	return NewKey(rw, tpm2.HandleEndorsement, DefaultEKTemplateRSA())
+	return NewCachedKey(rw, tpm2.HandleEndorsement, DefaultEKTemplateRSA(), EKReservedHandle)
 }
 
 // EndorsementKeyECC generates and loads a key from DefaultEKTemplateECC.
@@ -34,7 +34,7 @@ func EndorsementKeyECC(rw io.ReadWriter) (*Key, error) {
 
 // StorageRootKeyRSA generates and loads a key from SRKTemplateRSA.
 func StorageRootKeyRSA(rw io.ReadWriter) (*Key, error) {
-	return NewKey(rw, tpm2.HandleOwner, SRKTemplateRSA())
+	return NewCachedKey(rw, tpm2.HandleOwner, SRKTemplateRSA(), SRKReservedHandle)
 }
 
 // StorageRootKeyECC generates and loads a key from SRKTemplateECC.
@@ -64,6 +64,43 @@ func KeyFromNvIndex(rw io.ReadWriter, parent tpmutil.Handle, idx uint32) (*Key, 
 	return NewKey(rw, parent, template)
 }
 
+// NewCachedKey is almost identical to NewKey, except that it initially tries to
+// see if the a key matching the provided template is at cachedHandle. If so,
+// that key is returned. If not, the key is created as in NewKey, and that key
+// is persisted to the cachedHandle, overwriting any existing key there.
+func NewCachedKey(rw io.ReadWriter, parent tpmutil.Handle, template tpm2.Public, cachedHandle tpmutil.Handle) (k *Key, err error) {
+	owner := tpm2.HandleOwner
+	if parent == tpm2.HandlePlatform {
+		owner = tpm2.HandlePlatform
+	} else if parent == tpm2.HandleNull {
+		return nil, fmt.Errorf("Cannot cache objects in the null hierarchy")
+	}
+
+	cachedPub, _, _, err := tpm2.ReadPublic(rw, cachedHandle)
+	if err == nil {
+		if cachedPub.MatchesTemplate(template) {
+			k = &Key{rw: rw, handle: cachedHandle, pubArea: cachedPub}
+			return k, k.finish()
+		}
+		// Kick out old cached key if it does not match
+		if err = tpm2.EvictControl(rw, "", owner, cachedHandle, cachedHandle); err != nil {
+			return nil, err
+		}
+	}
+
+	k, err = NewKey(rw, parent, template)
+	if err != nil {
+		return nil, err
+	}
+	defer tpm2.FlushContext(rw, k.handle)
+
+	if err = tpm2.EvictControl(rw, "", owner, k.handle, cachedHandle); err != nil {
+		return nil, err
+	}
+	k.handle = cachedHandle
+	return k, nil
+}
+
 // NewKey generates a key from the template and loads that key into the TPM
 // under the specified parent. NewKey can call many different TPM commands:
 //   - If parent is tpm2.Handle{Owner|Endorsement|Platform|Null} a primary key
@@ -73,39 +110,37 @@ func KeyFromNvIndex(rw io.ReadWriter, parent tpmutil.Handle, idx uint32) (*Key, 
 // This function also assumes that the desired key:
 //   - Does not have its usage locked to specific PCR values
 //   - Usable with empty authorization sessions (i.e. doesn't need a password)
-func NewKey(rw io.ReadWriter, parent tpmutil.Handle, template tpm2.Public) (key *Key, err error) {
-	if parent != tpm2.HandleOwner && parent != tpm2.HandleEndorsement &&
-		parent != tpm2.HandlePlatform && parent != tpm2.HandleNull {
+func NewKey(rw io.ReadWriter, parent tpmutil.Handle, template tpm2.Public) (k *Key, err error) {
+	if !isHierarchy(parent) {
 		// TODO add support for normal objects with Create() and Load()
-		err = fmt.Errorf("unsupported parent handle: %x", parent)
-		return
+		return nil, fmt.Errorf("unsupported parent handle: %x", parent)
 	}
 
 	handle, pubArea, _, _, _, _, err :=
 		tpm2.CreatePrimaryEx(rw, parent, tpm2.PCRSelection{}, "", "", template)
 	if err != nil {
-		return
+		return nil, err
 	}
-
-	key = &Key{rw: rw, handle: handle}
-	// Do not leak the key, only use bare returns in this function.
 	defer func() {
-		if key != nil && err != nil {
-			key.Close()
-			key = nil
+		if err != nil {
+			tpm2.FlushContext(rw, handle)
 		}
 	}()
 
-	if key.pubArea, err = tpm2.DecodePublic(pubArea); err != nil {
+	k = &Key{rw: rw, handle: handle}
+	if k.pubArea, err = tpm2.DecodePublic(pubArea); err != nil {
 		return
 	}
-	if key.pubKey, err = key.pubArea.Key(); err != nil {
-		return
+	return k, k.finish()
+}
+
+func (k *Key) finish() error {
+	var err error
+	if k.pubKey, err = k.pubArea.Key(); err != nil {
+		return err
 	}
-	if key.name, err = key.pubArea.Name(); err != nil {
-		return
-	}
-	return
+	k.name, err = k.pubArea.Name()
+	return err
 }
 
 // Handle allows this key to be used directly with other go-tpm commands.
