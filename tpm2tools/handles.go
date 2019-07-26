@@ -9,6 +9,17 @@ import (
 	"github.com/google/go-tpm/tpmutil"
 )
 
+// Reserved Handles from "TCG TPM v2.0 Provisioning Guidance" - v1r1 - Table 2
+const (
+	EKReservedHandle  = tpmutil.Handle(0x81010001)
+	SRKReservedHandle = tpmutil.Handle(0x81000001)
+)
+
+func isHierarchy(h tpmutil.Handle) bool {
+	return h == tpm2.HandleOwner || h == tpm2.HandleEndorsement ||
+		h == tpm2.HandlePlatform || h == tpm2.HandleNull
+}
+
 // Handles returns a slice of tpmutil.Handle objects of all handles within
 // the TPM rw of type handleType.
 func Handles(rw io.ReadWriter, handleType tpm2.HandleType) ([]tpmutil.Handle, error) {
