@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"fmt"
+	"github.com/google/go-tpm-tools/tpm2tools"
 	"github.com/google/go-tpm/tpm2"
 	"github.com/spf13/cobra"
 )
@@ -96,15 +97,53 @@ func dataInput() io.Reader {
 }
 
 // Get the algorithm for public key.
-func getAlgo(keyAlgo string) (tpm2.Algorithm, error) {
+func getAlgo() (tpm2.Algorithm, error) {
 	switch keyAlgo {
 	case "rsa":
 		return tpm2.AlgRSA, nil
 	case "ecc":
 		return tpm2.AlgECC, nil
-	case "":
-		panic("--algo flag not properly setup")
 	default:
 		return tpm2.AlgNull, fmt.Errorf("invalid argument %q for \"--algo\" flag", keyAlgo)
 	}
+}
+
+func getSRKwithAlgo(rwc io.ReadWriter, algo tpm2.Algorithm) (*tpm2tools.Key, error) {
+	switch algo {
+	case tpm2.AlgRSA:
+		return tpm2tools.StorageRootKeyRSA(rwc)
+	case tpm2.AlgECC:
+		return tpm2tools.StorageRootKeyECC(rwc)
+	default:
+		return nil, fmt.Errorf("Cannot create SRK for the given algorithm.")
+	}
+}
+
+func getEKwithAlgo(rwc io.ReadWriter, algo tpm2.Algorithm) (*tpm2tools.Key, error) {
+	switch algo {
+	case tpm2.AlgRSA:
+		return tpm2tools.EndorsementKeyRSA(rwc)
+	case tpm2.AlgECC:
+		return tpm2tools.EndorsementKeyECC(rwc)
+	default:
+		return nil, fmt.Errorf("Cannot create EK for the given algorithm.")
+	}
+}
+
+// Load SRK based on tpm2.Algorithm set in the global flag vars.
+func getSRK(rwc io.ReadWriter) (*tpm2tools.Key, error) {
+	algo, err := getAlgo()
+	if err != nil {
+		return nil, err
+	}
+	return getSRKwithAlgo(rwc, algo)
+}
+
+// Load EK based on tpm2.Algorithm set in the global flag vars.
+func getEK(rwc io.ReadWriter) (*tpm2tools.Key, error) {
+	algo, err := getAlgo()
+	if err != nil {
+		return nil, err
+	}
+	return getEKwithAlgo(rwc, algo)
 }

@@ -4,15 +4,10 @@ import (
 	"fmt"
 	"io/ioutil"
 
-	pb "github.com/golang/protobuf/proto"
+	"github.com/golang/protobuf/proto"
 	"github.com/spf13/cobra"
 
-<<<<<<< HEAD
-	"github.com/google/go-tpm-tools/proto"
-=======
 	gotpmtoolspb "github.com/google/go-tpm-tools/proto"
->>>>>>> Add ECC algo for seal/unseal cmds
-	"github.com/google/go-tpm-tools/tpm2tools"
 	"github.com/google/go-tpm/tpm2"
 )
 
@@ -38,11 +33,7 @@ state (like Secure Boot).`,
 		defer rwc.Close()
 
 		fmt.Fprintln(debugOutput(), "Loading SRK")
-		algo, err := getAlgo(keyAlgo)
-		if err != nil {
-			return err
-		}
-		srk, err := tpm2tools.LoadSRK(rwc, algo)
+		srk, err := getSRK(rwc)
 		if err != nil {
 			return err
 		}
@@ -61,7 +52,7 @@ state (like Secure Boot).`,
 		}
 
 		fmt.Fprintln(debugOutput(), "Writing sealed data")
-		if err := pb.MarshalText(dataOutput(), sealed); err != nil {
+		if err := proto.MarshalText(dataOutput(), sealed); err != nil {
 			return err
 		}
 		fmt.Fprintf(debugOutput(), "Sealed data to PCRs: %v\n", pcrs)
@@ -93,18 +84,13 @@ Thus, algorithm and PCR options are not needed for the unseal command.`,
 		if err != nil {
 			return err
 		}
-<<<<<<< HEAD
-		var sealed proto.SealedBytes
-		if err := pb.UnmarshalText(string(data), &sealed); err != nil {
-=======
 		var sealed gotpmtoolspb.SealedBytes
 		if err := proto.UnmarshalText(string(data), &sealed); err != nil {
->>>>>>> Add ECC algo for seal/unseal cmds
 			return err
 		}
 
 		fmt.Fprintln(debugOutput(), "Loading SRK")
-		srk, err := tpm2tools.LoadSRK(rwc, tpm2.Algorithm(sealed.GetSrk()))
+		srk, err := getSRKwithAlgo(rwc, tpm2.Algorithm(sealed.GetSrk()))
 		if err != nil {
 			return err
 		}
