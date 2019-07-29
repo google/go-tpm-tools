@@ -7,7 +7,9 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/spf13/cobra"
 
+	gotpmtoolspb "github.com/google/go-tpm-tools/proto"
 	"github.com/google/go-tpm-tools/tpm2tools"
+	"github.com/google/go-tpm/tpm2"
 )
 
 var sealCmd = &cobra.Command{
@@ -25,7 +27,11 @@ TPMs support a "sealing" operation that ... TODO(joerichey): finish`,
 		defer rwc.Close()
 
 		fmt.Fprintln(debugOutput(), "Loading SRK")
-		srk, err := tpm2tools.StorageRootKeyRSA(rwc)
+		algo, err := getAlgo(keyAlgo)
+		if err != nil {
+			return err
+		}
+		srk, err := tpm2tools.LoadSRK(rwc, algo)
 		if err != nil {
 			return err
 		}
@@ -66,22 +72,22 @@ The opposite of "gotpm seal" ... TODO(joerichey): finish`,
 		}
 		defer rwc.Close()
 
-		fmt.Fprintln(debugOutput(), "Loading SRK")
-		srk, err := tpm2tools.StorageRootKeyRSA(rwc)
-		if err != nil {
-			return err
-		}
-		defer srk.Close()
-
 		fmt.Fprintln(debugOutput(), "Reading sealed data")
 		data, err := ioutil.ReadAll(dataInput())
 		if err != nil {
 			return err
 		}
-		var sealed tpm2tools.SealedBytes
+		var sealed gotpmtoolspb.SealedBytes
 		if err := proto.UnmarshalText(string(data), &sealed); err != nil {
 			return err
 		}
+
+		fmt.Fprintln(debugOutput(), "Loading SRK")
+		srk, err := tpm2tools.LoadSRK(rwc, tpm2.Algorithm(sealed.GetSrk()))
+		if err != nil {
+			return err
+		}
+		defer srk.Close()
 
 		fmt.Fprintln(debugOutput(), "Unsealing data")
 		secret, err := srk.Unseal(&sealed)
@@ -107,4 +113,5 @@ func init() {
 	addOutputFlag(unsealCmd)
 	// PCRs only used for sealing
 	addPCRsFlag(sealCmd)
+	addPublicKeyAlgoFlag(sealCmd)
 }

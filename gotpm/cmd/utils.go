@@ -4,6 +4,8 @@ import (
 	"io"
 	"os"
 
+	"fmt"
+	"github.com/google/go-tpm/tpm2"
 	"github.com/spf13/cobra"
 )
 
@@ -11,6 +13,7 @@ var (
 	output  string
 	input   string
 	nvIndex uint32
+	keyAlgo string
 	pcrs    []int
 )
 
@@ -43,6 +46,12 @@ func addIndexFlag(cmd *cobra.Command) {
 func addPCRsFlag(cmd *cobra.Command) {
 	cmd.PersistentFlags().IntSliceVar(&pcrs, "pcrs", nil,
 		"Comma separated list of PCR numbers")
+}
+
+// Lets this command specify the public key algorithm.
+func addPublicKeyAlgoFlag(cmd *cobra.Command) {
+	cmd.PersistentFlags().StringVar(&keyAlgo, "algo", "rsa",
+		"Public key algorithm, \"rsa\" or \"ecc\"")
 }
 
 // alwaysError implements io.ReadWriter by always returning an error
@@ -84,4 +93,18 @@ func dataInput() io.Reader {
 		return alwaysError{err}
 	}
 	return file
+}
+
+// Get the algorithm for public key.
+func getAlgo(keyAlgo string) (tpm2.Algorithm, error) {
+	switch keyAlgo {
+	case "rsa":
+		return tpm2.AlgRSA, nil
+	case "ecc":
+		return tpm2.AlgECC, nil
+	case "":
+		panic("--algo flag not properly setup")
+	default:
+		return tpm2.AlgNull, fmt.Errorf("invalid argument %q for \"--algo\" flag", keyAlgo)
+	}
 }

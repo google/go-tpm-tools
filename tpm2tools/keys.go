@@ -49,6 +49,18 @@ func EndorsementKeyFromNvIndex(rw io.ReadWriter, idx uint32) (*Key, error) {
 	return KeyFromNvIndex(rw, tpm2.HandleEndorsement, idx)
 }
 
+// Load SRK based on the given tpm2.Algorithm.
+func LoadSRK(rwc io.ReadWriter, algo tpm2.Algorithm) (*Key, error) {
+	switch algo {
+	case tpm2.AlgRSA:
+		return StorageRootKeyRSA(rwc)
+	case tpm2.AlgECC:
+		return StorageRootKeyECC(rwc)
+	default:
+		return nil, fmt.Errorf("Cannot create SRK for the given algorithm.")
+	}
+}
+
 // KeyFromNvIndex generates and loads a key under the provided parent
 // (possibly a hierarchy root tpm2.Handle{Owner|Endorsement|Platform|Null})
 // using the template stored at the provided nvdata index.
