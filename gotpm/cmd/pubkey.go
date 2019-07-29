@@ -46,7 +46,7 @@ NVDATA instead (and --algo is ignored).`,
 	}(),
 	Args: cobra.ExactValidArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		algo, err := getAlgo()
+		algo, err := getAlgo(keyAlgo)
 		if err != nil {
 			return err
 		}
@@ -68,27 +68,11 @@ NVDATA instead (and --algo is ignored).`,
 	},
 }
 
-var keyAlgo string
-
 func init() {
 	RootCmd.AddCommand(pubkeyCmd)
 	addIndexFlag(pubkeyCmd)
 	addOutputFlag(pubkeyCmd)
-	pubkeyCmd.PersistentFlags().StringVar(&keyAlgo, "algo", "rsa",
-		"Public key algorithm, \"rsa\" or \"ecc\"")
-}
-
-func getAlgo() (tpm2.Algorithm, error) {
-	switch keyAlgo {
-	case "rsa":
-		return tpm2.AlgRSA, nil
-	case "ecc":
-		return tpm2.AlgECC, nil
-	case "":
-		panic("--algo flag not properly setup")
-	default:
-		return tpm2.AlgNull, fmt.Errorf("invalid argument %q for \"--algo\" flag", keyAlgo)
-	}
+	addPublicKeyAlgoFlag(pubkeyCmd)
 }
 
 func getKey(rw io.ReadWriter, hierarchy tpmutil.Handle, algo tpm2.Algorithm) (*tpm2tools.Key, error) {

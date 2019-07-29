@@ -6,6 +6,7 @@ package proto;
 enum ObjectType {
   OBJECT_INVALID = 0x0000;
   RSA = 0x0001;
+  ECC = 0x0023;
 }
 
 enum HashAlgo {
