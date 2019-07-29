@@ -26,7 +26,7 @@ var pubkeyCmd = &cobra.Command{
 	Short: "Retrieve a public key from the TPM",
 	Long: `Get the PEM-formatted public component of a TPM's primary key
 
-A TPM can create a primary asymetric key in one of 4 hierarchies:
+A TPM can create a primary asymmetric key in one of 4 hierarchies:
 	endorsement - used for remote attestation, privacy sensitive
 	owner       - used for local signing/encryption, reset on TPM2_Clear
 	platform    - rarely used

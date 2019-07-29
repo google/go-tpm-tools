@@ -23,13 +23,13 @@ func hideHelp(cmd *cobra.Command) {
 // Lets this command specify an output file, for use with dataOutput().
 func addOutputFlag(cmd *cobra.Command) {
 	cmd.PersistentFlags().StringVar(&output, "output", "",
-		"output file for TPM data (defaults to stdout)")
+		"output file (defaults to stdout)")
 }
 
 // Lets this command specify an input file, for use with dataInput().
 func addInputFlag(cmd *cobra.Command) {
 	cmd.PersistentFlags().StringVar(&input, "input", "",
-		"input file for TPM data (defaults to stdin)")
+		"input file (defaults to stdin)")
 }
 
 // Lets this command specify an NVDATA index, for use with nvIndex.
