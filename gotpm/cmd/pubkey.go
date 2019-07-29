@@ -46,7 +46,7 @@ NVDATA instead (and --algo is ignored).`,
 	}(),
 	Args: cobra.ExactValidArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		algo, err := getAlgo(keyAlgo)
+		algo, err := getAlgo()
 		if err != nil {
 			return err
 		}
@@ -82,27 +82,13 @@ func getKey(rw io.ReadWriter, hierarchy tpmutil.Handle, algo tpm2.Algorithm) (*t
 		return tpm2tools.KeyFromNvIndex(rw, hierarchy, nvIndex)
 	}
 
-	switch algo {
-	case tpm2.AlgRSA:
-		switch hierarchy {
-		case tpm2.HandleEndorsement:
-			return tpm2tools.EndorsementKeyRSA(rw)
-		case tpm2.HandleOwner:
-			return tpm2tools.StorageRootKeyRSA(rw)
-		default:
-			return nil, fmt.Errorf("There is no default RSA key for this hierarchy")
-		}
-	case tpm2.AlgECC:
-		switch hierarchy {
-		case tpm2.HandleEndorsement:
-			return tpm2tools.EndorsementKeyECC(rw)
-		case tpm2.HandleOwner:
-			return tpm2tools.StorageRootKeyECC(rw)
-		default:
-			return nil, fmt.Errorf("There is no default ECC key for this hierarchy")
-		}
+	switch hierarchy {
+	case tpm2.HandleEndorsement:
+		return getEK(rw)
+	case tpm2.HandleOwner:
+		return getSRK(rw)
 	default:
-		panic("Unreachable")
+		return nil, fmt.Errorf("There is no default key for this hierarchy")
 	}
 }
 

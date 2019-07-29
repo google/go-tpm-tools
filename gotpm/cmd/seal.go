@@ -8,7 +8,6 @@ import (
 	"github.com/spf13/cobra"
 
 	gotpmtoolspb "github.com/google/go-tpm-tools/proto"
-	"github.com/google/go-tpm-tools/tpm2tools"
 	"github.com/google/go-tpm/tpm2"
 )
 
@@ -27,11 +26,7 @@ TPMs support a "sealing" operation that ... TODO(joerichey): finish`,
 		defer rwc.Close()
 
 		fmt.Fprintln(debugOutput(), "Loading SRK")
-		algo, err := getAlgo(keyAlgo)
-		if err != nil {
-			return err
-		}
-		srk, err := tpm2tools.LoadSRK(rwc, algo)
+		srk, err := getSRK(rwc)
 		if err != nil {
 			return err
 		}
@@ -83,7 +78,7 @@ The opposite of "gotpm seal" ... TODO(joerichey): finish`,
 		}
 
 		fmt.Fprintln(debugOutput(), "Loading SRK")
-		srk, err := tpm2tools.LoadSRK(rwc, tpm2.Algorithm(sealed.GetSrk()))
+		srk, err := getSRKwithAlgo(rwc, tpm2.Algorithm(sealed.GetSrk()))
 		if err != nil {
 			return err
 		}
