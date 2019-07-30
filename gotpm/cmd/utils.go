@@ -11,6 +11,7 @@ var (
 	output  string
 	input   string
 	nvIndex uint32
+	pcrs    []int
 )
 
 // Disable the "help" subcommand (and just use the -h/--help flags).
@@ -36,6 +37,12 @@ func addInputFlag(cmd *cobra.Command) {
 func addIndexFlag(cmd *cobra.Command) {
 	cmd.PersistentFlags().Uint32Var(&nvIndex, "index", 0,
 		"NVDATA index, cannot be 0")
+}
+
+// Lets this command specify some number of PCR arguments, check if in range.
+func addPCRsFlag(cmd *cobra.Command) {
+	cmd.PersistentFlags().IntSliceVar(&pcrs, "pcrs", nil,
+		"Comma separated list of PCR numbers")
 }
 
 // alwaysError implements io.ReadWriter by always returning an error
