@@ -38,10 +38,14 @@ func TestSealPlain(t *testing.T) {
 
 	tests := []struct {
 		name   string
+		algo   string
 		pcrArg string
 	}{
-		{"Plain", ""},
-		{"PCRs", "7,8"},
+		{"Default", "", ""},
+		{"Default with PCRs", "", "7,8"},
+		{"ECC", "ecc", ""},
+		{"ECC with PCRs", "ecc", "7"},
+		{"RSA", "rsa", ""},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -56,6 +60,9 @@ func TestSealPlain(t *testing.T) {
 			sealArgs := []string{"seal", "--quiet", "--input", secretFile1, "--output", sealedFile}
 			if test.pcrArg != "" {
 				sealArgs = append(sealArgs, "--pcrs", test.pcrArg)
+			}
+			if test.algo != "" {
+				sealArgs = append(sealArgs, "--algo", test.algo)
 			}
 			cmd.RootCmd.SetArgs(sealArgs)
 			if err := cmd.RootCmd.Execute(); err != nil {
