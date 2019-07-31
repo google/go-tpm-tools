@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"io/ioutil"
 
-	"github.com/golang/protobuf/proto"
+	pb "github.com/golang/protobuf/proto"
 	"github.com/spf13/cobra"
 
-	gotpmtoolspb "github.com/google/go-tpm-tools/proto"
+	"github.com/google/go-tpm-tools/proto"
 	"github.com/google/go-tpm/tpm2"
 )
 
@@ -52,7 +52,7 @@ state (like Secure Boot).`,
 		}
 
 		fmt.Fprintln(debugOutput(), "Writing sealed data")
-		if err := proto.MarshalText(dataOutput(), sealed); err != nil {
+		if err := pb.MarshalText(dataOutput(), sealed); err != nil {
 			return err
 		}
 		fmt.Fprintf(debugOutput(), "Sealed data to PCRs: %v\n", pcrs)
@@ -84,8 +84,8 @@ Thus, algorithm and PCR options are not needed for the unseal command.`,
 		if err != nil {
 			return err
 		}
-		var sealed gotpmtoolspb.SealedBytes
-		if err := proto.UnmarshalText(string(data), &sealed); err != nil {
+		var sealed proto.SealedBytes
+		if err := pb.UnmarshalText(string(data), &sealed); err != nil {
 			return err
 		}
 
