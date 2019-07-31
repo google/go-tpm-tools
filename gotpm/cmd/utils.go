@@ -4,6 +4,9 @@ import (
 	"io"
 	"os"
 
+	"fmt"
+	"github.com/google/go-tpm-tools/tpm2tools"
+	"github.com/google/go-tpm/tpm2"
 	"github.com/spf13/cobra"
 )
 
@@ -11,6 +14,7 @@ var (
 	output  string
 	input   string
 	nvIndex uint32
+	keyAlgo string
 	pcrs    []int
 )
 
@@ -43,6 +47,12 @@ func addIndexFlag(cmd *cobra.Command) {
 func addPCRsFlag(cmd *cobra.Command) {
 	cmd.PersistentFlags().IntSliceVar(&pcrs, "pcrs", nil,
 		"Comma separated list of PCR numbers")
+}
+
+// Lets this command specify the public key algorithm.
+func addPublicKeyAlgoFlag(cmd *cobra.Command) {
+	cmd.PersistentFlags().StringVar(&keyAlgo, "algo", "rsa",
+		"Public key algorithm, \"rsa\" or \"ecc\"")
 }
 
 // alwaysError implements io.ReadWriter by always returning an error
@@ -84,4 +94,56 @@ func dataInput() io.Reader {
 		return alwaysError{err}
 	}
 	return file
+}
+
+// Get the algorithm for public key.
+func getAlgo() (tpm2.Algorithm, error) {
+	switch keyAlgo {
+	case "rsa":
+		return tpm2.AlgRSA, nil
+	case "ecc":
+		return tpm2.AlgECC, nil
+	default:
+		return tpm2.AlgNull, fmt.Errorf("invalid argument %q for \"--algo\" flag", keyAlgo)
+	}
+}
+
+func getSRKwithAlgo(rwc io.ReadWriter, algo tpm2.Algorithm) (*tpm2tools.Key, error) {
+	switch algo {
+	case tpm2.AlgRSA:
+		return tpm2tools.StorageRootKeyRSA(rwc)
+	case tpm2.AlgECC:
+		return tpm2tools.StorageRootKeyECC(rwc)
+	default:
+		return nil, fmt.Errorf("Cannot create SRK for the given algorithm: 0x%x", algo)
+	}
+}
+
+func getEKwithAlgo(rwc io.ReadWriter, algo tpm2.Algorithm) (*tpm2tools.Key, error) {
+	switch algo {
+	case tpm2.AlgRSA:
+		return tpm2tools.EndorsementKeyRSA(rwc)
+	case tpm2.AlgECC:
+		return tpm2tools.EndorsementKeyECC(rwc)
+	default:
+		return nil, fmt.Errorf("Cannot create EK for the given algorithm: 0x%x", algo)
+	}
+}
+
+// Load SRK based on tpm2.Algorithm set in the global flag vars.
+func getSRK(rwc io.ReadWriter) (*tpm2tools.Key, error) {
+	algo, err := getAlgo()
+	if err != nil {
+		return nil, err
+	}
+	return getSRKwithAlgo(rwc, algo)
+}
+
+// Load EK based on tpm2.Algorithm set in the global flag vars.
+func getEK(rwc io.ReadWriter) (*tpm2tools.Key, error) {
+	algo, err := getAlgo()
+	if err != nil {
+		return nil, err
+	}
+	return getEKwithAlgo(rwc, algo)
 }

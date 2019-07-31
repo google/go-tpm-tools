@@ -68,27 +68,11 @@ NVDATA instead (and --algo is ignored).`,
 	},
 }
 
-var keyAlgo string
-
 func init() {
 	RootCmd.AddCommand(pubkeyCmd)
 	addIndexFlag(pubkeyCmd)
 	addOutputFlag(pubkeyCmd)
-	pubkeyCmd.PersistentFlags().StringVar(&keyAlgo, "algo", "rsa",
-		"Public key algorithm, \"rsa\" or \"ecc\"")
-}
-
-func getAlgo() (tpm2.Algorithm, error) {
-	switch keyAlgo {
-	case "rsa":
-		return tpm2.AlgRSA, nil
-	case "ecc":
-		return tpm2.AlgECC, nil
-	case "":
-		panic("--algo flag not properly setup")
-	default:
-		return tpm2.AlgNull, fmt.Errorf("invalid argument %q for \"--algo\" flag", keyAlgo)
-	}
+	addPublicKeyAlgoFlag(pubkeyCmd)
 }
 
 func getKey(rw io.ReadWriter, hierarchy tpmutil.Handle, algo tpm2.Algorithm) (*tpm2tools.Key, error) {
@@ -98,27 +82,13 @@ func getKey(rw io.ReadWriter, hierarchy tpmutil.Handle, algo tpm2.Algorithm) (*t
 		return tpm2tools.KeyFromNvIndex(rw, hierarchy, nvIndex)
 	}
 
-	switch algo {
-	case tpm2.AlgRSA:
-		switch hierarchy {
-		case tpm2.HandleEndorsement:
-			return tpm2tools.EndorsementKeyRSA(rw)
-		case tpm2.HandleOwner:
-			return tpm2tools.StorageRootKeyRSA(rw)
-		default:
-			return nil, fmt.Errorf("There is no default RSA key for this hierarchy")
-		}
-	case tpm2.AlgECC:
-		switch hierarchy {
-		case tpm2.HandleEndorsement:
-			return tpm2tools.EndorsementKeyECC(rw)
-		case tpm2.HandleOwner:
-			return tpm2tools.StorageRootKeyECC(rw)
-		default:
-			return nil, fmt.Errorf("There is no default ECC key for this hierarchy")
-		}
+	switch hierarchy {
+	case tpm2.HandleEndorsement:
+		return getEK(rw)
+	case tpm2.HandleOwner:
+		return getSRK(rw)
 	default:
-		panic("Unreachable")
+		return nil, fmt.Errorf("There is no default key for the given hierarchy: 0x%x", hierarchy)
 	}
 }
 

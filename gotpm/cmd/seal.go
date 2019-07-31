@@ -8,7 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/google/go-tpm-tools/proto"
-	"github.com/google/go-tpm-tools/tpm2tools"
+	"github.com/google/go-tpm/tpm2"
 )
 
 var sealCmd = &cobra.Command{
@@ -33,7 +33,7 @@ state (like Secure Boot).`,
 		defer rwc.Close()
 
 		fmt.Fprintln(debugOutput(), "Loading SRK")
-		srk, err := tpm2tools.StorageRootKeyRSA(rwc)
+		srk, err := getSRK(rwc)
 		if err != nil {
 			return err
 		}
@@ -79,13 +79,6 @@ Thus, algorithm and PCR options are not needed for the unseal command.`,
 		}
 		defer rwc.Close()
 
-		fmt.Fprintln(debugOutput(), "Loading SRK")
-		srk, err := tpm2tools.StorageRootKeyRSA(rwc)
-		if err != nil {
-			return err
-		}
-		defer srk.Close()
-
 		fmt.Fprintln(debugOutput(), "Reading sealed data")
 		data, err := ioutil.ReadAll(dataInput())
 		if err != nil {
@@ -95,6 +88,13 @@ Thus, algorithm and PCR options are not needed for the unseal command.`,
 		if err := pb.UnmarshalText(string(data), &sealed); err != nil {
 			return err
 		}
+
+		fmt.Fprintln(debugOutput(), "Loading SRK")
+		srk, err := getSRKwithAlgo(rwc, tpm2.Algorithm(sealed.GetSrk()))
+		if err != nil {
+			return err
+		}
+		defer srk.Close()
 
 		fmt.Fprintln(debugOutput(), "Unsealing data")
 		secret, err := srk.Unseal(&sealed)
@@ -120,4 +120,5 @@ func init() {
 	addOutputFlag(unsealCmd)
 	// PCRs only used for sealing
 	addPCRsFlag(sealCmd)
+	addPublicKeyAlgoFlag(sealCmd)
 }
