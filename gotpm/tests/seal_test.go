@@ -41,11 +41,9 @@ func TestSealPlain(t *testing.T) {
 		algo   string
 		pcrArg string
 	}{
-		{"Default", "", ""},
-		{"Default with PCRs", "", "7,8"},
-		{"ECC", "ecc", ""},
-		{"ECC with PCRs", "ecc", "7"},
 		{"RSA", "rsa", ""},
+		{"RSAwithPCRs", "rsa", "7,8"},
+		{"ECCwithPCRs", "ecc", "7"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
