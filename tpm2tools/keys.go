@@ -5,10 +5,9 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"io"
-
+	"crypto/rsa"
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpmutil"
-
 	"github.com/google/go-tpm-tools/proto"
 )
 
@@ -184,6 +183,27 @@ func (k *Key) Seal(pcrs []int, sensitive []byte) (*proto.SealedBytes, error) {
 	sb.Hash = proto.HashAlgo_SHA256
 	sb.Srk = proto.ObjectType(k.pubArea.Type)
 	return sb, nil
+}
+
+// CreatePublicAreaFromPublicKey creates a public area from a go interface PublicKey.
+func CreatePublicAreaFromPublicKey(k crypto.PublicKey) (tpm2.Public, error) {
+	rsaKey, ok := k.(*rsa.PublicKey)
+	if !ok {
+		return tpm2.Public{}, fmt.Errorf("CreatePublicAreaFromPublicKey only supports rsa keys. Unsupported key: %v", k)
+	}
+	public := DefaultEKTemplateRSA()
+	modulus := rsaKey.N.Bytes()
+	if l, expected  := uint16(len(modulus)*8), public.RSAParameters.KeyBits; l < expected  {
+		// If modulus length is less than expected, we are probably missing leading zero bytes.
+		modulus = append(make([]byte, expected - l), modulus...)
+	} else if l > expected {
+		return tpm2.Public{}, fmt.Errorf("Invalid modulus size for RSA key: %v expected: %v", len(modulus), public.RSAParameters.KeyBits)
+	}
+	if uint32(rsaKey.E) != public.RSAParameters.Exponent() {
+		return tpm2.Public{}, fmt.Errorf("Invalid exponent value for RSA key: %v expected: %v", rsaKey.E, public.RSAParameters.ExponentRaw)
+	}
+	public.RSAParameters.ModulusRaw = rsaKey.N.Bytes()
+	return public, nil
 }
 
 func sealHelper(rw io.ReadWriter, parentHandle tpmutil.Handle, auth []byte, sensitive []byte) (*proto.SealedBytes, error) {

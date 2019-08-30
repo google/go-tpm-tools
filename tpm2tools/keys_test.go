@@ -2,6 +2,7 @@ package tpm2tools
 
 import (
 	"io"
+	"crypto/rand"
 	"reflect"
 	"testing"
 
@@ -114,6 +115,37 @@ func TestKeyCreation(t *testing.T) {
 			}
 			key.Close()
 		})
+	}
+}
+
+func TestCreatePublicAreaFromPublicKey(t *testing.T) {
+	area := DefaultEKTemplateRSA()
+	io.ReadFull(rand.Reader, area.RSAParameters.ModulusRaw)
+	key, err := area.Key()
+	if err != nil {
+		t.Fatal(err)
+	}
+	newArea, err := CreatePublicAreaFromPublicKey(key)
+	if err != nil {
+		t.Fatalf("Failed to create public area from public key: %v", err)
+	}
+	if !newArea.MatchesTemplate(area) {
+		t.Errorf("Public Areas did not match. got: %v \n%v,\nwant: %v \n%v", newArea, *newArea.RSAParameters, area, *area.RSAParameters)
+	}
+}
+
+func TestCreatePublicAreaFromPublicKeyWithZeroModulus(t *testing.T) {
+	area := DefaultEKTemplateRSA()
+	key, err := area.Key()
+	if err != nil {
+		t.Fatal(err)
+	}
+	newArea, err := CreatePublicAreaFromPublicKey(key)
+	if err != nil {
+		t.Fatalf("Failed to create public area from public key: %v", err)
+	}
+	if !newArea.MatchesTemplate(area) {
+		t.Errorf("Public Areas did not match. got: %v \n%v,\nwant: %v \n%v", newArea, *newArea.RSAParameters, area, *area.RSAParameters)
 	}
 }
 
