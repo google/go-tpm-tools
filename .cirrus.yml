@@ -1,5 +1,5 @@
 container:
-  image: golang:latest
+  dockerfile: Dockerfile
 
 env:
   GOPROXY: https://proxy.golang.org
