@@ -5,8 +5,8 @@ https://github.com/Microsoft/ms-tpm-20-ref/.
 
 The Microsoft code used here is a actually
 [a fork of the upstream source](https://github.com/josephlr/ms-tpm-20-ref/tree/google),
-and is included via a git submodule at `simulator/internal/ms-tpm-20-ref`. The
-code is forked primarily to eliminate the need for recursive git submodules.
+and is vendored at `simulator/ms-tpm-20-ref`. Building the simulator requires
+that OpenSSL headers are installed (this is the `libssl-dev` package on Debian).
 
 ## Debugging
 
