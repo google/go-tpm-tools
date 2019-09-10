@@ -3,24 +3,19 @@
 // as the Go code. Thus to allow us to use the Mircosoft code as a submodule, we
 // have to textually include all of the sources into this file.
 
+#define _CRYPT_HASH_C_
+#define _X509_SPT_
+
+// Google sources
+#include "Clock.c"
+#include "Entropy.c"
+#include "NVMem.c"
+#include "Run.c"
+
 // Most of the sources can be included in any order. However, this file has to
 // be included first as it instantiates all of the libraries global variables.
 #include "support/Global.c"
 
-// libplatform sources
-#include "Cancel.c"
-#include "Clock.c"
-#include "DebugHelpers.c"
-#include "Entropy.c"
-#include "LocalityPlat.c"
-#include "NVMem.c"
-#include "PPPlat.c"
-#include "PlatformData.c"
-#include "PowerPlat.c"
-#include "RunCommand.c"
-#include "Unique.c"
-
-// libtpm sources
 #include "X509/TpmASN1.c"
 #include "X509/X509_ECC.c"
 #include "X509/X509_RSA.c"
@@ -173,15 +168,9 @@
 #include "crypt/PrimeData.c"
 #include "crypt/RsaKeyCache.c"
 #include "crypt/Ticket.c"
-#include "crypt/ltc/TpmToLtcDesSupport.c"
-#include "crypt/ltc/TpmToLtcMath.c"
-#include "crypt/ltc/TpmToLtcSupport.c"
 #include "crypt/ossl/TpmToOsslDesSupport.c"
 #include "crypt/ossl/TpmToOsslMath.c"
 #include "crypt/ossl/TpmToOsslSupport.c"
-#include "crypt/wolf/TpmToWolfDesSupport.c"
-#include "crypt/wolf/TpmToWolfMath.c"
-#include "crypt/wolf/TpmToWolfSupport.c"
 #include "events/_TPM_Hash_Data.c"
 #include "events/_TPM_Hash_End.c"
 #include "events/_TPM_Hash_Start.c"
