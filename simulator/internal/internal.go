@@ -18,12 +18,11 @@
 package internal
 
 // // Directories containing .h files in the simulator source
-// #cgo CFLAGS: -I ../ms-tpm-20-ref/TPMCmd/Platform/include
-// #cgo CFLAGS: -I ../ms-tpm-20-ref/TPMCmd/Platform/include/prototypes
+// #cgo CFLAGS: -I ../ms-tpm-20-ref/Samples/Google
 // #cgo CFLAGS: -I ../ms-tpm-20-ref/TPMCmd/tpm/include
 // #cgo CFLAGS: -I ../ms-tpm-20-ref/TPMCmd/tpm/include/prototypes
 // // Allows simulator.c to import files without repeating the source repo path.
-// #cgo CFLAGS: -I ../ms-tpm-20-ref/TPMCmd/Platform/src
+// #cgo CFLAGS: -I ../ms-tpm-20-ref/Samples/Google
 // #cgo CFLAGS: -I ../ms-tpm-20-ref/TPMCmd/tpm/src
 // // Store NVDATA in memory, and we don't care about updates to failedTries.
 // #cgo CFLAGS: -DVTPM=NO -DSIMULATION=NO -DUSE_DA_USED=NO
@@ -32,10 +31,16 @@ package internal
 // // Silence known warnings from the reference code and CGO code.
 // #cgo CFLAGS: -Wno-missing-braces -Wno-empty-body -Wno-unused-variable
 // // Link against the system OpenSSL
-// #cgo CFLAGS: -DHASH_LIB=Ossl -DSYM_LIB=Ossl -DMATH_LIB=Ossl
+// #cgo CFLAGS: -DDEBUG=YES
+// #cgo CFLAGS: -DSIMULATION=NO
+// #cgo CFLAGS: -DCOMPILER_CHECKS=DEBUG
+// #cgo CFLAGS: -DRUNTIME_SIZE_CHECKS=DEBUG
+// #cgo CFLAGS: -DUSE_DA_USED=NO
+// #cgo CFLAGS: -DCERTIFYX509_DEBUG=NO
 // #cgo LDFLAGS: -lcrypto
 //
 // #include <stdlib.h>
+// #include "Platform.h"
 // #include "Tpm.h"
 //
 // void sync_seeds() {
@@ -46,7 +51,6 @@ package internal
 import "C"
 import (
 	"errors"
-	"fmt"
 	"io"
 	"unsafe"
 )
@@ -59,29 +63,10 @@ func SetSeeds(r io.Reader) {
 	r.Read(C.gp.PPSeed[2:])
 }
 
-// On starts the simulator. Does not call TPM2_Startup
-func On() {
-	// Setup the simulator to receive commands
-	C._plat__Signal_PowerOn()
-	C._plat__Signal_Reset()
-	C._plat__SetNvAvail()
-	C._plat__Signal_PhysicalPresenceOn()
-}
-
-// Off stops the simulator. Does not call TPM2_Shutdown
-func Off() {
-	C._plat__Signal_PhysicalPresenceOff()
-	C._plat__ClearNvAvail()
-	C._plat__Signal_PowerOff()
-}
-
-// ManufactureReset resets the TPM to its initial factory state.
-func ManufactureReset() error {
-	rc := C.TPM_Manufacture(1)
-	if rc != C.TPM_RC_SUCCESS {
-		return fmt.Errorf("manufacture reset failed: code %x", rc)
-	}
-	return nil
+// Reset simulates toggling the power the the TPM. If forceManufacture is true,
+// the reset will be a manufacturer reset.
+func Reset(forceManufacture bool) {
+	C._plat__Reset(C.bool(forceManufacture))
 }
 
 // RunCommand passes cmd to the simulator and returns the simulator's response.
