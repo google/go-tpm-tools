@@ -37,8 +37,8 @@
 // This file contains the structure definitions used for linking from the TPM
 // code to the MPA and LTC math libraries.
 
-#ifndef _TPM_TO_LTC_MATH_H_
-#define _TPM_TO_LTC_MATH_H_
+#ifndef MATH_LIB_DEFINED
+#define MATH_LIB_DEFINED
 
 #define MATH_LIB_LTC
 
@@ -51,11 +51,11 @@ _NORMAL_WARNING_LEVEL_
 
 
 #if RADIX_BITS != 32
-#error "The mpa library used with LibTopCrypt only works for 32-bit words"
+#error "The mpa library used with LibTomCrypt only works for 32-bit words"
 #endif
 
 // These macros handle entering and leaving a scope
-// from which an MPA or LibTopCrypt function may be called.
+// from which an MPA or LibTomCrypt function may be called.
 // Many of these functions require a scratch pool from which
 // they will allocate scratch variables (rather than using their
 // own stack).
@@ -86,4 +86,4 @@ typedef bnCurve_t  *bigCurve;
 // This definition would change if there were something to report
 #define MathLibSimulationEnd()
 
-#endif
+#endif // MATH_LIB_DEFINED

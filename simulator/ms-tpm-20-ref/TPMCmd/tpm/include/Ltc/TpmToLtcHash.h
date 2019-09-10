@@ -37,13 +37,13 @@
 // This header defines the interface between the hashing code and the LIbTomCrypt
 // hash functions.
 
-#ifndef _TPM_TO_LTC_HASH_H_
-#define _TPM_TO_LTC_HASH_H_
+#ifndef HASH_LIB_DEFINED
+#define HASH_LIB_DEFINED
 
 #define HASH_LIB_LTC
 
 // Avoid pulling in the MPA math if not doing asymmetric with LTC
-#if MATH_LIB != LTC
+#if !(defined MATH_LIB_LTC)
 #  define LTC_NO_ASYMMETRIC
 #endif
 
@@ -58,6 +58,9 @@
 #define tpmHashStateSHA256_t          struct sha256_state
 #define tpmHashStateSHA512_t          struct sha512_state
 #define tpmHashStateSHA384_t          struct sha512_state
+
+// The following defines are only needed by CryptHash.c
+#ifdef _CRYPT_HASH_C_
 
 // Define the interface between CryptHash.c to the functions provided by the 
 // library. For each method, define the calling parameters of the method and then 
@@ -158,13 +161,12 @@
 #define tpmHashStateExport_SHA512   memcpy 
 #define tpmHashStateImport_SHA512   memcpy
 
+#endif // _CRYPT_HASH_C_
+
 // No special processing to initialize the LTC hash library
 #define LibHashInit()
 
 // No special processing at the end of the simulation (i.e., no statistics to print)
 #define HashLibSimulationEnd()
 
-
-#endif // HASH_LIB == LTC
-
-#endif //
+#endif // HASH_LIB_DEFINED

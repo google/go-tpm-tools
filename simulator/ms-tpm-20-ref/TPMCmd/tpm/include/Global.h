@@ -63,7 +63,7 @@
 #define INITIALIZER(_value_)  = _value_
 #else
 #define EXTERN  extern
-#define INITIALIZER(_name_)
+#define INITIALIZER(_value_)
 #endif
 
 _REDUCE_WARNING_LEVEL_(2)
@@ -679,6 +679,7 @@ EXTERN BOOL             g_nvOk;
 // so that its value remains consistent during the command execution
 EXTERN TPM_RC           g_NvStatus;
 
+#ifdef  VENDOR_PERMANENT
 //*** g_platformUnique
 // This location contains the unique value(s) used to identify the TPM. It is
 // loaded on every _TPM2_Startup()
@@ -693,6 +694,7 @@ EXTERN TPM_RC           g_NvStatus;
 EXTERN TPM2B_AUTH       g_platformUniqueAuthorities; // Reserved for RNG
 
 EXTERN TPM2B_AUTH       g_platformUniqueDetails;   // referenced by VENDOR_PERMANENT
+#endif
 
 //*********************************************************************************
 //*********************************************************************************
@@ -916,9 +918,9 @@ EXTERN ORDERLY_DATA     go;
 //*** STATE_CLEAR_DATA
 //*********************************************************************************
 //*********************************************************************************
-// This structure contains the data that is saved on Shutdown(STATE).
+// This structure contains the data that is saved on Shutdown(STATE)
 // and restored on Startup(STATE).  The values are set to their default
-// settings on any Startup(Clear). In other words the data is only persistent
+// settings on any Startup(Clear). In other words, the data is only persistent
 // across TPM Resume.
 //
 // If the comments associated with a parameter indicate a default reset value, the

@@ -147,11 +147,13 @@ TPM2_Startup(
     // command has been received.
     OK = OK && TPMRegisterStartup();
 
+#ifdef  VENDOR_PERMANENT
     // Read the platform unique value that is used as VENDOR_PERMANENT
     // authorization value
     g_platformUniqueDetails.t.size 
         = (UINT16)_plat__GetUnique(1, sizeof(g_platformUniqueDetails.t.buffer),
                                    g_platformUniqueDetails.t.buffer);
+#endif
 
 // Start up subsystems
     // Start set the safe flag

@@ -59,20 +59,6 @@
 #undef NO
 #define NO 0
 
-#ifndef RADIX_BITS
-#if defined(__x86_64__) || defined(__x86_64)                                        \
-    || defined(__amd64__) || defined(__amd64) || defined(_WIN64) || defined(_M_X64) \
-    || defined(_M_ARM64) || defined(__aarch64__)
-#   define RADIX_BITS                      64
-#elif defined(__i386__) || defined(__i386) || defined(i386)                         \
-    || defined(_WIN32) || defined(_M_IX86)                                          \
-    || defined(_M_ARM) || defined(__arm__) || defined(__thumb__)
-#   define RADIX_BITS                      32
-#else
-#   error Unable to determine RADIX_BITS from compiler environment
-#endif
-#endif // RADIX_BITS
-
 // Allow the command line to specify a "profile" file
 #ifdef PROFILE
 #   define PROFILE_QUOTE(a) #a
@@ -263,7 +249,7 @@
 #   endif
 
 // Some of the values (such as sizes) are the result of different options set in 
-// Implementation.h. The combination might not be consistent. A function is defined
+// TpmProfile.h. The combination might not be consistent. A function is defined
 // (TpmSizeChecks()) that is used to verify the sizes at run time. To enable the 
 // function, define this parameter.
 #   if !(defined RUNTIME_SIZE_CHECKS)                                               \
@@ -335,6 +321,13 @@
     || ((LIBRARY_COMPATIBILITY_CHECK != NO) && (LIBRARY_COMPATIBILITY_CHECK != YES))
 #   undef   LIBRARY_COMPATIBILITY_CHECK
 #   define  LIBRARY_COMPATIBILITY_CHECK NO      // Default: Either YES or NO
+#endif
+
+// This define is used to control the debug for the CertifyX509 command.
+#if !(defined CERTIFYX509_DEBUG)                                                    \
+    || ((CERTIFYX509_DEBUG != NO) && (CERTIFYX509_DEBUG != YES))
+#   undef   CERTIFYX509_DEBUG
+#   define  CERTIFYX509_DEBUG YES               // Default: Either YES or NO
 #endif
 
 // Change these definitions to turn all algorithms or commands ON or OFF. That is,

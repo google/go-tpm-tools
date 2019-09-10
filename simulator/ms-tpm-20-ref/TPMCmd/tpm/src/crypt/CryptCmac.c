@@ -39,11 +39,14 @@
 // encryption functions of the selected symmetric cryptographic library.
 
 //** Includes, Defines, and Typedefs
+#define _CRYPT_HASH_C_
 #include "Tpm.h"
 #include "CryptSym.h"
 
 #if ALG_CMAC
+
 //** Functions
+
 //*** CryptCmacStart()
 // This is the function to start the CMAC sequence operation. It initializes the
 // dispatch functions for the data and end operations for CMAC and initializes the

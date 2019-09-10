@@ -36,7 +36,7 @@
 #include "Tpm.h"
 #include "TpmASN1.h"
 #include "TpmASN1_fp.h"
-#include "OIDs.h"
+#define _X509_SPT_
 #include "X509.h"
 #include "X509_spt_fp.h"
 #if ALG_RSA
@@ -49,20 +49,7 @@
 //#   include "X509_SM2_fp.h"
 #endif // ALG_RSA
 
-//** Global X509 Constants
-const x509KeyUsageUnion keyUsageSign = { TPMA_X509_KEY_USAGE_INITIALIZER(
-    /* digitalsignature */ 1, /* nonrepudiation   */ 0,
-    /* keyencipherment  */ 0, /* dataencipherment */ 0,
-    /* keyagreement     */ 0, /* keycertsign      */ 1,
-    /* crlsign          */ 1, /* encipheronly     */ 0,
-    /* decipheronly     */ 0, /* bits_at_9        */ 0) };
 
-const x509KeyUsageUnion keyUsageDecrypt = { TPMA_X509_KEY_USAGE_INITIALIZER(
-    /* digitalsignature */ 0, /* nonrepudiation   */ 0,
-    /* keyencipherment  */ 1, /* dataencipherment */ 1,
-    /* keyagreement     */ 1, /* keycertsign      */ 0,
-    /* crlsign          */ 0, /* encipheronly     */ 1,
-    /* decipheronly     */ 1, /* bits_at_9        */ 0) };
 
 //** Unmarshaling Functions
 
@@ -199,18 +186,19 @@ X509ProcessExtensions(
     //
         keyUsage.integer = value;
         // For KeyUsage:
-        //  the 'sign' attribute is SET if Key Usage includes signing
-        if(((keyUsageSign.integer & keyUsage.integer) != 0
-            && !IS_ATTRIBUTE(attributes, TPMA_OBJECT, sign))
-            // and the 'decrypt' attribute is Set if Key Usage includes decryption uses
-            || ((keyUsageDecrypt.integer & keyUsage.integer) != 0
-            && !IS_ATTRIBUTE(attributes, TPMA_OBJECT, decrypt))
-            // Check that 'fixedTPM' is SET if Key Usage is non-repudiation
-            || (IS_ATTRIBUTE(keyUsage.x509, TPMA_X509_KEY_USAGE, nonrepudiation)
-                && !IS_ATTRIBUTE(attributes, TPMA_OBJECT, fixedTPM))
-            || (IS_ATTRIBUTE(keyUsage.x509, TPMA_X509_KEY_USAGE, keyAgreement)
-                && !IS_ATTRIBUTE(attributes, TPMA_OBJECT, restricted))
-            )
+        //    the 'sign' attribute is SET if Key Usage includes signing
+        if(   (   (keyUsageSign.integer & keyUsage.integer) != 0
+               && !IS_ATTRIBUTE(attributes, TPMA_OBJECT, sign))
+           // OR the 'decrypt' attribute is Set if Key Usage includes decryption uses
+           || (   (keyUsageDecrypt.integer & keyUsage.integer) != 0
+               && !IS_ATTRIBUTE(attributes, TPMA_OBJECT, decrypt))
+           // OR that 'fixedTPM' is SET if Key Usage is non-repudiation
+           || (   IS_ATTRIBUTE(keyUsage.x509, TPMA_X509_KEY_USAGE, nonrepudiation)
+               && !IS_ATTRIBUTE(attributes, TPMA_OBJECT, fixedTPM))
+           // OR that 'restricted' is SET if Key Usage is key agreement
+           || (   IS_ATTRIBUTE(keyUsage.x509, TPMA_X509_KEY_USAGE, keyAgreement)
+               && !IS_ATTRIBUTE(attributes, TPMA_OBJECT, restricted))
+           )
             return TPM_RCS_ATTRIBUTES;
     }
     else
