@@ -193,7 +193,7 @@ func CreatePublicAreaFromPublicKey(k crypto.PublicKey) (tpm2.Public, error) {
 	}
 	public := DefaultEKTemplateRSA()
 	modulus := rsaKey.N.Bytes()
-	if l, expected  := uint16(rsaKey.N.BitLen(), public.RSAParameters.KeyBits; l < expected  {
+	if l, expected  := uint16(rsaKey.N.BitLen()), public.RSAParameters.KeyBits; l < expected  {
 		// If modulus length is less than expected, we are probably missing leading zero bytes.
 		modulus = append(make([]byte, expected - l), modulus...)
 	} else if l > expected {
