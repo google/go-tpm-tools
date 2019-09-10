@@ -189,18 +189,18 @@ func (k *Key) Seal(pcrs []int, sensitive []byte) (*proto.SealedBytes, error) {
 func CreatePublicAreaFromPublicKey(k crypto.PublicKey) (tpm2.Public, error) {
 	rsaKey, ok := k.(*rsa.PublicKey)
 	if !ok {
-		return tpm2.Public{}, fmt.Errorf("CreatePublicAreaFromPublicKey only supports rsa keys. Unsupported key: %v", k)
+		return tpm2.Public{}, fmt.Errorf("Unsupported public key type: %v", k)
 	}
 	public := DefaultEKTemplateRSA()
 	modulus := rsaKey.N.Bytes()
-	if l, expected  := uint16(len(modulus)*8), public.RSAParameters.KeyBits; l < expected  {
+	if l, expected  := uint16(rsaKey.N.BitLen(), public.RSAParameters.KeyBits; l < expected  {
 		// If modulus length is less than expected, we are probably missing leading zero bytes.
 		modulus = append(make([]byte, expected - l), modulus...)
 	} else if l > expected {
-		return tpm2.Public{}, fmt.Errorf("Invalid modulus size for RSA key: %v expected: %v", len(modulus), public.RSAParameters.KeyBits)
+		return tpm2.Public{}, fmt.Errorf("unexpected RSA modulus size: %d bits", l)
 	}
 	if uint32(rsaKey.E) != public.RSAParameters.Exponent() {
-		return tpm2.Public{}, fmt.Errorf("Invalid exponent value for RSA key: %v expected: %v", rsaKey.E, public.RSAParameters.ExponentRaw)
+		return tpm2.Public{}, fmt.Errorf("unexpected RSA exponent: %d", rsaKey.E)
 	}
 	public.RSAParameters.ModulusRaw = rsaKey.N.Bytes()
 	return public, nil

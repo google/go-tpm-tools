@@ -130,7 +130,7 @@ func TestCreatePublicAreaFromPublicKey(t *testing.T) {
 		t.Fatalf("Failed to create public area from public key: %v", err)
 	}
 	if !newArea.MatchesTemplate(area) {
-		t.Errorf("Public Areas did not match. got: %v \n%v,\nwant: %v \n%v", newArea, *newArea.RSAParameters, area, *area.RSAParameters)
+		t.Errorf("Public Areas did not match. got: %+v want: %v", newArea, area)
 	}
 }
 
