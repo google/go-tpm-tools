@@ -2,13 +2,13 @@ package tpm2tools
 
 import (
 	"crypto"
+	"crypto/rsa"
 	"crypto/sha256"
 	"fmt"
-	"io"
-	"crypto/rsa"
+	"github.com/google/go-tpm-tools/proto"
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpmutil"
-	"github.com/google/go-tpm-tools/proto"
+	"io"
 )
 
 // Key wraps an active TPM2 key. Users of Key should be sure to call Close()
@@ -185,19 +185,15 @@ func (k *Key) Seal(pcrs []int, sensitive []byte) (*proto.SealedBytes, error) {
 	return sb, nil
 }
 
-// CreatePublicAreaFromPublicKey creates a public area from a go interface PublicKey.
-func CreatePublicAreaFromPublicKey(k crypto.PublicKey) (tpm2.Public, error) {
+// CreateEKPublicAreaFromKey creates a public area from a go interface PublicKey.
+func CreateEKPublicAreaFromKey(k crypto.PublicKey) (tpm2.Public, error) {
 	rsaKey, ok := k.(*rsa.PublicKey)
 	if !ok {
 		return tpm2.Public{}, fmt.Errorf("Unsupported public key type: %v", k)
 	}
 	public := DefaultEKTemplateRSA()
-	modulus := rsaKey.N.Bytes()
-	if l, expected  := uint16(rsaKey.N.BitLen()), public.RSAParameters.KeyBits; l < expected  {
-		// If modulus length is less than expected, we are probably missing leading zero bytes.
-		modulus = append(make([]byte, expected - l), modulus...)
-	} else if l > expected {
-		return tpm2.Public{}, fmt.Errorf("unexpected RSA modulus size: %d bits", l)
+	if uint16(rsaKey.N.BitLen()) > public.RSAParameters.KeyBits {
+		return tpm2.Public{}, fmt.Errorf("unexpected RSA modulus size: %d bits", rsaKey.N.BitLen())
 	}
 	if uint32(rsaKey.E) != public.RSAParameters.Exponent() {
 		return tpm2.Public{}, fmt.Errorf("unexpected RSA exponent: %d", rsaKey.E)

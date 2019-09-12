@@ -1,8 +1,8 @@
 package tpm2tools
 
 import (
-	"io"
 	"crypto/rand"
+	"io"
 	"reflect"
 	"testing"
 
@@ -118,14 +118,16 @@ func TestKeyCreation(t *testing.T) {
 	}
 }
 
-func TestCreatePublicAreaFromPublicKey(t *testing.T) {
+func TestCreateEKPublicAreaFromKey(t *testing.T) {
 	area := DefaultEKTemplateRSA()
-	io.ReadFull(rand.Reader, area.RSAParameters.ModulusRaw)
+	if _, err := io.ReadFull(rand.Reader, area.RSAParameters.ModulusRaw); err != nil {
+		t.Fatal(err)
+	}
 	key, err := area.Key()
 	if err != nil {
 		t.Fatal(err)
 	}
-	newArea, err := CreatePublicAreaFromPublicKey(key)
+	newArea, err := CreateEKPublicAreaFromKey(key)
 	if err != nil {
 		t.Fatalf("Failed to create public area from public key: %v", err)
 	}
@@ -134,18 +136,18 @@ func TestCreatePublicAreaFromPublicKey(t *testing.T) {
 	}
 }
 
-func TestCreatePublicAreaFromPublicKeyWithZeroModulus(t *testing.T) {
+func TestCreateEKPublicAreaFromKeyWithZeroModulus(t *testing.T) {
 	area := DefaultEKTemplateRSA()
 	key, err := area.Key()
 	if err != nil {
 		t.Fatal(err)
 	}
-	newArea, err := CreatePublicAreaFromPublicKey(key)
+	newArea, err := CreateEKPublicAreaFromKey(key)
 	if err != nil {
 		t.Fatalf("Failed to create public area from public key: %v", err)
 	}
 	if !newArea.MatchesTemplate(area) {
-		t.Errorf("Public Areas did not match. got: %v \n%v,\nwant: %v \n%v", newArea, *newArea.RSAParameters, area, *area.RSAParameters)
+		t.Errorf("Public Areas did not match. got: %+v want: %v", newArea, area)
 	}
 }
 

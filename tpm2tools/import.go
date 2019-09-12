@@ -35,8 +35,7 @@ func (ek *Key) Import(rw io.ReadWriter, blob *pb.ImportBlob) ([]byte, error) {
 		return nil
 	}
 
-	err = refreshSession()
-	if err != nil {
+	if err = refreshSession(); err != nil {
 		return nil, err
 	}
 	auth := tpm2.AuthCommand{Session: session, Attributes: tpm2.AttrContinueSession, Auth: nil}
@@ -47,8 +46,7 @@ func (ek *Key) Import(rw io.ReadWriter, blob *pb.ImportBlob) ([]byte, error) {
 		return nil, fmt.Errorf("Import failed: %s", err)
 	}
 
-	err = refreshSession()
-	if err != nil {
+	if err = refreshSession(); err != nil {
 		return nil, err
 	}
 	handle, _, err := tpm2.LoadUsingAuth(rw, ek.Handle(), auth, public, private)
@@ -62,7 +60,4 @@ func (ek *Key) Import(rw io.ReadWriter, blob *pb.ImportBlob) ([]byte, error) {
 		return nil, fmt.Errorf("Unseal failed: %s", err)
 	}
 	return out, nil
-
-	return nil, nil
 }
-
