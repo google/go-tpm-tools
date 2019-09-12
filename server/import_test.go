@@ -19,15 +19,15 @@ func TestImport(t *testing.T) {
 	secret := []byte("super secret code")
 	blob, err := CreateImportBlob(pub, secret)
 	if err != nil {
-		t.Fatalf("CreateImportBlob failed: %v", err)
+		t.Fatalf("createImportBlob failed: %v", err)
 	}
 
 	output, err := ek.Import(rwc, blob)
 	if err != nil {
-		t.Fatalf("Import failed: %v", err)
+		t.Fatalf("import failed: %v", err)
 	}
 
 	if !bytes.Equal(output, secret) {
-		t.Errorf("Got %X, expected %X", output, secret)
+		t.Errorf("got %X, expected %X", output, secret)
 	}
 }

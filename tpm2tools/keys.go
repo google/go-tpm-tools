@@ -189,7 +189,7 @@ func (k *Key) Seal(pcrs []int, sensitive []byte) (*proto.SealedBytes, error) {
 func CreateEKPublicAreaFromKey(k crypto.PublicKey) (tpm2.Public, error) {
 	rsaKey, ok := k.(*rsa.PublicKey)
 	if !ok {
-		return tpm2.Public{}, fmt.Errorf("Unsupported public key type: %v", k)
+		return tpm2.Public{}, fmt.Errorf("unsupported public key type: %v", k)
 	}
 	public := DefaultEKTemplateRSA()
 	if uint16(rsaKey.N.BitLen()) > public.RSAParameters.KeyBits {
