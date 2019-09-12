@@ -2,14 +2,14 @@ package tpm2tools
 
 import (
 	"fmt"
-	pb "github.com/google/go-tpm-tools/proto"
+	"github.com/google/go-tpm-tools/proto"
 	"github.com/google/go-tpm/tpm2"
 	"io"
 )
 
 // Import decrypts the secret contained in an encoded import request.
 // The req parameter should come from server.CreateImportRequest.
-func (ek *Key) Import(rw io.ReadWriter, blob *pb.ImportBlob) ([]byte, error) {
+func (ek *Key) Import(rw io.ReadWriter, blob *proto.ImportBlob) ([]byte, error) {
 	session, _, err := tpm2.StartAuthSession(
 		rw,
 		tpm2.HandleNull,  /*tpmKey*/
@@ -22,7 +22,6 @@ func (ek *Key) Import(rw io.ReadWriter, blob *pb.ImportBlob) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	defer tpm2.FlushContext(rw, session)
 
 	// Authorization w/ EK has to use Policy Secret sessions. Call
@@ -30,7 +29,7 @@ func (ek *Key) Import(rw io.ReadWriter, blob *pb.ImportBlob) ([]byte, error) {
 	refreshSession := func() error {
 		nullAuth := tpm2.AuthCommand{Session: tpm2.HandlePasswordSession, Attributes: tpm2.AttrContinueSession}
 		if _, err := tpm2.PolicySecret(rw, tpm2.HandleEndorsement, nullAuth, session, nil, nil, nil, 0); err != nil {
-			return fmt.Errorf("PolicySecret: %v", err)
+			return fmt.Errorf("authorizing policy failed: %s", err)
 		}
 		return nil
 	}
@@ -43,7 +42,7 @@ func (ek *Key) Import(rw io.ReadWriter, blob *pb.ImportBlob) ([]byte, error) {
 	public, duplicate, seed := blob.PublicArea, blob.Duplicate, blob.EncryptedSeed
 	private, err := tpm2.Import(rw, ek.Handle(), auth, public, duplicate, seed, nil, nil)
 	if err != nil {
-		return nil, fmt.Errorf("Import failed: %s", err)
+		return nil, fmt.Errorf("import failed: %s", err)
 	}
 
 	if err = refreshSession(); err != nil {
@@ -51,13 +50,13 @@ func (ek *Key) Import(rw io.ReadWriter, blob *pb.ImportBlob) ([]byte, error) {
 	}
 	handle, _, err := tpm2.LoadUsingAuth(rw, ek.Handle(), auth, public, private)
 	if err != nil {
-		return nil, fmt.Errorf("Load failed: %s", err)
+		return nil, fmt.Errorf("load failed: %s", err)
 	}
 	defer tpm2.FlushContext(rw, handle)
 
 	out, err := tpm2.Unseal(rw, handle, "")
 	if err != nil {
-		return nil, fmt.Errorf("Unseal failed: %s", err)
+		return nil, fmt.Errorf("unseal failed: %s", err)
 	}
 	return out, nil
 }

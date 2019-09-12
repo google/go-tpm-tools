@@ -13,12 +13,12 @@ import (
 	"hash"
 	"io"
 
-	pb "github.com/google/go-tpm-tools/proto"
+	"github.com/google/go-tpm-tools/proto"
 )
 
 // CreateImportBlob uses the provided public EK to encrypt the sensitive data into import blob format.
 // The returned import blob can be decrypted by the TPM associated with the provided EK.
-func CreateImportBlob(ekPub crypto.PublicKey, sensitive []byte) (*pb.ImportBlob, error) {
+func CreateImportBlob(ekPub crypto.PublicKey, sensitive []byte) (*proto.ImportBlob, error) {
 	ek, err := tpm2tools.CreateEKPublicAreaFromKey(ekPub)
 	if err != nil {
 		return nil, err
@@ -38,7 +38,7 @@ func CreateImportBlob(ekPub crypto.PublicKey, sensitive []byte) (*pb.ImportBlob,
 	if err != nil {
 		return nil, err
 	}
-	return &pb.ImportBlob{
+	return &proto.ImportBlob{
 		Duplicate:     duplicate,
 		EncryptedSeed: encryptedSeed,
 		PublicArea:    pubEncoded,
@@ -106,6 +106,7 @@ func encryptSecret(secret, seed, nameEncoded []byte, hashAlg tpm2.Algorithm) ([]
 		return nil, err
 	}
 	encSecret := make([]byte, len(secret))
+	// The TPM spec requires an all-zero IV.
 	iv := make([]byte, len(symmetricKey))
 	cipher.NewCFBEncrypter(c, iv).XORKeyStream(encSecret, secret)
 	return encSecret, nil
@@ -113,12 +114,11 @@ func encryptSecret(secret, seed, nameEncoded []byte, hashAlg tpm2.Algorithm) ([]
 
 func encryptSeed(seed []byte, ek tpm2.Public) ([]byte, error) {
 	h := getHash(ek.NameAlg)
-	label := append([]byte("DUPLICATE"), 0)
 	ekPub, err := ek.Key()
 	if err != nil {
 		return nil, err
 	}
-	encSeed, err := rsa.EncryptOAEP(h, rand.Reader, ekPub.(*rsa.PublicKey), seed, label)
+	encSeed, err := rsa.EncryptOAEP(h, rand.Reader, ekPub.(*rsa.PublicKey), seed, []byte("DUPLICATE\x00"))
 	if err != nil {
 		return nil, err
 	}
@@ -146,7 +146,7 @@ func createPublic(private tpm2.Private, alg tpm2.Algorithm) tpm2.Public {
 	return tpm2.Public{
 		Type:       tpm2.AlgKeyedHash,
 		NameAlg:    alg,
-		Attributes: tpm2.FlagUserWithAuth | 0x00080000,
+		Attributes: tpm2.FlagUserWithAuth,
 		KeyedHashParameters: &tpm2.KeyedHashParams{
 			Alg:    tpm2.AlgNull,
 			Unique: publicHash.Sum(nil),
