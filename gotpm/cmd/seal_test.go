@@ -1,4 +1,4 @@
-package main
+package cmd
 
 import (
 	"bytes"
@@ -12,8 +12,6 @@ import (
 	"github.com/google/go-tpm-tools/tpm2tools"
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpmutil"
-
-	"github.com/google/go-tpm-tools/gotpm/cmd"
 )
 
 func makeTempFile(tb testing.TB, content []byte) string {
@@ -34,7 +32,7 @@ func makeTempFile(tb testing.TB, content []byte) string {
 func TestSealPlain(t *testing.T) {
 	rwc := internal.GetTPM(t)
 	defer tpm2tools.CheckedClose(t, rwc)
-	cmd.ExternalTPM = rwc
+	ExternalTPM = rwc
 
 	tests := []struct {
 		name   string
@@ -62,13 +60,13 @@ func TestSealPlain(t *testing.T) {
 			if test.algo != "" {
 				sealArgs = append(sealArgs, "--algo", test.algo)
 			}
-			cmd.RootCmd.SetArgs(sealArgs)
-			if err := cmd.RootCmd.Execute(); err != nil {
+			RootCmd.SetArgs(sealArgs)
+			if err := RootCmd.Execute(); err != nil {
 				t.Error(err)
 			}
 
-			cmd.RootCmd.SetArgs([]string{"unseal", "--quiet", "--input", sealedFile, "--output", secretFile2})
-			if err := cmd.RootCmd.Execute(); err != nil {
+			RootCmd.SetArgs([]string{"unseal", "--quiet", "--input", sealedFile, "--output", secretFile2})
+			if err := RootCmd.Execute(); err != nil {
 				t.Error(err)
 			}
 			secretOut, err := ioutil.ReadFile(secretFile2)
@@ -85,7 +83,7 @@ func TestSealPlain(t *testing.T) {
 func TestUnsealFail(t *testing.T) {
 	rwc := internal.GetTPM(t)
 	defer tpm2tools.CheckedClose(t, rwc)
-	cmd.ExternalTPM = rwc
+	ExternalTPM = rwc
 
 	tests := []struct {
 		name    string
@@ -106,8 +104,8 @@ func TestUnsealFail(t *testing.T) {
 			sealedFile := makeTempFile(t, nil)
 			defer os.Remove(sealedFile)
 
-			cmd.RootCmd.SetArgs([]string{"seal", "--quiet", "--input", secretFile, "--output", sealedFile, "--pcrs", "23"})
-			if err := cmd.RootCmd.Execute(); err != nil {
+			RootCmd.SetArgs([]string{"seal", "--quiet", "--input", secretFile, "--output", sealedFile, "--pcrs", "23"})
+			if err := RootCmd.Execute(); err != nil {
 				t.Error(err)
 			}
 
@@ -115,8 +113,8 @@ func TestUnsealFail(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			cmd.RootCmd.SetArgs([]string{"unseal", "--quiet", "--input", sealedFile, "--output", secretFile})
-			if cmd.RootCmd.Execute() == nil {
+			RootCmd.SetArgs([]string{"unseal", "--quiet", "--input", sealedFile, "--output", secretFile})
+			if RootCmd.Execute() == nil {
 				t.Error("Unsealing should have failed")
 			}
 		})

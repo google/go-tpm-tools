@@ -1,4 +1,4 @@
-package main
+package cmd
 
 import (
 	"testing"
@@ -6,17 +6,15 @@ import (
 	"github.com/google/go-tpm-tools/internal"
 	"github.com/google/go-tpm-tools/tpm2tools"
 	"github.com/google/go-tpm/tpm2"
-
-	"github.com/google/go-tpm-tools/gotpm/cmd"
 )
 
 func TestFlushNothing(t *testing.T) {
 	rwc := internal.GetTPM(t)
 	defer tpm2tools.CheckedClose(t, rwc)
-	cmd.ExternalTPM = rwc
+	ExternalTPM = rwc
 
-	cmd.RootCmd.SetArgs([]string{"flush", "all", "--quiet"})
-	if err := cmd.RootCmd.Execute(); err != nil {
+	RootCmd.SetArgs([]string{"flush", "all", "--quiet"})
+	if err := RootCmd.Execute(); err != nil {
 		t.Error(err)
 	}
 }
@@ -24,9 +22,9 @@ func TestFlushNothing(t *testing.T) {
 func TestFlush(t *testing.T) {
 	rwc := internal.GetTPM(t)
 	defer tpm2tools.CheckedClose(t, rwc)
-	cmd.ExternalTPM = rwc
+	ExternalTPM = rwc
 
-	cmd.RootCmd.SetArgs([]string{"flush", "transient", "--quiet"})
+	RootCmd.SetArgs([]string{"flush", "transient", "--quiet"})
 
 	// Loads then flushes 1, 2, 3 transient handles.
 	for numHandles := 1; numHandles <= 3; numHandles++ {
@@ -34,7 +32,7 @@ func TestFlush(t *testing.T) {
 			internal.LoadRandomExternalKey(t, rwc)
 		}
 
-		if err := cmd.RootCmd.Execute(); err != nil {
+		if err := RootCmd.Execute(); err != nil {
 			t.Error(err)
 		}
 
