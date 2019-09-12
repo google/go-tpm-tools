@@ -19,7 +19,7 @@ func TestImport(t *testing.T) {
 	secret := []byte("super secret code")
 	blob, err := CreateImportBlob(pub, secret)
 	if err != nil {
-		t.Fatalf("createImportBlob failed: %v", err)
+		t.Fatalf("creating import blob failed: %v", err)
 	}
 
 	output, err := ek.Import(rwc, blob)

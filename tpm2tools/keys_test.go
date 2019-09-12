@@ -132,7 +132,7 @@ func TestCreateEKPublicAreaFromKey(t *testing.T) {
 		t.Fatalf("failed to create public area from public key: %v", err)
 	}
 	if !newArea.MatchesTemplate(area) {
-		t.Errorf("public Areas did not match. got: %+v want: %v", newArea, area)
+		t.Errorf("public areas did not match. got: %+v want: %v", newArea, area)
 	}
 }
 
@@ -147,7 +147,7 @@ func TestCreateEKPublicAreaFromKeyWithZeroModulus(t *testing.T) {
 		t.Fatalf("failed to create public area from public key: %v", err)
 	}
 	if !newArea.MatchesTemplate(area) {
-		t.Errorf("public Areas did not match. got: %+v want: %v", newArea, area)
+		t.Errorf("public areas did not match. got: %+v want: %v", newArea, area)
 	}
 }
 
