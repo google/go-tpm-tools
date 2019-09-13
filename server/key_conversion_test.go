@@ -33,7 +33,9 @@ func TestCreateEKPublicAreaFromKeyTPMKey(t *testing.T) {
 	}
 	defer ek.Close()
 	newArea, err := CreateEKPublicAreaFromKey(ek.PublicKey())
-
+	if err != nil {
+		t.Fatalf("failed to create public area from public key: %v", err)
+	}
 	if matches, err := ek.Name().MatchesPublic(newArea); !matches || err != nil {
 		t.Error("public areas did not match.")
 	}
