@@ -174,8 +174,8 @@ func createHMAC(encryptedSecret, nameEncoded, seed []byte, hashAlg tpm2.Algorith
 	return mac.Sum(nil), nil
 }
 
-func getHash(alg tpm2.Algorithm) hash.Hash {
-	create, err := alg.HashConstructor()
+func getHash(hashAlg tpm2.Algorithm) hash.Hash {
+	create, err := hashAlg.HashConstructor()
 	if err != nil {
 		panic(err)
 	}

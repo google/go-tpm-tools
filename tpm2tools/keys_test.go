@@ -1,7 +1,6 @@
 package tpm2tools
 
 import (
-	"crypto/rand"
 	"io"
 	"reflect"
 	"testing"
