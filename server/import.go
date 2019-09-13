@@ -7,7 +7,6 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/rsa"
-	"github.com/google/go-tpm-tools/tpm2tools"
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpmutil"
 	"hash"
@@ -19,16 +18,12 @@ import (
 // CreateImportBlob uses the provided public EK to encrypt the sensitive data into import blob format.
 // The returned import blob can be decrypted by the TPM associated with the provided EK.
 func CreateImportBlob(ekPub crypto.PublicKey, sensitive []byte) (*proto.ImportBlob, error) {
-	ek, err := tpm2tools.CreateEKPublicAreaFromKey(ekPub)
+	ek, err := CreateEKPublicAreaFromKey(ekPub)
 	if err != nil {
 		return nil, err
 	}
 	private := createPrivate(sensitive, ek.NameAlg)
 	public := createPublic(private, ek.NameAlg)
-	pubEncoded, err := public.Encode()
-	if err != nil {
-		return nil, err
-	}
 	seed := createRandomSeed(ek)
 	encryptedSeed, err := encryptSeed(seed, ek)
 	if err != nil {
@@ -38,11 +33,70 @@ func CreateImportBlob(ekPub crypto.PublicKey, sensitive []byte) (*proto.ImportBl
 	if err != nil {
 		return nil, err
 	}
+	pubEncoded, err := public.Encode()
+	if err != nil {
+		return nil, err
+	}
 	return &proto.ImportBlob{
 		Duplicate:     duplicate,
 		EncryptedSeed: encryptedSeed,
 		PublicArea:    pubEncoded,
 	}, nil
+}
+
+func createPrivate(sensitive []byte, hashAlg tpm2.Algorithm) tpm2.Private {
+	private := tpm2.Private{
+		Type:      tpm2.AlgKeyedHash,
+		AuthValue: nil,
+		SeedValue: make([]byte, getHash(hashAlg).Size()),
+		Sensitive: sensitive,
+	}
+	if _, err := io.ReadFull(rand.Reader, private.SeedValue); err != nil {
+		panic(err)
+	}
+	return private
+}
+
+func createPublic(private tpm2.Private, hashAlg tpm2.Algorithm) tpm2.Public {
+	publicHash := getHash(hashAlg)
+	publicHash.Write(private.SeedValue)
+	publicHash.Write(private.Sensitive)
+	return tpm2.Public{
+		Type:       tpm2.AlgKeyedHash,
+		NameAlg:    hashAlg,
+		Attributes: tpm2.FlagUserWithAuth,
+		KeyedHashParameters: &tpm2.KeyedHashParams{
+			Alg:    tpm2.AlgNull,
+			Unique: publicHash.Sum(nil),
+		},
+	}
+}
+
+func createRandomSeed(ek tpm2.Public) []byte {
+	seedSize := ek.RSAParameters.Symmetric.KeyBits / 8
+	seed := make([]byte, seedSize)
+	if _, err := io.ReadFull(rand.Reader, seed); err != nil {
+		panic(err)
+	}
+	return seed
+}
+
+func encryptSeed(seed []byte, ek tpm2.Public) ([]byte, error) {
+	ekPub, err := ek.Key()
+	if err != nil {
+		return nil, err
+	}
+	encSeed, err := rsa.EncryptOAEP(
+		getHash(ek.NameAlg),
+		rand.Reader,
+		ekPub.(*rsa.PublicKey),
+		seed,
+		[]byte("DUPLICATE\x00"))
+	if err != nil {
+		return nil, err
+	}
+
+	return tpmutil.Pack(encSeed)
 }
 
 func createDuplicate(private tpm2.Private, seed []byte, public tpm2.Public, hashAlg tpm2.Algorithm) ([]byte, error) {
@@ -72,32 +126,22 @@ func createDuplicate(private tpm2.Private, seed []byte, public tpm2.Public, hash
 	})
 }
 
-func createHMAC(encryptedSecret, nameEncoded, seed []byte, hashAlg tpm2.Algorithm) ([]byte, error) {
-	macKey, err := tpm2.KDFa(hashAlg, seed, "INTEGRITY" /*contextU=*/, nil /*contextV=*/, nil, getHash(hashAlg).Size()*8)
-	if err != nil {
-		return nil, err
-	}
-	mac := hmac.New(func() hash.Hash { return getHash(hashAlg) }, macKey)
-	mac.Write(encryptedSecret)
-	mac.Write(nameEncoded)
-
-	return mac.Sum(nil), nil
-}
-
 func getEncodedName(public tpm2.Public) ([]byte, error) {
 	name, err := public.Name()
 	if err != nil {
 		return nil, err
 	}
-	nameEncoded, err := name.Digest.Encode()
-	if err != nil {
-		return nil, err
-	}
-	return nameEncoded, nil
+	return name.Digest.Encode()
 }
 
 func encryptSecret(secret, seed, nameEncoded []byte, hashAlg tpm2.Algorithm) ([]byte, error) {
-	symmetricKey, err := tpm2.KDFa(hashAlg, seed, "STORAGE", nameEncoded /*contextV=*/, nil, len(seed)*8)
+	symmetricKey, err := tpm2.KDFa(
+		hashAlg,
+		seed,
+		"STORAGE",
+		nameEncoded,
+		/*contextV=*/ nil,
+		len(seed)*8)
 	if err != nil {
 		return nil, err
 	}
@@ -112,59 +156,22 @@ func encryptSecret(secret, seed, nameEncoded []byte, hashAlg tpm2.Algorithm) ([]
 	return encSecret, nil
 }
 
-func encryptSeed(seed []byte, ek tpm2.Public) ([]byte, error) {
-	h := getHash(ek.NameAlg)
-	ekPub, err := ek.Key()
+func createHMAC(encryptedSecret, nameEncoded, seed []byte, hashAlg tpm2.Algorithm) ([]byte, error) {
+	macKey, err := tpm2.KDFa(
+		hashAlg,
+		seed,
+		"INTEGRITY",
+		/*contextU=*/ nil,
+		/*contextV=*/ nil,
+		getHash(hashAlg).Size()*8)
 	if err != nil {
 		return nil, err
 	}
-	encSeed, err := rsa.EncryptOAEP(h, rand.Reader, ekPub.(*rsa.PublicKey), seed, []byte("DUPLICATE\x00"))
-	if err != nil {
-		return nil, err
-	}
+	mac := hmac.New(func() hash.Hash { return getHash(hashAlg) }, macKey)
+	mac.Write(encryptedSecret)
+	mac.Write(nameEncoded)
 
-	packedSeed, err := tpmutil.Pack(encSeed)
-	if err != nil {
-		return nil, err
-	}
-	return packedSeed, nil
-}
-
-func createRandomSeed(ek tpm2.Public) []byte {
-	seedSize := ek.RSAParameters.Symmetric.KeyBits / 8
-	seed := make([]byte, seedSize)
-	if _, err := io.ReadFull(rand.Reader, seed); err != nil {
-		panic(err)
-	}
-	return seed
-}
-
-func createPublic(private tpm2.Private, alg tpm2.Algorithm) tpm2.Public {
-	publicHash := getHash(alg)
-	publicHash.Write(private.SeedValue)
-	publicHash.Write(private.Sensitive)
-	return tpm2.Public{
-		Type:       tpm2.AlgKeyedHash,
-		NameAlg:    alg,
-		Attributes: tpm2.FlagUserWithAuth,
-		KeyedHashParameters: &tpm2.KeyedHashParams{
-			Alg:    tpm2.AlgNull,
-			Unique: publicHash.Sum(nil),
-		},
-	}
-}
-
-func createPrivate(sensitive []byte, hashAlg tpm2.Algorithm) tpm2.Private {
-	private := tpm2.Private{
-		Type:      tpm2.AlgKeyedHash,
-		AuthValue: nil,
-		SeedValue: make([]byte, getHash(hashAlg).Size()),
-		Sensitive: sensitive,
-	}
-	if _, err := io.ReadFull(rand.Reader, private.SeedValue); err != nil {
-		panic(err)
-	}
-	return private
+	return mac.Sum(nil), nil
 }
 
 func getHash(alg tpm2.Algorithm) hash.Hash {

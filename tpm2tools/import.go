@@ -8,7 +8,8 @@ import (
 )
 
 // Import decrypts the secret contained in an encoded import request.
-// The req parameter should come from server.CreateImportRequest.
+// This method only works if the Key is a standard (low address) EK.
+// The req parameter should come from server.CreateImportBlob.
 func (ek *Key) Import(rw io.ReadWriter, blob *proto.ImportBlob) ([]byte, error) {
 	session, _, err := tpm2.StartAuthSession(
 		rw,
@@ -25,7 +26,7 @@ func (ek *Key) Import(rw io.ReadWriter, blob *proto.ImportBlob) ([]byte, error) 
 	defer tpm2.FlushContext(rw, session)
 
 	// Authorization w/ EK has to use Policy Secret sessions. Call
-	// refreshSession, after each use of the EK using auth.
+	// refreshSession, before each use of the EK using auth.
 	refreshSession := func() error {
 		nullAuth := tpm2.AuthCommand{Session: tpm2.HandlePasswordSession, Attributes: tpm2.AttrContinueSession}
 		if _, err := tpm2.PolicySecret(rw, tpm2.HandleEndorsement, nullAuth, session, nil, nil, nil, 0); err != nil {
@@ -33,14 +34,12 @@ func (ek *Key) Import(rw io.ReadWriter, blob *proto.ImportBlob) ([]byte, error) 
 		}
 		return nil
 	}
+	auth := tpm2.AuthCommand{Session: session, Attributes: tpm2.AttrContinueSession}
 
 	if err = refreshSession(); err != nil {
 		return nil, err
 	}
-	auth := tpm2.AuthCommand{Session: session, Attributes: tpm2.AttrContinueSession, Auth: nil}
-
-	public, duplicate, seed := blob.PublicArea, blob.Duplicate, blob.EncryptedSeed
-	private, err := tpm2.Import(rw, ek.Handle(), auth, public, duplicate, seed, nil, nil)
+	private, err := tpm2.Import(rw, ek.Handle(), auth, blob.PublicArea, blob.Duplicate, blob.EncryptedSeed, nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("import failed: %s", err)
 	}
@@ -48,7 +47,7 @@ func (ek *Key) Import(rw io.ReadWriter, blob *proto.ImportBlob) ([]byte, error) 
 	if err = refreshSession(); err != nil {
 		return nil, err
 	}
-	handle, _, err := tpm2.LoadUsingAuth(rw, ek.Handle(), auth, public, private)
+	handle, _, err := tpm2.LoadUsingAuth(rw, ek.Handle(), auth, blob.PublicArea, private)
 	if err != nil {
 		return nil, fmt.Errorf("load failed: %s", err)
 	}

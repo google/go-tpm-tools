@@ -15,6 +15,7 @@ func TestImport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer ek.Close()
 	pub := ek.PublicKey()
 	secret := []byte("super secret code")
 	blob, err := CreateImportBlob(pub, secret)
@@ -26,7 +27,6 @@ func TestImport(t *testing.T) {
 	if err != nil {
 		t.Fatalf("import failed: %v", err)
 	}
-
 	if !bytes.Equal(output, secret) {
 		t.Errorf("got %X, expected %X", output, secret)
 	}

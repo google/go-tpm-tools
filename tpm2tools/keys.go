@@ -2,7 +2,6 @@ package tpm2tools
 
 import (
 	"crypto"
-	"crypto/rsa"
 	"crypto/sha256"
 	"fmt"
 	"github.com/google/go-tpm-tools/proto"
@@ -183,23 +182,6 @@ func (k *Key) Seal(pcrs []int, sensitive []byte) (*proto.SealedBytes, error) {
 	sb.Hash = proto.HashAlgo_SHA256
 	sb.Srk = proto.ObjectType(k.pubArea.Type)
 	return sb, nil
-}
-
-// CreateEKPublicAreaFromKey creates a public area from a go interface PublicKey.
-func CreateEKPublicAreaFromKey(k crypto.PublicKey) (tpm2.Public, error) {
-	rsaKey, ok := k.(*rsa.PublicKey)
-	if !ok {
-		return tpm2.Public{}, fmt.Errorf("unsupported public key type: %v", k)
-	}
-	public := DefaultEKTemplateRSA()
-	if uint16(rsaKey.N.BitLen()) > public.RSAParameters.KeyBits {
-		return tpm2.Public{}, fmt.Errorf("unexpected RSA modulus size: %d bits", rsaKey.N.BitLen())
-	}
-	if uint32(rsaKey.E) != public.RSAParameters.Exponent() {
-		return tpm2.Public{}, fmt.Errorf("unexpected RSA exponent: %d", rsaKey.E)
-	}
-	public.RSAParameters.ModulusRaw = rsaKey.N.Bytes()
-	return public, nil
 }
 
 func sealHelper(rw io.ReadWriter, parentHandle tpmutil.Handle, auth []byte, sensitive []byte) (*proto.SealedBytes, error) {
