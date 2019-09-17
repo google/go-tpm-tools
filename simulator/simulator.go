@@ -57,6 +57,7 @@ func Get() (*Simulator, error) {
 	}
 
 	simulator := &Simulator{}
+	internal.Reset(true)
 	if err := simulator.on(true); err != nil {
 		return nil, err
 	}
@@ -82,6 +83,7 @@ func (s *Simulator) Reset() error {
 	if err := s.off(); err != nil {
 		return err
 	}
+	internal.Reset(false)
 	return s.on(false)
 }
 
@@ -91,6 +93,7 @@ func (s *Simulator) ManufactureReset() error {
 	if err := s.off(); err != nil {
 		return err
 	}
+	internal.Reset(true)
 	return s.on(true)
 }
 
@@ -119,12 +122,6 @@ func (s *Simulator) Close() error {
 }
 
 func (s *Simulator) on(manufactureReset bool) error {
-	internal.On()
-	if manufactureReset {
-		if err := internal.ManufactureReset(); err != nil {
-			return err
-		}
-	}
 	// TPM2_Startup must be the first command the TPM receives.
 	if err := tpm2.Startup(s, tpm2.StartupClear); err != nil {
 		return fmt.Errorf("startup: %v", err)
@@ -138,6 +135,5 @@ func (s *Simulator) off() error {
 	if err := tpm2.Shutdown(s, tpm2.StartupClear); err != nil {
 		return fmt.Errorf("shutdown: %v", err)
 	}
-	internal.Off()
 	return nil
 }

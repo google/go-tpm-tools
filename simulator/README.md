@@ -4,9 +4,14 @@ Microsoft maintains the reference implementation of the TPM2 spec at:
 https://github.com/Microsoft/ms-tpm-20-ref/.
 
 The Microsoft code used here is a actually
-[a fork of the upstream source](https://github.com/josephlr/ms-tpm-20-ref/tree/google),
-and is included via a git submodule at `simulator/internal/ms-tpm-20-ref`. The
-code is forked primarily to eliminate the need for recursive git submodules.
+[a fork of the upstream source](https://github.com/josephlr/ms-tpm-20-ref/tree/google).
+It is vendored at `simulator/ms-tpm-20-ref` to maintain compatiblity with
+`go get`. Building the simulator requires the OpenSSL headers to be installed.
+This can be doen with:
+  - Debain based systems (including Ubuntu): `apt install libssl-dev`
+  - Red Hat based systems: `yum install openssl-devel`
+  - Arch Linux based systems: [`openssl`](https://www.archlinux.org/packages/core/x86_64/openssl/)
+    is installed by default (as a dependancy of `base`) and includes the headers.
 
 ## Debugging
 
