@@ -2,9 +2,10 @@ package server
 
 import (
 	"bytes"
+	"testing"
+
 	"github.com/google/go-tpm-tools/internal"
 	"github.com/google/go-tpm-tools/tpm2tools"
-	"testing"
 )
 
 func TestImport(t *testing.T) {

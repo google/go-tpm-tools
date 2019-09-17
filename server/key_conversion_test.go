@@ -3,9 +3,10 @@ package server
 import (
 	"crypto/rand"
 	"crypto/rsa"
+	"testing"
+
 	"github.com/google/go-tpm-tools/internal"
 	"github.com/google/go-tpm-tools/tpm2tools"
-	"testing"
 )
 
 func TestCreateEKPublicAreaFromKeyGeneratedKey(t *testing.T) {

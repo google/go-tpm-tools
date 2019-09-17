@@ -4,6 +4,7 @@ import (
 	"crypto"
 	"crypto/rsa"
 	"fmt"
+
 	"github.com/google/go-tpm-tools/tpm2tools"
 	"github.com/google/go-tpm/tpm2"
 )

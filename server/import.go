@@ -7,10 +7,11 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/rsa"
-	"github.com/google/go-tpm/tpm2"
-	"github.com/google/go-tpm/tpmutil"
 	"hash"
 	"io"
+
+	"github.com/google/go-tpm/tpm2"
+	"github.com/google/go-tpm/tpmutil"
 
 	"github.com/google/go-tpm-tools/proto"
 )

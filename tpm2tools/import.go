@@ -2,9 +2,10 @@ package tpm2tools
 
 import (
 	"fmt"
+	"io"
+
 	"github.com/google/go-tpm-tools/proto"
 	"github.com/google/go-tpm/tpm2"
-	"io"
 )
 
 // Import decrypts the secret contained in an encoded import request.

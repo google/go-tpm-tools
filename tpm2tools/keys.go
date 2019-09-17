@@ -4,10 +4,11 @@ import (
 	"crypto"
 	"crypto/sha256"
 	"fmt"
+	"io"
+
 	"github.com/google/go-tpm-tools/proto"
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpmutil"
-	"io"
 )
 
 // Key wraps an active TPM2 key. Users of Key should be sure to call Close()
