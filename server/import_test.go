@@ -47,3 +47,52 @@ func TestImport(t *testing.T) {
 		})
 	}
 }
+
+func TestImport(t *testing.T) {
+	rwc := internal.GetTPM(t)
+	defer tpm2tools.CheckedClose(t, rwc)
+
+	ek, err := tpm2tools.EndorsementKeyRSA(rwc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ek.Close()
+	pcr0, err := tpm2.ReadPCR(rwc, 0, tpm2.AlgSHA256)
+	if err != nil {
+		t.Fatal(err)
+	badPCR := append([]byte(nil), pcr0...)
+	// badPCR increments first value so it doesn't match.
+	badPCR[0]++
+	tests := []struct {
+		name          string
+		pcrMap        map[int][]byte
+		expectSuccess bool
+	}{
+		{"No-PCR", nil, true},
+		{"Good-PCR", map[int][]byte{0: pcr0}, true},
+		{"Bad-PCR", map[int][]byte{0: badPCR}, false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			secret := []byte("super secret code")
+			blob, err := CreateImportBlob(ek.PublicKey(), secret, test.pcrMap)
+			if err != nil {
+				t.Fatalf("creating import blob failed: %v", err)
+			}
+
+			if !test.expectSuccess {
+				if _, err := ek.Import(rwc, blob); err == nil {
+					t.Error("expected Import to fail but it did not")
+				}
+				return
+			}
+			output, err := ek.Import(rwc, blob)
+			if err != nil {
+				t.Fatalf("import failed: %v", err)
+			}
+			if !bytes.Equal(output, secret) {
+				t.Errorf("got %X, expected %X", output, secret)
+			}
+		})
+	}
+}

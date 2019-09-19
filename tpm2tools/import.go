@@ -54,9 +54,33 @@ func (k *Key) Import(rw io.ReadWriter, blob *tpmpb.ImportBlob) ([]byte, error) {
 	}
 	defer tpm2.FlushContext(rw, handle)
 
-	out, err := tpm2.Unseal(rw, handle, "")
-	if err != nil {
-		return nil, fmt.Errorf("unseal failed: %s", err)
+	if len(blob.Pcrs) == 0 {
+		// The object to be imported does not have a PCR policy.
+		return tpm2.Unseal(rw, handle, "")
+	} else {
+		// The object to be imported has a PCR policy.
+		unsealSession, _, err := tpm2.StartAuthSession(
+			rw,
+			tpm2.HandleNull,
+			tpm2.HandleNull,
+			make([]byte, 16),
+			nil,
+			tpm2.SessionPolicy,
+			tpm2.AlgNull,
+			tpm2.AlgSHA256)
+		if err != nil {
+			return nil, err
+		}
+		defer tpm2.FlushContext(rw, unsealSession)
+
+		var pcrs []int
+		// Need to convert blob.Pcrs from []int32 to []int.
+		for pcr := range blob.Pcrs {
+			pcrs = append(pcrs, int(pcr))
+		}
+		if err = tpm2.PolicyPCR(rw, unsealSession, nil, tpm2.PCRSelection{tpm2.AlgSHA256, pcrs}); err != nil {
+			return nil, err
+		}
+		return tpm2.UnsealWithSession(rw, unsealSession, handle, "")
 	}
-	return out, nil
 }
