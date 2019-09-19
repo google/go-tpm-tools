@@ -5,17 +5,19 @@ import (
 	"os"
 
 	"fmt"
+
 	"github.com/google/go-tpm-tools/tpm2tools"
 	"github.com/google/go-tpm/tpm2"
 	"github.com/spf13/cobra"
 )
 
 var (
-	output  string
-	input   string
-	nvIndex uint32
-	keyAlgo string
-	pcrs    []int
+	output   string
+	input    string
+	nvIndex  uint32
+	keyAlgo  string
+	pcrs     []int
+	hashAlgo string
 )
 
 // Disable the "help" subcommand (and just use the -h/--help flags).
@@ -44,8 +46,8 @@ func addIndexFlag(cmd *cobra.Command) {
 }
 
 // Lets this command specify some number of PCR arguments, check if in range.
-func addPCRsFlag(cmd *cobra.Command) {
-	cmd.PersistentFlags().IntSliceVar(&pcrs, "pcrs", nil,
+func addPCRsFlag(cmd *cobra.Command, defaultPcrs) {
+	cmd.PersistentFlags().IntSliceVar(&pcrs, "pcrs", defaultPcrs,
 		"Comma separated list of PCR numbers")
 }
 
@@ -53,6 +55,11 @@ func addPCRsFlag(cmd *cobra.Command) {
 func addPublicKeyAlgoFlag(cmd *cobra.Command) {
 	cmd.PersistentFlags().StringVar(&keyAlgo, "algo", "rsa",
 		"Public key algorithm, \"rsa\" or \"ecc\"")
+}
+
+func addHashAlgoFlag(cmd *cobra.Command) {
+	cmd.PersistentFlags().StringVar(&hashAlgo, "hashAlgo", "sha1",
+		"Hash Algorithm, \"sha1\" or \"sha256\"")
 }
 
 // alwaysError implements io.ReadWriter by always returning an error
