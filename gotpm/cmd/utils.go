@@ -46,7 +46,7 @@ func addIndexFlag(cmd *cobra.Command) {
 }
 
 // Lets this command specify some number of PCR arguments, check if in range.
-func addPCRsFlag(cmd *cobra.Command, defaultPcrs) {
+func addPCRsFlag(cmd *cobra.Command, defaultPcrs []int) {
 	cmd.PersistentFlags().IntSliceVar(&pcrs, "pcrs", defaultPcrs,
 		"Comma separated list of PCR numbers")
 }

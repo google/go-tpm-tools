@@ -65,7 +65,7 @@ var unsealCmd = &cobra.Command{
 	Short: "Unseal some data previously sealed to the TPM",
 	Long: `Decrypt the input data using the TPM
 
-The opposite of "gotpm seal". This takes in some sealed input and decrypts it 
+The opposite of "gotpm seal". This takes in some sealed input and decrypts it
 using the TPM. This operation will fail if used on a different TPM, or if the
 Platform Control Registers (PCRs) are in the incorrect state.
 
@@ -119,6 +119,6 @@ func init() {
 	addOutputFlag(sealCmd)
 	addOutputFlag(unsealCmd)
 	// PCRs only used for sealing
-	addPCRsFlag(sealCmd)
+	addPCRsFlag(sealCmd, nil)
 	addPublicKeyAlgoFlag(sealCmd)
 }
