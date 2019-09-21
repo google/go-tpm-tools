@@ -2,8 +2,10 @@ package server
 
 import (
 	"crypto"
+	"fmt"
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/elliptic"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/rsa"
@@ -25,10 +27,42 @@ func CreateImportBlob(ekPub crypto.PublicKey, sensitive []byte) (*proto.ImportBl
 	}
 	private := createPrivate(sensitive, ek.NameAlg)
 	public := createPublic(private, ek.NameAlg)
-	seed := createRandomSeed(ek)
-	encryptedSeed, err := encryptSeed(seed, ek)
-	if err != nil {
-		return nil, err
+	var seed, encryptedSeed []byte
+	if ek.Type == tpm2.AlgRSA {
+		seed = createRandomSeed(ek)
+		encryptedSeed, err = encryptSeed(seed, ek)
+		if err != nil {
+			return nil, err
+		}
+	} else if ek.Type == tpm2.AlgECC {
+		curve := elliptic.P256() // TODO Get from ek.
+		priv, x, y, err := elliptic.GenerateKey(curve, rand.Reader)
+		if err != nil {
+			return nil, err
+		}
+		ekPoint := ek.ECCParameters.Point
+		z, _ := curve.ScalarMult(ekPoint.X(), ekPoint.Y(), priv)
+
+		seed, err = tpm2.KDFe(
+			ek.NameAlg,
+			z.Bytes(),
+			"DUPLICATE",
+			x.Bytes(),
+			ekPoint.X().Bytes(),
+			256)
+//			int(ek.ECCParameters.Symmetric.KeyBits))
+		if err != nil {
+			return nil, err
+		}
+		encryptedSeed, err = tpmutil.Pack(tpmutil.U16Bytes(x.Bytes()), tpmutil.U16Bytes(y.Bytes()))
+		if err != nil {
+			return nil, fmt.Errorf("err: %v", err)
+		}
+		if len(encryptedSeed) != 128 {
+	//		encryptedSeed = append(make([]byte, 128-len(encryptedSeed)), encryptedSeed...)
+	//		encryptedSeed = append(encryptedSeed, make([]byte, 128-len(encryptedSeed))...)
+		//	return nil, fmt.Errorf("size %v", len(encryptedSeed))
+		}
 	}
 	duplicate, err := createDuplicate(private, seed, public, ek.NameAlg)
 	if err != nil {
@@ -152,7 +186,7 @@ func encryptSecret(secret, seed, nameEncoded []byte, hashAlg tpm2.Algorithm) ([]
 	}
 	encSecret := make([]byte, len(secret))
 	// The TPM spec requires an all-zero IV.
-	iv := make([]byte, len(symmetricKey))
+	iv := make([]byte, 16)
 	cipher.NewCFBEncrypter(c, iv).XORKeyStream(encSecret, secret)
 	return encSecret, nil
 }
