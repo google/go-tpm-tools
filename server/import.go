@@ -35,7 +35,19 @@ func CreateImportBlob(ekPub crypto.PublicKey, sensitive []byte) (*proto.ImportBl
 			return nil, err
 		}
 	} else if ek.Type == tpm2.AlgECC {
-		curve := elliptic.P256() // TODO Get from ek.
+		var curve elliptic.Curve
+		switch ek.ECCParameters.CurveID {
+		case tpm2.CurveNISTP224:
+			curve = elliptic.P224()
+		case tpm2.CurveNISTP256:
+			curve = elliptic.P256()
+		case tpm2.CurveNISTP384:
+			curve = elliptic.P384()
+		case tpm2.CurveNISTP521:
+			curve = elliptic.P521()
+		default:
+			return nil, fmt.Errorf("unsupported elliptic curve: %v", ek.ECCParameters.CurveID)
+		}
 		priv, x, y, err := elliptic.GenerateKey(curve, rand.Reader)
 		if err != nil {
 			return nil, err
