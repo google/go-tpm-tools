@@ -37,6 +37,8 @@ package internal
 // #cgo CFLAGS: -DRUNTIME_SIZE_CHECKS=DEBUG
 // #cgo CFLAGS: -DUSE_DA_USED=NO
 // #cgo CFLAGS: -DCERTIFYX509_DEBUG=NO
+// #cgo CFLAGS: -DECC_NIST_P224=YES
+// #cgo CFLAGS: -DECC_NIST_P521=YES
 // #cgo LDFLAGS: -lcrypto
 //
 // #include <stdlib.h>
