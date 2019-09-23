@@ -61,19 +61,13 @@ func CreateImportBlob(ekPub crypto.PublicKey, sensitive []byte) (*proto.ImportBl
 			"DUPLICATE",
 			x.Bytes(),
 			ekPoint.X().Bytes(),
-			256)
-//			int(ek.ECCParameters.Symmetric.KeyBits))
+			getHash(ek.NameAlg).Size() * 8)
 		if err != nil {
 			return nil, err
 		}
 		encryptedSeed, err = tpmutil.Pack(tpmutil.U16Bytes(x.Bytes()), tpmutil.U16Bytes(y.Bytes()))
 		if err != nil {
 			return nil, fmt.Errorf("err: %v", err)
-		}
-		if len(encryptedSeed) != 128 {
-	//		encryptedSeed = append(make([]byte, 128-len(encryptedSeed)), encryptedSeed...)
-	//		encryptedSeed = append(encryptedSeed, make([]byte, 128-len(encryptedSeed))...)
-		//	return nil, fmt.Errorf("size %v", len(encryptedSeed))
 		}
 	}
 	duplicate, err := createDuplicate(private, seed, public, ek.NameAlg)
