@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"testing"
+	"fmt"
 
 	"github.com/google/go-tpm-tools/internal"
 	"github.com/google/go-tpm-tools/tpm2tools"
@@ -100,4 +101,29 @@ func TestCreateEKPublicAreaFromKeyTPMKey(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TODO THIS TEST FAILS SOMETIMES. DO NOT SUBMIT.
+func TestCreateEKPublicAreaFromKeyTPMKeyECC(t *testing.T) {
+	fmt.Println("running ECC")
+	rwc := internal.GetTPM(t)
+	defer tpm2tools.CheckedClose(t, rwc)
+    public := tpm2tools.DefaultEKTemplateECC()
+    public.ECCParameters.CurveID = tpm2.CurveNISTP521
+    public.ECCParameters.Point.XRaw = nil
+    public.ECCParameters.Point.YRaw = nil
+	ek, err := tpm2tools.NewKey(rwc, tpm2.HandleEndorsement, public)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ek.Close()
+	newArea, err := CreateEKPublicAreaFromKey(ek.PublicKey())
+	if err != nil {
+		t.Fatalf("failed to create public area from public key: %v", err)
+	}
+	if matches, err := ek.Name().MatchesPublic(newArea); !matches || err != nil {
+		t.Error("public areas did not match or match check failed.")
+	}
+
 }

@@ -2,15 +2,16 @@ package server
 
 import (
 	"crypto"
-	"fmt"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/elliptic"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/rsa"
+	"fmt"
 	"hash"
 	"io"
+	"math/big"
 
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpmutil"
@@ -35,39 +36,9 @@ func CreateImportBlob(ekPub crypto.PublicKey, sensitive []byte) (*proto.ImportBl
 			return nil, err
 		}
 	} else if ek.Type == tpm2.AlgECC {
-		var curve elliptic.Curve
-		switch ek.ECCParameters.CurveID {
-		case tpm2.CurveNISTP224:
-			curve = elliptic.P224()
-		case tpm2.CurveNISTP256:
-			curve = elliptic.P256()
-		case tpm2.CurveNISTP384:
-			curve = elliptic.P384()
-		case tpm2.CurveNISTP521:
-			curve = elliptic.P521()
-		default:
-			return nil, fmt.Errorf("unsupported elliptic curve: %v", ek.ECCParameters.CurveID)
-		}
-		priv, x, y, err := elliptic.GenerateKey(curve, rand.Reader)
+		seed, encryptedSeed, err = createECCSeed(ek)
 		if err != nil {
 			return nil, err
-		}
-		ekPoint := ek.ECCParameters.Point
-		z, _ := curve.ScalarMult(ekPoint.X(), ekPoint.Y(), priv)
-
-		seed, err = tpm2.KDFe(
-			ek.NameAlg,
-			z.Bytes(),
-			"DUPLICATE",
-			x.Bytes(),
-			ekPoint.X().Bytes(),
-			getHash(ek.NameAlg).Size() * 8)
-		if err != nil {
-			return nil, err
-		}
-		encryptedSeed, err = tpmutil.Pack(tpmutil.U16Bytes(x.Bytes()), tpmutil.U16Bytes(y.Bytes()))
-		if err != nil {
-			return nil, fmt.Errorf("err: %v", err)
 		}
 	}
 	duplicate, err := createDuplicate(private, seed, public, ek.NameAlg)
@@ -140,6 +111,42 @@ func encryptSeed(seed []byte, ek tpm2.Public) ([]byte, error) {
 	return tpmutil.Pack(encSeed)
 }
 
+func createECCSeed(ek tpm2.Public) (seed, encryptedSeed []byte, err error) {
+	var curve elliptic.Curve
+	switch ek.ECCParameters.CurveID {
+	case tpm2.CurveNISTP224:
+		curve = elliptic.P224()
+	case tpm2.CurveNISTP256:
+		curve = elliptic.P256()
+	case tpm2.CurveNISTP384:
+		curve = elliptic.P384()
+	case tpm2.CurveNISTP521:
+		curve = elliptic.P521()
+	default:
+		return nil, nil, fmt.Errorf("unsupported elliptic curve: %v", ek.ECCParameters.CurveID)
+	}
+	priv, x, y, err := elliptic.GenerateKey(curve, rand.Reader)
+	if err != nil {
+		return nil, nil, err
+	}
+	ekPoint := ek.ECCParameters.Point
+	z, _ := curve.ScalarMult(ekPoint.X(), ekPoint.Y(), priv)
+	xPad := eccIntToBytes(x, curve)
+
+	seed, err = tpm2.KDFe(
+		ek.NameAlg,
+		eccIntToBytes(z, curve),
+		"DUPLICATE",
+		xPad,
+		eccIntToBytes(ekPoint.X(), curve),
+		getHash(ek.NameAlg).Size())
+	if err != nil {
+		return nil, nil, err
+	}
+	encryptedSeed, err = tpmutil.Pack(tpmutil.U16Bytes(xPad), tpmutil.U16Bytes(eccIntToBytes(y, curve)))
+	return
+}
+
 func createDuplicate(private tpm2.Private, seed []byte, public tpm2.Public, hashAlg tpm2.Algorithm) ([]byte, error) {
 	nameEncoded, err := getEncodedName(public)
 	if err != nil {
@@ -182,7 +189,7 @@ func encryptSecret(secret, seed, nameEncoded []byte, hashAlg tpm2.Algorithm) ([]
 		"STORAGE",
 		nameEncoded,
 		/*contextV=*/ nil,
-		len(seed)*4)
+		128)
 	if err != nil {
 		return nil, err
 	}
@@ -221,4 +228,10 @@ func getHash(hashAlg tpm2.Algorithm) hash.Hash {
 		panic(err)
 	}
 	return create()
+}
+
+// ECC coordinates need to maintain a specific size based on the curve, so we pad the front with zeros.
+func eccIntToBytes(key *big.Int, curve elliptic.Curve) []byte {
+	bytes := key.Bytes()
+	return append(make([]byte, (curve.Params().BitSize+7)/8-len(bytes)), bytes...)
 }
