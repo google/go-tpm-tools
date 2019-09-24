@@ -182,7 +182,7 @@ func encryptSecret(secret, seed, nameEncoded []byte, hashAlg tpm2.Algorithm) ([]
 		"STORAGE",
 		nameEncoded,
 		/*contextV=*/ nil,
-		len(seed)*8)
+		len(seed)*4)
 	if err != nil {
 		return nil, err
 	}
