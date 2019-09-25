@@ -139,7 +139,7 @@ func createECCSeed(ek tpm2.Public) (seed, encryptedSeed []byte, err error) {
 		"DUPLICATE",
 		xPad,
 		eccIntToBytes(ekPoint.X(), curve),
-		getHash(ek.NameAlg).Size())
+		getHash(ek.NameAlg).Size()*8)
 	if err != nil {
 		return nil, nil, err
 	}
