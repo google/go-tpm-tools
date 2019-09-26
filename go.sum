@@ -13,6 +13,8 @@ github.com/google/go-tpm v0.1.2-0.20190725015402-ae6dd98980d4 h1:GNNkIb6NSjYfw+K
 github.com/google/go-tpm v0.1.2-0.20190725015402-ae6dd98980d4/go.mod h1:H9HbmUG2YgV/PHITkO7p6wxEEj/v5nlsVWIwumwH2NI=
 github.com/google/go-tpm v0.2.1-0.20190910203116-33a9c3f38379 h1:spUrNOxKZPzgPd/K9rAXoJ1BfHXTnuI2vT7zUkonnZM=
 github.com/google/go-tpm v0.2.1-0.20190910203116-33a9c3f38379/go.mod h1:gTv8GNuqS7CI+tQWrpt5BMMaD5W3G+dZULQLhhAKT5c=
+github.com/google/go-tpm v0.2.1-0.20190926184827-9f71d680f4ab h1:n0a1xd4IaX8uK/HK5C18vIAog4AJF0WEx39keoHAu8M=
+github.com/google/go-tpm v0.2.1-0.20190926184827-9f71d680f4ab/go.mod h1:gTv8GNuqS7CI+tQWrpt5BMMaD5W3G+dZULQLhhAKT5c=
 github.com/google/go-tpm-tools v0.0.0-20190906225433-1614c142f845/go.mod h1:AVfHadzbdzHo54inR2x1v640jdi1YSi3NauM2DUsxk0=
 github.com/hashicorp/hcl v1.0.0/go.mod h1:E5yfLk+7swimpb2L/Alb/PJmXilQ/rhwaUYs4T20WEQ=
 github.com/inconshreveable/mousetrap v1.0.0/go.mod h1:PxqpIevigyE2G7u3NXJIT2ANytuPF1OarO4DADm73n8=
