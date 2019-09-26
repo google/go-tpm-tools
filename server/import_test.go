@@ -9,14 +9,6 @@ import (
 	"github.com/google/go-tpm/tpm2"
 )
 
-func getECCTemplate(curve tpm2.EllipticCurve) tpm2.Public {
-	public := tpm2tools.DefaultEKTemplateECC()
-	public.ECCParameters.CurveID = curve
-	public.ECCParameters.Point.XRaw = nil
-	public.ECCParameters.Point.YRaw = nil
-	return public
-}
-
 func TestImport(t *testing.T) {
 	rwc := internal.GetTPM(t)
 	defer tpm2tools.CheckedClose(t, rwc)

@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"hash"
 	"io"
-	"math/big"
 
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpmutil"
@@ -95,7 +94,7 @@ func createRSASeed(ek tpm2.Public) (seed, encryptedSeed []byte, err error) {
 
 	ekPub, err := ek.Key()
 	if err != nil {
-		return
+		return nil, nil, err
 	}
 	encryptedSeed, err = rsa.EncryptOAEP(
 		getHash(ek.NameAlg),
@@ -104,29 +103,20 @@ func createRSASeed(ek tpm2.Public) (seed, encryptedSeed []byte, err error) {
 		seed,
 		[]byte("DUPLICATE\x00"))
 	if err != nil {
-		return
+		return nil, nil, err
 	}
 	encryptedSeed, err = tpmutil.Pack(encryptedSeed)
-	return
+	return seed, encryptedSeed, err
 }
 
 func createECCSeed(ek tpm2.Public) (seed, encryptedSeed []byte, err error) {
-	var curve elliptic.Curve
-	switch ek.ECCParameters.CurveID {
-	case tpm2.CurveNISTP224:
-		curve = elliptic.P224()
-	case tpm2.CurveNISTP256:
-		curve = elliptic.P256()
-	case tpm2.CurveNISTP384:
-		curve = elliptic.P384()
-	case tpm2.CurveNISTP521:
-		curve = elliptic.P521()
-	default:
-		return nil, nil, fmt.Errorf("unsupported elliptic curve: %v", ek.ECCParameters.CurveID)
+	curve, err := curveIDToGoCurve(ek.ECCParameters.CurveID)
+	if err != nil {
+		return nil, nil, err
 	}
 	priv, x, y, err := elliptic.GenerateKey(curve, rand.Reader)
 	if err != nil {
-		return
+		return nil, nil, err
 	}
 	ekPoint := ek.ECCParameters.Point
 	z, _ := curve.ScalarMult(ekPoint.X(), ekPoint.Y(), priv)
@@ -140,10 +130,10 @@ func createECCSeed(ek tpm2.Public) (seed, encryptedSeed []byte, err error) {
 		eccIntToBytes(ekPoint.X(), curve),
 		getHash(ek.NameAlg).Size()*8)
 	if err != nil {
-		return
+		return nil, nil, err
 	}
 	encryptedSeed, err = tpmutil.Pack(tpmutil.U16Bytes(xBytes), tpmutil.U16Bytes(eccIntToBytes(y, curve)))
-	return
+	return seed, encryptedSeed, err
 }
 
 func createDuplicate(private tpm2.Private, seed []byte, public, ek tpm2.Public) ([]byte, error) {
@@ -206,7 +196,7 @@ func encryptSecret(secret, seed, nameEncoded []byte, ek tpm2.Public) ([]byte, er
 	}
 	encSecret := make([]byte, len(secret))
 	// The TPM spec requires an all-zero IV.
-	iv := make([]byte, 16)
+	iv := make([]byte, len(symmetricKey))
 	cipher.NewCFBEncrypter(c, iv).XORKeyStream(encSecret, secret)
 	return encSecret, nil
 }
@@ -235,10 +225,4 @@ func getHash(hashAlg tpm2.Algorithm) hash.Hash {
 		panic(err)
 	}
 	return create()
-}
-
-// ECC coordinates need to maintain a specific size based on the curve, so we pad the front with zeros.
-func eccIntToBytes(key *big.Int, curve elliptic.Curve) []byte {
-	bytes := key.Bytes()
-	return append(make([]byte, (curve.Params().BitSize+7)/8-len(bytes)), bytes...)
 }
