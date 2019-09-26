@@ -29,19 +29,21 @@ func CreateImportBlob(ekPub crypto.PublicKey, sensitive []byte) (*proto.ImportBl
 	private := createPrivate(sensitive, ek.NameAlg)
 	public := createPublic(private, ek.NameAlg)
 	var seed, encryptedSeed []byte
-	if ek.Type == tpm2.AlgRSA {
-		seed = createRandomSeed(ek)
-		encryptedSeed, err = encryptSeed(seed, ek)
+	switch ek.Type {
+	case tpm2.AlgRSA:
+		seed, encryptedSeed, err = createRSASeed(ek)
 		if err != nil {
 			return nil, err
 		}
-	} else if ek.Type == tpm2.AlgECC {
+	case tpm2.AlgECC:
 		seed, encryptedSeed, err = createECCSeed(ek)
 		if err != nil {
 			return nil, err
 		}
+	default:
+		return nil, fmt.Errorf("unsupported EK type: %v", ek.Type)
 	}
-	duplicate, err := createDuplicate(private, seed, public, ek.NameAlg)
+	duplicate, err := createDuplicate(private, seed, public, ek)
 	if err != nil {
 		return nil, err
 	}
@@ -84,31 +86,28 @@ func createPublic(private tpm2.Private, hashAlg tpm2.Algorithm) tpm2.Public {
 	}
 }
 
-func createRandomSeed(ek tpm2.Public) []byte {
+func createRSASeed(ek tpm2.Public) (seed, encryptedSeed []byte, err error) {
 	seedSize := ek.RSAParameters.Symmetric.KeyBits / 8
-	seed := make([]byte, seedSize)
+	seed = make([]byte, seedSize)
 	if _, err := io.ReadFull(rand.Reader, seed); err != nil {
 		panic(err)
 	}
-	return seed
-}
 
-func encryptSeed(seed []byte, ek tpm2.Public) ([]byte, error) {
 	ekPub, err := ek.Key()
 	if err != nil {
-		return nil, err
+		return
 	}
-	encSeed, err := rsa.EncryptOAEP(
+	encryptedSeed, err = rsa.EncryptOAEP(
 		getHash(ek.NameAlg),
 		rand.Reader,
 		ekPub.(*rsa.PublicKey),
 		seed,
 		[]byte("DUPLICATE\x00"))
 	if err != nil {
-		return nil, err
+		return
 	}
-
-	return tpmutil.Pack(encSeed)
+	encryptedSeed, err = tpmutil.Pack(encryptedSeed)
+	return
 }
 
 func createECCSeed(ek tpm2.Public) (seed, encryptedSeed []byte, err error) {
@@ -127,27 +126,27 @@ func createECCSeed(ek tpm2.Public) (seed, encryptedSeed []byte, err error) {
 	}
 	priv, x, y, err := elliptic.GenerateKey(curve, rand.Reader)
 	if err != nil {
-		return nil, nil, err
+		return
 	}
 	ekPoint := ek.ECCParameters.Point
 	z, _ := curve.ScalarMult(ekPoint.X(), ekPoint.Y(), priv)
-	xPad := eccIntToBytes(x, curve)
+	xBytes := eccIntToBytes(x, curve)
 
 	seed, err = tpm2.KDFe(
 		ek.NameAlg,
 		eccIntToBytes(z, curve),
 		"DUPLICATE",
-		xPad,
+		xBytes,
 		eccIntToBytes(ekPoint.X(), curve),
 		getHash(ek.NameAlg).Size()*8)
 	if err != nil {
-		return nil, nil, err
+		return
 	}
-	encryptedSeed, err = tpmutil.Pack(tpmutil.U16Bytes(xPad), tpmutil.U16Bytes(eccIntToBytes(y, curve)))
+	encryptedSeed, err = tpmutil.Pack(tpmutil.U16Bytes(xBytes), tpmutil.U16Bytes(eccIntToBytes(y, curve)))
 	return
 }
 
-func createDuplicate(private tpm2.Private, seed []byte, public tpm2.Public, hashAlg tpm2.Algorithm) ([]byte, error) {
+func createDuplicate(private tpm2.Private, seed []byte, public, ek tpm2.Public) ([]byte, error) {
 	nameEncoded, err := getEncodedName(public)
 	if err != nil {
 		return nil, err
@@ -160,11 +159,11 @@ func createDuplicate(private tpm2.Private, seed []byte, public tpm2.Public, hash
 	if err != nil {
 		return nil, err
 	}
-	encryptedSecret, err := encryptSecret(packedSecret, seed, nameEncoded, hashAlg)
+	encryptedSecret, err := encryptSecret(packedSecret, seed, nameEncoded, ek)
 	if err != nil {
 		return nil, err
 	}
-	macSum, err := createHMAC(encryptedSecret, nameEncoded, seed, hashAlg)
+	macSum, err := createHMAC(encryptedSecret, nameEncoded, seed, ek.NameAlg)
 	if err != nil {
 		return nil, err
 	}
@@ -182,14 +181,22 @@ func getEncodedName(public tpm2.Public) ([]byte, error) {
 	return name.Digest.Encode()
 }
 
-func encryptSecret(secret, seed, nameEncoded []byte, hashAlg tpm2.Algorithm) ([]byte, error) {
+func encryptSecret(secret, seed, nameEncoded []byte, ek tpm2.Public) ([]byte, error) {
+	var symSize int
+	switch ek.Type {
+	case tpm2.AlgRSA:
+		symSize = int(ek.RSAParameters.Symmetric.KeyBits)
+	case tpm2.AlgECC:
+		symSize = int(ek.ECCParameters.Symmetric.KeyBits)
+	}
+
 	symmetricKey, err := tpm2.KDFa(
-		hashAlg,
+		ek.NameAlg,
 		seed,
 		"STORAGE",
 		nameEncoded,
 		/*contextV=*/ nil,
-		128)
+		symSize)
 	if err != nil {
 		return nil, err
 	}
