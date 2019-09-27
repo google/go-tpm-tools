@@ -46,8 +46,8 @@ func addIndexFlag(cmd *cobra.Command) {
 }
 
 // Lets this command specify some number of PCR arguments, check if in range.
-func addPCRsFlag(cmd *cobra.Command, defaultPcrs []int) {
-	cmd.PersistentFlags().IntSliceVar(&pcrs, "pcrs", defaultPcrs,
+func addPCRsFlag(cmd *cobra.Command) {
+	cmd.PersistentFlags().IntSliceVar(&pcrs, "pcrs", nil,
 		"Comma separated list of PCR numbers")
 }
 
@@ -58,7 +58,7 @@ func addPublicKeyAlgoFlag(cmd *cobra.Command) {
 }
 
 func addHashAlgoFlag(cmd *cobra.Command) {
-	cmd.PersistentFlags().StringVar(&hashAlgo, "hashAlgo", "sha1",
+	cmd.PersistentFlags().StringVar(&hashAlgo, "hashAlgo", "sha256",
 		"Hash Algorithm, \"sha1\" or \"sha256\"")
 }
 
@@ -112,6 +112,17 @@ func getAlgo() (tpm2.Algorithm, error) {
 		return tpm2.AlgECC, nil
 	default:
 		return tpm2.AlgNull, fmt.Errorf("invalid argument %q for \"--algo\" flag", keyAlgo)
+	}
+}
+
+func getHashAlgo() (tpm2.Algorithm, error) {
+	switch hashAlgo {
+	case "sha1":
+		return tpm2.AlgSHA1, nil
+	case "sha256":
+		return tpm2.AlgSHA256, nil
+	default:
+		return tpm2.AlgNull, fmt.Errorf("invalid argument %q for \"--hashAlgo\" flag", hashAlgo)
 	}
 }
 

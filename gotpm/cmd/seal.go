@@ -119,6 +119,6 @@ func init() {
 	addOutputFlag(sealCmd)
 	addOutputFlag(unsealCmd)
 	// PCRs only used for sealing
-	addPCRsFlag(sealCmd, nil)
+	addPCRsFlag(sealCmd)
 	addPublicKeyAlgoFlag(sealCmd)
 }

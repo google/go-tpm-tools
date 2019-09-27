@@ -46,3 +46,17 @@ func TestReadPCRs(t *testing.T) {
 		}
 	}
 }
+
+func TestGetPCRCount(t *testing.T) {
+	rwc := internal.GetTPM(t)
+	defer CheckedClose(t, rwc)
+	pcrCount, err := GetPCRCount(rwc)
+	if err != nil {
+		t.Fatalf("Failed to fetch pcr count: %v", err)
+	}
+
+	if pcrCount != 24 {
+		t.Fatalf("tpm simulator has unexpected number of PCRs: %v instead of 24", pcrCount)
+	}
+
+}

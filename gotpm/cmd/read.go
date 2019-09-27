@@ -2,19 +2,12 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 
 	pb "github.com/golang/protobuf/proto"
 	"github.com/google/go-tpm-tools/tpm2tools"
-	"github.com/google/go-tpm/tpm2"
 	"github.com/spf13/cobra"
 )
-
-var pcrDefault = []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23}
-
-var hashAlgorithms = map[string]tpm2.Algorithm{
-	"sha1":   tpm2.AlgSHA1,
-	"sha256": tpm2.AlgSHA256,
-}
 
 var readCmd = &cobra.Command{
 	Use:   "read <pcr>",
@@ -28,12 +21,12 @@ var pcrCmd = &cobra.Command{
 	Short: "Read PCRs from the TPM",
 	Long: `Read PCRs from the TPM
 
-Based on the --pcrs flag, this reads the contents of the TPM's Platform Control
-Registers (PCRs). This is primarily used for testing/experimentation, since data
-read in this manner is not signed by the TPM.
+Based on the --pcrs flag, this reads the contents of the TPM's PCRs.
 
-Optionally (using the --hashAlgo flag), you can change which hash's version of
-the PCRs to read. `,
+If --pcrs is not provided, all pcrs are read.
+
+Optionally (using the --hashAlgo flag), you can change which hash's PCRs to
+read.`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		rwc, err := openTpm()
@@ -43,7 +36,19 @@ the PCRs to read. `,
 		defer rwc.Close()
 
 		fmt.Fprintln(debugOutput(), "Reading pcrs")
-		pcrList, err := tpm2tools.ReadPCRs(rwc, pcrs, hashAlgorithms[hashAlgo])
+		hashAlgo, err := getHashAlgo()
+		if err != nil {
+			return err
+		}
+
+		if pcrs == nil {
+			pcrs, err = getDefaultPcrs(rwc)
+			if err != nil {
+				return err
+			}
+		}
+
+		pcrList, err := tpm2tools.ReadPCRs(rwc, pcrs, hashAlgo)
 		if err != nil {
 			return err
 		}
@@ -62,6 +67,19 @@ func init() {
 	RootCmd.AddCommand(readCmd)
 	readCmd.AddCommand(pcrCmd)
 	addOutputFlag(pcrCmd)
-	addPCRsFlag(pcrCmd, pcrDefault)
+	addPCRsFlag(pcrCmd)
 	addHashAlgoFlag(pcrCmd)
+}
+
+func getDefaultPcrs(rw io.ReadWriter) ([]int, error) {
+	pcrCount, err := tpm2tools.GetPCRCount(rw)
+	if err != nil {
+		return nil, err
+	}
+
+	pcrs := make([]int, pcrCount)
+	for i := 0; i < int(pcrCount); i++ {
+		pcrs[i] = i
+	}
+	return pcrs, nil
 }

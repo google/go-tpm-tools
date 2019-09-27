@@ -1,11 +1,34 @@
 package tpm2tools
 
 import (
+	"fmt"
 	"io"
 
 	"github.com/google/go-tpm-tools/proto"
 	"github.com/google/go-tpm/tpm2"
 )
+
+// GetPCRCount asks the tpm how many PCRs it has.
+func GetPCRCount(rw io.ReadWriter) (uint32, error) {
+	props, _, err := tpm2.GetCapability(rw, tpm2.CapabilityTPMProperties, 1, uint32(tpm2.PCRCount))
+	if err != nil {
+		return 0, err
+	}
+
+	if len(props) != 1 {
+		return 0, fmt.Errorf("tpm returned unexpected list of properties: %v", props)
+	}
+
+	switch prop := props[0].(type) {
+	case tpm2.TaggedProperty:
+		if prop.Tag != tpm2.PCRCount {
+			return 0, fmt.Errorf("tpm returned non PCRCount Property: %v", prop)
+		}
+		return prop.Value, nil
+	default:
+		return 0, fmt.Errorf("tpm returned unexpected properties: %v", prop)
+	}
+}
 
 // ReadPCRs fetchs the values of the specified PCRs for the specified hash.
 func ReadPCRs(rw io.ReadWriter, pcrs []int, hash tpm2.Algorithm) (*proto.Pcrs, error) {
