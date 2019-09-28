@@ -37,14 +37,10 @@ func createEKPublicRSA(rsaKey *rsa.PublicKey) (tpm2.Public, error) {
 
 func createEKPublicECC(eccKey *ecdsa.PublicKey) (public tpm2.Public, err error) {
 	public = tpm2tools.DefaultEKTemplateECC()
-	public.ECCParameters.CurveID, err = goCurveToCurveID(eccKey)
-	if err != nil {
-		return tpm2.Public{}, err
-	}
-
 	public.ECCParameters.Point = tpm2.ECPoint{
-		XRaw: eccIntToBytes(eccKey.X, eccKey),
-		YRaw: eccIntToBytes(eccKey.Y, eccKey),
+		XRaw: eccIntToBytes(eccKey.Curve, eccKey.X),
+		YRaw: eccIntToBytes(eccKey.Curve, eccKey.Y),
 	}
-	return public, nil
+	public.ECCParameters.CurveID, err = goCurveToCurveID(eccKey.Curve)
+	return public, err
 }

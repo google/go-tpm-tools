@@ -22,14 +22,13 @@ func getECCTemplate(curve tpm2.EllipticCurve) tpm2.Public {
 }
 
 func TestCreateEKPublicAreaFromKeyGeneratedKey(t *testing.T) {
-	template := tpm2tools.DefaultEKTemplateRSA()
 	tests := []struct {
 		name        string
 		template    tpm2.Public
 		generateKey func() (crypto.PublicKey, error)
 	}{
 		{"RSA", tpm2tools.DefaultEKTemplateRSA(), func() (crypto.PublicKey, error) {
-			priv, err := rsa.GenerateKey(rand.Reader, int(template.RSAParameters.KeyBits))
+			priv, err := rsa.GenerateKey(rand.Reader, 2048)
 			return priv.Public(), err
 		}},
 		{"ECC", tpm2tools.DefaultEKTemplateECC(), func() (crypto.PublicKey, error) {
@@ -64,7 +63,7 @@ func TestCreateEKPublicAreaFromKeyGeneratedKey(t *testing.T) {
 				t.Fatalf("failed to create public area from public key: %v", err)
 			}
 			if !newArea.MatchesTemplate(test.template) {
-				t.Errorf("public areas did not match. got: %+v want: %+v", newArea, template)
+				t.Errorf("public areas did not match. got: %+v want: %+v", newArea, test.template)
 			}
 		})
 	}
@@ -96,7 +95,7 @@ func TestCreateEKPublicAreaFromKeyTPMKey(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to create public area from public key: %v", err)
 			}
-			if matches, err := ek.Name().MatchesPublic(newArea); !matches || err != nil {
+			if matches, err := ek.Name().MatchesPublic(newArea); err != nil || !matches {
 				t.Error("public areas did not match or match check failed.")
 			}
 		})

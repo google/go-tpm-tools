@@ -10,9 +10,10 @@ import (
 
 // ECC coordinates need to maintain a specific size based on the curve, so we pad the front with zeros.
 // This is particularly an issue for NIST-P521 coordinates, as they are frequently missing their first byte.
-func eccIntToBytes(key *big.Int, curve elliptic.Curve) []byte {
-	bytes := key.Bytes()
-	return append(make([]byte, (curve.Params().BitSize+7)/8-len(bytes)), bytes...)
+func eccIntToBytes(curve elliptic.Curve, i *big.Int) []byte {
+	bytes := i.Bytes()
+	curveBytes := (curve.Params().BitSize + 7) / 8
+	return append(make([]byte, curveBytes-len(bytes)), bytes...)
 }
 
 func curveIDToGoCurve(curve tpm2.EllipticCurve) (elliptic.Curve, error) {
@@ -26,7 +27,7 @@ func curveIDToGoCurve(curve tpm2.EllipticCurve) (elliptic.Curve, error) {
 	case tpm2.CurveNISTP521:
 		return elliptic.P521(), nil
 	default:
-		return nil, fmt.Errorf("unsupported curve: %v", curve)
+		return nil, fmt.Errorf("unsupported TPM2 curve: %v", curve)
 	}
 }
 
@@ -41,6 +42,6 @@ func goCurveToCurveID(curve elliptic.Curve) (tpm2.EllipticCurve, error) {
 	case elliptic.P521().Params().Name:
 		return tpm2.CurveNISTP521, nil
 	default:
-		return 0, fmt.Errorf("unsupported curve: %v", curve.Params().Name)
+		return 0, fmt.Errorf("unsupported Go curve: %v", curve.Params().Name)
 	}
 }
