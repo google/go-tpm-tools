@@ -19,15 +19,10 @@ func GetPCRCount(rw io.ReadWriter) (uint32, error) {
 		return 0, fmt.Errorf("tpm returned unexpected list of properties: %v", props)
 	}
 
-	switch prop := props[0].(type) {
-	case tpm2.TaggedProperty:
-		if prop.Tag != tpm2.PCRCount {
-			return 0, fmt.Errorf("tpm returned non PCRCount Property: %v", prop)
-		}
+	if prop, ok := props[0].(tpm2.TaggedProperty); ok {
 		return prop.Value, nil
-	default:
-		return 0, fmt.Errorf("tpm returned unexpected properties: %v", prop)
 	}
+	return 0, fmt.Errorf("could not extract tagged property")
 }
 
 // ReadPCRs fetchs the values of the specified PCRs for the specified hash.
