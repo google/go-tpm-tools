@@ -13,6 +13,14 @@ import (
 	"github.com/google/go-tpm/tpm2"
 )
 
+func getECCTemplate(curve tpm2.EllipticCurve) tpm2.Public {
+	public := tpm2tools.DefaultEKTemplateECC()
+	public.ECCParameters.CurveID = curve
+	public.ECCParameters.Point.XRaw = nil
+	public.ECCParameters.Point.YRaw = nil
+	return public
+}
+
 func TestCreateEKPublicAreaFromKeyGeneratedKey(t *testing.T) {
 	template := tpm2tools.DefaultEKTemplateRSA()
 	tests := []struct {
