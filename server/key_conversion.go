@@ -11,7 +11,7 @@ import (
 )
 
 // CreateEKPublicAreaFromKey creates a public area from a go interface PublicKey.
-// Currently only supports RSA keys.
+// Supports RSA and ECC keys.
 func CreateEKPublicAreaFromKey(k crypto.PublicKey) (tpm2.Public, error) {
 	switch key := k.(type) {
 	case *rsa.PublicKey:
