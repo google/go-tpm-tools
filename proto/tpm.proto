@@ -11,7 +11,7 @@ enum ObjectType {
 
 enum HashAlgo {
   HASH_INVALID = 0x0000;
-  SHA1 = 0x0005;
+  SHA1 = 0x0004;
   SHA256 = 0x000B;
 }
 
