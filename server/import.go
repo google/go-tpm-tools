@@ -178,6 +178,8 @@ func encryptSecret(secret, seed, nameEncoded []byte, ek tpm2.Public) ([]byte, er
 		symSize = int(ek.RSAParameters.Symmetric.KeyBits)
 	case tpm2.AlgECC:
 		symSize = int(ek.ECCParameters.Symmetric.KeyBits)
+	default:
+		return nil, fmt.Errorf("unsupported EK type: %v", ek.Type)
 	}
 
 	symmetricKey, err := tpm2.KDFa(
