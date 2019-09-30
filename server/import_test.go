@@ -80,13 +80,13 @@ func TestImport(t *testing.T) {
 				t.Fatalf("creating import blob failed: %v", err)
 			}
 
+			output, err := ek.Import(rwc, blob)
 			if !test.expectSuccess {
-				if _, err := ek.Import(rwc, blob); err == nil {
+				if err == nil {
 					t.Error("expected Import to fail but it did not")
 				}
 				return
 			}
-			output, err := ek.Import(rwc, blob)
 			if err != nil {
 				t.Fatalf("import failed: %v", err)
 			}

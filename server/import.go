@@ -83,32 +83,26 @@ func createPrivate(sensitive []byte, hashAlg tpm2.Algorithm) tpm2.Private {
 	return private
 }
 
-func createPublic(private tpm2.Private, hashAlg tpm2.Algorithm, pcrs map[int][]byte) (tpm2.Public, error) {
-	var attr tpm2.KeyProp
-	var auth []byte
-	var err error
-	if len(pcrs) > 0 {
-		auth, err = tpm2tools.ComputePCRSessionAuth(pcrs)
-		if err != nil {
-			return tpm2.Public{}, err
-		}
-	} else {
-		// If we aren't using a PCR policy, allow password/HMAC authorization.
-		attr = tpm2.FlagUserWithAuth
-	}
+func createPublic(private tpm2.Private, hashAlg tpm2.Algorithm, pcrs map[int][]byte) (public tpm2.Public, err error) {
 	publicHash := getHash(hashAlg)
 	publicHash.Write(private.SeedValue)
 	publicHash.Write(private.Sensitive)
-	return tpm2.Public{
-		Type:       tpm2.AlgKeyedHash,
-		NameAlg:    hashAlg,
-		AuthPolicy: auth,
-		Attributes: attr,
+	public = tpm2.Public{
+		Type:    tpm2.AlgKeyedHash,
+		NameAlg: hashAlg,
 		KeyedHashParameters: &tpm2.KeyedHashParams{
 			Alg:    tpm2.AlgNull,
 			Unique: publicHash.Sum(nil),
 		},
-	}, nil
+	}
+	if len(pcrs) > 0 {
+		public.AuthPolicy, err = tpm2tools.ComputePCRSessionAuth(pcrs)
+		return public, err
+	} else {
+		// If we aren't using a PCR policy, allow password/HMAC authorization.
+		public.Attributes |= tpm2.FlagUserWithAuth
+		return public, nil
+	}
 }
 
 func createRSASeed(ek tpm2.Public) (seed, encryptedSeed []byte, err error) {
