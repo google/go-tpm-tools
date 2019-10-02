@@ -45,7 +45,7 @@ If --hash-algo is not provided, sha256 is assumed.`,
 			}
 		}
 
-		fmt.Fprintln(debugOutput(), "Reading pcrs (%v)", getDefaultPcrs)
+		fmt.Fprintf(debugOutput(), "Reading pcrs (%v)\n", pcrs)
 		pcrList, err := tpm2tools.ReadPCRs(rwc, pcrs, hashAlgo)
 		if err != nil {
 			return err
