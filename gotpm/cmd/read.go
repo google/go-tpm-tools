@@ -21,12 +21,11 @@ var pcrCmd = &cobra.Command{
 	Short: "Read PCRs from the TPM",
 	Long: `Read PCRs from the TPM
 
-Based on the --pcrs flag, this reads the contents of the TPM's PCRs.
+Based on the --pcrs and --hash-algo flags, this reads the contents of the TPM's
+PCRs for that hash algorithm.
 
 If --pcrs is not provided, all pcrs are read.
-
-Optionally (using the --hashAlgo flag), you can change which hash's PCRs to
-read.`,
+If --hash-algo is not provided, sha256 is assumed.`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		rwc, err := openTpm()
@@ -35,19 +34,18 @@ read.`,
 		}
 		defer rwc.Close()
 
-		fmt.Fprintln(debugOutput(), "Reading pcrs")
 		hashAlgo, err := getHashAlgo()
 		if err != nil {
 			return err
 		}
 
 		if pcrs == nil {
-			pcrs, err = getDefaultPcrs(rwc)
-			if err != nil {
+			if pcrs, err = getDefaultPcrs(rwc); err != nil {
 				return err
 			}
 		}
 
+		fmt.Fprintln(debugOutput(), "Reading pcrs (%v)", getDefaultPcrs)
 		pcrList, err := tpm2tools.ReadPCRs(rwc, pcrs, hashAlgo)
 		if err != nil {
 			return err
@@ -58,7 +56,6 @@ read.`,
 			return err
 		}
 		fmt.Fprintln(debugOutput(), "Wrote pcrs")
-
 		return nil
 	},
 }

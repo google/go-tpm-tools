@@ -58,8 +58,8 @@ func addPublicKeyAlgoFlag(cmd *cobra.Command) {
 }
 
 func addHashAlgoFlag(cmd *cobra.Command) {
-	cmd.PersistentFlags().StringVar(&hashAlgo, "hashAlgo", "sha256",
-		"Hash Algorithm, \"sha1\" or \"sha256\"")
+	cmd.PersistentFlags().StringVar(&hashAlgo, "hash-algo", "sha256",
+		"Hash Algorithm, \"sha1\",  \"sha256\", or \"sha384\"")
 }
 
 // alwaysError implements io.ReadWriter by always returning an error
@@ -121,8 +121,12 @@ func getHashAlgo() (tpm2.Algorithm, error) {
 		return tpm2.AlgSHA1, nil
 	case "sha256":
 		return tpm2.AlgSHA256, nil
+	case "sha384":
+		return tpm2.AlgSHA384, nil
+	case "sha512":
+		return tpm2.AlgSHA512, nil
 	default:
-		return tpm2.AlgNull, fmt.Errorf("invalid argument %q for \"--hashAlgo\" flag", hashAlgo)
+		return tpm2.AlgNull, fmt.Errorf("invalid argument %q for \"--hash-algo\" flag", hashAlgo)
 	}
 }
 
