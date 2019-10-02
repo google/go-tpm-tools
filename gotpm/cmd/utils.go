@@ -1,21 +1,22 @@
 package cmd
 
 import (
+	"fmt"
 	"io"
 	"os"
 
-	"fmt"
 	"github.com/google/go-tpm-tools/tpm2tools"
 	"github.com/google/go-tpm/tpm2"
 	"github.com/spf13/cobra"
 )
 
 var (
-	output  string
-	input   string
-	nvIndex uint32
-	keyAlgo string
-	pcrs    []int
+	output   string
+	input    string
+	nvIndex  uint32
+	keyAlgo  string
+	pcrs     []int
+	hashAlgo string
 )
 
 // Disable the "help" subcommand (and just use the -h/--help flags).
@@ -53,6 +54,11 @@ func addPCRsFlag(cmd *cobra.Command) {
 func addPublicKeyAlgoFlag(cmd *cobra.Command) {
 	cmd.PersistentFlags().StringVar(&keyAlgo, "algo", "rsa",
 		"Public key algorithm, \"rsa\" or \"ecc\"")
+}
+
+func addHashAlgoFlag(cmd *cobra.Command) {
+	cmd.PersistentFlags().StringVar(&hashAlgo, "hash-algo", "sha256",
+		"Hash Algorithm, \"sha1\",  \"sha256\", or \"sha384\"")
 }
 
 // alwaysError implements io.ReadWriter by always returning an error
@@ -105,6 +111,21 @@ func getAlgo() (tpm2.Algorithm, error) {
 		return tpm2.AlgECC, nil
 	default:
 		return tpm2.AlgNull, fmt.Errorf("invalid argument %q for \"--algo\" flag", keyAlgo)
+	}
+}
+
+func getHashAlgo() (tpm2.Algorithm, error) {
+	switch hashAlgo {
+	case "sha1":
+		return tpm2.AlgSHA1, nil
+	case "sha256":
+		return tpm2.AlgSHA256, nil
+	case "sha384":
+		return tpm2.AlgSHA384, nil
+	case "sha512":
+		return tpm2.AlgSHA512, nil
+	default:
+		return tpm2.AlgNull, fmt.Errorf("invalid argument %q for \"--hash-algo\" flag", hashAlgo)
 	}
 }
 
