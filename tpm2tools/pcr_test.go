@@ -55,7 +55,6 @@ func TestReadPCRs(t *testing.T) {
 
 	for _, test := range tests {
 		for _, extension := range test.inExtensions {
-
 			if err := tpm2.PCRExtend(rwc, tpmutil.Handle(0), test.inAlg, extension, ""); err != nil {
 				t.Fatalf("failed to extend pcr for test %v", err)
 			}

@@ -24,8 +24,7 @@ var pcrCmd = &cobra.Command{
 Based on the --pcrs and --hash-algo flags, this reads the contents of the TPM's
 PCRs for that hash algorithm.
 
-If --pcrs is not provided, all pcrs are read.
-If --hash-algo is not provided, sha256 is assumed.`,
+If --pcrs is not provided, all pcrs are read for that hash algorithm.`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		rwc, err := openTpm()

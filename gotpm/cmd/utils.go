@@ -1,10 +1,9 @@
 package cmd
 
 import (
+	"fmt"
 	"io"
 	"os"
-
-	"fmt"
 
 	"github.com/google/go-tpm-tools/tpm2tools"
 	"github.com/google/go-tpm/tpm2"
