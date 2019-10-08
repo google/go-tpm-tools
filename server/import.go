@@ -120,19 +120,19 @@ func createECCSeed(ek tpm2.Public) (seed, encryptedSeed []byte, err error) {
 	}
 	ekPoint := ek.ECCParameters.Point
 	z, _ := curve.ScalarMult(ekPoint.X(), ekPoint.Y(), priv)
-	xBytes := eccIntToBytes(x, curve)
+	xBytes := eccIntToBytes(curve, x)
 
 	seed, err = tpm2.KDFe(
 		ek.NameAlg,
-		eccIntToBytes(z, curve),
+		eccIntToBytes(curve, z),
 		"DUPLICATE",
 		xBytes,
-		eccIntToBytes(ekPoint.X(), curve),
+		eccIntToBytes(curve, ekPoint.X()),
 		getHash(ek.NameAlg).Size()*8)
 	if err != nil {
 		return nil, nil, err
 	}
-	encryptedSeed, err = tpmutil.Pack(tpmutil.U16Bytes(xBytes), tpmutil.U16Bytes(eccIntToBytes(y, curve)))
+	encryptedSeed, err = tpmutil.Pack(tpmutil.U16Bytes(xBytes), tpmutil.U16Bytes(eccIntToBytes(curve, y)))
 	return seed, encryptedSeed, err
 }
 
