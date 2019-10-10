@@ -9,7 +9,7 @@ import (
 	"github.com/google/go-tpm/tpm2"
 )
 
-func TestImport(t *testing.T) {
+func TestImportEKs(t *testing.T) {
 	rwc := internal.GetTPM(t)
 	defer tpm2tools.CheckedClose(t, rwc)
 	tests := []struct {
@@ -32,7 +32,7 @@ func TestImport(t *testing.T) {
 			defer ek.Close()
 			pub := ek.PublicKey()
 			secret := []byte("super secret code")
-			blob, err := CreateImportBlob(pub, secret)
+			blob, err := CreateImportBlob(pub, secret, nil)
 			if err != nil {
 				t.Fatalf("creating import blob failed: %v", err)
 			}
@@ -48,7 +48,7 @@ func TestImport(t *testing.T) {
 	}
 }
 
-func TestImport(t *testing.T) {
+func TestImportPCRs(t *testing.T) {
 	rwc := internal.GetTPM(t)
 	defer tpm2tools.CheckedClose(t, rwc)
 
@@ -60,6 +60,7 @@ func TestImport(t *testing.T) {
 	pcr0, err := tpm2.ReadPCR(rwc, 0, tpm2.AlgSHA256)
 	if err != nil {
 		t.Fatal(err)
+	}
 	badPCR := append([]byte(nil), pcr0...)
 	// badPCR increments first value so it doesn't match.
 	badPCR[0]++
