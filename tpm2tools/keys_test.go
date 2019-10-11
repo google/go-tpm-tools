@@ -32,7 +32,7 @@ func TestNameMatchesPublicArea(t *testing.T) {
 func TestCreateSigningKeysInHierarchies(t *testing.T) {
 	rwc := internal.GetTPM(t)
 	defer CheckedClose(t, rwc)
-	template := AIKTemplateRSA([256]byte{})
+	template := AIKTemplateRSA(nil)
 
 	// We are not authorized to create keys in the Platform Hierarchy
 	for _, hierarchy := range []tpmutil.Handle{tpm2.HandleOwner, tpm2.HandleEndorsement, tpm2.HandleNull} {
@@ -136,7 +136,7 @@ func BenchmarkKeyCreation(b *testing.B) {
 			return NewKey(rw, tpm2.HandleOwner, DefaultEKTemplateRSA())
 		}},
 		{"AIK-RSA-Null", func(rw io.ReadWriter) (*Key, error) {
-			template := AIKTemplateRSA([256]byte{})
+			template := AIKTemplateRSA(nil)
 			return NewKey(rw, tpm2.HandleNull, template)
 		}},
 	}

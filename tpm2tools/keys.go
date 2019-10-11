@@ -36,6 +36,11 @@ func StorageRootKeyRSA(rw io.ReadWriter) (*Key, error) {
 	return NewCachedKey(rw, tpm2.HandleOwner, SRKTemplateRSA(), SRKReservedHandle)
 }
 
+// AttestationIdentityKeyRSA generates and loads a key from AIKTemplateRSA
+func AttestationIdentityKeyRSA(rw io.ReadWriter, nonces []byte) (*Key, error) {
+	return NewKey(rw, tpm2.HandleOwner, AIKTemplateRSA(nonces))
+}
+
 // StorageRootKeyECC generates and loads a key from SRKTemplateECC.
 func StorageRootKeyECC(rw io.ReadWriter) (*Key, error) {
 	return NewKey(rw, tpm2.HandleOwner, SRKTemplateECC())
