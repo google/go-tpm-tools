@@ -59,7 +59,7 @@ func ReadPCRs(rw io.ReadWriter, pcrs []int, hash tpm2.Algorithm) (*proto.Pcrs, e
 	return &pl, nil
 }
 
-// ComputePCRSessionAuth calculates the auth value using the SHA256 versions of the provided PCRs.
+// ComputePCRSessionAuth calculates the auth value using the specified hash version of the provided PCRs.
 func ComputePCRSessionAuth(pcrProto proto.Pcrs) ([]byte, error) {
 	var pcrHash tpm2.Algorithm
 	switch pcrProto.Hash {
