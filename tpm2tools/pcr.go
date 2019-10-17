@@ -61,28 +61,30 @@ func ReadPCRs(rw io.ReadWriter, pcrs []int, hash tpm2.Algorithm) (*proto.Pcrs, e
 
 // ComputePCRSessionAuth calculates the auth value using the SHA256 versions of the provided PCRs.
 func ComputePCRSessionAuth(pcrProto proto.Pcrs) ([]byte, error) {
-	pcrs := map[int][]byte{}
-	for p, v := range pcrProto.Pcrs {
-		pcrs[int(p)] = v
+	var pcrHash tpm2.Algorithm
+	switch pcrProto.Hash {
+	case proto.HashAlgo_SHA1:
+		pcrHash = tpm2.AlgSHA1
+	case proto.HashAlgo_SHA256:
+		pcrHash = tpm2.AlgSHA256
+	default:
+		return nil, fmt.Errorf("Invalid hash alg: %v", pcrProto.Hash)
 	}
-	pcrAlg, err := getHashAlg(pcrProto.Hash)
-	if err != nil {
-		return nil, err
-	}
+
 	var pcrBits [3]byte
-	for pcr := range pcrs {
+	for pcr := range pcrProto.Pcrs {
 		byteNum := pcr / 8
 		bytePos := byte(1 << byte(pcr%8))
 		pcrBits[byteNum] |= bytePos
 	}
-	pcrDigest := digestPCRList(pcrs)
+	pcrDigest := digestPCRList(pcrProto.Pcrs)
 
 	summary := sessionSummary{
 		OldDigest:      make([]byte, sha256.Size),
 		CmdIDPolicyPCR: uint32(tpm2.CmdPolicyPCR),
 		NumPcrSels:     1,
 		Sel: tpmsPCRSelection{
-			Hash: pcrAlg,
+			Hash: pcrHash,
 			Size: 3,
 			PCRs: pcrBits[:],
 		},
@@ -97,23 +99,12 @@ func ComputePCRSessionAuth(pcrProto proto.Pcrs) ([]byte, error) {
 	return digest[:], nil
 }
 
-func digestPCRList(pcrs map[int][]byte) []byte {
+func digestPCRList(pcrs map[uint32][]byte) []byte {
 	hash := crypto.SHA256.New()
 	for i := 0; i < 24; i++ {
-		if pcrValue, exists := pcrs[i]; exists {
+		if pcrValue, exists := pcrs[uint32(i)]; exists {
 			hash.Write(pcrValue)
 		}
 	}
 	return hash.Sum(nil)
-}
-
-func getHashAlg(alg proto.HashAlgo) (tpm2.Algorithm, error) {
-	switch alg {
-	case proto.HashAlgo_SHA1:
-		return tpm2.AlgSHA1, nil
-	case proto.HashAlgo_SHA256:
-		return tpm2.AlgSHA256, nil
-	default:
-		return tpm2.AlgNull, fmt.Errorf("Invalid hash alg: %v", alg)
-	}
 }
