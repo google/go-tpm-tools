@@ -2,7 +2,6 @@ package tpm2tools
 
 import (
 	"crypto"
-	"crypto/sha256"
 	"fmt"
 	"io"
 
@@ -173,7 +172,7 @@ func (k *Key) Close() {
 // hierarchy using the SHA256 versions of the provided PCRs.
 // The Key k is used as the parent key.
 func (k *Key) Seal(pcrs []int, sensitive []byte) (*proto.SealedBytes, error) {
-	auth, err := getPCRSessionAuth(k.rw, pcrs)
+	auth, err := getPCRSessionAuth(k.rw, pcrs, tpm2.AlgSHA256)
 	if err != nil {
 		return nil, fmt.Errorf("could not get pcr session auth: %v", err)
 	}
@@ -217,7 +216,7 @@ func (k *Key) Unseal(in *proto.SealedBytes) ([]byte, error) {
 	for _, pcr := range in.Pcrs {
 		pcrs = append(pcrs, int(pcr))
 	}
-	session, err := createPCRSession(k.rw, pcrs)
+	session, err := createPCRSession(k.rw, pcrs, tpm2.AlgSHA256)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unseal: %v", err)
 	}
@@ -241,13 +240,13 @@ func (k *Key) Unseal(in *proto.SealedBytes) ([]byte, error) {
 // produced by the PCR state in pcrs. Similar to seal and unseal, this acts on
 // the SHA256 PCRs and uses the owner hierarchy.
 // The Key k is used as the parent key.
-func (k *Key) Reseal(pcrs map[int][]byte, in *proto.SealedBytes) (*proto.SealedBytes, error) {
+func (k *Key) Reseal(pcrs proto.Pcrs, in *proto.SealedBytes) (*proto.SealedBytes, error) {
 	sensitive, err := k.Unseal(in)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unseal: %v", err)
 	}
 
-	auth, err := computePCRSessionAuth(pcrs)
+	auth, err := ComputePCRSessionAuth(pcrs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compute pcr session auth: %v", err)
 	}
@@ -256,7 +255,7 @@ func (k *Key) Reseal(pcrs map[int][]byte, in *proto.SealedBytes) (*proto.SealedB
 	if err != nil {
 		return nil, err
 	}
-	for pcr := range pcrs {
+	for pcr := range pcrs.Pcrs {
 		sb.Pcrs = append(sb.Pcrs, int32(pcr))
 	}
 	sb.Hash = in.Hash
@@ -278,47 +277,8 @@ type sessionSummary struct {
 	PcrDigest      tpmutil.RawBytes
 }
 
-func computePCRSessionAuth(pcrs map[int][]byte) ([]byte, error) {
-	var pcrBits [3]byte
-	for pcr := range pcrs {
-		byteNum := pcr / 8
-		bytePos := byte(1 << byte(pcr%8))
-		pcrBits[byteNum] |= bytePos
-	}
-	pcrDigest := digestPCRList(pcrs)
-
-	summary := sessionSummary{
-		OldDigest:      make([]byte, sha256.Size),
-		CmdIDPolicyPCR: uint32(tpm2.CmdPolicyPCR),
-		NumPcrSels:     1,
-		Sel: tpmsPCRSelection{
-			Hash: tpm2.AlgSHA256,
-			Size: 3,
-			PCRs: pcrBits[:],
-		},
-		PcrDigest: pcrDigest,
-	}
-	b, err := tpmutil.Pack(summary)
-	if err != nil {
-		return nil, fmt.Errorf("failed to pack for hashing: %v ", err)
-	}
-
-	digest := sha256.Sum256(b)
-	return digest[:], nil
-}
-
-func digestPCRList(pcrs map[int][]byte) []byte {
-	hash := crypto.SHA256.New()
-	for i := 0; i < 24; i++ {
-		if pcrValue, exists := pcrs[i]; exists {
-			hash.Write(pcrValue)
-		}
-	}
-	return hash.Sum(nil)
-}
-
-func getPCRSessionAuth(rw io.ReadWriter, pcrs []int) ([]byte, error) {
-	handle, err := createPCRSession(rw, pcrs)
+func getPCRSessionAuth(rw io.ReadWriter, pcrs []int, hash tpm2.Algorithm) ([]byte, error) {
+	handle, err := createPCRSession(rw, pcrs, hash)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get digest: %v", err)
 	}
@@ -332,7 +292,7 @@ func getPCRSessionAuth(rw io.ReadWriter, pcrs []int) ([]byte, error) {
 	return digest, nil
 }
 
-func createPCRSession(rw io.ReadWriter, pcrs []int) (tpmutil.Handle, error) {
+func createPCRSession(rw io.ReadWriter, pcrs []int, hash tpm2.Algorithm) (tpmutil.Handle, error) {
 	nonceIn := make([]byte, 16)
 	/* This session assumes the bus is trusted.  */
 	handle, _, err := tpm2.StartAuthSession(
@@ -349,7 +309,7 @@ func createPCRSession(rw io.ReadWriter, pcrs []int) (tpmutil.Handle, error) {
 	}
 
 	sel := tpm2.PCRSelection{
-		Hash: tpm2.AlgSHA256,
+		Hash: hash,
 		PCRs: pcrs,
 	}
 	if err = tpm2.PolicyPCR(rw, handle, nil, sel); err != nil {

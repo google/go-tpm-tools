@@ -10,6 +10,7 @@ import (
 	"github.com/google/go-tpm/tpmutil"
 
 	"github.com/google/go-tpm-tools/internal"
+	"github.com/google/go-tpm-tools/proto"
 )
 
 func TestSeal(t *testing.T) {
@@ -66,30 +67,42 @@ func TestComputeSessionAuth(t *testing.T) {
 	defer CheckedClose(t, rwc)
 
 	pcrList := []int{1, 7}
+	pcrs := map[uint32][]byte{}
 
-	pcrs := map[int][]byte{}
-
-	for _, pcrNum := range pcrList {
-		pcrVal, err := tpm2.ReadPCR(rwc, pcrNum, tpm2.AlgSHA256)
-		if err != nil {
-			t.Fatalf("failed to read pcr: %v", err)
-		}
-
-		pcrs[pcrNum] = pcrVal
+	tests := []struct {
+		name     string
+		alg      tpm2.Algorithm
+		protoAlg proto.HashAlgo
+	}{
+		//	{"sha1", tpm2.AlgSHA1, proto.HashAlgo_SHA1},
+		{"sha256", tpm2.AlgSHA256, proto.HashAlgo_SHA256},
 	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
 
-	getAuth, err := getPCRSessionAuth(rwc, pcrList)
-	if err != nil {
-		t.Fatalf("failed to get session auth: %v", err)
-	}
+			for _, pcrNum := range pcrList {
+				pcrVal, err := tpm2.ReadPCR(rwc, pcrNum, test.alg)
+				if err != nil {
+					t.Fatalf("failed to read pcr: %v", err)
+				}
 
-	computeAuth, err := computePCRSessionAuth(pcrs)
-	if err != nil {
-		t.Fatalf("failed to compute session auth: %v", err)
-	}
+				pcrs[uint32(pcrNum)] = pcrVal
+			}
 
-	if !bytes.Equal(computeAuth, getAuth) {
-		t.Fatalf("computed auth (%v) not equal to session auth(%v)", computeAuth, getAuth)
+			getAuth, err := getPCRSessionAuth(rwc, pcrList, test.alg)
+			if err != nil {
+				t.Fatalf("failed to get session auth: %v", err)
+			}
+
+			computeAuth, err := ComputePCRSessionAuth(proto.Pcrs{Hash: test.protoAlg, Pcrs: pcrs})
+			if err != nil {
+				t.Fatalf("failed to compute session auth: %v", err)
+			}
+
+			if !bytes.Equal(computeAuth, getAuth) {
+				t.Fatalf("computed auth (%v) not equal to session auth(%v)", computeAuth, getAuth)
+			}
+		})
 	}
 }
 
@@ -106,14 +119,14 @@ func TestSelfReseal(t *testing.T) {
 	secret := []byte("test")
 
 	pcrList := []int{0, 4, 7}
-	pcrs := map[int][]byte{}
+	pcrs := map[uint32][]byte{}
 	for _, pcrNum := range pcrList {
 		pcrVal, err := tpm2.ReadPCR(rwc, pcrNum, tpm2.AlgSHA256)
 		if err != nil {
 			t.Fatalf("failed to read pcr: %v", err)
 		}
 
-		pcrs[pcrNum] = pcrVal
+		pcrs[uint32(pcrNum)] = pcrVal
 	}
 
 	sealed, err := key.Seal(pcrList, secret)
@@ -129,7 +142,7 @@ func TestSelfReseal(t *testing.T) {
 		t.Fatalf("unsealed (%v) not equal to secret (%v)", unseal, secret)
 	}
 
-	sealed, err = key.Reseal(pcrs, sealed)
+	sealed, err = key.Reseal(proto.Pcrs{Hash: proto.HashAlgo_SHA256, Pcrs: pcrs}, sealed)
 	if err != nil {
 		t.Fatalf("failed to reseal: %v", err)
 	}
@@ -200,14 +213,14 @@ func TestReseal(t *testing.T) {
 
 	pcrToChange := 23
 	pcrList := []int{7, 23}
-	pcrs := map[int][]byte{}
+	pcrs := map[uint32][]byte{}
 	for _, pcrNum := range pcrList {
 		pcrVal, err := tpm2.ReadPCR(rwc, pcrNum, tpm2.AlgSHA256)
 		if err != nil {
 			t.Fatalf("failed to read pcr: %v", err)
 		}
 
-		pcrs[pcrNum] = pcrVal
+		pcrs[uint32(pcrNum)] = pcrVal
 	}
 
 	sealed, err := key.Seal(pcrList, secret)
@@ -228,8 +241,8 @@ func TestReseal(t *testing.T) {
 	}
 
 	// Change pcr value to the predicted future value for resealing
-	pcrs[pcrToChange] = computePCRValue(pcrs[pcrToChange], extensions)
-	sealed, err = key.Reseal(pcrs, sealed)
+	pcrs[uint32(pcrToChange)] = computePCRValue(pcrs[uint32(pcrToChange)], extensions)
+	sealed, err = key.Reseal(proto.Pcrs{Hash: proto.HashAlgo_SHA256, Pcrs: pcrs}, sealed)
 	if err != nil {
 		t.Fatalf("failed to reseal: %v", err)
 	}
