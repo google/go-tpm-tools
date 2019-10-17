@@ -119,14 +119,14 @@ func TestSelfReseal(t *testing.T) {
 	secret := []byte("test")
 
 	pcrList := []int{0, 4, 7}
-	pcrs := map[uint32][]byte{}
+	pcrs := map[int][]byte{}
 	for _, pcrNum := range pcrList {
 		pcrVal, err := tpm2.ReadPCR(rwc, pcrNum, tpm2.AlgSHA256)
 		if err != nil {
 			t.Fatalf("failed to read pcr: %v", err)
 		}
 
-		pcrs[uint32(pcrNum)] = pcrVal
+		pcrs[pcrNum] = pcrVal
 	}
 
 	sealed, err := key.Seal(pcrList, secret)
@@ -142,7 +142,7 @@ func TestSelfReseal(t *testing.T) {
 		t.Fatalf("unsealed (%v) not equal to secret (%v)", unseal, secret)
 	}
 
-	sealed, err = key.Reseal(proto.Pcrs{Hash: proto.HashAlgo_SHA256, Pcrs: pcrs}, sealed)
+	sealed, err = key.Reseal(pcrs, sealed)
 	if err != nil {
 		t.Fatalf("failed to reseal: %v", err)
 	}
@@ -213,14 +213,14 @@ func TestReseal(t *testing.T) {
 
 	pcrToChange := 23
 	pcrList := []int{7, 23}
-	pcrs := map[uint32][]byte{}
+	pcrs := map[int][]byte{}
 	for _, pcrNum := range pcrList {
 		pcrVal, err := tpm2.ReadPCR(rwc, pcrNum, tpm2.AlgSHA256)
 		if err != nil {
 			t.Fatalf("failed to read pcr: %v", err)
 		}
 
-		pcrs[uint32(pcrNum)] = pcrVal
+		pcrs[pcrNum] = pcrVal
 	}
 
 	sealed, err := key.Seal(pcrList, secret)
@@ -241,8 +241,8 @@ func TestReseal(t *testing.T) {
 	}
 
 	// Change pcr value to the predicted future value for resealing
-	pcrs[uint32(pcrToChange)] = computePCRValue(pcrs[uint32(pcrToChange)], extensions)
-	sealed, err = key.Reseal(proto.Pcrs{Hash: proto.HashAlgo_SHA256, Pcrs: pcrs}, sealed)
+	pcrs[pcrToChange] = computePCRValue(pcrs[pcrToChange], extensions)
+	sealed, err = key.Reseal(pcrs, sealed)
 	if err != nil {
 		t.Fatalf("failed to reseal: %v", err)
 	}

@@ -240,13 +240,17 @@ func (k *Key) Unseal(in *proto.SealedBytes) ([]byte, error) {
 // produced by the PCR state in pcrs. Similar to seal and unseal, this acts on
 // the SHA256 PCRs and uses the owner hierarchy.
 // The Key k is used as the parent key.
-func (k *Key) Reseal(pcrs proto.Pcrs, in *proto.SealedBytes) (*proto.SealedBytes, error) {
+func (k *Key) Reseal(pcrs map[int][]byte, in *proto.SealedBytes) (*proto.SealedBytes, error) {
 	sensitive, err := k.Unseal(in)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unseal: %v", err)
 	}
+	pcrsU := map[uint32][]byte{}
+	for pcr, val := range pcrs {
+		pcrsU[uint32(pcr)] = val
+	}
 
-	auth, err := ComputePCRSessionAuth(pcrs)
+	auth, err := ComputePCRSessionAuth(proto.Pcrs{Hash: proto.HashAlgo_SHA256, Pcrs: pcrsU})
 	if err != nil {
 		return nil, fmt.Errorf("failed to compute pcr session auth: %v", err)
 	}
@@ -255,7 +259,7 @@ func (k *Key) Reseal(pcrs proto.Pcrs, in *proto.SealedBytes) (*proto.SealedBytes
 	if err != nil {
 		return nil, err
 	}
-	for pcr := range pcrs.Pcrs {
+	for pcr := range pcrs {
 		sb.Pcrs = append(sb.Pcrs, int32(pcr))
 	}
 	sb.Hash = in.Hash
