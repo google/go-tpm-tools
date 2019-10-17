@@ -2,8 +2,9 @@ package tpm2tools
 
 import (
 	"fmt"
-	"hash"
 	"io"
+	"crypto/sha256"
+	"crypto"
 
 	"github.com/google/go-tpm-tools/proto"
 	"github.com/google/go-tpm/tpm2"
@@ -68,20 +69,16 @@ func ComputePCRSessionAuth(pcrProto proto.Pcrs) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	getHash, err := pcrAlg.HashConstructor()
-	if err != nil {
-		return nil, err
-	}
 	var pcrBits [3]byte
 	for pcr := range pcrs {
 		byteNum := pcr / 8
 		bytePos := byte(1 << byte(pcr%8))
 		pcrBits[byteNum] |= bytePos
 	}
-	pcrDigest := digestPCRList(pcrs, getHash())
+	pcrDigest := digestPCRList(pcrs)
 
 	summary := sessionSummary{
-		OldDigest:      make([]byte, getHash().Size()),
+		OldDigest:      make([]byte, sha256.Size),
 		CmdIDPolicyPCR: uint32(tpm2.CmdPolicyPCR),
 		NumPcrSels:     1,
 		Sel: tpmsPCRSelection{
@@ -95,14 +92,13 @@ func ComputePCRSessionAuth(pcrProto proto.Pcrs) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to pack for hashing: %v ", err)
 	}
-	digestHash := getHash()
-	digestHash.Write(b)
-	digest := digestHash.Sum(nil)
 
+	digest := sha256.Sum256(b)
 	return digest[:], nil
 }
 
-func digestPCRList(pcrs map[int][]byte, hash hash.Hash) []byte {
+func digestPCRList(pcrs map[int][]byte) []byte {
+	hash := crypto.SHA256.New()
 	for i := 0; i < 24; i++ {
 		if pcrValue, exists := pcrs[i]; exists {
 			hash.Write(pcrValue)

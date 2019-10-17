@@ -74,7 +74,7 @@ func TestComputeSessionAuth(t *testing.T) {
 		alg      tpm2.Algorithm
 		protoAlg proto.HashAlgo
 	}{
-		//	{"sha1", tpm2.AlgSHA1, proto.HashAlgo_SHA1},
+		{"sha1", tpm2.AlgSHA1, proto.HashAlgo_SHA1},
 		{"sha256", tpm2.AlgSHA256, proto.HashAlgo_SHA256},
 	}
 	for _, test := range tests {
