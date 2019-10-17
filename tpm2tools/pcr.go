@@ -1,10 +1,10 @@
 package tpm2tools
 
 import (
+	"crypto"
+	"crypto/sha256"
 	"fmt"
 	"io"
-	"crypto/sha256"
-	"crypto"
 
 	"github.com/google/go-tpm-tools/proto"
 	"github.com/google/go-tpm/tpm2"
