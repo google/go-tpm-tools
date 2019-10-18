@@ -23,7 +23,7 @@ import (
 // CreateImportBlob uses the provided public EK to encrypt the sensitive data into import blob format.
 // The returned import blob can be decrypted by the TPM associated with the provided EK.
 // The pcrs parameter is used to create a PCR policy on the object to be imported using the SHA256 versions of the provided PCRs. A nil pcrs value will allow password/HMAC authorization.
-func CreateImportBlob(ekPub crypto.PublicKey, sensitive []byte, pcrs map[int][]byte) (*tpmpb.ImportBlob, error) {
+func CreateImportBlob(ekPub crypto.PublicKey, sensitive []byte, pcrs tpmpb.Pcrs) (*tpmpb.ImportBlob, error) {
 	ek, err := CreateEKPublicAreaFromKey(ekPub)
 	if err != nil {
 		return nil, err
@@ -56,17 +56,12 @@ func CreateImportBlob(ekPub crypto.PublicKey, sensitive []byte, pcrs map[int][]b
 	if err != nil {
 		return nil, err
 	}
-	// Create list of PCRs used in the PCR policy.
-	var pcrList []int32
-	for pcr := range pcrs {
-		pcrList = append(pcrList, int32(pcr))
-	}
 
 	return &tpmpb.ImportBlob{
 		Duplicate:     duplicate,
 		EncryptedSeed: encryptedSeed,
 		PublicArea:    pubEncoded,
-		Pcrs:          pcrList,
+		Pcrs:          pcrs,
 	}, nil
 }
 
@@ -83,7 +78,7 @@ func createPrivate(sensitive []byte, hashAlg tpm2.Algorithm) tpm2.Private {
 	return private
 }
 
-func createPublic(private tpm2.Private, hashAlg tpm2.Algorithm, pcrs map[int][]byte) (public tpm2.Public, err error) {
+func createPublic(private tpm2.Private, hashAlg tpm2.Algorithm, pcrs tpmpb.Pcrs) (public tpm2.Public, err error) {
 	publicHash := getHash(hashAlg)
 	publicHash.Write(private.SeedValue)
 	publicHash.Write(private.Sensitive)
@@ -95,8 +90,9 @@ func createPublic(private tpm2.Private, hashAlg tpm2.Algorithm, pcrs map[int][]b
 			Unique: publicHash.Sum(nil),
 		},
 	}
-	if len(pcrs) > 0 {
+	if pcrs != nil {
 		public.AuthPolicy, err = tpm2tools.ComputePCRSessionAuth(pcrs)
+		public.Attributes |= tpm2.FlagAdminWithPolicy
 		return public, err
 	} else {
 		// If we aren't using a PCR policy, allow password/HMAC authorization.
