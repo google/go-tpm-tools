@@ -46,7 +46,7 @@ state (like Secure Boot).`,
 		}
 
 		fmt.Fprintf(debugOutput(), "Sealing to PCRs: %v\n", pcrs)
-		sealed, err := srk.Seal(pcrs, secret)
+		sealed, err := srk.Seal(pcrs, secret, tpm2.PCRSelection{})
 		if err != nil {
 			return fmt.Errorf("sealing data: %v", err)
 		}
@@ -97,7 +97,7 @@ Thus, algorithm and PCR options are not needed for the unseal command.`,
 		defer srk.Close()
 
 		fmt.Fprintln(debugOutput(), "Unsealing data")
-		secret, err := srk.Unseal(&sealed)
+		secret, err := srk.Unseal(&sealed, false)
 		if err != nil {
 			return fmt.Errorf("unsealing data: %v", err)
 		}

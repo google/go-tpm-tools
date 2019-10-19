@@ -222,9 +222,9 @@ func createHMAC(encryptedSecret, nameEncoded, seed []byte, hashAlg tpm2.Algorith
 }
 
 func getHash(hashAlg tpm2.Algorithm) hash.Hash {
-	create, err := hashAlg.HashConstructor()
+	h, err := hashAlg.Hash()
 	if err != nil {
 		panic(err)
 	}
-	return create()
+	return h.New()
 }
