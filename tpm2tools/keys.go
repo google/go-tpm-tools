@@ -172,7 +172,7 @@ func (k *Key) Close() {
 // hierarchy using the SHA256 versions of the provided PCRs.
 // The Key k is used as the parent key.
 func (k *Key) Seal(pcrs []int, sensitive []byte) (*proto.SealedBytes, error) {
-	auth, err := getPCRSessionAuth(k.rw, pcrs, tpm2.AlgSHA256)
+	auth, err := getPCRSessionAuth(k.rw, pcrs, tpm2.AlgSHA256, tpm2.AlgSHA256)
 	if err != nil {
 		return nil, fmt.Errorf("could not get pcr session auth: %v", err)
 	}
@@ -216,7 +216,7 @@ func (k *Key) Unseal(in *proto.SealedBytes) ([]byte, error) {
 	for _, pcr := range in.Pcrs {
 		pcrs = append(pcrs, int(pcr))
 	}
-	session, err := createPCRSession(k.rw, pcrs, tpm2.AlgSHA256)
+	session, err := createPCRSession(k.rw, pcrs, tpm2.AlgSHA256, tpm2.AlgSHA256)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unseal: %v", err)
 	}
@@ -250,7 +250,7 @@ func (k *Key) Reseal(pcrs map[int][]byte, in *proto.SealedBytes) (*proto.SealedB
 		pcrsU[uint32(pcr)] = val
 	}
 
-	auth, err := ComputePCRSessionAuth(proto.Pcrs{Hash: proto.HashAlgo_SHA256, Pcrs: pcrsU})
+	auth, err := ComputePCRSessionAuth(&proto.Pcrs{Hash: proto.HashAlgo_SHA256, Pcrs: pcrsU}, tpm2.AlgSHA256)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compute pcr session auth: %v", err)
 	}
@@ -281,8 +281,8 @@ type sessionSummary struct {
 	PcrDigest      tpmutil.RawBytes
 }
 
-func getPCRSessionAuth(rw io.ReadWriter, pcrs []int, hash tpm2.Algorithm) ([]byte, error) {
-	handle, err := createPCRSession(rw, pcrs, hash)
+func getPCRSessionAuth(rw io.ReadWriter, pcrs []int, pcrHash tpm2.Algorithm, sessionHash tpm2.Algorithm) ([]byte, error) {
+	handle, err := createPCRSession(rw, pcrs, pcrHash, sessionHash)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get digest: %v", err)
 	}
@@ -296,7 +296,7 @@ func getPCRSessionAuth(rw io.ReadWriter, pcrs []int, hash tpm2.Algorithm) ([]byt
 	return digest, nil
 }
 
-func createPCRSession(rw io.ReadWriter, pcrs []int, hash tpm2.Algorithm) (tpmutil.Handle, error) {
+func createPCRSession(rw io.ReadWriter, pcrs []int, pcrHash tpm2.Algorithm, sessionHash tpm2.Algorithm) (tpmutil.Handle, error) {
 	nonceIn := make([]byte, 16)
 	/* This session assumes the bus is trusted.  */
 	handle, _, err := tpm2.StartAuthSession(
@@ -307,13 +307,13 @@ func createPCRSession(rw io.ReadWriter, pcrs []int, hash tpm2.Algorithm) (tpmuti
 		/*secret=*/ nil,
 		tpm2.SessionPolicy,
 		tpm2.AlgNull,
-		tpm2.AlgSHA256)
+		sessionHash)
 	if err != nil {
 		return tpm2.HandleNull, fmt.Errorf("failed to start auth session: %v", err)
 	}
 
 	sel := tpm2.PCRSelection{
-		Hash: hash,
+		Hash: pcrHash,
 		PCRs: pcrs,
 	}
 	if err = tpm2.PolicyPCR(rw, handle, nil, sel); err != nil {

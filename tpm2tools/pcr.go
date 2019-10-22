@@ -1,8 +1,6 @@
 package tpm2tools
 
 import (
-	"crypto"
-	"crypto/sha256"
 	"fmt"
 	"io"
 
@@ -59,52 +57,62 @@ func ReadPCRs(rw io.ReadWriter, pcrs []int, hash tpm2.Algorithm) (*proto.Pcrs, e
 	return &pl, nil
 }
 
-// ComputePCRSessionAuth calculates the auth value using the specified hash version of the provided PCRs.
-func ComputePCRSessionAuth(pcrProto proto.Pcrs) ([]byte, error) {
-	var pcrHash tpm2.Algorithm
-	switch pcrProto.Hash {
-	case proto.HashAlgo_SHA1:
-		pcrHash = tpm2.AlgSHA1
-	case proto.HashAlgo_SHA256:
-		pcrHash = tpm2.AlgSHA256
-	default:
-		return nil, fmt.Errorf("Invalid hash alg: %v", pcrProto.Hash)
+// ComputePCRSessionAuth calculates the auth value based on the given PCR proto
+// and hash algorithm.
+func ComputePCRSessionAuth(pcrs *proto.Pcrs, digestHash tpm2.Algorithm) ([]byte, error) {
+	pcrDigest, err := ComputePCRDigest(pcrs, digestHash)
+	if err != nil {
+		return nil, err
 	}
-
-	var pcrBits [3]byte
-	for pcr := range pcrProto.Pcrs {
-		byteNum := pcr / 8
-		bytePos := byte(1 << byte(pcr%8))
-		pcrBits[byteNum] |= bytePos
+	getHash, err := digestHash.HashConstructor()
+	if err != nil {
+		return nil, err
 	}
-	pcrDigest := digestPCRList(pcrProto.Pcrs)
 
 	summary := sessionSummary{
-		OldDigest:      make([]byte, sha256.Size),
+		OldDigest:      make([]byte, getHash().Size()),
 		CmdIDPolicyPCR: uint32(tpm2.CmdPolicyPCR),
 		NumPcrSels:     1,
-		Sel: tpmsPCRSelection{
-			Hash: pcrHash,
-			Size: 3,
-			PCRs: pcrBits[:],
-		},
-		PcrDigest: pcrDigest,
+		Sel:            computePCRSelection(pcrs),
+		PcrDigest:      pcrDigest,
 	}
 	b, err := tpmutil.Pack(summary)
 	if err != nil {
 		return nil, fmt.Errorf("failed to pack for hashing: %v ", err)
 	}
 
-	digest := sha256.Sum256(b)
+	hash := getHash()
+	hash.Write(b)
+	digest := hash.Sum(nil)
 	return digest[:], nil
 }
 
-func digestPCRList(pcrs map[uint32][]byte) []byte {
-	hash := crypto.SHA256.New()
+// ComputePCRDigest will take in a PCR proto and compute the digest based on the
+// given PCR proto and hash algorithm.
+func ComputePCRDigest(pcrs *proto.Pcrs, digestHash tpm2.Algorithm) ([]byte, error) {
+	getHash, err := digestHash.HashConstructor()
+	if err != nil {
+		return nil, err
+	}
+	hash := getHash()
 	for i := 0; i < 24; i++ {
-		if pcrValue, exists := pcrs[uint32(i)]; exists {
+		if pcrValue, exists := pcrs.Pcrs[uint32(i)]; exists {
 			hash.Write(pcrValue)
 		}
 	}
-	return hash.Sum(nil)
+	return hash.Sum(nil), nil
+}
+
+func computePCRSelection(pcrs *proto.Pcrs) tpmsPCRSelection {
+	var pcrBits [3]byte
+	for pcr := range pcrs.Pcrs {
+		byteNum := pcr / 8
+		bytePos := byte(1 << byte(pcr%8))
+		pcrBits[byteNum] |= bytePos
+	}
+	return tpmsPCRSelection{
+		Hash: tpm2.Algorithm(pcrs.Hash),
+		Size: 3,
+		PCRs: pcrBits[:],
+	}
 }
