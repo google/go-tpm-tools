@@ -39,6 +39,8 @@ package internal
 // #cgo CFLAGS: -DCERTIFYX509_DEBUG=NO
 // #cgo CFLAGS: -DECC_NIST_P224=YES
 // #cgo CFLAGS: -DECC_NIST_P521=YES
+// #cgo CFLAGS: -DALG_SHA512=ALG_YES
+// #cgo CFLAGS: -DMAX_CONTEXT_SIZE=1360
 // #cgo LDFLAGS: -lcrypto
 //
 // #include <stdlib.h>
