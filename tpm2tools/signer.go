@@ -3,6 +3,7 @@ package tpm2tools
 import (
 	"crypto"
 	"crypto/rsa"
+<<<<<<< HEAD
 	"encoding/asn1"
 	"fmt"
 	"io"
@@ -18,6 +19,25 @@ var signerMutex sync.Mutex
 type tpmSigner struct {
 	Key  *Key
 	Hash crypto.Hash
+=======
+	"fmt"
+	"io"
+	"sync"
+
+	"github.com/google/go-tpm/tpm2"
+)
+
+var (
+	// Global mutex to protect against concurrent TPM read/writes.
+	signerMutex = &sync.Mutex{}
+)
+
+// TpmSigner implements the crypto.Signer interface for TPM Keys.
+// Concurrent use of one or more TpmSigners is thread safe, but it is not safe
+// to read/write to the TPM from other sources while using a TpmSigner.
+type TpmSigner struct {
+	key *Key
+>>>>>>> 81cb72b... Format and change comments
 }
 
 // Public returns the tpmSigners public key.
@@ -25,12 +45,21 @@ func (signer *tpmSigner) Public() crypto.PublicKey {
 	return signer.Key.PublicKey()
 }
 
+<<<<<<< HEAD
 // Sign uses the TPM key to sign the digest.
 // The digest must be hashed from the same hash algorithm as the keys scheme.
 // The opts hash function must also match the keys scheme.
 // Concurrent use of Sign is thread safe, but it is not safe to access the TPM
 // from other sources while Sign is executing.
 func (signer *tpmSigner) Sign(_ io.Reader, digest []byte, opts crypto.SignerOpts) (signature []byte, err error) {
+=======
+// Sign uses the TPM key to  sign the digest.
+// The digest must be hashed from the same hash algorithm as the keys scheme.
+// The opts hash function must also match the keys scheme.
+// Concurrent use of Sign is thread safe, but it is not safe to read/write to
+// the TPM from other sources while Sign is executing.
+func (signer TpmSigner) Sign(_ io.Reader, digest []byte, opts crypto.SignerOpts) (signature []byte, err error) {
+>>>>>>> 81cb72b... Format and change comments
 	if _, ok := opts.(*rsa.PSSOptions); ok {
 		return nil, fmt.Errorf("signing with PSS not supported")
 	}
@@ -49,6 +78,7 @@ func (signer *tpmSigner) Sign(_ io.Reader, digest []byte, opts crypto.SignerOpts
 		return nil, err
 	}
 
+<<<<<<< HEAD
 	switch sig.Alg {
 	case tpm2.AlgRSASSA:
 		return sig.RSA.Signature, nil
@@ -59,6 +89,15 @@ func (signer *tpmSigner) Sign(_ io.Reader, digest []byte, opts crypto.SignerOpts
 		panic("unsupported signing algorithm")
 	}
 }
+=======
+	public := signer.key.pubArea
+
+	switch public.Type {
+	case tpm2.AlgRSA:
+		if hash != public.RSAParameters.Sign.Hash {
+			return nil, fmt.Errorf("opts hash: %v does not match the keys signing hash: %v", hash, public.RSAParameters.Sign.Hash)
+		}
+>>>>>>> 81cb72b... Format and change comments
 
 // GetSigner returns a crypto.Signer wrapping the loaded TPM Key.
 // Concurrent use of one or more Signers is thread safe, but it is not safe to
@@ -76,8 +115,20 @@ func (k *Key) GetSigner() (crypto.Signer, error) {
 		return nil, fmt.Errorf("non-signing key used with GetSigner()")
 	}
 
+<<<<<<< HEAD
 	var sigScheme *tpm2.SigScheme
 	var sigAlg tpm2.Algorithm
+=======
+		sig, err := tpm2.Sign(signer.key.rw, signer.key.handle, "", digest, nil)
+		if err != nil {
+			return nil, err
+		}
+		return sig.RSA.Signature, nil
+	default:
+		return nil, fmt.Errorf("unsupported key type: %v", public.Type)
+	}
+}
+>>>>>>> 81cb72b... Format and change comments
 
 	switch k.pubArea.Type {
 	case tpm2.AlgRSA:
