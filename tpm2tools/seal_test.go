@@ -70,14 +70,11 @@ func TestComputeSessionAuth(t *testing.T) {
 	pcrs := map[uint32][]byte{}
 
 	tests := []struct {
-		name       string
-		pcrHash    tpm2.Algorithm
-		digestHash tpm2.Algorithm
+		name    string
+		pcrHash tpm2.Algorithm
 	}{
-		{"sha1-sha1", tpm2.AlgSHA1, tpm2.AlgSHA1},
-		{"sha1-sha256", tpm2.AlgSHA1, tpm2.AlgSHA256},
-		{"sha256-sha1", tpm2.AlgSHA256, tpm2.AlgSHA1},
-		{"sha256-sha256", tpm2.AlgSHA256, tpm2.AlgSHA256},
+		{"sha1", tpm2.AlgSHA1},
+		{"sha256", tpm2.AlgSHA256},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -91,12 +88,12 @@ func TestComputeSessionAuth(t *testing.T) {
 				pcrs[uint32(pcrNum)] = pcrVal
 			}
 
-			getAuth, err := getPCRSessionAuth(rwc, pcrList, test.pcrHash, test.digestHash)
+			getAuth, err := getPCRSessionAuth(rwc, pcrList, test.pcrHash)
 			if err != nil {
 				t.Fatalf("failed to get session auth: %v", err)
 			}
 
-			computeAuth, err := ComputePCRSessionAuth(&proto.Pcrs{Hash: proto.HashAlgo(test.pcrHash), Pcrs: pcrs}, test.digestHash)
+			computeAuth, err := ComputePCRSessionAuth(&proto.Pcrs{Hash: proto.HashAlgo(test.pcrHash), Pcrs: pcrs})
 			if err != nil {
 				t.Fatalf("failed to compute session auth: %v", err)
 			}

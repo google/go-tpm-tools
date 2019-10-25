@@ -1,6 +1,7 @@
 package tpm2tools
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"io"
 
@@ -59,18 +60,11 @@ func ReadPCRs(rw io.ReadWriter, pcrs []int, hash tpm2.Algorithm) (*proto.Pcrs, e
 
 // ComputePCRSessionAuth calculates the auth value based on the given PCR proto
 // and hash algorithm.
-func ComputePCRSessionAuth(pcrs *proto.Pcrs, digestHash tpm2.Algorithm) ([]byte, error) {
-	pcrDigest, err := ComputePCRDigest(pcrs, digestHash)
-	if err != nil {
-		return nil, err
-	}
-	getHash, err := digestHash.HashConstructor()
-	if err != nil {
-		return nil, err
-	}
+func ComputePCRSessionAuth(pcrs *proto.Pcrs) ([]byte, error) {
+	pcrDigest := ComputePCRDigest(pcrs)
 
 	summary := sessionSummary{
-		OldDigest:      make([]byte, getHash().Size()),
+		OldDigest:      make([]byte, sha256.Size),
 		CmdIDPolicyPCR: uint32(tpm2.CmdPolicyPCR),
 		NumPcrSels:     1,
 		Sel:            computePCRSelection(pcrs),
@@ -81,26 +75,20 @@ func ComputePCRSessionAuth(pcrs *proto.Pcrs, digestHash tpm2.Algorithm) ([]byte,
 		return nil, fmt.Errorf("failed to pack for hashing: %v ", err)
 	}
 
-	hash := getHash()
-	hash.Write(b)
-	digest := hash.Sum(nil)
+	digest := sha256.Sum256(b)
 	return digest[:], nil
 }
 
 // ComputePCRDigest will take in a PCR proto and compute the digest based on the
 // given PCR proto and hash algorithm.
-func ComputePCRDigest(pcrs *proto.Pcrs, digestHash tpm2.Algorithm) ([]byte, error) {
-	getHash, err := digestHash.HashConstructor()
-	if err != nil {
-		return nil, err
-	}
-	hash := getHash()
+func ComputePCRDigest(pcrs *proto.Pcrs) []byte {
+	hash := sha256.New()
 	for i := 0; i < 24; i++ {
 		if pcrValue, exists := pcrs.Pcrs[uint32(i)]; exists {
 			hash.Write(pcrValue)
 		}
 	}
-	return hash.Sum(nil), nil
+	return hash.Sum(nil)
 }
 
 func computePCRSelection(pcrs *proto.Pcrs) tpmsPCRSelection {
