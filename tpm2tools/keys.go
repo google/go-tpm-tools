@@ -170,13 +170,23 @@ func (k *Key) Close() {
 	tpm2.FlushContext(k.rw, k.handle)
 }
 
-// Seal will seal the senestive dat with given SealingConfig.
+// Seal will seal the senestive data with given SealingConfig.
 func (k *Key) Seal(sensitive []byte, sealingCFG SealingConfig, certifyPCRs tpm2.PCRSelection) (*proto.SealedBytes, error) {
 	pcrs, err := sealingCFG.PCRsForSealing()
 	auth, err := computePCRSessionAuthFromPCRsProto(pcrs)
 	if err != nil {
 		return nil, err
 	}
+
+	// Special treatment when sealing to an empty set. As the computePCRSessionAuth() cannot
+	// compute the auth correctly.
+	if len(pcrs.GetPcrs()) == 0 {
+		auth, err = getPCRSessionAuth(k.rw, []int{})
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	sb, err := sealHelper(k.rw, k.Handle(), auth, sensitive, certifyPCRs)
 
 	var pcrList []int32
