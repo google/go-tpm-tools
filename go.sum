@@ -15,6 +15,8 @@ github.com/google/go-tpm v0.2.1-0.20190910203116-33a9c3f38379 h1:spUrNOxKZPzgPd/
 github.com/google/go-tpm v0.2.1-0.20190910203116-33a9c3f38379/go.mod h1:gTv8GNuqS7CI+tQWrpt5BMMaD5W3G+dZULQLhhAKT5c=
 github.com/google/go-tpm v0.2.1-0.20190926184827-9f71d680f4ab h1:n0a1xd4IaX8uK/HK5C18vIAog4AJF0WEx39keoHAu8M=
 github.com/google/go-tpm v0.2.1-0.20190926184827-9f71d680f4ab/go.mod h1:gTv8GNuqS7CI+tQWrpt5BMMaD5W3G+dZULQLhhAKT5c=
+github.com/google/go-tpm v0.2.1-0.20191022013559-8c7ffca061af h1:v5VgdlsBInaJ/LlEKLVKlHM1YxEvPjhgRB5PV2x/s0I=
+github.com/google/go-tpm v0.2.1-0.20191022013559-8c7ffca061af/go.mod h1:iVLWvrPp/bHeEkxTFi9WG6K9w0iy2yIszHwZGHPbzAw=
 github.com/google/go-tpm-tools v0.0.0-20190906225433-1614c142f845/go.mod h1:AVfHadzbdzHo54inR2x1v640jdi1YSi3NauM2DUsxk0=
 github.com/hashicorp/hcl v1.0.0/go.mod h1:E5yfLk+7swimpb2L/Alb/PJmXilQ/rhwaUYs4T20WEQ=
 github.com/inconshreveable/mousetrap v1.0.0/go.mod h1:PxqpIevigyE2G7u3NXJIT2ANytuPF1OarO4DADm73n8=
@@ -41,6 +43,7 @@ golang.org/x/lint v0.0.0-20190909230951-414d861bb4ac/go.mod h1:6SW0HCj/g11FgYtHl
 golang.org/x/net v0.0.0-20190311183353-d8887717615a/go.mod h1:t9HGtf8HONx5eT2rtn7q6eTqICYqUVnKs3thJo3Qplg=
 golang.org/x/net v0.0.0-20190620200207-3b0461eec859/go.mod h1:z5CRVTTTmAJ677TzLLGU+0bjPO0LkuOLi4/5GtJWs/s=
 golang.org/x/sync v0.0.0-20190423024810-112230192c58/go.mod h1:RxMgew5VJxzue5/jJTE5uejpjVlOe/izrB70Jof72aM=
+golang.org/x/sys v0.0.0-20181205085412-a5c9d58dba9a h1:1n5lsVfiQW3yfsRGu98756EH1YthsFqr/5mxHduZW2A=
 golang.org/x/sys v0.0.0-20181205085412-a5c9d58dba9a/go.mod h1:STP8DvDyc/dI5b8T5hshtkjS+E42TnysNCUPdjciGhY=
 golang.org/x/sys v0.0.0-20190215142949-d0b11bdaac8a/go.mod h1:STP8DvDyc/dI5b8T5hshtkjS+E42TnysNCUPdjciGhY=
 golang.org/x/text v0.3.0/go.mod h1:NqM8EUOU14njkJ3fqMW+pc6Ldnwhi/IjpwHt7yyuwOQ=
