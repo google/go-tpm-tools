@@ -125,3 +125,30 @@ func TestSignIncorrectHash(t *testing.T) {
 		t.Error("expected failure for correct digest, but incorrect hash.")
 	}
 }
+
+func TestSignPSS(t *testing.T) {
+	rwc := internal.GetTPM(t)
+	defer CheckedClose(t, rwc)
+
+	template := rsaTemplate(tpm2.AlgSHA512)
+	template.RSAParameters.Sign.Alg = tpm2.AlgRSAPSS
+	template.RSAParameters.KeyBits = 2048
+
+	key, err := NewKey(rwc, tpm2.HandleEndorsement, template)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer key.Close()
+
+	digest := sha512.Sum512([]byte("secret"))
+
+	signer := TpmSigner{key}
+	sig, err := signer.Sign(nil, digest[:], crypto.SHA512)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = rsa.VerifyPSS(signer.Public().(*rsa.PublicKey), crypto.SHA512, digest[:], sig, &rsa.PSSOptions{SaltLength: 64, Hash: crypto.SHA512})
+	if err != nil {
+		t.Error(err)
+	}
+}
