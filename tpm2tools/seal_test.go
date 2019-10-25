@@ -168,12 +168,6 @@ func TestSelfReseal(t *testing.T) {
 		},
 		RW: rwc,
 	}
-
-	resealTargetPCRs, err := ReadPCRs(rwc, pcrList, tpm2.AlgSHA256)
-	if err != nil {
-		t.Fatalf("failed to readPCR: %v", err)
-	}
-
 	sealed, err := key.Seal(secret, sealingConfig, tpm2.PCRSelection{})
 	if err != nil {
 		t.Fatalf("failed to seal: %v", err)
@@ -187,6 +181,10 @@ func TestSelfReseal(t *testing.T) {
 		t.Fatalf("unsealed (%v) not equal to secret (%v)", unseal, secret)
 	}
 
+	resealTargetPCRs, err := ReadPCRs(rwc, []int{10}, tpm2.AlgSHA256)
+	if err != nil {
+		t.Fatalf("failed to readPCR: %v", err)
+	}
 	sealed, err = key.Reseal(sealed, nil, TargetPCRs{resealTargetPCRs}, tpm2.PCRSelection{})
 	if err != nil {
 		t.Fatalf("failed to reseal: %v", err)
