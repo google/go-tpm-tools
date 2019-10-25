@@ -3,6 +3,7 @@ package tpm2tools
 import (
 	"crypto"
 	"crypto/sha256"
+	"crypto/subtle"
 	"fmt"
 	"io"
 
@@ -169,72 +170,63 @@ func (k *Key) Close() {
 	tpm2.FlushContext(k.rw, k.handle)
 }
 
-// Seal seals the sensitive byte buffer to the provided PCRs under the owner
-// hierarchy using the SHA256 versions of the provided PCRs.
-// The Key k is used as the parent key.
-func (k *Key) Seal(pcrs []int, sensitive []byte, pcrSelection tpm2.PCRSelection) (*proto.SealedBytes, error) {
-	auth, err := getPCRSessionAuth(k.rw, pcrs)
+// Seal will seal the senestive dat with given SealingConfig.
+func (k *Key) Seal(sensitive []byte, sealingCFG SealingConfig, certifyPCRs tpm2.PCRSelection) (*proto.SealedBytes, error) {
+	pcrs, err := sealingCFG.PCRsForSealing()
+	auth, err := computePCRSessionAuthFromPCRsProto(pcrs)
 	if err != nil {
-		return nil, fmt.Errorf("could not get pcr session auth: %v", err)
+		return nil, err
 	}
+	sb, err := sealHelper(k.rw, k.Handle(), auth, sensitive, certifyPCRs)
 
+	var pcrList []int32
+	for pcrNum := range pcrs.GetPcrs() {
+		pcrList = append(pcrList, int32(pcrNum))
+	}
+	sb.Pcrs = pcrList
+	sb.Hash = proto.HashAlgo_SHA256
+	sb.Srk = proto.ObjectType(k.pubArea.Type)
+
+	return sb, nil
+}
+
+func sealHelper(rw io.ReadWriter, parentHandle tpmutil.Handle, auth []byte, sensitive []byte, pcrSelection tpm2.PCRSelection) (*proto.SealedBytes, error) {
 	inPublic := tpm2.Public{
 		Type:       tpm2.AlgKeyedHash,
 		NameAlg:    tpm2.AlgSHA256,
 		Attributes: tpm2.FlagFixedTPM | tpm2.FlagFixedParent,
 		AuthPolicy: auth,
 	}
-
-	priv, pub, creationData, creationDataHash, ticket, err := tpm2.CreateWithSensitive(k.rw, k.Handle(), pcrSelection, "", "", inPublic, sensitive)
-	// priv, pub, err := tpm2.Seal(k.rw, k.Handle(), "", "", auth, sensitive)
-
-	sb := proto.SealedBytes{}
-	sb.Priv = priv
-	sb.Pub = pub
-	sb.CreationData = creationData // may not need
-	sb.CreationDataHash = creationDataHash
-
-	fmt.Println(ticket)
-
-	sb.Ticket = &proto.Ticket{}
-
-	sb.Ticket.Type = uint32(ticket.Type)
-	sb.Ticket.Digest = ticket.Digest
-
-	// sb.Ticket.Digest = []byte("AAAA")
-	// copy(sb.Ticket.Digest, []byte("AAAA"))
-
-	sb.Ticket.Hierarchy = ticket.Hierarchy
-
-	// sb, err := sealHelper(k.rw, k.Handle(), auth, sensitive)
+	priv, pub, creationData, _, ticket, err := tpm2.CreateKeyWithSensitive(rw, parentHandle, pcrSelection, "", "", inPublic, sensitive)
 	if err != nil {
 		return nil, err
 	}
-	for _, pcr := range pcrs {
-		sb.Pcrs = append(sb.Pcrs, int32(pcr))
-	}
-	sb.Hash = proto.HashAlgo_SHA256
-	sb.Srk = proto.ObjectType(k.pubArea.Type)
-	return &sb, nil
-}
-
-func sealHelper(rw io.ReadWriter, parentHandle tpmutil.Handle, auth []byte, sensitive []byte) (*proto.SealedBytes, error) {
-	priv, pub, err := tpm2.Seal(rw, parentHandle, "", "", auth, sensitive)
+	decodedCreationData, err := tpm2.DecodeCreationData(creationData)
 	if err != nil {
-		return nil, fmt.Errorf("failed to seal data: %v", err)
+		return nil, err
 	}
+	certifiedPCR, err := ReadPCRs(rw, pcrSelection.PCRs, pcrSelection.Hash)
+	if err != nil {
+		return nil, err
+	}
+	computedDigest, err := ComputePCRDigest(certifiedPCR, tpm2.AlgSHA256)
 
+	// make sure PCR has not been changed after sealing
+	if subtle.ConstantTimeCompare(computedDigest, decodedCreationData.PCRDigest) == 0 {
+		return nil, err
+	}
 	sb := proto.SealedBytes{}
+	sb.CertifiedPcrs = certifiedPCR
 	sb.Priv = priv
 	sb.Pub = pub
+	sb.CreationData = creationData
+	sb.Ticket = creatProtoTicket(ticket)
 	return &sb, nil
 }
 
-// Unseal takes a private/public pair of buffers and attempts to reverse the
-// sealing process under the owner hierarchy using the SHA256 versions of the
-// provided PCRs.
-// The Key k is used as the parent key.
-func (k *Key) Unseal(in *proto.SealedBytes, certifyRequired bool) ([]byte, error) {
+// Unseal will unseal given sealed blob. A certifyConfig will be used to certify the PCRs state when the blob was sealed.
+// certifyCongif can be nil, in which case the blob will be unsealed without certification.
+func (k *Key) Unseal(in *proto.SealedBytes, certifyConfig CertificationConfig) ([]byte, error) {
 	if in.Srk != proto.ObjectType(k.pubArea.Type) {
 		return nil, fmt.Errorf("Expected key of type %v, got %v", in.Srk, k.pubArea.Type)
 	}
@@ -262,71 +254,49 @@ func (k *Key) Unseal(in *proto.SealedBytes, certifyRequired bool) ([]byte, error
 	}
 	defer tpm2.FlushContext(k.rw, sealed)
 
-	if certifyRequired {
-		var tt tpm2.Ticket
-		protoTT := in.GetTicket()
-		tt.Type = tpmutil.Tag(protoTT.GetType())
-		tt.Hierarchy = protoTT.GetHierarchy()
-		tt.Digest = protoTT.GetDigest()
-
-		attest, sig, err := tpm2.CertifyCreation(k.rw, "", sealed, tpm2.HandleNull, nil, in.GetCreationDataHash(), tpm2.SigScheme{}, &tt)
-		att, err := tpm2.DecodeAttestationData(attest)
-
-		// if att.Type != TagAttestCreation {
-		// 	t.Errorf("Got att.Type = %v, want TagAttestCreation", att.Type)
-		// }
-
-		fmt.Println("-------------------------------------")
-		fmt.Println(att.AttestedCreationInfo.OpaqueDigest)
-		fmt.Println(in.GetCreationDataHash())
-
+	if certifyConfig != nil {
+		decodedCreation, err := tpm2.DecodeCreationData(in.GetCreationData())
+		err = certifyConfig.CertifyPCRs(in.GetCertifiedPcrs(), decodedCreation.PCRDigest)
 		if err != nil {
 			return nil, err
 		}
 
-		decodedCreationData, err := tpm2.DecodeCreationData(in.GetCreationData())
+		ticket := createTicket(in.GetTicket())
+		hashCon := sha256.New()
+		hashCon.Write(in.GetCreationData())
+		creationDataHash := hashCon.Sum(nil)
 
+		_, _, err = tpm2.CertifyCreation(k.rw, "", sealed, tpm2.HandleNull, nil, creationDataHash, tpm2.SigScheme{}, &ticket)
 		if err != nil {
 			return nil, err
 		}
-
-		fmt.Println(decodedCreationData.PCRSelection.PCRs)
-
-		fmt.Println(decodedCreationData.PCRDigest)
-
-		fmt.Println("ATTEST AND SIG")
-		fmt.Println(attest)
-		fmt.Println(sig)
 	}
-
 	return tpm2.UnsealWithSession(k.rw, session, sealed, "")
 }
 
-// Reseal unwraps a secret and rewraps it under the auth value that would be
-// produced by the PCR state in pcrs. Similar to seal and unseal, this acts on
-// the SHA256 PCRs and uses the owner hierarchy.
-// The Key k is used as the parent key.
-func (k *Key) Reseal(pcrs map[int][]byte, in *proto.SealedBytes) (*proto.SealedBytes, error) {
-	sensitive, err := k.Unseal(in, false)
+func creatProtoTicket(ticket tpm2.Ticket) *proto.Ticket {
+	var protoTicket = proto.Ticket{}
+	protoTicket.Type = uint32(ticket.Type)
+	protoTicket.Digest = ticket.Digest
+	protoTicket.Hierarchy = ticket.Hierarchy
+	return &protoTicket
+}
+
+func createTicket(protoTicket *proto.Ticket) tpm2.Ticket {
+	var ticket tpm2.Ticket
+	ticket.Type = tpmutil.Tag(protoTicket.GetType())
+	ticket.Hierarchy = protoTicket.GetHierarchy()
+	ticket.Digest = protoTicket.GetDigest()
+	return ticket
+}
+
+// Reseal will first unseal the blob with certifyConfig (can be nil) and then seal the unsealed secret with reSealingCFG and creationPCRs
+func (k *Key) Reseal(in *proto.SealedBytes, certifyConfig CertificationConfig, reSealingCFG SealingConfig, reSealingCertifyPCRs tpm2.PCRSelection) (*proto.SealedBytes, error) {
+	sensitive, err := k.Unseal(in, certifyConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unseal: %v", err)
 	}
-
-	auth, err := computePCRSessionAuth(pcrs)
-	if err != nil {
-		return nil, fmt.Errorf("failed to compute pcr session auth: %v", err)
-	}
-
-	sb, err := sealHelper(k.rw, k.Handle(), auth, sensitive)
-	if err != nil {
-		return nil, err
-	}
-	for pcr := range pcrs {
-		sb.Pcrs = append(sb.Pcrs, int32(pcr))
-	}
-	sb.Hash = in.Hash
-	sb.Srk = in.Srk
-	return sb, nil
+	return k.Seal(sensitive, reSealingCFG, reSealingCertifyPCRs)
 }
 
 type tpmsPCRSelection struct {
@@ -341,6 +311,14 @@ type sessionSummary struct {
 	NumPcrSels     uint32
 	Sel            tpmsPCRSelection
 	PcrDigest      tpmutil.RawBytes
+}
+
+func computePCRSessionAuthFromPCRsProto(pcrs *proto.Pcrs) ([]byte, error) {
+	pcrsMap := make(map[int][]byte)
+	for k, v := range pcrs.GetPcrs() {
+		pcrsMap[int(k)] = v
+	}
+	return computePCRSessionAuth(pcrsMap)
 }
 
 func computePCRSessionAuth(pcrs map[int][]byte) ([]byte, error) {

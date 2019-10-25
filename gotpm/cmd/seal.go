@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 
 	pb "github.com/golang/protobuf/proto"
+	"github.com/google/go-tpm-tools/tpm2tools"
 	"github.com/spf13/cobra"
 
 	"github.com/google/go-tpm-tools/proto"
@@ -44,9 +45,9 @@ state (like Secure Boot).`,
 		if err != nil {
 			return err
 		}
-
 		fmt.Fprintf(debugOutput(), "Sealing to PCRs: %v\n", pcrs)
-		sealed, err := srk.Seal(pcrs, secret, tpm2.PCRSelection{})
+		sealingConfig := tpm2tools.CurrentPCRs{PCRSel: tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: pcrs}, RW: rwc}
+		sealed, err := srk.Seal(secret, sealingConfig, tpm2.PCRSelection{})
 		if err != nil {
 			return fmt.Errorf("sealing data: %v", err)
 		}
@@ -56,6 +57,7 @@ state (like Secure Boot).`,
 			return err
 		}
 		fmt.Fprintf(debugOutput(), "Sealed data to PCRs: %v\n", pcrs)
+		pcrs = []int{} // init the list
 		return nil
 	},
 }
@@ -97,7 +99,7 @@ Thus, algorithm and PCR options are not needed for the unseal command.`,
 		defer srk.Close()
 
 		fmt.Fprintln(debugOutput(), "Unsealing data")
-		secret, err := srk.Unseal(&sealed, false)
+		secret, err := srk.Unseal(&sealed, nil)
 		if err != nil {
 			return fmt.Errorf("unsealing data: %v", err)
 		}
