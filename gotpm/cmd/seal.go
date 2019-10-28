@@ -46,7 +46,7 @@ state (like Secure Boot).`,
 			return err
 		}
 		fmt.Fprintf(debugOutput(), "Sealing to PCRs: %v\n", pcrs)
-		sealingConfig := tpm2tools.CurrentPCRs{PCRSel: tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: pcrs}, RW: rwc}
+		sealingConfig := tpm2tools.CurrentPCRs{PCRSel: tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: pcrs}}
 		sealed, err := srk.Seal(secret, sealingConfig, tpm2.PCRSelection{})
 		if err != nil {
 			return fmt.Errorf("sealing data: %v", err)

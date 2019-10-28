@@ -39,7 +39,8 @@ package internal
 // #cgo CFLAGS: -DCERTIFYX509_DEBUG=NO
 // #cgo CFLAGS: -DECC_NIST_P224=YES
 // #cgo CFLAGS: -DECC_NIST_P521=YES
-// #cgo LDFLAGS: -lcrypto
+// // allow compiling on a mac
+// #cgo LDFLAGS: -lcrypto -L/usr/local/opt/openssl/lib
 //
 // #include <stdlib.h>
 // #include "Platform.h"

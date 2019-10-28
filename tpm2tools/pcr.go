@@ -81,10 +81,7 @@ func ComputePCRDigest(pcrs *proto.Pcrs, hashAlg tpm2.Algorithm) ([]byte, error) 
 }
 
 // CurrentPCRs represent current PCRs states
-type CurrentPCRs struct {
-	PCRSel tpm2.PCRSelection
-	RW     io.ReadWriteCloser
-}
+type CurrentPCRs struct{ PCRSel tpm2.PCRSelection }
 
 // ExpectedPCRs should match the old PCRs.
 type ExpectedPCRs struct{ *proto.Pcrs }
@@ -94,17 +91,17 @@ type TargetPCRs struct{ *proto.Pcrs }
 
 // SealingConfig will return a set of target PCRs when sealing.
 type SealingConfig interface {
-	PCRsForSealing() (*proto.Pcrs, error)
+	PCRsForSealing(rw io.ReadWriter) (*proto.Pcrs, error)
 }
 
 // PCRsForSealing return the target PCRs.
-func (p TargetPCRs) PCRsForSealing() (*proto.Pcrs, error) {
+func (p TargetPCRs) PCRsForSealing(rw io.ReadWriter) (*proto.Pcrs, error) {
 	return p.Pcrs, nil
 }
 
 // PCRsForSealing read from TPM and return the selected PCRs.
-func (p CurrentPCRs) PCRsForSealing() (*proto.Pcrs, error) {
-	pcrVals, err := ReadPCRs(p.RW, p.PCRSel.PCRs, p.PCRSel.Hash)
+func (p CurrentPCRs) PCRsForSealing(rw io.ReadWriter) (*proto.Pcrs, error) {
+	pcrVals, err := ReadPCRs(rw, p.PCRSel.PCRs, p.PCRSel.Hash)
 	if err != nil {
 		return nil, err
 	}
@@ -113,12 +110,12 @@ func (p CurrentPCRs) PCRsForSealing() (*proto.Pcrs, error) {
 
 // CertificationConfig is an interface to certify create().
 type CertificationConfig interface {
-	CertifyPCRs(pcrs *proto.Pcrs, digest []byte) error
+	CertifyPCRs(rw io.ReadWriter, pcrs *proto.Pcrs, digest []byte) error
 }
 
 // CertifyPCRs from CurrentPCRs will read from TPM and compare the digest.
-func (p CurrentPCRs) CertifyPCRs(pcrs *proto.Pcrs, digest []byte) error {
-	pcrVals, err := ReadPCRs(p.RW, p.PCRSel.PCRs, p.PCRSel.Hash)
+func (p CurrentPCRs) CertifyPCRs(rw io.ReadWriter, pcrs *proto.Pcrs, digest []byte) error {
+	pcrVals, err := ReadPCRs(rw, p.PCRSel.PCRs, p.PCRSel.Hash)
 	if err != nil {
 		return err
 	}
@@ -133,7 +130,7 @@ func (p CurrentPCRs) CertifyPCRs(pcrs *proto.Pcrs, digest []byte) error {
 }
 
 // CertifyPCRs will compare the digest with given expected PCRs values.
-func (p ExpectedPCRs) CertifyPCRs(pcrs *proto.Pcrs, digest []byte) error {
+func (p ExpectedPCRs) CertifyPCRs(rw io.ReadWriter, pcrs *proto.Pcrs, digest []byte) error {
 	computedDigest, err := ComputePCRDigest(p.Pcrs, tpm2.AlgSHA256)
 	if err != nil {
 		return err

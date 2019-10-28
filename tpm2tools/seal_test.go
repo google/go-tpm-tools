@@ -37,7 +37,6 @@ func TestSeal(t *testing.T) {
 					Hash: tpm2.AlgSHA256,
 					PCRs: []int{7, 23},
 				},
-				RW: rwc,
 			}
 
 			sealed, err := srk.Seal(secret, sealingConfig, tpm2.PCRSelection{})
@@ -81,14 +80,12 @@ func TestSealWithCertify(t *testing.T) {
 		PCRSel: tpm2.PCRSelection{
 			Hash: tpm2.AlgSHA256,
 			PCRs: []int{4, 7}},
-		RW: rwc,
 	}
 	pcrListCert := []int{1}
 	certifyConfig := CurrentPCRs{
 		PCRSel: tpm2.PCRSelection{
 			Hash: tpm2.AlgSHA256,
 			PCRs: pcrListCert},
-		RW: rwc,
 	}
 
 	sealed, err := key.Seal(secret, sealingConfig, tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: pcrListCert})
@@ -166,7 +163,6 @@ func TestSelfReseal(t *testing.T) {
 			Hash: tpm2.AlgSHA256,
 			PCRs: pcrList,
 		},
-		RW: rwc,
 	}
 	sealed, err := key.Seal(secret, sealingConfig, tpm2.PCRSelection{})
 	if err != nil {
@@ -261,7 +257,6 @@ func TestReseal(t *testing.T) {
 			Hash: tpm2.AlgSHA256,
 			PCRs: pcrList,
 		},
-		RW: rwc,
 	}
 
 	pcrsInitial, err := ReadPCRs(rwc, pcrList, tpm2.AlgSHA256)
@@ -306,7 +301,7 @@ func TestReseal(t *testing.T) {
 	}
 
 	// unseal should not success if certify to current PCRs value, as one PCR has changed
-	unseal, err = key.Unseal(sealed, CurrentPCRs{PCRSel: tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: pcrList}, RW: rwc})
+	unseal, err = key.Unseal(sealed, CurrentPCRs{PCRSel: tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: pcrList}})
 	if err == nil {
 		t.Fatalf("unseal should fail since the certify PCRs have changed.")
 	}

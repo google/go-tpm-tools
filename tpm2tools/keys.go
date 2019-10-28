@@ -172,7 +172,7 @@ func (k *Key) Close() {
 
 // Seal will seal the senestive data with given SealingConfig.
 func (k *Key) Seal(sensitive []byte, sealingCFG SealingConfig, certifyPCRs tpm2.PCRSelection) (*proto.SealedBytes, error) {
-	pcrs, err := sealingCFG.PCRsForSealing()
+	pcrs, err := sealingCFG.PCRsForSealing(k.rw)
 	auth, err := computePCRSessionAuthFromPCRsProto(pcrs)
 	if err != nil {
 		return nil, err
@@ -266,7 +266,7 @@ func (k *Key) Unseal(in *proto.SealedBytes, certifyConfig CertificationConfig) (
 
 	if certifyConfig != nil {
 		decodedCreation, err := tpm2.DecodeCreationData(in.GetCreationData())
-		err = certifyConfig.CertifyPCRs(in.GetCertifiedPcrs(), decodedCreation.PCRDigest)
+		err = certifyConfig.CertifyPCRs(k.rw, in.GetCertifiedPcrs(), decodedCreation.PCRDigest)
 		if err != nil {
 			return nil, err
 		}
