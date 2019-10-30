@@ -170,28 +170,38 @@ func (k *Key) Close() {
 	tpm2.FlushContext(k.rw, k.handle)
 }
 
-// Seal will seal the senestive data with given SealingConfig.
-func (k *Key) Seal(sensitive []byte, sealingCFG SealingConfig, certifyPCRs tpm2.PCRSelection) (*proto.SealedBytes, error) {
-	pcrs, err := sealingCFG.PCRsForSealing(k.rw)
-	auth, err := computePCRSessionAuthFromPCRsProto(pcrs)
-	if err != nil {
-		return nil, err
-	}
+// Seal will seal the senestive data with given SealingOPT.
+func (k *Key) Seal(sensitive []byte, sealingCFG SealingOPT) (*proto.SealedBytes, error) {
+	var auth []byte
+	var pcrList []int32
+	var certifyPCRs tpm2.PCRSelection
+	var err error
 
-	// Special treatment when sealing to an empty set. As the computePCRSessionAuth() cannot
-	// compute the auth correctly.
-	if len(pcrs.GetPcrs()) == 0 {
-		auth, err = getPCRSessionAuth(k.rw, []int{})
+	if sealingCFG == nil {
+		certifyPCRs = tpm2.PCRSelection{}
+		if auth, err = getPCRSessionAuth(k.rw, []int{}); err != nil {
+			return nil, err
+		}
+	} else {
+		pcrs, err := sealingCFG.PCRsForSealing(k.rw)
 		if err != nil {
 			return nil, err
 		}
+		if len(pcrs.GetPcrs()) == 0 {
+			return nil, fmt.Errorf("SealingOPT should contain at least one PCR, or nil")
+		}
+		if auth, err = computePCRSessionAuthFromPCRsProto(pcrs); err != nil {
+			return nil, err
+		}
+		for pcrNum := range pcrs.GetPcrs() {
+			pcrList = append(pcrList, int32(pcrNum))
+		}
+		certifyPCRs = sealingCFG.PCRSelection()
 	}
-
 	sb, err := sealHelper(k.rw, k.Handle(), auth, sensitive, certifyPCRs)
 
-	var pcrList []int32
-	for pcrNum := range pcrs.GetPcrs() {
-		pcrList = append(pcrList, int32(pcrNum))
+	if err != nil {
+		return nil, err
 	}
 	sb.Pcrs = pcrList
 	sb.Hash = proto.HashAlgo_SHA256
@@ -235,8 +245,8 @@ func sealHelper(rw io.ReadWriter, parentHandle tpmutil.Handle, auth []byte, sens
 }
 
 // Unseal will unseal given sealed blob. A certifyConfig will be used to certify the PCRs state when the blob was sealed.
-// certifyCongif can be nil, in which case the blob will be unsealed without certification.
-func (k *Key) Unseal(in *proto.SealedBytes, certifyConfig CertificationConfig) ([]byte, error) {
+// cOPT can be nil, in which case the blob will be unsealed without certification.
+func (k *Key) Unseal(in *proto.SealedBytes, cOPT CertificationOPT) ([]byte, error) {
 	if in.Srk != proto.ObjectType(k.pubArea.Type) {
 		return nil, fmt.Errorf("Expected key of type %v, got %v", in.Srk, k.pubArea.Type)
 	}
@@ -264,9 +274,9 @@ func (k *Key) Unseal(in *proto.SealedBytes, certifyConfig CertificationConfig) (
 	}
 	defer tpm2.FlushContext(k.rw, sealed)
 
-	if certifyConfig != nil {
+	if cOPT != nil {
 		decodedCreation, err := tpm2.DecodeCreationData(in.GetCreationData())
-		err = certifyConfig.CertifyPCRs(k.rw, in.GetCertifiedPcrs(), decodedCreation.PCRDigest)
+		err = cOPT.CertifyPCRs(k.rw, in.GetCertifiedPcrs(), decodedCreation.PCRDigest)
 		if err != nil {
 			return nil, err
 		}
@@ -301,12 +311,12 @@ func createTicket(protoTicket *proto.Ticket) tpm2.Ticket {
 }
 
 // Reseal will first unseal the blob with certifyConfig (can be nil) and then seal the unsealed secret with reSealingCFG and creationPCRs
-func (k *Key) Reseal(in *proto.SealedBytes, certifyConfig CertificationConfig, reSealingCFG SealingConfig, reSealingCertifyPCRs tpm2.PCRSelection) (*proto.SealedBytes, error) {
-	sensitive, err := k.Unseal(in, certifyConfig)
+func (k *Key) Reseal(in *proto.SealedBytes, cOPT CertificationOPT, reSealingCFG SealingOPT) (*proto.SealedBytes, error) {
+	sensitive, err := k.Unseal(in, cOPT)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unseal: %v", err)
 	}
-	return k.Seal(sensitive, reSealingCFG, reSealingCertifyPCRs)
+	return k.Seal(sensitive, reSealingCFG)
 }
 
 type tpmsPCRSelection struct {

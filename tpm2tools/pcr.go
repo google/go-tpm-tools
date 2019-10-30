@@ -89,14 +89,31 @@ type ExpectedPCRs struct{ *proto.Pcrs }
 // TargetPCRs predicted sealing target PCRs.
 type TargetPCRs struct{ *proto.Pcrs }
 
-// SealingConfig will return a set of target PCRs when sealing.
-type SealingConfig interface {
+// SealingOPT will return a set of target PCRs when sealing.
+type SealingOPT interface {
 	PCRsForSealing(rw io.ReadWriter) (*proto.Pcrs, error)
+	PCRSelection() tpm2.PCRSelection
 }
 
 // PCRsForSealing return the target PCRs.
 func (p TargetPCRs) PCRsForSealing(rw io.ReadWriter) (*proto.Pcrs, error) {
 	return p.Pcrs, nil
+}
+
+// PCRSelection will return the PCRSelection extracted fromt the PCR proto.
+func (p TargetPCRs) PCRSelection() tpm2.PCRSelection {
+	pcrMap := p.GetPcrs()
+
+	pcrC := make([]int, 0, len(pcrMap))
+	for k := range pcrMap {
+		pcrC = append(pcrC, int(k))
+	}
+
+	sel := tpm2.PCRSelection{
+		Hash: tpm2.Algorithm(p.Pcrs.GetHash()),
+		PCRs: pcrC,
+	}
+	return sel
 }
 
 // PCRsForSealing read from TPM and return the selected PCRs.
@@ -108,8 +125,13 @@ func (p CurrentPCRs) PCRsForSealing(rw io.ReadWriter) (*proto.Pcrs, error) {
 	return pcrVals, nil
 }
 
-// CertificationConfig is an interface to certify create().
-type CertificationConfig interface {
+// PCRSelection just return the PCRSelection.
+func (p CurrentPCRs) PCRSelection() tpm2.PCRSelection {
+	return p.PCRSel
+}
+
+// CertificationOPT is an interface to certify keys created by create().
+type CertificationOPT interface {
 	CertifyPCRs(rw io.ReadWriter, pcrs *proto.Pcrs, digest []byte) error
 }
 

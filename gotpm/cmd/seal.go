@@ -5,10 +5,10 @@ import (
 	"io/ioutil"
 
 	pb "github.com/golang/protobuf/proto"
-	"github.com/google/go-tpm-tools/tpm2tools"
 	"github.com/spf13/cobra"
 
 	"github.com/google/go-tpm-tools/proto"
+	"github.com/google/go-tpm-tools/tpm2tools"
 	"github.com/google/go-tpm/tpm2"
 )
 
@@ -46,8 +46,18 @@ state (like Secure Boot).`,
 			return err
 		}
 		fmt.Fprintf(debugOutput(), "Sealing to PCRs: %v\n", pcrs)
-		sealingConfig := tpm2tools.CurrentPCRs{PCRSel: tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: pcrs}}
-		sealed, err := srk.Seal(secret, sealingConfig, tpm2.PCRSelection{})
+
+		var sealed *proto.SealedBytes
+		if len(pcrs) > 0 {
+			sealed, err = srk.Seal(secret, tpm2tools.CurrentPCRs{
+				PCRSel: tpm2.PCRSelection{
+					Hash: tpm2.AlgSHA256,
+					PCRs: pcrs,
+				},
+			})
+		} else {
+			sealed, err = srk.Seal(secret, nil)
+		}
 		if err != nil {
 			return fmt.Errorf("sealing data: %v", err)
 		}
