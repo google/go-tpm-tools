@@ -110,16 +110,6 @@ func TestSelfReseal(t *testing.T) {
 
 	secret := []byte("test")
 
-	// pcrList := []int{0, 4, 7}
-	// pcrs := map[int][]byte{}
-	// for _, pcrNum := range pcrList {
-	// 	pcrVal, err := tpm2.ReadPCR(rwc, pcrNum, tpm2.AlgSHA256)
-	// 	if err != nil {
-	// 		t.Fatalf("failed to read pcr: %v", err)
-	// 	}
-
-	// 	pcrs[pcrNum] = pcrVal
-	// }
 	sOpt := CurrentPCRs{
 		PCRSel: tpm2.PCRSelection{
 			Hash: tpm2.AlgSHA256,
@@ -277,6 +267,51 @@ func TestReseal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to unseal: %v", err)
 	}
+	if !bytes.Equal(secret, unseal) {
+		t.Fatalf("unsealed (%v) not equal to secret (%v)", unseal, secret)
+	}
+}
+
+func TestSealingResealingToEmptyPCRs(t *testing.T) {
+	rwc := internal.GetTPM(t)
+	defer CheckedClose(t, rwc)
+
+	key, err := StorageRootKeyRSA(rwc)
+	if err != nil {
+		t.Fatalf("can't create srk from template: %v", err)
+	}
+	defer key.Close()
+	secret := []byte("test")
+
+	// wrong way to seal to empty PCRs
+	sOpt := CurrentPCRs{
+		PCRSel: tpm2.PCRSelection{
+			Hash: tpm2.AlgSHA256,
+			PCRs: []int{},
+		},
+	}
+	sealed, err := key.Seal(secret, sOpt)
+	if err == nil {
+		t.Fatalf("sealing should fail with emtpy PCRSelection in SealingOpt")
+	}
+
+	// correct way to seal to empty PCRs
+	sealed, err = key.Seal(secret, nil)
+	if err != nil {
+		t.Fatalf("failed to seal: %v", err)
+	}
+	unseal, err := key.Unseal(sealed, nil)
+	if err != nil {
+		t.Fatalf("failed to unseal: %v", err)
+	}
+	if !bytes.Equal(secret, unseal) {
+		t.Fatalf("unsealed (%v) not equal to secret (%v)", unseal, secret)
+	}
+	resealed, err := key.Reseal(sealed, nil, nil)
+	if err != nil {
+		t.Fatalf("failed to reseal: %v", err)
+	}
+	unseal, err = key.Unseal(resealed, nil)
 	if !bytes.Equal(secret, unseal) {
 		t.Fatalf("unsealed (%v) not equal to secret (%v)", unseal, secret)
 	}

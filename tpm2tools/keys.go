@@ -188,6 +188,10 @@ func (k *Key) Seal(sensitive []byte, sOpt SealingOpt) (*proto.SealedBytes, error
 		}
 	} else {
 		pcrs, err := sOpt.PCRsForSealing(k.rw)
+
+		if len(pcrs.GetPcrs()) == 0 {
+			return nil, fmt.Errorf("SealingOpt contains empty PCRSelection")
+		}
 		if err != nil {
 			return nil, err
 		}
