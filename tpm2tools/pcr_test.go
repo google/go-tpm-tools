@@ -34,14 +34,14 @@ var tests = []struct {
 }
 
 func pcrExtend(alg tpm2.Algorithm, old, new []byte) ([]byte, error) {
-	hash, err := alg.Hash()
-	hCon := hash.New()
+	hCon, err := alg.Hash()
 	if err != nil {
 		return nil, fmt.Errorf("not a valid hash type: %v", alg)
 	}
-	hCon.Write(old)
-	hCon.Write(new)
-	return hCon.Sum(nil), nil
+	h := hCon.New()
+	h.Write(old)
+	h.Write(new)
+	return h.Sum(nil), nil
 }
 
 func TestReadPCRs(t *testing.T) {
