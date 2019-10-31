@@ -45,5 +45,4 @@ func TestFlush(t *testing.T) {
 			t.Errorf("TPM should be empty of transient handles; got: %d; want: 0", len(h))
 		}
 	}
-
 }
