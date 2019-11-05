@@ -83,7 +83,7 @@ func TestComputeSessionAuth(t *testing.T) {
 		pcrs[pcrNum] = pcrVal
 	}
 
-	getAuth, err := getPCRSessionAuth(rwc, pcrList)
+	getAuth, err := getSessionAuth(rwc, pcrList)
 	if err != nil {
 		t.Fatalf("failed to get session auth: %v", err)
 	}

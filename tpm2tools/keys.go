@@ -182,7 +182,7 @@ func (k *Key) Seal(sensitive []byte, sOpt SealingOpt) (*proto.SealedBytes, error
 
 	if sOpt == nil {
 		certifyPCRs = tpm2.PCRSelection{}
-		auth, err = getPCRSessionAuth(k.rw, []int{})
+		auth, err = getSessionAuth(k.rw, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -267,9 +267,9 @@ func (k *Key) Unseal(in *proto.SealedBytes, cOpt CertificationOpt) ([]byte, erro
 	for _, pcr := range in.Pcrs {
 		pcrs = append(pcrs, int(pcr))
 	}
-	session, err := createPCRSession(k.rw, pcrs)
+	session, err := createSession(k.rw, pcrs)
 	if err != nil {
-		return nil, fmt.Errorf("failed to unseal: %v", err)
+		return nil, fmt.Errorf("failed to create session: %v", err)
 	}
 	defer tpm2.FlushContext(k.rw, session)
 
@@ -390,8 +390,8 @@ func digestPCRList(pcrs map[int][]byte) []byte {
 	return hash.Sum(nil)
 }
 
-func getPCRSessionAuth(rw io.ReadWriter, pcrs []int) ([]byte, error) {
-	handle, err := createPCRSession(rw, pcrs)
+func getSessionAuth(rw io.ReadWriter, pcrs []int) ([]byte, error) {
+	handle, err := createSession(rw, pcrs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get digest: %v", err)
 	}
@@ -405,7 +405,7 @@ func getPCRSessionAuth(rw io.ReadWriter, pcrs []int) ([]byte, error) {
 	return digest, nil
 }
 
-func createPCRSession(rw io.ReadWriter, pcrs []int) (tpmutil.Handle, error) {
+func createSession(rw io.ReadWriter, pcrs []int) (tpmutil.Handle, error) {
 	nonceIn := make([]byte, 16)
 	/* This session assumes the bus is trusted.  */
 	handle, _, err := tpm2.StartAuthSession(
@@ -421,12 +421,19 @@ func createPCRSession(rw io.ReadWriter, pcrs []int) (tpmutil.Handle, error) {
 		return tpm2.HandleNull, fmt.Errorf("failed to start auth session: %v", err)
 	}
 
-	sel := tpm2.PCRSelection{
-		Hash: tpm2.AlgSHA256,
-		PCRs: pcrs,
-	}
-	if err = tpm2.PolicyPCR(rw, handle, nil, sel); err != nil {
-		return tpm2.HandleNull, fmt.Errorf("auth step PolicyPCR failed: %v", err)
+	// if pcrs is nil, then create a password session, otherwise create a policy PCRs session
+	if pcrs == nil || len(pcrs) == 0 {
+		if err = tpm2.PolicyPassword(rw, handle); err != nil {
+			return tpm2.HandleNull, fmt.Errorf("auth step PolicyPassword failed: %v", err)
+		}
+	} else {
+		sel := tpm2.PCRSelection{
+			Hash: tpm2.AlgSHA256,
+			PCRs: pcrs,
+		}
+		if err = tpm2.PolicyPCR(rw, handle, nil, sel); err != nil {
+			return tpm2.HandleNull, fmt.Errorf("auth step PolicyPCR failed: %v", err)
+		}
 	}
 
 	return handle, nil
