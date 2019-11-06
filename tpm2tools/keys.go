@@ -182,16 +182,9 @@ func (k *Key) Seal(sensitive []byte, sOpt SealingOpt) (*proto.SealedBytes, error
 
 	if sOpt == nil {
 		certifyPCRs = tpm2.PCRSelection{}
-		auth, err = getSessionAuth(k.rw, nil)
-		if err != nil {
-			return nil, err
-		}
+		auth = nil
 	} else {
 		pcrs, err := sOpt.PCRsForSealing(k.rw)
-
-		if len(pcrs.GetPcrs()) == 0 {
-			return nil, fmt.Errorf("SealingOpt contains empty PCRSelection")
-		}
 		if err != nil {
 			return nil, err
 		}
@@ -202,7 +195,7 @@ func (k *Key) Seal(sensitive []byte, sOpt SealingOpt) (*proto.SealedBytes, error
 		for pcrNum := range pcrs.GetPcrs() {
 			pcrList = append(pcrList, int32(pcrNum))
 		}
-		certifyPCRs = sOpt.PCRSelection()
+		certifyPCRs = sOpt.GetPCRSelection()
 	}
 	sb, err := sealHelper(k.rw, k.Handle(), auth, sensitive, certifyPCRs)
 	if err != nil {
@@ -222,6 +215,12 @@ func sealHelper(rw io.ReadWriter, parentHandle tpmutil.Handle, auth []byte, sens
 		Attributes: tpm2.FlagFixedTPM | tpm2.FlagFixedParent,
 		AuthPolicy: auth,
 	}
+	if auth == nil {
+		inPublic.Attributes |= tpm2.FlagUserWithAuth
+	} else {
+		inPublic.Attributes |= tpm2.FlagAdminWithPolicy
+	}
+
 	priv, pub, creationData, _, ticket, err := tpm2.CreateKeyWithSensitive(rw, parentHandle, certifyPCRsSel, "", "", inPublic, sensitive)
 	if err != nil {
 		return nil, err
@@ -247,7 +246,13 @@ func sealHelper(rw io.ReadWriter, parentHandle tpmutil.Handle, auth []byte, sens
 	sb.Priv = priv
 	sb.Pub = pub
 	sb.CreationData = creationData
-	sb.Ticket = convertToProtoTicket(ticket)
+
+	t, err := tpmutil.Pack(ticket)
+	if err != nil {
+		return nil, err
+	}
+	sb.Ticket = t
+
 	return &sb, nil
 }
 
@@ -285,37 +290,29 @@ func (k *Key) Unseal(in *proto.SealedBytes, cOpt CertificationOpt) ([]byte, erro
 	defer tpm2.FlushContext(k.rw, sealed)
 
 	if cOpt != nil {
-		decodedCreation, err := tpm2.DecodeCreationData(in.GetCreationData())
-		err = cOpt.CertifyPCRs(k.rw, in.GetCertifiedPcrs(), decodedCreation.PCRDigest)
+		var ticket tpm2.Ticket
+		_, err = tpmutil.Unpack(in.GetTicket(), &ticket)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("Ticket unpack failed: %v", err)
 		}
-		ticket := convertFromProtoTicket(in.GetTicket())
 		hashCon := sha256.New()
 		hashCon.Write(in.GetCreationData())
 		creationDataHash := hashCon.Sum(nil)
-		_, _, err = tpm2.CertifyCreation(k.rw, "", sealed, tpm2.HandleNull, nil, creationDataHash, tpm2.SigScheme{}, &ticket)
+		_, _, err = tpm2.CertifyCreation(k.rw, "", sealed, tpm2.HandleNull, nil, creationDataHash, tpm2.SigScheme{}, ticket)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to certify creation: %v", err)
+		}
+		decodedCreation, err := tpm2.DecodeCreationData(in.GetCreationData())
+		err = cOpt.CertifyPCRs(k.rw, decodedCreation.PCRDigest)
+		if err != nil {
+			return nil, fmt.Errorf("failed to certify PCRs: %v", err)
 		}
 	}
+	// if sealing to 0 PCRs, then we don't need an auth session to unseal the data
+	if len(pcrs) == 0 {
+		return tpm2.Unseal(k.rw, sealed, "")
+	}
 	return tpm2.UnsealWithSession(k.rw, session, sealed, "")
-}
-
-func convertToProtoTicket(ticket tpm2.Ticket) *proto.Ticket {
-	var protoTicket = proto.Ticket{}
-	protoTicket.Type = uint32(ticket.Type)
-	protoTicket.Digest = ticket.Digest
-	protoTicket.Hierarchy = ticket.Hierarchy
-	return &protoTicket
-}
-
-func convertFromProtoTicket(protoTicket *proto.Ticket) tpm2.Ticket {
-	var ticket tpm2.Ticket
-	ticket.Type = tpmutil.Tag(protoTicket.GetType())
-	ticket.Hierarchy = protoTicket.GetHierarchy()
-	ticket.Digest = protoTicket.GetDigest()
-	return ticket
 }
 
 // Reseal unwraps a secret and rewraps it under the auth value that would be

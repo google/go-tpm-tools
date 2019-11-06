@@ -15,12 +15,6 @@ enum HashAlgo {
   SHA256 = 0x000B;
 }
 
-message Ticket {
-  uint32 type = 12;
-  uint32 hierarchy = 11;
-  bytes digest = 10;
-}
-
 // SealedBytes stores the result of a TPM2_Seal. The private portion (priv) has
 // already been encrypted and is no longer sensitive. The hash algorithm is
 // assumed to be SHA256.
@@ -32,7 +26,7 @@ message SealedBytes {
   ObjectType srk = 5;
   Pcrs certified_pcrs = 6;
   bytes creation_data = 7;
-  Ticket ticket = 8;
+  bytes ticket = 8;
 }
 
 message ImportBlob {

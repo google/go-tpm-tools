@@ -34,7 +34,7 @@ func TestSeal(t *testing.T) {
 			secret := []byte("test")
 			pcrToExtend := tpmutil.Handle(23)
 			sOpt := CurrentPCRs{
-				PCRSel: tpm2.PCRSelection{
+				PCRSelection: tpm2.PCRSelection{
 					Hash: tpm2.AlgSHA256,
 					PCRs: []int{7, 23},
 				},
@@ -111,7 +111,7 @@ func TestSelfReseal(t *testing.T) {
 	secret := []byte("test")
 
 	sOpt := CurrentPCRs{
-		PCRSel: tpm2.PCRSelection{
+		PCRSelection: tpm2.PCRSelection{
 			Hash: tpm2.AlgSHA256,
 			PCRs: []int{0, 4, 7},
 		},
@@ -208,7 +208,7 @@ func TestReseal(t *testing.T) {
 	pcrToChange := 23
 	pcrList := []int{7, 23}
 	sOpt := CurrentPCRs{
-		PCRSel: tpm2.PCRSelection{
+		PCRSelection: tpm2.PCRSelection{
 			Hash: tpm2.AlgSHA256,
 			PCRs: pcrList,
 		},
@@ -257,7 +257,7 @@ func TestReseal(t *testing.T) {
 	}
 
 	// unseal should fail if certify to current PCRs value, as one PCR has changed
-	unseal, err = key.Unseal(sealed, CurrentPCRs{PCRSel: tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: pcrList}})
+	unseal, err = key.Unseal(sealed, CurrentPCRs{PCRSelection: tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: pcrList}})
 	if err == nil {
 		t.Fatalf("unseal should fail since the certify PCRs have changed.")
 	}
@@ -272,7 +272,7 @@ func TestReseal(t *testing.T) {
 	}
 }
 
-func TestSealingResealingToEmptyPCRs(t *testing.T) {
+func TestSealingResealingToNilPCRs(t *testing.T) {
 	rwc := internal.GetTPM(t)
 	defer CheckedClose(t, rwc)
 
@@ -283,20 +283,7 @@ func TestSealingResealingToEmptyPCRs(t *testing.T) {
 	defer key.Close()
 	secret := []byte("test")
 
-	// wrong way to seal to empty PCRs
-	sOpt := CurrentPCRs{
-		PCRSel: tpm2.PCRSelection{
-			Hash: tpm2.AlgSHA256,
-			PCRs: []int{},
-		},
-	}
-	sealed, err := key.Seal(secret, sOpt)
-	if err == nil {
-		t.Fatalf("sealing should fail with emtpy PCRSelection in SealingOpt")
-	}
-
-	// correct way to seal to empty PCRs
-	sealed, err = key.Seal(secret, nil)
+	sealed, err := key.Seal(secret, nil)
 	if err != nil {
 		t.Fatalf("failed to seal: %v", err)
 	}

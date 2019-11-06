@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"crypto/sha512"
 	"fmt"
+	"reflect"
 	"testing"
 
 	"github.com/google/go-tpm-tools/internal"
@@ -87,5 +88,86 @@ func TestGetPCRCount(t *testing.T) {
 
 	if pcrCount != 24 {
 		t.Errorf("tpm simulator has unexpected number of PCRs: %v instead of 24", pcrCount)
+	}
+}
+
+func TestCurrentPCR(t *testing.T) {
+	rwc := internal.GetTPM(t)
+	defer CheckedClose(t, rwc)
+
+	pcrList := []int{1, 7}
+	currentPCRSelection := tpm2.PCRSelection{
+		Hash: tpm2.AlgSHA256,
+		PCRs: pcrList,
+	}
+	currentPCR := CurrentPCRs{PCRSelection: currentPCRSelection}
+	proto, err := ReadPCRs(rwc, pcrList, tpm2.AlgSHA256)
+	if err != nil {
+		t.Fatalf("fail to read PCRs: %v", err)
+	}
+	computedDigest, err := ComputePCRDigest(proto, tpm2.AlgSHA256)
+	if err != nil {
+		t.Fatalf("fail to computeDigest: %v", err)
+	}
+
+	if !reflect.DeepEqual(currentPCR.GetPCRSelection(), currentPCRSelection) {
+		t.Fatalf("GetPCRSelection not euqal to expect")
+	}
+
+	pcrForSealing, err := currentPCR.PCRsForSealing(rwc)
+	if err != nil {
+		t.Fatalf("fail to computeDigest: %v", err)
+	}
+	if !reflect.DeepEqual(pcrForSealing, proto) {
+		t.Fatalf("PCRForSealing not equal to expect")
+	}
+
+	if err = currentPCR.CertifyPCRs(rwc, computedDigest); err != nil {
+		t.Fatalf("CertifyPCRs failed: %v", err)
+	}
+}
+
+func TestTargetPCR(t *testing.T) {
+	rwc := internal.GetTPM(t)
+	defer CheckedClose(t, rwc)
+
+	pcrList := []int{1, 7}
+	expectedPCRSelection := tpm2.PCRSelection{
+		Hash: tpm2.AlgSHA256,
+		PCRs: pcrList,
+	}
+
+	proto, err := ReadPCRs(rwc, pcrList, tpm2.AlgSHA256)
+	if err != nil {
+		t.Fatalf("Failed to read pcr: %v", err)
+	}
+	targetPCR := TargetPCRs{proto}
+
+	if !reflect.DeepEqual(targetPCR.GetPCRSelection(), expectedPCRSelection) {
+		t.Fatalf("GetPCRSelection not equal to expect")
+	}
+
+	pcrForSealing, err := targetPCR.PCRsForSealing(nil)
+	if err != nil {
+		t.Fatalf("Failed to get get PCRsForSealing")
+	}
+	if !reflect.DeepEqual(pcrForSealing, proto) {
+		t.Fatal("PCRForSealing not equal to expect")
+	}
+}
+
+func TestExpectedPCR(t *testing.T) {
+	rwc := internal.GetTPM(t)
+	defer CheckedClose(t, rwc)
+
+	pcrList := []int{1, 7}
+	proto, err := ReadPCRs(rwc, pcrList, tpm2.AlgSHA256)
+	computedDigest, err := ComputePCRDigest(proto, tpm2.AlgSHA256)
+	if err != nil {
+		t.Fatalf("Failed to read pcr: %v", err)
+	}
+	expectedPCRs := ExpectedPCRs{proto}
+	if err = expectedPCRs.CertifyPCRs(nil, computedDigest); err != nil {
+		t.Fatalf("CertifyPCRs failed: %v", err)
 	}
 }

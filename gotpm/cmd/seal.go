@@ -50,7 +50,7 @@ state (like Secure Boot).`,
 		var sealed *proto.SealedBytes
 		if len(pcrs) > 0 {
 			sealed, err = srk.Seal(secret, tpm2tools.CurrentPCRs{
-				PCRSel: tpm2.PCRSelection{
+				PCRSelection: tpm2.PCRSelection{
 					Hash: tpm2.AlgSHA256,
 					PCRs: pcrs,
 				},
