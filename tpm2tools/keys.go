@@ -272,7 +272,7 @@ func (k *Key) Unseal(in *proto.SealedBytes, cOpt CertificationOpt) ([]byte, erro
 	for _, pcr := range in.Pcrs {
 		pcrs = append(pcrs, int(pcr))
 	}
-	session, err := createSession(k.rw, pcrs)
+	session, err := createPCRSession(k.rw, pcrs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create session: %v", err)
 	}
@@ -387,8 +387,8 @@ func digestPCRList(pcrs map[int][]byte) []byte {
 	return hash.Sum(nil)
 }
 
-func getSessionAuth(rw io.ReadWriter, pcrs []int) ([]byte, error) {
-	handle, err := createSession(rw, pcrs)
+func getPCRSessionAuth(rw io.ReadWriter, pcrs []int) ([]byte, error) {
+	handle, err := createPCRSession(rw, pcrs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get digest: %v", err)
 	}
@@ -402,7 +402,7 @@ func getSessionAuth(rw io.ReadWriter, pcrs []int) ([]byte, error) {
 	return digest, nil
 }
 
-func createSession(rw io.ReadWriter, pcrs []int) (tpmutil.Handle, error) {
+func createPCRSession(rw io.ReadWriter, pcrs []int) (tpmutil.Handle, error) {
 	nonceIn := make([]byte, 16)
 	/* This session assumes the bus is trusted.  */
 	handle, _, err := tpm2.StartAuthSession(
