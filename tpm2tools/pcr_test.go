@@ -66,7 +66,8 @@ func TestReadPCRs(t *testing.T) {
 			testPcrs[test.inAlg] = pcrVal
 		}
 
-		proto, err := ReadPCRs(rwc, []int{0}, test.inAlg)
+		sel := tpm2.PCRSelection{Hash: test.inAlg, PCRs: []int{0}}
+		proto, err := ReadPCRs(rwc, sel)
 		if err != nil {
 			t.Fatalf("failed to read pcrs %v", err)
 		}

@@ -10,30 +10,13 @@ import (
 	"github.com/google/go-tpm/tpmutil"
 )
 
-const (
-	// sessionHashAlg is the hash algorithm used to compute the policy digest. If
-	// the policy digest is used as the authPolicy for an object, sessionHashAlg
-	// should match the objects name alg. For compatibility with
-	// github.com/google/go-tpm/tpm2, we use SHA256, as tpm2 hardcodes the
-	// nameAlg as SHA256 in several places.
-	// Both crypto and tpm2 consts are set to avoid the need for conversion.
-	sessionHashAlg    = crypto.SHA256
-	sessionHashAlgTpm = tpm2.AlgSHA256
-)
-
-type tpmsPCRSelection struct {
-	Hash tpm2.Algorithm
-	Size byte
-	PCRs tpmutil.RawBytes
-}
-
-type sessionSummary struct {
-	OldDigest      tpmutil.RawBytes
-	CmdIDPolicyPCR uint32
-	NumPcrSels     uint32
-	Sel            tpmsPCRSelection
-	PcrDigest      tpmutil.RawBytes
-}
+// We hard-code SHA256 as the policy session hash algorithms. Note that this
+// differs from the PCR hash algorithm (which selects the bank of PCRs to use)
+// and the Public area Name algorithm. We also chose this for compatibility with
+// github.com/google/go-tpm/tpm2, as it hardcodes the nameAlg as SHA256 in
+// several places. Two constants are used to avoid repeated conversions.
+const sessionHashAlg = crypto.SHA256
+const sessionHashAlgTpm = tpm2.AlgSHA256
 
 // GetPCRCount asks the tpm how many PCRs it has.
 func GetPCRCount(rw io.ReadWriter) (uint32, error) {
@@ -56,18 +39,19 @@ func min(a, b int) int {
 	return b
 }
 
-// ReadPCRs fetchs the values of the specified PCRs for the specified hash.
-func ReadPCRs(rw io.ReadWriter, pcrs []int, hash tpm2.Algorithm) (*proto.Pcrs, error) {
+// ReadPCRs fetches all the PCR values specified in sel, making multiple calls
+// to the TPM if necessary.
+func ReadPCRs(rw io.ReadWriter, sel tpm2.PCRSelection) (*proto.Pcrs, error) {
 	pl := proto.Pcrs{
-		Hash: proto.HashAlgo(hash),
+		Hash: proto.HashAlgo(sel.Hash),
 		Pcrs: map[uint32][]byte{},
 	}
 
-	for i := 0; i < len(pcrs); i += 8 {
-		end := min(i+8, len(pcrs))
+	for i := 0; i < len(sel.PCRs); i += 8 {
+		end := min(i+8, len(sel.PCRs))
 		pcrSel := tpm2.PCRSelection{
-			Hash: hash,
-			PCRs: pcrs[i:end],
+			Hash: sel.Hash,
+			PCRs: sel.PCRs[i:end],
 		}
 
 		pcrMap, err := tpm2.ReadPCRs(rw, pcrSel)
@@ -83,32 +67,35 @@ func ReadPCRs(rw io.ReadWriter, pcrs []int, hash tpm2.Algorithm) (*proto.Pcrs, e
 	return &pl, nil
 }
 
-// ComputePCRSessionAuth calculates the auth value based on the given PCR proto
-// and hash algorithm.
-func ComputePCRSessionAuth(pcrs *proto.Pcrs) ([]byte, error) {
-	pcrDigest := ComputePCRDigest(pcrs)
+// PCRSelection returns the corresponding tpm2.PCRSelection for a proto.Pcrs
+func PCRSelection(pcrs *proto.Pcrs) tpm2.PCRSelection {
+	sel := tpm2.PCRSelection{Hash: tpm2.Algorithm(pcrs.Hash)}
 
-	summary := sessionSummary{
-		OldDigest:      make([]byte, sessionHashAlg.Size()),
-		CmdIDPolicyPCR: uint32(tpm2.CmdPolicyPCR),
-		NumPcrSels:     1,
-		Sel:            computePCRSelection(pcrs),
-		PcrDigest:      pcrDigest,
+	for pcrNum := range pcrs.Pcrs {
+		sel.PCRs = append(sel.PCRs, int(pcrNum))
 	}
-	b, err := tpmutil.Pack(summary)
-	if err != nil {
-		return nil, fmt.Errorf("failed to pack for hashing: %v ", err)
-	}
+	return sel
+}
 
+// ComputePCRSessionAuth calculates the authorization value for the given PCRs.
+func ComputePCRSessionAuth(pcrs *proto.Pcrs) []byte {
+	// Start with all zeros, we only use a single policy command on our session.
+	oldDigest := make([]byte, sessionHashAlg.Size())
+	ccPolicyPCR, _ := tpmutil.Pack(tpm2.CmdPolicyPCR)
+
+	// Extend the policy digest, see TPM2_PolicyPCR in Part 3 of the spec.
 	hash := sessionHashAlg.New()
-	hash.Write(b)
-	digest := hash.Sum(nil)
-	return digest[:], nil
+	hash.Write(oldDigest)
+	hash.Write(ccPolicyPCR)
+	hash.Write(encodePCRSelection(PCRSelection(pcrs)))
+	hash.Write(computePCRDigest(pcrs))
+	newDigest := hash.Sum(nil)
+	return newDigest[:]
 }
 
 // ComputePCRDigest will take in a PCR proto and compute the digest based on the
 // given PCR proto.
-func ComputePCRDigest(pcrs *proto.Pcrs) []byte {
+func computePCRDigest(pcrs *proto.Pcrs) []byte {
 	hash := sessionHashAlg.New()
 	for i := 0; i < 24; i++ {
 		if pcrValue, exists := pcrs.Pcrs[uint32(i)]; exists {
@@ -118,58 +105,43 @@ func ComputePCRDigest(pcrs *proto.Pcrs) []byte {
 	return hash.Sum(nil)
 }
 
-func computePCRSelection(pcrs *proto.Pcrs) tpmsPCRSelection {
-	var pcrBits [3]byte
-	for pcr := range pcrs.Pcrs {
+// Encode a tpm2.PCRSelection as if it were a TPML_PCR_SELECTION
+func encodePCRSelection(sel tpm2.PCRSelection) []byte {
+	// Encode count, pcrSelections.hash and pcrSelections.sizeofSelect fields
+	buf, _ := tpmutil.Pack(uint32(1), sel.Hash, byte(3))
+	// Encode pcrSelect bitmask
+	pcrBits := make([]byte, 3)
+	for _, pcr := range sel.PCRs {
 		byteNum := pcr / 8
-		bytePos := byte(1 << byte(pcr%8))
-		pcrBits[byteNum] |= bytePos
+		bytePos := 1 << uint(pcr%8)
+		pcrBits[byteNum] |= byte(bytePos)
 	}
-	return tpmsPCRSelection{
-		Hash: tpm2.Algorithm(pcrs.Hash),
-		Size: 3,
-		PCRs: pcrBits[:],
-	}
+
+	return append(buf, pcrBits...)
 }
 
-func getPCRSessionAuth(rw io.ReadWriter, pcrs []int, pcrHash tpm2.Algorithm) ([]byte, error) {
-	handle, err := createPCRSession(rw, pcrs, pcrHash)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get digest: %v", err)
-	}
-	defer tpm2.FlushContext(rw, handle)
-
-	digest, err := tpm2.PolicyGetDigest(rw, handle)
-	if err != nil {
-		return nil, fmt.Errorf("could not get digest from session: %v", err)
-	}
-
-	return digest, nil
-}
-
-func createPCRSession(rw io.ReadWriter, pcrs []int, pcrHash tpm2.Algorithm) (tpmutil.Handle, error) {
-	nonceIn := make([]byte, 16)
-	/* This session assumes the bus is trusted.  */
+func createPCRSession(rw io.ReadWriter, sel tpm2.PCRSelection) (tpmutil.Handle, error) {
+	// This session assumes the bus is trusted, so we:
+	// - use nil for tpmkey, encrypted salt, and symmetric
+	// - use and all-zeros caller nonce, and ignore the returned nonce
+	// As we are creating a plain TPM session, we:
+	// - setup a policy session
+	// - don't bind the session to any particular key
 	handle, _, err := tpm2.StartAuthSession(
 		rw,
-		tpm2.HandleNull,
-		tpm2.HandleNull,
-		nonceIn,
-		/*secret=*/ nil,
-		tpm2.SessionPolicy,
-		tpm2.AlgNull,
-		sessionHashAlgTpm)
+		/*tpmkey=*/ tpm2.HandleNull,
+		/*bindkey=*/ tpm2.HandleNull,
+		/*nonceCaller=*/ make([]byte, sessionHashAlg.Size()),
+		/*encryptedSalt=*/ nil,
+		/*sessionType=*/ tpm2.SessionPolicy,
+		/*symmetric=*/ tpm2.AlgNull,
+		/*authHash=*/ sessionHashAlgTpm)
 	if err != nil {
 		return tpm2.HandleNull, fmt.Errorf("failed to start auth session: %v", err)
 	}
 
-	sel := tpm2.PCRSelection{
-		Hash: pcrHash,
-		PCRs: pcrs,
-	}
 	if err = tpm2.PolicyPCR(rw, handle, nil, sel); err != nil {
 		return tpm2.HandleNull, fmt.Errorf("auth step PolicyPCR failed: %v", err)
 	}
-
 	return handle, nil
 }

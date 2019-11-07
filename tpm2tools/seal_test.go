@@ -10,7 +10,6 @@ import (
 	"github.com/google/go-tpm/tpmutil"
 
 	"github.com/google/go-tpm-tools/internal"
-	"github.com/google/go-tpm-tools/proto"
 )
 
 func TestSeal(t *testing.T) {
@@ -33,10 +32,10 @@ func TestSeal(t *testing.T) {
 			defer srk.Close()
 
 			secret := []byte("test")
-			pcrList := []int{7, 23}
+			sel := tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{7, 23}}
 			pcrToExtend := tpmutil.Handle(23)
 
-			sealed, err := srk.Seal(pcrList, secret)
+			sealed, err := srk.Seal(secret, sel)
 			if err != nil {
 				t.Fatalf("failed to seal: %v", err)
 			}
@@ -66,8 +65,7 @@ func TestComputeSessionAuth(t *testing.T) {
 	rwc := internal.GetTPM(t)
 	defer CheckedClose(t, rwc)
 
-	pcrList := []int{1, 7}
-	pcrs := map[uint32][]byte{}
+	pcrNums := []int{1, 7}
 
 	tests := []struct {
 		name    string
@@ -78,28 +76,26 @@ func TestComputeSessionAuth(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-
-			for _, pcrNum := range pcrList {
-				pcrVal, err := tpm2.ReadPCR(rwc, pcrNum, test.pcrHash)
-				if err != nil {
-					t.Fatalf("failed to read pcr: %v", err)
-				}
-
-				pcrs[uint32(pcrNum)] = pcrVal
+			sel := tpm2.PCRSelection{Hash: test.pcrHash, PCRs: pcrNums}
+			pcrs, err := ReadPCRs(rwc, sel)
+			if err != nil {
+				t.Fatalf("failed to read PCRs: %v", err)
 			}
+			computeAuth := ComputePCRSessionAuth(pcrs)
 
-			getAuth, err := getPCRSessionAuth(rwc, pcrList, test.pcrHash)
+			session, err := createPCRSession(rwc, sel)
+			if err != nil {
+				t.Fatalf("failed to create PCR session: %v", err)
+			}
+			defer tpm2.FlushContext(rwc, session)
+
+			getAuth, err := tpm2.PolicyGetDigest(rwc, session)
 			if err != nil {
 				t.Fatalf("failed to get session auth: %v", err)
 			}
 
-			computeAuth, err := ComputePCRSessionAuth(&proto.Pcrs{Hash: proto.HashAlgo(test.pcrHash), Pcrs: pcrs})
-			if err != nil {
-				t.Fatalf("failed to compute session auth: %v", err)
-			}
-
 			if !bytes.Equal(computeAuth, getAuth) {
-				t.Fatalf("computed auth (%v) not equal to session auth(%v)", computeAuth, getAuth)
+				t.Errorf("computed auth (%v) not equal to session auth(%v)", computeAuth, getAuth)
 			}
 		})
 	}
@@ -116,19 +112,13 @@ func TestSelfReseal(t *testing.T) {
 	defer key.Close()
 
 	secret := []byte("test")
-
-	pcrList := []int{0, 4, 7}
-	pcrs := map[int][]byte{}
-	for _, pcrNum := range pcrList {
-		pcrVal, err := tpm2.ReadPCR(rwc, pcrNum, tpm2.AlgSHA256)
-		if err != nil {
-			t.Fatalf("failed to read pcr: %v", err)
-		}
-
-		pcrs[pcrNum] = pcrVal
+	sel := tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{0, 4, 7}}
+	pcrs, err := ReadPCRs(rwc, sel)
+	if err != nil {
+		t.Fatalf("failed to read PCRs: %v", err)
 	}
 
-	sealed, err := key.Seal(pcrList, secret)
+	sealed, err := key.Seal(secret, sel)
 	if err != nil {
 		t.Fatalf("failed to seal: %v", err)
 	}
@@ -138,20 +128,20 @@ func TestSelfReseal(t *testing.T) {
 		t.Fatalf("failed to unseal: %v", err)
 	}
 	if !bytes.Equal(secret, unseal) {
-		t.Fatalf("unsealed (%v) not equal to secret (%v)", unseal, secret)
+		t.Errorf("unsealed (%v) not equal to secret (%v)", unseal, secret)
 	}
 
-	sealed, err = key.Reseal(pcrs, sealed)
+	sealed, err = key.Reseal(sealed, pcrs)
 	if err != nil {
 		t.Fatalf("failed to reseal: %v", err)
 	}
 
 	unseal, err = key.Unseal(sealed)
 	if err != nil {
-		t.Fatalf("unseal failed: %v", err)
+		t.Fatalf("failed to unseal after resealing: %v", err)
 	}
 	if !bytes.Equal(secret, unseal) {
-		t.Fatalf("unsealed (%v) not equal to secret (%v)", unseal, secret)
+		t.Errorf("unsealed (%v) not equal to secret (%v)", unseal, secret)
 	}
 }
 
@@ -209,20 +199,15 @@ func TestReseal(t *testing.T) {
 	defer key.Close()
 
 	secret := []byte("test")
+	pcrToChange := uint32(23)
+	sel := tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{7, 23}}
 
-	pcrToChange := 23
-	pcrList := []int{7, 23}
-	pcrs := map[int][]byte{}
-	for _, pcrNum := range pcrList {
-		pcrVal, err := tpm2.ReadPCR(rwc, pcrNum, tpm2.AlgSHA256)
-		if err != nil {
-			t.Fatalf("failed to read pcr: %v", err)
-		}
-
-		pcrs[pcrNum] = pcrVal
+	pcrs, err := ReadPCRs(rwc, sel)
+	if err != nil {
+		t.Fatalf("failed to read PCRs: %v", err)
 	}
 
-	sealed, err := key.Seal(pcrList, secret)
+	sealed, err := key.Seal(secret, sel)
 	if err != nil {
 		t.Fatalf("failed to seal: %v", err)
 	}
@@ -235,20 +220,17 @@ func TestReseal(t *testing.T) {
 		t.Fatalf("unsealed (%v) not equal to secret (%v)", unseal, secret)
 	}
 
-	extensions := [][]byte{
-		bytes.Repeat([]byte{0xAA}, sha256.Size),
-	}
+	extensions := [][]byte{bytes.Repeat([]byte{0xAA}, sha256.Size)}
 
 	// Change pcr value to the predicted future value for resealing
-	pcrs[pcrToChange] = computePCRValue(pcrs[pcrToChange], extensions)
-	sealed, err = key.Reseal(pcrs, sealed)
+	pcrs.Pcrs[pcrToChange] = computePCRValue(pcrs.Pcrs[pcrToChange], extensions)
+	sealed, err = key.Reseal(sealed, pcrs)
 	if err != nil {
 		t.Fatalf("failed to reseal: %v", err)
 	}
 
 	// unseal should not succeed since pcr has not been extended.
-	_, err = key.Unseal(sealed)
-	if err == nil {
+	if _, err = key.Unseal(sealed); err == nil {
 		t.Fatalf("unseal should have failed: %v", err)
 	}
 
@@ -261,9 +243,35 @@ func TestReseal(t *testing.T) {
 
 	unseal, err = key.Unseal(sealed)
 	if err != nil {
-		t.Fatalf("failed to unseal: %v", err)
+		t.Fatalf("failed to unseal after resealing: %v", err)
 	}
 	if !bytes.Equal(secret, unseal) {
 		t.Fatalf("unsealed (%v) not equal to secret (%v)", unseal, secret)
+	}
+}
+
+func TestSealingResealingToNilPCRs(t *testing.T) {
+	rwc := internal.GetTPM(t)
+	defer CheckedClose(t, rwc)
+
+	key, err := StorageRootKeyRSA(rwc)
+	if err != nil {
+		t.Fatalf("can't create srk from template: %v", err)
+	}
+	defer key.Close()
+
+	secret := []byte("test")
+	sel := tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: nil}
+
+	sealed, err := key.Seal(secret, sel)
+	if err != nil {
+		t.Fatalf("failed to seal: %v", err)
+	}
+	unseal, err := key.Unseal(sealed)
+	if err != nil {
+		t.Fatalf("failed to unseal: %v", err)
+	}
+	if !bytes.Equal(secret, unseal) {
+		t.Errorf("unsealed (%v) not equal to secret (%v)", unseal, secret)
 	}
 }

@@ -45,8 +45,13 @@ state (like Secure Boot).`,
 			return err
 		}
 
-		fmt.Fprintf(debugOutput(), "Sealing to PCRs: %v\n", pcrs)
-		sealed, err := srk.Seal(pcrs, secret)
+		sel, err := getSelection()
+		if err != nil {
+			return err
+		}
+
+		fmt.Fprintf(debugOutput(), "Sealing to PCRs: %v\n", sel.PCRs)
+		sealed, err := srk.Seal(secret, sel)
 		if err != nil {
 			return fmt.Errorf("sealing data: %v", err)
 		}
@@ -55,7 +60,7 @@ state (like Secure Boot).`,
 		if err := pb.MarshalText(dataOutput(), sealed); err != nil {
 			return err
 		}
-		fmt.Fprintf(debugOutput(), "Sealed data to PCRs: %v\n", pcrs)
+		fmt.Fprintf(debugOutput(), "Sealed data to PCRs: %v\n", sel.PCRs)
 		return nil
 	},
 }
@@ -118,7 +123,8 @@ func init() {
 	addInputFlag(unsealCmd)
 	addOutputFlag(sealCmd)
 	addOutputFlag(unsealCmd)
-	// PCRs only used for sealing
+	// PCRs and hash algorithm only used for sealing
 	addPCRsFlag(sealCmd)
+	addHashAlgoFlag(sealCmd)
 	addPublicKeyAlgoFlag(sealCmd)
 }
