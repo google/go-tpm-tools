@@ -155,7 +155,7 @@ func (p CurrentPCRs) CertifyPCRs(rw io.ReadWriter, digest []byte) error {
 	if err != nil {
 		return err
 	}
-	return validPCRDigest(pcrVals, digest)
+	return validatePCRDigest(pcrVals, digest)
 }
 
 // CertifyPCRs will compare the digest with given expected PCRs values.
@@ -163,10 +163,10 @@ func (p ExpectedPCRs) CertifyPCRs(_ io.ReadWriter, digest []byte) error {
 	if p.Pcrs == nil || len(p.Pcrs.GetPcrs()) == 0 {
 		panic("ExpectedPCRs contains nil or 0 PCRs")
 	}
-	return validPCRDigest(p.Pcrs, digest)
+	return validatePCRDigest(p.Pcrs, digest)
 }
 
-func validPCRDigest(pcrs *proto.Pcrs, digest []byte) error {
+func validatePCRDigest(pcrs *proto.Pcrs, digest []byte) error {
 	computedDigest, err := ComputePCRDigest(pcrs, tpm2.AlgSHA256)
 	if err != nil {
 		return err

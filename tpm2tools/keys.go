@@ -172,18 +172,15 @@ func (k *Key) Close() {
 
 // Seal will seal the sensitive data with the given SealingOPT.
 // SealingOPT contains some PCRs values which will bind to the secret. Those PCRs
-// will be used to generate a ticket to certify the seal.
-// SealingOPT can be nil, in which case the secert will not be bind to any PCRs
+// will also be used to generate a ticket to certify the seal in the future.
+// SealingOPT can be nil, in which case the secert will not be bind to any PCRs.
 func (k *Key) Seal(sensitive []byte, sOpt SealingOpt) (*proto.SealedBytes, error) {
 	var auth []byte
 	var pcrList []int32
 	var certifyPCRs tpm2.PCRSelection
 	var err error
 
-	if sOpt == nil {
-		certifyPCRs = tpm2.PCRSelection{}
-		auth = nil
-	} else {
+	if sOpt != nil {
 		pcrs, err := sOpt.PCRsForSealing(k.rw)
 		if err != nil {
 			return nil, err
@@ -202,7 +199,6 @@ func (k *Key) Seal(sensitive []byte, sOpt SealingOpt) (*proto.SealedBytes, error
 		return nil, err
 	}
 	sb.Pcrs = pcrList
-
 	sb.Hash = proto.HashAlgo_SHA256
 	sb.Srk = proto.ObjectType(k.pubArea.Type)
 	return sb, nil
@@ -223,20 +219,22 @@ func sealHelper(rw io.ReadWriter, parentHandle tpmutil.Handle, auth []byte, sens
 
 	priv, pub, creationData, _, ticket, err := tpm2.CreateKeyWithSensitive(rw, parentHandle, certifyPCRsSel, "", "", inPublic, sensitive)
 	if err != nil {
-		return nil, err
-	}
-	decodedCreationData, err := tpm2.DecodeCreationData(creationData)
-
-	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("Failed to create key: %v", err)
 	}
 	certifiedPCR, err := ReadPCRs(rw, certifyPCRsSel.PCRs, certifyPCRsSel.Hash)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("Failed to read PCRs: %v", err)
 	}
 	computedDigest, err := ComputePCRDigest(certifiedPCR, tpm2.AlgSHA256)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to compute PCRs digest: %v", err)
+	}
+	decodedCreationData, err := tpm2.DecodeCreationData(creationData)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to decode creation data: %v", err)
+	}
 
-	// make sure PCR has not been changed after sealing
+	// make sure PCRs haven't being altered after sealing
 	if subtle.ConstantTimeCompare(computedDigest, decodedCreationData.PCRDigest) == 0 {
 		return nil, fmt.Errorf("PCRs have been modified after sealing")
 	}
@@ -315,8 +313,8 @@ func (k *Key) Unseal(in *proto.SealedBytes, cOpt CertificationOpt) ([]byte, erro
 	return tpm2.UnsealWithSession(k.rw, session, sealed, "")
 }
 
-// Reseal unwraps a secret and rewraps it under the auth value that would be
-// produced by the PCR state in pcrs.
+// Reseal unwraps a secret using cOpt and then reseal the secret using sOpt
+// cOpt and sOpt can be nil
 // The Key k is used as the parent key.
 func (k *Key) Reseal(in *proto.SealedBytes, cOpt CertificationOpt, sOpt SealingOpt) (*proto.SealedBytes, error) {
 	sensitive, err := k.Unseal(in, cOpt)
@@ -418,19 +416,12 @@ func createPCRSession(rw io.ReadWriter, pcrs []int) (tpmutil.Handle, error) {
 		return tpm2.HandleNull, fmt.Errorf("failed to start auth session: %v", err)
 	}
 
-	// if pcrs is nil, then create a password session, otherwise create a policy PCRs session
-	if pcrs == nil || len(pcrs) == 0 {
-		if err = tpm2.PolicyPassword(rw, handle); err != nil {
-			return tpm2.HandleNull, fmt.Errorf("auth step PolicyPassword failed: %v", err)
-		}
-	} else {
-		sel := tpm2.PCRSelection{
-			Hash: tpm2.AlgSHA256,
-			PCRs: pcrs,
-		}
-		if err = tpm2.PolicyPCR(rw, handle, nil, sel); err != nil {
-			return tpm2.HandleNull, fmt.Errorf("auth step PolicyPCR failed: %v", err)
-		}
+	sel := tpm2.PCRSelection{
+		Hash: tpm2.AlgSHA256,
+		PCRs: pcrs,
+	}
+	if err = tpm2.PolicyPCR(rw, handle, nil, sel); err != nil {
+		return tpm2.HandleNull, fmt.Errorf("auth step PolicyPCR failed: %v", err)
 	}
 
 	return handle, nil

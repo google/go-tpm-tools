@@ -32,11 +32,12 @@ func TestSeal(t *testing.T) {
 			defer srk.Close()
 
 			secret := []byte("test")
+			pcrList := []int{7, 23}
 			pcrToExtend := tpmutil.Handle(23)
 			sOpt := CurrentPCRs{
 				PCRSelection: tpm2.PCRSelection{
 					Hash: tpm2.AlgSHA256,
-					PCRs: []int{7, 23},
+					PCRs: pcrList,
 				},
 			}
 
@@ -109,11 +110,11 @@ func TestSelfReseal(t *testing.T) {
 	defer key.Close()
 
 	secret := []byte("test")
-
+	pcrList := []int{0, 4, 7}
 	sOpt := CurrentPCRs{
 		PCRSelection: tpm2.PCRSelection{
 			Hash: tpm2.AlgSHA256,
-			PCRs: []int{0, 4, 7},
+			PCRs: pcrList,
 		},
 	}
 
@@ -131,7 +132,8 @@ func TestSelfReseal(t *testing.T) {
 	}
 
 	// Try to reseal to a different target PCR
-	resealTargetPCR, err := ReadPCRs(rwc, []int{10}, tpm2.AlgSHA256)
+	newPcrList := []int{10}
+	resealTargetPCR, err := ReadPCRs(rwc, newPcrList, tpm2.AlgSHA256)
 	if err != nil {
 		t.Fatal(err)
 	}
