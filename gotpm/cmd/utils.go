@@ -129,6 +129,11 @@ func getHashAlgo() (tpm2.Algorithm, error) {
 	}
 }
 
+func getSelection() (tpm2.PCRSelection, error) {
+	hash, err := getHashAlgo()
+	return tpm2.PCRSelection{Hash: hash, PCRs: pcrs}, err
+}
+
 func getSRKwithAlgo(rwc io.ReadWriter, algo tpm2.Algorithm) (*tpm2tools.Key, error) {
 	switch algo {
 	case tpm2.AlgRSA:

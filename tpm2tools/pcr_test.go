@@ -67,7 +67,8 @@ func TestReadPCRs(t *testing.T) {
 			testPcrs[test.inAlg] = pcrVal
 		}
 
-		proto, err := ReadPCRs(rwc, []int{0}, test.inAlg)
+		sel := tpm2.PCRSelection{Hash: test.inAlg, PCRs: []int{0}}
+		proto, err := ReadPCRs(rwc, sel)
 		if err != nil {
 			t.Fatalf("failed to read pcrs %v", err)
 		}
@@ -101,14 +102,11 @@ func TestCurrentPCR(t *testing.T) {
 		PCRs: pcrList,
 	}
 	currentPCR := CurrentPCRs{PCRSelection: currentPCRSelection}
-	proto, err := ReadPCRs(rwc, pcrList, tpm2.AlgSHA256)
+	proto, err := ReadPCRs(rwc, currentPCRSelection)
 	if err != nil {
 		t.Fatalf("fail to read PCRs: %v", err)
 	}
-	computedDigest, err := ComputePCRDigest(proto, tpm2.AlgSHA256)
-	if err != nil {
-		t.Fatalf("fail to computeDigest: %v", err)
-	}
+	computedDigest := computePCRDigest(proto)
 
 	if !reflect.DeepEqual(currentPCR.GetPCRSelection(), currentPCRSelection) {
 		t.Fatalf("GetPCRSelection not euqal to expect")
@@ -137,7 +135,7 @@ func TestTargetPCR(t *testing.T) {
 		PCRs: pcrList,
 	}
 
-	proto, err := ReadPCRs(rwc, pcrList, tpm2.AlgSHA256)
+	proto, err := ReadPCRs(rwc, expectedPCRSelection)
 	if err != nil {
 		t.Fatalf("Failed to read pcr: %v", err)
 	}
@@ -161,11 +159,13 @@ func TestExpectedPCR(t *testing.T) {
 	defer CheckedClose(t, rwc)
 
 	pcrList := []int{1, 7}
-	proto, err := ReadPCRs(rwc, pcrList, tpm2.AlgSHA256)
-	computedDigest, err := ComputePCRDigest(proto, tpm2.AlgSHA256)
-	if err != nil {
-		t.Fatalf("Failed to read pcr: %v", err)
+	expectedPCRSelection := tpm2.PCRSelection{
+		Hash: tpm2.AlgSHA256,
+		PCRs: pcrList,
 	}
+	proto, err := ReadPCRs(rwc, expectedPCRSelection)
+	computedDigest := computePCRDigest(proto)
+
 	expectedPCRs := ExpectedPCRs{proto}
 	if err = expectedPCRs.CertifyPCRs(nil, computedDigest); err != nil {
 		t.Fatalf("CertifyPCRs failed: %v", err)

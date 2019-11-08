@@ -174,9 +174,11 @@ func (k *Key) Close() {
 // SealingOPT contains some PCRs values which will bind to the secret. Those PCRs
 // will also be used to generate a ticket to certify the seal in the future.
 // SealingOPT can be nil, in which case the secert will not be bind to any PCRs.
+// The Key k is used as the parent key.
 func (k *Key) Seal(sensitive []byte, sOpt SealingOpt) (*proto.SealedBytes, error) {
 	var auth []byte
 	var pcrList []int32
+	var pcrHash proto.HashAlgo
 	var certifyPCRs tpm2.PCRSelection
 	var err error
 
@@ -185,7 +187,7 @@ func (k *Key) Seal(sensitive []byte, sOpt SealingOpt) (*proto.SealedBytes, error
 		if err != nil {
 			return nil, err
 		}
-		auth, err = computePCRSessionAuthFromPCRsProto(pcrs)
+		auth = ComputePCRSessionAuth(pcrs)
 		if err != nil {
 			return nil, err
 		}
@@ -193,13 +195,19 @@ func (k *Key) Seal(sensitive []byte, sOpt SealingOpt) (*proto.SealedBytes, error
 			pcrList = append(pcrList, int32(pcrNum))
 		}
 		certifyPCRs = sOpt.GetPCRSelection()
+		pcrHash = pcrs.GetHash()
 	}
 	sb, err := sealHelper(k.rw, k.Handle(), auth, sensitive, certifyPCRs)
 	if err != nil {
 		return nil, err
 	}
 	sb.Pcrs = pcrList
-	sb.Hash = proto.HashAlgo_SHA256
+	// sb.Hash = proto.HashAlgo_SHA256
+	sb.Hash = pcrHash
+	// for _, pcr := range sel.PCRs {
+	// 	sb.Pcrs = append(sb.Pcrs, int32(pcr))
+	// }
+	// sb.Hash = proto.HashAlgo(sel.Hash)
 	sb.Srk = proto.ObjectType(k.pubArea.Type)
 	return sb, nil
 }
@@ -221,14 +229,12 @@ func sealHelper(rw io.ReadWriter, parentHandle tpmutil.Handle, auth []byte, sens
 	if err != nil {
 		return nil, fmt.Errorf("Failed to create key: %v", err)
 	}
-	certifiedPCR, err := ReadPCRs(rw, certifyPCRsSel.PCRs, certifyPCRsSel.Hash)
+	certifiedPCR, err := ReadPCRs(rw, certifyPCRsSel)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to read PCRs: %v", err)
 	}
-	computedDigest, err := ComputePCRDigest(certifiedPCR, tpm2.AlgSHA256)
-	if err != nil {
-		return nil, fmt.Errorf("Failed to compute PCRs digest: %v", err)
-	}
+	computedDigest := computePCRDigest(certifiedPCR)
+
 	decodedCreationData, err := tpm2.DecodeCreationData(creationData)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to decode creation data: %v", err)
@@ -263,16 +269,14 @@ func (k *Key) Unseal(in *proto.SealedBytes, cOpt CertificationOpt) ([]byte, erro
 	if in.Srk != proto.ObjectType(k.pubArea.Type) {
 		return nil, fmt.Errorf("Expected key of type %v, got %v", in.Srk, k.pubArea.Type)
 	}
-	if in.Hash != proto.HashAlgo_SHA256 {
-		return nil, fmt.Errorf("Only SHA256 PCRs are currently supported")
-	}
-	var pcrs []int
+	sel := tpm2.PCRSelection{Hash: tpm2.Algorithm(in.Hash)}
 	for _, pcr := range in.Pcrs {
-		pcrs = append(pcrs, int(pcr))
+		sel.PCRs = append(sel.PCRs, int(pcr))
 	}
-	session, err := createPCRSession(k.rw, pcrs)
+	session, err := createPCRSession(k.rw, sel)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create session: %v", err)
+		// sel.PCRs = append(sel.PCRs, int(pcr))
 	}
 	defer tpm2.FlushContext(k.rw, session)
 
@@ -307,9 +311,19 @@ func (k *Key) Unseal(in *proto.SealedBytes, cOpt CertificationOpt) ([]byte, erro
 		}
 	}
 	// if sealing to 0 PCRs, then we don't need an auth session to unseal the data
-	if len(pcrs) == 0 {
+	if len(sel.PCRs) == 0 {
 		return tpm2.Unseal(k.rw, sealed, "")
 	}
+	// if len(sel.PCRs) == 0 {
+	// 	return tpm2.Unseal(k.rw, sealed, "")
+	// }
+
+	// session, err := createPCRSession(k.rw, sel)
+	// if err != nil {
+	// 	return nil, fmt.Errorf("failed to unseal: %v", err)
+	// }
+	// defer tpm2.FlushContext(k.rw, session)
+
 	return tpm2.UnsealWithSession(k.rw, session, sealed, "")
 }
 
@@ -324,105 +338,78 @@ func (k *Key) Reseal(in *proto.SealedBytes, cOpt CertificationOpt, sOpt SealingO
 	return k.Seal(sensitive, sOpt)
 }
 
-type tpmsPCRSelection struct {
-	Hash tpm2.Algorithm
-	Size byte
-	PCRs tpmutil.RawBytes
-}
+// type tpmsPCRSelection struct {
+// 	Hash tpm2.Algorithm
+// 	Size byte
+// 	PCRs tpmutil.RawBytes
+// }
 
-type sessionSummary struct {
-	OldDigest      tpmutil.RawBytes
-	CmdIDPolicyPCR uint32
-	NumPcrSels     uint32
-	Sel            tpmsPCRSelection
-	PcrDigest      tpmutil.RawBytes
-}
+// type sessionSummary struct {
+// 	OldDigest      tpmutil.RawBytes
+// 	CmdIDPolicyPCR uint32
+// 	NumPcrSels     uint32
+// 	Sel            tpmsPCRSelection
+// 	PcrDigest      tpmutil.RawBytes
+// }
 
-func computePCRSessionAuthFromPCRsProto(pcrs *proto.Pcrs) ([]byte, error) {
-	pcrsMap := make(map[int][]byte)
-	for k, v := range pcrs.GetPcrs() {
-		pcrsMap[int(k)] = v
-	}
-	return computePCRSessionAuth(pcrsMap)
-}
+// func computePCRSessionAuthFromPCRsProto(pcrs *proto.Pcrs) ([]byte, error) {
+// 	pcrsMap := make(map[int][]byte)
+// 	for k, v := range pcrs.GetPcrs() {
+// 		pcrsMap[int(k)] = v
+// 	}
+// 	return computePCRSessionAuth(pcrsMap)
+// }
 
-func computePCRSessionAuth(pcrs map[int][]byte) ([]byte, error) {
-	var pcrBits [3]byte
-	for pcr := range pcrs {
-		byteNum := pcr / 8
-		bytePos := byte(1 << byte(pcr%8))
-		pcrBits[byteNum] |= bytePos
-	}
-	pcrDigest := digestPCRList(pcrs)
+// func computePCRSessionAuth(pcrs map[int][]byte) ([]byte, error) {
+// 	var pcrBits [3]byte
+// 	for pcr := range pcrs {
+// 		byteNum := pcr / 8
+// 		bytePos := byte(1 << byte(pcr%8))
+// 		pcrBits[byteNum] |= bytePos
+// 	}
+// 	pcrDigest := digestPCRList(pcrs)
 
-	summary := sessionSummary{
-		OldDigest:      make([]byte, sha256.Size),
-		CmdIDPolicyPCR: uint32(tpm2.CmdPolicyPCR),
-		NumPcrSels:     1,
-		Sel: tpmsPCRSelection{
-			Hash: tpm2.AlgSHA256,
-			Size: 3,
-			PCRs: pcrBits[:],
-		},
-		PcrDigest: pcrDigest,
-	}
-	b, err := tpmutil.Pack(summary)
-	if err != nil {
-		return nil, fmt.Errorf("failed to pack for hashing: %v ", err)
-	}
+// 	summary := sessionSummary{
+// 		OldDigest:      make([]byte, sha256.Size),
+// 		CmdIDPolicyPCR: uint32(tpm2.CmdPolicyPCR),
+// 		NumPcrSels:     1,
+// 		Sel: tpmsPCRSelection{
+// 			Hash: tpm2.AlgSHA256,
+// 			Size: 3,
+// 			PCRs: pcrBits[:],
+// 		},
+// 		PcrDigest: pcrDigest,
+// 	}
+// 	b, err := tpmutil.Pack(summary)
+// 	if err != nil {
+// 		return nil, fmt.Errorf("failed to pack for hashing: %v ", err)
+// 	}
 
-	digest := sha256.Sum256(b)
-	return digest[:], nil
-}
+// 	digest := sha256.Sum256(b)
+// 	return digest[:], nil
+// }
 
-func digestPCRList(pcrs map[int][]byte) []byte {
-	hash := crypto.SHA256.New()
-	for i := 0; i < 24; i++ {
-		if pcrValue, exists := pcrs[i]; exists {
-			hash.Write(pcrValue)
-		}
-	}
-	return hash.Sum(nil)
-}
+// func digestPCRList(pcrs map[int][]byte) []byte {
+// 	hash := crypto.SHA256.New()
+// 	for i := 0; i < 24; i++ {
+// 		if pcrValue, exists := pcrs[i]; exists {
+// 			hash.Write(pcrValue)
+// 		}
+// 	}
+// 	return hash.Sum(nil)
+// }
 
-func getPCRSessionAuth(rw io.ReadWriter, pcrs []int) ([]byte, error) {
-	handle, err := createPCRSession(rw, pcrs)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get digest: %v", err)
-	}
-	defer tpm2.FlushContext(rw, handle)
+// func getPCRSessionAuth(rw io.ReadWriter, pcrs []int) ([]byte, error) {
+// 	handle, err := createPCRSession(rw, pcrs)
+// 	if err != nil {
+// 		return nil, fmt.Errorf("failed to get digest: %v", err)
+// 	}
+// 	defer tpm2.FlushContext(rw, handle)
 
-	digest, err := tpm2.PolicyGetDigest(rw, handle)
-	if err != nil {
-		return nil, fmt.Errorf("could not get digest from session: %v", err)
-	}
+// 	digest, err := tpm2.PolicyGetDigest(rw, handle)
+// 	if err != nil {
+// 		return nil, fmt.Errorf("could not get digest from session: %v", err)
+// 	}
 
-	return digest, nil
-}
-
-func createPCRSession(rw io.ReadWriter, pcrs []int) (tpmutil.Handle, error) {
-	nonceIn := make([]byte, 16)
-	/* This session assumes the bus is trusted.  */
-	handle, _, err := tpm2.StartAuthSession(
-		rw,
-		tpm2.HandleNull,
-		tpm2.HandleNull,
-		nonceIn,
-		/*secret=*/ nil,
-		tpm2.SessionPolicy,
-		tpm2.AlgNull,
-		tpm2.AlgSHA256)
-	if err != nil {
-		return tpm2.HandleNull, fmt.Errorf("failed to start auth session: %v", err)
-	}
-
-	sel := tpm2.PCRSelection{
-		Hash: tpm2.AlgSHA256,
-		PCRs: pcrs,
-	}
-	if err = tpm2.PolicyPCR(rw, handle, nil, sel); err != nil {
-		return tpm2.HandleNull, fmt.Errorf("auth step PolicyPCR failed: %v", err)
-	}
-
-	return handle, nil
-}
+// 	return digest, nil
+// }

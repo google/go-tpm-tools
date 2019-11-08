@@ -32,14 +32,9 @@ func TestSeal(t *testing.T) {
 			defer srk.Close()
 
 			secret := []byte("test")
-			pcrList := []int{7, 23}
+			sel := tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{7, 23}}
 			pcrToExtend := tpmutil.Handle(23)
-			sOpt := CurrentPCRs{
-				PCRSelection: tpm2.PCRSelection{
-					Hash: tpm2.AlgSHA256,
-					PCRs: pcrList,
-				},
-			}
+			sOpt := CurrentPCRs{PCRSelection: sel}
 
 			sealed, err := srk.Seal(secret, sOpt)
 			if err != nil {
@@ -71,31 +66,39 @@ func TestComputeSessionAuth(t *testing.T) {
 	rwc := internal.GetTPM(t)
 	defer CheckedClose(t, rwc)
 
-	pcrList := []int{1, 7}
+	pcrNums := []int{1, 7}
 
-	pcrs := map[int][]byte{}
-
-	for _, pcrNum := range pcrList {
-		pcrVal, err := tpm2.ReadPCR(rwc, pcrNum, tpm2.AlgSHA256)
-		if err != nil {
-			t.Fatalf("failed to read pcr: %v", err)
-		}
-
-		pcrs[pcrNum] = pcrVal
+	tests := []struct {
+		name    string
+		pcrHash tpm2.Algorithm
+	}{
+		{"sha1", tpm2.AlgSHA1},
+		{"sha256", tpm2.AlgSHA256},
 	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			sel := tpm2.PCRSelection{Hash: test.pcrHash, PCRs: pcrNums}
+			pcrs, err := ReadPCRs(rwc, sel)
+			if err != nil {
+				t.Fatalf("failed to read PCRs: %v", err)
+			}
+			computeAuth := ComputePCRSessionAuth(pcrs)
 
-	getAuth, err := getPCRSessionAuth(rwc, pcrList)
-	if err != nil {
-		t.Fatalf("failed to get session auth: %v", err)
-	}
+			session, err := createPCRSession(rwc, sel)
+			if err != nil {
+				t.Fatalf("failed to create PCR session: %v", err)
+			}
+			defer tpm2.FlushContext(rwc, session)
 
-	computeAuth, err := computePCRSessionAuth(pcrs)
-	if err != nil {
-		t.Fatalf("failed to compute session auth: %v", err)
-	}
+			getAuth, err := tpm2.PolicyGetDigest(rwc, session)
+			if err != nil {
+				t.Fatalf("failed to get session auth: %v", err)
+			}
 
-	if !bytes.Equal(computeAuth, getAuth) {
-		t.Fatalf("computed auth (%v) not equal to session auth(%v)", computeAuth, getAuth)
+			if !bytes.Equal(computeAuth, getAuth) {
+				t.Errorf("computed auth (%v) not equal to session auth(%v)", computeAuth, getAuth)
+			}
+		})
 	}
 }
 
@@ -128,12 +131,13 @@ func TestSelfReseal(t *testing.T) {
 		t.Fatalf("failed to unseal: %v", err)
 	}
 	if !bytes.Equal(secret, unseal) {
-		t.Fatalf("unsealed (%v) not equal to secret (%v)", unseal, secret)
+		t.Errorf("unsealed (%v) not equal to secret (%v)", unseal, secret)
 	}
 
 	// Try to reseal to a different target PCR
 	newPcrList := []int{10}
-	resealTargetPCR, err := ReadPCRs(rwc, newPcrList, tpm2.AlgSHA256)
+	sel := tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: newPcrList}
+	resealTargetPCR, err := ReadPCRs(rwc, sel)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,10 +149,10 @@ func TestSelfReseal(t *testing.T) {
 
 	unseal, err = key.Unseal(sealed, nil)
 	if err != nil {
-		t.Fatalf("unseal failed: %v", err)
+		t.Fatalf("failed to unseal after resealing: %v", err)
 	}
 	if !bytes.Equal(secret, unseal) {
-		t.Fatalf("unsealed (%v) not equal to secret (%v)", unseal, secret)
+		t.Errorf("unsealed (%v) not equal to secret (%v)", unseal, secret)
 	}
 }
 
@@ -206,15 +210,12 @@ func TestReseal(t *testing.T) {
 	defer key.Close()
 
 	secret := []byte("test")
+	pcrToChange := uint32(23)
+	sel := tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{7, 23}}
 
-	pcrToChange := 23
-	pcrList := []int{7, 23}
-	sOpt := CurrentPCRs{
-		PCRSelection: tpm2.PCRSelection{
-			Hash: tpm2.AlgSHA256,
-			PCRs: pcrList,
-		},
-	}
+	// pcrToChange := 23
+	// pcrList := []int{7, 23}
+	sOpt := CurrentPCRs{PCRSelection: sel}
 
 	sealed, err := key.Seal(secret, sOpt)
 	if err != nil {
@@ -233,23 +234,27 @@ func TestReseal(t *testing.T) {
 	extensions := [][]byte{
 		bytes.Repeat([]byte{0xAA}, sha256.Size),
 	}
-	newPcrsValue, err := ReadPCRs(rwc, pcrList, tpm2.AlgSHA256)
+	newPcrsValue, err := ReadPCRs(rwc, sel)
 	newPcrsValue.GetPcrs()[uint32(pcrToChange)] = computePCRValue(newPcrsValue.GetPcrs()[uint32(pcrToChange)], extensions)
 
 	// change pcr value to the predicted future value for resealing
 	sealed, err = key.Reseal(sealed, nil, TargetPCRs{newPcrsValue})
+	// extensions := [][]byte{bytes.Repeat([]byte{0xAA}, sha256.Size)}
+
+	// // Change pcr value to the predicted future value for resealing
+	// pcrs.Pcrs[pcrToChange] = computePCRValue(pcrs.Pcrs[pcrToChange], extensions)
+	// sealed, err = key.Reseal(sealed, pcrs)
 	if err != nil {
 		t.Fatalf("failed to reseal: %v", err)
 	}
 
 	// unseal should not succeed since pcr has not been extended.
-	_, err = key.Unseal(sealed, nil)
-	if err == nil {
+	if _, err = key.Unseal(sealed, nil); err == nil {
 		t.Fatalf("unseal should have failed: %v", err)
 	}
 
 	// save the current PCR value for certification before extend the PCRs
-	pcrsInitial, err := ReadPCRs(rwc, pcrList, tpm2.AlgSHA256)
+	pcrsInitial, err := ReadPCRs(rwc, sel)
 
 	for _, extension := range extensions {
 		err = tpm2.PCRExtend(rwc, tpmutil.Handle(pcrToChange), tpm2.AlgSHA256, extension, "")
@@ -259,7 +264,7 @@ func TestReseal(t *testing.T) {
 	}
 
 	// unseal should fail if certify to current PCRs value, as one PCR has changed
-	unseal, err = key.Unseal(sealed, CurrentPCRs{PCRSelection: tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: pcrList}})
+	unseal, err = key.Unseal(sealed, CurrentPCRs{PCRSelection: sel})
 	if err == nil {
 		t.Fatalf("unseal should fail since the certify PCRs have changed.")
 	}
@@ -291,7 +296,7 @@ func TestSealingResealingToNilPCRs(t *testing.T) {
 	}
 	unseal, err := key.Unseal(sealed, nil)
 	if err != nil {
-		t.Fatalf("failed to unseal: %v", err)
+		t.Fatalf("failed to unseal after resealing: %v", err)
 	}
 	if !bytes.Equal(secret, unseal) {
 		t.Fatalf("unsealed (%v) not equal to secret (%v)", unseal, secret)
@@ -305,3 +310,29 @@ func TestSealingResealingToNilPCRs(t *testing.T) {
 		t.Fatalf("unsealed (%v) not equal to secret (%v)", unseal, secret)
 	}
 }
+
+// func TestSealingResealingToNilPCRs(t *testing.T) {
+// 	rwc := internal.GetTPM(t)
+// 	defer CheckedClose(t, rwc)
+
+// 	key, err := StorageRootKeyRSA(rwc)
+// 	if err != nil {
+// 		t.Fatalf("can't create srk from template: %v", err)
+// 	}
+// 	defer key.Close()
+
+// 	secret := []byte("test")
+// 	sel := tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: nil}
+
+// 	sealed, err := key.Seal(secret, sel)
+// 	if err != nil {
+// 		t.Fatalf("failed to seal: %v", err)
+// 	}
+// 	unseal, err := key.Unseal(sealed)
+// 	if err != nil {
+// 		t.Fatalf("failed to unseal: %v", err)
+// 	}
+// 	if !bytes.Equal(secret, unseal) {
+// 		t.Errorf("unsealed (%v) not equal to secret (%v)", unseal, secret)
+// 	}
+// }
