@@ -213,8 +213,6 @@ func TestReseal(t *testing.T) {
 	pcrToChange := uint32(23)
 	sel := tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{7, 23}}
 
-	// pcrToChange := 23
-	// pcrList := []int{7, 23}
 	sOpt := CurrentPCRs{PCRSelection: sel}
 
 	sealed, err := key.Seal(secret, sOpt)
@@ -238,18 +236,13 @@ func TestReseal(t *testing.T) {
 	newPcrsValue.GetPcrs()[uint32(pcrToChange)] = computePCRValue(newPcrsValue.GetPcrs()[uint32(pcrToChange)], extensions)
 
 	// change pcr value to the predicted future value for resealing
-	sealed, err = key.Reseal(sealed, nil, TargetPCRs{newPcrsValue})
-	// extensions := [][]byte{bytes.Repeat([]byte{0xAA}, sha256.Size)}
-
-	// // Change pcr value to the predicted future value for resealing
-	// pcrs.Pcrs[pcrToChange] = computePCRValue(pcrs.Pcrs[pcrToChange], extensions)
-	// sealed, err = key.Reseal(sealed, pcrs)
+	resealed, err := key.Reseal(sealed, nil, TargetPCRs{newPcrsValue})
 	if err != nil {
 		t.Fatalf("failed to reseal: %v", err)
 	}
 
 	// unseal should not succeed since pcr has not been extended.
-	if _, err = key.Unseal(sealed, nil); err == nil {
+	if _, err = key.Unseal(resealed, nil); err == nil {
 		t.Fatalf("unseal should have failed: %v", err)
 	}
 
@@ -264,13 +257,13 @@ func TestReseal(t *testing.T) {
 	}
 
 	// unseal should fail if certify to current PCRs value, as one PCR has changed
-	unseal, err = key.Unseal(sealed, CurrentPCRs{PCRSelection: sel})
+	unseal, err = key.Unseal(resealed, CurrentPCRs{PCRSelection: sel})
 	if err == nil {
 		t.Fatalf("unseal should fail since the certify PCRs have changed.")
 	}
 
 	// certify to original PCRs value (PCRs value when do the sealing) will work
-	unseal, err = key.Unseal(sealed, ExpectedPCRs{pcrsInitial})
+	unseal, err = key.Unseal(resealed, ExpectedPCRs{pcrsInitial})
 	if err != nil {
 		t.Fatalf("failed to unseal: %v", err)
 	}
@@ -310,29 +303,3 @@ func TestSealingResealingToNilPCRs(t *testing.T) {
 		t.Fatalf("unsealed (%v) not equal to secret (%v)", unseal, secret)
 	}
 }
-
-// func TestSealingResealingToNilPCRs(t *testing.T) {
-// 	rwc := internal.GetTPM(t)
-// 	defer CheckedClose(t, rwc)
-
-// 	key, err := StorageRootKeyRSA(rwc)
-// 	if err != nil {
-// 		t.Fatalf("can't create srk from template: %v", err)
-// 	}
-// 	defer key.Close()
-
-// 	secret := []byte("test")
-// 	sel := tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: nil}
-
-// 	sealed, err := key.Seal(secret, sel)
-// 	if err != nil {
-// 		t.Fatalf("failed to seal: %v", err)
-// 	}
-// 	unseal, err := key.Unseal(sealed)
-// 	if err != nil {
-// 		t.Fatalf("failed to unseal: %v", err)
-// 	}
-// 	if !bytes.Equal(secret, unseal) {
-// 		t.Errorf("unsealed (%v) not equal to secret (%v)", unseal, secret)
-// 	}
-// }

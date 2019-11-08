@@ -68,28 +68,6 @@ func ReadPCRs(rw io.ReadWriter, sel tpm2.PCRSelection) (*proto.Pcrs, error) {
 	return &pl, nil
 }
 
-// ComputePCRDigest will take in a PCR proto and compute the SHA256 digest based on the
-// given PCR proto.
-// Followed PCRComputeCurrentDigest() in the TPM spec.
-// func ComputePCRDigest(pcrs *proto.Pcrs, hashAlg tpm2.Algorithm) ([]byte, error) {
-// 	hash, err := hashAlg.Hash()
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// 	hashCon := hash.New()
-
-// 	pcrMap := pcrs.GetPcrs()
-// 	pcrsList := make([]int, 0, len(pcrMap))
-// 	for k := range pcrMap {
-// 		pcrsList = append(pcrsList, int(k))
-// 	}
-// 	sort.Ints(pcrsList)
-// 	for _, pcrNum := range pcrsList {
-// 		hashCon.Write(pcrMap[uint32(pcrNum)])
-// 	}
-// 	return hashCon.Sum(nil), nil
-// }
-
 // CurrentPCRs represent current PCRs states
 type CurrentPCRs struct{ tpm2.PCRSelection }
 
@@ -129,13 +107,9 @@ func (p TargetPCRs) GetPCRSelection() tpm2.PCRSelection {
 
 // PCRsForSealing read from TPM and return the selected PCRs.
 func (p CurrentPCRs) PCRsForSealing(rw io.ReadWriter) (*proto.Pcrs, error) {
-	if p.PCRSelection.PCRs == nil || len(p.PCRSelection.PCRs) == 0 {
+	if p.PCRSelection.PCRs == nil {
 		panic("CurrentPCRs contains 0 PCRs")
 	}
-	if rw == nil {
-		panic("io.ReadWriter cannot be nil for CurrentPCRs")
-	}
-
 	pcrVals, err := ReadPCRs(rw, p.PCRSelection)
 	if err != nil {
 		return nil, err
@@ -155,11 +129,8 @@ type CertificationOpt interface {
 
 // CertifyPCRs from CurrentPCRs will read PCR values from TPM and compare the digest.
 func (p CurrentPCRs) CertifyPCRs(rw io.ReadWriter, digest []byte) error {
-	if p.PCRSelection.PCRs == nil || len(p.PCRSelection.PCRs) == 0 {
+	if p.PCRSelection.PCRs == nil {
 		panic("CurrentPCRs contains nil or 0 PCRs")
-	}
-	if rw == nil {
-		panic("io.ReadWriter cannot be nil for CurrentPCRs")
 	}
 	pcrVals, err := ReadPCRs(rw, p.PCRSelection)
 	if err != nil {

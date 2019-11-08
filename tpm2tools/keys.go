@@ -170,10 +170,10 @@ func (k *Key) Close() {
 	tpm2.FlushContext(k.rw, k.handle)
 }
 
-// Seal will seal the sensitive data with the given SealingOPT.
-// SealingOPT contains some PCRs values which will bind to the secret. Those PCRs
+// Seal will seal the sensitive data with the given SealingOpt.
+// SealingOpt contains some PCRs values which will bind to the secret. Those PCRs
 // will also be used to generate a ticket to certify the seal in the future.
-// SealingOPT can be nil, in which case the secert will not be bind to any PCRs.
+// SealingOpt can be nil, in which case the the auth will be empty.
 // The Key k is used as the parent key.
 func (k *Key) Seal(sensitive []byte, sOpt SealingOpt) (*proto.SealedBytes, error) {
 	var auth []byte
@@ -188,9 +188,7 @@ func (k *Key) Seal(sensitive []byte, sOpt SealingOpt) (*proto.SealedBytes, error
 			return nil, err
 		}
 		auth = ComputePCRSessionAuth(pcrs)
-		if err != nil {
-			return nil, err
-		}
+
 		for pcrNum := range pcrs.GetPcrs() {
 			pcrList = append(pcrList, int32(pcrNum))
 		}
@@ -202,12 +200,7 @@ func (k *Key) Seal(sensitive []byte, sOpt SealingOpt) (*proto.SealedBytes, error
 		return nil, err
 	}
 	sb.Pcrs = pcrList
-	// sb.Hash = proto.HashAlgo_SHA256
 	sb.Hash = pcrHash
-	// for _, pcr := range sel.PCRs {
-	// 	sb.Pcrs = append(sb.Pcrs, int32(pcr))
-	// }
-	// sb.Hash = proto.HashAlgo(sel.Hash)
 	sb.Srk = proto.ObjectType(k.pubArea.Type)
 	return sb, nil
 }
@@ -276,7 +269,6 @@ func (k *Key) Unseal(in *proto.SealedBytes, cOpt CertificationOpt) ([]byte, erro
 	session, err := createPCRSession(k.rw, sel)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create session: %v", err)
-		// sel.PCRs = append(sel.PCRs, int(pcr))
 	}
 	defer tpm2.FlushContext(k.rw, session)
 
@@ -314,15 +306,6 @@ func (k *Key) Unseal(in *proto.SealedBytes, cOpt CertificationOpt) ([]byte, erro
 	if len(sel.PCRs) == 0 {
 		return tpm2.Unseal(k.rw, sealed, "")
 	}
-	// if len(sel.PCRs) == 0 {
-	// 	return tpm2.Unseal(k.rw, sealed, "")
-	// }
-
-	// session, err := createPCRSession(k.rw, sel)
-	// if err != nil {
-	// 	return nil, fmt.Errorf("failed to unseal: %v", err)
-	// }
-	// defer tpm2.FlushContext(k.rw, session)
 
 	return tpm2.UnsealWithSession(k.rw, session, sealed, "")
 }
@@ -337,79 +320,3 @@ func (k *Key) Reseal(in *proto.SealedBytes, cOpt CertificationOpt, sOpt SealingO
 	}
 	return k.Seal(sensitive, sOpt)
 }
-
-// type tpmsPCRSelection struct {
-// 	Hash tpm2.Algorithm
-// 	Size byte
-// 	PCRs tpmutil.RawBytes
-// }
-
-// type sessionSummary struct {
-// 	OldDigest      tpmutil.RawBytes
-// 	CmdIDPolicyPCR uint32
-// 	NumPcrSels     uint32
-// 	Sel            tpmsPCRSelection
-// 	PcrDigest      tpmutil.RawBytes
-// }
-
-// func computePCRSessionAuthFromPCRsProto(pcrs *proto.Pcrs) ([]byte, error) {
-// 	pcrsMap := make(map[int][]byte)
-// 	for k, v := range pcrs.GetPcrs() {
-// 		pcrsMap[int(k)] = v
-// 	}
-// 	return computePCRSessionAuth(pcrsMap)
-// }
-
-// func computePCRSessionAuth(pcrs map[int][]byte) ([]byte, error) {
-// 	var pcrBits [3]byte
-// 	for pcr := range pcrs {
-// 		byteNum := pcr / 8
-// 		bytePos := byte(1 << byte(pcr%8))
-// 		pcrBits[byteNum] |= bytePos
-// 	}
-// 	pcrDigest := digestPCRList(pcrs)
-
-// 	summary := sessionSummary{
-// 		OldDigest:      make([]byte, sha256.Size),
-// 		CmdIDPolicyPCR: uint32(tpm2.CmdPolicyPCR),
-// 		NumPcrSels:     1,
-// 		Sel: tpmsPCRSelection{
-// 			Hash: tpm2.AlgSHA256,
-// 			Size: 3,
-// 			PCRs: pcrBits[:],
-// 		},
-// 		PcrDigest: pcrDigest,
-// 	}
-// 	b, err := tpmutil.Pack(summary)
-// 	if err != nil {
-// 		return nil, fmt.Errorf("failed to pack for hashing: %v ", err)
-// 	}
-
-// 	digest := sha256.Sum256(b)
-// 	return digest[:], nil
-// }
-
-// func digestPCRList(pcrs map[int][]byte) []byte {
-// 	hash := crypto.SHA256.New()
-// 	for i := 0; i < 24; i++ {
-// 		if pcrValue, exists := pcrs[i]; exists {
-// 			hash.Write(pcrValue)
-// 		}
-// 	}
-// 	return hash.Sum(nil)
-// }
-
-// func getPCRSessionAuth(rw io.ReadWriter, pcrs []int) ([]byte, error) {
-// 	handle, err := createPCRSession(rw, pcrs)
-// 	if err != nil {
-// 		return nil, fmt.Errorf("failed to get digest: %v", err)
-// 	}
-// 	defer tpm2.FlushContext(rw, handle)
-
-// 	digest, err := tpm2.PolicyGetDigest(rw, handle)
-// 	if err != nil {
-// 		return nil, fmt.Errorf("could not get digest from session: %v", err)
-// 	}
-
-// 	return digest, nil
-// }

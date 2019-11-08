@@ -17,6 +17,7 @@ var (
 	keyAlgo  string
 	pcrs     []int
 	hashAlgo string
+	certify  bool
 )
 
 // Disable the "help" subcommand (and just use the -h/--help flags).
@@ -59,6 +60,12 @@ func addPublicKeyAlgoFlag(cmd *cobra.Command) {
 func addHashAlgoFlag(cmd *cobra.Command) {
 	cmd.PersistentFlags().StringVar(&hashAlgo, "hash-algo", "sha256",
 		"Hash Algorithm, \"sha1\",  \"sha256\", or \"sha384\"")
+}
+
+// Lets this command enforce certification
+func addCertifyFlag(cmd *cobra.Command) {
+	cmd.PersistentFlags().BoolVar(&certify, "certify", false,
+		"ask TPM to certify this operation to sealing PCRs with current PCR value")
 }
 
 // alwaysError implements io.ReadWriter by always returning an error
