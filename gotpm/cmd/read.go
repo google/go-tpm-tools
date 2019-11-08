@@ -33,19 +33,19 @@ If --pcrs is not provided, all pcrs are read for that hash algorithm.`,
 		}
 		defer rwc.Close()
 
-		hashAlgo, err := getHashAlgo()
+		sel, err := getSelection()
 		if err != nil {
 			return err
 		}
 
-		if pcrs == nil {
-			if pcrs, err = getDefaultPcrs(rwc); err != nil {
+		if len(sel.PCRs) == 0 {
+			if sel.PCRs, err = getDefaultPcrs(rwc); err != nil {
 				return err
 			}
 		}
 
-		fmt.Fprintf(debugOutput(), "Reading pcrs (%v)\n", pcrs)
-		pcrList, err := tpm2tools.ReadPCRs(rwc, pcrs, hashAlgo)
+		fmt.Fprintf(debugOutput(), "Reading pcrs (%v)\n", sel.PCRs)
+		pcrList, err := tpm2tools.ReadPCRs(rwc, sel)
 		if err != nil {
 			return err
 		}
