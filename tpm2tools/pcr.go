@@ -129,9 +129,6 @@ type CertificationOpt interface {
 
 // CertifyPCRs from CurrentPCRs will read PCR values from TPM and compare the digest.
 func (p CurrentPCRs) CertifyPCRs(rw io.ReadWriter, digest []byte) error {
-	if p.PCRSelection.PCRs == nil {
-		panic("CurrentPCRs contains nil or 0 PCRs")
-	}
 	pcrVals, err := ReadPCRs(rw, p.PCRSelection)
 	if err != nil {
 		return err
@@ -141,9 +138,6 @@ func (p CurrentPCRs) CertifyPCRs(rw io.ReadWriter, digest []byte) error {
 
 // CertifyPCRs will compare the digest with given expected PCRs values.
 func (p ExpectedPCRs) CertifyPCRs(_ io.ReadWriter, digest []byte) error {
-	if p.Pcrs == nil || len(p.Pcrs.GetPcrs()) == 0 {
-		panic("ExpectedPCRs contains nil or 0 PCRs")
-	}
 	return validatePCRDigest(p.Pcrs, digest)
 }
 

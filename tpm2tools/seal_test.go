@@ -228,14 +228,14 @@ func TestReseal(t *testing.T) {
 		t.Fatalf("unsealed (%v) not equal to secret (%v)", unseal, secret)
 	}
 
-	// create a new set of PCRs value for modificiation
 	extensions := [][]byte{
 		bytes.Repeat([]byte{0xAA}, sha256.Size),
 	}
+	// create a new set of PCRs value for modificiation
 	newPcrsValue, err := ReadPCRs(rwc, sel)
+	// change pcr value to the predicted future value for resealing
 	newPcrsValue.GetPcrs()[uint32(pcrToChange)] = computePCRValue(newPcrsValue.GetPcrs()[uint32(pcrToChange)], extensions)
 
-	// change pcr value to the predicted future value for resealing
 	resealed, err := key.Reseal(sealed, nil, TargetPCRs{newPcrsValue})
 	if err != nil {
 		t.Fatalf("failed to reseal: %v", err)

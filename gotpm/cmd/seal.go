@@ -55,8 +55,7 @@ state (like Secure Boot).`,
 
 		var sealed *proto.SealedBytes
 		if len(pcrs) > 0 {
-			sOpt := tpm2tools.CurrentPCRs{PCRSelection: sel}
-			sealed, err = srk.Seal(secret, sOpt)
+			sealed, err = srk.Seal(secret, tpm2tools.CurrentPCRs{PCRSelection: sel})
 		} else {
 			sealed, err = srk.Seal(secret, nil)
 		}
@@ -114,8 +113,7 @@ Thus, algorithm and PCR options are not needed for the unseal command.`,
 
 		var secret []byte
 		if certify {
-			cOpt := tpm2tools.ExpectedPCRs{Pcrs: sealed.CertifiedPcrs}
-			secret, err = srk.Unseal(&sealed, cOpt)
+			secret, err = srk.Unseal(&sealed, tpm2tools.ExpectedPCRs{Pcrs: sealed.CertifiedPcrs})
 		} else {
 			secret, err = srk.Unseal(&sealed, nil)
 		}

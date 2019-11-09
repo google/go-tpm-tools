@@ -129,7 +129,7 @@ func TestTargetPCR(t *testing.T) {
 	rwc := internal.GetTPM(t)
 	defer CheckedClose(t, rwc)
 
-	pcrList := []int{1, 7}
+	pcrList := []int{7}
 	expectedPCRSelection := tpm2.PCRSelection{
 		Hash: tpm2.AlgSHA256,
 		PCRs: pcrList,

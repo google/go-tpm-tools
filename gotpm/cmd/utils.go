@@ -65,7 +65,7 @@ func addHashAlgoFlag(cmd *cobra.Command) {
 // Lets this command enforce certification
 func addCertifyFlag(cmd *cobra.Command) {
 	cmd.PersistentFlags().BoolVar(&certify, "certify", false,
-		"ask TPM to certify this operation to sealing PCRs with current PCR value")
+		"ask TPM to certify this operation using the certified PCRs values")
 }
 
 // alwaysError implements io.ReadWriter by always returning an error
