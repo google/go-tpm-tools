@@ -22,17 +22,16 @@ import (
 
 // CreateImportBlob uses the provided public EK to encrypt the sensitive data into import blob format.
 // The returned import blob can be decrypted by the TPM associated with the provided EK.
-// The pcrs parameter is used to create a PCR policy on the object to be imported using the SHA256 versions of the provided PCRs. A nil pcrs value will allow password/HMAC authorization.
-func CreateImportBlob(ekPub crypto.PublicKey, sensitive []byte, pcrs tpmpb.Pcrs) (*tpmpb.ImportBlob, error) {
+// The pcrs parameter is used to create a PCR policy on the object to be imported.
+// A nil pcrs value will allow password/HMAC authorization.
+func CreateImportBlob(ekPub crypto.PublicKey, sensitive []byte, pcrs *tpmpb.Pcrs) (*tpmpb.ImportBlob, error) {
 	ek, err := CreateEKPublicAreaFromKey(ekPub)
 	if err != nil {
 		return nil, err
 	}
 	private := createPrivate(sensitive, ek.NameAlg)
-	public, err := createPublic(private, ek.NameAlg, pcrs)
-	if err != nil {
-		return nil, err
-	}
+	public := createPublic(private, ek.NameAlg, pcrs)
+
 	var seed, encryptedSeed []byte
 	switch ek.Type {
 	case tpm2.AlgRSA:
@@ -78,11 +77,11 @@ func createPrivate(sensitive []byte, hashAlg tpm2.Algorithm) tpm2.Private {
 	return private
 }
 
-func createPublic(private tpm2.Private, hashAlg tpm2.Algorithm, pcrs tpmpb.Pcrs) (public tpm2.Public, err error) {
+func createPublic(private tpm2.Private, hashAlg tpm2.Algorithm, pcrs *tpmpb.Pcrs) (public tpm2.Public, err error) {
 	publicHash := getHash(hashAlg)
 	publicHash.Write(private.SeedValue)
 	publicHash.Write(private.Sensitive)
-	public = tpm2.Public{
+	public := tpm2.Public{
 		Type:    tpm2.AlgKeyedHash,
 		NameAlg: hashAlg,
 		KeyedHashParameters: &tpm2.KeyedHashParams{
@@ -90,14 +89,14 @@ func createPublic(private tpm2.Private, hashAlg tpm2.Algorithm, pcrs tpmpb.Pcrs)
 			Unique: publicHash.Sum(nil),
 		},
 	}
-	if pcrs != nil {
-		public.AuthPolicy, err = tpm2tools.ComputePCRSessionAuth(pcrs)
+	if pcrs != nil && len(pcrs.Pcrs) != 0 {
+		public.AuthPolicy = tpm2tools.ComputePCRSessionAuth(pcrs)
 		public.Attributes |= tpm2.FlagAdminWithPolicy
-		return public, err
+		return public
 	} else {
 		// If we aren't using a PCR policy, allow password/HMAC authorization.
 		public.Attributes |= tpm2.FlagUserWithAuth
-		return public, nil
+		return public
 	}
 }
 

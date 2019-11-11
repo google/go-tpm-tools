@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/google/go-tpm-tools/internal"
+	"github.com/google/go-tpm-tools/proto"
 	"github.com/google/go-tpm-tools/tpm2tools"
 	"github.com/google/go-tpm/tpm2"
 )
@@ -66,17 +67,18 @@ func TestImportPCRs(t *testing.T) {
 	badPCR[0]++
 	tests := []struct {
 		name          string
-		pcrMap        map[int][]byte
+		pcrs          *proto.Pcrs
 		expectSuccess bool
 	}{
-		{"No-PCR", nil, true},
-		{"Good-PCR", map[int][]byte{0: pcr0}, true},
-		{"Bad-PCR", map[int][]byte{0: badPCR}, false},
+		{"No-PCR-nil", nil, true},
+		{"No-PCR-empty", &proto.Pcrs{Hash: proto.HashAlgo_SHA256}, true},
+		{"Good-PCR", &proto.Pcrs{Hash: proto.HashAlgo_SHA256, Pcrs: map[uint32][]byte{0: pcr0}}, true},
+		{"Bad-PCR", &proto.Pcrs{Hash: proto.HashAlgo_SHA256, Pcrs: map[uint32][]byte{0: badPCR}}, false},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			secret := []byte("super secret code")
-			blob, err := CreateImportBlob(ek.PublicKey(), secret, test.pcrMap)
+			blob, err := CreateImportBlob(ek.PublicKey(), secret, test.pcrs)
 			if err != nil {
 				t.Fatalf("creating import blob failed: %v", err)
 			}
