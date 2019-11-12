@@ -73,20 +73,7 @@ func (k *Key) Import(rw io.ReadWriter, blob *tpmpb.ImportBlob) ([]byte, error) {
 		}
 		defer tpm2.FlushContext(rw, unsealSession)
 
-		var pcrs []int
-		for pcr := range blob.Pcrs.Pcrs {
-			pcrs = append(pcrs, int(pcr))
-		}
-		var hash tpm2.Algorithm
-		switch blob.Pcrs.Hash {
-		case proto.HashAlgo_SHA1:
-			hash = tpm2.AlgSHA1
-		case proto.HashAlgo_SHA256:
-			hash = tpm2.AlgSHA256
-		default:
-			return nil, fmt.Errorf("invalid hash algorithm: %v", blob.Pcrs.Hash)
-		}
-		if err = tpm2.PolicyPCR(rw, unsealSession, nil, tpm2.PCRSelection{hash, pcrs}); err != nil {
+		if err = tpm2.PolicyPCR(rw, unsealSession, nil, PCRSelection(blob.Pcrs)); err != nil {
 			return nil, err
 		}
 		return tpm2.UnsealWithSession(rw, unsealSession, handle, "")
