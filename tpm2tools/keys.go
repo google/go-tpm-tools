@@ -2,7 +2,6 @@ package tpm2tools
 
 import (
 	"crypto"
-	"crypto/sha256"
 	"crypto/subtle"
 	"fmt"
 	"io"
@@ -208,7 +207,7 @@ func (k *Key) Seal(sensitive []byte, sOpt SealingOpt) (*proto.SealedBytes, error
 func sealHelper(rw io.ReadWriter, parentHandle tpmutil.Handle, auth []byte, sensitive []byte, certifyPCRsSel tpm2.PCRSelection) (*proto.SealedBytes, error) {
 	inPublic := tpm2.Public{
 		Type:       tpm2.AlgKeyedHash,
-		NameAlg:    tpm2.AlgSHA256,
+		NameAlg:    sessionHashAlgTpm,
 		Attributes: tpm2.FlagFixedTPM | tpm2.FlagFixedParent,
 		AuthPolicy: auth,
 	}
@@ -289,7 +288,7 @@ func (k *Key) Unseal(in *proto.SealedBytes, cOpt CertificationOpt) ([]byte, erro
 		if err != nil {
 			return nil, fmt.Errorf("Ticket unpack failed: %v", err)
 		}
-		hashCon := sha256.New()
+		hashCon := sessionHashAlg.New()
 		hashCon.Write(in.GetCreationData())
 		creationDataHash := hashCon.Sum(nil)
 		_, _, err = tpm2.CertifyCreation(k.rw, "", sealed, tpm2.HandleNull, nil, creationDataHash, tpm2.SigScheme{}, ticket)
