@@ -96,9 +96,6 @@ func (p SealTarget) PCRsForSealing(_ io.ReadWriter) (*proto.Pcrs, error) {
 	return p.Pcrs, nil
 }
 
-////
-////
-
 // CertifyCurrent represent a PCR selection for ceritfy.
 type CertifyCurrent struct{ tpm2.PCRSelection }
 
@@ -125,10 +122,9 @@ func (p CertifyExpected) CertifyPCRs(_ io.ReadWriter, pcrs *proto.Pcrs) error {
 }
 
 func validateCertifyPCRs(certifier *proto.Pcrs, truth *proto.Pcrs) error {
-
 	var pcrList string
-	for pcrNum, pcrVal := range certifier.GetPcrs() {
-		if val, ok := truth.GetPcrs()[pcrNum]; ok {
+	for pcrNum, pcrVal := range truth.GetPcrs() {
+		if val, ok := certifier.GetPcrs()[pcrNum]; ok {
 			if !bytes.Equal(val, pcrVal) {
 				pcrList += string(pcrNum) + "\n"
 			}

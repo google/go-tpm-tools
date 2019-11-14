@@ -39,7 +39,6 @@ func TestSealPlain(t *testing.T) {
 		algo   string
 		pcrArg string
 	}{
-		{"RSA", "rsa", ""},
 		{"RSAwithPCRs", "rsa", "7,8"},
 		{"ECCwithPCRs", "ecc", "7"},
 	}

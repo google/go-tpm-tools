@@ -266,35 +266,3 @@ func TestReseal(t *testing.T) {
 		t.Fatalf("unsealed (%v) not equal to secret (%v)", unseal, secret)
 	}
 }
-
-func TestSealingResealingToNilPCRs(t *testing.T) {
-	rwc := internal.GetTPM(t)
-	defer CheckedClose(t, rwc)
-
-	key, err := StorageRootKeyRSA(rwc)
-	if err != nil {
-		t.Fatalf("can't create srk from template: %v", err)
-	}
-	defer key.Close()
-	secret := []byte("test")
-
-	sealed, err := key.Seal(secret, nil)
-	if err != nil {
-		t.Fatalf("failed to seal: %v", err)
-	}
-	unseal, err := key.Unseal(sealed, nil)
-	if err != nil {
-		t.Fatalf("failed to unseal after resealing: %v", err)
-	}
-	if !bytes.Equal(secret, unseal) {
-		t.Fatalf("unsealed (%v) not equal to secret (%v)", unseal, secret)
-	}
-	resealed, err := key.Reseal(sealed, nil, nil)
-	if err != nil {
-		t.Fatalf("failed to reseal: %v", err)
-	}
-	unseal, err = key.Unseal(resealed, nil)
-	if !bytes.Equal(secret, unseal) {
-		t.Fatalf("unsealed (%v) not equal to secret (%v)", unseal, secret)
-	}
-}
