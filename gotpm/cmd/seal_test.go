@@ -76,19 +76,6 @@ func TestSealPlain(t *testing.T) {
 			if !bytes.Equal(secretIn, secretOut) {
 				t.Errorf("Expected %s, got %s", secretIn, secretOut)
 			}
-
-			// test unseal with certify
-			RootCmd.SetArgs([]string{"unseal", "--quiet", "--input", sealedFile, "--output", secretFile2, "--certify"})
-			if err := RootCmd.Execute(); err != nil {
-				t.Error(err)
-			}
-			secretOut, err = ioutil.ReadFile(secretFile2)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if !bytes.Equal(secretIn, secretOut) {
-				t.Errorf("Expected %s, got %s", secretIn, secretOut)
-			}
 		})
 	}
 }
