@@ -84,17 +84,15 @@ func TestImportPCRs(t *testing.T) {
 			}
 
 			output, err := ek.Import(rwc, blob)
-			if !test.expectSuccess {
-				if err == nil {
-					t.Error("expected Import to fail but it did not")
+			if test.expectSuccess {
+				if err != nil {
+					t.Fatalf("import failed: %v", err)
 				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("import failed: %v", err)
-			}
-			if !bytes.Equal(output, secret) {
-				t.Errorf("got %X, expected %X", output, secret)
+				if !bytes.Equal(output, secret) {
+					t.Errorf("got %X, expected %X", output, secret)
+				}
+			} else if err == nil {
+				t.Error("expected Import to fail but it did not")
 			}
 		})
 	}

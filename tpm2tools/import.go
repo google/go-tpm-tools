@@ -6,6 +6,7 @@ import (
 
 	tpmpb "github.com/google/go-tpm-tools/proto"
 	"github.com/google/go-tpm/tpm2"
+	"github.com/google/go-tpm/tpmutil"
 )
 
 // Import decrypts the secret contained in an encoded import request.
@@ -54,28 +55,26 @@ func (k *Key) Import(rw io.ReadWriter, blob *tpmpb.ImportBlob) ([]byte, error) {
 	}
 	defer tpm2.FlushContext(rw, handle)
 
-	if blob.Pcrs == nil || len(blob.Pcrs.Pcrs) == 0 {
+	var out []byte
+	//if blob.Pcrs == nil || len(blob.Pcrs.Pcrs) == 0 {
+	if len(blob.Pcrs.GetPcrs()) == 0 {
 		// The object to be imported does not have a PCR policy.
-		return tpm2.Unseal(rw, handle, "")
+		out, err = tpm2.Unseal(rw, handle, "")
 	} else {
 		// The object to be imported has a PCR policy.
-		unsealSession, _, err := tpm2.StartAuthSession(
-			rw,
-			tpm2.HandleNull,
-			tpm2.HandleNull,
-			make([]byte, 16),
-			nil,
-			tpm2.SessionPolicy,
-			tpm2.AlgNull,
-			tpm2.AlgSHA256)
+		pcrSel := PCRSelection(blob.Pcrs)
+
+		var unsealSession tpmutil.Handle
+		unsealSession, err = createPCRSession(rw, pcrSel)
 		if err != nil {
 			return nil, err
 		}
 		defer tpm2.FlushContext(rw, unsealSession)
 
-		if err = tpm2.PolicyPCR(rw, unsealSession, nil, PCRSelection(blob.Pcrs)); err != nil {
-			return nil, err
-		}
-		return tpm2.UnsealWithSession(rw, unsealSession, handle, "")
+		out, err = tpm2.UnsealWithSession(rw, unsealSession, handle, "")
 	}
+	if err != nil {
+		return nil, fmt.Errorf("unseal failed: %s", err)
+	}
+	return out, nil
 }

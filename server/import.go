@@ -20,10 +20,10 @@ import (
 	"github.com/google/go-tpm-tools/tpm2tools"
 )
 
-// CreateImportBlob uses the provided public EK to encrypt the sensitive data into import blob format.
-// The returned import blob can be decrypted by the TPM associated with the provided EK.
-// The pcrs parameter is used to create a PCR policy on the object to be imported.
-// A nil pcrs value will allow password/HMAC authorization.
+// CreateImportBlob uses the provided public EK to encrypt the sensitive data.
+// The returned ImportBlob can then be decrypted and imported using the
+// tpm2tools Key.Import() method. A non-nil pcrs parameter adds a requirement
+// that the TPM must have specific PCR values for Import() to succeed.
 func CreateImportBlob(ekPub crypto.PublicKey, sensitive []byte, pcrs *tpmpb.Pcrs) (*tpmpb.ImportBlob, error) {
 	ek, err := CreateEKPublicAreaFromKey(ekPub)
 	if err != nil {
@@ -89,15 +89,15 @@ func createPublic(private tpm2.Private, hashAlg tpm2.Algorithm, pcrs *tpmpb.Pcrs
 			Unique: publicHash.Sum(nil),
 		},
 	}
-	if pcrs != nil && len(pcrs.Pcrs) != 0 {
+	if len(pcrs.GetPcrs()) == 0 {
+		// Allow password authorization so we can use a nil AuthPolicy.
+		public.AuthPolicy = nil
+		public.Attributes |= tpm2.FlagUserWithAuth
+	} else {
 		public.AuthPolicy = tpm2tools.ComputePCRSessionAuth(pcrs)
 		public.Attributes |= tpm2.FlagAdminWithPolicy
-		return public
-	} else {
-		// If we aren't using a PCR policy, allow password/HMAC authorization.
-		public.Attributes |= tpm2.FlagUserWithAuth
-		return public
 	}
+	return public
 }
 
 func createRSASeed(ek tpm2.Public) (seed, encryptedSeed []byte, err error) {
