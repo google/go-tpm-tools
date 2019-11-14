@@ -178,23 +178,25 @@ func (k *Key) Seal(sensitive []byte, sOpt SealingOpt) (*proto.SealedBytes, error
 	var auth []byte
 	var pcrList []int32
 	var pcrHash proto.HashAlgo
-	var certifyPCRs tpm2.PCRSelection
+	// var certifyPCRs tpm2.PCRSelection
 	var err error
 
-	if sOpt != nil {
-		pcrs, err := sOpt.PCRsForSealing(k.rw)
-		if err != nil {
-			return nil, err
-		}
-		auth = ComputePCRSessionAuth(pcrs)
-
-		for pcrNum := range pcrs.GetPcrs() {
-			pcrList = append(pcrList, int32(pcrNum))
-		}
-		certifyPCRs = sOpt.GetPCRSelection()
-		pcrHash = pcrs.GetHash()
+	if sOpt == nil {
+		panic("Seal cannot be nil")
 	}
-	sb, err := sealHelper(k.rw, k.Handle(), auth, sensitive, certifyPCRs)
+
+	pcrs, err := sOpt.PCRsForSealing(k.rw)
+	if err != nil {
+		return nil, err
+	}
+	auth = ComputePCRSessionAuth(pcrs)
+
+	for pcrNum := range pcrs.GetPcrs() {
+		pcrList = append(pcrList, int32(pcrNum))
+	}
+	// certifyPCRs = sOpt.GetPCRSelection()
+	pcrHash = pcrs.GetHash()
+	sb, err := sealHelper(k.rw, k.Handle(), auth, sensitive, ComprehensivePcrSel(sessionHashAlgTpm))
 	if err != nil {
 		return nil, err
 	}
@@ -295,8 +297,9 @@ func (k *Key) Unseal(in *proto.SealedBytes, cOpt CertificationOpt) ([]byte, erro
 		if err != nil {
 			return nil, fmt.Errorf("failed to certify creation: %v", err)
 		}
-		decodedCreation, err := tpm2.DecodeCreationData(in.GetCreationData())
-		err = cOpt.CertifyPCRs(k.rw, decodedCreation.PCRDigest)
+		// decodedCreation, err := tpm2.DecodeCreationData(in.GetCreationData())
+		// err = cOpt.CertifyPCRs(k.rw, decodedCreation.PCRDigest)
+		err = cOpt.CertifyPCRs(k.rw, in.GetCertifiedPcrs())
 		if err != nil {
 			return nil, fmt.Errorf("failed to certify PCRs: %v", err)
 		}

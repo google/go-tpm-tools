@@ -1,6 +1,7 @@
 package tpm2tools
 
 import (
+	"bytes"
 	"crypto"
 	"crypto/subtle"
 	"fmt"
@@ -68,77 +69,79 @@ func ReadPCRs(rw io.ReadWriter, sel tpm2.PCRSelection) (*proto.Pcrs, error) {
 	return &pl, nil
 }
 
-// CurrentPCRs represent current PCRs states
-type CurrentPCRs struct{ tpm2.PCRSelection }
+// SealCurrent represent current PCRs states.
+type SealCurrent struct{ tpm2.PCRSelection }
 
-// ExpectedPCRs should match the old PCRs.
-type ExpectedPCRs struct{ *proto.Pcrs }
-
-// TargetPCRs predicted sealing target PCRs.
-type TargetPCRs struct{ *proto.Pcrs }
+// SealTarget predicted sealing target PCRs.
+type SealTarget struct{ *proto.Pcrs }
 
 // SealingOpt will return a set of target PCRs when sealing.
 type SealingOpt interface {
 	PCRsForSealing(rw io.ReadWriter) (*proto.Pcrs, error)
-	GetPCRSelection() tpm2.PCRSelection
+}
+
+// PCRsForSealing read from TPM and return the selected PCRs.
+func (p SealCurrent) PCRsForSealing(rw io.ReadWriter) (*proto.Pcrs, error) {
+	if p.PCRSelection.PCRs == nil {
+		panic("SealCurrent contains 0 PCRs")
+	}
+	return ReadPCRs(rw, p.PCRSelection)
 }
 
 // PCRsForSealing return the target PCRs.
-func (p TargetPCRs) PCRsForSealing(_ io.ReadWriter) (*proto.Pcrs, error) {
+func (p SealTarget) PCRsForSealing(_ io.ReadWriter) (*proto.Pcrs, error) {
 	if p.Pcrs == nil || len(p.Pcrs.GetPcrs()) == 0 {
-		panic("TargetPCRs contains 0 PCRs")
+		panic("SealTarget contains 0 PCRs")
 	}
 	return p.Pcrs, nil
 }
 
-// GetPCRSelection will return the PCRSelection extracted from a PCR proto.
-func (p TargetPCRs) GetPCRSelection() tpm2.PCRSelection {
-	pcrMap := p.GetPcrs()
-	pcrList := make([]int, 0, len(pcrMap))
-	for k := range pcrMap {
-		pcrList = append(pcrList, int(k))
-	}
-	sel := tpm2.PCRSelection{
-		Hash: tpm2.Algorithm(p.Pcrs.GetHash()),
-		PCRs: pcrList,
-	}
-	return sel
-}
+////
+////
 
-// PCRsForSealing read from TPM and return the selected PCRs.
-func (p CurrentPCRs) PCRsForSealing(rw io.ReadWriter) (*proto.Pcrs, error) {
-	if p.PCRSelection.PCRs == nil {
-		panic("CurrentPCRs contains 0 PCRs")
-	}
-	pcrVals, err := ReadPCRs(rw, p.PCRSelection)
-	if err != nil {
-		return nil, err
-	}
-	return pcrVals, nil
-}
+// CertifyCurrent represent a PCR selection for ceritfy.
+type CertifyCurrent struct{ tpm2.PCRSelection }
 
-// GetPCRSelection just return the PCRSelection.
-func (p CurrentPCRs) GetPCRSelection() tpm2.PCRSelection {
-	return p.PCRSelection
-}
+// CertifyExpected should match the old PCRs.
+type CertifyExpected struct{ *proto.Pcrs }
 
 // CertificationOpt is an interface to certify keys created by create().
 type CertificationOpt interface {
-	CertifyPCRs(rw io.ReadWriter, digest []byte) error
+	CertifyPCRs(rw io.ReadWriter, certified *proto.Pcrs) error
 }
 
 // CertifyPCRs from CurrentPCRs will read PCR values from TPM and compare the digest.
-func (p CurrentPCRs) CertifyPCRs(rw io.ReadWriter, digest []byte) error {
-	pcrVals, err := ReadPCRs(rw, p.PCRSelection)
+func (p CertifyCurrent) CertifyPCRs(rw io.ReadWriter, pcrs *proto.Pcrs) error {
+	current, err := ReadPCRs(rw, p.PCRSelection)
 	if err != nil {
 		return err
 	}
-	return validatePCRDigest(pcrVals, digest)
+	return validateCertifyPCRs(pcrs, current)
 }
 
 // CertifyPCRs will compare the digest with given expected PCRs values.
-func (p ExpectedPCRs) CertifyPCRs(_ io.ReadWriter, digest []byte) error {
-	return validatePCRDigest(p.Pcrs, digest)
+func (p CertifyExpected) CertifyPCRs(_ io.ReadWriter, pcrs *proto.Pcrs) error {
+	return validateCertifyPCRs(pcrs, p.Pcrs)
+}
+
+func validateCertifyPCRs(certifier *proto.Pcrs, truth *proto.Pcrs) error {
+
+	var pcrList string
+	for pcrNum, pcrVal := range certifier.GetPcrs() {
+		if val, ok := truth.GetPcrs()[pcrNum]; ok {
+			if !bytes.Equal(val, pcrVal) {
+				pcrList += string(pcrNum) + "\n"
+			}
+		} else {
+			// pcr not present
+			panic("PCR " + string(pcrNum) + " not existed in the certified PCRs")
+		}
+	}
+
+	if pcrList != "" {
+		return fmt.Errorf("Certify PCR not matching: " + pcrList)
+	}
+	return nil
 }
 
 func validatePCRDigest(pcrs *proto.Pcrs, digest []byte) error {
@@ -155,6 +158,16 @@ func PCRSelection(pcrs *proto.Pcrs) tpm2.PCRSelection {
 
 	for pcrNum := range pcrs.Pcrs {
 		sel.PCRs = append(sel.PCRs, int(pcrNum))
+	}
+	return sel
+}
+
+// ComprehensivePcrSel will returns a full pcr selection (24 pcrs) with given
+// hash algo.
+func ComprehensivePcrSel(hash tpm2.Algorithm) tpm2.PCRSelection {
+	sel := tpm2.PCRSelection{Hash: hash}
+	for i := 0; i < 24; i++ {
+		sel.PCRs = append(sel.PCRs, int(i))
 	}
 	return sel
 }

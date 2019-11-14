@@ -34,9 +34,7 @@ func TestSeal(t *testing.T) {
 			secret := []byte("test")
 			sel := tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{7, 23}}
 			pcrToExtend := tpmutil.Handle(23)
-			sOpt := CurrentPCRs{PCRSelection: sel}
-
-			sealed, err := srk.Seal(secret, sOpt)
+			sealed, err := srk.Seal(secret, SealCurrent{PCRSelection: sel})
 			if err != nil {
 				t.Fatalf("failed to seal: %v", err)
 			}
@@ -114,7 +112,7 @@ func TestSelfReseal(t *testing.T) {
 
 	secret := []byte("test")
 	pcrList := []int{0, 4, 7}
-	sOpt := CurrentPCRs{
+	sOpt := SealCurrent{
 		PCRSelection: tpm2.PCRSelection{
 			Hash: tpm2.AlgSHA256,
 			PCRs: pcrList,
@@ -142,7 +140,7 @@ func TestSelfReseal(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sealed, err = key.Reseal(sealed, nil, TargetPCRs{resealTargetPCR})
+	sealed, err = key.Reseal(sealed, nil, SealTarget{resealTargetPCR})
 	if err != nil {
 		t.Fatalf("failed to reseal: %v", err)
 	}
@@ -212,10 +210,7 @@ func TestReseal(t *testing.T) {
 	secret := []byte("test")
 	pcrToChange := uint32(23)
 	sel := tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{7, 23}}
-
-	sOpt := CurrentPCRs{PCRSelection: sel}
-
-	sealed, err := key.Seal(secret, sOpt)
+	sealed, err := key.Seal(secret, SealCurrent{PCRSelection: sel})
 	if err != nil {
 		t.Fatalf("failed to seal: %v", err)
 	}
@@ -236,7 +231,7 @@ func TestReseal(t *testing.T) {
 	// change pcr value to the predicted future value for resealing
 	newPcrsValue.GetPcrs()[uint32(pcrToChange)] = computePCRValue(newPcrsValue.GetPcrs()[uint32(pcrToChange)], extensions)
 
-	resealed, err := key.Reseal(sealed, nil, TargetPCRs{newPcrsValue})
+	resealed, err := key.Reseal(sealed, nil, SealTarget{newPcrsValue})
 	if err != nil {
 		t.Fatalf("failed to reseal: %v", err)
 	}
@@ -257,13 +252,13 @@ func TestReseal(t *testing.T) {
 	}
 
 	// unseal should fail if certify to current PCRs value, as one PCR has changed
-	unseal, err = key.Unseal(resealed, CurrentPCRs{PCRSelection: sel})
+	unseal, err = key.Unseal(resealed, CertifyCurrent{PCRSelection: sel})
 	if err == nil {
 		t.Fatalf("unseal should fail since the certify PCRs have changed.")
 	}
 
 	// certify to original PCRs value (PCRs value when do the sealing) will work
-	unseal, err = key.Unseal(resealed, ExpectedPCRs{pcrsInitial})
+	unseal, err = key.Unseal(resealed, CertifyExpected{pcrsInitial})
 	if err != nil {
 		t.Fatalf("failed to unseal: %v", err)
 	}
