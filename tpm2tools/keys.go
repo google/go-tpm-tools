@@ -172,13 +172,12 @@ func (k *Key) Close() {
 // Seal will seal the sensitive data with the given SealingOpt.
 // SealingOpt contains some PCRs values which will bind to the secret. Those PCRs
 // will also be used to generate a ticket to certify the seal in the future.
-// SealingOpt can be nil, in which case the the auth will be empty.
+// SealingOpt cannot be nil, need to seal to at least on pcr.
 // The Key k is used as the parent key.
 func (k *Key) Seal(sensitive []byte, sOpt SealingOpt) (*proto.SealedBytes, error) {
 	var auth []byte
 	var pcrList []int32
 	var pcrHashAlgo proto.HashAlgo
-	// var certifyPCRs tpm2.PCRSelection
 	var err error
 
 	if sOpt == nil {
