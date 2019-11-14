@@ -110,8 +110,8 @@ func TestValidateCertifyPCRs(t *testing.T) {
 	}
 
 	toBeCertify, err = ReadPCRs(rwc, tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{1, 2, 3}})
-	if err := validateCertifyPCRs(toBeCertify, truth); err == nil {
-		t.Fatalf("Validation should fail")
+	if err := validateCertifyPCRs(toBeCertify, truth); err == nil || err.Error() != "Certify PCRs not matching: [2]" {
+		t.Fatalf("validation should fail due to PCR 2 changed")
 	}
 
 	toBeCertify, err = ReadPCRs(rwc, tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{}})
