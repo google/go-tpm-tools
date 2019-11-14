@@ -91,82 +91,31 @@ func TestGetPCRCount(t *testing.T) {
 	}
 }
 
-// func TestCurrentPCR(t *testing.T) {
-// 	rwc := internal.GetTPM(t)
-// 	defer CheckedClose(t, rwc)
+func TestValidateCertifyPCRs(t *testing.T) {
+	rwc := internal.GetTPM(t)
+	defer CheckedClose(t, rwc)
 
-// 	pcrList := []int{1, 7}
-// 	currentPCRSelection := tpm2.PCRSelection{
-// 		Hash: tpm2.AlgSHA256,
-// 		PCRs: pcrList,
-// 	}
-// 	currentPCR := SealCurrent{PCRSelection: currentPCRSelection}
-// 	proto, err := ReadPCRs(rwc, currentPCRSelection)
-// 	if err != nil {
-// 		t.Fatalf("fail to read PCRs: %v", err)
-// 	}
-// 	computedDigest := computePCRDigest(proto)
+	truth, err := ReadPCRs(rwc, FullPcrSel(tpm2.AlgSHA256))
+	if err != nil {
+		t.Fatalf("Failed to Read PCRs: %v", err)
+	}
 
-// 	if !reflect.DeepEqual(currentPCR.GetPCRSelection(), currentPCRSelection) {
-// 		t.Fatalf("GetPCRSelection not euqal to expect")
-// 	}
+	toBeCertify, err := ReadPCRs(rwc, tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{1, 2, 3}})
+	if err := validateCertifyPCRs(toBeCertify, truth); err != nil {
+		t.Fatalf("Validation should pass: %v", err)
+	}
 
-// 	pcrForSealing, err := currentPCR.PCRsForSealing(rwc)
-// 	if err != nil {
-// 		t.Fatalf("fail to computeDigest: %v", err)
-// 	}
-// 	if !reflect.DeepEqual(pcrForSealing, proto) {
-// 		t.Fatalf("PCRForSealing not equal to expect")
-// 	}
+	if err := tpm2.PCRExtend(rwc, tpmutil.Handle(2), tpm2.AlgSHA256, bytes.Repeat([]byte{0x00}, sha256.Size), ""); err != nil {
+		t.Fatalf("failed to extend pcr for test %v", err)
+	}
 
-// 	if err = currentPCR.CertifyPCRs(rwc, computedDigest); err != nil {
-// 		t.Fatalf("CertifyPCRs failed: %v", err)
-// 	}
-// }
+	toBeCertify, err = ReadPCRs(rwc, tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{1, 2, 3}})
+	if err := validateCertifyPCRs(toBeCertify, truth); err == nil {
+		t.Fatalf("Validation should fail")
+	}
 
-// func TestTargetPCR(t *testing.T) {
-// 	rwc := internal.GetTPM(t)
-// 	defer CheckedClose(t, rwc)
-
-// 	pcrList := []int{7}
-// 	expectedPCRSelection := tpm2.PCRSelection{
-// 		Hash: tpm2.AlgSHA256,
-// 		PCRs: pcrList,
-// 	}
-
-// 	proto, err := ReadPCRs(rwc, expectedPCRSelection)
-// 	if err != nil {
-// 		t.Fatalf("Failed to read pcr: %v", err)
-// 	}
-// 	targetPCR := TargetPCRs{proto}
-
-// 	if !reflect.DeepEqual(targetPCR.GetPCRSelection(), expectedPCRSelection) {
-// 		t.Fatalf("GetPCRSelection not equal to expect")
-// 	}
-
-// 	pcrForSealing, err := targetPCR.PCRsForSealing(nil)
-// 	if err != nil {
-// 		t.Fatalf("Failed to get get PCRsForSealing")
-// 	}
-// 	if !reflect.DeepEqual(pcrForSealing, proto) {
-// 		t.Fatal("PCRForSealing not equal to expect")
-// 	}
-// }
-
-// func TestExpectedPCR(t *testing.T) {
-// 	rwc := internal.GetTPM(t)
-// 	defer CheckedClose(t, rwc)
-
-// 	pcrList := []int{1, 7}
-// 	expectedPCRSelection := tpm2.PCRSelection{
-// 		Hash: tpm2.AlgSHA256,
-// 		PCRs: pcrList,
-// 	}
-// 	proto, err := ReadPCRs(rwc, expectedPCRSelection)
-// 	computedDigest := computePCRDigest(proto)
-
-// 	expectedPCRs := ExpectedPCRs{proto}
-// 	if err = expectedPCRs.CertifyPCRs(nil, computedDigest); err != nil {
-// 		t.Fatalf("CertifyPCRs failed: %v", err)
-// 	}
-// }
+	toBeCertify, err = ReadPCRs(rwc, tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{}})
+	if err := validateCertifyPCRs(toBeCertify, truth); err != nil {
+		t.Fatalf("empty pcrs is always validate")
+	}
+}

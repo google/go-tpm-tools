@@ -3,7 +3,6 @@ package tpm2tools
 import (
 	"bytes"
 	"crypto"
-	"crypto/subtle"
 	"fmt"
 	"io"
 
@@ -113,37 +112,29 @@ func (p CertifyCurrent) CertifyPCRs(rw io.ReadWriter, pcrs *proto.Pcrs) error {
 	if err != nil {
 		return err
 	}
-	return validateCertifyPCRs(pcrs, current)
+	return validateCertifyPCRs(current, pcrs)
 }
 
 // CertifyPCRs will compare the digest with given expected PCRs values.
 func (p CertifyExpected) CertifyPCRs(_ io.ReadWriter, pcrs *proto.Pcrs) error {
-	return validateCertifyPCRs(pcrs, p.Pcrs)
+	return validateCertifyPCRs(p.Pcrs, pcrs)
 }
 
-func validateCertifyPCRs(certifier *proto.Pcrs, truth *proto.Pcrs) error {
-	var pcrList string
-	for pcrNum, pcrVal := range truth.GetPcrs() {
-		if val, ok := certifier.GetPcrs()[pcrNum]; ok {
-			if !bytes.Equal(val, pcrVal) {
-				pcrList += string(pcrNum) + "\n"
+func validateCertifyPCRs(toBeCertified *proto.Pcrs, truth *proto.Pcrs) error {
+	var pcrList []uint32
+	for pcrNum, pcrVal := range toBeCertified.GetPcrs() {
+		if expectedVal, ok := truth.GetPcrs()[pcrNum]; ok {
+			if !bytes.Equal(expectedVal, pcrVal) {
+				pcrList = append(pcrList, pcrNum)
 			}
 		} else {
-			// pcr not present
+			// pcr # out of bound (not within 0-23)
 			panic("PCR " + string(pcrNum) + " not existed in the certified PCRs")
 		}
 	}
 
-	if pcrList != "" {
-		return fmt.Errorf("Certify PCR not matching: " + pcrList)
-	}
-	return nil
-}
-
-func validatePCRDigest(pcrs *proto.Pcrs, digest []byte) error {
-	computedDigest := computePCRDigest(pcrs)
-	if subtle.ConstantTimeCompare(computedDigest, digest) == 0 {
-		return fmt.Errorf("PCR digest not matching")
+	if len(pcrList) > 0 {
+		return fmt.Errorf("Certify PCRs not matching: %v", pcrList)
 	}
 	return nil
 }
@@ -158,9 +149,9 @@ func PCRSelection(pcrs *proto.Pcrs) tpm2.PCRSelection {
 	return sel
 }
 
-// ComprehensivePcrSel will returns a full pcr selection (24 pcrs) with given
+// FullPcrSel will returns a full pcr selection (24 pcrs) with given
 // hash algo.
-func ComprehensivePcrSel(hash tpm2.Algorithm) tpm2.PCRSelection {
+func FullPcrSel(hash tpm2.Algorithm) tpm2.PCRSelection {
 	sel := tpm2.PCRSelection{Hash: hash}
 	for i := 0; i < 24; i++ {
 		sel.PCRs = append(sel.PCRs, int(i))

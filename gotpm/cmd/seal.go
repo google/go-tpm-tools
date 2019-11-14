@@ -126,6 +126,7 @@ func init() {
 	addOutputFlag(unsealCmd)
 	// PCRs and hash algorithm only used for sealing
 	addPCRsFlag(sealCmd)
+	sealCmd.MarkFlagRequired("pcrs")
 	addHashAlgoFlag(sealCmd)
 	addPublicKeyAlgoFlag(sealCmd)
 }

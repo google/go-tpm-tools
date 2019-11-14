@@ -177,12 +177,12 @@ func (k *Key) Close() {
 func (k *Key) Seal(sensitive []byte, sOpt SealingOpt) (*proto.SealedBytes, error) {
 	var auth []byte
 	var pcrList []int32
-	var pcrHash proto.HashAlgo
+	var pcrHashAlgo proto.HashAlgo
 	// var certifyPCRs tpm2.PCRSelection
 	var err error
 
 	if sOpt == nil {
-		panic("Seal cannot be nil")
+		panic("Cannot seal to empty PCRs")
 	}
 
 	pcrs, err := sOpt.PCRsForSealing(k.rw)
@@ -194,14 +194,13 @@ func (k *Key) Seal(sensitive []byte, sOpt SealingOpt) (*proto.SealedBytes, error
 	for pcrNum := range pcrs.GetPcrs() {
 		pcrList = append(pcrList, int32(pcrNum))
 	}
-	// certifyPCRs = sOpt.GetPCRSelection()
-	pcrHash = pcrs.GetHash()
-	sb, err := sealHelper(k.rw, k.Handle(), auth, sensitive, ComprehensivePcrSel(sessionHashAlgTpm))
+	pcrHashAlgo = pcrs.GetHash()
+	sb, err := sealHelper(k.rw, k.Handle(), auth, sensitive, FullPcrSel(sessionHashAlgTpm))
 	if err != nil {
 		return nil, err
 	}
 	sb.Pcrs = pcrList
-	sb.Hash = pcrHash
+	sb.Hash = pcrHashAlgo
 	sb.Srk = proto.ObjectType(k.pubArea.Type)
 	return sb, nil
 }
@@ -263,16 +262,6 @@ func (k *Key) Unseal(in *proto.SealedBytes, cOpt CertificationOpt) ([]byte, erro
 	if in.Srk != proto.ObjectType(k.pubArea.Type) {
 		return nil, fmt.Errorf("Expected key of type %v, got %v", in.Srk, k.pubArea.Type)
 	}
-	sel := tpm2.PCRSelection{Hash: tpm2.Algorithm(in.Hash)}
-	for _, pcr := range in.Pcrs {
-		sel.PCRs = append(sel.PCRs, int(pcr))
-	}
-	session, err := createPCRSession(k.rw, sel)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create session: %v", err)
-	}
-	defer tpm2.FlushContext(k.rw, session)
-
 	sealed, _, err := tpm2.Load(
 		k.rw,
 		k.Handle(),
@@ -297,17 +286,21 @@ func (k *Key) Unseal(in *proto.SealedBytes, cOpt CertificationOpt) ([]byte, erro
 		if err != nil {
 			return nil, fmt.Errorf("failed to certify creation: %v", err)
 		}
-		// decodedCreation, err := tpm2.DecodeCreationData(in.GetCreationData())
-		// err = cOpt.CertifyPCRs(k.rw, decodedCreation.PCRDigest)
 		err = cOpt.CertifyPCRs(k.rw, in.GetCertifiedPcrs())
 		if err != nil {
 			return nil, fmt.Errorf("failed to certify PCRs: %v", err)
 		}
 	}
-	// if sealing to 0 PCRs, then we don't need an auth session to unseal the data
-	if len(sel.PCRs) == 0 {
-		return tpm2.Unseal(k.rw, sealed, "")
+
+	sel := tpm2.PCRSelection{Hash: tpm2.Algorithm(in.Hash)}
+	for _, pcr := range in.Pcrs {
+		sel.PCRs = append(sel.PCRs, int(pcr))
 	}
+	session, err := createPCRSession(k.rw, sel)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create session: %v", err)
+	}
+	defer tpm2.FlushContext(k.rw, session)
 
 	return tpm2.UnsealWithSession(k.rw, session, sealed, "")
 }
