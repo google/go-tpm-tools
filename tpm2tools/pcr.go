@@ -149,7 +149,7 @@ func PCRSelection(pcrs *proto.Pcrs) tpm2.PCRSelection {
 	return sel
 }
 
-// FullPcrSel will return a full pcr selection (24 pcrs) with given
+// FullPcrSel will return a full pcr selection (24 pcrs) with the given
 // hash algo.
 func FullPcrSel(hash tpm2.Algorithm) tpm2.PCRSelection {
 	sel := tpm2.PCRSelection{Hash: hash}
