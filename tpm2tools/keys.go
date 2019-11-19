@@ -276,3 +276,7 @@ func (k *Key) Reseal(in *proto.SealedBytes, pcrs *proto.Pcrs) (*proto.SealedByte
 	sb.Srk = in.Srk
 	return sb, nil
 }
+
+func (k *Key) hasAttribute(attr tpm2.KeyProp) bool {
+	return k.pubArea.Attributes&attr != 0
+}
