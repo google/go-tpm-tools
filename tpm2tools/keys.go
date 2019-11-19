@@ -169,37 +169,28 @@ func (k *Key) Close() {
 	tpm2.FlushContext(k.rw, k.handle)
 }
 
-// Seal will seal the sensitive data with the given SealingOpt.
-// SealingOpt contains some PCRs values which will bind to the secret. Those PCRs
-// will also be used to generate a ticket to certify the seal in the future.
-// SealingOpt cannot be nil, need to seal to at least on pcr.
-// The Key k is used as the parent key.
+// Seal seals the sensitive byte buffer to the PCRs specified by SealingOpt (the
+// SealingOpt cannot be nil). The sealing is done under Owner Hierarchy. During
+// the sealing process, certification data will be created allowing Unseal() to
+// validate the state of the TPM during the sealing process.
 func (k *Key) Seal(sensitive []byte, sOpt SealingOpt) (*proto.SealedBytes, error) {
-	var auth []byte
-	var pcrList []int32
-	var pcrHashAlgo proto.HashAlgo
-	var err error
-
 	if sOpt == nil {
-		panic("Cannot seal to empty PCRs")
+		panic("Cannot seal to nil SealingOpt")
 	}
-
 	pcrs, err := sOpt.PCRsForSealing(k.rw)
 	if err != nil {
 		return nil, err
 	}
-	auth = ComputePCRSessionAuth(pcrs)
-
-	for pcrNum := range pcrs.GetPcrs() {
-		pcrList = append(pcrList, int32(pcrNum))
-	}
-	pcrHashAlgo = pcrs.GetHash()
-	sb, err := sealHelper(k.rw, k.Handle(), auth, sensitive, FullPcrSel(sessionHashAlgTpm))
+	auth := ComputePCRSessionAuth(pcrs)
+	sb, err := sealHelper(k.rw, k.Handle(), auth, sensitive, FullPcrSel(tpm2.Algorithm(pcrs.GetHash())))
 	if err != nil {
 		return nil, err
 	}
-	sb.Pcrs = pcrList
-	sb.Hash = pcrHashAlgo
+
+	for pcrNum := range pcrs.GetPcrs() {
+		sb.Pcrs = append(sb.Pcrs, int32(pcrNum))
+	}
+	sb.Hash = pcrs.GetHash()
 	sb.Srk = proto.ObjectType(k.pubArea.Type)
 	return sb, nil
 }
@@ -242,21 +233,16 @@ func sealHelper(rw io.ReadWriter, parentHandle tpmutil.Handle, auth []byte, sens
 	sb.Priv = priv
 	sb.Pub = pub
 	sb.CreationData = creationData
-
-	t, err := tpmutil.Pack(ticket)
-	if err != nil {
+	if sb.Ticket, err = tpmutil.Pack(ticket); err != nil {
 		return nil, err
 	}
-	sb.Ticket = t
-
 	return &sb, nil
 }
 
-// Unseal takes a private/public pair of buffers and attempts to reverse the
-// sealing process under the owner hierarchy using the SHA256 versions of the
-// provided PCRs.
-// CertificationOpt can be nil, which means no certify will be performed.
-// The Key k is used as the parent key.
+// Unseal attempts to reverse the process of Seal(), using the PCRs, public, and
+// private data in proto.SealedBytes. Optionally, a CertificationOpt can be
+// passed, to verify the state of the TPM when the data was sealed. A nil value
+// can be passed to skip certification.
 func (k *Key) Unseal(in *proto.SealedBytes, cOpt CertificationOpt) ([]byte, error) {
 	if in.Srk != proto.ObjectType(k.pubArea.Type) {
 		return nil, fmt.Errorf("Expected key of type %v, got %v", in.Srk, k.pubArea.Type)
@@ -274,19 +260,15 @@ func (k *Key) Unseal(in *proto.SealedBytes, cOpt CertificationOpt) ([]byte, erro
 
 	if cOpt != nil {
 		var ticket tpm2.Ticket
-		_, err = tpmutil.Unpack(in.GetTicket(), &ticket)
-		if err != nil {
+		if _, err = tpmutil.Unpack(in.GetTicket(), &ticket); err != nil {
 			return nil, fmt.Errorf("Ticket unpack failed: %v", err)
 		}
-		hashCon := sessionHashAlg.New()
-		hashCon.Write(in.GetCreationData())
-		creationDataHash := hashCon.Sum(nil)
-		_, _, err = tpm2.CertifyCreation(k.rw, "", sealed, tpm2.HandleNull, nil, creationDataHash, tpm2.SigScheme{}, ticket)
-		if err != nil {
+		creationHash := sessionHashAlg.New()
+		creationHash.Write(in.GetCreationData())
+		if _, _, err = tpm2.CertifyCreation(k.rw, "", sealed, tpm2.HandleNull, nil, creationHash.Sum(nil), tpm2.SigScheme{}, ticket); err != nil {
 			return nil, fmt.Errorf("failed to certify creation: %v", err)
 		}
-		err = cOpt.CertifyPCRs(k.rw, in.GetCertifiedPcrs())
-		if err != nil {
+		if err := cOpt.CertifyPCRs(k.rw, in.GetCertifiedPcrs()); err != nil {
 			return nil, fmt.Errorf("failed to certify PCRs: %v", err)
 		}
 	}
@@ -304,9 +286,8 @@ func (k *Key) Unseal(in *proto.SealedBytes, cOpt CertificationOpt) ([]byte, erro
 	return tpm2.UnsealWithSession(k.rw, session, sealed, "")
 }
 
-// Reseal unwraps a secret using cOpt and then reseal the secret using sOpt
-// cOpt and sOpt can be nil
-// The Key k is used as the parent key.
+// Reseal is a shortcut to call Unseal() followed by Seal().
+// CertificationOpt will be used in Unseal(), and SealingOpt wil be used in Seal()
 func (k *Key) Reseal(in *proto.SealedBytes, cOpt CertificationOpt, sOpt SealingOpt) (*proto.SealedBytes, error) {
 	sensitive, err := k.Unseal(in, cOpt)
 	if err != nil {

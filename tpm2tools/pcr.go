@@ -1,8 +1,8 @@
 package tpm2tools
 
 import (
-	"bytes"
 	"crypto"
+	"crypto/subtle"
 	"fmt"
 	"io"
 
@@ -68,20 +68,20 @@ func ReadPCRs(rw io.ReadWriter, sel tpm2.PCRSelection) (*proto.Pcrs, error) {
 	return &pl, nil
 }
 
-// SealCurrent represent current PCRs states.
+// SealCurrent seals data to the current specified PCR selection.
 type SealCurrent struct{ tpm2.PCRSelection }
 
-// SealTarget predicted sealing target PCRs.
+// SealTarget predicatively seals data to the given specified PCR values.
 type SealTarget struct{ *proto.Pcrs }
 
-// SealingOpt will return a set of target PCRs when sealing.
+// SealingOpt specifies the PCR values that should be used for Seal().
 type SealingOpt interface {
 	PCRsForSealing(rw io.ReadWriter) (*proto.Pcrs, error)
 }
 
 // PCRsForSealing read from TPM and return the selected PCRs.
 func (p SealCurrent) PCRsForSealing(rw io.ReadWriter) (*proto.Pcrs, error) {
-	if p.PCRSelection.PCRs == nil {
+	if len(p.PCRSelection.PCRs) == 0 {
 		panic("SealCurrent contains 0 PCRs")
 	}
 	return ReadPCRs(rw, p.PCRSelection)
@@ -89,52 +89,60 @@ func (p SealCurrent) PCRsForSealing(rw io.ReadWriter) (*proto.Pcrs, error) {
 
 // PCRsForSealing return the target PCRs.
 func (p SealTarget) PCRsForSealing(_ io.ReadWriter) (*proto.Pcrs, error) {
-	if p.Pcrs == nil || len(p.Pcrs.GetPcrs()) == 0 {
+	if len(p.Pcrs.GetPcrs()) == 0 {
 		panic("SealTarget contains 0 PCRs")
 	}
 	return p.Pcrs, nil
 }
 
-// CertifyCurrent represent a PCR selection for ceritfy.
+// CertifyCurrent certifies that a selection of current PCRs have the same value when sealing.
 type CertifyCurrent struct{ tpm2.PCRSelection }
 
-// CertifyExpected should match the old PCRs.
+// CertifyExpected certifies that the TPM had a specific set of PCR values when sealing.
 type CertifyExpected struct{ *proto.Pcrs }
 
-// CertificationOpt is an interface to certify keys created by create().
+// CertificationOpt determines if the given PCR value can pass certification in Unseal().
 type CertificationOpt interface {
 	CertifyPCRs(rw io.ReadWriter, certified *proto.Pcrs) error
 }
 
 // CertifyPCRs from CurrentPCRs will read PCR values from TPM and compare the digest.
 func (p CertifyCurrent) CertifyPCRs(rw io.ReadWriter, pcrs *proto.Pcrs) error {
+	if len(p.PCRSelection.PCRs) == 0 {
+		panic("CertifyCurrent contains 0 PCRs")
+	}
 	current, err := ReadPCRs(rw, p.PCRSelection)
 	if err != nil {
 		return err
 	}
-	return validateCertifyPCRs(current, pcrs)
+	return checkContainedPCRs(current, pcrs)
 }
 
 // CertifyPCRs will compare the digest with given expected PCRs values.
 func (p CertifyExpected) CertifyPCRs(_ io.ReadWriter, pcrs *proto.Pcrs) error {
-	return validateCertifyPCRs(p.Pcrs, pcrs)
+	if len(p.Pcrs.GetPcrs()) == 0 {
+		panic("CertifyExpected contains 0 PCRs")
+	}
+	return checkContainedPCRs(p.Pcrs, pcrs)
 }
 
-func validateCertifyPCRs(toBeCertified *proto.Pcrs, truth *proto.Pcrs) error {
-	var pcrList []uint32
-	for pcrNum, pcrVal := range toBeCertified.GetPcrs() {
-		if expectedVal, ok := truth.GetPcrs()[pcrNum]; ok {
-			if !bytes.Equal(expectedVal, pcrVal) {
-				pcrList = append(pcrList, pcrNum)
+// Check if the "superset" PCRs contain a valid "subset" PCRs, the PCR value must match
+// If there is one or more PCRs in subset which don't exist in superset, will return
+// an error with the first missing PCR.
+// If there is one or more PCRs value mismatch with the superset, will return an error
+// with the first mismatched PCR numbers.
+func checkContainedPCRs(subset *proto.Pcrs, superset *proto.Pcrs) error {
+	if subset.GetHash() != superset.GetHash() {
+		return fmt.Errorf("PCR hash algo not matching: %v, %v", subset.GetHash(), superset.GetHash())
+	}
+	for pcrNum, pcrVal := range subset.GetPcrs() {
+		if expectedVal, ok := superset.GetPcrs()[pcrNum]; ok {
+			if subtle.ConstantTimeCompare(expectedVal, pcrVal) == 0 {
+				return fmt.Errorf("PCR %d mismatch: expected %s, got %s", pcrNum, expectedVal, pcrVal)
 			}
 		} else {
-			// pcr # out of bound (not within 0-23)
-			panic("PCR " + string(pcrNum) + " not existed in the certified PCRs")
+			return fmt.Errorf("PCR %d mismatch: value missing from the superset PCRs", pcrNum)
 		}
-	}
-
-	if len(pcrList) > 0 {
-		return fmt.Errorf("Certify PCRs not matching: %v", pcrList)
 	}
 	return nil
 }

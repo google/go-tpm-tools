@@ -91,7 +91,7 @@ func TestGetPCRCount(t *testing.T) {
 	}
 }
 
-func TestValidateCertifyPCRs(t *testing.T) {
+func TestCheckContainedPCRs(t *testing.T) {
 	rwc := internal.GetTPM(t)
 	defer CheckedClose(t, rwc)
 
@@ -101,7 +101,7 @@ func TestValidateCertifyPCRs(t *testing.T) {
 	}
 
 	toBeCertify, err := ReadPCRs(rwc, tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{1, 2, 3}})
-	if err := validateCertifyPCRs(toBeCertify, truth); err != nil {
+	if err := checkContainedPCRs(toBeCertify, truth); err != nil {
 		t.Fatalf("Validation should pass: %v", err)
 	}
 
@@ -110,12 +110,12 @@ func TestValidateCertifyPCRs(t *testing.T) {
 	}
 
 	toBeCertify, err = ReadPCRs(rwc, tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{1, 2, 3}})
-	if err := validateCertifyPCRs(toBeCertify, truth); err == nil || err.Error() != "Certify PCRs not matching: [2]" {
+	if err := checkContainedPCRs(toBeCertify, truth); err == nil {
 		t.Fatalf("validation should fail due to PCR 2 changed")
 	}
 
 	toBeCertify, err = ReadPCRs(rwc, tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{}})
-	if err := validateCertifyPCRs(toBeCertify, truth); err != nil {
+	if err := checkContainedPCRs(toBeCertify, truth); err != nil {
 		t.Fatalf("empty pcrs is always validate")
 	}
 }
