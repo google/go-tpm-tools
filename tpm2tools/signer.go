@@ -2,6 +2,7 @@ package tpm2tools
 
 import (
 	"crypto"
+	"crypto/rsa"
 	"fmt"
 	"io"
 	"sync"
@@ -22,12 +23,15 @@ func (signer *tpmSigner) Public() crypto.PublicKey {
 	return signer.Key.PublicKey()
 }
 
-// Sign uses the TPM key to  sign the digest.
+// Sign uses the TPM key to sign the digest.
 // The digest must be hashed from the same hash algorithm as the keys scheme.
 // The opts hash function must also match the keys scheme.
 // Concurrent use of Sign is thread safe, but it is not safe to access the TPM
 // from other sources while Sign is executing.
 func (signer *tpmSigner) Sign(_ io.Reader, digest []byte, opts crypto.SignerOpts) (signature []byte, err error) {
+	if _, ok := opts.(*rsa.PSSOptions); ok {
+		return nil, fmt.Errorf("signing with PSS not supported.")
+	}
 	if opts.HashFunc() != signer.Hash {
 		return nil, fmt.Errorf("opts hash: %v does not match the keys signing hash: %v", opts.HashFunc(), signer.Hash)
 	}
