@@ -15,7 +15,7 @@ var (
 	input    string
 	nvIndex  uint32
 	keyAlgo  string
-	pcrs     []int
+	pcrs     []uint
 	hashAlgo string
 )
 
@@ -46,7 +46,7 @@ func addIndexFlag(cmd *cobra.Command) {
 
 // Lets this command specify some number of PCR arguments, check if in range.
 func addPCRsFlag(cmd *cobra.Command) {
-	cmd.PersistentFlags().IntSliceVar(&pcrs, "pcrs", nil,
+	cmd.PersistentFlags().UintSliceVar(&pcrs, "pcrs", nil,
 		"Comma separated list of PCR numbers")
 }
 
@@ -131,7 +131,11 @@ func getHashAlgo() (tpm2.Algorithm, error) {
 
 func getSelection() (tpm2.PCRSelection, error) {
 	hash, err := getHashAlgo()
-	return tpm2.PCRSelection{Hash: hash, PCRs: pcrs}, err
+	sel := tpm2.PCRSelection{Hash: hash}
+	for _, val := range pcrs {
+		sel.PCRs = append(sel.PCRs, int(val))
+	}
+	return sel, err
 }
 
 func getSRKwithAlgo(rwc io.ReadWriter, algo tpm2.Algorithm) (*tpm2tools.Key, error) {
