@@ -3,6 +3,8 @@ package tpm2tools
 import (
 	"crypto"
 	"crypto/rsa"
+	"math/big"
+	"encoding/asn1"
 	"fmt"
 	"io"
 	"sync"
@@ -46,7 +48,13 @@ func (signer *tpmSigner) Sign(_ io.Reader, digest []byte, opts crypto.SignerOpts
 	if err != nil {
 		return nil, err
 	}
-	return sig.RSA.Signature, nil
+
+	if sig.RSA != nil {
+		return sig.RSA.Signature, nil
+	} else {
+		sigStruct := struct{R *big.Int; S *big.Int}{sig.ECC.R, sig.ECC.S}
+		return asn1.Marshal(sigStruct)
+	}
 }
 
 // GetSigner returns a crypto.Signer wrapping the loaded TPM Key.
@@ -55,9 +63,6 @@ func (signer *tpmSigner) Sign(_ io.Reader, digest []byte, opts crypto.SignerOpts
 // The returned Signer lasts the lifetime of the Key, and will no longer work
 // once the Key has been closed.
 func (k *Key) GetSigner() (crypto.Signer, error) {
-	if k.pubArea.Type != tpm2.AlgRSA {
-		return nil, fmt.Errorf("only RSA keys are supported")
-	}
 	if k.pubArea.AuthPolicy != nil {
 		return nil, fmt.Errorf("keys with auth policies are not supported")
 	}
@@ -67,13 +72,23 @@ func (k *Key) GetSigner() (crypto.Signer, error) {
 	if !k.hasAttribute(tpm2.FlagSign) {
 		return nil, fmt.Errorf("non-signing key used with GetSigner()")
 	}
-	if k.pubArea.RSAParameters.Sign == nil {
-		return nil, fmt.Errorf("key missing required signing scheme")
+
+	var sigScheme *tpm2.SigScheme
+	switch k.pubArea.Type {
+	case tpm2.AlgRSA:
+		sigScheme = k.pubArea.RSAParameters.Sign
+	case tpm2.AlgECC:
+		sigScheme = k.pubArea.ECCParameters.Sign
+	default:
+		return nil, fmt.Errorf("unsupported key type: %v", k.pubArea.Type)
 	}
-	if k.pubArea.RSAParameters.Sign.Alg != tpm2.AlgRSASSA {
-		return nil, fmt.Errorf("only RSASSA signing keys are supported")
+	if sigScheme == nil {
+		return nil, fmt.Errorf("GetSigner called on key missing a signing scheme.")
 	}
-	hash, err := k.pubArea.RSAParameters.Sign.Hash.Hash()
+	if sigScheme.Alg != tpm2.AlgRSASSA && sigScheme.Alg != tpm2.AlgECDSA {
+		return nil, fmt.Errorf("unsupported signing algorithm: %v.", sigScheme.Alg)
+	}
+	hash, err := sigScheme.Hash.Hash()
 	if err != nil {
 		return nil, err
 	}

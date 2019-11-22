@@ -2,10 +2,13 @@ package tpm2tools
 
 import (
 	"crypto"
+	"math/big"
+	"crypto/ecdsa"
 	"crypto/rsa"
 	"crypto/sha1"
 	"crypto/sha256"
 	"testing"
+	"encoding/asn1"
 
 	"github.com/google/go-tpm-tools/internal"
 	"github.com/google/go-tpm/tpm2"
@@ -19,6 +22,31 @@ func templateSSA(hash tpm2.Algorithm) tpm2.Public {
 	return template
 }
 
+func templateECC(hash tpm2.Algorithm) tpm2.Public {
+	template := AIKTemplateRSA(nil)
+	template.Attributes &= ^tpm2.FlagRestricted
+	template.Type = tpm2.AlgECC
+	template.RSAParameters = nil
+	template.ECCParameters = &tpm2.ECCParams{
+		Sign: &tpm2.SigScheme{
+			Alg: tpm2.AlgECDSA,
+			Hash: hash,
+		},
+		CurveID: tpm2.CurveNISTP256,
+	}
+	return template
+}
+
+func verifyRSA(pubKey crypto.PublicKey, hash crypto.Hash, digest, sig []byte) bool {
+	return rsa.VerifyPKCS1v15(pubKey.(*rsa.PublicKey), hash, digest, sig) == nil
+}
+
+func verifyECC(pubKey crypto.PublicKey, _ crypto.Hash, digest, sig []byte) bool {
+	var sigStruct struct{R *big.Int; S *big.Int}
+	asn1.Unmarshal(sig, &sigStruct)
+	return ecdsa.Verify(pubKey.(*ecdsa.PublicKey), digest, sigStruct.R, sigStruct.S)
+}
+
 func TestSign(t *testing.T) {
 	rwc := internal.GetTPM(t)
 	defer CheckedClose(t, rwc)
@@ -27,11 +55,16 @@ func TestSign(t *testing.T) {
 		name     string
 		hash     crypto.Hash
 		template tpm2.Public
+		verify   func(crypto.PublicKey, crypto.Hash, []byte, []byte) bool
 	}{
-		{"RSA-SHA1", crypto.SHA1, templateSSA(tpm2.AlgSHA1)},
-		{"RSA-SHA256", crypto.SHA256, templateSSA(tpm2.AlgSHA256)},
-		{"RSA-SHA384", crypto.SHA384, templateSSA(tpm2.AlgSHA384)},
-		{"RSA-SHA512", crypto.SHA512, templateSSA(tpm2.AlgSHA512)},
+		{"RSA-SHA1", crypto.SHA1, templateSSA(tpm2.AlgSHA1), verifyRSA},
+		{"RSA-SHA256", crypto.SHA256, templateSSA(tpm2.AlgSHA256), verifyRSA},
+		{"RSA-SHA384", crypto.SHA384, templateSSA(tpm2.AlgSHA384), verifyRSA},
+		{"RSA-SHA512", crypto.SHA512, templateSSA(tpm2.AlgSHA512), verifyRSA},
+		{"ECC-SHA1", crypto.SHA1, templateECC(tpm2.AlgSHA1), verifyECC},
+		{"ECC-SHA256", crypto.SHA256, templateECC(tpm2.AlgSHA256), verifyECC},
+		{"ECC-SHA384", crypto.SHA384, templateECC(tpm2.AlgSHA384), verifyECC},
+		{"ECC-SHA512", crypto.SHA512, templateECC(tpm2.AlgSHA512), verifyECC},
 	}
 
 	for _, test := range tests {
@@ -55,8 +88,7 @@ func TestSign(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			pubKey := signer.Public().(*rsa.PublicKey)
-			if err := rsa.VerifyPKCS1v15(pubKey, test.hash, digest, sig); err != nil {
+			if !test.verify(signer.Public(), test.hash, digest, sig) {
 				t.Error(err)
 			}
 		})
