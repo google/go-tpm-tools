@@ -3,10 +3,10 @@ package tpm2tools
 import (
 	"crypto"
 	"crypto/rsa"
-	"math/big"
 	"encoding/asn1"
 	"fmt"
 	"io"
+	"math/big"
 	"sync"
 
 	"github.com/google/go-tpm/tpm2"
@@ -52,7 +52,7 @@ func (signer *tpmSigner) Sign(_ io.Reader, digest []byte, opts crypto.SignerOpts
 	if sig.RSA != nil {
 		return sig.RSA.Signature, nil
 	} else {
-		sigStruct := struct{R *big.Int; S *big.Int}{sig.ECC.R, sig.ECC.S}
+		sigStruct := struct{ R, S *big.Int }{sig.ECC.R, sig.ECC.S}
 		return asn1.Marshal(sigStruct)
 	}
 }

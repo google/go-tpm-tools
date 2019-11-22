@@ -2,13 +2,13 @@ package tpm2tools
 
 import (
 	"crypto"
-	"math/big"
 	"crypto/ecdsa"
 	"crypto/rsa"
 	"crypto/sha1"
 	"crypto/sha256"
-	"testing"
 	"encoding/asn1"
+	"math/big"
+	"testing"
 
 	"github.com/google/go-tpm-tools/internal"
 	"github.com/google/go-tpm/tpm2"
@@ -29,7 +29,7 @@ func templateECC(hash tpm2.Algorithm) tpm2.Public {
 	template.RSAParameters = nil
 	template.ECCParameters = &tpm2.ECCParams{
 		Sign: &tpm2.SigScheme{
-			Alg: tpm2.AlgECDSA,
+			Alg:  tpm2.AlgECDSA,
 			Hash: hash,
 		},
 		CurveID: tpm2.CurveNISTP256,
@@ -42,7 +42,7 @@ func verifyRSA(pubKey crypto.PublicKey, hash crypto.Hash, digest, sig []byte) bo
 }
 
 func verifyECC(pubKey crypto.PublicKey, _ crypto.Hash, digest, sig []byte) bool {
-	var sigStruct struct{R *big.Int; S *big.Int}
+	var sigStruct struct{ R, S *big.Int }
 	asn1.Unmarshal(sig, &sigStruct)
 	return ecdsa.Verify(pubKey.(*ecdsa.PublicKey), digest, sigStruct.R, sigStruct.S)
 }
