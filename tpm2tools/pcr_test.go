@@ -95,13 +95,17 @@ func TestCheckContainedPCRs(t *testing.T) {
 	rwc := internal.GetTPM(t)
 	defer CheckedClose(t, rwc)
 
-	truth, err := ReadPCRs(rwc, FullPcrSel(tpm2.AlgSHA256))
+	sel, err := FullPcrSel(tpm2.AlgSHA256, rwc)
+	if err != nil {
+		t.Fatalf("Failed to get a full PCR selection: %v", err)
+	}
+	baseline, err := ReadPCRs(rwc, sel)
 	if err != nil {
 		t.Fatalf("Failed to Read PCRs: %v", err)
 	}
 
-	toBeCertify, err := ReadPCRs(rwc, tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{1, 2, 3}})
-	if err := checkContainedPCRs(toBeCertify, truth); err != nil {
+	toBeCertified, err := ReadPCRs(rwc, tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{1, 2, 3}})
+	if err := checkContainedPCRs(toBeCertified, baseline); err != nil {
 		t.Fatalf("Validation should pass: %v", err)
 	}
 
@@ -109,13 +113,13 @@ func TestCheckContainedPCRs(t *testing.T) {
 		t.Fatalf("failed to extend pcr for test %v", err)
 	}
 
-	toBeCertify, err = ReadPCRs(rwc, tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{1, 2, 3}})
-	if err := checkContainedPCRs(toBeCertify, truth); err == nil {
+	toBeCertified, err = ReadPCRs(rwc, tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{1, 2, 3}})
+	if err := checkContainedPCRs(toBeCertified, baseline); err == nil {
 		t.Fatalf("validation should fail due to PCR 2 changed")
 	}
 
-	toBeCertify, err = ReadPCRs(rwc, tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{}})
-	if err := checkContainedPCRs(toBeCertify, truth); err != nil {
+	toBeCertified, err = ReadPCRs(rwc, tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{}})
+	if err := checkContainedPCRs(toBeCertified, baseline); err != nil {
 		t.Fatalf("empty pcrs is always validate")
 	}
 }

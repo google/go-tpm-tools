@@ -169,20 +169,28 @@ func (k *Key) Close() {
 	tpm2.FlushContext(k.rw, k.handle)
 }
 
-// Seal seals the sensitive byte buffer to the PCRs specified by SealingOpt (the
-// SealingOpt cannot be nil). The sealing is done under Owner Hierarchy. During
+// Seal seals the sensitive byte buffer to the PCRs specified by SealOpt (the
+// SealOpt cannot be nil, but an empty SealOpt can be passed in if you don't
+// want to seal to any PCRs). The sealing is done under Owner Hierarchy. During
 // the sealing process, certification data will be created allowing Unseal() to
 // validate the state of the TPM during the sealing process.
-func (k *Key) Seal(sensitive []byte, sOpt SealingOpt) (*proto.SealedBytes, error) {
+func (k *Key) Seal(sensitive []byte, sOpt SealOpt) (*proto.SealedBytes, error) {
 	if sOpt == nil {
-		panic("Cannot seal to nil SealingOpt")
+		panic("Cannot seal to nil SealOpt")
 	}
 	pcrs, err := sOpt.PCRsForSealing(k.rw)
 	if err != nil {
 		return nil, err
 	}
-	auth := ComputePCRSessionAuth(pcrs)
-	sb, err := sealHelper(k.rw, k.Handle(), auth, sensitive, FullPcrSel(tpm2.Algorithm(pcrs.GetHash())))
+	var auth []byte
+	if len(pcrs.GetPcrs()) > 0 {
+		auth = ComputePCRSessionAuth(pcrs)
+	}
+	sel, err := FullPcrSel(tpm2.Algorithm(pcrs.GetHash()), k.rw)
+	if err != nil {
+		return nil, err
+	}
+	sb, err := sealHelper(k.rw, k.Handle(), auth, sensitive, sel)
 	if err != nil {
 		return nil, err
 	}
@@ -212,11 +220,11 @@ func sealHelper(rw io.ReadWriter, parentHandle tpmutil.Handle, auth []byte, sens
 	if err != nil {
 		return nil, fmt.Errorf("Failed to create key: %v", err)
 	}
-	certifiedPCR, err := ReadPCRs(rw, certifyPCRsSel)
+	certifiedPcr, err := ReadPCRs(rw, certifyPCRsSel)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to read PCRs: %v", err)
 	}
-	computedDigest := computePCRDigest(certifiedPCR)
+	computedDigest := computePCRDigest(certifiedPcr)
 
 	decodedCreationData, err := tpm2.DecodeCreationData(creationData)
 	if err != nil {
@@ -229,7 +237,7 @@ func sealHelper(rw io.ReadWriter, parentHandle tpmutil.Handle, auth []byte, sens
 	}
 
 	sb := proto.SealedBytes{}
-	sb.CertifiedPcrs = certifiedPCR
+	sb.CertifiedPcrs = certifiedPcr
 	sb.Priv = priv
 	sb.Pub = pub
 	sb.CreationData = creationData
@@ -240,10 +248,10 @@ func sealHelper(rw io.ReadWriter, parentHandle tpmutil.Handle, auth []byte, sens
 }
 
 // Unseal attempts to reverse the process of Seal(), using the PCRs, public, and
-// private data in proto.SealedBytes. Optionally, a CertificationOpt can be
+// private data in proto.SealedBytes. Optionally, a CertifyOpt can be
 // passed, to verify the state of the TPM when the data was sealed. A nil value
 // can be passed to skip certification.
-func (k *Key) Unseal(in *proto.SealedBytes, cOpt CertificationOpt) ([]byte, error) {
+func (k *Key) Unseal(in *proto.SealedBytes, cOpt CertifyOpt) ([]byte, error) {
 	if in.Srk != proto.ObjectType(k.pubArea.Type) {
 		return nil, fmt.Errorf("Expected key of type %v, got %v", in.Srk, k.pubArea.Type)
 	}
@@ -283,12 +291,17 @@ func (k *Key) Unseal(in *proto.SealedBytes, cOpt CertificationOpt) ([]byte, erro
 	}
 	defer tpm2.FlushContext(k.rw, session)
 
+	if len(sel.PCRs) == 0 {
+		return tpm2.Unseal(k.rw, sealed, "")
+	}
+
 	return tpm2.UnsealWithSession(k.rw, session, sealed, "")
 }
 
 // Reseal is a shortcut to call Unseal() followed by Seal().
-// CertificationOpt will be used in Unseal(), and SealingOpt wil be used in Seal()
-func (k *Key) Reseal(in *proto.SealedBytes, cOpt CertificationOpt, sOpt SealingOpt) (*proto.SealedBytes, error) {
+// CertifyOpt(nillable) will be used in Unseal(), and SealOpt(non-nillable)
+// will be used in Seal()
+func (k *Key) Reseal(in *proto.SealedBytes, cOpt CertifyOpt, sOpt SealOpt) (*proto.SealedBytes, error) {
 	sensitive, err := k.Unseal(in, cOpt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unseal: %v", err)

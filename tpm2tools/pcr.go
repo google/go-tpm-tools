@@ -1,8 +1,8 @@
 package tpm2tools
 
 import (
+	"bytes"
 	"crypto"
-	"crypto/subtle"
 	"fmt"
 	"io"
 
@@ -74,24 +74,18 @@ type SealCurrent struct{ tpm2.PCRSelection }
 // SealTarget predicatively seals data to the given specified PCR values.
 type SealTarget struct{ *proto.Pcrs }
 
-// SealingOpt specifies the PCR values that should be used for Seal().
-type SealingOpt interface {
+// SealOpt specifies the PCR values that should be used for Seal().
+type SealOpt interface {
 	PCRsForSealing(rw io.ReadWriter) (*proto.Pcrs, error)
 }
 
 // PCRsForSealing read from TPM and return the selected PCRs.
 func (p SealCurrent) PCRsForSealing(rw io.ReadWriter) (*proto.Pcrs, error) {
-	if len(p.PCRSelection.PCRs) == 0 {
-		panic("SealCurrent contains 0 PCRs")
-	}
 	return ReadPCRs(rw, p.PCRSelection)
 }
 
 // PCRsForSealing return the target PCRs.
 func (p SealTarget) PCRsForSealing(_ io.ReadWriter) (*proto.Pcrs, error) {
-	if len(p.Pcrs.GetPcrs()) == 0 {
-		panic("SealTarget contains 0 PCRs")
-	}
 	return p.Pcrs, nil
 }
 
@@ -101,8 +95,8 @@ type CertifyCurrent struct{ tpm2.PCRSelection }
 // CertifyExpected certifies that the TPM had a specific set of PCR values when sealing.
 type CertifyExpected struct{ *proto.Pcrs }
 
-// CertificationOpt determines if the given PCR value can pass certification in Unseal().
-type CertificationOpt interface {
+// CertifyOpt determines if the given PCR value can pass certification in Unseal().
+type CertifyOpt interface {
 	CertifyPCRs(rw io.ReadWriter, certified *proto.Pcrs) error
 }
 
@@ -137,8 +131,8 @@ func checkContainedPCRs(subset *proto.Pcrs, superset *proto.Pcrs) error {
 	}
 	for pcrNum, pcrVal := range subset.GetPcrs() {
 		if expectedVal, ok := superset.GetPcrs()[pcrNum]; ok {
-			if subtle.ConstantTimeCompare(expectedVal, pcrVal) == 0 {
-				return fmt.Errorf("PCR %d mismatch: expected %s, got %s", pcrNum, expectedVal, pcrVal)
+			if !bytes.Equal(expectedVal, pcrVal) {
+				return fmt.Errorf("PCR %d mismatch: expected %v, got %v", pcrNum, expectedVal, pcrVal)
 			}
 		} else {
 			return fmt.Errorf("PCR %d mismatch: value missing from the superset PCRs", pcrNum)
@@ -157,14 +151,18 @@ func PCRSelection(pcrs *proto.Pcrs) tpm2.PCRSelection {
 	return sel
 }
 
-// FullPcrSel will return a full pcr selection (24 pcrs) with the given
-// hash algo.
-func FullPcrSel(hash tpm2.Algorithm) tpm2.PCRSelection {
+// FullPcrSel will return a full PCR selection based on the total PCR number
+// of the TPM with the given hash algo.
+func FullPcrSel(hash tpm2.Algorithm, rw io.ReadWriter) (tpm2.PCRSelection, error) {
 	sel := tpm2.PCRSelection{Hash: hash}
-	for i := 0; i < 24; i++ {
+	count, err := GetPCRCount(rw)
+	if err != nil {
+		return sel, err
+	}
+	for i := 0; i < int(count); i++ {
 		sel.PCRs = append(sel.PCRs, int(i))
 	}
-	return sel
+	return sel, nil
 }
 
 // ComputePCRSessionAuth calculates the authorization value for the given PCRs.
