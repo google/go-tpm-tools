@@ -276,7 +276,7 @@ func TestReseal(t *testing.T) {
 		t.Fatalf("failed to unseal: %v", err)
 	}
 	if !bytes.Equal(secret, unseal) {
-		t.Fatalf("unsealed (%v) not equal to secret (%v)", unseal, secret)
+		t.Errorf("unsealed (%v) not equal to secret (%v)", unseal, secret)
 	}
 }
 
@@ -323,7 +323,7 @@ func TestSealResealWithEmptyPCRs(t *testing.T) {
 	// reseal should success as CertifyOpt is nil
 	sealed, err = key.Reseal(sealed, nil, nil)
 	if err != nil {
-		t.Errorf("failed to reseal: %v", err)
+		t.Fatalf("failed to reseal: %v", err)
 	}
 
 	// unseal should success as the above Reseal() "refresh" the Ceritfy PCRs.
