@@ -170,27 +170,29 @@ func (k *Key) Close() {
 }
 
 // Seal seals the sensitive byte buffer to the PCRs specified by SealOpt (the
-// SealOpt cannot be nil, but an empty SealOpt can be passed in if you don't
-// want to seal to any PCRs). The sealing is done under Owner Hierarchy. During
-// the sealing process, certification data will be created allowing Unseal() to
-// validate the state of the TPM during the sealing process.
+// SealOpt can be nil, which means seal to an none PCRs. However the PCR
+// selection in SealOpt cannot be emtpy). The sealing is done under Owner
+// Hierarchy. During the sealing process, certification data will be created
+// allowing Unseal() to validate the state of the TPM during the sealing process.
 func (k *Key) Seal(sensitive []byte, sOpt SealOpt) (*proto.SealedBytes, error) {
-	if sOpt == nil {
-		panic("Cannot seal to nil SealOpt")
-	}
-	pcrs, err := sOpt.PCRsForSealing(k.rw)
-	if err != nil {
-		return nil, err
-	}
+	var pcrs *proto.Pcrs
+	var err error
 	var auth []byte
+	if sOpt != nil {
+		pcrs, err = sOpt.PCRsForSealing(k.rw)
+		if err != nil {
+			return nil, err
+		}
+	}
 	if len(pcrs.GetPcrs()) > 0 {
 		auth = ComputePCRSessionAuth(pcrs)
 	}
-	sel, err := FullPcrSel(tpm2.Algorithm(pcrs.GetHash()), k.rw)
+	// use the session hash algo as SealOpt, because the certification PCRs could be nil
+	certifySel, err := FullPcrSel(sessionHashAlgTpm, k.rw)
 	if err != nil {
 		return nil, err
 	}
-	sb, err := sealHelper(k.rw, k.Handle(), auth, sensitive, sel)
+	sb, err := sealHelper(k.rw, k.Handle(), auth, sensitive, certifySel)
 	if err != nil {
 		return nil, err
 	}
@@ -299,7 +301,7 @@ func (k *Key) Unseal(in *proto.SealedBytes, cOpt CertifyOpt) ([]byte, error) {
 }
 
 // Reseal is a shortcut to call Unseal() followed by Seal().
-// CertifyOpt(nillable) will be used in Unseal(), and SealOpt(non-nillable)
+// CertifyOpt(nillable) will be used in Unseal(), and SealOpt(nillable)
 // will be used in Seal()
 func (k *Key) Reseal(in *proto.SealedBytes, cOpt CertifyOpt, sOpt SealOpt) (*proto.SealedBytes, error) {
 	sensitive, err := k.Unseal(in, cOpt)

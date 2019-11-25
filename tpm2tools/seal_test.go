@@ -279,3 +279,56 @@ func TestReseal(t *testing.T) {
 		t.Fatalf("unsealed (%v) not equal to secret (%v)", unseal, secret)
 	}
 }
+
+func TestSealResealWithEmptyPCRs(t *testing.T) {
+	rwc := internal.GetTPM(t)
+	defer CheckedClose(t, rwc)
+
+	key, err := StorageRootKeyRSA(rwc)
+	if err != nil {
+		t.Fatalf("can't create srk from template: %v", err)
+	}
+	defer key.Close()
+
+	secret := []byte("test")
+	sealed, err := key.Seal(secret, nil)
+	if err != nil {
+		t.Fatalf("failed to seal: %v", err)
+	}
+	cOpt := CertifyCurrent{
+		PCRSelection: tpm2.PCRSelection{
+			Hash: tpm2.AlgSHA256,
+			PCRs: []int{7},
+		},
+	}
+	unseal, err := key.Unseal(sealed, cOpt)
+	if err != nil {
+		t.Fatalf("failed to unseal: %v", err)
+	}
+	if !bytes.Equal(secret, unseal) {
+		t.Fatalf("unsealed (%v) not equal to secret (%v)", unseal, secret)
+	}
+
+	extension := bytes.Repeat([]byte{0xAA}, sha256.Size)
+	if err = tpm2.PCRExtend(rwc, 7, tpm2.AlgSHA256, extension, ""); err != nil {
+		t.Fatalf("failed to extend pcr: %v", err)
+	}
+
+	// unseal should failed as the PCR 7 has changed (not as same as when sealing)
+	unseal, err = key.Unseal(sealed, cOpt)
+	if err == nil {
+		t.Fatalf("unseal should fail as PCR 7 changed")
+	}
+
+	// reseal should success as CertifyOpt is nil
+	sealed, err = key.Reseal(sealed, nil, nil)
+	if err != nil {
+		t.Errorf("failed to reseal: %v", err)
+	}
+
+	// unseal should success as the above Reseal() "refresh" the Ceritfy PCRs.
+	unseal, err = key.Unseal(sealed, cOpt)
+	if err != nil {
+		t.Errorf("failed to unseal: %v", err)
+	}
+}

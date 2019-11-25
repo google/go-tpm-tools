@@ -81,11 +81,17 @@ type SealOpt interface {
 
 // PCRsForSealing read from TPM and return the selected PCRs.
 func (p SealCurrent) PCRsForSealing(rw io.ReadWriter) (*proto.Pcrs, error) {
+	if len(p.PCRSelection.PCRs) == 0 {
+		panic("SealCurrent contains 0 PCRs")
+	}
 	return ReadPCRs(rw, p.PCRSelection)
 }
 
 // PCRsForSealing return the target PCRs.
 func (p SealTarget) PCRsForSealing(_ io.ReadWriter) (*proto.Pcrs, error) {
+	if len(p.Pcrs.GetPcrs()) == 0 {
+		panic("SealTaget contains 0 PCRs")
+	}
 	return p.Pcrs, nil
 }
 

@@ -52,7 +52,12 @@ state (like Secure Boot).`,
 		}
 
 		fmt.Fprintf(debugOutput(), "Sealing to PCRs: %v\n", sel.PCRs)
-		sealed, err := srk.Seal(secret, tpm2tools.SealCurrent{PCRSelection: sel})
+		var sealed *proto.SealedBytes
+		if len(sel.PCRs) > 0 {
+			sealed, err = srk.Seal(secret, tpm2tools.SealCurrent{PCRSelection: sel})
+		} else {
+			sealed, err = srk.Seal(secret, nil)
+		}
 		if err != nil {
 			return fmt.Errorf("sealing data: %v", err)
 		}
