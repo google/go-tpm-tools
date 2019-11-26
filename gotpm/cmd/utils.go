@@ -47,18 +47,30 @@ func addIndexFlag(cmd *cobra.Command) {
 // Lets this command specify some number of PCR arguments, check if in range.
 func addPCRsFlag(cmd *cobra.Command) {
 	cmd.PersistentFlags().IntSliceVar(&pcrs, "pcrs", nil,
-		"Comma separated list of PCR numbers")
+		"comma separated list of PCR numbers")
 }
 
 // Lets this command specify the public key algorithm.
 func addPublicKeyAlgoFlag(cmd *cobra.Command) {
 	cmd.PersistentFlags().StringVar(&keyAlgo, "algo", "rsa",
-		"Public key algorithm, \"rsa\" or \"ecc\"")
+		"public key algorithm, \"rsa\" or \"ecc\"")
 }
 
 func addHashAlgoFlag(cmd *cobra.Command) {
 	cmd.PersistentFlags().StringVar(&hashAlgo, "hash-algo", "sha256",
-		"Hash Algorithm, \"sha1\",  \"sha256\", or \"sha384\"")
+		"hash algorithm, \"sha1\",  \"sha256\", or \"sha384\"")
+}
+
+func addCertifyPCRFlag(cmd *cobra.Command) {
+	cmd.PersistentFlags().IntSliceVar(&pcrs, "certify-pcrs", nil,
+		"comma separated list of certify PCR numbers (optional, currently only support sha256 PCR hash)")
+}
+
+// initPCRs will initialize the pcr var. This function is only useful in some test cases, where
+// there are consecutive Execute() calls. But variables like pcrs here are not initialize for every
+// Execute() calls, we need to manually "flush" pcrs value in last Execute() cmd.
+func initPCRs() {
+	pcrs = []int{}
 }
 
 // alwaysError implements io.ReadWriter by always returning an error

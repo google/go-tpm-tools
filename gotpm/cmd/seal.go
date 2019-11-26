@@ -108,7 +108,18 @@ Thus, algorithm and PCR options are not needed for the unseal command.`,
 		defer srk.Close()
 
 		fmt.Fprintln(debugOutput(), "Unsealing data")
-		secret, err := srk.Unseal(&sealed, nil)
+
+		certifySel, err := getSelection()
+		if err != nil {
+			return err
+		}
+
+		var secret []byte
+		if len(certifySel.PCRs) > 0 {
+			secret, err = srk.Unseal(&sealed, tpm2tools.CertifyCurrent{PCRSelection: certifySel})
+		} else {
+			secret, err = srk.Unseal(&sealed, nil)
+		}
 		if err != nil {
 			return fmt.Errorf("unsealing data: %v", err)
 		}
@@ -132,5 +143,6 @@ func init() {
 	// PCRs and hash algorithm only used for sealing
 	addPCRsFlag(sealCmd)
 	addHashAlgoFlag(sealCmd)
+	addCertifyPCRFlag(unsealCmd)
 	addPublicKeyAlgoFlag(sealCmd)
 }
