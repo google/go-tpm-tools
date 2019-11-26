@@ -34,13 +34,18 @@ func TestSeal(t *testing.T) {
 			secret := []byte("test")
 			sel := tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{7, 23}}
 			pcrToExtend := tpmutil.Handle(23)
-
-			sealed, err := srk.Seal(secret, sel)
+			sealed, err := srk.Seal(secret, SealCurrent{PCRSelection: sel})
 			if err != nil {
 				t.Fatalf("failed to seal: %v", err)
 			}
 
-			unseal, err := srk.Unseal(sealed)
+			cOpt := CertifyCurrent{
+				PCRSelection: tpm2.PCRSelection{
+					Hash: tpm2.AlgSHA256,
+					PCRs: []int{7},
+				},
+			}
+			unseal, err := srk.Unseal(sealed, cOpt)
 			if err != nil {
 				t.Fatalf("failed to unseal: %v", err)
 			}
@@ -54,7 +59,7 @@ func TestSeal(t *testing.T) {
 			}
 
 			// unseal should not succeed.
-			if _, err = srk.Unseal(sealed); err == nil {
+			if _, err = srk.Unseal(sealed, cOpt); err == nil {
 				t.Fatalf("unseal should have caused an error: %v", err)
 			}
 		})
@@ -112,18 +117,26 @@ func TestSelfReseal(t *testing.T) {
 	defer key.Close()
 
 	secret := []byte("test")
-	sel := tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{0, 4, 7}}
-	pcrs, err := ReadPCRs(rwc, sel)
-	if err != nil {
-		t.Fatalf("failed to read PCRs: %v", err)
+	pcrList := []int{0, 4, 7}
+	sOpt := SealCurrent{
+		PCRSelection: tpm2.PCRSelection{
+			Hash: tpm2.AlgSHA256,
+			PCRs: pcrList,
+		},
 	}
 
-	sealed, err := key.Seal(secret, sel)
+	sealed, err := key.Seal(secret, sOpt)
 	if err != nil {
 		t.Fatalf("failed to seal: %v", err)
 	}
 
-	unseal, err := key.Unseal(sealed)
+	cOpt := CertifyCurrent{
+		PCRSelection: tpm2.PCRSelection{
+			Hash: tpm2.AlgSHA256,
+			PCRs: []int{7},
+		},
+	}
+	unseal, err := key.Unseal(sealed, cOpt)
 	if err != nil {
 		t.Fatalf("failed to unseal: %v", err)
 	}
@@ -131,12 +144,12 @@ func TestSelfReseal(t *testing.T) {
 		t.Errorf("unsealed (%v) not equal to secret (%v)", unseal, secret)
 	}
 
-	sealed, err = key.Reseal(sealed, pcrs)
+	sealed, err = key.Reseal(sealed, cOpt, sOpt)
 	if err != nil {
 		t.Fatalf("failed to reseal: %v", err)
 	}
 
-	unseal, err = key.Unseal(sealed)
+	unseal, err = key.Unseal(sealed, cOpt)
 	if err != nil {
 		t.Fatalf("failed to unseal after resealing: %v", err)
 	}
@@ -201,18 +214,18 @@ func TestReseal(t *testing.T) {
 	secret := []byte("test")
 	pcrToChange := uint32(23)
 	sel := tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{7, 23}}
-
-	pcrs, err := ReadPCRs(rwc, sel)
-	if err != nil {
-		t.Fatalf("failed to read PCRs: %v", err)
-	}
-
-	sealed, err := key.Seal(secret, sel)
+	sealed, err := key.Seal(secret, SealCurrent{PCRSelection: sel})
 	if err != nil {
 		t.Fatalf("failed to seal: %v", err)
 	}
 
-	unseal, err := key.Unseal(sealed)
+	cOpt := CertifyCurrent{
+		PCRSelection: tpm2.PCRSelection{
+			Hash: tpm2.AlgSHA256,
+			PCRs: []int{7, 23},
+		},
+	}
+	unseal, err := key.Unseal(sealed, cOpt)
 	if err != nil {
 		t.Fatalf("failed to unseal: %v", err)
 	}
@@ -220,20 +233,30 @@ func TestReseal(t *testing.T) {
 		t.Fatalf("unsealed (%v) not equal to secret (%v)", unseal, secret)
 	}
 
+	// create a new set of PCRs value for modificiation
+	predictedPcrsValue, err := ReadPCRs(rwc, sel)
+	if err != nil {
+		t.Fatalf("failed to read PCRs value: %v", err)
+	}
+	// change pcr value to the predicted future value for resealing
 	extensions := [][]byte{bytes.Repeat([]byte{0xAA}, sha256.Size)}
+	predictedPcrsValue.GetPcrs()[uint32(pcrToChange)] = computePCRValue(predictedPcrsValue.GetPcrs()[uint32(pcrToChange)], extensions)
 
-	// Change pcr value to the predicted future value for resealing
-	pcrs.Pcrs[pcrToChange] = computePCRValue(pcrs.Pcrs[pcrToChange], extensions)
-	sealed, err = key.Reseal(sealed, pcrs)
+	resealed, err := key.Reseal(sealed, cOpt, SealTarget{predictedPcrsValue})
 	if err != nil {
 		t.Fatalf("failed to reseal: %v", err)
 	}
 
 	// unseal should not succeed since pcr has not been extended.
-	if _, err = key.Unseal(sealed); err == nil {
+	if _, err = key.Unseal(resealed, nil); err == nil {
 		t.Fatalf("unseal should have failed: %v", err)
 	}
 
+	// save the current PCR value for certification before extend the PCRs
+	oldPcrsValue, err := ReadPCRs(rwc, sel)
+	if err != nil {
+		t.Fatalf("failed to read PCRs value: %v", err)
+	}
 	for _, extension := range extensions {
 		err = tpm2.PCRExtend(rwc, tpmutil.Handle(pcrToChange), tpm2.AlgSHA256, extension, "")
 		if err != nil {
@@ -241,16 +264,23 @@ func TestReseal(t *testing.T) {
 		}
 	}
 
-	unseal, err = key.Unseal(sealed)
+	// unseal should fail if certify to current PCRs value, as one PCR has changed
+	unseal, err = key.Unseal(resealed, CertifyCurrent{PCRSelection: sel})
+	if err == nil {
+		t.Fatalf("unseal should fail since the certify PCRs have changed.")
+	}
+
+	// certify to original PCRs value (PCRs value when do the sealing) will work
+	unseal, err = key.Unseal(resealed, CertifyExpected{oldPcrsValue})
 	if err != nil {
-		t.Fatalf("failed to unseal after resealing: %v", err)
+		t.Fatalf("failed to unseal: %v", err)
 	}
 	if !bytes.Equal(secret, unseal) {
-		t.Fatalf("unsealed (%v) not equal to secret (%v)", unseal, secret)
+		t.Errorf("unsealed (%v) not equal to secret (%v)", unseal, secret)
 	}
 }
 
-func TestSealingResealingToNilPCRs(t *testing.T) {
+func TestSealResealWithEmptyPCRs(t *testing.T) {
 	rwc := internal.GetTPM(t)
 	defer CheckedClose(t, rwc)
 
@@ -261,17 +291,44 @@ func TestSealingResealingToNilPCRs(t *testing.T) {
 	defer key.Close()
 
 	secret := []byte("test")
-	sel := tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: nil}
-
-	sealed, err := key.Seal(secret, sel)
+	sealed, err := key.Seal(secret, nil)
 	if err != nil {
 		t.Fatalf("failed to seal: %v", err)
 	}
-	unseal, err := key.Unseal(sealed)
+	cOpt := CertifyCurrent{
+		PCRSelection: tpm2.PCRSelection{
+			Hash: tpm2.AlgSHA256,
+			PCRs: []int{7},
+		},
+	}
+	unseal, err := key.Unseal(sealed, cOpt)
 	if err != nil {
 		t.Fatalf("failed to unseal: %v", err)
 	}
 	if !bytes.Equal(secret, unseal) {
-		t.Errorf("unsealed (%v) not equal to secret (%v)", unseal, secret)
+		t.Fatalf("unsealed (%v) not equal to secret (%v)", unseal, secret)
+	}
+
+	extension := bytes.Repeat([]byte{0xAA}, sha256.Size)
+	if err = tpm2.PCRExtend(rwc, 7, tpm2.AlgSHA256, extension, ""); err != nil {
+		t.Fatalf("failed to extend pcr: %v", err)
+	}
+
+	// unseal should failed as the PCR 7 has changed (not as same as when sealing)
+	unseal, err = key.Unseal(sealed, cOpt)
+	if err == nil {
+		t.Fatalf("unseal should fail as PCR 7 changed")
+	}
+
+	// reseal should success as CertifyOpt is nil
+	sealed, err = key.Reseal(sealed, nil, nil)
+	if err != nil {
+		t.Fatalf("failed to reseal: %v", err)
+	}
+
+	// unseal should success as the above Reseal() "refresh" the Ceritfy PCRs.
+	unseal, err = key.Unseal(sealed, cOpt)
+	if err != nil {
+		t.Errorf("failed to unseal: %v", err)
 	}
 }

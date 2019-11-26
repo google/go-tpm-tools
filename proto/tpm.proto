@@ -24,6 +24,9 @@ message SealedBytes {
   repeated int32 pcrs = 3;
   HashAlgo hash = 4;
   ObjectType srk = 5;
+  Pcrs certified_pcrs = 6;
+  bytes creation_data = 7;
+  bytes ticket = 8;
 }
 
 message ImportBlob {

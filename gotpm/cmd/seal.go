@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/google/go-tpm-tools/proto"
+	"github.com/google/go-tpm-tools/tpm2tools"
 	"github.com/google/go-tpm/tpm2"
 )
 
@@ -51,7 +52,12 @@ state (like Secure Boot).`,
 		}
 
 		fmt.Fprintf(debugOutput(), "Sealing to PCRs: %v\n", sel.PCRs)
-		sealed, err := srk.Seal(secret, sel)
+		var sealed *proto.SealedBytes
+		if len(sel.PCRs) > 0 {
+			sealed, err = srk.Seal(secret, tpm2tools.SealCurrent{PCRSelection: sel})
+		} else {
+			sealed, err = srk.Seal(secret, nil)
+		}
 		if err != nil {
 			return fmt.Errorf("sealing data: %v", err)
 		}
@@ -102,7 +108,7 @@ Thus, algorithm and PCR options are not needed for the unseal command.`,
 		defer srk.Close()
 
 		fmt.Fprintln(debugOutput(), "Unsealing data")
-		secret, err := srk.Unseal(&sealed)
+		secret, err := srk.Unseal(&sealed, nil)
 		if err != nil {
 			return fmt.Errorf("unsealing data: %v", err)
 		}
