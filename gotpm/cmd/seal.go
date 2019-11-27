@@ -52,12 +52,11 @@ state (like Secure Boot).`,
 		}
 
 		fmt.Fprintf(debugOutput(), "Sealing to PCRs: %v\n", sel.PCRs)
-		var sealed *proto.SealedBytes
+		var sOpt tpm2tools.SealOpt
 		if len(sel.PCRs) > 0 {
-			sealed, err = srk.Seal(secret, tpm2tools.SealCurrent{PCRSelection: sel})
-		} else {
-			sealed, err = srk.Seal(secret, nil)
+			sOpt = tpm2tools.SealCurrent{PCRSelection: sel}
 		}
+		sealed, err := srk.Seal(secret, sOpt)
 		if err != nil {
 			return fmt.Errorf("sealing data: %v", err)
 		}
@@ -113,13 +112,11 @@ Thus, algorithm and PCR options are not needed for the unseal command.`,
 		if err != nil {
 			return err
 		}
-
-		var secret []byte
+		var cOpt tpm2tools.CertifyOpt
 		if len(certifySel.PCRs) > 0 {
-			secret, err = srk.Unseal(&sealed, tpm2tools.CertifyCurrent{PCRSelection: certifySel})
-		} else {
-			secret, err = srk.Unseal(&sealed, nil)
+			cOpt = tpm2tools.CertifyCurrent{PCRSelection: certifySel}
 		}
+		secret, err := srk.Unseal(&sealed, cOpt)
 		if err != nil {
 			return fmt.Errorf("unsealing data: %v", err)
 		}

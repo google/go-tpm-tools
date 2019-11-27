@@ -6,6 +6,7 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
+	"strconv"
 	"testing"
 
 	"github.com/google/go-tpm-tools/internal"
@@ -40,14 +41,14 @@ func TestSealPlain(t *testing.T) {
 		sealPCRs    string
 		certifyPCRs string
 	}{
-		{"RSA", "rsa", "", ""},
-		{"ECC", "ecc", "", ""},
-		{"RSAWithSealPCR", "rsa", "7", ""},
-		{"ECCWithSealPCR", "ecc", "7", ""},
-		{"RSAWithCertifyPCR", "rsa", "", "7"},
-		{"ECCWithCertifyPCR", "ecc", "", "7"},
-		{"RSAwithSealCertifyPCR", "rsa", "7,8", "1"},
-		{"ECCwithSealCertifyPCR", "ecc", "7", "7,23"},
+		{"RSASeal", "rsa", "", ""},
+		{"ECCSeal", "ecc", "", ""},
+		{"RSASealWithPCR", "rsa", "7", ""},
+		{"ECCSealWithPCR", "ecc", "7", ""},
+		{"RSACertifyWithPCR", "rsa", "", "7"},
+		{"ECCCertifyWithPCR", "ecc", "", "7"},
+		{"RSASealAndCertifyWithPCR", "rsa", "7,8", "1"},
+		{"ECCSealAndCertifyWithPCR", "ecc", "7", "7,23"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -95,23 +96,30 @@ func TestUnsealFail(t *testing.T) {
 	rwc := internal.GetTPM(t)
 	defer tpm2tools.CheckedClose(t, rwc)
 	ExternalTPM = rwc
-	extendPCR := func(rw io.ReadWriter, pcr int) error {
+
+	// func to be executed between Seal and Unseal in the following tests
+	type intermediateFunc func(io.ReadWriter, []string) error
+	var extendPCR intermediateFunc = func(rw io.ReadWriter, pcrs []string) error {
+		pcr, err := strconv.ParseInt(pcrs[0], 10, 32)
+		if err != nil {
+			return err
+		}
 		pcrToExtend := tpmutil.Handle(pcr)
 		extension := bytes.Repeat([]byte{0xAA}, sha256.Size)
 		return tpm2.PCRExtend(rw, pcrToExtend, tpm2.AlgSHA256, extension, "")
 	}
 
 	tests := []struct {
-		name             string
-		sealPCRs         string
-		certifyPCRs      string
-		tpmFunc          func(io.ReadWriter, int) error
-		tpmFuncParameter int
+		name              string
+		sealPCRs          string
+		certifyPCRs       string
+		tpmFuncs          []intermediateFunc
+		tpmFuncParameters [][]string
 	}{
 		// TODO(joerichey): Add test that TPM2_Reset make unsealing fail
-		{"ExtendSealPCR", "23", "", extendPCR, 23},
-		{"ExtendCertifyPCR", "23", "7", extendPCR, 7},
-		{"ExtendCertifyPCRWithNoSealPCR", "", "5", extendPCR, 5},
+		{"ExtendPCRAndUnseal", "23", "", []intermediateFunc{extendPCR}, [][]string{{"23"}}},
+		{"ExtendPCRAndCertify", "23", "7", []intermediateFunc{extendPCR}, [][]string{{"7"}}},
+		{"ExtendPCRAndCertify2", "", "5", []intermediateFunc{extendPCR}, [][]string{{"5"}}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -131,8 +139,10 @@ func TestUnsealFail(t *testing.T) {
 			}
 			initPCRs()
 
-			if err := test.tpmFunc(rwc, test.tpmFuncParameter); err != nil {
-				t.Fatal(err)
+			for i, f := range test.tpmFuncs {
+				if err := f(rwc, test.tpmFuncParameters[i]); err != nil {
+					t.Fatal(err)
+				}
 			}
 			unsealArgs := []string{"unseal", "--quiet", "--input", sealedFile, "--output", secretFile}
 			if test.certifyPCRs != "" {
@@ -140,7 +150,7 @@ func TestUnsealFail(t *testing.T) {
 			}
 
 			RootCmd.SetArgs(unsealArgs)
-			if err := RootCmd.Execute(); err == nil {
+			if RootCmd.Execute() == nil {
 				t.Error("Unsealing should have failed")
 			}
 		})
