@@ -56,7 +56,6 @@ func (k *Key) Import(rw io.ReadWriter, blob *tpmpb.ImportBlob) ([]byte, error) {
 	defer tpm2.FlushContext(rw, handle)
 
 	var out []byte
-	//if blob.Pcrs == nil || len(blob.Pcrs.Pcrs) == 0 {
 	if len(blob.Pcrs.GetPcrs()) == 0 {
 		// The object to be imported does not have a PCR policy.
 		out, err = tpm2.Unseal(rw, handle, "")
