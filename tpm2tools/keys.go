@@ -278,6 +278,15 @@ func (k *Key) Unseal(in *proto.SealedBytes, cOpt CertifyOpt) ([]byte, error) {
 		if _, _, err = tpm2.CertifyCreation(k.rw, "", sealed, tpm2.HandleNull, nil, creationHash.Sum(nil), tpm2.SigScheme{}, ticket); err != nil {
 			return nil, fmt.Errorf("failed to certify creation: %v", err)
 		}
+		// verify certify PCRs haven't been modified
+		decodedCreationData, err := tpm2.DecodeCreationData(in.GetCreationData())
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode creation data: %v", err)
+		}
+		if subtle.ConstantTimeCompare(decodedCreationData.PCRDigest, computePCRDigest(in.GetCertifiedPcrs())) == 0 {
+			return nil, fmt.Errorf("certify PCRs digest does not match the digest in the creation data")
+		}
+
 		if err := cOpt.CertifyPCRs(k.rw, in.GetCertifiedPcrs()); err != nil {
 			return nil, fmt.Errorf("failed to certify PCRs: %v", err)
 		}
