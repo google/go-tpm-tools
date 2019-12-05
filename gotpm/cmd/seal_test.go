@@ -3,10 +3,8 @@ package cmd
 import (
 	"bytes"
 	"crypto/sha256"
-	"io"
 	"io/ioutil"
 	"os"
-	"strconv"
 	"testing"
 
 	"github.com/google/go-tpm-tools/internal"
@@ -71,11 +69,11 @@ func TestSealPlain(t *testing.T) {
 			if err := RootCmd.Execute(); err != nil {
 				t.Error(err)
 			}
-			initPCRs()
+			pcrs = []int{} // "flush" pcrs value in last Execute() cmd
 
 			unsealArgs := []string{"unseal", "--quiet", "--input", sealedFile, "--output", secretFile2}
 			if test.certifyPCRs != "" {
-				unsealArgs = append(unsealArgs, "--certify-pcrs", test.certifyPCRs)
+				unsealArgs = append(unsealArgs, "--pcrs", test.certifyPCRs)
 			}
 			RootCmd.SetArgs(unsealArgs)
 			if err := RootCmd.Execute(); err != nil {
@@ -96,30 +94,18 @@ func TestUnsealFail(t *testing.T) {
 	rwc := internal.GetTPM(t)
 	defer tpm2tools.CheckedClose(t, rwc)
 	ExternalTPM = rwc
-
-	// func to be executed between Seal and Unseal in the following tests
-	type intermediateFunc func(io.ReadWriter, []string) error
-	var extendPCR intermediateFunc = func(rw io.ReadWriter, pcrs []string) error {
-		pcr, err := strconv.ParseInt(pcrs[0], 10, 32)
-		if err != nil {
-			return err
-		}
-		pcrToExtend := tpmutil.Handle(pcr)
-		extension := bytes.Repeat([]byte{0xAA}, sha256.Size)
-		return tpm2.PCRExtend(rw, pcrToExtend, tpm2.AlgSHA256, extension, "")
-	}
+	extension := bytes.Repeat([]byte{0xAA}, sha256.Size)
 
 	tests := []struct {
-		name              string
-		sealPCRs          string
-		certifyPCRs       string
-		tpmFuncs          []intermediateFunc
-		tpmFuncParameters [][]string
+		name        string
+		sealPCRs    string
+		certifyPCRs string
+		pcrToExtend []int
 	}{
 		// TODO(joerichey): Add test that TPM2_Reset make unsealing fail
-		{"ExtendPCRAndUnseal", "23", "", []intermediateFunc{extendPCR}, [][]string{{"23"}}},
-		{"ExtendPCRAndCertify", "23", "7", []intermediateFunc{extendPCR}, [][]string{{"7"}}},
-		{"ExtendPCRAndCertify2", "", "5", []intermediateFunc{extendPCR}, [][]string{{"5"}}},
+		{"ExtendPCRAndUnseal", "23", "", []int{23}},
+		{"ExtendPCRAndCertify", "23", "7", []int{7}},
+		{"ExtendPCRAndCertify2", "", "5", []int{5}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -137,18 +123,19 @@ func TestUnsealFail(t *testing.T) {
 			if err := RootCmd.Execute(); err != nil {
 				t.Error(err)
 			}
-			initPCRs()
+			pcrs = []int{} // "flush" pcrs value in last Execute() cmd
 
-			for i, f := range test.tpmFuncs {
-				if err := f(rwc, test.tpmFuncParameters[i]); err != nil {
+			for _, pcr := range test.pcrToExtend {
+				pcrHandle := tpmutil.Handle(pcr)
+				if err := tpm2.PCRExtend(rwc, pcrHandle, tpm2.AlgSHA256, extension, ""); err != nil {
 					t.Fatal(err)
 				}
 			}
+
 			unsealArgs := []string{"unseal", "--quiet", "--input", sealedFile, "--output", secretFile}
 			if test.certifyPCRs != "" {
-				unsealArgs = append(unsealArgs, "--certify-pcrs", test.certifyPCRs)
+				unsealArgs = append(unsealArgs, "--pcrs", test.certifyPCRs)
 			}
-
 			RootCmd.SetArgs(unsealArgs)
 			if RootCmd.Execute() == nil {
 				t.Error("Unsealing should have failed")

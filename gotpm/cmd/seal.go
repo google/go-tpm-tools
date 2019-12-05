@@ -80,7 +80,11 @@ using the TPM. This operation will fail if used on a different TPM, or if the
 Platform Control Registers (PCRs) are in the incorrect state.
 
 All the necessary data to decrypt the sealed input is present in the input blob.
-Thus, algorithm and PCR options are not needed for the unseal command.`,
+Thus, algorithm and seal PCR options are not needed for the unseal command.
+
+The optional --pcrs flag allows the user to certify the blob that has been sealed
+under the same PCR values as current with the given PCR numbers.
+`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		rwc, err := openTpm()
@@ -140,6 +144,6 @@ func init() {
 	// PCRs and hash algorithm only used for sealing
 	addPCRsFlag(sealCmd)
 	addHashAlgoFlag(sealCmd)
-	addCertifyPCRFlag(unsealCmd)
+	addPCRsFlag(unsealCmd)
 	addPublicKeyAlgoFlag(sealCmd)
 }

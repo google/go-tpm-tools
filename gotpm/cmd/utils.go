@@ -61,18 +61,6 @@ func addHashAlgoFlag(cmd *cobra.Command) {
 		"hash algorithm, \"sha1\",  \"sha256\", or \"sha384\"")
 }
 
-func addCertifyPCRFlag(cmd *cobra.Command) {
-	cmd.PersistentFlags().IntSliceVar(&pcrs, "certify-pcrs", nil,
-		"comma separated list of certify PCR numbers (optional, currently only support sha256 PCR hash)")
-}
-
-// initPCRs will initialize the pcr var. This function is only useful in some test cases, where
-// there are consecutive Execute() calls. But variables like pcrs here are not initialize for every
-// Execute() calls, we need to manually "flush" pcrs value in last Execute() cmd.
-func initPCRs() {
-	pcrs = []int{}
-}
-
 // alwaysError implements io.ReadWriter by always returning an error
 type alwaysError struct {
 	error
