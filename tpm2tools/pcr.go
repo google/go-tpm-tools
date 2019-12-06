@@ -162,29 +162,21 @@ func PCRSelection(pcrs *proto.Pcrs) tpm2.PCRSelection {
 	return sel
 }
 
-// EqualsPCRSelections compares the given tpm2.PCRSelections (including
-// the hash algo), and will return an error if they are not equal.
-func EqualsPCRSelections(a tpm2.PCRSelection, b tpm2.PCRSelection) error {
-	if a.Hash != b.Hash {
-		return fmt.Errorf("hash algorithm not equal")
+// HasSamePCRSelection checks the given proto.Pcrs has the same PCRSelection as the
+// given tpm2.PCRSelection (including the hash algorithm).
+func HasSamePCRSelection(pcrs proto.Pcrs, pcrSel tpm2.PCRSelection) bool {
+	if tpm2.Algorithm(pcrs.Hash) != pcrSel.Hash {
+		return false
 	}
-	diff := make(map[int]int, len(a.PCRs))
-	for _, pcr := range a.PCRs {
-		diff[pcr]++
+	if len(pcrs.GetPcrs()) != len(pcrSel.PCRs) {
+		return false
 	}
-	for _, pcr := range b.PCRs {
-		if _, ok := diff[pcr]; !ok {
-			return fmt.Errorf("PCR selection not equal")
-		}
-		diff[pcr]--
-		if diff[pcr] == 0 {
-			delete(diff, pcr)
+	for _, p := range pcrSel.PCRs {
+		if _, ok := pcrs.Pcrs[uint32(p)]; !ok {
+			return false
 		}
 	}
-	if len(diff) != 0 {
-		return fmt.Errorf("PCR selection not equal")
-	}
-	return nil
+	return true
 }
 
 // FullPcrSel will return a full PCR selection based on the total PCR number

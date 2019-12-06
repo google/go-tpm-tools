@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/google/go-tpm-tools/internal"
+	"github.com/google/go-tpm-tools/proto"
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpmutil"
 )
@@ -124,26 +125,27 @@ func TestCheckContainedPCRs(t *testing.T) {
 	}
 }
 
-func TestEqualsPCRSelections(t *testing.T) {
+func TestHasSamePCRSelection(t *testing.T) {
 	var tests = []struct {
-		a         tpm2.PCRSelection
-		b         tpm2.PCRSelection
-		assertion bool
+		pcrs        proto.Pcrs
+		pcrSel      tpm2.PCRSelection
+		expectedRes bool
 	}{
-		{tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{0}}, tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{0}}, true},
-		{tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{}}, tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{}}, true},
-		{tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{1, 2, 3}}, tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{2, 1, 3}}, true},
-		{tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{0}}, tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{}}, false},
-		{tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{2}}, tpm2.PCRSelection{Hash: tpm2.AlgSHA1, PCRs: []int{2}}, false},
-		{tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{1, 2, 2, 3}}, tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{2, 1, 3}}, false},
+		{proto.Pcrs{}, tpm2.PCRSelection{}, true},
+		{proto.Pcrs{Hash: proto.HashAlgo(tpm2.AlgSHA256), Pcrs: map[uint32][]byte{1: []byte{}}},
+			tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{1}}, true},
+		{proto.Pcrs{Hash: proto.HashAlgo(tpm2.AlgSHA256), Pcrs: map[uint32][]byte{}},
+			tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{}}, true},
+		{proto.Pcrs{Hash: proto.HashAlgo(tpm2.AlgSHA256), Pcrs: map[uint32][]byte{1: []byte{}}},
+			tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{4}}, false},
+		{proto.Pcrs{Hash: proto.HashAlgo(tpm2.AlgSHA256), Pcrs: map[uint32][]byte{1: []byte{}, 4: []byte{}}},
+			tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{4}}, false},
+		{proto.Pcrs{Hash: proto.HashAlgo(tpm2.AlgSHA256), Pcrs: map[uint32][]byte{1: []byte{}, 2: []byte{}}},
+			tpm2.PCRSelection{Hash: tpm2.AlgSHA1, PCRs: []int{1, 2}}, false},
 	}
 	for _, test := range tests {
-		err := EqualsPCRSelections(test.a, test.b)
-		if test.assertion && err != nil {
-			t.Errorf("PCR selections should be equal")
-		}
-		if !test.assertion && err == nil {
-			t.Errorf("PCR selections should not be equal")
+		if HasSamePCRSelection(test.pcrs, test.pcrSel) != test.expectedRes {
+			t.Errorf("HasSamePCRSelection result is not expected")
 		}
 	}
 }

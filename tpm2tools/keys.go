@@ -282,8 +282,8 @@ func (k *Key) Unseal(in *proto.SealedBytes, cOpt CertifyOpt) ([]byte, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to decode creation data: %v", err)
 		}
-		if err := EqualsPCRSelections(PCRSelection(in.GetCertifiedPcrs()), decodedCreationData.PCRSelection); err != nil {
-			return nil, err
+		if !HasSamePCRSelection(*in.GetCertifiedPcrs(), decodedCreationData.PCRSelection) {
+			return nil, fmt.Errorf("certify PCRs does not match the PCR selection in the creation data")
 		}
 		if subtle.ConstantTimeCompare(decodedCreationData.PCRDigest, computePCRDigest(in.GetCertifiedPcrs())) == 0 {
 			return nil, fmt.Errorf("certify PCRs digest does not match the digest in the creation data")
