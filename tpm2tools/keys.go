@@ -187,8 +187,7 @@ func (k *Key) Seal(sensitive []byte, sOpt SealOpt) (*proto.SealedBytes, error) {
 	if len(pcrs.GetPcrs()) > 0 {
 		auth = ComputePCRSessionAuth(pcrs)
 	}
-	// use the session hash algo as SealOpt, because the certification PCRs could be nil
-	certifySel, err := FullPcrSel(sessionHashAlgTpm, k.rw)
+	certifySel, err := FullPcrSel(CertifyHashAlgTpm, k.rw)
 	if err != nil {
 		return nil, err
 	}
@@ -282,6 +281,9 @@ func (k *Key) Unseal(in *proto.SealedBytes, cOpt CertifyOpt) ([]byte, error) {
 		decodedCreationData, err := tpm2.DecodeCreationData(in.GetCreationData())
 		if err != nil {
 			return nil, fmt.Errorf("failed to decode creation data: %v", err)
+		}
+		if err := EqualsPCRSelections(PCRSelection(in.GetCertifiedPcrs()), decodedCreationData.PCRSelection); err != nil {
+			return nil, err
 		}
 		if subtle.ConstantTimeCompare(decodedCreationData.PCRDigest, computePCRDigest(in.GetCertifiedPcrs())) == 0 {
 			return nil, fmt.Errorf("certify PCRs digest does not match the digest in the creation data")

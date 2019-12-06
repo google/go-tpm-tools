@@ -80,10 +80,12 @@ using the TPM. This operation will fail if used on a different TPM, or if the
 Platform Control Registers (PCRs) are in the incorrect state.
 
 All the necessary data to decrypt the sealed input is present in the input blob.
-Thus, algorithm and seal PCR options are not needed for the unseal command.
+We do not need to specify the PCRs used for unsealing.
 
-The optional --pcrs flag allows the user to certify the blob that has been sealed
-under the same PCR values as current with the given PCR numbers.
+We do support an optional "certification" process. A list of PCRs may be
+provided with --pcrs, and the unwrapping will fail if the PCR values when
+sealing differ from the current PCR values. This allows for verification of the
+machine state when sealing took place.
 `,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -112,10 +114,7 @@ under the same PCR values as current with the given PCR numbers.
 
 		fmt.Fprintln(debugOutput(), "Unsealing data")
 
-		certifySel, err := getSelection()
-		if err != nil {
-			return err
-		}
+		certifySel := tpm2.PCRSelection{Hash: tpm2tools.CertifyHashAlgTpm, PCRs: pcrs}
 		var cOpt tpm2tools.CertifyOpt
 		if len(certifySel.PCRs) > 0 {
 			cOpt = tpm2tools.CertifyCurrent{PCRSelection: certifySel}

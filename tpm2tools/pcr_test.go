@@ -123,3 +123,27 @@ func TestCheckContainedPCRs(t *testing.T) {
 		t.Fatalf("empty pcrs is always validate")
 	}
 }
+
+func TestEqualsPCRSelections(t *testing.T) {
+	var tests = []struct {
+		a         tpm2.PCRSelection
+		b         tpm2.PCRSelection
+		assertion bool
+	}{
+		{tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{0}}, tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{0}}, true},
+		{tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{}}, tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{}}, true},
+		{tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{1, 2, 3}}, tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{2, 1, 3}}, true},
+		{tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{0}}, tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{}}, false},
+		{tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{2}}, tpm2.PCRSelection{Hash: tpm2.AlgSHA1, PCRs: []int{2}}, false},
+		{tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{1, 2, 2, 3}}, tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{2, 1, 3}}, false},
+	}
+	for _, test := range tests {
+		err := EqualsPCRSelections(test.a, test.b)
+		if test.assertion && err != nil {
+			t.Errorf("PCR selections should be equal")
+		}
+		if !test.assertion && err == nil {
+			t.Errorf("PCR selections should not be equal")
+		}
+	}
+}

@@ -19,6 +19,9 @@ import (
 const sessionHashAlg = crypto.SHA256
 const sessionHashAlgTpm = tpm2.AlgSHA256
 
+// CertifyHashAlgTpm is the hard-coded algorithm used in certify PCRs.
+const CertifyHashAlgTpm = tpm2.AlgSHA256
+
 // GetPCRCount asks the tpm how many PCRs it has.
 func GetPCRCount(rw io.ReadWriter) (uint32, error) {
 	props, _, err := tpm2.GetCapability(rw, tpm2.CapabilityTPMProperties, 1, uint32(tpm2.PCRCount))
@@ -96,9 +99,11 @@ func (p SealTarget) PCRsForSealing(_ io.ReadWriter) (*proto.Pcrs, error) {
 }
 
 // CertifyCurrent certifies that a selection of current PCRs have the same value when sealing.
+// Hash Algorithm in the selection should be CertifyHashAlgTpm.
 type CertifyCurrent struct{ tpm2.PCRSelection }
 
 // CertifyExpected certifies that the TPM had a specific set of PCR values when sealing.
+// Hash Algorithm in the PCR proto should be CertifyHashAlgTpm.
 type CertifyExpected struct{ *proto.Pcrs }
 
 // CertifyOpt determines if the given PCR value can pass certification in Unseal().
@@ -155,6 +160,31 @@ func PCRSelection(pcrs *proto.Pcrs) tpm2.PCRSelection {
 		sel.PCRs = append(sel.PCRs, int(pcrNum))
 	}
 	return sel
+}
+
+// EqualsPCRSelections compares the given tpm2.PCRSelections (including
+// the hash algo), and will return an error if they are not equal.
+func EqualsPCRSelections(a tpm2.PCRSelection, b tpm2.PCRSelection) error {
+	if a.Hash != b.Hash {
+		return fmt.Errorf("hash algorithm not equal")
+	}
+	diff := make(map[int]int, len(a.PCRs))
+	for _, pcr := range a.PCRs {
+		diff[pcr]++
+	}
+	for _, pcr := range b.PCRs {
+		if _, ok := diff[pcr]; !ok {
+			return fmt.Errorf("PCR selection not equal")
+		}
+		diff[pcr]--
+		if diff[pcr] == 0 {
+			delete(diff, pcr)
+		}
+	}
+	if len(diff) != 0 {
+		return fmt.Errorf("PCR selection not equal")
+	}
+	return nil
 }
 
 // FullPcrSel will return a full PCR selection based on the total PCR number
