@@ -47,18 +47,18 @@ func addIndexFlag(cmd *cobra.Command) {
 // Lets this command specify some number of PCR arguments, check if in range.
 func addPCRsFlag(cmd *cobra.Command) {
 	cmd.PersistentFlags().IntSliceVar(&pcrs, "pcrs", nil,
-		"Comma separated list of PCR numbers")
+		"comma separated list of PCR numbers")
 }
 
 // Lets this command specify the public key algorithm.
 func addPublicKeyAlgoFlag(cmd *cobra.Command) {
 	cmd.PersistentFlags().StringVar(&keyAlgo, "algo", "rsa",
-		"Public key algorithm, \"rsa\" or \"ecc\"")
+		"public key algorithm, \"rsa\" or \"ecc\"")
 }
 
 func addHashAlgoFlag(cmd *cobra.Command) {
 	cmd.PersistentFlags().StringVar(&hashAlgo, "hash-algo", "sha256",
-		"Hash Algorithm, \"sha1\",  \"sha256\", or \"sha384\"")
+		"hash algorithm, \"sha1\",  \"sha256\", or \"sha384\"")
 }
 
 // alwaysError implements io.ReadWriter by always returning an error
