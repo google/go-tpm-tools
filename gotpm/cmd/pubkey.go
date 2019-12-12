@@ -88,7 +88,7 @@ func getKey(rw io.ReadWriter, hierarchy tpmutil.Handle, algo tpm2.Algorithm) (*t
 	case tpm2.HandleOwner:
 		return getSRK(rw)
 	default:
-		return nil, fmt.Errorf("There is no default key for the given hierarchy: 0x%x", hierarchy)
+		return nil, fmt.Errorf("there is no default key for the given hierarchy: 0x%x", hierarchy)
 	}
 }
 

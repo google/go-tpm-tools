@@ -77,7 +77,7 @@ func NewCachedKey(rw io.ReadWriter, parent tpmutil.Handle, template tpm2.Public,
 	if parent == tpm2.HandlePlatform {
 		owner = tpm2.HandlePlatform
 	} else if parent == tpm2.HandleNull {
-		return nil, fmt.Errorf("Cannot cache objects in the null hierarchy")
+		return nil, fmt.Errorf("cannot cache objects in the null hierarchy")
 	}
 
 	cachedPub, _, _, err := tpm2.ReadPublic(rw, cachedHandle)
@@ -171,7 +171,7 @@ func (k *Key) Close() {
 
 // Seal seals the sensitive byte buffer to the PCRs specified by SealOpt (the
 // SealOpt can be nil, which means seal to an none PCRs. However the PCR
-// selection in SealOpt cannot be emtpy). The sealing is done under Owner
+// selection in SealOpt cannot be empty). The sealing is done under Owner
 // Hierarchy. During the sealing process, certification data will be created
 // allowing Unseal() to validate the state of the TPM during the sealing process.
 func (k *Key) Seal(sensitive []byte, sOpt SealOpt) (*proto.SealedBytes, error) {
@@ -219,17 +219,17 @@ func sealHelper(rw io.ReadWriter, parentHandle tpmutil.Handle, auth []byte, sens
 
 	priv, pub, creationData, _, ticket, err := tpm2.CreateKeyWithSensitive(rw, parentHandle, certifyPCRsSel, "", "", inPublic, sensitive)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to create key: %v", err)
+		return nil, fmt.Errorf("failed to create key: %v", err)
 	}
 	certifiedPcr, err := ReadPCRs(rw, certifyPCRsSel)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to read PCRs: %v", err)
+		return nil, fmt.Errorf("failed to read PCRs: %v", err)
 	}
 	computedDigest := computePCRDigest(certifiedPcr)
 
 	decodedCreationData, err := tpm2.DecodeCreationData(creationData)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to decode creation data: %v", err)
+		return nil, fmt.Errorf("failed to decode creation data: %v", err)
 	}
 
 	// make sure PCRs haven't being altered after sealing
@@ -254,7 +254,7 @@ func sealHelper(rw io.ReadWriter, parentHandle tpmutil.Handle, auth []byte, sens
 // can be passed to skip certification.
 func (k *Key) Unseal(in *proto.SealedBytes, cOpt CertifyOpt) ([]byte, error) {
 	if in.Srk != proto.ObjectType(k.pubArea.Type) {
-		return nil, fmt.Errorf("Expected key of type %v, got %v", in.Srk, k.pubArea.Type)
+		return nil, fmt.Errorf("expected key of type %v, got %v", in.Srk, k.pubArea.Type)
 	}
 	sealed, _, err := tpm2.Load(
 		k.rw,
@@ -270,7 +270,7 @@ func (k *Key) Unseal(in *proto.SealedBytes, cOpt CertifyOpt) ([]byte, error) {
 	if cOpt != nil {
 		var ticket tpm2.Ticket
 		if _, err = tpmutil.Unpack(in.GetTicket(), &ticket); err != nil {
-			return nil, fmt.Errorf("Ticket unpack failed: %v", err)
+			return nil, fmt.Errorf("ticket unpack failed: %v", err)
 		}
 		creationHash := sessionHashAlg.New()
 		creationHash.Write(in.GetCreationData())

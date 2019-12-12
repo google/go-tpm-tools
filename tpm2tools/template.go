@@ -15,7 +15,7 @@ func defaultEKAuthPolicy() []byte {
 	}
 	digest1 := sha256.Sum256(append(make([]byte, 32), buf...))
 	// We would normally append the policy buffer to digest1, but the
-	// policy buffer is empty for the deafult Auth Policy.
+	// policy buffer is empty for the default Auth Policy.
 	digest2 := sha256.Sum256(digest1[:])
 	return digest2[:]
 }

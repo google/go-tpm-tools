@@ -141,7 +141,7 @@ func getSRKwithAlgo(rwc io.ReadWriter, algo tpm2.Algorithm) (*tpm2tools.Key, err
 	case tpm2.AlgECC:
 		return tpm2tools.StorageRootKeyECC(rwc)
 	default:
-		return nil, fmt.Errorf("Cannot create SRK for the given algorithm: 0x%x", algo)
+		return nil, fmt.Errorf("cannot create SRK for the given algorithm: 0x%x", algo)
 	}
 }
 
@@ -152,7 +152,7 @@ func getEKwithAlgo(rwc io.ReadWriter, algo tpm2.Algorithm) (*tpm2tools.Key, erro
 	case tpm2.AlgECC:
 		return tpm2tools.EndorsementKeyECC(rwc)
 	default:
-		return nil, fmt.Errorf("Cannot create EK for the given algorithm: 0x%x", algo)
+		return nil, fmt.Errorf("cannot create EK for the given algorithm: 0x%x", algo)
 	}
 }
 

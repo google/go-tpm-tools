@@ -18,7 +18,7 @@ This tool allows performing TPM2 operations from the command line.
 See the per-command documentation for more information.`,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		if quiet && verbose {
-			return fmt.Errorf("Cannot specify both --quiet and --verbose")
+			return fmt.Errorf("cannot specify both --quiet and --verbose")
 		}
 		return nil
 	},
