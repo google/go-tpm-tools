@@ -265,7 +265,7 @@ func TestReseal(t *testing.T) {
 	}
 
 	// unseal should fail if certify to current PCRs value, as one PCR has changed
-	unseal, err = key.Unseal(resealed, CertifyCurrent{PCRSelection: sel})
+	_, err = key.Unseal(resealed, CertifyCurrent{PCRSelection: sel})
 	if err == nil {
 		t.Fatalf("unseal should fail since the certify PCRs have changed.")
 	}
@@ -315,7 +315,7 @@ func TestSealResealWithEmptyPCRs(t *testing.T) {
 	}
 
 	// unseal should failed as the PCR 7 has changed (not as same as when sealing)
-	unseal, err = key.Unseal(sealed, cOpt)
+	_, err = key.Unseal(sealed, cOpt)
 	if err == nil {
 		t.Fatalf("unseal should fail as PCR 7 changed")
 	}
@@ -330,5 +330,8 @@ func TestSealResealWithEmptyPCRs(t *testing.T) {
 	unseal, err = key.Unseal(sealed, cOpt)
 	if err != nil {
 		t.Errorf("failed to unseal: %v", err)
+	}
+	if !bytes.Equal(secret, unseal) {
+		t.Fatalf("unsealed (%v) not equal to secret (%v)", unseal, secret)
 	}
 }
