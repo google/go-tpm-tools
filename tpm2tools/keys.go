@@ -171,7 +171,7 @@ func (k *Key) Close() {
 
 // Seal seals the sensitive byte buffer to the PCRs specified by SealOpt (the
 // SealOpt can be nil, which means seal to an none PCRs. However the PCR
-// selection in SealOpt cannot be emtpy). The sealing is done under Owner
+// selection in SealOpt cannot be empty). The sealing is done under Owner
 // Hierarchy. During the sealing process, certification data will be created
 // allowing Unseal() to validate the state of the TPM during the sealing process.
 func (k *Key) Seal(sensitive []byte, sOpt SealOpt) (*proto.SealedBytes, error) {
