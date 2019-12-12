@@ -11,7 +11,7 @@ import (
 // Import decrypts the secret contained in an encoded import request.
 // This method only works if the Key is a standard (low address) EK.
 // The req parameter should come from server.CreateImportBlob.
-func (ek *Key) Import(rw io.ReadWriter, blob *proto.ImportBlob) ([]byte, error) {
+func (k *Key) Import(rw io.ReadWriter, blob *proto.ImportBlob) ([]byte, error) {
 	session, _, err := tpm2.StartAuthSession(
 		rw,
 		tpm2.HandleNull,  /*tpmKey*/
@@ -40,7 +40,7 @@ func (ek *Key) Import(rw io.ReadWriter, blob *proto.ImportBlob) ([]byte, error) 
 	if err = refreshSession(); err != nil {
 		return nil, err
 	}
-	private, err := tpm2.Import(rw, ek.Handle(), auth, blob.PublicArea, blob.Duplicate, blob.EncryptedSeed, nil, nil)
+	private, err := tpm2.Import(rw, k.Handle(), auth, blob.PublicArea, blob.Duplicate, blob.EncryptedSeed, nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("import failed: %s", err)
 	}
@@ -48,7 +48,7 @@ func (ek *Key) Import(rw io.ReadWriter, blob *proto.ImportBlob) ([]byte, error) 
 	if err = refreshSession(); err != nil {
 		return nil, err
 	}
-	handle, _, err := tpm2.LoadUsingAuth(rw, ek.Handle(), auth, blob.PublicArea, private)
+	handle, _, err := tpm2.LoadUsingAuth(rw, k.Handle(), auth, blob.PublicArea, private)
 	if err != nil {
 		return nil, fmt.Errorf("load failed: %s", err)
 	}
