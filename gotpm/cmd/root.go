@@ -1,3 +1,4 @@
+// Package cmd contains a CLI to interact with TPM.
 package cmd
 
 import (
