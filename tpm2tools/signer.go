@@ -83,10 +83,10 @@ func (k *Key) GetSigner() (crypto.Signer, error) {
 		return nil, fmt.Errorf("unsupported key type: %v", k.pubArea.Type)
 	}
 	if sigScheme == nil {
-		return nil, fmt.Errorf("GetSigner called on key missing a signing scheme.")
+		return nil, fmt.Errorf("key missing required signing scheme")
 	}
 	if sigScheme.Alg != tpm2.AlgRSASSA && sigScheme.Alg != tpm2.AlgECDSA {
-		return nil, fmt.Errorf("unsupported signing algorithm: %v.", sigScheme.Alg)
+		return nil, fmt.Errorf("unsupported signing algorithm: %v", sigScheme.Alg)
 	}
 	hash, err := sigScheme.Hash.Hash()
 	if err != nil {
