@@ -46,10 +46,6 @@ NVDATA instead (and --algo is ignored).`,
 	}(),
 	Args: cobra.ExactValidArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		algo, err := getAlgo()
-		if err != nil {
-			return err
-		}
 		cmd.SilenceUsage = true
 
 		rwc, err := openTpm()
@@ -58,7 +54,7 @@ NVDATA instead (and --algo is ignored).`,
 		}
 		defer rwc.Close()
 
-		key, err := getKey(rwc, hierarchyNames[args[0]], algo)
+		key, err := getKey(rwc, hierarchyNames[args[0]], keyAlgo)
 		if err != nil {
 			return err
 		}

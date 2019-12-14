@@ -33,11 +33,7 @@ If --pcrs is not provided, all pcrs are read for that hash algorithm.`,
 		}
 		defer rwc.Close()
 
-		sel, err := getSelection()
-		if err != nil {
-			return err
-		}
-
+		sel := getSelection()
 		if len(sel.PCRs) == 0 {
 			if sel.PCRs, err = getDefaultPcrs(rwc); err != nil {
 				return err

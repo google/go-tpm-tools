@@ -1,9 +1,11 @@
 package cmd
 
 import (
-	"fmt"
+	"errors"
 	"io"
 	"os"
+	"strconv"
+	"strings"
 
 	"github.com/google/go-tpm-tools/tpm2tools"
 	"github.com/google/go-tpm/tpm2"
@@ -14,10 +16,81 @@ var (
 	output   string
 	input    string
 	nvIndex  uint32
-	keyAlgo  string
+	keyAlgo  = tpm2.AlgRSA
 	pcrs     []int
-	hashAlgo string
+	hashAlgo = tpm2.AlgSHA256
 )
+
+type pcrsFlag struct {
+	value *[]int
+}
+
+func (f *pcrsFlag) Set(val string) error {
+	for _, d := range strings.Split(val, ",") {
+		pcr, err := strconv.Atoi(d)
+		if err != nil {
+			return err
+		}
+		if pcr < 0 || pcr > 23 {
+			return errors.New("pcr out of range")
+		}
+		*f.value = append(*f.value, pcr)
+	}
+	return nil
+}
+
+func (f *pcrsFlag) Type() string {
+	return "pcrs"
+}
+
+func (f *pcrsFlag) String() string {
+	return "" // Don't display a default value
+}
+
+var algos = map[tpm2.Algorithm]string{
+	tpm2.AlgRSA:    "rsa",
+	tpm2.AlgECC:    "ecc",
+	tpm2.AlgSHA1:   "sha1",
+	tpm2.AlgSHA256: "sha256",
+	tpm2.AlgSHA384: "sha384",
+	tpm2.AlgSHA512: "sha512",
+}
+
+type algoFlag struct {
+	value   *tpm2.Algorithm
+	allowed []tpm2.Algorithm
+}
+
+func (f *algoFlag) Set(val string) error {
+	present := false
+	for _, algo := range f.allowed {
+		if algos[algo] == val {
+			*f.value = algo
+			present = true
+		}
+	}
+	if !present {
+		return errors.New("unknown algorithm")
+	}
+	return nil
+}
+
+func (f *algoFlag) Type() string {
+	return "algo"
+}
+
+func (f *algoFlag) String() string {
+	return algos[*f.value]
+}
+
+// Allowed gives a string list of the permitted algorithm values for this flag.
+func (f *algoFlag) Allowed() string {
+	out := make([]string, len(f.allowed))
+	for i, a := range f.allowed {
+		out[i] = algos[a]
+	}
+	return strings.Join(out, ", ")
+}
 
 // Disable the "help" subcommand (and just use the -h/--help flags).
 // This should be called on all commands with subcommands.
@@ -46,19 +119,18 @@ func addIndexFlag(cmd *cobra.Command) {
 
 // Lets this command specify some number of PCR arguments, check if in range.
 func addPCRsFlag(cmd *cobra.Command) {
-	cmd.PersistentFlags().IntSliceVar(&pcrs, "pcrs", nil,
-		"comma separated list of PCR numbers")
+	cmd.PersistentFlags().Var(&pcrsFlag{&pcrs}, "pcrs", "comma separated list of PCR numbers")
 }
 
 // Lets this command specify the public key algorithm.
 func addPublicKeyAlgoFlag(cmd *cobra.Command) {
-	cmd.PersistentFlags().StringVar(&keyAlgo, "algo", "rsa",
-		"public key algorithm, \"rsa\" or \"ecc\"")
+	f := algoFlag{&keyAlgo, []tpm2.Algorithm{tpm2.AlgRSA, tpm2.AlgECC}}
+	cmd.PersistentFlags().Var(&f, "algo", "public key algorithm: "+f.Allowed())
 }
 
 func addHashAlgoFlag(cmd *cobra.Command) {
-	cmd.PersistentFlags().StringVar(&hashAlgo, "hash-algo", "sha256",
-		"hash algorithm, \"sha1\",  \"sha256\", or \"sha384\"")
+	f := algoFlag{&hashAlgo, []tpm2.Algorithm{tpm2.AlgSHA1, tpm2.AlgSHA256, tpm2.AlgSHA384, tpm2.AlgSHA512}}
+	cmd.PersistentFlags().Var(&f, "hash-algo", "hash algorithm: "+f.Allowed())
 }
 
 // alwaysError implements io.ReadWriter by always returning an error
@@ -102,74 +174,30 @@ func dataInput() io.Reader {
 	return file
 }
 
-// Get the algorithm for public key.
-func getAlgo() (tpm2.Algorithm, error) {
+func getSelection() tpm2.PCRSelection {
+	return tpm2.PCRSelection{Hash: hashAlgo, PCRs: pcrs}
+}
+
+// Load SRK based on tpm2.Algorithm set in the global flag vars.
+func getSRK(rwc io.ReadWriter) (*tpm2tools.Key, error) {
 	switch keyAlgo {
-	case "rsa":
-		return tpm2.AlgRSA, nil
-	case "ecc":
-		return tpm2.AlgECC, nil
-	default:
-		return tpm2.AlgNull, fmt.Errorf("invalid argument %q for \"--algo\" flag", keyAlgo)
-	}
-}
-
-func getHashAlgo() (tpm2.Algorithm, error) {
-	switch hashAlgo {
-	case "sha1":
-		return tpm2.AlgSHA1, nil
-	case "sha256":
-		return tpm2.AlgSHA256, nil
-	case "sha384":
-		return tpm2.AlgSHA384, nil
-	case "sha512":
-		return tpm2.AlgSHA512, nil
-	default:
-		return tpm2.AlgNull, fmt.Errorf("invalid argument %q for \"--hash-algo\" flag", hashAlgo)
-	}
-}
-
-func getSelection() (tpm2.PCRSelection, error) {
-	hash, err := getHashAlgo()
-	return tpm2.PCRSelection{Hash: hash, PCRs: pcrs}, err
-}
-
-func getSRKwithAlgo(rwc io.ReadWriter, algo tpm2.Algorithm) (*tpm2tools.Key, error) {
-	switch algo {
 	case tpm2.AlgRSA:
 		return tpm2tools.StorageRootKeyRSA(rwc)
 	case tpm2.AlgECC:
 		return tpm2tools.StorageRootKeyECC(rwc)
 	default:
-		return nil, fmt.Errorf("cannot create SRK for the given algorithm: 0x%x", algo)
+		panic("unexpected keyAlgo")
 	}
 }
 
-func getEKwithAlgo(rwc io.ReadWriter, algo tpm2.Algorithm) (*tpm2tools.Key, error) {
-	switch algo {
+// Load EK based on tpm2.Algorithm set in the global flag vars.
+func getEK(rwc io.ReadWriter) (*tpm2tools.Key, error) {
+	switch keyAlgo {
 	case tpm2.AlgRSA:
 		return tpm2tools.EndorsementKeyRSA(rwc)
 	case tpm2.AlgECC:
 		return tpm2tools.EndorsementKeyECC(rwc)
 	default:
-		return nil, fmt.Errorf("cannot create EK for the given algorithm: 0x%x", algo)
+		panic("unexpected keyAlgo")
 	}
-}
-
-// Load SRK based on tpm2.Algorithm set in the global flag vars.
-func getSRK(rwc io.ReadWriter) (*tpm2tools.Key, error) {
-	algo, err := getAlgo()
-	if err != nil {
-		return nil, err
-	}
-	return getSRKwithAlgo(rwc, algo)
-}
-
-// Load EK based on tpm2.Algorithm set in the global flag vars.
-func getEK(rwc io.ReadWriter) (*tpm2tools.Key, error) {
-	algo, err := getAlgo()
-	if err != nil {
-		return nil, err
-	}
-	return getEKwithAlgo(rwc, algo)
 }
