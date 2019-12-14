@@ -4,14 +4,14 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/google/go-tpm-tools/proto"
+	tpmpb "github.com/google/go-tpm-tools/proto"
 	"github.com/google/go-tpm/tpm2"
 )
 
 // Import decrypts the secret contained in an encoded import request.
 // This method only works if the Key is a standard (low address) EK.
 // The req parameter should come from server.CreateImportBlob.
-func (k *Key) Import(rw io.ReadWriter, blob *proto.ImportBlob) ([]byte, error) {
+func (k *Key) Import(rw io.ReadWriter, blob *tpmpb.ImportBlob) ([]byte, error) {
 	session, _, err := tpm2.StartAuthSession(
 		rw,
 		tpm2.HandleNull,  /*tpmKey*/

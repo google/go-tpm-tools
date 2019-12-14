@@ -1,3 +1,4 @@
+// Package tpm2tools contains some high-level TPM 2.0 functions.
 package tpm2tools
 
 import (
@@ -6,7 +7,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/google/go-tpm-tools/proto"
+	tpmpb "github.com/google/go-tpm-tools/proto"
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpmutil"
 )
@@ -174,8 +175,8 @@ func (k *Key) Close() {
 // selection in SealOpt cannot be empty). The sealing is done under Owner
 // Hierarchy. During the sealing process, certification data will be created
 // allowing Unseal() to validate the state of the TPM during the sealing process.
-func (k *Key) Seal(sensitive []byte, sOpt SealOpt) (*proto.SealedBytes, error) {
-	var pcrs *proto.Pcrs
+func (k *Key) Seal(sensitive []byte, sOpt SealOpt) (*tpmpb.SealedBytes, error) {
+	var pcrs *tpmpb.Pcrs
 	var err error
 	var auth []byte
 	if sOpt != nil {
@@ -200,11 +201,11 @@ func (k *Key) Seal(sensitive []byte, sOpt SealOpt) (*proto.SealedBytes, error) {
 		sb.Pcrs = append(sb.Pcrs, int32(pcrNum))
 	}
 	sb.Hash = pcrs.GetHash()
-	sb.Srk = proto.ObjectType(k.pubArea.Type)
+	sb.Srk = tpmpb.ObjectType(k.pubArea.Type)
 	return sb, nil
 }
 
-func sealHelper(rw io.ReadWriter, parentHandle tpmutil.Handle, auth []byte, sensitive []byte, certifyPCRsSel tpm2.PCRSelection) (*proto.SealedBytes, error) {
+func sealHelper(rw io.ReadWriter, parentHandle tpmutil.Handle, auth []byte, sensitive []byte, certifyPCRsSel tpm2.PCRSelection) (*tpmpb.SealedBytes, error) {
 	inPublic := tpm2.Public{
 		Type:       tpm2.AlgKeyedHash,
 		NameAlg:    sessionHashAlgTpm,
@@ -237,7 +238,7 @@ func sealHelper(rw io.ReadWriter, parentHandle tpmutil.Handle, auth []byte, sens
 		return nil, fmt.Errorf("PCRs have been modified after sealing")
 	}
 
-	sb := proto.SealedBytes{}
+	sb := tpmpb.SealedBytes{}
 	sb.CertifiedPcrs = certifiedPcr
 	sb.Priv = priv
 	sb.Pub = pub
@@ -252,8 +253,8 @@ func sealHelper(rw io.ReadWriter, parentHandle tpmutil.Handle, auth []byte, sens
 // private data in proto.SealedBytes. Optionally, a CertifyOpt can be
 // passed, to verify the state of the TPM when the data was sealed. A nil value
 // can be passed to skip certification.
-func (k *Key) Unseal(in *proto.SealedBytes, cOpt CertifyOpt) ([]byte, error) {
-	if in.Srk != proto.ObjectType(k.pubArea.Type) {
+func (k *Key) Unseal(in *tpmpb.SealedBytes, cOpt CertifyOpt) ([]byte, error) {
+	if in.Srk != tpmpb.ObjectType(k.pubArea.Type) {
 		return nil, fmt.Errorf("expected key of type %v, got %v", in.Srk, k.pubArea.Type)
 	}
 	sealed, _, err := tpm2.Load(
@@ -282,7 +283,7 @@ func (k *Key) Unseal(in *proto.SealedBytes, cOpt CertifyOpt) ([]byte, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to decode creation data: %v", err)
 		}
-		if !HasSamePCRSelection(*in.GetCertifiedPcrs(), decodedCreationData.PCRSelection) {
+		if !HasSamePCRSelection(in.GetCertifiedPcrs(), decodedCreationData.PCRSelection) {
 			return nil, fmt.Errorf("certify PCRs does not match the PCR selection in the creation data")
 		}
 		if subtle.ConstantTimeCompare(decodedCreationData.PCRDigest, computePCRDigest(in.GetCertifiedPcrs())) == 0 {
@@ -314,7 +315,7 @@ func (k *Key) Unseal(in *proto.SealedBytes, cOpt CertifyOpt) ([]byte, error) {
 // Reseal is a shortcut to call Unseal() followed by Seal().
 // CertifyOpt(nillable) will be used in Unseal(), and SealOpt(nillable)
 // will be used in Seal()
-func (k *Key) Reseal(in *proto.SealedBytes, cOpt CertifyOpt, sOpt SealOpt) (*proto.SealedBytes, error) {
+func (k *Key) Reseal(in *tpmpb.SealedBytes, cOpt CertifyOpt, sOpt SealOpt) (*tpmpb.SealedBytes, error) {
 	sensitive, err := k.Unseal(in, cOpt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unseal: %v", err)

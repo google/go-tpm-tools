@@ -7,7 +7,7 @@ import (
 	pb "github.com/golang/protobuf/proto"
 	"github.com/spf13/cobra"
 
-	"github.com/google/go-tpm-tools/proto"
+	tpmpb "github.com/google/go-tpm-tools/proto"
 	"github.com/google/go-tpm-tools/tpm2tools"
 	"github.com/google/go-tpm/tpm2"
 )
@@ -100,7 +100,7 @@ machine state when sealing took place.
 		if err != nil {
 			return err
 		}
-		var sealed proto.SealedBytes
+		var sealed tpmpb.SealedBytes
 		if err := pb.UnmarshalText(string(data), &sealed); err != nil {
 			return err
 		}

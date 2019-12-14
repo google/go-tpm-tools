@@ -1,3 +1,4 @@
+// Package server contains functions to be ran on a server (no TPM needed), as oppose to a client (with TPM).
 package server
 
 import (
@@ -15,12 +16,12 @@ import (
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpmutil"
 
-	"github.com/google/go-tpm-tools/proto"
+	tpmpb "github.com/google/go-tpm-tools/proto"
 )
 
 // CreateImportBlob uses the provided public EK to encrypt the sensitive data into import blob format.
 // The returned import blob can be decrypted by the TPM associated with the provided EK.
-func CreateImportBlob(ekPub crypto.PublicKey, sensitive []byte) (*proto.ImportBlob, error) {
+func CreateImportBlob(ekPub crypto.PublicKey, sensitive []byte) (*tpmpb.ImportBlob, error) {
 	ek, err := CreateEKPublicAreaFromKey(ekPub)
 	if err != nil {
 		return nil, err
@@ -50,7 +51,7 @@ func CreateImportBlob(ekPub crypto.PublicKey, sensitive []byte) (*proto.ImportBl
 	if err != nil {
 		return nil, err
 	}
-	return &proto.ImportBlob{
+	return &tpmpb.ImportBlob{
 		Duplicate:     duplicate,
 		EncryptedSeed: encryptedSeed,
 		PublicArea:    pubEncoded,
