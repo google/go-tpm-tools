@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/google/go-tpm-tools/internal"
+	"github.com/google/go-tpm-tools/proto"
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpmutil"
 )
@@ -88,5 +89,72 @@ func TestGetPCRCount(t *testing.T) {
 
 	if pcrCount != 24 {
 		t.Errorf("tpm simulator has unexpected number of PCRs: %v instead of 24", pcrCount)
+	}
+}
+
+func TestCheckContainedPCRs(t *testing.T) {
+	rwc := internal.GetTPM(t)
+	defer CheckedClose(t, rwc)
+
+	sel, err := FullPcrSel(tpm2.AlgSHA256, rwc)
+	if err != nil {
+		t.Fatalf("Failed to get a full PCR selection: %v", err)
+	}
+	baseline, err := ReadPCRs(rwc, sel)
+	if err != nil {
+		t.Fatalf("Failed to Read PCRs: %v", err)
+	}
+
+	toBeCertified, err := ReadPCRs(rwc, tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{1, 2, 3}})
+	if err != nil {
+		t.Fatalf("failed to read pcrs %v", err)
+	}
+	if err := checkContainedPCRs(toBeCertified, baseline); err != nil {
+		t.Fatalf("Validation should pass: %v", err)
+	}
+
+	if err := tpm2.PCRExtend(rwc, tpmutil.Handle(2), tpm2.AlgSHA256, bytes.Repeat([]byte{0x00}, sha256.Size), ""); err != nil {
+		t.Fatalf("failed to extend pcr for test %v", err)
+	}
+
+	toBeCertified, err = ReadPCRs(rwc, tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{1, 2, 3}})
+	if err != nil {
+		t.Fatalf("failed to read pcrs %v", err)
+	}
+	if err := checkContainedPCRs(toBeCertified, baseline); err == nil {
+		t.Fatalf("validation should fail due to PCR 2 changed")
+	}
+
+	toBeCertified, err = ReadPCRs(rwc, tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{}})
+	if err != nil {
+		t.Fatalf("failed to read pcrs %v", err)
+	}
+	if err := checkContainedPCRs(toBeCertified, baseline); err != nil {
+		t.Fatalf("empty pcrs is always validate")
+	}
+}
+
+func TestHasSamePCRSelection(t *testing.T) {
+	var tests = []struct {
+		pcrs        proto.Pcrs
+		pcrSel      tpm2.PCRSelection
+		expectedRes bool
+	}{
+		{proto.Pcrs{}, tpm2.PCRSelection{}, true},
+		{proto.Pcrs{Hash: proto.HashAlgo(tpm2.AlgSHA256), Pcrs: map[uint32][]byte{1: []byte{}}},
+			tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{1}}, true},
+		{proto.Pcrs{Hash: proto.HashAlgo(tpm2.AlgSHA256), Pcrs: map[uint32][]byte{}},
+			tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{}}, true},
+		{proto.Pcrs{Hash: proto.HashAlgo(tpm2.AlgSHA256), Pcrs: map[uint32][]byte{1: []byte{}}},
+			tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{4}}, false},
+		{proto.Pcrs{Hash: proto.HashAlgo(tpm2.AlgSHA256), Pcrs: map[uint32][]byte{1: []byte{}, 4: []byte{}}},
+			tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{4}}, false},
+		{proto.Pcrs{Hash: proto.HashAlgo(tpm2.AlgSHA256), Pcrs: map[uint32][]byte{1: []byte{}, 2: []byte{}}},
+			tpm2.PCRSelection{Hash: tpm2.AlgSHA1, PCRs: []int{1, 2}}, false},
+	}
+	for _, test := range tests {
+		if HasSamePCRSelection(test.pcrs, test.pcrSel) != test.expectedRes {
+			t.Errorf("HasSamePCRSelection result is not expected")
+		}
 	}
 }

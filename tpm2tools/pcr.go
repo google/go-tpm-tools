@@ -1,6 +1,7 @@
 package tpm2tools
 
 import (
+	"bytes"
 	"crypto"
 	"fmt"
 	"io"
@@ -17,6 +18,9 @@ import (
 // several places. Two constants are used to avoid repeated conversions.
 const sessionHashAlg = crypto.SHA256
 const sessionHashAlgTpm = tpm2.AlgSHA256
+
+// CertifyHashAlgTpm is the hard-coded algorithm used in certify PCRs.
+const CertifyHashAlgTpm = tpm2.AlgSHA256
 
 // GetPCRCount asks the tpm how many PCRs it has.
 func GetPCRCount(rw io.ReadWriter) (uint32, error) {
@@ -67,6 +71,87 @@ func ReadPCRs(rw io.ReadWriter, sel tpm2.PCRSelection) (*proto.Pcrs, error) {
 	return &pl, nil
 }
 
+// SealCurrent seals data to the current specified PCR selection.
+type SealCurrent struct{ tpm2.PCRSelection }
+
+// SealTarget predicatively seals data to the given specified PCR values.
+type SealTarget struct{ *proto.Pcrs }
+
+// SealOpt specifies the PCR values that should be used for Seal().
+type SealOpt interface {
+	PCRsForSealing(rw io.ReadWriter) (*proto.Pcrs, error)
+}
+
+// PCRsForSealing read from TPM and return the selected PCRs.
+func (p SealCurrent) PCRsForSealing(rw io.ReadWriter) (*proto.Pcrs, error) {
+	if len(p.PCRSelection.PCRs) == 0 {
+		panic("SealCurrent contains 0 PCRs")
+	}
+	return ReadPCRs(rw, p.PCRSelection)
+}
+
+// PCRsForSealing return the target PCRs.
+func (p SealTarget) PCRsForSealing(_ io.ReadWriter) (*proto.Pcrs, error) {
+	if len(p.Pcrs.GetPcrs()) == 0 {
+		panic("SealTaget contains 0 PCRs")
+	}
+	return p.Pcrs, nil
+}
+
+// CertifyCurrent certifies that a selection of current PCRs have the same value when sealing.
+// Hash Algorithm in the selection should be CertifyHashAlgTpm.
+type CertifyCurrent struct{ tpm2.PCRSelection }
+
+// CertifyExpected certifies that the TPM had a specific set of PCR values when sealing.
+// Hash Algorithm in the PCR proto should be CertifyHashAlgTpm.
+type CertifyExpected struct{ *proto.Pcrs }
+
+// CertifyOpt determines if the given PCR value can pass certification in Unseal().
+type CertifyOpt interface {
+	CertifyPCRs(rw io.ReadWriter, certified *proto.Pcrs) error
+}
+
+// CertifyPCRs from CurrentPCRs will read PCR values from TPM and compare the digest.
+func (p CertifyCurrent) CertifyPCRs(rw io.ReadWriter, pcrs *proto.Pcrs) error {
+	if len(p.PCRSelection.PCRs) == 0 {
+		panic("CertifyCurrent contains 0 PCRs")
+	}
+	current, err := ReadPCRs(rw, p.PCRSelection)
+	if err != nil {
+		return err
+	}
+	return checkContainedPCRs(current, pcrs)
+}
+
+// CertifyPCRs will compare the digest with given expected PCRs values.
+func (p CertifyExpected) CertifyPCRs(_ io.ReadWriter, pcrs *proto.Pcrs) error {
+	if len(p.Pcrs.GetPcrs()) == 0 {
+		panic("CertifyExpected contains 0 PCRs")
+	}
+	return checkContainedPCRs(p.Pcrs, pcrs)
+}
+
+// Check if the "superset" PCRs contain a valid "subset" PCRs, the PCR value must match
+// If there is one or more PCRs in subset which don't exist in superset, will return
+// an error with the first missing PCR.
+// If there is one or more PCRs value mismatch with the superset, will return an error
+// with the first mismatched PCR numbers.
+func checkContainedPCRs(subset *proto.Pcrs, superset *proto.Pcrs) error {
+	if subset.GetHash() != superset.GetHash() {
+		return fmt.Errorf("PCR hash algo not matching: %v, %v", subset.GetHash(), superset.GetHash())
+	}
+	for pcrNum, pcrVal := range subset.GetPcrs() {
+		if expectedVal, ok := superset.GetPcrs()[pcrNum]; ok {
+			if !bytes.Equal(expectedVal, pcrVal) {
+				return fmt.Errorf("PCR %d mismatch: expected %v, got %v", pcrNum, expectedVal, pcrVal)
+			}
+		} else {
+			return fmt.Errorf("PCR %d mismatch: value missing from the superset PCRs", pcrNum)
+		}
+	}
+	return nil
+}
+
 // PCRSelection returns the corresponding tpm2.PCRSelection for a proto.Pcrs
 func PCRSelection(pcrs *proto.Pcrs) tpm2.PCRSelection {
 	sel := tpm2.PCRSelection{Hash: tpm2.Algorithm(pcrs.Hash)}
@@ -75,6 +160,37 @@ func PCRSelection(pcrs *proto.Pcrs) tpm2.PCRSelection {
 		sel.PCRs = append(sel.PCRs, int(pcrNum))
 	}
 	return sel
+}
+
+// HasSamePCRSelection checks the given proto.Pcrs has the same PCRSelection as the
+// given tpm2.PCRSelection (including the hash algorithm).
+func HasSamePCRSelection(pcrs proto.Pcrs, pcrSel tpm2.PCRSelection) bool {
+	if tpm2.Algorithm(pcrs.Hash) != pcrSel.Hash {
+		return false
+	}
+	if len(pcrs.GetPcrs()) != len(pcrSel.PCRs) {
+		return false
+	}
+	for _, p := range pcrSel.PCRs {
+		if _, ok := pcrs.Pcrs[uint32(p)]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+// FullPcrSel will return a full PCR selection based on the total PCR number
+// of the TPM with the given hash algo.
+func FullPcrSel(hash tpm2.Algorithm, rw io.ReadWriter) (tpm2.PCRSelection, error) {
+	sel := tpm2.PCRSelection{Hash: hash}
+	count, err := GetPCRCount(rw)
+	if err != nil {
+		return sel, err
+	}
+	for i := 0; i < int(count); i++ {
+		sel.PCRs = append(sel.PCRs, int(i))
+	}
+	return sel, nil
 }
 
 // ComputePCRSessionAuth calculates the authorization value for the given PCRs.

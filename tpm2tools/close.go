@@ -7,7 +7,7 @@ import (
 	"github.com/google/go-tpm/tpm2"
 )
 
-// CheckedClose closes the simluator and asserts that there were no leaked handles.
+// CheckedClose closes the simulator and asserts that there were no leaked handles.
 func CheckedClose(tb testing.TB, rwc io.ReadWriteCloser) {
 	for _, t := range []tpm2.HandleType{
 		tpm2.HandleTypeLoadedSession,

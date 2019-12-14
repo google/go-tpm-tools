@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/google/go-tpm-tools/proto"
+	"github.com/google/go-tpm-tools/tpm2tools"
 	"github.com/google/go-tpm/tpm2"
 )
 
@@ -51,7 +52,11 @@ state (like Secure Boot).`,
 		}
 
 		fmt.Fprintf(debugOutput(), "Sealing to PCRs: %v\n", sel.PCRs)
-		sealed, err := srk.Seal(secret, sel)
+		var sOpt tpm2tools.SealOpt
+		if len(sel.PCRs) > 0 {
+			sOpt = tpm2tools.SealCurrent{PCRSelection: sel}
+		}
+		sealed, err := srk.Seal(secret, sOpt)
 		if err != nil {
 			return fmt.Errorf("sealing data: %v", err)
 		}
@@ -75,7 +80,13 @@ using the TPM. This operation will fail if used on a different TPM, or if the
 Platform Control Registers (PCRs) are in the incorrect state.
 
 All the necessary data to decrypt the sealed input is present in the input blob.
-Thus, algorithm and PCR options are not needed for the unseal command.`,
+We do not need to specify the PCRs used for unsealing.
+
+We do support an optional "certification" process. A list of PCRs may be
+provided with --pcrs, and the unwrapping will fail if the PCR values when
+sealing differ from the current PCR values. This allows for verification of the
+machine state when sealing took place.
+`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		rwc, err := openTpm()
@@ -102,7 +113,13 @@ Thus, algorithm and PCR options are not needed for the unseal command.`,
 		defer srk.Close()
 
 		fmt.Fprintln(debugOutput(), "Unsealing data")
-		secret, err := srk.Unseal(&sealed)
+
+		certifySel := tpm2.PCRSelection{Hash: tpm2tools.CertifyHashAlgTpm, PCRs: pcrs}
+		var cOpt tpm2tools.CertifyOpt
+		if len(certifySel.PCRs) > 0 {
+			cOpt = tpm2tools.CertifyCurrent{PCRSelection: certifySel}
+		}
+		secret, err := srk.Unseal(&sealed, cOpt)
 		if err != nil {
 			return fmt.Errorf("unsealing data: %v", err)
 		}
@@ -126,5 +143,6 @@ func init() {
 	// PCRs and hash algorithm only used for sealing
 	addPCRsFlag(sealCmd)
 	addHashAlgoFlag(sealCmd)
+	addPCRsFlag(unsealCmd)
 	addPublicKeyAlgoFlag(sealCmd)
 }

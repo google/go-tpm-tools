@@ -30,7 +30,7 @@ func (signer *tpmSigner) Public() crypto.PublicKey {
 // from other sources while Sign is executing.
 func (signer *tpmSigner) Sign(_ io.Reader, digest []byte, opts crypto.SignerOpts) (signature []byte, err error) {
 	if _, ok := opts.(*rsa.PSSOptions); ok {
-		return nil, fmt.Errorf("signing with PSS not supported.")
+		return nil, fmt.Errorf("signing with PSS not supported")
 	}
 	if opts.HashFunc() != signer.Hash {
 		return nil, fmt.Errorf("opts hash: %v does not match the keys signing hash: %v", opts.HashFunc(), signer.Hash)
@@ -56,22 +56,22 @@ func (signer *tpmSigner) Sign(_ io.Reader, digest []byte, opts crypto.SignerOpts
 // once the Key has been closed.
 func (k *Key) GetSigner() (crypto.Signer, error) {
 	if k.pubArea.Type != tpm2.AlgRSA {
-		return nil, fmt.Errorf("unsupported key type: %v", k.pubArea.Type)
+		return nil, fmt.Errorf("only RSA keys are supported")
 	}
 	if k.pubArea.AuthPolicy != nil {
-		return nil, fmt.Errorf("GetSigner does not support keys with an auth policy.")
+		return nil, fmt.Errorf("keys with auth policies are not supported")
 	}
 	if k.hasAttribute(tpm2.FlagRestricted) {
-		return nil, fmt.Errorf("GetSigner does not support restricted keys.")
+		return nil, fmt.Errorf("restricted keys are not supported")
 	}
 	if !k.hasAttribute(tpm2.FlagSign) {
-		return nil, fmt.Errorf("GetSigner called on non-signing key.")
+		return nil, fmt.Errorf("non-signing key used with GetSigner()")
 	}
 	if k.pubArea.RSAParameters.Sign == nil {
-		return nil, fmt.Errorf("GetSigner called on key missing a signing scheme.")
+		return nil, fmt.Errorf("key missing required signing scheme")
 	}
 	if k.pubArea.RSAParameters.Sign.Alg != tpm2.AlgRSASSA {
-		return nil, fmt.Errorf("GetSigner only supports RSASSA signing keys.")
+		return nil, fmt.Errorf("only RSASSA signing keys are supported")
 	}
 	hash, err := k.pubArea.RSAParameters.Sign.Hash.Hash()
 	if err != nil {
