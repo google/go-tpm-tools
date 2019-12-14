@@ -188,10 +188,7 @@ func (k *Key) Seal(sensitive []byte, sOpt SealOpt) (*tpmpb.SealedBytes, error) {
 	if len(pcrs.GetPcrs()) > 0 {
 		auth = ComputePCRSessionAuth(pcrs)
 	}
-	certifySel, err := FullPcrSel(CertifyHashAlgTpm, k.rw)
-	if err != nil {
-		return nil, err
-	}
+	certifySel := FullPcrSel(CertifyHashAlgTpm)
 	sb, err := sealHelper(k.rw, k.Handle(), auth, sensitive, certifySel)
 	if err != nil {
 		return nil, err

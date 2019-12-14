@@ -79,27 +79,11 @@ func TestReadPCRs(t *testing.T) {
 	}
 }
 
-func TestGetPCRCount(t *testing.T) {
-	rwc := internal.GetTPM(t)
-	defer CheckedClose(t, rwc)
-	pcrCount, err := GetPCRCount(rwc)
-	if err != nil {
-		t.Fatalf("Failed to fetch pcr count: %v", err)
-	}
-
-	if pcrCount != 24 {
-		t.Errorf("tpm simulator has unexpected number of PCRs: %v instead of 24", pcrCount)
-	}
-}
-
 func TestCheckContainedPCRs(t *testing.T) {
 	rwc := internal.GetTPM(t)
 	defer CheckedClose(t, rwc)
 
-	sel, err := FullPcrSel(tpm2.AlgSHA256, rwc)
-	if err != nil {
-		t.Fatalf("Failed to get a full PCR selection: %v", err)
-	}
+	sel := FullPcrSel(tpm2.AlgSHA256)
 	baseline, err := ReadPCRs(rwc, sel)
 	if err != nil {
 		t.Fatalf("Failed to Read PCRs: %v", err)

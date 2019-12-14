@@ -31,7 +31,7 @@ func (f *pcrsFlag) Set(val string) error {
 		if err != nil {
 			return err
 		}
-		if pcr < 0 || pcr > 23 {
+		if pcr < 0 || pcr >= tpm2tools.NumPCRs {
 			return errors.New("pcr out of range")
 		}
 		*f.value = append(*f.value, pcr)

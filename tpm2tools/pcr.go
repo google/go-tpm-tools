@@ -11,6 +11,9 @@ import (
 	"github.com/google/go-tpm/tpmutil"
 )
 
+// NumPCRs is set to the spec minimum of 24, as that's all go-tpm supports.
+const NumPCRs = 24
+
 // We hard-code SHA256 as the policy session hash algorithms. Note that this
 // differs from the PCR hash algorithm (which selects the bank of PCRs to use)
 // and the Public area Name algorithm. We also chose this for compatibility with
@@ -21,20 +24,6 @@ const sessionHashAlgTpm = tpm2.AlgSHA256
 
 // CertifyHashAlgTpm is the hard-coded algorithm used in certify PCRs.
 const CertifyHashAlgTpm = tpm2.AlgSHA256
-
-// GetPCRCount asks the tpm how many PCRs it has.
-func GetPCRCount(rw io.ReadWriter) (uint32, error) {
-	props, _, err := tpm2.GetCapability(rw, tpm2.CapabilityTPMProperties, 1, uint32(tpm2.PCRCount))
-	if err != nil {
-		return 0, err
-	}
-
-	if len(props) != 1 {
-		return 0, fmt.Errorf("tpm returned unexpected list of properties: %v", props)
-	}
-
-	return props[0].(tpm2.TaggedProperty).Value, nil
-}
 
 func min(a, b int) int {
 	if a < b {
@@ -181,16 +170,12 @@ func HasSamePCRSelection(pcrs *tpmpb.Pcrs, pcrSel tpm2.PCRSelection) bool {
 
 // FullPcrSel will return a full PCR selection based on the total PCR number
 // of the TPM with the given hash algo.
-func FullPcrSel(hash tpm2.Algorithm, rw io.ReadWriter) (tpm2.PCRSelection, error) {
+func FullPcrSel(hash tpm2.Algorithm) tpm2.PCRSelection {
 	sel := tpm2.PCRSelection{Hash: hash}
-	count, err := GetPCRCount(rw)
-	if err != nil {
-		return sel, err
-	}
-	for i := 0; i < int(count); i++ {
+	for i := 0; i < NumPCRs; i++ {
 		sel.PCRs = append(sel.PCRs, int(i))
 	}
-	return sel, nil
+	return sel
 }
 
 // ComputePCRSessionAuth calculates the authorization value for the given PCRs.
