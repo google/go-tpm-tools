@@ -114,7 +114,8 @@ machine state when sealing took place.
 
 		fmt.Fprintln(debugOutput(), "Unsealing data")
 
-		certifySel := tpm2.PCRSelection{Hash: tpm2tools.CertifyHashAlgTpm, PCRs: pcrs}
+		certifySel := tpm2.PCRSelection{Hash: tpm2tools.CertifyHashAlgTpm}
+		getPCRs(&certifySel)
 		var cOpt tpm2tools.CertifyOpt
 		if len(certifySel.PCRs) > 0 {
 			cOpt = tpm2tools.CertifyCurrent{PCRSelection: certifySel}

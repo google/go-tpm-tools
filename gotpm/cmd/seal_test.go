@@ -69,7 +69,7 @@ func TestSealPlain(t *testing.T) {
 			if err := RootCmd.Execute(); err != nil {
 				t.Error(err)
 			}
-			pcrs = []int{} // "flush" pcrs value in last Execute() cmd
+			pcrs = []uint{} // "flush" pcrs value in last Execute() cmd
 
 			unsealArgs := []string{"unseal", "--quiet", "--input", sealedFile, "--output", secretFile2}
 			if test.certifyPCRs != "" {
@@ -123,7 +123,7 @@ func TestUnsealFail(t *testing.T) {
 			if err := RootCmd.Execute(); err != nil {
 				t.Error(err)
 			}
-			pcrs = []int{} // "flush" pcrs value in last Execute() cmd
+			pcrs = []uint{} // "flush" pcrs value in last Execute() cmd
 
 			for _, pcr := range test.pcrToExtend {
 				pcrHandle := tpmutil.Handle(pcr)

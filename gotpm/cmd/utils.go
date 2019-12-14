@@ -129,12 +129,16 @@ func getHashAlgo() (tpm2.Algorithm, error) {
 	}
 }
 
-func getSelection() (tpm2.PCRSelection, error) {
-	hash, err := getHashAlgo()
-	sel := tpm2.PCRSelection{Hash: hash}
+func getPCRs(sel *tpm2.PCRSelection) {
 	for _, val := range pcrs {
 		sel.PCRs = append(sel.PCRs, int(val))
 	}
+}
+
+func getSelection() (tpm2.PCRSelection, error) {
+	hash, err := getHashAlgo()
+	sel := tpm2.PCRSelection{Hash: hash}
+	getPCRs(&sel)
 	return sel, err
 }
 
