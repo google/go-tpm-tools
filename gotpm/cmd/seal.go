@@ -46,11 +46,7 @@ state (like Secure Boot).`,
 			return err
 		}
 
-		sel, err := getSelection()
-		if err != nil {
-			return err
-		}
-
+		sel := getSelection()
 		fmt.Fprintf(debugOutput(), "Sealing to PCRs: %v\n", sel.PCRs)
 		var sOpt tpm2tools.SealOpt
 		if len(sel.PCRs) > 0 {
@@ -106,7 +102,8 @@ machine state when sealing took place.
 		}
 
 		fmt.Fprintln(debugOutput(), "Loading SRK")
-		srk, err := getSRKwithAlgo(rwc, tpm2.Algorithm(sealed.GetSrk()))
+		keyAlgo = tpm2.Algorithm(sealed.GetSrk())
+		srk, err := getSRK(rwc)
 		if err != nil {
 			return err
 		}
