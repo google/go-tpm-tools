@@ -3,8 +3,10 @@ package tpm2tools
 import (
 	"crypto"
 	"crypto/rsa"
+	"encoding/asn1"
 	"fmt"
 	"io"
+	"math/big"
 	"sync"
 
 	"github.com/google/go-tpm/tpm2"
@@ -46,7 +48,16 @@ func (signer *tpmSigner) Sign(_ io.Reader, digest []byte, opts crypto.SignerOpts
 	if err != nil {
 		return nil, err
 	}
-	return sig.RSA.Signature, nil
+
+	switch sig.Alg {
+	case tpm2.AlgRSASSA:
+		return sig.RSA.Signature, nil
+	case tpm2.AlgECDSA:
+		sigStruct := struct{ R, S *big.Int }{sig.ECC.R, sig.ECC.S}
+		return asn1.Marshal(sigStruct)
+	default:
+		panic("unsupported signing algorithm")
+	}
 }
 
 // GetSigner returns a crypto.Signer wrapping the loaded TPM Key.
@@ -55,9 +66,6 @@ func (signer *tpmSigner) Sign(_ io.Reader, digest []byte, opts crypto.SignerOpts
 // The returned Signer lasts the lifetime of the Key, and will no longer work
 // once the Key has been closed.
 func (k *Key) GetSigner() (crypto.Signer, error) {
-	if k.pubArea.Type != tpm2.AlgRSA {
-		return nil, fmt.Errorf("only RSA keys are supported")
-	}
 	if k.pubArea.AuthPolicy != nil {
 		return nil, fmt.Errorf("keys with auth policies are not supported")
 	}
@@ -67,13 +75,27 @@ func (k *Key) GetSigner() (crypto.Signer, error) {
 	if !k.hasAttribute(tpm2.FlagSign) {
 		return nil, fmt.Errorf("non-signing key used with GetSigner()")
 	}
-	if k.pubArea.RSAParameters.Sign == nil {
+
+	var sigScheme *tpm2.SigScheme
+	var sigAlg tpm2.Algorithm
+
+	switch k.pubArea.Type {
+	case tpm2.AlgRSA:
+		sigScheme = k.pubArea.RSAParameters.Sign
+		sigAlg = tpm2.AlgRSASSA
+	case tpm2.AlgECC:
+		sigScheme = k.pubArea.ECCParameters.Sign
+		sigAlg = tpm2.AlgECDSA
+	default:
+		return nil, fmt.Errorf("unsupported key type: %v", k.pubArea.Type)
+	}
+	if sigScheme == nil {
 		return nil, fmt.Errorf("key missing required signing scheme")
 	}
-	if k.pubArea.RSAParameters.Sign.Alg != tpm2.AlgRSASSA {
-		return nil, fmt.Errorf("only RSASSA signing keys are supported")
+	if sigScheme.Alg != sigAlg {
+		return nil, fmt.Errorf("unsupported signing algorithm: %v", sigScheme.Alg)
 	}
-	hash, err := k.pubArea.RSAParameters.Sign.Hash.Hash()
+	hash, err := sigScheme.Hash.Hash()
 	if err != nil {
 		return nil, err
 	}
