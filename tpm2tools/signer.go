@@ -49,11 +49,14 @@ func (signer *tpmSigner) Sign(_ io.Reader, digest []byte, opts crypto.SignerOpts
 		return nil, err
 	}
 
-	if sig.RSA != nil {
+	switch sig.Alg {
+	case tpm2.AlgRSASSA:
 		return sig.RSA.Signature, nil
-	} else {
+	case tpm2.AlgECDSA:
 		sigStruct := struct{ R, S *big.Int }{sig.ECC.R, sig.ECC.S}
 		return asn1.Marshal(sigStruct)
+	default:
+		return nil, fmt.Errorf("unsupported signing algorithm: %v", sig.Alg)
 	}
 }
 
@@ -74,18 +77,22 @@ func (k *Key) GetSigner() (crypto.Signer, error) {
 	}
 
 	var sigScheme *tpm2.SigScheme
+	var sigAlg tpm2.Algorithm
+
 	switch k.pubArea.Type {
 	case tpm2.AlgRSA:
 		sigScheme = k.pubArea.RSAParameters.Sign
+		sigAlg = tpm2.AlgRSASSA
 	case tpm2.AlgECC:
 		sigScheme = k.pubArea.ECCParameters.Sign
+		sigAlg = tpm2.AlgECDSA
 	default:
 		return nil, fmt.Errorf("unsupported key type: %v", k.pubArea.Type)
 	}
 	if sigScheme == nil {
 		return nil, fmt.Errorf("key missing required signing scheme")
 	}
-	if sigScheme.Alg != tpm2.AlgRSASSA && sigScheme.Alg != tpm2.AlgECDSA {
+	if sigScheme.Alg != sigAlg {
 		return nil, fmt.Errorf("unsupported signing algorithm: %v", sigScheme.Alg)
 	}
 	hash, err := sigScheme.Hash.Hash()
