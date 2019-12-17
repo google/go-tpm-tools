@@ -56,7 +56,7 @@ func (signer *tpmSigner) Sign(_ io.Reader, digest []byte, opts crypto.SignerOpts
 		sigStruct := struct{ R, S *big.Int }{sig.ECC.R, sig.ECC.S}
 		return asn1.Marshal(sigStruct)
 	default:
-		return nil, fmt.Errorf("unsupported signing algorithm: %v", sig.Alg)
+		panic("unsupported signing algorithm")
 	}
 }
 
