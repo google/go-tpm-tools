@@ -16,7 +16,7 @@ var useTBS = flag.Bool("use-tbs", false, "Run the tests against the Windows TBS.
 // appropriate TPM device from the flags passed into "go test".
 func GetTPM(tb testing.TB) io.ReadWriteCloser {
 	tb.Helper()
-	if useTBS {
+	if *useTBS {
 		rwc, err := tpm2.OpenTPM()
 		if err != nil {
 			tb.Fatalf("Windows TBS initialization failed: %v", err)
