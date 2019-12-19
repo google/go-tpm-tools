@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"github.com/google/go-tpm-tools/gotpm/cmd"
+	"github.com/google/go-tpm-tools/cmd"
 )
 
 func main() {
