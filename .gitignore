@@ -1,4 +1,6 @@
-gotpm/gotpm*
-gotpm/tests/tests.test*
-tpm2tools/tpm2tools.test*
+*.test
+*.test.exe
+gotpm
+!gotpm/
+gotpm.exe
 .vscode*
