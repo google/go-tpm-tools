@@ -3,4 +3,8 @@
 gotpm
 !gotpm/
 gotpm.exe
+files/pkg
+files/src
+files/go-tpm-tools
+*.pkg.tar.xz
 .vscode*
