@@ -49,7 +49,6 @@ Which handles are flushed depends on the argument passed:
 	}(),
 	Args: cobra.ExactValidArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cmd.SilenceUsage = true
 		rwc, err := openTpm()
 		if err != nil {
 			return err

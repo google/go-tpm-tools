@@ -21,6 +21,7 @@ See the per-command documentation for more information.`,
 		if quiet && verbose {
 			return fmt.Errorf("cannot specify both --quiet and --verbose")
 		}
+		cmd.SilenceUsage = true
 		return nil
 	},
 }

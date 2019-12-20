@@ -46,8 +46,6 @@ NVDATA instead (and --algo is ignored).`,
 	}(),
 	Args: cobra.ExactValidArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cmd.SilenceUsage = true
-
 		rwc, err := openTpm()
 		if err != nil {
 			return err
