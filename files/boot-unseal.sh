@@ -10,7 +10,7 @@ for device in $(blkid -o device); do
 
     # Temporarily mount the ESP to read disk unlock keys
     mkdir -p /mnt/esp
-    mount -t vfat $device /mnt/esp
+    mount -t vfat -o ro $device /mnt/esp
 
     # Attempt to unseal each sealed keyfile on the ESP. Note that just becasue
     # the key is unsealed by the TPM, does not mean it will unlock the disk. We
