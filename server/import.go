@@ -77,7 +77,7 @@ func createPrivate(sensitive []byte, hashAlg tpm2.Algorithm) tpm2.Private {
 	return private
 }
 
-func createPublic(private tpm2.Private, hashAlg tpm2.Algorithm, pcrs *tpmpb.Pcrs) (public tpm2.Public, err error) {
+func createPublic(private tpm2.Private, hashAlg tpm2.Algorithm, pcrs *tpmpb.Pcrs) tpm2.Public {
 	publicHash := getHash(hashAlg)
 	publicHash.Write(private.SeedValue)
 	publicHash.Write(private.Sensitive)
@@ -242,3 +242,4 @@ func getHash(hashAlg tpm2.Algorithm) hash.Hash {
 		panic(err)
 	}
 	return create.New()
+}
