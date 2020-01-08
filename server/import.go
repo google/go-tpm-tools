@@ -17,17 +17,21 @@ import (
 	"github.com/google/go-tpm/tpmutil"
 
 	tpmpb "github.com/google/go-tpm-tools/proto"
+	"github.com/google/go-tpm-tools/tpm2tools"
 )
 
-// CreateImportBlob uses the provided public EK to encrypt the sensitive data into import blob format.
-// The returned import blob can be decrypted by the TPM associated with the provided EK.
-func CreateImportBlob(ekPub crypto.PublicKey, sensitive []byte) (*tpmpb.ImportBlob, error) {
+// CreateImportBlob uses the provided public EK to encrypt the sensitive data.
+// The returned ImportBlob can then be decrypted and imported using the
+// tpm2tools Key.Import() method. A non-nil pcrs parameter adds a requirement
+// that the TPM must have specific PCR values for Import() to succeed.
+func CreateImportBlob(ekPub crypto.PublicKey, sensitive []byte, pcrs *tpmpb.Pcrs) (*tpmpb.ImportBlob, error) {
 	ek, err := CreateEKPublicAreaFromKey(ekPub)
 	if err != nil {
 		return nil, err
 	}
 	private := createPrivate(sensitive, ek.NameAlg)
-	public := createPublic(private, ek.NameAlg)
+	public := createPublic(private, ek.NameAlg, pcrs)
+
 	var seed, encryptedSeed []byte
 	switch ek.Type {
 	case tpm2.AlgRSA:
@@ -51,10 +55,12 @@ func CreateImportBlob(ekPub crypto.PublicKey, sensitive []byte) (*tpmpb.ImportBl
 	if err != nil {
 		return nil, err
 	}
+
 	return &tpmpb.ImportBlob{
 		Duplicate:     duplicate,
 		EncryptedSeed: encryptedSeed,
 		PublicArea:    pubEncoded,
+		Pcrs:          pcrs,
 	}, nil
 }
 
@@ -71,19 +77,27 @@ func createPrivate(sensitive []byte, hashAlg tpm2.Algorithm) tpm2.Private {
 	return private
 }
 
-func createPublic(private tpm2.Private, hashAlg tpm2.Algorithm) tpm2.Public {
+func createPublic(private tpm2.Private, hashAlg tpm2.Algorithm, pcrs *tpmpb.Pcrs) tpm2.Public {
 	publicHash := getHash(hashAlg)
 	publicHash.Write(private.SeedValue)
 	publicHash.Write(private.Sensitive)
-	return tpm2.Public{
-		Type:       tpm2.AlgKeyedHash,
-		NameAlg:    hashAlg,
-		Attributes: tpm2.FlagUserWithAuth,
+	public := tpm2.Public{
+		Type:    tpm2.AlgKeyedHash,
+		NameAlg: hashAlg,
 		KeyedHashParameters: &tpm2.KeyedHashParams{
 			Alg:    tpm2.AlgNull,
 			Unique: publicHash.Sum(nil),
 		},
 	}
+	if len(pcrs.GetPcrs()) == 0 {
+		// Allow password authorization so we can use a nil AuthPolicy.
+		public.AuthPolicy = nil
+		public.Attributes |= tpm2.FlagUserWithAuth
+	} else {
+		public.AuthPolicy = tpm2tools.ComputePCRSessionAuth(pcrs)
+		public.Attributes |= tpm2.FlagAdminWithPolicy
+	}
+	return public
 }
 
 func createRSASeed(ek tpm2.Public) (seed, encryptedSeed []byte, err error) {

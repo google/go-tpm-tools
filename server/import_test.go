@@ -5,11 +5,12 @@ import (
 	"testing"
 
 	"github.com/google/go-tpm-tools/internal"
+	"github.com/google/go-tpm-tools/proto"
 	"github.com/google/go-tpm-tools/tpm2tools"
 	"github.com/google/go-tpm/tpm2"
 )
 
-func TestImport(t *testing.T) {
+func TestImportEKs(t *testing.T) {
 	rwc := internal.GetTPM(t)
 	defer tpm2tools.CheckedClose(t, rwc)
 	tests := []struct {
@@ -32,7 +33,7 @@ func TestImport(t *testing.T) {
 			defer ek.Close()
 			pub := ek.PublicKey()
 			secret := []byte("super secret code")
-			blob, err := CreateImportBlob(pub, secret)
+			blob, err := CreateImportBlob(pub, secret, nil)
 			if err != nil {
 				t.Fatalf("creating import blob failed: %v", err)
 			}
@@ -43,6 +44,55 @@ func TestImport(t *testing.T) {
 			}
 			if !bytes.Equal(output, secret) {
 				t.Errorf("got %X, expected %X", output, secret)
+			}
+		})
+	}
+}
+
+func TestImportPCRs(t *testing.T) {
+	rwc := internal.GetTPM(t)
+	defer tpm2tools.CheckedClose(t, rwc)
+
+	ek, err := tpm2tools.EndorsementKeyRSA(rwc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ek.Close()
+	pcr0, err := tpm2.ReadPCR(rwc, 0, tpm2.AlgSHA256)
+	if err != nil {
+		t.Fatal(err)
+	}
+	badPCR := append([]byte(nil), pcr0...)
+	// badPCR increments first value so it doesn't match.
+	badPCR[0]++
+	tests := []struct {
+		name          string
+		pcrs          *proto.Pcrs
+		expectSuccess bool
+	}{
+		{"No-PCR-nil", nil, true},
+		{"No-PCR-empty", &proto.Pcrs{Hash: proto.HashAlgo_SHA256}, true},
+		{"Good-PCR", &proto.Pcrs{Hash: proto.HashAlgo_SHA256, Pcrs: map[uint32][]byte{0: pcr0}}, true},
+		{"Bad-PCR", &proto.Pcrs{Hash: proto.HashAlgo_SHA256, Pcrs: map[uint32][]byte{0: badPCR}}, false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			secret := []byte("super secret code")
+			blob, err := CreateImportBlob(ek.PublicKey(), secret, test.pcrs)
+			if err != nil {
+				t.Fatalf("creating import blob failed: %v", err)
+			}
+
+			output, err := ek.Import(rwc, blob)
+			if test.expectSuccess {
+				if err != nil {
+					t.Fatalf("import failed: %v", err)
+				}
+				if !bytes.Equal(output, secret) {
+					t.Errorf("got %X, expected %X", output, secret)
+				}
+			} else if err == nil {
+				t.Error("expected Import to fail but it did not")
 			}
 		})
 	}
