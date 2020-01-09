@@ -171,7 +171,7 @@
 #define NUM_AUTHVALUE_PCR_GROUP         1
 #endif
 #ifndef MAX_CONTEXT_SIZE
-#define MAX_CONTEXT_SIZE                1360
+#define MAX_CONTEXT_SIZE                1264
 #endif
 #ifndef MAX_DIGEST_BUFFER
 #define MAX_DIGEST_BUFFER               1024
@@ -356,7 +356,7 @@
 #define ALG_SHA3_512                    ALG_NO      /* Not specified by vendor */
 #endif
 #ifndef ALG_SHA512
-#define ALG_SHA512                      ALG_YES
+#define ALG_SHA512                      ALG_NO
 #endif
 #ifndef ALG_SM2
 #define ALG_SM2                         (ALG_NO && ALG_ECC)
