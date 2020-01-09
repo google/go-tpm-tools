@@ -30,9 +30,13 @@ func (signer *tpmSigner) Public() crypto.PublicKey {
 // The opts hash function must also match the keys scheme.
 // Concurrent use of Sign is thread safe, but it is not safe to access the TPM
 // from other sources while Sign is executing.
+// For RSAPSS signatures, you cannot specify custom salt lengths. The salt
+// length will be (keyBits/8) - digestSize - 2, unless that is less than the
+// digestSize in which case, saltLen will be digestSize. The only normal case
+// where saltLen is not digestSize is when using 1024 keyBits with SHA512.
 func (signer *tpmSigner) Sign(_ io.Reader, digest []byte, opts crypto.SignerOpts) (signature []byte, err error) {
 	if _, ok := opts.(*rsa.PSSOptions); ok {
-		return nil, fmt.Errorf("signing with PSS not supported")
+		return nil, fmt.Errorf("signing with non-default PSS options not supported")
 	}
 	if opts.HashFunc() != signer.Hash {
 		return nil, fmt.Errorf("opts hash: %v does not match the keys signing hash: %v", opts.HashFunc(), signer.Hash)
@@ -51,6 +55,8 @@ func (signer *tpmSigner) Sign(_ io.Reader, digest []byte, opts crypto.SignerOpts
 
 	switch sig.Alg {
 	case tpm2.AlgRSASSA:
+		return sig.RSA.Signature, nil
+	case tpm2.AlgRSAPSS:
 		return sig.RSA.Signature, nil
 	case tpm2.AlgECDSA:
 		sigStruct := struct{ R, S *big.Int }{sig.ECC.R, sig.ECC.S}
@@ -82,7 +88,10 @@ func (k *Key) GetSigner() (crypto.Signer, error) {
 	switch k.pubArea.Type {
 	case tpm2.AlgRSA:
 		sigScheme = k.pubArea.RSAParameters.Sign
-		sigAlg = tpm2.AlgRSASSA
+		sigAlg = sigScheme.Alg
+		if sigAlg != tpm2.AlgRSAPSS && sigAlg != tpm2.AlgRSASSA {
+			return nil, fmt.Errorf("unsupported signing algorithm: %v", sigAlg)
+		}
 	case tpm2.AlgECC:
 		sigScheme = k.pubArea.ECCParameters.Sign
 		sigAlg = tpm2.AlgECDSA
