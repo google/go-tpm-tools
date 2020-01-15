@@ -151,11 +151,11 @@ func TestSignPSS(t *testing.T) {
 		{"RSA-SHA384", crypto.SHA384, templatePSS(tpm2.AlgSHA384), 1024, 48},
 		{"RSA-SHA512", crypto.SHA512, templatePSS(tpm2.AlgSHA512), 1024, 62},
 		{"RSA-SHA512", crypto.SHA512, templatePSS(tpm2.AlgSHA512), 2048, 64},
-		{"RSA-SHA1", &rsa.PSSOptions{rsa.PSSSaltLengthAuto, crypto.SHA1}, templatePSS(tpm2.AlgSHA1), 1024, 20},
-		{"RSA-SHA256", &rsa.PSSOptions{rsa.PSSSaltLengthAuto, crypto.SHA256}, templatePSS(tpm2.AlgSHA256), 1024, 32},
-		{"RSA-SHA384", &rsa.PSSOptions{rsa.PSSSaltLengthAuto, crypto.SHA384}, templatePSS(tpm2.AlgSHA384), 1024, 48},
-		{"RSA-SHA512", &rsa.PSSOptions{rsa.PSSSaltLengthAuto, crypto.SHA512}, templatePSS(tpm2.AlgSHA512), 1024, 62},
-		{"RSA-SHA512", &rsa.PSSOptions{rsa.PSSSaltLengthAuto, crypto.SHA512}, templatePSS(tpm2.AlgSHA512), 2048, 64},
+		{"RSA-SHA1", &rsa.PSSOptions{SaltLength: rsa.PSSSaltLengthAuto, Hash: crypto.SHA1}, templatePSS(tpm2.AlgSHA1), 1024, 20},
+		{"RSA-SHA256", &rsa.PSSOptions{SaltLength: rsa.PSSSaltLengthAuto, Hash: crypto.SHA256}, templatePSS(tpm2.AlgSHA256), 1024, 32},
+		{"RSA-SHA384", &rsa.PSSOptions{SaltLength: rsa.PSSSaltLengthAuto, Hash: crypto.SHA384}, templatePSS(tpm2.AlgSHA384), 1024, 48},
+		{"RSA-SHA512", &rsa.PSSOptions{SaltLength: rsa.PSSSaltLengthAuto, Hash: crypto.SHA512}, templatePSS(tpm2.AlgSHA512), 1024, 62},
+		{"RSA-SHA512", &rsa.PSSOptions{SaltLength: rsa.PSSSaltLengthAuto, Hash: crypto.SHA512}, templatePSS(tpm2.AlgSHA512), 2048, 64},
 	}
 
 	for _, test := range tests {
