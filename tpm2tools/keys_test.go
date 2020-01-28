@@ -1,6 +1,7 @@
 package tpm2tools
 
 import (
+	"crypto/rand"
 	"io"
 	"reflect"
 	"testing"
@@ -102,8 +103,17 @@ func TestKeyCreation(t *testing.T) {
 	}{
 		{"SRK-ECC", StorageRootKeyECC},
 		{"EK-ECC", EndorsementKeyECC},
+		{"AIK-ECC", AttestationIdentityKeyECC},
 		{"SRK-RSA", StorageRootKeyRSA},
 		{"EK-RSA", EndorsementKeyRSA},
+		{"AIK-RSA-Default", func(rw io.ReadWriter) (*Key, error) {
+			return AttestationIdentityKeyRSA(rw, nil)
+		}},
+		{"AIK-RSA-Nonce", func(rw io.ReadWriter) (*Key, error) {
+			nonce := make([]byte, 16)
+			rand.Read(nonce)
+			return AttestationIdentityKeyRSA(rw, nonce)
+		}},
 	}
 
 	for _, test := range tests {
