@@ -29,7 +29,7 @@ func EndorsementKeyRSA(rw io.ReadWriter) (*Key, error) {
 
 // EndorsementKeyECC generates and loads a key from DefaultEKTemplateECC.
 func EndorsementKeyECC(rw io.ReadWriter) (*Key, error) {
-	return NewKey(rw, tpm2.HandleEndorsement, DefaultEKTemplateECC())
+	return NewCachedKey(rw, tpm2.HandleEndorsement, DefaultEKTemplateECC(), EKECCReservedHandle)
 }
 
 // StorageRootKeyRSA generates and loads a key from SRKTemplateRSA.
@@ -37,14 +37,24 @@ func StorageRootKeyRSA(rw io.ReadWriter) (*Key, error) {
 	return NewCachedKey(rw, tpm2.HandleOwner, SRKTemplateRSA(), SRKReservedHandle)
 }
 
-// AttestationIdentityKeyRSA generates and loads a key from AIKTemplateRSA
-func AttestationIdentityKeyRSA(rw io.ReadWriter, nonces []byte) (*Key, error) {
-	return NewKey(rw, tpm2.HandleOwner, AIKTemplateRSA(nonces))
-}
-
 // StorageRootKeyECC generates and loads a key from SRKTemplateECC.
 func StorageRootKeyECC(rw io.ReadWriter) (*Key, error) {
-	return NewKey(rw, tpm2.HandleOwner, SRKTemplateECC())
+	return NewCachedKey(rw, tpm2.HandleOwner, SRKTemplateECC(), SRKECCReservedHandle)
+}
+
+// AttestationIdentityKeyRSA generates and loads a key from AIKTemplateRSA
+func AttestationIdentityKeyRSA(rw io.ReadWriter, nonces []byte) (*Key, error) {
+	// If nonce is null, then try to use the cached key
+	if nonces == nil {
+		return NewCachedKey(rw, tpm2.HandleOwner, AIKTemplateRSA(nonces), DefaultAIKRSAHandle)
+	} else {
+		return NewKey(rw, tpm2.HandleOwner, AIKTemplateRSA(nonces))
+	}
+}
+
+// AttestationIdentityKeyECC generates and loads a key from AIKTemplateECC
+func AttestationIdentityKeyECC(rw io.ReadWriter) (*Key, error) {
+	return NewCachedKey(rw, tpm2.HandleOwner, AIKTemplateECC(), DefaultAIKECCHandle)
 }
 
 // EndorsementKeyFromNvIndex generates and loads an endorsement key using the

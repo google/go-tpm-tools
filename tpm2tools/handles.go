@@ -9,10 +9,17 @@ import (
 	"github.com/google/go-tpm/tpmutil"
 )
 
-// Reserved Handles from "TCG TPM v2.0 Provisioning Guidance" - v1r1 - Table 2
 const (
-	EKReservedHandle  = tpmutil.Handle(0x81010001)
-	SRKReservedHandle = tpmutil.Handle(0x81000001)
+	// Reserved Handles from "TCG TPM v2.0 Provisioning Guidance" - v1r1 - Table 2
+	EKReservedHandle     = tpmutil.Handle(0x81010001)
+	EKECCReservedHandle  = tpmutil.Handle(0x81010002)
+	SRKReservedHandle    = tpmutil.Handle(0x81000001)
+	SRKECCReservedHandle = tpmutil.Handle(0x81000002)
+
+	// Picked available handles from TPM 2.0 Handles and Localities 2.3.1 - Table 11
+	// go-tpm-tools will use handles in the range from 0x81008F00 to 0x81008FFF
+	DefaultAIKECCHandle = tpmutil.Handle(0x81008F00)
+	DefaultAIKRSAHandle = tpmutil.Handle(0x81008F01)
 )
 
 func isHierarchy(h tpmutil.Handle) bool {

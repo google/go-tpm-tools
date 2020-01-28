@@ -104,6 +104,29 @@ func AIKTemplateRSA(nonce []byte) tpm2.Public {
 	}
 }
 
+// AIKTemplateRSA returns a potential Attestation Identity Key (AIK) template.
+// This is very similar to DefaultEKTemplateECC, except that this will be a
+// signing key instead of an encrypting key. Unlike AIKTemplateRSA, this ECC
+// template doesn't accept a nonce.
+func AIKTemplateECC() tpm2.Public {
+	return tpm2.Public{
+		Type:       tpm2.AlgECC,
+		NameAlg:    tpm2.AlgSHA256,
+		Attributes: tpm2.FlagSignerDefault,
+		ECCParameters: &tpm2.ECCParams{
+			Sign: &tpm2.SigScheme{
+				Alg:  tpm2.AlgECDSA,
+				Hash: tpm2.AlgSHA256,
+			},
+			CurveID: tpm2.CurveNISTP256,
+			Point: tpm2.ECPoint{
+				XRaw: make([]byte, 32),
+				YRaw: make([]byte, 32),
+			},
+		},
+	}
+}
+
 // SRKTemplateRSA returns a standard Storage Root Key (SRK) template.
 // This is based upon the advice in the TCG's TPM v2.0 Provisioning Guidance.
 func SRKTemplateRSA() tpm2.Public {
