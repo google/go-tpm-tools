@@ -135,19 +135,36 @@ func BenchmarkKeyCreation(b *testing.B) {
 		name   string
 		getKey func(io.ReadWriter) (*Key, error)
 	}{
-		{"SRK-ECC", StorageRootKeyECC},
-		{"EK-ECC", EndorsementKeyECC},
+		{"SRK-ECC-Cached", StorageRootKeyECC},
+		{"EK-ECC-Cached", EndorsementKeyECC},
+		{"AIK-ECC-Default-Cached", AttestationIdentityKeyECC},
+
+		{"SRK-ECC", func(rw io.ReadWriter) (*Key, error) {
+			return NewKey(rw, tpm2.HandleOwner, SRKTemplateECC())
+		}},
+		{"EK-ECC", func(rw io.ReadWriter) (*Key, error) {
+			return NewKey(rw, tpm2.HandleEndorsement, DefaultEKTemplateECC())
+		}},
+		{"AIK-ECC-Default", func(rw io.ReadWriter) (*Key, error) {
+			return NewKey(rw, tpm2.HandleOwner, AIKTemplateECC())
+		}},
+
 		{"SRK-RSA-Cached", StorageRootKeyRSA},
 		{"EK-RSA-Cached", EndorsementKeyRSA},
+		{"AIK-RSA-Default-Cached", func(rw io.ReadWriter) (*Key, error) {
+			return AttestationIdentityKeyRSA(rw, nil)
+		}},
+
 		{"SRK-RSA", func(rw io.ReadWriter) (*Key, error) {
 			return NewKey(rw, tpm2.HandleEndorsement, SRKTemplateRSA())
 		}},
 		{"EK-RSA", func(rw io.ReadWriter) (*Key, error) {
 			return NewKey(rw, tpm2.HandleOwner, DefaultEKTemplateRSA())
 		}},
-		{"AIK-RSA-Null", func(rw io.ReadWriter) (*Key, error) {
-			template := AIKTemplateRSA(nil)
-			return NewKey(rw, tpm2.HandleNull, template)
+		{"AIK-RSA", func(rw io.ReadWriter) (*Key, error) {
+			nonce := make([]byte, 16)
+			rand.Read(nonce)
+			return AttestationIdentityKeyRSA(rw, nonce)
 		}},
 	}
 

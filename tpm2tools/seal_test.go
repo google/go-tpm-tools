@@ -335,3 +335,45 @@ func TestSealResealWithEmptyPCRs(t *testing.T) {
 		t.Fatalf("unsealed (%v) not equal to secret (%v)", unseal, secret)
 	}
 }
+
+func BenchmarkSeal(b *testing.B) {
+	rwc := internal.GetTPM(b)
+	defer CheckedClose(b, rwc)
+
+	pcrSel7 := tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{7}}
+	sOptPCR7 := SealCurrent{PCRSelection: pcrSel7}
+	cOptPCR7 := CertifyCurrent{PCRSelection: pcrSel7}
+	benchmarks := []struct {
+		name   string
+		sOpt   SealOpt
+		cOpt   CertifyOpt
+		getKey func(io.ReadWriter) (*Key, error)
+	}{
+		{"SRK-ECC-SealPCR7-CertifyPCR7", sOptPCR7, cOptPCR7, StorageRootKeyECC},
+		{"SRK-ECC-nil-CertifyPCR7", nil, cOptPCR7, StorageRootKeyECC},
+		{"SRK-ECC-SealPCR7-nil", sOptPCR7, nil, StorageRootKeyECC},
+		{"SRK-ECC-nil-nil", nil, nil, StorageRootKeyECC},
+		{"SRK-RSA-SealPCR7-CertifyPCR7", sOptPCR7, cOptPCR7, StorageRootKeyRSA},
+		{"SRK-RSA-nil-CertifyPCR7", nil, cOptPCR7, StorageRootKeyRSA},
+		{"SRK-RSA-SealPCR7-nil", sOptPCR7, nil, StorageRootKeyRSA},
+		{"SRK-RSA-nil-nil", nil, nil, StorageRootKeyRSA},
+	}
+
+	for _, bm := range benchmarks {
+		key, err := bm.getKey(rwc)
+		if err != nil {
+			b.Fatal(err)
+		}
+		b.Run(bm.name, func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				blob, err := key.Seal([]byte("test123"), bm.sOpt)
+				if err != nil {
+					b.Fatal(err)
+				}
+				if _, err = key.Unseal(blob, bm.cOpt); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
