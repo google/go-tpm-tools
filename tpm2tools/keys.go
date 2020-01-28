@@ -282,9 +282,28 @@ func (k *Key) Unseal(in *tpmpb.SealedBytes, cOpt CertifyOpt) ([]byte, error) {
 		}
 		creationHash := sessionHashAlg.New()
 		creationHash.Write(in.GetCreationData())
-		if _, _, err = tpm2.CertifyCreation(k.rw, "", sealed, tpm2.HandleNull, nil, creationHash.Sum(nil), tpm2.SigScheme{}, ticket); err != nil {
-			return nil, fmt.Errorf("failed to certify creation: %v", err)
+
+		_, _, certErr := tpm2.CertifyCreation(k.rw, "", sealed, tpm2.HandleNull, nil, creationHash.Sum(nil), tpm2.SigScheme{}, ticket)
+		// There is a bug in some older TPMs, where they are unable to
+		// CertifyCreation when using a Null signing handle (despite this
+		// being allowed by all versions of the TPM spec). To work around
+		// this bug, we use a temporary signing key and ignore the signed
+		// result. To reduce the cost of this workaround, we use a cached
+		// ECC signing key.
+		// We can detect this bug, as it triggers a RCInsufficient
+		// Unmarshalling error.
+		if paramErr, ok := certErr.(tpm2.ParameterError); ok && paramErr.Code == tpm2.RCInsufficient {
+			signer, err := AttestationIdentityKeyECC(k.rw)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create fallback signing key: %v", err)
+			}
+			defer signer.Close()
+			_, _, certErr = tpm2.CertifyCreation(k.rw, "", sealed, signer.Handle(), nil, creationHash.Sum(nil), tpm2.SigScheme{}, ticket)
 		}
+		if certErr != nil {
+			return nil, fmt.Errorf("failed to certify creation: %v", certErr)
+		}
+
 		// verify certify PCRs haven't been modified
 		decodedCreationData, err := tpm2.DecodeCreationData(in.GetCreationData())
 		if err != nil {
