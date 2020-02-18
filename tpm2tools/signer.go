@@ -30,9 +30,18 @@ func (signer *tpmSigner) Public() crypto.PublicKey {
 // The opts hash function must also match the keys scheme.
 // Concurrent use of Sign is thread safe, but it is not safe to access the TPM
 // from other sources while Sign is executing.
+// For RSAPSS signatures, you cannot specify custom salt lengths. The salt
+// length will be (keyBits/8) - digestSize - 2, unless that is less than the
+// digestSize in which case, saltLen will be digestSize. The only normal case
+// where saltLen is not digestSize is when using 1024 keyBits with SHA512.
 func (signer *tpmSigner) Sign(_ io.Reader, digest []byte, opts crypto.SignerOpts) (signature []byte, err error) {
-	if _, ok := opts.(*rsa.PSSOptions); ok {
-		return nil, fmt.Errorf("signing with PSS not supported")
+	if pssOpts, ok := opts.(*rsa.PSSOptions); ok {
+		if signer.Key.pubArea.RSAParameters.Sign.Alg != tpm2.AlgRSAPSS {
+			return nil, fmt.Errorf("invalid options. PSSOptions cannot be used with signing alg: %v", signer.Key.pubArea.RSAParameters.Sign.Alg)
+		}
+		if pssOpts.SaltLength != rsa.PSSSaltLengthAuto {
+			return nil, fmt.Errorf("salt length must be rsa.PSSSaltLengthAuto")
+		}
 	}
 	if opts.HashFunc() != signer.Hash {
 		return nil, fmt.Errorf("opts hash: %v does not match the keys signing hash: %v", opts.HashFunc(), signer.Hash)
@@ -51,6 +60,8 @@ func (signer *tpmSigner) Sign(_ io.Reader, digest []byte, opts crypto.SignerOpts
 
 	switch sig.Alg {
 	case tpm2.AlgRSASSA:
+		return sig.RSA.Signature, nil
+	case tpm2.AlgRSAPSS:
 		return sig.RSA.Signature, nil
 	case tpm2.AlgECDSA:
 		sigStruct := struct{ R, S *big.Int }{sig.ECC.R, sig.ECC.S}
@@ -77,23 +88,20 @@ func (k *Key) GetSigner() (crypto.Signer, error) {
 	}
 
 	var sigScheme *tpm2.SigScheme
-	var sigAlg tpm2.Algorithm
 
 	switch k.pubArea.Type {
 	case tpm2.AlgRSA:
 		sigScheme = k.pubArea.RSAParameters.Sign
-		sigAlg = tpm2.AlgRSASSA
+		if sigScheme.Alg != tpm2.AlgRSAPSS && sigScheme.Alg != tpm2.AlgRSASSA {
+			return nil, fmt.Errorf("unsupported signing algorithm: %v", sigScheme.Alg)
+		}
 	case tpm2.AlgECC:
 		sigScheme = k.pubArea.ECCParameters.Sign
-		sigAlg = tpm2.AlgECDSA
+		if sigScheme.Alg != tpm2.AlgECDSA {
+			return nil, fmt.Errorf("unsupported signing algorithm: %v", sigScheme.Alg)
+		}
 	default:
 		return nil, fmt.Errorf("unsupported key type: %v", k.pubArea.Type)
-	}
-	if sigScheme == nil {
-		return nil, fmt.Errorf("key missing required signing scheme")
-	}
-	if sigScheme.Alg != sigAlg {
-		return nil, fmt.Errorf("unsupported signing algorithm: %v", sigScheme.Alg)
 	}
 	hash, err := sigScheme.Hash.Hash()
 	if err != nil {

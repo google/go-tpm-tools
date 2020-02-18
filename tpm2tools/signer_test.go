@@ -22,6 +22,12 @@ func templateSSA(hash tpm2.Algorithm) tpm2.Public {
 	return template
 }
 
+func templatePSS(hash tpm2.Algorithm) tpm2.Public {
+	template := templateSSA(hash)
+	template.RSAParameters.Sign.Alg = tpm2.AlgRSAPSS
+	return template
+}
+
 func templateECC(hash tpm2.Algorithm) tpm2.Public {
 	template := AIKTemplateRSA(nil)
 	template.Attributes &= ^tpm2.FlagRestricted
@@ -123,5 +129,69 @@ func TestSignIncorrectHash(t *testing.T) {
 
 	if _, err := signer.Sign(nil, digestSHA256[:], crypto.SHA1); err == nil {
 		t.Error("expected failure for correct digest, but incorrect hash.")
+	}
+}
+
+func TestSignPSS(t *testing.T) {
+	rwc := internal.GetTPM(t)
+	defer CheckedClose(t, rwc)
+	tests := []struct {
+		name     string
+		opts     crypto.SignerOpts
+		template tpm2.Public
+		keyBits  uint16
+		saltLen  int
+	}{
+		// saltLen should be (keyBits/8) - digestSize - 2, unless that is less than
+		// digestSize in which case, saltLen will be digestSize.
+		// The only normal case where saltLen is not digestSize is when using
+		// 1024 keyBits with SHA512.
+		{"RSA-SHA1", crypto.SHA1, templatePSS(tpm2.AlgSHA1), 1024, 20},
+		{"RSA-SHA256", crypto.SHA256, templatePSS(tpm2.AlgSHA256), 1024, 32},
+		{"RSA-SHA384", crypto.SHA384, templatePSS(tpm2.AlgSHA384), 1024, 48},
+		{"RSA-SHA512", crypto.SHA512, templatePSS(tpm2.AlgSHA512), 1024, 62},
+		{"RSA-SHA512", crypto.SHA512, templatePSS(tpm2.AlgSHA512), 2048, 64},
+		{"RSA-SHA1", &rsa.PSSOptions{SaltLength: rsa.PSSSaltLengthAuto, Hash: crypto.SHA1}, templatePSS(tpm2.AlgSHA1), 1024, 20},
+		{"RSA-SHA256", &rsa.PSSOptions{SaltLength: rsa.PSSSaltLengthAuto, Hash: crypto.SHA256}, templatePSS(tpm2.AlgSHA256), 1024, 32},
+		{"RSA-SHA384", &rsa.PSSOptions{SaltLength: rsa.PSSSaltLengthAuto, Hash: crypto.SHA384}, templatePSS(tpm2.AlgSHA384), 1024, 48},
+		{"RSA-SHA512", &rsa.PSSOptions{SaltLength: rsa.PSSSaltLengthAuto, Hash: crypto.SHA512}, templatePSS(tpm2.AlgSHA512), 1024, 62},
+		{"RSA-SHA512", &rsa.PSSOptions{SaltLength: rsa.PSSSaltLengthAuto, Hash: crypto.SHA512}, templatePSS(tpm2.AlgSHA512), 2048, 64},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+
+			test.template.RSAParameters.KeyBits = test.keyBits
+
+			key, err := NewKey(rwc, tpm2.HandleEndorsement, test.template)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer key.Close()
+
+			hash := test.opts.HashFunc().New()
+			hash.Write([]byte("authenticated message"))
+			digest := hash.Sum(nil)
+
+			signer, err := key.GetSigner()
+			if err != nil {
+				t.Fatal(err)
+			}
+			sig, err := signer.Sign(nil, digest[:], test.opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Verify with expected salt length.
+			err = rsa.VerifyPSS(signer.Public().(*rsa.PublicKey), test.opts.HashFunc(), digest[:], sig, &rsa.PSSOptions{SaltLength: test.saltLen, Hash: test.opts.HashFunc()})
+			if err != nil {
+				t.Error(err)
+			}
+
+			// Verify with default salt length.
+			err = rsa.VerifyPSS(signer.Public().(*rsa.PublicKey), test.opts.HashFunc(), digest[:], sig, nil)
+			if err != nil {
+				t.Error(err)
+			}
+		})
 	}
 }
