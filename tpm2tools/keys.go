@@ -2,6 +2,7 @@
 package tpm2tools
 
 import (
+	"bytes"
 	"crypto"
 	"crypto/subtle"
 	"fmt"
@@ -12,14 +13,16 @@ import (
 	"github.com/google/go-tpm/tpmutil"
 )
 
-// Key wraps an active TPM2 key. Users of Key should be sure to call Close()
-// when finished using the Key, so that the underlying TPM handle can be freed.
+// Key wraps an active asymmetric TPM2 key. This can either be a signing key or
+// an encryption key. Users of Key should be sure to call Close() when the Key
+// is no longer needed, so that the underlying TPM handle can be freed.
 type Key struct {
 	rw      io.ReadWriter
 	handle  tpmutil.Handle
 	pubArea tpm2.Public
 	pubKey  crypto.PublicKey
 	name    tpm2.Name
+	session session
 }
 
 // EndorsementKeyRSA generates and loads a key from DefaultEKTemplateRSA.
@@ -154,8 +157,22 @@ func (k *Key) finish() error {
 	if k.pubKey, err = k.pubArea.Key(); err != nil {
 		return err
 	}
-	k.name, err = k.pubArea.Name()
-	return err
+	if k.name, err = k.pubArea.Name(); err != nil {
+		return err
+	}
+	// We determine the right type of session based on the auth policy
+	if k.session == nil {
+		if bytes.Equal(k.pubArea.AuthPolicy, defaultEKAuthPolicy()) {
+			if k.session, err = newEKSession(k.rw); err != nil {
+				return err
+			}
+		} else if len(k.pubArea.AuthPolicy) == 0 {
+			k.session = nullSession{}
+		} else {
+			return fmt.Errorf("unknown auth policy when creating key")
+		}
+	}
+	return nil
 }
 
 // Handle allows this key to be used directly with other go-tpm commands.
@@ -177,14 +194,16 @@ func (k *Key) PublicKey() crypto.PublicKey {
 // Close should be called when the key is no longer needed. This is important to
 // do as most TPMs can only have a small number of key simultaneously loaded.
 func (k *Key) Close() {
+	k.session.Close()
 	tpm2.FlushContext(k.rw, k.handle)
 }
 
-// Seal seals the sensitive byte buffer to the PCRs specified by SealOpt (the
-// SealOpt can be nil, which means seal to an none PCRs. However the PCR
-// selection in SealOpt cannot be empty). The sealing is done under Owner
-// Hierarchy. During the sealing process, certification data will be created
-// allowing Unseal() to validate the state of the TPM during the sealing process.
+// Seal seals the sensitive byte buffer to a key. This key must be an SRK (we
+// currently do not support sealing to EKs). Optionally, a non-nil SealOpt can
+// be provided. In this case, the sensitive data can only be unsealed if the
+// PCRs are in the specified state. During the sealing process, certification
+// data will be created allowing Unseal() to validate the state of the TPM
+// during the sealing process.
 func (k *Key) Seal(sensitive []byte, sOpt SealOpt) (*tpmpb.SealedBytes, error) {
 	var pcrs *tpmpb.Pcrs
 	var err error
@@ -325,17 +344,18 @@ func (k *Key) Unseal(in *tpmpb.SealedBytes, cOpt CertifyOpt) ([]byte, error) {
 	for _, pcr := range in.Pcrs {
 		sel.PCRs = append(sel.PCRs, int(pcr))
 	}
-	session, err := createPCRSession(k.rw, sel)
+
+	session, err := newPCRSession(k.rw, sel)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create session: %v", err)
 	}
-	defer tpm2.FlushContext(k.rw, session)
+	defer session.Close()
 
-	if len(sel.PCRs) == 0 {
-		return tpm2.Unseal(k.rw, sealed, "")
+	auth, err := session.Auth()
+	if err != nil {
+		return nil, err
 	}
-
-	return tpm2.UnsealWithSession(k.rw, session, sealed, "")
+	return tpm2.UnsealWithSession(k.rw, auth.Session, sealed, "")
 }
 
 // Reseal is a shortcut to call Unseal() followed by Seal().

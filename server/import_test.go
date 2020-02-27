@@ -10,7 +10,7 @@ import (
 	"github.com/google/go-tpm/tpm2"
 )
 
-func TestImportEKs(t *testing.T) {
+func TestImport(t *testing.T) {
 	rwc := internal.GetTPM(t)
 	defer tpm2tools.CheckedClose(t, rwc)
 	tests := []struct {
@@ -19,6 +19,8 @@ func TestImportEKs(t *testing.T) {
 	}{
 		{"RSA", tpm2tools.DefaultEKTemplateRSA()},
 		{"ECC", tpm2tools.DefaultEKTemplateECC()},
+		{"SRK-RSA", tpm2tools.SRKTemplateRSA()},
+		{"SRK-ECC", tpm2tools.SRKTemplateECC()},
 		{"ECC-P224", getECCTemplate(tpm2.CurveNISTP224)},
 		{"ECC-P256", getECCTemplate(tpm2.CurveNISTP256)},
 		{"ECC-P384", getECCTemplate(tpm2.CurveNISTP384)},

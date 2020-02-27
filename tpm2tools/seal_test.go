@@ -86,21 +86,25 @@ func TestComputeSessionAuth(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to read PCRs: %v", err)
 			}
-			computeAuth := ComputePCRSessionAuth(pcrs)
+			computeDigest := ComputePCRSessionAuth(pcrs)
 
-			session, err := createPCRSession(rwc, sel)
+			session, err := newPCRSession(rwc, sel)
 			if err != nil {
 				t.Fatalf("failed to create PCR session: %v", err)
 			}
-			defer tpm2.FlushContext(rwc, session)
+			defer session.Close()
 
-			getAuth, err := tpm2.PolicyGetDigest(rwc, session)
+			auth, err := session.Auth()
 			if err != nil {
-				t.Fatalf("failed to get session auth: %v", err)
+				t.Fatalf("failed to get PCR auth: %v", err)
+			}
+			digest, err := tpm2.PolicyGetDigest(rwc, auth.Session)
+			if err != nil {
+				t.Fatalf("failed to get pcr digest: %v", err)
 			}
 
-			if !bytes.Equal(computeAuth, getAuth) {
-				t.Errorf("computed auth (%v) not equal to session auth(%v)", computeAuth, getAuth)
+			if !bytes.Equal(computeDigest, digest) {
+				t.Errorf("computed digest (%v) not equal to session digest (%v)", computeDigest, digest)
 			}
 		})
 	}

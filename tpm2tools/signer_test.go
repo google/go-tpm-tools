@@ -29,17 +29,26 @@ func templatePSS(hash tpm2.Algorithm) tpm2.Public {
 }
 
 func templateECC(hash tpm2.Algorithm) tpm2.Public {
-	template := AIKTemplateRSA(nil)
+	template := AIKTemplateECC()
 	template.Attributes &= ^tpm2.FlagRestricted
-	template.Type = tpm2.AlgECC
-	template.RSAParameters = nil
-	template.ECCParameters = &tpm2.ECCParams{
-		Sign: &tpm2.SigScheme{
-			Alg:  tpm2.AlgECDSA,
-			Hash: hash,
-		},
-		CurveID: tpm2.CurveNISTP256,
-	}
+	template.ECCParameters.Sign.Hash = hash
+	return template
+}
+
+// Templates that require some sort of (default) authorization
+func templateAuthSSA() tpm2.Public {
+	template := templateSSA(tpm2.AlgSHA256)
+	template.AuthPolicy = defaultEKAuthPolicy()
+	template.Attributes |= tpm2.FlagAdminWithPolicy
+	template.Attributes &= ^tpm2.FlagUserWithAuth
+	return template
+}
+
+func templateAuthECC() tpm2.Public {
+	template := templateECC(tpm2.AlgSHA256)
+	template.AuthPolicy = defaultEKAuthPolicy()
+	template.Attributes |= tpm2.FlagAdminWithPolicy
+	template.Attributes &= ^tpm2.FlagUserWithAuth
 	return template
 }
 
@@ -71,6 +80,8 @@ func TestSign(t *testing.T) {
 		{"ECC-SHA256", crypto.SHA256, templateECC(tpm2.AlgSHA256), verifyECC},
 		{"ECC-SHA384", crypto.SHA384, templateECC(tpm2.AlgSHA384), verifyECC},
 		{"ECC-SHA512", crypto.SHA512, templateECC(tpm2.AlgSHA512), verifyECC},
+		{"Auth-RSA", crypto.SHA256, templateAuthSSA(), verifyRSA},
+		{"Auth-ECC", crypto.SHA256, templateAuthECC(), verifyECC},
 	}
 
 	for _, test := range tests {
