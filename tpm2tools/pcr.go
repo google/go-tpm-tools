@@ -143,9 +143,9 @@ func checkContainedPCRs(subset *tpmpb.Pcrs, superset *tpmpb.Pcrs) error {
 
 // PCRSelection returns the corresponding tpm2.PCRSelection for a tpmpb.Pcrs
 func PCRSelection(pcrs *tpmpb.Pcrs) tpm2.PCRSelection {
-	sel := tpm2.PCRSelection{Hash: tpm2.Algorithm(pcrs.Hash)}
+	sel := tpm2.PCRSelection{Hash: tpm2.Algorithm(pcrs.GetHash())}
 
-	for pcrNum := range pcrs.Pcrs {
+	for pcrNum := range pcrs.GetPcrs() {
 		sel.PCRs = append(sel.PCRs, int(pcrNum))
 	}
 	return sel
@@ -219,30 +219,4 @@ func encodePCRSelection(sel tpm2.PCRSelection) []byte {
 	}
 
 	return append(buf, pcrBits...)
-}
-
-func createPCRSession(rw io.ReadWriter, sel tpm2.PCRSelection) (tpmutil.Handle, error) {
-	// This session assumes the bus is trusted, so we:
-	// - use nil for tpmkey, encrypted salt, and symmetric
-	// - use and all-zeros caller nonce, and ignore the returned nonce
-	// As we are creating a plain TPM session, we:
-	// - setup a policy session
-	// - don't bind the session to any particular key
-	handle, _, err := tpm2.StartAuthSession(
-		rw,
-		/*tpmkey=*/ tpm2.HandleNull,
-		/*bindkey=*/ tpm2.HandleNull,
-		/*nonceCaller=*/ make([]byte, sessionHashAlg.Size()),
-		/*encryptedSalt=*/ nil,
-		/*sessionType=*/ tpm2.SessionPolicy,
-		/*symmetric=*/ tpm2.AlgNull,
-		/*authHash=*/ sessionHashAlgTpm)
-	if err != nil {
-		return tpm2.HandleNull, fmt.Errorf("failed to start auth session: %v", err)
-	}
-
-	if err = tpm2.PolicyPCR(rw, handle, nil, sel); err != nil {
-		return tpm2.HandleNull, fmt.Errorf("auth step PolicyPCR failed: %v", err)
-	}
-	return handle, nil
 }

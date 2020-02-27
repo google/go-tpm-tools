@@ -109,21 +109,17 @@ func AIKTemplateRSA(nonce []byte) tpm2.Public {
 // signing key instead of an encrypting key. Unlike AIKTemplateRSA, this ECC
 // template doesn't accept a nonce.
 func AIKTemplateECC() tpm2.Public {
+	params := defaultECCParams()
+	params.Symmetric = nil
+	params.Sign = &tpm2.SigScheme{
+		Alg:  tpm2.AlgECDSA,
+		Hash: tpm2.AlgSHA256,
+	}
 	return tpm2.Public{
-		Type:       tpm2.AlgECC,
-		NameAlg:    tpm2.AlgSHA256,
-		Attributes: tpm2.FlagSignerDefault,
-		ECCParameters: &tpm2.ECCParams{
-			Sign: &tpm2.SigScheme{
-				Alg:  tpm2.AlgECDSA,
-				Hash: tpm2.AlgSHA256,
-			},
-			CurveID: tpm2.CurveNISTP256,
-			Point: tpm2.ECPoint{
-				XRaw: make([]byte, 32),
-				YRaw: make([]byte, 32),
-			},
-		},
+		Type:          tpm2.AlgECC,
+		NameAlg:       tpm2.AlgSHA256,
+		Attributes:    tpm2.FlagSignerDefault,
+		ECCParameters: params,
 	}
 }
 

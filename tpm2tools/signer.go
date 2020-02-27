@@ -53,7 +53,12 @@ func (signer *tpmSigner) Sign(_ io.Reader, digest []byte, opts crypto.SignerOpts
 	signerMutex.Lock()
 	defer signerMutex.Unlock()
 
-	sig, err := tpm2.Sign(signer.Key.rw, signer.Key.handle, "", digest, nil)
+	auth, err := signer.Key.session.Auth()
+	if err != nil {
+		return nil, err
+	}
+
+	sig, err := tpm2.SignWithSession(signer.Key.rw, auth.Session, signer.Key.handle, "", digest, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -77,9 +82,6 @@ func (signer *tpmSigner) Sign(_ io.Reader, digest []byte, opts crypto.SignerOpts
 // The returned Signer lasts the lifetime of the Key, and will no longer work
 // once the Key has been closed.
 func (k *Key) GetSigner() (crypto.Signer, error) {
-	if k.pubArea.AuthPolicy != nil {
-		return nil, fmt.Errorf("keys with auth policies are not supported")
-	}
 	if k.hasAttribute(tpm2.FlagRestricted) {
 		return nil, fmt.Errorf("restricted keys are not supported")
 	}
