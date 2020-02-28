@@ -71,7 +71,7 @@ func EndorsementKeyFromNvIndex(rw io.ReadWriter, idx uint32) (*Key, error) {
 // (possibly a hierarchy root tpm2.Handle{Owner|Endorsement|Platform|Null})
 // using the template stored at the provided nvdata index.
 func KeyFromNvIndex(rw io.ReadWriter, parent tpmutil.Handle, idx uint32) (*Key, error) {
-	data, err := tpm2.NVRead(rw, tpmutil.Handle(idx))
+	data, err := tpm2.NVReadEx(rw, tpmutil.Handle(idx), parent, "", 0)
 	if err != nil {
 		return nil, fmt.Errorf("read error at index %d: %v", idx, err)
 	}

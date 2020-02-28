@@ -5,6 +5,8 @@ import (
 
 	pb "github.com/golang/protobuf/proto"
 	"github.com/google/go-tpm-tools/tpm2tools"
+	"github.com/google/go-tpm/tpm2"
+	"github.com/google/go-tpm/tpmutil"
 	"github.com/spf13/cobra"
 )
 
@@ -52,10 +54,40 @@ If --pcrs is not provided, all pcrs are read for that hash algorithm.`,
 	},
 }
 
+var nvReadCmd = &cobra.Command{
+	Use:   "nvdata",
+	Short: "Read TPM NVData",
+	Long: `Read NVData at a particular NVIndex
+
+Based on the --index flag, this reads all of the NVData present at that NVIndex.
+The read is authenticated with the owner hierarchy and an empty password.`,
+	Args: cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		rwc, err := openTpm()
+		if err != nil {
+			return err
+		}
+		defer rwc.Close()
+
+		data, err := tpm2.NVReadEx(rwc, tpmutil.Handle(nvIndex), tpm2.HandleOwner, "", 0)
+		if err != nil {
+			return err
+		}
+		if _, err := dataOutput().Write(data); err != nil {
+			return fmt.Errorf("cannot output NVData: %v", err)
+		}
+		return nil
+	},
+}
+
 func init() {
 	RootCmd.AddCommand(readCmd)
 	readCmd.AddCommand(pcrCmd)
+	readCmd.AddCommand(nvReadCmd)
 	addOutputFlag(pcrCmd)
 	addPCRsFlag(pcrCmd)
 	addHashAlgoFlag(pcrCmd)
+	addIndexFlag(nvReadCmd)
+	nvReadCmd.MarkPersistentFlagRequired("index")
+	addOutputFlag(nvReadCmd)
 }
