@@ -8,10 +8,11 @@ import (
 	"fmt"
 	"io"
 
-	tpmpb "github.com/google/go-tpm-tools/proto"
 	"github.com/google/go-tpm-tools/tpm2tools"
 	"github.com/google/go-tpm/tpm2"
 )
+
+var defaultNameAlg = tpm2tools.DefaultEKTemplateRSA().NameAlg
 
 // CreateEKPublicAreaFromKey creates a public area from a go interface PublicKey.
 // Supports RSA and ECC keys.
@@ -48,38 +49,60 @@ func createEKPublicECC(eccKey *ecdsa.PublicKey) (public tpm2.Public, err error) 
 	return public, err
 }
 
-func createPublic(private tpm2.Private, hashAlg tpm2.Algorithm, pcrs *tpmpb.Pcrs) tpm2.Public {
-	publicHash := getHash(hashAlg)
+func createPublic(private tpm2.Private) tpm2.Public {
+	publicHash := getHash(defaultNameAlg)
 	publicHash.Write(private.SeedValue)
 	publicHash.Write(private.Sensitive)
-	public := tpm2.Public{
+	return tpm2.Public{
 		Type:    tpm2.AlgKeyedHash,
-		NameAlg: hashAlg,
+		NameAlg: defaultNameAlg,
 		KeyedHashParameters: &tpm2.KeyedHashParams{
 			Alg:    tpm2.AlgNull,
 			Unique: publicHash.Sum(nil),
 		},
 	}
-	if len(pcrs.GetPcrs()) == 0 {
-		// Allow password authorization so we can use a nil AuthPolicy.
-		public.AuthPolicy = nil
-		public.Attributes |= tpm2.FlagUserWithAuth
-	} else {
-		public.AuthPolicy = tpm2tools.ComputePCRSessionAuth(pcrs)
-		public.Attributes |= tpm2.FlagAdminWithPolicy
-	}
-	return public
 }
 
-func createPrivate(sensitive []byte, hashAlg tpm2.Algorithm) tpm2.Private {
+func createPrivate(sensitive []byte) tpm2.Private {
 	private := tpm2.Private{
 		Type:      tpm2.AlgKeyedHash,
 		AuthValue: nil,
-		SeedValue: make([]byte, getHash(hashAlg).Size()),
+		SeedValue: make([]byte, getHash(defaultNameAlg).Size()),
 		Sensitive: sensitive,
 	}
 	if _, err := io.ReadFull(rand.Reader, private.SeedValue); err != nil {
 		panic(err)
 	}
 	return private
+}
+
+func createPublicPrivateSign(signingKey crypto.PrivateKey) (tpm2.Public, tpm2.Private, error) {
+	rsaPriv, ok := signingKey.(*rsa.PrivateKey)
+	if !ok {
+		return tpm2.Public{}, tpm2.Private{}, fmt.Errorf("unsupported signing key type: %T", signingKey)
+	}
+
+	rsaPub := rsaPriv.PublicKey
+	public := tpm2.Public{
+		Type:       tpm2.AlgRSA,
+		NameAlg:    defaultNameAlg,
+		Attributes: tpm2.FlagSign,
+		RSAParameters: &tpm2.RSAParams{
+			KeyBits:     uint16(rsaPub.N.BitLen()),
+			ExponentRaw: uint32(rsaPub.E),
+			ModulusRaw:  rsaPub.N.Bytes(),
+			Sign: &tpm2.SigScheme{
+				Alg:  tpm2.AlgRSASSA,
+				Hash: tpm2.AlgSHA256,
+			},
+		},
+	}
+	private := tpm2.Private{
+		Type:      tpm2.AlgRSA,
+		AuthValue: nil,
+		SeedValue: nil, // Only Storage Keys need a seed value. See part 3 TPM2_CREATE b.3.
+		Sensitive: rsaPriv.Primes[0].Bytes(),
+	}
+
+	return public, private, nil
 }
