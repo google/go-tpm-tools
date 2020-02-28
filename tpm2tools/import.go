@@ -2,7 +2,6 @@ package tpm2tools
 
 import (
 	"fmt"
-	"io"
 
 	tpmpb "github.com/google/go-tpm-tools/proto"
 	"github.com/google/go-tpm/tpm2"
@@ -33,14 +32,14 @@ func loadHandle(k *Key, blob *tpmpb.ImportBlob) (tpmutil.Handle, error) {
 // Import decrypts the secret contained in an encoded import request.
 // The key used must be an encryption key (signing keys cannot be used).
 // The req parameter should come from server.CreateImportBlob.
-func (k *Key) Import(rw io.ReadWriter, blob *tpmpb.ImportBlob) ([]byte, error) {
+func (k *Key) Import(blob *tpmpb.ImportBlob) ([]byte, error) {
 	handle, err := loadHandle(k, blob)
 	if err != nil {
 		return nil, err
 	}
-	defer tpm2.FlushContext(rw, handle)
+	defer tpm2.FlushContext(k.rw, handle)
 
-	unsealSession, err := newPCRSession(rw, PCRSelection(blob.Pcrs))
+	unsealSession, err := newPCRSession(k.rw, PCRSelection(blob.Pcrs))
 	if err != nil {
 		return nil, err
 	}
@@ -50,7 +49,7 @@ func (k *Key) Import(rw io.ReadWriter, blob *tpmpb.ImportBlob) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	out, err := tpm2.UnsealWithSession(rw, auth.Session, handle, "")
+	out, err := tpm2.UnsealWithSession(k.rw, auth.Session, handle, "")
 	if err != nil {
 		return nil, fmt.Errorf("unseal failed: %s", err)
 	}

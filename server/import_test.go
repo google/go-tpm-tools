@@ -43,7 +43,7 @@ func TestImport(t *testing.T) {
 				t.Fatalf("creating import blob failed: %v", err)
 			}
 
-			output, err := ek.Import(rwc, blob)
+			output, err := ek.Import(blob)
 			if err != nil {
 				t.Fatalf("import failed: %v", err)
 			}
@@ -87,7 +87,7 @@ func TestImportPCRs(t *testing.T) {
 			if err != nil {
 				t.Fatalf("creating import blob failed: %v", err)
 			}
-			output, err := ek.Import(rwc, blob)
+			output, err := ek.Import(blob)
 			if test.expectSuccess {
 				if err != nil {
 					t.Fatalf("import failed: %v", err)
