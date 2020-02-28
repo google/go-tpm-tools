@@ -65,26 +65,13 @@ func (k *Key) ImportSigningKey(blob *tpmpb.ImportBlob) (*Key, error) {
 	if err != nil {
 		return nil, err
 	}
+	key := &Key{rw: k.rw, handle: handle}
 
-	public, _, _, err := tpm2.ReadPublic(k.rw, handle)
-	if err != nil {
+	if key.pubArea, _, _, err = tpm2.ReadPublic(k.rw, handle); err != nil {
 		return nil, err
 	}
-
-	name, err := public.Name()
-	if err != nil {
+	if key.session, err = newPCRSession(k.rw, PCRSelection(blob.Pcrs)); err != nil {
 		return nil, err
 	}
-
-	pubKey, err := public.Key()
-	if err != nil {
-		return nil, err
-	}
-
-	session, err := newPCRSession(k.rw, PCRSelection(blob.Pcrs))
-	if err != nil {
-		return nil, err
-	}
-
-	return &Key{k.rw, handle, public, pubKey, name, session}, nil
+	return key, key.finish()
 }
