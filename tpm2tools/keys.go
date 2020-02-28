@@ -194,7 +194,9 @@ func (k *Key) PublicKey() crypto.PublicKey {
 // Close should be called when the key is no longer needed. This is important to
 // do as most TPMs can only have a small number of key simultaneously loaded.
 func (k *Key) Close() {
-	k.session.Close()
+	if k.session != nil {
+		k.session.Close()
+	}
 	tpm2.FlushContext(k.rw, k.handle)
 }
 

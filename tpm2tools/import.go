@@ -60,12 +60,18 @@ func (k *Key) Import(rw io.ReadWriter, blob *tpmpb.ImportBlob) ([]byte, error) {
 // ImportSigningKey returns the signing key contained in an encoded import request.
 // The parent key must be an encryption key (signing keys cannot be used).
 // The req parameter should come from server.CreateSigningKeyImportBlob.
-func (k *Key) ImportSigningKey(blob *tpmpb.ImportBlob) (*Key, error) {
+func (k *Key) ImportSigningKey(blob *tpmpb.ImportBlob) (key *Key, err error) {
 	handle, err := loadHandle(k, blob)
 	if err != nil {
 		return nil, err
 	}
-	key := &Key{rw: k.rw, handle: handle}
+	key = &Key{rw: k.rw, handle: handle}
+
+	defer func() {
+		if err != nil {
+			key.Close()
+		}
+	}()
 
 	if key.pubArea, _, _, err = tpm2.ReadPublic(k.rw, handle); err != nil {
 		return nil, err
