@@ -46,13 +46,8 @@ func StorageRootKeyECC(rw io.ReadWriter) (*Key, error) {
 }
 
 // AttestationIdentityKeyRSA generates and loads a key from AIKTemplateRSA
-func AttestationIdentityKeyRSA(rw io.ReadWriter, nonces []byte) (*Key, error) {
-	// If nonce is null, then try to use the cached key
-	if nonces == nil {
-		return NewCachedKey(rw, tpm2.HandleOwner, AIKTemplateRSA(nonces), DefaultAIKRSAHandle)
-	} else {
-		return NewKey(rw, tpm2.HandleOwner, AIKTemplateRSA(nonces))
-	}
+func AttestationIdentityKeyRSA(rw io.ReadWriter) (*Key, error) {
+	return NewCachedKey(rw, tpm2.HandleOwner, AIKTemplateRSA(), DefaultAIKRSAHandle)
 }
 
 // AttestationIdentityKeyECC generates and loads a key from AIKTemplateECC
