@@ -88,7 +88,7 @@ func DefaultEKTemplateECC() tpm2.Public {
 // This is very similar to DefaultEKTemplateRSA, except that this will be a
 // signing key instead of an encrypting key. The random nonce provided allows
 // for multiple AIKs to easily cooexist on the same TPM (which only has 1 EK).
-func AIKTemplateRSA(nonce []byte) tpm2.Public {
+func AIKTemplateRSA() tpm2.Public {
 	return tpm2.Public{
 		Type:       tpm2.AlgRSA,
 		NameAlg:    tpm2.AlgSHA256,
@@ -98,8 +98,7 @@ func AIKTemplateRSA(nonce []byte) tpm2.Public {
 				Alg:  tpm2.AlgRSASSA,
 				Hash: tpm2.AlgSHA256,
 			},
-			KeyBits:    2048,
-			ModulusRaw: nonce, // Use public.unique to generate distinct keys
+			KeyBits: 2048,
 		},
 	}
 }

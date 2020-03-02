@@ -15,7 +15,7 @@ import (
 )
 
 func templateSSA(hash tpm2.Algorithm) tpm2.Public {
-	template := AIKTemplateRSA(nil)
+	template := AIKTemplateRSA()
 	// Can't sign arbitrary data if restricted.
 	template.Attributes &= ^tpm2.FlagRestricted
 	template.RSAParameters.Sign.Hash = hash
