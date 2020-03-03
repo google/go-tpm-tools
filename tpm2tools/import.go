@@ -73,10 +73,10 @@ func (k *Key) ImportSigningKey(blob *tpmpb.ImportBlob) (key *Key, err error) {
 	}()
 
 	if key.pubArea, _, _, err = tpm2.ReadPublic(k.rw, handle); err != nil {
-		return nil, err
+		return
 	}
 	if key.session, err = newPCRSession(k.rw, PCRSelection(blob.Pcrs)); err != nil {
-		return nil, err
+		return
 	}
 	return key, key.finish()
 }
