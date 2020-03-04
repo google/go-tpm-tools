@@ -14,11 +14,11 @@ var (
 	lock sync.Mutex
 )
 
-type NoClose struct {
+type noClose struct {
 	io.ReadWriter
 }
 
-func (n NoClose) Close() error {
+func (n noClose) Close() error {
 	return nil
 }
 
@@ -35,7 +35,7 @@ func GetTPM(tb testing.TB) io.ReadWriteCloser {
 				tb.Fatalf("Failed to open TPM: %v", err)
 			}
 		}
-		return NoClose{tpm}
+		return noClose{tpm}
 	}
 
 	simulator, err := simulator.Get()

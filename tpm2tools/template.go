@@ -86,8 +86,7 @@ func DefaultEKTemplateECC() tpm2.Public {
 
 // AIKTemplateRSA returns a potential Attestation Identity Key (AIK) template.
 // This is very similar to DefaultEKTemplateRSA, except that this will be a
-// signing key instead of an encrypting key. The random nonce provided allows
-// for multiple AIKs to easily cooexist on the same TPM (which only has 1 EK).
+// signing key instead of an encrypting key.
 func AIKTemplateRSA() tpm2.Public {
 	return tpm2.Public{
 		Type:       tpm2.AlgRSA,
@@ -103,10 +102,9 @@ func AIKTemplateRSA() tpm2.Public {
 	}
 }
 
-// AIKTemplateRSA returns a potential Attestation Identity Key (AIK) template.
+// AIKTemplateECC returns a potential Attestation Identity Key (AIK) template.
 // This is very similar to DefaultEKTemplateECC, except that this will be a
-// signing key instead of an encrypting key. Unlike AIKTemplateRSA, this ECC
-// template doesn't accept a nonce.
+// signing key instead of an encrypting key.
 func AIKTemplateECC() tpm2.Public {
 	params := defaultECCParams()
 	params.Symmetric = nil

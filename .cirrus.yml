@@ -18,5 +18,7 @@ test_task:
       -E stylecheck
       -E goimports
       -E misspell
+      -E golint
+      --exclude-use-default=false
       --max-same-issues=0
       --max-issues-per-linter=0
