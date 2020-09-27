@@ -5,6 +5,7 @@ import (
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
+	"errors"
 	"testing"
 
 	"github.com/google/go-tpm-tools/internal"
@@ -49,6 +50,73 @@ func TestImport(t *testing.T) {
 			}
 			if !bytes.Equal(output, secret) {
 				t.Errorf("got %X, expected %X", output, secret)
+			}
+		})
+	}
+}
+
+func TestBadImport(t *testing.T) {
+	rwc := internal.GetTPM(t)
+	defer tpm2tools.CheckedClose(t, rwc)
+
+	valueErr := tpm2.ParameterError{
+		Code:      tpm2.RCValue,
+		Parameter: tpm2.RC4,
+	}
+	integrityErr := tpm2.ParameterError{
+		Code:      tpm2.RCIntegrity,
+		Parameter: tpm2.RC3,
+	}
+	pointErr := tpm2.ParameterError{
+		Code:      tpm2.RCECCPoint,
+		Parameter: tpm2.RC4,
+	}
+
+	tests := []struct {
+		name         string
+		template     tpm2.Public
+		wrongKeyErr  tpm2.ParameterError
+		corruptedErr tpm2.ParameterError
+	}{
+		{"RSA", tpm2tools.DefaultEKTemplateRSA(), valueErr, valueErr},
+		{"ECC", tpm2tools.DefaultEKTemplateECC(), integrityErr, pointErr},
+		{"SRK-RSA", tpm2tools.SRKTemplateRSA(), valueErr, valueErr},
+		{"SRK-ECC", tpm2tools.SRKTemplateECC(), integrityErr, pointErr},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ek, err := tpm2tools.NewKey(rwc, tpm2.HandleEndorsement, test.template)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer ek.Close()
+			pub := ek.PublicKey()
+
+			// Create a second, different key
+			template2 := test.template
+			template2.Attributes ^= tpm2.FlagNoDA
+			ek2, err := tpm2tools.NewKey(rwc, tpm2.HandleEndorsement, template2)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer ek2.Close()
+
+			secret := []byte("super secret code")
+			blob, err := CreateImportBlob(pub, secret, nil)
+			if err != nil {
+				t.Fatalf("creating import blob failed: %v", err)
+			}
+
+			// Try to import this blob under the wrong key
+			if _, err = ek2.Import(blob); !errors.Is(err, test.wrongKeyErr) {
+				t.Errorf("got error: %v, expected: %v", err, test.wrongKeyErr)
+			}
+
+			// Try to import a corrupted blob
+			blob.EncryptedSeed[10] ^= 0xFF
+			if _, err = ek.Import(blob); !errors.Is(err, test.corruptedErr) {
+				t.Errorf("got error: %v, expected: %v", err, test.corruptedErr)
 			}
 		})
 	}
