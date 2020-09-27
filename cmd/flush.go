@@ -59,17 +59,17 @@ Which handles are flushed depends on the argument passed:
 		for _, handleType := range handleNames[args[0]] {
 			handles, err := tpm2tools.Handles(rwc, handleType)
 			if err != nil {
-				return fmt.Errorf("getting handles: %v", err)
+				return fmt.Errorf("getting handles: %w", err)
 			}
 			for _, handle := range handles {
 				if handleType == tpm2.HandleTypePersistent {
 					if err = tpm2.EvictControl(rwc, "", tpm2.HandleOwner, handle, handle); err != nil {
-						return fmt.Errorf("evicting handle 0x%x: %v", handle, err)
+						return fmt.Errorf("evicting handle 0x%x: %w", handle, err)
 					}
 					fmt.Fprintf(debugOutput(), "Handle 0x%x evicted\n", handle)
 				} else {
 					if err = tpm2.FlushContext(rwc, handle); err != nil {
-						return fmt.Errorf("flushing handle 0x%x: %v", handle, err)
+						return fmt.Errorf("flushing handle 0x%x: %w", handle, err)
 					}
 					fmt.Fprintf(debugOutput(), "Handle 0x%x flushed\n", handle)
 				}

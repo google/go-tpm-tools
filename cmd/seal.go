@@ -54,7 +54,7 @@ state (like Secure Boot).`,
 		}
 		sealed, err := srk.Seal(secret, sOpt)
 		if err != nil {
-			return fmt.Errorf("sealing data: %v", err)
+			return fmt.Errorf("sealing data: %w", err)
 		}
 
 		fmt.Fprintln(debugOutput(), "Writing sealed data")
@@ -118,12 +118,12 @@ machine state when sealing took place.
 		}
 		secret, err := srk.Unseal(&sealed, cOpt)
 		if err != nil {
-			return fmt.Errorf("unsealing data: %v", err)
+			return fmt.Errorf("unsealing data: %w", err)
 		}
 
 		fmt.Fprintln(debugOutput(), "Writing secret data")
 		if _, err := dataOutput().Write(secret); err != nil {
-			return fmt.Errorf("writing secret data: %v", err)
+			return fmt.Errorf("writing secret data: %w", err)
 		}
 		fmt.Fprintln(debugOutput(), "Unsealed data using TPM")
 		return nil

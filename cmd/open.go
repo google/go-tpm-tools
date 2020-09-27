@@ -26,7 +26,7 @@ func openTpm() (io.ReadWriteCloser, error) {
 	}
 	rwc, err := openImpl()
 	if err != nil {
-		return nil, fmt.Errorf("connecting to TPM: %v", err)
+		return nil, fmt.Errorf("connecting to TPM: %w", err)
 	}
 	return rwc, nil
 }

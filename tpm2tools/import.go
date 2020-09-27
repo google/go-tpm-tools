@@ -15,7 +15,7 @@ func loadHandle(k *Key, blob *tpmpb.ImportBlob) (tpmutil.Handle, error) {
 	}
 	private, err := tpm2.Import(k.rw, k.Handle(), auth, blob.PublicArea, blob.Duplicate, blob.EncryptedSeed, nil, nil)
 	if err != nil {
-		return tpm2.HandleNull, fmt.Errorf("import failed: %s", err)
+		return tpm2.HandleNull, fmt.Errorf("import failed: %w", err)
 	}
 
 	auth, err = k.session.Auth()
@@ -24,7 +24,7 @@ func loadHandle(k *Key, blob *tpmpb.ImportBlob) (tpmutil.Handle, error) {
 	}
 	handle, _, err := tpm2.LoadUsingAuth(k.rw, k.Handle(), auth, blob.PublicArea, private)
 	if err != nil {
-		return tpm2.HandleNull, fmt.Errorf("load failed: %s", err)
+		return tpm2.HandleNull, fmt.Errorf("load failed: %w", err)
 	}
 	return handle, nil
 }
@@ -51,7 +51,7 @@ func (k *Key) Import(blob *tpmpb.ImportBlob) ([]byte, error) {
 	}
 	out, err := tpm2.UnsealWithSession(k.rw, auth.Session, handle, "")
 	if err != nil {
-		return nil, fmt.Errorf("unseal failed: %s", err)
+		return nil, fmt.Errorf("unseal failed: %w", err)
 	}
 	return out, nil
 }

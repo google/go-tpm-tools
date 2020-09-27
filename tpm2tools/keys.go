@@ -68,11 +68,11 @@ func EndorsementKeyFromNvIndex(rw io.ReadWriter, idx uint32) (*Key, error) {
 func KeyFromNvIndex(rw io.ReadWriter, parent tpmutil.Handle, idx uint32) (*Key, error) {
 	data, err := tpm2.NVReadEx(rw, tpmutil.Handle(idx), tpm2.HandleOwner, "", 0)
 	if err != nil {
-		return nil, fmt.Errorf("read error at index %d: %v", idx, err)
+		return nil, fmt.Errorf("read error at index %d: %w", idx, err)
 	}
 	template, err := tpm2.DecodePublic(data)
 	if err != nil {
-		return nil, fmt.Errorf("index %d data was not a TPM key template: %v", idx, err)
+		return nil, fmt.Errorf("index %d data was not a TPM key template: %w", idx, err)
 	}
 	return NewKey(rw, parent, template)
 }
@@ -243,17 +243,17 @@ func sealHelper(rw io.ReadWriter, parentHandle tpmutil.Handle, auth []byte, sens
 
 	priv, pub, creationData, _, ticket, err := tpm2.CreateKeyWithSensitive(rw, parentHandle, certifyPCRsSel, "", "", inPublic, sensitive)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create key: %v", err)
+		return nil, fmt.Errorf("failed to create key: %w", err)
 	}
 	certifiedPcr, err := ReadPCRs(rw, certifyPCRsSel)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read PCRs: %v", err)
+		return nil, fmt.Errorf("failed to read PCRs: %w", err)
 	}
 	computedDigest := computePCRDigest(certifiedPcr)
 
 	decodedCreationData, err := tpm2.DecodeCreationData(creationData)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decode creation data: %v", err)
+		return nil, fmt.Errorf("failed to decode creation data: %w", err)
 	}
 
 	// make sure PCRs haven't being altered after sealing
@@ -287,14 +287,14 @@ func (k *Key) Unseal(in *tpmpb.SealedBytes, cOpt CertifyOpt) ([]byte, error) {
 		in.Pub,
 		in.Priv)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load sealed object: %v", err)
+		return nil, fmt.Errorf("failed to load sealed object: %w", err)
 	}
 	defer tpm2.FlushContext(k.rw, sealed)
 
 	if cOpt != nil {
 		var ticket tpm2.Ticket
 		if _, err = tpmutil.Unpack(in.GetTicket(), &ticket); err != nil {
-			return nil, fmt.Errorf("ticket unpack failed: %v", err)
+			return nil, fmt.Errorf("ticket unpack failed: %w", err)
 		}
 		creationHash := sessionHashAlg.New()
 		creationHash.Write(in.GetCreationData())
@@ -311,19 +311,19 @@ func (k *Key) Unseal(in *tpmpb.SealedBytes, cOpt CertifyOpt) ([]byte, error) {
 		if paramErr, ok := certErr.(tpm2.ParameterError); ok && paramErr.Code == tpm2.RCInsufficient {
 			signer, err := AttestationIdentityKeyECC(k.rw)
 			if err != nil {
-				return nil, fmt.Errorf("failed to create fallback signing key: %v", err)
+				return nil, fmt.Errorf("failed to create fallback signing key: %w", err)
 			}
 			defer signer.Close()
 			_, _, certErr = tpm2.CertifyCreation(k.rw, "", sealed, signer.Handle(), nil, creationHash.Sum(nil), tpm2.SigScheme{}, ticket)
 		}
 		if certErr != nil {
-			return nil, fmt.Errorf("failed to certify creation: %v", certErr)
+			return nil, fmt.Errorf("failed to certify creation: %w", certErr)
 		}
 
 		// verify certify PCRs haven't been modified
 		decodedCreationData, err := tpm2.DecodeCreationData(in.GetCreationData())
 		if err != nil {
-			return nil, fmt.Errorf("failed to decode creation data: %v", err)
+			return nil, fmt.Errorf("failed to decode creation data: %w", err)
 		}
 		if !HasSamePCRSelection(in.GetCertifiedPcrs(), decodedCreationData.PCRSelection) {
 			return nil, fmt.Errorf("certify PCRs does not match the PCR selection in the creation data")
@@ -333,7 +333,7 @@ func (k *Key) Unseal(in *tpmpb.SealedBytes, cOpt CertifyOpt) ([]byte, error) {
 		}
 
 		if err := cOpt.CertifyPCRs(k.rw, in.GetCertifiedPcrs()); err != nil {
-			return nil, fmt.Errorf("failed to certify PCRs: %v", err)
+			return nil, fmt.Errorf("failed to certify PCRs: %w", err)
 		}
 	}
 
@@ -344,7 +344,7 @@ func (k *Key) Unseal(in *tpmpb.SealedBytes, cOpt CertifyOpt) ([]byte, error) {
 
 	session, err := newPCRSession(k.rw, sel)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create session: %v", err)
+		return nil, fmt.Errorf("failed to create session: %w", err)
 	}
 	defer session.Close()
 
@@ -361,7 +361,7 @@ func (k *Key) Unseal(in *tpmpb.SealedBytes, cOpt CertifyOpt) ([]byte, error) {
 func (k *Key) Reseal(in *tpmpb.SealedBytes, cOpt CertifyOpt, sOpt SealOpt) (*tpmpb.SealedBytes, error) {
 	sensitive, err := k.Unseal(in, cOpt)
 	if err != nil {
-		return nil, fmt.Errorf("failed to unseal: %v", err)
+		return nil, fmt.Errorf("failed to unseal: %w", err)
 	}
 	return k.Seal(sensitive, sOpt)
 }

@@ -74,7 +74,7 @@ The read is authenticated with the owner hierarchy and an empty password.`,
 			return err
 		}
 		if _, err := dataOutput().Write(data); err != nil {
-			return fmt.Errorf("cannot output NVData: %v", err)
+			return fmt.Errorf("cannot output NVData: %w", err)
 		}
 		return nil
 	},

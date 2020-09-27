@@ -124,7 +124,7 @@ func (s *Simulator) Close() error {
 func (s *Simulator) on(manufactureReset bool) error {
 	// TPM2_Startup must be the first command the TPM receives.
 	if err := tpm2.Startup(s, tpm2.StartupClear); err != nil {
-		return fmt.Errorf("startup: %v", err)
+		return fmt.Errorf("startup: %w", err)
 	}
 	return nil
 }
@@ -133,7 +133,7 @@ func (s *Simulator) off() error {
 	// TPM2_Shutdown must be the last command the TPM receives. We call
 	// Shutdown with StartupClear to simulate a full reboot.
 	if err := tpm2.Shutdown(s, tpm2.StartupClear); err != nil {
-		return fmt.Errorf("shutdown: %v", err)
+		return fmt.Errorf("shutdown: %w", err)
 	}
 	return nil
 }
