@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/google/go-tpm-tools/internal"
-	"github.com/google/go-tpm-tools/proto"
+	tpmpb "github.com/google/go-tpm-tools/proto"
 	"github.com/google/go-tpm-tools/tpm2tools"
 	"github.com/google/go-tpm/tpm2"
 )
@@ -140,13 +140,13 @@ func TestImportPCRs(t *testing.T) {
 	badPCR[0]++
 	tests := []struct {
 		name          string
-		pcrs          *proto.Pcrs
+		pcrs          *tpmpb.Pcrs
 		expectSuccess bool
 	}{
 		{"No-PCR-nil", nil, true},
-		{"No-PCR-empty", &proto.Pcrs{Hash: proto.HashAlgo_SHA256}, true},
-		{"Good-PCR", &proto.Pcrs{Hash: proto.HashAlgo_SHA256, Pcrs: map[uint32][]byte{0: pcr0}}, true},
-		{"Bad-PCR", &proto.Pcrs{Hash: proto.HashAlgo_SHA256, Pcrs: map[uint32][]byte{0: badPCR}}, false},
+		{"No-PCR-empty", &tpmpb.Pcrs{Hash: tpmpb.HashAlgo_SHA256}, true},
+		{"Good-PCR", &tpmpb.Pcrs{Hash: tpmpb.HashAlgo_SHA256, Pcrs: map[uint32][]byte{0: pcr0}}, true},
+		{"Bad-PCR", &tpmpb.Pcrs{Hash: tpmpb.HashAlgo_SHA256, Pcrs: map[uint32][]byte{0: badPCR}}, false},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -192,13 +192,13 @@ func TestSigningKeyImport(t *testing.T) {
 	badPCR[0]++
 	tests := []struct {
 		name          string
-		pcrs          *proto.Pcrs
+		pcrs          *tpmpb.Pcrs
 		expectSuccess bool
 	}{
 		{"No-PCR-nil", nil, true},
-		{"No-PCR-empty", &proto.Pcrs{Hash: proto.HashAlgo_SHA256}, true},
-		{"Good-PCR", &proto.Pcrs{Hash: proto.HashAlgo_SHA256, Pcrs: map[uint32][]byte{0: pcr0}}, true},
-		{"Bad-PCR", &proto.Pcrs{Hash: proto.HashAlgo_SHA256, Pcrs: map[uint32][]byte{0: badPCR}}, false},
+		{"No-PCR-empty", &tpmpb.Pcrs{Hash: tpmpb.HashAlgo_SHA256}, true},
+		{"Good-PCR", &tpmpb.Pcrs{Hash: tpmpb.HashAlgo_SHA256, Pcrs: map[uint32][]byte{0: pcr0}}, true},
+		{"Bad-PCR", &tpmpb.Pcrs{Hash: tpmpb.HashAlgo_SHA256, Pcrs: map[uint32][]byte{0: badPCR}}, false},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
