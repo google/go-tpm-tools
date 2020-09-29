@@ -7,7 +7,6 @@ import (
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpmutil"
 	"github.com/spf13/cobra"
-	"google.golang.org/protobuf/encoding/prototext"
 )
 
 var readCmd = &cobra.Command{
@@ -46,8 +45,8 @@ If --pcrs is not provided, all pcrs are read for that hash algorithm.`,
 		}
 
 		fmt.Fprintln(debugOutput(), "Writing pcrs")
-		var output []byte
-		if output, err = prototext.Marshal(pcrList); err != nil {
+		output, err := marshalOptions.Marshal(pcrList)
+		if err != nil {
 			return err
 		}
 		if _, err = dataOutput().Write(output); err != nil {

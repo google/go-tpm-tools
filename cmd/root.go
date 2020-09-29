@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+	"google.golang.org/protobuf/encoding/prototext"
 )
 
 // RootCmd is the entrypoint for gotpm.
@@ -52,3 +53,10 @@ func debugOutput() io.Writer {
 	}
 	return ioutil.Discard
 }
+
+// Default Text Marshalling options
+var marshalOptions = prototext.MarshalOptions{
+	Multiline: true,
+	EmitASCII: true,
+}
+var unmarshalOptions = prototext.UnmarshalOptions{}
