@@ -44,15 +44,13 @@ If --pcrs is not provided, all pcrs are read for that hash algorithm.`,
 			return err
 		}
 
-		fmt.Fprintln(debugOutput(), "Writing pcrs")
-		output, err := marshalOptions.Marshal(pcrList)
-		if err != nil {
-			return err
+		for idx := uint32(0); idx < tpm2tools.NumPCRs; idx++ {
+			if val, ok := pcrList.Pcrs[idx]; ok {
+				if _, err = fmt.Fprintf(dataOutput(), "%2d: %x\n", idx, val); err != nil {
+					return err
+				}
+			}
 		}
-		if _, err = dataOutput().Write(output); err != nil {
-			return err
-		}
-		fmt.Fprintln(debugOutput(), "Wrote pcrs")
 		return nil
 	},
 }
