@@ -3,11 +3,11 @@ package cmd
 import (
 	"fmt"
 
-	pb "github.com/golang/protobuf/proto"
 	"github.com/google/go-tpm-tools/tpm2tools"
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpmutil"
 	"github.com/spf13/cobra"
+	"google.golang.org/protobuf/encoding/prototext"
 )
 
 var readCmd = &cobra.Command{
@@ -46,7 +46,11 @@ If --pcrs is not provided, all pcrs are read for that hash algorithm.`,
 		}
 
 		fmt.Fprintln(debugOutput(), "Writing pcrs")
-		if err := pb.MarshalText(dataOutput(), pcrList); err != nil {
+		var output []byte
+		if output, err = prototext.Marshal(pcrList); err != nil {
+			return err
+		}
+		if _, err = dataOutput().Write(output); err != nil {
 			return err
 		}
 		fmt.Fprintln(debugOutput(), "Wrote pcrs")

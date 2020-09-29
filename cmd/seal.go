@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"io/ioutil"
 
-	pb "github.com/golang/protobuf/proto"
 	"github.com/spf13/cobra"
+	"google.golang.org/protobuf/encoding/prototext"
 
 	tpmpb "github.com/google/go-tpm-tools/proto"
 	"github.com/google/go-tpm-tools/tpm2tools"
@@ -58,7 +58,11 @@ state (like Secure Boot).`,
 		}
 
 		fmt.Fprintln(debugOutput(), "Writing sealed data")
-		if err := pb.MarshalText(dataOutput(), sealed); err != nil {
+		var output []byte
+		if output, err = prototext.Marshal(sealed); err != nil {
+			return err
+		}
+		if _, err = dataOutput().Write(output); err != nil {
 			return err
 		}
 		fmt.Fprintf(debugOutput(), "Sealed data to PCRs: %v\n", sel.PCRs)
@@ -97,7 +101,7 @@ machine state when sealing took place.
 			return err
 		}
 		var sealed tpmpb.SealedBytes
-		if err := pb.UnmarshalText(string(data), &sealed); err != nil {
+		if err := prototext.Unmarshal(data, &sealed); err != nil {
 			return err
 		}
 
