@@ -13,6 +13,13 @@ use with [Go-TPM](https://github.com/google/go-tpm):
   - `gotpm`: a command line tool for using the TPM from the command line. Run
     `gotpm --help` and `gotpm [command] --help` for more documentation.
 
+## Minimum Required Go Version
+
+This project currently requires Go 1.13 or newer. In general, we try to support
+building with all [currently supportted Go versions](https://endoflife.date/go).
+Any update to the minimum required Go version will be released as a **minor**
+version update.
+
 ## Legal
 
 Copyright 2018 Google Inc. under the
