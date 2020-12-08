@@ -206,3 +206,39 @@ func TestSignPSS(t *testing.T) {
 		})
 	}
 }
+
+/// Make sure signing fails when using PSS params with a non-PSS key
+func TestFailSignPSS(t *testing.T) {
+	rwc := internal.GetTPM(t)
+	defer CheckedClose(t, rwc)
+	tests := []struct {
+		name     string
+		template tpm2.Public
+	}{
+		{"SSA", templateSSA(tpm2.AlgSHA256)},
+		{"ECC", templateECC(tpm2.AlgSHA256)},
+	}
+
+	pssOpts := rsa.PSSOptions{SaltLength: rsa.PSSSaltLengthAuto, Hash: crypto.SHA256}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			key, err := NewKey(rwc, tpm2.HandleEndorsement, test.template)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer key.Close()
+
+			signer, err := key.GetSigner()
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			// Fake SHA-256 digest
+			digest := make([]byte, 32)
+			if _, err = signer.Sign(nil, digest, &pssOpts); err == nil {
+				t.Error("expected failure when using PSS options")
+			}
+		})
+	}
+}

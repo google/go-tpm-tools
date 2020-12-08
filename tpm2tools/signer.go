@@ -36,6 +36,9 @@ func (signer *tpmSigner) Public() crypto.PublicKey {
 // where saltLen is not digestSize is when using 1024 keyBits with SHA512.
 func (signer *tpmSigner) Sign(_ io.Reader, digest []byte, opts crypto.SignerOpts) (signature []byte, err error) {
 	if pssOpts, ok := opts.(*rsa.PSSOptions); ok {
+		if signer.Key.pubArea.RSAParameters == nil {
+			return nil, fmt.Errorf("invalid options: PSSOptions can only be used with RSA keys")
+		}
 		if signer.Key.pubArea.RSAParameters.Sign.Alg != tpm2.AlgRSAPSS {
 			return nil, fmt.Errorf("invalid options: PSSOptions cannot be used with signing alg: %v", signer.Key.pubArea.RSAParameters.Sign.Alg)
 		}
