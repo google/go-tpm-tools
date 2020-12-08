@@ -216,7 +216,6 @@ func TestFailSignPSS(t *testing.T) {
 		template tpm2.Public
 	}{
 		{"SSA", templateSSA(tpm2.AlgSHA256)},
-		// {"PSS", templatePSS(tpm2.AlgSHA256)},
 		{"ECC", templateECC(tpm2.AlgSHA256)},
 	}
 
