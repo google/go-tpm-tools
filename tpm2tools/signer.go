@@ -88,29 +88,40 @@ func (k *Key) GetSigner() (crypto.Signer, error) {
 	if k.hasAttribute(tpm2.FlagRestricted) {
 		return nil, fmt.Errorf("restricted keys are not supported")
 	}
-	if !k.hasAttribute(tpm2.FlagSign) {
-		return nil, fmt.Errorf("non-signing key used with GetSigner()")
+	hashAlg, err := getSigningHashAlg(k)
+	if err != nil {
+		return nil, err
 	}
-
-	var sigScheme *tpm2.SigScheme
-
-	switch k.pubArea.Type {
-	case tpm2.AlgRSA:
-		sigScheme = k.pubArea.RSAParameters.Sign
-		if sigScheme.Alg != tpm2.AlgRSAPSS && sigScheme.Alg != tpm2.AlgRSASSA {
-			return nil, fmt.Errorf("unsupported signing algorithm: %v", sigScheme.Alg)
-		}
-	case tpm2.AlgECC:
-		sigScheme = k.pubArea.ECCParameters.Sign
-		if sigScheme.Alg != tpm2.AlgECDSA {
-			return nil, fmt.Errorf("unsupported signing algorithm: %v", sigScheme.Alg)
-		}
-	default:
-		return nil, fmt.Errorf("unsupported key type: %v", k.pubArea.Type)
-	}
-	hash, err := sigScheme.Hash.Hash()
+	// For crypto.Signer, Go does the hashing. Make sure the hash is supported.
+	hash, err := hashAlg.Hash()
 	if err != nil {
 		return nil, err
 	}
 	return &tpmSigner{k, hash}, nil
+}
+
+func getSigningHashAlg(k *Key) (tpm2.Algorithm, error) {
+	if !k.hasAttribute(tpm2.FlagSign) {
+		return tpm2.AlgNull, fmt.Errorf("non-signing key used with signing operation")
+	}
+
+	var sigScheme *tpm2.SigScheme
+	switch k.pubArea.Type {
+	case tpm2.AlgRSA:
+		sigScheme = k.pubArea.RSAParameters.Sign
+	case tpm2.AlgECC:
+		sigScheme = k.pubArea.ECCParameters.Sign
+	default:
+		return tpm2.AlgNull, fmt.Errorf("unsupported key type: %v", k.pubArea.Type)
+	}
+
+	if sigScheme == nil {
+		return tpm2.AlgNull, fmt.Errorf("unsupported null signing scheme")
+	}
+	switch sigScheme.Alg {
+	case tpm2.AlgRSAPSS, tpm2.AlgRSASSA, tpm2.AlgECDSA:
+		return sigScheme.Hash, nil
+	default:
+		return tpm2.AlgNull, fmt.Errorf("unsupported signing algorithm: %v", sigScheme.Alg)
+	}
 }

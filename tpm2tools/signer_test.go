@@ -242,3 +242,21 @@ func TestFailSignPSS(t *testing.T) {
 		})
 	}
 }
+
+// Signing keys without a signature scheme are incompatible with GetSigner
+func TestFailGetSignerNullScheme(t *testing.T) {
+	template := templateSSA(tpm2.AlgSHA256)
+	template.RSAParameters.Sign = nil
+
+	rwc := internal.GetTPM(t)
+	defer CheckedClose(t, rwc)
+	key, err := NewKey(rwc, tpm2.HandleEndorsement, template)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer key.Close()
+
+	if _, err = key.GetSigner(); err == nil {
+		t.Error("expected failure when calling GetSigner")
+	}
+}
