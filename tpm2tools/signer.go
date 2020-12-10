@@ -65,18 +65,7 @@ func (signer *tpmSigner) Sign(_ io.Reader, digest []byte, opts crypto.SignerOpts
 	if err != nil {
 		return nil, err
 	}
-
-	switch sig.Alg {
-	case tpm2.AlgRSASSA:
-		return sig.RSA.Signature, nil
-	case tpm2.AlgRSAPSS:
-		return sig.RSA.Signature, nil
-	case tpm2.AlgECDSA:
-		sigStruct := struct{ R, S *big.Int }{sig.ECC.R, sig.ECC.S}
-		return asn1.Marshal(sigStruct)
-	default:
-		panic("unsupported signing algorithm")
-	}
+	return getSignature(sig)
 }
 
 // GetSigner returns a crypto.Signer wrapping the loaded TPM Key.
@@ -98,6 +87,47 @@ func (k *Key) GetSigner() (crypto.Signer, error) {
 		return nil, err
 	}
 	return &tpmSigner{k, hash}, nil
+}
+
+// SignData signs a data buffer with a TPM loaded key. Unlike GetSigner, this
+// method works with restricted and unrestricted keys. If this method is called
+// on a restriced key, the TPM itself will hash the provided data, failing the
+// signing operation if the data begins with TPM_GENERATED_VALUE.
+func (k *Key) SignData(data []byte) ([]byte, error) {
+	hashAlg, err := getSigningHashAlg(k)
+	if err != nil {
+		return nil, err
+	}
+
+	var digest []byte
+	var ticket *tpm2.Ticket
+	if k.hasAttribute(tpm2.FlagRestricted) {
+		// Restricted keys can only sign data hashed by the TPM. We use the
+		// owner hierarchy for the Ticket, but any non-Null hierarchy would do.
+		digest, ticket, err = tpm2.Hash(k.rw, hashAlg, data, tpm2.HandleOwner)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		// Unrestricted keys can sign any digest, no need for TPM hashing.
+		hash, err := hashAlg.Hash()
+		if err != nil {
+			return nil, err
+		}
+		hasher := hash.New()
+		hasher.Write(data)
+		digest = hasher.Sum(nil)
+	}
+
+	auth, err := k.session.Auth()
+	if err != nil {
+		return nil, err
+	}
+	sig, err := tpm2.SignWithSession(k.rw, auth.Session, k.handle, "", digest, ticket, nil)
+	if err != nil {
+		return nil, err
+	}
+	return getSignature(sig)
 }
 
 func getSigningHashAlg(k *Key) (tpm2.Algorithm, error) {
@@ -123,5 +153,19 @@ func getSigningHashAlg(k *Key) (tpm2.Algorithm, error) {
 		return sigScheme.Hash, nil
 	default:
 		return tpm2.AlgNull, fmt.Errorf("unsupported signing algorithm: %v", sigScheme.Alg)
+	}
+}
+
+func getSignature(sig *tpm2.Signature) ([]byte, error) {
+	switch sig.Alg {
+	case tpm2.AlgRSASSA:
+		return sig.RSA.Signature, nil
+	case tpm2.AlgRSAPSS:
+		return sig.RSA.Signature, nil
+	case tpm2.AlgECDSA:
+		sigStruct := struct{ R, S *big.Int }{sig.ECC.R, sig.ECC.S}
+		return asn1.Marshal(sigStruct)
+	default:
+		return nil, fmt.Errorf("unsupported signing algorithm: %v", sig.Alg)
 	}
 }

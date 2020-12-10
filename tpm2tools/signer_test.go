@@ -84,7 +84,14 @@ func TestSign(t *testing.T) {
 		{"Auth-ECC", crypto.SHA256, templateAuthECC(), verifyECC},
 	}
 
+	message := []byte("authenticated message")
+	// Data beginning with TPM_GENERATED_VALUE (looks like a TPM-internal message)
+	generatedMsg := append([]byte("\xffTCG"), message...)
 	for _, test := range tests {
+		hash := test.hash.New()
+		hash.Write(message)
+		digest := hash.Sum(nil)
+
 		t.Run(test.name, func(t *testing.T) {
 			key, err := NewKey(rwc, tpm2.HandleEndorsement, test.template)
 			if err != nil {
@@ -92,21 +99,58 @@ func TestSign(t *testing.T) {
 			}
 			defer key.Close()
 
-			hash := test.hash.New()
-			hash.Write([]byte("authenticated message"))
-			digest := hash.Sum(nil)
-
 			signer, err := key.GetSigner()
 			if err != nil {
 				t.Fatal(err)
 			}
-
 			sig, err := signer.Sign(nil, digest, test.hash)
 			if err != nil {
 				t.Fatal(err)
 			}
 			if !test.verify(signer.Public(), test.hash, digest, sig) {
 				t.Error(err)
+			}
+		})
+		t.Run(test.name+"-SignData", func(t *testing.T) {
+			key, err := NewKey(rwc, tpm2.HandleEndorsement, test.template)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer key.Close()
+
+			sig, err := key.SignData(message)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !test.verify(key.PublicKey(), test.hash, digest, sig) {
+				t.Error(err)
+			}
+
+			// Unrestricted keys can sign data beginning with TPM_GENERATED_VALUE
+			if _, err = key.SignData(generatedMsg); err != nil {
+				t.Error(err)
+			}
+		})
+		t.Run(test.name+"-SignDataRestricted", func(t *testing.T) {
+			restrictedTemplate := test.template
+			restrictedTemplate.Attributes |= tpm2.FlagRestricted
+			key, err := NewKey(rwc, tpm2.HandleEndorsement, restrictedTemplate)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer key.Close()
+
+			sig, err := key.SignData(message)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !test.verify(key.PublicKey(), test.hash, digest, sig) {
+				t.Error(err)
+			}
+
+			// Restricted keys cannot sign data beginning with TPM_GENERATED_VALUE
+			if _, err = key.SignData(generatedMsg); err == nil {
+				t.Error("Signing TPM_GENERATED_VALUE data should fail")
 			}
 		})
 	}
