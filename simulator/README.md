@@ -3,7 +3,7 @@
 Microsoft maintains the reference implementation of the TPM2 spec at:
 https://github.com/Microsoft/ms-tpm-20-ref/.
 
-The Microsoft code used here is a actually
+The Microsoft code used here is actually
 [a fork of the upstream source](https://github.com/josephlr/ms-tpm-20-ref/tree/google).
 It is vendored at `simulator/ms-tpm-20-ref` to maintain compatiblity with
 `go get`. Building the simulator requires the OpenSSL headers to be installed.
