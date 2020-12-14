@@ -3,7 +3,7 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/google/go-tpm-tools/tpm2tools"
+	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm/tpm2"
 	"github.com/spf13/cobra"
 )
@@ -57,7 +57,7 @@ Which handles are flushed depends on the argument passed:
 
 		totalHandles := 0
 		for _, handleType := range handleNames[args[0]] {
-			handles, err := tpm2tools.Handles(rwc, handleType)
+			handles, err := client.Handles(rwc, handleType)
 			if err != nil {
 				return fmt.Errorf("getting handles: %w", err)
 			}

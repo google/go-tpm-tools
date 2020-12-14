@@ -1,4 +1,4 @@
-package tpm2tools
+package client
 
 import (
 	"io"

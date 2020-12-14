@@ -6,8 +6,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/google/go-tpm-tools/client"
 	tpmpb "github.com/google/go-tpm-tools/proto"
-	"github.com/google/go-tpm-tools/tpm2tools"
 	"github.com/google/go-tpm/tpm2"
 )
 
@@ -47,9 +47,9 @@ state (like Secure Boot).`,
 
 		sel := getSelection()
 		fmt.Fprintf(debugOutput(), "Sealing to PCRs: %v\n", sel.PCRs)
-		var sOpt tpm2tools.SealOpt
+		var sOpt client.SealOpt
 		if len(sel.PCRs) > 0 {
-			sOpt = tpm2tools.SealCurrent{PCRSelection: sel}
+			sOpt = client.SealCurrent{PCRSelection: sel}
 		}
 		sealed, err := srk.Seal(secret, sOpt)
 		if err != nil {
@@ -114,10 +114,10 @@ machine state when sealing took place.
 
 		fmt.Fprintln(debugOutput(), "Unsealing data")
 
-		certifySel := tpm2.PCRSelection{Hash: tpm2tools.CertifyHashAlgTpm, PCRs: pcrs}
-		var cOpt tpm2tools.CertifyOpt
+		certifySel := tpm2.PCRSelection{Hash: client.CertifyHashAlgTpm, PCRs: pcrs}
+		var cOpt client.CertifyOpt
 		if len(certifySel.PCRs) > 0 {
-			cOpt = tpm2tools.CertifyCurrent{PCRSelection: certifySel}
+			cOpt = client.CertifyCurrent{PCRSelection: certifySel}
 		}
 		secret, err := srk.Unseal(&sealed, cOpt)
 		if err != nil {

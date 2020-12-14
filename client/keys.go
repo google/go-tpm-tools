@@ -1,5 +1,5 @@
-// Package tpm2tools contains some high-level TPM 2.0 functions.
-package tpm2tools
+// Package client contains some high-level TPM 2.0 functions.
+package client
 
 import (
 	"bytes"

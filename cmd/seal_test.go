@@ -7,8 +7,8 @@ import (
 	"os"
 	"testing"
 
+	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal"
-	"github.com/google/go-tpm-tools/tpm2tools"
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpmutil"
 )
@@ -30,7 +30,7 @@ func makeTempFile(tb testing.TB, content []byte) string {
 
 func TestSealPlain(t *testing.T) {
 	rwc := internal.GetTPM(t)
-	defer tpm2tools.CheckedClose(t, rwc)
+	defer client.CheckedClose(t, rwc)
 	ExternalTPM = rwc
 
 	tests := []struct {
@@ -92,7 +92,7 @@ func TestSealPlain(t *testing.T) {
 
 func TestUnsealFail(t *testing.T) {
 	rwc := internal.GetTPM(t)
-	defer tpm2tools.CheckedClose(t, rwc)
+	defer client.CheckedClose(t, rwc)
 	ExternalTPM = rwc
 	extension := bytes.Repeat([]byte{0xAA}, sha256.Size)
 

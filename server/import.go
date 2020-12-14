@@ -16,13 +16,13 @@ import (
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpmutil"
 
+	"github.com/google/go-tpm-tools/client"
 	tpmpb "github.com/google/go-tpm-tools/proto"
-	"github.com/google/go-tpm-tools/tpm2tools"
 )
 
 // CreateImportBlob uses the provided public EK to encrypt the sensitive data.
 // The returned ImportBlob can then be decrypted and imported using the
-// tpm2tools Key.Import() method. A non-nil pcrs parameter adds a requirement
+// client Key.Import() method. A non-nil pcrs parameter adds a requirement
 // that the TPM must have specific PCR values for Import() to succeed.
 func CreateImportBlob(ekPub crypto.PublicKey, sensitive []byte, pcrs *tpmpb.Pcrs) (*tpmpb.ImportBlob, error) {
 	ek, err := CreateEKPublicAreaFromKey(ekPub)
@@ -38,7 +38,7 @@ func CreateImportBlob(ekPub crypto.PublicKey, sensitive []byte, pcrs *tpmpb.Pcrs
 // CreateSigningKeyImportBlob uses the provided public EK to encrypt the signing
 // key into import blob format. The returned import blob can be used to import
 // the signing key into the TPM associated with the provided EK without exposing
-// the private area to the TPM's OS using the tpm2tools Key.ImportSigningKey()
+// the private area to the TPM's OS using the client Key.ImportSigningKey()
 // method. A non-nil pcrs parameter adds a requirement that the TPM must have
 // specific PCR values to use the signing key.
 func CreateSigningKeyImportBlob(ekPub crypto.PublicKey, signingKey crypto.PrivateKey, pcrs *tpmpb.Pcrs) (*tpmpb.ImportBlob, error) {
@@ -96,7 +96,7 @@ func setPublicAuth(public *tpm2.Public, pcrs *tpmpb.Pcrs) {
 		public.AuthPolicy = nil
 		public.Attributes |= tpm2.FlagUserWithAuth
 	} else {
-		public.AuthPolicy = tpm2tools.ComputePCRSessionAuth(pcrs)
+		public.AuthPolicy = client.ComputePCRSessionAuth(pcrs)
 		public.Attributes |= tpm2.FlagAdminWithPolicy
 	}
 }
