@@ -8,13 +8,13 @@ import (
 	"crypto/rsa"
 	"testing"
 
+	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal"
-	"github.com/google/go-tpm-tools/tpm2tools"
 	"github.com/google/go-tpm/tpm2"
 )
 
 func getECCTemplate(curve tpm2.EllipticCurve) tpm2.Public {
-	public := tpm2tools.DefaultEKTemplateECC()
+	public := client.DefaultEKTemplateECC()
 	public.ECCParameters.CurveID = curve
 	public.ECCParameters.Point.XRaw = nil
 	public.ECCParameters.Point.YRaw = nil
@@ -27,11 +27,11 @@ func TestCreateEKPublicAreaFromKeyGeneratedKey(t *testing.T) {
 		template    tpm2.Public
 		generateKey func() (crypto.PublicKey, error)
 	}{
-		{"RSA", tpm2tools.DefaultEKTemplateRSA(), func() (crypto.PublicKey, error) {
+		{"RSA", client.DefaultEKTemplateRSA(), func() (crypto.PublicKey, error) {
 			priv, err := rsa.GenerateKey(rand.Reader, 2048)
 			return priv.Public(), err
 		}},
-		{"ECC", tpm2tools.DefaultEKTemplateECC(), func() (crypto.PublicKey, error) {
+		{"ECC", client.DefaultEKTemplateECC(), func() (crypto.PublicKey, error) {
 			priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 			return priv.Public(), err
 		}},
@@ -71,14 +71,14 @@ func TestCreateEKPublicAreaFromKeyGeneratedKey(t *testing.T) {
 
 func TestCreateEKPublicAreaFromKeyTPMKey(t *testing.T) {
 	rwc := internal.GetTPM(t)
-	defer tpm2tools.CheckedClose(t, rwc)
+	defer client.CheckedClose(t, rwc)
 
 	tests := []struct {
 		name     string
 		template tpm2.Public
 	}{
-		{"RSA", tpm2tools.DefaultEKTemplateRSA()},
-		{"ECC", tpm2tools.DefaultEKTemplateECC()},
+		{"RSA", client.DefaultEKTemplateRSA()},
+		{"ECC", client.DefaultEKTemplateECC()},
 		{"ECC-P224", getECCTemplate(tpm2.CurveNISTP224)},
 		{"ECC-P256", getECCTemplate(tpm2.CurveNISTP256)},
 		{"ECC-P384", getECCTemplate(tpm2.CurveNISTP384)},
@@ -86,7 +86,7 @@ func TestCreateEKPublicAreaFromKeyTPMKey(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			ek, err := tpm2tools.NewKey(rwc, tpm2.HandleEndorsement, test.template)
+			ek, err := client.NewKey(rwc, tpm2.HandleEndorsement, test.template)
 			if err != nil {
 				t.Fatal(err)
 			}

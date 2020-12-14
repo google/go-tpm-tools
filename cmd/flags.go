@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/google/go-tpm-tools/tpm2tools"
+	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm/tpm2"
 	"github.com/spf13/cobra"
 )
@@ -31,7 +31,7 @@ func (f *pcrsFlag) Set(val string) error {
 		if err != nil {
 			return err
 		}
-		if pcr < 0 || pcr >= tpm2tools.NumPCRs {
+		if pcr < 0 || pcr >= client.NumPCRs {
 			return errors.New("pcr out of range")
 		}
 		*f.value = append(*f.value, pcr)
@@ -179,24 +179,24 @@ func getSelection() tpm2.PCRSelection {
 }
 
 // Load SRK based on tpm2.Algorithm set in the global flag vars.
-func getSRK(rwc io.ReadWriter) (*tpm2tools.Key, error) {
+func getSRK(rwc io.ReadWriter) (*client.Key, error) {
 	switch keyAlgo {
 	case tpm2.AlgRSA:
-		return tpm2tools.StorageRootKeyRSA(rwc)
+		return client.StorageRootKeyRSA(rwc)
 	case tpm2.AlgECC:
-		return tpm2tools.StorageRootKeyECC(rwc)
+		return client.StorageRootKeyECC(rwc)
 	default:
 		panic("unexpected keyAlgo")
 	}
 }
 
 // Load EK based on tpm2.Algorithm set in the global flag vars.
-func getEK(rwc io.ReadWriter) (*tpm2tools.Key, error) {
+func getEK(rwc io.ReadWriter) (*client.Key, error) {
 	switch keyAlgo {
 	case tpm2.AlgRSA:
-		return tpm2tools.EndorsementKeyRSA(rwc)
+		return client.EndorsementKeyRSA(rwc)
 	case tpm2.AlgECC:
-		return tpm2tools.EndorsementKeyECC(rwc)
+		return client.EndorsementKeyECC(rwc)
 	default:
 		panic("unexpected keyAlgo")
 	}

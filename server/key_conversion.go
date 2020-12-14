@@ -8,11 +8,11 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/google/go-tpm-tools/tpm2tools"
+	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm/tpm2"
 )
 
-var defaultNameAlg = tpm2tools.DefaultEKTemplateRSA().NameAlg
+var defaultNameAlg = client.DefaultEKTemplateRSA().NameAlg
 
 // CreateEKPublicAreaFromKey creates a public area from a go interface PublicKey.
 // Supports RSA and ECC keys.
@@ -28,7 +28,7 @@ func CreateEKPublicAreaFromKey(k crypto.PublicKey) (tpm2.Public, error) {
 }
 
 func createEKPublicRSA(rsaKey *rsa.PublicKey) (tpm2.Public, error) {
-	public := tpm2tools.DefaultEKTemplateRSA()
+	public := client.DefaultEKTemplateRSA()
 	if rsaKey.N.BitLen() != int(public.RSAParameters.KeyBits) {
 		return tpm2.Public{}, fmt.Errorf("unexpected RSA modulus size: %d bits", rsaKey.N.BitLen())
 	}
@@ -40,7 +40,7 @@ func createEKPublicRSA(rsaKey *rsa.PublicKey) (tpm2.Public, error) {
 }
 
 func createEKPublicECC(eccKey *ecdsa.PublicKey) (public tpm2.Public, err error) {
-	public = tpm2tools.DefaultEKTemplateECC()
+	public = client.DefaultEKTemplateECC()
 	public.ECCParameters.Point = tpm2.ECPoint{
 		XRaw: eccIntToBytes(eccKey.Curve, eccKey.X),
 		YRaw: eccIntToBytes(eccKey.Curve, eccKey.Y),

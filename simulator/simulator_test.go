@@ -22,7 +22,7 @@ import (
 	"math/big"
 	"testing"
 
-	"github.com/google/go-tpm-tools/tpm2tools"
+	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm/tpm2"
 )
 
@@ -37,7 +37,7 @@ func getSimulator(t *testing.T) *Simulator {
 
 func getEKModulus(t *testing.T, rwc io.ReadWriteCloser) *big.Int {
 	t.Helper()
-	ek, err := tpm2tools.EndorsementKeyRSA(rwc)
+	ek, err := client.EndorsementKeyRSA(rwc)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +48,7 @@ func getEKModulus(t *testing.T, rwc io.ReadWriteCloser) *big.Int {
 
 func TestResetDoesntChangeEK(t *testing.T) {
 	s := getSimulator(t)
-	defer tpm2tools.CheckedClose(t, s)
+	defer client.CheckedClose(t, s)
 
 	modulus1 := getEKModulus(t, s)
 	if err := s.Reset(); err != nil {
@@ -62,7 +62,7 @@ func TestResetDoesntChangeEK(t *testing.T) {
 }
 func TestManufactureResetChangesEK(t *testing.T) {
 	s := getSimulator(t)
-	defer tpm2tools.CheckedClose(t, s)
+	defer client.CheckedClose(t, s)
 
 	modulus1 := getEKModulus(t, s)
 	if err := s.ManufactureReset(); err != nil {
@@ -77,7 +77,7 @@ func TestManufactureResetChangesEK(t *testing.T) {
 
 func TestGetRandom(t *testing.T) {
 	s := getSimulator(t)
-	defer tpm2tools.CheckedClose(t, s)
+	defer client.CheckedClose(t, s)
 	result, err := tpm2.GetRandom(s, 10)
 	if err != nil {
 		t.Fatalf("GetRandom: %v", err)
@@ -97,7 +97,7 @@ func TestFixedSeedExpectedModulus(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer tpm2tools.CheckedClose(t, s)
+	defer client.CheckedClose(t, s)
 
 	modulus := getEKModulus(t, s)
 	if modulus.Cmp(zeroSeedModulus()) != 0 {
@@ -110,7 +110,7 @@ func TestDifferentSeedDifferentModulus(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer tpm2tools.CheckedClose(t, s)
+	defer client.CheckedClose(t, s)
 
 	modulus := getEKModulus(t, s)
 	if modulus.Cmp(zeroSeedModulus()) == 0 {
