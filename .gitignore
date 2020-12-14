@@ -8,3 +8,5 @@ files/src
 files/go-tpm-tools
 *.pkg.tar.xz
 .vscode*
+*.code-workspace
+
