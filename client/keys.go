@@ -17,12 +17,13 @@ import (
 // an encryption key. Users of Key should be sure to call Close() when the Key
 // is no longer needed, so that the underlying TPM handle can be freed.
 type Key struct {
-	rw      io.ReadWriter
-	handle  tpmutil.Handle
-	pubArea tpm2.Public
-	pubKey  crypto.PublicKey
-	name    tpm2.Name
-	session session
+	rw       io.ReadWriter
+	handle   tpmutil.Handle
+	privBlob []byte
+	pubArea  tpm2.Public
+	pubKey   crypto.PublicKey
+	name     tpm2.Name
+	session  session
 }
 
 // EndorsementKeyRSA generates and loads a key from DefaultEKTemplateRSA.
@@ -45,14 +46,24 @@ func StorageRootKeyECC(rw io.ReadWriter) (*Key, error) {
 	return NewCachedKey(rw, tpm2.HandleOwner, SRKTemplateECC(), SRKECCReservedHandle)
 }
 
-// AttestationKeyRSA generates and loads a key from AKTemplateRSA
-func AttestationKeyRSA(rw io.ReadWriter) (*Key, error) {
-	return NewCachedKey(rw, tpm2.HandleOwner, AKTemplateRSA(), DefaultAKRSAHandle)
+// AttestationKeyRSAPrimary generates and loads a primary key from AKTemplateRSA.
+func AttestationKeyRSAPrimary(rw io.ReadWriter) (*Key, error) {
+	return NewCachedKey(rw, tpm2.HandleOwner, AKTemplateRSA(), DefaultAKRSAPrimaryHandle)
 }
 
-// AttestationKeyECC generates and loads a key from AKTemplateECC
-func AttestationKeyECC(rw io.ReadWriter) (*Key, error) {
-	return NewCachedKey(rw, tpm2.HandleOwner, AKTemplateECC(), DefaultAKECCHandle)
+// AttestationKeyECCPrimary generates and loads a primary key from AKTemplateECC.
+func AttestationKeyECCPrimary(rw io.ReadWriter) (*Key, error) {
+	return NewCachedKey(rw, tpm2.HandleOwner, AKTemplateECC(), DefaultAKECCPrimaryHandle)
+}
+
+// AttestationKeyRSAChild creates an attestation key under the SRK from the AKTemplateRSA.
+func AttestationKeyRSAChild(rw io.ReadWriter) (*Key, error) {
+	return NewCachedKey(rw, SRKReservedHandle, AKTemplateRSA(), DefaultAKRSAChildHandle)
+}
+
+// AttestationKeyECCChild creates an attestation key under the SRK from the AKTemplateECC.
+func AttestationKeyECCChild(rw io.ReadWriter) (*Key, error) {
+	return NewCachedKey(rw, SRKECCReservedHandle, AKTemplateECC(), DefaultAKECCChildHandle)
 }
 
 // EndorsementKeyFromNvIndex generates and loads an endorsement key using the
@@ -119,29 +130,44 @@ func NewCachedKey(rw io.ReadWriter, parent tpmutil.Handle, template tpm2.Public,
 //   - If parent is tpm2.Handle{Owner|Endorsement|Platform|Null} a primary key
 //     is created in the specified hierarchy (using CreatePrimary).
 //   - If parent is a valid key handle, a normal key object is created under
-//     that parent (using Create and Load). NOTE: Not yet supported.
+//     that parent (using Create and Load).
+// Key's privBlob is non-nil iff NewKey is creating a child key.
 // This function also assumes that the desired key:
 //   - Does not have its usage locked to specific PCR values
 //   - Usable with empty authorization sessions (i.e. doesn't need a password)
 func NewKey(rw io.ReadWriter, parent tpmutil.Handle, template tpm2.Public) (k *Key, err error) {
-	if !isHierarchy(parent) {
-		// TODO add support for normal objects with Create() and Load()
-		return nil, fmt.Errorf("unsupported parent handle: %x", parent)
+	// Create a primary key if the parent is a handle to a TPM hierarchy.
+	var (
+		handle tpmutil.Handle
+		priv   []byte
+		pub    []byte
+	)
+	if isHierarchy(parent) {
+		handle, pub, _, _, _, _, err =
+			tpm2.CreatePrimaryEx(rw, parent, tpm2.PCRSelection{}, "", "", template)
+		if err != nil {
+			return nil, fmt.Errorf("CreatePrimaryEx failed: %v", err)
+		}
+	} else {
+		priv, pub, _, _, _, err = tpm2.CreateKey(rw, parent, tpm2.PCRSelection{}, "", "", template)
+		if err != nil {
+			return nil, fmt.Errorf("CreateKey failed: %v", err)
+		}
+
+		handle, _, err = tpm2.Load(rw, parent, "", pub, priv)
+		if err != nil {
+			return nil, fmt.Errorf("Load failed for created key: %v", err)
+		}
 	}
 
-	handle, pubArea, _, _, _, _, err :=
-		tpm2.CreatePrimaryEx(rw, parent, tpm2.PCRSelection{}, "", "", template)
-	if err != nil {
-		return nil, err
-	}
 	defer func() {
 		if err != nil {
 			tpm2.FlushContext(rw, handle)
 		}
 	}()
 
-	k = &Key{rw: rw, handle: handle}
-	if k.pubArea, err = tpm2.DecodePublic(pubArea); err != nil {
+	k = &Key{rw: rw, handle: handle, privBlob: priv}
+	if k.pubArea, err = tpm2.DecodePublic(pub); err != nil {
 		return
 	}
 	return k, k.finish()
@@ -170,6 +196,18 @@ func (k *Key) finish() error {
 	return nil
 }
 
+// LoadKey attempts to load a wrapped private/public blob into a TPM object.
+func LoadKey(rw io.ReadWriter, parent tpmutil.Handle, privBlob []byte, pubBlob []byte) (k *Key, err error) {
+	var pubArea tpm2.Public
+	if pubArea, err = tpm2.DecodePublic(pubBlob); err != nil {
+		return nil, err
+	}
+	handle, _, err := tpm2.Load(rw, parent, "", pubBlob, privBlob)
+
+	k = &Key{rw: rw, handle: handle, privBlob: privBlob, pubArea: pubArea}
+	return k, k.finish()
+}
+
 // Handle allows this key to be used directly with other go-tpm commands.
 func (k *Key) Handle() tpmutil.Handle {
 	return k.handle
@@ -181,9 +219,19 @@ func (k *Key) Name() tpm2.Name {
 	return k.name
 }
 
-// PublicKey provides a go interface to the loaded key's public area.
+// PublicKey provides a go interface to the loaded key's public component.
 func (k *Key) PublicKey() crypto.PublicKey {
 	return k.pubKey
+}
+
+// PrivateBlob provides the loaded key's wrapped, private blob.
+func (k *Key) PrivateBlob() []byte {
+	return k.privBlob
+}
+
+// PublicArea provides the loaded key's public area.
+func (k *Key) PublicArea() tpm2.Public {
+	return k.pubArea
 }
 
 // Close should be called when the key is no longer needed. This is important to
@@ -309,7 +357,7 @@ func (k *Key) Unseal(in *tpmpb.SealedBytes, cOpt CertifyOpt) ([]byte, error) {
 		// We can detect this bug, as it triggers a RCInsufficient
 		// Unmarshalling error.
 		if paramErr, ok := certErr.(tpm2.ParameterError); ok && paramErr.Code == tpm2.RCInsufficient {
-			signer, err := AttestationKeyECC(k.rw)
+			signer, err := AttestationKeyECCPrimary(k.rw)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create fallback signing key: %w", err)
 			}
@@ -368,4 +416,20 @@ func (k *Key) Reseal(in *tpmpb.SealedBytes, cOpt CertifyOpt, sOpt SealOpt) (*tpm
 
 func (k *Key) hasAttribute(attr tpm2.KeyProp) bool {
 	return k.pubArea.Attributes&attr != 0
+}
+
+// ActivateCredential proves that a key is generated on the same TPM as the EK.
+// This key must be a key created on the owner hierarchy.
+// ActivateCredential takes an EKpub-encrypted, server-generated secret and decrypts it
+// using the EKpriv.
+func (k *Key) ActivateCredential(rw io.ReadWriter, ekKey *Key, credentialBlob []byte, encryptedSecret []byte) (certInfo []byte, err error) {
+	ekSessionAuth, err := ekKey.session.Auth()
+	if err != nil {
+		return nil, fmt.Errorf("getting EK auth: %v", err)
+	}
+
+	return tpm2.ActivateCredentialUsingAuth(rw, []tpm2.AuthCommand{
+		{Session: tpm2.HandlePasswordSession, Attributes: tpm2.AttrContinueSession},
+		ekSessionAuth,
+	}, k.handle, ekKey.handle, credentialBlob[2:], encryptedSecret[2:])
 }

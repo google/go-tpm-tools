@@ -108,10 +108,10 @@ func TestKeyCreation(t *testing.T) {
 	}{
 		{"SRK-ECC", StorageRootKeyECC},
 		{"EK-ECC", EndorsementKeyECC},
-		{"AK-ECC", AttestationKeyECC},
+		{"AK-ECC", AttestationKeyECCPrimary},
 		{"SRK-RSA", StorageRootKeyRSA},
 		{"EK-RSA", EndorsementKeyRSA},
-		{"AK-RSA", AttestationKeyRSA},
+		{"AK-RSA", AttestationKeyRSAPrimary},
 	}
 
 	for _, test := range tests {
@@ -135,7 +135,7 @@ func BenchmarkKeyCreation(b *testing.B) {
 	}{
 		{"SRK-ECC-Cached", StorageRootKeyECC},
 		{"EK-ECC-Cached", EndorsementKeyECC},
-		{"AK-ECC-Cached", AttestationKeyECC},
+		{"AK-ECC-Cached", AttestationKeyECCPrimary},
 
 		{"SRK-ECC", func(rw io.ReadWriter) (*Key, error) {
 			return NewKey(rw, tpm2.HandleOwner, SRKTemplateECC())
@@ -149,7 +149,7 @@ func BenchmarkKeyCreation(b *testing.B) {
 
 		{"SRK-RSA-Cached", StorageRootKeyRSA},
 		{"EK-RSA-Cached", EndorsementKeyRSA},
-		{"AK-RSA-Cached", AttestationKeyRSA},
+		{"AK-RSA-Cached", AttestationKeyRSAPrimary},
 
 		{"SRK-RSA", func(rw io.ReadWriter) (*Key, error) {
 			return NewKey(rw, tpm2.HandleEndorsement, SRKTemplateRSA())
