@@ -45,19 +45,19 @@ func StorageRootKeyECC(rw io.ReadWriter) (*Key, error) {
 	return NewCachedKey(rw, tpm2.HandleOwner, SRKTemplateECC(), SRKECCReservedHandle)
 }
 
-// AttestationIdentityKeyRSA generates and loads a key from AIKTemplateRSA
-func AttestationIdentityKeyRSA(rw io.ReadWriter) (*Key, error) {
-	return NewCachedKey(rw, tpm2.HandleOwner, AIKTemplateRSA(), DefaultAIKRSAHandle)
+// AttestationKeyRSA generates and loads a key from AKTemplateRSA
+func AttestationKeyRSA(rw io.ReadWriter) (*Key, error) {
+	return NewCachedKey(rw, tpm2.HandleOwner, AKTemplateRSA(), DefaultAKRSAHandle)
 }
 
-// AttestationIdentityKeyECC generates and loads a key from AIKTemplateECC
-func AttestationIdentityKeyECC(rw io.ReadWriter) (*Key, error) {
-	return NewCachedKey(rw, tpm2.HandleOwner, AIKTemplateECC(), DefaultAIKECCHandle)
+// AttestationKeyECC generates and loads a key from AKTemplateECC
+func AttestationKeyECC(rw io.ReadWriter) (*Key, error) {
+	return NewCachedKey(rw, tpm2.HandleOwner, AKTemplateECC(), DefaultAKECCHandle)
 }
 
 // EndorsementKeyFromNvIndex generates and loads an endorsement key using the
 // template stored at the provided nvdata index. This is useful for TPMs which
-// have a preinstalled AIK template.
+// have a preinstalled AK template.
 func EndorsementKeyFromNvIndex(rw io.ReadWriter, idx uint32) (*Key, error) {
 	return KeyFromNvIndex(rw, tpm2.HandleEndorsement, idx)
 }
@@ -309,7 +309,7 @@ func (k *Key) Unseal(in *tpmpb.SealedBytes, cOpt CertifyOpt) ([]byte, error) {
 		// We can detect this bug, as it triggers a RCInsufficient
 		// Unmarshalling error.
 		if paramErr, ok := certErr.(tpm2.ParameterError); ok && paramErr.Code == tpm2.RCInsufficient {
-			signer, err := AttestationIdentityKeyECC(k.rw)
+			signer, err := AttestationKeyECC(k.rw)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create fallback signing key: %w", err)
 			}

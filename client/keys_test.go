@@ -32,7 +32,7 @@ func TestNameMatchesPublicArea(t *testing.T) {
 func TestCreateSigningKeysInHierarchies(t *testing.T) {
 	rwc := internal.GetTPM(t)
 	defer CheckedClose(t, rwc)
-	template := AIKTemplateRSA()
+	template := AKTemplateRSA()
 
 	// We are not authorized to create keys in the Platform Hierarchy
 	for _, hierarchy := range []tpmutil.Handle{tpm2.HandleOwner, tpm2.HandleEndorsement, tpm2.HandleNull} {
@@ -108,10 +108,10 @@ func TestKeyCreation(t *testing.T) {
 	}{
 		{"SRK-ECC", StorageRootKeyECC},
 		{"EK-ECC", EndorsementKeyECC},
-		{"AIK-ECC", AttestationIdentityKeyECC},
+		{"AK-ECC", AttestationKeyECC},
 		{"SRK-RSA", StorageRootKeyRSA},
 		{"EK-RSA", EndorsementKeyRSA},
-		{"AIK-RSA", AttestationIdentityKeyRSA},
+		{"AK-RSA", AttestationKeyRSA},
 	}
 
 	for _, test := range tests {
@@ -135,7 +135,7 @@ func BenchmarkKeyCreation(b *testing.B) {
 	}{
 		{"SRK-ECC-Cached", StorageRootKeyECC},
 		{"EK-ECC-Cached", EndorsementKeyECC},
-		{"AIK-ECC-Cached", AttestationIdentityKeyECC},
+		{"AK-ECC-Cached", AttestationKeyECC},
 
 		{"SRK-ECC", func(rw io.ReadWriter) (*Key, error) {
 			return NewKey(rw, tpm2.HandleOwner, SRKTemplateECC())
@@ -143,13 +143,13 @@ func BenchmarkKeyCreation(b *testing.B) {
 		{"EK-ECC", func(rw io.ReadWriter) (*Key, error) {
 			return NewKey(rw, tpm2.HandleEndorsement, DefaultEKTemplateECC())
 		}},
-		{"AIK-ECC", func(rw io.ReadWriter) (*Key, error) {
-			return NewKey(rw, tpm2.HandleOwner, AIKTemplateECC())
+		{"AK-ECC", func(rw io.ReadWriter) (*Key, error) {
+			return NewKey(rw, tpm2.HandleOwner, AKTemplateECC())
 		}},
 
 		{"SRK-RSA-Cached", StorageRootKeyRSA},
 		{"EK-RSA-Cached", EndorsementKeyRSA},
-		{"AIK-RSA-Cached", AttestationIdentityKeyRSA},
+		{"AK-RSA-Cached", AttestationKeyRSA},
 
 		{"SRK-RSA", func(rw io.ReadWriter) (*Key, error) {
 			return NewKey(rw, tpm2.HandleEndorsement, SRKTemplateRSA())
@@ -157,8 +157,8 @@ func BenchmarkKeyCreation(b *testing.B) {
 		{"EK-RSA", func(rw io.ReadWriter) (*Key, error) {
 			return NewKey(rw, tpm2.HandleOwner, DefaultEKTemplateRSA())
 		}},
-		{"AIK-RSA", func(rw io.ReadWriter) (*Key, error) {
-			return NewKey(rw, tpm2.HandleOwner, AIKTemplateRSA())
+		{"AK-RSA", func(rw io.ReadWriter) (*Key, error) {
+			return NewKey(rw, tpm2.HandleOwner, AKTemplateRSA())
 		}},
 	}
 

@@ -20,8 +20,8 @@ const (
 // Picked available handles from TPM 2.0 Handles and Localities 2.3.1 - Table 11
 // go-tpm-tools will use handles in the range from 0x81008F00 to 0x81008FFF
 const (
-	DefaultAIKECCHandle = tpmutil.Handle(0x81008F00)
-	DefaultAIKRSAHandle = tpmutil.Handle(0x81008F01)
+	DefaultAKECCHandle = tpmutil.Handle(0x81008F00)
+	DefaultAKRSAHandle = tpmutil.Handle(0x81008F01)
 )
 
 func isHierarchy(h tpmutil.Handle) bool {
