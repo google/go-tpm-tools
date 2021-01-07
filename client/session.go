@@ -1,4 +1,4 @@
-package tpm2tools
+package client
 
 import (
 	"io"
@@ -12,7 +12,7 @@ type session interface {
 	Auth() (tpm2.AuthCommand, error)
 }
 
-func startAuthSesssion(rw io.ReadWriter) (session tpmutil.Handle, err error) {
+func startAuthSession(rw io.ReadWriter) (session tpmutil.Handle, err error) {
 	// This session assumes the bus is trusted, so we:
 	// - use nil for tpmkey, encrypted salt, and symmetric
 	// - use and all-zeros caller nonce, and ignore the returned nonce
@@ -41,7 +41,7 @@ func newPCRSession(rw io.ReadWriter, sel tpm2.PCRSelection) (session, error) {
 	if len(sel.PCRs) == 0 {
 		return nullSession{}, nil
 	}
-	session, err := startAuthSesssion(rw)
+	session, err := startAuthSession(rw)
 	return pcrSession{rw, session, sel}, err
 }
 
@@ -62,7 +62,7 @@ type ekSession struct {
 }
 
 func newEKSession(rw io.ReadWriter) (session, error) {
-	session, err := startAuthSesssion(rw)
+	session, err := startAuthSession(rw)
 	return ekSession{rw, session}, err
 }
 

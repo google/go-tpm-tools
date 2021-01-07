@@ -8,23 +8,23 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal"
 	tpmpb "github.com/google/go-tpm-tools/proto"
-	"github.com/google/go-tpm-tools/tpm2tools"
 	"github.com/google/go-tpm/tpm2"
 )
 
 func TestImport(t *testing.T) {
 	rwc := internal.GetTPM(t)
-	defer tpm2tools.CheckedClose(t, rwc)
+	defer client.CheckedClose(t, rwc)
 	tests := []struct {
 		name     string
 		template tpm2.Public
 	}{
-		{"RSA", tpm2tools.DefaultEKTemplateRSA()},
-		{"ECC", tpm2tools.DefaultEKTemplateECC()},
-		{"SRK-RSA", tpm2tools.SRKTemplateRSA()},
-		{"SRK-ECC", tpm2tools.SRKTemplateECC()},
+		{"RSA", client.DefaultEKTemplateRSA()},
+		{"ECC", client.DefaultEKTemplateECC()},
+		{"SRK-RSA", client.SRKTemplateRSA()},
+		{"SRK-ECC", client.SRKTemplateECC()},
 		{"ECC-P224", getECCTemplate(tpm2.CurveNISTP224)},
 		{"ECC-P256", getECCTemplate(tpm2.CurveNISTP256)},
 		{"ECC-P384", getECCTemplate(tpm2.CurveNISTP384)},
@@ -32,7 +32,7 @@ func TestImport(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			ek, err := tpm2tools.NewKey(rwc, tpm2.HandleEndorsement, test.template)
+			ek, err := client.NewKey(rwc, tpm2.HandleEndorsement, test.template)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -57,7 +57,7 @@ func TestImport(t *testing.T) {
 
 func TestBadImport(t *testing.T) {
 	rwc := internal.GetTPM(t)
-	defer tpm2tools.CheckedClose(t, rwc)
+	defer client.CheckedClose(t, rwc)
 
 	valueErr := tpm2.ParameterError{
 		Code:      tpm2.RCValue,
@@ -78,15 +78,15 @@ func TestBadImport(t *testing.T) {
 		wrongKeyErr  tpm2.ParameterError
 		corruptedErr tpm2.ParameterError
 	}{
-		{"RSA", tpm2tools.DefaultEKTemplateRSA(), valueErr, valueErr},
-		{"ECC", tpm2tools.DefaultEKTemplateECC(), integrityErr, pointErr},
-		{"SRK-RSA", tpm2tools.SRKTemplateRSA(), valueErr, valueErr},
-		{"SRK-ECC", tpm2tools.SRKTemplateECC(), integrityErr, pointErr},
+		{"RSA", client.DefaultEKTemplateRSA(), valueErr, valueErr},
+		{"ECC", client.DefaultEKTemplateECC(), integrityErr, pointErr},
+		{"SRK-RSA", client.SRKTemplateRSA(), valueErr, valueErr},
+		{"SRK-ECC", client.SRKTemplateECC(), integrityErr, pointErr},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			ek, err := tpm2tools.NewKey(rwc, tpm2.HandleEndorsement, test.template)
+			ek, err := client.NewKey(rwc, tpm2.HandleEndorsement, test.template)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -96,7 +96,7 @@ func TestBadImport(t *testing.T) {
 			// Create a second, different key
 			template2 := test.template
 			template2.Attributes ^= tpm2.FlagNoDA
-			ek2, err := tpm2tools.NewKey(rwc, tpm2.HandleEndorsement, template2)
+			ek2, err := client.NewKey(rwc, tpm2.HandleEndorsement, template2)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -124,9 +124,9 @@ func TestBadImport(t *testing.T) {
 
 func TestImportPCRs(t *testing.T) {
 	rwc := internal.GetTPM(t)
-	defer tpm2tools.CheckedClose(t, rwc)
+	defer client.CheckedClose(t, rwc)
 
-	ek, err := tpm2tools.EndorsementKeyRSA(rwc)
+	ek, err := client.EndorsementKeyRSA(rwc)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,9 +172,9 @@ func TestImportPCRs(t *testing.T) {
 
 func TestSigningKeyImport(t *testing.T) {
 	rwc := internal.GetTPM(t)
-	defer tpm2tools.CheckedClose(t, rwc)
+	defer client.CheckedClose(t, rwc)
 
-	ek, err := tpm2tools.EndorsementKeyRSA(rwc)
+	ek, err := client.EndorsementKeyRSA(rwc)
 	if err != nil {
 		t.Fatal(err)
 	}

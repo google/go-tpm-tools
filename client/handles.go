@@ -1,4 +1,4 @@
-package tpm2tools
+package client
 
 import (
 	"fmt"
@@ -19,9 +19,15 @@ const (
 
 // Picked available handles from TPM 2.0 Handles and Localities 2.3.1 - Table 11
 // go-tpm-tools will use handles in the range from 0x81008F00 to 0x81008FFF
+// DefaultAKECCPrimaryHandle and DefaultAKRSAPrimaryHandle are handles to the
+// go-tpm-tools default primary AK ECC and RSA, respectively.
+// DefaultAKECCChildHandle and DefaultAKRSAChildHandle are handles to the
+// go-tpm-tools default SRK child AK ECC and RSA, respectively.
 const (
-	DefaultAIKECCHandle = tpmutil.Handle(0x81008F00)
-	DefaultAIKRSAHandle = tpmutil.Handle(0x81008F01)
+	DefaultAKECCPrimaryHandle = tpmutil.Handle(0x81008F00)
+	DefaultAKRSAPrimaryHandle = tpmutil.Handle(0x81008F01)
+	DefaultAKECCChildHandle   = tpmutil.Handle(0x81008F02)
+	DefaultAKRSAChildHandle   = tpmutil.Handle(0x81008F03)
 )
 
 func isHierarchy(h tpmutil.Handle) bool {

@@ -1,4 +1,4 @@
-package tpm2tools
+package client
 
 import (
 	"crypto"
@@ -15,7 +15,7 @@ import (
 )
 
 func templateSSA(hash tpm2.Algorithm) tpm2.Public {
-	template := AIKTemplateRSA()
+	template := AKTemplateRSA()
 	// Can't sign arbitrary data if restricted.
 	template.Attributes &= ^tpm2.FlagRestricted
 	template.RSAParameters.Sign.Hash = hash
@@ -29,7 +29,7 @@ func templatePSS(hash tpm2.Algorithm) tpm2.Public {
 }
 
 func templateECC(hash tpm2.Algorithm) tpm2.Public {
-	template := AIKTemplateECC()
+	template := AKTemplateECC()
 	template.Attributes &= ^tpm2.FlagRestricted
 	template.ECCParameters.Sign.Hash = hash
 	return template

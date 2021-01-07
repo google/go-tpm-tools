@@ -3,14 +3,14 @@ package cmd
 import (
 	"testing"
 
+	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal"
-	"github.com/google/go-tpm-tools/tpm2tools"
 	"github.com/google/go-tpm/tpm2"
 )
 
 func TestFlushNothing(t *testing.T) {
 	rwc := internal.GetTPM(t)
-	defer tpm2tools.CheckedClose(t, rwc)
+	defer client.CheckedClose(t, rwc)
 	ExternalTPM = rwc
 
 	RootCmd.SetArgs([]string{"flush", "all", "--quiet"})
@@ -21,7 +21,7 @@ func TestFlushNothing(t *testing.T) {
 
 func TestFlush(t *testing.T) {
 	rwc := internal.GetTPM(t)
-	defer tpm2tools.CheckedClose(t, rwc)
+	defer client.CheckedClose(t, rwc)
 	ExternalTPM = rwc
 
 	RootCmd.SetArgs([]string{"flush", "transient", "--quiet"})
@@ -37,7 +37,7 @@ func TestFlush(t *testing.T) {
 		}
 
 		// Ensure there are no active handles after that.
-		h, err := tpm2tools.Handles(rwc, tpm2.HandleTypeTransient)
+		h, err := client.Handles(rwc, tpm2.HandleTypeTransient)
 		if err != nil {
 			t.Fatal(err)
 		}

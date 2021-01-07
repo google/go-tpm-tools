@@ -1,4 +1,4 @@
-package tpm2tools
+package client
 
 import (
 	"crypto/sha256"
@@ -84,10 +84,10 @@ func DefaultEKTemplateECC() tpm2.Public {
 	}
 }
 
-// AIKTemplateRSA returns a potential Attestation Identity Key (AIK) template.
+// AKTemplateRSA returns a potential Attestation Key (AK) template.
 // This is very similar to DefaultEKTemplateRSA, except that this will be a
 // signing key instead of an encrypting key.
-func AIKTemplateRSA() tpm2.Public {
+func AKTemplateRSA() tpm2.Public {
 	return tpm2.Public{
 		Type:       tpm2.AlgRSA,
 		NameAlg:    tpm2.AlgSHA256,
@@ -102,10 +102,10 @@ func AIKTemplateRSA() tpm2.Public {
 	}
 }
 
-// AIKTemplateECC returns a potential Attestation Identity Key (AIK) template.
+// AKTemplateECC returns a potential Attestation Key (AK) template.
 // This is very similar to DefaultEKTemplateECC, except that this will be a
 // signing key instead of an encrypting key.
-func AIKTemplateECC() tpm2.Public {
+func AKTemplateECC() tpm2.Public {
 	params := defaultECCParams()
 	params.Symmetric = nil
 	params.Sign = &tpm2.SigScheme{

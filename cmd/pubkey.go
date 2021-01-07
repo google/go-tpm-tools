@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/google/go-tpm-tools/tpm2tools"
+	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm/tpmutil"
 
 	"github.com/google/go-tpm/tpm2"
@@ -69,11 +69,11 @@ func init() {
 	addPublicKeyAlgoFlag(pubkeyCmd)
 }
 
-func getKey(rw io.ReadWriter, hierarchy tpmutil.Handle, algo tpm2.Algorithm) (*tpm2tools.Key, error) {
+func getKey(rw io.ReadWriter, hierarchy tpmutil.Handle, algo tpm2.Algorithm) (*client.Key, error) {
 	fmt.Fprintf(debugOutput(), "Using hierarchy 0x%x\n", hierarchy)
 	if nvIndex != 0 {
 		fmt.Fprintf(debugOutput(), "Reading from NVDATA index %d\n", nvIndex)
-		return tpm2tools.KeyFromNvIndex(rw, hierarchy, nvIndex)
+		return client.KeyFromNvIndex(rw, hierarchy, nvIndex)
 	}
 
 	switch hierarchy {

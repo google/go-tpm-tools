@@ -3,7 +3,7 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/google/go-tpm-tools/tpm2tools"
+	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpmutil"
 	"github.com/spf13/cobra"
@@ -35,16 +35,16 @@ If --pcrs is not provided, all pcrs are read for that hash algorithm.`,
 
 		sel := getSelection()
 		if len(sel.PCRs) == 0 {
-			sel = tpm2tools.FullPcrSel(hashAlgo)
+			sel = client.FullPcrSel(hashAlgo)
 		}
 
 		fmt.Fprintf(debugOutput(), "Reading pcrs (%v)\n", sel.PCRs)
-		pcrList, err := tpm2tools.ReadPCRs(rwc, sel)
+		pcrList, err := client.ReadPCRs(rwc, sel)
 		if err != nil {
 			return err
 		}
 
-		for idx := uint32(0); idx < tpm2tools.NumPCRs; idx++ {
+		for idx := uint32(0); idx < client.NumPCRs; idx++ {
 			if val, ok := pcrList.Pcrs[idx]; ok {
 				if _, err = fmt.Fprintf(dataOutput(), "%2d: %x\n", idx, val); err != nil {
 					return err
