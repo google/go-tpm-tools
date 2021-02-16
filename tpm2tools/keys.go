@@ -140,9 +140,15 @@ func NewKey(rw io.ReadWriter, parent tpmutil.Handle, template tpm2.Public) (k *K
 		}
 	}()
 
+	key, err := NewKeyFromValues(rw, handle, pubArea)
+	return key, err
+}
+
+// NewKeyFromValues creates an instance of Key from handle and public area
+func NewKeyFromValues(rw io.ReadWriter, handle tpmutil.Handle, pubArea []byte) (k *Key, err error) {
 	k = &Key{rw: rw, handle: handle}
 	if k.pubArea, err = tpm2.DecodePublic(pubArea); err != nil {
-		return
+		return nil, err
 	}
 	return k, k.finish()
 }
