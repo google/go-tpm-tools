@@ -27,8 +27,6 @@ package internal
 // #cgo CFLAGS: -DECC_NIST_P521=YES
 // #cgo CFLAGS: -DALG_SHA512=ALG_YES
 // #cgo CFLAGS: -DMAX_CONTEXT_SIZE=1360
-// #cgo CFLAGS: -I /Users/wuale/homebrew/opt/openssl@1.1/include
-// #cgo LDFLAGS: -L/Users/wuale/homebrew/opt/openssl@1.1/lib
 // #cgo LDFLAGS: -lcrypto
 //
 // #include <stdlib.h>
