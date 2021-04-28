@@ -5,6 +5,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/google/go-attestation/attest"
 	"github.com/google/go-tpm-tools/simulator"
 )
 
@@ -12,6 +13,7 @@ import (
 var (
 	tpm  io.ReadWriteCloser
 	lock sync.Mutex
+	_    = attest.ParseEventLog
 )
 
 type noClose struct {
