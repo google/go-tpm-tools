@@ -16,9 +16,30 @@ use with [Go-TPM](https://github.com/google/go-tpm):
 ## Minimum Required Go Version
 
 This project currently requires Go 1.13 or newer. In general, we try to support
-building with all [currently supportted Go versions](https://endoflife.date/go).
+building with all [currently supported Go versions](https://endoflife.date/go).
 Any update to the minimum required Go version will be released as a **minor**
 version update.
+
+## macOS Dev
+macOS fails to `go build` and `go test` by default with the error `ld: library not found for -lcrypto`.
+Fix it by installing OpenSSL and pointing cgo to the include and lib.
+
+These commands were tested on macOS 10.15.7 (Catalina).
+### Install OpenSSL
+1. Install Homebrew
+1. `brew install openssl`
+1. `cd /usr/local/include`
+1. `sudo ln -s  $(brew --prefix openssl)/include/openssl .`
+
+### Add OpenSSL to the include path and linking 
+Add the two lines to `simulator/internal/internal.go`, using the output of
+`$(brew --prefix openssl)` for `$OPENSSL_PATH`.
+```
+// #cgo CFLAGS: -I $OPENSSL_PATH/include
+// #cgo LDFLAGS: -L$OPENSSL_PATH/lib
+```
+
+Remember to remove the lines from `simulator/internal/internal.go` before committing changes.
 
 ## Legal
 
