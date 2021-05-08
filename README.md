@@ -31,15 +31,27 @@ These commands were tested on macOS 10.15.7 (Catalina).
 1. `cd /usr/local/include`
 1. `sudo ln -s  $(brew --prefix openssl)/include/openssl .`
 
-### Add OpenSSL to the include path and linking 
-Add the two lines to `simulator/internal/internal.go`, using the output of
-`$(brew --prefix openssl)` for `$OPENSSL_PATH`.
+To point the simulator at openssl as provided by Homebrew, there are a couple
+of options. Both of these use the output of `$(brew --prefix openssl)` for
+`$OPENSSL_PATH`.
+
+#### Add OpenSSL to the include and library path at the commandline
+This solution does not require modifying go-tpm-tools code and is useful when
+working on other projects that depend on go-tpm-tools/simulator.
+```
+C_INCLUDE_PATH="$OPENSSL_PATH/include" LIBRARY_PATH="$OPENSSL_PATH/lib" go test ...
+```
+
+#### Add OpenSSL to the include and library path in the code
+This solution modifies your local copy of the go-tpm-tools simulator source
+and removes the need to provide the paths on the commandline.
+
+Remember to remove the lines from `simulator/internal/internal.go` before
+committing changes.
 ```
 // #cgo CFLAGS: -I $OPENSSL_PATH/include
 // #cgo LDFLAGS: -L$OPENSSL_PATH/lib
 ```
-
-Remember to remove the lines from `simulator/internal/internal.go` before committing changes.
 
 ## Legal
 
