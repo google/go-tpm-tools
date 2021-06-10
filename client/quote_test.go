@@ -91,4 +91,5 @@ func TestQuoteShouldFailWithNonSigningKey(t *testing.T) {
 	if err == nil {
 		t.Errorf("Quote with a non-signing key should fail")
 	}
+	t.Log(err)
 }
