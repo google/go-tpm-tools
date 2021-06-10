@@ -357,8 +357,16 @@ func (k *Key) Unseal(in *tpmpb.SealedBytes, cOpt CertifyOpt) ([]byte, error) {
 
 // Quote will tell TPM to compute a hash of a set of given PCR selection, together with
 // some extra data (typically a nonce), sign it with the given signing key, and return
-// the signature and the attestation data.
+// the signature and the attestation data. This function will panic if the key is not a
+// restricted signing key.
 func (k *Key) Quote(selpcr tpm2.PCRSelection, extraData []byte) (*tpmpb.Quote, error) {
+	// Make sure that we have a valid signing key before trying quote
+	if _, err := getSigningHashAlg(k); err != nil {
+		return nil, err
+	}
+	if !k.hasAttribute(tpm2.FlagRestricted) {
+		return nil, fmt.Errorf("unrestricted keys are insecure to use with Quote")
+	}
 	quoted, rawSig, err := tpm2.QuoteRaw(k.rw, k.Handle(), "", "", extraData, selpcr, tpm2.AlgNull)
 	if err != nil {
 		return nil, fmt.Errorf("failed to quote: %v", err)
