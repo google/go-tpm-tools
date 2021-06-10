@@ -36,6 +36,11 @@ message ImportBlob {
   Pcrs pcrs = 4;
 }
 
+message Quote {
+  bytes quote = 1;
+  bytes raw_sig = 2;
+}
+
 message Pcrs {
   HashAlgo hash = 1;
   map<uint32, bytes> pcrs = 2;

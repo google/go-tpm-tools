@@ -249,7 +249,7 @@ func sealHelper(rw io.ReadWriter, parentHandle tpmutil.Handle, auth []byte, sens
 	if err != nil {
 		return nil, fmt.Errorf("failed to read PCRs: %w", err)
 	}
-	computedDigest := computePCRDigest(certifiedPcr)
+	computedDigest := ComputePCRDigest(certifiedPcr, sessionHashAlg)
 
 	decodedCreationData, err := tpm2.DecodeCreationData(creationData)
 	if err != nil {
@@ -328,7 +328,7 @@ func (k *Key) Unseal(in *tpmpb.SealedBytes, cOpt CertifyOpt) ([]byte, error) {
 		if !HasSamePCRSelection(in.GetCertifiedPcrs(), decodedCreationData.PCRSelection) {
 			return nil, fmt.Errorf("certify PCRs does not match the PCR selection in the creation data")
 		}
-		if subtle.ConstantTimeCompare(decodedCreationData.PCRDigest, computePCRDigest(in.GetCertifiedPcrs())) == 0 {
+		if subtle.ConstantTimeCompare(decodedCreationData.PCRDigest, ComputePCRDigest(in.GetCertifiedPcrs(), sessionHashAlg)) == 0 {
 			return nil, fmt.Errorf("certify PCRs digest does not match the digest in the creation data")
 		}
 
@@ -353,6 +353,28 @@ func (k *Key) Unseal(in *tpmpb.SealedBytes, cOpt CertifyOpt) ([]byte, error) {
 		return nil, err
 	}
 	return tpm2.UnsealWithSession(k.rw, auth.Session, sealed, "")
+}
+
+// Quote will tell TPM to compute a hash of a set of given PCR selection, together with
+// some extra data (typically a nonce), sign it with the given signing key, and return
+// the signature and the attestation data. This function will panic if the key is not a
+// restricted signing key.
+func (k *Key) Quote(selpcr tpm2.PCRSelection, extraData []byte) (*tpmpb.Quote, error) {
+	// Make sure that we have a valid signing key before trying quote
+	if _, err := getSigningHashAlg(k); err != nil {
+		return nil, err
+	}
+	if !k.hasAttribute(tpm2.FlagRestricted) {
+		return nil, fmt.Errorf("unrestricted keys are insecure to use with Quote")
+	}
+	quoted, rawSig, err := tpm2.QuoteRaw(k.rw, k.Handle(), "", "", extraData, selpcr, tpm2.AlgNull)
+	if err != nil {
+		return nil, fmt.Errorf("failed to quote: %v", err)
+	}
+	quoteResult := tpmpb.Quote{}
+	quoteResult.Quote = quoted
+	quoteResult.RawSig = rawSig
+	return &quoteResult, nil
 }
 
 // Reseal is a shortcut to call Unseal() followed by Seal().
