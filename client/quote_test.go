@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/ecdsa"
 	"crypto/rsa"
+	"fmt"
 	"io"
 	"testing"
 
@@ -15,7 +16,7 @@ func TestQuote(t *testing.T) {
 	rwc := internal.GetTPM(t)
 	defer CheckedClose(t, rwc)
 
-	tests := []struct {
+	keys := []struct {
 		name   string
 		getKey func(io.ReadWriter) (*Key, error)
 	}{
@@ -23,52 +24,59 @@ func TestQuote(t *testing.T) {
 		{"AK-RSA", AttestationKeyRSA},
 	}
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			ak, err := test.getKey(rwc)
-			if err != nil {
-				t.Errorf("failed to generate AK: %v", err)
-			}
-			defer ak.Close()
+	pcrSels := []tpm2.PCRSelection{
+		{
+			Hash: tpm2.AlgSHA256,
+			PCRs: []int{7},
+		},
+		FullPcrSel(tpm2.AlgSHA256),
+	}
 
-			selpcr := tpm2.PCRSelection{
-				Hash: tpm2.AlgSHA256,
-				PCRs: []int{7},
-			}
-			quoted, err := ak.Quote(selpcr, []byte("test"))
-			if err != nil {
-				t.Errorf("failed to quote: %v", err)
-			}
-			sig, err := tpm2.DecodeSignature(bytes.NewBuffer(quoted.GetRawSig()))
-			if err != nil {
-				t.Errorf("signature decoding failed: %v", err)
-			}
-
-			switch pub := ak.PublicKey().(type) {
-			case *ecdsa.PublicKey:
-				hash, err := sig.ECC.HashAlg.Hash()
+	for _, key := range keys {
+		for _, sel := range pcrSels {
+			name := fmt.Sprintf("%s-%d", key.name, len(sel.PCRs))
+			t.Run(name, func(t *testing.T) {
+				ak, err := key.getKey(rwc)
 				if err != nil {
-					t.Fatalf("not a valid hash type: %v", sig.ECC.HashAlg)
+					t.Errorf("failed to generate AK: %v", err)
 				}
+				defer ak.Close()
 
-				hashCon := hash.New()
-				hashCon.Write(quoted.GetQuote())
-				if !ecdsa.Verify(pub, hashCon.Sum(nil)[:], sig.ECC.R, sig.ECC.S) {
-					t.Errorf("ECC signature verification failed")
-				}
-			case *rsa.PublicKey:
-				hash, err := sig.RSA.HashAlg.Hash()
+				quoted, err := ak.Quote(sel, []byte("test"))
 				if err != nil {
-					t.Fatalf("not a valid hash type: %v", sig.RSA.HashAlg)
+					t.Errorf("failed to quote: %v", err)
+				}
+				sig, err := tpm2.DecodeSignature(bytes.NewBuffer(quoted.GetRawSig()))
+				if err != nil {
+					t.Errorf("signature decoding failed: %v", err)
 				}
 
-				hashCon := hash.New()
-				hashCon.Write(quoted.GetQuote())
-				if err = rsa.VerifyPKCS1v15(pub, hash, hashCon.Sum(nil), []byte(sig.RSA.Signature)); err != nil {
-					t.Errorf("RSA signature verification failed: %v", err)
+				switch pub := ak.PublicKey().(type) {
+				case *ecdsa.PublicKey:
+					hash, err := sig.ECC.HashAlg.Hash()
+					if err != nil {
+						t.Fatalf("not a valid hash type: %v", sig.ECC.HashAlg)
+					}
+
+					hashCon := hash.New()
+					hashCon.Write(quoted.GetQuote())
+					if !ecdsa.Verify(pub, hashCon.Sum(nil)[:], sig.ECC.R, sig.ECC.S) {
+						t.Errorf("ECC signature verification failed")
+					}
+				case *rsa.PublicKey:
+					hash, err := sig.RSA.HashAlg.Hash()
+					if err != nil {
+						t.Fatalf("not a valid hash type: %v", sig.RSA.HashAlg)
+					}
+
+					hashCon := hash.New()
+					hashCon.Write(quoted.GetQuote())
+					if err = rsa.VerifyPKCS1v15(pub, hash, hashCon.Sum(nil), []byte(sig.RSA.Signature)); err != nil {
+						t.Errorf("RSA signature verification failed: %v", err)
+					}
 				}
-			}
-		})
+			})
+		}
 	}
 
 }
