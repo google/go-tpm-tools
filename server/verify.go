@@ -58,8 +58,8 @@ func Verify(pubKey crypto.PublicKey, quote *tpmpb.Quote, pcrs *tpmpb.Pcrs, extra
 	if attestedQuoteInfo == nil {
 		return fmt.Errorf("attestation data does not contain quote info")
 	}
-	if !bytes.Equal([]byte(attestationData.ExtraData), extraData) {
-		return fmt.Errorf("quote extraData %v did not match expected extraData %v", attestationData.ExtraData, extraData)
+	if subtle.ConstantTimeCompare(attestationData.ExtraData, extraData) == 0 {
+		return fmt.Errorf("quote extraData did not match expected extraData")
 	}
 	if err := validatePCRDigest(attestedQuoteInfo, pcrs, hash); err != nil {
 		return err
