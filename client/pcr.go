@@ -189,15 +189,15 @@ func ComputePCRSessionAuth(pcrs *tpmpb.Pcrs) []byte {
 	hash.Write(oldDigest)
 	hash.Write(ccPolicyPCR)
 	hash.Write(encodePCRSelection(PCRSelection(pcrs)))
-	hash.Write(computePCRDigest(pcrs))
+	hash.Write(ComputePCRDigest(pcrs, sessionHashAlg))
 	newDigest := hash.Sum(nil)
 	return newDigest[:]
 }
 
 // ComputePCRDigest will take in a PCR proto and compute the digest based on the
 // given PCR proto.
-func computePCRDigest(pcrs *tpmpb.Pcrs) []byte {
-	hash := sessionHashAlg.New()
+func ComputePCRDigest(pcrs *tpmpb.Pcrs, hashAlg crypto.Hash) []byte {
+	hash := hashAlg.New()
 	for i := 0; i < 24; i++ {
 		if pcrValue, exists := pcrs.Pcrs[uint32(i)]; exists {
 			hash.Write(pcrValue)
