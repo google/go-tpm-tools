@@ -355,6 +355,20 @@ func (k *Key) Unseal(in *tpmpb.SealedBytes, cOpt CertifyOpt) ([]byte, error) {
 	return tpm2.UnsealWithSession(k.rw, auth.Session, sealed, "")
 }
 
+// Quote will tell TPM to compute a hash of a set of given PCR selection, together with
+// some extra data (typically a nonce), sign it with the given signing key, and return
+// the signature and the attestation data.
+func (k *Key) Quote(selpcr tpm2.PCRSelection, extraData []byte) (*tpmpb.Quote, error) {
+	quoted, rawSig, err := tpm2.QuoteRaw(k.rw, k.Handle(), "", "", extraData, selpcr, tpm2.AlgNull)
+	if err != nil {
+		return nil, fmt.Errorf("failed to quote: %v", err)
+	}
+	quoteResult := tpmpb.Quote{}
+	quoteResult.Quote = quoted
+	quoteResult.RawSig = rawSig
+	return &quoteResult, nil
+}
+
 // Reseal is a shortcut to call Unseal() followed by Seal().
 // CertifyOpt(nillable) will be used in Unseal(), and SealOpt(nillable)
 // will be used in Seal()
