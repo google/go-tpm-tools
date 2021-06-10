@@ -94,15 +94,8 @@ func verifyRSASSAQuoteSignature(rsaPub *rsa.PublicKey, hash crypto.Hash, quoted 
 }
 
 func validatePCRDigest(quoteInfo *tpm2.QuoteInfo, pcrs *tpmpb.Pcrs, hash crypto.Hash) error {
-	quotedPCRList := quoteInfo.PCRSelection.PCRs
-	pcrMap := pcrs.GetPcrs()
-	if len(pcrMap) != len(quotedPCRList) {
-		return fmt.Errorf("given PCRs quantity not matching")
-	}
-	for _, val := range quotedPCRList {
-		if _, exists := pcrMap[uint32(val)]; !exists {
-			return fmt.Errorf("given PCRs handles not matching")
-		}
+	if !client.HasSamePCRSelection(pcrs, quoteInfo.PCRSelection) {
+		return fmt.Errorf("given PCRs and Quote do not have the same PCR selection")
 	}
 	pcrDigest := client.ComputePCRDigest(pcrs, hash)
 	if subtle.ConstantTimeCompare(quoteInfo.PCRDigest, pcrDigest) == 0 {
