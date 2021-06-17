@@ -20,7 +20,7 @@ func TestNameMatchesPublicArea(t *testing.T) {
 	}
 	defer ek.Close()
 
-	matches, err := ek.Name().MatchesPublic(ek.pubArea)
+	matches, err := ek.Name().MatchesPublic(ek.PublicArea())
 	if err != nil {
 		t.Fatal(err)
 	}
