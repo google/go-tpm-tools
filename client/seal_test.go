@@ -66,50 +66,6 @@ func TestSeal(t *testing.T) {
 	}
 }
 
-func TestComputeSessionAuth(t *testing.T) {
-	rwc := internal.GetTPM(t)
-	defer CheckedClose(t, rwc)
-
-	pcrNums := []int{1, 7}
-
-	tests := []struct {
-		name    string
-		pcrHash tpm2.Algorithm
-	}{
-		{"sha1", tpm2.AlgSHA1},
-		{"sha256", tpm2.AlgSHA256},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			sel := tpm2.PCRSelection{Hash: test.pcrHash, PCRs: pcrNums}
-			pcrs, err := ReadPCRs(rwc, sel)
-			if err != nil {
-				t.Fatalf("failed to read PCRs: %v", err)
-			}
-			computeDigest := ComputePCRSessionAuth(pcrs)
-
-			session, err := newPCRSession(rwc, sel)
-			if err != nil {
-				t.Fatalf("failed to create PCR session: %v", err)
-			}
-			defer session.Close()
-
-			auth, err := session.Auth()
-			if err != nil {
-				t.Fatalf("failed to get PCR auth: %v", err)
-			}
-			digest, err := tpm2.PolicyGetDigest(rwc, auth.Session)
-			if err != nil {
-				t.Fatalf("failed to get pcr digest: %v", err)
-			}
-
-			if !bytes.Equal(computeDigest, digest) {
-				t.Errorf("computed digest (%v) not equal to session digest (%v)", computeDigest, digest)
-			}
-		})
-	}
-}
-
 func TestSelfReseal(t *testing.T) {
 	rwc := internal.GetTPM(t)
 	defer CheckedClose(t, rwc)
