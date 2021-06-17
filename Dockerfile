@@ -1,7 +1,7 @@
 FROM golang:latest
 # We need OpenSSL headers to build the simulator
 RUN apt-get update && apt-get install -y \
-    libssl-dev \
+    libssl-dev libtspi-dev \
  && rm -rf /var/lib/apt/lists/*
 # We need golangci-lint for linting
 ARG VERSION=1.23.7
