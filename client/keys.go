@@ -219,7 +219,7 @@ func (k *Key) Seal(sensitive []byte, sOpt SealOpt) (*tpmpb.SealedBytes, error) {
 		}
 	}
 	if len(pcrs.GetPcrs()) > 0 {
-		auth = ComputePCRSessionAuth(pcrs)
+		auth = pcrs.ComputePCRSessionAuth(SessionHashAlg)
 	}
 	certifySel := FullPcrSel(CertifyHashAlgTpm)
 	sb, err := sealHelper(k.rw, k.Handle(), auth, sensitive, certifySel)
@@ -256,7 +256,7 @@ func sealHelper(rw io.ReadWriter, parentHandle tpmutil.Handle, auth []byte, sens
 	if err != nil {
 		return nil, fmt.Errorf("failed to read PCRs: %w", err)
 	}
-	computedDigest := ComputePCRDigest(certifiedPcr, sessionHashAlg)
+	computedDigest := certifiedPcr.ComputePCRDigest(SessionHashAlg)
 
 	decodedCreationData, err := tpm2.DecodeCreationData(creationData)
 	if err != nil {
@@ -332,10 +332,10 @@ func (k *Key) Unseal(in *tpmpb.SealedBytes, cOpt CertifyOpt) ([]byte, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to decode creation data: %w", err)
 		}
-		if !HasSamePCRSelection(in.GetCertifiedPcrs(), decodedCreationData.PCRSelection) {
+		if !in.GetCertifiedPcrs().HasSamePCRSelection(decodedCreationData.PCRSelection) {
 			return nil, fmt.Errorf("certify PCRs does not match the PCR selection in the creation data")
 		}
-		if subtle.ConstantTimeCompare(decodedCreationData.PCRDigest, ComputePCRDigest(in.GetCertifiedPcrs(), sessionHashAlg)) == 0 {
+		if subtle.ConstantTimeCompare(decodedCreationData.PCRDigest, in.GetCertifiedPcrs().ComputePCRDigest(SessionHashAlg)) == 0 {
 			return nil, fmt.Errorf("certify PCRs digest does not match the digest in the creation data")
 		}
 
