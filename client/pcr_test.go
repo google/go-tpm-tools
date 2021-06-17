@@ -1,4 +1,4 @@
-package client
+package client_test
 
 import (
 	"bytes"
@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal"
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpmutil"
@@ -46,7 +47,7 @@ func pcrExtend(alg tpm2.Algorithm, old, new []byte) ([]byte, error) {
 
 func TestReadPCRs(t *testing.T) {
 	rwc := internal.GetTPM(t)
-	defer CheckedClose(t, rwc)
+	defer client.CheckedClose(t, rwc)
 
 	testPcrs := make(map[tpm2.Algorithm][]byte, 2)
 	testPcrs[tpm2.AlgSHA1] = bytes.Repeat([]byte{0x00}, sha1.Size)
@@ -80,15 +81,15 @@ func TestReadPCRs(t *testing.T) {
 
 func TestCheckContainedPCRs(t *testing.T) {
 	rwc := internal.GetTPM(t)
-	defer CheckedClose(t, rwc)
+	defer client.CheckedClose(t, rwc)
 
-	sel := FullPcrSel(tpm2.AlgSHA256)
-	baseline, err := ReadPCRs(rwc, sel)
+	sel := client.FullPcrSel(tpm2.AlgSHA256)
+	baseline, err := client.ReadPCRs(rwc, sel)
 	if err != nil {
 		t.Fatalf("Failed to Read PCRs: %v", err)
 	}
 
-	toBeCertified, err := ReadPCRs(rwc, tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{1, 2, 3}})
+	toBeCertified, err := client.ReadPCRs(rwc, tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{1, 2, 3}})
 	if err != nil {
 		t.Fatalf("failed to read pcrs %v", err)
 	}
@@ -100,7 +101,7 @@ func TestCheckContainedPCRs(t *testing.T) {
 		t.Fatalf("failed to extend pcr for test %v", err)
 	}
 
-	toBeCertified, err = ReadPCRs(rwc, tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{1, 2, 3}})
+	toBeCertified, err = client.ReadPCRs(rwc, tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{1, 2, 3}})
 	if err != nil {
 		t.Fatalf("failed to read pcrs %v", err)
 	}
@@ -108,7 +109,7 @@ func TestCheckContainedPCRs(t *testing.T) {
 		t.Fatalf("validation should fail due to PCR 2 changed")
 	}
 
-	toBeCertified, err = ReadPCRs(rwc, tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{}})
+	toBeCertified, err = client.ReadPCRs(rwc, tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{}})
 	if err != nil {
 		t.Fatalf("failed to read pcrs %v", err)
 	}

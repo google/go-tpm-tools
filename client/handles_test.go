@@ -1,9 +1,10 @@
-package client
+package client_test
 
 import (
 	"reflect"
 	"testing"
 
+	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal"
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpmutil"
@@ -16,13 +17,13 @@ const (
 
 func TestHandles(t *testing.T) {
 	rwc := internal.GetTPM(t)
-	defer CheckedClose(t, rwc)
+	defer client.CheckedClose(t, rwc)
 
 	expected := make([]tpmutil.Handle, 0)
 	for i := 0; i < maxHandles; i++ {
 		expected = append(expected, internal.LoadRandomExternalKey(t, rwc))
 
-		handles, err := Handles(rwc, tpm2.HandleTypeTransient)
+		handles, err := client.Handles(rwc, tpm2.HandleTypeTransient)
 		if err != nil {
 			t.Fatal(err)
 		}

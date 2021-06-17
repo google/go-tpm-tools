@@ -1,4 +1,4 @@
-package client
+package client_test
 
 import (
 	"bytes"
@@ -8,20 +8,21 @@ import (
 	"io"
 	"testing"
 
+	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal"
 	"github.com/google/go-tpm/tpm2"
 )
 
 func TestQuote(t *testing.T) {
 	rwc := internal.GetTPM(t)
-	defer CheckedClose(t, rwc)
+	defer client.CheckedClose(t, rwc)
 
 	keys := []struct {
 		name   string
-		getKey func(io.ReadWriter) (*Key, error)
+		getKey func(io.ReadWriter) (*client.Key, error)
 	}{
-		{"AK-ECC", AttestationKeyECC},
-		{"AK-RSA", AttestationKeyRSA},
+		{"AK-ECC", client.AttestationKeyECC},
+		{"AK-RSA", client.AttestationKeyRSA},
 	}
 
 	pcrSels := []tpm2.PCRSelection{
@@ -29,7 +30,7 @@ func TestQuote(t *testing.T) {
 			Hash: tpm2.AlgSHA256,
 			PCRs: []int{7},
 		},
-		FullPcrSel(tpm2.AlgSHA256),
+		client.FullPcrSel(tpm2.AlgSHA256),
 	}
 
 	for _, key := range keys {
@@ -83,9 +84,9 @@ func TestQuote(t *testing.T) {
 
 func TestQuoteShouldFailWithNonSigningKey(t *testing.T) {
 	rwc := internal.GetTPM(t)
-	defer CheckedClose(t, rwc)
+	defer client.CheckedClose(t, rwc)
 
-	srk, err := StorageRootKeyRSA(rwc)
+	srk, err := client.StorageRootKeyRSA(rwc)
 	if err != nil {
 		t.Errorf("failed to generate SRK: %v", err)
 	}
