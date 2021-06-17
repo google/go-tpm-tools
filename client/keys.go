@@ -238,7 +238,7 @@ func (k *Key) Seal(sensitive []byte, sOpt SealOpt) (*tpmpb.SealedBytes, error) {
 func sealHelper(rw io.ReadWriter, parentHandle tpmutil.Handle, auth []byte, sensitive []byte, certifyPCRsSel tpm2.PCRSelection) (*tpmpb.SealedBytes, error) {
 	inPublic := tpm2.Public{
 		Type:       tpm2.AlgKeyedHash,
-		NameAlg:    sessionHashAlgTpm,
+		NameAlg:    SessionHashAlgTpm,
 		Attributes: tpm2.FlagFixedTPM | tpm2.FlagFixedParent,
 		AuthPolicy: auth,
 	}
@@ -303,7 +303,7 @@ func (k *Key) Unseal(in *tpmpb.SealedBytes, cOpt CertifyOpt) ([]byte, error) {
 		if _, err = tpmutil.Unpack(in.GetTicket(), &ticket); err != nil {
 			return nil, fmt.Errorf("ticket unpack failed: %w", err)
 		}
-		creationHash := sessionHashAlg.New()
+		creationHash := SessionHashAlg.New()
 		creationHash.Write(in.GetCreationData())
 
 		_, _, certErr := tpm2.CertifyCreation(k.rw, "", sealed, tpm2.HandleNull, nil, creationHash.Sum(nil), tpm2.SigScheme{}, ticket)

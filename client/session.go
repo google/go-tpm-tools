@@ -23,11 +23,11 @@ func startAuthSesssion(rw io.ReadWriter) (session tpmutil.Handle, err error) {
 		rw,
 		/*tpmkey=*/ tpm2.HandleNull,
 		/*bindkey=*/ tpm2.HandleNull,
-		/*nonceCaller=*/ make([]byte, sessionHashAlg.Size()),
+		/*nonceCaller=*/ make([]byte, SessionHashAlg.Size()),
 		/*encryptedSalt=*/ nil,
 		/*sessionType=*/ tpm2.SessionPolicy,
 		/*symmetric=*/ tpm2.AlgNull,
-		/*authHash=*/ sessionHashAlgTpm)
+		/*authHash=*/ SessionHashAlgTpm)
 	return
 }
 

@@ -19,8 +19,10 @@ const NumPCRs = 24
 // and the Public area Name algorithm. We also chose this for compatibility with
 // github.com/google/go-tpm/tpm2, as it hardcodes the nameAlg as SHA256 in
 // several places. Two constants are used to avoid repeated conversions.
-const sessionHashAlg = crypto.SHA256
-const sessionHashAlgTpm = tpm2.AlgSHA256
+const (
+	SessionHashAlg    = crypto.SHA256
+	SessionHashAlgTpm = tpm2.AlgSHA256
+)
 
 // CertifyHashAlgTpm is the hard-coded algorithm used in certify PCRs.
 const CertifyHashAlgTpm = tpm2.AlgSHA256
