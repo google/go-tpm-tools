@@ -8,7 +8,6 @@ import (
 	"crypto/subtle"
 	"fmt"
 
-	"github.com/google/go-tpm-tools/client"
 	tpmpb "github.com/google/go-tpm-tools/proto"
 	"github.com/google/go-tpm/tpm2"
 )
@@ -94,10 +93,10 @@ func verifyRSASSAQuoteSignature(rsaPub *rsa.PublicKey, hash crypto.Hash, quoted 
 }
 
 func validatePCRDigest(quoteInfo *tpm2.QuoteInfo, pcrs *tpmpb.Pcrs, hash crypto.Hash) error {
-	if !client.HasSamePCRSelection(pcrs, quoteInfo.PCRSelection) {
+	if !pcrs.HasSamePCRSelection(quoteInfo.PCRSelection) {
 		return fmt.Errorf("given PCRs and Quote do not have the same PCR selection")
 	}
-	pcrDigest := client.ComputePCRDigest(pcrs, hash)
+	pcrDigest := pcrs.ComputePCRDigest(hash)
 	if subtle.ConstantTimeCompare(quoteInfo.PCRDigest, pcrDigest) == 0 {
 		return fmt.Errorf("given PCRs digest not matching")
 	}

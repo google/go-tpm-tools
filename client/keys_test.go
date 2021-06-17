@@ -1,4 +1,4 @@
-package client
+package client_test
 
 import (
 	"io"
@@ -8,19 +8,20 @@ import (
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpmutil"
 
+	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal"
 )
 
 func TestNameMatchesPublicArea(t *testing.T) {
 	rwc := internal.GetTPM(t)
-	defer CheckedClose(t, rwc)
-	ek, err := EndorsementKeyRSA(rwc)
+	defer client.CheckedClose(t, rwc)
+	ek, err := client.EndorsementKeyRSA(rwc)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer ek.Close()
 
-	matches, err := ek.Name().MatchesPublic(ek.pubArea)
+	matches, err := ek.Name().MatchesPublic(ek.PublicArea())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -31,12 +32,12 @@ func TestNameMatchesPublicArea(t *testing.T) {
 
 func TestCreateSigningKeysInHierarchies(t *testing.T) {
 	rwc := internal.GetTPM(t)
-	defer CheckedClose(t, rwc)
-	template := AKTemplateRSA()
+	defer client.CheckedClose(t, rwc)
+	template := client.AKTemplateRSA()
 
 	// We are not authorized to create keys in the Platform Hierarchy
 	for _, hierarchy := range []tpmutil.Handle{tpm2.HandleOwner, tpm2.HandleEndorsement, tpm2.HandleNull} {
-		key, err := NewKey(rwc, hierarchy, template)
+		key, err := client.NewKey(rwc, hierarchy, template)
 		if err != nil {
 			t.Errorf("Hierarchy %+v: %s", hierarchy, err)
 		} else {
@@ -47,13 +48,13 @@ func TestCreateSigningKeysInHierarchies(t *testing.T) {
 
 func TestCachedRSAKeys(t *testing.T) {
 	rwc := internal.GetTPM(t)
-	defer CheckedClose(t, rwc)
+	defer client.CheckedClose(t, rwc)
 	tests := []struct {
 		name   string
-		getKey func(io.ReadWriter) (*Key, error)
+		getKey func(io.ReadWriter) (*client.Key, error)
 	}{
-		{"SRK", StorageRootKeyRSA},
-		{"EK", EndorsementKeyRSA},
+		{"SRK", client.StorageRootKeyRSA},
+		{"EK", client.EndorsementKeyRSA},
 	}
 
 	for _, test := range tests {
@@ -100,18 +101,18 @@ func TestCachedRSAKeys(t *testing.T) {
 
 func TestKeyCreation(t *testing.T) {
 	rwc := internal.GetTPM(t)
-	defer CheckedClose(t, rwc)
+	defer client.CheckedClose(t, rwc)
 
 	tests := []struct {
 		name   string
-		getKey func(io.ReadWriter) (*Key, error)
+		getKey func(io.ReadWriter) (*client.Key, error)
 	}{
-		{"SRK-ECC", StorageRootKeyECC},
-		{"EK-ECC", EndorsementKeyECC},
-		{"AK-ECC", AttestationKeyECC},
-		{"SRK-RSA", StorageRootKeyRSA},
-		{"EK-RSA", EndorsementKeyRSA},
-		{"AK-RSA", AttestationKeyRSA},
+		{"SRK-ECC", client.StorageRootKeyECC},
+		{"EK-ECC", client.EndorsementKeyECC},
+		{"AK-ECC", client.AttestationKeyECC},
+		{"SRK-RSA", client.StorageRootKeyRSA},
+		{"EK-RSA", client.EndorsementKeyRSA},
+		{"AK-RSA", client.AttestationKeyRSA},
 	}
 
 	for _, test := range tests {
@@ -127,38 +128,38 @@ func TestKeyCreation(t *testing.T) {
 
 func BenchmarkKeyCreation(b *testing.B) {
 	rwc := internal.GetTPM(b)
-	defer CheckedClose(b, rwc)
+	defer client.CheckedClose(b, rwc)
 
 	benchmarks := []struct {
 		name   string
-		getKey func(io.ReadWriter) (*Key, error)
+		getKey func(io.ReadWriter) (*client.Key, error)
 	}{
-		{"SRK-ECC-Cached", StorageRootKeyECC},
-		{"EK-ECC-Cached", EndorsementKeyECC},
-		{"AK-ECC-Cached", AttestationKeyECC},
+		{"SRK-ECC-Cached", client.StorageRootKeyECC},
+		{"EK-ECC-Cached", client.EndorsementKeyECC},
+		{"AK-ECC-Cached", client.AttestationKeyECC},
 
-		{"SRK-ECC", func(rw io.ReadWriter) (*Key, error) {
-			return NewKey(rw, tpm2.HandleOwner, SRKTemplateECC())
+		{"SRK-ECC", func(rw io.ReadWriter) (*client.Key, error) {
+			return client.NewKey(rw, tpm2.HandleOwner, client.SRKTemplateECC())
 		}},
-		{"EK-ECC", func(rw io.ReadWriter) (*Key, error) {
-			return NewKey(rw, tpm2.HandleEndorsement, DefaultEKTemplateECC())
+		{"EK-ECC", func(rw io.ReadWriter) (*client.Key, error) {
+			return client.NewKey(rw, tpm2.HandleEndorsement, client.DefaultEKTemplateECC())
 		}},
-		{"AK-ECC", func(rw io.ReadWriter) (*Key, error) {
-			return NewKey(rw, tpm2.HandleOwner, AKTemplateECC())
+		{"AK-ECC", func(rw io.ReadWriter) (*client.Key, error) {
+			return client.NewKey(rw, tpm2.HandleOwner, client.AKTemplateECC())
 		}},
 
-		{"SRK-RSA-Cached", StorageRootKeyRSA},
-		{"EK-RSA-Cached", EndorsementKeyRSA},
-		{"AK-RSA-Cached", AttestationKeyRSA},
+		{"SRK-RSA-Cached", client.StorageRootKeyRSA},
+		{"EK-RSA-Cached", client.EndorsementKeyRSA},
+		{"AK-RSA-Cached", client.AttestationKeyRSA},
 
-		{"SRK-RSA", func(rw io.ReadWriter) (*Key, error) {
-			return NewKey(rw, tpm2.HandleEndorsement, SRKTemplateRSA())
+		{"SRK-RSA", func(rw io.ReadWriter) (*client.Key, error) {
+			return client.NewKey(rw, tpm2.HandleEndorsement, client.SRKTemplateRSA())
 		}},
-		{"EK-RSA", func(rw io.ReadWriter) (*Key, error) {
-			return NewKey(rw, tpm2.HandleOwner, DefaultEKTemplateRSA())
+		{"EK-RSA", func(rw io.ReadWriter) (*client.Key, error) {
+			return client.NewKey(rw, tpm2.HandleOwner, client.DefaultEKTemplateRSA())
 		}},
-		{"AK-RSA", func(rw io.ReadWriter) (*Key, error) {
-			return NewKey(rw, tpm2.HandleOwner, AKTemplateRSA())
+		{"AK-RSA", func(rw io.ReadWriter) (*client.Key, error) {
+			return client.NewKey(rw, tpm2.HandleOwner, client.AKTemplateRSA())
 		}},
 	}
 

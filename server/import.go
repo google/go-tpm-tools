@@ -96,7 +96,7 @@ func setPublicAuth(public *tpm2.Public, pcrs *tpmpb.Pcrs) {
 		public.AuthPolicy = nil
 		public.Attributes |= tpm2.FlagUserWithAuth
 	} else {
-		public.AuthPolicy = client.ComputePCRSessionAuth(pcrs)
+		public.AuthPolicy = pcrs.ComputePCRSessionAuth(client.SessionHashAlg)
 		public.Attributes |= tpm2.FlagAdminWithPolicy
 	}
 }

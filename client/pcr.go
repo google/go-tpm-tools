@@ -1,14 +1,11 @@
 package client
 
 import (
-	"bytes"
 	"crypto"
-	"fmt"
 	"io"
 
 	tpmpb "github.com/google/go-tpm-tools/proto"
 	"github.com/google/go-tpm/tpm2"
-	"github.com/google/go-tpm/tpmutil"
 )
 
 // NumPCRs is set to the spec minimum of 24, as that's all go-tpm supports.
@@ -19,8 +16,10 @@ const NumPCRs = 24
 // and the Public area Name algorithm. We also chose this for compatibility with
 // github.com/google/go-tpm/tpm2, as it hardcodes the nameAlg as SHA256 in
 // several places. Two constants are used to avoid repeated conversions.
-const sessionHashAlg = crypto.SHA256
-const sessionHashAlgTpm = tpm2.AlgSHA256
+const (
+	SessionHashAlg    = crypto.SHA256
+	SessionHashAlgTpm = tpm2.AlgSHA256
+)
 
 // CertifyHashAlgTpm is the hard-coded algorithm used in certify PCRs.
 const CertifyHashAlgTpm = tpm2.AlgSHA256
@@ -109,7 +108,7 @@ func (p CertifyCurrent) CertifyPCRs(rw io.ReadWriter, pcrs *tpmpb.Pcrs) error {
 	if err != nil {
 		return err
 	}
-	return checkContainedPCRs(current, pcrs)
+	return current.CheckIfSubsetOf(pcrs)
 }
 
 // CertifyPCRs will compare the digest with given expected PCRs values.
@@ -117,55 +116,7 @@ func (p CertifyExpected) CertifyPCRs(_ io.ReadWriter, pcrs *tpmpb.Pcrs) error {
 	if len(p.Pcrs.GetPcrs()) == 0 {
 		panic("CertifyExpected contains 0 PCRs")
 	}
-	return checkContainedPCRs(p.Pcrs, pcrs)
-}
-
-// Check if the "superset" PCRs contain a valid "subset" PCRs, the PCR value must match
-// If there is one or more PCRs in subset which don't exist in superset, will return
-// an error with the first missing PCR.
-// If there is one or more PCRs value mismatch with the superset, will return an error
-// with the first mismatched PCR numbers.
-func checkContainedPCRs(subset *tpmpb.Pcrs, superset *tpmpb.Pcrs) error {
-	if subset.GetHash() != superset.GetHash() {
-		return fmt.Errorf("PCR hash algo not matching: %v, %v", subset.GetHash(), superset.GetHash())
-	}
-	for pcrNum, pcrVal := range subset.GetPcrs() {
-		if expectedVal, ok := superset.GetPcrs()[pcrNum]; ok {
-			if !bytes.Equal(expectedVal, pcrVal) {
-				return fmt.Errorf("PCR %d mismatch: expected %v, got %v", pcrNum, expectedVal, pcrVal)
-			}
-		} else {
-			return fmt.Errorf("PCR %d mismatch: value missing from the superset PCRs", pcrNum)
-		}
-	}
-	return nil
-}
-
-// PCRSelection returns the corresponding tpm2.PCRSelection for a tpmpb.Pcrs
-func PCRSelection(pcrs *tpmpb.Pcrs) tpm2.PCRSelection {
-	sel := tpm2.PCRSelection{Hash: tpm2.Algorithm(pcrs.GetHash())}
-
-	for pcrNum := range pcrs.GetPcrs() {
-		sel.PCRs = append(sel.PCRs, int(pcrNum))
-	}
-	return sel
-}
-
-// HasSamePCRSelection checks the given tpmpb.Pcrs has the same PCRSelection as the
-// given tpm2.PCRSelection (including the hash algorithm).
-func HasSamePCRSelection(pcrs *tpmpb.Pcrs, pcrSel tpm2.PCRSelection) bool {
-	if tpm2.Algorithm(pcrs.Hash) != pcrSel.Hash {
-		return false
-	}
-	if len(pcrs.GetPcrs()) != len(pcrSel.PCRs) {
-		return false
-	}
-	for _, p := range pcrSel.PCRs {
-		if _, ok := pcrs.Pcrs[uint32(p)]; !ok {
-			return false
-		}
-	}
-	return true
+	return p.Pcrs.CheckIfSubsetOf(pcrs)
 }
 
 // FullPcrSel will return a full PCR selection based on the total PCR number
@@ -176,47 +127,4 @@ func FullPcrSel(hash tpm2.Algorithm) tpm2.PCRSelection {
 		sel.PCRs = append(sel.PCRs, int(i))
 	}
 	return sel
-}
-
-// ComputePCRSessionAuth calculates the authorization value for the given PCRs.
-func ComputePCRSessionAuth(pcrs *tpmpb.Pcrs) []byte {
-	// Start with all zeros, we only use a single policy command on our session.
-	oldDigest := make([]byte, sessionHashAlg.Size())
-	ccPolicyPCR, _ := tpmutil.Pack(tpm2.CmdPolicyPCR)
-
-	// Extend the policy digest, see TPM2_PolicyPCR in Part 3 of the spec.
-	hash := sessionHashAlg.New()
-	hash.Write(oldDigest)
-	hash.Write(ccPolicyPCR)
-	hash.Write(encodePCRSelection(PCRSelection(pcrs)))
-	hash.Write(ComputePCRDigest(pcrs, sessionHashAlg))
-	newDigest := hash.Sum(nil)
-	return newDigest[:]
-}
-
-// ComputePCRDigest will take in a PCR proto and compute the digest based on the
-// given PCR proto.
-func ComputePCRDigest(pcrs *tpmpb.Pcrs, hashAlg crypto.Hash) []byte {
-	hash := hashAlg.New()
-	for i := 0; i < 24; i++ {
-		if pcrValue, exists := pcrs.Pcrs[uint32(i)]; exists {
-			hash.Write(pcrValue)
-		}
-	}
-	return hash.Sum(nil)
-}
-
-// Encode a tpm2.PCRSelection as if it were a TPML_PCR_SELECTION
-func encodePCRSelection(sel tpm2.PCRSelection) []byte {
-	// Encode count, pcrSelections.hash and pcrSelections.sizeofSelect fields
-	buf, _ := tpmutil.Pack(uint32(1), sel.Hash, byte(3))
-	// Encode pcrSelect bitmask
-	pcrBits := make([]byte, 3)
-	for _, pcr := range sel.PCRs {
-		byteNum := pcr / 8
-		bytePos := 1 << uint(pcr%8)
-		pcrBits[byteNum] |= byte(bytePos)
-	}
-
-	return append(buf, pcrBits...)
 }

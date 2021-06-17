@@ -177,8 +177,15 @@ func (k *Key) Handle() tpmutil.Handle {
 
 // Name is hash of this key's public area. Only the Digest field will ever be
 // populated. It is useful for various TPM commands related to authorization.
+// This is equivalent to k.PublicArea.Name(), except that is cannot fail.
 func (k *Key) Name() tpm2.Name {
 	return k.name
+}
+
+// PublicArea exposes the key's entire public area. This is useful for
+// determining additional properties of the underlying TPM key.
+func (k *Key) PublicArea() tpm2.Public {
+	return k.pubArea
 }
 
 // PublicKey provides a go interface to the loaded key's public area.
@@ -212,7 +219,7 @@ func (k *Key) Seal(sensitive []byte, sOpt SealOpt) (*tpmpb.SealedBytes, error) {
 		}
 	}
 	if len(pcrs.GetPcrs()) > 0 {
-		auth = ComputePCRSessionAuth(pcrs)
+		auth = pcrs.ComputePCRSessionAuth(SessionHashAlg)
 	}
 	certifySel := FullPcrSel(CertifyHashAlgTpm)
 	sb, err := sealHelper(k.rw, k.Handle(), auth, sensitive, certifySel)
@@ -231,7 +238,7 @@ func (k *Key) Seal(sensitive []byte, sOpt SealOpt) (*tpmpb.SealedBytes, error) {
 func sealHelper(rw io.ReadWriter, parentHandle tpmutil.Handle, auth []byte, sensitive []byte, certifyPCRsSel tpm2.PCRSelection) (*tpmpb.SealedBytes, error) {
 	inPublic := tpm2.Public{
 		Type:       tpm2.AlgKeyedHash,
-		NameAlg:    sessionHashAlgTpm,
+		NameAlg:    SessionHashAlgTpm,
 		Attributes: tpm2.FlagFixedTPM | tpm2.FlagFixedParent,
 		AuthPolicy: auth,
 	}
@@ -249,7 +256,7 @@ func sealHelper(rw io.ReadWriter, parentHandle tpmutil.Handle, auth []byte, sens
 	if err != nil {
 		return nil, fmt.Errorf("failed to read PCRs: %w", err)
 	}
-	computedDigest := ComputePCRDigest(certifiedPcr, sessionHashAlg)
+	computedDigest := certifiedPcr.ComputePCRDigest(SessionHashAlg)
 
 	decodedCreationData, err := tpm2.DecodeCreationData(creationData)
 	if err != nil {
@@ -296,7 +303,7 @@ func (k *Key) Unseal(in *tpmpb.SealedBytes, cOpt CertifyOpt) ([]byte, error) {
 		if _, err = tpmutil.Unpack(in.GetTicket(), &ticket); err != nil {
 			return nil, fmt.Errorf("ticket unpack failed: %w", err)
 		}
-		creationHash := sessionHashAlg.New()
+		creationHash := SessionHashAlg.New()
 		creationHash.Write(in.GetCreationData())
 
 		_, _, certErr := tpm2.CertifyCreation(k.rw, "", sealed, tpm2.HandleNull, nil, creationHash.Sum(nil), tpm2.SigScheme{}, ticket)
@@ -325,10 +332,10 @@ func (k *Key) Unseal(in *tpmpb.SealedBytes, cOpt CertifyOpt) ([]byte, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to decode creation data: %w", err)
 		}
-		if !HasSamePCRSelection(in.GetCertifiedPcrs(), decodedCreationData.PCRSelection) {
+		if !in.GetCertifiedPcrs().HasSamePCRSelection(decodedCreationData.PCRSelection) {
 			return nil, fmt.Errorf("certify PCRs does not match the PCR selection in the creation data")
 		}
-		if subtle.ConstantTimeCompare(decodedCreationData.PCRDigest, ComputePCRDigest(in.GetCertifiedPcrs(), sessionHashAlg)) == 0 {
+		if subtle.ConstantTimeCompare(decodedCreationData.PCRDigest, in.GetCertifiedPcrs().ComputePCRDigest(SessionHashAlg)) == 0 {
 			return nil, fmt.Errorf("certify PCRs digest does not match the digest in the creation data")
 		}
 
