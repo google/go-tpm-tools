@@ -368,19 +368,23 @@ func (k *Key) Unseal(in *tpmpb.SealedBytes, cOpt CertifyOpt) ([]byte, error) {
 // restricted signing key.
 func (k *Key) Quote(selpcr tpm2.PCRSelection, extraData []byte) (*tpmpb.Quote, error) {
 	// Make sure that we have a valid signing key before trying quote
-	if _, err := getSigningHashAlg(k); err != nil {
+	var err error
+	if _, err = getSigningHashAlg(k); err != nil {
 		return nil, err
 	}
 	if !k.hasAttribute(tpm2.FlagRestricted) {
 		return nil, fmt.Errorf("unrestricted keys are insecure to use with Quote")
 	}
-	quoted, rawSig, err := tpm2.QuoteRaw(k.rw, k.Handle(), "", "", extraData, selpcr, tpm2.AlgNull)
-	if err != nil {
-		return nil, fmt.Errorf("failed to quote: %v", err)
-	}
+
 	quoteResult := tpmpb.Quote{}
-	quoteResult.Quote = quoted
-	quoteResult.RawSig = rawSig
+	quoteResult.Quote, quoteResult.RawSig, err = tpm2.QuoteRaw(k.rw, k.Handle(), "", "", extraData, selpcr, tpm2.AlgNull)
+	if err != nil {
+		return nil, fmt.Errorf("failed to quote: %w", err)
+	}
+	quoteResult.Pcrs, err = ReadPCRs(k.rw, selpcr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read PCRs: %w", err)
+	}
 	return &quoteResult, nil
 }
 

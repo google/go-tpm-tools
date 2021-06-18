@@ -39,6 +39,7 @@ message ImportBlob {
 message Quote {
   bytes quote = 1;
   bytes raw_sig = 2;
+  Pcrs pcrs = 3;
 }
 
 message Pcrs {

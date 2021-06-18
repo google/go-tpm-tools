@@ -15,7 +15,7 @@ import (
 // Then, it matches that quoted data (PCR digest) against a group of PCRs.
 //
 // Verify supports ECDSA and RSASSA signature verification.
-func (quote *Quote) Verify(pubKey crypto.PublicKey, pcrs *Pcrs, extraData []byte) error {
+func (quote *Quote) Verify(pubKey crypto.PublicKey, extraData []byte) error {
 	sig, err := tpm2.DecodeSignature(bytes.NewBuffer(quote.GetRawSig()))
 	if err != nil {
 		return fmt.Errorf("signature decoding failed: %v", err)
@@ -59,7 +59,7 @@ func (quote *Quote) Verify(pubKey crypto.PublicKey, pcrs *Pcrs, extraData []byte
 	if subtle.ConstantTimeCompare(attestationData.ExtraData, extraData) == 0 {
 		return fmt.Errorf("quote extraData did not match expected extraData")
 	}
-	if err := validatePCRDigest(attestedQuoteInfo, pcrs, hash); err != nil {
+	if err := validatePCRDigest(attestedQuoteInfo, quote.GetPcrs(), hash); err != nil {
 		return err
 	}
 	return nil
