@@ -33,6 +33,26 @@ func min(a, b int) int {
 	return b
 }
 
+// Get a list of selections corresponding to the TPM's implemented PCRs
+func implementedPCRs(rw io.ReadWriter) ([]tpm2.PCRSelection, error) {
+	caps, moreData, err := tpm2.GetCapability(rw, tpm2.CapabilityPCRs, math.MaxUint32, 0)
+	if err != nil {
+		return nil, fmt.Errorf("listing implemented PCR banks: %w", err)
+	}
+	if moreData {
+		return nil, fmt.Errorf("extra data from GetCapability")
+	}
+	sels := make([]tpm2.PCRSelection, len(caps))
+	for i, cap := range caps {
+		sel, ok := cap.(tpm2.PCRSelection)
+		if !ok {
+			return nil, fmt.Errorf("unexpected data from GetCapability")
+		}
+		sels[i] = sel
+	}
+	return sels, nil
+}
+
 // ReadPCRs fetches all the PCR values specified in sel, making multiple calls
 // to the TPM if necessary.
 func ReadPCRs(rw io.ReadWriter, sel tpm2.PCRSelection) (*tpmpb.Pcrs, error) {
@@ -63,19 +83,13 @@ func ReadPCRs(rw io.ReadWriter, sel tpm2.PCRSelection) (*tpmpb.Pcrs, error) {
 
 // ReadAllPCRs fetches all the PCR values from all implemented PCR banks.
 func ReadAllPCRs(rw io.ReadWriter) ([]*tpmpb.Pcrs, error) {
-	sels, moreData, err := tpm2.GetCapability(rw, tpm2.CapabilityPCRs, math.MaxUint32, 0)
+	sels, err := implementedPCRs(rw)
 	if err != nil {
-		return nil, fmt.Errorf("listing implemented PCR banks: %w", err)
+		return nil, err
 	}
-	if moreData {
-		return nil, fmt.Errorf("extra data from GetCapability")
-	}
+
 	allPcrs := make([]*tpmpb.Pcrs, len(sels))
 	for i, sel := range sels {
-		sel, ok := sel.(tpm2.PCRSelection)
-		if !ok {
-			return nil, fmt.Errorf("unexpected data from GetCapability")
-		}
 		allPcrs[i], err = ReadPCRs(rw, sel)
 		if err != nil {
 			return nil, fmt.Errorf("reading bank %x PCRs: %w", sel.Hash, err)

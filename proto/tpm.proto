@@ -39,9 +39,16 @@ message ImportBlob {
 message Quote {
   bytes quote = 1;
   bytes raw_sig = 2;
+  Pcrs pcrs = 3;
 }
 
 message Pcrs {
   HashAlgo hash = 1;
   map<uint32, bytes> pcrs = 2;
+}
+
+message Attestation {
+  bytes ak_pub = 1;
+  repeated Quote quotes = 2;
+  bytes event_log = 3;
 }

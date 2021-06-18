@@ -364,24 +364,59 @@ func (k *Key) Unseal(in *tpmpb.SealedBytes, cOpt CertifyOpt) ([]byte, error) {
 
 // Quote will tell TPM to compute a hash of a set of given PCR selection, together with
 // some extra data (typically a nonce), sign it with the given signing key, and return
-// the signature and the attestation data. This function will panic if the key is not a
-// restricted signing key.
+// the signature and the attestation data. This function will return an error if
+// the key is not a restricted signing key.
 func (k *Key) Quote(selpcr tpm2.PCRSelection, extraData []byte) (*tpmpb.Quote, error) {
 	// Make sure that we have a valid signing key before trying quote
-	if _, err := getSigningHashAlg(k); err != nil {
+	var err error
+	if _, err = getSigningHashAlg(k); err != nil {
 		return nil, err
 	}
 	if !k.hasAttribute(tpm2.FlagRestricted) {
 		return nil, fmt.Errorf("unrestricted keys are insecure to use with Quote")
 	}
-	quoted, rawSig, err := tpm2.QuoteRaw(k.rw, k.Handle(), "", "", extraData, selpcr, tpm2.AlgNull)
+
+	quote := tpmpb.Quote{}
+	quote.Quote, quote.RawSig, err = tpm2.QuoteRaw(k.rw, k.Handle(), "", "", extraData, selpcr, tpm2.AlgNull)
 	if err != nil {
-		return nil, fmt.Errorf("failed to quote: %v", err)
+		return nil, fmt.Errorf("failed to quote: %w", err)
 	}
-	quoteResult := tpmpb.Quote{}
-	quoteResult.Quote = quoted
-	quoteResult.RawSig = rawSig
-	return &quoteResult, nil
+	quote.Pcrs, err = ReadPCRs(k.rw, selpcr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read PCRs: %w", err)
+	}
+	// Verify the quote client-side to make sure we didn't mess things up.
+	// NOTE: the quote still must be verified server-side as well.
+	if err := quote.Verify(k.PublicKey(), extraData); err != nil {
+		return nil, fmt.Errorf("failed to verify quote: %w", err)
+	}
+	return &quote, nil
+}
+
+// Attest generates an Attestation containing the TCG Event Log and a Quote over
+// all PCR banks. The provided nonce can be used to guarantee freshness of the
+// attestation. This function will return an error if the key is not a
+// restricted signing key.
+func (k *Key) Attest(nonce []byte) (*tpmpb.Attestation, error) {
+	sels, err := implementedPCRs(k.rw)
+	if err != nil {
+		return nil, err
+	}
+
+	attestation := tpmpb.Attestation{}
+	if attestation.AkPub, err = k.PublicArea().Encode(); err != nil {
+		return nil, fmt.Errorf("failed to encode public area: %w", err)
+	}
+	attestation.Quotes = make([]*tpmpb.Quote, len(sels))
+	for i, sel := range sels {
+		if attestation.Quotes[i], err = k.Quote(sel, nonce); err != nil {
+			return nil, err
+		}
+	}
+	if attestation.EventLog, err = GetEventLog(); err != nil {
+		return nil, fmt.Errorf("failed to retrieve TCG Event Log: %w", err)
+	}
+	return &attestation, nil
 }
 
 // Reseal is a shortcut to call Unseal() followed by Seal().
