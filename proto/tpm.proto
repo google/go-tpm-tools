@@ -46,3 +46,9 @@ message Pcrs {
   HashAlgo hash = 1;
   map<uint32, bytes> pcrs = 2;
 }
+
+message Attestation {
+  bytes ak_pub = 1;
+  repeated Quote quotes = 2;
+  bytes event_log = 3;
+}
