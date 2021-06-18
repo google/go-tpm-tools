@@ -23,10 +23,10 @@ var pcrCmd = &cobra.Command{
 	Short: "Read PCRs from the TPM",
 	Long: `Read PCRs from the TPM
 
-Based on the --pcrs and --hash-algo flags, this reads the contents of the TPM's
-PCRs for that hash algorithm.
+Based on --hash-algo and --pcrs flags, read the contents of the TPM's PCRs.
 
-If --pcrs is not provided, all pcrs are read for that hash algorithm.`,
+If --hash-algo is not provided, all banks of PCRs will be read.
+If --pcrs is not provided, all PCRs are read for that hash algorithm.`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		rwc, err := openTpm()
@@ -35,22 +35,29 @@ If --pcrs is not provided, all pcrs are read for that hash algorithm.`,
 		}
 		defer rwc.Close()
 
-		sel := tpm2.PCRSelection{Hash: pcrHashAlgo, PCRs: pcrs}
-		if len(sel.PCRs) == 0 {
-			sel = client.FullPcrSel(sel.Hash)
+		if pcrHashAlgo != tpm2.AlgUnknown {
+			sel := tpm2.PCRSelection{Hash: pcrHashAlgo, PCRs: pcrs}
+			if len(sel.PCRs) == 0 {
+				sel = client.FullPcrSel(sel.Hash)
+			}
+
+			fmt.Fprintf(debugOutput(), "Reading %v PCRs (%v)\n", sel.Hash, sel.PCRs)
+			pcrList, err := client.ReadPCRs(rwc, sel)
+			if err != nil {
+				return err
+			}
+			return pcrList.PrettyFormat(dataOutput())
 		}
 
-		fmt.Fprintf(debugOutput(), "Reading pcrs (%v)\n", sel.PCRs)
-		pcrList, err := client.ReadPCRs(rwc, sel)
+		fmt.Fprintln(debugOutput(), "Reading all PCRs")
+		banks, err := client.ReadAllPCRs(rwc)
 		if err != nil {
 			return err
 		}
 
-		for idx := uint32(0); idx < client.NumPCRs; idx++ {
-			if val, ok := pcrList.Pcrs[idx]; ok {
-				if _, err = fmt.Fprintf(dataOutput(), "%2d: %x\n", idx, val); err != nil {
-					return err
-				}
+		for _, bank := range banks {
+			if err = bank.PrettyFormat(dataOutput()); err != nil {
+				return err
 			}
 		}
 		return nil
