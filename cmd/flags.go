@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"strconv"
@@ -43,7 +44,15 @@ func (f *pcrsFlag) Type() string {
 }
 
 func (f *pcrsFlag) String() string {
-	return "" // Don't display a default value
+	if len(*f.value) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "%d", (*f.value)[0])
+	for _, pcr := range (*f.value)[1:] {
+		fmt.Fprintf(&b, ",%d", pcr)
+	}
+	return b.String()
 }
 
 var algos = map[tpm2.Algorithm]string{
