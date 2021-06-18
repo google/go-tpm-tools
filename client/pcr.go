@@ -2,7 +2,9 @@ package client
 
 import (
 	"crypto"
+	"fmt"
 	"io"
+	"math"
 
 	tpmpb "github.com/google/go-tpm-tools/proto"
 	"github.com/google/go-tpm/tpm2"
@@ -57,6 +59,29 @@ func ReadPCRs(rw io.ReadWriter, sel tpm2.PCRSelection) (*tpmpb.Pcrs, error) {
 	}
 
 	return &pl, nil
+}
+
+// ReadAllPCRs fetches all the PCR values from all implemented PCR banks.
+func ReadAllPCRs(rw io.ReadWriter) ([]*tpmpb.Pcrs, error) {
+	sels, moreData, err := tpm2.GetCapability(rw, tpm2.CapabilityPCRs, math.MaxUint32, 0)
+	if err != nil {
+		return nil, fmt.Errorf("listing implemented PCR banks: %w", err)
+	}
+	if moreData {
+		return nil, fmt.Errorf("extra data from GetCapability")
+	}
+	allPcrs := make([]*tpmpb.Pcrs, len(sels))
+	for i, sel := range sels {
+		sel, ok := sel.(tpm2.PCRSelection)
+		if !ok {
+			return nil, fmt.Errorf("unexpected data from GetCapability")
+		}
+		allPcrs[i], err = ReadPCRs(rw, sel)
+		if err != nil {
+			return nil, fmt.Errorf("reading bank %x PCRs: %w", sel.Hash, err)
+		}
+	}
+	return allPcrs, nil
 }
 
 // SealCurrent seals data to the current specified PCR selection.

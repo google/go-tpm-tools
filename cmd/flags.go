@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"strconv"
@@ -13,12 +14,11 @@ import (
 )
 
 var (
-	output   string
-	input    string
-	nvIndex  uint32
-	keyAlgo  = tpm2.AlgRSA
-	pcrs     []int
-	hashAlgo = tpm2.AlgSHA256
+	output  string
+	input   string
+	nvIndex uint32
+	keyAlgo = tpm2.AlgRSA
+	pcrs    []int
 )
 
 type pcrsFlag struct {
@@ -44,16 +44,25 @@ func (f *pcrsFlag) Type() string {
 }
 
 func (f *pcrsFlag) String() string {
-	return "" // Don't display a default value
+	if len(*f.value) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "%d", (*f.value)[0])
+	for _, pcr := range (*f.value)[1:] {
+		fmt.Fprintf(&b, ",%d", pcr)
+	}
+	return b.String()
 }
 
 var algos = map[tpm2.Algorithm]string{
-	tpm2.AlgRSA:    "rsa",
-	tpm2.AlgECC:    "ecc",
-	tpm2.AlgSHA1:   "sha1",
-	tpm2.AlgSHA256: "sha256",
-	tpm2.AlgSHA384: "sha384",
-	tpm2.AlgSHA512: "sha512",
+	tpm2.AlgUnknown: "",
+	tpm2.AlgRSA:     "rsa",
+	tpm2.AlgECC:     "ecc",
+	tpm2.AlgSHA1:    "sha1",
+	tpm2.AlgSHA256:  "sha256",
+	tpm2.AlgSHA384:  "sha384",
+	tpm2.AlgSHA512:  "sha512",
 }
 
 type algoFlag struct {
@@ -128,8 +137,8 @@ func addPublicKeyAlgoFlag(cmd *cobra.Command) {
 	cmd.PersistentFlags().Var(&f, "algo", "public key algorithm: "+f.Allowed())
 }
 
-func addHashAlgoFlag(cmd *cobra.Command) {
-	f := algoFlag{&hashAlgo, []tpm2.Algorithm{tpm2.AlgSHA1, tpm2.AlgSHA256, tpm2.AlgSHA384, tpm2.AlgSHA512}}
+func addHashAlgoFlag(cmd *cobra.Command, hashAlgo *tpm2.Algorithm) {
+	f := algoFlag{hashAlgo, []tpm2.Algorithm{tpm2.AlgSHA1, tpm2.AlgSHA256, tpm2.AlgSHA384, tpm2.AlgSHA512}}
 	cmd.PersistentFlags().Var(&f, "hash-algo", "hash algorithm: "+f.Allowed())
 }
 
@@ -172,10 +181,6 @@ func dataInput() io.Reader {
 		return alwaysError{err}
 	}
 	return file
-}
-
-func getSelection() tpm2.PCRSelection {
-	return tpm2.PCRSelection{Hash: hashAlgo, PCRs: pcrs}
 }
 
 // Load SRK based on tpm2.Algorithm set in the global flag vars.

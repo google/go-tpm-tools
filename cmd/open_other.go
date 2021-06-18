@@ -11,7 +11,7 @@ import (
 var tpmPath string
 
 func init() {
-	RootCmd.PersistentFlags().StringVar(&tpmPath, "tpm-path", "/dev/tpm0",
+	RootCmd.PersistentFlags().StringVar(&tpmPath, "tpm-path", "/dev/tpmrm0",
 		"path to TPM device")
 }
 

@@ -6,10 +6,38 @@ import (
 	"bytes"
 	"crypto"
 	"fmt"
+	"io"
 
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpmutil"
 )
+
+const minPCRIndex = uint32(0)
+
+func (x *Pcrs) maxPCRIndex() uint32 {
+	max := minPCRIndex
+	for idx := range x.Pcrs {
+		if idx > max {
+			max = idx
+		}
+	}
+	return max
+}
+
+// PrettyFormat writes a multiline representation of the PCR values to w.
+func (x *Pcrs) PrettyFormat(w io.Writer) error {
+	if _, err := fmt.Fprintf(w, "%v:\n", x.Hash); err != nil {
+		return err
+	}
+	for idx := minPCRIndex; idx <= x.maxPCRIndex(); idx++ {
+		if val, ok := x.Pcrs[idx]; ok {
+			if _, err := fmt.Fprintf(w, "  %2d: 0x%X\n", idx, val); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
 
 // CheckIfSubsetOf verifies if the pcrs PCRs are a valid "subset" of the provided
 // "superset" of PCRs. The PCR values must match (if present), and all PCRs must
