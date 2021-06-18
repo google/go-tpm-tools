@@ -11,6 +11,8 @@ import (
 	"github.com/google/go-tpm/tpm2"
 )
 
+var sealHashAlgo = tpm2.AlgSHA256
+
 var sealCmd = &cobra.Command{
 	Use:   "seal",
 	Short: "Seal some data to the TPM",
@@ -45,7 +47,7 @@ state (like Secure Boot).`,
 			return err
 		}
 
-		sel := getSelection()
+		sel := tpm2.PCRSelection{Hash: sealHashAlgo, PCRs: pcrs}
 		fmt.Fprintf(debugOutput(), "Sealing to PCRs: %v\n", sel.PCRs)
 		var sOpt client.SealOpt
 		if len(sel.PCRs) > 0 {
@@ -142,7 +144,7 @@ func init() {
 	addOutputFlag(unsealCmd)
 	// PCRs and hash algorithm only used for sealing
 	addPCRsFlag(sealCmd)
-	addHashAlgoFlag(sealCmd)
+	addHashAlgoFlag(sealCmd, &sealHashAlgo)
 	addPCRsFlag(unsealCmd)
 	addPublicKeyAlgoFlag(sealCmd)
 }

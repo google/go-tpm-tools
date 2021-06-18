@@ -16,6 +16,8 @@ var readCmd = &cobra.Command{
 	Args:  cobra.NoArgs,
 }
 
+var pcrHashAlgo = tpm2.AlgUnknown
+
 var pcrCmd = &cobra.Command{
 	Use:   "pcr",
 	Short: "Read PCRs from the TPM",
@@ -33,9 +35,9 @@ If --pcrs is not provided, all pcrs are read for that hash algorithm.`,
 		}
 		defer rwc.Close()
 
-		sel := getSelection()
+		sel := tpm2.PCRSelection{Hash: pcrHashAlgo, PCRs: pcrs}
 		if len(sel.PCRs) == 0 {
-			sel = client.FullPcrSel(hashAlgo)
+			sel = client.FullPcrSel(sel.Hash)
 		}
 
 		fmt.Fprintf(debugOutput(), "Reading pcrs (%v)\n", sel.PCRs)
@@ -87,7 +89,7 @@ func init() {
 	readCmd.AddCommand(nvReadCmd)
 	addOutputFlag(pcrCmd)
 	addPCRsFlag(pcrCmd)
-	addHashAlgoFlag(pcrCmd)
+	addHashAlgoFlag(pcrCmd, &pcrHashAlgo)
 	addIndexFlag(nvReadCmd)
 	nvReadCmd.MarkPersistentFlagRequired("index")
 	addOutputFlag(nvReadCmd)
