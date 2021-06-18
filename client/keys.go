@@ -364,8 +364,8 @@ func (k *Key) Unseal(in *tpmpb.SealedBytes, cOpt CertifyOpt) ([]byte, error) {
 
 // Quote will tell TPM to compute a hash of a set of given PCR selection, together with
 // some extra data (typically a nonce), sign it with the given signing key, and return
-// the signature and the attestation data. This function will panic if the key is not a
-// restricted signing key.
+// the signature and the attestation data. This function will return an error if
+// the key is not a restricted signing key.
 func (k *Key) Quote(selpcr tpm2.PCRSelection, extraData []byte) (*tpmpb.Quote, error) {
 	// Make sure that we have a valid signing key before trying quote
 	var err error
@@ -391,6 +391,32 @@ func (k *Key) Quote(selpcr tpm2.PCRSelection, extraData []byte) (*tpmpb.Quote, e
 		return nil, fmt.Errorf("failed to verify quote: %w", err)
 	}
 	return &quote, nil
+}
+
+// Attest generates an Attestation containing the TCG Event Log and a Quote over
+// all PCR banks. The provided nonce can be used to guarantee freshness of the
+// attestation. This function will return an error if the key is not a
+// restricted signing key.
+func (k *Key) Attest(nonce []byte) (*tpmpb.Attestation, error) {
+	sels, err := implementedPCRs(k.rw)
+	if err != nil {
+		return nil, err
+	}
+
+	attestation := tpmpb.Attestation{}
+	if attestation.AkPub, err = k.PublicArea().Encode(); err != nil {
+		return nil, fmt.Errorf("failed to encode public area: %w", err)
+	}
+	attestation.Quotes = make([]*tpmpb.Quote, len(sels))
+	for i, sel := range sels {
+		if attestation.Quotes[i], err = k.Quote(sel, nonce); err != nil {
+			return nil, err
+		}
+	}
+	if attestation.EventLog, err = GetEventLog(); err != nil {
+		return nil, fmt.Errorf("failed to retrieve TCG Event Log: %w", err)
+	}
+	return &attestation, nil
 }
 
 // Reseal is a shortcut to call Unseal() followed by Seal().
