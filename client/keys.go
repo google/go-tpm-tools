@@ -376,16 +376,21 @@ func (k *Key) Quote(selpcr tpm2.PCRSelection, extraData []byte) (*tpmpb.Quote, e
 		return nil, fmt.Errorf("unrestricted keys are insecure to use with Quote")
 	}
 
-	quoteResult := tpmpb.Quote{}
-	quoteResult.Quote, quoteResult.RawSig, err = tpm2.QuoteRaw(k.rw, k.Handle(), "", "", extraData, selpcr, tpm2.AlgNull)
+	quote := tpmpb.Quote{}
+	quote.Quote, quote.RawSig, err = tpm2.QuoteRaw(k.rw, k.Handle(), "", "", extraData, selpcr, tpm2.AlgNull)
 	if err != nil {
 		return nil, fmt.Errorf("failed to quote: %w", err)
 	}
-	quoteResult.Pcrs, err = ReadPCRs(k.rw, selpcr)
+	quote.Pcrs, err = ReadPCRs(k.rw, selpcr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read PCRs: %w", err)
 	}
-	return &quoteResult, nil
+	// Verify the quote client-side to make sure we didn't mess things up.
+	// NOTE: the quote still must be verified server-side as well.
+	if err := quote.Verify(k.PublicKey(), extraData); err != nil {
+		return nil, fmt.Errorf("failed to verify quote: %w", err)
+	}
+	return &quote, nil
 }
 
 // Reseal is a shortcut to call Unseal() followed by Seal().
