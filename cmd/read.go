@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/google/go-tpm-tools/client"
@@ -47,6 +48,9 @@ If --pcrs is not provided, all PCRs are read for that hash algorithm.`,
 				return err
 			}
 			return pcrList.PrettyFormat(dataOutput())
+		}
+		if len(pcrs) != 0 {
+			return errors.New("--hash-algo must be used with --pcrs")
 		}
 
 		fmt.Fprintln(debugOutput(), "Reading all PCRs")
