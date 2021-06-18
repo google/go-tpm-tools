@@ -1,4 +1,4 @@
-package server
+package proto
 
 import (
 	"bytes"
@@ -8,7 +8,6 @@ import (
 	"crypto/subtle"
 	"fmt"
 
-	tpmpb "github.com/google/go-tpm-tools/proto"
 	"github.com/google/go-tpm/tpm2"
 )
 
@@ -16,7 +15,7 @@ import (
 // Then, it matches that quoted data (PCR digest) against a group of PCRs.
 //
 // Verify supports ECDSA and RSASSA signature verification.
-func Verify(pubKey crypto.PublicKey, quote *tpmpb.Quote, pcrs *tpmpb.Pcrs, extraData []byte) error {
+func (quote *Quote) Verify(pubKey crypto.PublicKey, pcrs *Pcrs, extraData []byte) error {
 	sig, err := tpm2.DecodeSignature(bytes.NewBuffer(quote.GetRawSig()))
 	if err != nil {
 		return fmt.Errorf("signature decoding failed: %v", err)
@@ -92,7 +91,7 @@ func verifyRSASSAQuoteSignature(rsaPub *rsa.PublicKey, hash crypto.Hash, quoted 
 	return nil
 }
 
-func validatePCRDigest(quoteInfo *tpm2.QuoteInfo, pcrs *tpmpb.Pcrs, hash crypto.Hash) error {
+func validatePCRDigest(quoteInfo *tpm2.QuoteInfo, pcrs *Pcrs, hash crypto.Hash) error {
 	if !pcrs.HasSamePCRSelection(quoteInfo.PCRSelection) {
 		return fmt.Errorf("given PCRs and Quote do not have the same PCR selection")
 	}

@@ -96,7 +96,7 @@ func TestVerifyHappyCases(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to read PCRs: %v", err)
 			}
-			err = Verify(ak.PublicKey(), quoted, readPCR, test.extraData)
+			err = quoted.Verify(ak.PublicKey(), readPCR, test.extraData)
 			if err != nil {
 				t.Fatalf("failed to verify: %v", err)
 			}
@@ -138,7 +138,7 @@ func TestVerifyPCRChanged(t *testing.T) {
 	if err != nil {
 		t.Errorf("failed to read PCRs: %v", err)
 	}
-	err = Verify(ak.PublicKey(), quoted, readPCR, nonce)
+	err = quoted.Verify(ak.PublicKey(), readPCR, nonce)
 	if err == nil {
 		t.Errorf("Verify should fail as Verify read a modified PCR")
 	}
@@ -178,7 +178,7 @@ func TestVerifyUsingDifferentPCR(t *testing.T) {
 	if err != nil {
 		t.Errorf("failed to read PCRs: %v", err)
 	}
-	err = Verify(ak.PublicKey(), quoted, readPCR, nonce)
+	err = quoted.Verify(ak.PublicKey(), readPCR, nonce)
 	if err == nil {
 		t.Errorf("Verify should fail as Verify read a different PCR")
 	}
