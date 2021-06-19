@@ -413,7 +413,7 @@ func (k *Key) Attest(nonce []byte) (*tpmpb.Attestation, error) {
 			return nil, err
 		}
 	}
-	if attestation.EventLog, err = GetEventLog(); err != nil {
+	if attestation.EventLog, err = GetEventLog(k.rw); err != nil {
 		return nil, fmt.Errorf("failed to retrieve TCG Event Log: %w", err)
 	}
 	return &attestation, nil
