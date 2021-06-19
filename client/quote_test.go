@@ -8,6 +8,7 @@ import (
 	"io"
 	"testing"
 
+	"github.com/google/go-attestation/attest"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal"
 	"github.com/google/go-tpm/tpm2"
@@ -101,4 +102,53 @@ func TestQuoteShouldFailWithNonSigningKey(t *testing.T) {
 		t.Errorf("Quote with a non-signing key should fail")
 	}
 	t.Log(err)
+}
+
+// Basic tests of Key.Attest, more advanced methods are in server package
+func TestAttest(t *testing.T) {
+	rwc := internal.GetTPM(t)
+	defer client.CheckedClose(t, rwc)
+
+	keys := []struct {
+		name          string
+		getKey        func(io.ReadWriter) (*client.Key, error)
+		shouldSucceed bool
+	}{
+		{"AK-ECC", client.AttestationKeyECC, true},
+		{"AK-RSA", client.AttestationKeyRSA, true},
+		{"EK-ECC", client.EndorsementKeyECC, false},
+		{"EK-RSA", client.EndorsementKeyRSA, false},
+	}
+	for _, key := range keys {
+		t.Run(key.name, func(t *testing.T) {
+			ak, err := key.getKey(rwc)
+			if err != nil {
+				t.Fatalf("failed to generate AK: %v", err)
+			}
+			defer ak.Close()
+
+			attestation, err := ak.Attest([]byte("some nonce"))
+			if !key.shouldSucceed {
+				if err == nil {
+					t.Error("expected failure when calling Attest")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("failed to attest: %v", err)
+			}
+
+			// Basic check, make sure we got multiple banks, and fields parse
+			if _, err = tpm2.DecodePublic(attestation.AkPub); err != nil {
+				t.Errorf("failed to decode AkPub: %v", err)
+			}
+			if len(attestation.Quotes) <= 1 {
+				t.Error("expected multiple quotes")
+			}
+			if _, err = attest.ParseEventLog(attestation.EventLog); err != nil {
+				t.Errorf("failed to parse event log: %v", err)
+			}
+		})
+
+	}
 }
