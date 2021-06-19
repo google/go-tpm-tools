@@ -49,14 +49,14 @@ func TestReadPCRs(t *testing.T) {
 	rwc := internal.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
 
-	testPcrs := make(map[tpm2.Algorithm][]byte, 2)
+	testPcrs := make(map[tpm2.Algorithm][]byte)
 	testPcrs[tpm2.AlgSHA1] = bytes.Repeat([]byte{0x00}, sha1.Size)
 	testPcrs[tpm2.AlgSHA256] = bytes.Repeat([]byte{0x00}, sha256.Size)
 	testPcrs[tpm2.AlgSHA384] = bytes.Repeat([]byte{0x00}, sha512.Size384)
 
 	for _, test := range tests {
 		for _, extension := range test.inExtensions {
-			if err := tpm2.PCRExtend(rwc, tpmutil.Handle(0), test.inAlg, extension, ""); err != nil {
+			if err := tpm2.PCRExtend(rwc, tpmutil.Handle(internal.DebugPCR), test.inAlg, extension, ""); err != nil {
 				t.Fatalf("failed to extend pcr for test %v", err)
 			}
 
@@ -67,13 +67,13 @@ func TestReadPCRs(t *testing.T) {
 			testPcrs[test.inAlg] = pcrVal
 		}
 
-		sel := tpm2.PCRSelection{Hash: test.inAlg, PCRs: []int{0}}
+		sel := tpm2.PCRSelection{Hash: test.inAlg, PCRs: []int{internal.DebugPCR}}
 		proto, err := client.ReadPCRs(rwc, sel)
 		if err != nil {
 			t.Fatalf("failed to read pcrs %v", err)
 		}
 
-		if !bytes.Equal(proto.Pcrs[0], testPcrs[test.inAlg]) {
+		if !bytes.Equal(proto.Pcrs[uint32(internal.DebugPCR)], testPcrs[test.inAlg]) {
 			t.Errorf("%v not equal to expected %v", proto.Pcrs[0], testPcrs[test.inAlg])
 		}
 	}
@@ -97,16 +97,16 @@ func TestCheckContainedPCRs(t *testing.T) {
 		t.Fatalf("Validation should pass: %v", err)
 	}
 
-	if err := tpm2.PCRExtend(rwc, tpmutil.Handle(2), tpm2.AlgSHA256, bytes.Repeat([]byte{0x00}, sha256.Size), ""); err != nil {
+	if err := tpm2.PCRExtend(rwc, tpmutil.Handle(internal.DebugPCR), tpm2.AlgSHA256, bytes.Repeat([]byte{0x00}, sha256.Size), ""); err != nil {
 		t.Fatalf("failed to extend pcr for test %v", err)
 	}
 
-	toBeCertified, err = client.ReadPCRs(rwc, tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{1, 2, 3}})
+	toBeCertified, err = client.ReadPCRs(rwc, tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{1, 3, internal.DebugPCR}})
 	if err != nil {
 		t.Fatalf("failed to read pcrs %v", err)
 	}
 	if err := toBeCertified.CheckIfSubsetOf(baseline); err == nil {
-		t.Fatalf("validation should fail due to PCR 2 changed")
+		t.Fatalf("validation should fail due to PCR %d changed", internal.DebugPCR)
 	}
 
 	toBeCertified, err = client.ReadPCRs(rwc, tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{}})

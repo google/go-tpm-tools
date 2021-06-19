@@ -20,6 +20,12 @@ var (
 	lock sync.Mutex
 )
 
+// PCR registers that are OK to use in tests (can be reset without reboot)
+var (
+	DebugPCR       = 16
+	ApplicationPCR = 23
+)
+
 type noClose struct {
 	io.ReadWriter
 }

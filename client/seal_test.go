@@ -33,8 +33,8 @@ func TestSeal(t *testing.T) {
 			defer srk.Close()
 
 			secret := []byte("test")
-			sel := tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{7, 23}}
-			pcrToExtend := tpmutil.Handle(23)
+			pcrToChange := internal.DebugPCR
+			sel := tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{7, pcrToChange}}
 			sealed, err := srk.Seal(secret, client.SealCurrent{PCRSelection: sel})
 			if err != nil {
 				t.Fatalf("failed to seal: %v", err)
@@ -55,7 +55,7 @@ func TestSeal(t *testing.T) {
 			}
 
 			extension := bytes.Repeat([]byte{0xAA}, sha256.Size)
-			if err = tpm2.PCRExtend(rwc, pcrToExtend, tpm2.AlgSHA256, extension, ""); err != nil {
+			if err = tpm2.PCRExtend(rwc, tpmutil.Handle(pcrToChange), tpm2.AlgSHA256, extension, ""); err != nil {
 				t.Fatalf("failed to extend pcr: %v", err)
 			}
 
@@ -131,7 +131,7 @@ func TestComputePCRValue(t *testing.T) {
 	rwc := internal.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
 
-	pcrNum := 23
+	pcrNum := internal.DebugPCR
 	extensions := [][]byte{
 		bytes.Repeat([]byte{0xAA}, sha256.Size),
 		bytes.Repeat([]byte{0xAB}, sha256.Size),
@@ -173,18 +173,15 @@ func TestReseal(t *testing.T) {
 	defer key.Close()
 
 	secret := []byte("test")
-	pcrToChange := uint32(23)
-	sel := tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{7, 23}}
+	pcrToChange := internal.DebugPCR
+	sel := tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{7, pcrToChange}}
 	sealed, err := key.Seal(secret, client.SealCurrent{PCRSelection: sel})
 	if err != nil {
 		t.Fatalf("failed to seal: %v", err)
 	}
 
 	cOpt := client.CertifyCurrent{
-		PCRSelection: tpm2.PCRSelection{
-			Hash: tpm2.AlgSHA256,
-			PCRs: []int{7, 23},
-		},
+		PCRSelection: sel,
 	}
 	unseal, err := key.Unseal(sealed, cOpt)
 	if err != nil {
@@ -252,6 +249,7 @@ func TestSealResealWithEmptyPCRs(t *testing.T) {
 	defer key.Close()
 
 	secret := []byte("test")
+	pcrToChange := internal.DebugPCR
 	sealed, err := key.Seal(secret, nil)
 	if err != nil {
 		t.Fatalf("failed to seal: %v", err)
@@ -259,7 +257,7 @@ func TestSealResealWithEmptyPCRs(t *testing.T) {
 	cOpt := client.CertifyCurrent{
 		PCRSelection: tpm2.PCRSelection{
 			Hash: tpm2.AlgSHA256,
-			PCRs: []int{7},
+			PCRs: []int{pcrToChange},
 		},
 	}
 	unseal, err := key.Unseal(sealed, cOpt)
@@ -271,11 +269,11 @@ func TestSealResealWithEmptyPCRs(t *testing.T) {
 	}
 
 	extension := bytes.Repeat([]byte{0xAA}, sha256.Size)
-	if err = tpm2.PCRExtend(rwc, 7, tpm2.AlgSHA256, extension, ""); err != nil {
+	if err = tpm2.PCRExtend(rwc, tpmutil.Handle(pcrToChange), tpm2.AlgSHA256, extension, ""); err != nil {
 		t.Fatalf("failed to extend pcr: %v", err)
 	}
 
-	// unseal should failed as the PCR 7 has changed (not as same as when sealing)
+	// unseal should fail as the PCR has changed (not as same as when sealing)
 	_, err = key.Unseal(sealed, cOpt)
 	if err == nil {
 		t.Fatalf("unseal should fail as PCR 7 changed")
