@@ -108,7 +108,11 @@ func readEventLog(filePath string) ([]byte, error) {
 func TestSystemParseEventLog(t *testing.T) {
 	rwc := internal.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
-	evtLog := internal.GetEventLog(t, rwc)
+
+	evtLog, err := client.GetEventLog(rwc)
+	if err != nil {
+		t.Fatalf("failed to retrieve Event Log: %v", err)
+	}
 
 	sel := client.FullPcrSel(tpm2.AlgSHA1)
 	pcrs, err := client.ReadPCRs(rwc, sel)

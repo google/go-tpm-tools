@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/google/go-attestation/attest"
-	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/simulator"
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpmutil"
@@ -20,6 +19,12 @@ var (
 	lock sync.Mutex
 )
 
+// PCR registers that are OK to use in tests (can be reset without reboot)
+var (
+	DebugPCR       = 16
+	ApplicationPCR = 23
+)
+
 type noClose struct {
 	io.ReadWriter
 }
@@ -28,8 +33,20 @@ func (n noClose) Close() error {
 	return nil
 }
 
+type simulatedTpm struct {
+	io.ReadWriteCloser
+	eventLog []byte
+}
+
+func (s simulatedTpm) EventLog() ([]byte, error) {
+	return s.eventLog, nil
+}
+
 // GetTPM is a cross-platform testing helper function that retrives the
 // appropriate TPM device from the flags passed into "go test".
+//
+// If using a test TPM, this will also retrieve a test eventlog. In this case,
+// GetTPM extends the test event log's events into the test TPM.
 func GetTPM(tb testing.TB) io.ReadWriteCloser {
 	tb.Helper()
 	if useRealTPM() {
@@ -48,24 +65,6 @@ func GetTPM(tb testing.TB) io.ReadWriteCloser {
 	if err != nil {
 		tb.Fatalf("Simulator initialization failed: %v", err)
 	}
-	return simulator
-}
-
-// GetEventLog is a testing helper function that gets the TCG event log
-// on supported systems, if using a real TPM, or a test event log, if not.
-//
-// Note that GetEventLog may have side effects.
-// If a test requests a test event log, GetEventLog extends
-// the test event log's events into the simulator.
-func GetEventLog(tb testing.TB, rw io.ReadWriter) []byte {
-	if useRealTPM() {
-		eventLog, err := client.GetEventLog()
-		if err != nil {
-			tb.Fatalf("Failed to get system event log: %v", err)
-		}
-		return eventLog
-	}
-
 	absPath, err := filepath.Abs("../server/test/ubuntu-2104-event-log")
 	if err != nil {
 		tb.Fatalf("failed to get abs path: %v", err)
@@ -76,8 +75,8 @@ func GetEventLog(tb testing.TB, rw io.ReadWriter) []byte {
 	}
 
 	// Extend event log events on simulator TPM.
-	simulateEventLogEvents(tb, rw, eventLog)
-	return eventLog
+	simulateEventLogEvents(tb, simulator, eventLog)
+	return simulatedTpm{simulator, eventLog}
 }
 
 // simulateEventLogEvents simulates the events in the the test event log

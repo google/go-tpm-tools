@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"io/ioutil"
 	"os"
+	"strconv"
 	"testing"
 
 	"github.com/google/go-tpm-tools/client"
@@ -96,6 +97,8 @@ func TestUnsealFail(t *testing.T) {
 	ExternalTPM = rwc
 	extension := bytes.Repeat([]byte{0xAA}, sha256.Size)
 
+	sealPCR := internal.DebugPCR
+	certPCR := internal.ApplicationPCR
 	tests := []struct {
 		name        string
 		sealPCRs    string
@@ -103,9 +106,9 @@ func TestUnsealFail(t *testing.T) {
 		pcrToExtend []int
 	}{
 		// TODO(joerichey): Add test that TPM2_Reset make unsealing fail
-		{"ExtendPCRAndUnseal", "23", "", []int{23}},
-		{"ExtendPCRAndCertify", "23", "7", []int{7}},
-		{"ExtendPCRAndCertify2", "", "5", []int{5}},
+		{"ExtendPCRAndUnseal", strconv.Itoa(sealPCR), "", []int{sealPCR}},
+		{"ExtendPCRAndCertify", strconv.Itoa(sealPCR), strconv.Itoa(certPCR), []int{certPCR}},
+		{"ExtendPCRAndCertify2", "", strconv.Itoa(certPCR), []int{certPCR}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

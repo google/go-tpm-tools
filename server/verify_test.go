@@ -32,7 +32,7 @@ func extendPCRsRandomly(rwc io.ReadWriteCloser, selpcr tpm2.PCRSelection) error 
 		if err != nil {
 			return fmt.Errorf("random bytes read fail %v", err)
 		}
-		err = tpm2.PCRExtend(rwc, tpmutil.Handle(int(v)), selpcr.Hash, pcrExtendValue, "")
+		err = tpm2.PCRExtend(rwc, tpmutil.Handle(v), selpcr.Hash, pcrExtendValue, "")
 		if err != nil {
 			return fmt.Errorf("PCR extend fail %v", err)
 		}
@@ -44,6 +44,10 @@ func TestVerifyHappyCases(t *testing.T) {
 	rwc := internal.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
 
+	onePCR := []int{internal.DebugPCR}
+	twoPCR := append(onePCR, internal.ApplicationPCR)
+	dupePCR := append(twoPCR, twoPCR...)
+
 	tests := []struct {
 		name         string
 		getKey       func(io.ReadWriter) (*client.Key, error)
@@ -51,21 +55,19 @@ func TestVerifyHappyCases(t *testing.T) {
 		quotePCRList []int
 		extraData    []byte
 	}{
-		{"AK-RSA_SHA1_2PCRs_nonce", client.AttestationKeyRSA, tpm2.AlgSHA1, []int{7, 6}, getDigestHash("test")},
-		{"AK-RSA_SHA1_1PCR_nonce", client.AttestationKeyRSA, tpm2.AlgSHA1, []int{7}, getDigestHash("t")},
-		{"AK-RSA_SHA1_1PCR_no-nonce", client.AttestationKeyRSA, tpm2.AlgSHA1, []int{7}, nil},
-		{"AK-RSA_SHA256_2PCRs_nonce", client.AttestationKeyRSA, tpm2.AlgSHA256, []int{7, 6}, getDigestHash("test")},
-		{"AK-RSA_SHA256_3PCR_no-nonce", client.AttestationKeyRSA, tpm2.AlgSHA256, []int{7, 6, 5}, nil},
-		{"AK-RSA_SHA256_4PCR_empty-nonce", client.AttestationKeyRSA, tpm2.AlgSHA256, []int{7, 6, 5, 4}, []byte{}},
-		{"AK-RSA_SHA256_dupePCrSel_nonce", client.AttestationKeyRSA, tpm2.AlgSHA256, []int{7, 6, 6, 6, 1}, getDigestHash("")},
+		{"AK-RSA_SHA1_2PCRs_nonce", client.AttestationKeyRSA, tpm2.AlgSHA1, twoPCR, getDigestHash("test")},
+		{"AK-RSA_SHA1_1PCR_nonce", client.AttestationKeyRSA, tpm2.AlgSHA1, onePCR, getDigestHash("t")},
+		{"AK-RSA_SHA1_1PCR_no-nonce", client.AttestationKeyRSA, tpm2.AlgSHA1, onePCR, nil},
+		{"AK-RSA_SHA256_2PCRs_nonce", client.AttestationKeyRSA, tpm2.AlgSHA256, twoPCR, getDigestHash("test")},
+		{"AK-RSA_SHA256_2PCR_empty-nonce", client.AttestationKeyRSA, tpm2.AlgSHA256, twoPCR, []byte{}},
+		{"AK-RSA_SHA256_dupePCrSel_nonce", client.AttestationKeyRSA, tpm2.AlgSHA256, dupePCR, getDigestHash("")},
 
-		{"AK-ECC_SHA1_2PCRs_nonce", client.AttestationKeyECC, tpm2.AlgSHA1, []int{7, 6}, getDigestHash("test")},
-		{"AK-ECC_SHA1_1PCR_nonce", client.AttestationKeyECC, tpm2.AlgSHA1, []int{7}, getDigestHash("t")},
-		{"AK-ECC_SHA1_1PCR_no-nonce", client.AttestationKeyECC, tpm2.AlgSHA1, []int{7}, nil},
-		{"AK-ECC_SHA256_2PCRs_nonce", client.AttestationKeyECC, tpm2.AlgSHA256, []int{7, 6}, getDigestHash("test")},
-		{"AK-ECC_SHA256_3PCR_no-nonce", client.AttestationKeyECC, tpm2.AlgSHA256, []int{7, 6, 5}, nil},
-		{"AK-ECC_SHA256_4PCR_empty-nonce", client.AttestationKeyECC, tpm2.AlgSHA256, []int{7, 6, 5, 4}, []byte{}},
-		{"AK-ECC_SHA256_dupePCrSel_nonce", client.AttestationKeyECC, tpm2.AlgSHA256, []int{7, 6, 6, 6, 1}, getDigestHash("")},
+		{"AK-ECC_SHA1_2PCRs_nonce", client.AttestationKeyECC, tpm2.AlgSHA1, twoPCR, getDigestHash("test")},
+		{"AK-ECC_SHA1_1PCR_nonce", client.AttestationKeyECC, tpm2.AlgSHA1, onePCR, getDigestHash("t")},
+		{"AK-ECC_SHA1_1PCR_no-nonce", client.AttestationKeyECC, tpm2.AlgSHA1, onePCR, nil},
+		{"AK-ECC_SHA256_2PCRs_nonce", client.AttestationKeyECC, tpm2.AlgSHA256, twoPCR, getDigestHash("test")},
+		{"AK-ECC_SHA256_2PCR_empty-nonce", client.AttestationKeyECC, tpm2.AlgSHA256, twoPCR, []byte{}},
+		{"AK-ECC_SHA256_dupePCrSel_nonce", client.AttestationKeyECC, tpm2.AlgSHA256, dupePCR, getDigestHash("")},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -107,7 +109,7 @@ func TestVerifyPCRChanged(t *testing.T) {
 
 	selpcr := tpm2.PCRSelection{
 		Hash: tpm2.AlgSHA256,
-		PCRs: []int{7},
+		PCRs: []int{internal.DebugPCR},
 	}
 	err = extendPCRsRandomly(rwc, selpcr)
 	if err != nil {
@@ -119,7 +121,7 @@ func TestVerifyPCRChanged(t *testing.T) {
 		t.Error(err)
 	}
 
-	// change the PCR 7 value
+	// change the PCR value
 	err = extendPCRsRandomly(rwc, selpcr)
 	if err != nil {
 		t.Errorf("failed to extend test PCRs: %v", err)
@@ -147,7 +149,7 @@ func TestVerifyUsingDifferentPCR(t *testing.T) {
 
 	err = extendPCRsRandomly(rwc, tpm2.PCRSelection{
 		Hash: tpm2.AlgSHA256,
-		PCRs: []int{7, 8},
+		PCRs: []int{internal.DebugPCR, internal.ApplicationPCR},
 	})
 	if err != nil {
 		t.Errorf("failed to extend test PCRs: %v", err)
@@ -156,7 +158,7 @@ func TestVerifyUsingDifferentPCR(t *testing.T) {
 	nonce := getDigestHash("test")
 	quoted, err := ak.Quote(tpm2.PCRSelection{
 		Hash: tpm2.AlgSHA256,
-		PCRs: []int{7},
+		PCRs: []int{internal.DebugPCR},
 	}, nonce)
 	if err != nil {
 		t.Error(err)
@@ -164,7 +166,7 @@ func TestVerifyUsingDifferentPCR(t *testing.T) {
 
 	quoted.Pcrs, err = client.ReadPCRs(rwc, tpm2.PCRSelection{
 		Hash: tpm2.AlgSHA256,
-		PCRs: []int{8},
+		PCRs: []int{internal.ApplicationPCR},
 	})
 	if err != nil {
 		t.Errorf("failed to read PCRs: %v", err)
