@@ -24,6 +24,12 @@ const (
 	DefaultAKRSAHandle = tpmutil.Handle(0x81008F01)
 )
 
+// NV Indices holding GCE AK Templates
+const (
+	GceAKTemplateNVIndexRSA uint32 = 0x01c10001
+	GceAKTemplateNVIndexECC uint32 = 0x01c10003
+)
+
 func isHierarchy(h tpmutil.Handle) bool {
 	return h == tpm2.HandleOwner || h == tpm2.HandleEndorsement ||
 		h == tpm2.HandlePlatform || h == tpm2.HandleNull

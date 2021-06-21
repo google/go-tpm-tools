@@ -45,12 +45,12 @@ func StorageRootKeyECC(rw io.ReadWriter) (*Key, error) {
 	return NewCachedKey(rw, tpm2.HandleOwner, SRKTemplateECC(), SRKECCReservedHandle)
 }
 
-// AttestationKeyRSA generates and loads a key from AKTemplateRSA
+// AttestationKeyRSA generates and loads a key from AKTemplateRSA in the Owner hierarchy.
 func AttestationKeyRSA(rw io.ReadWriter) (*Key, error) {
 	return NewCachedKey(rw, tpm2.HandleOwner, AKTemplateRSA(), DefaultAKRSAHandle)
 }
 
-// AttestationKeyECC generates and loads a key from AKTemplateECC
+// AttestationKeyECC generates and loads a key from AKTemplateECC in the Owner hierarchy.
 func AttestationKeyECC(rw io.ReadWriter) (*Key, error) {
 	return NewCachedKey(rw, tpm2.HandleOwner, AKTemplateECC(), DefaultAKECCHandle)
 }
@@ -60,6 +60,20 @@ func AttestationKeyECC(rw io.ReadWriter) (*Key, error) {
 // have a preinstalled AK template.
 func EndorsementKeyFromNvIndex(rw io.ReadWriter, idx uint32) (*Key, error) {
 	return KeyFromNvIndex(rw, tpm2.HandleEndorsement, idx)
+}
+
+// GceAttestationKeyRSA generates and loads the GCE RSA AK. Note that this
+// function will only work on a GCE VM. Unlike AttestationKeyRSA, this key uses
+// the Endorsement Hierarchy and its template loaded from GceAKTemplateNVIndexRSA.
+func GceAttestationKeyRSA(rw io.ReadWriter) (*Key, error) {
+	return EndorsementKeyFromNvIndex(rw, GceAKTemplateNVIndexRSA)
+}
+
+// GceAttestationKeyECC generates and loads the GCE ECC AK. Note that this
+// function will only work on a GCE VM. Unlike AttestationKeyECC, this key uses
+// the Endorsement Hierarchy and its template loaded from GceAKTemplateNVIndexECC.
+func GceAttestationKeyECC(rw io.ReadWriter) (*Key, error) {
+	return EndorsementKeyFromNvIndex(rw, GceAKTemplateNVIndexECC)
 }
 
 // KeyFromNvIndex generates and loads a key under the provided parent
