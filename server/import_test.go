@@ -55,6 +55,15 @@ func TestImport(t *testing.T) {
 	}
 }
 
+func isExpectedError(err error, expected []error) bool {
+	for _, candidate := range expected {
+		if errors.Is(err, candidate) {
+			return true
+		}
+	}
+	return false
+}
+
 func TestBadImport(t *testing.T) {
 	rwc := internal.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
@@ -63,6 +72,11 @@ func TestBadImport(t *testing.T) {
 		Code:      tpm2.RCValue,
 		Parameter: tpm2.RC4,
 	}
+	// RSA keys lengths are not consistent, so we could also get RCSize
+	rsaWrongKeyErrs := []error{valueErr, tpm2.ParameterError{
+		Code:      tpm2.RCSize,
+		Parameter: tpm2.RC4,
+	}}
 	integrityErr := tpm2.ParameterError{
 		Code:      tpm2.RCIntegrity,
 		Parameter: tpm2.RC3,
@@ -73,15 +87,15 @@ func TestBadImport(t *testing.T) {
 	}
 
 	tests := []struct {
-		name         string
-		template     tpm2.Public
-		wrongKeyErr  tpm2.ParameterError
-		corruptedErr tpm2.ParameterError
+		name          string
+		template      tpm2.Public
+		wrongKeyErrs  []error
+		corruptedErrs []error
 	}{
-		{"RSA", client.DefaultEKTemplateRSA(), valueErr, valueErr},
-		{"ECC", client.DefaultEKTemplateECC(), integrityErr, pointErr},
-		{"SRK-RSA", client.SRKTemplateRSA(), valueErr, valueErr},
-		{"SRK-ECC", client.SRKTemplateECC(), integrityErr, pointErr},
+		{"RSA", client.DefaultEKTemplateRSA(), rsaWrongKeyErrs, []error{valueErr}},
+		{"ECC", client.DefaultEKTemplateECC(), []error{integrityErr}, []error{pointErr}},
+		{"SRK-RSA", client.SRKTemplateRSA(), rsaWrongKeyErrs, []error{valueErr}},
+		{"SRK-ECC", client.SRKTemplateECC(), []error{integrityErr}, []error{pointErr}},
 	}
 
 	for _, test := range tests {
@@ -109,14 +123,14 @@ func TestBadImport(t *testing.T) {
 			}
 
 			// Try to import this blob under the wrong key
-			if _, err = ek2.Import(blob); !errors.Is(err, test.wrongKeyErr) {
-				t.Errorf("got error: %v, expected: %v", err, test.wrongKeyErr)
+			if _, err = ek2.Import(blob); !isExpectedError(err, test.wrongKeyErrs) {
+				t.Errorf("got error: %v, expected: %v", err, test.wrongKeyErrs)
 			}
 
 			// Try to import a corrupted blob
 			blob.EncryptedSeed[10] ^= 0xFF
-			if _, err = ek.Import(blob); !errors.Is(err, test.corruptedErr) {
-				t.Errorf("got error: %v, expected: %v", err, test.corruptedErr)
+			if _, err = ek.Import(blob); !isExpectedError(err, test.corruptedErrs) {
+				t.Errorf("got error: %v, expected: %v", err, test.corruptedErrs)
 			}
 		})
 	}
