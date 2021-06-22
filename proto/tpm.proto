@@ -52,3 +52,63 @@ message Attestation {
   repeated Quote quotes = 2;
   bytes event_log = 3;
 }
+
+enum GceConfidentialTechnology {
+  NONE = 0;
+  AMD_SEV = 1;
+  AMD_SEV_ES = 2;
+}
+
+message PlatformState {
+  bytes firmware_version = 1;
+  GceConfidentialTechnology technology = 2;
+}
+
+message Certificate {
+  bytes der = 1;
+}
+
+// A Secure Boot database containing lists of hashes and certificates,
+// as defined by section 32.4.1 Signature Database in the UEFI spec.
+message Database {
+  repeated Certificate certs = 1;
+  repeated bytes hashes = 2;
+}
+
+message SecureBootState {
+  bool enabled = 1; 
+  Database db = 2;
+  Database dbx = 3;
+  // Authority events post-separator. Pre-separator authorities
+  // are currently not supported.
+  Database authority = 4;
+}
+
+message Event {
+  uint32 index = 1;
+  uint32 untrusted_type = 2;
+  bytes data = 3;
+  bytes digest = 4;
+}
+
+message MachineState {
+  PlatformState platform = 1;
+  SecureBootState secure_boot = 2;
+  repeated Event raw_events = 3;
+}
+
+message PlatformPolicy {
+  repeated bytes allowed_firmware_versions = 1;
+  GceConfidentialTechnology minimum_technology = 2;
+}
+
+message SecureBootPolicy {
+  Database permitted = 1;
+  Database forbidden = 2;
+  repeated Certificate permitted_authorities = 3;
+}
+
+message AttestationPolicy {
+  PlatformPolicy platform = 1;
+  SecureBootPolicy secure_boot = 2;
+}
