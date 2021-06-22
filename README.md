@@ -1,24 +1,77 @@
 # Go-TPM tools
 
-This repository contains various libraries and a command line tool designed for
-use with [Go-TPM](https://github.com/google/go-tpm):
-  - [simulator](https://godoc.org/github.com/google/go-tpm-tools/simulator):
-    Go bindings to the Microsoft's
-    [TPM2 simulator](https://github.com/Microsoft/ms-tpm-20-ref/).
-  - [tpm2tools](https://godoc.org/github.com/google/go-tpm-tools/tpm2tools):
-    a Go library providing useful abstractions and utility functions for using a
-    TPM2. The goal of this library is to handle complex TPM functionality
-    (sessions, authorization, activating credentials, etc...), providing users
-    with a simplified API.
-  - `gotpm`: a command line tool for using the TPM from the command line. Run
-    `gotpm --help` and `gotpm [command] --help` for more documentation.
+The `go-tpm-tools` module is a [TPM 2.0](https://trustedcomputinggroup.org/resource/trusted-platform-module-2-0-a-brief-introduction/) support library designed to complement [Go-TPM](https://github.com/google/go-tpm).
+
+It contains the following public packages:
+  - [`client`](https://pkg.go.dev/github.com/google/go-tpm-tools@v0.3.0-alpha/client):
+    A Go package providing simplified abstractions and utility functions for interacting with a TPM 2.0, including:
+      - Signing
+      - Attestation
+      - Reading PCRs
+      - Sealing/Unsealing data
+      - Importing Data and Keys
+      - Reading NVData
+      - Getting the TCG Event Log
+  - [`server`](https://pkg.go.dev/github.com/google/go-tpm-tools@v0.3.0-alpha/server):
+    A Go package providing functionality for a remote server to send, receive, and interpret TPM 2.0 data. None of the commands in this package isssue TPM commands, but instead handle:
+      - TCG Event Log parsing
+      - Attestation verification
+      - Creating data for Importing into a TPM
+  - [`proto`](https://pkg.go.dev/github.com/google/go-tpm-tools@v0.3.0-alpha/proto):
+    Common [Protocol Buffer](https://developers.google.com/protocol-buffers) messages that are exchanged between the `client` and `server` libaries. This package also contains helper methods for validating these messages.
+  - [`simulator`](https://pkg.go.dev/github.com/google/go-tpm-tools@v0.3.0-alpha/simulator):
+    Go bindings to the Microsoft's [TPM 2.0 simulator](https://github.com/Microsoft/ms-tpm-20-ref/).
+
+This repository also contains `gotpm`, a command line tool for using the TPM.
+Run `gotpm --help` and `gotpm <command> --help` for more documentation.
+
+### Building and Installing `gotpm`
+
+`gotpm` can be directly installed from this repo by running:
+```bash
+go install github.com/google/go-tpm-tools/cmd/gotpm@latest
+# gotpm will be installed to $GOBIN
+gotpm --help
+```
+Alternatively, to build `gotpm` from a cloned version of this repo, run:
+```bash
+cd /my/path/to/cloned/go-tpm-tools
+go build ./cmd/gotpm
+# gotpm will be in the root of the repo
+./gotpm --help
+```
 
 ## Minimum Required Go Version
 
-This project currently requires Go 1.13 or newer. In general, we try to support
-building with all [currently supported Go versions](https://endoflife.date/go).
-Any update to the minimum required Go version will be released as a **minor**
-version update.
+This project currently requires Go 1.16 or newer. Any update to the minimum required Go version will be released as a **minor** version update.
+
+## `trousers` errors when building `server`
+
+When building the `server` library (or tests) you may get an error that looks like:
+```
+fatal error: trousers/tss.h: No such file or directory
+   17 | // #include <trousers/tss.h>
+      |           ^~~~~~~~~~~~~~~~
+compilation terminated.
+```
+This is because the `server` library (indirectly) depends on the [Trousers `libtspi` library](http://trousers.sourceforge.net/). This is a _temporary_ dependency ([tracking issue](https://github.com/google/go-tpm-tools/issues/109)). To fix this error, install `libtspi` by running:
+```bash
+sudo apt install libtspi-dev
+```
+
+## `openssl` errors when building `simulator`
+
+Similarly, when building the `simulator` library (or tests), you may get an error that looks like:
+```
+fatal error: openssl/aes.h: No such file or directory
+   47 | // #include <openssl/aes.h>
+      |           ^~~~~~~~~~~~~~~~
+compilation terminated.
+```
+This is because the `simulator` library depends on having the [OpenSSL](https://www.openssl.org/) headers installed. To fix this error, install them by running:
+```bash
+sudo apt install libssl-dev
+```
 
 ## macOS Dev
 macOS fails to `go build` and `go test` by default with the error `ld: library not found for -lcrypto`.
@@ -52,6 +105,10 @@ committing changes.
 // #cgo CFLAGS: -I $OPENSSL_PATH/include
 // #cgo LDFLAGS: -L$OPENSSL_PATH/lib
 ```
+
+## No TPM 1.2 support
+
+Unlike [Go-TPM](https://github.com/google/go-tpm) (which supports TPM 1.2 and TPM 2.0), this module explicitly only supports TPM 2.0. Users should avoid use of TPM 1.2 due to the inherent reliance on SHA1 (which is [quite broken](https://sha-mbles.github.io/)).
 
 ## Legal
 
