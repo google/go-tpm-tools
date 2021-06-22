@@ -12,21 +12,3 @@ After updating `tpm.proto` you will have to regenerate the go bindings. To do th
     ```
 
 See [the docs](https://developers.google.com/protocol-buffers/docs/reference/go-generated) for more information.
-
-
-### Workaround for https://github.com/golang/protobuf/issues/1077
-
-In order to not have this package depend on an old version of the protobuf
-library:
-
-Delete this import from the generated file:
-```go
-proto "github.com/golang/protobuf/proto"
-```
-
-Delete this code from the generated file:
-```go
-// This is a compile-time assertion that a sufficiently up-to-date version
-// of the legacy proto package is being used.
-const _ = proto.ProtoPackageIsVersion4
-```
