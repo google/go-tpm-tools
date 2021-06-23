@@ -39,7 +39,7 @@ func convertToAttestPcrs(pcrProto *tpmpb.Pcrs) ([]attest.PCR, error) {
 		return nil, err
 	}
 
-	attestPcrs := make([]attest.PCR, len(pcrProto.GetPcrs()))
+	attestPcrs := make([]attest.PCR, 0, len(pcrProto.GetPcrs()))
 	for index, digest := range pcrProto.GetPcrs() {
 		attestPcrs = append(attestPcrs, attest.PCR{
 			Index:     int(index),

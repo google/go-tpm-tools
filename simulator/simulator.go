@@ -19,7 +19,6 @@ package simulator
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"math/rand"
 	"sync"
@@ -36,32 +35,22 @@ type Simulator struct {
 	buf bytes.Buffer
 }
 
-// ErrSimulatorInUse indicates another open Simulator already exists.
-var ErrSimulatorInUse = errors.New("simulator is being used by another caller")
-
 // The simulator is a global resource, so we use the variables below to make
 // sure we only ever have one open reference to the Simulator at a time.
-var (
-	lock  sync.Mutex
-	inUse bool
-)
+var lock sync.Mutex
 
 // Get the pointer to an initialized, powered on, and started simulator. As only
-// one simulator may be running at a time, a second call to Get() will return
-// ErrSimulatorInUse until the first Simulator is Closed.
+// one simulator may be running at a time, a second call to Get() block until
+// the first Simulator is Closed.
 func Get() (*Simulator, error) {
 	lock.Lock()
-	defer lock.Unlock()
-	if inUse {
-		return nil, ErrSimulatorInUse
-	}
 
 	simulator := &Simulator{}
 	internal.Reset(true)
 	if err := simulator.on(true); err != nil {
+		lock.Unlock()
 		return nil, err
 	}
-	inUse = true
 	return simulator, nil
 }
 
@@ -115,9 +104,7 @@ func (s *Simulator) Read(responseBuffer []byte) (int, error) {
 // Close cleans up and stops the simulator, Close() should always be called when
 // the Simulator is no longer needed, freeing up other callers to use Get().
 func (s *Simulator) Close() error {
-	lock.Lock()
 	defer lock.Unlock()
-	inUse = false
 	return s.off()
 }
 
