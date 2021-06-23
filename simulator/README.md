@@ -8,7 +8,7 @@ The Microsoft code used here is actually
 It is vendored at `simulator/ms-tpm-20-ref` to maintain compatiblity with
 `go get`. Building the simulator requires the OpenSSL headers to be installed.
 This can be doen with:
-  - Debain based systems (including Ubuntu): `apt install libssl-dev`
+  - Debian based systems (including Ubuntu): `apt install libssl-dev`
   - Red Hat based systems: `yum install openssl-devel`
   - Arch Linux based systems: [`openssl`](https://www.archlinux.org/packages/core/x86_64/openssl/)
     is installed by default (as a dependancy of `base`) and includes the headers.
