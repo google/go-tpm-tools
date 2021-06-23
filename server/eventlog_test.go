@@ -16,6 +16,42 @@ type eventLog struct {
 	Banks  []*tpmpb.Pcrs
 }
 
+// Agile Event Log from a RHEL 8 GCE instance with Secure Boot enabled
+var Rhel8GCE = eventLog{
+	RawLog: internal.Rhel8EventLog,
+	Banks: []*tpmpb.Pcrs{{
+		Hash: tpmpb.HashAlgo_SHA1,
+		Pcrs: map[uint32][]byte{
+			0:  decodeHex("0f2d3a2a1adaa479aeeca8f5df76aadc41b862ea"),
+			1:  decodeHex("5cc549378bafaa92e965c7e9c287925cfff33abd"),
+			2:  decodeHex("b2a83b0ebf2f8374299a5b2bdfc31ea955ad7236"),
+			3:  decodeHex("b2a83b0ebf2f8374299a5b2bdfc31ea955ad7236"),
+			4:  decodeHex("7fbe2df30156ca4934109f48d850ab327110f8fa"),
+			5:  decodeHex("3258daa13f4cccf245c170481c76e2a4602e5a7b"),
+			6:  decodeHex("b2a83b0ebf2f8374299a5b2bdfc31ea955ad7236"),
+			7:  decodeHex("d7a632f8990b2171e987041b0a3c69fc1b2a4f27"),
+			8:  decodeHex("15aab2077008f8325e7c61ee39fedd7118aad5d7"),
+			9:  decodeHex("25de9455ef4e8180b76bbb9bb54a82f9a73abb0a"),
+			14: decodeHex("1f5149668c40524e01be9cbc3ad527645943f148"),
+		},
+	}, {
+		Hash: tpmpb.HashAlgo_SHA256,
+		Pcrs: map[uint32][]byte{
+			0:  decodeHex("24af52a4f429b71a3184a6d64cddad17e54ea030e2aa6576bf3a5a3d8bd3328f"),
+			1:  decodeHex("454220afaa80c83c3839f6cccd8b3c88bf4f562316a9dda1121c578c9e005a53"),
+			2:  decodeHex("3d458cfe55cc03ea1f443f1562beec8df51c75e14a9fcf9a7234a13f198e7969"),
+			3:  decodeHex("3d458cfe55cc03ea1f443f1562beec8df51c75e14a9fcf9a7234a13f198e7969"),
+			4:  decodeHex("758a3d35f1b0ff5b135dacd07db0c8132c0ac665d944090d4bf96e66447a245c"),
+			5:  decodeHex("53d0ee36163219201e686167bbb71ec505b3ba2917b9d9183ed84aad26cfeb89"),
+			6:  decodeHex("3d458cfe55cc03ea1f443f1562beec8df51c75e14a9fcf9a7234a13f198e7969"),
+			7:  decodeHex("5fd54361d580eb7592adb8deb236ff35444ceeac7148f24b3de63c041f12b3da"),
+			8:  decodeHex("25c3874041ebd4e9a21b6ed71b624a7bfa99907a8dcea7f129a4c64cbaf5829a"),
+			9:  decodeHex("d43b2f61eb18b4791812ff5f20ab20e4ef621ba683370bedf5dbdf518b3a8078"),
+			14: decodeHex("d8f57ebcc1a23cc46832696e1a657f720e1be8f5b405bb7204682114e363b455"),
+		},
+	}},
+}
+
 // Agile Event Log from a Ubuntu 21.04 GCE instance with Secure Boot enabled
 var Ubuntu2104GCE = eventLog{
 	RawLog: internal.Ubuntu2104EventLog,
@@ -76,6 +112,7 @@ func TestParseEventLogs(t *testing.T) {
 		log  eventLog
 	}{
 		{"Debain10GCE", Debain10GCE},
+		{"Rhel8GCE", Rhel8GCE},
 		{"Ubuntu2104GCE", Ubuntu2104GCE},
 	}
 
