@@ -105,11 +105,10 @@ func TestSystemParseEventLog(t *testing.T) {
 	sel := client.FullPcrSel(tpm2.AlgSHA1)
 	pcrs, err := client.ReadPCRs(rwc, sel)
 	if err != nil {
-		t.Errorf("failed to read PCRs: %v", err)
+		t.Fatalf("failed to read PCRs: %v", err)
 	}
 
-	_, err = ParseAndVerifyEventLog(evtLog, pcrs)
-	if err != nil {
+	if _, err = ParseAndVerifyEventLog(evtLog, pcrs); err != nil {
 		t.Errorf("failed to parse and verify log: %v", err)
 	}
 }
