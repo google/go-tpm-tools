@@ -7,6 +7,9 @@ import (
 //go:embed eventlogs/debian-10.bin
 var Debian10EventLog []byte
 
+//go:embed eventlogs/glinux-alex.bin
+var GlinuxAlexEventLog []byte
+
 //go:embed eventlogs/rhel8-uefi.bin
 var Rhel8EventLog []byte
 

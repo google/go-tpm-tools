@@ -124,6 +124,37 @@ var Ubuntu2104NoSecureBootGCE = eventLog{
 	}},
 }
 
+// Agile Event Log from Alex's gLinux laptop with secure boot disabled
+// No PCR[0] as replay is currently broken for H-CRTM measurement
+var GlinuxNoSecureBootLaptop = eventLog{
+	RawLog: internal.GlinuxAlexEventLog,
+	Banks: []*tpmpb.Pcrs{{
+		Hash: tpmpb.HashAlgo_SHA1,
+		Pcrs: map[uint32][]byte{
+			// 0: decodeHex("faf6e04e58687bbedd28cb902b3516b0cf4b79dd"),
+			1: decodeHex("db16852a369b2503d6cc6c0007501c837dbe1170"),
+			2: decodeHex("0c8ef58d40b8cd1fe15f6b45fc1b385dd251eec0"),
+			3: decodeHex("b2a83b0ebf2f8374299a5b2bdfc31ea955ad7236"),
+			4: decodeHex("c56cddf3dcf59a473a239efd17b130391e24b0df"),
+			5: decodeHex("23606963a2813421f5b6e76e32a337ff8940e413"),
+			6: decodeHex("b2a83b0ebf2f8374299a5b2bdfc31ea955ad7236"),
+			7: decodeHex("9221b8fc57b60cb7de507dc016f88d4600cde9c5"),
+		},
+	}, {
+		Hash: tpmpb.HashAlgo_SHA256,
+		Pcrs: map[uint32][]byte{
+			// 0: decodeHex("1f0d16fee72999408656db5e4ac8ea0ce0c43095b8f6e439fef380958bc74295"),
+			1: decodeHex("9750400838980c9419764b9cf19c975c0e159c18ebe21cb897c6e834a8d8d433"),
+			2: decodeHex("970096d49105b0404999173e49c3f6b8597b9c4c5ff6a9e364b55ce01037578e"),
+			3: decodeHex("3d458cfe55cc03ea1f443f1562beec8df51c75e14a9fcf9a7234a13f198e7969"),
+			4: decodeHex("ddb124ca9013f1e42f98537f7f381e47c5e6caa988cf2b4088f452c5a8dd912d"),
+			5: decodeHex("fb58603615cfec59c0428e71913d30d45f38e4280380cc814135a7659c246b13"),
+			6: decodeHex("3d458cfe55cc03ea1f443f1562beec8df51c75e14a9fcf9a7234a13f198e7969"),
+			7: decodeHex("9d1be46302bc4f5055c90a0376d9142e397ca8744f387c9824170f1bc855fde5"),
+		},
+	}},
+}
+
 // Legacy Event Log from a Debian 10 GCE instance with Secure Boot enabled
 var Debain10GCE = eventLog{
 	RawLog: internal.Debian10EventLog,
@@ -151,6 +182,7 @@ func TestParseEventLogs(t *testing.T) {
 		{"Rhel8GCE", Rhel8GCE},
 		{"Ubuntu2104NoDbxGCE", Ubuntu2104NoDbxGCE},
 		{"Ubuntu2104NoSecureBootGCE", Ubuntu2104NoSecureBootGCE},
+		{"GlinuxNoSecureBootLaptop", GlinuxNoSecureBootLaptop},
 	}
 
 	for _, test := range tests {
