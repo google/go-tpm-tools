@@ -72,7 +72,7 @@ func GetTPM(tb testing.TB) io.ReadWriteCloser {
 			}
 		}
 	})
-	eventLog := Ubuntu2104EventLog
+	eventLog := Rhel8EventLog
 
 	// Extend event log events on simulator TPM.
 	simulateEventLogEvents(tb, simulator, eventLog)

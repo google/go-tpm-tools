@@ -52,9 +52,9 @@ var Rhel8GCE = eventLog{
 	}},
 }
 
-// Agile Event Log from a Ubuntu 21.04 GCE instance with Secure Boot enabled
-var Ubuntu2104GCE = eventLog{
-	RawLog: internal.Ubuntu2104EventLog,
+// Agile Event Log from a Ubuntu 21.04 GCE instance without a DBX and with Secure Boot disabled
+var Ubuntu2104NoDbxGCE = eventLog{
+	RawLog: internal.Ubuntu2104NoDbxEventLog,
 	Banks: []*tpmpb.Pcrs{{
 		Hash: tpmpb.HashAlgo_SHA1,
 		Pcrs: map[uint32][]byte{
@@ -113,7 +113,7 @@ func TestParseEventLogs(t *testing.T) {
 	}{
 		{"Debain10GCE", Debain10GCE},
 		{"Rhel8GCE", Rhel8GCE},
-		{"Ubuntu2104GCE", Ubuntu2104GCE},
+		{"Ubuntu2104NoDbxGCE", Ubuntu2104NoDbxGCE},
 	}
 
 	for _, test := range tests {
