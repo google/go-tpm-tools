@@ -4,6 +4,9 @@ import (
 	_ "embed"
 )
 
+//go:embed eventlogs/arch-linux-workstation.bin
+var ArchLinuxWorkstationEventLog []byte
+
 //go:embed eventlogs/debian-10.bin
 var Debian10EventLog []byte
 

@@ -155,6 +155,38 @@ var GlinuxNoSecureBootLaptop = eventLog{
 	}},
 }
 
+// Agile Event Log from an Arch Linux worksation with systemd-boot and Secure Boot Disabled
+var ArchLinuxWorkstation = eventLog{
+	RawLog: internal.ArchLinuxWorkstationEventLog,
+	Banks: []*tpmpb.Pcrs{{
+		Hash: tpmpb.HashAlgo_SHA1,
+		Pcrs: map[uint32][]byte{
+			0: decodeHex("a0487b0d95387d4a30560edf5f041307bf4a1dcc"),
+			1: decodeHex("56b71c334a5b67d3b7b3343e3241dff5a1ad87bf"),
+			2: decodeHex("01098a68e44e4fbd0af3b9a836b1b79e78c4f6f5"),
+			3: decodeHex("b2a83b0ebf2f8374299a5b2bdfc31ea955ad7236"),
+			4: decodeHex("4c8b6f359b5e5cb9d09e825009a98e1281165b01"),
+			5: decodeHex("0dfa5ca60508ac5214515b20ed3e66289514fcb6"),
+			6: decodeHex("b2a83b0ebf2f8374299a5b2bdfc31ea955ad7236"),
+			7: decodeHex("029c700c2fa2bc83cbf3ce4ee501ad4d984ec5ae"),
+			8: decodeHex("aa99fc93faa0777f42da6e1ae77a0653b5005619"),
+		},
+	}, {
+		Hash: tpmpb.HashAlgo_SHA256,
+		Pcrs: map[uint32][]byte{
+			0: decodeHex("758b773d94feabf52ef5a4c00a7ad2c80d8d6e6d9d58756150be9bc973da9087"),
+			1: decodeHex("bfda688a5d320123fddb3fc70b746bc17647e2e7f2f96e130d429542bf4622d5"),
+			2: decodeHex("65dee4a48cde677aa89fa83c5c35e883fda658f743853e3ebad504ca6702f7c5"),
+			3: decodeHex("3d458cfe55cc03ea1f443f1562beec8df51c75e14a9fcf9a7234a13f198e7969"),
+			4: decodeHex("925d453d3dfef4ac0c72c957402163d45fa95d05e6d53f047263a3a60b598325"),
+			5: decodeHex("202522f005ef625588bb7c9e21335ba96a63c5086306138885b3bb2c381730ca"),
+			6: decodeHex("3d458cfe55cc03ea1f443f1562beec8df51c75e14a9fcf9a7234a13f198e7969"),
+			7: decodeHex("3b4a4db44b7a872524055364e62e897ae678e0d47ab0809f65c3a4ed77f66ab9"),
+			8: decodeHex("47591b43af431963eaeb5238a5c42eda1eb0014c27f7de7ae483066a2d2a2e61"),
+		},
+	}},
+}
+
 // Legacy Event Log from a Debian 10 GCE instance with Secure Boot enabled
 var Debain10GCE = eventLog{
 	RawLog: internal.Debian10EventLog,
@@ -183,6 +215,7 @@ func TestParseEventLogs(t *testing.T) {
 		{"Ubuntu2104NoDbxGCE", Ubuntu2104NoDbxGCE},
 		{"Ubuntu2104NoSecureBootGCE", Ubuntu2104NoSecureBootGCE},
 		{"GlinuxNoSecureBootLaptop", GlinuxNoSecureBootLaptop},
+		{"ArchLinuxWorkstation", ArchLinuxWorkstation},
 	}
 
 	for _, test := range tests {
