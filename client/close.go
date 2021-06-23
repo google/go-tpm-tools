@@ -16,7 +16,7 @@ func CheckedClose(tb testing.TB, rwc io.ReadWriteCloser) {
 	} {
 		handles, err := Handles(rwc, t)
 		if err != nil {
-			tb.Fatalf("failed to fetch handles of type %v: %v", t, err)
+			tb.Errorf("failed to fetch handles of type %v: %v", t, err)
 		}
 		if len(handles) != 0 {
 			tb.Errorf("tests leaked handles: %v", handles)
@@ -24,6 +24,6 @@ func CheckedClose(tb testing.TB, rwc io.ReadWriteCloser) {
 	}
 
 	if err := rwc.Close(); err != nil {
-		tb.Errorf("failed to close simulator: %v", err)
+		tb.Errorf("when closing simulator: %v", err)
 	}
 }
