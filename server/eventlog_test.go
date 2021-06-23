@@ -188,7 +188,7 @@ var ArchLinuxWorkstation = eventLog{
 }
 
 // Legacy Event Log from a Debian 10 GCE instance with Secure Boot enabled
-var Debain10GCE = eventLog{
+var Debian10GCE = eventLog{
 	RawLog: internal.Debian10EventLog,
 	Banks: []*tpmpb.Pcrs{{
 		Hash: tpmpb.HashAlgo_SHA1,
@@ -210,7 +210,7 @@ func TestParseEventLogs(t *testing.T) {
 		name string
 		log  eventLog
 	}{
-		{"Debain10GCE", Debain10GCE},
+		{"Debian10GCE", Debian10GCE},
 		{"Rhel8GCE", Rhel8GCE},
 		{"Ubuntu2104NoDbxGCE", Ubuntu2104NoDbxGCE},
 		{"Ubuntu2104NoSecureBootGCE", Ubuntu2104NoSecureBootGCE},
