@@ -2,8 +2,6 @@ package internal
 
 import (
 	"io"
-	"io/ioutil"
-	"path/filepath"
 	"sync"
 	"testing"
 
@@ -74,14 +72,7 @@ func GetTPM(tb testing.TB) io.ReadWriteCloser {
 			}
 		}
 	})
-	absPath, err := filepath.Abs("../server/test/ubuntu-2104-event-log")
-	if err != nil {
-		tb.Fatalf("failed to get abs path: %v", err)
-	}
-	eventLog, err := ioutil.ReadFile(absPath)
-	if err != nil {
-		tb.Fatalf("Failed to get test event log: %v", err)
-	}
+	eventLog := Ubuntu2104EventLog
 
 	// Extend event log events on simulator TPM.
 	simulateEventLogEvents(tb, simulator, eventLog)
