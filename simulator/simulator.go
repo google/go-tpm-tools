@@ -32,7 +32,8 @@ import (
 // handles, no synchronization is provided; the same simulator handle should not
 // be used from multiple threads.
 type Simulator struct {
-	buf bytes.Buffer
+	buf    bytes.Buffer
+	closed bool
 }
 
 // The simulator is a global resource, so we use the variables below to make
@@ -51,6 +52,7 @@ func Get() (*Simulator, error) {
 		lock.Unlock()
 		return nil, err
 	}
+	simulator.closed = false
 	return simulator, nil
 }
 
@@ -104,8 +106,14 @@ func (s *Simulator) Read(responseBuffer []byte) (int, error) {
 // Close cleans up and stops the simulator, Close() should always be called when
 // the Simulator is no longer needed, freeing up other callers to use Get().
 func (s *Simulator) Close() error {
+	s.closed = true
 	defer lock.Unlock()
 	return s.off()
+}
+
+// IsClosed returns true if the simulator has been Closed()
+func (s *Simulator) IsClosed() bool {
+	return s.closed
 }
 
 func (s *Simulator) on(manufactureReset bool) error {

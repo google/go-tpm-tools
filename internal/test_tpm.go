@@ -65,6 +65,15 @@ func GetTPM(tb testing.TB) io.ReadWriteCloser {
 	if err != nil {
 		tb.Fatalf("Simulator initialization failed: %v", err)
 	}
+	// Make sure that whatever happens, we close the simulator
+	tb.Cleanup(func() {
+		if !simulator.IsClosed() {
+			tb.Error("simulator was not properly closed")
+			if err := simulator.Close(); err != nil {
+				tb.Errorf("when closing simulator: %v", err)
+			}
+		}
+	})
 	absPath, err := filepath.Abs("../server/test/ubuntu-2104-event-log")
 	if err != nil {
 		tb.Fatalf("failed to get abs path: %v", err)
