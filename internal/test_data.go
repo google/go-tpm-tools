@@ -1,23 +1,19 @@
 package internal
 
-import (
-	_ "embed"
+import _ "embed" // Necessary to use go:embed
+
+// Raw binary TCG Event Logs
+var (
+	//go:embed eventlogs/arch-linux-workstation.bin
+	ArchLinuxWorkstationEventLog []byte
+	//go:embed eventlogs/debian-10.bin
+	Debian10EventLog []byte
+	//go:embed eventlogs/glinux-alex.bin
+	GlinuxAlexEventLog []byte
+	//go:embed eventlogs/rhel8-uefi.bin
+	Rhel8EventLog []byte
+	//go:embed eventlogs/ubuntu-2104-no-dbx.bin
+	Ubuntu2104NoDbxEventLog []byte
+	//go:embed eventlogs/ubuntu-2104-no-secure-boot.bin
+	Ubuntu2104NoSecureBootEventLog []byte
 )
-
-//go:embed eventlogs/arch-linux-workstation.bin
-var ArchLinuxWorkstationEventLog []byte
-
-//go:embed eventlogs/debian-10.bin
-var Debian10EventLog []byte
-
-//go:embed eventlogs/glinux-alex.bin
-var GlinuxAlexEventLog []byte
-
-//go:embed eventlogs/rhel8-uefi.bin
-var Rhel8EventLog []byte
-
-//go:embed eventlogs/ubuntu-2104-no-dbx.bin
-var Ubuntu2104NoDbxEventLog []byte
-
-//go:embed eventlogs/ubuntu-2104-no-secure-boot.bin
-var Ubuntu2104NoSecureBootEventLog []byte

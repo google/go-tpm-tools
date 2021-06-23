@@ -1,6 +1,6 @@
 package server
 
-import _ "embed"
+import _ "embed" // Necessary to use go:embed
 
 // Standard Secure Boot certificates (DER encoded)
 var (
