@@ -88,6 +88,42 @@ var Ubuntu2104NoDbxGCE = eventLog{
 	}},
 }
 
+// Agile Event Log from a Ubuntu 21.04 GCE instance with Secure Boot disabled
+var Ubuntu2104NoSecureBootGCE = eventLog{
+	RawLog: internal.Ubuntu2104NoSecureBootEventLog,
+	Banks: []*tpmpb.Pcrs{{
+		Hash: tpmpb.HashAlgo_SHA1,
+		Pcrs: map[uint32][]byte{
+			0:  decodeHex("0f2d3a2a1adaa479aeeca8f5df76aadc41b862ea"),
+			1:  decodeHex("f5310dfcfcec5571cbf730064d526906c9cea2f0"),
+			2:  decodeHex("b2a83b0ebf2f8374299a5b2bdfc31ea955ad7236"),
+			3:  decodeHex("b2a83b0ebf2f8374299a5b2bdfc31ea955ad7236"),
+			4:  decodeHex("e53d909941dcbc699b273fc4c0d817a41c6ab975"),
+			5:  decodeHex("9e2af4bac1432830594b1ae90c68c52a20a9700e"),
+			6:  decodeHex("b2a83b0ebf2f8374299a5b2bdfc31ea955ad7236"),
+			7:  decodeHex("ede7204673f41ac2592b0d3b4cd429b43f39dc61"),
+			8:  decodeHex("bda59abe1c7d18e0b85edfcb4381f10d4dcc88f7"),
+			9:  decodeHex("39fd49224476f4d7eea26a53e264c9c33e47649c"),
+			14: decodeHex("cd3734d2bdfcfba9e443ac02c03c812ffcceb255"),
+		},
+	}, {
+		Hash: tpmpb.HashAlgo_SHA256,
+		Pcrs: map[uint32][]byte{
+			0:  decodeHex("24af52a4f429b71a3184a6d64cddad17e54ea030e2aa6576bf3a5a3d8bd3328f"),
+			1:  decodeHex("45ed8540f34db53220ef197e5fb8a3835b2095454349e445f397f13d91c509a5"),
+			2:  decodeHex("3d458cfe55cc03ea1f443f1562beec8df51c75e14a9fcf9a7234a13f198e7969"),
+			3:  decodeHex("3d458cfe55cc03ea1f443f1562beec8df51c75e14a9fcf9a7234a13f198e7969"),
+			4:  decodeHex("ebc7ae25d0347868250995c9a8fff16bf79e048453262d0ef2756e213c76181c"),
+			5:  decodeHex("47715f9f2c10769da6ee23be5633fd88e247caf162f4eeb0b6f8482ccfeadfb5"),
+			6:  decodeHex("3d458cfe55cc03ea1f443f1562beec8df51c75e14a9fcf9a7234a13f198e7969"),
+			7:  decodeHex("0d8847bc5eca06452df10e2f214363845c7ac11d47525a5474e225e72ce25dfe"),
+			8:  decodeHex("b9a324947de94ec2fd4b04483ecfcb37dfdd520a7c0ecf73c77bf2595549c84f"),
+			9:  decodeHex("adb87be3efd96cc3a2f66b8aa7564f9727563ef494a95d571a3f38ff4afb25dd"),
+			14: decodeHex("8351c65483c5419079e8c96758dd2130bee075d71fea226f68ec4eb5bfc71983"),
+		},
+	}},
+}
+
 // Legacy Event Log from a Debian 10 GCE instance with Secure Boot enabled
 var Debain10GCE = eventLog{
 	RawLog: internal.Debian10EventLog,
@@ -114,6 +150,7 @@ func TestParseEventLogs(t *testing.T) {
 		{"Debain10GCE", Debain10GCE},
 		{"Rhel8GCE", Rhel8GCE},
 		{"Ubuntu2104NoDbxGCE", Ubuntu2104NoDbxGCE},
+		{"Ubuntu2104NoSecureBootGCE", Ubuntu2104NoSecureBootGCE},
 	}
 
 	for _, test := range tests {

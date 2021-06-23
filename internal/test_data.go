@@ -12,3 +12,6 @@ var Rhel8EventLog []byte
 
 //go:embed eventlogs/ubuntu-2104-no-dbx.bin
 var Ubuntu2104NoDbxEventLog []byte
+
+//go:embed eventlogs/ubuntu-2104-no-secure-boot.bin
+var Ubuntu2104NoSecureBootEventLog []byte
