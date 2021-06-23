@@ -3,8 +3,6 @@ package server
 import (
 	"encoding/hex"
 	"fmt"
-	"io/ioutil"
-	"path/filepath"
 	"testing"
 
 	"github.com/google/go-tpm-tools/client"
@@ -13,14 +11,15 @@ import (
 	"github.com/google/go-tpm/tpm2"
 )
 
-func TestParseCryptoAgileEventLog(t *testing.T) {
-	evtLog, err := readEventLog("./test/ubuntu-2104-event-log")
-	if err != nil {
-		t.Fatalf("failed reading event log: %v", err)
-	}
+type eventLog struct {
+	RawLog []byte
+	Banks  []*tpmpb.Pcrs
+}
 
-	// Fetched from the tpm2-tools eventlog command.
-	sha1Pcrs := tpmpb.Pcrs{
+// Agile Event Log from a Ubuntu 21.04 GCE instance with Secure Boot enabled
+var Ubuntu2104GCE = eventLog{
+	RawLog: internal.Ubuntu2104EventLog,
+	Banks: []*tpmpb.Pcrs{{
 		Hash: tpmpb.HashAlgo_SHA1,
 		Pcrs: map[uint32][]byte{
 			0:  decodeHex("0f2d3a2a1adaa479aeeca8f5df76aadc41b862ea"),
@@ -35,8 +34,7 @@ func TestParseCryptoAgileEventLog(t *testing.T) {
 			9:  decodeHex("f53869ab9015b5ad736e5f00e44fdfee2fdfde27"),
 			14: decodeHex("cd3734d2bdfcfba9e443ac02c03c812ffcceb255"),
 		},
-	}
-	sha256Pcrs := tpmpb.Pcrs{
+	}, {
 		Hash: tpmpb.HashAlgo_SHA256,
 		Pcrs: map[uint32][]byte{
 			0:  decodeHex("24af52a4f429b71a3184a6d64cddad17e54ea030e2aa6576bf3a5a3d8bd3328f"),
@@ -51,29 +49,13 @@ func TestParseCryptoAgileEventLog(t *testing.T) {
 			9:  decodeHex("9f27883322aaaf043662c27542d9685790c687ea554e4e2ae30f0e099a2e4889"),
 			14: decodeHex("8351c65483c5419079e8c96758dd2130bee075d71fea226f68ec4eb5bfc71983"),
 		},
-	}
-	banks := []*tpmpb.Pcrs{
-		&sha1Pcrs,
-		&sha256Pcrs,
-	}
-
-	for _, bank := range banks {
-		_, err = ParseAndVerifyEventLog(evtLog, bank)
-		if err != nil {
-			t.Errorf("failed to parse and verify log for hash %s: %v",
-				tpmpb.HashAlgo_name[int32(bank.Hash)], err)
-		}
-	}
+	}},
 }
 
-func TestParseSHA1EventLog(t *testing.T) {
-	evtLog, err := readEventLog("./test/debian_10_binary_bios_measurements")
-	if err != nil {
-		t.Fatalf("failed reading event log: %v", err)
-	}
-
-	// Fetched from the tpm2-tools eventlog command.
-	pcrs := tpmpb.Pcrs{
+// Legacy Event Log from a Debian 10 GCE instance with Secure Boot enabled
+var Debain10GCE = eventLog{
+	RawLog: internal.Debian10EventLog,
+	Banks: []*tpmpb.Pcrs{{
 		Hash: tpmpb.HashAlgo_SHA1,
 		Pcrs: map[uint32][]byte{
 			0: decodeHex("0f2d3a2a1adaa479aeeca8f5df76aadc41b862ea"),
@@ -85,24 +67,30 @@ func TestParseSHA1EventLog(t *testing.T) {
 			6: decodeHex("b2a83b0ebf2f8374299a5b2bdfc31ea955ad7236"),
 			7: decodeHex("9e6c57e850f371c2a7fe02bca552149363952318"),
 		},
-	}
-
-	_, err = ParseAndVerifyEventLog(evtLog, &pcrs)
-	if err != nil {
-		t.Errorf("failed to parse and verify log: %v", err)
-	}
+	}},
 }
 
-func readEventLog(filePath string) ([]byte, error) {
-	absPath, err := filepath.Abs(filePath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get abs path: %v", err)
+func TestParseEventLogs(t *testing.T) {
+	tests := []struct {
+		name string
+		log  eventLog
+	}{
+		{"Debain10GCE", Debain10GCE},
+		{"Ubuntu2104GCE", Ubuntu2104GCE},
 	}
-	evtLog, err := ioutil.ReadFile(absPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read event log: %v", err)
+
+	for _, test := range tests {
+		rawLog := test.log.RawLog
+		for _, bank := range test.log.Banks {
+			hashName := tpmpb.HashAlgo_name[int32(bank.Hash)]
+			subtestName := fmt.Sprintf("%s-%s", test.name, hashName)
+			t.Run(subtestName, func(t *testing.T) {
+				if _, err := ParseAndVerifyEventLog(rawLog, bank); err != nil {
+					t.Errorf("failed to parse and verify log: %v", err)
+				}
+			})
+		}
 	}
-	return evtLog, nil
 }
 
 func TestSystemParseEventLog(t *testing.T) {
