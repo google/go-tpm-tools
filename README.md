@@ -13,12 +13,12 @@ It contains the following public packages:
       - Reading NVData
       - Getting the TCG Event Log
   - [`server`](https://pkg.go.dev/github.com/google/go-tpm-tools@v0.3.0-alpha/server):
-    A Go package providing functionality for a remote server to send, receive, and interpret TPM 2.0 data. None of the commands in this package isssue TPM commands, but instead handle:
+    A Go package providing functionality for a remote server to send, receive, and interpret TPM 2.0 data. None of the commands in this package issue TPM commands, but instead handle:
       - TCG Event Log parsing
       - Attestation verification
       - Creating data for Importing into a TPM
   - [`proto`](https://pkg.go.dev/github.com/google/go-tpm-tools@v0.3.0-alpha/proto):
-    Common [Protocol Buffer](https://developers.google.com/protocol-buffers) messages that are exchanged between the `client` and `server` libaries. This package also contains helper methods for validating these messages.
+    Common [Protocol Buffer](https://developers.google.com/protocol-buffers) messages that are exchanged between the `client` and `server` libraries. This package also contains helper methods for validating these messages.
   - [`simulator`](https://pkg.go.dev/github.com/google/go-tpm-tools@v0.3.0-alpha/simulator):
     Go bindings to the Microsoft's [TPM 2.0 simulator](https://github.com/Microsoft/ms-tpm-20-ref/).
 
@@ -88,7 +88,7 @@ To point the simulator at openssl as provided by Homebrew, there are a couple
 of options. Both of these use the output of `$(brew --prefix openssl)` for
 `$OPENSSL_PATH`.
 
-#### Add OpenSSL to the include and library path at the commandline
+#### Add OpenSSL to the include and library path at the command line
 This solution does not require modifying go-tpm-tools code and is useful when
 working on other projects that depend on go-tpm-tools/simulator.
 ```
@@ -97,7 +97,7 @@ C_INCLUDE_PATH="$OPENSSL_PATH/include" LIBRARY_PATH="$OPENSSL_PATH/lib" go test 
 
 #### Add OpenSSL to the include and library path in the code
 This solution modifies your local copy of the go-tpm-tools simulator source
-and removes the need to provide the paths on the commandline.
+and removes the need to provide the paths on the command line.
 
 Remember to remove the lines from `simulator/internal/internal.go` before
 committing changes.

@@ -79,7 +79,7 @@ func GetTPM(tb testing.TB) io.ReadWriteCloser {
 	return simulatedTpm{simulator, eventLog}
 }
 
-// simulateEventLogEvents simulates the events in the the test event log
+// simulateEventLogEvents simulates the events in the test event log
 // "server/test/ubuntu-2104-event-log" by parsing the log
 // and manually extending the TPM.
 func simulateEventLogEvents(tb testing.TB, rw io.ReadWriter, eventLog []byte) {
