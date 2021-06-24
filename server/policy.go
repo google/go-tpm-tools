@@ -12,6 +12,8 @@ import (
 	tpmpb "github.com/google/go-tpm-tools/proto"
 )
 
+// PolicyCheckOutput represents the errors found when applying
+// an AttestationPolicy to a MachineState.
 type PolicyCheckOutput struct {
 	Errors []error
 }
@@ -136,6 +138,9 @@ func applyFirmwareVersionCheck(platPolicy *tpmpb.PlatformPolicy, firmwareVersion
 	return ret
 }
 
+// CommonDbContents contains the two certs regularly in the UEFI Secure Boot db:
+// - Microsoft Corporation UEFI CA 2011
+// - Microsoft Windows Production PCA 2011
 func CommonDbContents() *tpmpb.Database {
 	return &tpmpb.Database{
 		Certs: []*tpmpb.Certificate{
@@ -149,6 +154,14 @@ func CommonDbContents() *tpmpb.Database {
 	}
 }
 
+// CommonDbxContents takes a dbxHexList and returns an expected dbx Database.
+// The dbxHexList should be one of the curated lists in policy_constants.go.
+//
+// These are taken from the UEFI revocation
+// list file site. The dbx also contains two revoked certs from Debian and
+// Canonical due to the Boothole
+// (https://eclypsium.com/2020/07/29/theres-a-hole-in-the-boot/)
+// vulnerability.
 func CommonDbxContents(dbxHexList []string) (*tpmpb.Database, error) {
 	dbxBytes := make([][]byte, 0, len(dbxHexList))
 	for _, hash := range dbxHexList {
@@ -171,6 +184,8 @@ func CommonDbxContents(dbxHexList []string) (*tpmpb.Database, error) {
 	}, nil
 }
 
+// CommonGceDbxContents adds a revoked Cisco Virtual UEFI CA to the
+// CommonDbxContents, seen on GCE machines.
 func CommonGceDbxContents(dbxHexList []string) (*tpmpb.Database, error) {
 	dbx, err := CommonDbxContents(dbxHexList)
 	if err != nil {
@@ -183,6 +198,14 @@ func CommonGceDbxContents(dbxHexList []string) (*tpmpb.Database, error) {
 	return dbx, nil
 }
 
+// DefaultGceSecureBootPolicy returns a partial GCE secure boot policy.
+// Specifically, the policy specifies a:
+// - db
+// - dbx
+// - Authorities
+//
+// It is missing distro-specific CAs used with shim (e.g., the Canonical
+// CA for Ubuntu).
 func DefaultGceSecureBootPolicy() (*tpmpb.SecureBootPolicy, error) {
 	dbx, err := CommonGceDbxContents(DbxX64ListOct2020Contents)
 	if err != nil {
@@ -194,6 +217,13 @@ func DefaultGceSecureBootPolicy() (*tpmpb.SecureBootPolicy, error) {
 	}, nil
 }
 
+// DefaultGceLinuxSecureBootPolicy returns a partial GCE AttestationPolicy.
+// Specifically, the policy contains a:
+// - PlatformPolicy with known values for GCE firmware versions
+// - GCE's default Secure Boot policy.
+//
+// It is missing distro-specific CAs used with shim (e.g., the Canonical
+// CA for Ubuntu).
 func DefaultGceLinuxSecureBootPolicy() (*tpmpb.SecureBootPolicy, error) {
 	secureBootPolicy, err := DefaultGceSecureBootPolicy()
 	if err != nil {
@@ -231,19 +261,18 @@ func DefaultGceLinuxPolicy() (*tpmpb.AttestationPolicy, error) {
 func getGceVirtualFirmwareEvent(version uint) []byte {
 	if version == 0 {
 		return []byte{0x00, 0x00, 0x00, 0x00}
-	} else {
-		event := GceVirtualFirmwareVersion
-		// Add version information in UCS-2 format.
-		versionString := strconv.Itoa(int(version))
-		encoded := utf16.Encode([]rune(versionString))
-		encodedBytes := make([]byte, 2)
-		for _, encodedRune := range encoded {
-			binary.LittleEndian.PutUint16(encodedBytes, encodedRune)
-			event = append(event, encodedBytes...)
-		}
-
-		// Add null terminator.
-		event = append(event, 0x00, 0x00)
-		return event
 	}
+	event := GceVirtualFirmwareVersion
+	// Add version information in UCS-2 format.
+	versionString := strconv.Itoa(int(version))
+	encoded := utf16.Encode([]rune(versionString))
+	encodedBytes := make([]byte, 2)
+	for _, encodedRune := range encoded {
+		binary.LittleEndian.PutUint16(encodedBytes, encodedRune)
+		event = append(event, encodedBytes...)
+	}
+
+	// Add null terminator.
+	event = append(event, 0x00, 0x00)
+	return event
 }

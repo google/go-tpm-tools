@@ -1,5 +1,6 @@
 package proto
 
+// SetDifference returns the certificates in removeFrom not in toRemove.
 func SetDifference(removeFrom []*Certificate, toRemove []*Certificate) []*Certificate {
 	var difference []*Certificate
 	superCerts := make(map[string]struct{}, len(removeFrom))
@@ -14,6 +15,7 @@ func SetDifference(removeFrom []*Certificate, toRemove []*Certificate) []*Certif
 	return difference
 }
 
+// SetDifference returns the database elements in the receiver not in toRemove.
 func (d *Database) SetDifference(toRemove *Database) *Database {
 	var difference *Database = &Database{}
 	certDifference := SetDifference(d.Certs, toRemove.Certs)
@@ -31,10 +33,12 @@ func (d *Database) SetDifference(toRemove *Database) *Database {
 	return difference
 }
 
+// IsEmpty returns whether number of database elements (certs and hashes) is zero.
 func (d *Database) IsEmpty() bool {
 	return d.Size() == 0
 }
 
+// Size returns number of database elements (certs and hashes).
 func (d *Database) Size() int {
 	return len(d.Certs) + len(d.Hashes)
 }
