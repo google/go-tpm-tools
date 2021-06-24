@@ -43,6 +43,15 @@ var (
 	MicrosoftUEFICA2011Cert []byte
 )
 
+// Distro-specific Secure Boot certificates (DER encoded).
+// Used with shim.
+var (
+	//go:embed secure-boot/DebianSecureBootCA.crt
+	DebianSecureBootCert []byte
+	//go:embed secure-boot/RedHatSecureBootCA.crt
+	RedHatSecureBootCert []byte
+)
+
 // Revoked Signing certificates (DER encoded)
 var (
 	//go:embed secure-boot/canonical-boothole.crt
