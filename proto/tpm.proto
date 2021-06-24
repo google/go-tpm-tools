@@ -37,8 +37,11 @@ message ImportBlob {
 }
 
 message Quote {
+  // TPM2 quote, encoded as a TPMS_ATTEST
   bytes quote = 1;
+  // TPM2 signature, encoded as a TPMT_SIGNATURE
   bytes raw_sig = 2;
+  // PCR values of the bank being quoted
   Pcrs pcrs = 3;
 }
 
@@ -47,6 +50,9 @@ message Pcrs {
   map<uint32, bytes> pcrs = 2;
 }
 
+// Information uniquely identifying a GCE instnace. Can be used to create an
+// instnace URL, which can then be used with GCE APIs. Formatted like:
+//   https://www.googleapis.com/compute/v1/projects/{project_id}/zones/{zone}/instances/{instance_name}
 message GceInstanceInfo {
   string zone = 1;
   string project_id = 2;
@@ -56,8 +62,12 @@ message GceInstanceInfo {
 }
 
 message Attestation {
+  // Attestation Key (AK) Public Area, encoded as a TPMT_PUBLIC
   bytes ak_pub = 1;
+  // Quotes over all supported PCR banks
   repeated Quote quotes = 2;
+  // TCG Event Log, encoded in the raw binary format
   bytes event_log = 3;
+  // Optional information about a GCE instance, unused outside of GCE
   GceInstanceInfo instance_info = 4;
 }
