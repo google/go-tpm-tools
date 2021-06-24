@@ -47,8 +47,17 @@ message Pcrs {
   map<uint32, bytes> pcrs = 2;
 }
 
+message GceInstanceInfo {
+  string zone = 1;
+  string project_id = 2;
+  uint64 project_number = 3;
+  string instance_name = 4;
+  uint64 instance_id = 5;
+}
+
 message Attestation {
   bytes ak_pub = 1;
   repeated Quote quotes = 2;
   bytes event_log = 3;
+  GceInstanceInfo instance_info = 4;
 }
