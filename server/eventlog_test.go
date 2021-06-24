@@ -3,8 +3,10 @@ package server
 import (
 	"encoding/hex"
 	"fmt"
+	"reflect"
 	"testing"
 
+	"github.com/google/go-attestation/attest"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal"
 	tpmpb "github.com/google/go-tpm-tools/proto"
@@ -232,6 +234,44 @@ func TestParseEventLogs(t *testing.T) {
 	}
 }
 
+func TestParseGceConfidentialTech(t *testing.T) {
+	nonconfidentialEvent := getGceMemoryEncryptionNonhostEvent( /*memoryEncrypted=*/ false)
+
+	// Empty events should return NONCONFIDENTIAL.
+	confTech, err := parseGceConfidentialTechnology([][]byte{})
+	if err != nil {
+		t.Errorf("failed to parse GCE confidential tech: %v", err)
+	}
+	if confTech != tpmpb.GceConfidentialTechnology_NONE {
+		t.Errorf("expected ConfidentialTechnology %v, received %v", tpmpb.GceConfidentialTechnology_NONE, confTech)
+	}
+
+	confTech, err = parseGceConfidentialTechnology([][]byte{nonconfidentialEvent})
+	if err != nil {
+		t.Errorf("failed to parse GCE confidential tech: %v", err)
+	}
+	if confTech != tpmpb.GceConfidentialTechnology_NONE {
+		t.Errorf("expected ConfidentialTechnology %v, received %v", tpmpb.GceConfidentialTechnology_NONE, confTech)
+	}
+
+	sevEvent := getGceMemoryEncryptionNonhostEvent( /*memoryEncrypted=*/ true)
+	confTech, err = parseGceConfidentialTechnology([][]byte{sevEvent})
+	if err != nil {
+		t.Errorf("failed to parse GCE confidential tech: %v", err)
+	}
+	if confTech != tpmpb.GceConfidentialTechnology_AMD_SEV {
+		t.Errorf("expected ConfidentialTechnology %v, received %v", tpmpb.GceConfidentialTechnology_AMD_SEV, confTech)
+	}
+}
+
+func TestParseGceConfidentialTechUnknownType(t *testing.T) {
+	nonconfidentialEvent := getGceMemoryEncryptionNonhostEvent( /*memoryEncrypted=*/ false)
+	nonconfidentialEvent[16] = 0x02
+	if _, err := parseGceConfidentialTechnology([][]byte{nonconfidentialEvent}); err == nil {
+		t.Errorf("expected error parsing GCE confidential nonhost event")
+	}
+}
+
 func TestSystemParseEventLog(t *testing.T) {
 	rwc := internal.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
@@ -252,10 +292,70 @@ func TestSystemParseEventLog(t *testing.T) {
 	}
 }
 
+func TestConvertToProtoEvents(t *testing.T) {
+	evtLog := Rhel8GCE
+	protoEvents, err := ParseAndVerifyEventLog(evtLog.RawLog, evtLog.Banks[0])
+	if err != nil {
+		t.Fatalf("failed to parse event log")
+	}
+
+	converted := convertToProtoEvents(convertToAttestEvents(protoEvents))
+	if !reflect.DeepEqual(protoEvents, converted) {
+		t.Errorf("converted attestEvents do not match expected ones")
+	}
+}
+
+func convertToAttestEvents(protoEvents []*tpmpb.Event) []attest.Event {
+	attestEvents := make([]attest.Event, 0, len(protoEvents))
+	for _, protoEvent := range protoEvents {
+		attestEvents = append(attestEvents, attest.Event{
+			Index:  int(protoEvent.Index),
+			Type:   attest.EventType(protoEvent.UntrustedType),
+			Data:   protoEvent.Data,
+			Digest: protoEvent.Digest,
+		})
+	}
+	return attestEvents
+}
+
 func decodeHex(hexStr string) []byte {
 	bytes, err := hex.DecodeString(hexStr)
 	if err != nil {
 		panic(err)
 	}
 	return bytes
+}
+
+func TestParsePlatformStateBadDigest(t *testing.T) {
+	eventLog, err := attest.ParseEventLog(Debian10GCE.RawLog)
+	if err != nil {
+		t.Fatalf("failed to parse event log: %v", err)
+	}
+	events := eventLog.Events(attest.HashSHA1)
+	events[0].Digest = []byte{0x00, 0x01, 0x02, 0x03}
+
+	if _, err := parsePlatformState(events); err == nil {
+		t.Errorf("expected parsing failure in verifying digest")
+	}
+}
+
+func TestParsePlatformStateMultipleSCRTMEvents(t *testing.T) {
+	scrtmVersionType := attest.EventType(SCRTMVersion)
+	eventLog, err := attest.ParseEventLog(Debian10GCE.RawLog)
+	if err != nil {
+		t.Fatalf("failed to parse event log: %v", err)
+	}
+	events := eventLog.Events(attest.HashSHA1)
+
+	var dupeEvent attest.Event
+	for _, event := range events {
+		if event.Type == scrtmVersionType {
+			dupeEvent = event
+		}
+	}
+	events = append(events, dupeEvent)
+
+	if _, err := parsePlatformState(events); err == nil {
+		t.Errorf("expected parsing failure in verifying digest")
+	}
 }
