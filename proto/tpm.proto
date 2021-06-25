@@ -21,7 +21,7 @@ enum HashAlgo {
 message SealedBytes {
   bytes priv = 1;
   bytes pub = 2;
-  repeated int32 pcrs = 3;
+  repeated uint32 pcrs = 3;
   HashAlgo hash = 4;
   ObjectType srk = 5;
   Pcrs certified_pcrs = 6;
