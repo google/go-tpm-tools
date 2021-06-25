@@ -191,7 +191,7 @@ func TestReseal(t *testing.T) {
 		t.Fatalf("unsealed (%v) not equal to secret (%v)", unseal, secret)
 	}
 
-	// create a new set of PCRs value for modificiation
+	// create a new set of PCRs value for modification
 	predictedPcrsValue, err := client.ReadPCRs(rwc, sel)
 	if err != nil {
 		t.Fatalf("failed to read PCRs value: %v", err)
@@ -285,7 +285,7 @@ func TestSealResealWithEmptyPCRs(t *testing.T) {
 		t.Fatalf("failed to reseal: %v", err)
 	}
 
-	// unseal should success as the above Reseal() "refresh" the Ceritfy PCRs.
+	// unseal should success as the above Reseal() "refresh" the Certify PCRs.
 	unseal, err = key.Unseal(sealed, cOpt)
 	if err != nil {
 		t.Errorf("failed to unseal: %v", err)

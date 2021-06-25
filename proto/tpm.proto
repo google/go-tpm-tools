@@ -50,8 +50,8 @@ message Pcrs {
   map<uint32, bytes> pcrs = 2;
 }
 
-// Information uniquely identifying a GCE instnace. Can be used to create an
-// instnace URL, which can then be used with GCE APIs. Formatted like:
+// Information uniquely identifying a GCE instance. Can be used to create an
+// instance URL, which can then be used with GCE APIs. Formatted like:
 //   https://www.googleapis.com/compute/v1/projects/{project_id}/zones/{zone}/instances/{instance_name}
 message GceInstanceInfo {
   string zone = 1;
