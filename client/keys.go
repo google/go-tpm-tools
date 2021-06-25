@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"crypto"
 	"crypto/subtle"
+	"errors"
 	"fmt"
 	"io"
 
@@ -407,11 +408,19 @@ func (k *Key) Quote(selpcr tpm2.PCRSelection, extraData []byte) (*tpmpb.Quote, e
 	return &quote, nil
 }
 
+// AttestOpts allows for optional Attest functionality to be enabled.
+type AttestOpts interface{}
+
 // Attest generates an Attestation containing the TCG Event Log and a Quote over
 // all PCR banks. The provided nonce can be used to guarantee freshness of the
 // attestation. This function will return an error if the key is not a
 // restricted signing key.
-func (k *Key) Attest(nonce []byte) (*tpmpb.Attestation, error) {
+//
+// An optional AttestOpts can also be passed. Currently, this parameter must be nil.
+func (k *Key) Attest(nonce []byte, opts AttestOpts) (*tpmpb.Attestation, error) {
+	if opts != nil {
+		return nil, errors.New("provided AttestOpts must be nil")
+	}
 	sels, err := implementedPCRs(k.rw)
 	if err != nil {
 		return nil, err
