@@ -106,6 +106,10 @@ func (s *Simulator) Read(responseBuffer []byte) (int, error) {
 // Close cleans up and stops the simulator, Close() should always be called when
 // the Simulator is no longer needed, freeing up other callers to use Get().
 func (s *Simulator) Close() error {
+	if s.closed {
+		fmt.Println("The Simulator has already been closed!")
+		return nil
+	}
 	s.closed = true
 	defer lock.Unlock()
 	return s.off()
