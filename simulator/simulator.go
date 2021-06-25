@@ -19,6 +19,7 @@ package simulator
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"math/rand"
 	"sync"
@@ -35,6 +36,10 @@ type Simulator struct {
 	buf    bytes.Buffer
 	closed bool
 }
+
+// ErrUsingClosedSimulator is returned if any operation on a Simulator is
+// attempted after it is closed.
+var ErrUsingClosedSimulator = errors.New("attempting to use a closed simulator")
 
 // The simulator is a global resource, so we use the variables below to make
 // sure we only ever have one open reference to the Simulator at a time.
@@ -71,6 +76,9 @@ func GetWithFixedSeedInsecure(seed int64) (*Simulator, error) {
 
 // Reset the TPM as if the host computer had rebooted.
 func (s *Simulator) Reset() error {
+	if s.IsClosed() {
+		return ErrUsingClosedSimulator
+	}
 	if err := s.off(); err != nil {
 		return err
 	}
@@ -81,6 +89,9 @@ func (s *Simulator) Reset() error {
 // ManufactureReset behaves like Reset() except that the TPM is complete wiped.
 // All data (NVData, Hierarchy seeds, etc...) is cleared or reset.
 func (s *Simulator) ManufactureReset() error {
+	if s.IsClosed() {
+		return ErrUsingClosedSimulator
+	}
 	if err := s.off(); err != nil {
 		return err
 	}
@@ -91,6 +102,9 @@ func (s *Simulator) ManufactureReset() error {
 // Write executes the command specified by commandBuffer. The command response
 // can be retrieved with a subsequent call to Read().
 func (s *Simulator) Write(commandBuffer []byte) (int, error) {
+	if s.IsClosed() {
+		return 0, ErrUsingClosedSimulator
+	}
 	resp, err := internal.RunCommand(commandBuffer)
 	if err != nil {
 		return 0, err
@@ -100,19 +114,22 @@ func (s *Simulator) Write(commandBuffer []byte) (int, error) {
 
 // Read gets the response of a command previously issued by calling Write().
 func (s *Simulator) Read(responseBuffer []byte) (int, error) {
+	if s.IsClosed() {
+		return 0, ErrUsingClosedSimulator
+	}
 	return s.buf.Read(responseBuffer)
 }
 
 // Close cleans up and stops the simulator, Close() should always be called when
 // the Simulator is no longer needed, freeing up other callers to use Get().
 func (s *Simulator) Close() error {
-	if s.closed {
-		fmt.Println("The Simulator has already been closed!")
-		return nil
+	if s.IsClosed() {
+		return ErrUsingClosedSimulator
 	}
+	err := s.off()
 	s.closed = true
-	defer lock.Unlock()
-	return s.off()
+	lock.Unlock()
+	return err
 }
 
 // IsClosed returns true if the simulator has been Closed()
