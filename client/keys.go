@@ -243,7 +243,7 @@ func (k *Key) Seal(sensitive []byte, opts SealOpts) (*tpmpb.SealedBytes, error) 
 	}
 
 	for pcrNum := range pcrs.GetPcrs() {
-		sb.Pcrs = append(sb.Pcrs, int32(pcrNum))
+		sb.Pcrs = append(sb.Pcrs, pcrNum)
 	}
 	sb.Hash = pcrs.GetHash()
 	sb.Srk = tpmpb.ObjectType(k.pubArea.Type)
@@ -306,8 +306,8 @@ func (k *Key) Unseal(in *tpmpb.SealedBytes, opts CertifyOpts) ([]byte, error) {
 		k.rw,
 		k.Handle(),
 		/*parentPassword=*/ "",
-		in.Pub,
-		in.Priv)
+		in.GetPub(),
+		in.GetPriv())
 	if err != nil {
 		return nil, fmt.Errorf("failed to load sealed object: %w", err)
 	}
@@ -359,8 +359,8 @@ func (k *Key) Unseal(in *tpmpb.SealedBytes, opts CertifyOpts) ([]byte, error) {
 		}
 	}
 
-	sel := tpm2.PCRSelection{Hash: tpm2.Algorithm(in.Hash)}
-	for _, pcr := range in.Pcrs {
+	sel := tpm2.PCRSelection{Hash: tpm2.Algorithm(in.GetHash())}
+	for _, pcr := range in.GetPcrs() {
 		sel.PCRs = append(sel.PCRs, int(pcr))
 	}
 
