@@ -3,7 +3,7 @@
 //
 // Generating Protocol Buffer Code
 //
-// Anytime the Protocol Buffer defintions change, the generated Go code must be
+// Anytime the Protocol Buffer definitions change, the generated Go code must be
 // regenerated. This can be done with "go generate". Just run:
 //   go generate ./...
 //
