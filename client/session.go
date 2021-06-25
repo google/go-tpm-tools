@@ -12,17 +12,17 @@ type session interface {
 	Auth() (tpm2.AuthCommand, error)
 }
 
-func startAuthSesssion(rw io.ReadWriter) (session tpmutil.Handle, err error) {
+func startAuthSession(rw io.ReadWriter) (session tpmutil.Handle, err error) {
 	// This session assumes the bus is trusted, so we:
-	// - use nil for tpmkey, encrypted salt, and symmetric
+	// - use nil for tpmKey, encrypted salt, and symmetric
 	// - use and all-zeros caller nonce, and ignore the returned nonce
 	// As we are creating a plain TPM session, we:
 	// - setup a policy session
 	// - don't bind the session to any particular key
 	session, _, err = tpm2.StartAuthSession(
 		rw,
-		/*tpmkey=*/ tpm2.HandleNull,
-		/*bindkey=*/ tpm2.HandleNull,
+		/*tpmKey=*/ tpm2.HandleNull,
+		/*bindKey=*/ tpm2.HandleNull,
 		/*nonceCaller=*/ make([]byte, SessionHashAlg.Size()),
 		/*encryptedSalt=*/ nil,
 		/*sessionType=*/ tpm2.SessionPolicy,
@@ -41,7 +41,7 @@ func newPCRSession(rw io.ReadWriter, sel tpm2.PCRSelection) (session, error) {
 	if len(sel.PCRs) == 0 {
 		return nullSession{}, nil
 	}
-	session, err := startAuthSesssion(rw)
+	session, err := startAuthSession(rw)
 	return pcrSession{rw, session, sel}, err
 }
 
@@ -62,7 +62,7 @@ type ekSession struct {
 }
 
 func newEKSession(rw io.ReadWriter) (session, error) {
-	session, err := startAuthSesssion(rw)
+	session, err := startAuthSession(rw)
 	return ekSession{rw, session}, err
 }
 

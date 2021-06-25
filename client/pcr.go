@@ -120,7 +120,7 @@ func (p SealCurrent) PCRsForSealing(rw io.ReadWriter) (*tpmpb.Pcrs, error) {
 // PCRsForSealing return the target PCRs.
 func (p SealTarget) PCRsForSealing(_ io.ReadWriter) (*tpmpb.Pcrs, error) {
 	if len(p.Pcrs.GetPcrs()) == 0 {
-		panic("SealTaget contains 0 PCRs")
+		panic("SealTarget contains 0 PCRs")
 	}
 	return p.Pcrs, nil
 }

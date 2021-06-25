@@ -328,7 +328,7 @@ func (k *Key) Unseal(in *tpmpb.SealedBytes, cOpt CertifyOpt) ([]byte, error) {
 		// result. To reduce the cost of this workaround, we use a cached
 		// ECC signing key.
 		// We can detect this bug, as it triggers a RCInsufficient
-		// Unmarshalling error.
+		// Unmarshaling error.
 		if paramErr, ok := certErr.(tpm2.ParameterError); ok && paramErr.Code == tpm2.RCInsufficient {
 			signer, err := AttestationKeyECC(k.rw)
 			if err != nil {
