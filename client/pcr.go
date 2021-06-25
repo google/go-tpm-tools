@@ -102,7 +102,7 @@ func ReadAllPCRs(rw io.ReadWriter) ([]*tpmpb.Pcrs, error) {
 type SealCurrent struct{ tpm2.PCRSelection }
 
 // SealTarget predicatively seals data to the given specified PCR values.
-type SealTarget struct{ Pcrs *tpmpb.Pcrs }
+type SealTarget struct{ *tpmpb.Pcrs }
 
 // SealOpt specifies the PCR values that should be used for Seal().
 type SealOpt interface {
@@ -131,7 +131,7 @@ type CertifyCurrent struct{ tpm2.PCRSelection }
 
 // CertifyExpected certifies that the TPM had a specific set of PCR values when sealing.
 // Hash Algorithm in the PCR proto should be CertifyHashAlgTpm.
-type CertifyExpected struct{ Pcrs *tpmpb.Pcrs }
+type CertifyExpected struct{ *tpmpb.Pcrs }
 
 // CertifyOpt determines if the given PCR value can pass certification in Unseal().
 type CertifyOpt interface {
