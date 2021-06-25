@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"crypto"
 	"crypto/subtle"
+	"errors"
 	"fmt"
 	"io"
 
@@ -222,12 +223,12 @@ func (k *Key) Close() {
 // PCRs are in the specified state. During the sealing process, certification
 // data will be created allowing Unseal() to validate the state of the TPM
 // during the sealing process.
-func (k *Key) Seal(sensitive []byte, sOpt SealOpt) (*tpmpb.SealedBytes, error) {
+func (k *Key) Seal(sensitive []byte, opts SealOpts) (*tpmpb.SealedBytes, error) {
 	var pcrs *tpmpb.Pcrs
 	var err error
 	var auth []byte
-	if sOpt != nil {
-		pcrs, err = sOpt.PCRsForSealing(k.rw)
+	if opts != nil {
+		pcrs, err = opts.PCRsForSealing(k.rw)
 		if err != nil {
 			return nil, err
 		}
@@ -297,7 +298,7 @@ func sealHelper(rw io.ReadWriter, parentHandle tpmutil.Handle, auth []byte, sens
 // private data in proto.SealedBytes. Optionally, a CertifyOpt can be
 // passed, to verify the state of the TPM when the data was sealed. A nil value
 // can be passed to skip certification.
-func (k *Key) Unseal(in *tpmpb.SealedBytes, cOpt CertifyOpt) ([]byte, error) {
+func (k *Key) Unseal(in *tpmpb.SealedBytes, opts CertifyOpts) ([]byte, error) {
 	if in.Srk != tpmpb.ObjectType(k.pubArea.Type) {
 		return nil, fmt.Errorf("expected key of type %v, got %v", in.Srk, k.pubArea.Type)
 	}
@@ -312,7 +313,7 @@ func (k *Key) Unseal(in *tpmpb.SealedBytes, cOpt CertifyOpt) ([]byte, error) {
 	}
 	defer tpm2.FlushContext(k.rw, sealed)
 
-	if cOpt != nil {
+	if opts != nil {
 		var ticket tpm2.Ticket
 		if _, err = tpmutil.Unpack(in.GetTicket(), &ticket); err != nil {
 			return nil, fmt.Errorf("ticket unpack failed: %w", err)
@@ -353,7 +354,7 @@ func (k *Key) Unseal(in *tpmpb.SealedBytes, cOpt CertifyOpt) ([]byte, error) {
 			return nil, fmt.Errorf("certify PCRs digest does not match the digest in the creation data")
 		}
 
-		if err := cOpt.CertifyPCRs(k.rw, in.GetCertifiedPcrs()); err != nil {
+		if err := opts.CertifyPCRs(k.rw, in.GetCertifiedPcrs()); err != nil {
 			return nil, fmt.Errorf("failed to certify PCRs: %w", err)
 		}
 	}
@@ -407,11 +408,19 @@ func (k *Key) Quote(selpcr tpm2.PCRSelection, extraData []byte) (*tpmpb.Quote, e
 	return &quote, nil
 }
 
+// AttestOpts allows for optional Attest functionality to be enabled.
+type AttestOpts interface{}
+
 // Attest generates an Attestation containing the TCG Event Log and a Quote over
 // all PCR banks. The provided nonce can be used to guarantee freshness of the
 // attestation. This function will return an error if the key is not a
 // restricted signing key.
-func (k *Key) Attest(nonce []byte) (*tpmpb.Attestation, error) {
+//
+// An optional AttestOpts can also be passed. Currently, this parameter must be nil.
+func (k *Key) Attest(nonce []byte, opts AttestOpts) (*tpmpb.Attestation, error) {
+	if opts != nil {
+		return nil, errors.New("provided AttestOpts must be nil")
+	}
 	sels, err := implementedPCRs(k.rw)
 	if err != nil {
 		return nil, err
@@ -436,12 +445,12 @@ func (k *Key) Attest(nonce []byte) (*tpmpb.Attestation, error) {
 // Reseal is a shortcut to call Unseal() followed by Seal().
 // CertifyOpt(nillable) will be used in Unseal(), and SealOpt(nillable)
 // will be used in Seal()
-func (k *Key) Reseal(in *tpmpb.SealedBytes, cOpt CertifyOpt, sOpt SealOpt) (*tpmpb.SealedBytes, error) {
-	sensitive, err := k.Unseal(in, cOpt)
+func (k *Key) Reseal(in *tpmpb.SealedBytes, cOpts CertifyOpts, sOpts SealOpts) (*tpmpb.SealedBytes, error) {
+	sensitive, err := k.Unseal(in, cOpts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unseal: %w", err)
 	}
-	return k.Seal(sensitive, sOpt)
+	return k.Seal(sensitive, sOpts)
 }
 
 func (k *Key) hasAttribute(attr tpm2.KeyProp) bool {

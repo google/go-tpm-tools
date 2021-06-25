@@ -49,11 +49,11 @@ state (like Secure Boot).`,
 
 		sel := tpm2.PCRSelection{Hash: sealHashAlgo, PCRs: pcrs}
 		fmt.Fprintf(debugOutput(), "Sealing to PCRs: %v\n", sel.PCRs)
-		var sOpt client.SealOpt
+		var opts client.SealOpts
 		if len(sel.PCRs) > 0 {
-			sOpt = client.SealCurrent{PCRSelection: sel}
+			opts = client.SealCurrent{PCRSelection: sel}
 		}
-		sealed, err := srk.Seal(secret, sOpt)
+		sealed, err := srk.Seal(secret, opts)
 		if err != nil {
 			return fmt.Errorf("sealing data: %w", err)
 		}
@@ -117,11 +117,11 @@ machine state when sealing took place.
 		fmt.Fprintln(debugOutput(), "Unsealing data")
 
 		certifySel := tpm2.PCRSelection{Hash: client.CertifyHashAlgTpm, PCRs: pcrs}
-		var cOpt client.CertifyOpt
+		var opts client.CertifyOpts
 		if len(certifySel.PCRs) > 0 {
-			cOpt = client.CertifyCurrent{PCRSelection: certifySel}
+			opts = client.CertifyCurrent{PCRSelection: certifySel}
 		}
-		secret, err := srk.Unseal(&sealed, cOpt)
+		secret, err := srk.Unseal(&sealed, opts)
 		if err != nil {
 			return fmt.Errorf("unsealing data: %w", err)
 		}
