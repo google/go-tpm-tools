@@ -104,8 +104,8 @@ type SealCurrent struct{ tpm2.PCRSelection }
 // SealTarget predicatively seals data to the given specified PCR values.
 type SealTarget struct{ *tpmpb.Pcrs }
 
-// SealOpt specifies the PCR values that should be used for Seal().
-type SealOpt interface {
+// SealOpts specifies the PCR values that should be used for Seal().
+type SealOpts interface {
 	PCRsForSealing(rw io.ReadWriter) (*tpmpb.Pcrs, error)
 }
 
@@ -133,8 +133,8 @@ type CertifyCurrent struct{ tpm2.PCRSelection }
 // Hash Algorithm in the PCR proto should be CertifyHashAlgTpm.
 type CertifyExpected struct{ *tpmpb.Pcrs }
 
-// CertifyOpt determines if the given PCR value can pass certification in Unseal().
-type CertifyOpt interface {
+// CertifyOpts determines if the given PCR value can pass certification in Unseal().
+type CertifyOpts interface {
 	CertifyPCRs(rw io.ReadWriter, certified *tpmpb.Pcrs) error
 }
 
