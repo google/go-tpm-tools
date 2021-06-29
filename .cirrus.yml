@@ -13,13 +13,19 @@ test_task:
   build_script: go build -v ./...
   windows_build_script: GOOS=windows go build -v ./...
   test_script: go test -v ./...
+
+lint_task:
+  env:
+    matrix:
+      - GOOS: linux
+      - GOOS: windows
   lint_script:
     golangci-lint run
       -D errcheck
       -E stylecheck
       -E goimports
       -E misspell
-      -E golint
+      -E revive
       --exclude-use-default=false
       --max-same-issues=0
       --max-issues-per-linter=0
