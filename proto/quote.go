@@ -67,10 +67,7 @@ func (x *Quote) Verify(trustedPub crypto.PublicKey, extraData []byte) error {
 	if subtle.ConstantTimeCompare(attestationData.ExtraData, extraData) == 0 {
 		return fmt.Errorf("quote extraData did not match expected extraData")
 	}
-	if err := validatePCRDigest(attestedQuoteInfo, x.GetPcrs(), hash); err != nil {
-		return err
-	}
-	return nil
+	return validatePCRDigest(attestedQuoteInfo, x.GetPcrs(), hash)
 }
 
 func verifyECDSAQuoteSignature(ecdsaPub *ecdsa.PublicKey, hash crypto.Hash, quoted []byte, sig *tpm2.Signature) error {
