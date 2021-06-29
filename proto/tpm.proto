@@ -1,7 +1,7 @@
 syntax = "proto3";
 
-package proto;
-option go_package = "github.com/google/go-tpm-tools/proto";
+package tpm;
+option go_package = "github.com/google/go-tpm-tools/proto/tpm";
 
 // Enum values come from TCG Algorithm Registry - v1.27 - Table 3
 enum ObjectType {
@@ -49,26 +49,4 @@ message Quote {
 message Pcrs {
   HashAlgo hash = 1;
   map<uint32, bytes> pcrs = 2;
-}
-
-// Information uniquely identifying a GCE instance. Can be used to create an
-// instance URL, which can then be used with GCE APIs. Formatted like:
-//   https://www.googleapis.com/compute/v1/projects/{project_id}/zones/{zone}/instances/{instance_name}
-message GceInstanceInfo {
-  string zone = 1;
-  string project_id = 2;
-  uint64 project_number = 3;
-  string instance_name = 4;
-  uint64 instance_id = 5;
-}
-
-message Attestation {
-  // Attestation Key (AK) Public Area, encoded as a TPMT_PUBLIC
-  bytes ak_pub = 1;
-  // Quotes over all supported PCR banks
-  repeated Quote quotes = 2;
-  // TCG Event Log, encoded in the raw binary format
-  bytes event_log = 3;
-  // Optional information about a GCE instance, unused outside of GCE
-  GceInstanceInfo instance_info = 4;
 }
