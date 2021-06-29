@@ -1,6 +1,6 @@
-// Package internal provides helper methods for testing. It should never be
+// Package test provides helper methods for testing. It should never be
 // included in non-test libraries/binaries.
-package internal
+package test
 
 import (
 	"crypto/rand"

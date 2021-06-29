@@ -1,4 +1,4 @@
-package internal
+package test
 
 import _ "embed" // Necessary to use go:embed
 
