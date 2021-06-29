@@ -4,7 +4,7 @@ RUN apt-get update && apt-get install -y \
     libssl-dev libtspi-dev protobuf-compiler \
  && rm -rf /var/lib/apt/lists/*
 # We need golangci-lint for linting
-ARG VERSION=1.23.7
+ARG VERSION=1.41.1
 RUN curl -SL \
     https://github.com/golangci/golangci-lint/releases/download/v${VERSION}/golangci-lint-${VERSION}-linux-amd64.tar.gz \
     --output golangci.tar.gz \
