@@ -9,7 +9,7 @@ import (
 
 // GCEInstanceURL returns a Google API URL to the specified instance. This URL
 // can then be used with GCE instance APIs.
-func GCEInstanceURL(i *pb.GceInstanceInfo) string {
+func GCEInstanceURL(i *pb.GCEInstanceInfo) string {
 	return fmt.Sprintf(
 		"https://www.googleapis.com/compute/v1/projects/%s/zones/%s/instances/%s",
 		url.PathEscape(i.GetProjectId()),
