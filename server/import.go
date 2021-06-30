@@ -25,7 +25,7 @@ import (
 // The returned ImportBlob can then be decrypted and imported using the
 // client Key.Import() method. A non-nil pcrs parameter adds a requirement
 // that the TPM must have specific PCR values for Import() to succeed.
-func CreateImportBlob(ekPub crypto.PublicKey, sensitive []byte, pcrs *pb.Pcrs) (*pb.ImportBlob, error) {
+func CreateImportBlob(ekPub crypto.PublicKey, sensitive []byte, pcrs *pb.PCRs) (*pb.ImportBlob, error) {
 	ek, err := CreateEKPublicAreaFromKey(ekPub)
 	if err != nil {
 		return nil, err
@@ -42,7 +42,7 @@ func CreateImportBlob(ekPub crypto.PublicKey, sensitive []byte, pcrs *pb.Pcrs) (
 // the private area to the TPM's OS using the client Key.ImportSigningKey()
 // method. A non-nil pcrs parameter adds a requirement that the TPM must have
 // specific PCR values to use the signing key.
-func CreateSigningKeyImportBlob(ekPub crypto.PublicKey, signingKey crypto.PrivateKey, pcrs *pb.Pcrs) (*pb.ImportBlob, error) {
+func CreateSigningKeyImportBlob(ekPub crypto.PublicKey, signingKey crypto.PrivateKey, pcrs *pb.PCRs) (*pb.ImportBlob, error) {
 	ek, err := CreateEKPublicAreaFromKey(ekPub)
 	if err != nil {
 		return nil, err
@@ -55,7 +55,7 @@ func CreateSigningKeyImportBlob(ekPub crypto.PublicKey, signingKey crypto.Privat
 	return createImportBlobHelper(ek, public, private, pcrs)
 }
 
-func createImportBlobHelper(ek, public tpm2.Public, private tpm2.Private, pcrs *pb.Pcrs) (*pb.ImportBlob, error) {
+func createImportBlobHelper(ek, public tpm2.Public, private tpm2.Private, pcrs *pb.PCRs) (*pb.ImportBlob, error) {
 	setPublicAuth(&public, pcrs)
 
 	var seed, encryptedSeed []byte
@@ -91,7 +91,7 @@ func createImportBlobHelper(ek, public tpm2.Public, private tpm2.Private, pcrs *
 	}, nil
 }
 
-func setPublicAuth(public *tpm2.Public, pcrs *pb.Pcrs) {
+func setPublicAuth(public *tpm2.Public, pcrs *pb.PCRs) {
 	if len(pcrs.GetPcrs()) == 0 {
 		// Allow password authorization so we can use a nil AuthPolicy.
 		public.AuthPolicy = nil

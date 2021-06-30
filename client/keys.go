@@ -224,7 +224,7 @@ func (k *Key) Close() {
 // data will be created allowing Unseal() to validate the state of the TPM
 // during the sealing process.
 func (k *Key) Seal(sensitive []byte, opts SealOpts) (*pb.SealedBytes, error) {
-	var pcrs *pb.Pcrs
+	var pcrs *pb.PCRs
 	var err error
 	var auth []byte
 	if opts != nil {

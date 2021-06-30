@@ -13,13 +13,13 @@ import (
 
 type eventLog struct {
 	RawLog []byte
-	Banks  []*pb.Pcrs
+	Banks  []*pb.PCRs
 }
 
 // Agile Event Log from a RHEL 8 GCE instance with Secure Boot enabled
 var Rhel8GCE = eventLog{
 	RawLog: test.Rhel8EventLog,
-	Banks: []*pb.Pcrs{{
+	Banks: []*pb.PCRs{{
 		Hash: pb.HashAlgo_SHA1,
 		Pcrs: map[uint32][]byte{
 			0:  decodeHex("0f2d3a2a1adaa479aeeca8f5df76aadc41b862ea"),
@@ -55,7 +55,7 @@ var Rhel8GCE = eventLog{
 // Agile Event Log from a Ubuntu 21.04 GCE instance without a DBX and with Secure Boot disabled
 var Ubuntu2104NoDbxGCE = eventLog{
 	RawLog: test.Ubuntu2104NoDbxEventLog,
-	Banks: []*pb.Pcrs{{
+	Banks: []*pb.PCRs{{
 		Hash: pb.HashAlgo_SHA1,
 		Pcrs: map[uint32][]byte{
 			0:  decodeHex("0f2d3a2a1adaa479aeeca8f5df76aadc41b862ea"),
@@ -91,7 +91,7 @@ var Ubuntu2104NoDbxGCE = eventLog{
 // Agile Event Log from a Ubuntu 21.04 GCE instance with Secure Boot disabled
 var Ubuntu2104NoSecureBootGCE = eventLog{
 	RawLog: test.Ubuntu2104NoSecureBootEventLog,
-	Banks: []*pb.Pcrs{{
+	Banks: []*pb.PCRs{{
 		Hash: pb.HashAlgo_SHA1,
 		Pcrs: map[uint32][]byte{
 			0:  decodeHex("0f2d3a2a1adaa479aeeca8f5df76aadc41b862ea"),
@@ -128,7 +128,7 @@ var Ubuntu2104NoSecureBootGCE = eventLog{
 // No PCR[0] as replay is currently broken for H-CRTM measurement
 var GlinuxNoSecureBootLaptop = eventLog{
 	RawLog: test.GlinuxAlexEventLog,
-	Banks: []*pb.Pcrs{{
+	Banks: []*pb.PCRs{{
 		Hash: pb.HashAlgo_SHA1,
 		Pcrs: map[uint32][]byte{
 			// 0: decodeHex("faf6e04e58687bbedd28cb902b3516b0cf4b79dd"),
@@ -158,7 +158,7 @@ var GlinuxNoSecureBootLaptop = eventLog{
 // Agile Event Log from an Arch Linux worksation with systemd-boot and Secure Boot Disabled
 var ArchLinuxWorkstation = eventLog{
 	RawLog: test.ArchLinuxWorkstationEventLog,
-	Banks: []*pb.Pcrs{{
+	Banks: []*pb.PCRs{{
 		Hash: pb.HashAlgo_SHA1,
 		Pcrs: map[uint32][]byte{
 			0: decodeHex("a0487b0d95387d4a30560edf5f041307bf4a1dcc"),
@@ -190,7 +190,7 @@ var ArchLinuxWorkstation = eventLog{
 // Legacy Event Log from a Debian 10 GCE instance with Secure Boot enabled
 var Debian10GCE = eventLog{
 	RawLog: test.Debian10EventLog,
-	Banks: []*pb.Pcrs{{
+	Banks: []*pb.PCRs{{
 		Hash: pb.HashAlgo_SHA1,
 		Pcrs: map[uint32][]byte{
 			0: decodeHex("0f2d3a2a1adaa479aeeca8f5df76aadc41b862ea"),

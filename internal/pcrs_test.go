@@ -9,20 +9,20 @@ import (
 
 func TestHasSamePCRSelection(t *testing.T) {
 	var subtests = []struct {
-		pcrs        *pb.Pcrs
+		pcrs        *pb.PCRs
 		pcrSel      tpm2.PCRSelection
 		expectedRes bool
 	}{
-		{&pb.Pcrs{}, tpm2.PCRSelection{}, true},
-		{&pb.Pcrs{Hash: pb.HashAlgo(tpm2.AlgSHA256), Pcrs: map[uint32][]byte{1: {}}},
+		{&pb.PCRs{}, tpm2.PCRSelection{}, true},
+		{&pb.PCRs{Hash: pb.HashAlgo(tpm2.AlgSHA256), Pcrs: map[uint32][]byte{1: {}}},
 			tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{1}}, true},
-		{&pb.Pcrs{Hash: pb.HashAlgo(tpm2.AlgSHA256), Pcrs: map[uint32][]byte{}},
+		{&pb.PCRs{Hash: pb.HashAlgo(tpm2.AlgSHA256), Pcrs: map[uint32][]byte{}},
 			tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{}}, true},
-		{&pb.Pcrs{Hash: pb.HashAlgo(tpm2.AlgSHA256), Pcrs: map[uint32][]byte{1: {}}},
+		{&pb.PCRs{Hash: pb.HashAlgo(tpm2.AlgSHA256), Pcrs: map[uint32][]byte{1: {}}},
 			tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{4}}, false},
-		{&pb.Pcrs{Hash: pb.HashAlgo(tpm2.AlgSHA256), Pcrs: map[uint32][]byte{1: {}, 4: {}}},
+		{&pb.PCRs{Hash: pb.HashAlgo(tpm2.AlgSHA256), Pcrs: map[uint32][]byte{1: {}, 4: {}}},
 			tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{4}}, false},
-		{&pb.Pcrs{Hash: pb.HashAlgo(tpm2.AlgSHA256), Pcrs: map[uint32][]byte{1: {}, 2: {}}},
+		{&pb.PCRs{Hash: pb.HashAlgo(tpm2.AlgSHA256), Pcrs: map[uint32][]byte{1: {}, 2: {}}},
 			tpm2.PCRSelection{Hash: tpm2.AlgSHA1, PCRs: []int{1, 2}}, false},
 	}
 	for _, subtest := range subtests {

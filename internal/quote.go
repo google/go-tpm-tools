@@ -97,7 +97,7 @@ func verifyRSASSAQuoteSignature(rsaPub *rsa.PublicKey, hash crypto.Hash, quoted 
 	return nil
 }
 
-func validatePCRDigest(quoteInfo *tpm2.QuoteInfo, pcrs *pb.Pcrs, hash crypto.Hash) error {
+func validatePCRDigest(quoteInfo *tpm2.QuoteInfo, pcrs *pb.PCRs, hash crypto.Hash) error {
 	if !SamePCRSelection(pcrs, quoteInfo.PCRSelection) {
 		return fmt.Errorf("given PCRs and Quote do not have the same PCR selection")
 	}

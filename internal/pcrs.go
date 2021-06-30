@@ -14,7 +14,7 @@ import (
 
 const minPCRIndex = uint32(0)
 
-func maxPCRIndex(p *pb.Pcrs) uint32 {
+func maxPCRIndex(p *pb.PCRs) uint32 {
 	max := minPCRIndex
 	for idx := range p.GetPcrs() {
 		if idx > max {
@@ -25,7 +25,7 @@ func maxPCRIndex(p *pb.Pcrs) uint32 {
 }
 
 // FormatPCRs writes a multiline representation of the PCR values to w.
-func FormatPCRs(w io.Writer, p *pb.Pcrs) error {
+func FormatPCRs(w io.Writer, p *pb.PCRs) error {
 	if _, err := fmt.Fprintf(w, "%v:\n", p.Hash); err != nil {
 		return err
 	}
@@ -43,7 +43,7 @@ func FormatPCRs(w io.Writer, p *pb.Pcrs) error {
 // "superset" of PCRs. The PCR values must match (if present), and all PCRs must
 // be present in the superset. This function will return an error containing the
 // first missing or mismatched PCR number.
-func CheckSubset(subset, superset *pb.Pcrs) error {
+func CheckSubset(subset, superset *pb.PCRs) error {
 	if subset.GetHash() != superset.GetHash() {
 		return fmt.Errorf("PCR hash algo not matching: %v, %v", subset.GetHash(), superset.GetHash())
 	}
@@ -60,7 +60,7 @@ func CheckSubset(subset, superset *pb.Pcrs) error {
 }
 
 // PCRSelection returns the corresponding tpm2.PCRSelection for the PCR data.
-func PCRSelection(p *pb.Pcrs) tpm2.PCRSelection {
+func PCRSelection(p *pb.PCRs) tpm2.PCRSelection {
 	sel := tpm2.PCRSelection{Hash: tpm2.Algorithm(p.GetHash())}
 
 	for pcrNum := range p.GetPcrs() {
@@ -71,7 +71,7 @@ func PCRSelection(p *pb.Pcrs) tpm2.PCRSelection {
 
 // SamePCRSelection checks if the Pcrs has the same PCRSelection as the
 // provided given tpm2.PCRSelection (including the hash algorithm).
-func SamePCRSelection(p *pb.Pcrs, sel tpm2.PCRSelection) bool {
+func SamePCRSelection(p *pb.PCRs, sel tpm2.PCRSelection) bool {
 	if tpm2.Algorithm(p.GetHash()) != sel.Hash {
 		return false
 	}
@@ -87,7 +87,7 @@ func SamePCRSelection(p *pb.Pcrs, sel tpm2.PCRSelection) bool {
 }
 
 // PCRSessionAuth calculates the authorization value for the given PCRs.
-func PCRSessionAuth(p *pb.Pcrs, hashAlg crypto.Hash) []byte {
+func PCRSessionAuth(p *pb.PCRs, hashAlg crypto.Hash) []byte {
 	// Start with all zeros, we only use a single policy command on our session.
 	oldDigest := make([]byte, hashAlg.Size())
 	ccPolicyPCR, _ := tpmutil.Pack(tpm2.CmdPolicyPCR)
@@ -104,7 +104,7 @@ func PCRSessionAuth(p *pb.Pcrs, hashAlg crypto.Hash) []byte {
 
 // PCRDigest computes the digest of the Pcrs. Note that the digest hash
 // algorithm may differ from the PCRs' hash (which denotes the PCR bank).
-func PCRDigest(p *pb.Pcrs, hashAlg crypto.Hash) []byte {
+func PCRDigest(p *pb.PCRs, hashAlg crypto.Hash) []byte {
 	hash := hashAlg.New()
 	for i := uint32(0); i < 24; i++ {
 		if pcrValue, exists := p.GetPcrs()[i]; exists {

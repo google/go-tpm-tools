@@ -154,13 +154,13 @@ func TestImportPCRs(t *testing.T) {
 	badPCR[0]++
 	subtests := []struct {
 		name          string
-		pcrs          *pb.Pcrs
+		pcrs          *pb.PCRs
 		expectSuccess bool
 	}{
 		{"No-PCR-nil", nil, true},
-		{"No-PCR-empty", &pb.Pcrs{Hash: pb.HashAlgo_SHA256}, true},
-		{"Good-PCR", &pb.Pcrs{Hash: pb.HashAlgo_SHA256, Pcrs: map[uint32][]byte{0: pcr0}}, true},
-		{"Bad-PCR", &pb.Pcrs{Hash: pb.HashAlgo_SHA256, Pcrs: map[uint32][]byte{0: badPCR}}, false},
+		{"No-PCR-empty", &pb.PCRs{Hash: pb.HashAlgo_SHA256}, true},
+		{"Good-PCR", &pb.PCRs{Hash: pb.HashAlgo_SHA256, Pcrs: map[uint32][]byte{0: pcr0}}, true},
+		{"Bad-PCR", &pb.PCRs{Hash: pb.HashAlgo_SHA256, Pcrs: map[uint32][]byte{0: badPCR}}, false},
 	}
 	for _, subtest := range subtests {
 		t.Run(subtest.name, func(t *testing.T) {
@@ -206,13 +206,13 @@ func TestSigningKeyImport(t *testing.T) {
 	badPCR[0]++
 	subtests := []struct {
 		name          string
-		pcrs          *pb.Pcrs
+		pcrs          *pb.PCRs
 		expectSuccess bool
 	}{
 		{"No-PCR-nil", nil, true},
-		{"No-PCR-empty", &pb.Pcrs{Hash: pb.HashAlgo_SHA256}, true},
-		{"Good-PCR", &pb.Pcrs{Hash: pb.HashAlgo_SHA256, Pcrs: map[uint32][]byte{0: pcr0}}, true},
-		{"Bad-PCR", &pb.Pcrs{Hash: pb.HashAlgo_SHA256, Pcrs: map[uint32][]byte{0: badPCR}}, false},
+		{"No-PCR-empty", &pb.PCRs{Hash: pb.HashAlgo_SHA256}, true},
+		{"Good-PCR", &pb.PCRs{Hash: pb.HashAlgo_SHA256, Pcrs: map[uint32][]byte{0: pcr0}}, true},
+		{"Bad-PCR", &pb.PCRs{Hash: pb.HashAlgo_SHA256, Pcrs: map[uint32][]byte{0: badPCR}}, false},
 	}
 	for _, subtest := range subtests {
 		t.Run(subtest.name, func(t *testing.T) {
