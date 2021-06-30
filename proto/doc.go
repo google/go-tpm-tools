@@ -1,5 +1,5 @@
 // Package proto contains protocol buffers that are exchanged between the client
-// and server. Note, some of these types have additional helper methods.
+// and server.
 //
 // Generating Protocol Buffer Code
 //
@@ -8,7 +8,7 @@
 //   go generate ./...
 //
 // Alternatively, you can manually invoke protoc yourself. In the root of this project, run:
-//   protoc --go_out=. --go_opt=module=github.com/google/go-tpm-tools **/*.proto
+//   protoc --proto_path=proto --go_out=. --go_opt=module=github.com/google/go-tpm-tools proto/*.proto
 //
 // Upstream documentation:
 // https://developers.google.com/protocol-buffers/docs/reference/go-generated
