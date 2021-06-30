@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/google/go-tpm-tools/client"
-	"github.com/google/go-tpm-tools/internal"
+	"github.com/google/go-tpm-tools/internal/test"
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpmutil"
 )
@@ -30,11 +30,11 @@ func makeTempFile(tb testing.TB, content []byte) string {
 }
 
 func TestSealPlain(t *testing.T) {
-	rwc := internal.GetTPM(t)
+	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
 	ExternalTPM = rwc
 
-	tests := []struct {
+	operations := []struct {
 		name        string
 		algo        string
 		sealPCRs    string
@@ -49,8 +49,8 @@ func TestSealPlain(t *testing.T) {
 		{"RSASealAndCertifyWithPCR", "rsa", "7,8", "1"},
 		{"ECCSealAndCertifyWithPCR", "ecc", "7", "7,23"},
 	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
+	for _, op := range operations {
+		t.Run(op.name, func(t *testing.T) {
 			secretIn := []byte("Hello")
 			secretFile1 := makeTempFile(t, secretIn)
 			defer os.Remove(secretFile1)
@@ -60,11 +60,11 @@ func TestSealPlain(t *testing.T) {
 			defer os.Remove(secretFile2)
 
 			sealArgs := []string{"seal", "--quiet", "--input", secretFile1, "--output", sealedFile}
-			if test.sealPCRs != "" {
-				sealArgs = append(sealArgs, "--pcrs", test.sealPCRs)
+			if op.sealPCRs != "" {
+				sealArgs = append(sealArgs, "--pcrs", op.sealPCRs)
 			}
-			if test.algo != "" {
-				sealArgs = append(sealArgs, "--algo", test.algo)
+			if op.algo != "" {
+				sealArgs = append(sealArgs, "--algo", op.algo)
 			}
 			RootCmd.SetArgs(sealArgs)
 			if err := RootCmd.Execute(); err != nil {
@@ -73,8 +73,8 @@ func TestSealPlain(t *testing.T) {
 			pcrs = []int{} // "flush" pcrs value in last Execute() cmd
 
 			unsealArgs := []string{"unseal", "--quiet", "--input", sealedFile, "--output", secretFile2}
-			if test.certifyPCRs != "" {
-				unsealArgs = append(unsealArgs, "--pcrs", test.certifyPCRs)
+			if op.certifyPCRs != "" {
+				unsealArgs = append(unsealArgs, "--pcrs", op.certifyPCRs)
 			}
 			RootCmd.SetArgs(unsealArgs)
 			if err := RootCmd.Execute(); err != nil {
@@ -92,14 +92,14 @@ func TestSealPlain(t *testing.T) {
 }
 
 func TestUnsealFail(t *testing.T) {
-	rwc := internal.GetTPM(t)
+	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
 	ExternalTPM = rwc
 	extension := bytes.Repeat([]byte{0xAA}, sha256.Size)
 
-	sealPCR := internal.DebugPCR
-	certPCR := internal.ApplicationPCR
-	tests := []struct {
+	sealPCR := test.DebugPCR
+	certPCR := test.ApplicationPCR
+	operations := []struct {
 		name        string
 		sealPCRs    string
 		certifyPCRs string
@@ -110,8 +110,8 @@ func TestUnsealFail(t *testing.T) {
 		{"ExtendPCRAndCertify", strconv.Itoa(sealPCR), strconv.Itoa(certPCR), []int{certPCR}},
 		{"ExtendPCRAndCertify2", "", strconv.Itoa(certPCR), []int{certPCR}},
 	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
+	for _, op := range operations {
+		t.Run(op.name, func(t *testing.T) {
 			secretIn := []byte("Hello")
 			secretFile := makeTempFile(t, secretIn)
 			defer os.Remove(secretFile)
@@ -119,8 +119,8 @@ func TestUnsealFail(t *testing.T) {
 			defer os.Remove(sealedFile)
 
 			sealArgs := []string{"seal", "--quiet", "--input", secretFile, "--output", sealedFile}
-			if test.sealPCRs != "" {
-				sealArgs = append(sealArgs, "--pcrs", test.sealPCRs)
+			if op.sealPCRs != "" {
+				sealArgs = append(sealArgs, "--pcrs", op.sealPCRs)
 			}
 			RootCmd.SetArgs(sealArgs)
 			if err := RootCmd.Execute(); err != nil {
@@ -128,7 +128,7 @@ func TestUnsealFail(t *testing.T) {
 			}
 			pcrs = []int{} // "flush" pcrs value in last Execute() cmd
 
-			for _, pcr := range test.pcrToExtend {
+			for _, pcr := range op.pcrToExtend {
 				pcrHandle := tpmutil.Handle(pcr)
 				if err := tpm2.PCRExtend(rwc, pcrHandle, tpm2.AlgSHA256, extension, ""); err != nil {
 					t.Fatal(err)
@@ -136,8 +136,8 @@ func TestUnsealFail(t *testing.T) {
 			}
 
 			unsealArgs := []string{"unseal", "--quiet", "--input", sealedFile, "--output", secretFile}
-			if test.certifyPCRs != "" {
-				unsealArgs = append(unsealArgs, "--pcrs", test.certifyPCRs)
+			if op.certifyPCRs != "" {
+				unsealArgs = append(unsealArgs, "--pcrs", op.certifyPCRs)
 			}
 			RootCmd.SetArgs(unsealArgs)
 			if RootCmd.Execute() == nil {

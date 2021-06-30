@@ -10,12 +10,12 @@ import (
 
 	"github.com/google/go-attestation/attest"
 	"github.com/google/go-tpm-tools/client"
-	"github.com/google/go-tpm-tools/internal"
+	"github.com/google/go-tpm-tools/internal/test"
 	"github.com/google/go-tpm/tpm2"
 )
 
 func TestQuote(t *testing.T) {
-	rwc := internal.GetTPM(t)
+	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
 
 	keys := []struct {
@@ -84,7 +84,7 @@ func TestQuote(t *testing.T) {
 }
 
 func TestQuoteShouldFailWithNonSigningKey(t *testing.T) {
-	rwc := internal.GetTPM(t)
+	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
 
 	srk, err := client.StorageRootKeyRSA(rwc)
@@ -106,7 +106,7 @@ func TestQuoteShouldFailWithNonSigningKey(t *testing.T) {
 
 // Basic tests of Key.Attest, more advanced methods are in server package
 func TestAttest(t *testing.T) {
-	rwc := internal.GetTPM(t)
+	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
 
 	keys := []struct {

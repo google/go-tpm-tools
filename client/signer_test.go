@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"github.com/google/go-tpm-tools/client"
-	"github.com/google/go-tpm-tools/internal"
+	"github.com/google/go-tpm-tools/internal/test"
 	"github.com/google/go-tpm/tpm2"
 )
 
@@ -64,10 +64,10 @@ func verifyECC(pubKey crypto.PublicKey, _ crypto.Hash, digest, sig []byte) bool 
 }
 
 func TestSign(t *testing.T) {
-	rwc := internal.GetTPM(t)
+	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
 
-	tests := []struct {
+	keys := []struct {
 		name     string
 		hash     crypto.Hash
 		template tpm2.Public
@@ -86,15 +86,15 @@ func TestSign(t *testing.T) {
 	}
 
 	message := []byte("authenticated message")
-	// Data beginning with TPM_GENERATED_VALUE (looks like a TPM-internal message)
+	// Data beginning with TPM_GENERATED_VALUE (looks like a TPM-test message)
 	generatedMsg := append([]byte("\xffTCG"), message...)
-	for _, test := range tests {
-		hash := test.hash.New()
+	for _, k := range keys {
+		hash := k.hash.New()
 		hash.Write(message)
 		digest := hash.Sum(nil)
 
-		t.Run(test.name, func(t *testing.T) {
-			key, err := client.NewKey(rwc, tpm2.HandleEndorsement, test.template)
+		t.Run(k.name, func(t *testing.T) {
+			key, err := client.NewKey(rwc, tpm2.HandleEndorsement, k.template)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -104,16 +104,16 @@ func TestSign(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			sig, err := signer.Sign(nil, digest, test.hash)
+			sig, err := signer.Sign(nil, digest, k.hash)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !test.verify(signer.Public(), test.hash, digest, sig) {
+			if !k.verify(signer.Public(), k.hash, digest, sig) {
 				t.Error(err)
 			}
 		})
-		t.Run(test.name+"-SignData", func(t *testing.T) {
-			key, err := client.NewKey(rwc, tpm2.HandleEndorsement, test.template)
+		t.Run(k.name+"-SignData", func(t *testing.T) {
+			key, err := client.NewKey(rwc, tpm2.HandleEndorsement, k.template)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -123,7 +123,7 @@ func TestSign(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !test.verify(key.PublicKey(), test.hash, digest, sig) {
+			if !k.verify(key.PublicKey(), k.hash, digest, sig) {
 				t.Error(err)
 			}
 
@@ -132,8 +132,8 @@ func TestSign(t *testing.T) {
 				t.Error(err)
 			}
 		})
-		t.Run(test.name+"-SignDataRestricted", func(t *testing.T) {
-			restrictedTemplate := test.template
+		t.Run(k.name+"-SignDataRestricted", func(t *testing.T) {
+			restrictedTemplate := k.template
 			restrictedTemplate.Attributes |= tpm2.FlagRestricted
 			key, err := client.NewKey(rwc, tpm2.HandleEndorsement, restrictedTemplate)
 			if err != nil {
@@ -145,7 +145,7 @@ func TestSign(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !test.verify(key.PublicKey(), test.hash, digest, sig) {
+			if !k.verify(key.PublicKey(), k.hash, digest, sig) {
 				t.Error(err)
 			}
 
@@ -158,7 +158,7 @@ func TestSign(t *testing.T) {
 }
 
 func TestSignIncorrectHash(t *testing.T) {
-	rwc := internal.GetTPM(t)
+	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
 
 	key, err := client.NewKey(rwc, tpm2.HandleEndorsement, templateSSA(tpm2.AlgSHA256))
@@ -189,9 +189,9 @@ func TestSignIncorrectHash(t *testing.T) {
 }
 
 func TestSignPSS(t *testing.T) {
-	rwc := internal.GetTPM(t)
+	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
-	tests := []struct {
+	keys := []struct {
 		name     string
 		opts     crypto.SignerOpts
 		template tpm2.Public
@@ -214,18 +214,18 @@ func TestSignPSS(t *testing.T) {
 		{"RSA-SHA512", &rsa.PSSOptions{SaltLength: rsa.PSSSaltLengthAuto, Hash: crypto.SHA512}, templatePSS(tpm2.AlgSHA512), 2048, 64},
 	}
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
+	for _, k := range keys {
+		t.Run(k.name, func(t *testing.T) {
 
-			test.template.RSAParameters.KeyBits = test.keyBits
+			k.template.RSAParameters.KeyBits = k.keyBits
 
-			key, err := client.NewKey(rwc, tpm2.HandleEndorsement, test.template)
+			key, err := client.NewKey(rwc, tpm2.HandleEndorsement, k.template)
 			if err != nil {
 				t.Fatal(err)
 			}
 			defer key.Close()
 
-			hash := test.opts.HashFunc().New()
+			hash := k.opts.HashFunc().New()
 			hash.Write([]byte("authenticated message"))
 			digest := hash.Sum(nil)
 
@@ -233,18 +233,18 @@ func TestSignPSS(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			sig, err := signer.Sign(nil, digest[:], test.opts)
+			sig, err := signer.Sign(nil, digest[:], k.opts)
 			if err != nil {
 				t.Fatal(err)
 			}
 			// Verify with expected salt length.
-			err = rsa.VerifyPSS(signer.Public().(*rsa.PublicKey), test.opts.HashFunc(), digest[:], sig, &rsa.PSSOptions{SaltLength: test.saltLen, Hash: test.opts.HashFunc()})
+			err = rsa.VerifyPSS(signer.Public().(*rsa.PublicKey), k.opts.HashFunc(), digest[:], sig, &rsa.PSSOptions{SaltLength: k.saltLen, Hash: k.opts.HashFunc()})
 			if err != nil {
 				t.Error(err)
 			}
 
 			// Verify with default salt length.
-			err = rsa.VerifyPSS(signer.Public().(*rsa.PublicKey), test.opts.HashFunc(), digest[:], sig, nil)
+			err = rsa.VerifyPSS(signer.Public().(*rsa.PublicKey), k.opts.HashFunc(), digest[:], sig, nil)
 			if err != nil {
 				t.Error(err)
 			}
@@ -254,9 +254,9 @@ func TestSignPSS(t *testing.T) {
 
 /// Make sure signing fails when using PSS params with a non-PSS key
 func TestFailSignPSS(t *testing.T) {
-	rwc := internal.GetTPM(t)
+	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
-	tests := []struct {
+	keys := []struct {
 		name     string
 		template tpm2.Public
 	}{
@@ -266,9 +266,9 @@ func TestFailSignPSS(t *testing.T) {
 
 	pssOpts := rsa.PSSOptions{SaltLength: rsa.PSSSaltLengthAuto, Hash: crypto.SHA256}
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			key, err := client.NewKey(rwc, tpm2.HandleEndorsement, test.template)
+	for _, k := range keys {
+		t.Run(k.name, func(t *testing.T) {
+			key, err := client.NewKey(rwc, tpm2.HandleEndorsement, k.template)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -293,7 +293,7 @@ func TestFailGetSignerNullScheme(t *testing.T) {
 	template := templateSSA(tpm2.AlgSHA256)
 	template.RSAParameters.Sign = nil
 
-	rwc := internal.GetTPM(t)
+	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
 	key, err := client.NewKey(rwc, tpm2.HandleEndorsement, template)
 	if err != nil {

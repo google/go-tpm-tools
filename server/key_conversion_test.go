@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/google/go-tpm-tools/client"
-	"github.com/google/go-tpm-tools/internal"
+	"github.com/google/go-tpm-tools/internal/test"
 	"github.com/google/go-tpm/tpm2"
 )
 
@@ -22,7 +22,7 @@ func getECCTemplate(curve tpm2.EllipticCurve) tpm2.Public {
 }
 
 func TestCreateEKPublicAreaFromKeyGeneratedKey(t *testing.T) {
-	tests := []struct {
+	keys := []struct {
 		name        string
 		template    tpm2.Public
 		generateKey func() (crypto.PublicKey, error)
@@ -52,9 +52,9 @@ func TestCreateEKPublicAreaFromKeyGeneratedKey(t *testing.T) {
 			return priv.Public(), err
 		}},
 	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			key, err := test.generateKey()
+	for _, k := range keys {
+		t.Run(k.name, func(t *testing.T) {
+			key, err := k.generateKey()
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -62,18 +62,18 @@ func TestCreateEKPublicAreaFromKeyGeneratedKey(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to create public area from public key: %v", err)
 			}
-			if !newArea.MatchesTemplate(test.template) {
-				t.Errorf("public areas did not match. got: %+v want: %+v", newArea, test.template)
+			if !newArea.MatchesTemplate(k.template) {
+				t.Errorf("public areas did not match. got: %+v want: %+v", newArea, k.template)
 			}
 		})
 	}
 }
 
 func TestCreateEKPublicAreaFromKeyTPMKey(t *testing.T) {
-	rwc := internal.GetTPM(t)
+	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
 
-	tests := []struct {
+	keys := []struct {
 		name     string
 		template tpm2.Public
 	}{
@@ -84,9 +84,9 @@ func TestCreateEKPublicAreaFromKeyTPMKey(t *testing.T) {
 		{"ECC-P384", getECCTemplate(tpm2.CurveNISTP384)},
 		{"ECC-P521", getECCTemplate(tpm2.CurveNISTP521)},
 	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			ek, err := client.NewKey(rwc, tpm2.HandleEndorsement, test.template)
+	for _, k := range keys {
+		t.Run(k.name, func(t *testing.T) {
+			ek, err := client.NewKey(rwc, tpm2.HandleEndorsement, k.template)
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/google/go-tpm-tools/client"
-	"github.com/google/go-tpm-tools/internal"
+	"github.com/google/go-tpm-tools/internal/test"
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpmutil"
 )
@@ -41,14 +41,14 @@ func extendPCRsRandomly(rwc io.ReadWriteCloser, selpcr tpm2.PCRSelection) error 
 }
 
 func TestVerifyHappyCases(t *testing.T) {
-	rwc := internal.GetTPM(t)
+	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
 
-	onePCR := []int{internal.DebugPCR}
-	twoPCR := append(onePCR, internal.ApplicationPCR)
+	onePCR := []int{test.DebugPCR}
+	twoPCR := append(onePCR, test.ApplicationPCR)
 	dupePCR := append(twoPCR, twoPCR...)
 
-	tests := []struct {
+	subtests := []struct {
 		name         string
 		getKey       func(io.ReadWriter) (*client.Key, error)
 		pcrHashAlgo  tpm2.Algorithm
@@ -69,27 +69,27 @@ func TestVerifyHappyCases(t *testing.T) {
 		{"AK-ECC_SHA256_2PCR_empty-nonce", client.AttestationKeyECC, tpm2.AlgSHA256, twoPCR, []byte{}},
 		{"AK-ECC_SHA256_dupePCrSel_nonce", client.AttestationKeyECC, tpm2.AlgSHA256, dupePCR, getDigestHash("")},
 	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			ak, err := test.getKey(rwc)
+	for _, subtest := range subtests {
+		t.Run(subtest.name, func(t *testing.T) {
+			ak, err := subtest.getKey(rwc)
 			if err != nil {
 				t.Errorf("failed to generate AK: %v", err)
 			}
 			defer ak.Close()
 
 			selpcr := tpm2.PCRSelection{
-				Hash: test.pcrHashAlgo,
-				PCRs: test.quotePCRList,
+				Hash: subtest.pcrHashAlgo,
+				PCRs: subtest.quotePCRList,
 			}
 			err = extendPCRsRandomly(rwc, selpcr)
 			if err != nil {
 				t.Fatalf("failed to extend test PCRs: %v", err)
 			}
-			quoted, err := ak.Quote(selpcr, test.extraData)
+			quoted, err := ak.Quote(selpcr, subtest.extraData)
 			if err != nil {
 				t.Fatalf("failed to quote: %v", err)
 			}
-			err = quoted.Verify(ak.PublicKey(), test.extraData)
+			err = quoted.Verify(ak.PublicKey(), subtest.extraData)
 			if err != nil {
 				t.Fatalf("failed to verify: %v", err)
 			}
@@ -98,7 +98,7 @@ func TestVerifyHappyCases(t *testing.T) {
 }
 
 func TestVerifyPCRChanged(t *testing.T) {
-	rwc := internal.GetTPM(t)
+	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
 
 	ak, err := client.AttestationKeyRSA(rwc)
@@ -109,7 +109,7 @@ func TestVerifyPCRChanged(t *testing.T) {
 
 	selpcr := tpm2.PCRSelection{
 		Hash: tpm2.AlgSHA256,
-		PCRs: []int{internal.DebugPCR},
+		PCRs: []int{test.DebugPCR},
 	}
 	err = extendPCRsRandomly(rwc, selpcr)
 	if err != nil {
@@ -138,7 +138,7 @@ func TestVerifyPCRChanged(t *testing.T) {
 }
 
 func TestVerifyUsingDifferentPCR(t *testing.T) {
-	rwc := internal.GetTPM(t)
+	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
 
 	ak, err := client.AttestationKeyRSA(rwc)
@@ -149,7 +149,7 @@ func TestVerifyUsingDifferentPCR(t *testing.T) {
 
 	err = extendPCRsRandomly(rwc, tpm2.PCRSelection{
 		Hash: tpm2.AlgSHA256,
-		PCRs: []int{internal.DebugPCR, internal.ApplicationPCR},
+		PCRs: []int{test.DebugPCR, test.ApplicationPCR},
 	})
 	if err != nil {
 		t.Errorf("failed to extend test PCRs: %v", err)
@@ -158,7 +158,7 @@ func TestVerifyUsingDifferentPCR(t *testing.T) {
 	nonce := getDigestHash("test")
 	quoted, err := ak.Quote(tpm2.PCRSelection{
 		Hash: tpm2.AlgSHA256,
-		PCRs: []int{internal.DebugPCR},
+		PCRs: []int{test.DebugPCR},
 	}, nonce)
 	if err != nil {
 		t.Error(err)
@@ -166,7 +166,7 @@ func TestVerifyUsingDifferentPCR(t *testing.T) {
 
 	quoted.Pcrs, err = client.ReadPCRs(rwc, tpm2.PCRSelection{
 		Hash: tpm2.AlgSHA256,
-		PCRs: []int{internal.ApplicationPCR},
+		PCRs: []int{test.ApplicationPCR},
 	})
 	if err != nil {
 		t.Errorf("failed to read PCRs: %v", err)

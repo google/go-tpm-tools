@@ -9,15 +9,15 @@ import (
 	"testing"
 
 	"github.com/google/go-tpm-tools/client"
-	"github.com/google/go-tpm-tools/internal"
+	"github.com/google/go-tpm-tools/internal/test"
 	tpmpb "github.com/google/go-tpm-tools/proto"
 	"github.com/google/go-tpm/tpm2"
 )
 
 func TestImport(t *testing.T) {
-	rwc := internal.GetTPM(t)
+	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
-	tests := []struct {
+	keys := []struct {
 		name     string
 		template tpm2.Public
 	}{
@@ -30,9 +30,9 @@ func TestImport(t *testing.T) {
 		{"ECC-P384", getECCTemplate(tpm2.CurveNISTP384)},
 		{"ECC-P521", getECCTemplate(tpm2.CurveNISTP521)},
 	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			ek, err := client.NewKey(rwc, tpm2.HandleEndorsement, test.template)
+	for _, k := range keys {
+		t.Run(k.name, func(t *testing.T) {
+			ek, err := client.NewKey(rwc, tpm2.HandleEndorsement, k.template)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -65,7 +65,7 @@ func isExpectedError(err error, expected []error) bool {
 }
 
 func TestBadImport(t *testing.T) {
-	rwc := internal.GetTPM(t)
+	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
 
 	valueErr := tpm2.ParameterError{
@@ -86,7 +86,7 @@ func TestBadImport(t *testing.T) {
 		Parameter: tpm2.RC4,
 	}
 
-	tests := []struct {
+	keys := []struct {
 		name          string
 		template      tpm2.Public
 		wrongKeyErrs  []error
@@ -98,9 +98,9 @@ func TestBadImport(t *testing.T) {
 		{"SRK-ECC", client.SRKTemplateECC(), []error{integrityErr}, []error{pointErr}},
 	}
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			ek, err := client.NewKey(rwc, tpm2.HandleEndorsement, test.template)
+	for _, k := range keys {
+		t.Run(k.name, func(t *testing.T) {
+			ek, err := client.NewKey(rwc, tpm2.HandleEndorsement, k.template)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -108,7 +108,7 @@ func TestBadImport(t *testing.T) {
 			pub := ek.PublicKey()
 
 			// Create a second, different key
-			template2 := test.template
+			template2 := k.template
 			template2.Attributes ^= tpm2.FlagNoDA
 			ek2, err := client.NewKey(rwc, tpm2.HandleEndorsement, template2)
 			if err != nil {
@@ -123,21 +123,21 @@ func TestBadImport(t *testing.T) {
 			}
 
 			// Try to import this blob under the wrong key
-			if _, err = ek2.Import(blob); !isExpectedError(err, test.wrongKeyErrs) {
-				t.Errorf("got error: %v, expected: %v", err, test.wrongKeyErrs)
+			if _, err = ek2.Import(blob); !isExpectedError(err, k.wrongKeyErrs) {
+				t.Errorf("got error: %v, expected: %v", err, k.wrongKeyErrs)
 			}
 
 			// Try to import a corrupted blob
 			blob.EncryptedSeed[10] ^= 0xFF
-			if _, err = ek.Import(blob); !isExpectedError(err, test.corruptedErrs) {
-				t.Errorf("got error: %v, expected: %v", err, test.corruptedErrs)
+			if _, err = ek.Import(blob); !isExpectedError(err, k.corruptedErrs) {
+				t.Errorf("got error: %v, expected: %v", err, k.corruptedErrs)
 			}
 		})
 	}
 }
 
 func TestImportPCRs(t *testing.T) {
-	rwc := internal.GetTPM(t)
+	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
 
 	ek, err := client.EndorsementKeyRSA(rwc)
@@ -152,7 +152,7 @@ func TestImportPCRs(t *testing.T) {
 	badPCR := append([]byte(nil), pcr0...)
 	// badPCR increments first value so it doesn't match.
 	badPCR[0]++
-	tests := []struct {
+	subtests := []struct {
 		name          string
 		pcrs          *tpmpb.Pcrs
 		expectSuccess bool
@@ -162,15 +162,15 @@ func TestImportPCRs(t *testing.T) {
 		{"Good-PCR", &tpmpb.Pcrs{Hash: tpmpb.HashAlgo_SHA256, Pcrs: map[uint32][]byte{0: pcr0}}, true},
 		{"Bad-PCR", &tpmpb.Pcrs{Hash: tpmpb.HashAlgo_SHA256, Pcrs: map[uint32][]byte{0: badPCR}}, false},
 	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
+	for _, subtest := range subtests {
+		t.Run(subtest.name, func(t *testing.T) {
 			secret := []byte("super secret code")
-			blob, err := CreateImportBlob(ek.PublicKey(), secret, test.pcrs)
+			blob, err := CreateImportBlob(ek.PublicKey(), secret, subtest.pcrs)
 			if err != nil {
 				t.Fatalf("creating import blob failed: %v", err)
 			}
 			output, err := ek.Import(blob)
-			if test.expectSuccess {
+			if subtest.expectSuccess {
 				if err != nil {
 					t.Fatalf("import failed: %v", err)
 				}
@@ -185,7 +185,7 @@ func TestImportPCRs(t *testing.T) {
 }
 
 func TestSigningKeyImport(t *testing.T) {
-	rwc := internal.GetTPM(t)
+	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
 
 	ek, err := client.EndorsementKeyRSA(rwc)
@@ -204,7 +204,7 @@ func TestSigningKeyImport(t *testing.T) {
 	badPCR := append(make([]byte, 0), pcr0...)
 	// badPCR increments first value so it doesn't match.
 	badPCR[0]++
-	tests := []struct {
+	subtests := []struct {
 		name          string
 		pcrs          *tpmpb.Pcrs
 		expectSuccess bool
@@ -214,9 +214,9 @@ func TestSigningKeyImport(t *testing.T) {
 		{"Good-PCR", &tpmpb.Pcrs{Hash: tpmpb.HashAlgo_SHA256, Pcrs: map[uint32][]byte{0: pcr0}}, true},
 		{"Bad-PCR", &tpmpb.Pcrs{Hash: tpmpb.HashAlgo_SHA256, Pcrs: map[uint32][]byte{0: badPCR}}, false},
 	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			blob, err := CreateSigningKeyImportBlob(ek.PublicKey(), signingKey, test.pcrs)
+	for _, subtest := range subtests {
+		t.Run(subtest.name, func(t *testing.T) {
+			blob, err := CreateSigningKeyImportBlob(ek.PublicKey(), signingKey, subtest.pcrs)
 			if err != nil {
 				t.Fatalf("creating import blob failed: %v", err)
 			}
@@ -233,7 +233,7 @@ func TestSigningKeyImport(t *testing.T) {
 			var digest [32]byte
 
 			sig, err := signer.Sign(nil, digest[:], crypto.SHA256)
-			if test.expectSuccess {
+			if subtest.expectSuccess {
 				if err != nil {
 					t.Fatalf("import failed: %v", err)
 				}

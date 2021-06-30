@@ -9,11 +9,11 @@ import (
 	"github.com/google/go-tpm/tpmutil"
 
 	"github.com/google/go-tpm-tools/client"
-	"github.com/google/go-tpm-tools/internal"
+	"github.com/google/go-tpm-tools/internal/test"
 )
 
 func TestNameMatchesPublicArea(t *testing.T) {
-	rwc := internal.GetTPM(t)
+	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
 	ek, err := client.EndorsementKeyRSA(rwc)
 	if err != nil {
@@ -31,7 +31,7 @@ func TestNameMatchesPublicArea(t *testing.T) {
 }
 
 func TestCreateSigningKeysInHierarchies(t *testing.T) {
-	rwc := internal.GetTPM(t)
+	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
 	template := client.AKTemplateRSA()
 
@@ -47,9 +47,9 @@ func TestCreateSigningKeysInHierarchies(t *testing.T) {
 }
 
 func TestCachedRSAKeys(t *testing.T) {
-	rwc := internal.GetTPM(t)
+	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
-	tests := []struct {
+	keys := []struct {
 		name   string
 		getKey func(io.ReadWriter) (*client.Key, error)
 	}{
@@ -57,10 +57,10 @@ func TestCachedRSAKeys(t *testing.T) {
 		{"EK", client.EndorsementKeyRSA},
 	}
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
+	for _, k := range keys {
+		t.Run(k.name, func(t *testing.T) {
 			// Get the key the first time and persist
-			srk, err := test.getKey(rwc)
+			srk, err := k.getKey(rwc)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -72,7 +72,7 @@ func TestCachedRSAKeys(t *testing.T) {
 			}
 
 			// Get the cached key (should be the same)
-			srk, err = test.getKey(rwc)
+			srk, err = k.getKey(rwc)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -86,7 +86,7 @@ func TestCachedRSAKeys(t *testing.T) {
 			if err := tpm2.EvictControl(rwc, "", tpm2.HandleOwner, srk.Handle(), srk.Handle()); err != nil {
 				t.Errorf("Evicting control failed: %v", err)
 			}
-			srk, err = test.getKey(rwc)
+			srk, err = k.getKey(rwc)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -100,10 +100,10 @@ func TestCachedRSAKeys(t *testing.T) {
 }
 
 func TestKeyCreation(t *testing.T) {
-	rwc := internal.GetTPM(t)
+	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
 
-	tests := []struct {
+	keys := []struct {
 		name   string
 		getKey func(io.ReadWriter) (*client.Key, error)
 	}{
@@ -115,9 +115,9 @@ func TestKeyCreation(t *testing.T) {
 		{"AK-RSA", client.AttestationKeyRSA},
 	}
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			key, err := test.getKey(rwc)
+	for _, k := range keys {
+		t.Run(k.name, func(t *testing.T) {
+			key, err := k.getKey(rwc)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -127,7 +127,7 @@ func TestKeyCreation(t *testing.T) {
 }
 
 func BenchmarkKeyCreation(b *testing.B) {
-	rwc := internal.GetTPM(b)
+	rwc := test.GetTPM(b)
 	defer client.CheckedClose(b, rwc)
 
 	benchmarks := []struct {

@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/google/go-tpm-tools/client"
-	"github.com/google/go-tpm-tools/internal"
+	"github.com/google/go-tpm-tools/internal/test"
 	tpmpb "github.com/google/go-tpm-tools/proto"
 	"github.com/google/go-tpm/tpm2"
 )
@@ -18,7 +18,7 @@ type eventLog struct {
 
 // Agile Event Log from a RHEL 8 GCE instance with Secure Boot enabled
 var Rhel8GCE = eventLog{
-	RawLog: internal.Rhel8EventLog,
+	RawLog: test.Rhel8EventLog,
 	Banks: []*tpmpb.Pcrs{{
 		Hash: tpmpb.HashAlgo_SHA1,
 		Pcrs: map[uint32][]byte{
@@ -54,7 +54,7 @@ var Rhel8GCE = eventLog{
 
 // Agile Event Log from a Ubuntu 21.04 GCE instance without a DBX and with Secure Boot disabled
 var Ubuntu2104NoDbxGCE = eventLog{
-	RawLog: internal.Ubuntu2104NoDbxEventLog,
+	RawLog: test.Ubuntu2104NoDbxEventLog,
 	Banks: []*tpmpb.Pcrs{{
 		Hash: tpmpb.HashAlgo_SHA1,
 		Pcrs: map[uint32][]byte{
@@ -90,7 +90,7 @@ var Ubuntu2104NoDbxGCE = eventLog{
 
 // Agile Event Log from a Ubuntu 21.04 GCE instance with Secure Boot disabled
 var Ubuntu2104NoSecureBootGCE = eventLog{
-	RawLog: internal.Ubuntu2104NoSecureBootEventLog,
+	RawLog: test.Ubuntu2104NoSecureBootEventLog,
 	Banks: []*tpmpb.Pcrs{{
 		Hash: tpmpb.HashAlgo_SHA1,
 		Pcrs: map[uint32][]byte{
@@ -127,7 +127,7 @@ var Ubuntu2104NoSecureBootGCE = eventLog{
 // Agile Event Log from Alex's gLinux laptop with secure boot disabled
 // No PCR[0] as replay is currently broken for H-CRTM measurement
 var GlinuxNoSecureBootLaptop = eventLog{
-	RawLog: internal.GlinuxAlexEventLog,
+	RawLog: test.GlinuxAlexEventLog,
 	Banks: []*tpmpb.Pcrs{{
 		Hash: tpmpb.HashAlgo_SHA1,
 		Pcrs: map[uint32][]byte{
@@ -157,7 +157,7 @@ var GlinuxNoSecureBootLaptop = eventLog{
 
 // Agile Event Log from an Arch Linux worksation with systemd-boot and Secure Boot Disabled
 var ArchLinuxWorkstation = eventLog{
-	RawLog: internal.ArchLinuxWorkstationEventLog,
+	RawLog: test.ArchLinuxWorkstationEventLog,
 	Banks: []*tpmpb.Pcrs{{
 		Hash: tpmpb.HashAlgo_SHA1,
 		Pcrs: map[uint32][]byte{
@@ -189,7 +189,7 @@ var ArchLinuxWorkstation = eventLog{
 
 // Legacy Event Log from a Debian 10 GCE instance with Secure Boot enabled
 var Debian10GCE = eventLog{
-	RawLog: internal.Debian10EventLog,
+	RawLog: test.Debian10EventLog,
 	Banks: []*tpmpb.Pcrs{{
 		Hash: tpmpb.HashAlgo_SHA1,
 		Pcrs: map[uint32][]byte{
@@ -206,23 +206,23 @@ var Debian10GCE = eventLog{
 }
 
 func TestParseEventLogs(t *testing.T) {
-	tests := []struct {
+	logs := []struct {
+		eventLog
 		name string
-		log  eventLog
 	}{
-		{"Debian10GCE", Debian10GCE},
-		{"Rhel8GCE", Rhel8GCE},
-		{"Ubuntu2104NoDbxGCE", Ubuntu2104NoDbxGCE},
-		{"Ubuntu2104NoSecureBootGCE", Ubuntu2104NoSecureBootGCE},
-		{"GlinuxNoSecureBootLaptop", GlinuxNoSecureBootLaptop},
-		{"ArchLinuxWorkstation", ArchLinuxWorkstation},
+		{Debian10GCE, "Debian10GCE"},
+		{Rhel8GCE, "Rhel8GCE"},
+		{Ubuntu2104NoDbxGCE, "Ubuntu2104NoDbxGCE"},
+		{Ubuntu2104NoSecureBootGCE, "Ubuntu2104NoSecureBootGCE"},
+		{GlinuxNoSecureBootLaptop, "GlinuxNoSecureBootLaptop"},
+		{ArchLinuxWorkstation, "ArchLinuxWorkstation"},
 	}
 
-	for _, test := range tests {
-		rawLog := test.log.RawLog
-		for _, bank := range test.log.Banks {
+	for _, log := range logs {
+		rawLog := log.RawLog
+		for _, bank := range log.Banks {
 			hashName := tpmpb.HashAlgo_name[int32(bank.Hash)]
-			subtestName := fmt.Sprintf("%s-%s", test.name, hashName)
+			subtestName := fmt.Sprintf("%s-%s", log.name, hashName)
 			t.Run(subtestName, func(t *testing.T) {
 				if _, err := ParseAndVerifyEventLog(rawLog, bank); err != nil {
 					t.Errorf("failed to parse and verify log: %v", err)
@@ -233,7 +233,7 @@ func TestParseEventLogs(t *testing.T) {
 }
 
 func TestSystemParseEventLog(t *testing.T) {
-	rwc := internal.GetTPM(t)
+	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
 
 	evtLog, err := client.GetEventLog(rwc)

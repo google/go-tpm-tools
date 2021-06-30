@@ -10,30 +10,30 @@ import (
 	"github.com/google/go-tpm/tpmutil"
 
 	"github.com/google/go-tpm-tools/client"
-	"github.com/google/go-tpm-tools/internal"
+	"github.com/google/go-tpm-tools/internal/test"
 )
 
 func TestSeal(t *testing.T) {
-	rwc := internal.GetTPM(t)
+	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
 
-	tests := []struct {
+	keys := []struct {
 		name   string
 		getSRK func(io.ReadWriter) (*client.Key, error)
 	}{
 		{"RSA", client.StorageRootKeyRSA},
 		{"ECC", client.StorageRootKeyECC},
 	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			srk, err := test.getSRK(rwc)
+	for _, key := range keys {
+		t.Run(key.name, func(t *testing.T) {
+			srk, err := key.getSRK(rwc)
 			if err != nil {
-				t.Fatalf("can't create %s srk from template: %v", test.name, err)
+				t.Fatalf("can't create %s srk from template: %v", key.name, err)
 			}
 			defer srk.Close()
 
 			secret := []byte("test")
-			pcrToChange := internal.DebugPCR
+			pcrToChange := test.DebugPCR
 			sel := tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{7, pcrToChange}}
 			sealed, err := srk.Seal(secret, client.SealCurrent{PCRSelection: sel})
 			if err != nil {
@@ -68,7 +68,7 @@ func TestSeal(t *testing.T) {
 }
 
 func TestSelfReseal(t *testing.T) {
-	rwc := internal.GetTPM(t)
+	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
 
 	key, err := client.StorageRootKeyRSA(rwc)
@@ -128,10 +128,10 @@ func computePCRValue(base []byte, extensions [][]byte) []byte {
 }
 
 func TestComputePCRValue(t *testing.T) {
-	rwc := internal.GetTPM(t)
+	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
 
-	pcrNum := internal.DebugPCR
+	pcrNum := test.DebugPCR
 	extensions := [][]byte{
 		bytes.Repeat([]byte{0xAA}, sha256.Size),
 		bytes.Repeat([]byte{0xAB}, sha256.Size),
@@ -163,7 +163,7 @@ func TestComputePCRValue(t *testing.T) {
 }
 
 func TestReseal(t *testing.T) {
-	rwc := internal.GetTPM(t)
+	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
 
 	key, err := client.StorageRootKeyRSA(rwc)
@@ -173,7 +173,7 @@ func TestReseal(t *testing.T) {
 	defer key.Close()
 
 	secret := []byte("test")
-	pcrToChange := internal.DebugPCR
+	pcrToChange := test.DebugPCR
 	sel := tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{7, pcrToChange}}
 	sealed, err := key.Seal(secret, client.SealCurrent{PCRSelection: sel})
 	if err != nil {
@@ -239,7 +239,7 @@ func TestReseal(t *testing.T) {
 }
 
 func TestSealResealWithEmptyPCRs(t *testing.T) {
-	rwc := internal.GetTPM(t)
+	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
 
 	key, err := client.StorageRootKeyRSA(rwc)
@@ -249,7 +249,7 @@ func TestSealResealWithEmptyPCRs(t *testing.T) {
 	defer key.Close()
 
 	secret := []byte("test")
-	pcrToChange := internal.DebugPCR
+	pcrToChange := test.DebugPCR
 	sealed, err := key.Seal(secret, nil)
 	if err != nil {
 		t.Fatalf("failed to seal: %v", err)
@@ -296,7 +296,7 @@ func TestSealResealWithEmptyPCRs(t *testing.T) {
 }
 
 func BenchmarkSeal(b *testing.B) {
-	rwc := internal.GetTPM(b)
+	rwc := test.GetTPM(b)
 	defer client.CheckedClose(b, rwc)
 
 	pcrSel7 := tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{7}}

@@ -7,7 +7,7 @@ import (
 )
 
 func TestHasSamePCRSelection(t *testing.T) {
-	var tests = []struct {
+	var subtests = []struct {
 		pcrs        *Pcrs
 		pcrSel      tpm2.PCRSelection
 		expectedRes bool
@@ -24,8 +24,8 @@ func TestHasSamePCRSelection(t *testing.T) {
 		{&Pcrs{Hash: HashAlgo(tpm2.AlgSHA256), Pcrs: map[uint32][]byte{1: {}, 2: {}}},
 			tpm2.PCRSelection{Hash: tpm2.AlgSHA1, PCRs: []int{1, 2}}, false},
 	}
-	for _, test := range tests {
-		if test.pcrs.HasSamePCRSelection(test.pcrSel) != test.expectedRes {
+	for _, subtest := range subtests {
+		if subtest.pcrs.HasSamePCRSelection(subtest.pcrSel) != subtest.expectedRes {
 			t.Errorf("HasSamePCRSelection result is not expected")
 		}
 	}
