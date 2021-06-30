@@ -18,7 +18,7 @@ import (
 
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal"
-	pb "github.com/google/go-tpm-tools/proto"
+	pb "github.com/google/go-tpm-tools/proto/tpm"
 )
 
 // CreateImportBlob uses the provided public EK to encrypt the sensitive data.

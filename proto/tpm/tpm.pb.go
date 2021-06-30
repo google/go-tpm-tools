@@ -4,7 +4,7 @@
 // 	protoc        v3.16.0
 // source: tpm.proto
 
-package proto
+package tpm
 
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"

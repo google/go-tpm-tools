@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"net/url"
 
-	pb "github.com/google/go-tpm-tools/proto"
+	pb "github.com/google/go-tpm-tools/proto/tpm"
 )
 
 // GCEInstanceURL returns a Google API URL to the specified instance. This URL

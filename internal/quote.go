@@ -8,7 +8,7 @@ import (
 	"crypto/subtle"
 	"fmt"
 
-	pb "github.com/google/go-tpm-tools/proto"
+	pb "github.com/google/go-tpm-tools/proto/tpm"
 	"github.com/google/go-tpm/tpm2"
 )
 

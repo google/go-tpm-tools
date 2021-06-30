@@ -7,7 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/google/go-tpm-tools/client"
-	pb "github.com/google/go-tpm-tools/proto"
+	pb "github.com/google/go-tpm-tools/proto/tpm"
 	"github.com/google/go-tpm/tpm2"
 )
 
