@@ -86,8 +86,8 @@ func SamePCRSelection(p *pb.Pcrs, sel tpm2.PCRSelection) bool {
 	return true
 }
 
-// ComputePCRSessionAuth calculates the authorization value for the given PCRs.
-func ComputePCRSessionAuth(p *pb.Pcrs, hashAlg crypto.Hash) []byte {
+// PCRSessionAuth calculates the authorization value for the given PCRs.
+func PCRSessionAuth(p *pb.Pcrs, hashAlg crypto.Hash) []byte {
 	// Start with all zeros, we only use a single policy command on our session.
 	oldDigest := make([]byte, hashAlg.Size())
 	ccPolicyPCR, _ := tpmutil.Pack(tpm2.CmdPolicyPCR)
@@ -97,14 +97,14 @@ func ComputePCRSessionAuth(p *pb.Pcrs, hashAlg crypto.Hash) []byte {
 	hash.Write(oldDigest)
 	hash.Write(ccPolicyPCR)
 	hash.Write(encodePCRSelection(PCRSelection(p)))
-	hash.Write(ComputePCRDigest(p, hashAlg))
+	hash.Write(PCRDigest(p, hashAlg))
 	newDigest := hash.Sum(nil)
 	return newDigest[:]
 }
 
-// ComputePCRDigest computes the digest of the Pcrs. Note that the digest hash
+// PCRDigest computes the digest of the Pcrs. Note that the digest hash
 // algorithm may differ from the PCRs' hash (which denotes the PCR bank).
-func ComputePCRDigest(p *pb.Pcrs, hashAlg crypto.Hash) []byte {
+func PCRDigest(p *pb.Pcrs, hashAlg crypto.Hash) []byte {
 	hash := hashAlg.New()
 	for i := uint32(0); i < 24; i++ {
 		if pcrValue, exists := p.GetPcrs()[i]; exists {

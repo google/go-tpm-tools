@@ -101,7 +101,7 @@ func validatePCRDigest(quoteInfo *tpm2.QuoteInfo, pcrs *pb.Pcrs, hash crypto.Has
 	if !SamePCRSelection(pcrs, quoteInfo.PCRSelection) {
 		return fmt.Errorf("given PCRs and Quote do not have the same PCR selection")
 	}
-	pcrDigest := ComputePCRDigest(pcrs, hash)
+	pcrDigest := PCRDigest(pcrs, hash)
 	if subtle.ConstantTimeCompare(quoteInfo.PCRDigest, pcrDigest) == 0 {
 		return fmt.Errorf("given PCRs digest not matching")
 	}
