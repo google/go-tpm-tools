@@ -9,7 +9,8 @@ import (
 	"fmt"
 	"io"
 
-	tpmpb "github.com/google/go-tpm-tools/proto"
+	"github.com/google/go-tpm-tools/internal"
+	pb "github.com/google/go-tpm-tools/proto"
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpmutil"
 )
@@ -223,8 +224,8 @@ func (k *Key) Close() {
 // PCRs are in the specified state. During the sealing process, certification
 // data will be created allowing Unseal() to validate the state of the TPM
 // during the sealing process.
-func (k *Key) Seal(sensitive []byte, opts SealOpts) (*tpmpb.SealedBytes, error) {
-	var pcrs *tpmpb.Pcrs
+func (k *Key) Seal(sensitive []byte, opts SealOpts) (*pb.SealedBytes, error) {
+	var pcrs *pb.Pcrs
 	var err error
 	var auth []byte
 	if opts != nil {
@@ -234,7 +235,7 @@ func (k *Key) Seal(sensitive []byte, opts SealOpts) (*tpmpb.SealedBytes, error) 
 		}
 	}
 	if len(pcrs.GetPcrs()) > 0 {
-		auth = pcrs.ComputePCRSessionAuth(SessionHashAlg)
+		auth = internal.ComputePCRSessionAuth(pcrs, SessionHashAlg)
 	}
 	certifySel := FullPcrSel(CertifyHashAlgTpm)
 	sb, err := sealHelper(k.rw, k.Handle(), auth, sensitive, certifySel)
@@ -246,11 +247,11 @@ func (k *Key) Seal(sensitive []byte, opts SealOpts) (*tpmpb.SealedBytes, error) 
 		sb.Pcrs = append(sb.Pcrs, pcrNum)
 	}
 	sb.Hash = pcrs.GetHash()
-	sb.Srk = tpmpb.ObjectType(k.pubArea.Type)
+	sb.Srk = pb.ObjectType(k.pubArea.Type)
 	return sb, nil
 }
 
-func sealHelper(rw io.ReadWriter, parentHandle tpmutil.Handle, auth []byte, sensitive []byte, certifyPCRsSel tpm2.PCRSelection) (*tpmpb.SealedBytes, error) {
+func sealHelper(rw io.ReadWriter, parentHandle tpmutil.Handle, auth []byte, sensitive []byte, certifyPCRsSel tpm2.PCRSelection) (*pb.SealedBytes, error) {
 	inPublic := tpm2.Public{
 		Type:       tpm2.AlgKeyedHash,
 		NameAlg:    SessionHashAlgTpm,
@@ -271,7 +272,7 @@ func sealHelper(rw io.ReadWriter, parentHandle tpmutil.Handle, auth []byte, sens
 	if err != nil {
 		return nil, fmt.Errorf("failed to read PCRs: %w", err)
 	}
-	computedDigest := certifiedPcr.ComputePCRDigest(SessionHashAlg)
+	computedDigest := internal.ComputePCRDigest(certifiedPcr, SessionHashAlg)
 
 	decodedCreationData, err := tpm2.DecodeCreationData(creationData)
 	if err != nil {
@@ -283,7 +284,7 @@ func sealHelper(rw io.ReadWriter, parentHandle tpmutil.Handle, auth []byte, sens
 		return nil, fmt.Errorf("PCRs have been modified after sealing")
 	}
 
-	sb := tpmpb.SealedBytes{}
+	sb := &pb.SealedBytes{}
 	sb.CertifiedPcrs = certifiedPcr
 	sb.Priv = priv
 	sb.Pub = pub
@@ -291,15 +292,15 @@ func sealHelper(rw io.ReadWriter, parentHandle tpmutil.Handle, auth []byte, sens
 	if sb.Ticket, err = tpmutil.Pack(ticket); err != nil {
 		return nil, err
 	}
-	return &sb, nil
+	return sb, nil
 }
 
 // Unseal attempts to reverse the process of Seal(), using the PCRs, public, and
 // private data in proto.SealedBytes. Optionally, a CertifyOpt can be
 // passed, to verify the state of the TPM when the data was sealed. A nil value
 // can be passed to skip certification.
-func (k *Key) Unseal(in *tpmpb.SealedBytes, opts CertifyOpts) ([]byte, error) {
-	if in.Srk != tpmpb.ObjectType(k.pubArea.Type) {
+func (k *Key) Unseal(in *pb.SealedBytes, opts CertifyOpts) ([]byte, error) {
+	if in.Srk != pb.ObjectType(k.pubArea.Type) {
 		return nil, fmt.Errorf("expected key of type %v, got %v", in.Srk, k.pubArea.Type)
 	}
 	sealed, _, err := tpm2.Load(
@@ -347,10 +348,11 @@ func (k *Key) Unseal(in *tpmpb.SealedBytes, opts CertifyOpts) ([]byte, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to decode creation data: %w", err)
 		}
-		if !in.GetCertifiedPcrs().HasSamePCRSelection(decodedCreationData.PCRSelection) {
+		if !internal.SamePCRSelection(in.GetCertifiedPcrs(), decodedCreationData.PCRSelection) {
 			return nil, fmt.Errorf("certify PCRs does not match the PCR selection in the creation data")
 		}
-		if subtle.ConstantTimeCompare(decodedCreationData.PCRDigest, in.GetCertifiedPcrs().ComputePCRDigest(SessionHashAlg)) == 0 {
+		expectedDigest := internal.ComputePCRDigest(in.GetCertifiedPcrs(), SessionHashAlg)
+		if subtle.ConstantTimeCompare(decodedCreationData.PCRDigest, expectedDigest) == 0 {
 			return nil, fmt.Errorf("certify PCRs digest does not match the digest in the creation data")
 		}
 
@@ -381,7 +383,7 @@ func (k *Key) Unseal(in *tpmpb.SealedBytes, opts CertifyOpts) ([]byte, error) {
 // some extra data (typically a nonce), sign it with the given signing key, and return
 // the signature and the attestation data. This function will return an error if
 // the key is not a restricted signing key.
-func (k *Key) Quote(selpcr tpm2.PCRSelection, extraData []byte) (*tpmpb.Quote, error) {
+func (k *Key) Quote(selpcr tpm2.PCRSelection, extraData []byte) (*pb.Quote, error) {
 	// Make sure that we have a valid signing key before trying quote
 	var err error
 	if _, err = getSigningHashAlg(k); err != nil {
@@ -391,7 +393,7 @@ func (k *Key) Quote(selpcr tpm2.PCRSelection, extraData []byte) (*tpmpb.Quote, e
 		return nil, fmt.Errorf("unrestricted keys are insecure to use with Quote")
 	}
 
-	quote := tpmpb.Quote{}
+	quote := &pb.Quote{}
 	quote.Quote, quote.RawSig, err = tpm2.QuoteRaw(k.rw, k.Handle(), "", "", extraData, selpcr, tpm2.AlgNull)
 	if err != nil {
 		return nil, fmt.Errorf("failed to quote: %w", err)
@@ -402,10 +404,10 @@ func (k *Key) Quote(selpcr tpm2.PCRSelection, extraData []byte) (*tpmpb.Quote, e
 	}
 	// Verify the quote client-side to make sure we didn't mess things up.
 	// NOTE: the quote still must be verified server-side as well.
-	if err := quote.Verify(k.PublicKey(), extraData); err != nil {
+	if err := internal.VerifyQuote(quote, k.PublicKey(), extraData); err != nil {
 		return nil, fmt.Errorf("failed to verify quote: %w", err)
 	}
-	return &quote, nil
+	return quote, nil
 }
 
 // AttestOpts allows for optional Attest functionality to be enabled.
@@ -417,7 +419,7 @@ type AttestOpts interface{}
 // restricted signing key.
 //
 // An optional AttestOpts can also be passed. Currently, this parameter must be nil.
-func (k *Key) Attest(nonce []byte, opts AttestOpts) (*tpmpb.Attestation, error) {
+func (k *Key) Attest(nonce []byte, opts AttestOpts) (*pb.Attestation, error) {
 	if opts != nil {
 		return nil, errors.New("provided AttestOpts must be nil")
 	}
@@ -426,11 +428,11 @@ func (k *Key) Attest(nonce []byte, opts AttestOpts) (*tpmpb.Attestation, error) 
 		return nil, err
 	}
 
-	attestation := tpmpb.Attestation{}
+	attestation := pb.Attestation{}
 	if attestation.AkPub, err = k.PublicArea().Encode(); err != nil {
 		return nil, fmt.Errorf("failed to encode public area: %w", err)
 	}
-	attestation.Quotes = make([]*tpmpb.Quote, len(sels))
+	attestation.Quotes = make([]*pb.Quote, len(sels))
 	for i, sel := range sels {
 		if attestation.Quotes[i], err = k.Quote(sel, nonce); err != nil {
 			return nil, err
@@ -445,7 +447,7 @@ func (k *Key) Attest(nonce []byte, opts AttestOpts) (*tpmpb.Attestation, error) 
 // Reseal is a shortcut to call Unseal() followed by Seal().
 // CertifyOpt(nillable) will be used in Unseal(), and SealOpt(nillable)
 // will be used in Seal()
-func (k *Key) Reseal(in *tpmpb.SealedBytes, cOpts CertifyOpts, sOpts SealOpts) (*tpmpb.SealedBytes, error) {
+func (k *Key) Reseal(in *pb.SealedBytes, cOpts CertifyOpts, sOpts SealOpts) (*pb.SealedBytes, error) {
 	sensitive, err := k.Unseal(in, cOpts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unseal: %w", err)

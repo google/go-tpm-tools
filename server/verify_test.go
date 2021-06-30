@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/google/go-tpm-tools/client"
+	"github.com/google/go-tpm-tools/internal"
 	"github.com/google/go-tpm-tools/internal/test"
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpmutil"
@@ -85,11 +86,11 @@ func TestVerifyHappyCases(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to extend test PCRs: %v", err)
 			}
-			quoted, err := ak.Quote(selpcr, subtest.extraData)
+			quote, err := ak.Quote(selpcr, subtest.extraData)
 			if err != nil {
 				t.Fatalf("failed to quote: %v", err)
 			}
-			err = quoted.Verify(ak.PublicKey(), subtest.extraData)
+			err = internal.VerifyQuote(quote, ak.PublicKey(), subtest.extraData)
 			if err != nil {
 				t.Fatalf("failed to verify: %v", err)
 			}
@@ -116,7 +117,7 @@ func TestVerifyPCRChanged(t *testing.T) {
 		t.Errorf("failed to extend test PCRs: %v", err)
 	}
 	nonce := getDigestHash("test")
-	quoted, err := ak.Quote(selpcr, nonce)
+	quote, err := ak.Quote(selpcr, nonce)
 	if err != nil {
 		t.Error(err)
 	}
@@ -127,11 +128,11 @@ func TestVerifyPCRChanged(t *testing.T) {
 		t.Errorf("failed to extend test PCRs: %v", err)
 	}
 
-	quoted.Pcrs, err = client.ReadPCRs(rwc, selpcr)
+	quote.Pcrs, err = client.ReadPCRs(rwc, selpcr)
 	if err != nil {
 		t.Errorf("failed to read PCRs: %v", err)
 	}
-	err = quoted.Verify(ak.PublicKey(), nonce)
+	err = internal.VerifyQuote(quote, ak.PublicKey(), nonce)
 	if err == nil {
 		t.Errorf("Verify should fail as Verify read a modified PCR")
 	}
@@ -156,7 +157,7 @@ func TestVerifyUsingDifferentPCR(t *testing.T) {
 	}
 
 	nonce := getDigestHash("test")
-	quoted, err := ak.Quote(tpm2.PCRSelection{
+	quote, err := ak.Quote(tpm2.PCRSelection{
 		Hash: tpm2.AlgSHA256,
 		PCRs: []int{test.DebugPCR},
 	}, nonce)
@@ -164,14 +165,14 @@ func TestVerifyUsingDifferentPCR(t *testing.T) {
 		t.Error(err)
 	}
 
-	quoted.Pcrs, err = client.ReadPCRs(rwc, tpm2.PCRSelection{
+	quote.Pcrs, err = client.ReadPCRs(rwc, tpm2.PCRSelection{
 		Hash: tpm2.AlgSHA256,
 		PCRs: []int{test.ApplicationPCR},
 	})
 	if err != nil {
 		t.Errorf("failed to read PCRs: %v", err)
 	}
-	err = quoted.Verify(ak.PublicKey(), nonce)
+	err = internal.VerifyQuote(quote, ak.PublicKey(), nonce)
 	if err == nil {
 		t.Errorf("Verify should fail as Verify read a different PCR")
 	}

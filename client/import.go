@@ -3,12 +3,13 @@ package client
 import (
 	"fmt"
 
-	tpmpb "github.com/google/go-tpm-tools/proto"
+	"github.com/google/go-tpm-tools/internal"
+	pb "github.com/google/go-tpm-tools/proto"
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpmutil"
 )
 
-func loadHandle(k *Key, blob *tpmpb.ImportBlob) (tpmutil.Handle, error) {
+func loadHandle(k *Key, blob *pb.ImportBlob) (tpmutil.Handle, error) {
 	auth, err := k.session.Auth()
 	if err != nil {
 		return tpm2.HandleNull, err
@@ -32,14 +33,14 @@ func loadHandle(k *Key, blob *tpmpb.ImportBlob) (tpmutil.Handle, error) {
 // Import decrypts the secret contained in an encoded import request.
 // The key used must be an encryption key (signing keys cannot be used).
 // The req parameter should come from server.CreateImportBlob.
-func (k *Key) Import(blob *tpmpb.ImportBlob) ([]byte, error) {
+func (k *Key) Import(blob *pb.ImportBlob) ([]byte, error) {
 	handle, err := loadHandle(k, blob)
 	if err != nil {
 		return nil, err
 	}
 	defer tpm2.FlushContext(k.rw, handle)
 
-	unsealSession, err := newPCRSession(k.rw, blob.Pcrs.PCRSelection())
+	unsealSession, err := newPCRSession(k.rw, internal.PCRSelection(blob.Pcrs))
 	if err != nil {
 		return nil, err
 	}
@@ -59,7 +60,7 @@ func (k *Key) Import(blob *tpmpb.ImportBlob) ([]byte, error) {
 // ImportSigningKey returns the signing key contained in an encoded import request.
 // The parent key must be an encryption key (signing keys cannot be used).
 // The req parameter should come from server.CreateSigningKeyImportBlob.
-func (k *Key) ImportSigningKey(blob *tpmpb.ImportBlob) (key *Key, err error) {
+func (k *Key) ImportSigningKey(blob *pb.ImportBlob) (key *Key, err error) {
 	handle, err := loadHandle(k, blob)
 	if err != nil {
 		return nil, err
@@ -75,7 +76,7 @@ func (k *Key) ImportSigningKey(blob *tpmpb.ImportBlob) (key *Key, err error) {
 	if key.pubArea, _, _, err = tpm2.ReadPublic(k.rw, handle); err != nil {
 		return
 	}
-	if key.session, err = newPCRSession(k.rw, blob.Pcrs.PCRSelection()); err != nil {
+	if key.session, err = newPCRSession(k.rw, internal.PCRSelection(blob.Pcrs)); err != nil {
 		return
 	}
 	return key, key.finish()

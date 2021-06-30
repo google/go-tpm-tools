@@ -6,7 +6,8 @@ import (
 	"io"
 	"math"
 
-	tpmpb "github.com/google/go-tpm-tools/proto"
+	"github.com/google/go-tpm-tools/internal"
+	pb "github.com/google/go-tpm-tools/proto"
 	"github.com/google/go-tpm/tpm2"
 )
 
@@ -55,9 +56,9 @@ func implementedPCRs(rw io.ReadWriter) ([]tpm2.PCRSelection, error) {
 
 // ReadPCRs fetches all the PCR values specified in sel, making multiple calls
 // to the TPM if necessary.
-func ReadPCRs(rw io.ReadWriter, sel tpm2.PCRSelection) (*tpmpb.Pcrs, error) {
-	pl := tpmpb.Pcrs{
-		Hash: tpmpb.HashAlgo(sel.Hash),
+func ReadPCRs(rw io.ReadWriter, sel tpm2.PCRSelection) (*pb.Pcrs, error) {
+	pl := pb.Pcrs{
+		Hash: pb.HashAlgo(sel.Hash),
 		Pcrs: map[uint32][]byte{},
 	}
 
@@ -82,13 +83,13 @@ func ReadPCRs(rw io.ReadWriter, sel tpm2.PCRSelection) (*tpmpb.Pcrs, error) {
 }
 
 // ReadAllPCRs fetches all the PCR values from all implemented PCR banks.
-func ReadAllPCRs(rw io.ReadWriter) ([]*tpmpb.Pcrs, error) {
+func ReadAllPCRs(rw io.ReadWriter) ([]*pb.Pcrs, error) {
 	sels, err := implementedPCRs(rw)
 	if err != nil {
 		return nil, err
 	}
 
-	allPcrs := make([]*tpmpb.Pcrs, len(sels))
+	allPcrs := make([]*pb.Pcrs, len(sels))
 	for i, sel := range sels {
 		allPcrs[i], err = ReadPCRs(rw, sel)
 		if err != nil {
@@ -102,15 +103,15 @@ func ReadAllPCRs(rw io.ReadWriter) ([]*tpmpb.Pcrs, error) {
 type SealCurrent struct{ tpm2.PCRSelection }
 
 // SealTarget predicatively seals data to the given specified PCR values.
-type SealTarget struct{ Pcrs *tpmpb.Pcrs }
+type SealTarget struct{ Pcrs *pb.Pcrs }
 
 // SealOpts specifies the PCR values that should be used for Seal().
 type SealOpts interface {
-	PCRsForSealing(rw io.ReadWriter) (*tpmpb.Pcrs, error)
+	PCRsForSealing(rw io.ReadWriter) (*pb.Pcrs, error)
 }
 
 // PCRsForSealing read from TPM and return the selected PCRs.
-func (p SealCurrent) PCRsForSealing(rw io.ReadWriter) (*tpmpb.Pcrs, error) {
+func (p SealCurrent) PCRsForSealing(rw io.ReadWriter) (*pb.Pcrs, error) {
 	if len(p.PCRSelection.PCRs) == 0 {
 		panic("SealCurrent contains 0 PCRs")
 	}
@@ -118,7 +119,7 @@ func (p SealCurrent) PCRsForSealing(rw io.ReadWriter) (*tpmpb.Pcrs, error) {
 }
 
 // PCRsForSealing return the target PCRs.
-func (p SealTarget) PCRsForSealing(_ io.ReadWriter) (*tpmpb.Pcrs, error) {
+func (p SealTarget) PCRsForSealing(_ io.ReadWriter) (*pb.Pcrs, error) {
 	if len(p.Pcrs.GetPcrs()) == 0 {
 		panic("SealTarget contains 0 PCRs")
 	}
@@ -131,15 +132,15 @@ type CertifyCurrent struct{ tpm2.PCRSelection }
 
 // CertifyExpected certifies that the TPM had a specific set of PCR values when sealing.
 // Hash Algorithm in the PCR proto should be CertifyHashAlgTpm.
-type CertifyExpected struct{ Pcrs *tpmpb.Pcrs }
+type CertifyExpected struct{ Pcrs *pb.Pcrs }
 
 // CertifyOpts determines if the given PCR value can pass certification in Unseal().
 type CertifyOpts interface {
-	CertifyPCRs(rw io.ReadWriter, certified *tpmpb.Pcrs) error
+	CertifyPCRs(rw io.ReadWriter, certified *pb.Pcrs) error
 }
 
 // CertifyPCRs from CurrentPCRs will read PCR values from TPM and compare the digest.
-func (p CertifyCurrent) CertifyPCRs(rw io.ReadWriter, pcrs *tpmpb.Pcrs) error {
+func (p CertifyCurrent) CertifyPCRs(rw io.ReadWriter, pcrs *pb.Pcrs) error {
 	if len(p.PCRSelection.PCRs) == 0 {
 		panic("CertifyCurrent contains 0 PCRs")
 	}
@@ -147,15 +148,15 @@ func (p CertifyCurrent) CertifyPCRs(rw io.ReadWriter, pcrs *tpmpb.Pcrs) error {
 	if err != nil {
 		return err
 	}
-	return current.CheckIfSubsetOf(pcrs)
+	return internal.CheckSubset(current, pcrs)
 }
 
 // CertifyPCRs will compare the digest with given expected PCRs values.
-func (p CertifyExpected) CertifyPCRs(_ io.ReadWriter, pcrs *tpmpb.Pcrs) error {
+func (p CertifyExpected) CertifyPCRs(_ io.ReadWriter, pcrs *pb.Pcrs) error {
 	if len(p.Pcrs.GetPcrs()) == 0 {
 		panic("CertifyExpected contains 0 PCRs")
 	}
-	return p.Pcrs.CheckIfSubsetOf(pcrs)
+	return internal.CheckSubset(p.Pcrs, pcrs)
 }
 
 // FullPcrSel will return a full PCR selection based on the total PCR number

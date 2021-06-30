@@ -7,7 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/google/go-tpm-tools/client"
-	tpmpb "github.com/google/go-tpm-tools/proto"
+	pb "github.com/google/go-tpm-tools/proto"
 	"github.com/google/go-tpm/tpm2"
 )
 
@@ -101,7 +101,7 @@ machine state when sealing took place.
 		if err != nil {
 			return err
 		}
-		var sealed tpmpb.SealedBytes
+		var sealed pb.SealedBytes
 		if err := unmarshalOptions.Unmarshal(data, &sealed); err != nil {
 			return err
 		}

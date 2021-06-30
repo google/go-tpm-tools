@@ -17,14 +17,15 @@ import (
 	"github.com/google/go-tpm/tpmutil"
 
 	"github.com/google/go-tpm-tools/client"
-	tpmpb "github.com/google/go-tpm-tools/proto"
+	"github.com/google/go-tpm-tools/internal"
+	pb "github.com/google/go-tpm-tools/proto"
 )
 
 // CreateImportBlob uses the provided public EK to encrypt the sensitive data.
 // The returned ImportBlob can then be decrypted and imported using the
 // client Key.Import() method. A non-nil pcrs parameter adds a requirement
 // that the TPM must have specific PCR values for Import() to succeed.
-func CreateImportBlob(ekPub crypto.PublicKey, sensitive []byte, pcrs *tpmpb.Pcrs) (*tpmpb.ImportBlob, error) {
+func CreateImportBlob(ekPub crypto.PublicKey, sensitive []byte, pcrs *pb.Pcrs) (*pb.ImportBlob, error) {
 	ek, err := CreateEKPublicAreaFromKey(ekPub)
 	if err != nil {
 		return nil, err
@@ -41,7 +42,7 @@ func CreateImportBlob(ekPub crypto.PublicKey, sensitive []byte, pcrs *tpmpb.Pcrs
 // the private area to the TPM's OS using the client Key.ImportSigningKey()
 // method. A non-nil pcrs parameter adds a requirement that the TPM must have
 // specific PCR values to use the signing key.
-func CreateSigningKeyImportBlob(ekPub crypto.PublicKey, signingKey crypto.PrivateKey, pcrs *tpmpb.Pcrs) (*tpmpb.ImportBlob, error) {
+func CreateSigningKeyImportBlob(ekPub crypto.PublicKey, signingKey crypto.PrivateKey, pcrs *pb.Pcrs) (*pb.ImportBlob, error) {
 	ek, err := CreateEKPublicAreaFromKey(ekPub)
 	if err != nil {
 		return nil, err
@@ -54,7 +55,7 @@ func CreateSigningKeyImportBlob(ekPub crypto.PublicKey, signingKey crypto.Privat
 	return createImportBlobHelper(ek, public, private, pcrs)
 }
 
-func createImportBlobHelper(ek, public tpm2.Public, private tpm2.Private, pcrs *tpmpb.Pcrs) (*tpmpb.ImportBlob, error) {
+func createImportBlobHelper(ek, public tpm2.Public, private tpm2.Private, pcrs *pb.Pcrs) (*pb.ImportBlob, error) {
 	setPublicAuth(&public, pcrs)
 
 	var seed, encryptedSeed []byte
@@ -82,7 +83,7 @@ func createImportBlobHelper(ek, public tpm2.Public, private tpm2.Private, pcrs *
 		return nil, err
 	}
 
-	return &tpmpb.ImportBlob{
+	return &pb.ImportBlob{
 		Duplicate:     duplicate,
 		EncryptedSeed: encryptedSeed,
 		PublicArea:    pubEncoded,
@@ -90,13 +91,13 @@ func createImportBlobHelper(ek, public tpm2.Public, private tpm2.Private, pcrs *
 	}, nil
 }
 
-func setPublicAuth(public *tpm2.Public, pcrs *tpmpb.Pcrs) {
+func setPublicAuth(public *tpm2.Public, pcrs *pb.Pcrs) {
 	if len(pcrs.GetPcrs()) == 0 {
 		// Allow password authorization so we can use a nil AuthPolicy.
 		public.AuthPolicy = nil
 		public.Attributes |= tpm2.FlagUserWithAuth
 	} else {
-		public.AuthPolicy = pcrs.ComputePCRSessionAuth(client.SessionHashAlg)
+		public.AuthPolicy = internal.ComputePCRSessionAuth(pcrs, client.SessionHashAlg)
 		public.Attributes |= tpm2.FlagAdminWithPolicy
 	}
 }

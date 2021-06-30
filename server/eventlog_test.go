@@ -7,20 +7,20 @@ import (
 
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal/test"
-	tpmpb "github.com/google/go-tpm-tools/proto"
+	pb "github.com/google/go-tpm-tools/proto"
 	"github.com/google/go-tpm/tpm2"
 )
 
 type eventLog struct {
 	RawLog []byte
-	Banks  []*tpmpb.Pcrs
+	Banks  []*pb.Pcrs
 }
 
 // Agile Event Log from a RHEL 8 GCE instance with Secure Boot enabled
 var Rhel8GCE = eventLog{
 	RawLog: test.Rhel8EventLog,
-	Banks: []*tpmpb.Pcrs{{
-		Hash: tpmpb.HashAlgo_SHA1,
+	Banks: []*pb.Pcrs{{
+		Hash: pb.HashAlgo_SHA1,
 		Pcrs: map[uint32][]byte{
 			0:  decodeHex("0f2d3a2a1adaa479aeeca8f5df76aadc41b862ea"),
 			1:  decodeHex("5cc549378bafaa92e965c7e9c287925cfff33abd"),
@@ -35,7 +35,7 @@ var Rhel8GCE = eventLog{
 			14: decodeHex("1f5149668c40524e01be9cbc3ad527645943f148"),
 		},
 	}, {
-		Hash: tpmpb.HashAlgo_SHA256,
+		Hash: pb.HashAlgo_SHA256,
 		Pcrs: map[uint32][]byte{
 			0:  decodeHex("24af52a4f429b71a3184a6d64cddad17e54ea030e2aa6576bf3a5a3d8bd3328f"),
 			1:  decodeHex("454220afaa80c83c3839f6cccd8b3c88bf4f562316a9dda1121c578c9e005a53"),
@@ -55,8 +55,8 @@ var Rhel8GCE = eventLog{
 // Agile Event Log from a Ubuntu 21.04 GCE instance without a DBX and with Secure Boot disabled
 var Ubuntu2104NoDbxGCE = eventLog{
 	RawLog: test.Ubuntu2104NoDbxEventLog,
-	Banks: []*tpmpb.Pcrs{{
-		Hash: tpmpb.HashAlgo_SHA1,
+	Banks: []*pb.Pcrs{{
+		Hash: pb.HashAlgo_SHA1,
 		Pcrs: map[uint32][]byte{
 			0:  decodeHex("0f2d3a2a1adaa479aeeca8f5df76aadc41b862ea"),
 			1:  decodeHex("36c6b7436c37243c5f6744b73ced4df1287cd16a"),
@@ -71,7 +71,7 @@ var Ubuntu2104NoDbxGCE = eventLog{
 			14: decodeHex("cd3734d2bdfcfba9e443ac02c03c812ffcceb255"),
 		},
 	}, {
-		Hash: tpmpb.HashAlgo_SHA256,
+		Hash: pb.HashAlgo_SHA256,
 		Pcrs: map[uint32][]byte{
 			0:  decodeHex("24af52a4f429b71a3184a6d64cddad17e54ea030e2aa6576bf3a5a3d8bd3328f"),
 			1:  decodeHex("f7dab5fda6b082e0ec1a12c43dd996ee409111422cda752a784620313039db19"),
@@ -91,8 +91,8 @@ var Ubuntu2104NoDbxGCE = eventLog{
 // Agile Event Log from a Ubuntu 21.04 GCE instance with Secure Boot disabled
 var Ubuntu2104NoSecureBootGCE = eventLog{
 	RawLog: test.Ubuntu2104NoSecureBootEventLog,
-	Banks: []*tpmpb.Pcrs{{
-		Hash: tpmpb.HashAlgo_SHA1,
+	Banks: []*pb.Pcrs{{
+		Hash: pb.HashAlgo_SHA1,
 		Pcrs: map[uint32][]byte{
 			0:  decodeHex("0f2d3a2a1adaa479aeeca8f5df76aadc41b862ea"),
 			1:  decodeHex("f5310dfcfcec5571cbf730064d526906c9cea2f0"),
@@ -107,7 +107,7 @@ var Ubuntu2104NoSecureBootGCE = eventLog{
 			14: decodeHex("cd3734d2bdfcfba9e443ac02c03c812ffcceb255"),
 		},
 	}, {
-		Hash: tpmpb.HashAlgo_SHA256,
+		Hash: pb.HashAlgo_SHA256,
 		Pcrs: map[uint32][]byte{
 			0:  decodeHex("24af52a4f429b71a3184a6d64cddad17e54ea030e2aa6576bf3a5a3d8bd3328f"),
 			1:  decodeHex("45ed8540f34db53220ef197e5fb8a3835b2095454349e445f397f13d91c509a5"),
@@ -128,8 +128,8 @@ var Ubuntu2104NoSecureBootGCE = eventLog{
 // No PCR[0] as replay is currently broken for H-CRTM measurement
 var GlinuxNoSecureBootLaptop = eventLog{
 	RawLog: test.GlinuxAlexEventLog,
-	Banks: []*tpmpb.Pcrs{{
-		Hash: tpmpb.HashAlgo_SHA1,
+	Banks: []*pb.Pcrs{{
+		Hash: pb.HashAlgo_SHA1,
 		Pcrs: map[uint32][]byte{
 			// 0: decodeHex("faf6e04e58687bbedd28cb902b3516b0cf4b79dd"),
 			1: decodeHex("db16852a369b2503d6cc6c0007501c837dbe1170"),
@@ -141,7 +141,7 @@ var GlinuxNoSecureBootLaptop = eventLog{
 			7: decodeHex("9221b8fc57b60cb7de507dc016f88d4600cde9c5"),
 		},
 	}, {
-		Hash: tpmpb.HashAlgo_SHA256,
+		Hash: pb.HashAlgo_SHA256,
 		Pcrs: map[uint32][]byte{
 			// 0: decodeHex("1f0d16fee72999408656db5e4ac8ea0ce0c43095b8f6e439fef380958bc74295"),
 			1: decodeHex("9750400838980c9419764b9cf19c975c0e159c18ebe21cb897c6e834a8d8d433"),
@@ -158,8 +158,8 @@ var GlinuxNoSecureBootLaptop = eventLog{
 // Agile Event Log from an Arch Linux worksation with systemd-boot and Secure Boot Disabled
 var ArchLinuxWorkstation = eventLog{
 	RawLog: test.ArchLinuxWorkstationEventLog,
-	Banks: []*tpmpb.Pcrs{{
-		Hash: tpmpb.HashAlgo_SHA1,
+	Banks: []*pb.Pcrs{{
+		Hash: pb.HashAlgo_SHA1,
 		Pcrs: map[uint32][]byte{
 			0: decodeHex("a0487b0d95387d4a30560edf5f041307bf4a1dcc"),
 			1: decodeHex("56b71c334a5b67d3b7b3343e3241dff5a1ad87bf"),
@@ -172,7 +172,7 @@ var ArchLinuxWorkstation = eventLog{
 			8: decodeHex("aa99fc93faa0777f42da6e1ae77a0653b5005619"),
 		},
 	}, {
-		Hash: tpmpb.HashAlgo_SHA256,
+		Hash: pb.HashAlgo_SHA256,
 		Pcrs: map[uint32][]byte{
 			0: decodeHex("758b773d94feabf52ef5a4c00a7ad2c80d8d6e6d9d58756150be9bc973da9087"),
 			1: decodeHex("bfda688a5d320123fddb3fc70b746bc17647e2e7f2f96e130d429542bf4622d5"),
@@ -190,8 +190,8 @@ var ArchLinuxWorkstation = eventLog{
 // Legacy Event Log from a Debian 10 GCE instance with Secure Boot enabled
 var Debian10GCE = eventLog{
 	RawLog: test.Debian10EventLog,
-	Banks: []*tpmpb.Pcrs{{
-		Hash: tpmpb.HashAlgo_SHA1,
+	Banks: []*pb.Pcrs{{
+		Hash: pb.HashAlgo_SHA1,
 		Pcrs: map[uint32][]byte{
 			0: decodeHex("0f2d3a2a1adaa479aeeca8f5df76aadc41b862ea"),
 			1: decodeHex("b1676439cac1531683990fefe2218a43239d6fe8"),
@@ -221,7 +221,7 @@ func TestParseEventLogs(t *testing.T) {
 	for _, log := range logs {
 		rawLog := log.RawLog
 		for _, bank := range log.Banks {
-			hashName := tpmpb.HashAlgo_name[int32(bank.Hash)]
+			hashName := pb.HashAlgo_name[int32(bank.Hash)]
 			subtestName := fmt.Sprintf("%s-%s", log.name, hashName)
 			t.Run(subtestName, func(t *testing.T) {
 				if _, err := ParseAndVerifyEventLog(rawLog, bank); err != nil {
