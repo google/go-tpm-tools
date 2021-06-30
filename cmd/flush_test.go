@@ -4,12 +4,12 @@ import (
 	"testing"
 
 	"github.com/google/go-tpm-tools/client"
-	"github.com/google/go-tpm-tools/internal"
+	"github.com/google/go-tpm-tools/internal/test"
 	"github.com/google/go-tpm/tpm2"
 )
 
 func TestFlushNothing(t *testing.T) {
-	rwc := internal.GetTPM(t)
+	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
 	ExternalTPM = rwc
 
@@ -20,7 +20,7 @@ func TestFlushNothing(t *testing.T) {
 }
 
 func TestFlush(t *testing.T) {
-	rwc := internal.GetTPM(t)
+	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
 	ExternalTPM = rwc
 
@@ -29,7 +29,7 @@ func TestFlush(t *testing.T) {
 	// Loads then flushes 1, 2, 3 transient handles.
 	for numHandles := 1; numHandles <= 3; numHandles++ {
 		for i := 0; i < numHandles; i++ {
-			internal.LoadRandomExternalKey(t, rwc)
+			test.LoadRandomExternalKey(t, rwc)
 		}
 
 		if err := RootCmd.Execute(); err != nil {

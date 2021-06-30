@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/google/go-tpm-tools/client"
+	"github.com/google/go-tpm-tools/internal"
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpmutil"
 	"github.com/spf13/cobra"
@@ -43,11 +44,11 @@ If --pcrs is not provided, all PCRs are read for that hash algorithm.`,
 			}
 
 			fmt.Fprintf(debugOutput(), "Reading %v PCRs (%v)\n", sel.Hash, sel.PCRs)
-			pcrList, err := client.ReadPCRs(rwc, sel)
+			pcrs, err := client.ReadPCRs(rwc, sel)
 			if err != nil {
 				return err
 			}
-			return pcrList.PrettyFormat(dataOutput())
+			return internal.FormatPCRs(dataOutput(), pcrs)
 		}
 		if len(pcrs) != 0 {
 			return errors.New("--hash-algo must be used with --pcrs")
@@ -60,7 +61,7 @@ If --pcrs is not provided, all PCRs are read for that hash algorithm.`,
 		}
 
 		for _, bank := range banks {
-			if err = bank.PrettyFormat(dataOutput()); err != nil {
+			if err = internal.FormatPCRs(dataOutput(), bank); err != nil {
 				return err
 			}
 		}

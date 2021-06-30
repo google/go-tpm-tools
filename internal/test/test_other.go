@@ -1,6 +1,6 @@
 // +build !windows
 
-package internal
+package test
 
 import (
 	"flag"
