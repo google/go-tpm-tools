@@ -6,16 +6,17 @@
 #define _CRYPT_HASH_C_
 #define _X509_SPT_
 
+// Most of the sources can be included in any order. However, this file has to
+// be included first as it instantiates all of the libraries global variables.
+#include "support/Global.c"
+
 // Google sources
 #include "Clock.c"
 #include "Entropy.c"
 #include "NVMem.c"
 #include "Run.c"
 
-// Most of the sources can be included in any order. However, this file has to
-// be included first as it instantiates all of the libraries global variables.
-#include "support/Global.c"
-
+// Simulator sources
 #include "X509/TpmASN1.c"
 #include "X509/X509_ECC.c"
 #include "X509/X509_RSA.c"
