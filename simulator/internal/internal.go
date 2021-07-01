@@ -32,25 +32,22 @@ package internal
 // #include <stdlib.h>
 // #include "Platform.h"
 // #include "Tpm.h"
-//
-// void sync_seeds() {
-//     NV_SYNC_PERSISTENT(EPSeed);
-//     NV_SYNC_PERSISTENT(SPSeed);
-//     NV_SYNC_PERSISTENT(PPSeed);
-// }
 import "C"
 import (
 	"errors"
+	"fmt"
 	"io"
 	"unsafe"
 )
 
 // SetSeeds uses the output of r to reset the 3 TPM simulator seeds.
 func SetSeeds(r io.Reader) {
-	// The first two bytes of the seed encode the size (so we don't overwrite)
-	r.Read(C.gp.EPSeed[2:])
-	r.Read(C.gp.SPSeed[2:])
-	r.Read(C.gp.PPSeed[2:])
+	// We need data for 3 seeds of 64 bytes each
+	var seeds [64 * 3]byte
+	if _, err := io.ReadFull(r, seeds[:]); err != nil {
+		panic(fmt.Sprintf("error when reading data for seeds: %v", err))
+	}
+	C._plat__SetSeeds(C.uint32_t(len(seeds)), (*C.uint8_t)(&seeds[0]))
 }
 
 // Reset simulates toggling the power the the TPM. If forceManufacture is true,
