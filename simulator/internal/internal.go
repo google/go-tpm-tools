@@ -31,7 +31,6 @@ package internal
 //
 // #include <stdlib.h>
 // #include "Platform.h"
-// #include "Tpm.h"
 import "C"
 import (
 	"fmt"
@@ -57,7 +56,7 @@ func Reset(forceManufacture bool) {
 
 // RunCommand passes cmd to the simulator and returns the simulator's response.
 func RunCommand(cmd []byte) []byte {
-	responseSize := C.uint32_t(C.MAX_RESPONSE_SIZE)
+	responseSize := C.uint32_t(4096)
 	// _plat__RunCommand takes the response buffer as a uint8_t** instead of as
 	// a uint8_t*. As Cgo bans go pointers to go pointers, we must allocate the
 	// response buffer with malloc().
