@@ -105,10 +105,7 @@ func (s *Simulator) Write(commandBuffer []byte) (int, error) {
 	if s.IsClosed() {
 		return 0, ErrUsingClosedSimulator
 	}
-	resp, err := internal.RunCommand(commandBuffer)
-	if err != nil {
-		return 0, err
-	}
+	resp := internal.RunCommand(commandBuffer)
 	return s.buf.Write(resp)
 }
 

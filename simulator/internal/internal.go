@@ -34,7 +34,6 @@ package internal
 // #include "Tpm.h"
 import "C"
 import (
-	"errors"
 	"fmt"
 	"io"
 	"unsafe"
@@ -57,26 +56,18 @@ func Reset(forceManufacture bool) {
 }
 
 // RunCommand passes cmd to the simulator and returns the simulator's response.
-func RunCommand(cmd []byte) ([]byte, error) {
+func RunCommand(cmd []byte) []byte {
 	responseSize := C.uint32_t(C.MAX_RESPONSE_SIZE)
 	// _plat__RunCommand takes the response buffer as a uint8_t** instead of as
 	// a uint8_t*. As Cgo bans go pointers to go pointers, we must allocate the
 	// response buffer with malloc().
 	response := C.malloc(C.size_t(responseSize))
 	defer C.free(response)
-	// Make a copy of the response pointer, so we can be sure _plat__RunCommand
-	// doesn't modify the pointer (it _is_ expected to modify the buffer).
+	// Make a copy of the response pointer, so if _plat__RunCommand modifies
+	// the pointer, response will still be freed correctly.
 	responsePtr := (*C.uint8_t)(response)
 
 	C._plat__RunCommand(C.uint32_t(len(cmd)), (*C.uint8_t)(&cmd[0]),
 		&responseSize, &responsePtr)
-	// As long as NO_FAIL_TRACE is not defined, debug error information is
-	// written to certain global variables on internal failure.
-	if C.g_inFailureMode == C.TRUE {
-		return nil, errors.New("unknown internal failure")
-	}
-	if response != unsafe.Pointer(responsePtr) {
-		panic("Response pointer shouldn't be modified on success")
-	}
-	return C.GoBytes(response, C.int(responseSize)), nil
+	return C.GoBytes(unsafe.Pointer(responsePtr), C.int(responseSize))
 }
