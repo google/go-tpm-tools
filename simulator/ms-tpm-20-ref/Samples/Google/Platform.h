@@ -64,6 +64,14 @@ void _plat__RunCommand(uint32_t requestSize,     // IN: command buffer size
 // for forceManufacture to perfrom a manufacturer reset.
 void _plat__Reset(bool forceManufacture);
 
+//*** _plat__SetSeeds
+// Copy the provided seeds data into the TPM's internal seeds. This should be
+// called after _plat_Reset() but before issuing a command. This function copies
+// at most 3*PRIMARY_SEED_SIZE bytes from seeds. If more data is provided, it is
+// ignored. If less data is provided, the internal seeds will only be partially
+// written (remaining bytes will be random).
+void _plat__SetSeeds(uint32_t size, const uint8_t *seeds);
+
 #ifdef __cplusplus
 }
 #endif

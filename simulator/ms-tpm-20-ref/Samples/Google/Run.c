@@ -76,3 +76,18 @@ void _plat__Reset(bool forceManufacture) {
   _plat__TimerReset();
   _TPM_Init();
 }
+
+void _plat__SetSeeds(uint32_t size, const uint8_t *seeds) {
+  // Make sure we don't read the seeds buffer out-of-bounds
+  size_t toCopy = MIN(size/3, PRIMARY_SEED_SIZE);
+  // Copy into the buffers without reading seed.t.size. If we read more data
+  // than seed.t.size (but less than PRIMARY_SEED_SIZE), the data will not be
+  // used, but will not write out-of-bounds.
+  memcpy(gp.EPSeed.t.buffer, seeds, toCopy);
+  memcpy(gp.SPSeed.t.buffer, seeds + toCopy, toCopy);
+  memcpy(gp.PPSeed.t.buffer, seeds + 2*toCopy, toCopy);
+  // Make sure our changes to the seeds are synced to NVData
+  NV_SYNC_PERSISTENT(EPSeed);
+  NV_SYNC_PERSISTENT(SPSeed);
+  NV_SYNC_PERSISTENT(PPSeed);
+}
