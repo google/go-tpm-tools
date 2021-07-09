@@ -14,6 +14,8 @@ enum HashAlgo {
   HASH_INVALID = 0x0000;
   SHA1 = 0x0004;
   SHA256 = 0x000B;
+  SHA384 = 0x000C;
+  SHA512 = 0x000D;
 }
 
 // SealedBytes stores the result of a TPM2_Seal. The private portion (priv) has

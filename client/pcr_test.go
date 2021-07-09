@@ -15,24 +15,21 @@ import (
 	"github.com/google/go-tpm/tpmutil"
 )
 
-var extends = []struct {
-	alg     tpm2.Algorithm
-	digests [][]byte
+var extends = map[tpm2.Algorithm][]struct {
+	digest []byte
 }{
-	{tpm2.AlgSHA1, nil},
-	{tpm2.AlgSHA1, [][]byte{bytes.Repeat([]byte{0x00}, sha1.Size)}},
-	{tpm2.AlgSHA1, [][]byte{bytes.Repeat([]byte{0x01}, sha1.Size)}},
-	{tpm2.AlgSHA1, [][]byte{bytes.Repeat([]byte{0x02}, sha1.Size)}},
-
-	{tpm2.AlgSHA256, nil},
-	{tpm2.AlgSHA256, [][]byte{bytes.Repeat([]byte{0x00}, sha256.Size)}},
-	{tpm2.AlgSHA256, [][]byte{bytes.Repeat([]byte{0x01}, sha256.Size)}},
-	{tpm2.AlgSHA256, [][]byte{bytes.Repeat([]byte{0x02}, sha256.Size)}},
-
-	{tpm2.AlgSHA384, nil},
-	{tpm2.AlgSHA384, [][]byte{bytes.Repeat([]byte{0x00}, sha512.Size384)}},
-	{tpm2.AlgSHA384, [][]byte{bytes.Repeat([]byte{0x01}, sha512.Size384)}},
-	{tpm2.AlgSHA384, [][]byte{bytes.Repeat([]byte{0x02}, sha512.Size384)}},
+	tpm2.AlgSHA1: {
+		{bytes.Repeat([]byte{0x00}, sha1.Size)},
+		{bytes.Repeat([]byte{0x01}, sha1.Size)},
+		{bytes.Repeat([]byte{0x02}, sha1.Size)}},
+	tpm2.AlgSHA256: {
+		{bytes.Repeat([]byte{0x00}, sha256.Size)},
+		{bytes.Repeat([]byte{0x01}, sha256.Size)},
+		{bytes.Repeat([]byte{0x02}, sha256.Size)}},
+	tpm2.AlgSHA384: {
+		{bytes.Repeat([]byte{0x00}, sha512.Size384)},
+		{bytes.Repeat([]byte{0x01}, sha512.Size384)},
+		{bytes.Repeat([]byte{0x02}, sha512.Size384)}},
 }
 
 func pcrExtend(alg tpm2.Algorithm, old, new []byte) ([]byte, error) {
@@ -50,33 +47,43 @@ func TestReadPCRs(t *testing.T) {
 	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
 
-	testPcrs := make(map[tpm2.Algorithm][]byte)
-	testPcrs[tpm2.AlgSHA1] = bytes.Repeat([]byte{0x00}, sha1.Size)
-	testPcrs[tpm2.AlgSHA256] = bytes.Repeat([]byte{0x00}, sha256.Size)
-	testPcrs[tpm2.AlgSHA384] = bytes.Repeat([]byte{0x00}, sha512.Size384)
+	cases := []struct {
+		name    string
+		hashalg tpm2.Algorithm
+	}{
+		{"SHA1", tpm2.AlgSHA1},
+		{"SHA256", tpm2.AlgSHA256},
+		{"SHA384", tpm2.AlgSHA512},
+	}
 
-	for _, extend := range extends {
-		for _, digest := range extend.digests {
-			if err := tpm2.PCRExtend(rwc, tpmutil.Handle(test.DebugPCR), extend.alg, digest, ""); err != nil {
-				t.Fatalf("failed to extend pcr for test %v", err)
-			}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			test.SkipOnUnsupportedAlg(t, rwc, c.hashalg)
 
-			pcrVal, err := pcrExtend(extend.alg, testPcrs[extend.alg], digest)
+			pcrbank, err := tpm2.ReadPCR(rwc, test.DebugPCR, c.hashalg)
 			if err != nil {
-				t.Fatalf("could not extend pcr: %v", err)
+				t.Fatal(err)
 			}
-			testPcrs[extend.alg] = pcrVal
-		}
 
-		sel := tpm2.PCRSelection{Hash: extend.alg, PCRs: []int{test.DebugPCR}}
-		proto, err := client.ReadPCRs(rwc, sel)
-		if err != nil {
-			t.Fatalf("failed to read pcrs %v", err)
-		}
-
-		if !bytes.Equal(proto.Pcrs[uint32(test.DebugPCR)], testPcrs[extend.alg]) {
-			t.Errorf("%v not equal to expected %v", proto.Pcrs[0], testPcrs[extend.alg])
-		}
+			for _, d := range extends[c.hashalg] {
+				if err := tpm2.PCRExtend(rwc, tpmutil.Handle(test.DebugPCR), c.hashalg, d.digest, ""); err != nil {
+					t.Fatalf("failed to extend pcr for test %v", err)
+				}
+				pcrVal, err := pcrExtend(c.hashalg, pcrbank, d.digest)
+				if err != nil {
+					t.Fatalf("could not extend pcr: %v", err)
+				}
+				pcrbank = pcrVal
+				sel := tpm2.PCRSelection{Hash: c.hashalg, PCRs: []int{test.DebugPCR}}
+				proto, err := client.ReadPCRs(rwc, sel)
+				if err != nil {
+					t.Fatalf("failed to read pcrs %v", err)
+				}
+				if !bytes.Equal(proto.Pcrs[uint32(test.DebugPCR)], pcrbank) {
+					t.Errorf("%v not equal to expected %v", proto.Pcrs[uint32(test.DebugPCR)], pcrbank)
+				}
+			}
+		})
 	}
 }
 

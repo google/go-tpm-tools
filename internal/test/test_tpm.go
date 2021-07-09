@@ -40,6 +40,29 @@ func (s simulatedTpm) EventLog() ([]byte, error) {
 	return s.eventLog, nil
 }
 
+// SkipOnUnsupportedAlg skips the test if the algorithm is not found in the TPM
+// capability.
+func SkipOnUnsupportedAlg(t testing.TB, rw io.ReadWriter, alg tpm2.Algorithm) {
+	moreData := true
+	for i := uint32(0); moreData; i++ {
+		var err error
+		var descs []interface{}
+		descs, moreData, err = tpm2.GetCapability(rw, tpm2.CapabilityAlgs, 1, i)
+		if err != nil {
+			t.Fatalf("Could not get TPM algorithm capability: %v", err)
+		}
+		for _, desc := range descs {
+			if desc.(tpm2.AlgorithmDescription).ID == alg {
+				return
+			}
+		}
+		if !moreData {
+			break
+		}
+	}
+	t.Skipf("Algorithm %v is not supported by the TPM", alg)
+}
+
 // GetTPM is a cross-platform testing helper function that retrives the
 // appropriate TPM device from the flags passed into "go test".
 //
