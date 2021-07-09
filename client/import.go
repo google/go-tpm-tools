@@ -32,7 +32,7 @@ func loadHandle(k *Key, blob *pb.ImportBlob) (tpmutil.Handle, error) {
 
 // Import decrypts the secret contained in an encoded import request.
 // The key used must be an encryption key (signing keys cannot be used).
-// The req parameter should come from server.CreateImportBlob.
+// The blob parameter should come from server.CreateImportBlob.
 func (k *Key) Import(blob *pb.ImportBlob) ([]byte, error) {
 	handle, err := loadHandle(k, blob)
 	if err != nil {
