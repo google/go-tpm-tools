@@ -92,8 +92,14 @@ func TestSign(t *testing.T) {
 		hash := k.hash.New()
 		hash.Write(message)
 		digest := hash.Sum(nil)
+		alg, err := tpm2.HashToAlgorithm(k.hash)
+		if err != nil {
+			t.Fatal(err)
+		}
 
 		t.Run(k.name, func(t *testing.T) {
+			test.SkipOnUnsupportedAlg(t, rwc, alg)
+
 			key, err := client.NewKey(rwc, tpm2.HandleEndorsement, k.template)
 			if err != nil {
 				t.Fatal(err)
@@ -113,6 +119,8 @@ func TestSign(t *testing.T) {
 			}
 		})
 		t.Run(k.name+"-SignData", func(t *testing.T) {
+			test.SkipOnUnsupportedAlg(t, rwc, alg)
+
 			key, err := client.NewKey(rwc, tpm2.HandleEndorsement, k.template)
 			if err != nil {
 				t.Fatal(err)
@@ -133,6 +141,8 @@ func TestSign(t *testing.T) {
 			}
 		})
 		t.Run(k.name+"-SignDataRestricted", func(t *testing.T) {
+			test.SkipOnUnsupportedAlg(t, rwc, alg)
+
 			restrictedTemplate := k.template
 			restrictedTemplate.Attributes |= tpm2.FlagRestricted
 			key, err := client.NewKey(rwc, tpm2.HandleEndorsement, restrictedTemplate)
@@ -216,6 +226,11 @@ func TestSignPSS(t *testing.T) {
 
 	for _, k := range keys {
 		t.Run(k.name, func(t *testing.T) {
+			alg, err := tpm2.HashToAlgorithm(k.opts.HashFunc())
+			if err != nil {
+				t.Fatal(err)
+			}
+			test.SkipOnUnsupportedAlg(t, rwc, alg)
 
 			k.template.RSAParameters.KeyBits = k.keyBits
 
@@ -237,13 +252,8 @@ func TestSignPSS(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			// Verify with expected salt length.
-			err = rsa.VerifyPSS(signer.Public().(*rsa.PublicKey), k.opts.HashFunc(), digest[:], sig, &rsa.PSSOptions{SaltLength: k.saltLen, Hash: k.opts.HashFunc()})
-			if err != nil {
-				t.Error(err)
-			}
-
-			// Verify with default salt length.
+			// Different implementations may specify different salt length. Some have "keyBytes - digestSize - 2", some have
+			// just "digestSize". Therefore here we just verify with default salt length.
 			err = rsa.VerifyPSS(signer.Public().(*rsa.PublicKey), k.opts.HashFunc(), digest[:], sig, nil)
 			if err != nil {
 				t.Error(err)
