@@ -19,6 +19,7 @@ var (
 	nvIndex uint32
 	keyAlgo = tpm2.AlgRSA
 	pcrs    []int
+	nonce   []byte
 )
 
 type pcrsFlag struct {
@@ -140,6 +141,10 @@ func addPublicKeyAlgoFlag(cmd *cobra.Command) {
 func addHashAlgoFlag(cmd *cobra.Command, hashAlgo *tpm2.Algorithm) {
 	f := algoFlag{hashAlgo, []tpm2.Algorithm{tpm2.AlgSHA1, tpm2.AlgSHA256, tpm2.AlgSHA384, tpm2.AlgSHA512}}
 	cmd.PersistentFlags().Var(&f, "hash-algo", "hash algorithm: "+f.Allowed())
+}
+
+func addNonceFlag(cmd *cobra.Command) {
+	cmd.PersistentFlags().BytesHexVar(&nonce, "nonce", []byte{}, "hex encoded nonce, can be empty")
 }
 
 // alwaysError implements io.ReadWriter by always returning an error
