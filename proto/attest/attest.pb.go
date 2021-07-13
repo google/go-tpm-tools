@@ -21,6 +21,56 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// Type of hardware technology used to protect this instance
+type GCEConfidentialTechnology int32
+
+const (
+	GCEConfidentialTechnology_NONE       GCEConfidentialTechnology = 0
+	GCEConfidentialTechnology_AMD_SEV    GCEConfidentialTechnology = 1
+	GCEConfidentialTechnology_AMD_SEV_ES GCEConfidentialTechnology = 2
+)
+
+// Enum value maps for GCEConfidentialTechnology.
+var (
+	GCEConfidentialTechnology_name = map[int32]string{
+		0: "NONE",
+		1: "AMD_SEV",
+		2: "AMD_SEV_ES",
+	}
+	GCEConfidentialTechnology_value = map[string]int32{
+		"NONE":       0,
+		"AMD_SEV":    1,
+		"AMD_SEV_ES": 2,
+	}
+)
+
+func (x GCEConfidentialTechnology) Enum() *GCEConfidentialTechnology {
+	p := new(GCEConfidentialTechnology)
+	*p = x
+	return p
+}
+
+func (x GCEConfidentialTechnology) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (GCEConfidentialTechnology) Descriptor() protoreflect.EnumDescriptor {
+	return file_proto_attest_proto_enumTypes[0].Descriptor()
+}
+
+func (GCEConfidentialTechnology) Type() protoreflect.EnumType {
+	return &file_proto_attest_proto_enumTypes[0]
+}
+
+func (x GCEConfidentialTechnology) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use GCEConfidentialTechnology.Descriptor instead.
+func (GCEConfidentialTechnology) EnumDescriptor() ([]byte, []int) {
+	return file_proto_attest_proto_rawDescGZIP(), []int{0}
+}
+
 // Information uniquely identifying a GCE instance. Can be used to create an
 // instance URL, which can then be used with GCE APIs. Formatted like:
 //   https://www.googleapis.com/compute/v1/projects/{project_id}/zones/{zone}/instances/{instance_name}
@@ -178,6 +228,622 @@ func (x *Attestation) GetInstanceInfo() *GCEInstanceInfo {
 	return nil
 }
 
+type PlatformState struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	// Types that are assignable to Firmware:
+	//	*PlatformState_ScrtmVersionId
+	//	*PlatformState_GceVersion
+	Firmware isPlatformState_Firmware `protobuf_oneof:"firmware"`
+	// Set to NONE on non-GCE instances or non-Confidenital Shielded GCE instances
+	Technology GCEConfidentialTechnology `protobuf:"varint,3,opt,name=technology,proto3,enum=attest.GCEConfidentialTechnology" json:"technology,omitempty"`
+	// Only set for GCE instances
+	InstanceInfo *GCEInstanceInfo `protobuf:"bytes,4,opt,name=instance_info,json=instanceInfo,proto3" json:"instance_info,omitempty"`
+}
+
+func (x *PlatformState) Reset() {
+	*x = PlatformState{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_proto_attest_proto_msgTypes[2]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *PlatformState) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PlatformState) ProtoMessage() {}
+
+func (x *PlatformState) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_attest_proto_msgTypes[2]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PlatformState.ProtoReflect.Descriptor instead.
+func (*PlatformState) Descriptor() ([]byte, []int) {
+	return file_proto_attest_proto_rawDescGZIP(), []int{2}
+}
+
+func (m *PlatformState) GetFirmware() isPlatformState_Firmware {
+	if m != nil {
+		return m.Firmware
+	}
+	return nil
+}
+
+func (x *PlatformState) GetScrtmVersionId() []byte {
+	if x, ok := x.GetFirmware().(*PlatformState_ScrtmVersionId); ok {
+		return x.ScrtmVersionId
+	}
+	return nil
+}
+
+func (x *PlatformState) GetGceVersion() uint32 {
+	if x, ok := x.GetFirmware().(*PlatformState_GceVersion); ok {
+		return x.GceVersion
+	}
+	return 0
+}
+
+func (x *PlatformState) GetTechnology() GCEConfidentialTechnology {
+	if x != nil {
+		return x.Technology
+	}
+	return GCEConfidentialTechnology_NONE
+}
+
+func (x *PlatformState) GetInstanceInfo() *GCEInstanceInfo {
+	if x != nil {
+		return x.InstanceInfo
+	}
+	return nil
+}
+
+type isPlatformState_Firmware interface {
+	isPlatformState_Firmware()
+}
+
+type PlatformState_ScrtmVersionId struct {
+	// Raw S-CRTM version identifier (EV_S_CRTM_VERSION)
+	ScrtmVersionId []byte `protobuf:"bytes,1,opt,name=scrtm_version_id,json=scrtmVersionId,proto3,oneof"`
+}
+
+type PlatformState_GceVersion struct {
+	// Virtual GCE firmware version (parsed from S-CRTM version id)
+	GceVersion uint32 `protobuf:"varint,2,opt,name=gce_version,json=gceVersion,proto3,oneof"`
+}
+
+func (*PlatformState_ScrtmVersionId) isPlatformState_Firmware() {}
+
+func (*PlatformState_GceVersion) isPlatformState_Firmware() {}
+
+type Certificate struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Der []byte `protobuf:"bytes,1,opt,name=der,proto3" json:"der,omitempty"`
+}
+
+func (x *Certificate) Reset() {
+	*x = Certificate{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_proto_attest_proto_msgTypes[3]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *Certificate) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Certificate) ProtoMessage() {}
+
+func (x *Certificate) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_attest_proto_msgTypes[3]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Certificate.ProtoReflect.Descriptor instead.
+func (*Certificate) Descriptor() ([]byte, []int) {
+	return file_proto_attest_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *Certificate) GetDer() []byte {
+	if x != nil {
+		return x.Der
+	}
+	return nil
+}
+
+// A Secure Boot database containing lists of hashes and certificates,
+// as defined by section 32.4.1 Signature Database in the UEFI spec.
+type Database struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Certs  []*Certificate `protobuf:"bytes,1,rep,name=certs,proto3" json:"certs,omitempty"`
+	Hashes [][]byte       `protobuf:"bytes,2,rep,name=hashes,proto3" json:"hashes,omitempty"`
+}
+
+func (x *Database) Reset() {
+	*x = Database{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_proto_attest_proto_msgTypes[4]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *Database) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Database) ProtoMessage() {}
+
+func (x *Database) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_attest_proto_msgTypes[4]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Database.ProtoReflect.Descriptor instead.
+func (*Database) Descriptor() ([]byte, []int) {
+	return file_proto_attest_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *Database) GetCerts() []*Certificate {
+	if x != nil {
+		return x.Certs
+	}
+	return nil
+}
+
+func (x *Database) GetHashes() [][]byte {
+	if x != nil {
+		return x.Hashes
+	}
+	return nil
+}
+
+type SecureBootState struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	// Set to true if Secure Boot is enabled
+	Enabled bool `protobuf:"varint,1,opt,name=enabled,proto3" json:"enabled,omitempty"`
+	// The certs/hashes that can be used to authorize Secure Boot
+	Db *Database `protobuf:"bytes,2,opt,name=db,proto3" json:"db,omitempty"`
+	// These certs/hashes block Secure Boot authorization (precedence over db)
+	Dbx *Database `protobuf:"bytes,3,opt,name=dbx,proto3" json:"dbx,omitempty"`
+	// Authority events post-separator. Pre-separator authorities
+	// are currently not supported.
+	Authority *Database `protobuf:"bytes,4,opt,name=authority,proto3" json:"authority,omitempty"`
+}
+
+func (x *SecureBootState) Reset() {
+	*x = SecureBootState{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_proto_attest_proto_msgTypes[5]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *SecureBootState) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SecureBootState) ProtoMessage() {}
+
+func (x *SecureBootState) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_attest_proto_msgTypes[5]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SecureBootState.ProtoReflect.Descriptor instead.
+func (*SecureBootState) Descriptor() ([]byte, []int) {
+	return file_proto_attest_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *SecureBootState) GetEnabled() bool {
+	if x != nil {
+		return x.Enabled
+	}
+	return false
+}
+
+func (x *SecureBootState) GetDb() *Database {
+	if x != nil {
+		return x.Db
+	}
+	return nil
+}
+
+func (x *SecureBootState) GetDbx() *Database {
+	if x != nil {
+		return x.Dbx
+	}
+	return nil
+}
+
+func (x *SecureBootState) GetAuthority() *Database {
+	if x != nil {
+		return x.Authority
+	}
+	return nil
+}
+
+// A parsed event from the TCG event log
+type Event struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Index         uint32 `protobuf:"varint,1,opt,name=index,proto3" json:"index,omitempty"`
+	UntrustedType uint32 `protobuf:"varint,2,opt,name=untrusted_type,json=untrustedType,proto3" json:"untrusted_type,omitempty"`
+	Data          []byte `protobuf:"bytes,3,opt,name=data,proto3" json:"data,omitempty"`
+	Digest        []byte `protobuf:"bytes,4,opt,name=digest,proto3" json:"digest,omitempty"`
+}
+
+func (x *Event) Reset() {
+	*x = Event{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_proto_attest_proto_msgTypes[6]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *Event) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Event) ProtoMessage() {}
+
+func (x *Event) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_attest_proto_msgTypes[6]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Event.ProtoReflect.Descriptor instead.
+func (*Event) Descriptor() ([]byte, []int) {
+	return file_proto_attest_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *Event) GetIndex() uint32 {
+	if x != nil {
+		return x.Index
+	}
+	return 0
+}
+
+func (x *Event) GetUntrustedType() uint32 {
+	if x != nil {
+		return x.UntrustedType
+	}
+	return 0
+}
+
+func (x *Event) GetData() []byte {
+	if x != nil {
+		return x.Data
+	}
+	return nil
+}
+
+func (x *Event) GetDigest() []byte {
+	if x != nil {
+		return x.Digest
+	}
+	return nil
+}
+
+// The verified state of a booted machine obtained from an Attestation
+type MachineState struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Platform   *PlatformState   `protobuf:"bytes,1,opt,name=platform,proto3" json:"platform,omitempty"`
+	SecureBoot *SecureBootState `protobuf:"bytes,2,opt,name=secure_boot,json=secureBoot,proto3" json:"secure_boot,omitempty"`
+	// The complete TCG Event Log, including those events used to create the
+	// PlatformState and SecureBootState.
+	RawEvents []*Event `protobuf:"bytes,3,rep,name=raw_events,json=rawEvents,proto3" json:"raw_events,omitempty"`
+}
+
+func (x *MachineState) Reset() {
+	*x = MachineState{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_proto_attest_proto_msgTypes[7]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *MachineState) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MachineState) ProtoMessage() {}
+
+func (x *MachineState) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_attest_proto_msgTypes[7]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MachineState.ProtoReflect.Descriptor instead.
+func (*MachineState) Descriptor() ([]byte, []int) {
+	return file_proto_attest_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *MachineState) GetPlatform() *PlatformState {
+	if x != nil {
+		return x.Platform
+	}
+	return nil
+}
+
+func (x *MachineState) GetSecureBoot() *SecureBootState {
+	if x != nil {
+		return x.SecureBoot
+	}
+	return nil
+}
+
+func (x *MachineState) GetRawEvents() []*Event {
+	if x != nil {
+		return x.RawEvents
+	}
+	return nil
+}
+
+type PlatformPolicy struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	// If non-empty, the PlatformState's firmware.scrtm_version_id must appear
+	// in this list. For use with a GCE VM, minimum_gce_firmware_version is
+	// often a better altenative.
+	AllowedScrtmVersionIds [][]byte `protobuf:"bytes,1,rep,name=allowed_scrtm_version_ids,json=allowedScrtmVersionIds,proto3" json:"allowed_scrtm_version_ids,omitempty"`
+	// If non-zero, the PlatformState's firmware.gce_version must be greater
+	// than or equal to this value. Currently, the max version is 1.
+	MinimumGceFirmwareVersion uint32 `protobuf:"varint,2,opt,name=minimum_gce_firmware_version,json=minimumGceFirmwareVersion,proto3" json:"minimum_gce_firmware_version,omitempty"`
+	// If not NONE, the PlatformState's technology must be at least as secure as
+	// the specified minimum_technology (i.e. AMD_SEV_ES > AMD_SEV).
+	MinimumTechnology GCEConfidentialTechnology `protobuf:"varint,3,opt,name=minimum_technology,json=minimumTechnology,proto3,enum=attest.GCEConfidentialTechnology" json:"minimum_technology,omitempty"`
+}
+
+func (x *PlatformPolicy) Reset() {
+	*x = PlatformPolicy{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_proto_attest_proto_msgTypes[8]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *PlatformPolicy) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PlatformPolicy) ProtoMessage() {}
+
+func (x *PlatformPolicy) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_attest_proto_msgTypes[8]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PlatformPolicy.ProtoReflect.Descriptor instead.
+func (*PlatformPolicy) Descriptor() ([]byte, []int) {
+	return file_proto_attest_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *PlatformPolicy) GetAllowedScrtmVersionIds() [][]byte {
+	if x != nil {
+		return x.AllowedScrtmVersionIds
+	}
+	return nil
+}
+
+func (x *PlatformPolicy) GetMinimumGceFirmwareVersion() uint32 {
+	if x != nil {
+		return x.MinimumGceFirmwareVersion
+	}
+	return 0
+}
+
+func (x *PlatformPolicy) GetMinimumTechnology() GCEConfidentialTechnology {
+	if x != nil {
+		return x.MinimumTechnology
+	}
+	return GCEConfidentialTechnology_NONE
+}
+
+type SecureBootPolicy struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	// If present, only these entries may appear in the SecureBootState's db. It
+	// is fine for some of the permitted entries to be missing from the db, as
+	// that does not decrease security.
+	Permitted *Database `protobuf:"bytes,1,opt,name=permitted,proto3" json:"permitted,omitempty"`
+	// If present, all of these entries must appear in the SecureBootState's dbx.
+	// It is fine for the dbx to contain additional entries, as that does not
+	// decrease security.
+	Forbidden *Database `protobuf:"bytes,2,opt,name=forbidden,proto3" json:"forbidden,omitempty"`
+	// If non-empty, only authorites in this list may appear as authorities. This
+	// is useful for furthur restricting which OSes are allowed. For example,
+	// adding the Ubuntu Secure Boot key here causes Red Hat boots to be denied.
+	PermittedAuthorities []*Certificate `protobuf:"bytes,3,rep,name=permitted_authorities,json=permittedAuthorities,proto3" json:"permitted_authorities,omitempty"`
+}
+
+func (x *SecureBootPolicy) Reset() {
+	*x = SecureBootPolicy{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_proto_attest_proto_msgTypes[9]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *SecureBootPolicy) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SecureBootPolicy) ProtoMessage() {}
+
+func (x *SecureBootPolicy) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_attest_proto_msgTypes[9]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SecureBootPolicy.ProtoReflect.Descriptor instead.
+func (*SecureBootPolicy) Descriptor() ([]byte, []int) {
+	return file_proto_attest_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *SecureBootPolicy) GetPermitted() *Database {
+	if x != nil {
+		return x.Permitted
+	}
+	return nil
+}
+
+func (x *SecureBootPolicy) GetForbidden() *Database {
+	if x != nil {
+		return x.Forbidden
+	}
+	return nil
+}
+
+func (x *SecureBootPolicy) GetPermittedAuthorities() []*Certificate {
+	if x != nil {
+		return x.PermittedAuthorities
+	}
+	return nil
+}
+
+// A policy dictating which type of MachineStates to allow and disallow
+type AttestationPolicy struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Platform   *PlatformPolicy   `protobuf:"bytes,1,opt,name=platform,proto3" json:"platform,omitempty"`
+	SecureBoot *SecureBootPolicy `protobuf:"bytes,2,opt,name=secure_boot,json=secureBoot,proto3" json:"secure_boot,omitempty"`
+}
+
+func (x *AttestationPolicy) Reset() {
+	*x = AttestationPolicy{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_proto_attest_proto_msgTypes[10]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *AttestationPolicy) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AttestationPolicy) ProtoMessage() {}
+
+func (x *AttestationPolicy) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_attest_proto_msgTypes[10]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AttestationPolicy.ProtoReflect.Descriptor instead.
+func (*AttestationPolicy) Descriptor() ([]byte, []int) {
+	return file_proto_attest_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *AttestationPolicy) GetPlatform() *PlatformPolicy {
+	if x != nil {
+		return x.Platform
+	}
+	return nil
+}
+
+func (x *AttestationPolicy) GetSecureBoot() *SecureBootPolicy {
+	if x != nil {
+		return x.SecureBoot
+	}
+	return nil
+}
+
 var File_proto_attest_proto protoreflect.FileDescriptor
 
 var file_proto_attest_proto_rawDesc = []byte{
@@ -205,10 +871,99 @@ var file_proto_attest_proto_rawDesc = []byte{
 	0x74, 0x61, 0x6e, 0x63, 0x65, 0x5f, 0x69, 0x6e, 0x66, 0x6f, 0x18, 0x04, 0x20, 0x01, 0x28, 0x0b,
 	0x32, 0x17, 0x2e, 0x61, 0x74, 0x74, 0x65, 0x73, 0x74, 0x2e, 0x47, 0x43, 0x45, 0x49, 0x6e, 0x73,
 	0x74, 0x61, 0x6e, 0x63, 0x65, 0x49, 0x6e, 0x66, 0x6f, 0x52, 0x0c, 0x69, 0x6e, 0x73, 0x74, 0x61,
-	0x6e, 0x63, 0x65, 0x49, 0x6e, 0x66, 0x6f, 0x42, 0x2d, 0x5a, 0x2b, 0x67, 0x69, 0x74, 0x68, 0x75,
-	0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x67, 0x6f, 0x6f, 0x67, 0x6c, 0x65, 0x2f, 0x67, 0x6f, 0x2d,
-	0x74, 0x70, 0x6d, 0x2d, 0x74, 0x6f, 0x6f, 0x6c, 0x73, 0x2f, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2f,
-	0x61, 0x74, 0x74, 0x65, 0x73, 0x74, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x6e, 0x63, 0x65, 0x49, 0x6e, 0x66, 0x6f, 0x22, 0xeb, 0x01, 0x0a, 0x0d, 0x50, 0x6c, 0x61, 0x74,
+	0x66, 0x6f, 0x72, 0x6d, 0x53, 0x74, 0x61, 0x74, 0x65, 0x12, 0x2a, 0x0a, 0x10, 0x73, 0x63, 0x72,
+	0x74, 0x6d, 0x5f, 0x76, 0x65, 0x72, 0x73, 0x69, 0x6f, 0x6e, 0x5f, 0x69, 0x64, 0x18, 0x01, 0x20,
+	0x01, 0x28, 0x0c, 0x48, 0x00, 0x52, 0x0e, 0x73, 0x63, 0x72, 0x74, 0x6d, 0x56, 0x65, 0x72, 0x73,
+	0x69, 0x6f, 0x6e, 0x49, 0x64, 0x12, 0x21, 0x0a, 0x0b, 0x67, 0x63, 0x65, 0x5f, 0x76, 0x65, 0x72,
+	0x73, 0x69, 0x6f, 0x6e, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0d, 0x48, 0x00, 0x52, 0x0a, 0x67, 0x63,
+	0x65, 0x56, 0x65, 0x72, 0x73, 0x69, 0x6f, 0x6e, 0x12, 0x41, 0x0a, 0x0a, 0x74, 0x65, 0x63, 0x68,
+	0x6e, 0x6f, 0x6c, 0x6f, 0x67, 0x79, 0x18, 0x03, 0x20, 0x01, 0x28, 0x0e, 0x32, 0x21, 0x2e, 0x61,
+	0x74, 0x74, 0x65, 0x73, 0x74, 0x2e, 0x47, 0x43, 0x45, 0x43, 0x6f, 0x6e, 0x66, 0x69, 0x64, 0x65,
+	0x6e, 0x74, 0x69, 0x61, 0x6c, 0x54, 0x65, 0x63, 0x68, 0x6e, 0x6f, 0x6c, 0x6f, 0x67, 0x79, 0x52,
+	0x0a, 0x74, 0x65, 0x63, 0x68, 0x6e, 0x6f, 0x6c, 0x6f, 0x67, 0x79, 0x12, 0x3c, 0x0a, 0x0d, 0x69,
+	0x6e, 0x73, 0x74, 0x61, 0x6e, 0x63, 0x65, 0x5f, 0x69, 0x6e, 0x66, 0x6f, 0x18, 0x04, 0x20, 0x01,
+	0x28, 0x0b, 0x32, 0x17, 0x2e, 0x61, 0x74, 0x74, 0x65, 0x73, 0x74, 0x2e, 0x47, 0x43, 0x45, 0x49,
+	0x6e, 0x73, 0x74, 0x61, 0x6e, 0x63, 0x65, 0x49, 0x6e, 0x66, 0x6f, 0x52, 0x0c, 0x69, 0x6e, 0x73,
+	0x74, 0x61, 0x6e, 0x63, 0x65, 0x49, 0x6e, 0x66, 0x6f, 0x42, 0x0a, 0x0a, 0x08, 0x66, 0x69, 0x72,
+	0x6d, 0x77, 0x61, 0x72, 0x65, 0x22, 0x1f, 0x0a, 0x0b, 0x43, 0x65, 0x72, 0x74, 0x69, 0x66, 0x69,
+	0x63, 0x61, 0x74, 0x65, 0x12, 0x10, 0x0a, 0x03, 0x64, 0x65, 0x72, 0x18, 0x01, 0x20, 0x01, 0x28,
+	0x0c, 0x52, 0x03, 0x64, 0x65, 0x72, 0x22, 0x4d, 0x0a, 0x08, 0x44, 0x61, 0x74, 0x61, 0x62, 0x61,
+	0x73, 0x65, 0x12, 0x29, 0x0a, 0x05, 0x63, 0x65, 0x72, 0x74, 0x73, 0x18, 0x01, 0x20, 0x03, 0x28,
+	0x0b, 0x32, 0x13, 0x2e, 0x61, 0x74, 0x74, 0x65, 0x73, 0x74, 0x2e, 0x43, 0x65, 0x72, 0x74, 0x69,
+	0x66, 0x69, 0x63, 0x61, 0x74, 0x65, 0x52, 0x05, 0x63, 0x65, 0x72, 0x74, 0x73, 0x12, 0x16, 0x0a,
+	0x06, 0x68, 0x61, 0x73, 0x68, 0x65, 0x73, 0x18, 0x02, 0x20, 0x03, 0x28, 0x0c, 0x52, 0x06, 0x68,
+	0x61, 0x73, 0x68, 0x65, 0x73, 0x22, 0xa1, 0x01, 0x0a, 0x0f, 0x53, 0x65, 0x63, 0x75, 0x72, 0x65,
+	0x42, 0x6f, 0x6f, 0x74, 0x53, 0x74, 0x61, 0x74, 0x65, 0x12, 0x18, 0x0a, 0x07, 0x65, 0x6e, 0x61,
+	0x62, 0x6c, 0x65, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28, 0x08, 0x52, 0x07, 0x65, 0x6e, 0x61, 0x62,
+	0x6c, 0x65, 0x64, 0x12, 0x20, 0x0a, 0x02, 0x64, 0x62, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0b, 0x32,
+	0x10, 0x2e, 0x61, 0x74, 0x74, 0x65, 0x73, 0x74, 0x2e, 0x44, 0x61, 0x74, 0x61, 0x62, 0x61, 0x73,
+	0x65, 0x52, 0x02, 0x64, 0x62, 0x12, 0x22, 0x0a, 0x03, 0x64, 0x62, 0x78, 0x18, 0x03, 0x20, 0x01,
+	0x28, 0x0b, 0x32, 0x10, 0x2e, 0x61, 0x74, 0x74, 0x65, 0x73, 0x74, 0x2e, 0x44, 0x61, 0x74, 0x61,
+	0x62, 0x61, 0x73, 0x65, 0x52, 0x03, 0x64, 0x62, 0x78, 0x12, 0x2e, 0x0a, 0x09, 0x61, 0x75, 0x74,
+	0x68, 0x6f, 0x72, 0x69, 0x74, 0x79, 0x18, 0x04, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x10, 0x2e, 0x61,
+	0x74, 0x74, 0x65, 0x73, 0x74, 0x2e, 0x44, 0x61, 0x74, 0x61, 0x62, 0x61, 0x73, 0x65, 0x52, 0x09,
+	0x61, 0x75, 0x74, 0x68, 0x6f, 0x72, 0x69, 0x74, 0x79, 0x22, 0x70, 0x0a, 0x05, 0x45, 0x76, 0x65,
+	0x6e, 0x74, 0x12, 0x14, 0x0a, 0x05, 0x69, 0x6e, 0x64, 0x65, 0x78, 0x18, 0x01, 0x20, 0x01, 0x28,
+	0x0d, 0x52, 0x05, 0x69, 0x6e, 0x64, 0x65, 0x78, 0x12, 0x25, 0x0a, 0x0e, 0x75, 0x6e, 0x74, 0x72,
+	0x75, 0x73, 0x74, 0x65, 0x64, 0x5f, 0x74, 0x79, 0x70, 0x65, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0d,
+	0x52, 0x0d, 0x75, 0x6e, 0x74, 0x72, 0x75, 0x73, 0x74, 0x65, 0x64, 0x54, 0x79, 0x70, 0x65, 0x12,
+	0x12, 0x0a, 0x04, 0x64, 0x61, 0x74, 0x61, 0x18, 0x03, 0x20, 0x01, 0x28, 0x0c, 0x52, 0x04, 0x64,
+	0x61, 0x74, 0x61, 0x12, 0x16, 0x0a, 0x06, 0x64, 0x69, 0x67, 0x65, 0x73, 0x74, 0x18, 0x04, 0x20,
+	0x01, 0x28, 0x0c, 0x52, 0x06, 0x64, 0x69, 0x67, 0x65, 0x73, 0x74, 0x22, 0xa9, 0x01, 0x0a, 0x0c,
+	0x4d, 0x61, 0x63, 0x68, 0x69, 0x6e, 0x65, 0x53, 0x74, 0x61, 0x74, 0x65, 0x12, 0x31, 0x0a, 0x08,
+	0x70, 0x6c, 0x61, 0x74, 0x66, 0x6f, 0x72, 0x6d, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x15,
+	0x2e, 0x61, 0x74, 0x74, 0x65, 0x73, 0x74, 0x2e, 0x50, 0x6c, 0x61, 0x74, 0x66, 0x6f, 0x72, 0x6d,
+	0x53, 0x74, 0x61, 0x74, 0x65, 0x52, 0x08, 0x70, 0x6c, 0x61, 0x74, 0x66, 0x6f, 0x72, 0x6d, 0x12,
+	0x38, 0x0a, 0x0b, 0x73, 0x65, 0x63, 0x75, 0x72, 0x65, 0x5f, 0x62, 0x6f, 0x6f, 0x74, 0x18, 0x02,
+	0x20, 0x01, 0x28, 0x0b, 0x32, 0x17, 0x2e, 0x61, 0x74, 0x74, 0x65, 0x73, 0x74, 0x2e, 0x53, 0x65,
+	0x63, 0x75, 0x72, 0x65, 0x42, 0x6f, 0x6f, 0x74, 0x53, 0x74, 0x61, 0x74, 0x65, 0x52, 0x0a, 0x73,
+	0x65, 0x63, 0x75, 0x72, 0x65, 0x42, 0x6f, 0x6f, 0x74, 0x12, 0x2c, 0x0a, 0x0a, 0x72, 0x61, 0x77,
+	0x5f, 0x65, 0x76, 0x65, 0x6e, 0x74, 0x73, 0x18, 0x03, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x0d, 0x2e,
+	0x61, 0x74, 0x74, 0x65, 0x73, 0x74, 0x2e, 0x45, 0x76, 0x65, 0x6e, 0x74, 0x52, 0x09, 0x72, 0x61,
+	0x77, 0x45, 0x76, 0x65, 0x6e, 0x74, 0x73, 0x22, 0xde, 0x01, 0x0a, 0x0e, 0x50, 0x6c, 0x61, 0x74,
+	0x66, 0x6f, 0x72, 0x6d, 0x50, 0x6f, 0x6c, 0x69, 0x63, 0x79, 0x12, 0x39, 0x0a, 0x19, 0x61, 0x6c,
+	0x6c, 0x6f, 0x77, 0x65, 0x64, 0x5f, 0x73, 0x63, 0x72, 0x74, 0x6d, 0x5f, 0x76, 0x65, 0x72, 0x73,
+	0x69, 0x6f, 0x6e, 0x5f, 0x69, 0x64, 0x73, 0x18, 0x01, 0x20, 0x03, 0x28, 0x0c, 0x52, 0x16, 0x61,
+	0x6c, 0x6c, 0x6f, 0x77, 0x65, 0x64, 0x53, 0x63, 0x72, 0x74, 0x6d, 0x56, 0x65, 0x72, 0x73, 0x69,
+	0x6f, 0x6e, 0x49, 0x64, 0x73, 0x12, 0x3f, 0x0a, 0x1c, 0x6d, 0x69, 0x6e, 0x69, 0x6d, 0x75, 0x6d,
+	0x5f, 0x67, 0x63, 0x65, 0x5f, 0x66, 0x69, 0x72, 0x6d, 0x77, 0x61, 0x72, 0x65, 0x5f, 0x76, 0x65,
+	0x72, 0x73, 0x69, 0x6f, 0x6e, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0d, 0x52, 0x19, 0x6d, 0x69, 0x6e,
+	0x69, 0x6d, 0x75, 0x6d, 0x47, 0x63, 0x65, 0x46, 0x69, 0x72, 0x6d, 0x77, 0x61, 0x72, 0x65, 0x56,
+	0x65, 0x72, 0x73, 0x69, 0x6f, 0x6e, 0x12, 0x50, 0x0a, 0x12, 0x6d, 0x69, 0x6e, 0x69, 0x6d, 0x75,
+	0x6d, 0x5f, 0x74, 0x65, 0x63, 0x68, 0x6e, 0x6f, 0x6c, 0x6f, 0x67, 0x79, 0x18, 0x03, 0x20, 0x01,
+	0x28, 0x0e, 0x32, 0x21, 0x2e, 0x61, 0x74, 0x74, 0x65, 0x73, 0x74, 0x2e, 0x47, 0x43, 0x45, 0x43,
+	0x6f, 0x6e, 0x66, 0x69, 0x64, 0x65, 0x6e, 0x74, 0x69, 0x61, 0x6c, 0x54, 0x65, 0x63, 0x68, 0x6e,
+	0x6f, 0x6c, 0x6f, 0x67, 0x79, 0x52, 0x11, 0x6d, 0x69, 0x6e, 0x69, 0x6d, 0x75, 0x6d, 0x54, 0x65,
+	0x63, 0x68, 0x6e, 0x6f, 0x6c, 0x6f, 0x67, 0x79, 0x22, 0xbc, 0x01, 0x0a, 0x10, 0x53, 0x65, 0x63,
+	0x75, 0x72, 0x65, 0x42, 0x6f, 0x6f, 0x74, 0x50, 0x6f, 0x6c, 0x69, 0x63, 0x79, 0x12, 0x2e, 0x0a,
+	0x09, 0x70, 0x65, 0x72, 0x6d, 0x69, 0x74, 0x74, 0x65, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b,
+	0x32, 0x10, 0x2e, 0x61, 0x74, 0x74, 0x65, 0x73, 0x74, 0x2e, 0x44, 0x61, 0x74, 0x61, 0x62, 0x61,
+	0x73, 0x65, 0x52, 0x09, 0x70, 0x65, 0x72, 0x6d, 0x69, 0x74, 0x74, 0x65, 0x64, 0x12, 0x2e, 0x0a,
+	0x09, 0x66, 0x6f, 0x72, 0x62, 0x69, 0x64, 0x64, 0x65, 0x6e, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0b,
+	0x32, 0x10, 0x2e, 0x61, 0x74, 0x74, 0x65, 0x73, 0x74, 0x2e, 0x44, 0x61, 0x74, 0x61, 0x62, 0x61,
+	0x73, 0x65, 0x52, 0x09, 0x66, 0x6f, 0x72, 0x62, 0x69, 0x64, 0x64, 0x65, 0x6e, 0x12, 0x48, 0x0a,
+	0x15, 0x70, 0x65, 0x72, 0x6d, 0x69, 0x74, 0x74, 0x65, 0x64, 0x5f, 0x61, 0x75, 0x74, 0x68, 0x6f,
+	0x72, 0x69, 0x74, 0x69, 0x65, 0x73, 0x18, 0x03, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x13, 0x2e, 0x61,
+	0x74, 0x74, 0x65, 0x73, 0x74, 0x2e, 0x43, 0x65, 0x72, 0x74, 0x69, 0x66, 0x69, 0x63, 0x61, 0x74,
+	0x65, 0x52, 0x14, 0x70, 0x65, 0x72, 0x6d, 0x69, 0x74, 0x74, 0x65, 0x64, 0x41, 0x75, 0x74, 0x68,
+	0x6f, 0x72, 0x69, 0x74, 0x69, 0x65, 0x73, 0x22, 0x82, 0x01, 0x0a, 0x11, 0x41, 0x74, 0x74, 0x65,
+	0x73, 0x74, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x50, 0x6f, 0x6c, 0x69, 0x63, 0x79, 0x12, 0x32, 0x0a,
+	0x08, 0x70, 0x6c, 0x61, 0x74, 0x66, 0x6f, 0x72, 0x6d, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32,
+	0x16, 0x2e, 0x61, 0x74, 0x74, 0x65, 0x73, 0x74, 0x2e, 0x50, 0x6c, 0x61, 0x74, 0x66, 0x6f, 0x72,
+	0x6d, 0x50, 0x6f, 0x6c, 0x69, 0x63, 0x79, 0x52, 0x08, 0x70, 0x6c, 0x61, 0x74, 0x66, 0x6f, 0x72,
+	0x6d, 0x12, 0x39, 0x0a, 0x0b, 0x73, 0x65, 0x63, 0x75, 0x72, 0x65, 0x5f, 0x62, 0x6f, 0x6f, 0x74,
+	0x18, 0x02, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x18, 0x2e, 0x61, 0x74, 0x74, 0x65, 0x73, 0x74, 0x2e,
+	0x53, 0x65, 0x63, 0x75, 0x72, 0x65, 0x42, 0x6f, 0x6f, 0x74, 0x50, 0x6f, 0x6c, 0x69, 0x63, 0x79,
+	0x52, 0x0a, 0x73, 0x65, 0x63, 0x75, 0x72, 0x65, 0x42, 0x6f, 0x6f, 0x74, 0x2a, 0x42, 0x0a, 0x19,
+	0x47, 0x43, 0x45, 0x43, 0x6f, 0x6e, 0x66, 0x69, 0x64, 0x65, 0x6e, 0x74, 0x69, 0x61, 0x6c, 0x54,
+	0x65, 0x63, 0x68, 0x6e, 0x6f, 0x6c, 0x6f, 0x67, 0x79, 0x12, 0x08, 0x0a, 0x04, 0x4e, 0x4f, 0x4e,
+	0x45, 0x10, 0x00, 0x12, 0x0b, 0x0a, 0x07, 0x41, 0x4d, 0x44, 0x5f, 0x53, 0x45, 0x56, 0x10, 0x01,
+	0x12, 0x0e, 0x0a, 0x0a, 0x41, 0x4d, 0x44, 0x5f, 0x53, 0x45, 0x56, 0x5f, 0x45, 0x53, 0x10, 0x02,
+	0x42, 0x2d, 0x5a, 0x2b, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x67,
+	0x6f, 0x6f, 0x67, 0x6c, 0x65, 0x2f, 0x67, 0x6f, 0x2d, 0x74, 0x70, 0x6d, 0x2d, 0x74, 0x6f, 0x6f,
+	0x6c, 0x73, 0x2f, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2f, 0x61, 0x74, 0x74, 0x65, 0x73, 0x74, 0x62,
+	0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
@@ -223,20 +978,46 @@ func file_proto_attest_proto_rawDescGZIP() []byte {
 	return file_proto_attest_proto_rawDescData
 }
 
-var file_proto_attest_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_proto_attest_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_proto_attest_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_proto_attest_proto_goTypes = []interface{}{
-	(*GCEInstanceInfo)(nil), // 0: attest.GCEInstanceInfo
-	(*Attestation)(nil),     // 1: attest.Attestation
-	(*tpm.Quote)(nil),       // 2: tpm.Quote
+	(GCEConfidentialTechnology)(0), // 0: attest.GCEConfidentialTechnology
+	(*GCEInstanceInfo)(nil),        // 1: attest.GCEInstanceInfo
+	(*Attestation)(nil),            // 2: attest.Attestation
+	(*PlatformState)(nil),          // 3: attest.PlatformState
+	(*Certificate)(nil),            // 4: attest.Certificate
+	(*Database)(nil),               // 5: attest.Database
+	(*SecureBootState)(nil),        // 6: attest.SecureBootState
+	(*Event)(nil),                  // 7: attest.Event
+	(*MachineState)(nil),           // 8: attest.MachineState
+	(*PlatformPolicy)(nil),         // 9: attest.PlatformPolicy
+	(*SecureBootPolicy)(nil),       // 10: attest.SecureBootPolicy
+	(*AttestationPolicy)(nil),      // 11: attest.AttestationPolicy
+	(*tpm.Quote)(nil),              // 12: tpm.Quote
 }
 var file_proto_attest_proto_depIdxs = []int32{
-	2, // 0: attest.Attestation.quotes:type_name -> tpm.Quote
-	0, // 1: attest.Attestation.instance_info:type_name -> attest.GCEInstanceInfo
-	2, // [2:2] is the sub-list for method output_type
-	2, // [2:2] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	12, // 0: attest.Attestation.quotes:type_name -> tpm.Quote
+	1,  // 1: attest.Attestation.instance_info:type_name -> attest.GCEInstanceInfo
+	0,  // 2: attest.PlatformState.technology:type_name -> attest.GCEConfidentialTechnology
+	1,  // 3: attest.PlatformState.instance_info:type_name -> attest.GCEInstanceInfo
+	4,  // 4: attest.Database.certs:type_name -> attest.Certificate
+	5,  // 5: attest.SecureBootState.db:type_name -> attest.Database
+	5,  // 6: attest.SecureBootState.dbx:type_name -> attest.Database
+	5,  // 7: attest.SecureBootState.authority:type_name -> attest.Database
+	3,  // 8: attest.MachineState.platform:type_name -> attest.PlatformState
+	6,  // 9: attest.MachineState.secure_boot:type_name -> attest.SecureBootState
+	7,  // 10: attest.MachineState.raw_events:type_name -> attest.Event
+	0,  // 11: attest.PlatformPolicy.minimum_technology:type_name -> attest.GCEConfidentialTechnology
+	5,  // 12: attest.SecureBootPolicy.permitted:type_name -> attest.Database
+	5,  // 13: attest.SecureBootPolicy.forbidden:type_name -> attest.Database
+	4,  // 14: attest.SecureBootPolicy.permitted_authorities:type_name -> attest.Certificate
+	9,  // 15: attest.AttestationPolicy.platform:type_name -> attest.PlatformPolicy
+	10, // 16: attest.AttestationPolicy.secure_boot:type_name -> attest.SecureBootPolicy
+	17, // [17:17] is the sub-list for method output_type
+	17, // [17:17] is the sub-list for method input_type
+	17, // [17:17] is the sub-list for extension type_name
+	17, // [17:17] is the sub-list for extension extendee
+	0,  // [0:17] is the sub-list for field type_name
 }
 
 func init() { file_proto_attest_proto_init() }
@@ -269,19 +1050,132 @@ func file_proto_attest_proto_init() {
 				return nil
 			}
 		}
+		file_proto_attest_proto_msgTypes[2].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*PlatformState); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_proto_attest_proto_msgTypes[3].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*Certificate); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_proto_attest_proto_msgTypes[4].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*Database); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_proto_attest_proto_msgTypes[5].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*SecureBootState); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_proto_attest_proto_msgTypes[6].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*Event); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_proto_attest_proto_msgTypes[7].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*MachineState); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_proto_attest_proto_msgTypes[8].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*PlatformPolicy); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_proto_attest_proto_msgTypes[9].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*SecureBootPolicy); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_proto_attest_proto_msgTypes[10].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*AttestationPolicy); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+	}
+	file_proto_attest_proto_msgTypes[2].OneofWrappers = []interface{}{
+		(*PlatformState_ScrtmVersionId)(nil),
+		(*PlatformState_GceVersion)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_proto_attest_proto_rawDesc,
-			NumEnums:      0,
-			NumMessages:   2,
+			NumEnums:      1,
+			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
 		GoTypes:           file_proto_attest_proto_goTypes,
 		DependencyIndexes: file_proto_attest_proto_depIdxs,
+		EnumInfos:         file_proto_attest_proto_enumTypes,
 		MessageInfos:      file_proto_attest_proto_msgTypes,
 	}.Build()
 	File_proto_attest_proto = out.File

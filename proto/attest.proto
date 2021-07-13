@@ -26,3 +26,95 @@ message Attestation {
   // Optional information about a GCE instance, unused outside of GCE
   GCEInstanceInfo instance_info = 4;
 }
+
+// Type of hardware technology used to protect this instance
+enum GCEConfidentialTechnology {
+  NONE = 0;
+  AMD_SEV = 1;
+  AMD_SEV_ES = 2;
+}
+
+message PlatformState {
+  oneof firmware {
+    // Raw S-CRTM version identifier (EV_S_CRTM_VERSION)
+    bytes scrtm_version_id = 1;
+    // Virtual GCE firmware version (parsed from S-CRTM version id)
+    uint32 gce_version = 2;
+  }
+  // Set to NONE on non-GCE instances or non-Confidenital Shielded GCE instances
+  GCEConfidentialTechnology technology = 3;
+  // Only set for GCE instances
+  GCEInstanceInfo instance_info = 4;
+}
+
+message Certificate { bytes der = 1; }
+
+// A Secure Boot database containing lists of hashes and certificates,
+// as defined by section 32.4.1 Signature Database in the UEFI spec.
+message Database {
+  repeated Certificate certs = 1;
+  repeated bytes hashes = 2;
+}
+
+message SecureBootState {
+  // Set to true if Secure Boot is enabled
+  bool enabled = 1;
+  // The certs/hashes that can be used to authorize Secure Boot
+  Database db = 2;
+  // These certs/hashes block Secure Boot authorization (precedence over db)
+  Database dbx = 3;
+  // Authority events post-separator. Pre-separator authorities
+  // are currently not supported.
+  Database authority = 4;
+}
+
+// A parsed event from the TCG event log
+message Event {
+  uint32 index = 1;
+  uint32 untrusted_type = 2;
+  bytes data = 3;
+  bytes digest = 4;
+}
+
+// The verified state of a booted machine obtained from an Attestation
+message MachineState {
+  PlatformState platform = 1;
+  SecureBootState secure_boot = 2;
+  // The complete TCG Event Log, including those events used to create the
+  // PlatformState and SecureBootState.
+  repeated Event raw_events = 3;
+}
+
+message PlatformPolicy {
+  // If non-empty, the PlatformState's firmware.scrtm_version_id must appear
+  // in this list. For use with a GCE VM, minimum_gce_firmware_version is
+  // often a better altenative.
+  repeated bytes allowed_scrtm_version_ids = 1;
+  // If non-zero, the PlatformState's firmware.gce_version must be greater
+  // than or equal to this value. Currently, the max version is 1.
+  uint32 minimum_gce_firmware_version = 2;
+  // If not NONE, the PlatformState's technology must be at least as secure as
+  // the specified minimum_technology (i.e. AMD_SEV_ES > AMD_SEV).
+  GCEConfidentialTechnology minimum_technology = 3;
+}
+
+message SecureBootPolicy {
+  // If present, only these entries may appear in the SecureBootState's db. It
+  // is fine for some of the permitted entries to be missing from the db, as
+  // that does not decrease security.
+  Database permitted = 1;
+  // If present, all of these entries must appear in the SecureBootState's dbx.
+  // It is fine for the dbx to contain additional entries, as that does not
+  // decrease security.
+  Database forbidden = 2;
+  // If non-empty, only authorites in this list may appear as authorities. This
+  // is useful for furthur restricting which OSes are allowed. For example,
+  // adding the Ubuntu Secure Boot key here causes Red Hat boots to be denied.
+  repeated Certificate permitted_authorities = 3;
+}
+
+// A policy dictating which type of MachineStates to allow and disallow
+message AttestationPolicy {
+  PlatformPolicy platform = 1;
+  SecureBootPolicy secure_boot = 2;
+}
