@@ -51,7 +51,9 @@ func TestAttest(t *testing.T) {
 			}
 
 			var attestation attestpb.Attestation
-			proto.Unmarshal(attestationBytes, &attestation)
+			if err := proto.Unmarshal(attestationBytes, &attestation); err != nil {
+				t.Fatalf("failed to unmarshal Attestation proto: %v", err)
+			}
 
 			// Validate AK Pub.
 			matchingKeyPub, err := command.keyFunc(rwc)
@@ -78,11 +80,29 @@ func TestAttest(t *testing.T) {
 			for _, quote := range attestation.GetQuotes() {
 				if _, err := server.ParseAndVerifyEventLog(attestation.GetEventLog(), quote.GetPcrs()); err == nil {
 					replaySuccess = true
+					break
 				}
 			}
 			if !replaySuccess {
-				t.Errorf("failed to replay event log: %v", err)
+				t.Error("failed to replay event log")
 			}
 		})
+	}
+}
+
+func TestAttestGceFlagsFail(t *testing.T) {
+	// Missing instance flags.
+	RootCmd.SetArgs([]string{"attest", "gce", "--quiet",
+		"--gce-zone", "fakeZone", "--gce-project-id", "fakeProject",
+		"--gce-project-number", "123443"})
+	if err := RootCmd.Execute(); err == nil {
+		t.Error("expected an error when calling without 5 flags")
+	}
+
+	// GCE flags using default keys.
+	RootCmd.SetArgs([]string{"attest", "default", "--quiet",
+		"--gce-zone", "fakeZone"})
+	if err := RootCmd.Execute(); err == nil {
+		t.Error("expected an error when calling default with GCE flags")
 	}
 }

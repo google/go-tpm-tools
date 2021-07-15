@@ -16,6 +16,10 @@ var ExternalTPM io.ReadWriter
 
 type ignoreClose struct {
 	io.ReadWriter
+}
+
+type ignoreCloseWithEventLogGetter struct {
+	ignoreClose
 	client.EventLogGetter
 }
 
@@ -25,11 +29,11 @@ func (ic ignoreClose) Close() error {
 
 func openTpm() (io.ReadWriteCloser, error) {
 	if ExternalTPM != nil {
-		ignoreRwc := ignoreClose{ExternalTPM, nil}
+		ignoreCloser := ignoreClose{ExternalTPM}
 		if elg, ok := ExternalTPM.(client.EventLogGetter); ok {
-			ignoreRwc.EventLogGetter = elg
+			return ignoreCloseWithEventLogGetter{ignoreCloser, elg}, nil
 		}
-		return ignoreRwc, nil
+		return ignoreCloser, nil
 	}
 	rwc, err := openImpl()
 	if err != nil {

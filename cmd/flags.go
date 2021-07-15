@@ -14,12 +14,17 @@ import (
 )
 
 var (
-	output  string
-	input   string
-	nvIndex uint32
-	keyAlgo = tpm2.AlgRSA
-	pcrs    []int
-	nonce   []byte
+	output           string
+	input            string
+	nvIndex          uint32
+	keyAlgo          = tpm2.AlgRSA
+	pcrs             []int
+	nonce            []byte
+	gceZone          string
+	gceProjectID     string
+	gceProjectNumber uint64
+	gceInstanceName  string
+	gceInstanceID    uint64
 )
 
 type pcrsFlag struct {
@@ -147,6 +152,19 @@ func addNonceFlag(cmd *cobra.Command) {
 	cmd.PersistentFlags().BytesHexVar(&nonce, "nonce", []byte{}, "hex encoded nonce, can be empty")
 }
 
+func addGceFlags(cmd *cobra.Command) {
+	cmd.PersistentFlags().StringVar(&gceZone, "gce-zone", "",
+		"GCE only: zone for the instance")
+	cmd.PersistentFlags().StringVar(&gceProjectID, "gce-project-id", "",
+		"GCE only: project ID for the instance")
+	cmd.PersistentFlags().Uint64Var(&gceProjectNumber, "gce-project-number", 0,
+		"GCE only: instance number for the instance")
+	cmd.PersistentFlags().Uint64Var(&gceInstanceID, "gce-instance-id", 0,
+		"GCE only: instance ID for the instance")
+	cmd.PersistentFlags().StringVar(&gceInstanceName, "gce-instance-name", "",
+		"GCE only: instance name for the instance")
+}
+
 // alwaysError implements io.ReadWriter by always returning an error
 type alwaysError struct {
 	error
@@ -210,4 +228,19 @@ func getEK(rwc io.ReadWriter) (*client.Key, error) {
 	default:
 		panic("unexpected keyAlgo")
 	}
+}
+
+func usedGceFlags() int {
+	used := 0
+	for _, flag := range []string{gceZone, gceProjectID, gceInstanceName} {
+		if flag != "" {
+			used++
+		}
+	}
+	for _, flag := range []uint64{gceProjectNumber, gceInstanceID} {
+		if flag != 0 {
+			used++
+		}
+	}
+	return used
 }
