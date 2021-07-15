@@ -3,6 +3,8 @@ package cmd
 import (
 	"fmt"
 	"io"
+
+	"github.com/google/go-tpm-tools/client"
 )
 
 // ExternalTPM can be set to run tests against an TPM initialized by an
@@ -14,6 +16,7 @@ var ExternalTPM io.ReadWriter
 
 type ignoreClose struct {
 	io.ReadWriter
+	client.EventLogGetter
 }
 
 func (ic ignoreClose) Close() error {
@@ -22,7 +25,11 @@ func (ic ignoreClose) Close() error {
 
 func openTpm() (io.ReadWriteCloser, error) {
 	if ExternalTPM != nil {
-		return ignoreClose{ExternalTPM}, nil
+		ignoreRwc := ignoreClose{ExternalTPM, nil}
+		if elg, ok := ExternalTPM.(client.EventLogGetter); ok {
+			ignoreRwc.EventLogGetter = elg
+		}
+		return ignoreRwc, nil
 	}
 	rwc, err := openImpl()
 	if err != nil {
