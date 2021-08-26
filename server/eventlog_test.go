@@ -52,6 +52,41 @@ var Rhel8GCE = eventLog{
 	}},
 }
 
+// Agile Event Log from a Ubuntu 18.04 GCE instance with Secure Boot and
+// Confidential Computing enabled.
+var UbuntuAmdSevGCE = eventLog{
+	RawLog: test.Ubuntu1804AmdSevEventLog,
+	Banks: []*pb.PCRs{{
+		Hash: pb.HashAlgo_SHA1,
+		Pcrs: map[uint32][]byte{
+			0: decodeHex("c032c3b51dbb6f96b047421512fd4b4dfde496f3"),
+			1: decodeHex("35f38e5ce90728b02a0f66d836eef53d287e69bf"),
+			2: decodeHex("b2a83b0ebf2f8374299a5b2bdfc31ea955ad7236"),
+			3: decodeHex("b2a83b0ebf2f8374299a5b2bdfc31ea955ad7236"),
+			4: decodeHex("41c68947aeee8a59110c7989a9b7a55df547f003"),
+			5: decodeHex("baee22b5cce9029300f909add54d75d5d7475cfd"),
+			6: decodeHex("b2a83b0ebf2f8374299a5b2bdfc31ea955ad7236"),
+			7: decodeHex("6530ed2dcba68801c78ca08753f239118bead7c8"),
+			8: decodeHex("4e5533d878287970f3ef8d374fb140d93bcb2c37"),
+			9: decodeHex("1b79f2140a84462cb13d1a0c1904daefd24d7938"),
+		},
+	}, {
+		Hash: pb.HashAlgo_SHA256,
+		Pcrs: map[uint32][]byte{
+			0: decodeHex("0f35c214608d93c7a6e68ae7359b4a8be5a0e99eea9107ece427c4dea4e439cf"),
+			1: decodeHex("add81cbc06b154716ac7bd5999c84cbc520184d57c58102657d270274508d9ce"),
+			2: decodeHex("3d458cfe55cc03ea1f443f1562beec8df51c75e14a9fcf9a7234a13f198e7969"),
+			3: decodeHex("3d458cfe55cc03ea1f443f1562beec8df51c75e14a9fcf9a7234a13f198e7969"),
+			4: decodeHex("b4b94e840fc9352e20bdb5b456b4c242af0fb146755b6935d8eda000ea368a31"),
+			5: decodeHex("0b75168095fd6464ff1f9943b762ec009a3ae84c5e76cf67361e16b9db30d28e"),
+			6: decodeHex("3d458cfe55cc03ea1f443f1562beec8df51c75e14a9fcf9a7234a13f198e7969"),
+			7: decodeHex("61af3f499f1a86be54458fd30d193fa913a7e23ca3103fa3d0abaefd3cd4f9b8"),
+			8: decodeHex("c324da9d0c54252c37af697cdd58b066f2bb0f4a69752d27623bc738d02e9486"),
+			9: decodeHex("2d334f1eeb9a16dabaccaa746ff1c0dce2e9aeb3f3a4a314e5e1e61b01e940d0"),
+		},
+	}},
+}
+
 // Agile Event Log from a Ubuntu 21.04 GCE instance without a DBX and with Secure Boot disabled
 var Ubuntu2104NoDbxGCE = eventLog{
 	RawLog: test.Ubuntu2104NoDbxEventLog,
@@ -212,6 +247,7 @@ func TestParseEventLogs(t *testing.T) {
 	}{
 		{Debian10GCE, "Debian10GCE"},
 		{Rhel8GCE, "Rhel8GCE"},
+		{UbuntuAmdSevGCE, "UbuntuAmdSevGCE"},
 		{Ubuntu2104NoDbxGCE, "Ubuntu2104NoDbxGCE"},
 		{Ubuntu2104NoSecureBootGCE, "Ubuntu2104NoSecureBootGCE"},
 		{GlinuxNoSecureBootLaptop, "GlinuxNoSecureBootLaptop"},
