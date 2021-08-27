@@ -260,8 +260,8 @@ func TestParseEventLogs(t *testing.T) {
 			hashName := pb.HashAlgo_name[int32(bank.Hash)]
 			subtestName := fmt.Sprintf("%s-%s", log.name, hashName)
 			t.Run(subtestName, func(t *testing.T) {
-				if _, err := ParseAndVerifyEventLog(rawLog, bank); err != nil {
-					t.Errorf("failed to parse and verify log: %v", err)
+				if _, err := ParseAndReplayEventLog(rawLog, bank); err != nil {
+					t.Errorf("failed to parse and replay log: %v", err)
 				}
 			})
 		}
@@ -283,8 +283,8 @@ func TestSystemParseEventLog(t *testing.T) {
 		t.Fatalf("failed to read PCRs: %v", err)
 	}
 
-	if _, err = ParseAndVerifyEventLog(evtLog, pcrs); err != nil {
-		t.Errorf("failed to parse and verify log: %v", err)
+	if _, err = ParseAndReplayEventLog(evtLog, pcrs); err != nil {
+		t.Errorf("failed to parse and replay log: %v", err)
 	}
 }
 

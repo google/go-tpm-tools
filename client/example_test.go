@@ -137,13 +137,13 @@ func ExampleKey_Attest() {
 	// On verifier, replay event log.
 	// TODO: decide which hash algorithm to use in the quotes. SHA1 is
 	// typically undesirable but is the only event log option on some distros.
-	_, err = server.ParseAndVerifyEventLog(attestation.EventLog, attestation.Quotes[0].Pcrs)
+	_, err = server.ParseAndReplayEventLog(attestation.EventLog, attestation.Quotes[0].Pcrs)
 	if err != nil {
 		// TODO: handle parsing or replay error.
 		log.Fatalf("failed to read PCRs: %v", err)
 	}
 	fmt.Println(attestation)
-	// TODO: use events output of ParseAndVerifyEventLog.
+	// TODO: use events output of ParseAndReplayEventLog.
 }
 
 func Example_sealAndUnseal() {
