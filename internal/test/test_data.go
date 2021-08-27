@@ -12,6 +12,8 @@ var (
 	GlinuxAlexEventLog []byte
 	//go:embed eventlogs/rhel8-uefi.bin
 	Rhel8EventLog []byte
+	//go:embed eventlogs/ubuntu-1804-amd-sev.bin
+	Ubuntu1804AmdSevEventLog []byte
 	//go:embed eventlogs/ubuntu-2104-no-dbx.bin
 	Ubuntu2104NoDbxEventLog []byte
 	//go:embed eventlogs/ubuntu-2104-no-secure-boot.bin
