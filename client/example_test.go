@@ -163,7 +163,7 @@ func Example_sealAndUnseal() {
 
 	sel := tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{7}}
 	// Seal the data to the current value of PCR7.
-	sealedBlob, err := srk.Seal([]byte(sealedSecret), client.SealCurrent{PCRSelection: sel})
+	sealedBlob, err := srk.Seal([]byte(sealedSecret), client.SealOpts{Current: sel})
 	if err != nil {
 		log.Fatalf("failed to seal to SRK: %v", err)
 	}

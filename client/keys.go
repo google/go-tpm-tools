@@ -218,20 +218,20 @@ func (k *Key) Close() {
 }
 
 // Seal seals the sensitive byte buffer to a key. This key must be an SRK (we
-// currently do not support sealing to EKs). Optionally, a non-nil SealOpt can
-// be provided. In this case, the sensitive data can only be unsealed if the
-// PCRs are in the specified state. During the sealing process, certification
-// data will be created allowing Unseal() to validate the state of the TPM
-// during the sealing process.
+// currently do not support sealing to EKs). Optionally, the SealOpts struct can
+// be modified to provide sealed-to PCRs. In this case, the sensitive data can
+// only be unsealed if the seal-time PCRs are in the SealOpts-specified state.
+// There must not be overlap in PCRs between SealOpts' Current and Target.
+// During the sealing process, certification data will be created allowing
+// Unseal() to validate the state of the TPM during the sealing process.
 func (k *Key) Seal(sensitive []byte, opts SealOpts) (*pb.SealedBytes, error) {
 	var pcrs *pb.PCRs
 	var err error
 	var auth []byte
-	if opts != nil {
-		pcrs, err = opts.PCRsForSealing(k.rw)
-		if err != nil {
-			return nil, err
-		}
+
+	pcrs, err = sealOptsToPcrs(k.rw, opts)
+	if err != nil {
+		return nil, err
 	}
 	if len(pcrs.GetPcrs()) > 0 {
 		auth = internal.PCRSessionAuth(pcrs, SessionHashAlg)
@@ -248,6 +248,42 @@ func (k *Key) Seal(sensitive []byte, opts SealOpts) (*pb.SealedBytes, error) {
 	sb.Hash = pcrs.GetHash()
 	sb.Srk = pb.ObjectType(k.pubArea.Type)
 	return sb, nil
+}
+
+func sealOptsToPcrs(rw io.ReadWriter, opts SealOpts) (*pb.PCRs, error) {
+	if opts.Target == nil || len(opts.Target.GetPcrs()) == 0 {
+		return ReadPCRs(rw, opts.Current)
+	}
+	if len(opts.Current.PCRs) == 0 {
+		return opts.Target, nil
+	}
+	if opts.Current.Hash != tpm2.Algorithm(opts.Target.Hash) {
+		return nil, fmt.Errorf("invalid SealOpts: current hash (%v) differs from target hash (%v)",
+			opts.Current.Hash, tpm2.Algorithm(opts.Target.Hash))
+	}
+
+	// At this point, both Current and Target are non-empty.
+	// Verify no overlap in Current and Target PCR indexes.
+	overlap := make([]int, 0)
+	targetMap := opts.Target.GetPcrs()
+	for _, pcrVal := range opts.Current.PCRs {
+		if _, found := targetMap[uint32(pcrVal)]; found {
+			overlap = append(overlap, pcrVal)
+		}
+	}
+	if len(overlap) != 0 {
+		return nil, fmt.Errorf("invalid SealOpts: found PCR overlap between Current and Target: %v", overlap)
+	}
+
+	currentPcrs, err := ReadPCRs(rw, opts.Current)
+	if err != nil {
+		return nil, err
+	}
+
+	for pcr, val := range opts.Target.Pcrs {
+		currentPcrs.Pcrs[pcr] = val
+	}
+	return currentPcrs, nil
 }
 
 func sealHelper(rw io.ReadWriter, parentHandle tpmutil.Handle, auth []byte, sensitive []byte, certifyPCRsSel tpm2.PCRSelection) (*pb.SealedBytes, error) {

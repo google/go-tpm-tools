@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"io"
+	"reflect"
 	"testing"
 
 	"github.com/google/go-tpm/tpm2"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal/test"
+	pb "github.com/google/go-tpm-tools/proto/tpm"
 )
 
 func TestSeal(t *testing.T) {
@@ -35,7 +37,7 @@ func TestSeal(t *testing.T) {
 			secret := []byte("test")
 			pcrToChange := test.DebugPCR
 			sel := tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{7, pcrToChange}}
-			sealed, err := srk.Seal(secret, client.SealCurrent{PCRSelection: sel})
+			sealed, err := srk.Seal(secret, client.SealOpts{Current: sel})
 			if err != nil {
 				t.Fatalf("failed to seal: %v", err)
 			}
@@ -79,8 +81,8 @@ func TestSelfReseal(t *testing.T) {
 
 	secret := []byte("test")
 	pcrList := []int{0, 4, 7}
-	sOpts := client.SealCurrent{
-		PCRSelection: tpm2.PCRSelection{
+	sOpts := client.SealOpts{
+		Current: tpm2.PCRSelection{
 			Hash: tpm2.AlgSHA256,
 			PCRs: pcrList,
 		},
@@ -175,7 +177,7 @@ func TestReseal(t *testing.T) {
 	secret := []byte("test")
 	pcrToChange := test.DebugPCR
 	sel := tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{7, pcrToChange}}
-	sealed, err := key.Seal(secret, client.SealCurrent{PCRSelection: sel})
+	sealed, err := key.Seal(secret, client.SealOpts{Current: sel})
 	if err != nil {
 		t.Fatalf("failed to seal: %v", err)
 	}
@@ -200,7 +202,7 @@ func TestReseal(t *testing.T) {
 	extensions := [][]byte{bytes.Repeat([]byte{0xAA}, sha256.Size)}
 	predictedPcrsValue.GetPcrs()[uint32(pcrToChange)] = computePCRValue(predictedPcrsValue.GetPcrs()[uint32(pcrToChange)], extensions)
 
-	resealed, err := key.Reseal(sealed, opts, client.SealTarget{predictedPcrsValue})
+	resealed, err := key.Reseal(sealed, opts, client.SealOpts{Target: predictedPcrsValue})
 	if err != nil {
 		t.Fatalf("failed to reseal: %v", err)
 	}
@@ -250,7 +252,7 @@ func TestSealResealWithEmptyPCRs(t *testing.T) {
 
 	secret := []byte("test")
 	pcrToChange := test.DebugPCR
-	sealed, err := key.Seal(secret, nil)
+	sealed, err := key.Seal(secret, client.SealOpts{})
 	if err != nil {
 		t.Fatalf("failed to seal: %v", err)
 	}
@@ -280,7 +282,7 @@ func TestSealResealWithEmptyPCRs(t *testing.T) {
 	}
 
 	// reseal should succeed as CertifyOpts is nil
-	sealed, err = key.Reseal(sealed, nil, nil)
+	sealed, err = key.Reseal(sealed, nil, client.SealOpts{})
 	if err != nil {
 		t.Fatalf("failed to reseal: %v", err)
 	}
@@ -300,7 +302,7 @@ func BenchmarkSeal(b *testing.B) {
 	defer client.CheckedClose(b, rwc)
 
 	pcrSel7 := tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{7}}
-	sOptsPCR7 := client.SealCurrent{PCRSelection: pcrSel7}
+	sOptsPCR7 := client.SealOpts{Current: pcrSel7}
 	cOptsPCR7 := client.CertifyCurrent{PCRSelection: pcrSel7}
 	benchmarks := []struct {
 		name   string
@@ -309,13 +311,13 @@ func BenchmarkSeal(b *testing.B) {
 		getKey func(io.ReadWriter) (*client.Key, error)
 	}{
 		{"SRK-ECC-SealPCR7-CertifyPCR7", sOptsPCR7, cOptsPCR7, client.StorageRootKeyECC},
-		{"SRK-ECC-nil-CertifyPCR7", nil, cOptsPCR7, client.StorageRootKeyECC},
+		{"SRK-ECC-SealEmpty-CertifyPCR7", client.SealOpts{}, cOptsPCR7, client.StorageRootKeyECC},
 		{"SRK-ECC-SealPCR7-nil", sOptsPCR7, nil, client.StorageRootKeyECC},
-		{"SRK-ECC-nil-nil", nil, nil, client.StorageRootKeyECC},
+		{"SRK-ECC-SealEmpty-nil", client.SealOpts{}, nil, client.StorageRootKeyECC},
 		{"SRK-RSA-SealPCR7-CertifyPCR7", sOptsPCR7, cOptsPCR7, client.StorageRootKeyRSA},
-		{"SRK-RSA-nil-CertifyPCR7", nil, cOptsPCR7, client.StorageRootKeyRSA},
+		{"SRK-RSA-SealEmpty-CertifyPCR7", client.SealOpts{}, cOptsPCR7, client.StorageRootKeyRSA},
 		{"SRK-RSA-SealPCR7-nil", sOptsPCR7, nil, client.StorageRootKeyRSA},
-		{"SRK-RSA-nil-nil", nil, nil, client.StorageRootKeyRSA},
+		{"SRK-RSA-SealEmpty-nil", client.SealOpts{}, nil, client.StorageRootKeyRSA},
 	}
 
 	for _, bm := range benchmarks {
@@ -332,6 +334,110 @@ func BenchmarkSeal(b *testing.B) {
 				if _, err = key.Unseal(blob, bm.cOpts); err != nil {
 					b.Fatal(err)
 				}
+			}
+		})
+	}
+}
+func TestSealOpts(t *testing.T) {
+	rwc := test.GetTPM(t)
+	defer client.CheckedClose(t, rwc)
+
+	emptySet := map[uint32]struct{}{}
+	srk, err := client.StorageRootKeyECC(rwc)
+	if err != nil {
+		t.Fatalf("failed to create SRK: %v", err)
+	}
+
+	opts := []struct {
+		name         string
+		current      tpm2.PCRSelection
+		target       *pb.PCRs
+		expectedPcrs map[uint32]struct{}
+	}{
+		{"CurrentEmpty-TargetNil", tpm2.PCRSelection{}, nil, emptySet},
+		{"CurrentEmpty7-TargetNil", tpm2.PCRSelection{}, nil, emptySet},
+		{"CurrentEmpty-TargetEmpty", tpm2.PCRSelection{}, &pb.PCRs{}, emptySet},
+		{"CurrentSHA1Empty-TargetSHA256Empty",
+			tpm2.PCRSelection{Hash: tpm2.AlgSHA1},
+			&pb.PCRs{Hash: pb.HashAlgo_SHA256},
+			emptySet},
+		{"CurrentSHA256Empty-TargetSHA1Empty",
+			tpm2.PCRSelection{Hash: tpm2.AlgSHA256},
+			&pb.PCRs{Hash: pb.HashAlgo_SHA1},
+			emptySet},
+		{"CurrentSHA2567-TargetSHA1Empty",
+			tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{7}},
+			&pb.PCRs{Hash: pb.HashAlgo_SHA1},
+			map[uint32]struct{}{7: struct{}{}}},
+		{"Current7-TargetPCR0,4",
+			tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{0, 7}},
+			&pb.PCRs{Hash: pb.HashAlgo_SHA256,
+				Pcrs: map[uint32][]byte{4: []byte{0x00}}},
+			map[uint32]struct{}{
+				0: struct{}{},
+				4: struct{}{},
+				7: struct{}{},
+			}},
+	}
+
+	sliceToSet := func(a []uint32) map[uint32]struct{} {
+		ret := make(map[uint32]struct{})
+		for _, val := range a {
+			ret[val] = struct{}{}
+		}
+		return ret
+	}
+	for _, testcase := range opts {
+		t.Run(testcase.name, func(t *testing.T) {
+			sealed, err := srk.Seal([]byte("secretzz"),
+				client.SealOpts{Current: testcase.current, Target: testcase.target})
+			if err != nil {
+				t.Errorf("error calling Seal with SealOpts: %v", err)
+			}
+			outPcrsMap := sliceToSet(sealed.Pcrs)
+			if !reflect.DeepEqual(outPcrsMap, testcase.expectedPcrs) {
+				t.Errorf("received PCRs (%v) do not match expected PCRs (%v)",
+					outPcrsMap, testcase.expectedPcrs)
+			}
+		})
+	}
+
+	// Run empty SealOpts.
+	_, err = srk.Seal([]byte("secretzz"),
+		client.SealOpts{})
+	if err != nil {
+		t.Errorf("error calling Seal with SealOpts: %v", err)
+	}
+}
+func TestSealOptsFail(t *testing.T) {
+	rwc := test.GetTPM(t)
+	defer client.CheckedClose(t, rwc)
+
+	srk, err := client.StorageRootKeyECC(rwc)
+	if err != nil {
+		t.Fatalf("failed to create SRK: %v", err)
+	}
+
+	pcrSel7 := tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{7}}
+	pcrMap7 := map[uint32][]byte{7: []byte{0x01, 0x02}}
+	pbPcr7 := &pb.PCRs{Hash: pb.HashAlgo_SHA256, Pcrs: pcrMap7}
+	opts := []struct {
+		name    string
+		current tpm2.PCRSelection
+		target  *pb.PCRs
+	}{
+		{"CurrentSHA256-TargetSHA1", pcrSel7, &pb.PCRs{Hash: pb.HashAlgo_SHA1, Pcrs: pcrMap7}},
+		{"Current-TargetPCROverlap", pcrSel7, pbPcr7},
+		{"Current-TargetPCROverlapMultiple", tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{0, 4, 7, 8}},
+			&pb.PCRs{Hash: pb.HashAlgo_SHA256, Pcrs: map[uint32][]byte{0: []byte{}, 4: []byte{0x00}, 9: []byte{0x01, 0x02}}}},
+	}
+
+	for _, testcase := range opts {
+		t.Run(testcase.name, func(t *testing.T) {
+			_, err := srk.Seal([]byte("secretzz"),
+				client.SealOpts{Current: testcase.current, Target: testcase.target})
+			if err == nil {
+				t.Errorf("expected failure calling sealOptsToPcrs")
 			}
 		})
 	}

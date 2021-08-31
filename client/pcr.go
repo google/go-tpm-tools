@@ -99,31 +99,12 @@ func ReadAllPCRs(rw io.ReadWriter) ([]*pb.PCRs, error) {
 	return allPcrs, nil
 }
 
-// SealCurrent seals data to the current specified PCR selection.
-type SealCurrent struct{ tpm2.PCRSelection }
-
-// SealTarget predicatively seals data to the given specified PCR values.
-type SealTarget struct{ Pcrs *pb.PCRs }
-
 // SealOpts specifies the PCR values that should be used for Seal().
-type SealOpts interface {
-	PCRsForSealing(rw io.ReadWriter) (*pb.PCRs, error)
-}
-
-// PCRsForSealing read from TPM and return the selected PCRs.
-func (p SealCurrent) PCRsForSealing(rw io.ReadWriter) (*pb.PCRs, error) {
-	if len(p.PCRSelection.PCRs) == 0 {
-		panic("SealCurrent contains 0 PCRs")
-	}
-	return ReadPCRs(rw, p.PCRSelection)
-}
-
-// PCRsForSealing return the target PCRs.
-func (p SealTarget) PCRsForSealing(_ io.ReadWriter) (*pb.PCRs, error) {
-	if len(p.Pcrs.GetPcrs()) == 0 {
-		panic("SealTarget contains 0 PCRs")
-	}
-	return p.Pcrs, nil
+type SealOpts struct {
+	// Current seals data to the current specified PCR selection.
+	Current tpm2.PCRSelection
+	// Target predicatively seals data to the given specified PCR values.
+	Target *pb.PCRs
 }
 
 // CertifyCurrent certifies that a selection of current PCRs have the same value when sealing.

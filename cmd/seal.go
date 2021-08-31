@@ -51,7 +51,7 @@ state (like Secure Boot).`,
 		fmt.Fprintf(debugOutput(), "Sealing to PCRs: %v\n", sel.PCRs)
 		var opts client.SealOpts
 		if len(sel.PCRs) > 0 {
-			opts = client.SealCurrent{PCRSelection: sel}
+			opts = client.SealOpts{Current: sel}
 		}
 		sealed, err := srk.Seal(secret, opts)
 		if err != nil {
