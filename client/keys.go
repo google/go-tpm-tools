@@ -229,9 +229,9 @@ func (k *Key) Seal(sensitive []byte, opts SealOpts) (*pb.SealedBytes, error) {
 	var err error
 	var auth []byte
 
-	pcrs, err = sealOptsToPcrs(k.rw, opts)
+	pcrs, err = mergePCRSelAndProto(k.rw, opts.Current, opts.Target)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("invalid SealOpts: %v", err)
 	}
 	if len(pcrs.GetPcrs()) > 0 {
 		auth = internal.PCRSessionAuth(pcrs, SessionHashAlg)
@@ -250,37 +250,37 @@ func (k *Key) Seal(sensitive []byte, opts SealOpts) (*pb.SealedBytes, error) {
 	return sb, nil
 }
 
-func sealOptsToPcrs(rw io.ReadWriter, opts SealOpts) (*pb.PCRs, error) {
-	if opts.Target == nil || len(opts.Target.GetPcrs()) == 0 {
-		return ReadPCRs(rw, opts.Current)
+func mergePCRSelAndProto(rw io.ReadWriter, sel tpm2.PCRSelection, proto *pb.PCRs) (*pb.PCRs, error) {
+	if proto == nil || len(proto.GetPcrs()) == 0 {
+		return ReadPCRs(rw, sel)
 	}
-	if len(opts.Current.PCRs) == 0 {
-		return opts.Target, nil
+	if len(sel.PCRs) == 0 {
+		return proto, nil
 	}
-	if opts.Current.Hash != tpm2.Algorithm(opts.Target.Hash) {
-		return nil, fmt.Errorf("invalid SealOpts: current hash (%v) differs from target hash (%v)",
-			opts.Current.Hash, tpm2.Algorithm(opts.Target.Hash))
+	if sel.Hash != tpm2.Algorithm(proto.Hash) {
+		return nil, fmt.Errorf("current hash (%v) differs from target hash (%v)",
+			sel.Hash, tpm2.Algorithm(proto.Hash))
 	}
 
-	// At this point, both Current and Target are non-empty.
-	// Verify no overlap in Current and Target PCR indexes.
+	// At this point, both sel and proto are non-empty.
+	// Verify no overlap in sel and proto PCR indexes.
 	overlap := make([]int, 0)
-	targetMap := opts.Target.GetPcrs()
-	for _, pcrVal := range opts.Current.PCRs {
+	targetMap := proto.GetPcrs()
+	for _, pcrVal := range sel.PCRs {
 		if _, found := targetMap[uint32(pcrVal)]; found {
 			overlap = append(overlap, pcrVal)
 		}
 	}
 	if len(overlap) != 0 {
-		return nil, fmt.Errorf("invalid SealOpts: found PCR overlap between Current and Target: %v", overlap)
+		return nil, fmt.Errorf("found PCR overlap: %v", overlap)
 	}
 
-	currentPcrs, err := ReadPCRs(rw, opts.Current)
+	currentPcrs, err := ReadPCRs(rw, sel)
 	if err != nil {
 		return nil, err
 	}
 
-	for pcr, val := range opts.Target.Pcrs {
+	for pcr, val := range proto.GetPcrs() {
 		currentPcrs.Pcrs[pcr] = val
 	}
 	return currentPcrs, nil
