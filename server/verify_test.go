@@ -1,7 +1,9 @@
 package server
 
 import (
+	"crypto"
 	"crypto/rand"
+	"crypto/rsa"
 	"crypto/sha256"
 	"fmt"
 	"io"
@@ -175,5 +177,53 @@ func TestVerifyUsingDifferentPCR(t *testing.T) {
 	err = internal.VerifyQuote(quote, ak.PublicKey(), nonce)
 	if err == nil {
 		t.Errorf("Verify should fail as Verify read a different PCR")
+	}
+}
+
+func TestVerifyBasicAttestation(t *testing.T) {
+	rwc := test.GetTPM(t)
+	defer client.CheckedClose(t, rwc)
+
+	ak, err := client.AttestationKeyRSA(rwc)
+	if err != nil {
+		t.Fatalf("failed to generate AK: %v", err)
+	}
+	defer ak.Close()
+
+	nonce := []byte("super secret nonce")
+	attestation, err := ak.Attest(client.AttestOpts{Nonce: nonce})
+	if err != nil {
+		t.Fatalf("failed to attest: %v", err)
+	}
+
+	if _, err := VerifyAttestation(attestation, VerifyOpts{
+		Nonce:      nonce,
+		TrustedAKs: []crypto.PublicKey{ak.PublicKey()},
+	}); err != nil {
+		t.Errorf("failed to verify: %v", err)
+	}
+
+	if _, err := VerifyAttestation(attestation, VerifyOpts{
+		Nonce:      append(nonce, 0),
+		TrustedAKs: []crypto.PublicKey{ak.PublicKey()},
+	}); err == nil {
+		t.Error("using the wrong nonce should make verification fail")
+	}
+
+	if _, err := VerifyAttestation(attestation, VerifyOpts{
+		Nonce: nonce,
+	}); err == nil {
+		t.Error("using no trusted AKs should make verification fail")
+	}
+
+	priv, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := VerifyAttestation(attestation, VerifyOpts{
+		Nonce:      nonce,
+		TrustedAKs: []crypto.PublicKey{priv.Public()},
+	}); err == nil {
+		t.Error("using a random trusted AKs should make verification fail")
 	}
 }
