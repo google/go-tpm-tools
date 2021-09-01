@@ -12,6 +12,9 @@ import (
 	"github.com/google/go-tpm/tpm2"
 )
 
+// The hash algorithms we support, in their preferred order of use.
+var supportedHashAlgs = []tpm2.Algorithm{tpm2.AlgSHA512, tpm2.AlgSHA384, tpm2.AlgSHA256}
+
 // VerifyOpts allows for customizing the functionality of VerifyAttestation.
 type VerifyOpts struct {
 	// The nonce used when calling client.Attest
@@ -48,27 +51,45 @@ func VerifyAttestation(attestation *pb.Attestation, opts VerifyOpts) (*pb.Machin
 		return nil, err
 	}
 
-	// For now, we only verify SHA256 based Quotes, PCRs, and Events
-	var quote *tpmpb.Quote
-	for _, q := range attestation.GetQuotes() {
-		if q.GetPcrs().GetHash() != tpmpb.HashAlgo_SHA256 {
+	// Verify the signing hash algorithm
+	signHashAlg, err := internal.GetSigningHashAlg(akPubArea)
+	if err != nil {
+		return nil, fmt.Errorf("bad AK public area: %w", err)
+	}
+	if err = checkHashAlgSupported(signHashAlg, opts); err != nil {
+		return nil, fmt.Errorf("in AK public area: %w", err)
+	}
+
+	// Attempt to replay the log against our PCRs in order of hash preference
+	var lastErr error
+	for _, quote := range supportedQuotes(attestation.GetQuotes()) {
+		// Verify the Quote
+		if err = internal.VerifyQuote(quote, akPubKey, opts.Nonce); err != nil {
+			lastErr = fmt.Errorf("failed to verify quote: %w", err)
 			continue
 		}
-		quote = q
+
+		// Parse the event log and replay the events against the provided PCRs
+		pcrs := quote.GetPcrs()
+		state, err := ParseAndReplayEventLog(attestation.GetEventLog(), pcrs)
+		if err != nil {
+			lastErr = fmt.Errorf("failed to validate the event log: %w", err)
+			continue
+		}
+
+		// Verify the PCR hash algorithm
+		pcrHashAlg := tpm2.Algorithm(pcrs.GetHash())
+		if err = checkHashAlgSupported(pcrHashAlg, opts); err != nil {
+			return nil, fmt.Errorf("when verifying PCRs: %w", err)
+		}
+
+		return state, nil
 	}
-	if quote == nil {
-		return nil, fmt.Errorf("attestation does not contain a SHA256 quote")
+
+	if lastErr != nil {
+		return nil, lastErr
 	}
-	// Verify the Quote
-	if err = internal.VerifyQuote(quote, akPubKey, opts.Nonce); err != nil {
-		return nil, fmt.Errorf("failed to verify quote: %w", err)
-	}
-	// Parse the event log and replay the events against the provided PCRs
-	state, err := ParseAndReplayEventLog(attestation.GetEventLog(), quote.GetPcrs())
-	if err != nil {
-		return nil, fmt.Errorf("failed to validate the event log: %w", err)
-	}
-	return state, nil
+	return nil, fmt.Errorf("attestation does not contain a supported quote")
 }
 
 func pubKeysEqual(k1 crypto.PublicKey, k2 crypto.PublicKey) bool {
@@ -95,4 +116,27 @@ func checkAkTrusted(ak crypto.PublicKey, opts VerifyOpts) error {
 		}
 	}
 	return fmt.Errorf("AK public key is not trusted")
+}
+
+func checkHashAlgSupported(hash tpm2.Algorithm, opts VerifyOpts) error {
+	for _, alg := range supportedHashAlgs {
+		if hash == alg {
+			return nil
+		}
+	}
+	return fmt.Errorf("unsupported hash algorithm: %v", hash)
+}
+
+// Retrieve the supported quotes in order of hash preference
+func supportedQuotes(quotes []*tpmpb.Quote) []*tpmpb.Quote {
+	out := make([]*tpmpb.Quote, 0, len(quotes))
+	for _, alg := range supportedHashAlgs {
+		for _, quote := range quotes {
+			if tpm2.Algorithm(quote.GetPcrs().GetHash()) == alg {
+				out = append(out, quote)
+				break
+			}
+		}
+	}
+	return out
 }
