@@ -389,7 +389,7 @@ func (k *Key) Unseal(in *pb.SealedBytes, opts UnsealOpts) ([]byte, error) {
 func (k *Key) Quote(selpcr tpm2.PCRSelection, extraData []byte) (*pb.Quote, error) {
 	// Make sure that we have a valid signing key before trying quote
 	var err error
-	if _, err = getSigningHashAlg(k); err != nil {
+	if _, err = internal.GetSigningHashAlg(k.pubArea); err != nil {
 		return nil, err
 	}
 	if !k.hasAttribute(tpm2.FlagRestricted) {
