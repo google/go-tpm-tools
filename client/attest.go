@@ -1,24 +1,38 @@
 package client
 
 import (
-	"errors"
 	"fmt"
 
 	pb "github.com/google/go-tpm-tools/proto/attest"
 )
 
-// AttestOpts allows for optional Attest functionality to be enabled.
-type AttestOpts interface{}
+// AttestOpts allows for customizing the functionality of Attest.
+type AttestOpts struct {
+	// A unique, application-specific nonce used to guarantee freshness of the
+	// attestation. This must not be empty, and should generally be long enough
+	// to make brute force attacks infeasible.
+	//
+	// For security reasons, applications should not allow for attesting with
+	// arbitrary, externally-provided nonces. The nonce should be prefixed or
+	// otherwise bound (i.e. via a KDF) to application-specific data. For more
+	// information on why this is an issue, see this paper on robust remote
+	// attestation protocols:
+	// https://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.70.4562&rep=rep1&type=pdf
+	Nonce []byte
+}
 
 // Attest generates an Attestation containing the TCG Event Log and a Quote over
 // all PCR banks. The provided nonce can be used to guarantee freshness of the
 // attestation. This function will return an error if the key is not a
 // restricted signing key.
 //
-// An optional AttestOpts can also be passed. Currently, this parameter must be nil.
-func (k *Key) Attest(nonce []byte, opts AttestOpts) (*pb.Attestation, error) {
-	if opts != nil {
-		return nil, errors.New("provided AttestOpts must be nil")
+// AttestOpts is used for additional configuration of the Attestation process.
+// This is primarily used to pass the attestation's nonce:
+//
+//   attestation, err := key.Attest(client.AttestOpts{Nonce: my_nonce})
+func (k *Key) Attest(opts AttestOpts) (*pb.Attestation, error) {
+	if len(opts.Nonce) == 0 {
+		return nil, fmt.Errorf("provided nonce must not be empty")
 	}
 	sels, err := implementedPCRs(k.rw)
 	if err != nil {
@@ -30,7 +44,7 @@ func (k *Key) Attest(nonce []byte, opts AttestOpts) (*pb.Attestation, error) {
 		return nil, fmt.Errorf("failed to encode public area: %w", err)
 	}
 	for _, sel := range sels {
-		quote, err := k.Quote(sel, nonce)
+		quote, err := k.Quote(sel, opts.Nonce)
 		if err != nil {
 			return nil, err
 		}

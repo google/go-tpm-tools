@@ -118,7 +118,7 @@ func ExampleKey_Attest() {
 	}
 	defer ak.Close()
 
-	attestation, err := ak.Attest(nonce, nil)
+	attestation, err := ak.Attest(client.AttestOpts{nonce})
 	if err != nil {
 		log.Fatalf("failed to attest: %v", err)
 	}
