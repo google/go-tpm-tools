@@ -172,7 +172,7 @@ func Example_sealAndUnseal() {
 	// properly but fail to certify it (thus we shouldn't unseal it because the creation status
 	// cannot be verify). This ensures we can unseal the sealed blob, and that its contents are
 	// equal to what we sealed.
-	output, err := srk.Unseal(sealedBlob, client.CertifyCurrent{PCRSelection: sel})
+	output, err := srk.Unseal(sealedBlob, client.UnsealOpts{CertifyCurrent: sel})
 	if err != nil {
 		// TODO: handle unseal error.
 		log.Fatalf("failed to unseal blob: %v", err)

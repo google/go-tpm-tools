@@ -117,9 +117,9 @@ machine state when sealing took place.
 		fmt.Fprintln(debugOutput(), "Unsealing data")
 
 		certifySel := tpm2.PCRSelection{Hash: client.CertifyHashAlgTpm, PCRs: pcrs}
-		var opts client.CertifyOpts
+		var opts client.UnsealOpts
 		if len(certifySel.PCRs) > 0 {
-			opts = client.CertifyCurrent{PCRSelection: certifySel}
+			opts = client.UnsealOpts{CertifyCurrent: certifySel}
 		}
 		secret, err := srk.Unseal(&sealed, opts)
 		if err != nil {

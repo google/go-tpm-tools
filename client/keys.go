@@ -331,10 +331,10 @@ func sealHelper(rw io.ReadWriter, parentHandle tpmutil.Handle, auth []byte, sens
 }
 
 // Unseal attempts to reverse the process of Seal(), using the PCRs, public, and
-// private data in proto.SealedBytes. Optionally, a CertifyOpt can be
-// passed, to verify the state of the TPM when the data was sealed. A nil value
-// can be passed to skip certification.
-func (k *Key) Unseal(in *pb.SealedBytes, opts CertifyOpts) ([]byte, error) {
+// private data in proto.SealedBytes. Optionally, the UnsealOpts parameter can
+// be used to verify the state of the TPM when the data was sealed. The
+// zero-value UnsealOpts can be passed to skip certification.
+func (k *Key) Unseal(in *pb.SealedBytes, opts UnsealOpts) ([]byte, error) {
 	if in.Srk != pb.ObjectType(k.pubArea.Type) {
 		return nil, fmt.Errorf("expected key of type %v, got %v", in.Srk, k.pubArea.Type)
 	}
@@ -349,7 +349,11 @@ func (k *Key) Unseal(in *pb.SealedBytes, opts CertifyOpts) ([]byte, error) {
 	}
 	defer tpm2.FlushContext(k.rw, sealed)
 
-	if opts != nil {
+	pcrs, err := mergePCRSelAndProto(k.rw, opts.CertifyCurrent, opts.CertifyExpected)
+	if err != nil {
+		return nil, fmt.Errorf("invalid UnsealOpts: %v", err)
+	}
+	if len(pcrs.GetPcrs()) > 0 {
 		var ticket tpm2.Ticket
 		if _, err = tpmutil.Unpack(in.GetTicket(), &ticket); err != nil {
 			return nil, fmt.Errorf("ticket unpack failed: %w", err)
@@ -391,7 +395,7 @@ func (k *Key) Unseal(in *pb.SealedBytes, opts CertifyOpts) ([]byte, error) {
 			return nil, fmt.Errorf("certify PCRs digest does not match the digest in the creation data")
 		}
 
-		if err := opts.CertifyPCRs(k.rw, in.GetCertifiedPcrs()); err != nil {
+		if err := internal.CheckSubset(pcrs, in.GetCertifiedPcrs()); err != nil {
 			return nil, fmt.Errorf("failed to certify PCRs: %w", err)
 		}
 	}
@@ -448,8 +452,8 @@ func (k *Key) Quote(selpcr tpm2.PCRSelection, extraData []byte) (*pb.Quote, erro
 // Reseal is a shortcut to call Unseal() followed by Seal().
 // CertifyOpt(nillable) will be used in Unseal(), and SealOpt(nillable)
 // will be used in Seal()
-func (k *Key) Reseal(in *pb.SealedBytes, cOpts CertifyOpts, sOpts SealOpts) (*pb.SealedBytes, error) {
-	sensitive, err := k.Unseal(in, cOpts)
+func (k *Key) Reseal(in *pb.SealedBytes, uOpts UnsealOpts, sOpts SealOpts) (*pb.SealedBytes, error) {
+	sensitive, err := k.Unseal(in, uOpts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unseal: %w", err)
 	}

@@ -6,7 +6,6 @@ import (
 	"io"
 	"math"
 
-	"github.com/google/go-tpm-tools/internal"
 	pb "github.com/google/go-tpm-tools/proto/tpm"
 	"github.com/google/go-tpm/tpm2"
 )
@@ -103,41 +102,21 @@ func ReadAllPCRs(rw io.ReadWriter) ([]*pb.PCRs, error) {
 type SealOpts struct {
 	// Current seals data to the current specified PCR selection.
 	Current tpm2.PCRSelection
-	// Target predicatively seals data to the given specified PCR values.
+	// Target predictively seals data to the given specified PCR values.
 	Target *pb.PCRs
 }
 
-// CertifyCurrent certifies that a selection of current PCRs have the same value when sealing.
-// Hash Algorithm in the selection should be CertifyHashAlgTpm.
-type CertifyCurrent struct{ tpm2.PCRSelection }
-
-// CertifyExpected certifies that the TPM had a specific set of PCR values when sealing.
-// Hash Algorithm in the PCR proto should be CertifyHashAlgTpm.
-type CertifyExpected struct{ Pcrs *pb.PCRs }
-
-// CertifyOpts determines if the given PCR value can pass certification in Unseal().
-type CertifyOpts interface {
-	CertifyPCRs(rw io.ReadWriter, certified *pb.PCRs) error
-}
-
-// CertifyPCRs from CurrentPCRs will read PCR values from TPM and compare the digest.
-func (p CertifyCurrent) CertifyPCRs(rw io.ReadWriter, pcrs *pb.PCRs) error {
-	if len(p.PCRSelection.PCRs) == 0 {
-		panic("CertifyCurrent contains 0 PCRs")
-	}
-	current, err := ReadPCRs(rw, p.PCRSelection)
-	if err != nil {
-		return err
-	}
-	return internal.CheckSubset(current, pcrs)
-}
-
-// CertifyPCRs will compare the digest with given expected PCRs values.
-func (p CertifyExpected) CertifyPCRs(_ io.ReadWriter, pcrs *pb.PCRs) error {
-	if len(p.Pcrs.GetPcrs()) == 0 {
-		panic("CertifyExpected contains 0 PCRs")
-	}
-	return internal.CheckSubset(p.Pcrs, pcrs)
+// UnsealOpts specifies the options that should be used for Unseal().
+// Currently, it specifies the PCRs that need to pass certification in order to
+// successfully unseal.
+type UnsealOpts struct {
+	// CertifyCurrent certifies that a selection of current PCRs have the same
+	// value when sealing.
+	// Hash Algorithm in the selection should be CertifyHashAlgTpm.
+	CertifyCurrent tpm2.PCRSelection
+	// CertifyExpected certifies that the TPM had a specific set of PCR values when sealing.
+	// Hash Algorithm in the PCR proto should be CertifyHashAlgTpm.
+	CertifyExpected *pb.PCRs
 }
 
 // FullPcrSel will return a full PCR selection based on the total PCR number
