@@ -13,7 +13,9 @@ import (
 )
 
 // The hash algorithms we support, in their preferred order of use.
-var supportedHashAlgs = []tpm2.Algorithm{tpm2.AlgSHA512, tpm2.AlgSHA384, tpm2.AlgSHA256}
+var supportedHashAlgs = []tpm2.Algorithm{
+	tpm2.AlgSHA512, tpm2.AlgSHA384, tpm2.AlgSHA256, tpm2.AlgSHA1,
+}
 
 // VerifyOpts allows for customizing the functionality of VerifyAttestation.
 type VerifyOpts struct {
@@ -22,6 +24,12 @@ type VerifyOpts struct {
 	// Trusted public keys that can be used to directly verify the key used for
 	// attestation. This option should be used if you already know the AK.
 	TrustedAKs []crypto.PublicKey
+	// Allow attestations to be verified using SHA-1. This defaults to false
+	// because SHA-1 is a weak hash algorithm with known collision attacks.
+	// However, setting this to true may be necessary if the client only
+	// supports the legacy event log format. This is the case on older Linux
+	// distributions (such as Debian 10).
+	AllowSHA1 bool
 }
 
 // VerifyAttestation performs the following checks on an Attestation:
@@ -119,6 +127,9 @@ func checkAkTrusted(ak crypto.PublicKey, opts VerifyOpts) error {
 }
 
 func checkHashAlgSupported(hash tpm2.Algorithm, opts VerifyOpts) error {
+	if hash == tpm2.AlgSHA1 && !opts.AllowSHA1 {
+		return fmt.Errorf("SHA-1 is not allowed for verification (set VerifyOpts.AllowSHA1 to true to allow)")
+	}
 	for _, alg := range supportedHashAlgs {
 		if hash == alg {
 			return nil
