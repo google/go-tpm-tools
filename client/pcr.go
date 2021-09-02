@@ -6,7 +6,6 @@ import (
 	"io"
 	"math"
 
-	"github.com/google/go-tpm-tools/internal"
 	pb "github.com/google/go-tpm-tools/proto/tpm"
 	"github.com/google/go-tpm/tpm2"
 )
@@ -99,64 +98,25 @@ func ReadAllPCRs(rw io.ReadWriter) ([]*pb.PCRs, error) {
 	return allPcrs, nil
 }
 
-// SealCurrent seals data to the current specified PCR selection.
-type SealCurrent struct{ tpm2.PCRSelection }
-
-// SealTarget predicatively seals data to the given specified PCR values.
-type SealTarget struct{ Pcrs *pb.PCRs }
-
 // SealOpts specifies the PCR values that should be used for Seal().
-type SealOpts interface {
-	PCRsForSealing(rw io.ReadWriter) (*pb.PCRs, error)
+type SealOpts struct {
+	// Current seals data to the current specified PCR selection.
+	Current tpm2.PCRSelection
+	// Target predictively seals data to the given specified PCR values.
+	Target *pb.PCRs
 }
 
-// PCRsForSealing read from TPM and return the selected PCRs.
-func (p SealCurrent) PCRsForSealing(rw io.ReadWriter) (*pb.PCRs, error) {
-	if len(p.PCRSelection.PCRs) == 0 {
-		panic("SealCurrent contains 0 PCRs")
-	}
-	return ReadPCRs(rw, p.PCRSelection)
-}
-
-// PCRsForSealing return the target PCRs.
-func (p SealTarget) PCRsForSealing(_ io.ReadWriter) (*pb.PCRs, error) {
-	if len(p.Pcrs.GetPcrs()) == 0 {
-		panic("SealTarget contains 0 PCRs")
-	}
-	return p.Pcrs, nil
-}
-
-// CertifyCurrent certifies that a selection of current PCRs have the same value when sealing.
-// Hash Algorithm in the selection should be CertifyHashAlgTpm.
-type CertifyCurrent struct{ tpm2.PCRSelection }
-
-// CertifyExpected certifies that the TPM had a specific set of PCR values when sealing.
-// Hash Algorithm in the PCR proto should be CertifyHashAlgTpm.
-type CertifyExpected struct{ Pcrs *pb.PCRs }
-
-// CertifyOpts determines if the given PCR value can pass certification in Unseal().
-type CertifyOpts interface {
-	CertifyPCRs(rw io.ReadWriter, certified *pb.PCRs) error
-}
-
-// CertifyPCRs from CurrentPCRs will read PCR values from TPM and compare the digest.
-func (p CertifyCurrent) CertifyPCRs(rw io.ReadWriter, pcrs *pb.PCRs) error {
-	if len(p.PCRSelection.PCRs) == 0 {
-		panic("CertifyCurrent contains 0 PCRs")
-	}
-	current, err := ReadPCRs(rw, p.PCRSelection)
-	if err != nil {
-		return err
-	}
-	return internal.CheckSubset(current, pcrs)
-}
-
-// CertifyPCRs will compare the digest with given expected PCRs values.
-func (p CertifyExpected) CertifyPCRs(_ io.ReadWriter, pcrs *pb.PCRs) error {
-	if len(p.Pcrs.GetPcrs()) == 0 {
-		panic("CertifyExpected contains 0 PCRs")
-	}
-	return internal.CheckSubset(p.Pcrs, pcrs)
+// UnsealOpts specifies the options that should be used for Unseal().
+// Currently, it specifies the PCRs that need to pass certification in order to
+// successfully unseal.
+// CertifyHashAlgTpm is the hard-coded algorithm that must be used with
+// UnsealOpts.
+type UnsealOpts struct {
+	// CertifyCurrent certifies that a selection of current PCRs have the same
+	// value when sealing.
+	CertifyCurrent tpm2.PCRSelection
+	// CertifyExpected certifies that the TPM had a specific set of PCR values when sealing.
+	CertifyExpected *pb.PCRs
 }
 
 // FullPcrSel will return a full PCR selection based on the total PCR number
@@ -167,4 +127,40 @@ func FullPcrSel(hash tpm2.Algorithm) tpm2.PCRSelection {
 		sel.PCRs = append(sel.PCRs, int(i))
 	}
 	return sel
+}
+
+func mergePCRSelAndProto(rw io.ReadWriter, sel tpm2.PCRSelection, proto *pb.PCRs) (*pb.PCRs, error) {
+	if proto == nil || len(proto.GetPcrs()) == 0 {
+		return ReadPCRs(rw, sel)
+	}
+	if len(sel.PCRs) == 0 {
+		return proto, nil
+	}
+	if sel.Hash != tpm2.Algorithm(proto.Hash) {
+		return nil, fmt.Errorf("current hash (%v) differs from target hash (%v)",
+			sel.Hash, tpm2.Algorithm(proto.Hash))
+	}
+
+	// At this point, both sel and proto are non-empty.
+	// Verify no overlap in sel and proto PCR indexes.
+	overlap := make([]int, 0)
+	targetMap := proto.GetPcrs()
+	for _, pcrVal := range sel.PCRs {
+		if _, found := targetMap[uint32(pcrVal)]; found {
+			overlap = append(overlap, pcrVal)
+		}
+	}
+	if len(overlap) != 0 {
+		return nil, fmt.Errorf("found PCR overlap: %v", overlap)
+	}
+
+	currentPcrs, err := ReadPCRs(rw, sel)
+	if err != nil {
+		return nil, err
+	}
+
+	for pcr, val := range proto.GetPcrs() {
+		currentPcrs.Pcrs[pcr] = val
+	}
+	return currentPcrs, nil
 }

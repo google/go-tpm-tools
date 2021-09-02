@@ -163,7 +163,7 @@ func Example_sealAndUnseal() {
 
 	sel := tpm2.PCRSelection{Hash: tpm2.AlgSHA256, PCRs: []int{7}}
 	// Seal the data to the current value of PCR7.
-	sealedBlob, err := srk.Seal([]byte(sealedSecret), client.SealCurrent{PCRSelection: sel})
+	sealedBlob, err := srk.Seal([]byte(sealedSecret), client.SealOpts{Current: sel})
 	if err != nil {
 		log.Fatalf("failed to seal to SRK: %v", err)
 	}
@@ -172,7 +172,7 @@ func Example_sealAndUnseal() {
 	// properly but fail to certify it (thus we shouldn't unseal it because the creation status
 	// cannot be verify). This ensures we can unseal the sealed blob, and that its contents are
 	// equal to what we sealed.
-	output, err := srk.Unseal(sealedBlob, client.CertifyCurrent{PCRSelection: sel})
+	output, err := srk.Unseal(sealedBlob, client.UnsealOpts{CertifyCurrent: sel})
 	if err != nil {
 		// TODO: handle unseal error.
 		log.Fatalf("failed to unseal blob: %v", err)
