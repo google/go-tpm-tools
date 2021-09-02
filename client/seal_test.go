@@ -182,10 +182,10 @@ func TestReseal(t *testing.T) {
 		t.Fatalf("failed to seal: %v", err)
 	}
 
-	opts := client.UnsealOpts{
+	uOpts := client.UnsealOpts{
 		CertifyCurrent: sel,
 	}
-	unseal, err := key.Unseal(sealed, opts)
+	unseal, err := key.Unseal(sealed, uOpts)
 	if err != nil {
 		t.Fatalf("failed to unseal: %v", err)
 	}
@@ -202,7 +202,8 @@ func TestReseal(t *testing.T) {
 	extensions := [][]byte{bytes.Repeat([]byte{0xAA}, sha256.Size)}
 	predictedPcrsValue.GetPcrs()[uint32(pcrToChange)] = computePCRValue(predictedPcrsValue.GetPcrs()[uint32(pcrToChange)], extensions)
 
-	resealed, err := key.Reseal(sealed, opts, client.SealOpts{Target: predictedPcrsValue})
+	sOpts := client.SealOpts{Target: predictedPcrsValue}
+	resealed, err := key.Reseal(sealed, uOpts, sOpts)
 	if err != nil {
 		t.Fatalf("failed to reseal: %v", err)
 	}
@@ -389,8 +390,8 @@ func TestSealOpts(t *testing.T) {
 	}
 	for _, testcase := range opts {
 		t.Run(testcase.name, func(t *testing.T) {
-			sealed, err := srk.Seal([]byte("secretzz"),
-				client.SealOpts{Current: testcase.current, Target: testcase.target})
+			sOpts := client.SealOpts{Current: testcase.current, Target: testcase.target}
+			sealed, err := srk.Seal([]byte("secretzz"), sOpts)
 			if err != nil {
 				t.Errorf("error calling Seal with SealOpts: %v", err)
 			}
@@ -403,8 +404,7 @@ func TestSealOpts(t *testing.T) {
 	}
 
 	// Run empty SealOpts.
-	_, err = srk.Seal([]byte("secretzz"),
-		client.SealOpts{})
+	_, err = srk.Seal([]byte("secretzz"), client.SealOpts{})
 	if err != nil {
 		t.Errorf("error calling Seal with SealOpts: %v", err)
 	}
@@ -434,9 +434,9 @@ func TestSealAndUnsealOptsFail(t *testing.T) {
 
 	for _, testcase := range opts {
 		t.Run("Seal"+testcase.name, func(t *testing.T) {
-			_, err := srk.Seal([]byte("secretzz"),
-				client.SealOpts{Current: testcase.current,
-					Target: testcase.target})
+			sOpts := client.SealOpts{Current: testcase.current,
+				Target: testcase.target}
+			_, err := srk.Seal([]byte("secretzz"), sOpts)
 			if err == nil {
 				t.Errorf("expected failure calling SealOpts")
 			}
@@ -449,9 +449,9 @@ func TestSealAndUnsealOptsFail(t *testing.T) {
 	}
 	for _, testcase := range opts {
 		t.Run("Unseal"+testcase.name, func(t *testing.T) {
-			_, err := srk.Unseal(sealed,
-				client.UnsealOpts{CertifyCurrent: testcase.current,
-					CertifyExpected: testcase.target})
+			uOpts := client.UnsealOpts{CertifyCurrent: testcase.current,
+				CertifyExpected: testcase.target}
+			_, err := srk.Unseal(sealed, uOpts)
 			if err == nil {
 				t.Errorf("expected failure calling SealOpts")
 			}

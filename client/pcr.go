@@ -109,13 +109,13 @@ type SealOpts struct {
 // UnsealOpts specifies the options that should be used for Unseal().
 // Currently, it specifies the PCRs that need to pass certification in order to
 // successfully unseal.
+// CertifyHashAlgTpm is the hard-coded algorithm that must be used with
+// UnsealOpts.
 type UnsealOpts struct {
 	// CertifyCurrent certifies that a selection of current PCRs have the same
 	// value when sealing.
-	// Hash Algorithm in the selection should be CertifyHashAlgTpm.
 	CertifyCurrent tpm2.PCRSelection
 	// CertifyExpected certifies that the TPM had a specific set of PCR values when sealing.
-	// Hash Algorithm in the PCR proto should be CertifyHashAlgTpm.
 	CertifyExpected *pb.PCRs
 }
 

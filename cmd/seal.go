@@ -47,12 +47,10 @@ state (like Secure Boot).`,
 			return err
 		}
 
-		sel := tpm2.PCRSelection{Hash: sealHashAlgo, PCRs: pcrs}
-		fmt.Fprintf(debugOutput(), "Sealing to PCRs: %v\n", sel.PCRs)
-		var opts client.SealOpts
-		if len(sel.PCRs) > 0 {
-			opts = client.SealOpts{Current: sel}
-		}
+		fmt.Fprintf(debugOutput(), "Sealing to PCRs: %v\n", pcrs)
+		opts := client.SealOpts{Current: tpm2.PCRSelection{
+			Hash: sealHashAlgo,
+			PCRs: pcrs}}
 		sealed, err := srk.Seal(secret, opts)
 		if err != nil {
 			return fmt.Errorf("sealing data: %w", err)
@@ -66,7 +64,7 @@ state (like Secure Boot).`,
 		if _, err = dataOutput().Write(output); err != nil {
 			return err
 		}
-		fmt.Fprintf(debugOutput(), "Sealed data to PCRs: %v\n", sel.PCRs)
+		fmt.Fprintf(debugOutput(), "Sealed data to PCRs: %v\n", pcrs)
 		return nil
 	},
 }
@@ -116,11 +114,9 @@ machine state when sealing took place.
 
 		fmt.Fprintln(debugOutput(), "Unsealing data")
 
-		certifySel := tpm2.PCRSelection{Hash: client.CertifyHashAlgTpm, PCRs: pcrs}
-		var opts client.UnsealOpts
-		if len(certifySel.PCRs) > 0 {
-			opts = client.UnsealOpts{CertifyCurrent: certifySel}
-		}
+		opts := client.UnsealOpts{CertifyCurrent: tpm2.PCRSelection{
+			Hash: client.CertifyHashAlgTpm,
+			PCRs: pcrs}}
 		secret, err := srk.Unseal(&sealed, opts)
 		if err != nil {
 			return fmt.Errorf("unsealing data: %w", err)

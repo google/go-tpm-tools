@@ -318,6 +318,10 @@ func (k *Key) Unseal(in *pb.SealedBytes, opts UnsealOpts) ([]byte, error) {
 		return nil, fmt.Errorf("invalid UnsealOpts: %v", err)
 	}
 	if len(pcrs.GetPcrs()) > 0 {
+		if err := internal.CheckSubset(pcrs, in.GetCertifiedPcrs()); err != nil {
+			return nil, fmt.Errorf("failed to certify PCRs: %w", err)
+		}
+
 		var ticket tpm2.Ticket
 		if _, err = tpmutil.Unpack(in.GetTicket(), &ticket); err != nil {
 			return nil, fmt.Errorf("ticket unpack failed: %w", err)
@@ -357,10 +361,6 @@ func (k *Key) Unseal(in *pb.SealedBytes, opts UnsealOpts) ([]byte, error) {
 		expectedDigest := internal.PCRDigest(in.GetCertifiedPcrs(), SessionHashAlg)
 		if subtle.ConstantTimeCompare(decodedCreationData.PCRDigest, expectedDigest) == 0 {
 			return nil, fmt.Errorf("certify PCRs digest does not match the digest in the creation data")
-		}
-
-		if err := internal.CheckSubset(pcrs, in.GetCertifiedPcrs()); err != nil {
-			return nil, fmt.Errorf("failed to certify PCRs: %w", err)
 		}
 	}
 
