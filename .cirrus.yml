@@ -26,6 +26,8 @@ lint_task:
       -E goimports
       -E misspell
       -E revive
+      -E gofmt
+      -E goimports
       --exclude-use-default=false
       --max-same-issues=0
       --max-issues-per-linter=0
