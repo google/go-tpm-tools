@@ -128,3 +128,39 @@ func FullPcrSel(hash tpm2.Algorithm) tpm2.PCRSelection {
 	}
 	return sel
 }
+
+func mergePCRSelAndProto(rw io.ReadWriter, sel tpm2.PCRSelection, proto *pb.PCRs) (*pb.PCRs, error) {
+	if proto == nil || len(proto.GetPcrs()) == 0 {
+		return ReadPCRs(rw, sel)
+	}
+	if len(sel.PCRs) == 0 {
+		return proto, nil
+	}
+	if sel.Hash != tpm2.Algorithm(proto.Hash) {
+		return nil, fmt.Errorf("current hash (%v) differs from target hash (%v)",
+			sel.Hash, tpm2.Algorithm(proto.Hash))
+	}
+
+	// At this point, both sel and proto are non-empty.
+	// Verify no overlap in sel and proto PCR indexes.
+	overlap := make([]int, 0)
+	targetMap := proto.GetPcrs()
+	for _, pcrVal := range sel.PCRs {
+		if _, found := targetMap[uint32(pcrVal)]; found {
+			overlap = append(overlap, pcrVal)
+		}
+	}
+	if len(overlap) != 0 {
+		return nil, fmt.Errorf("found PCR overlap: %v", overlap)
+	}
+
+	currentPcrs, err := ReadPCRs(rw, sel)
+	if err != nil {
+		return nil, err
+	}
+
+	for pcr, val := range proto.GetPcrs() {
+		currentPcrs.Pcrs[pcr] = val
+	}
+	return currentPcrs, nil
+}
