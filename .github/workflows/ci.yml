@@ -1,0 +1,79 @@
+#
+# Copyright 2020 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not
+# use this file except in compliance with the License. You may obtain a copy of
+# the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations under
+# the License.
+#
+
+name: CI
+on:
+  push:
+    tags:
+      - v*
+    branches:
+      - master
+      - main
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        go-version: [1.16.x, 1.17.x]
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    name: Build and Test (Go ${{ matrix.go-version }})
+    runs-on: ${{ matrix.os }}
+    steps:
+    - name: Install Go
+      uses: actions/setup-go@v2
+      with:
+        go-version: ${{ matrix.go-version }}
+    - name: Checkout code
+      uses: actions/checkout@v2
+    - name: Generate Protobufs
+      run: go generate ./...
+    - name: Build
+      run: go build -v ./...
+    - name: Test
+      run: go test -v ./...
+
+  lint:
+    strategy:
+      matrix:
+        go-version: [1.17.x]
+        os: [ubuntu-latest, windows-latest]
+    name: Lint (Go ${{ matrix.go-version }})
+    runs-on: ${{ matrix.os }}
+    steps:
+    - name: Install Go
+      uses: actions/setup-go@v2
+      with:
+        go-version: ${{ matrix.go-version }}
+    - name: Checkout code
+      uses: actions/checkout@v2
+    - name: Lint
+      uses: golangci/golangci-lint-action@v2
+      with:
+        version: v1.42
+        skip-go-installation: true
+        args: >
+          -D errcheck
+          -E stylecheck
+          -E goimports
+          -E misspell
+          -E revive
+          -E gofmt
+          -E goimports
+          --exclude-use-default=false
+          --max-same-issues=0
+          --max-issues-per-linter=0
+          --issues-exit-code=0
