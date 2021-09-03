@@ -1,3 +1,4 @@
+//go:build !cgo
 // +build !cgo
 
 // Package internal provides stubs when not using CGO.

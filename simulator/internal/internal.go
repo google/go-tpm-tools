@@ -1,3 +1,4 @@
+//go:build cgo
 // +build cgo
 
 // Package internal provides low-level bindings to the Microsoft TPM2 simulator.
