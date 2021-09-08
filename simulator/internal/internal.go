@@ -14,7 +14,7 @@ package internal
 // // Store NVDATA in memory, and we don't care about updates to failedTries.
 // #cgo CFLAGS: -DVTPM=NO -DSIMULATION=NO -DUSE_DA_USED=NO
 // // Flags from ../ms-tpm-20-ref/TPMCmd/configure.ac
-// #cgo CFLAGS: -std=gnu11 -Wall -Wformat-security -fstack-protector-all -fPIC
+// #cgo CFLAGS: -std=gnu11 -Wall -Wformat-security -fPIC
 // // Silence known warnings from the reference code and CGO code.
 // #cgo CFLAGS: -Wno-missing-braces -Wno-empty-body -Wno-unused-variable
 // // Link against the system OpenSSL
@@ -28,6 +28,13 @@ package internal
 // #cgo CFLAGS: -DECC_NIST_P521=YES
 // #cgo CFLAGS: -DALG_SHA512=ALG_YES
 // #cgo CFLAGS: -DMAX_CONTEXT_SIZE=1360
+// // Add flags to find the macOS Homebrew install location
+// #cgo darwin CFLAGS: -I/usr/local/opt/openssl/include
+// #cgo darwin LDFLAGS: -L/usr/local/opt/openssl/lib
+// // Add flags to find the Windows default install location
+// #cgo windows CFLAGS: -I"C:/Program Files/OpenSSL-Win64/include"
+// #cgo windows LDFLAGS: -L"C:/Program Files/OpenSSL-Win64/lib"
+// // Link against OpenSSL
 // #cgo LDFLAGS: -lcrypto
 //
 // #include <stdlib.h>
