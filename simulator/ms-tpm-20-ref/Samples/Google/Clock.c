@@ -42,7 +42,12 @@
 // However, the precision of the clock functions may be implementation
 // dependent.
 
+#ifdef _WIN32
+#include <sys/types.h>
+#include <sys/timeb.h>
+#else
 #include <time.h>
+#endif
 
 #include "PlatformData.h"
 #include "Platform_fp.h"
@@ -63,10 +68,16 @@ void _plat__TimerReset() {
   return;
 }
 
-static uint64_t _plat__RealTime() {
+static clock64_t _plat__RealTime() {
+#ifdef _WIN32 // On Windows we might be using msvcrt, which only has _ftime.
+  struct _timeb sysTime;
+  _ftime_s(&sysTime);
+  return (clock64_t)(sysTime.time) * 1000 + sysTime.millitm;
+#else
   struct timespec systime;
   clock_gettime(CLOCK_MONOTONIC, &systime);
   return (clock64_t)systime.tv_sec * 1000 + (systime.tv_nsec / 1000000);
+#endif
 }
 
 uint64_t _plat__TimerRead() {
