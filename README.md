@@ -68,25 +68,39 @@ fatal error: openssl/aes.h: No such file or directory
       |           ^~~~~~~~~~~~~~~~
 compilation terminated.
 ```
-This is because the `simulator` library depends on having the [OpenSSL](https://www.openssl.org/) headers installed. To fix this error, install them by running:
+This is because the `simulator` library depends on having the [OpenSSL](https://www.openssl.org/) headers installed. To fix this error, install the appropriate header package:
+
+### Linux
+
 ```bash
+# Ubuntu/Debian based systems
 sudo apt install libssl-dev
+# Redhat/Centos based systems
+sudo yum install openssl-devel
+# Arch Linux (headers/library in the same package)
+sudo pacman -S openssl
 ```
 
-## macOS Dev
-macOS fails to `go build` and `go test` by default with the error `ld: library not found for -lcrypto`.
-Fix it by installing OpenSSL and pointing cgo to the include and lib.
+### macOS
 
-These commands were tested on macOS 10.15.7 (Catalina).
-### Install OpenSSL
-1. Install Homebrew
-1. `brew install openssl`
-1. `cd /usr/local/include`
-1. `sudo ln -s  $(brew --prefix openssl)/include/openssl .`
+First, install [Homebrew](https://brew.sh/). Then run:
+```bash
+brew install openssl
+```
 
-To point the simulator at openssl as provided by Homebrew, there are a couple
-of options. Both of these use the output of `$(brew --prefix openssl)` for
-`$OPENSSL_PATH`.
+### Windows
+
+First, install [Chocolatey](https://chocolatey.org/). Then run:
+```bash
+choco install openssl
+```
+
+### Custom install location
+
+If you want to use a different installation of OpenSSL, or you are getting
+linker errors like `ld: library not found for -lcrypto`, you can directly
+point Go your installation. We will assume your installation is located at
+`$OPENSSL_PATH` (with `lib` and `include` subdirectories).
 
 #### Add OpenSSL to the include and library path at the command line
 This solution does not require modifying go-tpm-tools code and is useful when
@@ -99,12 +113,15 @@ C_INCLUDE_PATH="$OPENSSL_PATH/include" LIBRARY_PATH="$OPENSSL_PATH/lib" go test 
 This solution modifies your local copy of the go-tpm-tools simulator source
 and removes the need to provide the paths on the command line.
 
-Remember to remove the lines from `simulator/internal/internal.go` before
-committing changes.
+Modify the `CFLAGS`/`LDFLAGS` options beginning with `#cgo darwin` or
+`#cgo windows` in `simulator/internal/internal.go` to point at your
+installation. This could look something like:
+```diff
+// #cgo darwin CFLAGS: -I $OPENSSL_PATH/include
+// #cgo darwin LDFLAGS: -L $OPENSSL_PATH/lib
 ```
-// #cgo CFLAGS: -I $OPENSSL_PATH/include
-// #cgo LDFLAGS: -L$OPENSSL_PATH/lib
-```
+Remember to revert your modifications to `simulator/internal/internal.go`
+before committing your changes.
 
 ## No TPM 1.2 support
 

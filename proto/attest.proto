@@ -3,7 +3,7 @@ syntax = "proto3";
 package attest;
 option go_package = "github.com/google/go-tpm-tools/proto/attest";
 
-import "proto/tpm.proto";
+import "tpm.proto";
 
 // Information uniquely identifying a GCE instance. Can be used to create an
 // instance URL, which can then be used with GCE APIs. Formatted like:

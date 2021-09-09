@@ -7,9 +7,6 @@
 // regenerated. This can be done with "go generate". Just run:
 //   go generate ./...
 //
-// Alternatively, you can manually invoke the protoc script yourself by running:
-//   ./files/generate_protos.sh
-//
 // Upstream documentation:
 // https://developers.google.com/protocol-buffers/docs/reference/go-generated
 //
@@ -22,4 +19,4 @@
 //   go install google.golang.org/protobuf/cmd/protoc-gen-go
 package proto
 
-//go:generate ../files/generate_protos.sh
+//go:generate protoc --go_out=. --go_opt=module=github.com/google/go-tpm-tools/proto tpm.proto attest.proto
