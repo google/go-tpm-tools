@@ -30,10 +30,10 @@ package internal
 // #cgo CFLAGS: -DECC_NIST_P521=YES
 // #cgo CFLAGS: -DALG_SHA512=ALG_YES
 // #cgo CFLAGS: -DMAX_CONTEXT_SIZE=1360
-// // Add flags to find the macOS Homebrew install location
+// // Flags to find OpenSSL installation on macOS (default Homebrew location)
 // #cgo darwin CFLAGS: -I/usr/local/opt/openssl/include
 // #cgo darwin LDFLAGS: -L/usr/local/opt/openssl/lib
-// // Add flags to find the Windows default install location
+// // Flags to find OpenSSL installation on Windows (default install location)
 // #cgo windows CFLAGS: -I"C:/Program Files/OpenSSL-Win64/include"
 // #cgo windows LDFLAGS: -L"C:/Program Files/OpenSSL-Win64/lib"
 // // Link against OpenSSL

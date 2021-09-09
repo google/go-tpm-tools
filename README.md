@@ -113,12 +113,15 @@ C_INCLUDE_PATH="$OPENSSL_PATH/include" LIBRARY_PATH="$OPENSSL_PATH/lib" go test 
 This solution modifies your local copy of the go-tpm-tools simulator source
 and removes the need to provide the paths on the command line.
 
-Remember to remove the lines from `simulator/internal/internal.go` before
-committing changes.
+Modify the `CFLAGS`/`LDFLAGS` options beginning with `#cgo darwin` or
+`#cgo windows` in `simulator/internal/internal.go` to point at your
+installation. This could look something like:
+```diff
+// #cgo darwin CFLAGS: -I $OPENSSL_PATH/include
+// #cgo darwin LDFLAGS: -L $OPENSSL_PATH/lib
 ```
-// #cgo CFLAGS: -I $OPENSSL_PATH/include
-// #cgo LDFLAGS: -L $OPENSSL_PATH/lib
-```
+Remember to revert your modifications to `simulator/internal/internal.go`
+before committing your changes.
 
 ## No TPM 1.2 support
 
