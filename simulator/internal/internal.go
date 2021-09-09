@@ -15,8 +15,10 @@ package internal
 // #cgo CFLAGS: -DVTPM=NO -DSIMULATION=NO -DUSE_DA_USED=NO
 // // Flags from ../ms-tpm-20-ref/TPMCmd/configure.ac
 // #cgo CFLAGS: -std=gnu11 -Wall -Wformat-security -fPIC
+// // Windows has linking errors when using stack protectors
+// #cgo !windows CFLAGS: -fstack-protector-all
 // // Silence known warnings from the reference code and CGO code.
-// #cgo CFLAGS: -Wno-missing-braces -Wno-empty-body -Wno-unused-variable
+// #cgo CFLAGS: -Wno-missing-braces -Wno-empty-body -Wno-unused-variable -Wno-maybe-uninitialized
 // // Link against the system OpenSSL
 // #cgo CFLAGS: -DDEBUG=YES
 // #cgo CFLAGS: -DSIMULATION=NO
