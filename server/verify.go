@@ -79,7 +79,7 @@ func VerifyAttestation(attestation *pb.Attestation, opts VerifyOpts) (*pb.Machin
 
 		// Parse the event log and replay the events against the provided PCRs
 		pcrs := quote.GetPcrs()
-		state, err := ParseAndReplayEventLog(attestation.GetEventLog(), pcrs)
+		state, err := ParseMachineState(attestation.GetEventLog(), pcrs)
 		if err != nil {
 			lastErr = fmt.Errorf("failed to validate the event log: %w", err)
 			continue

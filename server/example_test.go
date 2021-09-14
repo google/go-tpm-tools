@@ -8,7 +8,7 @@ import (
 	"github.com/google/go-tpm/tpm2"
 )
 
-func ExampleParseAndReplayEventLog() {
+func ExampleParseMachineState() {
 	// On client machine, generate the TPM quote.
 	// TODO: use real TPM.
 	simulator, err := simulator.Get()
@@ -31,7 +31,7 @@ func ExampleParseAndReplayEventLog() {
 
 	// Verifier replays the event log.
 	// TODO: validate the PCRs against a quote. See the Quote examle.
-	_, err = ParseAndReplayEventLog(evtLog, pcrs)
+	_, err = ParseMachineState(evtLog, pcrs)
 	if err != nil {
 		// TODO: handle parsing or replay error.
 		log.Fatalf("failed to read PCRs: %v", err)

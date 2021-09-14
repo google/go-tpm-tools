@@ -11,7 +11,7 @@ import (
 	"github.com/google/go-tpm/tpm2"
 )
 
-// ParseAndReplayEventLog parses a raw event log and replays the parsed event
+// ParseMachineState parses a raw event log and replays the parsed event
 // log against the given PCR values. It returns the corresponding MachineState
 // containing the events verified by particular PCR indexes/digests. An error is
 // returned if the replay for any PCR index does not match the provided value.
@@ -19,7 +19,7 @@ import (
 // It is the caller's responsibility to ensure that the passed PCR values can be
 // trusted. Users can establish trust in PCR values by either calling
 // client.ReadPCRs() themselves or by verifying the values via a PCR quote.
-func ParseAndReplayEventLog(rawEventLog []byte, pcrs *tpmpb.PCRs) (*pb.MachineState, error) {
+func ParseMachineState(rawEventLog []byte, pcrs *tpmpb.PCRs) (*pb.MachineState, error) {
 	events, err := parseReplayHelper(rawEventLog, pcrs)
 	if err != nil {
 		return nil, err
