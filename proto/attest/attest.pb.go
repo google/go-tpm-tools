@@ -238,7 +238,7 @@ type PlatformState struct {
 	//	*PlatformState_ScrtmVersionId
 	//	*PlatformState_GceVersion
 	Firmware isPlatformState_Firmware `protobuf_oneof:"firmware"`
-	// Set to NONE on non-GCE instances or non-Confidenital Shielded GCE instances
+	// Set to NONE on non-GCE instances or non-Confidential Shielded GCE instances
 	Technology GCEConfidentialTechnology `protobuf:"varint,3,opt,name=technology,proto3,enum=attest.GCEConfidentialTechnology" json:"technology,omitempty"`
 	// Only set for GCE instances
 	InstanceInfo *GCEInstanceInfo `protobuf:"bytes,4,opt,name=instance_info,json=instanceInfo,proto3" json:"instance_info,omitempty"`
@@ -340,7 +340,7 @@ type Event struct {
 	// The type of this event. Note that this value is not verified, so it should
 	// only be used as a hint during event parsing.
 	UntrustedType uint32 `protobuf:"varint,2,opt,name=untrusted_type,json=untrustedType,proto3" json:"untrusted_type,omitempty"`
-	// The raw data associtated to this event. The meaning of this data is
+	// The raw data associated to this event. The meaning of this data is
 	// specific to the type of the event.
 	Data []byte `protobuf:"bytes,3,opt,name=data,proto3" json:"data,omitempty"`
 	// The event digest actually extended into the TPM. This is often the hash of
@@ -428,7 +428,7 @@ type MachineState struct {
 	// create the PlatformState.
 	RawEvents []*Event `protobuf:"bytes,3,rep,name=raw_events,json=rawEvents,proto3" json:"raw_events,omitempty"`
 	// The hash algorithm used when verifying the Attestation. This indicates:
-	//   - which PCR bank was used for quote validation
+	//   - which PCR bank was used for for quote validation and event log replay
 	//   - the hash algorithm used to calculate event digests
 	Hash tpm.HashAlgo `protobuf:"varint,4,opt,name=hash,proto3,enum=tpm.HashAlgo" json:"hash,omitempty"`
 }
@@ -492,15 +492,15 @@ type PlatformPolicy struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	// If non-empty, the PlatformState's firmware.scrtm_version_id must appear
+	// If PlatformState.firmware contains a scrtm_version_id, it must appear
 	// in this list. For use with a GCE VM, minimum_gce_firmware_version is
-	// often a better altenative.
+	// often a better alternative.
 	AllowedScrtmVersionIds [][]byte `protobuf:"bytes,1,rep,name=allowed_scrtm_version_ids,json=allowedScrtmVersionIds,proto3" json:"allowed_scrtm_version_ids,omitempty"`
-	// If non-zero, the PlatformState's firmware.gce_version must be greater
-	// than or equal to this value. Currently, the max version is 1.
+	// If PlatformState.firmware contains a minimum_gce_firmware_version, it must
+	// be greater than or equal to this value. Currently, the max version is 1.
 	MinimumGceFirmwareVersion uint32 `protobuf:"varint,2,opt,name=minimum_gce_firmware_version,json=minimumGceFirmwareVersion,proto3" json:"minimum_gce_firmware_version,omitempty"`
-	// If not NONE, the PlatformState's technology must be at least as secure as
-	// the specified minimum_technology (i.e. AMD_SEV_ES > AMD_SEV).
+	// The PlatformState's technology must be at least as secure as
+	// the specified minimum_technology (i.e. AMD_SEV_ES > AMD_SEV > NONE).
 	MinimumTechnology GCEConfidentialTechnology `protobuf:"varint,3,opt,name=minimum_technology,json=minimumTechnology,proto3,enum=attest.GCEConfidentialTechnology" json:"minimum_technology,omitempty"`
 }
 
