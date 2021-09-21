@@ -85,10 +85,14 @@ func VerifyAttestation(attestation *pb.Attestation, opts VerifyOpts) (*pb.Machin
 			continue
 		}
 
-		// Verify the PCR hash algorithm
+		// Verify the PCR hash algorithm. We have this check here (instead of at
+		// the start of the loop) so that the user gets a "SHA-1 not supported"
+		// error only if allowing SHA-1 support would actually allow the log
+		// to be verified. This makes debugging failed verifications easier.
 		pcrHashAlg := tpm2.Algorithm(pcrs.GetHash())
 		if err = checkHashAlgSupported(pcrHashAlg, opts); err != nil {
-			return nil, fmt.Errorf("when verifying PCRs: %w", err)
+			lastErr = fmt.Errorf("when verifying PCRs: %w", err)
+			continue
 		}
 
 		return state, nil
