@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"crypto"
 	"errors"
 	"fmt"
 
@@ -24,11 +25,15 @@ func ParseMachineState(rawEventLog []byte, pcrs *tpmpb.PCRs) (*pb.MachineState, 
 	if err != nil {
 		return nil, err
 	}
+	// error is already checked in convertToAttestPcrs
+	cryptoHash, _ := tpm2.Algorithm(pcrs.GetHash()).Hash()
 
-	rawEvents := convertToPbEvents(pcrs.GetHash(), events)
-	platform, err := getPlatfromState(rawEvents)
+	rawEvents := convertToPbEvents(cryptoHash, events)
+	platform, err := getPlatfromState(cryptoHash, rawEvents)
 	if err != nil {
-		return nil, err
+		// If we had an error parsing the platform state, we don't want to fail
+		// the entire attestation. Instead, just don't include a platform state.
+		platform = &pb.PlatformState{}
 	}
 
 	return &pb.MachineState{
@@ -38,8 +43,65 @@ func ParseMachineState(rawEventLog []byte, pcrs *tpmpb.PCRs) (*pb.MachineState, 
 	}, nil
 }
 
-func getPlatfromState(events []*pb.Event) (*pb.PlatformState, error) {
-	return &pb.PlatformState{}, nil
+func getPlatfromState(hash crypto.Hash, events []*pb.Event) (*pb.PlatformState, error) {
+	// To address issues raised in https://github.com/google/go-attestation/blob/master/docs/event-log-disclosure.md
+	// We pre-compute the separator event hash, and check if the event type has
+	// been modified. We only trust events that come before a valid separator.
+	hasher := hash.New()
+	separatorData := []byte{0, 0, 0, 0}
+	hasher.Write(separatorData)
+	separatorDigest := hasher.Sum(nil)
+
+	var versionString []byte
+	var nonHostInfo []byte
+	for _, event := range events {
+		index := event.GetPcrIndex()
+		if index != 0 {
+			continue
+		}
+
+		if (event.GetUntrustedType() == Separator) || bytes.Equal(event.GetDigest(), separatorDigest) {
+			// Make sure we have a valid separator event
+			if !(event.GetUntrustedType() == Separator) {
+				return nil, fmt.Errorf("invalid separator type for PCR%d", index)
+			}
+			if !event.GetDigestVerified() {
+				return nil, fmt.Errorf("unverified separator digest for PCR%d", index)
+			}
+			if !bytes.Equal(event.GetData(), separatorData) {
+				return nil, fmt.Errorf("invalid separator data for PCR%d", index)
+			}
+			// Don't trust any PCR0 events after the separator
+			break
+		}
+
+		if event.GetUntrustedType() == SCRTMVersion {
+			if !event.GetDigestVerified() {
+				return nil, fmt.Errorf("invalid SCRTM version event for PCR%d", index)
+			}
+			versionString = event.GetData()
+		}
+
+		if event.GetUntrustedType() == NonhostInfo {
+			if !event.GetDigestVerified() {
+				return nil, fmt.Errorf("invalid Non-Host info event for PCR%d", index)
+			}
+			nonHostInfo = event.GetData()
+		}
+	}
+
+	state := &pb.PlatformState{}
+	if gceVersion, err := ParseGCEFirmwareVersion(versionString); err == nil {
+		state.Firmware = &pb.PlatformState_GceVersion{GceVersion: gceVersion}
+	} else {
+		state.Firmware = &pb.PlatformState_ScrtmVersionId{ScrtmVersionId: versionString}
+	}
+
+	if tech, err := ParseGCEConfidentialTechnology(nonHostInfo); err == nil {
+		state.Technology = tech
+	}
+
+	return state, nil
 }
 
 // Separate helper function so we can use attest.ParseSecurebootState without
@@ -81,10 +143,7 @@ func convertToAttestPcrs(pcrProto *tpmpb.PCRs) ([]attest.PCR, error) {
 	return attestPcrs, nil
 }
 
-func convertToPbEvents(alg tpmpb.HashAlgo, events []attest.Event) []*pb.Event {
-	// error is already checked in convertToAttestPcrs
-	hash, _ := tpm2.Algorithm(alg).Hash()
-
+func convertToPbEvents(hash crypto.Hash, events []attest.Event) []*pb.Event {
 	pbEvents := make([]*pb.Event, len(events))
 	for i, event := range events {
 		hasher := hash.New()
