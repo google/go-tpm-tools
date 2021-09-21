@@ -1,5 +1,6 @@
 module github.com/google/go-tpm-tools
 
+// Move to new-style build tags when updating to 1.17
 go 1.16
 
 require (
