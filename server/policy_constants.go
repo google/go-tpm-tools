@@ -91,6 +91,23 @@ func ConvertSCRTMVersionToGCEFirmwareVersion(version []byte) (uint32, error) {
 	return uint32(versionNum), nil
 }
 
+// ConvertGCEFirmwareVersionToSCRTMVersion creates the corresponding SCRTM
+// version string from a numerical GCE firmware version. The returned string
+// is UCS2 encoded with a null terminator. A version of 0 corresponds to an
+// empty string (representing old GCE VMs that just used an empty string).
+func ConvertGCEFirmwareVersionToSCRTMVersion(version uint32) []byte {
+	if version == 0 {
+		return []byte{}
+	}
+	versionString := GceVirtualFirmwarePrefix
+	for _, b := range []byte(strconv.Itoa(int(version))) {
+		// Convert ACSII to little-endian UCS-2
+		versionString = append(versionString, b, 0)
+	}
+	// Add the null terminator
+	return append(versionString, 0, 0)
+}
+
 // ParseGCENonHostInfo attempts to parse the Confidential VM
 // technology used by a GCE VM from the GCE Non-Host info event. This data
 // should come from a valid and verified EV_NONHOST_INFO event.
