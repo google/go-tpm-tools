@@ -44,7 +44,6 @@ func ParseMachineState(rawEventLog []byte, pcrs *tpmpb.PCRs) (*pb.MachineState, 
 }
 
 func getPlatfromState(hash crypto.Hash, events []*pb.Event) (*pb.PlatformState, error) {
-	// To address issues raised in https://github.com/google/go-attestation/blob/master/docs/event-log-disclosure.md
 	// We pre-compute the separator event hash, and check if the event type has
 	// been modified. We only trust events that come before a valid separator.
 	hasher := hash.New()
@@ -60,9 +59,12 @@ func getPlatfromState(hash crypto.Hash, events []*pb.Event) (*pb.PlatformState, 
 			continue
 		}
 
+		// Make sure we have a valid separator event, we check any event that
+		// claims to be a Separator or "looks like" a separator to prevent
+		// certain vulnerabilities in event parsing. For more info see:
+		// https://github.com/google/go-attestation/blob/master/docs/event-log-disclosure.md
 		if (event.GetUntrustedType() == Separator) || bytes.Equal(event.GetDigest(), separatorDigest) {
-			// Make sure we have a valid separator event
-			if !(event.GetUntrustedType() == Separator) {
+			if event.GetUntrustedType() != Separator {
 				return nil, fmt.Errorf("invalid separator type for PCR%d", index)
 			}
 			if !event.GetDigestVerified() {
