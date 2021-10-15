@@ -91,7 +91,7 @@ func getPlatfromState(hash crypto.Hash, events []*pb.Event) (*pb.PlatformState, 
 	}
 
 	state := &pb.PlatformState{}
-	if gceVersion, err := ParseGCEFirmwareVersion(versionString); err == nil {
+	if gceVersion, err := ConvertSCRTMVersionToGCEFirmwareVersion(versionString); err == nil {
 		state.Firmware = &pb.PlatformState_GceVersion{GceVersion: gceVersion}
 	} else {
 		state.Firmware = &pb.PlatformState_ScrtmVersionId{ScrtmVersionId: versionString}

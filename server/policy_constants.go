@@ -27,7 +27,7 @@ var (
 	// of the below signature (16 bytes), followed by a byte indicating whether
 	// it is confidential, followed by 15 reserved bytes.
 	GCENonHostInfoSignature = []byte("GCE NonHostInfo\x00")
-	// GceVirtualFirmwarePrefix is the UCS-2 encoded string
+	// GceVirtualFirmwarePrefix is the little-endian UCS-2 encoded string
 	// "GCE Virtual Firmware v" without a null terminator. All GCE firmware
 	// versions are UCS-2 encoded, start with this prefix, contain the firmware
 	// version encoded as an integer, and end with a null terminator.
@@ -60,10 +60,10 @@ var (
 	RevokedCiscoCert []byte
 )
 
-// ParseGCEFirmwareVersion attempts to parse the Firmware Version of a GCE VM
-// from the bytes of the version string of the SRTM. This data should come from
-// a valid and verified EV_S_CRTM_VERSION event.
-func ParseGCEFirmwareVersion(version []byte) (uint32, error) {
+// ConvertSCRTMVersionToGCEFirmwareVersion attempts to parse the Firmware
+// Version of a GCE VM from the bytes of the version string of the SCRTM. This
+// data should come from a valid and verified EV_S_CRTM_VERSION event.
+func ConvertSCRTMVersionToGCEFirmwareVersion(version []byte) (uint32, error) {
 	prefixLen := len(GceVirtualFirmwarePrefix)
 	if (len(version) <= prefixLen) || (len(version)%2 != 0) {
 		return 0, fmt.Errorf("length of GCE version (%d) is invalid", len(version))
