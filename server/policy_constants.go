@@ -121,5 +121,8 @@ func ParseGCENonHostInfo(nonHostInfo []byte) (pb.GCEConfidentialTechnology, erro
 		return pb.GCEConfidentialTechnology_NONE, errors.New("prefix for GCE Non-Host info is missing")
 	}
 	tech := nonHostInfo[prefixLen]
+	if tech > byte(pb.GCEConfidentialTechnology_AMD_SEV_ES) {
+		return pb.GCEConfidentialTechnology_NONE, fmt.Errorf("unknown GCE Confidential Technology: %d", tech)
+	}
 	return pb.GCEConfidentialTechnology(tech), nil
 }
