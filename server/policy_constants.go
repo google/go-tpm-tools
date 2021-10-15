@@ -91,10 +91,10 @@ func ParseGCEFirmwareVersion(version []byte) (uint32, error) {
 	return uint32(versionNum), nil
 }
 
-// ParseGCEConfidentialTechnology attempts to parse the Confidential VM
+// ParseGCENonHostInfo attempts to parse the Confidential VM
 // technology used by a GCE VM from the GCE Non-Host info event. This data
 // should come from a valid and verified EV_NONHOST_INFO event.
-func ParseGCEConfidentialTechnology(nonHostInfo []byte) (pb.GCEConfidentialTechnology, error) {
+func ParseGCENonHostInfo(nonHostInfo []byte) (pb.GCEConfidentialTechnology, error) {
 	prefixLen := len(GCENonHostInfoSignature)
 	if len(nonHostInfo) < (prefixLen + 1) {
 		return pb.GCEConfidentialTechnology_NONE, fmt.Errorf("length of GCE Non-Host info (%d) is too short", len(nonHostInfo))

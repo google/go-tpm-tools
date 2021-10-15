@@ -97,7 +97,7 @@ func getPlatfromState(hash crypto.Hash, events []*pb.Event) (*pb.PlatformState, 
 		state.Firmware = &pb.PlatformState_ScrtmVersionId{ScrtmVersionId: versionString}
 	}
 
-	if tech, err := ParseGCEConfidentialTechnology(nonHostInfo); err == nil {
+	if tech, err := ParseGCENonHostInfo(nonHostInfo); err == nil {
 		state.Technology = tech
 	}
 
