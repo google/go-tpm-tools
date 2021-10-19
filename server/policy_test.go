@@ -4,6 +4,21 @@ import (
 	"testing"
 
 	"github.com/google/go-tpm-tools/proto/attest"
+	pb "github.com/google/go-tpm-tools/proto/attest"
+)
+
+var (
+	defaultGcePolicy = pb.Policy{
+		Platform: &pb.PlatformPolicy{
+			MinimumGceFirmwareVersion: 1,
+			MinimumTechnology:         pb.GCEConfidentialTechnology_NONE,
+		},
+	}
+	defaultPhysicalPolicy = pb.Policy{
+		Platform: &pb.PlatformPolicy{
+			AllowedScrtmVersionIds: [][]byte{},
+		},
+	}
 )
 
 func TestNilPolicyAlwaysPasses(t *testing.T) {
@@ -38,5 +53,96 @@ func TestGCEFirmwareVersionSimple(t *testing.T) {
 	)
 	if ver != 23 {
 		t.Errorf("convert functions aren't inverses, got %d: %v", ver, err)
+	}
+}
+
+func TestEvaluatePolicy(t *testing.T) {
+	tests := []struct {
+		name   string
+		log    eventLog
+		policy *pb.Policy
+	}{
+		{"Debian10-SHA1", Debian10GCE, &defaultGcePolicy},
+		{"RHEL8-CryptoAgile", Rhel8GCE, &defaultGcePolicy},
+		{"Ubuntu1804AmdSev-CryptoAgile", UbuntuAmdSevGCE, &defaultGcePolicy},
+		{"Ubuntu2104NoDbx-CryptoAgile", Ubuntu2104NoDbxGCE, &defaultGcePolicy},
+		{"Ubuntu2104NoSecureBoot-CryptoAgile", Ubuntu2104NoSecureBootGCE, &defaultGcePolicy},
+		{"GlinuxNoSecureBoot-CryptoAgile", GlinuxNoSecureBootLaptop, &defaultPhysicalPolicy},
+		{"ArchLinuxWorkstation-CryptoAgile", ArchLinuxWorkstation, &defaultPhysicalPolicy},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			machineState, err := ParseMachineState(test.log.RawLog, test.log.Banks[0])
+			if err != nil {
+				t.Fatalf("failed to get machine state: %v", err)
+			}
+			if err := EvaluatePolicy(machineState, test.policy); err != nil {
+				t.Errorf("failed to apply policy: %v", err)
+			}
+		})
+	}
+}
+
+func TestEvaluatePolicySCRTM(t *testing.T) {
+	gLinuxPolicy := pb.Policy{
+		Platform: &pb.PlatformPolicy{
+			AllowedScrtmVersionIds: [][]byte{{0x00}},
+		},
+	}
+	machineState, err := ParseMachineState(GlinuxNoSecureBootLaptop.RawLog, GlinuxNoSecureBootLaptop.Banks[0])
+	if err != nil {
+		t.Fatalf("failed to get machine state: %v", err)
+	}
+	if err := EvaluatePolicy(machineState, &gLinuxPolicy); err != nil {
+		t.Errorf("failed to apply policy: %v", err)
+	}
+}
+
+func TestEvaluatePolicyFailure(t *testing.T) {
+	badGcePolicyVersion := pb.Policy{
+		Platform: &pb.PlatformPolicy{
+			MinimumGceFirmwareVersion: 2,
+			MinimumTechnology:         pb.GCEConfidentialTechnology_NONE,
+		},
+	}
+	badGcePolicySEV_ES := pb.Policy{
+		Platform: &pb.PlatformPolicy{
+			MinimumGceFirmwareVersion: 0,
+			MinimumTechnology:         pb.GCEConfidentialTechnology_AMD_SEV_ES,
+		},
+	}
+	badGcePolicySEV := pb.Policy{
+		Platform: &pb.PlatformPolicy{
+			MinimumGceFirmwareVersion: 0,
+			MinimumTechnology:         pb.GCEConfidentialTechnology_AMD_SEV_ES,
+		},
+	}
+	badPhysicalPolicy := pb.Policy{
+		Platform: &pb.PlatformPolicy{
+			AllowedScrtmVersionIds: [][]byte{{0x00}},
+		},
+	}
+	tests := []struct {
+		name   string
+		log    eventLog
+		policy *pb.Policy
+	}{
+		{"Debian10-SHA1", Debian10GCE, &badGcePolicyVersion},
+		{"Debian10-SHA1", Debian10GCE, &badGcePolicySEV},
+		{"Ubuntu1804AmdSev-CryptoAgile", UbuntuAmdSevGCE, &badGcePolicySEV_ES},
+		{"GlinuxNoSecureBoot-CryptoAgile", GlinuxNoSecureBootLaptop, &badPhysicalPolicy},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			machineState, err := ParseMachineState(test.log.RawLog, test.log.Banks[0])
+			if err != nil {
+				t.Fatalf("failed to get machine state: %v", err)
+			}
+			if err := EvaluatePolicy(machineState, test.policy); err == nil {
+				t.Errorf("expected policy failure; got success")
+			}
+		})
 	}
 }

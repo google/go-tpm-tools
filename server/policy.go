@@ -8,7 +8,7 @@ import (
 	pb "github.com/google/go-tpm-tools/proto/attest"
 )
 
-// EvaluatePolicy succeeds if the provied MachineState complies with the
+// EvaluatePolicy succeeds if the provided MachineState complies with the
 // provided policy. If the state does not pass the policy, the returned error
 // will describe in what way the state failed. See the Policy documentation for
 // more information about the specifics of different policies.
