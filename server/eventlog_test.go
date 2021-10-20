@@ -249,7 +249,6 @@ func TestParseEventLogs(t *testing.T) {
 		{UbuntuAmdSevGCE, "UbuntuAmdSevGCE"},
 		{Ubuntu2104NoDbxGCE, "Ubuntu2104NoDbxGCE"},
 		{Ubuntu2104NoSecureBootGCE, "Ubuntu2104NoSecureBootGCE"},
-		{GlinuxNoSecureBootLaptop, "GlinuxNoSecureBootLaptop"},
 		{ArchLinuxWorkstation, "ArchLinuxWorkstation"},
 	}
 

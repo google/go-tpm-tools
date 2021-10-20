@@ -31,9 +31,14 @@ func ParseMachineState(rawEventLog []byte, pcrs *tpmpb.PCRs) (*pb.MachineState, 
 	rawEvents := convertToPbEvents(cryptoHash, events)
 	platform, err := getPlatformState(cryptoHash, rawEvents)
 	if err != nil {
-		// If we had an error parsing the platform state, we don't want to fail
-		// the entire attestation. Instead, just don't include a platform state.
-		platform = &pb.PlatformState{}
+		// Eventually, we want to support a partial failure model.
+		// The MachineState can contain empty {Platform,SecureBoot}States when
+		// those individually fail parsing. The error will contain suberrors
+		// for the fields in MachineState that failed parsing.
+		//
+		// For now, since the MachineState only comprises PlatformState, we
+		// return an empty MachineState with empty platform state and the error.
+		return &pb.MachineState{}, err
 	}
 
 	return &pb.MachineState{
@@ -72,14 +77,15 @@ func getPlatformState(hash crypto.Hash, events []*pb.Event) (*pb.PlatformState, 
 		if index != 0 {
 			continue
 		}
+		evtType := event.GetUntrustedType()
 
 		// Make sure we have a valid separator event, we check any event that
 		// claims to be a Separator or "looks like" a separator to prevent
 		// certain vulnerabilities in event parsing. For more info see:
 		// https://github.com/google/go-attestation/blob/master/docs/event-log-disclosure.md
 		if (event.GetUntrustedType() == Separator) || contains(separatorDigests, event.GetDigest()) {
-			if event.GetUntrustedType() != Separator {
-				return nil, fmt.Errorf("invalid separator type for PCR%d", index)
+			if evtType != Separator {
+				return nil, fmt.Errorf("PCR%d event contains separator data but non-separator type %d", index, evtType)
 			}
 			if !event.GetDigestVerified() {
 				return nil, fmt.Errorf("unverified separator digest for PCR%d", index)

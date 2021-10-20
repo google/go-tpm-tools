@@ -66,7 +66,6 @@ func TestEvaluatePolicy(t *testing.T) {
 		{"Ubuntu1804AmdSev-CryptoAgile", UbuntuAmdSevGCE, &defaultGcePolicy},
 		{"Ubuntu2104NoDbx-CryptoAgile", Ubuntu2104NoDbxGCE, &defaultGcePolicy},
 		{"Ubuntu2104NoSecureBoot-CryptoAgile", Ubuntu2104NoSecureBootGCE, &defaultGcePolicy},
-		{"GlinuxNoSecureBoot-CryptoAgile", GlinuxNoSecureBootLaptop, &defaultPhysicalPolicy},
 		{"ArchLinuxWorkstation-CryptoAgile", ArchLinuxWorkstation, &defaultPhysicalPolicy},
 	}
 
@@ -131,7 +130,7 @@ func TestEvaluatePolicyFailure(t *testing.T) {
 		{"Debian10-SHA1", Debian10GCE, &badGcePolicyVersion},
 		{"Debian10-SHA1", Debian10GCE, &badGcePolicySEV},
 		{"Ubuntu1804AmdSev-CryptoAgile", UbuntuAmdSevGCE, &badGcePolicySEVES},
-		{"GlinuxNoSecureBoot-CryptoAgile", GlinuxNoSecureBootLaptop, &badPhysicalPolicy},
+		{"ArchLinuxWorkstation-CryptoAgile", ArchLinuxWorkstation, &badPhysicalPolicy},
 	}
 
 	for _, test := range tests {
