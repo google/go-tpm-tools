@@ -85,16 +85,17 @@ func TestEvaluatePolicy(t *testing.T) {
 }
 
 func TestEvaluatePolicySCRTM(t *testing.T) {
-	gLinuxPolicy := pb.Policy{
+	archLinuxWorkstationSCRTMPolicy := pb.Policy{
 		Platform: &pb.PlatformPolicy{
-			AllowedScrtmVersionIds: [][]byte{{0x00}},
+			AllowedScrtmVersionIds: [][]byte{{0x1e, 0xfb, 0x6b, 0x54, 0x0c, 0x1d, 0x55, 0x40, 0xa4, 0xad,
+				0x4e, 0xf4, 0xbf, 0x17, 0xb8, 0x3a}},
 		},
 	}
-	machineState, err := ParseMachineState(GlinuxNoSecureBootLaptop.RawLog, GlinuxNoSecureBootLaptop.Banks[0])
+	machineState, err := ParseMachineState(ArchLinuxWorkstation.RawLog, ArchLinuxWorkstation.Banks[0])
 	if err != nil {
 		t.Fatalf("failed to get machine state: %v", err)
 	}
-	if err := EvaluatePolicy(machineState, &gLinuxPolicy); err != nil {
+	if err := EvaluatePolicy(machineState, &archLinuxWorkstationSCRTMPolicy); err != nil {
 		t.Errorf("failed to apply policy: %v", err)
 	}
 }
