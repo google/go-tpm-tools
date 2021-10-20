@@ -29,7 +29,7 @@ func ParseMachineState(rawEventLog []byte, pcrs *tpmpb.PCRs) (*pb.MachineState, 
 	cryptoHash, _ := tpm2.Algorithm(pcrs.GetHash()).Hash()
 
 	rawEvents := convertToPbEvents(cryptoHash, events)
-	platform, err := getPlatfromState(cryptoHash, rawEvents)
+	platform, err := getPlatformState(cryptoHash, rawEvents)
 	if err != nil {
 		// If we had an error parsing the platform state, we don't want to fail
 		// the entire attestation. Instead, just don't include a platform state.
@@ -43,7 +43,7 @@ func ParseMachineState(rawEventLog []byte, pcrs *tpmpb.PCRs) (*pb.MachineState, 
 	}, nil
 }
 
-func getPlatfromState(hash crypto.Hash, events []*pb.Event) (*pb.PlatformState, error) {
+func getPlatformState(hash crypto.Hash, events []*pb.Event) (*pb.PlatformState, error) {
 	// We pre-compute the separator event hash, and check if the event type has
 	// been modified. We only trust events that come before a valid separator.
 	hasher := hash.New()
