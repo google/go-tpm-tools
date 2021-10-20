@@ -43,13 +43,27 @@ func ParseMachineState(rawEventLog []byte, pcrs *tpmpb.PCRs) (*pb.MachineState, 
 	}, nil
 }
 
+func contains(set [][]byte, value []byte) bool {
+	for _, setItem := range set {
+		if bytes.Equal(value, setItem) {
+			return true
+		}
+	}
+	return false
+}
+
 func getPlatformState(hash crypto.Hash, events []*pb.Event) (*pb.PlatformState, error) {
 	// We pre-compute the separator event hash, and check if the event type has
 	// been modified. We only trust events that come before a valid separator.
 	hasher := hash.New()
-	separatorData := []byte{0, 0, 0, 0}
-	hasher.Write(separatorData)
-	separatorDigest := hasher.Sum(nil)
+	// From the PC Client Firmware Profile spec, on the separator event:
+	// The event field MUST contain the hex value 00000000h or FFFFFFFFh.
+	separatorData := [][]byte{{0, 0, 0, 0}, {0xff, 0xff, 0xff, 0xff}}
+	separatorDigests := make([][]byte, len(separatorData))
+	for _, value := range separatorData {
+		hasher.Write(value)
+		separatorDigests = append(separatorDigests, hasher.Sum(nil))
+	}
 
 	var versionString []byte
 	var nonHostInfo []byte
@@ -63,14 +77,14 @@ func getPlatformState(hash crypto.Hash, events []*pb.Event) (*pb.PlatformState, 
 		// claims to be a Separator or "looks like" a separator to prevent
 		// certain vulnerabilities in event parsing. For more info see:
 		// https://github.com/google/go-attestation/blob/master/docs/event-log-disclosure.md
-		if (event.GetUntrustedType() == Separator) || bytes.Equal(event.GetDigest(), separatorDigest) {
+		if (event.GetUntrustedType() == Separator) || contains(separatorDigests, event.GetDigest()) {
 			if event.GetUntrustedType() != Separator {
 				return nil, fmt.Errorf("invalid separator type for PCR%d", index)
 			}
 			if !event.GetDigestVerified() {
 				return nil, fmt.Errorf("unverified separator digest for PCR%d", index)
 			}
-			if !bytes.Equal(event.GetData(), separatorData) {
+			if !contains(separatorData, event.GetData()) {
 				return nil, fmt.Errorf("invalid separator data for PCR%d", index)
 			}
 			// Don't trust any PCR0 events after the separator

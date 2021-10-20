@@ -4,18 +4,17 @@ import (
 	"testing"
 
 	"github.com/google/go-tpm-tools/proto/attest"
-	pb "github.com/google/go-tpm-tools/proto/attest"
 )
 
 var (
-	defaultGcePolicy = pb.Policy{
-		Platform: &pb.PlatformPolicy{
+	defaultGcePolicy = attest.Policy{
+		Platform: &attest.PlatformPolicy{
 			MinimumGceFirmwareVersion: 1,
-			MinimumTechnology:         pb.GCEConfidentialTechnology_NONE,
+			MinimumTechnology:         attest.GCEConfidentialTechnology_NONE,
 		},
 	}
-	defaultPhysicalPolicy = pb.Policy{
-		Platform: &pb.PlatformPolicy{
+	defaultPhysicalPolicy = attest.Policy{
+		Platform: &attest.PlatformPolicy{
 			AllowedScrtmVersionIds: [][]byte{},
 		},
 	}
@@ -60,7 +59,7 @@ func TestEvaluatePolicy(t *testing.T) {
 	tests := []struct {
 		name   string
 		log    eventLog
-		policy *pb.Policy
+		policy *attest.Policy
 	}{
 		{"Debian10-SHA1", Debian10GCE, &defaultGcePolicy},
 		{"RHEL8-CryptoAgile", Rhel8GCE, &defaultGcePolicy},
@@ -85,8 +84,8 @@ func TestEvaluatePolicy(t *testing.T) {
 }
 
 func TestEvaluatePolicySCRTM(t *testing.T) {
-	archLinuxWorkstationSCRTMPolicy := pb.Policy{
-		Platform: &pb.PlatformPolicy{
+	archLinuxWorkstationSCRTMPolicy := attest.Policy{
+		Platform: &attest.PlatformPolicy{
 			AllowedScrtmVersionIds: [][]byte{{0x1e, 0xfb, 0x6b, 0x54, 0x0c, 0x1d, 0x55, 0x40, 0xa4, 0xad,
 				0x4e, 0xf4, 0xbf, 0x17, 0xb8, 0x3a}},
 		},
@@ -101,37 +100,37 @@ func TestEvaluatePolicySCRTM(t *testing.T) {
 }
 
 func TestEvaluatePolicyFailure(t *testing.T) {
-	badGcePolicyVersion := pb.Policy{
-		Platform: &pb.PlatformPolicy{
+	badGcePolicyVersion := attest.Policy{
+		Platform: &attest.PlatformPolicy{
 			MinimumGceFirmwareVersion: 2,
-			MinimumTechnology:         pb.GCEConfidentialTechnology_NONE,
+			MinimumTechnology:         attest.GCEConfidentialTechnology_NONE,
 		},
 	}
-	badGcePolicySEV_ES := pb.Policy{
-		Platform: &pb.PlatformPolicy{
+	badGcePolicySEVES := attest.Policy{
+		Platform: &attest.PlatformPolicy{
 			MinimumGceFirmwareVersion: 0,
-			MinimumTechnology:         pb.GCEConfidentialTechnology_AMD_SEV_ES,
+			MinimumTechnology:         attest.GCEConfidentialTechnology_AMD_SEV_ES,
 		},
 	}
-	badGcePolicySEV := pb.Policy{
-		Platform: &pb.PlatformPolicy{
+	badGcePolicySEV := attest.Policy{
+		Platform: &attest.PlatformPolicy{
 			MinimumGceFirmwareVersion: 0,
-			MinimumTechnology:         pb.GCEConfidentialTechnology_AMD_SEV_ES,
+			MinimumTechnology:         attest.GCEConfidentialTechnology_AMD_SEV_ES,
 		},
 	}
-	badPhysicalPolicy := pb.Policy{
-		Platform: &pb.PlatformPolicy{
+	badPhysicalPolicy := attest.Policy{
+		Platform: &attest.PlatformPolicy{
 			AllowedScrtmVersionIds: [][]byte{{0x00}},
 		},
 	}
 	tests := []struct {
 		name   string
 		log    eventLog
-		policy *pb.Policy
+		policy *attest.Policy
 	}{
 		{"Debian10-SHA1", Debian10GCE, &badGcePolicyVersion},
 		{"Debian10-SHA1", Debian10GCE, &badGcePolicySEV},
-		{"Ubuntu1804AmdSev-CryptoAgile", UbuntuAmdSevGCE, &badGcePolicySEV_ES},
+		{"Ubuntu1804AmdSev-CryptoAgile", UbuntuAmdSevGCE, &badGcePolicySEVES},
 		{"GlinuxNoSecureBoot-CryptoAgile", GlinuxNoSecureBootLaptop, &badPhysicalPolicy},
 	}
 
