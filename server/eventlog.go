@@ -83,7 +83,7 @@ func getPlatformState(hash crypto.Hash, events []*pb.Event) (*pb.PlatformState, 
 		// claims to be a Separator or "looks like" a separator to prevent
 		// certain vulnerabilities in event parsing. For more info see:
 		// https://github.com/google/go-attestation/blob/master/docs/event-log-disclosure.md
-		if (event.GetUntrustedType() == Separator) || contains(separatorDigests, event.GetDigest()) {
+		if (evtType == Separator) || contains(separatorDigests, event.GetDigest()) {
 			if evtType != Separator {
 				return nil, fmt.Errorf("PCR%d event contains separator data but non-separator type %d", index, evtType)
 			}
@@ -97,14 +97,14 @@ func getPlatformState(hash crypto.Hash, events []*pb.Event) (*pb.PlatformState, 
 			break
 		}
 
-		if event.GetUntrustedType() == SCRTMVersion {
+		if evtType == SCRTMVersion {
 			if !event.GetDigestVerified() {
 				return nil, fmt.Errorf("invalid SCRTM version event for PCR%d", index)
 			}
 			versionString = event.GetData()
 		}
 
-		if event.GetUntrustedType() == NonhostInfo {
+		if evtType == NonhostInfo {
 			if !event.GetDigestVerified() {
 				return nil, fmt.Errorf("invalid Non-Host info event for PCR%d", index)
 			}
