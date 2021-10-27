@@ -1,7 +1,9 @@
 package server
 
 import (
+	"crypto"
 	"crypto/rand"
+	"crypto/rsa"
 	"crypto/sha256"
 	"fmt"
 	"io"
@@ -175,5 +177,106 @@ func TestVerifyUsingDifferentPCR(t *testing.T) {
 	err = internal.VerifyQuote(quote, ak.PublicKey(), nonce)
 	if err == nil {
 		t.Errorf("Verify should fail as Verify read a different PCR")
+	}
+}
+
+func TestVerifyBasicAttestation(t *testing.T) {
+	rwc := test.GetTPM(t)
+	defer client.CheckedClose(t, rwc)
+
+	ak, err := client.AttestationKeyRSA(rwc)
+	if err != nil {
+		t.Fatalf("failed to generate AK: %v", err)
+	}
+	defer ak.Close()
+
+	nonce := []byte("super secret nonce")
+	attestation, err := ak.Attest(client.AttestOpts{Nonce: nonce})
+	if err != nil {
+		t.Fatalf("failed to attest: %v", err)
+	}
+
+	if _, err := VerifyAttestation(attestation, VerifyOpts{
+		Nonce:      nonce,
+		TrustedAKs: []crypto.PublicKey{ak.PublicKey()},
+	}); err != nil {
+		t.Errorf("failed to verify: %v", err)
+	}
+
+	if _, err := VerifyAttestation(attestation, VerifyOpts{
+		Nonce:      append(nonce, 0),
+		TrustedAKs: []crypto.PublicKey{ak.PublicKey()},
+	}); err == nil {
+		t.Error("using the wrong nonce should make verification fail")
+	}
+
+	if _, err := VerifyAttestation(attestation, VerifyOpts{
+		Nonce: nonce,
+	}); err == nil {
+		t.Error("using no trusted AKs should make verification fail")
+	}
+
+	priv, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := VerifyAttestation(attestation, VerifyOpts{
+		Nonce:      nonce,
+		TrustedAKs: []crypto.PublicKey{priv.Public()},
+	}); err == nil {
+		t.Error("using a random trusted AKs should make verification fail")
+	}
+}
+
+func TestVerifySHA1Attestation(t *testing.T) {
+	rwc := test.GetTPM(t)
+	defer client.CheckedClose(t, rwc)
+
+	ak, err := client.AttestationKeyRSA(rwc)
+	if err != nil {
+		t.Fatalf("failed to generate AK: %v", err)
+	}
+	defer ak.Close()
+
+	nonce := []byte("super secret nonce")
+	attestation, err := ak.Attest(client.AttestOpts{Nonce: nonce})
+	if err != nil {
+		t.Fatalf("failed to attest: %v", err)
+	}
+
+	// We should get a SHA-256 state, even if we allow SHA-1
+	opts := VerifyOpts{
+		Nonce:      nonce,
+		TrustedAKs: []crypto.PublicKey{ak.PublicKey()},
+		AllowSHA1:  true,
+	}
+	state, err := VerifyAttestation(attestation, opts)
+	if err != nil {
+		t.Errorf("failed to verify: %v", err)
+	}
+	h := tpm2.Algorithm(state.GetHash())
+	if h != tpm2.AlgSHA256 {
+		t.Errorf("expected SHA-256 state, got: %v", h)
+	}
+
+	// Now we mess up the SHA-256 state to force SHA-1 fallback
+	for _, quote := range attestation.GetQuotes() {
+		if tpm2.Algorithm(quote.GetPcrs().GetHash()) == tpm2.AlgSHA256 {
+			quote.Quote = nil
+		}
+	}
+	state, err = VerifyAttestation(attestation, opts)
+	if err != nil {
+		t.Errorf("failed to verify: %v", err)
+	}
+	h = tpm2.Algorithm(state.GetHash())
+	if h != tpm2.AlgSHA1 {
+		t.Errorf("expected SHA-1 state, got: %v", h)
+	}
+
+	// SHA-1 fallback can then be disabled
+	opts.AllowSHA1 = false
+	if _, err = VerifyAttestation(attestation, opts); err == nil {
+		t.Error("expected attestation to fail with only SHA-1")
 	}
 }

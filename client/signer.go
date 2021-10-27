@@ -9,6 +9,7 @@ import (
 	"math/big"
 	"sync"
 
+	"github.com/google/go-tpm-tools/internal"
 	"github.com/google/go-tpm/tpm2"
 )
 
@@ -77,7 +78,7 @@ func (k *Key) GetSigner() (crypto.Signer, error) {
 	if k.hasAttribute(tpm2.FlagRestricted) {
 		return nil, fmt.Errorf("restricted keys are not supported")
 	}
-	hashAlg, err := getSigningHashAlg(k)
+	hashAlg, err := internal.GetSigningHashAlg(k.pubArea)
 	if err != nil {
 		return nil, err
 	}
@@ -94,7 +95,7 @@ func (k *Key) GetSigner() (crypto.Signer, error) {
 // on a restriced key, the TPM itself will hash the provided data, failing the
 // signing operation if the data begins with TPM_GENERATED_VALUE.
 func (k *Key) SignData(data []byte) ([]byte, error) {
-	hashAlg, err := getSigningHashAlg(k)
+	hashAlg, err := internal.GetSigningHashAlg(k.pubArea)
 	if err != nil {
 		return nil, err
 	}
@@ -128,32 +129,6 @@ func (k *Key) SignData(data []byte) ([]byte, error) {
 		return nil, err
 	}
 	return getSignature(sig)
-}
-
-func getSigningHashAlg(k *Key) (tpm2.Algorithm, error) {
-	if !k.hasAttribute(tpm2.FlagSign) {
-		return tpm2.AlgNull, fmt.Errorf("non-signing key used with signing operation")
-	}
-
-	var sigScheme *tpm2.SigScheme
-	switch k.pubArea.Type {
-	case tpm2.AlgRSA:
-		sigScheme = k.pubArea.RSAParameters.Sign
-	case tpm2.AlgECC:
-		sigScheme = k.pubArea.ECCParameters.Sign
-	default:
-		return tpm2.AlgNull, fmt.Errorf("unsupported key type: %v", k.pubArea.Type)
-	}
-
-	if sigScheme == nil {
-		return tpm2.AlgNull, fmt.Errorf("unsupported null signing scheme")
-	}
-	switch sigScheme.Alg {
-	case tpm2.AlgRSAPSS, tpm2.AlgRSASSA, tpm2.AlgECDSA:
-		return sigScheme.Hash, nil
-	default:
-		return tpm2.AlgNull, fmt.Errorf("unsupported signing algorithm: %v", sigScheme.Alg)
-	}
 }
 
 func getSignature(sig *tpm2.Signature) ([]byte, error) {

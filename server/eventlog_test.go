@@ -160,13 +160,12 @@ var Ubuntu2104NoSecureBootGCE = eventLog{
 }
 
 // Agile Event Log from Alex's gLinux laptop with secure boot disabled
-// No PCR[0] as replay is currently broken for H-CRTM measurement
 var GlinuxNoSecureBootLaptop = eventLog{
 	RawLog: test.GlinuxAlexEventLog,
 	Banks: []*pb.PCRs{{
 		Hash: pb.HashAlgo_SHA1,
 		Pcrs: map[uint32][]byte{
-			// 0: decodeHex("faf6e04e58687bbedd28cb902b3516b0cf4b79dd"),
+			0: decodeHex("29d236609a5f9cc6912af44ba5f57b13a17c8a84"),
 			1: decodeHex("db16852a369b2503d6cc6c0007501c837dbe1170"),
 			2: decodeHex("0c8ef58d40b8cd1fe15f6b45fc1b385dd251eec0"),
 			3: decodeHex("b2a83b0ebf2f8374299a5b2bdfc31ea955ad7236"),
@@ -178,7 +177,7 @@ var GlinuxNoSecureBootLaptop = eventLog{
 	}, {
 		Hash: pb.HashAlgo_SHA256,
 		Pcrs: map[uint32][]byte{
-			// 0: decodeHex("1f0d16fee72999408656db5e4ac8ea0ce0c43095b8f6e439fef380958bc74295"),
+			0: decodeHex("0e5ea849d7647a1ac1becc096fee4df98f00f8015f934afadaab0b8aa20b38a5"),
 			1: decodeHex("9750400838980c9419764b9cf19c975c0e159c18ebe21cb897c6e834a8d8d433"),
 			2: decodeHex("970096d49105b0404999173e49c3f6b8597b9c4c5ff6a9e364b55ce01037578e"),
 			3: decodeHex("3d458cfe55cc03ea1f443f1562beec8df51c75e14a9fcf9a7234a13f198e7969"),
@@ -250,7 +249,6 @@ func TestParseEventLogs(t *testing.T) {
 		{UbuntuAmdSevGCE, "UbuntuAmdSevGCE"},
 		{Ubuntu2104NoDbxGCE, "Ubuntu2104NoDbxGCE"},
 		{Ubuntu2104NoSecureBootGCE, "Ubuntu2104NoSecureBootGCE"},
-		{GlinuxNoSecureBootLaptop, "GlinuxNoSecureBootLaptop"},
 		{ArchLinuxWorkstation, "ArchLinuxWorkstation"},
 	}
 
@@ -260,8 +258,8 @@ func TestParseEventLogs(t *testing.T) {
 			hashName := pb.HashAlgo_name[int32(bank.Hash)]
 			subtestName := fmt.Sprintf("%s-%s", log.name, hashName)
 			t.Run(subtestName, func(t *testing.T) {
-				if _, err := ParseAndVerifyEventLog(rawLog, bank); err != nil {
-					t.Errorf("failed to parse and verify log: %v", err)
+				if _, err := ParseMachineState(rawLog, bank); err != nil {
+					t.Errorf("failed to parse and replay log: %v", err)
 				}
 			})
 		}
@@ -283,8 +281,8 @@ func TestSystemParseEventLog(t *testing.T) {
 		t.Fatalf("failed to read PCRs: %v", err)
 	}
 
-	if _, err = ParseAndVerifyEventLog(evtLog, pcrs); err != nil {
-		t.Errorf("failed to parse and verify log: %v", err)
+	if _, err = ParseMachineState(evtLog, pcrs); err != nil {
+		t.Errorf("failed to parse and replay log: %v", err)
 	}
 }
 

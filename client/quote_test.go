@@ -127,7 +127,7 @@ func TestAttest(t *testing.T) {
 			}
 			defer ak.Close()
 
-			attestation, err := ak.Attest([]byte("some nonce"), nil)
+			attestation, err := ak.Attest(client.AttestOpts{[]byte("some nonce")})
 			if !key.shouldSucceed {
 				if err == nil {
 					t.Error("expected failure when calling Attest")

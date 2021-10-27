@@ -118,7 +118,7 @@ func ExampleKey_Attest() {
 	}
 	defer ak.Close()
 
-	attestation, err := ak.Attest(nonce, nil)
+	attestation, err := ak.Attest(client.AttestOpts{nonce})
 	if err != nil {
 		log.Fatalf("failed to attest: %v", err)
 	}
@@ -137,13 +137,13 @@ func ExampleKey_Attest() {
 	// On verifier, replay event log.
 	// TODO: decide which hash algorithm to use in the quotes. SHA1 is
 	// typically undesirable but is the only event log option on some distros.
-	_, err = server.ParseAndVerifyEventLog(attestation.EventLog, attestation.Quotes[0].Pcrs)
+	_, err = server.ParseMachineState(attestation.EventLog, attestation.Quotes[0].Pcrs)
 	if err != nil {
 		// TODO: handle parsing or replay error.
 		log.Fatalf("failed to read PCRs: %v", err)
 	}
 	fmt.Println(attestation)
-	// TODO: use events output of ParseAndVerifyEventLog.
+	// TODO: use events output of ParseMachineState.
 }
 
 func Example_sealAndUnseal() {
