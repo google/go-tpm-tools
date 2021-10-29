@@ -5,12 +5,29 @@ import (
 	"crypto"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/google/go-attestation/attest"
 	pb "github.com/google/go-tpm-tools/proto/attest"
 	tpmpb "github.com/google/go-tpm-tools/proto/tpm"
 	"github.com/google/go-tpm/tpm2"
 )
+
+type MachineStateError struct {
+	Errors []error
+}
+
+func (msErr *MachineStateError) Error() string {
+	if msErr == nil || len(msErr.Errors) == 0 {
+		return ""
+	}
+	var sb strings.Builder
+	for _, err := range msErr.Errors {
+		sb.WriteString("\n")
+		sb.WriteString(err.Error())
+	}
+	return "failed to parse MachineState:" + sb.String()
+}
 
 // ParseMachineState parses a raw event log and replays the parsed event
 // log against the given PCR values. It returns the corresponding MachineState
