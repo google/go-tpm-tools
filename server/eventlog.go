@@ -64,7 +64,7 @@ func getPlatformState(hash crypto.Hash, events []*pb.Event) (*pb.PlatformState, 
 	// From the PC Client Firmware Profile spec, on the separator event:
 	// The event field MUST contain the hex value 00000000h or FFFFFFFFh.
 	separatorData := [][]byte{{0, 0, 0, 0}, {0xff, 0xff, 0xff, 0xff}}
-	separatorDigests := make([][]byte, len(separatorData))
+	separatorDigests := make([][]byte, 0, len(separatorData))
 	for _, value := range separatorData {
 		hasher.Write(value)
 		separatorDigests = append(separatorDigests, hasher.Sum(nil))
