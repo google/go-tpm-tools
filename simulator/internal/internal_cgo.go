@@ -1,7 +1,6 @@
 //go:build cgo
 // +build cgo
 
-// Package internal provides low-level bindings to the Microsoft TPM2 simulator.
 package internal
 
 // // Directories containing .h files in the simulator source
