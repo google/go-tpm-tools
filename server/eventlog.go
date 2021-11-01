@@ -5,7 +5,6 @@ import (
 	"crypto"
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/google/certificate-transparency-go/x509"
 	"github.com/google/go-attestation/attest"
@@ -13,22 +12,6 @@ import (
 	tpmpb "github.com/google/go-tpm-tools/proto/tpm"
 	"github.com/google/go-tpm/tpm2"
 )
-
-type MachineStateError struct {
-	Errors []error
-}
-
-func (msErr *MachineStateError) Error() string {
-	if msErr == nil || len(msErr.Errors) == 0 {
-		return ""
-	}
-	var sb strings.Builder
-	for _, err := range msErr.Errors {
-		sb.WriteString("\n")
-		sb.WriteString(err.Error())
-	}
-	return "failed to parse MachineState:" + sb.String()
-}
 
 // ParseMachineState parses a raw event log and replays the parsed event
 // log against the given PCR values. It returns the corresponding MachineState
@@ -44,7 +27,7 @@ func (msErr *MachineStateError) Error() string {
 // trusted. Users can establish trust in PCR values by either calling
 // client.ReadPCRs() themselves or by verifying the values via a PCR quote.
 func ParseMachineState(rawEventLog []byte, pcrs *tpmpb.PCRs) (*pb.MachineState, error) {
-	var ret MachineStateError
+	var errors []error
 	events, err := parseReplayHelper(rawEventLog, pcrs)
 	if err != nil {
 		return nil, err
@@ -55,11 +38,11 @@ func ParseMachineState(rawEventLog []byte, pcrs *tpmpb.PCRs) (*pb.MachineState, 
 	rawEvents := convertToPbEvents(cryptoHash, events)
 	platform, err := getPlatformState(cryptoHash, rawEvents)
 	if err != nil {
-		ret.Errors = append(ret.Errors, err)
+		errors = append(errors, err)
 	}
 	sbState, err := getSecureBootState(events)
 	if err != nil {
-		ret.Errors = append(ret.Errors, err)
+		errors = append(errors, err)
 	}
 
 	return &pb.MachineState{
@@ -67,7 +50,7 @@ func ParseMachineState(rawEventLog []byte, pcrs *tpmpb.PCRs) (*pb.MachineState, 
 		SecureBoot: sbState,
 		RawEvents:  rawEvents,
 		Hash:       pcrs.GetHash(),
-	}, &ret
+	}, createGroupedError("failed to fully parse MachineState:", errors)
 }
 
 func contains(set [][]byte, value []byte) bool {

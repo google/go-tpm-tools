@@ -294,22 +294,3 @@ func decodeHex(hexStr string) []byte {
 	}
 	return bytes
 }
-
-func TestMachineStateError(t *testing.T) {
-	var ms MachineStateError
-	ms.Errors = append(ms.Errors, errors.New("error1"))
-	ms.Errors = append(ms.Errors, errors.New("error2"))
-	ms.Errors = append(ms.Errors, fmt.Errorf("fmted error"))
-	ms.Errors = append(ms.Errors, fmt.Errorf("wrapped: %w", errors.New("error3")))
-
-	expected := `failed to parse MachineState:
-error1
-error2
-fmted error
-wrapped: error3`
-
-	if ms.Error() != expected {
-		t.Errorf("error string output (%s) did not match expected (%s)",
-			ms.Error(), expected)
-	}
-}
