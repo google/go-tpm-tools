@@ -62,7 +62,7 @@ func SetSeeds(r io.Reader) {
 	r.Read(C.gp.PPSeed[2:])
 }
 
-// Reset simulates toggling the power the the TPM. If forceManufacture is true,
+// Reset simulates toggling the power the TPM. If forceManufacture is true,
 // the reset will be a manufacturer reset.
 func Reset(forceManufacture bool) {
 	C._plat__Reset(C.bool(forceManufacture))
