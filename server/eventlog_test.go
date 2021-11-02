@@ -2,7 +2,6 @@ package server
 
 import (
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"testing"
 
@@ -16,6 +15,8 @@ type eventLog struct {
 	RawLog []byte
 	Banks  []*pb.PCRs
 }
+
+var archLinuxBadSecureBoot string = "SecureBoot data len is 0, expected 1"
 
 // Agile Event Log from a RHEL 8 GCE instance with Secure Boot enabled
 var Rhel8GCE = eventLog{
@@ -241,16 +242,24 @@ var Debian10GCE = eventLog{
 }
 
 func TestParseEventLogs(t *testing.T) {
+	sbatErrorStr := "asn1: structure error: tags don't match (16 vs {class:0 tag:24 length:10 isCompound:true})"
 	logs := []struct {
 		eventLog
 		name string
+		// This field handles known issues with event log parsing or bad event
+		// logs.
+		// An empty string will not attempt to pattern match the error result.
+		errorSubstr string
 	}{
-		{Debian10GCE, "Debian10GCE"},
-		{Rhel8GCE, "Rhel8GCE"},
-		{UbuntuAmdSevGCE, "UbuntuAmdSevGCE"},
-		{Ubuntu2104NoDbxGCE, "Ubuntu2104NoDbxGCE"},
-		{Ubuntu2104NoSecureBootGCE, "Ubuntu2104NoSecureBootGCE"},
-		{ArchLinuxWorkstation, "ArchLinuxWorkstation"},
+		{Debian10GCE, "Debian10GCE", ""},
+		{Rhel8GCE, "Rhel8GCE", ""},
+		{UbuntuAmdSevGCE, "UbuntuAmdSevGCE", ""},
+		// TODO: remove once the fix is pulled in
+		// https://github.com/google/go-attestation/pull/222
+		{Ubuntu2104NoDbxGCE, "Ubuntu2104NoDbxGCE", sbatErrorStr},
+		{Ubuntu2104NoSecureBootGCE, "Ubuntu2104NoSecureBootGCE", sbatErrorStr},
+		// This event log has a SecureBoot variable length of 0.
+		{ArchLinuxWorkstation, "ArchLinuxWorkstation", archLinuxBadSecureBoot},
 	}
 
 	for _, log := range logs {
@@ -260,7 +269,10 @@ func TestParseEventLogs(t *testing.T) {
 			subtestName := fmt.Sprintf("%s-%s", log.name, hashName)
 			t.Run(subtestName, func(t *testing.T) {
 				if _, err := ParseMachineState(rawLog, bank); err != nil {
-					t.Errorf("failed to parse and replay log: %v", err)
+					gErr := err.(*GroupedError)
+					if log.errorSubstr != "" && !gErr.containsOnlySubstring(log.errorSubstr) {
+						t.Errorf("failed to parse and replay log: %v", err)
+					}
 				}
 			})
 		}
@@ -283,7 +295,7 @@ func TestSystemParseEventLog(t *testing.T) {
 	}
 
 	if _, err = ParseMachineState(evtLog, pcrs); err != nil {
-		t.Errorf("failed to parse and replay log: %v", err)
+		t.Errorf("failed to parse MachineState: %v", err)
 	}
 }
 
