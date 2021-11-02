@@ -28,3 +28,19 @@ func createGroupedError(prefix string, errors []error) error {
 	}
 	return &GroupedError{Prefix: prefix, Errors: errors}
 }
+
+func (gErr *GroupedError) containsSubstring(substr string) bool {
+	for _, err := range gErr.Errors {
+		if strings.Contains(err.Error(), substr) {
+			return true
+		}
+	}
+	return false
+}
+
+func (gErr *GroupedError) containsOnlySubstring(substr string) bool {
+	if len(gErr.Errors) != 1 {
+		return false
+	}
+	return gErr.containsSubstring(substr)
+}
