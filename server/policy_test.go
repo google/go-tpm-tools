@@ -6,19 +6,12 @@ import (
 	pb "github.com/google/go-tpm-tools/proto/attest"
 )
 
-var (
-	defaultGcePolicy = pb.Policy{
-		Platform: &pb.PlatformPolicy{
-			MinimumGceFirmwareVersion: 1,
-			MinimumTechnology:         pb.GCEConfidentialTechnology_NONE,
-		},
-	}
-	defaultPhysicalPolicy = pb.Policy{
-		Platform: &pb.PlatformPolicy{
-			AllowedScrtmVersionIds: [][]byte{},
-		},
-	}
-)
+var defaultGcePolicy = pb.Policy{
+	Platform: &pb.PlatformPolicy{
+		MinimumGceFirmwareVersion: 1,
+		MinimumTechnology:         pb.GCEConfidentialTechnology_NONE,
+	},
+}
 
 func TestNilPolicyAlwaysPasses(t *testing.T) {
 	subtests := []struct {
