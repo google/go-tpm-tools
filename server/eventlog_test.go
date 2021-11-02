@@ -16,7 +16,7 @@ type eventLog struct {
 	Banks  []*pb.PCRs
 }
 
-var archLinuxBadSecureBoot string = "SecureBoot data len is 0, expected 1"
+var archLinuxBadSecureBoot = "SecureBoot data len is 0, expected 1"
 
 // Agile Event Log from a RHEL 8 GCE instance with Secure Boot enabled
 var Rhel8GCE = eventLog{

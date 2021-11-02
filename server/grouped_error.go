@@ -2,8 +2,10 @@ package server
 
 import "strings"
 
-var fatalError string = "fatal: invalid GroupedError"
+var fatalError = "fatal: invalid GroupedError"
 
+// GroupedError collects related errors and exposes them as a single error.
+// Users can inspect the `Errors` field for details on the suberrors.
 type GroupedError struct {
 	// The prefix string returned by `Error()`, followed by the grouped errors.
 	Prefix string
