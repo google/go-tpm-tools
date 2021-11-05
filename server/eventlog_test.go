@@ -552,6 +552,49 @@ func generateNonCosCelEvent(hashAlgoList []crypto.Hash) (cel.Record, error) {
 	return randRecord, nil
 }
 
+func TestParseGrubState(t *testing.T) {
+	eventlog := COS85AmdSev
+	for _, bank := range eventlog.Banks {
+		hashName := pb.HashAlgo_name[int32(bank.Hash)]
+		subtestName := fmt.Sprintf("COS85AmdSev-%s", hashName)
+		t.Run(subtestName, func(t *testing.T) {
+			msState, err := parsePCClientEventLog(eventlog.RawLog, bank, GRUB)
+			if err != nil {
+				t.Errorf("failed to parse and replay log: %v", err)
+			}
+
+			if len(msState.Grub.GetCommands()) == 0 {
+				t.Errorf("expected COS85 to run GRUB commands!")
+			}
+			if len(msState.Grub.GetFiles()) != 2 {
+				t.Errorf("expected COS85 to read two files (grub.cfg and kernel)!")
+			}
+		})
+	}
+}
+
+func TestParseGrubStateFail(t *testing.T) {
+	// No GRUB measurements for this event log.
+	eventlog := GlinuxNoSecureBootLaptop
+	for _, bank := range eventlog.Banks {
+		hashName := pb.HashAlgo_name[int32(bank.Hash)]
+		subtestName := fmt.Sprintf("GlinuxNoSecureBootLaptop-%s", hashName)
+		t.Run(subtestName, func(t *testing.T) {
+			_, err := parsePCClientEventLog(eventlog.RawLog, bank, GRUB)
+			if err == nil {
+				t.Error("expected error when parsing GRUB state")
+			}
+			gErr, ok := err.(*GroupedError)
+			if !ok {
+				t.Errorf("ParseMachineState should return a GroupedError")
+			}
+			if !gErr.containsSubstring("no GRUB measurements found") {
+				t.Errorf("expected GroupedError (%s) to contain no GRUB measurements error", err)
+			}
+		})
+	}
+}
+
 func decodeHex(hexStr string) []byte {
 	bytes, err := hex.DecodeString(hexStr)
 	if err != nil {
