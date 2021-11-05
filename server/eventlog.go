@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto"
 	"crypto/x509"
+	"encoding/hex"
 	"errors"
 	"fmt"
 
@@ -46,11 +47,20 @@ func parsePCClientEventLog(rawEventLog []byte, pcrs *tpmpb.PCRs, loader Bootload
 		errors = append(errors, err)
 	}
 
+	var grub *pb.GrubState
+	if loader == GRUB {
+		grub, err = getGrubState(cryptoHash, rawEvents)
+		if err != nil {
+			errors = append(errors, err)
+		}
+	}
+
 	return &pb.MachineState{
 		Platform:   platform,
 		SecureBoot: sbState,
 		RawEvents:  rawEvents,
 		Hash:       pcrs.GetHash(),
+		Grub:       grub,
 	}, createGroupedError("failed to fully parse MachineState:", errors)
 }
 
@@ -316,4 +326,53 @@ func getSecureBootState(attestEvents []attest.Event) (*pb.SecureBootState, error
 		Dbx:       convertToPbDatabase(attestSbState.ForbiddenKeys, attestSbState.ForbiddenHashes),
 		Authority: convertToPbDatabase(attestSbState.PostSeparatorAuthority, nil),
 	}, nil
+}
+
+func getGrubState(hash crypto.Hash, events []*pb.Event) (*pb.GrubState, error) {
+	var files []*pb.GrubFile
+	var commands []string
+	for idx, event := range events {
+		index := event.GetPcrIndex()
+		if index != 8 && index != 9 {
+			continue
+		}
+
+		if event.GetUntrustedType() != IPL {
+			return nil, fmt.Errorf("invalid event type for PCR%d, expected EV_IPL", index)
+		}
+
+		if index == 9 {
+			files = append(files, &pb.GrubFile{Digest: event.GetDigest(),
+				UntrustedFilename: event.GetData()})
+		} else if index == 8 {
+			hasher := hash.New()
+			suffixAt := -1
+			rawData := event.GetData()
+			for _, prefix := range validPrefixes {
+				if bytes.HasPrefix(rawData, prefix) {
+					suffixAt = len(prefix)
+					break
+				}
+			}
+			if suffixAt == -1 {
+				return nil, fmt.Errorf("invalid prefix seen for PCR%d event: %s", index, rawData)
+			}
+			hasher.Write(rawData[suffixAt : len(rawData)-1])
+			if !bytes.Equal(event.Digest, hasher.Sum(nil)) {
+				// Older GRUBs measure "grub_cmd " with the null terminator.
+				// However, "grub_kernel_cmdline " measurements also ignore the null terminator.
+				hasher.Reset()
+				hasher.Write(rawData[suffixAt:])
+				if !bytes.Equal(event.Digest, hasher.Sum(nil)) {
+					return nil, fmt.Errorf("invalid digest seen for GRUB event log in event %d: %s", idx, hex.EncodeToString(event.Digest))
+				}
+			}
+			hasher.Reset()
+			commands = append(commands, string(rawData))
+		}
+	}
+	if len(files) == 0 && len(commands) == 0 {
+		return nil, errors.New("no GRUB measurements found")
+	}
+	return &pb.GrubState{Files: files, Commands: commands}, nil
 }
