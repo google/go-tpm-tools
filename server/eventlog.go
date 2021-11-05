@@ -27,7 +27,7 @@ import (
 // It is the caller's responsibility to ensure that the passed PCR values can be
 // trusted. Users can establish trust in PCR values by either calling
 // client.ReadPCRs() themselves or by verifying the values via a PCR quote.
-func parsePCClientEventLog(rawEventLog []byte, pcrs *tpmpb.PCRs) (*pb.MachineState, error) {
+func parsePCClientEventLog(rawEventLog []byte, pcrs *tpmpb.PCRs, loader Bootloader) (*pb.MachineState, error) {
 	var errors []error
 	events, err := parseReplayHelper(rawEventLog, pcrs)
 	if err != nil {

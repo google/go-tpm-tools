@@ -20,6 +20,7 @@ const (
 	Separator    uint32 = 0x00000004
 	SCRTMVersion uint32 = 0x00000008
 	NonhostInfo  uint32 = 0x00000011
+	IPL          uint32 = 0x0000000D
 )
 
 var (
