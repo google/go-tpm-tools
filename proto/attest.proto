@@ -71,6 +71,14 @@ message GrubState {
   // and kernel modules.
   repeated string commands = 2;
 }
+  
+// The state of the Linux kernel.
+// At the moment, parsing LinuxKernelState relies on parsing the GrubState.
+// To do so, use ParseOpts{Loader: GRUB} when calling ParseMachineState.
+message LinuxKernelState {
+  // The kernel command line.
+  string command_line = 1;
+}
 
 // A parsed event from the TCG event log
 message Event {
@@ -189,7 +197,7 @@ message MachineState {
 
   GrubState grub = 5;
 
-  // LinuxKernelState linux_kernel = 6;
+  LinuxKernelState linux_kernel = 6;
 
   AttestedCosState cos = 7;
 }
