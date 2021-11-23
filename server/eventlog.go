@@ -30,7 +30,7 @@ func ParseMachineState(rawEventLog []byte, pcrs *tpmpb.PCRs) (*pb.MachineState, 
 	var errors []error
 	events, err := parseReplayHelper(rawEventLog, pcrs)
 	if err != nil {
-		return nil, err
+		return nil, createGroupedError("", []error{err})
 	}
 	// error is already checked in convertToAttestPcrs
 	cryptoHash, _ := tpm2.Algorithm(pcrs.GetHash()).Hash()

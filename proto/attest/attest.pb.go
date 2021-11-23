@@ -610,7 +610,7 @@ func (x *Database) GetHashes() [][]byte {
 	return nil
 }
 
-// The Secure Boot state for this instance
+// The Secure Boot state for this instance.
 type SecureBootState struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache

@@ -269,7 +269,10 @@ func TestParseEventLogs(t *testing.T) {
 			subtestName := fmt.Sprintf("%s-%s", log.name, hashName)
 			t.Run(subtestName, func(t *testing.T) {
 				if _, err := ParseMachineState(rawLog, bank); err != nil {
-					gErr := err.(*GroupedError)
+					gErr, ok := err.(*GroupedError)
+					if !ok {
+						t.Errorf("ParseMachineState should return a GroupedError")
+					}
 					if log.errorSubstr != "" && !gErr.containsOnlySubstring(log.errorSubstr) {
 						t.Errorf("failed to parse and replay log: %v", err)
 					}

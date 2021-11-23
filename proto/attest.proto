@@ -92,7 +92,7 @@ message Database {
   repeated bytes hashes = 2;
 }
 
-// The Secure Boot state for this instance
+// The Secure Boot state for this instance.
 message SecureBootState {
   // Whether Secure Boot is enabled.
   bool enabled = 1;
