@@ -282,6 +282,22 @@ func TestParseEventLogs(t *testing.T) {
 	}
 }
 
+func TestParseMachineStateReplayFail(t *testing.T) {
+	badPcrs := pb.PCRs{Hash: pb.HashAlgo_SHA1}
+	pcrMap := make(map[uint32][]byte)
+	pcrMap[0] = []byte{0, 0, 0, 0}
+	badPcrs.Pcrs = pcrMap
+
+	_, err := ParseMachineState(Debian10GCE.RawLog, &badPcrs)
+	if err == nil {
+		t.Errorf("ParseMachineState should fail to replay the event log")
+	}
+	_, ok := err.(*GroupedError)
+	if !ok {
+		t.Errorf("ParseMachineState should return a GroupedError")
+	}
+}
+
 func TestSystemParseEventLog(t *testing.T) {
 	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
