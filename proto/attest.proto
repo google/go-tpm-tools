@@ -65,11 +65,54 @@ message Event {
   bool digest_verified = 5;
 }
 
+  // Common, publicly-listed certificates by different vendors.
+  enum WellKnownCertificate {
+    UNKNOWN = 0;
+
+    // Microsoft certs:
+    // https://go.microsoft.com/fwlink/p/?linkid=321192
+    MS_WINDOWS_PROD_PCA_2011 = 1;
+    // https://go.microsoft.com/fwlink/p/?linkid=321194
+    MS_THIRD_PARTY_UEFI_CA_2011 = 2;
+  }
+
+message Certificate {
+
+  // The representation of the certificate. If the certificate matches a
+  // well-known certificate above, representation should contain the value in 
+  // the enum. Otherwise, it will contain the raw DER.
+  oneof representation {
+    // DER representation of the certificate.
+    bytes der = 1;
+    WellKnownCertificate well_known = 2;
+  }
+}
+
+// A Secure Boot database containing lists of hashes and certificates,
+// as defined by section 32.4.1 Signature Database in the UEFI spec.
+message Database {
+  repeated Certificate certs = 1;
+  repeated bytes hashes = 2;
+}
+
+// The Secure Boot state for this instance.
+message SecureBootState {
+  // Whether Secure Boot is enabled.
+  bool enabled = 1;
+  // The Secure Boot signature (allowed) database.
+  Database db = 2;
+  // The Secure Boot revoked signature (forbidden) database.
+  Database dbx = 3;
+  // Authority events post-separator. Pre-separator authorities
+  // are currently not supported.
+  Database authority = 4;
+}
+
 // The verified state of a booted machine, obtained from an Attestation
 message MachineState {
   PlatformState platform = 1;
 
-  // SecureBootState secure_boot = 2;
+  SecureBootState secure_boot = 2;
 
   // The complete parsed TCG Event Log, including those events used to
   // create the PlatformState.

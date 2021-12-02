@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/google/certificate-transparency-go/x509"
 	"github.com/google/go-attestation/attest"
 	pb "github.com/google/go-tpm-tools/proto/attest"
 	tpmpb "github.com/google/go-tpm-tools/proto/tpm"
@@ -14,16 +15,22 @@ import (
 
 // ParseMachineState parses a raw event log and replays the parsed event
 // log against the given PCR values. It returns the corresponding MachineState
-// containing the events verified by particular PCR indexes/digests. An error is
-// returned if the replay for any PCR index does not match the provided value.
+// containing the events verified by particular PCR indexes/digests. It returns
+// an error if the replay for any PCR index does not match the provided value.
+//
+// The returned MachineState may be a partial MachineState where fields can be
+// the zero value. In this case, an error of type MachineStateError will be
+// returned. Callers can inspect individual parsing errors by examining
+// `MachineStateError.Errors`.
 //
 // It is the caller's responsibility to ensure that the passed PCR values can be
 // trusted. Users can establish trust in PCR values by either calling
 // client.ReadPCRs() themselves or by verifying the values via a PCR quote.
 func ParseMachineState(rawEventLog []byte, pcrs *tpmpb.PCRs) (*pb.MachineState, error) {
+	var errors []error
 	events, err := parseReplayHelper(rawEventLog, pcrs)
 	if err != nil {
-		return nil, err
+		return nil, createGroupedError("", []error{err})
 	}
 	// error is already checked in convertToAttestPcrs
 	cryptoHash, _ := tpm2.Algorithm(pcrs.GetHash()).Hash()
@@ -31,21 +38,19 @@ func ParseMachineState(rawEventLog []byte, pcrs *tpmpb.PCRs) (*pb.MachineState, 
 	rawEvents := convertToPbEvents(cryptoHash, events)
 	platform, err := getPlatformState(cryptoHash, rawEvents)
 	if err != nil {
-		// Eventually, we want to support a partial failure model.
-		// The MachineState can contain empty {Platform,SecureBoot}States when
-		// those individually fail parsing. The error will contain suberrors
-		// for the fields in MachineState that failed parsing.
-		//
-		// For now, since the MachineState only comprises PlatformState, we
-		// return an empty MachineState with empty platform state and the error.
-		return &pb.MachineState{}, err
+		errors = append(errors, err)
+	}
+	sbState, err := getSecureBootState(events)
+	if err != nil {
+		errors = append(errors, err)
 	}
 
 	return &pb.MachineState{
-		Platform:  platform,
-		RawEvents: rawEvents,
-		Hash:      pcrs.GetHash(),
-	}, nil
+		Platform:   platform,
+		SecureBoot: sbState,
+		RawEvents:  rawEvents,
+		Hash:       pcrs.GetHash(),
+	}, createGroupedError("failed to fully parse MachineState:", errors)
 }
 
 func contains(set [][]byte, value []byte) bool {
@@ -181,4 +186,48 @@ func convertToPbEvents(hash crypto.Hash, events []attest.Event) []*pb.Event {
 		}
 	}
 	return pbEvents
+}
+
+func convertToPbDatabase(certs []x509.Certificate, hashes [][]byte) *pb.Database {
+	protoCerts := make([]*pb.Certificate, 0, len(certs))
+	for _, cert := range certs {
+		wkEnum, err := matchWellKnown(cert)
+		var pbCert pb.Certificate
+		if err == nil {
+			pbCert.Representation = &pb.Certificate_WellKnown{WellKnown: wkEnum}
+		} else {
+			pbCert.Representation = &pb.Certificate_Der{Der: cert.Raw}
+		}
+		protoCerts = append(protoCerts, &pbCert)
+	}
+	return &pb.Database{
+		Certs:  protoCerts,
+		Hashes: hashes,
+	}
+}
+
+func matchWellKnown(cert x509.Certificate) (pb.WellKnownCertificate, error) {
+	if bytes.Equal(WindowsProductionPCA2011Cert, cert.Raw) {
+		return pb.WellKnownCertificate_MS_WINDOWS_PROD_PCA_2011, nil
+	}
+	if bytes.Equal(MicrosoftUEFICA2011Cert, cert.Raw) {
+		return pb.WellKnownCertificate_MS_THIRD_PARTY_UEFI_CA_2011, nil
+	}
+	return pb.WellKnownCertificate_UNKNOWN, errors.New("failed to find matching well known certificate")
+}
+
+func getSecureBootState(attestEvents []attest.Event) (*pb.SecureBootState, error) {
+	attestSbState, err := attest.ParseSecurebootState(attestEvents)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse SecureBootState: %v", err)
+	}
+	if len(attestSbState.PreSeparatorAuthority) != 0 {
+		return nil, fmt.Errorf("event log contained %v pre-separator authorities, which are not expected or supported", len(attestSbState.PreSeparatorAuthority))
+	}
+	return &pb.SecureBootState{
+		Enabled:   attestSbState.Enabled,
+		Db:        convertToPbDatabase(attestSbState.PermittedKeys, attestSbState.PermittedHashes),
+		Dbx:       convertToPbDatabase(attestSbState.ForbiddenKeys, attestSbState.ForbiddenHashes),
+		Authority: convertToPbDatabase(attestSbState.PostSeparatorAuthority, nil),
+	}, nil
 }

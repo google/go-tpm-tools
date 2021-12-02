@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal/test"
+	attestpb "github.com/google/go-tpm-tools/proto/attest"
 	pb "github.com/google/go-tpm-tools/proto/tpm"
 	"github.com/google/go-tpm/tpm2"
 )
@@ -15,6 +16,8 @@ type eventLog struct {
 	RawLog []byte
 	Banks  []*pb.PCRs
 }
+
+var archLinuxBadSecureBoot = "SecureBoot data len is 0, expected 1"
 
 // Agile Event Log from a RHEL 8 GCE instance with Secure Boot enabled
 var Rhel8GCE = eventLog{
@@ -240,16 +243,24 @@ var Debian10GCE = eventLog{
 }
 
 func TestParseEventLogs(t *testing.T) {
+	sbatErrorStr := "asn1: structure error: tags don't match (16 vs {class:0 tag:24 length:10 isCompound:true})"
 	logs := []struct {
 		eventLog
 		name string
+		// This field handles known issues with event log parsing or bad event
+		// logs.
+		// An empty string will not attempt to pattern match the error result.
+		errorSubstr string
 	}{
-		{Debian10GCE, "Debian10GCE"},
-		{Rhel8GCE, "Rhel8GCE"},
-		{UbuntuAmdSevGCE, "UbuntuAmdSevGCE"},
-		{Ubuntu2104NoDbxGCE, "Ubuntu2104NoDbxGCE"},
-		{Ubuntu2104NoSecureBootGCE, "Ubuntu2104NoSecureBootGCE"},
-		{ArchLinuxWorkstation, "ArchLinuxWorkstation"},
+		{Debian10GCE, "Debian10GCE", ""},
+		{Rhel8GCE, "Rhel8GCE", ""},
+		{UbuntuAmdSevGCE, "UbuntuAmdSevGCE", ""},
+		// TODO: remove once the fix is pulled in
+		// https://github.com/google/go-attestation/pull/222
+		{Ubuntu2104NoDbxGCE, "Ubuntu2104NoDbxGCE", sbatErrorStr},
+		{Ubuntu2104NoSecureBootGCE, "Ubuntu2104NoSecureBootGCE", sbatErrorStr},
+		// This event log has a SecureBoot variable length of 0.
+		{ArchLinuxWorkstation, "ArchLinuxWorkstation", archLinuxBadSecureBoot},
 	}
 
 	for _, log := range logs {
@@ -259,10 +270,32 @@ func TestParseEventLogs(t *testing.T) {
 			subtestName := fmt.Sprintf("%s-%s", log.name, hashName)
 			t.Run(subtestName, func(t *testing.T) {
 				if _, err := ParseMachineState(rawLog, bank); err != nil {
-					t.Errorf("failed to parse and replay log: %v", err)
+					gErr, ok := err.(*GroupedError)
+					if !ok {
+						t.Errorf("ParseMachineState should return a GroupedError")
+					}
+					if log.errorSubstr != "" && !gErr.containsOnlySubstring(log.errorSubstr) {
+						t.Errorf("failed to parse and replay log: %v", err)
+					}
 				}
 			})
 		}
+	}
+}
+
+func TestParseMachineStateReplayFail(t *testing.T) {
+	badPcrs := pb.PCRs{Hash: pb.HashAlgo_SHA1}
+	pcrMap := make(map[uint32][]byte)
+	pcrMap[0] = []byte{0, 0, 0, 0}
+	badPcrs.Pcrs = pcrMap
+
+	_, err := ParseMachineState(Debian10GCE.RawLog, &badPcrs)
+	if err == nil {
+		t.Errorf("ParseMachineState should fail to replay the event log")
+	}
+	_, ok := err.(*GroupedError)
+	if !ok {
+		t.Errorf("ParseMachineState should return a GroupedError")
 	}
 }
 
@@ -282,8 +315,39 @@ func TestSystemParseEventLog(t *testing.T) {
 	}
 
 	if _, err = ParseMachineState(evtLog, pcrs); err != nil {
-		t.Errorf("failed to parse and replay log: %v", err)
+		t.Errorf("failed to parse MachineState: %v", err)
 	}
+}
+
+func TestParseSecureBootState(t *testing.T) {
+	for _, bank := range UbuntuAmdSevGCE.Banks {
+		msState, err := ParseMachineState(UbuntuAmdSevGCE.RawLog, bank)
+		if err != nil {
+			t.Errorf("failed to parse and replay log: %v", err)
+		}
+		containsWinProdPCA := false
+		contains3PUEFI := false
+		if len(msState.GetSecureBoot().GetDb().GetHashes()) != 0 {
+			t.Error("found hashes in db")
+		}
+		for _, cert := range msState.GetSecureBoot().GetDb().GetCerts() {
+			switch c := cert.GetRepresentation().(type) {
+			case *attestpb.Certificate_WellKnown:
+				if c.WellKnown == attestpb.WellKnownCertificate_UNKNOWN {
+					t.Error(("found WellKnownCertificate_UNKNOWN in db"))
+				}
+				if c.WellKnown == attestpb.WellKnownCertificate_MS_THIRD_PARTY_UEFI_CA_2011 {
+					contains3PUEFI = true
+				} else if c.WellKnown == attestpb.WellKnownCertificate_MS_WINDOWS_PROD_PCA_2011 {
+					containsWinProdPCA = true
+				}
+			}
+		}
+		if !contains3PUEFI || !containsWinProdPCA {
+			t.Error("expected to see both WinProdPCA and ThirdPartyUEFI certs")
+		}
+	}
+
 }
 
 func decodeHex(hexStr string) []byte {
