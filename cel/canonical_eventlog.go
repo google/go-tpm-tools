@@ -14,9 +14,9 @@ import (
 
 const (
 	// CEL spec 5.1
-	recnumTypeValue uint8 = 0
-	pcrTypeValue    uint8 = 1
-	// nvIndexTagValue uint8 = 2 // nvindex field is not supported yet
+	recnumTypeValue  uint8 = 0
+	pcrTypeValue     uint8 = 1
+	_                uint8 = 2 // nvindex field is not supported yet
 	digestsTypeValue uint8 = 3
 
 	tlvTypeFieldLength   int = 1
@@ -27,59 +27,71 @@ const (
 )
 
 // TLV definition according to CEL spec TCG_IWG_CEL_v1_r0p37, page 16.
+// Length is implicitly defined by len(Value), using uint32 big-endian
+// when encoding.
 type TLV struct {
-	Type   uint8
-	Length uint32 // big-endian when encoding
-	Value  []byte // with size of Length
+	Type  uint8
+	Value []byte
 }
 
-// Marshal marhsals a TLV to a byte slice.
-func (tlv *TLV) Marshal() ([]byte, error) {
-	if tlv.Length != uint32(len(tlv.Value)) {
-		return nil, fmt.Errorf("length of tlv.Value [%d] doesn't equal to tlv.Length [%d]",
-			len(tlv.Value), tlv.Length)
-	}
-
-	buf := make([]byte, tlv.Length+uint32(tlvTypeFieldLength)+uint32(tlvLengthFieldLength))
+// MarshalBinary marshals a TLV to a byte slice.
+func (tlv *TLV) MarshalBinary() (data []byte, err error) {
+	buf := make([]byte, len(tlv.Value)+tlvTypeFieldLength+tlvLengthFieldLength)
 
 	buf[0] = tlv.Type
-	binary.BigEndian.PutUint32(buf[tlvTypeFieldLength:], tlv.Length)
+	binary.BigEndian.PutUint32(buf[tlvTypeFieldLength:], uint32(len(tlv.Value)))
 	copy(buf[tlvTypeFieldLength+tlvLengthFieldLength:], tlv.Value)
 
 	return buf, nil
 }
 
-// TLVUnmarshal reads and parse the first TLV from the bytes buffer. The function will
-// return io.EOF if the buf ends unexpectedly or cannot filled the TLV.
-func TLVUnmarshal(buf *bytes.Buffer) (TLV, error) {
-	var tlv TLV
-	var err error
+// UnmarshalBinary unmarshal a byte slice to a TLV.
+func (tlv *TLV) UnmarshalBinary(data []byte) error {
+	valueLength := binary.BigEndian.Uint32(data[tlvTypeFieldLength : tlvTypeFieldLength+tlvLengthFieldLength])
 
-	// read type
-	tlv.Type, err = buf.ReadByte()
+	if valueLength != uint32(len(data[tlvTypeFieldLength+tlvLengthFieldLength:])) {
+		return fmt.Errorf("TLV Length doesn't match the size of its Value")
+	}
+	tlv.Type = data[0]
+	tlv.Value = data[tlvTypeFieldLength+tlvLengthFieldLength:]
+
+	return nil
+}
+
+// UnmarshalFirstTLV reads and parse the first TLV from the bytes buffer. The function will
+// return io.EOF if the buf ends unexpectedly or cannot fill the TLV.
+func UnmarshalFirstTLV(buf *bytes.Buffer) (tlv TLV, err error) {
+	typeByte, err := buf.ReadByte()
+	if err != nil {
+		return tlv, err
+	}
+	var data []byte
+	data = append(data, typeByte)
+
+	// get the length
+	lengthBytes := make([]byte, tlvLengthFieldLength)
+	bytesRead, err := buf.Read(lengthBytes)
 	if err != nil {
 		return TLV{}, err
 	}
-
-	// read length
-	b := make([]byte, tlvLengthFieldLength)
-	l, err := buf.Read(b)
-	if err != nil {
-		return TLV{}, err
-	}
-	if l < tlvLengthFieldLength {
+	if bytesRead != tlvLengthFieldLength {
 		return TLV{}, io.EOF
 	}
-	tlv.Length = binary.BigEndian.Uint32(b)
+	valueLength := binary.BigEndian.Uint32(lengthBytes)
+	data = append(data, lengthBytes...)
 
-	// read value
-	tlv.Value = make([]byte, tlv.Length)
-	l, err = buf.Read(tlv.Value)
+	valueBytes := make([]byte, valueLength)
+	bytesRead, err = buf.Read(valueBytes)
 	if err != nil {
 		return TLV{}, err
 	}
-	if l < int(tlv.Length) {
+	if uint32(bytesRead) != valueLength {
 		return TLV{}, io.EOF
+	}
+	data = append(data, valueBytes...)
+
+	if err = (&tlv).UnmarshalBinary(data); err != nil {
+		return TLV{}, err
 	}
 	return tlv, nil
 }
@@ -132,30 +144,41 @@ func (c *CEL) AppendEvent(tpm io.ReadWriteCloser, pcr int, hashAlgos []crypto.Ha
 func createRecNumField(recNum uint64) TLV {
 	value := make([]byte, recnumValueLength)
 	binary.BigEndian.PutUint64(value, recNum)
-	return TLV{recnumTypeValue, recnumValueLength, value}
+	return TLV{recnumTypeValue, value}
 }
 
-// UnmarshalRecNum takes in a TLV with its tag equals to the recnum tag value (0), and
+// UnmarshalRecNum takes in a TLV with its type equals to the recnum type value (0), and
 // return its record number.
 func UnmarshalRecNum(tlv TLV) (uint64, error) {
 	if tlv.Type != recnumTypeValue {
-		return 0, fmt.Errorf("tag of the TLV [%d] indicates it is not a recnum field [%d]",
+		return 0, fmt.Errorf("type of the TLV [%d] indicates it is not a recnum field [%d]",
 			tlv.Type, recnumTypeValue)
+	}
+	if uint32(len(tlv.Value)) != recnumValueLength {
+		return 0, fmt.Errorf(
+			"length of the value of the TLV [%d] doesn't match the defined length [%d] of value for recnum",
+			len(tlv.Value), recnumValueLength)
 	}
 	return binary.BigEndian.Uint64(tlv.Value), nil
 }
 
 func createPCRField(pcrNum uint8) TLV {
-	return TLV{pcrTypeValue, pcrValueLength, []byte{pcrNum}}
+	return TLV{pcrTypeValue, []byte{pcrNum}}
 }
 
-// UnmarshalPCR takes in a TLV with its tag equals to the PCR tag value (1), and
+// UnmarshalPCR takes in a TLV with its type equals to the PCR type value (1), and
 // return its PCR number.
 func UnmarshalPCR(tlv TLV) (pcrNum uint8, err error) {
 	if tlv.Type != pcrTypeValue {
-		return 0, fmt.Errorf("tag of the TLV [%d] indicates it is not a PCR field [%d]",
+		return 0, fmt.Errorf("type of the TLV [%d] indicates it is not a PCR field [%d]",
 			tlv.Type, pcrTypeValue)
 	}
+	if uint32(len(tlv.Value)) != pcrValueLength {
+		return 0, fmt.Errorf(
+			"length of the value of the TLV [%d] doesn't match the defined length [%d] of value for a PCR field",
+			len(tlv.Value), pcrValueLength)
+	}
+
 	return tlv.Value[0], nil
 }
 
@@ -170,8 +193,8 @@ func createDigestField(digestMap map[crypto.Hash][]byte) (TLV, error) {
 		if err != nil {
 			return TLV{}, err
 		}
-		singledigestTLV := TLV{uint8(tpmHashAlg), uint32(len(hash)), hash}
-		d, err := singledigestTLV.Marshal()
+		singleDigestTLV := TLV{uint8(tpmHashAlg), hash}
+		d, err := singleDigestTLV.MarshalBinary()
 		if err != nil {
 			return TLV{}, err
 		}
@@ -180,21 +203,21 @@ func createDigestField(digestMap map[crypto.Hash][]byte) (TLV, error) {
 			return TLV{}, err
 		}
 	}
-	return TLV{digestsTypeValue, uint32(buf.Len()), buf.Bytes()}, nil
+	return TLV{digestsTypeValue, buf.Bytes()}, nil
 }
 
-// UnmarshalDigests takes in a TLV with its tag equals to the digests Tag value (3), and
+// UnmarshalDigests takes in a TLV with its type equals to the digests type value (3), and
 // return its digests content in a map, the key is its TPM hash algorithm.
 func UnmarshalDigests(tlv TLV) (digestsMap map[crypto.Hash][]byte, err error) {
 	if tlv.Type != digestsTypeValue {
-		return nil, fmt.Errorf("tag of the TLV indicates it doesn't contain digests")
+		return nil, fmt.Errorf("type of the TLV indicates it doesn't contain digests")
 	}
 
 	buf := bytes.NewBuffer(tlv.Value)
 	digestsMap = make(map[crypto.Hash][]byte)
 
 	for buf.Len() > 0 {
-		digestTLV, err := TLVUnmarshal(buf)
+		digestTLV, err := UnmarshalFirstTLV(buf)
 		if err == io.EOF {
 			return nil, fmt.Errorf("buffer ends unexpectedly")
 		} else if err != nil {
@@ -225,19 +248,19 @@ func createCELR(recNum uint64, pcr uint8, digestsmap map[crypto.Hash][]byte, eve
 // EncodeCELR encodes the CELR to bytes according to the CEL spec and write them
 // to the bytes byffer.
 func (r *Record) EncodeCELR(buf *bytes.Buffer) error {
-	recnumField, err := r.RECNUM.Marshal()
+	recnumField, err := r.RECNUM.MarshalBinary()
 	if err != nil {
 		return err
 	}
-	pcrField, err := r.PCR.Marshal()
+	pcrField, err := r.PCR.MarshalBinary()
 	if err != nil {
 		return err
 	}
-	digestsField, err := r.Digests.Marshal()
+	digestsField, err := r.Digests.MarshalBinary()
 	if err != nil {
 		return err
 	}
-	eventField, err := r.Content.Marshal()
+	eventField, err := r.Content.MarshalBinary()
 	if err != nil {
 		return err
 	}
@@ -291,7 +314,7 @@ func DecodeToCEL(buf *bytes.Buffer) (CEL, error) {
 // DecodeToCELR will read the buf for the next CELR, will return err if
 // failed to unmarshal a correct CELR TLV from the buffer.
 func DecodeToCELR(buf *bytes.Buffer) (Record, error) {
-	recnum, err := TLVUnmarshal(buf)
+	recnum, err := UnmarshalFirstTLV(buf)
 	if err != nil {
 		return Record{}, err
 	}
@@ -300,7 +323,7 @@ func DecodeToCELR(buf *bytes.Buffer) (Record, error) {
 			recnumTypeValue, recnum.Type)
 	}
 
-	pcr, err := TLVUnmarshal(buf)
+	pcr, err := UnmarshalFirstTLV(buf)
 	if err != nil {
 		return Record{}, err
 	}
@@ -309,7 +332,7 @@ func DecodeToCELR(buf *bytes.Buffer) (Record, error) {
 			pcrTypeValue, pcr.Type)
 	}
 
-	digests, err := TLVUnmarshal(buf)
+	digests, err := UnmarshalFirstTLV(buf)
 	if err != nil {
 		return Record{}, err
 	}
@@ -318,7 +341,7 @@ func DecodeToCELR(buf *bytes.Buffer) (Record, error) {
 			digestsTypeValue, digests.Type)
 	}
 
-	content, err := TLVUnmarshal(buf)
+	content, err := UnmarshalFirstTLV(buf)
 	if err != nil {
 		return Record{}, err
 	}

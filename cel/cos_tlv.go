@@ -17,9 +17,8 @@ type CosTlv struct {
 // GetTLV returns the TLV representation of the COS TLV.
 func (c CosTlv) GetTLV() TLV {
 	return TLV{
-		Type:   CosTypeValue,
-		Length: uint32(len(c.data)),
-		Value:  c.data,
+		Type:  CosTypeValue,
+		Value: c.data,
 	}
 }
 
@@ -27,7 +26,7 @@ func (c CosTlv) GetTLV() TLV {
 // be marshaled to bytes and feed into the hash algo.
 func (c CosTlv) GenerateDigest(hashAlgo crypto.Hash) ([]byte, error) {
 	contentTLV := c.GetTLV()
-	b, err := contentTLV.Marshal()
+	b, err := contentTLV.MarshalBinary()
 	if err != nil {
 		return nil, err
 	}
