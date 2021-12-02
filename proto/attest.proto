@@ -65,15 +65,18 @@ message Event {
   bool digest_verified = 5;
 }
 
-message Certificate {
   // Common, publicly-listed certificates by different vendors.
   enum WellKnownCertificate {
     UNKNOWN = 0;
 
-    // Microsoft certs: https://go.microsoft.com/fwlink/p/?linkid=321192
+    // Microsoft certs:
+    // https://go.microsoft.com/fwlink/p/?linkid=321192
     MS_WINDOWS_PROD_PCA_2011 = 1;
+    // https://go.microsoft.com/fwlink/p/?linkid=321194
     MS_THIRD_PARTY_UEFI_CA_2011 = 2;
   }
+
+message Certificate {
 
   // The representation of the certificate. If the certificate matches a
   // well-known certificate above, representation should contain the value in 

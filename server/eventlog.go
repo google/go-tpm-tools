@@ -206,14 +206,14 @@ func convertToPbDatabase(certs []x509.Certificate, hashes [][]byte) *pb.Database
 	}
 }
 
-func matchWellKnown(cert x509.Certificate) (pb.Certificate_WellKnownCertificate, error) {
+func matchWellKnown(cert x509.Certificate) (pb.WellKnownCertificate, error) {
 	if bytes.Equal(WindowsProductionPCA2011Cert, cert.Raw) {
-		return pb.Certificate_MS_WINDOWS_PROD_PCA_2011, nil
+		return pb.WellKnownCertificate_MS_WINDOWS_PROD_PCA_2011, nil
 	}
 	if bytes.Equal(MicrosoftUEFICA2011Cert, cert.Raw) {
-		return pb.Certificate_MS_THIRD_PARTY_UEFI_CA_2011, nil
+		return pb.WellKnownCertificate_MS_THIRD_PARTY_UEFI_CA_2011, nil
 	}
-	return pb.Certificate_UNKNOWN, errors.New("failed to find matching well known certificate")
+	return pb.WellKnownCertificate_UNKNOWN, errors.New("failed to find matching well known certificate")
 }
 
 func getSecureBootState(attestEvents []attest.Event) (*pb.SecureBootState, error) {
