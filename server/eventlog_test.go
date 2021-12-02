@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal/test"
+	attestpb "github.com/google/go-tpm-tools/proto/attest"
 	pb "github.com/google/go-tpm-tools/proto/tpm"
 	"github.com/google/go-tpm/tpm2"
 )
@@ -316,6 +317,37 @@ func TestSystemParseEventLog(t *testing.T) {
 	if _, err = ParseMachineState(evtLog, pcrs); err != nil {
 		t.Errorf("failed to parse MachineState: %v", err)
 	}
+}
+
+func TestParseSecureBootState(t *testing.T) {
+	for _, bank := range UbuntuAmdSevGCE.Banks {
+		msState, err := ParseMachineState(UbuntuAmdSevGCE.RawLog, bank)
+		if err != nil {
+			t.Errorf("failed to parse and replay log: %v", err)
+		}
+		containsWinProdPCA := false
+		contains3PUEFI := false
+		if len(msState.GetSecureBoot().GetDb().GetHashes()) != 0 {
+			t.Error("found hashes in db")
+		}
+		for _, cert := range msState.GetSecureBoot().GetDb().GetCerts() {
+			switch c := cert.GetRepresentation().(type) {
+			case *attestpb.Certificate_WellKnown:
+				if c.WellKnown == attestpb.WellKnownCertificate_UNKNOWN {
+					t.Error(("found WellKnownCertificate_UNKNOWN in db"))
+				}
+				if c.WellKnown == attestpb.WellKnownCertificate_MS_THIRD_PARTY_UEFI_CA_2011 {
+					contains3PUEFI = true
+				} else if c.WellKnown == attestpb.WellKnownCertificate_MS_WINDOWS_PROD_PCA_2011 {
+					containsWinProdPCA = true
+				}
+			}
+		}
+		if !contains3PUEFI || !containsWinProdPCA {
+			t.Error("expected to see both WinProdPCA and ThirdPartyUEFI certs")
+		}
+	}
+
 }
 
 func decodeHex(hexStr string) []byte {
