@@ -36,23 +36,20 @@ func TestCELEncodingDecoding(t *testing.T) {
 	if len(decodedcel.Records) != 2 {
 		t.Errorf("should have two records")
 	}
-	if recnum, err := UnmarshalRecNum(decodedcel.Records[0].RECNUM); err != nil || recnum != uint64(0) {
+	if decodedcel.Records[0].RecNum != 0 {
 		t.Errorf("recnum mismatch")
 	}
-	if recnum, err := UnmarshalRecNum(decodedcel.Records[1].RECNUM); err != nil || recnum != uint64(1) {
+	if decodedcel.Records[1].RecNum != 1 {
 		t.Errorf("recnum mismatch")
 	}
-	if pcr, err := UnmarshalPCR(decodedcel.Records[0].PCR); err != nil || pcr != uint8(13) {
+	if decodedcel.Records[0].PCR != 13 {
 		t.Errorf("pcr value mismatch")
 	}
-	if pcr, err := UnmarshalPCR(decodedcel.Records[1].PCR); err != nil || pcr != uint8(14) {
+	if decodedcel.Records[1].PCR != 14 {
 		t.Errorf("pcr value mismatch")
 	}
 
-	digestsMap, err := UnmarshalDigests(decodedcel.Records[0].Digests)
-	if err != nil {
-		t.Error(err)
-	}
+	digestsMap := decodedcel.Records[0].Digests
 	if len(digestsMap[crypto.SHA256]) != 32 {
 		t.Errorf("SHA256 digest length doesn't match")
 	}
