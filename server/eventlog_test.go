@@ -317,7 +317,10 @@ func TestParseEventLogs(t *testing.T) {
 					if !ok {
 						t.Errorf("ParseMachineState should return a GroupedError")
 					}
-					if log.errorSubstr == "" || !gErr.containsOnlySubstring(log.errorSubstr) {
+					if log.errorSubstr == "" {
+						t.Errorf("expected no errors in GroupedError, received (%v)", err)
+					}
+					if !gErr.containsOnlySubstring(log.errorSubstr) {
 						t.Errorf("failed to parse and replay log: %v", err)
 					}
 				}
