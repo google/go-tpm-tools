@@ -151,7 +151,7 @@ func createRecNumField(recNum uint64) TLV {
 
 // UnmarshalRecNum takes in a TLV with its type equals to the recnum type value (0), and
 // return its record number.
-func UnmarshalRecNum(tlv TLV) (uint64, error) {
+func unmarshalRecNum(tlv TLV) (uint64, error) {
 	if tlv.Type != recnumTypeValue {
 		return 0, fmt.Errorf("type of the TLV [%d] indicates it is not a recnum field [%d]",
 			tlv.Type, recnumTypeValue)
@@ -170,7 +170,7 @@ func createPCRField(pcrNum uint8) TLV {
 
 // UnmarshalPCR takes in a TLV with its type equals to the PCR type value (1), and
 // return its PCR number.
-func UnmarshalPCR(tlv TLV) (pcrNum uint8, err error) {
+func unmarshalPCR(tlv TLV) (pcrNum uint8, err error) {
 	if tlv.Type != pcrTypeValue {
 		return 0, fmt.Errorf("type of the TLV [%d] indicates it is not a PCR field [%d]",
 			tlv.Type, pcrTypeValue)
@@ -210,7 +210,7 @@ func createDigestField(digestMap map[crypto.Hash][]byte) (TLV, error) {
 
 // UnmarshalDigests takes in a TLV with its type equals to the digests type value (3), and
 // return its digests content in a map, the key is its TPM hash algorithm.
-func UnmarshalDigests(tlv TLV) (digestsMap map[crypto.Hash][]byte, err error) {
+func unmarshalDigests(tlv TLV) (digestsMap map[crypto.Hash][]byte, err error) {
 	if tlv.Type != digestsTypeValue {
 		return nil, fmt.Errorf("type of the TLV indicates it doesn't contain digests")
 	}
@@ -311,7 +311,7 @@ func DecodeToCELR(buf *bytes.Buffer) (r Record, err error) {
 	if err != nil {
 		return Record{}, err
 	}
-	r.RecNum, err = UnmarshalRecNum(recnum)
+	r.RecNum, err = unmarshalRecNum(recnum)
 	if err != nil {
 		return Record{}, err
 	}
@@ -320,7 +320,7 @@ func DecodeToCELR(buf *bytes.Buffer) (r Record, err error) {
 	if err != nil {
 		return Record{}, err
 	}
-	r.PCR, err = UnmarshalPCR(pcr)
+	r.PCR, err = unmarshalPCR(pcr)
 	if err != nil {
 		return Record{}, err
 	}
@@ -329,7 +329,7 @@ func DecodeToCELR(buf *bytes.Buffer) (r Record, err error) {
 	if err != nil {
 		return Record{}, err
 	}
-	r.Digests, err = UnmarshalDigests(digests)
+	r.Digests, err = unmarshalDigests(digests)
 	if err != nil {
 		return Record{}, err
 	}
