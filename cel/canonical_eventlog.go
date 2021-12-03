@@ -35,7 +35,7 @@ type TLV struct {
 }
 
 // MarshalBinary marshals a TLV to a byte slice.
-func (tlv *TLV) MarshalBinary() (data []byte, err error) {
+func (tlv TLV) MarshalBinary() (data []byte, err error) {
 	buf := make([]byte, len(tlv.Value)+tlvTypeFieldLength+tlvLengthFieldLength)
 
 	buf[0] = tlv.Type
@@ -98,9 +98,9 @@ func UnmarshalFirstTLV(buf *bytes.Buffer) (tlv TLV, err error) {
 
 // Record represents a Canonical Eventlog Record.
 type Record struct {
-	RECNUM  TLV
-	PCR     TLV
-	Digests TLV
+	RecNum  uint64
+	PCR     uint8
+	Digests map[crypto.Hash][]byte
 	Content TLV
 }
 
@@ -132,9 +132,11 @@ func (c *CEL) AppendEvent(tpm io.ReadWriteCloser, pcr int, hashAlgos []crypto.Ha
 		// TODO: extend the digest to TPM PCR
 	}
 
-	celr, err := createCELR(uint64(len(c.Records)), uint8(pcr), digestsMap, event)
-	if err != nil {
-		return err
+	celr := Record{
+		RecNum:  uint64(len(c.Records)),
+		PCR:     uint8(pcr),
+		Digests: digestsMap,
+		Content: event.GetTLV(),
 	}
 
 	c.Records = append(c.Records, celr)
@@ -232,31 +234,22 @@ func UnmarshalDigests(tlv TLV) (digestsMap map[crypto.Hash][]byte, err error) {
 	return digestsMap, nil
 }
 
-func createCELR(recNum uint64, pcr uint8, digestsmap map[crypto.Hash][]byte, event Content) (celr Record, err error) {
-	recnumField := createRecNumField(recNum)
-	pcrField := createPCRField(pcr)
-
-	digestField, err := createDigestField(digestsmap)
-	if err != nil {
-		return Record{}, err
-	}
-	celr = Record{recnumField, pcrField, digestField, event.GetTLV()}
-
-	return celr, nil
-}
-
 // EncodeCELR encodes the CELR to bytes according to the CEL spec and write them
 // to the bytes byffer.
 func (r *Record) EncodeCELR(buf *bytes.Buffer) error {
-	recnumField, err := r.RECNUM.MarshalBinary()
+	recnumField, err := createRecNumField(r.RecNum).MarshalBinary()
 	if err != nil {
 		return err
 	}
-	pcrField, err := r.PCR.MarshalBinary()
+	pcrField, err := createPCRField(r.PCR).MarshalBinary()
 	if err != nil {
 		return err
 	}
-	digestsField, err := r.Digests.MarshalBinary()
+	digests, err := createDigestField(r.Digests)
+	if err != nil {
+		return err
+	}
+	digestsField, err := digests.MarshalBinary()
 	if err != nil {
 		return err
 	}
@@ -313,44 +306,37 @@ func DecodeToCEL(buf *bytes.Buffer) (CEL, error) {
 
 // DecodeToCELR will read the buf for the next CELR, will return err if
 // failed to unmarshal a correct CELR TLV from the buffer.
-func DecodeToCELR(buf *bytes.Buffer) (Record, error) {
+func DecodeToCELR(buf *bytes.Buffer) (r Record, err error) {
 	recnum, err := UnmarshalFirstTLV(buf)
 	if err != nil {
 		return Record{}, err
 	}
-	if recnum.Type != recnumTypeValue {
-		return Record{}, fmt.Errorf("recnum TLV doesn't have the correct type [%d], got [%d]",
-			recnumTypeValue, recnum.Type)
+	r.RecNum, err = UnmarshalRecNum(recnum)
+	if err != nil {
+		return Record{}, err
 	}
 
 	pcr, err := UnmarshalFirstTLV(buf)
 	if err != nil {
 		return Record{}, err
 	}
-	if pcr.Type != pcrTypeValue {
-		return Record{}, fmt.Errorf("pcr TLV doesn't have the correct type [%d], got [%d]",
-			pcrTypeValue, pcr.Type)
+	r.PCR, err = UnmarshalPCR(pcr)
+	if err != nil {
+		return Record{}, err
 	}
 
 	digests, err := UnmarshalFirstTLV(buf)
 	if err != nil {
 		return Record{}, err
 	}
-	if digests.Type != digestsTypeValue {
-		return Record{}, fmt.Errorf("digests TLV doesn't have the correct type [%d], got [%d]",
-			digestsTypeValue, digests.Type)
-	}
-
-	content, err := UnmarshalFirstTLV(buf)
+	r.Digests, err = UnmarshalDigests(digests)
 	if err != nil {
 		return Record{}, err
 	}
-	celr := Record{
-		recnum,
-		pcr,
-		digests,
-		content,
-	}
 
-	return celr, nil
+	r.Content, err = UnmarshalFirstTLV(buf)
+	if err != nil {
+		return Record{}, err
+	}
+	return r, nil
 }
