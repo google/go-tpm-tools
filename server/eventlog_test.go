@@ -283,6 +283,39 @@ var COS85AmdSev = eventLog{
 	}},
 }
 
+var COS93AmdSev = eventLog{
+	RawLog: test.Cos93AmdSevEventLog,
+	Banks: []*pb.PCRs{{
+		Hash: pb.HashAlgo_SHA1,
+		Pcrs: map[uint32][]byte{
+			0: decodeHex("c032c3b51dbb6f96b047421512fd4b4dfde496f3"),
+			1: decodeHex("e3e9e1d9deacd95b289bbbd3a1717a57af7d211b"),
+			2: decodeHex("b2a83b0ebf2f8374299a5b2bdfc31ea955ad7236"),
+			3: decodeHex("b2a83b0ebf2f8374299a5b2bdfc31ea955ad7236"),
+			4: decodeHex("1e4b998edfb4d62fb88337a66b3af8be26159498"),
+			5: decodeHex("3421f02e05d71fe4bd002cbe22e68c230397821d"),
+			6: decodeHex("b2a83b0ebf2f8374299a5b2bdfc31ea955ad7236"),
+			7: decodeHex("42e669233f0e826df5093abfd6998c020df2de88"),
+			8: decodeHex("ec84952e0c5c96cd4404122131b8f86d5ac7df7d"),
+			9: decodeHex("7a406f847075a86a55aa184cfe3fcef7eaff40a7"),
+		},
+	}, {
+		Hash: pb.HashAlgo_SHA256,
+		Pcrs: map[uint32][]byte{
+			0: decodeHex("0f35c214608d93c7a6e68ae7359b4a8be5a0e99eea9107ece427c4dea4e439cf"),
+			1: decodeHex("6eb40f5b6bfafcb9914d486ce59404acd24bc13a6a3c45cda3b44c9d7053d638"),
+			2: decodeHex("3d458cfe55cc03ea1f443f1562beec8df51c75e14a9fcf9a7234a13f198e7969"),
+			3: decodeHex("3d458cfe55cc03ea1f443f1562beec8df51c75e14a9fcf9a7234a13f198e7969"),
+			4: decodeHex("871e8343044ae4c87b402dcb94b5e49715b1b8dc1b19c43ba0801422fabb39d4"),
+			5: decodeHex("74be59dc8066011eade913db9a3db7978f93852c04816cba9427dd59b87042cc"),
+			6: decodeHex("3d458cfe55cc03ea1f443f1562beec8df51c75e14a9fcf9a7234a13f198e7969"),
+			7: decodeHex("3365d7fa2b024c852913c06e04ffbfa6ea5289f743bbf1a76f7ffdf21ed84793"),
+			8: decodeHex("ba18b7028111f1f193967cad3c23b5050f73061c0f119182ac0f42efd6a9159e"),
+			9: decodeHex("0b1e4f9ca7bc8535c4c33f0025969d7abea008aa51dcd7f7c2d1068470e4bce4"),
+		},
+	}},
+}
+
 func TestParseEventLogs(t *testing.T) {
 	sbatErrorStr := "asn1: structure error: tags don't match (16 vs {class:0 tag:24 length:10 isCompound:true})"
 	logs := []struct {
@@ -304,6 +337,7 @@ func TestParseEventLogs(t *testing.T) {
 		// This event log has a SecureBoot variable length of 0.
 		{ArchLinuxWorkstation, "ArchLinuxWorkstation", UnsupportedLoader, archLinuxBadSecureBoot},
 		{COS85AmdSev, "COS85AmdSev", GRUB, ""},
+		{COS93AmdSev, "COS93AmdSev", GRUB, ""},
 	}
 
 	for _, log := range logs {
@@ -556,23 +590,31 @@ func generateNonCosCelEvent(hashAlgoList []crypto.Hash) (cel.Record, error) {
 }
 
 func TestParseGrubState(t *testing.T) {
-	eventlog := COS85AmdSev
-	for _, bank := range eventlog.Banks {
-		hashName := pb.HashAlgo_name[int32(bank.Hash)]
-		subtestName := fmt.Sprintf("COS85AmdSev-%s", hashName)
-		t.Run(subtestName, func(t *testing.T) {
-			msState, err := parsePCClientEventLog(eventlog.RawLog, bank, GRUB)
-			if err != nil {
-				t.Errorf("failed to parse and replay log: %v", err)
-			}
+	logs := []struct {
+		eventLog
+		name string
+	}{
+		{COS85AmdSev, "COS85AmdSev"},
+		{COS93AmdSev, "COS93AmdSev"},
+	}
+	for _, log := range logs {
+		for _, bank := range log.Banks {
+			hashName := pb.HashAlgo_name[int32(bank.Hash)]
+			subtestName := fmt.Sprintf("COS85AmdSev-%s", hashName)
+			t.Run(subtestName, func(t *testing.T) {
+				msState, err := parsePCClientEventLog(log.RawLog, bank, GRUB)
+				if err != nil {
+					t.Errorf("failed to parse and replay log: %v", err)
+				}
 
-			if len(msState.Grub.GetCommands()) == 0 {
-				t.Errorf("expected COS85 to run GRUB commands!")
-			}
-			if len(msState.Grub.GetFiles()) != 2 {
-				t.Errorf("expected COS85 to read two files (grub.cfg and kernel)!")
-			}
-		})
+				if len(msState.Grub.GetCommands()) == 0 {
+					t.Errorf("expected COS85 to run GRUB commands!")
+				}
+				if len(msState.Grub.GetFiles()) != 2 {
+					t.Errorf("expected COS85 to read two files (grub.cfg and kernel)!")
+				}
+			})
+		}
 	}
 }
 
