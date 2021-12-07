@@ -108,6 +108,26 @@ message SecureBootState {
   Database authority = 4;
 }
 
+// The container's restart policy.
+// See
+// https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#restart-policy
+// for more details.
+enum RestartPolicy {
+  ALWAYS = 0;
+  ON_FAILURE = 1;
+  NEVER = 2;
+}
+
+message ContainerState {
+  string image_reference = 1;
+  bytes image_digest = 2;
+  RestartPolicy restart_policy = 3;
+}
+
+message AttestedCosState {
+  ContainerState container = 1;
+}
+
 // The verified state of a booted machine, obtained from an Attestation
 message MachineState {
   PlatformState platform = 1;
@@ -121,6 +141,12 @@ message MachineState {
   //   - which PCR bank was used for for quote validation and event log replay
   //   - the hash algorithm used to calculate event digests
   tpm.HashAlgo hash = 4;
+
+  // GrubState grub = 5;
+
+  // LinuxKernelState linux_kernel = 6;
+
+  AttestedCosState cos = 7;
 }
 
 // A policy dictating which values of PlatformState to allow
