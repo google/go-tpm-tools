@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"crypto"
 	"crypto/subtle"
+	"crypto/x509"
 	"fmt"
 	"io"
 
@@ -24,6 +25,7 @@ type Key struct {
 	pubKey  crypto.PublicKey
 	name    tpm2.Name
 	session session
+	cert    *x509.Certificate
 }
 
 // EndorsementKeyRSA generates and loads a key from DefaultEKTemplateRSA.
@@ -67,14 +69,32 @@ func EndorsementKeyFromNvIndex(rw io.ReadWriter, idx uint32) (*Key, error) {
 // function will only work on a GCE VM. Unlike AttestationKeyRSA, this key uses
 // the Endorsement Hierarchy and its template loaded from GceAKTemplateNVIndexRSA.
 func GceAttestationKeyRSA(rw io.ReadWriter) (*Key, error) {
-	return EndorsementKeyFromNvIndex(rw, GceAKTemplateNVIndexRSA)
+	akRsa, err := EndorsementKeyFromNvIndex(rw, GceAKTemplateNVIndexRSA)
+	if err != nil {
+		return nil, err
+	}
+	akCert, err := getCertificateFromNvram(rw, GceAKCertNVIndexRSA)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch GCE RSA AKCert: %v", err)
+	}
+	akRsa.cert = akCert
+	return akRsa, nil
 }
 
 // GceAttestationKeyECC generates and loads the GCE ECC AK. Note that this
 // function will only work on a GCE VM. Unlike AttestationKeyECC, this key uses
 // the Endorsement Hierarchy and its template loaded from GceAKTemplateNVIndexECC.
 func GceAttestationKeyECC(rw io.ReadWriter) (*Key, error) {
-	return EndorsementKeyFromNvIndex(rw, GceAKTemplateNVIndexECC)
+	akEcc, err := EndorsementKeyFromNvIndex(rw, GceAKTemplateNVIndexECC)
+	if err != nil {
+		return nil, err
+	}
+	akCert, err := getCertificateFromNvram(rw, GceAKCertNVIndexECC)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch GCE ECC AKCert: %v", err)
+	}
+	akEcc.cert = akCert
+	return akEcc, nil
 }
 
 // KeyFromNvIndex generates and loads a key under the provided parent
@@ -426,4 +446,29 @@ func (k *Key) Reseal(in *pb.SealedBytes, uOpts UnsealOpts, sOpts SealOpts) (*pb.
 
 func (k *Key) hasAttribute(attr tpm2.KeyProp) bool {
 	return k.pubArea.Attributes&attr != 0
+}
+
+// Cert returns the parsed certificate for the given key.
+func (k *Key) Cert() *x509.Certificate {
+	return k.cert
+}
+
+// CertRaw provides the ASN.1 DER content of the key's certificate.
+func (k *Key) CertRaw() []byte {
+	if k.cert == nil {
+		return nil
+	}
+	return k.cert.Raw
+}
+
+func getCertificateFromNvram(rw io.ReadWriter, index uint32) (*x509.Certificate, error) {
+	certASN1, err := tpm2.NVReadEx(rw, tpmutil.Handle(index), tpm2.HandleOwner, "", 0)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read certificate from NV memory: %v", certASN1)
+	}
+	x509Cert, err := x509.ParseCertificate(certASN1)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse certificate from NV memory")
+	}
+	return x509Cert, nil
 }

@@ -24,9 +24,11 @@ const (
 	DefaultAKRSAHandle = tpmutil.Handle(0x81008F01)
 )
 
-// NV Indices holding GCE AK Templates
+// GCE Attestation Key NV Indices
 const (
+	GceAKCertNVIndexRSA     uint32 = 0x01c10000
 	GceAKTemplateNVIndexRSA uint32 = 0x01c10001
+	GceAKCertNVIndexECC     uint32 = 0x01c10002
 	GceAKTemplateNVIndexECC uint32 = 0x01c10003
 )
 
