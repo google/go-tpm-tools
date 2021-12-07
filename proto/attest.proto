@@ -65,16 +65,16 @@ message Event {
   bool digest_verified = 5;
 }
 
-  // Common, publicly-listed certificates by different vendors.
-  enum WellKnownCertificate {
-    UNKNOWN = 0;
+// Common, publicly-listed certificates by different vendors.
+enum WellKnownCertificate {
+  UNKNOWN = 0;
 
-    // Microsoft certs:
-    // https://go.microsoft.com/fwlink/p/?linkid=321192
-    MS_WINDOWS_PROD_PCA_2011 = 1;
-    // https://go.microsoft.com/fwlink/p/?linkid=321194
-    MS_THIRD_PARTY_UEFI_CA_2011 = 2;
-  }
+  // Microsoft certs:
+  // https://go.microsoft.com/fwlink/p/?linkid=321192
+  MS_WINDOWS_PROD_PCA_2011 = 1;
+  // https://go.microsoft.com/fwlink/p/?linkid=321194
+  MS_THIRD_PARTY_UEFI_CA_2011 = 2;
+}
 
 message Certificate {
 
