@@ -10,6 +10,7 @@ import (
 	"io"
 
 	"github.com/google/go-tpm/tpm2"
+	"github.com/google/go-tpm/tpmutil"
 )
 
 const (
@@ -129,7 +130,13 @@ func (c *CEL) AppendEvent(tpm io.ReadWriteCloser, pcr int, hashAlgos []crypto.Ha
 		}
 		digestsMap[hashAlgo] = digest
 
-		// TODO: extend the digest to TPM PCR
+		tpm2Alg, err := tpm2.HashToAlgorithm(hashAlgo)
+		if err != nil {
+			return err
+		}
+		if err := tpm2.PCRExtend(tpm, tpmutil.Handle(pcr), tpm2Alg, digest, ""); err != nil {
+			return fmt.Errorf("failed to extend event to PCR%d: %v", pcr, err)
+		}
 	}
 
 	celr := Record{
