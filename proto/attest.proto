@@ -21,10 +21,13 @@ message Attestation {
   bytes ak_pub = 1;
   // Quotes over all supported PCR banks
   repeated tpm.Quote quotes = 2;
-  // TCG Event Log, encoded in the raw binary format
+  // TCG Event Log, encoded in the raw binary format.
+  // Can be SHA-1 or crypto-agile.
   bytes event_log = 3;
   // Optional information about a GCE instance, unused outside of GCE
   GCEInstanceInfo instance_info = 4;
+  // A TCG Canonical Event Log.
+  bytes canonical_event_log = 5;
 }
 
 // Type of hardware technology used to protect this instance
