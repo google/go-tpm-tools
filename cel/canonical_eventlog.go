@@ -389,5 +389,5 @@ func (c *CEL) replay(bank *pb.PCRs) error {
 		return nil
 	}
 
-	return fmt.Errorf("CEL replay failed for these PCRS in bank %v: %v", tpm2Alg, failedReplayPcrs)
+	return fmt.Errorf("CEL replay failed for these PCRs in bank %v: %v", tpm2Alg, failedReplayPcrs)
 }

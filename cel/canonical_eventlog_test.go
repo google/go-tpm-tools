@@ -85,10 +85,12 @@ func TestCELMeasureAndReplay(t *testing.T) {
 	appendOrFatal(t, cel, tpm, test.ApplicationPCR, measuredHashes, cosEvent)
 
 	replay(t, cel, tpm, measuredHashes,
-		[]int{test.DebugPCR, test.ApplicationPCR} /*shouldSucceed=*/, true)
+		[]int{test.DebugPCR, test.ApplicationPCR},
+		/*shouldSucceed=*/ true)
 	// Supersets should pass.
 	replay(t, cel, tpm, measuredHashes,
-		[]int{0, 13, 14, test.DebugPCR, 22, test.ApplicationPCR} /*shouldSucceed=*/, true)
+		[]int{0, 13, 14, test.DebugPCR, 22, test.ApplicationPCR},
+		/*shouldSucceed=*/ true)
 }
 
 func TestCELReplayFailTampered(t *testing.T) {
@@ -118,7 +120,8 @@ func TestCELReplayFailTampered(t *testing.T) {
 		modifiedRecord.Digests[hash] = newDigest
 	}
 	replay(t, cel, tpm, measuredHashes,
-		[]int{test.DebugPCR, test.ApplicationPCR} /*shouldSucceed=*/, false)
+		[]int{test.DebugPCR, test.ApplicationPCR},
+		/*shouldSucceed=*/ false)
 }
 
 func TestCELReplayEmpty(t *testing.T) {
@@ -127,7 +130,8 @@ func TestCELReplayEmpty(t *testing.T) {
 
 	cel := &CEL{}
 	replay(t, cel, tpm, []crypto.Hash{crypto.SHA256, crypto.SHA1, crypto.SHA512},
-		[]int{test.DebugPCR, test.ApplicationPCR} /*shouldSucceed=*/, true)
+		[]int{test.DebugPCR, test.ApplicationPCR},
+		/*shouldSucceed=*/ true)
 }
 
 func TestCELReplayFailMissingPCRsInBank(t *testing.T) {
@@ -143,9 +147,11 @@ func TestCELReplayFailMissingPCRsInBank(t *testing.T) {
 	appendOrFatal(t, cel, tpm, test.DebugPCR, measuredHashes, CosTlv{someEvent})
 	appendOrFatal(t, cel, tpm, test.ApplicationPCR, measuredHashes, CosTlv{someEvent2})
 	replay(t, cel, tpm, measuredHashes,
-		[]int{test.DebugPCR} /*shouldSucceed=*/, false)
+		[]int{test.DebugPCR},
+		/*shouldSucceed=*/ false)
 	replay(t, cel, tpm, measuredHashes,
-		[]int{test.ApplicationPCR} /*shouldSucceed=*/, false)
+		[]int{test.ApplicationPCR},
+		/*shouldSucceed=*/ false)
 }
 
 func replay(t *testing.T, cel *CEL, tpm io.ReadWriteCloser, measuredHashes []crypto.Hash, pcrs []int, shouldSucceed bool) {
