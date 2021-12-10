@@ -9,7 +9,9 @@ import (
 	"fmt"
 	"io"
 
+	pb "github.com/google/go-tpm-tools/proto/tpm"
 	"github.com/google/go-tpm/tpm2"
+	"github.com/google/go-tpm/tpmutil"
 )
 
 const (
@@ -129,7 +131,13 @@ func (c *CEL) AppendEvent(tpm io.ReadWriteCloser, pcr int, hashAlgos []crypto.Ha
 		}
 		digestsMap[hashAlgo] = digest
 
-		// TODO: extend the digest to TPM PCR
+		tpm2Alg, err := tpm2.HashToAlgorithm(hashAlgo)
+		if err != nil {
+			return err
+		}
+		if err := tpm2.PCRExtend(tpm, tpmutil.Handle(pcr), tpm2Alg, digest, ""); err != nil {
+			return fmt.Errorf("failed to extend event to PCR%d: %v", pcr, err)
+		}
 	}
 
 	celr := Record{
@@ -339,4 +347,47 @@ func DecodeToCELR(buf *bytes.Buffer) (r Record, err error) {
 		return Record{}, err
 	}
 	return r, nil
+}
+
+// replay takes the digests from a Canonical Event Log and carries out the
+// extend sequence for each PCR in the log. It then compares the final digests
+// against a bank of PCR values to see if they match.
+func (c *CEL) replay(bank *pb.PCRs) error {
+	tpm2Alg := tpm2.Algorithm(bank.GetHash())
+	cryptoHash, err := tpm2Alg.Hash()
+	if err != nil {
+		return err
+	}
+	replayed := make(map[uint8][]byte)
+	for _, record := range c.Records {
+		if _, ok := replayed[record.PCR]; !ok {
+			replayed[record.PCR] = make([]byte, cryptoHash.Size())
+		}
+		hasher := cryptoHash.New()
+		digestsMap := record.Digests
+		digest, ok := digestsMap[cryptoHash]
+		if !ok {
+			return fmt.Errorf("the CEL record did not contain a %v digest", tpm2Alg)
+		}
+		hasher.Write(replayed[record.PCR])
+		hasher.Write(digest)
+		replayed[record.PCR] = hasher.Sum(nil)
+	}
+
+	var failedReplayPcrs []uint8
+	for replayPcr, replayDigest := range replayed {
+		bankDigest, ok := bank.Pcrs[uint32(replayPcr)]
+		if !ok {
+			return fmt.Errorf("the CEL contained record(s) for PCR%d without a matching PCR in the bank to verify", replayPcr)
+		}
+		if !bytes.Equal(bankDigest, replayDigest) {
+			failedReplayPcrs = append(failedReplayPcrs, replayPcr)
+		}
+	}
+
+	if len(failedReplayPcrs) == 0 {
+		return nil
+	}
+
+	return fmt.Errorf("CEL replay failed for these PCRs in bank %v: %v", tpm2Alg, failedReplayPcrs)
 }
