@@ -60,6 +60,14 @@ var (
 	RevokedCiscoCert []byte
 )
 
+// Known Privacy CA certs.
+var (
+	//go:embed ca-certs/tpm_ek_root_1.cer
+	GceEKRootCA []byte
+	//go:embed ca-certs/tpm_ek_intermediate_2.crt
+	GceEKIntermediateCA2 []byte
+)
+
 // ConvertSCRTMVersionToGCEFirmwareVersion attempts to parse the Firmware
 // Version of a GCE VM from the bytes of the version string of the SCRTM. This
 // data should come from a valid and verified EV_S_CRTM_VERSION event.
