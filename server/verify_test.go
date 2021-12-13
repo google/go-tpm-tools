@@ -11,15 +11,23 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/certificate-transparency-go/x509"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal"
 	"github.com/google/go-tpm-tools/internal/test"
 	attestpb "github.com/google/go-tpm-tools/proto/attest"
+	pb "github.com/google/go-tpm-tools/proto/attest"
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpmutil"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
+)
+
+var (
+	GceRoots         = [][]byte{GceEKRootCA}
+	GceIntermediates = [][]byte{GceEKIntermediateCA2}
 )
 
 func getDigestHash(input string) []byte {
@@ -394,4 +402,116 @@ func TestVerifyFailWithTamperedCELContent(t *testing.T) {
 	} else if !strings.Contains(err.Error(), "CEL record content digest verification failed") {
 		t.Fatalf("expect to get digest verification failed error, but got %v", err)
 	}
+}
+
+func TestVerifyAttestationWithCerts(t *testing.T) {
+	tests := []struct {
+		name        string
+		attestation []byte
+		nonce       []byte
+	}{
+		{
+			"no-nonce",
+			test.COS85NoNonce,
+			nil,
+		},
+		{
+			"nonce-9009",
+			test.COS85Nonce9009,
+			[]byte{0x90, 0x09},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			attestBytes := test.attestation
+			att := &pb.Attestation{}
+			if err := proto.Unmarshal(attestBytes, att); err != nil {
+				t.Fatalf("failed to unmarshal attestation: %v", err)
+			}
+
+			roots, err := getPool(GceRoots)
+			if err != nil {
+				t.Fatalf("failed to get root CA certs: %v", err)
+			}
+			intermediates, err := getPool(GceIntermediates)
+			if err != nil {
+				t.Fatalf("failed to get intermediate CA certs: %v", err)
+			}
+
+			if _, err := VerifyAttestation(att, VerifyOpts{
+				Nonce:                test.nonce,
+				TrustedRoots:         roots,
+				TrustedIntermediates: intermediates,
+			}); err != nil {
+				t.Errorf("failed to VerifyAttestation with AKCert: %v", err)
+			}
+		})
+	}
+}
+
+func TestVerifyAttestationEmptyRootsIntermediates(t *testing.T) {
+	attestBytes := test.COS85NoNonce
+	att := &pb.Attestation{}
+	if err := proto.Unmarshal(attestBytes, att); err != nil {
+		t.Fatalf("failed to unmarshal attestation: %v", err)
+	}
+
+	if _, err := VerifyAttestation(att, VerifyOpts{
+		TrustedRoots:         x509.NewCertPool(),
+		TrustedIntermediates: x509.NewCertPool(),
+	}); err == nil {
+		t.Error("expected error when calling VerifyAttestation with empty roots and intermediates")
+	}
+
+	if _, err := VerifyAttestation(att, VerifyOpts{}); err == nil {
+		t.Error("expected error when calling VerifyAttestation with empty VerifyOpts")
+	}
+}
+
+func TestVerifyAttestationMissingRoots(t *testing.T) {
+	attestBytes := test.COS85NoNonce
+	att := &pb.Attestation{}
+	if err := proto.Unmarshal(attestBytes, att); err != nil {
+		t.Fatalf("failed to unmarshal attestation: %v", err)
+	}
+	intermediates, err := getPool(GceIntermediates)
+	if err != nil {
+		t.Fatalf("failed to get intermediate CA certs: %v", err)
+	}
+
+	if _, err := VerifyAttestation(att, VerifyOpts{
+		TrustedIntermediates: intermediates,
+	}); err == nil {
+		t.Error("expected error when calling VerifyAttestation with empty roots and intermediates")
+	}
+}
+
+func TestVerifyAttestationMissingIntermediates(t *testing.T) {
+	attestBytes := test.COS85NoNonce
+	att := &pb.Attestation{}
+	if err := proto.Unmarshal(attestBytes, att); err != nil {
+		t.Fatalf("failed to unmarshal attestation: %v", err)
+	}
+	roots, err := getPool(GceRoots)
+	if err != nil {
+		t.Fatalf("failed to get root CA certs: %v", err)
+	}
+
+	if _, err := VerifyAttestation(att, VerifyOpts{
+		TrustedRoots: roots,
+	}); err == nil {
+		t.Error("expected error when calling VerifyAttestation with empty roots and intermediates")
+	}
+}
+
+func getPool(certs [][]byte) (*x509.CertPool, error) {
+	pool := x509.NewCertPool()
+	for _, certBytes := range certs {
+		cert, err := x509.ParseCertificate(certBytes)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse cert: %v", err)
+		}
+		pool.AddCert(cert)
+	}
+	return pool, nil
 }
