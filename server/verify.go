@@ -4,8 +4,11 @@ import (
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/rsa"
+	"errors"
 	"fmt"
 
+	// Rather than crypto/x509 as ct allows disabling critical extension checks.
+	"github.com/google/certificate-transparency-go/x509"
 	"github.com/google/go-tpm-tools/internal"
 	pb "github.com/google/go-tpm-tools/proto/attest"
 	tpmpb "github.com/google/go-tpm-tools/proto/tpm"
@@ -23,7 +26,8 @@ type VerifyOpts struct {
 	// The nonce used when calling client.Attest
 	Nonce []byte
 	// Trusted public keys that can be used to directly verify the key used for
-	// attestation. This option should be used if you already know the AK.
+	// attestation. This option should be used if you already know the AK, as
+	// it provides the highest level of assurance.
 	TrustedAKs []crypto.PublicKey
 	// Allow attestations to be verified using SHA-1. This defaults to false
 	// because SHA-1 is a weak hash algorithm with known collision attacks.
@@ -31,6 +35,12 @@ type VerifyOpts struct {
 	// supports the legacy event log format. This is the case on older Linux
 	// distributions (such as Debian 10).
 	AllowSHA1 bool
+	// A collection of trusted root CAs that are used to sign AK certificates.
+	// The TrustedAKs are used first, followed by TrustRoots and Intermediates.
+	// Adding a specific TPM manufacturer's root or intermediate CA means all
+	// TPMs signed by that CA will be trusted.
+	TrustedRoots         *x509.CertPool
+	TrustedIntermediates *x509.CertPool
 }
 
 // VerifyAttestation performs the following checks on an Attestation:
@@ -56,8 +66,10 @@ func VerifyAttestation(attestation *pb.Attestation, opts VerifyOpts) (*pb.Machin
 	if err != nil {
 		return nil, fmt.Errorf("failed to get AK public key: %w", err)
 	}
-	if err = checkAkTrusted(akPubKey, opts); err != nil {
-		return nil, err
+	if err := checkAkTrusted(akPubKey, opts); err != nil {
+		if err := validateAkCert(attestation.AkCert, opts.TrustedIntermediates, opts.TrustedRoots); err != nil {
+			return nil, fmt.Errorf("failed to validate attestation key: AKPub is untrusted and %v", err)
+		}
 	}
 
 	// Verify the signing hash algorithm
@@ -137,6 +149,35 @@ func checkAkTrusted(ak crypto.PublicKey, opts VerifyOpts) error {
 		}
 	}
 	return fmt.Errorf("AK public key is not trusted")
+}
+
+func validateAkCert(akCertBytes []byte, intermediates *x509.CertPool, roots *x509.CertPool) error {
+	if len(akCertBytes) == 0 {
+		return errors.New("AKCert is empty")
+	}
+
+	akCert, err := x509.ParseCertificate(akCertBytes)
+	if err != nil {
+		return fmt.Errorf("failed to parse AKCert: %v", err)
+	}
+
+	if _, err := akCert.Verify(x509.VerifyOptions{
+		Roots:         roots,
+		Intermediates: intermediates,
+		// x509 (both ct and crypto) marks the SAN extension unhandled if SAN
+		// does not parse any of DNSNames, EmailAddresses, IPAddresses, or URIs.
+		// https://cs.opensource.google/go/go/+/master:src/crypto/x509/parser.go;l=668-678
+		DisableCriticalExtensionChecks: true,
+		// The default key usage (ExtKeyUsageServerAuth) is not appropriate for
+		// an Attestation Key: ExtKeyUsage of
+		// - https://oidref.com/2.23.133.8.1
+		// - https://oidref.com/2.23.133.8.3
+		// https://pkg.go.dev/crypto/x509#VerifyOptions
+		KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsage(x509.ExtKeyUsageAny)},
+	}); err != nil {
+		return fmt.Errorf("failed to verify AKCert against trusted roots: %v", err)
+	}
+	return nil
 }
 
 func checkHashAlgSupported(hash tpm2.Algorithm, opts VerifyOpts) error {
