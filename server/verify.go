@@ -36,11 +36,12 @@ type VerifyOpts struct {
 	// distributions (such as Debian 10).
 	AllowSHA1 bool
 	// A collection of trusted root CAs that are used to sign AK certificates.
-	// The TrustedAKs are used first, followed by TrustRoots and Intermediates.
-	// Adding a specific TPM manufacturer's root or intermediate CA means all
+	// The TrustedAKs are used first, followed by TrustRootCerts and
+	// IntermediateCerts.
+	// Adding a specific TPM manufacturer's root and intermediate CAs means all
 	// TPMs signed by that CA will be trusted.
-	TrustedRoots         *x509.CertPool
-	TrustedIntermediates *x509.CertPool
+	TrustedRootCerts  *x509.CertPool
+	IntermediateCerts *x509.CertPool
 }
 
 // VerifyAttestation performs the following checks on an Attestation:
@@ -67,7 +68,7 @@ func VerifyAttestation(attestation *pb.Attestation, opts VerifyOpts) (*pb.Machin
 		return nil, fmt.Errorf("failed to get AK public key: %w", err)
 	}
 	if err := checkAkTrusted(akPubKey, opts); err != nil {
-		if err := validateAkCert(attestation.AkCert, opts.TrustedIntermediates, opts.TrustedRoots); err != nil {
+		if err := validateAkCert(attestation.AkCert, opts.IntermediateCerts, opts.TrustedRootCerts); err != nil {
 			return nil, fmt.Errorf("failed to validate attestation key: AKPub is untrusted and %v", err)
 		}
 	}

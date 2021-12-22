@@ -18,16 +18,10 @@ import (
 	"github.com/google/go-tpm-tools/internal"
 	"github.com/google/go-tpm-tools/internal/test"
 	attestpb "github.com/google/go-tpm-tools/proto/attest"
-	pb "github.com/google/go-tpm-tools/proto/attest"
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpmutil"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
-)
-
-var (
-	GceRoots         = [][]byte{GceEKRootCA}
-	GceIntermediates = [][]byte{GceEKIntermediateCA2}
 )
 
 func getDigestHash(input string) []byte {
@@ -424,24 +418,15 @@ func TestVerifyAttestationWithCerts(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			attestBytes := test.attestation
-			att := &pb.Attestation{}
+			att := &attestpb.Attestation{}
 			if err := proto.Unmarshal(attestBytes, att); err != nil {
 				t.Fatalf("failed to unmarshal attestation: %v", err)
 			}
 
-			roots, err := getPool(GceRoots)
-			if err != nil {
-				t.Fatalf("failed to get root CA certs: %v", err)
-			}
-			intermediates, err := getPool(GceIntermediates)
-			if err != nil {
-				t.Fatalf("failed to get intermediate CA certs: %v", err)
-			}
-
 			if _, err := VerifyAttestation(att, VerifyOpts{
-				Nonce:                test.nonce,
-				TrustedRoots:         roots,
-				TrustedIntermediates: intermediates,
+				Nonce:             test.nonce,
+				TrustedRootCerts:  GceEKRoots,
+				IntermediateCerts: GceEKIntermediates,
 			}); err != nil {
 				t.Errorf("failed to VerifyAttestation with AKCert: %v", err)
 			}
@@ -451,14 +436,14 @@ func TestVerifyAttestationWithCerts(t *testing.T) {
 
 func TestVerifyAttestationEmptyRootsIntermediates(t *testing.T) {
 	attestBytes := test.COS85NoNonce
-	att := &pb.Attestation{}
+	att := &attestpb.Attestation{}
 	if err := proto.Unmarshal(attestBytes, att); err != nil {
 		t.Fatalf("failed to unmarshal attestation: %v", err)
 	}
 
 	if _, err := VerifyAttestation(att, VerifyOpts{
-		TrustedRoots:         x509.NewCertPool(),
-		TrustedIntermediates: x509.NewCertPool(),
+		TrustedRootCerts:  x509.NewCertPool(),
+		IntermediateCerts: x509.NewCertPool(),
 	}); err == nil {
 		t.Error("expected error when calling VerifyAttestation with empty roots and intermediates")
 	}
@@ -470,17 +455,13 @@ func TestVerifyAttestationEmptyRootsIntermediates(t *testing.T) {
 
 func TestVerifyAttestationMissingRoots(t *testing.T) {
 	attestBytes := test.COS85NoNonce
-	att := &pb.Attestation{}
+	att := &attestpb.Attestation{}
 	if err := proto.Unmarshal(attestBytes, att); err != nil {
 		t.Fatalf("failed to unmarshal attestation: %v", err)
 	}
-	intermediates, err := getPool(GceIntermediates)
-	if err != nil {
-		t.Fatalf("failed to get intermediate CA certs: %v", err)
-	}
 
 	if _, err := VerifyAttestation(att, VerifyOpts{
-		TrustedIntermediates: intermediates,
+		IntermediateCerts: GceEKIntermediates,
 	}); err == nil {
 		t.Error("expected error when calling VerifyAttestation with empty roots and intermediates")
 	}
@@ -488,30 +469,14 @@ func TestVerifyAttestationMissingRoots(t *testing.T) {
 
 func TestVerifyAttestationMissingIntermediates(t *testing.T) {
 	attestBytes := test.COS85NoNonce
-	att := &pb.Attestation{}
+	att := &attestpb.Attestation{}
 	if err := proto.Unmarshal(attestBytes, att); err != nil {
 		t.Fatalf("failed to unmarshal attestation: %v", err)
 	}
-	roots, err := getPool(GceRoots)
-	if err != nil {
-		t.Fatalf("failed to get root CA certs: %v", err)
-	}
 
 	if _, err := VerifyAttestation(att, VerifyOpts{
-		TrustedRoots: roots,
+		TrustedRootCerts: GceEKRoots,
 	}); err == nil {
 		t.Error("expected error when calling VerifyAttestation with empty roots and intermediates")
 	}
-}
-
-func getPool(certs [][]byte) (*x509.CertPool, error) {
-	pool := x509.NewCertPool()
-	for _, certBytes := range certs {
-		cert, err := x509.ParseCertificate(certBytes)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse cert: %v", err)
-		}
-		pool.AddCert(cert)
-	}
-	return pool, nil
 }
