@@ -28,6 +28,9 @@ message Attestation {
   GCEInstanceInfo instance_info = 4;
   // A TCG Canonical Event Log.
   bytes canonical_event_log = 5;
+  // Attestation Key (AK) Certificate, encoded as ASN.1 DER.
+  // Optional.
+  bytes ak_cert = 6;
 }
 
 // Type of hardware technology used to protect this instance

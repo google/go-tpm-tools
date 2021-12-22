@@ -5,8 +5,10 @@ import (
 	_ "embed" // Necessary to use go:embed
 	"errors"
 	"fmt"
+	"log"
 	"strconv"
 
+	"github.com/google/certificate-transparency-go/x509"
 	pb "github.com/google/go-tpm-tools/proto/attest"
 )
 
@@ -59,6 +61,43 @@ var (
 	//go:embed secure-boot/cisco-boothole.crt
 	RevokedCiscoCert []byte
 )
+
+// Known Privacy CA certs.
+var (
+	//go:embed ca-certs/tpm_ek_root_1.cer
+	gceEKRootCA []byte
+	//go:embed ca-certs/tpm_ek_intermediate_2.crt
+	gceEKIntermediateCA2 []byte
+)
+
+// CertPools corresponding to the known CA certs for GCE.
+var (
+	GceEKRoots         *x509.CertPool
+	GceEKIntermediates *x509.CertPool
+)
+
+func init() {
+	var err error
+	GceEKRoots, err = getPool([][]byte{gceEKRootCA})
+	if err != nil {
+		log.Panicf("failed to create the root cert pool: %v", err)
+	}
+	GceEKIntermediates, err = getPool([][]byte{gceEKIntermediateCA2})
+	if err != nil {
+		log.Panicf("failed to create the intermediate cert pool: %v", err)
+	}
+}
+func getPool(certs [][]byte) (*x509.CertPool, error) {
+	pool := x509.NewCertPool()
+	for _, certBytes := range certs {
+		cert, err := x509.ParseCertificate(certBytes)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse cert: %w", err)
+		}
+		pool.AddCert(cert)
+	}
+	return pool, nil
+}
 
 // ConvertSCRTMVersionToGCEFirmwareVersion attempts to parse the Firmware
 // Version of a GCE VM from the bytes of the version string of the SCRTM. This

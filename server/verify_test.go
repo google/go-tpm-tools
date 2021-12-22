@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/certificate-transparency-go/x509"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
@@ -19,6 +20,7 @@ import (
 	attestpb "github.com/google/go-tpm-tools/proto/attest"
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpmutil"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 )
 
@@ -393,5 +395,88 @@ func TestVerifyFailWithTamperedCELContent(t *testing.T) {
 		t.Fatalf("VerifyAttestation should fail due to modified content")
 	} else if !strings.Contains(err.Error(), "CEL record content digest verification failed") {
 		t.Fatalf("expect to get digest verification failed error, but got %v", err)
+	}
+}
+
+func TestVerifyAttestationWithCerts(t *testing.T) {
+	tests := []struct {
+		name        string
+		attestation []byte
+		nonce       []byte
+	}{
+		{
+			"no-nonce",
+			test.COS85NoNonce,
+			nil,
+		},
+		{
+			"nonce-9009",
+			test.COS85Nonce9009,
+			[]byte{0x90, 0x09},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			attestBytes := test.attestation
+			att := &attestpb.Attestation{}
+			if err := proto.Unmarshal(attestBytes, att); err != nil {
+				t.Fatalf("failed to unmarshal attestation: %v", err)
+			}
+
+			if _, err := VerifyAttestation(att, VerifyOpts{
+				Nonce:             test.nonce,
+				TrustedRootCerts:  GceEKRoots,
+				IntermediateCerts: GceEKIntermediates,
+			}); err != nil {
+				t.Errorf("failed to VerifyAttestation with AKCert: %v", err)
+			}
+		})
+	}
+}
+
+func TestVerifyAttestationEmptyRootsIntermediates(t *testing.T) {
+	attestBytes := test.COS85NoNonce
+	att := &attestpb.Attestation{}
+	if err := proto.Unmarshal(attestBytes, att); err != nil {
+		t.Fatalf("failed to unmarshal attestation: %v", err)
+	}
+
+	if _, err := VerifyAttestation(att, VerifyOpts{
+		TrustedRootCerts:  x509.NewCertPool(),
+		IntermediateCerts: x509.NewCertPool(),
+	}); err == nil {
+		t.Error("expected error when calling VerifyAttestation with empty roots and intermediates")
+	}
+
+	if _, err := VerifyAttestation(att, VerifyOpts{}); err == nil {
+		t.Error("expected error when calling VerifyAttestation with empty VerifyOpts")
+	}
+}
+
+func TestVerifyAttestationMissingRoots(t *testing.T) {
+	attestBytes := test.COS85NoNonce
+	att := &attestpb.Attestation{}
+	if err := proto.Unmarshal(attestBytes, att); err != nil {
+		t.Fatalf("failed to unmarshal attestation: %v", err)
+	}
+
+	if _, err := VerifyAttestation(att, VerifyOpts{
+		IntermediateCerts: GceEKIntermediates,
+	}); err == nil {
+		t.Error("expected error when calling VerifyAttestation with empty roots and intermediates")
+	}
+}
+
+func TestVerifyAttestationMissingIntermediates(t *testing.T) {
+	attestBytes := test.COS85NoNonce
+	att := &attestpb.Attestation{}
+	if err := proto.Unmarshal(attestBytes, att); err != nil {
+		t.Fatalf("failed to unmarshal attestation: %v", err)
+	}
+
+	if _, err := VerifyAttestation(att, VerifyOpts{
+		TrustedRootCerts: GceEKRoots,
+	}); err == nil {
+		t.Error("expected error when calling VerifyAttestation with empty roots and intermediates")
 	}
 }

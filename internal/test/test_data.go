@@ -19,3 +19,11 @@ var (
 	//go:embed eventlogs/ubuntu-2104-no-secure-boot.bin
 	Ubuntu2104NoSecureBootEventLog []byte
 )
+
+// Attestation .pb files.
+var (
+	//go:embed attestations/gce-cos-85-no-nonce.pb
+	COS85NoNonce []byte
+	//go:embed attestations/gce-cos-85-nonce9009.pb
+	COS85Nonce9009 []byte
+)

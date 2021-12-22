@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"crypto"
 	"crypto/subtle"
+	"crypto/x509"
 	"fmt"
 	"io"
 
@@ -24,16 +25,29 @@ type Key struct {
 	pubKey  crypto.PublicKey
 	name    tpm2.Name
 	session session
+	cert    *x509.Certificate
 }
 
 // EndorsementKeyRSA generates and loads a key from DefaultEKTemplateRSA.
 func EndorsementKeyRSA(rw io.ReadWriter) (*Key, error) {
-	return NewCachedKey(rw, tpm2.HandleEndorsement, DefaultEKTemplateRSA(), EKReservedHandle)
+	ekRsa, err := NewCachedKey(rw, tpm2.HandleEndorsement, DefaultEKTemplateRSA(), EKReservedHandle)
+	if err != nil {
+		return nil, err
+	}
+	// Error ignored, because not all TPMs will have an EK.
+	ekRsa.cert, _ = getCertificateFromNvram(rw, EKCertNVIndexRSA)
+	return ekRsa, nil
 }
 
 // EndorsementKeyECC generates and loads a key from DefaultEKTemplateECC.
 func EndorsementKeyECC(rw io.ReadWriter) (*Key, error) {
-	return NewCachedKey(rw, tpm2.HandleEndorsement, DefaultEKTemplateECC(), EKECCReservedHandle)
+	ekEcc, err := NewCachedKey(rw, tpm2.HandleEndorsement, DefaultEKTemplateECC(), EKECCReservedHandle)
+	if err != nil {
+		return nil, err
+	}
+	// Error ignored, because not all TPMs will have an EK.
+	ekEcc.cert, _ = getCertificateFromNvram(rw, EKCertNVIndexECC)
+	return ekEcc, nil
 }
 
 // StorageRootKeyRSA generates and loads a key from SRKTemplateRSA.
@@ -67,14 +81,26 @@ func EndorsementKeyFromNvIndex(rw io.ReadWriter, idx uint32) (*Key, error) {
 // function will only work on a GCE VM. Unlike AttestationKeyRSA, this key uses
 // the Endorsement Hierarchy and its template loaded from GceAKTemplateNVIndexRSA.
 func GceAttestationKeyRSA(rw io.ReadWriter) (*Key, error) {
-	return EndorsementKeyFromNvIndex(rw, GceAKTemplateNVIndexRSA)
+	akRsa, err := EndorsementKeyFromNvIndex(rw, GceAKTemplateNVIndexRSA)
+	if err != nil {
+		return nil, err
+	}
+	// Error ignored, because not all GCE instances will have an AK cert.
+	akRsa.cert, _ = getCertificateFromNvram(rw, GceAKCertNVIndexRSA)
+	return akRsa, nil
 }
 
 // GceAttestationKeyECC generates and loads the GCE ECC AK. Note that this
 // function will only work on a GCE VM. Unlike AttestationKeyECC, this key uses
 // the Endorsement Hierarchy and its template loaded from GceAKTemplateNVIndexECC.
 func GceAttestationKeyECC(rw io.ReadWriter) (*Key, error) {
-	return EndorsementKeyFromNvIndex(rw, GceAKTemplateNVIndexECC)
+	akEcc, err := EndorsementKeyFromNvIndex(rw, GceAKTemplateNVIndexECC)
+	if err != nil {
+		return nil, err
+	}
+	// Error ignored, because not all GCE instances will have an AK cert.
+	akEcc.cert, _ = getCertificateFromNvram(rw, GceAKCertNVIndexECC)
+	return akEcc, nil
 }
 
 // KeyFromNvIndex generates and loads a key under the provided parent
@@ -426,4 +452,30 @@ func (k *Key) Reseal(in *pb.SealedBytes, uOpts UnsealOpts, sOpts SealOpts) (*pb.
 
 func (k *Key) hasAttribute(attr tpm2.KeyProp) bool {
 	return k.pubArea.Attributes&attr != 0
+}
+
+// Cert returns the parsed certificate (or nil) for the given key.
+func (k *Key) Cert() *x509.Certificate {
+	return k.cert
+}
+
+// CertDERBytes provides the ASN.1 DER content of the key's certificate. If the
+// key does not have a certficate, returns nil.
+func (k *Key) CertDERBytes() []byte {
+	if k.cert == nil {
+		return nil
+	}
+	return k.cert.Raw
+}
+
+func getCertificateFromNvram(rw io.ReadWriter, index uint32) (*x509.Certificate, error) {
+	certASN1, err := tpm2.NVReadEx(rw, tpmutil.Handle(index), tpm2.HandleOwner, "", 0)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read certificate from NV index %d: %w", index, err)
+	}
+	x509Cert, err := x509.ParseCertificate(certASN1)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse certificate from NV memory: %w", err)
+	}
+	return x509Cert, nil
 }
