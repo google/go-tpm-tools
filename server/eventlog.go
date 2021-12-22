@@ -8,12 +8,13 @@ import (
 
 	"github.com/google/certificate-transparency-go/x509"
 	"github.com/google/go-attestation/attest"
+	"github.com/google/go-tpm-tools/cel"
 	pb "github.com/google/go-tpm-tools/proto/attest"
 	tpmpb "github.com/google/go-tpm-tools/proto/tpm"
 	"github.com/google/go-tpm/tpm2"
 )
 
-// ParseMachineState parses a raw event log and replays the parsed event
+// parsePCClientEventLog parses a raw event log and replays the parsed event
 // log against the given PCR values. It returns the corresponding MachineState
 // containing the events verified by particular PCR indexes/digests. It returns
 // an error if the replay for any PCR index does not match the provided value.
@@ -26,7 +27,7 @@ import (
 // It is the caller's responsibility to ensure that the passed PCR values can be
 // trusted. Users can establish trust in PCR values by either calling
 // client.ReadPCRs() themselves or by verifying the values via a PCR quote.
-func ParseMachineState(rawEventLog []byte, pcrs *tpmpb.PCRs) (*pb.MachineState, error) {
+func parsePCClientEventLog(rawEventLog []byte, pcrs *tpmpb.PCRs) (*pb.MachineState, error) {
 	var errors []error
 	events, err := parseReplayHelper(rawEventLog, pcrs)
 	if err != nil {
@@ -53,6 +54,26 @@ func ParseMachineState(rawEventLog []byte, pcrs *tpmpb.PCRs) (*pb.MachineState, 
 	}, createGroupedError("failed to fully parse MachineState:", errors)
 }
 
+func parseCanonicalEventLog(rawCanonicalEventLog []byte, pcrs *tpmpb.PCRs) (*pb.MachineState, error) {
+	decodedCEL, err := cel.DecodeToCEL(bytes.NewBuffer(rawCanonicalEventLog))
+	if err != nil {
+		return nil, err
+	}
+	// Validate the COS event log first.
+	if err := decodedCEL.Replay(pcrs); err != nil {
+		return nil, err
+	}
+
+	cosState, err := getVerifiedCosState(decodedCEL, pcrs)
+	if err != nil {
+		return nil, err
+	}
+
+	return &pb.MachineState{
+		Cos: cosState,
+	}, err
+}
+
 func contains(set [][]byte, value []byte) bool {
 	for _, setItem := range set {
 		if bytes.Equal(value, setItem) {
@@ -60,6 +81,44 @@ func contains(set [][]byte, value []byte) bool {
 		}
 	}
 	return false
+}
+
+func getVerifiedCosState(coscel cel.CEL, pcrs *tpmpb.PCRs) (*pb.AttestedCosState, error) {
+	cosState := &pb.AttestedCosState{}
+	cosState.Container = &pb.ContainerState{}
+
+	for _, record := range coscel.Records {
+		// ignore non COS CEL events
+		if !record.Content.IsCosTlv() {
+			continue
+		}
+
+		cosTlv, err := record.Content.ParseToCosTlv()
+		if err != nil {
+			return nil, err
+		}
+
+		// verify digests for the cos cel content
+		if err := cel.VerifyDigests(cosTlv, record.Digests); err != nil {
+			return nil, err
+		}
+
+		switch cosTlv.EventType {
+		case cel.ImageRefType:
+			cosState.Container.ImageReference = string(cosTlv.EventContent)
+
+		case cel.ImageDigestType:
+			cosState.Container.ImageDigest = string(cosTlv.EventContent)
+
+		case cel.RestartPolicyType:
+			restartPolicy, ok := pb.RestartPolicy_value[string(cosTlv.EventContent)]
+			if !ok {
+				return nil, fmt.Errorf("unknown restart policy in COS eventlog: %s", string(cosTlv.EventContent))
+			}
+			cosState.Container.RestartPolicy = pb.RestartPolicy(restartPolicy)
+		}
+	}
+	return cosState, nil
 }
 
 func getPlatformState(hash crypto.Hash, events []*pb.Event) (*pb.PlatformState, error) {

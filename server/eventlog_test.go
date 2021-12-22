@@ -1,15 +1,22 @@
 package server
 
 import (
+	"bytes"
+	"crypto"
+	"crypto/rand"
 	"encoding/hex"
 	"fmt"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal/test"
 	attestpb "github.com/google/go-tpm-tools/proto/attest"
 	pb "github.com/google/go-tpm-tools/proto/tpm"
 	"github.com/google/go-tpm/tpm2"
+	"github.com/google/go-tpm/tpmutil"
+	"google.golang.org/protobuf/testing/protocmp"
 )
 
 type eventLog struct {
@@ -269,7 +276,7 @@ func TestParseEventLogs(t *testing.T) {
 			hashName := pb.HashAlgo_name[int32(bank.Hash)]
 			subtestName := fmt.Sprintf("%s-%s", log.name, hashName)
 			t.Run(subtestName, func(t *testing.T) {
-				if _, err := ParseMachineState(rawLog, bank); err != nil {
+				if _, err := parsePCClientEventLog(rawLog, bank); err != nil {
 					gErr, ok := err.(*GroupedError)
 					if !ok {
 						t.Errorf("ParseMachineState should return a GroupedError")
@@ -289,7 +296,7 @@ func TestParseMachineStateReplayFail(t *testing.T) {
 	pcrMap[0] = []byte{0, 0, 0, 0}
 	badPcrs.Pcrs = pcrMap
 
-	_, err := ParseMachineState(Debian10GCE.RawLog, &badPcrs)
+	_, err := parsePCClientEventLog(Debian10GCE.RawLog, &badPcrs)
 	if err == nil {
 		t.Errorf("ParseMachineState should fail to replay the event log")
 	}
@@ -314,14 +321,14 @@ func TestSystemParseEventLog(t *testing.T) {
 		t.Fatalf("failed to read PCRs: %v", err)
 	}
 
-	if _, err = ParseMachineState(evtLog, pcrs); err != nil {
+	if _, err = parsePCClientEventLog(evtLog, pcrs); err != nil {
 		t.Errorf("failed to parse MachineState: %v", err)
 	}
 }
 
 func TestParseSecureBootState(t *testing.T) {
 	for _, bank := range UbuntuAmdSevGCE.Banks {
-		msState, err := ParseMachineState(UbuntuAmdSevGCE.RawLog, bank)
+		msState, err := parsePCClientEventLog(UbuntuAmdSevGCE.RawLog, bank)
 		if err != nil {
 			t.Errorf("failed to parse and replay log: %v", err)
 		}
@@ -347,7 +354,133 @@ func TestParseSecureBootState(t *testing.T) {
 			t.Error("expected to see both WinProdPCA and ThirdPartyUEFI certs")
 		}
 	}
+}
 
+func TestParsingCELEventLog(t *testing.T) {
+	tpm := test.GetTPM(t)
+	defer client.CheckedClose(t, tpm)
+
+	coscel := &cel.CEL{}
+	hashAlgoList := []crypto.Hash{crypto.SHA256, crypto.SHA1, crypto.SHA384, crypto.SHA512}
+	emptyCosState := attestpb.ContainerState{}
+
+	var buf bytes.Buffer
+	// First, encode an empty CEL and try to parse it.
+	if err := coscel.EncodeCEL(&buf); err != nil {
+		t.Fatal(err)
+	}
+	banks, err := client.ReadAllPCRs(tpm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, bank := range banks {
+		// pcrs can have any value here, since the coscel has no records, the replay should always success.
+		msState, err := parseCanonicalEventLog(buf.Bytes(), bank)
+		if err != nil {
+			t.Errorf("expecting no error from parseCanonicalEventLog(), but get %v", err)
+		}
+		if diff := cmp.Diff(msState.Cos.Container, &emptyCosState, protocmp.Transform()); diff != "" {
+			t.Errorf("unexpected difference:\n%v", diff)
+		}
+	}
+
+	// Secondly, append a random non-COS event, encode and try to parse it. Because there is no COS TLV event,
+	// we should get an empty/default CosState in the MachineState.
+	event, err := generateNonCosCelEvent(hashAlgoList)
+	if err != nil {
+		t.Fatal(err)
+	}
+	coscel.Records = append(coscel.Records, event)
+	buf = bytes.Buffer{}
+	if err := coscel.EncodeCEL(&buf); err != nil {
+		t.Fatal(err)
+	}
+	// extend digests to the PCR
+	for _, hash := range hashAlgoList {
+		algo, err := tpm2.HashToAlgorithm(hash)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := tpm2.PCRExtend(tpm, tpmutil.Handle(test.DebugPCR), algo, event.Digests[hash], ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	banks, err = client.ReadAllPCRs(tpm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, bank := range banks {
+		msState, err := parseCanonicalEventLog(buf.Bytes(), bank)
+		if err != nil {
+			t.Errorf("expecting no error from parseCanonicalEventLog(), but get %v", err)
+		}
+		// expect nothing in the CosState
+		if diff := cmp.Diff(msState.Cos.Container, &emptyCosState, protocmp.Transform()); diff != "" {
+			t.Errorf("unexpected difference:\n%v", diff)
+		}
+	}
+
+	// Thirdly, append some real COS events to the CEL. This time we should get content in the CosState.
+	testCELEvents := []struct {
+		cosNestedEventType cel.CosType
+		pcr                int
+		eventPayload       []byte
+	}{
+		{cel.ImageRefType, test.DebugPCR, []byte("docker.io/bazel/experimental/test:latest")},
+		{cel.ImageDigestType, test.DebugPCR, []byte("sha256:781d8dfdd92118436bd914442c8339e653b83f6bf3c1a7a98efcfb7c4fed7483")},
+		{cel.RestartPolicyType, test.DebugPCR, []byte(attestpb.RestartPolicy_ALWAYS.String())},
+	}
+
+	want := attestpb.ContainerState{
+		ImageReference: string(testCELEvents[0].eventPayload),
+		ImageDigest:    string(testCELEvents[1].eventPayload),
+		RestartPolicy:  attestpb.RestartPolicy_ALWAYS}
+	for _, testEvent := range testCELEvents {
+		cos := cel.CosTlv{EventType: testEvent.cosNestedEventType, EventContent: testEvent.eventPayload}
+		if err := coscel.AppendEvent(tpm, testEvent.pcr, hashAlgoList, cos); err != nil {
+			t.Fatal(err)
+		}
+	}
+	buf = bytes.Buffer{}
+	if err := coscel.EncodeCEL(&buf); err != nil {
+		t.Fatal(err)
+	}
+	banks, err = client.ReadAllPCRs(tpm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, bank := range banks {
+		if msState, err := parseCanonicalEventLog(buf.Bytes(), bank); err != nil {
+			t.Errorf("expecting no error from parseCanonicalEventLog(), but get %v", err)
+		} else {
+			if diff := cmp.Diff(msState.Cos.Container, &want, protocmp.Transform()); diff != "" {
+				t.Errorf("unexpected difference:\n%v", diff)
+			}
+		}
+	}
+}
+
+func generateNonCosCelEvent(hashAlgoList []crypto.Hash) (cel.Record, error) {
+	randRecord := cel.Record{}
+	randRecord.RecNum = 0
+	randRecord.PCR = uint8(test.DebugPCR)
+	contentValue := make([]byte, 10)
+	rand.Read(contentValue)
+	randRecord.Content = cel.TLV{Type: 250, Value: contentValue}
+	contentBytes, err := randRecord.Content.MarshalBinary()
+	if err != nil {
+		return cel.Record{}, err
+	}
+
+	digestMap := make(map[crypto.Hash][]byte)
+	for _, hash := range hashAlgoList {
+		h := hash.New()
+		h.Write(contentBytes)
+		digestMap[hash] = h.Sum(nil)
+	}
+	randRecord.Digests = digestMap
+
+	return randRecord, nil
 }
 
 func decodeHex(hexStr string) []byte {

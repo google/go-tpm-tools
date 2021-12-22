@@ -1,19 +1,25 @@
 package server
 
 import (
+	"bytes"
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
 	"fmt"
 	"io"
+	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal"
 	"github.com/google/go-tpm-tools/internal/test"
+	attestpb "github.com/google/go-tpm-tools/proto/attest"
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpmutil"
+	"google.golang.org/protobuf/testing/protocmp"
 )
 
 func getDigestHash(input string) []byte {
@@ -278,5 +284,114 @@ func TestVerifySHA1Attestation(t *testing.T) {
 	opts.AllowSHA1 = false
 	if _, err = VerifyAttestation(attestation, opts); err == nil {
 		t.Error("expected attestation to fail with only SHA-1")
+	}
+}
+
+func TestVerifyAttestationWithCEL(t *testing.T) {
+	rwc := test.GetTPM(t)
+	defer client.CheckedClose(t, rwc)
+
+	ak, err := client.AttestationKeyRSA(rwc)
+	if err != nil {
+		t.Fatalf("failed to generate AK: %v", err)
+	}
+	defer ak.Close()
+
+	coscel := &cel.CEL{}
+	testEvents := []struct {
+		cosNestedEventType cel.CosType
+		pcr                int
+		eventPayload       []byte
+	}{
+		{cel.ImageRefType, test.DebugPCR, []byte("docker.io/bazel/experimental/test:latest")},
+		{cel.ImageDigestType, test.DebugPCR, []byte("sha256:781d8dfdd92118436bd914442c8339e653b83f6bf3c1a7a98efcfb7c4fed7483")},
+		{cel.RestartPolicyType, test.DebugPCR, []byte(attestpb.RestartPolicy_NEVER.String())},
+	}
+	hashAlgoList := []crypto.Hash{crypto.SHA256, crypto.SHA1, crypto.SHA512}
+	for _, testEvent := range testEvents {
+		cos := cel.CosTlv{EventType: testEvent.cosNestedEventType, EventContent: testEvent.eventPayload}
+		if err := coscel.AppendEvent(rwc, testEvent.pcr, hashAlgoList, cos); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var buf bytes.Buffer
+	if err := coscel.EncodeCEL(&buf); err != nil {
+		t.Fatal(err)
+	}
+
+	nonce := []byte("super secret nonce")
+	attestation, err := ak.Attest(client.AttestOpts{Nonce: nonce, CanonicalEventLog: buf.Bytes()})
+	if err != nil {
+		t.Fatalf("failed to attest: %v", err)
+	}
+
+	opts := VerifyOpts{
+		Nonce:      nonce,
+		TrustedAKs: []crypto.PublicKey{ak.PublicKey()},
+	}
+	state, err := VerifyAttestation(attestation, opts)
+	if err != nil {
+		t.Fatalf("failed to verify: %v", err)
+	}
+
+	want := attestpb.ContainerState{
+		ImageReference: string(testEvents[0].eventPayload),
+		ImageDigest:    string(testEvents[1].eventPayload),
+		RestartPolicy:  attestpb.RestartPolicy_NEVER}
+	if diff := cmp.Diff(state.Cos.Container, &want, protocmp.Transform()); diff != "" {
+		t.Errorf("unexpected difference:\n%v", diff)
+	}
+}
+
+func TestVerifyFailWithTamperedCELContent(t *testing.T) {
+	rwc := test.GetTPM(t)
+	defer client.CheckedClose(t, rwc)
+
+	ak, err := client.AttestationKeyRSA(rwc)
+	if err != nil {
+		t.Fatalf("failed to generate AK: %v", err)
+	}
+	defer ak.Close()
+
+	c := &cel.CEL{}
+	measuredHashes := []crypto.Hash{crypto.SHA256, crypto.SHA1, crypto.SHA512}
+
+	cosEvent := cel.CosTlv{EventType: cel.ImageRefType, EventContent: []byte("docker.io/bazel/experimental/test:latest")}
+	cosEvent2 := cel.CosTlv{EventType: cel.ImageDigestType, EventContent: []byte("sha256:781d8dfdd92118436bd914442c8339e653b83f6bf3c1a7a98efcfb7c4fed7483")}
+	if err := c.AppendEvent(rwc, test.DebugPCR, measuredHashes, cosEvent); err != nil {
+		t.Fatalf("failed to append event: %v", err)
+	}
+	if err := c.AppendEvent(rwc, test.DebugPCR, measuredHashes, cosEvent2); err != nil {
+		t.Fatalf("failed to append event: %v", err)
+	}
+
+	// modify the first record content, but not the record digest
+	modifiedRecord := cel.CosTlv{EventType: cel.ImageDigestType, EventContent: []byte("sha256:000000000000000000000000000000000000000000000000000000000000000")}
+	modifiedTLV, err := modifiedRecord.GetTLV()
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Records[0].Content = modifiedTLV
+
+	var buf bytes.Buffer
+	if err := c.EncodeCEL(&buf); err != nil {
+		t.Fatal(err)
+	}
+
+	nonce := []byte("super secret nonce")
+	attestation, err := ak.Attest(client.AttestOpts{Nonce: nonce, CanonicalEventLog: buf.Bytes()})
+	if err != nil {
+		t.Fatalf("failed to attest: %v", err)
+	}
+
+	opts := VerifyOpts{
+		Nonce:      nonce,
+		TrustedAKs: []crypto.PublicKey{ak.PublicKey()},
+	}
+	if _, err := VerifyAttestation(attestation, opts); err == nil {
+		t.Fatalf("VerifyAttestation should fail due to modified content")
+	} else if !strings.Contains(err.Error(), "CEL record content digest verification failed") {
+		t.Fatalf("expect to get digest verification failed error, but got %v", err)
 	}
 }

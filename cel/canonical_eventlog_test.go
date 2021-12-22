@@ -21,11 +21,10 @@ func TestCELEncodingDecoding(t *testing.T) {
 	hashAlgoList := []crypto.Hash{crypto.SHA256, crypto.SHA1, crypto.SHA512}
 	cel := &CEL{}
 
-	someEvent := make([]byte, 10)
-	cosEvent := CosTlv{someEvent}
+	cosEvent := CosTlv{ImageDigestType, []byte("sha256:781d8dfdd92118436bd914442c8339e653b83f6bf3c1a7a98efcfb7c4fed7483")}
 	appendOrFatal(t, cel, tpm, test.DebugPCR, hashAlgoList, cosEvent)
 
-	cosEvent2 := CosTlv{someEvent}
+	cosEvent2 := CosTlv{ImageRefType, []byte("docker.io/bazel/experimental/test:latest")}
 	appendOrFatal(t, cel, tpm, test.ApplicationPCR, hashAlgoList, cosEvent2)
 
 	var buf bytes.Buffer
@@ -52,13 +51,6 @@ func TestCELEncodingDecoding(t *testing.T) {
 		t.Errorf("pcr value mismatch")
 	}
 
-	digestsMap := decodedcel.Records[0].Digests
-	if len(digestsMap[crypto.SHA256]) != 32 {
-		t.Errorf("SHA256 digest length doesn't match")
-	}
-	if len(digestsMap[crypto.SHA1]) != 20 {
-		t.Errorf("SHA1 digest length doesn't match")
-	}
 	if !reflect.DeepEqual(decodedcel.Records, cel.Records) {
 		t.Errorf("decoded CEL doesn't equal to the original one")
 	}
@@ -71,12 +63,10 @@ func TestCELMeasureAndReplay(t *testing.T) {
 	cel := &CEL{}
 	measuredHashes := []crypto.Hash{crypto.SHA256, crypto.SHA1, crypto.SHA512}
 
-	someEvent := make([]byte, 10)
-	cosEvent := CosTlv{someEvent}
+	cosEvent := CosTlv{ImageRefType, []byte("docker.io/bazel/experimental/test:latest")}
 	someEvent2 := make([]byte, 10)
-
 	rand.Read(someEvent2)
-	cosEvent2 := CosTlv{someEvent2}
+	cosEvent2 := CosTlv{ImageDigestType, someEvent2}
 	appendOrFatal(t, cel, tpm, test.DebugPCR, measuredHashes, cosEvent)
 	appendOrFatal(t, cel, tpm, test.DebugPCR, measuredHashes, cosEvent2)
 
@@ -93,19 +83,18 @@ func TestCELMeasureAndReplay(t *testing.T) {
 		/*shouldSucceed=*/ true)
 }
 
-func TestCELReplayFailTampered(t *testing.T) {
+func TestCELReplayFailTamperedDigest(t *testing.T) {
 	tpm := test.GetTPM(t)
 	defer client.CheckedClose(t, tpm)
 
 	cel := &CEL{}
 	measuredHashes := []crypto.Hash{crypto.SHA256, crypto.SHA1, crypto.SHA512}
 
-	someEvent := make([]byte, 10)
-	cosEvent := CosTlv{someEvent}
+	cosEvent := CosTlv{ImageRefType, []byte("docker.io/bazel/experimental/test:latest")}
 	someEvent2 := make([]byte, 10)
 
 	rand.Read(someEvent2)
-	cosEvent2 := CosTlv{someEvent2}
+	cosEvent2 := CosTlv{ImageDigestType, someEvent2}
 	appendOrFatal(t, cel, tpm, test.DebugPCR, measuredHashes, cosEvent)
 	appendOrFatal(t, cel, tpm, test.DebugPCR, measuredHashes, cosEvent2)
 
@@ -144,8 +133,8 @@ func TestCELReplayFailMissingPCRsInBank(t *testing.T) {
 	someEvent := make([]byte, 10)
 	someEvent2 := make([]byte, 10)
 	rand.Read(someEvent2)
-	appendOrFatal(t, cel, tpm, test.DebugPCR, measuredHashes, CosTlv{someEvent})
-	appendOrFatal(t, cel, tpm, test.ApplicationPCR, measuredHashes, CosTlv{someEvent2})
+	appendOrFatal(t, cel, tpm, test.DebugPCR, measuredHashes, CosTlv{ImageRefType, someEvent})
+	appendOrFatal(t, cel, tpm, test.ApplicationPCR, measuredHashes, CosTlv{ImageDigestType, someEvent2})
 	replay(t, cel, tpm, measuredHashes,
 		[]int{test.DebugPCR},
 		/*shouldSucceed=*/ false)
@@ -170,7 +159,7 @@ func replay(t *testing.T, cel *CEL, tpm io.ReadWriteCloser, measuredHashes []cry
 		for index, val := range pcrMap {
 			pbPcr.Pcrs[uint32(index)] = val
 		}
-		if err := cel.replay(pbPcr); shouldSucceed && err != nil {
+		if err := cel.Replay(pbPcr); shouldSucceed && err != nil {
 			t.Errorf("failed to replay CEL on %v bank: %v",
 				pb.HashAlgo_name[int32(pbPcr.Hash)], err)
 		}

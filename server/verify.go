@@ -10,6 +10,7 @@ import (
 	pb "github.com/google/go-tpm-tools/proto/attest"
 	tpmpb "github.com/google/go-tpm-tools/proto/tpm"
 	"github.com/google/go-tpm/tpm2"
+	"google.golang.org/protobuf/proto"
 )
 
 // The hash algorithms we support, in their preferred order of use.
@@ -77,13 +78,21 @@ func VerifyAttestation(attestation *pb.Attestation, opts VerifyOpts) (*pb.Machin
 			continue
 		}
 
-		// Parse the event log and replay the events against the provided PCRs
+		// Parse event logs and replay the events against the provided PCRs
 		pcrs := quote.GetPcrs()
-		state, err := ParseMachineState(attestation.GetEventLog(), pcrs)
+		state, err := parsePCClientEventLog(attestation.GetEventLog(), pcrs)
 		if err != nil {
-			lastErr = fmt.Errorf("failed to validate the event log: %w", err)
+			lastErr = fmt.Errorf("failed to validate the PCClient event log: %w", err)
 			continue
 		}
+
+		celState, err := parseCanonicalEventLog(attestation.GetCanonicalEventLog(), pcrs)
+		if err != nil {
+			lastErr = fmt.Errorf("failed to validate the Canonical event log: %w", err)
+			continue
+		}
+
+		proto.Merge(celState, state)
 
 		// Verify the PCR hash algorithm. We have this check here (instead of at
 		// the start of the loop) so that the user gets a "SHA-1 not supported"
@@ -95,7 +104,7 @@ func VerifyAttestation(attestation *pb.Attestation, opts VerifyOpts) (*pb.Machin
 			continue
 		}
 
-		return state, nil
+		return celState, nil
 	}
 
 	if lastErr != nil {

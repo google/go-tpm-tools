@@ -123,21 +123,16 @@ func ExampleKey_Attest() {
 		log.Fatalf("failed to attest: %v", err)
 	}
 
-	// On verifier, verify the quote(s) against a stored public key/AK
-	// certificate's public part and the nonce passed.
 	// TODO: establish trust in the AK (typically via an AK certificate signed
 	// by the manufacturer).
-	for i, quote := range attestation.Quotes {
-		if err := internal.VerifyQuote(quote, attestation.AkPub, nonce); err != nil {
-			// TODO: handle verify error.
-			log.Fatalf("failed to verify quote with index %v in attestation", i)
-		}
-	}
-
-	// On verifier, replay event log.
+	// On verifier, verify the Attestation message. This:
+	//  - checks the quote(s) against a stored public key/AK
+	// certificate's public part and the expected nonce.
+	//  - replays the event log against the quoted PCRs
+	//  - extracts events into a MachineState message.
 	// TODO: decide which hash algorithm to use in the quotes. SHA1 is
 	// typically undesirable but is the only event log option on some distros.
-	_, err = server.ParseMachineState(attestation.EventLog, attestation.Quotes[0].Pcrs)
+	_, err = server.VerifyAttestation(attestation, server.VerifyOpts{Nonce: nonce, TrustedAKs: []crypto.PublicKey{ak.PublicKey()}})
 	if err != nil {
 		// TODO: handle parsing or replay error.
 		log.Fatalf("failed to read PCRs: %v", err)
