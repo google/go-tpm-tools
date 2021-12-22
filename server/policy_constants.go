@@ -5,6 +5,7 @@ import (
 	_ "embed" // Necessary to use go:embed
 	"errors"
 	"fmt"
+	"log"
 	"strconv"
 
 	"github.com/google/certificate-transparency-go/x509"
@@ -69,7 +70,7 @@ var (
 	gceEKIntermediateCA2 []byte
 )
 
-// CertPools corresponding to the known CA certs.
+// CertPools corresponding to the known CA certs for GCE.
 var (
 	GceEKRoots         *x509.CertPool
 	GceEKIntermediates *x509.CertPool
@@ -79,11 +80,11 @@ func init() {
 	var err error
 	GceEKRoots, err = getPool([][]byte{gceEKRootCA})
 	if err != nil {
-		panic("failed to create the root cert pool, because some certs failed to parse")
+		log.Panicf("failed to create the root cert pool: %v", err)
 	}
 	GceEKIntermediates, err = getPool([][]byte{gceEKIntermediateCA2})
 	if err != nil {
-		panic("failed to create the intermediate cert pool, because some certs failed to parse")
+		log.Panicf("failed to create the intermediate cert pool: %v", err)
 	}
 }
 func getPool(certs [][]byte) (*x509.CertPool, error) {
@@ -91,7 +92,7 @@ func getPool(certs [][]byte) (*x509.CertPool, error) {
 	for _, certBytes := range certs {
 		cert, err := x509.ParseCertificate(certBytes)
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse cert: %v", err)
+			return nil, fmt.Errorf("failed to parse cert: %w", err)
 		}
 		pool.AddCert(cert)
 	}

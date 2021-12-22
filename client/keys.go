@@ -35,8 +35,7 @@ func EndorsementKeyRSA(rw io.ReadWriter) (*Key, error) {
 		return nil, err
 	}
 	// Error ignored, because not all TPMs will have an EK.
-	ekCert, _ := getCertificateFromNvram(rw, EKCertNVIndexRSA)
-	ekRsa.cert = ekCert
+	ekRsa.cert, _ = getCertificateFromNvram(rw, EKCertNVIndexRSA)
 	return ekRsa, nil
 }
 
@@ -47,8 +46,7 @@ func EndorsementKeyECC(rw io.ReadWriter) (*Key, error) {
 		return nil, err
 	}
 	// Error ignored, because not all TPMs will have an EK.
-	ekCert, _ := getCertificateFromNvram(rw, EKCertNVIndexECC)
-	ekEcc.cert = ekCert
+	ekEcc.cert, _ = getCertificateFromNvram(rw, EKCertNVIndexECC)
 	return ekEcc, nil
 }
 
@@ -88,8 +86,7 @@ func GceAttestationKeyRSA(rw io.ReadWriter) (*Key, error) {
 		return nil, err
 	}
 	// Error ignored, because not all GCE instances will have an AK cert.
-	akCert, _ := getCertificateFromNvram(rw, GceAKCertNVIndexRSA)
-	akRsa.cert = akCert
+	akRsa.cert, _ = getCertificateFromNvram(rw, GceAKCertNVIndexRSA)
 	return akRsa, nil
 }
 
@@ -102,8 +99,7 @@ func GceAttestationKeyECC(rw io.ReadWriter) (*Key, error) {
 		return nil, err
 	}
 	// Error ignored, because not all GCE instances will have an AK cert.
-	akCert, _ := getCertificateFromNvram(rw, GceAKCertNVIndexECC)
-	akEcc.cert = akCert
+	akEcc.cert, _ = getCertificateFromNvram(rw, GceAKCertNVIndexECC)
 	return akEcc, nil
 }
 
@@ -458,12 +454,13 @@ func (k *Key) hasAttribute(attr tpm2.KeyProp) bool {
 	return k.pubArea.Attributes&attr != 0
 }
 
-// Cert returns the parsed certificate for the given key.
+// Cert returns the parsed certificate (or nil) for the given key.
 func (k *Key) Cert() *x509.Certificate {
 	return k.cert
 }
 
-// CertDERBytes provides the ASN.1 DER content of the key's certificate.
+// CertDERBytes provides the ASN.1 DER content of the key's certificate. If the
+// key does not have a certficate, returns nil.
 func (k *Key) CertDERBytes() []byte {
 	if k.cert == nil {
 		return nil
@@ -474,11 +471,11 @@ func (k *Key) CertDERBytes() []byte {
 func getCertificateFromNvram(rw io.ReadWriter, index uint32) (*x509.Certificate, error) {
 	certASN1, err := tpm2.NVReadEx(rw, tpmutil.Handle(index), tpm2.HandleOwner, "", 0)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read certificate from NV memory: %v", certASN1)
+		return nil, fmt.Errorf("failed to read certificate from NV index %d: %w", index, err)
 	}
 	x509Cert, err := x509.ParseCertificate(certASN1)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse certificate from NV memory")
+		return nil, fmt.Errorf("failed to parse certificate from NV memory: %w", err)
 	}
 	return x509Cert, nil
 }
