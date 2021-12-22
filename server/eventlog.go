@@ -86,6 +86,8 @@ func contains(set [][]byte, value []byte) bool {
 func getVerifiedCosState(coscel cel.CEL, pcrs *tpmpb.PCRs) (*pb.AttestedCosState, error) {
 	cosState := &pb.AttestedCosState{}
 	cosState.Container = &pb.ContainerState{}
+	cosState.Container.Args = make([]string, 0)
+	cosState.Container.EnvVars = make(map[string]string)
 
 	for _, record := range coscel.Records {
 		// ignore non COS CEL events
@@ -116,6 +118,19 @@ func getVerifiedCosState(coscel cel.CEL, pcrs *tpmpb.PCRs) (*pb.AttestedCosState
 				return nil, fmt.Errorf("unknown restart policy in COS eventlog: %s", string(cosTlv.EventContent))
 			}
 			cosState.Container.RestartPolicy = pb.RestartPolicy(restartPolicy)
+
+		case cel.ImageIDType:
+			cosState.Container.ImageId = string(cosTlv.EventContent)
+
+		case cel.EnvVarType:
+			envname, envval, err := cel.ParseEnvVar(string(cosTlv.EventContent))
+			if err != nil {
+				return nil, err
+			}
+			cosState.Container.EnvVars[envname] = envval
+
+		case cel.ArgType:
+			cosState.Container.Args = append(cosState.Container.Args, string(cosTlv.EventContent))
 		}
 	}
 	return cosState, nil

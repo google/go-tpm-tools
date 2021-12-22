@@ -429,12 +429,30 @@ func TestParsingCELEventLog(t *testing.T) {
 		{cel.ImageRefType, test.DebugPCR, []byte("docker.io/bazel/experimental/test:latest")},
 		{cel.ImageDigestType, test.DebugPCR, []byte("sha256:781d8dfdd92118436bd914442c8339e653b83f6bf3c1a7a98efcfb7c4fed7483")},
 		{cel.RestartPolicyType, test.DebugPCR, []byte(attestpb.RestartPolicy_Always.String())},
+		{cel.ImageIDType, test.DebugPCR, []byte("sha256:5DF4A1AC347DCF8CF5E9D0ABC04B04DB847D1B88D3B1CC1006F0ACB68E5A1F4B")},
+		{cel.EnvVarType, test.DebugPCR, []byte("foo=bar")},
+		{cel.EnvVarType, test.DebugPCR, []byte("bar=baz")},
+		{cel.EnvVarType, test.DebugPCR, []byte("baz=foo=bar")},
+		{cel.EnvVarType, test.DebugPCR, []byte("empty=")},
+		{cel.ArgType, test.DebugPCR, []byte("--x")},
+		{cel.ArgType, test.DebugPCR, []byte("--y")},
+		{cel.ArgType, test.DebugPCR, []byte("")},
 	}
+
+	expectedEnvVars := make(map[string]string)
+	expectedEnvVars["foo"] = "bar"
+	expectedEnvVars["bar"] = "baz"
+	expectedEnvVars["baz"] = "foo=bar"
+	expectedEnvVars["empty"] = ""
 
 	want := attestpb.ContainerState{
 		ImageReference: string(testCELEvents[0].eventPayload),
 		ImageDigest:    string(testCELEvents[1].eventPayload),
-		RestartPolicy:  attestpb.RestartPolicy_Always}
+		RestartPolicy:  attestpb.RestartPolicy_Always,
+		ImageId:        string(testCELEvents[3].eventPayload),
+		EnvVars:        expectedEnvVars,
+		Args:           []string{string(testCELEvents[8].eventPayload), string(testCELEvents[9].eventPayload), string(testCELEvents[10].eventPayload)},
+	}
 	for _, testEvent := range testCELEvents {
 		cos := cel.CosTlv{EventType: testEvent.cosNestedEventType, EventContent: testEvent.eventPayload}
 		if err := coscel.AppendEvent(tpm, testEvent.pcr, hashAlgoList, cos); err != nil {
