@@ -48,7 +48,7 @@ func (k *Key) Attest(opts AttestOpts) (*pb.Attestation, error) {
 	if attestation.AkPub, err = k.PublicArea().Encode(); err != nil {
 		return nil, fmt.Errorf("failed to encode public area: %w", err)
 	}
-	attestation.AkCert = k.CertRaw()
+	attestation.AkCert = k.CertDERBytes()
 	for _, sel := range sels {
 		quote, err := k.Quote(sel, opts.Nonce)
 		if err != nil {

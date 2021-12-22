@@ -30,12 +30,26 @@ type Key struct {
 
 // EndorsementKeyRSA generates and loads a key from DefaultEKTemplateRSA.
 func EndorsementKeyRSA(rw io.ReadWriter) (*Key, error) {
-	return NewCachedKey(rw, tpm2.HandleEndorsement, DefaultEKTemplateRSA(), EKReservedHandle)
+	ekRsa, err := NewCachedKey(rw, tpm2.HandleEndorsement, DefaultEKTemplateRSA(), EKReservedHandle)
+	if err != nil {
+		return nil, err
+	}
+	// Error ignored, because not all TPMs will have an EK.
+	ekCert, _ := getCertificateFromNvram(rw, EKCertNVIndexRSA)
+	ekRsa.cert = ekCert
+	return ekRsa, nil
 }
 
 // EndorsementKeyECC generates and loads a key from DefaultEKTemplateECC.
 func EndorsementKeyECC(rw io.ReadWriter) (*Key, error) {
-	return NewCachedKey(rw, tpm2.HandleEndorsement, DefaultEKTemplateECC(), EKECCReservedHandle)
+	ekEcc, err := NewCachedKey(rw, tpm2.HandleEndorsement, DefaultEKTemplateECC(), EKECCReservedHandle)
+	if err != nil {
+		return nil, err
+	}
+	// Error ignored, because not all TPMs will have an EK.
+	ekCert, _ := getCertificateFromNvram(rw, EKCertNVIndexECC)
+	ekEcc.cert = ekCert
+	return ekEcc, nil
 }
 
 // StorageRootKeyRSA generates and loads a key from SRKTemplateRSA.
@@ -73,10 +87,8 @@ func GceAttestationKeyRSA(rw io.ReadWriter) (*Key, error) {
 	if err != nil {
 		return nil, err
 	}
-	akCert, err := getCertificateFromNvram(rw, GceAKCertNVIndexRSA)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch GCE RSA AKCert: %v", err)
-	}
+	// Error ignored, because not all GCE instances will have an AK cert.
+	akCert, _ := getCertificateFromNvram(rw, GceAKCertNVIndexRSA)
 	akRsa.cert = akCert
 	return akRsa, nil
 }
@@ -89,10 +101,8 @@ func GceAttestationKeyECC(rw io.ReadWriter) (*Key, error) {
 	if err != nil {
 		return nil, err
 	}
-	akCert, err := getCertificateFromNvram(rw, GceAKCertNVIndexECC)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch GCE ECC AKCert: %v", err)
-	}
+	// Error ignored, because not all GCE instances will have an AK cert.
+	akCert, _ := getCertificateFromNvram(rw, GceAKCertNVIndexECC)
 	akEcc.cert = akCert
 	return akEcc, nil
 }
@@ -453,8 +463,8 @@ func (k *Key) Cert() *x509.Certificate {
 	return k.cert
 }
 
-// CertRaw provides the ASN.1 DER content of the key's certificate.
-func (k *Key) CertRaw() []byte {
+// CertDERBytes provides the ASN.1 DER content of the key's certificate.
+func (k *Key) CertDERBytes() []byte {
 	if k.cert == nil {
 		return nil
 	}
