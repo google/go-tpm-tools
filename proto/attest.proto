@@ -123,12 +123,27 @@ enum RestartPolicy {
 
 message ContainerState {
   string image_reference = 1;
-  bytes image_digest = 2;
+  // Digest of the registry's image manifest, which contains a list of the
+  // layers comprising the image.
+  string image_digest = 2;
   RestartPolicy restart_policy = 3;
+  // Digest of the local image configuration object, containing config items
+  // such as local layer digests.
+  string image_id = 4;
+  repeated string args = 5;
+  map<string, string> env_vars = 6;
+}
+
+message SemanticVersion {
+  uint32 major = 1;
+  uint32 minor = 2;
+  uint32 patch = 3;
 }
 
 message AttestedCosState {
   ContainerState container = 1;
+  SemanticVersion cos_version = 2;
+  SemanticVersion launcher_version = 3;
 }
 
 // The verified state of a booted machine, obtained from an Attestation
