@@ -115,13 +115,15 @@ message SecureBootState {
 }
 
 // The container's restart policy.
-// See
+// See the following Kubernetes documentation for more details:
 // https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#restart-policy
-// for more details.
+// Note that these enum variants do not conform to the standard Protocol Buffers
+// Style Guide so that RestartPolicy_name, RestartPolicy_value, and
+// RestartPolicy.String() match the values used by Kubernetes and others.
 enum RestartPolicy {
-  ALWAYS = 0;
-  ON_FAILURE = 1;
-  NEVER = 2;
+  Always = 0;
+  OnFailure = 1;
+  Never = 2;
 }
 
 message ContainerState {

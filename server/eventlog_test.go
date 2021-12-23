@@ -428,13 +428,13 @@ func TestParsingCELEventLog(t *testing.T) {
 	}{
 		{cel.ImageRefType, test.DebugPCR, []byte("docker.io/bazel/experimental/test:latest")},
 		{cel.ImageDigestType, test.DebugPCR, []byte("sha256:781d8dfdd92118436bd914442c8339e653b83f6bf3c1a7a98efcfb7c4fed7483")},
-		{cel.RestartPolicyType, test.DebugPCR, []byte(attestpb.RestartPolicy_ALWAYS.String())},
+		{cel.RestartPolicyType, test.DebugPCR, []byte(attestpb.RestartPolicy_Always.String())},
 	}
 
 	want := attestpb.ContainerState{
 		ImageReference: string(testCELEvents[0].eventPayload),
 		ImageDigest:    string(testCELEvents[1].eventPayload),
-		RestartPolicy:  attestpb.RestartPolicy_ALWAYS}
+		RestartPolicy:  attestpb.RestartPolicy_Always}
 	for _, testEvent := range testCELEvents {
 		cos := cel.CosTlv{EventType: testEvent.cosNestedEventType, EventContent: testEvent.eventPayload}
 		if err := coscel.AppendEvent(tpm, testEvent.pcr, hashAlgoList, cos); err != nil {
