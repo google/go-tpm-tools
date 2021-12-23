@@ -307,7 +307,7 @@ func TestVerifyAttestationWithCEL(t *testing.T) {
 	}{
 		{cel.ImageRefType, test.DebugPCR, []byte("docker.io/bazel/experimental/test:latest")},
 		{cel.ImageDigestType, test.DebugPCR, []byte("sha256:781d8dfdd92118436bd914442c8339e653b83f6bf3c1a7a98efcfb7c4fed7483")},
-		{cel.RestartPolicyType, test.DebugPCR, []byte(attestpb.RestartPolicy_NEVER.String())},
+		{cel.RestartPolicyType, test.DebugPCR, []byte(attestpb.RestartPolicy_Never.String())},
 	}
 	hashAlgoList := []crypto.Hash{crypto.SHA256, crypto.SHA1, crypto.SHA512}
 	for _, testEvent := range testEvents {
@@ -340,7 +340,7 @@ func TestVerifyAttestationWithCEL(t *testing.T) {
 	want := attestpb.ContainerState{
 		ImageReference: string(testEvents[0].eventPayload),
 		ImageDigest:    string(testEvents[1].eventPayload),
-		RestartPolicy:  attestpb.RestartPolicy_NEVER}
+		RestartPolicy:  attestpb.RestartPolicy_Never}
 	if diff := cmp.Diff(state.Cos.Container, &want, protocmp.Transform()); diff != "" {
 		t.Errorf("unexpected difference:\n%v", diff)
 	}

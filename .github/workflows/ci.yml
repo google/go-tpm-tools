@@ -47,7 +47,7 @@ jobs:
       uses: arduino/setup-protoc@v1
       with:
         repo-token: ${{ secrets.GITHUB_TOKEN }}
-        version: '3.17.3'
+        version: '3.19.1'
     - name: Install protoc-gen-go
       run: go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.27.1
     - name: Check Protobuf Generation

@@ -25,7 +25,7 @@ func TestCosEventlog(t *testing.T) {
 	}{
 		{ImageRefType, test.DebugPCR, []byte("docker.io/bazel/experimental/test:latest")},
 		{ImageDigestType, test.DebugPCR, []byte("sha256:781d8dfdd92118436bd914442c8339e653b83f6bf3c1a7a98efcfb7c4fed7483")},
-		{RestartPolicyType, test.DebugPCR, []byte(pb.RestartPolicy_NEVER.String())},
+		{RestartPolicyType, test.DebugPCR, []byte(pb.RestartPolicy_Never.String())},
 	}
 
 	for _, testEvent := range testEvents {
