@@ -70,18 +70,24 @@ func SkipOnUnsupportedAlg(t testing.TB, rw io.ReadWriter, alg tpm2.Algorithm) {
 // GetTPM extends the test event log's events into the test TPM.
 func GetTPM(tb testing.TB) io.ReadWriteCloser {
 	tb.Helper()
-	if useRealTPM() {
-		lock.Lock()
-		defer lock.Unlock()
-		if tpm == nil {
-			var err error
-			if tpm, err = getRealTPM(); err != nil {
-				tb.Fatalf("Failed to open TPM: %v", err)
-			}
-		}
-		return noClose{tpm}
+	if !useRealTPM() {
+		return GetSimulatorWithLog(tb, Rhel8EventLog)
 	}
 
+	lock.Lock()
+	defer lock.Unlock()
+	if tpm == nil {
+		var err error
+		if tpm, err = getRealTPM(); err != nil {
+			tb.Fatalf("Failed to open TPM: %v", err)
+		}
+	}
+	return noClose{tpm}
+}
+
+// GetSimulatorWithLog returns a simulated TPM with PCRs that match the events
+// of the passed in eventlog. This allows for testing attestation flows.
+func GetSimulatorWithLog(tb testing.TB, eventLog []byte) io.ReadWriteCloser {
 	simulator, err := simulator.Get()
 	if err != nil {
 		tb.Fatalf("Simulator initialization failed: %v", err)
@@ -95,7 +101,6 @@ func GetTPM(tb testing.TB) io.ReadWriteCloser {
 			}
 		}
 	})
-	eventLog := Rhel8EventLog
 
 	// Extend event log events on simulator TPM.
 	simulateEventLogEvents(tb, simulator, eventLog)
