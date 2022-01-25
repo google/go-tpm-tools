@@ -518,3 +518,36 @@ func TestVerifyAttestationMissingIntermediates(t *testing.T) {
 		t.Error("expected error when calling VerifyAttestation with empty roots and intermediates")
 	}
 }
+
+func TestVerifyMismatchedAKPubAndAKCert(t *testing.T) {
+	// Make sure that we fail verification if the AKPub and AKCert don't match
+	rwc := test.GetTPM(t)
+	defer client.CheckedClose(t, rwc)
+
+	ak, err := client.AttestationKeyRSA(rwc)
+	if err != nil {
+		t.Fatalf("failed to generate AK: %v", err)
+	}
+	defer ak.Close()
+
+	nonce := []byte{0x90, 0x09}
+	badAtt, err := ak.Attest(client.AttestOpts{Nonce: nonce})
+	if err != nil {
+		t.Fatalf("failed to attest: %v", err)
+	}
+	// Copy "good" certificate into "bad" attestation
+	goodAtt := &attestpb.Attestation{}
+	if err := proto.Unmarshal(test.COS85Nonce9009, goodAtt); err != nil {
+		t.Fatalf("failed to unmarshal attestation: %v", err)
+	}
+	badAtt.AkCert = goodAtt.GetAkCert()
+
+	opts := VerifyOpts{
+		Nonce:             nonce,
+		TrustedRootCerts:  GceEKRoots,
+		IntermediateCerts: GceEKIntermediates,
+	}
+	if _, err := VerifyAttestation(badAtt, opts); err == nil {
+		t.Error("expected error when calling VerifyAttestation with mismatched public key and cert")
+	}
+}
