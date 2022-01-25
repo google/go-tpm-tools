@@ -2,8 +2,6 @@ package server
 
 import (
 	"crypto"
-	"crypto/ecdsa"
-	"crypto/rsa"
 	"errors"
 	"fmt"
 
@@ -125,14 +123,15 @@ func VerifyAttestation(attestation *pb.Attestation, opts VerifyOpts) (*pb.Machin
 }
 
 func pubKeysEqual(k1 crypto.PublicKey, k2 crypto.PublicKey) bool {
-	switch key := k1.(type) {
-	case *rsa.PublicKey:
-		return key.Equal(k2)
-	case *ecdsa.PublicKey:
-		return key.Equal(k2)
-	default:
-		return false
+	// Common interface for all the standard public key types, see:
+	// https://pkg.go.dev/crypto@go1.18beta1#PublicKey
+	type publicKey interface {
+		Equal(crypto.PublicKey) bool
 	}
+	if key, ok := k1.(publicKey); ok {
+		return key.Equal(k2)
+	}
+	return false
 }
 
 // Checks if the provided AK public key can be trusted
