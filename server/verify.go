@@ -123,7 +123,8 @@ func VerifyAttestation(attestation *pb.Attestation, opts VerifyOpts) (*pb.Machin
 }
 
 func pubKeysEqual(k1 crypto.PublicKey, k2 crypto.PublicKey) bool {
-	// Common interface for all public keys (see crypto.PublicKey documentation)
+	// Common interface for all the standard public key types, see:
+	// https://pkg.go.dev/crypto@go1.18beta1#PublicKey
 	type publicKey interface {
 		Equal(crypto.PublicKey) bool
 	}
