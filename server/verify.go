@@ -142,6 +142,9 @@ func checkAKTrusted(ak crypto.PublicKey, akCertBytes []byte, opts VerifyOpts) er
 	if !checkPub && !checkCert {
 		return fmt.Errorf("no trust mechanism provided, either use TrustedAKs or TrustedRootCerts")
 	}
+	if checkPub && checkCert {
+		return fmt.Errorf("multiple trust mechanisms provided, only use one of TrustedAKs or TrustedRootCerts")
+	}
 
 	// Check against known AKs
 	if checkPub {

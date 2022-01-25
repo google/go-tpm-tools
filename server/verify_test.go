@@ -451,6 +451,27 @@ func TestVerifyAttestationWithCerts(t *testing.T) {
 	}
 }
 
+func TestVerifyFailWithCertsAndPubkey(t *testing.T) {
+	att := &attestpb.Attestation{}
+	if err := proto.Unmarshal(test.COS85NoNonce, att); err != nil {
+		t.Fatalf("failed to unmarshal attestation: %v", err)
+	}
+
+	priv, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts := VerifyOpts{
+		Nonce:             nil,
+		TrustedRootCerts:  GceEKRoots,
+		IntermediateCerts: GceEKIntermediates,
+		TrustedAKs:        []crypto.PublicKey{priv.Public()},
+	}
+	if _, err := VerifyAttestation(att, opts); err == nil {
+		t.Error("Verified attestation even with multiple trust methods")
+	}
+}
+
 func TestVerifyAttestationEmptyRootsIntermediates(t *testing.T) {
 	attestBytes := test.COS85NoNonce
 	att := &attestpb.Attestation{}
