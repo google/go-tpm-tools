@@ -164,6 +164,9 @@ func checkAKTrusted(ak crypto.PublicKey, akCertBytes []byte, opts VerifyOpts) er
 	if err != nil {
 		return fmt.Errorf("failed to parse certificate: %w", err)
 	}
+	if !pubKeysEqual(ak, akCert.PublicKey) {
+		return fmt.Errorf("mismatch between public key and certificate")
+	}
 
 	x509Opts := x509.VerifyOptions{
 		Roots:         opts.TrustedRootCerts,
