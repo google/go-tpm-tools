@@ -451,6 +451,27 @@ func TestVerifyAttestationWithCerts(t *testing.T) {
 	}
 }
 
+func TestVerifyFailWithCertsAndPubkey(t *testing.T) {
+	att := &attestpb.Attestation{}
+	if err := proto.Unmarshal(test.COS85NoNonce, att); err != nil {
+		t.Fatalf("failed to unmarshal attestation: %v", err)
+	}
+
+	priv, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts := VerifyOpts{
+		Nonce:             nil,
+		TrustedRootCerts:  GceEKRoots,
+		IntermediateCerts: GceEKIntermediates,
+		TrustedAKs:        []crypto.PublicKey{priv.Public()},
+	}
+	if _, err := VerifyAttestation(att, opts); err == nil {
+		t.Error("Verified attestation even with multiple trust methods")
+	}
+}
+
 func TestVerifyAttestationEmptyRootsIntermediates(t *testing.T) {
 	attestBytes := test.COS85NoNonce
 	att := &attestpb.Attestation{}
@@ -495,5 +516,38 @@ func TestVerifyAttestationMissingIntermediates(t *testing.T) {
 		TrustedRootCerts: GceEKRoots,
 	}); err == nil {
 		t.Error("expected error when calling VerifyAttestation with empty roots and intermediates")
+	}
+}
+
+func TestVerifyMismatchedAKPubAndAKCert(t *testing.T) {
+	// Make sure that we fail verification if the AKPub and AKCert don't match
+	rwc := test.GetTPM(t)
+	defer client.CheckedClose(t, rwc)
+
+	ak, err := client.AttestationKeyRSA(rwc)
+	if err != nil {
+		t.Fatalf("failed to generate AK: %v", err)
+	}
+	defer ak.Close()
+
+	nonce := []byte{0x90, 0x09}
+	badAtt, err := ak.Attest(client.AttestOpts{Nonce: nonce})
+	if err != nil {
+		t.Fatalf("failed to attest: %v", err)
+	}
+	// Copy "good" certificate into "bad" attestation
+	goodAtt := &attestpb.Attestation{}
+	if err := proto.Unmarshal(test.COS85Nonce9009, goodAtt); err != nil {
+		t.Fatalf("failed to unmarshal attestation: %v", err)
+	}
+	badAtt.AkCert = goodAtt.GetAkCert()
+
+	opts := VerifyOpts{
+		Nonce:             nonce,
+		TrustedRootCerts:  GceEKRoots,
+		IntermediateCerts: GceEKIntermediates,
+	}
+	if _, err := VerifyAttestation(badAtt, opts); err == nil {
+		t.Error("expected error when calling VerifyAttestation with mismatched public key and cert")
 	}
 }

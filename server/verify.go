@@ -67,10 +67,8 @@ func VerifyAttestation(attestation *pb.Attestation, opts VerifyOpts) (*pb.Machin
 	if err != nil {
 		return nil, fmt.Errorf("failed to get AK public key: %w", err)
 	}
-	if err := checkAkTrusted(akPubKey, opts); err != nil {
-		if err := validateAkCert(attestation.AkCert, opts.IntermediateCerts, opts.TrustedRootCerts); err != nil {
-			return nil, fmt.Errorf("failed to validate attestation key: AKPub is untrusted and %v", err)
-		}
+	if err := checkAKTrusted(akPubKey, attestation.GetAkCert(), opts); err != nil {
+		return nil, fmt.Errorf("failed to validate AK: %w", err)
 	}
 
 	// Verify the signing hash algorithm
@@ -138,33 +136,41 @@ func pubKeysEqual(k1 crypto.PublicKey, k2 crypto.PublicKey) bool {
 }
 
 // Checks if the provided AK public key can be trusted
-func checkAkTrusted(ak crypto.PublicKey, opts VerifyOpts) error {
-	if len(opts.TrustedAKs) == 0 {
-		return fmt.Errorf("no mechanism for AK verification provided")
+func checkAKTrusted(ak crypto.PublicKey, akCertBytes []byte, opts VerifyOpts) error {
+	checkPub := len(opts.TrustedAKs) > 0
+	checkCert := opts.TrustedRootCerts != nil && len(opts.TrustedRootCerts.Subjects()) > 0
+	if !checkPub && !checkCert {
+		return fmt.Errorf("no trust mechanism provided, either use TrustedAKs or TrustedRootCerts")
+	}
+	if checkPub && checkCert {
+		return fmt.Errorf("multiple trust mechanisms provided, only use one of TrustedAKs or TrustedRootCerts")
 	}
 
 	// Check against known AKs
-	for _, trusted := range opts.TrustedAKs {
-		if pubKeysEqual(ak, trusted) {
-			return nil
+	if checkPub {
+		for _, trusted := range opts.TrustedAKs {
+			if pubKeysEqual(ak, trusted) {
+				return nil
+			}
 		}
+		return fmt.Errorf("public key is not trusted")
 	}
-	return fmt.Errorf("AK public key is not trusted")
-}
 
-func validateAkCert(akCertBytes []byte, intermediates *x509.CertPool, roots *x509.CertPool) error {
+	// Check if the AK Cert chains to a trusted root
 	if len(akCertBytes) == 0 {
-		return errors.New("AKCert is empty")
+		return errors.New("no certificate provided in attestation")
 	}
-
 	akCert, err := x509.ParseCertificate(akCertBytes)
 	if err != nil {
-		return fmt.Errorf("failed to parse AKCert: %v", err)
+		return fmt.Errorf("failed to parse certificate: %w", err)
+	}
+	if !pubKeysEqual(ak, akCert.PublicKey) {
+		return fmt.Errorf("mismatch between public key and certificate")
 	}
 
-	if _, err := akCert.Verify(x509.VerifyOptions{
-		Roots:         roots,
-		Intermediates: intermediates,
+	x509Opts := x509.VerifyOptions{
+		Roots:         opts.TrustedRootCerts,
+		Intermediates: opts.IntermediateCerts,
 		// x509 (both ct and crypto) marks the SAN extension unhandled if SAN
 		// does not parse any of DNSNames, EmailAddresses, IPAddresses, or URIs.
 		// https://cs.opensource.google/go/go/+/master:src/crypto/x509/parser.go;l=668-678
@@ -175,8 +181,9 @@ func validateAkCert(akCertBytes []byte, intermediates *x509.CertPool, roots *x50
 		// - https://oidref.com/2.23.133.8.3
 		// https://pkg.go.dev/crypto/x509#VerifyOptions
 		KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsage(x509.ExtKeyUsageAny)},
-	}); err != nil {
-		return fmt.Errorf("failed to verify AKCert against trusted roots: %v", err)
+	}
+	if _, err := akCert.Verify(x509Opts); err != nil {
+		return fmt.Errorf("failed to verify certificate against trusted roots: %v", err)
 	}
 	return nil
 }
