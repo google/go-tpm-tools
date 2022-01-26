@@ -78,6 +78,10 @@ jobs:
       uses: actions/checkout@v2
     - name: Install Linux packages
       run: sudo apt-get -y install libssl-dev libtspi-dev
+    - name: Check for CGO Warnings (gcc)
+      run: CGO_CFLAGS=-Werror CC=gcc go build ./...
+    - name: Check for CGO Warnings (clang)
+      run: CGO_CFLAGS=-Werror CC=clang go build ./...
     - name: Lint
       uses: golangci/golangci-lint-action@v2
       with:
