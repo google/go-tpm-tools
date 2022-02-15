@@ -17,6 +17,11 @@
 //
 // The "protoc-gen-go" tool must also be installed. To install it, run:
 //   go install google.golang.org/protobuf/cmd/protoc-gen-go
+//
+// If you see a 'protoc-gen-go: program not found or is not executable' error
+// for the 'go generate' command, run the following:
+//   echo 'export PATH=$PATH:$GOPATH/bin' >> $HOME/.bashrc
+//   source $HOME/.bashrc
 package proto
 
 //go:generate protoc --go_out=. --go_opt=module=github.com/google/go-tpm-tools/proto tpm.proto attest.proto
