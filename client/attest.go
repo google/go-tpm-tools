@@ -1,7 +1,10 @@
 package client
 
 import (
+	"crypto/x509"
 	"fmt"
+	"io/ioutil"
+	"net/http"
 
 	pb "github.com/google/go-tpm-tools/proto/attest"
 )
@@ -24,6 +27,39 @@ type AttestOpts struct {
 	// firmware event log, where PCRs 0-9 and 14 are often measured. If the two
 	// logs overlap, server-side verification using this library may fail.
 	CanonicalEventLog []byte
+	// HTTP Client for retrieving Intermediate Certificates.
+	certClient *http.Client
+}
+
+// Constructs the certificate chain for the key's certificate, using the provided HTTP client.
+func (k *Key) getCertificateChain(client *http.Client) ([][]byte, error) {
+	var certs [][]byte
+
+	for _, url := range k.cert.IssuingCertificateURL {
+		resp, err := http.Get(url)
+		if err != nil {
+			return nil, fmt.Errorf("failed to retrieve certificate at %v: %v", url, err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("certificate retrieval from %s returned non-OK status: %v", url, resp.StatusCode)
+		}
+		certBytes, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read response body from %s: %v", url, err)
+		}
+
+		// Verify that the bytes can be parsed into a certificate.
+		_, err = x509.ParseCertificate(certBytes)
+		if err != nil {
+			return nil, fmt.Errorf("error parsing certificate from %s: %v", url, err)
+		}
+
+		certs = append(certs, certBytes)
+	}
+
+	return certs, nil
 }
 
 // Attest generates an Attestation containing the TCG Event Log and a Quote over
@@ -62,5 +98,14 @@ func (k *Key) Attest(opts AttestOpts) (*pb.Attestation, error) {
 	if len(opts.CanonicalEventLog) != 0 {
 		attestation.CanonicalEventLog = opts.CanonicalEventLog
 	}
+
+	// Construct certficate chain.
+	if opts.certClient != nil {
+		attestation.IntermediateCerts, err = k.getCertificateChain(opts.certClient)
+		if err != nil {
+			return nil, fmt.Errorf("Error creating intermediate cert chain: %v", err)
+		}
+	}
+
 	return &attestation, nil
 }

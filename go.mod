@@ -4,6 +4,7 @@ module github.com/google/go-tpm-tools
 go 1.16
 
 require (
+	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/google/certificate-transparency-go v1.1.2
 	github.com/google/go-attestation v0.4.3-0.20220215003148-83d71b1c538e
 	github.com/google/go-cmp v0.5.7
