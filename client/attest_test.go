@@ -57,14 +57,14 @@ func TestGetCertificateChainSucceeds(t *testing.T) {
 	}
 	key := &Key{cert: leafCert}
 
-	certChain, err := key.getCertificateChain(&http.Client{})
+	certChain, err := key.getCertificateChain()
 	if err != nil {
-		t.Fatalf("getCertificateChain(httpClient) returned error: %v", err)
+		t.Fatalf("getCertificateChain() returned error: %v", err)
 	}
 
 	// Expect only one intermediate certificate retrieved.
 	if len(certChain) != 1 {
-		t.Errorf("getCertificateChain(httpClient) did not return the expected number of certificates: got %v, want 1", len(certChain))
+		t.Errorf("getCertificateChain() did not return the expected number of certificates: got %v, want 1", len(certChain))
 	}
 }
 
@@ -98,7 +98,7 @@ func TestGetCertificateChainErrors(t *testing.T) {
 			}
 			key := &Key{cert: leafCert}
 
-			_, err = key.getCertificateChain(&http.Client{})
+			_, err = key.getCertificateChain()
 			if err == nil {
 				t.Error("key.getCertificateChain() returned successfully, expected error.")
 			} else {

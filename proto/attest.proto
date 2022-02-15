@@ -32,6 +32,7 @@ message Attestation {
   // Optional.
   bytes ak_cert = 6;
   // Intermediate Certificates for verifying the AK Certificate, encoded as ASN.1 DER.
+  // Optional.
   repeated bytes intermediate_certs = 7;
 }
 

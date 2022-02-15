@@ -27,12 +27,12 @@ type AttestOpts struct {
 	// firmware event log, where PCRs 0-9 and 14 are often measured. If the two
 	// logs overlap, server-side verification using this library may fail.
 	CanonicalEventLog []byte
-	// HTTP Client for retrieving Intermediate Certificates.
-	certClient *http.Client
+	// Indicates whether the AK certificate chain should be retrieved for validation.
+	validateCertChain bool
 }
 
 // Constructs the certificate chain for the key's certificate, using the provided HTTP client.
-func (k *Key) getCertificateChain(client *http.Client) ([][]byte, error) {
+func (k *Key) getCertificateChain() ([][]byte, error) {
 	var certs [][]byte
 
 	for _, url := range k.cert.IssuingCertificateURL {
@@ -100,8 +100,8 @@ func (k *Key) Attest(opts AttestOpts) (*pb.Attestation, error) {
 	}
 
 	// Construct certficate chain.
-	if opts.certClient != nil {
-		attestation.IntermediateCerts, err = k.getCertificateChain(opts.certClient)
+	if opts.validateCertChain {
+		attestation.IntermediateCerts, err = k.getCertificateChain()
 		if err != nil {
 			return nil, fmt.Errorf("Error creating intermediate cert chain: %v", err)
 		}

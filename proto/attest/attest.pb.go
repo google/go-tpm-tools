@@ -281,6 +281,7 @@ type Attestation struct {
 	// Optional.
 	AkCert []byte `protobuf:"bytes,6,opt,name=ak_cert,json=akCert,proto3" json:"ak_cert,omitempty"`
 	// Intermediate Certificates for verifying the AK Certificate, encoded as ASN.1 DER.
+	// Optional.
 	IntermediateCerts [][]byte `protobuf:"bytes,7,rep,name=intermediate_certs,json=intermediateCerts,proto3" json:"intermediate_certs,omitempty"`
 }
 
