@@ -51,20 +51,6 @@ go build ./cmd/gotpm
 
 This project currently requires Go 1.16 or newer. Any update to the minimum required Go version will be released as a **minor** version update.
 
-## `trousers` errors when building `server`
-
-When building the `server` library (or tests) you may get an error that looks like:
-```
-fatal error: trousers/tss.h: No such file or directory
-   17 | // #include <trousers/tss.h>
-      |           ^~~~~~~~~~~~~~~~
-compilation terminated.
-```
-This is because the `server` library (indirectly) depends on the [Trousers `libtspi` library](http://trousers.sourceforge.net/). This is a _temporary_ dependency ([tracking issue](https://github.com/google/go-tpm-tools/issues/109)). To fix this error, install `libtspi` by running:
-```bash
-sudo apt install libtspi-dev
-```
-
 ## `openssl` errors when building `simulator`
 
 Similarly, when building the `simulator` library (or tests), you may get an error that looks like:

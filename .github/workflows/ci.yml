@@ -53,7 +53,7 @@ jobs:
     - name: Check Protobuf Generation
       run: go generate ./... && git diff -G'^[^/]' --exit-code
     - name: Install Linux packages
-      run: sudo apt-get -y install libssl-dev libtspi-dev
+      run: sudo apt-get -y install libssl-dev
       if: runner.os == 'Linux'
     - name: Install Mac packages
       run: brew install openssl
@@ -77,7 +77,7 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v2
     - name: Install Linux packages
-      run: sudo apt-get -y install libssl-dev libtspi-dev
+      run: sudo apt-get -y install libssl-dev
     - name: Check for CGO Warnings (gcc)
       run: CGO_CFLAGS=-Werror CC=gcc go build ./...
     - name: Check for CGO Warnings (clang)
