@@ -323,6 +323,8 @@ github.com/google/certificate-transparency-go v1.1.2/go.mod h1:3OL+HKDqHPUfdKrHV
 github.com/google/go-attestation v0.3.2/go.mod h1:N0ADdnY0cr7eLJyZ75o8kofGGTUF2XrZTJuTPo5acwk=
 github.com/google/go-attestation v0.4.2 h1:MZF7b5CuopvCjIwrJLNbUGX6/NxLK4+Ps9h6N7Ys3kg=
 github.com/google/go-attestation v0.4.2/go.mod h1:rdQESXQvTDdAEe15KC5WOkdGPDSV/bFEBUtRUJlK+Bw=
+github.com/google/go-attestation v0.4.3-0.20220215003148-83d71b1c538e h1:NmZguGblibzcgDdkL42ZeH5iJmXgVZmNMhW71i7w7bk=
+github.com/google/go-attestation v0.4.3-0.20220215003148-83d71b1c538e/go.mod h1:7L6MpeaeEmJVJHpr/5cCrOE0SjNA2aFLfJF1Og0AJS8=
 github.com/google/go-cmp v0.2.0/go.mod h1:oXzfMopK8JAjlY9xF4vHSVASa0yLyX7SntLO5aqRK0M=
 github.com/google/go-cmp v0.3.0/go.mod h1:8QqcDgzrUqlUb/G2PQTWiueGozuR1884gddMywk6iLU=
 github.com/google/go-cmp v0.3.1/go.mod h1:8QqcDgzrUqlUb/G2PQTWiueGozuR1884gddMywk6iLU=
