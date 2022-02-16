@@ -360,8 +360,12 @@ func TestParsingCELEventLog(t *testing.T) {
 	tpm := test.GetTPM(t)
 	defer client.CheckedClose(t, tpm)
 
+	err := tpm2.PCRReset(tpm, tpmutil.Handle(test.DebugPCR))
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	coscel := &cel.CEL{}
-	hashAlgoList := []crypto.Hash{crypto.SHA256, crypto.SHA1, crypto.SHA384, crypto.SHA512}
 	emptyCosState := attestpb.ContainerState{}
 
 	var buf bytes.Buffer
@@ -373,6 +377,17 @@ func TestParsingCELEventLog(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	implmentedHash := []crypto.Hash{}
+	// get all implmented hash algo in the TPM
+	for _, h := range banks {
+		hsh, err := tpm2.Algorithm(h.Hash).Hash()
+		if err != nil {
+			t.Fatal(err)
+		}
+		implmentedHash = append(implmentedHash, crypto.Hash(hsh))
+	}
+
 	for _, bank := range banks {
 		// pcrs can have any value here, since the coscel has no records, the replay should always success.
 		msState, err := parseCanonicalEventLog(buf.Bytes(), bank)
@@ -386,7 +401,7 @@ func TestParsingCELEventLog(t *testing.T) {
 
 	// Secondly, append a random non-COS event, encode and try to parse it. Because there is no COS TLV event,
 	// we should get an empty/default CosState in the MachineState.
-	event, err := generateNonCosCelEvent(hashAlgoList)
+	event, err := generateNonCosCelEvent(implmentedHash)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -396,7 +411,7 @@ func TestParsingCELEventLog(t *testing.T) {
 		t.Fatal(err)
 	}
 	// extend digests to the PCR
-	for _, hash := range hashAlgoList {
+	for _, hash := range implmentedHash {
 		algo, err := tpm2.HashToAlgorithm(hash)
 		if err != nil {
 			t.Fatal(err)
@@ -455,7 +470,7 @@ func TestParsingCELEventLog(t *testing.T) {
 	}
 	for _, testEvent := range testCELEvents {
 		cos := cel.CosTlv{EventType: testEvent.cosNestedEventType, EventContent: testEvent.eventPayload}
-		if err := coscel.AppendEvent(tpm, testEvent.pcr, hashAlgoList, cos); err != nil {
+		if err := coscel.AppendEvent(tpm, testEvent.pcr, implmentedHash, cos); err != nil {
 			t.Fatal(err)
 		}
 	}

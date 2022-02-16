@@ -12,20 +12,22 @@ import (
 	"github.com/google/go-tpm-tools/internal/test"
 	pb "github.com/google/go-tpm-tools/proto/tpm"
 	"github.com/google/go-tpm/tpm2"
+	"github.com/google/go-tpm/tpmutil"
 )
+
+var measuredHashes = []crypto.Hash{crypto.SHA1, crypto.SHA256}
 
 func TestCELEncodingDecoding(t *testing.T) {
 	tpm := test.GetTPM(t)
 	defer client.CheckedClose(t, tpm)
 
-	hashAlgoList := []crypto.Hash{crypto.SHA256, crypto.SHA1, crypto.SHA512}
 	cel := &CEL{}
 
 	cosEvent := CosTlv{ImageDigestType, []byte("sha256:781d8dfdd92118436bd914442c8339e653b83f6bf3c1a7a98efcfb7c4fed7483")}
-	appendOrFatal(t, cel, tpm, test.DebugPCR, hashAlgoList, cosEvent)
+	appendOrFatal(t, cel, tpm, test.DebugPCR, measuredHashes, cosEvent)
 
 	cosEvent2 := CosTlv{ImageRefType, []byte("docker.io/bazel/experimental/test:latest")}
-	appendOrFatal(t, cel, tpm, test.ApplicationPCR, hashAlgoList, cosEvent2)
+	appendOrFatal(t, cel, tpm, test.ApplicationPCR, measuredHashes, cosEvent2)
 
 	var buf bytes.Buffer
 	if err := cel.EncodeCEL(&buf); err != nil {
@@ -60,8 +62,16 @@ func TestCELMeasureAndReplay(t *testing.T) {
 	tpm := test.GetTPM(t)
 	defer client.CheckedClose(t, tpm)
 
+	err := tpm2.PCRReset(tpm, tpmutil.Handle(test.DebugPCR))
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = tpm2.PCRReset(tpm, tpmutil.Handle(test.ApplicationPCR))
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	cel := &CEL{}
-	measuredHashes := []crypto.Hash{crypto.SHA256, crypto.SHA1, crypto.SHA512}
 
 	cosEvent := CosTlv{ImageRefType, []byte("docker.io/bazel/experimental/test:latest")}
 	someEvent2 := make([]byte, 10)
@@ -75,12 +85,10 @@ func TestCELMeasureAndReplay(t *testing.T) {
 	appendOrFatal(t, cel, tpm, test.ApplicationPCR, measuredHashes, cosEvent)
 
 	replay(t, cel, tpm, measuredHashes,
-		[]int{test.DebugPCR, test.ApplicationPCR},
-		/*shouldSucceed=*/ true)
+		[]int{test.DebugPCR, test.ApplicationPCR}, true /*shouldSucceed*/)
 	// Supersets should pass.
 	replay(t, cel, tpm, measuredHashes,
-		[]int{0, 13, 14, test.DebugPCR, 22, test.ApplicationPCR},
-		/*shouldSucceed=*/ true)
+		[]int{0, 13, 14, test.DebugPCR, 22, test.ApplicationPCR}, true /*shouldSucceed*/)
 }
 
 func TestCELReplayFailTamperedDigest(t *testing.T) {
@@ -88,7 +96,6 @@ func TestCELReplayFailTamperedDigest(t *testing.T) {
 	defer client.CheckedClose(t, tpm)
 
 	cel := &CEL{}
-	measuredHashes := []crypto.Hash{crypto.SHA256, crypto.SHA1, crypto.SHA512}
 
 	cosEvent := CosTlv{ImageRefType, []byte("docker.io/bazel/experimental/test:latest")}
 	someEvent2 := make([]byte, 10)
@@ -109,8 +116,7 @@ func TestCELReplayFailTamperedDigest(t *testing.T) {
 		modifiedRecord.Digests[hash] = newDigest
 	}
 	replay(t, cel, tpm, measuredHashes,
-		[]int{test.DebugPCR, test.ApplicationPCR},
-		/*shouldSucceed=*/ false)
+		[]int{test.DebugPCR, test.ApplicationPCR}, false /*shouldSucceed*/)
 }
 
 func TestCELReplayEmpty(t *testing.T) {
@@ -118,9 +124,8 @@ func TestCELReplayEmpty(t *testing.T) {
 	defer client.CheckedClose(t, tpm)
 
 	cel := &CEL{}
-	replay(t, cel, tpm, []crypto.Hash{crypto.SHA256, crypto.SHA1, crypto.SHA512},
-		[]int{test.DebugPCR, test.ApplicationPCR},
-		/*shouldSucceed=*/ true)
+	replay(t, cel, tpm, []crypto.Hash{crypto.SHA1, crypto.SHA256},
+		[]int{test.DebugPCR, test.ApplicationPCR}, true /*shouldSucceed*/)
 }
 
 func TestCELReplayFailMissingPCRsInBank(t *testing.T) {
@@ -128,7 +133,6 @@ func TestCELReplayFailMissingPCRsInBank(t *testing.T) {
 	defer client.CheckedClose(t, tpm)
 
 	cel := &CEL{}
-	measuredHashes := []crypto.Hash{crypto.SHA256, crypto.SHA1, crypto.SHA512}
 
 	someEvent := make([]byte, 10)
 	someEvent2 := make([]byte, 10)
@@ -136,11 +140,9 @@ func TestCELReplayFailMissingPCRsInBank(t *testing.T) {
 	appendOrFatal(t, cel, tpm, test.DebugPCR, measuredHashes, CosTlv{ImageRefType, someEvent})
 	appendOrFatal(t, cel, tpm, test.ApplicationPCR, measuredHashes, CosTlv{ImageDigestType, someEvent2})
 	replay(t, cel, tpm, measuredHashes,
-		[]int{test.DebugPCR},
-		/*shouldSucceed=*/ false)
+		[]int{test.DebugPCR}, false /*shouldSucceed*/)
 	replay(t, cel, tpm, measuredHashes,
-		[]int{test.ApplicationPCR},
-		/*shouldSucceed=*/ false)
+		[]int{test.ApplicationPCR}, false /*shouldSucceed*/)
 }
 
 func replay(t *testing.T, cel *CEL, tpm io.ReadWriteCloser, measuredHashes []crypto.Hash, pcrs []int, shouldSucceed bool) {

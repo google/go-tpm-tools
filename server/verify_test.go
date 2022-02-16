@@ -24,6 +24,8 @@ import (
 	"google.golang.org/protobuf/testing/protocmp"
 )
 
+var measuredHashes = []crypto.Hash{crypto.SHA1, crypto.SHA256}
+
 func getDigestHash(input string) []byte {
 	inputDigestHash := sha256.New()
 	inputDigestHash.Write([]byte(input))
@@ -293,6 +295,11 @@ func TestVerifyAttestationWithCEL(t *testing.T) {
 	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
 
+	err := tpm2.PCRReset(rwc, 16)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	ak, err := client.AttestationKeyRSA(rwc)
 	if err != nil {
 		t.Fatalf("failed to generate AK: %v", err)
@@ -316,10 +323,9 @@ func TestVerifyAttestationWithCEL(t *testing.T) {
 		{cel.ArgType, test.DebugPCR, []byte("--x")},
 		{cel.ArgType, test.DebugPCR, []byte("--y")},
 	}
-	hashAlgoList := []crypto.Hash{crypto.SHA256, crypto.SHA1, crypto.SHA512}
 	for _, testEvent := range testEvents {
 		cos := cel.CosTlv{EventType: testEvent.cosNestedEventType, EventContent: testEvent.eventPayload}
-		if err := coscel.AppendEvent(rwc, testEvent.pcr, hashAlgoList, cos); err != nil {
+		if err := coscel.AppendEvent(rwc, testEvent.pcr, measuredHashes, cos); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -367,6 +373,11 @@ func TestVerifyFailWithTamperedCELContent(t *testing.T) {
 	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
 
+	err := tpm2.PCRReset(rwc, tpmutil.Handle(test.DebugPCR))
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	ak, err := client.AttestationKeyRSA(rwc)
 	if err != nil {
 		t.Fatalf("failed to generate AK: %v", err)
@@ -374,7 +385,6 @@ func TestVerifyFailWithTamperedCELContent(t *testing.T) {
 	defer ak.Close()
 
 	c := &cel.CEL{}
-	measuredHashes := []crypto.Hash{crypto.SHA256, crypto.SHA1, crypto.SHA512}
 
 	cosEvent := cel.CosTlv{EventType: cel.ImageRefType, EventContent: []byte("docker.io/bazel/experimental/test:latest")}
 	cosEvent2 := cel.CosTlv{EventType: cel.ImageDigestType, EventContent: []byte("sha256:781d8dfdd92118436bd914442c8339e653b83f6bf3c1a7a98efcfb7c4fed7483")}

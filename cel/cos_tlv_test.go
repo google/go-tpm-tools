@@ -2,7 +2,6 @@ package cel
 
 import (
 	"bytes"
-	"crypto"
 	"strings"
 	"testing"
 
@@ -16,7 +15,6 @@ func TestCosEventlog(t *testing.T) {
 	tpm := test.GetTPM(t)
 	defer client.CheckedClose(t, tpm)
 
-	hashAlgoList := []crypto.Hash{crypto.SHA256, crypto.SHA1, crypto.SHA512}
 	cel := &CEL{}
 
 	testEvents := []struct {
@@ -38,7 +36,7 @@ func TestCosEventlog(t *testing.T) {
 
 	for _, testEvent := range testEvents {
 		cos := CosTlv{testEvent.cosNestedEventType, testEvent.eventPayload}
-		if err := cel.AppendEvent(tpm, testEvent.pcr, hashAlgoList, cos); err != nil {
+		if err := cel.AppendEvent(tpm, testEvent.pcr, measuredHashes, cos); err != nil {
 			t.Fatal(err.Error())
 		}
 	}
