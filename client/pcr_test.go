@@ -53,7 +53,7 @@ func TestReadPCRs(t *testing.T) {
 	}{
 		{"SHA1", tpm2.AlgSHA1},
 		{"SHA256", tpm2.AlgSHA256},
-		{"SHA384", tpm2.AlgSHA512},
+		{"SHA384", tpm2.AlgSHA384},
 	}
 
 	for _, c := range cases {
