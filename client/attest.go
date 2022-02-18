@@ -28,7 +28,7 @@ type AttestOpts struct {
 	// logs overlap, server-side verification using this library may fail.
 	CanonicalEventLog []byte
 	// Indicates whether the AK certificate chain should be retrieved for validation.
-	validateCertChain bool
+	ValidateCertChain bool
 }
 
 // Constructs the certificate chain for the key's certificate, using the provided HTTP client.
