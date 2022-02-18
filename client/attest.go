@@ -100,7 +100,7 @@ func (k *Key) Attest(opts AttestOpts) (*pb.Attestation, error) {
 	}
 
 	// Construct certficate chain.
-	if opts.validateCertChain {
+	if opts.ValidateCertChain {
 		attestation.IntermediateCerts, err = k.getCertificateChain()
 		if err != nil {
 			return nil, fmt.Errorf("error creating intermediate cert chain: %v", err)
