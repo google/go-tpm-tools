@@ -34,7 +34,7 @@ type AttestOpts struct {
 	// logs overlap, server-side verification using this library may fail.
 	CanonicalEventLog []byte
 	// Indicates whether the AK certificate chain should be retrieved for validation.
-	// If true, Key.Attest() will contruct the certificate chain by making GET requests to
+	// If true, Key.Attest() will construct the certificate chain by making GET requests to
 	// the contents of Key.cert.IssuingCertificateURL.
 	FetchCertChain bool
 }
