@@ -4,9 +4,15 @@ import (
 	"crypto/x509"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net/http"
 
 	pb "github.com/google/go-tpm-tools/proto/attest"
+)
+
+const (
+	maxIssuingCertificateURLs = 3
+	maxCertChainDepth         = 4
 )
 
 // AttestOpts allows for customizing the functionality of Attest.
@@ -28,35 +34,74 @@ type AttestOpts struct {
 	// logs overlap, server-side verification using this library may fail.
 	CanonicalEventLog []byte
 	// Indicates whether the AK certificate chain should be retrieved for validation.
-	ValidateCertChain bool
+	// If true, Key.Attest() will contruct the certificate chain by making GET requests to
+	// the contents of Key.cert.IssuingCertificateURL.
+	FetchCertChain bool
 }
 
-// Constructs the certificate chain for the key's certificate, using the provided HTTP client.
-func (k *Key) getCertificateChain() ([][]byte, error) {
-	var certs [][]byte
-
-	for _, url := range k.cert.IssuingCertificateURL {
+// Given a certificate, iterates through its IssuingCertificateURLs and returns the certificate
+// that signed it. Returns an error if a valid signing certificate is not found.
+func fetchIssuingCertificate(cert *x509.Certificate) (*x509.Certificate, error) {
+	if cert == nil {
+		return nil, fmt.Errorf("provided certificate is nil")
+	}
+	// For each URL, fetch and parse the certificate, then verify whether it signed cert.
+	// If successful, return the parsed certificate. If any step in this process fails, try the next url.
+	for _, url := range cert.IssuingCertificateURL {
 		resp, err := http.Get(url)
 		if err != nil {
-			return nil, fmt.Errorf("failed to retrieve certificate at %v: %v", url, err)
+			log.Printf("failed to retrieve certificate at %v: %v\n", url, err)
+			continue
 		}
 		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("certificate retrieval from %s returned non-OK status: %v", url, resp.StatusCode)
+			log.Printf("certificate retrieval from %s returned non-OK status: %v\n", url, resp.StatusCode)
+			continue
 		}
 		certBytes, err := ioutil.ReadAll(resp.Body)
 		if err != nil {
-			return nil, fmt.Errorf("failed to read response body from %s: %v", url, err)
+			log.Printf("failed to read response body from %s: %v\n", url, err)
+			continue
 		}
 
-		// Verify that the bytes can be parsed into a certificate.
-		_, err = x509.ParseCertificate(certBytes)
+		parsedCert, err := x509.ParseCertificate(certBytes)
 		if err != nil {
-			return nil, fmt.Errorf("error parsing certificate from %s: %v", url, err)
+			log.Printf("failed to parse response from %s into a certificate: %v\n", url, err)
+			continue
 		}
 
-		certs = append(certs, certBytes)
+		// Check if the parsed certificate signed the current one.
+		err = cert.CheckSignatureFrom(parsedCert)
+		if err == nil {
+			return parsedCert, nil
+		}
+	}
+
+	return nil, fmt.Errorf("did not find valid signing certificate")
+}
+
+// Constructs the certificate chain for the key's certificate, using the provided HTTP client.
+func (k *Key) getCertificateChain() ([][]byte, error) {
+	if len(k.cert.IssuingCertificateURL) > maxIssuingCertificateURLs {
+		return nil, fmt.Errorf("key cert contains too many issuing URLS: got %v, expect no more than %v", len(k.cert.IssuingCertificateURL), maxIssuingCertificateURLs)
+	}
+
+	var certs [][]byte
+	currentCert := k.cert
+	for i := 0; i < maxCertChainDepth; i++ {
+		issuingCert, err := fetchIssuingCertificate(currentCert)
+		if err != nil {
+			return nil, fmt.Errorf("error retrieving certificate chain: %w", err)
+		}
+
+		certs = append(certs, issuingCert.Raw)
+		// Stop searching if no IssuingCertificateURLs found.
+		if len(issuingCert.IssuingCertificateURL) == 0 {
+			break
+		}
+
+		currentCert = issuingCert
 	}
 
 	return certs, nil
@@ -100,10 +145,14 @@ func (k *Key) Attest(opts AttestOpts) (*pb.Attestation, error) {
 	}
 
 	// Construct certficate chain.
-	if opts.ValidateCertChain {
+	if opts.FetchCertChain {
+		if k.cert == nil {
+			return nil, fmt.Errorf("cert chain fetching option was set but no AK cert found in key")
+		}
+
 		attestation.IntermediateCerts, err = k.getCertificateChain()
 		if err != nil {
-			return nil, fmt.Errorf("error creating intermediate cert chain: %v", err)
+			return nil, fmt.Errorf("error creating intermediate cert chain: %w", err)
 		}
 	}
 
