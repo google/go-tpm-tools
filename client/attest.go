@@ -145,11 +145,7 @@ func (k *Key) Attest(opts AttestOpts) (*pb.Attestation, error) {
 	}
 
 	// Construct certficate chain.
-	if opts.FetchCertChain {
-		if k.cert == nil {
-			return nil, fmt.Errorf("cert chain fetching option was set but no AK cert found in key")
-		}
-
+	if opts.FetchCertChain && k.cert != nil {
 		attestation.IntermediateCerts, err = k.getCertificateChain()
 		if err != nil {
 			return nil, fmt.Errorf("error creating intermediate cert chain: %w", err)

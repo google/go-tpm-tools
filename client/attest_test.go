@@ -176,7 +176,7 @@ func TestKeyAttestSucceedsWithCertChainRetrieval(t *testing.T) {
 	}
 }
 
-func TestKeyAttestFailsForFetchCertChainWithNoAKCert(t *testing.T) {
+func TestKeyAttestSucceedsForFetchCertChainWithNoAKCert(t *testing.T) {
 	rwc := test.GetTPM(t)
 	defer CheckedClose(t, rwc)
 
@@ -186,8 +186,8 @@ func TestKeyAttestFailsForFetchCertChainWithNoAKCert(t *testing.T) {
 	}
 
 	_, err = ak.Attest(AttestOpts{Nonce: []byte("some nonce"), FetchCertChain: true})
-	if err == nil {
-		t.Errorf("Attest returned successfully, expected error due to nil AK cert.")
+	if err != nil {
+		t.Errorf("Attest returned error: %v", err)
 	}
 
 }
