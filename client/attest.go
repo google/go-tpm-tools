@@ -53,13 +53,13 @@ func fetchIssuingCertificate(cert *x509.Certificate) (*x509.Certificate, error) 
 			log.Printf("failed to retrieve certificate at %v: %v\n", url, err)
 			continue
 		}
-		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
 			log.Printf("certificate retrieval from %s returned non-OK status: %v\n", url, resp.StatusCode)
 			continue
 		}
 		certBytes, err := ioutil.ReadAll(resp.Body)
+		resp.Body.Close()
 		if err != nil {
 			log.Printf("failed to read response body from %s: %v\n", url, err)
 			continue
@@ -72,8 +72,7 @@ func fetchIssuingCertificate(cert *x509.Certificate) (*x509.Certificate, error) 
 		}
 
 		// Check if the parsed certificate signed the current one.
-		err = cert.CheckSignatureFrom(parsedCert)
-		if err == nil {
+		if err = cert.CheckSignatureFrom(parsedCert); err == nil {
 			return parsedCert, nil
 		}
 	}
@@ -84,7 +83,7 @@ func fetchIssuingCertificate(cert *x509.Certificate) (*x509.Certificate, error) 
 // Constructs the certificate chain for the key's certificate, using the provided HTTP client.
 func (k *Key) getCertificateChain() ([][]byte, error) {
 	if len(k.cert.IssuingCertificateURL) > maxIssuingCertificateURLs {
-		return nil, fmt.Errorf("key cert contains too many issuing URLS: got %v, expect no more than %v", len(k.cert.IssuingCertificateURL), maxIssuingCertificateURLs)
+		return nil, fmt.Errorf("key cert contains too many issuing URLs: got %v, expect no more than %v", len(k.cert.IssuingCertificateURL), maxIssuingCertificateURLs)
 	}
 
 	var certs [][]byte
@@ -146,8 +145,7 @@ func (k *Key) Attest(opts AttestOpts) (*pb.Attestation, error) {
 
 	// Construct certficate chain.
 	if opts.FetchCertChain && k.cert != nil {
-		attestation.IntermediateCerts, err = k.getCertificateChain()
-		if err != nil {
+		if attestation.IntermediateCerts, err = k.getCertificateChain(); err != nil {
 			return nil, fmt.Errorf("error creating intermediate cert chain: %w", err)
 		}
 	}
