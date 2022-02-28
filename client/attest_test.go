@@ -62,9 +62,9 @@ func TestFetchIssuingCertificateSucceeds(t *testing.T) {
 
 	leafCert, _ := getTestCert(t, []string{"invalid.URL", ts.URL}, testCA, caKey)
 
-	_, err := fetchIssuingCertificate(leafCert)
-	if err != nil {
-		t.Errorf("fetchIssuingCertificate() returned error: %v", err)
+	cert := fetchIssuingCertificate(leafCert)
+	if cert == nil {
+		t.Errorf("fetchIssuingCertificate() did not find valid intermediate cert")
 	}
 }
 
@@ -78,9 +78,9 @@ func TestFetchIssuingCertificateReturnsErrorIfNoValidCertificateFound(t *testing
 	testCA, caKey := getTestCert(t, nil, nil, nil)
 	leafCert, _ := getTestCert(t, []string{ts.URL}, testCA, caKey)
 
-	_, err := fetchIssuingCertificate(leafCert)
-	if err == nil {
-		t.Error("fetchIssuingCertificate returned successfully, but expected error.")
+	cert := fetchIssuingCertificate(leafCert)
+	if cert != nil {
+		t.Error("fetchIssuingCertificate returned non-nil certificate, but expected nil.")
 	}
 }
 
@@ -109,33 +109,9 @@ func TestGetCertificateChainSucceeds(t *testing.T) {
 
 	key := &Key{cert: leafCert}
 
-	certChain, err := key.getCertificateChain()
-	if err != nil {
-		t.Fatalf("getCertificateChain returned error: %v", err)
-	}
-
+	certChain := key.getCertificateChain()
 	if len(certChain) != 2 {
 		t.Fatalf("getCertificateChain did not return the expected number of certificates: got %v, want 2", len(certChain))
-	}
-}
-
-func TestGetCertificateChainFailsIfCertHasTooManyIssuingURLs(t *testing.T) {
-	// Create CA and corresponding server so the only failure point is the IssuingCertificateURL length check.
-	testCA, caKey := getTestCert(t, nil, nil, nil)
-
-	caServer := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
-		rw.WriteHeader(http.StatusOK)
-		rw.Write(testCA.Raw)
-	}))
-	defer caServer.Close()
-
-	leafCert, _ := getTestCert(t, []string{caServer.URL, "url2", "url3", "url4"}, testCA, caKey)
-
-	key := &Key{cert: leafCert}
-
-	_, err := key.getCertificateChain()
-	if err == nil {
-		t.Error("getCertificateChain was successful, expected error")
 	}
 }
 
@@ -176,7 +152,7 @@ func TestKeyAttestSucceedsWithCertChainRetrieval(t *testing.T) {
 	}
 }
 
-func TestKeyAttestSucceedsForFetchCertChainWithNoAKCert(t *testing.T) {
+func TestKeyAttestGetCertificateChainConditions(t *testing.T) {
 	rwc := test.GetTPM(t)
 	defer CheckedClose(t, rwc)
 
@@ -185,9 +161,43 @@ func TestKeyAttestSucceedsForFetchCertChainWithNoAKCert(t *testing.T) {
 		t.Fatalf("Failed to generate test AK: %v", err)
 	}
 
-	_, err = ak.Attest(AttestOpts{Nonce: []byte("some nonce"), FetchCertChain: true})
-	if err != nil {
-		t.Errorf("Attest returned error: %v", err)
+	akCert, _ := getTestCert(t, nil, nil, nil)
+
+	testcases := []struct {
+		name           string
+		fetchCertChain bool
+		cert           *x509.Certificate
+	}{
+		{
+			name:           "fetchCertChain is false",
+			fetchCertChain: false,
+			cert:           nil,
+		},
+		{
+			name:           "fetchCertChain is true, key.cert is nil",
+			fetchCertChain: true,
+			cert:           nil,
+		},
+		{
+			name:           "fetchCertChain is true, key.cert has nil IssuingCertificateURL",
+			fetchCertChain: true,
+			cert:           akCert,
+		},
 	}
 
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			ak.cert = tc.cert
+
+			att, err := ak.Attest(AttestOpts{Nonce: []byte("some nonce"), FetchCertChain: tc.fetchCertChain})
+			if err != nil {
+				t.Fatalf("Attest returned error: %v", err)
+			}
+
+			if len(att.IntermediateCerts) != 0 {
+				t.Errorf("Attest() returned with intermediate certs, expected no certs retrieved.")
+			}
+
+		})
+	}
 }
