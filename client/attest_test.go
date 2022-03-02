@@ -197,7 +197,10 @@ func TestKeyAttestGetCertificateChainConditions(t *testing.T) {
 			if len(att.IntermediateCerts) != 0 {
 				t.Errorf("Attest() returned with intermediate certs, expected no certs retrieved.")
 			}
-
 		})
 	}
+}
+
+func TestGetCertificateChainWithActualCertificate(t *testing.T) {
+
 }

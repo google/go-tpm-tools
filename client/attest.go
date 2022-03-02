@@ -50,6 +50,7 @@ func fetchIssuingCertificate(cert *x509.Certificate) *x509.Certificate {
 	for i, url := range cert.IssuingCertificateURL {
 		// Limit the number of attempts.
 		if i == maxIssuingCertificateURLs {
+			log.Printf("Reached the maximum number of attempts (%v)", maxIssuingCertificateURLs)
 			return nil
 		}
 		resp, err := http.Get(url)
