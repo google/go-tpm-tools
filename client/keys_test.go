@@ -1,6 +1,7 @@
 package client_test
 
 import (
+	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
@@ -190,16 +191,13 @@ func BenchmarkKeyCreation(b *testing.B) {
 	}
 }
 
-func TestSetCert(t *testing.T) {
-	rwc := test.GetTPM(t)
-	defer client.CheckedClose(t, rwc)
+// Returns an x509 Certificate for the provided pubkey, signed with the provided parent certificate and key.
+// If the provided fields are nil, will create a self-signed certificate.
+func getTestCert(t *testing.T, pubKey crypto.PublicKey, parentCert *x509.Certificate, parentKey *rsa.PrivateKey) (*x509.Certificate, *rsa.PrivateKey) {
+	t.Helper()
 
-	key, err := client.AttestationKeyECC(rwc)
-	if err != nil {
-		t.Fatalf("Uable to create key: %v", err)
-	}
+	certKey, _ := rsa.GenerateKey(rand.Reader, 2048)
 
-	caKey, _ := rsa.GenerateKey(rand.Reader, 2048)
 	template := &x509.Certificate{
 		SerialNumber:          big.NewInt(1),
 		NotBefore:             time.Now(),
@@ -211,7 +209,13 @@ func TestSetCert(t *testing.T) {
 		MaxPathLenZero:        true,
 	}
 
-	certBytes, err := x509.CreateCertificate(rand.Reader, template, template, caKey.Public(), caKey)
+	if pubKey == nil && parentCert == nil && parentKey == nil {
+		pubKey = certKey.Public()
+		parentCert = template
+		parentKey = certKey
+	}
+
+	certBytes, err := x509.CreateCertificate(rand.Reader, template, parentCert, pubKey, parentKey)
 	if err != nil {
 		t.Fatalf("Unable to create test certificate: %v", err)
 	}
@@ -219,5 +223,41 @@ func TestSetCert(t *testing.T) {
 	cert, err := x509.ParseCertificate(certBytes)
 	if err != nil {
 		t.Fatalf("Unable to parse test certificate: %v", err)
+	}
+
+	return cert, certKey
+}
+func TestSetCert(t *testing.T) {
+	rwc := test.GetTPM(t)
+	defer client.CheckedClose(t, rwc)
+
+	key, err := client.AttestationKeyECC(rwc)
+	if err != nil {
+		t.Fatalf("Unable to create key: %v", err)
+	}
+
+	ca, caKey := getTestCert(t, nil, nil, nil)
+	akCert, _ := getTestCert(t, key.PublicKey(), ca, caKey)
+
+	if err = key.SetCert(akCert); err != nil {
+		t.Errorf("SetCert() returned error: %v", err)
+	}
+}
+
+func TestSetCertFailsIfCertificateIsNotForKey(t *testing.T) {
+	rwc := test.GetTPM(t)
+	defer client.CheckedClose(t, rwc)
+	key, err := client.AttestationKeyECC(rwc)
+	if err != nil {
+		t.Fatalf("Unable to create key: %v", err)
+	}
+
+	otherKey, _ := rsa.GenerateKey(rand.Reader, 2048)
+
+	ca, caKey := getTestCert(t, nil, nil, nil)
+	akCert, _ := getTestCert(t, otherKey.Public(), ca, caKey)
+
+	if err = key.SetCert(akCert); err == nil {
+		t.Error("SetCert() returned successfully, expected error")
 	}
 }
