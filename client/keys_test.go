@@ -1,9 +1,14 @@
 package client_test
 
 import (
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
 	"io"
+	"math/big"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpmutil"
@@ -182,5 +187,37 @@ func BenchmarkKeyCreation(b *testing.B) {
 				key.Close()
 			}
 		})
+	}
+}
+
+func TestSetCert(t *testing.T) {
+	rwc := test.GetTPM(t)
+	defer client.CheckedClose(t, rwc)
+
+	key, err := client.AttestationKeyECC(rwc)
+	if err != nil {
+		t.Fatalf("Uable to create key: %v", err)
+	}
+
+	caKey, _ := rsa.GenerateKey(rand.Reader, 2048)
+	template := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		NotBefore:             time.Now(),
+		NotAfter:              time.Now().AddDate(10, 0, 0),
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+		MaxPathLenZero:        true,
+	}
+
+	certBytes, err := x509.CreateCertificate(rand.Reader, template, template, caKey.Public(), caKey)
+	if err != nil {
+		t.Fatalf("Unable to create test certificate: %v", err)
+	}
+
+	cert, err := x509.ParseCertificate(certBytes)
+	if err != nil {
+		t.Fatalf("Unable to parse test certificate: %v", err)
 	}
 }

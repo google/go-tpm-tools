@@ -6,6 +6,7 @@ import (
 	"crypto"
 	"crypto/subtle"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"io"
 
@@ -466,6 +467,21 @@ func (k *Key) CertDERBytes() []byte {
 		return nil
 	}
 	return k.cert.Raw
+}
+
+// SetCert assigns the provided certificate to the key after verifying it matches the key.
+func (k *Key) SetCert(cert *x509.Certificate) error {
+	certPubKey, ok := cert.PublicKey.(crypto.PublicKey)
+	if !ok {
+		return errors.New("certificate public key is not the appropriate type")
+	}
+
+	if certPubKey != k.pubKey {
+		return errors.New("certificate does not match key")
+	}
+
+	k.cert = cert
+	return nil
 }
 
 func getCertificateFromNvram(rw io.ReadWriter, index uint32) (*x509.Certificate, error) {
