@@ -200,7 +200,3 @@ func TestKeyAttestGetCertificateChainConditions(t *testing.T) {
 		})
 	}
 }
-
-func TestGetCertificateChainWithActualCertificate(t *testing.T) {
-
-}
