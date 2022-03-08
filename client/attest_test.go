@@ -62,13 +62,13 @@ func TestFetchIssuingCertificateSucceeds(t *testing.T) {
 
 	leafCert, _ := getTestCert(t, []string{"invalid.URL", ts.URL}, testCA, caKey)
 
-	cert := fetchIssuingCertificate(leafCert)
-	if cert == nil {
-		t.Errorf("fetchIssuingCertificate() did not find valid intermediate cert")
+	cert, err := fetchIssuingCertificate(leafCert)
+	if err != nil || cert == nil {
+		t.Errorf("fetchIssuingCertificate() did not find valid intermediate cert: %v", err)
 	}
 }
 
-func TestFetchIssuingCertificateReturnsErrorIfNoValidCertificateFound(t *testing.T) {
+func TestFetchIssuingCertificateReturnsErrorIfMalformedCertificateFound(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		rw.WriteHeader(http.StatusOK)
 		rw.Write([]byte("these are some random bytes"))
@@ -78,9 +78,9 @@ func TestFetchIssuingCertificateReturnsErrorIfNoValidCertificateFound(t *testing
 	testCA, caKey := getTestCert(t, nil, nil, nil)
 	leafCert, _ := getTestCert(t, []string{ts.URL}, testCA, caKey)
 
-	cert := fetchIssuingCertificate(leafCert)
-	if cert != nil {
-		t.Error("fetchIssuingCertificate returned non-nil certificate, but expected nil.")
+	_, err := fetchIssuingCertificate(leafCert)
+	if err == nil {
+		t.Fatal("expected fetchIssuingCertificate to fail with malformed cert")
 	}
 }
 
@@ -109,7 +109,10 @@ func TestGetCertificateChainSucceeds(t *testing.T) {
 
 	key := &Key{cert: leafCert}
 
-	certChain := key.getCertificateChain()
+	certChain, err := key.getCertificateChain()
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(certChain) != 2 {
 		t.Fatalf("getCertificateChain did not return the expected number of certificates: got %v, want 2", len(certChain))
 	}

@@ -23,7 +23,10 @@ func TestNetworkFetchIssuingCertificate(t *testing.T) {
 
 	key := &Key{cert: akCert}
 
-	certChain := key.getCertificateChain()
+	certChain, err := key.getCertificateChain()
+	if err != nil {
+		t.Error(err)
+	}
 	if len(certChain) == 0 {
 		t.Error("Did not retrieve any certificates.")
 	}

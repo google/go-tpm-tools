@@ -4,7 +4,6 @@ import (
 	"crypto/x509"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net/http"
 
 	pb "github.com/google/go-tpm-tools/proto/attest"
@@ -12,7 +11,7 @@ import (
 
 const (
 	maxIssuingCertificateURLs = 3
-	maxCertChainDepth         = 4
+	maxCertChainLength        = 4
 )
 
 // AttestOpts allows for customizing the functionality of Attest.
@@ -39,74 +38,75 @@ type AttestOpts struct {
 	FetchCertChain bool
 }
 
-// Given a certificate, iterates through its IssuingCertificateURLs and returns the certificate
-// that signed it. If unable to find an intermediate certificate, it returns a nil.
-func fetchIssuingCertificate(cert *x509.Certificate) *x509.Certificate {
-	if cert == nil {
-		return nil
+// Given a certificate, iterates through its IssuingCertificateURLs and returns
+// the certificate that signed it. If the certificate lacks an
+// IssuingCertificateURL, return nil. If fetching the certificates fails or the
+// cert chain is malformed, return an error.
+func fetchIssuingCertificate(cert *x509.Certificate) (*x509.Certificate, error) {
+	// Nothing to do
+	if cert == nil || len(cert.IssuingCertificateURL) == 0 {
+		return nil, nil
 	}
 	// For each URL, fetch and parse the certificate, then verify whether it signed cert.
 	// If successful, return the parsed certificate. If any step in this process fails, try the next url.
+	// If all the URLs fail, return the last error we got.
+	// TODO(Issue #169): Return a multi-error here
+	var lastErr error
 	for i, url := range cert.IssuingCertificateURL {
 		// Limit the number of attempts.
-		if i == maxIssuingCertificateURLs {
-			log.Printf("Reached the maximum number of attempts (%v)", maxIssuingCertificateURLs)
-			return nil
+		if i >= maxIssuingCertificateURLs {
+			break
 		}
 		resp, err := http.Get(url)
 		if err != nil {
-			log.Printf("failed to retrieve certificate at %v: %v\n", url, err)
+			lastErr = fmt.Errorf("failed to retrieve certificate at %v: %w", url, err)
 			continue
 		}
 
 		if resp.StatusCode != http.StatusOK {
-			log.Printf("certificate retrieval from %s returned non-OK status: %v\n", url, resp.StatusCode)
+			lastErr = fmt.Errorf("certificate retrieval from %s returned non-OK status: %v", url, resp.StatusCode)
 			continue
 		}
 		certBytes, err := ioutil.ReadAll(resp.Body)
 		resp.Body.Close()
 		if err != nil {
-			log.Printf("failed to read response body from %s: %v\n", url, err)
+			lastErr = fmt.Errorf("failed to read response body from %s: %w", url, err)
 			continue
 		}
 
 		parsedCert, err := x509.ParseCertificate(certBytes)
 		if err != nil {
-			log.Printf("failed to parse response from %s into a certificate: %v\n", url, err)
+			lastErr = fmt.Errorf("failed to parse response from %s into a certificate: %w", url, err)
 			continue
 		}
 
 		// Check if the parsed certificate signed the current one.
-		if err = cert.CheckSignatureFrom(parsedCert); err == nil {
-			return parsedCert
+		if err = cert.CheckSignatureFrom(parsedCert); err != nil {
+			lastErr = fmt.Errorf("parent certificate from %s did not sign child: %w", url, err)
+			continue
 		}
+		return parsedCert, nil
 	}
-
-	log.Println("failed to find intermediate certificate")
-	return nil
+	return nil, lastErr
 }
 
-// Constructs the certificate chain for the key's certificate, using the provided HTTP client.
+// Constructs the certificate chain for the key's certificate.
 // If an error is encountered in the process, return what has been constructed so far.
-func (k *Key) getCertificateChain() [][]byte {
+func (k *Key) getCertificateChain() ([][]byte, error) {
 	var certs [][]byte
 	currentCert := k.cert
-	for i := 0; i < maxCertChainDepth; i++ {
-		issuingCert := fetchIssuingCertificate(currentCert)
+	for len(certs) <= maxCertChainLength {
+		issuingCert, err := fetchIssuingCertificate(currentCert)
+		if err != nil {
+			return nil, err
+		}
 		if issuingCert == nil {
-			break
+			return certs, nil
 		}
-
 		certs = append(certs, issuingCert.Raw)
-		// Stop searching if no IssuingCertificateURLs found.
-		if len(issuingCert.IssuingCertificateURL) == 0 {
-			break
-		}
-
 		currentCert = issuingCert
 	}
-
-	return certs
+	return nil, fmt.Errorf("max certificate chain length (%v) exceeded", maxCertChainLength)
 }
 
 // Attest generates an Attestation containing the TCG Event Log and a Quote over
@@ -146,9 +146,12 @@ func (k *Key) Attest(opts AttestOpts) (*pb.Attestation, error) {
 		attestation.CanonicalEventLog = opts.CanonicalEventLog
 	}
 
-	// Construct certficate chain if AK cert is present and contains intermediate cert URLs.
-	if opts.FetchCertChain && k.cert != nil && len(k.cert.IssuingCertificateURL) > 0 {
-		attestation.IntermediateCerts = k.getCertificateChain()
+	// Construct certificate chain if AK cert is present and contains intermediate cert URLs.
+	if opts.FetchCertChain {
+		attestation.IntermediateCerts, err = k.getCertificateChain()
+		if err != nil {
+			return nil, fmt.Errorf("fetching certificate chain: %w", err)
+		}
 	}
 
 	return &attestation, nil
