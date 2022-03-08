@@ -43,7 +43,7 @@ type AttestOpts struct {
 // IssuingCertificateURL, return nil. If fetching the certificates fails or the
 // cert chain is malformed, return an error.
 func fetchIssuingCertificate(cert *x509.Certificate) (*x509.Certificate, error) {
-	// Nothing to do
+	// Check if we should event attempt fetching.
 	if cert == nil || len(cert.IssuingCertificateURL) == 0 {
 		return nil, nil
 	}
@@ -146,7 +146,8 @@ func (k *Key) Attest(opts AttestOpts) (*pb.Attestation, error) {
 		attestation.CanonicalEventLog = opts.CanonicalEventLog
 	}
 
-	// Construct certificate chain if AK cert is present and contains intermediate cert URLs.
+	// Attempt to construct certificate chain. fetchIssuingCertificate checks if
+	// AK cert is present and contains intermediate cert URLs.
 	if opts.FetchCertChain {
 		attestation.IntermediateCerts, err = k.getCertificateChain()
 		if err != nil {
