@@ -5,7 +5,6 @@ import (
 	_ "embed" // Necessary to use go:embed
 	"errors"
 	"fmt"
-	"log"
 	"strconv"
 
 	"github.com/google/certificate-transparency-go/x509"
@@ -80,11 +79,11 @@ func init() {
 	var err error
 	GceEKRoots, err = getPool([][]byte{gceEKRootCA})
 	if err != nil {
-		log.Panicf("failed to create the root cert pool: %v", err)
+		panic(fmt.Sprintf("failed to create the root cert pool: %v", err))
 	}
 	GceEKIntermediates, err = getPool([][]byte{gceEKIntermediateCA2})
 	if err != nil {
-		log.Panicf("failed to create the intermediate cert pool: %v", err)
+		panic(fmt.Sprintf("failed to create the intermediate cert pool: %v", err))
 	}
 }
 func getPool(certs [][]byte) (*x509.CertPool, error) {
