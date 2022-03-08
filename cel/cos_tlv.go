@@ -25,6 +25,8 @@ const (
 	ImageIDType
 	ArgType
 	EnvVarType
+	OverrideArgType
+	OverrideEnvType
 )
 
 // CosTlv is a specific event type created for the COS (Google Container-Optimized OS),
