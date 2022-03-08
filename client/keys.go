@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"reflect"
 
 	"github.com/google/go-tpm-tools/internal"
 	pb "github.com/google/go-tpm-tools/proto/tpm"
@@ -477,7 +476,7 @@ func (k *Key) SetCert(cert *x509.Certificate) error {
 		return errors.New("certificate public key is not the appropriate type")
 	}
 
-	if !reflect.DeepEqual(certPubKey, k.pubKey) {
+	if !internal.PubKeysEqual(certPubKey, k.pubKey) {
 		return errors.New("certificate does not match key")
 	}
 
