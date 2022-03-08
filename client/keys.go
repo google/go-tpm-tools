@@ -6,6 +6,7 @@ import (
 	"crypto"
 	"crypto/subtle"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"io"
 
@@ -34,8 +35,10 @@ func EndorsementKeyRSA(rw io.ReadWriter) (*Key, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Error ignored, because not all TPMs will have an EK.
-	ekRsa.cert, _ = getCertificateFromNvram(rw, EKCertNVIndexRSA)
+	if err := ekRsa.trySetCertificateFromNvram(EKCertNVIndexRSA); err != nil {
+		ekRsa.Close()
+		return nil, err
+	}
 	return ekRsa, nil
 }
 
@@ -45,8 +48,10 @@ func EndorsementKeyECC(rw io.ReadWriter) (*Key, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Error ignored, because not all TPMs will have an EK.
-	ekEcc.cert, _ = getCertificateFromNvram(rw, EKCertNVIndexECC)
+	if err := ekEcc.trySetCertificateFromNvram(EKCertNVIndexECC); err != nil {
+		ekEcc.Close()
+		return nil, err
+	}
 	return ekEcc, nil
 }
 
@@ -85,8 +90,10 @@ func GceAttestationKeyRSA(rw io.ReadWriter) (*Key, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Error ignored, because not all GCE instances will have an AK cert.
-	akRsa.cert, _ = getCertificateFromNvram(rw, GceAKCertNVIndexRSA)
+	if err := akRsa.trySetCertificateFromNvram(GceAKCertNVIndexRSA); err != nil {
+		akRsa.Close()
+		return nil, err
+	}
 	return akRsa, nil
 }
 
@@ -98,8 +105,10 @@ func GceAttestationKeyECC(rw io.ReadWriter) (*Key, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Error ignored, because not all GCE instances will have an AK cert.
-	akEcc.cert, _ = getCertificateFromNvram(rw, GceAKCertNVIndexECC)
+	if err := akEcc.trySetCertificateFromNvram(GceAKCertNVIndexECC); err != nil {
+		akEcc.Close()
+		return nil, err
+	}
 	return akEcc, nil
 }
 
@@ -468,14 +477,31 @@ func (k *Key) CertDERBytes() []byte {
 	return k.cert.Raw
 }
 
-func getCertificateFromNvram(rw io.ReadWriter, index uint32) (*x509.Certificate, error) {
-	certASN1, err := tpm2.NVReadEx(rw, tpmutil.Handle(index), tpm2.HandleOwner, "", 0)
+// SetCert assigns the provided certificate to the key after verifying it matches the key.
+func (k *Key) SetCert(cert *x509.Certificate) error {
+	certPubKey := cert.PublicKey.(crypto.PublicKey) // This cast cannot fail
+	if !internal.PubKeysEqual(certPubKey, k.pubKey) {
+		return errors.New("certificate does not match key")
+	}
+
+	k.cert = cert
+	return nil
+}
+
+// Attempt to fetch a key's certificate from NVRAM. If the certificate is simply
+// missing, this function succeeds (and no certificate is set). This is to allow
+// for AKs and EKs that simply don't have a certificate. However, if the
+// certificate read from NVRAM is either malformed or does not match the key, we
+// return an error.
+func (k *Key) trySetCertificateFromNvram(index uint32) error {
+	certASN1, err := tpm2.NVReadEx(k.rw, tpmutil.Handle(index), tpm2.HandleOwner, "", 0)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read certificate from NV index %d: %w", index, err)
+		// Either the cert data is missing, or we are not allowed to read it
+		return nil
 	}
 	x509Cert, err := x509.ParseCertificate(certASN1)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse certificate from NV memory: %w", err)
+		return fmt.Errorf("failed to parse certificate from NV memory: %w", err)
 	}
-	return x509Cert, nil
+	return k.SetCert(x509Cert)
 }
