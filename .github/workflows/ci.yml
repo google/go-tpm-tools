@@ -65,28 +65,27 @@ jobs:
       run: go build -v ./...
     - name: Test
       run: go test -v ./...
+    - name: Build/Test cmd
+      working-directory: ./cmd
+      run: |
+        go build -v ./...
+        go test -v ./...
 
   lint:
     name: Lint
     runs-on: ubuntu-latest
+    strategy:
+      matrix: { dir: ['./', './cmd'] }
     steps:
-    - name: Install Go
-      uses: actions/setup-go@v2
+    - uses: actions/setup-go@v2
       with:
         go-version: 1.17.x
-    - name: Checkout code
-      uses: actions/checkout@v2
-    - name: Install Linux packages
-      run: sudo apt-get -y install libssl-dev
-    - name: Check for CGO Warnings (gcc)
-      run: CGO_CFLAGS=-Werror CC=gcc go build ./...
-    - name: Check for CGO Warnings (clang)
-      run: CGO_CFLAGS=-Werror CC=clang go build ./...
-    - name: Lint
-      uses: golangci/golangci-lint-action@v2
+    - uses: actions/checkout@v2
+    - name: Run golangci-lint
+      uses: golangci/golangci-lint-action@v3.1.0
       with:
-        version: v1.42
-        skip-go-installation: true
+        version: latest
+        working-directory: ${{ matrix.dir }}
         args: >
           -D errcheck
           -E stylecheck
@@ -98,3 +97,18 @@ jobs:
           --exclude-use-default=false
           --max-same-issues=0
           --max-issues-per-linter=0
+
+  lintc:
+    name: Lint CGO
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/setup-go@v2
+      with:
+        go-version: 1.17.x
+    - uses: actions/checkout@v2
+    - name: Install Linux packages
+      run: sudo apt-get -y install libssl-dev
+    - name: Check for CGO Warnings (gcc)
+      run: CGO_CFLAGS=-Werror CC=gcc go build ./...
+    - name: Check for CGO Warnings (clang)
+      run: CGO_CFLAGS=-Werror CC=clang go build ./...
