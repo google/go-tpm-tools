@@ -32,17 +32,17 @@ type AttestOpts struct {
 	// firmware event log, where PCRs 0-9 and 14 are often measured. If the two
 	// logs overlap, server-side verification using this library may fail.
 	CanonicalEventLog []byte
-	// Indicates whether the AK certificate chain should be retrieved for validation.
-	// If true, Key.Attest() will construct the certificate chain by making GET requests to
-	// the contents of Key.cert.IssuingCertificateURL.
-	FetchCertChain bool
+	// If non-nil, will be used to fetch the AK certificate chain for validation.
+	// Key.Attest() will construct the certificate chain by making GET requests to
+	// the contents of Key.cert.IssuingCertificateURL using this client.
+	CertChainFetcher *http.Client
 }
 
 // Given a certificate, iterates through its IssuingCertificateURLs and returns
 // the certificate that signed it. If the certificate lacks an
 // IssuingCertificateURL, return nil. If fetching the certificates fails or the
 // cert chain is malformed, return an error.
-func fetchIssuingCertificate(cert *x509.Certificate) (*x509.Certificate, error) {
+func fetchIssuingCertificate(client *http.Client, cert *x509.Certificate) (*x509.Certificate, error) {
 	// Check if we should event attempt fetching.
 	if cert == nil || len(cert.IssuingCertificateURL) == 0 {
 		return nil, nil
@@ -57,7 +57,7 @@ func fetchIssuingCertificate(cert *x509.Certificate) (*x509.Certificate, error) 
 		if i >= maxIssuingCertificateURLs {
 			break
 		}
-		resp, err := http.Get(url)
+		resp, err := client.Get(url)
 		if err != nil {
 			lastErr = fmt.Errorf("failed to retrieve certificate at %v: %w", url, err)
 			continue
@@ -92,11 +92,11 @@ func fetchIssuingCertificate(cert *x509.Certificate) (*x509.Certificate, error) 
 
 // Constructs the certificate chain for the key's certificate.
 // If an error is encountered in the process, return what has been constructed so far.
-func (k *Key) getCertificateChain() ([][]byte, error) {
+func (k *Key) getCertificateChain(client *http.Client) ([][]byte, error) {
 	var certs [][]byte
 	currentCert := k.cert
 	for len(certs) <= maxCertChainLength {
-		issuingCert, err := fetchIssuingCertificate(currentCert)
+		issuingCert, err := fetchIssuingCertificate(client, currentCert)
 		if err != nil {
 			return nil, err
 		}
@@ -148,8 +148,8 @@ func (k *Key) Attest(opts AttestOpts) (*pb.Attestation, error) {
 
 	// Attempt to construct certificate chain. fetchIssuingCertificate checks if
 	// AK cert is present and contains intermediate cert URLs.
-	if opts.FetchCertChain {
-		attestation.IntermediateCerts, err = k.getCertificateChain()
+	if opts.CertChainFetcher != nil {
+		attestation.IntermediateCerts, err = k.getCertificateChain(opts.CertChainFetcher)
 		if err != nil {
 			return nil, fmt.Errorf("fetching certificate chain: %w", err)
 		}

@@ -2,12 +2,15 @@ package client
 
 import (
 	"crypto/x509"
+	"net/http"
 	"testing"
 
 	"github.com/google/go-tpm-tools/internal/test"
 	pb "github.com/google/go-tpm-tools/proto/attest"
 	"google.golang.org/protobuf/proto"
 )
+
+var externalClient = http.DefaultClient
 
 func TestNetworkFetchIssuingCertificate(t *testing.T) {
 	attestBytes := test.COS85Nonce9009
@@ -23,7 +26,7 @@ func TestNetworkFetchIssuingCertificate(t *testing.T) {
 
 	key := &Key{cert: akCert}
 
-	certChain, err := key.getCertificateChain()
+	certChain, err := key.getCertificateChain(externalClient)
 	if err != nil {
 		t.Error(err)
 	}

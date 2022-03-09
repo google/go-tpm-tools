@@ -14,6 +14,8 @@ import (
 	"github.com/google/go-tpm-tools/internal/test"
 )
 
+var localClient = http.DefaultClient
+
 // Returns an x509 Certificate with the provided issuingURL and signed with the provided parent certificate and key.
 // If parentCert and parentKey are nil, the certificate will be self-signed.
 func getTestCert(t *testing.T, issuingURL []string, parentCert *x509.Certificate, parentKey *rsa.PrivateKey) (*x509.Certificate, *rsa.PrivateKey) {
@@ -62,7 +64,7 @@ func TestFetchIssuingCertificateSucceeds(t *testing.T) {
 
 	leafCert, _ := getTestCert(t, []string{"invalid.URL", ts.URL}, testCA, caKey)
 
-	cert, err := fetchIssuingCertificate(leafCert)
+	cert, err := fetchIssuingCertificate(localClient, leafCert)
 	if err != nil || cert == nil {
 		t.Errorf("fetchIssuingCertificate() did not find valid intermediate cert: %v", err)
 	}
@@ -78,7 +80,7 @@ func TestFetchIssuingCertificateReturnsErrorIfMalformedCertificateFound(t *testi
 	testCA, caKey := getTestCert(t, nil, nil, nil)
 	leafCert, _ := getTestCert(t, []string{ts.URL}, testCA, caKey)
 
-	_, err := fetchIssuingCertificate(leafCert)
+	_, err := fetchIssuingCertificate(localClient, leafCert)
 	if err == nil {
 		t.Fatal("expected fetchIssuingCertificate to fail with malformed cert")
 	}
@@ -109,7 +111,7 @@ func TestGetCertificateChainSucceeds(t *testing.T) {
 
 	key := &Key{cert: leafCert}
 
-	certChain, err := key.getCertificateChain()
+	certChain, err := key.getCertificateChain(localClient)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +142,7 @@ func TestKeyAttestSucceedsWithCertChainRetrieval(t *testing.T) {
 
 	ak.cert = leafCert
 
-	attestation, err := ak.Attest(AttestOpts{Nonce: []byte("some nonce"), FetchCertChain: true})
+	attestation, err := ak.Attest(AttestOpts{Nonce: []byte("some nonce"), CertChainFetcher: localClient})
 	if err != nil {
 		t.Fatalf("Attest returned with error: %v", err)
 	}
@@ -167,24 +169,24 @@ func TestKeyAttestGetCertificateChainConditions(t *testing.T) {
 	akCert, _ := getTestCert(t, nil, nil, nil)
 
 	testcases := []struct {
-		name           string
-		fetchCertChain bool
-		cert           *x509.Certificate
+		name                 string
+		fetchCertChainClient *http.Client
+		cert                 *x509.Certificate
 	}{
 		{
-			name:           "fetchCertChain is false",
-			fetchCertChain: false,
-			cert:           nil,
+			name:                 "CertChainFetcher is nil",
+			fetchCertChainClient: nil,
+			cert:                 nil,
 		},
 		{
-			name:           "fetchCertChain is true, key.cert is nil",
-			fetchCertChain: true,
-			cert:           nil,
+			name:                 "CertChainFetcher is present, key.cert is nil",
+			fetchCertChainClient: localClient,
+			cert:                 nil,
 		},
 		{
-			name:           "fetchCertChain is true, key.cert has nil IssuingCertificateURL",
-			fetchCertChain: true,
-			cert:           akCert,
+			name:                 "CertChainFetcher is present, key.cert has nil IssuingCertificateURL",
+			fetchCertChainClient: localClient,
+			cert:                 akCert,
 		},
 	}
 
@@ -192,7 +194,7 @@ func TestKeyAttestGetCertificateChainConditions(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ak.cert = tc.cert
 
-			att, err := ak.Attest(AttestOpts{Nonce: []byte("some nonce"), FetchCertChain: tc.fetchCertChain})
+			att, err := ak.Attest(AttestOpts{Nonce: []byte("some nonce"), CertChainFetcher: tc.fetchCertChainClient})
 			if err != nil {
 				t.Fatalf("Attest returned error: %v", err)
 			}
