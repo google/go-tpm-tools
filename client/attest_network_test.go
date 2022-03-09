@@ -10,6 +10,8 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+var externalClient = http.DefaultClient
+
 func TestNetworkFetchIssuingCertificate(t *testing.T) {
 	attestBytes := test.COS85Nonce9009
 	att := &pb.Attestation{}
@@ -24,7 +26,7 @@ func TestNetworkFetchIssuingCertificate(t *testing.T) {
 
 	key := &Key{cert: akCert}
 
-	certChain, err := key.getCertificateChain(&http.Client{})
+	certChain, err := key.getCertificateChain(externalClient)
 	if err != nil {
 		t.Error(err)
 	}

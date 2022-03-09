@@ -35,7 +35,7 @@ type AttestOpts struct {
 	// If non-nil, will be used to fetch the AK certificate chain for validation.
 	// Key.Attest() will construct the certificate chain by making GET requests to
 	// the contents of Key.cert.IssuingCertificateURL using this client.
-	FetchCertChainClient *http.Client
+	CertChainFetcher *http.Client
 }
 
 // Given a certificate, iterates through its IssuingCertificateURLs and returns
@@ -148,8 +148,8 @@ func (k *Key) Attest(opts AttestOpts) (*pb.Attestation, error) {
 
 	// Attempt to construct certificate chain. fetchIssuingCertificate checks if
 	// AK cert is present and contains intermediate cert URLs.
-	if opts.FetchCertChainClient != nil {
-		attestation.IntermediateCerts, err = k.getCertificateChain(opts.FetchCertChainClient)
+	if opts.CertChainFetcher != nil {
+		attestation.IntermediateCerts, err = k.getCertificateChain(opts.CertChainFetcher)
 		if err != nil {
 			return nil, fmt.Errorf("fetching certificate chain: %w", err)
 		}
