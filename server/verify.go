@@ -65,6 +65,22 @@ func VerifyAttestation(attestation *pb.Attestation, opts VerifyOpts) (*pb.Machin
 	if err != nil {
 		return nil, fmt.Errorf("failed to get AK public key: %w", err)
 	}
+
+	// Add intermediate certs in the attestation if they exist.
+	if len(attestation.IntermediateCerts) != 0 {
+		if opts.IntermediateCerts == nil {
+			opts.IntermediateCerts = x509.NewCertPool()
+		}
+
+		for _, certBytes := range attestation.IntermediateCerts {
+			cert, err := x509.ParseCertificate(certBytes)
+			if err != nil {
+				return nil, fmt.Errorf("filed to parse intermediate certificate in attestation: %w", err)
+			}
+
+			opts.IntermediateCerts.AddCert(cert)
+		}
+	}
 	if err := checkAKTrusted(akPubKey, attestation.GetAkCert(), opts); err != nil {
 		return nil, fmt.Errorf("failed to validate AK: %w", err)
 	}

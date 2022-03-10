@@ -461,6 +461,22 @@ func TestVerifyAttestationWithCerts(t *testing.T) {
 	}
 }
 
+func TestVerifyAutomaticallyUsesIntermediatesInAttestation(t *testing.T) {
+	attestBytes := test.COS85Nonce9009
+	att := &attestpb.Attestation{}
+	if err := proto.Unmarshal(attestBytes, att); err != nil {
+		t.Fatalf("failed to unmarshal attestation: %v", err)
+	}
+	att.IntermediateCerts = [][]byte{gceEKIntermediateCA2}
+
+	if _, err := VerifyAttestation(att, VerifyOpts{
+		Nonce:            []byte{0x90, 0x09},
+		TrustedRootCerts: GceEKRoots,
+	}); err != nil {
+		t.Errorf("failed to VerifyAttestation with intermediates provided in attestation: %v", err)
+	}
+}
+
 func TestVerifyFailWithCertsAndPubkey(t *testing.T) {
 	att := &attestpb.Attestation{}
 	if err := proto.Unmarshal(test.COS85NoNonce, att); err != nil {
@@ -511,7 +527,7 @@ func TestVerifyAttestationMissingRoots(t *testing.T) {
 	if _, err := VerifyAttestation(att, VerifyOpts{
 		IntermediateCerts: GceEKIntermediates,
 	}); err == nil {
-		t.Error("expected error when calling VerifyAttestation with empty roots and intermediates")
+		t.Error("expected error when calling VerifyAttestation with missing roots")
 	}
 }
 
@@ -525,7 +541,7 @@ func TestVerifyAttestationMissingIntermediates(t *testing.T) {
 	if _, err := VerifyAttestation(att, VerifyOpts{
 		TrustedRootCerts: GceEKRoots,
 	}); err == nil {
-		t.Error("expected error when calling VerifyAttestation with empty roots and intermediates")
+		t.Error("expected error when calling VerifyAttestation with missing intermediates")
 	}
 }
 
@@ -559,5 +575,21 @@ func TestVerifyMismatchedAKPubAndAKCert(t *testing.T) {
 	}
 	if _, err := VerifyAttestation(badAtt, opts); err == nil {
 		t.Error("expected error when calling VerifyAttestation with mismatched public key and cert")
+	}
+}
+
+func TestVerifyFailsWithMalformedIntermediatesInAttestation(t *testing.T) {
+	attestBytes := test.COS85Nonce9009
+	att := &attestpb.Attestation{}
+	if err := proto.Unmarshal(attestBytes, att); err != nil {
+		t.Fatalf("failed to unmarshal attestation: %v", err)
+	}
+	att.IntermediateCerts = [][]byte{[]byte("Not an intermediate cert.")}
+
+	if _, err := VerifyAttestation(att, VerifyOpts{
+		Nonce:            []byte{0x90, 0x09},
+		TrustedRootCerts: GceEKRoots,
+	}); err == nil {
+		t.Error("expected error when calling VerifyAttestation with malformed intermediate")
 	}
 }
