@@ -75,7 +75,7 @@ func VerifyAttestation(attestation *pb.Attestation, opts VerifyOpts) (*pb.Machin
 		for _, certBytes := range attestation.IntermediateCerts {
 			cert, err := x509.ParseCertificate(certBytes)
 			if err != nil {
-				return nil, fmt.Errorf("filed to parse intermediate certificate in attestation: %w", err)
+				return nil, fmt.Errorf("failed to parse intermediate certificate in attestation: %w", err)
 			}
 
 			opts.IntermediateCerts.AddCert(cert)
