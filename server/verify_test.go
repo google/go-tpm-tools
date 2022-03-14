@@ -477,6 +477,23 @@ func TestVerifyAutomaticallyUsesIntermediatesInAttestation(t *testing.T) {
 	}
 }
 
+func TestVerifySucceedsWithOverlappingIntermediatesInOptionsAndAttestation(t *testing.T) {
+	attestBytes := test.COS85Nonce9009
+	att := &attestpb.Attestation{}
+	if err := proto.Unmarshal(attestBytes, att); err != nil {
+		t.Fatalf("failed to unmarshal attestation: %v", err)
+	}
+	att.IntermediateCerts = [][]byte{gceEKIntermediateCA2}
+
+	if _, err := VerifyAttestation(att, VerifyOpts{
+		Nonce:             []byte{0x90, 0x09},
+		TrustedRootCerts:  GceEKRoots,
+		IntermediateCerts: GceEKIntermediates,
+	}); err != nil {
+		t.Errorf("failed to VerifyAttestation with overlapping intermediates provided in attestation and options: %v", err)
+	}
+}
+
 func TestVerifyFailWithCertsAndPubkey(t *testing.T) {
 	att := &attestpb.Attestation{}
 	if err := proto.Unmarshal(test.COS85NoNonce, att); err != nil {
