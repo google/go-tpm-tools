@@ -1,3 +1,4 @@
+launcher/launcher
 *.test
 *.test.exe
 gotpm
