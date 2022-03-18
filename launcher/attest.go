@@ -10,7 +10,6 @@ import (
 
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
-	servgrpc "github.com/google/go-tpm-tools/launcher/proto/attestation_verifier/v0"
 	servpb "github.com/google/go-tpm-tools/launcher/proto/attestation_verifier/v0"
 	pb "github.com/google/go-tpm-tools/proto/attest"
 	"google.golang.org/grpc"
@@ -28,7 +27,7 @@ type principalIDTokenFetcher func(audience string) ([][]byte, error)
 type AttestationAgent struct {
 	tpm              io.ReadWriteCloser
 	akFetcher        tpmKeyFetcher
-	client           servgrpc.AttestationVerifierClient
+	client           servpb.AttestationVerifierClient
 	principalFetcher principalIDTokenFetcher
 	cosCel           cel.CEL
 }
@@ -40,7 +39,7 @@ type AttestationAgent struct {
 // - conn is a client connection to the attestation service, typically created
 //   `grpc.Dial`. It is the client's responsibility to close the connection.
 func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher tpmKeyFetcher, conn *grpc.ClientConn, principalFetcher principalIDTokenFetcher) *AttestationAgent {
-	client := servgrpc.NewAttestationVerifierClient(conn)
+	client := servpb.NewAttestationVerifierClient(conn)
 	return &AttestationAgent{
 		tpm:              tpm,
 		client:           client,

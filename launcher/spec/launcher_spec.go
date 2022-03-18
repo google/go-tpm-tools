@@ -1,4 +1,4 @@
-// Package spec contains definition of some basic contianer launcher specs needed to
+// Package spec contains definition of some basic container launcher specs needed to
 // launch a container, provided by the operator.
 package spec
 

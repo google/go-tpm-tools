@@ -9,9 +9,9 @@ import (
 	"golang.org/x/oauth2"
 )
 
-// RetriveAuthToken takes in a metadata server client, and uses it to read the
+// RetrieveAuthToken takes in a metadata server client, and uses it to read the
 // default service account token from a GCE VM and returns the token.
-func RetriveAuthToken(client *metadata.Client) (oauth2.Token, error) {
+func RetrieveAuthToken(client *metadata.Client) (oauth2.Token, error) {
 	data, err := client.Get("instance/service-accounts/default/token")
 	if err != nil {
 		return oauth2.Token{}, err

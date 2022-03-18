@@ -37,7 +37,7 @@ func TestLauncherSpecUnmarshalJSONHappyCases(t *testing.T) {
 		ImageRef:      "docker.io/library/hello-world:latest",
 		RestartPolicy: Always,
 		Cmd:           []string{"--foo", "--bar", "--baz"},
-		Envs:          []EnvVar{EnvVar{"enva", "aaa"}},
+		Envs:          []EnvVar{{"enva", "aaa"}},
 	}
 
 	for _, testcase := range testCases {

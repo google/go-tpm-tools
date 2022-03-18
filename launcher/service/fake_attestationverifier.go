@@ -39,6 +39,7 @@ func New() FakeServer {
 	return fs
 }
 
+// GetParams requests attestation parameters (including nonce and audience).
 func (s *FakeServer) GetParams(ctx context.Context, req *servpb.GetParamsRequest) (*servpb.GetParamsResponse, error) {
 	nonce := make([]byte, 32)
 	rand.Read(nonce)
@@ -57,6 +58,7 @@ func (s *FakeServer) GetParams(ctx context.Context, req *servpb.GetParamsRequest
 	return resp, nil
 }
 
+// Verify verifies the attestation and return an OIDC/JWT token.
 func (s *FakeServer) Verify(ctx context.Context, req *servpb.VerifyRequest) (*servpb.VerifyResponse, error) {
 	if req.GetConnId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "VerifyRequest is missing conn_id")

@@ -50,9 +50,9 @@ func main() {
 	}
 	defer tpm.Close()
 
-	token, err := RetriveAuthToken(mdsClient)
+	token, err := RetrieveAuthToken(mdsClient)
 	if err != nil {
-		log.Printf("Failed to retrive auth token: %v, using empty auth", err)
+		log.Printf("Failed to retrieve auth token: %v, using empty auth", err)
 	}
 
 	r, err := NewRunner(ctx, client, token, spec, mdsClient, tpm)

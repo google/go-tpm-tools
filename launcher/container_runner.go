@@ -181,15 +181,15 @@ func (r *ContainerRunner) measureContainerClaims(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := r.attestAgent.MeasureEvent(cel.CosTlv{cel.ImageRefType, []byte(image.Name())}); err != nil {
+	if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.ImageRefType, EventContent: []byte(image.Name())}); err != nil {
 		return err
 	}
-	if err := r.attestAgent.MeasureEvent(cel.CosTlv{cel.ImageDigestType, []byte(image.Target().Digest)}); err != nil {
+	if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.ImageDigestType, EventContent: []byte(image.Target().Digest)}); err != nil {
 		return err
 	}
-	r.attestAgent.MeasureEvent(cel.CosTlv{cel.RestartPolicyType, []byte(r.launchSpec.RestartPolicy)})
+	r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.RestartPolicyType, EventContent: []byte(r.launchSpec.RestartPolicy)})
 	if imageConfig, err := image.Config(ctx); err == nil { // if NO error
-		if err := r.attestAgent.MeasureEvent(cel.CosTlv{cel.ImageIDType, []byte(imageConfig.Digest)}); err != nil {
+		if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.ImageIDType, EventContent: []byte(imageConfig.Digest)}); err != nil {
 			return err
 		}
 	}
@@ -199,12 +199,12 @@ func (r *ContainerRunner) measureContainerClaims(ctx context.Context) error {
 		return err
 	}
 	for _, arg := range contianerSpec.Process.Args {
-		if err := r.attestAgent.MeasureEvent(cel.CosTlv{cel.ArgType, []byte(arg)}); err != nil {
+		if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.ArgType, EventContent: []byte(arg)}); err != nil {
 			return err
 		}
 	}
 	for _, env := range contianerSpec.Process.Env {
-		if err := r.attestAgent.MeasureEvent(cel.CosTlv{cel.EnvVarType, []byte(env)}); err != nil {
+		if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.EnvVarType, EventContent: []byte(env)}); err != nil {
 			return err
 		}
 	}
@@ -229,8 +229,7 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	if err := os.MkdirAll(HostTokenPath, 0644); err != nil {
 		log.Fatal(err)
 	}
-	err = os.WriteFile(path.Join(HostTokenPath, attestationVerifierTokenFile), token, 0644)
-	if err != nil {
+	if err = os.WriteFile(path.Join(HostTokenPath, attestationVerifierTokenFile), token, 0644); err != nil {
 		return fmt.Errorf("failed to write token to container mount source point: %v", err)
 	}
 
