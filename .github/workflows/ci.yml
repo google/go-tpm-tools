@@ -74,6 +74,7 @@ jobs:
       working-directory: ./launcher
       run: |
         go get github.com/google/go-tpm-tools/launcher
+        go generate ./... && git diff -G'^[^/]' --exit-code
         go build -v ./...
         go test -v ./...
 
