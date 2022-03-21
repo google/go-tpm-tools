@@ -70,12 +70,19 @@ jobs:
       run: |
         go build -v ./...
         go test -v ./...
+    - name: Build/Test launcher
+      working-directory: ./launcher
+      run: |
+        go get github.com/google/go-tpm-tools/launcher
+        go generate ./... && git diff -G'^[^/]' --exit-code
+        go build -v ./...
+        go test -v ./...
 
   lint:
     name: Lint
     runs-on: ubuntu-latest
     strategy:
-      matrix: { dir: ['./', './cmd'] }
+      matrix: { dir: ['./', './cmd', './launcher'] }
     steps:
     - uses: actions/setup-go@v2
       with:

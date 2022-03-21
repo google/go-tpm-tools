@@ -1,6 +1,7 @@
+launcher/launcher
 *.test
 *.test.exe
-gotpm
+cmd/gotpm/gotpm
 !gotpm/
 gotpm.exe
 files/pkg
