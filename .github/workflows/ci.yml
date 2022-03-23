@@ -25,97 +25,121 @@ on:
   pull_request:
 
 jobs:
-  test:
+  build_old:
     strategy:
       matrix:
-        go-version: [1.17.x]
+        go-version: [1.16.x, 1.17.x]
         # TODO: Get this working on windows-latest
-        os: [macos-latest, ubuntu-latest]
-        include:
-          - go-version: 1.16.x
-            os: ubuntu-latest
-    name: Build and Test (${{matrix.os}}, Go ${{ matrix.go-version }})
+        os: [ubuntu-latest]
+    name: Build/Test (${{ matrix.os }}, Go ${{ matrix.go-version }})
     runs-on: ${{ matrix.os }}
     steps:
-    - name: Install Go
-      uses: actions/setup-go@v2
-      with:
-        go-version: ${{ matrix.go-version }}
-    - name: Checkout code
-      uses: actions/checkout@v2
-    - name: Install Protoc
-      uses: arduino/setup-protoc@v1
-      with:
-        repo-token: ${{ secrets.GITHUB_TOKEN }}
-        version: '3.19.1'
-    - name: Install protoc-gen-go
-      run: go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.27.1
-    - name: Check Protobuf Generation
-      run: go generate ./... && git diff -G'^[^/]' --exit-code
-    - name: Install Linux packages
-      run: sudo apt-get -y install libssl-dev
-      if: runner.os == 'Linux'
-    - name: Install Mac packages
-      run: brew install openssl
-      if: runner.os == 'macOS'
-    - name: Install Windows packages
-      run: choco install openssl
-      if: runner.os == 'Windows'
-    - name: Build
-      run: go build -v ./...
-    - name: Test
-      run: go test -v ./...
-    - name: Build/Test cmd
-      working-directory: ./cmd
-      run: |
-        go build -v ./...
-        go test -v ./...
-    - name: Build/Test launcher
-      working-directory: ./launcher
-      run: |
-        go get github.com/google/go-tpm-tools/launcher
-        go generate ./... && git diff -G'^[^/]' --exit-code
-        go build -v ./...
-        go test -v ./...
+      - uses: actions/checkout@v3
+      - uses: actions/setup-go@v2
+        with:
+          go-version: ${{ matrix.go-version }}
+      - name: Install Linux packages
+        run: sudo apt-get -y install libssl-dev
+        if: runner.os == 'Linux'
+      - name: Install Mac packages
+        run: brew install openssl
+        if: runner.os == 'macOS'
+      - name: Install Windows packages
+        run: choco install openssl
+        if: runner.os == 'Windows'
+      - name: Build/Test root module
+        run: |
+          go build -v ./...
+          go test -v ./...
+      - name: Build/Test cmd module
+        working-directory: ./cmd
+        run: |
+          go build -v ./...
+          go test -v ./...
+
+  build_new:
+    strategy:
+      matrix:
+        go-version: [1.18.x]
+        # TODO: Get this working on windows-latest
+        os: [macos-latest, ubuntu-latest]
+    name: Generate/Build/Test (${{ matrix.os }}, Go ${{ matrix.go-version }})
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-go@v2
+        with:
+          go-version: ${{ matrix.go-version }}
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v1
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          version: "3.19.1"
+      - name: Install protoc-gen-go
+        run: go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.27.1
+      - name: Check Protobuf Generation
+        run: |
+          go generate ./... ./cmd/... ./launcher/...
+          git diff -G'^[^/]' --exit-code
+      - name: Install Linux packages
+        run: sudo apt-get -y install libssl-dev
+        if: runner.os == 'Linux'
+      - name: Install Mac packages
+        run: brew install openssl
+        if: runner.os == 'macOS'
+      - name: Install Windows packages
+        run: choco install openssl
+        if: runner.os == 'Windows'
+      - name: Build all modules
+        run: go build -v ./... ./cmd/... ./launcher/...
+      - name: Test all modules
+        run: go test -v ./... ./cmd/... ./launcher/...
 
   lint:
-    name: Lint
-    runs-on: ubuntu-latest
     strategy:
-      matrix: { dir: ['./', './cmd', './launcher'] }
+      matrix:
+        go-version: [1.18.x]
+        os: [ubuntu-latest]
+        dir: ["./", "./cmd", "./launcher"]
+    name: Lint ${{ matrix.dir }} (${{ matrix.os }}, Go ${{ matrix.go-version }})
+    runs-on: ${{ matrix.os }}
     steps:
-    - uses: actions/setup-go@v2
-      with:
-        go-version: 1.17.x
-    - uses: actions/checkout@v2
-    - name: Run golangci-lint
-      uses: golangci/golangci-lint-action@v3.1.0
-      with:
-        version: latest
-        working-directory: ${{ matrix.dir }}
-        args: >
-          -D errcheck
-          -E stylecheck
-          -E goimports
-          -E misspell
-          -E revive
-          -E gofmt
-          -E goimports
-          --exclude-use-default=false
-          --max-same-issues=0
-          --max-issues-per-linter=0
+      - uses: actions/checkout@v3
+      - uses: actions/setup-go@v2
+        with:
+          go-version: ${{ matrix.go-version }}
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v3.1.0
+        with:
+          version: latest
+          working-directory: ${{ matrix.dir }}
+          args: >
+            -D errcheck
+            -E stylecheck
+            -E goimports
+            -E misspell
+            -E revive
+            -E gofmt
+            -E goimports
+            --exclude-use-default=false
+            --max-same-issues=0
+            --max-issues-per-linter=0
 
   lintc:
-    name: Lint CGO
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go-version: [1.18.x]
+        os: [ubuntu-latest]
+    name: Lint CGO (${{ matrix.os }}, Go ${{ matrix.go-version }})
+    runs-on: ${{ matrix.os }}
     steps:
-    - uses: actions/setup-go@v2
-      with:
-        go-version: 1.17.x
-    - uses: actions/checkout@v2
-    - name: Install Linux packages
-      run: sudo apt-get -y install libssl-dev
-    - name: Check for CGO Warnings (gcc)
-      run: CGO_CFLAGS=-Werror CC=gcc go build ./...
-    - name: Check for CGO Warnings (clang)
-      run: CGO_CFLAGS=-Werror CC=clang go build ./...
+      - uses: actions/checkout@v3
+      - uses: actions/setup-go@v2
+        with:
+          go-version: ${{ matrix.go-version }}
+      - name: Install Linux packages
+        run: sudo apt-get -y install libssl-dev
+      - name: Check for CGO Warnings (gcc)
+        run: CGO_CFLAGS=-Werror CC=gcc go build ./...
+      - name: Check for CGO Warnings (clang)
+        run: CGO_CFLAGS=-Werror CC=clang go build ./...
