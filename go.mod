@@ -1,7 +1,7 @@
 module github.com/google/go-tpm-tools
 
-// Move to new-style build tags when updating to 1.17
-go 1.16
+// Move to new-style build tags when minimum supported Go version is 1.17
+go 1.17
 
 require (
 	github.com/google/certificate-transparency-go v1.1.2

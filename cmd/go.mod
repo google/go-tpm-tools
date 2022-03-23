@@ -1,6 +1,6 @@
 module github.com/google/go-tpm-tools/cmd
 
-go 1.16
+go 1.17
 
 require (
 	github.com/google/go-tpm v0.3.3
