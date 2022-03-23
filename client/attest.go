@@ -1,11 +1,11 @@
 package client
 
 import (
-	"crypto/x509"
 	"fmt"
 	"io/ioutil"
 	"net/http"
 
+	"github.com/google/certificate-transparency-go/x509"
 	pb "github.com/google/go-tpm-tools/proto/attest"
 )
 
