@@ -21,6 +21,8 @@ var supportedHashAlgs = []tpm2.Algorithm{
 	tpm2.AlgSHA512, tpm2.AlgSHA384, tpm2.AlgSHA256, tpm2.AlgSHA1,
 }
 
+const cloudComputeInstanceIdentifierOID = "1.3.6.1.4.1.11129.2.1.21"
+
 // VerifyOpts allows for customizing the functionality of VerifyAttestation.
 type VerifyOpts struct {
 	// The nonce used when calling client.Attest
@@ -42,6 +44,22 @@ type VerifyOpts struct {
 	// TPMs signed by that CA will be trusted.
 	TrustedRootCerts  []*x509.Certificate
 	IntermediateCerts []*x509.Certificate
+}
+
+type gceInstanceInfo struct {
+	Zone               []byte
+	ProjectNumber      int
+	ProjectID          []byte
+	InstanceID         int
+	InstanceName       []byte
+	SecurityProperties struct {
+		SecurityVersion             int
+		IsProduction                bool
+		TPMDataAlwaysEncrypted      bool
+		SuspendResumeAlwaysDisabled bool
+		VMTDAlwaysDisabled          bool
+		AlwaysInYawn                bool
+	}
 }
 
 // VerifyAttestation performs the following checks on an Attestation:
@@ -73,9 +91,11 @@ func VerifyAttestation(attestation *pb.Attestation, opts VerifyOpts) (*pb.Machin
 	if err != nil {
 		return nil, fmt.Errorf("attestation intermediates: %w", err)
 	}
+
 	opts.IntermediateCerts = append(opts.IntermediateCerts, certs...)
 
-	if err := checkAKTrusted(akPubKey, attestation.GetAkCert(), opts); err != nil {
+	machineState, err := checkAKTrusted(akPubKey, attestation.GetAkCert(), opts)
+	if err != nil {
 		return nil, fmt.Errorf("failed to validate AK: %w", err)
 	}
 
@@ -111,7 +131,8 @@ func VerifyAttestation(attestation *pb.Attestation, opts VerifyOpts) (*pb.Machin
 			continue
 		}
 
-		proto.Merge(celState, state)
+		proto.Merge(machineState, celState)
+		proto.Merge(machineState, state)
 
 		// Verify the PCR hash algorithm. We have this check here (instead of at
 		// the start of the loop) so that the user gets a "SHA-1 not supported"
@@ -133,36 +154,33 @@ func VerifyAttestation(attestation *pb.Attestation, opts VerifyOpts) (*pb.Machin
 }
 
 // Checks if the provided AK public key can be trusted
-func checkAKTrusted(ak crypto.PublicKey, akCertBytes []byte, opts VerifyOpts) error {
+func checkAKTrusted(ak crypto.PublicKey, akCertBytes []byte, opts VerifyOpts) (*pb.MachineState, error) {
 	checkPub := len(opts.TrustedAKs) > 0
 	checkCert := opts.TrustedRootCerts != nil
 	if !checkPub && !checkCert {
-		return fmt.Errorf("no trust mechanism provided, either use TrustedAKs or TrustedRootCerts")
+		return nil, fmt.Errorf("no trust mechanism provided, either use TrustedAKs or TrustedRootCerts")
 	}
 	if checkPub && checkCert {
-		return fmt.Errorf("multiple trust mechanisms provided, only use one of TrustedAKs or TrustedRootCerts")
+		return nil, fmt.Errorf("multiple trust mechanisms provided, only use one of TrustedAKs or TrustedRootCerts")
 	}
 
 	// Check against known AKs
 	if checkPub {
 		for _, trusted := range opts.TrustedAKs {
 			if internal.PubKeysEqual(ak, trusted) {
-				return nil
+				return &pb.MachineState{}, nil
 			}
 		}
-		return fmt.Errorf("public key is not trusted")
+		return nil, fmt.Errorf("public key is not trusted")
 	}
 
 	// Check if the AK Cert chains to a trusted root
 	if len(akCertBytes) == 0 {
-		return errors.New("no certificate provided in attestation")
+		return nil, errors.New("no certificate provided in attestation")
 	}
 	akCert, err := x509.ParseCertificate(akCertBytes)
 	if err != nil {
-		return fmt.Errorf("failed to parse certificate: %w", err)
-	}
-	if !internal.PubKeysEqual(ak, akCert.PublicKey) {
-		return fmt.Errorf("mismatch between public key and certificate")
+		return nil, fmt.Errorf("failed to parse certificate: %w", err)
 	}
 
 	// We manually handle the SAN extension because x509 marks it unhandled if
@@ -188,9 +206,49 @@ func checkAKTrusted(ak crypto.PublicKey, akCertBytes []byte, opts VerifyOpts) er
 		KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsage(x509.ExtKeyUsageAny)},
 	}
 	if _, err := akCert.Verify(x509Opts); err != nil {
-		return fmt.Errorf("failed to verify certificate against trusted roots: %v", err)
+		return nil, fmt.Errorf("failed to verify certificate against trusted roots: %v", err)
 	}
-	return nil
+
+	if !internal.PubKeysEqual(ak, akCert.PublicKey) {
+		return nil, fmt.Errorf("mismatch between public key and certificate")
+	}
+
+	var gceInstanceInfoBytes []byte
+	for _, ext := range akCert.Extensions {
+		if ext.Id.String() == cloudComputeInstanceIdentifierOID {
+			gceInstanceInfoBytes = ext.Value
+			break
+		}
+	}
+
+	// If GCE Instance Info extension is not found.
+	if gceInstanceInfoBytes == nil {
+		return &pb.MachineState{}, nil
+	}
+
+	var parsedInstanceInfo gceInstanceInfo
+	if _, err := asn1.Unmarshal(gceInstanceInfoBytes, &parsedInstanceInfo); err != nil {
+		return nil, fmt.Errorf("failed to parse GCE Instance Information Extension: %w", err)
+	}
+
+	// Check production.
+	if !parsedInstanceInfo.SecurityProperties.IsProduction {
+		return &pb.MachineState{}, nil
+	}
+
+	machineState := &pb.MachineState{
+		Platform: &pb.PlatformState{
+			InstanceInfo: &pb.GCEInstanceInfo{
+				Zone:          string(parsedInstanceInfo.Zone),
+				ProjectId:     string(parsedInstanceInfo.ProjectID),
+				ProjectNumber: uint64(parsedInstanceInfo.ProjectNumber),
+				InstanceName:  string(parsedInstanceInfo.InstanceName),
+				InstanceId:    uint64(parsedInstanceInfo.InstanceID),
+			},
+		},
+	}
+
+	return machineState, nil
 }
 
 func checkHashAlgSupported(hash tpm2.Algorithm, opts VerifyOpts) error {
