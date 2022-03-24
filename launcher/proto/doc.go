@@ -5,6 +5,9 @@
 // Anytime the Protocol Buffer definitions change, the generated Go code must be
 // regenerated. This can be done with "go generate". Just run:
 //   go generate ./...
+// in the ./launcher directory. Or if using Go 1.18 or later, you can just run
+//   go generate ./launcher/...
+// in the root directory.
 //
 // Upstream documentation:
 // https://developers.google.com/protocol-buffers/docs/reference/go-generated
