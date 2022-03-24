@@ -41,9 +41,9 @@ gotpm --help
 ```
 Alternatively, to build `gotpm` from a cloned version of this repo, run:
 ```bash
-cd /my/path/to/cloned/go-tpm-tools
-go build ./cmd/gotpm
-# gotpm will be in the root of the repo
+cd /my/path/to/cloned/go-tpm-tools/cmd/gotpm
+go build
+# gotpm will be in the cmd/gotpm subdirectory of the repo
 ./gotpm --help
 ```
 
