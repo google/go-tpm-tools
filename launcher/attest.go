@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
@@ -96,7 +97,7 @@ func (a *AttestationAgent) getAttestation(nonce []byte) (*pb.Attestation, error)
 		return nil, err
 	}
 
-	attestation, err := ak.Attest(client.AttestOpts{Nonce: nonce, CanonicalEventLog: buf.Bytes()})
+	attestation, err := ak.Attest(client.AttestOpts{Nonce: nonce, CanonicalEventLog: buf.Bytes(), CertChainFetcher: http.DefaultClient})
 	if err != nil {
 		return nil, fmt.Errorf("failed to attest: %v", err)
 	}
