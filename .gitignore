@@ -2,7 +2,7 @@ launcher/launcher
 *.test
 *.test.exe
 cmd/gotpm/gotpm
-!gotpm/
+gotpm
 gotpm.exe
 files/pkg
 files/src
