@@ -143,7 +143,7 @@ func VerifyAttestation(attestation *pb.Attestation, opts VerifyOpts) (*pb.Machin
 // Checks if the provided AK public key can be trusted
 func checkAKTrusted(ak crypto.PublicKey, akCertBytes []byte, opts VerifyOpts) error {
 	checkPub := len(opts.TrustedAKs) > 0
-	checkCert := opts.TrustedRootCerts != nil && len(opts.TrustedRootCerts.Subjects()) > 0
+	checkCert := opts.TrustedRootCerts != nil
 	if !checkPub && !checkCert {
 		return fmt.Errorf("no trust mechanism provided, either use TrustedAKs or TrustedRootCerts")
 	}
