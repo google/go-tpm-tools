@@ -26,3 +26,8 @@ information on using pull requests.
 
 This project follows [Google's Open Source Community
 Guidelines](https://opensource.google.com/conduct/).
+
+## Releasing a new version
+
+See [`RELEASING.md`](RELEASING.md) for instructions on how to cut a new
+version of go-tpm-tools.
