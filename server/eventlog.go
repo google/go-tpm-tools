@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/google/certificate-transparency-go/x509"
+	ctx509 "github.com/google/certificate-transparency-go/x509"
 	"github.com/google/go-attestation/attest"
 	"github.com/google/go-tpm-tools/cel"
 	pb "github.com/google/go-tpm-tools/proto/attest"
@@ -262,7 +262,7 @@ func convertToPbEvents(hash crypto.Hash, events []attest.Event) []*pb.Event {
 	return pbEvents
 }
 
-func convertToPbDatabase(certs []x509.Certificate, hashes [][]byte) *pb.Database {
+func convertToPbDatabase(certs []ctx509.Certificate, hashes [][]byte) *pb.Database {
 	protoCerts := make([]*pb.Certificate, 0, len(certs))
 	for _, cert := range certs {
 		wkEnum, err := matchWellKnown(cert)
@@ -280,7 +280,7 @@ func convertToPbDatabase(certs []x509.Certificate, hashes [][]byte) *pb.Database
 	}
 }
 
-func matchWellKnown(cert x509.Certificate) (pb.WellKnownCertificate, error) {
+func matchWellKnown(cert ctx509.Certificate) (pb.WellKnownCertificate, error) {
 	if bytes.Equal(WindowsProductionPCA2011Cert, cert.Raw) {
 		return pb.WellKnownCertificate_MS_WINDOWS_PROD_PCA_2011, nil
 	}

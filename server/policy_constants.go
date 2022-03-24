@@ -2,12 +2,12 @@ package server
 
 import (
 	"bytes"
+	"crypto/x509"
 	_ "embed" // Necessary to use go:embed
 	"errors"
 	"fmt"
 	"strconv"
 
-	"github.com/google/certificate-transparency-go/x509"
 	pb "github.com/google/go-tpm-tools/proto/attest"
 )
 
