@@ -29,11 +29,12 @@ const (
 )
 
 const (
-	imageRefKey        = "tee-image-reference"
-	restartPolicyKey   = "tee-restart-policy"
-	cmdKey             = "tee-cmd"
-	envKeyPrefix       = "tee-env-"
-	instanceAttributes = "instance/attributes/?recursive=true"
+	imageRefKey                = "tee-image-reference"
+	restartPolicyKey           = "tee-restart-policy"
+	cmdKey                     = "tee-cmd"
+	envKeyPrefix               = "tee-env-"
+	instanceAttributes         = "instance/attributes/?recursive=true"
+	impersonateServiceAccounts = "tee-impersonate-service-accounts"
 )
 
 var errImageRefNotSpecified = fmt.Errorf("%s is not specified in the custom metadata", imageRefKey)
@@ -47,12 +48,13 @@ type EnvVar struct {
 // LauncherSpec contains specification set by the operator who wants to
 // launch a container.
 type LauncherSpec struct {
-	ImageRef               string
-	RestartPolicy          RestartPolicy
-	Cmd                    []string
-	Envs                   []EnvVar
-	UseLocalImage          bool
-	AttestationServiceAddr string
+	ImageRef                   string
+	RestartPolicy              RestartPolicy
+	Cmd                        []string
+	Envs                       []EnvVar
+	UseLocalImage              bool
+	AttestationServiceAddr     string
+	ImpersonateServiceAccounts []string
 }
 
 // UnmarshalJSON unmarshals an instance attributes list in JSON format from the metadata
@@ -75,6 +77,11 @@ func (s *LauncherSpec) UnmarshalJSON(b []byte) error {
 	}
 	if err := s.RestartPolicy.isValid(); err != nil {
 		return err
+	}
+
+	if val, ok := unmarshaledMap[impersonateServiceAccounts]; ok && val != "" {
+		delegates := strings.Split(val, ",")
+		s.ImpersonateServiceAccounts = append(s.ImpersonateServiceAccounts, delegates...)
 	}
 
 	// populate cmd override

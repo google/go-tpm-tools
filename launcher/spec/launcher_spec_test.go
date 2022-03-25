@@ -15,29 +15,32 @@ func TestLauncherSpecUnmarshalJSONHappyCases(t *testing.T) {
 			"HappyCase",
 			`{
 				"tee-cmd":"[\"--foo\",\"--bar\",\"--baz\"]",
-				"tee-env-enva":"aaa",
+				"tee-env-foo":"bar",
 				"tee-image-reference":"docker.io/library/hello-world:latest",
-				"tee-restart-policy":"Always"
+				"tee-restart-policy":"Always",
+				"tee-impersonate-service-accounts":"sv1@developer.gserviceaccount.com,sv2@developer.gserviceaccount.com"
 			}`,
 		},
 		{
 			"HappyCaseWithExtraUnknowFields",
 			`{
 				"tee-cmd":"[\"--foo\",\"--bar\",\"--baz\"]",
-				"tee-env-enva":"aaa",
+				"tee-env-foo":"bar",
 				"tee-unknown":"unknown",
 				"unknown":"unknown",
 				"tee-image-reference":"docker.io/library/hello-world:latest",
-				"tee-restart-policy":"Always"
+				"tee-restart-policy":"Always",
+				"tee-impersonate-service-accounts":"sv1@developer.gserviceaccount.com,sv2@developer.gserviceaccount.com"
 			}`,
 		},
 	}
 
 	want := &LauncherSpec{
-		ImageRef:      "docker.io/library/hello-world:latest",
-		RestartPolicy: Always,
-		Cmd:           []string{"--foo", "--bar", "--baz"},
-		Envs:          []EnvVar{{"enva", "aaa"}},
+		ImageRef:                   "docker.io/library/hello-world:latest",
+		RestartPolicy:              Always,
+		Cmd:                        []string{"--foo", "--bar", "--baz"},
+		Envs:                       []EnvVar{{"foo", "bar"}},
+		ImpersonateServiceAccounts: []string{"sv1@developer.gserviceaccount.com", "sv2@developer.gserviceaccount.com"},
 	}
 
 	for _, testcase := range testCases {
@@ -98,7 +101,10 @@ func TestLauncherSpecUnmarshalJSONBadInput(t *testing.T) {
 }
 
 func TestLauncherSpecUnmarshalJSONWithDefaultValue(t *testing.T) {
-	mdsJSON := `{"tee-image-reference":"docker.io/library/hello-world:latest"}`
+	mdsJSON := `{
+		"tee-image-reference":"docker.io/library/hello-world:latest",
+		"tee-impersonate-service-accounts":""
+		}`
 
 	spec := &LauncherSpec{}
 	if err := spec.UnmarshalJSON([]byte(mdsJSON)); err != nil {
@@ -108,8 +114,6 @@ func TestLauncherSpecUnmarshalJSONWithDefaultValue(t *testing.T) {
 	want := &LauncherSpec{
 		ImageRef:      "docker.io/library/hello-world:latest",
 		RestartPolicy: Never,
-		Cmd:           nil,
-		Envs:          nil,
 	}
 
 	if !cmp.Equal(spec, want) {
@@ -120,7 +124,7 @@ func TestLauncherSpecUnmarshalJSONWithDefaultValue(t *testing.T) {
 func TestLauncherSpecUnmarshalJSONWithoutImageReference(t *testing.T) {
 	mdsJSON := `{
 		"tee-cmd":"[\"--foo\",\"--bar\",\"--baz\"]",
-		"tee-env-enva":"aaa",
+		"tee-env-foo":"bar",
 		"tee-restart-policy":"Never"
 		}`
 
