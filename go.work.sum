@@ -1,2 +1,4 @@
 cloud.google.com/go v0.100.2 h1:t9Iw5QH5v4XtlEQaCtUY7x6sCABps8sW0acw7e2WQ6Y=
-github.com/google/go-tpm-tools v0.3.7/go.mod h1:rp+rDmmDCnWiMmxOTF3ypWxpChEQ4vwA6wtAIq09Qtc=
+github.com/googleapis/gax-go v2.0.2+incompatible h1:silFMLAnr330+NRuag/VjIGF7TLp/LBrV2CJKFLWEww=
+github.com/googleapis/gax-go/v2 v2.1.1 h1:dp3bWCh+PPO1zjRRiCSczJav13sBvG4UhNyVTa1KqdU=
+google.golang.org/api v0.70.0 h1:67zQnAE0T2rB0A3CwLSas0K+SbVzSxP+zTLkQLexeiw=

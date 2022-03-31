@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"time"
 
 	"cloud.google.com/go/compute/metadata"
 	"github.com/containerd/containerd"
@@ -16,6 +17,7 @@ import (
 	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/images"
 	"github.com/containerd/containerd/oci"
+	"github.com/golang-jwt/jwt"
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/launcher/spec"
@@ -26,12 +28,21 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
+type attestationAgent interface {
+	MeasureEvent(cel.Content) error
+	Attest(context.Context) ([]byte, error)
+}
+
 // ContainerRunner contains information about the container settings
 type ContainerRunner struct {
-	container   containerd.Container
-	launchSpec  spec.LauncherSpec
-	attestConn  *grpc.ClientConn
-	attestAgent *AttestationAgent
+	container      containerd.Container
+	launchSpec     spec.LauncherSpec
+	attestConn     *grpc.ClientConn
+	attestAgent    attestationAgent
+	tokenRefresher struct {
+		timer *time.Timer
+		done  chan bool
+	}
 }
 
 const (
@@ -46,6 +57,12 @@ const (
 	containerID = "tee-container"
 	snapshotID  = "tee-snapshot"
 )
+
+// Given a token TTL, calculates the duration to wait before refreshing the token.
+// Interval is shorter than TTL to ensure refresh succeeds before the previous token expires.
+func refreshInterval(ttl time.Duration) time.Duration {
+	return ttl * 9 / 10
+}
 
 // NewRunner returns a runner.
 func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.Token, launchSpec spec.LauncherSpec, mdsClient *metadata.Client, tpm io.ReadWriteCloser) (*ContainerRunner, error) {
@@ -194,20 +211,93 @@ func (r *ContainerRunner) measureContainerClaims(ctx context.Context) error {
 		}
 	}
 
-	contianerSpec, err := r.container.Spec(ctx)
+	containerSpec, err := r.container.Spec(ctx)
 	if err != nil {
 		return err
 	}
-	for _, arg := range contianerSpec.Process.Args {
+	for _, arg := range containerSpec.Process.Args {
 		if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.ArgType, EventContent: []byte(arg)}); err != nil {
 			return err
 		}
 	}
-	for _, env := range contianerSpec.Process.Env {
+	for _, env := range containerSpec.Process.Env {
 		if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.EnvVarType, EventContent: []byte(env)}); err != nil {
 			return err
 		}
 	}
+	return nil
+}
+
+func getTTL(token []byte) (time.Duration, error) {
+	claims := &jwt.StandardClaims{}
+	_, _, err := new(jwt.Parser).ParseUnverified(string(token), claims)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse token: %w", err)
+	}
+
+	return time.Until(time.Unix(claims.ExpiresAt, 0)), nil
+}
+
+func (r *ContainerRunner) fetchAndWriteToken(ctx context.Context) error {
+	// Create hostTokenPath directory. Should come before NewTask.
+	token, err := r.attestAgent.Attest(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to retrieve attestation service token: %v", err)
+	}
+
+	filepath := path.Join(HostTokenPath, attestationVerifierTokenFile)
+
+	ttl, err := getTTL(token)
+	if err != nil {
+		return fmt.Errorf("failed to get token TTL: %v", err)
+	}
+
+	// If timer is already configured.
+	if r.tokenRefresher.timer != nil {
+		r.tokenRefresher.timer.Stop()
+	}
+
+	// Set a timer to refresh the token before it expires.
+	r.tokenRefresher.timer = time.NewTimer(refreshInterval(ttl))
+	r.tokenRefresher.done = make(chan bool)
+	go func() {
+		for {
+			select {
+			case <-r.tokenRefresher.done:
+				return
+			case <-r.tokenRefresher.timer.C:
+				// Refresh token.
+				token, err := r.attestAgent.Attest(ctx)
+				if err != nil {
+					log.Printf("failed to refresh attestation service token: %v\n", err)
+					continue
+				}
+
+				ttl, err := getTTL(token)
+				if err != nil {
+					log.Printf("failed to get token TTL: %v", err)
+					continue
+				}
+
+				if err = os.WriteFile(filepath, token, 0644); err != nil {
+					log.Printf("failed to write token to container mount source point: %v", err)
+					continue
+				}
+
+				r.tokenRefresher.timer.Reset(refreshInterval(ttl))
+			}
+		}
+	}()
+
+	// Write OIDC token for container.
+	if err := os.MkdirAll(HostTokenPath, 0744); err != nil {
+		log.Fatal(err)
+	}
+
+	if err = os.WriteFile(filepath, token, 0644); err != nil {
+		return fmt.Errorf("failed to write token to continer mount source point: %v", err)
+	}
+
 	return nil
 }
 
@@ -219,18 +309,8 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		return fmt.Errorf("failed to measure container claims: %v", err)
 	}
 
-	// Create hostTokenPath directory. Should come before NewTask.
-	token, err := r.attestAgent.Attest(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to retrieve attestation service token: %v", err)
-	}
-
-	// Write OIDC token for the container.
-	if err := os.MkdirAll(HostTokenPath, 0644); err != nil {
-		log.Fatal(err)
-	}
-	if err = os.WriteFile(path.Join(HostTokenPath, attestationVerifierTokenFile), token, 0644); err != nil {
-		return fmt.Errorf("failed to write token to container mount source point: %v", err)
+	if err := r.fetchAndWriteToken(ctx); err != nil {
+		return fmt.Errorf("failed to fetch and write OIDC token: %v", err)
 	}
 
 	task, err := r.container.NewTask(ctx, cio.NewCreator(cio.WithStdio))
@@ -314,4 +394,10 @@ func (r *ContainerRunner) Close(ctx context.Context) {
 	// Delete container and close connection to attestation service.
 	r.container.Delete(ctx, containerd.WithSnapshotCleanup)
 	r.attestConn.Close()
+
+	// Stop token refresh goroutine.
+	if r.tokenRefresher.timer != nil {
+		r.tokenRefresher.timer.Stop()
+		r.tokenRefresher.done <- true
+	}
 }
