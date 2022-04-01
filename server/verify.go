@@ -46,22 +46,20 @@ type VerifyOpts struct {
 	IntermediateCerts []*x509.Certificate
 }
 
-type gceSecurityProperties struct {
-	SecurityVersion             int64 `asn1:"optional"`
-	IsProduction                bool  `asn1:"optional"`
-	TpmDataAlwaysEncrypted      bool  `asn1:"optional"`
-	SuspendResumeAlwaysDisabled bool  `asn1:"optional"`
-	VmtdAlwaysDisabled          bool  `asn1:"optional"`
-	AlwaysInYawn                bool  `asn1:"optional"`
-}
-
 type gceInstanceInfo struct {
-	Zone               string `asn1:"utf8"`
-	ProjectNumber      int64
-	ProjectId          string `asn1:"utf8"`
-	InstanceId         int64
-	InstanceName       string                `asn1:"utf8"`
-	SecurityProperties gceSecurityProperties `asn1:"optional"`
+	Zone               []byte
+	ProjectNumber      int
+	ProjectID          []byte
+	InstanceID         int
+	InstanceName       []byte
+	SecurityProperties struct {
+		SecurityVersion             int
+		IsProduction                bool
+		TPMDataAlwaysEncrypted      bool
+		SuspendResumeAlwaysDisabled bool
+		VMTDAlwaysDisabled          bool
+		AlwaysInYawn                bool
+	}
 }
 
 // VerifyAttestation performs the following checks on an Attestation:
@@ -146,7 +144,7 @@ func VerifyAttestation(attestation *pb.Attestation, opts VerifyOpts) (*pb.Machin
 			continue
 		}
 
-		return machineState, nil
+		return celState, nil
 	}
 
 	if lastErr != nil {
@@ -156,7 +154,7 @@ func VerifyAttestation(attestation *pb.Attestation, opts VerifyOpts) (*pb.Machin
 }
 
 // Checks if the provided AK public key can be trusted
-func validateAK(ak crypto.PublicKey, akCertBytes []byte, opts VerifyOpts) (*pb.MachineState, error) {
+func checkAKTrusted(ak crypto.PublicKey, akCertBytes []byte, opts VerifyOpts) (*pb.MachineState, error) {
 	checkPub := len(opts.TrustedAKs) > 0
 	checkCert := opts.TrustedRootCerts != nil
 	if !checkPub && !checkCert {
@@ -228,7 +226,7 @@ func validateAK(ak crypto.PublicKey, akCertBytes []byte, opts VerifyOpts) (*pb.M
 		return &pb.MachineState{}, nil
 	}
 
-	parsedInstanceInfo := gceInstanceInfo{}
+	var parsedInstanceInfo gceInstanceInfo
 	if _, err := asn1.Unmarshal(gceInstanceInfoBytes, &parsedInstanceInfo); err != nil {
 		return nil, fmt.Errorf("failed to parse GCE Instance Information Extension: %w", err)
 	}
@@ -238,17 +236,19 @@ func validateAK(ak crypto.PublicKey, akCertBytes []byte, opts VerifyOpts) (*pb.M
 		return &pb.MachineState{}, nil
 	}
 
-	return &pb.MachineState{
+	machineState := &pb.MachineState{
 		Platform: &pb.PlatformState{
 			InstanceInfo: &pb.GCEInstanceInfo{
-				Zone:          parsedInstanceInfo.Zone,
-				ProjectId:     parsedInstanceInfo.ProjectId,
+				Zone:          string(parsedInstanceInfo.Zone),
+				ProjectId:     string(parsedInstanceInfo.ProjectID),
 				ProjectNumber: uint64(parsedInstanceInfo.ProjectNumber),
-				InstanceName:  parsedInstanceInfo.InstanceName,
-				InstanceId:    uint64(parsedInstanceInfo.InstanceId),
+				InstanceName:  string(parsedInstanceInfo.InstanceName),
+				InstanceId:    uint64(parsedInstanceInfo.InstanceID),
 			},
 		},
-	}, nil
+	}
+
+	return machineState, nil
 }
 
 func checkHashAlgSupported(hash tpm2.Algorithm, opts VerifyOpts) error {

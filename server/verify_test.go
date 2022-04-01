@@ -8,6 +8,8 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"io"
+	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -24,6 +26,22 @@ import (
 )
 
 var measuredHashes = []crypto.Hash{crypto.SHA1, crypto.SHA256}
+
+func stringToOID(t *testing.T, str string) asn1.ObjectIdentifier {
+	split := strings.Split(str, ".")
+
+	oid := []int{}
+	for _, s := range split {
+		sInt, err := strconv.Atoi(s)
+		if err != nil {
+			t.Fatal("Error creating test OID.")
+		}
+
+		oid = append(oid, sInt)
+	}
+
+	return asn1.ObjectIdentifier(oid)
+}
 
 func getDigestHash(input string) []byte {
 	inputDigestHash := sha256.New()
@@ -607,5 +625,107 @@ func TestVerifyFailsWithMalformedIntermediatesInAttestation(t *testing.T) {
 		TrustedRootCerts: GceEKRoots,
 	}); err == nil {
 		t.Error("expected error when calling VerifyAttestation with malformed intermediate")
+	}
+}
+
+func TestGetInstanceInfo(t *testing.T) {
+	expectedInstanceInfo := &attestpb.GCEInstanceInfo{
+		Zone:          "expected zone",
+		ProjectId:     "expected project id",
+		ProjectNumber: 0,
+		InstanceName:  "expected instance name",
+		InstanceId:    1,
+	}
+
+	extStruct := gceInstanceInfo{
+		Zone:               expectedInstanceInfo.Zone,
+		ProjectId:          expectedInstanceInfo.ProjectId,
+		ProjectNumber:      int64(expectedInstanceInfo.ProjectNumber),
+		InstanceName:       expectedInstanceInfo.InstanceName,
+		InstanceId:         int64(expectedInstanceInfo.InstanceId),
+		SecurityProperties: gceSecurityProperties{IsProduction: true},
+	}
+
+	marshaledExt, err := asn1.Marshal(extStruct)
+	if err != nil {
+		t.Fatalf("Error marshaling test extension: %v", err)
+	}
+
+	ext := []pkix.Extension{{
+		Id:    stringToOID(t, cloudComputeInstanceIdentifierOID),
+		Value: marshaledExt,
+	}}
+
+	instanceInfo, err := getInstanceInfo(ext)
+	if err != nil {
+		t.Fatalf("getInstanceInfo returned with error: %v", err)
+	}
+	if instanceInfo == nil {
+		t.Fatal("getInstanceInfo returned nil instance info.")
+	}
+
+	if !reflect.DeepEqual(instanceInfo, expectedInstanceInfo) {
+		t.Errorf("getInstanceInfo did not return expected instance info: got %v, want %v", instanceInfo, expectedInstanceInfo)
+	}
+}
+
+func TestGetInstanceInfoReturnsNil(t *testing.T) {
+	extStruct := gceInstanceInfo{
+		Zone:               "zone",
+		ProjectId:          "project id",
+		ProjectNumber:      0,
+		InstanceName:       "instance name",
+		InstanceId:         1,
+		SecurityProperties: gceSecurityProperties{IsProduction: false},
+	}
+
+	marshaledExt, err := asn1.Marshal(extStruct)
+	if err != nil {
+		t.Fatalf("Error marshaling test extension: %v", err)
+	}
+
+	testcases := []struct {
+		name string
+		ext  []pkix.Extension
+	}{
+		{
+			name: "No extension with expected OID",
+			ext: []pkix.Extension{{
+				Id:    stringToOID(t, "1.2.3.4"),
+				Value: []byte("fake extension"),
+			}},
+		},
+		{
+			name: "IsProduction is false",
+			ext: []pkix.Extension{{
+				Id:    stringToOID(t, cloudComputeInstanceIdentifierOID),
+				Value: marshaledExt,
+			}},
+		},
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			instanceInfo, err := getInstanceInfo(tc.ext)
+			if err != nil {
+				t.Fatalf("getInstanceInfo returned with error: %v", err)
+			}
+
+			if instanceInfo != nil {
+				t.Error("getInstanceInfo returned instance information, expected nil")
+			}
+		})
+	}
+}
+
+func TestGetInstanceInfoError(t *testing.T) {
+	ext := []pkix.Extension{{
+		Id:    stringToOID(t, cloudComputeInstanceIdentifierOID),
+		Value: []byte("not valid ASN1"),
+	}}
+
+	_, err := getInstanceInfo(ext)
+	if err == nil {
+		t.Error("getInstanceInfo returned successfully, expected error")
 	}
 }
