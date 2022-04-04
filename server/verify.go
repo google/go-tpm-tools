@@ -46,20 +46,22 @@ type VerifyOpts struct {
 	IntermediateCerts []*x509.Certificate
 }
 
+type gceSecurityProperties struct {
+	SecurityVersion             int64 `asn1:"optional"`
+	IsProduction                bool  `asn1:"optional"`
+	TpmDataAlwaysEncrypted      bool  `asn1:"optional"`
+	SuspendResumeAlwaysDisabled bool  `asn1:"optional"`
+	VmtdAlwaysDisabled          bool  `asn1:"optional"`
+	AlwaysInYawn                bool  `asn1:"optional"`
+}
+
 type gceInstanceInfo struct {
-	Zone               []byte
-	ProjectNumber      int
-	ProjectID          []byte
-	InstanceID         int
-	InstanceName       []byte
-	SecurityProperties struct {
-		SecurityVersion             int
-		IsProduction                bool
-		TPMDataAlwaysEncrypted      bool
-		SuspendResumeAlwaysDisabled bool
-		VMTDAlwaysDisabled          bool
-		AlwaysInYawn                bool
-	}
+	Zone               string `asn1:"utf8"`
+	ProjectNumber      int64
+	ProjectID          string `asn1:"utf8"`
+	InstanceID         int64
+	InstanceName       string                `asn1:"utf8"`
+	SecurityProperties gceSecurityProperties `asn1:"optional"`
 }
 
 // VerifyAttestation performs the following checks on an Attestation:
@@ -151,6 +153,39 @@ func VerifyAttestation(attestation *pb.Attestation, opts VerifyOpts) (*pb.Machin
 		return nil, lastErr
 	}
 	return nil, fmt.Errorf("attestation does not contain a supported quote")
+}
+
+func getInstanceInfo(extensions []pkix.Extension) (*pb.GCEInstanceInfo, error) {
+	var gceInstanceInfoBytes []byte
+	for _, ext := range extensions {
+		if ext.Id.String() == cloudComputeInstanceIdentifierOID {
+			gceInstanceInfoBytes = ext.Value
+			break
+		}
+	}
+
+	// If GCE Instance Info extension is not found.
+	if gceInstanceInfoBytes == nil {
+		return nil, nil
+	}
+
+	parsedInstanceInfo := gceInstanceInfo{}
+	if _, err := asn1.Unmarshal(gceInstanceInfoBytes, &parsedInstanceInfo); err != nil {
+		return nil, fmt.Errorf("failed to parse GCE Instance Information Extension: %w", err)
+	}
+
+	// Check production.
+	if !parsedInstanceInfo.SecurityProperties.IsProduction {
+		return nil, nil
+	}
+
+	return &pb.GCEInstanceInfo{
+		Zone:          parsedInstanceInfo.Zone,
+		ProjectId:     parsedInstanceInfo.ProjectID,
+		ProjectNumber: uint64(parsedInstanceInfo.ProjectNumber),
+		InstanceName:  parsedInstanceInfo.InstanceName,
+		InstanceId:    uint64(parsedInstanceInfo.InstanceID),
+	}, nil
 }
 
 // Checks if the provided AK public key can be trusted

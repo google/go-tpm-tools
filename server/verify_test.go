@@ -639,10 +639,10 @@ func TestGetInstanceInfo(t *testing.T) {
 
 	extStruct := gceInstanceInfo{
 		Zone:               expectedInstanceInfo.Zone,
-		ProjectId:          expectedInstanceInfo.ProjectId,
+		ProjectID:          expectedInstanceInfo.ProjectId,
 		ProjectNumber:      int64(expectedInstanceInfo.ProjectNumber),
 		InstanceName:       expectedInstanceInfo.InstanceName,
-		InstanceId:         int64(expectedInstanceInfo.InstanceId),
+		InstanceID:         int64(expectedInstanceInfo.InstanceId),
 		SecurityProperties: gceSecurityProperties{IsProduction: true},
 	}
 
@@ -672,10 +672,10 @@ func TestGetInstanceInfo(t *testing.T) {
 func TestGetInstanceInfoReturnsNil(t *testing.T) {
 	extStruct := gceInstanceInfo{
 		Zone:               "zone",
-		ProjectId:          "project id",
+		ProjectID:          "project id",
 		ProjectNumber:      0,
 		InstanceName:       "instance name",
-		InstanceId:         1,
+		InstanceID:         1,
 		SecurityProperties: gceSecurityProperties{IsProduction: false},
 	}
 
