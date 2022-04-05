@@ -2,17 +2,19 @@ package server
 
 import (
 	"crypto"
+	"crypto/x509"
+	"encoding/asn1"
 	"errors"
 	"fmt"
 
-	// Rather than crypto/x509 as ct allows disabling critical extension checks.
-	"github.com/google/certificate-transparency-go/x509"
 	"github.com/google/go-tpm-tools/internal"
 	pb "github.com/google/go-tpm-tools/proto/attest"
 	tpmpb "github.com/google/go-tpm-tools/proto/tpm"
 	"github.com/google/go-tpm/tpm2"
 	"google.golang.org/protobuf/proto"
 )
+
+var oidExtensionSubjectAltName = []int{2, 5, 29, 17}
 
 // The hash algorithms we support, in their preferred order of use.
 var supportedHashAlgs = []tpm2.Algorithm{
@@ -141,7 +143,7 @@ func VerifyAttestation(attestation *pb.Attestation, opts VerifyOpts) (*pb.Machin
 // Checks if the provided AK public key can be trusted
 func checkAKTrusted(ak crypto.PublicKey, akCertBytes []byte, opts VerifyOpts) error {
 	checkPub := len(opts.TrustedAKs) > 0
-	checkCert := opts.TrustedRootCerts != nil && len(opts.TrustedRootCerts.Subjects()) > 0
+	checkCert := opts.TrustedRootCerts != nil
 	if !checkPub && !checkCert {
 		return fmt.Errorf("no trust mechanism provided, either use TrustedAKs or TrustedRootCerts")
 	}
@@ -171,13 +173,21 @@ func checkAKTrusted(ak crypto.PublicKey, akCertBytes []byte, opts VerifyOpts) er
 		return fmt.Errorf("mismatch between public key and certificate")
 	}
 
+	// We manually handle the SAN extension because x509 marks it unhandled if
+	// SAN does not parse any of DNSNames, EmailAddresses, IPAddresses, or URIs.
+	// https://cs.opensource.google/go/go/+/master:src/crypto/x509/parser.go;l=668-678
+	var exts []asn1.ObjectIdentifier
+	for _, ext := range akCert.UnhandledCriticalExtensions {
+		if ext.Equal(oidExtensionSubjectAltName) {
+			continue
+		}
+		exts = append(exts, ext)
+	}
+	akCert.UnhandledCriticalExtensions = exts
+
 	x509Opts := x509.VerifyOptions{
 		Roots:         opts.TrustedRootCerts,
 		Intermediates: opts.IntermediateCerts,
-		// x509 (both ct and crypto) marks the SAN extension unhandled if SAN
-		// does not parse any of DNSNames, EmailAddresses, IPAddresses, or URIs.
-		// https://cs.opensource.google/go/go/+/master:src/crypto/x509/parser.go;l=668-678
-		DisableCriticalExtensionChecks: true,
 		// The default key usage (ExtKeyUsageServerAuth) is not appropriate for
 		// an Attestation Key: ExtKeyUsage of
 		// - https://oidref.com/2.23.133.8.1

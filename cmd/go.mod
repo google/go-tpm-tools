@@ -11,7 +11,7 @@ require (
 
 require (
 	github.com/google/certificate-transparency-go v1.1.2 // indirect
-	github.com/google/go-attestation v0.4.3 // indirect
+	github.com/google/go-attestation v0.4.4-0.20220404204839-8820d49b18d9 // indirect
 	github.com/google/go-tspi v0.2.1-0.20190423175329-115dea689aad // indirect
 	github.com/inconshreveable/mousetrap v1.0.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect

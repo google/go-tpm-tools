@@ -4,13 +4,13 @@ import (
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/x509"
 	"io"
 	"math/big"
 	"reflect"
 	"testing"
 	"time"
 
-	"github.com/google/certificate-transparency-go/x509"
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpmutil"
 

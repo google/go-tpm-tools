@@ -3,10 +3,10 @@ package server
 import (
 	"bytes"
 	"crypto"
+	"crypto/x509"
 	"errors"
 	"fmt"
 
-	"github.com/google/certificate-transparency-go/x509"
 	"github.com/google/go-attestation/attest"
 	"github.com/google/go-tpm-tools/cel"
 	pb "github.com/google/go-tpm-tools/proto/attest"

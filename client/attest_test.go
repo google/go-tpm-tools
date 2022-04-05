@@ -4,13 +4,13 @@ import (
 	"bytes"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/x509"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
-	"github.com/google/certificate-transparency-go/x509"
 	"github.com/google/go-tpm-tools/internal/test"
 )
 

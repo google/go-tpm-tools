@@ -1,10 +1,10 @@
 package client
 
 import (
+	"crypto/x509"
 	"net/http"
 	"testing"
 
-	"github.com/google/certificate-transparency-go/x509"
 	"github.com/google/go-tpm-tools/internal/test"
 	pb "github.com/google/go-tpm-tools/proto/attest"
 	"google.golang.org/protobuf/proto"

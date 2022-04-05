@@ -5,11 +5,11 @@ import (
 	"bytes"
 	"crypto"
 	"crypto/subtle"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"io"
 
-	"github.com/google/certificate-transparency-go/x509"
 	"github.com/google/go-tpm-tools/internal"
 	pb "github.com/google/go-tpm-tools/proto/tpm"
 	"github.com/google/go-tpm/tpm2"
