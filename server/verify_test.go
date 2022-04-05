@@ -10,7 +10,6 @@ import (
 	"encoding/asn1"
 	"fmt"
 	"io"
-	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -666,7 +665,7 @@ func TestGetInstanceInfo(t *testing.T) {
 		t.Fatal("getInstanceInfo returned nil instance info.")
 	}
 
-	if !reflect.DeepEqual(instanceInfo, expectedInstanceInfo) {
+	if !proto.Equal(instanceInfo, expectedInstanceInfo) {
 		t.Errorf("getInstanceInfo did not return expected instance info: got %v, want %v", instanceInfo, expectedInstanceInfo)
 	}
 }
