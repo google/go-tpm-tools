@@ -3,6 +3,7 @@ package server
 import (
 	"crypto"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/asn1"
 	"errors"
 	"fmt"
@@ -146,7 +147,7 @@ func VerifyAttestation(attestation *pb.Attestation, opts VerifyOpts) (*pb.Machin
 			continue
 		}
 
-		return celState, nil
+		return machineState, nil
 	}
 
 	if lastErr != nil {
@@ -189,7 +190,7 @@ func getInstanceInfo(extensions []pkix.Extension) (*pb.GCEInstanceInfo, error) {
 }
 
 // Checks if the provided AK public key can be trusted
-func checkAKTrusted(ak crypto.PublicKey, akCertBytes []byte, opts VerifyOpts) (*pb.MachineState, error) {
+func validateAK(ak crypto.PublicKey, akCertBytes []byte, opts VerifyOpts) (*pb.MachineState, error) {
 	checkPub := len(opts.TrustedAKs) > 0
 	checkCert := opts.TrustedRootCerts != nil
 	if !checkPub && !checkCert {
@@ -248,42 +249,16 @@ func checkAKTrusted(ak crypto.PublicKey, akCertBytes []byte, opts VerifyOpts) (*
 		return nil, fmt.Errorf("mismatch between public key and certificate")
 	}
 
-	var gceInstanceInfoBytes []byte
-	for _, ext := range akCert.Extensions {
-		if ext.Id.String() == cloudComputeInstanceIdentifierOID {
-			gceInstanceInfoBytes = ext.Value
-			break
-		}
+	instanceInfo, err := getInstanceInfo(akCert.Extensions)
+	if err != nil {
+		return nil, fmt.Errorf("error getting instance info: %v", err)
 	}
 
-	// If GCE Instance Info extension is not found.
-	if gceInstanceInfoBytes == nil {
+	if instanceInfo == nil {
 		return &pb.MachineState{}, nil
 	}
 
-	var parsedInstanceInfo gceInstanceInfo
-	if _, err := asn1.Unmarshal(gceInstanceInfoBytes, &parsedInstanceInfo); err != nil {
-		return nil, fmt.Errorf("failed to parse GCE Instance Information Extension: %w", err)
-	}
-
-	// Check production.
-	if !parsedInstanceInfo.SecurityProperties.IsProduction {
-		return &pb.MachineState{}, nil
-	}
-
-	machineState := &pb.MachineState{
-		Platform: &pb.PlatformState{
-			InstanceInfo: &pb.GCEInstanceInfo{
-				Zone:          string(parsedInstanceInfo.Zone),
-				ProjectId:     string(parsedInstanceInfo.ProjectID),
-				ProjectNumber: uint64(parsedInstanceInfo.ProjectNumber),
-				InstanceName:  string(parsedInstanceInfo.InstanceName),
-				InstanceId:    uint64(parsedInstanceInfo.InstanceID),
-			},
-		},
-	}
-
-	return machineState, nil
+	return &pb.MachineState{Platform: &pb.PlatformState{InstanceInfo: instanceInfo}}, nil
 }
 
 func checkHashAlgSupported(hash tpm2.Algorithm, opts VerifyOpts) error {
