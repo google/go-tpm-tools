@@ -6,7 +6,6 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
-	"crypto/x509"
 	"fmt"
 	"io"
 	"strings"
@@ -523,8 +522,8 @@ func TestVerifyAttestationEmptyRootsIntermediates(t *testing.T) {
 	}
 
 	if _, err := VerifyAttestation(att, VerifyOpts{
-		TrustedRootCerts:  x509.NewCertPool(),
-		IntermediateCerts: x509.NewCertPool(),
+		TrustedRootCerts:  nil,
+		IntermediateCerts: nil,
 	}); err == nil {
 		t.Error("expected error when calling VerifyAttestation with empty roots and intermediates")
 	}

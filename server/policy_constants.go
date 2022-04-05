@@ -69,33 +69,34 @@ var (
 	gceEKIntermediateCA2 []byte
 )
 
-// CertPools corresponding to the known CA certs for GCE.
+// Certificates corresponding to the known CA certs for GCE.
 var (
-	GceEKRoots         *x509.CertPool
-	GceEKIntermediates *x509.CertPool
+	GceEKRoots         []*x509.Certificate
+	GceEKIntermediates []*x509.Certificate
 )
 
 func init() {
 	var err error
-	GceEKRoots, err = getPool([][]byte{gceEKRootCA})
+	GceEKRoots, err = parseCerts([][]byte{gceEKRootCA})
 	if err != nil {
 		panic(fmt.Sprintf("failed to create the root cert pool: %v", err))
 	}
-	GceEKIntermediates, err = getPool([][]byte{gceEKIntermediateCA2})
+	GceEKIntermediates, err = parseCerts([][]byte{gceEKIntermediateCA2})
 	if err != nil {
 		panic(fmt.Sprintf("failed to create the intermediate cert pool: %v", err))
 	}
 }
-func getPool(certs [][]byte) (*x509.CertPool, error) {
-	pool := x509.NewCertPool()
-	for _, certBytes := range certs {
+
+func parseCerts(rawCerts [][]byte) ([]*x509.Certificate, error) {
+	certs := make([]*x509.Certificate, len(rawCerts))
+	for i, certBytes := range rawCerts {
 		cert, err := x509.ParseCertificate(certBytes)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse cert: %w", err)
 		}
-		pool.AddCert(cert)
+		certs[i] = cert
 	}
-	return pool, nil
+	return certs, nil
 }
 
 // ConvertSCRTMVersionToGCEFirmwareVersion attempts to parse the Firmware
