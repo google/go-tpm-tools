@@ -22,7 +22,7 @@ var supportedHashAlgs = []tpm2.Algorithm{
 	tpm2.AlgSHA512, tpm2.AlgSHA384, tpm2.AlgSHA256, tpm2.AlgSHA1,
 }
 
-const cloudComputeInstanceIdentifierOID = "1.3.6.1.4.1.11129.2.1.21"
+var cloudComputeInstanceIdentifierOID asn1.ObjectIdentifier = []int{1, 3, 6, 1, 4, 1, 11129, 2, 1, 21}
 
 // VerifyOpts allows for customizing the functionality of VerifyAttestation.
 type VerifyOpts struct {
@@ -47,13 +47,10 @@ type VerifyOpts struct {
 	IntermediateCerts []*x509.Certificate
 }
 
+// TODO: Change int64 fields to uint64 when compatible with ASN1 parsing.
 type gceSecurityProperties struct {
-	SecurityVersion             int64 `asn1:"optional"`
-	IsProduction                bool  `asn1:"optional"`
-	TpmDataAlwaysEncrypted      bool  `asn1:"optional"`
-	SuspendResumeAlwaysDisabled bool  `asn1:"optional"`
-	VmtdAlwaysDisabled          bool  `asn1:"optional"`
-	AlwaysInYawn                bool  `asn1:"optional"`
+	SecurityVersion int64 `asn1:"optional"`
+	IsProduction    bool  `asn1:"optional"`
 }
 
 type gceInstanceInfo struct {
@@ -134,9 +131,6 @@ func VerifyAttestation(attestation *pb.Attestation, opts VerifyOpts) (*pb.Machin
 			continue
 		}
 
-		proto.Merge(machineState, celState)
-		proto.Merge(machineState, state)
-
 		// Verify the PCR hash algorithm. We have this check here (instead of at
 		// the start of the loop) so that the user gets a "SHA-1 not supported"
 		// error only if allowing SHA-1 support would actually allow the log
@@ -146,6 +140,9 @@ func VerifyAttestation(attestation *pb.Attestation, opts VerifyOpts) (*pb.Machin
 			lastErr = fmt.Errorf("when verifying PCRs: %w", err)
 			continue
 		}
+
+		proto.Merge(machineState, celState)
+		proto.Merge(machineState, state)
 
 		return machineState, nil
 	}
@@ -157,35 +154,40 @@ func VerifyAttestation(attestation *pb.Attestation, opts VerifyOpts) (*pb.Machin
 }
 
 func getInstanceInfo(extensions []pkix.Extension) (*pb.GCEInstanceInfo, error) {
-	var gceInstanceInfoBytes []byte
+	var rawInfo []byte
 	for _, ext := range extensions {
-		if ext.Id.String() == cloudComputeInstanceIdentifierOID {
-			gceInstanceInfoBytes = ext.Value
+		if ext.Id.Equal(cloudComputeInstanceIdentifierOID) {
+			rawInfo = ext.Value
 			break
 		}
 	}
 
 	// If GCE Instance Info extension is not found.
-	if gceInstanceInfoBytes == nil {
+	if rawInfo == nil {
 		return nil, nil
 	}
 
-	parsedInstanceInfo := gceInstanceInfo{}
-	if _, err := asn1.Unmarshal(gceInstanceInfoBytes, &parsedInstanceInfo); err != nil {
+	info := gceInstanceInfo{}
+	if _, err := asn1.Unmarshal(rawInfo, &info); err != nil {
 		return nil, fmt.Errorf("failed to parse GCE Instance Information Extension: %w", err)
 	}
 
+	// TODO: Remove when fields are changed to uint64.
+	if info.ProjectNumber < 0 || info.InstanceID < 0 || info.SecurityProperties.SecurityVersion < 0 {
+		return nil, fmt.Errorf("instance Information should not contain negative integer fields")
+	}
+
 	// Check production.
-	if !parsedInstanceInfo.SecurityProperties.IsProduction {
+	if !info.SecurityProperties.IsProduction {
 		return nil, nil
 	}
 
 	return &pb.GCEInstanceInfo{
-		Zone:          parsedInstanceInfo.Zone,
-		ProjectId:     parsedInstanceInfo.ProjectID,
-		ProjectNumber: uint64(parsedInstanceInfo.ProjectNumber),
-		InstanceName:  parsedInstanceInfo.InstanceName,
-		InstanceId:    uint64(parsedInstanceInfo.InstanceID),
+		Zone:          info.Zone,
+		ProjectId:     info.ProjectID,
+		ProjectNumber: uint64(info.ProjectNumber),
+		InstanceName:  info.InstanceName,
+		InstanceId:    uint64(info.InstanceID),
 	}, nil
 }
 
@@ -219,6 +221,10 @@ func validateAK(ak crypto.PublicKey, akCertBytes []byte, opts VerifyOpts) (*pb.M
 		return nil, fmt.Errorf("failed to parse certificate: %w", err)
 	}
 
+	if !internal.PubKeysEqual(ak, akCert.PublicKey) {
+		return nil, fmt.Errorf("mismatch between public key and certificate")
+	}
+
 	// We manually handle the SAN extension because x509 marks it unhandled if
 	// SAN does not parse any of DNSNames, EmailAddresses, IPAddresses, or URIs.
 	// https://cs.opensource.google/go/go/+/master:src/crypto/x509/parser.go;l=668-678
@@ -245,17 +251,9 @@ func validateAK(ak crypto.PublicKey, akCertBytes []byte, opts VerifyOpts) (*pb.M
 		return nil, fmt.Errorf("failed to verify certificate against trusted roots: %v", err)
 	}
 
-	if !internal.PubKeysEqual(ak, akCert.PublicKey) {
-		return nil, fmt.Errorf("mismatch between public key and certificate")
-	}
-
 	instanceInfo, err := getInstanceInfo(akCert.Extensions)
 	if err != nil {
 		return nil, fmt.Errorf("error getting instance info: %v", err)
-	}
-
-	if instanceInfo == nil {
-		return &pb.MachineState{}, nil
 	}
 
 	return &pb.MachineState{Platform: &pb.PlatformState{InstanceInfo: instanceInfo}}, nil

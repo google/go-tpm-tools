@@ -10,7 +10,6 @@ import (
 	"encoding/asn1"
 	"fmt"
 	"io"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -27,22 +26,6 @@ import (
 )
 
 var measuredHashes = []crypto.Hash{crypto.SHA1, crypto.SHA256}
-
-func stringToOID(t *testing.T, str string) asn1.ObjectIdentifier {
-	split := strings.Split(str, ".")
-
-	oid := []int{}
-	for _, s := range split {
-		sInt, err := strconv.Atoi(s)
-		if err != nil {
-			t.Fatal("Error creating test OID.")
-		}
-
-		oid = append(oid, sInt)
-	}
-
-	return asn1.ObjectIdentifier(oid)
-}
 
 func getDigestHash(input string) []byte {
 	inputDigestHash := sha256.New()
@@ -639,12 +622,15 @@ func TestGetInstanceInfo(t *testing.T) {
 	}
 
 	extStruct := gceInstanceInfo{
-		Zone:               expectedInstanceInfo.Zone,
-		ProjectID:          expectedInstanceInfo.ProjectId,
-		ProjectNumber:      int64(expectedInstanceInfo.ProjectNumber),
-		InstanceName:       expectedInstanceInfo.InstanceName,
-		InstanceID:         int64(expectedInstanceInfo.InstanceId),
-		SecurityProperties: gceSecurityProperties{IsProduction: true},
+		Zone:          expectedInstanceInfo.Zone,
+		ProjectID:     expectedInstanceInfo.ProjectId,
+		ProjectNumber: int64(expectedInstanceInfo.ProjectNumber),
+		InstanceName:  expectedInstanceInfo.InstanceName,
+		InstanceID:    int64(expectedInstanceInfo.InstanceId),
+		SecurityProperties: gceSecurityProperties{
+			SecurityVersion: 0,
+			IsProduction:    true,
+		},
 	}
 
 	marshaledExt, err := asn1.Marshal(extStruct)
@@ -653,7 +639,7 @@ func TestGetInstanceInfo(t *testing.T) {
 	}
 
 	ext := []pkix.Extension{{
-		Id:    stringToOID(t, cloudComputeInstanceIdentifierOID),
+		Id:    cloudComputeInstanceIdentifierOID,
 		Value: marshaledExt,
 	}}
 
@@ -692,14 +678,14 @@ func TestGetInstanceInfoReturnsNil(t *testing.T) {
 		{
 			name: "No extension with expected OID",
 			ext: []pkix.Extension{{
-				Id:    stringToOID(t, "1.2.3.4"),
+				Id:    asn1.ObjectIdentifier([]int{1, 2, 3, 4}),
 				Value: []byte("fake extension"),
 			}},
 		},
 		{
 			name: "IsProduction is false",
 			ext: []pkix.Extension{{
-				Id:    stringToOID(t, cloudComputeInstanceIdentifierOID),
+				Id:    cloudComputeInstanceIdentifierOID,
 				Value: marshaledExt,
 			}},
 		},
@@ -720,8 +706,78 @@ func TestGetInstanceInfoReturnsNil(t *testing.T) {
 }
 
 func TestGetInstanceInfoError(t *testing.T) {
+	testcases := []struct {
+		name         string
+		instanceInfo *gceInstanceInfo
+	}{
+		{
+			name:         "Extension value is not valid ASN1",
+			instanceInfo: nil,
+		},
+		{
+			name: "Negative ProjectNumber",
+			instanceInfo: &gceInstanceInfo{
+				Zone:               "zone",
+				ProjectID:          "project id",
+				ProjectNumber:      -1,
+				InstanceName:       "instance name",
+				InstanceID:         1,
+				SecurityProperties: gceSecurityProperties{IsProduction: false},
+			},
+		},
+		{
+			name: "Negative InstanceID",
+			instanceInfo: &gceInstanceInfo{
+				Zone:               "zone",
+				ProjectID:          "project id",
+				ProjectNumber:      0,
+				InstanceName:       "instance name",
+				InstanceID:         -1,
+				SecurityProperties: gceSecurityProperties{IsProduction: false},
+			},
+		},
+		{
+			name: "Negative SecurityVersion",
+			instanceInfo: &gceInstanceInfo{
+				Zone:          "zone",
+				ProjectID:     "project id",
+				ProjectNumber: 0,
+				InstanceName:  "instance name",
+				InstanceID:    1,
+				SecurityProperties: gceSecurityProperties{
+					SecurityVersion: -1,
+					IsProduction:    false,
+				},
+			},
+		},
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			var extensionVal []byte
+			var err error
+			if tc.instanceInfo != nil {
+				extensionVal, err = asn1.Marshal(*tc.instanceInfo)
+				if err != nil {
+					t.Fatalf("Error marshaling test extension: %v", err)
+				}
+			} else {
+				extensionVal = []byte("Not a valid ASN1 extension.")
+			}
+
+			_, err = getInstanceInfo([]pkix.Extension{{
+				Id:    cloudComputeInstanceIdentifierOID,
+				Value: extensionVal,
+			}})
+
+			if err == nil {
+				t.Error("getInstanceInfo returned successfully, expected error")
+			}
+		})
+	}
+
 	ext := []pkix.Extension{{
-		Id:    stringToOID(t, cloudComputeInstanceIdentifierOID),
+		Id:    cloudComputeInstanceIdentifierOID,
 		Value: []byte("not valid ASN1"),
 	}}
 
