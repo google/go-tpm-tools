@@ -40,8 +40,8 @@ type VerifyOpts struct {
 	// IntermediateCerts.
 	// Adding a specific TPM manufacturer's root and intermediate CAs means all
 	// TPMs signed by that CA will be trusted.
-	TrustedRootCerts  *x509.CertPool
-	IntermediateCerts *x509.CertPool
+	TrustedRootCerts  []*x509.Certificate
+	IntermediateCerts []*x509.Certificate
 }
 
 // VerifyAttestation performs the following checks on an Attestation:
@@ -69,20 +69,12 @@ func VerifyAttestation(attestation *pb.Attestation, opts VerifyOpts) (*pb.Machin
 	}
 
 	// Add intermediate certs in the attestation if they exist.
-	if len(attestation.IntermediateCerts) != 0 {
-		if opts.IntermediateCerts == nil {
-			opts.IntermediateCerts = x509.NewCertPool()
-		}
-
-		for _, certBytes := range attestation.IntermediateCerts {
-			cert, err := x509.ParseCertificate(certBytes)
-			if err != nil {
-				return nil, fmt.Errorf("failed to parse intermediate certificate in attestation: %w", err)
-			}
-
-			opts.IntermediateCerts.AddCert(cert)
-		}
+	certs, err := parseCerts(attestation.IntermediateCerts)
+	if err != nil {
+		return nil, fmt.Errorf("attestation intermediates: %w", err)
 	}
+	opts.IntermediateCerts = append(opts.IntermediateCerts, certs...)
+
 	if err := checkAKTrusted(akPubKey, attestation.GetAkCert(), opts); err != nil {
 		return nil, fmt.Errorf("failed to validate AK: %w", err)
 	}
@@ -186,8 +178,8 @@ func checkAKTrusted(ak crypto.PublicKey, akCertBytes []byte, opts VerifyOpts) er
 	akCert.UnhandledCriticalExtensions = exts
 
 	x509Opts := x509.VerifyOptions{
-		Roots:         opts.TrustedRootCerts,
-		Intermediates: opts.IntermediateCerts,
+		Roots:         makePool(opts.TrustedRootCerts),
+		Intermediates: makePool(opts.IntermediateCerts),
 		// The default key usage (ExtKeyUsageServerAuth) is not appropriate for
 		// an Attestation Key: ExtKeyUsage of
 		// - https://oidref.com/2.23.133.8.1
@@ -225,4 +217,12 @@ func supportedQuotes(quotes []*tpmpb.Quote) []*tpmpb.Quote {
 		}
 	}
 	return out
+}
+
+func makePool(certs []*x509.Certificate) *x509.CertPool {
+	pool := x509.NewCertPool()
+	for _, cert := range certs {
+		pool.AddCert(cert)
+	}
+	return pool
 }
