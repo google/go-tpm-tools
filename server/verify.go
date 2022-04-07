@@ -163,7 +163,7 @@ func getInstanceInfo(extensions []pkix.Extension) (*pb.GCEInstanceInfo, error) {
 	}
 
 	// If GCE Instance Info extension is not found.
-	if rawInfo == nil {
+	if len(rawInfo) == 0 {
 		return nil, nil
 	}
 
@@ -174,7 +174,7 @@ func getInstanceInfo(extensions []pkix.Extension) (*pb.GCEInstanceInfo, error) {
 
 	// TODO: Remove when fields are changed to uint64.
 	if info.ProjectNumber < 0 || info.InstanceID < 0 || info.SecurityProperties.SecurityVersion < 0 {
-		return nil, fmt.Errorf("instance Information should not contain negative integer fields")
+		return nil, fmt.Errorf("negative integer fields found in GCE Instance Information Extension")
 	}
 
 	// Check production.
