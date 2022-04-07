@@ -3,6 +3,7 @@ package server
 import (
 	"crypto"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/asn1"
 	"errors"
 	"fmt"
@@ -20,6 +21,8 @@ var oidExtensionSubjectAltName = []int{2, 5, 29, 17}
 var supportedHashAlgs = []tpm2.Algorithm{
 	tpm2.AlgSHA512, tpm2.AlgSHA384, tpm2.AlgSHA256, tpm2.AlgSHA1,
 }
+
+var cloudComputeInstanceIdentifierOID asn1.ObjectIdentifier = []int{1, 3, 6, 1, 4, 1, 11129, 2, 1, 21}
 
 // VerifyOpts allows for customizing the functionality of VerifyAttestation.
 type VerifyOpts struct {
@@ -42,6 +45,21 @@ type VerifyOpts struct {
 	// TPMs signed by that CA will be trusted.
 	TrustedRootCerts  []*x509.Certificate
 	IntermediateCerts []*x509.Certificate
+}
+
+// TODO: Change int64 fields to uint64 when compatible with ASN1 parsing.
+type gceSecurityProperties struct {
+	SecurityVersion int64 `asn1:"optional"`
+	IsProduction    bool  `asn1:"optional"`
+}
+
+type gceInstanceInfo struct {
+	Zone               string `asn1:"utf8"`
+	ProjectNumber      int64
+	ProjectID          string `asn1:"utf8"`
+	InstanceID         int64
+	InstanceName       string                `asn1:"utf8"`
+	SecurityProperties gceSecurityProperties `asn1:"optional"`
 }
 
 // VerifyAttestation performs the following checks on an Attestation:
@@ -73,9 +91,11 @@ func VerifyAttestation(attestation *pb.Attestation, opts VerifyOpts) (*pb.Machin
 	if err != nil {
 		return nil, fmt.Errorf("attestation intermediates: %w", err)
 	}
+
 	opts.IntermediateCerts = append(opts.IntermediateCerts, certs...)
 
-	if err := checkAKTrusted(akPubKey, attestation.GetAkCert(), opts); err != nil {
+	machineState, err := validateAK(akPubKey, attestation.GetAkCert(), opts)
+	if err != nil {
 		return nil, fmt.Errorf("failed to validate AK: %w", err)
 	}
 
@@ -111,8 +131,6 @@ func VerifyAttestation(attestation *pb.Attestation, opts VerifyOpts) (*pb.Machin
 			continue
 		}
 
-		proto.Merge(celState, state)
-
 		// Verify the PCR hash algorithm. We have this check here (instead of at
 		// the start of the loop) so that the user gets a "SHA-1 not supported"
 		// error only if allowing SHA-1 support would actually allow the log
@@ -123,7 +141,10 @@ func VerifyAttestation(attestation *pb.Attestation, opts VerifyOpts) (*pb.Machin
 			continue
 		}
 
-		return celState, nil
+		proto.Merge(machineState, celState)
+		proto.Merge(machineState, state)
+
+		return machineState, nil
 	}
 
 	if lastErr != nil {
@@ -132,37 +153,76 @@ func VerifyAttestation(attestation *pb.Attestation, opts VerifyOpts) (*pb.Machin
 	return nil, fmt.Errorf("attestation does not contain a supported quote")
 }
 
+func getInstanceInfo(extensions []pkix.Extension) (*pb.GCEInstanceInfo, error) {
+	var rawInfo []byte
+	for _, ext := range extensions {
+		if ext.Id.Equal(cloudComputeInstanceIdentifierOID) {
+			rawInfo = ext.Value
+			break
+		}
+	}
+
+	// If GCE Instance Info extension is not found.
+	if len(rawInfo) == 0 {
+		return nil, nil
+	}
+
+	info := gceInstanceInfo{}
+	if _, err := asn1.Unmarshal(rawInfo, &info); err != nil {
+		return nil, fmt.Errorf("failed to parse GCE Instance Information Extension: %w", err)
+	}
+
+	// TODO: Remove when fields are changed to uint64.
+	if info.ProjectNumber < 0 || info.InstanceID < 0 || info.SecurityProperties.SecurityVersion < 0 {
+		return nil, fmt.Errorf("negative integer fields found in GCE Instance Information Extension")
+	}
+
+	// Check production.
+	if !info.SecurityProperties.IsProduction {
+		return nil, nil
+	}
+
+	return &pb.GCEInstanceInfo{
+		Zone:          info.Zone,
+		ProjectId:     info.ProjectID,
+		ProjectNumber: uint64(info.ProjectNumber),
+		InstanceName:  info.InstanceName,
+		InstanceId:    uint64(info.InstanceID),
+	}, nil
+}
+
 // Checks if the provided AK public key can be trusted
-func checkAKTrusted(ak crypto.PublicKey, akCertBytes []byte, opts VerifyOpts) error {
+func validateAK(ak crypto.PublicKey, akCertBytes []byte, opts VerifyOpts) (*pb.MachineState, error) {
 	checkPub := len(opts.TrustedAKs) > 0
 	checkCert := opts.TrustedRootCerts != nil
 	if !checkPub && !checkCert {
-		return fmt.Errorf("no trust mechanism provided, either use TrustedAKs or TrustedRootCerts")
+		return nil, fmt.Errorf("no trust mechanism provided, either use TrustedAKs or TrustedRootCerts")
 	}
 	if checkPub && checkCert {
-		return fmt.Errorf("multiple trust mechanisms provided, only use one of TrustedAKs or TrustedRootCerts")
+		return nil, fmt.Errorf("multiple trust mechanisms provided, only use one of TrustedAKs or TrustedRootCerts")
 	}
 
 	// Check against known AKs
 	if checkPub {
 		for _, trusted := range opts.TrustedAKs {
 			if internal.PubKeysEqual(ak, trusted) {
-				return nil
+				return &pb.MachineState{}, nil
 			}
 		}
-		return fmt.Errorf("public key is not trusted")
+		return nil, fmt.Errorf("public key is not trusted")
 	}
 
 	// Check if the AK Cert chains to a trusted root
 	if len(akCertBytes) == 0 {
-		return errors.New("no certificate provided in attestation")
+		return nil, errors.New("no certificate provided in attestation")
 	}
 	akCert, err := x509.ParseCertificate(akCertBytes)
 	if err != nil {
-		return fmt.Errorf("failed to parse certificate: %w", err)
+		return nil, fmt.Errorf("failed to parse certificate: %w", err)
 	}
+
 	if !internal.PubKeysEqual(ak, akCert.PublicKey) {
-		return fmt.Errorf("mismatch between public key and certificate")
+		return nil, fmt.Errorf("mismatch between public key and certificate")
 	}
 
 	// We manually handle the SAN extension because x509 marks it unhandled if
@@ -188,9 +248,15 @@ func checkAKTrusted(ak crypto.PublicKey, akCertBytes []byte, opts VerifyOpts) er
 		KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsage(x509.ExtKeyUsageAny)},
 	}
 	if _, err := akCert.Verify(x509Opts); err != nil {
-		return fmt.Errorf("failed to verify certificate against trusted roots: %v", err)
+		return nil, fmt.Errorf("failed to verify certificate against trusted roots: %v", err)
 	}
-	return nil
+
+	instanceInfo, err := getInstanceInfo(akCert.Extensions)
+	if err != nil {
+		return nil, fmt.Errorf("error getting instance info: %v", err)
+	}
+
+	return &pb.MachineState{Platform: &pb.PlatformState{InstanceInfo: instanceInfo}}, nil
 }
 
 func checkHashAlgSupported(hash tpm2.Algorithm, opts VerifyOpts) error {

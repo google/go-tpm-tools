@@ -6,6 +6,8 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
+	"crypto/x509/pkix"
+	"encoding/asn1"
 	"fmt"
 	"io"
 	"strings"
@@ -607,5 +609,180 @@ func TestVerifyFailsWithMalformedIntermediatesInAttestation(t *testing.T) {
 		TrustedRootCerts: GceEKRoots,
 	}); err == nil {
 		t.Error("expected error when calling VerifyAttestation with malformed intermediate")
+	}
+}
+
+func TestGetInstanceInfo(t *testing.T) {
+	expectedInstanceInfo := &attestpb.GCEInstanceInfo{
+		Zone:          "expected zone",
+		ProjectId:     "expected project id",
+		ProjectNumber: 0,
+		InstanceName:  "expected instance name",
+		InstanceId:    1,
+	}
+
+	extStruct := gceInstanceInfo{
+		Zone:          expectedInstanceInfo.Zone,
+		ProjectID:     expectedInstanceInfo.ProjectId,
+		ProjectNumber: int64(expectedInstanceInfo.ProjectNumber),
+		InstanceName:  expectedInstanceInfo.InstanceName,
+		InstanceID:    int64(expectedInstanceInfo.InstanceId),
+		SecurityProperties: gceSecurityProperties{
+			SecurityVersion: 0,
+			IsProduction:    true,
+		},
+	}
+
+	marshaledExt, err := asn1.Marshal(extStruct)
+	if err != nil {
+		t.Fatalf("Error marshaling test extension: %v", err)
+	}
+
+	ext := []pkix.Extension{{
+		Id:    cloudComputeInstanceIdentifierOID,
+		Value: marshaledExt,
+	}}
+
+	instanceInfo, err := getInstanceInfo(ext)
+	if err != nil {
+		t.Fatalf("getInstanceInfo returned with error: %v", err)
+	}
+	if instanceInfo == nil {
+		t.Fatal("getInstanceInfo returned nil instance info.")
+	}
+
+	if !proto.Equal(instanceInfo, expectedInstanceInfo) {
+		t.Errorf("getInstanceInfo did not return expected instance info: got %v, want %v", instanceInfo, expectedInstanceInfo)
+	}
+}
+
+func TestGetInstanceInfoReturnsNil(t *testing.T) {
+	extStruct := gceInstanceInfo{
+		Zone:               "zone",
+		ProjectID:          "project id",
+		ProjectNumber:      0,
+		InstanceName:       "instance name",
+		InstanceID:         1,
+		SecurityProperties: gceSecurityProperties{IsProduction: false},
+	}
+
+	marshaledExt, err := asn1.Marshal(extStruct)
+	if err != nil {
+		t.Fatalf("Error marshaling test extension: %v", err)
+	}
+
+	testcases := []struct {
+		name string
+		ext  []pkix.Extension
+	}{
+		{
+			name: "No extension with expected OID",
+			ext: []pkix.Extension{{
+				Id:    asn1.ObjectIdentifier([]int{1, 2, 3, 4}),
+				Value: []byte("fake extension"),
+			}},
+		},
+		{
+			name: "IsProduction is false",
+			ext: []pkix.Extension{{
+				Id:    cloudComputeInstanceIdentifierOID,
+				Value: marshaledExt,
+			}},
+		},
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			instanceInfo, err := getInstanceInfo(tc.ext)
+			if err != nil {
+				t.Fatalf("getInstanceInfo returned with error: %v", err)
+			}
+
+			if instanceInfo != nil {
+				t.Error("getInstanceInfo returned instance information, expected nil")
+			}
+		})
+	}
+}
+
+func TestGetInstanceInfoError(t *testing.T) {
+	testcases := []struct {
+		name         string
+		instanceInfo *gceInstanceInfo
+	}{
+		{
+			name:         "Extension value is not valid ASN1",
+			instanceInfo: nil,
+		},
+		{
+			name: "Negative ProjectNumber",
+			instanceInfo: &gceInstanceInfo{
+				Zone:               "zone",
+				ProjectID:          "project id",
+				ProjectNumber:      -1,
+				InstanceName:       "instance name",
+				InstanceID:         1,
+				SecurityProperties: gceSecurityProperties{IsProduction: false},
+			},
+		},
+		{
+			name: "Negative InstanceID",
+			instanceInfo: &gceInstanceInfo{
+				Zone:               "zone",
+				ProjectID:          "project id",
+				ProjectNumber:      0,
+				InstanceName:       "instance name",
+				InstanceID:         -1,
+				SecurityProperties: gceSecurityProperties{IsProduction: false},
+			},
+		},
+		{
+			name: "Negative SecurityVersion",
+			instanceInfo: &gceInstanceInfo{
+				Zone:          "zone",
+				ProjectID:     "project id",
+				ProjectNumber: 0,
+				InstanceName:  "instance name",
+				InstanceID:    1,
+				SecurityProperties: gceSecurityProperties{
+					SecurityVersion: -1,
+					IsProduction:    false,
+				},
+			},
+		},
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			var extensionVal []byte
+			var err error
+			if tc.instanceInfo != nil {
+				extensionVal, err = asn1.Marshal(*tc.instanceInfo)
+				if err != nil {
+					t.Fatalf("Error marshaling test extension: %v", err)
+				}
+			} else {
+				extensionVal = []byte("Not a valid ASN1 extension.")
+			}
+
+			_, err = getInstanceInfo([]pkix.Extension{{
+				Id:    cloudComputeInstanceIdentifierOID,
+				Value: extensionVal,
+			}})
+
+			if err == nil {
+				t.Error("getInstanceInfo returned successfully, expected error")
+			}
+		})
+	}
+
+	ext := []pkix.Extension{{
+		Id:    cloudComputeInstanceIdentifierOID,
+		Value: []byte("not valid ASN1"),
+	}}
+
+	_, err := getInstanceInfo(ext)
+	if err == nil {
+		t.Error("getInstanceInfo returned successfully, expected error")
 	}
 }
