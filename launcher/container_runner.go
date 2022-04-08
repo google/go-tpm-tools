@@ -241,13 +241,13 @@ func (r *ContainerRunner) measureContainerClaims(ctx context.Context) error {
 }
 
 func getTTL(token []byte) (time.Duration, error) {
-	claims := &jwt.StandardClaims{}
+	claims := &jwt.RegisteredClaims{}
 	_, _, err := new(jwt.Parser).ParseUnverified(string(token), claims)
 	if err != nil {
 		return 0, fmt.Errorf("failed to parse token: %w", err)
 	}
 
-	return time.Until(time.Unix(claims.ExpiresAt, 0)), nil
+	return time.Until(claims.ExpiresAt.Time), nil
 }
 
 func (r *ContainerRunner) refreshToken(ctx context.Context) (time.Duration, error) {

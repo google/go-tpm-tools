@@ -46,12 +46,12 @@ func createJWTToken(t *testing.T, ttl time.Duration) []byte {
 		t.Fatalf("Error creating token key: %v", err)
 	}
 
-	now := jwt.TimeFunc().Unix()
-	claims := &jwt.StandardClaims{
-		Id:        "test token",
-		IssuedAt:  now,
-		NotBefore: now,
-		ExpiresAt: now + int64(ttl.Seconds()),
+	now := jwt.TimeFunc()
+	claims := &jwt.RegisteredClaims{
+		ID:        "test token",
+		IssuedAt:  jwt.NewNumericDate(now),
+		NotBefore: jwt.NewNumericDate(now),
+		ExpiresAt: jwt.NewNumericDate(now.Add(ttl)),
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
