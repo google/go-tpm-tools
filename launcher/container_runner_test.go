@@ -225,8 +225,19 @@ func TestTokenRefresh(t *testing.T) {
 		},
 	}
 
+	// Check that token has not been refreshed yet.
+	data, err = os.ReadFile(filepath)
+	if err != nil {
+		t.Fatalf("Failed to read from %s: %v", filepath, err)
+	}
+
+	if !bytes.Equal(data, expectedToken) {
+		t.Errorf("Token unexpectedly refreshed: got %v, want %v", data, expectedRefreshedToken)
+	}
+
 	time.Sleep(ttl)
 
+	// Check that token has changed.
 	data, err = os.ReadFile(filepath)
 	if err != nil {
 		t.Fatalf("Failed to read from %s: %v", filepath, err)

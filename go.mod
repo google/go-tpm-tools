@@ -11,7 +11,6 @@ require (
 )
 
 require (
-	github.com/golang-jwt/jwt v3.2.2+incompatible // indirect
 	github.com/google/certificate-transparency-go v1.1.2 // indirect
 	github.com/google/go-tspi v0.2.1-0.20190423175329-115dea689aad // indirect
 	golang.org/x/crypto v0.0.0-20210817164053-32db794688a5 // indirect

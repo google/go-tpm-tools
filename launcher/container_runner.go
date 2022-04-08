@@ -58,10 +58,22 @@ const (
 	snapshotID  = "tee-snapshot"
 )
 
+const defaultRefreshRatio = 0.9
+
 // Given a token TTL, calculates the duration to wait before refreshing the token.
 // Interval is shorter than TTL to ensure refresh succeeds before the previous token expires.
-func refreshInterval(ttl time.Duration) time.Duration {
-	return ttl * 9 / 10
+func refreshInterval(ttl time.Duration, refreshRatio float64) time.Duration {
+	if refreshRatio > 1 {
+		log.Printf("refresh ratio cannot exceed 1, defaulting to %v\n", defaultRefreshRatio)
+		refreshRatio = defaultRefreshRatio
+	}
+
+	if refreshRatio <= 0 {
+		log.Printf("refresh ratio must be positive, defaulting to %v\n", defaultRefreshRatio)
+		refreshRatio = defaultRefreshRatio
+	}
+
+	return time.Duration(float64(ttl) * refreshRatio)
 }
 
 // NewRunner returns a runner.
@@ -238,18 +250,33 @@ func getTTL(token []byte) (time.Duration, error) {
 	return time.Until(time.Unix(claims.ExpiresAt, 0)), nil
 }
 
-func (r *ContainerRunner) fetchAndWriteToken(ctx context.Context) error {
-	// Create hostTokenPath directory. Should come before NewTask.
+func (r *ContainerRunner) refreshToken(ctx context.Context) (time.Duration, error) {
 	token, err := r.attestAgent.Attest(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to retrieve attestation service token: %v", err)
+		return 0, fmt.Errorf("failed to retrieve attestation service token: %v", err)
 	}
 
 	filepath := path.Join(HostTokenPath, attestationVerifierTokenFile)
+	if err = os.WriteFile(filepath, token, 0644); err != nil {
+		return 0, fmt.Errorf("failed to write token to continer mount source point: %v", err)
+	}
 
 	ttl, err := getTTL(token)
 	if err != nil {
-		return fmt.Errorf("failed to get token TTL: %v", err)
+		return 0, fmt.Errorf("failed to get token TTL: %v", err)
+	}
+
+	return refreshInterval(ttl, defaultRefreshRatio), nil
+}
+
+func (r *ContainerRunner) fetchAndWriteToken(ctx context.Context) error {
+	if err := os.MkdirAll(HostTokenPath, 0744); err != nil {
+		log.Fatal(err)
+	}
+
+	duration, err := r.refreshToken(ctx)
+	if err != nil {
+		return err
 	}
 
 	// If timer is already configured.
@@ -258,7 +285,7 @@ func (r *ContainerRunner) fetchAndWriteToken(ctx context.Context) error {
 	}
 
 	// Set a timer to refresh the token before it expires.
-	r.tokenRefresher.timer = time.NewTimer(refreshInterval(ttl))
+	r.tokenRefresher.timer = time.NewTimer(duration)
 	r.tokenRefresher.done = make(chan bool)
 	go func() {
 		for {
@@ -267,36 +294,16 @@ func (r *ContainerRunner) fetchAndWriteToken(ctx context.Context) error {
 				return
 			case <-r.tokenRefresher.timer.C:
 				// Refresh token.
-				token, err := r.attestAgent.Attest(ctx)
+				duration, err := r.refreshToken(ctx)
 				if err != nil {
-					log.Printf("failed to refresh attestation service token: %v\n", err)
+					log.Printf("failed to refresh attestation service token: %v", err)
 					continue
 				}
 
-				ttl, err := getTTL(token)
-				if err != nil {
-					log.Printf("failed to get token TTL: %v", err)
-					continue
-				}
-
-				if err = os.WriteFile(filepath, token, 0644); err != nil {
-					log.Printf("failed to write token to container mount source point: %v", err)
-					continue
-				}
-
-				r.tokenRefresher.timer.Reset(refreshInterval(ttl))
+				r.tokenRefresher.timer.Reset(duration)
 			}
 		}
 	}()
-
-	// Write OIDC token for container.
-	if err := os.MkdirAll(HostTokenPath, 0744); err != nil {
-		log.Fatal(err)
-	}
-
-	if err = os.WriteFile(filepath, token, 0644); err != nil {
-		return fmt.Errorf("failed to write token to continer mount source point: %v", err)
-	}
 
 	return nil
 }
