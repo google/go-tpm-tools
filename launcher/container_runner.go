@@ -234,7 +234,7 @@ func getTTL(token []byte) (time.Duration, error) {
 
 	now := time.Now()
 	if !now.Before(claims.ExpiresAt.Time) {
-		return 0, errors.New("Token is expired.")
+		return 0, errors.New("token is expired")
 	}
 
 	return time.Until(claims.ExpiresAt.Time), nil
