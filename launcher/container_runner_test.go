@@ -83,9 +83,115 @@ func TestGetTTL(t *testing.T) {
 }
 
 func TestGetTTLError(t *testing.T) {
-	_, err := getTTL([]byte("not a valid token"))
-	if err == nil {
-		t.Error("getTTL returned success, expected error.")
+	testcases := []struct {
+		name  string
+		token []byte
+	}{
+		{
+			name:  "Invalid token",
+			token: []byte("not a valid token"),
+		},
+		{
+			name:  "Expired token",
+			token: createJWTToken(t, -5*time.Second),
+		},
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := getTTL(tc.token); err == nil {
+				t.Error("getTTL returned success, expected error.")
+			}
+		})
+	}
+}
+
+func TestRefreshToken(t *testing.T) {
+	ctx := context.Background()
+
+	ttl := 5 * time.Second
+	expectedToken := createJWTToken(t, ttl)
+
+	runner := ContainerRunner{
+		attestAgent: &fakeAttestationAgent{
+			attestFunc: func(context.Context) ([]byte, error) {
+				return expectedToken, nil
+			},
+		},
+	}
+
+	if err := os.MkdirAll(HostTokenPath, 0744); err != nil {
+		t.Fatalf("Error creating host token path directory: %v", err)
+	}
+
+	refreshTime, err := runner.refreshToken(ctx, defaultRefreshMultiplier)
+	if err != nil {
+		t.Fatalf("refreshToken returned with error: %v", err)
+	}
+
+	filepath := path.Join(HostTokenPath, attestationVerifierTokenFile)
+	data, err := os.ReadFile(filepath)
+	if err != nil {
+		t.Fatalf("Failed to read from %s: %v", filepath, err)
+	}
+
+	if !bytes.Equal(data, expectedToken) {
+		t.Errorf("Initial token written to file does not match expected token: got %v, want %v", data, expectedToken)
+	}
+
+	// Expect refreshTime to be no greater than expectedTTL * refreshRatio.
+	if refreshTime >= time.Duration(float64(ttl)*defaultRefreshMultiplier) {
+		t.Errorf("Refresh time cannot exceed ttl*refreshRato: got %v, expect no greater than %v", refreshTime, time.Duration(float64(ttl)*defaultRefreshMultiplier))
+	}
+}
+
+func TestRefreshTokenError(t *testing.T) {
+	testcases := []struct {
+		name              string
+		attestAgent       *fakeAttestationAgent
+		refreshMultiplier float64
+	}{
+		{
+			name: "Attest fails",
+			attestAgent: &fakeAttestationAgent{
+				attestFunc: func(context.Context) ([]byte, error) {
+					return nil, errors.New("attest error")
+				},
+			},
+			refreshMultiplier: defaultRefreshMultiplier,
+		},
+		{
+			name: "refreshMultiplier is greater than 1",
+			attestAgent: &fakeAttestationAgent{
+				attestFunc: func(context.Context) ([]byte, error) {
+					return createJWTToken(t, 5*time.Second), nil
+				},
+			},
+			refreshMultiplier: 2.0,
+		},
+		{
+			name: "refreshMultiplier is negative",
+			attestAgent: &fakeAttestationAgent{
+				attestFunc: func(context.Context) ([]byte, error) {
+					return createJWTToken(t, 5*time.Second), nil
+				},
+			},
+			refreshMultiplier: -1.0,
+		},
+	}
+
+	if err := os.MkdirAll(HostTokenPath, 0744); err != nil {
+		t.Fatalf("Error creating host token path directory: %v", err)
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			runner := ContainerRunner{attestAgent: tc.attestAgent}
+
+			if _, err := runner.refreshToken(context.Background(), tc.refreshMultiplier); err == nil {
+				t.Error("refreshToken succeeded, expected error.")
+			}
+		})
 	}
 }
 
@@ -179,7 +285,7 @@ func TestTokenIsNotChangedIfRefreshFails(t *testing.T) {
 	}
 }
 
-func TestTokenRefresh(t *testing.T) {
+func TestFetchAndWriteTokenWithTokenRefresh(t *testing.T) {
 	ctx := context.Background()
 
 	expectedToken := createJWTToken(t, 5*time.Second)
