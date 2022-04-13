@@ -242,9 +242,9 @@ func getTTL(token []byte) (time.Duration, error) {
 
 func (r *ContainerRunner) refreshToken(ctx context.Context, refreshMultiplier float64) (time.Duration, error) {
 	if refreshMultiplier > 1 {
-		return 0, fmt.Errorf("refresh multiplier cannot exceed 1, got %v\n", refreshMultiplier)
+		return 0, fmt.Errorf("refresh multiplier cannot exceed 1, got %v", refreshMultiplier)
 	} else if refreshMultiplier <= 0 {
-		return 0, fmt.Errorf("refresh multiplier must be positive, got %v\n", refreshMultiplier)
+		return 0, fmt.Errorf("refresh multiplier must be positive, got %v", refreshMultiplier)
 	}
 
 	token, err := r.attestAgent.Attest(ctx)
