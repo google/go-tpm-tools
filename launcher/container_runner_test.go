@@ -118,13 +118,14 @@ func TestRefreshToken(t *testing.T) {
 				return expectedToken, nil
 			},
 		},
+		refresher: tokenRefresher{refreshMultiplier: defaultRefreshMultiplier},
 	}
 
 	if err := os.MkdirAll(HostTokenPath, 0744); err != nil {
 		t.Fatalf("Error creating host token path directory: %v", err)
 	}
 
-	refreshTime, err := runner.refreshToken(ctx, defaultRefreshMultiplier)
+	refreshTime, err := runner.refreshToken(ctx)
 	if err != nil {
 		t.Fatalf("refreshToken returned with error: %v", err)
 	}
@@ -146,52 +147,21 @@ func TestRefreshToken(t *testing.T) {
 }
 
 func TestRefreshTokenError(t *testing.T) {
-	testcases := []struct {
-		name              string
-		attestAgent       *fakeAttestationAgent
-		refreshMultiplier float64
-	}{
-		{
-			name: "Attest fails",
-			attestAgent: &fakeAttestationAgent{
-				attestFunc: func(context.Context) ([]byte, error) {
-					return nil, errors.New("attest error")
-				},
-			},
-			refreshMultiplier: defaultRefreshMultiplier,
-		},
-		{
-			name: "refreshMultiplier is greater than 1",
-			attestAgent: &fakeAttestationAgent{
-				attestFunc: func(context.Context) ([]byte, error) {
-					return createJWTToken(t, 5*time.Second), nil
-				},
-			},
-			refreshMultiplier: 2.0,
-		},
-		{
-			name: "refreshMultiplier is negative",
-			attestAgent: &fakeAttestationAgent{
-				attestFunc: func(context.Context) ([]byte, error) {
-					return createJWTToken(t, 5*time.Second), nil
-				},
-			},
-			refreshMultiplier: -1.0,
-		},
-	}
-
 	if err := os.MkdirAll(HostTokenPath, 0744); err != nil {
 		t.Fatalf("Error creating host token path directory: %v", err)
 	}
 
-	for _, tc := range testcases {
-		t.Run(tc.name, func(t *testing.T) {
-			runner := ContainerRunner{attestAgent: tc.attestAgent}
+	runner := ContainerRunner{
+		attestAgent: &fakeAttestationAgent{
+			attestFunc: func(context.Context) ([]byte, error) {
+				return nil, errors.New("attest error")
+			},
+		},
+		refresher: tokenRefresher{refreshMultiplier: defaultRefreshMultiplier},
+	}
 
-			if _, err := runner.refreshToken(context.Background(), tc.refreshMultiplier); err == nil {
-				t.Error("refreshToken succeeded, expected error.")
-			}
-		})
+	if _, err := runner.refreshToken(context.Background()); err == nil {
+		t.Error("refreshToken succeeded, expected error.")
 	}
 }
 
@@ -208,17 +178,17 @@ func TestFetchAndWriteTokenSucceeds(t *testing.T) {
 		},
 	}
 	defer func() {
-		if runner.tokenRefresher.timer != nil {
+		if runner.refresher.timer != nil {
 			// Drain the timer channel if expired.
-			if !runner.tokenRefresher.timer.Stop() {
-				<-runner.tokenRefresher.timer.C
+			if !runner.refresher.timer.Stop() {
+				<-runner.refresher.timer.C
 			}
 
-			runner.tokenRefresher.done <- true
+			runner.refresher.done <- true
 		}
 	}()
 
-	if err := runner.fetchAndWriteToken(ctx); err != nil {
+	if err := runner.fetchAndWriteToken(ctx, defaultRefreshMultiplier); err != nil {
 		t.Fatalf("fetchAndWriteToken failed: %v", err)
 	}
 
@@ -230,6 +200,42 @@ func TestFetchAndWriteTokenSucceeds(t *testing.T) {
 
 	if !bytes.Equal(data, expectedToken) {
 		t.Errorf("Token written to file does not match expected token: got %v, want %v", data, expectedToken)
+	}
+}
+
+func TestFetchAndWriteTokenError(t *testing.T) {
+	testcases := []struct {
+		name              string
+		refreshMultiplier float64
+	}{
+		{
+			name:              "refreshMultiplier is greater than 1",
+			refreshMultiplier: 2.0,
+		},
+		{
+			name:              "refreshMultiplier is negative",
+			refreshMultiplier: -1.0,
+		},
+	}
+
+	if err := os.MkdirAll(HostTokenPath, 0744); err != nil {
+		t.Fatalf("Error creating host token path directory: %v", err)
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			runner := ContainerRunner{
+				attestAgent: &fakeAttestationAgent{
+					attestFunc: func(context.Context) ([]byte, error) {
+						return createJWTToken(t, 5*time.Second), nil
+					},
+				},
+			}
+
+			if err := runner.fetchAndWriteToken(context.Background(), tc.refreshMultiplier); err == nil {
+				t.Error("fetchAndWriteToken succeeded, expected error.")
+			}
+		})
 	}
 }
 
@@ -250,13 +256,13 @@ func TestTokenIsNotChangedIfRefreshFails(t *testing.T) {
 		attestAgent: &fakeAttestationAgent{attestFunc: successfulAttestFunc},
 	}
 	defer func() {
-		if runner.tokenRefresher.timer != nil {
-			runner.tokenRefresher.timer.Stop()
-			runner.tokenRefresher.done <- true
+		if runner.refresher.timer != nil {
+			runner.refresher.timer.Stop()
+			runner.refresher.done <- true
 		}
 	}()
 
-	if err := runner.fetchAndWriteToken(ctx); err != nil {
+	if err := runner.fetchAndWriteToken(ctx, defaultRefreshMultiplier); err != nil {
 		t.Fatalf("fetchAndWriteToken failed: %v", err)
 	}
 
@@ -300,16 +306,16 @@ func TestFetchAndWriteTokenWithTokenRefresh(t *testing.T) {
 		},
 	}
 	defer func() {
-		if runner.tokenRefresher.timer != nil {
+		if runner.refresher.timer != nil {
 			// Drain the timer channel if expired.
-			if !runner.tokenRefresher.timer.Stop() {
-				<-runner.tokenRefresher.timer.C
+			if !runner.refresher.timer.Stop() {
+				<-runner.refresher.timer.C
 			}
-			runner.tokenRefresher.done <- true
+			runner.refresher.done <- true
 		}
 	}()
 
-	if err := runner.fetchAndWriteToken(ctx); err != nil {
+	if err := runner.fetchAndWriteToken(ctx, defaultRefreshMultiplier); err != nil {
 		t.Fatalf("fetchAndWriteToken failed: %v", err)
 	}
 

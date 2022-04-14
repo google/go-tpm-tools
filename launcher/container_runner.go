@@ -34,16 +34,19 @@ type attestationAgent interface {
 	Attest(context.Context) ([]byte, error)
 }
 
+type tokenRefresher struct {
+	timer             *time.Timer
+	done              chan bool
+	refreshMultiplier float64
+}
+
 // ContainerRunner contains information about the container settings
 type ContainerRunner struct {
-	container      containerd.Container
-	launchSpec     spec.LauncherSpec
-	attestConn     *grpc.ClientConn
-	attestAgent    attestationAgent
-	tokenRefresher struct {
-		timer *time.Timer
-		done  chan bool
-	}
+	container   containerd.Container
+	launchSpec  spec.LauncherSpec
+	attestConn  *grpc.ClientConn
+	attestAgent attestationAgent
+	refresher   tokenRefresher
 }
 
 const (
@@ -240,13 +243,7 @@ func getTTL(token []byte) (time.Duration, error) {
 	return time.Until(claims.ExpiresAt.Time), nil
 }
 
-func (r *ContainerRunner) refreshToken(ctx context.Context, refreshMultiplier float64) (time.Duration, error) {
-	if refreshMultiplier > 1 {
-		return 0, fmt.Errorf("refresh multiplier cannot exceed 1, got %v", refreshMultiplier)
-	} else if refreshMultiplier <= 0 {
-		return 0, fmt.Errorf("refresh multiplier must be positive, got %v", refreshMultiplier)
-	}
-
+func (r *ContainerRunner) refreshToken(ctx context.Context) (time.Duration, error) {
 	token, err := r.attestAgent.Attest(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("failed to retrieve attestation service token: %v", err)
@@ -262,41 +259,49 @@ func (r *ContainerRunner) refreshToken(ctx context.Context, refreshMultiplier fl
 		return 0, fmt.Errorf("failed to get token TTL: %v", err)
 	}
 
-	return time.Duration(float64(ttl) * refreshMultiplier), nil
+	return time.Duration(float64(ttl) * r.refresher.refreshMultiplier), nil
 }
 
-func (r *ContainerRunner) fetchAndWriteToken(ctx context.Context) error {
+func (r *ContainerRunner) fetchAndWriteToken(ctx context.Context, refreshMultiplier float64) error {
+	if refreshMultiplier > 1 {
+		return fmt.Errorf("refresh multiplier cannot exceed 1, got %v", refreshMultiplier)
+	} else if refreshMultiplier <= 0 {
+		return fmt.Errorf("refresh multiplier must be positive, got %v", refreshMultiplier)
+	}
+
+	r.refresher.refreshMultiplier = refreshMultiplier
+
 	if err := os.MkdirAll(HostTokenPath, 0744); err != nil {
 		log.Fatal(err)
 	}
 
-	duration, err := r.refreshToken(ctx, defaultRefreshMultiplier)
+	duration, err := r.refreshToken(ctx)
 	if err != nil {
 		return err
 	}
 
 	// If timer is already configured.
-	if r.tokenRefresher.timer != nil {
-		r.tokenRefresher.timer.Stop()
+	if r.refresher.timer != nil {
+		r.refresher.timer.Stop()
 	}
 
 	// Set a timer to refresh the token before it expires.
-	r.tokenRefresher.timer = time.NewTimer(duration)
-	r.tokenRefresher.done = make(chan bool)
+	r.refresher.timer = time.NewTimer(duration)
+	r.refresher.done = make(chan bool)
 	go func() {
 		for {
 			select {
-			case <-r.tokenRefresher.done:
+			case <-r.refresher.done:
 				return
-			case <-r.tokenRefresher.timer.C:
+			case <-r.refresher.timer.C:
 				// Refresh token.
-				duration, err := r.refreshToken(ctx, defaultRefreshMultiplier)
+				duration, err := r.refreshToken(ctx)
 				if err != nil {
 					log.Printf("failed to refresh attestation service token: %v", err)
 					continue
 				}
 
-				r.tokenRefresher.timer.Reset(duration)
+				r.refresher.timer.Reset(duration)
 			}
 		}
 	}()
@@ -312,7 +317,7 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		return fmt.Errorf("failed to measure container claims: %v", err)
 	}
 
-	if err := r.fetchAndWriteToken(ctx); err != nil {
+	if err := r.fetchAndWriteToken(ctx, defaultRefreshMultiplier); err != nil {
 		return fmt.Errorf("failed to fetch and write OIDC token: %v", err)
 	}
 
@@ -399,8 +404,8 @@ func (r *ContainerRunner) Close(ctx context.Context) {
 	r.attestConn.Close()
 
 	// Stop token refresh goroutine.
-	if r.tokenRefresher.timer != nil {
-		r.tokenRefresher.timer.Stop()
-		r.tokenRefresher.done <- true
+	if r.refresher.timer != nil {
+		r.refresher.timer.Stop()
+		r.refresher.done <- true
 	}
 }
