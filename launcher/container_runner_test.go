@@ -63,51 +63,9 @@ func createJWTToken(t *testing.T, ttl time.Duration) []byte {
 	return []byte(signed)
 }
 
-func TestGetTTL(t *testing.T) {
-	expectedTTL := 5 * time.Second
-	token := createJWTToken(t, expectedTTL)
-
-	ttl, err := getTTL(token)
-	if err != nil {
-		t.Fatalf("getTTL failed: %v", err)
-	}
-
-	// Expect TTL to be greater than 0 and no greater than the expected TTL.
-	if ttl <= 0 {
-		t.Errorf("expect TTL to be greater than 0, got %v", ttl)
-	}
-
-	if ttl > expectedTTL {
-		t.Errorf("TTL exceeds the expected TTL: got %v, want no greater than %v", ttl, expectedTTL)
-	}
-}
-
-func TestGetTTLError(t *testing.T) {
-	testcases := []struct {
-		name  string
-		token []byte
-	}{
-		{
-			name:  "Invalid token",
-			token: []byte("not a valid token"),
-		},
-		{
-			name:  "Expired token",
-			token: createJWTToken(t, -5*time.Second),
-		},
-	}
-
-	for _, tc := range testcases {
-		t.Run(tc.name, func(t *testing.T) {
-			if _, err := getTTL(tc.token); err == nil {
-				t.Error("getTTL returned success, expected error.")
-			}
-		})
-	}
-}
-
 func TestRefreshToken(t *testing.T) {
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	ttl := 5 * time.Second
 	expectedToken := createJWTToken(t, ttl)
@@ -118,7 +76,6 @@ func TestRefreshToken(t *testing.T) {
 				return expectedToken, nil
 			},
 		},
-		refresher: tokenRefresher{refreshMultiplier: defaultRefreshMultiplier},
 	}
 
 	if err := os.MkdirAll(HostTokenPath, 0744); err != nil {
@@ -151,22 +108,45 @@ func TestRefreshTokenError(t *testing.T) {
 		t.Fatalf("Error creating host token path directory: %v", err)
 	}
 
-	runner := ContainerRunner{
-		attestAgent: &fakeAttestationAgent{
-			attestFunc: func(context.Context) ([]byte, error) {
-				return nil, errors.New("attest error")
+	testcases := []struct {
+		name  string
+		agent *fakeAttestationAgent
+	}{
+		{
+			name: "Attest fails",
+			agent: &fakeAttestationAgent{
+				attestFunc: func(context.Context) ([]byte, error) {
+					return nil, errors.New("attest error")
+				},
 			},
 		},
-		refresher: tokenRefresher{refreshMultiplier: defaultRefreshMultiplier},
+		{
+			name: "Attest returns expired token",
+			agent: &fakeAttestationAgent{
+				attestFunc: func(context.Context) ([]byte, error) {
+					return createJWTToken(t, -5*time.Second), nil
+				},
+			},
+		},
 	}
 
-	if _, err := runner.refreshToken(context.Background()); err == nil {
-		t.Error("refreshToken succeeded, expected error.")
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			runner := ContainerRunner{
+				attestAgent: tc.agent,
+			}
+
+			if _, err := runner.refreshToken(context.Background()); err == nil {
+				t.Error("refreshToken succeeded, expected error.")
+			}
+
+		})
 	}
 }
 
 func TestFetchAndWriteTokenSucceeds(t *testing.T) {
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	expectedToken := createJWTToken(t, 5*time.Second)
 
@@ -177,18 +157,8 @@ func TestFetchAndWriteTokenSucceeds(t *testing.T) {
 			},
 		},
 	}
-	defer func() {
-		if runner.refresher.timer != nil {
-			// Drain the timer channel if expired.
-			if !runner.refresher.timer.Stop() {
-				<-runner.refresher.timer.C
-			}
 
-			runner.refresher.done <- true
-		}
-	}()
-
-	if err := runner.fetchAndWriteToken(ctx, defaultRefreshMultiplier); err != nil {
+	if err := runner.fetchAndWriteToken(ctx); err != nil {
 		t.Fatalf("fetchAndWriteToken failed: %v", err)
 	}
 
@@ -203,44 +173,9 @@ func TestFetchAndWriteTokenSucceeds(t *testing.T) {
 	}
 }
 
-func TestFetchAndWriteTokenError(t *testing.T) {
-	testcases := []struct {
-		name              string
-		refreshMultiplier float64
-	}{
-		{
-			name:              "refreshMultiplier is greater than 1",
-			refreshMultiplier: 2.0,
-		},
-		{
-			name:              "refreshMultiplier is negative",
-			refreshMultiplier: -1.0,
-		},
-	}
-
-	if err := os.MkdirAll(HostTokenPath, 0744); err != nil {
-		t.Fatalf("Error creating host token path directory: %v", err)
-	}
-
-	for _, tc := range testcases {
-		t.Run(tc.name, func(t *testing.T) {
-			runner := ContainerRunner{
-				attestAgent: &fakeAttestationAgent{
-					attestFunc: func(context.Context) ([]byte, error) {
-						return createJWTToken(t, 5*time.Second), nil
-					},
-				},
-			}
-
-			if err := runner.fetchAndWriteToken(context.Background(), tc.refreshMultiplier); err == nil {
-				t.Error("fetchAndWriteToken succeeded, expected error.")
-			}
-		})
-	}
-}
-
 func TestTokenIsNotChangedIfRefreshFails(t *testing.T) {
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	expectedToken := createJWTToken(t, 5*time.Second)
 	ttl := 5 * time.Second
@@ -255,14 +190,8 @@ func TestTokenIsNotChangedIfRefreshFails(t *testing.T) {
 	runner := ContainerRunner{
 		attestAgent: &fakeAttestationAgent{attestFunc: successfulAttestFunc},
 	}
-	defer func() {
-		if runner.refresher.timer != nil {
-			runner.refresher.timer.Stop()
-			runner.refresher.done <- true
-		}
-	}()
 
-	if err := runner.fetchAndWriteToken(ctx, defaultRefreshMultiplier); err != nil {
+	if err := runner.fetchAndWriteToken(ctx); err != nil {
 		t.Fatalf("fetchAndWriteToken failed: %v", err)
 	}
 
@@ -292,7 +221,8 @@ func TestTokenIsNotChangedIfRefreshFails(t *testing.T) {
 }
 
 func TestFetchAndWriteTokenWithTokenRefresh(t *testing.T) {
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	expectedToken := createJWTToken(t, 5*time.Second)
 
@@ -305,17 +235,8 @@ func TestFetchAndWriteTokenWithTokenRefresh(t *testing.T) {
 			},
 		},
 	}
-	defer func() {
-		if runner.refresher.timer != nil {
-			// Drain the timer channel if expired.
-			if !runner.refresher.timer.Stop() {
-				<-runner.refresher.timer.C
-			}
-			runner.refresher.done <- true
-		}
-	}()
 
-	if err := runner.fetchAndWriteToken(ctx, defaultRefreshMultiplier); err != nil {
+	if err := runner.fetchAndWriteToken(ctx); err != nil {
 		t.Fatalf("fetchAndWriteToken failed: %v", err)
 	}
 
