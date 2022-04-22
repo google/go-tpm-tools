@@ -150,7 +150,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		container,
 		launchSpec,
 		conn,
-		CreateAttestationAgent(tpm, client.AttestationKeyECC, conn, principalFetcher),
+		CreateAttestationAgent(tpm, client.GceAttestationKeyECC, conn, principalFetcher),
 	}, nil
 }
 

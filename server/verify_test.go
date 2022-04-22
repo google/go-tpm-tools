@@ -786,3 +786,34 @@ func TestGetInstanceInfoError(t *testing.T) {
 		t.Error("getInstanceInfo returned successfully, expected error")
 	}
 }
+
+func TestGetInstanceInfoASN(t *testing.T) {
+	expectedInstanceInfo := &attestpb.GCEInstanceInfo{
+		Zone:          "us-west1-b",
+		ProjectId:     "jiankun-vm-test",
+		ProjectNumber: 620438545889,
+		InstanceName:  "jkltest42102",
+		InstanceId:    3560342035431930290,
+	}
+
+	// The payload is extract from a real AK cert, the ASN1 encoding requires gceSecurityProperties
+	// to have explicit ASN tag.
+	extPayload := []byte{48, 95, 12, 10, 117, 115, 45, 119, 101, 115, 116, 49, 45, 98, 2, 6, 0, 144, 117, 4, 229, 225, 12, 15, 106, 105, 97, 110, 107, 117, 110, 45, 118, 109, 45, 116, 101, 115, 116, 2, 8, 49, 104, 224, 55, 188, 207, 185, 178, 12, 12, 106, 107, 108, 116, 101, 115, 116, 52, 50, 49, 48, 50, 160, 32, 48, 30, 160, 3, 2, 1, 0, 161, 3, 1, 1, 255, 162, 3, 1, 1, 0, 163, 3, 1, 1, 0, 164, 3, 1, 1, 0, 165, 3, 1, 1, 0}
+
+	ext := []pkix.Extension{{
+		Id:    cloudComputeInstanceIdentifierOID,
+		Value: extPayload,
+	}}
+
+	instanceInfo, err := getInstanceInfo(ext)
+	if err != nil {
+		t.Fatalf("getInstanceInfo returned with error: %v", err)
+	}
+	if instanceInfo == nil {
+		t.Fatal("getInstanceInfo returned nil instance info.")
+	}
+
+	if !proto.Equal(instanceInfo, expectedInstanceInfo) {
+		t.Errorf("getInstanceInfo did not return expected instance info: got %v, want %v", instanceInfo, expectedInstanceInfo)
+	}
+}

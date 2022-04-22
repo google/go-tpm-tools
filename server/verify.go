@@ -49,8 +49,8 @@ type VerifyOpts struct {
 
 // TODO: Change int64 fields to uint64 when compatible with ASN1 parsing.
 type gceSecurityProperties struct {
-	SecurityVersion int64 `asn1:"optional"`
-	IsProduction    bool  `asn1:"optional"`
+	SecurityVersion int64 `asn1:"explicit,tag:0,optional"`
+	IsProduction    bool  `asn1:"explicit,tag:1,optional"`
 }
 
 type gceInstanceInfo struct {
@@ -59,7 +59,7 @@ type gceInstanceInfo struct {
 	ProjectID          string `asn1:"utf8"`
 	InstanceID         int64
 	InstanceName       string                `asn1:"utf8"`
-	SecurityProperties gceSecurityProperties `asn1:"optional"`
+	SecurityProperties gceSecurityProperties `asn1:"explicit,optional"`
 }
 
 // VerifyAttestation performs the following checks on an Attestation:
