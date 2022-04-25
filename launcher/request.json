@@ -1,0 +1,8 @@
+{
+    "delegates": [
+      "impersonate3@jessieqliu-test.iam.gserviceaccount.com"
+    ],
+    "scope": [
+      "https://www.googleapis.com/auth/cloud-platform"
+    ]
+  }

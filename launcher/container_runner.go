@@ -141,19 +141,38 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	}
 	// Fetch ID token with specific audience.
 	// See https://cloud.google.com/functions/docs/securing/authenticating#functions-bearer-token-example-go.
-	principalFetcher := func(audience string) ([][]byte, error) {
-		u := url.URL{
-			Path: "instance/service-accounts/default/identity",
-			RawQuery: url.Values{
-				"audience": {audience},
-				"format":   {"full"},
-			}.Encode(),
+	var principalFetcher func(audience string) ([][]byte, error)
+
+	if len(launchSpec.ImpersonateServiceAccounts) != 0 {
+		principalFetcher = func(audience string) ([][]byte, error) {
+			fetcher, err := newImpersonatedTokenFetcher(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create fetcher for impersonated ID token: %v", err)
+			}
+
+			token, err := fetcher.fetchIDTokenFromChain(launchSpec.ImpersonateServiceAccounts, audience)
+			if err != nil {
+				return nil, fmt.Errorf("error retrieving ID token: %v", err)
+			}
+
+			return [][]byte{[]byte(token)}, err
 		}
-		idToken, err := mdsClient.Get(u.String())
-		if err != nil {
-			return nil, fmt.Errorf("failed to get principal tokens: %w", err)
+
+	} else {
+		principalFetcher = func(audience string) ([][]byte, error) {
+			u := url.URL{
+				Path: "instance/service-accounts/default/identity",
+				RawQuery: url.Values{
+					"audience": {audience},
+					"format":   {"full"},
+				}.Encode(),
+			}
+			idToken, err := mdsClient.Get(u.String())
+			if err != nil {
+				return nil, fmt.Errorf("failed to get principal tokens: %w", err)
+			}
+			return [][]byte{[]byte(idToken)}, nil
 		}
-		return [][]byte{[]byte(idToken)}, nil
 	}
 
 	return &ContainerRunner{
