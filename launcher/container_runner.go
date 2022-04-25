@@ -3,12 +3,14 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net/url"
 	"os"
 	"path"
+	"time"
 
 	"cloud.google.com/go/compute/metadata"
 	"github.com/containerd/containerd"
@@ -16,6 +18,7 @@ import (
 	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/images"
 	"github.com/containerd/containerd/oci"
+	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/launcher/spec"
@@ -26,12 +29,17 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
+type attestationAgent interface {
+	MeasureEvent(cel.Content) error
+	Attest(context.Context) ([]byte, error)
+}
+
 // ContainerRunner contains information about the container settings
 type ContainerRunner struct {
 	container   containerd.Container
 	launchSpec  spec.LauncherSpec
 	attestConn  *grpc.ClientConn
-	attestAgent *AttestationAgent
+	attestAgent attestationAgent
 }
 
 const (
@@ -46,6 +54,8 @@ const (
 	containerID = "tee-container"
 	snapshotID  = "tee-snapshot"
 )
+
+const defaultRefreshMultiplier = 0.9
 
 // NewRunner returns a runner.
 func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.Token, launchSpec spec.LauncherSpec, mdsClient *metadata.Client, tpm io.ReadWriteCloser) (*ContainerRunner, error) {
@@ -194,16 +204,16 @@ func (r *ContainerRunner) measureContainerClaims(ctx context.Context) error {
 		}
 	}
 
-	contianerSpec, err := r.container.Spec(ctx)
+	containerSpec, err := r.container.Spec(ctx)
 	if err != nil {
 		return err
 	}
-	for _, arg := range contianerSpec.Process.Args {
+	for _, arg := range containerSpec.Process.Args {
 		if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.ArgType, EventContent: []byte(arg)}); err != nil {
 			return err
 		}
 	}
-	for _, env := range contianerSpec.Process.Env {
+	for _, env := range containerSpec.Process.Env {
 		if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.EnvVarType, EventContent: []byte(env)}); err != nil {
 			return err
 		}
@@ -211,26 +221,83 @@ func (r *ContainerRunner) measureContainerClaims(ctx context.Context) error {
 	return nil
 }
 
+// Retrieves an OIDC token from the attestation service, and returns how long
+// to wait before attemping to refresh it.
+func (r *ContainerRunner) refreshToken(ctx context.Context) (time.Duration, error) {
+	token, err := r.attestAgent.Attest(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("failed to retrieve attestation service token: %v", err)
+	}
+
+	// Get token expiration.
+	claims := &jwt.RegisteredClaims{}
+	_, _, err = jwt.NewParser().ParseUnverified(string(token), claims)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse token: %w", err)
+	}
+
+	now := time.Now()
+	if !now.Before(claims.ExpiresAt.Time) {
+		return 0, errors.New("token is expired")
+	}
+
+	filepath := path.Join(HostTokenPath, attestationVerifierTokenFile)
+	if err = os.WriteFile(filepath, token, 0644); err != nil {
+		return 0, fmt.Errorf("failed to write token to container mount source point: %v", err)
+	}
+
+	return time.Duration(float64(time.Until(claims.ExpiresAt.Time)) * defaultRefreshMultiplier), nil
+}
+
+// ctx must be a cancellable context.
+func (r *ContainerRunner) fetchAndWriteToken(ctx context.Context) error {
+	if err := os.MkdirAll(HostTokenPath, 0744); err != nil {
+		log.Fatal(err)
+	}
+
+	duration, err := r.refreshToken(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Set a timer to refresh the token before it expires.
+	timer := time.NewTimer(duration)
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				log.Printf("token refreshing stopped: %v", ctx.Err())
+				return
+			case <-timer.C:
+				// Refresh token.
+				duration, err := r.refreshToken(ctx)
+				if err != nil {
+					log.Printf("failed to refresh attestation service token: %v", err)
+					return
+				}
+
+				timer.Reset(duration)
+			}
+		}
+	}()
+
+	return nil
+}
+
 // Run the container
 // Doesn't support container restart yet
 // Container output will always be redirected to stdio for now
 func (r *ContainerRunner) Run(ctx context.Context) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	if err := r.measureContainerClaims(ctx); err != nil {
 		return fmt.Errorf("failed to measure container claims: %v", err)
 	}
 
-	// Create hostTokenPath directory. Should come before NewTask.
-	token, err := r.attestAgent.Attest(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to retrieve attestation service token: %v", err)
-	}
-
-	// Write OIDC token for the container.
-	if err := os.MkdirAll(HostTokenPath, 0644); err != nil {
-		log.Fatal(err)
-	}
-	if err = os.WriteFile(path.Join(HostTokenPath, attestationVerifierTokenFile), token, 0644); err != nil {
-		return fmt.Errorf("failed to write token to container mount source point: %v", err)
+	if err := r.fetchAndWriteToken(ctx); err != nil {
+		return fmt.Errorf("failed to fetch and write OIDC token: %v", err)
 	}
 
 	task, err := r.container.NewTask(ctx, cio.NewCreator(cio.WithStdio))

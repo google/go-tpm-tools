@@ -5,6 +5,7 @@ go 1.18
 require (
 	cloud.google.com/go/compute v1.5.0
 	github.com/containerd/containerd v1.6.1
+	github.com/golang-jwt/jwt/v4 v4.4.1
 	github.com/google/go-cmp v0.5.7
 	github.com/google/go-tpm v0.3.3
 	github.com/google/go-tpm-tools v0.3.7
