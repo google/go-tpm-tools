@@ -8,7 +8,7 @@ require (
 	github.com/golang-jwt/jwt/v4 v4.4.1
 	github.com/google/go-cmp v0.5.7
 	github.com/google/go-tpm v0.3.3
-	github.com/google/go-tpm-tools v0.3.7
+	github.com/google/go-tpm-tools v0.3.8
 	github.com/opencontainers/image-spec v1.0.2-0.20211117181255-693428a734f5
 	github.com/opencontainers/runtime-spec v1.0.3-0.20210326190908-1c3f411f0417
 	golang.org/x/oauth2 v0.0.0-20220309155454-6242fa91716a
