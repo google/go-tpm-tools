@@ -41,24 +41,16 @@ type idTokenResp struct {
 
 type impersonatedTokenFetcher struct {
 	client *http.Client
-	// serviceAccounts []string
 }
 
 func newImpersonatedTokenFetcher(ctx context.Context, opts ...option.ClientOption) (*impersonatedTokenFetcher, error) {
-	// if len(serviceAccounts) == 0 {
-	// 	return nil, fmt.Errorf("no service accounts provided.")
-	// }
-
 	opts = append(opts, internaloption.WithDefaultAudience("https://iamcredentials.googleapis.com/"))
 	client, _, err := htransport.NewClient(ctx, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("error creating client: %v", err)
 	}
 
-	return &impersonatedTokenFetcher{
-		client: client,
-		// serviceAccounts: serviceAccounts,
-	}, nil
+	return &impersonatedTokenFetcher{client}, nil
 }
 
 func (f *impersonatedTokenFetcher) postHTTP(url, authToken string, reqBody []byte) ([]byte, error) {

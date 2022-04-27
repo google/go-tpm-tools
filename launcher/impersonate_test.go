@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,9 +9,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"google.golang.org/api/idtoken"
-	"google.golang.org/api/option"
 )
 
 type testRoundTripper struct {
@@ -278,44 +274,5 @@ func TestFetchImpersonatedTokenWithOneServiceAccount(t *testing.T) {
 
 	if token != expectedToken {
 		t.Errorf("fetchImpersonatedToken did not return expected token: got %v, want %v", token, expectedToken)
-	}
-}
-
-func TestFetcherWithRealServiceAccounts(t *testing.T) {
-	ctx := context.Background()
-
-	serviceAccounts := []string{
-		"impersonate1@jessieqliu-test.iam.gserviceaccount.com",
-		"impersonate2@jessieqliu-test.iam.gserviceaccount.com",
-		"impersonate3@jessieqliu-test.iam.gserviceaccount.com",
-	}
-
-	fetcher, err := newImpersonatedTokenFetcher(ctx)
-	if err != nil {
-		t.Fatalf("Creating fetcher failed: %v", err)
-	}
-
-	token, err := fetcher.fetchIDTokenFromChain(serviceAccounts, "test_aud")
-	if err != nil {
-		t.Fatalf("Fetching failed: %v", err)
-	}
-
-	validator, err := idtoken.NewValidator(ctx, option.WithoutAuthentication())
-	if err != nil {
-		t.Fatalf("Failed to create validator: %v", err)
-	}
-
-	payload, err := validator.Validate(ctx, token, "test_aud")
-	if err != nil {
-		t.Fatalf("Failed to validate token: %v", err)
-	}
-
-	email, ok := payload.Claims["email"]
-	if !ok {
-		t.Fatal("Token has no email claim.")
-	}
-
-	if email != serviceAccounts[len(serviceAccounts)-1] {
-		t.Errorf("Token does not contain expected email: got %v, want %v", email, serviceAccounts[len(serviceAccounts)-1])
 	}
 }
