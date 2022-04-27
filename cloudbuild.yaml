@@ -1,0 +1,43 @@
+substitutions:
+  '_BASE_IMAGE': 'cos-dev-101-16963-0-0'
+  '_BASE_IMAGE_PROJECT': 'cos-cloud'
+  '_OUTPUT_IMAGE': ''
+  '_ATTEST_ENDPOINT': ''
+
+steps:
+  - name: golang:1.18
+    entrypoint: /bin/bash
+    args:
+      - -c
+      - |
+        cd launcher
+        go build  
+  - name: 'gcr.io/cos-cloud/cos-customizer'
+    args: ['start-image-build',
+           '-gcs-bucket=${PROJECT_ID}_cloudbuild',
+           '-gcs-workdir=customizer-${BUILD_ID}',
+           '-image-name=${_BASE_IMAGE}',
+           '-image-project=${_BASE_IMAGE_PROJECT}']
+  - name: 'gcr.io/cos-cloud/cos-customizer'
+    args: ['run-script',
+           '-script=launcher/preload.sh',
+           '-env=ATTEST_ENDPOINT=${_ATTEST_ENDPOINT}']
+  - name: 'gcr.io/cos-cloud/cos-customizer'
+    args: ['seal-oem']
+  - name: 'gcr.io/cos-cloud/cos-customizer'
+    args: ['run-script',
+           '-script=launcher/fixup_oem.sh']
+  - name: 'gcr.io/cos-cloud/cos-customizer'
+    args: ['finish-image-build',
+           '-oem-size=500M',
+           '-disk-size-gb=11',
+           '-image-name=attest-cos-dev-${_OUTPUT_IMAGE}',
+           '-image-family=attest-cos-dev',
+           '-image-project=${PROJECT_ID}',
+           '-zone=us-central1-a',
+           '-project=${PROJECT_ID}']
+
+timeout: '3000s'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
