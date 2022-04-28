@@ -5,8 +5,11 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path"
 	"testing"
@@ -14,6 +17,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-tpm-tools/cel"
+	"google.golang.org/api/option"
 )
 
 // Fake attestation agent.
@@ -278,5 +282,99 @@ func TestFetchAndWriteTokenWithTokenRefresh(t *testing.T) {
 
 	if !bytes.Equal(data, expectedRefreshedToken) {
 		t.Errorf("Refreshed token written to file does not match expected token: got %v, want %v", data, expectedRefreshedToken)
+	}
+}
+
+type testRoundTripper struct {
+	roundTripFunc func(*http.Request) *http.Response
+}
+
+func (t *testRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	return t.roundTripFunc(req), nil
+}
+
+func TestFetchImpersonatedToken(t *testing.T) {
+	expectedEmail := "test2@google.com"
+	serviceAccounts := []string{
+		"test0@google.com",
+		"test1@google.com",
+		expectedEmail,
+	}
+
+	expectedToken := []byte("test_token")
+
+	expectedURL := fmt.Sprintf(idTokenEndpoint, expectedEmail)
+	client := &http.Client{
+		Transport: &testRoundTripper{
+			roundTripFunc: func(req *http.Request) *http.Response {
+				if req.URL.String() != expectedURL {
+					t.Errorf("HTTP call was not made to a endpoint: got %v, want %v", req.URL.String(), expectedURL)
+				}
+
+				resp := idTokenResp{
+					Token: string(expectedToken),
+				}
+
+				respBody, err := json.Marshal(resp)
+				if err != nil {
+					t.Fatalf("Unable to marshal HTTP response: %v", err)
+				}
+
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     make(http.Header),
+					Body:       io.NopCloser(bytes.NewBuffer(respBody)),
+				}
+			},
+		},
+	}
+
+	token, err := fetchImpersonatedToken(context.Background(), serviceAccounts, "test_aud", option.WithHTTPClient(client))
+	if err != nil {
+		t.Fatalf("fetchImpersonatedToken returned error: %v", err)
+	}
+
+	if !bytes.Equal(token, expectedToken) {
+		t.Errorf("fetchImpersonatedToken did not return expected token: got %v, want %v", token, expectedToken)
+	}
+}
+
+func TestFetchImpersonatedTokenWithoutDelegationChain(t *testing.T) {
+	expectedEmail := "test2@google.com"
+	expectedToken := []byte("test_token")
+
+	expectedURL := fmt.Sprintf(idTokenEndpoint, expectedEmail)
+	client := &http.Client{
+		Transport: &testRoundTripper{
+			roundTripFunc: func(req *http.Request) *http.Response {
+				if req.URL.String() != expectedURL {
+					t.Errorf("HTTP call was not made to a endpoint: got %v, want %v", req.URL.String(), expectedURL)
+				}
+
+				resp := idTokenResp{
+					Token: string(expectedToken),
+				}
+
+				respBody, err := json.Marshal(resp)
+				if err != nil {
+					t.Fatalf("Unable to marshal HTTP response: %v", err)
+				}
+
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     make(http.Header),
+					Body:       io.NopCloser(bytes.NewBuffer(respBody)),
+				}
+			},
+		},
+	}
+
+	token, err := fetchImpersonatedToken(context.Background(), []string{expectedEmail}, "test_aud", option.WithHTTPClient(client))
+	if err != nil {
+		t.Fatalf("fetchImpersonatedToken returned error: %v", err)
+	}
+
+	if !bytes.Equal(token, expectedToken) {
+		t.Errorf("fetchImpersonatedToken did not return expected token: got %v, want %v", token, expectedToken)
 	}
 }
