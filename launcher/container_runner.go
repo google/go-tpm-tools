@@ -1,12 +1,15 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
+	"net/http"
 	"net/url"
 	"os"
 	"path"
@@ -25,9 +28,71 @@ import (
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/oauth2"
+	"google.golang.org/api/option"
+	htransport "google.golang.org/api/transport/http"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
+
+const (
+	idTokenEndpoint = "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/%s:generateIdToken"
+)
+
+type idTokenReq struct {
+	Audience     string   `json:"audience"`
+	IncludeEmail bool     `json:"includeEmail"`
+	Delegates    []string `json:"delegates,omitempty"`
+}
+
+type idTokenResp struct {
+	Token string `json:"token"`
+}
+
+func fetchImpersonatedToken(ctx context.Context, accounts []string, audience string, opts ...option.ClientOption) ([]byte, error) {
+	client, _, err := htransport.NewClient(ctx, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating HTTP client: %v", err)
+	}
+
+	reqBody, err := json.Marshal(idTokenReq{
+		Audience:     audience,
+		IncludeEmail: true,
+		Delegates:    accounts[:len(accounts)-1],
+	})
+	if err != nil {
+		return nil, fmt.Errorf("unable to marshal request body: %v", err)
+	}
+
+	url := fmt.Sprintf(idTokenEndpoint, accounts[len(accounts)-1])
+	req, err := http.NewRequest("POST", url, bytes.NewReader(reqBody))
+	if err != nil {
+		return nil, fmt.Errorf("unable to create request: %v", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("HTTP call returned error: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		fmt.Println(resp)
+		return nil, fmt.Errorf("HTTP call returned non-OK status: %v", resp.Status)
+	}
+
+	defer resp.Body.Close()
+	respBody, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("unable to read response body: %v", err)
+	}
+
+	var response idTokenResp
+	if err = json.Unmarshal(respBody, &response); err != nil {
+		return nil, fmt.Errorf("unable to unmarshal response: %v", err)
+	}
+
+	return []byte(response.Token), nil
+}
 
 type attestationAgent interface {
 	MeasureEvent(cel.Content) error
@@ -145,17 +210,22 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 
 	if len(launchSpec.ImpersonateServiceAccounts) != 0 {
 		principalFetcher = func(audience string) ([][]byte, error) {
-			fetcher, err := newImpersonatedTokenFetcher(ctx)
+			// fetcher, err := newImpersonatedTokenFetcher(ctx)
+			// if err != nil {
+			// 	return nil, fmt.Errorf("failed to create fetcher for impersonated ID token: %v", err)
+			// }
+
+			// token, err := fetcher.fetchIDTokenFromChain(launchSpec.ImpersonateServiceAccounts, audience)
+			// if err != nil {
+			// 	return nil, fmt.Errorf("error retrieving ID token: %v", err)
+			// }
+
+			token, err := fetchImpersonatedToken(ctx, launchSpec.ImpersonateServiceAccounts, audience)
 			if err != nil {
-				return nil, fmt.Errorf("failed to create fetcher for impersonated ID token: %v", err)
+				return nil, fmt.Errorf("failed to get impersonated tokens: %w", err)
 			}
 
-			token, err := fetcher.fetchIDTokenFromChain(launchSpec.ImpersonateServiceAccounts, audience)
-			if err != nil {
-				return nil, fmt.Errorf("error retrieving ID token: %v", err)
-			}
-
-			return [][]byte{[]byte(token)}, err
+			return [][]byte{[]byte(token)}, nil
 		}
 
 	} else {
