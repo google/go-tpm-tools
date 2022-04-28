@@ -293,6 +293,10 @@ func (t *testRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) 
 	return t.roundTripFunc(req), nil
 }
 
+type idTokenResp struct {
+	Token string `json:"token"`
+}
+
 func TestFetchImpersonatedToken(t *testing.T) {
 	expectedEmail := "test2@google.com"
 	serviceAccounts := []string{

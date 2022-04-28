@@ -35,17 +35,11 @@ const (
 	idTokenEndpoint = "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/%s:generateIdToken"
 )
 
-type idTokenReq struct {
-	Audience     string   `json:"audience"`
-	IncludeEmail bool     `json:"includeEmail"`
-	Delegates    []string `json:"delegates,omitempty"`
-}
-
-type idTokenResp struct {
-	Token string `json:"token"`
-}
-
 func fetchImpersonatedToken(ctx context.Context, serviceAccounts []string, audience string, opts ...option.ClientOption) ([]byte, error) {
+	if len(serviceAccounts) < 1 {
+		return nil, fmt.Errorf("no service accounts provided")
+	}
+
 	config := impersonate.IDTokenConfig{
 		Audience:        audience,
 		TargetPrincipal: serviceAccounts[len(serviceAccounts)-1],
@@ -55,12 +49,12 @@ func fetchImpersonatedToken(ctx context.Context, serviceAccounts []string, audie
 
 	tokenSource, err := impersonate.IDTokenSource(ctx, config, opts...)
 	if err != nil {
-		return nil, fmt.Errorf("Error creating token source: %v", err)
+		return nil, fmt.Errorf("error creating token source: %v", err)
 	}
 
 	token, err := tokenSource.Token()
 	if err != nil {
-		return nil, fmt.Errorf("Error retrieving token: %v", err)
+		return nil, fmt.Errorf("error retrieving token: %v", err)
 	}
 
 	return []byte(token.AccessToken), nil
@@ -176,20 +170,19 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	if err != nil {
 		return nil, fmt.Errorf("failed to open connection to attestation service: %v", err)
 	}
-	// Fetch ID token with specific audience.
-	// See https://cloud.google.com/functions/docs/securing/authenticating#functions-bearer-token-example-go.
-	var principalFetcher func(audience string) ([][]byte, error)
 
+	var principalFetcher func(audience string) ([][]byte, error)
 	if len(launchSpec.ImpersonateServiceAccounts) != 0 {
 		principalFetcher = func(audience string) ([][]byte, error) {
 			token, err := fetchImpersonatedToken(ctx, launchSpec.ImpersonateServiceAccounts, audience)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get impersonated tokens: %w", err)
 			}
-
 			return [][]byte{[]byte(token)}, nil
 		}
 	} else {
+		// Fetch ID token with specific audience.
+		// See https://cloud.google.com/functions/docs/securing/authenticating#functions-bearer-token-example-go.
 		principalFetcher = func(audience string) ([][]byte, error) {
 			u := url.URL{
 				Path: "instance/service-accounts/default/identity",
