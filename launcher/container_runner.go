@@ -1,15 +1,12 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
-	"net/http"
 	"net/url"
 	"os"
 	"path"
@@ -28,8 +25,8 @@ import (
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/oauth2"
+	"google.golang.org/api/impersonate"
 	"google.golang.org/api/option"
-	htransport "google.golang.org/api/transport/http"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -48,50 +45,25 @@ type idTokenResp struct {
 	Token string `json:"token"`
 }
 
-func fetchImpersonatedToken(ctx context.Context, accounts []string, audience string, opts ...option.ClientOption) ([]byte, error) {
-	client, _, err := htransport.NewClient(ctx, opts...)
+func fetchImpersonatedToken(ctx context.Context, serviceAccounts []string, audience string, opts ...option.ClientOption) ([]byte, error) {
+	config := impersonate.IDTokenConfig{
+		Audience:        audience,
+		TargetPrincipal: serviceAccounts[len(serviceAccounts)-1],
+		IncludeEmail:    true,
+		Delegates:       serviceAccounts[:len(serviceAccounts)-1],
+	}
+
+	tokenSource, err := impersonate.IDTokenSource(ctx, config, opts...)
 	if err != nil {
-		return nil, fmt.Errorf("error creating HTTP client: %v", err)
+		return nil, fmt.Errorf("Error creating token source: %v", err)
 	}
 
-	reqBody, err := json.Marshal(idTokenReq{
-		Audience:     audience,
-		IncludeEmail: true,
-		Delegates:    accounts[:len(accounts)-1],
-	})
+	token, err := tokenSource.Token()
 	if err != nil {
-		return nil, fmt.Errorf("unable to marshal request body: %v", err)
+		return nil, fmt.Errorf("Error retrieving token: %v", err)
 	}
 
-	url := fmt.Sprintf(idTokenEndpoint, accounts[len(accounts)-1])
-	req, err := http.NewRequest("POST", url, bytes.NewReader(reqBody))
-	if err != nil {
-		return nil, fmt.Errorf("unable to create request: %v", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("HTTP call returned error: %v", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		fmt.Println(resp)
-		return nil, fmt.Errorf("HTTP call returned non-OK status: %v", resp.Status)
-	}
-
-	defer resp.Body.Close()
-	respBody, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("unable to read response body: %v", err)
-	}
-
-	var response idTokenResp
-	if err = json.Unmarshal(respBody, &response); err != nil {
-		return nil, fmt.Errorf("unable to unmarshal response: %v", err)
-	}
-
-	return []byte(response.Token), nil
+	return []byte(token.AccessToken), nil
 }
 
 type attestationAgent interface {
