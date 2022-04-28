@@ -210,16 +210,6 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 
 	if len(launchSpec.ImpersonateServiceAccounts) != 0 {
 		principalFetcher = func(audience string) ([][]byte, error) {
-			// fetcher, err := newImpersonatedTokenFetcher(ctx)
-			// if err != nil {
-			// 	return nil, fmt.Errorf("failed to create fetcher for impersonated ID token: %v", err)
-			// }
-
-			// token, err := fetcher.fetchIDTokenFromChain(launchSpec.ImpersonateServiceAccounts, audience)
-			// if err != nil {
-			// 	return nil, fmt.Errorf("error retrieving ID token: %v", err)
-			// }
-
 			token, err := fetchImpersonatedToken(ctx, launchSpec.ImpersonateServiceAccounts, audience)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get impersonated tokens: %w", err)
@@ -227,7 +217,6 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 
 			return [][]byte{[]byte(token)}, nil
 		}
-
 	} else {
 		principalFetcher = func(audience string) ([][]byte, error) {
 			u := url.URL{
