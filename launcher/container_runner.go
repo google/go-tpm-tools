@@ -35,31 +35,6 @@ const (
 	idTokenEndpoint = "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/%s:generateIdToken"
 )
 
-func fetchImpersonatedToken(ctx context.Context, serviceAccounts []string, audience string, opts ...option.ClientOption) ([]byte, error) {
-	if len(serviceAccounts) < 1 {
-		return nil, fmt.Errorf("no service accounts provided")
-	}
-
-	config := impersonate.IDTokenConfig{
-		Audience:        audience,
-		TargetPrincipal: serviceAccounts[len(serviceAccounts)-1],
-		IncludeEmail:    true,
-		Delegates:       serviceAccounts[:len(serviceAccounts)-1],
-	}
-
-	tokenSource, err := impersonate.IDTokenSource(ctx, config, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("error creating token source: %v", err)
-	}
-
-	token, err := tokenSource.Token()
-	if err != nil {
-		return nil, fmt.Errorf("error retrieving token: %v", err)
-	}
-
-	return []byte(token.AccessToken), nil
-}
-
 type attestationAgent interface {
 	MeasureEvent(cel.Content) error
 	Attest(context.Context) ([]byte, error)
@@ -87,6 +62,31 @@ const (
 )
 
 const defaultRefreshMultiplier = 0.9
+
+func fetchImpersonatedToken(ctx context.Context, serviceAccounts []string, audience string, opts ...option.ClientOption) ([]byte, error) {
+	if len(serviceAccounts) < 1 {
+		return nil, fmt.Errorf("no service accounts provided")
+	}
+
+	config := impersonate.IDTokenConfig{
+		Audience:        audience,
+		TargetPrincipal: serviceAccounts[len(serviceAccounts)-1],
+		IncludeEmail:    true,
+		Delegates:       serviceAccounts[:len(serviceAccounts)-1],
+	}
+
+	tokenSource, err := impersonate.IDTokenSource(ctx, config, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating token source: %v", err)
+	}
+
+	token, err := tokenSource.Token()
+	if err != nil {
+		return nil, fmt.Errorf("error retrieving token: %v", err)
+	}
+
+	return []byte(token.AccessToken), nil
+}
 
 // NewRunner returns a runner.
 func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.Token, launchSpec spec.LauncherSpec, mdsClient *metadata.Client, tpm io.ReadWriteCloser) (*ContainerRunner, error) {
@@ -272,6 +272,15 @@ func (r *ContainerRunner) refreshToken(ctx context.Context) (time.Duration, erro
 		return 0, fmt.Errorf("failed to retrieve attestation service token: %v", err)
 	}
 
+	// For testing, remove before merging.
+	mapClaims := &jwt.MapClaims{}
+	_, _, err = jwt.NewParser().ParseUnverified(string(token), mapClaims)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse map: %w", err)
+	}
+
+	log.Printf("Map claims are: %s", mapClaims)
+
 	// Get token expiration.
 	claims := &jwt.RegisteredClaims{}
 	_, _, err = jwt.NewParser().ParseUnverified(string(token), claims)
@@ -298,6 +307,7 @@ func (r *ContainerRunner) fetchAndWriteToken(ctx context.Context) error {
 		log.Fatal(err)
 	}
 
+	log.Println("fetching token")
 	duration, err := r.refreshToken(ctx)
 	if err != nil {
 		return err
@@ -339,6 +349,7 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		return fmt.Errorf("failed to measure container claims: %v", err)
 	}
 
+	log.Println("fetching and writing token")
 	if err := r.fetchAndWriteToken(ctx); err != nil {
 		return fmt.Errorf("failed to fetch and write OIDC token: %v", err)
 	}
