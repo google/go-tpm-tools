@@ -39,7 +39,7 @@ func run() int {
 	}
 	logClient, err := logging.NewClient(context.Background(), projectID)
 	if err != nil {
-		log.Printf("cannot setup Cloud Logging, using the default logger %v", err)
+		logger.Printf("cannot setup Cloud Logging, using the default logger %v", err)
 	} else {
 		defer logClient.Close()
 		logger.Println("logs will publish to Cloud Logging")
