@@ -68,6 +68,8 @@ func fetchImpersonatedToken(ctx context.Context, serviceAccounts []string, audie
 		return nil, fmt.Errorf("no service accounts provided")
 	}
 
+	log.Printf("target is: %v", serviceAccounts[len(serviceAccounts)-1])
+
 	config := impersonate.IDTokenConfig{
 		Audience:        audience,
 		TargetPrincipal: serviceAccounts[len(serviceAccounts)-1],
