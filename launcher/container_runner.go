@@ -31,10 +31,6 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
-const (
-	idTokenEndpoint = "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/%s:generateIdToken"
-)
-
 type attestationAgent interface {
 	MeasureEvent(cel.Content) error
 	Attest(context.Context) ([]byte, error)
