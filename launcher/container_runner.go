@@ -59,18 +59,11 @@ const (
 
 const defaultRefreshMultiplier = 0.9
 
-func fetchImpersonatedToken(ctx context.Context, serviceAccounts []string, audience string, opts ...option.ClientOption) ([]byte, error) {
-	if len(serviceAccounts) < 1 {
-		return nil, fmt.Errorf("no service accounts provided")
-	}
-
-	log.Printf("target is: %v", serviceAccounts[len(serviceAccounts)-1])
-
+func fetchImpersonatedToken(ctx context.Context, serviceAccount string, audience string, opts ...option.ClientOption) ([]byte, error) {
 	config := impersonate.IDTokenConfig{
 		Audience:        audience,
-		TargetPrincipal: serviceAccounts[len(serviceAccounts)-1],
+		TargetPrincipal: serviceAccount,
 		IncludeEmail:    true,
-		Delegates:       serviceAccounts[:len(serviceAccounts)-1],
 	}
 
 	tokenSource, err := impersonate.IDTokenSource(ctx, config, opts...)
@@ -186,14 +179,16 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 
 		tokens := [][]byte{[]byte(idToken)}
 
-		// Fetch impersonated ID token.
 		if len(launchSpec.ImpersonateServiceAccounts) != 0 {
-			idToken, err := fetchImpersonatedToken(ctx, launchSpec.ImpersonateServiceAccounts, audience)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get impersonated tokens: %w", err)
-			}
+			// Fetch impersonated ID tokens.
+			for _, sa := range launchSpec.ImpersonateServiceAccounts {
+				idToken, err := fetchImpersonatedToken(ctx, sa, audience)
+				if err != nil {
+					return nil, fmt.Errorf("failed to get impersonated tokens: %w", err)
+				}
 
-			tokens = append(tokens, idToken)
+				tokens = append(tokens, idToken)
+			}
 		}
 		return tokens, nil
 	}

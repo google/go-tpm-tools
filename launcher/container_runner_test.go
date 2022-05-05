@@ -303,11 +303,6 @@ type idTokenResp struct {
 
 func TestFetchImpersonatedToken(t *testing.T) {
 	expectedEmail := "test2@google.com"
-	serviceAccounts := []string{
-		"test0@google.com",
-		"test1@google.com",
-		expectedEmail,
-	}
 
 	expectedToken := []byte("test_token")
 
@@ -337,47 +332,7 @@ func TestFetchImpersonatedToken(t *testing.T) {
 		},
 	}
 
-	token, err := fetchImpersonatedToken(context.Background(), serviceAccounts, "test_aud", option.WithHTTPClient(client))
-	if err != nil {
-		t.Fatalf("fetchImpersonatedToken returned error: %v", err)
-	}
-
-	if !bytes.Equal(token, expectedToken) {
-		t.Errorf("fetchImpersonatedToken did not return expected token: got %v, want %v", token, expectedToken)
-	}
-}
-
-func TestFetchImpersonatedTokenWithoutDelegationChain(t *testing.T) {
-	expectedEmail := "test2@google.com"
-	expectedToken := []byte("test_token")
-
-	expectedURL := fmt.Sprintf(idTokenEndpoint, expectedEmail)
-	client := &http.Client{
-		Transport: &testRoundTripper{
-			roundTripFunc: func(req *http.Request) *http.Response {
-				if req.URL.String() != expectedURL {
-					t.Errorf("HTTP call was not made to a endpoint: got %v, want %v", req.URL.String(), expectedURL)
-				}
-
-				resp := idTokenResp{
-					Token: string(expectedToken),
-				}
-
-				respBody, err := json.Marshal(resp)
-				if err != nil {
-					t.Fatalf("Unable to marshal HTTP response: %v", err)
-				}
-
-				return &http.Response{
-					StatusCode: http.StatusOK,
-					Header:     make(http.Header),
-					Body:       io.NopCloser(bytes.NewBuffer(respBody)),
-				}
-			},
-		},
-	}
-
-	token, err := fetchImpersonatedToken(context.Background(), []string{expectedEmail}, "test_aud", option.WithHTTPClient(client))
+	token, err := fetchImpersonatedToken(context.Background(), expectedEmail, "test_aud", option.WithHTTPClient(client))
 	if err != nil {
 		t.Fatalf("fetchImpersonatedToken returned error: %v", err)
 	}
