@@ -173,32 +173,33 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		return nil, fmt.Errorf("failed to open connection to attestation service: %v", err)
 	}
 
-	var principalFetcher func(audience string) ([][]byte, error)
-	if len(launchSpec.ImpersonateServiceAccounts) != 0 {
-		principalFetcher = func(audience string) ([][]byte, error) {
-			token, err := fetchImpersonatedToken(ctx, launchSpec.ImpersonateServiceAccounts, audience)
+	// Fetch ID token with specific audience.
+	// See https://cloud.google.com/functions/docs/securing/authenticating#functions-bearer-token-example-go.
+	principalFetcher := func(audience string) ([][]byte, error) {
+		u := url.URL{
+			Path: "instance/service-accounts/default/identity",
+			RawQuery: url.Values{
+				"audience": {audience},
+				"format":   {"full"},
+			}.Encode(),
+		}
+		idToken, err := mdsClient.Get(u.String())
+		if err != nil {
+			return nil, fmt.Errorf("failed to get principal tokens: %w", err)
+		}
+
+		tokens := [][]byte{[]byte(idToken)}
+
+		// Fetch impersonated ID token.
+		if len(launchSpec.ImpersonateServiceAccounts) != 0 {
+			idToken, err := fetchImpersonatedToken(ctx, launchSpec.ImpersonateServiceAccounts, audience)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get impersonated tokens: %w", err)
 			}
-			return [][]byte{[]byte(token)}, nil
+
+			tokens = append(tokens, idToken)
 		}
-	} else {
-		// Fetch ID token with specific audience.
-		// See https://cloud.google.com/functions/docs/securing/authenticating#functions-bearer-token-example-go.
-		principalFetcher = func(audience string) ([][]byte, error) {
-			u := url.URL{
-				Path: "instance/service-accounts/default/identity",
-				RawQuery: url.Values{
-					"audience": {audience},
-					"format":   {"full"},
-				}.Encode(),
-			}
-			idToken, err := mdsClient.Get(u.String())
-			if err != nil {
-				return nil, fmt.Errorf("failed to get principal tokens: %w", err)
-			}
-			return [][]byte{[]byte(idToken)}, nil
-		}
+		return tokens, nil
 	}
 
 	return &ContainerRunner{
@@ -274,15 +275,6 @@ func (r *ContainerRunner) refreshToken(ctx context.Context) (time.Duration, erro
 		return 0, fmt.Errorf("failed to retrieve attestation service token: %v", err)
 	}
 
-	// For testing, remove before merging.
-	mapClaims := &jwt.MapClaims{}
-	_, _, err = jwt.NewParser().ParseUnverified(string(token), mapClaims)
-	if err != nil {
-		return 0, fmt.Errorf("failed to parse map: %w", err)
-	}
-
-	log.Printf("Map claims are: %s", mapClaims)
-
 	// Get token expiration.
 	claims := &jwt.RegisteredClaims{}
 	_, _, err = jwt.NewParser().ParseUnverified(string(token), claims)
@@ -309,7 +301,6 @@ func (r *ContainerRunner) fetchAndWriteToken(ctx context.Context) error {
 		log.Fatal(err)
 	}
 
-	log.Println("fetching token")
 	duration, err := r.refreshToken(ctx)
 	if err != nil {
 		return err
@@ -351,7 +342,6 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		return fmt.Errorf("failed to measure container claims: %v", err)
 	}
 
-	log.Println("fetching and writing token")
 	if err := r.fetchAndWriteToken(ctx); err != nil {
 		return fmt.Errorf("failed to fetch and write OIDC token: %v", err)
 	}
