@@ -20,6 +20,10 @@ import (
 	"google.golang.org/api/option"
 )
 
+const (
+	idTokenEndpoint = "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/%s:generateIdToken"
+)
+
 // Fake attestation agent.
 type fakeAttestationAgent struct {
 	measureEventFunc func(cel.Content) error
