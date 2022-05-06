@@ -80,8 +80,8 @@ func (s *LauncherSpec) UnmarshalJSON(b []byte) error {
 	}
 
 	if val, ok := unmarshaledMap[impersonateServiceAccounts]; ok && val != "" {
-		delegates := strings.Split(val, ",")
-		s.ImpersonateServiceAccounts = append(s.ImpersonateServiceAccounts, delegates...)
+		impersonateAccounts := strings.Split(val, ",")
+		s.ImpersonateServiceAccounts = append(s.ImpersonateServiceAccounts, impersonateAccounts...)
 	}
 
 	// populate cmd override
