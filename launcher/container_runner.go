@@ -179,16 +179,14 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 
 		tokens := [][]byte{[]byte(idToken)}
 
-		if len(launchSpec.ImpersonateServiceAccounts) != 0 {
-			// Fetch impersonated ID tokens.
-			for _, sa := range launchSpec.ImpersonateServiceAccounts {
-				idToken, err := fetchImpersonatedToken(ctx, sa, audience)
-				if err != nil {
-					return nil, fmt.Errorf("failed to get impersonated tokens: %w", err)
-				}
-
-				tokens = append(tokens, idToken)
+		// Fetch impersonated ID tokens.
+		for _, sa := range launchSpec.ImpersonateServiceAccounts {
+			idToken, err := fetchImpersonatedToken(ctx, sa, audience)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get impersonated token for %v: %w", sa, err)
 			}
+
+			tokens = append(tokens, idToken)
 		}
 		return tokens, nil
 	}

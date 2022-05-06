@@ -33,7 +33,6 @@ require (
 	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/google/certificate-transparency-go v1.1.2 // indirect
 	github.com/google/go-attestation v0.4.4-0.20220404204839-8820d49b18d9 // indirect
-	github.com/google/go-tpm v0.3.3 // indirect
 	github.com/google/go-tspi v0.2.1-0.20190423175329-115dea689aad // indirect
 	github.com/google/uuid v1.2.0 // indirect
 	github.com/klauspost/compress v1.11.13 // indirect
