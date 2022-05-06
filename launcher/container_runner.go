@@ -25,6 +25,8 @@ import (
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/oauth2"
+	"google.golang.org/api/impersonate"
+	"google.golang.org/api/option"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -56,6 +58,26 @@ const (
 )
 
 const defaultRefreshMultiplier = 0.9
+
+func fetchImpersonatedToken(ctx context.Context, serviceAccount string, audience string, opts ...option.ClientOption) ([]byte, error) {
+	config := impersonate.IDTokenConfig{
+		Audience:        audience,
+		TargetPrincipal: serviceAccount,
+		IncludeEmail:    true,
+	}
+
+	tokenSource, err := impersonate.IDTokenSource(ctx, config, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating token source: %v", err)
+	}
+
+	token, err := tokenSource.Token()
+	if err != nil {
+		return nil, fmt.Errorf("error retrieving token: %v", err)
+	}
+
+	return []byte(token.AccessToken), nil
+}
 
 // NewRunner returns a runner.
 func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.Token, launchSpec spec.LauncherSpec, mdsClient *metadata.Client, tpm io.ReadWriteCloser) (*ContainerRunner, error) {
@@ -139,6 +161,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	if err != nil {
 		return nil, fmt.Errorf("failed to open connection to attestation service: %v", err)
 	}
+
 	// Fetch ID token with specific audience.
 	// See https://cloud.google.com/functions/docs/securing/authenticating#functions-bearer-token-example-go.
 	principalFetcher := func(audience string) ([][]byte, error) {
@@ -153,7 +176,19 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		if err != nil {
 			return nil, fmt.Errorf("failed to get principal tokens: %w", err)
 		}
-		return [][]byte{[]byte(idToken)}, nil
+
+		tokens := [][]byte{[]byte(idToken)}
+
+		// Fetch impersonated ID tokens.
+		for _, sa := range launchSpec.ImpersonateServiceAccounts {
+			idToken, err := fetchImpersonatedToken(ctx, sa, audience)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get impersonated token for %v: %w", sa, err)
+			}
+
+			tokens = append(tokens, idToken)
+		}
+		return tokens, nil
 	}
 
 	return &ContainerRunner{
