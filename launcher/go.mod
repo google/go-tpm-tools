@@ -4,6 +4,7 @@ go 1.18
 
 require (
 	cloud.google.com/go/compute v1.5.0
+	cloud.google.com/go/logging v1.4.2
 	github.com/containerd/containerd v1.6.1
 	github.com/golang-jwt/jwt/v4 v4.4.1
 	github.com/google/go-cmp v0.5.7
@@ -19,6 +20,7 @@ require (
 )
 
 require (
+	cloud.google.com/go v0.100.2 // indirect
 	github.com/Microsoft/go-winio v0.5.1 // indirect
 	github.com/Microsoft/hcsshim v0.9.2 // indirect
 	github.com/containerd/cgroups v1.0.3 // indirect
@@ -35,6 +37,7 @@ require (
 	github.com/google/go-attestation v0.4.4-0.20220404204839-8820d49b18d9 // indirect
 	github.com/google/go-tspi v0.2.1-0.20190423175329-115dea689aad // indirect
 	github.com/google/uuid v1.2.0 // indirect
+	github.com/googleapis/gax-go/v2 v2.1.1 // indirect
 	github.com/klauspost/compress v1.11.13 // indirect
 	github.com/moby/locker v1.0.1 // indirect
 	github.com/moby/sys/mountinfo v0.5.0 // indirect

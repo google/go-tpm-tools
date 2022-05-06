@@ -42,6 +42,7 @@ type ContainerRunner struct {
 	launchSpec  spec.LauncherSpec
 	attestConn  *grpc.ClientConn
 	attestAgent attestationAgent
+	logger      *log.Logger
 }
 
 const (
@@ -80,8 +81,8 @@ func fetchImpersonatedToken(ctx context.Context, serviceAccount string, audience
 }
 
 // NewRunner returns a runner.
-func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.Token, launchSpec spec.LauncherSpec, mdsClient *metadata.Client, tpm io.ReadWriteCloser) (*ContainerRunner, error) {
-	image, err := initImage(ctx, cdClient, launchSpec, token)
+func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.Token, launchSpec spec.LauncherSpec, mdsClient *metadata.Client, tpm io.ReadWriteCloser, logger *log.Logger) (*ContainerRunner, error) {
+	image, err := initImage(ctx, cdClient, launchSpec, token, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -96,22 +97,22 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		container.Delete(ctx, containerd.WithSnapshotCleanup)
 	}
 
-	log.Printf("Operator Input Image Ref   : %v\n", image.Name())
-	log.Printf("Image Digest               : %v\n", image.Target().Digest)
-	log.Printf("Operator Override Env Vars : %v\n", envs)
-	log.Printf("Operator Override Cmd      : %v\n", launchSpec.Cmd)
+	logger.Printf("Operator Input Image Ref   : %v\n", image.Name())
+	logger.Printf("Image Digest               : %v\n", image.Target().Digest)
+	logger.Printf("Operator Override Env Vars : %v\n", envs)
+	logger.Printf("Operator Override Cmd      : %v\n", launchSpec.Cmd)
 
 	imagelabels, err := getImageLabels(ctx, image)
 	if err != nil {
-		log.Printf("Failed to get image OCI labels %v\n", err)
-	}
-	log.Printf("Image Labels               : %v\n", imagelabels)
-
-	if imageConfig, err := image.Config(ctx); err != nil {
-		log.Println(err)
+		logger.Printf("Failed to get image OCI labels %v\n", err)
 	} else {
-		log.Printf("Image ID                   : %v\n", imageConfig.Digest)
-		log.Printf("Image Annotations          : %v\n", imageConfig.Annotations)
+		logger.Printf("Image Labels               : %v\n", imagelabels)
+	}
+	if imageConfig, err := image.Config(ctx); err != nil {
+		logger.Println(err)
+	} else {
+		logger.Printf("Image ID                   : %v\n", imageConfig.Digest)
+		logger.Printf("Image Annotations          : %v\n", imageConfig.Annotations)
 	}
 
 	hostname, err := os.Hostname()
@@ -195,7 +196,8 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		container,
 		launchSpec,
 		conn,
-		CreateAttestationAgent(tpm, client.GceAttestationKeyECC, conn, principalFetcher),
+		CreateAttestationAgent(tpm, client.GceAttestationKeyECC, conn, principalFetcher, logger),
+		logger,
 	}, nil
 }
 
@@ -289,7 +291,7 @@ func (r *ContainerRunner) refreshToken(ctx context.Context) (time.Duration, erro
 // ctx must be a cancellable context.
 func (r *ContainerRunner) fetchAndWriteToken(ctx context.Context) error {
 	if err := os.MkdirAll(HostTokenPath, 0744); err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	duration, err := r.refreshToken(ctx)
@@ -304,13 +306,13 @@ func (r *ContainerRunner) fetchAndWriteToken(ctx context.Context) error {
 			select {
 			case <-ctx.Done():
 				timer.Stop()
-				log.Printf("token refreshing stopped: %v", ctx.Err())
+				r.logger.Printf("token refreshing stopped: %v", ctx.Err())
 				return
 			case <-timer.C:
 				// Refresh token.
 				duration, err := r.refreshToken(ctx)
 				if err != nil {
-					log.Printf("failed to refresh attestation service token: %v", err)
+					r.logger.Printf("failed to refresh attestation service token: %v", err)
 					return
 				}
 
@@ -345,7 +347,7 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		log.Println("task started")
+		r.logger.Println("task started")
 
 		if err := task.Start(ctx); err != nil {
 			return err
@@ -358,11 +360,11 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		}
 		task.Delete(ctx)
 
-		log.Printf("task ended with return code %d \n", code)
+		r.logger.Printf("task ended with return code %d \n", code)
 		if r.launchSpec.RestartPolicy == spec.Always {
-			log.Println("restarting task")
+			r.logger.Println("restarting task")
 		} else if r.launchSpec.RestartPolicy == spec.OnFailure && code != 0 {
-			log.Println("restarting task on failure")
+			r.logger.Println("restarting task on failure")
 		} else {
 			break
 		}
@@ -371,7 +373,7 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	return nil
 }
 
-func initImage(ctx context.Context, cdClient *containerd.Client, launchSpec spec.LauncherSpec, token oauth2.Token) (containerd.Image, error) {
+func initImage(ctx context.Context, cdClient *containerd.Client, launchSpec spec.LauncherSpec, token oauth2.Token, logger *log.Logger) (containerd.Image, error) {
 	if launchSpec.UseLocalImage {
 		image, err := cdClient.GetImage(ctx, launchSpec.ImageRef)
 		if err != nil {
@@ -384,7 +386,7 @@ func initImage(ctx context.Context, cdClient *containerd.Client, launchSpec spec
 	if token.Valid() {
 		remoteOpt = containerd.WithResolver(Resolver(token.AccessToken))
 	} else {
-		log.Println("invalid auth token, will use empty auth")
+		logger.Println("invalid auth token, will use empty auth")
 	}
 
 	image, err := cdClient.Pull(ctx, launchSpec.ImageRef, containerd.WithPullUnpack, remoteOpt)

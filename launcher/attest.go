@@ -31,6 +31,7 @@ type AttestationAgent struct {
 	client           servpb.AttestationVerifierClient
 	principalFetcher principalIDTokenFetcher
 	cosCel           cel.CEL
+	logger           *log.Logger
 }
 
 // CreateAttestationAgent returns an agent capable of performing remote
@@ -39,13 +40,14 @@ type AttestationAgent struct {
 // - akFetcher is a func to fetch an attestation key: see go-tpm-tools/client.
 // - conn is a client connection to the attestation service, typically created
 //   `grpc.Dial`. It is the client's responsibility to close the connection.
-func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher tpmKeyFetcher, conn *grpc.ClientConn, principalFetcher principalIDTokenFetcher) *AttestationAgent {
+func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher tpmKeyFetcher, conn *grpc.ClientConn, principalFetcher principalIDTokenFetcher, logger *log.Logger) *AttestationAgent {
 	client := servpb.NewAttestationVerifierClient(conn)
 	return &AttestationAgent{
 		tpm:              tpm,
 		client:           client,
 		akFetcher:        akFetcher,
 		principalFetcher: principalFetcher,
+		logger:           logger,
 	}
 }
 
@@ -59,12 +61,12 @@ func (a *AttestationAgent) MeasureEvent(event cel.Content) error {
 // creates an attestation message, and returns the resultant
 // principalIDTokens are Metadata Server-generated ID tokens for the instance.
 func (a *AttestationAgent) Attest(ctx context.Context) ([]byte, error) {
-	log.Println("Calling attestation verifier GetParams")
+	a.logger.Println("Calling attestation verifier GetParams")
 	params, err := a.client.GetParams(ctx, &servpb.GetParamsRequest{})
 	if err != nil {
 		return nil, fmt.Errorf("failed GetParams call: %v", err)
 	}
-	log.Println(params.String())
+	a.logger.Println(params.String())
 
 	principalTokens, err := a.principalFetcher(params.GetAudience())
 	if err != nil {
@@ -77,7 +79,7 @@ func (a *AttestationAgent) Attest(ctx context.Context) ([]byte, error) {
 	}
 
 	req := &servpb.VerifyRequest{ConnId: params.GetConnId(), Attestation: attestation, PrincipalIdTokens: principalTokens}
-	log.Println("Calling attestation verifier Verify")
+	a.logger.Println("Calling attestation verifier Verify")
 	resp, err := a.client.Verify(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed Verify call: %v", err)

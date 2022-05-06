@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"cloud.google.com/go/compute/metadata"
+	"cloud.google.com/go/logging"
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/defaults"
 	"github.com/containerd/containerd/namespaces"
@@ -22,47 +23,68 @@ var (
 
 func main() {
 	flag.Parse()
-	log.SetOutput(os.Stdout)
-	log.Println("TEE container launcher starting...")
-	defer log.Println("TEE container launcher exited successfully")
+	os.Exit(run())
+}
+
+func run() int {
+	logger := log.Default()
+	logger.Println("TEE container launcher starting...")
 
 	mdsClient := metadata.NewClient(nil)
+	ctx := namespaces.WithNamespace(context.Background(), namespaces.Default)
+	projectID, err := mdsClient.ProjectID()
+	if err != nil {
+		logger.Printf("cannot get projectID, not in GCE? %v", err)
+		return 1
+	}
+	logClient, err := logging.NewClient(context.Background(), projectID)
+	if err != nil {
+		log.Printf("cannot setup Cloud Logging, using the default logger %v", err)
+	} else {
+		defer logClient.Close()
+		logger.Println("logs will publish to Cloud Logging")
+		logger = logClient.Logger("confidential-space-launcher").StandardLogger(logging.Info)
+	}
+
 	spec, err := spec.GetLauncherSpec(mdsClient)
 	if err != nil {
-		log.Fatal(err)
+		logger.Println(err)
+		return 1
 	}
 
 	spec.UseLocalImage = *useLocalImage
 	spec.AttestationServiceAddr = *serverAddr
-	log.Println("Launcher Spec: ", spec)
+	logger.Println("Launcher Spec: ", spec)
 
 	client, err := containerd.New(defaults.DefaultAddress)
 	if err != nil {
-		log.Fatal(err)
+		logger.Println(err)
+		return 1
 	}
 	defer client.Close()
 
-	ctx := namespaces.WithNamespace(context.Background(), namespaces.Default)
 	tpm, err := tpm2.OpenTPM("/dev/tpmrm0")
 	if err != nil {
-		log.Fatal(err)
-		return
+		logger.Println(err)
+		return 1
 	}
 	defer tpm.Close()
 
 	token, err := RetrieveAuthToken(mdsClient)
 	if err != nil {
-		log.Printf("Failed to retrieve auth token: %v, using empty auth", err)
+		logger.Printf("failed to retrieve auth token: %v, using empty auth", err)
 	}
 
-	r, err := NewRunner(ctx, client, token, spec, mdsClient, tpm)
+	r, err := NewRunner(ctx, client, token, spec, mdsClient, tpm, logger)
 	if err != nil {
-		log.Fatal(err)
+		logger.Println(err)
+		return 1
 	}
 	defer r.Close(ctx)
 
-	err = r.Run(ctx)
-	if err != nil {
-		log.Fatal(err)
+	if err := r.Run(ctx); err != nil {
+		logger.Println(err)
+		return 1
 	}
+	return 0
 }
