@@ -30,6 +30,7 @@ message SealedBytes {
   PCRs certified_pcrs = 6;
   bytes creation_data = 7;
   bytes ticket = 8;
+  bytes binary_sml_at_sealtime = 9;
 }
 
 message ImportBlob {

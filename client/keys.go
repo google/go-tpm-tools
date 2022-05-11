@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 
 	"github.com/google/go-tpm-tools/internal"
 	pb "github.com/google/go-tpm-tools/proto/tpm"
@@ -317,12 +318,22 @@ func sealHelper(rw io.ReadWriter, parentHandle tpmutil.Handle, auth []byte, sens
 	if subtle.ConstantTimeCompare(computedDigest, decodedCreationData.PCRDigest) == 0 {
 		return nil, fmt.Errorf("PCRs have been modified after sealing")
 	}
+	
+	binarySmlAtSealtime, err := GetEventLog(rw)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			binarySmlAtSealtime = nil
+		} else {
+			return nil, fmt.Errorf("failed get event log: %w", err)
+		}
+	}
 
 	sb := &pb.SealedBytes{}
 	sb.CertifiedPcrs = certifiedPcr
 	sb.Priv = priv
 	sb.Pub = pub
 	sb.CreationData = creationData
+	sb.BinarySmlAtSealtime = binarySmlAtSealtime
 	if sb.Ticket, err = tpmutil.Pack(ticket); err != nil {
 		return nil, err
 	}
