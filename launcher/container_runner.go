@@ -325,7 +325,7 @@ func (r *ContainerRunner) fetchAndWriteToken(ctx context.Context) error {
 }
 
 // Run the container
-// Container output will always be redirected to stdio for now
+// Container output will always be redirected to logger writer for now
 func (r *ContainerRunner) Run(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -339,7 +339,7 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	}
 
 	for {
-		task, err := r.container.NewTask(ctx, cio.NewCreator(cio.WithStdio))
+		task, err := r.container.NewTask(ctx, cio.NewCreator(cio.WithStreams(nil, r.logger.Writer(), r.logger.Writer())))
 		if err != nil {
 			return err
 		}
