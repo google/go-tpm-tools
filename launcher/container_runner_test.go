@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path"
@@ -84,6 +85,7 @@ func TestRefreshToken(t *testing.T) {
 				return expectedToken, nil
 			},
 		},
+		logger: log.Default(),
 	}
 
 	if err := os.MkdirAll(HostTokenPath, 0744); err != nil {
@@ -142,6 +144,7 @@ func TestRefreshTokenError(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			runner := ContainerRunner{
 				attestAgent: tc.agent,
+				logger:      log.Default(),
 			}
 
 			if _, err := runner.refreshToken(context.Background()); err == nil {
@@ -164,6 +167,7 @@ func TestFetchAndWriteTokenSucceeds(t *testing.T) {
 				return expectedToken, nil
 			},
 		},
+		logger: log.Default(),
 	}
 
 	if err := runner.fetchAndWriteToken(ctx); err != nil {
@@ -197,6 +201,7 @@ func TestTokenIsNotChangedIfRefreshFails(t *testing.T) {
 
 	runner := ContainerRunner{
 		attestAgent: &fakeAttestationAgent{attestFunc: successfulAttestFunc},
+		logger:      log.Default(),
 	}
 
 	if err := runner.fetchAndWriteToken(ctx); err != nil {
@@ -242,6 +247,7 @@ func TestFetchAndWriteTokenWithTokenRefresh(t *testing.T) {
 				return expectedToken, nil
 			},
 		},
+		logger: log.Default(),
 	}
 
 	if err := runner.fetchAndWriteToken(ctx); err != nil {

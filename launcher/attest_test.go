@@ -41,7 +41,7 @@ func TestAttest(t *testing.T) {
 		t.Fatalf("failed to connect to attestation service: %v", err)
 	}
 	// Cannot test a GCE key on the simulator.
-	agent := CreateAttestationAgent(tpm, client.AttestationKeyECC, conn, placeholderFetcher)
+	agent := CreateAttestationAgent(tpm, client.AttestationKeyECC, conn, placeholderFetcher, log.Default())
 
 	token, err := agent.Attest(context.Background())
 	if err != nil {
