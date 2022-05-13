@@ -333,13 +333,14 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	if err := r.measureContainerClaims(ctx); err != nil {
 		return fmt.Errorf("failed to measure container claims: %v", err)
 	}
-
 	if err := r.fetchAndWriteToken(ctx); err != nil {
 		return fmt.Errorf("failed to fetch and write OIDC token: %v", err)
 	}
 
+	loggerAndStdout := io.MultiWriter(os.Stdout, r.logger.Writer())
+	loggerAndStderr := io.MultiWriter(os.Stderr, r.logger.Writer())
 	for {
-		task, err := r.container.NewTask(ctx, cio.NewCreator(cio.WithStreams(nil, r.logger.Writer(), r.logger.Writer())))
+		task, err := r.container.NewTask(ctx, cio.NewCreator(cio.WithStreams(nil, loggerAndStdout, loggerAndStderr)))
 		if err != nil {
 			return err
 		}
