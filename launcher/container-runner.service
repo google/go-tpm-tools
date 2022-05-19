@@ -10,6 +10,7 @@ ExecStopPost=systemctl poweroff
 Restart=no
 # RestartSec=90
 StandardOutput=journal+console
+StandardError=journal+console
 
 [Install]
 WantedBy=multi-user.target
