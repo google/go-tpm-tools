@@ -6,7 +6,8 @@ After=network-online.target gcr-online.target containerd.service
 [Service]
 ExecStart=/var/lib/google/cc_container_launcher --addr=${ATTEST_ENDPOINT}
 # Shutdown the host after the launcher exits
-ExecStopPost=systemctl poweroff
+ExecStopPost=/bin/sleep 60
+ExecStopPost=/usr/bin/systemctl poweroff
 Restart=no
 # RestartSec=90
 StandardOutput=journal+console

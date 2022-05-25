@@ -345,10 +345,8 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		return fmt.Errorf("failed to fetch and write OIDC token: %v", err)
 	}
 
-	loggerAndStdout := io.MultiWriter(os.Stdout, r.logger.Writer())
-	loggerAndStderr := io.MultiWriter(os.Stderr, r.logger.Writer())
 	for {
-		task, err := r.container.NewTask(ctx, cio.NewCreator(cio.WithStreams(nil, loggerAndStdout, loggerAndStderr)))
+		task, err := r.container.NewTask(ctx, cio.NewCreator(cio.WithStreams(nil, r.logger.Writer(), r.logger.Writer())))
 		if err != nil {
 			return err
 		}
