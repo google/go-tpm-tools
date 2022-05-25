@@ -31,8 +31,8 @@ steps:
     args: ['finish-image-build',
            '-oem-size=500M',
            '-disk-size-gb=11',
-           '-image-name=attest-cos-dev-${_OUTPUT_IMAGE}',
-           '-image-family=attest-cos-dev',
+           '-image-name=confidential-space-${_OUTPUT_IMAGE}',
+           '-image-family=confidential-space-dev',
            '-image-project=${PROJECT_ID}',
            '-zone=us-central1-a',
            '-project=${PROJECT_ID}']
