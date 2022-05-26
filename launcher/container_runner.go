@@ -102,12 +102,20 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	logger.Printf("Operator Override Env Vars : %v\n", envs)
 	logger.Printf("Operator Override Cmd      : %v\n", launchSpec.Cmd)
 
-	imagelabels, err := getImageLabels(ctx, image)
+	imageLabels, err := getImageLabels(ctx, image)
 	if err != nil {
 		logger.Printf("Failed to get image OCI labels %v\n", err)
-	} else {
-		logger.Printf("Image Labels               : %v\n", imagelabels)
 	}
+
+	logger.Printf("Image Labels               : %v\n", imageLabels)
+	launchPolicy, err := spec.GetLaunchPolicy(imageLabels)
+	if err != nil {
+		return nil, err
+	}
+	if err := launchPolicy.Verify(launchSpec); err != nil {
+		return nil, err
+	}
+
 	if imageConfig, err := image.Config(ctx); err != nil {
 		logger.Println(err)
 	} else {
@@ -337,10 +345,8 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		return fmt.Errorf("failed to fetch and write OIDC token: %v", err)
 	}
 
-	loggerAndStdout := io.MultiWriter(os.Stdout, r.logger.Writer())
-	loggerAndStderr := io.MultiWriter(os.Stderr, r.logger.Writer())
 	for {
-		task, err := r.container.NewTask(ctx, cio.NewCreator(cio.WithStreams(nil, loggerAndStdout, loggerAndStderr)))
+		task, err := r.container.NewTask(ctx, cio.NewCreator(cio.WithStreams(nil, r.logger.Writer(), r.logger.Writer())))
 		if err != nil {
 			return err
 		}
@@ -403,14 +409,12 @@ func getImageLabels(ctx context.Context, image containerd.Image) (map[string]str
 	if err != nil {
 		return nil, err
 	}
-
 	switch ic.MediaType {
 	case v1.MediaTypeImageConfig, images.MediaTypeDockerSchema2Config:
 		p, err := content.ReadBlob(ctx, image.ContentStore(), ic)
 		if err != nil {
 			return nil, err
 		}
-
 		var ociimage v1.Image
 		if err := json.Unmarshal(p, &ociimage); err != nil {
 			return nil, err

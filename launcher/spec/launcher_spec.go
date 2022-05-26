@@ -33,8 +33,8 @@ const (
 	restartPolicyKey           = "tee-restart-policy"
 	cmdKey                     = "tee-cmd"
 	envKeyPrefix               = "tee-env-"
-	instanceAttributes         = "instance/attributes/?recursive=true"
 	impersonateServiceAccounts = "tee-impersonate-service-accounts"
+	instanceAttributesQuery    = "instance/attributes/?recursive=true"
 )
 
 var errImageRefNotSpecified = fmt.Errorf("%s is not specified in the custom metadata", imageRefKey)
@@ -97,6 +97,7 @@ func (s *LauncherSpec) UnmarshalJSON(b []byte) error {
 			s.Envs = append(s.Envs, EnvVar{strings.TrimPrefix(k, envKeyPrefix), v})
 		}
 	}
+
 	return nil
 }
 
@@ -105,7 +106,7 @@ func (s *LauncherSpec) UnmarshalJSON(b []byte) error {
 // ImageRef (tee-image-reference) is required, will return an error if
 // ImageRef is not presented in the metadata.
 func GetLauncherSpec(client *metadata.Client) (LauncherSpec, error) {
-	data, err := client.Get(instanceAttributes)
+	data, err := client.Get(instanceAttributesQuery)
 	if err != nil {
 		return LauncherSpec{}, err
 	}

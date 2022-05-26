@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"flag"
+	"io"
 	"log"
 	"os"
 
@@ -19,6 +20,10 @@ import (
 var (
 	useLocalImage = flag.Bool("use_local_image", false, "use local image instead of pulling image from the repo, only for testing purpose")
 	serverAddr    = flag.String("addr", "", "The server address in the format of host:port")
+)
+
+const (
+	logName = "confidential-space-launcher"
 )
 
 func main() {
@@ -39,11 +44,13 @@ func run() int {
 	}
 	logClient, err := logging.NewClient(context.Background(), projectID)
 	if err != nil {
-		log.Printf("cannot setup Cloud Logging, using the default logger %v", err)
+		logger.Printf("cannot setup Cloud Logging, using the default stdout logger %v", err)
 	} else {
 		defer logClient.Close()
-		logger.Println("logs will publish to Cloud Logging")
-		logger = logClient.Logger("confidential-space-launcher").StandardLogger(logging.Info)
+		logger.Printf("logs will be published to Cloud Logging under the log name %s\n", logName)
+		logger = logClient.Logger(logName).StandardLogger(logging.Info)
+		loggerAndStdout := io.MultiWriter(os.Stdout, logger.Writer()) // for now also print log to stdout
+		logger.SetOutput(loggerAndStdout)
 	}
 
 	spec, err := spec.GetLauncherSpec(mdsClient)
