@@ -16,7 +16,6 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 
 	servgrpc "github.com/google/go-tpm-tools/launcher/proto/attestation_verifier/v0"
-	servpb "github.com/google/go-tpm-tools/launcher/proto/attestation_verifier/v0"
 )
 
 func TestAttest(t *testing.T) {
@@ -42,7 +41,7 @@ func TestAttest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to connect to attestation service: %v", err)
 	}
-	pbClient := servpb.NewAttestationVerifierClient(conn)
+	pbClient := servgrpc.NewAttestationVerifierClient(conn)
 	verifierClient := verifier.NewGRPCClient(pbClient, log.Default())
 	// Cannot test a GCE key on the simulator.
 	agent := CreateAttestationAgent(tpm, client.AttestationKeyECC, verifierClient, placeholderFetcher, log.Default())
