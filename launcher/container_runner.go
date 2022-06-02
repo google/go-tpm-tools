@@ -22,7 +22,7 @@ import (
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/launcher/internal/verifier"
-	servpb "github.com/google/go-tpm-tools/launcher/proto/attestation_verifier/v0"
+	servpb "github.com/google/go-tpm-tools/launcher/internal/verifier/proto/attestation_verifier/v0"
 	"github.com/google/go-tpm-tools/launcher/spec"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 	specs "github.com/opencontainers/runtime-spec/specs-go"

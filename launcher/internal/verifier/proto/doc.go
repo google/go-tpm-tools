@@ -29,4 +29,4 @@
 //   go install google.golang.org/grpc/cmd/protoc-gen-go-grpc
 package proto
 
-//go:generate protoc -I=../../proto -I=. --go_out=. --go-grpc_out=require_unimplemented_servers=false,module=github.com/google/go-tpm-tools/launcher/proto:. --go_opt=module=github.com/google/go-tpm-tools/launcher/proto  service.proto
+//go:generate protoc -I=../../proto -I=. --go_out=. --go-grpc_out=require_unimplemented_servers=false,module=github.com/google/go-tpm-tools/launcher/internal/verifier/proto:. --go_opt=module=github.com/google/go-tpm-tools/launcher/internal/verifier/proto  service.proto

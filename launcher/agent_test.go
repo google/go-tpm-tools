@@ -10,12 +10,12 @@ import (
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal/test"
 	"github.com/google/go-tpm-tools/launcher/internal/verifier"
-	"github.com/google/go-tpm-tools/launcher/service"
+	"github.com/google/go-tpm-tools/launcher/internal/verifier/service"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"
 
-	servgrpc "github.com/google/go-tpm-tools/launcher/proto/attestation_verifier/v0"
+	servgrpc "github.com/google/go-tpm-tools/launcher/internal/verifier/proto/attestation_verifier/v0"
 )
 
 func TestAttest(t *testing.T) {

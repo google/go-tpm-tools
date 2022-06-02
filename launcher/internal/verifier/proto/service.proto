@@ -19,7 +19,7 @@ package attestation_verifier.v0;
 import "google/api/annotations.proto";
 import "attest.proto";
 
-option go_package = "github.com/google/go-tpm-tools/launcher/proto/attestation_verifier/v0";
+option go_package = "github.com/google/go-tpm-tools/launcher/internal/verifier/proto/attestation_verifier/v0";
 
 message GetParamsRequest {}
 
@@ -49,7 +49,7 @@ message VerifyRequest {
   // The Google ID Token for the principal running in the VM. Generated from the
   // Metadata Server with the requested `audience`. Optional.
   repeated bytes principal_id_tokens = 3;
-}
+}>
 
 message VerifyResponse {
   // OIDC ID token containing the claims created by the server. Required.
@@ -57,7 +57,7 @@ message VerifyResponse {
 }
 
 service AttestationVerifier {
-  // Endpoint to request attestation parameters (including nonce and audience).
+  // Endpoint to request attestation para>meters (including nonce and audience).
   rpc GetParams(GetParamsRequest) returns (GetParamsResponse) {
     option (google.api.http) = {
       post: "/v0/getParams"

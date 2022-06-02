@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"log"
 
-	servpb "github.com/google/go-tpm-tools/launcher/proto/attestation_verifier/v0"
+	servpb "github.com/google/go-tpm-tools/launcher/internal/verifier/proto/attestation_verifier/v0"
 )
 
 // GRPCClient makes calls to a gRPC attestation verifier.
-// Its gRPC definition is at github.com/google/go-tpm-tools/launcher/proto/attestation_verifier/v0.
+// Its gRPC definition is at github.com/google/go-tpm-tools/launcher/internal/verifier/proto/attestation_verifier/v0.
 type GRPCClient struct {
 	pbClient servpb.AttestationVerifierClient
 	logger   *log.Logger
