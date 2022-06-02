@@ -17,20 +17,9 @@ type Client interface {
 // get challenge part of a remote attestation protocol. The challenge
 // will be verified as part of VerifyAttestation.
 type Challenge struct {
-	name   string
-	nonce  []byte
+	Name   string
+	Nonce  []byte
 	connID string
-}
-
-// Name is the attestation verifier-specific identifier for a challenge.
-func (c Challenge) Name() string {
-	return c.name
-}
-
-// Nonce is attestation verifier-generated random data used when generating a
-// TPM quote.
-func (c Challenge) Nonce() []byte {
-	return c.nonce
 }
 
 // VerifyAttestationRequest is passed in on VerifyAttestation. It contains the
@@ -45,12 +34,5 @@ type VerifyAttestationRequest struct {
 // VerifyAttestationResponse is the response from a successful
 // VerifyAttestation call.
 type VerifyAttestationResponse struct {
-	claimsToken []byte
-}
-
-// ClaimsToken is the OIDC token issued by the attestation verifier on a
-// successful VerifyAttestation call. It contains attestation-derived claims
-// about the platform.
-func (r VerifyAttestationResponse) ClaimsToken() []byte {
-	return r.claimsToken
+	ClaimsToken []byte
 }

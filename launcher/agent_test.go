@@ -44,7 +44,7 @@ func TestAttest(t *testing.T) {
 	pbClient := servgrpc.NewAttestationVerifierClient(conn)
 	verifierClient := verifier.NewGRPCClient(pbClient, log.Default())
 	// Cannot test a GCE key on the simulator.
-	agent := CreateAttestationAgent(tpm, client.AttestationKeyECC, verifierClient, placeholderFetcher, log.Default())
+	agent := CreateAttestationAgent(tpm, client.AttestationKeyECC, verifierClient, placeholderFetcher)
 
 	token, err := agent.Attest(context.Background())
 	if err != nil {

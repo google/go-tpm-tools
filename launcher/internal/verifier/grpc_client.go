@@ -36,8 +36,8 @@ func (c *GRPCClient) CreateChallenge(ctx context.Context) (*Challenge, error) {
 	c.logger.Println(params.String())
 
 	return &Challenge{
-		name:   params.GetAudience(),
-		nonce:  params.GetNonce(),
+		Name:   params.GetAudience(),
+		Nonce:  params.GetNonce(),
 		connID: params.GetConnId(),
 	}, nil
 }
@@ -54,13 +54,17 @@ func (c *GRPCClient) VerifyAttestation(ctx context.Context, request VerifyAttest
 	if request.Attestation == nil {
 		return nil, errors.New("failed VerifyAttestation: VerifyAttestationRequest did not contain Attestation")
 	}
-	req := &servpb.VerifyRequest{ConnId: request.Challenge.connID, Attestation: request.Attestation, PrincipalIdTokens: request.GcpCredentials}
+	req := &servpb.VerifyRequest{
+		ConnId:            request.Challenge.connID,
+		Attestation:       request.Attestation,
+		PrincipalIdTokens: request.GcpCredentials,
+	}
 	c.logger.Println("Calling gRPC attestation verifier Verify")
 	resp, err := c.pbClient.Verify(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed Verify call: %v", err)
 	}
 	return &VerifyAttestationResponse{
-		claimsToken: resp.GetClaimsToken(),
+		ClaimsToken: resp.GetClaimsToken(),
 	}, nil
 }

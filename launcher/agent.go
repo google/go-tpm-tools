@@ -6,7 +6,6 @@ import (
 	"crypto"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 
 	"github.com/google/go-tpm-tools/cel"
@@ -30,7 +29,6 @@ type AttestationAgent struct {
 	client           verifier.Client
 	principalFetcher principalIDTokenFetcher
 	cosCel           cel.CEL
-	logger           *log.Logger
 }
 
 // CreateAttestationAgent returns an agent capable of performing remote
@@ -39,13 +37,12 @@ type AttestationAgent struct {
 // - akFetcher is a func to fetch an attestation key: see go-tpm-tools/client.
 // - conn is a client connection to the attestation service, typically created
 //   `grpc.Dial`. It is the client's responsibility to close the connection.
-func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher tpmKeyFetcher, verifierClient verifier.Client, principalFetcher principalIDTokenFetcher, logger *log.Logger) *AttestationAgent {
+func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher tpmKeyFetcher, verifierClient verifier.Client, principalFetcher principalIDTokenFetcher) *AttestationAgent {
 	return &AttestationAgent{
 		tpm:              tpm,
 		client:           verifierClient,
 		akFetcher:        akFetcher,
 		principalFetcher: principalFetcher,
-		logger:           logger,
 	}
 }
 
@@ -59,18 +56,17 @@ func (a *AttestationAgent) MeasureEvent(event cel.Content) error {
 // creates an attestation message, and returns the resultant
 // principalIDTokens are Metadata Server-generated ID tokens for the instance.
 func (a *AttestationAgent) Attest(ctx context.Context) ([]byte, error) {
-	a.logger.Println("Calling attestation verifier GetParams")
 	challenge, err := a.client.CreateChallenge(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	principalTokens, err := a.principalFetcher(challenge.Name())
+	principalTokens, err := a.principalFetcher(challenge.Name)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get principal tokens: %w", err)
 	}
 
-	attestation, err := a.getAttestation(challenge.Nonce())
+	attestation, err := a.getAttestation(challenge.Nonce)
 	if err != nil {
 		return nil, err
 	}
@@ -83,7 +79,7 @@ func (a *AttestationAgent) Attest(ctx context.Context) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return resp.ClaimsToken(), nil
+	return resp.ClaimsToken, nil
 }
 
 func (a *AttestationAgent) getAttestation(nonce []byte) (*pb.Attestation, error) {
