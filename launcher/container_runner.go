@@ -21,6 +21,8 @@ import (
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
+	"github.com/google/go-tpm-tools/launcher/internal/verifier"
+	servpb "github.com/google/go-tpm-tools/launcher/internal/verifier/proto/attestation_verifier/v0"
 	"github.com/google/go-tpm-tools/launcher/spec"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
@@ -170,6 +172,8 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	if err != nil {
 		return nil, fmt.Errorf("failed to open connection to attestation service: %v", err)
 	}
+	pbClient := servpb.NewAttestationVerifierClient(conn)
+	verifierClient := verifier.NewGRPCClient(pbClient, logger)
 
 	// Fetch ID token with specific audience.
 	// See https://cloud.google.com/functions/docs/securing/authenticating#functions-bearer-token-example-go.
@@ -204,7 +208,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		container,
 		launchSpec,
 		conn,
-		CreateAttestationAgent(tpm, client.GceAttestationKeyECC, conn, principalFetcher, logger),
+		CreateAttestationAgent(tpm, client.GceAttestationKeyECC, verifierClient, principalFetcher),
 		logger,
 	}, nil
 }
