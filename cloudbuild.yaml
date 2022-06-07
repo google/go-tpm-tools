@@ -34,6 +34,8 @@ steps:
            '-image-name=confidential-space-${_OUTPUT_IMAGE}',
            '-image-family=confidential-space-dev',
            '-image-project=${PROJECT_ID}',
+           '-licenses=projects/confidential-space-images/global/licenses/confidential-space',
+           '-licenses=projects/confidential-space-images/global/licenses/ek-certificate-license',
            '-zone=us-central1-a',
            '-project=${PROJECT_ID}']
 
