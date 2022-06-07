@@ -9,7 +9,7 @@ import (
 func TestLaunchPolicy(t *testing.T) {
 	testCases := []struct {
 		testName       string
-		imageLables    map[string]string
+		imageLabels    map[string]string
 		expectedPolicy LaunchPolicy
 	}{
 		{
@@ -56,7 +56,7 @@ func TestLaunchPolicy(t *testing.T) {
 
 	for _, testcase := range testCases {
 		t.Run(testcase.testName, func(t *testing.T) {
-			got, err := GetLaunchPolicy(testcase.imageLables)
+			got, err := GetLaunchPolicy(testcase.imageLabels)
 			if err != nil {
 				t.Fatal(err)
 			}
