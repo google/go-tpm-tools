@@ -46,8 +46,8 @@ func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher tpmKeyFetcher, ver
 	}
 }
 
-// MeasureEvent takes in a cel.Content and append it to the CEL eventlog
-// under the attesation agent.
+// MeasureEvent takes in a cel.Content and appends it to the CEL eventlog
+// under the attestation agent.
 func (a *AttestationAgent) MeasureEvent(event cel.Content) error {
 	return a.cosCel.AppendEvent(a.tpm, defaultCELPCR, defaultCELHashAlgo, event)
 }
