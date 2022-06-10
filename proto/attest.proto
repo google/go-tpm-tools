@@ -140,6 +140,10 @@ message ContainerState {
   string image_id = 4;
   repeated string args = 5;
   map<string, string> env_vars = 6;
+  // Record operator input Env Vars and Args, should be subsets of the above
+  // Env Vars and Args.
+  repeated string overridden_args = 7;
+  map<string, string> overridden_env_vars = 8;
 }
 
 message SemanticVersion {

@@ -269,6 +269,20 @@ func (r *ContainerRunner) measureContainerClaims(ctx context.Context) error {
 			return err
 		}
 	}
+
+	// Measure the input overridden Env Vars and Args separately, these should be subsets of the Env Vars and Args above.
+	envs := parseEnvVars(r.launchSpec.Envs)
+	for _, env := range envs {
+		if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.OverrideEnvType, EventContent: []byte(env)}); err != nil {
+			return err
+		}
+	}
+	for _, arg := range r.launchSpec.Cmd {
+		if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.OverrideArgType, EventContent: []byte(arg)}); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 

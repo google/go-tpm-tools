@@ -88,6 +88,7 @@ func getVerifiedCosState(coscel cel.CEL, pcrs *tpmpb.PCRs) (*pb.AttestedCosState
 	cosState.Container = &pb.ContainerState{}
 	cosState.Container.Args = make([]string, 0)
 	cosState.Container.EnvVars = make(map[string]string)
+	cosState.Container.OverriddenEnvVars = make(map[string]string)
 
 	for _, record := range coscel.Records {
 		// ignore non COS CEL events
@@ -123,15 +124,26 @@ func getVerifiedCosState(coscel cel.CEL, pcrs *tpmpb.PCRs) (*pb.AttestedCosState
 			cosState.Container.ImageId = string(cosTlv.EventContent)
 
 		case cel.EnvVarType:
-			envname, envval, err := cel.ParseEnvVar(string(cosTlv.EventContent))
+			envName, envVal, err := cel.ParseEnvVar(string(cosTlv.EventContent))
 			if err != nil {
 				return nil, err
 			}
-			cosState.Container.EnvVars[envname] = envval
+			cosState.Container.EnvVars[envName] = envVal
 
 		case cel.ArgType:
 			cosState.Container.Args = append(cosState.Container.Args, string(cosTlv.EventContent))
+
+		case cel.OverrideArgType:
+			cosState.Container.OverriddenArgs = append(cosState.Container.OverriddenArgs, string(cosTlv.EventContent))
+
+		case cel.OverrideEnvType:
+			envName, envVal, err := cel.ParseEnvVar(string(cosTlv.EventContent))
+			if err != nil {
+				return nil, err
+			}
+			cosState.Container.OverriddenEnvVars[envName] = envVal
 		}
+
 	}
 	return cosState, nil
 }
