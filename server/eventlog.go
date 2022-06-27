@@ -220,6 +220,11 @@ func getPlatformState(hash crypto.Hash, events []*pb.Event) (*pb.PlatformState, 
 // Separate helper function so we can use attest.ParseSecurebootState without
 // needing to reparse the entire event log.
 func parseReplayHelper(rawEventLog []byte, pcrs *tpmpb.PCRs) ([]attest.Event, error) {
+	// Similar to parseCanonicalEventLog, just return an empty array of events for an empty log
+	if len(rawEventLog) == 0 {
+		return nil, nil
+	}
+
 	attestPcrs, err := convertToAttestPcrs(pcrs)
 	if err != nil {
 		return nil, fmt.Errorf("received bad PCR proto: %v", err)
@@ -236,9 +241,6 @@ func parseReplayHelper(rawEventLog []byte, pcrs *tpmpb.PCRs) ([]attest.Event, er
 }
 
 func convertToAttestPcrs(pcrProto *tpmpb.PCRs) ([]attest.PCR, error) {
-	if len(pcrProto.GetPcrs()) == 0 {
-		return nil, errors.New("no PCRs to convert")
-	}
 	hash := tpm2.Algorithm(pcrProto.GetHash())
 	cryptoHash, err := hash.Hash()
 	if err != nil {
