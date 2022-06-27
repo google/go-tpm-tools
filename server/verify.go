@@ -15,12 +15,10 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-var oidExtensionSubjectAltName = []int{2, 5, 29, 17}
+// We conditinally support SHA-1 for PCR hashes, but at the lowest priority.
+var pcrHashAlgs = append(internal.SignatureHashAlgs, tpm2.AlgSHA1)
 
-// The hash algorithms we support, in their preferred order of use.
-var supportedHashAlgs = []tpm2.Algorithm{
-	tpm2.AlgSHA512, tpm2.AlgSHA384, tpm2.AlgSHA256, tpm2.AlgSHA1,
-}
+var oidExtensionSubjectAltName = []int{2, 5, 29, 17}
 
 var cloudComputeInstanceIdentifierOID asn1.ObjectIdentifier = []int{1, 3, 6, 1, 4, 1, 11129, 2, 1, 21}
 
@@ -32,11 +30,12 @@ type VerifyOpts struct {
 	// attestation. This option should be used if you already know the AK, as
 	// it provides the highest level of assurance.
 	TrustedAKs []crypto.PublicKey
-	// Allow attestations to be verified using SHA-1. This defaults to false
+	// Allow using SHA-1 PCRs to verify attestations. This defaults to false
 	// because SHA-1 is a weak hash algorithm with known collision attacks.
 	// However, setting this to true may be necessary if the client only
 	// supports the legacy event log format. This is the case on older Linux
-	// distributions (such as Debian 10).
+	// distributions (such as Debian 10). Note that this will NOT allow
+	// SHA-1 signatures to be used, just SHA-1 PCRs.
 	AllowSHA1 bool
 	// A collection of trusted root CAs that are used to sign AK certificates.
 	// The TrustedAKs are used first, followed by TrustRootCerts and
@@ -99,15 +98,6 @@ func VerifyAttestation(attestation *pb.Attestation, opts VerifyOpts) (*pb.Machin
 		return nil, fmt.Errorf("failed to validate AK: %w", err)
 	}
 
-	// Verify the signing hash algorithm
-	signHashAlg, err := internal.GetSigningHashAlg(akPubArea)
-	if err != nil {
-		return nil, fmt.Errorf("bad AK public area: %w", err)
-	}
-	if err = checkHashAlgSupported(signHashAlg, opts); err != nil {
-		return nil, fmt.Errorf("in AK public area: %w", err)
-	}
-
 	// Attempt to replay the log against our PCRs in order of hash preference
 	var lastErr error
 	for _, quote := range supportedQuotes(attestation.GetQuotes()) {
@@ -135,9 +125,8 @@ func VerifyAttestation(attestation *pb.Attestation, opts VerifyOpts) (*pb.Machin
 		// the start of the loop) so that the user gets a "SHA-1 not supported"
 		// error only if allowing SHA-1 support would actually allow the log
 		// to be verified. This makes debugging failed verifications easier.
-		pcrHashAlg := tpm2.Algorithm(pcrs.GetHash())
-		if err = checkHashAlgSupported(pcrHashAlg, opts); err != nil {
-			lastErr = fmt.Errorf("when verifying PCRs: %w", err)
+		if !opts.AllowSHA1 && tpm2.Algorithm(pcrs.GetHash()) == tpm2.AlgSHA1 {
+			lastErr = fmt.Errorf("SHA-1 is not allowed for verification (set VerifyOpts.AllowSHA1 to true to allow)")
 			continue
 		}
 
@@ -259,22 +248,10 @@ func validateAK(ak crypto.PublicKey, akCertBytes []byte, opts VerifyOpts) (*pb.M
 	return &pb.MachineState{Platform: &pb.PlatformState{InstanceInfo: instanceInfo}}, nil
 }
 
-func checkHashAlgSupported(hash tpm2.Algorithm, opts VerifyOpts) error {
-	if hash == tpm2.AlgSHA1 && !opts.AllowSHA1 {
-		return fmt.Errorf("SHA-1 is not allowed for verification (set VerifyOpts.AllowSHA1 to true to allow)")
-	}
-	for _, alg := range supportedHashAlgs {
-		if hash == alg {
-			return nil
-		}
-	}
-	return fmt.Errorf("unsupported hash algorithm: %v", hash)
-}
-
-// Retrieve the supported quotes in order of hash preference
+// Retrieve the supported quotes in order of hash preference.
 func supportedQuotes(quotes []*tpmpb.Quote) []*tpmpb.Quote {
 	out := make([]*tpmpb.Quote, 0, len(quotes))
-	for _, alg := range supportedHashAlgs {
+	for _, alg := range pcrHashAlgs {
 		for _, quote := range quotes {
 			if tpm2.Algorithm(quote.GetPcrs().GetHash()) == alg {
 				out = append(out, quote)
