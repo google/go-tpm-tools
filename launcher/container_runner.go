@@ -21,6 +21,7 @@ import (
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
+	"github.com/google/go-tpm-tools/launcher/agent"
 	"github.com/google/go-tpm-tools/launcher/internal/verifier"
 	servpb "github.com/google/go-tpm-tools/launcher/internal/verifier/proto/attestation_verifier/v0"
 	"github.com/google/go-tpm-tools/launcher/spec"
@@ -33,17 +34,12 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
-type attestationAgent interface {
-	MeasureEvent(cel.Content) error
-	Attest(context.Context) ([]byte, error)
-}
-
 // ContainerRunner contains information about the container settings
 type ContainerRunner struct {
 	container   containerd.Container
 	launchSpec  spec.LauncherSpec
 	attestConn  *grpc.ClientConn
-	attestAgent attestationAgent
+	attestAgent agent.AttestationAgent
 	logger      *log.Logger
 }
 
@@ -208,7 +204,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		container,
 		launchSpec,
 		conn,
-		CreateAttestationAgent(tpm, client.GceAttestationKeyECC, verifierClient, principalFetcher),
+		agent.CreateAttestationAgent(tpm, client.GceAttestationKeyECC, verifierClient, principalFetcher),
 		logger,
 	}, nil
 }
