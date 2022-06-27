@@ -328,6 +328,11 @@ func TestSystemParseEventLog(t *testing.T) {
 
 func TestEmptyEventlog(t *testing.T) {
 	emptyLog := []byte{}
+	emptyState := &attestpb.MachineState{
+		Hash:       pb.HashAlgo_SHA1,
+		Platform:   &attestpb.PlatformState{Firmware: &attestpb.PlatformState_ScrtmVersionId{}},
+		SecureBoot: &attestpb.SecureBootState{},
+	}
 
 	// SHA-1 PCR data consisting of all zero digests (i.e. the reset state)
 	zeroDigest := make([]byte, crypto.SHA1.Size())
@@ -354,8 +359,12 @@ func TestEmptyEventlog(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if _, err := parsePCClientEventLog(emptyLog, c.pcrs); err != nil {
+			state, err := parsePCClientEventLog(emptyLog, c.pcrs)
+			if err != nil {
 				t.Errorf("parsing empty eventlog: %v", err)
+			}
+			if diff := cmp.Diff(state, emptyState, protocmp.Transform(), protocmp.IgnoreEmptyMessages()); diff != "" {
+				t.Errorf("unexpected non-empty MachineState:\n%v", diff)
 			}
 		})
 	}
