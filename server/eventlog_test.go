@@ -326,6 +326,50 @@ func TestSystemParseEventLog(t *testing.T) {
 	}
 }
 
+func TestEmptyEventlog(t *testing.T) {
+	emptyLog := []byte{}
+	emptyState := &attestpb.MachineState{
+		Hash:       pb.HashAlgo_SHA1,
+		Platform:   &attestpb.PlatformState{Firmware: &attestpb.PlatformState_ScrtmVersionId{}},
+		SecureBoot: &attestpb.SecureBootState{},
+	}
+
+	// SHA-1 PCR data consisting of all zero digests (i.e. the reset state)
+	zeroDigest := make([]byte, crypto.SHA1.Size())
+	zeroPCRs := &pb.PCRs{Hash: pb.HashAlgo_SHA1, Pcrs: make(map[uint32][]byte)}
+	for i := uint32(0); i < 24; i++ {
+		zeroPCRs.Pcrs[i] = zeroDigest
+	}
+
+	// For our "Real" PCR data, use the simulated TPM (which has extended events)
+	rwc := test.GetTPM(t)
+	defer client.CheckedClose(t, rwc)
+	realPCRs, err := client.ReadPCRs(rwc, client.FullPcrSel(tpm2.AlgSHA1))
+	if err != nil {
+		t.Fatalf("failed to read PCRs: %v", err)
+	}
+
+	cases := []struct {
+		name string
+		pcrs *pb.PCRs
+	}{
+		{"Empty", &pb.PCRs{Hash: pb.HashAlgo_SHA1}},
+		{"AllZero", zeroPCRs},
+		{"Real", realPCRs},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			state, err := parsePCClientEventLog(emptyLog, c.pcrs)
+			if err != nil {
+				t.Errorf("parsing empty eventlog: %v", err)
+			}
+			if diff := cmp.Diff(state, emptyState, protocmp.Transform(), protocmp.IgnoreEmptyMessages()); diff != "" {
+				t.Errorf("unexpected non-empty MachineState:\n%v", diff)
+			}
+		})
+	}
+}
+
 func TestParseSecureBootState(t *testing.T) {
 	for _, bank := range UbuntuAmdSevGCE.Banks {
 		msState, err := parsePCClientEventLog(UbuntuAmdSevGCE.RawLog, bank)
