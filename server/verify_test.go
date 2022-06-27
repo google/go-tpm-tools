@@ -571,7 +571,7 @@ func TestVerifyAttestationMissingIntermediates(t *testing.T) {
 }
 
 func TestVerifyMismatchedAKPubAndAKCert(t *testing.T) {
-	// Make sure that we fail verification if the AKPub and AKCert don't match
+	// Make sure that we ignore the AKPub if the AKCert is presented
 	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
 
@@ -599,7 +599,7 @@ func TestVerifyMismatchedAKPubAndAKCert(t *testing.T) {
 		IntermediateCerts: GceEKIntermediates,
 	}
 	if _, err := VerifyAttestation(badAtt, opts); err == nil {
-		t.Error("expected error when calling VerifyAttestation with mismatched public key and cert")
+		t.Error("expected error when calling VerifyAttestation, because the cert is replaced")
 	}
 }
 
