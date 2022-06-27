@@ -570,7 +570,7 @@ func TestVerifyAttestationMissingIntermediates(t *testing.T) {
 	}
 }
 
-func TestVerifyMismatchedAKPubAndAKCert(t *testing.T) {
+func TestVerifyIgnoreAKPubWithAKCert(t *testing.T) {
 	// Make sure that we ignore the AKPub if the AKCert is presented
 	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
