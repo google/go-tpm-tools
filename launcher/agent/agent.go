@@ -1,3 +1,8 @@
+// Package agent coordinates the communication between the TPM and the remote
+// attestation service. It handles:
+//  - All TPM-related functionality (quotes, logs, certs, etc...)
+//  - Fetching the relevant principal ID tokens
+//  - Calling VerifyAttestation on the remote service
 package agent
 
 import (
