@@ -1,4 +1,5 @@
 // Package verifier contains clients for various attestation verifiers.
+// It is meant for launcher use and testing; the API is not stable.
 package verifier
 
 import (
@@ -19,7 +20,7 @@ type Client interface {
 type Challenge struct {
 	Name   string
 	Nonce  []byte
-	connID string
+	ConnID string
 }
 
 // VerifyAttestationRequest is passed in on VerifyAttestation. It contains the
