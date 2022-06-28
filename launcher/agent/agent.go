@@ -15,7 +15,7 @@ import (
 
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
-	"github.com/google/go-tpm-tools/launcher/internal/verifier"
+	"github.com/google/go-tpm-tools/launcher/verifier"
 	pb "github.com/google/go-tpm-tools/proto/attest"
 )
 

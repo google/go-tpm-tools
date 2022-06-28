@@ -6,7 +6,7 @@ import (
 	"crypto/rand"
 	"fmt"
 
-	servpb "github.com/google/go-tpm-tools/launcher/internal/verifier/proto/attestation_verifier/v0"
+	servpb "github.com/google/go-tpm-tools/launcher/verifier/grpc/proto/attestation_verifier/v0"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
