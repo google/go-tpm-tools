@@ -45,7 +45,34 @@ type VerifyOpts struct {
 	// TPMs signed by that CA will be trusted.
 	TrustedRootCerts  []*x509.Certificate
 	IntermediateCerts []*x509.Certificate
+	// Which bootloader the instance uses. Pick UNSUPPORTED to skip this
+	// parsing or for unsupported bootloaders (e.g., systemd).
+	Loader Bootloader
 }
+
+var (
+	// See https://www.gnu.org/software/grub/manual/grub/grub.html#Measured-Boot.
+	validPrefixes = [][]byte{[]byte("grub_cmd: "),
+		[]byte("kernel_cmdline: "),
+		[]byte("module_cmdline: "),
+		// Older style prefixes:
+		// https://src.fedoraproject.org/rpms/grub2/blob/c789522f7cfa19a10cd716a1db24dab5499c6e5c/f/0224-Rework-TPM-measurements.patch
+		[]byte("grub_kernel_cmdline "),
+		[]byte("grub_cmd ")}
+)
+
+// Bootloader refers to the second-stage bootloader that loads and transfers
+// execution to the OS kernel.
+type Bootloader int
+
+const (
+	// UnsupportedLoader refers to a second-stage bootloader that is of an
+	// unsupported type. VerifyAttestation will not parse the PCClient Event Log
+	// for bootloader events.
+	UnsupportedLoader Bootloader = iota
+	// GRUB (https://www.gnu.org/software/grub/).
+	GRUB
+)
 
 // TODO: Change int64 fields to uint64 when compatible with ASN1 parsing.
 type gceSecurityProperties struct {
@@ -119,7 +146,7 @@ func VerifyAttestation(attestation *pb.Attestation, opts VerifyOpts) (*pb.Machin
 
 		// Parse event logs and replay the events against the provided PCRs
 		pcrs := quote.GetPcrs()
-		state, err := parsePCClientEventLog(attestation.GetEventLog(), pcrs)
+		state, err := parsePCClientEventLog(attestation.GetEventLog(), pcrs, opts.Loader)
 		if err != nil {
 			lastErr = fmt.Errorf("failed to validate the PCClient event log: %w", err)
 			continue

@@ -18,6 +18,10 @@ var (
 	Ubuntu2104NoDbxEventLog []byte
 	//go:embed eventlogs/ubuntu-2104-no-secure-boot.bin
 	Ubuntu2104NoSecureBootEventLog []byte
+	//go:embed eventlogs/cos-85-amd-sev.bin
+	Cos85AmdSevEventLog []byte
+	//go:embed eventlogs/cos-93-amd-sev.bin
+	Cos93AmdSevEventLog []byte
 )
 
 // Attestation .pb files.
