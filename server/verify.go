@@ -5,7 +5,6 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/asn1"
-	"errors"
 	"fmt"
 
 	"github.com/google/go-tpm-tools/internal"
@@ -15,12 +14,10 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-var oidExtensionSubjectAltName = []int{2, 5, 29, 17}
+// We conditinally support SHA-1 for PCR hashes, but at the lowest priority.
+var pcrHashAlgs = append(internal.SignatureHashAlgs, tpm2.AlgSHA1)
 
-// The hash algorithms we support, in their preferred order of use.
-var supportedHashAlgs = []tpm2.Algorithm{
-	tpm2.AlgSHA512, tpm2.AlgSHA384, tpm2.AlgSHA256, tpm2.AlgSHA1,
-}
+var oidExtensionSubjectAltName = []int{2, 5, 29, 17}
 
 var cloudComputeInstanceIdentifierOID asn1.ObjectIdentifier = []int{1, 3, 6, 1, 4, 1, 11129, 2, 1, 21}
 
@@ -32,11 +29,12 @@ type VerifyOpts struct {
 	// attestation. This option should be used if you already know the AK, as
 	// it provides the highest level of assurance.
 	TrustedAKs []crypto.PublicKey
-	// Allow attestations to be verified using SHA-1. This defaults to false
+	// Allow using SHA-1 PCRs to verify attestations. This defaults to false
 	// because SHA-1 is a weak hash algorithm with known collision attacks.
 	// However, setting this to true may be necessary if the client only
 	// supports the legacy event log format. This is the case on older Linux
-	// distributions (such as Debian 10).
+	// distributions (such as Debian 10). Note that this will NOT allow
+	// SHA-1 signatures to be used, just SHA-1 PCRs.
 	AllowSHA1 bool
 	// A collection of trusted root CAs that are used to sign AK certificates.
 	// The TrustedAKs are used first, followed by TrustRootCerts and
@@ -103,43 +101,50 @@ type gceInstanceInfo struct {
 // After this, the eventlog is parsed and the corresponding MachineState is
 // returned. This design prevents unverified MachineStates from being used.
 func VerifyAttestation(attestation *pb.Attestation, opts VerifyOpts) (*pb.MachineState, error) {
-	// Verify the AK
-	akPubArea, err := tpm2.DecodePublic(attestation.GetAkPub())
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode AK public area: %w", err)
-	}
-	akPubKey, err := akPubArea.Key()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get AK public key: %w", err)
+	if err := validateOpts(opts); err != nil {
+		return nil, fmt.Errorf("bad options: %w", err)
 	}
 
-	// Add intermediate certs in the attestation if they exist.
-	certs, err := parseCerts(attestation.IntermediateCerts)
-	if err != nil {
-		return nil, fmt.Errorf("attestation intermediates: %w", err)
-	}
+	var akPubKey crypto.PublicKey
+	machineState := &pb.MachineState{}
+	if len(attestation.GetAkCert()) == 0 {
+		// If the AK Cert is not in the attestation, use the AK Public Area.
+		akPubArea, err := tpm2.DecodePublic(attestation.GetAkPub())
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode AK public area: %w", err)
+		}
+		akPubKey, err = akPubArea.Key()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get AK public key: %w", err)
+		}
+		if err := validateAKPub(akPubKey, opts); err != nil {
+			return nil, fmt.Errorf("failed to validate AK public key: %w", err)
+		}
+	} else {
+		// If AK Cert is presented, ignore the AK Public Area.
+		akCert, err := x509.ParseCertificate(attestation.GetAkCert())
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse AK certificate: %w", err)
+		}
+		// Use intermediate certs from the attestation if they exist.
+		certs, err := parseCerts(attestation.IntermediateCerts)
+		if err != nil {
+			return nil, fmt.Errorf("attestation intermediates: %w", err)
+		}
+		opts.IntermediateCerts = append(opts.IntermediateCerts, certs...)
 
-	opts.IntermediateCerts = append(opts.IntermediateCerts, certs...)
-
-	machineState, err := validateAK(akPubKey, attestation.GetAkCert(), opts)
-	if err != nil {
-		return nil, fmt.Errorf("failed to validate AK: %w", err)
-	}
-
-	// Verify the signing hash algorithm
-	signHashAlg, err := internal.GetSigningHashAlg(akPubArea)
-	if err != nil {
-		return nil, fmt.Errorf("bad AK public area: %w", err)
-	}
-	if err = checkHashAlgSupported(signHashAlg, opts); err != nil {
-		return nil, fmt.Errorf("in AK public area: %w", err)
+		machineState, err = validateAKCert(akCert, opts)
+		if err != nil {
+			return nil, fmt.Errorf("failed to validate AK certificate: %w", err)
+		}
+		akPubKey = akCert.PublicKey.(crypto.PublicKey)
 	}
 
 	// Attempt to replay the log against our PCRs in order of hash preference
 	var lastErr error
 	for _, quote := range supportedQuotes(attestation.GetQuotes()) {
 		// Verify the Quote
-		if err = internal.VerifyQuote(quote, akPubKey, opts.Nonce); err != nil {
+		if err := internal.VerifyQuote(quote, akPubKey, opts.Nonce); err != nil {
 			lastErr = fmt.Errorf("failed to verify quote: %w", err)
 			continue
 		}
@@ -162,9 +167,8 @@ func VerifyAttestation(attestation *pb.Attestation, opts VerifyOpts) (*pb.Machin
 		// the start of the loop) so that the user gets a "SHA-1 not supported"
 		// error only if allowing SHA-1 support would actually allow the log
 		// to be verified. This makes debugging failed verifications easier.
-		pcrHashAlg := tpm2.Algorithm(pcrs.GetHash())
-		if err = checkHashAlgSupported(pcrHashAlg, opts); err != nil {
-			lastErr = fmt.Errorf("when verifying PCRs: %w", err)
+		if !opts.AllowSHA1 && tpm2.Algorithm(pcrs.GetHash()) == tpm2.AlgSHA1 {
+			lastErr = fmt.Errorf("SHA-1 is not allowed for verification (set VerifyOpts.AllowSHA1 to true to allow)")
 			continue
 		}
 
@@ -218,38 +222,31 @@ func getInstanceInfo(extensions []pkix.Extension) (*pb.GCEInstanceInfo, error) {
 	}, nil
 }
 
-// Checks if the provided AK public key can be trusted
-func validateAK(ak crypto.PublicKey, akCertBytes []byte, opts VerifyOpts) (*pb.MachineState, error) {
+// Check that we are passing in a valid VerifyOpts structure
+func validateOpts(opts VerifyOpts) error {
 	checkPub := len(opts.TrustedAKs) > 0
-	checkCert := opts.TrustedRootCerts != nil
+	checkCert := len(opts.TrustedRootCerts) > 0
 	if !checkPub && !checkCert {
-		return nil, fmt.Errorf("no trust mechanism provided, either use TrustedAKs or TrustedRootCerts")
+		return fmt.Errorf("no trust mechanism provided, either use TrustedAKs or TrustedRootCerts")
 	}
 	if checkPub && checkCert {
-		return nil, fmt.Errorf("multiple trust mechanisms provided, only use one of TrustedAKs or TrustedRootCerts")
+		return fmt.Errorf("multiple trust mechanisms provided, only use one of TrustedAKs or TrustedRootCerts")
 	}
+	return nil
+}
 
-	// Check against known AKs
-	if checkPub {
-		for _, trusted := range opts.TrustedAKs {
-			if internal.PubKeysEqual(ak, trusted) {
-				return &pb.MachineState{}, nil
-			}
+func validateAKPub(ak crypto.PublicKey, opts VerifyOpts) error {
+	for _, trusted := range opts.TrustedAKs {
+		if internal.PubKeysEqual(ak, trusted) {
+			return nil
 		}
-		return nil, fmt.Errorf("public key is not trusted")
 	}
+	return fmt.Errorf("key not trusted")
+}
 
-	// Check if the AK Cert chains to a trusted root
-	if len(akCertBytes) == 0 {
-		return nil, errors.New("no certificate provided in attestation")
-	}
-	akCert, err := x509.ParseCertificate(akCertBytes)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse certificate: %w", err)
-	}
-
-	if !internal.PubKeysEqual(ak, akCert.PublicKey) {
-		return nil, fmt.Errorf("mismatch between public key and certificate")
+func validateAKCert(akCert *x509.Certificate, opts VerifyOpts) (*pb.MachineState, error) {
+	if len(opts.TrustedRootCerts) == 0 {
+		return nil, validateAKPub(akCert.PublicKey.(crypto.PublicKey), opts)
 	}
 
 	// We manually handle the SAN extension because x509 marks it unhandled if
@@ -275,7 +272,7 @@ func validateAK(ak crypto.PublicKey, akCertBytes []byte, opts VerifyOpts) (*pb.M
 		KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsage(x509.ExtKeyUsageAny)},
 	}
 	if _, err := akCert.Verify(x509Opts); err != nil {
-		return nil, fmt.Errorf("failed to verify certificate against trusted roots: %v", err)
+		return nil, fmt.Errorf("certificate did not chain to a trusted root: %v", err)
 	}
 
 	instanceInfo, err := getInstanceInfo(akCert.Extensions)
@@ -286,22 +283,10 @@ func validateAK(ak crypto.PublicKey, akCertBytes []byte, opts VerifyOpts) (*pb.M
 	return &pb.MachineState{Platform: &pb.PlatformState{InstanceInfo: instanceInfo}}, nil
 }
 
-func checkHashAlgSupported(hash tpm2.Algorithm, opts VerifyOpts) error {
-	if hash == tpm2.AlgSHA1 && !opts.AllowSHA1 {
-		return fmt.Errorf("SHA-1 is not allowed for verification (set VerifyOpts.AllowSHA1 to true to allow)")
-	}
-	for _, alg := range supportedHashAlgs {
-		if hash == alg {
-			return nil
-		}
-	}
-	return fmt.Errorf("unsupported hash algorithm: %v", hash)
-}
-
-// Retrieve the supported quotes in order of hash preference
+// Retrieve the supported quotes in order of hash preference.
 func supportedQuotes(quotes []*tpmpb.Quote) []*tpmpb.Quote {
 	out := make([]*tpmpb.Quote, 0, len(quotes))
-	for _, alg := range supportedHashAlgs {
+	for _, alg := range pcrHashAlgs {
 		for _, quote := range quotes {
 			if tpm2.Algorithm(quote.GetPcrs().GetHash()) == alg {
 				out = append(out, quote)
