@@ -432,7 +432,7 @@ func TestEmptyEventlog(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			state, err := parsePCClientEventLog(emptyLog, c.pcrs)
+			state, err := parsePCClientEventLog(emptyLog, c.pcrs, UnsupportedLoader)
 			if err != nil {
 				t.Errorf("parsing empty eventlog: %v", err)
 			}
