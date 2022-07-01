@@ -72,12 +72,34 @@ message GrubState {
   repeated string commands = 2;
 }
   
+// DmVerityState exposes the cryptographic properties of a verity block device.
+// It does not include per-machine specifics, like the device containing the
+// or the device containing the hash tree. Users should build a dm-verity
+// device and extract its root hash prior to validating the state here.
+//
+// Currently, we only support ChromiumOS-style dm-verity command line flags
+// versus upstream kernel flags.
+// See (respectively):
+// https://chromium.googlesource.com/chromiumos/platform2/+/HEAD/installer/chromeos_setimage.cc
+// vs
+// https://www.kernel.org/doc/html/latest/admin-guide/device-mapper/verity.html
+message DmVerityState {
+  // The hash algorithm used for the dm-verity device.
+  tpm.HashAlgo hash_alg = 1;
+  // The root digest used for the dm-verity device.
+  bytes root_digest = 2;
+  // The cryptographic salt applied to the final digest.
+  bytes salt = 3;
+}
+
 // The state of the Linux kernel.
 // At the moment, parsing LinuxKernelState relies on parsing the GrubState.
 // To do so, use ParseOpts{Loader: GRUB} when calling ParseMachineState.
 message LinuxKernelState {
   // The kernel command line.
   string command_line = 1;
+  // The dm-verity configuration extracted from the kernel command line.
+  repeated DmVerityState verity = 2;
 }
 
 // A parsed event from the TCG event log
