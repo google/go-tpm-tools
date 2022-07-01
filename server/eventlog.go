@@ -15,6 +15,19 @@ import (
 	"github.com/google/go-tpm/tpm2"
 )
 
+var (
+	newGrubKernelCmdlinePrefix = []byte("kernel_cmdline: ")
+	oldGrubKernelCmdlinePrefix = []byte("grub_kernel_cmdline ")
+	// See https://www.gnu.org/software/grub/manual/grub/grub.html#Measured-Boot.
+	validPrefixes = [][]byte{[]byte("grub_cmd: "),
+		newGrubKernelCmdlinePrefix,
+		[]byte("module_cmdline: "),
+		// Older style prefixes:
+		// https://src.fedoraproject.org/rpms/grub2/blob/c789522f7cfa19a10cd716a1db24dab5499c6e5c/f/0224-Rework-TPM-measurements.patch
+		oldGrubKernelCmdlinePrefix,
+		[]byte("grub_cmd ")}
+)
+
 // parsePCClientEventLog parses a raw event log and replays the parsed event
 // log against the given PCR values. It returns the corresponding MachineState
 // containing the events verified by particular PCR indexes/digests. It returns
@@ -48,19 +61,25 @@ func parsePCClientEventLog(rawEventLog []byte, pcrs *tpmpb.PCRs, loader Bootload
 	}
 
 	var grub *pb.GrubState
+	var kernel *pb.LinuxKernelState
 	if loader == GRUB {
 		grub, err = getGrubState(cryptoHash, rawEvents)
+		if err != nil {
+			errors = append(errors, err)
+		}
+		kernel, err = getLinuxKernelStateFromGRUB(grub)
 		if err != nil {
 			errors = append(errors, err)
 		}
 	}
 
 	return &pb.MachineState{
-		Platform:   platform,
-		SecureBoot: sbState,
-		RawEvents:  rawEvents,
-		Hash:       pcrs.GetHash(),
-		Grub:       grub,
+		Platform:    platform,
+		SecureBoot:  sbState,
+		RawEvents:   rawEvents,
+		Hash:        pcrs.GetHash(),
+		Grub:        grub,
+		LinuxKernel: kernel,
 	}, createGroupedError("failed to fully parse MachineState:", errors)
 }
 
@@ -377,4 +396,35 @@ func getGrubState(hash crypto.Hash, events []*pb.Event) (*pb.GrubState, error) {
 		return nil, errors.New("no GRUB measurements found")
 	}
 	return &pb.GrubState{Files: files, Commands: commands}, nil
+}
+
+func getLinuxKernelStateFromGRUB(grub *pb.GrubState) (*pb.LinuxKernelState, error) {
+	var cmdline string
+	seen := false
+
+	for _, command := range grub.GetCommands() {
+		// GRUB config is always in UTF-8: https://www.gnu.org/software/grub/manual/grub/html_node/Internationalisation.html.
+		cmdBytes := []byte(command)
+		suffixAt := getGrubKernelCmdlineSuffix(cmdBytes)
+		if suffixAt == -1 {
+			continue
+		}
+
+		if seen {
+			return nil, fmt.Errorf("more than one kernel commandline in GRUB commands")
+		}
+		seen = true
+		cmdline = command[suffixAt:]
+	}
+
+	return &pb.LinuxKernelState{CommandLine: cmdline}, nil
+}
+
+func getGrubKernelCmdlineSuffix(grubCmd []byte) int {
+	for _, prefix := range [][]byte{oldGrubKernelCmdlinePrefix, newGrubKernelCmdlinePrefix} {
+		if bytes.HasPrefix(grubCmd, prefix) {
+			return len(prefix)
+		}
+	}
+	return -1
 }
