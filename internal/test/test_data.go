@@ -22,6 +22,8 @@ var (
 	Cos85AmdSevEventLog []byte
 	//go:embed eventlogs/cos-93-amd-sev.bin
 	Cos93AmdSevEventLog []byte
+	//go:embed eventlogs/cos-101-amd-sev.bin
+	Cos101AmdSevEventLog []byte
 )
 
 // Attestation .pb files.
