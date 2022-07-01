@@ -773,6 +773,42 @@ func TestParseGrubStateFail(t *testing.T) {
 	}
 }
 
+func TestParseVerity(t *testing.T) {
+	eventlog := COS85AmdSev
+	for _, bank := range eventlog.Banks {
+		hashName := pb.HashAlgo_name[int32(bank.Hash)]
+		subtestName := fmt.Sprintf("COS85AmdSev-%s", hashName)
+		t.Run(subtestName, func(t *testing.T) {
+			msState, err := parsePCClientEventLog(eventlog.RawLog, bank, GRUB)
+			if err != nil {
+				t.Errorf("failed to parse and replay log: %v", err)
+			}
+
+			if len(msState.LinuxKernel.Verity) != 1 {
+				t.Error("expected exactly one verity state")
+			}
+
+			if msState.LinuxKernel.Verity[0].HashAlg != pb.HashAlgo_SHA256 {
+				t.Error("expected hash alg to be SHA256!")
+			}
+			if len(msState.LinuxKernel.Verity[0].RootDigest) != 32 {
+				t.Errorf("expected SHA256 hash to be size 32, found size %v!", len(msState.LinuxKernel.Verity[0].RootDigest))
+			}
+
+			if !bytes.Equal(msState.LinuxKernel.Verity[0].RootDigest,
+				decodeHex("795872ee03859c10dfcc4d67b4b96c85094b340c2d8784783abc2fa12a6ed671")) {
+				t.Error("expected exact root digest!")
+			}
+
+			if !bytes.Equal(msState.LinuxKernel.Verity[0].Salt,
+				decodeHex("40eb77fb9093cbff56a6f9c2214c4f7554817d079513b7c77de4953d6b8ffc16")) {
+				t.Error("expected exact salt!")
+			}
+		})
+	}
+
+}
+
 func decodeHex(hexStr string) []byte {
 	bytes, err := hex.DecodeString(hexStr)
 	if err != nil {

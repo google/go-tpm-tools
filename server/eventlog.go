@@ -398,8 +398,63 @@ func getGrubState(hash crypto.Hash, events []*pb.Event) (*pb.GrubState, error) {
 	return &pb.GrubState{Files: files, Commands: commands}, nil
 }
 
+func getGrubKernelCmdlineSuffix(grubCmd []byte) int {
+	for _, prefix := range [][]byte{oldGrubKernelCmdlinePrefix, newGrubKernelCmdlinePrefix} {
+		if bytes.HasPrefix(grubCmd, prefix) {
+			return len(prefix)
+		}
+	}
+	return -1
+}
+
+// tryGetDmVerityStateFromCmdline trys to read from the "dm" kernel parameter
+// and extract dm-verity state.
+// It only supports the non-upstreamed ChromiumOS dm-verity style arguments
+// for now.
+// For example:
+// dm=1 vroot none ro 1,0 4077568 verity payload=<uuid> hashtree=<uuid> hashstart=4077568 alg=sha256 root_hexdigest=<digest> salt=<digest>
+// See:
+// https://source.chromium.org/chromiumos/chromiumos/codesearch/+/main:src/platform2/verity/README.md
+func tryGetDmVerityStateFromCmdline(paramToVal map[string]string) (*pb.DmVerityState, error) {
+	if _, ok := paramToVal["dm"]; !ok {
+		return nil, nil
+	}
+	dmLine := paramToVal["dm"]
+	dmArgs := parseArgs([]byte(dmLine))
+
+	hashAlg, ok := dmArgs["alg"]
+	if !ok {
+		return nil, fmt.Errorf("algorithm not specified in dm-verity configuration")
+	}
+	if hashAlg != "sha256" {
+		return nil, fmt.Errorf("invalid hash algorithm \"%v\" specified in dm-verity configuration: only sha256 is supported", hashAlg)
+	}
+
+	rootDigestStr, ok := dmArgs["root_hexdigest"]
+	if !ok {
+		return nil, fmt.Errorf("root digest not specified in dm-verity configuration")
+	}
+	rootDigestBytes, err := hex.DecodeString(rootDigestStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid hex specified for root digest in dm-verity configuration: %v", err)
+	}
+
+	saltStr, ok := dmArgs["salt"]
+	if !ok {
+		return nil, fmt.Errorf("salt not specified in dm-verity configuration")
+	}
+	saltBytes, err := hex.DecodeString(saltStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid hex specified for root digest in dm-verity configuration: %v", err)
+	}
+
+	return &pb.DmVerityState{HashAlg: tpmpb.HashAlgo_SHA256, RootDigest: rootDigestBytes, Salt: saltBytes}, nil
+}
+
 func getLinuxKernelStateFromGRUB(grub *pb.GrubState) (*pb.LinuxKernelState, error) {
 	var cmdline string
+	var err error
+	var verity *pb.DmVerityState
 	seen := false
 
 	for _, command := range grub.GetCommands() {
@@ -415,16 +470,14 @@ func getLinuxKernelStateFromGRUB(grub *pb.GrubState) (*pb.LinuxKernelState, erro
 		}
 		seen = true
 		cmdline = command[suffixAt:]
-	}
 
-	return &pb.LinuxKernelState{CommandLine: cmdline}, nil
-}
-
-func getGrubKernelCmdlineSuffix(grubCmd []byte) int {
-	for _, prefix := range [][]byte{oldGrubKernelCmdlinePrefix, newGrubKernelCmdlinePrefix} {
-		if bytes.HasPrefix(grubCmd, prefix) {
-			return len(prefix)
+		verity, err = tryGetDmVerityStateFromCmdline(parseArgs(cmdBytes))
+		if err != nil {
+			return nil, err
 		}
 	}
-	return -1
+
+	return &pb.LinuxKernelState{CommandLine: cmdline,
+			Verity: []*pb.DmVerityState{verity}},
+		nil
 }
