@@ -316,6 +316,41 @@ var COS93AmdSev = eventLog{
 	}},
 }
 
+var COS101AmdSev = eventLog{
+	RawLog: test.Cos101AmdSevEventLog,
+	Banks: []*pb.PCRs{{
+		Hash: pb.HashAlgo_SHA1,
+		Pcrs: map[uint32][]byte{
+			0:  decodeHex("c032c3b51dbb6f96b047421512fd4b4dfde496f3"),
+			1:  decodeHex("e3e9e1d9deacd95b289bbbd3a1717a57af7d211b"),
+			2:  decodeHex("b2a83b0ebf2f8374299a5b2bdfc31ea955ad7236"),
+			3:  decodeHex("b2a83b0ebf2f8374299a5b2bdfc31ea955ad7236"),
+			4:  decodeHex("1ebe08ea6c45e0dfbd2aad903d2e0d3ab69fd7ad"),
+			5:  decodeHex("1c7ca47e5c09a78a747b0e0f051cc8cad6431400"),
+			6:  decodeHex("b2a83b0ebf2f8374299a5b2bdfc31ea955ad7236"),
+			7:  decodeHex("6847f752ad1795c279f289e1eecf0040cd53c1d4"),
+			8:  decodeHex("a243d82bd1fa01ae487b7ba77dd73ebb7a17800a"),
+			9:  decodeHex("fbbb8a8f120369810e7e161504556f0080afadac"),
+			14: decodeHex("1ba610b2d80967338649a8f88f45810448814bfc"),
+		},
+	}, {
+		Hash: pb.HashAlgo_SHA256,
+		Pcrs: map[uint32][]byte{
+			0:  decodeHex("0f35c214608d93c7a6e68ae7359b4a8be5a0e99eea9107ece427c4dea4e439cf"),
+			1:  decodeHex("6eb40f5b6bfafcb9914d486ce59404acd24bc13a6a3c45cda3b44c9d7053d638"),
+			2:  decodeHex("3d458cfe55cc03ea1f443f1562beec8df51c75e14a9fcf9a7234a13f198e7969"),
+			3:  decodeHex("3d458cfe55cc03ea1f443f1562beec8df51c75e14a9fcf9a7234a13f198e7969"),
+			4:  decodeHex("6d9f1a1d461cf77517e8d4c488c53f338a71c5a8e2b81ab7011c14f72cbc9a80"),
+			5:  decodeHex("d1a1ab23a5c3d98fbacff3891bad42d8e9257d61e1f683f42c6c9fa949bf96c5"),
+			6:  decodeHex("3d458cfe55cc03ea1f443f1562beec8df51c75e14a9fcf9a7234a13f198e7969"),
+			7:  decodeHex("2bc6edaa921f953cec0ffb28dad4f87114886603d6a782036502d28e69d97a48"),
+			8:  decodeHex("ebb7c847c4ade99849bcffca236d32331224a530087a7ae4cb9f7db4c2e571b5"),
+			9:  decodeHex("b5ad662e5eb9165825ee39ad66e851a67a193e0b87b27858f25ac58afa72ac57"),
+			14: decodeHex("d0d95459205afae879514db7b85630f5d6b8272ed8c731bf92933dbc9fe99969"),
+		},
+	}},
+}
+
 func TestParseEventLogs(t *testing.T) {
 	sbatErrorStr := "asn1: structure error: tags don't match (16 vs {class:0 tag:24 length:10 isCompound:true})"
 	logs := []struct {
@@ -338,6 +373,7 @@ func TestParseEventLogs(t *testing.T) {
 		{ArchLinuxWorkstation, "ArchLinuxWorkstation", UnsupportedLoader, archLinuxBadSecureBoot},
 		{COS85AmdSev, "COS85AmdSev", GRUB, ""},
 		{COS93AmdSev, "COS93AmdSev", GRUB, ""},
+		{COS101AmdSev, "COS101AmdSev", GRUB, ""},
 	}
 
 	for _, log := range logs {
@@ -633,6 +669,41 @@ func generateNonCosCelEvent(hashAlgoList []crypto.Hash) (cel.Record, error) {
 	return randRecord, nil
 }
 
+func TestParseLinuxKernelState(t *testing.T) {
+	logs := []struct {
+		eventLog
+		name            string
+		expectedCmdline string
+	}{
+		{COS85AmdSev, "COS85AmdSev", test.Cos85AmdSevCmdline},
+		{COS93AmdSev, "COS93AmdSev", test.Cos93AmdSevCmdline},
+		{COS101AmdSev, "COS101AmdSev", test.Cos101AmdSevCmdline},
+	}
+	for _, log := range logs {
+		for _, bank := range log.Banks {
+			hashName := pb.HashAlgo_name[int32(bank.Hash)]
+			subtestName := fmt.Sprintf("%s-%s", log.name, hashName)
+			t.Run(subtestName, func(t *testing.T) {
+				msState, err := parsePCClientEventLog(log.RawLog, bank, GRUB)
+				if err != nil {
+					t.Errorf("failed to parse and replay log: %v", err)
+				}
+
+				if msState.LinuxKernel == nil || len(msState.LinuxKernel.CommandLine) == 0 {
+					t.Errorf("expected %s to have a LinuxKernelState", log.name)
+				}
+
+				if msState.LinuxKernel.CommandLine != log.expectedCmdline {
+					t.Errorf("kernel command line for log %s:\n'%s'\n did not match expected cmdline:\n'%s'",
+						log.name,
+						msState.LinuxKernel.CommandLine,
+						log.expectedCmdline)
+				}
+			})
+		}
+	}
+}
+
 func TestParseGrubState(t *testing.T) {
 	logs := []struct {
 		eventLog
@@ -640,11 +711,12 @@ func TestParseGrubState(t *testing.T) {
 	}{
 		{COS85AmdSev, "COS85AmdSev"},
 		{COS93AmdSev, "COS93AmdSev"},
+		{COS101AmdSev, "COS101AmdSev"},
 	}
 	for _, log := range logs {
 		for _, bank := range log.Banks {
 			hashName := pb.HashAlgo_name[int32(bank.Hash)]
-			subtestName := fmt.Sprintf("COS85AmdSev-%s", hashName)
+			subtestName := fmt.Sprintf("%s-%s", log.name, hashName)
 			t.Run(subtestName, func(t *testing.T) {
 				msState, err := parsePCClientEventLog(log.RawLog, bank, GRUB)
 				if err != nil {
