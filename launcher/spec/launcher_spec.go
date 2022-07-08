@@ -29,10 +29,6 @@ const (
 )
 
 const (
-	defaultAttestationServiceEndpoint = "attestation-verifier.confidential-computing-test-org.joonix.net:9090"
-)
-
-const (
 	imageRefKey                = "tee-image-reference"
 	restartPolicyKey           = "tee-restart-policy"
 	cmdKey                     = "tee-cmd"
@@ -56,12 +52,15 @@ type EnvVar struct {
 // LauncherSpec contains specification set by the operator who wants to
 // launch a container.
 type LauncherSpec struct {
+	// MDS-based values.
 	ImageRef                   string
 	RestartPolicy              RestartPolicy
 	Cmd                        []string
 	Envs                       []EnvVar
 	AttestationServiceAddr     string
 	ImpersonateServiceAccounts []string
+	ProjectID                  string
+	Region                     string
 }
 
 // UnmarshalJSON unmarshals an instance attributes list in JSON format from the metadata
@@ -110,6 +109,18 @@ func (s *LauncherSpec) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+func getRegion(client *metadata.Client) (string, error) {
+	zone, err := client.Zone()
+	if err != nil {
+		return "", fmt.Errorf("failed to retrieve zone from MDS: %v", err)
+	}
+	lastDash := strings.LastIndex(zone, "-")
+	if lastDash == -1 {
+		return "", fmt.Errorf("got malformed zone from MDS: %v", zone)
+	}
+	return zone[:lastDash], nil
+}
+
 // GetLauncherSpec takes in a metadata server client, reads and parse operator's
 // input to the GCE instance custom metadata and return a LauncherSpec.
 // ImageRef (tee-image-reference) is required, will return an error if
@@ -125,8 +136,14 @@ func GetLauncherSpec(client *metadata.Client) (LauncherSpec, error) {
 		return LauncherSpec{}, err
 	}
 
-	if spec.AttestationServiceAddr == "" {
-		spec.AttestationServiceAddr = defaultAttestationServiceEndpoint
+	spec.ProjectID, err = client.ProjectID()
+	if err != nil {
+		return LauncherSpec{}, fmt.Errorf("failed to retrieve projectID from MDS: %v", err)
+	}
+
+	spec.Region, err = getRegion(client)
+	if err != nil {
+		return LauncherSpec{}, err
 	}
 
 	return *spec, nil
