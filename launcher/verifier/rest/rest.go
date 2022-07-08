@@ -69,6 +69,9 @@ func (c *restClient) CreateChallenge(ctx context.Context) (*verifier.Challenge, 
 
 // VerifyAttestation implements verifier.Client
 func (c *restClient) VerifyAttestation(ctx context.Context, request verifier.VerifyAttestationRequest) (*verifier.VerifyAttestationResponse, error) {
+	if request.Challenge == nil || request.Attestation == nil {
+		return nil, fmt.Errorf("nil value provided in challenge")
+	}
 	response, err := c.service.Projects.Locations.Challenges.VerifyAttestation(
 		request.Challenge.Name,
 		convertRequestToREST(request),
