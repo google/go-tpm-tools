@@ -11,12 +11,32 @@ import (
 	"github.com/google/go-tpm-tools/launcher/verifier"
 
 	v1alpha1 "google.golang.org/api/confidentialcomputing/v1alpha1"
-	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
 )
 
+// BadRegionError indicates that:
+//   - the requested Region cannot be used with this API
+//   - other Regions _can_ be used with this API
+type BadRegionError struct {
+	RequestedRegion  string
+	AvailableRegions []string
+	err              error
+}
+
+func (e *BadRegionError) Error() string {
+	return fmt.Sprintf(
+		"invalid region %q, available regions are [%s]: %v",
+		e.RequestedRegion, strings.Join(e.AvailableRegions, ", "), e.err,
+	)
+}
+
+func (e *BadRegionError) Unwrap() error {
+	return e.err
+}
+
 // NewClient creates a new REST client which is configured to perform
-// attestations in a particular project and region.
+// attestations in a particular project and region. Returns a *BadRegionError
+// if the requested project is valid, but the region is invalid.
 func NewClient(ctx context.Context, projectID string, region string, opts ...option.ClientOption) (verifier.Client, error) {
 	service, err := v1alpha1.NewService(ctx, opts...)
 	if err != nil {
@@ -26,27 +46,28 @@ func NewClient(ctx context.Context, projectID string, region string, opts ...opt
 	projectName := fmt.Sprintf("projects/%s", projectID)
 	locationName := fmt.Sprintf("%s/locations/%v", projectName, region)
 
-	location, err := service.Projects.Locations.Get(locationName).Do()
-	if err == nil {
+	location, getErr := service.Projects.Locations.Get(locationName).Do()
+	if getErr == nil {
 		return &restClient{service, location}, nil
 	}
 
-	// Check if the error was due to a bad region name
-	if apiErr, ok := err.(*googleapi.Error); ok && apiErr.Code == 403 {
-		// In this case, inform the user about the allowed regions
-		if list, listErr := service.Projects.Locations.List(projectName).Do(); listErr == nil {
-			locations := make([]string, len(list.Locations))
-			for i, loc := range list.Locations {
-				locations[i] = loc.LocationId
-			}
-			return nil, fmt.Errorf(
-				"unable to find region %q, available regions are [%s]: %w",
-				region, strings.Join(locations, ", "), err,
-			)
-		}
+	// If we can't get the location, try to list the locations. This handles
+	// situations where the projectID is invalid.
+	list, listErr := service.Projects.Locations.List(projectName).Do()
+	if listErr != nil {
+		return nil, fmt.Errorf("listing regions in project %q: %w", projectID, listErr)
 	}
 
-	return nil, fmt.Errorf("unable to use project %q and region %q: %w", projectID, region, err)
+	// The project is valid, but can't get the desired region.
+	regions := make([]string, len(list.Locations))
+	for i, loc := range list.Locations {
+		regions[i] = loc.LocationId
+	}
+	return nil, &BadRegionError{
+		RequestedRegion:  region,
+		AvailableRegions: regions,
+		err:              getErr,
+	}
 }
 
 type restClient struct {
