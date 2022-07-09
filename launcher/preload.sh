@@ -7,7 +7,15 @@ copy_launcher() {
 setup_launcher_systemd_unit() {
   cp launcher/container-runner.service /usr/share/oem/container-runner.service
   # set attest service endpoint
-  sed -i 's/\${ATTEST_ENDPOINT}/'${ATTEST_ENDPOINT}'/g' /usr/share/oem/container-runner.service
+
+  if [ "$IMAGE_ENV" == "hardened" ]; then
+    cp launcher/hardened.conf /usr/share/oem/launcher.conf
+  elif [ "$IMAGE_ENV" == "debug" ]; then
+    cp launcher/debug.conf /usr/share/oem/launcher.conf
+  else
+    echo "Unknown IMAGE_ENV, use hardened or debug"
+    exit 1
+  fi
 }
 
 append_cmdline() {
