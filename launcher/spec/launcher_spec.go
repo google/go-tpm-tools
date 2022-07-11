@@ -29,12 +29,20 @@ const (
 )
 
 const (
+	defaultAttestationServiceEndpoint = "attestation-verifier.confidential-computing-test-org.joonix.net:9090"
+)
+
+const (
 	imageRefKey                = "tee-image-reference"
 	restartPolicyKey           = "tee-restart-policy"
 	cmdKey                     = "tee-cmd"
 	envKeyPrefix               = "tee-env-"
 	impersonateServiceAccounts = "tee-impersonate-service-accounts"
-	instanceAttributesQuery    = "instance/attributes/?recursive=true"
+	attestationServiceAddrKey  = "tee-attestation-service-endpoint"
+)
+
+const (
+	instanceAttributesQuery = "instance/attributes/?recursive=true"
 )
 
 var errImageRefNotSpecified = fmt.Errorf("%s is not specified in the custom metadata", imageRefKey)
@@ -52,7 +60,6 @@ type LauncherSpec struct {
 	RestartPolicy              RestartPolicy
 	Cmd                        []string
 	Envs                       []EnvVar
-	UseLocalImage              bool
 	AttestationServiceAddr     string
 	ImpersonateServiceAccounts []string
 }
@@ -98,6 +105,8 @@ func (s *LauncherSpec) UnmarshalJSON(b []byte) error {
 		}
 	}
 
+	s.AttestationServiceAddr = unmarshaledMap[attestationServiceAddrKey]
+
 	return nil
 }
 
@@ -114,6 +123,10 @@ func GetLauncherSpec(client *metadata.Client) (LauncherSpec, error) {
 	spec := &LauncherSpec{}
 	if err := spec.UnmarshalJSON([]byte(data)); err != nil {
 		return LauncherSpec{}, err
+	}
+
+	if spec.AttestationServiceAddr == "" {
+		spec.AttestationServiceAddr = defaultAttestationServiceEndpoint
 	}
 
 	return *spec, nil

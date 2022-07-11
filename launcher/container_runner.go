@@ -393,14 +393,6 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 }
 
 func initImage(ctx context.Context, cdClient *containerd.Client, launchSpec spec.LauncherSpec, token oauth2.Token, logger *log.Logger) (containerd.Image, error) {
-	if launchSpec.UseLocalImage {
-		image, err := cdClient.GetImage(ctx, launchSpec.ImageRef)
-		if err != nil {
-			return nil, fmt.Errorf("cannot get local image: [%w]", err)
-		}
-		return image, nil
-	}
-
 	var remoteOpt containerd.RemoteOpt
 	if token.Valid() {
 		remoteOpt = containerd.WithResolver(Resolver(token.AccessToken))
