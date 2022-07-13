@@ -57,6 +57,11 @@ func EndorsementKeyECC(rw io.ReadWriter) (*Key, error) {
 	return ekEcc, nil
 }
 
+// LoadStorageRootKeyRSA returns a key that matches SRKTemplateRSA from cachedHandle.
+func LoadStorageRootKeyRSA(rw io.ReadWriter, cachedHandle tpmutil.Handle) (*Key, error) {
+	return CachedKey(rw, tpm2.HandleOwner, SRKTemplateRSA(), cachedHandle)
+}
+
 // StorageRootKeyRSA generates and loads a key from SRKTemplateRSA.
 func StorageRootKeyRSA(rw io.ReadWriter) (*Key, error) {
 	return NewCachedKey(rw, tpm2.HandleOwner, SRKTemplateRSA(), SRKReservedHandle)
@@ -164,6 +169,22 @@ func NewCachedKey(rw io.ReadWriter, parent tpmutil.Handle, template tpm2.Public,
 	}
 	k.handle = cachedHandle
 	return k, nil
+}
+
+// CachedKey is almost identical to NewCachedKey, except that it initially tries to
+// see if the a key matching the provided template is at cachedHandle. If so,
+// that key is returned. If not, it returns an error.
+func CachedKey(rw io.ReadWriter, parent tpmutil.Handle, template tpm2.Public, cachedHandle tpmutil.Handle) (k *Key, err error) {
+	cachedPub, _, _, err := tpm2.ReadPublic(rw, cachedHandle)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read public of cachedHandle: %w", err)
+	}
+
+	if cachedPub.MatchesTemplate(template) {
+		k = &Key{rw: rw, handle: cachedHandle, pubArea: cachedPub}
+		return k, k.finish()
+	}
+	return nil, fmt.Errorf("failed to find matching template at cachedHandle")
 }
 
 // NewKey generates a key from the template and loads that key into the TPM
