@@ -18,6 +18,7 @@ import (
 	"github.com/google/go-tpm/direct/structures/tpm2b"
 	"github.com/google/go-tpm/direct/structures/tpmt"
 	tpm2direct "github.com/google/go-tpm/direct/tpm2"
+	"github.com/google/go-tpm/direct/transport"
 )
 
 // Key wraps an active asymmetric TPM2 key. This can either be a signing key or
@@ -33,7 +34,7 @@ type Key struct {
 	session session
 
 	// Direct Implementation
-	// transport.tpm will be referenced from transport.FromReadWriter(rw)
+	// transport.tpm will be referenced from transportTPM()
 	pubAreaDirect tpmt.Public
 	nameDirect    *tpm2b.Name
 	sessionDirect tpm2direct.Session
@@ -42,6 +43,11 @@ type Key struct {
 	pubKey crypto.PublicKey
 	cert   *x509.Certificate
 	handle tpmutil.Handle
+}
+
+// transportTPM wraps the ReadWriter to a transport TPM.
+func (k *Key) transportTPM() transport.TPM {
+	return transport.FromReadWriter(k.rw)
 }
 
 // EndorsementKeyRSA generates and loads a key from DefaultEKTemplateRSA.
@@ -185,6 +191,7 @@ func NewCachedKey(rw io.ReadWriter, parent tpmutil.Handle, template tpm2.Public,
 //     is created in the specified hierarchy (using CreatePrimary).
 //   - If parent is a valid key handle, a normal key object is created under
 //     that parent (using Create and Load). NOTE: Not yet supported.
+//
 // This function also assumes that the desired key:
 //   - Does not have its usage locked to specific PCR values
 //   - Usable with empty authorization sessions (i.e. doesn't need a password)
@@ -225,10 +232,10 @@ func (k *Key) finish() error {
 	var tpmtPublic tpmt.Public
 	pubArea, err := k.pubArea.Encode()
 	if err != nil {
-		return fmt.Errorf("failed to encode: %v", err)
+		return fmt.Errorf("failed to encode legacy k.pubArea: %v", err)
 	}
 	if err := tpm2direct.Unmarshal(pubArea, &tpmtPublic); err != nil {
-		return fmt.Errorf("failed to unmarshal: %v", err)
+		return fmt.Errorf("failed to unmarshal direct tpmtPublic: %v", err)
 	}
 	k.pubAreaDirect = tpmtPublic
 	if k.nameDirect, err = tpm2direct.ObjectName(&k.pubAreaDirect); err != nil {
@@ -297,6 +304,32 @@ func (k *Key) Seal(sensitive []byte, opts SealOpts) (*pb.SealedBytes, error) {
 	var auth []byte
 
 	pcrs, err = mergePCRSelAndProto(k.rw, opts.Current, opts.Target)
+	if err != nil {
+		return nil, fmt.Errorf("invalid SealOpts: %v", err)
+	}
+	if len(pcrs.GetPcrs()) > 0 {
+		auth = internal.PCRSessionAuth(pcrs, SessionHashAlg)
+	}
+	certifySel := FullPcrSel(CertifyHashAlgTpm)
+	sb, err := sealHelper(k.rw, k.Handle(), auth, sensitive, certifySel)
+	if err != nil {
+		return nil, err
+	}
+
+	for pcrNum := range pcrs.GetPcrs() {
+		sb.Pcrs = append(sb.Pcrs, pcrNum)
+	}
+	sb.Hash = pcrs.GetHash()
+	sb.Srk = pb.ObjectType(k.pubArea.Type)
+	return sb, nil
+}
+
+func (k *Key) SealDirect(sensitive []byte, opts SealOptsDirect) (*pb.SealedBytes, error) {
+	var pcrs *pb.PCRs
+	var err error
+	var auth []byte
+
+	// pcrs, err = mergePCRSelAndProtoDirect(k.transportTPM, opts.Current, opts.Target)
 	if err != nil {
 		return nil, fmt.Errorf("invalid SealOpts: %v", err)
 	}
