@@ -12,6 +12,10 @@ import (
 
 	"github.com/google/go-tpm-tools/internal"
 	pb "github.com/google/go-tpm-tools/proto/tpm"
+	"github.com/google/go-tpm/direct/structures/tpm2b"
+	"github.com/google/go-tpm/direct/structures/tpmt"
+	tpm2direct "github.com/google/go-tpm/direct/tpm2"
+	"github.com/google/go-tpm/direct/transport"
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpmutil"
 )
@@ -25,6 +29,12 @@ type Key struct {
 	rw      io.ReadWriter
 	handle  tpmutil.Handle
 	pubArea tpm2.Public
+	// >>> Start Direct Implementaion <<<
+	transportTPM  transport.TPM
+	pubAreaDirect tpmt.Public
+	nameDirect    *tpm2b.Name
+	sessionDirect tpm2direct.Session
+	// >>> End Direct Implementaion <<<
 	pubKey  crypto.PublicKey
 	name    tpm2.Name
 	session session
@@ -196,6 +206,14 @@ func NewKey(rw io.ReadWriter, parent tpmutil.Handle, template tpm2.Public) (k *K
 	if k.pubArea, err = tpm2.DecodePublic(pubArea); err != nil {
 		return
 	}
+	// >>> Start Direct Implementaion <<<
+	var tpmtPublic tpmt.Public
+	if err := tpm2direct.Unmarshal(pubArea, &tpmtPublic); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal: %v", err)
+	}
+	k.pubAreaDirect = tpmtPublic
+	k.transportTPM = transport.FromReadWriter(rw)
+	// >>> End Direct Implementaion <<<
 	return k, k.finish()
 }
 
@@ -207,14 +225,19 @@ func (k *Key) finish() error {
 	if k.name, err = k.pubArea.Name(); err != nil {
 		return err
 	}
+	if k.nameDirect, err = tpm2direct.ObjectName(&k.pubAreaDirect); err != nil {
+		return err
+	}
 	// We determine the right type of session based on the auth policy
 	if k.session == nil {
 		if bytes.Equal(k.pubArea.AuthPolicy, defaultEKAuthPolicy()) {
+			// Check for direct session here when sessions are implemented
 			if k.session, err = newEKSession(k.rw); err != nil {
 				return err
 			}
 		} else if len(k.pubArea.AuthPolicy) == 0 {
 			k.session = nullSession{}
+			k.sessionDirect = tpm2direct.PasswordAuth(nil)
 		} else {
 			return fmt.Errorf("unknown auth policy when creating key")
 		}
@@ -238,6 +261,12 @@ func (k *Key) Name() tpm2.Name {
 // determining additional properties of the underlying TPM key.
 func (k *Key) PublicArea() tpm2.Public {
 	return k.pubArea
+}
+
+// PublicAreaDirect exposes the key's entire direct public area. This is useful for
+// determining additional properties of the underlying TPM key.
+func (k *Key) PublicAreaDirect() tpmt.Public {
+	return k.pubAreaDirect
 }
 
 // PublicKey provides a go interface to the loaded key's public area.

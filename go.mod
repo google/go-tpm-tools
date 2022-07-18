@@ -6,7 +6,7 @@ go 1.17
 require (
 	github.com/google/go-attestation v0.4.4-0.20220404204839-8820d49b18d9
 	github.com/google/go-cmp v0.5.7
-	github.com/google/go-tpm v0.3.3
+	github.com/google/go-tpm v0.3.4-0.20220713223303-d2289fb1cdc5
 	google.golang.org/protobuf v1.28.0
 )
 
