@@ -129,7 +129,7 @@ func TestCachedRSAKeys(t *testing.T) {
 			defer srk.Close()
 
 			// Get the cached key (should be the same)
-			srk, err = k.checkKey(rwc, k.cachedHandle)
+			_, err = k.checkKey(rwc, k.cachedHandle)
 			if k.shouldPass {
 				if err != nil {
 					t.Errorf("Expected checkKey to Pass: %v", err)
