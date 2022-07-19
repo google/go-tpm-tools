@@ -28,7 +28,7 @@ jobs:
   build_old:
     strategy:
       matrix:
-        go-version: [1.16.x, 1.17.x]
+        go-version: [1.17.x, 1.18.x]
         # TODO: Get this working on windows-latest
         os: [ubuntu-latest]
     name: Build/Test (${{ matrix.os }}, Go ${{ matrix.go-version }})
