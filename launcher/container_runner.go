@@ -349,6 +349,18 @@ func (r *ContainerRunner) refreshToken(ctx context.Context) (time.Duration, erro
 		return 0, fmt.Errorf("failed to write token to container mount source point: %v", err)
 	}
 
+	// Print out the claims in the jwt payload
+	mapClaims := jwt.MapClaims{}
+	_, _, err = jwt.NewParser().ParseUnverified(string(token), mapClaims)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse token: %w", err)
+	}
+	claimsString, err := json.MarshalIndent(mapClaims, "", "  ")
+	if err != nil {
+		return 0, fmt.Errorf("failed to format claims: %w", err)
+	}
+	r.logger.Println(string(claimsString))
+
 	return time.Duration(float64(time.Until(claims.ExpiresAt.Time)) * defaultRefreshMultiplier), nil
 }
 
@@ -357,7 +369,6 @@ func (r *ContainerRunner) fetchAndWriteToken(ctx context.Context) error {
 	if err := os.MkdirAll(HostTokenPath, 0744); err != nil {
 		return err
 	}
-
 	duration, err := r.refreshToken(ctx)
 	if err != nil {
 		return err
