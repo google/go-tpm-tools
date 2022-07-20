@@ -34,7 +34,11 @@ const (
 	cmdKey                     = "tee-cmd"
 	envKeyPrefix               = "tee-env-"
 	impersonateServiceAccounts = "tee-impersonate-service-accounts"
-	instanceAttributesQuery    = "instance/attributes/?recursive=true"
+	attestationServiceAddrKey  = "tee-attestation-service-endpoint"
+)
+
+const (
+	instanceAttributesQuery = "instance/attributes/?recursive=true"
 )
 
 var errImageRefNotSpecified = fmt.Errorf("%s is not specified in the custom metadata", imageRefKey)
@@ -48,13 +52,15 @@ type EnvVar struct {
 // LauncherSpec contains specification set by the operator who wants to
 // launch a container.
 type LauncherSpec struct {
+	// MDS-based values.
 	ImageRef                   string
 	RestartPolicy              RestartPolicy
 	Cmd                        []string
 	Envs                       []EnvVar
-	UseLocalImage              bool
 	AttestationServiceAddr     string
 	ImpersonateServiceAccounts []string
+	ProjectID                  string
+	Region                     string
 }
 
 // UnmarshalJSON unmarshals an instance attributes list in JSON format from the metadata
@@ -98,7 +104,21 @@ func (s *LauncherSpec) UnmarshalJSON(b []byte) error {
 		}
 	}
 
+	s.AttestationServiceAddr = unmarshaledMap[attestationServiceAddrKey]
+
 	return nil
+}
+
+func getRegion(client *metadata.Client) (string, error) {
+	zone, err := client.Zone()
+	if err != nil {
+		return "", fmt.Errorf("failed to retrieve zone from MDS: %v", err)
+	}
+	lastDash := strings.LastIndex(zone, "-")
+	if lastDash == -1 {
+		return "", fmt.Errorf("got malformed zone from MDS: %v", zone)
+	}
+	return zone[:lastDash], nil
 }
 
 // GetLauncherSpec takes in a metadata server client, reads and parse operator's
@@ -113,6 +133,16 @@ func GetLauncherSpec(client *metadata.Client) (LauncherSpec, error) {
 
 	spec := &LauncherSpec{}
 	if err := spec.UnmarshalJSON([]byte(data)); err != nil {
+		return LauncherSpec{}, err
+	}
+
+	spec.ProjectID, err = client.ProjectID()
+	if err != nil {
+		return LauncherSpec{}, fmt.Errorf("failed to retrieve projectID from MDS: %v", err)
+	}
+
+	spec.Region, err = getRegion(client)
+	if err != nil {
 		return LauncherSpec{}, err
 	}
 

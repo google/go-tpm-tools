@@ -1,4 +1,6 @@
-package verifier
+// Package grpcclient contains the verifier.Client implementation for a gRPC
+// attestation verifier.
+package grpcclient
 
 import (
 	"context"
@@ -6,20 +8,22 @@ import (
 	"fmt"
 	"log"
 
-	servpb "github.com/google/go-tpm-tools/launcher/internal/verifier/proto/attestation_verifier/v0"
+	"github.com/google/go-tpm-tools/launcher/verifier"
+	servpb "github.com/google/go-tpm-tools/launcher/verifier/grpcclient/proto/attestation_verifier/v0"
+	"google.golang.org/grpc"
 )
 
-// GRPCClient makes calls to a gRPC attestation verifier.
-// Its gRPC definition is at github.com/google/go-tpm-tools/launcher/internal/verifier/proto/attestation_verifier/v0.
-type GRPCClient struct {
+type grpcClient struct {
 	pbClient servpb.AttestationVerifierClient
 	logger   *log.Logger
 }
 
-// NewGRPCClient returns a GRPCClient implementing verifier.Client.
-func NewGRPCClient(pbClient servpb.AttestationVerifierClient, logger *log.Logger) *GRPCClient {
-	return &GRPCClient{
-		pbClient: pbClient,
+// NewClient returns a verifier.Client which connects to the prototype service
+// via gRPC. Its gRPC definition is at:
+// github.com/google/go-tpm-tools/launcher/verifier/grpcclient/proto/attestation_verifier/v0.
+func NewClient(conn *grpc.ClientConn, logger *log.Logger) verifier.Client {
+	return &grpcClient{
+		pbClient: servpb.NewAttestationVerifierClient(conn),
 		logger:   logger,
 	}
 }
@@ -27,7 +31,7 @@ func NewGRPCClient(pbClient servpb.AttestationVerifierClient, logger *log.Logger
 // CreateChallenge returns a Challenge. This challenge contains an audience
 // used when generating the optional GcpCredentials, a nonce for TPM2_Quote,
 // and a service-specific connection ID used when calling Verify.
-func (c *GRPCClient) CreateChallenge(ctx context.Context) (*Challenge, error) {
+func (c *grpcClient) CreateChallenge(ctx context.Context) (*verifier.Challenge, error) {
 	params, err := c.pbClient.GetParams(ctx, &servpb.GetParamsRequest{})
 	c.logger.Println("Calling gRPC attestation verifier GetParams")
 	if err != nil {
@@ -35,10 +39,10 @@ func (c *GRPCClient) CreateChallenge(ctx context.Context) (*Challenge, error) {
 	}
 	c.logger.Println(params.String())
 
-	return &Challenge{
+	return &verifier.Challenge{
 		Name:   params.GetAudience(),
 		Nonce:  params.GetNonce(),
-		connID: params.GetConnId(),
+		ConnID: params.GetConnId(),
 	}, nil
 }
 
@@ -47,7 +51,7 @@ func (c *GRPCClient) CreateChallenge(ctx context.Context) (*Challenge, error) {
 // with the Challenge.Name and the attestation quote to use the Challenge.Nonce.
 // VerifyAttestation also uses the Challenge.connId to reference the original
 // connection ID of CreateChallenge.
-func (c *GRPCClient) VerifyAttestation(ctx context.Context, request VerifyAttestationRequest) (*VerifyAttestationResponse, error) {
+func (c *grpcClient) VerifyAttestation(ctx context.Context, request verifier.VerifyAttestationRequest) (*verifier.VerifyAttestationResponse, error) {
 	if request.Challenge == nil {
 		return nil, errors.New("failed VerifyAttestation: VerifyAttestationRequest did not contain Challenge")
 	}
@@ -55,7 +59,7 @@ func (c *GRPCClient) VerifyAttestation(ctx context.Context, request VerifyAttest
 		return nil, errors.New("failed VerifyAttestation: VerifyAttestationRequest did not contain Attestation")
 	}
 	req := &servpb.VerifyRequest{
-		ConnId:            request.Challenge.connID,
+		ConnId:            request.Challenge.ConnID,
 		Attestation:       request.Attestation,
 		PrincipalIdTokens: request.GcpCredentials,
 	}
@@ -64,7 +68,7 @@ func (c *GRPCClient) VerifyAttestation(ctx context.Context, request VerifyAttest
 	if err != nil {
 		return nil, fmt.Errorf("failed Verify call: %v", err)
 	}
-	return &VerifyAttestationResponse{
+	return &verifier.VerifyAttestationResponse{
 		ClaimsToken: resp.GetClaimsToken(),
 	}, nil
 }

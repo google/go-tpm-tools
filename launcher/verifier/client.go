@@ -1,10 +1,11 @@
 // Package verifier contains clients for various attestation verifiers.
+// It is meant for launcher use and testing; the API is not stable.
 package verifier
 
 import (
 	"context"
 
-	"github.com/google/go-tpm-tools/proto/attest"
+	attestpb "github.com/google/go-tpm-tools/proto/attest"
 )
 
 // Client is a common interface to various attestation verifiers.
@@ -19,7 +20,7 @@ type Client interface {
 type Challenge struct {
 	Name   string
 	Nonce  []byte
-	connID string
+	ConnID string
 }
 
 // VerifyAttestationRequest is passed in on VerifyAttestation. It contains the
@@ -28,7 +29,7 @@ type Challenge struct {
 type VerifyAttestationRequest struct {
 	Challenge      *Challenge
 	GcpCredentials [][]byte
-	Attestation    *attest.Attestation
+	Attestation    *attestpb.Attestation
 }
 
 // VerifyAttestationResponse is the response from a successful

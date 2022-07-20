@@ -109,9 +109,10 @@ jobs:
         with:
           go-version: ${{ matrix.go-version }}
       - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v3.1.0
+        uses: golangci/golangci-lint-action@v3.2.0
         with:
-          version: latest
+          # Update when https://github.com/golangci/golangci-lint/issues/2997 is fixed.
+          version: v1.46.2
           working-directory: ${{ matrix.dir }}
           args: >
             -D errcheck

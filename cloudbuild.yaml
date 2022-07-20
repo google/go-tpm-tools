@@ -2,7 +2,7 @@ substitutions:
   '_BASE_IMAGE': 'cos-dev-101-16963-0-0'
   '_BASE_IMAGE_PROJECT': 'cos-cloud'
   '_OUTPUT_IMAGE': ''
-  '_ATTEST_ENDPOINT': ''
+  '_IMAGE_ENV': 'debug'
 
 steps:
   - name: golang:1.18
@@ -21,7 +21,7 @@ steps:
   - name: 'gcr.io/cos-cloud/cos-customizer'
     args: ['run-script',
            '-script=launcher/preload.sh',
-           '-env=ATTEST_ENDPOINT=${_ATTEST_ENDPOINT}']
+           '-env=IMAGE_ENV=${_IMAGE_ENV}']
   - name: 'gcr.io/cos-cloud/cos-customizer'
     args: ['seal-oem']
   - name: 'gcr.io/cos-cloud/cos-customizer'
@@ -34,6 +34,8 @@ steps:
            '-image-name=confidential-space-${_OUTPUT_IMAGE}',
            '-image-family=confidential-space-dev',
            '-image-project=${PROJECT_ID}',
+           '-licenses=projects/confidential-space-images/global/licenses/confidential-space',
+           '-licenses=projects/confidential-space-images/global/licenses/ek-certificate-license',
            '-zone=us-central1-a',
            '-project=${PROJECT_ID}']
 

@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"strings"
 	"time"
 
 	"cloud.google.com/go/compute/metadata"
@@ -21,29 +22,27 @@ import (
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
-	"github.com/google/go-tpm-tools/launcher/internal/verifier"
-	servpb "github.com/google/go-tpm-tools/launcher/internal/verifier/proto/attestation_verifier/v0"
+	"github.com/google/go-tpm-tools/launcher/agent"
 	"github.com/google/go-tpm-tools/launcher/spec"
+	"github.com/google/go-tpm-tools/launcher/verifier"
+	"github.com/google/go-tpm-tools/launcher/verifier/grpcclient"
+	"github.com/google/go-tpm-tools/launcher/verifier/rest"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/google"
 	"google.golang.org/api/impersonate"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
-type attestationAgent interface {
-	MeasureEvent(cel.Content) error
-	Attest(context.Context) ([]byte, error)
-}
-
 // ContainerRunner contains information about the container settings
 type ContainerRunner struct {
 	container   containerd.Container
 	launchSpec  spec.LauncherSpec
 	attestConn  *grpc.ClientConn
-	attestAgent attestationAgent
+	attestAgent agent.AttestationAgent
 	logger      *log.Logger
 }
 
@@ -166,15 +165,6 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		return nil, fmt.Errorf("length of Args [%d] is shorter or equal to the length of the given Cmd [%d], maybe the Entrypoint is set to empty in the image?", len(containerSpec.Process.Args), len(launchSpec.Cmd))
 	}
 
-	// TODO(b/212586174): Dial with secure credentials.
-	opt := grpc.WithTransportCredentials(insecure.NewCredentials())
-	conn, err := grpc.Dial(launchSpec.AttestationServiceAddr, opt)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open connection to attestation service: %v", err)
-	}
-	pbClient := servpb.NewAttestationVerifierClient(conn)
-	verifierClient := verifier.NewGRPCClient(pbClient, logger)
-
 	// Fetch ID token with specific audience.
 	// See https://cloud.google.com/functions/docs/securing/authenticating#functions-bearer-token-example-go.
 	principalFetcher := func(audience string) ([][]byte, error) {
@@ -204,13 +194,61 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		return tokens, nil
 	}
 
+	asAddr := launchSpec.AttestationServiceAddr
+	var verifierClient verifier.Client
+	var conn *grpc.ClientConn
+	// Temporary support for both gRPC and REST-based attestation verifier.
+	// Use REST when empty flag or the presence of http in the addr, else gRPC.
+	// TODO: remove once fully migrated to the REST-based verifier.
+	if asAddr == "" || strings.Contains(asAddr, "http") {
+		verifierClient, err = getRESTClient(ctx, asAddr, launchSpec)
+	} else {
+		verifierClient, conn, err = getGRPCClient(asAddr, logger)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to create verifier client: %v", err)
+	}
+
 	return &ContainerRunner{
 		container,
 		launchSpec,
 		conn,
-		CreateAttestationAgent(tpm, client.GceAttestationKeyECC, verifierClient, principalFetcher),
+		agent.CreateAttestationAgent(tpm, client.GceAttestationKeyECC, verifierClient, principalFetcher),
 		logger,
 	}, nil
+}
+
+// getGRPCClient returns a gRPC verifier.Client pointing to the given address.
+// It also returns a grpc.ClientConn for closing out the connection.
+func getGRPCClient(asAddr string, logger *log.Logger) (verifier.Client, *grpc.ClientConn, error) {
+	opt := grpc.WithTransportCredentials(insecure.NewCredentials())
+	conn, err := grpc.Dial(asAddr, opt)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to open connection to gRPC attestation service: %v", err)
+	}
+	return grpcclient.NewClient(conn, logger), conn, nil
+}
+
+// getRESTClient returns a REST verifier.Client that points to the given address.
+// It defaults to the Attestation Verifier instance at
+// https://confidentialcomputing.googleapis.com.
+func getRESTClient(ctx context.Context, asAddr string, spec spec.LauncherSpec) (verifier.Client, error) {
+	httpClient, err := google.DefaultClient(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create HTTP client: %v", err)
+	}
+
+	opts := []option.ClientOption{option.WithHTTPClient(httpClient)}
+	if asAddr != "" {
+		opts = append(opts, option.WithEndpoint(asAddr))
+	}
+
+	const defaultRegion = "us-central1"
+	restClient, err := rest.NewClient(ctx, spec.ProjectID, defaultRegion, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return restClient, nil
 }
 
 // parseEnvVars parses the environment variables to the oci format
@@ -269,6 +307,20 @@ func (r *ContainerRunner) measureContainerClaims(ctx context.Context) error {
 			return err
 		}
 	}
+
+	// Measure the input overridden Env Vars and Args separately, these should be subsets of the Env Vars and Args above.
+	envs := parseEnvVars(r.launchSpec.Envs)
+	for _, env := range envs {
+		if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.OverrideEnvType, EventContent: []byte(env)}); err != nil {
+			return err
+		}
+	}
+	for _, arg := range r.launchSpec.Cmd {
+		if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.OverrideArgType, EventContent: []byte(arg)}); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -297,6 +349,18 @@ func (r *ContainerRunner) refreshToken(ctx context.Context) (time.Duration, erro
 		return 0, fmt.Errorf("failed to write token to container mount source point: %v", err)
 	}
 
+	// Print out the claims in the jwt payload
+	mapClaims := jwt.MapClaims{}
+	_, _, err = jwt.NewParser().ParseUnverified(string(token), mapClaims)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse token: %w", err)
+	}
+	claimsString, err := json.MarshalIndent(mapClaims, "", "  ")
+	if err != nil {
+		return 0, fmt.Errorf("failed to format claims: %w", err)
+	}
+	r.logger.Println(string(claimsString))
+
 	return time.Duration(float64(time.Until(claims.ExpiresAt.Time)) * defaultRefreshMultiplier), nil
 }
 
@@ -305,7 +369,6 @@ func (r *ContainerRunner) fetchAndWriteToken(ctx context.Context) error {
 	if err := os.MkdirAll(HostTokenPath, 0744); err != nil {
 		return err
 	}
-
 	duration, err := r.refreshToken(ctx)
 	if err != nil {
 		return err
@@ -385,14 +448,6 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 }
 
 func initImage(ctx context.Context, cdClient *containerd.Client, launchSpec spec.LauncherSpec, token oauth2.Token, logger *log.Logger) (containerd.Image, error) {
-	if launchSpec.UseLocalImage {
-		image, err := cdClient.GetImage(ctx, launchSpec.ImageRef)
-		if err != nil {
-			return nil, fmt.Errorf("cannot get local image: [%w]", err)
-		}
-		return image, nil
-	}
-
 	var remoteOpt containerd.RemoteOpt
 	if token.Valid() {
 		remoteOpt = containerd.WithResolver(Resolver(token.AccessToken))
@@ -433,5 +488,7 @@ func (r *ContainerRunner) Close(ctx context.Context) {
 	// Exit gracefully:
 	// Delete container and close connection to attestation service.
 	r.container.Delete(ctx, containerd.WithSnapshotCleanup)
-	r.attestConn.Close()
+	if r.attestConn != nil {
+		r.attestConn.Close()
+	}
 }

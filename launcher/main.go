@@ -17,11 +17,6 @@ import (
 	"github.com/google/go-tpm/tpm2"
 )
 
-var (
-	useLocalImage = flag.Bool("use_local_image", false, "use local image instead of pulling image from the repo, only for testing purpose")
-	serverAddr    = flag.String("addr", "", "The server address in the format of host:port")
-)
-
 const (
 	logName = "confidential-space-launcher"
 )
@@ -59,8 +54,6 @@ func run() int {
 		return 1
 	}
 
-	spec.UseLocalImage = *useLocalImage
-	spec.AttestationServiceAddr = *serverAddr
 	logger.Println("Launcher Spec: ", spec)
 
 	client, err := containerd.New(defaults.DefaultAddress)

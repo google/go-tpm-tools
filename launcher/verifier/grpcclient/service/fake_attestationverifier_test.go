@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	servpb "github.com/google/go-tpm-tools/launcher/internal/verifier/proto/attestation_verifier/v0"
+	servpb "github.com/google/go-tpm-tools/launcher/verifier/grpcclient/proto/attestation_verifier/v0"
 	pb "github.com/google/go-tpm-tools/proto/attest"
 )
 

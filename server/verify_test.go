@@ -323,6 +323,8 @@ func TestVerifyAttestationWithCEL(t *testing.T) {
 		{cel.EnvVarType, test.DebugPCR, []byte("empty=")},
 		{cel.ArgType, test.DebugPCR, []byte("--x")},
 		{cel.ArgType, test.DebugPCR, []byte("--y")},
+		{cel.OverrideArgType, test.DebugPCR, []byte("--x")},
+		{cel.OverrideEnvType, test.DebugPCR, []byte("empty=")},
 	}
 	for _, testEvent := range testEvents {
 		cos := cel.CosTlv{EventType: testEvent.cosNestedEventType, EventContent: testEvent.eventPayload}
@@ -357,13 +359,18 @@ func TestVerifyAttestationWithCEL(t *testing.T) {
 	expectedEnvVars["baz"] = "foo=bar"
 	expectedEnvVars["empty"] = ""
 
+	expectedOverriddenEnvVars := make(map[string]string)
+	expectedOverriddenEnvVars["empty"] = ""
+
 	want := attestpb.ContainerState{
-		ImageReference: string(testEvents[0].eventPayload),
-		ImageDigest:    string(testEvents[1].eventPayload),
-		RestartPolicy:  attestpb.RestartPolicy_Never,
-		ImageId:        string(testEvents[3].eventPayload),
-		EnvVars:        expectedEnvVars,
-		Args:           []string{string(testEvents[8].eventPayload), string(testEvents[9].eventPayload)},
+		ImageReference:    string(testEvents[0].eventPayload),
+		ImageDigest:       string(testEvents[1].eventPayload),
+		RestartPolicy:     attestpb.RestartPolicy_Never,
+		ImageId:           string(testEvents[3].eventPayload),
+		EnvVars:           expectedEnvVars,
+		Args:              []string{string(testEvents[8].eventPayload), string(testEvents[9].eventPayload)},
+		OverriddenEnvVars: expectedOverriddenEnvVars,
+		OverriddenArgs:    []string{string(testEvents[10].eventPayload)},
 	}
 	if diff := cmp.Diff(state.Cos.Container, &want, protocmp.Transform()); diff != "" {
 		t.Errorf("unexpected difference:\n%v", diff)
@@ -563,8 +570,8 @@ func TestVerifyAttestationMissingIntermediates(t *testing.T) {
 	}
 }
 
-func TestVerifyMismatchedAKPubAndAKCert(t *testing.T) {
-	// Make sure that we fail verification if the AKPub and AKCert don't match
+func TestVerifyIgnoreAKPubWithAKCert(t *testing.T) {
+	// Make sure that we ignore the AKPub if the AKCert is presented
 	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
 
@@ -592,7 +599,7 @@ func TestVerifyMismatchedAKPubAndAKCert(t *testing.T) {
 		IntermediateCerts: GceEKIntermediates,
 	}
 	if _, err := VerifyAttestation(badAtt, opts); err == nil {
-		t.Error("expected error when calling VerifyAttestation with mismatched public key and cert")
+		t.Error("expected error when calling VerifyAttestation, because the cert is replaced")
 	}
 }
 

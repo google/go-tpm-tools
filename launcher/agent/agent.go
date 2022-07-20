@@ -1,4 +1,9 @@
-package main
+// Package agent coordinates the communication between the TPM and the remote
+// attestation service. It handles:
+//  - All TPM-related functionality (quotes, logs, certs, etc...)
+//  - Fetching the relevant principal ID tokens
+//  - Calling VerifyAttestation on the remote service
+package agent
 
 import (
 	"bytes"
@@ -10,7 +15,7 @@ import (
 
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
-	"github.com/google/go-tpm-tools/launcher/internal/verifier"
+	"github.com/google/go-tpm-tools/launcher/verifier"
 	pb "github.com/google/go-tpm-tools/proto/attest"
 )
 
@@ -22,8 +27,14 @@ type tpmKeyFetcher func(rw io.ReadWriter) (*client.Key, error)
 type principalIDTokenFetcher func(audience string) ([][]byte, error)
 
 // AttestationAgent is an agent that interacts with GCE's Attestation Service
-// to Verify an attestation message.
-type AttestationAgent struct {
+// to Verify an attestation message. It is an interface instead of a concrete
+// struct to make testing easier.
+type AttestationAgent interface {
+	MeasureEvent(cel.Content) error
+	Attest(context.Context) ([]byte, error)
+}
+
+type agent struct {
 	tpm              io.ReadWriteCloser
 	akFetcher        tpmKeyFetcher
 	client           verifier.Client
@@ -37,8 +48,8 @@ type AttestationAgent struct {
 // - akFetcher is a func to fetch an attestation key: see go-tpm-tools/client.
 // - conn is a client connection to the attestation service, typically created
 //   `grpc.Dial`. It is the client's responsibility to close the connection.
-func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher tpmKeyFetcher, verifierClient verifier.Client, principalFetcher principalIDTokenFetcher) *AttestationAgent {
-	return &AttestationAgent{
+func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher tpmKeyFetcher, verifierClient verifier.Client, principalFetcher principalIDTokenFetcher) AttestationAgent {
+	return &agent{
 		tpm:              tpm,
 		client:           verifierClient,
 		akFetcher:        akFetcher,
@@ -46,16 +57,16 @@ func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher tpmKeyFetcher, ver
 	}
 }
 
-// MeasureEvent takes in a cel.Content and append it to the CEL eventlog
-// under the attesation agent.
-func (a *AttestationAgent) MeasureEvent(event cel.Content) error {
+// MeasureEvent takes in a cel.Content and appends it to the CEL eventlog
+// under the attestation agent.
+func (a *agent) MeasureEvent(event cel.Content) error {
 	return a.cosCel.AppendEvent(a.tpm, defaultCELPCR, defaultCELHashAlgo, event)
 }
 
 // Attest fetches the nonce and connection ID from the Attestation Service,
 // creates an attestation message, and returns the resultant
 // principalIDTokens are Metadata Server-generated ID tokens for the instance.
-func (a *AttestationAgent) Attest(ctx context.Context) ([]byte, error) {
+func (a *agent) Attest(ctx context.Context) ([]byte, error) {
 	challenge, err := a.client.CreateChallenge(ctx)
 	if err != nil {
 		return nil, err
@@ -82,7 +93,7 @@ func (a *AttestationAgent) Attest(ctx context.Context) ([]byte, error) {
 	return resp.ClaimsToken, nil
 }
 
-func (a *AttestationAgent) getAttestation(nonce []byte) (*pb.Attestation, error) {
+func (a *agent) getAttestation(nonce []byte) (*pb.Attestation, error) {
 	ak, err := a.akFetcher(a.tpm)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get AK: %v", err)

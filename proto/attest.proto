@@ -57,6 +57,21 @@ message PlatformState {
   GCEInstanceInfo instance_info = 4;
 }
 
+message GrubFile {
+  // The digest of the file (pulled from the raw event digest).
+  bytes digest = 1;
+  // The event data. This is not measured, so it is untrusted.
+  bytes untrusted_filename = 2;
+}
+
+message GrubState {
+  // All GRUB-read and measured files, including grub.cfg.
+  repeated GrubFile files = 1;
+  // A list of executed GRUB commands and command lines passed to the kernel
+  // and kernel modules.
+  repeated string commands = 2;
+}
+
 // A parsed event from the TCG event log
 message Event {
   // The Platform Control Register (PCR) this event was extended into.
@@ -140,6 +155,10 @@ message ContainerState {
   string image_id = 4;
   repeated string args = 5;
   map<string, string> env_vars = 6;
+  // Record operator input Env Vars and Args, should be subsets of the above
+  // Env Vars and Args.
+  repeated string overridden_args = 7;
+  map<string, string> overridden_env_vars = 8;
 }
 
 message SemanticVersion {
@@ -168,7 +187,7 @@ message MachineState {
   //   - the hash algorithm used to calculate event digests
   tpm.HashAlgo hash = 4;
 
-  // GrubState grub = 5;
+  GrubState grub = 5;
 
   // LinuxKernelState linux_kernel = 6;
 

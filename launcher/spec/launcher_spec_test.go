@@ -22,7 +22,7 @@ func TestLauncherSpecUnmarshalJSONHappyCases(t *testing.T) {
 			}`,
 		},
 		{
-			"HappyCaseWithExtraUnknowFields",
+			"HappyCaseWithExtraUnknownFields",
 			`{
 				"tee-cmd":"[\"--foo\",\"--bar\",\"--baz\"]",
 				"tee-env-foo":"bar",

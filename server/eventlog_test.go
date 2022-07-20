@@ -249,25 +249,95 @@ var Debian10GCE = eventLog{
 	}},
 }
 
+// Agile Event Log from a Ubuntu 21.04 GCE instance with Secure Boot disabled
+var COS85AmdSev = eventLog{
+	RawLog: test.Cos85AmdSevEventLog,
+	Banks: []*pb.PCRs{{
+		Hash: pb.HashAlgo_SHA1,
+		Pcrs: map[uint32][]byte{
+			0: decodeHex("c032c3b51dbb6f96b047421512fd4b4dfde496f3"),
+			1: decodeHex("e3e9e1d9deacd95b289bbbd3a1717a57af7d211b"),
+			2: decodeHex("b2a83b0ebf2f8374299a5b2bdfc31ea955ad7236"),
+			3: decodeHex("b2a83b0ebf2f8374299a5b2bdfc31ea955ad7236"),
+			4: decodeHex("6168c9ce88a8658920f2cf2f9012d3c6bbfab79b"),
+			5: decodeHex("fb6b3a15b220a74b0c4f73416919476702e930e2"),
+			6: decodeHex("b2a83b0ebf2f8374299a5b2bdfc31ea955ad7236"),
+			7: decodeHex("42e669233f0e826df5093abfd6998c020df2de88"),
+			8: decodeHex("72778b0ba3c491db25eb7c8368cb1fb51f0ce458"),
+			9: decodeHex("08bd04f0dbadf591510340d94a0019c0ddcb779f"),
+		},
+	}, {
+		Hash: pb.HashAlgo_SHA256,
+		Pcrs: map[uint32][]byte{
+			0: decodeHex("0f35c214608d93c7a6e68ae7359b4a8be5a0e99eea9107ece427c4dea4e439cf"),
+			1: decodeHex("6eb40f5b6bfafcb9914d486ce59404acd24bc13a6a3c45cda3b44c9d7053d638"),
+			2: decodeHex("3d458cfe55cc03ea1f443f1562beec8df51c75e14a9fcf9a7234a13f198e7969"),
+			3: decodeHex("3d458cfe55cc03ea1f443f1562beec8df51c75e14a9fcf9a7234a13f198e7969"),
+			4: decodeHex("d690bdac2aa8b73a1d718cb91990df07d0747b07ea57b3b2d0f0d511f0d90491"),
+			5: decodeHex("e9e0b32564b6f8215b1bd43954d9f910682d39c3b18abd4737ac3b797cf269e0"),
+			6: decodeHex("3d458cfe55cc03ea1f443f1562beec8df51c75e14a9fcf9a7234a13f198e7969"),
+			7: decodeHex("3365d7fa2b024c852913c06e04ffbfa6ea5289f743bbf1a76f7ffdf21ed84793"),
+			8: decodeHex("9e9b6511ae6ad443aae4c7bf998ffffbcd271c874f1efab9d692f129eb6e6c18"),
+			9: decodeHex("f4f2d92d6d54f6c41f2706fd98091317642e0680a7902c72893d41e3464a93b7"),
+		},
+	}},
+}
+
+var COS93AmdSev = eventLog{
+	RawLog: test.Cos93AmdSevEventLog,
+	Banks: []*pb.PCRs{{
+		Hash: pb.HashAlgo_SHA1,
+		Pcrs: map[uint32][]byte{
+			0: decodeHex("c032c3b51dbb6f96b047421512fd4b4dfde496f3"),
+			1: decodeHex("e3e9e1d9deacd95b289bbbd3a1717a57af7d211b"),
+			2: decodeHex("b2a83b0ebf2f8374299a5b2bdfc31ea955ad7236"),
+			3: decodeHex("b2a83b0ebf2f8374299a5b2bdfc31ea955ad7236"),
+			4: decodeHex("1e4b998edfb4d62fb88337a66b3af8be26159498"),
+			5: decodeHex("3421f02e05d71fe4bd002cbe22e68c230397821d"),
+			6: decodeHex("b2a83b0ebf2f8374299a5b2bdfc31ea955ad7236"),
+			7: decodeHex("42e669233f0e826df5093abfd6998c020df2de88"),
+			8: decodeHex("ec84952e0c5c96cd4404122131b8f86d5ac7df7d"),
+			9: decodeHex("7a406f847075a86a55aa184cfe3fcef7eaff40a7"),
+		},
+	}, {
+		Hash: pb.HashAlgo_SHA256,
+		Pcrs: map[uint32][]byte{
+			0: decodeHex("0f35c214608d93c7a6e68ae7359b4a8be5a0e99eea9107ece427c4dea4e439cf"),
+			1: decodeHex("6eb40f5b6bfafcb9914d486ce59404acd24bc13a6a3c45cda3b44c9d7053d638"),
+			2: decodeHex("3d458cfe55cc03ea1f443f1562beec8df51c75e14a9fcf9a7234a13f198e7969"),
+			3: decodeHex("3d458cfe55cc03ea1f443f1562beec8df51c75e14a9fcf9a7234a13f198e7969"),
+			4: decodeHex("871e8343044ae4c87b402dcb94b5e49715b1b8dc1b19c43ba0801422fabb39d4"),
+			5: decodeHex("74be59dc8066011eade913db9a3db7978f93852c04816cba9427dd59b87042cc"),
+			6: decodeHex("3d458cfe55cc03ea1f443f1562beec8df51c75e14a9fcf9a7234a13f198e7969"),
+			7: decodeHex("3365d7fa2b024c852913c06e04ffbfa6ea5289f743bbf1a76f7ffdf21ed84793"),
+			8: decodeHex("ba18b7028111f1f193967cad3c23b5050f73061c0f119182ac0f42efd6a9159e"),
+			9: decodeHex("0b1e4f9ca7bc8535c4c33f0025969d7abea008aa51dcd7f7c2d1068470e4bce4"),
+		},
+	}},
+}
+
 func TestParseEventLogs(t *testing.T) {
 	sbatErrorStr := "asn1: structure error: tags don't match (16 vs {class:0 tag:24 length:10 isCompound:true})"
 	logs := []struct {
 		eventLog
 		name string
+		Bootloader
 		// This field handles known issues with event log parsing or bad event
 		// logs.
 		// An empty string will not attempt to pattern match the error result.
 		errorSubstr string
 	}{
-		{Debian10GCE, "Debian10GCE", ""},
-		{Rhel8GCE, "Rhel8GCE", ""},
-		{UbuntuAmdSevGCE, "UbuntuAmdSevGCE", ""},
+		{Debian10GCE, "Debian10GCE", UnsupportedLoader, ""},
+		{Rhel8GCE, "Rhel8GCE", GRUB, ""},
+		{UbuntuAmdSevGCE, "UbuntuAmdSevGCE", GRUB, ""},
 		// TODO: remove once the fix is pulled in
 		// https://github.com/google/go-attestation/pull/222
-		{Ubuntu2104NoDbxGCE, "Ubuntu2104NoDbxGCE", sbatErrorStr},
-		{Ubuntu2104NoSecureBootGCE, "Ubuntu2104NoSecureBootGCE", sbatErrorStr},
+		{Ubuntu2104NoDbxGCE, "Ubuntu2104NoDbxGCE", GRUB, sbatErrorStr},
+		{Ubuntu2104NoSecureBootGCE, "Ubuntu2104NoSecureBootGCE", GRUB, sbatErrorStr},
 		// This event log has a SecureBoot variable length of 0.
-		{ArchLinuxWorkstation, "ArchLinuxWorkstation", archLinuxBadSecureBoot},
+		{ArchLinuxWorkstation, "ArchLinuxWorkstation", UnsupportedLoader, archLinuxBadSecureBoot},
+		{COS85AmdSev, "COS85AmdSev", GRUB, ""},
+		{COS93AmdSev, "COS93AmdSev", GRUB, ""},
 	}
 
 	for _, log := range logs {
@@ -276,12 +346,15 @@ func TestParseEventLogs(t *testing.T) {
 			hashName := pb.HashAlgo_name[int32(bank.Hash)]
 			subtestName := fmt.Sprintf("%s-%s", log.name, hashName)
 			t.Run(subtestName, func(t *testing.T) {
-				if _, err := parsePCClientEventLog(rawLog, bank); err != nil {
+				if _, err := parsePCClientEventLog(rawLog, bank, UnsupportedLoader); err != nil {
 					gErr, ok := err.(*GroupedError)
 					if !ok {
 						t.Errorf("ParseMachineState should return a GroupedError")
 					}
-					if log.errorSubstr == "" || !gErr.containsOnlySubstring(log.errorSubstr) {
+					if log.errorSubstr == "" {
+						t.Errorf("expected no errors in GroupedError, received (%v)", err)
+					}
+					if !gErr.containsOnlySubstring(log.errorSubstr) {
 						t.Errorf("failed to parse and replay log: %v", err)
 					}
 				}
@@ -296,7 +369,7 @@ func TestParseMachineStateReplayFail(t *testing.T) {
 	pcrMap[0] = []byte{0, 0, 0, 0}
 	badPcrs.Pcrs = pcrMap
 
-	_, err := parsePCClientEventLog(Debian10GCE.RawLog, &badPcrs)
+	_, err := parsePCClientEventLog(Debian10GCE.RawLog, &badPcrs, UnsupportedLoader)
 	if err == nil {
 		t.Errorf("ParseMachineState should fail to replay the event log")
 	}
@@ -321,14 +394,58 @@ func TestSystemParseEventLog(t *testing.T) {
 		t.Fatalf("failed to read PCRs: %v", err)
 	}
 
-	if _, err = parsePCClientEventLog(evtLog, pcrs); err != nil {
+	if _, err = parsePCClientEventLog(evtLog, pcrs, UnsupportedLoader); err != nil {
 		t.Errorf("failed to parse MachineState: %v", err)
+	}
+}
+
+func TestEmptyEventlog(t *testing.T) {
+	emptyLog := []byte{}
+	emptyState := &attestpb.MachineState{
+		Hash:       pb.HashAlgo_SHA1,
+		Platform:   &attestpb.PlatformState{Firmware: &attestpb.PlatformState_ScrtmVersionId{}},
+		SecureBoot: &attestpb.SecureBootState{},
+	}
+
+	// SHA-1 PCR data consisting of all zero digests (i.e. the reset state)
+	zeroDigest := make([]byte, crypto.SHA1.Size())
+	zeroPCRs := &pb.PCRs{Hash: pb.HashAlgo_SHA1, Pcrs: make(map[uint32][]byte)}
+	for i := uint32(0); i < 24; i++ {
+		zeroPCRs.Pcrs[i] = zeroDigest
+	}
+
+	// For our "Real" PCR data, use the simulated TPM (which has extended events)
+	rwc := test.GetTPM(t)
+	defer client.CheckedClose(t, rwc)
+	realPCRs, err := client.ReadPCRs(rwc, client.FullPcrSel(tpm2.AlgSHA1))
+	if err != nil {
+		t.Fatalf("failed to read PCRs: %v", err)
+	}
+
+	cases := []struct {
+		name string
+		pcrs *pb.PCRs
+	}{
+		{"Empty", &pb.PCRs{Hash: pb.HashAlgo_SHA1}},
+		{"AllZero", zeroPCRs},
+		{"Real", realPCRs},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			state, err := parsePCClientEventLog(emptyLog, c.pcrs, UnsupportedLoader)
+			if err != nil {
+				t.Errorf("parsing empty eventlog: %v", err)
+			}
+			if diff := cmp.Diff(state, emptyState, protocmp.Transform(), protocmp.IgnoreEmptyMessages()); diff != "" {
+				t.Errorf("unexpected non-empty MachineState:\n%v", diff)
+			}
+		})
 	}
 }
 
 func TestParseSecureBootState(t *testing.T) {
 	for _, bank := range UbuntuAmdSevGCE.Banks {
-		msState, err := parsePCClientEventLog(UbuntuAmdSevGCE.RawLog, bank)
+		msState, err := parsePCClientEventLog(UbuntuAmdSevGCE.RawLog, bank, UnsupportedLoader)
 		if err != nil {
 			t.Errorf("failed to parse and replay log: %v", err)
 		}
@@ -514,6 +631,57 @@ func generateNonCosCelEvent(hashAlgoList []crypto.Hash) (cel.Record, error) {
 	randRecord.Digests = digestMap
 
 	return randRecord, nil
+}
+
+func TestParseGrubState(t *testing.T) {
+	logs := []struct {
+		eventLog
+		name string
+	}{
+		{COS85AmdSev, "COS85AmdSev"},
+		{COS93AmdSev, "COS93AmdSev"},
+	}
+	for _, log := range logs {
+		for _, bank := range log.Banks {
+			hashName := pb.HashAlgo_name[int32(bank.Hash)]
+			subtestName := fmt.Sprintf("COS85AmdSev-%s", hashName)
+			t.Run(subtestName, func(t *testing.T) {
+				msState, err := parsePCClientEventLog(log.RawLog, bank, GRUB)
+				if err != nil {
+					t.Errorf("failed to parse and replay log: %v", err)
+				}
+
+				if len(msState.Grub.GetCommands()) == 0 {
+					t.Errorf("expected COS85 to run GRUB commands!")
+				}
+				if len(msState.Grub.GetFiles()) != 2 {
+					t.Errorf("expected COS85 to read two files (grub.cfg and kernel)!")
+				}
+			})
+		}
+	}
+}
+
+func TestParseGrubStateFail(t *testing.T) {
+	// No GRUB measurements for this event log.
+	eventlog := GlinuxNoSecureBootLaptop
+	for _, bank := range eventlog.Banks {
+		hashName := pb.HashAlgo_name[int32(bank.Hash)]
+		subtestName := fmt.Sprintf("GlinuxNoSecureBootLaptop-%s", hashName)
+		t.Run(subtestName, func(t *testing.T) {
+			_, err := parsePCClientEventLog(eventlog.RawLog, bank, GRUB)
+			if err == nil {
+				t.Error("expected error when parsing GRUB state")
+			}
+			gErr, ok := err.(*GroupedError)
+			if !ok {
+				t.Errorf("ParseMachineState should return a GroupedError")
+			}
+			if !gErr.containsSubstring("no GRUB measurements found") {
+				t.Errorf("expected GroupedError (%s) to contain no GRUB measurements error", err)
+			}
+		})
+	}
 }
 
 func decodeHex(hexStr string) []byte {
