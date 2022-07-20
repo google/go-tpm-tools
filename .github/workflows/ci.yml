@@ -125,6 +125,7 @@ jobs:
             --exclude-use-default=false
             --max-same-issues=0
             --max-issues-per-linter=0
+            --timeout=2m
 
   lintc:
     strategy:
