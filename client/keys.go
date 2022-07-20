@@ -18,6 +18,7 @@ import (
 	"github.com/google/go-tpm/direct/structures/tpm2b"
 	"github.com/google/go-tpm/direct/structures/tpmt"
 	tpm2direct "github.com/google/go-tpm/direct/tpm2"
+	"github.com/google/go-tpm/direct/transport"
 )
 
 // Key wraps an active asymmetric TPM2 key. This can either be a signing key or
@@ -33,7 +34,7 @@ type Key struct {
 	session session
 
 	// Direct Implementation
-	// transport.tpm will be referenced from transport.FromReadWriter(rw)
+	// transport.tpm will be referenced from getTransportTPM
 	pubAreaDirect tpmt.Public
 	nameDirect    *tpm2b.Name
 	sessionDirect tpm2direct.Session
@@ -42,6 +43,11 @@ type Key struct {
 	pubKey crypto.PublicKey
 	cert   *x509.Certificate
 	handle tpmutil.Handle
+}
+
+// getTransportTPM wraps the ReadWriter to a transport TPM.
+func getTransportTPM(rw io.ReadWriter) transport.TPM {
+	return transport.FromReadWriter(rw)
 }
 
 // EndorsementKeyRSA generates and loads a key from DefaultEKTemplateRSA.
@@ -185,6 +191,7 @@ func NewCachedKey(rw io.ReadWriter, parent tpmutil.Handle, template tpm2.Public,
 //     is created in the specified hierarchy (using CreatePrimary).
 //   - If parent is a valid key handle, a normal key object is created under
 //     that parent (using Create and Load). NOTE: Not yet supported.
+//
 // This function also assumes that the desired key:
 //   - Does not have its usage locked to specific PCR values
 //   - Usable with empty authorization sessions (i.e. doesn't need a password)
@@ -225,10 +232,10 @@ func (k *Key) finish() error {
 	var tpmtPublic tpmt.Public
 	pubArea, err := k.pubArea.Encode()
 	if err != nil {
-		return fmt.Errorf("failed to encode: %v", err)
+		return fmt.Errorf("failed to encode legacy key.pubArea: %v", err)
 	}
 	if err := tpm2direct.Unmarshal(pubArea, &tpmtPublic); err != nil {
-		return fmt.Errorf("failed to unmarshal: %v", err)
+		return fmt.Errorf("failed to unmarshal direct tpmtPublic: %v", err)
 	}
 	k.pubAreaDirect = tpmtPublic
 	if k.nameDirect, err = tpm2direct.ObjectName(&k.pubAreaDirect); err != nil {
