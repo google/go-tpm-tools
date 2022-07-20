@@ -45,9 +45,9 @@ type Key struct {
 	handle tpmutil.Handle
 }
 
-// getTransportTPM wraps the ReadWriter to a transport TPM.
-func getTransportTPM(rw io.ReadWriter) transport.TPM {
-	return transport.FromReadWriter(rw)
+// transportTPM wraps the ReadWriter to a transport TPM.
+func (k *Key) transportTPM() transport.TPM {
+	return transport.FromReadWriter(k.rw)
 }
 
 // EndorsementKeyRSA generates and loads a key from DefaultEKTemplateRSA.
