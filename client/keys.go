@@ -14,6 +14,10 @@ import (
 	pb "github.com/google/go-tpm-tools/proto/tpm"
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpmutil"
+
+	"github.com/google/go-tpm/direct/structures/tpm2b"
+	"github.com/google/go-tpm/direct/structures/tpmt"
+	tpm2direct "github.com/google/go-tpm/direct/tpm2"
 )
 
 // Key wraps an active asymmetric TPM2 key. This can either be a signing key or
@@ -22,13 +26,22 @@ import (
 // Concurrent accesses on Key are not safe, with the exception of the
 // Sign method called on the crypto.Signer returned by Key.GetSigner.
 type Key struct {
+	// Legacy Implementation
 	rw      io.ReadWriter
-	handle  tpmutil.Handle
 	pubArea tpm2.Public
-	pubKey  crypto.PublicKey
 	name    tpm2.Name
 	session session
-	cert    *x509.Certificate
+
+	// Direct Implementation
+	// transport.tpm will be referenced from transport.FromReadWriter(rw)
+	pubAreaDirect tpmt.Public
+	nameDirect    *tpm2b.Name
+	sessionDirect tpm2direct.Session
+
+	// Common Implementation
+	pubKey crypto.PublicKey
+	cert   *x509.Certificate
+	handle tpmutil.Handle
 }
 
 // EndorsementKeyRSA generates and loads a key from DefaultEKTemplateRSA.
@@ -207,14 +220,31 @@ func (k *Key) finish() error {
 	if k.name, err = k.pubArea.Name(); err != nil {
 		return err
 	}
+
+	// Direct Implementation
+	var tpmtPublic tpmt.Public
+	pubArea, err := k.pubArea.Encode()
+	if err != nil {
+		return fmt.Errorf("failed to encode: %v", err)
+	}
+	if err := tpm2direct.Unmarshal(pubArea, &tpmtPublic); err != nil {
+		return fmt.Errorf("failed to unmarshal: %v", err)
+	}
+	k.pubAreaDirect = tpmtPublic
+	if k.nameDirect, err = tpm2direct.ObjectName(&k.pubAreaDirect); err != nil {
+		return err
+	}
+
 	// We determine the right type of session based on the auth policy
 	if k.session == nil {
 		if bytes.Equal(k.pubArea.AuthPolicy, defaultEKAuthPolicy()) {
+			// TODO: Check for direct session here when sessions are implemented
 			if k.session, err = newEKSession(k.rw); err != nil {
 				return err
 			}
 		} else if len(k.pubArea.AuthPolicy) == 0 {
 			k.session = nullSession{}
+			k.sessionDirect = tpm2direct.PasswordAuth(nil)
 		} else {
 			return fmt.Errorf("unknown auth policy when creating key")
 		}
