@@ -1,5 +1,5 @@
 substitutions:
-  '_BASE_IMAGE': 'cos-dev-101-16963-0-0'
+  '_BASE_IMAGE': 'cos-dev-101-17136-0-0'
   '_BASE_IMAGE_PROJECT': 'cos-cloud'
   '_OUTPUT_IMAGE': ''
   '_IMAGE_ENV': 'debug'
