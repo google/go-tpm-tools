@@ -324,32 +324,6 @@ func (k *Key) Seal(sensitive []byte, opts SealOpts) (*pb.SealedBytes, error) {
 	return sb, nil
 }
 
-func (k *Key) SealDirect(sensitive []byte, opts SealOptsDirect) (*pb.SealedBytes, error) {
-	var pcrs *pb.PCRs
-	var err error
-	var auth []byte
-
-	// pcrs, err = mergePCRSelAndProtoDirect(k.transportTPM, opts.Current, opts.Target)
-	if err != nil {
-		return nil, fmt.Errorf("invalid SealOpts: %v", err)
-	}
-	if len(pcrs.GetPcrs()) > 0 {
-		auth = internal.PCRSessionAuth(pcrs, SessionHashAlg)
-	}
-	certifySel := FullPcrSel(CertifyHashAlgTpm)
-	sb, err := sealHelper(k.rw, k.Handle(), auth, sensitive, certifySel)
-	if err != nil {
-		return nil, err
-	}
-
-	for pcrNum := range pcrs.GetPcrs() {
-		sb.Pcrs = append(sb.Pcrs, pcrNum)
-	}
-	sb.Hash = pcrs.GetHash()
-	sb.Srk = pb.ObjectType(k.pubArea.Type)
-	return sb, nil
-}
-
 func sealHelper(rw io.ReadWriter, parentHandle tpmutil.Handle, auth []byte, sensitive []byte, certifyPCRsSel tpm2.PCRSelection) (*pb.SealedBytes, error) {
 	inPublic := tpm2.Public{
 		Type:       tpm2.AlgKeyedHash,
