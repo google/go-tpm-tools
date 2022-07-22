@@ -1,8 +1,9 @@
 substitutions:
   '_BASE_IMAGE': 'cos-dev-101-17136-0-0'
   '_BASE_IMAGE_PROJECT': 'cos-cloud'
-  '_OUTPUT_IMAGE': ''
+  '_OUTPUT_IMAGE_SUFFIX': ''
   '_IMAGE_ENV': 'debug'
+  '_BUCKET_NAME': '${PROJECT_ID}_csi_cloudbuild'
 
 steps:
   - name: golang:1.18
@@ -10,28 +11,28 @@ steps:
     args:
       - -c
       - |
-        cd launcher
-        go build  
+        go build -o image/launcher
   - name: 'gcr.io/cos-cloud/cos-customizer'
     args: ['start-image-build',
-           '-gcs-bucket=${PROJECT_ID}_cloudbuild',
+           '-build-context=image',
+           '-gcs-bucket=${_BUCKET_NAME}',
            '-gcs-workdir=customizer-${BUILD_ID}',
            '-image-name=${_BASE_IMAGE}',
            '-image-project=${_BASE_IMAGE_PROJECT}']
   - name: 'gcr.io/cos-cloud/cos-customizer'
     args: ['run-script',
-           '-script=launcher/preload.sh',
+           '-script=preload.sh',
            '-env=IMAGE_ENV=${_IMAGE_ENV}']
   - name: 'gcr.io/cos-cloud/cos-customizer'
     args: ['seal-oem']
   - name: 'gcr.io/cos-cloud/cos-customizer'
     args: ['run-script',
-           '-script=launcher/fixup_oem.sh']
+           '-script=fixup_oem.sh']
   - name: 'gcr.io/cos-cloud/cos-customizer'
     args: ['finish-image-build',
            '-oem-size=500M',
            '-disk-size-gb=11',
-           '-image-name=confidential-space-${_OUTPUT_IMAGE}',
+           '-image-name=confidential-space-${_OUTPUT_IMAGE_SUFFIX}',
            '-image-family=confidential-space-dev',
            '-image-project=${PROJECT_ID}',
            '-licenses=projects/confidential-space-images/global/licenses/confidential-space',
@@ -43,3 +44,4 @@ timeout: '3000s'
 
 options:
   logging: CLOUD_LOGGING_ONLY
+  dynamic_substitutions: true
