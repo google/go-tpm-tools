@@ -9,12 +9,12 @@ import (
 	pb "github.com/google/go-tpm-tools/proto/tpm"
 	"github.com/google/go-tpm/tpm2"
 
-	tpm "github.com/google/go-tpm/direct/structures/tpm"
+	"github.com/google/go-tpm/direct/structures/tpm"
 	"github.com/google/go-tpm/direct/structures/tpm2b"
-	tpml "github.com/google/go-tpm/direct/structures/tpml"
-	tpms "github.com/google/go-tpm/direct/structures/tpms"
+	"github.com/google/go-tpm/direct/structures/tpml"
+	"github.com/google/go-tpm/direct/structures/tpms"
 	tpm2Direct "github.com/google/go-tpm/direct/tpm2"
-	transport "github.com/google/go-tpm/direct/transport"
+	"github.com/google/go-tpm/direct/transport"
 )
 
 // NumPCRs is set to the spec minimum of 24, as that's all go-tpm supports.
@@ -26,14 +26,12 @@ const NumPCRs = 24
 // github.com/google/go-tpm/tpm2, as it hardcodes the nameAlg as SHA256 in
 // several places. Two constants are used to avoid repeated conversions.
 const (
-	SessionHashAlg          = crypto.SHA256
-	SessionHashAlgTpm       = tpm2.AlgSHA256
-	SessionHashAlgTpmDirect = tpm.AlgSHA256
+	SessionHashAlg    = crypto.SHA256
+	SessionHashAlgTpm = tpm2.AlgSHA256
 )
 
 // CertifyHashAlgTpm is the hard-coded algorithm used in certify PCRs.
 const CertifyHashAlgTpm = tpm2.AlgSHA256
-const CertifyHashAlgTpmDirect = tpm.AlgSHA256
 
 func min(a, b int) int {
 	if a < b {
@@ -73,7 +71,7 @@ func implementedPCRsDirect(thetpm transport.TPM) (*tpml.PCRSelection, error) {
 	rspGetCap, err := getCap.Execute(thetpm)
 
 	if err != nil {
-		return nil, fmt.Errorf("Failed to GetCapability: %w", err)
+		return nil, fmt.Errorf("failed to GetCapability: %w", err)
 	}
 	if rspGetCap.MoreData {
 		return nil, fmt.Errorf("extra data from GetCapability")
@@ -82,9 +80,7 @@ func implementedPCRsDirect(thetpm transport.TPM) (*tpml.PCRSelection, error) {
 	pcrLen := len(rspGetCap.CapabilityData.Data.AssignedPCR.PCRSelections)
 	pcrSels := make([]tpms.PCRSelection, pcrLen)
 
-	for i, cap := range rspGetCap.CapabilityData.Data.AssignedPCR.PCRSelections {
-		pcrSels[i] = cap
-	}
+	copy(pcrSels, rspGetCap.CapabilityData.Data.AssignedPCR.PCRSelections)
 
 	sels := tpml.PCRSelection{
 		PCRSelections: pcrSels,
@@ -121,7 +117,8 @@ func ReadPCRs(rw io.ReadWriter, sel tpm2.PCRSelection) (*pb.PCRs, error) {
 	return &pl, nil
 }
 
-func ReadPcrHelper(thetpm transport.TPM, hash tpm.AlgID, index int) (*tpm2b.Digest, error) {
+// readPcrHelper fetches the digest of a single PCR index.
+func readPcrHelper(thetpm transport.TPM, hash tpm.AlgID, index int) (*tpm2b.Digest, error) {
 	pcrRead := tpm2Direct.PCRRead{
 		PCRSelectionIn: tpml.PCRSelection{
 			PCRSelections: []tpms.PCRSelection{
@@ -137,7 +134,7 @@ func ReadPcrHelper(thetpm transport.TPM, hash tpm.AlgID, index int) (*tpm2b.Dige
 
 	pcrReadRsp, err := pcrRead.Execute(thetpm)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to pcrRead")
+		return nil, fmt.Errorf("failed to pcrRead")
 	}
 
 	return &pcrReadRsp.PCRValues.Digests[0], nil
@@ -155,9 +152,9 @@ func ReadPCRsDirect(thetpm transport.TPM, sel tpms.PCRSelection) (*pb.PCRs, erro
 		for j := 0; j < 8; j++ {
 			pcrIndex := i*8 + j
 			if (selByte>>j)&1 == 1 {
-				digest, err := ReadPcrHelper(thetpm, sel.Hash, pcrIndex)
+				digest, err := readPcrHelper(thetpm, sel.Hash, pcrIndex)
 				if err != nil {
-					return nil, fmt.Errorf("Failed to pcrRead.")
+					return nil, fmt.Errorf("failed to pcrRead")
 				}
 				pl.Pcrs[uint32(pcrIndex)] = digest.Buffer
 			}
@@ -210,14 +207,6 @@ type SealOpts struct {
 	Target *pb.PCRs
 }
 
-// SealOptsDirect specifies the PCR values that should be used for Seal().
-type SealOptsDirect struct {
-	// Current seals data to the current specified PCR selection.
-	Current tpms.PCRSelection
-	// Target predictively seals data to the given specified PCR values.
-	Target *pb.PCRs
-}
-
 // UnsealOpts specifies the options that should be used for Unseal().
 // Currently, it specifies the PCRs that need to pass certification in order to
 // successfully unseal.
@@ -227,14 +216,6 @@ type UnsealOpts struct {
 	// CertifyCurrent certifies that a selection of current PCRs have the same
 	// value when sealing.
 	CertifyCurrent tpm2.PCRSelection
-	// CertifyExpected certifies that the TPM had a specific set of PCR values when sealing.
-	CertifyExpected *pb.PCRs
-}
-
-type UnsealOptsDirect struct {
-	// CertifyCurrent certifies that a selection of current PCRs have the same
-	// value when sealing.
-	CertifyCurrent tpms.PCRSelection
 	// CertifyExpected certifies that the TPM had a specific set of PCR values when sealing.
 	CertifyExpected *pb.PCRs
 }
@@ -249,12 +230,12 @@ func FullPcrSel(hash tpm2.Algorithm) tpm2.PCRSelection {
 	return sel
 }
 
+// FullPcrSelDirect will return a full PCR selection based on the total PCR number
+// of the TPM with the given hash algo.
 func FullPcrSelDirect(hash tpm.AlgID) tpms.PCRSelection {
 	sel := tpms.PCRSelection{
 		Hash: hash,
 	}
-
-	// Not sure if this is correct
 	for i := 0; i < 3; i++ {
 		sel.PCRSelect = append(sel.PCRSelect, byte(255))
 	}
@@ -287,52 +268,6 @@ func mergePCRSelAndProto(rw io.ReadWriter, sel tpm2.PCRSelection, proto *pb.PCRs
 	}
 
 	currentPcrs, err := ReadPCRs(rw, sel)
-	if err != nil {
-		return nil, err
-	}
-
-	for pcr, val := range proto.GetPcrs() {
-		currentPcrs.Pcrs[pcr] = val
-	}
-	return currentPcrs, nil
-}
-
-func mergePCRSelAndProtoDirect(thetpm transport.TPM, sel tpms.PCRSelection, proto *pb.PCRs) (*pb.PCRs, error) {
-
-	if proto == nil || len(proto.GetPcrs()) == 0 {
-		return ReadPCRsDirect(thetpm, sel)
-	}
-
-	if len(sel.PCRSelect) == 0 {
-		return proto, nil
-	}
-	if sel.Hash != tpm.AlgID(proto.Hash) {
-		return nil, fmt.Errorf("current hash (%v) differs from target hash (%v)",
-			sel.Hash, tpm.AlgID(proto.Hash))
-	}
-
-	// At this point, both sel and proto are non-empty.
-	// Verify no overlap in sel and proto PCR indexes.
-	overlap := make([]int, 0)
-	targetMap := proto.GetPcrs()
-	for bytePos := range sel.PCRSelect {
-		for bitPos := 0; bitPos <= 8; bitPos++ {
-
-			if (sel.PCRSelect[bytePos]>>bitPos)&1 == 1 {
-				pcrVal := bytePos*8 + bitPos
-				if _, found := targetMap[uint32(pcrVal)]; found {
-					overlap = append(overlap, pcrVal)
-				}
-			}
-
-		}
-
-	}
-	if len(overlap) != 0 {
-		return nil, fmt.Errorf("found PCR overlap: %v", overlap)
-	}
-
-	currentPcrs, err := ReadPCRsDirect(thetpm, sel)
 	if err != nil {
 		return nil, err
 	}

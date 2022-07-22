@@ -14,10 +14,10 @@ import (
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpmutil"
 
-	tpm "github.com/google/go-tpm/direct/structures/tpm"
-	tpml "github.com/google/go-tpm/direct/structures/tpml"
-	tpms "github.com/google/go-tpm/direct/structures/tpms"
-	tpmt "github.com/google/go-tpm/direct/structures/tpmt"
+	"github.com/google/go-tpm/direct/structures/tpm"
+	"github.com/google/go-tpm/direct/structures/tpml"
+	"github.com/google/go-tpm/direct/structures/tpms"
+	"github.com/google/go-tpm/direct/structures/tpmt"
 	tpm2direct "github.com/google/go-tpm/direct/tpm2"
 	"github.com/google/go-tpm/direct/transport/simulator"
 )
@@ -56,7 +56,7 @@ var extendsDirect = map[tpm.AlgID][]struct {
 		{bytes.Repeat([]byte{0x02}, sha512.Size384)}},
 }
 
-func pcrExtend(alg tpm2.Algorithm, old, new []byte) ([]byte, error) {
+func simulatedPCRExtend(alg tpm2.Algorithm, old, new []byte) ([]byte, error) {
 	hCon, err := alg.Hash()
 	if err != nil {
 		return nil, fmt.Errorf("not a valid hash type: %v", alg)
@@ -67,7 +67,7 @@ func pcrExtend(alg tpm2.Algorithm, old, new []byte) ([]byte, error) {
 	return h.Sum(nil), nil
 }
 
-func pcrExtendDirect(alg tpm.AlgID, old, new []byte) ([]byte, error) {
+func simulatedPCRExtendDirect(alg tpm.AlgID, old, new []byte) ([]byte, error) {
 	hCon, err := alg.Hash()
 	if err != nil {
 		return nil, fmt.Errorf("not a valid hash type: %v", alg)
@@ -104,7 +104,7 @@ func TestReadPCRs(t *testing.T) {
 				if err := tpm2.PCRExtend(rwc, tpmutil.Handle(test.DebugPCR), c.hashalg, d.digest, ""); err != nil {
 					t.Fatalf("failed to extend pcr for test %v", err)
 				}
-				pcrVal, err := pcrExtend(c.hashalg, pcrbank, d.digest)
+				pcrVal, err := simulatedPCRExtend(c.hashalg, pcrbank, d.digest)
 				if err != nil {
 					t.Fatalf("could not extend pcr: %v", err)
 				}
@@ -122,7 +122,7 @@ func TestReadPCRs(t *testing.T) {
 	}
 }
 
-func CreatePCRSelection(s []int) ([]byte, error) {
+func createPCRSelection(s []int) ([]byte, error) {
 
 	const sizeOfPCRSelect = 3
 
@@ -158,7 +158,7 @@ func TestReadPCRsDirect(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			PCRs, err := CreatePCRSelection([]int{test.DebugPCR})
+			PCRs, err := createPCRSelection([]int{test.DebugPCR})
 			if err != nil {
 				t.Fatalf("Failed to create PCRSelection")
 			}
@@ -204,7 +204,7 @@ func TestReadPCRsDirect(t *testing.T) {
 					t.Fatalf("failed to extend pcr for test %v", err)
 				}
 
-				pcrVal, err := pcrExtendDirect(c.hashalg, pcr16val, d.digest)
+				pcrVal, err := simulatedPCRExtendDirect(c.hashalg, pcr16val, d.digest)
 				if err != nil {
 					t.Fatalf("could not extend pcr: %v", err)
 				}
@@ -276,7 +276,7 @@ func TestCheckContainedPCRsDirect(t *testing.T) {
 		t.Fatalf("Failed to Read PCRs: %v", err)
 	}
 
-	pcrs, err := CreatePCRSelection([]int{test.DebugPCR})
+	pcrs, err := createPCRSelection([]int{test.DebugPCR})
 	if err != nil {
 		t.Fatalf("Failed to create PCRSelection")
 	}
@@ -288,7 +288,7 @@ func TestCheckContainedPCRsDirect(t *testing.T) {
 		t.Fatalf("Validation should pass: %v", err)
 	}
 
-	pcrExtend := tpm2direct.PCRExtend {
+	pcrExtend := tpm2direct.PCRExtend{
 		PCRHandle: tpm2direct.AuthHandle{
 			Handle: tpm.Handle(test.DebugPCR),
 			Auth:   tpm2direct.PasswordAuth(nil),
@@ -306,7 +306,7 @@ func TestCheckContainedPCRsDirect(t *testing.T) {
 		t.Fatalf("failed to extend pcr for test %v", err)
 	}
 
-	pcrs, err = CreatePCRSelection([]int{1, 3, test.DebugPCR})
+	pcrs, err = createPCRSelection([]int{1, 3, test.DebugPCR})
 	if err != nil {
 		t.Fatalf("Failed to create PCRSelection")
 	}
@@ -315,10 +315,10 @@ func TestCheckContainedPCRsDirect(t *testing.T) {
 		t.Fatalf("failed to read pcrs %v", err)
 	}
 	if err := internal.CheckSubset(toBeCertified, baseline); err == nil {
-		t.Fatalf("Validation should pass: %v", err)
+		t.Fatalf("validation should fail due to PCR %d changed", test.DebugPCR)
 	}
 
-	pcrs, err = CreatePCRSelection([]int{})
+	pcrs, err = createPCRSelection([]int{})
 	if err != nil {
 		t.Fatalf("Failed to create PCRSelection")
 	}

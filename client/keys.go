@@ -18,7 +18,6 @@ import (
 	"github.com/google/go-tpm/direct/structures/tpm2b"
 	"github.com/google/go-tpm/direct/structures/tpmt"
 	tpm2direct "github.com/google/go-tpm/direct/tpm2"
-	"github.com/google/go-tpm/direct/transport"
 )
 
 // Key wraps an active asymmetric TPM2 key. This can either be a signing key or
@@ -43,11 +42,6 @@ type Key struct {
 	pubKey crypto.PublicKey
 	cert   *x509.Certificate
 	handle tpmutil.Handle
-}
-
-// transportTPM wraps the ReadWriter to a transport TPM.
-func (k *Key) transportTPM() transport.TPM {
-	return transport.FromReadWriter(k.rw)
 }
 
 // EndorsementKeyRSA generates and loads a key from DefaultEKTemplateRSA.
