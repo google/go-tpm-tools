@@ -3,7 +3,7 @@ substitutions:
   '_BASE_IMAGE_PROJECT': 'cos-cloud'
   '_OUTPUT_IMAGE_SUFFIX': ''
   '_IMAGE_ENV': 'debug'
-  '_BUCKET_NAME': '${PROJECT_ID}_csi_cloudbuild'
+  '_BUCKET_NAME': '${PROJECT_ID}_cloudbuild'
 
 steps:
   - name: golang:1.18
@@ -11,10 +11,11 @@ steps:
     args:
       - -c
       - |
-        go build -o image/launcher
+        cd launcher
+        go build -o launcher/image/launcher
   - name: 'gcr.io/cos-cloud/cos-customizer'
     args: ['start-image-build',
-           '-build-context=image',
+           '-build-context=launcher/image',
            '-gcs-bucket=${_BUCKET_NAME}',
            '-gcs-workdir=customizer-${BUILD_ID}',
            '-image-name=${_BASE_IMAGE}',
