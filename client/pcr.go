@@ -140,9 +140,9 @@ func readPcrHelper(thetpm transport.TPM, hash tpm.AlgID, index int) (*tpm2b.Dige
 	return &pcrReadRsp.PCRValues.Digests[0], nil
 }
 
-// ReadPCRsDirect fetches all the PCR values specified in sel, making multiple calls
+// readPCRsDirect fetches all the PCR values specified in sel, making multiple calls
 // to the TPM if necessary.
-func ReadPCRsDirect(thetpm transport.TPM, sel tpms.PCRSelection) (*pb.PCRs, error) {
+func readPCRsDirect(thetpm transport.TPM, sel tpms.PCRSelection) (*pb.PCRs, error) {
 	pl := pb.PCRs{
 		Hash: pb.HashAlgo(sel.Hash),
 		Pcrs: map[uint32][]byte{},
@@ -182,8 +182,8 @@ func ReadAllPCRs(rw io.ReadWriter) ([]*pb.PCRs, error) {
 	return allPcrs, nil
 }
 
-// ReadAllPCRsDirect fetches all the PCR values from all implemented PCR banks.
-func ReadAllPCRsDirect(thetpm transport.TPM) ([]*pb.PCRs, error) {
+// readAllPCRsDirect fetches all the PCR values from all implemented PCR banks.
+func readAllPCRsDirect(thetpm transport.TPM) ([]*pb.PCRs, error) {
 	sels, err := implementedPCRsDirect(thetpm)
 	if err != nil {
 		return nil, err
@@ -191,7 +191,7 @@ func ReadAllPCRsDirect(thetpm transport.TPM) ([]*pb.PCRs, error) {
 
 	allPcrs := make([]*pb.PCRs, len(sels.PCRSelections))
 	for i, sel := range sels.PCRSelections {
-		allPcrs[i], err = ReadPCRsDirect(thetpm, sel)
+		allPcrs[i], err = readPCRsDirect(thetpm, sel)
 		if err != nil {
 			return nil, fmt.Errorf("reading bank %x PCRs: %w", sel.Hash, err)
 		}
@@ -230,9 +230,9 @@ func FullPcrSel(hash tpm2.Algorithm) tpm2.PCRSelection {
 	return sel
 }
 
-// FullPcrSelDirect will return a full PCR selection based on the total PCR number
+// fullPcrSelDirect will return a full PCR selection based on the total PCR number
 // of the TPM with the given hash algo.
-func FullPcrSelDirect(hash tpm.AlgID) tpms.PCRSelection {
+func fullPcrSelDirect(hash tpm.AlgID) tpms.PCRSelection {
 	sel := tpms.PCRSelection{
 		Hash: hash,
 	}
@@ -268,6 +268,52 @@ func mergePCRSelAndProto(rw io.ReadWriter, sel tpm2.PCRSelection, proto *pb.PCRs
 	}
 
 	currentPcrs, err := ReadPCRs(rw, sel)
+	if err != nil {
+		return nil, err
+	}
+
+	for pcr, val := range proto.GetPcrs() {
+		currentPcrs.Pcrs[pcr] = val
+	}
+	return currentPcrs, nil
+}
+
+func mergePCRSelAndProtoDirect(thetpm transport.TPM, sel tpms.PCRSelection, proto *pb.PCRs) (*pb.PCRs, error) {
+
+	if proto == nil || len(proto.GetPcrs()) == 0 {
+		return readPCRsDirect(thetpm, sel)
+	}
+
+	if len(sel.PCRSelect) == 0 {
+		return proto, nil
+	}
+	if sel.Hash != tpm.AlgID(proto.Hash) {
+		return nil, fmt.Errorf("current hash (%v) differs from target hash (%v)",
+			sel.Hash, tpm.AlgID(proto.Hash))
+	}
+
+	// At this point, both sel and proto are non-empty.
+	// Verify no overlap in sel and proto PCR indexes.
+	overlap := make([]int, 0)
+	targetMap := proto.GetPcrs()
+	for bytePos := range sel.PCRSelect {
+		for bitPos := 0; bitPos < 8; bitPos++ {
+
+			if (sel.PCRSelect[bytePos]>>bitPos)&1 == 1 {
+				pcrVal := bytePos*8 + bitPos
+				if _, found := targetMap[uint32(pcrVal)]; found {
+					overlap = append(overlap, pcrVal)
+				}
+			}
+
+		}
+
+	}
+	if len(overlap) != 0 {
+		return nil, fmt.Errorf("found PCR overlap: %v", overlap)
+	}
+
+	currentPcrs, err := readPCRsDirect(thetpm, sel)
 	if err != nil {
 		return nil, err
 	}
