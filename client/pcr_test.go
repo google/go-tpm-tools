@@ -32,7 +32,7 @@ var extends = map[tpm2.Algorithm][]struct {
 		{bytes.Repeat([]byte{0x02}, sha512.Size384)}},
 }
 
-func pcrExtend(alg tpm2.Algorithm, old, new []byte) ([]byte, error) {
+func simulatedPCRExtend(alg tpm2.Algorithm, old, new []byte) ([]byte, error) {
 	hCon, err := alg.Hash()
 	if err != nil {
 		return nil, fmt.Errorf("not a valid hash type: %v", alg)
@@ -69,7 +69,7 @@ func TestReadPCRs(t *testing.T) {
 				if err := tpm2.PCRExtend(rwc, tpmutil.Handle(test.DebugPCR), c.hashalg, d.digest, ""); err != nil {
 					t.Fatalf("failed to extend pcr for test %v", err)
 				}
-				pcrVal, err := pcrExtend(c.hashalg, pcrbank, d.digest)
+				pcrVal, err := simulatedPCRExtend(c.hashalg, pcrbank, d.digest)
 				if err != nil {
 					t.Fatalf("could not extend pcr: %v", err)
 				}
