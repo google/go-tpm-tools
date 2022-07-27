@@ -26,12 +26,16 @@ const NumPCRs = 24
 // github.com/google/go-tpm/tpm2, as it hardcodes the nameAlg as SHA256 in
 // several places. Two constants are used to avoid repeated conversions.
 const (
-	SessionHashAlg    = crypto.SHA256
-	SessionHashAlgTpm = tpm2.AlgSHA256
+	SessionHashAlg          = crypto.SHA256
+	SessionHashAlgTpm       = tpm2.AlgSHA256
+	sessionHashAlgTpmDirect = tpm.AlgSHA256
 )
 
 // CertifyHashAlgTpm is the hard-coded algorithm used in certify PCRs.
-const CertifyHashAlgTpm = tpm2.AlgSHA256
+const (
+	CertifyHashAlgTpm       = tpm2.AlgSHA256
+	certifyHashAlgTpmDirect = tpm.AlgSHA256
+)
 
 func min(a, b int) int {
 	if a < b {
@@ -207,6 +211,14 @@ type SealOpts struct {
 	Target *pb.PCRs
 }
 
+// sealOptsDirect specifies the PCR values that should be used for Seal().
+type sealOptsDirect struct {
+	// Current seals data to the current specified PCR selection.
+	Current tpms.PCRSelection
+	// Target predictively seals data to the given specified PCR values.
+	Target *pb.PCRs
+}
+
 // UnsealOpts specifies the options that should be used for Unseal().
 // Currently, it specifies the PCRs that need to pass certification in order to
 // successfully unseal.
@@ -216,6 +228,17 @@ type UnsealOpts struct {
 	// CertifyCurrent certifies that a selection of current PCRs have the same
 	// value when sealing.
 	CertifyCurrent tpm2.PCRSelection
+	// CertifyExpected certifies that the TPM had a specific set of PCR values when sealing.
+	CertifyExpected *pb.PCRs
+}
+
+// unsealOptsDirect specifies the options that should be used for Unseal().
+// Currently, it specifies the PCRs that need to pass certification in order to
+// successfully unseal.
+type unsealOptsDirect struct {
+	// CertifyCurrent certifies that a selection of current PCRs have the same
+	// value when sealing.
+	CertifyCurrent tpms.PCRSelection
 	// CertifyExpected certifies that the TPM had a specific set of PCR values when sealing.
 	CertifyExpected *pb.PCRs
 }

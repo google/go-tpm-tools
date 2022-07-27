@@ -15,9 +15,14 @@ import (
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpmutil"
 
+	"github.com/google/go-tpm/direct/structures/tpm"
 	"github.com/google/go-tpm/direct/structures/tpm2b"
+	"github.com/google/go-tpm/direct/structures/tpma"
+	"github.com/google/go-tpm/direct/structures/tpml"
+	"github.com/google/go-tpm/direct/structures/tpms"
 	"github.com/google/go-tpm/direct/structures/tpmt"
 	tpm2direct "github.com/google/go-tpm/direct/tpm2"
+	"github.com/google/go-tpm/direct/transport"
 )
 
 // Key wraps an active asymmetric TPM2 key. This can either be a signing key or
@@ -42,6 +47,11 @@ type Key struct {
 	pubKey crypto.PublicKey
 	cert   *x509.Certificate
 	handle tpmutil.Handle
+}
+
+// transportTPM wraps the ReadWriter to a transport TPM.
+func (k *Key) transportTPM() transport.TPM {
+	return transport.FromReadWriter(k.rw)
 }
 
 // EndorsementKeyRSA generates and loads a key from DefaultEKTemplateRSA.
@@ -362,6 +372,116 @@ func sealHelper(rw io.ReadWriter, parentHandle tpmutil.Handle, auth []byte, sens
 	return sb, nil
 }
 
+// sealDirect seals the sensitive byte buffer to a key. This key must be an SRK (we
+// currently do not support sealing to EKs). Optionally, the sealOptsDirect struct can
+// be modified to provide sealed-to PCRs. In this case, the sensitive data can
+// only be unsealed if the seal-time PCRs are in the sealOptsDirect-specified state.
+// There must not be overlap in PCRs between sealOptsDirect's Current and Target.
+// During the sealing process, certification data will be created allowing
+// unsealDirect() to validate the state of the TPM during the sealing process.
+func (k *Key) sealDirect(sensitive []byte, opts sealOptsDirect) (*pb.SealedBytes, error) {
+	var pcrs *pb.PCRs
+	var err error
+	var auth []byte
+
+	pcrs, err = mergePCRSelAndProtoDirect(k.transportTPM(), opts.Current, opts.Target)
+	if err != nil {
+		return nil, fmt.Errorf("invalid SealOpts: %v", err)
+	}
+	if len(pcrs.GetPcrs()) > 0 {
+		auth = internal.PCRSessionAuth(pcrs, SessionHashAlg)
+	}
+	certifySel := fullPcrSelDirect(certifyHashAlgTpmDirect)
+	sb, err := sealHelperDirect(k.transportTPM(), tpm.Handle(k.Handle()), auth, sensitive, certifySel)
+	if err != nil {
+		return nil, err
+	}
+
+	for pcrNum := range pcrs.GetPcrs() {
+		sb.Pcrs = append(sb.Pcrs, pcrNum)
+	}
+	sb.Hash = pcrs.GetHash()
+	sb.Srk = pb.ObjectType(k.pubArea.Type)
+	return sb, nil
+}
+
+func sealHelperDirect(thetpm transport.TPM, parentHandle tpm.Handle, auth []byte, sensitive []byte, certifyPCRsSel tpms.PCRSelection) (*pb.SealedBytes, error) {
+	inPublic := tpm2b.Public{
+		PublicArea: tpmt.Public{
+			Type:    tpm.AlgKeyedHash,
+			NameAlg: sessionHashAlgTpmDirect,
+			ObjectAttributes: tpma.Object{
+				FixedTPM:    true,
+				FixedParent: true,
+			},
+			AuthPolicy: tpm2b.Digest{
+				Buffer: auth,
+			},
+		},
+	}
+
+	if auth == nil {
+		inPublic.PublicArea.ObjectAttributes.UserWithAuth = true
+	} else {
+		inPublic.PublicArea.ObjectAttributes.AdminWithPolicy = true
+	}
+
+	create := tpm2direct.Create{
+		ParentHandle: parentHandle,
+		InSensitive: tpm2b.SensitiveCreate{
+			Sensitive: tpms.SensitiveCreate{
+				UserAuth: tpm2b.Auth{
+					Buffer: nil,
+				}, //test with commented out
+				Data: tpm2b.SensitiveData{
+					Buffer: sensitive,
+				},
+			},
+		},
+		InPublic: inPublic,
+		CreationPCR: tpml.PCRSelection{
+			PCRSelections: []tpms.PCRSelection{
+				{
+					Hash:      certifyPCRsSel.Hash,
+					PCRSelect: certifyPCRsSel.PCRSelect,
+				},
+			},
+		},
+	}
+
+	createRsp, err := create.Execute(thetpm)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create key: %w", err)
+	}
+
+	certifiedPcr, err := readPCRsDirect(thetpm, certifyPCRsSel)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read PCRs: %w", err)
+	}
+	computedDigest := internal.PCRDigest(certifiedPcr, SessionHashAlg)
+
+	// make sure PCRs haven't being altered after sealing
+	if subtle.ConstantTimeCompare(computedDigest, createRsp.CreationData.CreationData.PCRDigest.Buffer) == 0 {
+		return nil, fmt.Errorf("PCRs have been modified after sealing")
+	}
+
+	// 	priv, pub, creationData, _, ticket, err
+	// return private, public, creationData, creationHash, creationTicket, nil
+	sb := &pb.SealedBytes{}
+	sb.CertifiedPcrs = certifiedPcr
+	sb.Priv = createRsp.OutPrivate.Buffer
+	if sb.Pub, err = tpm2direct.Marshal(createRsp.OutPublic); err != nil {
+		return nil, err
+	}
+	if sb.CreationData, err = tpm2direct.Marshal(createRsp.CreationData); err != nil {
+		return nil, err
+	}
+	if sb.Ticket, err = tpm2direct.Marshal(createRsp.CreationTicket); err != nil {
+		return nil, err
+	}
+	return sb, nil
+}
+
 // Unseal attempts to reverse the process of Seal(), using the PCRs, public, and
 // private data in proto.SealedBytes. Optionally, the UnsealOpts parameter can
 // be used to verify the state of the TPM when the data was sealed. The
@@ -448,6 +568,175 @@ func (k *Key) Unseal(in *pb.SealedBytes, opts UnsealOpts) ([]byte, error) {
 		return nil, err
 	}
 	return tpm2.UnsealWithSession(k.rw, auth.Session, sealed, "")
+}
+
+// Unseal attempts to reverse the process of Seal(), using the PCRs, public, and
+// private data in proto.SealedBytes. Optionally, the UnsealOpts parameter can
+// be used to verify the state of the TPM when the data was sealed. The
+// zero-value UnsealOpts can be passed to skip certification.
+func (k *Key) unsealDirect(in *pb.SealedBytes, opts unsealOptsDirect) ([]byte, error) {
+	if in.Srk != pb.ObjectType(k.pubArea.Type) {
+		return nil, fmt.Errorf("expected key of type %v, got %v", in.Srk, k.pubArea.Type)
+	}
+	var public tpm2b.Public
+	err := tpm2direct.Unmarshal(in.GetPub(), &public)
+
+	load := tpm2direct.Load{
+		ParentHandle: tpm.Handle(k.handle),
+		InPrivate: tpm2b.Private{
+			Buffer: in.GetPriv(),
+		},
+		InPublic: public,
+	}
+	loadRsp, err := load.Execute(k.transportTPM())
+	if err != nil {
+		return nil, fmt.Errorf("failed to load sealed object: %w", err)
+	}
+	sealed := tpm2direct.NamedHandle{
+		Handle: loadRsp.ObjectHandle,
+		Name:   loadRsp.Name,
+	}
+	flushContext := tpm2direct.FlushContext{FlushHandle: loadRsp.ObjectHandle}
+	defer flushContext.Execute(k.transportTPM())
+
+	pcrs, err := mergePCRSelAndProtoDirect(k.transportTPM(), opts.CertifyCurrent, opts.CertifyExpected)
+	if err != nil {
+		return nil, fmt.Errorf("invalid UnsealOpts: %v", err)
+	}
+	if len(pcrs.GetPcrs()) > 0 {
+		if err := internal.CheckSubset(pcrs, in.GetCertifiedPcrs()); err != nil {
+			return nil, fmt.Errorf("failed to certify PCRs: %w", err)
+		}
+
+		var ticket tpmt.TKCreation
+		if err = tpm2direct.Unmarshal(in.GetTicket(), &ticket); err != nil {
+			return nil, fmt.Errorf("ticket unmarshal failed: %w", err)
+		}
+
+		creationHash := SessionHashAlg.New()
+		creationHash.Write(in.GetCreationData())
+
+		certifyCreation := tpm2direct.CertifyCreation{
+			SignHandle:   tpm.RHNull,
+			ObjectHandle: sealed,
+			CreationHash: tpm2b.Digest{
+				Buffer: creationHash.Sum(nil),
+			},
+			CreationTicket: ticket,
+		}
+
+		_, certErr := certifyCreation.Execute(k.transportTPM())
+
+		// rw io.ReadWriter, objectAuth string, object, signer tpmutil.Handle, qualifyingData, creationHash []byte, sigScheme SigScheme, creationTicket Ticket
+		// tpm2.CertifyCreation(k.rw, "", sealed, tpm2.HandleNull, nil, creationHash.Sum(nil), tpm2.SigScheme{}, ticket)
+		// There is a bug in some older TPMs, where they are unable to
+		// CertifyCreation when using a Null signing handle (despite this
+		// being allowed by all versions of the TPM spec). To work around
+		// this bug, we use a temporary signing key and ignore the signed
+		// result. To reduce the cost of this workaround, we use a cached
+		// ECC signing key.
+		// We can detect this bug, as it triggers a RCInsufficient
+		// Unmarshaling error.
+		if paramErr, ok := certErr.(tpm2.ParameterError); ok && paramErr.Code == tpm2.RCInsufficient {
+			signer, err := AttestationKeyECC(k.rw)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create fallback signing key: %w", err)
+			}
+			defer signer.Close()
+
+			certifyCreation := tpm2direct.CertifyCreation{
+				SignHandle: tpm2direct.AuthHandle{
+					Handle: tpm.Handle(signer.handle),
+					Name:   *signer.nameDirect,
+					Auth:   tpm2direct.PasswordAuth(nil),
+				},
+				ObjectHandle: sealed,
+				CreationHash: tpm2b.Digest{
+					Buffer: creationHash.Sum(nil),
+				},
+				CreationTicket: ticket,
+			}
+
+			_, err = certifyCreation.Execute(k.transportTPM())
+			if err != nil {
+				return nil, fmt.Errorf("failed to certify creation: %w", err)
+			}
+		}
+		if certErr != nil {
+			return nil, fmt.Errorf("failed to certify creation: %w", certErr)
+		}
+
+		// verify certify PCRs haven't been modified
+		var decodedCreationData tpms.CreationData
+		if err = tpm2direct.Unmarshal(in.GetCreationData(), &decodedCreationData); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal creation data: %w", err)
+		}
+
+		if !internal.SamePCRSelectionDirect(in.GetCertifiedPcrs(), decodedCreationData.PCRSelect) {
+			return nil, fmt.Errorf("certify PCRs does not match the PCR selection in the creation data")
+		}
+		expectedDigest := internal.PCRDigest(in.GetCertifiedPcrs(), SessionHashAlg)
+		if subtle.ConstantTimeCompare(decodedCreationData.PCRDigest.Buffer, expectedDigest) == 0 {
+			return nil, fmt.Errorf("certify PCRs digest does not match the digest in the creation data")
+		}
+	}
+
+	const sizeOfPCRSelect = 3
+	PCRs := make([]byte, sizeOfPCRSelect)
+	for _, n := range in.GetPcrs() {
+		n := int(n)
+		if n >= 8*sizeOfPCRSelect {
+			return nil, fmt.Errorf("PCR index %d is out of range (exceeds maximum value %d)", n, 8*sizeOfPCRSelect-1)
+		}
+		byteNum := n / 8
+		bytePos := byte(1 << (n % 8))
+		PCRs[byteNum] |= bytePos
+	}
+
+	hash := tpm.AlgID(in.GetHash())
+	sel := tpml.PCRSelection{
+		PCRSelections: []tpms.PCRSelection{
+			{
+				Hash:      hash,
+				PCRSelect: PCRs,
+			},
+		},
+	}
+
+	sess, cleanup2, err := tpm2direct.PolicySession(k.transportTPM(), tpm.AlgSHA1, 0)
+
+	if err != nil {
+		return nil, fmt.Errorf("Failed to start Policy Session: %v", err)
+	}
+
+	policyPCR := tpm2direct.PolicyPCR{
+		PolicySession: sess.Handle(),
+		Pcrs:          sel,
+	}
+
+	err = policyPCR.Execute(k.transportTPM())
+
+	if err != nil {
+		return nil, fmt.Errorf("Failed to start pcrPolicy: %v", err)
+	}
+
+	unseal := tpm2direct.Unseal{
+		ItemHandle: tpm2direct.AuthHandle{
+			Handle: tpm.Handle(k.handle),
+			Name:   *k.nameDirect,
+			Auth:   sess,
+		},
+	}
+
+	unsealRsp, err := unseal.Execute(k.transportTPM())
+	if err != nil {
+		return nil, fmt.Errorf("Failed to unseal: %v", err)
+	}
+
+	if err := cleanup2(); err != nil {
+		return nil, fmt.Errorf("cleaning up policy session: %v", err)
+	}
+	return unsealRsp.OutData.Buffer, nil
 }
 
 // Quote will tell TPM to compute a hash of a set of given PCR selection, together with

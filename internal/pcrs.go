@@ -11,6 +11,10 @@ import (
 	pb "github.com/google/go-tpm-tools/proto/tpm"
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpmutil"
+
+	"github.com/google/go-tpm/direct/structures/tpm"
+	"github.com/google/go-tpm/direct/structures/tpmi"
+	"github.com/google/go-tpm/direct/structures/tpml"
 )
 
 const minPCRIndex = uint32(0)
@@ -86,6 +90,46 @@ func SamePCRSelection(p *pb.PCRs, sel tpm2.PCRSelection) bool {
 		}
 	}
 	return true
+}
+
+// SamePCRSelection checks if the Pcrs has the same PCRSelection as the
+// provided given tpm2.PCRSelection (including the hash algorithm).
+func SamePCRSelectionDirect(p *pb.PCRs, sels tpml.PCRSelection) bool {
+	if len(p.GetPcrs()) != len(sels.PCRSelections)*24 {
+		return false
+	}
+	for k, sel := range sels.PCRSelections {
+		if tpm.AlgID(p.GetHash()) != sel.Hash {
+			return false
+		}
+		for i, selByte := range sel.PCRSelect {
+			for j := 0; j < 8; j++ {
+				pcrIndex := k*24 + i*8 + j
+				if (selByte>>j)&1 == 1 {
+					if _, ok := p.Pcrs[uint32(pcrIndex)]; !ok {
+						return false
+					}
+				}
+
+			}
+		}
+	}
+	return true
+}
+
+// Hash returns the TPMIAlgHash associated with a crypto.Hash.
+func hash(a crypto.Hash) (tpmi.AlgHash, error) {
+	switch a {
+	case crypto.SHA1:
+		return tpm.AlgSHA1, nil
+	case crypto.SHA256:
+		return tpm.AlgSHA256, nil
+	case crypto.SHA384:
+		return tpm.AlgSHA384, nil
+	case crypto.SHA512:
+		return tpm.AlgSHA512, nil
+	}
+	return tpm.AlgSHA256, fmt.Errorf("unsupported hash algorithm: %v", a)
 }
 
 // PCRSessionAuth calculates the authorization value for the given PCRs.
