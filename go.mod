@@ -6,7 +6,7 @@ go 1.17
 require (
 	github.com/google/go-attestation v0.4.4-0.20220404204839-8820d49b18d9
 	github.com/google/go-cmp v0.5.7
-	github.com/google/go-tpm v0.3.4-0.20220713223303-d2289fb1cdc5
+	github.com/google/go-tpm v0.3.4-0.20220730011945-6f9794f68d3c
 	google.golang.org/protobuf v1.28.0
 )
 
@@ -17,5 +17,3 @@ require (
 	golang.org/x/sys v0.0.0-20220209214540-3681064d5158 // indirect
 	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1 // indirect
 )
-
-replace github.com/google/go-tpm => /usr/local/google/home/matthewtsai/git/go-tpm

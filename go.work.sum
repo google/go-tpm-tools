@@ -1,1 +1,3 @@
+github.com/google/go-tpm v0.3.4-0.20220730011945-6f9794f68d3c h1:YxS6DCP66y2BScJjlhbGO+xBw7NDghBxJNtCskUK2Ts=
+github.com/google/go-tpm v0.3.4-0.20220730011945-6f9794f68d3c/go.mod h1:A9+OVpCkif3WafyygRenGLP51SrEFilKNtlbpCqYzH4=
 github.com/googleapis/gax-go v2.0.2+incompatible h1:silFMLAnr330+NRuag/VjIGF7TLp/LBrV2CJKFLWEww=
