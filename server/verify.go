@@ -48,17 +48,6 @@ type VerifyOpts struct {
 	Loader Bootloader
 }
 
-var (
-	// See https://www.gnu.org/software/grub/manual/grub/grub.html#Measured-Boot.
-	validPrefixes = [][]byte{[]byte("grub_cmd: "),
-		[]byte("kernel_cmdline: "),
-		[]byte("module_cmdline: "),
-		// Older style prefixes:
-		// https://src.fedoraproject.org/rpms/grub2/blob/c789522f7cfa19a10cd716a1db24dab5499c6e5c/f/0224-Rework-TPM-measurements.patch
-		[]byte("grub_kernel_cmdline "),
-		[]byte("grub_cmd ")}
-)
-
 // Bootloader refers to the second-stage bootloader that loads and transfers
 // execution to the OS kernel.
 type Bootloader int
