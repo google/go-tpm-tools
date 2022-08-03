@@ -556,7 +556,7 @@ func (k *Key) Unseal(in *pb.SealedBytes, opts UnsealOpts) ([]byte, error) {
 	for _, pcr := range in.GetPcrs() {
 		sel.PCRs = append(sel.PCRs, int(pcr))
 	}
-	
+
 	session, err := newPCRSession(k.rw, sel)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create session: %w", err)
@@ -705,8 +705,8 @@ func (k *Key) unsealDirect(in *pb.SealedBytes, opts unsealOptsDirect) ([]byte, e
 			},
 		},
 	}
-	
-	sess, cleanup2, err := tpm2direct.PolicySession(k.transportTPM(), sessionHashAlgTpmDirect, SessionHashAlg.Size()) // start with encrypt out Aes-enc in sessions.go
+
+	sess, cleanup2, err := tpm2direct.PolicySession(k.transportTPM(), sessionHashAlgTpmDirect, SessionHashAlg.Size()) 
 	if err != nil {
 		return nil, fmt.Errorf("Failed to start Policy Session: %v", err)
 	}

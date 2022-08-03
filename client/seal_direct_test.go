@@ -20,7 +20,6 @@ import (
 
 func CreatePCRSelection(s []int) ([]byte, error) {
 	const sizeOfPCRSelect = 3
-
 	PCRs := make(tpmutil.RawBytes, sizeOfPCRSelect)
 
 	for _, n := range s {
