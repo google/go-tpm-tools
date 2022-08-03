@@ -91,8 +91,8 @@ func SamePCRSelection(p *pb.PCRs, sel tpm2.PCRSelection) bool {
 	return true
 }
 
-// SamePCRSelection checks if the Pcrs has the same PCRSelection as the
-// provided given tpm2.PCRSelection (including the hash algorithm).
+// SamePCRSelectionDirect checks if the Pcrs has the same PCRSelection as the
+// provided given tpml.PCRSelection (including the hash algorithm).
 func SamePCRSelectionDirect(p *pb.PCRs, sels tpml.PCRSelection) bool {
 	if len(p.GetPcrs()) != len(sels.PCRSelections)*24 {
 		return false

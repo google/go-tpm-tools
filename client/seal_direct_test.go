@@ -24,7 +24,7 @@ func CreatePCRSelection(s []int) ([]byte, error) {
 
 	for _, n := range s {
 		if n >= 8*sizeOfPCRSelect {
-			return nil, fmt.Errorf("PCR index %d is out of range (exceeds maximum value %d)", n, 8*sizeOfPCRSelect-1)
+			return nil, fmt.Errorf("pcr index %d is out of range (exceeds maximum value %d)", n, 8*sizeOfPCRSelect-1)
 		}
 		byteNum := n / 8
 		bytePos := byte(1 << (n % 8))

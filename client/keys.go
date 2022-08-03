@@ -360,7 +360,7 @@ func sealHelper(rw io.ReadWriter, parentHandle tpmutil.Handle, auth []byte, sens
 
 	// make sure PCRs haven't being altered after sealing
 	if subtle.ConstantTimeCompare(computedDigest, decodedCreationData.PCRDigest) == 0 {
-		return nil, fmt.Errorf("PCRs have been modified after sealing")
+		return nil, fmt.Errorf("pcrs have been modified after sealing")
 	}
 
 	sb := &pb.SealedBytes{}
@@ -465,7 +465,7 @@ func sealHelperDirect(thetpm transport.TPM, parentName tpm2b.Name, parentHandle 
 	computedDigest := internal.PCRDigest(certifiedPcr, SessionHashAlg)
 
 	if subtle.ConstantTimeCompare(computedDigest, createRsp.CreationData.CreationData.PCRDigest.Buffer) == 0 {
-		return nil, fmt.Errorf("PCRs have been modified after sealing")
+		return nil, fmt.Errorf("pcrs have been modified after sealing")
 	}
 
 	sb := &pb.SealedBytes{}
@@ -580,7 +580,6 @@ func (k *Key) unsealDirect(in *pb.SealedBytes, opts unsealOptsDirect) ([]byte, e
 	}
 	var public tpmt.Public
 	err := tpm2direct.Unmarshal(in.GetPub(), &public)
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal public: %w", err)
 	}
@@ -663,7 +662,7 @@ func (k *Key) unsealDirect(in *pb.SealedBytes, opts unsealOptsDirect) ([]byte, e
 				},
 				CreationTicket: ticket,
 			}
-			_, err = certifyCreation.Execute(k.transportTPM())
+			_, certErr = certifyCreation.Execute(k.transportTPM())
 
 		}
 		if certErr != nil {
@@ -689,7 +688,7 @@ func (k *Key) unsealDirect(in *pb.SealedBytes, opts unsealOptsDirect) ([]byte, e
 	for _, n := range in.GetPcrs() {
 		n := int(n)
 		if n >= 8*sizeOfPCRSelect {
-			return nil, fmt.Errorf("PCR index %d is out of range (exceeds maximum value %d)", n, 8*sizeOfPCRSelect-1)
+			return nil, fmt.Errorf("pcr index %d is out of range (exceeds maximum value %d)", n, 8*sizeOfPCRSelect-1)
 		}
 		byteNum := n / 8
 		bytePos := byte(1 << (n % 8))
@@ -706,9 +705,9 @@ func (k *Key) unsealDirect(in *pb.SealedBytes, opts unsealOptsDirect) ([]byte, e
 		},
 	}
 
-	sess, cleanup2, err := tpm2direct.PolicySession(k.transportTPM(), sessionHashAlgTpmDirect, SessionHashAlg.Size()) 
+	sess, cleanup2, err := tpm2direct.PolicySession(k.transportTPM(), sessionHashAlgTpmDirect, SessionHashAlg.Size())
 	if err != nil {
-		return nil, fmt.Errorf("Failed to start Policy Session: %v", err)
+		return nil, fmt.Errorf("failed to start Policy Session: %v", err)
 	}
 	defer cleanup2()
 
@@ -718,7 +717,7 @@ func (k *Key) unsealDirect(in *pb.SealedBytes, opts unsealOptsDirect) ([]byte, e
 	}
 	err = policyPCR.Execute(k.transportTPM())
 	if err != nil {
-		return nil, fmt.Errorf("Failed to start pcrPolicy: %v", err)
+		return nil, fmt.Errorf("failed to start pcrPolicy: %v", err)
 	}
 
 	unseal := tpm2direct.Unseal{
@@ -730,7 +729,7 @@ func (k *Key) unsealDirect(in *pb.SealedBytes, opts unsealOptsDirect) ([]byte, e
 	}
 	unsealRsp, err := unseal.Execute(k.transportTPM())
 	if err != nil {
-		return nil, fmt.Errorf("Failed to unseal: %v", err)
+		return nil, fmt.Errorf("failed to unseal: %v", err)
 	}
 	return unsealRsp.OutData.Buffer, nil
 }
