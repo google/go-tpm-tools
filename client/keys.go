@@ -385,7 +385,7 @@ func (k *Key) sealDirect(sensitive []byte, opts sealOptsDirect) (*pb.SealedBytes
 	var pcrs *pb.PCRs
 	var err error
 	var auth []byte
-
+	
 	pcrs, err = mergePCRSelAndProtoDirect(k.transportTPM(), opts.Current, opts.Target)
 	if err != nil {
 		return nil, fmt.Errorf("invalid SealOpts: %v", err)
@@ -688,7 +688,11 @@ func (k *Key) unsealDirect(in *pb.SealedBytes, opts unsealOptsDirect) ([]byte, e
 		return nil, fmt.Errorf("failed to create PCRSelection: %v", err)
 	}
 
-	sess, cleanup2, err := tpm2direct.PolicySession(k.transportTPM(), sessionHashAlgTpmDirect, SessionHashAlg.Size())
+	var options []tpm2direct.AuthOption
+	options = append(options, tpm2direct.Salted(tpm.Handle(k.handle), k.pubAreaDirect))
+	options = append(options, tpm2direct.AESEncryption(128, tpm2direct.EncryptOut))
+
+	sess, cleanup2, err := tpm2direct.PolicySession(k.transportTPM(), sessionHashAlgTpmDirect, SessionHashAlg.Size(), options...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to start Policy Session: %v", err)
 	}
