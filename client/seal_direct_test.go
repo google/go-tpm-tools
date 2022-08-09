@@ -9,6 +9,7 @@ import (
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpmutil"
 
+	"github.com/google/go-tpm-tools/internal"
 	"github.com/google/go-tpm-tools/internal/test"
 	"github.com/google/go-tpm/direct/structures/tpm"
 	"github.com/google/go-tpm/direct/structures/tpml"
@@ -47,7 +48,7 @@ func TestLegacySealDirectUnseal(t *testing.T) {
 			}
 
 			// Unsealing with the Direct
-			PCR7, err := createTPMSPCRSelection([]uint32{7}, tpm.AlgSHA256)
+			PCR7, err := internal.CreateTPMSPCRSelection([]uint32{7}, tpm.AlgSHA256)
 			if err != nil {
 				t.Fatalf("Failed to create TPMSPCRSelection")
 			}
@@ -112,7 +113,7 @@ func TestDirectSealLegacyUnseal(t *testing.T) {
 			pcrToChange := uint32(test.DebugPCR)
 
 			// Sealing with the Direct
-			sel, err := createTPMSPCRSelection([]uint32{7, pcrToChange}, tpm.AlgSHA256)
+			sel, err := internal.CreateTPMSPCRSelection([]uint32{7, pcrToChange}, tpm.AlgSHA256)
 			if err != nil {
 				t.Fatalf("Failed to create PCRSelection")
 			}
@@ -177,7 +178,7 @@ func TestDirectSealDirectUnseal(t *testing.T) {
 			pcrToChange := uint32(test.DebugPCR)
 
 			// Sealing with the Direct
-			sel, err := createTPMSPCRSelection([]uint32{7, pcrToChange}, tpm.AlgSHA256)
+			sel, err := internal.CreateTPMSPCRSelection([]uint32{7, pcrToChange}, tpm.AlgSHA256)
 			if err != nil {
 				t.Fatalf("Failed to create TPMSPCRSelection")
 			}
@@ -191,7 +192,7 @@ func TestDirectSealDirectUnseal(t *testing.T) {
 			}
 
 			// Unsealing with the Direct
-			PCR7, err := createTPMSPCRSelection([]uint32{7}, tpm.AlgSHA256)
+			PCR7, err := internal.CreateTPMSPCRSelection([]uint32{7}, tpm.AlgSHA256)
 			if err != nil {
 				t.Fatalf("Failed to create TPMSPCRSelection")
 			}

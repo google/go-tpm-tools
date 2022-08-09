@@ -64,7 +64,7 @@ func TestReadPCRsDirect(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			selection, err := createTPMLPCRSelection([]uint32{uint32(test.DebugPCR)}, c.hashalg)
+			selection, err := internal.CreateTPMLPCRSelection([]uint32{uint32(test.DebugPCR)}, c.hashalg)
 			if err != nil {
 				t.Fatalf("Failed to create PCRSelection")
 			}
@@ -135,7 +135,7 @@ func TestCheckContainedPCRsDirect(t *testing.T) {
 		t.Fatalf("Failed to Read PCRs: %v", err)
 	}
 
-	pcrs, err := createTPMSPCRSelection([]uint32{DebugPCR}, tpm.AlgSHA256)
+	pcrs, err := internal.CreateTPMSPCRSelection([]uint32{DebugPCR}, tpm.AlgSHA256)
 	if err != nil {
 		t.Fatalf("Failed to create PCRSelection")
 	}
@@ -165,7 +165,7 @@ func TestCheckContainedPCRsDirect(t *testing.T) {
 		t.Fatalf("failed to extend pcr for test %v", err)
 	}
 
-	pcrs, err = createTPMSPCRSelection([]uint32{1, 3, DebugPCR}, tpm.AlgSHA256)
+	pcrs, err = internal.CreateTPMSPCRSelection([]uint32{1, 3, DebugPCR}, tpm.AlgSHA256)
 	if err != nil {
 		t.Fatalf("Failed to create PCRSelection")
 	}
@@ -177,7 +177,7 @@ func TestCheckContainedPCRsDirect(t *testing.T) {
 		t.Fatalf("validation should fail due to PCR %d changed", test.DebugPCR)
 	}
 
-	pcrs, err = createTPMSPCRSelection([]uint32{}, tpm.AlgSHA256)
+	pcrs, err = internal.CreateTPMSPCRSelection([]uint32{}, tpm.AlgSHA256)
 	if err != nil {
 		t.Fatalf("Failed to create PCRSelection")
 	}
@@ -220,7 +220,7 @@ func TestMergePCRSelAndProtoDirect(t *testing.T) {
 	}
 	defer thetpm.Close()
 
-	pcrs, err := createTPMSPCRSelection([]uint32{1, 2, 3, 4}, tpm.AlgSHA256)
+	pcrs, err := internal.CreateTPMSPCRSelection([]uint32{1, 2, 3, 4}, tpm.AlgSHA256)
 	if err != nil {
 		t.Fatalf("Failed to create PCRSelection: %v", err)
 	}
@@ -229,7 +229,7 @@ func TestMergePCRSelAndProtoDirect(t *testing.T) {
 		t.Fatalf("Failed to readPCRsDirect: %v", err)
 	}
 
-	pcrs, err = createTPMSPCRSelection([]uint32{1, 3}, tpm.AlgSHA256)
+	pcrs, err = internal.CreateTPMSPCRSelection([]uint32{1, 3}, tpm.AlgSHA256)
 	if err != nil {
 		t.Fatalf("Failed to create PCRSelection: %v", err)
 	}
@@ -238,7 +238,7 @@ func TestMergePCRSelAndProtoDirect(t *testing.T) {
 		t.Fatalf("Failed to readPCRsDirect: %v", err)
 	}
 
-	pcrs, err = createTPMSPCRSelection([]uint32{2, 4}, tpm.AlgSHA256)
+	pcrs, err = internal.CreateTPMSPCRSelection([]uint32{2, 4}, tpm.AlgSHA256)
 	if err != nil {
 		t.Fatalf("Failed to create PCRSelection: %v", err)
 	}

@@ -683,7 +683,7 @@ func (k *Key) unsealDirect(in *pb.SealedBytes, opts unsealOptsDirect) ([]byte, e
 		}
 	}
 	hash := tpm.AlgID(in.GetHash())
-	sel, err := createTPMLPCRSelection(in.GetPcrs(), hash)
+	sel, err := internal.CreateTPMLPCRSelection(in.GetPcrs(), hash)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create PCRSelection: %v", err)
 	}
@@ -715,45 +715,6 @@ func (k *Key) unsealDirect(in *pb.SealedBytes, opts unsealOptsDirect) ([]byte, e
 		return nil, fmt.Errorf("failed to unseal: %v", err)
 	}
 	return unsealRsp.OutData.Buffer, nil
-}
-
-// createTPMSPCRSelection will create a TPMS PCR Selection given a slice of uint32 and a tpm.AlgID.
-// This function only supports up to 24 PCRs.
-func createTPMSPCRSelection(s []uint32, hash tpm.AlgID) (*tpms.PCRSelection, error) {
-	const sizeOfPCRSelect = 3
-
-	PCRs := make(tpmutil.RawBytes, sizeOfPCRSelect)
-
-	for _, n := range s {
-		if n >= 8*sizeOfPCRSelect {
-			return nil, fmt.Errorf("PCR index %d is out of range (exceeds maximum value %d)", n, 8*sizeOfPCRSelect-1)
-		}
-		byteNum := n / 8
-		bytePos := byte(1 << (n % 8))
-		PCRs[byteNum] |= bytePos
-	}
-
-	sel := tpms.PCRSelection{
-		Hash:      hash,
-		PCRSelect: PCRs,
-	}
-
-	return &sel, nil
-}
-
-// createTPMLPCRSelection will create a TPMS PCR Selection given a slice of uint32 and a tpm.AlgID
-// Similar to createTPMSPCRSelection this function only supports up to 24 PCRS.
-func createTPMLPCRSelection(s []uint32, hash tpm.AlgID) (*tpml.PCRSelection, error) {
-	tpmsSel, err := createTPMSPCRSelection(s, hash)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create PCRSelection: %v", err)
-	}
-	tpmsPCR := []tpms.PCRSelection{}
-	tpmsPCR = append(tpmsPCR, *tpmsSel)
-	sel := tpml.PCRSelection{
-		PCRSelections: tpmsPCR,
-	}
-	return &sel, nil
 }
 
 // Quote will tell TPM to compute a hash of a set of given PCR selection, together with
