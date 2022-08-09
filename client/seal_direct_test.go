@@ -3,7 +3,6 @@ package client
 import (
 	"bytes"
 	"crypto/sha256"
-	"fmt"
 	"io"
 	"testing"
 
@@ -13,26 +12,9 @@ import (
 	"github.com/google/go-tpm-tools/internal/test"
 	"github.com/google/go-tpm/direct/structures/tpm"
 	"github.com/google/go-tpm/direct/structures/tpml"
-	"github.com/google/go-tpm/direct/structures/tpms"
 	"github.com/google/go-tpm/direct/structures/tpmt"
 	tpm2direct "github.com/google/go-tpm/direct/tpm2"
 )
-
-func CreatePCRSelection(s []int) ([]byte, error) {
-	const sizeOfPCRSelect = 3
-	PCRs := make(tpmutil.RawBytes, sizeOfPCRSelect)
-
-	for _, n := range s {
-		if n >= 8*sizeOfPCRSelect {
-			return nil, fmt.Errorf("pcr index %d is out of range (exceeds maximum value %d)", n, 8*sizeOfPCRSelect-1)
-		}
-		byteNum := n / 8
-		bytePos := byte(1 << (n % 8))
-		PCRs[byteNum] |= bytePos
-	}
-
-	return PCRs, nil
-}
 
 func TestLegacySealDirectUnseal(t *testing.T) {
 	rwc := test.GetTPM(t)
@@ -65,16 +47,13 @@ func TestLegacySealDirectUnseal(t *testing.T) {
 			}
 
 			// Unsealing with the Direct
-			PCR7, err := CreatePCRSelection([]int{7})
+			PCR7, err := createTPMSPCRSelection([]uint32{7}, tpm.AlgSHA256)
 			if err != nil {
-				t.Fatalf("Failed to create PCRSelection")
+				t.Fatalf("Failed to create TPMSPCRSelection")
 			}
 
 			unsealOpts := unsealOptsDirect{
-				CertifyCurrent: tpms.PCRSelection{
-					Hash:      tpm.AlgSHA256,
-					PCRSelect: PCR7,
-				},
+				CertifyCurrent: *PCR7,
 			}
 			unseal, err := srk.unsealDirect(sealed, unsealOpts)
 			if err != nil {
@@ -130,19 +109,16 @@ func TestDirectSealLegacyUnseal(t *testing.T) {
 			defer srk.Close()
 
 			secret := []byte("test")
-			pcrToChange := test.DebugPCR
+			pcrToChange := uint32(test.DebugPCR)
 
 			// Sealing with the Direct
-			sel, err := CreatePCRSelection([]int{7, pcrToChange})
+			sel, err := createTPMSPCRSelection([]uint32{7, pcrToChange}, tpm.AlgSHA256)
 			if err != nil {
 				t.Fatalf("Failed to create PCRSelection")
 			}
 
 			sealOpts := sealOptsDirect{
-				Current: tpms.PCRSelection{
-					Hash:      tpm.AlgSHA256,
-					PCRSelect: sel,
-				},
+				Current: *sel,
 			}
 			sealed, err := srk.sealDirect(secret, sealOpts)
 			if err != nil {
@@ -198,19 +174,16 @@ func TestDirectSealDirectUnseal(t *testing.T) {
 			defer srk.Close()
 
 			secret := []byte("test")
-			pcrToChange := test.DebugPCR
+			pcrToChange := uint32(test.DebugPCR)
 
 			// Sealing with the Direct
-			sel, err := CreatePCRSelection([]int{7, pcrToChange})
+			sel, err := createTPMSPCRSelection([]uint32{7, pcrToChange}, tpm.AlgSHA256)
 			if err != nil {
-				t.Fatalf("Failed to create PCRSelection")
+				t.Fatalf("Failed to create TPMSPCRSelection")
 			}
 
 			sealOpts := sealOptsDirect{
-				Current: tpms.PCRSelection{
-					Hash:      tpm.AlgSHA256,
-					PCRSelect: sel,
-				},
+				Current: *sel,
 			}
 			sealed, err := srk.sealDirect(secret, sealOpts)
 			if err != nil {
@@ -218,16 +191,13 @@ func TestDirectSealDirectUnseal(t *testing.T) {
 			}
 
 			// Unsealing with the Direct
-			PCR7, err := CreatePCRSelection([]int{7})
+			PCR7, err := createTPMSPCRSelection([]uint32{7}, tpm.AlgSHA256)
 			if err != nil {
-				t.Fatalf("Failed to create PCRSelection")
+				t.Fatalf("Failed to create TPMSPCRSelection")
 			}
 
 			unsealOpts := unsealOptsDirect{
-				CertifyCurrent: tpms.PCRSelection{
-					Hash:      tpm.AlgSHA256,
-					PCRSelect: PCR7,
-				},
+				CertifyCurrent: *PCR7,
 			}
 			unseal, err := srk.unsealDirect(sealed, unsealOpts)
 			if err != nil {
