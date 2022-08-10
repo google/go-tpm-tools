@@ -696,7 +696,7 @@ func (k *Key) unsealDirect(in *pb.SealedBytes, opts unsealOptsDirect) ([]byte, e
 
 	policyPCR := tpm2direct.PolicyPCR{
 		PolicySession: sess.Handle(),
-		Pcrs:          *sel,
+		Pcrs:          sel,
 	}
 	err = policyPCR.Execute(k.transportTPM())
 	if err != nil {

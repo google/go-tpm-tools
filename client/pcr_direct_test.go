@@ -70,7 +70,7 @@ func TestReadPCRsDirect(t *testing.T) {
 			}
 
 			pcrRead := tpm2.PCRRead{
-				PCRSelectionIn: *selection,
+				PCRSelectionIn: selection,
 			}
 
 			pcrReadRsp, err := pcrRead.Execute(thetpm)
@@ -139,7 +139,7 @@ func TestCheckContainedPCRsDirect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create PCRSelection")
 	}
-	toBeCertified, err := readPCRsDirect(thetpm, *pcrs)
+	toBeCertified, err := readPCRsDirect(thetpm, pcrs)
 	if err != nil {
 		t.Fatalf("failed to read pcrs %v", err)
 	}
@@ -169,7 +169,7 @@ func TestCheckContainedPCRsDirect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create PCRSelection")
 	}
-	toBeCertified, err = readPCRsDirect(thetpm, *pcrs)
+	toBeCertified, err = readPCRsDirect(thetpm, pcrs)
 	if err != nil {
 		t.Fatalf("failed to read pcrs %v", err)
 	}
@@ -181,7 +181,7 @@ func TestCheckContainedPCRsDirect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create PCRSelection")
 	}
-	toBeCertified, err = readPCRsDirect(thetpm, *pcrs)
+	toBeCertified, err = readPCRsDirect(thetpm, pcrs)
 	if err != nil {
 		t.Fatalf("failed to read pcrs %v", err)
 	}
@@ -224,7 +224,7 @@ func TestMergePCRSelAndProtoDirect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create PCRSelection: %v", err)
 	}
-	mergeExpected, err := readPCRsDirect(thetpm, *pcrs)
+	mergeExpected, err := readPCRsDirect(thetpm, pcrs)
 	if err != nil {
 		t.Fatalf("Failed to readPCRsDirect: %v", err)
 	}
@@ -233,7 +233,7 @@ func TestMergePCRSelAndProtoDirect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create PCRSelection: %v", err)
 	}
-	proto, err := readPCRsDirect(thetpm, *pcrs)
+	proto, err := readPCRsDirect(thetpm, pcrs)
 	if err != nil {
 		t.Fatalf("Failed to readPCRsDirect: %v", err)
 	}
@@ -243,7 +243,7 @@ func TestMergePCRSelAndProtoDirect(t *testing.T) {
 		t.Fatalf("Failed to create PCRSelection: %v", err)
 	}
 
-	mergeResult, err := mergePCRSelAndProtoDirect(thetpm, *pcrs, proto)
+	mergeResult, err := mergePCRSelAndProtoDirect(thetpm, pcrs, proto)
 	if err != nil {
 		t.Fatalf("Failed to mergePCRSelAndProtoDirect: %v", err)
 	}

@@ -54,7 +54,7 @@ func TestLegacySealDirectUnseal(t *testing.T) {
 			}
 
 			unsealOpts := unsealOptsDirect{
-				CertifyCurrent: *PCR7,
+				CertifyCurrent: PCR7,
 			}
 			unseal, err := srk.unsealDirect(sealed, unsealOpts)
 			if err != nil {
@@ -119,7 +119,7 @@ func TestDirectSealLegacyUnseal(t *testing.T) {
 			}
 
 			sealOpts := sealOptsDirect{
-				Current: *sel,
+				Current: sel,
 			}
 			sealed, err := srk.sealDirect(secret, sealOpts)
 			if err != nil {
@@ -184,7 +184,7 @@ func TestDirectSealDirectUnseal(t *testing.T) {
 			}
 
 			sealOpts := sealOptsDirect{
-				Current: *sel,
+				Current: sel,
 			}
 			sealed, err := srk.sealDirect(secret, sealOpts)
 			if err != nil {
@@ -198,7 +198,7 @@ func TestDirectSealDirectUnseal(t *testing.T) {
 			}
 
 			unsealOpts := unsealOptsDirect{
-				CertifyCurrent: *PCR7,
+				CertifyCurrent: PCR7,
 			}
 			unseal, err := srk.unsealDirect(sealed, unsealOpts)
 			if err != nil {
