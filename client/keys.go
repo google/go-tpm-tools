@@ -385,7 +385,7 @@ func (k *Key) sealDirect(sensitive []byte, opts sealOptsDirect) (*pb.SealedBytes
 	var pcrs *pb.PCRs
 	var err error
 	var auth []byte
-	
+
 	pcrs, err = mergePCRSelAndProtoDirect(k.transportTPM(), opts.Current, opts.Target)
 	if err != nil {
 		return nil, fmt.Errorf("invalid SealOpts: %v", err)
