@@ -14,27 +14,10 @@ import (
 
 	"github.com/google/go-tpm/direct/structures/tpm"
 	"github.com/google/go-tpm/direct/structures/tpml"
-	"github.com/google/go-tpm/direct/structures/tpms"
 	"github.com/google/go-tpm/direct/structures/tpmt"
 	"github.com/google/go-tpm/direct/tpm2"
 	"github.com/google/go-tpm/direct/transport/simulator"
 )
-
-func createPCRSelection(s []int) ([]byte, error) {
-	const sizeOfPCRSelect = 3
-	PCRs := make([]byte, sizeOfPCRSelect)
-
-	for _, n := range s {
-		if n >= 8*sizeOfPCRSelect {
-			return nil, fmt.Errorf("PCR index %d is out of range (exceeds maximum value %d)", n, 8*sizeOfPCRSelect-1)
-		}
-		byteNum := n / 8
-		bytePos := byte(1 << (n % 8))
-		PCRs[byteNum] |= bytePos
-	}
-
-	return PCRs, nil
-}
 
 var extendsDirect = map[tpm.AlgID][]struct {
 	digest []byte
@@ -81,18 +64,9 @@ func TestReadPCRsDirect(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			PCRs, err := createPCRSelection([]int{test.DebugPCR})
+			selection, err := internal.CreateTPMLPCRSelection([]uint32{uint32(test.DebugPCR)}, c.hashalg)
 			if err != nil {
 				t.Fatalf("Failed to create PCRSelection")
-			}
-
-			selection := tpml.PCRSelection{
-				PCRSelections: []tpms.PCRSelection{
-					{
-						Hash:      c.hashalg,
-						PCRSelect: PCRs,
-					},
-				},
 			}
 
 			pcrRead := tpm2.PCRRead{
@@ -154,17 +128,18 @@ func TestCheckContainedPCRsDirect(t *testing.T) {
 	}
 	defer thetpm.Close()
 
+	DebugPCR := uint32(test.DebugPCR)
 	sel := fullPcrSelDirect(tpm.AlgSHA256)
 	baseline, err := readPCRsDirect(thetpm, sel)
 	if err != nil {
 		t.Fatalf("Failed to Read PCRs: %v", err)
 	}
 
-	pcrs, err := createPCRSelection([]int{test.DebugPCR})
+	pcrs, err := internal.CreateTPMSPCRSelection([]uint32{DebugPCR}, tpm.AlgSHA256)
 	if err != nil {
 		t.Fatalf("Failed to create PCRSelection")
 	}
-	toBeCertified, err := readPCRsDirect(thetpm, tpms.PCRSelection{Hash: tpm.AlgSHA256, PCRSelect: pcrs})
+	toBeCertified, err := readPCRsDirect(thetpm, pcrs)
 	if err != nil {
 		t.Fatalf("failed to read pcrs %v", err)
 	}
@@ -190,11 +165,11 @@ func TestCheckContainedPCRsDirect(t *testing.T) {
 		t.Fatalf("failed to extend pcr for test %v", err)
 	}
 
-	pcrs, err = createPCRSelection([]int{1, 3, test.DebugPCR})
+	pcrs, err = internal.CreateTPMSPCRSelection([]uint32{1, 3, DebugPCR}, tpm.AlgSHA256)
 	if err != nil {
 		t.Fatalf("Failed to create PCRSelection")
 	}
-	toBeCertified, err = readPCRsDirect(thetpm, tpms.PCRSelection{Hash: tpm.AlgSHA256, PCRSelect: pcrs})
+	toBeCertified, err = readPCRsDirect(thetpm, pcrs)
 	if err != nil {
 		t.Fatalf("failed to read pcrs %v", err)
 	}
@@ -202,11 +177,11 @@ func TestCheckContainedPCRsDirect(t *testing.T) {
 		t.Fatalf("validation should fail due to PCR %d changed", test.DebugPCR)
 	}
 
-	pcrs, err = createPCRSelection([]int{})
+	pcrs, err = internal.CreateTPMSPCRSelection([]uint32{}, tpm.AlgSHA256)
 	if err != nil {
 		t.Fatalf("Failed to create PCRSelection")
 	}
-	toBeCertified, err = readPCRsDirect(thetpm, tpms.PCRSelection{Hash: tpm.AlgSHA256, PCRSelect: pcrs})
+	toBeCertified, err = readPCRsDirect(thetpm, pcrs)
 	if err != nil {
 		t.Fatalf("failed to read pcrs %v", err)
 	}
@@ -245,31 +220,30 @@ func TestMergePCRSelAndProtoDirect(t *testing.T) {
 	}
 	defer thetpm.Close()
 
-	pcrs, err := createPCRSelection([]int{1, 2, 3, 4})
+	pcrs, err := internal.CreateTPMSPCRSelection([]uint32{1, 2, 3, 4}, tpm.AlgSHA256)
 	if err != nil {
 		t.Fatalf("Failed to create PCRSelection: %v", err)
 	}
-	mergeExpected, err := readPCRsDirect(thetpm, tpms.PCRSelection{Hash: tpm.AlgSHA256, PCRSelect: pcrs})
+	mergeExpected, err := readPCRsDirect(thetpm, pcrs)
 	if err != nil {
 		t.Fatalf("Failed to readPCRsDirect: %v", err)
 	}
 
-	pcrs, err = createPCRSelection([]int{1, 3})
+	pcrs, err = internal.CreateTPMSPCRSelection([]uint32{1, 3}, tpm.AlgSHA256)
 	if err != nil {
 		t.Fatalf("Failed to create PCRSelection: %v", err)
 	}
-	proto, err := readPCRsDirect(thetpm, tpms.PCRSelection{Hash: tpm.AlgSHA256, PCRSelect: pcrs})
+	proto, err := readPCRsDirect(thetpm, pcrs)
 	if err != nil {
 		t.Fatalf("Failed to readPCRsDirect: %v", err)
 	}
 
-	pcrs, err = createPCRSelection([]int{2, 4})
+	pcrs, err = internal.CreateTPMSPCRSelection([]uint32{2, 4}, tpm.AlgSHA256)
 	if err != nil {
 		t.Fatalf("Failed to create PCRSelection: %v", err)
 	}
-	sel := tpms.PCRSelection{Hash: tpm.AlgSHA256, PCRSelect: pcrs}
 
-	mergeResult, err := mergePCRSelAndProtoDirect(thetpm, sel, proto)
+	mergeResult, err := mergePCRSelAndProtoDirect(thetpm, pcrs, proto)
 	if err != nil {
 		t.Fatalf("Failed to mergePCRSelAndProtoDirect: %v", err)
 	}

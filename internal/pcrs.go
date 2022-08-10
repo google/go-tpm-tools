@@ -11,6 +11,9 @@ import (
 	pb "github.com/google/go-tpm-tools/proto/tpm"
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpmutil"
+
+	"github.com/google/go-tpm/direct/structures/tpm"
+	"github.com/google/go-tpm/direct/structures/tpml"
 )
 
 const minPCRIndex = uint32(0)
@@ -83,6 +86,31 @@ func SamePCRSelection(p *pb.PCRs, sel tpm2.PCRSelection) bool {
 	for _, pcr := range sel.PCRs {
 		if _, ok := p.Pcrs[uint32(pcr)]; !ok {
 			return false
+		}
+	}
+	return true
+}
+
+// SamePCRSelectionDirect checks if the Pcrs has the same PCRSelection as the
+// provided tpml.PCRSelection (including the hash algorithm).
+func SamePCRSelectionDirect(p *pb.PCRs, sels tpml.PCRSelection) bool {
+	if len(p.GetPcrs()) != len(sels.PCRSelections)*24 {
+		return false
+	}
+	for k, sel := range sels.PCRSelections {
+		if tpm.AlgID(p.GetHash()) != sel.Hash {
+			return false
+		}
+		for i, selByte := range sel.PCRSelect {
+			for j := 0; j < 8; j++ {
+				pcrIndex := k*24 + i*8 + j
+				if (selByte>>j)&1 == 1 {
+					if _, ok := p.Pcrs[uint32(pcrIndex)]; !ok {
+						return false
+					}
+				}
+
+			}
 		}
 	}
 	return true
