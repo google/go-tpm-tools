@@ -2,8 +2,17 @@ package spec
 
 import (
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
+)
+
+type LogRedirectPolicyType uint8
+
+const (
+	LogRedirectDebugOnly LogRedirectPolicyType = iota
+	LogRedirctFalse
+	LogRedirctTrue
 )
 
 // LaunchPolicy contains policies on starting the container.
@@ -11,11 +20,13 @@ import (
 type LaunchPolicy struct {
 	AllowedEnvOverride []string
 	AllowedCmdOverride bool
+	LogRedirect        bool
 }
 
 const (
 	envOverride = "tee.launch_policy.allow_env_override"
 	cmdOverride = "tee.launch_policy.allow_cmd_override"
+	logRedirect = "tee.launch_policy.log_redirect"
 )
 
 // GetLaunchPolicy takes in a map[string] string which should come from image labels,
@@ -35,7 +46,27 @@ func GetLaunchPolicy(imageLabels map[string]string) (LaunchPolicy, error) {
 
 	if v, ok := imageLabels[cmdOverride]; ok {
 		if launchPolicy.AllowedCmdOverride, err = strconv.ParseBool(v); err != nil {
-			return LaunchPolicy{}, fmt.Errorf("value of LABEL %s of the image is not a boolean %s", cmdOverride, v)
+			return LaunchPolicy{}, fmt.Errorf("value of LABEL %s of the image is not a boolean: %s", cmdOverride, v)
+		}
+	}
+
+	if v, ok := imageLabels[logRedirect]; ok {
+		if launchPolicy.LogRedirect, err = strconv.ParseBool(v); err != nil {
+			if strings.ToUpper(v) == "DEBUGONLY" {
+				if IsHardened() {
+					launchPolicy.LogRedirect = false
+				} else {
+					launchPolicy.LogRedirect = true
+				}
+			} else {
+				return LaunchPolicy{}, fmt.Errorf("value of LABEL %s of the image is not one of True/False/DebugOnly: %s", logRedirect, v)
+			}
+		}
+	} else {
+		if IsHardened() {
+			launchPolicy.LogRedirect = false
+		} else {
+			launchPolicy.LogRedirect = true
 		}
 	}
 
@@ -64,4 +95,30 @@ func contains(strs []string, target string) bool {
 		}
 	}
 	return false
+}
+
+// IsHardened determine current enviornemnt is in a hardended OS
+func IsHardened() bool {
+	kernelCmd, err := readCmdline()
+	// if failed to read cmdline, default to non-prod
+	if err != nil {
+		fmt.Println(err)
+		return false
+	}
+	args := strings.Fields(kernelCmd)
+
+	for _, arg := range args {
+		if strings.HasPrefix(arg, "confidential-space.env=") {
+			return strings.HasSuffix(arg, "=hardended")
+		}
+	}
+	return false
+}
+
+func readCmdline() (string, error) {
+	kernelCmd, err := os.ReadFile("/proc/cmdline")
+	if err != nil {
+		return "", err
+	}
+	return string(kernelCmd), nil
 }

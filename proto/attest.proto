@@ -152,6 +152,13 @@ enum RestartPolicy {
   Never = 2;
 }
 
+//  
+// enum RedirectOption {
+//   False = 0;
+//   True = 1;
+//   // OnDebugOnly = 2;
+// }
+
 message ContainerState {
   string image_reference = 1;
   // Digest of the registry's image manifest, which contains a list of the
@@ -167,6 +174,8 @@ message ContainerState {
   // Env Vars and Args.
   repeated string overridden_args = 7;
   map<string, string> overridden_env_vars = 8;
+  // Log 
+  bool log_redirected = 9;
 }
 
 message SemanticVersion {

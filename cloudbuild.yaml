@@ -12,7 +12,7 @@ steps:
       - -c
       - |
         cd launcher
-        go build -o launcher/image/launcher
+        go build -o image/launcher
   - name: 'gcr.io/cos-cloud/cos-customizer'
     args: ['start-image-build',
            '-build-context=launcher/image',
