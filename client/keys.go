@@ -385,7 +385,9 @@ func (k *Key) sealDirect(sensitive []byte, opts sealOptsDirect) (*pb.SealedBytes
 	var pcrs *pb.PCRs
 	var err error
 	var auth []byte
-
+	if !k.pubAreaDirect.ObjectAttributes.Decrypt || !k.pubAreaDirect.ObjectAttributes.Restricted {
+		return nil, fmt.Errorf("seal Key is not a restricted decryption key")
+	}
 	pcrs, err = mergePCRSelAndProtoDirect(k.transportTPM(), opts.Current, opts.Target)
 	if err != nil {
 		return nil, fmt.Errorf("invalid SealOpts: %v", err)
@@ -575,6 +577,9 @@ func (k *Key) Unseal(in *pb.SealedBytes, opts UnsealOpts) ([]byte, error) {
 // be used to verify the state of the TPM when the data was sealed. The
 // zero-value UnsealOpts can be passed to skip certification.
 func (k *Key) unsealDirect(in *pb.SealedBytes, opts unsealOptsDirect) ([]byte, error) {
+	if !k.pubAreaDirect.ObjectAttributes.Decrypt || !k.pubAreaDirect.ObjectAttributes.Restricted {
+		return nil, fmt.Errorf("unseal Key is not a restricted decryption key")
+	}
 	if in.Srk != pb.ObjectType(k.pubArea.Type) {
 		return nil, fmt.Errorf("expected key of type %v, got %v", in.Srk, k.pubArea.Type)
 	}
