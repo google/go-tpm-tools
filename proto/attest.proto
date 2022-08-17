@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package attest;
 
+import "proto/sevsnp.proto";
 import "tpm.proto";
 
 option go_package = "github.com/google/go-tpm-tools/proto/attest";
@@ -35,6 +36,12 @@ message Attestation {
   // Intermediate Certificates for verifying the AK Certificate, encoded as
   // ASN.1 DER. Optional.
   repeated bytes intermediate_certs = 7;
+  // Trusted execution environment attestation is a secondary platform
+  // attestation that the machine is running within a particular confidential
+  // environment.
+  oneof tee_attestation {
+    sevsnp.Attestation sev_snp_attestation = 8;
+  }
 }
 
 // Type of hardware technology used to protect this instance
@@ -42,6 +49,8 @@ enum GCEConfidentialTechnology {
   NONE = 0;
   AMD_SEV = 1;
   AMD_SEV_ES = 2;
+  // Enum value 3 is reserved.
+  AMD_SEV_SNP = 4;
 }
 
 // The platform/firmware state for this instance
