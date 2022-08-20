@@ -65,7 +65,7 @@ func (a *agent) MeasureEvent(event cel.Content) error {
 
 // Attest fetches the nonce and connection ID from the Attestation Service,
 // creates an attestation message, and returns the resultant
-// principalIDTokens are Metadata Server-generated ID tokens for the instance.
+// principalIDTokens and Metadata Server-generated ID tokens for the instance.
 func (a *agent) Attest(ctx context.Context) ([]byte, error) {
 	challenge, err := a.client.CreateChallenge(ctx)
 	if err != nil {
