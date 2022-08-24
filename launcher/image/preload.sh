@@ -43,6 +43,7 @@ configure_entrypoint() {
   cp "$1" /usr/share/oem/user-data
   touch /usr/share/oem/meta-data
   append_cmdline "'ds=nocloud;s=/usr/share/oem/'"
+  append_cmdline "'confidential-space.env=aaa'"
 }
 
 configure_necessary_systemd_units() {
@@ -59,8 +60,7 @@ configure_necessary_systemd_units() {
 }
 
 configure_systemd_units_for_debug() {
-  # No-op for now, as debug will default to using multi-user.target.
-  exit 0
+  # No-op for now, as debug will default to using multi-user.target.  
 }
 
 configure_systemd_units_for_hardened() {
@@ -82,6 +82,7 @@ configure_systemd_units_for_hardened() {
 
 main() {
   mount -o remount,rw /usr/share/oem
+  echo 'test1\n'
 
   # Install container launcher entrypoint.
   configure_entrypoint "entrypoint.sh"
@@ -89,15 +90,28 @@ main() {
   copy_launcher
   setup_launcher_systemd_unit
 
+  append_cmdline "'confidentialspaceenv=a'"
+
+  echo 'test2\n'
+
   if [[ "${IMAGE_ENV}" == "debug" ]]; then
+    echo 'test4\n'
     configure_systemd_units_for_debug
+    append_cmdline "'confidentialspc.env=debug'"
   elif [[ "${IMAGE_ENV}" == "hardened" ]]; then
+    echo 'test5\n'
     configure_systemd_units_for_hardened
+    append_cmdline "'confidentialspace.env=hardended'"
   else
+    echo 'test6\n'
+    append_cmdline "'confidentialspace.eee=what'"
     echo "Unknown image env: ${IMAGE_ENV}." \
          "Only 'debug' and 'hardened' are supported."
     exit 1
   fi
+
+  echo 'test3\n'
+  append_cmdline "'confidentialspace.eee=h'"
 }
 
 main

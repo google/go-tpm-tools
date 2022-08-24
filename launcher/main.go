@@ -29,6 +29,7 @@ func main() {
 func run() int {
 	logger := log.Default()
 	logger.Println("TEE container launcher starting...")
+	logger.Println("Hardended: ", spec.IsHardened())
 
 	mdsClient := metadata.NewClient(nil)
 	ctx := namespaces.WithNamespace(context.Background(), namespaces.Default)
@@ -73,6 +74,11 @@ func run() int {
 	token, err := RetrieveAuthToken(mdsClient)
 	if err != nil {
 		logger.Printf("failed to retrieve auth token: %v, using empty auth", err)
+	}
+
+	//reset tpm
+	if err := tpm2.PCRReset(tpm, 16); err != nil {
+		logger.Printf("!!!failed to reset %v", err)
 	}
 
 	r, err := NewRunner(ctx, client, token, spec, mdsClient, tpm, logger)

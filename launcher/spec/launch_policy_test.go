@@ -21,6 +21,7 @@ func TestLaunchPolicy(t *testing.T) {
 			LaunchPolicy{
 				AllowedEnvOverride: []string{"foo"},
 				AllowedCmdOverride: true,
+				LogRedirect:        true,
 			},
 		},
 		{
@@ -31,6 +32,7 @@ func TestLaunchPolicy(t *testing.T) {
 			LaunchPolicy{
 				AllowedEnvOverride: []string{"foo", "bar"},
 				AllowedCmdOverride: false,
+				LogRedirect:        true,
 			},
 		},
 		{
@@ -39,6 +41,7 @@ func TestLaunchPolicy(t *testing.T) {
 			LaunchPolicy{
 				AllowedEnvOverride: nil,
 				AllowedCmdOverride: false,
+				LogRedirect:        true,
 			},
 		},
 		{
@@ -50,6 +53,7 @@ func TestLaunchPolicy(t *testing.T) {
 			LaunchPolicy{
 				AllowedEnvOverride: []string{"foo"},
 				AllowedCmdOverride: false,
+				LogRedirect:        true,
 			},
 		},
 	}
