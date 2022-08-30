@@ -28,7 +28,7 @@ jobs:
   build_old:
     strategy:
       matrix:
-        go-version: [1.16.x, 1.17.x]
+        go-version: [1.16.x, 1.17.x, 1.18.x]
         # TODO: Get this working on windows-latest
         os: [ubuntu-latest]
     name: Build/Test (${{ matrix.os }}, Go ${{ matrix.go-version }})
@@ -60,7 +60,7 @@ jobs:
   build_new:
     strategy:
       matrix:
-        go-version: [1.18.x]
+        go-version: [1.19.x]
         # TODO: Get this working on windows-latest
         os: [macos-latest, ubuntu-latest]
     name: Generate/Build/Test (${{ matrix.os }}, Go ${{ matrix.go-version }})
@@ -74,9 +74,9 @@ jobs:
         uses: arduino/setup-protoc@v1
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-          version: "3.19.1"
+          version: "3.20.1"
       - name: Install protoc-gen-go
-        run: go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.27.1
+        run: go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.28.0
       - name: Check Protobuf Generation
         run: |
           go generate ./... ./cmd/... ./launcher/...
@@ -98,7 +98,7 @@ jobs:
   lint:
     strategy:
       matrix:
-        go-version: [1.18.x]
+        go-version: [1.19.x]
         os: [ubuntu-latest]
         dir: ["./", "./cmd", "./launcher"]
     name: Lint ${{ matrix.dir }} (${{ matrix.os }}, Go ${{ matrix.go-version }})
@@ -111,8 +111,7 @@ jobs:
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v3.2.0
         with:
-          # Update when https://github.com/golangci/golangci-lint/issues/2997 is fixed.
-          version: v1.46.2
+          version: v1.49.0
           working-directory: ${{ matrix.dir }}
           args: >
             -D errcheck
@@ -125,11 +124,12 @@ jobs:
             --exclude-use-default=false
             --max-same-issues=0
             --max-issues-per-linter=0
+            --timeout 2m0s
 
   lintc:
     strategy:
       matrix:
-        go-version: [1.18.x]
+        go-version: [1.19.x]
         os: [ubuntu-latest]
     name: Lint CGO (${{ matrix.os }}, Go ${{ matrix.go-version }})
     runs-on: ${{ matrix.os }}
