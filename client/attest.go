@@ -3,7 +3,7 @@ package client
 import (
 	"crypto/x509"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 
 	pb "github.com/google/go-tpm-tools/proto/attest"
@@ -67,7 +67,7 @@ func fetchIssuingCertificate(client *http.Client, cert *x509.Certificate) (*x509
 			lastErr = fmt.Errorf("certificate retrieval from %s returned non-OK status: %v", url, resp.StatusCode)
 			continue
 		}
-		certBytes, err := ioutil.ReadAll(resp.Body)
+		certBytes, err := io.ReadAll(resp.Body)
 		resp.Body.Close()
 		if err != nil {
 			lastErr = fmt.Errorf("failed to read response body from %s: %w", url, err)
