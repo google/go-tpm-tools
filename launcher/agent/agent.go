@@ -1,8 +1,8 @@
 // Package agent coordinates the communication between the TPM and the remote
 // attestation service. It handles:
-//  - All TPM-related functionality (quotes, logs, certs, etc...)
-//  - Fetching the relevant principal ID tokens
-//  - Calling VerifyAttestation on the remote service
+//   - All TPM-related functionality (quotes, logs, certs, etc...)
+//   - Fetching the relevant principal ID tokens
+//   - Calling VerifyAttestation on the remote service
 package agent
 
 import (
@@ -47,7 +47,8 @@ type agent struct {
 // - tpm is a handle to the TPM on the instance
 // - akFetcher is a func to fetch an attestation key: see go-tpm-tools/client.
 // - conn is a client connection to the attestation service, typically created
-//   `grpc.Dial`. It is the client's responsibility to close the connection.
+//
+//	`grpc.Dial`. It is the client's responsibility to close the connection.
 func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher tpmKeyFetcher, verifierClient verifier.Client, principalFetcher principalIDTokenFetcher) AttestationAgent {
 	return &agent{
 		tpm:              tpm,

@@ -117,7 +117,7 @@ func (k *Key) getCertificateChain(client *http.Client) ([][]byte, error) {
 // AttestOpts is used for additional configuration of the Attestation process.
 // This is primarily used to pass the attestation's nonce:
 //
-//   attestation, err := key.Attest(client.AttestOpts{Nonce: my_nonce})
+//	attestation, err := key.Attest(client.AttestOpts{Nonce: my_nonce})
 func (k *Key) Attest(opts AttestOpts) (*pb.Attestation, error) {
 	if len(opts.Nonce) == 0 {
 		return nil, fmt.Errorf("provided nonce must not be empty")
