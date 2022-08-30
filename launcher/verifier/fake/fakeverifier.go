@@ -15,7 +15,7 @@ type fakeClient struct {
 	signer crypto.Signer
 }
 
-// NewClient contructs a new fake client given a crypto.Signer.
+// NewClient constructs a new fake client given a crypto.Signer.
 func NewClient(signer crypto.Signer) verifier.Client {
 	return &fakeClient{signer}
 }
