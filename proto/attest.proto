@@ -1,9 +1,10 @@
 syntax = "proto3";
 
 package attest;
-option go_package = "github.com/google/go-tpm-tools/proto/attest";
 
 import "tpm.proto";
+
+option go_package = "github.com/google/go-tpm-tools/proto/attest";
 
 // Information uniquely identifying a GCE instance. Can be used to create an
 // instance URL, which can then be used with GCE APIs. Formatted like:
@@ -31,8 +32,8 @@ message Attestation {
   // Attestation Key (AK) Certificate, encoded as ASN.1 DER.
   // Optional.
   bytes ak_cert = 6;
-  // Intermediate Certificates for verifying the AK Certificate, encoded as ASN.1 DER.
-  // Optional.
+  // Intermediate Certificates for verifying the AK Certificate, encoded as
+  // ASN.1 DER. Optional.
   repeated bytes intermediate_certs = 7;
 }
 
@@ -71,7 +72,7 @@ message GrubState {
   // and kernel modules.
   repeated string commands = 2;
 }
-  
+
 // The state of the Linux kernel.
 // At the moment, parsing LinuxKernelState relies on parsing the GrubState.
 // To do so, use ParseOpts{Loader: GRUB} when calling ParseMachineState.
@@ -109,9 +110,8 @@ enum WellKnownCertificate {
 }
 
 message Certificate {
-
   // The representation of the certificate. If the certificate matches a
-  // well-known certificate above, representation should contain the value in 
+  // well-known certificate above, representation should contain the value in
   // the enum. Otherwise, it will contain the raw DER.
   oneof representation {
     // DER representation of the certificate.
