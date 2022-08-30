@@ -181,7 +181,8 @@ func (RestartPolicy) EnumDescriptor() ([]byte, []int) {
 
 // Information uniquely identifying a GCE instance. Can be used to create an
 // instance URL, which can then be used with GCE APIs. Formatted like:
-//   https://www.googleapis.com/compute/v1/projects/{project_id}/zones/{zone}/instances/{instance_name}
+//
+//	https://www.googleapis.com/compute/v1/projects/{project_id}/zones/{zone}/instances/{instance_name}
 type GCEInstanceInfo struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
@@ -280,8 +281,8 @@ type Attestation struct {
 	// Attestation Key (AK) Certificate, encoded as ASN.1 DER.
 	// Optional.
 	AkCert []byte `protobuf:"bytes,6,opt,name=ak_cert,json=akCert,proto3" json:"ak_cert,omitempty"`
-	// Intermediate Certificates for verifying the AK Certificate, encoded as ASN.1 DER.
-	// Optional.
+	// Intermediate Certificates for verifying the AK Certificate, encoded as
+	// ASN.1 DER. Optional.
 	IntermediateCerts [][]byte `protobuf:"bytes,7,rep,name=intermediate_certs,json=intermediateCerts,proto3" json:"intermediate_certs,omitempty"`
 }
 
@@ -373,6 +374,7 @@ type PlatformState struct {
 	unknownFields protoimpl.UnknownFields
 
 	// Types that are assignable to Firmware:
+	//
 	//	*PlatformState_ScrtmVersionId
 	//	*PlatformState_GceVersion
 	Firmware isPlatformState_Firmware `protobuf_oneof:"firmware"`
@@ -731,6 +733,7 @@ type Certificate struct {
 	// the enum. Otherwise, it will contain the raw DER.
 	//
 	// Types that are assignable to Representation:
+	//
 	//	*Certificate_Der
 	//	*Certificate_WellKnown
 	Representation isCertificate_Representation `protobuf_oneof:"representation"`

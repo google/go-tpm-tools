@@ -2,7 +2,7 @@ package cmd
 
 import (
 	"fmt"
-	"io/ioutil"
+	"io"
 
 	"github.com/spf13/cobra"
 
@@ -42,7 +42,7 @@ state (like Secure Boot).`,
 		defer srk.Close()
 
 		fmt.Fprintln(debugOutput(), "Reading sealed data")
-		secret, err := ioutil.ReadAll(dataInput())
+		secret, err := io.ReadAll(dataInput())
 		if err != nil {
 			return err
 		}
@@ -95,7 +95,7 @@ machine state when sealing took place.
 		defer rwc.Close()
 
 		fmt.Fprintln(debugOutput(), "Reading sealed data")
-		data, err := ioutil.ReadAll(dataInput())
+		data, err := io.ReadAll(dataInput())
 		if err != nil {
 			return err
 		}

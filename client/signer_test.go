@@ -262,7 +262,7 @@ func TestSignPSS(t *testing.T) {
 	}
 }
 
-/// Make sure signing fails when using PSS params with a non-PSS key
+// Make sure signing fails when using PSS params with a non-PSS key
 func TestFailSignPSS(t *testing.T) {
 	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)

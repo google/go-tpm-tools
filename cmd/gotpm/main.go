@@ -1,3 +1,4 @@
+// Package main is a binary wrapper package around cmd.
 package main
 
 import (

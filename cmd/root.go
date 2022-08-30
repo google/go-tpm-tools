@@ -4,7 +4,6 @@ package cmd
 import (
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -42,7 +41,7 @@ func init() {
 
 func messageOutput() io.Writer {
 	if quiet {
-		return ioutil.Discard
+		return io.Discard
 	}
 	return os.Stdout
 }
@@ -51,7 +50,7 @@ func debugOutput() io.Writer {
 	if verbose {
 		return os.Stdout
 	}
-	return ioutil.Discard
+	return io.Discard
 }
 
 // Default Text Marshalling options
