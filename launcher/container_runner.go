@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"os"
 	"path"
-	"strings"
 	"time"
 
 	"cloud.google.com/go/compute/metadata"
@@ -25,7 +24,6 @@ import (
 	"github.com/google/go-tpm-tools/launcher/agent"
 	"github.com/google/go-tpm-tools/launcher/spec"
 	"github.com/google/go-tpm-tools/launcher/verifier"
-	"github.com/google/go-tpm-tools/launcher/verifier/grpcclient"
 	"github.com/google/go-tpm-tools/launcher/verifier/rest"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
@@ -33,15 +31,12 @@ import (
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/impersonate"
 	"google.golang.org/api/option"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 )
 
 // ContainerRunner contains information about the container settings
 type ContainerRunner struct {
 	container   containerd.Container
 	launchSpec  spec.LauncherSpec
-	attestConn  *grpc.ClientConn
 	attestAgent agent.AttestationAgent
 	logger      *log.Logger
 }
@@ -82,10 +77,70 @@ func fetchImpersonatedToken(ctx context.Context, serviceAccount string, audience
 }
 
 // NewRunner returns a runner.
-func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.Token, launchSpec spec.LauncherSpec, mdsClient *metadata.Client, tpm io.ReadWriteCloser, logger *log.Logger) (*ContainerRunner, error) {
+func NewRunner(
+	ctx context.Context,
+	cdClient *containerd.Client,
+	token oauth2.Token,
+	launchSpec spec.LauncherSpec,
+	mdsClient *metadata.Client,
+	tpm io.ReadWriteCloser,
+	logger *log.Logger,
+) (r *ContainerRunner, finalErr error) {
+	verifierClient, err := getRESTClient(ctx, launchSpec.AttestationServiceAddr, launchSpec)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create verifier client: %v", err)
+	}
+
+	// Fetch ID token with specific audience.
+	// See https://cloud.google.com/functions/docs/securing/authenticating#functions-bearer-token-example-go.
+	principalFetcher := func(audience string) ([][]byte, error) {
+		u := url.URL{
+			Path: "instance/service-accounts/default/identity",
+			RawQuery: url.Values{
+				"audience": {audience},
+				"format":   {"full"},
+			}.Encode(),
+		}
+		idToken, err := mdsClient.Get(u.String())
+		if err != nil {
+			return nil, fmt.Errorf("failed to get principal tokens: %w", err)
+		}
+
+		tokens := [][]byte{[]byte(idToken)}
+
+		// Fetch impersonated ID tokens.
+		for _, sa := range launchSpec.ImpersonateServiceAccounts {
+			idToken, err := fetchImpersonatedToken(ctx, sa, audience)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get impersonated token for %v: %w", sa, err)
+			}
+
+			tokens = append(tokens, idToken)
+		}
+		return tokens, nil
+	}
+
+	attestAgent := agent.CreateAttestationAgent(tpm, client.GceAttestationKeyECC, verifierClient, principalFetcher)
+
+	// Make sure we measure failure if we cannot create a Runner
+	defer func() {
+		if finalErr != nil {
+			measureErr := measureFailure(attestAgent, finalErr)
+			if measureErr != nil {
+				logger.Println(measureErr)
+			}
+		}
+	}()
+
+	if err := measureLaunchSpec(attestAgent, launchSpec); err != nil {
+		return nil, fmt.Errorf("failed to measure launch spec events: %v", err)
+	}
 	image, err := initImage(ctx, cdClient, launchSpec, token, logger)
 	if err != nil {
 		return nil, err
+	}
+	if err := measureImage(ctx, attestAgent, image); err != nil {
+		return nil, fmt.Errorf("failed to measure image events: %v", err)
 	}
 
 	mounts := make([]specs.Mount, 0)
@@ -164,69 +219,16 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	if len(containerSpec.Process.Args) <= len(launchSpec.Cmd) {
 		return nil, fmt.Errorf("length of Args [%d] is shorter or equal to the length of the given Cmd [%d], maybe the Entrypoint is set to empty in the image?", len(containerSpec.Process.Args), len(launchSpec.Cmd))
 	}
-
-	// Fetch ID token with specific audience.
-	// See https://cloud.google.com/functions/docs/securing/authenticating#functions-bearer-token-example-go.
-	principalFetcher := func(audience string) ([][]byte, error) {
-		u := url.URL{
-			Path: "instance/service-accounts/default/identity",
-			RawQuery: url.Values{
-				"audience": {audience},
-				"format":   {"full"},
-			}.Encode(),
-		}
-		idToken, err := mdsClient.Get(u.String())
-		if err != nil {
-			return nil, fmt.Errorf("failed to get principal tokens: %w", err)
-		}
-
-		tokens := [][]byte{[]byte(idToken)}
-
-		// Fetch impersonated ID tokens.
-		for _, sa := range launchSpec.ImpersonateServiceAccounts {
-			idToken, err := fetchImpersonatedToken(ctx, sa, audience)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get impersonated token for %v: %w", sa, err)
-			}
-
-			tokens = append(tokens, idToken)
-		}
-		return tokens, nil
-	}
-
-	asAddr := launchSpec.AttestationServiceAddr
-	var verifierClient verifier.Client
-	var conn *grpc.ClientConn
-	// Temporary support for both gRPC and REST-based attestation verifier.
-	// Use REST when empty flag or the presence of http in the addr, else gRPC.
-	// TODO: remove once fully migrated to the REST-based verifier.
-	if asAddr == "" || strings.Contains(asAddr, "http") {
-		verifierClient, err = getRESTClient(ctx, asAddr, launchSpec)
-	} else {
-		verifierClient, conn, err = getGRPCClient(asAddr, logger)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("failed to create verifier client: %v", err)
+	if err := measureContainer(attestAgent, containerSpec); err != nil {
+		return nil, fmt.Errorf("failed to measure container events: %v", err)
 	}
 
 	return &ContainerRunner{
 		container,
 		launchSpec,
-		conn,
-		agent.CreateAttestationAgent(tpm, client.GceAttestationKeyECC, verifierClient, principalFetcher),
+		attestAgent,
 		logger,
 	}, nil
-}
-
-// getGRPCClient returns a gRPC verifier.Client pointing to the given address.
-// It also returns a grpc.ClientConn for closing out the connection.
-func getGRPCClient(asAddr string, logger *log.Logger) (verifier.Client, *grpc.ClientConn, error) {
-	opt := grpc.WithTransportCredentials(insecure.NewCredentials())
-	conn, err := grpc.Dial(asAddr, opt)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to open connection to gRPC attestation service: %v", err)
-	}
-	return grpcclient.NewClient(conn, logger), conn, nil
 }
 
 // getRESTClient returns a REST verifier.Client that points to the given address.
@@ -271,56 +273,88 @@ func appendTokenMounts(mounts []specs.Mount) []specs.Mount {
 	return append(mounts, m)
 }
 
-// measureContainerClaims will measure various container claims into the COS
-// eventlog in the AttestationAgent.
-func (r *ContainerRunner) measureContainerClaims(ctx context.Context) error {
-	image, err := r.container.Image(ctx)
-	if err != nil {
+// Measure container claims specific to the operator-provided LaunchSpec. Should
+// be called before downloading the image.
+func measureLaunchSpec(a agent.AttestationAgent, ls spec.LauncherSpec) error {
+	imgRefEvent := cel.CosTlv{EventType: cel.ImageRefType, EventContent: []byte(ls.ImageRef)}
+	if err := a.MeasureEvent(imgRefEvent); err != nil {
 		return err
 	}
-	if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.ImageRefType, EventContent: []byte(image.Name())}); err != nil {
+	restartPolicyEvent := cel.CosTlv{EventType: cel.RestartPolicyType, EventContent: []byte(ls.RestartPolicy)}
+	if err := a.MeasureEvent(restartPolicyEvent); err != nil {
 		return err
 	}
-	if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.ImageDigestType, EventContent: []byte(image.Target().Digest)}); err != nil {
+
+	// Measure the overridden Args and Env Vars separately. These will end up
+	// being subsets of the Args and Env Vars in measureContainer.
+	argEvent := cel.CosTlv{EventType: cel.OverrideArgType}
+	for _, arg := range ls.Cmd {
+		argEvent.EventContent = []byte(arg)
+		if err := a.MeasureEvent(argEvent); err != nil {
+			return err
+		}
+	}
+
+	envEvent := cel.CosTlv{EventType: cel.OverrideEnvType}
+	for _, env := range parseEnvVars(ls.Envs) {
+		envEvent.EventContent = []byte(env)
+		if err := a.MeasureEvent(envEvent); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Measure container claims specific to the downloaded image. Should be called
+// before creating a container from the downloaded image.
+func measureImage(ctx context.Context, a agent.AttestationAgent, image containerd.Image) error {
+	digestEvent := cel.CosTlv{EventType: cel.ImageDigestType, EventContent: []byte(image.Target().Digest)}
+	if err := a.MeasureEvent(digestEvent); err != nil {
 		return err
 	}
-	if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.RestartPolicyType, EventContent: []byte(r.launchSpec.RestartPolicy)}); err != nil {
-		return err
-	}
+
 	if imageConfig, err := image.Config(ctx); err == nil { // if NO error
-		if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.ImageIDType, EventContent: []byte(imageConfig.Digest)}); err != nil {
+		idEvent := cel.CosTlv{EventType: cel.ImageIDType, EventContent: []byte(imageConfig.Digest)}
+		if err := a.MeasureEvent(idEvent); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Measure container claims specific to the constructed container spec. Should
+// be called before running the container.
+func measureContainer(a agent.AttestationAgent, spec *specs.Spec) error {
+	argEvent := cel.CosTlv{EventType: cel.ArgType}
+	for _, arg := range spec.Process.Args {
+		argEvent.EventContent = []byte(arg)
+		if err := a.MeasureEvent(argEvent); err != nil {
 			return err
 		}
 	}
 
-	containerSpec, err := r.container.Spec(ctx)
-	if err != nil {
-		return err
-	}
-	for _, arg := range containerSpec.Process.Args {
-		if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.ArgType, EventContent: []byte(arg)}); err != nil {
+	envEvent := cel.CosTlv{EventType: cel.EnvVarType}
+	for _, env := range spec.Process.Env {
+		envEvent.EventContent = []byte(env)
+		if err := a.MeasureEvent(envEvent); err != nil {
 			return err
 		}
 	}
-	for _, env := range containerSpec.Process.Env {
-		if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.EnvVarType, EventContent: []byte(env)}); err != nil {
-			return err
-		}
-	}
+	return nil
+}
 
-	// Measure the input overridden Env Vars and Args separately, these should be subsets of the Env Vars and Args above.
-	envs := parseEnvVars(r.launchSpec.Envs)
-	for _, env := range envs {
-		if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.OverrideEnvType, EventContent: []byte(env)}); err != nil {
-			return err
-		}
+// Measure a separator indicating that we failed to launch the container.
+func measureFailure(a agent.AttestationAgent, err error) error {
+	separator := cel.CosTlv{
+		EventType:    cel.LaunchSeparatorType,
+		EventContent: []byte(err.Error()),
 	}
-	for _, arg := range r.launchSpec.Cmd {
-		if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.OverrideArgType, EventContent: []byte(arg)}); err != nil {
-			return err
-		}
-	}
+	return a.MeasureEvent(separator)
+}
 
+// Measure final pre-launch separator into the event log. Should be called right
+// before executing the container.
+func (r *ContainerRunner) measureLaunch(ctx context.Context) error {
 	separator := cel.CosTlv{
 		EventType:    cel.LaunchSeparatorType,
 		EventContent: nil, // Success
@@ -409,11 +443,12 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	if err := r.measureContainerClaims(ctx); err != nil {
-		return fmt.Errorf("failed to measure container claims: %v", err)
-	}
 	if err := r.fetchAndWriteToken(ctx); err != nil {
 		return fmt.Errorf("failed to fetch and write OIDC token: %v", err)
+	}
+
+	if err := r.measureLaunch(ctx); err != nil {
+		return fmt.Errorf("failed to measure launch events: %v", err)
 	}
 
 	for {
@@ -463,6 +498,13 @@ func initImage(ctx context.Context, cdClient *containerd.Client, launchSpec spec
 	if err != nil {
 		return nil, fmt.Errorf("cannot pull image: %w", err)
 	}
+	if image.Name() != launchSpec.ImageRef {
+		return nil, fmt.Errorf(
+			"created images has name %q, expected supplied image reference %q",
+			image.Name(),
+			launchSpec.ImageRef,
+		)
+	}
 	return image, nil
 }
 
@@ -492,7 +534,4 @@ func (r *ContainerRunner) Close(ctx context.Context) {
 	// Exit gracefully:
 	// Delete container and close connection to attestation service.
 	r.container.Delete(ctx, containerd.WithSnapshotCleanup)
-	if r.attestConn != nil {
-		r.attestConn.Close()
-	}
 }
