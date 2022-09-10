@@ -9,9 +9,11 @@ import (
 )
 
 const (
-	// CosEventType indicate the CELR event is a COS content
+	// CosEventType indicates the CELR event is a COS content
 	// TODO: the value needs to be reserved in the CEL spec
 	CosEventType uint8 = 80
+	// CosEventPCR is the PCR which should be used for CosEventType events.
+	CosEventPCR = 13
 )
 
 // CosType represent a COS content type in a CEL record content.
@@ -27,6 +29,8 @@ const (
 	EnvVarType
 	OverrideArgType
 	OverrideEnvType
+	// EventContent is empty on success, or contains an error message on failure.
+	LaunchSeparatorType
 )
 
 // CosTlv is a specific event type created for the COS (Google Container-Optimized OS),
