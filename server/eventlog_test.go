@@ -527,14 +527,14 @@ func TestParsingCELEventLog(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	implmentedHash := []crypto.Hash{}
+	implementedHashes := []crypto.Hash{}
 	// get all implmented hash algo in the TPM
 	for _, h := range banks {
 		hsh, err := tpm2.Algorithm(h.Hash).Hash()
 		if err != nil {
 			t.Fatal(err)
 		}
-		implmentedHash = append(implmentedHash, crypto.Hash(hsh))
+		implementedHashes = append(implementedHashes, crypto.Hash(hsh))
 	}
 
 	for _, bank := range banks {
@@ -583,7 +583,7 @@ func TestParsingCELEventLog(t *testing.T) {
 	}
 	for _, testEvent := range testCELEvents {
 		cos := cel.CosTlv{EventType: testEvent.cosNestedEventType, EventContent: testEvent.eventPayload}
-		if err := coscel.AppendEvent(tpm, testEvent.pcr, implmentedHash, cos); err != nil {
+		if err := coscel.AppendEvent(tpm, testEvent.pcr, implementedHashes, cos); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -608,7 +608,7 @@ func TestParsingCELEventLog(t *testing.T) {
 	// Thirdly, append a random non-COS event, encode and try to parse it.
 	// Because there is no COS TLV event, attestation should fail as we do not
 	// understand the content type.
-	event, err := generateNonCosCelEvent(implmentedHash)
+	event, err := generateNonCosCelEvent(implementedHashes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -618,7 +618,7 @@ func TestParsingCELEventLog(t *testing.T) {
 		t.Fatal(err)
 	}
 	// extend digests to the PCR
-	for _, hash := range implmentedHash {
+	for _, hash := range implementedHashes {
 		algo, err := tpm2.HashToAlgorithm(hash)
 		if err != nil {
 			t.Fatal(err)
