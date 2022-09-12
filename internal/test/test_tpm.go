@@ -85,6 +85,14 @@ func GetTPM(tb testing.TB) io.ReadWriteCloser {
 	return noClose{tpm}
 }
 
+// SkipForRealTPM causes a test or benchmark to be skipped if we are not using
+// a test TPM. This lets us avoid clobbering important PCRs on a real machine.
+func SkipForRealTPM(tb testing.TB) {
+	if useRealTPM() {
+		tb.Skip("Running against a real TPM, Skipping Test")
+	}
+}
+
 // GetSimulatorWithLog returns a simulated TPM with PCRs that match the events
 // of the passed in eventlog. This allows for testing attestation flows.
 func GetSimulatorWithLog(tb testing.TB, eventLog []byte) io.ReadWriteCloser {

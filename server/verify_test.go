@@ -293,13 +293,9 @@ func TestVerifySHA1Attestation(t *testing.T) {
 }
 
 func TestVerifyAttestationWithCEL(t *testing.T) {
+	test.SkipForRealTPM(t)
 	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
-
-	err := tpm2.PCRReset(rwc, 16)
-	if err != nil {
-		t.Fatal(err)
-	}
 
 	ak, err := client.AttestationKeyRSA(rwc)
 	if err != nil {
@@ -313,18 +309,18 @@ func TestVerifyAttestationWithCEL(t *testing.T) {
 		pcr                int
 		eventPayload       []byte
 	}{
-		{cel.ImageRefType, test.DebugPCR, []byte("docker.io/bazel/experimental/test:latest")},
-		{cel.ImageDigestType, test.DebugPCR, []byte("sha256:781d8dfdd92118436bd914442c8339e653b83f6bf3c1a7a98efcfb7c4fed7483")},
-		{cel.RestartPolicyType, test.DebugPCR, []byte(attestpb.RestartPolicy_Never.String())},
-		{cel.ImageIDType, test.DebugPCR, []byte("sha256:5DF4A1AC347DCF8CF5E9D0ABC04B04DB847D1B88D3B1CC1006F0ACB68E5A1F4B")},
-		{cel.EnvVarType, test.DebugPCR, []byte("foo=bar")},
-		{cel.EnvVarType, test.DebugPCR, []byte("bar=baz")},
-		{cel.EnvVarType, test.DebugPCR, []byte("baz=foo=bar")},
-		{cel.EnvVarType, test.DebugPCR, []byte("empty=")},
-		{cel.ArgType, test.DebugPCR, []byte("--x")},
-		{cel.ArgType, test.DebugPCR, []byte("--y")},
-		{cel.OverrideArgType, test.DebugPCR, []byte("--x")},
-		{cel.OverrideEnvType, test.DebugPCR, []byte("empty=")},
+		{cel.ImageRefType, cel.CosEventPCR, []byte("docker.io/bazel/experimental/test:latest")},
+		{cel.ImageDigestType, cel.CosEventPCR, []byte("sha256:781d8dfdd92118436bd914442c8339e653b83f6bf3c1a7a98efcfb7c4fed7483")},
+		{cel.RestartPolicyType, cel.CosEventPCR, []byte(attestpb.RestartPolicy_Never.String())},
+		{cel.ImageIDType, cel.CosEventPCR, []byte("sha256:5DF4A1AC347DCF8CF5E9D0ABC04B04DB847D1B88D3B1CC1006F0ACB68E5A1F4B")},
+		{cel.EnvVarType, cel.CosEventPCR, []byte("foo=bar")},
+		{cel.EnvVarType, cel.CosEventPCR, []byte("bar=baz")},
+		{cel.EnvVarType, cel.CosEventPCR, []byte("baz=foo=bar")},
+		{cel.EnvVarType, cel.CosEventPCR, []byte("empty=")},
+		{cel.ArgType, cel.CosEventPCR, []byte("--x")},
+		{cel.ArgType, cel.CosEventPCR, []byte("--y")},
+		{cel.OverrideArgType, cel.CosEventPCR, []byte("--x")},
+		{cel.OverrideEnvType, cel.CosEventPCR, []byte("empty=")},
 	}
 	for _, testEvent := range testEvents {
 		cos := cel.CosTlv{EventType: testEvent.cosNestedEventType, EventContent: testEvent.eventPayload}
@@ -378,13 +374,9 @@ func TestVerifyAttestationWithCEL(t *testing.T) {
 }
 
 func TestVerifyFailWithTamperedCELContent(t *testing.T) {
+	test.SkipForRealTPM(t)
 	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
-
-	err := tpm2.PCRReset(rwc, tpmutil.Handle(test.DebugPCR))
-	if err != nil {
-		t.Fatal(err)
-	}
 
 	ak, err := client.AttestationKeyRSA(rwc)
 	if err != nil {
@@ -396,10 +388,10 @@ func TestVerifyFailWithTamperedCELContent(t *testing.T) {
 
 	cosEvent := cel.CosTlv{EventType: cel.ImageRefType, EventContent: []byte("docker.io/bazel/experimental/test:latest")}
 	cosEvent2 := cel.CosTlv{EventType: cel.ImageDigestType, EventContent: []byte("sha256:781d8dfdd92118436bd914442c8339e653b83f6bf3c1a7a98efcfb7c4fed7483")}
-	if err := c.AppendEvent(rwc, test.DebugPCR, measuredHashes, cosEvent); err != nil {
+	if err := c.AppendEvent(rwc, cel.CosEventPCR, measuredHashes, cosEvent); err != nil {
 		t.Fatalf("failed to append event: %v", err)
 	}
-	if err := c.AppendEvent(rwc, test.DebugPCR, measuredHashes, cosEvent2); err != nil {
+	if err := c.AppendEvent(rwc, cel.CosEventPCR, measuredHashes, cosEvent2); err != nil {
 		t.Fatalf("failed to append event: %v", err)
 	}
 

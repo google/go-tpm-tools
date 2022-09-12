@@ -19,8 +19,6 @@ import (
 	pb "github.com/google/go-tpm-tools/proto/attest"
 )
 
-const defaultCELPCR = 13
-
 var defaultCELHashAlgo = []crypto.Hash{crypto.SHA256, crypto.SHA1}
 
 type tpmKeyFetcher func(rw io.ReadWriter) (*client.Key, error)
@@ -61,7 +59,7 @@ func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher tpmKeyFetcher, ver
 // MeasureEvent takes in a cel.Content and appends it to the CEL eventlog
 // under the attestation agent.
 func (a *agent) MeasureEvent(event cel.Content) error {
-	return a.cosCel.AppendEvent(a.tpm, defaultCELPCR, defaultCELHashAlgo, event)
+	return a.cosCel.AppendEvent(a.tpm, cel.CosEventPCR, defaultCELHashAlgo, event)
 }
 
 // Attest fetches the nonce and connection ID from the Attestation Service,

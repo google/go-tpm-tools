@@ -510,13 +510,9 @@ func TestParseSecureBootState(t *testing.T) {
 }
 
 func TestParsingCELEventLog(t *testing.T) {
+	test.SkipForRealTPM(t)
 	tpm := test.GetTPM(t)
 	defer client.CheckedClose(t, tpm)
-
-	err := tpm2.PCRReset(tpm, tpmutil.Handle(test.DebugPCR))
-	if err != nil {
-		t.Fatal(err)
-	}
 
 	coscel := &cel.CEL{}
 	emptyCosState := attestpb.ContainerState{}
@@ -531,14 +527,14 @@ func TestParsingCELEventLog(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	implmentedHash := []crypto.Hash{}
+	implementedHashes := []crypto.Hash{}
 	// get all implmented hash algo in the TPM
 	for _, h := range banks {
 		hsh, err := tpm2.Algorithm(h.Hash).Hash()
 		if err != nil {
 			t.Fatal(err)
 		}
-		implmentedHash = append(implmentedHash, crypto.Hash(hsh))
+		implementedHashes = append(implementedHashes, crypto.Hash(hsh))
 	}
 
 	for _, bank := range banks {
@@ -552,59 +548,23 @@ func TestParsingCELEventLog(t *testing.T) {
 		}
 	}
 
-	// Secondly, append a random non-COS event, encode and try to parse it. Because there is no COS TLV event,
-	// we should get an empty/default CosState in the MachineState.
-	event, err := generateNonCosCelEvent(implmentedHash)
-	if err != nil {
-		t.Fatal(err)
-	}
-	coscel.Records = append(coscel.Records, event)
-	buf = bytes.Buffer{}
-	if err := coscel.EncodeCEL(&buf); err != nil {
-		t.Fatal(err)
-	}
-	// extend digests to the PCR
-	for _, hash := range implmentedHash {
-		algo, err := tpm2.HashToAlgorithm(hash)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := tpm2.PCRExtend(tpm, tpmutil.Handle(test.DebugPCR), algo, event.Digests[hash], ""); err != nil {
-			t.Fatal(err)
-		}
-	}
-	banks, err = client.ReadAllPCRs(tpm)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, bank := range banks {
-		msState, err := parseCanonicalEventLog(buf.Bytes(), bank)
-		if err != nil {
-			t.Errorf("expecting no error from parseCanonicalEventLog(), but get %v", err)
-		}
-		// expect nothing in the CosState
-		if diff := cmp.Diff(msState.Cos.Container, &emptyCosState, protocmp.Transform()); diff != "" {
-			t.Errorf("unexpected difference:\n%v", diff)
-		}
-	}
-
-	// Thirdly, append some real COS events to the CEL. This time we should get content in the CosState.
+	// Secondly, append some real COS events to the CEL. This time we should get content in the CosState.
 	testCELEvents := []struct {
 		cosNestedEventType cel.CosType
 		pcr                int
 		eventPayload       []byte
 	}{
-		{cel.ImageRefType, test.DebugPCR, []byte("docker.io/bazel/experimental/test:latest")},
-		{cel.ImageDigestType, test.DebugPCR, []byte("sha256:781d8dfdd92118436bd914442c8339e653b83f6bf3c1a7a98efcfb7c4fed7483")},
-		{cel.RestartPolicyType, test.DebugPCR, []byte(attestpb.RestartPolicy_Always.String())},
-		{cel.ImageIDType, test.DebugPCR, []byte("sha256:5DF4A1AC347DCF8CF5E9D0ABC04B04DB847D1B88D3B1CC1006F0ACB68E5A1F4B")},
-		{cel.EnvVarType, test.DebugPCR, []byte("foo=bar")},
-		{cel.EnvVarType, test.DebugPCR, []byte("bar=baz")},
-		{cel.EnvVarType, test.DebugPCR, []byte("baz=foo=bar")},
-		{cel.EnvVarType, test.DebugPCR, []byte("empty=")},
-		{cel.ArgType, test.DebugPCR, []byte("--x")},
-		{cel.ArgType, test.DebugPCR, []byte("--y")},
-		{cel.ArgType, test.DebugPCR, []byte("")},
+		{cel.ImageRefType, cel.CosEventPCR, []byte("docker.io/bazel/experimental/test:latest")},
+		{cel.ImageDigestType, cel.CosEventPCR, []byte("sha256:781d8dfdd92118436bd914442c8339e653b83f6bf3c1a7a98efcfb7c4fed7483")},
+		{cel.RestartPolicyType, cel.CosEventPCR, []byte(attestpb.RestartPolicy_Always.String())},
+		{cel.ImageIDType, cel.CosEventPCR, []byte("sha256:5DF4A1AC347DCF8CF5E9D0ABC04B04DB847D1B88D3B1CC1006F0ACB68E5A1F4B")},
+		{cel.EnvVarType, cel.CosEventPCR, []byte("foo=bar")},
+		{cel.EnvVarType, cel.CosEventPCR, []byte("bar=baz")},
+		{cel.EnvVarType, cel.CosEventPCR, []byte("baz=foo=bar")},
+		{cel.EnvVarType, cel.CosEventPCR, []byte("empty=")},
+		{cel.ArgType, cel.CosEventPCR, []byte("--x")},
+		{cel.ArgType, cel.CosEventPCR, []byte("--y")},
+		{cel.ArgType, cel.CosEventPCR, []byte("")},
 	}
 
 	expectedEnvVars := make(map[string]string)
@@ -623,7 +583,7 @@ func TestParsingCELEventLog(t *testing.T) {
 	}
 	for _, testEvent := range testCELEvents {
 		cos := cel.CosTlv{EventType: testEvent.cosNestedEventType, EventContent: testEvent.eventPayload}
-		if err := coscel.AppendEvent(tpm, testEvent.pcr, implmentedHash, cos); err != nil {
+		if err := coscel.AppendEvent(tpm, testEvent.pcr, implementedHashes, cos); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -644,12 +604,45 @@ func TestParsingCELEventLog(t *testing.T) {
 			}
 		}
 	}
+
+	// Thirdly, append a random non-COS event, encode and try to parse it.
+	// Because there is no COS TLV event, attestation should fail as we do not
+	// understand the content type.
+	event, err := generateNonCosCelEvent(implementedHashes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	coscel.Records = append(coscel.Records, event)
+	buf = bytes.Buffer{}
+	if err := coscel.EncodeCEL(&buf); err != nil {
+		t.Fatal(err)
+	}
+	// extend digests to the PCR
+	for _, hash := range implementedHashes {
+		algo, err := tpm2.HashToAlgorithm(hash)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := tpm2.PCRExtend(tpm, tpmutil.Handle(cel.CosEventPCR), algo, event.Digests[hash], ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	banks, err = client.ReadAllPCRs(tpm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, bank := range banks {
+		_, err := parseCanonicalEventLog(buf.Bytes(), bank)
+		if err == nil {
+			t.Errorf("expected error when parsing event log with unknown content type")
+		}
+	}
 }
 
 func generateNonCosCelEvent(hashAlgoList []crypto.Hash) (cel.Record, error) {
 	randRecord := cel.Record{}
 	randRecord.RecNum = 0
-	randRecord.PCR = uint8(test.DebugPCR)
+	randRecord.PCR = cel.CosEventPCR
 	contentValue := make([]byte, 10)
 	rand.Read(contentValue)
 	randRecord.Content = cel.TLV{Type: 250, Value: contentValue}

@@ -119,12 +119,18 @@ func getVerifiedCosState(coscel cel.CEL, pcrs *tpmpb.PCRs) (*pb.AttestedCosState
 	cosState.Container.EnvVars = make(map[string]string)
 	cosState.Container.OverriddenEnvVars = make(map[string]string)
 
+	seenSeparator := false
 	for _, record := range coscel.Records {
-		// ignore non COS CEL events
-		if !record.Content.IsCosTlv() {
-			continue
+		// COS State only comes from the CosEventPCR
+		if record.PCR != cel.CosEventPCR {
+			return nil, fmt.Errorf("found unexpected PCR %d in CEL log", record.PCR)
 		}
 
+		// The Content.Type is not verified at this point, so we have to fail
+		// if we see any events that we do not understand. This ensures that
+		// we either verify the digest of event event in this PCR, or we fail
+		// to replay the event log.
+		// TODO: See if we can fix this to have the Content Type be verified.
 		cosTlv, err := record.Content.ParseToCosTlv()
 		if err != nil {
 			return nil, err
@@ -135,11 +141,22 @@ func getVerifiedCosState(coscel cel.CEL, pcrs *tpmpb.PCRs) (*pb.AttestedCosState
 			return nil, err
 		}
 
+		// TODO: Add support for post-separator container data
+		if seenSeparator {
+			return nil, fmt.Errorf("found COS Event Type %v after LaunchSeparator event", cosTlv.EventType)
+		}
+
 		switch cosTlv.EventType {
 		case cel.ImageRefType:
+			if cosState.Container.GetImageReference() != "" {
+				return nil, fmt.Errorf("found more than one ImageRef event")
+			}
 			cosState.Container.ImageReference = string(cosTlv.EventContent)
 
 		case cel.ImageDigestType:
+			if cosState.Container.GetImageDigest() != "" {
+				return nil, fmt.Errorf("found more than one ImageDigest event")
+			}
 			cosState.Container.ImageDigest = string(cosTlv.EventContent)
 
 		case cel.RestartPolicyType:
@@ -150,6 +167,9 @@ func getVerifiedCosState(coscel cel.CEL, pcrs *tpmpb.PCRs) (*pb.AttestedCosState
 			cosState.Container.RestartPolicy = pb.RestartPolicy(restartPolicy)
 
 		case cel.ImageIDType:
+			if cosState.Container.GetImageId() != "" {
+				return nil, fmt.Errorf("found more than one ImageId event")
+			}
 			cosState.Container.ImageId = string(cosTlv.EventContent)
 
 		case cel.EnvVarType:
@@ -171,6 +191,10 @@ func getVerifiedCosState(coscel cel.CEL, pcrs *tpmpb.PCRs) (*pb.AttestedCosState
 				return nil, err
 			}
 			cosState.Container.OverriddenEnvVars[envName] = envVal
+		case cel.LaunchSeparatorType:
+			seenSeparator = true
+		default:
+			return nil, fmt.Errorf("found unknown COS Event Type %v", cosTlv.EventType)
 		}
 
 	}
