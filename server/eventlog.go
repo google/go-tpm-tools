@@ -149,13 +149,13 @@ func getVerifiedCosState(coscel cel.CEL, pcrs *tpmpb.PCRs) (*pb.AttestedCosState
 		switch cosTlv.EventType {
 		case cel.ImageRefType:
 			if cosState.Container.GetImageReference() != "" {
-				return nil, fmt.Errorf("found duplicate ImageRef event")
+				return nil, fmt.Errorf("found more than one ImageRef event")
 			}
 			cosState.Container.ImageReference = string(cosTlv.EventContent)
 
 		case cel.ImageDigestType:
 			if cosState.Container.GetImageDigest() != "" {
-				return nil, fmt.Errorf("found duplicate ImageDigest event")
+				return nil, fmt.Errorf("found more than one ImageDigest event")
 			}
 			cosState.Container.ImageDigest = string(cosTlv.EventContent)
 
@@ -168,7 +168,7 @@ func getVerifiedCosState(coscel cel.CEL, pcrs *tpmpb.PCRs) (*pb.AttestedCosState
 
 		case cel.ImageIDType:
 			if cosState.Container.GetImageId() != "" {
-				return nil, fmt.Errorf("found duplicate ImageId event")
+				return nil, fmt.Errorf("found more than one ImageId event")
 			}
 			cosState.Container.ImageId = string(cosTlv.EventContent)
 
