@@ -123,7 +123,7 @@ func getVerifiedCosState(coscel cel.CEL, pcrs *tpmpb.PCRs) (*pb.AttestedCosState
 	for _, record := range coscel.Records {
 		// COS State only comes from the CosEventPCR
 		if record.PCR != cel.CosEventPCR {
-			continue
+			return nil, fmt.Errorf("found unexpected PCR %d in CEL log", record.PCR)
 		}
 
 		// The Content.Type is not verified at this point, so we have to fail
