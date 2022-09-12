@@ -321,7 +321,11 @@ func (r *ContainerRunner) measureContainerClaims(ctx context.Context) error {
 		}
 	}
 
-	return nil
+	separator := cel.CosTlv{
+		EventType:    cel.LaunchSeparatorType,
+		EventContent: nil, // Success
+	}
+	return r.attestAgent.MeasureEvent(separator)
 }
 
 // Retrieves an OIDC token from the attestation service, and returns how long
