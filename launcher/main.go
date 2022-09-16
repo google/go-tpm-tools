@@ -48,13 +48,12 @@ func run() int {
 		logger.SetOutput(loggerAndStdout)
 	}
 
-	spec, err := spec.GetLauncherSpec(mdsClient)
+	launchSpec, err := spec.GetLaunchSpec(mdsClient)
 	if err != nil {
 		logger.Println(err)
 		return 1
 	}
-
-	logger.Println("Launcher Spec: ", spec)
+	logger.Println("Launch Spec: ", launchSpec)
 
 	client, err := containerd.New(defaults.DefaultAddress)
 	if err != nil {
@@ -75,7 +74,7 @@ func run() int {
 		logger.Printf("failed to retrieve auth token: %v, using empty auth", err)
 	}
 
-	r, err := NewRunner(ctx, client, token, spec, mdsClient, tpm, logger)
+	r, err := NewRunner(ctx, client, token, launchSpec, mdsClient, tpm, logger)
 	if err != nil {
 		logger.Println(err)
 		return 1

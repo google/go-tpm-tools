@@ -72,7 +72,7 @@ func TestVerify(t *testing.T) {
 	testCases := []struct {
 		testName  string
 		policy    LaunchPolicy
-		spec      LauncherSpec
+		spec      LaunchSpec
 		expectErr bool
 	}{
 		{
@@ -81,7 +81,7 @@ func TestVerify(t *testing.T) {
 				AllowedEnvOverride: []string{"foo"},
 				AllowedCmdOverride: true,
 			},
-			LauncherSpec{
+			LaunchSpec{
 				Envs: []EnvVar{{Name: "foo", Value: "foo"}},
 				Cmd:  []string{"foo"},
 			},
@@ -90,7 +90,7 @@ func TestVerify(t *testing.T) {
 		{
 			"default case",
 			LaunchPolicy{},
-			LauncherSpec{},
+			LaunchSpec{},
 			false,
 		},
 		{
@@ -98,7 +98,7 @@ func TestVerify(t *testing.T) {
 			LaunchPolicy{
 				AllowedEnvOverride: []string{"foo"},
 			},
-			LauncherSpec{
+			LaunchSpec{
 				Envs: []EnvVar{{Name: "bar", Value: ""}},
 			},
 			true,
@@ -108,7 +108,7 @@ func TestVerify(t *testing.T) {
 			LaunchPolicy{
 				AllowedCmdOverride: false,
 			},
-			LauncherSpec{
+			LaunchSpec{
 				Cmd: []string{"foo"},
 			},
 			true,
@@ -119,7 +119,7 @@ func TestVerify(t *testing.T) {
 				AllowedEnvOverride: []string{"foo"},
 				AllowedCmdOverride: true,
 			},
-			LauncherSpec{
+			LaunchSpec{
 				Envs: []EnvVar{{Name: "foo", Value: "foo"}},
 				Cmd:  []string{"foo"},
 			},

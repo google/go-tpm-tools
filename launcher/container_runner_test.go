@@ -88,7 +88,7 @@ func TestRefreshToken(t *testing.T) {
 		logger: log.Default(),
 	}
 
-	if err := os.MkdirAll(HostTokenPath, 0744); err != nil {
+	if err := os.MkdirAll(hostTokenPath, 0744); err != nil {
 		t.Fatalf("Error creating host token path directory: %v", err)
 	}
 
@@ -97,7 +97,7 @@ func TestRefreshToken(t *testing.T) {
 		t.Fatalf("refreshToken returned with error: %v", err)
 	}
 
-	filepath := path.Join(HostTokenPath, attestationVerifierTokenFile)
+	filepath := path.Join(hostTokenPath, attestationVerifierTokenFile)
 	data, err := os.ReadFile(filepath)
 	if err != nil {
 		t.Fatalf("Failed to read from %s: %v", filepath, err)
@@ -114,7 +114,7 @@ func TestRefreshToken(t *testing.T) {
 }
 
 func TestRefreshTokenError(t *testing.T) {
-	if err := os.MkdirAll(HostTokenPath, 0744); err != nil {
+	if err := os.MkdirAll(hostTokenPath, 0744); err != nil {
 		t.Fatalf("Error creating host token path directory: %v", err)
 	}
 
@@ -174,7 +174,7 @@ func TestFetchAndWriteTokenSucceeds(t *testing.T) {
 		t.Fatalf("fetchAndWriteToken failed: %v", err)
 	}
 
-	filepath := path.Join(HostTokenPath, attestationVerifierTokenFile)
+	filepath := path.Join(hostTokenPath, attestationVerifierTokenFile)
 	data, err := os.ReadFile(filepath)
 	if err != nil {
 		t.Fatalf("Failed to read from %s: %v", filepath, err)
@@ -208,7 +208,7 @@ func TestTokenIsNotChangedIfRefreshFails(t *testing.T) {
 		t.Fatalf("fetchAndWriteToken failed: %v", err)
 	}
 
-	filepath := path.Join(HostTokenPath, attestationVerifierTokenFile)
+	filepath := path.Join(hostTokenPath, attestationVerifierTokenFile)
 	data, err := os.ReadFile(filepath)
 	if err != nil {
 		t.Fatalf("Failed to read from %s: %v", filepath, err)
@@ -254,7 +254,7 @@ func TestFetchAndWriteTokenWithTokenRefresh(t *testing.T) {
 		t.Fatalf("fetchAndWriteToken failed: %v", err)
 	}
 
-	filepath := path.Join(HostTokenPath, attestationVerifierTokenFile)
+	filepath := path.Join(hostTokenPath, attestationVerifierTokenFile)
 	data, err := os.ReadFile(filepath)
 	if err != nil {
 		t.Fatalf("Failed to read from %s: %v", filepath, err)

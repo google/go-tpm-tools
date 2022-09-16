@@ -40,15 +40,16 @@ import (
 // ContainerRunner contains information about the container settings
 type ContainerRunner struct {
 	container   containerd.Container
-	launchSpec  spec.LauncherSpec
+	launchSpec  spec.LaunchSpec
 	attestConn  *grpc.ClientConn
 	attestAgent agent.AttestationAgent
 	logger      *log.Logger
 }
 
 const (
-	// HostTokenPath defined the directory that will store attestation tokens
-	HostTokenPath                = "/tmp/container_launcher/"
+	// hostTokenPath defined the directory in the host that will store attestation tokens
+	hostTokenPath = "/tmp/container_launcher/"
+	// containerTokenMountPath defined the directory in the container stores attestation tokens
 	containerTokenMountPath      = "/run/container_launcher/"
 	attestationVerifierTokenFile = "attestation_verifier_claims_token"
 )
@@ -82,7 +83,7 @@ func fetchImpersonatedToken(ctx context.Context, serviceAccount string, audience
 }
 
 // NewRunner returns a runner.
-func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.Token, launchSpec spec.LauncherSpec, mdsClient *metadata.Client, tpm io.ReadWriteCloser, logger *log.Logger) (*ContainerRunner, error) {
+func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.Token, launchSpec spec.LaunchSpec, mdsClient *metadata.Client, tpm io.ReadWriteCloser, logger *log.Logger) (*ContainerRunner, error) {
 	image, err := initImage(ctx, cdClient, launchSpec, token, logger)
 	if err != nil {
 		return nil, err
@@ -232,7 +233,7 @@ func getGRPCClient(asAddr string, logger *log.Logger) (verifier.Client, *grpc.Cl
 // getRESTClient returns a REST verifier.Client that points to the given address.
 // It defaults to the Attestation Verifier instance at
 // https://confidentialcomputing.googleapis.com.
-func getRESTClient(ctx context.Context, asAddr string, spec spec.LauncherSpec) (verifier.Client, error) {
+func getRESTClient(ctx context.Context, asAddr string, spec spec.LaunchSpec) (verifier.Client, error) {
 	httpClient, err := google.DefaultClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create HTTP client: %v", err)
@@ -265,7 +266,7 @@ func appendTokenMounts(mounts []specs.Mount) []specs.Mount {
 	m := specs.Mount{}
 	m.Destination = containerTokenMountPath
 	m.Type = "bind"
-	m.Source = HostTokenPath
+	m.Source = hostTokenPath
 	m.Options = []string{"rbind", "ro"}
 
 	return append(mounts, m)
@@ -348,7 +349,7 @@ func (r *ContainerRunner) refreshToken(ctx context.Context) (time.Duration, erro
 		return 0, errors.New("token is expired")
 	}
 
-	filepath := path.Join(HostTokenPath, attestationVerifierTokenFile)
+	filepath := path.Join(hostTokenPath, attestationVerifierTokenFile)
 	if err = os.WriteFile(filepath, token, 0644); err != nil {
 		return 0, fmt.Errorf("failed to write token to container mount source point: %v", err)
 	}
@@ -370,7 +371,7 @@ func (r *ContainerRunner) refreshToken(ctx context.Context) (time.Duration, erro
 
 // ctx must be a cancellable context.
 func (r *ContainerRunner) fetchAndWriteToken(ctx context.Context) error {
-	if err := os.MkdirAll(HostTokenPath, 0744); err != nil {
+	if err := os.MkdirAll(hostTokenPath, 0744); err != nil {
 		return err
 	}
 	duration, err := r.refreshToken(ctx)
@@ -451,7 +452,7 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	return nil
 }
 
-func initImage(ctx context.Context, cdClient *containerd.Client, launchSpec spec.LauncherSpec, token oauth2.Token, logger *log.Logger) (containerd.Image, error) {
+func initImage(ctx context.Context, cdClient *containerd.Client, launchSpec spec.LaunchSpec, token oauth2.Token, logger *log.Logger) (containerd.Image, error) {
 	var remoteOpt containerd.RemoteOpt
 	if token.Valid() {
 		remoteOpt = containerd.WithResolver(Resolver(token.AccessToken))

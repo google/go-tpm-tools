@@ -42,9 +42,9 @@ func GetLaunchPolicy(imageLabels map[string]string) (LaunchPolicy, error) {
 	return launchPolicy, nil
 }
 
-// Verify will use the LaunchPolicy to verify the given LauncherSpec. If the verification passed, will return nil.
+// Verify will use the LaunchPolicy to verify the given LaunchSpec. If the verification passed, will return nil.
 // If there are multiple violations, the function will return the first error.
-func (p LaunchPolicy) Verify(ls LauncherSpec) error {
+func (p LaunchPolicy) Verify(ls LaunchSpec) error {
 	for _, e := range ls.Envs {
 		if !contains(p.AllowedEnvOverride, e.Name) {
 			return fmt.Errorf("env var %s is not allowed to be overridden on this image; allowed envs to be overridden: %v", e, p.AllowedEnvOverride)
