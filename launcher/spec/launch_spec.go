@@ -1,10 +1,11 @@
-// Package spec contains definition of some basic container launcher specs needed to
+// Package spec contains definition of some basic container launch specs needed to
 // launch a container, provided by the operator.
 package spec
 
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 
 	"cloud.google.com/go/compute/metadata"
@@ -49,9 +50,9 @@ type EnvVar struct {
 	Value string
 }
 
-// LauncherSpec contains specification set by the operator who wants to
+// LaunchSpec contains specification set by the operator who wants to
 // launch a container.
-type LauncherSpec struct {
+type LaunchSpec struct {
 	// MDS-based values.
 	ImageRef                   string
 	RestartPolicy              RestartPolicy
@@ -61,11 +62,12 @@ type LauncherSpec struct {
 	ImpersonateServiceAccounts []string
 	ProjectID                  string
 	Region                     string
+	Hardened                   bool
 }
 
 // UnmarshalJSON unmarshals an instance attributes list in JSON format from the metadata
-// server set by an operator to a LauncherSpec.
-func (s *LauncherSpec) UnmarshalJSON(b []byte) error {
+// server set by an operator to a LaunchSpec.
+func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 	var unmarshaledMap map[string]string
 	if err := json.Unmarshal(b, &unmarshaledMap); err != nil {
 		return err
@@ -121,30 +123,53 @@ func getRegion(client *metadata.Client) (string, error) {
 	return zone[:lastDash], nil
 }
 
-// GetLauncherSpec takes in a metadata server client, reads and parse operator's
-// input to the GCE instance custom metadata and return a LauncherSpec.
+// GetLaunchSpec takes in a metadata server client, reads and parse operator's
+// input to the GCE instance custom metadata and return a LaunchSpec.
 // ImageRef (tee-image-reference) is required, will return an error if
 // ImageRef is not presented in the metadata.
-func GetLauncherSpec(client *metadata.Client) (LauncherSpec, error) {
+func GetLaunchSpec(client *metadata.Client) (LaunchSpec, error) {
 	data, err := client.Get(instanceAttributesQuery)
 	if err != nil {
-		return LauncherSpec{}, err
+		return LaunchSpec{}, err
 	}
 
-	spec := &LauncherSpec{}
+	spec := &LaunchSpec{}
 	if err := spec.UnmarshalJSON([]byte(data)); err != nil {
-		return LauncherSpec{}, err
+		return LaunchSpec{}, err
 	}
 
 	spec.ProjectID, err = client.ProjectID()
 	if err != nil {
-		return LauncherSpec{}, fmt.Errorf("failed to retrieve projectID from MDS: %v", err)
+		return LaunchSpec{}, fmt.Errorf("failed to retrieve projectID from MDS: %v", err)
 	}
 
 	spec.Region, err = getRegion(client)
 	if err != nil {
-		return LauncherSpec{}, err
+		return LaunchSpec{}, err
 	}
 
+	kernelCmd, err := readCmdline()
+	if err != nil {
+		return LaunchSpec{}, err
+	}
+	spec.Hardened = isHardened(kernelCmd)
+
 	return *spec, nil
+}
+
+func isHardened(kernelCmd string) bool {
+	for _, arg := range strings.Fields(kernelCmd) {
+		if arg == "confidential-space.hardened=true" {
+			return true
+		}
+	}
+	return false
+}
+
+func readCmdline() (string, error) {
+	kernelCmd, err := os.ReadFile("/proc/cmdline")
+	if err != nil {
+		return "", err
+	}
+	return string(kernelCmd), nil
 }

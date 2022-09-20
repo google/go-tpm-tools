@@ -72,7 +72,7 @@ func TestVerify(t *testing.T) {
 	testCases := []struct {
 		testName  string
 		policy    LaunchPolicy
-		spec      LauncherSpec
+		spec      LaunchSpec
 		expectErr bool
 	}{
 		{
@@ -81,7 +81,7 @@ func TestVerify(t *testing.T) {
 				AllowedEnvOverride: []string{"foo"},
 				AllowedCmdOverride: true,
 			},
-			LauncherSpec{
+			LaunchSpec{
 				Envs: []EnvVar{{Name: "foo", Value: "foo"}},
 				Cmd:  []string{"foo"},
 			},
@@ -90,7 +90,7 @@ func TestVerify(t *testing.T) {
 		{
 			"default case",
 			LaunchPolicy{},
-			LauncherSpec{},
+			LaunchSpec{},
 			false,
 		},
 		{
@@ -98,7 +98,7 @@ func TestVerify(t *testing.T) {
 			LaunchPolicy{
 				AllowedEnvOverride: []string{"foo"},
 			},
-			LauncherSpec{
+			LaunchSpec{
 				Envs: []EnvVar{{Name: "bar", Value: ""}},
 			},
 			true,
@@ -108,7 +108,7 @@ func TestVerify(t *testing.T) {
 			LaunchPolicy{
 				AllowedCmdOverride: false,
 			},
-			LauncherSpec{
+			LaunchSpec{
 				Cmd: []string{"foo"},
 			},
 			true,
@@ -119,7 +119,7 @@ func TestVerify(t *testing.T) {
 				AllowedEnvOverride: []string{"foo"},
 				AllowedCmdOverride: true,
 			},
-			LauncherSpec{
+			LaunchSpec{
 				Envs: []EnvVar{{Name: "foo", Value: "foo"}},
 				Cmd:  []string{"foo"},
 			},
@@ -137,6 +137,44 @@ func TestVerify(t *testing.T) {
 				if err != nil {
 					t.Errorf("expected no error, but got %v", err)
 				}
+			}
+		})
+	}
+}
+
+func TestIsHardened(t *testing.T) {
+	testCases := []struct {
+		testName       string
+		kernelCmd      string
+		expectHardened bool
+	}{
+		{
+			"empty kernel cmd",
+			"",
+			false,
+		},
+		{
+			"no confidential-space.hardened arg",
+			"BOOT_IMAGE=/syslinux/vmlinuz.B init=/usr/lib/systemd/systemd boot=local rootwait ro noresume loglevel=7 console=tty1 console=ttyS0 security=apparmor virtio_net.napi_tx=1 nmi_watchdog=0 csm.disabled=1 loadpin.exclude=kernel-module modules-load=loadpin_trigger module.sig_enforce=1 dm_verity.error_behavior=3 dm_verity.max_bios=-1 dm_verity.dev_wait=1 i915.modeset=1 cros_efi cos.protected_stateful_partition=e systemd.mask=update-engine.service ds=nocloud;s=/usr/share/oem/ cros_debug root=/dev/dm-0 \"dm=2 vroot none ro 1,0 4077568 verity payload=PARTUUID=DC7DB0DC-DDCC-AA45-BAE3-A41CA1698E83 hashtree=PARTUUID=DC7DB0DC-DDCC-AA45-BAE3-A41CA1698E83 hashstart=4077568 alg=sha256 root_hexdigest=6d5887660805db1b366319bd1c2161600d11b9e53f059b0e44b760a7277e1b0a salt=f4a41993832655a00d48f5769351370bebafd7de906df068bc1b1929b175ee43,oemroot none ro 1, 0 1024000 verity payload=PARTUUID=fd5af56a-7b25-c448-a616-19eb240b3260 hashtree=PARTUUID=fd5af56a-7b25-c448-a616-19eb240b3260 hashstart=1024000 alg=sha256 root_hexdigest=50c406c129054649a432fa144eeff56aa8b707d4c86f3ab44edde589356e8b23 salt=2a3461269a26ad6247f4b64cacd84f64e5a3311cd4b2f742bab6442291bf4977\"",
+			false,
+		},
+		{
+			"has kernel arg confidential-space.hardened=true",
+			"BOOT_IMAGE=/syslinux/vmlinuz.B init=/usr/lib/systemd/systemd boot=local rootwait ro noresume loglevel=7 console=tty1 console=ttyS0 security=apparmor virtio_net.napi_tx=1 nmi_watchdog=0 csm.disabled=1 loadpin.exclude=kernel-module modules-load=loadpin_trigger module.sig_enforce=1 dm_verity.error_behavior=3 dm_verity.max_bios=-1 dm_verity.dev_wait=1 i915.modeset=1 cros_efi confidential-space.hardened=true cos.protected_stateful_partition=e systemd.mask=update-engine.service ds=nocloud;s=/usr/share/oem/ cros_debug root=/dev/dm-0 \"dm=2 vroot none ro 1,0 4077568 verity payload=PARTUUID=DC7DB0DC-DDCC-AA45-BAE3-A41CA1698E83 hashtree=PARTUUID=DC7DB0DC-DDCC-AA45-BAE3-A41CA1698E83 hashstart=4077568 alg=sha256 root_hexdigest=6d5887660805db1b366319bd1c2161600d11b9e53f059b0e44b760a7277e1b0a salt=f4a41993832655a00d48f5769351370bebafd7de906df068bc1b1929b175ee43,oemroot none ro 1, 0 1024000 verity payload=PARTUUID=fd5af56a-7b25-c448-a616-19eb240b3260 hashtree=PARTUUID=fd5af56a-7b25-c448-a616-19eb240b3260 hashstart=1024000 alg=sha256 root_hexdigest=50c406c129054649a432fa144eeff56aa8b707d4c86f3ab44edde589356e8b23 salt=2a3461269a26ad6247f4b64cacd84f64e5a3311cd4b2f742bab6442291bf4977\"",
+			true,
+		},
+		{
+			"has kernel arg confidential-space.hardened=false",
+			"BOOT_IMAGE=/syslinux/vmlinuz.B init=/usr/lib/systemd/systemd boot=local rootwait ro noresume loglevel=7 console=tty1 console=ttyS0 security=apparmor virtio_net.napi_tx=1 nmi_watchdog=0 csm.disabled=1 loadpin.exclude=kernel-module modules-load=loadpin_trigger module.sig_enforce=1 dm_verity.error_behavior=3 dm_verity.max_bios=-1 dm_verity.dev_wait=1 i915.modeset=1 cros_efi confidential-space.hardened=false cos.protected_stateful_partition=e systemd.mask=update-engine.service ds=nocloud;s=/usr/share/oem/ cros_debug root=/dev/dm-0 \"dm=2 vroot none ro 1,0 4077568 verity payload=PARTUUID=DC7DB0DC-DDCC-AA45-BAE3-A41CA1698E83 hashtree=PARTUUID=DC7DB0DC-DDCC-AA45-BAE3-A41CA1698E83 hashstart=4077568 alg=sha256 root_hexdigest=6d5887660805db1b366319bd1c2161600d11b9e53f059b0e44b760a7277e1b0a salt=f4a41993832655a00d48f5769351370bebafd7de906df068bc1b1929b175ee43,oemroot none ro 1, 0 1024000 verity payload=PARTUUID=fd5af56a-7b25-c448-a616-19eb240b3260 hashtree=PARTUUID=fd5af56a-7b25-c448-a616-19eb240b3260 hashstart=1024000 alg=sha256 root_hexdigest=50c406c129054649a432fa144eeff56aa8b707d4c86f3ab44edde589356e8b23 salt=2a3461269a26ad6247f4b64cacd84f64e5a3311cd4b2f742bab6442291bf4977\"",
+			false,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.testName, func(t *testing.T) {
+			hardened := isHardened(testCase.kernelCmd)
+			if testCase.expectHardened != hardened {
+				t.Errorf("expected %t, but got %t", testCase.expectHardened, hardened)
 			}
 		})
 	}

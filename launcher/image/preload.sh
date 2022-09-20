@@ -60,7 +60,7 @@ configure_necessary_systemd_units() {
 
 configure_systemd_units_for_debug() {
   # No-op for now, as debug will default to using multi-user.target.
-  exit 0
+  :
 }
 
 configure_systemd_units_for_hardened() {
@@ -91,8 +91,10 @@ main() {
 
   if [[ "${IMAGE_ENV}" == "debug" ]]; then
     configure_systemd_units_for_debug
+    append_cmdline "'confidential-space.hardened=false'"
   elif [[ "${IMAGE_ENV}" == "hardened" ]]; then
     configure_systemd_units_for_hardened
+    append_cmdline "'confidential-space.hardened=true'"
   else
     echo "Unknown image env: ${IMAGE_ENV}." \
          "Only 'debug' and 'hardened' are supported."

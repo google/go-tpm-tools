@@ -6,7 +6,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
-func TestLauncherSpecUnmarshalJSONHappyCases(t *testing.T) {
+func TestLaunchSpecUnmarshalJSONHappyCases(t *testing.T) {
 	var testCases = []struct {
 		testName string
 		mdsJSON  string
@@ -35,7 +35,7 @@ func TestLauncherSpecUnmarshalJSONHappyCases(t *testing.T) {
 		},
 	}
 
-	want := &LauncherSpec{
+	want := &LaunchSpec{
 		ImageRef:                   "docker.io/library/hello-world:latest",
 		RestartPolicy:              Always,
 		Cmd:                        []string{"--foo", "--bar", "--baz"},
@@ -45,18 +45,18 @@ func TestLauncherSpecUnmarshalJSONHappyCases(t *testing.T) {
 
 	for _, testcase := range testCases {
 		t.Run(testcase.testName, func(t *testing.T) {
-			spec := &LauncherSpec{}
+			spec := &LaunchSpec{}
 			if err := spec.UnmarshalJSON([]byte(testcase.mdsJSON)); err != nil {
 				t.Fatal(err)
 			}
 			if !cmp.Equal(spec, want) {
-				t.Errorf("LauncherSpec UnmarshalJSON got %+v, want %+v", spec, want)
+				t.Errorf("LaunchSpec UnmarshalJSON got %+v, want %+v", spec, want)
 			}
 		})
 	}
 }
 
-func TestLauncherSpecUnmarshalJSONBadInput(t *testing.T) {
+func TestLaunchSpecUnmarshalJSONBadInput(t *testing.T) {
 	var testCases = []struct {
 		testName string
 		mdsJSON  string
@@ -92,7 +92,7 @@ func TestLauncherSpecUnmarshalJSONBadInput(t *testing.T) {
 
 	for _, testcase := range testCases {
 		t.Run(testcase.testName, func(t *testing.T) {
-			spec := &LauncherSpec{}
+			spec := &LaunchSpec{}
 			if err := spec.UnmarshalJSON([]byte(testcase.mdsJSON)); err == nil {
 				t.Fatal("expected JSON parsing err")
 			}
@@ -100,35 +100,35 @@ func TestLauncherSpecUnmarshalJSONBadInput(t *testing.T) {
 	}
 }
 
-func TestLauncherSpecUnmarshalJSONWithDefaultValue(t *testing.T) {
+func TestLaunchSpecUnmarshalJSONWithDefaultValue(t *testing.T) {
 	mdsJSON := `{
 		"tee-image-reference":"docker.io/library/hello-world:latest",
 		"tee-impersonate-service-accounts":""
 		}`
 
-	spec := &LauncherSpec{}
+	spec := &LaunchSpec{}
 	if err := spec.UnmarshalJSON([]byte(mdsJSON)); err != nil {
 		t.Fatal(err)
 	}
 
-	want := &LauncherSpec{
+	want := &LaunchSpec{
 		ImageRef:      "docker.io/library/hello-world:latest",
 		RestartPolicy: Never,
 	}
 
 	if !cmp.Equal(spec, want) {
-		t.Errorf("LauncherSpec UnmarshalJSON got %+v, want %+v", spec, want)
+		t.Errorf("LaunchSpec UnmarshalJSON got %+v, want %+v", spec, want)
 	}
 }
 
-func TestLauncherSpecUnmarshalJSONWithoutImageReference(t *testing.T) {
+func TestLaunchSpecUnmarshalJSONWithoutImageReference(t *testing.T) {
 	mdsJSON := `{
 		"tee-cmd":"[\"--foo\",\"--bar\",\"--baz\"]",
 		"tee-env-foo":"bar",
 		"tee-restart-policy":"Never"
 		}`
 
-	spec := &LauncherSpec{}
+	spec := &LaunchSpec{}
 	if err := spec.UnmarshalJSON([]byte(mdsJSON)); err == nil || err != errImageRefNotSpecified {
 		t.Fatalf("got %v error, but expected %v error", err, errImageRefNotSpecified)
 	}
