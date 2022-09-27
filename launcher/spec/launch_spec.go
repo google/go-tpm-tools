@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"cloud.google.com/go/compute/metadata"
@@ -29,6 +30,7 @@ const (
 	Never     RestartPolicy = "Never"
 )
 
+// Metadata variable names.
 const (
 	imageRefKey                = "tee-image-reference"
 	restartPolicyKey           = "tee-restart-policy"
@@ -36,6 +38,7 @@ const (
 	envKeyPrefix               = "tee-env-"
 	impersonateServiceAccounts = "tee-impersonate-service-accounts"
 	attestationServiceAddrKey  = "tee-attestation-service-endpoint"
+	logRedirectKey             = "tee-container-log-redirect"
 )
 
 const (
@@ -63,6 +66,7 @@ type LaunchSpec struct {
 	ProjectID                  string
 	Region                     string
 	Hardened                   bool
+	LogRedirect                bool
 }
 
 // UnmarshalJSON unmarshals an instance attributes list in JSON format from the metadata
@@ -104,6 +108,15 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 		if strings.HasPrefix(k, envKeyPrefix) {
 			s.Envs = append(s.Envs, EnvVar{strings.TrimPrefix(k, envKeyPrefix), v})
 		}
+	}
+
+	// by default log redirect is false
+	if val, ok := unmarshaledMap[logRedirectKey]; ok && val != "" {
+		logRedirect, err := strconv.ParseBool(val)
+		if err != nil {
+			return err
+		}
+		s.LogRedirect = logRedirect
 	}
 
 	s.AttestationServiceAddr = unmarshaledMap[attestationServiceAddrKey]

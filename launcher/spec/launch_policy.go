@@ -11,11 +11,36 @@ import (
 type LaunchPolicy struct {
 	AllowedEnvOverride []string
 	AllowedCmdOverride bool
+	AllowedLogRedirect logRedirectPolicy
+}
+
+type logRedirectPolicy int
+
+const (
+	debugOnly logRedirectPolicy = iota
+	always
+	never
+)
+
+func toLogRedirectPolicy(s string) (logRedirectPolicy, error) {
+	s = strings.ToLower(s)
+	s = strings.TrimSpace(s)
+
+	if s == "always" {
+		return always, nil
+	} else if s == "never" {
+		return never, nil
+	} else if s == "debugonly" {
+		return debugOnly, nil
+	} else {
+		return 0, fmt.Errorf("not a valid LogRedirectPolicy %s (must be one of [always, never, debugonly])", s)
+	}
 }
 
 const (
 	envOverride = "tee.launch_policy.allow_env_override"
 	cmdOverride = "tee.launch_policy.allow_cmd_override"
+	logRedirect = "tee.launch_policy.log_redirect"
 )
 
 // GetLaunchPolicy takes in a map[string] string which should come from image labels,
@@ -35,7 +60,15 @@ func GetLaunchPolicy(imageLabels map[string]string) (LaunchPolicy, error) {
 
 	if v, ok := imageLabels[cmdOverride]; ok {
 		if launchPolicy.AllowedCmdOverride, err = strconv.ParseBool(v); err != nil {
-			return LaunchPolicy{}, fmt.Errorf("value of LABEL %s of the image is not a boolean %s", cmdOverride, v)
+			return LaunchPolicy{}, fmt.Errorf("invalid image LABEL '%s' (not a boolean); contact the image author", cmdOverride)
+		}
+	}
+
+	// default is debug only
+	if v, ok := imageLabels[logRedirect]; ok {
+		launchPolicy.AllowedLogRedirect, err = toLogRedirectPolicy(v)
+		if err != nil {
+			return LaunchPolicy{}, fmt.Errorf("invalid image LABEL '%s'; contact the image author", logRedirect)
 		}
 	}
 
@@ -52,6 +85,14 @@ func (p LaunchPolicy) Verify(ls LaunchSpec) error {
 	}
 	if !p.AllowedCmdOverride && len(ls.Cmd) > 0 {
 		return fmt.Errorf("CMD is not allowed to be overridden on this image")
+	}
+
+	if p.AllowedLogRedirect == never && ls.LogRedirect {
+		return fmt.Errorf("logging redirection not allowed by image")
+	}
+
+	if p.AllowedLogRedirect == debugOnly && ls.LogRedirect && ls.Hardened {
+		return fmt.Errorf("logging redirection only allowed on debug environment by image")
 	}
 
 	return nil

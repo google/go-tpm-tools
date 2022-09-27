@@ -18,7 +18,8 @@ func TestLaunchSpecUnmarshalJSONHappyCases(t *testing.T) {
 				"tee-env-foo":"bar",
 				"tee-image-reference":"docker.io/library/hello-world:latest",
 				"tee-restart-policy":"Always",
-				"tee-impersonate-service-accounts":"sv1@developer.gserviceaccount.com,sv2@developer.gserviceaccount.com"
+				"tee-impersonate-service-accounts":"sv1@developer.gserviceaccount.com,sv2@developer.gserviceaccount.com",
+				"tee-container-log-redirect":"true"
 			}`,
 		},
 		{
@@ -30,7 +31,8 @@ func TestLaunchSpecUnmarshalJSONHappyCases(t *testing.T) {
 				"unknown":"unknown",
 				"tee-image-reference":"docker.io/library/hello-world:latest",
 				"tee-restart-policy":"Always",
-				"tee-impersonate-service-accounts":"sv1@developer.gserviceaccount.com,sv2@developer.gserviceaccount.com"
+				"tee-impersonate-service-accounts":"sv1@developer.gserviceaccount.com,sv2@developer.gserviceaccount.com",
+				"tee-container-log-redirect":"true"
 			}`,
 		},
 	}
@@ -41,6 +43,7 @@ func TestLaunchSpecUnmarshalJSONHappyCases(t *testing.T) {
 		Cmd:                        []string{"--foo", "--bar", "--baz"},
 		Envs:                       []EnvVar{{"foo", "bar"}},
 		ImpersonateServiceAccounts: []string{"sv1@developer.gserviceaccount.com", "sv2@developer.gserviceaccount.com"},
+		LogRedirect:                true,
 	}
 
 	for _, testcase := range testCases {
