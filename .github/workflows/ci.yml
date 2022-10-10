@@ -25,39 +25,7 @@ on:
   pull_request:
 
 jobs:
-  build_old:
-    strategy:
-      matrix:
-        go-version: [1.16.x, 1.17.x, 1.18.x]
-        # TODO: Get this working on windows-latest
-        os: [ubuntu-latest]
-    name: Build/Test (${{ matrix.os }}, Go ${{ matrix.go-version }})
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-go@v2
-        with:
-          go-version: ${{ matrix.go-version }}
-      - name: Install Linux packages
-        run: sudo apt-get -y install libssl-dev
-        if: runner.os == 'Linux'
-      - name: Install Mac packages
-        run: brew install openssl
-        if: runner.os == 'macOS'
-      - name: Install Windows packages
-        run: choco install openssl
-        if: runner.os == 'Windows'
-      - name: Build/Test root module
-        run: |
-          go build -v ./...
-          go test -v ./...
-      - name: Build/Test cmd module
-        working-directory: ./cmd
-        run: |
-          go build -v ./...
-          go test -v ./...
-
-  build_new:
+  build:
     strategy:
       matrix:
         go-version: [1.19.x]
