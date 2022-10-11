@@ -76,14 +76,16 @@ func TestVerify(t *testing.T) {
 		expectErr bool
 	}{
 		{
-			"allow everything",
+			"allows everything",
 			LaunchPolicy{
 				AllowedEnvOverride: []string{"foo"},
 				AllowedCmdOverride: true,
+				AllowedLogRedirect: always,
 			},
 			LaunchSpec{
-				Envs: []EnvVar{{Name: "foo", Value: "foo"}},
-				Cmd:  []string{"foo"},
+				Envs:        []EnvVar{{Name: "foo", Value: "foo"}},
+				Cmd:         []string{"foo"},
+				LogRedirect: true,
 			},
 			false,
 		},
@@ -114,14 +116,134 @@ func TestVerify(t *testing.T) {
 			true,
 		},
 		{
-			"allow everything",
+			"log redirect (never) test 1",
 			LaunchPolicy{
-				AllowedEnvOverride: []string{"foo"},
-				AllowedCmdOverride: true,
+				AllowedLogRedirect: never,
 			},
 			LaunchSpec{
-				Envs: []EnvVar{{Name: "foo", Value: "foo"}},
-				Cmd:  []string{"foo"},
+				LogRedirect: true,
+				Hardened:    true,
+			},
+			true,
+		},
+		{
+			"log redirect (never) test 2",
+			LaunchPolicy{
+				AllowedLogRedirect: never,
+			},
+			LaunchSpec{
+				LogRedirect: true,
+				Hardened:    false,
+			},
+			true,
+		},
+		{
+			"log redirect (never) test 3",
+			LaunchPolicy{
+				AllowedLogRedirect: never,
+			},
+			LaunchSpec{
+				LogRedirect: false,
+				Hardened:    true,
+			},
+			false,
+		},
+		{
+			"log redirect (never) test 4",
+			LaunchPolicy{
+				AllowedLogRedirect: never,
+			},
+			LaunchSpec{
+				LogRedirect: false,
+				Hardened:    false,
+			},
+			false,
+		},
+		{
+			"log redirect (debugOnly) test 1",
+			LaunchPolicy{
+				AllowedLogRedirect: debugOnly,
+			},
+			LaunchSpec{
+				LogRedirect: true,
+				Hardened:    true,
+			},
+			true,
+		},
+		{
+			"log redirect (debugOnly) test 2",
+			LaunchPolicy{
+				AllowedLogRedirect: debugOnly,
+			},
+			LaunchSpec{
+				LogRedirect: true,
+				Hardened:    false,
+			},
+			false,
+		},
+		{
+			"log redirect (debugOnly) test 3",
+			LaunchPolicy{
+				AllowedLogRedirect: debugOnly,
+			},
+			LaunchSpec{
+				LogRedirect: false,
+				Hardened:    true,
+			},
+			false,
+		},
+		{
+			"log redirect (debugOnly) test 4",
+			LaunchPolicy{
+				AllowedLogRedirect: debugOnly,
+			},
+			LaunchSpec{
+				LogRedirect: false,
+				Hardened:    false,
+			},
+			false,
+		},
+		{
+			"log redirect (always) test 1",
+			LaunchPolicy{
+				AllowedLogRedirect: always,
+			},
+			LaunchSpec{
+				LogRedirect: true,
+				Hardened:    true,
+			},
+			false,
+		},
+		{
+			"log redirect (always) test 2",
+			LaunchPolicy{
+				AllowedLogRedirect: always,
+			},
+			LaunchSpec{
+				LogRedirect: true,
+				Hardened:    false,
+			},
+			false,
+		},
+		{
+			"log redirect (always) test 3",
+			LaunchPolicy{
+				AllowedLogRedirect: always,
+			},
+			LaunchSpec{
+				LogRedirect: false,
+				Hardened:    true,
+			},
+			false,
+		},
+		{
+			"log redirect (always) test 4",
+			LaunchPolicy{
+				AllowedLogRedirect: always,
+			},
+			LaunchSpec{
+				LogRedirect: false,
+				Hardened:    false,
 			},
 			false,
 		},

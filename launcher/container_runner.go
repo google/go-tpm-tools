@@ -418,7 +418,16 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	}
 
 	for {
-		task, err := r.container.NewTask(ctx, cio.NewCreator(cio.WithStreams(nil, r.logger.Writer(), r.logger.Writer())))
+		var streamOpt cio.Opt
+		if r.launchSpec.LogRedirect {
+			streamOpt = cio.WithStreams(nil, r.logger.Writer(), r.logger.Writer())
+			r.logger.Println("container stdout/stderr will be redirected")
+		} else {
+			streamOpt = cio.WithStreams(nil, nil, nil)
+			r.logger.Println("container stdout/stderr will not be redirected")
+		}
+
+		task, err := r.container.NewTask(ctx, cio.NewCreator(streamOpt))
 		if err != nil {
 			return err
 		}
