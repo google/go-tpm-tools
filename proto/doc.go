@@ -27,4 +27,5 @@
 //	source $HOME/.bashrc
 package proto
 
-//go:generate protoc --go_out=. --go_opt=module=github.com/google/go-tpm-tools/proto tpm.proto attest.proto
+//go:generate ./gen_attest.sh
+//go:generate protoc --go_out=. --go_opt=module=github.com/google/go-tpm-tools/proto tpm.proto

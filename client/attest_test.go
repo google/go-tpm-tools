@@ -8,10 +8,13 @@ import (
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
+	sgtest "github.com/google/go-sev-guest/testing"
 	"github.com/google/go-tpm-tools/internal/test"
+	pb "github.com/google/go-tpm-tools/proto/attest"
 )
 
 var localClient = http.DefaultClient
@@ -201,6 +204,90 @@ func TestKeyAttestGetCertificateChainConditions(t *testing.T) {
 
 			if len(att.IntermediateCerts) != 0 {
 				t.Errorf("Attest() returned with intermediate certs, expected no certs retrieved.")
+			}
+		})
+	}
+}
+
+func TestSevSnpDevice(t *testing.T) {
+	rwc := test.GetTPM(t)
+	defer CheckedClose(t, rwc)
+
+	ak, err := AttestationKeyRSA(rwc)
+	if err != nil {
+		t.Fatalf("Failed to generate test AK: %v", err)
+	}
+
+	someNonce := []byte("some nonce")
+	var someNonce64 [64]byte
+	copy(someNonce64[:], someNonce)
+	var nonce64 [64]byte
+	copy(nonce64[:], []byte("noncey business"))
+	sevTestDevice, err := sgtest.TcDevice([]sgtest.TestCase{
+		{
+			Input:  someNonce64,
+			Output: sgtest.TestRawReport(someNonce64),
+		},
+		{
+			Input:  nonce64,
+			Output: sgtest.TestRawReport(nonce64),
+		},
+	}, &sgtest.DeviceOptions{Now: time.Now()})
+	if err != nil {
+		t.Fatalf("failed to create test device: %v", err)
+	}
+
+	testcases := []struct {
+		name           string
+		opts           AttestOpts
+		wantReportData [64]byte
+		wantErr        string
+	}{
+		{
+			name: "Happy case no nonce",
+			opts: AttestOpts{
+				Nonce:            someNonce,
+				CertChainFetcher: localClient,
+				TEEDevice:        &SevSnpDevice{sevTestDevice},
+			},
+			wantReportData: someNonce64,
+		},
+		{
+			name: "Happy case with nonce",
+			opts: AttestOpts{
+				Nonce:            someNonce,
+				CertChainFetcher: localClient,
+				TEEDevice:        &SevSnpDevice{sevTestDevice},
+				TEENonce:         nonce64[:],
+			},
+			wantReportData: nonce64,
+		},
+		{
+			name: "TEE nonce without TEE",
+			opts: AttestOpts{
+				Nonce:            someNonce,
+				CertChainFetcher: localClient,
+				TEENonce:         nonce64[:],
+			},
+			wantErr: "got non-nil TEENonce when TEEDevice is nil",
+		},
+	}
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			att, err := ak.Attest(tc.opts)
+			if (err == nil && tc.wantErr != "") || (err != nil && !strings.Contains(err.Error(), tc.wantErr)) {
+				t.Fatalf("Attest(%v) = %v, want %q", tc.opts, err, tc.wantErr)
+			}
+			// Successful attestation should include a SEV-SNP attestation.
+			if err == nil {
+				snp, ok := att.GetTeeAttestation().(*pb.Attestation_SevSnpAttestation)
+				if !ok {
+					t.Fatalf("Attestation missing SEV-SNP attestation: %v", att.GetTeeAttestation())
+				}
+				report := snp.SevSnpAttestation.Report
+				if !bytes.Equal(report.GetReportData(), tc.wantReportData[:]) {
+					t.Fatalf("SEV-SNP nonces differ. Got %v, want %v", report.GetReportData(), tc.wantReportData)
+				}
 			}
 		})
 	}

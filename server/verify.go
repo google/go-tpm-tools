@@ -46,6 +46,11 @@ type VerifyOpts struct {
 	// Which bootloader the instance uses. Pick UNSUPPORTED to skip this
 	// parsing or for unsupported bootloaders (e.g., systemd).
 	Loader Bootloader
+	// TEEOpts allows customizing the functionality of VerifyTEEAttestation.
+	// Its type can be *VerifySnpOpts if the TEEAttestation is a SevSnpAttestation.
+	// If nil, uses Nonce for ReportData and the TEE's verification library's
+	// embedded root certs for its roots of trust.
+	TEEOpts interface{}
 }
 
 // Bootloader refers to the second-stage bootloader that loads and transfers
@@ -143,6 +148,11 @@ func VerifyAttestation(attestation *pb.Attestation, opts VerifyOpts) (*pb.Machin
 		state, err := parsePCClientEventLog(attestation.GetEventLog(), pcrs, opts.Loader)
 		if err != nil {
 			lastErr = fmt.Errorf("failed to validate the PCClient event log: %w", err)
+			continue
+		}
+
+		if err := VerifyGceTechnology(attestation, state.Platform.GetTechnology(), &opts); err != nil {
+			lastErr = fmt.Errorf("failed to verify memory encryption technology: %w", err)
 			continue
 		}
 
@@ -292,4 +302,39 @@ func makePool(certs []*x509.Certificate) *x509.CertPool {
 		pool.AddCert(cert)
 	}
 	return pool
+}
+
+// VerifyGceTechnology checks the GCE-specific GceNonHost event's Trusted Execution Technology (TEE)
+// claim using attestation reports if the technology supports them, and only then validates that a
+// particular technology has proven that it is in use.
+func VerifyGceTechnology(attestation *pb.Attestation, tech pb.GCEConfidentialTechnology, opts *VerifyOpts) error {
+	switch tech {
+	case pb.GCEConfidentialTechnology_NONE: // Nothing to verify
+		return nil
+	case pb.GCEConfidentialTechnology_AMD_SEV: // Not verifiable on GCE
+		return nil
+	case pb.GCEConfidentialTechnology_AMD_SEV_ES: // Not verifiable on GCE
+		return nil
+	case pb.GCEConfidentialTechnology_AMD_SEV_SNP:
+		switch tee := attestation.GetTeeAttestation().(type) {
+		case *pb.Attestation_SevSnpAttestation:
+			var snpOpts *VerifySnpOpts
+			if opts.TEEOpts == nil {
+				snpOpts = &VerifySnpOpts{}
+				copy(snpOpts.ReportData[:], opts.Nonce)
+			} else {
+				switch teeopts := opts.TEEOpts.(type) {
+				case *VerifySnpOpts:
+					snpOpts = teeopts
+				default:
+					return fmt.Errorf("unexpected value for TEEOpts given a SEV-SNP attestation report: %v",
+						opts.TEEOpts)
+				}
+			}
+			return VerifySevSnpAttestation(tee.SevSnpAttestation, snpOpts)
+		default:
+			return fmt.Errorf("TEE attestation is %v, expected an SevSnpAttestation", attestation.GetTeeAttestation())
+		}
+	}
+	return fmt.Errorf("unknown GCEConfidentialTechnology: %v", tech)
 }
