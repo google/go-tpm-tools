@@ -2,6 +2,7 @@ package cel
 
 import (
 	"bytes"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -124,5 +125,21 @@ func TestParseEnvVar(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestParseFormatSemVer(t *testing.T) {
+	input := &pb.SemanticVersion{Major: 3, Minor: 23, Patch: 323}
+	formatted := FormatSemVer(input)
+	output, err := ParseSemVer(formatted)
+	if err != nil {
+		t.Fatalf("failed to parse semver bytes: %v", err)
+	}
+	if !reflect.DeepEqual(input, output) {
+		t.Errorf("failed to parse semver: got %v, expected %v", input, output)
+	}
+	anotherFormatted := FormatSemVer(input)
+	if !bytes.Equal(formatted, anotherFormatted) {
+		t.Errorf("failed to format semver: got %v, expected %v", formatted, anotherFormatted)
 	}
 }

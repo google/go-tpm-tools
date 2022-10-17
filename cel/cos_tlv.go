@@ -2,10 +2,13 @@ package cel
 
 import (
 	"crypto"
+	"encoding/binary"
 	"fmt"
 	"regexp"
 	"strings"
 	"unicode/utf8"
+
+	attestpb "github.com/google/go-tpm-tools/proto/attest"
 )
 
 const (
@@ -20,6 +23,8 @@ const (
 type CosType uint8
 
 // Type for COS nested events
+// For SeparatorTypes, EventContent is empty on success, or contains an
+// error message on failure.
 const (
 	ImageRefType CosType = iota
 	ImageDigestType
@@ -29,8 +34,14 @@ const (
 	EnvVarType
 	OverrideArgType
 	OverrideEnvType
-	// EventContent is empty on success, or contains an error message on failure.
+	// The launch separator is the last separator measured before the container is
+	// launched.
 	LaunchSeparatorType
+	// The launcher version EventContent stores the semantic version of the
+	// launcher (major, minor, patch) uint32s in little-endian byte order.
+	// This should be incremented when there are breaking changes to the
+	// launcher MDS interface, including MDS variables and the COS event log.
+	LauncherVersionType
 )
 
 // CosTlv is a specific event type created for the COS (Google Container-Optimized OS),
@@ -123,4 +134,28 @@ func ParseEnvVar(envvar string) (string, string, error) {
 	}
 
 	return e[0], e[1], nil
+}
+
+// ParseSemVer takes a COS TLV event content for LauncherVersionType and
+// returns the corresponding SemanticVersion.
+func ParseSemVer(launcherVersion []byte) (*attestpb.SemanticVersion, error) {
+	semver := &attestpb.SemanticVersion{}
+	if len(launcherVersion) != 12 {
+		return nil, fmt.Errorf("bad semver byte slice (should be length 12): %v", launcherVersion)
+	}
+	semver.Major = binary.LittleEndian.Uint32(launcherVersion[0:4])
+	semver.Minor = binary.LittleEndian.Uint32(launcherVersion[4:8])
+	semver.Patch = binary.LittleEndian.Uint32(launcherVersion[8:12])
+	return semver, nil
+}
+
+// FormatSemVer turns a SemanticVersion into the corresponding COS TLV event
+// content for LauncherVersionType:
+// major, minor, patch uint32s in little-endian byte format.
+func FormatSemVer(semver *attestpb.SemanticVersion) []byte {
+	launcherVersion := make([]byte, 12)
+	binary.LittleEndian.PutUint32(launcherVersion[0:4], semver.Major)
+	binary.LittleEndian.PutUint32(launcherVersion[4:8], semver.Minor)
+	binary.LittleEndian.PutUint32(launcherVersion[8:12], semver.Patch)
+	return launcherVersion
 }
