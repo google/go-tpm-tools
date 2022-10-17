@@ -275,10 +275,14 @@ func appendTokenMounts(mounts []specs.Mount) []specs.Mount {
 // measureContainerClaims will measure various container claims into the COS
 // eventlog in the AttestationAgent.
 func (r *ContainerRunner) measureContainerClaims(ctx context.Context) error {
+	// When changing the ordering or format of this code, consider whether it
+	// is a breaking change. If so, update the launcher version and the server
+	// parsing logic.
 	image, err := r.container.Image(ctx)
 	if err != nil {
 		return err
 	}
+	// TODO: measure launcher version.
 	if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.ImageRefType, EventContent: []byte(image.Name())}); err != nil {
 		return err
 	}
