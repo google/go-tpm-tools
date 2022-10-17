@@ -98,7 +98,10 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 
 	mounts := make([]specs.Mount, 0)
 	mounts = appendTokenMounts(mounts)
-	envs := parseEnvVars(launchSpec.Envs)
+	envs, err := formatEnvVars(launchSpec.Envs)
+	if err != nil {
+		return nil, err
+	}
 	// Check if there is already a container
 	container, err := cdClient.LoadContainer(ctx, containerID)
 	if err == nil {
@@ -240,13 +243,17 @@ func getRESTClient(ctx context.Context, asAddr string, spec spec.LaunchSpec) (ve
 	return restClient, nil
 }
 
-// parseEnvVars parses the environment variables to the oci format
-func parseEnvVars(envVars []spec.EnvVar) []string {
+// formatEnvVars formats the environment variables to the oci format
+func formatEnvVars(envVars []spec.EnvVar) ([]string, error) {
 	var result []string
 	for _, envVar := range envVars {
-		result = append(result, envVar.Name+"="+envVar.Value)
+		ociFormat, err := cel.FormatEnvVar(envVar.Name, envVar.Value)
+		if err != nil {
+			return nil, fmt.Errorf("failed to format env var: %v", err)
+		}
+		result = append(result, ociFormat)
 	}
-	return result
+	return result, nil
 }
 
 // appendTokenMounts appends the default mount specs for the OIDC token
@@ -298,7 +305,10 @@ func (r *ContainerRunner) measureContainerClaims(ctx context.Context) error {
 	}
 
 	// Measure the input overridden Env Vars and Args separately, these should be subsets of the Env Vars and Args above.
-	envs := parseEnvVars(r.launchSpec.Envs)
+	envs, err := formatEnvVars(r.launchSpec.Envs)
+	if err != nil {
+		return err
+	}
 	for _, env := range envs {
 		if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.OverrideEnvType, EventContent: []byte(env)}); err != nil {
 			return err
