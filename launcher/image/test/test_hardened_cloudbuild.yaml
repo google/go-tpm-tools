@@ -16,6 +16,11 @@ steps:
         ]
 - name: 'gcr.io/cloud-builders/gcloud'
   entrypoint: 'bash'
+  env:
+  - 'BUILD_ID=$BUILD_ID'
+  args: ['test_multiwriterpd_disabled.sh']
+- name: 'gcr.io/cloud-builders/gcloud'
+  entrypoint: 'bash'
   args: ['test_startupscript_disabled.sh']
 - name: 'gcr.io/cloud-builders/gcloud'
   entrypoint: 'bash'
