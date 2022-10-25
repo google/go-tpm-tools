@@ -9,4 +9,4 @@ echo "Cleaning up."
 VM_NAME=$(cat /workspace/vm_name.txt)
 
 echo 'Deleting VM' $VM_NAME
-gcloud compute instances delete $VM_NAME --zone us-central1-a
+gcloud compute instances delete $VM_NAME --zone us-central1-a -q
