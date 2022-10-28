@@ -113,34 +113,52 @@ func contains(set [][]byte, value []byte) bool {
 }
 
 func getVerifiedCosState(coscel cel.CEL, pcrs *tpmpb.PCRs) (*pb.AttestedCosState, error) {
-	cosState := &pb.AttestedCosState{}
-	cosState.Container = &pb.ContainerState{}
-	cosState.Container.Args = make([]string, 0)
-	cosState.Container.EnvVars = make(map[string]string)
-	cosState.Container.OverriddenEnvVars = make(map[string]string)
-
-	seenSeparator := false
+	cosTlvs := make([]cel.CosTlv, 0, len(coscel.Records))
+	// Validate individual events in COS CEL and convert to `CosTlv`s.
 	for _, record := range coscel.Records {
 		// COS State only comes from the CosEventPCR
 		if record.PCR != cel.CosEventPCR {
 			return nil, fmt.Errorf("found unexpected PCR %d in CEL log", record.PCR)
 		}
-
-		// The Content.Type is not verified at this point, so we have to fail
-		// if we see any events that we do not understand. This ensures that
-		// we either verify the digest of event event in this PCR, or we fail
-		// to replay the event log.
+		// The Content is not verified at this point, so we cannot use its Type
+		// or Value. We fail if we see any CEL events that we do not understand
+		// (basically, a properly structured COS TLV).
+		// This ensures that we either verify event digests with PCR values, or
+		// we fail to replay the event log.
 		// TODO: See if we can fix this to have the Content Type be verified.
 		cosTlv, err := record.Content.ParseToCosTlv()
 		if err != nil {
 			return nil, err
 		}
 
-		// verify digests for the cos cel content
+		// Verify digests for the COS CEL content.
 		if err := cel.VerifyDigests(cosTlv, record.Digests); err != nil {
 			return nil, err
 		}
+		// Post-verification, we can use the parsed record.Content.
+		cosTlvs = append(cosTlvs, cosTlv)
+	}
 
+	cosState := &pb.AttestedCosState{}
+	cosState.Container = &pb.ContainerState{}
+	cosState.Container.Args = make([]string, 0)
+	cosState.Container.EnvVars = make(map[string]string)
+	cosState.Container.OverriddenEnvVars = make(map[string]string)
+	if len(cosTlvs) == 0 {
+		return cosState, nil
+	}
+	cosState.LauncherVersion = &pb.SemanticVersion{Major: 0, Minor: 1, Patch: 0}
+	if cosTlvs[0].EventType == cel.LauncherVersionType {
+		semver, err := cel.ParseSemVer(cosTlvs[0].EventContent)
+		if err != nil {
+			return nil, fmt.Errorf("found bad LauncherVersion event in COS event log: %v", err)
+		}
+		cosState.LauncherVersion = semver
+		cosTlvs = cosTlvs[1:]
+	}
+
+	seenSeparator := false
+	for _, cosTlv := range cosTlvs {
 		// TODO: Add support for post-separator container data
 		if seenSeparator {
 			return nil, fmt.Errorf("found COS Event Type %v after LaunchSeparator event", cosTlv.EventType)

@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -522,21 +523,11 @@ func TestParsingCELEventLog(t *testing.T) {
 	if err := coscel.EncodeCEL(&buf); err != nil {
 		t.Fatal(err)
 	}
+
 	banks, err := client.ReadAllPCRs(tpm)
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	implementedHashes := []crypto.Hash{}
-	// get all implmented hash algo in the TPM
-	for _, h := range banks {
-		hsh, err := tpm2.Algorithm(h.Hash).Hash()
-		if err != nil {
-			t.Fatal(err)
-		}
-		implementedHashes = append(implementedHashes, crypto.Hash(hsh))
-	}
-
 	for _, bank := range banks {
 		// pcrs can have any value here, since the coscel has no records, the replay should always success.
 		msState, err := parseCanonicalEventLog(buf.Bytes(), bank)
@@ -554,10 +545,10 @@ func TestParsingCELEventLog(t *testing.T) {
 		pcr                int
 		eventPayload       []byte
 	}{
-		{cel.ImageRefType, cel.CosEventPCR, []byte("docker.io/bazel/experimental/test:latest")},
-		{cel.ImageDigestType, cel.CosEventPCR, []byte("sha256:781d8dfdd92118436bd914442c8339e653b83f6bf3c1a7a98efcfb7c4fed7483")},
+		{cel.ImageRefType, cel.CosEventPCR, []byte(cosImageRef)},
+		{cel.ImageDigestType, cel.CosEventPCR, []byte(cosImageDigest)},
 		{cel.RestartPolicyType, cel.CosEventPCR, []byte(attestpb.RestartPolicy_Always.String())},
-		{cel.ImageIDType, cel.CosEventPCR, []byte("sha256:5DF4A1AC347DCF8CF5E9D0ABC04B04DB847D1B88D3B1CC1006F0ACB68E5A1F4B")},
+		{cel.ImageIDType, cel.CosEventPCR, []byte(cosImageID)},
 		{cel.EnvVarType, cel.CosEventPCR, []byte("foo=bar")},
 		{cel.EnvVarType, cel.CosEventPCR, []byte("bar=baz")},
 		{cel.EnvVarType, cel.CosEventPCR, []byte("baz=foo=bar")},
@@ -566,6 +557,7 @@ func TestParsingCELEventLog(t *testing.T) {
 		{cel.ArgType, cel.CosEventPCR, []byte("--y")},
 		{cel.ArgType, cel.CosEventPCR, []byte("")},
 	}
+	implementedHashes := getImplementedHashes(t, tpm)
 
 	expectedEnvVars := make(map[string]string)
 	expectedEnvVars["foo"] = "bar"
@@ -755,4 +747,22 @@ func decodeHex(hexStr string) []byte {
 		panic(err)
 	}
 	return bytes
+}
+
+// Get all TPM-implemented hash algos.
+func getImplementedHashes(t *testing.T, tpm io.ReadWriter) []crypto.Hash {
+	banks, err := client.ImplementedPCRs(tpm)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	implementedHashes := []crypto.Hash{}
+	for _, h := range banks {
+		hsh, err := tpm2.Algorithm(h.Hash).Hash()
+		if err != nil {
+			t.Fatal(err)
+		}
+		implementedHashes = append(implementedHashes, crypto.Hash(hsh))
+	}
+	return implementedHashes
 }

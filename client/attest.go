@@ -219,7 +219,7 @@ func (k *Key) Attest(opts AttestOpts) (*pb.Attestation, error) {
 	if len(opts.Nonce) == 0 {
 		return nil, fmt.Errorf("provided nonce must not be empty")
 	}
-	sels, err := implementedPCRs(k.rw)
+	sels, err := ImplementedPCRs(k.rw)
 	if err != nil {
 		return nil, err
 	}
