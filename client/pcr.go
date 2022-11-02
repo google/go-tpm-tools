@@ -33,8 +33,8 @@ func min(a, b int) int {
 	return b
 }
 
-// implementedPCRs returns a list of selections corresponding to the TPM's implemented PCRs.
-func implementedPCRs(rw io.ReadWriter) ([]tpm2.PCRSelection, error) {
+// allocatedPCRs returns a list of selections corresponding to the TPM's implemented PCRs.
+func allocatedPCRs(rw io.ReadWriter) ([]tpm2.PCRSelection, error) {
 	caps, moreData, err := tpm2.GetCapability(rw, tpm2.CapabilityPCRs, math.MaxUint32, 0)
 	if err != nil {
 		return nil, fmt.Errorf("listing implemented PCR banks: %w", err)
@@ -48,7 +48,7 @@ func implementedPCRs(rw io.ReadWriter) ([]tpm2.PCRSelection, error) {
 		if !ok {
 			return nil, fmt.Errorf("unexpected data from GetCapability")
 		}
-		// skip empty PCR selections
+		// skip empty (unallocated) PCR selections
 		if len(sel.PCRs) == 0 {
 			continue
 		}
@@ -87,7 +87,7 @@ func ReadPCRs(rw io.ReadWriter, sel tpm2.PCRSelection) (*pb.PCRs, error) {
 
 // ReadAllPCRs fetches all the PCR values from all implemented PCR banks.
 func ReadAllPCRs(rw io.ReadWriter) ([]*pb.PCRs, error) {
-	sels, err := implementedPCRs(rw)
+	sels, err := allocatedPCRs(rw)
 	if err != nil {
 		return nil, err
 	}
