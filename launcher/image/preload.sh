@@ -1,20 +1,15 @@
 #!/bin/bash
 
+readonly OEM_PATH='/usr/share/oem'
+readonly CS_PATH="${OEM_PATH}/confidential_space"
+
 copy_launcher() {
-  cp launcher /usr/share/oem/cc_container_launcher
+  cp launcher "${CS_PATH}/cs_container_launcher"
 }
 
 setup_launcher_systemd_unit() {
-  cp container-runner.service /usr/share/oem/container-runner.service
-
-  if [ "$IMAGE_ENV" == "hardened" ]; then
-    cp hardened.conf /usr/share/oem/launcher.conf
-  elif [ "$IMAGE_ENV" == "debug" ]; then
-    cp debug.conf /usr/share/oem/launcher.conf
-  else
-    echo "Unknown IMAGE_ENV: ${IMAGE_ENV}. Use hardened or debug"
-    exit 1
-  fi
+  cp container-runner.service "${CS_PATH}/container-runner.service"
+  cp exit_script.sh "${CS_PATH}/exit_script.sh"
 }
 
 append_cmdline() {
@@ -40,9 +35,9 @@ enable_unit() {
 }
 
 configure_entrypoint() {
-  cp "$1" /usr/share/oem/user-data
-  touch /usr/share/oem/meta-data
-  append_cmdline "'ds=nocloud;s=/usr/share/oem/'"
+  cp "$1" ${OEM_PATH}/user-data
+  touch ${OEM_PATH}/meta-data
+  append_cmdline "'ds=nocloud;s=${OEM_PATH}/'"
 }
 
 configure_necessary_systemd_units() {
@@ -62,7 +57,6 @@ configure_systemd_units_for_debug() {
   # No-op for now, as debug will default to using multi-user.target.
   :
 }
-
 configure_systemd_units_for_hardened() {
   configure_necessary_systemd_units
   # Make entrypoint (via cloud-init) the default unit.
@@ -81,7 +75,8 @@ configure_systemd_units_for_hardened() {
 }
 
 main() {
-  mount -o remount,rw /usr/share/oem
+  mount -o remount,rw ${OEM_PATH}
+  mkdir ${CS_PATH}
 
   # Install container launcher entrypoint.
   configure_entrypoint "entrypoint.sh"
