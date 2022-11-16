@@ -13,9 +13,11 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"strconv"
 	"testing"
 	"time"
 
+	"github.com/cenkalti/backoff/v4"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-tpm-tools/cel"
 	"google.golang.org/api/option"
@@ -47,7 +49,11 @@ func (f *fakeAttestationAgent) Attest(ctx context.Context) ([]byte, error) {
 	return nil, fmt.Errorf("unimplemented")
 }
 
-func createJWTToken(t *testing.T, ttl time.Duration) []byte {
+func createJWT(t *testing.T, ttl time.Duration) []byte {
+	return createJWTWithID(t, "test token", ttl)
+}
+
+func createJWTWithID(t *testing.T, id string, ttl time.Duration) []byte {
 	t.Helper()
 
 	privkey, err := rsa.GenerateKey(rand.Reader, 2048)
@@ -57,7 +63,7 @@ func createJWTToken(t *testing.T, ttl time.Duration) []byte {
 
 	now := jwt.TimeFunc()
 	claims := &jwt.RegisteredClaims{
-		ID:        "test token",
+		ID:        id,
 		IssuedAt:  jwt.NewNumericDate(now),
 		NotBefore: jwt.NewNumericDate(now),
 		ExpiresAt: jwt.NewNumericDate(now.Add(ttl)),
@@ -72,12 +78,21 @@ func createJWTToken(t *testing.T, ttl time.Duration) []byte {
 	return []byte(signed)
 }
 
+func extractJWTClaims(t *testing.T, token []byte) *jwt.RegisteredClaims {
+	claims := &jwt.RegisteredClaims{}
+	_, _, err := jwt.NewParser().ParseUnverified(string(token), claims)
+	if err != nil {
+		t.Fatalf("failed to parse JWT: %v", token)
+	}
+	return claims
+}
+
 func TestRefreshToken(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	ttl := 5 * time.Second
-	expectedToken := createJWTToken(t, ttl)
+	expectedToken := createJWT(t, ttl)
 
 	runner := ContainerRunner{
 		attestAgent: &fakeAttestationAgent{
@@ -134,7 +149,7 @@ func TestRefreshTokenError(t *testing.T) {
 			name: "Attest returns expired token",
 			agent: &fakeAttestationAgent{
 				attestFunc: func(context.Context) ([]byte, error) {
-					return createJWTToken(t, -5*time.Second), nil
+					return createJWT(t, -5*time.Second), nil
 				},
 			},
 		},
@@ -159,7 +174,7 @@ func TestFetchAndWriteTokenSucceeds(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	expectedToken := createJWTToken(t, 5*time.Second)
+	expectedToken := createJWT(t, 5*time.Second)
 
 	runner := ContainerRunner{
 		attestAgent: &fakeAttestationAgent{
@@ -189,7 +204,7 @@ func TestTokenIsNotChangedIfRefreshFails(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	expectedToken := createJWTToken(t, 5*time.Second)
+	expectedToken := createJWT(t, 5*time.Second)
 	ttl := 5 * time.Second
 	successfulAttestFunc := func(context.Context) ([]byte, error) {
 		return expectedToken, nil
@@ -233,11 +248,97 @@ func TestTokenIsNotChangedIfRefreshFails(t *testing.T) {
 	}
 }
 
+// testRetryPolicy tries the operation at the following times:
+// t=0s, .5s, 1.25s. It is canceled before the fourth try.
+func testRetryPolicyThreeTimes() *backoff.ExponentialBackOff {
+	expBack := backoff.NewExponentialBackOff()
+	expBack.InitialInterval = 500 * time.Millisecond
+	expBack.RandomizationFactor = 0
+	expBack.Multiplier = 1.5
+	expBack.MaxInterval = 1 * time.Second
+	expBack.MaxElapsedTime = 2249 * time.Millisecond
+	return expBack
+}
+
+func TestTokenRefreshRetryPolicyFail(t *testing.T) {
+	testRetryPolicyWithNTries(t, 4 /*numTries*/, false /*expectRefresh*/)
+}
+
+func TestTokenRefreshRetryPolicy(t *testing.T) {
+	// Test retry policy tries 3 times.
+	for numTries := 1; numTries <= 3; numTries++ {
+		t.Run("RetryPolicyWith"+strconv.Itoa(numTries)+"Tries",
+			func(t *testing.T) { testRetryPolicyWithNTries(t, numTries /*numTries*/, true /*expectRefresh*/) })
+	}
+}
+
+func testRetryPolicyWithNTries(t *testing.T, numTries int, expectRefresh bool) {
+	strNum := strconv.Itoa(numTries)
+	t.Logf("testing with %d tries", numTries)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	expectedInitialToken := createJWTWithID(t, "initial token"+strNum, 5*time.Second)
+	expectedRefreshToken := createJWTWithID(t, "refresh token"+strNum, 100*time.Second)
+	// Wait the initial token's 5s plus a second per retry (MaxInterval).
+	ttl := time.Duration(numTries)*time.Second + 5*time.Second
+	retry := -1
+	attestFunc := func(context.Context) ([]byte, error) {
+		retry++
+		// Success on the initial fetch (subsequent calls use refresher goroutine).
+		if retry == 0 {
+			return expectedInitialToken, nil
+		}
+		if retry == numTries {
+			return expectedRefreshToken, nil
+		}
+		return nil, errors.New("attest unsuccessful")
+	}
+	runner := ContainerRunner{
+		attestAgent: &fakeAttestationAgent{attestFunc: attestFunc},
+		logger:      log.Default(),
+	}
+	if err := runner.fetchAndWriteTokenWithRetry(ctx, testRetryPolicyThreeTimes()); err != nil {
+		t.Fatalf("fetchAndWriteTokenWithRetry failed: %v", err)
+	}
+	filepath := path.Join(hostTokenPath, attestationVerifierTokenFile)
+	data, err := os.ReadFile(filepath)
+	if err != nil {
+		t.Fatalf("failed to read from %s: %v", filepath, err)
+	}
+
+	if !bytes.Equal(data, expectedInitialToken) {
+		gotClaims := extractJWTClaims(t, data)
+		wantClaims := extractJWTClaims(t, expectedInitialToken)
+		t.Errorf("initial token written to file does not match expected token: got ID %v, want ID %v", gotClaims.ID, wantClaims.ID)
+	}
+	time.Sleep(ttl)
+
+	data, err = os.ReadFile(filepath)
+	if err != nil {
+		t.Fatalf("failed to read from %s: %v", filepath, err)
+	}
+
+	// No refresh: the token should match initial token.
+	if !expectRefresh && !bytes.Equal(data, expectedInitialToken) {
+		gotClaims := extractJWTClaims(t, data)
+		wantClaims := extractJWTClaims(t, expectedInitialToken)
+		t.Errorf("token refresher should fail and received token should be the initial token: got ID %v, want ID %v", gotClaims.ID, wantClaims.ID)
+	}
+
+	// Should Refresh: the token should match refreshed token.
+	if expectRefresh && !bytes.Equal(data, expectedRefreshToken) {
+		gotClaims := extractJWTClaims(t, data)
+		wantClaims := extractJWTClaims(t, expectedRefreshToken)
+		t.Errorf("refreshed token did not match expected token: got ID %v, want ID %v", gotClaims.ID, wantClaims.ID)
+	}
+}
+
 func TestFetchAndWriteTokenWithTokenRefresh(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	expectedToken := createJWTToken(t, 5*time.Second)
+	expectedToken := createJWT(t, 5*time.Second)
 
 	ttl := 5 * time.Second
 
@@ -265,7 +366,7 @@ func TestFetchAndWriteTokenWithTokenRefresh(t *testing.T) {
 	}
 
 	// Change attest agent to return new token.
-	expectedRefreshedToken := createJWTToken(t, 10*time.Second)
+	expectedRefreshedToken := createJWT(t, 10*time.Second)
 	runner.attestAgent = &fakeAttestationAgent{
 		attestFunc: func(context.Context) ([]byte, error) {
 			return expectedRefreshedToken, nil
