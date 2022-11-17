@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"os"
 	"path"
-	"strings"
 	"time"
 
 	"cloud.google.com/go/compute/metadata"
@@ -25,7 +24,6 @@ import (
 	"github.com/google/go-tpm-tools/launcher/agent"
 	"github.com/google/go-tpm-tools/launcher/spec"
 	"github.com/google/go-tpm-tools/launcher/verifier"
-	"github.com/google/go-tpm-tools/launcher/verifier/grpcclient"
 	"github.com/google/go-tpm-tools/launcher/verifier/rest"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
@@ -33,15 +31,12 @@ import (
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/impersonate"
 	"google.golang.org/api/option"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 )
 
 // ContainerRunner contains information about the container settings
 type ContainerRunner struct {
 	container   containerd.Container
 	launchSpec  spec.LaunchSpec
-	attestConn  *grpc.ClientConn
 	attestAgent agent.AttestationAgent
 	logger      *log.Logger
 }
@@ -196,38 +191,17 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	}
 
 	asAddr := launchSpec.AttestationServiceAddr
-	var verifierClient verifier.Client
-	var conn *grpc.ClientConn
-	// Temporary support for both gRPC and REST-based attestation verifier.
-	// Use REST when empty flag or the presence of http in the addr, else gRPC.
-	// TODO: remove once fully migrated to the REST-based verifier.
-	if asAddr == "" || strings.Contains(asAddr, "http") {
-		verifierClient, err = getRESTClient(ctx, asAddr, launchSpec)
-	} else {
-		verifierClient, conn, err = getGRPCClient(asAddr, logger)
-	}
+	verifierClient, err := getRESTClient(ctx, asAddr, launchSpec)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create verifier client: %v", err)
+		return nil, fmt.Errorf("failed to create REST verifier client: %v", err)
 	}
 
 	return &ContainerRunner{
 		container,
 		launchSpec,
-		conn,
 		agent.CreateAttestationAgent(tpm, client.GceAttestationKeyECC, verifierClient, principalFetcher),
 		logger,
 	}, nil
-}
-
-// getGRPCClient returns a gRPC verifier.Client pointing to the given address.
-// It also returns a grpc.ClientConn for closing out the connection.
-func getGRPCClient(asAddr string, logger *log.Logger) (verifier.Client, *grpc.ClientConn, error) {
-	opt := grpc.WithTransportCredentials(insecure.NewCredentials())
-	conn, err := grpc.Dial(asAddr, opt)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to open connection to gRPC attestation service: %v", err)
-	}
-	return grpcclient.NewClient(conn, logger), conn, nil
 }
 
 // getRESTClient returns a REST verifier.Client that points to the given address.
@@ -502,7 +476,4 @@ func (r *ContainerRunner) Close(ctx context.Context) {
 	// Exit gracefully:
 	// Delete container and close connection to attestation service.
 	r.container.Delete(ctx, containerd.WithSnapshotCleanup)
-	if r.attestConn != nil {
-		r.attestConn.Close()
-	}
 }
