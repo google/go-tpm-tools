@@ -5,6 +5,7 @@ go 1.18
 require (
 	cloud.google.com/go/compute v1.7.0
 	cloud.google.com/go/logging v1.4.2
+	github.com/cenkalti/backoff/v4 v4.1.3
 	github.com/containerd/containerd v1.6.6
 	github.com/golang-jwt/jwt/v4 v4.4.1
 	github.com/google/go-cmp v0.5.8
@@ -23,6 +24,7 @@ require (
 	cloud.google.com/go v0.102.0 // indirect
 	github.com/Microsoft/go-winio v0.5.2 // indirect
 	github.com/Microsoft/hcsshim v0.9.3 // indirect
+	github.com/cenkalti/backoff v2.2.1+incompatible // indirect
 	github.com/containerd/cgroups v1.0.3 // indirect
 	github.com/containerd/continuity v0.3.0 // indirect
 	github.com/containerd/fifo v1.0.0 // indirect

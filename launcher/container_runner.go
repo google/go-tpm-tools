@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/compute/metadata"
+	"github.com/cenkalti/backoff/v4"
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/cio"
 	"github.com/containerd/containerd/content"
@@ -55,7 +56,35 @@ const (
 	snapshotID  = "tee-snapshot"
 )
 
-const defaultRefreshMultiplier = 0.9
+/*
+	Values for token refresh and retries.
+
+With a 60m token expiration, the refresher goroutine will refresh beginning at .9*60=54m.
+
+Given the following default arguments, the retry sequence will be,
+assuming we go over the MaxElapsedTime:
+
+	 RetryInterval = 30s
+	 RandomizationFactor = 0.5
+	 Multiplier = 1.5
+	 MaxInterval = 180s
+	 MaxElapsedTime = 600s
+
+	 Request #  RetryInterval (seconds)  Randomized Interval (seconds)
+										 RetryInterval*[1-RandFactor, 1+RandFactor]
+	  1          30                      [15,   45]
+	  2          60                      [30,   90]
+	  3          120                     [60,   180]
+	  4          180 (MaxInterval) 	     [90,   270]
+	  5          180 (MaxInterval) 	     [90,   270]
+	  reached MaxElapsedTime             backoff.Stop
+*/
+const (
+	defaultRefreshMultiplier = 0.9
+	defaultInitialInterval   = 30 * time.Second
+	defaultMaxInterval       = 3 * time.Minute
+	defaultMaxElapsedTime    = 10 * time.Minute
+)
 
 func fetchImpersonatedToken(ctx context.Context, serviceAccount string, audience string, opts ...option.ClientOption) ([]byte, error) {
 	config := impersonate.IDTokenConfig{
@@ -306,6 +335,7 @@ func (r *ContainerRunner) measureContainerClaims(ctx context.Context) error {
 // Retrieves an OIDC token from the attestation service, and returns how long
 // to wait before attemping to refresh it.
 func (r *ContainerRunner) refreshToken(ctx context.Context) (time.Duration, error) {
+	r.logger.Print("refreshing attestation verifier OIDC token")
 	token, err := r.attestAgent.Attest(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("failed to retrieve attestation service token: %v", err)
@@ -345,6 +375,13 @@ func (r *ContainerRunner) refreshToken(ctx context.Context) (time.Duration, erro
 
 // ctx must be a cancellable context.
 func (r *ContainerRunner) fetchAndWriteToken(ctx context.Context) error {
+	return r.fetchAndWriteTokenWithRetry(ctx, defaultRetryPolicy())
+}
+
+// ctx must be a cancellable context.
+// retry specifies the refresher goroutine's retry policy.
+func (r *ContainerRunner) fetchAndWriteTokenWithRetry(ctx context.Context,
+	retry *backoff.ExponentialBackOff) error {
 	if err := os.MkdirAll(hostTokenPath, 0744); err != nil {
 		return err
 	}
@@ -363,10 +400,19 @@ func (r *ContainerRunner) fetchAndWriteToken(ctx context.Context) error {
 				r.logger.Printf("token refreshing stopped: %v", ctx.Err())
 				return
 			case <-timer.C:
-				// Refresh token.
-				duration, err := r.refreshToken(ctx)
+				var duration time.Duration
+				// Refresh token with default retry policy.
+				err := backoff.RetryNotify(
+					func() error {
+						duration, err = r.refreshToken(ctx)
+						return err
+					},
+					retry,
+					func(err error, t time.Duration) {
+						r.logger.Printf("failed to refresh attestation service token at time %v: %v", t, err)
+					})
 				if err != nil {
-					r.logger.Printf("failed to refresh attestation service token: %v", err)
+					r.logger.Printf("failed all attempts to refresh attestation service token, stopping refresher: %v", err)
 					return
 				}
 
@@ -376,6 +422,18 @@ func (r *ContainerRunner) fetchAndWriteToken(ctx context.Context) error {
 	}()
 
 	return nil
+}
+
+// defaultRetryPolicy retries with:
+// initial interval of 30s, multiplication factor of 1.5
+// randomization factor of 0.5, max interval of 3m, and
+// max elapsed time of 10m.
+func defaultRetryPolicy() *backoff.ExponentialBackOff {
+	expBack := backoff.NewExponentialBackOff()
+	expBack.InitialInterval = defaultInitialInterval
+	expBack.MaxInterval = defaultMaxInterval
+	expBack.MaxElapsedTime = defaultMaxElapsedTime
+	return expBack
 }
 
 // Run the container
