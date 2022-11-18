@@ -1,4 +1,5 @@
-package main
+// Package launcher contains functionalities to start a measured workload
+package launcher
 
 import (
 	"context"
@@ -151,7 +152,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 
 	hostname, err := os.Hostname()
 	if err != nil {
-		return nil, fmt.Errorf("cannot get hostname: [%w]", err)
+		return nil, &RetryableError{fmt.Errorf("cannot get hostname: [%w]", err)}
 	}
 
 	container, err = cdClient.NewContainer(
@@ -175,19 +176,21 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		if container != nil {
 			container.Delete(ctx, containerd.WithSnapshotCleanup)
 		}
-		return nil, fmt.Errorf("failed to create a container: [%w]", err)
+		return nil, &RetryableError{fmt.Errorf("failed to create a container: [%w]", err)}
 	}
 
 	containerSpec, err := container.Spec(ctx)
 	if err != nil {
-		return nil, err
+		return nil, &RetryableError{err}
 	}
 	// Container process Args length should be strictly longer than the Cmd
 	// override length set by the operator, as we want the Entrypoint filed
 	// to be mandatory for the image.
 	// Roughly speaking, Args = Entrypoint + Cmd
 	if len(containerSpec.Process.Args) <= len(launchSpec.Cmd) {
-		return nil, fmt.Errorf("length of Args [%d] is shorter or equal to the length of the given Cmd [%d], maybe the Entrypoint is set to empty in the image?", len(containerSpec.Process.Args), len(launchSpec.Cmd))
+		return nil,
+			fmt.Errorf("length of Args [%d] is shorter or equal to the length of the given Cmd [%d], maybe the Entrypoint is set to empty in the image?",
+				len(containerSpec.Process.Args), len(launchSpec.Cmd))
 	}
 
 	// Fetch ID token with specific audience.
@@ -449,47 +452,40 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		return fmt.Errorf("failed to fetch and write OIDC token: %v", err)
 	}
 
-	for {
-		var streamOpt cio.Opt
-		if r.launchSpec.LogRedirect {
-			streamOpt = cio.WithStreams(nil, r.logger.Writer(), r.logger.Writer())
-			r.logger.Println("container stdout/stderr will be redirected")
-		} else {
-			streamOpt = cio.WithStreams(nil, nil, nil)
-			r.logger.Println("container stdout/stderr will not be redirected")
-		}
-
-		task, err := r.container.NewTask(ctx, cio.NewCreator(streamOpt))
-		if err != nil {
-			return err
-		}
-		exitStatus, err := task.Wait(ctx)
-		if err != nil {
-			return err
-		}
-		r.logger.Println("task started")
-
-		if err := task.Start(ctx); err != nil {
-			return err
-		}
-		status := <-exitStatus
-
-		code, _, err := status.Result()
-		if err != nil {
-			return err
-		}
-		task.Delete(ctx)
-
-		r.logger.Printf("task ended with return code %d \n", code)
-		if r.launchSpec.RestartPolicy == spec.Always {
-			r.logger.Println("restarting task")
-		} else if r.launchSpec.RestartPolicy == spec.OnFailure && code != 0 {
-			r.logger.Println("restarting task on failure")
-		} else {
-			break
-		}
+	var streamOpt cio.Opt
+	if r.launchSpec.LogRedirect {
+		streamOpt = cio.WithStreams(nil, r.logger.Writer(), r.logger.Writer())
+		r.logger.Println("container stdout/stderr will be redirected")
+	} else {
+		streamOpt = cio.WithStreams(nil, nil, nil)
+		r.logger.Println("container stdout/stderr will not be redirected")
 	}
 
+	task, err := r.container.NewTask(ctx, cio.NewCreator(streamOpt))
+	if err != nil {
+		return &RetryableError{err}
+	}
+	exitStatus, err := task.Wait(ctx)
+	if err != nil {
+		return &RetryableError{err}
+	}
+	r.logger.Println("workload task started")
+
+	if err := task.Start(ctx); err != nil {
+		return &RetryableError{err}
+	}
+	status := <-exitStatus
+
+	code, _, err := status.Result()
+	if err != nil {
+		return err
+	}
+	if _, err := task.Delete(ctx); err != nil {
+		return err
+	}
+	if code != 0 {
+		return &WorkloadError{code}
+	}
 	return nil
 }
 

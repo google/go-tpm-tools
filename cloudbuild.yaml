@@ -11,8 +11,8 @@ steps:
     args:
       - -c
       - |
-        cd launcher
-        go build -o image/launcher
+        cd launcher/launcher
+        go build -o ../image/launcher
   - name: 'gcr.io/cos-cloud/cos-customizer'
     args: ['start-image-build',
            '-build-context=launcher/image',
