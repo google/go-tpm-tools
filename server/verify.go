@@ -100,7 +100,7 @@ func VerifyAttestation(attestation *pb.Attestation, opts VerifyOpts) (*pb.Machin
 	}
 
 	var akPubKey crypto.PublicKey
-	machineState := &pb.MachineState{}
+	var machineState *pb.MachineState
 	if len(attestation.GetAkCert()) == 0 {
 		// If the AK Cert is not in the attestation, use the AK Public Area.
 		akPubArea, err := tpm2.DecodePublic(attestation.GetAkPub())
@@ -111,7 +111,8 @@ func VerifyAttestation(attestation *pb.Attestation, opts VerifyOpts) (*pb.Machin
 		if err != nil {
 			return nil, fmt.Errorf("failed to get AK public key: %w", err)
 		}
-		if err := validateAKPub(akPubKey, opts); err != nil {
+		machineState, err = validateAKPub(akPubKey, opts)
+		if err != nil {
 			return nil, fmt.Errorf("failed to validate AK public key: %w", err)
 		}
 	} else {
@@ -234,18 +235,18 @@ func validateOpts(opts VerifyOpts) error {
 	return nil
 }
 
-func validateAKPub(ak crypto.PublicKey, opts VerifyOpts) error {
+func validateAKPub(ak crypto.PublicKey, opts VerifyOpts) (*pb.MachineState, error) {
 	for _, trusted := range opts.TrustedAKs {
 		if internal.PubKeysEqual(ak, trusted) {
-			return nil
+			return &pb.MachineState{}, nil
 		}
 	}
-	return fmt.Errorf("key not trusted")
+	return nil, fmt.Errorf("key not trusted")
 }
 
 func validateAKCert(akCert *x509.Certificate, opts VerifyOpts) (*pb.MachineState, error) {
 	if len(opts.TrustedRootCerts) == 0 {
-		return nil, validateAKPub(akCert.PublicKey.(crypto.PublicKey), opts)
+		return validateAKPub(akCert.PublicKey.(crypto.PublicKey), opts)
 	}
 
 	// We manually handle the SAN extension because x509 marks it unhandled if

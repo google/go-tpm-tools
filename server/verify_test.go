@@ -244,6 +244,32 @@ func TestVerifyBasicAttestation(t *testing.T) {
 	}
 }
 
+func TestVerifyWithTrustedAK(t *testing.T) {
+	rwc := test.GetTPM(t)
+	defer client.CheckedClose(t, rwc)
+
+	ak, err := client.AttestationKeyRSA(rwc)
+	if err != nil {
+		t.Fatalf("failed to generate AK: %v", err)
+	}
+	defer ak.Close()
+
+	nonce := []byte("super secret nonce")
+	attestation, err := ak.Attest(client.AttestOpts{Nonce: nonce})
+	if err != nil {
+		t.Fatalf("failed to attest: %v", err)
+	}
+
+	opts := VerifyOpts{
+		Nonce:      nonce,
+		TrustedAKs: []crypto.PublicKey{ak.PublicKey()},
+	}
+	_, err = VerifyAttestation(attestation, opts)
+	if err != nil {
+		t.Errorf("failed to verify: %v", err)
+	}
+}
+
 func TestVerifySHA1Attestation(t *testing.T) {
 	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
