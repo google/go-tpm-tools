@@ -448,3 +448,19 @@ func TestFetchImpersonatedToken(t *testing.T) {
 		t.Errorf("fetchImpersonatedToken did not return expected token: got %v, want %v", token, expectedToken)
 	}
 }
+
+func TestGetNextRefresh(t *testing.T) {
+	// 0 <= random < 1.
+	for _, randNum := range []float64{0, .1415926, .5, .75, .999999999} {
+		// expiration should always be >0.
+		// 0 or negative expiration means the token has already expired.
+		for _, expInt := range []int64{1, 10, 100, 1000, 10000, 1000000} {
+			expDuration := time.Duration(expInt)
+			next := getNextRefreshFromExpiration(expDuration, randNum)
+			if next >= expDuration {
+				t.Errorf("getNextRefreshFromExpiration(%v, %v) = %v next refresh. expected %v (next refresh) < %v (expiration)",
+					expDuration, randNum, next, next, expDuration)
+			}
+		}
+	}
+}
