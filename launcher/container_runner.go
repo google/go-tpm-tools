@@ -57,35 +57,7 @@ const (
 	snapshotID  = "tee-snapshot"
 )
 
-/*
-	Values for token refresh and retries.
-
-With a 60m token expiration, the refresher goroutine will refresh beginning at .9*60=54m.
-
-Given the following default arguments, the retry sequence will be,
-assuming we go over the MaxElapsedTime:
-
-	 RetryInterval = 30s
-	 RandomizationFactor = 0.5
-	 Multiplier = 1.5
-	 MaxInterval = 180s
-	 MaxElapsedTime = 600s
-
-	 Request #  RetryInterval (seconds)  Randomized Interval (seconds)
-										 RetryInterval*[1-RandFactor, 1+RandFactor]
-	  1          30                      [15,   45]
-	  2          60                      [30,   90]
-	  3          120                     [60,   180]
-	  4          180 (MaxInterval) 	     [90,   270]
-	  5          180 (MaxInterval) 	     [90,   270]
-	  reached MaxElapsedTime             backoff.Stop
-*/
-const (
-	defaultRefreshMultiplier = 0.9
-	defaultInitialInterval   = 30 * time.Second
-	defaultMaxInterval       = 3 * time.Minute
-	defaultMaxElapsedTime    = 10 * time.Minute
-)
+const defaultRefreshMultiplier = 0.9
 
 func fetchImpersonatedToken(ctx context.Context, serviceAccount string, audience string, opts ...option.ClientOption) ([]byte, error) {
 	config := impersonate.IDTokenConfig{
@@ -427,15 +399,37 @@ func (r *ContainerRunner) fetchAndWriteTokenWithRetry(ctx context.Context,
 	return nil
 }
 
-// defaultRetryPolicy retries with:
-// initial interval of 30s, multiplication factor of 1.5
-// randomization factor of 0.5, max interval of 3m, and
-// max elapsed time of 10m.
+/*
+defaultRetryPolicy retries as follows:
+
+Given the following arguments, the retry sequence will be:
+
+	RetryInterval = 60 sec
+	RandomizationFactor = 0.5
+	Multiplier = 2
+	MaxInterval = 3600 sec
+	MaxElapsedTime = 0 (never stops retrying)
+
+	Request #  RetryInterval (seconds)  Randomized Interval (seconds)
+									 RetryInterval*[1-RandFactor, 1+RandFactor]
+	 1          60                      [30,   90]
+	 2          120                     [60,   180]
+	 3          240                     [120,  360]
+	 4          480                     [240,  720]
+	 5          960                     [480,  1440]
+	 6          1920                    [960,  2880]
+	 7          3600 (MaxInterval)      [1800,  5400]
+	 8          3600 (MaxInterval)      [1800,  5400]
+	 ...
+*/
 func defaultRetryPolicy() *backoff.ExponentialBackOff {
 	expBack := backoff.NewExponentialBackOff()
-	expBack.InitialInterval = defaultInitialInterval
-	expBack.MaxInterval = defaultMaxInterval
-	expBack.MaxElapsedTime = defaultMaxElapsedTime
+	expBack.InitialInterval = time.Minute
+	expBack.RandomizationFactor = 0.5
+	expBack.Multiplier = 2
+	expBack.MaxInterval = time.Hour
+	// Never stop retrying.
+	expBack.MaxElapsedTime = 0
 	return expBack
 }
 
