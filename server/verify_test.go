@@ -673,7 +673,7 @@ func TestGetInstanceInfo(t *testing.T) {
 		Value: marshaledExt,
 	}}
 
-	instanceInfo, err := getInstanceInfo(ext)
+	instanceInfo, err := getInstanceInfoFromExtensions(ext)
 	if err != nil {
 		t.Fatalf("getInstanceInfo returned with error: %v", err)
 	}
@@ -723,7 +723,7 @@ func TestGetInstanceInfoReturnsNil(t *testing.T) {
 
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
-			instanceInfo, err := getInstanceInfo(tc.ext)
+			instanceInfo, err := getInstanceInfoFromExtensions(tc.ext)
 			if err != nil {
 				t.Fatalf("getInstanceInfo returned with error: %v", err)
 			}
@@ -795,7 +795,7 @@ func TestGetInstanceInfoError(t *testing.T) {
 				extensionVal = []byte("Not a valid ASN1 extension.")
 			}
 
-			_, err = getInstanceInfo([]pkix.Extension{{
+			_, err = getInstanceInfoFromExtensions([]pkix.Extension{{
 				Id:    cloudComputeInstanceIdentifierOID,
 				Value: extensionVal,
 			}})
@@ -811,7 +811,7 @@ func TestGetInstanceInfoError(t *testing.T) {
 		Value: []byte("not valid ASN1"),
 	}}
 
-	_, err := getInstanceInfo(ext)
+	_, err := getInstanceInfoFromExtensions(ext)
 	if err == nil {
 		t.Error("getInstanceInfo returned successfully, expected error")
 	}
@@ -835,7 +835,7 @@ func TestGetInstanceInfoASN(t *testing.T) {
 		Value: extPayload,
 	}}
 
-	instanceInfo, err := getInstanceInfo(ext)
+	instanceInfo, err := getInstanceInfoFromExtensions(ext)
 	if err != nil {
 		t.Fatalf("getInstanceInfo returned with error: %v", err)
 	}

@@ -5,6 +5,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/asn1"
+	"errors"
 	"fmt"
 
 	"github.com/google/go-tpm-tools/internal"
@@ -184,7 +185,18 @@ func VerifyAttestation(attestation *pb.Attestation, opts VerifyOpts) (*pb.Machin
 	return nil, fmt.Errorf("attestation does not contain a supported quote")
 }
 
-func getInstanceInfo(extensions []pkix.Extension) (*pb.GCEInstanceInfo, error) {
+// GetGCEInstanceInfo takes a GCE-issued x509 EK/AK certificate and tries to
+// extract its GCE instance information. It returns an error if the cert is nil
+// or malformed, but it does not return an error if the cert does not contain
+// the GCE Instance OID.
+func GetGCEInstanceInfo(cert *x509.Certificate) (*pb.GCEInstanceInfo, error) {
+	if cert == nil {
+		return nil, errors.New("cannot extract GCEInstanceInfo from a nil cert")
+	}
+	return getInstanceInfoFromExtensions(cert.Extensions)
+}
+
+func getInstanceInfoFromExtensions(extensions []pkix.Extension) (*pb.GCEInstanceInfo, error) {
 	var rawInfo []byte
 	for _, ext := range extensions {
 		if ext.Id.Equal(cloudComputeInstanceIdentifierOID) {
@@ -275,7 +287,7 @@ func validateAKCert(akCert *x509.Certificate, opts VerifyOpts) (*pb.MachineState
 		return nil, fmt.Errorf("certificate did not chain to a trusted root: %v", err)
 	}
 
-	instanceInfo, err := getInstanceInfo(akCert.Extensions)
+	instanceInfo, err := getInstanceInfoFromExtensions(akCert.Extensions)
 	if err != nil {
 		return nil, fmt.Errorf("error getting instance info: %v", err)
 	}
