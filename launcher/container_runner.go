@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math/rand"
 	"net/url"
 	"os"
 	"path"
@@ -57,7 +58,16 @@ const (
 	snapshotID  = "tee-snapshot"
 )
 
-const defaultRefreshMultiplier = 0.9
+const (
+	// defaultRefreshMultiplier is a multiplier on the current token expiration
+	// time, at which the refresher goroutine will collect a new token.
+	// defaultRefreshMultiplier+defaultRefreshJitter should be <1.
+	defaultRefreshMultiplier = 0.8
+	// defaultRefreshJitter is a random component applied additively to the
+	// refresh multiplier. The refresher will wait for some time in the range
+	// [defaultRefreshMultiplier-defaultRefreshJitter, defaultRefreshMultiplier+defaultRefreshJitter]
+	defaultRefreshJitter = 0.1
+)
 
 func fetchImpersonatedToken(ctx context.Context, serviceAccount string, audience string, opts ...option.ClientOption) ([]byte, error) {
 	config := impersonate.IDTokenConfig{
@@ -345,7 +355,7 @@ func (r *ContainerRunner) refreshToken(ctx context.Context) (time.Duration, erro
 	}
 	r.logger.Println(string(claimsString))
 
-	return time.Duration(float64(time.Until(claims.ExpiresAt.Time)) * defaultRefreshMultiplier), nil
+	return getNextRefreshFromExpiration(time.Until(claims.ExpiresAt.Time), rand.Float64()), nil
 }
 
 // ctx must be a cancellable context.
@@ -397,6 +407,16 @@ func (r *ContainerRunner) fetchAndWriteTokenWithRetry(ctx context.Context,
 	}()
 
 	return nil
+}
+
+// getNextRefreshFromExpiration returns the Duration for the next run of the
+// token refresher goroutine. It expects pre-validation that expiration is in
+// the future (e.g., time.Now < expiration).
+func getNextRefreshFromExpiration(expiration time.Duration, random float64) time.Duration {
+	diff := defaultRefreshJitter * float64(expiration)
+	center := defaultRefreshMultiplier * float64(expiration)
+	minRange := center - diff
+	return time.Duration(minRange + random*2*diff)
 }
 
 /*
