@@ -108,10 +108,10 @@ main() {
 
   if [[ "${IMAGE_ENV}" == "debug" ]]; then
     configure_systemd_units_for_debug
-    append_cmdline "'confidential-space.hardened=false'"
+    append_cmdline "confidential-space.hardened=false"
   elif [[ "${IMAGE_ENV}" == "hardened" ]]; then
     configure_systemd_units_for_hardened
-    append_cmdline "'confidential-space.hardened=true'"
+    append_cmdline "confidential-space.hardened=true"
   else
     echo "Unknown image env: ${IMAGE_ENV}." \
          "Only 'debug' and 'hardened' are supported."
