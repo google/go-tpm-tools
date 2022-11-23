@@ -40,3 +40,33 @@ var (
 	//go:embed attestations/gce-cos-85-nonce9009.pb
 	COS85Nonce9009 []byte
 )
+
+// EK and AK Certificates.
+var (
+	//go:embed certificates/pca_tpm_ecc_enc_cert.pem
+	GCEEncryptECCCertPCA []byte
+	//go:embed certificates/pca_tpm_ecc_sign_cert.pem
+	GCESignECCCertPCA []byte
+	//go:embed certificates/pca_tpm_rsa_enc_cert.pem
+	GCEEncryptRSACertPCA []byte
+	//go:embed certificates/pca_tpm_rsa_sign_cert.pem
+	GCESignRSACertPCA []byte
+
+	//go:embed certificates/uca_tpm_ecc_enc_cert.pem
+	GCEEncryptECCCertUCA []byte
+	//go:embed certificates/uca_tpm_ecc_sign_cert.pem
+	GCESignECCCertUCA []byte
+	//go:embed certificates/uca_tpm_rsa_enc_cert.pem
+	GCEEncryptRSACertUCA []byte
+	//go:embed certificates/uca_tpm_rsa_sign_cert.pem
+	GCESignRSACertUCA []byte
+)
+
+// GCECertPEMs provides a variety of GCE test certificates, including AK/EK,
+// RSA/ECC, and PCA/UCA.
+var GCECertPEMs = [][]byte{
+	GCEEncryptECCCertPCA, GCESignECCCertPCA,
+	GCEEncryptRSACertPCA, GCESignRSACertPCA,
+	GCEEncryptECCCertUCA, GCESignECCCertUCA,
+	GCEEncryptRSACertUCA, GCESignRSACertUCA,
+}
