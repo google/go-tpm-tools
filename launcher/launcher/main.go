@@ -35,12 +35,22 @@ var launchSpec spec.LaunchSpec
 
 func main() {
 	var exitCode int
-	defer func() {
-		os.Exit(exitCode)
-	}()
 
 	logger = log.Default()
+	// log.Default() outputs to stderr; change to stdout.
+	log.SetOutput(os.Stdout)
 	logger.Println("TEE container launcher initiating")
+
+	defer func() {
+		// catch panic, will only output to stdout, because cloud logging closed
+		// This should rarely happen (almost impossible), the only place can panic
+		// recover here is in the deferred logClient.Close().
+		if r := recover(); r != nil {
+			logger.Println("Panic:", r)
+			exitCode = 2
+		}
+		os.Exit(exitCode)
+	}()
 
 	mdsClient = metadata.NewClient(nil)
 	projectID, err := mdsClient.ProjectID()
@@ -71,6 +81,14 @@ func main() {
 		return
 	}
 
+	defer func() {
+		// catch panic, will also output to cloud logging if possible
+		if r := recover(); r != nil {
+			logger.Println("Panic:", r)
+			exitCode = 2
+		}
+		logger.Println("TEE container launcher exiting with exit code:", exitCode)
+	}()
 	if err = startLauncher(); err != nil {
 		logger.Println(err)
 	}
