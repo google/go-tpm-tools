@@ -1,48 +1,41 @@
 substitutions:
-  '_BASE_IMAGE': 'cos-dev-105-17234-0-0'
-  '_BASE_IMAGE_PROJECT': 'cos-cloud'
+  '_BASE_IMAGE': ''
+  '_OUTPUT_IMAGE_PREFIX': 'confidential-space'
   '_OUTPUT_IMAGE_SUFFIX': ''
-  '_IMAGE_ENV': 'debug'
-  '_BUCKET_NAME': '${PROJECT_ID}_cloudbuild'
 
 steps:
-  - name: golang:1.18
-    entrypoint: /bin/bash
-    args:
-      - -c
-      - |
-        cd launcher/launcher
-        go build -o ../image/launcher
-  - name: 'gcr.io/cos-cloud/cos-customizer'
-    args: ['start-image-build',
-           '-build-context=launcher/image',
-           '-gcs-bucket=${_BUCKET_NAME}',
-           '-gcs-workdir=customizer-${BUILD_ID}',
-           '-image-name=${_BASE_IMAGE}',
-           '-image-project=${_BASE_IMAGE_PROJECT}']
-  - name: 'gcr.io/cos-cloud/cos-customizer'
-    args: ['run-script',
-           '-script=preload.sh',
-           '-env=IMAGE_ENV=${_IMAGE_ENV}']
-  - name: 'gcr.io/cos-cloud/cos-customizer'
-    args: ['seal-oem']
-  - name: 'gcr.io/cos-cloud/cos-customizer'
-    args: ['run-script',
-           '-script=fixup_oem.sh']
-  - name: 'gcr.io/cos-cloud/cos-customizer'
-    args: ['finish-image-build',
-           '-oem-size=500M',
-           '-disk-size-gb=11',
-           '-image-name=confidential-space-${_OUTPUT_IMAGE_SUFFIX}',
-           '-image-family=confidential-space-dev',
-           '-image-project=${PROJECT_ID}',
-           '-licenses=projects/confidential-space-images/global/licenses/confidential-space',
-           '-licenses=projects/confidential-space-images/global/licenses/ek-certificate-license',
-           '-zone=us-central1-a',
-           '-project=${PROJECT_ID}']
+- name: 'gcr.io/cloud-builders/gcloud'
+  env:
+  - 'BASE_IMAGE=$_BASE_IMAGE'
+  - 'OUTPUT_IMAGE_PREFIX=$_OUTPUT_IMAGE_PREFIX'
+  - 'OUTPUT_IMAGE_SUFFIX=$_OUTPUT_IMAGE_SUFFIX'
+  - 'PROJECT_ID=$PROJECT_ID'
+  script: |
+    #!/usr/bin/env bash
 
-timeout: '3000s'
+    # if BASE_IMAGE is not specified, use the latest COS dev image
+    base_image=${BASE_IMAGE}
+    if [ -z ${base_image}]
+    then
+      echo "getting the latest COS image"
+      base_image=$(gcloud compute images describe-from-family cos-dev --project cos-cloud | grep name | cut -d ' ' -f 2)
+    fi
 
-options:
-  logging: CLOUD_LOGGING_ONLY
-  dynamic_substitutions: true
+    debug_image_name=${OUTPUT_IMAGE_PREFIX}-debug-${OUTPUT_IMAGE_SUFFIX}
+    hardened_image_name=${OUTPUT_IMAGE_PREFIX}-hardened-${OUTPUT_IMAGE_SUFFIX}
+
+    echo "building the debug image with the base image: ${base_image}"
+    gcloud builds submit --config=launcher/image/cloudbuild.yaml \
+      --substitutions _BASE_IMAGE=${base_image},_OUTPUT_IMAGE_NAME=${debug_image_name},_IMAGE_ENV=debug &
+
+    echo "building the hardened image with the base image: ${base_image}"
+    gcloud builds submit --config=launcher/image/cloudbuild.yaml \
+      --substitutions _BASE_IMAGE=${base_image},_OUTPUT_IMAGE_NAME=${hardened_image_name},_IMAGE_ENV=hardened &
+
+    echo "waiting for images to be built..."
+    wait
+
+    echo "running hardened image tests on ${hardened_image_name}"
+    cd launcher/image/test
+    gcloud builds submit --config=test_hardened_cloudbuild.yaml \
+      --substitutions _IMAGE_NAME=${hardened_image_name},_IMAGE_PROJECT=${PROJECT_ID}
