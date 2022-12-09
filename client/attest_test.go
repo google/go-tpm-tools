@@ -13,6 +13,7 @@ import (
 	"time"
 
 	sgtest "github.com/google/go-sev-guest/testing"
+	testclient "github.com/google/go-sev-guest/testing/client"
 	"github.com/google/go-tpm-tools/internal/test"
 	pb "github.com/google/go-tpm-tools/proto/attest"
 )
@@ -223,7 +224,7 @@ func TestSevSnpDevice(t *testing.T) {
 	copy(someNonce64[:], someNonce)
 	var nonce64 [64]byte
 	copy(nonce64[:], []byte("noncey business"))
-	sevTestDevice, err := sgtest.TcDevice([]sgtest.TestCase{
+	sevTestDevice, _, _, _ := testclient.GetSevGuest([]sgtest.TestCase{
 		{
 			Input:  someNonce64,
 			Output: sgtest.TestRawReport(someNonce64),
@@ -232,10 +233,8 @@ func TestSevSnpDevice(t *testing.T) {
 			Input:  nonce64,
 			Output: sgtest.TestRawReport(nonce64),
 		},
-	}, &sgtest.DeviceOptions{Now: time.Now()})
-	if err != nil {
-		t.Fatalf("failed to create test device: %v", err)
-	}
+	}, &sgtest.DeviceOptions{Now: time.Now()}, t)
+	defer sevTestDevice.Close()
 
 	testcases := []struct {
 		name           string
