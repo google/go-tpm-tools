@@ -122,9 +122,9 @@ func TestRefreshToken(t *testing.T) {
 		t.Errorf("Initial token written to file does not match expected token: got %v, want %v", data, expectedToken)
 	}
 
-	// Expect refreshTime to be no greater than expectedTTL * refreshRatio.
-	if refreshTime >= time.Duration(float64(ttl)*defaultRefreshMultiplier) {
-		t.Errorf("Refresh time cannot exceed ttl*refreshRato: got %v, expect no greater than %v", refreshTime, time.Duration(float64(ttl)*defaultRefreshMultiplier))
+	// Expect refreshTime to be no greater than expectedTTL.
+	if refreshTime >= time.Duration(float64(ttl)) {
+		t.Errorf("Refresh time cannot exceed ttl: got %v, expect no greater than %v", refreshTime, time.Duration(float64(ttl)))
 	}
 }
 

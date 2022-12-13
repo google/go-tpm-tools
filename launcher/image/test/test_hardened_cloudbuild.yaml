@@ -1,8 +1,8 @@
 substitutions:
   # Expects hardened image (not debug) and should have startup-script service
   # disabled. google-startup-scripts.service is only enabled with multi-user.target.
-  '_IMAGE_NAME': 'confidential-space-51031c1-dev-hardened'
-  '_BASE_IMAGE_PROJECT': 'confidential-space-images-dev'
+  '_IMAGE_NAME': ''
+  '_IMAGE_PROJECT': ''
   '_METADATA_FILE': 'startup-script=data/echo_startupscript.sh'
   '_CLEANUP': 'true'
 steps:
@@ -11,7 +11,7 @@ steps:
   env:
   - 'BUILD_ID=$BUILD_ID'
   args: ['create_vm.sh','-i', '${_IMAGE_NAME}',
-          -p, '${_BASE_IMAGE_PROJECT}',
+          -p, '${_IMAGE_PROJECT}',
           -f, '${_METADATA_FILE}'
         ]
 - name: 'gcr.io/cloud-builders/gcloud'
