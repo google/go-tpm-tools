@@ -12,13 +12,14 @@ import (
 	"fmt"
 	"hash"
 	"io"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
 	sgtest "github.com/google/go-sev-guest/testing"
-	"github.com/google/go-sev-guest/verify"
+	testclient "github.com/google/go-sev-guest/testing/client"
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal"
@@ -26,6 +27,7 @@ import (
 	attestpb "github.com/google/go-tpm-tools/proto/attest"
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpmutil"
+	"github.com/google/logger"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 )
@@ -57,6 +59,11 @@ func extendPCRsRandomly(rwc io.ReadWriteCloser, selpcr tpm2.PCRSelection) error 
 		}
 	}
 	return nil
+}
+
+func TestMain(m *testing.M) {
+	logger.Init("TestLog", false, false, os.Stderr)
+	os.Exit(m.Run())
 }
 
 func TestVerifyHappyCases(t *testing.T) {
@@ -206,12 +213,26 @@ func TestVerifyBasicAttestation(t *testing.T) {
 	}
 	defer ak.Close()
 
+	// When running on hardware, ak.Attest will collect an attestation report regardless of
+	// AttestOpts. We test the default behavior here by not passing in a device.
+	sevTestDevice, goodSnpRoot, _, kdsGetter := testclient.GetSevGuest(nil, &sgtest.DeviceOptions{}, t)
+	defer sevTestDevice.Close()
+
 	nonce := []byte("super secret nonce")
-	attestation, err := ak.Attest(client.AttestOpts{Nonce: nonce})
+	var nonce64 [64]byte
+	copy(nonce64[:], nonce)
+	attestation, err := ak.Attest(client.AttestOpts{
+		Nonce: nonce,
+	})
 	if err != nil {
 		t.Fatalf("failed to attest: %v", err)
 	}
 
+	teeopts := &VerifySnpOpts{
+		Getter:       kdsGetter,
+		ReportData:   nonce64,
+		TrustedRoots: goodSnpRoot,
+	}
 	if _, err := VerifyAttestation(attestation, VerifyOpts{
 		Nonce:      nonce,
 		TrustedAKs: []crypto.PublicKey{ak.PublicKey()},
@@ -222,12 +243,14 @@ func TestVerifyBasicAttestation(t *testing.T) {
 	if _, err := VerifyAttestation(attestation, VerifyOpts{
 		Nonce:      append(nonce, 0),
 		TrustedAKs: []crypto.PublicKey{ak.PublicKey()},
+		TEEOpts:    teeopts,
 	}); err == nil {
 		t.Error("using the wrong nonce should make verification fail")
 	}
 
 	if _, err := VerifyAttestation(attestation, VerifyOpts{
-		Nonce: nonce,
+		Nonce:   nonce,
+		TEEOpts: teeopts,
 	}); err == nil {
 		t.Error("using no trusted AKs should make verification fail")
 	}
@@ -239,6 +262,7 @@ func TestVerifyBasicAttestation(t *testing.T) {
 	if _, err := VerifyAttestation(attestation, VerifyOpts{
 		Nonce:      nonce,
 		TrustedAKs: []crypto.PublicKey{priv.Public()},
+		TEEOpts:    teeopts,
 	}); err == nil {
 		t.Error("using a random trusted AKs should make verification fail")
 	}
@@ -940,15 +964,13 @@ func TestVerifyAttestationWithSevSnp(t *testing.T) {
 	nonce := []byte("super secret nonce")
 	var nonce64 [64]byte
 	copy(nonce64[:], []byte("alternate secret nonce"))
-	sevTestDevice, err := sgtest.TcDevice([]sgtest.TestCase{
+	sevTestDevice, goodSnpRoot, badSnpRoot, kdsGetter := testclient.GetSevGuest([]sgtest.TestCase{
 		{
 			Input:  nonce64,
 			Output: sgtest.TestRawReport(nonce64),
 		},
-	}, &sgtest.DeviceOptions{Now: time.Now()})
-	if err != nil {
-		t.Fatalf("failed to create test device: %v", err)
-	}
+	}, &sgtest.DeviceOptions{Now: time.Now()}, t)
+	defer sevTestDevice.Close()
 	attestation, err := ak.Attest(client.AttestOpts{
 		Nonce:     nonce,
 		TEEDevice: &client.SevSnpDevice{Device: sevTestDevice},
@@ -958,15 +980,6 @@ func TestVerifyAttestationWithSevSnp(t *testing.T) {
 		t.Fatalf("failed to attest: %v", err)
 	}
 
-	goodSnpRoot := map[string][]*verify.AMDRootCerts{
-		"Milan": {
-			{
-				Product: "Milan",
-				AskX509: sevTestDevice.Signer.Ask,
-				ArkX509: sevTestDevice.Signer.Ark,
-			},
-		},
-	}
 	tcs := []struct {
 		name    string
 		opts    VerifyOpts
@@ -978,6 +991,7 @@ func TestVerifyAttestationWithSevSnp(t *testing.T) {
 				Nonce:      nonce,
 				TrustedAKs: []crypto.PublicKey{ak.PublicKey()},
 				TEEOpts: &VerifySnpOpts{
+					Getter:             kdsGetter,
 					ReportData:         nonce64,
 					TrustedRoots:       goodSnpRoot,
 					AllowDebugTestOnly: true,
@@ -990,6 +1004,7 @@ func TestVerifyAttestationWithSevSnp(t *testing.T) {
 				Nonce:      nonce,
 				TrustedAKs: []crypto.PublicKey{ak.PublicKey()},
 				TEEOpts: &VerifySnpOpts{
+					Getter: kdsGetter,
 					ReportData: func() [64]byte {
 						var badNonce [64]byte
 						copy(badNonce[:], []byte("soooo baaad"))
@@ -1007,17 +1022,9 @@ func TestVerifyAttestationWithSevSnp(t *testing.T) {
 				Nonce:      nonce,
 				TrustedAKs: []crypto.PublicKey{ak.PublicKey()},
 				TEEOpts: &VerifySnpOpts{
-					ReportData: nonce64,
-					TrustedRoots: map[string][]*verify.AMDRootCerts{
-						"Milan": {
-							{
-								Product: "Milan",
-								// Backwards, oops
-								AskX509: sevTestDevice.Signer.Ark,
-								ArkX509: sevTestDevice.Signer.Ask,
-							},
-						},
-					},
+					Getter:             kdsGetter,
+					ReportData:         nonce64,
+					TrustedRoots:       badSnpRoot,
 					AllowDebugTestOnly: true,
 				},
 			},
@@ -1029,6 +1036,7 @@ func TestVerifyAttestationWithSevSnp(t *testing.T) {
 				Nonce:      nonce,
 				TrustedAKs: []crypto.PublicKey{ak.PublicKey()},
 				TEEOpts: &VerifySnpOpts{
+					Getter:       kdsGetter,
 					ReportData:   nonce64,
 					TrustedRoots: goodSnpRoot,
 				},
