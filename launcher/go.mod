@@ -10,7 +10,7 @@ require (
 	github.com/golang-jwt/jwt/v4 v4.4.1
 	github.com/google/go-cmp v0.5.8
 	github.com/google/go-tpm v0.3.3
-	github.com/google/go-tpm-tools v0.3.9
+	github.com/google/go-tpm-tools v0.3.10
 	github.com/opencontainers/image-spec v1.0.3-0.20211202183452-c5a74bcca799
 	github.com/opencontainers/runtime-spec v1.0.3-0.20210326190908-1c3f411f0417
 	golang.org/x/oauth2 v0.0.0-20220622183110-fd043fe589d2
@@ -33,7 +33,9 @@ require (
 	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/google/certificate-transparency-go v1.1.2 // indirect
 	github.com/google/go-attestation v0.4.4-0.20220404204839-8820d49b18d9 // indirect
+	github.com/google/go-sev-guest v0.4.1 // indirect
 	github.com/google/go-tspi v0.2.1-0.20190423175329-115dea689aad // indirect
+	github.com/google/logger v1.1.1 // indirect
 	github.com/google/uuid v1.3.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.1.0 // indirect
 	github.com/googleapis/gax-go/v2 v2.4.0 // indirect
@@ -44,10 +46,11 @@ require (
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/runc v1.1.2 // indirect
 	github.com/opencontainers/selinux v1.10.1 // indirect
+	github.com/pborman/uuid v1.2.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/sirupsen/logrus v1.8.1 // indirect
 	go.opencensus.io v0.23.0 // indirect
-	golang.org/x/crypto v0.0.0-20210817164053-32db794688a5 // indirect
+	golang.org/x/crypto v0.0.0-20220525230936-793ad666bf5e // indirect
 	golang.org/x/net v0.0.0-20220624214902-1bab6f366d9e // indirect
 	golang.org/x/sync v0.0.0-20220601150217-0de741cfad7f // indirect
 	golang.org/x/sys v0.0.0-20220624220833-87e55d714810 // indirect
