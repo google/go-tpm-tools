@@ -1,22 +1,35 @@
 #!/bin/bash
 
-# read_serial pulls from the global VM_NAME variable and attempts to read the
-# entirety of its serial port output.
-# Use var=$(read_serial) to capture the output of this command into a variable.
+# read_serial attempts to read the serial output until the workload is finished
+# Use var=$(read_serial <VM_NAME> <ZONE>) to capture the output of this command into a variable.
 read_serial() {
-  local base_cmd='gcloud compute instances get-serial-port-output $VM_NAME --zone us-central1-a 2>/workspace/next_start.txt'
+  local base_cmd='gcloud compute instances get-serial-port-output $1 --zone $2 2>/workspace/next_start.txt'
   local serial_out=$(eval ${base_cmd})
   local last=''
+
+  # timeout after 10 min
+  timeout="10 minute"
+  endtime=$(date -ud "$timeout" +%s)
+
   while [ -s /workspace/next_start.txt ]; do
-    next=$(cat /workspace/next_start.txt | sed -n 2p | cut -d ' ' -f2)
-    # Need to compare the last value to avoid infinite looping with no more data.
-    if [[ "$last" == "$next" ]]; then
+    if [[ $(date -u +%s) -ge $endtime ]]; then
+      echo "timed out reading serial console" 
       break
     fi
 
+    next=$(cat /workspace/next_start.txt | sed -n 2p | cut -d ' ' -f2)
     local next_cmd="${base_cmd} ${next}"
+    
+    # sleeping 5s for the next serial console read"
+    sleep 5
+
     local tmp=$(eval ${next_cmd})
     serial_out="$serial_out $tmp"
+
+    # break the loop if the workload is finished
+    if echo ${serial_out} | grep -qi "TEE container launcher exiting"; then
+      break
+    fi
 
     last=$next
   done

@@ -15,7 +15,6 @@ DISK_NAME="source-boot-disk-$BUILD_ID"
 echo "Creating PD $DISK_NAME"
 gcloud compute disks create --image-family confidential-space --image-project confidential-space-images $DISK_NAME --zone us-west1-a
 
-
 from_src_disk=$(gcloud beta compute disks create test-multi-writer-disk --source-disk=$DISK_NAME --multi-writer --zone us-west1-a 2>&1 || true)
 # Cleanup disk before seeing test result.
 gcloud compute disks delete $DISK_NAME -q --zone us-west1-a

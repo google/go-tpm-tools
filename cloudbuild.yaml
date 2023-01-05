@@ -1,41 +1,89 @@
 substitutions:
+  # using this base image for now, because there is an issue causing the newest COS dev
+  # image not booting with cs.
   '_BASE_IMAGE': 'cos-dev-105-17234-0-0'
   '_OUTPUT_IMAGE_PREFIX': 'confidential-space'
   '_OUTPUT_IMAGE_SUFFIX': ''
 
 steps:
+# determine the base image
 - name: 'gcr.io/cloud-builders/gcloud'
+  id: BaseImageIdent
   env:
   - 'BASE_IMAGE=$_BASE_IMAGE'
+  script: |
+    #!/usr/bin/env bash
+
+    # if BASE_IMAGE is not specified in the substitutions, use the latest COS dev image
+    base_image=${BASE_IMAGE}
+    if [ -z ${base_image} ]
+    then
+      echo "getting the latest COS image"
+      base_image=$(gcloud compute images describe-from-family cos-dev --project cos-cloud | grep name | cut -d ' ' -f 2)
+    fi
+
+    echo ${base_image} > /workspace/base_image.txt
+
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: DebugImageBuild
+  waitFor: ['BaseImageIdent']
+  env:
+  - 'OUTPUT_IMAGE_PREFIX=$_OUTPUT_IMAGE_PREFIX'
+  - 'OUTPUT_IMAGE_SUFFIX=$_OUTPUT_IMAGE_SUFFIX'
+  script: |
+    #!/usr/bin/env bash
+    set -exuo pipefail
+
+    base_image=$(cat /workspace/base_image.txt)
+    echo "building the debug image: ${OUTPUT_IMAGE_PREFIX}-debug-${OUTPUT_IMAGE_SUFFIX} with the base image: ${base_image}"
+    gcloud builds submit --config=launcher/image/cloudbuild.yaml \
+      --substitutions _BASE_IMAGE=${base_image},_OUTPUT_IMAGE_NAME=${OUTPUT_IMAGE_PREFIX}-debug-${OUTPUT_IMAGE_SUFFIX},_IMAGE_ENV=debug
+    exit
+
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: HardenedImageBuild
+  waitFor: ['BaseImageIdent']
+  env:
+  - 'OUTPUT_IMAGE_PREFIX=$_OUTPUT_IMAGE_PREFIX'
+  - 'OUTPUT_IMAGE_SUFFIX=$_OUTPUT_IMAGE_SUFFIX'
+  script: |
+    #!/usr/bin/env bash
+    set -exuo pipefail
+
+    base_image=$(cat /workspace/base_image.txt)
+    echo "building the hardened image: ${OUTPUT_IMAGE_PREFIX}-hardened-${OUTPUT_IMAGE_SUFFIX} with the base image: ${base_image}"
+    gcloud builds submit --config=launcher/image/cloudbuild.yaml \
+      --substitutions _BASE_IMAGE=${base_image},_OUTPUT_IMAGE_NAME=${OUTPUT_IMAGE_PREFIX}-hardened-${OUTPUT_IMAGE_SUFFIX},_IMAGE_ENV=hardened
+    exit
+
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: DebugImageTests
+  waitFor: ['DebugImageBuild']
+  env:
   - 'OUTPUT_IMAGE_PREFIX=$_OUTPUT_IMAGE_PREFIX'
   - 'OUTPUT_IMAGE_SUFFIX=$_OUTPUT_IMAGE_SUFFIX'
   - 'PROJECT_ID=$PROJECT_ID'
   script: |
     #!/usr/bin/env bash
 
-    # if BASE_IMAGE is not specified, use the latest COS dev image
-    base_image=${BASE_IMAGE}
-    if [ -z ${base_image}]
-    then
-      echo "getting the latest COS image"
-      base_image=$(gcloud compute images describe-from-family cos-dev --project cos-cloud | grep name | cut -d ' ' -f 2)
-    fi
-
-    debug_image_name=${OUTPUT_IMAGE_PREFIX}-debug-${OUTPUT_IMAGE_SUFFIX}
-    hardened_image_name=${OUTPUT_IMAGE_PREFIX}-hardened-${OUTPUT_IMAGE_SUFFIX}
-
-    echo "building the debug image with the base image: ${base_image}"
-    gcloud builds submit --config=launcher/image/cloudbuild.yaml \
-      --substitutions _BASE_IMAGE=${base_image},_OUTPUT_IMAGE_NAME=${debug_image_name},_IMAGE_ENV=debug &
-
-    echo "building the hardened image with the base image: ${base_image}"
-    gcloud builds submit --config=launcher/image/cloudbuild.yaml \
-      --substitutions _BASE_IMAGE=${base_image},_OUTPUT_IMAGE_NAME=${hardened_image_name},_IMAGE_ENV=hardened &
-
-    echo "waiting for images to be built..."
-    wait
-
-    echo "running hardened image tests on ${hardened_image_name}"
     cd launcher/image/test
+    echo "running debug image tests on ${OUTPUT_IMAGE_PREFIX}-debug-${OUTPUT_IMAGE_SUFFIX}"
+    gcloud builds submit --config=test_debug_cloudbuild.yaml \
+      --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_PREFIX}-debug-${OUTPUT_IMAGE_SUFFIX},_IMAGE_PROJECT=${PROJECT_ID}
+    exit
+
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: HardenedImageTests
+  waitFor: ['HardenedImageBuild']
+  env:
+  - 'OUTPUT_IMAGE_PREFIX=$_OUTPUT_IMAGE_PREFIX'
+  - 'OUTPUT_IMAGE_SUFFIX=$_OUTPUT_IMAGE_SUFFIX'
+  - 'PROJECT_ID=$PROJECT_ID'
+  script: |
+    #!/usr/bin/env bash
+
+    cd launcher/image/test
+    echo "running hardened image tests on ${OUTPUT_IMAGE_PREFIX}-hardened-${OUTPUT_IMAGE_SUFFIX}"
     gcloud builds submit --config=test_hardened_cloudbuild.yaml \
-      --substitutions _IMAGE_NAME=${hardened_image_name},_IMAGE_PROJECT=${PROJECT_ID}
+      --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_PREFIX}-hardened-${OUTPUT_IMAGE_SUFFIX},_IMAGE_PROJECT=${PROJECT_ID}
+    exit
