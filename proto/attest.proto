@@ -190,6 +190,21 @@ message AttestedCosState {
   SemanticVersion launcher_version = 3;
 }
 
+message EfiApp {
+  // The PE/COFF digest of the EFI application (pulled from the raw event digest).
+  bytes digest = 1;
+}
+
+// The verified state of EFI Applications. Policy usage on this machine state
+// should check the entire set of EFI App digests matches, not a subset.
+message EfiState {
+  // UEFI's OS Loader code is required to measure attempts to load and execute
+  // UEFI applications.
+  // UEFI applications are typically bootloaders such as shim and GRUB.
+  // These run and are measured using the UEFI LoadImage() service.
+  repeated EfiApp apps = 1;
+}
+
 // The verified state of a booted machine, obtained from an Attestation
 message MachineState {
   PlatformState platform = 1;
@@ -209,6 +224,8 @@ message MachineState {
   LinuxKernelState linux_kernel = 6;
 
   AttestedCosState cos = 7;
+
+  EfiState efi = 8;
 }
 
 // A policy dictating which values of PlatformState to allow
