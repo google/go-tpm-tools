@@ -84,6 +84,8 @@ main() {
   copy_launcher
   setup_launcher_systemd_unit
   append_cmdline "cos.protected_stateful_partition=e"
+  # Increase wait timeout of the protected stateful partition.
+  append_cmdline "systemd.default_timeout_start_sec=900s"
 
   if [[ "${IMAGE_ENV}" == "debug" ]]; then
     configure_systemd_units_for_debug

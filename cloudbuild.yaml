@@ -1,5 +1,5 @@
 substitutions:
-  '_BASE_IMAGE': ''
+  '_BASE_IMAGE': 'cos-dev-105-17234-0-0'
   '_OUTPUT_IMAGE_PREFIX': 'confidential-space'
   '_OUTPUT_IMAGE_SUFFIX': ''
 
