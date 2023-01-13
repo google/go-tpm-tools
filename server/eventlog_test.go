@@ -20,8 +20,9 @@ import (
 )
 
 type eventLog struct {
-	RawLog []byte
-	Banks  []*pb.PCRs
+	RawLog                []byte
+	Banks                 []*pb.PCRs
+	ExpectedEFIAppDigests map[pb.HashAlgo][]string
 }
 
 var archLinuxBadSecureBoot = "SecureBoot data len is 0, expected 1"
@@ -60,6 +61,23 @@ var Rhel8GCE = eventLog{
 			14: decodeHex("d8f57ebcc1a23cc46832696e1a657f720e1be8f5b405bb7204682114e363b455"),
 		},
 	}},
+	ExpectedEFIAppDigests: map[pb.HashAlgo][]string{
+		pb.HashAlgo_SHA1: {
+			"95f400d9003b4e8c0cb4734efcf547e36fc4100c",
+			"4f60d11ad6ac9a76837834f1371bc9521d018779",
+			"075f3bc8c7363c35a87ce56c604fa9201a97f79d",
+		},
+		pb.HashAlgo_SHA256: {
+			"40d6cae02973789080cf4c3a9ad11b5a0a4d8bba4438ab96e276cc784454dee7",
+			"e8a268c431da72caaae407f729f602b9dbf5d1d43492d4a51cc2b688a08586e3",
+			"e4c0382f98feaebfd43923a85fd6da9a20e1a48524a4d5928c31850ca1a96a6e",
+		},
+		pb.HashAlgo_SHA384: {
+			"66de9a210659294720af06838309fc1f4d0de82c646a62c1dd9f068cd331d2e05fd666377dbc11e84a796ce00108ab19",
+			"c1d031b07446588fa50f4eec3d8520d99ed01f21350b9c581e13f4c5a8c712cb5e3cbecc41ccab74465543439f7eb1e6",
+			"d844e63b32a73aadde4f78dda7cb7df73d75114f3a5964401847eb716142a06607ea95efee20f51283e85afca8da3afd",
+		},
+	},
 }
 
 // Agile Event Log from a Ubuntu 18.04 GCE instance with Secure Boot and
@@ -95,6 +113,20 @@ var UbuntuAmdSevGCE = eventLog{
 			9: decodeHex("2d334f1eeb9a16dabaccaa746ff1c0dce2e9aeb3f3a4a314e5e1e61b01e940d0"),
 		},
 	}},
+	ExpectedEFIAppDigests: map[pb.HashAlgo][]string{
+		pb.HashAlgo_SHA1: {
+			"21e79438580ec89df674dfe12653d77d132c3936",
+			"9a4c7c895a5d40c3906121ff59c6fe267a4c32e0",
+		},
+		pb.HashAlgo_SHA256: {
+			"2ea4cb6a1f1eb1d3dce82d54fde26ded243ba3e18de7c6d211902a594fe56788",
+			"835f940e97bac2f7c171819b1fcc4bebe72a1c4ea7d7245088ef32d253085bb3",
+		},
+		pb.HashAlgo_SHA384: {
+			"9b2baf7073fd9b7df3091b69ae7e48453450ae7b5311b37de11b79da75f175b8b2ed69f7d39406501653b35cbe90a030",
+			"b0a19b24395a4690eea97916483dc291a38c6023df20aa296d85064194cebe9097f6b5e8490fd57a4e6b01167a8c9c7c",
+		},
+	},
 }
 
 // Agile Event Log from a Ubuntu 21.04 GCE instance without a DBX and with Secure Boot disabled
@@ -131,6 +163,20 @@ var Ubuntu2104NoDbxGCE = eventLog{
 			14: decodeHex("8351c65483c5419079e8c96758dd2130bee075d71fea226f68ec4eb5bfc71983"),
 		},
 	}},
+	ExpectedEFIAppDigests: map[pb.HashAlgo][]string{
+		pb.HashAlgo_SHA1: {
+			"92e6ec17937f600b9ec7f23adf4ea5553b4e2364",
+			"4f9604e61091095594c206c8a404afe187a92586",
+		},
+		pb.HashAlgo_SHA256: {
+			"d99c93fcb042dbe52707bbde371c75fcf081dd5b0c88a195d44cc57536f6f521",
+			"b0a836fec2faf4a9bea0e1a5f1945bc86ddc03ac98ce0ae172ed9b1e536d7595",
+		},
+		pb.HashAlgo_SHA384: {
+			"d8811e9c08119168b156255c6d695614d1593422bc5044186d29c1aaaa86fff0a633f324ac1ac1122e547479ce50a75a",
+			"bbcdda8a6d872385b10802434eb8de1ac7b92dbaddf18bc1d7ea24fcc71b45291db5cc7b930a29c93405d6aecdb70683",
+		},
+	},
 }
 
 // Agile Event Log from a Ubuntu 21.04 GCE instance with Secure Boot disabled
@@ -167,6 +213,20 @@ var Ubuntu2104NoSecureBootGCE = eventLog{
 			14: decodeHex("8351c65483c5419079e8c96758dd2130bee075d71fea226f68ec4eb5bfc71983"),
 		},
 	}},
+	ExpectedEFIAppDigests: map[pb.HashAlgo][]string{
+		pb.HashAlgo_SHA1: {
+			"22df40d6e32d4721f1b2406b2b4a3bb0ca10ead5",
+			"4f9604e61091095594c206c8a404afe187a92586",
+		},
+		pb.HashAlgo_SHA256: {
+			"6265b732b005b3f330bcd1843374e5ec6ec5aef27cdb97a23daeb8580abbf526",
+			"b0a836fec2faf4a9bea0e1a5f1945bc86ddc03ac98ce0ae172ed9b1e536d7595",
+		},
+		pb.HashAlgo_SHA384: {
+			"4f491210da8f59f09cd16523b44db22e83d8b611c3b14656d3b078dd451347ab195177fc78cf8d5578376f1f5f9bb821",
+			"bbcdda8a6d872385b10802434eb8de1ac7b92dbaddf18bc1d7ea24fcc71b45291db5cc7b930a29c93405d6aecdb70683",
+		},
+	},
 }
 
 // Agile Event Log from Alex's gLinux laptop with secure boot disabled
@@ -247,6 +307,16 @@ var Debian10GCE = eventLog{
 			7: decodeHex("9e6c57e850f371c2a7fe02bca552149363952318"),
 		},
 	}},
+	// We shouldn't use these digests, as this Debian firmware does not measure
+	// ExitBootService events, which means an attacker could extend additional
+	// events after UEFI hands off the event log.
+	ExpectedEFIAppDigests: map[pb.HashAlgo][]string{
+		pb.HashAlgo_SHA1: {
+			"47263679db883d7ad9adbc93d6a1fbf8095f0133",
+			"3fae23b18d72350207661af3875f2c492e97621c",
+			"89b08941b47dcfbd4c8b3f2bc0fad984cd836b21",
+		},
+	},
 }
 
 // Agile Event Log from a Ubuntu 21.04 GCE instance with Secure Boot disabled
@@ -281,6 +351,23 @@ var COS85AmdSev = eventLog{
 			9: decodeHex("f4f2d92d6d54f6c41f2706fd98091317642e0680a7902c72893d41e3464a93b7"),
 		},
 	}},
+	ExpectedEFIAppDigests: map[pb.HashAlgo][]string{
+		pb.HashAlgo_SHA1: {
+			"bfeec15d9359fe0aa8b5fb6451d1f73e5144c6d3",
+			"860848ad3f129051f1e252749011cf7f7df837ee",
+			"91cd5aa9c3e407237e8aeb122d4ab94494034a90",
+		},
+		pb.HashAlgo_SHA256: {
+			"dba8d69ffb244496ac8ab2950695d3da539d6ac5ec660fc6b4bdde245284cf23",
+			"f7bad83f87940312e4642530a9a6242e88529dc37a497d7d4e7c1c070566d542",
+			"6f6afb3caed004e727200a0c310731bd8ab4cd391b2d95cedf67d08e1e8e5e7e",
+		},
+		pb.HashAlgo_SHA384: {
+			"778bd7d6385d8ca0da5e504e3e554b67d98d9a712d957cb4cbb4d9b2e66ca96e31ddc18680af02b03a3a8a1b08da6aca",
+			"d014c8c69b17ceb0f46be22b928f52684e717f40288246a61dadba00b1368c883cdde4e98762cc6788d94d0bcbd3f7ca",
+			"ff8ff1db8fc98d02d944a90c58103b1b2ad3ba893ba4f302a006a572951491622341bb9387de20dd072cb8b6b3583cd0",
+		},
+	},
 }
 
 var COS93AmdSev = eventLog{
@@ -314,6 +401,23 @@ var COS93AmdSev = eventLog{
 			9: decodeHex("0b1e4f9ca7bc8535c4c33f0025969d7abea008aa51dcd7f7c2d1068470e4bce4"),
 		},
 	}},
+	ExpectedEFIAppDigests: map[pb.HashAlgo][]string{
+		pb.HashAlgo_SHA1: {
+			"d582c2803fd716f09e50c82967079ff593e1bc6b",
+			"e3de6a97421ba8f329d4ba55e39df80013415a23",
+			"03221584436f78e488cdaec3c691b7a18ff2f621",
+		},
+		pb.HashAlgo_SHA256: {
+			"27cce48e55b3bfb6eb6206a4cc2b53a497846496a6264495006ab28dffa5623e",
+			"e3e226fb8c8e3b3fdb56c706a0fbfda080f34068aef5a1889c1bfa95f04c2e72",
+			"dc0aca594caee03705bcfa817e7f666692d89b713815f4793b7abbc2a0e00b6c",
+		},
+		pb.HashAlgo_SHA384: {
+			"da419d9c92eb55b6e14f5665d81644fa163b908b1b1e317740f7a605f1734994dd90f4ea3373400c59fd7683751e30ef",
+			"794e6206fe520d3b0bcbfd3e14b0dc8e41f6a8c3b131faef69442a11625fde690a1b77c46dcddcb443a8d3c1e3ea669c",
+			"64b218ab263625b49da1172a9ab37cedbcd20d668beac1c3baac4cae640a1a7f77a07c05682b4147ec649c51243f6bbf",
+		},
+	},
 }
 
 var COS101AmdSev = eventLog{
@@ -349,6 +453,26 @@ var COS101AmdSev = eventLog{
 			14: decodeHex("d0d95459205afae879514db7b85630f5d6b8272ed8c731bf92933dbc9fe99969"),
 		},
 	}},
+	ExpectedEFIAppDigests: map[pb.HashAlgo][]string{
+		pb.HashAlgo_SHA1: {
+			"dc41c297c4ed857e9b6354cad8b448995c3052ea",
+			"06ae09413b5107bb26aa68602ba4fe787d22f82e",
+			"f894ac3a351baa3a5ce4dd8d6f497eb616723461",
+			"f894ac3a351baa3a5ce4dd8d6f497eb616723461",
+		},
+		pb.HashAlgo_SHA256: {
+			"c7ac5d44444affd8d4a7c5d3dea0ce20a71e05812fc18777a428d092f78ae3ff",
+			"c5d3b47de11a9a2a4a15ef5cb7202d7800a10609c0dcecc46e3e963d476b76ce",
+			"af4161084115c9d5c1872f4473fe974b535e3a9a767688293720ac2cc6f7f9a3",
+			"af4161084115c9d5c1872f4473fe974b535e3a9a767688293720ac2cc6f7f9a3",
+		},
+		pb.HashAlgo_SHA384: {
+			"72bf185794a865eb14fcdf93a2daa8ed281c932e2a7009d8489c38056389b3f3776d755ec703c95fb9c396f79dbd52c7",
+			"5b38df39c7beec3bfd9c4cbd40c217bcbee190d1fa099a64c5f063d20efc3def26e48cbbd86d730c8eb4696a29759490",
+			"968f2f6cb5bae537adfca30942803ddcda773bae368c042258e8818788265cd0e119936c9fcdb782785154a6705c5143",
+			"968f2f6cb5bae537adfca30942803ddcda773bae368c042258e8818788265cd0e119936c9fcdb782785154a6705c5143",
+		},
+	},
 }
 
 func TestParseEventLogs(t *testing.T) {
@@ -746,6 +870,55 @@ func TestParseGrubStateFail(t *testing.T) {
 				t.Errorf("expected GroupedError (%s) to contain no GRUB measurements error", err)
 			}
 		})
+	}
+}
+
+func TestParseEfiState(t *testing.T) {
+	logs := []struct {
+		eventLog
+		name string
+	}{
+		{Rhel8GCE, "Rhel8GCE"},
+		{UbuntuAmdSevGCE, "UbuntuAmdSevGCE"},
+		{Ubuntu2104NoSecureBootGCE, "Ubuntu2104NoSecureBootGCE"},
+		{COS85AmdSev, "COS85AmdSev"},
+		{COS93AmdSev, "COS93AmdSev"},
+		{COS101AmdSev, "COS101AmdSev"},
+	}
+	for _, log := range logs {
+		for _, bank := range log.Banks {
+			hashName := pb.HashAlgo_name[int32(bank.Hash)]
+			subtestName := fmt.Sprintf("%s-%s", log.name, hashName)
+			t.Run(subtestName, func(t *testing.T) {
+				msState, err := parsePCClientEventLog(log.RawLog, bank, UnsupportedLoader)
+				if err != nil {
+					t.Errorf("parsePCClientEventLog(%v, %v) got err = %v, want nil", log.name, bank.GetHash().String(), err)
+				}
+
+				if msState.GetEfi() == nil {
+					t.Error("msState.GetEfi() returned nil, want EFI state")
+				}
+				efiApps := msState.GetEfi().GetApps()
+				if len(efiApps) == 0 {
+					t.Error("msState.GetEfi().GetApps() returned empty, want non-zero length")
+				}
+				expectedDigestStrs := log.ExpectedEFIAppDigests[bank.Hash]
+				if len(expectedDigestStrs) == 0 {
+					t.Fatalf("%v log used to test EFIState, but it has no expected EFI App digests", log.name)
+				}
+				expectedDigests := make([][]byte, 0, len(expectedDigestStrs))
+				for _, digestStr := range log.ExpectedEFIAppDigests[bank.Hash] {
+					expectedDigests = append(expectedDigests, decodeHex(digestStr))
+				}
+				gotDigests := make([][]byte, 0, len(efiApps))
+				for _, app := range efiApps {
+					gotDigests = append(gotDigests, app.GetDigest())
+				}
+				if !cmp.Equal(gotDigests, expectedDigests) {
+					t.Errorf("msState.GetEfi().GetApps() digests got %v, want %v", gotDigests, expectedDigests)
+				}
+			})
+		}
 	}
 }
 
