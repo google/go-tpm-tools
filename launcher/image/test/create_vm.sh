@@ -7,6 +7,8 @@ print_usage() {
     echo "  -p <imageProject>: which image project to use for the VM"
     echo "  -m <metadata>: metadata variables on VM creation; passed directly into gcloud"
     echo "  -f <metadataFromFile>: read a metadata value from a file; specified in format key=filePath"
+    echo "  -n <instanceName>: instance name"
+    echo "  -z <instanceZone>: instance zone"
     exit 1
 }
 
@@ -26,35 +28,35 @@ create_vm() {
     APPEND_METADATA_FILE="--metadata-from-file ${METADATA_FILE}"
   fi
 
-  VM_NAME=confidential-space-test-$BUILD_ID
   echo 'Creating VM' ${VM_NAME} 'with image' $IMAGE_NAME
 
   # check the active account
   gcloud auth list
 
-  gcloud compute instances create $VM_NAME --zone us-central1-a --image=$IMAGE_NAME --image-project=$PROJECT_NAME --shielded-secure-boot \
-  $APPEND_METADATA $APPEND_METADATA_FILE
+  gcloud compute instances create $VM_NAME --confidential-compute --maintenance-policy=TERMINATE \
+    --scopes=cloud-platform --zone $ZONE --image=$IMAGE_NAME --image-project=$PROJECT_NAME \
+    --shielded-secure-boot $APPEND_METADATA $APPEND_METADATA_FILE
 }
 
 IMAGE_NAME=''
+METADATA_FILE=''
+METADATA=''
 PROJECT_NAME=''
 VM_NAME=''
-METADATA=''
-METADATA_FILE=''
+ZONE=''
 
 # In getopts, a ':' following a letter means that that flag takes an argument.
 # For example, i: means -i takes an additional argument.
-while getopts 'i:f:m:p:' flag; do
+while getopts 'i:f:m:p:n:z:' flag; do
   case "${flag}" in
     i) IMAGE_NAME=${OPTARG} ;;
     f) METADATA_FILE=${OPTARG} ;;
     m) METADATA=${OPTARG} ;;
     p) PROJECT_NAME=${OPTARG} ;;
+    n) VM_NAME=${OPTARG} ;;
+    z) ZONE=${OPTARG} ;;
     *) print_usage ;;
   esac
 done
 
 create_vm
-
-# Persist VM name
-echo $VM_NAME > /workspace/vm_name.txt

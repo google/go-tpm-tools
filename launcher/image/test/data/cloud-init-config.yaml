@@ -1,0 +1,6 @@
+#cloud-config
+
+# will print the string to serial console if cloud-init executed
+# this config in user-data
+bootcmd:
+  - echo "user-data in metadata executed" > /dev/ttyS0

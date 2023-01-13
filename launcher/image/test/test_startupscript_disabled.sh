@@ -3,13 +3,9 @@ set -euo pipefail
 source util/read_serial.sh
 
 echo 'Running startup script test'
-VM_NAME=$(cat /workspace/vm_name.txt)
-
-echo 'Sleeping to allow startup script to run'
-sleep 5
 
 echo 'Reading from serial port:'
-SERIAL_OUTPUT=$(read_serial)
+SERIAL_OUTPUT=$(read_serial $1 $2)
 echo $SERIAL_OUTPUT
 
 # Without the or logic, this step will fail and cleanup does not run.

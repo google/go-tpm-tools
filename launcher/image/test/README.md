@@ -41,9 +41,6 @@ Scripts in `util/` contain functions that can be sourced from other test scripts
 ## Sharing Data Between Steps
 `/workspace` is used in Cloud Build as a scratch space for specific builds. Some conventions for Confidential Space tests:
 
-* `/workspace/vm_name.txt` contains the VM name created in `create_vm.sh`.
-Other test steps and `cleanup.sh` utilize this information to reference the VM
-name.
 * `/workspace/status.txt` contains the success/failure message from test steps.
 `check_failure.sh` looks for a failed message in the step to determine whether
 the cloud build is successful.
