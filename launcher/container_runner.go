@@ -208,6 +208,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	}
 
 	asAddr := launchSpec.AttestationServiceAddr
+
 	verifierClient, err := getRESTClient(ctx, asAddr, launchSpec)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create REST verifier client: %v", err)
@@ -235,8 +236,7 @@ func getRESTClient(ctx context.Context, asAddr string, spec spec.LaunchSpec) (ve
 		opts = append(opts, option.WithEndpoint(asAddr))
 	}
 
-	const defaultRegion = "us-central1"
-	restClient, err := rest.NewClient(ctx, spec.ProjectID, defaultRegion, opts...)
+	restClient, err := rest.NewClient(ctx, spec.ProjectID, spec.Region, opts...)
 	if err != nil {
 		return nil, err
 	}
