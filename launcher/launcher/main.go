@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/defaults"
 	"github.com/containerd/containerd/namespaces"
+	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/launcher"
 	"github.com/google/go-tpm-tools/launcher/spec"
 	"github.com/google/go-tpm/tpm2"
@@ -28,6 +30,13 @@ const (
 	rebootRC = 3 // reboot
 	holdRC   = 4 // hold
 )
+
+var rcMessage = map[int]string{
+	successRC: "workload finished successfully, shutting down the VM",
+	failRC:    "workload or launcher error, shutting down the VM",
+	rebootRC:  "rebooting VM",
+	holdRC:    "VM remains running",
+}
 
 var logger *log.Logger
 var mdsClient *metadata.Client
@@ -87,7 +96,12 @@ func main() {
 			logger.Println("Panic:", r)
 			exitCode = 2
 		}
-		logger.Println("TEE container launcher exiting with exit code:", exitCode)
+		msg, ok := rcMessage[exitCode]
+		if ok {
+			logger.Printf("TEE container launcher exiting with exit code: %d (%s)\n", exitCode, msg)
+		} else {
+			logger.Printf("TEE container launcher exiting with exit code: %d\n", exitCode)
+		}
 	}()
 	if err = startLauncher(); err != nil {
 		logger.Println(err)
@@ -130,11 +144,11 @@ func getExitCode(isHardened bool, restartPolicy spec.RestartPolicy, err error) i
 
 func startLauncher() error {
 	logger.Println("Launch Spec: ", launchSpec)
-	client, err := containerd.New(defaults.DefaultAddress)
+	containerdClient, err := containerd.New(defaults.DefaultAddress)
 	if err != nil {
 		return &launcher.RetryableError{Err: err}
 	}
-	defer client.Close()
+	defer containerdClient.Close()
 
 	tpm, err := tpm2.OpenTPM("/dev/tpmrm0")
 	if err != nil {
@@ -142,13 +156,23 @@ func startLauncher() error {
 	}
 	defer tpm.Close()
 
+	// check AK (EK signing) cert
+	gceAk, err := client.GceAttestationKeyECC(tpm)
+	if err != nil {
+		return err
+	}
+	if gceAk.Cert() == nil {
+		return errors.New("failed to find AKCert on this VM: try creating a new VM or contacting support")
+	}
+	gceAk.Close()
+
 	token, err := launcher.RetrieveAuthToken(mdsClient)
 	if err != nil {
 		logger.Printf("failed to retrieve auth token: %v, using empty auth", err)
 	}
 
 	ctx := namespaces.WithNamespace(context.Background(), namespaces.Default)
-	r, err := launcher.NewRunner(ctx, client, token, launchSpec, mdsClient, tpm, logger)
+	r, err := launcher.NewRunner(ctx, containerdClient, token, launchSpec, mdsClient, tpm, logger)
 	if err != nil {
 		return err
 	}

@@ -489,27 +489,29 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	if err != nil {
 		return &RetryableError{err}
 	}
-	exitStatus, err := task.Wait(ctx)
+	defer task.Delete(ctx)
+
+	exitStatusC, err := task.Wait(ctx)
 	if err != nil {
-		return &RetryableError{err}
+		r.logger.Println(err)
 	}
 	r.logger.Println("workload task started")
 
 	if err := task.Start(ctx); err != nil {
 		return &RetryableError{err}
 	}
-	status := <-exitStatus
+	status := <-exitStatusC
 
 	code, _, err := status.Result()
 	if err != nil {
 		return err
 	}
-	if _, err := task.Delete(ctx); err != nil {
-		return err
-	}
+
 	if code != 0 {
+		r.logger.Println("workload task ended and returned non-zero")
 		return &WorkloadError{code}
 	}
+	r.logger.Println("workload task ended and returned 0")
 	return nil
 }
 
