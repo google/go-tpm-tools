@@ -4,6 +4,7 @@ substitutions:
   '_BASE_IMAGE_PROJECT': 'cos-cloud'
   '_IMAGE_ENV': ''
   '_BUCKET_NAME': '${PROJECT_ID}_cloudbuild'
+  '_CS_LICENSE': ''
 
 steps:
   - name: golang:1.18
@@ -36,7 +37,7 @@ steps:
            '-image-name=${_OUTPUT_IMAGE_NAME}',
            '-image-family=confidential-space-dev',
            '-image-project=${PROJECT_ID}',
-           '-licenses=projects/confidential-space-images/global/licenses/confidential-space',
+           '-licenses=${_CS_LICENSE}',
            '-licenses=projects/confidential-space-images/global/licenses/ek-certificate-license',
            '-zone=us-central1-a',
            '-project=${PROJECT_ID}']
