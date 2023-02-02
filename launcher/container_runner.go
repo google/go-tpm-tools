@@ -392,7 +392,7 @@ func (r *ContainerRunner) fetchAndWriteTokenWithRetry(ctx context.Context,
 			select {
 			case <-ctx.Done():
 				timer.Stop()
-				r.logger.Printf("token refreshing stopped: %v", ctx.Err())
+				r.logger.Println("token refreshing stopped")
 				return
 			case <-timer.C:
 				var duration time.Duration
@@ -516,16 +516,18 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 }
 
 func initImage(ctx context.Context, cdClient *containerd.Client, launchSpec spec.LaunchSpec, token oauth2.Token, logger *log.Logger) (containerd.Image, error) {
-	var remoteOpt containerd.RemoteOpt
 	if token.Valid() {
-		remoteOpt = containerd.WithResolver(Resolver(token.AccessToken))
-	} else {
-		logger.Println("invalid auth token, will use empty auth")
-	}
+		remoteOpt := containerd.WithResolver(Resolver(token.AccessToken))
 
-	image, err := cdClient.Pull(ctx, launchSpec.ImageRef, containerd.WithPullUnpack, remoteOpt)
+		image, err := cdClient.Pull(ctx, launchSpec.ImageRef, containerd.WithPullUnpack, remoteOpt)
+		if err != nil {
+			return nil, fmt.Errorf("cannot pull the image: %w", err)
+		}
+		return image, nil
+	}
+	image, err := cdClient.Pull(ctx, launchSpec.ImageRef, containerd.WithPullUnpack)
 	if err != nil {
-		return nil, fmt.Errorf("cannot pull image: %w", err)
+		return nil, fmt.Errorf("cannot pull the image (no token, only works for a public image): %w", err)
 	}
 	return image, nil
 }

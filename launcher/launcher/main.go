@@ -168,7 +168,7 @@ func startLauncher() error {
 
 	token, err := launcher.RetrieveAuthToken(mdsClient)
 	if err != nil {
-		logger.Printf("failed to retrieve auth token: %v, using empty auth", err)
+		logger.Printf("failed to retrieve auth token: %v, using empty auth for image pulling\n", err)
 	}
 
 	ctx := namespaces.WithNamespace(context.Background(), namespaces.Default)
