@@ -333,8 +333,7 @@ func VerifyGceTechnology(attestation *pb.Attestation, tech pb.GCEConfidentialTec
 		case *pb.Attestation_SevSnpAttestation:
 			var snpOpts *VerifySnpOpts
 			if opts.TEEOpts == nil {
-				snpOpts = &VerifySnpOpts{}
-				copy(snpOpts.ReportData[:], opts.Nonce)
+				snpOpts = SevSnpDefaultOptions(opts.Nonce)
 			} else {
 				switch teeopts := opts.TEEOpts.(type) {
 				case *VerifySnpOpts:

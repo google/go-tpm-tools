@@ -18,8 +18,10 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	sgclient "github.com/google/go-sev-guest/client"
 	sgtest "github.com/google/go-sev-guest/testing"
 	testclient "github.com/google/go-sev-guest/testing/client"
+	sv "github.com/google/go-sev-guest/verify"
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal"
@@ -219,8 +221,6 @@ func TestVerifyBasicAttestation(t *testing.T) {
 	defer sevTestDevice.Close()
 
 	nonce := []byte("super secret nonce")
-	var nonce64 [64]byte
-	copy(nonce64[:], nonce)
 	attestation, err := ak.Attest(client.AttestOpts{
 		Nonce: nonce,
 	})
@@ -229,9 +229,11 @@ func TestVerifyBasicAttestation(t *testing.T) {
 	}
 
 	teeopts := &VerifySnpOpts{
-		Getter:       kdsGetter,
-		ReportData:   nonce64,
-		TrustedRoots: goodSnpRoot,
+		Validation: SevSnpDefaultValidateOpts(nonce),
+		Verification: &sv.Options{
+			Getter:       kdsGetter,
+			TrustedRoots: goodSnpRoot,
+		},
 	}
 	if _, err := VerifyAttestation(attestation, VerifyOpts{
 		Nonce:      nonce,
@@ -962,8 +964,9 @@ func TestVerifyAttestationWithSevSnp(t *testing.T) {
 	defer ak.Close()
 
 	nonce := []byte("super secret nonce")
+	altNonce := []byte("alternate secret nonce")
 	var nonce64 [64]byte
-	copy(nonce64[:], []byte("alternate secret nonce"))
+	copy(nonce64[:], altNonce)
 	sevTestDevice, goodSnpRoot, badSnpRoot, kdsGetter := testclient.GetSevGuest([]sgtest.TestCase{
 		{
 			Input:  nonce64,
@@ -980,21 +983,23 @@ func TestVerifyAttestationWithSevSnp(t *testing.T) {
 		t.Fatalf("failed to attest: %v", err)
 	}
 
-	tcs := []struct {
+	type testCase struct {
 		name    string
 		opts    VerifyOpts
 		wantErr string
-	}{
+	}
+	tcs := []testCase{
 		{
 			name: "Happy path",
 			opts: VerifyOpts{
 				Nonce:      nonce,
 				TrustedAKs: []crypto.PublicKey{ak.PublicKey()},
 				TEEOpts: &VerifySnpOpts{
-					Getter:             kdsGetter,
-					ReportData:         nonce64,
-					TrustedRoots:       goodSnpRoot,
-					AllowDebugTestOnly: true,
+					Validation: SevSnpDefaultValidateOptsForTest(altNonce),
+					Verification: &sv.Options{
+						Getter:       kdsGetter,
+						TrustedRoots: goodSnpRoot,
+					},
 				},
 			},
 		},
@@ -1004,14 +1009,11 @@ func TestVerifyAttestationWithSevSnp(t *testing.T) {
 				Nonce:      nonce,
 				TrustedAKs: []crypto.PublicKey{ak.PublicKey()},
 				TEEOpts: &VerifySnpOpts{
-					Getter: kdsGetter,
-					ReportData: func() [64]byte {
-						var badNonce [64]byte
-						copy(badNonce[:], []byte("soooo baaad"))
-						return badNonce
-					}(),
-					TrustedRoots:       goodSnpRoot,
-					AllowDebugTestOnly: true,
+					Validation: SevSnpDefaultValidateOptsForTest([]byte("soooo baaad")),
+					Verification: &sv.Options{
+						Getter:       kdsGetter,
+						TrustedRoots: goodSnpRoot,
+					},
 				},
 			},
 			wantErr: "report field REPORT_DATA",
@@ -1022,27 +1024,37 @@ func TestVerifyAttestationWithSevSnp(t *testing.T) {
 				Nonce:      nonce,
 				TrustedAKs: []crypto.PublicKey{ak.PublicKey()},
 				TEEOpts: &VerifySnpOpts{
-					Getter:             kdsGetter,
-					ReportData:         nonce64,
-					TrustedRoots:       badSnpRoot,
-					AllowDebugTestOnly: true,
+					Validation: SevSnpDefaultValidateOptsForTest(altNonce),
+					Verification: &sv.Options{
+						Getter:       kdsGetter,
+						TrustedRoots: badSnpRoot,
+					},
 				},
 			},
 			wantErr: "error verifying VCEK certificate",
 		},
-		{
+	}
+	// Production SEV VMs are not run with debug enabled, so this test must be skipped when the
+	// sev-guest device is passed in, indicating the test is running in a real SEV-SNP VM.
+	if sgclient.UseDefaultSevGuest() {
+		tcs = append(tcs, testCase{
 			name: "woops all debug",
 			opts: VerifyOpts{
 				Nonce:      nonce,
 				TrustedAKs: []crypto.PublicKey{ak.PublicKey()},
 				TEEOpts: &VerifySnpOpts{
-					Getter:       kdsGetter,
-					ReportData:   nonce64,
-					TrustedRoots: goodSnpRoot,
+					// The Debug bit is not set. If run in a production environment,
+					// this test will still pass validation and thus not fail
+					// in the expected way.
+					Validation: SevSnpDefaultValidateOpts(altNonce),
+					Verification: &sv.Options{
+						Getter:       kdsGetter,
+						TrustedRoots: goodSnpRoot,
+					},
 				},
 			},
 			wantErr: "found unauthorized debug capability",
-		},
+		})
 	}
 	for _, tc := range tcs {
 		t.Run(tc.name, func(t *testing.T) {
