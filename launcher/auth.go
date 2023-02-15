@@ -2,6 +2,7 @@ package launcher
 
 import (
 	"encoding/json"
+	"strings"
 
 	"cloud.google.com/go/compute/metadata"
 	"github.com/containerd/containerd/remotes"
@@ -31,7 +32,11 @@ func Resolver(token string) remotes.Resolver {
 	options := docker.ResolverOptions{}
 
 	credentials := func(host string) (string, string, error) {
-		return "_token", token, nil
+		// append the token if is talking to Artifact Registry or GCR Registry
+		if strings.HasSuffix(host, "docker.pkg.dev") || strings.HasSuffix(host, "gcr.io") {
+			return "_token", token, nil
+		}
+		return "", "", nil
 	}
 	authOpts := []docker.AuthorizerOpt{docker.WithAuthCreds(credentials)}
 	options.Authorizer = docker.NewDockerAuthorizer(authOpts...)
