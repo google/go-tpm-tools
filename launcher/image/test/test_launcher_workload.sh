@@ -16,7 +16,7 @@ else
     print_serial=true
 fi
 
-if echo $SERIAL_OUTPUT | grep -q 'workload args: \[/main arg_foo\]'
+if echo $SERIAL_OUTPUT | grep -q 'workload args: \[/main newCmd\]'
 then
     echo "- arguments verified"
 else
@@ -27,12 +27,22 @@ fi
 
 if echo $SERIAL_OUTPUT | grep -q 'env_bar=val_bar'
 then
-    echo "- env vars verified"
+    echo "- env_bar var verified"
 else
-    echo "FAILED: env var not verified"
+    echo "FAILED: env_bar env not verified"
     echo 'TEST FAILED.' > /workspace/status.txt
     print_serial=true
 fi
+
+if echo $SERIAL_OUTPUT | grep -q 'ALLOWED_OVERRIDE=overridden'
+then
+    echo "- ALLOWED_OVERRIDE var verified"
+else
+    echo "FAILED: ALLOWED_OVERRIDE env not verified"
+    echo 'TEST FAILED.' > /workspace/status.txt
+    print_serial=true
+fi
+
 
 if echo $SERIAL_OUTPUT | grep -q 'token looks okay'
 then
