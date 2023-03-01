@@ -7,7 +7,7 @@ source util/read_serial.sh
 SERIAL_OUTPUT=$(read_serial $1 $2) 
 print_serial=false
 
-if echo $SERIAL_OUTPUT | grep -q 'workload running'
+if echo $SERIAL_OUTPUT | grep -q 'Workload running'
 then
     echo "- workload running verified"
 else
@@ -16,7 +16,7 @@ else
     print_serial=true
 fi
 
-if echo $SERIAL_OUTPUT | grep -q 'workload args: \[/main newCmd\]'
+if echo $SERIAL_OUTPUT | grep -q 'Workload args: \[/main newCmd\]'
 then
     echo "- arguments verified"
 else
@@ -27,7 +27,7 @@ fi
 
 if echo $SERIAL_OUTPUT | grep -q 'env_bar=val_bar'
 then
-    echo "- env_bar var verified"
+    echo "- env_bar env var verified"
 else
     echo "FAILED: env_bar env not verified"
     echo 'TEST FAILED.' > /workspace/status.txt
@@ -36,15 +36,68 @@ fi
 
 if echo $SERIAL_OUTPUT | grep -q 'ALLOWED_OVERRIDE=overridden'
 then
-    echo "- ALLOWED_OVERRIDE var verified"
+    echo "- ALLOWED_OVERRIDE env var verified"
 else
     echo "FAILED: ALLOWED_OVERRIDE env not verified"
     echo 'TEST FAILED.' > /workspace/status.txt
     print_serial=true
 fi
 
+if echo $SERIAL_OUTPUT | grep -q 'aud: https://sts.googleapis.com'
+then
+    echo "- token aud verified"
+else
+    echo "FAILED: token aud not verified"
+    echo 'TEST FAILED.' > /workspace/status.txt
+    print_serial=true
+fi
 
-if echo $SERIAL_OUTPUT | grep -q 'token looks okay'
+if echo $SERIAL_OUTPUT | grep -q 'iss: https://confidentialcomputing.googleapis.com'
+then
+    echo "- token iss verified"
+else
+    echo "FAILED: token iss not verified"
+    echo 'TEST FAILED.' > /workspace/status.txt
+    print_serial=true
+fi
+
+if echo $SERIAL_OUTPUT | grep -q 'secboot: true'
+then
+    echo "- token secboot verified"
+else
+    echo "FAILED: token secboot not verified"
+    echo 'TEST FAILED.' > /workspace/status.txt
+    print_serial=true
+fi
+
+if echo $SERIAL_OUTPUT | grep -q 'oemid: 11129'
+then
+    echo "- token oemid verified"
+else
+    echo "FAILED: token oemid not verified"
+    echo 'TEST FAILED.' > /workspace/status.txt
+    print_serial=true
+fi
+
+if echo $SERIAL_OUTPUT | grep -q 'hwmodel: GCP_AMD_SEV'
+then
+    echo "- token hwmodel verified"
+else
+    echo "FAILED: token hwmodel not verified"
+    echo 'TEST FAILED.' > /workspace/status.txt
+    print_serial=true
+fi
+
+if echo $SERIAL_OUTPUT | grep -q 'swname: GCE'
+then
+    echo "- token swname verified"
+else
+    echo "FAILED: token swname not verified"
+    echo 'TEST FAILED.' > /workspace/status.txt
+    print_serial=true
+fi
+
+if echo $SERIAL_OUTPUT | grep -q 'Token looks okay'
 then
     echo "- OIDC token accessible"
 else
