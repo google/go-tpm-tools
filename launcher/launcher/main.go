@@ -143,7 +143,7 @@ func getExitCode(isHardened bool, restartPolicy spec.RestartPolicy, err error) i
 }
 
 func startLauncher() error {
-	logger.Println("Launch Spec: ", launchSpec)
+	logger.Printf("Launch Spec: %+v\n", launchSpec)
 	containerdClient, err := containerd.New(defaults.DefaultAddress)
 	if err != nil {
 		return &launcher.RetryableError{Err: err}
