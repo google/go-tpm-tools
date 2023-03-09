@@ -109,13 +109,8 @@ func (s *Simulator) Write(commandBuffer []byte) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	n, err := s.buf.Write(resp)
-	if err != nil {
-		return 0, err
-	}
-	if n != len(resp) {
-		return 0, fmt.Errorf("expected %d bytes to be written to command response buffer, but actual number is %d", len(resp), n)
-	}
+	// write response to the internal response buffer.
+	_, _ = s.buf.Write(resp)
 	return len(commandBuffer), nil
 }
 
