@@ -6,7 +6,7 @@ require (
 	cloud.google.com/go/compute v1.7.0
 	cloud.google.com/go/logging v1.4.2
 	github.com/cenkalti/backoff/v4 v4.1.3
-	github.com/containerd/containerd v1.6.6
+	github.com/containerd/containerd v1.6.18
 	github.com/golang-jwt/jwt/v4 v4.4.1
 	github.com/google/go-cmp v0.5.8
 	github.com/google/go-tpm v0.3.3
@@ -20,8 +20,8 @@ require (
 require (
 	cloud.google.com/go v0.102.0 // indirect
 	github.com/Microsoft/go-winio v0.5.2 // indirect
-	github.com/Microsoft/hcsshim v0.9.3 // indirect
-	github.com/containerd/cgroups v1.0.3 // indirect
+	github.com/Microsoft/hcsshim v0.9.6 // indirect
+	github.com/containerd/cgroups v1.0.4 // indirect
 	github.com/containerd/continuity v0.3.0 // indirect
 	github.com/containerd/fifo v1.0.0 // indirect
 	github.com/containerd/ttrpc v1.1.0 // indirect
@@ -59,7 +59,6 @@ require (
 	google.golang.org/genproto v0.0.0-20220624142145-8cd45d7dbd1f // indirect
 	google.golang.org/grpc v1.47.0 // indirect
 	google.golang.org/protobuf v1.28.0 // indirect
-	gopkg.in/yaml.v3 v3.0.0 // indirect
 )
 
 replace google.golang.org/api v0.86.0 => github.com/josephlr/google-api-go-client v0.86.1
