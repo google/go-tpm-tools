@@ -40,6 +40,35 @@ func (gErr *GroupedError) containsSubstring(substr string) bool {
 	return false
 }
 
+// containsKnownSubstrings is used to match a set of known errors.
+// Each substring must only match error in the GroupedError.
+// In other words, there must not be overlap in the substring matches.
+func (gErr *GroupedError) containsKnownSubstrings(substrs []string) bool {
+	if len(gErr.Errors) != len(substrs) {
+		return false
+	}
+	matchedGErr := make(map[string]bool)
+	for _, err := range gErr.Errors {
+		matchedGErr[err.Error()] = false
+		for _, substr := range substrs {
+			if strings.Contains(err.Error(), substr) {
+				if matchedGErr[err.Error()] {
+					// Duplicated match for the error.
+					return false
+				}
+				matchedGErr[err.Error()] = true
+			}
+		}
+	}
+
+	for _, matched := range matchedGErr {
+		if !matched {
+			return false
+		}
+	}
+	return true
+}
+
 func (gErr *GroupedError) containsOnlySubstring(substr string) bool {
 	if len(gErr.Errors) != 1 {
 		return false

@@ -25,7 +25,11 @@ type eventLog struct {
 	ExpectedEFIAppDigests map[pb.HashAlgo][]string
 }
 
-var archLinuxBadSecureBoot = "SecureBoot data len is 0, expected 1"
+// The Arch Linux event log has two known failures due to our parser's strict checks.
+var archLinuxKnownParsingFailures = []string{
+	"SecureBoot data len is 0, expected 1",
+	"found EFIBootServicesApplication in PCR4 before CallingEFIApp event",
+}
 
 // Agile Event Log from a RHEL 8 GCE instance with Secure Boot enabled
 var Rhel8GCE = eventLog{
@@ -483,21 +487,21 @@ func TestParseEventLogs(t *testing.T) {
 		Bootloader
 		// This field handles known issues with event log parsing or bad event
 		// logs.
-		// An empty string will not attempt to pattern match the error result.
-		errorSubstr string
+		// Set to nil when the event log has no known issues.
+		errorSubstrs []string
 	}{
-		{Debian10GCE, "Debian10GCE", UnsupportedLoader, ""},
-		{Rhel8GCE, "Rhel8GCE", GRUB, ""},
-		{UbuntuAmdSevGCE, "UbuntuAmdSevGCE", GRUB, ""},
+		{Debian10GCE, "Debian10GCE", UnsupportedLoader, nil},
+		{Rhel8GCE, "Rhel8GCE", GRUB, nil},
+		{UbuntuAmdSevGCE, "UbuntuAmdSevGCE", GRUB, nil},
 		// TODO: remove once the fix is pulled in
 		// https://github.com/google/go-attestation/pull/222
-		{Ubuntu2104NoDbxGCE, "Ubuntu2104NoDbxGCE", GRUB, sbatErrorStr},
-		{Ubuntu2104NoSecureBootGCE, "Ubuntu2104NoSecureBootGCE", GRUB, sbatErrorStr},
+		{Ubuntu2104NoDbxGCE, "Ubuntu2104NoDbxGCE", GRUB, []string{sbatErrorStr}},
+		{Ubuntu2104NoSecureBootGCE, "Ubuntu2104NoSecureBootGCE", GRUB, []string{sbatErrorStr}},
 		// This event log has a SecureBoot variable length of 0.
-		{ArchLinuxWorkstation, "ArchLinuxWorkstation", UnsupportedLoader, archLinuxBadSecureBoot},
-		{COS85AmdSev, "COS85AmdSev", GRUB, ""},
-		{COS93AmdSev, "COS93AmdSev", GRUB, ""},
-		{COS101AmdSev, "COS101AmdSev", GRUB, ""},
+		{ArchLinuxWorkstation, "ArchLinuxWorkstation", UnsupportedLoader, archLinuxKnownParsingFailures},
+		{COS85AmdSev, "COS85AmdSev", GRUB, nil},
+		{COS93AmdSev, "COS93AmdSev", GRUB, nil},
+		{COS101AmdSev, "COS101AmdSev", GRUB, nil},
 	}
 
 	for _, log := range logs {
@@ -511,10 +515,10 @@ func TestParseEventLogs(t *testing.T) {
 					if !ok {
 						t.Errorf("ParseMachineState should return a GroupedError")
 					}
-					if log.errorSubstr == "" {
+					if len(log.errorSubstrs) == 0 {
 						t.Errorf("expected no errors in GroupedError, received (%v)", err)
 					}
-					if !gErr.containsOnlySubstring(log.errorSubstr) {
+					if !gErr.containsKnownSubstrings(log.errorSubstrs) {
 						t.Errorf("failed to parse and replay log: %v", err)
 					}
 				}
