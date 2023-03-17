@@ -479,12 +479,13 @@ func getEfiState(hash crypto.Hash, events []*pb.Event) (*pb.EfiState, error) {
 	var seenExitBootServices bool
 	for _, event := range events {
 		index := event.GetPcrIndex()
+		// getEfiState should only ever process PCRs 4 and 5.
+		if index != 4 && index != 5 {
+			continue
+		}
 		evtType := event.GetUntrustedType()
 
 		switch index {
-		default:
-			// Only process PCRs 4 and 5.
-			continue
 		case 4:
 			// Process Calling EFI Application event.
 			if bytes.Equal(callingEFIAppDigest, event.GetDigest()) {
