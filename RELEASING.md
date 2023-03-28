@@ -17,12 +17,12 @@ git commit --allow-empty
 
 The description of the PR should just be the release notes that we want to
 publish in the GitHub Release. The notes should just have one-line summaries
-of the PRs in the release. Trivial PRs can be omitted and releated PRs can be
+of the PRs in the release. Trivial PRs can be omitted and related PRs can be
 combined in a single line. It should have the following subsections:
   - "Breaking Changes" (backwards-incompatible changes to the package API)
   - "New Features" (backwards-compatible changes to the package API)
   - "Bug Fixes" (fixes to any particular issues)
-  - "Other Changes" (non-breaking code changes oor Doc/CI updates)
+  - "Other Changes" (non-breaking code changes or Doc/CI updates)
 
 Sections can be omitted if there wouldn't be any PRs under them. The
 [`v0.3.2` release notes](https://github.com/google/go-tpm-tools/releases/tag/v0.3.2)
@@ -71,7 +71,7 @@ of a single commit and be "squashed" instead of "merged".
 
 ## Tagging the submodules
 
-The submodules must be tagged sepearately from the main library release. This
+The submodules must be tagged separately from the main library release. This
 is best done on the git command line. After the Submodule update PR has been
 merged, checkout the repo and check that your `HEAD` is on the commit for the
 submodule update PR on the `master` branch. This _should not_  be normal release
