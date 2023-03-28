@@ -46,3 +46,7 @@ steps:
   env:
   - 'BUILD_ID=$BUILD_ID'
   args: ['check_failure.sh']
+
+options:
+  pool:
+    name: 'projects/confidential-space-images-dev/locations/us-west1/workerPools/cs-image-build-vpc'
