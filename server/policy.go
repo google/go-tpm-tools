@@ -13,10 +13,7 @@ import (
 // will describe in what way the state failed. See the Policy documentation for
 // more information about the specifics of different policies.
 func EvaluatePolicy(state *pb.MachineState, policy *pb.Policy) error {
-	if err := evaluatePlatformPolicy(state.GetPlatform(), policy.GetPlatform()); err != nil {
-		return err
-	}
-	return nil
+	return evaluatePlatformPolicy(state.GetPlatform(), policy.GetPlatform())
 }
 
 func evaluatePlatformPolicy(state *pb.PlatformState, policy *pb.PlatformPolicy) error {

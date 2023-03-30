@@ -139,7 +139,7 @@ func (s *Simulator) IsClosed() bool {
 	return s.closed
 }
 
-func (s *Simulator) on(manufactureReset bool) error {
+func (s *Simulator) on(_ bool) error {
 	// TPM2_Startup must be the first command the TPM receives.
 	if err := tpm2.Startup(s, tpm2.StartupClear); err != nil {
 		return fmt.Errorf("startup: %w", err)

@@ -151,7 +151,7 @@ func (ae alwaysError) Write([]byte) (int, error) {
 	return 0, ae.error
 }
 
-func (ae alwaysError) Read(p []byte) (n int, err error) {
+func (ae alwaysError) Read(_ []byte) (n int, err error) {
 	return 0, ae.error
 }
 

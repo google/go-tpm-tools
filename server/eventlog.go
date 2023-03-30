@@ -98,7 +98,7 @@ func parseCanonicalEventLog(rawCanonicalEventLog []byte, pcrs *tpmpb.PCRs) (*pb.
 		return nil, err
 	}
 
-	cosState, err := getVerifiedCosState(decodedCEL, pcrs)
+	cosState, err := getVerifiedCosState(decodedCEL)
 	if err != nil {
 		return nil, err
 	}
@@ -117,7 +117,7 @@ func contains(set [][]byte, value []byte) bool {
 	return false
 }
 
-func getVerifiedCosState(coscel cel.CEL, pcrs *tpmpb.PCRs) (*pb.AttestedCosState, error) {
+func getVerifiedCosState(coscel cel.CEL) (*pb.AttestedCosState, error) {
 	cosState := &pb.AttestedCosState{}
 	cosState.Container = &pb.ContainerState{}
 	cosState.Container.Args = make([]string, 0)
