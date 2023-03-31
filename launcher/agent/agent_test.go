@@ -55,6 +55,6 @@ func TestAttest(t *testing.T) {
 	fmt.Printf("token.Claims: %v\n", token.Claims)
 }
 
-func placeholderFetcher(audience string) ([][]byte, error) {
+func placeholderFetcher(_ string) ([][]byte, error) {
 	return [][]byte{}, nil
 }

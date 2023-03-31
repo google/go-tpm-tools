@@ -69,7 +69,7 @@ func init() {
 	addPublicKeyAlgoFlag(pubkeyCmd)
 }
 
-func getKey(rw io.ReadWriter, hierarchy tpmutil.Handle, algo tpm2.Algorithm) (*client.Key, error) {
+func getKey(rw io.ReadWriter, hierarchy tpmutil.Handle, _ tpm2.Algorithm) (*client.Key, error) {
 	fmt.Fprintf(debugOutput(), "Using hierarchy 0x%x\n", hierarchy)
 	if nvIndex != 0 {
 		fmt.Fprintf(debugOutput(), "Reading from NVDATA index %d\n", nvIndex)

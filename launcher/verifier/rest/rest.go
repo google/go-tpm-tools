@@ -76,7 +76,7 @@ type restClient struct {
 }
 
 // CreateChallenge implements verifier.Client
-func (c *restClient) CreateChallenge(ctx context.Context) (*verifier.Challenge, error) {
+func (c *restClient) CreateChallenge(_ context.Context) (*verifier.Challenge, error) {
 	// Pass an empty Challenge for the input (all params are output-only)
 	chal, err := c.service.Projects.Locations.Challenges.Create(
 		c.location.Name,
@@ -89,7 +89,7 @@ func (c *restClient) CreateChallenge(ctx context.Context) (*verifier.Challenge, 
 }
 
 // VerifyAttestation implements verifier.Client
-func (c *restClient) VerifyAttestation(ctx context.Context, request verifier.VerifyAttestationRequest) (*verifier.VerifyAttestationResponse, error) {
+func (c *restClient) VerifyAttestation(_ context.Context, request verifier.VerifyAttestationRequest) (*verifier.VerifyAttestationResponse, error) {
 	if request.Challenge == nil || request.Attestation == nil {
 		return nil, fmt.Errorf("nil value provided in challenge")
 	}

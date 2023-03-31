@@ -91,7 +91,7 @@ func fetchImpersonatedToken(ctx context.Context, serviceAccount string, audience
 
 // NewRunner returns a runner.
 func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.Token, launchSpec spec.LaunchSpec, mdsClient *metadata.Client, tpm io.ReadWriteCloser, logger *log.Logger) (*ContainerRunner, error) {
-	image, err := initImage(ctx, cdClient, launchSpec, token, logger)
+	image, err := initImage(ctx, cdClient, launchSpec, token)
 	if err != nil {
 		return nil, err
 	}
@@ -515,7 +515,7 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	return nil
 }
 
-func initImage(ctx context.Context, cdClient *containerd.Client, launchSpec spec.LaunchSpec, token oauth2.Token, logger *log.Logger) (containerd.Image, error) {
+func initImage(ctx context.Context, cdClient *containerd.Client, launchSpec spec.LaunchSpec, token oauth2.Token) (containerd.Image, error) {
 	if token.Valid() {
 		remoteOpt := containerd.WithResolver(Resolver(token.AccessToken))
 

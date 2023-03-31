@@ -24,7 +24,7 @@ func NewClient(signer crypto.Signer) verifier.Client {
 //
 // If you have found this method is insufficient for your tests, this class must be updated to
 // allow for better testing.
-func (fc *fakeClient) CreateChallenge(ctx context.Context) (*verifier.Challenge, error) {
+func (fc *fakeClient) CreateChallenge(_ context.Context) (*verifier.Challenge, error) {
 	bs := make([]byte, 2)
 	binary.LittleEndian.PutUint16(bs, 15)
 	return &verifier.Challenge{
@@ -37,7 +37,7 @@ func (fc *fakeClient) CreateChallenge(ctx context.Context) (*verifier.Challenge,
 //
 // If you have found this method is insufficient for your tests, this class must be updated to
 // allow for better testing.
-func (fc *fakeClient) VerifyAttestation(ctx context.Context, request verifier.VerifyAttestationRequest) (*verifier.VerifyAttestationResponse, error) {
+func (fc *fakeClient) VerifyAttestation(_ context.Context, _ verifier.VerifyAttestationRequest) (*verifier.VerifyAttestationResponse, error) {
 	// Determine signing algorithm.
 	signingMethod := jwt.SigningMethodRS256
 	now := jwt.TimeFunc()
