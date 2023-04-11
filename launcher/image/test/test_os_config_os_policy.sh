@@ -41,7 +41,6 @@ then
 else
     echo 'TEST FAILED: OS policy assignment could not be created'
     echo 'TEST FAILED.' > /workspace/status.txt
-    exit 1
 fi
 
 if $1 == 'debug'

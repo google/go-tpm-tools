@@ -1,6 +1,10 @@
 substitutions:
+  # Expects hardened image (not debug) and should have startup-script service
+  # disabled. google-startup-scripts.service is only enabled with multi-user.target.
   '_IMAGE_NAME': ''
   '_IMAGE_PROJECT': ''
+  # Add user-data in the metadata to test if it is disabled.
+  '_METADATA_FILE': 'startup-script=data/echo_startupscript.sh,user-data=data/cloud-init-config.yaml'
   '_CLEANUP': 'true'
   '_VM_NAME_PREFIX': 'cs-hardened-test'
   '_ZONE': 'us-central1-a'
@@ -13,6 +17,7 @@ steps:
   - 'BUILD_ID=$BUILD_ID'
   args: ['create_vm.sh','-i', '${_IMAGE_NAME}',
           '-p', '${_IMAGE_PROJECT}',
+          '-f', '${_METADATA_FILE}',
           '-m', 'tee-image-reference=${_WORKLOAD_IMAGE},tee-container-log-redirect=true,tee-cmd=["newCmd"],tee-env-ALLOWED_OVERRIDE=overridden,enable-osconfig=TRUE',
           '-n', '${_VM_NAME_PREFIX}-${BUILD_ID}',
           '-z', '${_ZONE}',
