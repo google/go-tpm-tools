@@ -17,8 +17,10 @@ var (
 	output  string
 	input   string
 	nvIndex uint32
+	nonce   []byte
 	keyAlgo = tpm2.AlgRSA
 	pcrs    []int
+	format  string
 )
 
 type pcrsFlag struct {
@@ -140,6 +142,15 @@ func addPublicKeyAlgoFlag(cmd *cobra.Command) {
 func addHashAlgoFlag(cmd *cobra.Command, hashAlgo *tpm2.Algorithm) {
 	f := algoFlag{hashAlgo, []tpm2.Algorithm{tpm2.AlgSHA1, tpm2.AlgSHA256, tpm2.AlgSHA384, tpm2.AlgSHA512}}
 	cmd.PersistentFlags().Var(&f, "hash-algo", "hash algorithm: "+f.Allowed())
+}
+
+func addNonceFlag(cmd *cobra.Command) {
+	cmd.PersistentFlags().BytesHexVar(&nonce, "nonce", []byte{}, "hex encoded nonce for vTPM attestation , cannot be empty")
+}
+
+// Lets this command specify the type of output file (binary or txt)
+func addFormatFlag(cmd *cobra.Command) {
+	cmd.PersistentFlags().StringVar(&format, "format", "binarypb", "type of output file where attestation report stored <binarypb|textproto>")
 }
 
 // alwaysError implements io.ReadWriter by always returning an error
