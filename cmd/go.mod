@@ -3,6 +3,7 @@ module github.com/google/go-tpm-tools/cmd
 go 1.17
 
 require (
+	cloud.google.com/go v0.99.0
 	github.com/google/go-tpm v0.3.3
 	github.com/google/go-tpm-tools v0.3.11
 	github.com/spf13/cobra v1.3.0
@@ -10,6 +11,7 @@ require (
 )
 
 require (
+	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/google/certificate-transparency-go v1.1.2 // indirect
 	github.com/google/go-attestation v0.4.4-0.20220404204839-8820d49b18d9 // indirect
 	github.com/google/go-sev-guest v0.5.2 // indirect
@@ -20,6 +22,8 @@ require (
 	github.com/pborman/uuid v1.2.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
+	go.uber.org/atomic v1.7.0 // indirect
+	go.uber.org/multierr v1.8.0 // indirect
 	golang.org/x/crypto v0.0.0-20220525230936-793ad666bf5e // indirect
 	golang.org/x/sys v0.5.0 // indirect
 )

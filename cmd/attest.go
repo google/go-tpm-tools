@@ -66,6 +66,7 @@ by --format flag.
 		if err != nil {
 			return fmt.Errorf("failed to create attestation key: %v", err)
 		}
+		defer attestationKey.Close()
 
 		attestOpts := client.AttestOpts{}
 		attestOpts.Nonce = nonce
@@ -83,8 +84,8 @@ by --format flag.
 		}
 
 		attestation, err := attestationKey.Attest(attestOpts)
-		if(err != nil){
-			return fmt.Errorf("failed to collect attestation report : %v",err)
+		if err != nil {
+			return fmt.Errorf("failed to collect attestation report : %v", err)
 		}
 
 		if key == "gceAK" {
