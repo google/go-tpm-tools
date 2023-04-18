@@ -80,7 +80,7 @@ func TestVerifyWithGCEAK(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to encode GCEAKTemplateRSA: %v", err)
 			}
-			err = setGCETemplate(t, rwc, op.keyAlgo, data)
+			err = setGCEAKTemplate(t, rwc, op.keyAlgo, data)
 			if err != nil {
 				t.Error(err)
 			}

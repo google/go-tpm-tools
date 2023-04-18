@@ -46,7 +46,9 @@ func GCEAKTemplateRSA() tpm2.Public {
 	}
 }
 
-func setGCETemplate(tb testing.TB, rwc io.ReadWriteCloser, algo string, data []byte) error {
+// Need to call tpm2.NVUndefinespace on the handle with authHandle tpm2.HandlePlatform.
+// e.g defer tpm2.NVUndefineSpace(rwc, "", tpm2.HandlePlatform, tpmutil.Handle(client.GceAKTemplateNVIndexRSA))
+func setGCEAKTemplate(tb testing.TB, rwc io.ReadWriteCloser, algo string, data []byte) error {
 	var err error
 	idx := tpmutil.Handle(getIndex[algo])
 	if err := tpm2.NVDefineSpace(rwc, tpm2.HandlePlatform, idx,
@@ -98,8 +100,8 @@ func TestAttestPass(t *testing.T) {
 		algo  string
 		nonce string
 	}{
-		{"DefaultKey", "", "rsa", "2222"},
-		{"Withnonce", "AK", "rsa", "2222"},
+		{"AKWithRSA", "AK", "rsa", "2222"},
+		{"AKWithECC", "AK", "ecc", "2222"},
 	}
 	for _, op := range tests {
 		t.Run(op.name, func(t *testing.T) {
@@ -199,7 +201,7 @@ func TestMetadataPass(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	t.Cleanup(mock.Stop)
+	defer mock.Stop()
 	instanceInfo, err := getInstanceInfoFromMetadata()
 	if err != nil {
 		t.Error(err)
@@ -241,11 +243,11 @@ func TestAttestWithGCEAK(t *testing.T) {
 	}
 	tests := []struct {
 		name    string
-		nonce   []byte
+		nonce   string
 		keyAlgo string
 	}{
-		{"gceAK:RSA", []byte{1, 2, 3, 4}, "rsa"},
-		{"gceAK:ECC", []byte{1, 2, 3, 4}, "ecc"},
+		{"gceAK:RSA", "1234", "rsa"},
+		{"gceAK:ECC", "1234", "ecc"},
 	}
 	for _, op := range tests {
 		t.Run(op.name, func(t *testing.T) {
@@ -253,11 +255,11 @@ func TestAttestWithGCEAK(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to encode GCEAKTemplateRSA: %v", err)
 			}
-			err = setGCETemplate(t, rwc, op.keyAlgo, data)
+			err = setGCEAKTemplate(t, rwc, op.keyAlgo, data)
 			if err != nil {
 				t.Error(err)
 			}
-			RootCmd.SetArgs([]string{"attest", "--nonce", "1234", "--key", "gceAK", "--algo", op.keyAlgo, "--output", secretFile1, "--format", "binarypb"})
+			RootCmd.SetArgs([]string{"attest", "--nonce", op.nonce, "--key", "gceAK", "--algo", op.keyAlgo, "--output", secretFile1, "--format", "binarypb"})
 			if err := RootCmd.Execute(); err != nil {
 				t.Error(err)
 			}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 
+	sv "github.com/google/go-sev-guest/verify"
 	pb "github.com/google/go-tpm-tools/proto/attest"
 	"github.com/google/go-tpm-tools/server"
 	"github.com/google/go-tpm/tpm2"
@@ -14,12 +15,12 @@ import (
 
 var verifyCmd = &cobra.Command{
 	Use:   "verify",
-	Short: "Output attestation related data",
+	Short: "Verify a remote attestation report.",
 	Args:  cobra.NoArgs,
 }
 var debugCmd = &cobra.Command{
 	Use:   "debug",
-	Short: "VerifyAttestation and Output attestation related data",
+	Short: "Debug the contents of an attestation report without verifying its root-of-trust (e.g., attestation key certificate). For debugging purposes only",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		attestationBytes, err := io.ReadAll(dataInput())
 		if err != nil {
@@ -46,7 +47,19 @@ var debugCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		ms, err := server.VerifyAttestation(attestation, server.VerifyOpts{Nonce: nonce, TrustedAKs: []crypto.PublicKey{cryptoPub}})
+		var validateOpts *server.VerifySnpOpts
+		if len(teeNonce) != 0 {
+			validateOpts = &server.VerifySnpOpts{
+				Validation:   server.SevSnpDefaultValidateOpts(teeNonce),
+				Verification: &sv.Options{},
+			}
+		} else {
+			validateOpts = &server.VerifySnpOpts{
+				Validation:   server.SevSnpDefaultValidateOpts(nonce),
+				Verification: &sv.Options{},
+			}
+		}
+		ms, err := server.VerifyAttestation(attestation, server.VerifyOpts{Nonce: nonce, TrustedAKs: []crypto.PublicKey{cryptoPub}, TEEOpts: validateOpts})
 		if err != nil {
 			return fmt.Errorf("verifying attestation: %w", err)
 		}
@@ -68,4 +81,5 @@ func init() {
 	addOutputFlag(debugCmd)
 	addInputFlag(debugCmd)
 	addFormatFlag(debugCmd)
+	addTeeNonceflag(debugCmd)
 }

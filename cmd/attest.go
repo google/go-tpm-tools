@@ -29,6 +29,7 @@ var attestationKeys = map[string]map[tpm2.Algorithm]func(rw io.ReadWriter) (*cli
 	},
 }
 
+// If hardware technology needs a variable length teenonce then please modify the flags description
 var attestCmd = &cobra.Command{
 	Use:   "attest",
 	Short: "Create a remote attestation report",
@@ -37,15 +38,10 @@ The Attestation report contains a quote on all available PCR banks, a way to val
 the quote, and a TCG Event Log (Linux only).
 Use --key to specify the type of attestation key. It can be gceAK for GCE attestation
 key or AK for a custom attestation key. By default it uses AK.
---algo flag override the public key algorithm for attestation key. If not provided then
+--algo flag overrides the public key algorithm for attestation key. If not provided then
 by default rsa is used.
---nonce attaches even length extra data to the report and guarantees a fresh quote.
---teenonce attaches a 64 bytes extra data to the attestation report of hardware and 
-guarantees a fresh quote.
---format flag specify the type of output file. It can be "binarypb" or "textproto".
-By default it uses binarypb.
---output flag provides file name to store attestation report in the format specified
-by --format flag.
+--teenonce attaches a 64 bytes extra data to the attestation report of TDX and SEV-SNP 
+hardware and guarantees a fresh quote.
 `,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -55,6 +51,10 @@ by --format flag.
 			return err
 		}
 		defer rwc.Close()
+
+		if !(format == "binarypb" || format == "textproto") {
+			return fmt.Errorf("format should be either binarypb or textproto")
+		}
 
 		var attestationKey *client.Key
 		algoToCreateAK, ok := attestationKeys[key]
@@ -102,10 +102,8 @@ by --format flag.
 			if err != nil {
 				return fmt.Errorf("failed to marshal attestation proto: %v", attestation)
 			}
-		} else if format == "textproto" {
-			out = []byte(marshalOptions.Format(attestation))
 		} else {
-			return fmt.Errorf("format should be either binarypb or textproto")
+			out = []byte(marshalOptions.Format(attestation))
 		}
 		if _, err := dataOutput().Write(out); err != nil {
 			return fmt.Errorf("failed to write attestation report: %v", err)

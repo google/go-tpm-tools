@@ -145,7 +145,7 @@ func addHashAlgoFlag(cmd *cobra.Command, hashAlgo *tpm2.Algorithm) {
 }
 
 func addNonceFlag(cmd *cobra.Command) {
-	cmd.PersistentFlags().BytesHexVar(&nonce, "nonce", []byte{}, "hex encoded nonce for vTPM attestation , cannot be empty")
+	cmd.PersistentFlags().BytesHexVar(&nonce, "nonce", []byte{}, "hex encoded nonce for vTPM attestation, cannot be empty")
 }
 
 // Lets this command specify the type of output file (binary or txt)
