@@ -1,13 +1,18 @@
 package cmd
 
 import (
+	"bytes"
 	"io"
 	"os"
 	"strconv"
 	"testing"
+	"time"
 
+	sgtest "github.com/google/go-sev-guest/testing"
+	testclient "github.com/google/go-sev-guest/testing/client"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal/test"
+	pb "github.com/google/go-tpm-tools/proto/attest"
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpmutil"
 )
@@ -269,6 +274,63 @@ func TestAttestWithGCEAK(t *testing.T) {
 	}
 }
 
+func TestAttestTeeNoncePass(t *testing.T) {
+	rwc := test.GetTPM(t)
+	defer client.CheckedClose(t, rwc)
+	ExternalTPM = rwc
+
+	tests := []struct {
+		name     string
+		nonce    []byte
+		teenonce [64]byte
+	}{
+		{"gceAK:RSA", []byte{1, 2, 3, 4}, [64]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4}},
+		{"gceAK:ECC", []byte{1, 2, 3, 4}, [64]byte{}},
+	}
+	for _, op := range tests {
+		t.Run(op.name, func(t *testing.T) {
+			if len(op.teenonce) == 0 {
+				copy(op.teenonce[:], op.nonce[:])
+			}
+			sevTestDevice, _, _, _ := testclient.GetSevGuest([]sgtest.TestCase{
+				{
+					Input:  op.teenonce,
+					Output: sgtest.TestRawReport(op.teenonce),
+				},
+			}, &sgtest.DeviceOptions{Now: time.Now()}, t)
+			defer sevTestDevice.Close()
+
+			ak, err := client.AttestationKeyRSA(rwc)
+			if err != nil {
+				t.Error(err)
+			}
+			attestopts := client.AttestOpts{}
+			attestopts.Nonce = op.nonce
+			attestopts.TEENonce = op.teenonce[:]
+			attestopts.TEEDevice = &client.SevSnpDevice{Device: sevTestDevice}
+			attestopts.TCGEventLog, err = client.GetEventLog(rwc)
+			if err != nil {
+				t.Error(err)
+			}
+			att, err := ak.Attest(attestopts)
+			if err != nil {
+				t.Error(err)
+			}
+
+			if err == nil {
+				snp, ok := att.GetTeeAttestation().(*pb.Attestation_SevSnpAttestation)
+				if !ok {
+					t.Fatalf("Attestation missing SEV-SNP attestation: %v", att.GetTeeAttestation())
+				}
+				report := snp.SevSnpAttestation.Report
+				if !bytes.Equal(report.GetReportData(), op.teenonce[:]) {
+					t.Fatalf("SEV-SNP nonces differ. Got %v, want %v", report.GetReportData(), op.teenonce[:])
+				}
+			}
+		})
+	}
+}
+
 func TestAttestTeeNonceFail(t *testing.T) {
 	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
@@ -278,4 +340,27 @@ func TestAttestTeeNonceFail(t *testing.T) {
 	if err := RootCmd.Execute(); err == nil {
 		t.Error("expected not-nil error")
 	}
+
+	// TEENonce with length less than 64 bytes.
+	sevTestDevice, _, _, _ := testclient.GetSevGuest([]sgtest.TestCase{
+		{
+			Input: [64]byte{1, 2, 3, 4},
+		},
+	}, &sgtest.DeviceOptions{Now: time.Now()}, t)
+	defer sevTestDevice.Close()
+
+	ak, err := client.AttestationKeyRSA(rwc)
+	if err != nil {
+		t.Error(err)
+	}
+	attestopts := client.AttestOpts{
+		Nonce:     []byte{1, 2, 3, 4},
+		TEENonce:  []byte{1, 2, 3, 4},
+		TEEDevice: &client.SevSnpDevice{Device: sevTestDevice},
+	}
+	_, err = ak.Attest(attestopts)
+	if err == nil {
+		t.Error("expected non-nil error")
+	}
+
 }
