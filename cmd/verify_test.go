@@ -224,8 +224,7 @@ func TestVerifySevSnpPass(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	var validateOpts *server.VerifySnpOpts
-	validateOpts = &server.VerifySnpOpts{
+	validateOpts := &server.VerifySnpOpts{
 		Validation: server.SevSnpDefaultValidateOptsForTest(nonce64[:]),
 		Verification: &sv.Options{
 			Getter:       kdsGetter,
@@ -271,8 +270,7 @@ func TestVerifySevSnpFail(t *testing.T) {
 		t.Error(err)
 	}
 
-	var validateOpts *server.VerifySnpOpts
-	validateOpts = &server.VerifySnpOpts{
+	validateOpts := &server.VerifySnpOpts{
 		Validation: server.SevSnpDefaultValidateOptsForTest([]byte("different from teenonce")),
 		Verification: &sv.Options{
 			Getter:       kdsGetter,
