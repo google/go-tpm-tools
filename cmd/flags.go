@@ -14,13 +14,14 @@ import (
 )
 
 var (
-	output  string
-	input   string
-	nvIndex uint32
-	nonce   []byte
-	keyAlgo = tpm2.AlgRSA
-	pcrs    []int
-	format  string
+	output   string
+	input    string
+	nvIndex  uint32
+	nonce    []byte
+	teeNonce []byte
+	keyAlgo  = tpm2.AlgRSA
+	pcrs     []int
+	format   string
 )
 
 type pcrsFlag struct {
@@ -151,6 +152,10 @@ func addNonceFlag(cmd *cobra.Command) {
 // Lets this command specify the type of output file (binary or txt)
 func addFormatFlag(cmd *cobra.Command) {
 	cmd.PersistentFlags().StringVar(&format, "format", "binarypb", "type of output file where attestation report stored <binarypb|textproto>")
+}
+
+func addTeeNonceflag(cmd *cobra.Command) {
+	cmd.PersistentFlags().BytesHexVar(&teeNonce, "teenonce", []byte{}, "hex encoded teenonce for hardware attestation, can be empty")
 }
 
 // alwaysError implements io.ReadWriter by always returning an error

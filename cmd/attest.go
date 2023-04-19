@@ -14,8 +14,7 @@ import (
 )
 
 var (
-	key      string
-	teeNonce []byte
+	key string
 )
 
 var attestationKeys = map[string]map[tpm2.Algorithm]func(rw io.ReadWriter) (*client.Key, error){
@@ -155,9 +154,6 @@ func getInstanceInfoFromMetadata() (*attest.GCEInstanceInfo, error) {
 
 func addKeyFlag(cmd *cobra.Command) {
 	cmd.PersistentFlags().StringVar(&key, "key", "AK", "indicates type of attestation key to use <gceAK|AK>")
-}
-func addTeeNonceflag(cmd *cobra.Command) {
-	cmd.PersistentFlags().BytesHexVar(&teeNonce, "teenonce", []byte{}, "hex encoded teenonce for hardware attestation, can be empty")
 }
 
 func init() {

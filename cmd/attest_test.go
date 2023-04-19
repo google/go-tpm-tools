@@ -105,6 +105,7 @@ func TestAttestPass(t *testing.T) {
 		algo  string
 		nonce string
 	}{
+		{"defaultKey", "", "rsa", "1234"},
 		{"AKWithRSA", "AK", "rsa", "2222"},
 		{"AKWithECC", "AK", "ecc", "2222"},
 	}
@@ -264,17 +265,24 @@ func TestAttestWithGCEAK(t *testing.T) {
 			if err != nil {
 				t.Error(err)
 			}
+			defer tpm2.NVUndefineSpace(rwc, "", tpm2.HandlePlatform, tpmutil.Handle(getIndex[op.keyAlgo]))
+
+			var dummyInstance = Instance{ProjectID: "test-project", ProjectNumber: "1922337278274", Zone: "us-central-1a", InstanceID: "12345678", InstanceName: "default"}
+			mock, err := NewMetadataServer(dummyInstance)
+			if err != nil {
+				t.Error(err)
+			}
+			defer mock.Stop()
+
 			RootCmd.SetArgs([]string{"attest", "--nonce", op.nonce, "--key", "gceAK", "--algo", op.keyAlgo, "--output", secretFile1, "--format", "binarypb"})
 			if err := RootCmd.Execute(); err != nil {
 				t.Error(err)
 			}
-
-			defer tpm2.NVUndefineSpace(rwc, "", tpm2.HandlePlatform, tpmutil.Handle(getIndex[op.keyAlgo]))
 		})
 	}
 }
 
-func TestAttestTeeNoncePass(t *testing.T) {
+func TestAttestSevSnpPass(t *testing.T) {
 	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
 	ExternalTPM = rwc
