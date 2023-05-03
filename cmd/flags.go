@@ -14,11 +14,14 @@ import (
 )
 
 var (
-	output  string
-	input   string
-	nvIndex uint32
-	keyAlgo = tpm2.AlgRSA
-	pcrs    []int
+	output   string
+	input    string
+	nvIndex  uint32
+	nonce    []byte
+	teeNonce []byte
+	keyAlgo  = tpm2.AlgRSA
+	pcrs     []int
+	format   string
 )
 
 type pcrsFlag struct {
@@ -142,6 +145,19 @@ func addHashAlgoFlag(cmd *cobra.Command, hashAlgo *tpm2.Algorithm) {
 	cmd.PersistentFlags().Var(&f, "hash-algo", "hash algorithm: "+f.Allowed())
 }
 
+func addNonceFlag(cmd *cobra.Command) {
+	cmd.PersistentFlags().BytesHexVar(&nonce, "nonce", []byte{}, "hex encoded nonce for vTPM attestation, cannot be empty")
+}
+
+// Lets this command specify the type of output file (binary or txt)
+func addFormatFlag(cmd *cobra.Command) {
+	cmd.PersistentFlags().StringVar(&format, "format", "binarypb", "type of output file where attestation report stored <binarypb|textproto>")
+}
+
+func addTeeNonceflag(cmd *cobra.Command) {
+	cmd.PersistentFlags().BytesHexVar(&teeNonce, "teenonce", []byte{}, "hex encoded teenonce for hardware attestation, can be empty")
+}
+
 // alwaysError implements io.ReadWriter by always returning an error
 type alwaysError struct {
 	error
@@ -151,7 +167,7 @@ func (ae alwaysError) Write([]byte) (int, error) {
 	return 0, ae.error
 }
 
-func (ae alwaysError) Read(p []byte) (n int, err error) {
+func (ae alwaysError) Read(_ []byte) (n int, err error) {
 	return 0, ae.error
 }
 

@@ -143,7 +143,7 @@ func getExitCode(isHardened bool, restartPolicy spec.RestartPolicy, err error) i
 }
 
 func startLauncher() error {
-	logger.Println("Launch Spec: ", launchSpec)
+	logger.Printf("Launch Spec: %+v\n", launchSpec)
 	containerdClient, err := containerd.New(defaults.DefaultAddress)
 	if err != nil {
 		return &launcher.RetryableError{Err: err}
@@ -168,7 +168,7 @@ func startLauncher() error {
 
 	token, err := launcher.RetrieveAuthToken(mdsClient)
 	if err != nil {
-		logger.Printf("failed to retrieve auth token: %v, using empty auth", err)
+		logger.Printf("failed to retrieve auth token: %v, using empty auth for image pulling\n", err)
 	}
 
 	ctx := namespaces.WithNamespace(context.Background(), namespaces.Default)

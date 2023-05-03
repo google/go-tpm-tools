@@ -11,16 +11,27 @@ import (
 	pb "github.com/google/go-tpm-tools/proto/attest"
 )
 
-// Expected Firmware/PCR0 Event Types.
+// Expected TCG Event Log Event Types.
 //
 // Taken from TCG PC Client Platform Firmware Profile Specification,
 // Table 14 Events.
 const (
-	NoAction     uint32 = 0x00000003
-	Separator    uint32 = 0x00000004
-	SCRTMVersion uint32 = 0x00000008
-	NonhostInfo  uint32 = 0x00000011
-	IPL          uint32 = 0x0000000D
+	NoAction                   uint32 = 0x00000003
+	Separator                  uint32 = 0x00000004
+	SCRTMVersion               uint32 = 0x00000008
+	IPL                        uint32 = 0x0000000D
+	NonhostInfo                uint32 = 0x00000011
+	EFIBootServicesApplication uint32 = 0x80000003
+	EFIAction                  uint32 = 0x80000007
+)
+
+// Constant events used with type "EV_EFI_ACTION".
+// Taken from TCG PC Client Platform Firmware Profile Specification,
+// Table 17 EV_EFI_ACTION Strings.
+const (
+	// Measured when Boot Manager attempts to execute code from a Boot Option.
+	CallingEFIApplication      string = "Calling EFI Application from Boot Option"
+	ExitBootServicesInvocation string = "Exit Boot Services Invocation"
 )
 
 var (

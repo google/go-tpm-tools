@@ -123,6 +123,6 @@ Unlike [Go-TPM](https://github.com/google/go-tpm) (which supports TPM 1.2 and TP
 
 Copyright 2018 Google Inc. under the
 [Apache 2.0 License](https://www.apache.org/licenses/LICENSE-2.0). Microsoft's TPM simulator
-code is licensed under a [3-clause BSD license](https://opensource.org/licenses/BSD-3-Clause) and the [TCG software license](https://trustedcomputinggroup.org/wp-content/uploads/TPM-Rev-2.0-Part-1-Architecture-01.38.pdf). See the `LICENSE` file for more information.
+code is licensed under a [3-clause BSD license](https://opensource.org/licenses/BSD-3-Clause) and the [TCG software license](https://trustedcomputinggroup.org/wp-content/uploads/TPM-Rev-2.0-Part-1-Architecture-01.38.pdf). See the [`LICENSE`](LICENSE) file for more information.
 
 This is not an official Google product.

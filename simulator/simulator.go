@@ -109,7 +109,9 @@ func (s *Simulator) Write(commandBuffer []byte) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	return s.buf.Write(resp)
+	// write response to the internal response buffer.
+	_, _ = s.buf.Write(resp)
+	return len(commandBuffer), nil
 }
 
 // Read gets the response of a command previously issued by calling Write().
@@ -137,7 +139,7 @@ func (s *Simulator) IsClosed() bool {
 	return s.closed
 }
 
-func (s *Simulator) on(manufactureReset bool) error {
+func (s *Simulator) on(_ bool) error {
 	// TPM2_Startup must be the first command the TPM receives.
 	if err := tpm2.Startup(s, tpm2.StartupClear); err != nil {
 		return fmt.Errorf("startup: %w", err)

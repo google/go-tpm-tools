@@ -1,0 +1,98 @@
+substitutions:
+  # Expects hardened image (not debug) and should have startup-script service
+  # disabled. google-startup-scripts.service is only enabled with multi-user.target.
+  '_IMAGE_NAME': ''
+  '_IMAGE_PROJECT': ''
+  # Add user-data in the metadata to test if it is disabled.
+  '_METADATA_FILE': 'startup-script=data/echo_startupscript.sh,user-data=data/cloud-init-config.yaml'
+  '_CLEANUP': 'true'
+  '_VM_NAME_PREFIX': 'cs-hardened-test'
+  '_ZONE': 'us-central1-a'
+  '_WORKLOAD_IMAGE_LOG': 'us-west1-docker.pkg.dev/confidential-space-images-dev/cs-integ-test-images/launchpolicylog:latest'
+  '_WORKLOAD_IMAGE_ENV': 'us-west1-docker.pkg.dev/confidential-space-images-dev/cs-integ-test-images/basic-test:latest'
+  '_WORKLOAD_IMAGE_CMD': 'us-west1-docker.pkg.dev/confidential-space-images-dev/cs-integ-test-images/launchpolicycmd:latest'
+steps:
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CreateVMLogOverride
+  entrypoint: 'bash'
+  env:
+  - 'BUILD_ID=$BUILD_ID'
+  args: ['create_vm.sh','-i', '${_IMAGE_NAME}',
+          '-p', '${_IMAGE_PROJECT}',
+          '-f', '${_METADATA_FILE}',
+          '-m', 'tee-image-reference=${_WORKLOAD_IMAGE_LOG},tee-container-log-redirect=true',
+          '-n', '${_VM_NAME_PREFIX}-log-${BUILD_ID}',
+          '-z', '${_ZONE}',
+        ]
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: LogOverrideTest
+  entrypoint: 'bash'
+  args: ['scripts/test_launchpolicy_log.sh', '${_VM_NAME_PREFIX}-log-${BUILD_ID}', '${_ZONE}']
+  waitFor: ['CreateVMLogOverride']
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CleanUpLogOverride
+  entrypoint: 'bash'
+  env:
+  - 'CLEANUP=$_CLEANUP'
+  args: ['cleanup.sh', '${_VM_NAME_PREFIX}-log-${BUILD_ID}', '${_ZONE}']
+  waitFor: ['LogOverrideTest']
+
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CreateVMEnvOverride
+  entrypoint: 'bash'
+  env:
+  - 'BUILD_ID=$BUILD_ID'
+  args: ['create_vm.sh','-i', '${_IMAGE_NAME}',
+          '-p', '${_IMAGE_PROJECT}',
+          '-f', '${_METADATA_FILE}',
+          '-m', 'tee-image-reference=${_WORKLOAD_IMAGE_ENV},tee-env-OUT=a',
+          '-n', '${_VM_NAME_PREFIX}-env-${BUILD_ID}',
+          '-z', '${_ZONE}',
+        ]
+  waitFor: ['-']  # The '-' indicates that this step begins immediately.
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: EnvOverrideTest
+  entrypoint: 'bash'
+  args: ['scripts/test_launchpolicy_env.sh', '${_VM_NAME_PREFIX}-env-${BUILD_ID}', '${_ZONE}']
+  waitFor: ['CreateVMEnvOverride']
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CleanUpEnvOverride
+  entrypoint: 'bash'
+  env:
+  - 'CLEANUP=$_CLEANUP'
+  args: ['cleanup.sh', '${_VM_NAME_PREFIX}-env-${BUILD_ID}', '${_ZONE}']
+  waitFor: ['EnvOverrideTest']
+
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CreateVMCmdOverride
+  entrypoint: 'bash'
+  env:
+  - 'BUILD_ID=$BUILD_ID'
+  args: ['create_vm.sh','-i', '${_IMAGE_NAME}',
+          '-p', '${_IMAGE_PROJECT}',
+          '-f', '${_METADATA_FILE}',
+          '-m', 'tee-image-reference=${_WORKLOAD_IMAGE_CMD},tee-cmd=["newCmd"]',
+          '-n', '${_VM_NAME_PREFIX}-cmd-${BUILD_ID}',
+          '-z', '${_ZONE}',
+        ]
+  waitFor: ['-']  # The '-' indicates that this step begins immediately.
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CmdOverrideTest
+  entrypoint: 'bash'
+  args: ['scripts/test_launchpolicy_cmd.sh', '${_VM_NAME_PREFIX}-cmd-${BUILD_ID}', '${_ZONE}']
+  waitFor: ['CreateVMCmdOverride']
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CleanUpCmdOverride
+  entrypoint: 'bash'
+  env:
+  - 'CLEANUP=$_CLEANUP'
+  args: ['cleanup.sh', '${_VM_NAME_PREFIX}-cmd-${BUILD_ID}', '${_ZONE}']
+  waitFor: ['CmdOverrideTest']
+
+# Must come after cleanup.
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CheckFailure
+  entrypoint: 'bash'
+  env:
+  - 'BUILD_ID=$BUILD_ID'
+  args: ['check_failure.sh']

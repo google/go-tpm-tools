@@ -18,8 +18,13 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
+	"github.com/containerd/containerd"
+	"github.com/containerd/containerd/defaults"
+	"github.com/containerd/containerd/namespaces"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-tpm-tools/cel"
+	"github.com/google/go-tpm-tools/launcher/spec"
+	"golang.org/x/oauth2"
 	"google.golang.org/api/option"
 )
 
@@ -461,6 +466,34 @@ func TestGetNextRefresh(t *testing.T) {
 				t.Errorf("getNextRefreshFromExpiration(%v, %v) = %v next refresh. expected %v (next refresh) < %v (expiration)",
 					expDuration, randNum, next, next, expDuration)
 			}
+		}
+	}
+}
+
+func TestInitImageDockerPublic(t *testing.T) {
+	// testing image fetching using a dummy token and a docker repo url
+	containerdClient, err := containerd.New(defaults.DefaultAddress)
+	if err != nil {
+		t.Skipf("test needs containerd daemon: %v", err)
+	}
+
+	ctx := namespaces.WithNamespace(context.Background(), "test")
+	// This is a "valid" token (formatwise)
+	validToken := oauth2.Token{AccessToken: "000000", Expiry: time.Now().Add(time.Hour)}
+	if _, err := initImage(ctx, containerdClient, spec.LaunchSpec{ImageRef: "docker.io/library/hello-world:latest"}, validToken); err != nil {
+		t.Error(err)
+	} else {
+		if err := containerdClient.ImageService().Delete(ctx, "docker.io/library/hello-world:latest"); err != nil {
+			t.Error(err)
+		}
+	}
+
+	invalidToken := oauth2.Token{}
+	if _, err := initImage(ctx, containerdClient, spec.LaunchSpec{ImageRef: "docker.io/library/hello-world:latest"}, invalidToken); err != nil {
+		t.Error(err)
+	} else {
+		if err := containerdClient.ImageService().Delete(ctx, "docker.io/library/hello-world:latest"); err != nil {
+			t.Error(err)
 		}
 	}
 }

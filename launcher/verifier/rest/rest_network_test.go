@@ -36,7 +36,7 @@ func testClient(t *testing.T) verifier.Client {
 	return vClient
 }
 
-func testFetcher(audience string) ([][]byte, error) {
+func testFetcher(_ string) ([][]byte, error) {
 	return [][]byte{}, nil
 }
 

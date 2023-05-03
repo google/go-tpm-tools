@@ -59,6 +59,10 @@ func parsePCClientEventLog(rawEventLog []byte, pcrs *tpmpb.PCRs, loader Bootload
 	if err != nil {
 		errors = append(errors, err)
 	}
+	efiState, err := getEfiState(cryptoHash, rawEvents)
+	if err != nil {
+		errors = append(errors, err)
+	}
 
 	var grub *pb.GrubState
 	var kernel *pb.LinuxKernelState
@@ -76,6 +80,7 @@ func parsePCClientEventLog(rawEventLog []byte, pcrs *tpmpb.PCRs, loader Bootload
 	return &pb.MachineState{
 		Platform:    platform,
 		SecureBoot:  sbState,
+		Efi:         efiState,
 		RawEvents:   rawEvents,
 		Hash:        pcrs.GetHash(),
 		Grub:        grub,
@@ -93,7 +98,7 @@ func parseCanonicalEventLog(rawCanonicalEventLog []byte, pcrs *tpmpb.PCRs) (*pb.
 		return nil, err
 	}
 
-	cosState, err := getVerifiedCosState(decodedCEL, pcrs)
+	cosState, err := getVerifiedCosState(decodedCEL)
 	if err != nil {
 		return nil, err
 	}
@@ -112,7 +117,7 @@ func contains(set [][]byte, value []byte) bool {
 	return false
 }
 
-func getVerifiedCosState(coscel cel.CEL, pcrs *tpmpb.PCRs) (*pb.AttestedCosState, error) {
+func getVerifiedCosState(coscel cel.CEL) (*pb.AttestedCosState, error) {
 	cosState := &pb.AttestedCosState{}
 	cosState.Container = &pb.ContainerState{}
 	cosState.Container.Args = make([]string, 0)
@@ -201,19 +206,59 @@ func getVerifiedCosState(coscel cel.CEL, pcrs *tpmpb.PCRs) (*pb.AttestedCosState
 	return cosState, nil
 }
 
-func getPlatformState(hash crypto.Hash, events []*pb.Event) (*pb.PlatformState, error) {
-	// We pre-compute the separator event hash, and check if the event type has
-	// been modified. We only trust events that come before a valid separator.
+type separatorInfo struct {
+	separatorData    [][]byte
+	separatorDigests [][]byte
+}
+
+// getSeparatorInfo is used to return the valid event data and their corresponding
+// digests. This is useful for events like separators, where the data is known
+// ahead of time.
+func getSeparatorInfo(hash crypto.Hash) *separatorInfo {
 	hasher := hash.New()
 	// From the PC Client Firmware Profile spec, on the separator event:
 	// The event field MUST contain the hex value 00000000h or FFFFFFFFh.
-	separatorData := [][]byte{{0, 0, 0, 0}, {0xff, 0xff, 0xff, 0xff}}
-	separatorDigests := make([][]byte, 0, len(separatorData))
-	for _, value := range separatorData {
+	sepData := [][]byte{{0, 0, 0, 0}, {0xff, 0xff, 0xff, 0xff}}
+	sepDigests := make([][]byte, 0, len(sepData))
+	for _, value := range sepData {
 		hasher.Write(value)
-		separatorDigests = append(separatorDigests, hasher.Sum(nil))
+		sepDigests = append(sepDigests, hasher.Sum(nil))
 	}
+	return &separatorInfo{separatorData: sepData, separatorDigests: sepDigests}
+}
 
+// checkIfValidSeparator returns true if both the separator event's type and
+// digest match the expected event data.
+// If the event type is Separator, but the data is invalid, it returns false
+// and an error.
+// checkIfValidSeparator returns false and a nil error on other event types.
+func checkIfValidSeparator(event *pb.Event, sepInfo *separatorInfo) (bool, error) {
+	evtType := event.GetUntrustedType()
+	index := event.GetPcrIndex()
+	if (evtType != Separator) && !contains(sepInfo.separatorDigests, event.GetDigest()) {
+		return false, nil
+	}
+	// To make sure we have a valid event, we check any event (e.g., separator)
+	// that claims to be of the event type or "looks like" the event to prevent
+	// certain vulnerabilities in event parsing. For more info see:
+	// https://github.com/google/go-attestation/blob/master/docs/event-log-disclosure.md
+	if evtType != Separator {
+		return false, fmt.Errorf("PCR%d event contains separator data but non-separator type %d", index, evtType)
+	}
+	if !event.GetDigestVerified() {
+		return false, fmt.Errorf("unverified separator digest for PCR%d", index)
+	}
+	if !contains(sepInfo.separatorData, event.GetData()) {
+		return false, fmt.Errorf("invalid separator data for PCR%d", index)
+	}
+	return true, nil
+}
+
+func getPlatformState(hash crypto.Hash, events []*pb.Event) (*pb.PlatformState, error) {
+	// We pre-compute the separator and EFI Action event hash.
+	// We check if these events have been modified, since the event type is
+	// untrusted.
+	sepInfo := getSeparatorInfo(hash)
 	var versionString []byte
 	var nonHostInfo []byte
 	for _, event := range events {
@@ -223,20 +268,11 @@ func getPlatformState(hash crypto.Hash, events []*pb.Event) (*pb.PlatformState, 
 		}
 		evtType := event.GetUntrustedType()
 
-		// Make sure we have a valid separator event, we check any event that
-		// claims to be a Separator or "looks like" a separator to prevent
-		// certain vulnerabilities in event parsing. For more info see:
-		// https://github.com/google/go-attestation/blob/master/docs/event-log-disclosure.md
-		if (evtType == Separator) || contains(separatorDigests, event.GetDigest()) {
-			if evtType != Separator {
-				return nil, fmt.Errorf("PCR%d event contains separator data but non-separator type %d", index, evtType)
-			}
-			if !event.GetDigestVerified() {
-				return nil, fmt.Errorf("unverified separator digest for PCR%d", index)
-			}
-			if !contains(separatorData, event.GetData()) {
-				return nil, fmt.Errorf("invalid separator data for PCR%d", index)
-			}
+		isSeparator, err := checkIfValidSeparator(event, sepInfo)
+		if err != nil {
+			return nil, err
+		}
+		if isSeparator {
 			// Don't trust any PCR0 events after the separator
 			break
 		}
@@ -420,6 +456,110 @@ func getGrubState(hash crypto.Hash, events []*pb.Event) (*pb.GrubState, error) {
 		return nil, errors.New("no GRUB measurements found")
 	}
 	return &pb.GrubState{Files: files, Commands: commands}, nil
+}
+
+func getEfiState(hash crypto.Hash, events []*pb.Event) (*pb.EfiState, error) {
+	// We pre-compute various event digests, and check if those event type have
+	// been modified. We only trust events that come before the
+	// ExitBootServices() request.
+	separatorInfo := getSeparatorInfo(hash)
+
+	hasher := hash.New()
+	hasher.Write([]byte(CallingEFIApplication))
+	callingEFIAppDigest := hasher.Sum(nil)
+
+	hasher.Reset()
+	hasher.Write([]byte(ExitBootServicesInvocation))
+	exitBootSvcDigest := hasher.Sum(nil)
+
+	var efiAppStates []*pb.EfiApp
+	var seenSeparator4 bool
+	var seenSeparator5 bool
+	var seenCallingEfiApp bool
+	var seenExitBootServices bool
+	for _, event := range events {
+		index := event.GetPcrIndex()
+		// getEfiState should only ever process PCRs 4 and 5.
+		if index != 4 && index != 5 {
+			continue
+		}
+		evtType := event.GetUntrustedType()
+
+		switch index {
+		case 4:
+			// Process Calling EFI Application event.
+			if bytes.Equal(callingEFIAppDigest, event.GetDigest()) {
+				if evtType != EFIAction {
+					return nil, fmt.Errorf("PCR%d contains CallingEFIApp event but non EFIAction type: %d",
+						index, evtType)
+				}
+				if !event.GetDigestVerified() {
+					return nil, fmt.Errorf("unverified CallingEFIApp digest for PCR%d", index)
+				}
+				// We don't support calling more than one boot device.
+				if seenCallingEfiApp {
+					return nil, fmt.Errorf("found duplicate CallingEFIApp event in PCR%d", index)
+				}
+				if seenSeparator4 {
+					return nil, fmt.Errorf("found CallingEFIApp event in PCR%d after separator event", index)
+				}
+				seenCallingEfiApp = true
+			}
+
+			if evtType == EFIBootServicesApplication {
+				if !seenCallingEfiApp {
+					return nil, fmt.Errorf("found EFIBootServicesApplication in PCR%d before CallingEFIApp event", index)
+				}
+				efiAppStates = append(efiAppStates, &pb.EfiApp{Digest: event.GetDigest()})
+			}
+
+			isSeparator, err := checkIfValidSeparator(event, separatorInfo)
+			if err != nil {
+				return nil, err
+			}
+			if !isSeparator {
+				continue
+			}
+			if seenSeparator4 {
+				return nil, errors.New("found duplicate Separator event in PCR4")
+			}
+			seenSeparator4 = true
+		case 5:
+			// Process ExitBootServices event.
+			if bytes.Equal(exitBootSvcDigest, event.GetDigest()) {
+				if evtType != EFIAction {
+					return nil, fmt.Errorf("PCR%d contains ExitBootServices event but non EFIAction type: %d",
+						index, evtType)
+				}
+				if !event.GetDigestVerified() {
+					return nil, fmt.Errorf("unverified ExitBootServices digest for PCR%d", index)
+				}
+				// Don't process any PCR4 or PCR5 events after Boot Manager has
+				// requested ExitBootServices().
+				seenExitBootServices = true
+				break
+			}
+
+			isSeparator, err := checkIfValidSeparator(event, separatorInfo)
+			if err != nil {
+				return nil, err
+			}
+			if !isSeparator {
+				continue
+			}
+			if seenSeparator5 {
+				return nil, errors.New("found duplicate Separator event in PCR5")
+			}
+			seenSeparator5 = true
+		}
+	}
+	// Only write EFI digests if we see an ExitBootServices invocation.
+	// Otherwise, software further down the bootchain could extend bad
+	// PCR4 measurements.
+	if seenExitBootServices {
+		return &pb.EfiState{Apps: efiAppStates}, nil
+	}
+	return nil, nil
 }
 
 func getLinuxKernelStateFromGRUB(grub *pb.GrubState) (*pb.LinuxKernelState, error) {
