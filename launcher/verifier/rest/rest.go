@@ -131,7 +131,7 @@ func convertChallengeFromREST(chal *confidentialcomputingpb.Challenge) (*verifie
 func convertRequestToREST(request verifier.VerifyAttestationRequest) *confidentialcomputingpb.VerifyAttestationRequest {
 	idTokens := make([]string, len(request.GcpCredentials))
 	for i, token := range request.GcpCredentials {
-		idTokens[i] = encoding.EncodeToString(token)
+		idTokens[i] = string(token)
 	}
 
 	quotes := make([]*confidentialcomputingpb.TpmAttestation_Quote, len(request.Attestation.GetQuotes()))
