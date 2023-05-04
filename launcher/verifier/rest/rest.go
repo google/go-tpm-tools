@@ -91,12 +91,12 @@ type restClient struct {
 func (c *restClient) CreateChallenge(ctx context.Context) (*verifier.Challenge, error) {
 	// Pass an empty Challenge for the input (all params are output-only)
 	req := &confidentialcomputingpb.CreateChallengeRequest{
-		Parent: c.location.Name,
+		Parent:    c.location.Name,
 		Challenge: &confidentialcomputingpb.Challenge{},
 	}
 	chal, err := c.service.CreateChallenge(ctx, req)
 	if err != nil {
-		return nil, fmt.Errorf("calling v1alpha1.CreateChallenge: %w", err)
+		return nil, fmt.Errorf("calling v1.CreateChallenge: %w", err)
 	}
 	return convertChallengeFromREST(chal)
 }
@@ -110,7 +110,7 @@ func (c *restClient) VerifyAttestation(ctx context.Context, request verifier.Ver
 	req.Challenge = request.Challenge.Name
 	response, err := c.service.VerifyAttestation(ctx, req)
 	if err != nil {
-		return nil, fmt.Errorf("calling v1alpha1.VerifyAttestation: %w", err)
+		return nil, fmt.Errorf("calling v1.VerifyAttestation: %w", err)
 	}
 	return convertResponseFromREST(response)
 }
