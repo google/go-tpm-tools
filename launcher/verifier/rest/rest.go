@@ -169,10 +169,7 @@ func convertRequestToREST(request verifier.VerifyAttestationRequest) *confidenti
 }
 
 func convertResponseFromREST(resp *confidentialcomputingpb.VerifyAttestationResponse) (*verifier.VerifyAttestationResponse, error) {
-	token, err := encoding.DecodeString(resp.GetOidcClaimsToken())
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode VerifyAttestationResponse.ClaimsToken: %w", err)
-	}
+	token := []byte(resp.GetOidcClaimsToken())
 	return &verifier.VerifyAttestationResponse{
 		ClaimsToken: token,
 	}, nil
