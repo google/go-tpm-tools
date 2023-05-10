@@ -2,7 +2,7 @@ substitutions:
   # using this base image for now, because there is an issue causing the newest COS dev
   # image not booting with cs.
   '_BASE_IMAGE': '' # left empty means using the latest image in the family
-  '_BASE_IMAGE_FAMILY': 'cos-beta' # base image family
+  '_BASE_IMAGE_FAMILY': 'cos-dev' # base image family
   '_OUTPUT_IMAGE_PREFIX': 'confidential-space'
   '_OUTPUT_IMAGE_SUFFIX': ''
   '_BUCKET_NAME': '${PROJECT_ID}_cloudbuild'
