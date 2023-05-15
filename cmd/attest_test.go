@@ -280,12 +280,24 @@ func TestAttestWithGCEAK(t *testing.T) {
 	}
 }
 
+func TestTeeTechnologyFail(t *testing.T) {
+	rwc := test.GetTPM(t)
+	defer client.CheckedClose(t, rwc)
+	ExternalTPM = rwc
+
+	// value of tee_technology flag should be sev-snp
+	RootCmd.SetArgs([]string{"attest", "--nonce", "1234", "--key", "AK", "--teenonce", "12345678", "--tee_technology", "sgx"})
+	if err := RootCmd.Execute(); err == nil {
+		t.Error("expected not-nil error")
+	}
+}
+
 func TestAttestTeeNonceFail(t *testing.T) {
 	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
 	ExternalTPM = rwc
 	// non-nil TEENonce when TEEDevice is nil
-	RootCmd.SetArgs([]string{"attest", "--nonce", "1234", "--key", "AK", "--teenonce", "12345678"})
+	RootCmd.SetArgs([]string{"attest", "--nonce", "1234", "--key", "AK", "--teenonce", "12345678", "--tee_technology", ""})
 	if err := RootCmd.Execute(); err == nil {
 		t.Error("expected not-nil error")
 	}
@@ -302,6 +314,7 @@ func TestAttestTeeNonceFail(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
+	defer ak.Close()
 	attestopts := client.AttestOpts{
 		Nonce:     []byte{1, 2, 3, 4},
 		TEENonce:  []byte{1, 2, 3, 4},

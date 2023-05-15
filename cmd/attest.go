@@ -14,7 +14,8 @@ import (
 )
 
 var (
-	key string
+	key           string
+	teeTechnology string
 )
 
 var attestationKeys = map[string]map[tpm2.Algorithm]func(rw io.ReadWriter) (*client.Key, error){
@@ -69,11 +70,24 @@ hardware and guarantees a fresh quote.
 
 		attestOpts := client.AttestOpts{}
 		attestOpts.Nonce = nonce
-		if len(teeNonce) != 0 {
-			attestOpts.TEENonce = teeNonce
-			attestOpts.TEEDevice, err = client.CreateSevSnpDevice()
-			if err != nil {
-				return fmt.Errorf("failed to collect TEE attestation report: %v", err)
+		if len(teeTechnology) != 0 {
+			// Add logic to open other hardware devices when required.
+			switch teeTechnology {
+			case "sev-snp":
+				attestOpts.TEEDevice, err = client.CreateSevSnpDevice()
+				if err != nil {
+					return fmt.Errorf("failed to open sev-snp device: %v", err)
+				}
+			default:
+				// Change the return statement when more devices are added
+				return fmt.Errorf("tee_technology should be sev-snp")
+			}
+			if len(teeNonce) != 0 {
+				attestOpts.TEENonce = teeNonce
+			}
+		} else {
+			if len(teeNonce) != 0 {
+				return fmt.Errorf("use of --teenonce requires specifying TEE hardware type with --tee_technology")
 			}
 		}
 
@@ -156,6 +170,10 @@ func addKeyFlag(cmd *cobra.Command) {
 	cmd.PersistentFlags().StringVar(&key, "key", "AK", "indicates type of attestation key to use <gceAK|AK>")
 }
 
+func addTeeTechnology(cmd *cobra.Command) {
+	cmd.PersistentFlags().StringVar(&teeTechnology, "tee_technology", "", "indicates the type of TEE hardware <sev-snp>")
+}
+
 func init() {
 	RootCmd.AddCommand(attestCmd)
 	addKeyFlag(attestCmd)
@@ -164,4 +182,5 @@ func init() {
 	addPublicKeyAlgoFlag(attestCmd)
 	addOutputFlag(attestCmd)
 	addFormatFlag(attestCmd)
+	addTeeTechnology(attestCmd)
 }
