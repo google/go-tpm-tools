@@ -18,6 +18,11 @@ var (
 	teeTechnology string
 )
 
+const (
+	// Add constants for other devices when required
+	SevSnp = "sev-snp"
+)
+
 var attestationKeys = map[string]map[tpm2.Algorithm]func(rw io.ReadWriter) (*client.Key, error){
 	"AK": {
 		tpm2.AlgRSA: client.AttestationKeyRSA,
@@ -73,22 +78,20 @@ hardware and guarantees a fresh quote.
 		if len(teeTechnology) != 0 {
 			// Add logic to open other hardware devices when required.
 			switch teeTechnology {
-			case "sev-snp":
+			case SevSnp:
 				attestOpts.TEEDevice, err = client.CreateSevSnpDevice()
 				if err != nil {
-					return fmt.Errorf("failed to open sev-snp device: %v", err)
+					return fmt.Errorf("failed to open %s device: %v", SevSnp, err)
 				}
 			default:
 				// Change the return statement when more devices are added
-				return fmt.Errorf("tee_technology should be sev-snp")
+				return fmt.Errorf("tee_technology should be empty or %s", SevSnp)
 			}
 			if len(teeNonce) != 0 {
 				attestOpts.TEENonce = teeNonce
 			}
-		} else {
-			if len(teeNonce) != 0 {
-				return fmt.Errorf("use of --teenonce requires specifying TEE hardware type with --tee_technology")
-			}
+		} else if len(teeNonce) != 0 {
+			return fmt.Errorf("use of --teenonce requires specifying TEE hardware type with --tee_technology")
 		}
 
 		attestOpts.TCGEventLog, err = client.GetEventLog(rwc)
