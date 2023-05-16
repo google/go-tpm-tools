@@ -18,8 +18,9 @@ var (
 	teeTechnology string
 )
 
+// Add constants for other devices when required
 const (
-	// Add constants for other devices when required
+	// SevSnp is a constant denotes device name for teeTechnology
 	SevSnp = "sev-snp"
 )
 
