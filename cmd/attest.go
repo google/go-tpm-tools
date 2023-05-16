@@ -175,7 +175,7 @@ func addKeyFlag(cmd *cobra.Command) {
 }
 
 func addTeeTechnology(cmd *cobra.Command) {
-	cmd.PersistentFlags().StringVar(&teeTechnology, "tee_technology", "", "indicates the type of TEE hardware <sev-snp>")
+	cmd.PersistentFlags().StringVar(&teeTechnology, "tee_technology", "", "indicates the type of TEE hardware. Should be empty or sev-snp")
 }
 
 func init() {
