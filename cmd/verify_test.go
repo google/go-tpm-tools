@@ -20,7 +20,7 @@ func TestVerifyNoncePass(t *testing.T) {
 	defer os.RemoveAll(file1)
 	defer os.RemoveAll(file2)
 
-	RootCmd.SetArgs([]string{"attest", "--nonce", "1234", "--key", "AK", "--teenonce", "", "--output", file1})
+	RootCmd.SetArgs([]string{"attest", "--nonce", "1234", "--key", "AK", "--tee-nonce", "", "--output", file1})
 	if err := RootCmd.Execute(); err != nil {
 		t.Error(err)
 	}
