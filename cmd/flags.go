@@ -155,7 +155,7 @@ func addFormatFlag(cmd *cobra.Command) {
 }
 
 func addTeeNonceflag(cmd *cobra.Command) {
-	cmd.PersistentFlags().BytesHexVar(&teeNonce, "teenonce", []byte{}, "hex encoded teenonce for hardware attestation, can be empty")
+	cmd.PersistentFlags().BytesHexVar(&teeNonce, "tee-nonce", []byte{}, "hex encoded teenonce for hardware attestation, can be empty")
 }
 
 // alwaysError implements io.ReadWriter by always returning an error
