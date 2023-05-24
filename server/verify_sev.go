@@ -41,7 +41,7 @@ func SevSnpDefaultValidateOptsForTest(tpmNonce []byte) *validate.Options {
 func SevSnpDefaultOptions(tpmNonce []byte) *VerifySnpOpts {
 	return &VerifySnpOpts{
 		Validation:   SevSnpDefaultValidateOpts(tpmNonce),
-		Verification: &sv.Options{},
+		Verification: sv.DefaultOptions(),
 	}
 }
 

@@ -14,7 +14,14 @@ import (
 )
 
 var (
-	key string
+	key           string
+	teeTechnology string
+)
+
+// Add constants for other devices when required
+const (
+	// SevSnp is a constant denotes device name for teeTechnology
+	SevSnp = "sev-snp"
 )
 
 var attestationKeys = map[string]map[tpm2.Algorithm]func(rw io.ReadWriter) (*client.Key, error){
@@ -39,7 +46,7 @@ Use --key to specify the type of attestation key. It can be gceAK for GCE attest
 key or AK for a custom attestation key. By default it uses AK.
 --algo flag overrides the public key algorithm for attestation key. If not provided then
 by default rsa is used.
---teenonce attaches a 64 bytes extra data to the attestation report of TDX and SEV-SNP 
+--tee-nonce attaches a 64 bytes extra data to the attestation report of TDX and SEV-SNP 
 hardware and guarantees a fresh quote.
 `,
 	Args: cobra.NoArgs,
@@ -69,12 +76,22 @@ hardware and guarantees a fresh quote.
 
 		attestOpts := client.AttestOpts{}
 		attestOpts.Nonce = nonce
-		if len(teeNonce) != 0 {
-			attestOpts.TEENonce = teeNonce
+
+		// Add logic to open other hardware devices when required.
+		switch teeTechnology {
+		case SevSnp:
 			attestOpts.TEEDevice, err = client.CreateSevSnpDevice()
 			if err != nil {
-				return fmt.Errorf("failed to collect TEE attestation report: %v", err)
+				return fmt.Errorf("failed to open %s device: %v", SevSnp, err)
 			}
+			attestOpts.TEENonce = teeNonce
+		case "":
+			if len(teeNonce) != 0 {
+				return fmt.Errorf("use of --tee-nonce requires specifying TEE hardware type with --tee-technology")
+			}
+		default:
+			// Change the return statement when more devices are added
+			return fmt.Errorf("tee-technology should be empty or %s", SevSnp)
 		}
 
 		attestOpts.TCGEventLog, err = client.GetEventLog(rwc)
@@ -156,6 +173,10 @@ func addKeyFlag(cmd *cobra.Command) {
 	cmd.PersistentFlags().StringVar(&key, "key", "AK", "indicates type of attestation key to use <gceAK|AK>")
 }
 
+func addTeeTechnology(cmd *cobra.Command) {
+	cmd.PersistentFlags().StringVar(&teeTechnology, "tee-technology", "", "indicates the type of TEE hardware. Should be empty or sev-snp")
+}
+
 func init() {
 	RootCmd.AddCommand(attestCmd)
 	addKeyFlag(attestCmd)
@@ -164,4 +185,5 @@ func init() {
 	addPublicKeyAlgoFlag(attestCmd)
 	addOutputFlag(attestCmd)
 	addFormatFlag(attestCmd)
+	addTeeTechnology(attestCmd)
 }

@@ -3,9 +3,10 @@ module github.com/google/go-tpm-tools/cmd
 go 1.17
 
 require (
-	cloud.google.com/go v0.99.0
+	cloud.google.com/go/compute v1.7.0
+	github.com/google/go-sev-guest v0.6.1
 	github.com/google/go-tpm v0.3.3
-	github.com/google/go-tpm-tools v0.3.11
+	github.com/google/go-tpm-tools v0.3.12
 	github.com/spf13/cobra v1.3.0
 	google.golang.org/protobuf v1.28.0
 )
@@ -14,7 +15,6 @@ require (
 	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/google/certificate-transparency-go v1.1.2 // indirect
 	github.com/google/go-attestation v0.4.4-0.20220404204839-8820d49b18d9 // indirect
-	github.com/google/go-sev-guest v0.5.2 // indirect
 	github.com/google/go-tspi v0.2.1-0.20190423175329-115dea689aad // indirect
 	github.com/google/logger v1.1.1 // indirect
 	github.com/google/uuid v1.3.0 // indirect

@@ -83,7 +83,7 @@ func NewClient(ctx context.Context, projectID string, region string, opts ...opt
 }
 
 type restClient struct {
-	service  *v1.Client
+	v1Client  *v1.Client
 	location *locationpb.Location
 }
 
@@ -94,7 +94,7 @@ func (c *restClient) CreateChallenge(ctx context.Context) (*verifier.Challenge, 
 		Parent:    c.location.Name,
 		Challenge: &confidentialcomputingpb.Challenge{},
 	}
-	chal, err := c.service.CreateChallenge(ctx, req)
+	chal, err := c.v1Client.CreateChallenge(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("calling v1.CreateChallenge: %w", err)
 	}
@@ -108,7 +108,7 @@ func (c *restClient) VerifyAttestation(ctx context.Context, request verifier.Ver
 	}
 	req := convertRequestToREST(request)
 	req.Challenge = request.Challenge.Name
-	response, err := c.service.VerifyAttestation(ctx, req)
+	response, err := c.v1Client.VerifyAttestation(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("calling v1.VerifyAttestation: %w", err)
 	}
