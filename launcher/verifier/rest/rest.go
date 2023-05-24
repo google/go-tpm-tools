@@ -83,7 +83,7 @@ func NewClient(ctx context.Context, projectID string, region string, opts ...opt
 }
 
 type restClient struct {
-	v1Client  *v1.Client
+	v1Client *v1.Client
 	location *locationpb.Location
 }
 
