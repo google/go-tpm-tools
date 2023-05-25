@@ -7,7 +7,7 @@ import (
 	"github.com/google/go-tpm/tpmutil"
 )
 
-type session interface {
+type Session interface {
 	io.Closer
 	Auth() (tpm2.AuthCommand, error)
 }
@@ -31,42 +31,42 @@ func startAuthSession(rw io.ReadWriter) (session tpmutil.Handle, err error) {
 	return
 }
 
-type pcrSession struct {
+type PCRSession struct {
 	rw      io.ReadWriter
 	session tpmutil.Handle
 	sel     tpm2.PCRSelection
 }
 
-func newPCRSession(rw io.ReadWriter, sel tpm2.PCRSelection) (session, error) {
+func NewPCRSession(rw io.ReadWriter, sel tpm2.PCRSelection) (Session, error) {
 	if len(sel.PCRs) == 0 {
-		return nullSession{}, nil
+		return NullSession{}, nil
 	}
 	session, err := startAuthSession(rw)
-	return pcrSession{rw, session, sel}, err
+	return PCRSession{rw, session, sel}, err
 }
 
-func (p pcrSession) Auth() (auth tpm2.AuthCommand, err error) {
+func (p PCRSession) Auth() (auth tpm2.AuthCommand, err error) {
 	if err = tpm2.PolicyPCR(p.rw, p.session, nil, p.sel); err != nil {
 		return
 	}
 	return tpm2.AuthCommand{Session: p.session, Attributes: tpm2.AttrContinueSession}, nil
 }
 
-func (p pcrSession) Close() error {
+func (p PCRSession) Close() error {
 	return tpm2.FlushContext(p.rw, p.session)
 }
 
-type ekSession struct {
+type EKSession struct {
 	rw      io.ReadWriter
 	session tpmutil.Handle
 }
 
-func newEKSession(rw io.ReadWriter) (session, error) {
+func NewEKSession(rw io.ReadWriter) (Session, error) {
 	session, err := startAuthSession(rw)
-	return ekSession{rw, session}, err
+	return EKSession{rw, session}, err
 }
 
-func (e ekSession) Auth() (auth tpm2.AuthCommand, err error) {
+func (e EKSession) Auth() (auth tpm2.AuthCommand, err error) {
 	nullAuth := tpm2.AuthCommand{Session: tpm2.HandlePasswordSession, Attributes: tpm2.AttrContinueSession}
 	if _, _, err = tpm2.PolicySecret(e.rw, tpm2.HandleEndorsement, nullAuth, e.session, nil, nil, nil, 0); err != nil {
 		return
@@ -74,16 +74,16 @@ func (e ekSession) Auth() (auth tpm2.AuthCommand, err error) {
 	return tpm2.AuthCommand{Session: e.session, Attributes: tpm2.AttrContinueSession}, nil
 }
 
-func (e ekSession) Close() error {
+func (e EKSession) Close() error {
 	return tpm2.FlushContext(e.rw, e.session)
 }
 
-type nullSession struct{}
+type NullSession struct{}
 
-func (n nullSession) Auth() (auth tpm2.AuthCommand, err error) {
+func (n NullSession) Auth() (auth tpm2.AuthCommand, err error) {
 	return tpm2.AuthCommand{Session: tpm2.HandlePasswordSession, Attributes: tpm2.AttrContinueSession}, nil
 }
 
-func (n nullSession) Close() error {
+func (n NullSession) Close() error {
 	return nil
 }
