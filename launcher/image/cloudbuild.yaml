@@ -1,6 +1,7 @@
 substitutions:
   '_BASE_IMAGE': ''
   '_OUTPUT_IMAGE_NAME': ''
+  '_OUTPUT_IMAGE_FAMILY': ''
   '_BASE_IMAGE_PROJECT': 'cos-cloud'
   '_IMAGE_ENV': ''
   '_BUCKET_NAME': '${PROJECT_ID}_cloudbuild'
@@ -35,7 +36,7 @@ steps:
            '-oem-size=500M',
            '-disk-size-gb=11',
            '-image-name=${_OUTPUT_IMAGE_NAME}',
-           '-image-family=confidential-space-dev',
+           '-image-family=${_OUTPUT_IMAGE_FAMILY}',
            '-image-project=${PROJECT_ID}',
            '-licenses=${_CS_LICENSE}',
            '-licenses=projects/confidential-space-images/global/licenses/ek-certificate-license',

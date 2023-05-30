@@ -1,6 +1,4 @@
-# Currently won't trigger automaticlly because the the private Cloudbuild pool hasn't
-# been setup up, can be triggered manually.
-# This test needs to be run in a private Cloudbuild pool, so the Cloudbuild instance
+# This test needs to be run in a private Cloud Build pool, so the Cloud Build instance
 # can be in the same network as the test VM.
 substitutions:
   '_IMAGE_NAME': ''
