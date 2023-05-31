@@ -11,7 +11,10 @@ import (
 	"math/rand"
 	"net/url"
 	"os"
+	"os/exec"
 	"path"
+	"strconv"
+	"strings"
 	"time"
 
 	"cloud.google.com/go/compute/metadata"
@@ -114,13 +117,18 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	logger.Printf("Operator Override Env Vars : %v\n", envs)
 	logger.Printf("Operator Override Cmd      : %v\n", launchSpec.Cmd)
 
-	imageLabels, err := getImageLabels(ctx, image)
+	imageConfig, err := getImageConfig(ctx, image)
 	if err != nil {
-		logger.Printf("Failed to get image OCI labels %v\n", err)
+		return nil, err
 	}
 
-	logger.Printf("Image Labels               : %v\n", imageLabels)
-	launchPolicy, err := spec.GetLaunchPolicy(imageLabels)
+	logger.Printf("Exposed Ports:             : %v\n", imageConfig.ExposedPorts)
+	if err := openPorts(imageConfig.ExposedPorts); err != nil {
+		return nil, err
+	}
+
+	logger.Printf("Image Labels               : %v\n", imageConfig.Labels)
+	launchPolicy, err := spec.GetLaunchPolicy(imageConfig.Labels)
 	if err != nil {
 		return nil, err
 	}
@@ -128,11 +136,11 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		return nil, err
 	}
 
-	if imageConfig, err := image.Config(ctx); err != nil {
+	if imageConfigDescriptor, err := image.Config(ctx); err != nil {
 		logger.Println(err)
 	} else {
-		logger.Printf("Image ID                   : %v\n", imageConfig.Digest)
-		logger.Printf("Image Annotations          : %v\n", imageConfig.Annotations)
+		logger.Printf("Image ID                   : %v\n", imageConfigDescriptor.Digest)
+		logger.Printf("Image Annotations          : %v\n", imageConfigDescriptor.Annotations)
 	}
 
 	hostname, err := os.Hostname()
@@ -283,8 +291,8 @@ func (r *ContainerRunner) measureContainerClaims(ctx context.Context) error {
 	if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.RestartPolicyType, EventContent: []byte(r.launchSpec.RestartPolicy)}); err != nil {
 		return err
 	}
-	if imageConfig, err := image.Config(ctx); err == nil { // if NO error
-		if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.ImageIDType, EventContent: []byte(imageConfig.Digest)}); err != nil {
+	if imageConfigDescriptor, err := image.Config(ctx); err == nil { // if NO error
+		if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.ImageIDType, EventContent: []byte(imageConfigDescriptor.Digest)}); err != nil {
 			return err
 		}
 	}
@@ -532,25 +540,54 @@ func initImage(ctx context.Context, cdClient *containerd.Client, launchSpec spec
 	return image, nil
 }
 
-func getImageLabels(ctx context.Context, image containerd.Image) (map[string]string, error) {
-	// TODO(jiankun): Switch to containerd's WithImageConfigLabels()
+// openPorts writes firewall rules to accept all traffic into that port and protocol using iptables.
+func openPorts(ports map[string]struct{}) error {
+	for k := range ports {
+		portAndProtocol := strings.Split(k, "/")
+		if len(portAndProtocol) != 2 {
+			return fmt.Errorf("failed to parse port and protocol: got %s, expected [port]/[protocol] 80/tcp", portAndProtocol)
+		}
+
+		port := portAndProtocol[0]
+		_, err := strconv.ParseUint(port, 10, 16)
+		if err != nil {
+			return fmt.Errorf("received invalid port number: %v, %w", port, err)
+		}
+
+		protocol := portAndProtocol[1]
+		if protocol != "tcp" && protocol != "udp" {
+			return fmt.Errorf("received unknown protocol: got %s, expected tcp or udp", protocol)
+		}
+
+		// This command will write a firewall rule to accept all INPUT packets for the given port/protocol.
+		cmd := exec.Command("iptables", "-A", "INPUT", "-p", protocol, "--dport", port, "-j", "ACCEPT")
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("failed to open port %s %s: %v %s", port, protocol, err, out)
+		}
+	}
+
+	return nil
+}
+
+func getImageConfig(ctx context.Context, image containerd.Image) (v1.ImageConfig, error) {
 	ic, err := image.Config(ctx)
 	if err != nil {
-		return nil, err
+		return v1.ImageConfig{}, err
 	}
 	switch ic.MediaType {
 	case v1.MediaTypeImageConfig, images.MediaTypeDockerSchema2Config:
 		p, err := content.ReadBlob(ctx, image.ContentStore(), ic)
 		if err != nil {
-			return nil, err
+			return v1.ImageConfig{}, err
 		}
 		var ociimage v1.Image
 		if err := json.Unmarshal(p, &ociimage); err != nil {
-			return nil, err
+			return v1.ImageConfig{}, err
 		}
-		return ociimage.Config.Labels, nil
+		return ociimage.Config, nil
 	}
-	return nil, fmt.Errorf("unknown image config media type %s", ic.MediaType)
+	return v1.ImageConfig{}, fmt.Errorf("unknown image config media type %s", ic.MediaType)
 }
 
 // Close the container runner

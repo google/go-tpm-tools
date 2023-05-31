@@ -5,6 +5,7 @@ substitutions:
   '_BASE_IMAGE_FAMILY': 'cos-dev' # base image family
   '_OUTPUT_IMAGE_PREFIX': 'confidential-space'
   '_OUTPUT_IMAGE_SUFFIX': ''
+  '_OUTPUT_IMAGE_FAMILY': ''
   '_BUCKET_NAME': '${PROJECT_ID}_cloudbuild'
 
 steps:
@@ -33,6 +34,7 @@ steps:
   env:
   - 'OUTPUT_IMAGE_PREFIX=$_OUTPUT_IMAGE_PREFIX'
   - 'OUTPUT_IMAGE_SUFFIX=$_OUTPUT_IMAGE_SUFFIX'
+  - 'OUTPUT_IMAGE_FAMILY=$_OUTPUT_IMAGE_FAMILY'
   - 'BUCKET_NAME=$_BUCKET_NAME'
   script: |
     #!/usr/bin/env bash
@@ -40,8 +42,8 @@ steps:
 
     base_image=$(cat /workspace/base_image.txt)
     echo "building the debug image: ${OUTPUT_IMAGE_PREFIX}-debug-${OUTPUT_IMAGE_SUFFIX} with the base image: ${base_image}"
-    gcloud builds submit --config=launcher/image/cloudbuild.yaml \
-      --substitutions _BASE_IMAGE=${base_image},_OUTPUT_IMAGE_NAME=${OUTPUT_IMAGE_PREFIX}-debug-${OUTPUT_IMAGE_SUFFIX},_IMAGE_ENV=debug,_CS_LICENSE=projects/confidential-space-images/global/licenses/confidential-space-debug,_BUCKET_NAME=${BUCKET_NAME}
+    gcloud builds submit --config=launcher/image/cloudbuild.yaml --region us-west1 \
+      --substitutions _BASE_IMAGE=${base_image},_OUTPUT_IMAGE_FAMILY=${OUTPUT_IMAGE_FAMILY}-debug,_OUTPUT_IMAGE_NAME=${OUTPUT_IMAGE_PREFIX}-debug-${OUTPUT_IMAGE_SUFFIX},_IMAGE_ENV=debug,_CS_LICENSE=projects/confidential-space-images/global/licenses/confidential-space-debug,_BUCKET_NAME=${BUCKET_NAME}
     exit
 
 - name: 'gcr.io/cloud-builders/gcloud'
@@ -50,6 +52,7 @@ steps:
   env:
   - 'OUTPUT_IMAGE_PREFIX=$_OUTPUT_IMAGE_PREFIX'
   - 'OUTPUT_IMAGE_SUFFIX=$_OUTPUT_IMAGE_SUFFIX'
+  - 'OUTPUT_IMAGE_FAMILY=$_OUTPUT_IMAGE_FAMILY'
   - 'BUCKET_NAME=$_BUCKET_NAME'
   script: |
     #!/usr/bin/env bash
@@ -57,8 +60,8 @@ steps:
 
     base_image=$(cat /workspace/base_image.txt)
     echo "building the hardened image: ${OUTPUT_IMAGE_PREFIX}-hardened-${OUTPUT_IMAGE_SUFFIX} with the base image: ${base_image}"
-    gcloud builds submit --config=launcher/image/cloudbuild.yaml \
-      --substitutions _BASE_IMAGE=${base_image},_OUTPUT_IMAGE_NAME=${OUTPUT_IMAGE_PREFIX}-hardened-${OUTPUT_IMAGE_SUFFIX},_IMAGE_ENV=hardened,_CS_LICENSE=projects/confidential-space-images/global/licenses/confidential-space,_BUCKET_NAME=${BUCKET_NAME}
+    gcloud builds submit --config=launcher/image/cloudbuild.yaml --region us-west1 \
+      --substitutions _BASE_IMAGE=${base_image},_OUTPUT_IMAGE_FAMILY=${OUTPUT_IMAGE_FAMILY},_OUTPUT_IMAGE_NAME=${OUTPUT_IMAGE_PREFIX}-hardened-${OUTPUT_IMAGE_SUFFIX},_IMAGE_ENV=hardened,_CS_LICENSE=projects/confidential-space-images/global/licenses/confidential-space,_BUCKET_NAME=${BUCKET_NAME}
     exit
 
 - name: 'gcr.io/cloud-builders/gcloud'
@@ -73,7 +76,7 @@ steps:
 
     cd launcher/image/test
     echo "running debug image tests on ${OUTPUT_IMAGE_PREFIX}-debug-${OUTPUT_IMAGE_SUFFIX}"
-    gcloud builds submit --config=test_debug_cloudbuild.yaml \
+    gcloud builds submit --config=test_debug_cloudbuild.yaml --region us-west1 \
       --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_PREFIX}-debug-${OUTPUT_IMAGE_SUFFIX},_IMAGE_PROJECT=${PROJECT_ID}
     exit
 
@@ -89,7 +92,7 @@ steps:
 
     cd launcher/image/test
     echo "running hardened image tests on ${OUTPUT_IMAGE_PREFIX}-hardened-${OUTPUT_IMAGE_SUFFIX}"
-    gcloud builds submit --config=test_hardened_cloudbuild.yaml \
+    gcloud builds submit --config=test_hardened_cloudbuild.yaml --region us-west1 \
       --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_PREFIX}-hardened-${OUTPUT_IMAGE_SUFFIX},_IMAGE_PROJECT=${PROJECT_ID}
     exit
 - name: 'gcr.io/cloud-builders/gcloud'
@@ -104,7 +107,39 @@ steps:
 
     cd launcher/image/test
     echo "running launch policy tests on ${OUTPUT_IMAGE_PREFIX}-hardened-${OUTPUT_IMAGE_SUFFIX}"
-    gcloud builds submit --config=test_launchpolicy_cloudbuild.yaml \
+    gcloud builds submit --config=test_launchpolicy_cloudbuild.yaml --region us-west1 \
       --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_PREFIX}-hardened-${OUTPUT_IMAGE_SUFFIX},_IMAGE_PROJECT=${PROJECT_ID}
     exit
 
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: HardenedNetworkIngressTests
+  waitFor: ['HardenedImageBuild']
+  env:
+  - 'OUTPUT_IMAGE_PREFIX=$_OUTPUT_IMAGE_PREFIX'
+  - 'OUTPUT_IMAGE_SUFFIX=$_OUTPUT_IMAGE_SUFFIX'
+  - 'PROJECT_ID=$PROJECT_ID'
+  script: |
+    #!/usr/bin/env bash
+    cd launcher/image/test
+    echo "running hardened image ingress network tests on ${OUTPUT_IMAGE_PREFIX}-hardened-${OUTPUT_IMAGE_SUFFIX}"
+    gcloud builds submit --config=test_ingress_network.yaml --region us-west1 \
+      --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_PREFIX}-hardened-${OUTPUT_IMAGE_SUFFIX},_IMAGE_PROJECT=${PROJECT_ID}
+    exit
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: DebugNetworkIngressTests
+  waitFor: ['DebugImageBuild']
+  env:
+  - 'OUTPUT_IMAGE_PREFIX=$_OUTPUT_IMAGE_PREFIX'
+  - 'OUTPUT_IMAGE_SUFFIX=$_OUTPUT_IMAGE_SUFFIX'
+  - 'PROJECT_ID=$PROJECT_ID'
+  script: |
+    #!/usr/bin/env bash
+    cd launcher/image/test
+    echo "running debug image ingress network tests on ${OUTPUT_IMAGE_PREFIX}-debug-${OUTPUT_IMAGE_SUFFIX}"
+    gcloud builds submit --config=test_ingress_network.yaml --region us-west1 \
+      --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_PREFIX}-debug-${OUTPUT_IMAGE_SUFFIX},_IMAGE_PROJECT=${PROJECT_ID}
+    exit
+
+options:
+  pool:
+    name: 'projects/confidential-space-images-dev/locations/us-west1/workerPools/cs-image-build-vpc'
