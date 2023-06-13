@@ -1,6 +1,7 @@
 package rest
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/google/go-tpm-tools/launcher/verifier"
