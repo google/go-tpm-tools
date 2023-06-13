@@ -83,7 +83,7 @@ func (c *restClient) CreateChallenge(_ context.Context) (*verifier.Challenge, er
 		&v1alpha1.Challenge{},
 	).Do()
 	if err != nil {
-		return nil, fmt.Errorf("calling v1alpha1.CreateChallenge: %w", err)
+		return nil, handleError(err, "Error calling v1alpha1.CreateChallenge")
 	}
 	return convertChallengeFromREST(chal)
 }
@@ -98,7 +98,7 @@ func (c *restClient) VerifyAttestation(_ context.Context, request verifier.Verif
 		convertRequestToREST(request),
 	).Do()
 	if err != nil {
-		return nil, fmt.Errorf("calling v1alpha1.VerifyAttestation: %w", err)
+		return nil, handleError(err, "Error calling v1alpha1.VerifyAttestation")
 	}
 	return convertResponseFromREST(response)
 }
@@ -155,6 +155,14 @@ func convertRequestToREST(request verifier.VerifyAttestationRequest) *v1alpha1.V
 			CertChain:         certs,
 		},
 	}
+}
+
+func handleError(err error, message string) error {
+	const invalidArgument = "invalid argument"
+	if strings.Contains(err.Error(), invalidArgument) {
+		return fmt.Errorf(message+": %w", err)
+	}
+	return fmt.Errorf(message)
 }
 
 func convertResponseFromREST(resp *v1alpha1.VerifyAttestationResponse) (*verifier.VerifyAttestationResponse, error) {

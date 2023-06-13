@@ -17,3 +17,17 @@ func TestConvertEmpty(t *testing.T) {
 		t.Errorf("Converting empty challenge: %v", err)
 	}
 }
+
+func TestHandleError(t *testing.T) {
+	internalError := errors.New("internal")
+	responseErrorInternal := handleError(internalError, "foo")
+	if !(responseErrorInternal.Error() == "foo") {
+		t.Errorf("Issue handling errors: %v", responseErrorInternal)
+	}
+
+	invalidError := errors.New("invalid argument bar")
+	responseErrorInvalid := handleError(invalidError, "foo")
+	if !(responseErrorInvalid.Error() == "foo: invalid argument bar") {
+		t.Errorf("Issue handling errors: %v", responseErrorInvalid)
+	}
+}
