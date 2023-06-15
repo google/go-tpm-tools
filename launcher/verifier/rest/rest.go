@@ -5,12 +5,14 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/google/go-tpm-tools/launcher/verifier"
 
 	v1alpha1 "google.golang.org/api/confidentialcomputing/v1alpha1"
+	googleapi "google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
 )
 
@@ -75,6 +77,11 @@ type restClient struct {
 	location *v1alpha1.Location
 }
 
+type errorOverride struct {
+	message   string
+	showError bool
+}
+
 // CreateChallenge implements verifier.Client
 func (c *restClient) CreateChallenge(_ context.Context) (*verifier.Challenge, error) {
 	// Pass an empty Challenge for the input (all params are output-only)
@@ -83,7 +90,13 @@ func (c *restClient) CreateChallenge(_ context.Context) (*verifier.Challenge, er
 		&v1alpha1.Challenge{},
 	).Do()
 	if err != nil {
-		return nil, handleError(err, "Error calling v1alpha1.CreateChallenge")
+		genericError := "error calling v1alpha1.CreateChallenge"
+		overrideMap := map[int]errorOverride{
+			http.StatusBadRequest:          {message: "bad request", showError: true},
+			http.StatusInternalServerError: {message: "internal", showError: true},
+			http.StatusLoopDetected:        {message: genericError, showError: false},
+		}
+		return nil, handleError(err.(*googleapi.Error), genericError, overrideMap)
 	}
 	return convertChallengeFromREST(chal)
 }
@@ -98,7 +111,13 @@ func (c *restClient) VerifyAttestation(_ context.Context, request verifier.Verif
 		convertRequestToREST(request),
 	).Do()
 	if err != nil {
-		return nil, handleError(err, "Error calling v1alpha1.VerifyAttestation")
+		genericError := "error calling v1alpha1.VerifyAttestation"
+		overrideMap := map[int]errorOverride{
+			http.StatusBadRequest:          {message: "bad request", showError: true},
+			http.StatusInternalServerError: {message: "internal", showError: true},
+			http.StatusLoopDetected:        {message: genericError, showError: false},
+		}
+		return nil, handleError(err.(*googleapi.Error), genericError, overrideMap)
 	}
 	return convertResponseFromREST(response)
 }
@@ -157,14 +176,17 @@ func convertRequestToREST(request verifier.VerifyAttestationRequest) *v1alpha1.V
 	}
 }
 
-func handleError(err error, message string) error {
-	const invalidArgument = "invalid argument"
-	if strings.Contains(err.Error(), invalidArgument) {
-		return fmt.Errorf(message+": %w", err)
+func handleError(apiErr *googleapi.Error, genericError string, errorOverrides map[int]errorOverride) error {
+	errorOverride, exists := errorOverrides[apiErr.Code]
+	if exists {
+		if !errorOverride.showError {
+			return fmt.Errorf(errorOverride.message)
+		}
+		return fmt.Errorf(errorOverride.message+": %v", apiErr)
 	}
-	return fmt.Errorf(message)
-}
 
+	return fmt.Errorf(genericError+": %v", apiErr)
+}
 func convertResponseFromREST(resp *v1alpha1.VerifyAttestationResponse) (*verifier.VerifyAttestationResponse, error) {
 	token, err := encoding.DecodeString(resp.ClaimsToken)
 	if err != nil {
