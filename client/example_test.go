@@ -12,7 +12,7 @@ import (
 	"github.com/google/go-tpm-tools/internal"
 	"github.com/google/go-tpm-tools/server"
 	"github.com/google/go-tpm-tools/simulator"
-	"github.com/google/go-tpm/tpm2"
+	"github.com/google/go-tpm/legacy/tpm2"
 )
 
 var tpmHashAlg = tpm2.AlgSHA256

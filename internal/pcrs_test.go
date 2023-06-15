@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	pb "github.com/google/go-tpm-tools/proto/tpm"
-	"github.com/google/go-tpm/tpm2"
+	"github.com/google/go-tpm/legacy/tpm2"
 )
 
 func TestHasSamePCRSelection(t *testing.T) {
