@@ -7,7 +7,7 @@ import (
 	"flag"
 	"io"
 
-	"github.com/google/go-tpm/tpm2"
+	"github.com/google/go-tpm/legacy/tpm2"
 )
 
 // As this package is only included in tests, this flag will not conflict with

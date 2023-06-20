@@ -8,7 +8,7 @@ import (
 	sv "github.com/google/go-sev-guest/verify"
 	pb "github.com/google/go-tpm-tools/proto/attest"
 	"github.com/google/go-tpm-tools/server"
-	"github.com/google/go-tpm/tpm2"
+	"github.com/google/go-tpm/legacy/tpm2"
 	"github.com/spf13/cobra"
 	"google.golang.org/protobuf/proto"
 )

@@ -16,7 +16,7 @@ import (
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/launcher"
 	"github.com/google/go-tpm-tools/launcher/spec"
-	"github.com/google/go-tpm/tpm2"
+	"github.com/google/go-tpm/legacy/tpm2"
 )
 
 const (
