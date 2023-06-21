@@ -33,6 +33,7 @@ const (
 // Metadata variable names.
 const (
 	imageRefKey                = "tee-image-reference"
+	signedImageRepos           = "tee-signed-image-repos"
 	restartPolicyKey           = "tee-restart-policy"
 	cmdKey                     = "tee-cmd"
 	envKeyPrefix               = "tee-env-"
@@ -58,6 +59,7 @@ type EnvVar struct {
 type LaunchSpec struct {
 	// MDS-based values.
 	ImageRef                   string
+	SignedImageRepos           []string
 	RestartPolicy              RestartPolicy
 	Cmd                        []string
 	Envs                       []EnvVar
@@ -94,6 +96,11 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 	if val, ok := unmarshaledMap[impersonateServiceAccounts]; ok && val != "" {
 		impersonateAccounts := strings.Split(val, ",")
 		s.ImpersonateServiceAccounts = append(s.ImpersonateServiceAccounts, impersonateAccounts...)
+	}
+
+	if val, ok := unmarshaledMap[signedImageRepos]; ok && val != "" {
+		imageRepos := strings.Split(val, ",")
+		s.SignedImageRepos = append(s.SignedImageRepos, imageRepos...)
 	}
 
 	// populate cmd override
