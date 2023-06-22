@@ -116,7 +116,7 @@ func GceAttestationKeyECC(rw io.ReadWriter) (*Key, error) {
 
 // LoadCachedKey loads a key from cachedHandle.
 // If the key is not found, an error is returned.
-// This function will no overwrite an existing key, unlike NewCachedKey.
+// This function will not overwrite an existing key, unlike NewCachedKey.
 func LoadCachedKey(rw io.ReadWriter, cachedHandle tpmutil.Handle, keySession Session) (k *Key, err error) {
 	cachedPub, _, _, err := tpm2.ReadPublic(rw, cachedHandle)
 	if err != nil {
