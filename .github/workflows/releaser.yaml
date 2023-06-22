@@ -1,0 +1,52 @@
+name: release
+
+on:
+  push:
+    branches:
+    tags:
+      - 'v*'
+  pull_request:
+
+jobs:
+  release:
+    strategy:
+      matrix:
+        go-version: [1.20.x]
+        os: [macos-latest, ubuntu-latest]
+
+    name: Release (${{ matrix.os}}, Go ${{ matrix.go-version }})
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v3
+        with:
+          go-version: ${{ matrix.go-version }}
+          cache: true
+      - shell: bash
+        run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+      - id: cache
+        uses: actions/cache@v3
+        with:
+          path: dist/${{ matrix.os }}
+          key: ${{ matrix.go }}-${{ env.sha_short }}
+      - name: Install Linux packages
+        run: sudo apt-get -y install libssl-dev
+        if: runner.os == 'Linux'
+      - name: Install Mac packages
+        run: brew install openssl
+        if: runner.os == 'macOS'
+      - name: Install Windows packages
+        run: choco install openssl
+        if: runner.os == 'Windows'
+      - name: Build all modules
+        run: go build -v ./... ./cmd/... ./launcher/...
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v3
+        if: success() && startsWith(github.ref, 'refs/tags/') && steps.cache.outputs.cache-hit != 'true'
+        with:
+          version: latest
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
