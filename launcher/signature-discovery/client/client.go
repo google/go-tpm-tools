@@ -1,3 +1,4 @@
+// Package client contains functionalities to discover container image signatures.
 package client
 
 import (
@@ -11,12 +12,14 @@ import (
 
 const signatureTagSuffix = "sig"
 
+// Client is a wrapper of containerd.Client to interact with signed image manifest.
 type Client struct {
 	cdClient      *containerd.Client
 	OriginalImage containerd.Image
 	RemoteOpts    []containerd.RemoteOpt
 }
 
+// New creates a new client.
 func New(cdClient *containerd.Client, originalImage containerd.Image, opts ...containerd.RemoteOpt) *Client {
 	c := &Client{
 		cdClient:      cdClient,
@@ -26,6 +29,7 @@ func New(cdClient *containerd.Client, originalImage containerd.Image, opts ...co
 	return c
 }
 
+// FetchSignedImageManifest fetches a signed image manifest using a tag-based discovery mechanism.
 func (c *Client) FetchSignedImageManifest(ctx context.Context, targetRepository string) (v1.Manifest, error) {
 	targetImageRef := fmt.Sprint(targetRepository, ":", formatSigTag(c.OriginalImage))
 	image, err := c.cdClient.Pull(ctx, targetImageRef, c.RemoteOpts...)
