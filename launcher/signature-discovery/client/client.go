@@ -1,0 +1,52 @@
+package client
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/containerd/containerd"
+	"github.com/containerd/containerd/images"
+	v1 "github.com/opencontainers/image-spec/specs-go/v1"
+)
+
+const signatureTagSuffix = "sig"
+
+type Client struct {
+	cdClient      *containerd.Client
+	OriginalImage containerd.Image
+	RemoteOpts    []containerd.RemoteOpt
+}
+
+func New(cdClient *containerd.Client, originalImage containerd.Image, opts ...containerd.RemoteOpt) *Client {
+	c := &Client{
+		cdClient:      cdClient,
+		OriginalImage: originalImage,
+		RemoteOpts:    opts,
+	}
+	return c
+}
+
+func (c *Client) FetchSignedImageManifest(ctx context.Context, targetRepository string) (v1.Manifest, error) {
+	targetImageRef := fmt.Sprint(targetRepository, ":", formatSigTag(c.OriginalImage))
+	image, err := c.cdClient.Pull(ctx, targetImageRef, c.RemoteOpts...)
+	if err != nil {
+		return v1.Manifest{}, fmt.Errorf("[signature-discovery]: cannot pull the image [%s] from taregetRepository [%s]: %w", targetRepository, targetImageRef, err)
+	}
+	return getManifest(ctx, image)
+}
+
+// formatSigTag turns image digests into tags with signatureTagSuffix:
+// sha256:9ecc53c2 -> sha256-9ecc53c2.sig
+func formatSigTag(image containerd.Image) string {
+	digest := image.Target().Digest
+	return fmt.Sprint(digest.Algorithm(), "-", digest.Encoded(), ".", signatureTagSuffix)
+}
+
+func getManifest(ctx context.Context, image containerd.Image) (v1.Manifest, error) {
+	cs := image.ContentStore()
+	manifest, err := images.Manifest(ctx, cs, image.Target(), image.Platform())
+	if err != nil {
+		return v1.Manifest{}, err
+	}
+	return manifest, nil
+}
