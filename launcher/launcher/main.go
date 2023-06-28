@@ -4,9 +4,13 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"os"
+	"os/exec"
+	"regexp"
+	"strings"
 
 	"cloud.google.com/go/compute/metadata"
 	"cloud.google.com/go/logging"
@@ -60,6 +64,12 @@ func main() {
 		}
 		os.Exit(exitCode)
 	}()
+
+	if err := verifyFsAndMount(); err != nil {
+		logger.Print(err)
+		exitCode = rebootRC
+		return
+	}
 
 	mdsClient = metadata.NewClient(nil)
 	projectID, err := mdsClient.ProjectID()
@@ -179,4 +189,68 @@ func startLauncher() error {
 	defer r.Close(ctx)
 
 	return r.Run(ctx)
+}
+
+// verifyFsAndMount checks the partitions/mounts are as expected, based on the command output reported by OS.
+// These checks are not security guarantee.
+func verifyFsAndMount() error {
+	// check protected_stateful_partition is encrypted and is on integrity protection
+	cryptsetupOutput, err := exec.Command("cryptsetup", "status", "/dev/mapper/protected_stateful_partition").Output()
+	if err != nil {
+		return err
+	}
+	matched := regexp.MustCompile(`type:\s+LUKS2`).FindString(string(cryptsetupOutput))
+	if len(matched) == 0 {
+		return fmt.Errorf("stateful partition is not LUKS2 formatted: \n%s", cryptsetupOutput)
+	}
+	matched = regexp.MustCompile(`integrity:\s+aead`).FindString(string(cryptsetupOutput))
+	if len(matched) == 0 {
+		return fmt.Errorf("stateful partition is not integrity protected: \n%s", cryptsetupOutput)
+	}
+	matched = regexp.MustCompile(`cipher:\s+aes-gcm-random`).FindString(string(cryptsetupOutput))
+	if len(matched) == 0 {
+		return fmt.Errorf("stateful partition is not using the aes-gcm-random cipher: \n%s", cryptsetupOutput)
+	}
+
+	// make sure /var/lib/containerd is on protected_stateful_partition
+	findmountOutput, err := exec.Command("findmnt", "/dev/mapper/protected_stateful_partition").Output()
+	if err != nil {
+		return err
+	}
+	matched = regexp.MustCompile(`/var/lib/containerd\s+/dev/mapper/protected_stateful_partition\[/var/lib/containerd\]\s+ext4\s+rw,nosuid,nodev,relatime,commit=30`).FindString(string(findmountOutput))
+	if len(matched) == 0 {
+		return fmt.Errorf("/var/lib/containerd was not mounted on the protected_stateful_partition: \n%s", findmountOutput)
+	}
+	matched = regexp.MustCompile(`/var/lib/google\s+/dev/mapper/protected_stateful_partition\[/var/lib/google\]\s+ext4\s+rw,nosuid,nodev,relatime,commit=30`).FindString(string(findmountOutput))
+	if len(matched) == 0 {
+		return fmt.Errorf("/var/lib/google was not mounted on the protected_stateful_partition: \n%s", findmountOutput)
+	}
+
+	// check /tmp is on tmpfs
+	findmntOutput, err := exec.Command("findmnt", "tmpfs").Output()
+	if err != nil {
+		return err
+	}
+	matched = regexp.MustCompile(`/tmp\s+tmpfs\s+tmpfs`).FindString(string(findmntOutput))
+	if len(matched) == 0 {
+		return fmt.Errorf("/tmp was not mounted on the tmpfs: \n%s", findmntOutput)
+	}
+
+	// check verity status on vroot and oemroot
+	cryptSetupOutput, err := exec.Command("cryptsetup", "status", "vroot").Output()
+	if err != nil {
+		return err
+	}
+	if !strings.Contains(string(cryptSetupOutput), "/dev/mapper/vroot is active and is in use.") {
+		return fmt.Errorf("/dev/mapper/vroot was not mounted correctly: \n%s", cryptSetupOutput)
+	}
+	cryptSetupOutput, err = exec.Command("cryptsetup", "status", "oemroot").Output()
+	if err != nil {
+		return err
+	}
+	if !strings.Contains(string(cryptSetupOutput), "/dev/mapper/oemroot is active and is in use.") {
+		return fmt.Errorf("/dev/mapper/oemroot was not mounted correctly: \n%s", cryptSetupOutput)
+	}
+
+	return nil
 }
