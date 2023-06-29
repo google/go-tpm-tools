@@ -53,6 +53,7 @@ const (
 	// containerTokenMountPath defined the directory in the container stores attestation tokens
 	containerTokenMountPath      = "/run/container_launcher/"
 	attestationVerifierTokenFile = "attestation_verifier_claims_token"
+	tokenFileTmp                 = ".token.tmp"
 )
 
 // Since we only allow one container on a VM, using a deterministic id is probably fine
@@ -337,6 +338,7 @@ func (r *ContainerRunner) measureContainerClaims(ctx context.Context) error {
 
 // Retrieves an OIDC token from the attestation service, and returns how long
 // to wait before attemping to refresh it.
+// The token file will be written to a tmp file and then renamed.
 func (r *ContainerRunner) refreshToken(ctx context.Context) (time.Duration, error) {
 	r.logger.Print("refreshing attestation verifier OIDC token")
 	token, err := r.attestAgent.Attest(ctx)
@@ -356,9 +358,15 @@ func (r *ContainerRunner) refreshToken(ctx context.Context) (time.Duration, erro
 		return 0, errors.New("token is expired")
 	}
 
-	filepath := path.Join(hostTokenPath, attestationVerifierTokenFile)
-	if err = os.WriteFile(filepath, token, 0644); err != nil {
-		return 0, fmt.Errorf("failed to write token to container mount source point: %v", err)
+	// Write to a temp file first.
+	tmpTokenPath := path.Join(hostTokenPath, tokenFileTmp)
+	if err = os.WriteFile(tmpTokenPath, token, 0644); err != nil {
+		return 0, fmt.Errorf("failed to write a tmp token file: %v", err)
+	}
+
+	// Rename the temp file to the token file (to avoid race conditions).
+	if err = os.Rename(tmpTokenPath, path.Join(hostTokenPath, attestationVerifierTokenFile)); err != nil {
+		return 0, fmt.Errorf("failed to rename the token file: %v", err)
 	}
 
 	// Print out the claims in the jwt payload
