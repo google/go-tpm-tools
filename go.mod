@@ -1,6 +1,5 @@
 module github.com/google/go-tpm-tools
 
-// Move to new-style build tags when minimum supported Go version is 1.17
 go 1.20
 
 require (

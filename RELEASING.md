@@ -62,7 +62,7 @@ files in the various submodules. First, you should update the version number in:
 Next, we cleanup the modules by running:
   - run `go mod tidy` in each module directory
   - run `go work sync` in the root directory
-  - this requires Go 1.18 or later
+  - this requires Go 1.20 or later
 
 Finally, create a PR with the title "Submodule update for vX.Y.Z". This PR
 doesn't need a description. The reviewers should just check that the above
