@@ -31,12 +31,20 @@ func New(cdClient *containerd.Client, originalImage containerd.Image, opts ...co
 
 // FetchSignedImageManifest fetches a signed image manifest using a tag-based discovery mechanism.
 func (c *Client) FetchSignedImageManifest(ctx context.Context, targetRepository string) (v1.Manifest, error) {
+	image, err := c.pullTargetImage(ctx, targetRepository)
+	if err != nil {
+		return v1.Manifest{}, err
+	}
+	return getManifest(ctx, image)
+}
+
+func (c *Client) pullTargetImage(ctx context.Context, targetRepository string) (containerd.Image, error) {
 	targetImageRef := fmt.Sprint(targetRepository, ":", formatSigTag(c.OriginalImage))
 	image, err := c.cdClient.Pull(ctx, targetImageRef, c.RemoteOpts...)
 	if err != nil {
-		return v1.Manifest{}, fmt.Errorf("[signature-discovery]: cannot pull the image [%s] from taregetRepository [%s]: %w", targetRepository, targetImageRef, err)
+		return nil, fmt.Errorf("[signature-discovery]: cannot pull the image [%s] from taregetRepository [%s]: %w", targetImageRef, targetRepository, err)
 	}
-	return getManifest(ctx, image)
+	return image, nil
 }
 
 // formatSigTag turns image digests into tags with signatureTagSuffix:
