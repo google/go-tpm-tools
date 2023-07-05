@@ -17,6 +17,7 @@ func TestLaunchSpecUnmarshalJSONHappyCases(t *testing.T) {
 				"tee-cmd":"[\"--foo\",\"--bar\",\"--baz\"]",
 				"tee-env-foo":"bar",
 				"tee-image-reference":"docker.io/library/hello-world:latest",
+				"tee-signed-image-repos":"docker.io/library/hello-world,gcr.io/cloudrun/hello",
 				"tee-restart-policy":"Always",
 				"tee-impersonate-service-accounts":"sv1@developer.gserviceaccount.com,sv2@developer.gserviceaccount.com",
 				"tee-container-log-redirect":"true"
@@ -30,6 +31,7 @@ func TestLaunchSpecUnmarshalJSONHappyCases(t *testing.T) {
 				"tee-unknown":"unknown",
 				"unknown":"unknown",
 				"tee-image-reference":"docker.io/library/hello-world:latest",
+				"tee-signed-image-repos":"docker.io/library/hello-world,gcr.io/cloudrun/hello",
 				"tee-restart-policy":"Always",
 				"tee-impersonate-service-accounts":"sv1@developer.gserviceaccount.com,sv2@developer.gserviceaccount.com",
 				"tee-container-log-redirect":"true"
@@ -39,6 +41,7 @@ func TestLaunchSpecUnmarshalJSONHappyCases(t *testing.T) {
 
 	want := &LaunchSpec{
 		ImageRef:                   "docker.io/library/hello-world:latest",
+		SignedImageRepos:           []string{"docker.io/library/hello-world", "gcr.io/cloudrun/hello"},
 		RestartPolicy:              Always,
 		Cmd:                        []string{"--foo", "--bar", "--baz"},
 		Envs:                       []EnvVar{{"foo", "bar"}},
@@ -106,7 +109,8 @@ func TestLaunchSpecUnmarshalJSONBadInput(t *testing.T) {
 func TestLaunchSpecUnmarshalJSONWithDefaultValue(t *testing.T) {
 	mdsJSON := `{
 		"tee-image-reference":"docker.io/library/hello-world:latest",
-		"tee-impersonate-service-accounts":""
+		"tee-impersonate-service-accounts":"",
+		"tee-signed-image-repos":""
 		}`
 
 	spec := &LaunchSpec{}
