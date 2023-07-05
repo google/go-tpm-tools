@@ -14,35 +14,42 @@ const signatureTagSuffix = "sig"
 
 // Client is a wrapper of containerd.Client to interact with signed image manifest.
 type Client struct {
-	cdClient      *containerd.Client
-	OriginalImage containerd.Image
-	RemoteOpts    []containerd.RemoteOpt
+	cdClient          *containerd.Client
+	OriginalImageDesc v1.Descriptor
+	RemoteOpts        []containerd.RemoteOpt
 }
 
 // New creates a new client.
-func New(cdClient *containerd.Client, originalImage containerd.Image, opts ...containerd.RemoteOpt) *Client {
-	c := &Client{
-		cdClient:      cdClient,
-		OriginalImage: originalImage,
-		RemoteOpts:    opts,
+func New(cdClient *containerd.Client, originalImageDesc v1.Descriptor, opts ...containerd.RemoteOpt) *Client {
+	return &Client{
+		cdClient:          cdClient,
+		OriginalImageDesc: originalImageDesc,
+		RemoteOpts:        opts,
 	}
-	return c
 }
 
 // FetchSignedImageManifest fetches a signed image manifest using a tag-based discovery mechanism.
 func (c *Client) FetchSignedImageManifest(ctx context.Context, targetRepository string) (v1.Manifest, error) {
-	targetImageRef := fmt.Sprint(targetRepository, ":", formatSigTag(c.OriginalImage))
-	image, err := c.cdClient.Pull(ctx, targetImageRef, c.RemoteOpts...)
+	image, err := c.pullTargetImage(ctx, targetRepository)
 	if err != nil {
-		return v1.Manifest{}, fmt.Errorf("[signature-discovery]: cannot pull the image [%s] from taregetRepository [%s]: %w", targetRepository, targetImageRef, err)
+		return v1.Manifest{}, err
 	}
 	return getManifest(ctx, image)
 }
 
+func (c *Client) pullTargetImage(ctx context.Context, targetRepository string) (containerd.Image, error) {
+	targetImageRef := fmt.Sprint(targetRepository, ":", formatSigTag(c.OriginalImageDesc))
+	image, err := c.cdClient.Pull(ctx, targetImageRef, c.RemoteOpts...)
+	if err != nil {
+		return nil, fmt.Errorf("cannot pull the signature object [%s] from tareget repository [%s]: %w", targetImageRef, targetRepository, err)
+	}
+	return image, nil
+}
+
 // formatSigTag turns image digests into tags with signatureTagSuffix:
 // sha256:9ecc53c2 -> sha256-9ecc53c2.sig
-func formatSigTag(image containerd.Image) string {
-	digest := image.Target().Digest
+func formatSigTag(imageDesc v1.Descriptor) string {
+	digest := imageDesc.Digest
 	return fmt.Sprint(digest.Algorithm(), "-", digest.Encoded(), ".", signatureTagSuffix)
 }
 
