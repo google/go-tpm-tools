@@ -31,6 +31,7 @@ jobs:
         go-version: [1.20.x]
         # TODO: Get this working on windows-latest
         os: [macos-latest, ubuntu-latest]
+        architecture: [x32, x64]
     name: Generate/Build/Test (${{ matrix.os }}, Go ${{ matrix.go-version }})
     runs-on: ${{ matrix.os }}
     steps:
@@ -38,6 +39,7 @@ jobs:
       - uses: actions/setup-go@v2
         with:
           go-version: ${{ matrix.go-version }}
+          architecture: ${{ matrix.architecture }}
       - name: Install Protoc
         uses: arduino/setup-protoc@v1
         with:
