@@ -1,4 +1,5 @@
 #!/bin/bash
+local OPTIND
 set -euxo pipefail
 
 print_usage() {
