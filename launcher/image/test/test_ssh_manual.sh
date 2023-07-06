@@ -19,7 +19,7 @@ run_ssh_test() {
     PROJECT_NAME=$(gcloud config get-value project)
 
     # Create a new VM
-    source create_vm.sh -n $VM_NAME -i $IMAGE_NAME -p $IMAGE_PROJECT -m tee-image-reference=$WORKLOAD_IMAGE,tee-container-log-redirect=true,tee-cmd=["newCmd"],tee-env-ALLOWED_OVERRIDE=overridden,enable-osconfig=TRUE -z $ZONE
+    source create_vm.sh -n $VM_NAME -i $IMAGE_NAME -p $IMAGE_PROJECT -m tee-image-reference=$WORKLOAD_IMAGE,tee-container-log-redirect=true,enable-osconfig=TRUE -z $ZONE
 
     # Add an SSH public key to an OS Login profile
     gcloud compute os-login ssh-keys add --key-file=$HOME_DIR/.ssh/google_compute_engine.pub || true
