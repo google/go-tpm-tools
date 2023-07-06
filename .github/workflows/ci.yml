@@ -32,7 +32,10 @@ jobs:
         # TODO: Get this working on windows-latest
         os: [macos-latest, ubuntu-latest]
         architecture: [x32, x64]
-    name: Generate/Build/Test (${{ matrix.os }}, Go ${{ matrix.go-version }})
+        exclude:
+          - os: macos-latest
+            architecture: x32
+    name: Generate/Build/Test (${{ matrix.os }}, ${{ matrix.architecture }}, Go ${{ matrix.go-version }})
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v3
