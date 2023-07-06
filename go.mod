@@ -6,7 +6,7 @@ go 1.20
 require (
 	github.com/google/go-attestation v0.4.4-0.20230613144338-a9b6eb1eb888
 	github.com/google/go-cmp v0.5.9
-	github.com/google/go-sev-guest v0.6.1
+	github.com/google/go-sev-guest v0.7.0
 	github.com/google/go-tpm v0.9.0
 	github.com/google/logger v1.1.1
 	google.golang.org/protobuf v1.28.0
