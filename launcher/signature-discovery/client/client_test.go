@@ -8,6 +8,7 @@ import (
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/defaults"
 	"github.com/containerd/containerd/namespaces"
+	"github.com/google/go-tpm-tools/launcher/signature-discovery/oci"
 )
 
 func pullPublicImage(ctx context.Context, imageRef string, cdClient *containerd.Client) (containerd.Image, error) {
@@ -67,22 +68,52 @@ func TestFormatSigTag(t *testing.T) {
 
 func TestFetchSignedImageManifestDockerPublic(t *testing.T) {
 	ctx := namespaces.WithNamespace(context.Background(), "test")
+
+	originalImageRef := "gcr.io/distroless/static:nonroot"
+	targetRepository := "gcr.io/distroless/static"
+
+	client := createTestClient(ctx, t, originalImageRef)
+	if _, err := client.FetchSignedImageManifest(ctx, targetRepository); err != nil {
+		t.Errorf("failed to fetch signed image manifest from targetRepository [%s]: %v", targetRepository, err)
+	}
+}
+
+func TestFetchImageSignaturesDockerPublic(t *testing.T) {
+	vs := validSig
+	defer func() {
+		validSig = vs
+	}()
+	// Override validSig for this test to not perform validity checks on the image signatures.
+	validSig = func(ctx context.Context, sig oci.Signature) error {
+		return nil
+	}
+
+	ctx := namespaces.WithNamespace(context.Background(), "test")
+	originalImageRef := "gcr.io/distroless/static:nonroot"
+	targetRepository := "gcr.io/distroless/static"
+
+	client := createTestClient(ctx, t, originalImageRef)
+	signaures, err := client.FetchImageSignatures(ctx, targetRepository)
+	if err != nil {
+		t.Errorf("failed to fetch image signatures from targetRepository [%s]: %v", targetRepository, err)
+	}
+	if len(signaures) == 0 {
+		t.Errorf("no image signatures found for the original image %v", originalImageRef)
+	}
+}
+
+func createTestClient(ctx context.Context, t *testing.T, originalImageRef string) *Client {
+	t.Helper()
+
 	containerdClient, err := containerd.New(defaults.DefaultAddress)
 	if err != nil {
 		t.Skipf("test needs containerd daemon: %v", err)
 	}
-	defer containerdClient.Close()
+	t.Cleanup(func() { containerdClient.Close() })
 
-	originalImageRef := "gcr.io/distroless/static:nonroot"
-	targetRepository := "gcr.io/distroless/static"
 	originalImage, err := pullPublicImage(ctx, originalImageRef, containerdClient)
 	if err != nil {
 		t.Fatalf("failed to pull public image ref [%s]: %v", originalImageRef, err)
 	}
-
-	client := New(containerdClient, originalImage)
-	// testing image manifest fetching using a public docker repo url
-	if _, err := client.FetchSignedImageManifest(ctx, targetRepository); err != nil {
-		t.Errorf("failed to fetch signed image manifest from targetRepository [%s]: %v", targetRepository, err)
-	}
+	return New(containerdClient, originalImage)
 }

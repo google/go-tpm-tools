@@ -7,8 +7,13 @@ import (
 
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/images"
+	"github.com/google/go-tpm-tools/launcher/signature-discovery/oci"
+	"github.com/google/go-tpm-tools/launcher/signature-discovery/oci/cosign"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
+	"go.uber.org/multierr"
 )
+
+var validSig = validOCISignature
 
 const signatureTagSuffix = "sig"
 
@@ -31,12 +36,45 @@ func New(cdClient *containerd.Client, originalImage containerd.Image, opts ...co
 
 // FetchSignedImageManifest fetches a signed image manifest using a tag-based discovery mechanism.
 func (c *Client) FetchSignedImageManifest(ctx context.Context, targetRepository string) (v1.Manifest, error) {
+	image, err := c.pullTargetImage(ctx, targetRepository)
+	if err != nil {
+		return v1.Manifest{}, err
+	}
+	return getManifest(ctx, image)
+}
+
+// FetchImageSignatures returns a list of valid image signatures associated with the target OCI image.
+func (c *Client) FetchImageSignatures(ctx context.Context, targetRepository string) ([]oci.Signature, error) {
+	image, err := c.pullTargetImage(ctx, targetRepository)
+	if err != nil {
+		return nil, err
+	}
+	manifest, err := getManifest(ctx, image)
+	if err != nil {
+		return nil, err
+	}
+	var validSigs []oci.Signature
+	for _, layer := range manifest.Layers {
+		sig := &cosign.Sig{
+			Layer: layer,
+			Blob:  image.ContentStore(),
+		}
+		if e := validSig(ctx, sig); e == nil {
+			validSigs = append(validSigs, sig)
+		} else {
+			err = multierr.Append(err, e)
+		}
+	}
+	return validSigs, err
+}
+
+func (c *Client) pullTargetImage(ctx context.Context, targetRepository string) (containerd.Image, error) {
 	targetImageRef := fmt.Sprint(targetRepository, ":", formatSigTag(c.OriginalImage))
 	image, err := c.cdClient.Pull(ctx, targetImageRef, c.RemoteOpts...)
 	if err != nil {
-		return v1.Manifest{}, fmt.Errorf("[signature-discovery]: cannot pull the image [%s] from taregetRepository [%s]: %w", targetRepository, targetImageRef, err)
+		return nil, fmt.Errorf("[signature-discovery]: cannot pull the image [%s] from taregetRepository [%s]: %w", targetImageRef, targetRepository, err)
 	}
-	return getManifest(ctx, image)
+	return image, nil
 }
 
 // formatSigTag turns image digests into tags with signatureTagSuffix:
@@ -53,4 +91,22 @@ func getManifest(ctx context.Context, image containerd.Image) (v1.Manifest, erro
 		return v1.Manifest{}, err
 	}
 	return manifest, nil
+}
+
+// validOCISignature performs validity checks on the given OCI signature.
+func validOCISignature(ctx context.Context, sig oci.Signature) error {
+	var err error
+	if _, e := sig.Payload(ctx); e != nil {
+		err = multierr.Append(err, e)
+	}
+	if _, e := sig.Base64Encoded(ctx); e != nil {
+		err = multierr.Append(err, e)
+	}
+	if _, e := sig.PubBase64Encoded(ctx); e != nil {
+		err = multierr.Append(err, e)
+	}
+	if _, e := sig.SigningAlgorithm(ctx); e != nil {
+		err = multierr.Append(err, e)
+	}
+	return err
 }
