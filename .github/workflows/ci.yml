@@ -58,7 +58,7 @@ jobs:
         run: sudo apt-get -y install libssl-dev
         if: runner.os == 'Linux' && matrix.architecture == 'x64'
       - name: Install Linux 32-bit packages
-        run: sudo dpkg --add-architecture i386 && sudo apt-get -y install libssl-dev:i386 gcc-multilib
+        run: sudo dpkg --add-architecture i386; sudo apt-get update; sudo apt-get -y install libssl-dev:i386 gcc-multilib
         if: runner.os == 'Linux' && matrix.architecture == 'x32'
       - name: Install Mac packages
         run: brew install openssl
