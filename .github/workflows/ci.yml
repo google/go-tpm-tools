@@ -54,9 +54,12 @@ jobs:
         run: |
           go generate ./... ./cmd/... ./launcher/...
           git diff -G'^[^/]' --exit-code
-      - name: Install Linux packages
-        run: sudo apt-get -y install libssl-dev gcc-multilib
-        if: runner.os == 'Linux'
+      - name: Install Linux 64-bit packages
+        run: sudo apt-get -y install libssl-dev
+        if: runner.os == 'Linux' && ${{ matrix.architecture }} == 'x64'
+      - name: Install Linux 32-bit packages
+        run: sudo apt-get -y install libssl-dev:i386 gcc-multilib
+        if: runner.os == 'Linux' && ${{ matrix.architecture }} == 'x32'
       - name: Install Mac packages
         run: brew install openssl
         if: runner.os == 'macOS'
