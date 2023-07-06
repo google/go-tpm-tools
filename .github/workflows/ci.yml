@@ -55,7 +55,7 @@ jobs:
           go generate ./... ./cmd/... ./launcher/...
           git diff -G'^[^/]' --exit-code
       - name: Install Linux packages
-        run: sudo apt-get -y install libssl-dev
+        run: sudo apt-get -y install libssl-dev gcc-multilib
         if: runner.os == 'Linux'
       - name: Install Mac packages
         run: brew install openssl
