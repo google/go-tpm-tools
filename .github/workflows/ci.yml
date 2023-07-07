@@ -31,13 +31,18 @@ jobs:
         go-version: [1.20.x]
         # TODO: Get this working on windows-latest
         os: [macos-latest, ubuntu-latest]
-    name: Generate/Build/Test (${{ matrix.os }}, Go ${{ matrix.go-version }})
+        architecture: [x32, x64]
+        exclude:
+          - os: macos-latest
+            architecture: x32
+    name: Generate/Build/Test (${{ matrix.os }}, ${{ matrix.architecture }}, Go ${{ matrix.go-version }})
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v3
-      - uses: actions/setup-go@v2
+      - uses: actions/setup-go@v4
         with:
           go-version: ${{ matrix.go-version }}
+          architecture: ${{ matrix.architecture }}
       - name: Install Protoc
         uses: arduino/setup-protoc@v1
         with:
@@ -49,9 +54,12 @@ jobs:
         run: |
           go generate ./... ./cmd/... ./launcher/...
           git diff -G'^[^/]' --exit-code
-      - name: Install Linux packages
+      - name: Install Linux 64-bit packages
         run: sudo apt-get -y install libssl-dev
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && matrix.architecture == 'x64'
+      - name: Install Linux 32-bit packages
+        run: sudo dpkg --add-architecture i386; sudo apt-get update; sudo apt-get -y install libssl-dev:i386 libgcc-s1:i386 gcc-multilib
+        if: runner.os == 'Linux' && matrix.architecture == 'x32'
       - name: Install Mac packages
         run: brew install openssl
         if: runner.os == 'macOS'
