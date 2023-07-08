@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/containerd/containerd"
+	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/images"
 	"github.com/google/go-tpm-tools/launcher/signature-discovery/oci"
 	"github.com/google/go-tpm-tools/launcher/signature-discovery/oci/cosign"
@@ -13,9 +14,9 @@ import (
 	"go.uber.org/multierr"
 )
 
-var validSig = validOCISignature
-
 const signatureTagSuffix = "sig"
+
+var validSig = oci.ValidSig
 
 // Client is a wrapper of containerd.Client to interact with signed image manifest.
 type Client struct {
@@ -55,11 +56,16 @@ func (c *Client) FetchImageSignatures(ctx context.Context, targetRepository stri
 	}
 	var validSigs []oci.Signature
 	for _, layer := range manifest.Layers {
+		blob, e := content.ReadBlob(ctx, image.ContentStore(), layer)
+		if e != nil {
+			err = multierr.Append(err, e)
+			continue
+		}
 		sig := &cosign.Sig{
 			Layer: layer,
-			Blob:  image.ContentStore(),
+			Blob:  blob,
 		}
-		if e := validSig(ctx, sig); e == nil {
+		if e := validSig(sig); e == nil {
 			validSigs = append(validSigs, sig)
 		} else {
 			err = multierr.Append(err, e)
@@ -91,22 +97,4 @@ func getManifest(ctx context.Context, image containerd.Image) (v1.Manifest, erro
 		return v1.Manifest{}, err
 	}
 	return manifest, nil
-}
-
-// validOCISignature performs validity checks on the given OCI signature.
-func validOCISignature(ctx context.Context, sig oci.Signature) error {
-	var err error
-	if _, e := sig.Payload(ctx); e != nil {
-		err = multierr.Append(err, e)
-	}
-	if _, e := sig.Base64Encoded(ctx); e != nil {
-		err = multierr.Append(err, e)
-	}
-	if _, e := sig.PubBase64Encoded(ctx); e != nil {
-		err = multierr.Append(err, e)
-	}
-	if _, e := sig.SigningAlgorithm(ctx); e != nil {
-		err = multierr.Append(err, e)
-	}
-	return err
 }

@@ -3,13 +3,12 @@
 package cosign
 
 import (
-	"context"
 	"encoding/base64"
 	"errors"
 	"fmt"
 
-	"github.com/containerd/containerd/content"
 	"github.com/google/go-tpm-tools/launcher/signature-discovery/oci"
+	"github.com/opencontainers/go-digest"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
@@ -18,7 +17,7 @@ type Sig struct {
 	// Layer represents a layer descriptor for OCI image manifest.
 	Layer v1.Descriptor
 	// Blob represents the opaque data uploaded to OCI registory associated with the layer.
-	Blob content.Store
+	Blob []byte
 }
 
 const (
@@ -31,7 +30,7 @@ const (
 	// RsassaPssSha256 is RSASSA-PSS with a SHA256 digest supported for cosign sign.
 	RsassaPssSha256 = "RSASSA_PSS_SHA256"
 	// RsassaPkcs1v5Sha256 is RSASSA-PKCS1 v1.5 with a SHA256 digest supported for cosign sign.
-	RsassaPkcs1v5Sha256 = "RSASSA_PKCS1_V1_5_SHA256"
+	RsassaPkcs1v5Sha256 = "RSASSA_PKCS1V15_SHA256"
 	// EcdsaP256Sha256 is ECDSA on the P-256 Curve with a SHA256 digest supported for cosign sign.
 	EcdsaP256Sha256 = "ECDSA_P256_SHA256"
 )
@@ -43,12 +42,15 @@ var (
 )
 
 // Payload implements oci.Signature interface.
-func (s Sig) Payload(ctx context.Context) ([]byte, error) {
-	return content.ReadBlob(ctx, s.Blob, s.Layer)
+func (s Sig) Payload() ([]byte, error) {
+	if digest.FromBytes(s.Blob) != s.Layer.Digest {
+		return nil, errors.New("an unmatched payload digest is paired with a layer descriptor digest")
+	}
+	return s.Blob, nil
 }
 
 // Base64Encoded implements oci.Signature interface.
-func (s Sig) Base64Encoded(_ context.Context) (string, error) {
+func (s Sig) Base64Encoded() (string, error) {
 	sig, ok := s.Layer.Annotations[CosignSigKey]
 	if !ok {
 		return "", errors.New("cosign signature not found in the layer annotations")
@@ -60,8 +62,8 @@ func (s Sig) Base64Encoded(_ context.Context) (string, error) {
 }
 
 // PubBase64Encoded implements oci.Signature interface.
-func (s Sig) PubBase64Encoded(ctx context.Context) (string, error) {
-	payloadBytes, err := s.Payload(ctx)
+func (s Sig) PubBase64Encoded() (string, error) {
+	payloadBytes, err := s.Payload()
 	if err != nil {
 		return "", err
 	}
@@ -80,8 +82,8 @@ func (s Sig) PubBase64Encoded(ctx context.Context) (string, error) {
 }
 
 // SigningAlgorithm implements oci.Signature interface.
-func (s Sig) SigningAlgorithm(ctx context.Context) (string, error) {
-	payloadBytes, err := s.Payload(ctx)
+func (s Sig) SigningAlgorithm() (string, error) {
+	payloadBytes, err := s.Payload()
 	if err != nil {
 		return "", err
 	}

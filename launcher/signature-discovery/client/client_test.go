@@ -84,7 +84,7 @@ func TestFetchImageSignaturesDockerPublic(t *testing.T) {
 		validSig = vs
 	}()
 	// Override validSig for this test to not perform validity checks on the image signatures.
-	validSig = func(ctx context.Context, sig oci.Signature) error {
+	validSig = func(sig oci.Signature) error {
 		return nil
 	}
 

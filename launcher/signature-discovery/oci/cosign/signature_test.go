@@ -2,24 +2,16 @@ package cosign
 
 import (
 	"bytes"
-	"context"
 	"crypto/rand"
 	"encoding/json"
-	"os"
 	"testing"
 
-	"github.com/containerd/containerd/content"
-	"github.com/containerd/containerd/content/local"
 	"github.com/google/go-cmp/cmp"
-
-	"github.com/containerd/containerd/namespaces"
 	"github.com/opencontainers/go-digest"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
 func TestPayload(t *testing.T) {
-	ctx := namespaces.WithNamespace(context.Background(), "test")
-
 	testCases := []struct {
 		name        string
 		blob        []byte
@@ -45,15 +37,13 @@ func TestPayload(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			cs := createLocalContentStore(t)
-			writeBlob(ctx, t, cs, tc.blob)
 			sig := &Sig{
 				Layer: v1.Descriptor{
 					Digest: tc.wantDigest,
 				},
-				Blob: cs,
+				Blob: tc.blob,
 			}
-			gotPayload, err := sig.Payload(ctx)
+			gotPayload, err := sig.Payload()
 			if err != nil && tc.wantPass {
 				t.Errorf("Payload() failed for test case %v: %v", tc.name, err)
 			}
@@ -65,8 +55,6 @@ func TestPayload(t *testing.T) {
 }
 
 func TestBase64Encoded(t *testing.T) {
-	ctx := namespaces.WithNamespace(context.Background(), "test")
-
 	testCases := []struct {
 		name             string
 		wantSignatureKey string
@@ -102,7 +90,7 @@ func TestBase64Encoded(t *testing.T) {
 					},
 				},
 			}
-			gotSignature, err := sig.Base64Encoded(ctx)
+			gotSignature, err := sig.Base64Encoded()
 			if err != nil && tc.wantPass {
 				t.Errorf("Base64Encoded() failed for test case %v: %v", tc.name, err)
 			}
@@ -114,8 +102,6 @@ func TestBase64Encoded(t *testing.T) {
 }
 
 func TestPubBase64Encoded(t *testing.T) {
-	ctx := namespaces.WithNamespace(context.Background(), "test")
-
 	testCases := []struct {
 		name        string
 		wantPayload []byte
@@ -150,15 +136,13 @@ func TestPubBase64Encoded(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			cs := createLocalContentStore(t)
-			writeBlob(ctx, t, cs, tc.wantPayload)
 			sig := &Sig{
 				Layer: v1.Descriptor{
 					Digest: digest.FromBytes(tc.wantPayload),
 				},
-				Blob: cs,
+				Blob: tc.wantPayload,
 			}
-			gotPubKey, err := sig.PubBase64Encoded(ctx)
+			gotPubKey, err := sig.PubBase64Encoded()
 			if err != nil && tc.wantPass {
 				t.Errorf("PubBase64Encoded() failed for test case %v: %v", tc.name, err)
 			}
@@ -170,8 +154,6 @@ func TestPubBase64Encoded(t *testing.T) {
 }
 
 func TestSigningAlgorithm(t *testing.T) {
-	ctx := namespaces.WithNamespace(context.Background(), "test")
-
 	testCases := []struct {
 		name        string
 		wantPayload []byte
@@ -200,15 +182,13 @@ func TestSigningAlgorithm(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			cs := createLocalContentStore(t)
-			writeBlob(ctx, t, cs, tc.wantPayload)
 			sig := &Sig{
 				Layer: v1.Descriptor{
 					Digest: digest.FromBytes(tc.wantPayload),
 				},
-				Blob: cs,
+				Blob: tc.wantPayload,
 			}
-			gotSigAlg, err := sig.SigningAlgorithm(ctx)
+			gotSigAlg, err := sig.SigningAlgorithm()
 			if err != nil && tc.wantPass {
 				t.Errorf("SigningAlgorithm() failed for test case %v: %v", tc.name, err)
 			}
@@ -220,8 +200,6 @@ func TestSigningAlgorithm(t *testing.T) {
 }
 
 func TestWorkflow(t *testing.T) {
-	ctx := namespaces.WithNamespace(context.Background(), "test")
-
 	wantPayload := &Payload{
 		Critical: Critical{
 			Identity: Identity{
@@ -239,12 +217,10 @@ func TestWorkflow(t *testing.T) {
 	}
 	wantSig := randomBase64EncodedString(32)
 
-	cs := createLocalContentStore(t)
 	blob, err := json.Marshal(wantPayload)
 	if err != nil {
 		t.Fatalf("unable to marshal payload: %v", err)
 	}
-	writeBlob(ctx, t, cs, blob)
 
 	sig := &Sig{
 		Layer: v1.Descriptor{
@@ -253,10 +229,10 @@ func TestWorkflow(t *testing.T) {
 				CosignSigKey: wantSig,
 			},
 		},
-		Blob: cs,
+		Blob: blob,
 	}
 
-	payloadBytes, err := sig.Payload(ctx)
+	payloadBytes, err := sig.Payload()
 	if err != nil {
 		t.Errorf("Payload() failed: %v", err)
 	}
@@ -265,7 +241,7 @@ func TestWorkflow(t *testing.T) {
 		t.Errorf("Payload() failed, got %v, but want %v", gotPayload, wantPayload)
 	}
 
-	gotSig, err := sig.Base64Encoded(ctx)
+	gotSig, err := sig.Base64Encoded()
 	if err != nil {
 		t.Errorf("Base64Encoded() failed: %v", err)
 	}
@@ -274,7 +250,7 @@ func TestWorkflow(t *testing.T) {
 	}
 
 	wantPub := wantPayload.Optional[CosignPubKey]
-	gotPub, err := sig.PubBase64Encoded(ctx)
+	gotPub, err := sig.PubBase64Encoded()
 	if err != nil {
 		t.Errorf("PubBase64Encoded() failed: %v", err)
 	}
@@ -283,40 +259,12 @@ func TestWorkflow(t *testing.T) {
 	}
 
 	wantSigAlg := wantPayload.Optional[CosignSigningAlgo]
-	gotSigAlg, err := sig.SigningAlgorithm(ctx)
+	gotSigAlg, err := sig.SigningAlgorithm()
 	if err != nil {
 		t.Errorf("SigningAlgorithm() failed: %v", err)
 	}
 	if gotSigAlg != wantSigAlg {
 		t.Errorf("SigningAlgorithm() failed, got %v, but want %v", gotSigAlg, wantSigAlg)
-	}
-}
-
-func createLocalContentStore(t *testing.T) content.Store {
-	tmpdir := t.TempDir()
-	t.Cleanup(func() { os.RemoveAll(tmpdir) })
-	store, err := local.NewStore(tmpdir)
-	if err != nil {
-		t.Fatalf("unable to create a local content store: %v", err)
-	}
-	return store
-}
-
-func writeBlob(ctx context.Context, t *testing.T, cs content.Store, blob []byte) {
-	total := int64(len(blob))
-	writer, err := cs.Writer(ctx, content.WithRef("ref"), content.WithDescriptor(v1.Descriptor{Size: total}))
-	if err != nil {
-		t.Fatalf("unable to create a content store writer: %v", err)
-	}
-	t.Cleanup(func() { writer.Close() })
-	_, err = writer.Write(blob)
-	if err != nil {
-		t.Fatalf("unable to write payload blob: %v", err)
-	}
-	dgst := digest.FromBytes(blob)
-	err = writer.Commit(ctx, total, dgst)
-	if err != nil {
-		t.Fatalf("unable to commit a blob: %v", err)
 	}
 }
 
