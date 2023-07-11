@@ -6,6 +6,7 @@ import (
 	"go.uber.org/multierr"
 )
 
+// SigningAlgorithm is a specific type for string constants used for sigature signing and verification.
 type SigningAlgorithm string
 
 const (

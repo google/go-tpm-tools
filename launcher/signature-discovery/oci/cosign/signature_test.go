@@ -119,7 +119,7 @@ func TestPublicKey(t *testing.T) {
 		{
 			name:        "cosign signature PublicKey() success",
 			wantPayload: []byte(`{"critical":{"identity":{"docker-reference":"us-docker.pkg.dev/confidential-space-images-dev/cs-cosign-tests/base"},"image":{"docker-manifest-digest":"sha256:9494e567c7c44e8b9f8808c1658a47c9b7979ef3cceef10f48754fc2706802ba"},"type":"cosign container image signature"},"optional":{"dev.cosignproject.cosign/pub": "-----BEGIN PUBLIC KEY-----\nMIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCNEi/TiRoeS29nnSCTGX61+Z/3\n6mKZmEoC81cFAYSV5f+K6oR7dwqz14wCJSNleCLLGHYfGSeWIimcfzwK6Ar93RJm\n+k1wjGBmAZawd1AkIWRAXW7TzRPbO30xSpcnQ1M1bZTyjXioEDkCuB0DLpHj2gc7\nq/hY7zZO8rnRN1xzTwIDAQAB\n-----END PUBLIC KEY-----"}}`),
-			wantPubKey:  []byte(pubKey), // PEM-encoded byte slide of public key"
+			wantPubKey:  []byte(pubKey), // PEM-encoded byte slide of public key
 			wantPass:    true,
 		},
 		{
