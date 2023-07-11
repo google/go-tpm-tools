@@ -7,9 +7,17 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-tpm-tools/launcher/signature-discovery/oci"
 	"github.com/opencontainers/go-digest"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 )
+
+const pubKey = `-----BEGIN PUBLIC KEY-----
+MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCNEi/TiRoeS29nnSCTGX61+Z/3
+6mKZmEoC81cFAYSV5f+K6oR7dwqz14wCJSNleCLLGHYfGSeWIimcfzwK6Ar93RJm
++k1wjGBmAZawd1AkIWRAXW7TzRPbO30xSpcnQ1M1bZTyjXioEDkCuB0DLpHj2gc7
+q/hY7zZO8rnRN1xzTwIDAQAB
+-----END PUBLIC KEY-----`
 
 func TestPayload(t *testing.T) {
 	testCases := []struct {
@@ -101,35 +109,35 @@ func TestBase64Encoded(t *testing.T) {
 	}
 }
 
-func TestPubBase64Encoded(t *testing.T) {
+func TestPublicKey(t *testing.T) {
 	testCases := []struct {
 		name        string
 		wantPayload []byte
-		wantPubKey  string
+		wantPubKey  []byte
 		wantPass    bool
 	}{
 		{
-			name:        "cosign signature PubBase64Encoded() success",
-			wantPayload: []byte(`{"critical":{"identity":{"docker-reference":"us-docker.pkg.dev/confidential-space-images-dev/cs-cosign-tests/base"},"image":{"docker-manifest-digest":"sha256:9494e567c7c44e8b9f8808c1658a47c9b7979ef3cceef10f48754fc2706802ba"},"type":"cosign container image signature"},"optional":{"dev.cosignproject.cosign/pub": "aGVsbG8gd29ybGQ="}}`),
-			wantPubKey:  "aGVsbG8gd29ybGQ=", // base64 encoded "hello world"
+			name:        "cosign signature PublicKey() success",
+			wantPayload: []byte(`{"critical":{"identity":{"docker-reference":"us-docker.pkg.dev/confidential-space-images-dev/cs-cosign-tests/base"},"image":{"docker-manifest-digest":"sha256:9494e567c7c44e8b9f8808c1658a47c9b7979ef3cceef10f48754fc2706802ba"},"type":"cosign container image signature"},"optional":{"dev.cosignproject.cosign/pub": "-----BEGIN PUBLIC KEY-----\nMIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCNEi/TiRoeS29nnSCTGX61+Z/3\n6mKZmEoC81cFAYSV5f+K6oR7dwqz14wCJSNleCLLGHYfGSeWIimcfzwK6Ar93RJm\n+k1wjGBmAZawd1AkIWRAXW7TzRPbO30xSpcnQ1M1bZTyjXioEDkCuB0DLpHj2gc7\nq/hY7zZO8rnRN1xzTwIDAQAB\n-----END PUBLIC KEY-----"}}`),
+			wantPubKey:  []byte(pubKey), // PEM-encoded byte slide of public key"
 			wantPass:    true,
 		},
 		{
-			name:        "cosign signature PubBase64Encoded() failed with invalid payload format",
+			name:        "cosign signature PublicKey() failed with invalid payload format",
 			wantPayload: []byte(`{"invalid payload format": "invalid"}`),
-			wantPubKey:  "",
+			wantPubKey:  nil,
 			wantPass:    false,
 		},
 		{
-			name:        "cosign signature PubBase64Encoded() failed with no public key found",
+			name:        "cosign signature PublicKey() failed with no public key found",
 			wantPayload: []byte(`{"critical":{"identity":{"docker-reference":"us-docker.pkg.dev/confidential-space-images-dev/cs-cosign-tests/base"},"image":{"docker-manifest-digest":"sha256:9494e567c7c44e8b9f8808c1658a47c9b7979ef3cceef10f48754fc2706802ba"},"type":"cosign container image signature"},"optional":null}`),
-			wantPubKey:  "",
+			wantPubKey:  nil,
 			wantPass:    false,
 		},
 		{
-			name:        "cosign signature PubBase64Encoded() failed with invalid base64 encoded public key",
+			name:        "cosign signature PublicKey() failed with invalid PEM encoded public key",
 			wantPayload: []byte(`{"critical":{"identity":{"docker-reference":"us-docker.pkg.dev/confidential-space-images-dev/cs-cosign-tests/base"},"image":{"docker-manifest-digest":"sha256:9494e567c7c44e8b9f8808c1658a47c9b7979ef3cceef10f48754fc2706802ba"},"type":"cosign container image signature"},"optional":{"dev.cosignproject.cosign/pub": "invalid pub key"}}`),
-			wantPubKey:  "",
+			wantPubKey:  nil,
 			wantPass:    false,
 		},
 	}
@@ -142,12 +150,12 @@ func TestPubBase64Encoded(t *testing.T) {
 				},
 				Blob: tc.wantPayload,
 			}
-			gotPubKey, err := sig.PubBase64Encoded()
+			gotPubKey, err := sig.PublicKey()
 			if err != nil && tc.wantPass {
-				t.Errorf("PubBase64Encoded() failed for test case %v: %v", tc.name, err)
+				t.Errorf("PublicKey() failed for test case %v: %v", tc.name, err)
 			}
-			if gotPubKey != tc.wantPubKey {
-				t.Errorf("PubBase64Encoded() failed for test case %v: got %v, but want %v", tc.name, gotPubKey, tc.wantPubKey)
+			if !bytes.Equal(gotPubKey, tc.wantPubKey) {
+				t.Errorf("PublicKey() failed for test case %v: got %v, but want %v", tc.name, gotPubKey, tc.wantPubKey)
 			}
 		})
 	}
@@ -157,13 +165,13 @@ func TestSigningAlgorithm(t *testing.T) {
 	testCases := []struct {
 		name        string
 		wantPayload []byte
-		wantSigAlg  string
+		wantSigAlg  oci.SigningAlgorithm
 		wantPass    bool
 	}{
 		{
 			name:        "cosign signature SigningAlgorithm() success",
 			wantPayload: []byte(`{"critical":{"identity":{"docker-reference":"us-docker.pkg.dev/confidential-space-images-dev/cs-cosign-tests/base"},"image":{"docker-manifest-digest":"sha256:9494e567c7c44e8b9f8808c1658a47c9b7979ef3cceef10f48754fc2706802ba"},"type":"cosign container image signature"},"optional":{"dev.cosignproject.cosign/signingalgo": "RSASSA_PSS_SHA256"}}`),
-			wantSigAlg:  RsassaPssSha256,
+			wantSigAlg:  oci.RsassaPssSha256,
 			wantPass:    true,
 		},
 		{
@@ -211,8 +219,8 @@ func TestWorkflow(t *testing.T) {
 			Type: CosignCriticalType,
 		},
 		Optional: map[string]interface{}{
-			CosignPubKey:      randomBase64EncodedString(32),
-			CosignSigningAlgo: RsassaPkcs1v5Sha256,
+			CosignPubKey:      pubKey,
+			CosignSigningAlgo: string(oci.RsassaPkcs1v15Sha256),
 		},
 	}
 	wantSig := randomBase64EncodedString(32)
@@ -249,21 +257,21 @@ func TestWorkflow(t *testing.T) {
 		t.Errorf("Base64Encoded() failed, got %s, but want %s", gotSig, wantSig)
 	}
 
-	wantPub := wantPayload.Optional[CosignPubKey]
-	gotPub, err := sig.PubBase64Encoded()
+	wantPub := wantPayload.Optional[CosignPubKey].(string)
+	gotPub, err := sig.PublicKey()
 	if err != nil {
-		t.Errorf("PubBase64Encoded() failed: %v", err)
+		t.Errorf("PublicKey() failed: %v", err)
 	}
-	if gotPub != wantPub {
-		t.Errorf("PubBase64Encoded() failed, got %v, but want %v", gotPub, wantPub)
+	if !bytes.Equal(gotPub, []byte(wantPub)) {
+		t.Errorf("PublicKey() failed, got %v, but want %v", gotPub, []byte(wantPub))
 	}
 
-	wantSigAlg := wantPayload.Optional[CosignSigningAlgo]
+	wantSigAlg := wantPayload.Optional[CosignSigningAlgo].(string)
 	gotSigAlg, err := sig.SigningAlgorithm()
 	if err != nil {
 		t.Errorf("SigningAlgorithm() failed: %v", err)
 	}
-	if gotSigAlg != wantSigAlg {
+	if gotSigAlg != oci.SigningAlgorithm(wantSigAlg) {
 		t.Errorf("SigningAlgorithm() failed, got %v, but want %v", gotSigAlg, wantSigAlg)
 	}
 }

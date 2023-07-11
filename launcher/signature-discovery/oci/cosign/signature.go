@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 
+	utils "github.com/google/go-tpm-tools/launcher/signature-discovery"
 	"github.com/google/go-tpm-tools/launcher/signature-discovery/oci"
 	"github.com/opencontainers/go-digest"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
@@ -27,12 +28,6 @@ const (
 	CosignPubKey = "dev.cosignproject.cosign/pub"
 	// CosignSigningAlgo is the key of the signing algorithm attached to the cosign-generated payload.
 	CosignSigningAlgo = "dev.cosignproject.cosign/signingalgo"
-	// RsassaPssSha256 is RSASSA-PSS with a SHA256 digest supported for cosign sign.
-	RsassaPssSha256 = "RSASSA_PSS_SHA256"
-	// RsassaPkcs1v5Sha256 is RSASSA-PKCS1 v1.5 with a SHA256 digest supported for cosign sign.
-	RsassaPkcs1v5Sha256 = "RSASSA_PKCS1V15_SHA256"
-	// EcdsaP256Sha256 is ECDSA on the P-256 Curve with a SHA256 digest supported for cosign sign.
-	EcdsaP256Sha256 = "ECDSA_P256_SHA256"
 )
 
 var (
@@ -61,28 +56,30 @@ func (s Sig) Base64Encoded() (string, error) {
 	return sig, nil
 }
 
-// PubBase64Encoded implements oci.Signature interface.
-func (s Sig) PubBase64Encoded() (string, error) {
+// PublicKey implements oci.Signature interface.
+func (s Sig) PublicKey() ([]byte, error) {
 	payloadBytes, err := s.Payload()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	payload, err := UnmarshalPayload(payloadBytes)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	pub, ok := payload.Optional[CosignPubKey].(string)
 	if !ok {
-		return "", errors.New("pub key not found in the Opotional field of payload")
+		return nil, errors.New("pub key not found in the Opotional field of payload")
 	}
-	if _, err := encoding.DecodeString(pub); err != nil {
-		return "", fmt.Errorf("invalid base64 encoded pub key: %w", err)
+	pemBytes := []byte(pub)
+	// Verify if it is a valid PEM-encoded public key.
+	if _, err := utils.UnmarshalPEMToPub(pemBytes); err != nil {
+		return nil, fmt.Errorf("invalid PEM-encoded pub key: %w", err)
 	}
-	return pub, nil
+	return pemBytes, nil
 }
 
 // SigningAlgorithm implements oci.Signature interface.
-func (s Sig) SigningAlgorithm() (string, error) {
+func (s Sig) SigningAlgorithm() (oci.SigningAlgorithm, error) {
 	payloadBytes, err := s.Payload()
 	if err != nil {
 		return "", err
@@ -95,9 +92,9 @@ func (s Sig) SigningAlgorithm() (string, error) {
 	if !ok {
 		return "", errors.New("signing algorithm not found in the Opotional field of payload")
 	}
-	switch alg {
-	case RsassaPssSha256, RsassaPkcs1v5Sha256, EcdsaP256Sha256:
-		return alg, nil
+	switch oci.SigningAlgorithm(alg) {
+	case oci.RsassaPssSha256, oci.RsassaPkcs1v15Sha256, oci.EcdsaP256Sha256:
+		return oci.SigningAlgorithm(alg), nil
 	default:
 		return "", errors.New("unsupported signing algorithm")
 	}
