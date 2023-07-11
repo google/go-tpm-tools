@@ -1,6 +1,6 @@
 module github.com/google/go-tpm-tools/cmd
 
-go 1.17
+go 1.20
 
 require (
 	cloud.google.com/go/compute v1.7.0

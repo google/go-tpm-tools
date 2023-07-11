@@ -8,13 +8,13 @@ substitutions:
   '_CS_LICENSE': ''
 
 steps:
-  - name: golang:1.18
+  - name: golang:1.20
     entrypoint: /bin/bash
     args:
       - -c
       - |
         cd launcher/launcher
-        go build -o ../image/launcher
+        CGO_ENABLED=0 go build -o ../image/launcher
   - name: 'gcr.io/cos-cloud/cos-customizer'
     args: ['start-image-build',
            '-build-context=launcher/image',
