@@ -15,7 +15,7 @@ type ECDSAVerifier struct {
 // Verify that our ECDSAVerifier struct implements the expected public interface.
 var _ Verifier = ECDSAVerifier{}
 
-// VerifySignature verifies the siganture for the given payload and public key using ECDSA signing algorithm.
+// VerifySignature verifies the signature for the given payload and public key using ECDSA signing algorithm.
 // This method will return nil if the verification succeeded, otherwise return an error.
 func (v ECDSAVerifier) VerifySignature(payload, signature []byte, pubKey crypto.PublicKey) error {
 	if signature == nil {

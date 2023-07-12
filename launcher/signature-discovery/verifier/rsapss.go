@@ -15,7 +15,7 @@ type RSAPSSVerifier struct {
 // Verify that our RSAPSSVerifier struct implements the expected public interface.
 var _ Verifier = RSAPSSVerifier{}
 
-// VerifySignature verifies the siganture for the given payload and public key using RSA PSS signing algorithm.
+// VerifySignature verifies the signature for the given payload and public key using RSA PSS signing algorithm.
 // This method will use rsa.PSSSaltLengthAuto by default if no pssOpts specified.
 // This method will return nil if the verification succeeded, otherwise return an error.
 func (v RSAPSSVerifier) VerifySignature(payload, signature []byte, pubKey crypto.PublicKey) error {
