@@ -4,6 +4,8 @@ package attest;
 
 import "proto/sevsnp.proto";
 import "tpm.proto";
+import "proto/tdx.proto";
+
 
 option go_package = "github.com/google/go-tpm-tools/proto/attest";
 
@@ -41,6 +43,7 @@ message Attestation {
   // environment.
   oneof tee_attestation {
     sevsnp.Attestation sev_snp_attestation = 8;
+    tdx.QuoteV4 tdx_attestation = 9;
   }
 }
 
