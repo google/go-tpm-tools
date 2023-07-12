@@ -23,7 +23,7 @@ TuK6bgn9+KDX3bq8KwIDAQAB
 -----END PUBLIC KEY-----`
 
 func TestRSAPSSVerifySignatureSuccess(t *testing.T) {
-	verifier, err := loadVerifier(oci.RsassaPssSha256)
+	verifier, err := LoadVerifier(oci.RsassaPssSha256)
 	if err != nil {
 		t.Fatalf("unalbe to load a RSASSA_PSS_SHA256 verifier")
 	}

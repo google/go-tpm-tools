@@ -43,7 +43,7 @@ func TestLoadverifier(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := loadVerifier(tc.alg)
+			_, err := LoadVerifier(tc.alg)
 			if got := err == nil; got != tc.wantPass {
 				t.Errorf("loadVerifier() failed for test case %s for signing algorithm: %v", tc.name, tc.alg)
 			}

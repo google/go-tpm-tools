@@ -11,7 +11,7 @@ import (
 )
 
 func TestRSAPKCS1V15Success(t *testing.T) {
-	verifier, err := loadVerifier(oci.RsassaPkcs1v15Sha256)
+	verifier, err := LoadVerifier(oci.RsassaPkcs1v15Sha256)
 	if err != nil {
 		t.Fatalf("unalbe to load a RSA_PKCS1V15_SHA256 verifier")
 	}

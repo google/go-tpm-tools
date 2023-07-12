@@ -21,7 +21,7 @@ gqLf36SUAhbJ/Qnof5HkiJfXB/cBawuddv9JfNFL4nXLNZTHfz4uBrPduw==
 -----END PUBLIC KEY-----`
 
 func TestECDSAVerifySignatureSuccess(t *testing.T) {
-	verifier, err := loadVerifier(oci.EcdsaP256Sha256)
+	verifier, err := LoadVerifier(oci.EcdsaP256Sha256)
 	if err != nil {
 		t.Fatalf("unalbe to load a ECDSA_P256_SHA256 verifier")
 	}
