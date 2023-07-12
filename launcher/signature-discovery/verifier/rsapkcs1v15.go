@@ -3,6 +3,7 @@ package verifier
 import (
 	"crypto"
 	"crypto/rsa"
+	"errors"
 	"fmt"
 )
 
@@ -13,11 +14,16 @@ type RSAPKCS1V15Verifier struct {
 var _ Verifier = RSAPKCS1V15Verifier{}
 
 func (v RSAPKCS1V15Verifier) VerifySignature(payload, signature []byte, pubKey crypto.PublicKey) error {
+	if signature == nil {
+		return errors.New("invalid signature: signature is nil")
+	}
 	pub, ok := pubKey.(*rsa.PublicKey)
 	if !ok {
 		return fmt.Errorf("public key is not a rsa public key")
 	}
 	digest := computeDigest(v.hashFunc, payload)
-
+	if digest == nil {
+		return errors.New("failed to compute digest: invalid hash function specified")
+	}
 	return rsa.VerifyPKCS1v15(pub, v.hashFunc, digest, signature)
 }
