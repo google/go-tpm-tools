@@ -117,7 +117,7 @@ func TestRefreshToken(t *testing.T) {
 		t.Fatalf("refreshToken returned with error: %v", err)
 	}
 
-	filepath := path.Join(hostTokenPath, attestationVerifierTokenFile)
+	filepath := path.Join(hostTokenPath, AttestationVerifierTokenFile)
 	data, err := os.ReadFile(filepath)
 	if err != nil {
 		t.Fatalf("Failed to read from %s: %v", filepath, err)
@@ -194,7 +194,7 @@ func TestFetchAndWriteTokenSucceeds(t *testing.T) {
 		t.Fatalf("fetchAndWriteToken failed: %v", err)
 	}
 
-	filepath := path.Join(hostTokenPath, attestationVerifierTokenFile)
+	filepath := path.Join(hostTokenPath, AttestationVerifierTokenFile)
 	data, err := os.ReadFile(filepath)
 	if err != nil {
 		t.Fatalf("Failed to read from %s: %v", filepath, err)
@@ -228,7 +228,7 @@ func TestTokenIsNotChangedIfRefreshFails(t *testing.T) {
 		t.Fatalf("fetchAndWriteToken failed: %v", err)
 	}
 
-	filepath := path.Join(hostTokenPath, attestationVerifierTokenFile)
+	filepath := path.Join(hostTokenPath, AttestationVerifierTokenFile)
 	data, err := os.ReadFile(filepath)
 	if err != nil {
 		t.Fatalf("Failed to read from %s: %v", filepath, err)
@@ -306,7 +306,7 @@ func testRetryPolicyWithNTries(t *testing.T, numTries int, expectRefresh bool) {
 	if err := runner.fetchAndWriteTokenWithRetry(ctx, testRetryPolicyThreeTimes()); err != nil {
 		t.Fatalf("fetchAndWriteTokenWithRetry failed: %v", err)
 	}
-	filepath := path.Join(hostTokenPath, attestationVerifierTokenFile)
+	filepath := path.Join(hostTokenPath, AttestationVerifierTokenFile)
 	data, err := os.ReadFile(filepath)
 	if err != nil {
 		t.Fatalf("failed to read from %s: %v", filepath, err)
@@ -360,7 +360,7 @@ func TestFetchAndWriteTokenWithTokenRefresh(t *testing.T) {
 		t.Fatalf("fetchAndWriteToken failed: %v", err)
 	}
 
-	filepath := path.Join(hostTokenPath, attestationVerifierTokenFile)
+	filepath := path.Join(hostTokenPath, AttestationVerifierTokenFile)
 	data, err := os.ReadFile(filepath)
 	if err != nil {
 		t.Fatalf("Failed to read from %s: %v", filepath, err)

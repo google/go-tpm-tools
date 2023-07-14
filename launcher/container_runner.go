@@ -50,9 +50,10 @@ type ContainerRunner struct {
 const (
 	// hostTokenPath defined the directory in the host that will store attestation tokens
 	hostTokenPath = "/tmp/container_launcher/"
-	// containerTokenMountPath defined the directory in the container stores attestation tokens
-	containerTokenMountPath      = "/run/container_launcher/"
-	attestationVerifierTokenFile = "attestation_verifier_claims_token"
+	// ContainerTokenMountPath defined the directory in the container stores attestation tokens
+	ContainerTokenMountPath = "/run/container_launcher/"
+	// AttestationVerifierTokenFile defines the name of the file the attestation token is stored in.
+	AttestationVerifierTokenFile = "attestation_verifier_claims_token"
 	tokenFileTmp                 = ".token.tmp"
 )
 
@@ -268,7 +269,7 @@ func formatEnvVars(envVars []spec.EnvVar) ([]string, error) {
 // appendTokenMounts appends the default mount specs for the OIDC token
 func appendTokenMounts(mounts []specs.Mount) []specs.Mount {
 	m := specs.Mount{}
-	m.Destination = containerTokenMountPath
+	m.Destination = ContainerTokenMountPath
 	m.Type = "bind"
 	m.Source = hostTokenPath
 	m.Options = []string{"rbind", "ro"}
@@ -365,7 +366,7 @@ func (r *ContainerRunner) refreshToken(ctx context.Context) (time.Duration, erro
 	}
 
 	// Rename the temp file to the token file (to avoid race conditions).
-	if err = os.Rename(tmpTokenPath, path.Join(hostTokenPath, attestationVerifierTokenFile)); err != nil {
+	if err = os.Rename(tmpTokenPath, path.Join(hostTokenPath, AttestationVerifierTokenFile)); err != nil {
 		return 0, fmt.Errorf("failed to rename the token file: %v", err)
 	}
 
