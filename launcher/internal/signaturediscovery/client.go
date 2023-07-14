@@ -1,5 +1,5 @@
-// Package client contains functionalities to discover container image signatures.
-package client
+// Package signaturediscovery contains functionalities to discover container image signatures.
+package signaturediscovery
 
 import (
 	"context"
@@ -41,7 +41,7 @@ func (c *Client) pullTargetImage(ctx context.Context, targetRepository string) (
 	targetImageRef := fmt.Sprint(targetRepository, ":", formatSigTag(c.OriginalImageDesc))
 	image, err := c.cdClient.Pull(ctx, targetImageRef, c.RemoteOpts...)
 	if err != nil {
-		return nil, fmt.Errorf("cannot pull the signature object [%s] from tareget repository [%s]: %w", targetImageRef, targetRepository, err)
+		return nil, fmt.Errorf("cannot pull the signature object [%s] from target repository [%s]: %w", targetImageRef, targetRepository, err)
 	}
 	return image, nil
 }
