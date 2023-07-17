@@ -2,7 +2,6 @@ package server
 
 import (
 	tpb "github.com/google/go-tdx-guest/proto/tdx"
-
 	tv "github.com/google/go-tdx-guest/verify"
 )
 
@@ -12,15 +11,14 @@ type VerifyTdxOpts struct {
 }
 
 // TdxDefaultOptions returns a default verification options for TDX
-// attestation reports on GCE.
+// attestation quote on GCE.
 func TdxDefaultOptions(tpmNonce []byte) *VerifyTdxOpts {
 	return &VerifyTdxOpts{
 		Verification: tv.DefaultOptions(),
 	}
 }
 
-// VerifySevSnpAttestation checks that the SEV-SNP attestation report matches expectations for the
-// product.
+// VerifyTdxAttestation checks that the TDX attestation quote is valid
 func VerifyTdxAttestation(attestation *tpb.QuoteV4, opts *VerifyTdxOpts) error {
 	// Check that the quote contains valid signature and certificates. Do not check revocations.
 	return tv.TdxVerify(attestation, opts.Verification)
