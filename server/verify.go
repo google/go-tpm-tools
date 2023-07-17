@@ -48,7 +48,8 @@ type VerifyOpts struct {
 	// parsing or for unsupported bootloaders (e.g., systemd).
 	Loader Bootloader
 	// TEEOpts allows customizing the functionality of VerifyTEEAttestation.
-	// Its type can be *VerifySnpOpts if the TEEAttestation is a SevSnpAttestation.
+	// Its type can be *VerifySnpOpts if the TEEAttestation is a SevSnpAttestation
+	// or can be *VerifyTdxOpts if the TEEAttestation is a TdxAttestation
 	// If nil, uses Nonce for ReportData and the TEE's verification library's
 	// embedded root certs for its roots of trust.
 	TEEOpts interface{}
@@ -346,6 +347,25 @@ func VerifyGceTechnology(attestation *pb.Attestation, tech pb.GCEConfidentialTec
 			return VerifySevSnpAttestation(tee.SevSnpAttestation, snpOpts)
 		default:
 			return fmt.Errorf("TEE attestation is %v, expected an SevSnpAttestation", attestation.GetTeeAttestation())
+		}
+	case pb.GCEConfidentialTechnology_Intel_TDX:
+		switch tee := attestation.GetTeeAttestation().(type) {
+		case *pb.Attestation_TdxAttestation:
+			var tdxOpts *VerifyTdxOpts
+			if opts.TEEOpts == nil {
+				tdxOpts = TdxDefaultOptions(opts.Nonce)
+			} else {
+				switch teeopts := opts.TEEOpts.(type) {
+				case *VerifyTdxOpts:
+					tdxOpts = teeopts
+				default:
+					return fmt.Errorf("unexpected value for TEEOpts given a TDX attestation quote: %v",
+						opts.TEEOpts)
+				}
+			}
+			return VerifyTdxAttestation(tee.TdxAttestation, tdxOpts)
+		default:
+			return fmt.Errorf("TEE attestation is %v, expected an TdxAttestation", attestation.GetTeeAttestation())
 		}
 	}
 	return fmt.Errorf("unknown GCEConfidentialTechnology: %v", tech)

@@ -22,6 +22,8 @@ var (
 const (
 	// SevSnp is a constant denotes device name for teeTechnology
 	SevSnp = "sev-snp"
+	// Tdx is a constant denotes device name for teeTechnology
+	Tdx = "tdx"
 )
 
 var attestationKeys = map[string]map[tpm2.Algorithm]func(rw io.ReadWriter) (*client.Key, error){
@@ -85,13 +87,19 @@ hardware and guarantees a fresh quote.
 				return fmt.Errorf("failed to open %s device: %v", SevSnp, err)
 			}
 			attestOpts.TEENonce = teeNonce
+		case Tdx:
+			attestOpts.TEEDevice, err = client.CreateTdxDevice()
+			if err != nil {
+				return fmt.Errorf("failed to open %s device: %v", Tdx, err)
+			}
+			attestOpts.TEENonce = teeNonce
 		case "":
 			if len(teeNonce) != 0 {
 				return fmt.Errorf("use of --tee-nonce requires specifying TEE hardware type with --tee-technology")
 			}
 		default:
 			// Change the return statement when more devices are added
-			return fmt.Errorf("tee-technology should be empty or %s", SevSnp)
+			return fmt.Errorf("tee-technology should be either empty or should have values %s or %s", SevSnp, Tdx)
 		}
 
 		attestOpts.TCGEventLog, err = client.GetEventLog(rwc)
@@ -174,7 +182,8 @@ func addKeyFlag(cmd *cobra.Command) {
 }
 
 func addTeeTechnology(cmd *cobra.Command) {
-	cmd.PersistentFlags().StringVar(&teeTechnology, "tee-technology", "", "indicates the type of TEE hardware. Should be empty or sev-snp")
+	cmd.PersistentFlags().StringVar(&teeTechnology, "tee-technology", "",
+		"indicates the type of TEE hardware. Should be either empty or one of sev-snp or tdx")
 }
 
 func init() {

@@ -3,6 +3,7 @@ syntax = "proto3";
 package attest;
 
 import "proto/sevsnp.proto";
+import "proto/tdx.proto";
 import "tpm.proto";
 
 option go_package = "github.com/google/go-tpm-tools/proto/attest";
@@ -41,6 +42,7 @@ message Attestation {
   // environment.
   oneof tee_attestation {
     sevsnp.Attestation sev_snp_attestation = 8;
+    tdx.QuoteV4 tdx_attestation = 9;
   }
 }
 
@@ -51,6 +53,7 @@ enum GCEConfidentialTechnology {
   AMD_SEV_ES = 2;
   // Enum value 3 is reserved.
   AMD_SEV_SNP = 4;
+  Intel_TDX = 5;
 }
 
 // The platform/firmware state for this instance

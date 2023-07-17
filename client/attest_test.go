@@ -14,6 +14,9 @@ import (
 
 	sgtest "github.com/google/go-sev-guest/testing"
 	testclient "github.com/google/go-sev-guest/testing/client"
+	tgtest "github.com/google/go-tdx-guest/testing"
+	tgtestclient "github.com/google/go-tdx-guest/testing/client"
+	tgtestdata "github.com/google/go-tdx-guest/testing/testdata"
 	"github.com/google/go-tpm-tools/internal/test"
 	pb "github.com/google/go-tpm-tools/proto/attest"
 )
@@ -286,6 +289,84 @@ func TestSevSnpDevice(t *testing.T) {
 				report := snp.SevSnpAttestation.Report
 				if !bytes.Equal(report.GetReportData(), tc.wantReportData[:]) {
 					t.Fatalf("SEV-SNP nonces differ. Got %v, want %v", report.GetReportData(), tc.wantReportData)
+				}
+			}
+		})
+	}
+}
+
+func TestTdxDevice(t *testing.T) {
+	rwc := test.GetTPM(t)
+	defer CheckedClose(t, rwc)
+
+	ak, err := AttestationKeyRSA(rwc)
+	if err != nil {
+		t.Fatalf("Failed to generate test AK: %v", err)
+	}
+
+	someNonce := []byte("some nonce")
+	var someNonce64 [64]byte
+	copy(someNonce64[:], someNonce)
+	var nonce64 [64]byte
+	copy(nonce64[:], []byte("noncey business"))
+	tdxTestDevice := tgtestclient.GetTdxGuest([]tgtest.TestCase{
+		{
+			Input: someNonce64,
+			Quote: tgtestdata.RawQuote,
+		},
+		{
+			Input: nonce64,
+			Quote: tgtestdata.RawQuote,
+		},
+	}, t)
+	defer tdxTestDevice.Close()
+
+	testcases := []struct {
+		name           string
+		opts           AttestOpts
+		wantReportData [64]byte
+		wantErr        string
+	}{
+		{
+			name: "Happy case no nonce",
+			opts: AttestOpts{
+				Nonce:            someNonce,
+				CertChainFetcher: localClient,
+				TEEDevice:        &TdxDevice{tdxTestDevice},
+			},
+			wantReportData: someNonce64,
+		},
+		{
+			name: "Happy case with nonce",
+			opts: AttestOpts{
+				Nonce:            someNonce,
+				CertChainFetcher: localClient,
+				TEEDevice:        &TdxDevice{tdxTestDevice},
+				TEENonce:         nonce64[:],
+			},
+			wantReportData: nonce64,
+		},
+		{
+			name: "TEE nonce without TEE",
+			opts: AttestOpts{
+				Nonce:            someNonce,
+				CertChainFetcher: localClient,
+				TEENonce:         nonce64[:],
+			},
+			wantErr: "got non-nil TEENonce when TEEDevice is nil",
+		},
+	}
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			att, err := ak.Attest(tc.opts)
+			if (err == nil && tc.wantErr != "") || (err != nil && !strings.Contains(err.Error(), tc.wantErr)) {
+				t.Fatalf("Attest(%v) = %v, want %q", tc.opts, err, tc.wantErr)
+			}
+			// Successful attestation should include a TDX attestation.
+			if err == nil {
+				_, ok := att.GetTeeAttestation().(*pb.Attestation_TdxAttestation)
+				if !ok {
+					t.Fatalf("Attestation missing TDX attestation: %v", att.GetTeeAttestation())
 				}
 			}
 		})
