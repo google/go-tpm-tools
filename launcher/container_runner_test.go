@@ -261,7 +261,7 @@ func testRetryPolicyThreeTimes() *backoff.ExponentialBackOff {
 	expBack.RandomizationFactor = 0
 	expBack.Multiplier = 1.5
 	expBack.MaxInterval = 1 * time.Second
-	expBack.MaxElapsedTime = 2249 * time.Millisecond
+	expBack.MaxElapsedTime = 1251 * time.Millisecond
 	return expBack
 }
 
