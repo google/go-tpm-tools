@@ -87,11 +87,11 @@ func (p LaunchPolicy) Verify(ls LaunchSpec) error {
 		return fmt.Errorf("CMD is not allowed to be overridden on this image")
 	}
 
-	if p.AllowedLogRedirect == never && ls.LogRedirect {
+	if p.AllowedLogRedirect == never && ls.LogRedirect.enabled() {
 		return fmt.Errorf("logging redirection not allowed by image")
 	}
 
-	if p.AllowedLogRedirect == debugOnly && ls.LogRedirect && ls.Hardened {
+	if p.AllowedLogRedirect == debugOnly && ls.LogRedirect.enabled() && ls.Hardened {
 		return fmt.Errorf("logging redirection only allowed on debug environment by image")
 	}
 
