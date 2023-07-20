@@ -201,7 +201,7 @@ func CreateTdxDevice() (*TdxDevice, error) {
 	return &TdxDevice{Device: d}, nil
 }
 
-// AddTDXAttestation will get the TDX attestation quote given opts.TEENonce
+// AddAttestation will get the TDX attestation quote given opts.TEENonce
 // and add them to `attestation`. If opts.TEENonce is empty, then uses
 // contents of opts.Nonce.
 func (d *TdxDevice) AddAttestation(attestation *pb.Attestation, opts AttestOpts) error {

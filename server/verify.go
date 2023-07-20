@@ -353,7 +353,7 @@ func VerifyGceTechnology(attestation *pb.Attestation, tech pb.GCEConfidentialTec
 		case *pb.Attestation_TdxAttestation:
 			var tdxOpts *VerifyTdxOpts
 			if opts.TEEOpts == nil {
-				tdxOpts = TdxDefaultOptions(opts.Nonce)
+				tdxOpts = TdxDefaultOptions()
 			} else {
 				switch teeopts := opts.TEEOpts.(type) {
 				case *VerifyTdxOpts:

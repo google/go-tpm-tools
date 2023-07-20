@@ -12,7 +12,7 @@ type VerifyTdxOpts struct {
 
 // TdxDefaultOptions returns a default verification options for TDX
 // attestation quote on GCE.
-func TdxDefaultOptions(tpmNonce []byte) *VerifyTdxOpts {
+func TdxDefaultOptions() *VerifyTdxOpts {
 	return &VerifyTdxOpts{
 		Verification: tv.DefaultOptions(),
 	}
