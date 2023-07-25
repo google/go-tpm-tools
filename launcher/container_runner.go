@@ -21,6 +21,7 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/cio"
+	"github.com/containerd/containerd/containers"
 	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/images"
 	"github.com/containerd/containerd/oci"
@@ -61,6 +62,10 @@ const (
 const (
 	containerID = "tee-container"
 	snapshotID  = "tee-snapshot"
+)
+
+const (
+	nofile = 131072 // Max number of file descriptor
 )
 
 const (
@@ -150,6 +155,12 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		return nil, &RetryableError{fmt.Errorf("cannot get hostname: [%w]", err)}
 	}
 
+	rlimits := []specs.POSIXRlimit{{
+		Type: "RLIMIT_NOFILE",
+		Hard: nofile,
+		Soft: nofile,
+	}}
+
 	container, err = cdClient.NewContainer(
 		ctx,
 		containerID,
@@ -165,6 +176,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 			oci.WithHostResolvconf,
 			oci.WithHostNamespace(specs.NetworkNamespace),
 			oci.WithEnv([]string{fmt.Sprintf("HOSTNAME=%s", hostname)}),
+			withRlimits(rlimits),
 		),
 	)
 	if err != nil {
@@ -604,4 +616,12 @@ func (r *ContainerRunner) Close(ctx context.Context) {
 	// Exit gracefully:
 	// Delete container and close connection to attestation service.
 	r.container.Delete(ctx, containerd.WithSnapshotCleanup)
+}
+
+// withRlimits sets the rlimit (like the max file descriptor) for the container process
+func withRlimits(rlimits []specs.POSIXRlimit) oci.SpecOpts {
+	return func(_ context.Context, _ oci.Client, _ *containers.Container, s *oci.Spec) error {
+		s.Process.Rlimits = rlimits
+		return nil
+	}
 }
