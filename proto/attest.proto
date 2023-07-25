@@ -51,9 +51,8 @@ enum GCEConfidentialTechnology {
   NONE = 0;
   AMD_SEV = 1;
   AMD_SEV_ES = 2;
-  // Enum value 3 is reserved.
+  INTEL_TDX = 3;
   AMD_SEV_SNP = 4;
-  Intel_TDX = 5;
 }
 
 // The platform/firmware state for this instance

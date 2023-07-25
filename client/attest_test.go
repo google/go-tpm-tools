@@ -330,28 +330,25 @@ func TestTdxDevice(t *testing.T) {
 		{
 			name: "Happy case no nonce",
 			opts: AttestOpts{
-				Nonce:            someNonce,
-				CertChainFetcher: localClient,
-				TEEDevice:        &TdxDevice{tdxTestDevice},
+				Nonce:     someNonce,
+				TEEDevice: &TdxDevice{tdxTestDevice},
 			},
 			wantReportData: someNonce64,
 		},
 		{
 			name: "Happy case with nonce",
 			opts: AttestOpts{
-				Nonce:            someNonce,
-				CertChainFetcher: localClient,
-				TEEDevice:        &TdxDevice{tdxTestDevice},
-				TEENonce:         nonce64[:],
+				Nonce:     someNonce,
+				TEEDevice: &TdxDevice{tdxTestDevice},
+				TEENonce:  nonce64[:],
 			},
 			wantReportData: nonce64,
 		},
 		{
 			name: "TEE nonce without TEE",
 			opts: AttestOpts{
-				Nonce:            someNonce,
-				CertChainFetcher: localClient,
-				TEENonce:         nonce64[:],
+				Nonce:    someNonce,
+				TEENonce: nonce64[:],
 			},
 			wantErr: "got non-nil TEENonce when TEEDevice is nil",
 		},

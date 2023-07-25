@@ -55,7 +55,7 @@ var debugCmd = &cobra.Command{
 			validateOpts = &server.VerifyTdxOpts{
 				Verification: tv.DefaultOptions(),
 			}
-		default:
+		case *pb.Attestation_SevSnpAttestation:
 			if len(teeNonce) != 0 {
 				validateOpts = &server.VerifySnpOpts{
 					Validation:   server.SevSnpDefaultValidateOpts(teeNonce),
@@ -67,7 +67,10 @@ var debugCmd = &cobra.Command{
 					Verification: &sv.Options{},
 				}
 			}
+		default:
+			validateOpts = nil
 		}
+
 		ms, err := server.VerifyAttestation(attestation, server.VerifyOpts{Nonce: nonce, TrustedAKs: []crypto.PublicKey{cryptoPub}, TEEOpts: validateOpts})
 		if err != nil {
 			return fmt.Errorf("verifying attestation: %w", err)
