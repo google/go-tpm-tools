@@ -407,7 +407,7 @@ func (r *ContainerRunner) fetchAndWriteToken(ctx context.Context) error {
 // retry specifies the refresher goroutine's retry policy.
 func (r *ContainerRunner) fetchAndWriteTokenWithRetry(ctx context.Context,
 	retry *backoff.ExponentialBackOff) error {
-	if err := os.MkdirAll(hostTokenPath, 0744); err != nil {
+	if err := os.MkdirAll(hostTokenPath, 0755); err != nil {
 		return err
 	}
 	duration, err := r.refreshToken(ctx)
