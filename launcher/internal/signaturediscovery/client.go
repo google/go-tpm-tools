@@ -11,12 +11,9 @@ import (
 	"github.com/google/go-tpm-tools/launcher/internal/oci"
 	"github.com/google/go-tpm-tools/launcher/internal/oci/cosign"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
-	"go.uber.org/multierr"
 )
 
 const signatureTagSuffix = "sig"
-
-var validSig = oci.ValidSig
 
 // Client is a wrapper of containerd.Client to interact with signed image manifest.
 type Client struct {
@@ -53,25 +50,19 @@ func (c *Client) FetchImageSignatures(ctx context.Context, targetRepository stri
 	if err != nil {
 		return nil, err
 	}
-	var validSigs []oci.Signature
+	signatures := make([]oci.Signature, 0, len(manifest.Layers))
 	for _, layer := range manifest.Layers {
-		blob, e := content.ReadBlob(ctx, image.ContentStore(), layer)
-		if e != nil {
-			err = multierr.Append(err, e)
-			continue
+		blob, err := content.ReadBlob(ctx, image.ContentStore(), layer)
+		if err != nil {
+			return nil, err
 		}
 		sig := &cosign.Sig{
-			Layer:             layer,
-			Blob:              blob,
-			OriginalImageDgst: c.OriginalImageDesc.Digest,
+			Layer: layer,
+			Blob:  blob,
 		}
-		if e := validSig(sig); e == nil {
-			validSigs = append(validSigs, sig)
-		} else {
-			err = multierr.Append(err, e)
-		}
+		signatures = append(signatures, sig)
 	}
-	return validSigs, err
+	return signatures, nil
 }
 
 func (c *Client) pullTargetImage(ctx context.Context, targetRepository string) (containerd.Image, error) {
