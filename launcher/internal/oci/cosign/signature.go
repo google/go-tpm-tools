@@ -3,10 +3,7 @@
 package cosign
 
 import (
-	"crypto"
-	"crypto/x509"
 	"encoding/base64"
-	"encoding/pem"
 	"errors"
 	"fmt"
 
@@ -21,18 +18,10 @@ type Sig struct {
 	Layer v1.Descriptor
 	// Blob represents the opaque data uploaded to OCI registory associated with the layer.
 	Blob []byte
-	// OriginalImageDgst represents the digest of the original image signed by cosign.
-	OriginalImageDgst digest.Digest
 }
 
-const (
-	// CosignSigKey is the key of the cosign-generated signature embedded in OCI image manifest.
-	CosignSigKey = "dev.cosignproject.cosign/signature"
-	// CosignPubKey is the key of the public key for signature verification attached to the cosign-generated payload.
-	CosignPubKey = "dev.cosignproject.cosign/pub"
-	// CosignSigningAlgo is the key of the signing algorithm attached to the cosign-generated payload.
-	CosignSigningAlgo = "dev.cosignproject.cosign/signingalgo"
-)
+// CosignSigKey is the key of the cosign-generated signature embedded in OCI image manifest.
+const CosignSigKey = "dev.cosignproject.cosign/signature"
 
 var (
 	// Verify that our Sig struct implements the expected public interface.
@@ -44,14 +33,6 @@ var (
 func (s Sig) Payload() ([]byte, error) {
 	if digest.FromBytes(s.Blob) != s.Layer.Digest {
 		return nil, errors.New("an unmatched payload digest is paired with a layer descriptor digest")
-	}
-	payload, err := UnmarshalPayload(s.Blob)
-	if err != nil {
-		return nil, err
-	}
-	foundDgst := payload.Critical.Image.DockerManifestDigest
-	if foundDgst != string(s.OriginalImageDgst) {
-		return nil, fmt.Errorf("invalid or missing image digest in payload: %s", foundDgst)
 	}
 	return s.Blob, nil
 }
@@ -69,53 +50,15 @@ func (s Sig) Base64Encoded() (string, error) {
 }
 
 // PublicKey implements oci.Signature interface.
+// Since public key is attached to the `optional` field of payload, we don't actually implement this method.
+// Instead we send payload directly to the Attestation service and let the service parse the payload.
 func (s Sig) PublicKey() ([]byte, error) {
-	payload, err := UnmarshalPayload(s.Blob)
-	if err != nil {
-		return nil, err
-	}
-	pub, ok := payload.Optional[CosignPubKey].(string)
-	if !ok {
-		return nil, fmt.Errorf("pub key not found in the Opotional field of payload: %v", payload)
-	}
-	pemBytes := []byte(pub)
-	// Verify if it is a valid PEM-encoded public key.
-	if _, err := unmarshalPEMToPub(pemBytes); err != nil {
-		return nil, fmt.Errorf("invalid PEM-encoded pub key: %w", err)
-	}
-	return pemBytes, nil
+	return nil, nil
 }
 
 // SigningAlgorithm implements oci.Signature interface.
+// Since signing algorithm is attached to the `optional` field of payload, we don't actually implement this method.
+// Instead we send payload directly to the Attestation service and let the service parse the payload.
 func (s Sig) SigningAlgorithm() (oci.SigningAlgorithm, error) {
-	payload, err := UnmarshalPayload(s.Blob)
-	if err != nil {
-		return "", err
-	}
-	alg, ok := payload.Optional[CosignSigningAlgo].(string)
-	if !ok {
-		return "", fmt.Errorf("signing algorithm not found in the Opotional field of payload: %v", payload)
-	}
-	switch oci.SigningAlgorithm(alg) {
-	case oci.RsassaPssSha256, oci.RsassaPkcs1v15Sha256, oci.EcdsaP256Sha256:
-		return oci.SigningAlgorithm(alg), nil
-	default:
-		return "", errors.New("unsupported signing algorithm")
-	}
-}
-
-// unmarshalPEMToPub converts a PEM-encoded byte slice into a crypto.PublicKey.
-func unmarshalPEMToPub(pemBytes []byte) (crypto.PublicKey, error) {
-	block, _ := pem.Decode(pemBytes)
-	if block == nil {
-		return nil, errors.New("no PEM data found, failed to decode PEM-encoded byte slice")
-	}
-	switch block.Type {
-	case "PUBLIC KEY":
-		return x509.ParsePKIXPublicKey(block.Bytes)
-	case "RSA PUBLIC KEY":
-		return x509.ParsePKCS1PublicKey(block.Bytes)
-	default:
-		return nil, fmt.Errorf("unsupported public key type: %v", block.Type)
-	}
+	return "", nil
 }
