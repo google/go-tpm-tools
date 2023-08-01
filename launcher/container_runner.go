@@ -32,13 +32,13 @@ import (
 	"github.com/google/go-tpm-tools/launcher/internal/signaturediscovery"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/spec"
+	"github.com/google/go-tpm-tools/launcher/teeserver"
 	"github.com/google/go-tpm-tools/launcher/verifier"
 	"github.com/google/go-tpm-tools/launcher/verifier/rest"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
-	"google.golang.org/api/impersonate"
 	"google.golang.org/api/option"
 )
 
@@ -52,6 +52,8 @@ type ContainerRunner struct {
 }
 
 const tokenFileTmp = ".token.tmp"
+
+const teeServerSocket = "teeserver.sock"
 
 // Since we only allow one container on a VM, using a deterministic id is probably fine
 const (
@@ -74,26 +76,6 @@ const (
 	defaultRefreshJitter = 0.1
 )
 
-func fetchImpersonatedToken(ctx context.Context, serviceAccount string, audience string, opts ...option.ClientOption) ([]byte, error) {
-	config := impersonate.IDTokenConfig{
-		Audience:        audience,
-		TargetPrincipal: serviceAccount,
-		IncludeEmail:    true,
-	}
-
-	tokenSource, err := impersonate.IDTokenSource(ctx, config, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("error creating token source: %v", err)
-	}
-
-	token, err := tokenSource.Token()
-	if err != nil {
-		return nil, fmt.Errorf("error retrieving token: %v", err)
-	}
-
-	return []byte(token.AccessToken), nil
-}
-
 // NewRunner returns a runner.
 func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.Token, launchSpec spec.LaunchSpec, mdsClient *metadata.Client, tpm io.ReadWriteCloser, logger *log.Logger, serialConsole *os.File) (*ContainerRunner, error) {
 	image, err := initImage(ctx, cdClient, launchSpec, token)
@@ -103,6 +85,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 
 	mounts := make([]specs.Mount, 0)
 	mounts = appendTokenMounts(mounts)
+
 	envs, err := formatEnvVars(launchSpec.Envs)
 	if err != nil {
 		return nil, err
@@ -214,7 +197,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 
 		// Fetch impersonated ID tokens.
 		for _, sa := range launchSpec.ImpersonateServiceAccounts {
-			idToken, err := fetchImpersonatedToken(ctx, sa, audience)
+			idToken, err := FetchImpersonatedToken(ctx, sa, audience)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get impersonated token for %v: %w", sa, err)
 			}
@@ -360,7 +343,8 @@ func (r *ContainerRunner) measureContainerClaims(ctx context.Context) error {
 // The token file will be written to a tmp file and then renamed.
 func (r *ContainerRunner) refreshToken(ctx context.Context) (time.Duration, error) {
 	r.logger.Print("refreshing attestation verifier OIDC token")
-	token, err := r.attestAgent.Attest(ctx)
+	// request a default token
+	token, err := r.attestAgent.Attest(ctx, agent.AttestAgentOpts{})
 	if err != nil {
 		return 0, fmt.Errorf("failed to retrieve attestation service token: %v", err)
 	}
@@ -512,6 +496,16 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	}
 
 	r.logger.Printf("EnableTestFeatureForImage is set to %v\n", r.launchSpec.Experiments.EnableTestFeatureForImage)
+	// create and start the TEE server behind the experiment
+	if r.launchSpec.Experiments.EnableOnDemandAttestation {
+		r.logger.Println("EnableOnDemandAttestation is enabled: initializing TEE server.")
+		teeServer, err := teeserver.New(path.Join(launcherfile.HostTmpPath, teeServerSocket), r.attestAgent, r.logger)
+		if err != nil {
+			return fmt.Errorf("failed to create the TEE server: %v", err)
+		}
+		go teeServer.Serve()
+		defer teeServer.Shutdown(ctx)
+	}
 
 	var streamOpt cio.Opt
 	switch r.launchSpec.LogRedirect {

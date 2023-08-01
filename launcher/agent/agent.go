@@ -34,7 +34,14 @@ type principalIDTokenFetcher func(audience string) ([][]byte, error)
 // struct to make testing easier.
 type AttestationAgent interface {
 	MeasureEvent(cel.Content) error
-	Attest(context.Context) ([]byte, error)
+	Attest(context.Context, AttestAgentOpts) ([]byte, error)
+}
+
+// AttestAgentOpts contains user generated options when calling the
+// VerifyAttestation API
+type AttestAgentOpts struct {
+	Aud    string
+	Nonces []string
 }
 
 type agent struct {
@@ -76,7 +83,7 @@ func (a *agent) MeasureEvent(event cel.Content) error {
 // Attest fetches the nonce and connection ID from the Attestation Service,
 // creates an attestation message, and returns the resultant
 // principalIDTokens and Metadata Server-generated ID tokens for the instance.
-func (a *agent) Attest(ctx context.Context) ([]byte, error) {
+func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error) {
 	challenge, err := a.client.CreateChallenge(ctx)
 	if err != nil {
 		return nil, err
@@ -96,6 +103,8 @@ func (a *agent) Attest(ctx context.Context) ([]byte, error) {
 		Challenge:      challenge,
 		GcpCredentials: principalTokens,
 		Attestation:    attestation,
+		CustomAudience: opts.Aud,
+		CustomNonce:    opts.Nonces,
 	}
 
 	if a.launchSpec.Experiments.EnableSignedContainerImage {
