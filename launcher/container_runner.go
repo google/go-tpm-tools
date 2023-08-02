@@ -15,6 +15,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"cloud.google.com/go/compute/metadata"
@@ -29,6 +30,8 @@ import (
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/launcher/agent"
+	internal "github.com/google/go-tpm-tools/launcher/internal/oci"
+	"github.com/google/go-tpm-tools/launcher/internal/signaturediscovery"
 	"github.com/google/go-tpm-tools/launcher/spec"
 	"github.com/google/go-tpm-tools/launcher/verifier"
 	"github.com/google/go-tpm-tools/launcher/verifier/rest"
@@ -78,6 +81,33 @@ const (
 	// [defaultRefreshMultiplier-defaultRefreshJitter, defaultRefreshMultiplier+defaultRefreshJitter]
 	defaultRefreshJitter = 0.1
 )
+
+func fetchContainerImageSignatures(ctx context.Context, sdClient *signaturediscovery.Client, targetRepos []string, logger *log.Logger) []internal.Signature {
+	signatures := make([][]internal.Signature, len(targetRepos))
+
+	var wg sync.WaitGroup
+	for i, repo := range targetRepos {
+		wg.Add(1)
+		go func(targetRepo string, index int) {
+			defer wg.Done()
+			sigs, err := sdClient.FetchImageSignatures(ctx, targetRepo)
+			if err != nil {
+				logger.Printf("Failed to fetch signatures from the target repo [%s]: %v", targetRepo, err)
+			} else {
+				signatures[index] = sigs
+			}
+		}(repo, i)
+	}
+	wg.Wait()
+
+	var foundSigs []internal.Signature
+	for _, sigs := range signatures {
+		if len(sigs) != 0 {
+			foundSigs = append(foundSigs, sigs...)
+		}
+	}
+	return foundSigs
+}
 
 func fetchImpersonatedToken(ctx context.Context, serviceAccount string, audience string, opts ...option.ClientOption) ([]byte, error) {
 	config := impersonate.IDTokenConfig{
@@ -236,12 +266,36 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		return nil, fmt.Errorf("failed to create REST verifier client: %v", err)
 	}
 
+	// Fetch container image signatures by using signaturediscovery client.
+	signaturesFetcher := func(ctx context.Context) []internal.Signature {
+		authToken, err := RetrieveAuthToken(mdsClient)
+		if err != nil {
+			logger.Printf("failed to retrieve auth token: %v, using empty auth for image pulling\n", err)
+		}
+		updatedSpec, err := spec.GetLaunchSpec(mdsClient)
+		if err != nil {
+			logger.Println(err)
+			// If can not get launchSpec, default to the old one.
+			updatedSpec = launchSpec
+		}
+		sdClient := getSignatureDiscoveryClient(cdClient, authToken, image.Target())
+		return fetchContainerImageSignatures(ctx, sdClient, updatedSpec.SignedImageRepos, logger)
+	}
+
 	return &ContainerRunner{
 		container,
 		launchSpec,
-		agent.CreateAttestationAgent(tpm, client.GceAttestationKeyECC, verifierClient, principalFetcher),
+		agent.CreateAttestationAgent(tpm, client.GceAttestationKeyECC, verifierClient, principalFetcher, signaturesFetcher),
 		logger,
 	}, nil
+}
+
+func getSignatureDiscoveryClient(cdClient *containerd.Client, token oauth2.Token, imageDesc v1.Descriptor) *signaturediscovery.Client {
+	var remoteOpt containerd.RemoteOpt
+	if token.Valid() {
+		remoteOpt = containerd.WithResolver(Resolver(token.AccessToken))
+	}
+	return signaturediscovery.New(cdClient, imageDesc, remoteOpt)
 }
 
 // getRESTClient returns a REST verifier.Client that points to the given address.

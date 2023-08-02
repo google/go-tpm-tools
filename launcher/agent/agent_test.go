@@ -10,6 +10,7 @@ import (
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal/test"
+	"github.com/google/go-tpm-tools/launcher/internal/oci"
 	"github.com/google/go-tpm-tools/launcher/verifier/fake"
 )
 
@@ -22,7 +23,7 @@ func TestAttest(t *testing.T) {
 		t.Errorf("Failed to generate signing key %v", err)
 	}
 	verifierClient := fake.NewClient(fakeSigner)
-	agent := CreateAttestationAgent(tpm, client.AttestationKeyECC, verifierClient, placeholderFetcher)
+	agent := CreateAttestationAgent(tpm, client.AttestationKeyECC, verifierClient, placeholderFetcher, signaturesPlaceholderFetcher)
 
 	tokenBytes, err := agent.Attest(context.Background())
 	if err != nil {
@@ -57,4 +58,8 @@ func TestAttest(t *testing.T) {
 
 func placeholderFetcher(_ string) ([][]byte, error) {
 	return [][]byte{}, nil
+}
+
+func signaturesPlaceholderFetcher(_ context.Context) []oci.Signature {
+	return []oci.Signature{}
 }

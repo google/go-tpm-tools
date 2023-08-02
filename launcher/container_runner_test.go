@@ -22,8 +22,11 @@ import (
 	"github.com/containerd/containerd/defaults"
 	"github.com/containerd/containerd/namespaces"
 	"github.com/golang-jwt/jwt/v4"
+	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-tpm-tools/cel"
+	"github.com/google/go-tpm-tools/launcher/internal/signaturediscovery"
 	"github.com/google/go-tpm-tools/launcher/spec"
+	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 	"golang.org/x/oauth2"
 	"google.golang.org/api/option"
 )
@@ -261,7 +264,7 @@ func testRetryPolicyThreeTimes() *backoff.ExponentialBackOff {
 	expBack.RandomizationFactor = 0
 	expBack.Multiplier = 1.5
 	expBack.MaxInterval = 1 * time.Second
-	expBack.MaxElapsedTime = 1251 * time.Millisecond
+	expBack.MaxElapsedTime = 2249 * time.Millisecond
 	return expBack
 }
 
@@ -411,6 +414,71 @@ func (t *testRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) 
 
 type idTokenResp struct {
 	Token string `json:"token"`
+}
+
+func TestFetchContainerImageSignatures(t *testing.T) {
+	ctx := namespaces.WithNamespace(context.Background(), "test")
+
+	testCases := []struct {
+		name           string
+		targetRepos    []string
+		wantLen        int
+		wantBase64Sigs []string
+	}{
+		{
+			name:        "fetchContainerImageSignatures success",
+			targetRepos: []string{"us-docker.pkg.dev/vegas-codelab-5/cosign-test/base", "us-docker.pkg.dev/vegas-codelab-5/cosign-test/base"},
+			wantLen:     2,
+			wantBase64Sigs: []string{
+				// Check signatures from the OCI image manifest at https://pantheon.corp.google.com/artifacts/docker/vegas-codelab-5/us/cosign-test/base/sha256:1febaa6ac3a5c095435d5276755fb8efcb7f029fefe85cd9bf3ec7de91685b9f;tab=manifest?project=vegas-codelab-5.
+				"MEUCIQDgoiwMiVl1SAI1iePhH6Oeqztms3IwNtN+w0P92HTqQgIgKjJNcHEy0Ep4g4MH1Vd0gAHvbwH9ahD+jlnMP/rXSGE=",
+				"MEUCIQDgoiwMiVl1SAI1iePhH6Oeqztms3IwNtN+w0P92HTqQgIgKjJNcHEy0Ep4g4MH1Vd0gAHvbwH9ahD+jlnMP/rXSGE=",
+			},
+		},
+		{
+			name:        "fetchContainerImageSignatures success with nil target repos",
+			targetRepos: nil,
+			wantLen:     0,
+		},
+		{
+			name:        "fetchContainerImageSignatures success with empty target repos",
+			targetRepos: []string{},
+			wantLen:     0,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			signedImageDesc := v1.Descriptor{Digest: "sha256:905a0f3b3d6d0fb37bfa448b9e78f833b73f0b19fc97fed821a09cf49e255df1"}
+			sdClient := createTestSignatureDiscoveryClient(t, signedImageDesc)
+			gotSigs := fetchContainerImageSignatures(ctx, sdClient, tc.targetRepos, log.Default())
+			if len(gotSigs) != tc.wantLen {
+				t.Errorf("fetchContainerImageSignatures did not return expected signatures for test case %s, got signatures length %d, but want %d", tc.name, len(gotSigs), tc.wantLen)
+			}
+			var gotBase64Sigs []string
+			for _, gotSig := range gotSigs {
+				base64Sig, err := gotSig.Base64Encoded()
+				if err != nil {
+					t.Fatalf("fetchContainerImageSignatures did not return expected base64 signatures for test case %s: %v", tc.name, err)
+				}
+				gotBase64Sigs = append(gotBase64Sigs, base64Sig)
+			}
+			if !cmp.Equal(gotBase64Sigs, tc.wantBase64Sigs) {
+				t.Errorf("fetchContainerImageSignatures did not return expected signatures for test case %s, got signatures %v, but want %v", tc.name, gotBase64Sigs, tc.wantBase64Sigs)
+			}
+		})
+	}
+}
+
+func createTestSignatureDiscoveryClient(t *testing.T, originalImageDesc v1.Descriptor) *signaturediscovery.Client {
+	t.Helper()
+
+	containerdClient, err := containerd.New(defaults.DefaultAddress)
+	if err != nil {
+		t.Skipf("test needs containerd daemon: %v", err)
+	}
+	t.Cleanup(func() { containerdClient.Close() })
+	return signaturediscovery.New(containerdClient, originalImageDesc)
 }
 
 func TestFetchImpersonatedToken(t *testing.T) {

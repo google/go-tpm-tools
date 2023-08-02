@@ -68,6 +68,10 @@ jobs:
         if: runner.os == 'Windows'
       - name: Build all modules
         run: go build -v ./... ./cmd/... ./launcher/...
+      - name: Run specific tests under root permission
+        run: |
+          GO_EXECUTABLE_PATH=$(which go)
+          sudo $GO_EXECUTABLE_PATH test -v -run "(TestFetchContainerImageSignatures|TestFetchImageSignaturesDockerPublic)" ./launcher
       - name: Test all modules
         run: go test -v ./... ./cmd/... ./launcher/...
 

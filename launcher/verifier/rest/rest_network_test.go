@@ -7,6 +7,7 @@ import (
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal/test"
 	"github.com/google/go-tpm-tools/launcher/agent"
+	"github.com/google/go-tpm-tools/launcher/internal/oci"
 	"github.com/google/go-tpm-tools/launcher/verifier"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/option"
@@ -40,13 +41,17 @@ func testFetcher(_ string) ([][]byte, error) {
 	return [][]byte{}, nil
 }
 
+func testSignaturesFetcher(_ context.Context) []oci.Signature {
+	return []oci.Signature{}
+}
+
 func TestWithAgent(t *testing.T) {
 	vClient := testClient(t)
 
 	tpm := test.GetTPM(t)
 	defer client.CheckedClose(t, tpm)
 
-	agent := agent.CreateAttestationAgent(tpm, client.AttestationKeyECC, vClient, testFetcher)
+	agent := agent.CreateAttestationAgent(tpm, client.AttestationKeyECC, vClient, testFetcher, testSignaturesFetcher)
 	token, err := agent.Attest(context.Background())
 	if err != nil {
 		t.Errorf("failed to attest to Attestation Service: %v", err)

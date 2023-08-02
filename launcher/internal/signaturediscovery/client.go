@@ -60,9 +60,6 @@ func (c *Client) FetchImageSignatures(ctx context.Context, targetRepository stri
 			Layer: layer,
 			Blob:  blob,
 		}
-		if err := oci.ValidSig(sig); err != nil {
-			return nil, err
-		}
 		signatures = append(signatures, sig)
 	}
 	return signatures, nil
