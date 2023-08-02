@@ -20,7 +20,7 @@ steps:
 - name: 'gcr.io/cloud-builders/gcloud'
   id: OsConfigOsPolicyDisabledTest
   entrypoint: 'bash'
-  args: ['test_os_config_os_policy.sh', 'hardened', '${_VM_NAME_PREFIX}-${BUILD_ID}', '${_ZONE}']
+  args: ['scripts/test_os_config_os_policy.sh', 'hardened', '${_VM_NAME_PREFIX}-${BUILD_ID}', '${_ZONE}']
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CleanUp
   entrypoint: 'bash'

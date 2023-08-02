@@ -20,7 +20,7 @@ steps:
 - name: 'gcr.io/cloud-builders/gcloud'
   id: BasicWorkloadTest
   entrypoint: 'bash'
-  args: ['test_launcher_workload.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}', '${_ZONE}']
+  args: ['scripts/test_launcher_workload.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}', '${_ZONE}']
 - name: 'gcr.io/cloud-builders/gcloud'
   id: ChangeMDSVariables
   entrypoint: 'bash'
@@ -32,7 +32,7 @@ steps:
 - name: 'gcr.io/cloud-builders/gcloud'
   id: ChangeMDSVariablesTest
   entrypoint: 'bash'
-  args: ['test_mds_var_change.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}', '${_ZONE}']
+  args: ['scripts/test_mds_var_change.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}', '${_ZONE}']
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CleanUp
   entrypoint: 'bash'
