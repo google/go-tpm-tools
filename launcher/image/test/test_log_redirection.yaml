@@ -1,0 +1,143 @@
+substitutions:
+  '_HARDENED_IMAGE_NAME': ''
+  '_IMAGE_PROJECT': ''
+  '_CLEANUP': 'true'
+  '_VM_NAME_PREFIX': 'cs-logredirect-test'
+  '_ZONE': 'us-central1-a'
+  '_WORKLOAD_IMAGE': 'us-west1-docker.pkg.dev/confidential-space-images-dev/cs-integ-test-images/basic_test:latest'
+
+steps:
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CreateVMRedirectAll
+  entrypoint: 'bash'
+  env:
+  - 'BUILD_ID=$BUILD_ID'
+  args: ['create_vm.sh','-i', '${_HARDENED_IMAGE_NAME}',
+          '-p', '${_IMAGE_PROJECT}',
+          '-m', 'tee-image-reference=${_WORKLOAD_IMAGE},tee-container-log-redirect=true',
+          '-n', '${_VM_NAME_PREFIX}-${BUILD_ID}-all',
+          '-z', '${_ZONE}',
+        ]
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: LogAllCheckSerialTest
+  entrypoint: 'bash'
+  args: ['scripts/test_log_redirect.sh', 'serial', 'true', '${_VM_NAME_PREFIX}-${BUILD_ID}-all', '${_ZONE}']
+  waitFor: ['CreateVMRedirectAll']
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: LogAllCheckCloudLoggingTest
+  entrypoint: 'bash'
+  env:
+  - 'PROJECT_ID=$PROJECT_ID'
+  args: ['scripts/test_log_redirect.sh', 'cloud_logging', 'true', '${_VM_NAME_PREFIX}-${BUILD_ID}-all', '${_ZONE}']
+  waitFor: ['CreateVMRedirectAll']
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CleanUpLogAllTest
+  entrypoint: 'bash'
+  env:
+  - 'CLEANUP=$_CLEANUP'
+  args: ['cleanup.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}-all', '${_ZONE}']
+  waitFor: ['LogAllCheckSerialTest', 'LogAllCheckCloudLoggingTest']
+
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CreateVMRedirectSerial
+  entrypoint: 'bash'
+  env:
+  - 'BUILD_ID=$BUILD_ID'
+  args: ['create_vm.sh','-i', '${_HARDENED_IMAGE_NAME}',
+          '-p', '${_IMAGE_PROJECT}',
+          '-m', 'tee-image-reference=${_WORKLOAD_IMAGE},tee-container-log-redirect=serial',
+          '-n', '${_VM_NAME_PREFIX}-${BUILD_ID}-serial',
+          '-z', '${_ZONE}',
+        ]
+  waitFor: ['-']
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: LogSerialCheckSerialTest
+  entrypoint: 'bash'
+  args: ['scripts/test_log_redirect.sh', 'serial', 'true', '${_VM_NAME_PREFIX}-${BUILD_ID}-serial', '${_ZONE}']
+  waitFor: ['CreateVMRedirectSerial']
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: LogSerialCheckCloudLoggingTest
+  entrypoint: 'bash'
+  env:
+  - 'PROJECT_ID=$PROJECT_ID'
+  args: ['scripts/test_log_redirect.sh', 'cloud_logging', 'false', '${_VM_NAME_PREFIX}-${BUILD_ID}-serial', '${_ZONE}']
+  waitFor: ['CreateVMRedirectSerial']
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CleanUpLogSerialTest
+  entrypoint: 'bash'
+  env:
+  - 'CLEANUP=$_CLEANUP'
+  args: ['cleanup.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}-serial', '${_ZONE}']
+  waitFor: ['LogSerialCheckCloudLoggingTest', 'LogSerialCheckCloudLoggingTest']
+
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CreateVMRedirectCloudLogging
+  entrypoint: 'bash'
+  env:
+  - 'BUILD_ID=$BUILD_ID'
+  args: ['create_vm.sh','-i', '${_HARDENED_IMAGE_NAME}',
+          '-p', '${_IMAGE_PROJECT}',
+          '-m', 'tee-image-reference=${_WORKLOAD_IMAGE},tee-container-log-redirect=cloud_logging',
+          '-n', '${_VM_NAME_PREFIX}-${BUILD_ID}-clog',
+          '-z', '${_ZONE}',
+        ]
+  waitFor: ['-']
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: LogCloudLoggingCheckSerialTest
+  entrypoint: 'bash'
+  args: ['scripts/test_log_redirect.sh', 'serial', 'false', '${_VM_NAME_PREFIX}-${BUILD_ID}-clog', '${_ZONE}']
+  waitFor: ['CreateVMRedirectCloudLogging']
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: LogCloudLoggingCheckCloudLoggingTest
+  entrypoint: 'bash'
+  env:
+  - 'PROJECT_ID=$PROJECT_ID'
+  args: ['scripts/test_log_redirect.sh', 'cloud_logging', 'true', '${_VM_NAME_PREFIX}-${BUILD_ID}-clog', '${_ZONE}']
+  waitFor: ['CreateVMRedirectCloudLogging']
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CleanUpLogCloudLoggingTest
+  entrypoint: 'bash'
+  env:
+  - 'CLEANUP=$_CLEANUP'
+  args: ['cleanup.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}-clog', '${_ZONE}']
+  waitFor: ['LogCloudLoggingCheckSerialTest', 'LogCloudLoggingCheckCloudLoggingTest']
+
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CreateVMRedirectNone
+  entrypoint: 'bash'
+  env:
+  - 'BUILD_ID=$BUILD_ID'
+  args: ['create_vm.sh','-i', '${_HARDENED_IMAGE_NAME}',
+          '-p', '${_IMAGE_PROJECT}',
+          '-m', 'tee-image-reference=${_WORKLOAD_IMAGE},tee-container-log-redirect=false',
+          '-n', '${_VM_NAME_PREFIX}-${BUILD_ID}-none',
+          '-z', '${_ZONE}',
+        ]
+  waitFor: ['-']
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: LogNoneCheckSerialTest
+  entrypoint: 'bash'
+  args: ['scripts/test_log_redirect.sh', 'serial', 'false', '${_VM_NAME_PREFIX}-${BUILD_ID}-none', '${_ZONE}']
+  waitFor: ['CreateVMRedirectNone']
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: LogNoneCheckCloudLoggingTest
+  entrypoint: 'bash'
+  env:
+  - 'PROJECT_ID=$PROJECT_ID'
+  args: ['scripts/test_log_redirect.sh', 'cloud_logging', 'false', '${_VM_NAME_PREFIX}-${BUILD_ID}-none', '${_ZONE}']
+  waitFor: ['CreateVMRedirectNone']
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CleanUpLogNoneTest
+  entrypoint: 'bash'
+  env:
+  - 'CLEANUP=$_CLEANUP'
+  args: ['cleanup.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}-none', '${_ZONE}']
+  waitFor: ['LogNoneCheckSerialTest', 'LogNoneCheckCloudLoggingTest']
+
+# Must come after cleanup.
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CheckFailure
+  entrypoint: 'bash'
+  env:
+  - 'BUILD_ID=$BUILD_ID'
+  args: ['check_failure.sh']

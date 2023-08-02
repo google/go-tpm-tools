@@ -27,6 +27,12 @@ steps:
   entrypoint: 'bash'
   args: ['scripts/test_launcher_workload.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}', '${_ZONE}']
 - name: 'gcr.io/cloud-builders/gcloud'
+  id: BasicWorkloadTestCloudLogging
+  entrypoint: 'bash'
+  env:
+  - 'PROJECT_ID=$PROJECT_ID'
+  args: ['scripts/test_launcher_workload_cloudlogging.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}']
+- name: 'gcr.io/cloud-builders/gcloud'
   id: ChangeMDSVariables
   entrypoint: 'bash'
   args: ['util/change_metadata_vars.sh',
