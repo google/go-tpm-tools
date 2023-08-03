@@ -166,7 +166,7 @@ func (d *SevSnpDevice) AddAttestation(attestation *pb.Attestation, opts AttestOp
 	if len(opts.TEENonce) == 0 {
 		copy(snpNonce[:], opts.Nonce[:])
 	} else if len(opts.TEENonce) != sabi.ReportDataSize {
-		return fmt.Errorf("the TEENonce size is %d. SEV-SNP device requires 64", len(opts.TEENonce))
+		return fmt.Errorf("the TEENonce size is %d. SEV-SNP device requires %d", len(opts.TEENonce), sabi.ReportDataSize)
 	} else {
 		copy(snpNonce[:], opts.TEENonce)
 	}
@@ -209,7 +209,7 @@ func (d *TdxDevice) AddAttestation(attestation *pb.Attestation, opts AttestOpts)
 	if len(opts.TEENonce) == 0 {
 		copy(tdxNonce[:], opts.Nonce[:])
 	} else if len(opts.TEENonce) != tabi.TdReportDataSize {
-		return fmt.Errorf("the TEENonce size is %d. Intel TDX device requires 64", len(opts.TEENonce))
+		return fmt.Errorf("the TEENonce size is %d. Intel TDX device requires %d", len(opts.TEENonce), tabi.TdReportDataSize)
 	} else {
 		copy(tdxNonce[:], opts.TEENonce)
 	}

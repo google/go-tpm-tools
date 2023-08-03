@@ -361,5 +361,4 @@ func TestTdxAttestTeeNonceFail(t *testing.T) {
 	if err == nil {
 		t.Error("expected non-nil error")
 	}
-
 }

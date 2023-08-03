@@ -330,30 +330,26 @@ func VerifyGceTechnology(attestation *pb.Attestation, tech pb.GCEConfidentialTec
 	case pb.GCEConfidentialTechnology_AMD_SEV_ES: // Not verifiable on GCE
 		return nil
 	case pb.GCEConfidentialTechnology_AMD_SEV_SNP:
-		switch tee := attestation.GetTeeAttestation().(type) {
-		case *pb.Attestation_SevSnpAttestation:
-			var snpOpts *VerifySnpOpts
-			if opts.TEEOpts == nil {
-				snpOpts = SevSnpDefaultOptions(opts.Nonce)
-			} else {
-				switch teeopts := opts.TEEOpts.(type) {
-				case *VerifySnpOpts:
-					snpOpts = teeopts
-				default:
-					return fmt.Errorf("unexpected value for TEEOpts given a SEV-SNP attestation report: %v",
-						opts.TEEOpts)
-				}
-			}
-			return VerifySevSnpAttestation(tee.SevSnpAttestation, snpOpts)
-		default:
-			return fmt.Errorf("TEE attestation is %v, expected a SevSnpAttestation", attestation.GetTeeAttestation())
+		var snpOpts *VerifySnpOpts
+		tee, ok := attestation.TeeAttestation.(*pb.Attestation_SevSnpAttestation)
+		if !ok {
+			return fmt.Errorf("TEE attestation is %T, expected a SevSnpAttestation", attestation.GetTeeAttestation())
 		}
+		if opts.TEEOpts == nil {
+			snpOpts = SevSnpDefaultOptions(opts.Nonce)
+		} else {
+			snpOpts, ok = opts.TEEOpts.(*VerifySnpOpts)
+			if !ok {
+				return fmt.Errorf("unexpected value for TEEOpts given a SEV-SNP attestation report: %v",
+					opts.TEEOpts)
+			}
+		}
+		return VerifySevSnpAttestation(tee.SevSnpAttestation, snpOpts)
 	case pb.GCEConfidentialTechnology_INTEL_TDX:
 		var tdxOpts *VerifyTdxOpts
-		var ok bool
 		tee, ok := attestation.TeeAttestation.(*pb.Attestation_TdxAttestation)
 		if !ok {
-			return fmt.Errorf("TEE attestation is %v, expected a TdxAttestation", attestation.GetTeeAttestation())
+			return fmt.Errorf("TEE attestation is %T, expected a TdxAttestation", attestation.GetTeeAttestation())
 		}
 		if opts.TEEOpts == nil {
 			tdxOpts = TdxDefaultOptions()
