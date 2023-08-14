@@ -25,6 +25,7 @@ import (
 	tgtestclient "github.com/google/go-tdx-guest/testing/client"
 	tgtestdata "github.com/google/go-tdx-guest/testing/testdata"
 	tv "github.com/google/go-tdx-guest/verify"
+	"github.com/google/go-tdx-guest/verify/trust"
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal"
@@ -1178,6 +1179,24 @@ func TestVerifyAttestationWithTdx(t *testing.T) {
 		t.Fatalf("failed to attest: %v", err)
 	}
 
+	alterQuote2 := make([]byte, len(tgtestdata.RawQuote))
+	copy(alterQuote2[:], tgtestdata.RawQuote)
+	alterQuote1[0x1024] = 0x32
+	tdxTestDevice2 := tgtestclient.GetTdxGuest([]tgtest.TestCase{
+		{
+			Input: nonce64,
+			Quote: alterQuote1,
+		},
+	}, t)
+	defer tdxTestDevice1.Close()
+	attestation2, err := ak.Attest(client.AttestOpts{
+		Nonce:     nonce,
+		TEEDevice: &client.TdxDevice{Device: tdxTestDevice2},
+		TEENonce:  nonce64[:],
+	})
+	if err != nil {
+		t.Fatalf("failed to attest: %v", err)
+	}
 	type testCase struct {
 		name    string
 		opts    VerifyOpts
@@ -1207,6 +1226,22 @@ func TestVerifyAttestationWithTdx(t *testing.T) {
 			},
 			attest:  attestation1,
 			wantErr: "failed to verify memory encryption technology: unable to verify message digest using quote's signature and ecdsa attestation key",
+		},
+		{
+			name: "Bad Roots Certificate",
+			opts: VerifyOpts{
+				Nonce:      nonce,
+				TrustedAKs: []crypto.PublicKey{ak.PublicKey()},
+				TEEOpts: &VerifyTdxOpts{
+					Verification: &tv.Options{
+						Getter:       trust.DefaultHTTPSGetter(),
+						Now:          time.Now(),
+						TrustedRoots: nil,
+					},
+				},
+			},
+			attest:  attestation2,
+			wantErr: "failed to verify memory encryption technology: could not interpret Root CA certificate DER bytes: x509: invalid RDNSequence: invalid attribute value",
 		},
 	}
 	for _, tc := range tcs {
