@@ -11,10 +11,12 @@ import (
 	"crypto"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
+	"github.com/google/go-tpm-tools/launcher/internal/oci"
 	"github.com/google/go-tpm-tools/launcher/verifier"
 	pb "github.com/google/go-tpm-tools/proto/attest"
 )
@@ -23,6 +25,7 @@ var defaultCELHashAlgo = []crypto.Hash{crypto.SHA256, crypto.SHA1}
 
 type tpmKeyFetcher func(rw io.ReadWriter) (*client.Key, error)
 type principalIDTokenFetcher func(audience string) ([][]byte, error)
+type containerImageSignaturesFetcher func(ctx context.Context) []oci.Signature
 
 // AttestationAgent is an agent that interacts with GCE's Attestation Service
 // to Verify an attestation message. It is an interface instead of a concrete
@@ -33,11 +36,13 @@ type AttestationAgent interface {
 }
 
 type agent struct {
-	tpm              io.ReadWriteCloser
-	akFetcher        tpmKeyFetcher
-	client           verifier.Client
-	principalFetcher principalIDTokenFetcher
-	cosCel           cel.CEL
+	tpm               io.ReadWriteCloser
+	akFetcher         tpmKeyFetcher
+	client            verifier.Client
+	principalFetcher  principalIDTokenFetcher
+	signaturesFetcher containerImageSignaturesFetcher
+	cosCel            cel.CEL
+	logger            *log.Logger
 }
 
 // CreateAttestationAgent returns an agent capable of performing remote
@@ -45,12 +50,16 @@ type agent struct {
 // - tpm is a handle to the TPM on the instance
 // - akFetcher is a func to fetch an attestation key: see go-tpm-tools/client.
 // - principalFetcher is a func to fetch GCE principal tokens for a given audience.
-func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher tpmKeyFetcher, verifierClient verifier.Client, principalFetcher principalIDTokenFetcher) AttestationAgent {
+// - signaturesFetcher is a func to fetch container image signatures associated with the running workload.
+// - logger will log any partial errors returned by VerifyAttestation.
+func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher tpmKeyFetcher, verifierClient verifier.Client, principalFetcher principalIDTokenFetcher, signaturesFetcher containerImageSignaturesFetcher, logger *log.Logger) AttestationAgent {
 	return &agent{
-		tpm:              tpm,
-		client:           verifierClient,
-		akFetcher:        akFetcher,
-		principalFetcher: principalFetcher,
+		tpm:               tpm,
+		client:            verifierClient,
+		akFetcher:         akFetcher,
+		principalFetcher:  principalFetcher,
+		signaturesFetcher: signaturesFetcher,
+		logger:            logger,
 	}
 }
 
@@ -79,13 +88,19 @@ func (a *agent) Attest(ctx context.Context) ([]byte, error) {
 		return nil, err
 	}
 
+	signatures := a.signaturesFetcher(ctx)
+
 	resp, err := a.client.VerifyAttestation(ctx, verifier.VerifyAttestationRequest{
-		Challenge:      challenge,
-		GcpCredentials: principalTokens,
-		Attestation:    attestation,
+		Challenge:                challenge,
+		GcpCredentials:           principalTokens,
+		Attestation:              attestation,
+		ContainerImageSignatures: signatures,
 	})
 	if err != nil {
 		return nil, err
+	}
+	if len(resp.PartialErrs) > 0 {
+		a.logger.Printf("Partial errors from VerifyAttestation: %v", resp.PartialErrs)
 	}
 	return resp.ClaimsToken, nil
 }
