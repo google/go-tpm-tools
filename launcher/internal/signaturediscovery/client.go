@@ -6,7 +6,10 @@ import (
 	"fmt"
 
 	"github.com/containerd/containerd"
+	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/images"
+	"github.com/google/go-tpm-tools/launcher/internal/oci"
+	"github.com/google/go-tpm-tools/launcher/internal/oci/cosign"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
@@ -35,6 +38,31 @@ func (c *Client) FetchSignedImageManifest(ctx context.Context, targetRepository 
 		return v1.Manifest{}, err
 	}
 	return getManifest(ctx, image)
+}
+
+// FetchImageSignatures returns a list of valid image signatures associated with the target OCI image.
+func (c *Client) FetchImageSignatures(ctx context.Context, targetRepository string) ([]oci.Signature, error) {
+	image, err := c.pullTargetImage(ctx, targetRepository)
+	if err != nil {
+		return nil, err
+	}
+	manifest, err := getManifest(ctx, image)
+	if err != nil {
+		return nil, err
+	}
+	signatures := make([]oci.Signature, 0, len(manifest.Layers))
+	for _, layer := range manifest.Layers {
+		blob, err := content.ReadBlob(ctx, image.ContentStore(), layer)
+		if err != nil {
+			return nil, err
+		}
+		sig := &cosign.Sig{
+			Layer: layer,
+			Blob:  blob,
+		}
+		signatures = append(signatures, sig)
+	}
+	return signatures, nil
 }
 
 func (c *Client) pullTargetImage(ctx context.Context, targetRepository string) (containerd.Image, error) {
