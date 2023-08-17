@@ -21,6 +21,7 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/cio"
+	"github.com/containerd/containerd/containers"
 	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/images"
 	"github.com/containerd/containerd/oci"
@@ -50,9 +51,10 @@ type ContainerRunner struct {
 const (
 	// hostTokenPath defined the directory in the host that will store attestation tokens
 	hostTokenPath = "/tmp/container_launcher/"
-	// containerTokenMountPath defined the directory in the container stores attestation tokens
-	containerTokenMountPath      = "/run/container_launcher/"
-	attestationVerifierTokenFile = "attestation_verifier_claims_token"
+	// ContainerTokenMountPath defined the directory in the container stores attestation tokens
+	ContainerTokenMountPath = "/run/container_launcher/"
+	// AttestationVerifierTokenFile defines the name of the file the attestation token is stored in.
+	AttestationVerifierTokenFile = "attestation_verifier_claims_token"
 	tokenFileTmp                 = ".token.tmp"
 )
 
@@ -60,6 +62,10 @@ const (
 const (
 	containerID = "tee-container"
 	snapshotID  = "tee-snapshot"
+)
+
+const (
+	nofile = 131072 // Max number of file descriptor
 )
 
 const (
@@ -149,6 +155,12 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		return nil, &RetryableError{fmt.Errorf("cannot get hostname: [%w]", err)}
 	}
 
+	rlimits := []specs.POSIXRlimit{{
+		Type: "RLIMIT_NOFILE",
+		Hard: nofile,
+		Soft: nofile,
+	}}
+
 	container, err = cdClient.NewContainer(
 		ctx,
 		containerID,
@@ -164,6 +176,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 			oci.WithHostResolvconf,
 			oci.WithHostNamespace(specs.NetworkNamespace),
 			oci.WithEnv([]string{fmt.Sprintf("HOSTNAME=%s", hostname)}),
+			withRlimits(rlimits),
 		),
 	)
 	if err != nil {
@@ -268,7 +281,7 @@ func formatEnvVars(envVars []spec.EnvVar) ([]string, error) {
 // appendTokenMounts appends the default mount specs for the OIDC token
 func appendTokenMounts(mounts []specs.Mount) []specs.Mount {
 	m := specs.Mount{}
-	m.Destination = containerTokenMountPath
+	m.Destination = ContainerTokenMountPath
 	m.Type = "bind"
 	m.Source = hostTokenPath
 	m.Options = []string{"rbind", "ro"}
@@ -365,7 +378,7 @@ func (r *ContainerRunner) refreshToken(ctx context.Context) (time.Duration, erro
 	}
 
 	// Rename the temp file to the token file (to avoid race conditions).
-	if err = os.Rename(tmpTokenPath, path.Join(hostTokenPath, attestationVerifierTokenFile)); err != nil {
+	if err = os.Rename(tmpTokenPath, path.Join(hostTokenPath, AttestationVerifierTokenFile)); err != nil {
 		return 0, fmt.Errorf("failed to rename the token file: %v", err)
 	}
 
@@ -603,4 +616,12 @@ func (r *ContainerRunner) Close(ctx context.Context) {
 	// Exit gracefully:
 	// Delete container and close connection to attestation service.
 	r.container.Delete(ctx, containerd.WithSnapshotCleanup)
+}
+
+// withRlimits sets the rlimit (like the max file descriptor) for the container process
+func withRlimits(rlimits []specs.POSIXRlimit) oci.SpecOpts {
+	return func(_ context.Context, _ oci.Client, _ *containers.Container, s *oci.Spec) error {
+		s.Process.Rlimits = rlimits
+		return nil
+	}
 }
