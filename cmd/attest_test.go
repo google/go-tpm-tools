@@ -4,11 +4,14 @@ import (
 	"io"
 	"os"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
 	sgtest "github.com/google/go-sev-guest/testing"
-	testclient "github.com/google/go-sev-guest/testing/client"
+	sgtestclient "github.com/google/go-sev-guest/testing/client"
+	tgtest "github.com/google/go-tdx-guest/testing"
+	tgtestclient "github.com/google/go-tdx-guest/testing/client"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal/test"
 	"github.com/google/go-tpm/legacy/tpm2"
@@ -292,7 +295,7 @@ func TestTeeTechnologyFail(t *testing.T) {
 	}
 }
 
-func TestAttestTeeNonceFail(t *testing.T) {
+func TestSevAttestTeeNonceFail(t *testing.T) {
 	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
 	ExternalTPM = rwc
@@ -303,7 +306,7 @@ func TestAttestTeeNonceFail(t *testing.T) {
 	}
 
 	// TEENonce with length less than 64 bytes.
-	sevTestDevice, _, _, _ := testclient.GetSevGuest([]sgtest.TestCase{
+	sevTestDevice, _, _, _ := sgtestclient.GetSevGuest([]sgtest.TestCase{
 		{
 			Input: [64]byte{1, 2, 3, 4},
 		},
@@ -325,4 +328,70 @@ func TestAttestTeeNonceFail(t *testing.T) {
 		t.Error("expected non-nil error")
 	}
 
+}
+
+func TestTdxAttestTeeNonceFail(t *testing.T) {
+	rwc := test.GetTPM(t)
+	defer client.CheckedClose(t, rwc)
+	ExternalTPM = rwc
+	// non-nil TEENonce when TEEDevice is nil
+	RootCmd.SetArgs([]string{"attest", "--nonce", "1234", "--key", "AK", "--tee-nonce", "12345678", "--tee-technology", ""})
+	if err := RootCmd.Execute(); err == nil {
+		t.Error("expected not-nil error")
+	}
+
+	// TEENonce with length less than 64 bytes.
+	tdxTestDevice := tgtestclient.GetTdxGuest([]tgtest.TestCase{
+		{
+			Input: [64]byte{1, 2, 3, 4},
+		},
+	}, t)
+	defer tdxTestDevice.Close()
+
+	ak, err := client.AttestationKeyRSA(rwc)
+	if err != nil {
+		t.Error(err)
+	}
+	defer ak.Close()
+	attestopts := client.AttestOpts{
+		Nonce:     []byte{1, 2, 3, 4},
+		TEENonce:  []byte{1, 2, 3, 4},
+		TEEDevice: &client.TdxDevice{Device: tdxTestDevice},
+	}
+	_, err = ak.Attest(attestopts)
+	if err == nil {
+		t.Error("expected non-nil error")
+	}
+}
+
+func TestHardwareAttestationPass(t *testing.T) {
+	rwc := test.GetTPM(t)
+	defer client.CheckedClose(t, rwc)
+	ExternalTPM = rwc
+
+	inputFile := makeOutputFile(t, "attest")
+	outputFile := makeOutputFile(t, "attestout")
+	defer os.RemoveAll(inputFile)
+	defer os.RemoveAll(outputFile)
+	teenonce := "12345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678"
+	tests := []struct {
+		name    string
+		nonce   string
+		teetech string
+		wanterr string
+	}{
+		{"TdxPass", "1234", "tdx", "failed to open tdx device: could not open Intel TDX guest device at \"/dev/tdx-guest\": no such file or directory"},
+		{"SevSnpPass", "1234", "sev-snp", "failed to open sev-snp device: could not open AMD SEV guest device at /dev/sev-guest (see https://github.com/google/go-sev-guest/blob/main/INSTALL.md): no such file or directory"},
+	}
+	for _, op := range tests {
+		t.Run(op.name, func(t *testing.T) {
+			attestArgs := []string{"attest", "--nonce", op.nonce, "--output", inputFile, "--format", "textproto", "--tee-nonce", teenonce, "--tee-technology", op.teetech}
+			RootCmd.SetArgs(attestArgs)
+			if err := RootCmd.Execute(); err != nil {
+				if !strings.Contains(err.Error(), op.wanterr) {
+					t.Error(err)
+				}
+			}
+		})
+	}
 }

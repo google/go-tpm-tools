@@ -88,9 +88,9 @@ hardware and guarantees a fresh quote.
 			}
 			attestOpts.TEENonce = teeNonce
 		case Tdx:
-			attestOpts.TEEDevice, err = client.CreateTDXDevice()
+			attestOpts.TEEDevice, err = client.CreateTdxDevice()
 			if err != nil {
-				return fmt.Errorf("failed to open %s device: %v", SevSnp, err)
+				return fmt.Errorf("failed to open %s device: %v", Tdx, err)
 			}
 			attestOpts.TEENonce = teeNonce
 		case "":
@@ -99,7 +99,7 @@ hardware and guarantees a fresh quote.
 			}
 		default:
 			// Change the return statement when more devices are added
-			return fmt.Errorf("tee-technology should be empty, %s or %s", SevSnp, Tdx)
+			return fmt.Errorf("tee-technology should be either empty or should have values %s or %s", SevSnp, Tdx)
 		}
 
 		attestOpts.TCGEventLog, err = client.GetEventLog(rwc)
@@ -182,7 +182,7 @@ func addKeyFlag(cmd *cobra.Command) {
 }
 
 func addTeeTechnology(cmd *cobra.Command) {
-	cmd.PersistentFlags().StringVar(&teeTechnology, "tee-technology", "", "indicates the type of TEE hardware. Should be empty, sev-snp or tdx")
+	cmd.PersistentFlags().StringVar(&teeTechnology, "tee-technology", "", "indicates the type of TEE hardware. Should be either empty or one of sev-snp or tdx")
 }
 
 func init() {

@@ -6,7 +6,6 @@ import "proto/sevsnp.proto";
 import "tpm.proto";
 import "proto/tdx.proto";
 
-
 option go_package = "github.com/google/go-tpm-tools/proto/attest";
 
 // Information uniquely identifying a GCE instance. Can be used to create an
@@ -52,7 +51,7 @@ enum GCEConfidentialTechnology {
   NONE = 0;
   AMD_SEV = 1;
   AMD_SEV_ES = 2;
-  // Enum value 3 is reserved.
+  INTEL_TDX = 3;
   AMD_SEV_SNP = 4;
 }
 

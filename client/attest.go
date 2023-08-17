@@ -8,7 +8,7 @@ import (
 
 	sabi "github.com/google/go-sev-guest/abi"
 	sg "github.com/google/go-sev-guest/client"
-	tdx "github.com/google/go-tdx-guest/client"
+	tg "github.com/google/go-tdx-guest/client"
 	tabi "github.com/google/go-tdx-guest/client/linuxabi"
 	pb "github.com/google/go-tpm-tools/proto/attest"
 )
@@ -142,6 +142,12 @@ type SevSnpDevice struct {
 	Device sg.Device
 }
 
+// TdxDevice encapsulates the TDX attestation device to add its attestation quote
+// to a pb.Attestation.
+type TdxDevice struct {
+	Device tg.Device
+}
+
 // CreateSevSnpDevice opens the SEV-SNP attestation driver and wraps it with behavior
 // that allows it to add an attestation report to pb.Attestation.
 func CreateSevSnpDevice() (*SevSnpDevice, error) {
@@ -185,35 +191,29 @@ func (d *SevSnpDevice) Close() error {
 	return nil
 }
 
-// TDXDevice encapsulates the attestation device to add its attestation quote
-// to a pb.Attestation.
-type TDXDevice struct {
-	Device tdx.Device
-}
-
-// CreateTDXDevice opens the TDX attestation driver and wraps it with behavior
+// CreateTdxDevice opens the TDX attestation driver and wraps it with behavior
 // that allows it to add an attestation quote to pb.Attestation.
-func CreateTDXDevice() (*TDXDevice, error) {
-	d, err := tdx.OpenDevice()
+func CreateTdxDevice() (*TdxDevice, error) {
+	d, err := tg.OpenDevice()
 	if err != nil {
 		return nil, err
 	}
-	return &TDXDevice{Device: d}, nil
+	return &TdxDevice{Device: d}, nil
 }
 
-// AddTDXAttestation will get the TDX attestation report given opts.TEENonce with
-// associated certificates and add them to `attestation`. If opts.TEENonce is empty,
-// then uses contents of opts.Nonce.
-func (d *TDXDevice) AddAttestation(attestation *pb.Attestation, opts AttestOpts) error {
+// AddAttestation will get the TDX attestation quote given opts.TEENonce
+// and add them to `attestation`. If opts.TEENonce is empty, then uses
+// contents of opts.Nonce.
+func (d *TdxDevice) AddAttestation(attestation *pb.Attestation, opts AttestOpts) error {
 	var tdxNonce [tabi.TdReportDataSize]byte
 	if len(opts.TEENonce) == 0 {
 		copy(tdxNonce[:], opts.Nonce[:])
 	} else if len(opts.TEENonce) != tabi.TdReportDataSize {
-		return fmt.Errorf("the TEENonce size is %d. Intel TDX device requires 64", len(opts.TEENonce))
+		return fmt.Errorf("the TEENonce size is %d. Intel TDX device requires %d", len(opts.TEENonce), tabi.TdReportDataSize)
 	} else {
 		copy(tdxNonce[:], opts.TEENonce)
 	}
-	quote, err := tdx.GetQuote(d.Device, tdxNonce)
+	quote, err := tg.GetQuote(d.Device, tdxNonce)
 	if err != nil {
 		return err
 	}
@@ -223,9 +223,9 @@ func (d *TDXDevice) AddAttestation(attestation *pb.Attestation, opts AttestOpts)
 	return nil
 }
 
-// Close will free the device handle held by the SevSnpDevice. Calling more
+// Close will free the device handle held by the TdxDevice. Calling more
 // than once has no effect.
-func (d *TDXDevice) Close() error {
+func (d *TdxDevice) Close() error {
 	if d.Device != nil {
 		err := d.Device.Close()
 		d.Device = nil
@@ -257,7 +257,7 @@ func getTEEAttestationReport(attestation *pb.Attestation, opts AttestOpts) error
 	}
 
 	// Try TDX.
-	if device, err := CreateTDXDevice(); err == nil {
+	if device, err := CreateTdxDevice(); err == nil {
 		// Don't return errors if the attestation collection fails, since
 		// the user didn't specify a TEEDevice.
 		device.AddAttestation(attestation, opts)
