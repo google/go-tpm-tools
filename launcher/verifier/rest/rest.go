@@ -5,13 +5,16 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"strconv"
+	"log"
 	"strings"
 
 	"github.com/google/go-tpm-tools/launcher/verifier"
 
-	v1alpha1 "google.golang.org/api/confidentialcomputing/v1alpha1"
+	v1 "cloud.google.com/go/confidentialcomputing/apiv1"
+	ccpb "cloud.google.com/go/confidentialcomputing/apiv1/confidentialcomputingpb"
+	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
+	locationpb "google.golang.org/genproto/googleapis/cloud/location"
 )
 
 // BadRegionError indicates that:
@@ -38,30 +41,38 @@ func (e *BadRegionError) Unwrap() error {
 // attestations in a particular project and region. Returns a *BadRegionError
 // if the requested project is valid, but the region is invalid.
 func NewClient(ctx context.Context, projectID string, region string, opts ...option.ClientOption) (verifier.Client, error) {
-	service, err := v1alpha1.NewService(ctx, opts...)
+	client, err := v1.NewRESTClient(ctx, opts...)
 	if err != nil {
-		return nil, fmt.Errorf("can't create ConfidentialComputing v1alpha1 API client: %w", err)
+		return nil, fmt.Errorf("can't create ConfidentialComputing v1 API client: %w", err)
 	}
 
 	projectName := fmt.Sprintf("projects/%s", projectID)
 	locationName := fmt.Sprintf("%s/locations/%v", projectName, region)
 
-	location, getErr := service.Projects.Locations.Get(locationName).Do()
+	getReq := &locationpb.GetLocationRequest{
+		Name: locationName,
+	}
+	location, getErr := client.GetLocation(ctx, getReq)
 	if getErr == nil {
-		return &restClient{service, location}, nil
+		return &restClient{client, location}, nil
 	}
 
 	// If we can't get the location, try to list the locations. This handles
 	// situations where the projectID is invalid.
-	list, listErr := service.Projects.Locations.List(projectName).Do()
-	if listErr != nil {
-		return nil, fmt.Errorf("listing regions in project %q: %w", projectID, listErr)
-	}
+	listReq := &locationpb.ListLocationsRequest{Name: projectName}
+	listIter := client.ListLocations(ctx, listReq)
 
 	// The project is valid, but can't get the desired region.
-	regions := make([]string, len(list.Locations))
-	for i, loc := range list.Locations {
-		regions[i] = loc.LocationId
+	var regions []string
+	for {
+		resp, err := listIter.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("listing regions in project %q: %w", projectID, err)
+		}
+		regions = append(regions, resp.LocationId)
 	}
 	return nil, &BadRegionError{
 		RequestedRegion:  region,
@@ -71,42 +82,42 @@ func NewClient(ctx context.Context, projectID string, region string, opts ...opt
 }
 
 type restClient struct {
-	service  *v1alpha1.Service
-	location *v1alpha1.Location
+	v1Client *v1.Client
+	location *locationpb.Location
 }
 
 // CreateChallenge implements verifier.Client
-func (c *restClient) CreateChallenge(_ context.Context) (*verifier.Challenge, error) {
+func (c *restClient) CreateChallenge(ctx context.Context) (*verifier.Challenge, error) {
 	// Pass an empty Challenge for the input (all params are output-only)
-	chal, err := c.service.Projects.Locations.Challenges.Create(
-		c.location.Name,
-		&v1alpha1.Challenge{},
-	).Do()
+	req := &ccpb.CreateChallengeRequest{
+		Parent:    c.location.Name,
+		Challenge: &ccpb.Challenge{},
+	}
+	chal, err := c.v1Client.CreateChallenge(ctx, req)
 	if err != nil {
-		return nil, fmt.Errorf("calling v1alpha1.CreateChallenge: %w", err)
+		return nil, fmt.Errorf("calling v1.CreateChallenge: %w", err)
 	}
 	return convertChallengeFromREST(chal)
 }
 
 // VerifyAttestation implements verifier.Client
-func (c *restClient) VerifyAttestation(_ context.Context, request verifier.VerifyAttestationRequest) (*verifier.VerifyAttestationResponse, error) {
+func (c *restClient) VerifyAttestation(ctx context.Context, request verifier.VerifyAttestationRequest) (*verifier.VerifyAttestationResponse, error) {
 	if request.Challenge == nil || request.Attestation == nil {
 		return nil, fmt.Errorf("nil value provided in challenge")
 	}
-	response, err := c.service.Projects.Locations.Challenges.VerifyAttestation(
-		request.Challenge.Name,
-		convertRequestToREST(request),
-	).Do()
+	req := convertRequestToREST(request)
+	req.Challenge = request.Challenge.Name
+	response, err := c.v1Client.VerifyAttestation(ctx, req)
 	if err != nil {
-		return nil, fmt.Errorf("calling v1alpha1.VerifyAttestation: %w", err)
+		return nil, fmt.Errorf("calling v1.VerifyAttestation: %w", err)
 	}
 	return convertResponseFromREST(response)
 }
 
 var encoding = base64.StdEncoding
 
-func convertChallengeFromREST(chal *v1alpha1.Challenge) (*verifier.Challenge, error) {
-	nonce, err := encoding.DecodeString(chal.Nonce)
+func convertChallengeFromREST(chal *ccpb.Challenge) (*verifier.Challenge, error) {
+	nonce, err := encoding.DecodeString(chal.TpmNonce)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode Challenge.Nonce: %w", err)
 	}
@@ -116,53 +127,73 @@ func convertChallengeFromREST(chal *v1alpha1.Challenge) (*verifier.Challenge, er
 	}, nil
 }
 
-func convertRequestToREST(request verifier.VerifyAttestationRequest) *v1alpha1.VerifyAttestationRequest {
+func convertRequestToREST(request verifier.VerifyAttestationRequest) *ccpb.VerifyAttestationRequest {
 	idTokens := make([]string, len(request.GcpCredentials))
 	for i, token := range request.GcpCredentials {
-		idTokens[i] = encoding.EncodeToString(token)
+		idTokens[i] = string(token)
 	}
 
-	quotes := make([]*v1alpha1.Quote, len(request.Attestation.GetQuotes()))
+	quotes := make([]*ccpb.TpmAttestation_Quote, len(request.Attestation.GetQuotes()))
 	for i, quote := range request.Attestation.GetQuotes() {
-		pcrVals := map[string]string{}
+		pcrVals := map[int32][]byte{}
 		for idx, val := range quote.GetPcrs().GetPcrs() {
-			strIdx := strconv.FormatUint(uint64(idx), 10)
-			pcrVals[strIdx] = encoding.EncodeToString(val)
+			pcrVals[int32(idx)] = val
 		}
 
-		quotes[i] = &v1alpha1.Quote{
-			RawQuote:     encoding.EncodeToString(quote.GetQuote()),
-			RawSignature: encoding.EncodeToString(quote.GetRawSig()),
-			HashAlgo:     int64(quote.GetPcrs().GetHash()),
+		quotes[i] = &ccpb.TpmAttestation_Quote{
+			RawQuote:     quote.GetQuote(),
+			RawSignature: quote.GetRawSig(),
+			HashAlgo:     int32(quote.GetPcrs().GetHash()),
 			PcrValues:    pcrVals,
 		}
 	}
 
-	certs := make([]string, len(request.Attestation.GetIntermediateCerts()))
+	certs := make([][]byte, len(request.Attestation.GetIntermediateCerts()))
 	for i, cert := range request.Attestation.GetIntermediateCerts() {
-		certs[i] = encoding.EncodeToString(cert)
+		certs[i] = cert
 	}
 
-	return &v1alpha1.VerifyAttestationRequest{
-		GcpCredentials: &v1alpha1.GcpCredentials{
-			IdTokens: idTokens,
+	signatures := make([]*ccpb.ContainerImageSignature, len(request.ContainerImageSignatures))
+	for i, sig := range request.ContainerImageSignatures {
+		payload, err := sig.Payload()
+		if err != nil {
+			log.Printf("extract signature payload error %v: %v", sig, err)
+		}
+		b64Sig, err := sig.Base64Encoded()
+		if err != nil {
+			log.Printf("extract base64 signature error %v: %v", sig, err)
+		}
+		sigBytes, err := encoding.DecodeString(b64Sig)
+		if err != nil {
+			log.Printf("decode base64 encoded signature error %v: %v", sig, err)
+		}
+		signatures[i] = &ccpb.ContainerImageSignature{
+			Payload:   payload,
+			Signature: sigBytes,
+		}
+	}
+
+	return &ccpb.VerifyAttestationRequest{
+		GcpCredentials: &ccpb.GcpCredentials{
+			ServiceAccountIdTokens: idTokens,
 		},
-		TpmAttestation: &v1alpha1.TpmAttestation{
+		TpmAttestation: &ccpb.TpmAttestation{
 			Quotes:            quotes,
-			TcgEventLog:       encoding.EncodeToString(request.Attestation.GetEventLog()),
-			CanonicalEventLog: encoding.EncodeToString(request.Attestation.GetCanonicalEventLog()),
-			AkCert:            encoding.EncodeToString(request.Attestation.GetAkCert()),
+			TcgEventLog:       request.Attestation.GetEventLog(),
+			CanonicalEventLog: request.Attestation.GetCanonicalEventLog(),
+			AkCert:            request.Attestation.GetAkCert(),
 			CertChain:         certs,
+		},
+		ConfidentialSpaceInfo: &ccpb.ConfidentialSpaceInfo{
+			SignedEntities: []*ccpb.SignedEntity{{ContainerImageSignatures: signatures}},
 		},
 	}
 }
 
-func convertResponseFromREST(resp *v1alpha1.VerifyAttestationResponse) (*verifier.VerifyAttestationResponse, error) {
-	token, err := encoding.DecodeString(resp.ClaimsToken)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode VerifyAttestationResponse.ClaimsToken: %w", err)
-	}
+func convertResponseFromREST(resp *ccpb.VerifyAttestationResponse) (*verifier.VerifyAttestationResponse, error) {
+	token := []byte(resp.GetOidcClaimsToken())
 	return &verifier.VerifyAttestationResponse{
 		ClaimsToken: token,
+		PartialErrs: resp.PartialErrors,
 	}, nil
 }
