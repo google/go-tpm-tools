@@ -151,55 +151,9 @@ func getVerifiedCosState(coscel cel.CEL) (*pb.AttestedCosState, error) {
 			return nil, fmt.Errorf("found COS Event Type %v after LaunchSeparator event", cosTlv.EventType)
 		}
 
-		switch cosTlv.EventType {
-		case cel.ImageRefType:
-			if cosState.Container.GetImageReference() != "" {
-				return nil, fmt.Errorf("found more than one ImageRef event")
-			}
-			cosState.Container.ImageReference = string(cosTlv.EventContent)
-
-		case cel.ImageDigestType:
-			if cosState.Container.GetImageDigest() != "" {
-				return nil, fmt.Errorf("found more than one ImageDigest event")
-			}
-			cosState.Container.ImageDigest = string(cosTlv.EventContent)
-
-		case cel.RestartPolicyType:
-			restartPolicy, ok := pb.RestartPolicy_value[string(cosTlv.EventContent)]
-			if !ok {
-				return nil, fmt.Errorf("unknown restart policy in COS eventlog: %s", string(cosTlv.EventContent))
-			}
-			cosState.Container.RestartPolicy = pb.RestartPolicy(restartPolicy)
-
-		case cel.ImageIDType:
-			if cosState.Container.GetImageId() != "" {
-				return nil, fmt.Errorf("found more than one ImageId event")
-			}
-			cosState.Container.ImageId = string(cosTlv.EventContent)
-
-		case cel.EnvVarType:
-			envName, envVal, err := cel.ParseEnvVar(string(cosTlv.EventContent))
-			if err != nil {
-				return nil, err
-			}
-			cosState.Container.EnvVars[envName] = envVal
-
-		case cel.ArgType:
-			cosState.Container.Args = append(cosState.Container.Args, string(cosTlv.EventContent))
-
-		case cel.OverrideArgType:
-			cosState.Container.OverriddenArgs = append(cosState.Container.OverriddenArgs, string(cosTlv.EventContent))
-
-		case cel.OverrideEnvType:
-			envName, envVal, err := cel.ParseEnvVar(string(cosTlv.EventContent))
-			if err != nil {
-				return nil, err
-			}
-			cosState.Container.OverriddenEnvVars[envName] = envVal
-		case cel.LaunchSeparatorType:
-			seenSeparator = true
-		default:
-			return nil, fmt.Errorf("found unknown COS Event Type %v", cosTlv.EventType)
+		seenSeparator, err = cel.UpdateCosState(cosState, cosTlv)
+		if err != nil {
+			return nil, err
 		}
 
 	}
