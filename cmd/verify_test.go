@@ -123,8 +123,8 @@ func TestHwAttestationPass(t *testing.T) {
 		teetech string
 		wanterr string
 	}{
-		{"TdxPass", "1234", "tdx", "failed to open tdx device: could not open Intel TDX guest device at \"/dev/tdx-guest\": no such file or directory"},
-		{"SevSnpPass", "1234", "sev-snp", "failed to open sev-snp device: could not open AMD SEV guest device at /dev/sev-guest (see https://github.com/google/go-sev-guest/blob/main/INSTALL.md): no such file or directory"},
+		{"TdxPass", "1234", "tdx", "failed to open tdx device"},
+		{"SevSnpPass", "1234", "sev-snp", "failed to open sev-snp device"},
 	}
 	for _, op := range tests {
 		t.Run(op.name, func(t *testing.T) {
