@@ -324,10 +324,19 @@ func makePool(certs []*x509.Certificate) *x509.CertPool {
 func VerifyGceTechnology(attestation *pb.Attestation, tech pb.GCEConfidentialTechnology, opts *VerifyOpts) error {
 	switch tech {
 	case pb.GCEConfidentialTechnology_NONE: // Nothing to verify
+		if opts.TEEOpts != nil {
+			return fmt.Errorf("TEEopts is non-nil")
+		}
 		return nil
 	case pb.GCEConfidentialTechnology_AMD_SEV: // Not verifiable on GCE
+		if opts.TEEOpts != nil {
+			return fmt.Errorf("TEEopts is non-nil")
+		}
 		return nil
 	case pb.GCEConfidentialTechnology_AMD_SEV_ES: // Not verifiable on GCE
+		if opts.TEEOpts != nil {
+			return fmt.Errorf("TEEopts is non-nil")
+		}
 		return nil
 	case pb.GCEConfidentialTechnology_AMD_SEV_SNP:
 		var snpOpts *VerifySnpOpts

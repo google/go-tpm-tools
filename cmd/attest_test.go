@@ -289,7 +289,7 @@ func TestTeeTechnologyFail(t *testing.T) {
 	ExternalTPM = rwc
 
 	// value of tee-technology flag should be sev-snp
-	RootCmd.SetArgs([]string{"attest", "--nonce", "1234", "--key", "AK", "--tee-nonce", "12345678", "--tee-technology", "sgx"})
+	RootCmd.SetArgs([]string{"attest", "--nonce", "1234", "--key", "AK", "--tee-nonce", "12345678", "--tee-technology", "sev"})
 	if err := RootCmd.Execute(); err == nil {
 		t.Error("expected not-nil error")
 	}

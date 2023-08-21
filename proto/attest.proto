@@ -3,8 +3,8 @@ syntax = "proto3";
 package attest;
 
 import "proto/sevsnp.proto";
-import "tpm.proto";
 import "proto/tdx.proto";
+import "tpm.proto";
 
 option go_package = "github.com/google/go-tpm-tools/proto/attest";
 
