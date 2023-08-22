@@ -325,17 +325,17 @@ func VerifyGceTechnology(attestation *pb.Attestation, tech pb.GCEConfidentialTec
 	switch tech {
 	case pb.GCEConfidentialTechnology_NONE: // Nothing to verify
 		if opts.TEEOpts != nil {
-			return fmt.Errorf("TEEopts is non-nil")
+			return fmt.Errorf("memory encryption technology %v does not support TEEOpts", tech)
 		}
 		return nil
 	case pb.GCEConfidentialTechnology_AMD_SEV: // Not verifiable on GCE
 		if opts.TEEOpts != nil {
-			return fmt.Errorf("TEEopts is non-nil")
+			return fmt.Errorf("memory encryption technology %v does not support TEEOpts", tech)
 		}
 		return nil
 	case pb.GCEConfidentialTechnology_AMD_SEV_ES: // Not verifiable on GCE
 		if opts.TEEOpts != nil {
-			return fmt.Errorf("TEEopts is non-nil")
+			return fmt.Errorf("memory encryption technology %v does not support TEEOpts", tech)
 		}
 		return nil
 	case pb.GCEConfidentialTechnology_AMD_SEV_SNP:
