@@ -15,6 +15,13 @@ steps:
       - |
         cd launcher/launcher
         CGO_ENABLED=0 go build -o ../image/launcher
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: DownloadExpBinary
+    entrypoint: 'gcloud'
+    args: ['storage',
+           'cp',
+           'gs://confidential-space-images_third-party/confidential_space_experiments',
+           './launcher/image/confidential_space_experiments']
   - name: 'gcr.io/cos-cloud/cos-customizer'
     args: ['start-image-build',
            '-build-context=launcher/image',

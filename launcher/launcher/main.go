@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"path"
 	"regexp"
 	"strings"
 
@@ -18,6 +19,8 @@ import (
 	"github.com/containerd/containerd/namespaces"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/launcher"
+	"github.com/google/go-tpm-tools/launcher/internal/experiments"
+	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/spec"
 	"github.com/google/go-tpm/legacy/tpm2"
 )
@@ -28,6 +31,10 @@ const (
 	// panic() returns 2
 	rebootRC = 3 // reboot
 	holdRC   = 4 // hold
+	// experimentDataFile defines where the experiment sync output data is expected to be.
+	experimentDataFile = "experiment_data"
+	// binaryPath contains the path to the experiments binary.
+	binaryPath = "/usr/share/oem/confidential_space/confidential_space_experiments"
 )
 
 var rcMessage = map[int]string{
@@ -71,6 +78,21 @@ func main() {
 		exitCode = failRC
 		return
 	}
+
+	experimentsFile := path.Join(launcherfile.HostTmpPath, experimentDataFile)
+
+	args := fmt.Sprintf("-output=%s", experimentsFile)
+	err = exec.Command(binaryPath, args).Run()
+	if err != nil {
+		logger.Printf("failure during experiment sync: %v", err)
+	}
+
+	e, err := experiments.New(experimentsFile)
+	if err != nil {
+		logger.Printf("failed to read experiment file %v\n", err)
+		// do not fail if experiment retrieval fails
+	}
+	launchSpec.Experiments = e
 
 	defer func() {
 		// Catch panic to attempt to output to Cloud Logging.
