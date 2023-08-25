@@ -164,7 +164,7 @@ func CreateSevSnpDevice() (*SevSnpDevice, error) {
 func (d *SevSnpDevice) AddAttestation(attestation *pb.Attestation, opts AttestOpts) error {
 	var snpNonce [sabi.ReportDataSize]byte
 	if len(opts.TEENonce) == 0 {
-		copy(snpNonce[:], opts.Nonce[:])
+		copy(snpNonce[:], opts.Nonce)
 	} else if len(opts.TEENonce) != sabi.ReportDataSize {
 		return fmt.Errorf("the TEENonce size is %d. SEV-SNP device requires 64", len(opts.TEENonce))
 	} else {
@@ -207,7 +207,7 @@ func CreateTdxDevice() (*TdxDevice, error) {
 func (d *TdxDevice) AddAttestation(attestation *pb.Attestation, opts AttestOpts) error {
 	var tdxNonce [tabi.TdReportDataSize]byte
 	if len(opts.TEENonce) == 0 {
-		copy(tdxNonce[:], opts.Nonce[:])
+		copy(tdxNonce[:], opts.Nonce)
 	} else if len(opts.TEENonce) != tabi.TdReportDataSize {
 		return fmt.Errorf("the TEENonce size is %d. Intel TDX device requires %d", len(opts.TEENonce), tabi.TdReportDataSize)
 	} else {
