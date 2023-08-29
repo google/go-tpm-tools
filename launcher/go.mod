@@ -4,7 +4,6 @@ go 1.20
 
 require (
 	cloud.google.com/go/compute v1.7.0
-	cloud.google.com/go/logging v1.4.2
 	github.com/cenkalti/backoff/v4 v4.1.3
 	github.com/containerd/containerd v1.6.18
 	github.com/golang-jwt/jwt/v4 v4.4.1

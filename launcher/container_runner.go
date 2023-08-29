@@ -42,10 +42,11 @@ import (
 
 // ContainerRunner contains information about the container settings
 type ContainerRunner struct {
-	container   containerd.Container
-	launchSpec  spec.LaunchSpec
-	attestAgent agent.AttestationAgent
-	logger      *log.Logger
+	container     containerd.Container
+	launchSpec    spec.LaunchSpec
+	attestAgent   agent.AttestationAgent
+	logger        *log.Logger
+	serialConsole *os.File
 }
 
 const (
@@ -100,7 +101,7 @@ func fetchImpersonatedToken(ctx context.Context, serviceAccount string, audience
 }
 
 // NewRunner returns a runner.
-func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.Token, launchSpec spec.LaunchSpec, mdsClient *metadata.Client, tpm io.ReadWriteCloser, logger *log.Logger) (*ContainerRunner, error) {
+func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.Token, launchSpec spec.LaunchSpec, mdsClient *metadata.Client, tpm io.ReadWriteCloser, logger *log.Logger, serialConsole *os.File) (*ContainerRunner, error) {
 	image, err := initImage(ctx, cdClient, launchSpec, token)
 	if err != nil {
 		return nil, err
@@ -241,6 +242,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		launchSpec,
 		agent.CreateAttestationAgent(tpm, client.GceAttestationKeyECC, verifierClient, principalFetcher),
 		logger,
+		serialConsole,
 	}, nil
 }
 
@@ -506,12 +508,24 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	}
 
 	var streamOpt cio.Opt
-	if r.launchSpec.LogRedirect {
-		streamOpt = cio.WithStreams(nil, r.logger.Writer(), r.logger.Writer())
-		r.logger.Println("container stdout/stderr will be redirected")
-	} else {
+	switch r.launchSpec.LogRedirect {
+	case spec.Nowhere:
 		streamOpt = cio.WithStreams(nil, nil, nil)
-		r.logger.Println("container stdout/stderr will not be redirected")
+		r.logger.Println("Container stdout/stderr will not be redirected.")
+	case spec.Everywhere:
+		w := io.MultiWriter(os.Stdout, r.serialConsole)
+		streamOpt = cio.WithStreams(nil, w, w)
+		r.logger.Println("Container stdout/stderr will be redirected to serial and Cloud Logging. " +
+			"This may result in performance issues due to slow serial console writes.")
+	case spec.CloudLogging:
+		streamOpt = cio.WithStreams(nil, os.Stdout, os.Stdout)
+		r.logger.Println("Container stdout/stderr will be redirected to Cloud Logging.")
+	case spec.Serial:
+		streamOpt = cio.WithStreams(nil, r.serialConsole, r.serialConsole)
+		r.logger.Println("Container stdout/stderr will be redirected to serial logging. " +
+			"This may result in performance issues due to slow serial console writes.")
+	default:
+		return fmt.Errorf("unknown logging redirect location: %v", r.launchSpec.LogRedirect)
 	}
 
 	task, err := r.container.NewTask(ctx, cio.NewCreator(streamOpt))

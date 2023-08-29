@@ -85,7 +85,7 @@ func TestVerify(t *testing.T) {
 			LaunchSpec{
 				Envs:        []EnvVar{{Name: "foo", Value: "foo"}},
 				Cmd:         []string{"foo"},
-				LogRedirect: true,
+				LogRedirect: Everywhere,
 			},
 			false,
 		},
@@ -116,133 +116,265 @@ func TestVerify(t *testing.T) {
 			true,
 		},
 		{
-			"log redirect (never) test 1",
+			"log redirect (never, everywhere, hardened): err",
 			LaunchPolicy{
 				AllowedLogRedirect: never,
 			},
 			LaunchSpec{
-				LogRedirect: true,
+				LogRedirect: Everywhere,
 				Hardened:    true,
 			},
 			true,
 		},
 		{
-			"log redirect (never) test 2",
+			"log redirect (never, cloudlogging, hardened): err",
 			LaunchPolicy{
 				AllowedLogRedirect: never,
 			},
 			LaunchSpec{
-				LogRedirect: true,
-				Hardened:    false,
-			},
-			true,
-		},
-		{
-			"log redirect (never) test 3",
-			LaunchPolicy{
-				AllowedLogRedirect: never,
-			},
-			LaunchSpec{
-				LogRedirect: false,
-				Hardened:    true,
-			},
-			false,
-		},
-		{
-			"log redirect (never) test 4",
-			LaunchPolicy{
-				AllowedLogRedirect: never,
-			},
-			LaunchSpec{
-				LogRedirect: false,
-				Hardened:    false,
-			},
-			false,
-		},
-		{
-			"log redirect (debugOnly) test 1",
-			LaunchPolicy{
-				AllowedLogRedirect: debugOnly,
-			},
-			LaunchSpec{
-				LogRedirect: true,
+				LogRedirect: CloudLogging,
 				Hardened:    true,
 			},
 			true,
 		},
 		{
-			"log redirect (debugOnly) test 2",
+			"log redirect (never, serial, hardened): err",
 			LaunchPolicy{
-				AllowedLogRedirect: debugOnly,
+				AllowedLogRedirect: never,
 			},
 			LaunchSpec{
-				LogRedirect: true,
-				Hardened:    false,
+				LogRedirect: Serial,
+				Hardened:    true,
 			},
-			false,
+			true,
 		},
 		{
-			"log redirect (debugOnly) test 3",
+			"log redirect (never, nowhere, hardened): noerr",
 			LaunchPolicy{
-				AllowedLogRedirect: debugOnly,
+				AllowedLogRedirect: never,
 			},
 			LaunchSpec{
-				LogRedirect: false,
+				LogRedirect: Nowhere,
 				Hardened:    true,
 			},
 			false,
 		},
 		{
-			"log redirect (debugOnly) test 4",
+			"log redirect (never, everywhere, debug): err",
+			LaunchPolicy{
+				AllowedLogRedirect: never,
+			},
+			LaunchSpec{
+				LogRedirect: Everywhere,
+				Hardened:    false,
+			},
+			true,
+		},
+		{
+			"log redirect (never, cloudlogging, debug): err",
+			LaunchPolicy{
+				AllowedLogRedirect: never,
+			},
+			LaunchSpec{
+				LogRedirect: CloudLogging,
+				Hardened:    false,
+			},
+			true,
+		},
+		{
+			"log redirect (never, serial, debug): err",
+			LaunchPolicy{
+				AllowedLogRedirect: never,
+			},
+			LaunchSpec{
+				LogRedirect: Serial,
+				Hardened:    false,
+			},
+			true,
+		},
+		{
+			"log redirect (never, nowhere, debug): noerr",
+			LaunchPolicy{
+				AllowedLogRedirect: never,
+			},
+			LaunchSpec{
+				LogRedirect: Nowhere,
+				Hardened:    false,
+			},
+			false,
+		},
+		{
+			"log redirect (debugOnly, everywhere, hardened): err",
 			LaunchPolicy{
 				AllowedLogRedirect: debugOnly,
 			},
 			LaunchSpec{
-				LogRedirect: false,
-				Hardened:    false,
+				LogRedirect: Everywhere,
+				Hardened:    true,
 			},
-			false,
+			true,
 		},
 		{
-			"log redirect (always) test 1",
+			"log redirect (debugOnly, cloudlogging, hardened): err",
 			LaunchPolicy{
-				AllowedLogRedirect: always,
+				AllowedLogRedirect: debugOnly,
 			},
 			LaunchSpec{
-				LogRedirect: true,
+				LogRedirect: CloudLogging,
+				Hardened:    true,
+			},
+			true,
+		},
+		{
+			"log redirect (debugOnly, serial, hardened): err",
+			LaunchPolicy{
+				AllowedLogRedirect: debugOnly,
+			},
+			LaunchSpec{
+				LogRedirect: Serial,
+				Hardened:    true,
+			},
+			true,
+		},
+		{
+			"log redirect (debugOnly, nowhere, hardened): noerr",
+			LaunchPolicy{
+				AllowedLogRedirect: debugOnly,
+			},
+			LaunchSpec{
+				LogRedirect: Nowhere,
 				Hardened:    true,
 			},
 			false,
 		},
 		{
-			"log redirect (always) test 2",
+			"log redirect (debugOnly, everywhere, debug): noerr",
 			LaunchPolicy{
-				AllowedLogRedirect: always,
+				AllowedLogRedirect: debugOnly,
 			},
 			LaunchSpec{
-				LogRedirect: true,
+				LogRedirect: Everywhere,
 				Hardened:    false,
 			},
 			false,
 		},
 		{
-			"log redirect (always) test 3",
+			"log redirect (debugOnly, cloudlogging, debug): noerr",
+			LaunchPolicy{
+				AllowedLogRedirect: debugOnly,
+			},
+			LaunchSpec{
+				LogRedirect: CloudLogging,
+				Hardened:    false,
+			},
+			false,
+		},
+		{
+			"log redirect (debugOnly, serial, debug): noerr",
+			LaunchPolicy{
+				AllowedLogRedirect: debugOnly,
+			},
+			LaunchSpec{
+				LogRedirect: Serial,
+				Hardened:    false,
+			},
+			false,
+		},
+		{
+			"log redirect (debugOnly, nowhere, debug): noerr",
+			LaunchPolicy{
+				AllowedLogRedirect: debugOnly,
+			},
+			LaunchSpec{
+				LogRedirect: Nowhere,
+				Hardened:    false,
+			},
+			false,
+		},
+		{
+			"log redirect (always, everywhere, hardened): noerr",
 			LaunchPolicy{
 				AllowedLogRedirect: always,
 			},
 			LaunchSpec{
-				LogRedirect: false,
+				LogRedirect: Everywhere,
 				Hardened:    true,
 			},
 			false,
 		},
 		{
-			"log redirect (always) test 4",
+			"log redirect (always, cloudlogging, hardened): noerr",
 			LaunchPolicy{
 				AllowedLogRedirect: always,
 			},
 			LaunchSpec{
-				LogRedirect: false,
+				LogRedirect: CloudLogging,
+				Hardened:    true,
+			},
+			false,
+		},
+		{
+			"log redirect (always, serial, hardened): noerr",
+			LaunchPolicy{
+				AllowedLogRedirect: always,
+			},
+			LaunchSpec{
+				LogRedirect: Serial,
+				Hardened:    true,
+			},
+			false,
+		},
+		{
+			"log redirect (always, nowhere, hardened): noerr",
+			LaunchPolicy{
+				AllowedLogRedirect: always,
+			},
+			LaunchSpec{
+				LogRedirect: Nowhere,
+				Hardened:    true,
+			},
+			false,
+		},
+		{
+			"log redirect (always, everywhere, debug): noerr",
+			LaunchPolicy{
+				AllowedLogRedirect: always,
+			},
+			LaunchSpec{
+				LogRedirect: Everywhere,
+				Hardened:    false,
+			},
+			false,
+		},
+		{
+			"log redirect (always, cloudlogging, debug): noerr",
+			LaunchPolicy{
+				AllowedLogRedirect: always,
+			},
+			LaunchSpec{
+				LogRedirect: CloudLogging,
+				Hardened:    false,
+			},
+			false,
+		},
+		{
+			"log redirect (always, serial, debug): noerr",
+			LaunchPolicy{
+				AllowedLogRedirect: always,
+			},
+			LaunchSpec{
+				LogRedirect: Serial,
+				Hardened:    false,
+			},
+			false,
+		},
+		{
+			"log redirect (always, nowhere, debug): noerr",
+			LaunchPolicy{
+				AllowedLogRedirect: always,
+			},
+			LaunchSpec{
+				LogRedirect: Nowhere,
 				Hardened:    false,
 			},
 			false,
