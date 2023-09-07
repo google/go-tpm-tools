@@ -311,6 +311,8 @@ github.com/google/go-sev-guest v0.7.0 h1:DBCABhTo7WicP27ZH/hwcCdjcmxFkxxMOQXm5hF
 github.com/google/go-sev-guest v0.7.0/go.mod h1:UEi9uwoPbLdKGl1QHaq1G8pfCbQ4QP0swWX4J0k6r+Q=
 github.com/google/go-tdx-guest v0.2.0 h1:BjZ6fFZUpdOaDondyDML/I6FS5Z9xeCxerc6ZB5v5v4=
 github.com/google/go-tdx-guest v0.2.0/go.mod h1:a8EIh1l5x7jmIrrOuH//xWn6y4Sk4yupwmMcJE006RI=
+github.com/google/go-tdx-guest v0.2.1-0.20230907045450-944015509c84 h1:XqVJa7fVU8b+Hlhcvw49qfg0+LYcRI+V+jYUrSek848=
+github.com/google/go-tdx-guest v0.2.1-0.20230907045450-944015509c84/go.mod h1:a8EIh1l5x7jmIrrOuH//xWn6y4Sk4yupwmMcJE006RI=
 github.com/google/go-tpm v0.9.0 h1:sQF6YqWMi+SCXpsmS3fd21oPy/vSddwZry4JnmltHVk=
 github.com/google/go-tpm v0.9.0/go.mod h1:FkNVkc6C+IsvDI9Jw1OveJmxGZUUaKxtrpOS47QWKfU=
 github.com/google/go-tspi v0.3.0 h1:ADtq8RKfP+jrTyIWIZDIYcKOMecRqNJFOew2IT0Inus=

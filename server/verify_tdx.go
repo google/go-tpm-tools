@@ -21,5 +21,5 @@ func TdxDefaultOptions() *VerifyTdxOpts {
 // VerifyTdxAttestation checks that the TDX attestation quote is valid
 func VerifyTdxAttestation(attestation *tpb.QuoteV4, opts *VerifyTdxOpts) error {
 	// Check that the quote contains valid signature and certificates. Do not check revocations.
-	return tv.TdxVerify(attestation, opts.Verification)
+	return tv.TdxQuote(attestation, opts.Verification)
 }
