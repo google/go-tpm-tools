@@ -6,9 +6,10 @@ import (
 	"io"
 
 	sv "github.com/google/go-sev-guest/verify"
+	tv "github.com/google/go-tdx-guest/verify"
 	pb "github.com/google/go-tpm-tools/proto/attest"
 	"github.com/google/go-tpm-tools/server"
-	"github.com/google/go-tpm/tpm2"
+	"github.com/google/go-tpm/legacy/tpm2"
 	"github.com/spf13/cobra"
 	"google.golang.org/protobuf/proto"
 )
@@ -47,17 +48,27 @@ var debugCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		var validateOpts *server.VerifySnpOpts
-		if len(teeNonce) != 0 {
-			validateOpts = &server.VerifySnpOpts{
-				Validation:   server.SevSnpDefaultValidateOpts(teeNonce),
-				Verification: &sv.Options{},
+
+		var validateOpts interface{}
+		switch attestation.GetTeeAttestation().(type) {
+		case *pb.Attestation_TdxAttestation:
+			validateOpts = &server.VerifyTdxOpts{
+				Verification: tv.DefaultOptions(),
 			}
-		} else {
-			validateOpts = &server.VerifySnpOpts{
-				Validation:   server.SevSnpDefaultValidateOpts(nonce),
-				Verification: &sv.Options{},
+		case *pb.Attestation_SevSnpAttestation:
+			if len(teeNonce) != 0 {
+				validateOpts = &server.VerifySnpOpts{
+					Validation:   server.SevSnpDefaultValidateOpts(teeNonce),
+					Verification: &sv.Options{},
+				}
+			} else {
+				validateOpts = &server.VerifySnpOpts{
+					Validation:   server.SevSnpDefaultValidateOpts(nonce),
+					Verification: &sv.Options{},
+				}
 			}
+		default:
+			validateOpts = nil
 		}
 		ms, err := server.VerifyAttestation(attestation, server.VerifyOpts{Nonce: nonce, TrustedAKs: []crypto.PublicKey{cryptoPub}, TEEOpts: validateOpts})
 		if err != nil {

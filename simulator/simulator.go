@@ -25,7 +25,7 @@ import (
 	"sync"
 
 	"github.com/google/go-tpm-tools/simulator/internal"
-	"github.com/google/go-tpm/tpm2"
+	"github.com/google/go-tpm/legacy/tpm2"
 )
 
 // Simulator represents a go-tpm compatible interface to the IBM TPM2 simulator.

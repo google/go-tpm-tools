@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 
 	"cloud.google.com/go/compute/metadata"
@@ -30,9 +29,34 @@ const (
 	Never     RestartPolicy = "Never"
 )
 
+// LogRedirectLocation specifies the workload logging redirect location.
+type LogRedirectLocation string
+
+func (l LogRedirectLocation) isValid() error {
+	switch l {
+	case Everywhere, CloudLogging, Serial, Nowhere:
+		return nil
+	}
+	return fmt.Errorf("invalid logging redirect location %s, expect one of %s", l,
+		[]LogRedirectLocation{Everywhere, CloudLogging, Serial, Nowhere})
+}
+
+func (l LogRedirectLocation) enabled() bool {
+	return l != Nowhere
+}
+
+// LogRedirectLocation acceptable values.
+const (
+	Everywhere   LogRedirectLocation = "true"
+	CloudLogging LogRedirectLocation = "cloud_logging"
+	Serial       LogRedirectLocation = "serial"
+	Nowhere      LogRedirectLocation = "false"
+)
+
 // Metadata variable names.
 const (
 	imageRefKey                = "tee-image-reference"
+	signedImageRepos           = "tee-signed-image-repos"
 	restartPolicyKey           = "tee-restart-policy"
 	cmdKey                     = "tee-cmd"
 	envKeyPrefix               = "tee-env-"
@@ -58,6 +82,7 @@ type EnvVar struct {
 type LaunchSpec struct {
 	// MDS-based values.
 	ImageRef                   string
+	SignedImageRepos           []string
 	RestartPolicy              RestartPolicy
 	Cmd                        []string
 	Envs                       []EnvVar
@@ -66,7 +91,7 @@ type LaunchSpec struct {
 	ProjectID                  string
 	Region                     string
 	Hardened                   bool
-	LogRedirect                bool
+	LogRedirect                LogRedirectLocation
 }
 
 // UnmarshalJSON unmarshals an instance attributes list in JSON format from the metadata
@@ -96,6 +121,11 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 		s.ImpersonateServiceAccounts = append(s.ImpersonateServiceAccounts, impersonateAccounts...)
 	}
 
+	if val, ok := unmarshaledMap[signedImageRepos]; ok && val != "" {
+		imageRepos := strings.Split(val, ",")
+		s.SignedImageRepos = append(s.SignedImageRepos, imageRepos...)
+	}
+
 	// populate cmd override
 	if val, ok := unmarshaledMap[cmdKey]; ok && val != "" {
 		if err := json.Unmarshal([]byte(val), &s.Cmd); err != nil {
@@ -110,13 +140,13 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 		}
 	}
 
-	// by default log redirect is false
-	if val, ok := unmarshaledMap[logRedirectKey]; ok && val != "" {
-		logRedirect, err := strconv.ParseBool(val)
-		if err != nil {
-			return err
-		}
-		s.LogRedirect = logRedirect
+	s.LogRedirect = LogRedirectLocation(unmarshaledMap[logRedirectKey])
+	// Default log redirect location is Nowhere ("false").
+	if s.LogRedirect == "" {
+		s.LogRedirect = Nowhere
+	}
+	if err := s.LogRedirect.isValid(); err != nil {
+		return err
 	}
 
 	s.AttestationServiceAddr = unmarshaledMap[attestationServiceAddrKey]

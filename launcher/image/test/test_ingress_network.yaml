@@ -1,0 +1,67 @@
+# This test needs to be run in a private Cloud Build pool, so the Cloud Build instance
+# can be in the same network as the test VM.
+substitutions:
+  '_IMAGE_NAME': ''
+  '_IMAGE_PROJECT': ''
+  '_CLEANUP': 'true'
+  '_ZONE': 'us-central1-a'
+  '_WORKLOAD_IMAGE': 'docker.io/library/nginx:latest'
+
+steps:
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: CreateServerWorkload
+    entrypoint: 'bash'
+    env:
+    - 'BUILD_ID=$BUILD_ID'
+    args: ['create_vm.sh','-i', '${_IMAGE_NAME}',
+            '-p', '${_IMAGE_PROJECT}',
+            '-m', 'tee-image-reference=${_WORKLOAD_IMAGE}',
+            '-n', 'ingress-network-test-${BUILD_ID}',
+            '-z', '${_ZONE}',
+          ]
+    
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: CheckReachability
+    waitFor: ['CreateServerWorkload']
+    entrypoint: 'bash'
+    args:
+      - -c
+      - |
+        echo "sleeping 200s, waiting for workload server to setup..."
+        sleep 200
+        internalIP=$(gcloud -q compute instances describe ingress-network-test-${BUILD_ID} --zone=${_ZONE} --format='get(networkInterfaces[0].networkIP)')
+        echo "workload internal IP: "${internalIP}
+
+        # try to connect to the nginx server
+        response=$(curl -v ${internalIP}:80)
+        echo "got response [${response}]"
+
+        # check nginx default response
+        if [[ "${response}" == *"Welcome to nginx!"* ]];
+        then
+          echo "workload reachable through the internal network"
+        else
+          echo "FAILED: workload not reachable through the internal network"
+          echo 'TEST FAILED' > /workspace/status.txt
+        fi
+
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: CleanUp
+    waitFor: ['CheckReachability']
+    entrypoint: 'bash'
+    env:
+    - 'CLEANUP=$_CLEANUP'
+    args: ['cleanup.sh', 'ingress-network-test-${BUILD_ID}', '${_ZONE}']
+
+  # Must come after cleanup.
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: CheckFailure
+    waitFor: ['CleanUp']
+    entrypoint: 'bash'
+    env:
+    - 'BUILD_ID=$BUILD_ID'
+    args: ['check_failure.sh']
+
+options:
+  pool:
+    name: 'projects/confidential-space-images-dev/locations/us-west1/workerPools/cs-image-build-vpc'

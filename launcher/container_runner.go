@@ -11,13 +11,17 @@ import (
 	"math/rand"
 	"net/url"
 	"os"
+	"os/exec"
 	"path"
+	"strconv"
+	"strings"
 	"time"
 
 	"cloud.google.com/go/compute/metadata"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/cio"
+	"github.com/containerd/containerd/containers"
 	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/images"
 	"github.com/containerd/containerd/oci"
@@ -38,24 +42,31 @@ import (
 
 // ContainerRunner contains information about the container settings
 type ContainerRunner struct {
-	container   containerd.Container
-	launchSpec  spec.LaunchSpec
-	attestAgent agent.AttestationAgent
-	logger      *log.Logger
+	container     containerd.Container
+	launchSpec    spec.LaunchSpec
+	attestAgent   agent.AttestationAgent
+	logger        *log.Logger
+	serialConsole *os.File
 }
 
 const (
 	// hostTokenPath defined the directory in the host that will store attestation tokens
 	hostTokenPath = "/tmp/container_launcher/"
-	// containerTokenMountPath defined the directory in the container stores attestation tokens
-	containerTokenMountPath      = "/run/container_launcher/"
-	attestationVerifierTokenFile = "attestation_verifier_claims_token"
+	// ContainerTokenMountPath defined the directory in the container stores attestation tokens
+	ContainerTokenMountPath = "/run/container_launcher/"
+	// AttestationVerifierTokenFile defines the name of the file the attestation token is stored in.
+	AttestationVerifierTokenFile = "attestation_verifier_claims_token"
+	tokenFileTmp                 = ".token.tmp"
 )
 
 // Since we only allow one container on a VM, using a deterministic id is probably fine
 const (
 	containerID = "tee-container"
 	snapshotID  = "tee-snapshot"
+)
+
+const (
+	nofile = 131072 // Max number of file descriptor
 )
 
 const (
@@ -90,7 +101,7 @@ func fetchImpersonatedToken(ctx context.Context, serviceAccount string, audience
 }
 
 // NewRunner returns a runner.
-func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.Token, launchSpec spec.LaunchSpec, mdsClient *metadata.Client, tpm io.ReadWriteCloser, logger *log.Logger) (*ContainerRunner, error) {
+func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.Token, launchSpec spec.LaunchSpec, mdsClient *metadata.Client, tpm io.ReadWriteCloser, logger *log.Logger, serialConsole *os.File) (*ContainerRunner, error) {
 	image, err := initImage(ctx, cdClient, launchSpec, token)
 	if err != nil {
 		return nil, err
@@ -114,13 +125,18 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	logger.Printf("Operator Override Env Vars : %v\n", envs)
 	logger.Printf("Operator Override Cmd      : %v\n", launchSpec.Cmd)
 
-	imageLabels, err := getImageLabels(ctx, image)
+	imageConfig, err := getImageConfig(ctx, image)
 	if err != nil {
-		logger.Printf("Failed to get image OCI labels %v\n", err)
+		return nil, err
 	}
 
-	logger.Printf("Image Labels               : %v\n", imageLabels)
-	launchPolicy, err := spec.GetLaunchPolicy(imageLabels)
+	logger.Printf("Exposed Ports:             : %v\n", imageConfig.ExposedPorts)
+	if err := openPorts(imageConfig.ExposedPorts); err != nil {
+		return nil, err
+	}
+
+	logger.Printf("Image Labels               : %v\n", imageConfig.Labels)
+	launchPolicy, err := spec.GetLaunchPolicy(imageConfig.Labels)
 	if err != nil {
 		return nil, err
 	}
@@ -128,17 +144,23 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		return nil, err
 	}
 
-	if imageConfig, err := image.Config(ctx); err != nil {
+	if imageConfigDescriptor, err := image.Config(ctx); err != nil {
 		logger.Println(err)
 	} else {
-		logger.Printf("Image ID                   : %v\n", imageConfig.Digest)
-		logger.Printf("Image Annotations          : %v\n", imageConfig.Annotations)
+		logger.Printf("Image ID                   : %v\n", imageConfigDescriptor.Digest)
+		logger.Printf("Image Annotations          : %v\n", imageConfigDescriptor.Annotations)
 	}
 
 	hostname, err := os.Hostname()
 	if err != nil {
 		return nil, &RetryableError{fmt.Errorf("cannot get hostname: [%w]", err)}
 	}
+
+	rlimits := []specs.POSIXRlimit{{
+		Type: "RLIMIT_NOFILE",
+		Hard: nofile,
+		Soft: nofile,
+	}}
 
 	container, err = cdClient.NewContainer(
 		ctx,
@@ -155,6 +177,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 			oci.WithHostResolvconf,
 			oci.WithHostNamespace(specs.NetworkNamespace),
 			oci.WithEnv([]string{fmt.Sprintf("HOSTNAME=%s", hostname)}),
+			withRlimits(rlimits),
 		),
 	)
 	if err != nil {
@@ -219,6 +242,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		launchSpec,
 		agent.CreateAttestationAgent(tpm, client.GceAttestationKeyECC, verifierClient, principalFetcher),
 		logger,
+		serialConsole,
 	}, nil
 }
 
@@ -259,7 +283,7 @@ func formatEnvVars(envVars []spec.EnvVar) ([]string, error) {
 // appendTokenMounts appends the default mount specs for the OIDC token
 func appendTokenMounts(mounts []specs.Mount) []specs.Mount {
 	m := specs.Mount{}
-	m.Destination = containerTokenMountPath
+	m.Destination = ContainerTokenMountPath
 	m.Type = "bind"
 	m.Source = hostTokenPath
 	m.Options = []string{"rbind", "ro"}
@@ -283,8 +307,8 @@ func (r *ContainerRunner) measureContainerClaims(ctx context.Context) error {
 	if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.RestartPolicyType, EventContent: []byte(r.launchSpec.RestartPolicy)}); err != nil {
 		return err
 	}
-	if imageConfig, err := image.Config(ctx); err == nil { // if NO error
-		if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.ImageIDType, EventContent: []byte(imageConfig.Digest)}); err != nil {
+	if imageConfigDescriptor, err := image.Config(ctx); err == nil { // if NO error
+		if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.ImageIDType, EventContent: []byte(imageConfigDescriptor.Digest)}); err != nil {
 			return err
 		}
 	}
@@ -329,6 +353,7 @@ func (r *ContainerRunner) measureContainerClaims(ctx context.Context) error {
 
 // Retrieves an OIDC token from the attestation service, and returns how long
 // to wait before attemping to refresh it.
+// The token file will be written to a tmp file and then renamed.
 func (r *ContainerRunner) refreshToken(ctx context.Context) (time.Duration, error) {
 	r.logger.Print("refreshing attestation verifier OIDC token")
 	token, err := r.attestAgent.Attest(ctx)
@@ -348,9 +373,15 @@ func (r *ContainerRunner) refreshToken(ctx context.Context) (time.Duration, erro
 		return 0, errors.New("token is expired")
 	}
 
-	filepath := path.Join(hostTokenPath, attestationVerifierTokenFile)
-	if err = os.WriteFile(filepath, token, 0644); err != nil {
-		return 0, fmt.Errorf("failed to write token to container mount source point: %v", err)
+	// Write to a temp file first.
+	tmpTokenPath := path.Join(hostTokenPath, tokenFileTmp)
+	if err = os.WriteFile(tmpTokenPath, token, 0644); err != nil {
+		return 0, fmt.Errorf("failed to write a tmp token file: %v", err)
+	}
+
+	// Rename the temp file to the token file (to avoid race conditions).
+	if err = os.Rename(tmpTokenPath, path.Join(hostTokenPath, AttestationVerifierTokenFile)); err != nil {
+		return 0, fmt.Errorf("failed to rename the token file: %v", err)
 	}
 
 	// Print out the claims in the jwt payload
@@ -477,12 +508,24 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	}
 
 	var streamOpt cio.Opt
-	if r.launchSpec.LogRedirect {
-		streamOpt = cio.WithStreams(nil, r.logger.Writer(), r.logger.Writer())
-		r.logger.Println("container stdout/stderr will be redirected")
-	} else {
+	switch r.launchSpec.LogRedirect {
+	case spec.Nowhere:
 		streamOpt = cio.WithStreams(nil, nil, nil)
-		r.logger.Println("container stdout/stderr will not be redirected")
+		r.logger.Println("Container stdout/stderr will not be redirected.")
+	case spec.Everywhere:
+		w := io.MultiWriter(os.Stdout, r.serialConsole)
+		streamOpt = cio.WithStreams(nil, w, w)
+		r.logger.Println("Container stdout/stderr will be redirected to serial and Cloud Logging. " +
+			"This may result in performance issues due to slow serial console writes.")
+	case spec.CloudLogging:
+		streamOpt = cio.WithStreams(nil, os.Stdout, os.Stdout)
+		r.logger.Println("Container stdout/stderr will be redirected to Cloud Logging.")
+	case spec.Serial:
+		streamOpt = cio.WithStreams(nil, r.serialConsole, r.serialConsole)
+		r.logger.Println("Container stdout/stderr will be redirected to serial logging. " +
+			"This may result in performance issues due to slow serial console writes.")
+	default:
+		return fmt.Errorf("unknown logging redirect location: %v", r.launchSpec.LogRedirect)
 	}
 
 	task, err := r.container.NewTask(ctx, cio.NewCreator(streamOpt))
@@ -532,25 +575,54 @@ func initImage(ctx context.Context, cdClient *containerd.Client, launchSpec spec
 	return image, nil
 }
 
-func getImageLabels(ctx context.Context, image containerd.Image) (map[string]string, error) {
-	// TODO(jiankun): Switch to containerd's WithImageConfigLabels()
+// openPorts writes firewall rules to accept all traffic into that port and protocol using iptables.
+func openPorts(ports map[string]struct{}) error {
+	for k := range ports {
+		portAndProtocol := strings.Split(k, "/")
+		if len(portAndProtocol) != 2 {
+			return fmt.Errorf("failed to parse port and protocol: got %s, expected [port]/[protocol] 80/tcp", portAndProtocol)
+		}
+
+		port := portAndProtocol[0]
+		_, err := strconv.ParseUint(port, 10, 16)
+		if err != nil {
+			return fmt.Errorf("received invalid port number: %v, %w", port, err)
+		}
+
+		protocol := portAndProtocol[1]
+		if protocol != "tcp" && protocol != "udp" {
+			return fmt.Errorf("received unknown protocol: got %s, expected tcp or udp", protocol)
+		}
+
+		// This command will write a firewall rule to accept all INPUT packets for the given port/protocol.
+		cmd := exec.Command("iptables", "-A", "INPUT", "-p", protocol, "--dport", port, "-j", "ACCEPT")
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("failed to open port %s %s: %v %s", port, protocol, err, out)
+		}
+	}
+
+	return nil
+}
+
+func getImageConfig(ctx context.Context, image containerd.Image) (v1.ImageConfig, error) {
 	ic, err := image.Config(ctx)
 	if err != nil {
-		return nil, err
+		return v1.ImageConfig{}, err
 	}
 	switch ic.MediaType {
 	case v1.MediaTypeImageConfig, images.MediaTypeDockerSchema2Config:
 		p, err := content.ReadBlob(ctx, image.ContentStore(), ic)
 		if err != nil {
-			return nil, err
+			return v1.ImageConfig{}, err
 		}
 		var ociimage v1.Image
 		if err := json.Unmarshal(p, &ociimage); err != nil {
-			return nil, err
+			return v1.ImageConfig{}, err
 		}
-		return ociimage.Config.Labels, nil
+		return ociimage.Config, nil
 	}
-	return nil, fmt.Errorf("unknown image config media type %s", ic.MediaType)
+	return v1.ImageConfig{}, fmt.Errorf("unknown image config media type %s", ic.MediaType)
 }
 
 // Close the container runner
@@ -558,4 +630,12 @@ func (r *ContainerRunner) Close(ctx context.Context) {
 	// Exit gracefully:
 	// Delete container and close connection to attestation service.
 	r.container.Delete(ctx, containerd.WithSnapshotCleanup)
+}
+
+// withRlimits sets the rlimit (like the max file descriptor) for the container process
+func withRlimits(rlimits []specs.POSIXRlimit) oci.SpecOpts {
+	return func(_ context.Context, _ oci.Client, _ *containers.Container, s *oci.Spec) error {
+		s.Process.Rlimits = rlimits
+		return nil
+	}
 }

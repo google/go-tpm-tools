@@ -2,11 +2,12 @@ package cmd
 
 import (
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal/test"
-	"github.com/google/go-tpm/tpm2"
+	"github.com/google/go-tpm/legacy/tpm2"
 	"github.com/google/go-tpm/tpmutil"
 )
 
@@ -20,7 +21,7 @@ func TestVerifyNoncePass(t *testing.T) {
 	defer os.RemoveAll(file1)
 	defer os.RemoveAll(file2)
 
-	RootCmd.SetArgs([]string{"attest", "--nonce", "1234", "--key", "AK", "--tee-nonce", "", "--output", file1})
+	RootCmd.SetArgs([]string{"attest", "--nonce", "1234", "--key", "AK", "--tee-nonce", "", "--output", file1, "--tee-technology", ""})
 	if err := RootCmd.Execute(); err != nil {
 		t.Error(err)
 	}
@@ -93,7 +94,7 @@ func TestVerifyWithGCEAK(t *testing.T) {
 			}
 			defer mock.Stop()
 
-			RootCmd.SetArgs([]string{"attest", "--nonce", op.nonce, "--key", "gceAK", "--algo", op.keyAlgo, "--output", file1, "--format", "binarypb"})
+			RootCmd.SetArgs([]string{"attest", "--nonce", op.nonce, "--key", "gceAK", "--algo", op.keyAlgo, "--output", file1, "--format", "binarypb", "--tee-technology", ""})
 			if err := RootCmd.Execute(); err != nil {
 				t.Error(err)
 			}
@@ -101,6 +102,43 @@ func TestVerifyWithGCEAK(t *testing.T) {
 			RootCmd.SetArgs([]string{"verify", "debug", "--nonce", op.nonce, "--input", file1, "--output", file2})
 			if err := RootCmd.Execute(); err != nil {
 				t.Error(err)
+			}
+		})
+	}
+}
+
+func TestHwAttestationPass(t *testing.T) {
+	rwc := test.GetTPM(t)
+	defer client.CheckedClose(t, rwc)
+	ExternalTPM = rwc
+
+	inputFile := makeOutputFile(t, "attest")
+	outputFile := makeOutputFile(t, "attestout")
+	defer os.RemoveAll(inputFile)
+	defer os.RemoveAll(outputFile)
+	teenonce := "12345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678"
+	tests := []struct {
+		name    string
+		nonce   string
+		teetech string
+		wanterr string
+	}{
+		{"TdxPass", "1234", "tdx", "failed to open tdx device"},
+		{"SevSnpPass", "1234", "sev-snp", "failed to open sev-snp device"},
+	}
+	for _, op := range tests {
+		t.Run(op.name, func(t *testing.T) {
+			attestArgs := []string{"attest", "--nonce", op.nonce, "--key", "AK", "--output", inputFile, "--format", "textproto", "--tee-nonce", teenonce, "--tee-technology", op.teetech}
+			RootCmd.SetArgs(attestArgs)
+			if err := RootCmd.Execute(); err != nil {
+				if !strings.Contains(err.Error(), op.wanterr) {
+					t.Error(err)
+				}
+			} else {
+				RootCmd.SetArgs([]string{"verify", "debug", "--nonce", op.nonce, "--input", inputFile, "--output", outputFile, "--format", "textproto", "--tee-nonce", teenonce})
+				if err := RootCmd.Execute(); err != nil {
+					t.Error(err)
+				}
 			}
 		})
 	}

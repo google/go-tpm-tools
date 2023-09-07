@@ -44,6 +44,7 @@ Scripts in `util/` contain functions that can be sourced from other test scripts
 * `/workspace/status.txt` contains the success/failure message from test steps.
 `check_failure.sh` looks for a failed message in the step to determine whether
 the cloud build is successful.
+* `workspace/next_start.txt` is used when reading the serial logs.
 
 ## Test Failures
 Due to the sequential/only-proceed-with-success nature of Cloud Build, tests
