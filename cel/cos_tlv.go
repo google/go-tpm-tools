@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"strings"
 	"unicode/utf8"
+
+	pb "github.com/google/go-tpm-tools/proto/attest"
 )
 
 const (
@@ -123,4 +125,63 @@ func ParseEnvVar(envvar string) (string, string, error) {
 	}
 
 	return e[0], e[1], nil
+}
+
+// UpdateCosState mutates the the given AttestedCosState with the details in
+// the provided CosTlv.
+// If using the AttestedCosState as verification output, callers MUST verify
+// the CosTlv against the COS-specific PCR (13) and the CEL record's digests.
+// This returns an
+func UpdateCosState(cosState *pb.AttestedCosState, cosTlv CosTlv) (seenSeparator bool, err error) {
+	switch cosTlv.EventType {
+	case ImageRefType:
+		if cosState.Container.GetImageReference() != "" {
+			return false, fmt.Errorf("found more than one ImageRef event")
+		}
+		cosState.Container.ImageReference = string(cosTlv.EventContent)
+
+	case ImageDigestType:
+		if cosState.Container.GetImageDigest() != "" {
+			return false, fmt.Errorf("found more than one ImageDigest event")
+		}
+		cosState.Container.ImageDigest = string(cosTlv.EventContent)
+
+	case RestartPolicyType:
+		restartPolicy, ok := pb.RestartPolicy_value[string(cosTlv.EventContent)]
+		if !ok {
+			return false, fmt.Errorf("unknown restart policy in COS eventlog: %s", string(cosTlv.EventContent))
+		}
+		cosState.Container.RestartPolicy = pb.RestartPolicy(restartPolicy)
+
+	case ImageIDType:
+		if cosState.Container.GetImageId() != "" {
+			return false, fmt.Errorf("found more than one ImageId event")
+		}
+		cosState.Container.ImageId = string(cosTlv.EventContent)
+
+	case EnvVarType:
+		envName, envVal, err := ParseEnvVar(string(cosTlv.EventContent))
+		if err != nil {
+			return false, err
+		}
+		cosState.Container.EnvVars[envName] = envVal
+
+	case ArgType:
+		cosState.Container.Args = append(cosState.Container.Args, string(cosTlv.EventContent))
+
+	case OverrideArgType:
+		cosState.Container.OverriddenArgs = append(cosState.Container.OverriddenArgs, string(cosTlv.EventContent))
+
+	case OverrideEnvType:
+		envName, envVal, err := ParseEnvVar(string(cosTlv.EventContent))
+		if err != nil {
+			return false, err
+		}
+		cosState.Container.OverriddenEnvVars[envName] = envVal
+	case LaunchSeparatorType:
+		return true, nil
+	default:
+		return false, fmt.Errorf("found unknown COS Event Type %v", cosTlv.EventType)
+	}
+	return false, nil
 }

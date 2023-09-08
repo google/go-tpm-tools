@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
@@ -30,6 +31,7 @@ type principalIDTokenFetcher func(audience string) ([][]byte, error)
 type AttestationAgent interface {
 	MeasureEvent(cel.Content) error
 	Attest(context.Context) ([]byte, error)
+	WriteCEL(filePath string) error
 }
 
 type agent struct {
@@ -58,6 +60,21 @@ func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher tpmKeyFetcher, ver
 // under the attestation agent.
 func (a *agent) MeasureEvent(event cel.Content) error {
 	return a.cosCel.AppendEvent(a.tpm, cel.CosEventPCR, defaultCELHashAlgo, event)
+}
+
+// WriteCEL outputs the CEL to the given file path.
+func (a *agent) WriteCEL(filePath string) error {
+	f, err := os.Create(filePath)
+	if err != nil {
+		return fmt.Errorf("failed to create file: %v", err)
+	}
+	defer f.Close()
+	var buf bytes.Buffer
+	if err := a.cosCel.EncodeCEL(&buf); err != nil {
+		return fmt.Errorf("failed to encode CEL: %v", err)
+	}
+	f.Write(buf.Bytes())
+	return nil
 }
 
 // Attest fetches the nonce and connection ID from the Attestation Service,

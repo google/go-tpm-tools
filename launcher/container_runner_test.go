@@ -38,6 +38,10 @@ type fakeAttestationAgent struct {
 	attestFunc       func(context.Context) ([]byte, error)
 }
 
+func (f *fakeAttestationAgent) WriteCEL(_ string) error {
+	return fmt.Errorf("unimplemented")
+}
+
 func (f *fakeAttestationAgent) MeasureEvent(event cel.Content) error {
 	if f.measureEventFunc != nil {
 		return f.measureEventFunc(event)

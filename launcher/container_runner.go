@@ -408,9 +408,6 @@ func (r *ContainerRunner) fetchAndWriteToken(ctx context.Context) error {
 // retry specifies the refresher goroutine's retry policy.
 func (r *ContainerRunner) fetchAndWriteTokenWithRetry(ctx context.Context,
 	retry *backoff.ExponentialBackOff) error {
-	if err := os.MkdirAll(hostTokenPath, 0744); err != nil {
-		return err
-	}
 	duration, err := r.refreshToken(ctx)
 	if err != nil {
 		return err
@@ -502,6 +499,14 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 
 	if err := r.measureContainerClaims(ctx); err != nil {
 		return fmt.Errorf("failed to measure container claims: %v", err)
+	}
+	if err := os.MkdirAll(hostTokenPath, 0744); err != nil {
+		return err
+	}
+	if !r.launchSpec.Hardened {
+		if err := r.attestAgent.WriteCEL(path.Join(hostTokenPath, "cos_canonical_event_log.bin")); err != nil {
+			return fmt.Errorf("failed to write CEL on debug image: %v", err)
+		}
 	}
 	if err := r.fetchAndWriteToken(ctx); err != nil {
 		return fmt.Errorf("failed to fetch and write OIDC token: %v", err)
