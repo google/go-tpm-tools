@@ -89,6 +89,9 @@ func (a *agent) Attest(ctx context.Context) ([]byte, error) {
 	}
 
 	signatures := a.signaturesFetcher(ctx)
+	if len(signatures) > 0 {
+		a.logger.Printf("Found image signatures: %v\n", signatures)
+	}
 
 	resp, err := a.client.VerifyAttestation(ctx, verifier.VerifyAttestationRequest{
 		Challenge:                challenge,
