@@ -29,6 +29,7 @@ import (
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/launcher/agent"
+	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/spec"
 	"github.com/google/go-tpm-tools/launcher/verifier"
 	"github.com/google/go-tpm-tools/launcher/verifier/rest"
@@ -49,15 +50,7 @@ type ContainerRunner struct {
 	serialConsole *os.File
 }
 
-const (
-	// hostTokenPath defined the directory in the host that will store attestation tokens
-	hostTokenPath = "/tmp/container_launcher/"
-	// ContainerTokenMountPath defined the directory in the container stores attestation tokens
-	ContainerTokenMountPath = "/run/container_launcher/"
-	// AttestationVerifierTokenFile defines the name of the file the attestation token is stored in.
-	AttestationVerifierTokenFile = "attestation_verifier_claims_token"
-	tokenFileTmp                 = ".token.tmp"
-)
+const tokenFileTmp = ".token.tmp"
 
 // Since we only allow one container on a VM, using a deterministic id is probably fine
 const (
@@ -283,9 +276,9 @@ func formatEnvVars(envVars []spec.EnvVar) ([]string, error) {
 // appendTokenMounts appends the default mount specs for the OIDC token
 func appendTokenMounts(mounts []specs.Mount) []specs.Mount {
 	m := specs.Mount{}
-	m.Destination = ContainerTokenMountPath
+	m.Destination = launcherfile.ContainerRuntimeMountPath
 	m.Type = "bind"
-	m.Source = hostTokenPath
+	m.Source = launcherfile.HostTmpPath
 	m.Options = []string{"rbind", "ro"}
 
 	return append(mounts, m)
@@ -374,13 +367,13 @@ func (r *ContainerRunner) refreshToken(ctx context.Context) (time.Duration, erro
 	}
 
 	// Write to a temp file first.
-	tmpTokenPath := path.Join(hostTokenPath, tokenFileTmp)
+	tmpTokenPath := path.Join(launcherfile.HostTmpPath, tokenFileTmp)
 	if err = os.WriteFile(tmpTokenPath, token, 0644); err != nil {
 		return 0, fmt.Errorf("failed to write a tmp token file: %v", err)
 	}
 
 	// Rename the temp file to the token file (to avoid race conditions).
-	if err = os.Rename(tmpTokenPath, path.Join(hostTokenPath, AttestationVerifierTokenFile)); err != nil {
+	if err = os.Rename(tmpTokenPath, path.Join(launcherfile.HostTmpPath, launcherfile.AttestationVerifierTokenFilename)); err != nil {
 		return 0, fmt.Errorf("failed to rename the token file: %v", err)
 	}
 
@@ -408,7 +401,7 @@ func (r *ContainerRunner) fetchAndWriteToken(ctx context.Context) error {
 // retry specifies the refresher goroutine's retry policy.
 func (r *ContainerRunner) fetchAndWriteTokenWithRetry(ctx context.Context,
 	retry *backoff.ExponentialBackOff) error {
-	if err := os.MkdirAll(hostTokenPath, 0744); err != nil {
+	if err := os.MkdirAll(launcherfile.HostTmpPath, 0744); err != nil {
 		return err
 	}
 	duration, err := r.refreshToken(ctx)
