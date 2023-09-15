@@ -1,19 +1,51 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
+	"log"
+	"net/url"
+	"os"
 
+	"cloud.google.com/go/compute/metadata"
+	"github.com/containerd/containerd/namespaces"
 	"github.com/google/go-tpm-tools/client"
+	"github.com/google/go-tpm-tools/launcher"
+	"github.com/google/go-tpm-tools/launcher/agent"
+	"github.com/google/go-tpm-tools/launcher/spec"
+	"github.com/google/go-tpm-tools/launcher/verifier"
+	"github.com/google/go-tpm-tools/launcher/verifier/rest"
+	"github.com/google/go-tpm/legacy/tpm2"
 	"github.com/spf13/cobra"
+	"golang.org/x/oauth2/google"
+	"google.golang.org/api/impersonate"
+	"google.golang.org/api/option"
 )
+
+const (
+	successRC = 0 // workload successful (no reboot)
+	failRC    = 1 // workload or launcher internal failed (no reboot)
+	// panic() returns 2
+	rebootRC = 3 // reboot
+	holdRC   = 4 // hold
+)
+
+var rcMessage = map[int]string{
+	successRC: "workload finished successfully, shutting down the VM",
+	failRC:    "workload or launcher error, shutting down the VM",
+	rebootRC:  "rebooting VM",
+	holdRC:    "VM remains running",
+}
+
+var logger *log.Logger
+var mdsClient *metadata.Client
 
 // If hardware technology needs a variable length teenonce then please modify the flags description
 var gentokenCmd = &cobra.Command{
 	Use:   "gentoken",
-	Short: "Attest and fetch an OIDC token from Google Attestation Verification Service",
+	Short: "Attest and fetch an OIDC token from Google Attestation Verification Service. Note that this command will only work on a GCE VM.",
 	Long: `Gather attestation report and send it to Google Attestation Verification Service for an OIDC token.
-The Attestation report contains a quote on all available PCR banks, a way to validate 
-the quote, and a TCG Event Log (Linux only). The OIDC token includes claims regarding the authentication of the user by the authorization server (Google IAM server) with the use of an OAuth client application(Google Cloud apps).
+The Attestation report contains a quote on all available PCR banks, a way to validate the quote, and a TCG Event Log (Linux only). The OIDC token includes claims regarding the authentication of the user by the authorization server (Google IAM server) with the use of an OAuth client application(Google Cloud apps).
 Use --key to specify the type of attestation key. It can be gceAK for GCE attestation
 key or AK for a custom attestation key. By default it uses AK.
 --algo flag overrides the public key algorithm for attestation key. If not provided then
@@ -84,8 +116,124 @@ hardware and guarantees a fresh quote.
 			}
 			attestation.InstanceInfo = instanceInfo
 		}
+
+		tpm, err := tpm2.OpenTPM("/dev/tpmrm0")
+		if err != nil {
+			return &launcher.RetryableError{Err: err}
+		}
+		defer tpm.Close()
+
+		logger = log.Default()
+		// log.Default() outputs to stderr; change to stdout.
+		log.SetOutput(os.Stdout)
+		logger.Println("TEE container launcher initiating")
+
+		var exitCode int
+		// Get RestartPolicy and IsHardened from spec
+		mdsClient = metadata.NewClient(nil)
+		launchSpec, err := spec.GetLaunchSpec(mdsClient)
+		if err != nil {
+			logger.Println(err)
+			// if cannot get launchSpec, exit directly
+			exitCode = failRC
+			return err
+		}
+
+		defer func() {
+			// Catch panic to attempt to output to Cloud Logging.
+			if r := recover(); r != nil {
+				logger.Println("Panic:", r)
+				exitCode = 2
+			}
+			msg, ok := rcMessage[exitCode]
+			if ok {
+				logger.Printf("TEE container launcher exiting with exit code: %d (%s)\n", exitCode, msg)
+			} else {
+				logger.Printf("TEE container launcher exiting with exit code: %d\n", exitCode)
+			}
+		}()
+
+		ctx := namespaces.WithNamespace(context.Background(), namespaces.Default)
+		// Fetch ID token with specific audience.
+		// See https://cloud.google.com/functions/docs/securing/authenticating#functions-bearer-token-example-go.
+		principalFetcher := func(audience string) ([][]byte, error) {
+			u := url.URL{
+				Path: "instance/service-accounts/default/identity",
+				RawQuery: url.Values{
+					"audience": {audience},
+					"format":   {"full"},
+				}.Encode(),
+			}
+			idToken, err := mdsClient.Get(u.String())
+			if err != nil {
+				return nil, fmt.Errorf("failed to get principal tokens: %w", err)
+			}
+
+			tokens := [][]byte{[]byte(idToken)}
+
+			// Fetch impersonated ID tokens.
+			for _, sa := range launchSpec.ImpersonateServiceAccounts {
+				idToken, err := fetchImpersonatedToken(ctx, sa, audience)
+				if err != nil {
+					return nil, fmt.Errorf("failed to get impersonated token for %v: %w", sa, err)
+				}
+
+				tokens = append(tokens, idToken)
+			}
+			return tokens, nil
+		}
+
+		asAddr := launchSpec.AttestationServiceAddr
+
+		verifierClient, err := getRESTClient(ctx, asAddr, launchSpec)
+		if err != nil {
+			return fmt.Errorf("failed to create REST verifier client: %v", err)
+		}
+
+		agent.CreateAttestationAgent(tpm, client.GceAttestationKeyECC, verifierClient, principalFetcher)
 		return nil
 	},
+}
+
+func fetchImpersonatedToken(ctx context.Context, serviceAccount string, audience string, opts ...option.ClientOption) ([]byte, error) {
+	config := impersonate.IDTokenConfig{
+		Audience:        audience,
+		TargetPrincipal: serviceAccount,
+		IncludeEmail:    true,
+	}
+
+	tokenSource, err := impersonate.IDTokenSource(ctx, config, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating token source: %v", err)
+	}
+
+	token, err := tokenSource.Token()
+	if err != nil {
+		return nil, fmt.Errorf("error retrieving token: %v", err)
+	}
+
+	return []byte(token.AccessToken), nil
+}
+
+// getRESTClient returns a REST verifier.Client that points to the given address.
+// It defaults to the Attestation Verifier instance at
+// https://confidentialcomputing.googleapis.com.
+func getRESTClient(ctx context.Context, asAddr string, spec spec.LaunchSpec) (verifier.Client, error) {
+	httpClient, err := google.DefaultClient(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create HTTP client: %v", err)
+	}
+
+	opts := []option.ClientOption{option.WithHTTPClient(httpClient)}
+	if asAddr != "" {
+		opts = append(opts, option.WithEndpoint(asAddr))
+	}
+
+	restClient, err := rest.NewClient(ctx, spec.ProjectID, spec.Region, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return restClient, nil
 }
 
 func init() {
