@@ -2,6 +2,9 @@
 set -euo pipefail
 source util/read_cloud_logging.sh
 
+# Allow VM some time to boot and write to cloud logging.
+sleep 120
+
 # This test requires the workload to run and print
 # corresponding messages to cloud logging.
 CLOUD_LOGGING_OUTPUT=$(read_cloud_logging $1) 
