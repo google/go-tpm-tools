@@ -6,7 +6,7 @@ require (
 	github.com/google/go-attestation v0.5.0
 	github.com/google/go-cmp v0.5.9
 	github.com/google/go-sev-guest v0.7.0
-	github.com/google/go-tdx-guest v0.2.1-0.20230907045450-944015509c84
+	github.com/google/go-tdx-guest v0.2.2
 	github.com/google/go-tpm v0.9.0
 	github.com/google/logger v1.1.1
 	google.golang.org/protobuf v1.31.0
