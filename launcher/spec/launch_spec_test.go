@@ -46,7 +46,7 @@ func TestLaunchSpecUnmarshalJSONHappyCases(t *testing.T) {
 		Cmd:                        []string{"--foo", "--bar", "--baz"},
 		Envs:                       []EnvVar{{"foo", "bar"}},
 		ImpersonateServiceAccounts: []string{"sv1@developer.gserviceaccount.com", "sv2@developer.gserviceaccount.com"},
-		LogRedirect:                true,
+		LogRedirect:                Everywhere,
 	}
 
 	for _, testcase := range testCases {
@@ -94,6 +94,13 @@ func TestLaunchSpecUnmarshalJSONBadInput(t *testing.T) {
 				"tee-restart-policy":"noway",
 			}`,
 		},
+		{
+			"WrongLogRedirectLocation",
+			`{
+				"tee-image-reference":"docker.io/library/hello-world:latest",
+				"tee-container-log-redirect":"badideas",
+			}`,
+		},
 	}
 
 	for _, testcase := range testCases {
@@ -110,7 +117,9 @@ func TestLaunchSpecUnmarshalJSONWithDefaultValue(t *testing.T) {
 	mdsJSON := `{
 		"tee-image-reference":"docker.io/library/hello-world:latest",
 		"tee-impersonate-service-accounts":"",
-		"tee-signed-image-repos":""
+		"tee-signed-image-repos":"",
+		"tee-container-log-redirect":"",
+		"tee-restart-policy":""
 		}`
 
 	spec := &LaunchSpec{}
@@ -121,6 +130,7 @@ func TestLaunchSpecUnmarshalJSONWithDefaultValue(t *testing.T) {
 	want := &LaunchSpec{
 		ImageRef:      "docker.io/library/hello-world:latest",
 		RestartPolicy: Never,
+		LogRedirect:   Nowhere,
 	}
 
 	if !cmp.Equal(spec, want) {

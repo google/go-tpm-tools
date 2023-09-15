@@ -32,6 +32,7 @@ import (
 	"github.com/google/go-tpm-tools/launcher/agent"
 	internal "github.com/google/go-tpm-tools/launcher/internal/oci"
 	"github.com/google/go-tpm-tools/launcher/internal/signaturediscovery"
+	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/spec"
 	"github.com/google/go-tpm-tools/launcher/verifier"
 	"github.com/google/go-tpm-tools/launcher/verifier/rest"
@@ -45,21 +46,14 @@ import (
 
 // ContainerRunner contains information about the container settings
 type ContainerRunner struct {
-	container   containerd.Container
-	launchSpec  spec.LaunchSpec
-	attestAgent agent.AttestationAgent
-	logger      *log.Logger
+	container     containerd.Container
+	launchSpec    spec.LaunchSpec
+	attestAgent   agent.AttestationAgent
+	logger        *log.Logger
+	serialConsole *os.File
 }
 
-const (
-	// hostTokenPath defined the directory in the host that will store attestation tokens
-	hostTokenPath = "/tmp/container_launcher/"
-	// ContainerTokenMountPath defined the directory in the container stores attestation tokens
-	ContainerTokenMountPath = "/run/container_launcher/"
-	// AttestationVerifierTokenFile defines the name of the file the attestation token is stored in.
-	AttestationVerifierTokenFile = "attestation_verifier_claims_token"
-	tokenFileTmp                 = ".token.tmp"
-)
+const tokenFileTmp = ".token.tmp"
 
 // Since we only allow one container on a VM, using a deterministic id is probably fine
 const (
@@ -129,7 +123,7 @@ func fetchImpersonatedToken(ctx context.Context, serviceAccount string, audience
 }
 
 // NewRunner returns a runner.
-func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.Token, launchSpec spec.LaunchSpec, mdsClient *metadata.Client, tpm io.ReadWriteCloser, logger *log.Logger) (*ContainerRunner, error) {
+func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.Token, launchSpec spec.LaunchSpec, mdsClient *metadata.Client, tpm io.ReadWriteCloser, logger *log.Logger, serialConsole *os.File) (*ContainerRunner, error) {
 	image, err := initImage(ctx, cdClient, launchSpec, token)
 	if err != nil {
 		return nil, err
@@ -276,6 +270,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		launchSpec,
 		agent.CreateAttestationAgent(tpm, client.GceAttestationKeyECC, verifierClient, principalFetcher, signaturesFetcher, logger),
 		logger,
+		serialConsole,
 	}, nil
 }
 
@@ -324,9 +319,9 @@ func formatEnvVars(envVars []spec.EnvVar) ([]string, error) {
 // appendTokenMounts appends the default mount specs for the OIDC token
 func appendTokenMounts(mounts []specs.Mount) []specs.Mount {
 	m := specs.Mount{}
-	m.Destination = ContainerTokenMountPath
+	m.Destination = launcherfile.ContainerRuntimeMountPath
 	m.Type = "bind"
-	m.Source = hostTokenPath
+	m.Source = launcherfile.HostTmpPath
 	m.Options = []string{"rbind", "ro"}
 
 	return append(mounts, m)
@@ -415,13 +410,13 @@ func (r *ContainerRunner) refreshToken(ctx context.Context) (time.Duration, erro
 	}
 
 	// Write to a temp file first.
-	tmpTokenPath := path.Join(hostTokenPath, tokenFileTmp)
+	tmpTokenPath := path.Join(launcherfile.HostTmpPath, tokenFileTmp)
 	if err = os.WriteFile(tmpTokenPath, token, 0644); err != nil {
 		return 0, fmt.Errorf("failed to write a tmp token file: %v", err)
 	}
 
 	// Rename the temp file to the token file (to avoid race conditions).
-	if err = os.Rename(tmpTokenPath, path.Join(hostTokenPath, AttestationVerifierTokenFile)); err != nil {
+	if err = os.Rename(tmpTokenPath, path.Join(launcherfile.HostTmpPath, launcherfile.AttestationVerifierTokenFilename)); err != nil {
 		return 0, fmt.Errorf("failed to rename the token file: %v", err)
 	}
 
@@ -449,7 +444,7 @@ func (r *ContainerRunner) fetchAndWriteToken(ctx context.Context) error {
 // retry specifies the refresher goroutine's retry policy.
 func (r *ContainerRunner) fetchAndWriteTokenWithRetry(ctx context.Context,
 	retry *backoff.ExponentialBackOff) error {
-	if err := os.MkdirAll(hostTokenPath, 0744); err != nil {
+	if err := os.MkdirAll(launcherfile.HostTmpPath, 0744); err != nil {
 		return err
 	}
 	duration, err := r.refreshToken(ctx)
@@ -549,12 +544,24 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	}
 
 	var streamOpt cio.Opt
-	if r.launchSpec.LogRedirect {
-		streamOpt = cio.WithStreams(nil, r.logger.Writer(), r.logger.Writer())
-		r.logger.Println("container stdout/stderr will be redirected")
-	} else {
+	switch r.launchSpec.LogRedirect {
+	case spec.Nowhere:
 		streamOpt = cio.WithStreams(nil, nil, nil)
-		r.logger.Println("container stdout/stderr will not be redirected")
+		r.logger.Println("Container stdout/stderr will not be redirected.")
+	case spec.Everywhere:
+		w := io.MultiWriter(os.Stdout, r.serialConsole)
+		streamOpt = cio.WithStreams(nil, w, w)
+		r.logger.Println("Container stdout/stderr will be redirected to serial and Cloud Logging. " +
+			"This may result in performance issues due to slow serial console writes.")
+	case spec.CloudLogging:
+		streamOpt = cio.WithStreams(nil, os.Stdout, os.Stdout)
+		r.logger.Println("Container stdout/stderr will be redirected to Cloud Logging.")
+	case spec.Serial:
+		streamOpt = cio.WithStreams(nil, r.serialConsole, r.serialConsole)
+		r.logger.Println("Container stdout/stderr will be redirected to serial logging. " +
+			"This may result in performance issues due to slow serial console writes.")
+	default:
+		return fmt.Errorf("unknown logging redirect location: %v", r.launchSpec.LogRedirect)
 	}
 
 	task, err := r.container.NewTask(ctx, cio.NewCreator(streamOpt))

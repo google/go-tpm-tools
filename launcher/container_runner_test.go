@@ -25,6 +25,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/launcher/internal/signaturediscovery"
+	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/spec"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 	"golang.org/x/oauth2"
@@ -111,7 +112,7 @@ func TestRefreshToken(t *testing.T) {
 		logger: log.Default(),
 	}
 
-	if err := os.MkdirAll(hostTokenPath, 0744); err != nil {
+	if err := os.MkdirAll(launcherfile.HostTmpPath, 0744); err != nil {
 		t.Fatalf("Error creating host token path directory: %v", err)
 	}
 
@@ -120,7 +121,7 @@ func TestRefreshToken(t *testing.T) {
 		t.Fatalf("refreshToken returned with error: %v", err)
 	}
 
-	filepath := path.Join(hostTokenPath, AttestationVerifierTokenFile)
+	filepath := path.Join(launcherfile.HostTmpPath, launcherfile.AttestationVerifierTokenFilename)
 	data, err := os.ReadFile(filepath)
 	if err != nil {
 		t.Fatalf("Failed to read from %s: %v", filepath, err)
@@ -137,7 +138,7 @@ func TestRefreshToken(t *testing.T) {
 }
 
 func TestRefreshTokenError(t *testing.T) {
-	if err := os.MkdirAll(hostTokenPath, 0744); err != nil {
+	if err := os.MkdirAll(launcherfile.HostTmpPath, 0744); err != nil {
 		t.Fatalf("Error creating host token path directory: %v", err)
 	}
 
@@ -197,7 +198,7 @@ func TestFetchAndWriteTokenSucceeds(t *testing.T) {
 		t.Fatalf("fetchAndWriteToken failed: %v", err)
 	}
 
-	filepath := path.Join(hostTokenPath, AttestationVerifierTokenFile)
+	filepath := path.Join(launcherfile.HostTmpPath, launcherfile.AttestationVerifierTokenFilename)
 	data, err := os.ReadFile(filepath)
 	if err != nil {
 		t.Fatalf("Failed to read from %s: %v", filepath, err)
@@ -231,7 +232,7 @@ func TestTokenIsNotChangedIfRefreshFails(t *testing.T) {
 		t.Fatalf("fetchAndWriteToken failed: %v", err)
 	}
 
-	filepath := path.Join(hostTokenPath, AttestationVerifierTokenFile)
+	filepath := path.Join(launcherfile.HostTmpPath, launcherfile.AttestationVerifierTokenFilename)
 	data, err := os.ReadFile(filepath)
 	if err != nil {
 		t.Fatalf("Failed to read from %s: %v", filepath, err)
@@ -309,7 +310,7 @@ func testRetryPolicyWithNTries(t *testing.T, numTries int, expectRefresh bool) {
 	if err := runner.fetchAndWriteTokenWithRetry(ctx, testRetryPolicyThreeTimes()); err != nil {
 		t.Fatalf("fetchAndWriteTokenWithRetry failed: %v", err)
 	}
-	filepath := path.Join(hostTokenPath, AttestationVerifierTokenFile)
+	filepath := path.Join(launcherfile.HostTmpPath, launcherfile.AttestationVerifierTokenFilename)
 	data, err := os.ReadFile(filepath)
 	if err != nil {
 		t.Fatalf("failed to read from %s: %v", filepath, err)
@@ -363,7 +364,7 @@ func TestFetchAndWriteTokenWithTokenRefresh(t *testing.T) {
 		t.Fatalf("fetchAndWriteToken failed: %v", err)
 	}
 
-	filepath := path.Join(hostTokenPath, AttestationVerifierTokenFile)
+	filepath := path.Join(launcherfile.HostTmpPath, launcherfile.AttestationVerifierTokenFilename)
 	data, err := os.ReadFile(filepath)
 	if err != nil {
 		t.Fatalf("Failed to read from %s: %v", filepath, err)

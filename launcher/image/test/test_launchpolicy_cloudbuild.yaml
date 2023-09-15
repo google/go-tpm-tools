@@ -1,14 +1,13 @@
 substitutions:
-  # Expects hardened image (not debug) and should have startup-script service
-  # disabled. google-startup-scripts.service is only enabled with multi-user.target.
-  '_IMAGE_NAME': ''
+  '_HARDENED_IMAGE_NAME': ''
   '_IMAGE_PROJECT': ''
   # Add user-data in the metadata to test if it is disabled.
   '_METADATA_FILE': 'startup-script=data/echo_startupscript.sh,user-data=data/cloud-init-config.yaml'
   '_CLEANUP': 'true'
-  '_VM_NAME_PREFIX': 'cs-hardened-test'
+  '_VM_NAME_PREFIX': 'cs-launchpolicy-test'
   '_ZONE': 'us-central1-a'
-  '_WORKLOAD_IMAGE_LOG': 'us-west1-docker.pkg.dev/confidential-space-images-dev/cs-integ-test-images/launchpolicylog:latest'
+  '_WORKLOAD_IMAGE_LOG_NEVER': 'us-west1-docker.pkg.dev/confidential-space-images-dev/cs-integ-test-images/launchpolicylognever:latest'
+  '_WORKLOAD_IMAGE_LOG_DEBUG': 'us-west1-docker.pkg.dev/confidential-space-images-dev/cs-integ-test-images/launchpolicylogdebug:latest'
   '_WORKLOAD_IMAGE_ENV': 'us-west1-docker.pkg.dev/confidential-space-images-dev/cs-integ-test-images/basic-test:latest'
   '_WORKLOAD_IMAGE_CMD': 'us-west1-docker.pkg.dev/confidential-space-images-dev/cs-integ-test-images/launchpolicycmd:latest'
 steps:
@@ -17,17 +16,24 @@ steps:
   entrypoint: 'bash'
   env:
   - 'BUILD_ID=$BUILD_ID'
-  args: ['create_vm.sh','-i', '${_IMAGE_NAME}',
+  args: ['create_vm.sh','-i', '${_HARDENED_IMAGE_NAME}',
           '-p', '${_IMAGE_PROJECT}',
           '-f', '${_METADATA_FILE}',
-          '-m', 'tee-image-reference=${_WORKLOAD_IMAGE_LOG},tee-container-log-redirect=true',
+          '-m', 'tee-image-reference=${_WORKLOAD_IMAGE_LOG_NEVER},tee-container-log-redirect=true',
           '-n', '${_VM_NAME_PREFIX}-log-${BUILD_ID}',
           '-z', '${_ZONE}',
         ]
 - name: 'gcr.io/cloud-builders/gcloud'
   id: LogOverrideTest
   entrypoint: 'bash'
-  args: ['scripts/test_launchpolicy_log.sh', '${_VM_NAME_PREFIX}-log-${BUILD_ID}', '${_ZONE}']
+  args: ['scripts/test_launchpolicy_log_never.sh', '${_VM_NAME_PREFIX}-log-${BUILD_ID}', '${_ZONE}']
+  waitFor: ['CreateVMLogOverride']
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: LogOverrideTestCloudLogging
+  entrypoint: 'bash'
+  env:
+  - 'PROJECT_ID=$PROJECT_ID'
+  args: ['scripts/test_launchpolicy_log_never_cloudlogging.sh', '${_VM_NAME_PREFIX}-log-${BUILD_ID}']
   waitFor: ['CreateVMLogOverride']
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CleanUpLogOverride
@@ -35,14 +41,46 @@ steps:
   env:
   - 'CLEANUP=$_CLEANUP'
   args: ['cleanup.sh', '${_VM_NAME_PREFIX}-log-${BUILD_ID}', '${_ZONE}']
-  waitFor: ['LogOverrideTest']
+  waitFor: ['LogOverrideTest', 'LogOverrideTestCloudLogging']
+
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CreateVMLogOverrideDebug
+  entrypoint: 'bash'
+  env:
+  - 'BUILD_ID=$BUILD_ID'
+  args: ['create_vm.sh','-i', '${_HARDENED_IMAGE_NAME}',
+          '-p', '${_IMAGE_PROJECT}',
+          '-f', '${_METADATA_FILE}',
+          '-m', 'tee-image-reference=${_WORKLOAD_IMAGE_LOG_DEBUG},tee-container-log-redirect=true',
+          '-n', '${_VM_NAME_PREFIX}-log-${BUILD_ID}',
+          '-z', '${_ZONE}',
+        ]
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: LogOverrideDebugTest
+  entrypoint: 'bash'
+  args: ['scripts/test_launchpolicy_log_debug.sh', '${_VM_NAME_PREFIX}-log-${BUILD_ID}', '${_ZONE}']
+  waitFor: ['CreateVMLogOverrideDebug']
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: LogOverrideDebugTestCloudLogging
+  entrypoint: 'bash'
+  env:
+  - 'PROJECT_ID=$PROJECT_ID'
+  args: ['scripts/test_launchpolicy_log_debug_cloudlogging.sh', '${_VM_NAME_PREFIX}-log-${BUILD_ID}']
+  waitFor: ['CreateVMLogOverrideDebug']
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CleanUpLogOverrideDebug
+  entrypoint: 'bash'
+  env:
+  - 'CLEANUP=$_CLEANUP'
+  args: ['cleanup.sh', '${_VM_NAME_PREFIX}-log-${BUILD_ID}', '${_ZONE}']
+  waitFor: ['LogOverrideDebugTest', 'LogOverrideDebugTestCloudLogging']
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CreateVMEnvOverride
   entrypoint: 'bash'
   env:
   - 'BUILD_ID=$BUILD_ID'
-  args: ['create_vm.sh','-i', '${_IMAGE_NAME}',
+  args: ['create_vm.sh','-i', '${_HARDENED_IMAGE_NAME}',
           '-p', '${_IMAGE_PROJECT}',
           '-f', '${_METADATA_FILE}',
           '-m', 'tee-image-reference=${_WORKLOAD_IMAGE_ENV},tee-env-OUT=a',
@@ -56,19 +94,26 @@ steps:
   args: ['scripts/test_launchpolicy_env.sh', '${_VM_NAME_PREFIX}-env-${BUILD_ID}', '${_ZONE}']
   waitFor: ['CreateVMEnvOverride']
 - name: 'gcr.io/cloud-builders/gcloud'
+  id: EnvOverrideTestCloudLogging
+  entrypoint: 'bash'
+  env:
+  - 'PROJECT_ID=$PROJECT_ID'
+  args: ['scripts/test_launchpolicy_env_cloudlogging.sh', '${_VM_NAME_PREFIX}-env-${BUILD_ID}']
+  waitFor: ['CreateVMEnvOverride']
+- name: 'gcr.io/cloud-builders/gcloud'
   id: CleanUpEnvOverride
   entrypoint: 'bash'
   env:
   - 'CLEANUP=$_CLEANUP'
   args: ['cleanup.sh', '${_VM_NAME_PREFIX}-env-${BUILD_ID}', '${_ZONE}']
-  waitFor: ['EnvOverrideTest']
+  waitFor: ['EnvOverrideTest', 'EnvOverrideTestCloudLogging']
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CreateVMCmdOverride
   entrypoint: 'bash'
   env:
   - 'BUILD_ID=$BUILD_ID'
-  args: ['create_vm.sh','-i', '${_IMAGE_NAME}',
+  args: ['create_vm.sh','-i', '${_HARDENED_IMAGE_NAME}',
           '-p', '${_IMAGE_PROJECT}',
           '-f', '${_METADATA_FILE}',
           '-m', 'tee-image-reference=${_WORKLOAD_IMAGE_CMD},tee-cmd=["newCmd"]',
@@ -82,12 +127,19 @@ steps:
   args: ['scripts/test_launchpolicy_cmd.sh', '${_VM_NAME_PREFIX}-cmd-${BUILD_ID}', '${_ZONE}']
   waitFor: ['CreateVMCmdOverride']
 - name: 'gcr.io/cloud-builders/gcloud'
+  id: CmdOverrideTestCloudLogging
+  entrypoint: 'bash'
+  env:
+  - 'PROJECT_ID=$PROJECT_ID'
+  args: ['scripts/test_launchpolicy_cmd_cloudlogging.sh', '${_VM_NAME_PREFIX}-cmd-${BUILD_ID}']
+  waitFor: ['CreateVMCmdOverride']
+- name: 'gcr.io/cloud-builders/gcloud'
   id: CleanUpCmdOverride
   entrypoint: 'bash'
   env:
   - 'CLEANUP=$_CLEANUP'
   args: ['cleanup.sh', '${_VM_NAME_PREFIX}-cmd-${BUILD_ID}', '${_ZONE}']
-  waitFor: ['CmdOverrideTest']
+  waitFor: ['CmdOverrideTest', 'CmdOverrideTestCloudLogging']
 
 # Must come after cleanup.
 - name: 'gcr.io/cloud-builders/gcloud'
