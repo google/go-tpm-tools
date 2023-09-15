@@ -1,7 +1,8 @@
 builds:
   - goos:
       - linux
-      - windows
+      # Windows is currently broken since the go-tdx-guest dependency doesn't implement OpenDevice for Windows.
+      # - windows
       - darwin
     goarch:
       - amd64
