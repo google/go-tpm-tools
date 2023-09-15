@@ -10,12 +10,10 @@ import (
 	"cloud.google.com/go/compute/metadata"
 	"github.com/containerd/containerd/namespaces"
 	"github.com/google/go-tpm-tools/client"
-	"github.com/google/go-tpm-tools/launcher"
 	"github.com/google/go-tpm-tools/launcher/agent"
 	"github.com/google/go-tpm-tools/launcher/spec"
 	"github.com/google/go-tpm-tools/launcher/verifier"
 	"github.com/google/go-tpm-tools/launcher/verifier/rest"
-	"github.com/google/go-tpm/legacy/tpm2"
 	"github.com/spf13/cobra"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/impersonate"
@@ -117,12 +115,6 @@ hardware and guarantees a fresh quote.
 			attestation.InstanceInfo = instanceInfo
 		}
 
-		tpm, err := tpm2.OpenTPM("/dev/tpmrm0")
-		if err != nil {
-			return &launcher.RetryableError{Err: err}
-		}
-		defer tpm.Close()
-
 		logger = log.Default()
 		// log.Default() outputs to stderr; change to stdout.
 		log.SetOutput(os.Stdout)
@@ -190,7 +182,7 @@ hardware and guarantees a fresh quote.
 			return fmt.Errorf("failed to create REST verifier client: %v", err)
 		}
 
-		agent.CreateAttestationAgent(tpm, client.GceAttestationKeyECC, verifierClient, principalFetcher)
+		agent.CreateAttestationAgent(rwc, client.GceAttestationKeyECC, verifierClient, principalFetcher)
 		return nil
 	},
 }
