@@ -6,17 +6,16 @@ import (
 	"log"
 	"net/url"
 	"os"
+	"strings"
 
 	"cloud.google.com/go/compute/metadata"
 	"github.com/containerd/containerd/namespaces"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/launcher/agent"
-	"github.com/google/go-tpm-tools/launcher/spec"
 	"github.com/google/go-tpm-tools/launcher/verifier"
 	"github.com/google/go-tpm-tools/launcher/verifier/rest"
 	"github.com/spf13/cobra"
 	"golang.org/x/oauth2/google"
-	"google.golang.org/api/impersonate"
 	"google.golang.org/api/option"
 )
 
@@ -53,6 +52,7 @@ hardware and guarantees a fresh quote.
 `,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// Generate attestation report
 		rwc, err := openTpm()
 		if err != nil {
 			return err
@@ -115,6 +115,8 @@ hardware and guarantees a fresh quote.
 			attestation.InstanceInfo = instanceInfo
 		}
 
+		// Send attestation report to Attestation Verification Server
+
 		logger = log.Default()
 		// log.Default() outputs to stderr; change to stdout.
 		log.SetOutput(os.Stdout)
@@ -123,13 +125,6 @@ hardware and guarantees a fresh quote.
 		var exitCode int
 		// Get RestartPolicy and IsHardened from spec
 		mdsClient = metadata.NewClient(nil)
-		launchSpec, err := spec.GetLaunchSpec(mdsClient)
-		if err != nil {
-			logger.Println(err)
-			// if cannot get launchSpec, exit directly
-			exitCode = failRC
-			return err
-		}
 
 		defer func() {
 			// Catch panic to attempt to output to Cloud Logging.
@@ -162,22 +157,23 @@ hardware and guarantees a fresh quote.
 			}
 
 			tokens := [][]byte{[]byte(idToken)}
-
-			// Fetch impersonated ID tokens.
-			for _, sa := range launchSpec.ImpersonateServiceAccounts {
-				idToken, err := fetchImpersonatedToken(ctx, sa, audience)
-				if err != nil {
-					return nil, fmt.Errorf("failed to get impersonated token for %v: %w", sa, err)
-				}
-
-				tokens = append(tokens, idToken)
-			}
 			return tokens, nil
 		}
 
-		asAddr := launchSpec.AttestationServiceAddr
+		// TODO: make this an optional flag
+		asAddr := "https://confidentialcomputing.googleapis.com"
 
-		verifierClient, err := getRESTClient(ctx, asAddr, launchSpec)
+		Region, err := getRegion(mdsClient)
+		if err != nil {
+			return fmt.Errorf("failed to fetch Region from MDS: %v", err)
+		}
+
+		ProjectID, err := mdsClient.ProjectID()
+		if err != nil {
+			return fmt.Errorf("failed to retrieve ProjectID from MDS: %v", err)
+		}
+
+		verifierClient, err := getRESTClient(ctx, asAddr, ProjectID, Region)
 		if err != nil {
 			return fmt.Errorf("failed to create REST verifier client: %v", err)
 		}
@@ -187,30 +183,10 @@ hardware and guarantees a fresh quote.
 	},
 }
 
-func fetchImpersonatedToken(ctx context.Context, serviceAccount string, audience string, opts ...option.ClientOption) ([]byte, error) {
-	config := impersonate.IDTokenConfig{
-		Audience:        audience,
-		TargetPrincipal: serviceAccount,
-		IncludeEmail:    true,
-	}
-
-	tokenSource, err := impersonate.IDTokenSource(ctx, config, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("error creating token source: %v", err)
-	}
-
-	token, err := tokenSource.Token()
-	if err != nil {
-		return nil, fmt.Errorf("error retrieving token: %v", err)
-	}
-
-	return []byte(token.AccessToken), nil
-}
-
 // getRESTClient returns a REST verifier.Client that points to the given address.
 // It defaults to the Attestation Verifier instance at
 // https://confidentialcomputing.googleapis.com.
-func getRESTClient(ctx context.Context, asAddr string, spec spec.LaunchSpec) (verifier.Client, error) {
+func getRESTClient(ctx context.Context, asAddr string, ProjectID string, Region string) (verifier.Client, error) {
 	httpClient, err := google.DefaultClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create HTTP client: %v", err)
@@ -221,11 +197,23 @@ func getRESTClient(ctx context.Context, asAddr string, spec spec.LaunchSpec) (ve
 		opts = append(opts, option.WithEndpoint(asAddr))
 	}
 
-	restClient, err := rest.NewClient(ctx, spec.ProjectID, spec.Region, opts...)
+	restClient, err := rest.NewClient(ctx, ProjectID, Region, opts...)
 	if err != nil {
 		return nil, err
 	}
 	return restClient, nil
+}
+
+func getRegion(client *metadata.Client) (string, error) {
+	zone, err := client.Zone()
+	if err != nil {
+		return "", fmt.Errorf("failed to retrieve zone from MDS: %v", err)
+	}
+	lastDash := strings.LastIndex(zone, "-")
+	if lastDash == -1 {
+		return "", fmt.Errorf("got malformed zone from MDS: %v", zone)
+	}
+	return zone[:lastDash], nil
 }
 
 func init() {
