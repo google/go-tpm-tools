@@ -2,14 +2,18 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/url"
 	"os"
 	"strings"
+	"time"
 
 	"cloud.google.com/go/compute/metadata"
 	"github.com/containerd/containerd/namespaces"
+	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/launcher/agent"
 	"github.com/google/go-tpm-tools/launcher/verifier"
@@ -40,7 +44,7 @@ var mdsClient *metadata.Client
 // If hardware technology needs a variable length teenonce then please modify the flags description
 var gentokenCmd = &cobra.Command{
 	Use:   "gentoken",
-	Short: "Attest and fetch an OIDC token from Google Attestation Verification Service. Note that this command will only work on a GCE VM.",
+	Short: "Attest and fetch an OIDC token from Google Attestation Verification Service. Note that this command will only work on a GCE VM. Confidential computing API needs to be enabled to access Google Attestation Verification Service https://pantheon.corp.google.com/apis/api/confidentialcomputing.googleapis.com.",
 	Long: `Gather attestation report and send it to Google Attestation Verification Service for an OIDC token.
 The Attestation report contains a quote on all available PCR banks, a way to validate the quote, and a TCG Event Log (Linux only). The OIDC token includes claims regarding the authentication of the user by the authorization server (Google IAM server) with the use of an OAuth client application(Google Cloud apps).
 Use --key to specify the type of attestation key. It can be gceAK for GCE attestation
@@ -178,7 +182,38 @@ hardware and guarantees a fresh quote.
 			return fmt.Errorf("failed to create REST verifier client: %v", err)
 		}
 
-		agent.CreateAttestationAgent(rwc, client.GceAttestationKeyECC, verifierClient, principalFetcher)
+		attestAgent := agent.CreateAttestationAgent(rwc, client.GceAttestationKeyECC, verifierClient, principalFetcher)
+
+		logger.Print("refreshing attestation verifier OIDC token")
+		token, err := attestAgent.Attest(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to retrieve attestation service token: %v", err)
+		}
+
+		// Get token expiration.
+		claims := &jwt.RegisteredClaims{}
+		_, _, err = jwt.NewParser().ParseUnverified(string(token), claims)
+		if err != nil {
+			return fmt.Errorf("failed to parse token: %w", err)
+		}
+
+		now := time.Now()
+		if !now.Before(claims.ExpiresAt.Time) {
+			return errors.New("token is expired")
+		}
+
+		// Print out the claims in the jwt payload
+		mapClaims := jwt.MapClaims{}
+		_, _, err = jwt.NewParser().ParseUnverified(string(token), mapClaims)
+		if err != nil {
+			return fmt.Errorf("failed to parse token: %w", err)
+		}
+		claimsString, err := json.MarshalIndent(mapClaims, "", "  ")
+		if err != nil {
+			return fmt.Errorf("failed to format claims: %w", err)
+		}
+		logger.Println(string(claimsString))
+
 		return nil
 	},
 }
