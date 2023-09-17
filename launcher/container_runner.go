@@ -500,6 +500,8 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		return fmt.Errorf("failed to fetch and write OIDC token: %v", err)
 	}
 
+	r.logger.Printf("EnableTestFeatureForImage is set to %v\n", r.launchSpec.Experiments.EnableTestFeatureForImage)
+
 	var streamOpt cio.Opt
 	switch r.launchSpec.LogRedirect {
 	case spec.Nowhere:
