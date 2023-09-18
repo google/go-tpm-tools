@@ -79,17 +79,20 @@ func main() {
 		return
 	}
 
+	if err := os.MkdirAll(launcherfile.HostTmpPath, 0744); err != nil {
+		logger.Printf("failed to create %s: %v", launcherfile.HostTmpPath, err)
+	}
 	experimentsFile := path.Join(launcherfile.HostTmpPath, experimentDataFile)
 
 	args := fmt.Sprintf("-output=%s", experimentsFile)
 	err = exec.Command(binaryPath, args).Run()
 	if err != nil {
-		logger.Printf("failure during experiment sync: %v", err)
+		logger.Printf("failure during experiment sync: %v\n", err)
 	}
 
 	e, err := experiments.New(experimentsFile)
 	if err != nil {
-		logger.Printf("failed to read experiment file %v\n", err)
+		logger.Printf("failed to read experiment file: %v\n", err)
 		// do not fail if experiment retrieval fails
 	}
 	launchSpec.Experiments = e
