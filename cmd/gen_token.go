@@ -182,6 +182,16 @@ hardware and guarantees a fresh quote.
 			return fmt.Errorf("failed to create REST verifier client: %v", err)
 		}
 
+		// check AK (EK signing) cert
+		gceAk, err := client.GceAttestationKeyECC(rwc)
+		if err != nil {
+			return err
+		}
+		if gceAk.Cert() == nil {
+			return errors.New("failed to find AKCert on this VM: try creating a new VM or contacting support")
+		}
+		gceAk.Close()
+
 		attestAgent := agent.CreateAttestationAgent(rwc, client.GceAttestationKeyECC, verifierClient, principalFetcher)
 
 		logger.Print("refreshing attestation verifier OIDC token")
