@@ -5,9 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"net/url"
-	"os"
 	"strings"
 	"time"
 
@@ -24,41 +22,27 @@ import (
 	"google.golang.org/api/option"
 )
 
-var logger *log.Logger
 var mdsClient *metadata.Client
 
 // If hardware technology needs a variable length teenonce then please modify the flags description
 var gentokenCmd = &cobra.Command{
 	Use:   "gentoken",
-	Short: "Attest and fetch an OIDC token from Google Attestation Verification Service. Note that this command will only work on a GCE VM with confidential space image for now (GCE VM in general in 2024q1). Confidential computing API needs to be enabled to access Google Attestation Verification Service https://pantheon.corp.google.com/apis/api/confidentialcomputing.googleapis.com.",
+	Short: "Attest and fetch an OIDC token from Google Attestation Verification Service.",
 	Long: `Gather attestation report and send it to Google Attestation Verification Service for an OIDC token.
-The Attestation report contains a quote on all available PCR banks, a way to validate the quote, and a TCG Event Log (Linux only). The OIDC token includes claims regarding the authentication of the user by the authorization server (Google IAM server) with the use of an OAuth client application(Google Cloud apps).
-Use --key to specify the type of attestation key. It can be gceAK for GCE attestation
-key or AK for a custom attestation key. By default it uses AK.
---algo flag overrides the public key algorithm for attestation key. If not provided then
-by default rsa is used.
+The OIDC token includes claims regarding the authentication of the user by the authorization server (Google IAM server) with the use of an OAuth client application(Google Cloud apps). Note that this command will only work on a GCE VM with confidential space image for now. And Confidential computing API needs to be enabled for your account to access Google Attestation Verification Service https://pantheon.corp.google.com/apis/api/confidentialcomputing.googleapis.com.
+--algo flag overrides the public key algorithm for attestation key. If not provided then by default rsa is used.
 `,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
+
 		rwc, err := openTpm()
 		if err != nil {
 			return err
 		}
 		defer rwc.Close()
 
-		logger = log.Default()
-		// log.Default() outputs to stderr; change to stdout.
-		log.SetOutput(os.Stdout)
-
 		// Metadata Server (MDS). A GCP specific client.
 		mdsClient = metadata.NewClient(nil)
-
-		defer func() {
-			// Catch panic to attempt to output to Cloud Logging.
-			if r := recover(); r != nil {
-				logger.Println("Panic:", r)
-			}
-		}()
 
 		ctx := namespaces.WithNamespace(context.Background(), namespaces.Default)
 		// Fetch GCP specific ID token with specific audience.
@@ -72,6 +56,7 @@ by default rsa is used.
 				}.Encode(),
 			}
 			idToken, err := mdsClient.Get(u.String())
+			fmt.Fprintf(debugOutput(), "GCP ID token fetched is: %s\n", idToken)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get principal tokens: %w", err)
 			}
@@ -82,6 +67,7 @@ by default rsa is used.
 
 		// TODO: make this an optional flag for generalization
 		asAddr := "https://confidentialcomputing.googleapis.com"
+		fmt.Fprintf(debugOutput(), "Attestation Address is set to %s\n", asAddr)
 
 		Region, err := getRegion(mdsClient)
 		if err != nil {
@@ -97,6 +83,10 @@ by default rsa is used.
 		if err != nil {
 			return fmt.Errorf("failed to create REST verifier client: %v", err)
 		}
+
+		// Now only supports GCE VM. Hard code the AK type.
+		key = "gceAK"
+		fmt.Fprintf(debugOutput(), "key is set to gceAK\n")
 
 		// Set AK (EK signing) cert
 		if key == "AK" {
@@ -124,14 +114,14 @@ by default rsa is used.
 				return err
 			}
 			if gceAK.Cert() == nil {
-				return errors.New("failed to find AKCert on this VM: try creating a new VM or contacting support")
+				return errors.New("failed to find gceAKCert on this VM: try creating a new VM or contacting support")
 			}
 			gceAK.Close()
 		}
 
 		attestAgent := agent.CreateAttestationAgent(rwc, attestationKeys[key][keyAlgo], verifierClient, principalFetcher)
 
-		logger.Print("Fetching attestation verifier OIDC token")
+		fmt.Fprintf(messageOutput(), "Fetching attestation verifier OIDC token")
 		token, err := attestAgent.Attest(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to retrieve attestation service token: %v", err)
@@ -159,7 +149,17 @@ by default rsa is used.
 		if err != nil {
 			return fmt.Errorf("failed to format claims: %w", err)
 		}
-		logger.Println(string(claimsString))
+
+		if output == "" {
+			fmt.Fprintf(messageOutput(), string(claimsString))
+		}
+
+		if output != "" {
+			out := []byte(string(claimsString))
+			if _, err := dataOutput().Write(out); err != nil {
+				return fmt.Errorf("failed to write attestation report: %v", err)
+			}
+		}
 
 		return nil
 	},
@@ -200,13 +200,13 @@ func getRegion(client *metadata.Client) (string, error) {
 
 func init() {
 	RootCmd.AddCommand(gentokenCmd)
-	addKeyFlag(gentokenCmd)
-	addNonceFlag(gentokenCmd)
 	addOutputFlag(gentokenCmd)
 	addPublicKeyAlgoFlag(gentokenCmd)
+	// TODO: Alow AK certificate from other parties than gceAK
+	// addKeyFlag(gentokenCmd)
 	// TODO: Add Attestation Service Address flag
 	// addAsAdressFlag(gentokenCmd)
-	// TODO: Add TEE hardware OIDC token generation.
+	// TODO: Add TEE hardware OIDC token generation
 	// addTeeNonceflag(gentokenCmd)
 	// addTeeTechnology(gentokenCmd)
 }
