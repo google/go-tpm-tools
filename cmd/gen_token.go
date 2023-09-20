@@ -66,8 +66,10 @@ The OIDC token includes claims regarding the authentication of the user by the a
 		}
 
 		// TODO: make this an optional flag for generalization
-		asAddr := "https://confidentialcomputing.googleapis.com"
-		fmt.Fprintf(debugOutput(), "Attestation Address is set to %s\n", asAddr)
+		if asAddress == "" {
+			asAddress = "https://confidentialcomputing.googleapis.com"
+		}
+		fmt.Fprintf(debugOutput(), "Attestation Address is set to %s\n", asAddress)
 
 		Region, err := getRegion(mdsClient)
 		if err != nil {
@@ -79,7 +81,7 @@ The OIDC token includes claims regarding the authentication of the user by the a
 			return fmt.Errorf("failed to retrieve ProjectID from MDS: %v", err)
 		}
 
-		verifierClient, err := getRESTClient(ctx, asAddr, ProjectID, Region)
+		verifierClient, err := getRESTClient(ctx, asAddress, ProjectID, Region)
 		if err != nil {
 			return fmt.Errorf("failed to create REST verifier client: %v", err)
 		}
@@ -202,10 +204,9 @@ func init() {
 	RootCmd.AddCommand(gentokenCmd)
 	addOutputFlag(gentokenCmd)
 	addPublicKeyAlgoFlag(gentokenCmd)
+	addAsAdressFlag(gentokenCmd)
 	// TODO: Alow AK certificate from other parties than gceAK
 	// addKeyFlag(gentokenCmd)
-	// TODO: Add Attestation Service Address flag
-	// addAsAdressFlag(gentokenCmd)
 	// TODO: Add TEE hardware OIDC token generation
 	// addTeeNonceflag(gentokenCmd)
 	// addTeeTechnology(gentokenCmd)
