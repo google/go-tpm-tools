@@ -65,7 +65,6 @@ The OIDC token includes claims regarding the authentication of the user by the a
 			return tokens, nil
 		}
 
-		// TODO: make this an optional flag for generalization
 		if asAddress == "" {
 			asAddress = "https://confidentialcomputing.googleapis.com"
 		}
@@ -86,21 +85,9 @@ The OIDC token includes claims regarding the authentication of the user by the a
 			return fmt.Errorf("failed to create REST verifier client: %v", err)
 		}
 
-		// Now only supports GCE VM. Hard code the AK type.
+		//  supports GCE VM. Hard code the AK type.
 		key = "gceAK"
 		fmt.Fprintf(debugOutput(), "key is set to gceAK\n")
-
-		// Set AK (EK signing) cert
-		if key == "AK" {
-			ak, err := client.AttestationKeyECC(rwc)
-			if err != nil {
-				return err
-			}
-			if ak.Cert() == nil {
-				return errors.New("failed to find AKCert on this VM: try creating a new VM or contacting support")
-			}
-			ak.Close()
-		}
 
 		// Set GCE AK (EK signing) cert
 		if key == "gceAK" {
@@ -123,7 +110,7 @@ The OIDC token includes claims regarding the authentication of the user by the a
 
 		attestAgent := agent.CreateAttestationAgent(rwc, attestationKeys[key][keyAlgo], verifierClient, principalFetcher)
 
-		fmt.Fprintf(messageOutput(), "Fetching attestation verifier OIDC token")
+		fmt.Fprintf(messageOutput(), "Fetching attestation verifier OIDC token\n")
 		token, err := attestAgent.Attest(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to retrieve attestation service token: %v", err)
@@ -153,7 +140,7 @@ The OIDC token includes claims regarding the authentication of the user by the a
 		}
 
 		if output == "" {
-			fmt.Fprintf(messageOutput(), string(claimsString))
+			fmt.Fprintf(messageOutput(), string(claimsString)+"\n")
 		}
 
 		if output != "" {
@@ -205,8 +192,6 @@ func init() {
 	addOutputFlag(gentokenCmd)
 	addPublicKeyAlgoFlag(gentokenCmd)
 	addAsAdressFlag(gentokenCmd)
-	// TODO: Alow AK certificate from other parties than gceAK
-	// addKeyFlag(gentokenCmd)
 	// TODO: Add TEE hardware OIDC token generation
 	// addTeeNonceflag(gentokenCmd)
 	// addTeeTechnology(gentokenCmd)
