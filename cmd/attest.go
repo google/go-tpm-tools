@@ -7,7 +7,7 @@ import (
 
 	"cloud.google.com/go/compute/metadata"
 	"github.com/google/go-tpm-tools/client"
-	"github.com/google/go-tpm-tools/proto/attest"
+	attestpb "github.com/google/go-tpm-tools/proto/attest"
 	"github.com/google/go-tpm/legacy/tpm2"
 	"github.com/spf13/cobra"
 	"google.golang.org/protobuf/proto"
@@ -136,10 +136,10 @@ hardware and guarantees a fresh quote.
 	},
 }
 
-func getInstanceInfoFromMetadata() (*attest.GCEInstanceInfo, error) {
+func getInstanceInfoFromMetadata() (*attestpb.GCEInstanceInfo, error) {
 
 	var err error
-	instanceInfo := &attest.GCEInstanceInfo{}
+	instanceInfo := &attestpb.GCEInstanceInfo{}
 
 	instanceInfo.ProjectId, err = metadata.ProjectID()
 	if err != nil {
