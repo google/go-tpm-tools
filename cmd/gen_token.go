@@ -110,7 +110,7 @@ The OIDC token includes claims regarding the authentication of the user by the a
 
 		attestAgent := agent.CreateAttestationAgent(rwc, attestationKeys[key][keyAlgo], verifierClient, principalFetcher)
 
-		fmt.Fprintf(messageOutput(), "Fetching attestation verifier OIDC token\n")
+		fmt.Fprintf(debugOutput(), "Fetching attestation verifier OIDC token\n")
 		token, err := attestAgent.Attest(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to retrieve attestation service token: %v", err)
@@ -139,12 +139,14 @@ The OIDC token includes claims regarding the authentication of the user by the a
 			return fmt.Errorf("failed to format claims: %w", err)
 		}
 
+		fmt.Fprintf(debugOutput(), string(claimsString)+"\n")
+
 		if output == "" {
-			fmt.Fprintf(messageOutput(), string(claimsString)+"\n")
+			fmt.Fprintf(messageOutput(), string(token)+"\n")
 		}
 
 		if output != "" {
-			out := []byte(string(claimsString))
+			out := []byte(token)
 			if _, err := dataOutput().Write(out); err != nil {
 				return fmt.Errorf("failed to write attestation report: %v", err)
 			}
