@@ -14,7 +14,16 @@ main() {
     sed -i -e 's|,oemroot|;oemroot|g' /mnt/disks/efi/efi/boot/grub.cfg
   fi
 
-  cat /mnt/disks/efi/efi/boot/grub.cfg
+  # Print grub.cfg's kernel command line.
+  grep -i '^\s*linux' /mnt/disks/efi/efi/boot/grub.cfg | \
+    sed -e 's|.*|[BEGIN_CS_GRUB_CMDLINE]&[END_CS_GRUB_CMDLINE]|g'
+
+  # Convert grub.cfg's kernel command line into what GRUB passes to the kernel.
+  grep -i '^\s*linux' /mnt/disks/efi/efi/boot/grub.cfg | \
+    sed -e "s|'ds=nocloud;s=/usr/share/oem/'|ds=nocloud;s=/usr/share/oem/|g" | \
+    sed -e 's|\\"|"|g' | \
+    sed -e 's|dm-mod.create="|"dm-mod.create=|g' | \
+    sed -e 's|.*|[BEGIN_CS_CMDLINE]&[END_CS_CMDLINE]|g'
 
   umount /mnt/disks/efi
 }
