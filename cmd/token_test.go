@@ -23,7 +23,7 @@ func TestGenTokenWithGCEAK(t *testing.T) {
 	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
 	ExternalTPM = rwc
-	secretFile1 := makeOutputFile(t, "gentoken")
+	secretFile1 := makeOutputFile(t, "token")
 	defer os.RemoveAll(secretFile1)
 	var template = map[string]tpm2.Public{
 		"rsa": GCEAKTemplateRSA(),
@@ -72,7 +72,7 @@ func TestGenTokenWithGCEAK(t *testing.T) {
 			}
 			defer mockAttestationServer.Stop()
 
-			RootCmd.SetArgs([]string{"gentoken", "--algo", op.algo, "--output", secretFile1, "--asAddr", mockAttestationServer.server.URL})
+			RootCmd.SetArgs([]string{"token", "--algo", op.algo, "--output", secretFile1, "--asAddr", mockAttestationServer.server.URL})
 			if err := RootCmd.Execute(); err != nil {
 				t.Error(err)
 			}
