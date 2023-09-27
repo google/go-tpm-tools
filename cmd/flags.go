@@ -126,8 +126,8 @@ func addInputFlag(cmd *cobra.Command) {
 
 // Lets this command specify an Attestation Server Address.
 func addAsAdressFlag(cmd *cobra.Command) {
-	cmd.PersistentFlags().StringVar(&asAddress, "asAddr", "",
-		"AS address (defaults to https://confidentialcomputing.googleapis.com)")
+	cmd.PersistentFlags().StringVar(&asAddress, "asAddr", "https://confidentialcomputing.googleapis.com",
+		"Attestation Service address")
 }
 
 // Lets this command specify an NVDATA index, for use with nvIndex.
