@@ -11,10 +11,15 @@ import (
 	"crypto"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
+	"sync"
 
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
+	"github.com/google/go-tpm-tools/launcher/internal/oci"
+	"github.com/google/go-tpm-tools/launcher/internal/signaturediscovery"
+	"github.com/google/go-tpm-tools/launcher/spec"
 	"github.com/google/go-tpm-tools/launcher/verifier"
 	pb "github.com/google/go-tpm-tools/proto/attest"
 )
@@ -37,7 +42,10 @@ type agent struct {
 	akFetcher        tpmKeyFetcher
 	client           verifier.Client
 	principalFetcher principalIDTokenFetcher
+	sigsFetcher      signaturediscovery.Fetcher
 	cosCel           cel.CEL
+	launchSpec       spec.LaunchSpec
+	logger           *log.Logger
 }
 
 // CreateAttestationAgent returns an agent capable of performing remote
@@ -45,12 +53,17 @@ type agent struct {
 // - tpm is a handle to the TPM on the instance
 // - akFetcher is a func to fetch an attestation key: see go-tpm-tools/client.
 // - principalFetcher is a func to fetch GCE principal tokens for a given audience.
-func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher tpmKeyFetcher, verifierClient verifier.Client, principalFetcher principalIDTokenFetcher) AttestationAgent {
+// - signaturesFetcher is a func to fetch container image signatures associated with the running workload.
+// - logger will log any partial errors returned by VerifyAttestation.
+func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher tpmKeyFetcher, verifierClient verifier.Client, principalFetcher principalIDTokenFetcher, sigsFetcher signaturediscovery.Fetcher, launchSpec spec.LaunchSpec, logger *log.Logger) AttestationAgent {
 	return &agent{
 		tpm:              tpm,
 		client:           verifierClient,
 		akFetcher:        akFetcher,
 		principalFetcher: principalFetcher,
+		sigsFetcher:      sigsFetcher,
+		launchSpec:       launchSpec,
+		logger:           logger,
 	}
 }
 
@@ -79,13 +92,26 @@ func (a *agent) Attest(ctx context.Context) ([]byte, error) {
 		return nil, err
 	}
 
-	resp, err := a.client.VerifyAttestation(ctx, verifier.VerifyAttestationRequest{
+	req := verifier.VerifyAttestationRequest{
 		Challenge:      challenge,
 		GcpCredentials: principalTokens,
 		Attestation:    attestation,
-	})
+	}
+
+	if a.launchSpec.Experiments.EnableSignedContainerImage {
+		signatures := fetchContainerImageSignatures(ctx, a.sigsFetcher, a.launchSpec.SignedImageRepos, a.logger)
+		if len(signatures) > 0 {
+			req.ContainerImageSignatures = signatures
+			a.logger.Printf("Found container image signatures: %v\n", signatures)
+		}
+	}
+
+	resp, err := a.client.VerifyAttestation(ctx, req)
 	if err != nil {
 		return nil, err
+	}
+	if len(resp.PartialErrs) > 0 {
+		a.logger.Printf("Partial errors from VerifyAttestation: %v", resp.PartialErrs)
 	}
 	return resp.ClaimsToken, nil
 }
@@ -107,4 +133,30 @@ func (a *agent) getAttestation(nonce []byte) (*pb.Attestation, error) {
 		return nil, fmt.Errorf("failed to attest: %v", err)
 	}
 	return attestation, nil
+}
+
+// TODO: cache signatures so we don't need to fetch every time.
+func fetchContainerImageSignatures(ctx context.Context, fetcher signaturediscovery.Fetcher, targetRepos []string, logger *log.Logger) []oci.Signature {
+	signatures := make([][]oci.Signature, len(targetRepos))
+
+	var wg sync.WaitGroup
+	for i, repo := range targetRepos {
+		wg.Add(1)
+		go func(targetRepo string, index int) {
+			defer wg.Done()
+			sigs, err := fetcher.FetchImageSignatures(ctx, targetRepo)
+			if err != nil {
+				logger.Printf("Failed to fetch signatures from the target repo [%s]: %v", targetRepo, err)
+			} else {
+				signatures[index] = sigs
+			}
+		}(repo, i)
+	}
+	wg.Wait()
+
+	var foundSigs []oci.Signature
+	for _, sigs := range signatures {
+		foundSigs = append(foundSigs, sigs...)
+	}
+	return foundSigs
 }

@@ -99,5 +99,8 @@ func createTestClient(t *testing.T, originalImageDesc v1.Descriptor) *Client {
 		t.Skipf("test needs containerd daemon: %v", err)
 	}
 	t.Cleanup(func() { containerdClient.Close() })
-	return New(containerdClient, originalImageDesc)
+	return &Client{
+		cdClient:          containerdClient,
+		OriginalImageDesc: originalImageDesc,
+	}
 }

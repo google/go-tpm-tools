@@ -5,8 +5,10 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"log"
 	"strings"
 
+	"github.com/google/go-tpm-tools/launcher/internal/oci"
 	"github.com/google/go-tpm-tools/launcher/verifier"
 
 	v1 "cloud.google.com/go/confidentialcomputing/apiv1"
@@ -154,6 +156,16 @@ func convertRequestToREST(request verifier.VerifyAttestationRequest) *confidenti
 		certs[i] = cert
 	}
 
+	signatures := make([]*confidentialcomputingpb.ContainerImageSignature, len(request.ContainerImageSignatures))
+	for i, sig := range request.ContainerImageSignatures {
+		signature, err := convertOCISignatureToREST(sig)
+		if err != nil {
+			log.Printf("failed to convert OCI signature [%v] to ContainerImageSignature proto: %v", sig, err)
+			continue
+		}
+		signatures[i] = signature
+	}
+
 	return &confidentialcomputingpb.VerifyAttestationRequest{
 		GcpCredentials: &confidentialcomputingpb.GcpCredentials{
 			ServiceAccountIdTokens: idTokens,
@@ -165,6 +177,9 @@ func convertRequestToREST(request verifier.VerifyAttestationRequest) *confidenti
 			AkCert:            request.Attestation.GetAkCert(),
 			CertChain:         certs,
 		},
+		ConfidentialSpaceInfo: &confidentialcomputingpb.ConfidentialSpaceInfo{
+			SignedEntities: []*confidentialcomputingpb.SignedEntity{{ContainerImageSignatures: signatures}},
+		},
 	}
 }
 
@@ -172,5 +187,25 @@ func convertResponseFromREST(resp *confidentialcomputingpb.VerifyAttestationResp
 	token := []byte(resp.GetOidcClaimsToken())
 	return &verifier.VerifyAttestationResponse{
 		ClaimsToken: token,
+		PartialErrs: resp.PartialErrors,
+	}, nil
+}
+
+func convertOCISignatureToREST(signature oci.Signature) (*confidentialcomputingpb.ContainerImageSignature, error) {
+	payload, err := signature.Payload()
+	if err != nil {
+		return nil, err
+	}
+	b64Sig, err := signature.Base64Encoded()
+	if err != nil {
+		return nil, err
+	}
+	sigBytes, err := encoding.DecodeString(b64Sig)
+	if err != nil {
+		return nil, err
+	}
+	return &confidentialcomputingpb.ContainerImageSignature{
+		Payload:   payload,
+		Signature: sigBytes,
 	}, nil
 }

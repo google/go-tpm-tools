@@ -8,7 +8,11 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v4"
+	"github.com/google/go-tpm-tools/launcher/internal/oci"
 	"github.com/google/go-tpm-tools/launcher/verifier"
+	"go.uber.org/multierr"
+	"google.golang.org/genproto/googleapis/rpc/code"
+	"google.golang.org/genproto/googleapis/rpc/status"
 )
 
 type fakeClient struct {
@@ -37,18 +41,32 @@ func (fc *fakeClient) CreateChallenge(_ context.Context) (*verifier.Challenge, e
 //
 // If you have found this method is insufficient for your tests, this class must be updated to
 // allow for better testing.
-func (fc *fakeClient) VerifyAttestation(_ context.Context, _ verifier.VerifyAttestationRequest) (*verifier.VerifyAttestationResponse, error) {
+func (fc *fakeClient) VerifyAttestation(_ context.Context, req verifier.VerifyAttestationRequest) (*verifier.VerifyAttestationResponse, error) {
 	// Determine signing algorithm.
 	signingMethod := jwt.SigningMethodRS256
 	now := jwt.TimeFunc()
-	claims := jwt.RegisteredClaims{
-		IssuedAt:  &jwt.NumericDate{Time: now},
-		NotBefore: &jwt.NumericDate{Time: now},
-		ExpiresAt: &jwt.NumericDate{Time: now.Add(time.Hour)},
-		Audience:  []string{"https://sts.googleapis.com/"},
-		Issuer:    "https://confidentialcomputing.googleapis.com/",
-		Subject:   "https://www.googleapis.com/compute/v1/projects/fakeProject/zones/fakeZone/instances/fakeInstance",
+	claims := Claims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			IssuedAt:  &jwt.NumericDate{Time: now},
+			NotBefore: &jwt.NumericDate{Time: now},
+			ExpiresAt: &jwt.NumericDate{Time: now.Add(time.Hour)},
+			Audience:  []string{"https://sts.googleapis.com/"},
+			Issuer:    "https://confidentialcomputing.googleapis.com/",
+			Subject:   "https://www.googleapis.com/compute/v1/projects/fakeProject/zones/fakeZone/instances/fakeInstance",
+		},
 	}
+
+	var signatureClaims []ContainerImageSignatureClaims
+	var partialErrs []*status.Status
+	for _, signature := range req.ContainerImageSignatures {
+		sc, err := verifyContainerImageSignature(signature)
+		if err != nil {
+			partialErrs = append(partialErrs, &status.Status{Code: int32(code.Code_INVALID_ARGUMENT), Message: err.Error()})
+		} else {
+			signatureClaims = append(signatureClaims, sc)
+		}
+	}
+	claims.ContainerImageSignatures = signatureClaims
 
 	token := jwt.NewWithClaims(signingMethod, claims)
 
@@ -60,7 +78,34 @@ func (fc *fakeClient) VerifyAttestation(_ context.Context, _ verifier.VerifyAtte
 
 	response := verifier.VerifyAttestationResponse{
 		ClaimsToken: []byte(signed),
+		PartialErrs: partialErrs,
 	}
 
 	return &response, nil
+}
+
+func verifyContainerImageSignature(signature oci.Signature) (ContainerImageSignatureClaims, error) {
+	var err error
+	payload, e := signature.Payload()
+	if e != nil {
+		err = multierr.Append(err, e)
+	}
+	b64Sig, e := signature.Base64Encoded()
+	if e != nil {
+		err = multierr.Append(err, e)
+	}
+	pubKey, e := signature.PublicKey()
+	if e != nil {
+		err = multierr.Append(err, e)
+	}
+	sigAlg, e := signature.SigningAlgorithm()
+	if e != nil {
+		err = multierr.Append(err, e)
+	}
+	return ContainerImageSignatureClaims{
+		Payload:   string(payload),
+		Signature: b64Sig,
+		PubKey:    string(pubKey),
+		SigAlg:    string(sigAlg),
+	}, err
 }

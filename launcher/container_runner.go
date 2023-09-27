@@ -29,6 +29,7 @@ import (
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/launcher/agent"
+	"github.com/google/go-tpm-tools/launcher/internal/signaturediscovery"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/spec"
 	"github.com/google/go-tpm-tools/launcher/verifier"
@@ -230,13 +231,23 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		return nil, fmt.Errorf("failed to create REST verifier client: %v", err)
 	}
 
+	// Create a new signaturediscovery cleint to fetch signatures.
+	sdClient := getSignatureDiscoveryClient(cdClient, token, image.Target())
 	return &ContainerRunner{
 		container,
 		launchSpec,
-		agent.CreateAttestationAgent(tpm, client.GceAttestationKeyECC, verifierClient, principalFetcher),
+		agent.CreateAttestationAgent(tpm, client.GceAttestationKeyECC, verifierClient, principalFetcher, sdClient, launchSpec, logger),
 		logger,
 		serialConsole,
 	}, nil
+}
+
+func getSignatureDiscoveryClient(cdClient *containerd.Client, token oauth2.Token, imageDesc v1.Descriptor) signaturediscovery.Fetcher {
+	var remoteOpt containerd.RemoteOpt
+	if token.Valid() {
+		remoteOpt = containerd.WithResolver(Resolver(token.AccessToken))
+	}
+	return signaturediscovery.New(cdClient, imageDesc, remoteOpt)
 }
 
 // getRESTClient returns a REST verifier.Client that points to the given address.

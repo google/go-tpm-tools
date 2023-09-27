@@ -5,7 +5,9 @@ package verifier
 import (
 	"context"
 
+	"github.com/google/go-tpm-tools/launcher/internal/oci"
 	attestpb "github.com/google/go-tpm-tools/proto/attest"
+	"google.golang.org/genproto/googleapis/rpc/status"
 )
 
 // Client is a common interface to various attestation verifiers.
@@ -25,15 +27,17 @@ type Challenge struct {
 
 // VerifyAttestationRequest is passed in on VerifyAttestation. It contains the
 // Challenge from CreateChallenge, optional GcpCredentials linked to the
-// attestation, and the Attestation generated from the TPM.
+// attestation, the Attestation generated from the TPM, and optional container image signatures associated with the workload.
 type VerifyAttestationRequest struct {
-	Challenge      *Challenge
-	GcpCredentials [][]byte
-	Attestation    *attestpb.Attestation
+	Challenge                *Challenge
+	GcpCredentials           [][]byte
+	Attestation              *attestpb.Attestation
+	ContainerImageSignatures []oci.Signature
 }
 
 // VerifyAttestationResponse is the response from a successful
 // VerifyAttestation call.
 type VerifyAttestationResponse struct {
 	ClaimsToken []byte
+	PartialErrs []*status.Status
 }
