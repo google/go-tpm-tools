@@ -348,7 +348,7 @@ func TestVerifyBasicAttestationWithSevSnp(t *testing.T) {
 	}
 }
 
-func TestVerifyBasicAttestationWithTdx(t *testing.T) {
+func TestBasicAttestationWithTdx(t *testing.T) {
 	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
 
