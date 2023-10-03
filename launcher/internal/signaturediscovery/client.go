@@ -15,6 +15,11 @@ import (
 
 const signatureTagSuffix = "sig"
 
+// Fetcher discovers and fetches OCI signatures from the target repository.
+type Fetcher interface {
+	FetchImageSignatures(ctx context.Context, targetRepository string) ([]oci.Signature, error)
+}
+
 // Client is a wrapper of containerd.Client to interact with signed image manifest.
 type Client struct {
 	cdClient          *containerd.Client
@@ -22,8 +27,8 @@ type Client struct {
 	RemoteOpts        []containerd.RemoteOpt
 }
 
-// New creates a new client.
-func New(cdClient *containerd.Client, originalImageDesc v1.Descriptor, opts ...containerd.RemoteOpt) *Client {
+// New creates a new client that implements Fetcher interface.
+func New(cdClient *containerd.Client, originalImageDesc v1.Descriptor, opts ...containerd.RemoteOpt) Fetcher {
 	return &Client{
 		cdClient:          cdClient,
 		OriginalImageDesc: originalImageDesc,
