@@ -7,7 +7,7 @@ cut a release (as GitHub doesn't have sufficiently advanced
 
 ## Create the main release PR
 
-Create a standalone PR titled "Release vX.Y.Z" against the `master` branch. This
+Create a standalone PR titled "Release vX.Y.Z" against the `main` branch. This
 PR should (ideally) be an empty commit, but might contain some minor changes if
 we want to get them in for a specific release. You can create an empty commit
 by running:
@@ -38,7 +38,7 @@ of a single commit and be "squashed" instead of "merged".
 
 ## Tag the releases
 
-After the new release is in the `master` branch, we need to create git tags so
+After the new release is in the `main` branch, we need to create git tags so
 that the Go version system can find the releases. Generally the author of the
 PR should do this.
 
