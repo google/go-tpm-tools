@@ -85,7 +85,11 @@ func main() {
 	experimentsFile := path.Join(launcherfile.HostTmpPath, experimentDataFile)
 
 	args := fmt.Sprintf("-output=%s", experimentsFile)
-	err = exec.Command(binaryPath, args).Run()
+	exec := exec.Command(binaryPath, args)
+	out, err := exec.Output()
+	if len(out) > 0 {
+		logger.Printf("experiment sync binary finished. stdout: %s", string(out))
+	}
 	if err != nil {
 		logger.Printf("failure during experiment sync: %v\n", err)
 	}
