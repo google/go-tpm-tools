@@ -21,6 +21,8 @@ type Sig struct {
 	// Blob represents the opaque data uploaded to OCI registry associated with the layer.
 	// This contains the Simple Signing Payload as described in https://github.com/sigstore/cosign/blob/main/specs/SIGNATURE_SPEC.md#tag-based-discovery.
 	Blob []byte
+	// SourceRepo represents the location that stores this signature.
+	SourceRepo string
 }
 
 // CosignSigKey is the key of the cosign-generated signature embedded in OCI image manifest.
@@ -67,4 +69,13 @@ func (s Sig) PublicKey() ([]byte, error) {
 // Instead we send payload directly to the Attestation service and let the service parse the payload.
 func (s Sig) SigningAlgorithm() (oci.SigningAlgorithm, error) {
 	return "", fmt.Errorf("not implemented")
+}
+
+// String returns signature details
+func (s Sig) String() string {
+	sig, err := s.Base64Encoded()
+	if err != nil {
+		return fmt.Sprintf("[signature error: %s]", err.Error())
+	}
+	return fmt.Sprintf("[signature: %q, sourceRepo: %q]", sig, s.SourceRepo)
 }

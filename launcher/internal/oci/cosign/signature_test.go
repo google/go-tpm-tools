@@ -3,6 +3,7 @@ package cosign
 import (
 	"bytes"
 	"crypto/rand"
+	"strings"
 	"testing"
 
 	"github.com/opencontainers/go-digest"
@@ -127,6 +128,45 @@ func TestWorkflow(t *testing.T) {
 	}
 	if gotSig != wantSig {
 		t.Errorf("Base64Encoded() failed, got %s, but want %s", gotSig, wantSig)
+	}
+}
+
+func TestString(t *testing.T) {
+	testCases := []struct {
+		name       string
+		sourceRepo string
+		b64Sig     string
+		wantString string
+	}{
+		{
+			name:       "successful signature details",
+			sourceRepo: "gcr.io/hello_world",
+			b64Sig:     "aGVsbG8gd29ybGQ=", // base64 encoded "hello world"
+			wantString: `signature: "aGVsbG8gd29ybGQ=", sourceRepo: "gcr.io/hello_world"`,
+		},
+		{
+			name:       "erronous signature details",
+			sourceRepo: "gcr.io/hello_world",
+			b64Sig:     "invalid",
+			wantString: `signature error: invalid base64 encoded signature`,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			sig := &Sig{
+				Layer: v1.Descriptor{
+					Annotations: map[string]string{
+						CosignSigKey: tc.b64Sig,
+					},
+				},
+				SourceRepo: tc.sourceRepo,
+			}
+			gotString := sig.String()
+			if !strings.Contains(gotString, tc.wantString) {
+				t.Errorf("String() failed, got %s, but want %s", gotString, tc.wantString)
+			}
+		})
 	}
 }
 
