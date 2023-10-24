@@ -11,6 +11,7 @@ read_serial() {
   timeout="10 minute"
   endtime=$(date -ud "$timeout" +%s)
 
+  echo "Reading serial console..."
   while [ -s /workspace/next_start.txt ]; do
     if [[ $(date -u +%s) -ge $endtime ]]; then
       echo "timed out reading serial console" 

@@ -28,13 +28,14 @@ func toLogRedirectPolicy(s string) (logRedirectPolicy, error) {
 
 	if s == "always" {
 		return always, nil
-	} else if s == "never" {
-		return never, nil
-	} else if s == "debugonly" {
-		return debugOnly, nil
-	} else {
-		return 0, fmt.Errorf("not a valid LogRedirectPolicy %s (must be one of [always, never, debugonly])", s)
 	}
+	if s == "never" {
+		return never, nil
+	}
+	if s == "debugonly" {
+		return debugOnly, nil
+	}
+	return 0, fmt.Errorf("not a valid LogRedirectPolicy %s (must be one of [always, never, debugonly])", s)
 }
 
 const (
