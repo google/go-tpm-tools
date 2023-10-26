@@ -26,13 +26,14 @@ func toLogRedirectPolicy(s string) (logRedirectPolicy, error) {
 	s = strings.ToLower(s)
 	s = strings.TrimSpace(s)
 
-	if s == "always" {
+	switch s {
+	case "always":
 		return always, nil
-	} else if s == "never" {
+	case "never":
 		return never, nil
-	} else if s == "debugonly" {
+	case "debugonly":
 		return debugOnly, nil
-	} else {
+	default:
 		return 0, fmt.Errorf("not a valid LogRedirectPolicy %s (must be one of [always, never, debugonly])", s)
 	}
 }
