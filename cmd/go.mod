@@ -4,7 +4,7 @@ go 1.20
 
 require (
 	cloud.google.com/go/compute/metadata v0.2.3
-	github.com/google/go-sev-guest v0.8.0
+	github.com/google/go-sev-guest v0.9.3
 	github.com/google/go-tdx-guest v0.2.3-0.20231011100059-4cf02bed9d33
 	github.com/google/go-tpm v0.9.0
 	github.com/google/go-tpm-tools v0.3.13-0.20230620182252-4639ecce2aba
