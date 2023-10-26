@@ -48,7 +48,7 @@ var logger *log.Logger
 var mdsClient *metadata.Client
 
 func main() {
-	var exitCode int
+	var exitCode int // by default exitcode should be zero
 	var err error
 
 	logger = log.Default()
@@ -58,6 +58,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to open serial console for writing: %v", err)
 	}
+	defer os.Exit(exitCode)
 	defer serialConsole.Close()
 	logger.SetOutput(io.MultiWriter(os.Stdout, serialConsole))
 
