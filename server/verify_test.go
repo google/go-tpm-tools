@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	sabi "github.com/google/go-sev-guest/abi"
 	sgclient "github.com/google/go-sev-guest/client"
 	sgtest "github.com/google/go-sev-guest/testing"
 	testclient "github.com/google/go-sev-guest/testing/client"
@@ -1050,6 +1051,7 @@ func TestVerifyAttestationWithSevSnp(t *testing.T) {
 		opts    VerifyOpts
 		wantErr string
 	}
+	milanB1 := sabi.DefaultSevProduct()
 	tcs := []testCase{
 		{
 			name: "Happy path",
@@ -1061,6 +1063,7 @@ func TestVerifyAttestationWithSevSnp(t *testing.T) {
 					Verification: &sv.Options{
 						Getter:       kdsGetter,
 						TrustedRoots: goodSnpRoot,
+						Product:      milanB1,
 					},
 				},
 			},
@@ -1075,6 +1078,7 @@ func TestVerifyAttestationWithSevSnp(t *testing.T) {
 					Verification: &sv.Options{
 						Getter:       kdsGetter,
 						TrustedRoots: goodSnpRoot,
+						Product:      milanB1,
 					},
 				},
 			},
@@ -1090,6 +1094,7 @@ func TestVerifyAttestationWithSevSnp(t *testing.T) {
 					Verification: &sv.Options{
 						Getter:       kdsGetter,
 						TrustedRoots: badSnpRoot,
+						Product:      milanB1,
 					},
 				},
 			},
@@ -1112,6 +1117,7 @@ func TestVerifyAttestationWithSevSnp(t *testing.T) {
 					Verification: &sv.Options{
 						Getter:       kdsGetter,
 						TrustedRoots: goodSnpRoot,
+						Product:      milanB1,
 					},
 				},
 			},
