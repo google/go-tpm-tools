@@ -73,7 +73,10 @@ jobs:
           GO_EXECUTABLE_PATH=$(which go)
           sudo $GO_EXECUTABLE_PATH test -v -run "TestFetchImageSignaturesDockerPublic" ./launcher
       - name: Test all modules
-        run: go test -v ./... ./cmd/... ./launcher/...
+        # Using -p 1 to avoid race condition between two tests (launcher/TestRefreshToken and teeserver/TestGetDefaultToken).
+        # Those two tests both create a file /tmp/container_launcher/attestation_verifier_claims_token, run tests on it,
+        # and then delete the tmp file.
+        run: go test -p 1 -v ./... ./cmd/... ./launcher/...
 
   lint:
     strategy:
