@@ -47,25 +47,34 @@ var rcMessage = map[int]string{
 var logger *log.Logger
 var mdsClient *metadata.Client
 
+var welcomeMessage = "TEE container launcher initiating"
+var exitMessage = "TEE container launcher exiting"
+
 func main() {
-	var exitCode int
+	var exitCode int // by default exit code is 0
 	var err error
 
 	logger = log.Default()
 	// log.Default() outputs to stderr; change to stdout.
 	log.SetOutput(os.Stdout)
+	defer os.Exit(exitCode)
+
 	serialConsole, err := os.OpenFile("/dev/console", os.O_WRONLY, 0)
 	if err != nil {
-		log.Fatalf("failed to open serial console for writing: %v", err)
+		logger.Printf("failed to open serial console for writing: %v\n", err)
+		exitCode = failRC
+		logger.Printf("%s, exit code: %d (%s)\n", exitMessage, exitCode, rcMessage[exitCode])
+		return
 	}
 	defer serialConsole.Close()
 	logger.SetOutput(io.MultiWriter(os.Stdout, serialConsole))
 
-	logger.Println("TEE container launcher initiating")
+	logger.Println(welcomeMessage)
 
 	if err := verifyFsAndMount(); err != nil {
-		logger.Print(err)
+		logger.Printf("failed to verify filesystem and mounts: %v\n", err)
 		exitCode = rebootRC
+		logger.Printf("%s, exit code: %d (%s)\n", exitMessage, exitCode, rcMessage[exitCode])
 		return
 	}
 
@@ -73,9 +82,10 @@ func main() {
 	mdsClient = metadata.NewClient(nil)
 	launchSpec, err := spec.GetLaunchSpec(mdsClient)
 	if err != nil {
-		logger.Println(err)
+		logger.Printf("failed to get launchspec, make sure you're running inside a GCE VM: %v\n", err)
 		// if cannot get launchSpec, exit directly
 		exitCode = failRC
+		logger.Printf("%s, exit code: %d (%s)\n", exitMessage, exitCode, rcMessage[exitCode])
 		return
 	}
 
@@ -105,9 +115,9 @@ func main() {
 		}
 		msg, ok := rcMessage[exitCode]
 		if ok {
-			logger.Printf("TEE container launcher exiting with exit code: %d (%s)\n", exitCode, msg)
+			logger.Printf("%s, exit code: %d (%s)\n", exitMessage, exitCode, msg)
 		} else {
-			logger.Printf("TEE container launcher exiting with exit code: %d\n", exitCode)
+			logger.Printf("%s, exit code: %d\n", exitMessage, exitCode)
 		}
 	}()
 	if err = startLauncher(launchSpec, serialConsole); err != nil {
@@ -194,7 +204,7 @@ func verifyFsAndMount() error {
 	// check protected_stateful_partition is encrypted and is on integrity protection
 	cryptsetupOutput, err := exec.Command("cryptsetup", "status", "/dev/mapper/protected_stateful_partition").Output()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to check /dev/mapper/protected_stateful_partition status: %v %s", err, string(cryptsetupOutput))
 	}
 	matched := regexp.MustCompile(`type:\s+LUKS2`).FindString(string(cryptsetupOutput))
 	if len(matched) == 0 {
@@ -212,7 +222,7 @@ func verifyFsAndMount() error {
 	// make sure /var/lib/containerd is on protected_stateful_partition
 	findmountOutput, err := exec.Command("findmnt", "/dev/mapper/protected_stateful_partition").Output()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to findmnt /dev/mapper/protected_stateful_partition: %v %s", err, string(findmountOutput))
 	}
 	matched = regexp.MustCompile(`/var/lib/containerd\s+/dev/mapper/protected_stateful_partition\[/var/lib/containerd\]\s+ext4\s+rw,nosuid,nodev,relatime,commit=30`).FindString(string(findmountOutput))
 	if len(matched) == 0 {
@@ -226,7 +236,7 @@ func verifyFsAndMount() error {
 	// check /tmp is on tmpfs
 	findmntOutput, err := exec.Command("findmnt", "tmpfs").Output()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to findmnt tmpfs: %v %s", err, string(findmntOutput))
 	}
 	matched = regexp.MustCompile(`/tmp\s+tmpfs\s+tmpfs`).FindString(string(findmntOutput))
 	if len(matched) == 0 {
@@ -236,14 +246,14 @@ func verifyFsAndMount() error {
 	// check verity status on vroot and oemroot
 	cryptSetupOutput, err := exec.Command("cryptsetup", "status", "vroot").Output()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to check vroot status: %v %s", err, string(cryptSetupOutput))
 	}
 	if !strings.Contains(string(cryptSetupOutput), "/dev/mapper/vroot is active and is in use.") {
 		return fmt.Errorf("/dev/mapper/vroot was not mounted correctly: \n%s", cryptSetupOutput)
 	}
 	cryptSetupOutput, err = exec.Command("cryptsetup", "status", "oemroot").Output()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to check oemroot status: %v %s", err, string(cryptSetupOutput))
 	}
 	if !strings.Contains(string(cryptSetupOutput), "/dev/mapper/oemroot is active and is in use.") {
 		return fmt.Errorf("/dev/mapper/oemroot was not mounted correctly: \n%s", cryptSetupOutput)
