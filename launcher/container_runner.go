@@ -30,6 +30,7 @@ import (
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/launcher/agent"
 	"github.com/google/go-tpm-tools/launcher/internal/signaturediscovery"
+	"github.com/google/go-tpm-tools/launcher/internal/systemctl"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/spec"
 	"github.com/google/go-tpm-tools/launcher/verifier"
@@ -94,8 +95,36 @@ func fetchImpersonatedToken(ctx context.Context, serviceAccount string, audience
 	return []byte(token.AccessToken), nil
 }
 
+var memoryConfig = `{
+	"memory": {
+	  "metricsConfigs": {
+		"memory/bytes_used": {
+		  "displayName": "memory/bytes_used"
+		}
+	  }
+	},
+	"invokeInterval": "60s"
+  }`
+func writeSystemStatsConfig() error {
+	return os.WriteFile("/etc/node_problem_detector/system-stats-monitor.json", []byte(memoryConfig), 0644)
+}
+
 // NewRunner returns a runner.
 func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.Token, launchSpec spec.LaunchSpec, mdsClient *metadata.Client, tpm io.ReadWriteCloser, logger *log.Logger, serialConsole *os.File) (*ContainerRunner, error) {
+	if err := writeSystemStatsConfig(); err != nil {
+		return nil, fmt.Errorf("Failed to override the default system-stats-monitor.json", err)
+	}
+	systemd, err := systemctl.NewDbus()
+	if err != nil {
+		return nil, fmt.Errorf("Unable to start NewDbus: %v", err)
+	}
+	if _, _, err := systemd.Enable([]string{"node-problem-detector.service"}, true); err != nil {
+		return nil, fmt.Errorf("Unable to enable node-problem-detector.service: %v", err)
+	}
+
+	if err := systemd.Start(ctx, "node-problem-detector.service"); err != nil {
+		return nil, fmt.Errorf("Unable to start node-problem-detector.service: %v", err)
+	}
 	image, err := initImage(ctx, cdClient, launchSpec, token)
 	if err != nil {
 		return nil, err
