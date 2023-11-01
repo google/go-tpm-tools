@@ -62,8 +62,9 @@ func (c *Client) FetchImageSignatures(ctx context.Context, targetRepository stri
 			return nil, err
 		}
 		sig := &cosign.Sig{
-			Layer: layer,
-			Blob:  blob,
+			Layer:      layer,
+			Blob:       blob,
+			SourceRepo: targetRepository,
 		}
 		signatures = append(signatures, sig)
 	}

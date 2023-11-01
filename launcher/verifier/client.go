@@ -33,6 +33,8 @@ type VerifyAttestationRequest struct {
 	GcpCredentials           [][]byte
 	Attestation              *attestpb.Attestation
 	ContainerImageSignatures []oci.Signature
+	CustomAudience           string
+	CustomNonce              []string
 }
 
 // VerifyAttestationResponse is the response from a successful

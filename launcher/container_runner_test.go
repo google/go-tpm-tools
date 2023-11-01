@@ -5,12 +5,9 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log"
-	"net/http"
 	"os"
 	"path"
 	"strconv"
@@ -23,10 +20,10 @@ import (
 	"github.com/containerd/containerd/namespaces"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-tpm-tools/cel"
+	"github.com/google/go-tpm-tools/launcher/agent"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/spec"
 	"golang.org/x/oauth2"
-	"google.golang.org/api/option"
 )
 
 const (
@@ -36,7 +33,7 @@ const (
 // Fake attestation agent.
 type fakeAttestationAgent struct {
 	measureEventFunc func(cel.Content) error
-	attestFunc       func(context.Context) ([]byte, error)
+	attestFunc       func(context.Context, agent.AttestAgentOpts) ([]byte, error)
 }
 
 func (f *fakeAttestationAgent) MeasureEvent(event cel.Content) error {
@@ -47,9 +44,9 @@ func (f *fakeAttestationAgent) MeasureEvent(event cel.Content) error {
 	return fmt.Errorf("unimplemented")
 }
 
-func (f *fakeAttestationAgent) Attest(ctx context.Context) ([]byte, error) {
+func (f *fakeAttestationAgent) Attest(ctx context.Context, _ agent.AttestAgentOpts) ([]byte, error) {
 	if f.attestFunc != nil {
-		return f.attestFunc(ctx)
+		return f.attestFunc(ctx, agent.AttestAgentOpts{})
 	}
 
 	return nil, fmt.Errorf("unimplemented")
@@ -102,7 +99,7 @@ func TestRefreshToken(t *testing.T) {
 
 	runner := ContainerRunner{
 		attestAgent: &fakeAttestationAgent{
-			attestFunc: func(context.Context) ([]byte, error) {
+			attestFunc: func(context.Context, agent.AttestAgentOpts) ([]byte, error) {
 				return expectedToken, nil
 			},
 		},
@@ -146,7 +143,7 @@ func TestRefreshTokenError(t *testing.T) {
 		{
 			name: "Attest fails",
 			agent: &fakeAttestationAgent{
-				attestFunc: func(context.Context) ([]byte, error) {
+				attestFunc: func(context.Context, agent.AttestAgentOpts) ([]byte, error) {
 					return nil, errors.New("attest error")
 				},
 			},
@@ -154,7 +151,7 @@ func TestRefreshTokenError(t *testing.T) {
 		{
 			name: "Attest returns expired token",
 			agent: &fakeAttestationAgent{
-				attestFunc: func(context.Context) ([]byte, error) {
+				attestFunc: func(context.Context, agent.AttestAgentOpts) ([]byte, error) {
 					return createJWT(t, -5*time.Second), nil
 				},
 			},
@@ -184,7 +181,7 @@ func TestFetchAndWriteTokenSucceeds(t *testing.T) {
 
 	runner := ContainerRunner{
 		attestAgent: &fakeAttestationAgent{
-			attestFunc: func(context.Context) ([]byte, error) {
+			attestFunc: func(context.Context, agent.AttestAgentOpts) ([]byte, error) {
 				return expectedToken, nil
 			},
 		},
@@ -212,11 +209,11 @@ func TestTokenIsNotChangedIfRefreshFails(t *testing.T) {
 
 	expectedToken := createJWT(t, 5*time.Second)
 	ttl := 5 * time.Second
-	successfulAttestFunc := func(context.Context) ([]byte, error) {
+	successfulAttestFunc := func(context.Context, agent.AttestAgentOpts) ([]byte, error) {
 		return expectedToken, nil
 	}
 
-	errorAttestFunc := func(context.Context) ([]byte, error) {
+	errorAttestFunc := func(context.Context, agent.AttestAgentOpts) ([]byte, error) {
 		return nil, errors.New("attest unsuccessful")
 	}
 
@@ -289,7 +286,7 @@ func testRetryPolicyWithNTries(t *testing.T, numTries int, expectRefresh bool) {
 	// Wait the initial token's 5s plus a second per retry (MaxInterval).
 	ttl := time.Duration(numTries)*time.Second + 5*time.Second
 	retry := -1
-	attestFunc := func(context.Context) ([]byte, error) {
+	attestFunc := func(context.Context, agent.AttestAgentOpts) ([]byte, error) {
 		retry++
 		// Success on the initial fetch (subsequent calls use refresher goroutine).
 		if retry == 0 {
@@ -350,7 +347,7 @@ func TestFetchAndWriteTokenWithTokenRefresh(t *testing.T) {
 
 	runner := ContainerRunner{
 		attestAgent: &fakeAttestationAgent{
-			attestFunc: func(context.Context) ([]byte, error) {
+			attestFunc: func(context.Context, agent.AttestAgentOpts) ([]byte, error) {
 				return expectedToken, nil
 			},
 		},
@@ -374,7 +371,7 @@ func TestFetchAndWriteTokenWithTokenRefresh(t *testing.T) {
 	// Change attest agent to return new token.
 	expectedRefreshedToken := createJWT(t, 10*time.Second)
 	runner.attestAgent = &fakeAttestationAgent{
-		attestFunc: func(context.Context) ([]byte, error) {
+		attestFunc: func(context.Context, agent.AttestAgentOpts) ([]byte, error) {
 			return expectedRefreshedToken, nil
 		},
 	}
@@ -399,59 +396,6 @@ func TestFetchAndWriteTokenWithTokenRefresh(t *testing.T) {
 
 	if !bytes.Equal(data, expectedRefreshedToken) {
 		t.Errorf("Refreshed token written to file does not match expected token: got %v, want %v", data, expectedRefreshedToken)
-	}
-}
-
-type testRoundTripper struct {
-	roundTripFunc func(*http.Request) *http.Response
-}
-
-func (t *testRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
-	return t.roundTripFunc(req), nil
-}
-
-type idTokenResp struct {
-	Token string `json:"token"`
-}
-
-func TestFetchImpersonatedToken(t *testing.T) {
-	expectedEmail := "test2@google.com"
-
-	expectedToken := []byte("test_token")
-
-	expectedURL := fmt.Sprintf(idTokenEndpoint, expectedEmail)
-	client := &http.Client{
-		Transport: &testRoundTripper{
-			roundTripFunc: func(req *http.Request) *http.Response {
-				if req.URL.String() != expectedURL {
-					t.Errorf("HTTP call was not made to a endpoint: got %v, want %v", req.URL.String(), expectedURL)
-				}
-
-				resp := idTokenResp{
-					Token: string(expectedToken),
-				}
-
-				respBody, err := json.Marshal(resp)
-				if err != nil {
-					t.Fatalf("Unable to marshal HTTP response: %v", err)
-				}
-
-				return &http.Response{
-					StatusCode: http.StatusOK,
-					Header:     make(http.Header),
-					Body:       io.NopCloser(bytes.NewBuffer(respBody)),
-				}
-			},
-		},
-	}
-
-	token, err := fetchImpersonatedToken(context.Background(), expectedEmail, "test_aud", option.WithHTTPClient(client))
-	if err != nil {
-		t.Fatalf("fetchImpersonatedToken returned error: %v", err)
-	}
-
-	if !bytes.Equal(token, expectedToken) {
-		t.Errorf("fetchImpersonatedToken did not return expected token: got %v, want %v", token, expectedToken)
 	}
 }
 

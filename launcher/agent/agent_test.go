@@ -61,7 +61,7 @@ func TestAttest(t *testing.T) {
 
 			agent := CreateAttestationAgent(tpm, client.AttestationKeyECC, verifierClient, tc.principalIDTokenFetcher, tc.containerSignaturesFetcher, tc.launchSpec, log.Default())
 
-			tokenBytes, err := agent.Attest(context.Background())
+			tokenBytes, err := agent.Attest(context.Background(), AttestAgentOpts{})
 			if err != nil {
 				t.Errorf("failed to attest to Attestation Service: %v", err)
 			}

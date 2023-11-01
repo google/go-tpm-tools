@@ -4,8 +4,8 @@ go 1.20
 
 require (
 	cloud.google.com/go/compute/metadata v0.2.3
-	github.com/google/go-sev-guest v0.7.0
-	github.com/google/go-tdx-guest v0.2.1-0.20230907045450-944015509c84
+	github.com/google/go-sev-guest v0.9.3
+	github.com/google/go-tdx-guest v0.2.3-0.20231011100059-4cf02bed9d33
 	github.com/google/go-tpm v0.9.0
 	github.com/google/go-tpm-tools v0.3.13-0.20230620182252-4639ecce2aba
 	github.com/spf13/cobra v1.3.0
@@ -19,13 +19,13 @@ require (
 	github.com/google/go-attestation v0.5.0 // indirect
 	github.com/google/go-tspi v0.3.0 // indirect
 	github.com/google/logger v1.1.1 // indirect
-	github.com/google/uuid v1.3.0 // indirect
+	github.com/google/uuid v1.3.1 // indirect
 	github.com/inconshreveable/mousetrap v1.0.0 // indirect
-	github.com/pborman/uuid v1.2.0 // indirect
+	github.com/pborman/uuid v1.2.1 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/stretchr/testify v1.8.3 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.org/x/crypto v0.11.0 // indirect
-	golang.org/x/sys v0.10.0 // indirect
+	golang.org/x/crypto v0.13.0 // indirect
+	golang.org/x/sys v0.12.0 // indirect
 )

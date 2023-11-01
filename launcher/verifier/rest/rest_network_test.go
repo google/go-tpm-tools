@@ -49,8 +49,8 @@ func TestWithAgent(t *testing.T) {
 	tpm := test.GetTPM(t)
 	defer client.CheckedClose(t, tpm)
 
-	agent := agent.CreateAttestationAgent(tpm, client.AttestationKeyECC, vClient, testPrincipalIDTokenFetcher, signaturediscovery.NewFakeClient(), spec.LaunchSpec{}, log.Default())
-	token, err := agent.Attest(context.Background())
+	a := agent.CreateAttestationAgent(tpm, client.AttestationKeyECC, vClient, testPrincipalIDTokenFetcher, signaturediscovery.NewFakeClient(), spec.LaunchSpec{}, log.Default())
+	token, err := a.Attest(context.Background(), agent.AttestAgentOpts{})
 	if err != nil {
 		t.Errorf("failed to attest to Attestation Service: %v", err)
 	}
