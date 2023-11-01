@@ -15,6 +15,7 @@ steps:
       - |
         cd launcher/launcher
         CGO_ENABLED=0 go build -o ../image/launcher
+        
   - name: 'gcr.io/cloud-builders/gcloud'
     id: DownloadExpBinary
     entrypoint: 'gcloud'
