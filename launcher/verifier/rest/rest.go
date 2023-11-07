@@ -181,8 +181,9 @@ func convertRequestToREST(request verifier.VerifyAttestationRequest) *confidenti
 			SignedEntities: []*confidentialcomputingpb.SignedEntity{{ContainerImageSignatures: signatures}},
 		},
 		TokenOptions: &confidentialcomputingpb.TokenOptions{
-			Audience: request.CustomAudience,
-			Nonce:    request.CustomNonce,
+			Audience:  request.CustomAudience,
+			Nonce:     request.CustomNonce,
+			TokenType: request.CustomTokenType,
 		},
 	}
 }

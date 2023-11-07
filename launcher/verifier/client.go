@@ -35,6 +35,7 @@ type VerifyAttestationRequest struct {
 	ContainerImageSignatures []oci.Signature
 	CustomAudience           string
 	CustomNonce              []string
+	CustomTokenType			 string
 }
 
 // VerifyAttestationResponse is the response from a successful
