@@ -23,8 +23,9 @@ type attestHandler struct {
 }
 
 type customTokenRequest struct {
-	Audience string   `json:"audience"`
-	Nonces   []string `json:"nonces"`
+	Audience  string   `json:"audience"`
+	Nonces    []string `json:"nonces"`
+	TokenType string   `json:tokenType`
 }
 
 // TeeServer is a server that can be called from a container through a unix
@@ -103,6 +104,12 @@ func (a *attestHandler) getToken(w http.ResponseWriter, r *http.Request) {
 		if tokenReq.Audience == "" {
 			w.WriteHeader(http.StatusBadRequest)
 			w.Write([]byte("use GET request for the default identity token"))
+			return
+		}
+
+		if tokenReq.TokenType != "OIDC" {
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte("token type must be OIDC"))
 			return
 		}
 
