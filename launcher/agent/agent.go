@@ -40,8 +40,9 @@ type AttestationAgent interface {
 // AttestAgentOpts contains user generated options when calling the
 // VerifyAttestation API
 type AttestAgentOpts struct {
-	Aud    string
-	Nonces []string
+	Aud       string
+	Nonces    []string
+	TokenType string
 }
 
 type agent struct {
@@ -103,8 +104,11 @@ func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error
 		Challenge:      challenge,
 		GcpCredentials: principalTokens,
 		Attestation:    attestation,
-		CustomAudience: opts.Aud,
-		CustomNonce:    opts.Nonces,
+		TokenOptions: verifier.TokenOptions{
+			CustomAudience: opts.Aud,
+			CustomNonce:    opts.Nonces,
+			TokenType:      opts.TokenType,
+		},
 	}
 
 	if a.launchSpec.Experiments.EnableSignedContainerImage {

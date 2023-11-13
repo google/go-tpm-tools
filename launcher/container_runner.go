@@ -338,7 +338,7 @@ func (r *ContainerRunner) measureContainerClaims(ctx context.Context) error {
 	return r.attestAgent.MeasureEvent(separator)
 }
 
-// Retrieves an OIDC token from the attestation service, and returns how long
+// Retrieves the default OIDC token from the attestation service, and returns how long
 // to wait before attemping to refresh it.
 // The token file will be written to a tmp file and then renamed.
 func (r *ContainerRunner) refreshToken(ctx context.Context) (time.Duration, error) {

@@ -23,8 +23,9 @@ type attestHandler struct {
 }
 
 type customTokenRequest struct {
-	Audience string   `json:"audience"`
-	Nonces   []string `json:"nonces"`
+	Audience  string   `json:"audience"`
+	Nonces    []string `json:"nonces"`
+	TokenType string   `json:"token_type"`
 }
 
 // TeeServer is a server that can be called from a container through a unix
@@ -106,10 +107,17 @@ func (a *attestHandler) getToken(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		if tokenReq.TokenType == "" {
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte("token_type is a required parameter"))
+			return
+		}
+
 		tok, err := a.attestAgent.Attest(context.Background(),
 			agent.AttestAgentOpts{
-				Aud:    tokenReq.Audience,
-				Nonces: tokenReq.Nonces,
+				Aud:       tokenReq.Audience,
+				Nonces:    tokenReq.Nonces,
+				TokenType: tokenReq.TokenType,
 			})
 		if err != nil {
 			a.logger.Print(err)
