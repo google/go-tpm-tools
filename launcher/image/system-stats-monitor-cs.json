@@ -1,0 +1,10 @@
+{
+  "memory": {
+    "metricsConfigs": {
+      "memory/bytes_used": {
+        "displayName": "memory/bytes_used"
+      }
+    }
+  },
+  "invokeInterval": "60s"
+}
