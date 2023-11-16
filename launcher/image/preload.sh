@@ -85,7 +85,6 @@ configure_systemd_units_for_hardened() {
   disable_unit "konlet-startup.service"
   disable_unit "crash-reporter.service"
   disable_unit "device_policy_manager.service"
-  disable_unit "node-problem-detector.service"
   disable_unit "docker-events-collector-fluent-bit.service"
   disable_unit "sshd.service"
   disable_unit "var-lib-toolbox.mount"

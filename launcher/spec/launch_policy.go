@@ -9,20 +9,21 @@ import (
 // LaunchPolicy contains policies on starting the container.
 // The policy comes from the labels of the image.
 type LaunchPolicy struct {
-	AllowedEnvOverride []string
-	AllowedCmdOverride bool
-	AllowedLogRedirect logRedirectPolicy
+	AllowedEnvOverride      []string
+	AllowedCmdOverride      bool
+	AllowedLogRedirect      policy
+	AllowedMemoryMonitoring policy
 }
 
-type logRedirectPolicy int
+type policy int
 
 const (
-	debugOnly logRedirectPolicy = iota
+	debugOnly policy = iota
 	always
 	never
 )
 
-func toLogRedirectPolicy(s string) (logRedirectPolicy, error) {
+func toPolicy(policy, s string) (policy, error) {
 	s = strings.ToLower(s)
 	s = strings.TrimSpace(s)
 
@@ -35,13 +36,14 @@ func toLogRedirectPolicy(s string) (logRedirectPolicy, error) {
 	if s == "debugonly" {
 		return debugOnly, nil
 	}
-	return 0, fmt.Errorf("not a valid LogRedirectPolicy %s (must be one of [always, never, debugonly])", s)
+	return 0, fmt.Errorf("not a valid %s %s (must be one of [always, never, debugonly])", policy, s)
 }
 
 const (
-	envOverride = "tee.launch_policy.allow_env_override"
-	cmdOverride = "tee.launch_policy.allow_cmd_override"
-	logRedirect = "tee.launch_policy.log_redirect"
+	envOverride      = "tee.launch_policy.allow_env_override"
+	cmdOverride      = "tee.launch_policy.allow_cmd_override"
+	logRedirect      = "tee.launch_policy.log_redirect"
+	memoryMonitoring = "tee.launch_policy.monitoring.memory.allow"
 )
 
 // GetLaunchPolicy takes in a map[string] string which should come from image labels,
@@ -65,9 +67,17 @@ func GetLaunchPolicy(imageLabels map[string]string) (LaunchPolicy, error) {
 		}
 	}
 
-	// default is debug only
+	// default is debug only for logRedirect
 	if v, ok := imageLabels[logRedirect]; ok {
-		launchPolicy.AllowedLogRedirect, err = toLogRedirectPolicy(v)
+		launchPolicy.AllowedLogRedirect, err = toPolicy(logRedirect, v)
+		if err != nil {
+			return LaunchPolicy{}, fmt.Errorf("invalid image LABEL '%s'; contact the image author", logRedirect)
+		}
+	}
+
+	// default is debug only for memoryMonitoring
+	if v, ok := imageLabels[memoryMonitoring]; ok {
+		launchPolicy.AllowedMemoryMonitoring, err = toPolicy(memoryMonitoring, v)
 		if err != nil {
 			return LaunchPolicy{}, fmt.Errorf("invalid image LABEL '%s'; contact the image author", logRedirect)
 		}
@@ -94,6 +104,14 @@ func (p LaunchPolicy) Verify(ls LaunchSpec) error {
 
 	if p.AllowedLogRedirect == debugOnly && ls.LogRedirect.enabled() && ls.Hardened {
 		return fmt.Errorf("logging redirection only allowed on debug environment by image")
+	}
+
+	if p.AllowedMemoryMonitoring == never && ls.MemoryMonitoringEnabled {
+		return fmt.Errorf("memory monitoring not allowed by image")
+	}
+
+	if p.AllowedMemoryMonitoring == debugOnly && ls.MemoryMonitoringEnabled && ls.Hardened {
+		return fmt.Errorf("memory monitoring only allowed on debug environment by image")
 	}
 
 	return nil
