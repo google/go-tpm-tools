@@ -1,26 +1,27 @@
 package systemctl
 
 import (
+	"context"
 	"errors"
 	"testing"
 )
 
 func TestRunSystmedCmd(t *testing.T) {
-	doneUnitFunc := func(unit string, mode string, progress chan<- string) (int, error) {
+	doneUnitFunc := func(ctx context.Context, unit string, mode string, progress chan<- string) (int, error) {
 		progress <- "done"
 		return 1, nil
 	}
-	failedCallUnitFunc := func(unit string, mode string, progress chan<- string) (int, error) {
+	failedCallUnitFunc := func(ctx context.Context, unit string, mode string, progress chan<- string) (int, error) {
 		return 1, errors.New("something went wrong")
 	}
-	failedUnitFunc := func(unit string, mode string, progress chan<- string) (int, error) {
+	failedUnitFunc := func(ctx context.Context, unit string, mode string, progress chan<- string) (int, error) {
 		progress <- "failed"
 		return 1, nil
 	}
 
 	testCases := []struct {
 		name          string
-		sytemdCmdFunc func(unit string, flag string, progress chan<- string) (int, error)
+		sytemdCmdFunc func(ctx context.Context, unit string, flag string, progress chan<- string) (int, error)
 		wantErr       bool
 	}{
 		{

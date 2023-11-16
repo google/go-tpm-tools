@@ -29,7 +29,6 @@ import (
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/launcher/agent"
-	npd "github.com/google/go-tpm-tools/launcher/internal/healthmonitoring/nodeproblemdetector"
 	"github.com/google/go-tpm-tools/launcher/internal/signaturediscovery"
 	"github.com/google/go-tpm-tools/launcher/internal/systemctl"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
@@ -56,8 +55,6 @@ type ContainerRunner struct {
 const tokenFileTmp = ".token.tmp"
 
 const teeServerSocket = "teeserver.sock"
-
-const systemStatsConfigFilePath = "/etc/node_problem_detector/system-stats-monitor.json"
 
 // Since we only allow one container on a VM, using a deterministic id is probably fine
 const (
@@ -511,26 +508,22 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		defer teeServer.Shutdown(ctx)
 	}
 
-	// customize node-problem-detector.service and start it.
+	// start node-problem-detector.service to collect memory related metrics.
 	if r.launchSpec.MemoryMonitoringEnabled {
 		r.logger.Println("MemoryMonitoring is enabled")
-		config := npd.NewSystemStatsConfig()
-		// collects "memory/bytes_used" metrics only when memory monitoring enabled.
-		config.EnableMemoryBytesUsed()
-		// override the default config file.
-		if err := config.WriteFile(systemStatsConfigFilePath); err != nil {
-			return fmt.Errorf("failed to override the default config file [%s] for node-problem-detector: %v", systemStatsConfigFilePath, err)
-		}
 		s, err := systemctl.New()
 		if err != nil {
 			return fmt.Errorf("failed to create systemctl client: %v", err)
 		}
 		defer s.Close()
 
+		r.logger.Println("Starting a systemctl operation: systemctl start node-problem-detector.service")
 		if err := s.Start("node-problem-detector.service"); err != nil {
 			return fmt.Errorf("failed to start node-problem-detector.service: %v", err)
 		}
 		r.logger.Println("node-problem-detector.service successfully started.")
+	} else {
+		r.logger.Println("MemoryMonitoring is disabled.")
 	}
 
 	var streamOpt cio.Opt

@@ -2,10 +2,11 @@
 package systemctl
 
 import (
+	"context"
 	"fmt"
 	"log"
 
-	"github.com/coreos/go-systemd/dbus"
+	"github.com/coreos/go-systemd/v22/dbus"
 )
 
 // Systemd is an interface to connect to host systemd with selected functions.
@@ -24,7 +25,7 @@ var _ Systemd = (*Systemctl)(nil)
 
 // New connects to systemd over dbus.
 func New() (*Systemctl, error) {
-	conn, err := dbus.New()
+	conn, err := dbus.NewWithContext(context.Background())
 	if err != nil {
 		return nil, err
 	}
@@ -33,23 +34,23 @@ func New() (*Systemctl, error) {
 
 // Start is the equivalent of `systemctl start $unit`.
 func (s *Systemctl) Start(unit string) error {
-	return runSystemdCmd(s.dbus.StartUnit, "start", unit)
+	return runSystemdCmd(s.dbus.StartUnitContext, "start", unit)
 }
 
 // Stop is the equivalent of `systemctl stop $unit`.
 func (s *Systemctl) Stop(unit string) error {
-	return runSystemdCmd(s.dbus.StopUnit, "stop", unit)
+	return runSystemdCmd(s.dbus.StopUnitContext, "stop", unit)
 }
 
 // Close disconnects from dbus.
 func (s *Systemctl) Close() { s.dbus.Close() }
 
-func runSystemdCmd(cmdFunc func(string, string, chan<- string) (int, error), cmd string, unit string) error {
+func runSystemdCmd(cmdFunc func(context.Context, string, string, chan<- string) (int, error), cmd string, unit string) error {
 	progress := make(chan string, 1)
 
 	// Run systemd command in "replace" mode to start the unit and its dependencies,
-	// possibly replacing already queued jobs that conflict w∏ith this.
-	if _, err := cmdFunc(unit, "replace", progress); err != nil {
+	// possibly replacing already queued jobs that conflict with this.
+	if _, err := cmdFunc(context.Background(), unit, "replace", progress); err != nil {
 		return fmt.Errorf("failed to run systemctl [%s] for unit [%s]: %v", cmd, unit, err)
 	}
 

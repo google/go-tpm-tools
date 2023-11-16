@@ -43,7 +43,7 @@ const (
 	envOverride      = "tee.launch_policy.allow_env_override"
 	cmdOverride      = "tee.launch_policy.allow_cmd_override"
 	logRedirect      = "tee.launch_policy.log_redirect"
-	memoryMonitoring = "tee.launch_policy.monitoring.memory.allow"
+	memoryMonitoring = "tee.launch_policy.monitoring_memory_allow"
 )
 
 // GetLaunchPolicy takes in a map[string] string which should come from image labels,
