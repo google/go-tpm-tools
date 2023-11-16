@@ -1,0 +1,69 @@
+substitutions:
+  '_IMAGE_NAME': ''
+  '_IMAGE_PROJECT': ''
+  '_CLEANUP': 'true'
+  '_VM_NAME_PREFIX': 'discover-signatures'
+  '_ZONE': 'us-west1-a'
+  '_WORKLOAD_IMAGE': 'us-west1-docker.pkg.dev/confidential-space-images-dev/cs-integ-test-images/basic-test:latest'
+  '_SIGNATURE_REPO': 'us-docker.pkg.dev/confidential-space-images-dev/cs-cosign-tests/hardened'
+
+steps:
+- name: 'gcr.io/projectsigstore/cosign:v2.2.0'
+  id: SignContainer
+  entrypoint: 'sh'
+  env:
+  - 'BUILD_ID=$BUILD_ID'
+  args:
+  - -c
+  - |
+    # Unpadded base64 encoding on the CloudKMS public key
+    pub=$(cosign public-key --key gcpkms://projects/confidential-space-images-dev/locations/global/keyRings/cosign-test/cryptoKeys/ecdsa/cryptoKeyVersions/1 | openssl base64)
+    pub=$(echo $pub | tr -d '[:space:]' | sed 's/[=]*$//')
+    # Use cosign sign
+    export COSIGN_REPOSITORY=${_SIGNATURE_REPO}
+    cosign sign --key gcpkms://projects/confidential-space-images-dev/locations/global/keyRings/cosign-test/cryptoKeys/ecdsa/cryptoKeyVersions/1 ${_WORKLOAD_IMAGE} -a dev.cosignproject.cosign/sigalg=ECDSA_P256_SHA256 -a dev.cosignproject.cosign/pub=$pub
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CreateVM
+  entrypoint: 'bash'
+  env:
+  - 'BUILD_ID=$BUILD_ID'
+  args: ['create_vm.sh','-i', '${_IMAGE_NAME}',
+          '-p', '${_IMAGE_PROJECT}',
+          '-m', 'tee-image-reference=${_WORKLOAD_IMAGE},tee-container-log-redirect=true,tee-signed-image-repos=${_SIGNATURE_REPO},tee-env-ALLOWED_OVERRIDE=overridden,tee-cmd=["newCmd"]',
+          '-n', '${_VM_NAME_PREFIX}-${BUILD_ID}',
+          '-z', '${_ZONE}',
+        ]
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: BasicDiscoverSignaturesTest
+  entrypoint: 'bash'
+  args: ['scripts/test_launcher_workload_discover_signatures.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}', '${_ZONE}']
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CleanUp
+  entrypoint: 'bash'
+  env:
+  - 'CLEANUP=$_CLEANUP'
+  args: ['cleanup.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}', '${_ZONE}']
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: DeleteContainerSignatures
+  env:
+  - 'BUILD_ID=$BUILD_ID'
+  entrypoint: 'bash'
+  args:
+  - -c
+  - |
+    echo "Deleting container signatures..."
+    digest=$(gcloud artifacts docker images describe ${_WORKLOAD_IMAGE} --format 'value(image_summary.digest)')
+    tag=${digest/":"/"-"}.sig
+    # Delete container signature by its tag
+    gcloud artifacts docker images delete -q ${_SIGNATURE_REPO}:${tag}
+# Must come after cleanup.
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CheckFailure
+  entrypoint: 'bash'
+  env:
+  - 'BUILD_ID=$BUILD_ID'
+  args: ['check_failure.sh']
+
+options:
+  pool:
+    name: 'projects/confidential-space-images-dev/locations/us-west1/workerPools/cs-image-build-vpc'
