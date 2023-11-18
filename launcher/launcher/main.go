@@ -57,7 +57,9 @@ func main() {
 	logger = log.Default()
 	// log.Default() outputs to stderr; change to stdout.
 	log.SetOutput(os.Stdout)
-	defer os.Exit(exitCode)
+	defer func() {
+		os.Exit(exitCode)
+	}()
 
 	serialConsole, err := os.OpenFile("/dev/console", os.O_WRONLY, 0)
 	if err != nil {
