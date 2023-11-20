@@ -25,6 +25,14 @@ type Challenge struct {
 	ConnID string
 }
 
+// TokenOptions contains fields that will be passed to the Attestation Service TokenOptions field.
+// These fields are used to customize several claims in the token from the Attestation service.
+type TokenOptions struct {
+	CustomAudience string
+	CustomNonce    []string
+	TokenType      string
+}
+
 // VerifyAttestationRequest is passed in on VerifyAttestation. It contains the
 // Challenge from CreateChallenge, optional GcpCredentials linked to the
 // attestation, the Attestation generated from the TPM, and optional container image signatures associated with the workload.
@@ -33,8 +41,7 @@ type VerifyAttestationRequest struct {
 	GcpCredentials           [][]byte
 	Attestation              *attestpb.Attestation
 	ContainerImageSignatures []oci.Signature
-	CustomAudience           string
-	CustomNonce              []string
+	TokenOptions             TokenOptions
 }
 
 // VerifyAttestationResponse is the response from a successful
