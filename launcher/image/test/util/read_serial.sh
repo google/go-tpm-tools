@@ -14,7 +14,7 @@ read_serial() {
   echo "Reading serial console..."
   while [ -s /workspace/next_start.txt ]; do
     if [[ $(date -u +%s) -ge $endtime ]]; then
-      echo "timed out reading serial console" 
+      echo "timed out reading serial console, or the workload is running more than ${timeout}"
       break
     fi
 

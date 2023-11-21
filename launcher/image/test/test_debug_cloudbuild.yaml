@@ -40,6 +40,27 @@ steps:
   entrypoint: 'bash'
   args: ['scripts/test_mds_var_change.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}', '${_ZONE}']
 - name: 'gcr.io/cloud-builders/gcloud'
+  id: CheckDebugVMAliveAfterLauncherExits
+  script: |
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    # Waiting for 2.5 mins, after the workload is finished.
+    # If using a debug image, the VM should still be accessible after
+    # the workload exit normally.
+    # Check the script: launcher/image/exit_script.sh for detail logic.
+    sleep 150
+
+    result=$(gcloud compute instances list --filter="name=(${_VM_NAME_PREFIX}-${BUILD_ID})" --zones=${_ZONE} --format="value(STATUS)")
+
+    if [[ "${result}" == "RUNNING" ]]; then
+        echo "verified debug VM is still running after 2.5 mins"
+    else
+        echo "FAILED: expect debug VM to be still running"
+        echo "TEST FAILED. Expect debug VM to be still running" > /workspace/status.txt
+    fi
+  automapSubstitutions: true
+- name: 'gcr.io/cloud-builders/gcloud'
   id: CleanUp
   entrypoint: 'bash'
   env:
