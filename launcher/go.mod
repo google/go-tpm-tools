@@ -7,6 +7,7 @@ require (
 	cloud.google.com/go/confidentialcomputing v1.4.0
 	github.com/cenkalti/backoff/v4 v4.1.3
 	github.com/containerd/containerd v1.6.18
+	github.com/coreos/go-systemd/v22 v22.5.0
 	github.com/golang-jwt/jwt/v4 v4.4.1
 	github.com/google/go-cmp v0.6.0
 	github.com/google/go-tpm v0.9.0
@@ -31,6 +32,7 @@ require (
 	github.com/containerd/ttrpc v1.1.0 // indirect
 	github.com/containerd/typeurl v1.0.2 // indirect
 	github.com/docker/go-events v0.0.0-20190806004212-e31b211e4f1c // indirect
+	github.com/godbus/dbus/v5 v5.0.6 // indirect
 	github.com/gogo/googleapis v1.4.1 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect

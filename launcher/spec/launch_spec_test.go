@@ -20,7 +20,8 @@ func TestLaunchSpecUnmarshalJSONHappyCases(t *testing.T) {
 				"tee-signed-image-repos":"docker.io/library/hello-world,gcr.io/cloudrun/hello",
 				"tee-restart-policy":"Always",
 				"tee-impersonate-service-accounts":"sv1@developer.gserviceaccount.com,sv2@developer.gserviceaccount.com",
-				"tee-container-log-redirect":"true"
+				"tee-container-log-redirect":"true",
+				"tee-monitoring-memory-enable":"true"
 			}`,
 		},
 		{
@@ -34,7 +35,8 @@ func TestLaunchSpecUnmarshalJSONHappyCases(t *testing.T) {
 				"tee-signed-image-repos":"docker.io/library/hello-world,gcr.io/cloudrun/hello",
 				"tee-restart-policy":"Always",
 				"tee-impersonate-service-accounts":"sv1@developer.gserviceaccount.com,sv2@developer.gserviceaccount.com",
-				"tee-container-log-redirect":"true"
+				"tee-container-log-redirect":"true",
+				"tee-monitoring-memory-enable":"TRUE"
 			}`,
 		},
 	}
@@ -47,6 +49,7 @@ func TestLaunchSpecUnmarshalJSONHappyCases(t *testing.T) {
 		Envs:                       []EnvVar{{"foo", "bar"}},
 		ImpersonateServiceAccounts: []string{"sv1@developer.gserviceaccount.com", "sv2@developer.gserviceaccount.com"},
 		LogRedirect:                Everywhere,
+		MemoryMonitoringEnabled:    true,
 	}
 
 	for _, testcase := range testCases {
@@ -119,7 +122,8 @@ func TestLaunchSpecUnmarshalJSONWithDefaultValue(t *testing.T) {
 		"tee-impersonate-service-accounts":"",
 		"tee-signed-image-repos":"",
 		"tee-container-log-redirect":"",
-		"tee-restart-policy":""
+		"tee-restart-policy":"",
+		"tee-monitoring-memory-enable":""
 		}`
 
 	spec := &LaunchSpec{}
@@ -128,9 +132,10 @@ func TestLaunchSpecUnmarshalJSONWithDefaultValue(t *testing.T) {
 	}
 
 	want := &LaunchSpec{
-		ImageRef:      "docker.io/library/hello-world:latest",
-		RestartPolicy: Never,
-		LogRedirect:   Nowhere,
+		ImageRef:                "docker.io/library/hello-world:latest",
+		RestartPolicy:           Never,
+		LogRedirect:             Nowhere,
+		MemoryMonitoringEnabled: false,
 	}
 
 	if !cmp.Equal(spec, want) {

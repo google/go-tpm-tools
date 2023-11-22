@@ -66,12 +66,22 @@ configure_cloud_logging() {
   cp fluent-bit-cs.conf "${CS_PATH}"
 }
 
+configure_node_problem_detector() {
+  # Copy CS-specific node-problem-detector configs to OEM partition.
+  cp nodeproblemdetector/system-stats-monitor-cs.json "${CS_PATH}"
+  cp nodeproblemdetector/boot-disk-size-consistency-monitor-cs.json "${CS_PATH}"
+  cp nodeproblemdetector/docker-monitor-cs.json "${CS_PATH}"
+  cp nodeproblemdetector/kernel-monitor-cs.json "${CS_PATH}"
+}
+
 configure_systemd_units_for_debug() {
   configure_cloud_logging
+  configure_node_problem_detector
 }
 configure_systemd_units_for_hardened() {
   configure_necessary_systemd_units
   configure_cloud_logging
+  configure_node_problem_detector
   # Make entrypoint (via cloud-init) the default unit.
   set_default_boot_target "cloud-final.service"
 
@@ -85,7 +95,6 @@ configure_systemd_units_for_hardened() {
   disable_unit "konlet-startup.service"
   disable_unit "crash-reporter.service"
   disable_unit "device_policy_manager.service"
-  disable_unit "node-problem-detector.service"
   disable_unit "docker-events-collector-fluent-bit.service"
   disable_unit "sshd.service"
   disable_unit "var-lib-toolbox.mount"

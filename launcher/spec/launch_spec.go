@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"cloud.google.com/go/compute/metadata"
@@ -64,6 +65,7 @@ const (
 	impersonateServiceAccounts = "tee-impersonate-service-accounts"
 	attestationServiceAddrKey  = "tee-attestation-service-endpoint"
 	logRedirectKey             = "tee-container-log-redirect"
+	memoryMonitoringEnable     = "tee-monitoring-memory-enable"
 )
 
 const (
@@ -92,6 +94,7 @@ type LaunchSpec struct {
 	ProjectID                  string
 	Region                     string
 	Hardened                   bool
+	MemoryMonitoringEnabled    bool
 	LogRedirect                LogRedirectLocation
 	Experiments                experiments.Experiments
 }
@@ -126,6 +129,12 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 	if val, ok := unmarshaledMap[signedImageRepos]; ok && val != "" {
 		imageRepos := strings.Split(val, ",")
 		s.SignedImageRepos = append(s.SignedImageRepos, imageRepos...)
+	}
+
+	if val, ok := unmarshaledMap[memoryMonitoringEnable]; ok && val != "" {
+		if boolValue, err := strconv.ParseBool(val); err == nil {
+			s.MemoryMonitoringEnabled = boolValue
+		}
 	}
 
 	// populate cmd override

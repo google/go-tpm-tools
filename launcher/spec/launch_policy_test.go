@@ -78,14 +78,16 @@ func TestVerify(t *testing.T) {
 		{
 			"allows everything",
 			LaunchPolicy{
-				AllowedEnvOverride: []string{"foo"},
-				AllowedCmdOverride: true,
-				AllowedLogRedirect: always,
+				AllowedEnvOverride:      []string{"foo"},
+				AllowedCmdOverride:      true,
+				AllowedLogRedirect:      always,
+				AllowedMemoryMonitoring: always,
 			},
 			LaunchSpec{
-				Envs:        []EnvVar{{Name: "foo", Value: "foo"}},
-				Cmd:         []string{"foo"},
-				LogRedirect: Everywhere,
+				Envs:                    []EnvVar{{Name: "foo", Value: "foo"}},
+				Cmd:                     []string{"foo"},
+				LogRedirect:             Everywhere,
+				MemoryMonitoringEnabled: true,
 			},
 			false,
 		},
@@ -114,6 +116,150 @@ func TestVerify(t *testing.T) {
 				Cmd: []string{"foo"},
 			},
 			true,
+		},
+		{
+			"memory monitor (never, enable, hardened): err",
+			LaunchPolicy{
+				AllowedMemoryMonitoring: never,
+			},
+			LaunchSpec{
+				MemoryMonitoringEnabled: true,
+				Hardened:                true,
+				LogRedirect:             Nowhere,
+			},
+			true,
+		},
+		{
+			"memory monitor (never, enable, debug): err",
+			LaunchPolicy{
+				AllowedMemoryMonitoring: never,
+			},
+			LaunchSpec{
+				MemoryMonitoringEnabled: true,
+				Hardened:                false,
+				LogRedirect:             Nowhere,
+			},
+			true,
+		},
+		{
+			"memory monitor (never, disable, hardened): noerr",
+			LaunchPolicy{
+				AllowedMemoryMonitoring: never,
+			},
+			LaunchSpec{
+				MemoryMonitoringEnabled: false,
+				Hardened:                true,
+				LogRedirect:             Nowhere,
+			},
+			false,
+		},
+		{
+			"memory monitor (never, disable, debug): noerr",
+			LaunchPolicy{
+				AllowedMemoryMonitoring: never,
+			},
+			LaunchSpec{
+				MemoryMonitoringEnabled: false,
+				Hardened:                false,
+				LogRedirect:             Nowhere,
+			},
+			false,
+		},
+		{
+			"memory monitor (debugonly, enable, hardened): err",
+			LaunchPolicy{
+				AllowedMemoryMonitoring: debugOnly,
+			},
+			LaunchSpec{
+				MemoryMonitoringEnabled: true,
+				Hardened:                true,
+				LogRedirect:             Nowhere,
+			},
+			true,
+		},
+		{
+			"memory monitor (debugonly, enable, debug): noerr",
+			LaunchPolicy{
+				AllowedMemoryMonitoring: debugOnly,
+			},
+			LaunchSpec{
+				MemoryMonitoringEnabled: true,
+				Hardened:                false,
+				LogRedirect:             Nowhere,
+			},
+			false,
+		},
+		{
+			"memory monitor (debugonly, disable, hardened): noerr",
+			LaunchPolicy{
+				AllowedMemoryMonitoring: debugOnly,
+			},
+			LaunchSpec{
+				MemoryMonitoringEnabled: false,
+				Hardened:                true,
+				LogRedirect:             Nowhere,
+			},
+			false,
+		},
+		{
+			"memory monitor (debugonly, disable, debug): noerr",
+			LaunchPolicy{
+				AllowedMemoryMonitoring: debugOnly,
+			},
+			LaunchSpec{
+				MemoryMonitoringEnabled: false,
+				Hardened:                false,
+				LogRedirect:             Nowhere,
+			},
+			false,
+		},
+		{
+			"memory monitor (always, enable, hardened): noerr",
+			LaunchPolicy{
+				AllowedMemoryMonitoring: always,
+			},
+			LaunchSpec{
+				MemoryMonitoringEnabled: true,
+				Hardened:                true,
+				LogRedirect:             Nowhere,
+			},
+			false,
+		},
+		{
+			"memory monitor (always, enable, debug): noerr",
+			LaunchPolicy{
+				AllowedMemoryMonitoring: always,
+			},
+			LaunchSpec{
+				MemoryMonitoringEnabled: true,
+				Hardened:                false,
+				LogRedirect:             Nowhere,
+			},
+			false,
+		},
+		{
+			"memory monitor (always, disable, hardened): noerr",
+			LaunchPolicy{
+				AllowedMemoryMonitoring: always,
+			},
+			LaunchSpec{
+				MemoryMonitoringEnabled: false,
+				Hardened:                true,
+				LogRedirect:             Nowhere,
+			},
+			false,
+		},
+		{
+			"memory monitor (always, disable, debug): noerr",
+			LaunchPolicy{
+				AllowedMemoryMonitoring: always,
+			},
+			LaunchSpec{
+				MemoryMonitoringEnabled: false,
+				Hardened:                false,
+				LogRedirect:             Nowhere,
+			},
+			false,
 		},
 		{
 			"log redirect (never, everywhere, hardened): err",
