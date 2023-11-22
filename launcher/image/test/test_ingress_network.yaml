@@ -4,7 +4,7 @@ substitutions:
   '_IMAGE_NAME': ''
   '_IMAGE_PROJECT': ''
   '_CLEANUP': 'true'
-  '_ZONE': 'us-central1-a'
+  '_ZONE': 'asia-east1-a'
   '_WORKLOAD_IMAGE': 'docker.io/library/nginx:latest'
 
 steps:

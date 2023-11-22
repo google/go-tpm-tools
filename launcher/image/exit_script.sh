@@ -11,4 +11,3 @@ then
 	# poweroff after 2 min
 	shutdown --poweroff +2
 fi
-

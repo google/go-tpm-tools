@@ -166,6 +166,14 @@ func convertRequestToREST(request verifier.VerifyAttestationRequest) *confidenti
 		signatures[i] = signature
 	}
 
+	var tokenType confidentialcomputingpb.TokenType
+	switch request.TokenOptions.TokenType {
+	case "OIDC":
+		tokenType = confidentialcomputingpb.TokenType_TOKEN_TYPE_OIDC
+	default:
+		tokenType = confidentialcomputingpb.TokenType_TOKEN_TYPE_UNSPECIFIED
+	}
+
 	return &confidentialcomputingpb.VerifyAttestationRequest{
 		GcpCredentials: &confidentialcomputingpb.GcpCredentials{
 			ServiceAccountIdTokens: idTokens,
@@ -181,8 +189,9 @@ func convertRequestToREST(request verifier.VerifyAttestationRequest) *confidenti
 			SignedEntities: []*confidentialcomputingpb.SignedEntity{{ContainerImageSignatures: signatures}},
 		},
 		TokenOptions: &confidentialcomputingpb.TokenOptions{
-			Audience: request.CustomAudience,
-			Nonce:    request.CustomNonce,
+			Audience:  request.TokenOptions.CustomAudience,
+			Nonce:     request.TokenOptions.CustomNonce,
+			TokenType: tokenType,
 		},
 	}
 }
