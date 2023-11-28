@@ -40,6 +40,16 @@ import (
 )
 
 var measuredHashes = []crypto.Hash{crypto.SHA1, crypto.SHA256}
+var tdxReportData = []byte{
+	108, 98, 222, 193, 184, 25, 23, 73,
+	163, 29, 171, 73, 11, 229, 50, 163,
+	89, 68, 222, 164, 124, 174, 241, 249,
+	128, 134, 57, 147, 217, 137, 149, 69,
+	235, 116, 6, 163, 141, 30, 237, 49,
+	59, 152, 122, 70, 125, 172, 234, 214,
+	240, 200, 122, 109, 118, 108, 102, 246,
+	242, 159, 138, 203, 40, 31, 17, 19,
+}
 
 func createTpm2EventLog(gceConfidentialTechnologyEnum byte) []byte {
 	pcr0 := uint32(0)
@@ -349,7 +359,9 @@ func TestVerifyBasicAttestationWithSevSnp(t *testing.T) {
 }
 
 func TestVerifyBasicAttestationWithTdx(t *testing.T) {
-	rwc := test.GetTPM(t)
+
+	tdxEventLog := createTpm2EventLog(3)
+	rwc := test.GetSimulatorWithLog(t, tdxEventLog)
 	defer client.CheckedClose(t, rwc)
 
 	ak, err := client.AttestationKeyRSA(rwc)
@@ -358,7 +370,7 @@ func TestVerifyBasicAttestationWithTdx(t *testing.T) {
 	}
 	defer ak.Close()
 
-	nonce := []byte("super secret nonce")
+	nonce := tdxReportData
 	var nonce64 [64]byte
 	copy(nonce64[:], nonce)
 	tdxTestDevice := tgtestclient.GetTdxGuest([]tgtest.TestCase{
@@ -374,19 +386,28 @@ func TestVerifyBasicAttestationWithTdx(t *testing.T) {
 		TEEDevice: &client.TdxDevice{Device: tdxTestDevice},
 		TEENonce:  nonce64[:],
 	})
-
 	if err != nil {
 		t.Fatalf("failed to attest: %v", err)
 	}
 
 	teeopts := &VerifyTdxOpts{
+		Validation:   TdxDefaultValidateOpts(nonce),
 		Verification: tv.DefaultOptions(),
 	}
 	if _, err := VerifyAttestation(attestation, VerifyOpts{
 		Nonce:      nonce,
 		TrustedAKs: []crypto.PublicKey{ak.PublicKey()},
+		TEEOpts:    teeopts,
 	}); err != nil {
 		t.Errorf("failed to verify: %v", err)
+	}
+
+	if _, err := VerifyAttestation(attestation, VerifyOpts{
+		Nonce:      append(nonce, 0),
+		TrustedAKs: []crypto.PublicKey{ak.PublicKey()},
+		TEEOpts:    teeopts,
+	}); err == nil {
+		t.Error("using the wrong nonce should make verification fail")
 	}
 
 	if _, err := VerifyAttestation(attestation, VerifyOpts{
@@ -1140,10 +1161,9 @@ func TestVerifyAttestationWithTdx(t *testing.T) {
 	}
 	defer ak.Close()
 
-	nonce := []byte("super secret nonce")
-	altNonce := []byte("alternate secret nonce")
+	nonce := tdxReportData
 	var nonce64 [64]byte
-	copy(nonce64[:], altNonce)
+	copy(nonce64[:], nonce)
 	tdxTestDevice := tgtestclient.GetTdxGuest([]tgtest.TestCase{
 		{
 			Input: nonce64,
@@ -1179,8 +1199,6 @@ func TestVerifyAttestationWithTdx(t *testing.T) {
 		t.Fatalf("failed to attest: %v", err)
 	}
 
-	alterQuote2 := make([]byte, len(tgtestdata.RawQuote))
-	copy(alterQuote2[:], tgtestdata.RawQuote)
 	alterQuote1[0x1024] = 0x32
 	tdxTestDevice2 := tgtestclient.GetTdxGuest([]tgtest.TestCase{
 		{
@@ -1210,6 +1228,7 @@ func TestVerifyAttestationWithTdx(t *testing.T) {
 				Nonce:      nonce,
 				TrustedAKs: []crypto.PublicKey{ak.PublicKey()},
 				TEEOpts: &VerifyTdxOpts{
+					Validation:   TdxDefaultValidateOpts(nonce),
 					Verification: tv.DefaultOptions(),
 				},
 			},
@@ -1221,6 +1240,7 @@ func TestVerifyAttestationWithTdx(t *testing.T) {
 				Nonce:      nonce,
 				TrustedAKs: []crypto.PublicKey{ak.PublicKey()},
 				TEEOpts: &VerifyTdxOpts{
+					Validation:   TdxDefaultValidateOpts(nonce),
 					Verification: tv.DefaultOptions(),
 				},
 			},
@@ -1233,6 +1253,7 @@ func TestVerifyAttestationWithTdx(t *testing.T) {
 				Nonce:      nonce,
 				TrustedAKs: []crypto.PublicKey{ak.PublicKey()},
 				TEEOpts: &VerifyTdxOpts{
+					Validation: TdxDefaultValidateOpts(nonce),
 					Verification: &tv.Options{
 						Getter:       trust.DefaultHTTPSGetter(),
 						Now:          time.Now(),
@@ -1242,6 +1263,19 @@ func TestVerifyAttestationWithTdx(t *testing.T) {
 			},
 			attest:  attestation2,
 			wantErr: "failed to verify memory encryption technology: could not interpret Root CA certificate DER bytes: x509: invalid RDNSequence: invalid attribute value",
+		},
+		{
+			name: "Wrong TEE Nonce",
+			opts: VerifyOpts{
+				Nonce:      nonce,
+				TrustedAKs: []crypto.PublicKey{ak.PublicKey()},
+				TEEOpts: &VerifyTdxOpts{
+					Validation:   TdxDefaultValidateOpts([]byte("badNonce")),
+					Verification: tv.DefaultOptions(),
+				},
+			},
+			attest:  attestation,
+			wantErr: "quote field REPORT_DATA",
 		},
 	}
 	for _, tc := range tcs {

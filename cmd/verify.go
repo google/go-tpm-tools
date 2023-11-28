@@ -52,8 +52,16 @@ var debugCmd = &cobra.Command{
 		var validateOpts interface{}
 		switch attestation.GetTeeAttestation().(type) {
 		case *pb.Attestation_TdxAttestation:
-			validateOpts = &server.VerifyTdxOpts{
-				Verification: tv.DefaultOptions(),
+			if len(teeNonce) != 0 {
+				validateOpts = &server.VerifyTdxOpts{
+					Validation:   server.TdxDefaultValidateOpts(teeNonce),
+					Verification: tv.DefaultOptions(),
+				}
+			} else {
+				validateOpts = &server.VerifyTdxOpts{
+					Validation:   server.TdxDefaultValidateOpts(nonce),
+					Verification: tv.DefaultOptions(),
+				}
 			}
 		case *pb.Attestation_SevSnpAttestation:
 			if len(teeNonce) != 0 {
