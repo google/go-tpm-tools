@@ -28,6 +28,9 @@ This allows a key (i.e. a disk encryption key) to be bound to specific machine
 state (like Secure Boot).`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		var err error
+		var sealed *pb.SealedBytes
+
 		rwc, err := openTpm()
 		if err != nil {
 			return err
@@ -51,7 +54,7 @@ state (like Secure Boot).`,
 		opts := client.SealOpts{Current: tpm2.PCRSelection{
 			Hash: sealHashAlgo,
 			PCRs: pcrs}}
-		sealed, err := srk.Seal(secret, opts)
+		sealed, err = srk.Seal(secret, opts, nvIndex)
 		if err != nil {
 			return fmt.Errorf("sealing data: %w", err)
 		}
@@ -131,13 +134,55 @@ machine state when sealing took place.
 	},
 }
 
+var unsealNvCmd = &cobra.Command{
+	Use:   "unsealnv",
+	Short: "Unseal from a TPM NVRAM index",
+	Long: `Decrypt data persisted in the TPM NVRAM
+
+The opposite of "gotpm seal --index ...". This takes an index and decrypts
+the data persisted at that index.
+`,
+	Args: cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		rwc, err := openTpm()
+		if err != nil {
+			return err
+		}
+		defer rwc.Close()
+
+		srk, err := getSRK(rwc)
+		if err != nil {
+			return err
+		}
+		defer srk.Close()
+
+		fmt.Fprintln(debugOutput(), "Unsealing data")
+
+		secret, err := srk.UnsealNv(nvIndex)
+		if err != nil {
+			return fmt.Errorf("unsealing data from nvram: %w", err)
+		}
+
+		fmt.Fprintln(debugOutput(), "Writing secret data")
+		if _, err := dataOutput().Write(secret); err != nil {
+			return fmt.Errorf("writing secret data: %w", err)
+		}
+		fmt.Fprintln(debugOutput(), "Unsealed data using TPM")
+		return nil
+	},
+}
+
 func init() {
 	RootCmd.AddCommand(sealCmd)
 	RootCmd.AddCommand(unsealCmd)
+	RootCmd.AddCommand(unsealNvCmd)
 	addInputFlag(sealCmd)
 	addInputFlag(unsealCmd)
 	addOutputFlag(sealCmd)
 	addOutputFlag(unsealCmd)
+	addOutputFlag(unsealNvCmd)
+	addIndexFlag(sealCmd)
+	addIndexFlag(unsealNvCmd)
 	// PCRs and hash algorithm only used for sealing
 	addPCRsFlag(sealCmd)
 	addHashAlgoFlag(sealCmd, &sealHashAlgo)

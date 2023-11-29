@@ -274,7 +274,7 @@ func (k *Key) Close() {
 // There must not be overlap in PCRs between SealOpts' Current and Target.
 // During the sealing process, certification data will be created allowing
 // Unseal() to validate the state of the TPM during the sealing process.
-func (k *Key) Seal(sensitive []byte, opts SealOpts) (*pb.SealedBytes, error) {
+func (k *Key) Seal(sensitive []byte, opts SealOpts, index uint32) (*pb.SealedBytes, error) {
 	var pcrs *pb.PCRs
 	var err error
 	var auth []byte
@@ -290,6 +290,22 @@ func (k *Key) Seal(sensitive []byte, opts SealOpts) (*pb.SealedBytes, error) {
 	sb, err := sealHelper(k.rw, k.Handle(), auth, sensitive, certifySel)
 	if err != nil {
 		return nil, err
+	}
+
+	if index > 0 {
+		persistHandle := tpmutil.Handle(index)
+		quoteHandle, _, err := tpm2.Load(k.rw, k.Handle(), "", sb.GetPub(), sb.GetPriv())
+		if err != nil {
+			return nil, fmt.Errorf("Load failed: %v", err)
+		}
+		defer tpm2.FlushContext(k.rw, quoteHandle)
+
+		// Evict persistent key, if there is one already (ignore if failng)
+		_ = tpm2.EvictControl(k.rw, "", tpm2.HandleOwner, persistHandle, persistHandle)
+		// Make key persistent.
+		if err := tpm2.EvictControl(k.rw, "", tpm2.HandleOwner, quoteHandle, persistHandle); err != nil {
+			return nil, fmt.Errorf("persisting with EvictControl failed: %v", err)
+		}
 	}
 
 	for pcrNum := range pcrs.GetPcrs() {
@@ -432,6 +448,16 @@ func (k *Key) Unseal(in *pb.SealedBytes, opts UnsealOpts) ([]byte, error) {
 	return tpm2.UnsealWithSession(k.rw, auth.Session, sealed, "")
 }
 
+// UnsealNv attempts to unseal a value stored in nvram.
+func (k *Key) UnsealNv(index uint32) ([]byte, error) {
+	persistHandle := tpmutil.Handle(index)
+	buff, err := tpm2.Unseal(k.rw, persistHandle, "")
+	if err != nil {
+		return nil, fmt.Errorf("failed to unseal: %w", err)
+	}
+	return buff, nil
+}
+
 // Quote will tell TPM to compute a hash of a set of given PCR selection, together with
 // some extra data (typically a nonce), sign it with the given signing key, and return
 // the signature and the attestation data. This function will return an error if
@@ -471,7 +497,7 @@ func (k *Key) Reseal(in *pb.SealedBytes, uOpts UnsealOpts, sOpts SealOpts) (*pb.
 	if err != nil {
 		return nil, fmt.Errorf("failed to unseal: %w", err)
 	}
-	return k.Seal(sensitive, sOpts)
+	return k.Seal(sensitive, sOpts, 0)
 }
 
 func (k *Key) hasAttribute(attr tpm2.KeyProp) bool {
