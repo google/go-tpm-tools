@@ -360,6 +360,47 @@ func sealHelper(rw io.ReadWriter, parentHandle tpmutil.Handle, auth []byte, sens
 	return sb, nil
 }
 
+func (k *Key) PersistNewKey(index uint32) error {
+
+	var defaultKeyParams = tpm2.Public{
+		Type:       tpm2.AlgRSA,
+		NameAlg:    tpm2.AlgSHA1,
+		Attributes: tpm2.FlagStorageDefault,
+		RSAParameters: &tpm2.RSAParams{
+			Symmetric: &tpm2.SymScheme{
+				Alg:     tpm2.AlgAES,
+				KeyBits: 128,
+				Mode:    tpm2.AlgCFB,
+			},
+			KeyBits:     2048,
+			ExponentRaw: 1<<16 + 1,
+		},
+	}
+
+	quotePrivate, quotePublic, _, _, _, err := tpm2.CreateKey(k.rw, k.Handle(), tpm2.PCRSelection{}, "", "", defaultKeyParams)
+	if err != nil {
+		return fmt.Errorf("CreateKey failed: %v", err)
+	}
+
+	quoteHandle, _, err := tpm2.Load(k.rw, k.Handle(), "", quotePublic, quotePrivate)
+	if err != nil {
+		return fmt.Errorf("Load failed: %v", err)
+	}
+	defer tpm2.FlushContext(k.rw, quoteHandle)
+
+	persistentHandle := tpmutil.Handle(index)
+	// Evict persistent key, if there is one already (e.g. last test run failed).
+	if err := tpm2.EvictControl(k.rw, "", k.Handle(), persistentHandle, persistentHandle); err != nil {
+		return fmt.Errorf("(expected) EvictControl failed: %v", err)
+	}
+	// Make key persistent.
+	if err := tpm2.EvictControl(k.rw, "", k.Handle(), quoteHandle, persistentHandle); err != nil {
+		return fmt.Errorf("EvictControl failed: %v", err)
+	}
+	return nil
+
+}
+
 // Unseal attempts to reverse the process of Seal(), using the PCRs, public, and
 // private data in proto.SealedBytes. Optionally, the UnsealOpts parameter can
 // be used to verify the state of the TPM when the data was sealed. The
