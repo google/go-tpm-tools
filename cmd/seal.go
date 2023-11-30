@@ -134,6 +134,24 @@ machine state when sealing took place.
 	},
 }
 
+var sealNvCmd = &cobra.Command{
+	Use:   "sealnv",
+	Short: "Seal some data to the TPM and store it in TPM NVRAM",
+	Long: `Encrypt the input data using the TPM and store it in TPM NVRAM
+
+TPMs support a "sealing" operation that allows some secret data to be encrypted
+by a particular TPM. This data can only be decrypted by the same TPM that did
+the encryption. The --index flag specifies a permanent handle address in the TPM
+from which the data can be retrieved.`,
+	Args: cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		fmt.Fprintf(debugOutput(), "Sealing data in NVRAM at: 0x%x\n", nvIndex)
+		sealArgs := []string{"seal", "--output", "/dev/null", "--index", fmt.Sprintf("0x%x", nvIndex)}
+		RootCmd.SetArgs(sealArgs)
+		return RootCmd.Execute()
+	},
+}
+
 var unsealNvCmd = &cobra.Command{
 	Use:   "unsealnv",
 	Short: "Unseal from a TPM NVRAM index",
@@ -175,17 +193,21 @@ the data persisted at that index.
 func init() {
 	RootCmd.AddCommand(sealCmd)
 	RootCmd.AddCommand(unsealCmd)
+	RootCmd.AddCommand(sealNvCmd)
 	RootCmd.AddCommand(unsealNvCmd)
 	addInputFlag(sealCmd)
+	addInputFlag(sealNvCmd)
 	addInputFlag(unsealCmd)
 	addOutputFlag(sealCmd)
 	addOutputFlag(unsealCmd)
 	addOutputFlag(unsealNvCmd)
 	addIndexFlag(sealCmd)
+	addIndexFlag(sealNvCmd)
 	addIndexFlag(unsealNvCmd)
 	// PCRs and hash algorithm only used for sealing
 	addPCRsFlag(sealCmd)
 	addHashAlgoFlag(sealCmd, &sealHashAlgo)
 	addPCRsFlag(unsealCmd)
 	addPublicKeyAlgoFlag(sealCmd)
+	addPublicKeyAlgoFlag(unsealCmd)
 }

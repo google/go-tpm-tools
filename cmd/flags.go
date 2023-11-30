@@ -16,6 +16,7 @@ import (
 var (
 	output   string
 	input    string
+	password string
 	nvIndex  uint32
 	nonce    []byte
 	teeNonce []byte
