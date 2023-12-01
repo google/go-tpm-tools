@@ -360,45 +360,52 @@ func sealHelper(rw io.ReadWriter, parentHandle tpmutil.Handle, auth []byte, sens
 	return sb, nil
 }
 
-func (k *Key) PersistNewKey(index uint32) error {
+func (k *Key) PersistNewRSAKey(index uint32, force bool) error {
 
-	var defaultKeyParams = tpm2.Public{
+	inKeyParams := tpm2.Public{
 		Type:       tpm2.AlgRSA,
-		NameAlg:    tpm2.AlgSHA1,
-		Attributes: tpm2.FlagStorageDefault,
+		NameAlg:    tpm2.AlgSHA256,
+		Attributes: tpm2.FlagFixedTPM | tpm2.FlagFixedParent | tpm2.FlagDecrypt | tpm2.FlagSensitiveDataOrigin | tpm2.FlagUserWithAuth,
 		RSAParameters: &tpm2.RSAParams{
 			Symmetric: &tpm2.SymScheme{
-				Alg:     tpm2.AlgAES,
-				KeyBits: 128,
-				Mode:    tpm2.AlgCFB,
+				Alg:  tpm2.AlgNull,
+				Mode: tpm2.AlgNull,
 			},
-			KeyBits:     2048,
-			ExponentRaw: 1<<16 + 1,
+			KeyBits: 2048,
 		},
 	}
 
-	quotePrivate, quotePublic, _, _, _, err := tpm2.CreateKey(k.rw, k.Handle(), tpm2.PCRSelection{}, "", "", defaultKeyParams)
+	priv, pub, _, _, _, err := tpm2.CreateKey(k.rw, k.Handle(), tpm2.PCRSelection{}, "", "", inKeyParams)
 	if err != nil {
 		return fmt.Errorf("CreateKey failed: %v", err)
 	}
 
-	quoteHandle, _, err := tpm2.Load(k.rw, k.Handle(), "", quotePublic, quotePrivate)
+	keyHandle, _, err := tpm2.Load(k.rw, k.Handle(), "", pub, priv)
 	if err != nil {
 		return fmt.Errorf("Load failed: %v", err)
 	}
-	defer tpm2.FlushContext(k.rw, quoteHandle)
+	defer tpm2.FlushContext(k.rw, keyHandle)
 
 	persistentHandle := tpmutil.Handle(index)
-	// Evict persistent key, if there is one already (e.g. last test run failed).
-	if err := tpm2.EvictControl(k.rw, "", k.Handle(), persistentHandle, persistentHandle); err != nil {
-		return fmt.Errorf("(expected) EvictControl failed: %v", err)
+	// remove old object that may be stored at index
+	if force {
+		k.PersistDel(index)
 	}
 	// Make key persistent.
-	if err := tpm2.EvictControl(k.rw, "", k.Handle(), quoteHandle, persistentHandle); err != nil {
+	if err := tpm2.EvictControl(k.rw, "", tpm2.HandleOwner, keyHandle, persistentHandle); err != nil {
 		return fmt.Errorf("EvictControl failed: %v", err)
 	}
 	return nil
+}
 
+// PersistDel removes an object in the NVRAM of the TPM. The location is specified by
+// the persistent handle "index".
+func (k *Key) PersistDel(index uint32) error {
+	persistentHandle := tpmutil.Handle(index)
+	if err := tpm2.EvictControl(k.rw, "", tpm2.HandleOwner, persistentHandle, persistentHandle); err != nil {
+		return fmt.Errorf("EvictControl has not found an object at 0x%x", index)
+	}
+	return nil
 }
 
 // Unseal attempts to reverse the process of Seal(), using the PCRs, public, and

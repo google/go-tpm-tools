@@ -10,6 +10,11 @@ import (
 	"github.com/google/go-tpm/tpmutil"
 )
 
+var (
+	persistForce  bool
+	persistDelete bool
+)
+
 var decryptCmd = &cobra.Command{
 	Use:   "decrypt",
 	Short: "Decrypt data with a key persisted in the TPM NVRAM",
@@ -77,6 +82,10 @@ invisible and inaccessible private key.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		var err error
 
+		if nvIndex == 0 {
+			return fmt.Errorf("a persistent handle must be specified with --index!")
+		}
+
 		rwc, err := openTpm()
 		if err != nil {
 			return err
@@ -90,7 +99,11 @@ invisible and inaccessible private key.`,
 		}
 		defer srk.Close()
 
-		err = srk.PersistNewKey(nvIndex)
+		if persistDelete {
+			err = srk.PersistDel(nvIndex)
+		} else {
+			err = srk.PersistNewRSAKey(nvIndex, persistForce)
+		}
 		return err
 	},
 }
@@ -103,4 +116,6 @@ func init() {
 	addIndexFlag(decryptCmd)
 	addIndexFlag(persistCmd)
 	addPublicKeyAlgoFlag(decryptCmd)
+	persistCmd.PersistentFlags().BoolVarP(&persistForce, "force", "f", false, "overwrite an old object at index in NVRAM")
+	persistCmd.PersistentFlags().BoolVarP(&persistDelete, "delete", "D", false, "remove an old object at index in NVRAM")
 }

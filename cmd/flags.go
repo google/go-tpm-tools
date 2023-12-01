@@ -130,12 +130,6 @@ func addIndexFlag(cmd *cobra.Command) {
 		"NVDATA index, cannot be 0")
 }
 
-// Lets this command specify an password string.
-func addPasswordFlag(cmd *cobra.Command) {
-	cmd.PersistentFlags().StringVar(&password, "password", "",
-		"password (defaults to '')")
-}
-
 // Lets this command specify some number of PCR arguments, check if in range.
 func addPCRsFlag(cmd *cobra.Command) {
 	cmd.PersistentFlags().Var(&pcrsFlag{&pcrs}, "pcrs", "comma separated list of PCR numbers")
