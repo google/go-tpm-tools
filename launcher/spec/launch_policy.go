@@ -23,6 +23,20 @@ const (
 	never
 )
 
+// String returns LaunchPolicy details.
+func (p policy) String() string {
+	switch p {
+	case debugOnly:
+		return "debugonly"
+	case always:
+		return "always"
+	case never:
+		return "never"
+	default:
+		return "unspecified launch policy"
+	}
+}
+
 func toPolicy(policy, s string) (policy, error) {
 	s = strings.ToLower(s)
 	s = strings.TrimSpace(s)
@@ -79,7 +93,7 @@ func GetLaunchPolicy(imageLabels map[string]string) (LaunchPolicy, error) {
 	if v, ok := imageLabels[memoryMonitoring]; ok {
 		launchPolicy.AllowedMemoryMonitoring, err = toPolicy(memoryMonitoring, v)
 		if err != nil {
-			return LaunchPolicy{}, fmt.Errorf("invalid image LABEL '%s'; contact the image author", logRedirect)
+			return LaunchPolicy{}, fmt.Errorf("invalid image LABEL '%s'; contact the image author", memoryMonitoring)
 		}
 	}
 
