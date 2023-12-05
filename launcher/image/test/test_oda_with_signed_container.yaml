@@ -2,9 +2,9 @@ substitutions:
   '_IMAGE_NAME': ''
   '_IMAGE_PROJECT': ''
   '_CLEANUP': 'true'
-  '_VM_NAME_PREFIX': 'discover-signatures'
-  '_ZONE': 'us-west1-a'
-  '_WORKLOAD_IMAGE': 'us-west1-docker.pkg.dev/confidential-space-images-dev/cs-integ-test-images/basic-test:latest'
+  '_VM_NAME_PREFIX': 'oda-signedcontainer'
+  '_ZONE': 'us-east1-b'
+  '_WORKLOAD_IMAGE': 'us-west1-docker.pkg.dev/confidential-space-images-dev/cs-integ-test-images/ipc/happypath:latest'
   '_SIGNATURE_REPO': 'us-docker.pkg.dev/confidential-space-images-dev/cs-cosign-tests/hardened'
 
 steps:
@@ -34,9 +34,15 @@ steps:
           '-z', '${_ZONE}',
         ]
 - name: 'gcr.io/cloud-builders/gcloud'
+  id: TestCustomToken
+  entrypoint: 'bash'
+  args: ['scripts/test_custom_token.sh', "true", '${_VM_NAME_PREFIX}-${BUILD_ID}', '${_ZONE}']
+- name: 'gcr.io/cloud-builders/gcloud'
   id: BasicDiscoverSignaturesTest
   entrypoint: 'bash'
-  args: ['scripts/test_launcher_workload_discover_signatures.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}', '${_ZONE}', '1']
+  # Check how many times `Found container image signatures` is being logged. 
+  # Since signature discovery will occur on refresh the default token, and on teeserver receiving ODA requests, so the expected number should be 2.
+  args: ['scripts/test_launcher_workload_discover_signatures.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}', '${_ZONE}', '2']
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CleanUp
   entrypoint: 'bash'

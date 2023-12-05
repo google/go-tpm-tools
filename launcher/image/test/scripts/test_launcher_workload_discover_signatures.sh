@@ -7,11 +7,12 @@ source util/read_serial.sh
 SERIAL_OUTPUT=$(read_serial $1 $2) 
 print_serial=false
 
-if echo $SERIAL_OUTPUT | grep -q 'Found container image signatures'
-then
-    echo "- container image signatures found"
+# Check how many times "Found container image signatures" is being logged.
+counts=$(echo $SERIAL_OUTPUT | grep -o 'Found container image signatures' | wc -l)
+if [ $counts -eq $3 ]; then
+    echo "- container image signatures found with expected counts: $3"
 else
-    echo "FAILED: container image signatures not found"
+    echo "FAILED: container image signatures want $3 counts, but got $counts"
     echo 'TEST FAILED.' > /workspace/status.txt
     print_serial=true
 fi

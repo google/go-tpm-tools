@@ -502,7 +502,7 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	// create and start the TEE server behind the experiment
 	if r.launchSpec.Experiments.EnableOnDemandAttestation {
 		r.logger.Println("EnableOnDemandAttestation is enabled: initializing TEE server.")
-		teeServer, err := teeserver.New(path.Join(launcherfile.HostTmpPath, teeServerSocket), r.attestAgent, r.logger)
+		teeServer, err := teeserver.New(ctx, path.Join(launcherfile.HostTmpPath, teeServerSocket), r.attestAgent, r.logger)
 		if err != nil {
 			return fmt.Errorf("failed to create the TEE server: %v", err)
 		}
