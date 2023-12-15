@@ -7,6 +7,7 @@ import (
 	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/x509/pkix"
+	_ "embed"
 	"encoding/asn1"
 	"encoding/binary"
 	"fmt"
@@ -25,7 +26,6 @@ import (
 	tgtestclient "github.com/google/go-tdx-guest/testing/client"
 	tgtestdata "github.com/google/go-tdx-guest/testing/testdata"
 	tv "github.com/google/go-tdx-guest/verify"
-	"github.com/google/go-tdx-guest/verify/trust"
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal"
@@ -40,16 +40,9 @@ import (
 )
 
 var measuredHashes = []crypto.Hash{crypto.SHA1, crypto.SHA256}
-var tdxReportData = []byte{
-	108, 98, 222, 193, 184, 25, 23, 73,
-	163, 29, 171, 73, 11, 229, 50, 163,
-	89, 68, 222, 164, 124, 174, 241, 249,
-	128, 134, 57, 147, 217, 137, 149, 69,
-	235, 116, 6, 163, 141, 30, 237, 49,
-	59, 152, 122, 70, 125, 172, 234, 214,
-	240, 200, 122, 109, 118, 108, 102, 246,
-	242, 159, 138, 203, 40, 31, 17, 19,
-}
+
+//go:embed tdxTestData.bin
+var tdxReportData []byte
 
 func createTpm2EventLog(gceConfidentialTechnologyEnum byte) []byte {
 	pcr0 := uint32(0)
@@ -370,32 +363,33 @@ func TestVerifyBasicAttestationWithTdx(t *testing.T) {
 	}
 	defer ak.Close()
 
-	nonce := tdxReportData
-	var nonce64 [64]byte
-	copy(nonce64[:], nonce)
+	tpmNonce := []byte("super secret nonce")
+	teeNonce := tdxReportData
+	var teeNonce64 [64]byte
+	copy(teeNonce64[:], teeNonce)
 	tdxTestDevice := tgtestclient.GetTdxGuest([]tgtest.TestCase{
 		{
-			Input: nonce64,
+			Input: teeNonce64,
 			Quote: tgtestdata.RawQuote,
 		},
 	}, t)
 
 	defer tdxTestDevice.Close()
 	attestation, err := ak.Attest(client.AttestOpts{
-		Nonce:     nonce,
+		Nonce:     tpmNonce,
 		TEEDevice: &client.TdxDevice{Device: tdxTestDevice},
-		TEENonce:  nonce64[:],
+		TEENonce:  teeNonce64[:],
 	})
 	if err != nil {
 		t.Fatalf("failed to attest: %v", err)
 	}
 
 	teeopts := &VerifyTdxOpts{
-		Validation:   TdxDefaultValidateOpts(nonce),
+		Validation:   TdxDefaultValidateOpts(teeNonce),
 		Verification: tv.DefaultOptions(),
 	}
 	if _, err := VerifyAttestation(attestation, VerifyOpts{
-		Nonce:      nonce,
+		Nonce:      tpmNonce,
 		TrustedAKs: []crypto.PublicKey{ak.PublicKey()},
 		TEEOpts:    teeopts,
 	}); err != nil {
@@ -403,15 +397,15 @@ func TestVerifyBasicAttestationWithTdx(t *testing.T) {
 	}
 
 	if _, err := VerifyAttestation(attestation, VerifyOpts{
-		Nonce:      append(nonce, 0),
+		Nonce:      append(tpmNonce, 0),
 		TrustedAKs: []crypto.PublicKey{ak.PublicKey()},
 		TEEOpts:    teeopts,
 	}); err == nil {
-		t.Error("using the wrong nonce should make verification fail")
+		t.Error("using the wrong TPM nonce should make verification fail")
 	}
 
 	if _, err := VerifyAttestation(attestation, VerifyOpts{
-		Nonce:   nonce,
+		Nonce:   tpmNonce,
 		TEEOpts: teeopts,
 	}); err == nil {
 		t.Error("using no trusted AKs should make verification fail")
@@ -422,7 +416,7 @@ func TestVerifyBasicAttestationWithTdx(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := VerifyAttestation(attestation, VerifyOpts{
-		Nonce:      nonce,
+		Nonce:      tpmNonce,
 		TrustedAKs: []crypto.PublicKey{priv.Public()},
 		TEEOpts:    teeopts,
 	}); err == nil {
@@ -1161,20 +1155,21 @@ func TestVerifyAttestationWithTdx(t *testing.T) {
 	}
 	defer ak.Close()
 
-	nonce := tdxReportData
-	var nonce64 [64]byte
-	copy(nonce64[:], nonce)
+	teeNonce := tdxReportData
+	tpmNonce := []byte("super secret nonce")
+	var teeNonce64 [64]byte
+	copy(teeNonce64[:], teeNonce)
 	tdxTestDevice := tgtestclient.GetTdxGuest([]tgtest.TestCase{
 		{
-			Input: nonce64,
+			Input: teeNonce64,
 			Quote: tgtestdata.RawQuote,
 		},
 	}, t)
 	defer tdxTestDevice.Close()
 	attestation, err := ak.Attest(client.AttestOpts{
-		Nonce:     nonce,
+		Nonce:     tpmNonce,
 		TEEDevice: &client.TdxDevice{Device: tdxTestDevice},
-		TEENonce:  nonce64[:],
+		TEENonce:  teeNonce64[:],
 	})
 	if err != nil {
 		t.Fatalf("failed to attest: %v", err)
@@ -1185,15 +1180,15 @@ func TestVerifyAttestationWithTdx(t *testing.T) {
 	alterQuote1[0x1E] = 0x32
 	tdxTestDevice1 := tgtestclient.GetTdxGuest([]tgtest.TestCase{
 		{
-			Input: nonce64,
+			Input: teeNonce64,
 			Quote: alterQuote1,
 		},
 	}, t)
 	defer tdxTestDevice1.Close()
 	attestation1, err := ak.Attest(client.AttestOpts{
-		Nonce:     nonce,
+		Nonce:     tpmNonce,
 		TEEDevice: &client.TdxDevice{Device: tdxTestDevice1},
-		TEENonce:  nonce64[:],
+		TEENonce:  teeNonce64[:],
 	})
 	if err != nil {
 		t.Fatalf("failed to attest: %v", err)
@@ -1202,87 +1197,78 @@ func TestVerifyAttestationWithTdx(t *testing.T) {
 	alterQuote1[0x1024] = 0x32
 	tdxTestDevice2 := tgtestclient.GetTdxGuest([]tgtest.TestCase{
 		{
-			Input: nonce64,
+			Input: teeNonce64,
 			Quote: alterQuote1,
 		},
 	}, t)
 	defer tdxTestDevice1.Close()
 	attestation2, err := ak.Attest(client.AttestOpts{
-		Nonce:     nonce,
+		Nonce:     tpmNonce,
 		TEEDevice: &client.TdxDevice{Device: tdxTestDevice2},
-		TEENonce:  nonce64[:],
+		TEENonce:  teeNonce64[:],
 	})
 	if err != nil {
 		t.Fatalf("failed to attest: %v", err)
 	}
 	type testCase struct {
 		name    string
-		opts    VerifyOpts
+		teeOpts VerifyTdxOpts
 		wantErr string
 		attest  *attestpb.Attestation
 	}
 	tcs := []testCase{
 		{
 			name: "Happy path",
-			opts: VerifyOpts{
-				Nonce:      nonce,
-				TrustedAKs: []crypto.PublicKey{ak.PublicKey()},
-				TEEOpts: &VerifyTdxOpts{
-					Validation:   TdxDefaultValidateOpts(nonce),
-					Verification: tv.DefaultOptions(),
-				},
+			teeOpts: VerifyTdxOpts{
+				Validation:   TdxDefaultValidateOpts(teeNonce),
+				Verification: tv.DefaultOptions(),
 			},
 			attest: attestation,
 		},
 		{
 			name: "Wrong TDX attestation quote",
-			opts: VerifyOpts{
-				Nonce:      nonce,
-				TrustedAKs: []crypto.PublicKey{ak.PublicKey()},
-				TEEOpts: &VerifyTdxOpts{
-					Validation:   TdxDefaultValidateOpts(nonce),
-					Verification: tv.DefaultOptions(),
-				},
+			teeOpts: VerifyTdxOpts{
+				Validation:   TdxDefaultValidateOpts(teeNonce),
+				Verification: tv.DefaultOptions(),
 			},
 			attest:  attestation1,
-			wantErr: "failed to verify memory encryption technology: unable to verify message digest using quote's signature and ecdsa attestation key",
+			wantErr: "unable to verify message digest using quote's signature and ecdsa attestation key",
 		},
 		{
 			name: "Bad Roots Certificate",
-			opts: VerifyOpts{
-				Nonce:      nonce,
-				TrustedAKs: []crypto.PublicKey{ak.PublicKey()},
-				TEEOpts: &VerifyTdxOpts{
-					Validation: TdxDefaultValidateOpts(nonce),
-					Verification: &tv.Options{
-						Getter:       trust.DefaultHTTPSGetter(),
-						Now:          time.Now(),
-						TrustedRoots: nil,
-					},
-				},
+			teeOpts: VerifyTdxOpts{
+				Validation:   TdxDefaultValidateOpts(teeNonce),
+				Verification: tv.DefaultOptions(),
 			},
 			attest:  attestation2,
-			wantErr: "failed to verify memory encryption technology: could not interpret Root CA certificate DER bytes: x509: invalid RDNSequence: invalid attribute value",
+			wantErr: "could not interpret Root CA certificate DER bytes: x509: invalid RDNSequence: invalid attribute value",
 		},
 		{
 			name: "Wrong TEE Nonce",
-			opts: VerifyOpts{
-				Nonce:      nonce,
-				TrustedAKs: []crypto.PublicKey{ak.PublicKey()},
-				TEEOpts: &VerifyTdxOpts{
-					Validation:   TdxDefaultValidateOpts([]byte("badNonce")),
-					Verification: tv.DefaultOptions(),
-				},
+			teeOpts: VerifyTdxOpts{
+				Validation:   TdxDefaultValidateOpts([]byte("badNonce")),
+				Verification: tv.DefaultOptions(),
 			},
 			attest:  attestation,
 			wantErr: "quote field REPORT_DATA",
 		},
+		{
+			name:    "Happy Path with empty TdxOpts",
+			attest:  attestation,
+			teeOpts: VerifyTdxOpts{},
+			wantErr: "options parameter is empty",
+		},
 	}
 	for _, tc := range tcs {
 		t.Run(tc.name, func(t *testing.T) {
-			if _, err := VerifyAttestation(tc.attest, tc.opts); (err == nil && tc.wantErr != "") ||
+			opts := VerifyOpts{
+				Nonce:      tpmNonce,
+				TrustedAKs: []crypto.PublicKey{ak.PublicKey()},
+				TEEOpts:    &tc.teeOpts,
+			}
+			if _, err := VerifyAttestation(tc.attest, opts); (err == nil && tc.wantErr != "") ||
 				(err != nil && !strings.Contains(err.Error(), tc.wantErr)) {
-				t.Errorf("VerifyAttestation(_, %v) = %v, want %q", tc.opts, err, tc.wantErr)
+				t.Errorf("VerifyAttestation(_, %v) = %v, want %q", opts, err, tc.wantErr)
 			}
 		})
 	}

@@ -24,9 +24,9 @@ func TdxDefaultValidateOpts(tpmNonce []byte) *validate.Options {
 
 // TdxDefaultOptions returns a default validation policy and verification options for TDX
 // attestation quote on GCE.
-func TdxDefaultOptions(tpmNonce []byte) *VerifyTdxOpts {
+func TdxDefaultOptions(tdxNonce []byte) *VerifyTdxOpts {
 	return &VerifyTdxOpts{
-		Validation:   TdxDefaultValidateOpts(tpmNonce),
+		Validation:   TdxDefaultValidateOpts(tdxNonce),
 		Verification: tv.DefaultOptions(),
 	}
 }
