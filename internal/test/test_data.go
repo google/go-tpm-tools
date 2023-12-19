@@ -70,3 +70,9 @@ var GCECertPEMs = [][]byte{
 	GCEEncryptECCCertUCA, GCESignECCCertUCA,
 	GCEEncryptRSACertUCA, GCESignRSACertUCA,
 }
+
+// TDX test files
+var (
+	//go:embed tdx_test_files/tdxReportData.bin
+	TdxReportData []byte // Use as tdx nonce
+)

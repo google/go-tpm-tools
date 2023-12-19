@@ -1,14 +1,20 @@
 package cmd
 
 import (
+	"encoding/hex"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
 
+	tgtest "github.com/google/go-tdx-guest/testing"
+	tgtestclient "github.com/google/go-tdx-guest/testing/client"
+	tgtestdata "github.com/google/go-tdx-guest/testing/testdata"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal/test"
 	"github.com/google/go-tpm/legacy/tpm2"
 	"github.com/google/go-tpm/tpmutil"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestVerifyNoncePass(t *testing.T) {
@@ -142,4 +148,83 @@ func TestHwAttestationPass(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestTdxAttestation(t *testing.T) {
+	file1, err := os.Create("attest")
+	if err != nil {
+		t.Fatal(err)
+	}
+	file2 := makeOutputFile(t, "verify")
+	defer os.RemoveAll(file1.Name())
+	defer os.RemoveAll(file2)
+
+	tpmNonce := "1234"
+	teeNonce := "6c62dec1b8191749a31dab490be532a35944dea47caef1f980863993d9899545eb7406a38d1eed313b987a467dacead6f0c87a6d766c66f6f29f8acb281f1113"
+	wrongTeeNonce := "1c12dec1b8191749a31dab490be532a35944dea47caef1f980863993d9899545eb7406a38d1eed313b987a467dacead6f0c87a6d766c66f6f29f8acb281f1113"
+	out, err := createAttestationWithFakeTdx([]byte(tpmNonce), test.TdxReportData, t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file1.Write(out)
+	hexTpmNonce := hex.EncodeToString([]byte(tpmNonce))
+	tests := []struct {
+		name     string
+		tdxNonce string
+		wantErr  string
+	}{
+		{"Correct TEE Nonce", teeNonce, ""},
+		{"Incorrect TEE Nonce", wrongTeeNonce, "quote field REPORT_DATA"},
+	}
+
+	for _, op := range tests {
+		t.Run(op.name, func(t *testing.T) {
+			RootCmd.SetArgs([]string{"verify", "debug", "--nonce", hexTpmNonce, "--input", file1.Name(), "--output", file2, "--tee-nonce", op.tdxNonce})
+			if err := RootCmd.Execute(); (err == nil && op.wantErr != "") ||
+				(err != nil && !strings.Contains(err.Error(), op.wantErr)) {
+				t.Error(err)
+			}
+		})
+	}
+
+}
+
+func createAttestationWithFakeTdx(tpmNonce []byte, teeNonce []byte, tb *testing.T) ([]byte, error) {
+	tdxEventLog := test.CreateTpm2EventLog(3) // Enum 3 - TDX
+	rwc := test.GetSimulatorWithLog(tb, tdxEventLog)
+	defer client.CheckedClose(tb, rwc)
+	ak, err := client.AttestationKeyRSA(rwc)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate AK: %v", err)
+	}
+	defer ak.Close()
+	var teeNonce64 [64]byte
+	copy(teeNonce64[:], teeNonce)
+	tdxTestDevice := tgtestclient.GetTdxGuest([]tgtest.TestCase{
+		{
+			Input: teeNonce64,
+			Quote: tgtestdata.RawQuote,
+		},
+	}, tb)
+
+	defer tdxTestDevice.Close()
+	attestation, err := ak.Attest(client.AttestOpts{
+		Nonce:     tpmNonce,
+		TEEDevice: &client.TdxDevice{Device: tdxTestDevice},
+		TEENonce:  teeNonce64[:],
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to attest: %v", err)
+	}
+
+	var out []byte
+	if format == "binarypb" {
+		out, err = proto.Marshal(attestation)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal attestation proto: %v", attestation)
+		}
+	} else {
+		out = []byte(marshalOptions.Format(attestation))
+	}
+	return out, nil
 }
