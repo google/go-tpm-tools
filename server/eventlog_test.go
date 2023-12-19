@@ -644,6 +644,7 @@ func TestParsingCELEventLog(t *testing.T) {
 
 	coscel := &cel.CEL{}
 	emptyCosState := attestpb.ContainerState{}
+	emptyHealthMonitoringState := attestpb.HealthMonitoringState{}
 
 	var buf bytes.Buffer
 	// First, encode an empty CEL and try to parse it.
@@ -672,7 +673,10 @@ func TestParsingCELEventLog(t *testing.T) {
 			t.Errorf("expecting no error from parseCanonicalEventLog(), but get %v", err)
 		}
 		if diff := cmp.Diff(msState.Cos.Container, &emptyCosState, protocmp.Transform()); diff != "" {
-			t.Errorf("unexpected difference:\n%v", diff)
+			t.Errorf("unexpected container state difference:\n%v", diff)
+		}
+		if diff := cmp.Diff(msState.Cos.HealthMonitoring, &emptyHealthMonitoringState, protocmp.Transform()); diff != "" {
+			t.Errorf("unexpected health monitoring difference:\n%v", diff)
 		}
 	}
 
@@ -693,6 +697,7 @@ func TestParsingCELEventLog(t *testing.T) {
 		{cel.ArgType, cel.CosEventPCR, []byte("--x")},
 		{cel.ArgType, cel.CosEventPCR, []byte("--y")},
 		{cel.ArgType, cel.CosEventPCR, []byte("")},
+		{cel.MemoryMonitorType, cel.CosEventPCR, []byte{1}},
 	}
 
 	expectedEnvVars := make(map[string]string)
@@ -701,13 +706,16 @@ func TestParsingCELEventLog(t *testing.T) {
 	expectedEnvVars["baz"] = "foo=bar"
 	expectedEnvVars["empty"] = ""
 
-	want := attestpb.ContainerState{
+	wantContainerState := attestpb.ContainerState{
 		ImageReference: string(testCELEvents[0].eventPayload),
 		ImageDigest:    string(testCELEvents[1].eventPayload),
 		RestartPolicy:  attestpb.RestartPolicy_Always,
 		ImageId:        string(testCELEvents[3].eventPayload),
 		EnvVars:        expectedEnvVars,
 		Args:           []string{string(testCELEvents[8].eventPayload), string(testCELEvents[9].eventPayload), string(testCELEvents[10].eventPayload)},
+	}
+	wantHealthMonitoringState := attestpb.HealthMonitoringState{
+		MemoryEnabled: true,
 	}
 	for _, testEvent := range testCELEvents {
 		cos := cel.CosTlv{EventType: testEvent.cosNestedEventType, EventContent: testEvent.eventPayload}
@@ -727,8 +735,11 @@ func TestParsingCELEventLog(t *testing.T) {
 		if msState, err := parseCanonicalEventLog(buf.Bytes(), bank); err != nil {
 			t.Errorf("expecting no error from parseCanonicalEventLog(), but get %v", err)
 		} else {
-			if diff := cmp.Diff(msState.Cos.Container, &want, protocmp.Transform()); diff != "" {
-				t.Errorf("unexpected difference:\n%v", diff)
+			if diff := cmp.Diff(msState.Cos.Container, &wantContainerState, protocmp.Transform()); diff != "" {
+				t.Errorf("unexpected container state difference:\n%v", diff)
+			}
+			if diff := cmp.Diff(msState.Cos.HealthMonitoring, &wantHealthMonitoringState, protocmp.Transform()); diff != "" {
+				t.Errorf("unexpected health monitoring state difference:\n%v", diff)
 			}
 		}
 	}
