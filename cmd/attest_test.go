@@ -341,12 +341,11 @@ func TestTdxAttestTeeNonceFail(t *testing.T) {
 	}
 
 	// TEENonce with length less than 64 bytes.
-	tdxTestDevice := tgtestclient.GetTdxGuest([]tgtest.TestCase{
+	mockTdxQuoteProvider := tgtestclient.GetMockTdxQuoteProvider([]tgtest.TestCase{
 		{
 			Input: [64]byte{1, 2, 3, 4},
 		},
 	}, t)
-	defer tdxTestDevice.Close()
 
 	ak, err := client.AttestationKeyRSA(rwc)
 	if err != nil {
@@ -356,7 +355,7 @@ func TestTdxAttestTeeNonceFail(t *testing.T) {
 	attestopts := client.AttestOpts{
 		Nonce:     []byte{1, 2, 3, 4},
 		TEENonce:  []byte{1, 2, 3, 4},
-		TEEDevice: &client.TdxDevice{Device: tdxTestDevice},
+		TEEDevice: &client.TdxQuoteProvider{QuoteProvider: mockTdxQuoteProvider},
 	}
 	_, err = ak.Attest(attestopts)
 	if err == nil {

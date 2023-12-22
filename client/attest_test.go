@@ -369,3 +369,77 @@ func TestTdxDevice(t *testing.T) {
 		})
 	}
 }
+
+func TestTdxQuoteProvider(t *testing.T) {
+	rwc := test.GetTPM(t)
+	defer CheckedClose(t, rwc)
+
+	ak, err := AttestationKeyRSA(rwc)
+	if err != nil {
+		t.Fatalf("Failed to generate test AK: %v", err)
+	}
+
+	someNonce := []byte("some nonce")
+	var someNonce64 [64]byte
+	copy(someNonce64[:], someNonce)
+	var nonce64 [64]byte
+	copy(nonce64[:], []byte("noncey business"))
+	mockTdxQuoteProvider := tgtestclient.GetMockTdxQuoteProvider([]tgtest.TestCase{
+		{
+			Input: someNonce64,
+			Quote: tgtestdata.RawQuote,
+		},
+		{
+			Input: nonce64,
+			Quote: tgtestdata.RawQuote,
+		},
+	}, t)
+
+	testcases := []struct {
+		name           string
+		opts           AttestOpts
+		wantReportData [64]byte
+		wantErr        string
+	}{
+		{
+			name: "Happy case no nonce",
+			opts: AttestOpts{
+				Nonce:     someNonce,
+				TEEDevice: &TdxQuoteProvider{mockTdxQuoteProvider},
+			},
+			wantReportData: someNonce64,
+		},
+		{
+			name: "Happy case with nonce",
+			opts: AttestOpts{
+				Nonce:     someNonce,
+				TEEDevice: &TdxQuoteProvider{mockTdxQuoteProvider},
+				TEENonce:  nonce64[:],
+			},
+			wantReportData: nonce64,
+		},
+		{
+			name: "TEE nonce without TEE",
+			opts: AttestOpts{
+				Nonce:    someNonce,
+				TEENonce: nonce64[:],
+			},
+			wantErr: "got non-nil TEENonce when TEEDevice is nil",
+		},
+	}
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			att, err := ak.Attest(tc.opts)
+			if (err == nil && tc.wantErr != "") || (err != nil && !strings.Contains(err.Error(), tc.wantErr)) {
+				t.Fatalf("Attest(%v) = %v, want %q", tc.opts, err, tc.wantErr)
+			}
+			// Successful attestation should include a TDX attestation.
+			if err == nil {
+				_, ok := att.GetTeeAttestation().(*pb.Attestation_TdxAttestation)
+				if !ok {
+					t.Fatalf("Attestation missing TDX attestation: %v", att.GetTeeAttestation())
+				}
+			}
+		})
+	}
+}

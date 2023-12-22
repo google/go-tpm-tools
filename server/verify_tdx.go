@@ -1,7 +1,6 @@
 package server
 
 import (
-	tpb "github.com/google/go-tdx-guest/proto/tdx"
 	tv "github.com/google/go-tdx-guest/verify"
 )
 
@@ -19,7 +18,7 @@ func TdxDefaultOptions() *VerifyTdxOpts {
 }
 
 // VerifyTdxAttestation checks that the TDX attestation quote is valid
-func VerifyTdxAttestation(attestation *tpb.QuoteV4, opts *VerifyTdxOpts) error {
+func VerifyTdxAttestation(attestation any, opts *VerifyTdxOpts) error {
 	// Check that the quote contains valid signature and certificates. Do not check revocations.
 	return tv.TdxQuote(attestation, opts.Verification)
 }
