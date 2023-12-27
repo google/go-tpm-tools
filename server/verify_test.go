@@ -361,17 +361,15 @@ func TestVerifyBasicAttestationWithTdx(t *testing.T) {
 	nonce := []byte("super secret nonce")
 	var nonce64 [64]byte
 	copy(nonce64[:], nonce)
-	tdxTestDevice := tgtestclient.GetTdxGuest([]tgtest.TestCase{
+	mockTdxQuoteProvider := tgtestclient.GetMockTdxQuoteProvider([]tgtest.TestCase{
 		{
 			Input: nonce64,
 			Quote: tgtestdata.RawQuote,
 		},
 	}, t)
-
-	defer tdxTestDevice.Close()
 	attestation, err := ak.Attest(client.AttestOpts{
 		Nonce:     nonce,
-		TEEDevice: &client.TdxDevice{Device: tdxTestDevice},
+		TEEDevice: &client.TdxQuoteProvider{QuoteProvider: mockTdxQuoteProvider},
 		TEENonce:  nonce64[:],
 	})
 
@@ -1144,54 +1142,49 @@ func TestVerifyAttestationWithTdx(t *testing.T) {
 	altNonce := []byte("alternate secret nonce")
 	var nonce64 [64]byte
 	copy(nonce64[:], altNonce)
-	tdxTestDevice := tgtestclient.GetTdxGuest([]tgtest.TestCase{
+	mockTdxQuoteProvider := tgtestclient.GetMockTdxQuoteProvider([]tgtest.TestCase{
 		{
 			Input: nonce64,
 			Quote: tgtestdata.RawQuote,
 		},
 	}, t)
-	defer tdxTestDevice.Close()
 	attestation, err := ak.Attest(client.AttestOpts{
 		Nonce:     nonce,
-		TEEDevice: &client.TdxDevice{Device: tdxTestDevice},
+		TEEDevice: &client.TdxQuoteProvider{QuoteProvider: mockTdxQuoteProvider},
 		TEENonce:  nonce64[:],
 	})
 	if err != nil {
 		t.Fatalf("failed to attest: %v", err)
 	}
-
 	alterQuote1 := make([]byte, len(tgtestdata.RawQuote))
 	copy(alterQuote1[:], tgtestdata.RawQuote)
 	alterQuote1[0x1E] = 0x32
-	tdxTestDevice1 := tgtestclient.GetTdxGuest([]tgtest.TestCase{
+	mockTdxQuoteProvider1 := tgtestclient.GetMockTdxQuoteProvider([]tgtest.TestCase{
 		{
 			Input: nonce64,
 			Quote: alterQuote1,
 		},
 	}, t)
-	defer tdxTestDevice1.Close()
 	attestation1, err := ak.Attest(client.AttestOpts{
 		Nonce:     nonce,
-		TEEDevice: &client.TdxDevice{Device: tdxTestDevice1},
+		TEEDevice: &client.TdxQuoteProvider{QuoteProvider: mockTdxQuoteProvider1},
 		TEENonce:  nonce64[:],
 	})
 	if err != nil {
 		t.Fatalf("failed to attest: %v", err)
 	}
-
 	alterQuote2 := make([]byte, len(tgtestdata.RawQuote))
 	copy(alterQuote2[:], tgtestdata.RawQuote)
 	alterQuote1[0x1024] = 0x32
-	tdxTestDevice2 := tgtestclient.GetTdxGuest([]tgtest.TestCase{
+	mockTdxQuoteProvider2 := tgtestclient.GetMockTdxQuoteProvider([]tgtest.TestCase{
 		{
 			Input: nonce64,
 			Quote: alterQuote1,
 		},
 	}, t)
-	defer tdxTestDevice1.Close()
 	attestation2, err := ak.Attest(client.AttestOpts{
 		Nonce:     nonce,
-		TEEDevice: &client.TdxDevice{Device: tdxTestDevice2},
+		TEEDevice: &client.TdxQuoteProvider{QuoteProvider: mockTdxQuoteProvider2},
 		TEENonce:  nonce64[:],
 	})
 	if err != nil {
