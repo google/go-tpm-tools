@@ -55,6 +55,8 @@ func GCEAKTemplateRSA() tpm2.Public {
 // Need to call tpm2.NVUndefinespace on the handle with authHandle tpm2.HandlePlatform.
 // e.g defer tpm2.NVUndefineSpace(rwc, "", tpm2.HandlePlatform, tpmutil.Handle(client.GceAKTemplateNVIndexRSA))
 func setGCEAKTemplate(tb testing.TB, rwc io.ReadWriteCloser, algo string, data []byte) error {
+	// Since this mutates the TPM, any tests using real TPMs must skip.
+	test.SkipForRealTPM(tb)
 	var err error
 	idx := tpmutil.Handle(getIndex[algo])
 	if err := tpm2.NVDefineSpace(rwc, tpm2.HandlePlatform, idx,
