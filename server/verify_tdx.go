@@ -17,8 +17,11 @@ func TdxDefaultOptions() *VerifyTdxOpts {
 	}
 }
 
-// VerifyTdxAttestation checks that the TDX attestation quote is valid
-func VerifyTdxAttestation(attestation any, opts *VerifyTdxOpts) error {
+// VerifyTdxAttestation checks that the TDX attestation quote is valid. The TEE-specific attestation
+// quote is extracted from the Attestation protobuf. At a granular level, this quote is fetched via
+// go-tdx-guest's GetQuote client API.
+// Supported quote formats - QuoteV4.
+func VerifyTdxAttestation(tdxAttestationQuote any, opts *VerifyTdxOpts) error {
 	// Check that the quote contains valid signature and certificates. Do not check revocations.
-	return tv.TdxQuote(attestation, opts.Verification)
+	return tv.TdxQuote(tdxAttestationQuote, opts.Verification)
 }
