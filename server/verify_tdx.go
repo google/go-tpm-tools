@@ -13,11 +13,11 @@ type VerifyTdxOpts struct {
 }
 
 // TdxDefaultValidateOpts returns a default validation policy for TDX attestation quote on GCE.
-func TdxDefaultValidateOpts(tpmNonce []byte) *validate.Options {
+func TdxDefaultValidateOpts(tdxNonce []byte) *validate.Options {
 	policy := &validate.Options{HeaderOptions: validate.HeaderOptions{},
 		TdQuoteBodyOptions: validate.TdQuoteBodyOptions{}}
 	policy.TdQuoteBodyOptions.ReportData = make([]byte, tabi.ReportDataSize)
-	copy(policy.TdQuoteBodyOptions.ReportData, tpmNonce)
+	copy(policy.TdQuoteBodyOptions.ReportData, tdxNonce)
 	return policy
 }
 

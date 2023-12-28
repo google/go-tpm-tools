@@ -12,9 +12,9 @@ import (
 	tgtestdata "github.com/google/go-tdx-guest/testing/testdata"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal/test"
+	pb "github.com/google/go-tpm-tools/proto/attest"
 	"github.com/google/go-tpm/legacy/tpm2"
 	"github.com/google/go-tpm/tpmutil"
-	"google.golang.org/protobuf/proto"
 )
 
 func TestVerifyNoncePass(t *testing.T) {
@@ -151,21 +151,21 @@ func TestHwAttestationPass(t *testing.T) {
 }
 
 func TestTdxAttestation(t *testing.T) {
-	file1, err := os.Create("attest")
+	dir := t.TempDir()
+	file1, err := os.Create(dir + "/attestFile")
 	if err != nil {
 		t.Fatal(err)
 	}
-	file2 := makeOutputFile(t, "verify")
-	defer os.RemoveAll(file1.Name())
+	file2 := makeOutputFile(t, "verifyFile")
 	defer os.RemoveAll(file2)
-
 	tpmNonce := "1234"
-	teeNonce := "6c62dec1b8191749a31dab490be532a35944dea47caef1f980863993d9899545eb7406a38d1eed313b987a467dacead6f0c87a6d766c66f6f29f8acb281f1113"
-	wrongTeeNonce := "1c12dec1b8191749a31dab490be532a35944dea47caef1f980863993d9899545eb7406a38d1eed313b987a467dacead6f0c87a6d766c66f6f29f8acb281f1113"
-	out, err := createAttestationWithFakeTdx([]byte(tpmNonce), test.TdxReportData, t)
+	teeNonce := hex.EncodeToString(test.TdxReportData)
+	wrongTeeNonce := hex.EncodeToString([]byte("wrongTdxNonce"))
+	attestation, err := createAttestationWithFakeTdx([]byte(tpmNonce), test.TdxReportData, t)
 	if err != nil {
 		t.Fatal(err)
 	}
+	out := []byte(marshalOptions.Format(attestation))
 	file1.Write(out)
 	hexTpmNonce := hex.EncodeToString([]byte(tpmNonce))
 	tests := []struct {
@@ -179,18 +179,17 @@ func TestTdxAttestation(t *testing.T) {
 
 	for _, op := range tests {
 		t.Run(op.name, func(t *testing.T) {
-			RootCmd.SetArgs([]string{"verify", "debug", "--nonce", hexTpmNonce, "--input", file1.Name(), "--output", file2, "--tee-nonce", op.tdxNonce})
+			RootCmd.SetArgs([]string{"verify", "debug", "--nonce", hexTpmNonce, "--input", file1.Name(), "--output", file2, "--tee-nonce", op.tdxNonce, "--format", "textproto"})
 			if err := RootCmd.Execute(); (err == nil && op.wantErr != "") ||
 				(err != nil && !strings.Contains(err.Error(), op.wantErr)) {
-				t.Error(err)
+				t.Errorf("Expected error: %v, got: %v", op.wantErr, err)
 			}
 		})
 	}
-
 }
 
-func createAttestationWithFakeTdx(tpmNonce []byte, teeNonce []byte, tb *testing.T) ([]byte, error) {
-	tdxEventLog := test.CreateTpm2EventLog(3) // Enum 3 - TDX
+func createAttestationWithFakeTdx(tpmNonce []byte, teeNonce []byte, tb *testing.T) (*pb.Attestation, error) {
+	tdxEventLog := test.CreateTpm2EventLog(3) // Enum 3- TDX
 	rwc := test.GetSimulatorWithLog(tb, tdxEventLog)
 	defer client.CheckedClose(tb, rwc)
 	ak, err := client.AttestationKeyRSA(rwc)
@@ -216,15 +215,5 @@ func createAttestationWithFakeTdx(tpmNonce []byte, teeNonce []byte, tb *testing.
 	if err != nil {
 		return nil, fmt.Errorf("failed to attest: %v", err)
 	}
-
-	var out []byte
-	if format == "binarypb" {
-		out, err = proto.Marshal(attestation)
-		if err != nil {
-			return nil, fmt.Errorf("failed to marshal attestation proto: %v", attestation)
-		}
-	} else {
-		out = []byte(marshalOptions.Format(attestation))
-	}
-	return out, nil
+	return attestation, nil
 }
