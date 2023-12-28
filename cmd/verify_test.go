@@ -129,7 +129,7 @@ func TestHwAttestationPass(t *testing.T) {
 		teetech string
 		wanterr string
 	}{
-		{"TdxPass", "1234", "tdx", "failed to open tdx device"},
+		{"TdxPass", "1234", "tdx", "failed to create tdx quote provider"},
 		{"SevSnpPass", "1234", "sev-snp", "failed to open sev-snp device"},
 	}
 	for _, op := range tests {

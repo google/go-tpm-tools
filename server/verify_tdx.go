@@ -2,7 +2,6 @@ package server
 
 import (
 	tabi "github.com/google/go-tdx-guest/abi"
-	tpb "github.com/google/go-tdx-guest/proto/tdx"
 	"github.com/google/go-tdx-guest/validate"
 	tv "github.com/google/go-tdx-guest/verify"
 )
@@ -31,13 +30,15 @@ func TdxDefaultOptions(tdxNonce []byte) *VerifyTdxOpts {
 	}
 }
 
-// VerifyTdxAttestation checks that the TDX attestation quote is valid
-func VerifyTdxAttestation(attestation *tpb.QuoteV4, opts *VerifyTdxOpts) error {
+// VerifyTdxAttestation checks that the TDX attestation quote is valid. The TEE-specific attestation
+// quote is extracted from the Attestation protobuf. At a granular level, this quote is fetched via
+// go-tdx-guest's GetQuote client API.
+// Supported quote formats - QuoteV4.
+func VerifyTdxAttestation(tdxAttestationQuote any, opts *VerifyTdxOpts) error {
 	// Check that the quote contains valid signature and certificates. Do not check revocations.
-	if err := tv.TdxQuote(attestation, opts.Verification); err != nil {
+	if err := tv.TdxQuote(tdxAttestationQuote, opts.Verification); err != nil {
 		return err
 	}
-
 	// Check that the fields of the quote are acceptable
-	return validate.TdxQuote(attestation, opts.Validation)
+	return validate.TdxQuote(tdxAttestationQuote, opts.Validation)
 }

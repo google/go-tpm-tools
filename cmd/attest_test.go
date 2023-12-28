@@ -55,6 +55,8 @@ func GCEAKTemplateRSA() tpm2.Public {
 // Need to call tpm2.NVUndefinespace on the handle with authHandle tpm2.HandlePlatform.
 // e.g defer tpm2.NVUndefineSpace(rwc, "", tpm2.HandlePlatform, tpmutil.Handle(client.GceAKTemplateNVIndexRSA))
 func setGCEAKTemplate(tb testing.TB, rwc io.ReadWriteCloser, algo string, data []byte) error {
+	// Since this mutates the TPM, any tests using real TPMs must skip.
+	test.SkipForRealTPM(tb)
 	var err error
 	idx := tpmutil.Handle(getIndex[algo])
 	if err := tpm2.NVDefineSpace(rwc, tpm2.HandlePlatform, idx,
@@ -341,12 +343,11 @@ func TestTdxAttestTeeNonceFail(t *testing.T) {
 	}
 
 	// TEENonce with length less than 64 bytes.
-	tdxTestDevice := tgtestclient.GetTdxGuest([]tgtest.TestCase{
+	mockTdxQuoteProvider := tgtestclient.GetMockTdxQuoteProvider([]tgtest.TestCase{
 		{
 			Input: [64]byte{1, 2, 3, 4},
 		},
 	}, t)
-	defer tdxTestDevice.Close()
 
 	ak, err := client.AttestationKeyRSA(rwc)
 	if err != nil {
@@ -356,7 +357,7 @@ func TestTdxAttestTeeNonceFail(t *testing.T) {
 	attestopts := client.AttestOpts{
 		Nonce:     []byte{1, 2, 3, 4},
 		TEENonce:  []byte{1, 2, 3, 4},
-		TEEDevice: &client.TdxDevice{Device: tdxTestDevice},
+		TEEDevice: &client.TdxQuoteProvider{QuoteProvider: mockTdxQuoteProvider},
 	}
 	_, err = ak.Attest(attestopts)
 	if err == nil {
@@ -380,7 +381,7 @@ func TestHardwareAttestationPass(t *testing.T) {
 		teetech string
 		wanterr string
 	}{
-		{"TdxPass", "1234", "tdx", "failed to open tdx device"},
+		{"TdxPass", "1234", "tdx", "failed to create tdx quote provider"},
 		{"SevSnpPass", "1234", "sev-snp", "failed to open sev-snp device"},
 	}
 	for _, op := range tests {

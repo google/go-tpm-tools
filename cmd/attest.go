@@ -88,9 +88,9 @@ hardware and guarantees a fresh quote.
 			}
 			attestOpts.TEENonce = teeNonce
 		case Tdx:
-			attestOpts.TEEDevice, err = client.CreateTdxDevice()
+			attestOpts.TEEDevice, err = client.CreateTdxQuoteProvider()
 			if err != nil {
-				return fmt.Errorf("failed to open %s device: %v", Tdx, err)
+				return fmt.Errorf("failed to create %s quote provider: %v", Tdx, err)
 			}
 			attestOpts.TEENonce = teeNonce
 		case "":
