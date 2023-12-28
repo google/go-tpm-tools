@@ -9,7 +9,7 @@ import (
 	"github.com/google/go-attestation/attest"
 	"github.com/google/go-tpm-tools/simulator"
 	"github.com/google/go-tpm/legacy/tpm2"
-	gotpm "github.com/google/go-tpm/tpm2"
+	gtpm2 "github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpmutil"
 )
 
@@ -151,7 +151,7 @@ func extendOnePcr(tb testing.TB, rw io.ReadWriter, pcr int, hashAlg tpm2.Algorit
 // CreateTpm2EventLog generates a sample event log that is based on gceConfidentialTechnology
 func CreateTpm2EventLog(gceConfidentialTechnologyEnum byte) []byte {
 	pcr0 := uint32(0)
-	algorithms := []gotpm.TPMIAlgHash{gotpm.TPMAlgSHA1, gotpm.TPMAlgSHA256, gotpm.TPMAlgSHA384}
+	algorithms := []gtpm2.TPMIAlgHash{gtpm2.TPMAlgSHA1, gtpm2.TPMAlgSHA256, gtpm2.TPMAlgSHA384}
 	specEventInfo := []byte{
 		'S', 'p', 'e', 'c', ' ', 'I', 'D', ' ', 'E', 'v', 'e', 'n', 't', '0', '3', 0,
 		0, 0, 0, 0, // platformClass
