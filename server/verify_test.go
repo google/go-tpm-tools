@@ -1075,7 +1075,6 @@ func TestVerifyAttestationWithTdx(t *testing.T) {
 	}
 	defer ak.Close()
 
-
 	teeNonce := test.TdxReportData
 	tpmNonce := []byte("super secret nonce")
 	var teeNonce64 [64]byte
@@ -1120,7 +1119,7 @@ func TestVerifyAttestationWithTdx(t *testing.T) {
 	}, t)
 	attestation2, err := ak.Attest(client.AttestOpts{
 		Nonce:     tpmNonce,
-	  TEEDevice: &client.TdxQuoteProvider{QuoteProvider: mockTdxQuoteProvider2},
+		TEEDevice: &client.TdxQuoteProvider{QuoteProvider: mockTdxQuoteProvider2},
 		TEENonce:  teeNonce64[:],
 	})
 	if err != nil {
