@@ -361,7 +361,7 @@ func VerifyGceTechnology(attestation *pb.Attestation, tech pb.GCEConfidentialTec
 			return fmt.Errorf("TEE attestation is %T, expected a TdxAttestation", attestation.GetTeeAttestation())
 		}
 		if opts.TEEOpts == nil {
-			tdxOpts = TdxDefaultOptions()
+			tdxOpts = TdxDefaultOptions(opts.Nonce)
 		} else {
 			tdxOpts, ok = opts.TEEOpts.(*VerifyTdxOpts)
 			if !ok {

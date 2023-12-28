@@ -7,8 +7,8 @@ import (
 	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/x509/pkix"
+	_ "embed"
 	"encoding/asn1"
-	"encoding/binary"
 	"fmt"
 	"io"
 	"os"
@@ -25,14 +25,12 @@ import (
 	tgtestclient "github.com/google/go-tdx-guest/testing/client"
 	tgtestdata "github.com/google/go-tdx-guest/testing/testdata"
 	tv "github.com/google/go-tdx-guest/verify"
-	"github.com/google/go-tdx-guest/verify/trust"
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal"
 	"github.com/google/go-tpm-tools/internal/test"
 	attestpb "github.com/google/go-tpm-tools/proto/attest"
 	"github.com/google/go-tpm/legacy/tpm2"
-	tpm "github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpmutil"
 	"github.com/google/logger"
 	"google.golang.org/protobuf/proto"
@@ -40,79 +38,6 @@ import (
 )
 
 var measuredHashes = []crypto.Hash{crypto.SHA1, crypto.SHA256}
-
-func createTpm2EventLog(gceConfidentialTechnologyEnum byte) []byte {
-	pcr0 := uint32(0)
-	algorithms := []tpm.TPMIAlgHash{tpm.TPMAlgSHA1, tpm.TPMAlgSHA256, tpm.TPMAlgSHA384}
-	specEventInfo := []byte{
-		'S', 'p', 'e', 'c', ' ', 'I', 'D', ' ', 'E', 'v', 'e', 'n', 't', '0', '3', 0,
-		0, 0, 0, 0, // platformClass
-		0,                              // specVersionMinor,
-		2,                              // specVersionMajor,
-		0,                              // specErrata
-		2,                              // uintnSize
-		byte(len(algorithms)), 0, 0, 0} // NumberOfAlgorithms
-	for _, alg := range algorithms {
-		var algInfo [4]byte
-		algo, _ := alg.Hash()
-		binary.LittleEndian.PutUint16(algInfo[0:2], uint16(alg))
-		binary.LittleEndian.PutUint16(algInfo[2:4], uint16(algo.Size()))
-		specEventInfo = append(specEventInfo, algInfo[:]...)
-	}
-	vendorInfoSize := byte(0)
-	specEventInfo = append(specEventInfo, vendorInfoSize)
-
-	specEventHeader := make([]byte, 32)
-	evNoAction := uint32(0x03)
-	binary.LittleEndian.PutUint32(specEventHeader[0:4], pcr0)
-	binary.LittleEndian.PutUint32(specEventHeader[4:8], evNoAction)
-	binary.LittleEndian.PutUint32(specEventHeader[28:32], uint32(len(specEventInfo)))
-	specEvent := append(specEventHeader, specEventInfo...)
-
-	// After the Spec ID Event, all events must use all the specified digest algorithms.
-	extendHashes := func(buffer []byte, info []byte) []byte {
-		var numberOfDigests [4]byte
-		binary.LittleEndian.PutUint32(numberOfDigests[:], uint32(len(algorithms)))
-		buffer = append(buffer, numberOfDigests[:]...)
-		for _, alg := range algorithms {
-			algo, _ := alg.Hash()
-			digest := make([]byte, 2+algo.Size())
-			binary.LittleEndian.PutUint16(digest[0:2], uint16(alg))
-			h := algo.New()
-			h.Write(info)
-			copy(digest[2:], h.Sum(nil))
-			buffer = append(buffer, digest...)
-		}
-		return buffer
-	}
-	writeTpm2Event := func(buffer []byte, pcr uint32, eventType uint32, info []byte) []byte {
-		header := make([]byte, 8)
-		binary.LittleEndian.PutUint32(header[0:4], pcr)
-		binary.LittleEndian.PutUint32(header[4:8], eventType)
-		buffer = append(buffer, header...)
-
-		buffer = extendHashes(buffer, info)
-
-		var eventSize [4]byte
-		binary.LittleEndian.PutUint32(eventSize[:], uint32(len(info)))
-		buffer = append(buffer, eventSize[:]...)
-
-		return append(buffer, info...)
-	}
-	evSCRTMversion := uint32(0x08)
-	versionEventInfo := []byte{
-		'G', 0, 'C', 0, 'E', 0, ' ', 0,
-		'V', 0, 'i', 0, 'r', 0, 't', 0, 'u', 0, 'a', 0, 'l', 0, ' ', 0,
-		'F', 0, 'i', 0, 'r', 0, 'm', 0, 'w', 0, 'a', 0, 'r', 0, 'e', 0, ' ', 0,
-		'v', 0, '1', 0, 0, 0}
-	withVersionEvent := writeTpm2Event(specEvent, pcr0, evSCRTMversion, versionEventInfo)
-
-	nonHostEventInfo := []byte{
-		'G', 'C', 'E', ' ', 'N', 'o', 'n', 'H', 'o', 's', 't', 'I', 'n', 'f', 'o', 0,
-		gceConfidentialTechnologyEnum, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
-	evNonHostInfo := uint32(0x11)
-	return writeTpm2Event(withVersionEvent, pcr0, evNonHostInfo, nonHostEventInfo)
-}
 
 func getDigestHash(input string) []byte {
 	inputDigestHash := sha256.New()
@@ -349,7 +274,9 @@ func TestVerifyBasicAttestationWithSevSnp(t *testing.T) {
 }
 
 func TestVerifyBasicAttestationWithTdx(t *testing.T) {
-	rwc := test.GetTPM(t)
+
+	tdxEventLog := test.CreateTpm2EventLog(3) // Enum 3- TDX
+	rwc := test.GetSimulatorWithLog(t, tdxEventLog)
 	defer client.CheckedClose(t, rwc)
 
 	ak, err := client.AttestationKeyRSA(rwc)
@@ -358,37 +285,47 @@ func TestVerifyBasicAttestationWithTdx(t *testing.T) {
 	}
 	defer ak.Close()
 
-	nonce := []byte("super secret nonce")
-	var nonce64 [64]byte
-	copy(nonce64[:], nonce)
+	tpmNonce := []byte("super secret nonce")
+	teeNonce := test.TdxReportData
+	var teeNonce64 [64]byte
+	copy(teeNonce64[:], teeNonce)
 	mockTdxQuoteProvider := tgtestclient.GetMockTdxQuoteProvider([]tgtest.TestCase{
 		{
-			Input: nonce64,
+			Input: teeNonce64,
 			Quote: tgtestdata.RawQuote,
 		},
 	}, t)
 	attestation, err := ak.Attest(client.AttestOpts{
-		Nonce:     nonce,
+		Nonce:     tpmNonce,
 		TEEDevice: &client.TdxQuoteProvider{QuoteProvider: mockTdxQuoteProvider},
-		TEENonce:  nonce64[:],
+		TEENonce:  teeNonce64[:],
 	})
-
 	if err != nil {
 		t.Fatalf("failed to attest: %v", err)
 	}
 
 	teeopts := &VerifyTdxOpts{
+		Validation:   TdxDefaultValidateOpts(teeNonce),
 		Verification: tv.DefaultOptions(),
 	}
 	if _, err := VerifyAttestation(attestation, VerifyOpts{
-		Nonce:      nonce,
+		Nonce:      tpmNonce,
 		TrustedAKs: []crypto.PublicKey{ak.PublicKey()},
+		TEEOpts:    teeopts,
 	}); err != nil {
 		t.Errorf("failed to verify: %v", err)
 	}
 
 	if _, err := VerifyAttestation(attestation, VerifyOpts{
-		Nonce:   nonce,
+		Nonce:      append(tpmNonce, 0),
+		TrustedAKs: []crypto.PublicKey{ak.PublicKey()},
+		TEEOpts:    teeopts,
+	}); err == nil {
+		t.Error("using the wrong TPM nonce should make verification fail")
+	}
+
+	if _, err := VerifyAttestation(attestation, VerifyOpts{
+		Nonce:   tpmNonce,
 		TEEOpts: teeopts,
 	}); err == nil {
 		t.Error("using no trusted AKs should make verification fail")
@@ -399,7 +336,7 @@ func TestVerifyBasicAttestationWithTdx(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := VerifyAttestation(attestation, VerifyOpts{
-		Nonce:      nonce,
+		Nonce:      tpmNonce,
 		TrustedAKs: []crypto.PublicKey{priv.Public()},
 		TEEOpts:    teeopts,
 	}); err == nil {
@@ -1013,7 +950,7 @@ func TestGetInstanceInfoASN(t *testing.T) {
 
 func TestVerifyAttestationWithSevSnp(t *testing.T) {
 
-	snpEventLog := createTpm2EventLog(4)
+	snpEventLog := test.CreateTpm2EventLog(4) // Enum 4- sev-snp
 	rwc := test.GetSimulatorWithLog(t, snpEventLog)
 	defer client.CheckedClose(t, rwc)
 
@@ -1128,7 +1065,7 @@ func TestVerifyAttestationWithSevSnp(t *testing.T) {
 
 func TestVerifyAttestationWithTdx(t *testing.T) {
 
-	tdxEventLog := createTpm2EventLog(3)
+	tdxEventLog := test.CreateTpm2EventLog(3) // Enum 3-TDX
 	rwc := test.GetSimulatorWithLog(t, tdxEventLog)
 	defer client.CheckedClose(t, rwc)
 
@@ -1138,20 +1075,20 @@ func TestVerifyAttestationWithTdx(t *testing.T) {
 	}
 	defer ak.Close()
 
-	nonce := []byte("super secret nonce")
-	altNonce := []byte("alternate secret nonce")
-	var nonce64 [64]byte
-	copy(nonce64[:], altNonce)
+	teeNonce := test.TdxReportData
+	tpmNonce := []byte("super secret nonce")
+	var teeNonce64 [64]byte
+	copy(teeNonce64[:], teeNonce)
 	mockTdxQuoteProvider := tgtestclient.GetMockTdxQuoteProvider([]tgtest.TestCase{
 		{
-			Input: nonce64,
+			Input: teeNonce64,
 			Quote: tgtestdata.RawQuote,
 		},
 	}, t)
 	attestation, err := ak.Attest(client.AttestOpts{
-		Nonce:     nonce,
+		Nonce:     tpmNonce,
 		TEEDevice: &client.TdxQuoteProvider{QuoteProvider: mockTdxQuoteProvider},
-		TEENonce:  nonce64[:],
+		TEENonce:  teeNonce64[:],
 	})
 	if err != nil {
 		t.Fatalf("failed to attest: %v", err)
@@ -1161,87 +1098,92 @@ func TestVerifyAttestationWithTdx(t *testing.T) {
 	alterQuote1[0x1E] = 0x32
 	mockTdxQuoteProvider1 := tgtestclient.GetMockTdxQuoteProvider([]tgtest.TestCase{
 		{
-			Input: nonce64,
+			Input: teeNonce64,
 			Quote: alterQuote1,
 		},
 	}, t)
 	attestation1, err := ak.Attest(client.AttestOpts{
-		Nonce:     nonce,
+		Nonce:     tpmNonce,
 		TEEDevice: &client.TdxQuoteProvider{QuoteProvider: mockTdxQuoteProvider1},
-		TEENonce:  nonce64[:],
+		TEENonce:  teeNonce64[:],
 	})
 	if err != nil {
 		t.Fatalf("failed to attest: %v", err)
 	}
-	alterQuote2 := make([]byte, len(tgtestdata.RawQuote))
-	copy(alterQuote2[:], tgtestdata.RawQuote)
 	alterQuote1[0x1024] = 0x32
 	mockTdxQuoteProvider2 := tgtestclient.GetMockTdxQuoteProvider([]tgtest.TestCase{
 		{
-			Input: nonce64,
+			Input: teeNonce64,
 			Quote: alterQuote1,
 		},
 	}, t)
 	attestation2, err := ak.Attest(client.AttestOpts{
-		Nonce:     nonce,
+		Nonce:     tpmNonce,
 		TEEDevice: &client.TdxQuoteProvider{QuoteProvider: mockTdxQuoteProvider2},
-		TEENonce:  nonce64[:],
+		TEENonce:  teeNonce64[:],
 	})
 	if err != nil {
 		t.Fatalf("failed to attest: %v", err)
 	}
 	type testCase struct {
 		name    string
-		opts    VerifyOpts
+		teeOpts VerifyTdxOpts
 		wantErr string
 		attest  *attestpb.Attestation
 	}
 	tcs := []testCase{
 		{
 			name: "Happy path",
-			opts: VerifyOpts{
-				Nonce:      nonce,
-				TrustedAKs: []crypto.PublicKey{ak.PublicKey()},
-				TEEOpts: &VerifyTdxOpts{
-					Verification: tv.DefaultOptions(),
-				},
+			teeOpts: VerifyTdxOpts{
+				Validation:   TdxDefaultValidateOpts(teeNonce),
+				Verification: tv.DefaultOptions(),
 			},
 			attest: attestation,
 		},
 		{
 			name: "Wrong TDX attestation quote",
-			opts: VerifyOpts{
-				Nonce:      nonce,
-				TrustedAKs: []crypto.PublicKey{ak.PublicKey()},
-				TEEOpts: &VerifyTdxOpts{
-					Verification: tv.DefaultOptions(),
-				},
+			teeOpts: VerifyTdxOpts{
+				Validation:   TdxDefaultValidateOpts(teeNonce),
+				Verification: tv.DefaultOptions(),
 			},
 			attest:  attestation1,
-			wantErr: "failed to verify memory encryption technology: unable to verify message digest using quote's signature and ecdsa attestation key",
+			wantErr: "unable to verify message digest using quote's signature and ecdsa attestation key",
 		},
 		{
 			name: "Bad Roots Certificate",
-			opts: VerifyOpts{
-				Nonce:      nonce,
-				TrustedAKs: []crypto.PublicKey{ak.PublicKey()},
-				TEEOpts: &VerifyTdxOpts{
-					Verification: &tv.Options{
-						Getter:       trust.DefaultHTTPSGetter(),
-						Now:          time.Now(),
-						TrustedRoots: nil,
-					},
-				},
+			teeOpts: VerifyTdxOpts{
+				Validation:   TdxDefaultValidateOpts(teeNonce),
+				Verification: tv.DefaultOptions(),
 			},
 			attest:  attestation2,
-			wantErr: "failed to verify memory encryption technology: could not interpret Root CA certificate DER bytes: x509: invalid RDNSequence: invalid attribute value",
+			wantErr: "could not interpret Root CA certificate DER bytes: x509: invalid RDNSequence: invalid attribute value",
+		},
+		{
+			name: "Wrong TEE Nonce",
+			teeOpts: VerifyTdxOpts{
+				Validation:   TdxDefaultValidateOpts([]byte("badNonce")),
+				Verification: tv.DefaultOptions(),
+			},
+			attest:  attestation,
+			wantErr: "quote field REPORT_DATA",
+		},
+		{
+			name:    "Happy Path with empty TdxOpts",
+			attest:  attestation,
+			teeOpts: VerifyTdxOpts{},
+			wantErr: "options parameter is empty",
 		},
 	}
 	for _, tc := range tcs {
 		t.Run(tc.name, func(t *testing.T) {
-			if _, err := VerifyAttestation(tc.attest, tc.opts); (err == nil && tc.wantErr != "") ||
+			opts := VerifyOpts{
+				Nonce:      tpmNonce,
+				TrustedAKs: []crypto.PublicKey{ak.PublicKey()},
+				TEEOpts:    &tc.teeOpts,
+			}
+			if _, err := VerifyAttestation(tc.attest, opts); (err == nil && tc.wantErr != "") ||
 				(err != nil && !strings.Contains(err.Error(), tc.wantErr)) {
-				t.Errorf("VerifyAttestation(_, %v) = %v, want %q", tc.opts, err, tc.wantErr)
+				t.Errorf("VerifyAttestation(_, %v) = %v, want %q", opts, err, tc.wantErr)
 			}
 		})
 	}
