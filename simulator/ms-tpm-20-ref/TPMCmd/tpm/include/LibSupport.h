@@ -42,11 +42,13 @@
 #ifndef RADIX_BITS
 #   if defined(__x86_64__) || defined(__x86_64)                                         \
         || defined(__amd64__) || defined(__amd64) || defined(_WIN64) || defined(_M_X64) \
-        || defined(_M_ARM64) || defined(__aarch64__)
+        || defined(_M_ARM64) || defined(__aarch64__)                                    \
+        || (defined(__riscv) && __riscv_xlen == 64)
 #       define RADIX_BITS                      64
 #   elif defined(__i386__) || defined(__i386) || defined(i386)                          \
         || defined(_WIN32) || defined(_M_IX86)                                          \
-        || defined(_M_ARM) || defined(__arm__) || defined(__thumb__)
+        || defined(_M_ARM) || defined(__arm__) || defined(__thumb__)                    \
+        || (defined(__riscv) && __riscv_xlen == 32)
 #       define RADIX_BITS                      32
 #   else
 #       error Unable to determine RADIX_BITS from compiler environment
