@@ -4,24 +4,12 @@ substitutions:
   '_CLEANUP': 'true'
   '_VM_NAME_PREFIX': 'oda-signedcontainer'
   '_ZONE': 'us-east1-b'
-  '_WORKLOAD_IMAGE': 'us-west1-docker.pkg.dev/confidential-space-images-dev/cs-integ-test-images/ipc/happypath:latest'
-  '_SIGNATURE_REPO': 'us-docker.pkg.dev/confidential-space-images-dev/cs-cosign-tests/hardened'
+  # If the workload image changes, the commit author should change the cosign signature as well to not break tests.
+  '_WORKLOAD_IMAGE': 'us-west1-docker.pkg.dev/confidential-space-images-dev/cs-integ-test-images/ipc/happypath@sha256:999831a7b8f8afd323e2359f3c1192206be2aa1d4f3b19f0739eff5f01f83b9e'
+  '_SIGNATURE_REPO': 'us-docker.pkg.dev/confidential-space-images-dev/cs-cosign-tests/oda'
+  '_EXPECTED_SIG': 'EQCIBIEAGtAqxzhMqq2jhs76KJZaD5VXvKV93yotPUtD7yDAiAFS4zFyiRicrhzeS1nmb9SpuAtDRSwv1lWaSWxWiwLTw=='
 
 steps:
-- name: 'gcr.io/projectsigstore/cosign:v2.2.0'
-  id: SignContainer
-  entrypoint: 'sh'
-  env:
-  - 'BUILD_ID=$BUILD_ID'
-  args:
-  - -c
-  - |
-    # Unpadded base64 encoding on the CloudKMS public key
-    pub=$(cosign public-key --key gcpkms://projects/confidential-space-images-dev/locations/global/keyRings/cosign-test/cryptoKeys/ecdsa/cryptoKeyVersions/1 | openssl base64)
-    pub=$(echo $pub | tr -d '[:space:]' | sed 's/[=]*$//')
-    # Use cosign sign
-    export COSIGN_REPOSITORY=${_SIGNATURE_REPO}
-    cosign sign --key gcpkms://projects/confidential-space-images-dev/locations/global/keyRings/cosign-test/cryptoKeys/ecdsa/cryptoKeyVersions/1 ${_WORKLOAD_IMAGE} -a dev.cosignproject.cosign/sigalg=ECDSA_P256_SHA256 -a dev.cosignproject.cosign/pub=$pub
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CreateVM
   entrypoint: 'bash'
@@ -40,28 +28,16 @@ steps:
 - name: 'gcr.io/cloud-builders/gcloud'
   id: BasicDiscoverSignaturesTest
   entrypoint: 'bash'
-  # Check how many times `Found container image signatures` is being logged. 
-  # Since signature discovery will occur on refresh the default token, and on teeserver receiving ODA requests, so the expected number should be 2.
-  args: ['scripts/test_launcher_workload_discover_signatures.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}', '${_ZONE}', '2']
+  # Check how many times container image signatures is being logged. 
+  # Since signature logging will occur on refresh the default token, and on attest agent calling the `Attest` method, so the expected number should be 3.
+  # This also checks the fetched signatures are the same.
+  args: ['scripts/test_launcher_workload_discover_signatures.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}', '${_ZONE}', '${_EXPECTED_SIG}', '3']
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CleanUp
   entrypoint: 'bash'
   env:
   - 'CLEANUP=$_CLEANUP'
   args: ['cleanup.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}', '${_ZONE}']
-- name: 'gcr.io/cloud-builders/gcloud'
-  id: DeleteContainerSignatures
-  env:
-  - 'BUILD_ID=$BUILD_ID'
-  entrypoint: 'bash'
-  args:
-  - -c
-  - |
-    echo "Deleting container signatures..."
-    digest=$(gcloud artifacts docker images describe ${_WORKLOAD_IMAGE} --format 'value(image_summary.digest)')
-    tag=${digest/":"/"-"}.sig
-    # Delete container signature by its tag
-    gcloud artifacts docker images delete -q ${_SIGNATURE_REPO}:${tag}
 # Must come after cleanup.
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CheckFailure

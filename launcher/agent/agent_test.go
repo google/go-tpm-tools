@@ -7,6 +7,8 @@ import (
 	"encoding/base64"
 	"fmt"
 	"log"
+	"runtime"
+	"sync"
 	"testing"
 
 	"github.com/golang-jwt/jwt/v4"
@@ -14,6 +16,8 @@ import (
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal/test"
 	"github.com/google/go-tpm-tools/launcher/internal/experiments"
+	"github.com/google/go-tpm-tools/launcher/internal/oci"
+	"github.com/google/go-tpm-tools/launcher/internal/oci/cosign"
 	"github.com/google/go-tpm-tools/launcher/internal/signaturediscovery"
 	"github.com/google/go-tpm-tools/launcher/spec"
 	"github.com/google/go-tpm-tools/launcher/verifier"
@@ -21,6 +25,7 @@ import (
 )
 
 func TestAttest(t *testing.T) {
+	ctx := context.Background()
 	testCases := []struct {
 		name                       string
 		launchSpec                 spec.LaunchSpec
@@ -37,7 +42,7 @@ func TestAttest(t *testing.T) {
 			name: "enable signed container",
 			launchSpec: spec.LaunchSpec{
 				SignedImageRepos: []string{signaturediscovery.FakeRepoWithSignatures},
-				Experiments:      experiments.Experiments{EnableSignedContainerImage: true},
+				Experiments:      experiments.Experiments{EnableSignedContainerCache: true},
 			},
 			principalIDTokenFetcher:    placeholderPrincipalFetcher,
 			containerSignaturesFetcher: signaturediscovery.NewFakeClient(),
@@ -61,7 +66,10 @@ func TestAttest(t *testing.T) {
 
 			agent := CreateAttestationAgent(tpm, client.AttestationKeyECC, verifierClient, tc.principalIDTokenFetcher, tc.containerSignaturesFetcher, tc.launchSpec, log.Default())
 
-			tokenBytes, err := agent.Attest(context.Background(), AttestAgentOpts{})
+			if err := agent.Refresh(ctx); err != nil {
+				t.Errorf("failed to fresh attestation agent: %v", err)
+			}
+			tokenBytes, err := agent.Attest(ctx, AttestAgentOpts{})
 			if err != nil {
 				t.Errorf("failed to attest to Attestation Service: %v", err)
 			}
@@ -88,7 +96,7 @@ func TestAttest(t *testing.T) {
 			if claims.Subject != "https://www.googleapis.com/compute/v1/projects/fakeProject/zones/fakeZone/instances/fakeInstance" {
 				t.Errorf("Invalid sub")
 			}
-			if tc.launchSpec.Experiments.EnableSignedContainerImage {
+			if tc.launchSpec.Experiments.EnableSignedContainerCache {
 				got := claims.ContainerImageSignatures
 				want := []fake.ContainerImageSignatureClaims{
 					{
@@ -214,14 +222,7 @@ func TestFetchContainerImageSignatures(t *testing.T) {
 			if len(gotSigs) != len(tc.wantBase64Sigs) {
 				t.Errorf("fetchContainerImageSignatures did not return expected signatures for test case %s, got signatures length %d, but want %d", tc.name, len(gotSigs), len(tc.wantBase64Sigs))
 			}
-			var gotBase64Sigs []string
-			for _, gotSig := range gotSigs {
-				base64Sig, err := gotSig.Base64Encoded()
-				if err != nil {
-					t.Fatalf("fetchContainerImageSignatures did not return expected base64 signatures for test case %s: %v", tc.name, err)
-				}
-				gotBase64Sigs = append(gotBase64Sigs, base64Sig)
-			}
+			gotBase64Sigs := convertOCISignatureToBase64(t, gotSigs)
 			if !cmp.Equal(gotBase64Sigs, tc.wantBase64Sigs) {
 				t.Errorf("fetchContainerImageSignatures did not return expected signatures for test case %s, got signatures %v, but want %v", tc.name, gotBase64Sigs, tc.wantBase64Sigs)
 			}
@@ -254,4 +255,56 @@ func TestFetchContainerImageSignatures(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCacheConcurrentSetGet(t *testing.T) {
+	cache := &sigsCache{}
+	if sigs := cache.get(); len(sigs) != 0 {
+		t.Errorf("signature cache should be empty, but got: %v", sigs)
+	}
+
+	var wg sync.WaitGroup
+	for i := 0; i < runtime.NumCPU(); i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			if idx%2 == 1 {
+				sigs := generateRandSigs(t)
+				cache.set(sigs)
+			} else {
+				cache.get()
+			}
+		}(i)
+	}
+	wg.Wait()
+}
+
+func generateRandSigs(t *testing.T) []oci.Signature {
+	t.Helper()
+
+	b := make([]byte, 32)
+	_, err := rand.Read(b)
+	if err != nil {
+		t.Fatalf("Unable to generate random bytes: %v", err)
+	}
+
+	randB64Str := base64.StdEncoding.EncodeToString(b)
+	return []oci.Signature{
+		cosign.NewFakeSignature(randB64Str, oci.ECDSAP256SHA256),
+	}
+}
+
+func convertOCISignatureToBase64(t *testing.T, sigs []oci.Signature) []string {
+	t.Helper()
+
+	var base64Sigs []string
+	for _, sig := range sigs {
+		b64Sig, err := sig.Base64Encoded()
+		if err != nil {
+			t.Fatalf("oci.Signature did not return expected base64 signature: %v", err)
+		}
+		base64Sigs = append(base64Sigs, b64Sig)
+	}
+
+	return base64Sigs
 }

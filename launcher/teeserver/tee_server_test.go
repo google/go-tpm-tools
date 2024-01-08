@@ -30,6 +30,10 @@ func (f fakeAttestationAgent) MeasureEvent(c cel.Content) error {
 	return f.measureEventFunc(c)
 }
 
+func (f fakeAttestationAgent) Refresh(_ context.Context) error {
+	return nil
+}
+
 func TestGetDefaultToken(t *testing.T) {
 	tmpDir := t.TempDir()
 	tmpToken := path.Join(tmpDir, launcherfile.AttestationVerifierTokenFilename)

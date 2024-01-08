@@ -346,6 +346,9 @@ func (r *ContainerRunner) measureContainerClaims(ctx context.Context) error {
 // The token file will be written to a tmp file and then renamed.
 func (r *ContainerRunner) refreshToken(ctx context.Context) (time.Duration, error) {
 	r.logger.Print("refreshing attestation verifier OIDC token")
+	if err := r.attestAgent.Refresh(ctx); err != nil {
+		return 0, fmt.Errorf("failed to refresh attestation agent: %v", err)
+	}
 	// request a default token
 	token, err := r.attestAgent.Attest(ctx, agent.AttestAgentOpts{})
 	if err != nil {
