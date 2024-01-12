@@ -452,6 +452,7 @@ func TestVerifyAttestationWithCEL(t *testing.T) {
 		{cel.ArgType, cel.CosEventPCR, []byte("--y")},
 		{cel.OverrideArgType, cel.CosEventPCR, []byte("--x")},
 		{cel.OverrideEnvType, cel.CosEventPCR, []byte("empty=")},
+		{cel.MemoryMonitorType, cel.CosEventPCR, []byte{1}},
 	}
 	for _, testEvent := range testEvents {
 		cos := cel.CosTlv{EventType: testEvent.cosNestedEventType, EventContent: testEvent.eventPayload}
@@ -489,7 +490,7 @@ func TestVerifyAttestationWithCEL(t *testing.T) {
 	expectedOverriddenEnvVars := make(map[string]string)
 	expectedOverriddenEnvVars["empty"] = ""
 
-	want := attestpb.ContainerState{
+	wantContainerState := attestpb.ContainerState{
 		ImageReference:    string(testEvents[0].eventPayload),
 		ImageDigest:       string(testEvents[1].eventPayload),
 		RestartPolicy:     attestpb.RestartPolicy_Never,
@@ -499,8 +500,14 @@ func TestVerifyAttestationWithCEL(t *testing.T) {
 		OverriddenEnvVars: expectedOverriddenEnvVars,
 		OverriddenArgs:    []string{string(testEvents[10].eventPayload)},
 	}
-	if diff := cmp.Diff(state.Cos.Container, &want, protocmp.Transform()); diff != "" {
-		t.Errorf("unexpected difference:\n%v", diff)
+	wantHealthMonitoringState := attestpb.HealthMonitoringState{
+		MemoryEnabled: true,
+	}
+	if diff := cmp.Diff(state.Cos.Container, &wantContainerState, protocmp.Transform()); diff != "" {
+		t.Errorf("unexpected container state difference:\n%v", diff)
+	}
+	if diff := cmp.Diff(state.Cos.HealthMonitoring, &wantHealthMonitoringState, protocmp.Transform()); diff != "" {
+		t.Errorf("unexpected health monitoring state difference:\n%v", diff)
 	}
 }
 

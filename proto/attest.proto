@@ -186,10 +186,16 @@ message SemanticVersion {
   uint32 patch = 3;
 }
 
+message HealthMonitoringState {
+  // Whether memory monitoring is enabled.
+  bool memory_enabled = 1;
+}
+
 message AttestedCosState {
   ContainerState container = 1;
   SemanticVersion cos_version = 2;
   SemanticVersion launcher_version = 3;
+  HealthMonitoringState health_monitoring = 4;
 }
 
 message EfiApp {

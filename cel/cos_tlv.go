@@ -31,6 +31,7 @@ const (
 	OverrideEnvType
 	// EventContent is empty on success, or contains an error message on failure.
 	LaunchSeparatorType
+	MemoryMonitorType
 )
 
 // CosTlv is a specific event type created for the COS (Google Container-Optimized OS),

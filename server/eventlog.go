@@ -120,6 +120,7 @@ func contains(set [][]byte, value []byte) bool {
 func getVerifiedCosState(coscel cel.CEL) (*pb.AttestedCosState, error) {
 	cosState := &pb.AttestedCosState{}
 	cosState.Container = &pb.ContainerState{}
+	cosState.HealthMonitoring = &pb.HealthMonitoringState{}
 	cosState.Container.Args = make([]string, 0)
 	cosState.Container.EnvVars = make(map[string]string)
 	cosState.Container.OverriddenEnvVars = make(map[string]string)
@@ -198,6 +199,10 @@ func getVerifiedCosState(coscel cel.CEL) (*pb.AttestedCosState, error) {
 			cosState.Container.OverriddenEnvVars[envName] = envVal
 		case cel.LaunchSeparatorType:
 			seenSeparator = true
+		case cel.MemoryMonitorType:
+			if len(cosTlv.EventContent) == 1 && cosTlv.EventContent[0] == uint8(1) {
+				cosState.HealthMonitoring.MemoryEnabled = true
+			}
 		default:
 			return nil, fmt.Errorf("found unknown COS Event Type %v", cosTlv.EventType)
 		}
