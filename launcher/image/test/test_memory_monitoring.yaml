@@ -22,7 +22,8 @@ steps:
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CheckMemoryMonitoringEnabled
   entrypoint: 'bash'
-  args: ['scripts/test_memory_monitoring.sh', '${_VM_NAME_PREFIX}-enable-${BUILD_ID}', '${_ZONE}', 'node-problem-detector.service successfully started']
+  # Search a regex pattern that ensures memory monitoring is enabled and measured into COS event logs.
+  args: ['scripts/test_memory_monitoring.sh', '${_VM_NAME_PREFIX}-enable-${BUILD_ID}', '${_ZONE}', 'node-problem-detector.service successfully started.*Successfully measured memory monitoring event']
   waitFor: ['CreateVMMemoryMemonitorEnabled']
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CleanUpVMMemoryMonitorEnabled
@@ -47,7 +48,8 @@ steps:
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CheckMemoryMonitoringDisabled
   entrypoint: 'bash'
-  args: ['scripts/test_memory_monitoring.sh', '${_VM_NAME_PREFIX}-disable-${BUILD_ID}', '${_ZONE}', 'MemoryMonitoring is disabled by the VM operator']
+  # Search a regex pattern that ensures memory monitoring is disabled and measured into COS event logs.
+  args: ['scripts/test_memory_monitoring.sh', '${_VM_NAME_PREFIX}-disable-${BUILD_ID}', '${_ZONE}', 'MemoryMonitoring is disabled by the VM operator.*Successfully measured memory monitoring event']
   waitFor: ['CreateVMMemoryMemonitorDisabled']
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CleanUpVMMemoryMonitorDisabled

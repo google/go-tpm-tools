@@ -16,6 +16,7 @@ type Experiments struct {
 	EnableOnDemandAttestation  bool
 	EnableMemoryMonitoring     bool
 	EnableSignedContainerCache bool
+	EnableMeasureMemoryMonitor bool
 }
 
 // New takes a filepath, opens the file, and calls ReadJsonInput with the contents

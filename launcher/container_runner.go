@@ -281,6 +281,23 @@ func appendTokenMounts(mounts []specs.Mount) []specs.Mount {
 	return append(mounts, m)
 }
 
+func (r *ContainerRunner) measureCELEvents(ctx context.Context) error {
+	if err := r.measureContainerClaims(ctx); err != nil {
+		return fmt.Errorf("failed to measure container claims: %v", err)
+	}
+	if r.launchSpec.Experiments.EnableMeasureMemoryMonitor {
+		if err := r.measureMemoryMonitor(); err != nil {
+			return fmt.Errorf("failed to measure memory monitoring state: %v", err)
+		}
+	}
+
+	separator := cel.CosTlv{
+		EventType:    cel.LaunchSeparatorType,
+		EventContent: nil, // Success
+	}
+	return r.attestAgent.MeasureEvent(separator)
+}
+
 // measureContainerClaims will measure various container claims into the COS
 // eventlog in the AttestationAgent.
 func (r *ContainerRunner) measureContainerClaims(ctx context.Context) error {
@@ -334,11 +351,21 @@ func (r *ContainerRunner) measureContainerClaims(ctx context.Context) error {
 		}
 	}
 
-	separator := cel.CosTlv{
-		EventType:    cel.LaunchSeparatorType,
-		EventContent: nil, // Success
+	return nil
+}
+
+// measureMemoryMonitor will measure memory monitoring claims into the COS
+// eventlog in the AttestationAgent.
+func (r *ContainerRunner) measureMemoryMonitor() error {
+	var enabled uint8
+	if r.launchSpec.MemoryMonitoringEnabled {
+		enabled = 1
 	}
-	return r.attestAgent.MeasureEvent(separator)
+	if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.MemoryMonitorType, EventContent: []byte{enabled}}); err != nil {
+		return err
+	}
+	r.logger.Println("Successfully measured memory monitoring event")
+	return nil
 }
 
 // Retrieves the default OIDC token from the attestation service, and returns how long
@@ -494,13 +521,6 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	if err := r.measureContainerClaims(ctx); err != nil {
-		return fmt.Errorf("failed to measure container claims: %v", err)
-	}
-	if err := r.fetchAndWriteToken(ctx); err != nil {
-		return fmt.Errorf("failed to fetch and write OIDC token: %v", err)
-	}
-
 	r.logger.Printf("EnableTestFeatureForImage is set to %v\n", r.launchSpec.Experiments.EnableTestFeatureForImage)
 	// create and start the TEE server behind the experiment
 	if r.launchSpec.Experiments.EnableOnDemandAttestation {
@@ -513,24 +533,30 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		defer teeServer.Shutdown(ctx)
 	}
 
-	if r.launchSpec.Experiments.EnableMemoryMonitoring {
-		// start node-problem-detector.service to collect memory related metrics.
-		if r.launchSpec.MemoryMonitoringEnabled {
-			r.logger.Println("MemoryMonitoring is enabled by the VM operator")
-			s, err := systemctl.New()
-			if err != nil {
-				return fmt.Errorf("failed to create systemctl client: %v", err)
-			}
-			defer s.Close()
-
-			r.logger.Println("Starting a systemctl operation: systemctl start node-problem-detector.service")
-			if err := s.Start("node-problem-detector.service"); err != nil {
-				return fmt.Errorf("failed to start node-problem-detector.service: %v", err)
-			}
-			r.logger.Println("node-problem-detector.service successfully started.")
-		} else {
-			r.logger.Println("MemoryMonitoring is disabled by the VM operator")
+	// start node-problem-detector.service to collect memory related metrics.
+	if r.launchSpec.MemoryMonitoringEnabled {
+		r.logger.Println("MemoryMonitoring is enabled by the VM operator")
+		s, err := systemctl.New()
+		if err != nil {
+			return fmt.Errorf("failed to create systemctl client: %v", err)
 		}
+		defer s.Close()
+
+		r.logger.Println("Starting a systemctl operation: systemctl start node-problem-detector.service")
+		if err := s.Start("node-problem-detector.service"); err != nil {
+			return fmt.Errorf("failed to start node-problem-detector.service: %v", err)
+		}
+		r.logger.Println("node-problem-detector.service successfully started.")
+	} else {
+		r.logger.Println("MemoryMonitoring is disabled by the VM operator")
+	}
+
+	if err := r.measureCELEvents(ctx); err != nil {
+		return fmt.Errorf("failed to measure CEL events: %v", err)
+	}
+
+	if err := r.fetchAndWriteToken(ctx); err != nil {
+		return fmt.Errorf("failed to fetch and write OIDC token: %v", err)
 	}
 
 	var streamOpt cio.Opt
