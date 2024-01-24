@@ -500,8 +500,9 @@ func TestVerifyAttestationWithCEL(t *testing.T) {
 		OverriddenEnvVars: expectedOverriddenEnvVars,
 		OverriddenArgs:    []string{string(testEvents[10].eventPayload)},
 	}
+	enabled := true
 	wantHealthMonitoringState := attestpb.HealthMonitoringState{
-		MemoryEnabled: true,
+		MemoryEnabled: &enabled,
 	}
 	if diff := cmp.Diff(state.Cos.Container, &wantContainerState, protocmp.Transform()); diff != "" {
 		t.Errorf("unexpected container state difference:\n%v", diff)

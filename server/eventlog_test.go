@@ -678,6 +678,9 @@ func TestParsingCELEventLog(t *testing.T) {
 		if diff := cmp.Diff(msState.Cos.HealthMonitoring, &emptyHealthMonitoringState, protocmp.Transform()); diff != "" {
 			t.Errorf("unexpected health monitoring difference:\n%v", diff)
 		}
+		if msState.Cos.HealthMonitoring.MemoryEnabled != nil {
+			t.Errorf("unexpected MemoryEnabled state, want nil, but got %v", *msState.Cos.HealthMonitoring.MemoryEnabled)
+		}
 	}
 
 	// Secondly, append some real COS events to the CEL. This time we should get content in the CosState.
@@ -714,8 +717,9 @@ func TestParsingCELEventLog(t *testing.T) {
 		EnvVars:        expectedEnvVars,
 		Args:           []string{string(testCELEvents[8].eventPayload), string(testCELEvents[9].eventPayload), string(testCELEvents[10].eventPayload)},
 	}
+	enabled := true
 	wantHealthMonitoringState := attestpb.HealthMonitoringState{
-		MemoryEnabled: true,
+		MemoryEnabled: &enabled,
 	}
 	for _, testEvent := range testCELEvents {
 		cos := cel.CosTlv{EventType: testEvent.cosNestedEventType, EventContent: testEvent.eventPayload}

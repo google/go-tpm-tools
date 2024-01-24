@@ -200,9 +200,11 @@ func getVerifiedCosState(coscel cel.CEL) (*pb.AttestedCosState, error) {
 		case cel.LaunchSeparatorType:
 			seenSeparator = true
 		case cel.MemoryMonitorType:
+			enabled := false
 			if len(cosTlv.EventContent) == 1 && cosTlv.EventContent[0] == uint8(1) {
-				cosState.HealthMonitoring.MemoryEnabled = true
+				enabled = true
 			}
+			cosState.HealthMonitoring.MemoryEnabled = &enabled
 		default:
 			return nil, fmt.Errorf("found unknown COS Event Type %v", cosTlv.EventType)
 		}
