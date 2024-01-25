@@ -188,7 +188,7 @@ message SemanticVersion {
 
 message HealthMonitoringState {
   // Whether memory monitoring is enabled.
-  bool memory_enabled = 1;
+  optional bool memory_enabled = 1;
 }
 
 message AttestedCosState {
