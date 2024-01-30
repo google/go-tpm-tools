@@ -346,6 +346,9 @@ func (r *ContainerRunner) measureContainerClaims(ctx context.Context) error {
 // The token file will be written to a tmp file and then renamed.
 func (r *ContainerRunner) refreshToken(ctx context.Context) (time.Duration, error) {
 	r.logger.Print("refreshing attestation verifier OIDC token")
+	if err := r.attestAgent.Refresh(ctx); err != nil {
+		return 0, fmt.Errorf("failed to refresh attestation agent: %v", err)
+	}
 	// request a default token
 	token, err := r.attestAgent.Attest(ctx, agent.AttestAgentOpts{})
 	if err != nil {
@@ -502,7 +505,7 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	// create and start the TEE server behind the experiment
 	if r.launchSpec.Experiments.EnableOnDemandAttestation {
 		r.logger.Println("EnableOnDemandAttestation is enabled: initializing TEE server.")
-		teeServer, err := teeserver.New(path.Join(launcherfile.HostTmpPath, teeServerSocket), r.attestAgent, r.logger)
+		teeServer, err := teeserver.New(ctx, path.Join(launcherfile.HostTmpPath, teeServerSocket), r.attestAgent, r.logger)
 		if err != nil {
 			return fmt.Errorf("failed to create the TEE server: %v", err)
 		}

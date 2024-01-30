@@ -36,7 +36,7 @@ steps:
 - name: 'gcr.io/cloud-builders/gcloud'
   id: BasicDiscoverSignaturesTest
   entrypoint: 'bash'
-  args: ['scripts/test_launcher_workload_discover_signatures.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}', '${_ZONE}']
+  args: ['scripts/test_launcher_workload_discover_signatures.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}', '${_ZONE}', 'Found container image signatures', '1']
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CleanUp
   entrypoint: 'bash'

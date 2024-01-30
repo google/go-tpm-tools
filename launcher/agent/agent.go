@@ -35,6 +35,7 @@ type principalIDTokenFetcher func(audience string) ([][]byte, error)
 type AttestationAgent interface {
 	MeasureEvent(cel.Content) error
 	Attest(context.Context, AttestAgentOpts) ([]byte, error)
+	Refresh(context.Context) error
 }
 
 // AttestAgentOpts contains user generated options when calling the
@@ -54,6 +55,7 @@ type agent struct {
 	cosCel           cel.CEL
 	launchSpec       spec.LaunchSpec
 	logger           *log.Logger
+	sigsCache        *sigsCache
 }
 
 // CreateAttestationAgent returns an agent capable of performing remote
@@ -72,6 +74,7 @@ func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher tpmKeyFetcher, ver
 		sigsFetcher:      sigsFetcher,
 		launchSpec:       launchSpec,
 		logger:           logger,
+		sigsCache:        &sigsCache{},
 	}
 }
 
@@ -111,12 +114,15 @@ func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error
 		},
 	}
 
-	if a.launchSpec.Experiments.EnableSignedContainerImage {
-		signatures := fetchContainerImageSignatures(ctx, a.sigsFetcher, a.launchSpec.SignedImageRepos, a.logger)
-		if len(signatures) > 0 {
-			req.ContainerImageSignatures = signatures
-			a.logger.Printf("Found container image signatures: %v\n", signatures)
-		}
+	var signatures []oci.Signature
+	if a.launchSpec.Experiments.EnableSignedContainerCache {
+		signatures = a.sigsCache.get()
+	} else {
+		signatures = fetchContainerImageSignatures(ctx, a.sigsFetcher, a.launchSpec.SignedImageRepos, a.logger)
+	}
+	if len(signatures) > 0 {
+		req.ContainerImageSignatures = signatures
+		a.logger.Printf("Found container image signatures: %v\n", signatures)
 	}
 
 	resp, err := a.client.VerifyAttestation(ctx, req)
@@ -127,6 +133,17 @@ func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error
 		a.logger.Printf("Partial errors from VerifyAttestation: %v", resp.PartialErrs)
 	}
 	return resp.ClaimsToken, nil
+}
+
+// Refresh refreshes the internal state of the attestation agent.
+// It will reset the container image signatures for now.
+func (a *agent) Refresh(ctx context.Context) error {
+	if a.launchSpec.Experiments.EnableSignedContainerCache {
+		signatures := fetchContainerImageSignatures(ctx, a.sigsFetcher, a.launchSpec.SignedImageRepos, a.logger)
+		a.sigsCache.set(signatures)
+		a.logger.Printf("Refreshed container image signature cache: %v\n", signatures)
+	}
+	return nil
 }
 
 func (a *agent) getAttestation(nonce []byte) (*pb.Attestation, error) {
@@ -148,7 +165,6 @@ func (a *agent) getAttestation(nonce []byte) (*pb.Attestation, error) {
 	return attestation, nil
 }
 
-// TODO: cache signatures so we don't need to fetch every time.
 func fetchContainerImageSignatures(ctx context.Context, fetcher signaturediscovery.Fetcher, targetRepos []string, logger *log.Logger) []oci.Signature {
 	signatures := make([][]oci.Signature, len(targetRepos))
 
@@ -172,4 +188,22 @@ func fetchContainerImageSignatures(ctx context.Context, fetcher signaturediscove
 		foundSigs = append(foundSigs, sigs...)
 	}
 	return foundSigs
+}
+
+type sigsCache struct {
+	mu    sync.RWMutex
+	items []oci.Signature
+}
+
+func (c *sigsCache) set(sigs []oci.Signature) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.items = make([]oci.Signature, len(sigs))
+	copy(c.items, sigs)
+}
+
+func (c *sigsCache) get() []oci.Signature {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.items
 }

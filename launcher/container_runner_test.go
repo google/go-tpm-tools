@@ -19,8 +19,10 @@ import (
 	"github.com/containerd/containerd/defaults"
 	"github.com/containerd/containerd/namespaces"
 	"github.com/golang-jwt/jwt/v4"
+	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/launcher/agent"
+	"github.com/google/go-tpm-tools/launcher/internal/experiments"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/spec"
 	"golang.org/x/oauth2"
@@ -34,6 +36,9 @@ const (
 type fakeAttestationAgent struct {
 	measureEventFunc func(cel.Content) error
 	attestFunc       func(context.Context, agent.AttestAgentOpts) ([]byte, error)
+	sigsCache        []string
+	sigsFetcherFunc  func(context.Context) []string
+	launchSpec       spec.LaunchSpec
 }
 
 func (f *fakeAttestationAgent) MeasureEvent(event cel.Content) error {
@@ -52,24 +57,57 @@ func (f *fakeAttestationAgent) Attest(ctx context.Context, _ agent.AttestAgentOp
 	return nil, fmt.Errorf("unimplemented")
 }
 
+// Refresh simulates the behavior of an actual agent.
+func (f *fakeAttestationAgent) Refresh(ctx context.Context) error {
+	if f.launchSpec.Experiments.EnableSignedContainerCache {
+		f.sigsCache = f.sigsFetcherFunc(ctx)
+	}
+	return nil
+}
+
+type fakeClaims struct {
+	jwt.RegisteredClaims
+	Signatures []string
+}
+
 func createJWT(t *testing.T, ttl time.Duration) []byte {
 	return createJWTWithID(t, "test token", ttl)
 }
 
 func createJWTWithID(t *testing.T, id string, ttl time.Duration) []byte {
-	t.Helper()
-
-	privkey, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		t.Fatalf("Error creating token key: %v", err)
-	}
-
 	now := jwt.TimeFunc()
 	claims := &jwt.RegisteredClaims{
 		ID:        id,
 		IssuedAt:  jwt.NewNumericDate(now),
 		NotBefore: jwt.NewNumericDate(now),
 		ExpiresAt: jwt.NewNumericDate(now.Add(ttl)),
+	}
+
+	return createSignedToken(t, claims)
+}
+
+func createJWTWithSignatures(t *testing.T, signatures []string) []byte {
+	now := jwt.TimeFunc()
+	ttl := 5 * time.Second
+	id := "signature token"
+	claims := &fakeClaims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			ID:        id,
+			IssuedAt:  jwt.NewNumericDate(now),
+			NotBefore: jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(now.Add(ttl)),
+		},
+		Signatures: signatures,
+	}
+	return createSignedToken(t, claims)
+}
+
+func createSignedToken(t *testing.T, claims jwt.Claims) []byte {
+	t.Helper()
+
+	privkey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("Error creating token key: %v", err)
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
@@ -128,6 +166,66 @@ func TestRefreshToken(t *testing.T) {
 	// Expect refreshTime to be no greater than expectedTTL.
 	if refreshTime >= time.Duration(float64(ttl)) {
 		t.Errorf("Refresh time cannot exceed ttl: got %v, expect no greater than %v", refreshTime, time.Duration(float64(ttl)))
+	}
+}
+
+// TestRefreshTokenWithSignedContainerCacheEnabled checks `refreshToken` updates the default token when signatures get updated.
+func TestRefreshTokenWithSignedContainerCacheEnabled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	oldCache := []string{"old sigs cache"}
+	fakeAgent := &fakeAttestationAgent{
+		sigsFetcherFunc: func(context.Context) []string {
+			return oldCache
+		},
+		launchSpec: spec.LaunchSpec{Experiments: experiments.Experiments{EnableSignedContainerCache: true}},
+	}
+	fakeAgent.attestFunc = func(context.Context, agent.AttestAgentOpts) ([]byte, error) {
+		return createJWTWithSignatures(t, fakeAgent.sigsCache), nil
+	}
+
+	runner := ContainerRunner{
+		attestAgent: fakeAgent,
+		logger:      log.Default(),
+	}
+
+	if err := os.MkdirAll(launcherfile.HostTmpPath, 0744); err != nil {
+		t.Fatalf("Error creating host token path directory: %v", err)
+	}
+
+	_, err := runner.refreshToken(ctx)
+	if err != nil {
+		t.Fatalf("refreshToken returned with error: %v", err)
+	}
+
+	// Simulate adding signatures.
+	newCache := []string{"old sigs cache", "new sigs cache"}
+	fakeAgent.sigsFetcherFunc = func(context.Context) []string {
+		return newCache
+	}
+
+	// Refresh token again to get the updated token.
+	_, err = runner.refreshToken(ctx)
+	if err != nil {
+		t.Fatalf("refreshToken returned with error: %v", err)
+	}
+
+	// Read the token to check if claims contain the updated signatures.
+	filepath := path.Join(launcherfile.HostTmpPath, launcherfile.AttestationVerifierTokenFilename)
+	token, err := os.ReadFile(filepath)
+	if err != nil {
+		t.Fatalf("Failed to read from %s: %v", filepath, err)
+	}
+
+	gotClaims := &fakeClaims{}
+	_, _, err = jwt.NewParser().ParseUnverified(string(token), gotClaims)
+	if err != nil {
+		t.Fatalf("failed to parse token: %v", err)
+	}
+
+	if gotSignatures, wantSignatures := gotClaims.Signatures, newCache; !cmp.Equal(gotSignatures, wantSignatures) {
+		t.Errorf("Updated token written to file does not contain expected signatures: got %v, want %v", gotSignatures, wantSignatures)
 	}
 }
 

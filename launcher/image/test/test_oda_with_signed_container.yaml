@@ -1,0 +1,51 @@
+substitutions:
+  '_IMAGE_NAME': ''
+  '_IMAGE_PROJECT': ''
+  '_CLEANUP': 'true'
+  '_VM_NAME_PREFIX': 'oda-signedcontainer'
+  '_ZONE': 'us-east1-b'
+  # If the workload image changes, the commit author should change the cosign signature as well to not break tests.
+  '_WORKLOAD_IMAGE': 'us-west1-docker.pkg.dev/confidential-space-images-dev/cs-integ-test-images/ipc/happypath@sha256:999831a7b8f8afd323e2359f3c1192206be2aa1d4f3b19f0739eff5f01f83b9e'
+  '_SIGNATURE_REPO': 'us-docker.pkg.dev/confidential-space-images-dev/cs-cosign-tests/oda'
+  '_EXPECTED_SIG': 'EQCIBIEAGtAqxzhMqq2jhs76KJZaD5VXvKV93yotPUtD7yDAiAFS4zFyiRicrhzeS1nmb9SpuAtDRSwv1lWaSWxWiwLTw=='
+
+steps:
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CreateVM
+  entrypoint: 'bash'
+  env:
+  - 'BUILD_ID=$BUILD_ID'
+  args: ['create_vm.sh','-i', '${_IMAGE_NAME}',
+          '-p', '${_IMAGE_PROJECT}',
+          '-m', 'tee-image-reference=${_WORKLOAD_IMAGE},tee-container-log-redirect=true,tee-signed-image-repos=${_SIGNATURE_REPO},tee-env-ALLOWED_OVERRIDE=overridden,tee-cmd=["newCmd"]',
+          '-n', '${_VM_NAME_PREFIX}-${BUILD_ID}',
+          '-z', '${_ZONE}',
+        ]
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: TestCustomToken
+  entrypoint: 'bash'
+  args: ['scripts/test_custom_token.sh', "true", '${_VM_NAME_PREFIX}-${BUILD_ID}', '${_ZONE}']
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: BasicDiscoverSignaturesTest
+  entrypoint: 'bash'
+  # Check how many times container image signatures is being logged. 
+  # Since signature logging will occur on refresh the default token, and on attest agent calling the `Attest` method, so the expected number should be 3.
+  # This also checks the fetched signatures are the same.
+  args: ['scripts/test_launcher_workload_discover_signatures.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}', '${_ZONE}', '${_EXPECTED_SIG}', '3']
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CleanUp
+  entrypoint: 'bash'
+  env:
+  - 'CLEANUP=$_CLEANUP'
+  args: ['cleanup.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}', '${_ZONE}']
+# Must come after cleanup.
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CheckFailure
+  entrypoint: 'bash'
+  env:
+  - 'BUILD_ID=$BUILD_ID'
+  args: ['check_failure.sh']
+
+options:
+  pool:
+    name: 'projects/confidential-space-images-dev/locations/us-west1/workerPools/cs-image-build-vpc'

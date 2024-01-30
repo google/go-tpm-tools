@@ -17,6 +17,7 @@ import (
 )
 
 type attestHandler struct {
+	ctx              context.Context
 	attestAgent      agent.AttestationAgent
 	defaultTokenFile string
 	logger           *log.Logger
@@ -36,7 +37,7 @@ type TeeServer struct {
 }
 
 // New takes in a socket and start to listen to it, and create a server
-func New(unixSock string, a agent.AttestationAgent, logger *log.Logger) (*TeeServer, error) {
+func New(ctx context.Context, unixSock string, a agent.AttestationAgent, logger *log.Logger) (*TeeServer, error) {
 	var err error
 	nl, err := net.Listen("unix", unixSock)
 	if err != nil {
@@ -47,6 +48,7 @@ func New(unixSock string, a agent.AttestationAgent, logger *log.Logger) (*TeeSer
 		netListener: nl,
 		server: &http.Server{
 			Handler: (&attestHandler{
+				ctx:              ctx,
 				attestAgent:      a,
 				defaultTokenFile: filepath.Join(launcherfile.HostTmpPath, launcherfile.AttestationVerifierTokenFilename),
 				logger:           logger,
@@ -76,7 +78,7 @@ func (a *attestHandler) getToken(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case "GET":
-		// this could call Attest(context.Background()) directly later.
+		// this could call Attest(ctx) directly later.
 		data, err := os.ReadFile(a.defaultTokenFile)
 
 		if err != nil {
@@ -113,7 +115,7 @@ func (a *attestHandler) getToken(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		tok, err := a.attestAgent.Attest(context.Background(),
+		tok, err := a.attestAgent.Attest(a.ctx,
 			agent.AttestAgentOpts{
 				Aud:       tokenReq.Audience,
 				Nonces:    tokenReq.Nonces,
