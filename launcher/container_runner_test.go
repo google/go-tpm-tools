@@ -29,7 +29,6 @@ import (
 	"github.com/opencontainers/go-digest"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
-	"golang.org/x/exp/slices"
 	"golang.org/x/oauth2"
 )
 
@@ -554,8 +553,8 @@ func TestMeasureCELEvents(t *testing.T) {
 			digest: "fake digest",
 			id:     "fake id",
 		},
-		args: []string{"fake", "args"},
-		env:  []string{"fake", "env"},
+		args: []string{"fake args"},
+		env:  []string{"fake env"},
 	}
 
 	testCases := []struct {
@@ -564,14 +563,36 @@ func TestMeasureCELEvents(t *testing.T) {
 		launchSpec    spec.LaunchSpec
 	}{
 		{
-			name:          "measure container events and launch separator event",
-			wantCELEvents: []cel.CosType{cel.LaunchSeparatorType, cel.ImageIDType, cel.ImageDigestType},
-			launchSpec:    spec.LaunchSpec{},
+			name: "measure full container events and launch separator event",
+			wantCELEvents: []cel.CosType{
+				cel.ImageRefType,
+				cel.ImageDigestType,
+				cel.RestartPolicyType,
+				cel.ImageIDType,
+				cel.ArgType,
+				cel.EnvVarType,
+				cel.OverrideEnvType,
+				cel.OverrideArgType,
+				cel.LaunchSeparatorType,
+			},
+			launchSpec: spec.LaunchSpec{
+				Envs: []spec.EnvVar{{Name: "hello", Value: "world"}},
+				Cmd:  []string{"hello world"},
+			},
 		},
 		{
-			name:          "measure memory monitoring event and launch separator event",
-			wantCELEvents: []cel.CosType{cel.LaunchSeparatorType, cel.MemoryMonitorType},
-			launchSpec:    spec.LaunchSpec{Experiments: experiments.Experiments{EnableMeasureMemoryMonitor: true}},
+			name: "measure partial container events, memory monitoring event, and launch separator event",
+			wantCELEvents: []cel.CosType{
+				cel.ImageRefType,
+				cel.ImageDigestType,
+				cel.RestartPolicyType,
+				cel.ImageIDType,
+				cel.ArgType,
+				cel.EnvVarType,
+				cel.MemoryMonitorType,
+				cel.LaunchSeparatorType,
+			},
+			launchSpec: spec.LaunchSpec{Experiments: experiments.Experiments{EnableMeasureMemoryMonitor: true}},
 		},
 	}
 
@@ -600,10 +621,8 @@ func TestMeasureCELEvents(t *testing.T) {
 				t.Errorf("failed to measureCELEvents: %v", err)
 			}
 
-			for _, wantEvent := range tc.wantCELEvents {
-				if !slices.Contains(gotEvents, cel.CosType(wantEvent)) {
-					t.Errorf("failed to measure CEL event %v", cel.CosType(wantEvent))
-				}
+			if !cmp.Equal(gotEvents, tc.wantCELEvents) {
+				t.Errorf("failed to measure CEL events, got %v, but want %v", gotEvents, tc.wantCELEvents)
 			}
 		})
 	}

@@ -521,6 +521,14 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
+	if err := r.measureCELEvents(ctx); err != nil {
+		return fmt.Errorf("failed to measure CEL events: %v", err)
+	}
+
+	if err := r.fetchAndWriteToken(ctx); err != nil {
+		return fmt.Errorf("failed to fetch and write OIDC token: %v", err)
+	}
+
 	r.logger.Printf("EnableTestFeatureForImage is set to %v\n", r.launchSpec.Experiments.EnableTestFeatureForImage)
 	// create and start the TEE server behind the experiment
 	if r.launchSpec.Experiments.EnableOnDemandAttestation {
@@ -549,14 +557,6 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		r.logger.Println("node-problem-detector.service successfully started.")
 	} else {
 		r.logger.Println("MemoryMonitoring is disabled by the VM operator")
-	}
-
-	if err := r.measureCELEvents(ctx); err != nil {
-		return fmt.Errorf("failed to measure CEL events: %v", err)
-	}
-
-	if err := r.fetchAndWriteToken(ctx); err != nil {
-		return fmt.Errorf("failed to fetch and write OIDC token: %v", err)
 	}
 
 	var streamOpt cio.Opt
