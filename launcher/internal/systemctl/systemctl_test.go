@@ -49,3 +49,43 @@ func TestRunSystmedCmd(t *testing.T) {
 		})
 	}
 }
+
+// TestGetStatus reads the `-.mount` which should exist on all systemd
+// systems and ensures that one of its properties is valid.
+func TestGetStatus(t *testing.T) {
+	systemctl, err := New()
+	if err != nil {
+		t.Skipf("Failed to create systemctl client: %v", err)
+	}
+
+	t.Cleanup(systemctl.Close)
+
+	testCases := []struct {
+		name string
+		unit string
+		want string
+	}{
+		{
+			name: "success",
+			unit: "-.mount", //`-.mount` which should exist on all systemd systems,
+			want: "active",
+		},
+		{
+			name: "success with an inactive unit",
+			unit: "node-problem-detector.service",
+			want: "inactive",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := systemctl.IsActive(context.Background(), tc.unit)
+			if err != nil {
+				t.Fatalf("failed to read status for unit [%s]: %v", tc.unit, got)
+			}
+			if got != tc.want {
+				t.Errorf("GetStatus returned unexpected status for unit [%s], got %s, but want %s", tc.unit, got, tc.want)
+			}
+		})
+	}
+}

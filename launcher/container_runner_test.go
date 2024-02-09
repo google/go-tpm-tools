@@ -18,6 +18,7 @@ import (
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/defaults"
 	"github.com/containerd/containerd/namespaces"
+	"github.com/containerd/containerd/oci"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-tpm-tools/cel"
@@ -25,6 +26,9 @@ import (
 	"github.com/google/go-tpm-tools/launcher/internal/experiments"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/spec"
+	"github.com/opencontainers/go-digest"
+	v1 "github.com/opencontainers/image-spec/specs-go/v1"
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/oauth2"
 )
 
@@ -539,4 +543,127 @@ func TestInitImageDockerPublic(t *testing.T) {
 			t.Error(err)
 		}
 	}
+}
+
+func TestMeasureCELEvents(t *testing.T) {
+	ctx := context.Background()
+	fakeContainer := &fakeContainer{
+		image: &fakeImage{
+			name:   "fake image name",
+			digest: "fake digest",
+			id:     "fake id",
+		},
+		args: []string{"fake args"},
+		env:  []string{"fake env"},
+	}
+
+	testCases := []struct {
+		name          string
+		wantCELEvents []cel.CosType
+		launchSpec    spec.LaunchSpec
+	}{
+		{
+			name: "measure full container events and launch separator event",
+			wantCELEvents: []cel.CosType{
+				cel.ImageRefType,
+				cel.ImageDigestType,
+				cel.RestartPolicyType,
+				cel.ImageIDType,
+				cel.ArgType,
+				cel.EnvVarType,
+				cel.OverrideEnvType,
+				cel.OverrideArgType,
+				cel.LaunchSeparatorType,
+			},
+			launchSpec: spec.LaunchSpec{
+				Envs: []spec.EnvVar{{Name: "hello", Value: "world"}},
+				Cmd:  []string{"hello world"},
+			},
+		},
+		{
+			name: "measure partial container events, memory monitoring event, and launch separator event",
+			wantCELEvents: []cel.CosType{
+				cel.ImageRefType,
+				cel.ImageDigestType,
+				cel.RestartPolicyType,
+				cel.ImageIDType,
+				cel.ArgType,
+				cel.EnvVarType,
+				cel.MemoryMonitorType,
+				cel.LaunchSeparatorType,
+			},
+			launchSpec: spec.LaunchSpec{Experiments: experiments.Experiments{EnableMeasureMemoryMonitor: true}},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			gotEvents := []cel.CosType{}
+
+			fakeAgent := &fakeAttestationAgent{
+				measureEventFunc: func(content cel.Content) error {
+					got, _ := content.GetTLV()
+					tlv := &cel.TLV{}
+					tlv.UnmarshalBinary(got.Value)
+					gotEvents = append(gotEvents, cel.CosType(tlv.Type))
+					return nil
+				},
+			}
+
+			r := ContainerRunner{
+				attestAgent: fakeAgent,
+				container:   fakeContainer,
+				launchSpec:  tc.launchSpec,
+				logger:      log.Default(),
+			}
+
+			if err := r.measureCELEvents(ctx); err != nil {
+				t.Errorf("failed to measureCELEvents: %v", err)
+			}
+
+			if !cmp.Equal(gotEvents, tc.wantCELEvents) {
+				t.Errorf("failed to measure CEL events, got %v, but want %v", gotEvents, tc.wantCELEvents)
+			}
+		})
+	}
+}
+
+// This ensures fakeContainer implements containerd.Container interface.
+var _ containerd.Container = &fakeContainer{}
+
+// This ensures fakeImage implements containerd.Image interface.
+var _ containerd.Image = &fakeImage{}
+
+type fakeContainer struct {
+	containerd.Container
+	image containerd.Image
+	args  []string
+	env   []string
+}
+
+func (c *fakeContainer) Image(context.Context) (containerd.Image, error) {
+	return c.image, nil
+}
+
+func (c *fakeContainer) Spec(context.Context) (*oci.Spec, error) {
+	return &oci.Spec{Process: &specs.Process{Args: c.args, Env: c.env}}, nil
+}
+
+type fakeImage struct {
+	containerd.Image
+	name   string
+	digest digest.Digest
+	id     digest.Digest
+}
+
+func (i *fakeImage) Name() string {
+	return i.name
+}
+
+func (i *fakeImage) Target() v1.Descriptor {
+	return v1.Descriptor{Digest: i.digest}
+}
+
+func (i *fakeImage) Config(_ context.Context) (v1.Descriptor, error) {
+	return v1.Descriptor{Digest: i.id}, nil
 }

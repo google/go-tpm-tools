@@ -13,6 +13,7 @@ import (
 type Systemd interface {
 	Start(string) error
 	Stop(string) error
+	IsActive(context.Context, string) (string, error)
 	Close()
 }
 
@@ -40,6 +41,19 @@ func (s *Systemctl) Start(unit string) error {
 // Stop is the equivalent of `systemctl stop $unit`.
 func (s *Systemctl) Stop(unit string) error {
 	return runSystemdCmd(s.dbus.StopUnitContext, "stop", unit)
+}
+
+// IsActive is the equivalent of `systemctl is-active $unit`.
+// The status can be "active", "activating", "deactivating", "inactive" or "failed".
+func (s *Systemctl) IsActive(ctx context.Context, unit string) (string, error) {
+	status, err := s.dbus.ListUnitsByNamesContext(ctx, []string{unit})
+	if err != nil {
+		return "", err
+	}
+	if len(status) != 1 {
+		return "", fmt.Errorf("want 1 unit from ListUnitsByNames, got %d", len(status))
+	}
+	return status[0].ActiveState, nil
 }
 
 // Close disconnects from dbus.
