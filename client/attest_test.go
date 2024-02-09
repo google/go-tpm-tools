@@ -63,7 +63,7 @@ func getTestCert(t *testing.T, issuingURL []string, parentCert *x509.Certificate
 func TestFetchIssuingCertificateSucceeds(t *testing.T) {
 	testCA, caKey := getTestCert(t, nil, nil, nil)
 
-	ts := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, _ *http.Request) {
 		rw.WriteHeader(http.StatusOK)
 		rw.Write(testCA.Raw)
 	}))
@@ -78,7 +78,7 @@ func TestFetchIssuingCertificateSucceeds(t *testing.T) {
 }
 
 func TestFetchIssuingCertificateReturnsErrorIfMalformedCertificateFound(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, _ *http.Request) {
 		rw.WriteHeader(http.StatusOK)
 		rw.Write([]byte("these are some random bytes"))
 	}))
@@ -97,7 +97,7 @@ func TestGetCertificateChainSucceeds(t *testing.T) {
 	// Create CA and corresponding server.
 	testCA, caKey := getTestCert(t, nil, nil, nil)
 
-	caServer := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+	caServer := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, _ *http.Request) {
 		rw.WriteHeader(http.StatusOK)
 		rw.Write(testCA.Raw)
 	}))
@@ -107,7 +107,7 @@ func TestGetCertificateChainSucceeds(t *testing.T) {
 	// Create intermediate cert and corresponding server.
 	intermediateCert, intermediateKey := getTestCert(t, []string{caServer.URL}, testCA, caKey)
 
-	intermediateServer := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+	intermediateServer := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, _ *http.Request) {
 		rw.WriteHeader(http.StatusOK)
 		rw.Write(intermediateCert.Raw)
 	}))
@@ -130,7 +130,7 @@ func TestGetCertificateChainSucceeds(t *testing.T) {
 func TestKeyAttestSucceedsWithCertChainRetrieval(t *testing.T) {
 	testCA, caKey := getTestCert(t, nil, nil, nil)
 
-	caServer := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+	caServer := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, _ *http.Request) {
 		rw.WriteHeader(http.StatusOK)
 		rw.Write(testCA.Raw)
 	}))

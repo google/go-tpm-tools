@@ -75,7 +75,7 @@ func TestAttest(t *testing.T) {
 			}
 
 			claims := &fake.Claims{}
-			keyFunc := func(token *jwt.Token) (interface{}, error) { return fakeSigner.Public(), nil }
+			keyFunc := func(_ *jwt.Token) (interface{}, error) { return fakeSigner.Public(), nil }
 			token, err := jwt.ParseWithClaims(string(tokenBytes), claims, keyFunc)
 			if err != nil {
 				t.Errorf("Failed to parse token %s", err)
@@ -240,7 +240,7 @@ func TestFetchContainerImageSignatures(t *testing.T) {
 				t.Fatalf("VerifyAttestation failed: %v", err)
 			}
 			claims := &fake.Claims{}
-			keyFunc := func(token *jwt.Token) (interface{}, error) { return fakeSigner.Public(), nil }
+			keyFunc := func(_ *jwt.Token) (interface{}, error) { return fakeSigner.Public(), nil }
 			_, err = jwt.ParseWithClaims(string(got.ClaimsToken), claims, keyFunc)
 			if err != nil {
 				t.Errorf("Failed to parse token %s", err)

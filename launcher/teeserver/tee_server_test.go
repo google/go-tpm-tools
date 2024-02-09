@@ -42,7 +42,7 @@ func TestGetDefaultToken(t *testing.T) {
 	ah := attestHandler{defaultTokenFile: tmpToken,
 		logger: log.Default(),
 		attestAgent: fakeAttestationAgent{
-			attestFunc: func(_ context.Context, a agent.AttestAgentOpts) ([]byte, error) {
+			attestFunc: func(context.Context, agent.AttestAgentOpts) ([]byte, error) {
 				t.Errorf("This method should not be called")
 				return nil, nil
 			},
@@ -95,7 +95,7 @@ func TestCustomToken(t *testing.T) {
 				"nonces": ["thisIsAcustomNonce"],
 				"token_type": "OIDC"
 				}`,
-			attestFunc: func(_ context.Context, a agent.AttestAgentOpts) ([]byte, error) {
+			attestFunc: func(context.Context, agent.AttestAgentOpts) ([]byte, error) {
 				t.Errorf("This method should not be called")
 				return nil, nil
 			},
@@ -108,7 +108,7 @@ func TestCustomToken(t *testing.T) {
 				"nonces": ["thisIsAcustomNonce"],
 				"token_type": "OIDC"
 			}`,
-			attestFunc: func(_ context.Context, a agent.AttestAgentOpts) ([]byte, error) {
+			attestFunc: func(context.Context, agent.AttestAgentOpts) ([]byte, error) {
 				return nil, errors.New("Error")
 			},
 			want: http.StatusBadRequest,
@@ -120,7 +120,7 @@ func TestCustomToken(t *testing.T) {
 				"nonces": ["thisIsAcustomNonce"],
 				"token_type": ""
 			}`,
-			attestFunc: func(_ context.Context, a agent.AttestAgentOpts) ([]byte, error) {
+			attestFunc: func(context.Context, agent.AttestAgentOpts) ([]byte, error) {
 				t.Errorf("This method should not be called")
 				return nil, nil
 			},
@@ -133,7 +133,7 @@ func TestCustomToken(t *testing.T) {
 				"nonces": ["thisIsAcustomNonce"],
 				"token_type": "OIDC"
 			}`,
-			attestFunc: func(_ context.Context, a agent.AttestAgentOpts) ([]byte, error) {
+			attestFunc: func(context.Context, agent.AttestAgentOpts) ([]byte, error) {
 				return []byte{}, nil
 			},
 			want: http.StatusOK,

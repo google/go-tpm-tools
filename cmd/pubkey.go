@@ -45,7 +45,7 @@ NVDATA instead (and --algo is ignored).`,
 		return keys
 	}(),
 	Args: cobra.ExactValidArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(_ *cobra.Command, args []string) error {
 		rwc, err := openTpm()
 		if err != nil {
 			return err

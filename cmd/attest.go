@@ -52,7 +52,7 @@ by default rsa is used.
 hardware and guarantees a fresh quote.
 `,
 	Args: cobra.NoArgs,
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(*cobra.Command, []string) error {
 
 		rwc, err := openTpm()
 		if err != nil {
