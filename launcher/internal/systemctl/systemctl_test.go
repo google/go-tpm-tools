@@ -7,14 +7,14 @@ import (
 )
 
 func TestRunSystmedCmd(t *testing.T) {
-	doneUnitFunc := func(ctx context.Context, unit string, mode string, progress chan<- string) (int, error) {
+	doneUnitFunc := func(_ context.Context, _, _ string, progress chan<- string) (int, error) {
 		progress <- "done"
 		return 1, nil
 	}
-	failedCallUnitFunc := func(ctx context.Context, unit string, mode string, progress chan<- string) (int, error) {
+	failedCallUnitFunc := func(context.Context, string, string, chan<- string) (int, error) {
 		return 1, errors.New("something went wrong")
 	}
-	failedUnitFunc := func(ctx context.Context, unit string, mode string, progress chan<- string) (int, error) {
+	failedUnitFunc := func(_ context.Context, _, _ string, progress chan<- string) (int, error) {
 		progress <- "failed"
 		return 1, nil
 	}

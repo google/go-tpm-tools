@@ -30,7 +30,7 @@ Based on --hash-algo and --pcrs flags, read the contents of the TPM's PCRs.
 If --hash-algo is not provided, all banks of PCRs will be read.
 If --pcrs is not provided, all PCRs are read for that hash algorithm.`,
 	Args: cobra.NoArgs,
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(*cobra.Command, []string) error {
 		rwc, err := openTpm()
 		if err != nil {
 			return err
@@ -77,7 +77,7 @@ var nvReadCmd = &cobra.Command{
 Based on the --index flag, this reads all of the NVData present at that NVIndex.
 The read is authenticated with the owner hierarchy and an empty password.`,
 	Args: cobra.NoArgs,
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(*cobra.Command, []string) error {
 		rwc, err := openTpm()
 		if err != nil {
 			return err

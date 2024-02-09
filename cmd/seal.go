@@ -27,7 +27,7 @@ only work if certain Platform Control Registers (PCRs) are in the correct state.
 This allows a key (i.e. a disk encryption key) to be bound to specific machine
 state (like Secure Boot).`,
 	Args: cobra.NoArgs,
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(*cobra.Command, []string) error {
 		rwc, err := openTpm()
 		if err != nil {
 			return err
@@ -87,7 +87,7 @@ sealing differ from the current PCR values. This allows for verification of the
 machine state when sealing took place.
 `,
 	Args: cobra.NoArgs,
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(*cobra.Command, []string) error {
 		rwc, err := openTpm()
 		if err != nil {
 			return err

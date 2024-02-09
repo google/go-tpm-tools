@@ -22,7 +22,7 @@ var verifyCmd = &cobra.Command{
 var debugCmd = &cobra.Command{
 	Use:   "debug",
 	Short: "Debug the contents of an attestation report without verifying its root-of-trust (e.g., attestation key certificate). For debugging purposes only",
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(*cobra.Command, []string) error {
 		attestationBytes, err := io.ReadAll(dataInput())
 		if err != nil {
 			return err
