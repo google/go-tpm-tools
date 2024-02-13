@@ -34,9 +34,16 @@ create_vm() {
   # check the active account
   gcloud auth list
 
+  # Max disk for n2d-standard-2 (8GB memory) at 1% memory overhead.
+  MIN_DISK_SIZE=11
+  MAX_DISK_SIZE_GB=80
+  ADDTL_DISK_RANGE=$(($MAX_DISK_SIZE_GB - $MIN_DISK_SIZE + 1))
+  DISK_SIZE_GB=$(($MIN_DISK_SIZE + ($RANDOM % $ADDTL_DISK_RANGE)))
+
   gcloud compute instances create $VM_NAME --confidential-compute --maintenance-policy=TERMINATE \
-    --scopes=cloud-platform --zone $ZONE --image=$IMAGE_NAME --image-project=$PROJECT_NAME \
-    --shielded-secure-boot $APPEND_METADATA $APPEND_METADATA_FILE
+    --machine-type=n2d-standard-2 --boot-disk-size=$DISK_SIZE_GB --scopes=cloud-platform --zone $ZONE \
+    --image=$IMAGE_NAME --image-project=$PROJECT_NAME --shielded-secure-boot $APPEND_METADATA \
+    $APPEND_METADATA_FILE
 }
 
 IMAGE_NAME=''
