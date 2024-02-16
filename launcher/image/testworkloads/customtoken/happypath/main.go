@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/golang-jwt/jwt/v4"
 )
@@ -173,6 +174,26 @@ func getRSAPublicKeyFromJWKsFile(t *jwt.Token) (any, error) {
 
 func decodeAndValidateToken(tokenBytes []byte, keyFunc func(t *jwt.Token) (any, error)) (*jwt.Token, error) {
 	var err error
+
+	unverifiedClaims := &jwt.RegisteredClaims{}
+	_, _, err = jwt.NewParser().ParseUnverified(string(tokenBytes), unverifiedClaims)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse claims: %v", err)
+	}
+	now := time.Now()
+	// Add one second for buffer.
+	nbf := unverifiedClaims.NotBefore.Time.Add(time.Second)
+	diff := nbf.Sub(now)
+	ten := 10 * time.Second
+	// Sleep until nbf is valid or max 10 seconds.
+	if diff > 0 {
+		if diff < ten {
+			time.Sleep(diff)
+		} else {
+			time.Sleep(ten)
+		}
+	}
+
 	token, err := jwt.NewParser().Parse(string(tokenBytes), keyFunc)
 
 	fmt.Printf("Token valid: %v", token.Valid)
@@ -208,7 +229,8 @@ func main() {
 	// custom attestation intended to be sent to a remote party for verification.
 	tokenbytes, err := getCustomTokenBytes(body)
 	if err != nil {
-		panic(err)
+		fmt.Println(err)
+		return
 	}
 
 	// Write a method to return a public key from the well-known endpoint
@@ -219,12 +241,14 @@ func main() {
 	// Confidential Space workload that generated the attestation.
 	token, err := decodeAndValidateToken(tokenbytes, keyFunc)
 	if err != nil {
-		panic(err)
+		fmt.Println(err)
+		return
 	}
 
 	claimsString, err := json.MarshalIndent(token.Claims, "", "  ")
 	if err != nil {
-		panic(err)
+		fmt.Println(err)
+		return
 	}
 
 	fmt.Println(string(claimsString))
