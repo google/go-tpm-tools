@@ -201,27 +201,72 @@ func startLauncher(launchSpec spec.LaunchSpec, serialConsole *os.File) error {
 }
 
 // verifyFsAndMount checks the partitions/mounts are as expected, based on the command output reported by OS.
-// These checks are not security guarantee.
+// These checks are not a security guarantee.
 func verifyFsAndMount() error {
-	// check protected_stateful_partition is encrypted and is on integrity protection
-	cryptsetupOutput, err := exec.Command("cryptsetup", "status", "/dev/mapper/protected_stateful_partition").Output()
+	dmLsOutput, err := exec.Command("dmsetup", "ls").Output()
 	if err != nil {
-		return fmt.Errorf("failed to check /dev/mapper/protected_stateful_partition status: %v %s", err, string(cryptsetupOutput))
-	}
-	matched := regexp.MustCompile(`type:\s+LUKS2`).FindString(string(cryptsetupOutput))
-	if len(matched) == 0 {
-		return fmt.Errorf("stateful partition is not LUKS2 formatted: \n%s", cryptsetupOutput)
-	}
-	matched = regexp.MustCompile(`integrity:\s+aead`).FindString(string(cryptsetupOutput))
-	if len(matched) == 0 {
-		return fmt.Errorf("stateful partition is not integrity protected: \n%s", cryptsetupOutput)
-	}
-	matched = regexp.MustCompile(`cipher:\s+aes-gcm-random`).FindString(string(cryptsetupOutput))
-	if len(matched) == 0 {
-		return fmt.Errorf("stateful partition is not using the aes-gcm-random cipher: \n%s", cryptsetupOutput)
+		return fmt.Errorf("failed to call `dmsetup ls`: %v %s", err, string(dmLsOutput))
 	}
 
-	// make sure /var/lib/containerd is on protected_stateful_partition
+	dmDevs := strings.Split(string(dmLsOutput), "\n")
+	devNameToDevNo := make(map[string]string)
+	for _, dmDev := range dmDevs {
+		if dmDev == "" {
+			continue
+		}
+		devFields := strings.Fields(dmDev)
+		if len(devFields) != 2 {
+			continue
+		}
+		devMajorMinor := strings.ReplaceAll(strings.ReplaceAll(devFields[1], "(", ""), ")", "")
+		devNameToDevNo[devFields[0]] = devMajorMinor
+	}
+	var cryptNo, zeroNo string
+	var ok bool
+	if _, ok = devNameToDevNo["protected_stateful_partition"]; !ok {
+		return fmt.Errorf("failed to find /dev/mapper/protected_stateful_partition: %s", string(dmLsOutput))
+	}
+	if cryptNo, ok = devNameToDevNo["protected_stateful_partition_crypt"]; !ok {
+		return fmt.Errorf("failed to find /dev/mapper/protected_stateful_partition_crypt: %s", string(dmLsOutput))
+	}
+	if zeroNo, ok = devNameToDevNo["protected_stateful_partition_zero"]; !ok {
+		return fmt.Errorf("failed to find /dev/mapper/protected_stateful_partition_zero: %s", string(dmLsOutput))
+	}
+
+	dmTableCloneOutput, err := exec.Command("dmsetup", "table", "/dev/mapper/protected_stateful_partition").Output()
+	if err != nil {
+		return fmt.Errorf("failed to check /dev/mapper/protected_stateful_partition status: %v %s", err, string(dmTableCloneOutput))
+	}
+	cloneTable := strings.Fields(string(dmTableCloneOutput))
+	// https://docs.kernel.org/admin-guide/device-mapper/dm-clone.html
+	if len(cloneTable) < 7 {
+		return fmt.Errorf("clone table does not match expected format: %s", string(dmTableCloneOutput))
+	}
+	if cloneTable[2] != "clone" {
+		return fmt.Errorf("protected_stateful_partition is not a dm-clone device: %s", string(dmTableCloneOutput))
+	}
+	if cloneTable[4] != cryptNo {
+		return fmt.Errorf("protected_stateful_partition does not have protected_stateful_partition_crypt as a destination device: %s", string(dmTableCloneOutput))
+	}
+	if cloneTable[5] != zeroNo {
+		return fmt.Errorf("protected_stateful_partition protected_stateful_partition_zero as a source device: %s", string(dmTableCloneOutput))
+	}
+
+	// Check protected_stateful_partition_crypt is encrypted and is on integrity protection.
+	dmTableCryptOutput, err := exec.Command("dmsetup", "table", "/dev/mapper/protected_stateful_partition_crypt").Output()
+	if err != nil {
+		return fmt.Errorf("failed to check /dev/mapper/protected_stateful_partition_crypt status: %v %s", err, string(dmTableCryptOutput))
+	}
+	matched := regexp.MustCompile(`integrity:28:aead`).FindString(string(dmTableCryptOutput))
+	if len(matched) == 0 {
+		return fmt.Errorf("stateful partition is not integrity protected: \n%s", dmTableCryptOutput)
+	}
+	matched = regexp.MustCompile(`capi:gcm\(aes\)-random`).FindString(string(dmTableCryptOutput))
+	if len(matched) == 0 {
+		return fmt.Errorf("stateful partition is not using the aes-gcm-random cipher: \n%s", dmTableCryptOutput)
+	}
+
+	// Make sure /var/lib/containerd is on protected_stateful_partition.
 	findmountOutput, err := exec.Command("findmnt", "/dev/mapper/protected_stateful_partition").Output()
 	if err != nil {
 		return fmt.Errorf("failed to findmnt /dev/mapper/protected_stateful_partition: %v %s", err, string(findmountOutput))
@@ -235,7 +280,7 @@ func verifyFsAndMount() error {
 		return fmt.Errorf("/var/lib/google was not mounted on the protected_stateful_partition: \n%s", findmountOutput)
 	}
 
-	// check /tmp is on tmpfs
+	// Check /tmp is on tmpfs.
 	findmntOutput, err := exec.Command("findmnt", "tmpfs").Output()
 	if err != nil {
 		return fmt.Errorf("failed to findmnt tmpfs: %v %s", err, string(findmntOutput))
@@ -245,7 +290,7 @@ func verifyFsAndMount() error {
 		return fmt.Errorf("/tmp was not mounted on the tmpfs: \n%s", findmntOutput)
 	}
 
-	// check verity status on vroot and oemroot
+	// Check verity status on vroot and oemroot.
 	cryptSetupOutput, err := exec.Command("cryptsetup", "status", "vroot").Output()
 	if err != nil {
 		return fmt.Errorf("failed to check vroot status: %v %s", err, string(cryptSetupOutput))

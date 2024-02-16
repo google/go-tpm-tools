@@ -111,7 +111,9 @@ main() {
   # Install container launcher.
   copy_launcher
   setup_launcher_systemd_unit
-  append_cmdline "cos.protected_stateful_partition=e"
+  # Minimum required COS version for 'e': cos-dev-105-17222-0-0.
+  # Minimum required COS version for 'm': cos-dev-113-18203-0-0.
+  append_cmdline "cos.protected_stateful_partition=m"
   # Increase wait timeout of the protected stateful partition.
   append_cmdline "systemd.default_timeout_start_sec=900s"
 
