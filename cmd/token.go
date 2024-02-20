@@ -34,8 +34,7 @@ The OIDC token includes claims regarding the authentication of the user by the a
 --algo flag overrides the public key algorithm for attestation key. If not provided then by default rsa is used.
 `,
 	Args: cobra.NoArgs,
-	RunE: func(cmd *cobra.Command, args []string) error {
-
+	RunE: func(*cobra.Command, []string) error {
 		rwc, err := openTpm()
 		if err != nil {
 			return err

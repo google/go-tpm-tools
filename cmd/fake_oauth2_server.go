@@ -11,11 +11,11 @@ type oauth2Server struct {
 
 func newMockOauth2Server() *oauth2Server {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/o/oauth2/auth", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/o/oauth2/auth", func(_ http.ResponseWriter, _ *http.Request) {
 		// Unimplemented: Should return authorization code back to the user
 	})
 
-	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/token", func(w http.ResponseWriter, _ *http.Request) {
 		// Should return acccess token back to the user
 		w.Header().Set("Content-Type", "application/x-www-form-urlencoded")
 		w.Write([]byte("access_token=mocktoken&scope=user&token_type=bearer"))
