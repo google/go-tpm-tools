@@ -314,6 +314,10 @@ github.com/google/go-tdx-guest v0.2.3-0.20231011100059-4cf02bed9d33 h1:lRlUusuie
 github.com/google/go-tdx-guest v0.2.3-0.20231011100059-4cf02bed9d33/go.mod h1:84ut3oago/BqPXD4ppiGXdkZNW3WFPkcyAO4my2hXdY=
 github.com/google/go-tdx-guest v0.2.3-0.20231222042644-aeefcb0d0eb3 h1:0EpD00z41G8EjJsHmO54BoUb3izF8/hgUzAzmlo6mCk=
 github.com/google/go-tdx-guest v0.2.3-0.20231222042644-aeefcb0d0eb3/go.mod h1:Iut2YE9wI7DbuNY9hFcExiUH5oeayMkHNgh/JpByzHQ=
+github.com/google/go-tdx-guest v0.3.1-0.20240216171427-43efd1ff6ae8 h1:/0VgwAVpTt5TPNndpNUguQlF+fWHaS9azdJzu4K8XNY=
+github.com/google/go-tdx-guest v0.3.1-0.20240216171427-43efd1ff6ae8/go.mod h1:/rc3d7rnPykOPuY8U9saMyEps0PZDThLk/RygXm04nE=
+github.com/google/go-tdx-guest v0.3.1 h1:gl0KvjdsD4RrJzyLefDOvFOUH3NAJri/3qvaL5m83Iw=
+github.com/google/go-tdx-guest v0.3.1/go.mod h1:/rc3d7rnPykOPuY8U9saMyEps0PZDThLk/RygXm04nE=
 github.com/google/go-tpm v0.9.0 h1:sQF6YqWMi+SCXpsmS3fd21oPy/vSddwZry4JnmltHVk=
 github.com/google/go-tpm v0.9.0/go.mod h1:FkNVkc6C+IsvDI9Jw1OveJmxGZUUaKxtrpOS47QWKfU=
 github.com/google/go-tspi v0.3.0 h1:ADtq8RKfP+jrTyIWIZDIYcKOMecRqNJFOew2IT0Inus=
