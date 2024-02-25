@@ -20,7 +20,7 @@ steps:
     entrypoint: 'gcloud'
     args: ['storage',
            'cp',
-           'gs://confidential-space-images_third-party/confidential_space_experiments',
+           'gs://confidential-space-images_third-party_test/confidential_space_experiments',
            './launcher/image/confidential_space_experiments']
   - name: 'gcr.io/cos-cloud/cos-customizer'
     args: ['start-image-build',
