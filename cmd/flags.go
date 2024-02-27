@@ -14,14 +14,15 @@ import (
 )
 
 var (
-	output   string
-	input    string
-	nvIndex  uint32
-	nonce    []byte
-	teeNonce []byte
-	keyAlgo  = tpm2.AlgRSA
-	pcrs     []int
-	format   string
+	output    string
+	input     string
+	nvIndex   uint32
+	nonce     []byte
+	teeNonce  []byte
+	keyAlgo   = tpm2.AlgRSA
+	pcrs      []int
+	format    string
+	asAddress string
 )
 
 type pcrsFlag struct {
@@ -121,6 +122,12 @@ func addOutputFlag(cmd *cobra.Command) {
 func addInputFlag(cmd *cobra.Command) {
 	cmd.PersistentFlags().StringVar(&input, "input", "",
 		"input file (defaults to stdin)")
+}
+
+// Lets this command specify an Attestation Server Address.
+func addAsAddressFlag(cmd *cobra.Command) {
+	cmd.PersistentFlags().StringVar(&asAddress, "asAddr", "https://confidentialcomputing.googleapis.com",
+		"Attestation Service address")
 }
 
 // Lets this command specify an NVDATA index, for use with nvIndex.

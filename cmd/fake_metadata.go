@@ -37,6 +37,7 @@ func NewMetadataServer(data Instance) (*MetadataServer, error) {
 	resp["instance/id"] = data.InstanceID
 	resp["instance/zone"] = data.Zone
 	resp["instance/name"] = data.InstanceName
+	resp["instance/service-accounts/default/identity"] = "test_jwt_token"
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := "/computeMetadata/v1/"

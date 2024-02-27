@@ -217,7 +217,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		return nil, fmt.Errorf("failed to create REST verifier client: %v", err)
 	}
 
-	// Create a new signaturediscovery cleint to fetch signatures.
+	// Create a new signaturediscovery client to fetch signatures.
 	sdClient := getSignatureDiscoveryClient(cdClient, token, image.Target())
 	return &ContainerRunner{
 		container,
