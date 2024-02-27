@@ -104,6 +104,9 @@ main() {
   mount -o remount,rw ${OEM_PATH}
   mkdir ${CS_PATH}
 
+  # Check all files
+  ls -lathr
+
   # Install container launcher entrypoint.
   configure_entrypoint "entrypoint.sh"
   # Install experiment client.
