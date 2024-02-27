@@ -30,8 +30,8 @@ var tokenCmd = &cobra.Command{
 	Use:   "token",
 	Short: "Attest and fetch an OIDC token from Google Attestation Verification Service.",
 	Long: `Gather attestation report and send it to Google Attestation Verification Service for an OIDC token.
-The OIDC token includes claims regarding the authentication of the user by the authorization server (Google IAM server) with the use of an OAuth client application(Google Cloud apps). Note that this command will only work on a GCE VM with confidential space image for now. And Confidential computing API needs to be enabled for your account to access Google Attestation Verification Service https://pantheon.corp.google.com/apis/api/confidentialcomputing.googleapis.com.
---algo flag overrides the public key algorithm for attestation key. If not provided then by default rsa is used.
+The OIDC token includes claims regarding the GCE VM, which is verified by Attestation Verification Service. Note that Confidential Computing API needs to be enabled for your account to access Google Attestation Verification Service https://pantheon.corp.google.com/apis/api/confidentialcomputing.googleapis.com.
+--algo flag overrides the public key algorithm for the GCE TPM attestation key. If not provided then by default rsa is used.
 `,
 	Args: cobra.NoArgs,
 	RunE: func(*cobra.Command, []string) error {
@@ -84,17 +84,20 @@ The OIDC token includes claims regarding the authentication of the user by the a
 
 		// Supports GCE VM. Hard code the AK type. Set GCE AK (EK signing) cert
 		var gceAK *client.Key
+		var usedKeyAlgo string
 		if keyAlgo == tpm2.AlgRSA {
+			usedKeyAlgo = "RSA"
 			gceAK, err = client.GceAttestationKeyRSA(rwc)
 		}
 		if keyAlgo == tpm2.AlgECC {
+			usedKeyAlgo = "ECC"
 			gceAK, err = client.GceAttestationKeyECC(rwc)
 		}
 		if err != nil {
 			return err
 		}
 		if gceAK.Cert() == nil {
-			return errors.New("failed to find gceAKCert on this VM: try creating a new VM or contacting support")
+			return errors.New("failed to find gceAKCert on this VM: try creating a new VM or verifying the VM has an EK cert using get-shielded-identity gcloud command. The used key algorithm is: " + usedKeyAlgo)
 		}
 		gceAK.Close()
 
@@ -132,16 +135,14 @@ The OIDC token includes claims regarding the authentication of the user by the a
 
 		if output == "" {
 			fmt.Fprintf(messageOutput(), string(token)+"\n")
-		}
-
-		if output != "" {
+		} else {
 			out := []byte(token)
 			if _, err := dataOutput().Write(out); err != nil {
-				return fmt.Errorf("failed to write attestation report: %v", err)
+				return fmt.Errorf("failed to write the token: %v", err)
 			}
 		}
 
-		fmt.Fprintf(debugOutput(), string(claimsString)+"\n")
+		fmt.Fprintf(debugOutput(), string(claimsString)+"\n"+"Note: these Claims are for debugging purpose and not verified"+"\n")
 		return nil
 	},
 }
@@ -184,7 +185,7 @@ func init() {
 	RootCmd.AddCommand(tokenCmd)
 	addOutputFlag(tokenCmd)
 	addPublicKeyAlgoFlag(tokenCmd)
-	addAsAdressFlag(tokenCmd)
+	addAsAddressFlag(tokenCmd)
 	// TODO: Add TEE hardware OIDC token generation
 	// addTeeNonceflag(tokenCmd)
 	// addTeeTechnology(tokenCmd)

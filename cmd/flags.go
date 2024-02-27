@@ -125,7 +125,7 @@ func addInputFlag(cmd *cobra.Command) {
 }
 
 // Lets this command specify an Attestation Server Address.
-func addAsAdressFlag(cmd *cobra.Command) {
+func addAsAddressFlag(cmd *cobra.Command) {
 	cmd.PersistentFlags().StringVar(&asAddress, "asAddr", "https://confidentialcomputing.googleapis.com",
 		"Attestation Service address")
 }
