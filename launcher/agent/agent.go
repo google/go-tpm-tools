@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"sync"
 
+	"cloud.google.com/go/logging"
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/launcher/internal/oci"
@@ -55,6 +56,7 @@ type agent struct {
 	cosCel           cel.CEL
 	launchSpec       spec.LaunchSpec
 	logger           *log.Logger
+	cloudLogger      *logging.Logger
 	sigsCache        *sigsCache
 }
 
@@ -65,7 +67,7 @@ type agent struct {
 // - principalFetcher is a func to fetch GCE principal tokens for a given audience.
 // - signaturesFetcher is a func to fetch container image signatures associated with the running workload.
 // - logger will log any partial errors returned by VerifyAttestation.
-func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher tpmKeyFetcher, verifierClient verifier.Client, principalFetcher principalIDTokenFetcher, sigsFetcher signaturediscovery.Fetcher, launchSpec spec.LaunchSpec, logger *log.Logger) AttestationAgent {
+func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher tpmKeyFetcher, verifierClient verifier.Client, principalFetcher principalIDTokenFetcher, sigsFetcher signaturediscovery.Fetcher, launchSpec spec.LaunchSpec, logger *log.Logger, cloudLogger *logging.Logger) AttestationAgent {
 	return &agent{
 		tpm:              tpm,
 		client:           verifierClient,
@@ -74,6 +76,7 @@ func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher tpmKeyFetcher, ver
 		sigsFetcher:      sigsFetcher,
 		launchSpec:       launchSpec,
 		logger:           logger,
+		cloudLogger:      cloudLogger,
 		sigsCache:        &sigsCache{},
 	}
 }
@@ -112,6 +115,11 @@ func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error
 			CustomNonce:    opts.Nonces,
 			TokenType:      opts.TokenType,
 		},
+	}
+
+	if a.cloudLogger != nil {
+		a.cloudLogger.Log(logging.Entry{Payload: challenge})
+		a.cloudLogger.Log(logging.Entry{Payload: attestation})
 	}
 
 	var signatures []oci.Signature

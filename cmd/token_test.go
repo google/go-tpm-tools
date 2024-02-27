@@ -5,14 +5,20 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/json"
 	"io"
 	"math/big"
 	"os"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal/test"
+	"github.com/google/go-tpm-tools/launcher/verifier"
+	pb "github.com/google/go-tpm-tools/proto/attest"
 	"github.com/google/go-tpm/legacy/tpm2"
 	"github.com/google/go-tpm/tpmutil"
 	"golang.org/x/oauth2"
@@ -25,6 +31,8 @@ func TestTokenWithGCEAK(t *testing.T) {
 	ExternalTPM = rwc
 	secretFile1 := makeOutputFile(t, "token")
 	defer os.RemoveAll(secretFile1)
+	// match the semantics of instrumenting cloud logging logs one time
+	var instrumentOnce = new(sync.Once)
 	var template = map[string]tpm2.Public{
 		"rsa": GCEAKTemplateRSA(),
 		"ecc": GCEAKTemplateECC(),
@@ -72,12 +80,76 @@ func TestTokenWithGCEAK(t *testing.T) {
 			}
 			defer mockAttestationServer.Stop()
 
-			RootCmd.SetArgs([]string{"token", "--algo", op.algo, "--output", secretFile1, "--asAddr", mockAttestationServer.server.URL})
+			//redirect cloud log from http request to stdout
+			old := os.Stdout
+			r, w, _ := os.Pipe()
+			os.Stdout = w
+
+			RootCmd.SetArgs([]string{"token", "--algo", op.algo, "--output", secretFile1, "--verifier-endpoint", mockAttestationServer.server.URL, "--cloud-log", "--audience", "https://api.test.com", "--unit-test"})
 			if err := RootCmd.Execute(); err != nil {
+				t.Error(err)
+			}
+
+			w.Close()
+			out, _ := io.ReadAll(r)
+			os.Stdout = old
+			arrays := strings.Split(string(out), "\n")
+			instrumentOnce.Do(func() {
+				// remove cloud log one-time instrumentation
+				arrays = append(arrays[:1], arrays[2:]...)
+			})
+
+			// parse json redirected
+			var gotChallenge challengeLogEntry
+			var gotAttestationRequest attestationRequestLogEntry
+			var gotToken tokenLogEntry
+			var gotClaims claimsLogEntry
+			err = json.Unmarshal([]byte(arrays[0]), &gotChallenge)
+			if err != nil {
+				t.Error(err)
+			}
+			err = json.Unmarshal([]byte(arrays[1]), &gotAttestationRequest)
+			if err != nil {
+				t.Error(err)
+			}
+			err = json.Unmarshal([]byte(arrays[2]), &gotToken)
+			if err != nil {
+				t.Error(err)
+			}
+			err = json.Unmarshal([]byte(arrays[3]), &gotClaims)
+			if err != nil {
 				t.Error(err)
 			}
 		})
 	}
+}
+
+type challengeLogEntry struct {
+	Message   verifier.Challenge `json:"message"`
+	Severity  string             `json:"severity"`
+	Timestamp string             `json:"timestamp"`
+}
+
+type attestationRequestLogEntry struct {
+	Message   *pb.Attestation `json:"message"`
+	Severity  string          `json:"severity"`
+	Timestamp string          `json:"timestamp"`
+}
+
+type Message struct {
+	Token string `json:"token"`
+}
+
+type tokenLogEntry struct {
+	Message   Message `json:"message"`
+	Severity  string  `json:"severity"`
+	Timestamp string  `json:"timestamp"`
+}
+
+type claimsLogEntry struct {
+	Message   jwt.RegisteredClaims `json:"message"`
+	Severity  string               `json:"severity"`
+	Timestamp string               `json:"timestamp"`
 }
 
 // Need to call tpm2.NVUndefinespace twice on the handle with authHandle tpm2.HandlePlatform.

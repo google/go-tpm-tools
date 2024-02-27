@@ -6,10 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
 	"cloud.google.com/go/compute/metadata"
+	"cloud.google.com/go/logging"
 	"github.com/containerd/containerd/namespaces"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-tpm-tools/client"
@@ -24,6 +26,8 @@ import (
 )
 
 var mdsClient *metadata.Client
+
+const toolName = "gotpm"
 
 // If hardware technology needs a variable length teenonce then please modify the flags description
 var tokenCmd = &cobra.Command{
@@ -101,11 +105,27 @@ The OIDC token includes claims regarding the GCE VM, which is verified by Attest
 		}
 		gceAK.Close()
 
+		var cloudLogClient *logging.Client
+		var cloudLogger *logging.Logger
+		if cloudLog {
+			cloudLogClient, err = logging.NewClient(ctx, projectID)
+			if err != nil {
+				return fmt.Errorf("failed to create Cloud Logging client: %w", err)
+			}
+
+			if unitTest {
+				cloudLogger = cloudLogClient.Logger(toolName, logging.RedirectAsJSON(os.Stdout))
+			} else {
+				cloudLogger = cloudLogClient.Logger(toolName)
+			}
+			fmt.Fprintf(debugOutput(), "cloudLogger created for project: "+projectID+"\n")
+		}
+
 		key = "gceAK"
-		attestAgent := agent.CreateAttestationAgent(rwc, attestationKeys[key][keyAlgo], verifierClient, principalFetcher, nil, spec.LaunchSpec{}, nil)
+		attestAgent := agent.CreateAttestationAgent(rwc, attestationKeys[key][keyAlgo], verifierClient, principalFetcher, nil, spec.LaunchSpec{}, nil, cloudLogger)
 
 		fmt.Fprintf(debugOutput(), "Fetching attestation verifier OIDC token\n")
-		token, err := attestAgent.Attest(ctx, agent.AttestAgentOpts{})
+		token, err := attestAgent.Attest(ctx, agent.AttestAgentOpts{Aud: audience, TokenType: "OIDC"})
 		if err != nil {
 			return fmt.Errorf("failed to retrieve attestation service token: %v", err)
 		}
@@ -142,7 +162,17 @@ The OIDC token includes claims regarding the GCE VM, which is verified by Attest
 			}
 		}
 
+		if cloudLog {
+			cloudLogger.Log(logging.Entry{Payload: map[string]string{"token": string(token)}})
+			cloudLogger.Log(logging.Entry{Payload: mapClaims})
+			cloudLogClient.Close()
+			if err != nil {
+				return fmt.Errorf("failed to close cloud logging client: %w", err)
+			}
+		}
+
 		fmt.Fprintf(debugOutput(), string(claimsString)+"\n"+"Note: these Claims are for debugging purpose and not verified"+"\n")
+
 		return nil
 	},
 }
@@ -186,6 +216,9 @@ func init() {
 	addOutputFlag(tokenCmd)
 	addPublicKeyAlgoFlag(tokenCmd)
 	addAsAddressFlag(tokenCmd)
+	addCloudLoggingFlag(tokenCmd)
+	addAudienceFlag(tokenCmd)
+	addUnitTestFlag(tokenCmd)
 	// TODO: Add TEE hardware OIDC token generation
 	// addTeeNonceflag(tokenCmd)
 	// addTeeTechnology(tokenCmd)
