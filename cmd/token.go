@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/url"
-	"os"
 	"strings"
 	"time"
 
@@ -23,9 +23,12 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/option"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 var mdsClient *metadata.Client
+var mockCloudLoggingServerAddress string
 
 const toolName = "gotpm"
 
@@ -108,16 +111,26 @@ The OIDC token includes claims regarding the GCE VM, which is verified by Attest
 		var cloudLogClient *logging.Client
 		var cloudLogger *logging.Logger
 		if cloudLog {
-			cloudLogClient, err = logging.NewClient(ctx, projectID)
-			if err != nil {
-				return fmt.Errorf("failed to create Cloud Logging client: %w", err)
+			if audience == "" {
+				return errors.New("cloud logging requires the --audience flag")
+			}
+			if mockCloudLoggingServerAddress != "" {
+				conn, err := grpc.Dial(mockCloudLoggingServerAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
+				if err != nil {
+					log.Fatalf("dialing %q: %v", mockCloudLoggingServerAddress, err)
+				}
+				cloudLogClient, err = logging.NewClient(ctx, TestProjectID, option.WithGRPCConn(conn))
+				if err != nil {
+					return fmt.Errorf("failed to create cloud logging client for mock cloud logging server: %w", err)
+				}
+			} else {
+				cloudLogClient, err = logging.NewClient(ctx, projectID)
+				if err != nil {
+					return fmt.Errorf("failed to create cloud logging client: %w", err)
+				}
 			}
 
-			if unitTest {
-				cloudLogger = cloudLogClient.Logger(toolName, logging.RedirectAsJSON(os.Stdout))
-			} else {
-				cloudLogger = cloudLogClient.Logger(toolName)
-			}
+			cloudLogger = cloudLogClient.Logger(toolName)
 			fmt.Fprintf(debugOutput(), "cloudLogger created for project: "+projectID+"\n")
 		}
 
@@ -218,7 +231,6 @@ func init() {
 	addAsAddressFlag(tokenCmd)
 	addCloudLoggingFlag(tokenCmd)
 	addAudienceFlag(tokenCmd)
-	addUnitTestFlag(tokenCmd)
 	// TODO: Add TEE hardware OIDC token generation
 	// addTeeNonceflag(tokenCmd)
 	// addTeeTechnology(tokenCmd)

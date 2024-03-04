@@ -25,7 +25,6 @@ var (
 	asAddress string
 	audience  string
 	cloudLog  bool
-	unitTest  bool
 )
 
 type pcrsFlag struct {
@@ -136,11 +135,6 @@ func addAsAddressFlag(cmd *cobra.Command) {
 // Lets this command enable Cloud logging
 func addCloudLoggingFlag(cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&cloudLog, "cloud-log", false, "logs the attestation and token to Cloud Logging for auditing purposes. Requires the audience flag.")
-}
-
-// Lets this command enable unit test
-func addUnitTestFlag(cmd *cobra.Command) {
-	cmd.Flags().BoolVar(&unitTest, "unit-test", false, "logs the attestation and token to local for unit test purposes.")
 }
 
 // Lets this command specify custom audience field of the attestation token
