@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v4"
-	"github.com/google/go-tpm-tools/launcher/internal/oci"
-	"github.com/google/go-tpm-tools/launcher/verifier"
+	"github.com/google/go-tpm-tools/verifier"
+	"github.com/google/go-tpm-tools/verifier/oci"
 	"go.uber.org/multierr"
 	"google.golang.org/genproto/googleapis/rpc/code"
 	"google.golang.org/genproto/googleapis/rpc/status"

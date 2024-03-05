@@ -16,12 +16,12 @@ import (
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal/test"
 	"github.com/google/go-tpm-tools/launcher/internal/experiments"
-	"github.com/google/go-tpm-tools/launcher/internal/oci"
-	"github.com/google/go-tpm-tools/launcher/internal/oci/cosign"
 	"github.com/google/go-tpm-tools/launcher/internal/signaturediscovery"
 	"github.com/google/go-tpm-tools/launcher/spec"
-	"github.com/google/go-tpm-tools/launcher/verifier"
-	"github.com/google/go-tpm-tools/launcher/verifier/fake"
+	"github.com/google/go-tpm-tools/verifier"
+	"github.com/google/go-tpm-tools/verifier/fake"
+	"github.com/google/go-tpm-tools/verifier/oci"
+	"github.com/google/go-tpm-tools/verifier/oci/cosign"
 )
 
 func TestAttest(t *testing.T) {

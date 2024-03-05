@@ -18,11 +18,11 @@ import (
 	"cloud.google.com/go/logging"
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
-	"github.com/google/go-tpm-tools/launcher/internal/oci"
 	"github.com/google/go-tpm-tools/launcher/internal/signaturediscovery"
 	"github.com/google/go-tpm-tools/launcher/spec"
-	"github.com/google/go-tpm-tools/launcher/verifier"
 	pb "github.com/google/go-tpm-tools/proto/attest"
+	"github.com/google/go-tpm-tools/verifier"
+	"github.com/google/go-tpm-tools/verifier/oci"
 )
 
 var defaultCELHashAlgo = []crypto.Hash{crypto.SHA256, crypto.SHA1}

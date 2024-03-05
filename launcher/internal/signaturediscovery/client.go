@@ -8,8 +8,8 @@ import (
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/images"
-	"github.com/google/go-tpm-tools/launcher/internal/oci"
-	"github.com/google/go-tpm-tools/launcher/internal/oci/cosign"
+	"github.com/google/go-tpm-tools/verifier/oci"
+	"github.com/google/go-tpm-tools/verifier/oci/cosign"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 )
 

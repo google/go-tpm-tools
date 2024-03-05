@@ -10,7 +10,7 @@ import (
 	"github.com/google/go-tpm-tools/launcher/agent"
 	"github.com/google/go-tpm-tools/launcher/internal/signaturediscovery"
 	"github.com/google/go-tpm-tools/launcher/spec"
-	"github.com/google/go-tpm-tools/launcher/verifier"
+	"github.com/google/go-tpm-tools/verifier"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/option"
 )
