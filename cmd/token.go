@@ -1,11 +1,14 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"net/url"
 	"strings"
 	"time"
@@ -14,9 +17,9 @@ import (
 	"cloud.google.com/go/logging"
 	"github.com/containerd/containerd/namespaces"
 	"github.com/golang-jwt/jwt/v4"
+	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
-	"github.com/google/go-tpm-tools/launcher/agent"
-	"github.com/google/go-tpm-tools/launcher/spec"
+	attestpb "github.com/google/go-tpm-tools/proto/attest"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/google/go-tpm-tools/verifier/rest"
 	"github.com/google/go-tpm/legacy/tpm2"
@@ -135,13 +138,41 @@ The OIDC token includes claims regarding the GCE VM, which is verified by Attest
 		}
 
 		key = "gceAK"
-		attestAgent := agent.CreateAttestationAgent(rwc, attestationKeys[key][keyAlgo], verifierClient, principalFetcher, nil, spec.LaunchSpec{}, nil, cloudLogger)
 
 		fmt.Fprintf(debugOutput(), "Fetching attestation verifier OIDC token\n")
-		token, err := attestAgent.Attest(ctx, agent.AttestAgentOpts{Aud: audience, TokenType: "OIDC"})
+
+		challenge, err := verifierClient.CreateChallenge(ctx)
 		if err != nil {
-			return fmt.Errorf("failed to retrieve attestation service token: %v", err)
+			return err
 		}
+
+		principalTokens, err := principalFetcher(challenge.Name)
+		if err != nil {
+			return fmt.Errorf("failed to get principal tokens: %w", err)
+		}
+
+		attestation, err := getAttestation(rwc, attestationKeys[key][keyAlgo], challenge.Nonce)
+		if err != nil {
+			return err
+		}
+
+		req := verifier.VerifyAttestationRequest{
+			Challenge:      challenge,
+			GcpCredentials: principalTokens,
+			Attestation:    attestation,
+			// TODO: add TokenOptions
+		}
+
+		resp, err := verifierClient.VerifyAttestation(ctx, req)
+		if err != nil {
+			return err
+		}
+		if len(resp.PartialErrs) > 0 {
+			// TODO: use logger
+			fmt.Printf("Partial errors from VerifyAttestation: %v", resp.PartialErrs)
+		}
+
+		token := resp.ClaimsToken
 
 		// Get token expiration.
 		claims := &jwt.RegisteredClaims{}
@@ -188,6 +219,28 @@ The OIDC token includes claims regarding the GCE VM, which is verified by Attest
 
 		return nil
 	},
+}
+
+type tpmKeyFetcher func(rw io.ReadWriter) (*client.Key, error)
+
+func getAttestation(tpm io.ReadWriteCloser, akFetcher tpmKeyFetcher, nonce []byte) (*attestpb.Attestation, error) {
+	ak, err := akFetcher(tpm)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get AK: %v", err)
+	}
+	defer ak.Close()
+
+	var buf bytes.Buffer
+	coscel := &cel.CEL{}
+	if err := coscel.EncodeCEL(&buf); err != nil {
+		return nil, err
+	}
+
+	attestation, err := ak.Attest(client.AttestOpts{Nonce: nonce, CanonicalEventLog: buf.Bytes(), CertChainFetcher: http.DefaultClient})
+	if err != nil {
+		return nil, fmt.Errorf("failed to attest: %v", err)
+	}
+	return attestation, nil
 }
 
 // TODO: getRESTClient is copied from go-tpm-tools/launcher/container_runner.go, to be refactored.
