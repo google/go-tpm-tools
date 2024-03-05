@@ -22,6 +22,14 @@ import (
 	"github.com/google/go-tpm-tools/verifier/fake"
 	"github.com/google/go-tpm-tools/verifier/oci"
 	"github.com/google/go-tpm-tools/verifier/oci/cosign"
+	"github.com/google/go-tpm-tools/verifier/rest"
+	"golang.org/x/oauth2/google"
+	"google.golang.org/api/option"
+)
+
+var (
+	fakeProject = "confidentialcomputing-e2e"
+	fakeRegion  = "us-central1"
 )
 
 func TestAttest(t *testing.T) {
@@ -307,4 +315,41 @@ func convertOCISignatureToBase64(t *testing.T, sigs []oci.Signature) []string {
 	}
 
 	return base64Sigs
+}
+
+// Skip the test if we are not running in an environment with Google API
+func testClient(t *testing.T) verifier.Client {
+	// TODO: Connect to the autopush endpoint by default.
+	hClient, err := google.DefaultClient(context.Background())
+	if err != nil {
+		t.Skipf("Getting HTTP Client: %v", err)
+	}
+
+	vClient, err := rest.NewClient(context.Background(),
+		fakeProject,
+		fakeRegion,
+		option.WithHTTPClient(hClient),
+	)
+	if err != nil {
+		t.Fatalf("Creating Verifier Client: %v", err)
+	}
+	return vClient
+}
+
+func testPrincipalIDTokenFetcher(_ string) ([][]byte, error) {
+	return [][]byte{}, nil
+}
+
+func TestWithAgent(t *testing.T) {
+	vClient := testClient(t)
+
+	tpm := test.GetTPM(t)
+	defer client.CheckedClose(t, tpm)
+
+	a := CreateAttestationAgent(tpm, client.AttestationKeyECC, vClient, testPrincipalIDTokenFetcher, signaturediscovery.NewFakeClient(), spec.LaunchSpec{}, log.Default(), nil)
+	token, err := a.Attest(context.Background(), AttestAgentOpts{})
+	if err != nil {
+		t.Errorf("failed to attest to Attestation Service: %v", err)
+	}
+	t.Logf("Got Token: |%v|", string(token))
 }
