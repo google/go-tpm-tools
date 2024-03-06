@@ -72,8 +72,7 @@ func TestAttest(t *testing.T) {
 
 			verifierClient := fake.NewClient(fakeSigner)
 
-			agent := CreateAttestationAgent(tpm, client.AttestationKeyECC, verifierClient, tc.principalIDTokenFetcher, tc.containerSignaturesFetcher, tc.launchSpec, log.Default(), nil)
-
+			agent := CreateAttestationAgent(tpm, client.AttestationKeyECC, verifierClient, tc.principalIDTokenFetcher, tc.containerSignaturesFetcher, tc.launchSpec, log.Default())
 			if err := agent.Refresh(ctx); err != nil {
 				t.Errorf("failed to fresh attestation agent: %v", err)
 			}
@@ -346,7 +345,7 @@ func TestWithAgent(t *testing.T) {
 	tpm := test.GetTPM(t)
 	defer client.CheckedClose(t, tpm)
 
-	a := CreateAttestationAgent(tpm, client.AttestationKeyECC, vClient, testPrincipalIDTokenFetcher, signaturediscovery.NewFakeClient(), spec.LaunchSpec{}, log.Default(), nil)
+	a := CreateAttestationAgent(tpm, client.AttestationKeyECC, vClient, testPrincipalIDTokenFetcher, signaturediscovery.NewFakeClient(), spec.LaunchSpec{}, log.Default())
 	token, err := a.Attest(context.Background(), AttestAgentOpts{})
 	if err != nil {
 		t.Errorf("failed to attest to Attestation Service: %v", err)

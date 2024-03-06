@@ -160,7 +160,7 @@ The OIDC token includes claims regarding the GCE VM, which is verified by Attest
 			Challenge:      challenge,
 			GcpCredentials: principalTokens,
 			Attestation:    attestation,
-			// TODO: add TokenOptions
+			TokenOptions:   verifier.TokenOptions{CustomAudience: audience, TokenType: "OIDC"},
 		}
 
 		resp, err := verifierClient.VerifyAttestation(ctx, req)
@@ -168,8 +168,7 @@ The OIDC token includes claims regarding the GCE VM, which is verified by Attest
 			return err
 		}
 		if len(resp.PartialErrs) > 0 {
-			// TODO: use logger
-			fmt.Printf("Partial errors from VerifyAttestation: %v", resp.PartialErrs)
+			return fmt.Errorf("partial errors from VerifyAttestation: %v", resp.PartialErrs)
 		}
 
 		token := resp.ClaimsToken
@@ -207,6 +206,8 @@ The OIDC token includes claims regarding the GCE VM, which is verified by Attest
 		}
 
 		if cloudLog {
+			cloudLogger.Log(logging.Entry{Payload: challenge})
+			cloudLogger.Log(logging.Entry{Payload: attestation})
 			cloudLogger.Log(logging.Entry{Payload: map[string]string{"token": string(token)}})
 			cloudLogger.Log(logging.Entry{Payload: mapClaims})
 			cloudLogClient.Close()
