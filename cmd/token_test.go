@@ -72,7 +72,12 @@ func TestTokenWithGCEAK(t *testing.T) {
 			}
 			defer mockAttestationServer.Stop()
 
-			RootCmd.SetArgs([]string{"token", "--algo", op.algo, "--output", secretFile1, "--asAddr", mockAttestationServer.server.URL})
+			mockCloudLoggingServerAddress, err = newMockCloudLoggingServer()
+			if err != nil {
+				t.Error(err)
+			}
+
+			RootCmd.SetArgs([]string{"token", "--algo", op.algo, "--output", secretFile1, "--verifier-endpoint", mockAttestationServer.server.URL, "--cloud-log", "--audience", "https://api.test.com"})
 			if err := RootCmd.Execute(); err != nil {
 				t.Error(err)
 			}

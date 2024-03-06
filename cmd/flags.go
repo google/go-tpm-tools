@@ -23,6 +23,8 @@ var (
 	pcrs      []int
 	format    string
 	asAddress string
+	audience  string
+	cloudLog  bool
 )
 
 type pcrsFlag struct {
@@ -126,8 +128,19 @@ func addInputFlag(cmd *cobra.Command) {
 
 // Lets this command specify an Attestation Server Address.
 func addAsAddressFlag(cmd *cobra.Command) {
-	cmd.PersistentFlags().StringVar(&asAddress, "asAddr", "https://confidentialcomputing.googleapis.com",
-		"Attestation Service address")
+	cmd.PersistentFlags().StringVar(&asAddress, "verifier-endpoint", "https://confidentialcomputing.googleapis.com",
+		"the attestation verifier endpoint used to retrieve an attestation claims token")
+}
+
+// Lets this command enable Cloud logging
+func addCloudLoggingFlag(cmd *cobra.Command) {
+	cmd.Flags().BoolVar(&cloudLog, "cloud-log", false, "logs the attestation and token to Cloud Logging for auditing purposes. Requires the audience flag.")
+}
+
+// Lets this command specify custom audience field of the attestation token
+func addAudienceFlag(cmd *cobra.Command) {
+	cmd.PersistentFlags().StringVar(&audience, "audience", "",
+		"the audience field in the claims token. Cannot be sts.googleapis.com.")
 }
 
 // Lets this command specify an NVDATA index, for use with nvIndex.

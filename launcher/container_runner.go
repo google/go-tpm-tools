@@ -222,7 +222,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	return &ContainerRunner{
 		container,
 		launchSpec,
-		agent.CreateAttestationAgent(tpm, client.GceAttestationKeyECC, verifierClient, principalFetcher, sdClient, launchSpec, logger),
+		agent.CreateAttestationAgent(tpm, client.GceAttestationKeyECC, verifierClient, principalFetcher, sdClient, launchSpec, logger, nil),
 		logger,
 		serialConsole,
 	}, nil
