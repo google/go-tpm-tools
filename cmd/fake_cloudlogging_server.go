@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
@@ -119,6 +120,28 @@ func (h *loggingHandler) WriteLogEntries(_ context.Context, req *logpb.WriteLogE
 
 		// Store by log name.
 		h.logs[e.LogName] = append(h.logs[e.LogName], e)
+	}
+
+	var logEntryPayload []map[string]interface{}
+	logEntryPayload = append(logEntryPayload, map[string]interface{}{"aud": "test", "iat": float64(1709752525), "exp": float64(1919752525)})
+	logEntryPayload = append(logEntryPayload, map[string]interface{}{"token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdWQiOiJ0ZXN0IiwiaWF0IjoxNzA5NzUyNTI1LCJleHAiOjE5MTk3NTI1MjV9.EBLA2zX3c-Fu0l--J9Gey6LIXMO1TFRCoe3bzuPGc1k"})
+	logEntryPayload = append(logEntryPayload, map[string]interface{}{"Name": "projects/test-project/locations/us-central-1/challenges/" + fakeChallengeUUID, "Nonce": fakeTpmNonce, "ConnID": ""})
+	attestationMapFields := []string{"TeeAttestation", "ak_pub", "quotes", "event_log", "ak_cert"}
+	for _, entry := range h.logs["projects/"+TestProjectID+"/logs/"+toolName] {
+		payload := entry.GetJsonPayload().AsMap()
+		foundMatch := false
+		for _, m := range logEntryPayload {
+			if reflect.DeepEqual(m, payload) {
+				foundMatch = true
+			}
+		}
+		if !foundMatch {
+			for _, field := range attestationMapFields {
+				if _, keyFound := payload[field]; !keyFound {
+					return nil, fmt.Errorf("wrong log: %q", entry.GetJsonPayload().String())
+				}
+			}
+		}
 	}
 	return &logpb.WriteLogEntriesResponse{}, nil
 }
