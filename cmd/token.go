@@ -1,14 +1,11 @@
 package cmd
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log"
-	"net/http"
 	"net/url"
 	"strings"
 	"time"
@@ -17,11 +14,10 @@ import (
 	"cloud.google.com/go/logging"
 	"github.com/containerd/containerd/namespaces"
 	"github.com/golang-jwt/jwt/v4"
-	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
-	attestpb "github.com/google/go-tpm-tools/proto/attest"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/google/go-tpm-tools/verifier/rest"
+	"github.com/google/go-tpm-tools/verifier/util"
 	"github.com/google/go-tpm/legacy/tpm2"
 	"github.com/spf13/cobra"
 	"golang.org/x/oauth2/google"
@@ -40,7 +36,7 @@ var tokenCmd = &cobra.Command{
 	Use:   "token",
 	Short: "Attest and fetch an OIDC token from Google Attestation Verification Service.",
 	Long: `Gather attestation report and send it to Google Attestation Verification Service for an OIDC token.
-The OIDC token includes claims regarding the GCE VM, which is verified by Attestation Verification Service. Note that Confidential Computing API needs to be enabled for your account to access Google Attestation Verification Service https://pantheon.corp.google.com/apis/api/confidentialcomputing.googleapis.com.
+The OIDC token includes claims regarding the GCE VM, which is verified by Attestation Verification Service. Note that Confidential Computing API needs to be enabled for your account to access Google Attestation Verification Service https://console.cloud.google.com/apis/api/confidentialcomputing.googleapis.com.
 --algo flag overrides the public key algorithm for the GCE TPM attestation key. If not provided then by default rsa is used.
 `,
 	Args: cobra.NoArgs,
@@ -107,7 +103,7 @@ The OIDC token includes claims regarding the GCE VM, which is verified by Attest
 			return err
 		}
 		if gceAK.Cert() == nil {
-			return errors.New("failed to find gceAKCert on this VM: try creating a new VM or verifying the VM has an EK cert using get-shielded-identity gcloud command. The used key algorithm is: " + usedKeyAlgo)
+			return errors.New("failed to find GCE AK Certificate on this VM: try creating a new VM or verifying the VM has an EK cert using get-shielded-identity gcloud command. The used key algorithm is: " + usedKeyAlgo)
 		}
 		gceAK.Close()
 
@@ -151,7 +147,7 @@ The OIDC token includes claims regarding the GCE VM, which is verified by Attest
 			return fmt.Errorf("failed to get principal tokens: %w", err)
 		}
 
-		attestation, err := getAttestation(rwc, attestationKeys[key][keyAlgo], challenge.Nonce)
+		attestation, err := util.GetAttestation(rwc, attestationKeys[key][keyAlgo], challenge.Nonce)
 		if err != nil {
 			return err
 		}
@@ -220,28 +216,6 @@ The OIDC token includes claims regarding the GCE VM, which is verified by Attest
 
 		return nil
 	},
-}
-
-type tpmKeyFetcher func(rw io.ReadWriter) (*client.Key, error)
-
-func getAttestation(tpm io.ReadWriteCloser, akFetcher tpmKeyFetcher, nonce []byte) (*attestpb.Attestation, error) {
-	ak, err := akFetcher(tpm)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get AK: %v", err)
-	}
-	defer ak.Close()
-
-	var buf bytes.Buffer
-	coscel := &cel.CEL{}
-	if err := coscel.EncodeCEL(&buf); err != nil {
-		return nil, err
-	}
-
-	attestation, err := ak.Attest(client.AttestOpts{Nonce: nonce, CanonicalEventLog: buf.Bytes(), CertChainFetcher: http.DefaultClient})
-	if err != nil {
-		return nil, fmt.Errorf("failed to attest: %v", err)
-	}
-	return attestation, nil
 }
 
 // TODO: getRESTClient is copied from go-tpm-tools/launcher/container_runner.go, to be refactored.
