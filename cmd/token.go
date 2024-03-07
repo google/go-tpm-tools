@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log"
 	"net/url"
-	"strings"
 	"time"
 
 	"cloud.google.com/go/compute/metadata"
@@ -71,7 +70,7 @@ The OIDC token includes claims regarding the GCE VM, which is verified by Attest
 
 		fmt.Fprintf(debugOutput(), "Attestation Address is set to %s\n", asAddress)
 
-		region, err := getRegion(mdsClient)
+		region, err := util.GetRegion(mdsClient)
 		if err != nil {
 			return fmt.Errorf("failed to fetch Region from MDS, the tool is probably not running in a GCE VM: %v", err)
 		}
@@ -214,18 +213,6 @@ The OIDC token includes claims regarding the GCE VM, which is verified by Attest
 
 		return nil
 	},
-}
-
-func getRegion(client *metadata.Client) (string, error) {
-	zone, err := client.Zone()
-	if err != nil {
-		return "", fmt.Errorf("failed to retrieve zone from MDS: %v", err)
-	}
-	lastDash := strings.LastIndex(zone, "-")
-	if lastDash == -1 {
-		return "", fmt.Errorf("got malformed zone from MDS: %v", zone)
-	}
-	return zone[:lastDash], nil
 }
 
 func init() {

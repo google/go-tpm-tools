@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
+	"cloud.google.com/go/compute/metadata"
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
 	attestpb "github.com/google/go-tpm-tools/proto/attest"
@@ -60,4 +62,17 @@ func GetRESTClient(ctx context.Context, asAddr string, ProjectID string, Region 
 		return nil, err
 	}
 	return restClient, nil
+}
+
+// GetRegion retrieves region information from GCE metadata server
+func GetRegion(client *metadata.Client) (string, error) {
+	zone, err := client.Zone()
+	if err != nil {
+		return "", fmt.Errorf("failed to retrieve zone from MDS: %v", err)
+	}
+	lastDash := strings.LastIndex(zone, "-")
+	if lastDash == -1 {
+		return "", fmt.Errorf("got malformed zone from MDS: %v", zone)
+	}
+	return zone[:lastDash], nil
 }

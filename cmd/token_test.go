@@ -50,8 +50,8 @@ func TestTokenWithGCEAK(t *testing.T) {
 			defer tpm2.NVUndefineSpace(rwc, "", tpm2.HandlePlatform, tpmutil.Handle(getIndex[op.algo]))
 			defer tpm2.NVUndefineSpace(rwc, "", tpm2.HandlePlatform, tpmutil.Handle(getCertIndex[op.algo]))
 
-			var dummyMetaInstance = Instance{ProjectID: "test-project", ProjectNumber: "1922337278274", Zone: "us-central-1a", InstanceID: "12345678", InstanceName: "default"}
-			mockMdsServer, err := NewMetadataServer(dummyMetaInstance)
+			var dummyMetaInstance = util.Instance{ProjectID: "test-project", ProjectNumber: "1922337278274", Zone: "us-central-1a", InstanceID: "12345678", InstanceName: "default"}
+			mockMdsServer, err := util.NewMetadataServer(dummyMetaInstance)
 			if err != nil {
 				t.Error(err)
 			}

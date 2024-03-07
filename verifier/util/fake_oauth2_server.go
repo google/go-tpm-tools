@@ -5,12 +5,13 @@ import (
 	"net/http/httptest"
 )
 
-type oauth2Server struct {
+// MockOauth2Server  is a struct for mocking Oauth2Server
+type MockOauth2Server struct {
 	Server *httptest.Server
 }
 
 // NewMockOauth2Server creates a mock Oauth2 server for testing purpose
-func NewMockOauth2Server() *oauth2Server {
+func NewMockOauth2Server() *MockOauth2Server {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/o/oauth2/auth", func(_ http.ResponseWriter, _ *http.Request) {
 		// Unimplemented: Should return authorization code back to the user
@@ -24,10 +25,10 @@ func NewMockOauth2Server() *oauth2Server {
 
 	server := httptest.NewServer(mux)
 
-	return &oauth2Server{Server: server}
+	return &MockOauth2Server{Server: server}
 }
 
 // Stop shuts down the server.
-func (s *oauth2Server) Stop() {
+func (s *MockOauth2Server) Stop() {
 	s.Server.Close()
 }

@@ -15,8 +15,8 @@ const fakeAsHostEnv = "GOOGLE_APPLICATION_CREDENTIALS"
 const fakeChallengeUUID = "947b4f7b-e6d4-4cfe-971c-39ffe00268ba"
 const fakeTpmNonce = "R29vZ0F0dGVzdFYxeGtJUGlRejFPOFRfTzg4QTRjdjRpQQ=="
 
-// attestationServer provides fake implementation for the GCE attestation server.
-type attestationServer struct {
+// MockAttestationServer provides fake implementation for the GCE attestation server.
+type MockAttestationServer struct {
 	Server           *httptest.Server
 	OldFakeAsHostEnv string
 }
@@ -31,7 +31,8 @@ func (payload *fakeOidcTokenPayload) Valid() error {
 	return nil
 }
 
-func NewMockAttestationServer() (*attestationServer, error) {
+// NewMockAttestationServer creates a mock verifier
+func NewMockAttestationServer() (*MockAttestationServer, error) {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		locationPath := "/v1/projects/test-project/locations/us-central"
 		if r.URL.Path == locationPath {
@@ -92,11 +93,11 @@ func NewMockAttestationServer() (*attestationServer, error) {
 	old := os.Getenv(fakeAsHostEnv)
 	os.Setenv(fakeAsHostEnv, "/tmp/test_credentials")
 
-	return &attestationServer{OldFakeAsHostEnv: old, Server: httpServer}, nil
+	return &MockAttestationServer{OldFakeAsHostEnv: old, Server: httpServer}, nil
 }
 
 // Stop shuts down the server.
-func (s *attestationServer) Stop() {
+func (s *MockAttestationServer) Stop() {
 	os.Remove("/tmp/test_credentials")
 	os.Setenv(fakeAsHostEnv, s.OldFakeAsHostEnv)
 	s.Server.Close()
