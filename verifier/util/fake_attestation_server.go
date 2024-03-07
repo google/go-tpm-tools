@@ -1,6 +1,7 @@
-package cmd
+package util
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -16,8 +17,8 @@ const fakeTpmNonce = "R29vZ0F0dGVzdFYxeGtJUGlRejFPOFRfTzg4QTRjdjRpQQ=="
 
 // attestationServer provides fake implementation for the GCE attestation server.
 type attestationServer struct {
-	server           *httptest.Server
-	oldFakeAsHostEnv string
+	Server           *httptest.Server
+	OldFakeAsHostEnv string
 }
 
 type fakeOidcTokenPayload struct {
@@ -30,7 +31,7 @@ func (payload *fakeOidcTokenPayload) Valid() error {
 	return nil
 }
 
-func newMockAttestationServer() (*attestationServer, error) {
+func NewMockAttestationServer() (*attestationServer, error) {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		locationPath := "/v1/projects/test-project/locations/us-central"
 		if r.URL.Path == locationPath {
@@ -64,18 +65,39 @@ func newMockAttestationServer() (*attestationServer, error) {
 	}
 	httpServer.Start()
 
-	old := os.Getenv(fakeAsHostEnv)
-	cwd, err := os.Getwd()
+	// create test oauth2 credentials
+	testCredentials := map[string]string{
+		"client_id":     "id",
+		"client_secret": "testdata",
+		"refresh_token": "testdata",
+		"type":          "authorized_user",
+	}
+
+	credentialsData, err := json.MarshalIndent(testCredentials, "", "  ") // Indent for readability
 	if err != nil {
 		return nil, err
 	}
-	os.Setenv(fakeAsHostEnv, cwd+"/testdata/credentials")
 
-	return &attestationServer{oldFakeAsHostEnv: old, server: httpServer}, nil
+	file, err := os.Create("/tmp/test_credentials")
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	_, err = file.Write(credentialsData)
+	if err != nil {
+		return nil, err
+	}
+
+	old := os.Getenv(fakeAsHostEnv)
+	os.Setenv(fakeAsHostEnv, "/tmp/test_credentials")
+
+	return &attestationServer{OldFakeAsHostEnv: old, Server: httpServer}, nil
 }
 
 // Stop shuts down the server.
 func (s *attestationServer) Stop() {
-	os.Setenv(fakeAsHostEnv, s.oldFakeAsHostEnv)
-	s.server.Close()
+	os.Remove("/tmp/test_credentials")
+	os.Setenv(fakeAsHostEnv, s.OldFakeAsHostEnv)
+	s.Server.Close()
 }

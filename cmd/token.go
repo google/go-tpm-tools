@@ -16,11 +16,9 @@ import (
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/verifier"
-	"github.com/google/go-tpm-tools/verifier/rest"
 	"github.com/google/go-tpm-tools/verifier/util"
 	"github.com/google/go-tpm/legacy/tpm2"
 	"github.com/spf13/cobra"
-	"golang.org/x/oauth2/google"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -83,7 +81,7 @@ The OIDC token includes claims regarding the GCE VM, which is verified by Attest
 			return fmt.Errorf("failed to retrieve ProjectID from MDS: %v", err)
 		}
 
-		verifierClient, err := getRESTClient(ctx, asAddress, projectID, region)
+		verifierClient, err := util.GetRESTClient(ctx, asAddress, projectID, region)
 		if err != nil {
 			return fmt.Errorf("failed to create REST verifier client: %v", err)
 		}
@@ -216,28 +214,6 @@ The OIDC token includes claims regarding the GCE VM, which is verified by Attest
 
 		return nil
 	},
-}
-
-// TODO: getRESTClient is copied from go-tpm-tools/launcher/container_runner.go, to be refactored.
-// getRESTClient returns a REST verifier.Client that points to the given address.
-// It defaults to the Attestation Verifier instance at
-// https://confidentialcomputing.googleapis.com.
-func getRESTClient(ctx context.Context, asAddr string, ProjectID string, Region string) (verifier.Client, error) {
-	httpClient, err := google.DefaultClient(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create HTTP client: %v", err)
-	}
-
-	opts := []option.ClientOption{option.WithHTTPClient(httpClient)}
-	if asAddr != "" {
-		opts = append(opts, option.WithEndpoint(asAddr))
-	}
-
-	restClient, err := rest.NewClient(ctx, ProjectID, Region, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return restClient, nil
 }
 
 func getRegion(client *metadata.Client) (string, error) {

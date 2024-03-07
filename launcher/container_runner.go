@@ -34,13 +34,10 @@ import (
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/spec"
 	"github.com/google/go-tpm-tools/launcher/teeserver"
-	"github.com/google/go-tpm-tools/verifier"
-	"github.com/google/go-tpm-tools/verifier/rest"
+	"github.com/google/go-tpm-tools/verifier/util"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/oauth2"
-	"golang.org/x/oauth2/google"
-	"google.golang.org/api/option"
 )
 
 // ContainerRunner contains information about the container settings
@@ -212,7 +209,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 
 	asAddr := launchSpec.AttestationServiceAddr
 
-	verifierClient, err := getRESTClient(ctx, asAddr, launchSpec)
+	verifierClient, err := util.GetRESTClient(ctx, asAddr, launchSpec.ProjectID, launchSpec.Region)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create REST verifier client: %v", err)
 	}
@@ -234,27 +231,6 @@ func getSignatureDiscoveryClient(cdClient *containerd.Client, token oauth2.Token
 		remoteOpt = containerd.WithResolver(Resolver(token.AccessToken))
 	}
 	return signaturediscovery.New(cdClient, imageDesc, remoteOpt)
-}
-
-// getRESTClient returns a REST verifier.Client that points to the given address.
-// It defaults to the Attestation Verifier instance at
-// https://confidentialcomputing.googleapis.com.
-func getRESTClient(ctx context.Context, asAddr string, spec spec.LaunchSpec) (verifier.Client, error) {
-	httpClient, err := google.DefaultClient(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create HTTP client: %v", err)
-	}
-
-	opts := []option.ClientOption{option.WithHTTPClient(httpClient)}
-	if asAddr != "" {
-		opts = append(opts, option.WithEndpoint(asAddr))
-	}
-
-	restClient, err := rest.NewClient(ctx, spec.ProjectID, spec.Region, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return restClient, nil
 }
 
 // formatEnvVars formats the environment variables to the oci format

@@ -1,4 +1,4 @@
-package cmd
+package util
 
 import (
 	"net/http"
@@ -6,10 +6,11 @@ import (
 )
 
 type oauth2Server struct {
-	server *httptest.Server
+	Server *httptest.Server
 }
 
-func newMockOauth2Server() *oauth2Server {
+// NewMockOauth2Server creates a mock Oauth2 server for testing purpose
+func NewMockOauth2Server() *oauth2Server {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/o/oauth2/auth", func(_ http.ResponseWriter, _ *http.Request) {
 		// Unimplemented: Should return authorization code back to the user
@@ -23,10 +24,10 @@ func newMockOauth2Server() *oauth2Server {
 
 	server := httptest.NewServer(mux)
 
-	return &oauth2Server{server: server}
+	return &oauth2Server{Server: server}
 }
 
 // Stop shuts down the server.
 func (s *oauth2Server) Stop() {
-	s.server.Close()
+	s.Server.Close()
 }
