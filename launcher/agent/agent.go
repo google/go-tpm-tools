@@ -14,11 +14,11 @@ import (
 	"sync"
 
 	"github.com/google/go-tpm-tools/cel"
+	"github.com/google/go-tpm-tools/internal/util"
 	"github.com/google/go-tpm-tools/launcher/internal/signaturediscovery"
 	"github.com/google/go-tpm-tools/launcher/spec"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/google/go-tpm-tools/verifier/oci"
-	"github.com/google/go-tpm-tools/verifier/util"
 )
 
 var defaultCELHashAlgo = []crypto.Hash{crypto.SHA256, crypto.SHA1}
