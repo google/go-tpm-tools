@@ -3,6 +3,7 @@ package util
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"reflect"
 	"testing"
 
@@ -77,16 +78,16 @@ func TestGetRESTClient(t *testing.T) {
 		t.Errorf("Failed to call VerifyAttestation %s", err)
 	}
 
+	wantNonce, _ := base64.StdEncoding.DecodeString(FakeTpmNonce)
 	wantChallenge := &verifier.Challenge{
-		Name:   "projects/test-project/locations/us-central-1/challenges/947b4f7b-e6d4-4cfe-971c-39ffe00268ba",
-		Nonce:  []byte("GoogAttestV1xkIPiQz1O8T_O88A4cv4iA"),
+		Name:   "projects/test-project/locations/us-central-1/challenges/" + FakeChallengeUUID,
+		Nonce:  []byte(wantNonce),
 		ConnID: ""}
 	wantToken := "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdWQiOiJ0ZXN0IiwiaWF0IjoxNzA5NzUyNTI1LCJleHAiOjE5MTk3NTI1MjV9.EBLA2zX3c-Fu0l--J9Gey6LIXMO1TFRCoe3bzuPGc1k"
-
 	if !reflect.DeepEqual(gotChallenge, wantChallenge) {
 		t.Error("Challenge Mismatch")
 	}
-	if string(gotTokenResponse.ClaimsToken) != wantToken {
+	if !bytes.Equal(gotTokenResponse.ClaimsToken, []byte(wantToken)) {
 		t.Error("Token Mismatch")
 	}
 

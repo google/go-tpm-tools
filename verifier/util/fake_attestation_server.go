@@ -40,11 +40,10 @@ func NewMockAttestationServer() (*MockAttestationServer, error) {
 		}
 		challengePath := locationPath + "-1/challenges"
 		if r.URL.Path == challengePath {
-			challenge := "{\n  \"name\": \"projects/test-project/locations/us-central-1/challenges/947b4f7b-e6d4-4cfe-971c-39ffe00268ba\",\n  \"createTime\": \"2023-09-21T01:04:48.230111757Z\",\n  \"expireTime\": \"2023-09-21T02:04:48.230111757Z\",\n  \"tpmNonce\": \"" + FakeTpmNonce + "\"\n}\n"
+			challenge := "{\n  \"name\": \"projects/test-project/locations/us-central-1/challenges/" + FakeChallengeUUID + "\",\n  \"createTime\": \"2023-09-21T01:04:48.230111757Z\",\n  \"expireTime\": \"2023-09-21T02:04:48.230111757Z\",\n  \"tpmNonce\": \"" + FakeTpmNonce + "\"\n}\n"
 			w.Write([]byte(challenge))
 		}
-		challengeNonce := "/947b4f7b-e6d4-4cfe-971c-39ffe00268ba"
-		verifyAttestationPath := challengePath + challengeNonce + ":verifyAttestation"
+		verifyAttestationPath := challengePath + "/" + FakeChallengeUUID + ":verifyAttestation"
 		if r.URL.Path == verifyAttestationPath {
 			payload := &fakeOidcTokenPayload{
 				Audience:  "test",
