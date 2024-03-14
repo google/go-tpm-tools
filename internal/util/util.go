@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"cloud.google.com/go/compute/metadata"
@@ -21,6 +22,25 @@ import (
 
 // TpmKeyFetcher abstracts the fetching of various types of Attestation Key from TPM
 type TpmKeyFetcher func(rw io.ReadWriter) (*client.Key, error)
+
+// PrincipalFetcher fetch ID token with specific audience from Metadata server.
+// See https://cloud.google.com/functions/docs/securing/authenticating#functions-bearer-token-example-go.
+func PrincipalFetcher(audience string, mdsClient *metadata.Client) ([][]byte, error) {
+	u := url.URL{
+		Path: "instance/service-accounts/default/identity",
+		RawQuery: url.Values{
+			"audience": {audience},
+			"format":   {"full"},
+		}.Encode(),
+	}
+	idToken, err := mdsClient.Get(u.String())
+	if err != nil {
+		return nil, fmt.Errorf("failed to get principal tokens: %w", err)
+	}
+
+	tokens := [][]byte{[]byte(idToken)}
+	return tokens, nil
+}
 
 // GetAttestation gathers the materials required for remote attestation from TPM
 func GetAttestation(tpm io.ReadWriteCloser, akFetcher TpmKeyFetcher, nonce []byte) (*attestpb.Attestation, error) {

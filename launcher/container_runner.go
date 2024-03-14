@@ -9,7 +9,6 @@ import (
 	"io"
 	"log"
 	"math/rand"
-	"net/url"
 	"os"
 	"os/exec"
 	"path"
@@ -178,22 +177,11 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 				len(containerSpec.Process.Args), len(launchSpec.Cmd))
 	}
 
-	// Fetch ID token with specific audience.
-	// See https://cloud.google.com/functions/docs/securing/authenticating#functions-bearer-token-example-go.
-	principalFetcher := func(audience string) ([][]byte, error) {
-		u := url.URL{
-			Path: "instance/service-accounts/default/identity",
-			RawQuery: url.Values{
-				"audience": {audience},
-				"format":   {"full"},
-			}.Encode(),
-		}
-		idToken, err := mdsClient.Get(u.String())
+	principalFetcherWithImpersonate := func(audience string) ([][]byte, error) {
+		tokens, err := util.PrincipalFetcher(audience, mdsClient)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get principal tokens: %w", err)
+			return nil, err
 		}
-
-		tokens := [][]byte{[]byte(idToken)}
 
 		// Fetch impersonated ID tokens.
 		for _, sa := range launchSpec.ImpersonateServiceAccounts {
@@ -219,7 +207,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	return &ContainerRunner{
 		container,
 		launchSpec,
-		agent.CreateAttestationAgent(tpm, client.GceAttestationKeyECC, verifierClient, principalFetcher, sdClient, launchSpec, logger),
+		agent.CreateAttestationAgent(tpm, client.GceAttestationKeyECC, verifierClient, principalFetcherWithImpersonate, sdClient, launchSpec, logger),
 		logger,
 		serialConsole,
 	}, nil

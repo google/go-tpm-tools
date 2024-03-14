@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"net/url"
 	"time"
 
 	"cloud.google.com/go/compute/metadata"
@@ -23,7 +22,6 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
-var mdsClient *metadata.Client
 var mockCloudLoggingServerAddress string
 
 const toolName = "gotpm"
@@ -45,28 +43,9 @@ The OIDC token includes claims regarding the GCE VM, which is verified by Attest
 		defer rwc.Close()
 
 		// Metadata Server (MDS). A GCP specific client.
-		mdsClient = metadata.NewClient(nil)
+		mdsClient := metadata.NewClient(nil)
 
 		ctx := namespaces.WithNamespace(context.Background(), namespaces.Default)
-		// TODO: principalFetcher is copied from go-tpm-tools/launcher/container_runner.go, to be refactored
-		// Fetch GCP specific ID token with specific audience.
-		// See https://cloud.google.com/functions/docs/securing/authenticating#functions-bearer-token-example-go.
-		principalFetcher := func(audience string) ([][]byte, error) {
-			u := url.URL{
-				Path: "instance/service-accounts/default/identity",
-				RawQuery: url.Values{
-					"audience": {audience},
-					"format":   {"full"},
-				}.Encode(),
-			}
-			idToken, err := mdsClient.Get(u.String())
-			if err != nil {
-				return nil, fmt.Errorf("failed to get principal tokens: %w", err)
-			}
-			fmt.Fprintf(debugOutput(), "GCP ID token fetched is: %s\n", idToken)
-			tokens := [][]byte{[]byte(idToken)}
-			return tokens, nil
-		}
 
 		fmt.Fprintf(debugOutput(), "Attestation Address is set to %s\n", asAddress)
 
@@ -139,7 +118,7 @@ The OIDC token includes claims regarding the GCE VM, which is verified by Attest
 			return err
 		}
 
-		principalTokens, err := principalFetcher(challenge.Name)
+		principalTokens, err := util.PrincipalFetcher(challenge.Name, mdsClient)
 		if err != nil {
 			return fmt.Errorf("failed to get principal tokens: %w", err)
 		}
