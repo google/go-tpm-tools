@@ -5,13 +5,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"time"
 
 	"github.com/golang-jwt/jwt/v4"
 	"golang.org/x/net/http2"
 )
 
 const fakeAsHostEnv = "GOOGLE_APPLICATION_CREDENTIALS"
+const fakeChallengeUUID = "947b4f7b-e6d4-4cfe-971c-39ffe00268ba"
+const fakeTpmNonce = "R29vZ0F0dGVzdFYxeGtJUGlRejFPOFRfTzg4QTRjdjRpQQ=="
 
 // attestationServer provides fake implementation for the GCE attestation server.
 type attestationServer struct {
@@ -38,7 +39,7 @@ func newMockAttestationServer() (*attestationServer, error) {
 		}
 		challengePath := locationPath + "-1/challenges"
 		if r.URL.Path == challengePath {
-			challenge := "{\n  \"name\": \"projects/test-project/locations/us-central-1/challenges/947b4f7b-e6d4-4cfe-971c-39ffe00268ba\",\n  \"createTime\": \"2023-09-21T01:04:48.230111757Z\",\n  \"expireTime\": \"2023-09-21T02:04:48.230111757Z\",\n  \"tpmNonce\": \"R29vZ0F0dGVzdFYxeGtJUGlRejFPOFRfTzg4QTRjdjRpQQ==\"\n}\n"
+			challenge := "{\n  \"name\": \"projects/test-project/locations/us-central-1/challenges/947b4f7b-e6d4-4cfe-971c-39ffe00268ba\",\n  \"createTime\": \"2023-09-21T01:04:48.230111757Z\",\n  \"expireTime\": \"2023-09-21T02:04:48.230111757Z\",\n  \"tpmNonce\": \"" + fakeTpmNonce + "\"\n}\n"
 			w.Write([]byte(challenge))
 		}
 		challengeNonce := "/947b4f7b-e6d4-4cfe-971c-39ffe00268ba"
@@ -46,15 +47,15 @@ func newMockAttestationServer() (*attestationServer, error) {
 		if r.URL.Path == verifyAttestationPath {
 			payload := &fakeOidcTokenPayload{
 				Audience:  "test",
-				IssuedAt:  time.Now().Unix(),
-				ExpiredAt: time.Now().Add(time.Minute).Unix(),
+				IssuedAt:  1709752525,
+				ExpiredAt: 1919752525,
 			}
 			jwtTokenUnsigned := jwt.NewWithClaims(jwt.SigningMethodHS256, payload)
-			jwtToken, err := jwtTokenUnsigned.SignedString([]byte("kcxjxnalpraetgccnnwhpnfwocxscaih"))
+			fakeJwtToken, err := jwtTokenUnsigned.SignedString([]byte("kcxjxnalpraetgccnnwhpnfwocxscaih"))
 			if err != nil {
 				fmt.Print("error creating test OIDC token")
 			}
-			w.Write([]byte("{\n  \"oidcClaimsToken\": \"" + jwtToken + "\"\n}\n"))
+			w.Write([]byte("{\n  \"oidcClaimsToken\": \"" + fakeJwtToken + "\"\n}\n"))
 		}
 	})
 	httpServer := httptest.NewUnstartedServer(handler)
