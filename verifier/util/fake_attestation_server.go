@@ -12,8 +12,12 @@ import (
 )
 
 const fakeAsHostEnv = "GOOGLE_APPLICATION_CREDENTIALS"
-const fakeChallengeUUID = "947b4f7b-e6d4-4cfe-971c-39ffe00268ba"
-const fakeTpmNonce = "R29vZ0F0dGVzdFYxeGtJUGlRejFPOFRfTzg4QTRjdjRpQQ=="
+
+// FakeChallengeUUID is the challenge for fake attestation server
+const FakeChallengeUUID = "947b4f7b-e6d4-4cfe-971c-39ffe00268ba"
+
+// FakeTpmNonce is the tpm nonce for fake attestation server
+const FakeTpmNonce = "R29vZ0F0dGVzdFYxeGtJUGlRejFPOFRfTzg4QTRjdjRpQQ=="
 
 // MockAttestationServer provides fake implementation for the GCE attestation server.
 type MockAttestationServer struct {
@@ -41,7 +45,7 @@ func NewMockAttestationServer() (*MockAttestationServer, error) {
 		}
 		challengePath := locationPath + "-1/challenges"
 		if r.URL.Path == challengePath {
-			challenge := "{\n  \"name\": \"projects/test-project/locations/us-central-1/challenges/947b4f7b-e6d4-4cfe-971c-39ffe00268ba\",\n  \"createTime\": \"2023-09-21T01:04:48.230111757Z\",\n  \"expireTime\": \"2023-09-21T02:04:48.230111757Z\",\n  \"tpmNonce\": \"" + fakeTpmNonce + "\"\n}\n"
+			challenge := "{\n  \"name\": \"projects/test-project/locations/us-central-1/challenges/947b4f7b-e6d4-4cfe-971c-39ffe00268ba\",\n  \"createTime\": \"2023-09-21T01:04:48.230111757Z\",\n  \"expireTime\": \"2023-09-21T02:04:48.230111757Z\",\n  \"tpmNonce\": \"" + FakeTpmNonce + "\"\n}\n"
 			w.Write([]byte(challenge))
 		}
 		challengeNonce := "/947b4f7b-e6d4-4cfe-971c-39ffe00268ba"
