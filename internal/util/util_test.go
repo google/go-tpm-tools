@@ -17,6 +17,24 @@ import (
 	"golang.org/x/oauth2/google"
 )
 
+func TestPrincipleFetcher(t *testing.T) {
+	var dummyMetaInstance = Instance{ProjectID: "test-project", ProjectNumber: "1922337278274", Zone: "us-central-1a", InstanceID: "12345678", InstanceName: "default"}
+	mockMdsServer, err := NewMetadataServer(dummyMetaInstance)
+	if err != nil {
+		t.Error(err)
+	}
+	defer mockMdsServer.Stop()
+	mdsClient := metadata.NewClient(nil)
+	gotTokens, err := PrincipalFetcher("test_audience", mdsClient)
+	if err != nil {
+		t.Error(err)
+	}
+	wantTokens := [][]byte{[]byte("test_jwt_token")}
+	if !reflect.DeepEqual(wantTokens, gotTokens) {
+		t.Error("ID Token Mismatch")
+	}
+}
+
 func TestGetAttestation(t *testing.T) {
 	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
