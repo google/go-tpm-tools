@@ -42,7 +42,10 @@ func TestGetAttestation(t *testing.T) {
 func TestGetRESTClient(t *testing.T) {
 	ctx := namespaces.WithNamespace(context.Background(), namespaces.Default)
 
-	mockOauth2Server := NewMockOauth2Server()
+	mockOauth2Server, err := NewMockOauth2Server()
+	if err != nil {
+		t.Error(err)
+	}
 	defer mockOauth2Server.Stop()
 
 	// Endpoint is Google's OAuth 2.0 default endpoint. Change to mock server.

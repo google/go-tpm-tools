@@ -57,7 +57,10 @@ func TestTokenWithGCEAK(t *testing.T) {
 			}
 			defer mockMdsServer.Stop()
 
-			mockOauth2Server := util.NewMockOauth2Server()
+			mockOauth2Server, err := util.NewMockOauth2Server()
+			if err != nil {
+				t.Error(err)
+			}
 			defer mockOauth2Server.Stop()
 
 			// Endpoint is Google's OAuth 2.0 default endpoint. Change to mock server.

@@ -1,17 +1,13 @@
 package util
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
 
 	"github.com/golang-jwt/jwt/v4"
 	"golang.org/x/net/http2"
 )
-
-const fakeAsHostEnv = "GOOGLE_APPLICATION_CREDENTIALS"
 
 // FakeChallengeUUID is the challenge for fake attestation server
 const FakeChallengeUUID = "947b4f7b-e6d4-4cfe-971c-39ffe00268ba"
@@ -21,8 +17,7 @@ const FakeTpmNonce = "R29vZ0F0dGVzdFYxeGtJUGlRejFPOFRfTzg4QTRjdjRpQQ=="
 
 // MockAttestationServer provides fake implementation for the GCE attestation server.
 type MockAttestationServer struct {
-	Server           *httptest.Server
-	OldFakeAsHostEnv string
+	Server *httptest.Server
 }
 
 type fakeOidcTokenPayload struct {
@@ -70,39 +65,10 @@ func NewMockAttestationServer() (*MockAttestationServer, error) {
 	}
 	httpServer.Start()
 
-	// create test oauth2 credentials
-	testCredentials := map[string]string{
-		"client_id":     "id",
-		"client_secret": "testdata",
-		"refresh_token": "testdata",
-		"type":          "authorized_user",
-	}
-
-	credentialsData, err := json.MarshalIndent(testCredentials, "", "  ") // Indent for readability
-	if err != nil {
-		return nil, err
-	}
-
-	file, err := os.Create("/tmp/test_credentials")
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-
-	_, err = file.Write(credentialsData)
-	if err != nil {
-		return nil, err
-	}
-
-	old := os.Getenv(fakeAsHostEnv)
-	os.Setenv(fakeAsHostEnv, "/tmp/test_credentials")
-
-	return &MockAttestationServer{OldFakeAsHostEnv: old, Server: httpServer}, nil
+	return &MockAttestationServer{Server: httpServer}, nil
 }
 
 // Stop shuts down the server.
 func (s *MockAttestationServer) Stop() {
-	os.Remove("/tmp/test_credentials")
-	os.Setenv(fakeAsHostEnv, s.OldFakeAsHostEnv)
 	s.Server.Close()
 }
