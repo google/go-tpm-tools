@@ -10,7 +10,7 @@ import (
 // Application Default Credentials (ADC) is a strategy used by the Google authentication libraries to automatically find credentials based on the application environment.
 // ADC searches for credentials in GOOGLE_APPLICATION_CREDENTIALS environment variable first (https://cloud.google.com/docs/authentication/application-default-credentials)
 // We use fakeAsHostEnv to let ADC find fake credential.
-const fakeAsHostEnv = "GOOGLE_APPLICATION_CREDENTIALS"
+const oauth2CredentialHostEnv = "GOOGLE_APPLICATION_CREDENTIALS"
 
 // MockOauth2Server  is a struct for mocking Oauth2Server
 type MockOauth2Server struct {
@@ -41,31 +41,31 @@ func NewMockOauth2Server() (*MockOauth2Server, error) {
 		"type":          "authorized_user",
 	}
 
-	credentialsData, err := json.MarshalIndent(testCredentials, "", "  ") // Indent for readability
+	fakeOauthCredentialData, err := json.MarshalIndent(testCredentials, "", "  ") // Indent for readability
 	if err != nil {
 		return nil, err
 	}
 
-	file, err := os.Create("/tmp/test_credentials")
+	file, err := os.CreateTemp("", "fake_oauth2_test_credentials")
 	if err != nil {
 		return nil, err
 	}
 	defer file.Close()
 
-	_, err = file.Write(credentialsData)
+	_, err = file.Write(fakeOauthCredentialData)
 	if err != nil {
 		return nil, err
 	}
 
-	old := os.Getenv(fakeAsHostEnv)
-	os.Setenv(fakeAsHostEnv, "/tmp/test_credentials")
+	old := os.Getenv(oauth2CredentialHostEnv)
+	os.Setenv(oauth2CredentialHostEnv, file.Name())
 
 	return &MockOauth2Server{Server: server, OldFakeAsHostEnv: old}, nil
 }
 
 // Stop shuts down the server.
 func (s *MockOauth2Server) Stop() {
-	os.Remove("/tmp/test_credentials")
-	os.Setenv(fakeAsHostEnv, s.OldFakeAsHostEnv)
+	os.Remove(os.Getenv(oauth2CredentialHostEnv))
+	os.Setenv(oauth2CredentialHostEnv, s.OldFakeAsHostEnv)
 	s.Server.Close()
 }
