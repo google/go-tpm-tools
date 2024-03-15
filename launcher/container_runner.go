@@ -9,7 +9,6 @@ import (
 	"io"
 	"log"
 	"math/rand"
-	"net/url"
 	"os"
 	"os/exec"
 	"path"
@@ -28,19 +27,16 @@ import (
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
+	"github.com/google/go-tpm-tools/internal/util"
 	"github.com/google/go-tpm-tools/launcher/agent"
 	"github.com/google/go-tpm-tools/launcher/internal/signaturediscovery"
 	"github.com/google/go-tpm-tools/launcher/internal/systemctl"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/spec"
 	"github.com/google/go-tpm-tools/launcher/teeserver"
-	"github.com/google/go-tpm-tools/launcher/verifier"
-	"github.com/google/go-tpm-tools/launcher/verifier/rest"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/oauth2"
-	"golang.org/x/oauth2/google"
-	"google.golang.org/api/option"
 )
 
 // ContainerRunner contains information about the container settings
@@ -181,22 +177,11 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 				len(containerSpec.Process.Args), len(launchSpec.Cmd))
 	}
 
-	// Fetch ID token with specific audience.
-	// See https://cloud.google.com/functions/docs/securing/authenticating#functions-bearer-token-example-go.
-	principalFetcher := func(audience string) ([][]byte, error) {
-		u := url.URL{
-			Path: "instance/service-accounts/default/identity",
-			RawQuery: url.Values{
-				"audience": {audience},
-				"format":   {"full"},
-			}.Encode(),
-		}
-		idToken, err := mdsClient.Get(u.String())
+	principalFetcherWithImpersonate := func(audience string) ([][]byte, error) {
+		tokens, err := util.PrincipalFetcher(audience, mdsClient)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get principal tokens: %w", err)
+			return nil, err
 		}
-
-		tokens := [][]byte{[]byte(idToken)}
 
 		// Fetch impersonated ID tokens.
 		for _, sa := range launchSpec.ImpersonateServiceAccounts {
@@ -212,7 +197,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 
 	asAddr := launchSpec.AttestationServiceAddr
 
-	verifierClient, err := getRESTClient(ctx, asAddr, launchSpec)
+	verifierClient, err := util.NewRESTClient(ctx, asAddr, launchSpec.ProjectID, launchSpec.Region)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create REST verifier client: %v", err)
 	}
@@ -222,7 +207,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	return &ContainerRunner{
 		container,
 		launchSpec,
-		agent.CreateAttestationAgent(tpm, client.GceAttestationKeyECC, verifierClient, principalFetcher, sdClient, launchSpec, logger, nil),
+		agent.CreateAttestationAgent(tpm, client.GceAttestationKeyECC, verifierClient, principalFetcherWithImpersonate, sdClient, launchSpec, logger),
 		logger,
 		serialConsole,
 	}, nil
@@ -234,27 +219,6 @@ func getSignatureDiscoveryClient(cdClient *containerd.Client, token oauth2.Token
 		remoteOpt = containerd.WithResolver(Resolver(token.AccessToken))
 	}
 	return signaturediscovery.New(cdClient, imageDesc, remoteOpt)
-}
-
-// getRESTClient returns a REST verifier.Client that points to the given address.
-// It defaults to the Attestation Verifier instance at
-// https://confidentialcomputing.googleapis.com.
-func getRESTClient(ctx context.Context, asAddr string, spec spec.LaunchSpec) (verifier.Client, error) {
-	httpClient, err := google.DefaultClient(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create HTTP client: %v", err)
-	}
-
-	opts := []option.ClientOption{option.WithHTTPClient(httpClient)}
-	if asAddr != "" {
-		opts = append(opts, option.WithEndpoint(asAddr))
-	}
-
-	restClient, err := rest.NewClient(ctx, spec.ProjectID, spec.Region, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return restClient, nil
 }
 
 // formatEnvVars formats the environment variables to the oci format

@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal/test"
+	"github.com/google/go-tpm-tools/internal/util"
 	"github.com/google/go-tpm/legacy/tpm2"
 	"github.com/google/go-tpm/tpmutil"
 	"golang.org/x/oauth2"
@@ -49,24 +50,27 @@ func TestTokenWithGCEAK(t *testing.T) {
 			defer tpm2.NVUndefineSpace(rwc, "", tpm2.HandlePlatform, tpmutil.Handle(getIndex[op.algo]))
 			defer tpm2.NVUndefineSpace(rwc, "", tpm2.HandlePlatform, tpmutil.Handle(getCertIndex[op.algo]))
 
-			var dummyMetaInstance = Instance{ProjectID: "test-project", ProjectNumber: "1922337278274", Zone: "us-central-1a", InstanceID: "12345678", InstanceName: "default"}
-			mockMdsServer, err := NewMetadataServer(dummyMetaInstance)
+			var dummyMetaInstance = util.Instance{ProjectID: "test-project", ProjectNumber: "1922337278274", Zone: "us-central-1a", InstanceID: "12345678", InstanceName: "default"}
+			mockMdsServer, err := util.NewMetadataServer(dummyMetaInstance)
 			if err != nil {
 				t.Error(err)
 			}
 			defer mockMdsServer.Stop()
 
-			mockOauth2Server := newMockOauth2Server()
+			mockOauth2Server, err := util.NewMockOauth2Server()
+			if err != nil {
+				t.Error(err)
+			}
 			defer mockOauth2Server.Stop()
 
 			// Endpoint is Google's OAuth 2.0 default endpoint. Change to mock server.
 			google.Endpoint = oauth2.Endpoint{
-				AuthURL:   mockOauth2Server.server.URL + "/o/oauth2/auth",
-				TokenURL:  mockOauth2Server.server.URL + "/token",
+				AuthURL:   mockOauth2Server.Server.URL + "/o/oauth2/auth",
+				TokenURL:  mockOauth2Server.Server.URL + "/token",
 				AuthStyle: oauth2.AuthStyleInParams,
 			}
 
-			mockAttestationServer, err := newMockAttestationServer()
+			mockAttestationServer, err := util.NewMockAttestationServer()
 			if err != nil {
 				t.Error(err)
 			}
@@ -77,7 +81,7 @@ func TestTokenWithGCEAK(t *testing.T) {
 				t.Error(err)
 			}
 
-			RootCmd.SetArgs([]string{"token", "--algo", op.algo, "--output", secretFile1, "--verifier-endpoint", mockAttestationServer.server.URL, "--cloud-log", "--audience", "https://api.test.com"})
+			RootCmd.SetArgs([]string{"token", "--algo", op.algo, "--output", secretFile1, "--verifier-endpoint", mockAttestationServer.Server.URL, "--cloud-log", "--audience", "https://api.test.com"})
 			if err := RootCmd.Execute(); err != nil {
 				t.Error(err)
 			}

@@ -6,28 +6,23 @@
 package agent
 
 import (
-	"bytes"
 	"context"
 	"crypto"
 	"fmt"
 	"io"
 	"log"
-	"net/http"
 	"sync"
 
-	"cloud.google.com/go/logging"
 	"github.com/google/go-tpm-tools/cel"
-	"github.com/google/go-tpm-tools/client"
-	"github.com/google/go-tpm-tools/launcher/internal/oci"
+	"github.com/google/go-tpm-tools/internal/util"
 	"github.com/google/go-tpm-tools/launcher/internal/signaturediscovery"
 	"github.com/google/go-tpm-tools/launcher/spec"
-	"github.com/google/go-tpm-tools/launcher/verifier"
-	pb "github.com/google/go-tpm-tools/proto/attest"
+	"github.com/google/go-tpm-tools/verifier"
+	"github.com/google/go-tpm-tools/verifier/oci"
 )
 
 var defaultCELHashAlgo = []crypto.Hash{crypto.SHA256, crypto.SHA1}
 
-type tpmKeyFetcher func(rw io.ReadWriter) (*client.Key, error)
 type principalIDTokenFetcher func(audience string) ([][]byte, error)
 
 // AttestationAgent is an agent that interacts with GCE's Attestation Service
@@ -49,14 +44,13 @@ type AttestAgentOpts struct {
 
 type agent struct {
 	tpm              io.ReadWriteCloser
-	akFetcher        tpmKeyFetcher
+	akFetcher        util.TpmKeyFetcher
 	client           verifier.Client
 	principalFetcher principalIDTokenFetcher
 	sigsFetcher      signaturediscovery.Fetcher
 	cosCel           cel.CEL
 	launchSpec       spec.LaunchSpec
 	logger           *log.Logger
-	cloudLogger      *logging.Logger
 	sigsCache        *sigsCache
 }
 
@@ -67,7 +61,7 @@ type agent struct {
 // - principalFetcher is a func to fetch GCE principal tokens for a given audience.
 // - signaturesFetcher is a func to fetch container image signatures associated with the running workload.
 // - logger will log any partial errors returned by VerifyAttestation.
-func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher tpmKeyFetcher, verifierClient verifier.Client, principalFetcher principalIDTokenFetcher, sigsFetcher signaturediscovery.Fetcher, launchSpec spec.LaunchSpec, logger *log.Logger, cloudLogger *logging.Logger) AttestationAgent {
+func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher util.TpmKeyFetcher, verifierClient verifier.Client, principalFetcher principalIDTokenFetcher, sigsFetcher signaturediscovery.Fetcher, launchSpec spec.LaunchSpec, logger *log.Logger) AttestationAgent {
 	return &agent{
 		tpm:              tpm,
 		client:           verifierClient,
@@ -76,7 +70,6 @@ func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher tpmKeyFetcher, ver
 		sigsFetcher:      sigsFetcher,
 		launchSpec:       launchSpec,
 		logger:           logger,
-		cloudLogger:      cloudLogger,
 		sigsCache:        &sigsCache{},
 	}
 }
@@ -101,7 +94,7 @@ func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error
 		return nil, fmt.Errorf("failed to get principal tokens: %w", err)
 	}
 
-	attestation, err := a.getAttestation(challenge.Nonce)
+	attestation, err := util.FetchAttestation(a.tpm, a.akFetcher, challenge.Nonce)
 	if err != nil {
 		return nil, err
 	}
@@ -115,11 +108,6 @@ func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error
 			CustomNonce:    opts.Nonces,
 			TokenType:      opts.TokenType,
 		},
-	}
-
-	if a.cloudLogger != nil {
-		a.cloudLogger.Log(logging.Entry{Payload: challenge})
-		a.cloudLogger.Log(logging.Entry{Payload: attestation})
 	}
 
 	var signatures []oci.Signature
@@ -152,25 +140,6 @@ func (a *agent) Refresh(ctx context.Context) error {
 		a.logger.Printf("Refreshed container image signature cache: %v\n", signatures)
 	}
 	return nil
-}
-
-func (a *agent) getAttestation(nonce []byte) (*pb.Attestation, error) {
-	ak, err := a.akFetcher(a.tpm)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get AK: %v", err)
-	}
-	defer ak.Close()
-
-	var buf bytes.Buffer
-	if err := a.cosCel.EncodeCEL(&buf); err != nil {
-		return nil, err
-	}
-
-	attestation, err := ak.Attest(client.AttestOpts{Nonce: nonce, CanonicalEventLog: buf.Bytes(), CertChainFetcher: http.DefaultClient})
-	if err != nil {
-		return nil, fmt.Errorf("failed to attest: %v", err)
-	}
-	return attestation, nil
 }
 
 func fetchContainerImageSignatures(ctx context.Context, fetcher signaturediscovery.Fetcher, targetRepos []string, logger *log.Logger) []oci.Signature {

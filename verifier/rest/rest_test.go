@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	confidentialcomputingpb "cloud.google.com/go/confidentialcomputing/apiv1/confidentialcomputingpb"
-	"github.com/google/go-tpm-tools/launcher/verifier"
+	"github.com/google/go-tpm-tools/verifier"
 )
 
 // Make sure our conversion function can handle empty values.

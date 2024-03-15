@@ -8,8 +8,8 @@ import (
 	"log"
 	"strings"
 
-	"github.com/google/go-tpm-tools/launcher/internal/oci"
-	"github.com/google/go-tpm-tools/launcher/verifier"
+	"github.com/google/go-tpm-tools/verifier"
+	"github.com/google/go-tpm-tools/verifier/oci"
 
 	v1 "cloud.google.com/go/confidentialcomputing/apiv1"
 	confidentialcomputingpb "cloud.google.com/go/confidentialcomputing/apiv1/confidentialcomputingpb"

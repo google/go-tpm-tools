@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"cloud.google.com/go/compute/metadata"
+	"github.com/google/go-tpm-tools/internal/util"
 	"github.com/google/go-tpm-tools/launcher/internal/experiments"
 )
 
@@ -165,18 +166,6 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-func getRegion(client *metadata.Client) (string, error) {
-	zone, err := client.Zone()
-	if err != nil {
-		return "", fmt.Errorf("failed to retrieve zone from MDS: %v", err)
-	}
-	lastDash := strings.LastIndex(zone, "-")
-	if lastDash == -1 {
-		return "", fmt.Errorf("got malformed zone from MDS: %v", zone)
-	}
-	return zone[:lastDash], nil
-}
-
 // GetLaunchSpec takes in a metadata server client, reads and parse operator's
 // input to the GCE instance custom metadata and return a LaunchSpec.
 // ImageRef (tee-image-reference) is required, will return an error if
@@ -197,7 +186,7 @@ func GetLaunchSpec(client *metadata.Client) (LaunchSpec, error) {
 		return LaunchSpec{}, fmt.Errorf("failed to retrieve projectID from MDS: %v", err)
 	}
 
-	spec.Region, err = getRegion(client)
+	spec.Region, err = util.GetRegion(client)
 	if err != nil {
 		return LaunchSpec{}, err
 	}

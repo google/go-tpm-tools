@@ -6,8 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"net/url"
-	"strings"
 	"time"
 
 	"cloud.google.com/go/compute/metadata"
@@ -15,19 +13,15 @@ import (
 	"github.com/containerd/containerd/namespaces"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-tpm-tools/client"
-	"github.com/google/go-tpm-tools/launcher/agent"
-	"github.com/google/go-tpm-tools/launcher/spec"
-	"github.com/google/go-tpm-tools/launcher/verifier"
-	"github.com/google/go-tpm-tools/launcher/verifier/rest"
+	"github.com/google/go-tpm-tools/internal/util"
+	"github.com/google/go-tpm-tools/verifier"
 	"github.com/google/go-tpm/legacy/tpm2"
 	"github.com/spf13/cobra"
-	"golang.org/x/oauth2/google"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
-var mdsClient *metadata.Client
 var mockCloudLoggingServerAddress string
 
 const toolName = "gotpm"
@@ -37,7 +31,7 @@ var tokenCmd = &cobra.Command{
 	Use:   "token",
 	Short: "Attest and fetch an OIDC token from Google Attestation Verification Service.",
 	Long: `Gather attestation report and send it to Google Attestation Verification Service for an OIDC token.
-The OIDC token includes claims regarding the GCE VM, which is verified by Attestation Verification Service. Note that Confidential Computing API needs to be enabled for your account to access Google Attestation Verification Service https://pantheon.corp.google.com/apis/api/confidentialcomputing.googleapis.com.
+The OIDC token includes claims regarding the GCE VM, which is verified by Attestation Verification Service. Note that Confidential Computing API needs to be enabled for your account to access Google Attestation Verification Service https://console.cloud.google.com/apis/api/confidentialcomputing.googleapis.com.
 --algo flag overrides the public key algorithm for the GCE TPM attestation key. If not provided then by default rsa is used.
 `,
 	Args: cobra.NoArgs,
@@ -49,32 +43,13 @@ The OIDC token includes claims regarding the GCE VM, which is verified by Attest
 		defer rwc.Close()
 
 		// Metadata Server (MDS). A GCP specific client.
-		mdsClient = metadata.NewClient(nil)
+		mdsClient := metadata.NewClient(nil)
 
 		ctx := namespaces.WithNamespace(context.Background(), namespaces.Default)
-		// TODO: principalFetcher is copied from go-tpm-tools/launcher/container_runner.go, to be refactored
-		// Fetch GCP specific ID token with specific audience.
-		// See https://cloud.google.com/functions/docs/securing/authenticating#functions-bearer-token-example-go.
-		principalFetcher := func(audience string) ([][]byte, error) {
-			u := url.URL{
-				Path: "instance/service-accounts/default/identity",
-				RawQuery: url.Values{
-					"audience": {audience},
-					"format":   {"full"},
-				}.Encode(),
-			}
-			idToken, err := mdsClient.Get(u.String())
-			if err != nil {
-				return nil, fmt.Errorf("failed to get principal tokens: %w", err)
-			}
-			fmt.Fprintf(debugOutput(), "GCP ID token fetched is: %s\n", idToken)
-			tokens := [][]byte{[]byte(idToken)}
-			return tokens, nil
-		}
 
 		fmt.Fprintf(debugOutput(), "Attestation Address is set to %s\n", asAddress)
 
-		region, err := getRegion(mdsClient)
+		region, err := util.GetRegion(mdsClient)
 		if err != nil {
 			return fmt.Errorf("failed to fetch Region from MDS, the tool is probably not running in a GCE VM: %v", err)
 		}
@@ -84,7 +59,7 @@ The OIDC token includes claims regarding the GCE VM, which is verified by Attest
 			return fmt.Errorf("failed to retrieve ProjectID from MDS: %v", err)
 		}
 
-		verifierClient, err := getRESTClient(ctx, asAddress, projectID, region)
+		verifierClient, err := util.NewRESTClient(ctx, asAddress, projectID, region)
 		if err != nil {
 			return fmt.Errorf("failed to create REST verifier client: %v", err)
 		}
@@ -104,7 +79,7 @@ The OIDC token includes claims regarding the GCE VM, which is verified by Attest
 			return err
 		}
 		if gceAK.Cert() == nil {
-			return errors.New("failed to find gceAKCert on this VM: try creating a new VM or verifying the VM has an EK cert using get-shielded-identity gcloud command. The used key algorithm is: " + usedKeyAlgo)
+			return errors.New("failed to find GCE AK Certificate on this VM: try creating a new VM or verifying the VM has an EK cert using get-shielded-identity gcloud command. The used key algorithm is: " + usedKeyAlgo)
 		}
 		gceAK.Close()
 
@@ -135,13 +110,40 @@ The OIDC token includes claims regarding the GCE VM, which is verified by Attest
 		}
 
 		key = "gceAK"
-		attestAgent := agent.CreateAttestationAgent(rwc, attestationKeys[key][keyAlgo], verifierClient, principalFetcher, nil, spec.LaunchSpec{}, nil, cloudLogger)
 
 		fmt.Fprintf(debugOutput(), "Fetching attestation verifier OIDC token\n")
-		token, err := attestAgent.Attest(ctx, agent.AttestAgentOpts{Aud: audience, TokenType: "OIDC"})
+
+		challenge, err := verifierClient.CreateChallenge(ctx)
 		if err != nil {
-			return fmt.Errorf("failed to retrieve attestation service token: %v", err)
+			return err
 		}
+
+		principalTokens, err := util.PrincipalFetcher(challenge.Name, mdsClient)
+		if err != nil {
+			return fmt.Errorf("failed to get principal tokens: %w", err)
+		}
+
+		attestation, err := util.FetchAttestation(rwc, attestationKeys[key][keyAlgo], challenge.Nonce)
+		if err != nil {
+			return err
+		}
+
+		req := verifier.VerifyAttestationRequest{
+			Challenge:      challenge,
+			GcpCredentials: principalTokens,
+			Attestation:    attestation,
+			TokenOptions:   verifier.TokenOptions{CustomAudience: audience, TokenType: "OIDC"},
+		}
+
+		resp, err := verifierClient.VerifyAttestation(ctx, req)
+		if err != nil {
+			return err
+		}
+		if len(resp.PartialErrs) > 0 {
+			fmt.Fprintf(debugOutput(), "partial errors from VerifyAttestation: %v", resp.PartialErrs)
+		}
+
+		token := resp.ClaimsToken
 
 		// Get token expiration.
 		claims := &jwt.RegisteredClaims{}
@@ -176,6 +178,8 @@ The OIDC token includes claims regarding the GCE VM, which is verified by Attest
 		}
 
 		if cloudLog {
+			cloudLogger.Log(logging.Entry{Payload: challenge})
+			cloudLogger.Log(logging.Entry{Payload: attestation})
 			cloudLogger.Log(logging.Entry{Payload: map[string]string{"token": string(token)}})
 			cloudLogger.Log(logging.Entry{Payload: mapClaims})
 			cloudLogClient.Close()
@@ -188,40 +192,6 @@ The OIDC token includes claims regarding the GCE VM, which is verified by Attest
 
 		return nil
 	},
-}
-
-// TODO: getRESTClient is copied from go-tpm-tools/launcher/container_runner.go, to be refactored.
-// getRESTClient returns a REST verifier.Client that points to the given address.
-// It defaults to the Attestation Verifier instance at
-// https://confidentialcomputing.googleapis.com.
-func getRESTClient(ctx context.Context, asAddr string, ProjectID string, Region string) (verifier.Client, error) {
-	httpClient, err := google.DefaultClient(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create HTTP client: %v", err)
-	}
-
-	opts := []option.ClientOption{option.WithHTTPClient(httpClient)}
-	if asAddr != "" {
-		opts = append(opts, option.WithEndpoint(asAddr))
-	}
-
-	restClient, err := rest.NewClient(ctx, ProjectID, Region, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return restClient, nil
-}
-
-func getRegion(client *metadata.Client) (string, error) {
-	zone, err := client.Zone()
-	if err != nil {
-		return "", fmt.Errorf("failed to retrieve zone from MDS: %v", err)
-	}
-	lastDash := strings.LastIndex(zone, "-")
-	if lastDash == -1 {
-		return "", fmt.Errorf("got malformed zone from MDS: %v", zone)
-	}
-	return zone[:lastDash], nil
 }
 
 func init() {
