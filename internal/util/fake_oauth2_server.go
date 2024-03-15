@@ -14,8 +14,8 @@ const oauth2CredentialHostEnv = "GOOGLE_APPLICATION_CREDENTIALS"
 
 // MockOauth2Server  is a struct for mocking Oauth2Server
 type MockOauth2Server struct {
-	Server           *httptest.Server
-	OldFakeAsHostEnv string
+	Server       *httptest.Server
+	OriginalCred string
 }
 
 // NewMockOauth2Server creates a mock Oauth2 server for testing purpose
@@ -60,12 +60,12 @@ func NewMockOauth2Server() (*MockOauth2Server, error) {
 	old := os.Getenv(oauth2CredentialHostEnv)
 	os.Setenv(oauth2CredentialHostEnv, file.Name())
 
-	return &MockOauth2Server{Server: server, OldFakeAsHostEnv: old}, nil
+	return &MockOauth2Server{Server: server, OriginalCred: old}, nil
 }
 
-// Stop shuts down the server.
+// Stop cleans up the fake credential, reset the original one, and shuts down the server.
 func (s *MockOauth2Server) Stop() {
 	os.Remove(os.Getenv(oauth2CredentialHostEnv))
-	os.Setenv(oauth2CredentialHostEnv, s.OldFakeAsHostEnv)
+	os.Setenv(oauth2CredentialHostEnv, s.OriginalCred)
 	s.Server.Close()
 }

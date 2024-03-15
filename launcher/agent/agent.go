@@ -94,7 +94,7 @@ func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error
 		return nil, fmt.Errorf("failed to get principal tokens: %w", err)
 	}
 
-	attestation, err := util.GetAttestation(a.tpm, a.akFetcher, challenge.Nonce)
+	attestation, err := util.FetchAttestation(a.tpm, a.akFetcher, challenge.Nonce)
 	if err != nil {
 		return nil, err
 	}

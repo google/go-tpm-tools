@@ -42,8 +42,8 @@ func PrincipalFetcher(audience string, mdsClient *metadata.Client) ([][]byte, er
 	return tokens, nil
 }
 
-// GetAttestation gathers the materials required for remote attestation from TPM
-func GetAttestation(tpm io.ReadWriteCloser, akFetcher TpmKeyFetcher, nonce []byte) (*attestpb.Attestation, error) {
+// FetchAttestation gathers the materials required for remote attestation from TPM
+func FetchAttestation(tpm io.ReadWriteCloser, akFetcher TpmKeyFetcher, nonce []byte) (*attestpb.Attestation, error) {
 	ak, err := akFetcher(tpm)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get AK: %v", err)
@@ -63,10 +63,10 @@ func GetAttestation(tpm io.ReadWriteCloser, akFetcher TpmKeyFetcher, nonce []byt
 	return attestation, nil
 }
 
-// GetRESTClient returns a REST verifier.Client that points to the given address.
+// NewRESTClient returns a REST verifier.Client that points to the given address.
 // It defaults to the Attestation Verifier instance at
 // https://confidentialcomputing.googleapis.com.
-func GetRESTClient(ctx context.Context, asAddr string, ProjectID string, Region string) (verifier.Client, error) {
+func NewRESTClient(ctx context.Context, asAddr string, ProjectID string, Region string) (verifier.Client, error) {
 	httpClient, err := google.DefaultClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create HTTP client: %v", err)

@@ -9,6 +9,7 @@ import (
 
 	"cloud.google.com/go/compute/metadata"
 	"github.com/containerd/containerd/namespaces"
+	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal/test"
 	"github.com/google/go-tpm-tools/proto/attest"
@@ -30,12 +31,12 @@ func TestPrincipleFetcher(t *testing.T) {
 		t.Error(err)
 	}
 	wantTokens := [][]byte{[]byte("test_jwt_token")}
-	if !reflect.DeepEqual(wantTokens, gotTokens) {
+	if !cmp.Equal(wantTokens, gotTokens) {
 		t.Error("ID Token Mismatch")
 	}
 }
 
-func TestGetAttestation(t *testing.T) {
+func TestFetchAttestation(t *testing.T) {
 	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
 	tests := []struct {
@@ -47,7 +48,7 @@ func TestGetAttestation(t *testing.T) {
 	}
 	for _, op := range tests {
 		t.Run(op.name, func(t *testing.T) {
-			attestation, err := GetAttestation(rwc, op.keyFetcher, []byte("test"))
+			attestation, err := FetchAttestation(rwc, op.keyFetcher, []byte("test"))
 			if err != nil {
 				t.Errorf("Failed to get attestation %s", err)
 			}
@@ -58,7 +59,7 @@ func TestGetAttestation(t *testing.T) {
 	}
 }
 
-func TestGetRESTClient(t *testing.T) {
+func TestNewRESTClient(t *testing.T) {
 	ctx := namespaces.WithNamespace(context.Background(), namespaces.Default)
 
 	mockOauth2Server, err := NewMockOauth2Server()
@@ -80,7 +81,7 @@ func TestGetRESTClient(t *testing.T) {
 	}
 	defer mockAttestationServer.Stop()
 
-	restClient, err := GetRESTClient(ctx, mockAttestationServer.Server.URL, "test-project", "us-central")
+	restClient, err := NewRESTClient(ctx, mockAttestationServer.Server.URL, "test-project", "us-central")
 	if err != nil {
 		t.Errorf("Failed to create rest client %s", err)
 	}

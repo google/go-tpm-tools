@@ -197,7 +197,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 
 	asAddr := launchSpec.AttestationServiceAddr
 
-	verifierClient, err := util.GetRESTClient(ctx, asAddr, launchSpec.ProjectID, launchSpec.Region)
+	verifierClient, err := util.NewRESTClient(ctx, asAddr, launchSpec.ProjectID, launchSpec.Region)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create REST verifier client: %v", err)
 	}

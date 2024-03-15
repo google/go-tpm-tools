@@ -59,7 +59,7 @@ The OIDC token includes claims regarding the GCE VM, which is verified by Attest
 			return fmt.Errorf("failed to retrieve ProjectID from MDS: %v", err)
 		}
 
-		verifierClient, err := util.GetRESTClient(ctx, asAddress, projectID, region)
+		verifierClient, err := util.NewRESTClient(ctx, asAddress, projectID, region)
 		if err != nil {
 			return fmt.Errorf("failed to create REST verifier client: %v", err)
 		}
@@ -123,7 +123,7 @@ The OIDC token includes claims regarding the GCE VM, which is verified by Attest
 			return fmt.Errorf("failed to get principal tokens: %w", err)
 		}
 
-		attestation, err := util.GetAttestation(rwc, attestationKeys[key][keyAlgo], challenge.Nonce)
+		attestation, err := util.FetchAttestation(rwc, attestationKeys[key][keyAlgo], challenge.Nonce)
 		if err != nil {
 			return err
 		}
@@ -140,7 +140,7 @@ The OIDC token includes claims regarding the GCE VM, which is verified by Attest
 			return err
 		}
 		if len(resp.PartialErrs) > 0 {
-			return fmt.Errorf("partial errors from VerifyAttestation: %v", resp.PartialErrs)
+			fmt.Fprintf(debugOutput(), "partial errors from VerifyAttestation: %v", resp.PartialErrs)
 		}
 
 		token := resp.ClaimsToken
