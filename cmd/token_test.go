@@ -90,6 +90,7 @@ func TestTokenWithGCEAK(t *testing.T) {
 }
 
 func TestCustomEventLogFile(t *testing.T) {
+	ExternalTPM = nil
 	var dummyMetaInstance = util.Instance{ProjectID: "test-project", ProjectNumber: "1922337278274", Zone: "us-central-1a", InstanceID: "12345678", InstanceName: "default"}
 	mockMdsServer, err := util.NewMetadataServer(dummyMetaInstance)
 	if err != nil {
