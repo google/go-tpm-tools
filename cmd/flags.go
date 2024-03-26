@@ -146,7 +146,7 @@ func addAudienceFlag(cmd *cobra.Command) {
 
 // Lets this command specify event log path
 func addEventLogFlag(cmd *cobra.Command) {
-	cmd.PersistentFlags().StringVar(&eventLog, "event-log", client.EventLogPath, "specifies the event log file path.")
+	cmd.PersistentFlags().StringVar(&eventLog, "event-log", "/sys/kernel/security/tpm0/binary_bios_measurements", "specifies the event log file path.")
 }
 
 // Lets this command specify an NVDATA index, for use with nvIndex.

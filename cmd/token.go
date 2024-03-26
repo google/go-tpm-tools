@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
+	"os"
 	"time"
 
 	"cloud.google.com/go/compute/metadata"
@@ -26,6 +28,19 @@ var mockCloudLoggingServerAddress string
 
 const toolName = "gotpm"
 
+type tpmWrapper struct {
+	io.ReadWriter
+}
+
+// EventLog allows caller to call the EventLogGetter function
+// of the wrapped TPM.
+func (et tpmWrapper) EventLog() ([]byte, error) {
+	if ExternalTPM != nil {
+		return client.GetEventLog(et.ReadWriter)
+	}
+	return os.ReadFile(eventLog)
+}
+
 // If hardware technology needs a variable length teenonce then please modify the flags description
 var tokenCmd = &cobra.Command{
 	Use:   "token",
@@ -36,12 +51,14 @@ The OIDC token includes claims regarding the GCE VM, which is verified by Attest
 `,
 	Args: cobra.NoArgs,
 	RunE: func(*cobra.Command, []string) error {
-		client.EventLogPath = eventLog
 		rwc, err := openTpm()
 		if err != nil {
 			return err
 		}
 		defer rwc.Close()
+
+		rwcw := tpmWrapper{}
+		rwcw.ReadWriter = rwc
 
 		// Metadata Server (MDS). A GCP specific client.
 		mdsClient := metadata.NewClient(nil)
@@ -70,11 +87,11 @@ The OIDC token includes claims regarding the GCE VM, which is verified by Attest
 		var usedKeyAlgo string
 		if keyAlgo == tpm2.AlgRSA {
 			usedKeyAlgo = "RSA"
-			gceAK, err = client.GceAttestationKeyRSA(rwc)
+			gceAK, err = client.GceAttestationKeyRSA(rwcw)
 		}
 		if keyAlgo == tpm2.AlgECC {
 			usedKeyAlgo = "ECC"
-			gceAK, err = client.GceAttestationKeyECC(rwc)
+			gceAK, err = client.GceAttestationKeyECC(rwcw)
 		}
 		if err != nil {
 			return err
@@ -124,7 +141,7 @@ The OIDC token includes claims regarding the GCE VM, which is verified by Attest
 			return fmt.Errorf("failed to get principal tokens: %w", err)
 		}
 
-		attestation, err := util.FetchAttestation(rwc, attestationKeys[key][keyAlgo], challenge.Nonce)
+		attestation, err := util.FetchAttestation(rwcw, attestationKeys[key][keyAlgo], challenge.Nonce)
 		if err != nil {
 			return err
 		}
