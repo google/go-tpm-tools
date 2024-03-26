@@ -89,6 +89,43 @@ func TestTokenWithGCEAK(t *testing.T) {
 	}
 }
 
+func TestCustomEventLogFile(t *testing.T) {
+	ExternalTPM = nil
+	var dummyMetaInstance = util.Instance{ProjectID: "test-project", ProjectNumber: "1922337278274", Zone: "us-central-1a", InstanceID: "12345678", InstanceName: "default"}
+	mockMdsServer, err := util.NewMetadataServer(dummyMetaInstance)
+	if err != nil {
+		t.Error(err)
+	}
+	defer mockMdsServer.Stop()
+
+	mockOauth2Server, err := util.NewMockOauth2Server()
+	if err != nil {
+		t.Error(err)
+	}
+	defer mockOauth2Server.Stop()
+
+	// Endpoint is Google's OAuth 2.0 default endpoint. Change to mock server.
+	google.Endpoint = oauth2.Endpoint{
+		AuthURL:   mockOauth2Server.Server.URL + "/o/oauth2/auth",
+		TokenURL:  mockOauth2Server.Server.URL + "/token",
+		AuthStyle: oauth2.AuthStyleInParams,
+	}
+
+	mockAttestationServer, err := util.NewMockAttestationServer()
+	if err != nil {
+		t.Error(err)
+	}
+	defer mockAttestationServer.Stop()
+
+	RootCmd.SetArgs([]string{"token", "--verifier-endpoint", mockAttestationServer.Server.URL, "--event-log", "/test-event-log"})
+	if err := RootCmd.Execute(); err != nil {
+		if err.Error() != "failed to attest: failed to retrieve TCG Event Log: open /test-event-log: no such file or directory" &&
+			err.Error() != "connecting to TPM: stat /dev/tpm0: no such file or directory" {
+			t.Error(err)
+		}
+	}
+}
+
 // Need to call tpm2.NVUndefinespace twice on the handle with authHandle tpm2.HandlePlatform.
 // e.g defer tpm2.NVUndefineSpace(rwc, "", tpm2.HandlePlatform, tpmutil.Handle(client.GceAKTemplateNVIndexRSA))
 // defer tpm2.NVUndefineSpace(rwc, "", tpm2.HandlePlatform, tpmutil.Handle(client.GceAKCertNVIndexRSA))

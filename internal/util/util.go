@@ -43,7 +43,7 @@ func PrincipalFetcher(audience string, mdsClient *metadata.Client) ([][]byte, er
 }
 
 // FetchAttestation gathers the materials required for remote attestation from TPM
-func FetchAttestation(tpm io.ReadWriteCloser, akFetcher TpmKeyFetcher, nonce []byte) (*attestpb.Attestation, error) {
+func FetchAttestation(tpm io.ReadWriter, akFetcher TpmKeyFetcher, nonce []byte) (*attestpb.Attestation, error) {
 	ak, err := akFetcher(tpm)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get AK: %v", err)
