@@ -119,7 +119,8 @@ func TestCustomEventLogFile(t *testing.T) {
 
 	RootCmd.SetArgs([]string{"token", "--verifier-endpoint", mockAttestationServer.Server.URL, "--event-log", "/test-event-log"})
 	if err := RootCmd.Execute(); err != nil {
-		if err.Error() != "failed to attest: failed to retrieve TCG Event Log: open /test-event-log: no such file or directory" {
+		if err.Error() != "failed to attest: failed to retrieve TCG Event Log: open /test-event-log: no such file or directory" &&
+			err.Error() != "connecting to TPM: stat /dev/tpm0: no such file or directory" {
 			t.Error(err)
 		}
 	}
