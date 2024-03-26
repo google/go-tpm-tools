@@ -81,9 +81,14 @@ func TestTokenWithGCEAK(t *testing.T) {
 				t.Error(err)
 			}
 
-			RootCmd.SetArgs([]string{"token", "--algo", op.algo, "--output", secretFile1, "--verifier-endpoint", mockAttestationServer.Server.URL, "--cloud-log", "--audience", "https://api.test.com"})
+			var testEventLogPath = "/test-event-log-path"
+
+			RootCmd.SetArgs([]string{"token", "--algo", op.algo, "--output", secretFile1, "--verifier-endpoint", mockAttestationServer.Server.URL, "--cloud-log", "--audience", "https://api.test.com", "--event-log", testEventLogPath})
 			if err := RootCmd.Execute(); err != nil {
 				t.Error(err)
+			}
+			if client.EventLogPath != testEventLogPath {
+				t.Error("Failed to set event log path")
 			}
 		})
 	}

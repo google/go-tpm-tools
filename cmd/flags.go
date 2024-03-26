@@ -24,6 +24,7 @@ var (
 	format    string
 	asAddress string
 	audience  string
+	eventLog  string
 	cloudLog  bool
 )
 
@@ -141,6 +142,11 @@ func addCloudLoggingFlag(cmd *cobra.Command) {
 func addAudienceFlag(cmd *cobra.Command) {
 	cmd.PersistentFlags().StringVar(&audience, "audience", "",
 		"the audience field in the claims token. Cannot be sts.googleapis.com.")
+}
+
+// Lets this command specify event log path
+func addEventLogFlag(cmd *cobra.Command) {
+	cmd.PersistentFlags().StringVar(&eventLog, "event-log", client.EventLogPath, "specifies the event log file path.")
 }
 
 // Lets this command specify an NVDATA index, for use with nvIndex.

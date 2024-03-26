@@ -36,6 +36,7 @@ The OIDC token includes claims regarding the GCE VM, which is verified by Attest
 `,
 	Args: cobra.NoArgs,
 	RunE: func(*cobra.Command, []string) error {
+		client.EventLogPath = eventLog
 		rwc, err := openTpm()
 		if err != nil {
 			return err
@@ -201,6 +202,7 @@ func init() {
 	addAsAddressFlag(tokenCmd)
 	addCloudLoggingFlag(tokenCmd)
 	addAudienceFlag(tokenCmd)
+	addEventLogFlag(tokenCmd)
 	// TODO: Add TEE hardware OIDC token generation
 	// addTeeNonceflag(tokenCmd)
 	// addTeeTechnology(tokenCmd)
