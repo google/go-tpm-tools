@@ -119,6 +119,23 @@ before committing your changes.
 
 Unlike [Go-TPM](https://github.com/google/go-tpm) (which supports TPM 1.2 and TPM 2.0), this module explicitly only supports TPM 2.0. Users should avoid use of TPM 1.2 due to the inherent reliance on SHA1 (which is [quite broken](https://sha-mbles.github.io/)).
 
+## Confidential VMs with Intel TDX
+For Ubuntu image, the `tdx_guest` module was moved to linux-modules-extra
+package in the 1016 and newer kernels. You should be able to install the module,
+and either manually load the module or reboot.
+
+To install the linux-modules-extra package, run:
+
+```console
+sudo apt-get install linux-modules-extra-gcp
+```
+
+To manually load the module, run:
+
+```console
+sudo modprobe tdx_guest
+```
+
 ## Legal
 
 Copyright 2018 Google Inc. under the
