@@ -31,6 +31,19 @@ It contains the following public packages:
 This repository also contains `gotpm`, a command line tool for using the TPM.
 Run `gotpm --help` and `gotpm <command> --help` for more documentation.
 
+### Use prebuilt `gotpm` binary
+
+You can download the binary from a [release](https://github.com/google/go-tpm-tools/releases) directly.
+
+```bash
+# VERSION: 0.4.4 ARCH: Linux_x86_64
+curl -L https://github.com/google/go-tpm-tools/releases/download/[VERSION]/go-tpm-tools_[ARCH].tar.gz -o go-tpm-tools.tar.gz
+tar xvf go-tpm-tools.tar.gz
+# You may need to copy the binary to a directory with executable permissions.
+# NOTE: on Container-Optimized OS, /var/lib/google/ is executable
+./gotpm --help
+```
+
 ### Building and Installing `gotpm`
 
 `gotpm` can be directly installed from this repo by running:
