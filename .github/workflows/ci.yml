@@ -28,7 +28,7 @@ jobs:
   build:
     strategy:
       matrix:
-        go-version: [1.20.x]
+        go-version: [1.21.x]
         # TODO: Get this working on windows-latest
         os: [macos-latest, ubuntu-latest]
         architecture: [x32, x64]
@@ -81,7 +81,7 @@ jobs:
   lint:
     strategy:
       matrix:
-        go-version: [1.20.x]
+        go-version: [1.21.x]
         os: [ubuntu-latest]
         dir: ["./", "./cmd", "./launcher"]
     name: Lint ${{ matrix.dir }} (${{ matrix.os }}, Go ${{ matrix.go-version }})
@@ -112,7 +112,7 @@ jobs:
   lintc:
     strategy:
       matrix:
-        go-version: [1.20.x]
+        go-version: [1.21.x]
         os: [ubuntu-latest]
     name: Lint CGO (${{ matrix.os }}, Go ${{ matrix.go-version }})
     runs-on: ${{ matrix.os }}

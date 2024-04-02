@@ -39,7 +39,8 @@ func Resolver(token string) remotes.Resolver {
 		return "", "", nil
 	}
 	authOpts := []docker.AuthorizerOpt{docker.WithAuthCreds(credentials)}
-	options.Authorizer = docker.NewDockerAuthorizer(authOpts...)
+	options.Hosts = docker.ConfigureDefaultRegistries(
+		docker.WithAuthorizer(docker.NewDockerAuthorizer(authOpts...)))
 
 	return docker.NewResolver(options)
 }

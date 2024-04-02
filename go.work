@@ -1,4 +1,4 @@
-go 1.20
+go 1.21
 
 use (
 	.
@@ -6,4 +6,4 @@ use (
 	./launcher
 )
 
-replace github.com/google/go-tpm-tools v0.3.12 => ./
+replace github.com/google/go-tpm-tools v0.4.4 => ./
