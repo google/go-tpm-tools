@@ -11,7 +11,7 @@ jobs:
   release:
     strategy:
       matrix:
-        go-version: [1.20.x]
+        go-version: [1.21.x]
         os: [macos-latest, ubuntu-latest]
 
     name: Release (${{ matrix.os}}, Go ${{ matrix.go-version }})

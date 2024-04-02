@@ -131,6 +131,12 @@ func createECCSeed(ek tpm2.Public) (seed, encryptedSeed []byte, err error) {
 	if err != nil {
 		return nil, nil, err
 	}
+
+	//nolint:staticcheck
+	// elliptic.GenerateKey is deprecated, but P224 is not supported in
+	// crypto/ecdh (P224 is supported in the TPM2 spec)
+	// https://github.com/golang/go/issues/59783
+	// TODO Check on crypto/ecdh library support on P224 curve
 	priv, x, y, err := elliptic.GenerateKey(curve, rand.Reader)
 	if err != nil {
 		return nil, nil, err

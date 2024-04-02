@@ -8,7 +8,7 @@ substitutions:
   '_CS_LICENSE': ''
 
 steps:
-  - name: golang:1.20
+  - name: golang:1.21
     entrypoint: /bin/bash
     args:
       - -c
