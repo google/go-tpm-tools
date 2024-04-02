@@ -7,7 +7,7 @@ cut a release (as GitHub doesn't have sufficiently advanced
 
 ## Create the main release PR
 
-Create a standalone PR titled "Release vX.Y.Z" against the `master` branch. This
+Create a standalone PR titled "Release vX.Y.Z" against the `main` branch. This
 PR should (ideally) be an empty commit, but might contain some minor changes if
 we want to get them in for a specific release. You can create an empty commit
 by running:
@@ -38,7 +38,7 @@ of a single commit and be "squashed" instead of "merged".
 
 ## Tag the releases
 
-After the new release is in the `master` branch, we need to create git tags so
+After the new release is in the `main` branch, we need to create git tags so
 that the Go version system can find the releases. Generally the author of the
 PR should do this.
 
@@ -74,7 +74,7 @@ of a single commit and be "squashed" instead of "merged".
 The submodules must be tagged separately from the main library release. This
 is best done on the git command line. After the Submodule update PR has been
 merged, checkout the repo and check that your `HEAD` is on the commit for the
-submodule update PR on the `master` branch. This _should not_  be normal release
+submodule update PR on the `main` branch. This _should not_  be normal release
 commit `vX.Y.Z`, but a later commit. Then, run the following command:
 ```
 git tag "cmd/vX.Y.Z" && git tag "launcher/vX.Y.Z"
@@ -82,7 +82,7 @@ git tag "cmd/vX.Y.Z" && git tag "launcher/vX.Y.Z"
 replacing `vX.Y.Z` with the actual version number.
 
 Finally, double check that you've tagged the correct commit, and then push the
-tags to the `master` branch by running:
+tags to the `main` branch by running:
 ```
 git push origin "cmd/vX.Y.Z" "launcher/vX.Y.Z"
 ```
