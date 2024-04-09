@@ -90,6 +90,10 @@ func TestTokenWithGCEAK(t *testing.T) {
 }
 
 func TestCustomEventLogFile(t *testing.T) {
+	if _, err := os.Stat("/dev/tpm0"); os.IsNotExist(err) {
+		t.Skip("Skipping test: /dev/tpm0 not found")
+	}
+
 	ExternalTPM = nil
 	var dummyMetaInstance = util.Instance{ProjectID: "test-project", ProjectNumber: "1922337278274", Zone: "us-central-1a", InstanceID: "12345678", InstanceName: "default"}
 	mockMdsServer, err := util.NewMetadataServer(dummyMetaInstance)
@@ -119,8 +123,7 @@ func TestCustomEventLogFile(t *testing.T) {
 
 	RootCmd.SetArgs([]string{"token", "--verifier-endpoint", mockAttestationServer.Server.URL, "--event-log", "/test-event-log"})
 	if err := RootCmd.Execute(); err != nil {
-		if err.Error() != "failed to attest: failed to retrieve TCG Event Log: open /test-event-log: no such file or directory" &&
-			err.Error() != "connecting to TPM: stat /dev/tpm0: no such file or directory" {
+		if err.Error() != "failed to attest: failed to retrieve TCG Event Log: open /test-event-log: no such file or directory" {
 			t.Error(err)
 		}
 	}
