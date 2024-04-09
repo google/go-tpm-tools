@@ -12,13 +12,12 @@ import (
 
 var tpmPath string
 
-// tpmWrapper wrap tpm io.ReadWriteCloser and EventLogGetter interfaces together.
+// tpmWrapper wraps a TPM io.ReadWriteCloser that implements client.EventLogGetter.
 type tpmWrapper struct {
 	io.ReadWriteCloser
 }
 
-// EventLog allows caller to call the EventLogGetter function
-// of the wrapped TPM.
+// EventLog fetches the event log specified by the event-log flag.
 func (et tpmWrapper) EventLog() ([]byte, error) {
 	return os.ReadFile(eventLog)
 }
