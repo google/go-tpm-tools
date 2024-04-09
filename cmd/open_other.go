@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 
-	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm/legacy/tpm2"
 )
 
@@ -16,15 +15,11 @@ var tpmPath string
 // tpmWrapper wrap tpm io.ReadWriteCloser and EventLogGetter interfaces together.
 type tpmWrapper struct {
 	io.ReadWriteCloser
-	client.EventLogGetter
 }
 
 // EventLog allows caller to call the EventLogGetter function
 // of the wrapped TPM.
 func (et tpmWrapper) EventLog() ([]byte, error) {
-	if ExternalTPM != nil {
-		return client.GetEventLog(et.ReadWriteCloser)
-	}
 	return os.ReadFile(eventLog)
 }
 
