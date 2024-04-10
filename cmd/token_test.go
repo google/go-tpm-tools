@@ -131,8 +131,8 @@ func TestCustomEventLogFile(t *testing.T) {
 }
 
 func TestCopiedCustomEventLogFile(t *testing.T) {
-	if _, err := os.Stat("/sys/kernel/security/tpm0/binary_bios_measurements"); os.IsNotExist(err) {
-		t.Skip("Skipping test: /sys/kernel/security/tpm0/binary_bios_measurements not found")
+	if os.Getenv("RUN_TestCopiedCustomEventLogFile") != "true" {
+		t.Skip("Skipping test: run this test manually with `go test -c -v ./cmd/...` and `sudo RUN_TestCopiedCustomEventLogFile=true ./cmd.test -test.run TestCopiedCustomEventLogFile`")
 	}
 
 	ExternalTPM = nil
