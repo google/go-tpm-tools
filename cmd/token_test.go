@@ -8,6 +8,7 @@ import (
 	"io"
 	"math/big"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -126,6 +127,60 @@ func TestCustomEventLogFile(t *testing.T) {
 		if err.Error() != "failed to attest: failed to retrieve TCG Event Log: open /test-event-log: no such file or directory" {
 			t.Error(err)
 		}
+	}
+}
+
+func TestCopiedCustomEventLogFile(t *testing.T) {
+	if _, err := os.Stat("/sys/kernel/security/tpm0/binary_bios_measurements"); os.IsNotExist(err) {
+		t.Skip("Skipping test: /sys/kernel/security/tpm0/binary_bios_measurements not found")
+	}
+
+	ExternalTPM = nil
+	var dummyMetaInstance = util.Instance{ProjectID: "test-project", ProjectNumber: "1922337278274", Zone: "us-central-1a", InstanceID: "12345678", InstanceName: "default"}
+	mockMdsServer, err := util.NewMetadataServer(dummyMetaInstance)
+	if err != nil {
+		t.Error(err)
+	}
+	defer mockMdsServer.Stop()
+
+	mockOauth2Server, err := util.NewMockOauth2Server()
+	if err != nil {
+		t.Error(err)
+	}
+	defer mockOauth2Server.Stop()
+
+	// Endpoint is Google's OAuth 2.0 default endpoint. Change to mock server.
+	google.Endpoint = oauth2.Endpoint{
+		AuthURL:   mockOauth2Server.Server.URL + "/o/oauth2/auth",
+		TokenURL:  mockOauth2Server.Server.URL + "/token",
+		AuthStyle: oauth2.AuthStyleInParams,
+	}
+
+	mockAttestationServer, err := util.NewMockAttestationServer()
+	if err != nil {
+		t.Error(err)
+	}
+	defer mockAttestationServer.Stop()
+
+	tmpDir := t.TempDir()
+	srcPath := "/sys/kernel/security/tpm0/binary_bios_measurements"
+	destPath := filepath.Join(tmpDir, "copied_binary_bios_measurements")
+
+	// Read the contents of the source file
+	data, err := os.ReadFile(srcPath)
+	if err != nil {
+		t.Fatal("Failed to read source file:", err)
+	}
+
+	// Write the contents to the destination file
+	err = os.WriteFile(destPath, data, 0644)
+	if err != nil {
+		t.Fatal("Failed to write destination file:", err)
+	}
+
+	RootCmd.SetArgs([]string{"token", "--verifier-endpoint", mockAttestationServer.Server.URL, "--event-log", destPath})
+	if err := RootCmd.Execute(); err != nil {
+		t.Error(err)
 	}
 }
 
