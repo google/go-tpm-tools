@@ -201,6 +201,7 @@ func init() {
 	addAsAddressFlag(tokenCmd)
 	addCloudLoggingFlag(tokenCmd)
 	addAudienceFlag(tokenCmd)
+	addEventLogFlag(tokenCmd)
 	// TODO: Add TEE hardware OIDC token generation
 	// addTeeNonceflag(tokenCmd)
 	// addTeeTechnology(tokenCmd)

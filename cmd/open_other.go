@@ -12,19 +12,32 @@ import (
 
 var tpmPath string
 
+// tpmWrapper wraps a TPM io.ReadWriteCloser that implements client.EventLogGetter.
+type tpmWrapper struct {
+	io.ReadWriteCloser
+}
+
+// EventLog fetches the event log specified by the event-log flag.
+func (et tpmWrapper) EventLog() ([]byte, error) {
+	return os.ReadFile(eventLog)
+}
+
 func init() {
 	RootCmd.PersistentFlags().StringVar(&tpmPath, "tpm-path", "",
 		"path to TPM device (defaults to /dev/tpmrm0 then /dev/tpm0)")
 }
 
 // On Linux, we have to pass in the TPM path though a flag
-func openImpl() (io.ReadWriteCloser, error) {
+func openImpl() (tpmWrapper, error) {
+	tw := tpmWrapper{}
+	var err error
 	if tpmPath == "" {
-		tpm, err := tpm2.OpenTPM("/dev/tpmrm0")
+		tw.ReadWriteCloser, err = tpm2.OpenTPM("/dev/tpmrm0")
 		if os.IsNotExist(err) {
-			tpm, err = tpm2.OpenTPM("/dev/tpm0")
+			tw.ReadWriteCloser, err = tpm2.OpenTPM("/dev/tpm0")
 		}
-		return tpm, err
+		return tw, err
 	}
-	return tpm2.OpenTPM(tpmPath)
+	tw.ReadWriteCloser, err = tpm2.OpenTPM(tpmPath)
+	return tw, err
 }
