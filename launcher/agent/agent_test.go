@@ -13,11 +13,13 @@ import (
 
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal/test"
 	"github.com/google/go-tpm-tools/launcher/internal/experiments"
 	"github.com/google/go-tpm-tools/launcher/internal/signaturediscovery"
 	"github.com/google/go-tpm-tools/launcher/spec"
+	attestpb "github.com/google/go-tpm-tools/proto/attest"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/google/go-tpm-tools/verifier/fake"
 	"github.com/google/go-tpm-tools/verifier/oci"
@@ -25,6 +27,18 @@ import (
 	"github.com/google/go-tpm-tools/verifier/rest"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/option"
+	"google.golang.org/protobuf/encoding/protojson"
+)
+
+const (
+	imageRef      = "gcr.io/fakeRepo/fakeTestImage:latest"
+	imageDigest   = "sha256:adb591795f9e9047f9117163b83c2ebcd5edc4503644d59a98cf911aef0367f8"
+	restartPolicy = spec.Always
+	imageID       = "sha256:d5496fd75dd8262f0495ab5706fc464659eb7f481e384700e6174b6c44144cae"
+	arg           = "-h"
+	envK          = "foo"
+	envV          = "foo"
+	env           = envK + "=" + envV
 )
 
 var (
@@ -67,25 +81,29 @@ func TestAttest(t *testing.T) {
 
 			fakeSigner, err := rsa.GenerateKey(rand.Reader, 2048)
 			if err != nil {
-				t.Errorf("Failed to generate signing key %v", err)
+				t.Fatalf("failed to generate signing key %v", err)
 			}
 
 			verifierClient := fake.NewClient(fakeSigner)
 
 			agent := CreateAttestationAgent(tpm, client.AttestationKeyECC, verifierClient, tc.principalIDTokenFetcher, tc.containerSignaturesFetcher, tc.launchSpec, log.Default())
+			err = measureFakeEvents(agent)
+			if err != nil {
+				t.Errorf("failed to measure events: %v", err)
+			}
 			if err := agent.Refresh(ctx); err != nil {
-				t.Errorf("failed to fresh attestation agent: %v", err)
+				t.Fatalf("failed to fresh attestation agent: %v", err)
 			}
 			tokenBytes, err := agent.Attest(ctx, AttestAgentOpts{})
 			if err != nil {
-				t.Errorf("failed to attest to Attestation Service: %v", err)
+				t.Fatalf("failed to attest to Attestation Service: %v", err)
 			}
 
 			claims := &fake.Claims{}
 			keyFunc := func(_ *jwt.Token) (interface{}, error) { return fakeSigner.Public(), nil }
 			token, err := jwt.ParseWithClaims(string(tokenBytes), claims, keyFunc)
 			if err != nil {
-				t.Errorf("Failed to parse token %s", err)
+				t.Errorf("failed to parse token %s", err)
 			}
 
 			if err = claims.Valid(); err != nil {
@@ -123,6 +141,12 @@ func TestAttest(t *testing.T) {
 					t.Errorf("ContainerImageSignatureClaims does not match expected value: got %v, want %v", got, want)
 				}
 			}
+			ms := &attestpb.MachineState{}
+			err = protojson.Unmarshal([]byte(claims.MachineStateMarshaled), ms)
+			if err != nil {
+				t.Fatalf("failed to unmarshal claims as MachineState: %v", err)
+			}
+			validateContainerState(t, ms.GetCos())
 			fmt.Printf("token.Claims: %v\n", token.Claims)
 		})
 	}
@@ -224,6 +248,13 @@ func TestFetchContainerImageSignatures(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			tpm := test.GetTPM(t)
+			defer client.CheckedClose(t, tpm)
+			ak, err := client.AttestationKeyECC(tpm)
+			if err != nil {
+				t.Fatalf("failed to create AK: %v", err)
+			}
+
 			sdClient := signaturediscovery.NewFakeClient()
 			gotSigs := fetchContainerImageSignatures(ctx, sdClient, tc.targetRepos, log.Default())
 			if len(gotSigs) != len(tc.wantBase64Sigs) {
@@ -236,10 +267,19 @@ func TestFetchContainerImageSignatures(t *testing.T) {
 
 			fakeSigner, err := rsa.GenerateKey(rand.Reader, 2048)
 			if err != nil {
-				t.Errorf("Failed to generate signing key %v", err)
+				t.Errorf("failed to generate signing key %v", err)
 			}
 			verifierClient := fake.NewClient(fakeSigner)
+			chal, err := verifierClient.CreateChallenge(ctx)
+			if err != nil {
+				t.Fatalf("failed to create challenge %v", err)
+			}
+			attestation, err := ak.Attest(client.AttestOpts{Nonce: chal.Nonce})
+			if err != nil {
+				t.Fatalf("failed to attest %v", err)
+			}
 			req := verifier.VerifyAttestationRequest{
+				Attestation:              attestation,
 				ContainerImageSignatures: gotSigs,
 			}
 			got, err := verifierClient.VerifyAttestation(context.Background(), req)
@@ -250,7 +290,7 @@ func TestFetchContainerImageSignatures(t *testing.T) {
 			keyFunc := func(_ *jwt.Token) (interface{}, error) { return fakeSigner.Public(), nil }
 			_, err = jwt.ParseWithClaims(string(got.ClaimsToken), claims, keyFunc)
 			if err != nil {
-				t.Errorf("Failed to parse token %s", err)
+				t.Errorf("failed to parse token %s", err)
 			}
 
 			gotSignatureClaims := claims.ContainerImageSignatures
@@ -351,4 +391,79 @@ func TestWithAgent(t *testing.T) {
 		t.Errorf("failed to attest to Attestation Service: %v", err)
 	}
 	t.Logf("Got Token: |%v|", string(token))
+}
+
+func validateContainerState(t *testing.T, cos *attestpb.AttestedCosState) {
+	if cos == nil {
+		t.Errorf("failed to find COS state in MachineState")
+	}
+	ctr := cos.GetContainer()
+	if ctr == nil {
+		t.Errorf("failed to find ContainerState in CosState")
+		return
+	}
+	if ctr.ImageReference != imageRef {
+		t.Errorf("got image ref %v, want image ref %v", ctr.ImageReference, imageRef)
+	}
+	if ctr.ImageDigest != imageDigest {
+		t.Errorf("got image digest %v, want image digest %v", ctr.ImageDigest, imageDigest)
+	}
+	if ctr.RestartPolicy.String() != string(restartPolicy) {
+		t.Errorf("got restart policy %v, want restart policy %v", ctr.RestartPolicy.String(), restartPolicy)
+	}
+	if len(ctr.Args) != 1 {
+		t.Fatalf("got args %v, want length 1", ctr.Args)
+	}
+	if ctr.Args[0] != arg {
+		t.Errorf("got args %v, want [%v]", ctr.Args, arg)
+	}
+	if len(ctr.OverriddenArgs) != 1 {
+		t.Fatalf("got overridden args %v, want length 1", ctr.OverriddenArgs)
+	}
+	if ctr.OverriddenArgs[0] != arg {
+		t.Errorf("got overridden args %v, want [%v]", ctr.OverriddenArgs, arg)
+	}
+
+	if len(ctr.EnvVars) != 1 {
+		t.Fatalf("got envs %v, want length 1", ctr.EnvVars)
+	}
+	if val := ctr.EnvVars[envK]; val != envV {
+		t.Errorf("got args %v, want map[%v]", ctr.EnvVars, env)
+	}
+	if len(ctr.OverriddenEnvVars) != 1 {
+		t.Fatalf("got overridden envs %v, want length 1", ctr.OverriddenEnvVars)
+	}
+	if val := ctr.EnvVars[envK]; val != envV {
+		t.Errorf("got overridden args %v, want map[%v]", ctr.OverriddenEnvVars, env)
+	}
+}
+
+func measureFakeEvents(attestAgent AttestationAgent) error {
+	if err := attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.ImageRefType, EventContent: []byte(imageRef)}); err != nil {
+		return err
+	}
+	if err := attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.ImageDigestType, EventContent: []byte(imageDigest)}); err != nil {
+		return err
+	}
+	if err := attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.RestartPolicyType, EventContent: []byte(restartPolicy)}); err != nil {
+		return err
+	}
+	if err := attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.ImageIDType, EventContent: []byte(imageID)}); err != nil {
+		return err
+	}
+
+	if err := attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.ArgType, EventContent: []byte(arg)}); err != nil {
+		return err
+	}
+	if err := attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.EnvVarType, EventContent: []byte(env)}); err != nil {
+		return err
+	}
+
+	if err := attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.OverrideEnvType, EventContent: []byte(env)}); err != nil {
+		return err
+	}
+	if err := attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.OverrideArgType, EventContent: []byte(arg)}); err != nil {
+		return err
+	}
+	return nil
 }

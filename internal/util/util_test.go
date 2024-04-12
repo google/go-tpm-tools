@@ -10,6 +10,7 @@ import (
 	"cloud.google.com/go/compute/metadata"
 	"github.com/containerd/containerd/namespaces"
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal/test"
 	"github.com/google/go-tpm-tools/proto/attest"
@@ -48,7 +49,7 @@ func TestFetchAttestation(t *testing.T) {
 	}
 	for _, op := range tests {
 		t.Run(op.name, func(t *testing.T) {
-			attestation, err := FetchAttestation(rwc, op.keyFetcher, []byte("test"))
+			attestation, err := FetchAttestation(rwc, op.keyFetcher, []byte("test"), &cel.CEL{})
 			if err != nil {
 				t.Errorf("Failed to get attestation %s", err)
 			}

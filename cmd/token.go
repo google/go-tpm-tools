@@ -12,6 +12,7 @@ import (
 	"cloud.google.com/go/logging"
 	"github.com/containerd/containerd/namespaces"
 	"github.com/golang-jwt/jwt/v4"
+	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal/util"
 	"github.com/google/go-tpm-tools/verifier"
@@ -123,7 +124,7 @@ The OIDC token includes claims regarding the GCE VM, which is verified by Attest
 			return fmt.Errorf("failed to get principal tokens: %w", err)
 		}
 
-		attestation, err := util.FetchAttestation(rwc, attestationKeys[key][keyAlgo], challenge.Nonce)
+		attestation, err := util.FetchAttestation(rwc, attestationKeys[key][keyAlgo], challenge.Nonce, &cel.CEL{})
 		if err != nil {
 			return err
 		}
