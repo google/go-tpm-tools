@@ -9,6 +9,7 @@ var _ jwt.Claims = Claims{}
 type Claims struct {
 	jwt.RegisteredClaims
 	ContainerImageSignatures []ContainerImageSignatureClaims `json:"container_image_signatures"`
+	MachineStateMarshaled    string
 }
 
 // ContainerImageSignatureClaims contains claims about a container image signature.
