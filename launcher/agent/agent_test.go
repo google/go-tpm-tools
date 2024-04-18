@@ -46,6 +46,36 @@ var (
 	fakeRegion  = "us-central1"
 )
 
+func TestAttestRacing(t *testing.T) {
+	ctx := context.Background()
+	tpm := test.GetTPM(t)
+	defer client.CheckedClose(t, tpm)
+
+	fakeSigner, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("failed to generate signing key %v", err)
+	}
+
+	verifierClient := fake.NewClient(fakeSigner)
+	agent, err := CreateAttestationAgent(tpm, client.AttestationKeyECC, verifierClient, placeholderPrincipalFetcher, signaturediscovery.NewFakeClient(), spec.LaunchSpec{}, log.Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	for i := 0; i < 5; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := agent.Attest(ctx, AttestAgentOpts{})
+			if err != nil {
+				t.Error(err)
+			}
+		}()
+	}
+	wg.Wait()
+	agent.Close()
+}
+
 func TestAttest(t *testing.T) {
 	ctx := context.Background()
 	testCases := []struct {
@@ -86,7 +116,10 @@ func TestAttest(t *testing.T) {
 
 			verifierClient := fake.NewClient(fakeSigner)
 
-			agent := CreateAttestationAgent(tpm, client.AttestationKeyECC, verifierClient, tc.principalIDTokenFetcher, tc.containerSignaturesFetcher, tc.launchSpec, log.Default())
+			agent, err := CreateAttestationAgent(tpm, client.AttestationKeyECC, verifierClient, tc.principalIDTokenFetcher, tc.containerSignaturesFetcher, tc.launchSpec, log.Default())
+			if err != nil {
+				t.Fatalf("falied to create an attestation agent %v", err)
+			}
 			err = measureFakeEvents(agent)
 			if err != nil {
 				t.Errorf("failed to measure events: %v", err)
@@ -98,6 +131,7 @@ func TestAttest(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to attest to Attestation Service: %v", err)
 			}
+			agent.Close()
 
 			claims := &fake.Claims{}
 			keyFunc := func(_ *jwt.Token) (interface{}, error) { return fakeSigner.Public(), nil }
@@ -385,8 +419,13 @@ func TestWithAgent(t *testing.T) {
 	tpm := test.GetTPM(t)
 	defer client.CheckedClose(t, tpm)
 
-	a := CreateAttestationAgent(tpm, client.AttestationKeyECC, vClient, testPrincipalIDTokenFetcher, signaturediscovery.NewFakeClient(), spec.LaunchSpec{}, log.Default())
-	token, err := a.Attest(context.Background(), AttestAgentOpts{})
+	agent, err := CreateAttestationAgent(tpm, client.AttestationKeyECC, vClient, testPrincipalIDTokenFetcher, signaturediscovery.NewFakeClient(), spec.LaunchSpec{}, log.Default())
+	if err != nil {
+		t.Fatalf("failed to create an attestation agent %v", err)
+	}
+	defer agent.Close()
+
+	token, err := agent.Attest(context.Background(), AttestAgentOpts{})
 	if err != nil {
 		t.Errorf("failed to attest to Attestation Service: %v", err)
 	}

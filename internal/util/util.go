@@ -43,13 +43,7 @@ func PrincipalFetcher(audience string, mdsClient *metadata.Client) ([][]byte, er
 }
 
 // FetchAttestation gathers the materials required for remote attestation from TPM
-func FetchAttestation(tpm io.ReadWriteCloser, akFetcher TpmKeyFetcher, nonce []byte, cosCEL *cel.CEL) (*attestpb.Attestation, error) {
-	ak, err := akFetcher(tpm)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get AK: %v", err)
-	}
-	defer ak.Close()
-
+func FetchAttestation(ak *client.Key, nonce []byte, cosCEL *cel.CEL) (*attestpb.Attestation, error) {
 	var buf bytes.Buffer
 	if cosCEL != nil {
 		if err := cosCEL.EncodeCEL(&buf); err != nil {
