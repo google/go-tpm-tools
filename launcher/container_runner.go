@@ -204,10 +204,15 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 
 	// Create a new signaturediscovery client to fetch signatures.
 	sdClient := getSignatureDiscoveryClient(cdClient, token, image.Target())
+
+	attestAgent, err := agent.CreateAttestationAgent(tpm, client.GceAttestationKeyECC, verifierClient, principalFetcherWithImpersonate, sdClient, launchSpec, logger)
+	if err != nil {
+		return nil, err
+	}
 	return &ContainerRunner{
 		container,
 		launchSpec,
-		agent.CreateAttestationAgent(tpm, client.GceAttestationKeyECC, verifierClient, principalFetcherWithImpersonate, sdClient, launchSpec, logger),
+		attestAgent,
 		logger,
 		serialConsole,
 	}, nil
@@ -643,6 +648,9 @@ func getImageConfig(ctx context.Context, image containerd.Image) (v1.ImageConfig
 
 // Close the container runner
 func (r *ContainerRunner) Close(ctx context.Context) {
+	// close the agent
+	r.attestAgent.Close()
+
 	// Exit gracefully:
 	// Delete container and close connection to attestation service.
 	r.container.Delete(ctx, containerd.WithSnapshotCleanup)

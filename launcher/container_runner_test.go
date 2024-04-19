@@ -69,6 +69,10 @@ func (f *fakeAttestationAgent) Refresh(ctx context.Context) error {
 	return nil
 }
 
+func (f fakeAttestationAgent) Close() error {
+	return nil
+}
+
 type fakeClaims struct {
 	jwt.RegisteredClaims
 	Signatures []string

@@ -124,10 +124,15 @@ The OIDC token includes claims regarding the GCE VM, which is verified by Attest
 			return fmt.Errorf("failed to get principal tokens: %w", err)
 		}
 
-		attestation, err := util.FetchAttestation(rwc, attestationKeys[key][keyAlgo], challenge.Nonce, &cel.CEL{})
+		ak, err := attestationKeys[key][keyAlgo](rwc)
+		if err != nil {
+			return fmt.Errorf("failed to get an AK: %w", err)
+		}
+		attestation, err := util.FetchAttestation(ak, challenge.Nonce, &cel.CEL{})
 		if err != nil {
 			return err
 		}
+		ak.Close()
 
 		req := verifier.VerifyAttestationRequest{
 			Challenge:      challenge,

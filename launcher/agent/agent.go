@@ -14,6 +14,7 @@ import (
 	"sync"
 
 	"github.com/google/go-tpm-tools/cel"
+	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal/util"
 	"github.com/google/go-tpm-tools/launcher/internal/signaturediscovery"
 	"github.com/google/go-tpm-tools/launcher/spec"
@@ -32,6 +33,7 @@ type AttestationAgent interface {
 	MeasureEvent(cel.Content) error
 	Attest(context.Context, AttestAgentOpts) ([]byte, error)
 	Refresh(context.Context) error
+	Close() error
 }
 
 // AttestAgentOpts contains user generated options when calling the
@@ -44,7 +46,8 @@ type AttestAgentOpts struct {
 
 type agent struct {
 	tpm              io.ReadWriteCloser
-	akFetcher        util.TpmKeyFetcher
+	tpmMu            sync.Mutex
+	fetchedAK        *client.Key
 	client           verifier.Client
 	principalFetcher principalIDTokenFetcher
 	sigsFetcher      signaturediscovery.Fetcher
@@ -61,22 +64,35 @@ type agent struct {
 // - principalFetcher is a func to fetch GCE principal tokens for a given audience.
 // - signaturesFetcher is a func to fetch container image signatures associated with the running workload.
 // - logger will log any partial errors returned by VerifyAttestation.
-func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher util.TpmKeyFetcher, verifierClient verifier.Client, principalFetcher principalIDTokenFetcher, sigsFetcher signaturediscovery.Fetcher, launchSpec spec.LaunchSpec, logger *log.Logger) AttestationAgent {
+func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher util.TpmKeyFetcher, verifierClient verifier.Client, principalFetcher principalIDTokenFetcher, sigsFetcher signaturediscovery.Fetcher, launchSpec spec.LaunchSpec, logger *log.Logger) (AttestationAgent, error) {
+	// Fetched the AK and save it, so the agent doesn't need to create a new key everytime
+	ak, err := akFetcher(tpm)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create an Attestation Agent: %w", err)
+	}
 	return &agent{
 		tpm:              tpm,
 		client:           verifierClient,
-		akFetcher:        akFetcher,
+		fetchedAK:        ak,
 		principalFetcher: principalFetcher,
 		sigsFetcher:      sigsFetcher,
 		launchSpec:       launchSpec,
 		logger:           logger,
 		sigsCache:        &sigsCache{},
-	}
+	}, nil
+}
+
+// Close cleans up the agent
+func (a *agent) Close() error {
+	a.fetchedAK.Close()
+	return nil
 }
 
 // MeasureEvent takes in a cel.Content and appends it to the CEL eventlog
 // under the attestation agent.
 func (a *agent) MeasureEvent(event cel.Content) error {
+	a.tpmMu.Lock()
+	defer a.tpmMu.Unlock()
 	return a.cosCel.AppendEvent(a.tpm, cel.CosEventPCR, defaultCELHashAlgo, event)
 }
 
@@ -94,7 +110,9 @@ func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error
 		return nil, fmt.Errorf("failed to get principal tokens: %w", err)
 	}
 
-	attestation, err := util.FetchAttestation(a.tpm, a.akFetcher, challenge.Nonce, &a.cosCel)
+	a.tpmMu.Lock()
+	attestation, err := util.FetchAttestation(a.fetchedAK, challenge.Nonce, &a.cosCel)
+	a.tpmMu.Unlock()
 	if err != nil {
 		return nil, err
 	}

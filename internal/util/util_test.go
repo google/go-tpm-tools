@@ -49,7 +49,11 @@ func TestFetchAttestation(t *testing.T) {
 	}
 	for _, op := range tests {
 		t.Run(op.name, func(t *testing.T) {
-			attestation, err := FetchAttestation(rwc, op.keyFetcher, []byte("test"), &cel.CEL{})
+			key, err := op.keyFetcher(rwc)
+			if err != nil {
+				t.Fatalf("failed to fetch an AK %v", err)
+			}
+			attestation, err := FetchAttestation(key, []byte("test"), &cel.CEL{})
 			if err != nil {
 				t.Errorf("Failed to get attestation %s", err)
 			}
