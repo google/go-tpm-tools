@@ -34,6 +34,7 @@ package internal
 // // Flags to find OpenSSL installation on macOS (default Homebrew location)
 // #cgo darwin CFLAGS: -I/usr/local/opt/openssl/include
 // #cgo darwin LDFLAGS: -L/usr/local/opt/openssl/lib
+// // Flags to find OpenSSL (new Homebrew)
 // // Flags to find OpenSSL installation on Windows (default install location)
 // #cgo windows CFLAGS: -I"C:/Program Files/OpenSSL-Win64/include"
 // #cgo windows LDFLAGS: -L"C:/Program Files/OpenSSL-Win64/lib"

@@ -61,7 +61,8 @@ jobs:
         run: sudo dpkg --add-architecture i386; sudo apt-get update; sudo apt-get -y install libssl-dev:i386 libgcc-s1:i386 gcc-multilib
         if: runner.os == 'Linux' && matrix.architecture == 'x32'
       - name: Install Mac packages
-        run: brew install openssl
+        run: |
+          brew install openssl
         if: runner.os == 'macOS'
       - name: Install Windows packages
         run: choco install openssl
