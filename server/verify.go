@@ -47,6 +47,11 @@ type VerifyOpts struct {
 	// Which bootloader the instance uses. Pick UNSUPPORTED to skip this
 	// parsing or for unsupported bootloaders (e.g., systemd).
 	Loader Bootloader
+	// AllowGCESoftwareTEEAttestation indicates if GCESoftwareTEEAttestation is
+	// allowed. If it is allowed, then TEE (e.g. sevsnp, tdx) hardware
+	// attestation evidence is not required. And Attestation struct does not
+	// need TEE Attestation (e.g. sevsnp.Attestation, tdx.QuoteV4).
+	AllowGCESoftwareTEEAttestation bool
 	// TEEOpts allows customizing the functionality of VerifyTEEAttestation.
 	// Its type can be *VerifySnpOpts if the TEEAttestation is a SevSnpAttestation
 	// or can be *VerifyTdxOpts if the TEEAttestation is a TdxAttestation
@@ -340,6 +345,9 @@ func VerifyGceTechnology(attestation *pb.Attestation, tech pb.GCEConfidentialTec
 		return nil
 	case pb.GCEConfidentialTechnology_AMD_SEV_SNP:
 		var snpOpts *VerifySnpOpts
+		if opts.AllowGCESoftwareTEEAttestation {
+			return nil
+		}
 		tee, ok := attestation.TeeAttestation.(*pb.Attestation_SevSnpAttestation)
 		if !ok {
 			return fmt.Errorf("TEE attestation is %T, expected a SevSnpAttestation", attestation.GetTeeAttestation())
@@ -356,6 +364,9 @@ func VerifyGceTechnology(attestation *pb.Attestation, tech pb.GCEConfidentialTec
 		return VerifySevSnpAttestation(tee.SevSnpAttestation, snpOpts)
 	case pb.GCEConfidentialTechnology_INTEL_TDX:
 		var tdxOpts *VerifyTdxOpts
+		if opts.AllowGCESoftwareTEEAttestation {
+			return nil
+		}
 		tee, ok := attestation.TeeAttestation.(*pb.Attestation_TdxAttestation)
 		if !ok {
 			return fmt.Errorf("TEE attestation is %T, expected a TdxAttestation", attestation.GetTeeAttestation())

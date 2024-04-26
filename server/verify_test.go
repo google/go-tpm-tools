@@ -128,6 +128,20 @@ func TestVerifyHappyCases(t *testing.T) {
 	}
 }
 
+func TestVerifyAllowGCESoftwareTEEAttestation(t *testing.T) {
+	if err := VerifyGceTechnology(&attestpb.Attestation{}, attestpb.GCEConfidentialTechnology_AMD_SEV_SNP, &VerifyOpts{
+		AllowGCESoftwareTEEAttestation: true,
+	}); err != nil {
+		t.Error("Skip sev snp hardware attestation verification if AllowGCESoftwareTEEAttestation fail")
+	}
+
+	if err := VerifyGceTechnology(&attestpb.Attestation{}, attestpb.GCEConfidentialTechnology_INTEL_TDX, &VerifyOpts{
+		AllowGCESoftwareTEEAttestation: true,
+	}); err != nil {
+		t.Error("Skip tdx hardware attestation verification if AllowGCESoftwareTEEAttestation fail")
+	}
+}
+
 func TestVerifyPCRChanged(t *testing.T) {
 	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
