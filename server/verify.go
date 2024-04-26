@@ -342,7 +342,7 @@ func VerifyGceTechnology(attestation *pb.Attestation, tech pb.GCEConfidentialTec
 		var snpOpts *VerifySnpOpts
 		tee, ok := attestation.TeeAttestation.(*pb.Attestation_SevSnpAttestation)
 		if !ok {
-			return fmt.Errorf("TEE attestation is %T, expected a SevSnpAttestation", attestation.GetTeeAttestation())
+			return nil // Verifiable but attestation report not received, allow vTPM evidence on SEVSNP
 		}
 		if opts.TEEOpts == nil {
 			snpOpts = SevSnpDefaultOptions(opts.Nonce)
@@ -358,7 +358,7 @@ func VerifyGceTechnology(attestation *pb.Attestation, tech pb.GCEConfidentialTec
 		var tdxOpts *VerifyTdxOpts
 		tee, ok := attestation.TeeAttestation.(*pb.Attestation_TdxAttestation)
 		if !ok {
-			return fmt.Errorf("TEE attestation is %T, expected a TdxAttestation", attestation.GetTeeAttestation())
+			return nil // Verifiable but attestation report not received, allow vTPM evidence on TDX
 		}
 		if opts.TEEOpts == nil {
 			tdxOpts = TdxDefaultOptions(opts.Nonce)
