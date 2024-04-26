@@ -154,6 +154,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 			oci.WithHostNamespace(specs.NetworkNamespace),
 			oci.WithEnv([]string{fmt.Sprintf("HOSTNAME=%s", hostname)}),
 			withRlimits(rlimits),
+			oci.WithDevShmSize(2097152), // 2GB = 2,097,152KB
 		),
 	)
 	if err != nil {

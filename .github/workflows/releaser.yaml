@@ -14,7 +14,7 @@ jobs:
         go-version: [1.20.x]
         os: [macos-latest, ubuntu-latest]
 
-    name: Release (${{ matrix.os}}, Go ${{ matrix.go-version }})
+    name: Release (${{ matrix.os}}, ${{ matrix.architecture }}, Go ${{ matrix.go-version }})
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v3
@@ -23,6 +23,7 @@ jobs:
       - uses: actions/setup-go@v3
         with:
           go-version: ${{ matrix.go-version }}
+          architecture: ${{ matrix.architecture }}
           cache: true
       - shell: bash
         run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
