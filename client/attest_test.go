@@ -213,7 +213,7 @@ func TestKeyAttestGetCertificateChainConditions(t *testing.T) {
 	}
 }
 
-func TestSevSnpDevice(t *testing.T) {
+func TestSevSnpQuoteProvider(t *testing.T) {
 	rwc := test.GetTPM(t)
 	defer CheckedClose(t, rwc)
 
@@ -227,7 +227,7 @@ func TestSevSnpDevice(t *testing.T) {
 	copy(someNonce64[:], someNonce)
 	var nonce64 [64]byte
 	copy(nonce64[:], []byte("noncey business"))
-	sevTestDevice, _, _, _ := testclient.GetSevGuest([]sgtest.TestCase{
+	sevTestQp, _, _, _ := testclient.GetSevQuoteProvider([]sgtest.TestCase{
 		{
 			Input:  someNonce64,
 			Output: sgtest.TestRawReport(someNonce64),
@@ -237,7 +237,6 @@ func TestSevSnpDevice(t *testing.T) {
 			Output: sgtest.TestRawReport(nonce64),
 		},
 	}, &sgtest.DeviceOptions{Now: time.Now()}, t)
-	defer sevTestDevice.Close()
 
 	testcases := []struct {
 		name           string
@@ -250,7 +249,7 @@ func TestSevSnpDevice(t *testing.T) {
 			opts: AttestOpts{
 				Nonce:            someNonce,
 				CertChainFetcher: localClient,
-				TEEDevice:        &SevSnpDevice{sevTestDevice},
+				TEEDevice:        &SevSnpQuoteProvider{sevTestQp},
 			},
 			wantReportData: someNonce64,
 		},
@@ -259,7 +258,7 @@ func TestSevSnpDevice(t *testing.T) {
 			opts: AttestOpts{
 				Nonce:            someNonce,
 				CertChainFetcher: localClient,
-				TEEDevice:        &SevSnpDevice{sevTestDevice},
+				TEEDevice:        &SevSnpQuoteProvider{sevTestQp},
 				TEENonce:         nonce64[:],
 			},
 			wantReportData: nonce64,

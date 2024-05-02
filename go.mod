@@ -5,7 +5,7 @@ go 1.20
 require (
 	github.com/google/go-attestation v0.5.1
 	github.com/google/go-cmp v0.6.0
-	github.com/google/go-sev-guest v0.9.3
+	github.com/google/go-sev-guest v0.11.1
 	github.com/google/go-tdx-guest v0.3.1
 	github.com/google/go-tpm v0.9.0
 	github.com/google/logger v1.1.1

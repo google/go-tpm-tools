@@ -972,16 +972,15 @@ func TestVerifyAttestationWithSevSnp(t *testing.T) {
 	altNonce := []byte("alternate secret nonce")
 	var nonce64 [64]byte
 	copy(nonce64[:], altNonce)
-	sevTestDevice, goodSnpRoot, badSnpRoot, kdsGetter := testclient.GetSevGuest([]sgtest.TestCase{
+	sevTestQp, goodSnpRoot, badSnpRoot, kdsGetter := testclient.GetSevQuoteProvider([]sgtest.TestCase{
 		{
 			Input:  nonce64,
 			Output: sgtest.TestRawReport(nonce64),
 		},
 	}, &sgtest.DeviceOptions{Now: time.Now()}, t)
-	defer sevTestDevice.Close()
 	attestation, err := ak.Attest(client.AttestOpts{
 		Nonce:     nonce,
-		TEEDevice: &client.SevSnpDevice{Device: sevTestDevice},
+		TEEDevice: &client.SevSnpQuoteProvider{QuoteProvider: sevTestQp},
 		TEENonce:  nonce64[:],
 	})
 	if err != nil {

@@ -82,7 +82,7 @@ hardware and guarantees a fresh quote.
 		// Add logic to open other hardware devices when required.
 		switch teeTechnology {
 		case SevSnp:
-			attestOpts.TEEDevice, err = client.CreateSevSnpDevice()
+			attestOpts.TEEDevice, err = client.CreateSevSnpQuoteProvider()
 			if err != nil {
 				return fmt.Errorf("failed to open %s device: %v", SevSnp, err)
 			}

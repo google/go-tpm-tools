@@ -8,7 +8,7 @@ require (
 	github.com/containerd/containerd v1.7.16
 	github.com/golang-jwt/jwt/v4 v4.5.0
 	github.com/golang/protobuf v1.5.4
-	github.com/google/go-sev-guest v0.9.3
+	github.com/google/go-sev-guest v0.11.1
 	github.com/google/go-tdx-guest v0.3.1
 	github.com/google/go-tpm v0.9.0
 	github.com/google/go-tpm-tools v0.4.4

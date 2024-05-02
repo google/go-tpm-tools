@@ -309,12 +309,11 @@ func TestSevAttestTeeNonceFail(t *testing.T) {
 	}
 
 	// TEENonce with length less than 64 bytes.
-	sevTestDevice, _, _, _ := sgtestclient.GetSevGuest([]sgtest.TestCase{
+	sevTestQp, _, _, _ := sgtestclient.GetSevQuoteProvider([]sgtest.TestCase{
 		{
 			Input: [64]byte{1, 2, 3, 4},
 		},
 	}, &sgtest.DeviceOptions{Now: time.Now()}, t)
-	defer sevTestDevice.Close()
 
 	ak, err := client.AttestationKeyRSA(rwc)
 	if err != nil {
@@ -324,7 +323,7 @@ func TestSevAttestTeeNonceFail(t *testing.T) {
 	attestopts := client.AttestOpts{
 		Nonce:     []byte{1, 2, 3, 4},
 		TEENonce:  []byte{1, 2, 3, 4},
-		TEEDevice: &client.SevSnpDevice{Device: sevTestDevice},
+		TEEDevice: &client.SevSnpQuoteProvider{QuoteProvider: sevTestQp},
 	}
 	_, err = ak.Attest(attestopts)
 	if err == nil {
