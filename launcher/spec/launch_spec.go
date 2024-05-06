@@ -3,6 +3,7 @@
 package spec
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -10,8 +11,8 @@ import (
 	"strings"
 
 	"cloud.google.com/go/compute/metadata"
-	"github.com/google/go-tpm-tools/internal/util"
 	"github.com/google/go-tpm-tools/launcher/internal/experiments"
+	"github.com/google/go-tpm-tools/verifier/util"
 )
 
 // RestartPolicy is the enum for the container restart policy.
@@ -170,8 +171,8 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 // input to the GCE instance custom metadata and return a LaunchSpec.
 // ImageRef (tee-image-reference) is required, will return an error if
 // ImageRef is not presented in the metadata.
-func GetLaunchSpec(client *metadata.Client) (LaunchSpec, error) {
-	data, err := client.Get(instanceAttributesQuery)
+func GetLaunchSpec(ctx context.Context, client *metadata.Client) (LaunchSpec, error) {
+	data, err := client.GetWithContext(ctx, instanceAttributesQuery)
 	if err != nil {
 		return LaunchSpec{}, err
 	}

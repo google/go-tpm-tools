@@ -44,7 +44,7 @@ NVDATA instead (and --algo is ignored).`,
 		}
 		return keys
 	}(),
-	Args: cobra.ExactValidArgs(1),
+	Args: cobra.MatchAll(cobra.ExactArgs(1), cobra.OnlyValidArgs),
 	RunE: func(_ *cobra.Command, args []string) error {
 		rwc, err := openTpm()
 		if err != nil {

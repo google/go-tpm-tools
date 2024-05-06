@@ -47,7 +47,7 @@ Which handles are flushed depends on the argument passed:
 		}
 		return keys
 	}(),
-	Args: cobra.ExactValidArgs(1),
+	Args: cobra.MatchAll(cobra.ExactArgs(1), cobra.OnlyValidArgs),
 	RunE: func(_ *cobra.Command, args []string) error {
 		rwc, err := openTpm()
 		if err != nil {

@@ -1,6 +1,7 @@
 package launcher
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 
@@ -12,8 +13,8 @@ import (
 
 // RetrieveAuthToken takes in a metadata server client, and uses it to read the
 // default service account token from a GCE VM and returns the token.
-func RetrieveAuthToken(client *metadata.Client) (oauth2.Token, error) {
-	data, err := client.Get("instance/service-accounts/default/token")
+func RetrieveAuthToken(ctx context.Context, client *metadata.Client) (oauth2.Token, error) {
+	data, err := client.GetWithContext(ctx, "instance/service-accounts/default/token")
 	if err != nil {
 		return oauth2.Token{}, err
 	}
@@ -39,6 +40,7 @@ func Resolver(token string) remotes.Resolver {
 		return "", "", nil
 	}
 	authOpts := []docker.AuthorizerOpt{docker.WithAuthCreds(credentials)}
+	//nolint:staticcheck
 	options.Authorizer = docker.NewDockerAuthorizer(authOpts...)
 
 	return docker.NewResolver(options)

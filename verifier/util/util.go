@@ -2,18 +2,14 @@
 package util
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
-	"net/http"
 	"net/url"
 	"strings"
 
 	"cloud.google.com/go/compute/metadata"
-	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
-	attestpb "github.com/google/go-tpm-tools/proto/attest"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/google/go-tpm-tools/verifier/rest"
 	"golang.org/x/oauth2/google"
@@ -40,22 +36,6 @@ func PrincipalFetcher(audience string, mdsClient *metadata.Client) ([][]byte, er
 
 	tokens := [][]byte{[]byte(idToken)}
 	return tokens, nil
-}
-
-// FetchAttestation gathers the materials required for remote attestation from TPM
-func FetchAttestation(ak *client.Key, nonce []byte, cosCEL *cel.CEL) (*attestpb.Attestation, error) {
-	var buf bytes.Buffer
-	if cosCEL != nil {
-		if err := cosCEL.EncodeCEL(&buf); err != nil {
-			return nil, err
-		}
-	}
-
-	attestation, err := ak.Attest(client.AttestOpts{Nonce: nonce, CanonicalEventLog: buf.Bytes(), CertChainFetcher: http.DefaultClient})
-	if err != nil {
-		return nil, fmt.Errorf("failed to attest: %v", err)
-	}
-	return attestation, nil
 }
 
 // NewRESTClient returns a REST verifier.Client that points to the given address.

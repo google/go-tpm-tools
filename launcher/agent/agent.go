@@ -6,20 +6,22 @@
 package agent
 
 import (
+	"bytes"
 	"context"
 	"crypto"
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"sync"
 
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
-	"github.com/google/go-tpm-tools/internal/util"
 	"github.com/google/go-tpm-tools/launcher/internal/signaturediscovery"
 	"github.com/google/go-tpm-tools/launcher/spec"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/google/go-tpm-tools/verifier/oci"
+	"github.com/google/go-tpm-tools/verifier/util"
 )
 
 var defaultCELHashAlgo = []crypto.Hash{crypto.SHA256, crypto.SHA1}
@@ -110,9 +112,18 @@ func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error
 		return nil, fmt.Errorf("failed to get principal tokens: %w", err)
 	}
 
+	var buf bytes.Buffer
+	if err := a.cosCel.EncodeCEL(&buf); err != nil {
+		return nil, err
+	}
+
 	a.tpmMu.Lock()
-	attestation, err := util.FetchAttestation(a.fetchedAK, challenge.Nonce, &a.cosCel)
+	attestation, err := a.fetchedAK.Attest(client.AttestOpts{Nonce: challenge.Nonce, CanonicalEventLog: buf.Bytes(), CertChainFetcher: http.DefaultClient})
+	if err != nil {
+		return nil, fmt.Errorf("failed to attest: %v", err)
+	}
 	a.tpmMu.Unlock()
+
 	if err != nil {
 		return nil, err
 	}

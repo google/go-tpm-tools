@@ -14,7 +14,7 @@ import (
 
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal/test"
-	"github.com/google/go-tpm-tools/internal/util"
+	"github.com/google/go-tpm-tools/verifier/util"
 	"github.com/google/go-tpm/legacy/tpm2"
 	"github.com/google/go-tpm/tpmutil"
 	"golang.org/x/oauth2"
@@ -87,46 +87,6 @@ func TestTokenWithGCEAK(t *testing.T) {
 				t.Error(err)
 			}
 		})
-	}
-}
-
-func TestCustomEventLogFile(t *testing.T) {
-	if _, err := os.Stat("/dev/tpm0"); os.IsNotExist(err) {
-		t.Skip("Skipping test: /dev/tpm0 not found")
-	}
-
-	ExternalTPM = nil
-	var dummyMetaInstance = util.Instance{ProjectID: "test-project", ProjectNumber: "1922337278274", Zone: "us-central-1a", InstanceID: "12345678", InstanceName: "default"}
-	mockMdsServer, err := util.NewMetadataServer(dummyMetaInstance)
-	if err != nil {
-		t.Error(err)
-	}
-	defer mockMdsServer.Stop()
-
-	mockOauth2Server, err := util.NewMockOauth2Server()
-	if err != nil {
-		t.Error(err)
-	}
-	defer mockOauth2Server.Stop()
-
-	// Endpoint is Google's OAuth 2.0 default endpoint. Change to mock server.
-	google.Endpoint = oauth2.Endpoint{
-		AuthURL:   mockOauth2Server.Server.URL + "/o/oauth2/auth",
-		TokenURL:  mockOauth2Server.Server.URL + "/token",
-		AuthStyle: oauth2.AuthStyleInParams,
-	}
-
-	mockAttestationServer, err := util.NewMockAttestationServer()
-	if err != nil {
-		t.Error(err)
-	}
-	defer mockAttestationServer.Stop()
-
-	RootCmd.SetArgs([]string{"token", "--verifier-endpoint", mockAttestationServer.Server.URL, "--event-log", "/test-event-log"})
-	if err := RootCmd.Execute(); err != nil {
-		if err.Error() != "failed to attest: failed to retrieve TCG Event Log: open /test-event-log: no such file or directory" {
-			t.Error(err)
-		}
 	}
 }
 

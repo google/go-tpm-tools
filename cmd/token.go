@@ -6,16 +6,16 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/http"
 	"time"
 
 	"cloud.google.com/go/compute/metadata"
 	"cloud.google.com/go/logging"
 	"github.com/containerd/containerd/namespaces"
 	"github.com/golang-jwt/jwt/v4"
-	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
-	"github.com/google/go-tpm-tools/internal/util"
 	"github.com/google/go-tpm-tools/verifier"
+	"github.com/google/go-tpm-tools/verifier/util"
 	"github.com/google/go-tpm/legacy/tpm2"
 	"github.com/spf13/cobra"
 	"google.golang.org/api/option"
@@ -128,9 +128,9 @@ The OIDC token includes claims regarding the GCE VM, which is verified by Attest
 		if err != nil {
 			return fmt.Errorf("failed to get an AK: %w", err)
 		}
-		attestation, err := util.FetchAttestation(ak, challenge.Nonce, &cel.CEL{})
+		attestation, err := ak.Attest(client.AttestOpts{Nonce: challenge.Nonce, CertChainFetcher: http.DefaultClient})
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to attest: %v", err)
 		}
 		ak.Close()
 
