@@ -32,8 +32,10 @@ package internal
 // #cgo CFLAGS: -DALG_SHA512=ALG_YES
 // #cgo CFLAGS: -DMAX_CONTEXT_SIZE=1360
 // // Flags to find OpenSSL installation on macOS (default Homebrew location)
-// #cgo darwin CFLAGS: -I/usr/local/opt/openssl/include
-// #cgo darwin LDFLAGS: -L/usr/local/opt/openssl/lib
+// #cgo darwin,amd64 CFLAGS: -I/usr/local/opt/openssl/include
+// #cgo darwin,amd64 LDFLAGS: -L/usr/local/opt/openssl/lib
+// #cgo darwin,arm64 CFLAGS: -I/opt/homebrew/opt/openssl/include
+// #cgo darwin,arm64 LDFLAGS: -L/opt/homebrew/opt/openssl/lib
 // // Flags to find OpenSSL installation on Windows (default install location)
 // #cgo windows CFLAGS: -I"C:/Program Files/OpenSSL-Win64/include"
 // #cgo windows LDFLAGS: -L"C:/Program Files/OpenSSL-Win64/lib"
