@@ -13,7 +13,7 @@ jobs:
       matrix:
         # We can cross-compile from Linux to macOS and Windows. See .goreleaser.yaml
         # So running just on ubuntu is sufficient.
-        go-version: [1.20.x]
+        go-version: [1.21.x]
         os: [ubuntu-latest]
 
     name: Release (${{ matrix.os}}, Go ${{ matrix.go-version }})
@@ -37,7 +37,7 @@ jobs:
         run: sudo apt-get -y install libssl-dev
         if: runner.os == 'Linux'
       - name: Build all modules
-        run: go build -v ./... ./cmd/... ./launcher/...
+        run: go build -v ./... ./cmd/... ./launcher/... ./verifier/...
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v3
         if: success() && startsWith(github.ref, 'refs/tags/') && steps.cache.outputs.cache-hit != 'true'

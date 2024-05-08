@@ -14,7 +14,7 @@ import (
 
 	logpb "cloud.google.com/go/logging/apiv2/loggingpb"
 	tspb "github.com/golang/protobuf/ptypes/timestamp"
-	"github.com/google/go-tpm-tools/internal/util"
+	"github.com/google/go-tpm-tools/verifier/util"
 	"google.golang.org/grpc"
 )
 

@@ -12,8 +12,8 @@ import (
 	tgtestdata "github.com/google/go-tdx-guest/testing/testdata"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal/test"
-	"github.com/google/go-tpm-tools/internal/util"
 	pb "github.com/google/go-tpm-tools/proto/attest"
+	"github.com/google/go-tpm-tools/verifier/util"
 	"github.com/google/go-tpm/legacy/tpm2"
 	"github.com/google/go-tpm/tpmutil"
 )

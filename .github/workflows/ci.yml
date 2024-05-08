@@ -28,17 +28,17 @@ jobs:
   build:
     strategy:
       matrix:
-        go-version: [1.20.x]
+        go-version: [1.21.x]
         # TODO: Get this working on windows-latest
         os: [ubuntu-latest]
         architecture: [x32, x64]
         include:
           - os: macos-latest
             architecture: arm64
-            go-version: 1.20.x
+            go-version: 1.21.x
           - os: macos-14-large
             architecture: x64
-            go-version: 1.20.x
+            go-version: 1.21.x
     name: Generate/Build/Test (${{ matrix.os }}, ${{ matrix.architecture }}, Go ${{ matrix.go-version }})
     runs-on: ${{ matrix.os }}
     steps:
@@ -56,7 +56,7 @@ jobs:
         run: go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.28.0
       - name: Check Protobuf Generation
         run: |
-          go generate ./... ./cmd/... ./launcher/...
+          go generate ./... ./cmd/... ./launcher/... ./verifier/...
           git diff -G'^[^/]' --exit-code
       - name: Install Linux 64-bit packages
         run: sudo apt-get -y install libssl-dev
@@ -72,7 +72,7 @@ jobs:
         run: choco install openssl
         if: runner.os == 'Windows'
       - name: Build all modules
-        run: go build -v ./... ./cmd/... ./launcher/...
+        run: go build -v ./... ./cmd/... ./launcher/... ./verifier/...
       - name: Run specific tests under root permission
         run: |
           GO_EXECUTABLE_PATH=$(which go)
@@ -81,12 +81,12 @@ jobs:
         run: go test ./launcher/agent -race -run TestCacheConcurrentSetGet
         if: (runner.os == 'Linux' || runner.os == 'macOS') && matrix.architecture == 'x64'
       - name: Test all modules
-        run: go test -v ./... ./cmd/... ./launcher/... -skip=TestCacheConcurrentSetGet
+        run: go test -v ./... ./cmd/... ./launcher/... ./verifier/... -skip=TestCacheConcurrentSetGet
 
   lint:
     strategy:
       matrix:
-        go-version: [1.20.x]
+        go-version: [1.21.x]
         os: [ubuntu-latest]
         dir: ["./", "./cmd", "./launcher"]
     name: Lint ${{ matrix.dir }} (${{ matrix.os }}, Go ${{ matrix.go-version }})
@@ -117,7 +117,7 @@ jobs:
   lintc:
     strategy:
       matrix:
-        go-version: [1.20.x]
+        go-version: [1.21.x]
         os: [ubuntu-latest]
     name: Lint CGO (${{ matrix.os }}, Go ${{ matrix.go-version }})
     runs-on: ${{ matrix.os }}
