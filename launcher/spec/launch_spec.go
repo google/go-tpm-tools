@@ -15,6 +15,8 @@ import (
 	"github.com/google/go-tpm-tools/verifier/util"
 )
 
+const MaxInt64 = int(^uint64(0) >> 1)
+
 // RestartPolicy is the enum for the container restart policy.
 type RestartPolicy string
 
@@ -68,6 +70,7 @@ const (
 	attestationServiceAddrKey  = "tee-attestation-service-endpoint"
 	logRedirectKey             = "tee-container-log-redirect"
 	memoryMonitoringEnable     = "tee-monitoring-memory-enable"
+	devShmSizeKey              = "tee-dev-shm-size"
 )
 
 const (
@@ -98,6 +101,7 @@ type LaunchSpec struct {
 	Hardened                   bool
 	MemoryMonitoringEnabled    bool
 	LogRedirect                LogRedirectLocation
+	DevShmSize                 int64
 	Experiments                experiments.Experiments
 }
 
@@ -164,6 +168,23 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 
 	s.AttestationServiceAddr = unmarshaledMap[attestationServiceAddrKey]
 
+	if val, ok := unmarshaledMap[devShmSizeKey]; ok && val != "" {
+		size, err := strconv.ParseUint(val, 10, 64)
+		if err != nil {
+			return fmt.Errorf("failed to convert %v into uint64, got: %v", devShmSizeKey, val)
+		}
+		freeMem, err := getLinuxFreeMem()
+		if err != nil {
+			return err
+		}
+		if size > freeMem {
+			return fmt.Errorf("got a /dev/shm size (%v) larger than free memory (%v)", size, freeMem)
+		}
+		if size > uint64(MaxInt64) {
+			return fmt.Errorf("got a size greater than max int64: %v", val)
+		}
+		s.DevShmSize = int64(size)
+	}
 	return nil
 }
 
@@ -208,6 +229,28 @@ func isHardened(kernelCmd string) bool {
 		}
 	}
 	return false
+}
+
+func getLinuxFreeMem() (uint64, error) {
+	meminfo, err := os.ReadFile("/proc/meminfo")
+	if err != nil {
+		return 0, fmt.Errorf("failed to read /proc/meminfo: %w", err)
+	}
+	for _, memtype := range strings.Split(string(meminfo), "\n") {
+		if !strings.Contains(memtype, "MemFree") {
+			continue
+		}
+		split := strings.Fields(memtype)
+		if len(split) != 3 {
+			return 0, fmt.Errorf("found invalid MemInfo entry: got: %v, expected format: MemFree:        <amount> kB", memtype)
+		}
+		freeMem, err := strconv.ParseUint(split[1], 10, 64)
+		if err != nil {
+			return 0, fmt.Errorf("failed to convert MemFree to uint64: %v", memtype)
+		}
+		return freeMem, nil
+	}
+	return 0, fmt.Errorf("failed to find MemFree in /proc/meminfo: %v", string(meminfo))
 }
 
 func readCmdline() (string, error) {
