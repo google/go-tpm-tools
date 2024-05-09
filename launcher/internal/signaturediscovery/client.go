@@ -8,12 +8,18 @@ import (
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/images"
+	"github.com/containerd/containerd/remotes"
 	"github.com/google/go-tpm-tools/verifier/oci"
 	"github.com/google/go-tpm-tools/verifier/oci/cosign"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
 const signatureTagSuffix = "sig"
+
+type (
+	remoteResolverFetcher func(context.Context) (remotes.Resolver, error)
+	imageFetcher          func(context.Context, string, ...containerd.RemoteOpt) (containerd.Image, error)
+)
 
 // Fetcher discovers and fetches OCI signatures from the target repository.
 type Fetcher interface {
@@ -22,17 +28,17 @@ type Fetcher interface {
 
 // Client is a wrapper of containerd.Client to interact with signed image manifest.
 type Client struct {
-	cdClient          *containerd.Client
-	OriginalImageDesc v1.Descriptor
-	RemoteOpts        []containerd.RemoteOpt
+	OriginalImageDesc     v1.Descriptor
+	remoteResolverFetcher remoteResolverFetcher
+	imageFetcher          imageFetcher
 }
 
 // New creates a new client that implements Fetcher interface.
-func New(cdClient *containerd.Client, originalImageDesc v1.Descriptor, opts ...containerd.RemoteOpt) Fetcher {
+func New(originalImageDesc v1.Descriptor, resolverFetcher remoteResolverFetcher, imageFetcher imageFetcher) Fetcher {
 	return &Client{
-		cdClient:          cdClient,
-		OriginalImageDesc: originalImageDesc,
-		RemoteOpts:        opts,
+		OriginalImageDesc:     originalImageDesc,
+		remoteResolverFetcher: resolverFetcher,
+		imageFetcher:          imageFetcher,
 	}
 }
 
@@ -73,11 +79,14 @@ func (c *Client) FetchImageSignatures(ctx context.Context, targetRepository stri
 
 func (c *Client) pullTargetImage(ctx context.Context, targetRepository string) (containerd.Image, error) {
 	targetImageRef := fmt.Sprint(targetRepository, ":", formatSigTag(c.OriginalImageDesc))
-	image, err := c.cdClient.Pull(ctx, targetImageRef, c.RemoteOpts...)
-	if err != nil {
-		return nil, fmt.Errorf("cannot pull the signature object [%s] from target repository [%s]: %w", targetImageRef, targetRepository, err)
+
+	// Refresh resolver before pulling container image.
+	if resolver, err := c.remoteResolverFetcher(ctx); err == nil {
+		return c.imageFetcher(ctx, targetImageRef, containerd.WithResolver(resolver))
 	}
-	return image, nil
+
+	// Pull signature image from a public repository.
+	return c.imageFetcher(ctx, targetImageRef)
 }
 
 // formatSigTag turns image digests into tags with signatureTagSuffix:

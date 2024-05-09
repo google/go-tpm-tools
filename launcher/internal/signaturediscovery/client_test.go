@@ -2,12 +2,15 @@ package signaturediscovery
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/defaults"
 	"github.com/containerd/containerd/namespaces"
+	"github.com/containerd/containerd/remotes"
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-tpm-tools/launcher/registryauth"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
@@ -91,6 +94,52 @@ func TestFetchImageSignaturesDockerPublic(t *testing.T) {
 	}
 }
 
+func TestPullTargetImage(t *testing.T) {
+	imageFetcher := func(_ context.Context, _ string, opts ...containerd.RemoteOpt) (containerd.Image, error) {
+		if len(opts) > 0 {
+			return &fakeImage{}, nil
+		}
+		return nil, fmt.Errorf("unable to fetch image")
+	}
+
+	testCases := []struct {
+		name            string
+		resolverFetcher remoteResolverFetcher
+		wantErr         bool
+	}{
+		{
+			name: "valid resolver",
+			resolverFetcher: func(_ context.Context) (remotes.Resolver, error) {
+				return registryauth.Resolver("valid access"), nil
+			},
+			wantErr: false,
+		},
+		{
+			name: "invalid resolver",
+			resolverFetcher: func(_ context.Context) (remotes.Resolver, error) {
+				return nil, fmt.Errorf("invalid resolver")
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		c := &Client{
+			OriginalImageDesc:     v1.Descriptor{Digest: "sha256:905a0f3b3d6d0fb37bfa448b9e78f833b73f0b19fc97fed821a09cf49e255df1"},
+			remoteResolverFetcher: tc.resolverFetcher,
+			imageFetcher:          imageFetcher,
+		}
+		_, err := c.pullTargetImage(context.Background(), "fake image repo")
+		if gotErr := err != nil; gotErr != tc.wantErr {
+			t.Errorf("failed to refresh resolver when pulling container image, gotErr: %v, but wantErr: %v", gotErr, tc.wantErr)
+		}
+	}
+}
+
+type fakeImage struct {
+	containerd.Image
+}
+
 func createTestClient(t *testing.T, originalImageDesc v1.Descriptor) *Client {
 	t.Helper()
 
@@ -99,8 +148,16 @@ func createTestClient(t *testing.T, originalImageDesc v1.Descriptor) *Client {
 		t.Skipf("test needs containerd daemon: %v", err)
 	}
 	t.Cleanup(func() { containerdClient.Close() })
+
+	resolverFetcher := func(_ context.Context) (remotes.Resolver, error) {
+		return nil, fmt.Errorf("fake remote resolver")
+	}
+	imageFetcher := func(ctx context.Context, imageRef string, opts ...containerd.RemoteOpt) (containerd.Image, error) {
+		return containerdClient.Pull(ctx, imageRef, opts...)
+	}
 	return &Client{
-		cdClient:          containerdClient,
-		OriginalImageDesc: originalImageDesc,
+		OriginalImageDesc:     originalImageDesc,
+		remoteResolverFetcher: resolverFetcher,
+		imageFetcher:          imageFetcher,
 	}
 }
