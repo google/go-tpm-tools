@@ -1,9 +1,11 @@
 package spec
 
 import (
+	"regexp"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-tpm-tools/launcher/internal/launchermount"
 )
 
 func TestLaunchSpecUnmarshalJSONHappyCases(t *testing.T) {
@@ -21,7 +23,9 @@ func TestLaunchSpecUnmarshalJSONHappyCases(t *testing.T) {
 				"tee-restart-policy":"Always",
 				"tee-impersonate-service-accounts":"sv1@developer.gserviceaccount.com,sv2@developer.gserviceaccount.com",
 				"tee-container-log-redirect":"true",
-				"tee-monitoring-memory-enable":"true"
+				"tee-monitoring-memory-enable":"true",
+				"tee-dev-shm-size-kb":"234234",
+				"tee-mount":"type=tmpfs,source=tmpfs,destination=/tmpmount;type=tmpfs,source=tmpfs,destination=/sized,size=222"
 			}`,
 		},
 		{
@@ -36,7 +40,9 @@ func TestLaunchSpecUnmarshalJSONHappyCases(t *testing.T) {
 				"tee-restart-policy":"Always",
 				"tee-impersonate-service-accounts":"sv1@developer.gserviceaccount.com,sv2@developer.gserviceaccount.com",
 				"tee-container-log-redirect":"true",
-				"tee-monitoring-memory-enable":"TRUE"
+				"tee-monitoring-memory-enable":"TRUE",
+				"tee-dev-shm-size-kb":"234234",
+				"tee-mount":"type=tmpfs,source=tmpfs,destination=/tmpmount;type=tmpfs,source=tmpfs,destination=/sized,size=222"
 			}`,
 		},
 	}
@@ -50,6 +56,9 @@ func TestLaunchSpecUnmarshalJSONHappyCases(t *testing.T) {
 		ImpersonateServiceAccounts: []string{"sv1@developer.gserviceaccount.com", "sv2@developer.gserviceaccount.com"},
 		LogRedirect:                Everywhere,
 		MemoryMonitoringEnabled:    true,
+		DevShmSize:                 234234,
+		Mounts: []launchermount.Mount{launchermount.TmpfsMount{Destination: "/tmpmount", Size: 0},
+			launchermount.TmpfsMount{Destination: "/sized", Size: 222}},
 	}
 
 	for _, testcase := range testCases {
@@ -123,7 +132,8 @@ func TestLaunchSpecUnmarshalJSONWithDefaultValue(t *testing.T) {
 		"tee-signed-image-repos":"",
 		"tee-container-log-redirect":"",
 		"tee-restart-policy":"",
-		"tee-monitoring-memory-enable":""
+		"tee-monitoring-memory-enable":"",
+		"tee-mount":""
 		}`
 
 	spec := &LaunchSpec{}
@@ -152,6 +162,117 @@ func TestLaunchSpecUnmarshalJSONWithoutImageReference(t *testing.T) {
 
 	spec := &LaunchSpec{}
 	if err := spec.UnmarshalJSON([]byte(mdsJSON)); err == nil || err != errImageRefNotSpecified {
-		t.Fatalf("got %v error, but expected %v error", err, errImageRefNotSpecified)
+		t.Errorf("got %v error, but expected %v error", err, errImageRefNotSpecified)
+	}
+}
+
+func TestLaunchSpecUnmarshalJSONWithTmpfsMounts(t *testing.T) {
+	var testCases = []struct {
+		testName string
+		mdsJSON  string
+		wantDst  string
+		wantSz   uint64
+	}{
+		{
+			"Empty Mounts",
+			`{
+				"tee-image-reference":"docker.io/library/hello-world:latest",
+				"tee-mount":""
+			}`,
+			"",
+			0,
+		},
+		{
+			"Tmpfs",
+			`{
+				"tee-image-reference":"docker.io/library/hello-world:latest",
+				"tee-mount":"type=tmpfs,source=tmpfs,destination=/tmpmount"
+			}`,
+			"/tmpmount",
+			0,
+		},
+		{
+			"Tmpfs Sized",
+			`{
+				"tee-image-reference":"docker.io/library/hello-world:latest",
+				"tee-mount":"type=tmpfs,source=tmpfs,destination=/tmpmount,size=78987"
+			}`,
+			"/tmpmount",
+			78987,
+		},
+	}
+	for _, testcase := range testCases {
+		t.Run(testcase.testName, func(t *testing.T) {
+			spec := &LaunchSpec{}
+			if err := spec.UnmarshalJSON([]byte(testcase.mdsJSON)); err != nil {
+				t.Errorf("got %v error, but expected nil error", err)
+			}
+		})
+	}
+}
+
+func TestLaunchSpecUnmarshalJSONWithBadMounts(t *testing.T) {
+	var testCases = []struct {
+		testName string
+		mdsJSON  string
+		errMatch string
+	}{
+		{
+			"Unknown Type",
+			`{
+				"tee-image-reference":"docker.io/library/hello-world:latest",
+				"tee-mount":"type=hallo"
+			}`,
+			"found unknown or unspecified mount type",
+		},
+		{
+			"Not k=v",
+			`{
+				"tee-image-reference":"docker.io/library/hello-world:latest",
+				"tee-mount":"type=tmpfs,source"
+			}`,
+			"failed to parse mount option",
+		},
+		{
+			"Unknown Option",
+			`{
+				"tee-image-reference":"docker.io/library/hello-world:latest",
+				"tee-mount":"type=tmpfs,source=tmpfs,destination=/tmpmount,size=123,foo=bar"
+			}`,
+			"found unknown mount option",
+		},
+		{
+			"Tmpfs Bad Source",
+			`{
+				"tee-image-reference":"docker.io/library/hello-world:latest",
+				"tee-mount":"type=tmpfs,source=src,destination=/tmpmount"
+			}`,
+			"received wrong mount source",
+		},
+		{
+			"Tmpfs No Destination",
+			`{
+				"tee-image-reference":"docker.io/library/hello-world:latest",
+				"tee-mount":"type=tmpfs,source=tmpfs"
+			}`,
+			"mount type \"tmpfs\" must have destination specified",
+		},
+		{
+			"Tmpfs Size Not Int",
+			`{
+					"tee-image-reference":"docker.io/library/hello-world:latest",
+					"tee-mount":"type=tmpfs,source=tmpfs,destination=/tmpmount,size=foo"
+			}`,
+			"failed to convert size option",
+		},
+	}
+	for _, testcase := range testCases {
+		t.Run(testcase.testName, func(t *testing.T) {
+			spec := &LaunchSpec{}
+			err := spec.UnmarshalJSON([]byte(testcase.mdsJSON))
+			if match, _ := regexp.MatchString(testcase.errMatch, err.Error()); !match {
+				t.Errorf("got %v error, but expected %v error", err, testcase.errMatch)
+			}
+		})
 	}
 }

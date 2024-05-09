@@ -1,7 +1,9 @@
 package spec
 
 import (
+	"errors"
 	"fmt"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -9,10 +11,11 @@ import (
 // LaunchPolicy contains policies on starting the container.
 // The policy comes from the labels of the image.
 type LaunchPolicy struct {
-	AllowedEnvOverride      []string
-	AllowedCmdOverride      bool
-	AllowedLogRedirect      policy
-	AllowedMemoryMonitoring policy
+	AllowedEnvOverride       []string
+	AllowedCmdOverride       bool
+	AllowedLogRedirect       policy
+	AllowedMemoryMonitoring  policy
+	AllowedMountDestinations []string
 }
 
 type policy int
@@ -58,6 +61,11 @@ const (
 	cmdOverride      = "tee.launch_policy.allow_cmd_override"
 	logRedirect      = "tee.launch_policy.log_redirect"
 	memoryMonitoring = "tee.launch_policy.monitoring_memory_allow"
+	// Values look like a PATH list, with ':' as a separator.
+	// Empty paths will be ignored and relative paths will be interpreted as
+	// relative to "/".
+	// Paths will be cleaned using filepath.Clean.
+	mountDestinations = "tee.launch_policy.allow_mount_destinations"
 )
 
 // GetLaunchPolicy takes in a map[string] string which should come from image labels,
@@ -97,6 +105,18 @@ func GetLaunchPolicy(imageLabels map[string]string) (LaunchPolicy, error) {
 		}
 	}
 
+	if v, ok := imageLabels[mountDestinations]; ok {
+
+		paths := filepath.SplitList(v)
+		for _, path := range paths {
+			// Strip out empty path name.
+			if path != "" {
+				path = filepath.Clean(path)
+				launchPolicy.AllowedMountDestinations = append(launchPolicy.AllowedMountDestinations, path)
+			}
+		}
+	}
+
 	return launchPolicy, nil
 }
 
@@ -128,7 +148,41 @@ func (p LaunchPolicy) Verify(ls LaunchSpec) error {
 		return fmt.Errorf("memory monitoring only allowed on debug environment by image")
 	}
 
+	var err error
+	for _, mnt := range ls.Mounts {
+		err = errors.Join(err, p.verifyMountDestination(mnt.Mountpoint()))
+	}
+	if err != nil {
+		return fmt.Errorf("destination mount points are not allowed: %v", err)
+	}
+
 	return nil
+}
+
+// verifyMountDestination assumes AllowedMountDestinations contains
+// `filepath.Clean`ed paths.
+func (p LaunchPolicy) verifyMountDestination(dstPath string) error {
+	if !filepath.IsAbs(dstPath) {
+		return fmt.Errorf("received a non-absolute destination path: %v", dstPath)
+	}
+	dstPath = filepath.Clean(dstPath)
+	for _, allowDst := range p.AllowedMountDestinations {
+		if !filepath.IsAbs(allowDst) {
+			return fmt.Errorf("received a non-absolute allowed destination path: %v", allowDst)
+		}
+		rel, err := filepath.Rel(allowDst, dstPath)
+		if err != nil {
+			return err
+		}
+
+		// If dest is not the parent dir relative to the allowed mountpoint
+		// or dest is not relative from the allowed's parent directory, then
+		// dest must be a child (or the exact same directory).
+		if rel != ".." && !strings.HasPrefix(rel, "../") {
+			return nil
+		}
+	}
+	return fmt.Errorf("destination mount point \"%v\" is invalid: policy only allows mounts in the following paths: %v", dstPath, p.AllowedMountDestinations)
 }
 
 func contains(strs []string, target string) bool {
