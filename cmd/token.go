@@ -138,7 +138,7 @@ The OIDC token includes claims regarding the GCE VM, which is verified by Attest
 			Challenge:      challenge,
 			GcpCredentials: principalTokens,
 			Attestation:    attestation,
-			TokenOptions:   verifier.TokenOptions{CustomAudience: audience, TokenType: "OIDC"},
+			TokenOptions:   verifier.TokenOptions{CustomAudience: audience, CustomNonce: customNonce, TokenType: "OIDC"},
 		}
 
 		resp, err := verifierClient.VerifyAttestation(ctx, req)
@@ -208,6 +208,7 @@ func init() {
 	addCloudLoggingFlag(tokenCmd)
 	addAudienceFlag(tokenCmd)
 	addEventLogFlag(tokenCmd)
+	addCustomNonceFlag(tokenCmd)
 	// TODO: Add TEE hardware OIDC token generation
 	// addTeeNonceflag(tokenCmd)
 	// addTeeTechnology(tokenCmd)

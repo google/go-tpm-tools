@@ -9,6 +9,7 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -34,9 +35,11 @@ func TestTokenWithGCEAK(t *testing.T) {
 	tests := []struct {
 		name string
 		algo string
+		fail bool
 	}{
-		{"gceAK:RSA", "rsa"},
-		{"gceAK:ECC", "ecc"},
+		{"gceAK:RSA", "rsa", true},
+		{"gceAK:RSA", "rsa", false},
+		{"gceAK:ECC", "ecc", false},
 	}
 	for _, op := range tests {
 		t.Run(op.name, func(t *testing.T) {
@@ -82,10 +85,19 @@ func TestTokenWithGCEAK(t *testing.T) {
 				t.Error(err)
 			}
 
-			RootCmd.SetArgs([]string{"token", "--algo", op.algo, "--output", secretFile1, "--verifier-endpoint", mockAttestationServer.Server.URL, "--cloud-log", "--audience", "https://api.test.com"})
-			if err := RootCmd.Execute(); err != nil {
-				t.Error(err)
+			if op.fail {
+				RootCmd.SetArgs([]string{"token", "--algo", op.algo, "--output", secretFile1, "--verifier-endpoint", mockAttestationServer.Server.URL, "--cloud-log", "--audience", util.FakeCustomAudience, "--custom-nonce", "fail test"})
+				if err := RootCmd.Execute(); err != nil && !strings.Contains(err.Error(), "googleapi: Error 400") {
+					t.Error(err)
+				}
+			} else {
+				RootCmd.SetArgs([]string{"token", "--algo", op.algo, "--output", secretFile1, "--verifier-endpoint", mockAttestationServer.Server.URL, "--cloud-log", "--audience", util.FakeCustomAudience, "--custom-nonce", util.FakeCustomNonce[0], "--custom-nonce", util.FakeCustomNonce[1]})
+				if err := RootCmd.Execute(); err != nil {
+					t.Error(err)
+				}
 			}
+			// reset custom-nonce
+			customNonce = nil
 		})
 	}
 }
