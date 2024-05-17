@@ -135,7 +135,7 @@ func ConvertSCRTMVersionToGCEFirmwareVersion(version []byte) (uint32, error) {
 		asciiVersion = append(asciiVersion, b)
 	}
 
-	versionNum, err := strconv.Atoi(string(asciiVersion))
+	versionNum, err := strconv.ParseUint(string(asciiVersion), 10, 32)
 	if err != nil {
 		return 0, fmt.Errorf("when parsing GCE firmware version: %w", err)
 	}
