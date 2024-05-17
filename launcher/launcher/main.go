@@ -21,6 +21,7 @@ import (
 	"github.com/google/go-tpm-tools/launcher"
 	"github.com/google/go-tpm-tools/launcher/internal/experiments"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
+	"github.com/google/go-tpm-tools/launcher/registryauth"
 	"github.com/google/go-tpm-tools/launcher/spec"
 	"github.com/google/go-tpm/legacy/tpm2"
 )
@@ -186,7 +187,7 @@ func startLauncher(ctx context.Context, launchSpec spec.LaunchSpec, serialConsol
 	}
 	gceAk.Close()
 
-	token, err := launcher.RetrieveAuthToken(ctx, mdsClient)
+	token, err := registryauth.RetrieveAuthToken(ctx, mdsClient)
 	if err != nil {
 		logger.Printf("failed to retrieve auth token: %v, using empty auth for image pulling\n", err)
 	}

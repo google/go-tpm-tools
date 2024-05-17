@@ -24,6 +24,7 @@ import (
 	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/images"
 	"github.com/containerd/containerd/oci"
+	"github.com/containerd/containerd/remotes"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
@@ -31,6 +32,7 @@ import (
 	"github.com/google/go-tpm-tools/launcher/internal/signaturediscovery"
 	"github.com/google/go-tpm-tools/launcher/internal/systemctl"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
+	"github.com/google/go-tpm-tools/launcher/registryauth"
 	"github.com/google/go-tpm-tools/launcher/spec"
 	"github.com/google/go-tpm-tools/launcher/teeserver"
 	"github.com/google/go-tpm-tools/verifier/util"
@@ -203,7 +205,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	}
 
 	// Create a new signaturediscovery client to fetch signatures.
-	sdClient := getSignatureDiscoveryClient(cdClient, token, image.Target())
+	sdClient := getSignatureDiscoveryClient(cdClient, mdsClient, image.Target())
 
 	attestAgent, err := agent.CreateAttestationAgent(tpm, client.GceAttestationKeyECC, verifierClient, principalFetcherWithImpersonate, sdClient, launchSpec, logger)
 	if err != nil {
@@ -218,12 +220,18 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	}, nil
 }
 
-func getSignatureDiscoveryClient(cdClient *containerd.Client, token oauth2.Token, imageDesc v1.Descriptor) signaturediscovery.Fetcher {
-	var remoteOpt containerd.RemoteOpt
-	if token.Valid() {
-		remoteOpt = containerd.WithResolver(Resolver(token.AccessToken))
+func getSignatureDiscoveryClient(cdClient *containerd.Client, mdsClient *metadata.Client, imageDesc v1.Descriptor) signaturediscovery.Fetcher {
+	resolverFetcher := func(ctx context.Context) (remotes.Resolver, error) {
+		return registryauth.RefreshResolver(ctx, mdsClient)
 	}
-	return signaturediscovery.New(cdClient, imageDesc, remoteOpt)
+	imageFetcher := func(ctx context.Context, imageRef string, opts ...containerd.RemoteOpt) (containerd.Image, error) {
+		image, err := cdClient.Pull(ctx, imageRef, opts...)
+		if err != nil {
+			return nil, fmt.Errorf("cannot pull signature objects from the signature image [%s]: %w", imageRef, err)
+		}
+		return image, nil
+	}
+	return signaturediscovery.New(imageDesc, resolverFetcher, imageFetcher)
 }
 
 // formatEnvVars formats the environment variables to the oci format
@@ -581,7 +589,7 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 
 func initImage(ctx context.Context, cdClient *containerd.Client, launchSpec spec.LaunchSpec, token oauth2.Token) (containerd.Image, error) {
 	if token.Valid() {
-		remoteOpt := containerd.WithResolver(Resolver(token.AccessToken))
+		remoteOpt := containerd.WithResolver(registryauth.Resolver(token.AccessToken))
 
 		image, err := cdClient.Pull(ctx, launchSpec.ImageRef, containerd.WithPullUnpack, remoteOpt)
 		if err != nil {
