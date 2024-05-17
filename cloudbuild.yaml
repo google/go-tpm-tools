@@ -245,3 +245,15 @@ steps:
 options:
   pool:
     name: 'projects/confidential-space-images-dev/locations/us-west1/workerPools/cs-image-build-vpc'
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: PresubmitImageCleanup
+  waitFor: ['ExperimentsTests', 'HttpServerTests', 'DebugImageTests', 'HardenedImageTests', 'LaunchPolicyTests', 'HardenedNetworkIngressTests', 'DebugNetworkIngressTests', 'LogRedirectionTests', 'HardenedDiscoverContainerSignatureTests', 'DebugDiscoverContainerSignatureTests', 'MemoryMonitoringTests', 'ODAWithSignedContainerTest']
+  script: |
+    #!/usr/bin/env bash
+    old_presubmit_images=$(gcloud compute images list --format="value[separator=' '](NAME)" --filter="creationTimestamp < -P30D AND name ~ presubmit" --project=confidential-space-images-dev --no-standard-images --verbosity=error)
+    if [ -n "${old_presubmit_images}" ]
+    then
+      echo "deleting old presubmit images: ${old_presubmit_images}"
+      gcloud compute images delete ${old_presubmit_images} --project=confidential-space-images-dev --quiet
+    fi
+    exit
