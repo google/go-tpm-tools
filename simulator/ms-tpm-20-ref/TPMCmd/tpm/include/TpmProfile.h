@@ -180,13 +180,13 @@
 #define MAX_NV_INDEX_SIZE               2048
 #endif
 #ifndef MAX_NV_BUFFER_SIZE
-#define MAX_NV_BUFFER_SIZE              1024
+#define MAX_NV_BUFFER_SIZE              2048
 #endif
 #ifndef MAX_CAP_BUFFER
 #define MAX_CAP_BUFFER                  1024
 #endif
 #ifndef NV_MEMORY_SIZE
-#define NV_MEMORY_SIZE                  16384
+#define NV_MEMORY_SIZE                  32768
 #endif
 #ifndef MIN_COUNTER_INDICES
 #define MIN_COUNTER_INDICES             8
