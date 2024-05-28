@@ -242,6 +242,19 @@ steps:
     gcloud builds submit --config=test_oda_with_signed_container.yaml --region us-west1 \
       --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_PREFIX}-hardened-${OUTPUT_IMAGE_SUFFIX},_IMAGE_PROJECT=${PROJECT_ID}
     exit
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: PresubmitImageCleanup
+  waitFor: ['ExperimentsTests', 'HttpServerTests', 'DebugImageTests', 'HardenedImageTests', 'LaunchPolicyTests', 'HardenedNetworkIngressTests', 'DebugNetworkIngressTests', 'LogRedirectionTests', 'HardenedDiscoverContainerSignatureTests', 'DebugDiscoverContainerSignatureTests', 'MemoryMonitoringTests', 'ODAWithSignedContainerTest']
+  script: |
+    #!/usr/bin/env bash
+    old_presubmit_images=$(gcloud compute images list --format="value[separator=' '](NAME)" --filter="creationTimestamp < -P30D AND name ~ presubmit" --project=confidential-space-images-dev --no-standard-images --verbosity=error)
+    if [ -n "${old_presubmit_images}" ]
+    then
+      echo "deleting old presubmit images: ${old_presubmit_images}"
+      gcloud compute images delete ${old_presubmit_images} --project=confidential-space-images-dev --quiet
+    fi
+    exit
 options:
   pool:
     name: 'projects/confidential-space-images-dev/locations/us-west1/workerPools/cs-image-build-vpc'
+    
