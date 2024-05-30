@@ -128,6 +128,12 @@ main() {
          "Only 'debug' and 'hardened' are supported."
     exit 1
   fi
+
+  # Make sure cache is flushed for the OEM partition.
+  sync ${OEM_PATH}
+
+  # Verify the content before the OEM sealing step.
+  ls -lh ${CS_PATH}
 }
 
 main

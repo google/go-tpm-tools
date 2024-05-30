@@ -45,6 +45,9 @@ var rcMessage = map[int]string{
 	holdRC:    "VM remains running",
 }
 
+// BuildCommit shows the commit when building the binary, set by -ldflags when building
+var BuildCommit = "dev"
+
 var logger *log.Logger
 var mdsClient *metadata.Client
 
@@ -74,6 +77,7 @@ func main() {
 	logger.SetOutput(io.MultiWriter(os.Stdout, serialConsole))
 
 	logger.Println(welcomeMessage)
+	logger.Printf("Build commit: %s\n", BuildCommit)
 
 	if err := verifyFsAndMount(); err != nil {
 		logger.Printf("failed to verify filesystem and mounts: %v\n", err)

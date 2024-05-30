@@ -6,15 +6,16 @@ substitutions:
   '_IMAGE_ENV': ''
   '_BUCKET_NAME': '${PROJECT_ID}_cloudbuild'
   '_CS_LICENSE': ''
+  '_SHORT_SHA': ''
 
 steps:
-  - name: golang:1.20
+  - name: golang:1.21
     entrypoint: /bin/bash
     args:
       - -c
       - |
         cd launcher/launcher
-        CGO_ENABLED=0 go build -o ../image/launcher
+        CGO_ENABLED=0 go build -o ../image/launcher -ldflags="-X 'main.BuildCommit=${_SHORT_SHA}'"
   - name: 'gcr.io/cloud-builders/gcloud'
     id: DownloadExpBinary
     entrypoint: 'gcloud'

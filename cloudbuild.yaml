@@ -36,6 +36,7 @@ steps:
   - 'OUTPUT_IMAGE_SUFFIX=$_OUTPUT_IMAGE_SUFFIX'
   - 'OUTPUT_IMAGE_FAMILY=$_OUTPUT_IMAGE_FAMILY'
   - 'BUCKET_NAME=$_BUCKET_NAME'
+  - 'SHORT_SHA=${SHORT_SHA}'
   script: |
     #!/usr/bin/env bash
     set -exuo pipefail
@@ -43,7 +44,7 @@ steps:
     base_image=$(cat /workspace/base_image.txt)
     echo "building the debug image: ${OUTPUT_IMAGE_PREFIX}-debug-${OUTPUT_IMAGE_SUFFIX} with the base image: ${base_image}"
     gcloud builds submit --config=launcher/image/cloudbuild.yaml --region us-west1 \
-      --substitutions _BASE_IMAGE=${base_image},_OUTPUT_IMAGE_FAMILY=${OUTPUT_IMAGE_FAMILY}-debug,_OUTPUT_IMAGE_NAME=${OUTPUT_IMAGE_PREFIX}-debug-${OUTPUT_IMAGE_SUFFIX},_IMAGE_ENV=debug,_CS_LICENSE=projects/confidential-space-images/global/licenses/confidential-space-debug,_BUCKET_NAME=${BUCKET_NAME}
+      --substitutions _SHORT_SHA=${SHORT_SHA},_BASE_IMAGE=${base_image},_OUTPUT_IMAGE_FAMILY=${OUTPUT_IMAGE_FAMILY}-debug,_OUTPUT_IMAGE_NAME=${OUTPUT_IMAGE_PREFIX}-debug-${OUTPUT_IMAGE_SUFFIX},_IMAGE_ENV=debug,_CS_LICENSE=projects/confidential-space-images/global/licenses/confidential-space-debug,_BUCKET_NAME=${BUCKET_NAME}
     exit
 
 - name: 'gcr.io/cloud-builders/gcloud'
@@ -54,6 +55,7 @@ steps:
   - 'OUTPUT_IMAGE_SUFFIX=$_OUTPUT_IMAGE_SUFFIX'
   - 'OUTPUT_IMAGE_FAMILY=$_OUTPUT_IMAGE_FAMILY'
   - 'BUCKET_NAME=$_BUCKET_NAME'
+  - 'SHORT_SHA=${SHORT_SHA}'
   script: |
     #!/usr/bin/env bash
     set -exuo pipefail
@@ -61,7 +63,7 @@ steps:
     base_image=$(cat /workspace/base_image.txt)
     echo "building the hardened image: ${OUTPUT_IMAGE_PREFIX}-hardened-${OUTPUT_IMAGE_SUFFIX} with the base image: ${base_image}"
     gcloud builds submit --config=launcher/image/cloudbuild.yaml --region us-west1 \
-      --substitutions _BASE_IMAGE=${base_image},_OUTPUT_IMAGE_FAMILY=${OUTPUT_IMAGE_FAMILY},_OUTPUT_IMAGE_NAME=${OUTPUT_IMAGE_PREFIX}-hardened-${OUTPUT_IMAGE_SUFFIX},_IMAGE_ENV=hardened,_CS_LICENSE=projects/confidential-space-images/global/licenses/confidential-space,_BUCKET_NAME=${BUCKET_NAME}
+      --substitutions _SHORT_SHA=${SHORT_SHA},_BASE_IMAGE=${base_image},_OUTPUT_IMAGE_FAMILY=${OUTPUT_IMAGE_FAMILY},_OUTPUT_IMAGE_NAME=${OUTPUT_IMAGE_PREFIX}-hardened-${OUTPUT_IMAGE_SUFFIX},_IMAGE_ENV=hardened,_CS_LICENSE=projects/confidential-space-images/global/licenses/confidential-space,_BUCKET_NAME=${BUCKET_NAME}
     exit
 
 - name: 'gcr.io/cloud-builders/gcloud'
