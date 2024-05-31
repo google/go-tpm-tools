@@ -14,18 +14,19 @@ import (
 )
 
 var (
-	output    string
-	input     string
-	nvIndex   uint32
-	nonce     []byte
-	teeNonce  []byte
-	keyAlgo   = tpm2.AlgRSA
-	pcrs      []int
-	format    string
-	asAddress string
-	audience  string
-	eventLog  string
-	cloudLog  bool
+	output      string
+	input       string
+	nvIndex     uint32
+	nonce       []byte
+	teeNonce    []byte
+	keyAlgo     = tpm2.AlgRSA
+	pcrs        []int
+	format      string
+	asAddress   string
+	audience    string
+	eventLog    string
+	cloudLog    bool
+	customNonce []string
 )
 
 type pcrsFlag struct {
@@ -142,6 +143,12 @@ func addCloudLoggingFlag(cmd *cobra.Command) {
 func addAudienceFlag(cmd *cobra.Command) {
 	cmd.PersistentFlags().StringVar(&audience, "audience", "",
 		"the audience field in the claims token. Cannot be sts.googleapis.com.")
+}
+
+// Lets this command specify custom nonce field of the attestation token.
+func addCustomNonceFlag(cmd *cobra.Command) {
+	cmd.PersistentFlags().StringArrayVar(&customNonce, "custom-nonce", nil,
+		"the custom nonce field in the claims token. use this flag multiple times to add multiple custom nonces.")
 }
 
 // Lets this command specify event log path.
