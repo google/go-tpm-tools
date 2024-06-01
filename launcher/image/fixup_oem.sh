@@ -26,6 +26,19 @@ main() {
     sed -e 's|.*|[BEGIN_CS_CMDLINE]&[END_CS_CMDLINE]|g'
 
   umount /mnt/disks/efi
+
+  # Now the oem partition is sealed, we mount it to print it's content
+  if [[ ! -d /mnt/disks/oem ]]; then
+    mkdir /mnt/disks/oem
+  fi
+
+  # Since it's sealed, we mount it read-only to prevent changes
+  mount -o ro /dev/sda8 /mnt/disks/oem
+
+  ls -l /mnt/disks/oem/
+  ls -l /mnt/disks/oem/confidential_space
+
+  umount /mnt/disks/oem
 }
 
 main

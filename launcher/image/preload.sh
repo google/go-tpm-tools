@@ -132,8 +132,12 @@ main() {
   # Make sure cache is flushed for the OEM partition.
   sync ${OEM_PATH}
 
+  # Remount as read-only to avoid unexpected changes
+  mount -o remount,ro ${OEM_PATH}
+
   # Verify the content before the OEM sealing step.
   ls -lh ${CS_PATH}
+  ls -lh ${OEM_PATH}
 }
 
 main
