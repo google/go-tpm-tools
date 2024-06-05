@@ -7,7 +7,7 @@ The Microsoft code used here is actually
 [a fork of the upstream source](https://github.com/josephlr/ms-tpm-20-ref/tree/google).
 It is vendored at `simulator/ms-tpm-20-ref` to maintain compatiblity with
 `go get`. Building the simulator requires the OpenSSL headers to be installed.
-This can be doen with:
+This can be done with:
   - Debian based systems (including Ubuntu): `apt install libssl-dev`
   - Red Hat based systems: `yum install openssl-devel`
   - Arch Linux based systems: [`openssl`](https://www.archlinux.org/packages/core/x86_64/openssl/)
