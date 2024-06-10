@@ -277,6 +277,9 @@ message RIMPolicy {
 message SevSnpPolicy {
   // The policy for checking the signed reference values for the UEFI at launch.
   RIMPolicy uefi = 1;
+  // The policy that any unsigned reference measurement must be within this
+  // set of measurements.
+  repeated bytes trusted_measurements = 2;
 }
 
 // A policy dictating which type of MachineStates to allow
