@@ -234,6 +234,13 @@ message MachineState {
   AttestedCosState cos = 7;
 
   EfiState efi = 8;
+
+  // Attestation/Quote representations from TEEs whose signatures are already
+  // verified.
+  oneof tee_attestation {
+    sevsnp.Attestation sev_snp_attestation = 9;
+    tdx.QuoteV4 tdx_attestation = 10;
+  }
 }
 
 // A policy dictating which values of PlatformState to allow
@@ -250,9 +257,35 @@ message PlatformPolicy {
   GCEConfidentialTechnology minimum_technology = 3;
 }
 
+// A policy about what parts of a RIM to compare against machine state as
+// reflected in a quote or (verified) event log. Reference measurements for
+// a component are expected to be addressable by the machine state's reported
+// digest, or otherwise presented as cached collateral with the attestation
+// itself. The method of delivery is vendor-specific.
+message RIMPolicy {
+  // If true, the signed measurement must be available (by means that can be
+  // vendor-specific), and the target measurement must be among the listed
+  // signed measurements.  If false, then only error if there is a problem
+  // verifying the signed measurements when they are available.
+  bool require_signed = 1;
+  // x.509 certificates in ASN.1 DER format.
+  repeated bytes root_certs = 2;
+}
+
+// Represent minimal decisions about attestation fields until necessary to
+// add for policy reasons.
+message SevSnpPolicy {
+  // The policy for checking the signed reference values for the UEFI at launch.
+  RIMPolicy uefi = 1;
+}
+
 // A policy dictating which type of MachineStates to allow
 message Policy {
   PlatformPolicy platform = 1;
 
   // SecureBootPolicy secure_boot = 2;
+
+  // When the attestation is on SEV-SNP, this is the policy. Unset means no
+  // constraints.
+  SevSnpPolicy sev_snp = 3;
 }
