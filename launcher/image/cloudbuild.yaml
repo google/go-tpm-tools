@@ -2,7 +2,7 @@ substitutions:
   '_BASE_IMAGE': ''
   '_OUTPUT_IMAGE_NAME': ''
   '_OUTPUT_IMAGE_FAMILY': ''
-  '_BASE_IMAGE_PROJECT': 'cos-cloud'
+  '_BASE_IMAGE_PROJECT': 'tdx-guest-images'
   '_IMAGE_ENV': ''
   '_BUCKET_NAME': '${PROJECT_ID}_cloudbuild'
   '_CS_LICENSE': ''
