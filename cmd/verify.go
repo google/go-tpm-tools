@@ -49,7 +49,7 @@ var debugCmd = &cobra.Command{
 			return err
 		}
 
-		var validateOpts interface{}
+		var validateOpts any
 		switch attestation.GetTeeAttestation().(type) {
 		case *pb.Attestation_TdxAttestation:
 			if len(teeNonce) != 0 {
