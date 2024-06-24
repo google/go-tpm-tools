@@ -242,6 +242,22 @@ steps:
     gcloud builds submit --config=test_oda_with_signed_container.yaml --region us-west1 \
       --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_PREFIX}-hardened-${OUTPUT_IMAGE_SUFFIX},_IMAGE_PROJECT=${PROJECT_ID}
     exit
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: MountTests
+  waitFor: ['HardenedImageBuild']
+  env:
+  - 'OUTPUT_IMAGE_PREFIX=$_OUTPUT_IMAGE_PREFIX'
+  - 'OUTPUT_IMAGE_SUFFIX=$_OUTPUT_IMAGE_SUFFIX'
+  - 'PROJECT_ID=$PROJECT_ID'
+  script: |
+    #!/usr/bin/env bash
+    cd launcher/image/test
+    dev_shm_size_kb=$(shuf -i 70000-256000 -n 1)
+    tmpfs_size_kb=$(shuf -i 256-256000 -n 1)
+    echo "running mount tests on ${OUTPUT_IMAGE_PREFIX}-hardened-${OUTPUT_IMAGE_SUFFIX}"
+    gcloud builds submit --config=test_mounts.yaml --region us-west1 \
+      --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_PREFIX}-hardened-${OUTPUT_IMAGE_SUFFIX},_IMAGE_PROJECT=${PROJECT_ID}
+    exit
 options:
   pool:
     name: 'projects/confidential-space-images-dev/locations/us-west1/workerPools/cs-image-build-vpc'
