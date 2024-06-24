@@ -1,9 +1,7 @@
 #!/bin/sh
 
 df -h
+df
 
 ls -lathr /
-
-ls -lathr /my-new-disk
-
-mkdir /my-new-disk/sldifj
+ls -lathr /tmp
