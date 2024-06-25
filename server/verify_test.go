@@ -18,9 +18,11 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	sgclient "github.com/google/go-sev-guest/client"
+	"github.com/google/go-sev-guest/proto/sevsnp"
 	sgtest "github.com/google/go-sev-guest/testing"
 	testclient "github.com/google/go-sev-guest/testing/client"
 	sv "github.com/google/go-sev-guest/verify"
+	"github.com/google/go-tdx-guest/proto/tdx"
 	tgtest "github.com/google/go-tdx-guest/testing"
 	tgtestclient "github.com/google/go-tdx-guest/testing/client"
 	tgtestdata "github.com/google/go-tdx-guest/testing/testdata"
@@ -1071,7 +1073,6 @@ func TestVerifyAttestationWithSevSnp(t *testing.T) {
 }
 
 func TestVerifyAttestationWithTdx(t *testing.T) {
-
 	tdxEventLog := test.CreateTpm2EventLog(3) // Enum 3-TDX
 	rwc := test.GetSimulatorWithLog(t, tdxEventLog)
 	defer client.CheckedClose(t, rwc)
@@ -1191,6 +1192,69 @@ func TestVerifyAttestationWithTdx(t *testing.T) {
 			if _, err := VerifyAttestation(tc.attest, opts); (err == nil && tc.wantErr != "") ||
 				(err != nil && !strings.Contains(err.Error(), tc.wantErr)) {
 				t.Errorf("VerifyAttestation(_, %v) = %v, want %q", opts, err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestParseTEEAttestation(t *testing.T) {
+	testCases := []struct {
+		name             string
+		tech             attestpb.GCEConfidentialTechnology
+		attestation      *attestpb.Attestation
+		wantMachineState *attestpb.MachineState
+		wantPass         bool
+	}{
+		{
+			name: "Happy path with TDX attestation",
+			tech: attestpb.GCEConfidentialTechnology_INTEL_TDX,
+			attestation: &attestpb.Attestation{
+				TeeAttestation: &attestpb.Attestation_TdxAttestation{TdxAttestation: &tdx.QuoteV4{TdQuoteBody: &tdx.TDQuoteBody{TdAttributes: []byte("fake TdAttributes")}}},
+			},
+			wantMachineState: &attestpb.MachineState{
+				TeeAttestation: &attestpb.MachineState_TdxAttestation{TdxAttestation: &tdx.QuoteV4{TdQuoteBody: &tdx.TDQuoteBody{TdAttributes: []byte("fake TdAttributes")}}},
+			},
+			wantPass: true,
+		},
+		{
+			name: "Happy path with SevSnp attestation",
+			tech: attestpb.GCEConfidentialTechnology_AMD_SEV_SNP,
+			attestation: &attestpb.Attestation{
+				TeeAttestation: &attestpb.Attestation_SevSnpAttestation{SevSnpAttestation: &sevsnp.Attestation{Report: &sevsnp.Report{HostData: []byte("fake Hostdata")}}},
+			},
+			wantMachineState: &attestpb.MachineState{
+				TeeAttestation: &attestpb.MachineState_SevSnpAttestation{SevSnpAttestation: &sevsnp.Attestation{Report: &sevsnp.Report{HostData: []byte("fake Hostdata")}}},
+			},
+			wantPass: true,
+		},
+		{
+			name: "Wrong GCETechnology type with TDX attestation",
+			tech: attestpb.GCEConfidentialTechnology_AMD_SEV_SNP,
+			attestation: &attestpb.Attestation{
+				TeeAttestation: &attestpb.Attestation_TdxAttestation{TdxAttestation: &tdx.QuoteV4{TdQuoteBody: &tdx.TDQuoteBody{TdAttributes: []byte("fake TdAttributes")}}},
+			},
+			wantMachineState: nil,
+			wantPass:         false,
+		},
+		{
+			name: "Wrong GCETechnology type with SevSnp attestation",
+			tech: attestpb.GCEConfidentialTechnology_INTEL_TDX,
+			attestation: &attestpb.Attestation{
+				TeeAttestation: &attestpb.Attestation_SevSnpAttestation{SevSnpAttestation: &sevsnp.Attestation{Report: &sevsnp.Report{HostData: []byte("fake Hostdata")}}},
+			},
+			wantMachineState: nil,
+			wantPass:         false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			gotMachineState, err := parseTEEAttestation(tc.attestation, tc.tech)
+			if !proto.Equal(gotMachineState, tc.wantMachineState) {
+				t.Errorf("parseTEEAttestation failed, got machineState: %+v, but want machineState: %+v", gotMachineState, tc.wantMachineState)
+			}
+			if gotPass := (err == nil); gotPass != tc.wantPass {
+				t.Errorf("parseTEEAttestation failed, gotPass: %v, but wantPass: %v", gotPass, tc.wantPass)
 			}
 		})
 	}
