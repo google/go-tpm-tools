@@ -8,6 +8,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/google/go-sev-guest/proto/sevsnp"
+	"github.com/google/go-tdx-guest/proto/tdx"
 	"github.com/google/go-tpm-tools/internal"
 	pb "github.com/google/go-tpm-tools/proto/attest"
 	tpmpb "github.com/google/go-tpm-tools/proto/tpm"
@@ -148,14 +150,9 @@ func VerifyAttestation(attestation *pb.Attestation, opts VerifyOpts) (*pb.Machin
 
 		// Parse event logs and replay the events against the provided PCRs
 		pcrs := quote.GetPcrs()
-		state, err := parsePCClientEventLog(attestation.GetEventLog(), pcrs, opts.Loader)
+		state, err := parseMachineStateFromTPM(attestation, pcrs, opts)
 		if err != nil {
-			lastErr = fmt.Errorf("failed to validate the PCClient event log: %w", err)
-			continue
-		}
-
-		if err := VerifyGceTechnology(attestation, state.Platform.GetTechnology(), &opts); err != nil {
-			lastErr = fmt.Errorf("failed to verify memory encryption technology: %w", err)
+			lastErr = fmt.Errorf("failed to parse machine state from TCG event log: %w", err)
 			continue
 		}
 
@@ -318,10 +315,10 @@ func makePool(certs []*x509.Certificate) *x509.CertPool {
 	return pool
 }
 
-// VerifyGceTechnology checks the GCE-specific GceNonHost event's Trusted Execution Technology (TEE)
+// verifyGceTechnology checks the GCE-specific GceNonHost event's Trusted Execution Technology (TEE)
 // claim using attestation reports if the technology supports them, and only then validates that a
 // particular technology has proven that it is in use.
-func VerifyGceTechnology(attestation *pb.Attestation, tech pb.GCEConfidentialTechnology, opts *VerifyOpts) error {
+func verifyGceTechnology(attestation *pb.Attestation, tech pb.GCEConfidentialTechnology, opts *VerifyOpts) error {
 	switch tech {
 	case pb.GCEConfidentialTechnology_NONE: // Nothing to verify
 		if opts.TEEOpts != nil {
@@ -371,4 +368,57 @@ func VerifyGceTechnology(attestation *pb.Attestation, tech pb.GCEConfidentialTec
 		return VerifyTdxAttestation(tee.TdxAttestation, tdxOpts)
 	}
 	return fmt.Errorf("unknown GCEConfidentialTechnology: %v", tech)
+}
+
+// parseMachineStateFromTPM is a wrapper function around `parsePCClientEventLog` method to:
+// 1. parse partial machine state from TPM TCG event logs.
+// 2. verify GceTechnology since the GCE Technology event is directly related to the TPM.
+// 3. populate the machineState TeeAttestatation field with the verified TDX/SNP attestation data.
+func parseMachineStateFromTPM(attestation *pb.Attestation, pcrs *tpmpb.PCRs, opts VerifyOpts) (*pb.MachineState, error) {
+	ms, err := parsePCClientEventLog(attestation.GetEventLog(), pcrs, opts.Loader)
+	if err != nil {
+		return nil, fmt.Errorf("failed to validate the PCClient event log: %w", err)
+	}
+
+	tech := ms.GetPlatform().Technology
+	if err := verifyGceTechnology(attestation, tech, &opts); err != nil {
+		return nil, fmt.Errorf("failed to verify memory encryption technology: %w", err)
+	}
+
+	state, err := parseTEEAttestation(attestation, tech)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse machineState from TEE attestation: %w", err)
+	}
+	ms.TeeAttestation = state.TeeAttestation
+	return ms, nil
+}
+
+// parseTEEAttestation parses a machineState from TeeAttestation.
+// For now it simply populates the machineState TeeAttestation field with the verified TDX/SNP data.
+// In long term, it should parse a full machineState from TeeAttestation.
+func parseTEEAttestation(attestation *pb.Attestation, tech pb.GCEConfidentialTechnology) (*pb.MachineState, error) {
+	switch tech {
+	case pb.GCEConfidentialTechnology_AMD_SEV_SNP:
+		tee, ok := attestation.TeeAttestation.(*pb.Attestation_SevSnpAttestation)
+		if !ok {
+			return nil, fmt.Errorf("TEE attestation is %T, expected a SevSnpAttestation", attestation.GetTeeAttestation())
+		}
+		return &pb.MachineState{
+			// TODO: needs to populate platform state from SNP report once GCE instance info is binded to HOSTDATA.
+			TeeAttestation: &pb.MachineState_SevSnpAttestation{
+				SevSnpAttestation: proto.Clone(tee.SevSnpAttestation).(*sevsnp.Attestation),
+			}}, nil
+	case pb.GCEConfidentialTechnology_INTEL_TDX:
+		tee, ok := attestation.TeeAttestation.(*pb.Attestation_TdxAttestation)
+		if !ok {
+			return nil, fmt.Errorf("TEE attestation is %T, expected a TdxAttestation", attestation.GetTeeAttestation())
+		}
+		// TODO: needs to populate platform state from TDX quote once GCE instance info is binded to MRCONFIG.
+		return &pb.MachineState{
+			TeeAttestation: &pb.MachineState_TdxAttestation{
+				TdxAttestation: proto.Clone(tee.TdxAttestation).(*tdx.QuoteV4),
+			}}, nil
+	default:
+		return &pb.MachineState{}, nil
+	}
 }
