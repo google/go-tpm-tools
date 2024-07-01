@@ -214,7 +214,7 @@ func startLauncher(ctx context.Context, launchSpec spec.LaunchSpec, serialConsol
 					return err
 				}
 				fmt.Println(bytes)
-				return nil
+				// return nil
 			default:
 				return fmt.Errorf("unsupported quote type: %T", quote)
 			}
