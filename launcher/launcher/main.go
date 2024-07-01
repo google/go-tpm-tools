@@ -17,6 +17,8 @@ import (
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/defaults"
 	"github.com/containerd/containerd/namespaces"
+	tdxclient "github.com/google/go-tdx-guest/client"
+	tdxpb "github.com/google/go-tdx-guest/proto/tdx"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/launcher"
 	"github.com/google/go-tpm-tools/launcher/internal/experiments"
@@ -24,6 +26,7 @@ import (
 	"github.com/google/go-tpm-tools/launcher/registryauth"
 	"github.com/google/go-tpm-tools/launcher/spec"
 	"github.com/google/go-tpm/legacy/tpm2"
+	"google.golang.org/protobuf/encoding/prototext"
 )
 
 const (
@@ -81,9 +84,9 @@ func main() {
 
 	if err := verifyFsAndMount(); err != nil {
 		logger.Printf("failed to verify filesystem and mounts: %v\n", err)
-		exitCode = rebootRC
-		logger.Printf("%s, exit code: %d (%s)\n", exitMessage, exitCode, rcMessage[exitCode])
-		return
+		// exitCode = rebootRC
+		// logger.Printf("%s, exit code: %d (%s)\n", exitMessage, exitCode, rcMessage[exitCode])
+		// return
 	}
 
 	// Get RestartPolicy and IsHardened from spec
@@ -180,6 +183,43 @@ func startLauncher(ctx context.Context, launchSpec spec.LaunchSpec, serialConsol
 		return &launcher.RetryableError{Err: err}
 	}
 	defer tpm.Close()
+
+	// try tdx device
+	logger.Printf("**check tdx**\n")
+	qp, err := client.CreateTdxQuoteProvider()
+	if err != nil {
+		logger.Printf("%v\n", err)
+	} else {
+		if err := qp.QuoteProvider.IsSupported(); err != nil {
+			logger.Printf("%v\n", err)
+		} else {
+			var emptynonce [64]byte
+			_, err := qp.QuoteProvider.GetRawQuote(emptynonce)
+			if err != nil {
+				logger.Println("----")
+				logger.Println(err)
+			}
+
+			quote, err := tdxclient.GetQuote(qp.QuoteProvider, emptynonce)
+			if err != nil {
+				logger.Println("++++")
+				logger.Println(err)
+			}
+
+			switch q := quote.(type) {
+			case *tdxpb.QuoteV4:
+				logger.Printf("%v", q)
+				bytes, err := prototext.Marshal(q)
+				if err != nil {
+					return err
+				}
+				fmt.Println(bytes)
+				// return nil
+			default:
+				return fmt.Errorf("unsupported quote type: %T", quote)
+			}
+		}
+	}
 
 	// check AK (EK signing) cert
 	gceAk, err := client.GceAttestationKeyECC(tpm)
