@@ -52,6 +52,6 @@ steps:
            '-project=${PROJECT_ID}']
 
 timeout: '3000s'
-
+tags: ['${_SHORT_SHA}']
 options:
   dynamic_substitutions: true
