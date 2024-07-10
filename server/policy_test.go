@@ -15,8 +15,8 @@ import (
 
 	gcesev "github.com/google/gce-tcb-verifier/sev"
 	"github.com/google/gce-tcb-verifier/testing/devkeys"
+	"github.com/google/gce-tcb-verifier/testing/fakeovmf"
 	"github.com/google/gce-tcb-verifier/testing/nonprod"
-	"github.com/google/gce-tcb-verifier/testing/ovmfsev"
 	spb "github.com/google/go-sev-guest/proto/sevsnp"
 	stest "github.com/google/go-sev-guest/testing"
 	pb "github.com/google/go-tpm-tools/proto/attest"
@@ -170,7 +170,7 @@ func TestEvaluatePolicyFailure(t *testing.T) {
 
 func TestSevSnpSignedUefi(t *testing.T) {
 	// Generate fake signed reference measurements.
-	fw := ovmfsev.CleanExample(t, 0x200000)
+	fw := fakeovmf.CleanExample(t, 0x200000)
 	meas, err := gcesev.LaunchDigest(gcesev.LaunchOptionsDefault(), fw)
 	if err != nil {
 		t.Fatal(err)

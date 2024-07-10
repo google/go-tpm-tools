@@ -320,6 +320,8 @@ github.com/google/certificate-transparency-go v1.1.2 h1:4hE0GEId6NAW28dFpC+LrRGw
 github.com/google/certificate-transparency-go v1.1.2/go.mod h1:3OL+HKDqHPUfdKrHVQxO6T8nDLO0HF7LRTlkIWXaWvQ=
 github.com/google/gce-tcb-verifier v0.0.0-20240610190123-163cd959430a h1:Ddd9PQTCPmPPWq93P3jMrXcqIpG+zmnZHaL912fAH7w=
 github.com/google/gce-tcb-verifier v0.0.0-20240610190123-163cd959430a/go.mod h1:Jvv9i6JF1t7sDVW09zP2x+9vN3lcujtih2Zb/lVXaLs=
+github.com/google/gce-tcb-verifier v0.2.2 h1:Y88TEsh4WMLXgMf4ro4CQkAaV5nYSPk63NIspfKlCks=
+github.com/google/gce-tcb-verifier v0.2.2/go.mod h1:Jvv9i6JF1t7sDVW09zP2x+9vN3lcujtih2Zb/lVXaLs=
 github.com/google/go-attestation v0.5.1 h1:jqtOrLk5MNdliTKjPbIPrAaRKJaKW+0LIU2n/brJYms=
 github.com/google/go-attestation v0.5.1/go.mod h1:KqGatdUhg5kPFkokyzSBDxwSCFyRgIgtRkMp6c3lOBQ=
 github.com/google/go-cmp v0.2.0/go.mod h1:oXzfMopK8JAjlY9xF4vHSVASa0yLyX7SntLO5aqRK0M=
