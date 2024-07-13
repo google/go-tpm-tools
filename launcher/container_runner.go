@@ -130,7 +130,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		return nil, err
 	}
 
-	logger.Info("Launch Policy              : %+v\n", launchPolicy)
+	logger.Info(fmt.Sprintf("Launch Policy              : %+v\n", launchPolicy))
 
 	if imageConfigDescriptor, err := image.Config(ctx); err != nil {
 		logger.Error(err.Error())
