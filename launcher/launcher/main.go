@@ -38,6 +38,12 @@ const (
 	binaryPath = "/usr/share/oem/confidential_space/confidential_space_experiments"
 )
 
+const (
+	maxAuthFail     = 0x20    // 32 tries
+	lockoutInterval = 0x1C20  // 120 mins
+	lockoutRecovery = 0x15180 // 24 hrs
+)
+
 var rcMessage = map[int]string{
 	successRC: "workload finished successfully, shutting down the VM",
 	failRC:    "workload or launcher error, shutting down the VM",
@@ -180,6 +186,33 @@ func startLauncher(ctx context.Context, launchSpec spec.LaunchSpec, serialConsol
 		return &launcher.RetryableError{Err: err}
 	}
 	defer tpm.Close()
+
+	// check DA info, don't crash if failed
+	daInfo, err := launcher.GetTPMDAInfo(tpm)
+	if err != nil {
+		log.Printf("failed to get DA Info: %v\n", err)
+	} else {
+		log.Printf("TPM DA params: %+v\n", daInfo)
+
+		if !daInfo.StartupClearOrderly {
+			log.Printf("TPM didn't start orderly, DA lockout counter incremented: %d/%d\n", daInfo.LockoutCounter, daInfo.MaxAuthFail)
+		}
+
+		// if DA params not as expected (first boot on the VM with a fresh TPM)
+		if daInfo.LockoutInterval != lockoutInterval || daInfo.MaxAuthFail != maxAuthFail || daInfo.LockoutRecovery != lockoutRecovery {
+			log.Println("updating TPM dictionary lockout parameters")
+			if err := launcher.SetTPMDAParams(tpm, maxAuthFail, lockoutInterval, lockoutRecovery); err != nil {
+				log.Printf("failed to set DA params: %v\n", err)
+			}
+
+			daInfo, err := launcher.GetTPMDAInfo(tpm)
+			if err != nil {
+				log.Printf("failed to get DA Info: %v\n", err)
+			} else {
+				log.Printf("updated TPM DA params: %+v\n", daInfo)
+			}
+		}
+	}
 
 	// check AK (EK signing) cert
 	gceAk, err := client.GceAttestationKeyECC(tpm)
