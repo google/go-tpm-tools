@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -229,6 +230,56 @@ var Ubuntu2104NoSecureBootGCE = eventLog{
 		pb.HashAlgo_SHA384: {
 			"4f491210da8f59f09cd16523b44db22e83d8b611c3b14656d3b078dd451347ab195177fc78cf8d5578376f1f5f9bb821",
 			"bbcdda8a6d872385b10802434eb8de1ac7b92dbaddf18bc1d7ea24fcc71b45291db5cc7b930a29c93405d6aecdb70683",
+		},
+	},
+}
+
+// Agile Event Log from a Ubuntu 24.04 GCE AMD_SEVSNP instance with Secure Boot disabled
+var Ubuntu2404AmdSevSnp = eventLog{
+	RawLog: test.Ubuntu2404AmdSevSnpEventLog,
+	Banks: []*pb.PCRs{{
+		Hash: pb.HashAlgo_SHA1,
+		Pcrs: map[uint32][]byte{
+			0:  decodeHex("8124f09f069c7d2d9acf5ce4eab928a7103a0bb2"),
+			1:  decodeHex("f00d6bbdea9ba55996f237a7f95f2b328a44e3f2"),
+			2:  decodeHex("b2a83b0ebf2f8374299a5b2bdfc31ea955ad7236"),
+			3:  decodeHex("b2a83b0ebf2f8374299a5b2bdfc31ea955ad7236"),
+			4:  decodeHex("175f4319fd7ac683bf49f2e7b837630e4fa8603f"),
+			5:  decodeHex("f65b39c7aec83294f796c1ea4acc987f80914efe"),
+			6:  decodeHex("b2a83b0ebf2f8374299a5b2bdfc31ea955ad7236"),
+			7:  decodeHex("7067b17aa6b3de0d22d17a59dce1e17e649cb56a"),
+			8:  decodeHex("5f4a1177c33521b0e48d855cf770520f8ab744de"),
+			9:  decodeHex("c6ee69063ab752df6c4ab99a80b12f3e5c432535"),
+			14: decodeHex("a482a15e112717d6a915b989a0ea6140a507e3e6"),
+		},
+	}, {
+		Hash: pb.HashAlgo_SHA256,
+		Pcrs: map[uint32][]byte{
+			0:  decodeHex("50597a27846e91d025eef597abbc89f72bff9af849094db97b0684d8bc4c515e"),
+			1:  decodeHex("57344e1cc8c6619413df33013a7cd67915459f967395af41db21c1fa7ca9c307"),
+			2:  decodeHex("3d458cfe55cc03ea1f443f1562beec8df51c75e14a9fcf9a7234a13f198e7969"),
+			3:  decodeHex("3d458cfe55cc03ea1f443f1562beec8df51c75e14a9fcf9a7234a13f198e7969"),
+			4:  decodeHex("abe8b3fa6aecb36c2fd93c6f6edde661c21b353d007410a2739d69bfa7e1b9be"),
+			5:  decodeHex("0b0e1903aeb1bff649b82dba2cdcf5c4ffb75027e54f151ab00b3b989f16a300"),
+			6:  decodeHex("3d458cfe55cc03ea1f443f1562beec8df51c75e14a9fcf9a7234a13f198e7969"),
+			7:  decodeHex("33ad69850fb2c7f30b4f8b4bc10ed93fc954dc07fa726e84f50f3d192dc1c140"),
+			8:  decodeHex("6932a3f71dc55ad3c1a6ac2196eeac26a1b7164b6bbfa106625d94088ec3ecc3"),
+			9:  decodeHex("ce08798b283c7a0ddc5e9ad1d602304b945b741fc60c20e254eafa0f4782512b"),
+			14: decodeHex("306f9d8b94f17d93dc6e7cf8f5c79d652eb4c6c4d13de2dddc24af416e13ecaf"),
+		},
+	}},
+	ExpectedEFIAppDigests: map[pb.HashAlgo][]string{
+		pb.HashAlgo_SHA1: {
+			"7eac7a5171a01cf975bb6ac1b0eb6eb79a391d5e",
+			"ec49599026c979912d8f18cfd4b260516a4d4ac1",
+		},
+		pb.HashAlgo_SHA256: {
+			"724de6844dd0fe618ba5776c7bca0728be38a6544e24e44ef259b987b7abce80",
+			"5e8cb75acdf8e09e5fc14cc2d6ce0c2288af208976d97309851c661e91ec1e03",
+		},
+		pb.HashAlgo_SHA384: {
+			"4637fb5cd30847e5f09ae24f8a50ce1611c4d21afd0ecb69c8ec40bc82dc11bc48abda1f8044fe340bfb70b29606eb47",
+			"c051991523ea083f466f13c2a2d11d77254f6110bc8ae3714f345cef8f33cde26082b49dda0f56ef324a62a10b556d1e",
 		},
 	},
 }
@@ -502,6 +553,7 @@ func TestParseEventLogs(t *testing.T) {
 		{COS85AmdSev, "COS85AmdSev", GRUB, nil},
 		{COS93AmdSev, "COS93AmdSev", GRUB, nil},
 		{COS101AmdSev, "COS101AmdSev", GRUB, nil},
+		{Ubuntu2404AmdSevSnp, "Ubuntu2404AmdSevSnp", GRUB, nil},
 	}
 
 	for _, log := range logs {
@@ -510,7 +562,7 @@ func TestParseEventLogs(t *testing.T) {
 			hashName := pb.HashAlgo_name[int32(bank.Hash)]
 			subtestName := fmt.Sprintf("%s-%s", log.name, hashName)
 			t.Run(subtestName, func(t *testing.T) {
-				if _, err := parsePCClientEventLog(rawLog, bank, UnsupportedLoader); err != nil {
+				if _, err := parsePCClientEventLog(rawLog, bank, log.Bootloader); err != nil {
 					gErr, ok := err.(*GroupedError)
 					if !ok {
 						t.Errorf("ParseMachineState should return a GroupedError")
@@ -814,6 +866,7 @@ func TestParseLinuxKernelState(t *testing.T) {
 		{COS85AmdSev, "COS85AmdSev", test.Cos85AmdSevCmdline},
 		{COS93AmdSev, "COS93AmdSev", test.Cos93AmdSevCmdline},
 		{COS101AmdSev, "COS101AmdSev", test.Cos101AmdSevCmdline},
+		{Ubuntu2404AmdSevSnp, "Ubuntu2404AmdSevSnp", test.Ubuntu2404AmdSevSnpCmdline},
 	}
 	for _, log := range logs {
 		for _, bank := range log.Banks {
@@ -848,6 +901,7 @@ func TestParseGrubState(t *testing.T) {
 		{COS85AmdSev, "COS85AmdSev"},
 		{COS93AmdSev, "COS93AmdSev"},
 		{COS101AmdSev, "COS101AmdSev"},
+		{Ubuntu2404AmdSevSnp, "Ubuntu2404AmdSevSnp"},
 	}
 	for _, log := range logs {
 		for _, bank := range log.Banks {
@@ -862,8 +916,15 @@ func TestParseGrubState(t *testing.T) {
 				if len(msState.Grub.GetCommands()) == 0 {
 					t.Errorf("expected COS85 to run GRUB commands!")
 				}
-				if len(msState.Grub.GetFiles()) != 2 {
+				if strings.HasPrefix(subtestName, "COS") && len(msState.Grub.GetFiles()) != 2 {
 					t.Errorf("expected COS85 to read two files (grub.cfg and kernel)!")
+				}
+
+				// check the absence of EV_EVENT_TAG in the GRUB files.
+				for _, f := range msState.Grub.GetFiles() {
+					if bytes.Equal(f.GetUntrustedFilename(), decodeHex(EventTagLoadedImageHex)) {
+						t.Error("EV_EVENT_TAG should not be in the GRUB files")
+					}
 				}
 			})
 		}
