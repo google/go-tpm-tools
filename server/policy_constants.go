@@ -18,6 +18,7 @@ import (
 const (
 	NoAction                   uint32 = 0x00000003
 	Separator                  uint32 = 0x00000004
+	EventTag                   uint32 = 0x00000006
 	SCRTMVersion               uint32 = 0x00000008
 	IPL                        uint32 = 0x0000000D
 	NonhostInfo                uint32 = 0x00000011
