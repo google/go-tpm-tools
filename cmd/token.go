@@ -55,7 +55,7 @@ The OIDC token includes claims regarding the GCE VM, which is verified by Attest
 			return fmt.Errorf("failed to fetch Region from MDS, the tool is probably not running in a GCE VM: %v", err)
 		}
 
-		projectID, err := mdsClient.ProjectID()
+		projectID, err := mdsClient.ProjectIDWithContext(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to retrieve ProjectID from MDS: %v", err)
 		}
@@ -91,7 +91,7 @@ The OIDC token includes claims regarding the GCE VM, which is verified by Attest
 				return errors.New("cloud logging requires the --audience flag")
 			}
 			if mockCloudLoggingServerAddress != "" {
-				conn, err := grpc.Dial(mockCloudLoggingServerAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
+				conn, err := grpc.NewClient(mockCloudLoggingServerAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
 				if err != nil {
 					log.Fatalf("dialing %q: %v", mockCloudLoggingServerAddress, err)
 				}

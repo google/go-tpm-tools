@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"strconv"
@@ -137,16 +138,16 @@ hardware and guarantees a fresh quote.
 }
 
 func getInstanceInfoFromMetadata() (*attest.GCEInstanceInfo, error) {
-
+	ctx := context.Background()
 	var err error
 	instanceInfo := &attest.GCEInstanceInfo{}
 
-	instanceInfo.ProjectId, err = metadata.ProjectID()
+	instanceInfo.ProjectId, err = metadata.ProjectIDWithContext(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	projectNumber, err := metadata.NumericProjectID()
+	projectNumber, err := metadata.NumericProjectIDWithContext(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -155,12 +156,12 @@ func getInstanceInfoFromMetadata() (*attest.GCEInstanceInfo, error) {
 		return nil, err
 	}
 
-	instanceInfo.Zone, err = metadata.Zone()
+	instanceInfo.Zone, err = metadata.ZoneWithContext(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	instanceID, err := metadata.InstanceID()
+	instanceID, err := metadata.InstanceIDWithContext(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -169,7 +170,7 @@ func getInstanceInfoFromMetadata() (*attest.GCEInstanceInfo, error) {
 		return nil, err
 	}
 
-	instanceInfo.InstanceName, err = metadata.InstanceName()
+	instanceInfo.InstanceName, err = metadata.InstanceNameWithContext(ctx)
 	if err != nil {
 		return nil, err
 	}
