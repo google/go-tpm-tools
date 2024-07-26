@@ -8,6 +8,8 @@ import (
 	"log"
 	"strings"
 
+	"github.com/google/go-sev-guest/abi"
+	"github.com/google/go-sev-guest/proto/sevsnp"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/google/go-tpm-tools/verifier/oci"
 
@@ -178,7 +180,7 @@ func convertRequestToREST(request verifier.VerifyAttestationRequest) *confidenti
 		tokenType = confidentialcomputingpb.TokenType_TOKEN_TYPE_UNSPECIFIED
 	}
 
-	return &confidentialcomputingpb.VerifyAttestationRequest{
+	verifyReq := &confidentialcomputingpb.VerifyAttestationRequest{
 		GcpCredentials: &confidentialcomputingpb.GcpCredentials{
 			ServiceAccountIdTokens: idTokens,
 		},
@@ -198,6 +200,16 @@ func convertRequestToREST(request verifier.VerifyAttestationRequest) *confidenti
 			TokenType: tokenType,
 		},
 	}
+
+	if request.Attestation.GetSevSnpAttestation() != nil {
+		sevsnp, err := convertSEVSNPProtoToREST(request.Attestation.GetSevSnpAttestation())
+		if err != nil {
+			log.Fatalf("Failed to convert SEVSNP proto to API proto: %v", err)
+		}
+		verifyReq.TeeAttestation = sevsnp
+	}
+
+	return verifyReq
 }
 
 func convertResponseFromREST(resp *confidentialcomputingpb.VerifyAttestationResponse) (*verifier.VerifyAttestationResponse, error) {
@@ -224,5 +236,19 @@ func convertOCISignatureToREST(signature oci.Signature) (*confidentialcomputingp
 	return &confidentialcomputingpb.ContainerImageSignature{
 		Payload:   payload,
 		Signature: sigBytes,
+	}, nil
+}
+
+func convertSEVSNPProtoToREST(att *sevsnp.Attestation) (*confidentialcomputingpb.VerifyAttestationRequest_SevSnpAttestation, error) {
+	auxBlob := abi.CertsFromProto(att.GetCertificateChain()).Marshal()
+	rawReport, err := abi.ReportToAbiBytes(att.GetReport())
+	if err != nil {
+		return nil, err
+	}
+	return &confidentialcomputingpb.VerifyAttestationRequest_SevSnpAttestation{
+		SevSnpAttestation: &confidentialcomputingpb.SevSnpAttestation{
+			AuxBlob: auxBlob,
+			Report:  rawReport,
+		},
 	}, nil
 }

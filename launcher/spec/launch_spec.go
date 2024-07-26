@@ -182,7 +182,7 @@ func GetLaunchSpec(ctx context.Context, client *metadata.Client) (LaunchSpec, er
 		return LaunchSpec{}, err
 	}
 
-	spec.ProjectID, err = client.ProjectID()
+	spec.ProjectID, err = client.ProjectIDWithContext(ctx)
 	if err != nil {
 		return LaunchSpec{}, fmt.Errorf("failed to retrieve projectID from MDS: %v", err)
 	}
