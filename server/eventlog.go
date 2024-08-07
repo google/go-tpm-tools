@@ -425,6 +425,11 @@ func getGrubState(hash crypto.Hash, events []*pb.Event) (*pb.GrubState, error) {
 			continue
 		}
 
+		// skip parsing EV_EVENT_TAG event since it likely comes from Linux.
+		if event.GetUntrustedType() == EventTag {
+			continue
+		}
+
 		if event.GetUntrustedType() != IPL {
 			return nil, fmt.Errorf("invalid event type for PCR%d, expected EV_IPL", index)
 		}
