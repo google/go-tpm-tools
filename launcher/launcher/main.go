@@ -125,7 +125,7 @@ func main() {
 		logger.Error(err.Error())
 	}
 
-	workloadDuration := time.Now().Sub(start)
+	workloadDuration := time.Since(start)
 	logger.Info("Workload completed", "latency", int64(workloadDuration))
 
 	exitCode = getExitCode(launchSpec.Hardened, launchSpec.RestartPolicy, err)
@@ -192,7 +192,7 @@ func startLauncher(launchSpec spec.LaunchSpec, serialConsole *os.File) error {
 		logger.Info(fmt.Sprintf("failed to retrieve auth token: %v, using empty auth for image pulling\n", err))
 	}
 
-	launchDuration := time.Now().Sub(start)
+	launchDuration := time.Since(start)
 	logger.Info("Launch completed", slog.Int64("latency", int64(launchDuration)))
 
 	ctx := namespaces.WithNamespace(context.Background(), namespaces.Default)
