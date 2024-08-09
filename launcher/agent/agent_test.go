@@ -59,7 +59,7 @@ func TestAttestRacing(t *testing.T) {
 	}
 
 	verifierClient := fake.NewClient(fakeSigner)
-	agent, err := CreateAttestationAgent(tpm, client.AttestationKeyECC, verifierClient, placeholderPrincipalFetcher, signaturediscovery.NewFakeClient(), spec.LaunchSpec{}, log.Default())
+	agent, err := CreateAttestationAgent(tpm, client.AttestationKeyECC, verifierClient, placeholderPrincipalFetcher, signaturediscovery.NewFakeClient(), spec.LaunchSpec{}, slog.Default())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +111,11 @@ func TestAttest(t *testing.T) {
 
 			verifierClient := fake.NewClient(fakeSigner)
 
+<<<<<<< HEAD
 			agent, err := CreateAttestationAgent(tpm, client.AttestationKeyECC, verifierClient, tc.principalIDTokenFetcher, tc.containerSignaturesFetcher, tc.launchSpec, log.Default())
+=======
+			agent, err := CreateAttestationAgent(tpm, client.AttestationKeyECC, verifierClient, tc.principalIDTokenFetcher, tc.containerSignaturesFetcher, tc.launchSpec, slog.Default())
+>>>>>>> 4b0af5d (fix conflicts)
 			if err != nil {
 				t.Fatalf("failed to create an attestation agent %v", err)
 			}
@@ -591,7 +595,7 @@ func TestWithAgent(t *testing.T) {
 	tpm := test.GetTPM(t)
 	defer client.CheckedClose(t, tpm)
 
-	agent, err := CreateAttestationAgent(tpm, client.AttestationKeyECC, vClient, testPrincipalIDTokenFetcher, signaturediscovery.NewFakeClient(), spec.LaunchSpec{}, log.Default())
+	agent, err := CreateAttestationAgent(tpm, client.AttestationKeyECC, vClient, testPrincipalIDTokenFetcher, signaturediscovery.NewFakeClient(), spec.LaunchSpec{}, slog.Default())
 	if err != nil {
 		t.Fatalf("failed to create an attestation agent %v", err)
 	}

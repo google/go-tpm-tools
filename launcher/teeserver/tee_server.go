@@ -6,7 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -20,7 +20,7 @@ type attestHandler struct {
 	ctx              context.Context
 	attestAgent      agent.AttestationAgent
 	defaultTokenFile string
-	logger           *log.Logger
+	logger           *slog.Logger
 }
 
 type customTokenRequest struct {
@@ -37,7 +37,7 @@ type TeeServer struct {
 }
 
 // New takes in a socket and start to listen to it, and create a server
-func New(ctx context.Context, unixSock string, a agent.AttestationAgent, logger *log.Logger) (*TeeServer, error) {
+func New(ctx context.Context, unixSock string, a agent.AttestationAgent, logger *slog.Logger) (*TeeServer, error) {
 	var err error
 	nl, err := net.Listen("unix", unixSock)
 	if err != nil {
@@ -82,7 +82,7 @@ func (a *attestHandler) getToken(w http.ResponseWriter, r *http.Request) {
 		data, err := os.ReadFile(a.defaultTokenFile)
 
 		if err != nil {
-			a.logger.Print(err)
+			a.logger.Error(err.Error())
 			w.WriteHeader(http.StatusNotFound)
 			w.Write([]byte("failed to get the token"))
 			return
@@ -97,7 +97,7 @@ func (a *attestHandler) getToken(w http.ResponseWriter, r *http.Request) {
 
 		err := decoder.Decode(&tokenReq)
 		if err != nil {
-			a.logger.Print(err)
+			a.logger.Error(err.Error())
 			w.WriteHeader(http.StatusBadRequest)
 			w.Write([]byte(err.Error()))
 			return
@@ -122,7 +122,7 @@ func (a *attestHandler) getToken(w http.ResponseWriter, r *http.Request) {
 				TokenType: tokenReq.TokenType,
 			})
 		if err != nil {
-			a.logger.Print(err)
+			a.logger.Error(err.Error())
 			w.WriteHeader(http.StatusBadRequest)
 			w.Write([]byte(err.Error()))
 			return
