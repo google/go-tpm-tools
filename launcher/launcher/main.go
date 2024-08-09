@@ -49,11 +49,6 @@ var mdsClient *metadata.Client
 var welcomeMessage = "TEE container launcher initiating"
 var exitMessage = "TEE container launcher exiting"
 
-type LauncherLog struct {
-	Success bool
-	Latency int64
-}
-
 var start time.Time
 
 func main() {
