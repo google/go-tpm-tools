@@ -115,13 +115,13 @@ func main() {
 		}
 		msg, ok := rcMessage[exitCode]
 		if ok {
-			logger.Printf("%s, exit code: %d (%s)\n", exitMessage, exitCode, msg)
+			logger.Error(fmt.Sprintf("TEE container launcher exiting with exit code: %d (%s)\n", exitCode, msg))
 		} else {
-			logger.Printf("%s, exit code: %d\n", exitMessage, exitCode)
+			logger.Error(fmt.Sprintf("TEE container launcher exiting with exit code: %d\n", exitCode))
 		}
 	}()
-	if err = startLauncher(ctx, launchSpec, serialConsole); err != nil {
-		logger.Println(err)
+	if err = startLauncher(launchSpec, serialConsole); err != nil {
+		logger.Error(err.Error())
 	}
 
 	workloadDuration := time.Now().Sub(start)
@@ -162,8 +162,8 @@ func getExitCode(isHardened bool, restartPolicy spec.RestartPolicy, err error) i
 	return exitCode
 }
 
-func startLauncher(ctx context.Context, launchSpec spec.LaunchSpec, serialConsole *os.File) error {
-	logger.Printf("Launch Spec: %+v\n", launchSpec)
+func startLauncher(launchSpec spec.LaunchSpec, serialConsole *os.File) error {
+	logger.Info(fmt.Sprintf("Launch Spec: %+v\n", launchSpec))
 	containerdClient, err := containerd.New(defaults.DefaultAddress)
 	if err != nil {
 		return &launcher.RetryableError{Err: err}
@@ -194,7 +194,7 @@ func startLauncher(ctx context.Context, launchSpec spec.LaunchSpec, serialConsol
 	launchDuration := time.Now().Sub(start)
 	logger.Info("Launch completed", slog.Int64("latency", int64(launchDuration)))
 
-	ctx = namespaces.WithNamespace(ctx, namespaces.Default)
+	ctx := namespaces.WithNamespace(context.Background(), namespaces.Default)
 	r, err := launcher.NewRunner(ctx, containerdClient, token, launchSpec, mdsClient, tpm, logger, serialConsole)
 	if err != nil {
 		return err
