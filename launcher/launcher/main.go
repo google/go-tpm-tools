@@ -6,11 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"os/exec"
 	"regexp"
 	"strings"
+	"time"
 
 	"cloud.google.com/go/compute/metadata"
 	"github.com/containerd/containerd"
@@ -42,20 +43,29 @@ var rcMessage = map[int]string{
 // BuildCommit shows the commit when building the binary, set by -ldflags when building
 var BuildCommit = "dev"
 
-var logger *log.Logger
+var logger *slog.Logger
 var mdsClient *metadata.Client
 
 var welcomeMessage = "TEE container launcher initiating"
 var exitMessage = "TEE container launcher exiting"
 
+type LauncherLog struct {
+	Success bool
+	Latency int64
+}
+
+var start time.Time
+
 func main() {
+	start = time.Now()
+
 	var exitCode int // by default exit code is 0
 	var err error
 	ctx := context.Background()
 
-	logger = log.Default()
+	logger = slog.Default()
 	// log.Default() outputs to stderr; change to stdout.
-	log.SetOutput(os.Stdout)
+	// log.SetOutput(os.Stdout)
 	defer func() {
 		os.Exit(exitCode)
 	}()
@@ -68,13 +78,15 @@ func main() {
 		return
 	}
 	defer serialConsole.Close()
-	logger.SetOutput(io.MultiWriter(os.Stdout, serialConsole))
 
-	logger.Println(welcomeMessage)
+	handler := slog.NewJSONHandler(io.MultiWriter(os.Stdout, serialConsole), nil)
+	logger = slog.New(handler)
+
+	logger.Info(welcomeMessage)
 	logger.Printf("Build commit: %s\n", BuildCommit)
 
 	if err := verifyFsAndMount(); err != nil {
-		logger.Printf("failed to verify filesystem and mounts: %v\n", err)
+		logger.Error(fmt.Sprintf("failed to verify filesystem and mounts: %v\n", err))
 		exitCode = rebootRC
 		logger.Printf("%s, exit code: %d (%s)\n", exitMessage, exitCode, rcMessage[exitCode])
 		return
@@ -98,7 +110,7 @@ func main() {
 	defer func() {
 		// Catch panic to attempt to output to Cloud Logging.
 		if r := recover(); r != nil {
-			logger.Println("Panic:", r)
+			logger.Error(fmt.Sprintf("Panic: %v", r))
 			exitCode = 2
 		}
 		msg, ok := rcMessage[exitCode]
@@ -111,6 +123,9 @@ func main() {
 	if err = startLauncher(ctx, launchSpec, serialConsole); err != nil {
 		logger.Println(err)
 	}
+
+	workloadDuration := time.Now().Sub(start)
+	logger.Info("Workload completed", slog.Int64("latency", int64(workloadDuration)))
 
 	exitCode = getExitCode(launchSpec.Hardened, launchSpec.RestartPolicy, err)
 }
@@ -173,8 +188,11 @@ func startLauncher(ctx context.Context, launchSpec spec.LaunchSpec, serialConsol
 
 	token, err := registryauth.RetrieveAuthToken(ctx, mdsClient)
 	if err != nil {
-		logger.Printf("failed to retrieve auth token: %v, using empty auth for image pulling\n", err)
+		logger.Info(fmt.Sprintf("failed to retrieve auth token: %v, using empty auth for image pulling\n", err))
 	}
+
+	launchDuration := time.Now().Sub(start)
+	logger.Info("Launch completed", slog.Int64("latency", int64(launchDuration)))
 
 	ctx = namespaces.WithNamespace(ctx, namespaces.Default)
 	r, err := launcher.NewRunner(ctx, containerdClient, token, launchSpec, mdsClient, tpm, logger, serialConsole)
@@ -183,6 +201,8 @@ func startLauncher(ctx context.Context, launchSpec spec.LaunchSpec, serialConsol
 	}
 	defer r.Close(ctx)
 
+	// Start tracking time for workload execution.
+	start = time.Now()
 	return r.Run(ctx)
 }
 
