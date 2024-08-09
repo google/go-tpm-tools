@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"net/http"
 	"sync"
 	"time"
@@ -58,7 +59,7 @@ type agent struct {
 	sigsFetcher      signaturediscovery.Fetcher
 	cosCel           cel.CEL
 	launchSpec       spec.LaunchSpec
-	logger           *log.Logger
+	logger           *slog.Logger
 	sigsCache        *sigsCache
 }
 
@@ -69,7 +70,7 @@ type agent struct {
 // - principalFetcher is a func to fetch GCE principal tokens for a given audience.
 // - signaturesFetcher is a func to fetch container image signatures associated with the running workload.
 // - logger will log any partial errors returned by VerifyAttestation.
-func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher util.TpmKeyFetcher, verifierClient verifier.Client, principalFetcher principalIDTokenFetcher, sigsFetcher signaturediscovery.Fetcher, launchSpec spec.LaunchSpec, logger *log.Logger) (AttestationAgent, error) {
+func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher util.TpmKeyFetcher, verifierClient verifier.Client, principalFetcher principalIDTokenFetcher, sigsFetcher signaturediscovery.Fetcher, launchSpec spec.LaunchSpec, logger *slog.Logger) (AttestationAgent, error) {
 	// Fetched the AK and save it, so the agent doesn't need to create a new key everytime
 	ak, err := akFetcher(tpm)
 	if err != nil {
@@ -139,7 +140,7 @@ func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error
 	signatures := a.sigsCache.get()
 	if len(signatures) > 0 {
 		req.ContainerImageSignatures = signatures
-		a.logger.Printf("Found container image signatures: %v\n", signatures)
+		a.logger.Info(fmt.Sprintf("Found container image signatures: %v\n", signatures))
 	}
 
 	resp, err := a.client.VerifyAttestation(ctx, req)
@@ -147,7 +148,7 @@ func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error
 		return nil, err
 	}
 	if len(resp.PartialErrs) > 0 {
-		a.logger.Printf("Partial errors from VerifyAttestation: %v", resp.PartialErrs)
+		a.logger.Error(fmt.Sprintf("Partial errors from VerifyAttestation: %v", resp.PartialErrs))
 	}
 	return resp.ClaimsToken, nil
 }
