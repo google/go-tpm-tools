@@ -140,7 +140,7 @@ func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error
 	signatures := a.sigsCache.get()
 	if len(signatures) > 0 {
 		req.ContainerImageSignatures = signatures
-		a.logger.Info(fmt.Sprintf("Found container image signatures: %v\n", signatures))
+		a.logger.Info("Found container image signatures: %v\n", "signatures", signatures)
 	}
 
 	resp, err := a.client.VerifyAttestation(ctx, req)
@@ -164,7 +164,7 @@ func (a *agent) attest(nonce []byte, cel []byte) (*pb.Attestation, error) {
 func (a *agent) Refresh(ctx context.Context) error {
 	signatures := fetchContainerImageSignatures(ctx, a.sigsFetcher, a.launchSpec.SignedImageRepos, defaultRetryPolicy, a.logger)
 	a.sigsCache.set(signatures)
-	a.logger.Printf("Refreshed container image signature cache: %v\n", signatures)
+	a.logger.Info("Refreshed container image signature cache", "signatures", signatures)
 	return nil
 }
 

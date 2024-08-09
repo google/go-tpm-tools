@@ -380,7 +380,7 @@ func (r *ContainerRunner) measureMemoryMonitor() error {
 	if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.MemoryMonitorType, EventContent: []byte{enabled}}); err != nil {
 		return err
 	}
-	r.logger.Println("Successfully measured memory monitoring event")
+	r.logger.Info("Successfully measured memory monitoring event")
 	return nil
 }
 
@@ -556,19 +556,18 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 
 	// Avoids breaking existing memory monitoring tests that depend on this log.
 	if r.launchSpec.MonitoringEnabled == spec.None {
-		r.logger.Printf("MemoryMonitoring is disabled by the VM operator")
+		r.logger.Info("MemoryMonitoring is disabled by the VM operator")
 	}
 
 	var streamOpt cio.Opt
 	switch r.launchSpec.LogRedirect {
 	case spec.Nowhere:
 		streamOpt = cio.WithStreams(nil, nil, nil)
-		r.logger.Info(fmt.Sprintf("Container stdout/stderr will not be redirected."))
+		r.logger.Info("Container stdout/stderr will not be redirected.")
 	case spec.Everywhere:
 		w := io.MultiWriter(os.Stdout, r.serialConsole)
 		streamOpt = cio.WithStreams(nil, w, w)
-		r.logger.Info(fmt.Sprintf("Container stdout/stderr will be redirected to serial and Cloud Logging. " +
-			"This may result in performance issues due to slow serial console writes."))
+		r.logger.Info("Container stdout/stderr will be redirected to serial and Cloud Logging. This may result in performance issues due to slow serial console writes.")
 	case spec.CloudLogging:
 		streamOpt = cio.WithStreams(nil, os.Stdout, os.Stdout)
 		r.logger.Info(fmt.Sprintf("Container stdout/stderr will be redirected to Cloud Logging."))

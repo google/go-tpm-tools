@@ -72,9 +72,11 @@ func main() {
 
 	serialConsole, err := os.OpenFile("/dev/console", os.O_WRONLY, 0)
 	if err != nil {
-		logger.Printf("failed to open serial console for writing: %v\n", err)
+		logger.Error("failed to open serial console for writing", "error", err)
 		exitCode = failRC
-		logger.Printf("%s, exit code: %d (%s)\n", exitMessage, exitCode, rcMessage[exitCode])
+		logger.Error(exitMessage,
+			"exit_code", exitCode,
+			"exit_msg", rcMessage[exitCode])
 		return
 	}
 	defer serialConsole.Close()
@@ -82,13 +84,12 @@ func main() {
 	handler := slog.NewJSONHandler(io.MultiWriter(os.Stdout, serialConsole), nil)
 	logger = slog.New(handler)
 
-	logger.Info(welcomeMessage)
-	logger.Printf("Build commit: %s\n", BuildCommit)
+	logger.Info(welcomeMessage, "build_commit", BuildCommit)
 
 	if err := verifyFsAndMount(); err != nil {
 		logger.Error(fmt.Sprintf("failed to verify filesystem and mounts: %v\n", err))
 		exitCode = rebootRC
-		logger.Printf("%s, exit code: %d (%s)\n", exitMessage, exitCode, rcMessage[exitCode])
+		logger.Error(exitMessage, "exit_code", exitCode, "exit_msg", rcMessage[exitCode])
 		return
 	}
 
@@ -100,10 +101,10 @@ func main() {
 	mdsClient = metadata.NewClient(nil)
 	launchSpec, err := spec.GetLaunchSpec(ctx, logger, mdsClient)
 	if err != nil {
-		logger.Printf("failed to get launchspec, make sure you're running inside a GCE VM: %v\n", err)
+		logger.Error("failed to get launchspec, make sure you're running inside a GCE VM", "error", err)
 		// if cannot get launchSpec, exit directly
 		exitCode = failRC
-		logger.Printf("%s, exit code: %d (%s)\n", exitMessage, exitCode, rcMessage[exitCode])
+		logger.Error(exitMessage, "exit_code", exitCode, "exit_msg", rcMessage[exitCode])
 		return
 	}
 
@@ -115,9 +116,9 @@ func main() {
 		}
 		msg, ok := rcMessage[exitCode]
 		if ok {
-			logger.Error(fmt.Sprintf("TEE container launcher exiting with exit code: %d (%s)\n", exitCode, msg))
+			logger.Error(exitMessage, "exit_code", exitCode, "exit_msg", msg)
 		} else {
-			logger.Error(fmt.Sprintf("TEE container launcher exiting with exit code: %d\n", exitCode))
+			logger.Error(exitMessage, "exit_code", exitCode)
 		}
 	}()
 	if err = startLauncher(launchSpec, serialConsole); err != nil {
@@ -125,7 +126,7 @@ func main() {
 	}
 
 	workloadDuration := time.Now().Sub(start)
-	logger.Info("Workload completed", slog.Int64("latency", int64(workloadDuration)))
+	logger.Info("Workload completed", "latency", int64(workloadDuration))
 
 	exitCode = getExitCode(launchSpec.Hardened, launchSpec.RestartPolicy, err)
 }
