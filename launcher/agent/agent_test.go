@@ -113,7 +113,7 @@ func TestAttest(t *testing.T) {
 
 			agent, err := CreateAttestationAgent(tpm, client.AttestationKeyECC, verifierClient, tc.principalIDTokenFetcher, tc.containerSignaturesFetcher, tc.launchSpec, log.Default())
 			if err != nil {
-				t.Fatalf("falied to create an attestation agent %v", err)
+				t.Fatalf("failed to create an attestation agent %v", err)
 			}
 			err = measureFakeEvents(agent)
 			if err != nil {
