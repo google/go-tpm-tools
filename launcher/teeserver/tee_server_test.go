@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -44,7 +44,7 @@ func TestGetDefaultToken(t *testing.T) {
 	// An empty attestHandler is fine for now as it is not being used
 	// in the handler.
 	ah := attestHandler{defaultTokenFile: tmpToken,
-		logger: log.Default(),
+		logger: slog.Default(),
 		attestAgent: fakeAttestationAgent{
 			attestFunc: func(context.Context, agent.AttestAgentOpts) ([]byte, error) {
 				t.Errorf("This method should not be called")
@@ -150,7 +150,7 @@ func TestCustomToken(t *testing.T) {
 		// An empty attestHandler is fine for now as it is not being used
 		// in the handler.
 		ah := attestHandler{defaultTokenFile: tmpToken,
-			logger: log.Default(),
+			logger: slog.Default(),
 			attestAgent: fakeAttestationAgent{
 				attestFunc: test.attestFunc,
 			}}
