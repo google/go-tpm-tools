@@ -121,7 +121,7 @@ func main() {
 	}
 
 	workloadDuration := time.Since(start)
-	logger.Info("Workload completed", "latency", int64(workloadDuration))
+	logger.Info("Workload completed", "latency_sec", int64(workloadDuration.Seconds()))
 
 	exitCode = getExitCode(launchSpec.Hardened, launchSpec.RestartPolicy, err)
 }
@@ -188,7 +188,7 @@ func startLauncher(launchSpec spec.LaunchSpec, serialConsole *os.File) error {
 	}
 
 	launchDuration := time.Since(start)
-	logger.Info("Launch completed", slog.Int64("latency", int64(launchDuration)))
+	logger.Info("Launch completed", slog.Int64("latency_sec", int64(launchDuration.Seconds())))
 
 	ctx := namespaces.WithNamespace(context.Background(), namespaces.Default)
 	r, err := launcher.NewRunner(ctx, containerdClient, token, launchSpec, mdsClient, tpm, logger, serialConsole)
