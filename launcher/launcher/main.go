@@ -2,6 +2,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -158,6 +159,21 @@ func getExitCode(isHardened bool, restartPolicy spec.RestartPolicy, err error) i
 	return exitCode
 }
 
+func getUptime() (string, error) {
+	file, err := os.ReadFile("/proc/uptime")
+	if err != nil {
+		return "", fmt.Errorf("error opening /proc/uptime")
+	}
+
+	// proc/uptime contains two values separated by a space. We only need the first.
+	split := bytes.Split(file, []byte(" "))
+	if len(split) != 2 {
+		return "", fmt.Errorf("unexpected contents")
+	}
+
+	return string(split[0]), nil
+}
+
 func startLauncher(launchSpec spec.LaunchSpec, serialConsole *os.File) error {
 	logger.Info(fmt.Sprintf("Launch Spec: %+v\n", launchSpec))
 	containerdClient, err := containerd.New(defaults.DefaultAddress)
@@ -187,8 +203,11 @@ func startLauncher(launchSpec spec.LaunchSpec, serialConsole *os.File) error {
 		logger.Info(fmt.Sprintf("failed to retrieve auth token: %v, using empty auth for image pulling\n", err))
 	}
 
-	launchDuration := time.Since(start)
-	logger.Info("Launch completed", slog.Int64("latency_sec", int64(launchDuration.Seconds())))
+	uptime, err := getUptime()
+	if err != nil {
+		logger.Error("error reading VM uptime", "error", err.Error())
+	}
+	logger.Info("Launch completed", "latency_sec", uptime)
 
 	ctx := namespaces.WithNamespace(context.Background(), namespaces.Default)
 	r, err := launcher.NewRunner(ctx, containerdClient, token, launchSpec, mdsClient, tpm, logger, serialConsole)
