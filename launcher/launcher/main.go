@@ -165,13 +165,13 @@ func getExitCode(isHardened bool, restartPolicy spec.RestartPolicy, err error) i
 func getUptime() (string, error) {
 	file, err := os.ReadFile("/proc/uptime")
 	if err != nil {
-		return "", fmt.Errorf("error opening /proc/uptime")
+		return "", fmt.Errorf("error opening /proc/uptime: %v", err)
 	}
 
 	// proc/uptime contains two values separated by a space. We only need the first.
 	split := bytes.Split(file, []byte(" "))
 	if len(split) != 2 {
-		return "", fmt.Errorf("unexpected contents")
+		return "", fmt.Errorf("Unexpected /proc/uptime contents: %s", file)
 	}
 
 	return string(split[0]), nil
