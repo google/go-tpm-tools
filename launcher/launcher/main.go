@@ -133,9 +133,9 @@ func main() {
 		}
 		msg, ok := rcMessage[exitCode]
 		if ok {
-			logger.Error(exitMessage, "exit_code", exitCode, "exit_msg", msg)
+			logger.Info(exitMessage, "exit_code", exitCode, "exit_msg", msg)
 		} else {
-			logger.Error(exitMessage, "exit_code", exitCode)
+			logger.Info(exitMessage, "exit_code", exitCode)
 		}
 	}()
 	if err = startLauncher(launchSpec, serialConsole); err != nil {
@@ -143,7 +143,10 @@ func main() {
 	}
 
 	workloadDuration := time.Since(start)
-	logger.Info("Workload completed", "latency_sec", int64(workloadDuration.Seconds()))
+	logger.Info("Workload completed",
+		"workload", launchSpec.ImageRef,
+		"latency_sec", workloadDuration.Seconds(),
+	)
 
 	exitCode = getExitCode(launchSpec.Hardened, launchSpec.RestartPolicy, err)
 }
