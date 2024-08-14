@@ -19,6 +19,7 @@ import (
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/launcher/internal/signaturediscovery"
 	"github.com/google/go-tpm-tools/launcher/spec"
+	pb "github.com/google/go-tpm-tools/proto/attest"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/google/go-tpm-tools/verifier/oci"
 	"github.com/google/go-tpm-tools/verifier/util"
@@ -117,12 +118,10 @@ func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error
 		return nil, err
 	}
 
-	a.tpmMu.Lock()
-	attestation, err := a.fetchedAK.Attest(client.AttestOpts{Nonce: challenge.Nonce, CanonicalEventLog: buf.Bytes(), CertChainFetcher: http.DefaultClient})
+	attestation, err := a.attest(challenge.Nonce, buf.Bytes())
 	if err != nil {
 		return nil, fmt.Errorf("failed to attest: %v", err)
 	}
-	a.tpmMu.Unlock()
 
 	if err != nil {
 		return nil, err
@@ -158,6 +157,12 @@ func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error
 		a.logger.Printf("Partial errors from VerifyAttestation: %v", resp.PartialErrs)
 	}
 	return resp.ClaimsToken, nil
+}
+
+func (a *agent) attest(nonce []byte, cel []byte) (*pb.Attestation, error) {
+	a.tpmMu.Lock()
+	defer a.tpmMu.Unlock()
+	return a.fetchedAK.Attest(client.AttestOpts{Nonce: nonce, CanonicalEventLog: cel, CertChainFetcher: http.DefaultClient})
 }
 
 // Refresh refreshes the internal state of the attestation agent.
