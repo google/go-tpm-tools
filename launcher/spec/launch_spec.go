@@ -5,15 +5,22 @@ package spec
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
 	"strings"
 
 	"cloud.google.com/go/compute/metadata"
+
+	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/launcher/internal/experiments"
+	"github.com/google/go-tpm-tools/launcher/internal/launchermount"
 	"github.com/google/go-tpm-tools/verifier/util"
 )
+
+// MaxInt64 is the maximum value of a signed int64.
+const MaxInt64 = 9223372036854775807
 
 // RestartPolicy is the enum for the container restart policy.
 type RestartPolicy string
@@ -68,6 +75,8 @@ const (
 	attestationServiceAddrKey  = "tee-attestation-service-endpoint"
 	logRedirectKey             = "tee-container-log-redirect"
 	memoryMonitoringEnable     = "tee-monitoring-memory-enable"
+	devShmSizeKey              = "tee-dev-shm-size-kb"
+	mountKey                   = "tee-mount"
 )
 
 const (
@@ -98,7 +107,10 @@ type LaunchSpec struct {
 	Hardened                   bool
 	MemoryMonitoringEnabled    bool
 	LogRedirect                LogRedirectLocation
-	Experiments                experiments.Experiments
+	Mounts                     []launchermount.Mount
+	// DevShmSize is specified in kiB.
+	DevShmSize  int64
+	Experiments experiments.Experiments
 }
 
 // UnmarshalJSON unmarshals an instance attributes list in JSON format from the metadata
@@ -115,7 +127,7 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 	}
 
 	s.RestartPolicy = RestartPolicy(unmarshaledMap[restartPolicyKey])
-	// set the default restart policy to "Never" for now
+	// Set the default restart policy to "Never" for now.
 	if s.RestartPolicy == "" {
 		s.RestartPolicy = Never
 	}
@@ -139,14 +151,14 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 		}
 	}
 
-	// populate cmd override
+	// Populate cmd override.
 	if val, ok := unmarshaledMap[cmdKey]; ok && val != "" {
 		if err := json.Unmarshal([]byte(val), &s.Cmd); err != nil {
 			return err
 		}
 	}
 
-	// populate all env vars
+	// Populate all env vars.
 	for k, v := range unmarshaledMap {
 		if strings.HasPrefix(k, envKeyPrefix) {
 			s.Envs = append(s.Envs, EnvVar{strings.TrimPrefix(k, envKeyPrefix), v})
@@ -164,6 +176,29 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 
 	s.AttestationServiceAddr = unmarshaledMap[attestationServiceAddrKey]
 
+	// Populate /dev/shm size override.
+	if val, ok := unmarshaledMap[devShmSizeKey]; ok && val != "" {
+		size, err := strconv.ParseUint(val, 10, 64)
+		if err != nil {
+			return fmt.Errorf("failed to convert %v into uint64, got: %v", devShmSizeKey, val)
+		}
+		s.DevShmSize = int64(size)
+	}
+
+	// Populate mount override.
+	// https://cloud.google.com/compute/docs/disks/set-persistent-device-name-in-linux-vm
+	// https://cloud.google.com/compute/docs/disks/add-local-ssd
+	if val, ok := unmarshaledMap[mountKey]; ok && val != "" {
+		mounts := strings.Split(val, ";")
+		for _, mount := range mounts {
+			specMnt, err := processMount(mount)
+			if err != nil {
+				return err
+			}
+			s.Mounts = append(s.Mounts, specMnt)
+		}
+	}
+
 	return nil
 }
 
@@ -180,6 +215,20 @@ func GetLaunchSpec(ctx context.Context, client *metadata.Client) (LaunchSpec, er
 	spec := &LaunchSpec{}
 	if err := spec.UnmarshalJSON([]byte(data)); err != nil {
 		return LaunchSpec{}, err
+	}
+
+	var errs []error
+	for _, mnt := range spec.Mounts {
+		if err := validateMount(mnt); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if len(errs) != 0 {
+		return LaunchSpec{}, fmt.Errorf("failed to validate mounts: %v", errors.Join(errs...))
+	}
+
+	if err := validateMemorySizeKb(uint64(spec.DevShmSize)); err != nil {
+		return LaunchSpec{}, fmt.Errorf("failed to validate /dev/shm size: %v", err)
 	}
 
 	spec.ProjectID, err = client.ProjectIDWithContext(ctx)
@@ -208,6 +257,84 @@ func isHardened(kernelCmd string) bool {
 		}
 	}
 	return false
+}
+
+func processMount(singleMount string) (launchermount.Mount, error) {
+	mntConfig := make(map[string]string)
+	var mntType string
+	mountOpts := strings.Split(singleMount, ",")
+	for _, mountOpt := range mountOpts {
+		name, val, err := cel.ParseEnvVar(mountOpt)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse mount option: %w", err)
+		}
+		switch name {
+		case launchermount.TypeKey:
+			mntType = val
+		case launchermount.SourceKey:
+		case launchermount.DestinationKey:
+		case launchermount.SizeKey:
+		default:
+			return nil, fmt.Errorf("found unknown mount option: %v, expect keys of %v", mountOpt, launchermount.AllMountKeys)
+		}
+		mntConfig[name] = val
+	}
+
+	switch mntType {
+	case launchermount.TypeTmpfs:
+		return launchermount.CreateTmpfsMount(mntConfig)
+	default:
+		return nil, fmt.Errorf("found unknown or unspecified mount type: %v, expect one of types [%v]", mountOpts, launchermount.TypeTmpfs)
+	}
+}
+
+func validateMount(mnt launchermount.Mount) error {
+	switch v := mnt.(type) {
+	case launchermount.TmpfsMount:
+		return validateMemorySizeKb(v.Size / 1024)
+	default:
+		return fmt.Errorf("got unknown mount type: %T", v)
+	}
+}
+
+// Ensures that system free memory is larger than the specified memory size.
+func validateMemorySizeKb(memSize uint64) error {
+	freeMem, err := getLinuxFreeMem()
+	if err != nil {
+		return fmt.Errorf("failed to get free memory: %v", err)
+	}
+	if memSize > freeMem {
+		return fmt.Errorf("got a /dev/shm size (%v) larger than free memory (%v) kB", memSize, freeMem)
+	}
+	if memSize > MaxInt64 {
+		return fmt.Errorf("got a size greater than max int64: %v", memSize)
+	}
+	return nil
+}
+
+func getLinuxFreeMem() (uint64, error) {
+	meminfo, err := os.ReadFile("/proc/meminfo")
+	if err != nil {
+		return 0, fmt.Errorf("failed to read /proc/meminfo: %w", err)
+	}
+	for _, memtype := range strings.Split(string(meminfo), "\n") {
+		if !strings.Contains(memtype, "MemFree") {
+			continue
+		}
+		split := strings.Fields(memtype)
+		if len(split) != 3 {
+			return 0, fmt.Errorf("found invalid MemInfo entry: got: %v, expected format: MemFree:        <amount> kB", memtype)
+		}
+		if split[2] != "kB" {
+			return 0, fmt.Errorf("found invalid MemInfo entry: got: %v, expected format: MemFree:        <amount> kB", memtype)
+		}
+		freeMem, err := strconv.ParseUint(split[1], 10, 64)
+		if err != nil {
+			return 0, fmt.Errorf("failed to convert MemFree to uint64: %v", memtype)
+		}
+		return freeMem, nil
+	}
+	return 0, fmt.Errorf("failed to find MemFree in /proc/meminfo: %v", string(meminfo))
 }
 
 func readCmdline() (string, error) {

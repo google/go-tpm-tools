@@ -1,0 +1,112 @@
+substitutions:
+  '_IMAGE_NAME': ''
+  '_IMAGE_PROJECT': ''
+  '_CLEANUP': 'true'
+  '_VM_NAME_PREFIX': 'cs-mounts-test'
+  '_ZONE': 'us-west1-a'
+  '_WORKLOAD_IMAGE': 'us-west1-docker.pkg.dev/confidential-space-images-dev/cs-integ-test-images/mounts_workload:latest'
+  '_DEV_SHM_SIZE_KB': '128000'
+  '_TMPFS_SIZE_KB': '222'
+steps:
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CreateVMWithMountsAllowed
+  entrypoint: 'bash'
+  env:
+  - 'BUILD_ID=$BUILD_ID'
+  - '_DEV_SHM_SIZE_KB=$_DEV_SHM_SIZE_KB'
+  - '_TMPFS_SIZE_KB=$_TMPFS_SIZE_KB'
+  args: ['create_vm.sh','-i', '${_IMAGE_NAME}',
+          '-p', '${_IMAGE_PROJECT}',
+          '-m', '^~^tee-image-reference=${_WORKLOAD_IMAGE}~tee-container-log-redirect=true~tee-mount=type=tmpfs,source=tmpfs,destination=/tmp/sized,size=${_TMPFS_SIZE_KB}000~tee-dev-shm-size-kb=${_DEV_SHM_SIZE_KB}',
+          '-n', '${_VM_NAME_PREFIX}-${BUILD_ID}-allowed',
+          '-z', '${_ZONE}',
+        ]
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CreateVMWithMountsDenied
+  entrypoint: 'bash'
+  env:
+  - 'BUILD_ID=$BUILD_ID'
+  args: ['create_vm.sh','-i', '${_IMAGE_NAME}',
+          '-p', '${_IMAGE_PROJECT}',
+          '-m', '^~^tee-image-reference=${_WORKLOAD_IMAGE}~tee-container-log-redirect=true~tee-mount=type=tmpfs,source=tmpfs,destination=/disallowed',
+          '-n', '${_VM_NAME_PREFIX}-${BUILD_ID}-denied',
+          '-z', '${_ZONE}',
+        ]
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CheckMountsAllowed
+  env:
+  - '_VM_NAME_PREFIX=$_VM_NAME_PREFIX'
+  - 'BUILD_ID=$BUILD_ID'
+  - '_ZONE=$_ZONE'
+  - '_DEV_SHM_SIZE_KB=$_DEV_SHM_SIZE_KB'
+  - '_TMPFS_SIZE_KB=$_TMPFS_SIZE_KB'
+  script: |
+    #!/bin/bash
+    set -euo pipefail
+    source util/read_serial.sh
+
+    sleep 45
+    SERIAL_OUTPUT=$(read_serial ${_VM_NAME_PREFIX}-${BUILD_ID}-allowed ${_ZONE})
+    echo $SERIAL_OUTPUT
+    if echo $SERIAL_OUTPUT | grep -q "tmpfs.*${_TMPFS_SIZE_KB}.*/tmp/sized"
+    then
+        echo "- Mount launch policy verified for sized tmpfs"
+    else
+        echo "FAILED: Mount launch policy verification for sized tmpfs"
+        echo 'TEST FAILED' > /workspace/status.txt
+        echo $SERIAL_OUTPUT
+    fi
+    if echo $SERIAL_OUTPUT | grep -q "shm.*${_DEV_SHM_SIZE_KB}.*/dev/shm"
+    then
+        echo "- Mount launch policy verified for /dev/shm size"
+    else
+        echo "FAILED: Mount launch policy verification for /dev/shm size"
+        echo 'TEST FAILED' > /workspace/status.txt
+        echo $SERIAL_OUTPUT
+    fi
+
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CheckMountsDenied
+  env:
+  - '_VM_NAME_PREFIX=$_VM_NAME_PREFIX'
+  - 'BUILD_ID=$BUILD_ID'
+  - '_ZONE=$_ZONE'
+  script: |
+    #!/bin/bash
+    set -euo pipefail
+    source util/read_serial.sh
+
+    sleep 45
+    SERIAL_OUTPUT=$(read_serial ${_VM_NAME_PREFIX}-${BUILD_ID}-denied ${_ZONE})
+    if echo $SERIAL_OUTPUT | grep -q "policy only allows mounts in the following paths"
+    then
+        echo "- Mount launch policy verified for disallowed mounts"
+    else
+        echo "FAILED: Mount launch policy verification for disallowed mounts"
+        echo 'TEST FAILED' > /workspace/status.txt
+        echo $SERIAL_OUTPUT
+    fi
+
+  waitFor: ['CreateVMWithMountsDenied']
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CleanUpVMWithMountsAllowed
+  entrypoint: 'bash'
+  env:
+  - 'CLEANUP=$_CLEANUP'
+  args: ['cleanup.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}-allowed', '${_ZONE}']
+  waitFor: ['CheckMountsAllowed']
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CleanUpVMWithMountsDenied
+  entrypoint: 'bash'
+  env:
+  - 'CLEANUP=$_CLEANUP'
+  args: ['cleanup.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}-denied', '${_ZONE}']
+  waitFor: ['CheckMountsDenied']
+
+# Must come after cleanup.
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CheckFailure
+  entrypoint: 'bash'
+  env:
+  - 'BUILD_ID=$BUILD_ID'
+  args: ['check_failure.sh']

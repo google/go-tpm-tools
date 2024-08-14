@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-tpm-tools/launcher/internal/launchermount"
 )
 
 func TestLaunchPolicy(t *testing.T) {
@@ -524,6 +525,111 @@ func TestVerify(t *testing.T) {
 				Hardened:    false,
 			},
 			false,
+		},
+		{
+			"allowed mount dest",
+			LaunchPolicy{
+				AllowedMountDestinations: []string{"/a"},
+			},
+			LaunchSpec{
+				Mounts: []launchermount.Mount{
+					launchermount.TmpfsMount{Destination: "/a/b"},
+				},
+			},
+			false,
+		},
+		{
+			"allowed mount dest same dir",
+			LaunchPolicy{
+				AllowedMountDestinations: []string{"/a"},
+			},
+			LaunchSpec{
+				Mounts: []launchermount.Mount{
+					launchermount.TmpfsMount{Destination: "/a"},
+				},
+			},
+			false,
+		},
+		{
+			"allowed mount dest multiple",
+			LaunchPolicy{
+				AllowedMountDestinations: []string{"/a", "/b", "/c/d"},
+			},
+			LaunchSpec{
+				Mounts: []launchermount.Mount{
+					launchermount.TmpfsMount{Destination: "/a"},
+					launchermount.TmpfsMount{Destination: "/b"},
+					launchermount.TmpfsMount{Destination: "/c/d"},
+					launchermount.TmpfsMount{Destination: "/a/b"},
+					launchermount.TmpfsMount{Destination: "/a/b/c"},
+					launchermount.TmpfsMount{Destination: "/c/d/e"},
+					launchermount.TmpfsMount{Destination: "/c/d/f"},
+					launchermount.TmpfsMount{Destination: "/c/d/e/f/g/../b"},
+					launchermount.TmpfsMount{Destination: "/c/d/e/f/./../b"},
+					launchermount.TmpfsMount{Destination: "/c/d/e/f/./../../b"},
+				},
+			},
+			false,
+		},
+		{
+			"mount dest relative",
+			LaunchPolicy{
+				AllowedMountDestinations: []string{"/b"},
+			},
+			LaunchSpec{
+				Mounts: []launchermount.Mount{
+					launchermount.TmpfsMount{Destination: "/a/../b"},
+				},
+			},
+			false,
+		},
+		{
+			"mount dest not abs",
+			LaunchPolicy{
+				AllowedMountDestinations: []string{"/as"},
+			},
+			LaunchSpec{
+				Mounts: []launchermount.Mount{
+					launchermount.TmpfsMount{Destination: "asd"},
+				},
+			},
+			true,
+		},
+		{
+			"allowed mount dest not abs",
+			LaunchPolicy{
+				AllowedMountDestinations: []string{"as"},
+			},
+			LaunchSpec{
+				Mounts: []launchermount.Mount{
+					launchermount.TmpfsMount{Destination: "/asd"},
+				},
+			},
+			true,
+		},
+		{
+			"mount dest prefix but not subdir",
+			LaunchPolicy{
+				AllowedMountDestinations: []string{"/a"},
+			},
+			LaunchSpec{
+				Mounts: []launchermount.Mount{
+					launchermount.TmpfsMount{Destination: "/abcd"},
+				},
+			},
+			true,
+		},
+		{
+			"mount dest parent of allowed",
+			LaunchPolicy{
+				AllowedMountDestinations: []string{"/a/b"},
+			},
+			LaunchSpec{
+				Mounts: []launchermount.Mount{
+					launchermount.TmpfsMount{Destination: "/a"},
+				},
+			},
+			true,
 		},
 	}
 	for _, testCase := range testCases {
