@@ -171,7 +171,7 @@ func getUptime() (string, error) {
 	// proc/uptime contains two values separated by a space. We only need the first.
 	split := bytes.Split(file, []byte(" "))
 	if len(split) != 2 {
-		return "", fmt.Errorf("Unexpected /proc/uptime contents: %s", file)
+		return "", fmt.Errorf("unexpected /proc/uptime contents: %s", file)
 	}
 
 	return string(split[0]), nil
