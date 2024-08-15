@@ -68,7 +68,7 @@ func main() {
 
 	serialConsole, err := os.OpenFile("/dev/console", os.O_WRONLY, 0)
 	if err != nil {
-		logger.Error("failed to open serial console for writing", "error", err)
+		logger.Error(fmt.Sprintf("failed to open serial console for writing: %v", err))
 		exitCode = failRC
 		logger.Error(exitMessage,
 			"exit_code", exitCode,
@@ -97,7 +97,7 @@ func main() {
 	mdsClient = metadata.NewClient(nil)
 	launchSpec, err := spec.GetLaunchSpec(ctx, logger, mdsClient)
 	if err != nil {
-		logger.Error("failed to get launchspec, make sure you're running inside a GCE VM", "error", err)
+		logger.Error(fmt.Sprintf("failed to get launchspec, make sure you're running inside a GCE VM: %v", err))
 		// if cannot get launchSpec, exit directly
 		exitCode = failRC
 		logger.Error(exitMessage, "exit_code", exitCode, "exit_msg", rcMessage[exitCode])
@@ -208,7 +208,7 @@ func startLauncher(launchSpec spec.LaunchSpec, serialConsole *os.File) error {
 
 	uptime, err := getUptime()
 	if err != nil {
-		logger.Error("error reading VM uptime", "error", err.Error())
+		logger.Error(fmt.Sprintf("error reading VM uptime: %v", err))
 	}
 	logger.Info("Launch completed", "latency_sec", uptime)
 
