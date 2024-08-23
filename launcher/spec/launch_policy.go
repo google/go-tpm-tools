@@ -15,8 +15,8 @@ type LaunchPolicy struct {
 	AllowedCmdOverride       bool
 	AllowedLogRedirect       policy
 	AllowedMountDestinations []string
-	HardenedMonitoring       monitoringType
-	DebugMonitoring          monitoringType
+	HardenedImageMonitoring  monitoringType
+	DebugImageMonitoring     monitoringType
 }
 
 type policy int
@@ -126,21 +126,21 @@ func GetLaunchPolicy(imageLabels map[string]string) (LaunchPolicy, error) {
 	}
 
 	if v, ok := imageLabels[hardenedMonitoring]; ok {
-		launchPolicy.HardenedMonitoring, err = toMonitoringType(v)
+		launchPolicy.HardenedImageMonitoring, err = toMonitoringType(v)
 		if err != nil {
 			return LaunchPolicy{}, fmt.Errorf("invalid monitoring type for hardened image: %v", err)
 		}
 	} else {
-		launchPolicy.HardenedMonitoring = None
+		launchPolicy.HardenedImageMonitoring = None
 	}
 
 	if v, ok := imageLabels[debugMonitoring]; ok {
-		launchPolicy.DebugMonitoring, err = toMonitoringType(v)
+		launchPolicy.DebugImageMonitoring, err = toMonitoringType(v)
 		if err != nil {
 			return LaunchPolicy{}, fmt.Errorf("invalid monitoring type for debug image: %v", err)
 		}
 	} else {
-		launchPolicy.DebugMonitoring = Health
+		launchPolicy.DebugImageMonitoring = Health
 	}
 
 	if v, ok := imageLabels[mountDestinations]; ok {
@@ -178,9 +178,9 @@ func (p LaunchPolicy) Verify(ls LaunchSpec) error {
 		return fmt.Errorf("logging redirection only allowed on debug environment by image")
 	}
 
-	monitoringPolicy := p.DebugMonitoring
+	monitoringPolicy := p.DebugImageMonitoring
 	if ls.Hardened {
-		monitoringPolicy = p.HardenedMonitoring
+		monitoringPolicy = p.HardenedImageMonitoring
 	}
 
 	if ls.HealthMonitoringEnabled {
