@@ -28,7 +28,7 @@ type statsConfig struct {
 // For now we only consider collecting memory related metrics.
 // View the comprehensive configuration details on https://github.com/kubernetes/node-problem-detector/tree/master/pkg/systemstatsmonitor#detailed-configuration-options
 type SystemStatsConfig struct {
-	Cpu            *statsConfig `json:"cpu,omitempty"`
+	CPU            *statsConfig `json:"cpu,omitempty"`
 	Disk           *statsConfig `json:"disk,omitempty"`
 	Host           *statsConfig `json:"host,omitempty"`
 	Memory         *statsConfig `json:"memory,omitempty"`
@@ -44,7 +44,7 @@ func NewSystemStatsConfig() SystemStatsConfig {
 }
 
 var healthConfig = &SystemStatsConfig{
-	Cpu: &statsConfig{map[string]metricConfig{
+	CPU: &statsConfig{map[string]metricConfig{
 		"cpu/load_5m": {"cpu/load_5m"},
 	}},
 	Disk: &statsConfig{map[string]metricConfig{
