@@ -58,8 +58,8 @@ func TestLaunchPolicy(t *testing.T) {
 	for _, testcase := range testCases {
 		t.Run(testcase.testName, func(t *testing.T) {
 			// Add default values for policy fields. Not relevant to tested behavior.
-			testcase.expectedPolicy.HardenedImageMonitoring = None
-			testcase.expectedPolicy.DebugImageMonitoring = Health
+			testcase.expectedPolicy.HardenedImageMonitoring = none
+			testcase.expectedPolicy.DebugImageMonitoring = health
 
 			got, err := GetLaunchPolicy(testcase.imageLabels)
 			if err != nil {
@@ -86,8 +86,8 @@ func TestVerify(t *testing.T) {
 				AllowedEnvOverride:      []string{"foo"},
 				AllowedCmdOverride:      true,
 				AllowedLogRedirect:      always,
-				HardenedImageMonitoring: MemoryOnly,
-				DebugImageMonitoring:    MemoryOnly,
+				HardenedImageMonitoring: memoryOnly,
+				DebugImageMonitoring:    memoryOnly,
 			},
 			LaunchSpec{
 				Envs:                    []EnvVar{{Name: "foo", Value: "foo"}},
@@ -126,8 +126,8 @@ func TestVerify(t *testing.T) {
 		{
 			"memory monitor (never, enable, hardened): err",
 			LaunchPolicy{
-				HardenedImageMonitoring: None,
-				DebugImageMonitoring:    None,
+				HardenedImageMonitoring: none,
+				DebugImageMonitoring:    none,
 			},
 			LaunchSpec{
 				MemoryMonitoringEnabled: true,
@@ -139,8 +139,8 @@ func TestVerify(t *testing.T) {
 		{
 			"memory monitor (never, enable, debug): err",
 			LaunchPolicy{
-				HardenedImageMonitoring: None,
-				DebugImageMonitoring:    None,
+				HardenedImageMonitoring: none,
+				DebugImageMonitoring:    none,
 			},
 			LaunchSpec{
 				MemoryMonitoringEnabled: true,
@@ -152,8 +152,8 @@ func TestVerify(t *testing.T) {
 		{
 			"memory monitor (never, disable, hardened): noerr",
 			LaunchPolicy{
-				HardenedImageMonitoring: None,
-				DebugImageMonitoring:    None,
+				HardenedImageMonitoring: none,
+				DebugImageMonitoring:    none,
 			},
 			LaunchSpec{
 				MemoryMonitoringEnabled: false,
@@ -165,8 +165,8 @@ func TestVerify(t *testing.T) {
 		{
 			"memory monitor (never, disable, debug): noerr",
 			LaunchPolicy{
-				HardenedImageMonitoring: None,
-				DebugImageMonitoring:    None,
+				HardenedImageMonitoring: none,
+				DebugImageMonitoring:    none,
 			},
 			LaunchSpec{
 				MemoryMonitoringEnabled: false,
@@ -178,7 +178,7 @@ func TestVerify(t *testing.T) {
 		{
 			"memory monitor (debugonly, enable, hardened): err",
 			LaunchPolicy{
-				DebugImageMonitoring: MemoryOnly,
+				DebugImageMonitoring: memoryOnly,
 			},
 			LaunchSpec{
 				MemoryMonitoringEnabled: true,
@@ -190,7 +190,7 @@ func TestVerify(t *testing.T) {
 		{
 			"memory monitor (debugonly, enable, debug): noerr",
 			LaunchPolicy{
-				DebugImageMonitoring: MemoryOnly,
+				DebugImageMonitoring: memoryOnly,
 			},
 			LaunchSpec{
 				MemoryMonitoringEnabled: true,
@@ -202,7 +202,7 @@ func TestVerify(t *testing.T) {
 		{
 			"memory monitor (debugonly, disable, hardened): noerr",
 			LaunchPolicy{
-				DebugImageMonitoring: MemoryOnly,
+				DebugImageMonitoring: memoryOnly,
 			},
 			LaunchSpec{
 				MemoryMonitoringEnabled: false,
@@ -214,7 +214,7 @@ func TestVerify(t *testing.T) {
 		{
 			"memory monitor (debugonly, disable, debug): noerr",
 			LaunchPolicy{
-				DebugImageMonitoring: MemoryOnly,
+				DebugImageMonitoring: memoryOnly,
 			},
 			LaunchSpec{
 				MemoryMonitoringEnabled: false,
@@ -226,8 +226,8 @@ func TestVerify(t *testing.T) {
 		{
 			"memory monitor (always, enable, hardened): noerr",
 			LaunchPolicy{
-				HardenedImageMonitoring: MemoryOnly,
-				DebugImageMonitoring:    MemoryOnly,
+				HardenedImageMonitoring: memoryOnly,
+				DebugImageMonitoring:    memoryOnly,
 			},
 			LaunchSpec{
 				MemoryMonitoringEnabled: true,
@@ -239,8 +239,8 @@ func TestVerify(t *testing.T) {
 		{
 			"memory monitor (always, enable, debug): noerr",
 			LaunchPolicy{
-				HardenedImageMonitoring: MemoryOnly,
-				DebugImageMonitoring:    MemoryOnly,
+				HardenedImageMonitoring: memoryOnly,
+				DebugImageMonitoring:    memoryOnly,
 			},
 			LaunchSpec{
 				MemoryMonitoringEnabled: true,
@@ -252,8 +252,8 @@ func TestVerify(t *testing.T) {
 		{
 			"memory monitor (always, disable, hardened): noerr",
 			LaunchPolicy{
-				HardenedImageMonitoring: MemoryOnly,
-				DebugImageMonitoring:    MemoryOnly,
+				HardenedImageMonitoring: memoryOnly,
+				DebugImageMonitoring:    memoryOnly,
 			},
 			LaunchSpec{
 				MemoryMonitoringEnabled: false,
@@ -265,8 +265,8 @@ func TestVerify(t *testing.T) {
 		{
 			"memory monitor (always, disable, debug): noerr",
 			LaunchPolicy{
-				HardenedImageMonitoring: MemoryOnly,
-				DebugImageMonitoring:    MemoryOnly,
+				HardenedImageMonitoring: memoryOnly,
+				DebugImageMonitoring:    memoryOnly,
 			},
 			LaunchSpec{
 				MemoryMonitoringEnabled: false,

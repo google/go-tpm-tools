@@ -30,9 +30,9 @@ const (
 type monitoringType int
 
 const (
-	None monitoringType = iota
-	MemoryOnly
-	Health
+	none monitoringType = iota
+	memoryOnly
+	health
 )
 
 // String returns LaunchPolicy details.
@@ -82,14 +82,14 @@ const (
 func toMonitoringType(label string) (monitoringType, error) {
 	switch strings.ToUpper(label) {
 	case "NONE":
-		return None, nil
+		return none, nil
 	case "MEMORY_ONLY":
-		return MemoryOnly, nil
+		return memoryOnly, nil
 	case "HEALTH":
-		return Health, nil
+		return health, nil
 	}
 
-	return None, fmt.Errorf("Invalid monitoring type: %v", label)
+	return none, fmt.Errorf("invalid monitoring type: %v", label)
 }
 
 // GetLaunchPolicy takes in a map[string] string which should come from image labels,
@@ -131,7 +131,7 @@ func GetLaunchPolicy(imageLabels map[string]string) (LaunchPolicy, error) {
 			return LaunchPolicy{}, fmt.Errorf("invalid monitoring type for hardened image: %v", err)
 		}
 	} else {
-		launchPolicy.HardenedImageMonitoring = None
+		launchPolicy.HardenedImageMonitoring = none
 	}
 
 	if v, ok := imageLabels[debugMonitoring]; ok {
@@ -140,7 +140,7 @@ func GetLaunchPolicy(imageLabels map[string]string) (LaunchPolicy, error) {
 			return LaunchPolicy{}, fmt.Errorf("invalid monitoring type for debug image: %v", err)
 		}
 	} else {
-		launchPolicy.DebugImageMonitoring = Health
+		launchPolicy.DebugImageMonitoring = health
 	}
 
 	if v, ok := imageLabels[mountDestinations]; ok {
@@ -185,13 +185,13 @@ func (p LaunchPolicy) Verify(ls LaunchSpec) error {
 
 	if ls.HealthMonitoringEnabled {
 		// Return error if policy does not allow health monitoring.
-		if monitoringPolicy != Health {
+		if monitoringPolicy != health {
 			return fmt.Errorf("image does not allow health monitoring")
 		}
 	}
 
 	if ls.MemoryMonitoringEnabled {
-		if monitoringPolicy == None {
+		if monitoringPolicy == none {
 			return fmt.Errorf("image does not allow any monitoring")
 		}
 	}

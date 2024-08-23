@@ -59,6 +59,7 @@ var healthConfig = &SystemStatsConfig{
 	InvokeInterval: defaultInvokeIntervalString,
 }
 
+// EnableHealthMonitoringConfig overwrites system stats config with health monitoring config.
 func EnableHealthMonitoringConfig() error {
 	return healthConfig.WriteFile(systemStatsFilePath)
 }
@@ -82,6 +83,7 @@ func (ssc *SystemStatsConfig) WriteFile(path string) error {
 	return os.WriteFile(path, bytes, 0644)
 }
 
+// StartService starts Node Problem Detector.
 func StartService(logger *log.Logger) error {
 	s, err := systemctl.New()
 	if err != nil {
