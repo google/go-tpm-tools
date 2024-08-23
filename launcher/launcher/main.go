@@ -18,6 +18,7 @@ import (
 	"github.com/containerd/containerd/namespaces"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/launcher"
+	"github.com/google/go-tpm-tools/launcher/internal/healthmonitoring/nodeproblemdetector"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/registryauth"
 	"github.com/google/go-tpm-tools/launcher/spec"
@@ -93,6 +94,19 @@ func main() {
 		exitCode = failRC
 		logger.Printf("%s, exit code: %d (%s)\n", exitMessage, exitCode, rcMessage[exitCode])
 		return
+	}
+
+	if launchSpec.HealthMonitoringEnabled {
+		logger.Printf("Health Monitoring is enabled by the VM operator")
+
+		if err := nodeproblemdetector.EnableHealthMonitoringConfig(); err != nil {
+			logger.Printf("failed to enable Health Monitoring config: %v", err)
+			return
+		}
+
+		if err := nodeproblemdetector.StartService(logger); err != nil {
+			logger.Print(err)
+		}
 	}
 
 	defer func() {

@@ -29,8 +29,8 @@ import (
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/launcher/agent"
+	"github.com/google/go-tpm-tools/launcher/internal/healthmonitoring/nodeproblemdetector"
 	"github.com/google/go-tpm-tools/launcher/internal/signaturediscovery"
-	"github.com/google/go-tpm-tools/launcher/internal/systemctl"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/registryauth"
 	"github.com/google/go-tpm-tools/launcher/spec"
@@ -524,17 +524,9 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	// start node-problem-detector.service to collect memory related metrics.
 	if r.launchSpec.MemoryMonitoringEnabled {
 		r.logger.Println("MemoryMonitoring is enabled by the VM operator")
-		s, err := systemctl.New()
-		if err != nil {
-			return fmt.Errorf("failed to create systemctl client: %v", err)
+		if err := nodeproblemdetector.StartService(r.logger); err != nil {
+			return err
 		}
-		defer s.Close()
-
-		r.logger.Println("Starting a systemctl operation: systemctl start node-problem-detector.service")
-		if err := s.Start("node-problem-detector.service"); err != nil {
-			return fmt.Errorf("failed to start node-problem-detector.service: %v", err)
-		}
-		r.logger.Println("node-problem-detector.service successfully started.")
 	} else {
 		r.logger.Println("MemoryMonitoring is disabled by the VM operator")
 	}

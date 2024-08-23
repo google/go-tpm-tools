@@ -83,6 +83,7 @@ const (
 	attestationServiceAddrKey  = "tee-attestation-service-endpoint"
 	logRedirectKey             = "tee-container-log-redirect"
 	memoryMonitoringEnable     = "tee-monitoring-memory-enable"
+	healthMonitoringEnable     = "tee-health-monitoring-enable"
 	devShmSizeKey              = "tee-dev-shm-size-kb"
 	mountKey                   = "tee-mount"
 )
@@ -114,6 +115,7 @@ type LaunchSpec struct {
 	Region                     string
 	Hardened                   bool
 	MemoryMonitoringEnabled    bool
+	HealthMonitoringEnabled    bool
 	LogRedirect                LogRedirectLocation
 	Mounts                     []launchermount.Mount
 	// DevShmSize is specified in kiB.
@@ -154,10 +156,19 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 		s.SignedImageRepos = append(s.SignedImageRepos, imageRepos...)
 	}
 
+	
+	memoryProhibited := false
 	if val, ok := unmarshaledMap[memoryMonitoringEnable]; ok && val != "" {
 		if boolValue, err := strconv.ParseBool(val); err == nil {
 			s.MemoryMonitoringEnabled = boolValue
+			if !boolValue {
+				memoryProhibited = true
+			}
 		}
+	}
+
+	if val, ok := unmarshaledMap[healthMonitoringEnable]; ok && val != "" {
+		if memoryProhibited
 	}
 
 	// Populate cmd override.

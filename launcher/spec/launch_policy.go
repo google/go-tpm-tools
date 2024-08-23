@@ -14,8 +14,9 @@ type LaunchPolicy struct {
 	AllowedEnvOverride       []string
 	AllowedCmdOverride       bool
 	AllowedLogRedirect       policy
-	AllowedMemoryMonitoring  policy
 	AllowedMountDestinations []string
+	HardenedMonitoring       monitoringType
+	DebugMonitoring          monitoringType
 }
 
 type policy int
@@ -24,6 +25,14 @@ const (
 	debugOnly policy = iota
 	always
 	never
+)
+
+type monitoringType int
+
+const (
+	None monitoringType = iota
+	MemoryOnly
+	Health
 )
 
 // String returns LaunchPolicy details.
@@ -57,16 +66,31 @@ func toPolicy(policy, s string) (policy, error) {
 }
 
 const (
-	envOverride      = "tee.launch_policy.allow_env_override"
-	cmdOverride      = "tee.launch_policy.allow_cmd_override"
-	logRedirect      = "tee.launch_policy.log_redirect"
-	memoryMonitoring = "tee.launch_policy.monitoring_memory_allow"
+	envOverride        = "tee.launch_policy.allow_env_override"
+	cmdOverride        = "tee.launch_policy.allow_cmd_override"
+	logRedirect        = "tee.launch_policy.log_redirect"
+	memoryMonitoring   = "tee.launch_policy.monitoring_memory_allow"
+	hardenedMonitoring = "tee.launch_policy.hardened_monitoring"
+	debugMonitoring    = "tee.launch_policy.debug_monitoring"
 	// Values look like a PATH list, with ':' as a separator.
 	// Empty paths will be ignored and relative paths will be interpreted as
 	// relative to "/".
 	// Paths will be cleaned using filepath.Clean.
 	mountDestinations = "tee.launch_policy.allow_mount_destinations"
 )
+
+func toMonitoringType(label string) (monitoringType, error) {
+	switch strings.ToUpper(label) {
+	case "NONE":
+		return None, nil
+	case "MEMORY_ONLY":
+		return MemoryOnly, nil
+	case "HEALTH":
+		return Health, nil
+	}
+
+	return None, fmt.Errorf("Invalid monitoring type: %v", label)
+}
 
 // GetLaunchPolicy takes in a map[string] string which should come from image labels,
 // and will try to parse it into a LaunchPolicy. Extra fields will be ignored.
@@ -97,12 +121,26 @@ func GetLaunchPolicy(imageLabels map[string]string) (LaunchPolicy, error) {
 		}
 	}
 
-	// default is debug only for memoryMonitoring
-	if v, ok := imageLabels[memoryMonitoring]; ok {
-		launchPolicy.AllowedMemoryMonitoring, err = toPolicy(memoryMonitoring, v)
+	if _, ok := imageLabels[memoryMonitoring]; ok {
+		return LaunchPolicy{}, fmt.Errorf("%v label is deprecated - use %v and %v instead", memoryMonitoring, hardenedMonitoring, debugMonitoring)
+	}
+
+	if v, ok := imageLabels[hardenedMonitoring]; ok {
+		launchPolicy.HardenedMonitoring, err = toMonitoringType(v)
 		if err != nil {
-			return LaunchPolicy{}, fmt.Errorf("invalid image LABEL '%s'; contact the image author", memoryMonitoring)
+			return LaunchPolicy{}, fmt.Errorf("invalid monitoring type for hardened image: %v", err)
 		}
+	} else {
+		launchPolicy.HardenedMonitoring = None
+	}
+
+	if v, ok := imageLabels[debugMonitoring]; ok {
+		launchPolicy.DebugMonitoring, err = toMonitoringType(v)
+		if err != nil {
+			return LaunchPolicy{}, fmt.Errorf("invalid monitoring type for debug image: %v", err)
+		}
+	} else {
+		launchPolicy.DebugMonitoring = Health
 	}
 
 	if v, ok := imageLabels[mountDestinations]; ok {
@@ -140,12 +178,22 @@ func (p LaunchPolicy) Verify(ls LaunchSpec) error {
 		return fmt.Errorf("logging redirection only allowed on debug environment by image")
 	}
 
-	if p.AllowedMemoryMonitoring == never && ls.MemoryMonitoringEnabled {
-		return fmt.Errorf("memory monitoring not allowed by image")
+	monitoringPolicy := p.DebugMonitoring
+	if ls.Hardened {
+		monitoringPolicy = p.HardenedMonitoring
 	}
 
-	if p.AllowedMemoryMonitoring == debugOnly && ls.MemoryMonitoringEnabled && ls.Hardened {
-		return fmt.Errorf("memory monitoring only allowed on debug environment by image")
+	if ls.HealthMonitoringEnabled {
+		// Return error if policy does not allow health monitoring.
+		if monitoringPolicy != Health {
+			return fmt.Errorf("image does not allow health monitoring")
+		}
+	}
+
+	if ls.MemoryMonitoringEnabled {
+		if monitoringPolicy == None {
+			return fmt.Errorf("image does not allow any monitoring")
+		}
 	}
 
 	var err error

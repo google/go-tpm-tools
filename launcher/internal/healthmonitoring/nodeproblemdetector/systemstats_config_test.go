@@ -2,6 +2,7 @@ package nodeproblemdetector
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"os"
 	"path"
@@ -11,12 +12,38 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
+func TestEnableHealthMonitoringConfig(t *testing.T) {
+	tmpDir := t.TempDir()
+	systemStatsFilePath = path.Join(tmpDir, "system-stats-monitor.json")
+
+	wantBytes, err := json.Marshal(healthConfig)
+	if err != nil {
+		t.Fatalf("Error marshaling expected config: %v", err)
+	}
+
+	EnableHealthMonitoringConfig()
+
+	file, err := os.OpenFile(systemStatsFilePath, os.O_RDONLY, 0)
+	if err != nil {
+		t.Fatalf("failed to open file %s: %v", systemStatsFilePath, err)
+	}
+
+	gotBytes, err := io.ReadAll(file)
+	if err != nil {
+		t.Fatalf("failed to read from file %s: %v", systemStatsFilePath, err)
+	}
+
+	if !bytes.Equal(gotBytes, wantBytes) {
+		t.Errorf("WriteFile() did not write expected contents, got %s, want %s", gotBytes, wantBytes)
+	}
+}
+
 func TestEnableMemoryBytesUsed(t *testing.T) {
 	got := NewSystemStatsConfig()
 	got.EnableMemoryBytesUsed()
 
 	want := SystemStatsConfig{
-		MemoryStatsConfig: memoryStatsConfig{
+		Memory: &statsConfig{
 			MetricsConfigs: map[string]metricConfig{
 				"memory/bytes_used": {DisplayName: "memory/bytes_used"},
 			},
