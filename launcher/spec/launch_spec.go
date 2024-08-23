@@ -156,7 +156,6 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 		s.SignedImageRepos = append(s.SignedImageRepos, imageRepos...)
 	}
 
-	
 	memoryProhibited := false
 	if val, ok := unmarshaledMap[memoryMonitoringEnable]; ok && val != "" {
 		if boolValue, err := strconv.ParseBool(val); err == nil {
@@ -168,7 +167,14 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 	}
 
 	if val, ok := unmarshaledMap[healthMonitoringEnable]; ok && val != "" {
-		if memoryProhibited
+		if boolValue, err := strconv.ParseBool(val); err == nil {
+			// If Health Monitoring is enabled but Memory Monitoring is disabled, this is contradictory.
+			if boolValue && memoryProhibited {
+				return fmt.Errorf("Health monitoring is enabled but memory monitoring is disabled.")
+			}
+
+			s.HealthMonitoringEnabled = boolValue
+		}
 	}
 
 	// Populate cmd override.
