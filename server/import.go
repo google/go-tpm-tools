@@ -131,11 +131,15 @@ func createECCSeed(ek tpm2.Public) (seed, encryptedSeed []byte, err error) {
 	if err != nil {
 		return nil, nil, err
 	}
+	//nolint:staticcheck
+	// crypto/ecdh does not support P-224, while GCP vTPM supports P224. We should keep the deprecated library till P224 is supported by crypto/ecdh.
 	priv, x, y, err := elliptic.GenerateKey(curve, rand.Reader)
 	if err != nil {
 		return nil, nil, err
 	}
 	ekPoint := ek.ECCParameters.Point
+	//nolint:staticcheck
+	// crypto/ecdh does not support P-224, while GCP vTPM supports P224. We should keep the deprecated library till P224 is supported by crypto/ecdh.
 	z, _ := curve.ScalarMult(ekPoint.X(), ekPoint.Y(), priv)
 	xBytes := eccIntToBytes(curve, x)
 
