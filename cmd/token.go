@@ -112,7 +112,7 @@ The OIDC token includes claims regarding the GCE VM, which is verified by Attest
 
 		key = "gceAK"
 
-		fmt.Fprintf(debugOutput(), "Fetching attestation verifier OIDC token\n")
+		fmt.Fprint(debugOutput(), "Fetching attestation verifier OIDC token\n")
 
 		challenge, err := verifierClient.CreateChallenge(ctx)
 		if err != nil {
