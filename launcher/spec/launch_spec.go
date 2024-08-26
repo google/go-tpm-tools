@@ -83,7 +83,7 @@ const (
 	attestationServiceAddrKey  = "tee-attestation-service-endpoint"
 	logRedirectKey             = "tee-container-log-redirect"
 	memoryMonitoringEnable     = "tee-monitoring-memory-enable"
-	healthMonitoringEnable     = "tee-health-monitoring-enable"
+	healthMonitoringEnable     = "tee-monitoring-health-enable"
 	devShmSizeKey              = "tee-dev-shm-size-kb"
 	mountKey                   = "tee-mount"
 )
@@ -170,7 +170,7 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 		if boolValue, err := strconv.ParseBool(val); err == nil {
 			// If Health Monitoring is enabled but Memory Monitoring is disabled, this is contradictory.
 			if boolValue && memoryProhibited {
-				return fmt.Errorf("Health monitoring is enabled but memory monitoring is disabled.")
+				return fmt.Errorf("health monitoring is enabled but memory monitoring is disabled.")
 			}
 
 			s.HealthMonitoringEnabled = boolValue

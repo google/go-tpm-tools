@@ -25,6 +25,7 @@ func TestLaunchSpecUnmarshalJSONHappyCases(t *testing.T) {
 				"tee-impersonate-service-accounts":"sv1@developer.gserviceaccount.com,sv2@developer.gserviceaccount.com",
 				"tee-container-log-redirect":"true",
 				"tee-monitoring-memory-enable":"true",
+				"tee-health-monitoring-enable":"false",
 				"tee-dev-shm-size-kb":"234234",
 				"tee-mount":"type=tmpfs,source=tmpfs,destination=/tmpmount;type=tmpfs,source=tmpfs,destination=/sized,size=222"
 			}`,
@@ -42,6 +43,7 @@ func TestLaunchSpecUnmarshalJSONHappyCases(t *testing.T) {
 				"tee-impersonate-service-accounts":"sv1@developer.gserviceaccount.com,sv2@developer.gserviceaccount.com",
 				"tee-container-log-redirect":"true",
 				"tee-monitoring-memory-enable":"TRUE",
+				"tee-monitoring-health-enable":"FALSE",
 				"tee-dev-shm-size-kb":"234234",
 				"tee-mount":"type=tmpfs,source=tmpfs,destination=/tmpmount;type=tmpfs,source=tmpfs,destination=/sized,size=222"
 			}`,
@@ -57,6 +59,7 @@ func TestLaunchSpecUnmarshalJSONHappyCases(t *testing.T) {
 		ImpersonateServiceAccounts: []string{"sv1@developer.gserviceaccount.com", "sv2@developer.gserviceaccount.com"},
 		LogRedirect:                Everywhere,
 		MemoryMonitoringEnabled:    true,
+		HealthMonitoringEnabled:    false,
 		DevShmSize:                 234234,
 		Mounts: []launchermount.Mount{launchermount.TmpfsMount{Destination: "/tmpmount", Size: 0},
 			launchermount.TmpfsMount{Destination: "/sized", Size: 222}},
@@ -140,6 +143,7 @@ func TestLaunchSpecUnmarshalJSONWithDefaultValue(t *testing.T) {
 		"tee-container-log-redirect":"",
 		"tee-restart-policy":"",
 		"tee-monitoring-memory-enable":"",
+		"tee-monitoring-health-enable":"",
 		"tee-mount":""
 		}`
 
