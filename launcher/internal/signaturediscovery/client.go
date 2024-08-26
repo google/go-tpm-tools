@@ -28,23 +28,23 @@ type Fetcher interface {
 
 // Client is a wrapper of containerd.Client to interact with signed image manifest.
 type Client struct {
-	OriginalImageDesc     v1.Descriptor
-	remoteResolverFetcher remoteResolverFetcher
-	imageFetcher          imageFetcher
+	OriginalImageDesc v1.Descriptor
+	refreshResolver   remoteResolverFetcher
+	imageFetcher      imageFetcher
 }
 
 // New creates a new client that implements Fetcher interface.
 func New(originalImageDesc v1.Descriptor, resolverFetcher remoteResolverFetcher, imageFetcher imageFetcher) Fetcher {
 	return &Client{
-		OriginalImageDesc:     originalImageDesc,
-		remoteResolverFetcher: resolverFetcher,
-		imageFetcher:          imageFetcher,
+		OriginalImageDesc: originalImageDesc,
+		refreshResolver:   resolverFetcher,
+		imageFetcher:      imageFetcher,
 	}
 }
 
 // FetchSignedImageManifest fetches a signed image manifest using a tag-based discovery mechanism.
 func (c *Client) FetchSignedImageManifest(ctx context.Context, targetRepository string) (v1.Manifest, error) {
-	image, err := c.pullTargetImage(ctx, targetRepository)
+	image, err := c.pullSignatureImage(ctx, targetRepository)
 	if err != nil {
 		return v1.Manifest{}, err
 	}
@@ -53,7 +53,7 @@ func (c *Client) FetchSignedImageManifest(ctx context.Context, targetRepository 
 
 // FetchImageSignatures returns a list of valid image signatures associated with the target OCI image.
 func (c *Client) FetchImageSignatures(ctx context.Context, targetRepository string) ([]oci.Signature, error) {
-	image, err := c.pullTargetImage(ctx, targetRepository)
+	image, err := c.pullSignatureImage(ctx, targetRepository)
 	if err != nil {
 		return nil, err
 	}
@@ -77,16 +77,20 @@ func (c *Client) FetchImageSignatures(ctx context.Context, targetRepository stri
 	return signatures, nil
 }
 
-func (c *Client) pullTargetImage(ctx context.Context, targetRepository string) (containerd.Image, error) {
-	targetImageRef := fmt.Sprint(targetRepository, ":", formatSigTag(c.OriginalImageDesc))
-
-	// Refresh resolver before pulling container image.
-	if resolver, err := c.remoteResolverFetcher(ctx); err == nil {
-		return c.imageFetcher(ctx, targetImageRef, containerd.WithResolver(resolver))
-	}
+func (c *Client) pullSignatureImage(ctx context.Context, signatureRepository string) (containerd.Image, error) {
+	signatureImageRef := fmt.Sprint(signatureRepository, ":", formatSigTag(c.OriginalImageDesc))
 
 	// Pull signature image from a public repository.
-	return c.imageFetcher(ctx, targetImageRef)
+	if c.refreshResolver == nil {
+		return c.imageFetcher(ctx, signatureImageRef)
+	}
+
+	// Refresh resolver before pulling container image.
+	resolver, err := c.refreshResolver(ctx)
+	if err == nil {
+		return c.imageFetcher(ctx, signatureImageRef, containerd.WithResolver(resolver))
+	}
+	return nil, fmt.Errorf("failed to refresh remote resolver before pulling container image: %v", err)
 }
 
 // formatSigTag turns image digests into tags with signatureTagSuffix:
