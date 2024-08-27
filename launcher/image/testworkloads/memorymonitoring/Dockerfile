@@ -7,7 +7,7 @@ COPY main /
 
 ENV env_bar="val_bar"
 
-LABEL "tee.launch_policy.monitoring_memory_allow"="always"
+LABEL "tee.launch_policy.hardened_monitoring"="MEMORY_ONLY"
 
 ENTRYPOINT ["/main"]
 
