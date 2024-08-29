@@ -3,6 +3,7 @@ package spec
 import (
 	"errors"
 	"fmt"
+	"log"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -79,13 +80,71 @@ const (
 	mountDestinations = "tee.launch_policy.allow_mount_destinations"
 )
 
+func getMonitoringPolicy(imageLabels map[string]string, launchPolicy *LaunchPolicy, logger *log.Logger) error {
+	// Old policy.
+	memVal, memOk := imageLabels[memoryMonitoring]
+	// New policies.
+	hardenedVal, hardenedOk := imageLabels[hardenedMonitoring]
+	debugVal, debugOk := imageLabels[debugMonitoring]
+
+	var err error
+
+	// Return an error if old/new policies are both defined
+	if memOk && (hardenedOk || debugOk) {
+		return fmt.Errorf("use either %s or %s/%s in image labels,- not both", memoryMonitoring, hardenedMonitoring, debugMonitoring)
+	} else if memOk {
+		policy, err := toPolicy(memoryMonitoring, memVal)
+		if err != nil {
+			return fmt.Errorf("invalid image LABEL '%s'", memoryMonitoring)
+		}
+
+		logger.Printf("%s is deprecated, use %s and %s instead", memoryMonitoring, hardenedMonitoring, debugMonitoring)
+
+		switch policy {
+		case always:
+			logger.Printf("%s=always, will be treated as %s=memory_only and %s=memory_only", memoryMonitoring, hardenedMonitoring, debugMonitoring)
+			launchPolicy.HardenedImageMonitoring = memoryOnly
+			launchPolicy.DebugImageMonitoring = memoryOnly
+		case never:
+			logger.Printf("%s=never, will be treated as %s=none and %s=none", memoryMonitoring, hardenedMonitoring, debugMonitoring)
+			launchPolicy.HardenedImageMonitoring = none
+			launchPolicy.DebugImageMonitoring = none
+		case debugOnly:
+			logger.Printf("%s=debug_only, will be treated as %s=none and %s=memory_only", memoryMonitoring, hardenedMonitoring, debugMonitoring)
+			launchPolicy.HardenedImageMonitoring = none
+			launchPolicy.DebugImageMonitoring = memoryOnly
+		}
+		return nil
+	} else {
+		if hardenedOk {
+			launchPolicy.HardenedImageMonitoring, err = toMonitoringType(hardenedVal)
+			if err != nil {
+				return fmt.Errorf("invalid monitoring type for hardened image: %v", err)
+			}
+		} else {
+			launchPolicy.HardenedImageMonitoring = none
+		}
+
+		if debugOk {
+			launchPolicy.DebugImageMonitoring, err = toMonitoringType(debugVal)
+			if err != nil {
+				return fmt.Errorf("invalid monitoring type for debug image: %v", err)
+			}
+		} else {
+			launchPolicy.DebugImageMonitoring = health
+		}
+	}
+
+	return nil
+}
+
 func toMonitoringType(label string) (monitoringType, error) {
-	switch strings.ToUpper(label) {
-	case "NONE":
+	switch strings.ToLower(label) {
+	case "none":
 		return none, nil
-	case "MEMORY_ONLY":
+	case "memoryonly":
 		return memoryOnly, nil
-	case "HEALTH":
+	case "health":
 		return health, nil
 	}
 
@@ -94,7 +153,7 @@ func toMonitoringType(label string) (monitoringType, error) {
 
 // GetLaunchPolicy takes in a map[string] string which should come from image labels,
 // and will try to parse it into a LaunchPolicy. Extra fields will be ignored.
-func GetLaunchPolicy(imageLabels map[string]string) (LaunchPolicy, error) {
+func GetLaunchPolicy(imageLabels map[string]string, logger *log.Logger) (LaunchPolicy, error) {
 	var err error
 	launchPolicy := LaunchPolicy{}
 	if v, ok := imageLabels[envOverride]; ok {
