@@ -12,9 +12,6 @@ import (
 // to treat experiment flags as their default value. The error should still be checked.
 type Experiments struct {
 	EnableTestFeatureForImage  bool
-	EnableSignedContainerImage bool
-	EnableOnDemandAttestation  bool
-	EnableMemoryMonitoring     bool
 	EnableSignedContainerCache bool
 	EnableMeasureMemoryMonitor bool
 }
