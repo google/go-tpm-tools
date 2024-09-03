@@ -156,23 +156,17 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 		s.SignedImageRepos = append(s.SignedImageRepos, imageRepos...)
 	}
 
-	memoryProhibited := false
-	if val, ok := unmarshaledMap[memoryMonitoringEnable]; ok && val != "" {
-		if boolValue, err := strconv.ParseBool(val); err == nil {
+	memVal, memOk := unmarshaledMap[memoryMonitoringEnable]
+	healthVal, healthOk := unmarshaledMap[healthMonitoringEnable]
+
+	if memOk && healthOk {
+		return fmt.Errorf("both %v and %v are specified, only one is permitted", memoryMonitoringEnable, healthMonitoringEnable)
+	} else if memOk && memVal != "" {
+		if boolValue, err := strconv.ParseBool(memVal); err == nil {
 			s.MemoryMonitoringEnabled = boolValue
-			if !boolValue {
-				memoryProhibited = true
-			}
 		}
-	}
-
-	if val, ok := unmarshaledMap[healthMonitoringEnable]; ok && val != "" {
-		if boolValue, err := strconv.ParseBool(val); err == nil {
-			// If Health Monitoring is enabled but Memory Monitoring is disabled, this is contradictory.
-			if boolValue && memoryProhibited {
-				return fmt.Errorf("health monitoring is enabled but memory monitoring is disabled")
-			}
-
+	} else if healthOk && healthVal != "" {
+		if boolValue, err := strconv.ParseBool(healthVal); err == nil {
 			s.HealthMonitoringEnabled = boolValue
 		}
 	}
