@@ -115,24 +115,24 @@ func getMonitoringPolicy(imageLabels map[string]string, launchPolicy *LaunchPoli
 			launchPolicy.DebugImageMonitoring = memoryOnly
 		}
 		return nil
-	} else {
-		if hardenedOk {
-			launchPolicy.HardenedImageMonitoring, err = toMonitoringType(hardenedVal)
-			if err != nil {
-				return fmt.Errorf("invalid monitoring type for hardened image: %v", err)
-			}
-		} else {
-			launchPolicy.HardenedImageMonitoring = none
-		}
+	}
 
-		if debugOk {
-			launchPolicy.DebugImageMonitoring, err = toMonitoringType(debugVal)
-			if err != nil {
-				return fmt.Errorf("invalid monitoring type for debug image: %v", err)
-			}
-		} else {
-			launchPolicy.DebugImageMonitoring = health
+	if hardenedOk {
+		launchPolicy.HardenedImageMonitoring, err = toMonitoringType(hardenedVal)
+		if err != nil {
+			return fmt.Errorf("invalid monitoring type for hardened image: %v", err)
 		}
+	} else {
+		launchPolicy.HardenedImageMonitoring = none
+	}
+
+	if debugOk {
+		launchPolicy.DebugImageMonitoring, err = toMonitoringType(debugVal)
+		if err != nil {
+			return fmt.Errorf("invalid monitoring type for debug image: %v", err)
+		}
+	} else {
+		launchPolicy.DebugImageMonitoring = health
 	}
 
 	return nil

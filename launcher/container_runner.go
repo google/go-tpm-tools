@@ -115,7 +115,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	}
 
 	logger.Printf("Image Labels               : %v\n", imageConfig.Labels)
-	launchPolicy, err := spec.GetLaunchPolicy(imageConfig.Labels, logger)
+	launchPolicy, err := spec.GetLaunchPolicy(imageConfig.Labels)
 	if err != nil {
 		return nil, err
 	}

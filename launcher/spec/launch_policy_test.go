@@ -62,7 +62,7 @@ func TestLaunchPolicy(t *testing.T) {
 			testcase.expectedPolicy.HardenedImageMonitoring = none
 			testcase.expectedPolicy.DebugImageMonitoring = health
 
-			got, err := GetLaunchPolicy(testcase.imageLabels, log.Default())
+			got, err := GetLaunchPolicy(testcase.imageLabels)
 			if err != nil {
 				t.Fatal(err)
 			}
