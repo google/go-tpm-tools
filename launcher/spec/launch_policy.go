@@ -153,7 +153,7 @@ func toMonitoringType(label string) (monitoringType, error) {
 
 // GetLaunchPolicy takes in a map[string] string which should come from image labels,
 // and will try to parse it into a LaunchPolicy. Extra fields will be ignored.
-func GetLaunchPolicy(imageLabels map[string]string, logger *log.Logger) (LaunchPolicy, error) {
+func GetLaunchPolicy(imageLabels map[string]string) (LaunchPolicy, error) {
 	var err error
 	launchPolicy := LaunchPolicy{}
 	if v, ok := imageLabels[envOverride]; ok {
