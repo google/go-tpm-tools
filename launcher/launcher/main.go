@@ -77,7 +77,7 @@ func main() {
 	}
 	defer serialConsole.Close()
 
-	handler := slog.NewJSONHandler(io.MultiWriter(os.Stdout, serialConsole), nil)
+	handler := slog.NewTextHandler(io.MultiWriter(os.Stdout, serialConsole), nil)
 	logger = slog.New(handler)
 
 	logger.Info(welcomeMessage, "build_commit", BuildCommit)
