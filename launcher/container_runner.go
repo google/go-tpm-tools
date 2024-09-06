@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -609,34 +610,61 @@ func initImage(ctx context.Context, cdClient *containerd.Client, launchSpec spec
 	return image, nil
 }
 
-// openPorts writes firewall rules to accept all traffic into that port and protocol using iptables.
+// openPorts writes firewall rules to accept all traffic into that port and protocol using iptables and ip6tables.
 func openPorts(ports map[string]struct{}) error {
-	for k := range ports {
-		portAndProtocol := strings.Split(k, "/")
-		if len(portAndProtocol) != 2 {
-			return fmt.Errorf("failed to parse port and protocol: got %s, expected [port]/[protocol] 80/tcp", portAndProtocol)
-		}
+	portMap := make(map[string]string)
+	var err error
 
+	portMap["tcp"], portMap["udp"], err = getPortsList(ports)
+	if err != nil {
+		return err
+	}
+
+	for _, command := range []string{"iptables", "ip6tables"} {
+		for protocol, ports := range portMap {
+			if ports == "" {
+				continue
+			}
+			cmd := exec.Command(command, "-A", "INPUT", "-p", protocol, "-m", "multiport", "--dport", ports, "-j", "ACCEPT")
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				return fmt.Errorf("failed to set firewall policy using %v, for %s %s: %v %s", cmd, ports, protocol, err, out)
+			}
+		}
+	}
+	return nil
+}
+
+// getPortsList takes in a docker file style port mapping and output string of comma separated port numbers
+func getPortsList(protocolAndports map[string]struct{}) (tcpPortStr, udpPortStr string, err error) {
+	var tcpPorts, udpPorts []string
+	for protocolAndPort := range protocolAndports {
+		// sample format: "80/tcp" "12345/udp"
+		portAndProtocol := strings.Split(protocolAndPort, "/")
+		if len(portAndProtocol) != 2 {
+			return "", "", fmt.Errorf("failed to parse port and protocol: got %s, expected [port]/[protocol] 80/tcp", portAndProtocol)
+		}
 		port := portAndProtocol[0]
 		_, err := strconv.ParseUint(port, 10, 16)
 		if err != nil {
-			return fmt.Errorf("received invalid port number: %v, %w", port, err)
+			return "", "", fmt.Errorf("received invalid port number: %v, %w", port, err)
 		}
-
 		protocol := portAndProtocol[1]
-		if protocol != "tcp" && protocol != "udp" {
-			return fmt.Errorf("received unknown protocol: got %s, expected tcp or udp", protocol)
-		}
-
-		// This command will write a firewall rule to accept all INPUT packets for the given port/protocol.
-		cmd := exec.Command("iptables", "-A", "INPUT", "-p", protocol, "--dport", port, "-j", "ACCEPT")
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			return fmt.Errorf("failed to open port %s %s: %v %s", port, protocol, err, out)
+		switch protocol {
+		case "tcp":
+			tcpPorts = append(tcpPorts, port)
+		case "udp":
+			udpPorts = append(udpPorts, port)
+		default:
+			return "", "", fmt.Errorf("received unsupported protocol: got %s, expected tcp or udp", protocol)
 		}
 	}
+	// sort to make the list deterministic, make the test easier
+	sort.Strings(tcpPorts)
+	sort.Strings(udpPorts)
 
-	return nil
+	tcpPortStr, udpPortStr = strings.Join(tcpPorts, ","), strings.Join(udpPorts, ",")
+	return
 }
 
 func getImageConfig(ctx context.Context, image containerd.Image) (v1.ImageConfig, error) {

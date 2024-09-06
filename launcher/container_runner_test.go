@@ -632,6 +632,77 @@ func TestMeasureCELEvents(t *testing.T) {
 	}
 }
 
+func TestGetPortsList(t *testing.T) {
+	testCases := []struct {
+		name        string
+		portMap     map[string]struct{}
+		expectedTCP string
+		expectedUDP string
+	}{
+		{
+			name: "single tcp",
+			portMap: map[string]struct{}{
+				"80/tcp": {},
+			},
+			expectedTCP: "80",
+			expectedUDP: "",
+		},
+		{
+			name: "single udp",
+			portMap: map[string]struct{}{
+				"80/udp": {},
+			},
+			expectedTCP: "",
+			expectedUDP: "80",
+		},
+		{
+			name: "multiple",
+			portMap: map[string]struct{}{
+				"80/udp": {},
+				"81/tcp": {},
+				"82/tcp": {},
+				"83/tcp": {},
+			},
+			expectedTCP: "81,82,83",
+			expectedUDP: "80",
+		},
+		{
+			name: "multiple",
+			portMap: map[string]struct{}{
+				"80/udp":   {},
+				"81/tcp":   {},
+				"82/tcp":   {},
+				"83/tcp":   {},
+				"85/udp":   {},
+				"1000/tcp": {},
+			},
+			expectedTCP: "1000,81,82,83",
+			expectedUDP: "80,85",
+		},
+		{
+			name:        "empty",
+			portMap:     map[string]struct{}{},
+			expectedTCP: "",
+			expectedUDP: "",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			tcpPorts, udpPorts, err := getPortsList(tc.portMap)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tcpPorts != tc.expectedTCP {
+				t.Errorf("failed to parse TCP ports, got '%v', want '%v'", tcpPorts, tc.expectedTCP)
+			}
+			if udpPorts != tc.expectedUDP {
+				t.Errorf("failed to parse UDP ports, got '%v', want '%v'", udpPorts, tc.expectedUDP)
+			}
+		})
+	}
+}
+
 // This ensures fakeContainer implements containerd.Container interface.
 var _ containerd.Container = &fakeContainer{}
 
