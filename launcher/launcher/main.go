@@ -77,7 +77,7 @@ func main() {
 	}
 	defer serialConsole.Close()
 
-	handler := slog.NewJSONHandler(io.MultiWriter(os.Stdout, serialConsole), nil)
+	handler := slog.NewTextHandler(io.MultiWriter(os.Stdout, serialConsole), nil)
 	logger = slog.New(handler)
 
 	logger.Info(welcomeMessage, "build_commit", BuildCommit)
@@ -104,6 +104,28 @@ func main() {
 		return
 	}
 
+<<<<<<< HEAD
+=======
+	if err := os.MkdirAll(launcherfile.HostTmpPath, 0744); err != nil {
+		logger.Warn(fmt.Sprintf("failed to create %s: %v", launcherfile.HostTmpPath, err))
+	}
+	experimentsFile := path.Join(launcherfile.HostTmpPath, experimentDataFile)
+
+	args := fmt.Sprintf("-output=%s", experimentsFile)
+	err = exec.Command(binaryPath, args).Run()
+	if err != nil {
+		logger.Warn(fmt.Sprintf("failure during experiment sync: %v\n", err))
+	}
+
+	e, err := experiments.New(experimentsFile)
+	if err != nil {
+		logger.Warn(fmt.Sprintf("failed to read experiment file: %v\n", err))
+		// do not fail if experiment retrieval fails
+	}
+	e.Log(logger)
+	launchSpec.Experiments = e
+
+>>>>>>> cdd18a2 (text handler and experiment logging)
 	defer func() {
 		// Catch panic to attempt to output to Cloud Logging.
 		if r := recover(); r != nil {
