@@ -201,6 +201,7 @@ func startLauncher(launchSpec spec.LaunchSpec, serialConsole *os.File) error {
 	}
 	gceAk.Close()
 
+	ctx := context.Background()
 	token, err := registryauth.RetrieveAuthToken(ctx, mdsClient)
 	if err != nil {
 		logger.Info(fmt.Sprintf("failed to retrieve auth token: %v, using empty auth for image pulling\n", err))
@@ -212,7 +213,7 @@ func startLauncher(launchSpec spec.LaunchSpec, serialConsole *os.File) error {
 	}
 	logger.Info("Launch completed", "latency_sec", uptime)
 
-	ctx := namespaces.WithNamespace(context.Background(), namespaces.Default)
+	ctx = namespaces.WithNamespace(ctx, namespaces.Default)
 	r, err := launcher.NewRunner(ctx, containerdClient, token, launchSpec, mdsClient, tpm, logger, serialConsole)
 	if err != nil {
 		return err
