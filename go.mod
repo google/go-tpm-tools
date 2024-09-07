@@ -6,17 +6,18 @@ require (
 	github.com/google/gce-tcb-verifier v0.2.3-0.20240905212129-12f728a62786
 	github.com/google/go-attestation v0.5.1
 	github.com/google/go-cmp v0.6.0
+	github.com/google/go-configfs-tsm v0.3.3-0.20240910040719-1cc7e25d9272
 	github.com/google/go-sev-guest v0.11.1
-	github.com/google/go-tdx-guest v0.3.1
+	github.com/google/go-tdx-guest v0.3.2-0.20240902060211-1f7f7b9b42b9
 	github.com/google/go-tpm v0.9.0
 	github.com/google/logger v1.1.1
-	google.golang.org/protobuf v1.34.1
+	google.golang.org/protobuf v1.34.2
 )
 
 require (
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/certificate-transparency-go v1.1.2 // indirect
-	github.com/google/go-configfs-tsm v0.2.2 // indirect
+	github.com/google/go-eventlog v0.0.2-0.20241003021507-01bb555f7cba
 	github.com/google/go-tspi v0.3.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect

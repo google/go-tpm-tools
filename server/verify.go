@@ -8,6 +8,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/google/go-eventlog/proto/state"
+	"github.com/google/go-eventlog/register"
 	"github.com/google/go-sev-guest/proto/sevsnp"
 	"github.com/google/go-tdx-guest/proto/tdx"
 	"github.com/google/go-tpm-tools/internal"
@@ -124,13 +126,26 @@ func VerifyAttestation(attestation *pb.Attestation, opts VerifyOpts) (*pb.Machin
 
 		// Parse event logs and replay the events against the provided PCRs
 		pcrs := quote.GetPcrs()
-		state, err := parseMachineStateFromTPM(attestation, pcrs, opts)
+		tpmMachineState, err := parseMachineStateFromTPM(attestation, pcrs, opts)
 		if err != nil {
 			lastErr = fmt.Errorf("failed to parse machine state from TCG event log: %w", err)
 			continue
 		}
 
-		celState, err := parseCanonicalEventLog(attestation.GetCanonicalEventLog(), pcrs)
+		pcrBank := register.PCRBank{TCGHashAlgo: state.HashAlgo(pcrs.Hash)}
+		digestAlg, err := pcrBank.TCGHashAlgo.CryptoHash()
+		if err != nil {
+			return nil, fmt.Errorf("invalid digest algorithm")
+		}
+
+		for pcrIndex, digest := range pcrs.GetPcrs() {
+			pcrBank.PCRs = append(pcrBank.PCRs, register.PCR{
+				Index:     int(pcrIndex),
+				Digest:    digest,
+				DigestAlg: digestAlg})
+		}
+
+		celState, err := ParseCosCELPCR(attestation.GetCanonicalEventLog(), pcrBank)
 		if err != nil {
 			lastErr = fmt.Errorf("failed to validate the Canonical event log: %w", err)
 			continue
@@ -146,7 +161,7 @@ func VerifyAttestation(attestation *pb.Attestation, opts VerifyOpts) (*pb.Machin
 		}
 
 		proto.Merge(machineState, celState)
-		proto.Merge(machineState, state)
+		proto.Merge(machineState, tpmMachineState)
 
 		return machineState, nil
 	}
@@ -397,6 +412,8 @@ func parseMachineStateFromTPM(attestation *pb.Attestation, pcrs *tpmpb.PCRs, opt
 		return nil, fmt.Errorf("failed to validate the PCClient event log: %w", err)
 	}
 
+	// TODO #500 remove verifyGceTechnology from parseMachineStateFromTPM/VerifyAttestation,
+	// as it's an application speicified operation.
 	tech := ms.GetPlatform().Technology
 	if err := verifyGceTechnology(attestation, tech, &opts); err != nil {
 		return nil, fmt.Errorf("failed to verify memory encryption technology: %w", err)

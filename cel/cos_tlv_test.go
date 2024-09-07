@@ -14,7 +14,6 @@ import (
 func TestCosEventlog(t *testing.T) {
 	tpm := test.GetTPM(t)
 	defer client.CheckedClose(t, tpm)
-
 	cel := &CEL{}
 
 	testEvents := []struct {
@@ -41,9 +40,10 @@ func TestCosEventlog(t *testing.T) {
 	}
 
 	for _, testEvent := range testEvents {
-		cos := CosTlv{testEvent.cosNestedEventType, testEvent.eventPayload}
-		if err := cel.AppendEvent(tpm, testEvent.pcr, measuredHashes, cos); err != nil {
-			t.Fatal(err.Error())
+		cosEvent := CosTlv{testEvent.cosNestedEventType, testEvent.eventPayload}
+
+		if err := cel.AppendEventPCR(tpm, testEvent.pcr, measuredHashes, cosEvent); err != nil {
+			t.Fatal(err)
 		}
 	}
 

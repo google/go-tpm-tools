@@ -459,8 +459,8 @@ func TestVerifyAttestationWithCEL(t *testing.T) {
 		{cel.MemoryMonitorType, cel.CosEventPCR, []byte{1}},
 	}
 	for _, testEvent := range testEvents {
-		cos := cel.CosTlv{EventType: testEvent.cosNestedEventType, EventContent: testEvent.eventPayload}
-		if err := coscel.AppendEvent(rwc, testEvent.pcr, measuredHashes, cos); err != nil {
+		cosEvent := cel.CosTlv{EventType: testEvent.cosNestedEventType, EventContent: testEvent.eventPayload}
+		if err := coscel.AppendEventPCR(rwc, testEvent.pcr, measuredHashes, cosEvent); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -531,10 +531,12 @@ func TestVerifyFailWithTamperedCELContent(t *testing.T) {
 
 	cosEvent := cel.CosTlv{EventType: cel.ImageRefType, EventContent: []byte("docker.io/bazel/experimental/test:latest")}
 	cosEvent2 := cel.CosTlv{EventType: cel.ImageDigestType, EventContent: []byte("sha256:781d8dfdd92118436bd914442c8339e653b83f6bf3c1a7a98efcfb7c4fed7483")}
-	if err := c.AppendEvent(rwc, cel.CosEventPCR, measuredHashes, cosEvent); err != nil {
+
+	if err := c.AppendEventPCR(rwc, cel.CosEventPCR, measuredHashes, cosEvent); err != nil {
 		t.Fatalf("failed to append event: %v", err)
 	}
-	if err := c.AppendEvent(rwc, cel.CosEventPCR, measuredHashes, cosEvent2); err != nil {
+
+	if err := c.AppendEventPCR(rwc, cel.CosEventPCR, measuredHashes, cosEvent2); err != nil {
 		t.Fatalf("failed to append event: %v", err)
 	}
 
