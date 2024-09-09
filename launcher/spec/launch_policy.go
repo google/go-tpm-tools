@@ -224,17 +224,20 @@ func (p LaunchPolicy) Verify(ls LaunchSpec) error {
 		monitoringPolicy = p.HardenedImageMonitoring
 	}
 
-	if ls.HealthMonitoringEnabled {
-		// Return error if policy does not allow health monitoring.
-		if monitoringPolicy != health {
-			return fmt.Errorf("image does not allow health monitoring")
+	if ls.HealthMonitoringEnabled && monitoringPolicy != health {
+		// Check if there is an issue with the image type.
+		if ls.Hardened && p.DebugImageMonitoring == health {
+			return fmt.Errorf("health monitoring only allowed on debug environment by image")
 		}
+		return fmt.Errorf("health monitoring not allowed by image")
 	}
 
-	if ls.MemoryMonitoringEnabled {
-		if monitoringPolicy == none {
-			return fmt.Errorf("image does not allow any monitoring")
+	if ls.MemoryMonitoringEnabled && monitoringPolicy == none {
+		// Check if there is an issue with the image type.
+		if ls.Hardened && p.DebugImageMonitoring == memoryOnly {
+			return fmt.Errorf("memory monitoring only allowed on debug environment by image")
 		}
+		return fmt.Errorf("memory monitoring not allowed by image")
 	}
 
 	var err error
