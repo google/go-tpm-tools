@@ -80,7 +80,7 @@ const (
 	mountDestinations = "tee.launch_policy.allow_mount_destinations"
 )
 
-func getMonitoringPolicy(imageLabels map[string]string, launchPolicy *LaunchPolicy, logger *log.Logger) error {
+func configureMonitoringPolicy(imageLabels map[string]string, launchPolicy *LaunchPolicy, logger *log.Logger) error {
 	// Old policy.
 	memVal, memOk := imageLabels[memoryMonitoring]
 	// New policies.
@@ -98,7 +98,7 @@ func getMonitoringPolicy(imageLabels map[string]string, launchPolicy *LaunchPoli
 			return fmt.Errorf("invalid image LABEL '%s'", memoryMonitoring)
 		}
 
-		logger.Printf("%s is deprecated, use %s and %s instead", memoryMonitoring, hardenedMonitoring, debugMonitoring)
+		logger.Printf("%s will be deprecated, use %s and %s instead", memoryMonitoring, hardenedMonitoring, debugMonitoring)
 
 		switch policy {
 		case always:
@@ -153,7 +153,7 @@ func toMonitoringType(label string) (monitoringType, error) {
 
 // GetLaunchPolicy takes in a map[string] string which should come from image labels,
 // and will try to parse it into a LaunchPolicy. Extra fields will be ignored.
-func GetLaunchPolicy(imageLabels map[string]string) (LaunchPolicy, error) {
+func GetLaunchPolicy(imageLabels map[string]string, logger *log.Logger) (LaunchPolicy, error) {
 	var err error
 	launchPolicy := LaunchPolicy{}
 	if v, ok := imageLabels[envOverride]; ok {
@@ -180,26 +180,8 @@ func GetLaunchPolicy(imageLabels map[string]string) (LaunchPolicy, error) {
 		}
 	}
 
-	if _, ok := imageLabels[memoryMonitoring]; ok {
-		return LaunchPolicy{}, fmt.Errorf("%v label is deprecated - use %v and %v instead", memoryMonitoring, hardenedMonitoring, debugMonitoring)
-	}
-
-	if v, ok := imageLabels[hardenedMonitoring]; ok {
-		launchPolicy.HardenedImageMonitoring, err = toMonitoringType(v)
-		if err != nil {
-			return LaunchPolicy{}, fmt.Errorf("invalid monitoring type for hardened image: %v", err)
-		}
-	} else {
-		launchPolicy.HardenedImageMonitoring = none
-	}
-
-	if v, ok := imageLabels[debugMonitoring]; ok {
-		launchPolicy.DebugImageMonitoring, err = toMonitoringType(v)
-		if err != nil {
-			return LaunchPolicy{}, fmt.Errorf("invalid monitoring type for debug image: %v", err)
-		}
-	} else {
-		launchPolicy.DebugImageMonitoring = health
+	if err := configureMonitoringPolicy(imageLabels, &launchPolicy, logger); err != nil {
+		return LaunchPolicy{}, err
 	}
 
 	if v, ok := imageLabels[mountDestinations]; ok {

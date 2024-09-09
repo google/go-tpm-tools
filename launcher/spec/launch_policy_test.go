@@ -62,7 +62,7 @@ func TestLaunchPolicy(t *testing.T) {
 			testcase.expectedPolicy.HardenedImageMonitoring = none
 			testcase.expectedPolicy.DebugImageMonitoring = health
 
-			got, err := GetLaunchPolicy(testcase.imageLabels)
+			got, err := GetLaunchPolicy(testcase.imageLabels, log.Default())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -818,7 +818,7 @@ func TestGetMonitoringPolicy(t *testing.T) {
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
 			policy := &LaunchPolicy{}
-			if err := getMonitoringPolicy(tc.labels, policy, log.Default()); err != nil {
+			if err := configureMonitoringPolicy(tc.labels, policy, log.Default()); err != nil {
 				t.Errorf("getMonitoringPolicy returned error: %v", err)
 				return
 			}
@@ -880,7 +880,7 @@ func TestGetMonitoringPolicyErrors(t *testing.T) {
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
 			policy := &LaunchPolicy{}
-			if err := getMonitoringPolicy(tc.labels, policy, log.Default()); err == nil {
+			if err := configureMonitoringPolicy(tc.labels, policy, log.Default()); err == nil {
 				t.Errorf("Expected getMonitoringPolicy to return error, returned successfully with policy %v", policy)
 			}
 		})
