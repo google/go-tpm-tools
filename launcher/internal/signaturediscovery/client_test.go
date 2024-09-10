@@ -94,9 +94,9 @@ func TestFetchImageSignaturesDockerPublic(t *testing.T) {
 	}
 }
 
-func TestPullTargetImage(t *testing.T) {
+func TestPullSignatureImage(t *testing.T) {
 	imageFetcher := func(_ context.Context, _ string, opts ...containerd.RemoteOpt) (containerd.Image, error) {
-		if len(opts) > 0 {
+		if len(opts) >= 0 {
 			return &fakeImage{}, nil
 		}
 		return nil, fmt.Errorf("unable to fetch image")
@@ -121,15 +121,20 @@ func TestPullTargetImage(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		{
+			name:            "nil resolver",
+			resolverFetcher: nil,
+			wantErr:         false,
+		},
 	}
 
 	for _, tc := range testCases {
 		c := &Client{
-			OriginalImageDesc:     v1.Descriptor{Digest: "sha256:905a0f3b3d6d0fb37bfa448b9e78f833b73f0b19fc97fed821a09cf49e255df1"},
-			remoteResolverFetcher: tc.resolverFetcher,
-			imageFetcher:          imageFetcher,
+			OriginalImageDesc: v1.Descriptor{Digest: "sha256:905a0f3b3d6d0fb37bfa448b9e78f833b73f0b19fc97fed821a09cf49e255df1"},
+			refreshResolver:   tc.resolverFetcher,
+			imageFetcher:      imageFetcher,
 		}
-		_, err := c.pullTargetImage(context.Background(), "fake image repo")
+		_, err := c.pullSignatureImage(context.Background(), "fake image repo")
 		if gotErr := err != nil; gotErr != tc.wantErr {
 			t.Errorf("failed to refresh resolver when pulling container image, gotErr: %v, but wantErr: %v", gotErr, tc.wantErr)
 		}
@@ -150,14 +155,14 @@ func createTestClient(t *testing.T, originalImageDesc v1.Descriptor) *Client {
 	t.Cleanup(func() { containerdClient.Close() })
 
 	resolverFetcher := func(_ context.Context) (remotes.Resolver, error) {
-		return nil, fmt.Errorf("fake remote resolver")
+		return registryauth.Resolver("valid token"), nil
 	}
 	imageFetcher := func(ctx context.Context, imageRef string, opts ...containerd.RemoteOpt) (containerd.Image, error) {
 		return containerdClient.Pull(ctx, imageRef, opts...)
 	}
 	return &Client{
-		OriginalImageDesc:     originalImageDesc,
-		remoteResolverFetcher: resolverFetcher,
-		imageFetcher:          imageFetcher,
+		OriginalImageDesc: originalImageDesc,
+		refreshResolver:   resolverFetcher,
+		imageFetcher:      imageFetcher,
 	}
 }
