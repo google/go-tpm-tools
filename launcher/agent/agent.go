@@ -123,10 +123,6 @@ func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error
 		return nil, fmt.Errorf("failed to attest: %v", err)
 	}
 
-	if err != nil {
-		return nil, err
-	}
-
 	req := verifier.VerifyAttestationRequest{
 		Challenge:      challenge,
 		GcpCredentials: principalTokens,
