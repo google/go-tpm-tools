@@ -5,8 +5,11 @@ import (
 
 	confidentialcomputingpb "cloud.google.com/go/confidentialcomputing/apiv1/confidentialcomputingpb"
 	"github.com/google/go-cmp/cmp"
-	"github.com/google/go-sev-guest/abi"
+	sabi "github.com/google/go-sev-guest/abi"
 	spb "github.com/google/go-sev-guest/proto/sevsnp"
+	tabi "github.com/google/go-tdx-guest/abi"
+	tpb "github.com/google/go-tdx-guest/proto/tdx"
+	tgtestdata "github.com/google/go-tdx-guest/testing/testdata"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/pborman/uuid"
 	"google.golang.org/protobuf/encoding/prototext"
@@ -51,7 +54,7 @@ func TestConvertSEVSNPProtoToREST(t *testing.T) {
 	}
 
 	rawCertTable := testRawCertTable(t)
-	certTable := &abi.CertTable{}
+	certTable := &sabi.CertTable{}
 	if err := certTable.Unmarshal(rawCertTable.table); err != nil {
 		t.Fatalf("Failed to unmarshal certTable bytes: %v", err)
 	}
@@ -62,7 +65,7 @@ func TestConvertSEVSNPProtoToREST(t *testing.T) {
 		t.Errorf("failed to convert SEVSNP proto to API proto: %v", err)
 	}
 
-	wantReport, err := abi.ReportToAbiBytes(report)
+	wantReport, err := sabi.ReportToAbiBytes(report)
 	if err != nil {
 		t.Fatalf("Unable to convert SEV-SNP report proto to ABI bytes: %v", err)
 	}
@@ -86,25 +89,25 @@ type testCertTable struct {
 
 func testRawCertTable(t testing.TB) *testCertTable {
 	t.Helper()
-	headers := make([]abi.CertTableHeaderEntry, 6) // ARK, ASK, VCEK, VLEK, extra, NULL
+	headers := make([]sabi.CertTableHeaderEntry, 6) // ARK, ASK, VCEK, VLEK, extra, NULL
 	arkraw := []byte("ark")
 	askraw := []byte("ask")
 	vcekraw := []byte("vcek")
 	vlekraw := []byte("vlek")
 	extraraw := []byte("extra")
-	headers[0].GUID = uuid.Parse(abi.ArkGUID)
-	headers[0].Offset = uint32(len(headers) * abi.CertTableEntrySize)
+	headers[0].GUID = uuid.Parse(sabi.ArkGUID)
+	headers[0].Offset = uint32(len(headers) * sabi.CertTableEntrySize)
 	headers[0].Length = uint32(len(arkraw))
 
-	headers[1].GUID = uuid.Parse(abi.AskGUID)
+	headers[1].GUID = uuid.Parse(sabi.AskGUID)
 	headers[1].Offset = headers[0].Offset + headers[0].Length
 	headers[1].Length = uint32(len(askraw))
 
-	headers[2].GUID = uuid.Parse(abi.VcekGUID)
+	headers[2].GUID = uuid.Parse(sabi.VcekGUID)
 	headers[2].Offset = headers[1].Offset + headers[1].Length
 	headers[2].Length = uint32(len(vcekraw))
 
-	headers[3].GUID = uuid.Parse(abi.VlekGUID)
+	headers[3].GUID = uuid.Parse(sabi.VlekGUID)
 	headers[3].Offset = headers[2].Offset + headers[2].Length
 	headers[3].Length = uint32(len(vlekraw))
 
@@ -117,10 +120,59 @@ func testRawCertTable(t testing.TB) *testCertTable {
 		extraraw: extraraw,
 	}
 	for i, cert := range [][]byte{arkraw, askraw, vcekraw, vlekraw, extraraw} {
-		if err := (&headers[i]).Write(result.table[i*abi.CertTableEntrySize:]); err != nil {
+		if err := (&headers[i]).Write(result.table[i*sabi.CertTableEntrySize:]); err != nil {
 			t.Fatalf("could not write header %d: %v", i, err)
 		}
 		copy(result.table[headers[i].Offset:], cert)
 	}
 	return result
+}
+
+func TestConvertTDXProtoToREST(t *testing.T) {
+	testCases := []struct {
+		name string
+		quote func() *tpb.QuoteV4
+		wantPass bool
+	} {
+		{
+			name: "successful TD quote conversion",
+			quote: func() *tpb.QuoteV4 {
+				tdx, err := tabi.QuoteToProto(tgtestdata.RawQuote)
+				if err != nil {
+					t.Fatalf("Unable to convert Raw TD Quote to TDX V4 quote: %v", err)
+				}
+			
+				quote, ok := tdx.(*tpb.QuoteV4)
+				if !ok {
+					t.Fatal("Quote format not supported, want QuoteV4 format")
+				}
+				return quote
+			},
+			wantPass: true,
+		},
+		{
+			name: "nil TD quote conversion",
+			quote: func() *tpb.QuoteV4 { return nil },
+			wantPass: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		got, err := convertTDXProtoToREST(tc.quote())
+		if err != nil && tc.wantPass {
+			t.Errorf("failed to convert TDX proto to API proto: %v", err)
+		}
+
+		if tc.wantPass {
+			want := &confidentialcomputingpb.VerifyAttestationRequest_TdCcel{
+				TdCcel: &confidentialcomputingpb.TdxCcelAttestation{
+					TdQuote: tgtestdata.RawQuote,
+				},
+			}
+		
+			if diff := cmp.Diff(got, want, protocmp.Transform()); diff != "" {
+				t.Errorf("TDX API proto mismatch: %s", diff)
+			}
+		}
+	}
 }

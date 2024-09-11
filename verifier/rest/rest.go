@@ -8,8 +8,10 @@ import (
 	"log"
 	"strings"
 
-	"github.com/google/go-sev-guest/abi"
+	sabi "github.com/google/go-sev-guest/abi"
 	"github.com/google/go-sev-guest/proto/sevsnp"
+	tabi "github.com/google/go-tdx-guest/abi"
+	"github.com/google/go-tdx-guest/proto/tdx"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/google/go-tpm-tools/verifier/oci"
 
@@ -209,6 +211,14 @@ func convertRequestToREST(request verifier.VerifyAttestationRequest) *confidenti
 		verifyReq.TeeAttestation = sevsnp
 	}
 
+	if request.Attestation.GetTdxAttestation() != nil {
+		tdx, err := convertTDXProtoToREST(request.Attestation.GetTdxAttestation())
+		if err != nil {
+			log.Fatalf("Failed to convert TD quote proto to API proto: %v", err)
+		}
+		verifyReq.TeeAttestation = tdx
+	}
+
 	return verifyReq
 }
 
@@ -240,8 +250,8 @@ func convertOCISignatureToREST(signature oci.Signature) (*confidentialcomputingp
 }
 
 func convertSEVSNPProtoToREST(att *sevsnp.Attestation) (*confidentialcomputingpb.VerifyAttestationRequest_SevSnpAttestation, error) {
-	auxBlob := abi.CertsFromProto(att.GetCertificateChain()).Marshal()
-	rawReport, err := abi.ReportToAbiBytes(att.GetReport())
+	auxBlob := sabi.CertsFromProto(att.GetCertificateChain()).Marshal()
+	rawReport, err := sabi.ReportToAbiBytes(att.GetReport())
 	if err != nil {
 		return nil, err
 	}
@@ -249,6 +259,18 @@ func convertSEVSNPProtoToREST(att *sevsnp.Attestation) (*confidentialcomputingpb
 		SevSnpAttestation: &confidentialcomputingpb.SevSnpAttestation{
 			AuxBlob: auxBlob,
 			Report:  rawReport,
+		},
+	}, nil
+}
+
+func convertTDXProtoToREST(att *tdx.QuoteV4) (*confidentialcomputingpb.VerifyAttestationRequest_TdCcel, error) {
+	rawQuote, err := tabi.QuoteToAbiBytes(att)
+	if err != nil {
+		return nil, err
+	}
+	return &confidentialcomputingpb.VerifyAttestationRequest_TdCcel{
+		TdCcel: &confidentialcomputingpb.TdxCcelAttestation{
+			TdQuote: rawQuote,
 		},
 	}, nil
 }
