@@ -388,7 +388,6 @@ func (r *ContainerRunner) measureMemoryMonitor() error {
 // to wait before attemping to refresh it.
 // The token file will be written to a tmp file and then renamed.
 func (r *ContainerRunner) refreshToken(ctx context.Context) (time.Duration, error) {
-	r.logger.Info("refreshing attestation verifier OIDC token")
 	if err := r.attestAgent.Refresh(ctx); err != nil {
 		return 0, fmt.Errorf("failed to refresh attestation agent: %v", err)
 	}
@@ -431,6 +430,7 @@ func (r *ContainerRunner) refreshToken(ctx context.Context) (time.Duration, erro
 	if err != nil {
 		return 0, fmt.Errorf("failed to format claims: %w", err)
 	}
+	r.logger.Info("successfully refreshed attestation token")
 	r.logger.Info(string(claimsString))
 
 	return getNextRefreshFromExpiration(time.Until(claims.ExpiresAt.Time), rand.Float64()), nil
@@ -463,6 +463,7 @@ func (r *ContainerRunner) fetchAndWriteTokenWithRetry(ctx context.Context,
 				r.logger.Info("token refreshing stopped")
 				return
 			case <-timer.C:
+				r.logger.Info("refreshing attestation verifier OIDC token")
 				var duration time.Duration
 				// Refresh token with default retry policy.
 				err := backoff.RetryNotify(
