@@ -82,11 +82,17 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		return nil, err
 	}
 
-	mounts := make([]specs.Mount, 0, len(launchSpec.Mounts)+1)
+	var mounts []specs.Mount
+	if launchSpec.Experiments.EnableTempFSMount {
+		mounts = make([]specs.Mount, 0, len(launchSpec.Mounts)+1)
 
-	for _, lsMnt := range launchSpec.Mounts {
-		mounts = append(mounts, lsMnt.SpecsMount())
+		for _, lsMnt := range launchSpec.Mounts {
+			mounts = append(mounts, lsMnt.SpecsMount())
+		}
+	} else {
+		mounts = make([]specs.Mount, 0)
 	}
+
 	mounts = appendTokenMounts(mounts)
 
 	envs, err := formatEnvVars(launchSpec.Envs)
