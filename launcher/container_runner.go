@@ -511,17 +511,14 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		return fmt.Errorf("failed to fetch and write OIDC token: %v", err)
 	}
 
-	r.logger.Printf("EnableTestFeatureForImage is set to %v\n", r.launchSpec.Experiments.EnableTestFeatureForImage)
-	// create and start the TEE server behind the experiment
-	if r.launchSpec.Experiments.EnableOnDemandAttestation {
-		r.logger.Println("EnableOnDemandAttestation is enabled: initializing TEE server.")
-		teeServer, err := teeserver.New(ctx, path.Join(launcherfile.HostTmpPath, teeServerSocket), r.attestAgent, r.logger)
-		if err != nil {
-			return fmt.Errorf("failed to create the TEE server: %v", err)
-		}
-		go teeServer.Serve()
-		defer teeServer.Shutdown(ctx)
+	// create and start the TEE server
+	r.logger.Println("EnableOnDemandAttestation is enabled: initializing TEE server.")
+	teeServer, err := teeserver.New(ctx, path.Join(launcherfile.HostTmpPath, teeServerSocket), r.attestAgent, r.logger)
+	if err != nil {
+		return fmt.Errorf("failed to create the TEE server: %v", err)
 	}
+	go teeServer.Serve()
+	defer teeServer.Shutdown(ctx)
 
 	// start node-problem-detector.service to collect memory related metrics.
 	if r.launchSpec.MemoryMonitoringEnabled {

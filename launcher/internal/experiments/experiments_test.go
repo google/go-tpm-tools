@@ -22,10 +22,6 @@ func TestExperiments(t *testing.T) {
 		if e.EnableTestFeatureForImage == false {
 			t.Errorf("testcase %d: expected EnableTestFeatureForImage to be true, got false", i)
 		}
-
-		if e.EnableSignedContainerImage == false {
-			t.Errorf("testcase %d: expected EnableSignedContainerImage to be true, got false", i)
-		}
 	}
 }
 
@@ -43,10 +39,6 @@ func TestExperimentsBadJson(t *testing.T) {
 
 		if e.EnableTestFeatureForImage == true {
 			t.Errorf("testcase %d: expected EnableTestFeatureForImage to be false, got true", i)
-		}
-
-		if e.EnableSignedContainerImage == true {
-			t.Errorf("testcase %d: expected EnableSignedContainerImage to be false, got true", i)
 		}
 	}
 }
