@@ -628,11 +628,12 @@ func openPorts(ports map[string]struct{}) error {
 			return fmt.Errorf("received unknown protocol: got %s, expected tcp or udp", protocol)
 		}
 
-		// This command will write a firewall rule to accept all INPUT packets for the given port/protocol.
-		cmd := exec.Command("iptables", "-A", "INPUT", "-p", protocol, "--dport", port, "-j", "ACCEPT")
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			return fmt.Errorf("failed to open port %s %s: %v %s", port, protocol, err, out)
+		for _, cmd := range []string{"iptables", "ip6tables"} {
+			cmdline := exec.Command(cmd, "-A", "INPUT", "-p", protocol, "--dport", port, "-j", "ACCEPT")
+			out, err := cmdline.CombinedOutput()
+			if err != nil {
+				return fmt.Errorf("failed to open port using %v: %s, %v", cmdline.Args, out, err)
+			}
 		}
 	}
 
