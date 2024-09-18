@@ -635,12 +635,7 @@ func TestVerifySucceedsWithOverlappingIntermediatesInOptionsAndAttestation(t *te
 	}
 }
 
-func TestVerifyFailWithCertsAndPubkey(t *testing.T) {
-	att := &attestpb.Attestation{}
-	if err := proto.Unmarshal(test.COS85NoNonce, att); err != nil {
-		t.Fatalf("failed to unmarshal attestation: %v", err)
-	}
-
+func TestValidateOptsFailWithCertsAndPubkey(t *testing.T) {
 	priv, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		t.Fatal(err)
@@ -651,56 +646,99 @@ func TestVerifyFailWithCertsAndPubkey(t *testing.T) {
 		IntermediateCerts: GceEKIntermediates,
 		TrustedAKs:        []crypto.PublicKey{priv.Public()},
 	}
-	if _, err := VerifyAttestation(att, opts); err == nil {
+	if err := validateOpts(opts); err == nil {
 		t.Error("Verified attestation even with multiple trust methods")
 	}
 }
 
-func TestVerifyAttestationEmptyRootsIntermediates(t *testing.T) {
+func TestValidateAK(t *testing.T) {
 	attestBytes := test.COS85NoNonce
 	att := &attestpb.Attestation{}
 	if err := proto.Unmarshal(attestBytes, att); err != nil {
 		t.Fatalf("failed to unmarshal attestation: %v", err)
 	}
 
-	if _, err := VerifyAttestation(att, VerifyOpts{
-		TrustedRootCerts:  nil,
-		IntermediateCerts: nil,
-	}); err == nil {
-		t.Error("expected error when calling VerifyAttestation with empty roots and intermediates")
+	rwc := test.GetTPM(t)
+	t.Cleanup(func() { client.CheckedClose(t, rwc) })
+
+	ak, err := client.AttestationKeyRSA(rwc)
+	if err != nil {
+		t.Fatalf("failed to generate AK: %v", err)
+	}
+	t.Cleanup(ak.Close)
+
+	testCases := []struct {
+		name     string
+		att      func() *attestpb.Attestation
+		opts     VerifyOpts
+		wantPass bool
+	}{
+		{
+			name: "success with validateAKCert",
+			att:  func() *attestpb.Attestation { return att },
+			opts: VerifyOpts{
+				TrustedRootCerts:  GceEKRoots,
+				IntermediateCerts: GceEKIntermediates,
+			},
+			wantPass: true,
+		},
+		{
+			name: "success with validateAKPub",
+			att: func() *attestpb.Attestation {
+				nonce := []byte("super secret nonce")
+				attestation, err := ak.Attest(client.AttestOpts{Nonce: nonce})
+				if err != nil {
+					t.Fatalf("failed to attest: %v", err)
+				}
+				return attestation
+			},
+			opts:     VerifyOpts{TrustedAKs: []crypto.PublicKey{ak.PublicKey()}},
+			wantPass: true,
+		},
+		{
+			name: "failed with empty roots and intermediates",
+			att:  func() *attestpb.Attestation { return att },
+			opts: VerifyOpts{
+				TrustedRootCerts:  nil,
+				IntermediateCerts: nil,
+			},
+			wantPass: false,
+		},
+		{
+			name:     "failed with empty VerifyOpts",
+			att:      func() *attestpb.Attestation { return att },
+			opts:     VerifyOpts{},
+			wantPass: false,
+		},
+		{
+			name:     "failed with missing roots",
+			att:      func() *attestpb.Attestation { return att },
+			opts:     VerifyOpts{IntermediateCerts: GceEKIntermediates},
+			wantPass: false,
+		},
+		{
+			name:     "failed with missing intermediates",
+			att:      func() *attestpb.Attestation { return att },
+			opts:     VerifyOpts{TrustedRootCerts: GceEKRoots},
+			wantPass: false,
+		},
+		{
+			name:     "failed with wrong trusted AKs",
+			att:      func() *attestpb.Attestation { return att },
+			opts:     VerifyOpts{TrustedAKs: []crypto.PublicKey{ak.PublicKey()}},
+			wantPass: false,
+		},
 	}
 
-	if _, err := VerifyAttestation(att, VerifyOpts{}); err == nil {
-		t.Error("expected error when calling VerifyAttestation with empty VerifyOpts")
-	}
-}
-
-func TestVerifyAttestationMissingRoots(t *testing.T) {
-	attestBytes := test.COS85NoNonce
-	att := &attestpb.Attestation{}
-	if err := proto.Unmarshal(attestBytes, att); err != nil {
-		t.Fatalf("failed to unmarshal attestation: %v", err)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, err := ValidateAK(tc.att(), tc.opts)
+			if gotPass := (err == nil); gotPass != tc.wantPass {
+				t.Errorf("ValidateAK failed, got pass %v, but want %v", gotPass, tc.wantPass)
+			}
+		})
 	}
 
-	if _, err := VerifyAttestation(att, VerifyOpts{
-		IntermediateCerts: GceEKIntermediates,
-	}); err == nil {
-		t.Error("expected error when calling VerifyAttestation with missing roots")
-	}
-}
-
-func TestVerifyAttestationMissingIntermediates(t *testing.T) {
-	attestBytes := test.COS85NoNonce
-	att := &attestpb.Attestation{}
-	if err := proto.Unmarshal(attestBytes, att); err != nil {
-		t.Fatalf("failed to unmarshal attestation: %v", err)
-	}
-
-	if _, err := VerifyAttestation(att, VerifyOpts{
-		TrustedRootCerts: GceEKRoots,
-	}); err == nil {
-		t.Error("expected error when calling VerifyAttestation with missing intermediates")
-	}
 }
 
 func TestVerifyIgnoreAKPubWithAKCert(t *testing.T) {

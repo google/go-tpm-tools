@@ -103,40 +103,19 @@ func VerifyAttestation(attestation *pb.Attestation, opts VerifyOpts) (*pb.Machin
 		return nil, fmt.Errorf("bad options: %w", err)
 	}
 
-	var akPubKey crypto.PublicKey
-	var machineState *pb.MachineState
-	if len(attestation.GetAkCert()) == 0 {
-		// If the AK Cert is not in the attestation, use the AK Public Area.
-		akPubArea, err := tpm2.DecodePublic(attestation.GetAkPub())
-		if err != nil {
-			return nil, fmt.Errorf("failed to decode AK public area: %w", err)
-		}
-		akPubKey, err = akPubArea.Key()
-		if err != nil {
-			return nil, fmt.Errorf("failed to get AK public key: %w", err)
-		}
-		machineState, err = validateAKPub(akPubKey, opts)
-		if err != nil {
-			return nil, fmt.Errorf("failed to validate AK public key: %w", err)
-		}
-	} else {
-		// If AK Cert is presented, ignore the AK Public Area.
-		akCert, err := x509.ParseCertificate(attestation.GetAkCert())
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse AK certificate: %w", err)
-		}
-		// Use intermediate certs from the attestation if they exist.
-		certs, err := parseCerts(attestation.IntermediateCerts)
-		if err != nil {
-			return nil, fmt.Errorf("attestation intermediates: %w", err)
-		}
-		opts.IntermediateCerts = append(opts.IntermediateCerts, certs...)
+	akCert, akPubKey, err := ValidateAK(attestation, opts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse and validate AK: %w", err)
+	}
 
-		machineState, err = validateAKCert(akCert, opts)
+	machineState := &pb.MachineState{}
+	if akCert != nil {
+		instanceInfo, err := GetGCEInstanceInfo(akCert)
 		if err != nil {
-			return nil, fmt.Errorf("failed to validate AK certificate: %w", err)
+			return nil, fmt.Errorf("failed to extract GCE instance info from AK cert: %w", err)
 		}
-		akPubKey = akCert.PublicKey.(crypto.PublicKey)
+		// Populate GCE instance info.
+		machineState.Platform = &pb.PlatformState{InstanceInfo: instanceInfo}
 	}
 
 	// Attempt to replay the log against our PCRs in order of hash preference
@@ -181,6 +160,42 @@ func VerifyAttestation(attestation *pb.Attestation, opts VerifyOpts) (*pb.Machin
 		return nil, lastErr
 	}
 	return nil, fmt.Errorf("attestation does not contain a supported quote")
+}
+
+// ValidateAK validates AK cert in the attestation, and returns AK cert (if exists) and public key.
+func ValidateAK(attestation *pb.Attestation, opts VerifyOpts) (*x509.Certificate, crypto.PublicKey, error) {
+	if len(attestation.GetAkCert()) == 0 {
+		// If the AK Cert is not in the attestation, use the AK Public Area.
+		akPubArea, err := tpm2.DecodePublic(attestation.GetAkPub())
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to decode AK public area: %w", err)
+		}
+		akPubKey, err := akPubArea.Key()
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to get AK public key: %w", err)
+		}
+		if err := validateAKPub(akPubKey, opts); err != nil {
+			return nil, nil, fmt.Errorf("failed to validate AK public key: %w", err)
+		}
+		return nil, akPubKey, nil
+	}
+
+	// If AK Cert is presented, ignore the AK Public Area.
+	akCert, err := x509.ParseCertificate(attestation.GetAkCert())
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to parse AK certificate: %w", err)
+	}
+	// Use intermediate certs from the attestation if they exist.
+	certs, err := parseCerts(attestation.IntermediateCerts)
+	if err != nil {
+		return nil, nil, fmt.Errorf("attestation intermediates: %w", err)
+	}
+	opts.IntermediateCerts = append(opts.IntermediateCerts, certs...)
+
+	if err := validateAKCert(akCert, opts); err != nil {
+		return nil, nil, fmt.Errorf("failed to validate AK certificate: %w", err)
+	}
+	return akCert, akCert.PublicKey.(crypto.PublicKey), nil
 }
 
 // GetGCEInstanceInfo takes a GCE-issued x509 EK/AK certificate and tries to
@@ -245,16 +260,16 @@ func validateOpts(opts VerifyOpts) error {
 	return nil
 }
 
-func validateAKPub(ak crypto.PublicKey, opts VerifyOpts) (*pb.MachineState, error) {
+func validateAKPub(ak crypto.PublicKey, opts VerifyOpts) error {
 	for _, trusted := range opts.TrustedAKs {
 		if internal.PubKeysEqual(ak, trusted) {
-			return &pb.MachineState{}, nil
+			return nil
 		}
 	}
-	return nil, fmt.Errorf("key not trusted")
+	return fmt.Errorf("key not trusted")
 }
 
-func validateAKCert(akCert *x509.Certificate, opts VerifyOpts) (*pb.MachineState, error) {
+func validateAKCert(akCert *x509.Certificate, opts VerifyOpts) error {
 	if len(opts.TrustedRootCerts) == 0 {
 		return validateAKPub(akCert.PublicKey.(crypto.PublicKey), opts)
 	}
@@ -282,15 +297,10 @@ func validateAKCert(akCert *x509.Certificate, opts VerifyOpts) (*pb.MachineState
 		KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsage(x509.ExtKeyUsageAny)},
 	}
 	if _, err := akCert.Verify(x509Opts); err != nil {
-		return nil, fmt.Errorf("certificate did not chain to a trusted root: %v", err)
+		return fmt.Errorf("certificate did not chain to a trusted root: %v", err)
 	}
 
-	instanceInfo, err := getInstanceInfoFromExtensions(akCert.Extensions)
-	if err != nil {
-		return nil, fmt.Errorf("error getting instance info: %v", err)
-	}
-
-	return &pb.MachineState{Platform: &pb.PlatformState{InstanceInfo: instanceInfo}}, nil
+	return nil
 }
 
 // Retrieve the supported quotes in order of hash preference.
