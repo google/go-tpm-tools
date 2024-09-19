@@ -6,9 +6,11 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
+	"crypto/x509"
 	"crypto/x509/pkix"
 	_ "embed"
 	"encoding/asn1"
+	"encoding/pem"
 	"fmt"
 	"io"
 	"os"
@@ -635,12 +637,7 @@ func TestVerifySucceedsWithOverlappingIntermediatesInOptionsAndAttestation(t *te
 	}
 }
 
-func TestVerifyFailWithCertsAndPubkey(t *testing.T) {
-	att := &attestpb.Attestation{}
-	if err := proto.Unmarshal(test.COS85NoNonce, att); err != nil {
-		t.Fatalf("failed to unmarshal attestation: %v", err)
-	}
-
+func TestValidateOptsFailWithCertsAndPubkey(t *testing.T) {
 	priv, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		t.Fatal(err)
@@ -651,56 +648,99 @@ func TestVerifyFailWithCertsAndPubkey(t *testing.T) {
 		IntermediateCerts: GceEKIntermediates,
 		TrustedAKs:        []crypto.PublicKey{priv.Public()},
 	}
-	if _, err := VerifyAttestation(att, opts); err == nil {
+	if err := validateOpts(opts); err == nil {
 		t.Error("Verified attestation even with multiple trust methods")
 	}
 }
 
-func TestVerifyAttestationEmptyRootsIntermediates(t *testing.T) {
+func TestValidateAK(t *testing.T) {
 	attestBytes := test.COS85NoNonce
 	att := &attestpb.Attestation{}
 	if err := proto.Unmarshal(attestBytes, att); err != nil {
 		t.Fatalf("failed to unmarshal attestation: %v", err)
 	}
 
-	if _, err := VerifyAttestation(att, VerifyOpts{
-		TrustedRootCerts:  nil,
-		IntermediateCerts: nil,
-	}); err == nil {
-		t.Error("expected error when calling VerifyAttestation with empty roots and intermediates")
+	rwc := test.GetTPM(t)
+	t.Cleanup(func() { client.CheckedClose(t, rwc) })
+
+	ak, err := client.AttestationKeyRSA(rwc)
+	if err != nil {
+		t.Fatalf("failed to generate AK: %v", err)
+	}
+	t.Cleanup(ak.Close)
+
+	testCases := []struct {
+		name     string
+		att      func() *attestpb.Attestation
+		opts     VerifyOpts
+		wantPass bool
+	}{
+		{
+			name: "success with validateAKCert",
+			att:  func() *attestpb.Attestation { return att },
+			opts: VerifyOpts{
+				TrustedRootCerts:  GceEKRoots,
+				IntermediateCerts: GceEKIntermediates,
+			},
+			wantPass: true,
+		},
+		{
+			name: "success with validateAKPub",
+			att: func() *attestpb.Attestation {
+				nonce := []byte("super secret nonce")
+				attestation, err := ak.Attest(client.AttestOpts{Nonce: nonce})
+				if err != nil {
+					t.Fatalf("failed to attest: %v", err)
+				}
+				return attestation
+			},
+			opts:     VerifyOpts{TrustedAKs: []crypto.PublicKey{ak.PublicKey()}},
+			wantPass: true,
+		},
+		{
+			name: "failed with empty roots and intermediates",
+			att:  func() *attestpb.Attestation { return att },
+			opts: VerifyOpts{
+				TrustedRootCerts:  nil,
+				IntermediateCerts: nil,
+			},
+			wantPass: false,
+		},
+		{
+			name:     "failed with empty VerifyOpts",
+			att:      func() *attestpb.Attestation { return att },
+			opts:     VerifyOpts{},
+			wantPass: false,
+		},
+		{
+			name:     "failed with missing roots",
+			att:      func() *attestpb.Attestation { return att },
+			opts:     VerifyOpts{IntermediateCerts: GceEKIntermediates},
+			wantPass: false,
+		},
+		{
+			name:     "failed with missing intermediates",
+			att:      func() *attestpb.Attestation { return att },
+			opts:     VerifyOpts{TrustedRootCerts: GceEKRoots},
+			wantPass: false,
+		},
+		{
+			name:     "failed with wrong trusted AKs",
+			att:      func() *attestpb.Attestation { return att },
+			opts:     VerifyOpts{TrustedAKs: []crypto.PublicKey{ak.PublicKey()}},
+			wantPass: false,
+		},
 	}
 
-	if _, err := VerifyAttestation(att, VerifyOpts{}); err == nil {
-		t.Error("expected error when calling VerifyAttestation with empty VerifyOpts")
-	}
-}
-
-func TestVerifyAttestationMissingRoots(t *testing.T) {
-	attestBytes := test.COS85NoNonce
-	att := &attestpb.Attestation{}
-	if err := proto.Unmarshal(attestBytes, att); err != nil {
-		t.Fatalf("failed to unmarshal attestation: %v", err)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, err := validateAK(tc.att(), tc.opts)
+			if gotPass := (err == nil); gotPass != tc.wantPass {
+				t.Errorf("ValidateAK failed, got pass %v, but want %v", gotPass, tc.wantPass)
+			}
+		})
 	}
 
-	if _, err := VerifyAttestation(att, VerifyOpts{
-		IntermediateCerts: GceEKIntermediates,
-	}); err == nil {
-		t.Error("expected error when calling VerifyAttestation with missing roots")
-	}
-}
-
-func TestVerifyAttestationMissingIntermediates(t *testing.T) {
-	attestBytes := test.COS85NoNonce
-	att := &attestpb.Attestation{}
-	if err := proto.Unmarshal(attestBytes, att); err != nil {
-		t.Fatalf("failed to unmarshal attestation: %v", err)
-	}
-
-	if _, err := VerifyAttestation(att, VerifyOpts{
-		TrustedRootCerts: GceEKRoots,
-	}); err == nil {
-		t.Error("expected error when calling VerifyAttestation with missing intermediates")
-	}
 }
 
 func TestVerifyIgnoreAKPubWithAKCert(t *testing.T) {
@@ -1255,6 +1295,96 @@ func TestParseTEEAttestation(t *testing.T) {
 			}
 			if gotPass := (err == nil); gotPass != tc.wantPass {
 				t.Errorf("parseTEEAttestation failed, gotPass: %v, but wantPass: %v", gotPass, tc.wantPass)
+			}
+		})
+	}
+}
+
+func TestValidateAKGCEAndGetGCEInstanceInfo(t *testing.T) {
+	testCases := []struct {
+		name            string
+		certPEM         []byte
+		rootCertDER     []byte
+		intermediateDER []byte
+	}{
+		{
+			name:            "GCE UCA AK ECC",
+			certPEM:         test.GCESignECCCertUCA,
+			rootCertDER:     gceEKRootCA,
+			intermediateDER: gceEKIntermediateCA3,
+		},
+		{
+			name:            "GCE UCA AK RSA",
+			certPEM:         test.GCESignRSACertUCA,
+			rootCertDER:     gceEKRootCA,
+			intermediateDER: gceEKIntermediateCA3,
+		},
+		{
+			name:            "GCE UCA EK ECC",
+			certPEM:         test.GCEEncryptECCCertUCA,
+			rootCertDER:     gceEKRootCA,
+			intermediateDER: gceEKIntermediateCA3,
+		},
+		{
+			name:            "GCE UCA EK RSA",
+			certPEM:         test.GCEEncryptRSACertUCA,
+			rootCertDER:     gceEKRootCA,
+			intermediateDER: gceEKIntermediateCA3,
+		},
+		{
+			name:            "GCE CAS AK ECC",
+			certPEM:         test.GCESignECCCertPCA,
+			rootCertDER:     gcpCASEKRootCA,
+			intermediateDER: gcpCASEKIntermediateCA3,
+		},
+		{
+			name:            "GCE CAS AK RSA",
+			certPEM:         test.GCESignRSACertPCA,
+			rootCertDER:     gcpCASEKRootCA,
+			intermediateDER: gcpCASEKIntermediateCA3,
+		},
+		{
+			name:            "GCE CAS EK ECC",
+			certPEM:         test.GCEEncryptECCCertPCA,
+			rootCertDER:     gcpCASEKRootCA,
+			intermediateDER: gcpCASEKIntermediateCA3,
+		},
+		{
+			name:            "GCE CAS EK RSA",
+			certPEM:         test.GCEEncryptRSACertPCA,
+			rootCertDER:     gcpCASEKRootCA,
+			intermediateDER: gcpCASEKIntermediateCA3,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			crtBlock, _ := pem.Decode(tc.certPEM)
+			if crtBlock.Bytes == nil {
+				t.Fatalf("failed to pem.Decode(tc.certPEM)")
+			}
+
+			akCrt, err := x509.ParseCertificate(crtBlock.Bytes)
+			if err != nil {
+				t.Fatalf("x509.ParseCertificate(crtBlock.Bytes): %v", err)
+			}
+			root, err := x509.ParseCertificate(tc.rootCertDER)
+			if err != nil {
+				t.Fatalf("x509.ParseCertificate(tc.rootCertDER): %v", err)
+			}
+			intermediate, err := x509.ParseCertificate(tc.intermediateDER)
+			if err != nil {
+				t.Fatalf("x509.ParseCertificate(tc.intermediateDER): %v", err)
+			}
+
+			if err := VerifyAKCert(akCrt, []*x509.Certificate{root}, []*x509.Certificate{intermediate}); err != nil {
+				t.Errorf("ValidateAKCert(%v): %v)", tc.name, err)
+			}
+
+			if gceInfo, err := GetGCEInstanceInfo(akCrt); err != nil {
+				t.Errorf("GetGCEInstanceInfo(akCrt): %v", err)
+			} else {
+				t.Log(gceInfo)
+				fmt.Print(gceInfo)
 			}
 		})
 	}
