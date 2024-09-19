@@ -1376,7 +1376,7 @@ func TestValidateAKGCEAndGetGCEInstanceInfo(t *testing.T) {
 				t.Fatalf("x509.ParseCertificate(tc.intermediateDER): %v", err)
 			}
 
-			if err := ValidateAKCert(akCrt, []*x509.Certificate{root}, []*x509.Certificate{intermediate}); err != nil {
+			if err := VerifyAKCert(akCrt, []*x509.Certificate{root}, []*x509.Certificate{intermediate}); err != nil {
 				t.Errorf("ValidateAKCert(%v): %v)", tc.name, err)
 			}
 

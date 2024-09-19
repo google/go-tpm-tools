@@ -108,19 +108,9 @@ func VerifyAttestation(attestation *pb.Attestation, opts VerifyOpts) (*pb.Machin
 		return nil, fmt.Errorf("bad options: %w", err)
 	}
 
-	akCert, akPubKey, err := validateAK(attestation, opts)
+	machineState, akPubKey, err := validateAK(attestation, opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse and validate AK: %w", err)
-	}
-
-	machineState := &pb.MachineState{}
-	if akCert != nil {
-		instanceInfo, err := GetGCEInstanceInfo(akCert)
-		if err != nil {
-			return nil, fmt.Errorf("failed to extract GCE instance info from AK cert: %w", err)
-		}
-		// Populate GCE instance info.
-		machineState.Platform = &pb.PlatformState{InstanceInfo: instanceInfo}
 	}
 
 	// Attempt to replay the log against our PCRs in order of hash preference
@@ -169,7 +159,7 @@ func VerifyAttestation(attestation *pb.Attestation, opts VerifyOpts) (*pb.Machin
 
 // validateAK validates AK cert in the attestation, and returns AK cert (if exists) and public key.
 // It also pulls out the GCE Instance Info if it exists.
-func validateAK(attestation *pb.Attestation, opts VerifyOpts) (*x509.Certificate, crypto.PublicKey, error) {
+func validateAK(attestation *pb.Attestation, opts VerifyOpts) (*pb.MachineState, crypto.PublicKey, error) {
 	if len(attestation.GetAkCert()) == 0 || len(opts.TrustedRootCerts) == 0 {
 		// If the AK Cert is not in the attestation, use the AK Public Area.
 		akPubArea, err := tpm2.DecodePublic(attestation.GetAkPub())
@@ -183,7 +173,7 @@ func validateAK(attestation *pb.Attestation, opts VerifyOpts) (*x509.Certificate
 		if err := validateAKPub(akPubKey, opts); err != nil {
 			return nil, nil, fmt.Errorf("failed to validate AK public key: %w", err)
 		}
-		return nil, akPubKey, nil
+		return &pb.MachineState{}, akPubKey, nil
 	}
 
 	// If AK Cert is presented, ignore the AK Public Area.
@@ -198,10 +188,15 @@ func validateAK(attestation *pb.Attestation, opts VerifyOpts) (*x509.Certificate
 	}
 	opts.IntermediateCerts = append(opts.IntermediateCerts, certs...)
 
-	if err := ValidateAKCert(akCert, opts.TrustedRootCerts, opts.IntermediateCerts); err != nil {
+	if err := VerifyAKCert(akCert, opts.TrustedRootCerts, opts.IntermediateCerts); err != nil {
 		return nil, nil, fmt.Errorf("failed to validate AK certificate: %w", err)
 	}
-	return akCert, akCert.PublicKey.(crypto.PublicKey), nil
+	instanceInfo, err := getInstanceInfoFromExtensions(akCert.Extensions)
+	if err != nil {
+		return nil, nil, fmt.Errorf("error getting instance info: %v", err)
+	}
+
+	return &pb.MachineState{Platform: &pb.PlatformState{InstanceInfo: instanceInfo}}, akCert.PublicKey, nil
 }
 
 // GetGCEInstanceInfo takes a GCE-issued x509 EK/AK certificate and tries to
@@ -276,7 +271,9 @@ func validateAKPub(ak crypto.PublicKey, opts VerifyOpts) error {
 	return fmt.Errorf("key not trusted")
 }
 
-func ValidateAKCert(akCert *x509.Certificate, trustedRootCerts []*x509.Certificate, intermediateCerts []*x509.Certificate) error {
+// VerifyAKCert checks a given Attestation Key certificate against the provided
+// root and intermediate CAs.
+func VerifyAKCert(akCert *x509.Certificate, trustedRootCerts []*x509.Certificate, intermediateCerts []*x509.Certificate) error {
 	if akCert == nil {
 		return errors.New("failed to validate AK Cert: received nil cert")
 	}
