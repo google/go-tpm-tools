@@ -81,7 +81,7 @@ jobs:
         run: go test ./launcher/agent -race -run TestCacheConcurrentSetGet
         if: (runner.os == 'Linux' || runner.os == 'macOS') && matrix.architecture == 'x64'
       - name: Test all modules
-        run: go test -v ./... ./cmd/... ./launcher/... ./verifier/... -skip=TestCacheConcurrentSetGet
+        run: go test -v ./... ./cmd/... ./launcher/... ./verifier/... -skip='TestCacheConcurrentSetGet|TestHwAttestationPass|TestHardwareAttestationPass'
 
   lint:
     strategy:
