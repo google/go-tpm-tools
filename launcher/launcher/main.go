@@ -9,7 +9,6 @@ import (
 	"log"
 	"os"
 	"os/exec"
-	"path"
 	"regexp"
 	"strings"
 
@@ -19,7 +18,6 @@ import (
 	"github.com/containerd/containerd/namespaces"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/launcher"
-	"github.com/google/go-tpm-tools/launcher/internal/experiments"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/registryauth"
 	"github.com/google/go-tpm-tools/launcher/spec"
@@ -32,10 +30,6 @@ const (
 	// panic() returns 2
 	rebootRC = 3 // reboot
 	holdRC   = 4 // hold
-	// experimentDataFile defines where the experiment sync output data is expected to be.
-	experimentDataFile = "experiment_data"
-	// binaryPath contains the path to the experiments binary.
-	binaryPath = "/usr/share/oem/confidential_space/confidential_space_experiments"
 )
 
 var rcMessage = map[int]string{
@@ -88,7 +82,7 @@ func main() {
 
 	// Get RestartPolicy and IsHardened from spec
 	mdsClient = metadata.NewClient(nil)
-	launchSpec, err := spec.GetLaunchSpec(ctx, mdsClient)
+	launchSpec, err := spec.GetLaunchSpec(ctx, logger, mdsClient)
 	if err != nil {
 		logger.Printf("failed to get launchspec, make sure you're running inside a GCE VM: %v\n", err)
 		// if cannot get launchSpec, exit directly
@@ -100,20 +94,6 @@ func main() {
 	if err := os.MkdirAll(launcherfile.HostTmpPath, 0744); err != nil {
 		logger.Printf("failed to create %s: %v", launcherfile.HostTmpPath, err)
 	}
-	experimentsFile := path.Join(launcherfile.HostTmpPath, experimentDataFile)
-
-	args := fmt.Sprintf("-output=%s", experimentsFile)
-	err = exec.Command(binaryPath, args).Run()
-	if err != nil {
-		logger.Printf("failure during experiment sync: %v\n", err)
-	}
-
-	e, err := experiments.New(experimentsFile)
-	if err != nil {
-		logger.Printf("failed to read experiment file: %v\n", err)
-		// do not fail if experiment retrieval fails
-	}
-	launchSpec.Experiments = e
 
 	defer func() {
 		// Catch panic to attempt to output to Cloud Logging.

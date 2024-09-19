@@ -64,7 +64,7 @@ func TestLaunchSpecUnmarshalJSONHappyCases(t *testing.T) {
 	for _, testcase := range testCases {
 		t.Run(testcase.testName, func(t *testing.T) {
 			spec := &LaunchSpec{}
-			if err := spec.UnmarshalJSON([]byte(testcase.mdsJSON)); err != nil {
+			if err := spec.unmarshalJSON([]byte(testcase.mdsJSON)); err != nil {
 				t.Fatal(err)
 			}
 			if !cmp.Equal(spec, want) {
@@ -118,7 +118,7 @@ func TestLaunchSpecUnmarshalJSONBadInput(t *testing.T) {
 	for _, testcase := range testCases {
 		t.Run(testcase.testName, func(t *testing.T) {
 			spec := &LaunchSpec{}
-			if err := spec.UnmarshalJSON([]byte(testcase.mdsJSON)); err == nil {
+			if err := spec.unmarshalJSON([]byte(testcase.mdsJSON)); err == nil {
 				t.Fatal("expected JSON parsing err")
 			}
 		})
@@ -137,7 +137,7 @@ func TestLaunchSpecUnmarshalJSONWithDefaultValue(t *testing.T) {
 		}`
 
 	spec := &LaunchSpec{}
-	if err := spec.UnmarshalJSON([]byte(mdsJSON)); err != nil {
+	if err := spec.unmarshalJSON([]byte(mdsJSON)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -161,7 +161,7 @@ func TestLaunchSpecUnmarshalJSONWithoutImageReference(t *testing.T) {
 		}`
 
 	spec := &LaunchSpec{}
-	if err := spec.UnmarshalJSON([]byte(mdsJSON)); err == nil || err != errImageRefNotSpecified {
+	if err := spec.unmarshalJSON([]byte(mdsJSON)); err == nil || err != errImageRefNotSpecified {
 		t.Errorf("got %v error, but expected %v error", err, errImageRefNotSpecified)
 	}
 }
@@ -204,7 +204,7 @@ func TestLaunchSpecUnmarshalJSONWithTmpfsMounts(t *testing.T) {
 	for _, testcase := range testCases {
 		t.Run(testcase.testName, func(t *testing.T) {
 			spec := &LaunchSpec{}
-			if err := spec.UnmarshalJSON([]byte(testcase.mdsJSON)); err != nil {
+			if err := spec.unmarshalJSON([]byte(testcase.mdsJSON)); err != nil {
 				t.Errorf("got %v error, but expected nil error", err)
 			}
 		})
@@ -269,7 +269,7 @@ func TestLaunchSpecUnmarshalJSONWithBadMounts(t *testing.T) {
 	for _, testcase := range testCases {
 		t.Run(testcase.testName, func(t *testing.T) {
 			spec := &LaunchSpec{}
-			err := spec.UnmarshalJSON([]byte(testcase.mdsJSON))
+			err := spec.unmarshalJSON([]byte(testcase.mdsJSON))
 			if match, _ := regexp.MatchString(testcase.errMatch, err.Error()); !match {
 				t.Errorf("got %v error, but expected %v error", err, testcase.errMatch)
 			}

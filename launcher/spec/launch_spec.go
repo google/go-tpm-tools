@@ -7,7 +7,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
+	"os/exec"
+	"path"
 	"strconv"
 	"strings"
 
@@ -16,6 +19,7 @@ import (
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/launcher/internal/experiments"
 	"github.com/google/go-tpm-tools/launcher/internal/launchermount"
+	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/verifier/util"
 )
 
@@ -38,6 +42,10 @@ const (
 	Always    RestartPolicy = "Always"
 	OnFailure RestartPolicy = "OnFailure"
 	Never     RestartPolicy = "Never"
+	// experimentDataFile defines where the experiment sync output data is expected to be.
+	experimentDataFile = "experiment_data"
+	// binaryPath contains the path to the experiments binary.
+	binaryPath = "/usr/share/oem/confidential_space/confidential_space_experiments"
 )
 
 // LogRedirectLocation specifies the workload logging redirect location.
@@ -113,9 +121,10 @@ type LaunchSpec struct {
 	Experiments experiments.Experiments
 }
 
-// UnmarshalJSON unmarshals an instance attributes list in JSON format from the metadata
+// unmarshalJSON unmarshals an instance attributes list in JSON format from the metadata
 // server set by an operator to a LaunchSpec.
-func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
+// This method expects experiments to be set on the LaunchSpec before being called.
+func (s *LaunchSpec) unmarshalJSON(b []byte) error {
 	var unmarshaledMap map[string]string
 	if err := json.Unmarshal(b, &unmarshaledMap); err != nil {
 		return err
@@ -176,26 +185,28 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 
 	s.AttestationServiceAddr = unmarshaledMap[attestationServiceAddrKey]
 
-	// Populate /dev/shm size override.
-	if val, ok := unmarshaledMap[devShmSizeKey]; ok && val != "" {
-		size, err := strconv.ParseUint(val, 10, 64)
-		if err != nil {
-			return fmt.Errorf("failed to convert %v into uint64, got: %v", devShmSizeKey, val)
-		}
-		s.DevShmSize = int64(size)
-	}
-
-	// Populate mount override.
-	// https://cloud.google.com/compute/docs/disks/set-persistent-device-name-in-linux-vm
-	// https://cloud.google.com/compute/docs/disks/add-local-ssd
-	if val, ok := unmarshaledMap[mountKey]; ok && val != "" {
-		mounts := strings.Split(val, ";")
-		for _, mount := range mounts {
-			specMnt, err := processMount(mount)
+	if s.Experiments.EnableTempFSMount {
+		// Populate /dev/shm size override.
+		if val, ok := unmarshaledMap[devShmSizeKey]; ok && val != "" {
+			size, err := strconv.ParseUint(val, 10, 64)
 			if err != nil {
-				return err
+				return fmt.Errorf("failed to convert %v into uint64, got: %v", devShmSizeKey, val)
 			}
-			s.Mounts = append(s.Mounts, specMnt)
+			s.DevShmSize = int64(size)
+		}
+
+		// Populate mount override.
+		// https://cloud.google.com/compute/docs/disks/set-persistent-device-name-in-linux-vm
+		// https://cloud.google.com/compute/docs/disks/add-local-ssd
+		if val, ok := unmarshaledMap[mountKey]; ok && val != "" {
+			mounts := strings.Split(val, ";")
+			for _, mount := range mounts {
+				specMnt, err := processMount(mount)
+				if err != nil {
+					return err
+				}
+				s.Mounts = append(s.Mounts, specMnt)
+			}
 		}
 	}
 
@@ -206,14 +217,15 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 // input to the GCE instance custom metadata and return a LaunchSpec.
 // ImageRef (tee-image-reference) is required, will return an error if
 // ImageRef is not presented in the metadata.
-func GetLaunchSpec(ctx context.Context, client *metadata.Client) (LaunchSpec, error) {
+func GetLaunchSpec(ctx context.Context, logger *log.Logger, client *metadata.Client) (LaunchSpec, error) {
 	data, err := client.GetWithContext(ctx, instanceAttributesQuery)
 	if err != nil {
 		return LaunchSpec{}, err
 	}
 
 	spec := &LaunchSpec{}
-	if err := spec.UnmarshalJSON([]byte(data)); err != nil {
+	spec.Experiments = fetchExperiments(logger)
+	if err := spec.unmarshalJSON([]byte(data)); err != nil {
 		return LaunchSpec{}, err
 	}
 
@@ -257,6 +269,22 @@ func isHardened(kernelCmd string) bool {
 		}
 	}
 	return false
+}
+
+func fetchExperiments(logger *log.Logger) experiments.Experiments {
+	experimentsFile := path.Join(launcherfile.HostTmpPath, experimentDataFile)
+
+	args := fmt.Sprintf("-output=%s", experimentsFile)
+	err := exec.Command(binaryPath, args).Run()
+	if err != nil {
+		logger.Printf("failure during experiment sync: %v\n", err)
+	}
+	e, err := experiments.New(experimentsFile)
+	if err != nil {
+		logger.Printf("failed to read experiment file: %v\n", err)
+		// do not fail if experiment retrieval fails
+	}
+	return e
 }
 
 func processMount(singleMount string) (launchermount.Mount, error) {
