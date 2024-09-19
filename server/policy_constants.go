@@ -78,12 +78,18 @@ var (
 	RevokedCiscoCert []byte
 )
 
-// Known Privacy CA certs.
+// Known GCE EK CA certs.
 var (
 	//go:embed ca-certs/tpm_ek_root_1.cer
 	gceEKRootCA []byte
 	//go:embed ca-certs/tpm_ek_intermediate_2.crt
 	gceEKIntermediateCA2 []byte
+	//go:embed ca-certs/tpm_ek_intermediate_3.crt
+	gceEKIntermediateCA3 []byte
+	//go:embed ca-certs/gcp_ek_ak_ca_root.crt
+	gcpCASEKRootCA []byte
+	//go:embed ca-certs/gcp_ek_ak_ca_intermediate_v3.crt
+	gcpCASEKIntermediateCA3 []byte
 )
 
 // Certificates corresponding to the known CA certs for GCE.

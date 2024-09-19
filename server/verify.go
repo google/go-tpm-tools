@@ -44,6 +44,11 @@ type VerifyOpts struct {
 	// IntermediateCerts.
 	// Adding a specific TPM manufacturer's root and intermediate CAs means all
 	// TPMs signed by that CA will be trusted.
+	// To trust the MachineState's GCE instance_info, the caller MUST use
+	// authentic Google-signed certificates provided in server/ca-certs
+	// OR fetched via
+	// https://privateca-content-62d71773-0000-21da-852e-f4f5e80d7778.storage.googleapis.com/032bf9d39db4fa06aade/ca.crt
+	// https://pki.goog/cloud_integrity/tpm_ek_root_1.crt.
 	TrustedRootCerts  []*x509.Certificate
 	IntermediateCerts []*x509.Certificate
 	// Which bootloader the instance uses. Pick UNSUPPORTED to skip this
@@ -103,7 +108,7 @@ func VerifyAttestation(attestation *pb.Attestation, opts VerifyOpts) (*pb.Machin
 		return nil, fmt.Errorf("bad options: %w", err)
 	}
 
-	akCert, akPubKey, err := ValidateAK(attestation, opts)
+	akCert, akPubKey, err := validateAK(attestation, opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse and validate AK: %w", err)
 	}
@@ -162,9 +167,10 @@ func VerifyAttestation(attestation *pb.Attestation, opts VerifyOpts) (*pb.Machin
 	return nil, fmt.Errorf("attestation does not contain a supported quote")
 }
 
-// ValidateAK validates AK cert in the attestation, and returns AK cert (if exists) and public key.
-func ValidateAK(attestation *pb.Attestation, opts VerifyOpts) (*x509.Certificate, crypto.PublicKey, error) {
-	if len(attestation.GetAkCert()) == 0 {
+// validateAK validates AK cert in the attestation, and returns AK cert (if exists) and public key.
+// It also pulls out the GCE Instance Info if it exists.
+func validateAK(attestation *pb.Attestation, opts VerifyOpts) (*x509.Certificate, crypto.PublicKey, error) {
+	if len(attestation.GetAkCert()) == 0 || len(opts.TrustedRootCerts) == 0 {
 		// If the AK Cert is not in the attestation, use the AK Public Area.
 		akPubArea, err := tpm2.DecodePublic(attestation.GetAkPub())
 		if err != nil {
@@ -192,7 +198,7 @@ func ValidateAK(attestation *pb.Attestation, opts VerifyOpts) (*x509.Certificate
 	}
 	opts.IntermediateCerts = append(opts.IntermediateCerts, certs...)
 
-	if err := validateAKCert(akCert, opts); err != nil {
+	if err := ValidateAKCert(akCert, opts.TrustedRootCerts, opts.IntermediateCerts); err != nil {
 		return nil, nil, fmt.Errorf("failed to validate AK certificate: %w", err)
 	}
 	return akCert, akCert.PublicKey.(crypto.PublicKey), nil
@@ -202,6 +208,7 @@ func ValidateAK(attestation *pb.Attestation, opts VerifyOpts) (*x509.Certificate
 // extract its GCE instance information. It returns an error if the cert is nil
 // or malformed, but it does not return an error if the cert does not contain
 // the GCE Instance OID.
+// The caller must first `ValidateAKCert` using a GCE EK Certificate root CA.
 func GetGCEInstanceInfo(cert *x509.Certificate) (*pb.GCEInstanceInfo, error) {
 	if cert == nil {
 		return nil, errors.New("cannot extract GCEInstanceInfo from a nil cert")
@@ -269,9 +276,12 @@ func validateAKPub(ak crypto.PublicKey, opts VerifyOpts) error {
 	return fmt.Errorf("key not trusted")
 }
 
-func validateAKCert(akCert *x509.Certificate, opts VerifyOpts) error {
-	if len(opts.TrustedRootCerts) == 0 {
-		return validateAKPub(akCert.PublicKey.(crypto.PublicKey), opts)
+func ValidateAKCert(akCert *x509.Certificate, trustedRootCerts []*x509.Certificate, intermediateCerts []*x509.Certificate) error {
+	if akCert == nil {
+		return errors.New("failed to validate AK Cert: received nil cert")
+	}
+	if len(trustedRootCerts) == 0 {
+		return errors.New("failed to validate AK Cert: received no trusted root certs")
 	}
 
 	// We manually handle the SAN extension because x509 marks it unhandled if
@@ -287,8 +297,8 @@ func validateAKCert(akCert *x509.Certificate, opts VerifyOpts) error {
 	akCert.UnhandledCriticalExtensions = exts
 
 	x509Opts := x509.VerifyOptions{
-		Roots:         makePool(opts.TrustedRootCerts),
-		Intermediates: makePool(opts.IntermediateCerts),
+		Roots:         makePool(trustedRootCerts),
+		Intermediates: makePool(intermediateCerts),
 		// The default key usage (ExtKeyUsageServerAuth) is not appropriate for
 		// an Attestation Key: ExtKeyUsage of
 		// - https://oidref.com/2.23.133.8.1

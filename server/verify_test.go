@@ -6,9 +6,11 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
+	"crypto/x509"
 	"crypto/x509/pkix"
 	_ "embed"
 	"encoding/asn1"
+	"encoding/pem"
 	"fmt"
 	"io"
 	"os"
@@ -732,7 +734,7 @@ func TestValidateAK(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, _, err := ValidateAK(tc.att(), tc.opts)
+			_, _, err := validateAK(tc.att(), tc.opts)
 			if gotPass := (err == nil); gotPass != tc.wantPass {
 				t.Errorf("ValidateAK failed, got pass %v, but want %v", gotPass, tc.wantPass)
 			}
@@ -1293,6 +1295,96 @@ func TestParseTEEAttestation(t *testing.T) {
 			}
 			if gotPass := (err == nil); gotPass != tc.wantPass {
 				t.Errorf("parseTEEAttestation failed, gotPass: %v, but wantPass: %v", gotPass, tc.wantPass)
+			}
+		})
+	}
+}
+
+func TestValidateAKGCEAndGetGCEInstanceInfo(t *testing.T) {
+	testCases := []struct {
+		name            string
+		certPEM         []byte
+		rootCertDER     []byte
+		intermediateDER []byte
+	}{
+		{
+			name:            "GCE UCA AK ECC",
+			certPEM:         test.GCESignECCCertUCA,
+			rootCertDER:     gceEKRootCA,
+			intermediateDER: gceEKIntermediateCA3,
+		},
+		{
+			name:            "GCE UCA AK RSA",
+			certPEM:         test.GCESignRSACertUCA,
+			rootCertDER:     gceEKRootCA,
+			intermediateDER: gceEKIntermediateCA3,
+		},
+		{
+			name:            "GCE UCA EK ECC",
+			certPEM:         test.GCEEncryptECCCertUCA,
+			rootCertDER:     gceEKRootCA,
+			intermediateDER: gceEKIntermediateCA3,
+		},
+		{
+			name:            "GCE UCA EK RSA",
+			certPEM:         test.GCEEncryptRSACertUCA,
+			rootCertDER:     gceEKRootCA,
+			intermediateDER: gceEKIntermediateCA3,
+		},
+		{
+			name:            "GCE CAS AK ECC",
+			certPEM:         test.GCESignECCCertPCA,
+			rootCertDER:     gcpCASEKRootCA,
+			intermediateDER: gcpCASEKIntermediateCA3,
+		},
+		{
+			name:            "GCE CAS AK RSA",
+			certPEM:         test.GCESignRSACertPCA,
+			rootCertDER:     gcpCASEKRootCA,
+			intermediateDER: gcpCASEKIntermediateCA3,
+		},
+		{
+			name:            "GCE CAS EK ECC",
+			certPEM:         test.GCEEncryptECCCertPCA,
+			rootCertDER:     gcpCASEKRootCA,
+			intermediateDER: gcpCASEKIntermediateCA3,
+		},
+		{
+			name:            "GCE CAS EK RSA",
+			certPEM:         test.GCEEncryptRSACertPCA,
+			rootCertDER:     gcpCASEKRootCA,
+			intermediateDER: gcpCASEKIntermediateCA3,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			crtBlock, _ := pem.Decode(tc.certPEM)
+			if crtBlock.Bytes == nil {
+				t.Fatalf("failed to pem.Decode(tc.certPEM)")
+			}
+
+			akCrt, err := x509.ParseCertificate(crtBlock.Bytes)
+			if err != nil {
+				t.Fatalf("x509.ParseCertificate(crtBlock.Bytes): %v", err)
+			}
+			root, err := x509.ParseCertificate(tc.rootCertDER)
+			if err != nil {
+				t.Fatalf("x509.ParseCertificate(tc.rootCertDER): %v", err)
+			}
+			intermediate, err := x509.ParseCertificate(tc.intermediateDER)
+			if err != nil {
+				t.Fatalf("x509.ParseCertificate(tc.intermediateDER): %v", err)
+			}
+
+			if err := ValidateAKCert(akCrt, []*x509.Certificate{root}, []*x509.Certificate{intermediate}); err != nil {
+				t.Errorf("ValidateAKCert(%v): %v)", tc.name, err)
+			}
+
+			if gceInfo, err := GetGCEInstanceInfo(akCrt); err != nil {
+				t.Errorf("GetGCEInstanceInfo(akCrt): %v", err)
+			} else {
+				t.Log(gceInfo)
+				fmt.Print(gceInfo)
 			}
 		})
 	}
