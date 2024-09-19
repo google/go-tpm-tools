@@ -9,6 +9,17 @@ substitutions:
   '_TMPFS_SIZE_KB': '222'
 steps:
 - name: 'gcr.io/cloud-builders/gcloud'
+  id: CreateVMWithDefaultDevShmSize
+  entrypoint: 'bash'
+  env:
+  - 'BUILD_ID=$BUILD_ID'
+  args: ['create_vm.sh','-i', '${_IMAGE_NAME}',
+          '-p', '${_IMAGE_PROJECT}',
+          '-m', '^~^tee-image-reference=${_WORKLOAD_IMAGE}~tee-container-log-redirect=true',
+          '-n', '${_VM_NAME_PREFIX}-${BUILD_ID}-default',
+          '-z', '${_ZONE}',
+        ]
+- name: 'gcr.io/cloud-builders/gcloud'
   id: CreateVMWithMountsAllowed
   entrypoint: 'bash'
   env:
@@ -33,6 +44,27 @@ steps:
           '-z', '${_ZONE}',
         ]
 - name: 'gcr.io/cloud-builders/gcloud'
+  id: CheckDevShmExists
+  env:
+  - '_VM_NAME_PREFIX=$_VM_NAME_PREFIX'
+  - 'BUILD_ID=$BUILD_ID'
+  - '_ZONE=$_ZONE'
+  script: |
+    #!/bin/bash
+    set -euo pipefail
+    source util/read_serial.sh
+
+    sleep 45
+    SERIAL_OUTPUT=$(read_serial ${_VM_NAME_PREFIX}-${BUILD_ID}-default ${_ZONE})
+    if echo $SERIAL_OUTPUT | grep -q "shm.*/dev/shm"
+    then
+        echo "- Verified /dev/shm mounted by defaul"
+    else
+        echo "FAILED: /dev/shm mount failed"
+        echo 'TEST FAILED' > /workspace/status.txt
+        echo $SERIAL_OUTPUT
+    fi
+- name: 'gcr.io/cloud-builders/gcloud'
   id: CheckMountsAllowed
   env:
   - '_VM_NAME_PREFIX=$_VM_NAME_PREFIX'
@@ -47,20 +79,19 @@ steps:
 
     sleep 45
     SERIAL_OUTPUT=$(read_serial ${_VM_NAME_PREFIX}-${BUILD_ID}-allowed ${_ZONE})
-    echo $SERIAL_OUTPUT
-    if echo $SERIAL_OUTPUT | grep -q "tmpfs.*${_TMPFS_SIZE_KB}.*/tmp/sized"
+    if echo $SERIAL_OUTPUT | grep -q "tmpfs.*220.*/tmp/sized"
     then
-        echo "- Mount launch policy verified for sized tmpfs"
+        echo "- Mount verified for sized tmpfs"
     else
-        echo "FAILED: Mount launch policy verification for sized tmpfs"
+        echo "FAILED: Mount verification for sized tmpfs"
         echo 'TEST FAILED' > /workspace/status.txt
         echo $SERIAL_OUTPUT
     fi
     if echo $SERIAL_OUTPUT | grep -q "shm.*${_DEV_SHM_SIZE_KB}.*/dev/shm"
     then
-        echo "- Mount launch policy verified for /dev/shm size"
+        echo "- Mount verified for /dev/shm size"
     else
-        echo "FAILED: Mount launch policy verification for /dev/shm size"
+        echo "FAILED: Mount verification for /dev/shm size"
         echo 'TEST FAILED' > /workspace/status.txt
         echo $SERIAL_OUTPUT
     fi
@@ -88,6 +119,13 @@ steps:
     fi
 
   waitFor: ['CreateVMWithMountsDenied']
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CleanUpVMWithDefault
+  entrypoint: 'bash'
+  env:
+  - 'CLEANUP=$_CLEANUP'
+  args: ['cleanup.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}-default', '${_ZONE}']
+  waitFor: ['CheckDevShmExists']
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CleanUpVMWithMountsAllowed
   entrypoint: 'bash'
