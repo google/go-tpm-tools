@@ -144,24 +144,28 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		Soft: nofile,
 	}}
 
+	specOpts := []oci.SpecOpts{
+		oci.WithImageConfigArgs(image, launchSpec.Cmd),
+		oci.WithEnv(envs),
+		oci.WithMounts(mounts),
+		// following 4 options are here to allow the container to have
+		// the host network (same effect as --net-host in ctr command)
+		oci.WithHostHostsFile,
+		oci.WithHostResolvconf,
+		oci.WithHostNamespace(specs.NetworkNamespace),
+		oci.WithEnv([]string{fmt.Sprintf("HOSTNAME=%s", hostname)}),
+		withRlimits(rlimits),
+	}
+	if launchSpec.DevShmSize != 0 {
+		specOpts = append(specOpts, oci.WithDevShmSize(launchSpec.DevShmSize))
+	}
+
 	container, err = cdClient.NewContainer(
 		ctx,
 		containerID,
 		containerd.WithImage(image),
 		containerd.WithNewSnapshot(snapshotID, image),
-		containerd.WithNewSpec(
-			oci.WithImageConfigArgs(image, launchSpec.Cmd),
-			oci.WithEnv(envs),
-			oci.WithMounts(mounts),
-			// following 4 options are here to allow the container to have
-			// the host network (same effect as --net-host in ctr command)
-			oci.WithHostHostsFile,
-			oci.WithHostResolvconf,
-			oci.WithHostNamespace(specs.NetworkNamespace),
-			oci.WithEnv([]string{fmt.Sprintf("HOSTNAME=%s", hostname)}),
-			withRlimits(rlimits),
-			oci.WithDevShmSize(launchSpec.DevShmSize),
-		),
+		containerd.WithNewSpec(specOpts...),
 	)
 	if err != nil {
 		if container != nil {
