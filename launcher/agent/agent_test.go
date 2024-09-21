@@ -352,6 +352,7 @@ type returnVal struct {
 
 // Implments signaturediscovery.Fetcher methods
 type failingClient struct {
+	mu       sync.Mutex
 	results  map[string][]returnVal
 	numTimes map[string]int
 }
@@ -369,6 +370,9 @@ func NewFailingClient(mymap map[string][]returnVal) signaturediscovery.Fetcher {
 
 // Return test data in a round robin fashion
 func (f *failingClient) FetchImageSignatures(_ context.Context, targetRepository string) ([]oci.Signature, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
 	attempt := f.numTimes[targetRepository]
 	r := f.results[targetRepository][attempt]
 	f.numTimes[targetRepository] = intMin(attempt+1, len(f.results[targetRepository])-1)
