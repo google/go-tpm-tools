@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-tpm-tools/launcher/internal/experiments"
 	"github.com/google/go-tpm-tools/launcher/internal/launchermount"
 )
 
@@ -59,11 +60,17 @@ func TestLaunchSpecUnmarshalJSONHappyCases(t *testing.T) {
 		DevShmSize:                 234234,
 		Mounts: []launchermount.Mount{launchermount.TmpfsMount{Destination: "/tmpmount", Size: 0},
 			launchermount.TmpfsMount{Destination: "/sized", Size: 222}},
+		Experiments: experiments.Experiments{
+			EnableTempFSMount: true,
+		},
 	}
 
 	for _, testcase := range testCases {
 		t.Run(testcase.testName, func(t *testing.T) {
 			spec := &LaunchSpec{}
+			spec.Experiments = experiments.Experiments{
+				EnableTempFSMount: true,
+			}
 			if err := spec.unmarshalJSON([]byte(testcase.mdsJSON)); err != nil {
 				t.Fatal(err)
 			}
@@ -269,6 +276,9 @@ func TestLaunchSpecUnmarshalJSONWithBadMounts(t *testing.T) {
 	for _, testcase := range testCases {
 		t.Run(testcase.testName, func(t *testing.T) {
 			spec := &LaunchSpec{}
+			spec.Experiments = experiments.Experiments{
+				EnableTempFSMount: true,
+			}
 			err := spec.unmarshalJSON([]byte(testcase.mdsJSON))
 			if match, _ := regexp.MatchString(testcase.errMatch, err.Error()); !match {
 				t.Errorf("got %v error, but expected %v error", err, testcase.errMatch)
