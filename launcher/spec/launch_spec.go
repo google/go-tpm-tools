@@ -121,10 +121,10 @@ type LaunchSpec struct {
 	Experiments experiments.Experiments
 }
 
-// unmarshalJSON unmarshals an instance attributes list in JSON format from the metadata
+// UnmarshalJSON unmarshals an instance attributes list in JSON format from the metadata
 // server set by an operator to a LaunchSpec.
 // This method expects experiments to be set on the LaunchSpec before being called.
-func (s *LaunchSpec) unmarshalJSON(b []byte) error {
+func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 	var unmarshaledMap map[string]string
 	if err := json.Unmarshal(b, &unmarshaledMap); err != nil {
 		return err
@@ -225,7 +225,7 @@ func GetLaunchSpec(ctx context.Context, logger *log.Logger, client *metadata.Cli
 
 	spec := &LaunchSpec{}
 	spec.Experiments = fetchExperiments(logger)
-	if err := spec.unmarshalJSON([]byte(data)); err != nil {
+	if err := spec.UnmarshalJSON([]byte(data)); err != nil {
 		return LaunchSpec{}, err
 	}
 
