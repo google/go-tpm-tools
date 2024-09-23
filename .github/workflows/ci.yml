@@ -31,7 +31,6 @@ jobs:
         go-version: [1.21.x]
         # TODO: Get this working on windows-latest
         os: [ubuntu-latest]
-        architecture: [x32, x64]
         include:
           - os: macos-latest
             architecture: arm64
@@ -39,14 +38,13 @@ jobs:
           - os: macos-14-large
             architecture: x64
             go-version: 1.21.x
-    name: Generate/Build/Test (${{ matrix.os }}, ${{ matrix.architecture }}, Go ${{ matrix.go-version }})
+    name: Generate/Build/Test (${{ matrix.os }}, Go ${{ matrix.go-version }})
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-go@v4
         with:
           go-version: ${{ matrix.go-version }}
-          architecture: ${{ matrix.architecture }}
       - name: Install Protoc
         uses: arduino/setup-protoc@v1
         with:
@@ -60,10 +58,7 @@ jobs:
           git diff -G'^[^/]' --exit-code
       - name: Install Linux 64-bit packages
         run: sudo apt-get -y install libssl-dev
-        if: runner.os == 'Linux' && matrix.architecture == 'x64'
-      - name: Install Linux 32-bit packages
-        run: sudo dpkg --add-architecture i386; sudo apt-get update; sudo apt-get -y install libssl-dev:i386 libgcc-s1:i386 gcc-multilib
-        if: runner.os == 'Linux' && matrix.architecture == 'x32'
+        if: runner.os == 'Linux' 
       - name: Install Mac packages
         run: |
           brew install openssl
@@ -79,7 +74,7 @@ jobs:
           sudo $GO_EXECUTABLE_PATH test -v -run "TestFetchImageSignaturesDockerPublic" ./launcher
       - name: Run specific tests to capture potential data race
         run: go test ./launcher/agent -race -run TestCacheConcurrentSetGet
-        if: (runner.os == 'Linux' || runner.os == 'macOS') && matrix.architecture == 'x64'
+        if: runner.os == 'Linux' || runner.os == 'macOS'
       - name: Test all modules
         run: go test -v ./... ./cmd/... ./launcher/... ./verifier/... -skip='TestCacheConcurrentSetGet|TestHwAttestationPass|TestHardwareAttestationPass'
 
