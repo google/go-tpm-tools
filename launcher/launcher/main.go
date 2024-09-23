@@ -80,6 +80,10 @@ func main() {
 		return
 	}
 
+	if err := os.MkdirAll(launcherfile.HostTmpPath, 0744); err != nil {
+		logger.Printf("failed to create %s: %v", launcherfile.HostTmpPath, err)
+	}
+
 	// Get RestartPolicy and IsHardened from spec
 	mdsClient = metadata.NewClient(nil)
 	launchSpec, err := spec.GetLaunchSpec(ctx, logger, mdsClient)
@@ -89,10 +93,6 @@ func main() {
 		exitCode = failRC
 		logger.Printf("%s, exit code: %d (%s)\n", exitMessage, exitCode, rcMessage[exitCode])
 		return
-	}
-
-	if err := os.MkdirAll(launcherfile.HostTmpPath, 0744); err != nil {
-		logger.Printf("failed to create %s: %v", launcherfile.HostTmpPath, err)
 	}
 
 	defer func() {
