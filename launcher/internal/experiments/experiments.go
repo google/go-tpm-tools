@@ -4,7 +4,6 @@ package experiments
 import (
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"os"
 )
 
@@ -40,16 +39,4 @@ func readJSONInput(b []byte) (Experiments, error) {
 		return Experiments{}, fmt.Errorf("failed to unmarshal json: %w", err)
 	}
 	return experiments, nil
-}
-
-// Log takes a structured logger and uses it to log the launcher's experiment flags.
-func (e Experiments) Log(logger *slog.Logger) {
-	logger.Info("Experiment settings",
-		slog.Bool("test_feature", e.EnableTestFeatureForImage),
-		slog.Bool("signed_container_image", e.EnableSignedContainerImage),
-		slog.Bool("on_demand_attestation", e.EnableOnDemandAttestation),
-		slog.Bool("memory_monitoring", e.EnableMemoryMonitoring),
-		slog.Bool("signed_container_cache", e.EnableSignedContainerCache),
-		slog.Bool("measure_memory_monitoring", e.EnableMeasureMemoryMonitor),
-	)
 }

@@ -60,9 +60,7 @@ func main() {
 	var err error
 	ctx := context.Background()
 
-	logger = slog.Default()
-	// log.Default() outputs to stderr; change to stdout.
-	// log.SetOutput(os.Stdout)
+	logger = slog.New(slog.NewTextHandler(os.Stdout, nil))
 	defer func() {
 		os.Exit(exitCode)
 	}()
@@ -91,7 +89,7 @@ func main() {
 	}
 
 	if err := os.MkdirAll(launcherfile.HostTmpPath, 0744); err != nil {
-		logger.Printf("failed to create %s: %v", launcherfile.HostTmpPath, err)
+		logger.Error(fmt.Sprintf("failed to create %s: %v", launcherfile.HostTmpPath, err))
 	}
 
 	// Get RestartPolicy and IsHardened from spec
@@ -133,9 +131,9 @@ func main() {
 		}
 		msg, ok := rcMessage[exitCode]
 		if ok {
-			logger.Info(exitMessage, "exit_code", exitCode, "exit_msg", msg)
+			logger.Info(exitMessage, slog.Int("exit_code", exitCode), slog.String("exit_msg", msg))
 		} else {
-			logger.Info(exitMessage, "exit_code", exitCode)
+			logger.Info(exitMessage, slog.Int("exit_code", exitCode))
 		}
 	}()
 	if err = startLauncher(launchSpec, serialConsole); err != nil {
@@ -222,8 +220,7 @@ func startLauncher(launchSpec spec.LaunchSpec, serialConsole *os.File) error {
 	}
 	gceAk.Close()
 
-	ctx := context.Background()
-	token, err := registryauth.RetrieveAuthToken(ctx, mdsClient)
+	token, err := registryauth.RetrieveAuthToken(context.Background(), mdsClient)
 	if err != nil {
 		logger.Info(fmt.Sprintf("failed to retrieve auth token: %v, using empty auth for image pulling\n", err))
 	}
@@ -234,7 +231,7 @@ func startLauncher(launchSpec spec.LaunchSpec, serialConsole *os.File) error {
 	}
 	logger.Info("Launch completed", "latency_sec", uptime)
 
-	ctx = namespaces.WithNamespace(ctx, namespaces.Default)
+	ctx := namespaces.WithNamespace(context.Background(), namespaces.Default)
 	r, err := launcher.NewRunner(ctx, containerdClient, token, launchSpec, mdsClient, tpm, logger, serialConsole)
 	if err != nil {
 		return err

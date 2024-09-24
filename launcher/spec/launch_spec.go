@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path"
@@ -247,7 +247,7 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 // input to the GCE instance custom metadata and return a LaunchSpec.
 // ImageRef (tee-image-reference) is required, will return an error if
 // ImageRef is not presented in the metadata.
-func GetLaunchSpec(ctx context.Context, logger *log.Logger, client *metadata.Client) (LaunchSpec, error) {
+func GetLaunchSpec(ctx context.Context, logger *slog.Logger, client *metadata.Client) (LaunchSpec, error) {
 	data, err := client.GetWithContext(ctx, instanceAttributesQuery)
 	if err != nil {
 		return LaunchSpec{}, err
@@ -301,17 +301,17 @@ func isHardened(kernelCmd string) bool {
 	return false
 }
 
-func fetchExperiments(logger *log.Logger) experiments.Experiments {
+func fetchExperiments(logger *slog.Logger) experiments.Experiments {
 	experimentsFile := path.Join(launcherfile.HostTmpPath, experimentDataFile)
 
 	args := fmt.Sprintf("-output=%s", experimentsFile)
 	err := exec.Command(binaryPath, args).Run()
 	if err != nil {
-		logger.Printf("failure during experiment sync: %v\n", err)
+		logger.Error(fmt.Sprintf("failure during experiment sync: %v\n", err))
 	}
 	e, err := experiments.New(experimentsFile)
 	if err != nil {
-		logger.Printf("failed to read experiment file: %v\n", err)
+		logger.Error(fmt.Sprintf("failed to read experiment file: %v\n", err))
 		// do not fail if experiment retrieval fails
 	}
 	return e

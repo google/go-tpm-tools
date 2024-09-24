@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"log"
+	"log/slog"
 	"math"
 	"runtime"
 	"sync"
@@ -111,11 +112,7 @@ func TestAttest(t *testing.T) {
 
 			verifierClient := fake.NewClient(fakeSigner)
 
-<<<<<<< HEAD
-			agent, err := CreateAttestationAgent(tpm, client.AttestationKeyECC, verifierClient, tc.principalIDTokenFetcher, tc.containerSignaturesFetcher, tc.launchSpec, log.Default())
-=======
 			agent, err := CreateAttestationAgent(tpm, client.AttestationKeyECC, verifierClient, tc.principalIDTokenFetcher, tc.containerSignaturesFetcher, tc.launchSpec, slog.Default())
->>>>>>> 4b0af5d (fix conflicts)
 			if err != nil {
 				t.Fatalf("failed to create an attestation agent %v", err)
 			}
@@ -295,7 +292,7 @@ func TestFetchContainerImageSignatures(t *testing.T) {
 			}
 
 			sdClient := signaturediscovery.NewFakeClient()
-			gotSigs := fetchContainerImageSignatures(ctx, sdClient, tc.targetRepos, testRetryPolicy, log.Default())
+			gotSigs := fetchContainerImageSignatures(ctx, sdClient, tc.targetRepos, testRetryPolicy, slog.Default())
 			if len(gotSigs) != len(tc.wantBase64Sigs) {
 				t.Errorf("fetchContainerImageSignatures did not return expected signatures for test case %s, got signatures length %d, but want %d", tc.name, len(gotSigs), len(tc.wantBase64Sigs))
 			}
