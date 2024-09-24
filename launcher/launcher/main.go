@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/compute/metadata"
+	"cloud.google.com/go/logging"
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/defaults"
 	"github.com/containerd/containerd/namespaces"
@@ -63,6 +64,16 @@ func main() {
 	defer func() {
 		os.Exit(exitCode)
 	}()
+
+	logClient, err := logging.NewClient(ctx, "confidentialcomputing-e2e")
+	if err != nil {
+		logger.Error("Cloud Logger failed")
+	}
+	defer logClient.Close()
+
+	logger := logClient.Logger("projects/confidentialcomputing-e2e/logs/confidential-space-launcher")
+
+	logger.Log(logging.Entry{Payload: "cloud logger test"})
 
 	serialConsole, err := os.OpenFile("/dev/console", os.O_WRONLY, 0)
 	if err != nil {
