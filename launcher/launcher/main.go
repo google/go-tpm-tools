@@ -71,9 +71,10 @@ func main() {
 	}
 	defer logClient.Close()
 
-	logger := logClient.Logger("projects/confidentialcomputing-e2e/logs/confidential-space-launcher")
+	clogger := logClient.Logger("projects/confidentialcomputing-e2e/logs/confidential-space-launcher")
 
-	logger.Log(logging.Entry{Payload: "cloud logger test"})
+	clogger.Log(logging.Entry{Payload: "cloud logger test"})
+	clogger.Flush()
 
 	serialConsole, err := os.OpenFile("/dev/console", os.O_WRONLY, 0)
 	if err != nil {
