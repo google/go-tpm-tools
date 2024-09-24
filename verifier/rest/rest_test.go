@@ -130,10 +130,10 @@ func testRawCertTable(t testing.TB) *testCertTable {
 
 func TestConvertTDXProtoToREST(t *testing.T) {
 	testCases := []struct {
-		name string
-		quote func() *tpb.QuoteV4
+		name     string
+		quote    func() *tpb.QuoteV4
 		wantPass bool
-	} {
+	}{
 		{
 			name: "successful TD quote conversion",
 			quote: func() *tpb.QuoteV4 {
@@ -141,7 +141,7 @@ func TestConvertTDXProtoToREST(t *testing.T) {
 				if err != nil {
 					t.Fatalf("Unable to convert Raw TD Quote to TDX V4 quote: %v", err)
 				}
-			
+
 				quote, ok := tdx.(*tpb.QuoteV4)
 				if !ok {
 					t.Fatal("Quote format not supported, want QuoteV4 format")
@@ -151,8 +151,8 @@ func TestConvertTDXProtoToREST(t *testing.T) {
 			wantPass: true,
 		},
 		{
-			name: "nil TD quote conversion",
-			quote: func() *tpb.QuoteV4 { return nil },
+			name:     "nil TD quote conversion",
+			quote:    func() *tpb.QuoteV4 { return nil },
 			wantPass: false,
 		},
 	}
@@ -169,7 +169,7 @@ func TestConvertTDXProtoToREST(t *testing.T) {
 					TdQuote: tgtestdata.RawQuote,
 				},
 			}
-		
+
 			if diff := cmp.Diff(got, want, protocmp.Transform()); diff != "" {
 				t.Errorf("TDX API proto mismatch: %s", diff)
 			}

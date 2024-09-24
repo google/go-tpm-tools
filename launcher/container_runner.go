@@ -407,13 +407,13 @@ func (r *ContainerRunner) refreshToken(ctx context.Context) (time.Duration, erro
 
 // ctx must be a cancellable context.
 func (r *ContainerRunner) fetchAndWriteToken(ctx context.Context) error {
-	return r.fetchAndWriteTokenWithRetry(ctx, defaultRetryPolicy())
+	return r.fetchAndWriteTokenWithRetry(ctx, defaultRetryPolicy)
 }
 
 // ctx must be a cancellable context.
 // retry specifies the refresher goroutine's retry policy.
 func (r *ContainerRunner) fetchAndWriteTokenWithRetry(ctx context.Context,
-	retry *backoff.ExponentialBackOff) error {
+	retry func() *backoff.ExponentialBackOff) error {
 	if err := os.MkdirAll(launcherfile.HostTmpPath, 0744); err != nil {
 		return err
 	}
@@ -439,7 +439,7 @@ func (r *ContainerRunner) fetchAndWriteTokenWithRetry(ctx context.Context,
 						duration, err = r.refreshToken(ctx)
 						return err
 					},
-					retry,
+					retry(),
 					func(err error, t time.Duration) {
 						r.logger.Printf("failed to refresh attestation service token at time %v: %v", t, err)
 					})
