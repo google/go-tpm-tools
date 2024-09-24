@@ -4,7 +4,7 @@ go 1.21
 
 require (
 	cloud.google.com/go/compute/metadata v0.5.0
-	cloud.google.com/go/logging v1.11.0
+	cloud.google.com/go/logging v1.10.0
 	github.com/cenkalti/backoff/v4 v4.2.1
 	github.com/containerd/containerd v1.7.16
 	github.com/coreos/go-systemd/v22 v22.5.0
