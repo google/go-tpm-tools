@@ -83,7 +83,6 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	}
 
 	mounts := make([]specs.Mount, 0, len(launchSpec.Mounts)+1)
-
 	for _, lsMnt := range launchSpec.Mounts {
 		mounts = append(mounts, lsMnt.SpecsMount())
 	}

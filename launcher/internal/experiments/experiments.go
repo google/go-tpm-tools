@@ -14,6 +14,7 @@ type Experiments struct {
 	EnableTestFeatureForImage  bool
 	EnableSignedContainerCache bool
 	EnableMeasureMemoryMonitor bool
+	EnableTempFSMount          bool
 }
 
 // New takes a filepath, opens the file, and calls ReadJsonInput with the contents
