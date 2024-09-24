@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/google/go-tpm-tools/launcher/internal/healthmonitoring/monitoring"
 )
 
 // LaunchPolicy contains policies on starting the container.
@@ -16,8 +18,8 @@ type LaunchPolicy struct {
 	AllowedCmdOverride       bool
 	AllowedLogRedirect       policy
 	AllowedMountDestinations []string
-	HardenedImageMonitoring  monitoringType
-	DebugImageMonitoring     monitoringType
+	HardenedImageMonitoring  monitoring.Config
+	DebugImageMonitoring     monitoring.Config
 }
 
 type policy int
@@ -100,55 +102,43 @@ func configureMonitoringPolicy(imageLabels map[string]string, launchPolicy *Laun
 
 		logger.Printf("%s will be deprecated, use %s and %s instead", memoryMonitoring, hardenedMonitoring, debugMonitoring)
 
+		memoryOnlyConfig := monitoring.Config{CPU: false, Disk: false, Host: false, Memory: false}
 		switch policy {
 		case always:
-			logger.Printf("%s=always, will be treated as %s=memory_only and %s=memory_only", memoryMonitoring, hardenedMonitoring, debugMonitoring)
-			launchPolicy.HardenedImageMonitoring = memoryOnly
-			launchPolicy.DebugImageMonitoring = memoryOnly
+			logger.Printf("%s=always, will be treated as %s=memory and %s=memory", memoryMonitoring, hardenedMonitoring, debugMonitoring)
+			launchPolicy.HardenedImageMonitoring = memoryOnlyConfig
+			launchPolicy.DebugImageMonitoring = memoryOnlyConfig
 		case never:
 			logger.Printf("%s=never, will be treated as %s=none and %s=none", memoryMonitoring, hardenedMonitoring, debugMonitoring)
-			launchPolicy.HardenedImageMonitoring = none
-			launchPolicy.DebugImageMonitoring = none
+			launchPolicy.HardenedImageMonitoring = memoryOnlyConfig
+			launchPolicy.DebugImageMonitoring = monitoring.NoneConfig()
 		case debugOnly:
-			logger.Printf("%s=debug_only, will be treated as %s=none and %s=memory_only", memoryMonitoring, hardenedMonitoring, debugMonitoring)
-			launchPolicy.HardenedImageMonitoring = none
-			launchPolicy.DebugImageMonitoring = memoryOnly
+			logger.Printf("%s=debug_only, will be treated as %s=none and %s=memory", memoryMonitoring, hardenedMonitoring, debugMonitoring)
+			launchPolicy.HardenedImageMonitoring = monitoring.NoneConfig()
+			launchPolicy.DebugImageMonitoring = memoryOnlyConfig
 		}
 		return nil
 	}
 
 	if hardenedOk {
-		launchPolicy.HardenedImageMonitoring, err = toMonitoringType(hardenedVal)
+		launchPolicy.HardenedImageMonitoring, err = monitoring.ToConfig(hardenedVal)
 		if err != nil {
 			return fmt.Errorf("invalid monitoring type for hardened image: %v", err)
 		}
 	} else {
-		launchPolicy.HardenedImageMonitoring = none
+		launchPolicy.HardenedImageMonitoring = monitoring.NoneConfig()
 	}
 
 	if debugOk {
-		launchPolicy.DebugImageMonitoring, err = toMonitoringType(debugVal)
+		launchPolicy.DebugImageMonitoring, err = monitoring.ToConfig(debugVal)
 		if err != nil {
 			return fmt.Errorf("invalid monitoring type for debug image: %v", err)
 		}
 	} else {
-		launchPolicy.DebugImageMonitoring = health
+		launchPolicy.DebugImageMonitoring = monitoring.AllConfig()
 	}
 
 	return nil
-}
-
-func toMonitoringType(label string) (monitoringType, error) {
-	switch strings.ToLower(label) {
-	case "none":
-		return none, nil
-	case "memoryonly":
-		return memoryOnly, nil
-	case "health":
-		return health, nil
-	}
-
-	return none, fmt.Errorf("invalid monitoring type: %v", label)
 }
 
 // GetLaunchPolicy takes in a map[string] string which should come from image labels,
@@ -224,20 +214,8 @@ func (p LaunchPolicy) Verify(ls LaunchSpec) error {
 		monitoringPolicy = p.HardenedImageMonitoring
 	}
 
-	if ls.HealthMonitoringEnabled && monitoringPolicy != health {
-		// Check if there is an issue with the image type.
-		if ls.Hardened && p.DebugImageMonitoring == health {
-			return fmt.Errorf("health monitoring only allowed on debug environment by image")
-		}
-		return fmt.Errorf("health monitoring not allowed by image")
-	}
-
-	if ls.MemoryMonitoringEnabled && monitoringPolicy == none {
-		// Check if there is an issue with the image type.
-		if ls.Hardened && p.DebugImageMonitoring == memoryOnly {
-			return fmt.Errorf("memory monitoring only allowed on debug environment by image")
-		}
-		return fmt.Errorf("memory monitoring not allowed by image")
+	if err := monitoring.CheckCompliance(monitoringPolicy, ls.MonitoringEnabled); err != nil {
+		return fmt.Errorf("error verifying monitoring configs: %v", err)
 	}
 
 	var err error

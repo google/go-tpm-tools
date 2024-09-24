@@ -18,6 +18,7 @@ import (
 
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/launcher/internal/experiments"
+	monitoring "github.com/google/go-tpm-tools/launcher/internal/healthmonitoring"
 	"github.com/google/go-tpm-tools/launcher/internal/launchermount"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/verifier/util"
@@ -83,7 +84,7 @@ const (
 	attestationServiceAddrKey  = "tee-attestation-service-endpoint"
 	logRedirectKey             = "tee-container-log-redirect"
 	memoryMonitoringEnable     = "tee-monitoring-memory-enable"
-	healthMonitoringEnable     = "tee-monitoring-health-enable"
+	monitoringEnable           = "tee-monitoring-enable"
 	devShmSizeKey              = "tee-dev-shm-size-kb"
 	mountKey                   = "tee-mount"
 )
@@ -115,7 +116,7 @@ type LaunchSpec struct {
 	Region                     string
 	Hardened                   bool
 	MemoryMonitoringEnabled    bool
-	HealthMonitoringEnabled    bool
+	MonitoringEnabled          monitoring.Config
 	LogRedirect                LogRedirectLocation
 	Mounts                     []launchermount.Mount
 	// DevShmSize is specified in kiB.
@@ -157,18 +158,21 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 	}
 
 	memVal, memOk := unmarshaledMap[memoryMonitoringEnable]
-	healthVal, healthOk := unmarshaledMap[healthMonitoringEnable]
+	monVal, monOk := unmarshaledMap[monitoringEnable]
 
-	if memOk && healthOk {
-		return fmt.Errorf("both %v and %v are specified, only one is permitted", memoryMonitoringEnable, healthMonitoringEnable)
+	if memOk && monOk {
+		return fmt.Errorf("both %v and %v are specified, only one is permitted", memoryMonitoringEnable, monitoringEnable)
 	} else if memOk && memVal != "" {
 		if boolValue, err := strconv.ParseBool(memVal); err == nil {
 			s.MemoryMonitoringEnabled = boolValue
 		}
-	} else if healthOk && healthVal != "" {
-		if boolValue, err := strconv.ParseBool(healthVal); err == nil {
-			s.HealthMonitoringEnabled = boolValue
+	} else if monOk && monVal != "" {
+		monCfg, err := monitoring.ToConfig(monVal)
+		if err != nil {
+			return err
 		}
+
+		s.MonitoringEnabled = monCfg
 	}
 
 	// Populate cmd override.
