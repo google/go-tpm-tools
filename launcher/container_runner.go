@@ -101,10 +101,10 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	}
 
 	logger.Info("Preparing Container Runner",
-		"operator_input_image_ref", image.Name(),
-		"image_digest", image.Target().Digest,
-		"operator_override_env_vars", envs,
-		"operator_override_cmd", launchSpec.Cmd,
+		slog.String("operator_input_image_ref", image.Name()),
+		slog.Any("image_digest", image.Target().Digest),
+		slog.Any("operator_override_env_vars", envs),
+		slog.Any("operator_override_cmd", launchSpec.Cmd),
 	)
 
 	imageConfig, err := getImageConfig(ctx, image)
@@ -136,8 +136,10 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	if imageConfigDescriptor, err := image.Config(ctx); err != nil {
 		logger.Error(err.Error())
 	} else {
-		logger.Info(fmt.Sprintf("Image ID                   : %v\n", imageConfigDescriptor.Digest))
-		logger.Info(fmt.Sprintf("Image Annotations          : %v\n", imageConfigDescriptor.Annotations))
+		logger.Info("Retrieved image config",
+			slog.Any("image_id", imageConfigDescriptor.Digest),
+			slog.Any("image_annotations", imageConfigDescriptor.Annotations),
+		)
 	}
 
 	hostname, err := os.Hostname()
