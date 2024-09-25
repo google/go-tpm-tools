@@ -73,11 +73,13 @@ func NewLogger(ctx context.Context) (Logger, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to open serial console for writing: %v", err)
 	}
-	defer serialConsole.Close()
+
+	slg := slog.New(slog.NewJSONHandler(serialConsole, nil))
+	slg.Info("Serial Console logger initialized")
 
 	return &logger{
 		cloudLogger:  cloggingClient.Logger(logName),
-		serialLogger: slog.New(slog.NewJSONHandler(serialConsole, nil)),
+		serialLogger: slg,
 		resource: &mrpb.MonitoredResource{
 			Type: "gce_instance",
 			Labels: map[string]string{
@@ -141,7 +143,7 @@ func (l *logger) writeLog(severity clogging.Severity, msg string, args ...any) {
 	pl := payload{}
 	addArgs(pl, args)
 
-	pl["msg"] = msg
+	pl["message"] = msg
 	logEntry.Payload = pl
 
 	l.cloudLogger.Log(logEntry)
