@@ -7,11 +7,6 @@ import (
 	"crypto/rsa"
 	"errors"
 	"fmt"
-<<<<<<< HEAD
-	"log"
-	"log/slog"
-=======
->>>>>>> 4a395b9 (add logging library with cloud logging client)
 	"os"
 	"path"
 	"strconv"
@@ -28,7 +23,6 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/launcher/agent"
-	"github.com/google/go-tpm-tools/launcher/internal/experiments"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/spec"
@@ -477,7 +471,7 @@ func TestFetchAndWriteTokenWithTokenRefresh(t *testing.T) {
 	}
 	runner := ContainerRunner{
 		attestAgent: attestAgent,
-		logger:      logging.SimpleLogger(),,
+		logger:      logging.SimpleLogger(),
 	}
 
 	if err := runner.fetchAndWriteToken(ctx); err != nil {
