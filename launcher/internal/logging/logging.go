@@ -16,6 +16,7 @@ const (
 	serialConsoleFile = "/dev/console"
 )
 
+// Logger defines the interface for the CS image logger.
 type Logger interface {
 	Log(severity clogging.Severity, msg string, args ...any)
 
@@ -182,7 +183,7 @@ func (l *logger) Debug(msg string, args ...any) {
 	l.writeLog(clogging.Debug, msg, args...)
 }
 
-// Lightweight implementation that wraps a slog.Default() logger.
+// SimpleLogger returns a lightweight implementation that wraps a slog.Default() logger.
 func SimpleLogger() Logger {
 	return &slogger{slog.Default()}
 }
@@ -229,4 +230,4 @@ func (l *slogger) SerialConsoleFile() *os.File {
 	return nil
 }
 
-func (l *slogger) Close() { return }
+func (l *slogger) Close() {}
