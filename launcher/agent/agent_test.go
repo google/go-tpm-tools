@@ -6,7 +6,6 @@ import (
 	"crypto/rsa"
 	"encoding/base64"
 	"fmt"
-	"log"
 	"math"
 	"runtime"
 	"sync"
@@ -499,7 +498,7 @@ func TestFetchContainerImageSignatures_RetriesOnFailure(t *testing.T) {
 				}
 			}
 
-			gotSigs := fetchContainerImageSignatures(ctx, sdClient, repos, retryPolicy, log.Default())
+			gotSigs := fetchContainerImageSignatures(ctx, sdClient, repos, retryPolicy, logging.SimpleLogger())
 
 			if len(gotSigs) != len(wantSigs) {
 				t.Errorf("fetchContainerImageSignatures did not return expected signatures for test case %s, got signatures length %d, but want %d", tc.name, len(gotSigs), len(wantSigs))
