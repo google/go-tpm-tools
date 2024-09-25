@@ -11,8 +11,6 @@ import (
 	"crypto"
 	"fmt"
 	"io"
-	"log"
-	"log/slog"
 	"net/http"
 	"sync"
 	"time"
@@ -20,6 +18,7 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
+	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/internal/signaturediscovery"
 	"github.com/google/go-tpm-tools/launcher/spec"
 	pb "github.com/google/go-tpm-tools/proto/attest"
@@ -59,7 +58,7 @@ type agent struct {
 	sigsFetcher      signaturediscovery.Fetcher
 	cosCel           cel.CEL
 	launchSpec       spec.LaunchSpec
-	logger           *slog.Logger
+	logger           logging.Logger
 	sigsCache        *sigsCache
 }
 
@@ -70,7 +69,7 @@ type agent struct {
 // - principalFetcher is a func to fetch GCE principal tokens for a given audience.
 // - signaturesFetcher is a func to fetch container image signatures associated with the running workload.
 // - logger will log any partial errors returned by VerifyAttestation.
-func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher util.TpmKeyFetcher, verifierClient verifier.Client, principalFetcher principalIDTokenFetcher, sigsFetcher signaturediscovery.Fetcher, launchSpec spec.LaunchSpec, logger *slog.Logger) (AttestationAgent, error) {
+func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher util.TpmKeyFetcher, verifierClient verifier.Client, principalFetcher principalIDTokenFetcher, sigsFetcher signaturediscovery.Fetcher, launchSpec spec.LaunchSpec, logger logging.Logger) (AttestationAgent, error) {
 	// Fetched the AK and save it, so the agent doesn't need to create a new key everytime
 	ak, err := akFetcher(tpm)
 	if err != nil {
@@ -168,7 +167,7 @@ func (a *agent) Refresh(ctx context.Context) error {
 	return nil
 }
 
-func fetchContainerImageSignatures(ctx context.Context, fetcher signaturediscovery.Fetcher, targetRepos []string, retry func() backoff.BackOff, logger *log.Logger) []oci.Signature {
+func fetchContainerImageSignatures(ctx context.Context, fetcher signaturediscovery.Fetcher, targetRepos []string, retry func() backoff.BackOff, logger logging.Logger) []oci.Signature {
 	signatures := make([][]oci.Signature, len(targetRepos))
 
 	var wg sync.WaitGroup
@@ -187,10 +186,10 @@ func fetchContainerImageSignatures(ctx context.Context, fetcher signaturediscove
 				},
 				retry(),
 				func(err error, _ time.Duration) {
-					logger.Error("Failed to fetch container image signatures from repo: "+err.Error(), slog.String("repo", targetRepo))
+					logger.Error("Failed to fetch container image signatures from repo: "+err.Error(), "repo", targetRepo)
 				})
 			if err != nil {
-				logger.Error("Failed all attempts to refresh container signatures from repo: "+err.Error(), slog.String("repo", targetRepo))
+				logger.Error("Failed all attempts to refresh container signatures from repo: "+err.Error(), "repo", targetRepo)
 			} else {
 				signatures[index] = sigs
 			}

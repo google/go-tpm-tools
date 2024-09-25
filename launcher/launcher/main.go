@@ -6,8 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
-	"log/slog"
+	"log"
 	"os"
 	"os/exec"
 	"regexp"
@@ -15,12 +14,12 @@ import (
 	"time"
 
 	"cloud.google.com/go/compute/metadata"
-	"cloud.google.com/go/logging"
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/defaults"
 	"github.com/containerd/containerd/namespaces"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/launcher"
+	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/registryauth"
 	"github.com/google/go-tpm-tools/launcher/spec"
@@ -45,7 +44,7 @@ var rcMessage = map[int]string{
 // BuildCommit shows the commit when building the binary, set by -ldflags when building
 var BuildCommit = "dev"
 
-var logger *slog.Logger
+var logger logging.Logger
 var mdsClient *metadata.Client
 
 var welcomeMessage = "TEE container launcher initiating"
@@ -60,35 +59,14 @@ func main() {
 	var err error
 	ctx := context.Background()
 
-	logger = slog.New(slog.NewTextHandler(os.Stdout, nil))
-	defer func() {
-		os.Exit(exitCode)
-	}()
-
-	logClient, err := logging.NewClient(ctx, "confidentialcomputing-e2e")
+	logger, err = logging.NewLogger(ctx)
 	if err != nil {
-		logger.Error("Cloud Logger failed")
-	}
-	defer logClient.Close()
-
-	clogger := logClient.Logger("projects/confidentialcomputing-e2e/logs/confidential-space-launcher")
-
-	clogger.Log(logging.Entry{Payload: "cloud logger test"})
-	clogger.Flush()
-
-	serialConsole, err := os.OpenFile("/dev/console", os.O_WRONLY, 0)
-	if err != nil {
-		logger.Error(fmt.Sprintf("failed to open serial console for writing: %v", err))
+		log.Default().Printf("failed to initialize logging")
 		exitCode = failRC
-		logger.Error(exitMessage,
-			"exit_code", exitCode,
-			"exit_msg", rcMessage[exitCode])
+		log.Default().Printf("%s, exit code: %d (%s)\n", exitMessage, exitCode, rcMessage[exitCode])
 		return
 	}
-	defer serialConsole.Close()
-
-	handler := slog.NewTextHandler(io.MultiWriter(os.Stdout, serialConsole), nil)
-	logger = slog.New(handler)
+	defer logger.Close()
 
 	logger.Info(welcomeMessage, "build_commit", BuildCommit)
 
@@ -122,12 +100,12 @@ func main() {
 		}
 		msg, ok := rcMessage[exitCode]
 		if ok {
-			logger.Info(exitMessage, slog.Int("exit_code", exitCode), slog.String("exit_msg", msg))
+			logger.Info(exitMessage, "exit_code", exitCode, "exit_msg", msg)
 		} else {
-			logger.Info(exitMessage, slog.Int("exit_code", exitCode))
+			logger.Info(exitMessage, "exit_code", exitCode)
 		}
 	}()
-	if err = startLauncher(launchSpec, serialConsole); err != nil {
+	if err = startLauncher(launchSpec, logger.SerialConsoleFile()); err != nil {
 		logger.Error(err.Error())
 	}
 
