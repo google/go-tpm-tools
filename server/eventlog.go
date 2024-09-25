@@ -9,6 +9,7 @@ import (
 	"fmt"
 
 	"github.com/google/go-attestation/attest"
+	"github.com/google/go-eventlog/register"
 	"github.com/google/go-tpm-tools/cel"
 	pb "github.com/google/go-tpm-tools/proto/attest"
 	tpmpb "github.com/google/go-tpm-tools/proto/tpm"
@@ -88,24 +89,34 @@ func parsePCClientEventLog(rawEventLog []byte, pcrs *tpmpb.PCRs, loader Bootload
 	}, createGroupedError("failed to fully parse MachineState:", errors)
 }
 
-func parseCanonicalEventLog(rawCanonicalEventLog []byte, pcrs *tpmpb.PCRs) (*pb.MachineState, error) {
+// ParseCosCELPCR takes an encoded COS CEL and PCR bank, replays the CEL against the PCRs,
+// and returns the AttestedCosState
+func ParseCosCELPCR(cosEventLog []byte, p register.PCRBank) (*pb.AttestedCosState, error) {
+	return getCosStateFromCEL(cosEventLog, p, cel.PCRTypeValue)
+}
+
+// ParseCosCELRTMR takes in a raw COS CEL and a RTMR bank, validates and returns it's
+// COS states as parts of the MachineState.
+func ParseCosCELRTMR(cosEventLog []byte, r register.RTMRBank) (*pb.AttestedCosState, error) {
+	return getCosStateFromCEL(cosEventLog, r, cel.CCMRTypeValue)
+}
+
+func getCosStateFromCEL(rawCanonicalEventLog []byte, register register.MRBank, trustingRegisterType uint8) (*pb.AttestedCosState, error) {
 	decodedCEL, err := cel.DecodeToCEL(bytes.NewBuffer(rawCanonicalEventLog))
 	if err != nil {
 		return nil, err
 	}
 	// Validate the COS event log first.
-	if err := decodedCEL.Replay(pcrs); err != nil {
+	if err := decodedCEL.Replay(register); err != nil {
 		return nil, err
 	}
 
-	cosState, err := getVerifiedCosState(decodedCEL)
+	cosState, err := getVerifiedCosState(decodedCEL, trustingRegisterType)
 	if err != nil {
 		return nil, err
 	}
 
-	return &pb.MachineState{
-		Cos: cosState,
-	}, err
+	return cosState, err
 }
 
 func contains(set [][]byte, value []byte) bool {
@@ -117,7 +128,9 @@ func contains(set [][]byte, value []byte) bool {
 	return false
 }
 
-func getVerifiedCosState(coscel cel.CEL) (*pb.AttestedCosState, error) {
+// getVerifiedCosState takes in CEL and a register type (can be PCR or CCELMR), and returns the state
+// in the CEL. It will only include events using the correct registerType.
+func getVerifiedCosState(coscel cel.CEL, registerType uint8) (*pb.AttestedCosState, error) {
 	cosState := &pb.AttestedCosState{}
 	cosState.Container = &pb.ContainerState{}
 	cosState.HealthMonitoring = &pb.HealthMonitoringState{}
@@ -127,9 +140,21 @@ func getVerifiedCosState(coscel cel.CEL) (*pb.AttestedCosState, error) {
 
 	seenSeparator := false
 	for _, record := range coscel.Records {
-		// COS State only comes from the CosEventPCR
-		if record.PCR != cel.CosEventPCR {
-			return nil, fmt.Errorf("found unexpected PCR %d in CEL log", record.PCR)
+		if record.IndexType != registerType {
+			return nil, fmt.Errorf("expect registerType: %d, but get %d in a CEL record", registerType, record.IndexType)
+		}
+
+		switch record.IndexType {
+		case cel.PCRTypeValue:
+			if record.Index != cel.CosEventPCR {
+				return nil, fmt.Errorf("found unexpected PCR %d in COS CEL log", record.Index)
+			}
+		case cel.CCMRTypeValue:
+			if record.Index != cel.CosCCELMRIndex {
+				return nil, fmt.Errorf("found unexpected CCELMR %d in COS CEL log", record.Index)
+			}
+		default:
+			return nil, fmt.Errorf("unknown COS CEL log index type %d", record.IndexType)
 		}
 
 		// The Content.Type is not verified at this point, so we have to fail
@@ -316,7 +341,7 @@ func getPlatformState(hash crypto.Hash, events []*pb.Event) (*pb.PlatformState, 
 // Separate helper function so we can use attest.ParseSecurebootState without
 // needing to reparse the entire event log.
 func parseReplayHelper(rawEventLog []byte, pcrs *tpmpb.PCRs) ([]attest.Event, error) {
-	// Similar to parseCanonicalEventLog, just return an empty array of events for an empty log
+	// Similar to ParseCosCanonicalEventLogPCR, just return an empty array of events for an empty log
 	if len(rawEventLog) == 0 {
 		return nil, nil
 	}

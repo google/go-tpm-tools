@@ -10,6 +10,10 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-configfs-tsm/configfs/fakertmr"
+	configfstsmrtmr "github.com/google/go-configfs-tsm/rtmr"
+	"github.com/google/go-eventlog/proto/state"
+	"github.com/google/go-eventlog/register"
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal/test"
@@ -689,6 +693,139 @@ func TestParseSecureBootState(t *testing.T) {
 	}
 }
 
+func convertToPCRBank(t *testing.T, pcrs *pb.PCRs) register.PCRBank {
+	pcrBank := register.PCRBank{TCGHashAlgo: state.HashAlgo(pcrs.Hash)}
+	digestAlg, err := pcrBank.TCGHashAlgo.CryptoHash()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for ind, dgst := range pcrs.GetPcrs() {
+		pcrBank.PCRs = append(pcrBank.PCRs, register.PCR{
+			Index:     int(ind),
+			Digest:    dgst,
+			DigestAlg: digestAlg},
+		)
+	}
+	return pcrBank
+}
+
+func getRTMRBank(t *testing.T, fakeRTMR *fakertmr.RtmrSubsystem) register.RTMRBank {
+	rtmrBank := register.RTMRBank{}
+	// RTMR 0 to 3
+	for i := 0; i < 4; i++ {
+		digest, err := configfstsmrtmr.GetDigest(fakeRTMR, i)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rtmrBank.RTMRs = append(rtmrBank.RTMRs, register.RTMR{Index: i, Digest: digest.Digest})
+	}
+	return rtmrBank
+}
+
+func TestParsingRTMREventlog(t *testing.T) {
+	coscel := &cel.CEL{}
+	emptyCosState := attestpb.ContainerState{}
+	emptyHealthMonitoringState := attestpb.HealthMonitoringState{}
+
+	var buf bytes.Buffer
+	// First, encode an empty CEL and try to parse it.
+	if err := coscel.EncodeCEL(&buf); err != nil {
+		t.Fatal(err)
+	}
+
+	fakeRTMR := fakertmr.CreateRtmrSubsystem(t.TempDir())
+	rtmrBank := getRTMRBank(t, fakeRTMR)
+
+	acosState, err := ParseCosCELRTMR(buf.Bytes(), rtmrBank)
+	if err != nil {
+		t.Errorf("expecting no error from ParseCosCELRTMR(), but get %v", err)
+	}
+	if diff := cmp.Diff(acosState.Container, &emptyCosState, protocmp.Transform()); diff != "" {
+		t.Errorf("unexpected container state difference:\n%v", diff)
+	}
+	if diff := cmp.Diff(acosState.HealthMonitoring, &emptyHealthMonitoringState, protocmp.Transform()); diff != "" {
+		t.Errorf("unexpected health monitoring difference:\n%v", diff)
+	}
+	if acosState.HealthMonitoring.MemoryEnabled != nil {
+		t.Errorf("unexpected MemoryEnabled state, want nil, but got %v", *acosState.HealthMonitoring.MemoryEnabled)
+	}
+
+	// add events
+	testCELEvents := []struct {
+		cosNestedEventType cel.CosType
+		register           int
+		eventPayload       []byte
+	}{
+		{cel.ImageRefType, cel.CosRTMR, []byte("docker.io/bazel/experimental/test:latest")},
+		{cel.ImageDigestType, cel.CosRTMR, []byte("sha256:781d8dfdd92118436bd914442c8339e653b83f6bf3c1a7a98efcfb7c4fed7483")},
+		{cel.RestartPolicyType, cel.CosRTMR, []byte(attestpb.RestartPolicy_Always.String())},
+		{cel.ImageIDType, cel.CosRTMR, []byte("sha256:5DF4A1AC347DCF8CF5E9D0ABC04B04DB847D1B88D3B1CC1006F0ACB68E5A1F4B")},
+		{cel.EnvVarType, cel.CosRTMR, []byte("foo=bar")},
+		{cel.EnvVarType, cel.CosRTMR, []byte("bar=baz")},
+		{cel.EnvVarType, cel.CosRTMR, []byte("baz=foo=bar")},
+		{cel.EnvVarType, cel.CosRTMR, []byte("empty=")},
+		{cel.ArgType, cel.CosRTMR, []byte("--x")},
+		{cel.ArgType, cel.CosRTMR, []byte("--y")},
+		{cel.ArgType, cel.CosRTMR, []byte("")},
+		{cel.MemoryMonitorType, cel.CosRTMR, []byte{1}},
+	}
+
+	expectedEnvVars := make(map[string]string)
+	expectedEnvVars["foo"] = "bar"
+	expectedEnvVars["bar"] = "baz"
+	expectedEnvVars["baz"] = "foo=bar"
+	expectedEnvVars["empty"] = ""
+
+	wantContainerState := attestpb.ContainerState{
+		ImageReference: string(testCELEvents[0].eventPayload),
+		ImageDigest:    string(testCELEvents[1].eventPayload),
+		RestartPolicy:  attestpb.RestartPolicy_Always,
+		ImageId:        string(testCELEvents[3].eventPayload),
+		EnvVars:        expectedEnvVars,
+		Args:           []string{string(testCELEvents[8].eventPayload), string(testCELEvents[9].eventPayload), string(testCELEvents[10].eventPayload)},
+	}
+	enabled := true
+	wantHealthMonitoringState := attestpb.HealthMonitoringState{
+		MemoryEnabled: &enabled,
+	}
+
+	for _, testEvent := range testCELEvents {
+		cosEvent := cel.CosTlv{EventType: testEvent.cosNestedEventType, EventContent: testEvent.eventPayload}
+		if err := coscel.AppendEventRTMR(fakeRTMR, testEvent.register, cosEvent); err != nil {
+			t.Fatal(err)
+		}
+	}
+	buf = bytes.Buffer{}
+	if err := coscel.EncodeCEL(&buf); err != nil {
+		t.Fatal(err)
+	}
+
+	rtmrBank = getRTMRBank(t, fakeRTMR)
+
+	if acosState, err := ParseCosCELRTMR(buf.Bytes(), rtmrBank); err != nil {
+		t.Errorf("expecting no error from ParseCosCELRTMR(), but get %v", err)
+	} else {
+		if diff := cmp.Diff(acosState.Container, &wantContainerState, protocmp.Transform()); diff != "" {
+			t.Errorf("unexpected container state difference:\n%v", diff)
+		}
+		if diff := cmp.Diff(acosState.HealthMonitoring, &wantHealthMonitoringState, protocmp.Transform()); diff != "" {
+			t.Errorf("unexpected health monitoring state difference:\n%v", diff)
+		}
+	}
+
+	// Faking PCR with RTMR should fail
+	imposterPcrBank := map[uint32][]byte{}
+	imposterPcrBank[1] = rtmrBank.RTMRs[0].Digest
+	imposterPcrBank[2] = rtmrBank.RTMRs[1].Digest
+	imposterPcrBank[3] = rtmrBank.RTMRs[2].Digest
+	imposterPcrBank[4] = rtmrBank.RTMRs[3].Digest
+	imposterPcrs := &pb.PCRs{Hash: pb.HashAlgo_SHA384, Pcrs: imposterPcrBank}
+	hackedPCRBank := convertToPCRBank(t, imposterPcrs)
+	if _, err = ParseCosCELPCR(buf.Bytes(), hackedPCRBank); err == nil {
+		t.Errorf("expecting error from ParseCosCELPCR() when using RTMR CEL Log, but get nil")
+	}
+}
+
 func TestParsingCELEventLog(t *testing.T) {
 	test.SkipForRealTPM(t)
 	tpm := test.GetTPM(t)
@@ -719,19 +856,20 @@ func TestParsingCELEventLog(t *testing.T) {
 	}
 
 	for _, bank := range banks {
+		pcrBank := convertToPCRBank(t, bank)
 		// pcrs can have any value here, since the coscel has no records, the replay should always success.
-		msState, err := parseCanonicalEventLog(buf.Bytes(), bank)
+		acosState, err := ParseCosCELPCR(buf.Bytes(), pcrBank)
 		if err != nil {
-			t.Errorf("expecting no error from parseCanonicalEventLog(), but get %v", err)
+			t.Errorf("expecting no error from ParseCosCELPCR(), but get %v", err)
 		}
-		if diff := cmp.Diff(msState.Cos.Container, &emptyCosState, protocmp.Transform()); diff != "" {
+		if diff := cmp.Diff(acosState.Container, &emptyCosState, protocmp.Transform()); diff != "" {
 			t.Errorf("unexpected container state difference:\n%v", diff)
 		}
-		if diff := cmp.Diff(msState.Cos.HealthMonitoring, &emptyHealthMonitoringState, protocmp.Transform()); diff != "" {
+		if diff := cmp.Diff(acosState.HealthMonitoring, &emptyHealthMonitoringState, protocmp.Transform()); diff != "" {
 			t.Errorf("unexpected health monitoring difference:\n%v", diff)
 		}
-		if msState.Cos.HealthMonitoring.MemoryEnabled != nil {
-			t.Errorf("unexpected MemoryEnabled state, want nil, but got %v", *msState.Cos.HealthMonitoring.MemoryEnabled)
+		if acosState.HealthMonitoring.MemoryEnabled != nil {
+			t.Errorf("unexpected MemoryEnabled state, want nil, but got %v", *acosState.HealthMonitoring.MemoryEnabled)
 		}
 	}
 
@@ -774,8 +912,9 @@ func TestParsingCELEventLog(t *testing.T) {
 		MemoryEnabled: &enabled,
 	}
 	for _, testEvent := range testCELEvents {
-		cos := cel.CosTlv{EventType: testEvent.cosNestedEventType, EventContent: testEvent.eventPayload}
-		if err := coscel.AppendEvent(tpm, testEvent.pcr, implementedHashes, cos); err != nil {
+		cosEvent := cel.CosTlv{EventType: testEvent.cosNestedEventType, EventContent: testEvent.eventPayload}
+
+		if err := coscel.AppendEventPCR(tpm, testEvent.pcr, implementedHashes, cosEvent); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -788,13 +927,15 @@ func TestParsingCELEventLog(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, bank := range banks {
-		if msState, err := parseCanonicalEventLog(buf.Bytes(), bank); err != nil {
-			t.Errorf("expecting no error from parseCanonicalEventLog(), but get %v", err)
+		pcrBank := convertToPCRBank(t, bank)
+
+		if acosState, err := ParseCosCELPCR(buf.Bytes(), pcrBank); err != nil {
+			t.Errorf("expecting no error from ParseCosCELPCR(), but get %v", err)
 		} else {
-			if diff := cmp.Diff(msState.Cos.Container, &wantContainerState, protocmp.Transform()); diff != "" {
+			if diff := cmp.Diff(acosState.Container, &wantContainerState, protocmp.Transform()); diff != "" {
 				t.Errorf("unexpected container state difference:\n%v", diff)
 			}
-			if diff := cmp.Diff(msState.Cos.HealthMonitoring, &wantHealthMonitoringState, protocmp.Transform()); diff != "" {
+			if diff := cmp.Diff(acosState.HealthMonitoring, &wantHealthMonitoringState, protocmp.Transform()); diff != "" {
 				t.Errorf("unexpected health monitoring state difference:\n%v", diff)
 			}
 		}
@@ -827,7 +968,8 @@ func TestParsingCELEventLog(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, bank := range banks {
-		_, err := parseCanonicalEventLog(buf.Bytes(), bank)
+		pcrBank := convertToPCRBank(t, bank)
+		_, err := ParseCosCELPCR(buf.Bytes(), pcrBank)
 		if err == nil {
 			t.Errorf("expected error when parsing event log with unknown content type")
 		}
@@ -837,7 +979,7 @@ func TestParsingCELEventLog(t *testing.T) {
 func generateNonCosCelEvent(hashAlgoList []crypto.Hash) (cel.Record, error) {
 	randRecord := cel.Record{}
 	randRecord.RecNum = 0
-	randRecord.PCR = cel.CosEventPCR
+	randRecord.Index = cel.CosEventPCR
 	contentValue := make([]byte, 10)
 	rand.Read(contentValue)
 	randRecord.Content = cel.TLV{Type: 250, Value: contentValue}

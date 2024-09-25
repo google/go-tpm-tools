@@ -29,6 +29,7 @@ import (
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/launcher/agent"
+	"github.com/google/go-tpm-tools/launcher/internal/gpu"
 	"github.com/google/go-tpm-tools/launcher/internal/signaturediscovery"
 	"github.com/google/go-tpm-tools/launcher/internal/systemctl"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
@@ -159,6 +160,21 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		specOpts = append(specOpts, oci.WithDevShmSize(launchSpec.DevShmSize))
 	}
 
+	if launchSpec.Experiments.EnableGpuDriverInstallation && launchSpec.InstallGpuDriver {
+		mounts = appendGpuDriverMounts(mounts)
+		specOpts = append(specOpts, oci.WithMounts(mounts))
+
+		gpuDeviceFiles, err := listFilesWithPrefix("/dev", "nvidia")
+		if err != nil {
+			return nil, fmt.Errorf("failed to list gpu device files: [%w]", err)
+		}
+
+		for _, deviceFile := range gpuDeviceFiles {
+			logger.Printf("device file : %s", deviceFile)
+			specOpts = append(specOpts, oci.WithDevices(deviceFile, deviceFile, "crw-rw-rw-"))
+		}
+	}
+
 	container, err = cdClient.NewContainer(
 		ctx,
 		containerID,
@@ -266,14 +282,30 @@ func appendTokenMounts(mounts []specs.Mount) []specs.Mount {
 	return append(mounts, m)
 }
 
+// appendGpuMounts appends the default mount specs for GPU drivers
+func appendGpuDriverMounts(mounts []specs.Mount) []specs.Mount {
+	gpuMounts := []specs.Mount{
+		{
+			Type:        "volume",
+			Source:      fmt.Sprintf("%s/lib64", gpu.InstallationHostDir),
+			Destination: fmt.Sprintf("%s/lib64", gpu.InstallationContainerDir),
+			Options:     []string{"rbind", "rw"},
+		}, {
+			Type:        "volume",
+			Source:      fmt.Sprintf("%s/bin", gpu.InstallationHostDir),
+			Destination: fmt.Sprintf("%s/bin", gpu.InstallationContainerDir),
+			Options:     []string{"rbind", "rw"},
+		},
+	}
+	return append(mounts, gpuMounts...)
+}
+
 func (r *ContainerRunner) measureCELEvents(ctx context.Context) error {
 	if err := r.measureContainerClaims(ctx); err != nil {
 		return fmt.Errorf("failed to measure container claims: %v", err)
 	}
-	if r.launchSpec.Experiments.EnableMeasureMemoryMonitor {
-		if err := r.measureMemoryMonitor(); err != nil {
-			return fmt.Errorf("failed to measure memory monitoring state: %v", err)
-		}
+	if err := r.measureMemoryMonitor(); err != nil {
+		return fmt.Errorf("failed to measure memory monitoring state: %v", err)
 	}
 
 	separator := cel.CosTlv{
@@ -407,13 +439,13 @@ func (r *ContainerRunner) refreshToken(ctx context.Context) (time.Duration, erro
 
 // ctx must be a cancellable context.
 func (r *ContainerRunner) fetchAndWriteToken(ctx context.Context) error {
-	return r.fetchAndWriteTokenWithRetry(ctx, defaultRetryPolicy())
+	return r.fetchAndWriteTokenWithRetry(ctx, defaultRetryPolicy)
 }
 
 // ctx must be a cancellable context.
 // retry specifies the refresher goroutine's retry policy.
 func (r *ContainerRunner) fetchAndWriteTokenWithRetry(ctx context.Context,
-	retry *backoff.ExponentialBackOff) error {
+	retry func() *backoff.ExponentialBackOff) error {
 	if err := os.MkdirAll(launcherfile.HostTmpPath, 0744); err != nil {
 		return err
 	}
@@ -439,7 +471,7 @@ func (r *ContainerRunner) fetchAndWriteTokenWithRetry(ctx context.Context,
 						duration, err = r.refreshToken(ctx)
 						return err
 					},
-					retry,
+					retry(),
 					func(err error, t time.Duration) {
 						r.logger.Printf("failed to refresh attestation service token at time %v: %v", t, err)
 					})

@@ -8,9 +8,13 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/google/go-configfs-tsm/configfs/configfsi"
+	"github.com/google/go-configfs-tsm/configfs/fakertmr"
+	configfstsmrtmr "github.com/google/go-configfs-tsm/rtmr"
+	"github.com/google/go-eventlog/proto/state"
+	"github.com/google/go-eventlog/register"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal/test"
-	pb "github.com/google/go-tpm-tools/proto/tpm"
 	"github.com/google/go-tpm/legacy/tpm2"
 	"github.com/google/go-tpm/tpmutil"
 )
@@ -24,10 +28,10 @@ func TestCELEncodingDecoding(t *testing.T) {
 	cel := &CEL{}
 
 	cosEvent := CosTlv{ImageDigestType, []byte("sha256:781d8dfdd92118436bd914442c8339e653b83f6bf3c1a7a98efcfb7c4fed7483")}
-	appendOrFatal(t, cel, tpm, test.DebugPCR, measuredHashes, cosEvent)
+	appendPcrEventOrFatal(t, cel, tpm, test.DebugPCR, measuredHashes, cosEvent)
 
 	cosEvent2 := CosTlv{ImageRefType, []byte("docker.io/bazel/experimental/test:latest")}
-	appendOrFatal(t, cel, tpm, test.ApplicationPCR, measuredHashes, cosEvent2)
+	appendPcrEventOrFatal(t, cel, tpm, test.ApplicationPCR, measuredHashes, cosEvent2)
 
 	var buf bytes.Buffer
 	if err := cel.EncodeCEL(&buf); err != nil {
@@ -46,10 +50,16 @@ func TestCELEncodingDecoding(t *testing.T) {
 	if decodedcel.Records[1].RecNum != 1 {
 		t.Errorf("recnum mismatch")
 	}
-	if decodedcel.Records[0].PCR != uint8(test.DebugPCR) {
+	if decodedcel.Records[0].IndexType != PCRTypeValue {
+		t.Errorf("index type mismatch")
+	}
+	if decodedcel.Records[0].Index != uint8(test.DebugPCR) {
 		t.Errorf("pcr value mismatch")
 	}
-	if decodedcel.Records[1].PCR != uint8(test.ApplicationPCR) {
+	if decodedcel.Records[1].IndexType != PCRTypeValue {
+		t.Errorf("index type mismatch")
+	}
+	if decodedcel.Records[1].Index != uint8(test.ApplicationPCR) {
 		t.Errorf("pcr value mismatch")
 	}
 
@@ -62,6 +72,8 @@ func TestCELMeasureAndReplay(t *testing.T) {
 	tpm := test.GetTPM(t)
 	defer client.CheckedClose(t, tpm)
 
+	fakeRTMR := fakertmr.CreateRtmrSubsystem(t.TempDir())
+
 	err := tpm2.PCRReset(tpm, tpmutil.Handle(test.DebugPCR))
 	if err != nil {
 		t.Fatal(err)
@@ -72,23 +84,36 @@ func TestCELMeasureAndReplay(t *testing.T) {
 	}
 
 	cel := &CEL{}
+	celRTMR := &CEL{}
 
 	cosEvent := CosTlv{ImageRefType, []byte("docker.io/bazel/experimental/test:latest")}
+
 	someEvent2 := make([]byte, 10)
 	rand.Read(someEvent2)
 	cosEvent2 := CosTlv{ImageDigestType, someEvent2}
-	appendOrFatal(t, cel, tpm, test.DebugPCR, measuredHashes, cosEvent)
-	appendOrFatal(t, cel, tpm, test.DebugPCR, measuredHashes, cosEvent2)
 
-	appendOrFatal(t, cel, tpm, test.ApplicationPCR, measuredHashes, cosEvent2)
-	appendOrFatal(t, cel, tpm, test.ApplicationPCR, measuredHashes, cosEvent)
-	appendOrFatal(t, cel, tpm, test.ApplicationPCR, measuredHashes, cosEvent)
+	appendPcrEventOrFatal(t, cel, tpm, test.DebugPCR, measuredHashes, cosEvent)
+	appendRtmrEventOrFatal(t, celRTMR, fakeRTMR, CosRTMR, cosEvent)
+
+	appendPcrEventOrFatal(t, cel, tpm, test.DebugPCR, measuredHashes, cosEvent2)
+	appendRtmrEventOrFatal(t, celRTMR, fakeRTMR, CosRTMR, cosEvent)
+
+	appendPcrEventOrFatal(t, cel, tpm, test.ApplicationPCR, measuredHashes, cosEvent2)
+	appendRtmrEventOrFatal(t, celRTMR, fakeRTMR, CosRTMR, cosEvent2)
+
+	appendPcrEventOrFatal(t, cel, tpm, test.ApplicationPCR, measuredHashes, cosEvent)
+	appendRtmrEventOrFatal(t, celRTMR, fakeRTMR, CosRTMR, cosEvent)
+
+	appendPcrEventOrFatal(t, cel, tpm, test.ApplicationPCR, measuredHashes, cosEvent)
+	appendRtmrEventOrFatal(t, celRTMR, fakeRTMR, CosRTMR, cosEvent)
 
 	replay(t, cel, tpm, measuredHashes,
 		[]int{test.DebugPCR, test.ApplicationPCR}, true /*shouldSucceed*/)
 	// Supersets should pass.
 	replay(t, cel, tpm, measuredHashes,
 		[]int{0, 13, 14, test.DebugPCR, 22, test.ApplicationPCR}, true /*shouldSucceed*/)
+
+	replayRTMR(t, celRTMR, fakeRTMR, []int{0, 1, 2, 3}, true /*shouldSucceed*/)
 }
 
 func TestCELReplayFailTamperedDigest(t *testing.T) {
@@ -99,15 +124,14 @@ func TestCELReplayFailTamperedDigest(t *testing.T) {
 
 	cosEvent := CosTlv{ImageRefType, []byte("docker.io/bazel/experimental/test:latest")}
 	someEvent2 := make([]byte, 10)
-
 	rand.Read(someEvent2)
 	cosEvent2 := CosTlv{ImageDigestType, someEvent2}
-	appendOrFatal(t, cel, tpm, test.DebugPCR, measuredHashes, cosEvent)
-	appendOrFatal(t, cel, tpm, test.DebugPCR, measuredHashes, cosEvent2)
 
-	appendOrFatal(t, cel, tpm, test.ApplicationPCR, measuredHashes, cosEvent2)
-	appendOrFatal(t, cel, tpm, test.ApplicationPCR, measuredHashes, cosEvent)
-	appendOrFatal(t, cel, tpm, test.ApplicationPCR, measuredHashes, cosEvent)
+	appendPcrEventOrFatal(t, cel, tpm, test.DebugPCR, measuredHashes, cosEvent)
+	appendPcrEventOrFatal(t, cel, tpm, test.DebugPCR, measuredHashes, cosEvent2)
+	appendPcrEventOrFatal(t, cel, tpm, test.ApplicationPCR, measuredHashes, cosEvent2)
+	appendPcrEventOrFatal(t, cel, tpm, test.ApplicationPCR, measuredHashes, cosEvent)
+	appendPcrEventOrFatal(t, cel, tpm, test.ApplicationPCR, measuredHashes, cosEvent)
 
 	modifiedRecord := cel.Records[3]
 	for hash := range modifiedRecord.Digests {
@@ -137,8 +161,10 @@ func TestCELReplayFailMissingPCRsInBank(t *testing.T) {
 	someEvent := make([]byte, 10)
 	someEvent2 := make([]byte, 10)
 	rand.Read(someEvent2)
-	appendOrFatal(t, cel, tpm, test.DebugPCR, measuredHashes, CosTlv{ImageRefType, someEvent})
-	appendOrFatal(t, cel, tpm, test.ApplicationPCR, measuredHashes, CosTlv{ImageDigestType, someEvent2})
+
+	appendPcrEventOrFatal(t, cel, tpm, test.DebugPCR, measuredHashes, CosTlv{ImageRefType, someEvent})
+	appendPcrEventOrFatal(t, cel, tpm, test.ApplicationPCR, measuredHashes, CosTlv{ImageDigestType, someEvent2})
+
 	replay(t, cel, tpm, measuredHashes,
 		[]int{test.DebugPCR}, false /*shouldSucceed*/)
 	replay(t, cel, tpm, measuredHashes,
@@ -155,21 +181,50 @@ func replay(t *testing.T, cel *CEL, tpm io.ReadWriteCloser, measuredHashes []cry
 		if err != nil {
 			t.Fatal(err)
 		}
-		pbPcr := &pb.PCRs{Hash: pb.HashAlgo(tpm2Hash),
-			Pcrs: map[uint32][]byte{},
-		}
+
+		pcrBank := register.PCRBank{TCGHashAlgo: state.HashAlgo(tpm2Hash)}
 		for index, val := range pcrMap {
-			pbPcr.Pcrs[uint32(index)] = val
+			pcrBank.PCRs = append(pcrBank.PCRs, register.PCR{
+				Index:     index,
+				Digest:    val,
+				DigestAlg: hash})
 		}
-		if err := cel.Replay(pbPcr); shouldSucceed && err != nil {
+
+		if err := cel.Replay(pcrBank); shouldSucceed && err != nil {
 			t.Errorf("failed to replay CEL on %v bank: %v",
-				pb.HashAlgo_name[int32(pbPcr.Hash)], err)
+				hash, err)
 		}
 	}
 }
 
-func appendOrFatal(t *testing.T, cel *CEL, tpm io.ReadWriteCloser, pcr int, hashAlgos []crypto.Hash, event Content) {
-	if err := cel.AppendEvent(tpm, pcr, hashAlgos, event); err != nil {
-		t.Fatalf("failed to append event: %v", err)
+func replayRTMR(t *testing.T, cel *CEL, rtmr *fakertmr.RtmrSubsystem, rtmrs []int, shouldSucceed bool) {
+	rtmrBank := register.RTMRBank{}
+
+	// RTMR 0 to 3
+	for _, rtmrIndex := range rtmrs {
+		digest, err := configfstsmrtmr.GetDigest(rtmr, rtmrIndex)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		rtmrBank.RTMRs = append(rtmrBank.RTMRs, register.RTMR{
+			Index:  rtmrIndex,
+			Digest: digest.Digest})
+	}
+
+	if err := cel.Replay(rtmrBank); shouldSucceed && err != nil {
+		t.Errorf("failed to replay RTMR: %v", err)
+	}
+}
+
+func appendPcrEventOrFatal(t *testing.T, cel *CEL, tpm io.ReadWriteCloser, pcr int, hashAlgos []crypto.Hash, event Content) {
+	if err := cel.AppendEventPCR(tpm, pcr, hashAlgos, event); err != nil {
+		t.Fatalf("failed to append PCR event: %v", err)
+	}
+}
+
+func appendRtmrEventOrFatal(t *testing.T, cel *CEL, rtmrClient configfsi.Client, rtmr int, event Content) {
+	if err := cel.AppendEventRTMR(rtmrClient, rtmr, event); err != nil {
+		t.Fatalf("failed to append RTMR event: %v", err)
 	}
 }

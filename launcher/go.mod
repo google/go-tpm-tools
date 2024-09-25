@@ -4,6 +4,7 @@ go 1.21
 
 require (
 	cloud.google.com/go/compute/metadata v0.5.0
+	cos.googlesource.com/cos/tools.git v0.0.0-20241008015903-8431fe581b1f
 	github.com/cenkalti/backoff/v4 v4.2.1
 	github.com/containerd/containerd v1.7.16
 	github.com/coreos/go-systemd/v22 v22.5.0
@@ -45,9 +46,10 @@ require (
 	github.com/google/certificate-transparency-go v1.1.2 // indirect
 	github.com/google/gce-tcb-verifier v0.2.3-0.20240905212129-12f728a62786 // indirect
 	github.com/google/go-attestation v0.5.1 // indirect
-	github.com/google/go-configfs-tsm v0.2.2 // indirect
+	github.com/google/go-configfs-tsm v0.3.3-0.20240919001351-b4b5b84fdcbc // indirect
+	github.com/google/go-eventlog v0.0.2-0.20241003021507-01bb555f7cba // indirect
 	github.com/google/go-sev-guest v0.11.1 // indirect
-	github.com/google/go-tdx-guest v0.3.1 // indirect
+	github.com/google/go-tdx-guest v0.3.2-0.20240902060211-1f7f7b9b42b9 // indirect
 	github.com/google/go-tspi v0.3.0 // indirect
 	github.com/google/logger v1.1.1 // indirect
 	github.com/google/s2a-go v0.1.7 // indirect

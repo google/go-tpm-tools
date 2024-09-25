@@ -7,6 +7,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -78,4 +81,60 @@ func (t *testRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) 
 
 type idTokenResp struct {
 	Token string `json:"token"`
+}
+
+func TestListFilesWithPrefix(t *testing.T) {
+
+	tmpDir := t.TempDir()
+	file1 := filepath.Join(tmpDir, "file1.txt")
+	file2 := filepath.Join(tmpDir, "file2.txt")
+
+	var testCases = []struct {
+		dir     string
+		pattern string
+		want    []string
+		wantErr bool
+	}{
+		{
+			dir:     tmpDir,
+			pattern: "file",
+			want:    []string{file1, file2},
+			wantErr: false,
+		},
+		{
+			dir:     tmpDir,
+			pattern: "newfile",
+			want:    []string{},
+			wantErr: false,
+		},
+		{
+			dir:     "otherdir",
+			pattern: "file",
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			dir:     "otherdir",
+			pattern: "tmpfile",
+			want:    nil,
+			wantErr: true,
+		},
+	}
+
+	// Create test files
+	os.WriteFile(file1, []byte("File 1 content"), 0644)
+	os.WriteFile(file2, []byte("File 2 content"), 0644)
+
+	for _, tc := range testCases {
+		t.Run(fmt.Sprintf("Dir: %s, Pattern: %s", tc.dir, tc.pattern), func(t *testing.T) {
+			got, err := listFilesWithPrefix(tc.dir, tc.pattern)
+			if (err != nil) != tc.wantErr {
+				t.Errorf("listFilesWithPrefix(%s, %s): got error: %v, want error: %v", tc.dir, tc.pattern, err, tc.wantErr)
+				return
+			}
+			if !tc.wantErr && !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("listFilesWithPrefix(%s, %s): got: %v, want: %v", tc.dir, tc.pattern, got, tc.want)
+			}
+		})
+	}
 }

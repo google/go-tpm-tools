@@ -29,7 +29,7 @@ message Attestation {
   bytes event_log = 3;
   // Optional information about a GCE instance, unused outside of GCE
   GCEInstanceInfo instance_info = 4;
-  // A TCG Canonical Event Log.
+  // A COS event log using the TCG Canonical Event Log format
   bytes canonical_event_log = 5;
   // Attestation Key (AK) Certificate, encoded as ASN.1 DER.
   // Optional.
