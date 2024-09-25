@@ -77,8 +77,8 @@ jobs:
         run: |
           GO_EXECUTABLE_PATH=$(which go)
           sudo $GO_EXECUTABLE_PATH test -v -run "TestFetchImageSignaturesDockerPublic" ./launcher
-      - name: Run specific tests to capture potential data race
-        run: go test ./launcher/agent -race -run TestCacheConcurrentSetGet
+      - name: Run all tests in launcher to capture potential data race
+        run: go test -v -race ./launcher/...
         if: (runner.os == 'Linux' || runner.os == 'macOS') && matrix.architecture == 'x64'
       - name: Test all modules
         run: go test -v ./... ./cmd/... ./launcher/... ./verifier/... -skip='TestCacheConcurrentSetGet|TestHwAttestationPass|TestHardwareAttestationPass'

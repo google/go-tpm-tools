@@ -140,7 +140,7 @@ func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error
 	if a.launchSpec.Experiments.EnableSignedContainerCache {
 		signatures = a.sigsCache.get()
 	} else {
-		signatures = fetchContainerImageSignatures(ctx, a.sigsFetcher, a.launchSpec.SignedImageRepos, defaultRetryPolicy(), a.logger)
+		signatures = fetchContainerImageSignatures(ctx, a.sigsFetcher, a.launchSpec.SignedImageRepos, defaultRetryPolicy, a.logger)
 	}
 	if len(signatures) > 0 {
 		req.ContainerImageSignatures = signatures
@@ -167,14 +167,14 @@ func (a *agent) attest(nonce []byte, cel []byte) (*pb.Attestation, error) {
 // It will reset the container image signatures for now.
 func (a *agent) Refresh(ctx context.Context) error {
 	if a.launchSpec.Experiments.EnableSignedContainerCache {
-		signatures := fetchContainerImageSignatures(ctx, a.sigsFetcher, a.launchSpec.SignedImageRepos, defaultRetryPolicy(), a.logger)
+		signatures := fetchContainerImageSignatures(ctx, a.sigsFetcher, a.launchSpec.SignedImageRepos, defaultRetryPolicy, a.logger)
 		a.sigsCache.set(signatures)
 		a.logger.Printf("Refreshed container image signature cache: %v\n", signatures)
 	}
 	return nil
 }
 
-func fetchContainerImageSignatures(ctx context.Context, fetcher signaturediscovery.Fetcher, targetRepos []string, retry backoff.BackOff, logger *log.Logger) []oci.Signature {
+func fetchContainerImageSignatures(ctx context.Context, fetcher signaturediscovery.Fetcher, targetRepos []string, retry func() backoff.BackOff, logger *log.Logger) []oci.Signature {
 	signatures := make([][]oci.Signature, len(targetRepos))
 
 	var wg sync.WaitGroup
@@ -191,7 +191,7 @@ func fetchContainerImageSignatures(ctx context.Context, fetcher signaturediscove
 					sigs = s
 					return err
 				},
-				retry,
+				retry(),
 				func(err error, _ time.Duration) {
 					logger.Printf("Failed to fetch container image signatures from repo %q: %v", targetRepo, err)
 				})

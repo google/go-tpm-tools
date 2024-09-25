@@ -11,6 +11,7 @@ import (
 	"os"
 	"path"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -43,6 +44,10 @@ type fakeAttestationAgent struct {
 	sigsCache        []string
 	sigsFetcherFunc  func(context.Context) []string
 	launchSpec       spec.LaunchSpec
+
+	// attMu sits on top of attempts field and protects attempts.
+	attMu    sync.Mutex
+	attempts int
 }
 
 func (f *fakeAttestationAgent) MeasureEvent(event cel.Content) error {
@@ -69,7 +74,7 @@ func (f *fakeAttestationAgent) Refresh(ctx context.Context) error {
 	return nil
 }
 
-func (f fakeAttestationAgent) Close() error {
+func (f *fakeAttestationAgent) Close() error {
 	return nil
 }
 
@@ -315,16 +320,22 @@ func TestTokenIsNotChangedIfRefreshFails(t *testing.T) {
 
 	expectedToken := createJWT(t, 5*time.Second)
 	ttl := 5 * time.Second
-	successfulAttestFunc := func(context.Context, agent.AttestAgentOpts) ([]byte, error) {
-		return expectedToken, nil
-	}
 
-	errorAttestFunc := func(context.Context, agent.AttestAgentOpts) ([]byte, error) {
+	attestAgent := &fakeAttestationAgent{}
+	attestAgent.attestFunc = func(context.Context, agent.AttestAgentOpts) ([]byte, error) {
+		attestAgent.attMu.Lock()
+		defer func() {
+			attestAgent.attempts = attestAgent.attempts + 1
+			attestAgent.attMu.Unlock()
+		}()
+		if attestAgent.attempts%2 == 0 {
+			return expectedToken, nil
+		}
 		return nil, errors.New("attest unsuccessful")
 	}
 
 	runner := ContainerRunner{
-		attestAgent: &fakeAttestationAgent{attestFunc: successfulAttestFunc},
+		attestAgent: attestAgent,
 		logger:      log.Default(),
 	}
 
@@ -341,9 +352,6 @@ func TestTokenIsNotChangedIfRefreshFails(t *testing.T) {
 	if !bytes.Equal(data, expectedToken) {
 		t.Errorf("Initial token written to file does not match expected token: got %v, want %v", data, expectedToken)
 	}
-
-	// Change attest agent to return error.
-	runner.attestAgent = &fakeAttestationAgent{attestFunc: errorAttestFunc}
 
 	time.Sleep(ttl)
 
@@ -407,7 +415,7 @@ func testRetryPolicyWithNTries(t *testing.T, numTries int, expectRefresh bool) {
 		attestAgent: &fakeAttestationAgent{attestFunc: attestFunc},
 		logger:      log.Default(),
 	}
-	if err := runner.fetchAndWriteTokenWithRetry(ctx, testRetryPolicyThreeTimes()); err != nil {
+	if err := runner.fetchAndWriteTokenWithRetry(ctx, testRetryPolicyThreeTimes); err != nil {
 		t.Fatalf("fetchAndWriteTokenWithRetry failed: %v", err)
 	}
 	filepath := path.Join(launcherfile.HostTmpPath, launcherfile.AttestationVerifierTokenFilename)
@@ -448,16 +456,25 @@ func TestFetchAndWriteTokenWithTokenRefresh(t *testing.T) {
 	defer cancel()
 
 	expectedToken := createJWT(t, 5*time.Second)
+	expectedRefreshedToken := createJWT(t, 10*time.Second)
 
 	ttl := 5 * time.Second
 
+	attestAgent := &fakeAttestationAgent{}
+	attestAgent.attestFunc = func(context.Context, agent.AttestAgentOpts) ([]byte, error) {
+		attestAgent.attMu.Lock()
+		defer func() {
+			attestAgent.attempts = attestAgent.attempts + 1
+			attestAgent.attMu.Unlock()
+		}()
+		if attestAgent.attempts%2 == 0 {
+			return expectedToken, nil
+		}
+		return expectedRefreshedToken, nil
+	}
 	runner := ContainerRunner{
-		attestAgent: &fakeAttestationAgent{
-			attestFunc: func(context.Context, agent.AttestAgentOpts) ([]byte, error) {
-				return expectedToken, nil
-			},
-		},
-		logger: log.Default(),
+		attestAgent: attestAgent,
+		logger:      log.Default(),
 	}
 
 	if err := runner.fetchAndWriteToken(ctx); err != nil {
@@ -472,14 +489,6 @@ func TestFetchAndWriteTokenWithTokenRefresh(t *testing.T) {
 
 	if !bytes.Equal(data, expectedToken) {
 		t.Errorf("Initial token written to file does not match expected token: got %v, want %v", data, expectedToken)
-	}
-
-	// Change attest agent to return new token.
-	expectedRefreshedToken := createJWT(t, 10*time.Second)
-	runner.attestAgent = &fakeAttestationAgent{
-		attestFunc: func(context.Context, agent.AttestAgentOpts) ([]byte, error) {
-			return expectedRefreshedToken, nil
-		},
 	}
 
 	// Check that token has not been refreshed yet.

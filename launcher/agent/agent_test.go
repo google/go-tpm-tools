@@ -292,8 +292,11 @@ func TestFetchContainerImageSignatures(t *testing.T) {
 				t.Fatalf("failed to create AK: %v", err)
 			}
 
-			testRetryPolicy := backoff.NewExponentialBackOff()
-			testRetryPolicy.MaxElapsedTime = time.Millisecond
+			testRetryPolicy := func() backoff.BackOff {
+				b := backoff.NewExponentialBackOff()
+				b.MaxElapsedTime = time.Millisecond
+				return b
+			}
 
 			sdClient := signaturediscovery.NewFakeClient()
 			gotSigs := fetchContainerImageSignatures(ctx, sdClient, tc.targetRepos, testRetryPolicy, log.Default())
@@ -487,7 +490,10 @@ func TestFetchContainerImageSignatures_RetriesOnFailure(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			sdClient := NewFailingClient(tc.resultmap)
-			b := backoff.NewConstantBackOff(time.Millisecond)
+			retryPolicy := func() backoff.BackOff {
+				b := backoff.NewExponentialBackOff()
+				return backoff.WithMaxRetries(b, 2)
+			}
 
 			repos := []string{}
 			wantSigs := []oci.Signature{}
@@ -500,7 +506,7 @@ func TestFetchContainerImageSignatures_RetriesOnFailure(t *testing.T) {
 				}
 			}
 
-			gotSigs := fetchContainerImageSignatures(ctx, sdClient, repos, backoff.WithMaxRetries(b, 2), log.Default())
+			gotSigs := fetchContainerImageSignatures(ctx, sdClient, repos, retryPolicy, log.Default())
 
 			if len(gotSigs) != len(wantSigs) {
 				t.Errorf("fetchContainerImageSignatures did not return expected signatures for test case %s, got signatures length %d, but want %d", tc.name, len(gotSigs), len(wantSigs))
