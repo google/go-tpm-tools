@@ -1,3 +1,5 @@
+// Package logging implements a logger to be used in the client.
+// Logs to both Cloud Logging and the serial console.
 package logging
 
 import (
