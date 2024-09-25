@@ -7,11 +7,6 @@ import (
 	"crypto/rsa"
 	"errors"
 	"fmt"
-<<<<<<< HEAD
-	"log"
-	"log/slog"
-=======
->>>>>>> 4a395b9 (add logging library with cloud logging client)
 	"os"
 	"path"
 	"strconv"
@@ -340,13 +335,8 @@ func TestTokenIsNotChangedIfRefreshFails(t *testing.T) {
 	}
 
 	runner := ContainerRunner{
-<<<<<<< HEAD
 		attestAgent: attestAgent,
-		logger:      log.Default(),
-=======
-		attestAgent: &fakeAttestationAgent{attestFunc: successfulAttestFunc},
 		logger:      logging.SimpleLogger(),
->>>>>>> 4a395b9 (add logging library with cloud logging client)
 	}
 
 	if err := runner.fetchAndWriteToken(ctx); err != nil {
@@ -483,17 +473,8 @@ func TestFetchAndWriteTokenWithTokenRefresh(t *testing.T) {
 		return expectedRefreshedToken, nil
 	}
 	runner := ContainerRunner{
-<<<<<<< HEAD
 		attestAgent: attestAgent,
-		logger:      log.Default(),
-=======
-		attestAgent: &fakeAttestationAgent{
-			attestFunc: func(context.Context, agent.AttestAgentOpts) ([]byte, error) {
-				return expectedToken, nil
-			},
-		},
-		logger: logging.SimpleLogger(),
->>>>>>> 4a395b9 (add logging library with cloud logging client)
+		logger:      logging.SimpleLogger(),
 	}
 
 	if err := runner.fetchAndWriteToken(ctx); err != nil {
