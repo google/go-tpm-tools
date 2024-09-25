@@ -143,7 +143,7 @@ func (l *logger) writeLog(severity clogging.Severity, msg string, args ...any) {
 	pl := payload{}
 	addArgs(pl, args)
 
-	pl["message"] = msg
+	pl["MESSAGE"] = msg
 	logEntry.Payload = pl
 
 	l.cloudLogger.Log(logEntry)
