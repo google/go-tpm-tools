@@ -7,8 +7,11 @@ import (
 	"crypto/rsa"
 	"errors"
 	"fmt"
+<<<<<<< HEAD
 	"log"
 	"log/slog"
+=======
+>>>>>>> 4a395b9 (add logging library with cloud logging client)
 	"os"
 	"path"
 	"strconv"
@@ -25,6 +28,8 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/launcher/agent"
+	"github.com/google/go-tpm-tools/launcher/internal/experiments"
+	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/spec"
 	"github.com/opencontainers/go-digest"
@@ -153,7 +158,7 @@ func TestRefreshToken(t *testing.T) {
 				return expectedToken, nil
 			},
 		},
-		logger: slog.Default(),
+		logger: logging.SimpleLogger(),
 	}
 
 	if err := os.MkdirAll(launcherfile.HostTmpPath, 0744); err != nil {
@@ -198,7 +203,7 @@ func TestRefreshTokenWithSignedContainerCacheEnabled(t *testing.T) {
 
 	runner := ContainerRunner{
 		attestAgent: fakeAgent,
-		logger:      slog.Default(),
+		logger:      logging.SimpleLogger(),
 	}
 
 	if err := os.MkdirAll(launcherfile.HostTmpPath, 0744); err != nil {
@@ -271,7 +276,7 @@ func TestRefreshTokenError(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			runner := ContainerRunner{
 				attestAgent: tc.agent,
-				logger:      slog.Default(),
+				logger:      logging.SimpleLogger(),
 			}
 
 			if _, err := runner.refreshToken(context.Background()); err == nil {
@@ -294,7 +299,7 @@ func TestFetchAndWriteTokenSucceeds(t *testing.T) {
 				return expectedToken, nil
 			},
 		},
-		logger: slog.Default(),
+		logger: logging.SimpleLogger(),
 	}
 
 	if err := runner.fetchAndWriteToken(ctx); err != nil {
@@ -334,7 +339,7 @@ func TestTokenIsNotChangedIfRefreshFails(t *testing.T) {
 
 	runner := ContainerRunner{
 		attestAgent: attestAgent,
-		logger:      log.Default(),
+		logger:      logging.SimpleLogger(),
 	}
 
 	if err := runner.fetchAndWriteToken(ctx); err != nil {
@@ -411,7 +416,7 @@ func testRetryPolicyWithNTries(t *testing.T, numTries int, expectRefresh bool) {
 	}
 	runner := ContainerRunner{
 		attestAgent: &fakeAttestationAgent{attestFunc: attestFunc},
-		logger:      slog.Default(),
+		logger:      logging.SimpleLogger(),
 	}
 	if err := runner.fetchAndWriteTokenWithRetry(ctx, testRetryPolicyThreeTimes); err != nil {
 		t.Fatalf("fetchAndWriteTokenWithRetry failed: %v", err)
@@ -472,7 +477,7 @@ func TestFetchAndWriteTokenWithTokenRefresh(t *testing.T) {
 	}
 	runner := ContainerRunner{
 		attestAgent: attestAgent,
-		logger:      log.Default(),
+		logger:      logging.SimpleLogger(),,
 	}
 
 	if err := runner.fetchAndWriteToken(ctx); err != nil {
@@ -625,7 +630,7 @@ func TestMeasureCELEvents(t *testing.T) {
 				attestAgent: fakeAgent,
 				container:   fakeContainer,
 				launchSpec:  tc.launchSpec,
-				logger:      slog.Default(),
+				logger:      logging.SimpleLogger(),
 			}
 
 			if err := r.measureCELEvents(ctx); err != nil {
