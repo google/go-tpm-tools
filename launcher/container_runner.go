@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"math/rand"
 	"os"
 	"os/exec"
@@ -29,6 +28,7 @@ import (
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/launcher/agent"
+	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/internal/signaturediscovery"
 	"github.com/google/go-tpm-tools/launcher/internal/systemctl"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
@@ -46,7 +46,7 @@ type ContainerRunner struct {
 	container     containerd.Container
 	launchSpec    spec.LaunchSpec
 	attestAgent   agent.AttestationAgent
-	logger        *slog.Logger
+	logger        logging.Logger
 	serialConsole *os.File
 }
 
@@ -76,7 +76,7 @@ const (
 )
 
 // NewRunner returns a runner.
-func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.Token, launchSpec spec.LaunchSpec, mdsClient *metadata.Client, tpm io.ReadWriteCloser, logger *slog.Logger, serialConsole *os.File) (*ContainerRunner, error) {
+func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.Token, launchSpec spec.LaunchSpec, mdsClient *metadata.Client, tpm io.ReadWriteCloser, logger logging.Logger, serialConsole *os.File) (*ContainerRunner, error) {
 	image, err := initImage(ctx, cdClient, launchSpec, token)
 	if err != nil {
 		return nil, err
@@ -100,10 +100,10 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	}
 
 	logger.Info("Preparing Container Runner",
-		slog.String("operator_input_image_ref", image.Name()),
-		slog.Any("image_digest", image.Target().Digest),
-		slog.Any("operator_override_env_vars", envs),
-		slog.Any("operator_override_cmd", launchSpec.Cmd),
+		"operator_input_image_ref", image.Name(),
+		"image_digest", image.Target().Digest,
+		"operator_override_env_vars", envs,
+		"operator_override_cmd", launchSpec.Cmd,
 	)
 
 	imageConfig, err := getImageConfig(ctx, image)
@@ -131,8 +131,8 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		logger.Error(err.Error())
 	} else {
 		logger.Info("Retrieved image config",
-			slog.Any("image_id", imageConfigDescriptor.Digest),
-			slog.Any("image_annotations", imageConfigDescriptor.Annotations),
+			"image_id", imageConfigDescriptor.Digest,
+			"image_annotations", imageConfigDescriptor.Annotations,
 		)
 	}
 
