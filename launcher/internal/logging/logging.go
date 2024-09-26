@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	logName           = "projects/confidentialcomputing-e2e/logs/confidential-space-launcher"
+	logName           = "confidential-space-launcher"
 	serialConsoleFile = "/dev/console"
 )
 
