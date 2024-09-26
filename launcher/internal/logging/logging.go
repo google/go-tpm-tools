@@ -5,6 +5,7 @@ package logging
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 
@@ -74,7 +75,7 @@ func NewLogger(ctx context.Context) (Logger, error) {
 		return nil, fmt.Errorf("failed to open serial console for writing: %v", err)
 	}
 
-	slg := slog.New(slog.NewJSONHandler(serialConsole, nil))
+	slg := slog.New(slog.NewJSONHandler(io.MultiWriter(os.Stdout, serialConsole), nil))
 	slg.Info("Serial Console logger initialized")
 
 	return &logger{
