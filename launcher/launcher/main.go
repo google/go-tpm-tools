@@ -59,6 +59,10 @@ func main() {
 	var err error
 	ctx := context.Background()
 
+	defer func() {
+		os.Exit(exitCode)
+	}()
+
 	logger, err = logging.NewLogger(ctx)
 	if err != nil {
 		log.Default().Printf("failed to initialize logging")
