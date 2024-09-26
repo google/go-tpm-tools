@@ -151,7 +151,7 @@ func (l *logger) writeLog(severity clogging.Severity, msg string, args ...any) {
 	addArgs(pl, args)
 
 	pl["MESSAGE"] = msg
-	// Needed for backwards compatibilty with Cloudbuild tests.
+	// Needed for backwards compatibility with Cloudbuild tests.
 	pl["_HOSTNAME"] = l.instanceName
 	logEntry.Payload = pl
 
