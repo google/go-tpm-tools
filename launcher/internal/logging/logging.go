@@ -5,7 +5,6 @@ package logging
 import (
 	"context"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 
@@ -37,6 +36,7 @@ type logger struct {
 	serialLogger *slog.Logger
 	resource     *mrpb.MonitoredResource
 
+	instanceName      string
 	cloudClient       *clogging.Client
 	serialConsoleFile *os.File
 }
@@ -80,7 +80,7 @@ func NewLogger(ctx context.Context) (Logger, error) {
 		return nil, fmt.Errorf("failed to open serial console for writing: %v", err)
 	}
 
-	slg := slog.New(slog.NewJSONHandler(io.MultiWriter(os.Stdout, serialConsole), nil))
+	slg := slog.New(slog.NewJSONHandler(serialConsole, nil))
 	slg.Info("Serial Console logger initialized")
 
 	return &logger{
@@ -89,12 +89,12 @@ func NewLogger(ctx context.Context) (Logger, error) {
 		resource: &mrpb.MonitoredResource{
 			Type: "gce_instance",
 			Labels: map[string]string{
-				"project_id":    projectID,
-				"instance_id":   instanceID,
-				"instance_name": instanceName,
-				"zone":          zone,
+				"project_id":  projectID,
+				"instance_id": instanceID,
+				"zone":        zone,
 			},
 		},
+		instanceName:      instanceName,
 		cloudClient:       cloggingClient,
 		serialConsoleFile: serialConsole,
 	}, err
@@ -151,6 +151,8 @@ func (l *logger) writeLog(severity clogging.Severity, msg string, args ...any) {
 	addArgs(pl, args)
 
 	pl["MESSAGE"] = msg
+	// Needed for backwards compatibilty with Cloudbuild tests.
+	pl["_HOSTNAME"] = l.instanceName
 	logEntry.Payload = pl
 
 	l.cloudLogger.Log(logEntry)
