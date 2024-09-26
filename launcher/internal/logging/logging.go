@@ -58,6 +58,11 @@ func NewLogger(ctx context.Context) (Logger, error) {
 		return nil, err
 	}
 
+	instanceName, err := mdsClient.InstanceNameWithContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	zone, err := mdsClient.ZoneWithContext(ctx)
 	if err != nil {
 		return nil, err
@@ -84,9 +89,10 @@ func NewLogger(ctx context.Context) (Logger, error) {
 		resource: &mrpb.MonitoredResource{
 			Type: "gce_instance",
 			Labels: map[string]string{
-				"project_id":  projectID,
-				"instance_id": instanceID,
-				"zone":        zone,
+				"project_id":    projectID,
+				"instance_id":   instanceID,
+				"instance_name": instanceName,
+				"zone":          zone,
 			},
 		},
 		cloudClient:       cloggingClient,
