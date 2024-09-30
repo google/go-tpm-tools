@@ -25,7 +25,6 @@ type Logger interface {
 	Info(msg string, args ...any)
 	Warn(msg string, args ...any)
 	Error(msg string, args ...any)
-	Debug(msg string, args ...any)
 
 	SerialConsoleFile() *os.File
 	Close()
@@ -80,8 +79,11 @@ func NewLogger(ctx context.Context) (Logger, error) {
 		return nil, fmt.Errorf("failed to open serial console for writing: %v", err)
 	}
 
-	slg := slog.New(slog.NewJSONHandler(serialConsole, nil))
+	slg := slog.New(slog.NewTextHandler(serialConsole, nil))
 	slg.Info("Serial Console logger initialized")
+
+	// This is necessary for DEBUG logs to propagate properly.
+	slog.SetDefault(slg)
 
 	return &logger{
 		cloudLogger:  cloggingClient.Logger(logName),
@@ -114,6 +116,8 @@ func (l *logger) Close() {
 	}
 }
 
+// Given a list of args, recursively converts it to a payload.
+// Assumes alternating keys and values (mirroring slog's behavior).
 func addArgs(pl payload, args []any) {
 	// Base case - if args is empty.
 	if len(args) == 0 {
@@ -167,7 +171,7 @@ func (l *logger) writeLog(severity clogging.Severity, msg string, args ...any) {
 	case clogging.Error, clogging.Critical, clogging.Alert, clogging.Emergency:
 		l.serialLogger.Error(msg, args...)
 	default:
-		l.serialLogger.Debug(msg, args...)
+		slog.Debug(msg, args...)
 	}
 }
 
@@ -191,12 +195,8 @@ func (l *logger) Error(msg string, args ...any) {
 	l.writeLog(clogging.Error, msg, args...)
 }
 
-// Debug logs msg and args at 'Debug' severity.
-func (l *logger) Debug(msg string, args ...any) {
-	l.writeLog(clogging.Debug, msg, args...)
-}
-
 // SimpleLogger returns a lightweight implementation that wraps a slog.Default() logger.
+// Suitable for testing.
 func SimpleLogger() Logger {
 	return &slogger{slog.Default()}
 }
@@ -232,11 +232,6 @@ func (l *slogger) Warn(msg string, args ...any) {
 // Error logs msg and args at 'Error' severity.
 func (l *slogger) Error(msg string, args ...any) {
 	l.slg.Error(msg, args...)
-}
-
-// Debug logs msg and args at 'Debug' severity.
-func (l *slogger) Debug(msg string, args ...any) {
-	l.slg.Debug(msg, args...)
 }
 
 func (l *slogger) SerialConsoleFile() *os.File {
