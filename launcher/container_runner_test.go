@@ -24,7 +24,6 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/launcher/agent"
-	"github.com/google/go-tpm-tools/launcher/internal/experiments"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/spec"
 	"github.com/opencontainers/go-digest"
@@ -43,7 +42,6 @@ type fakeAttestationAgent struct {
 	attestFunc       func(context.Context, agent.AttestAgentOpts) ([]byte, error)
 	sigsCache        []string
 	sigsFetcherFunc  func(context.Context) []string
-	launchSpec       spec.LaunchSpec
 
 	// attMu sits on top of attempts field and protects attempts.
 	attMu    sync.Mutex
@@ -68,7 +66,7 @@ func (f *fakeAttestationAgent) Attest(ctx context.Context, _ agent.AttestAgentOp
 
 // Refresh simulates the behavior of an actual agent.
 func (f *fakeAttestationAgent) Refresh(ctx context.Context) error {
-	if f.launchSpec.Experiments.EnableSignedContainerCache {
+	if f.sigsFetcherFunc != nil {
 		f.sigsCache = f.sigsFetcherFunc(ctx)
 	}
 	return nil
@@ -192,7 +190,6 @@ func TestRefreshTokenWithSignedContainerCacheEnabled(t *testing.T) {
 		sigsFetcherFunc: func(context.Context) []string {
 			return oldCache
 		},
-		launchSpec: spec.LaunchSpec{Experiments: experiments.Experiments{EnableSignedContainerCache: true}},
 	}
 	fakeAgent.attestFunc = func(context.Context, agent.AttestAgentOpts) ([]byte, error) {
 		return createJWTWithSignatures(t, fakeAgent.sigsCache), nil
@@ -586,6 +583,7 @@ func TestMeasureCELEvents(t *testing.T) {
 				cel.EnvVarType,
 				cel.OverrideEnvType,
 				cel.OverrideArgType,
+				cel.MemoryMonitorType,
 				cel.LaunchSeparatorType,
 			},
 			launchSpec: spec.LaunchSpec{
@@ -605,7 +603,6 @@ func TestMeasureCELEvents(t *testing.T) {
 				cel.MemoryMonitorType,
 				cel.LaunchSeparatorType,
 			},
-			launchSpec: spec.LaunchSpec{Experiments: experiments.Experiments{EnableMeasureMemoryMonitor: true}},
 		},
 	}
 

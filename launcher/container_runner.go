@@ -270,10 +270,8 @@ func (r *ContainerRunner) measureCELEvents(ctx context.Context) error {
 	if err := r.measureContainerClaims(ctx); err != nil {
 		return fmt.Errorf("failed to measure container claims: %v", err)
 	}
-	if r.launchSpec.Experiments.EnableMeasureMemoryMonitor {
-		if err := r.measureMemoryMonitor(); err != nil {
-			return fmt.Errorf("failed to measure memory monitoring state: %v", err)
-		}
+	if err := r.measureMemoryMonitor(); err != nil {
+		return fmt.Errorf("failed to measure memory monitoring state: %v", err)
 	}
 
 	separator := cel.CosTlv{
