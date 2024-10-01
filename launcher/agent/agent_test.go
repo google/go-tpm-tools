@@ -19,7 +19,6 @@ import (
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal/test"
-	"github.com/google/go-tpm-tools/launcher/internal/experiments"
 	"github.com/google/go-tpm-tools/launcher/internal/signaturediscovery"
 	"github.com/google/go-tpm-tools/launcher/spec"
 	attestpb "github.com/google/go-tpm-tools/proto/attest"
@@ -88,16 +87,9 @@ func TestAttest(t *testing.T) {
 		containerSignaturesFetcher signaturediscovery.Fetcher
 	}{
 		{
-			name:                       "all experiment flags disabled",
-			launchSpec:                 spec.LaunchSpec{},
-			principalIDTokenFetcher:    placeholderPrincipalFetcher,
-			containerSignaturesFetcher: signaturediscovery.NewFakeClient(),
-		},
-		{
-			name: "enable signed container",
+			name: "Happy path with container signatures",
 			launchSpec: spec.LaunchSpec{
 				SignedImageRepos: []string{signaturediscovery.FakeRepoWithSignatures},
-				Experiments:      experiments.Experiments{EnableSignedContainerCache: true},
 			},
 			principalIDTokenFetcher:    placeholderPrincipalFetcher,
 			containerSignaturesFetcher: signaturediscovery.NewFakeClient(),
@@ -158,26 +150,26 @@ func TestAttest(t *testing.T) {
 			if claims.Subject != "https://www.googleapis.com/compute/v1/projects/fakeProject/zones/fakeZone/instances/fakeInstance" {
 				t.Errorf("Invalid sub")
 			}
-			if tc.launchSpec.Experiments.EnableSignedContainerCache {
-				got := claims.ContainerImageSignatures
-				want := []fake.ContainerImageSignatureClaims{
-					{
-						Payload:   "test data",
-						Signature: base64.StdEncoding.EncodeToString([]byte("test data")),
-						PubKey:    "test data",
-						SigAlg:    "ECDSA_P256_SHA256",
-					},
-					{
-						Payload:   "hello world",
-						Signature: base64.StdEncoding.EncodeToString([]byte("hello world")),
-						PubKey:    "hello world",
-						SigAlg:    "RSASSA_PKCS1V15_SHA256",
-					},
-				}
-				if !cmp.Equal(got, want) {
-					t.Errorf("ContainerImageSignatureClaims does not match expected value: got %v, want %v", got, want)
-				}
+
+			got := claims.ContainerImageSignatures
+			want := []fake.ContainerImageSignatureClaims{
+				{
+					Payload:   "test data",
+					Signature: base64.StdEncoding.EncodeToString([]byte("test data")),
+					PubKey:    "test data",
+					SigAlg:    "ECDSA_P256_SHA256",
+				},
+				{
+					Payload:   "hello world",
+					Signature: base64.StdEncoding.EncodeToString([]byte("hello world")),
+					PubKey:    "hello world",
+					SigAlg:    "RSASSA_PKCS1V15_SHA256",
+				},
 			}
+			if !cmp.Equal(got, want) {
+				t.Errorf("ContainerImageSignatureClaims does not match expected value: got %v, want %v", got, want)
+			}
+
 			ms := &attestpb.MachineState{}
 			err = protojson.Unmarshal([]byte(claims.MachineStateMarshaled), ms)
 			if err != nil {
