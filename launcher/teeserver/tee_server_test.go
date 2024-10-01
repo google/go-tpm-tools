@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -14,6 +13,7 @@ import (
 
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/launcher/agent"
+	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 )
 
@@ -44,7 +44,7 @@ func TestGetDefaultToken(t *testing.T) {
 	// An empty attestHandler is fine for now as it is not being used
 	// in the handler.
 	ah := attestHandler{defaultTokenFile: tmpToken,
-		logger: log.Default(),
+		logger: logging.SimpleLogger(),
 		attestAgent: fakeAttestationAgent{
 			attestFunc: func(context.Context, agent.AttestAgentOpts) ([]byte, error) {
 				t.Errorf("This method should not be called")
@@ -150,7 +150,7 @@ func TestCustomToken(t *testing.T) {
 		// An empty attestHandler is fine for now as it is not being used
 		// in the handler.
 		ah := attestHandler{defaultTokenFile: tmpToken,
-			logger: log.Default(),
+			logger: logging.SimpleLogger(),
 			attestAgent: fakeAttestationAgent{
 				attestFunc: test.attestFunc,
 			}}

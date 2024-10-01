@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"math/rand"
 	"os"
 	"os/exec"
@@ -29,6 +28,7 @@ import (
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/launcher/agent"
+	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/internal/signaturediscovery"
 	"github.com/google/go-tpm-tools/launcher/internal/systemctl"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
@@ -46,7 +46,7 @@ type ContainerRunner struct {
 	container     containerd.Container
 	launchSpec    spec.LaunchSpec
 	attestAgent   agent.AttestationAgent
-	logger        *log.Logger
+	logger        logging.Logger
 	serialConsole *os.File
 }
 
@@ -76,7 +76,7 @@ const (
 )
 
 // NewRunner returns a runner.
-func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.Token, launchSpec spec.LaunchSpec, mdsClient *metadata.Client, tpm io.ReadWriteCloser, logger *log.Logger, serialConsole *os.File) (*ContainerRunner, error) {
+func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.Token, launchSpec spec.LaunchSpec, mdsClient *metadata.Client, tpm io.ReadWriteCloser, logger logging.Logger, serialConsole *os.File) (*ContainerRunner, error) {
 	image, err := initImage(ctx, cdClient, launchSpec, token)
 	if err != nil {
 		return nil, err
@@ -99,22 +99,24 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		container.Delete(ctx, containerd.WithSnapshotCleanup)
 	}
 
-	logger.Printf("Operator Input Image Ref   : %v\n", image.Name())
-	logger.Printf("Image Digest               : %v\n", image.Target().Digest)
-	logger.Printf("Operator Override Env Vars : %v\n", envs)
-	logger.Printf("Operator Override Cmd      : %v\n", launchSpec.Cmd)
+	logger.Info("Preparing Container Runner",
+		"operator_input_image_ref", image.Name(),
+		"image_digest", image.Target().Digest,
+		"operator_override_env_vars", envs,
+		"operator_override_cmd", launchSpec.Cmd,
+	)
 
 	imageConfig, err := getImageConfig(ctx, image)
 	if err != nil {
 		return nil, err
 	}
 
-	logger.Printf("Exposed Ports:             : %v\n", imageConfig.ExposedPorts)
+	logger.Info(fmt.Sprintf("Exposed Ports:             : %v\n", imageConfig.ExposedPorts))
 	if err := openPorts(imageConfig.ExposedPorts); err != nil {
 		return nil, err
 	}
 
-	logger.Printf("Image Labels               : %v\n", imageConfig.Labels)
+	logger.Info(fmt.Sprintf("Image Labels               : %v\n", imageConfig.Labels))
 	launchPolicy, err := spec.GetLaunchPolicy(imageConfig.Labels)
 	if err != nil {
 		return nil, err
@@ -123,13 +125,15 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		return nil, err
 	}
 
-	logger.Printf("Launch Policy              : %+v\n", launchPolicy)
+	logger.Info(fmt.Sprintf("Launch Policy              : %+v\n", launchPolicy))
 
 	if imageConfigDescriptor, err := image.Config(ctx); err != nil {
-		logger.Println(err)
+		logger.Error(err.Error())
 	} else {
-		logger.Printf("Image ID                   : %v\n", imageConfigDescriptor.Digest)
-		logger.Printf("Image Annotations          : %v\n", imageConfigDescriptor.Annotations)
+		logger.Info("Retrieved image config",
+			"image_id", imageConfigDescriptor.Digest,
+			"image_annotations", imageConfigDescriptor.Annotations,
+		)
 	}
 
 	hostname, err := os.Hostname()
@@ -349,7 +353,7 @@ func (r *ContainerRunner) measureMemoryMonitor() error {
 	if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.MemoryMonitorType, EventContent: []byte{enabled}}); err != nil {
 		return err
 	}
-	r.logger.Println("Successfully measured memory monitoring event")
+	r.logger.Info("Successfully measured memory monitoring event")
 	return nil
 }
 
@@ -357,7 +361,6 @@ func (r *ContainerRunner) measureMemoryMonitor() error {
 // to wait before attemping to refresh it.
 // The token file will be written to a tmp file and then renamed.
 func (r *ContainerRunner) refreshToken(ctx context.Context) (time.Duration, error) {
-	r.logger.Print("refreshing attestation verifier OIDC token")
 	if err := r.attestAgent.Refresh(ctx); err != nil {
 		return 0, fmt.Errorf("failed to refresh attestation agent: %v", err)
 	}
@@ -400,7 +403,8 @@ func (r *ContainerRunner) refreshToken(ctx context.Context) (time.Duration, erro
 	if err != nil {
 		return 0, fmt.Errorf("failed to format claims: %w", err)
 	}
-	r.logger.Println(string(claimsString))
+	r.logger.Info("successfully refreshed attestation token")
+	r.logger.Info(string(claimsString))
 
 	return getNextRefreshFromExpiration(time.Until(claims.ExpiresAt.Time), rand.Float64()), nil
 }
@@ -429,9 +433,10 @@ func (r *ContainerRunner) fetchAndWriteTokenWithRetry(ctx context.Context,
 			select {
 			case <-ctx.Done():
 				timer.Stop()
-				r.logger.Println("token refreshing stopped")
+				r.logger.Info("token refreshing stopped")
 				return
 			case <-timer.C:
+				r.logger.Info("refreshing attestation verifier OIDC token")
 				var duration time.Duration
 				// Refresh token with default retry policy.
 				err := backoff.RetryNotify(
@@ -441,10 +446,10 @@ func (r *ContainerRunner) fetchAndWriteTokenWithRetry(ctx context.Context,
 					},
 					retry(),
 					func(err error, t time.Duration) {
-						r.logger.Printf("failed to refresh attestation service token at time %v: %v", t, err)
+						r.logger.Error(fmt.Sprintf("failed to refresh attestation service token at time %v: %v", t, err))
 					})
 				if err != nil {
-					r.logger.Printf("failed all attempts to refresh attestation service token, stopping refresher: %v", err)
+					r.logger.Error(fmt.Sprintf("failed all attempts to refresh attestation service token, stopping refresher: %v", err))
 					return
 				}
 
@@ -515,7 +520,7 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	}
 
 	// create and start the TEE server
-	r.logger.Println("EnableOnDemandAttestation is enabled: initializing TEE server.")
+	r.logger.Info("EnableOnDemandAttestation is enabled: initializing TEE server.")
 	teeServer, err := teeserver.New(ctx, path.Join(launcherfile.HostTmpPath, teeServerSocket), r.attestAgent, r.logger)
 	if err != nil {
 		return fmt.Errorf("failed to create the TEE server: %v", err)
@@ -525,39 +530,37 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 
 	// start node-problem-detector.service to collect memory related metrics.
 	if r.launchSpec.MemoryMonitoringEnabled {
-		r.logger.Println("MemoryMonitoring is enabled by the VM operator")
+		r.logger.Info("MemoryMonitoring is enabled by the VM operator")
 		s, err := systemctl.New()
 		if err != nil {
 			return fmt.Errorf("failed to create systemctl client: %v", err)
 		}
 		defer s.Close()
 
-		r.logger.Println("Starting a systemctl operation: systemctl start node-problem-detector.service")
+		r.logger.Info("Starting a systemctl operation: systemctl start node-problem-detector.service")
 		if err := s.Start("node-problem-detector.service"); err != nil {
 			return fmt.Errorf("failed to start node-problem-detector.service: %v", err)
 		}
-		r.logger.Println("node-problem-detector.service successfully started.")
+		r.logger.Info("node-problem-detector.service successfully started.")
 	} else {
-		r.logger.Println("MemoryMonitoring is disabled by the VM operator")
+		r.logger.Info("MemoryMonitoring is disabled by the VM operator")
 	}
 
 	var streamOpt cio.Opt
 	switch r.launchSpec.LogRedirect {
 	case spec.Nowhere:
 		streamOpt = cio.WithStreams(nil, nil, nil)
-		r.logger.Println("Container stdout/stderr will not be redirected.")
+		r.logger.Info("Container stdout/stderr will not be redirected.")
 	case spec.Everywhere:
 		w := io.MultiWriter(os.Stdout, r.serialConsole)
 		streamOpt = cio.WithStreams(nil, w, w)
-		r.logger.Println("Container stdout/stderr will be redirected to serial and Cloud Logging. " +
-			"This may result in performance issues due to slow serial console writes.")
+		r.logger.Info("Container stdout/stderr will be redirected to serial and Cloud Logging. This may result in performance issues due to slow serial console writes.")
 	case spec.CloudLogging:
 		streamOpt = cio.WithStreams(nil, os.Stdout, os.Stdout)
-		r.logger.Println("Container stdout/stderr will be redirected to Cloud Logging.")
+		r.logger.Info("Container stdout/stderr will be redirected to Cloud Logging.")
 	case spec.Serial:
 		streamOpt = cio.WithStreams(nil, r.serialConsole, r.serialConsole)
-		r.logger.Println("Container stdout/stderr will be redirected to serial logging. " +
-			"This may result in performance issues due to slow serial console writes.")
+		r.logger.Info("Container stdout/stderr will be redirected to serial logging. This may result in performance issues due to slow serial console writes.")
 	default:
 		return fmt.Errorf("unknown logging redirect location: %v", r.launchSpec.LogRedirect)
 	}
@@ -570,9 +573,9 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 
 	exitStatusC, err := task.Wait(ctx)
 	if err != nil {
-		r.logger.Println(err)
+		r.logger.Error(err.Error())
 	}
-	r.logger.Println("workload task started")
+	r.logger.Info("workload task started")
 
 	if err := task.Start(ctx); err != nil {
 		return &RetryableError{err}
@@ -585,10 +588,10 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	}
 
 	if code != 0 {
-		r.logger.Println("workload task ended and returned non-zero")
+		r.logger.Error("workload task ended and returned non-zero")
 		return &WorkloadError{code}
 	}
-	r.logger.Println("workload task ended and returned 0")
+	r.logger.Info("workload task ended and returned 0")
 	return nil
 }
 
