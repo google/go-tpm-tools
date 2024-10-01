@@ -101,7 +101,6 @@ func (c *testCLogger) Flush() error { return nil }
 
 // testSLogWriter implements the io.Writer interface.
 type testSLogWriter struct {
-	t   *testing.T
 	log []byte
 }
 
@@ -113,11 +112,11 @@ func (s *testSLogWriter) Write(p []byte) (n int, err error) {
 
 func (s *testSLogWriter) checkLogContains(msg string, pl payload) error {
 	if len(s.log) == 0 {
-		return errors.New("Serial log is empty.")
+		return errors.New("serial log is empty")
 	}
 
 	if !bytes.Contains(s.log, []byte(msg)) {
-		return fmt.Errorf("Log did not contain expected message: got %s, want \"%s\"", s.log, msg)
+		return fmt.Errorf("log did not contain expected message: got %s, want \"%s\"", s.log, msg)
 	}
 
 	if len(pl) > 0 {
@@ -132,7 +131,7 @@ func (s *testSLogWriter) checkLogContains(msg string, pl payload) error {
 
 			expectedStr := fmt.Sprintf(format, k, v)
 			if !strings.Contains(strLogs, expectedStr) {
-				return fmt.Errorf("Logs expected to contain \"%s\", got \"%s\"", expectedStr, strLogs)
+				return fmt.Errorf("logs expected to contain \"%s\", got \"%s\"", expectedStr, strLogs)
 			}
 		}
 	}
@@ -144,7 +143,7 @@ func (s *testSLogWriter) checkLogLevel(level slog.Level) error {
 	expected := "level=" + level.String()
 
 	if !strings.Contains(string(s.log), expected) {
-		return fmt.Errorf("Log did not contain expected level %v: %v", expected, string(s.log))
+		return fmt.Errorf("log did not contain expected level %v: %v", expected, string(s.log))
 	}
 
 	return nil
@@ -213,31 +212,31 @@ func TestWriteLog(t *testing.T) {
 
 func TestLogFunctions(t *testing.T) {
 	testcases := []struct {
-		name           string
-		cloud_severity clogging.Severity
-		serial_level   slog.Level
-		logFunc        func(lgr *logger, msg string)
+		name          string
+		cloudSeverity clogging.Severity
+		serialLevel   slog.Level
+		logFunc       func(lgr *logger, msg string)
 	}{
 		{
-			name:           "logger.Info",
-			cloud_severity: clogging.Info,
-			serial_level:   slog.LevelInfo,
+			name:          "logger.Info",
+			cloudSeverity: clogging.Info,
+			serialLevel:   slog.LevelInfo,
 			logFunc: func(lgr *logger, msg string) {
 				lgr.Info(msg)
 			},
 		},
 		{
-			name:           "logger.Warn",
-			cloud_severity: clogging.Warning,
-			serial_level:   slog.LevelWarn,
+			name:          "logger.Warn",
+			cloudSeverity: clogging.Warning,
+			serialLevel:   slog.LevelWarn,
 			logFunc: func(lgr *logger, msg string) {
 				lgr.Warn(msg)
 			},
 		},
 		{
-			name:           "logger.Error",
-			cloud_severity: clogging.Error,
-			serial_level:   slog.LevelError,
+			name:          "logger.Error",
+			cloudSeverity: clogging.Error,
+			serialLevel:   slog.LevelError,
 			logFunc: func(lgr *logger, msg string) {
 				lgr.Error(msg)
 			},
@@ -265,8 +264,8 @@ func TestLogFunctions(t *testing.T) {
 				"_HOSTNAME": testLogger.instanceName,
 			}
 
-			if cloudLogs.log.Severity != tc.cloud_severity {
-				t.Errorf("Cloud logs did not contain expected severity: got %v, want %v", cloudLogs.log.Severity, tc.cloud_severity)
+			if cloudLogs.log.Severity != tc.cloudSeverity {
+				t.Errorf("Cloud logs did not contain expected severity: got %v, want %v", cloudLogs.log.Severity, tc.cloudSeverity)
 			}
 
 			if !cmp.Equal(cloudLogs.log.Payload, expectedPayload) {
@@ -277,7 +276,7 @@ func TestLogFunctions(t *testing.T) {
 				t.Errorf("Error validating Serial Log contents: %v", err)
 			}
 
-			if err := serialLogs.checkLogLevel(tc.serial_level); err != nil {
+			if err := serialLogs.checkLogLevel(tc.serialLevel); err != nil {
 				t.Errorf("Error validating Serial Log level: %v", err)
 			}
 		})
