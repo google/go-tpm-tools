@@ -2,7 +2,6 @@ package logging
 
 import (
 	"bytes"
-	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -100,37 +99,6 @@ func (c *testCLogger) Log(entry clogging.Entry) {
 
 func (c *testCLogger) Flush() error { return nil }
 
-// func (c *testCLogger) checkPayload(msg string, pl payload) error {
-// 	if cmp.Equal(c.log, &clogging.Entry{}) {
-// 		return errors.New("Cloud log is empty.")
-// 	}
-
-// 	if !bytes.Contains(c.log, []byte(msg)) {
-// 		return fmt.Errorf("Log did not contain expected message: got %s, want \"%s\"", c.log, msg)
-// 	}
-
-// 	if len(payloadJSON) > 0 {
-// 		// Trim start/end brackets.
-// 		expected := payloadJSON[1 : len(payloadJSON)-1]
-
-// 		if !bytes.Contains(c.log, expected) {
-// 			return fmt.Errorf("Log did not contain expected fields: got %s, want %s", c.log, expected)
-// 		}
-// 	}
-
-// 	return nil
-// }
-
-// func (c *testCLogger) checkLogSeverity(sev clogging.Severity) error {
-// 	expected := fmt.Sprintf("\"severity\":\"%v\"", strings.ToUpper(sev.String()))
-
-// 	if !bytes.Contains(c.log, []byte(expected)) {
-// 		return fmt.Errorf("Log did not contain expected severity field %v: %s", expected, c.log)
-// 	}
-
-// 	return nil
-// }
-
 // testSLogWriter implements the io.Writer interface.
 type testSLogWriter struct {
 	t   *testing.T
@@ -183,12 +151,6 @@ func (s *testSLogWriter) checkLogLevel(level slog.Level) error {
 }
 
 func TestWriteLog(t *testing.T) {
-	client, err := clogging.NewClient(context.Background(), "test-project")
-	if err != nil {
-		t.Fatalf("Error creating cloud logging client: %v", err)
-	}
-	t.Cleanup(func() { client.Close() })
-
 	testResource := &mrpb.MonitoredResource{
 		Type: "gce_instance",
 		Labels: map[string]string{
@@ -208,7 +170,6 @@ func TestWriteLog(t *testing.T) {
 		resource:     testResource,
 
 		instanceName: "test-instance",
-		cloudClient:  client,
 	}
 
 	testMsg := "test message"
@@ -251,12 +212,6 @@ func TestWriteLog(t *testing.T) {
 }
 
 func TestLogFunctions(t *testing.T) {
-	client, err := clogging.NewClient(context.Background(), "test-project")
-	if err != nil {
-		t.Fatalf("Error creating cloud logging client: %v", err)
-	}
-	t.Cleanup(func() { client.Close() })
-
 	testcases := []struct {
 		name           string
 		cloud_severity clogging.Severity
@@ -301,7 +256,6 @@ func TestLogFunctions(t *testing.T) {
 				cloudLogger:  cloudLogs,
 				serialLogger: slog.New(slog.NewTextHandler(serialLogs, nil)),
 				instanceName: "test-instance",
-				cloudClient:  client,
 			}
 
 			tc.logFunc(testLogger, msg)
