@@ -16,6 +16,9 @@ import (
 const (
 	logName           = "confidential-space-launcher"
 	serialConsoleFile = "/dev/console"
+
+	payloadMessageKey  = "MESSAGE"
+	payloadHostnameKey = "_HOSTNAME"
 )
 
 // Logger defines the interface for the CS image logger.
@@ -30,8 +33,13 @@ type Logger interface {
 	Close()
 }
 
+type cLogger interface {
+	Log(clogging.Entry)
+	Flush() error
+}
+
 type logger struct {
-	cloudLogger  *clogging.Logger
+	cloudLogger  cLogger
 	serialLogger *slog.Logger
 	resource     *mrpb.MonitoredResource
 
@@ -154,9 +162,15 @@ func (l *logger) writeLog(severity clogging.Severity, msg string, args ...any) {
 	pl := payload{}
 	addArgs(pl, args)
 
-	pl["MESSAGE"] = msg
-	// Needed for backwards compatibility with Cloudbuild tests.
-	pl["_HOSTNAME"] = l.instanceName
+	if len(msg) > 0 {
+		pl[payloadMessageKey] = msg
+	}
+
+	if len(l.instanceName) > 0 {
+		// Needed for backwards compatibility with Cloudbuild tests.
+		pl[payloadHostnameKey] = l.instanceName
+	}
+
 	logEntry.Payload = pl
 
 	l.cloudLogger.Log(logEntry)
