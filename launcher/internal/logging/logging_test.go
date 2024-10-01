@@ -3,7 +3,6 @@ package logging
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -12,6 +11,8 @@ import (
 	"testing"
 
 	clogging "cloud.google.com/go/logging"
+	"github.com/google/go-cmp/cmp"
+	mrpb "google.golang.org/genproto/googleapis/api/monitoredres"
 )
 
 func toArgs(pl payload) []any {
@@ -87,48 +88,50 @@ func TestAddArgs(t *testing.T) {
 	}
 }
 
-type testCLogWriter struct {
-	log []byte
+// testCLogger implements the cLogger interface.
+type testCLogger struct {
+	log clogging.Entry
 }
 
-func (c *testCLogWriter) Write(p []byte) (n int, err error) {
+func (c *testCLogger) Log(entry clogging.Entry) {
 	// Cloud Logging sends multiple messages - append everything together for simplicity.
-	c.log = append(c.log, p...)
-	return 0, nil
+	c.log = entry
 }
 
-func (c *testCLogWriter) checkLogContains(msg string, payloadJSON []byte) error {
-	if len(c.log) == 0 {
-		return errors.New("Cloud log is empty.")
+func (c *testCLogger) Flush() error { return nil }
 
-	}
+// func (c *testCLogger) checkPayload(msg string, pl payload) error {
+// 	if cmp.Equal(c.log, &clogging.Entry{}) {
+// 		return errors.New("Cloud log is empty.")
+// 	}
 
-	if !bytes.Contains(c.log, []byte(msg)) {
-		return fmt.Errorf("Log did not contain expected message: got %s, want \"%s\"", c.log, msg)
-	}
+// 	if !bytes.Contains(c.log, []byte(msg)) {
+// 		return fmt.Errorf("Log did not contain expected message: got %s, want \"%s\"", c.log, msg)
+// 	}
 
-	if len(payloadJSON) > 0 {
-		// Trim start/end brackets.
-		expected := payloadJSON[1 : len(payloadJSON)-1]
+// 	if len(payloadJSON) > 0 {
+// 		// Trim start/end brackets.
+// 		expected := payloadJSON[1 : len(payloadJSON)-1]
 
-		if !bytes.Contains(c.log, expected) {
-			return fmt.Errorf("Log did not contain expected fields: got %s, want %s", c.log, expected)
-		}
-	}
+// 		if !bytes.Contains(c.log, expected) {
+// 			return fmt.Errorf("Log did not contain expected fields: got %s, want %s", c.log, expected)
+// 		}
+// 	}
 
-	return nil
-}
+// 	return nil
+// }
 
-func (c *testCLogWriter) checkLogSeverity(sev clogging.Severity) error {
-	expected := fmt.Sprintf("\"severity\":\"%v\"", strings.ToUpper(sev.String()))
+// func (c *testCLogger) checkLogSeverity(sev clogging.Severity) error {
+// 	expected := fmt.Sprintf("\"severity\":\"%v\"", strings.ToUpper(sev.String()))
 
-	if !bytes.Contains(c.log, []byte(expected)) {
-		return fmt.Errorf("Log did not contain expected severity field %v: %s", expected, c.log)
-	}
+// 	if !bytes.Contains(c.log, []byte(expected)) {
+// 		return fmt.Errorf("Log did not contain expected severity field %v: %s", expected, c.log)
+// 	}
 
-	return nil
-}
+// 	return nil
+// }
 
+// testSLogWriter implements the io.Writer interface.
 type testSLogWriter struct {
 	t   *testing.T
 	log []byte
@@ -186,13 +189,23 @@ func TestWriteLog(t *testing.T) {
 	}
 	t.Cleanup(func() { client.Close() })
 
+	testResource := &mrpb.MonitoredResource{
+		Type: "gce_instance",
+		Labels: map[string]string{
+			"instance_id": "1234",
+			"project_id":  "not-a-real-project",
+			"zone":        "us-central1-c",
+		},
+	}
+
 	// Redirect loggers to buffers.
-	cloudLogs := &testCLogWriter{}
+	cloudLogger := &testCLogger{}
 	serialLogs := &testSLogWriter{}
 
 	testLogger := &logger{
-		cloudLogger:  client.Logger("test-log", clogging.RedirectAsJSON(cloudLogs)),
+		cloudLogger:  cloudLogger,
 		serialLogger: slog.New(slog.NewTextHandler(serialLogs, nil)),
+		resource:     testResource,
 
 		instanceName: "test-instance",
 		cloudClient:  client,
@@ -207,25 +220,33 @@ func TestWriteLog(t *testing.T) {
 
 	testLogger.writeLog(clogging.Info, testMsg, toArgs(testPayload)...)
 
-	expectedJSON, err := json.Marshal(testPayload)
-	if err != nil {
-		t.Fatalf("Failed to marshal expected payload: %v", err)
-	}
-
-	if err := cloudLogs.checkLogContains(testMsg, expectedJSON); err != nil {
-		t.Errorf("Error validating Cloud Log contents: %v", err)
-	}
-
-	if err := cloudLogs.checkLogSeverity(clogging.Info); err != nil {
-		t.Errorf("Error validating Cloud Log severity: %v", err)
-	}
-
 	if err := serialLogs.checkLogContains(testMsg, testPayload); err != nil {
 		t.Errorf("Error validating Serial Log contents: %v", err)
 	}
 
 	if err := serialLogs.checkLogLevel(slog.LevelInfo); err != nil {
 		t.Errorf("Error validating Serial Log level: %v", err)
+	}
+
+	// Add message and hostnames values to expected payload.
+	testPayload[payloadMessageKey] = testMsg
+	testPayload[payloadHostnameKey] = testLogger.instanceName
+
+	if !cmp.Equal(cloudLogger.log.Payload, testPayload) {
+		t.Errorf("Did not get expected payload in cloud logs: got %v, want %v", cloudLogger.log.Payload, testPayload)
+	}
+
+	if cloudLogger.log.Severity != clogging.Info {
+		t.Errorf("Did not get expected severity in cloud logs: got %v, want %v", cloudLogger.log.Severity, clogging.Info)
+	}
+
+	// Compare monitored resource.
+	if cloudLogger.log.Resource.Type != testResource.Type {
+		t.Errorf("Did not get expected monitored resource tyoe: got %v, want %v", cloudLogger.log.Resource.Type, testResource.Type)
+	}
+
+	if !cmp.Equal(cloudLogger.log.Resource.Labels, testResource.Labels) {
+		t.Errorf("Did not get expected monitored resource labels in cloud logs: got %v, want %v", cloudLogger.log.Resource.Labels, testResource.Labels)
 	}
 }
 
@@ -273,11 +294,11 @@ func TestLogFunctions(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 
 			// Redirect loggers to buffers.
-			cloudLogs := &testCLogWriter{}
+			cloudLogs := &testCLogger{}
 			serialLogs := &testSLogWriter{}
 
 			testLogger := &logger{
-				cloudLogger:  client.Logger("test-log", clogging.RedirectAsJSON(cloudLogs)),
+				cloudLogger:  cloudLogs,
 				serialLogger: slog.New(slog.NewTextHandler(serialLogs, nil)),
 				instanceName: "test-instance",
 				cloudClient:  client,
@@ -285,12 +306,17 @@ func TestLogFunctions(t *testing.T) {
 
 			tc.logFunc(testLogger, msg)
 
-			if err := cloudLogs.checkLogContains(msg, []byte{}); err != nil {
-				t.Errorf("Error validating Cloud Log contents: %v", err)
+			expectedPayload := payload{
+				"MESSAGE":   msg,
+				"_HOSTNAME": testLogger.instanceName,
 			}
 
-			if err := cloudLogs.checkLogSeverity(tc.cloud_severity); err != nil {
-				t.Errorf("Error validating Cloud Log severity: %v", err)
+			if cloudLogs.log.Severity != tc.cloud_severity {
+				t.Errorf("Cloud logs did not contain expected severity: got %v, want %v", cloudLogs.log.Severity, tc.cloud_severity)
+			}
+
+			if !cmp.Equal(cloudLogs.log.Payload, expectedPayload) {
+				t.Errorf("Cloud logs did not contain expected payload: got %v, want %v", cloudLogs.log.Payload, expectedPayload)
 			}
 
 			if err := serialLogs.checkLogContains(msg, payload{}); err != nil {
