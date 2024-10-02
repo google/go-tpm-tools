@@ -129,50 +129,68 @@ func testRawCertTable(t testing.TB) *testCertTable {
 }
 
 func TestConvertTDXProtoToREST(t *testing.T) {
+	tdx, err := tabi.QuoteToProto(tgtestdata.RawQuote)
+	if err != nil {
+		t.Fatalf("Unable to convert Raw TD Quote to TDX V4 quote: %v", err)
+	}
+
+	quote, ok := tdx.(*tpb.QuoteV4)
+	if !ok {
+		t.Fatal("Quote format not supported, want QuoteV4 format")
+	}
 	testCases := []struct {
-		name     string
-		quote    func() *tpb.QuoteV4
-		wantPass bool
+		name       string
+		tdCcel     *verifier.TdxCcelAttestation
+		quote      *tpb.QuoteV4
+		wantTdCcel *confidentialcomputingpb.VerifyAttestationRequest_TdCcel
+		wantPass   bool
 	}{
 		{
-			name: "successful TD quote conversion",
-			quote: func() *tpb.QuoteV4 {
-				tdx, err := tabi.QuoteToProto(tgtestdata.RawQuote)
-				if err != nil {
-					t.Fatalf("Unable to convert Raw TD Quote to TDX V4 quote: %v", err)
-				}
-
-				quote, ok := tdx.(*tpb.QuoteV4)
-				if !ok {
-					t.Fatal("Quote format not supported, want QuoteV4 format")
-				}
-				return quote
+			name: "successful TdCcel conversion",
+			tdCcel: &verifier.TdxCcelAttestation{
+				CcelAcpiTable:     []byte("test"),
+				CcelData:          []byte("test"),
+				CanonicalEventLog: []byte("test"),
+				TdQuote:           tgtestdata.RawQuote,
+			},
+			quote: quote,
+			wantTdCcel: &confidentialcomputingpb.VerifyAttestationRequest_TdCcel{
+				TdCcel: &confidentialcomputingpb.TdxCcelAttestation{
+					CcelAcpiTable:     []byte("test"),
+					CcelData:          []byte("test"),
+					CanonicalEventLog: []byte("test"),
+					TdQuote:           tgtestdata.RawQuote,
+				},
 			},
 			wantPass: true,
 		},
 		{
-			name:     "nil TD quote conversion",
-			quote:    func() *tpb.QuoteV4 { return nil },
-			wantPass: false,
+			name:   "successful TD quote conversion",
+			tdCcel: nil,
+			quote:  quote,
+			wantTdCcel: &confidentialcomputingpb.VerifyAttestationRequest_TdCcel{
+				TdCcel: &confidentialcomputingpb.TdxCcelAttestation{
+					TdQuote: tgtestdata.RawQuote,
+				},
+			},
+			wantPass: true,
+		},
+		{
+			name:       "nil TD quote conversion",
+			quote:      nil,
+			wantTdCcel: nil,
+			wantPass:   false,
 		},
 	}
 
 	for _, tc := range testCases {
-		got, err := convertTDXProtoToREST(tc.quote())
+		got, err := convertTDXProtoToREST(tc.quote, tc.tdCcel)
 		if err != nil && tc.wantPass {
 			t.Errorf("failed to convert TDX proto to API proto: %v", err)
 		}
 
-		if tc.wantPass {
-			want := &confidentialcomputingpb.VerifyAttestationRequest_TdCcel{
-				TdCcel: &confidentialcomputingpb.TdxCcelAttestation{
-					TdQuote: tgtestdata.RawQuote,
-				},
-			}
-
-			if diff := cmp.Diff(got, want, protocmp.Transform()); diff != "" {
-				t.Errorf("TDX API proto mismatch: %s", diff)
-			}
+		if diff := cmp.Diff(got, tc.wantTdCcel, protocmp.Transform()); diff != "" {
+			t.Errorf("TDX API proto mismatch: %s", diff)
 		}
 	}
 }

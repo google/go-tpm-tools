@@ -13,10 +13,12 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
+	tabi "github.com/google/go-tdx-guest/abi"
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/launcher/internal/signaturediscovery"
@@ -136,6 +138,15 @@ func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error
 		},
 	}
 
+	// TD quote found, collect CCEL ACPI table + CCEL data.
+	if attestation.GetTdxAttestation() != nil {
+		tdCcel, err := prepareTdxCcelAttestation(attestation.GetTdxAttestation(), buf.Bytes())
+		if err != nil {
+			return nil, err
+		}
+		req.TdCcel = tdCcel
+	}
+
 	signatures := a.sigsCache.get()
 	if len(signatures) > 0 {
 		req.ContainerImageSignatures = signatures
@@ -150,6 +161,30 @@ func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error
 		a.logger.Printf("Partial errors from VerifyAttestation: %v", resp.PartialErrs)
 	}
 	return resp.ClaimsToken, nil
+}
+
+func prepareTdxCcelAttestation(tdQuote any, celBytes []byte) (*verifier.TdxCcelAttestation, error) {
+	tableBytes, err := os.ReadFile("/sys/firmware/acpi/tables/CCEL")
+	if err != nil {
+		return nil, fmt.Errorf("failed to read CCEL ACPI table: %w", err)
+	}
+
+	dataBytes, err := os.ReadFile("/sys/firmware/acpi/tables/data/CCEL")
+	if err != nil {
+		return nil, fmt.Errorf("failed to read CCEL event log data: %w", err)
+	}
+
+	rawQuote, err := tabi.QuoteToAbiBytes(tdQuote)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert TD quote to bytes: %w", err)
+	}
+
+	return &verifier.TdxCcelAttestation{
+		CcelAcpiTable:     tableBytes,
+		CcelData:          dataBytes,
+		CanonicalEventLog: celBytes,
+		TdQuote:           rawQuote,
+	}, nil
 }
 
 func (a *agent) attest(nonce []byte, cel []byte) (*pb.Attestation, error) {

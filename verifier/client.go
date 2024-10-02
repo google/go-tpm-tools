@@ -42,6 +42,15 @@ type VerifyAttestationRequest struct {
 	Attestation              *attestpb.Attestation
 	ContainerImageSignatures []oci.Signature
 	TokenOptions             TokenOptions
+	TdCcel                   *TdxCcelAttestation
+}
+
+// TdxCcelAttestation represents a TDX attestation report.
+type TdxCcelAttestation struct {
+	CcelAcpiTable     []byte
+	CcelData          []byte
+	CanonicalEventLog []byte
+	TdQuote           []byte
 }
 
 // VerifyAttestationResponse is the response from a successful

@@ -212,7 +212,7 @@ func convertRequestToREST(request verifier.VerifyAttestationRequest) *confidenti
 	}
 
 	if request.Attestation.GetTdxAttestation() != nil {
-		tdx, err := convertTDXProtoToREST(request.Attestation.GetTdxAttestation())
+		tdx, err := convertTDXProtoToREST(request.Attestation.GetTdxAttestation(), request.TdCcel)
 		if err != nil {
 			log.Fatalf("Failed to convert TD quote proto to API proto: %v", err)
 		}
@@ -263,7 +263,18 @@ func convertSEVSNPProtoToREST(att *sevsnp.Attestation) (*confidentialcomputingpb
 	}, nil
 }
 
-func convertTDXProtoToREST(att *tdx.QuoteV4) (*confidentialcomputingpb.VerifyAttestationRequest_TdCcel, error) {
+func convertTDXProtoToREST(att *tdx.QuoteV4, tdCcel *verifier.TdxCcelAttestation) (*confidentialcomputingpb.VerifyAttestationRequest_TdCcel, error) {
+	if tdCcel != nil {
+		return &confidentialcomputingpb.VerifyAttestationRequest_TdCcel{
+			TdCcel: &confidentialcomputingpb.TdxCcelAttestation{
+				CcelAcpiTable:     tdCcel.CcelAcpiTable,
+				CcelData:          tdCcel.CcelData,
+				CanonicalEventLog: tdCcel.CanonicalEventLog,
+				TdQuote:           tdCcel.TdQuote,
+			},
+		}, nil
+	}
+
 	rawQuote, err := tabi.QuoteToAbiBytes(att)
 	if err != nil {
 		return nil, err
