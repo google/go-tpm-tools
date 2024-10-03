@@ -284,7 +284,7 @@ type Attestation struct {
 	EventLog []byte `protobuf:"bytes,3,opt,name=event_log,json=eventLog,proto3" json:"event_log,omitempty"`
 	// Optional information about a GCE instance, unused outside of GCE
 	InstanceInfo *GCEInstanceInfo `protobuf:"bytes,4,opt,name=instance_info,json=instanceInfo,proto3" json:"instance_info,omitempty"`
-	// A TCG Canonical Event Log.
+	// A COS event log using the TCG Canonical Event Log format
 	CanonicalEventLog []byte `protobuf:"bytes,5,opt,name=canonical_event_log,json=canonicalEventLog,proto3" json:"canonical_event_log,omitempty"`
 	// Attestation Key (AK) Certificate, encoded as ASN.1 DER.
 	// Optional.
