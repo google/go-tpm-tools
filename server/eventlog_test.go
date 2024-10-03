@@ -736,18 +736,18 @@ func TestParsingRTMREventlog(t *testing.T) {
 	fakeRTMR := fakertmr.CreateRtmrSubsystem(t.TempDir())
 	rtmrBank := getRTMRBank(t, fakeRTMR)
 
-	msState, err := ParseCosCELRTMR(buf.Bytes(), rtmrBank)
+	acosState, err := ParseCosCELRTMR(buf.Bytes(), rtmrBank)
 	if err != nil {
 		t.Errorf("expecting no error from ParseCosCELRTMR(), but get %v", err)
 	}
-	if diff := cmp.Diff(msState.Cos.Container, &emptyCosState, protocmp.Transform()); diff != "" {
+	if diff := cmp.Diff(acosState.Container, &emptyCosState, protocmp.Transform()); diff != "" {
 		t.Errorf("unexpected container state difference:\n%v", diff)
 	}
-	if diff := cmp.Diff(msState.Cos.HealthMonitoring, &emptyHealthMonitoringState, protocmp.Transform()); diff != "" {
+	if diff := cmp.Diff(acosState.HealthMonitoring, &emptyHealthMonitoringState, protocmp.Transform()); diff != "" {
 		t.Errorf("unexpected health monitoring difference:\n%v", diff)
 	}
-	if msState.Cos.HealthMonitoring.MemoryEnabled != nil {
-		t.Errorf("unexpected MemoryEnabled state, want nil, but got %v", *msState.Cos.HealthMonitoring.MemoryEnabled)
+	if acosState.HealthMonitoring.MemoryEnabled != nil {
+		t.Errorf("unexpected MemoryEnabled state, want nil, but got %v", *acosState.HealthMonitoring.MemoryEnabled)
 	}
 
 	// add events
@@ -802,13 +802,13 @@ func TestParsingRTMREventlog(t *testing.T) {
 
 	rtmrBank = getRTMRBank(t, fakeRTMR)
 
-	if msState, err := ParseCosCELRTMR(buf.Bytes(), rtmrBank); err != nil {
+	if acosState, err := ParseCosCELRTMR(buf.Bytes(), rtmrBank); err != nil {
 		t.Errorf("expecting no error from ParseCosCELRTMR(), but get %v", err)
 	} else {
-		if diff := cmp.Diff(msState.Cos.Container, &wantContainerState, protocmp.Transform()); diff != "" {
+		if diff := cmp.Diff(acosState.Container, &wantContainerState, protocmp.Transform()); diff != "" {
 			t.Errorf("unexpected container state difference:\n%v", diff)
 		}
-		if diff := cmp.Diff(msState.Cos.HealthMonitoring, &wantHealthMonitoringState, protocmp.Transform()); diff != "" {
+		if diff := cmp.Diff(acosState.HealthMonitoring, &wantHealthMonitoringState, protocmp.Transform()); diff != "" {
 			t.Errorf("unexpected health monitoring state difference:\n%v", diff)
 		}
 	}
@@ -858,18 +858,18 @@ func TestParsingCELEventLog(t *testing.T) {
 	for _, bank := range banks {
 		pcrBank := convertToPCRBank(t, bank)
 		// pcrs can have any value here, since the coscel has no records, the replay should always success.
-		msState, err := ParseCosCELPCR(buf.Bytes(), pcrBank)
+		acosState, err := ParseCosCELPCR(buf.Bytes(), pcrBank)
 		if err != nil {
 			t.Errorf("expecting no error from ParseCosCELPCR(), but get %v", err)
 		}
-		if diff := cmp.Diff(msState.Cos.Container, &emptyCosState, protocmp.Transform()); diff != "" {
+		if diff := cmp.Diff(acosState.Container, &emptyCosState, protocmp.Transform()); diff != "" {
 			t.Errorf("unexpected container state difference:\n%v", diff)
 		}
-		if diff := cmp.Diff(msState.Cos.HealthMonitoring, &emptyHealthMonitoringState, protocmp.Transform()); diff != "" {
+		if diff := cmp.Diff(acosState.HealthMonitoring, &emptyHealthMonitoringState, protocmp.Transform()); diff != "" {
 			t.Errorf("unexpected health monitoring difference:\n%v", diff)
 		}
-		if msState.Cos.HealthMonitoring.MemoryEnabled != nil {
-			t.Errorf("unexpected MemoryEnabled state, want nil, but got %v", *msState.Cos.HealthMonitoring.MemoryEnabled)
+		if acosState.HealthMonitoring.MemoryEnabled != nil {
+			t.Errorf("unexpected MemoryEnabled state, want nil, but got %v", *acosState.HealthMonitoring.MemoryEnabled)
 		}
 	}
 
@@ -929,13 +929,13 @@ func TestParsingCELEventLog(t *testing.T) {
 	for _, bank := range banks {
 		pcrBank := convertToPCRBank(t, bank)
 
-		if msState, err := ParseCosCELPCR(buf.Bytes(), pcrBank); err != nil {
+		if acosState, err := ParseCosCELPCR(buf.Bytes(), pcrBank); err != nil {
 			t.Errorf("expecting no error from ParseCosCELPCR(), but get %v", err)
 		} else {
-			if diff := cmp.Diff(msState.Cos.Container, &wantContainerState, protocmp.Transform()); diff != "" {
+			if diff := cmp.Diff(acosState.Container, &wantContainerState, protocmp.Transform()); diff != "" {
 				t.Errorf("unexpected container state difference:\n%v", diff)
 			}
-			if diff := cmp.Diff(msState.Cos.HealthMonitoring, &wantHealthMonitoringState, protocmp.Transform()); diff != "" {
+			if diff := cmp.Diff(acosState.HealthMonitoring, &wantHealthMonitoringState, protocmp.Transform()); diff != "" {
 				t.Errorf("unexpected health monitoring state difference:\n%v", diff)
 			}
 		}
