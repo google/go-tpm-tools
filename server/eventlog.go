@@ -91,17 +91,17 @@ func parsePCClientEventLog(rawEventLog []byte, pcrs *tpmpb.PCRs, loader Bootload
 
 // ParseCosCELPCR takes an encoded COS CEL and PCR bank, replays the CEL against the PCRs,
 // and returns the AttestedCosState
-func ParseCosCELPCR(cosEventLog []byte, p register.PCRBank) (*pb.MachineState, error) {
+func ParseCosCELPCR(cosEventLog []byte, p register.PCRBank) (*pb.AttestedCosState, error) {
 	return getCosStateFromCEL(cosEventLog, p, cel.PCRTypeValue)
 }
 
 // ParseCosCELRTMR takes in a raw COS CEL and a RTMR bank, validates and returns it's
 // COS states as parts of the MachineState.
-func ParseCosCELRTMR(cosEventLog []byte, r register.RTMRBank) (*pb.MachineState, error) {
+func ParseCosCELRTMR(cosEventLog []byte, r register.RTMRBank) (*pb.AttestedCosState, error) {
 	return getCosStateFromCEL(cosEventLog, r, cel.CCMRTypeValue)
 }
 
-func getCosStateFromCEL(rawCanonicalEventLog []byte, register register.MRBank, trustingRegisterType uint8) (*pb.MachineState, error) {
+func getCosStateFromCEL(rawCanonicalEventLog []byte, register register.MRBank, trustingRegisterType uint8) (*pb.AttestedCosState, error) {
 	decodedCEL, err := cel.DecodeToCEL(bytes.NewBuffer(rawCanonicalEventLog))
 	if err != nil {
 		return nil, err
@@ -116,9 +116,7 @@ func getCosStateFromCEL(rawCanonicalEventLog []byte, register register.MRBank, t
 		return nil, err
 	}
 
-	return &pb.MachineState{
-		Cos: cosState,
-	}, err
+	return cosState, err
 }
 
 func contains(set [][]byte, value []byte) bool {

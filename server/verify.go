@@ -150,6 +150,7 @@ func VerifyAttestation(attestation *pb.Attestation, opts VerifyOpts) (*pb.Machin
 			lastErr = fmt.Errorf("failed to validate the Canonical event log: %w", err)
 			continue
 		}
+		machineState.Cos = celState
 
 		// Verify the PCR hash algorithm. We have this check here (instead of at
 		// the start of the loop) so that the user gets a "SHA-1 not supported"
@@ -160,7 +161,6 @@ func VerifyAttestation(attestation *pb.Attestation, opts VerifyOpts) (*pb.Machin
 			continue
 		}
 
-		proto.Merge(machineState, celState)
 		proto.Merge(machineState, tpmMachineState)
 
 		return machineState, nil
