@@ -28,11 +28,15 @@ const (
 	never
 )
 
+// MonitoringType represents the possible health monitoring presets for the client.
 type MonitoringType int
 
 const (
+	// None indicates no monitoring enabled.
 	None MonitoringType = iota
+	// MemoryOnly indicates only memory_bytes_used enabled.
 	MemoryOnly
+	// All indicates all supported metrics enabled.
 	All
 )
 
