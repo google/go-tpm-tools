@@ -25,9 +25,9 @@ type statsConfig struct {
 
 type diskConfig struct {
 	IncludeAllAttachedBlk bool         `json:"includeAllAttachedBlk"`
-	IncludeRootBlk        bool         `json:includeRootBlk`
-	LsblkTimeout          string       `json:lsblkTimeout`
-	MetricsConfigs        *statsConfig `json:metricsConfigs`
+	IncludeRootBlk        bool         `json:"includeRootBlk"`
+	LsblkTimeout          string       `json:"lsblkTimeout"`
+	MetricsConfigs        *statsConfig `json:"metricsConfigs"`
 }
 
 // SystemStatsConfig contains configurations for `System Stats Monitor`,
