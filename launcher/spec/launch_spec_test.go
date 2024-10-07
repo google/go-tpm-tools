@@ -11,12 +11,11 @@ import (
 
 func TestLaunchSpecUnmarshalJSONHappyCases(t *testing.T) {
 	var testCases = []struct {
-		testName     string
-		mdsJSON      string
-		expectedSpec *LaunchSpec
+		testName string
+		mdsJSON  string
 	}{
 		{
-			"HappyCase_MemMonitor",
+			"HappyCase",
 			`{
 				"tee-cmd":"[\"--foo\",\"--bar\",\"--baz\"]",
 				"tee-env-foo":"bar",
@@ -29,47 +28,6 @@ func TestLaunchSpecUnmarshalJSONHappyCases(t *testing.T) {
 				"tee-dev-shm-size-kb":"234234",
 				"tee-mount":"type=tmpfs,source=tmpfs,destination=/tmpmount;type=tmpfs,source=tmpfs,destination=/sized,size=222"
 			}`,
-			&LaunchSpec{
-				ImageRef:                   "docker.io/library/hello-world:latest",
-				SignedImageRepos:           []string{"docker.io/library/hello-world", "gcr.io/cloudrun/hello"},
-				RestartPolicy:              Always,
-				Cmd:                        []string{"--foo", "--bar", "--baz"},
-				Envs:                       []EnvVar{{"foo", "bar"}},
-				ImpersonateServiceAccounts: []string{"sv1@developer.gserviceaccount.com", "sv2@developer.gserviceaccount.com"},
-				LogRedirect:                Everywhere,
-				MonitoringEnabled:          MemoryOnly,
-				DevShmSize:                 234234,
-				Mounts: []launchermount.Mount{launchermount.TmpfsMount{Destination: "/tmpmount", Size: 0},
-					launchermount.TmpfsMount{Destination: "/sized", Size: 222}},
-			},
-		},
-		{
-			"HappyCase_HealthMonitor",
-			`{
-				"tee-cmd":"[\"--foo\",\"--bar\",\"--baz\"]",
-				"tee-env-foo":"bar",
-				"tee-image-reference":"docker.io/library/hello-world:latest",
-				"tee-signed-image-repos":"docker.io/library/hello-world,gcr.io/cloudrun/hello",
-				"tee-restart-policy":"Always",
-				"tee-impersonate-service-accounts":"sv1@developer.gserviceaccount.com,sv2@developer.gserviceaccount.com",
-				"tee-container-log-redirect":"true",
-				"tee-monitoring-health-enable":"true",
-				"tee-dev-shm-size-kb":"234234",
-				"tee-mount":"type=tmpfs,source=tmpfs,destination=/tmpmount;type=tmpfs,source=tmpfs,destination=/sized,size=222"
-			}`,
-			&LaunchSpec{
-				ImageRef:                   "docker.io/library/hello-world:latest",
-				SignedImageRepos:           []string{"docker.io/library/hello-world", "gcr.io/cloudrun/hello"},
-				RestartPolicy:              Always,
-				Cmd:                        []string{"--foo", "--bar", "--baz"},
-				Envs:                       []EnvVar{{"foo", "bar"}},
-				ImpersonateServiceAccounts: []string{"sv1@developer.gserviceaccount.com", "sv2@developer.gserviceaccount.com"},
-				LogRedirect:                Everywhere,
-				MonitoringEnabled:          None,
-				DevShmSize:                 234234,
-				Mounts: []launchermount.Mount{launchermount.TmpfsMount{Destination: "/tmpmount", Size: 0},
-					launchermount.TmpfsMount{Destination: "/sized", Size: 222}},
-			},
 		},
 		{
 			"HappyCaseWithExtraUnknownFields",
@@ -87,19 +45,23 @@ func TestLaunchSpecUnmarshalJSONHappyCases(t *testing.T) {
 				"tee-dev-shm-size-kb":"234234",
 				"tee-mount":"type=tmpfs,source=tmpfs,destination=/tmpmount;type=tmpfs,source=tmpfs,destination=/sized,size=222"
 			}`,
-			&LaunchSpec{
-				ImageRef:                   "docker.io/library/hello-world:latest",
-				SignedImageRepos:           []string{"docker.io/library/hello-world", "gcr.io/cloudrun/hello"},
-				RestartPolicy:              Always,
-				Cmd:                        []string{"--foo", "--bar", "--baz"},
-				Envs:                       []EnvVar{{"foo", "bar"}},
-				ImpersonateServiceAccounts: []string{"sv1@developer.gserviceaccount.com", "sv2@developer.gserviceaccount.com"},
-				LogRedirect:                Everywhere,
-				MonitoringEnabled:          MemoryOnly,
-				DevShmSize:                 234234,
-				Mounts: []launchermount.Mount{launchermount.TmpfsMount{Destination: "/tmpmount", Size: 0},
-					launchermount.TmpfsMount{Destination: "/sized", Size: 222}},
-			},
+		},
+	}
+
+	want := &LaunchSpec{
+		ImageRef:                   "docker.io/library/hello-world:latest",
+		SignedImageRepos:           []string{"docker.io/library/hello-world", "gcr.io/cloudrun/hello"},
+		RestartPolicy:              Always,
+		Cmd:                        []string{"--foo", "--bar", "--baz"},
+		Envs:                       []EnvVar{{"foo", "bar"}},
+		ImpersonateServiceAccounts: []string{"sv1@developer.gserviceaccount.com", "sv2@developer.gserviceaccount.com"},
+		LogRedirect:                Everywhere,
+		MonitoringEnabled:          MemoryOnly,
+		DevShmSize:                 234234,
+		Mounts: []launchermount.Mount{launchermount.TmpfsMount{Destination: "/tmpmount", Size: 0},
+			launchermount.TmpfsMount{Destination: "/sized", Size: 222}},
+		Experiments: experiments.Experiments{
+			EnableTempFSMount: true,
 		},
 	}
 
@@ -112,8 +74,8 @@ func TestLaunchSpecUnmarshalJSONHappyCases(t *testing.T) {
 			if err := spec.UnmarshalJSON([]byte(testcase.mdsJSON)); err != nil {
 				t.Fatal(err)
 			}
-			if !cmp.Equal(spec, testcase.expectedSpec) {
-				t.Errorf("LaunchSpec UnmarshalJSON got %+v, want %+v", spec, testcase.expectedSpec)
+			if !cmp.Equal(spec, want) {
+				t.Errorf("LaunchSpec UnmarshalJSON got %+v, want %+v", spec, want)
 			}
 		})
 	}

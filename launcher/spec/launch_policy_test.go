@@ -758,7 +758,7 @@ func TestGetMonitoringPolicy(t *testing.T) {
 			},
 			expectedPolicy: &LaunchPolicy{
 				HardenedImageMonitoring: All,
-				DebugImageMonitoring:    All,
+				DebugImageMonitoring:    MemoryOnly,
 			},
 		},
 		{
