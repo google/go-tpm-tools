@@ -340,7 +340,7 @@ func (r *ContainerRunner) measureContainerClaims(ctx context.Context) error {
 // eventlog in the AttestationAgent.
 func (r *ContainerRunner) measureMemoryMonitor() error {
 	var enabled uint8
-	if r.launchSpec.MemoryMonitoringEnabled {
+	if r.launchSpec.MonitoringEnabled == spec.MemoryOnly {
 		enabled = 1
 	}
 	if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.MemoryMonitorType, EventContent: []byte{enabled}}); err != nil {
