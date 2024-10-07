@@ -16,12 +16,12 @@ func TestEnableHealthMonitoringConfig(t *testing.T) {
 	tmpDir := t.TempDir()
 	systemStatsFilePath = path.Join(tmpDir, "system-stats-monitor.json")
 
-	wantBytes, err := json.Marshal(healthConfig)
+	wantBytes, err := json.Marshal(allConfig)
 	if err != nil {
 		t.Fatalf("Error marshaling expected config: %v", err)
 	}
 
-	EnableHealthMonitoringConfig()
+	EnableAllConfig()
 
 	file, err := os.OpenFile(systemStatsFilePath, os.O_RDONLY, 0)
 	if err != nil {

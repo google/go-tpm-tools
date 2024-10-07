@@ -1,4 +1,4 @@
-package monitoring
+package healthmonitoring
 
 import (
 	"fmt"

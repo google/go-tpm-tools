@@ -37,8 +37,7 @@ func TestLaunchSpecUnmarshalJSONHappyCases(t *testing.T) {
 				Envs:                       []EnvVar{{"foo", "bar"}},
 				ImpersonateServiceAccounts: []string{"sv1@developer.gserviceaccount.com", "sv2@developer.gserviceaccount.com"},
 				LogRedirect:                Everywhere,
-				MemoryMonitoringEnabled:    true,
-				HealthMonitoringEnabled:    false,
+				MonitoringEnabled:          MemoryOnly,
 				DevShmSize:                 234234,
 				Mounts: []launchermount.Mount{launchermount.TmpfsMount{Destination: "/tmpmount", Size: 0},
 					launchermount.TmpfsMount{Destination: "/sized", Size: 222}},
@@ -66,8 +65,7 @@ func TestLaunchSpecUnmarshalJSONHappyCases(t *testing.T) {
 				Envs:                       []EnvVar{{"foo", "bar"}},
 				ImpersonateServiceAccounts: []string{"sv1@developer.gserviceaccount.com", "sv2@developer.gserviceaccount.com"},
 				LogRedirect:                Everywhere,
-				MemoryMonitoringEnabled:    false,
-				HealthMonitoringEnabled:    true,
+				MonitoringEnabled:          None,
 				DevShmSize:                 234234,
 				Mounts: []launchermount.Mount{launchermount.TmpfsMount{Destination: "/tmpmount", Size: 0},
 					launchermount.TmpfsMount{Destination: "/sized", Size: 222}},
@@ -97,30 +95,11 @@ func TestLaunchSpecUnmarshalJSONHappyCases(t *testing.T) {
 				Envs:                       []EnvVar{{"foo", "bar"}},
 				ImpersonateServiceAccounts: []string{"sv1@developer.gserviceaccount.com", "sv2@developer.gserviceaccount.com"},
 				LogRedirect:                Everywhere,
-				MemoryMonitoringEnabled:    true,
-				HealthMonitoringEnabled:    false,
+				MonitoringEnabled:          MemoryOnly,
 				DevShmSize:                 234234,
 				Mounts: []launchermount.Mount{launchermount.TmpfsMount{Destination: "/tmpmount", Size: 0},
 					launchermount.TmpfsMount{Destination: "/sized", Size: 222}},
 			},
-		},
-	}
-
-	want := &LaunchSpec{
-		ImageRef:                   "docker.io/library/hello-world:latest",
-		SignedImageRepos:           []string{"docker.io/library/hello-world", "gcr.io/cloudrun/hello"},
-		RestartPolicy:              Always,
-		Cmd:                        []string{"--foo", "--bar", "--baz"},
-		Envs:                       []EnvVar{{"foo", "bar"}},
-		ImpersonateServiceAccounts: []string{"sv1@developer.gserviceaccount.com", "sv2@developer.gserviceaccount.com"},
-		LogRedirect:                Everywhere,
-		MemoryMonitoringEnabled:    true,
-		HealthMonitoringEnabled:    false,
-		DevShmSize:                 234234,
-		Mounts: []launchermount.Mount{launchermount.TmpfsMount{Destination: "/tmpmount", Size: 0},
-			launchermount.TmpfsMount{Destination: "/sized", Size: 222}},
-		Experiments: experiments.Experiments{
-			EnableTempFSMount: true,
 		},
 	}
 
@@ -215,10 +194,10 @@ func TestLaunchSpecUnmarshalJSONWithDefaultValue(t *testing.T) {
 	}
 
 	want := &LaunchSpec{
-		ImageRef:                "docker.io/library/hello-world:latest",
-		RestartPolicy:           Never,
-		LogRedirect:             Nowhere,
-		MemoryMonitoringEnabled: false,
+		ImageRef:          "docker.io/library/hello-world:latest",
+		RestartPolicy:     Never,
+		LogRedirect:       Nowhere,
+		MonitoringEnabled: None,
 	}
 
 	if !cmp.Equal(spec, want) {

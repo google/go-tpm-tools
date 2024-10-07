@@ -23,13 +23,20 @@ type statsConfig struct {
 	MetricsConfigs map[string]metricConfig `json:"metricsConfigs"`
 }
 
+type diskConfig struct {
+	IncludeAllAttachedBlk bool         `json:"includeAllAttachedBlk"`
+	IncludeRootBlk        bool         `json:includeRootBlk`
+	LsblkTimeout          string       `json:lsblkTimeout`
+	MetricsConfigs        *statsConfig `json:metricsConfigs`
+}
+
 // SystemStatsConfig contains configurations for `System Stats Monitor`,
 // a problem daemon in node-problem-detector that collects pre-defined health-related metrics from different system components.
 // For now we only consider collecting memory related metrics.
 // View the comprehensive configuration details on https://github.com/kubernetes/node-problem-detector/tree/master/pkg/systemstatsmonitor#detailed-configuration-options
 type SystemStatsConfig struct {
 	CPU            *statsConfig `json:"cpu,omitempty"`
-	Disk           *statsConfig `json:"disk,omitempty"`
+	Disk           *diskConfig  `json:"disk,omitempty"`
 	Host           *statsConfig `json:"host,omitempty"`
 	Memory         *statsConfig `json:"memory,omitempty"`
 	InvokeInterval string       `json:"invokeInterval,omitempty"`
@@ -43,25 +50,50 @@ func NewSystemStatsConfig() SystemStatsConfig {
 	}
 }
 
-var healthConfig = &SystemStatsConfig{
+var allConfig = &SystemStatsConfig{
 	CPU: &statsConfig{map[string]metricConfig{
-		"cpu/load_5m": {"cpu/load_5m"},
+		"cpu/runnable_task_count": {"cpu/runnable_task_count"},
+		"cpu/usage_time":          {"cpu/usage_time"},
+		"cpu/load_1m":             {"cpu/load_1m"},
+		"cpu/load_5m":             {"cpu/load_5m"},
+		"cpu/load_15m":            {"cpu/load_15m"},
+		"system/cpu_stat":         {"system/cpu_stat"},
+		"system/interrupts_total": {"system/interrupts_total"},
+		"system/processes_total":  {"system/processes_total"},
+		"system/procs_blocked":    {"system/procs_blocked"},
+		"system/procs_running":    {"system/procs_running"},
 	}},
-	Disk: &statsConfig{map[string]metricConfig{
-		"disk/percent_used": {"disk/percent_used"},
-	}},
+	Disk: &diskConfig{
+		true, true, "5s",
+		&statsConfig{map[string]metricConfig{
+			"disk/avg_queue_len":          {"disk/avg_queue_len"},
+			"disk/bytes_used":             {"disk/bytes_used"},
+			"disk/percent_used":           {"disk/percent_used"},
+			"disk/io_time":                {"disk/io_time"},
+			"disk/merged_operation_count": {"disk/merged_operation_count"},
+			"disk/operation_bytes_count":  {"disk/operation_bytes_count"},
+			"disk/operation_count":        {"disk/operation_count"},
+			"disk/operation_time":         {"disk/operation_time"},
+			"disk/weighted_io":            {"disk/weighted_io"},
+		}},
+	},
 	Host: &statsConfig{map[string]metricConfig{
 		"host/uptime": {"host/uptime"},
 	}},
 	Memory: &statsConfig{map[string]metricConfig{
-		"memory/bytes_used": {"memory/bytes_used"},
+		"memory/anonymous_used":   {"memory/anonymous_used"},
+		"memory/bytes_used":       {"memory/bytes_used"},
+		"memory/dirty_used":       {"memory/dirty_used"},
+		"memory/page_cache_used":  {"memory/page_cache_used"},
+		"memory/unevictable_used": {"memory/unevictable_used"},
+		"memory/percent_used":     {"memory/percent_used"},
 	}},
 	InvokeInterval: defaultInvokeIntervalString,
 }
 
-// EnableHealthMonitoringConfig overwrites system stats config with health monitoring config.
-func EnableHealthMonitoringConfig() error {
-	return healthConfig.WriteFile(systemStatsFilePath)
+// EnableAllConfig overwrites system stats config with health monitoring config.
+func EnableAllConfig() error {
+	return allConfig.WriteFile(systemStatsFilePath)
 }
 
 // EnableMemoryBytesUsed enables "memory/bytes_used" for memory monitoring.

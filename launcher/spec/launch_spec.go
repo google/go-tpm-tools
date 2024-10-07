@@ -18,7 +18,6 @@ import (
 
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/launcher/internal/experiments"
-	monitoring "github.com/google/go-tpm-tools/launcher/internal/healthmonitoring"
 	"github.com/google/go-tpm-tools/launcher/internal/launchermount"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/verifier/util"
@@ -115,8 +114,7 @@ type LaunchSpec struct {
 	ProjectID                  string
 	Region                     string
 	Hardened                   bool
-	MemoryMonitoringEnabled    bool
-	MonitoringEnabled          monitoring.Config
+	MonitoringEnabled          MonitoringType
 	LogRedirect                LogRedirectLocation
 	Mounts                     []launchermount.Mount
 	// DevShmSize is specified in kiB.
@@ -163,16 +161,17 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 	if memOk && monOk {
 		return fmt.Errorf("both %v and %v are specified, only one is permitted", memoryMonitoringEnable, monitoringEnable)
 	} else if memOk && memVal != "" {
-		if boolValue, err := strconv.ParseBool(memVal); err == nil {
-			s.MemoryMonitoringEnabled = boolValue
+		if boolValue, err := strconv.ParseBool(memVal); err == nil && boolValue {
+			s.MonitoringEnabled = MemoryOnly
+		} else {
+			s.MonitoringEnabled = None
 		}
 	} else if monOk && monVal != "" {
-		monCfg, err := monitoring.ToConfig(monVal)
+		var err error
+		s.MonitoringEnabled, err = toMonitoringType(monVal)
 		if err != nil {
 			return err
 		}
-
-		s.MonitoringEnabled = monCfg
 	}
 
 	// Populate cmd override.

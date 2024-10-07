@@ -59,8 +59,8 @@ func TestLaunchPolicy(t *testing.T) {
 	for _, testcase := range testCases {
 		t.Run(testcase.testName, func(t *testing.T) {
 			// Add default values for policy fields. Not relevant to tested behavior.
-			testcase.expectedPolicy.HardenedImageMonitoring = none
-			testcase.expectedPolicy.DebugImageMonitoring = health
+			testcase.expectedPolicy.HardenedImageMonitoring = None
+			testcase.expectedPolicy.DebugImageMonitoring = MemoryOnly
 
 			got, err := GetLaunchPolicy(testcase.imageLabels, log.Default())
 			if err != nil {
@@ -87,14 +87,14 @@ func TestVerify(t *testing.T) {
 				AllowedEnvOverride:      []string{"foo"},
 				AllowedCmdOverride:      true,
 				AllowedLogRedirect:      always,
-				HardenedImageMonitoring: memoryOnly,
-				DebugImageMonitoring:    memoryOnly,
+				HardenedImageMonitoring: MemoryOnly,
+				DebugImageMonitoring:    MemoryOnly,
 			},
 			LaunchSpec{
-				Envs:                    []EnvVar{{Name: "foo", Value: "foo"}},
-				Cmd:                     []string{"foo"},
-				LogRedirect:             Everywhere,
-				MemoryMonitoringEnabled: true,
+				Envs:              []EnvVar{{Name: "foo", Value: "foo"}},
+				Cmd:               []string{"foo"},
+				LogRedirect:       Everywhere,
+				MonitoringEnabled: MemoryOnly,
 			},
 			false,
 		},
@@ -513,65 +513,55 @@ func TestVerify(t *testing.T) {
 func TestVerifyMonitoringSettings(t *testing.T) {
 	testCases := []struct {
 		testName   string
-		monitoring monitoringType
+		monitoring MonitoringType
 		spec       LaunchSpec
 	}{
 		{
 			"none policy, disabled by spec",
-			none,
+			None,
 			LaunchSpec{
-				HealthMonitoringEnabled: false,
-				MemoryMonitoringEnabled: false,
-				LogRedirect:             Nowhere,
+				MonitoringEnabled: None,
+				LogRedirect:       Nowhere,
 			},
 		},
 		{
 			"memory-only policy, all disabled by spec",
-			memoryOnly,
+			MemoryOnly,
 			LaunchSpec{
-				HealthMonitoringEnabled: false,
-				MemoryMonitoringEnabled: false,
-				LogRedirect:             Nowhere,
+				MonitoringEnabled: None,
+				LogRedirect:       Nowhere,
 			},
 		},
 		{
 			"memory-only policy, memory enabled by spec",
-			memoryOnly,
+			MemoryOnly,
 			LaunchSpec{
-				MemoryMonitoringEnabled: true,
-				LogRedirect:             Nowhere,
+				MonitoringEnabled: MemoryOnly,
+				LogRedirect:       Nowhere,
 			},
 		},
 		{
-			"health policy, health enabled by spec",
-			health,
+			"all enabled by policy, all enabled by spec",
+			All,
 			LaunchSpec{
-				HealthMonitoringEnabled: true,
-				LogRedirect:             Nowhere,
+				MonitoringEnabled: All,
+				LogRedirect:       Nowhere,
 			},
 		},
 		{
-			"health policy, health disabled by spec",
-			health,
+			"all enabled by policy, disabled by spec",
+			All,
 			LaunchSpec{
-				HealthMonitoringEnabled: false,
-				LogRedirect:             Nowhere,
+				MonitoringEnabled: None,
+				LogRedirect:       Nowhere,
 			},
 		},
 		{
-			"health policy, memory enabled by spec",
-			health,
+			"all enabled by policy, memory enabled by spec",
+			All,
 			LaunchSpec{
-				MemoryMonitoringEnabled: true,
-				LogRedirect:             Nowhere,
-			},
-		},
-		{
-			"health policy, memory disabled by spec",
-			health,
-			LaunchSpec{
-				MemoryMonitoringEnabled: false,
-				LogRedirect:             Nowhere,
+				MonitoringEnabled: MemoryOnly,
+				LogRedirect:       Nowhere,
 			},
 		},
 	}
@@ -606,34 +596,34 @@ func TestVerifyMonitoringSettings(t *testing.T) {
 func TestVerifyMonitoringSettingsErrors(t *testing.T) {
 	testCases := []struct {
 		testName   string
-		monitoring monitoringType
+		monitoring MonitoringType
 		spec       LaunchSpec
 	}{
 		{
-			"[Hardened] disabled policy, Health enabled by spec",
-			none,
+			"[Hardened] disabled policy, all enabled by spec",
+			None,
 			LaunchSpec{
-				HealthMonitoringEnabled: true,
-				Hardened:                true,
-				LogRedirect:             Nowhere,
+				MonitoringEnabled: All,
+				Hardened:          true,
+				LogRedirect:       Nowhere,
 			},
 		},
 		{
-			"[Hardened] disabled policy, Memory enabled by spec",
-			none,
+			"[Hardened] disabled policy, memory enabled by spec",
+			None,
 			LaunchSpec{
-				MemoryMonitoringEnabled: true,
-				Hardened:                true,
-				LogRedirect:             Nowhere,
+				MonitoringEnabled: MemoryOnly,
+				Hardened:          true,
+				LogRedirect:       Nowhere,
 			},
 		},
 		{
-			"[Hardened] memory-only policy, Health enabled by spec",
-			memoryOnly,
+			"[Hardened] memory-only policy, all enabled by spec",
+			MemoryOnly,
 			LaunchSpec{
-				HealthMonitoringEnabled: true,
-				Hardened:                true,
-				LogRedirect:             Nowhere,
+				MonitoringEnabled: All,
+				Hardened:          true,
+				LogRedirect:       Nowhere,
 			},
 		},
 	}
@@ -717,8 +707,8 @@ func TestGetMonitoringPolicy(t *testing.T) {
 				memoryMonitoring: "always",
 			},
 			expectedPolicy: &LaunchPolicy{
-				HardenedImageMonitoring: memoryOnly,
-				DebugImageMonitoring:    memoryOnly,
+				HardenedImageMonitoring: MemoryOnly,
+				DebugImageMonitoring:    MemoryOnly,
 			},
 		},
 		{
@@ -727,8 +717,8 @@ func TestGetMonitoringPolicy(t *testing.T) {
 				memoryMonitoring: "never",
 			},
 			expectedPolicy: &LaunchPolicy{
-				HardenedImageMonitoring: none,
-				DebugImageMonitoring:    none,
+				HardenedImageMonitoring: None,
+				DebugImageMonitoring:    None,
 			},
 		},
 		{
@@ -737,8 +727,8 @@ func TestGetMonitoringPolicy(t *testing.T) {
 				memoryMonitoring: "debugonly",
 			},
 			expectedPolicy: &LaunchPolicy{
-				HardenedImageMonitoring: none,
-				DebugImageMonitoring:    memoryOnly,
+				HardenedImageMonitoring: None,
+				DebugImageMonitoring:    MemoryOnly,
 			},
 		},
 		{
@@ -747,8 +737,8 @@ func TestGetMonitoringPolicy(t *testing.T) {
 				hardenedMonitoring: "none",
 			},
 			expectedPolicy: &LaunchPolicy{
-				HardenedImageMonitoring: none,
-				DebugImageMonitoring:    health,
+				HardenedImageMonitoring: None,
+				DebugImageMonitoring:    MemoryOnly,
 			},
 		},
 		{
@@ -757,18 +747,18 @@ func TestGetMonitoringPolicy(t *testing.T) {
 				hardenedMonitoring: "memoryonly",
 			},
 			expectedPolicy: &LaunchPolicy{
-				HardenedImageMonitoring: memoryOnly,
-				DebugImageMonitoring:    health,
+				HardenedImageMonitoring: MemoryOnly,
+				DebugImageMonitoring:    MemoryOnly,
 			},
 		},
 		{
-			name: "HardenedImageMonitoring=health",
+			name: "HardenedImageMonitoring=all",
 			labels: map[string]string{
-				hardenedMonitoring: "health",
+				hardenedMonitoring: "all",
 			},
 			expectedPolicy: &LaunchPolicy{
-				HardenedImageMonitoring: health,
-				DebugImageMonitoring:    health,
+				HardenedImageMonitoring: All,
+				DebugImageMonitoring:    All,
 			},
 		},
 		{
@@ -777,8 +767,8 @@ func TestGetMonitoringPolicy(t *testing.T) {
 				debugMonitoring: "none",
 			},
 			expectedPolicy: &LaunchPolicy{
-				HardenedImageMonitoring: none,
-				DebugImageMonitoring:    none,
+				HardenedImageMonitoring: None,
+				DebugImageMonitoring:    None,
 			},
 		},
 		{
@@ -787,30 +777,30 @@ func TestGetMonitoringPolicy(t *testing.T) {
 				debugMonitoring: "memoryonly",
 			},
 			expectedPolicy: &LaunchPolicy{
-				HardenedImageMonitoring: none,
-				DebugImageMonitoring:    memoryOnly,
+				HardenedImageMonitoring: None,
+				DebugImageMonitoring:    MemoryOnly,
 			},
 		},
 		{
-			name: "DebugImageMonitoring=health",
+			name: "DebugImageMonitoring=all",
 			labels: map[string]string{
-				debugMonitoring: "health",
+				debugMonitoring: "all",
 			},
 			expectedPolicy: &LaunchPolicy{
-				HardenedImageMonitoring: none,
-				DebugImageMonitoring:    health,
+				HardenedImageMonitoring: None,
+				DebugImageMonitoring:    All,
 			},
 		},
 		// Set both fields to non-default values.
 		{
-			name: "HardenedImageMonitoring=health, DebugImageMonitoring=none",
+			name: "HardenedImageMonitoring=all, DebugImageMonitoring=none",
 			labels: map[string]string{
-				hardenedMonitoring: "health",
+				hardenedMonitoring: "all",
 				debugMonitoring:    "none",
 			},
 			expectedPolicy: &LaunchPolicy{
-				HardenedImageMonitoring: health,
-				DebugImageMonitoring:    none,
+				HardenedImageMonitoring: All,
+				DebugImageMonitoring:    None,
 			},
 		},
 	}
@@ -839,21 +829,21 @@ func TestGetMonitoringPolicyErrors(t *testing.T) {
 			name: "memory_monitoring_allow and hardened_monitoring specified",
 			labels: map[string]string{
 				memoryMonitoring:   "always",
-				hardenedMonitoring: "health",
+				hardenedMonitoring: "all",
 			},
 		},
 		{
 			name: "memory_monitoring_allow and debug_monitoring specified",
 			labels: map[string]string{
 				memoryMonitoring: "always",
-				debugMonitoring:  "health",
+				debugMonitoring:  "all",
 			},
 		},
 		{
 			name: "memory_monitoring_allow, hardened_monitoring, and debug_monitoring specified",
 			labels: map[string]string{
 				memoryMonitoring:   "always",
-				hardenedMonitoring: "health",
+				hardenedMonitoring: "all",
 				debugMonitoring:    "memoryOnly",
 			},
 		},

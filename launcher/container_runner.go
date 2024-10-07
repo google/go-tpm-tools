@@ -29,7 +29,6 @@ import (
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/launcher/agent"
-	"github.com/google/go-tpm-tools/launcher/internal/healthmonitoring/nodeproblemdetector"
 	"github.com/google/go-tpm-tools/launcher/internal/signaturediscovery"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/registryauth"
@@ -520,16 +519,6 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	}
 	go teeServer.Serve()
 	defer teeServer.Shutdown(ctx)
-
-	// start node-problem-detector.service to collect memory related metrics.
-	if r.launchSpec.MemoryMonitoringEnabled {
-		r.logger.Println("MemoryMonitoring is enabled by the VM operator")
-		if err := nodeproblemdetector.StartService(r.logger); err != nil {
-			return err
-		}
-	} else {
-		r.logger.Println("MemoryMonitoring is disabled by the VM operator")
-	}
 
 	var streamOpt cio.Opt
 	switch r.launchSpec.LogRedirect {

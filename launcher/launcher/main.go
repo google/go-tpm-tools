@@ -96,12 +96,14 @@ func main() {
 		return
 	}
 
-	if launchSpec.HealthMonitoringEnabled {
-		logger.Printf("Health Monitoring is enabled by the VM operator")
+	if launchSpec.MonitoringEnabled != spec.None {
+		logger.Printf("Monitoring is enabled by the VM operator")
 
-		if err := nodeproblemdetector.EnableHealthMonitoringConfig(); err != nil {
-			logger.Printf("failed to enable Health Monitoring config: %v", err)
-			return
+		if launchSpec.MonitoringEnabled == spec.All {
+			if err := nodeproblemdetector.EnableAllConfig(); err != nil {
+				logger.Printf("failed to enable Health Monitoring config: %v", err)
+				return
+			}
 		}
 
 		if err := nodeproblemdetector.StartService(logger); err != nil {

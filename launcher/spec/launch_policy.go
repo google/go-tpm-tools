@@ -7,8 +7,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-
-	"github.com/google/go-tpm-tools/launcher/internal/healthmonitoring/monitoring"
 )
 
 // LaunchPolicy contains policies on starting the container.
@@ -18,8 +16,8 @@ type LaunchPolicy struct {
 	AllowedCmdOverride       bool
 	AllowedLogRedirect       policy
 	AllowedMountDestinations []string
-	HardenedImageMonitoring  monitoring.Config
-	DebugImageMonitoring     monitoring.Config
+	HardenedImageMonitoring  MonitoringType
+	DebugImageMonitoring     MonitoringType
 }
 
 type policy int
@@ -30,13 +28,26 @@ const (
 	never
 )
 
-type monitoringType int
+type MonitoringType int
 
 const (
-	none monitoringType = iota
-	memoryOnly
-	health
+	None MonitoringType = iota
+	MemoryOnly
+	All
 )
+
+func toMonitoringType(s string) (MonitoringType, error) {
+	switch strings.ToLower(s) {
+	case "none":
+		return None, nil
+	case "memoryonly":
+		return MemoryOnly, nil
+	case "all":
+		return All, nil
+	}
+
+	return None, fmt.Errorf("invalid monitoring type %v", s)
+}
 
 // String returns LaunchPolicy details.
 func (p policy) String() string {
@@ -102,40 +113,39 @@ func configureMonitoringPolicy(imageLabels map[string]string, launchPolicy *Laun
 
 		logger.Printf("%s will be deprecated, use %s and %s instead", memoryMonitoring, hardenedMonitoring, debugMonitoring)
 
-		memoryOnlyConfig := monitoring.Config{CPU: false, Disk: false, Host: false, Memory: false}
 		switch policy {
 		case always:
-			logger.Printf("%s=always, will be treated as %s=memory and %s=memory", memoryMonitoring, hardenedMonitoring, debugMonitoring)
-			launchPolicy.HardenedImageMonitoring = memoryOnlyConfig
-			launchPolicy.DebugImageMonitoring = memoryOnlyConfig
+			logger.Printf("%s=always, will be treated as %s=memory_only and %s=memory_only", memoryMonitoring, hardenedMonitoring, debugMonitoring)
+			launchPolicy.HardenedImageMonitoring = MemoryOnly
+			launchPolicy.DebugImageMonitoring = MemoryOnly
 		case never:
 			logger.Printf("%s=never, will be treated as %s=none and %s=none", memoryMonitoring, hardenedMonitoring, debugMonitoring)
-			launchPolicy.HardenedImageMonitoring = memoryOnlyConfig
-			launchPolicy.DebugImageMonitoring = monitoring.NoneConfig()
+			launchPolicy.HardenedImageMonitoring = None
+			launchPolicy.DebugImageMonitoring = None
 		case debugOnly:
 			logger.Printf("%s=debug_only, will be treated as %s=none and %s=memory", memoryMonitoring, hardenedMonitoring, debugMonitoring)
-			launchPolicy.HardenedImageMonitoring = monitoring.NoneConfig()
-			launchPolicy.DebugImageMonitoring = memoryOnlyConfig
+			launchPolicy.HardenedImageMonitoring = None
+			launchPolicy.DebugImageMonitoring = MemoryOnly
 		}
 		return nil
 	}
 
 	if hardenedOk {
-		launchPolicy.HardenedImageMonitoring, err = monitoring.ToConfig(hardenedVal)
+		launchPolicy.HardenedImageMonitoring, err = toMonitoringType(hardenedVal)
 		if err != nil {
 			return fmt.Errorf("invalid monitoring type for hardened image: %v", err)
 		}
 	} else {
-		launchPolicy.HardenedImageMonitoring = monitoring.NoneConfig()
+		launchPolicy.HardenedImageMonitoring = None
 	}
 
 	if debugOk {
-		launchPolicy.DebugImageMonitoring, err = monitoring.ToConfig(debugVal)
+		launchPolicy.DebugImageMonitoring, err = toMonitoringType(debugVal)
 		if err != nil {
 			return fmt.Errorf("invalid monitoring type for debug image: %v", err)
 		}
 	} else {
-		launchPolicy.DebugImageMonitoring = monitoring.AllConfig()
+		launchPolicy.DebugImageMonitoring = MemoryOnly
 	}
 
 	return nil
@@ -189,6 +199,22 @@ func GetLaunchPolicy(imageLabels map[string]string, logger *log.Logger) (LaunchP
 	return launchPolicy, nil
 }
 
+func verifyMonitoringConfig(policy MonitoringType, spec MonitoringType) error {
+	if policy == None {
+		if spec != None {
+			return fmt.Errorf("spec configured for %v but policy is none", spec)
+		}
+
+		return nil
+	} else if policy == MemoryOnly {
+		if spec == All {
+			return fmt.Errorf("spec configured all monitoring, policy only allows memory")
+		}
+	}
+
+	return nil
+}
+
 // Verify will use the LaunchPolicy to verify the given LaunchSpec. If the verification passed, will return nil.
 // If there are multiple violations, the function will return the first error.
 func (p LaunchPolicy) Verify(ls LaunchSpec) error {
@@ -214,8 +240,8 @@ func (p LaunchPolicy) Verify(ls LaunchSpec) error {
 		monitoringPolicy = p.HardenedImageMonitoring
 	}
 
-	if err := monitoring.CheckCompliance(monitoringPolicy, ls.MonitoringEnabled); err != nil {
-		return fmt.Errorf("error verifying monitoring configs: %v", err)
+	if err := verifyMonitoringConfig(monitoringPolicy, ls.MonitoringEnabled); err != nil {
+		return fmt.Errorf("error verifying monitoring config: %v", err)
 	}
 
 	var err error
