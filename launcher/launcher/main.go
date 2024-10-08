@@ -109,6 +109,9 @@ func main() {
 		if err := nodeproblemdetector.StartService(logger); err != nil {
 			logger.Print(err)
 		}
+	} else {
+		// Avoids breaking existing memory monitoring tests.
+		logger.Printf("MemoryMonitoring is disabled by the VM operator")
 	}
 
 	defer func() {
