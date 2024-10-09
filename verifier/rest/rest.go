@@ -109,11 +109,17 @@ func (c *restClient) CreateChallenge(ctx context.Context) (*verifier.Challenge, 
 
 // VerifyAttestation implements verifier.Client
 func (c *restClient) VerifyAttestation(ctx context.Context, request verifier.VerifyAttestationRequest) (*verifier.VerifyAttestationResponse, error) {
-	if request.Challenge == nil || request.Attestation == nil {
+	if request.Challenge == nil {
 		return nil, fmt.Errorf("nil value provided in challenge")
 	}
+
+	if request.Attestation == nil && request.TDCCELAttestation == nil {
+		return nil, fmt.Errorf("neither TPM nor TDX attestation is present")
+	}
+
 	req := convertRequestToREST(request)
 	req.Challenge = request.Challenge.Name
+
 	response, err := c.v1Client.VerifyAttestation(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("calling v1.VerifyAttestation: %w", err)
@@ -140,36 +146,6 @@ func convertRequestToREST(request verifier.VerifyAttestationRequest) *confidenti
 		idTokens[i] = string(token)
 	}
 
-	quotes := make([]*confidentialcomputingpb.TpmAttestation_Quote, len(request.Attestation.GetQuotes()))
-	for i, quote := range request.Attestation.GetQuotes() {
-		pcrVals := map[int32][]byte{}
-		for idx, val := range quote.GetPcrs().GetPcrs() {
-			pcrVals[int32(idx)] = val
-		}
-
-		quotes[i] = &confidentialcomputingpb.TpmAttestation_Quote{
-			RawQuote:     quote.GetQuote(),
-			RawSignature: quote.GetRawSig(),
-			HashAlgo:     int32(quote.GetPcrs().GetHash()),
-			PcrValues:    pcrVals,
-		}
-	}
-
-	certs := make([][]byte, len(request.Attestation.GetIntermediateCerts()))
-	for i, cert := range request.Attestation.GetIntermediateCerts() {
-		certs[i] = cert
-	}
-
-	signatures := make([]*confidentialcomputingpb.ContainerImageSignature, len(request.ContainerImageSignatures))
-	for i, sig := range request.ContainerImageSignatures {
-		signature, err := convertOCISignatureToREST(sig)
-		if err != nil {
-			log.Printf("failed to convert OCI signature [%v] to ContainerImageSignature proto: %v", sig, err)
-			continue
-		}
-		signatures[i] = signature
-	}
-
 	var tokenType confidentialcomputingpb.TokenType
 	switch request.TokenOptions.TokenType {
 	case "OIDC":
@@ -182,17 +158,21 @@ func convertRequestToREST(request verifier.VerifyAttestationRequest) *confidenti
 		tokenType = confidentialcomputingpb.TokenType_TOKEN_TYPE_UNSPECIFIED
 	}
 
+	signatures := make([]*confidentialcomputingpb.ContainerImageSignature, len(request.ContainerImageSignatures))
+	for i, sig := range request.ContainerImageSignatures {
+		signature, err := convertOCISignatureToREST(sig)
+		if err != nil {
+			log.Printf("failed to convert OCI signature [%v] to ContainerImageSignature proto: %v", sig, err)
+			continue
+		}
+		signatures[i] = signature
+	}
+
 	verifyReq := &confidentialcomputingpb.VerifyAttestationRequest{
 		GcpCredentials: &confidentialcomputingpb.GcpCredentials{
 			ServiceAccountIdTokens: idTokens,
 		},
-		TpmAttestation: &confidentialcomputingpb.TpmAttestation{
-			Quotes:            quotes,
-			TcgEventLog:       request.Attestation.GetEventLog(),
-			CanonicalEventLog: request.Attestation.GetCanonicalEventLog(),
-			AkCert:            request.Attestation.GetAkCert(),
-			CertChain:         certs,
-		},
+		TpmAttestation: nil,
 		ConfidentialSpaceInfo: &confidentialcomputingpb.ConfidentialSpaceInfo{
 			SignedEntities: []*confidentialcomputingpb.SignedEntity{{ContainerImageSignatures: signatures}},
 		},
@@ -203,20 +183,67 @@ func convertRequestToREST(request verifier.VerifyAttestationRequest) *confidenti
 		},
 	}
 
-	if request.Attestation.GetSevSnpAttestation() != nil {
-		sevsnp, err := convertSEVSNPProtoToREST(request.Attestation.GetSevSnpAttestation())
-		if err != nil {
-			log.Fatalf("Failed to convert SEVSNP proto to API proto: %v", err)
-		}
-		verifyReq.TeeAttestation = sevsnp
-	}
+	if request.Attestation != nil {
+		// TPM attestation route
+		quotes := make([]*confidentialcomputingpb.TpmAttestation_Quote, len(request.Attestation.GetQuotes()))
+		for i, quote := range request.Attestation.GetQuotes() {
+			pcrVals := map[int32][]byte{}
+			for idx, val := range quote.GetPcrs().GetPcrs() {
+				pcrVals[int32(idx)] = val
+			}
 
-	if request.Attestation.GetTdxAttestation() != nil {
-		tdx, err := convertTDXProtoToREST(request.Attestation.GetTdxAttestation())
-		if err != nil {
-			log.Fatalf("Failed to convert TD quote proto to API proto: %v", err)
+			quotes[i] = &confidentialcomputingpb.TpmAttestation_Quote{
+				RawQuote:     quote.GetQuote(),
+				RawSignature: quote.GetRawSig(),
+				HashAlgo:     int32(quote.GetPcrs().GetHash()),
+				PcrValues:    pcrVals,
+			}
 		}
-		verifyReq.TeeAttestation = tdx
+
+		certs := make([][]byte, len(request.Attestation.GetIntermediateCerts()))
+		for i, cert := range request.Attestation.GetIntermediateCerts() {
+			certs[i] = cert
+		}
+
+		verifyReq.TpmAttestation = &confidentialcomputingpb.TpmAttestation{
+			Quotes:            quotes,
+			TcgEventLog:       request.Attestation.GetEventLog(),
+			CanonicalEventLog: request.Attestation.GetCanonicalEventLog(),
+			AkCert:            request.Attestation.GetAkCert(),
+			CertChain:         certs,
+		}
+
+		if request.Attestation.GetSevSnpAttestation() != nil {
+			sevsnp, err := convertSEVSNPProtoToREST(request.Attestation.GetSevSnpAttestation())
+			if err != nil {
+				log.Fatalf("Failed to convert SEVSNP proto to API proto: %v", err)
+			}
+			verifyReq.TeeAttestation = sevsnp
+		}
+
+		if request.Attestation.GetTdxAttestation() != nil {
+			tdx, err := convertTDXProtoToREST(request.Attestation.GetTdxAttestation())
+			if err != nil {
+				log.Fatalf("Failed to convert TD quote proto to API proto: %v", err)
+			}
+			verifyReq.TeeAttestation = tdx
+		}
+	} else if request.TDCCELAttestation != nil {
+		// TDX attestation route
+		// still need AK for GCE info!
+		verifyReq.TpmAttestation = &confidentialcomputingpb.TpmAttestation{
+			AkCert:    request.TDCCELAttestation.AkCert,
+			CertChain: request.TDCCELAttestation.IntermediateCerts,
+		}
+
+		verifyReq.TeeAttestation = &confidentialcomputingpb.VerifyAttestationRequest_TdCcel{
+			TdCcel: &confidentialcomputingpb.TdxCcelAttestation{
+				TdQuote:           request.TDCCELAttestation.TdQuote,
+				CcelAcpiTable:     request.TDCCELAttestation.CcelAcpiTable,
+				CcelData:          request.TDCCELAttestation.CcelData,
+				CanonicalEventLog: request.TDCCELAttestation.CanonicalEventLog,
+			},
+		}
 	}
 
 	return verifyReq
