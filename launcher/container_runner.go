@@ -161,8 +161,20 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	}
 
 	if launchSpec.Experiments.EnableGpuDriverInstallation && launchSpec.InstallGpuDriver {
-		mounts = appendGpuDriverMounts(mounts)
-		specOpts = append(specOpts, oci.WithMounts(mounts))
+		gpuMounts := []specs.Mount{
+			{
+				Type:        "volume",
+				Source:      fmt.Sprintf("%s/lib64", gpu.InstallationHostDir),
+				Destination: fmt.Sprintf("%s/lib64", gpu.InstallationContainerDir),
+				Options:     []string{"rbind", "rw"},
+			}, {
+				Type:        "volume",
+				Source:      fmt.Sprintf("%s/bin", gpu.InstallationHostDir),
+				Destination: fmt.Sprintf("%s/bin", gpu.InstallationContainerDir),
+				Options:     []string{"rbind", "rw"},
+			},
+		}
+		specOpts = append(specOpts, oci.WithMounts(gpuMounts))
 
 		gpuDeviceFiles, err := listFilesWithPrefix("/dev", "nvidia")
 		if err != nil {
@@ -280,24 +292,6 @@ func appendTokenMounts(mounts []specs.Mount) []specs.Mount {
 	m.Options = []string{"rbind", "ro"}
 
 	return append(mounts, m)
-}
-
-// appendGpuMounts appends the default mount specs for GPU drivers
-func appendGpuDriverMounts(mounts []specs.Mount) []specs.Mount {
-	gpuMounts := []specs.Mount{
-		{
-			Type:        "volume",
-			Source:      fmt.Sprintf("%s/lib64", gpu.InstallationHostDir),
-			Destination: fmt.Sprintf("%s/lib64", gpu.InstallationContainerDir),
-			Options:     []string{"rbind", "rw"},
-		}, {
-			Type:        "volume",
-			Source:      fmt.Sprintf("%s/bin", gpu.InstallationHostDir),
-			Destination: fmt.Sprintf("%s/bin", gpu.InstallationContainerDir),
-			Options:     []string{"rbind", "rw"},
-		},
-	}
-	return append(mounts, gpuMounts...)
 }
 
 func (r *ContainerRunner) measureCELEvents(ctx context.Context) error {
