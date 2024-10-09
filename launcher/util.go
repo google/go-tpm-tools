@@ -33,23 +33,18 @@ func FetchImpersonatedToken(ctx context.Context, serviceAccount string, audience
 }
 
 func listFilesWithPrefix(targetDir string, prefix string) ([]string, error) {
-	targetFiles := make([]string, 0)
-
-	err := filepath.WalkDir(targetDir, func(path string, _ os.DirEntry, err error) error {
+	var targetFiles []string
+	err := filepath.WalkDir(targetDir, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
-			return err
+			return filepath.SkipDir
 		}
-
-		if strings.HasPrefix(filepath.Base(path), prefix) {
+		if !d.IsDir() && strings.HasPrefix(filepath.Base(path), prefix) {
 			targetFiles = append(targetFiles, path)
 		}
-
 		return nil
 	})
-
 	if err != nil {
 		return nil, fmt.Errorf("error walking directory: %v", err)
 	}
-
 	return targetFiles, nil
 }

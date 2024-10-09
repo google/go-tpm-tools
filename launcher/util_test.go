@@ -104,20 +104,19 @@ func TestListFilesWithPrefix(t *testing.T) {
 		{
 			dir:     tmpDir,
 			pattern: "newfile",
-			want:    []string{},
 			wantErr: false,
 		},
 		{
 			dir:     "otherdir",
 			pattern: "file",
 			want:    nil,
-			wantErr: true,
+			wantErr: false,
 		},
 		{
 			dir:     "otherdir",
 			pattern: "tmpfile",
 			want:    nil,
-			wantErr: true,
+			wantErr: false,
 		},
 	}
 

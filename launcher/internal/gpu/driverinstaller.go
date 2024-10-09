@@ -23,8 +23,7 @@ const (
 	installerSnapshotID  = "tee-gpu-driver-installer-snapshot"
 )
 
-// SupportedGpuTypes is the list of supported gpu types with open sourced nvidia kernel modules.
-var SupportedGpuTypes = []deviceinfo.GPUType{
+var supportedGpuTypes = []deviceinfo.GPUType{
 	deviceinfo.L4,
 	deviceinfo.T4,
 	deviceinfo.A100_40GB,
@@ -53,13 +52,18 @@ func NewDriverInstaller(cdClient *containerd.Client, launchSpec spec.LaunchSpec,
 // https://pkg.go.dev/cos.googlesource.com/cos/tools.git@v0.0.0-20241008015903-8431fe581b1f/src/cmd/cos_gpu_installer#section-readme
 // README specifies docker command where this function uses containerd for launching and managing the gpu driver installer container.
 func (di *DriverInstaller) InstallGPUDrivers(ctx context.Context) error {
+	err := remountAsExecutable(InstallationHostDir)
+	if err != nil {
+		return fmt.Errorf("failed to remount the installation directory: %v", err)
+	}
+
 	gpuType, err := deviceinfo.GetGPUTypeInfo()
 	if err != nil {
 		return fmt.Errorf("failed to get the gpu type info: %v", err)
 	}
 
 	if !gpuType.OpenSupported() {
-		return fmt.Errorf("unsupported gpu type %s, please retry with one of the supported gpu types: %v", gpuType.String(), gpu.SupportedGpuTypes)
+		return fmt.Errorf("unsupported gpu type %s, please retry with one of the supported gpu types: %v", gpuType.String(), supportedGpuTypes)
 	}
 
 	ctx = namespaces.WithNamespace(ctx, namespaces.Default)
@@ -113,11 +117,13 @@ func (di *DriverInstaller) InstallGPUDrivers(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to create gpu driver installer container: %v", err)
 	}
+	defer container.Delete(ctx, containerd.WithSnapshotCleanup)
 
 	task, err := container.NewTask(ctx, cio.NewCreator(cio.WithStdio))
 	if err != nil {
 		return fmt.Errorf("failed to create gpu driver installation task: %v", err)
 	}
+	defer task.Delete(ctx)
 
 	statusC, err := task.Wait(ctx)
 	if err != nil {
@@ -130,12 +136,13 @@ func (di *DriverInstaller) InstallGPUDrivers(ctx context.Context) error {
 
 	status := <-statusC
 	code, _, _ := status.Result()
-	di.logger.Printf("Gpu driver installation task exited with status: %d\n", code)
 
-	err = remountAsExecutable(gpu.InstallationHostDir)
-	if err != nil {
-		return fmt.Errorf("failed to remount the installed drivers: %v", err)
+	if code != 0 {
+		di.logger.Printf("Gpu driver installation task ended and returned non-zero status code %d", code)
+		return fmt.Errorf("gpu driver installation task ended with non-zero status code %d", code)
 	}
+
+	di.logger.Println("Gpu driver installation task exited with status: 0")
 	return nil
 }
 

@@ -62,19 +62,19 @@ steps:
 - name: 'gcr.io/cloud-builders/gcloud'
   id: SingleGpuWorkloadTest
   entrypoint: 'bash'
-  args: ['scripts/test_gpu_workload.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}', '${_ZONE}']
+  args: ['scripts/gpu/test_gpu_workload.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}', '${_ZONE}']
 - name: 'gcr.io/cloud-builders/gcloud'
   id: MultipleGpuWorkloadTest
   entrypoint: 'bash'
-  args: ['scripts/test_gpu_workload.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}-mul', '${_ZONE}']
+  args: ['scripts/gpu/test_gpu_workload.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}-mul', '${_ZONE}']
 - name: 'gcr.io/cloud-builders/gcloud'
   id: UnsupportedGpuWorkloadTest
   entrypoint: 'bash'
-  args: ['scripts/test_gpu_unsupported_gputype.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}-unsup', '${_ZONE}']
+  args: ['scripts/gpu/test_gpu_unsupported_gputype.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}-unsup', '${_ZONE}']
 - name: 'gcr.io/cloud-builders/gcloud'
   id: NoGpuWorkloadTest
   entrypoint: 'bash'
-  args: ['scripts/test_gpu_nogpu.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}-nogpu', '${_ZONE}']
+  args: ['scripts/gpu/test_gpu_nogpu.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}-nogpu', '${_ZONE}']
 - name: 'gcr.io/cloud-builders/gcloud'
   id: SingleGpuCleanUp
   entrypoint: 'bash'
