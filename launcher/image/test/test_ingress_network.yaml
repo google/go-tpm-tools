@@ -18,6 +18,8 @@ steps:
             '-m', 'tee-image-reference=${_WORKLOAD_IMAGE}',
             '-n', 'ingress-network-test-${BUILD_ID}',
             '-z', '${_ZONE}',
+            '-s', 'testipv6',
+            '-t', 'IPV4_IPV6'
           ]
     
   - name: 'gcr.io/cloud-builders/gcloud'
@@ -30,18 +32,36 @@ steps:
         echo "sleeping 200s, waiting for workload server to setup..."
         sleep 200
         internalIP=$(gcloud -q compute instances describe ingress-network-test-${BUILD_ID} --zone=${_ZONE} --format='get(networkInterfaces[0].networkIP)')
-        echo "workload internal IP: "${internalIP}
+        echo "workload internal IPv4 address: "${internalIP}
 
-        # try to connect to the nginx server
+        internalIPv6=$(gcloud -q compute instances describe ingress-network-test-${BUILD_ID} --zone=${_ZONE} --format='get(networkInterfaces[0].ipv6Address)')
+        echo "workload internal IPv6 address: "${internalIPv6}
+
+        # try to connect to the nginx server on IPv4
+        echo "try access via IPv4 internal IP"
         response=$(curl -v ${internalIP}:80)
         echo "got response [${response}]"
 
         # check nginx default response
         if [[ "${response}" == *"Welcome to nginx!"* ]];
         then
-          echo "workload reachable through the internal network"
+          echo "workload reachable through the internal network via IPv4"
         else
-          echo "FAILED: workload not reachable through the internal network"
+          echo "FAILED: workload not reachable through the internal network via IPv4"
+          echo 'TEST FAILED' > /workspace/status.txt
+        fi
+
+        # try to connect to the nginx server on IPv6
+        echo "try access via IPv6 internal IP"
+        response=$(curl -g -6 -v "http://[${internalIPv6}]:80/")
+        echo "got response [${response}]"
+
+        # check nginx default response
+        if [[ "${response}" == *"Welcome to nginx!"* ]];
+        then
+          echo "workload reachable through the internal network via IPv6"
+        else
+          echo "FAILED: workload not reachable through the internal network via IPv6"
           echo 'TEST FAILED' > /workspace/status.txt
         fi
 
@@ -64,4 +84,4 @@ steps:
 
 options:
   pool:
-    name: 'projects/confidential-space-images-dev/locations/us-west1/workerPools/cs-image-build-vpc'
+    name: 'projects/confidential-space-images-dev/locations/us-west1/workerPools/cs-image-build-vpc-ipv6'

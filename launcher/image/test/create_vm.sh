@@ -10,6 +10,8 @@ print_usage() {
     echo "  -f <metadataFromFile>: read a metadata value from a file; specified in format key=filePath"
     echo "  -n <instanceName>: instance name"
     echo "  -z <instanceZone>: instance zone"
+    echo "  -s <subnet>: subnet"
+    echo "  -t <stackType>: stack type"
     exit 1
 }
 
@@ -42,8 +44,8 @@ create_vm() {
 
   gcloud compute instances create $VM_NAME --confidential-compute --maintenance-policy=TERMINATE \
     --machine-type=n2d-standard-2 --boot-disk-size=$DISK_SIZE_GB --scopes=cloud-platform --zone $ZONE \
-    --image=$IMAGE_NAME --image-project=$PROJECT_NAME --shielded-secure-boot $APPEND_METADATA \
-    $APPEND_METADATA_FILE
+    --image=$IMAGE_NAME --image-project=$PROJECT_NAME --subnet=$SUBNET --shielded-secure-boot $APPEND_METADATA \
+    $APPEND_METADATA_FILE  --stack-type=$STACK_TYPE
 }
 
 IMAGE_NAME=''
@@ -52,10 +54,12 @@ METADATA=''
 PROJECT_NAME=''
 VM_NAME=''
 ZONE=''
+SUBNET='default'
+STACK_TYPE='IPV4_ONLY'
 
 # In getopts, a ':' following a letter means that that flag takes an argument.
 # For example, i: means -i takes an additional argument.
-while getopts 'i:f:m:p:n:z:' flag; do
+while getopts 'i:f:m:p:n:z:s:t:' flag; do
   case "${flag}" in
     i) IMAGE_NAME=${OPTARG} ;;
     f) METADATA_FILE=${OPTARG} ;;
@@ -63,6 +67,8 @@ while getopts 'i:f:m:p:n:z:' flag; do
     p) PROJECT_NAME=${OPTARG} ;;
     n) VM_NAME=${OPTARG} ;;
     z) ZONE=${OPTARG} ;;
+    s) SUBNET=${OPTARG} ;;
+    t) STACK_TYPE=${OPTARG} ;;
     *) print_usage ;;
   esac
 done
