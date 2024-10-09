@@ -39,9 +39,21 @@ type TokenOptions struct {
 type VerifyAttestationRequest struct {
 	Challenge                *Challenge
 	GcpCredentials           [][]byte
-	Attestation              *attestpb.Attestation
+	Attestation              *attestpb.Attestation // Attestation is for TPM attestations
 	ContainerImageSignatures []oci.Signature
 	TokenOptions             TokenOptions
+	TDCCELAttestation        *TDCCELAttestation // for TDX CCEL RTMR attestations
+}
+
+type TDCCELAttestation struct {
+	CcelAcpiTable     []byte
+	CcelData          []byte
+	CanonicalEventLog []byte
+	TdQuote           []byte
+	// still needs following two for GCE info
+	// (remove once not needed)
+	AkCert            []byte
+	IntermediateCerts [][]byte
 }
 
 // VerifyAttestationResponse is the response from a successful

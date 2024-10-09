@@ -161,7 +161,7 @@ func startLauncher(ctx context.Context, launchSpec spec.LaunchSpec, serialConsol
 	}
 	defer tpm.Close()
 
-	// check AK (EK signing) cert
+	// check if TPM AK (EK signing) cert presents
 	gceAk, err := client.GceAttestationKeyECC(tpm)
 	if err != nil {
 		return err
