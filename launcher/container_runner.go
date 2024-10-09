@@ -520,6 +520,11 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	go teeServer.Serve()
 	defer teeServer.Shutdown(ctx)
 
+	// Avoids breaking existing memory monitoring tests that depend on this log.
+	if r.launchSpec.MonitoringEnabled == spec.None {
+		r.logger.Printf("MemoryMonitoring is disabled by the VM operator")
+	}
+
 	var streamOpt cio.Opt
 	switch r.launchSpec.LogRedirect {
 	case spec.Nowhere:
