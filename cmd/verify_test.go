@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"encoding/hex"
-	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -20,13 +19,15 @@ import (
 
 func TestVerifyNoncePass(t *testing.T) {
 	rwc := test.GetTPM(t)
-	defer client.CheckedClose(t, rwc)
+	t.Cleanup(func() {
+		client.CheckedClose(t, rwc)
+	})
 	ExternalTPM = rwc
 
 	file1 := makeOutputFile(t, "attest")
 	file2 := makeOutputFile(t, "verify")
-	defer os.RemoveAll(file1)
-	defer os.RemoveAll(file2)
+	t.Cleanup(func() { os.RemoveAll(file1) })
+	t.Cleanup(func() { os.RemoveAll(file2) })
 
 	RootCmd.SetArgs([]string{"attest", "--nonce", "1234", "--key", "AK", "--tee-nonce", "", "--output", file1, "--tee-technology", ""})
 	if err := RootCmd.Execute(); err != nil {
@@ -41,13 +42,15 @@ func TestVerifyNoncePass(t *testing.T) {
 
 func TestVerifyNonceFail(t *testing.T) {
 	rwc := test.GetTPM(t)
-	defer client.CheckedClose(t, rwc)
+	t.Cleanup(func() {
+		client.CheckedClose(t, rwc)
+	})
 	ExternalTPM = rwc
 
 	file1 := makeOutputFile(t, "attest")
 	file2 := makeOutputFile(t, "verify")
-	defer os.RemoveAll(file1)
-	defer os.RemoveAll(file2)
+	t.Cleanup(func() { os.RemoveAll(file1) })
+	t.Cleanup(func() { os.RemoveAll(file2) })
 
 	RootCmd.SetArgs([]string{"attest", "--nonce", "1234", "--output", file1})
 	if err := RootCmd.Execute(); err != nil {
@@ -62,13 +65,15 @@ func TestVerifyNonceFail(t *testing.T) {
 
 func TestVerifyWithGCEAK(t *testing.T) {
 	rwc := test.GetTPM(t)
-	defer client.CheckedClose(t, rwc)
+	t.Cleanup(func() {
+		client.CheckedClose(t, rwc)
+	})
 	ExternalTPM = rwc
 
 	file1 := makeOutputFile(t, "attest")
 	file2 := makeOutputFile(t, "verify")
-	defer os.RemoveAll(file1)
-	defer os.RemoveAll(file2)
+	t.Cleanup(func() { os.RemoveAll(file1) })
+	t.Cleanup(func() { os.RemoveAll(file2) })
 
 	var template = map[string]tpm2.Public{
 		"rsa": GCEAKTemplateRSA(),
@@ -92,14 +97,16 @@ func TestVerifyWithGCEAK(t *testing.T) {
 			if err != nil {
 				t.Error(err)
 			}
-			defer tpm2.NVUndefineSpace(rwc, "", tpm2.HandlePlatform, tpmutil.Handle(getIndex[op.keyAlgo]))
+			t.Cleanup(func() {
+				tpm2.NVUndefineSpace(rwc, "", tpm2.HandlePlatform, tpmutil.Handle(getIndex[op.keyAlgo]))
+			})
 
 			var dummyInstance = util.Instance{ProjectID: "test-project", ProjectNumber: "1922337278274", Zone: "us-central-1a", InstanceID: "12345678", InstanceName: "default"}
 			mock, err := util.NewMetadataServer(dummyInstance)
 			if err != nil {
 				t.Error(err)
 			}
-			defer mock.Stop()
+			t.Cleanup(func() { mock.Stop() })
 
 			RootCmd.SetArgs([]string{"attest", "--nonce", op.nonce, "--key", "gceAK", "--algo", op.keyAlgo, "--output", file1, "--format", "binarypb", "--tee-technology", ""})
 			if err := RootCmd.Execute(); err != nil {
@@ -116,13 +123,15 @@ func TestVerifyWithGCEAK(t *testing.T) {
 
 func TestHwAttestationPass(t *testing.T) {
 	rwc := test.GetTPM(t)
-	defer client.CheckedClose(t, rwc)
+	t.Cleanup(func() {
+		client.CheckedClose(t, rwc)
+	})
 	ExternalTPM = rwc
 
 	inputFile := makeOutputFile(t, "attest")
 	outputFile := makeOutputFile(t, "attestout")
-	defer os.RemoveAll(inputFile)
-	defer os.RemoveAll(outputFile)
+	t.Cleanup(func() { os.RemoveAll(inputFile) })
+	t.Cleanup(func() { os.RemoveAll(outputFile) })
 	teenonce := "12345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678"
 	tests := []struct {
 		name    string
@@ -158,14 +167,11 @@ func TestTdxAttestation(t *testing.T) {
 		t.Fatal(err)
 	}
 	file2 := makeOutputFile(t, "verifyFile")
-	defer os.RemoveAll(file2)
+	t.Cleanup(func() { os.RemoveAll(file2) })
 	tpmNonce := "1234"
 	teeNonce := hex.EncodeToString(test.TdxReportData)
 	wrongTeeNonce := hex.EncodeToString([]byte("wrongTdxNonce"))
-	attestation, err := createAttestationWithFakeTdx([]byte(tpmNonce), test.TdxReportData, t)
-	if err != nil {
-		t.Fatal(err)
-	}
+	attestation := createAttestationWithFakeTdx(t, []byte(tpmNonce), test.TdxReportData, t)
 	out := []byte(marshalOptions.Format(attestation))
 	file1.Write(out)
 	hexTpmNonce := hex.EncodeToString([]byte(tpmNonce))
@@ -189,15 +195,18 @@ func TestTdxAttestation(t *testing.T) {
 	}
 }
 
-func createAttestationWithFakeTdx(tpmNonce []byte, teeNonce []byte, tb *testing.T) (*pb.Attestation, error) {
-	tdxEventLog := test.CreateTpm2EventLog(3) // Enum 3- TDX
-	rwc := test.GetSimulatorWithLog(tb, tdxEventLog)
-	defer client.CheckedClose(tb, rwc)
+func createAttestationWithFakeTdx(t *testing.T, tpmNonce []byte, teeNonce []byte, tb *testing.T) *pb.Attestation {
+	t.Helper()
+
+	rwc := test.GetSimulatorWithLog(tb, test.Ubuntu2204IntelTdxEventLog)
+	t.Cleanup(func() {
+		client.CheckedClose(tb, rwc)
+	})
 	ak, err := client.AttestationKeyRSA(rwc)
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate AK: %v", err)
+		t.Fatalf("failed to generate AK: %v", err)
 	}
-	defer ak.Close()
+	t.Cleanup(ak.Close)
 	var teeNonce64 [64]byte
 	copy(teeNonce64[:], teeNonce)
 	tdxTestDevice := tgtestclient.GetTdxGuest([]tgtest.TestCase{
@@ -207,14 +216,14 @@ func createAttestationWithFakeTdx(tpmNonce []byte, teeNonce []byte, tb *testing.
 		},
 	}, tb)
 
-	defer tdxTestDevice.Close()
+	t.Cleanup(func() { tdxTestDevice.Close() })
 	attestation, err := ak.Attest(client.AttestOpts{
 		Nonce:     tpmNonce,
 		TEEDevice: &client.TdxDevice{Device: tdxTestDevice},
 		TEENonce:  teeNonce64[:],
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to attest: %v", err)
+		t.Fatalf("failed to attest: %v", err)
 	}
-	return attestation, nil
+	return attestation
 }
