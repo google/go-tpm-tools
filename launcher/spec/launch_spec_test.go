@@ -56,7 +56,7 @@ func TestLaunchSpecUnmarshalJSONHappyCases(t *testing.T) {
 		Envs:                       []EnvVar{{"foo", "bar"}},
 		ImpersonateServiceAccounts: []string{"sv1@developer.gserviceaccount.com", "sv2@developer.gserviceaccount.com"},
 		LogRedirect:                Everywhere,
-		MemoryMonitoringEnabled:    true,
+		MonitoringEnabled:          MemoryOnly,
 		DevShmSize:                 234234,
 		Mounts: []launchermount.Mount{launchermount.TmpfsMount{Destination: "/tmpmount", Size: 0},
 			launchermount.TmpfsMount{Destination: "/sized", Size: 222}},
@@ -120,6 +120,13 @@ func TestLaunchSpecUnmarshalJSONBadInput(t *testing.T) {
 				"tee-container-log-redirect":"badideas",
 			}`,
 		},
+		{
+			"Memory and Health Monitoring both specified",
+			`{
+					"tee-monitoring-memory-enable":"false",
+					"tee-monitoring-health-enable":"false",
+			}`,
+		},
 	}
 
 	for _, testcase := range testCases {
@@ -149,10 +156,10 @@ func TestLaunchSpecUnmarshalJSONWithDefaultValue(t *testing.T) {
 	}
 
 	want := &LaunchSpec{
-		ImageRef:                "docker.io/library/hello-world:latest",
-		RestartPolicy:           Never,
-		LogRedirect:             Nowhere,
-		MemoryMonitoringEnabled: false,
+		ImageRef:          "docker.io/library/hello-world:latest",
+		RestartPolicy:     Never,
+		LogRedirect:       Nowhere,
+		MonitoringEnabled: None,
 	}
 
 	if !cmp.Equal(spec, want) {

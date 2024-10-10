@@ -1,6 +1,7 @@
 package spec
 
 import (
+	"log"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -57,7 +58,11 @@ func TestLaunchPolicy(t *testing.T) {
 
 	for _, testcase := range testCases {
 		t.Run(testcase.testName, func(t *testing.T) {
-			got, err := GetLaunchPolicy(testcase.imageLabels)
+			// Add default values for policy fields. Not relevant to tested behavior.
+			testcase.expectedPolicy.HardenedImageMonitoring = None
+			testcase.expectedPolicy.DebugImageMonitoring = MemoryOnly
+
+			got, err := GetLaunchPolicy(testcase.imageLabels, log.Default())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -82,13 +87,14 @@ func TestVerify(t *testing.T) {
 				AllowedEnvOverride:      []string{"foo"},
 				AllowedCmdOverride:      true,
 				AllowedLogRedirect:      always,
-				AllowedMemoryMonitoring: always,
+				HardenedImageMonitoring: MemoryOnly,
+				DebugImageMonitoring:    MemoryOnly,
 			},
 			LaunchSpec{
-				Envs:                    []EnvVar{{Name: "foo", Value: "foo"}},
-				Cmd:                     []string{"foo"},
-				LogRedirect:             Everywhere,
-				MemoryMonitoringEnabled: true,
+				Envs:              []EnvVar{{Name: "foo", Value: "foo"}},
+				Cmd:               []string{"foo"},
+				LogRedirect:       Everywhere,
+				MonitoringEnabled: MemoryOnly,
 			},
 			false,
 		},
@@ -117,150 +123,6 @@ func TestVerify(t *testing.T) {
 				Cmd: []string{"foo"},
 			},
 			true,
-		},
-		{
-			"memory monitor (never, enable, hardened): err",
-			LaunchPolicy{
-				AllowedMemoryMonitoring: never,
-			},
-			LaunchSpec{
-				MemoryMonitoringEnabled: true,
-				Hardened:                true,
-				LogRedirect:             Nowhere,
-			},
-			true,
-		},
-		{
-			"memory monitor (never, enable, debug): err",
-			LaunchPolicy{
-				AllowedMemoryMonitoring: never,
-			},
-			LaunchSpec{
-				MemoryMonitoringEnabled: true,
-				Hardened:                false,
-				LogRedirect:             Nowhere,
-			},
-			true,
-		},
-		{
-			"memory monitor (never, disable, hardened): noerr",
-			LaunchPolicy{
-				AllowedMemoryMonitoring: never,
-			},
-			LaunchSpec{
-				MemoryMonitoringEnabled: false,
-				Hardened:                true,
-				LogRedirect:             Nowhere,
-			},
-			false,
-		},
-		{
-			"memory monitor (never, disable, debug): noerr",
-			LaunchPolicy{
-				AllowedMemoryMonitoring: never,
-			},
-			LaunchSpec{
-				MemoryMonitoringEnabled: false,
-				Hardened:                false,
-				LogRedirect:             Nowhere,
-			},
-			false,
-		},
-		{
-			"memory monitor (debugonly, enable, hardened): err",
-			LaunchPolicy{
-				AllowedMemoryMonitoring: debugOnly,
-			},
-			LaunchSpec{
-				MemoryMonitoringEnabled: true,
-				Hardened:                true,
-				LogRedirect:             Nowhere,
-			},
-			true,
-		},
-		{
-			"memory monitor (debugonly, enable, debug): noerr",
-			LaunchPolicy{
-				AllowedMemoryMonitoring: debugOnly,
-			},
-			LaunchSpec{
-				MemoryMonitoringEnabled: true,
-				Hardened:                false,
-				LogRedirect:             Nowhere,
-			},
-			false,
-		},
-		{
-			"memory monitor (debugonly, disable, hardened): noerr",
-			LaunchPolicy{
-				AllowedMemoryMonitoring: debugOnly,
-			},
-			LaunchSpec{
-				MemoryMonitoringEnabled: false,
-				Hardened:                true,
-				LogRedirect:             Nowhere,
-			},
-			false,
-		},
-		{
-			"memory monitor (debugonly, disable, debug): noerr",
-			LaunchPolicy{
-				AllowedMemoryMonitoring: debugOnly,
-			},
-			LaunchSpec{
-				MemoryMonitoringEnabled: false,
-				Hardened:                false,
-				LogRedirect:             Nowhere,
-			},
-			false,
-		},
-		{
-			"memory monitor (always, enable, hardened): noerr",
-			LaunchPolicy{
-				AllowedMemoryMonitoring: always,
-			},
-			LaunchSpec{
-				MemoryMonitoringEnabled: true,
-				Hardened:                true,
-				LogRedirect:             Nowhere,
-			},
-			false,
-		},
-		{
-			"memory monitor (always, enable, debug): noerr",
-			LaunchPolicy{
-				AllowedMemoryMonitoring: always,
-			},
-			LaunchSpec{
-				MemoryMonitoringEnabled: true,
-				Hardened:                false,
-				LogRedirect:             Nowhere,
-			},
-			false,
-		},
-		{
-			"memory monitor (always, disable, hardened): noerr",
-			LaunchPolicy{
-				AllowedMemoryMonitoring: always,
-			},
-			LaunchSpec{
-				MemoryMonitoringEnabled: false,
-				Hardened:                true,
-				LogRedirect:             Nowhere,
-			},
-			false,
-		},
-		{
-			"memory monitor (always, disable, debug): noerr",
-			LaunchPolicy{
-				AllowedMemoryMonitoring: always,
-			},
-			LaunchSpec{
-				MemoryMonitoringEnabled: false,
-				Hardened:                false,
-				LogRedirect:             Nowhere,
-			},
-			false,
 		},
 		{
 			"log redirect (never, everywhere, hardened): err",
@@ -648,6 +510,153 @@ func TestVerify(t *testing.T) {
 	}
 }
 
+func TestVerifyMonitoringSettings(t *testing.T) {
+	testCases := []struct {
+		testName   string
+		monitoring MonitoringType
+		spec       LaunchSpec
+	}{
+		{
+			"none policy, disabled by spec",
+			None,
+			LaunchSpec{
+				MonitoringEnabled: None,
+				LogRedirect:       Nowhere,
+			},
+		},
+		{
+			"memory-only policy, all disabled by spec",
+			MemoryOnly,
+			LaunchSpec{
+				MonitoringEnabled: None,
+				LogRedirect:       Nowhere,
+			},
+		},
+		{
+			"memory-only policy, memory enabled by spec",
+			MemoryOnly,
+			LaunchSpec{
+				MonitoringEnabled: MemoryOnly,
+				LogRedirect:       Nowhere,
+			},
+		},
+		{
+			"all enabled by policy, all enabled by spec",
+			All,
+			LaunchSpec{
+				MonitoringEnabled: All,
+				LogRedirect:       Nowhere,
+			},
+		},
+		{
+			"all enabled by policy, disabled by spec",
+			All,
+			LaunchSpec{
+				MonitoringEnabled: None,
+				LogRedirect:       Nowhere,
+			},
+		},
+		{
+			"all enabled by policy, memory enabled by spec",
+			All,
+			LaunchSpec{
+				MonitoringEnabled: MemoryOnly,
+				LogRedirect:       Nowhere,
+			},
+		},
+	}
+
+	for _, testCase := range testCases {
+		// Debug.
+		t.Run("[Debug] "+testCase.testName, func(t *testing.T) {
+			policy := LaunchPolicy{
+				DebugImageMonitoring: testCase.monitoring,
+			}
+			if err := policy.Verify(testCase.spec); err != nil {
+				t.Errorf("expected no error, but got %v", err)
+			}
+		})
+
+		// Hardened.
+		t.Run("[Hardened] "+testCase.testName, func(t *testing.T) {
+			policy := LaunchPolicy{
+				HardenedImageMonitoring: testCase.monitoring,
+			}
+
+			// Copy the spec and set Hardened=true.
+			spec := testCase.spec
+			spec.Hardened = true
+			if err := policy.Verify(spec); err != nil {
+				t.Errorf("expected no error, but got %v", err)
+			}
+		})
+	}
+}
+
+func TestVerifyMonitoringSettingsErrors(t *testing.T) {
+	testCases := []struct {
+		testName   string
+		monitoring MonitoringType
+		spec       LaunchSpec
+	}{
+		{
+			"[Hardened] disabled policy, all enabled by spec",
+			None,
+			LaunchSpec{
+				MonitoringEnabled: All,
+				Hardened:          true,
+				LogRedirect:       Nowhere,
+			},
+		},
+		{
+			"[Hardened] disabled policy, memory enabled by spec",
+			None,
+			LaunchSpec{
+				MonitoringEnabled: MemoryOnly,
+				Hardened:          true,
+				LogRedirect:       Nowhere,
+			},
+		},
+		{
+			"[Hardened] memory-only policy, all enabled by spec",
+			MemoryOnly,
+			LaunchSpec{
+				MonitoringEnabled: All,
+				Hardened:          true,
+				LogRedirect:       Nowhere,
+			},
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.testName, func(t *testing.T) {
+			// Debug.
+			t.Run("[Debug] "+testCase.testName, func(t *testing.T) {
+				policy := LaunchPolicy{
+					DebugImageMonitoring: testCase.monitoring,
+				}
+				if err := policy.Verify(testCase.spec); err == nil {
+					t.Errorf("expected error, but got nil")
+				}
+			})
+
+			// Hardened.
+			t.Run("[Hardened] "+testCase.testName, func(t *testing.T) {
+				policy := LaunchPolicy{
+					HardenedImageMonitoring: testCase.monitoring,
+				}
+
+				// Copy the spec and set Hardened=true.
+				spec := testCase.spec
+				spec.Hardened = true
+				if err := policy.Verify(spec); err == nil {
+					t.Errorf("expected error, but got nil")
+				}
+			})
+		})
+	}
+}
+
 func TestIsHardened(t *testing.T) {
 	testCases := []struct {
 		testName       string
@@ -681,6 +690,188 @@ func TestIsHardened(t *testing.T) {
 			hardened := isHardened(testCase.kernelCmd)
 			if testCase.expectHardened != hardened {
 				t.Errorf("expected %t, but got %t", testCase.expectHardened, hardened)
+			}
+		})
+	}
+}
+
+func TestGetMonitoringPolicy(t *testing.T) {
+	testcases := []struct {
+		name           string
+		labels         map[string]string
+		expectedPolicy *LaunchPolicy
+	}{
+		{
+			name: "memory_monitoring_allow=always",
+			labels: map[string]string{
+				memoryMonitoring: "always",
+			},
+			expectedPolicy: &LaunchPolicy{
+				HardenedImageMonitoring: MemoryOnly,
+				DebugImageMonitoring:    MemoryOnly,
+			},
+		},
+		{
+			name: "memory_monitoring_allow=never",
+			labels: map[string]string{
+				memoryMonitoring: "never",
+			},
+			expectedPolicy: &LaunchPolicy{
+				HardenedImageMonitoring: None,
+				DebugImageMonitoring:    None,
+			},
+		},
+		{
+			name: "memory_monitoring_allow=debugonly",
+			labels: map[string]string{
+				memoryMonitoring: "debugonly",
+			},
+			expectedPolicy: &LaunchPolicy{
+				HardenedImageMonitoring: None,
+				DebugImageMonitoring:    MemoryOnly,
+			},
+		},
+		{
+			name: "HardenedImageMonitoring=none",
+			labels: map[string]string{
+				hardenedMonitoring: "none",
+			},
+			expectedPolicy: &LaunchPolicy{
+				HardenedImageMonitoring: None,
+				DebugImageMonitoring:    MemoryOnly,
+			},
+		},
+		{
+			name: "HardenedImageMonitoring=memoryonly",
+			labels: map[string]string{
+				hardenedMonitoring: "memoryonly",
+			},
+			expectedPolicy: &LaunchPolicy{
+				HardenedImageMonitoring: MemoryOnly,
+				DebugImageMonitoring:    MemoryOnly,
+			},
+		},
+		{
+			name: "HardenedImageMonitoring=all",
+			labels: map[string]string{
+				hardenedMonitoring: "all",
+			},
+			expectedPolicy: &LaunchPolicy{
+				HardenedImageMonitoring: All,
+				DebugImageMonitoring:    MemoryOnly,
+			},
+		},
+		{
+			name: "DebugImageMonitoring=none",
+			labels: map[string]string{
+				debugMonitoring: "none",
+			},
+			expectedPolicy: &LaunchPolicy{
+				HardenedImageMonitoring: None,
+				DebugImageMonitoring:    None,
+			},
+		},
+		{
+			name: "DebugImageMonitoring=memoryonly",
+			labels: map[string]string{
+				debugMonitoring: "memoryonly",
+			},
+			expectedPolicy: &LaunchPolicy{
+				HardenedImageMonitoring: None,
+				DebugImageMonitoring:    MemoryOnly,
+			},
+		},
+		{
+			name: "DebugImageMonitoring=all",
+			labels: map[string]string{
+				debugMonitoring: "all",
+			},
+			expectedPolicy: &LaunchPolicy{
+				HardenedImageMonitoring: None,
+				DebugImageMonitoring:    All,
+			},
+		},
+		// Set both fields to non-default values.
+		{
+			name: "HardenedImageMonitoring=all, DebugImageMonitoring=none",
+			labels: map[string]string{
+				hardenedMonitoring: "all",
+				debugMonitoring:    "none",
+			},
+			expectedPolicy: &LaunchPolicy{
+				HardenedImageMonitoring: All,
+				DebugImageMonitoring:    None,
+			},
+		},
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			policy := &LaunchPolicy{}
+			if err := configureMonitoringPolicy(tc.labels, policy, log.Default()); err != nil {
+				t.Errorf("getMonitoringPolicy returned error: %v", err)
+				return
+			}
+
+			if !cmp.Equal(policy, tc.expectedPolicy) {
+				t.Errorf("getMonitoringPolicy did not return expected policy: got %v, want %v", policy, tc.expectedPolicy)
+			}
+		})
+	}
+}
+
+func TestGetMonitoringPolicyErrors(t *testing.T) {
+	testcases := []struct {
+		name   string
+		labels map[string]string
+	}{
+		{
+			name: "memory_monitoring_allow and hardened_monitoring specified",
+			labels: map[string]string{
+				memoryMonitoring:   "always",
+				hardenedMonitoring: "all",
+			},
+		},
+		{
+			name: "memory_monitoring_allow and debug_monitoring specified",
+			labels: map[string]string{
+				memoryMonitoring: "always",
+				debugMonitoring:  "all",
+			},
+		},
+		{
+			name: "memory_monitoring_allow, hardened_monitoring, and debug_monitoring specified",
+			labels: map[string]string{
+				memoryMonitoring:   "always",
+				hardenedMonitoring: "all",
+				debugMonitoring:    "memoryOnly",
+			},
+		},
+		{
+			name: "invalid value for memory_monitoring_allow",
+			labels: map[string]string{
+				memoryMonitoring: "this is not valid",
+			},
+		},
+		{
+			name: "invalid value for hardened_monitoring",
+			labels: map[string]string{
+				hardenedMonitoring: "this is not valid",
+			},
+		},
+		{
+			name: "invalid value for debug_monitoring",
+			labels: map[string]string{
+				debugMonitoring: "this is not valid",
+			},
+		},
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			policy := &LaunchPolicy{}
+			if err := configureMonitoringPolicy(tc.labels, policy, log.Default()); err == nil {
+				t.Errorf("Expected getMonitoringPolicy to return error, returned successfully with policy %v", policy)
 			}
 		})
 	}
