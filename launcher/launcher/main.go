@@ -97,18 +97,23 @@ func main() {
 	}
 
 	if launchSpec.MonitoringEnabled != spec.None {
-		logger.Printf("Monitoring is enabled by the VM operator")
+		logger.Printf("Health Monitoring is enabled by the VM operator")
 
 		if launchSpec.MonitoringEnabled == spec.All {
+			logger.Printf("All health monitoring metrics enabled")
 			if err := nodeproblemdetector.EnableAllConfig(); err != nil {
-				logger.Printf("failed to enable Health Monitoring config: %v", err)
+				logger.Printf("failed to enable full monitoring config: %v", err)
 				return
 			}
+		} else if launchSpec.MonitoringEnabled == spec.MemoryOnly {
+			logger.Printf("memory/bytes_used enabled")
 		}
 
 		if err := nodeproblemdetector.StartService(logger); err != nil {
 			logger.Print(err)
 		}
+	} else {
+		logger.Printf("Health Monitoring is disabled")
 	}
 
 	defer func() {
