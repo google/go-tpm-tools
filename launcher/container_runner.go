@@ -29,6 +29,7 @@ import (
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/launcher/agent"
+	"github.com/google/go-tpm-tools/launcher/internal/gpu"
 	"github.com/google/go-tpm-tools/launcher/internal/signaturediscovery"
 	"github.com/google/go-tpm-tools/launcher/internal/systemctl"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
@@ -157,6 +158,33 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	}
 	if launchSpec.DevShmSize != 0 {
 		specOpts = append(specOpts, oci.WithDevShmSize(launchSpec.DevShmSize))
+	}
+
+	if launchSpec.Experiments.EnableGpuDriverInstallation && launchSpec.InstallGpuDriver {
+		gpuMounts := []specs.Mount{
+			{
+				Type:        "volume",
+				Source:      fmt.Sprintf("%s/lib64", gpu.InstallationHostDir),
+				Destination: fmt.Sprintf("%s/lib64", gpu.InstallationContainerDir),
+				Options:     []string{"rbind", "rw"},
+			}, {
+				Type:        "volume",
+				Source:      fmt.Sprintf("%s/bin", gpu.InstallationHostDir),
+				Destination: fmt.Sprintf("%s/bin", gpu.InstallationContainerDir),
+				Options:     []string{"rbind", "rw"},
+			},
+		}
+		specOpts = append(specOpts, oci.WithMounts(gpuMounts))
+
+		gpuDeviceFiles, err := listFilesWithPrefix("/dev", "nvidia")
+		if err != nil {
+			return nil, fmt.Errorf("failed to list gpu device files: [%w]", err)
+		}
+
+		for _, deviceFile := range gpuDeviceFiles {
+			logger.Printf("device file : %s", deviceFile)
+			specOpts = append(specOpts, oci.WithDevices(deviceFile, deviceFile, "crw-rw-rw-"))
+		}
 	}
 
 	container, err = cdClient.NewContainer(

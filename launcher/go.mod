@@ -4,6 +4,7 @@ go 1.21
 
 require (
 	cloud.google.com/go/compute/metadata v0.5.0
+	cos.googlesource.com/cos/tools.git v0.0.0-20241008015903-8431fe581b1f
 	github.com/cenkalti/backoff/v4 v4.2.1
 	github.com/containerd/containerd v1.7.16
 	github.com/coreos/go-systemd/v22 v22.5.0

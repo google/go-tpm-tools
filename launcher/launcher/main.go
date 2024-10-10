@@ -18,6 +18,7 @@ import (
 	"github.com/containerd/containerd/namespaces"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/launcher"
+	"github.com/google/go-tpm-tools/launcher/internal/gpu"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/registryauth"
 	"github.com/google/go-tpm-tools/launcher/spec"
@@ -154,6 +155,14 @@ func startLauncher(ctx context.Context, launchSpec spec.LaunchSpec, serialConsol
 		return &launcher.RetryableError{Err: err}
 	}
 	defer containerdClient.Close()
+
+	if launchSpec.Experiments.EnableGpuDriverInstallation && launchSpec.InstallGpuDriver {
+		installer := gpu.NewDriverInstaller(containerdClient, launchSpec, logger)
+		err = installer.InstallGPUDrivers(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to install gpu drivers: %v", err)
+		}
+	}
 
 	tpm, err := tpm2.OpenTPM("/dev/tpmrm0")
 	if err != nil {
