@@ -119,15 +119,17 @@ func configureMonitoringPolicy(imageLabels map[string]string, launchPolicy *Laun
 
 		switch policy {
 		case always:
-			logger.Printf("%s=always, will be treated as %s=memory_only and %s=memory_only", memoryMonitoring, hardenedMonitoring, debugMonitoring)
+			logger.Printf("%s=always will be treated as %s=memory_only and %s=memory_only", memoryMonitoring, hardenedMonitoring, debugMonitoring)
 			launchPolicy.HardenedImageMonitoring = MemoryOnly
 			launchPolicy.DebugImageMonitoring = MemoryOnly
 		case never:
-			logger.Printf("%s=never, will be treated as %s=none and %s=none", memoryMonitoring, hardenedMonitoring, debugMonitoring)
+			logger.Printf("%s=never will be treated as %s=none and %s=none", memoryMonitoring, hardenedMonitoring, debugMonitoring)
+			logger.Printf("memory monitoring not allowed by image")
 			launchPolicy.HardenedImageMonitoring = None
 			launchPolicy.DebugImageMonitoring = None
 		case debugOnly:
-			logger.Printf("%s=debug_only, will be treated as %s=none and %s=memory", memoryMonitoring, hardenedMonitoring, debugMonitoring)
+			logger.Printf("%s=debug_only will be treated as %s=none and %s=memory", memoryMonitoring, hardenedMonitoring, debugMonitoring)
+			logger.Printf("memory monitoring only allowed on debug environment by image")
 			launchPolicy.HardenedImageMonitoring = None
 			launchPolicy.DebugImageMonitoring = MemoryOnly
 		}
