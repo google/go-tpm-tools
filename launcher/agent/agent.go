@@ -186,10 +186,10 @@ func fetchContainerImageSignatures(ctx context.Context, fetcher signaturediscove
 				},
 				retry(),
 				func(err error, _ time.Duration) {
-					logger.Error("Failed to fetch container image signatures from repo: "+err.Error(), "repo", targetRepo)
+					logger.Error(fmt.Sprintf("Failed to fetch container image signatures from repo: %v", err.Error()), "repo", targetRepo)
 				})
 			if err != nil {
-				logger.Error("Failed all attempts to refresh container signatures from repo: "+err.Error(), "repo", targetRepo)
+				logger.Error(fmt.Sprintf("Failed all attempts to refresh container signatures from repo: %v", err.Error()), "repo", targetRepo)
 			} else {
 				signatures[index] = sigs
 			}

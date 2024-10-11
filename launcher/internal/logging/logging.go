@@ -17,8 +17,8 @@ const (
 	logName           = "confidential-space-launcher"
 	serialConsoleFile = "/dev/console"
 
-	payloadMessageKey  = "MESSAGE"
-	payloadHostnameKey = "_HOSTNAME"
+	payloadMessageKey  = "message"
+	payloadHostnameKey = "instanceName"
 )
 
 // Logger defines the interface for the CS image logger.

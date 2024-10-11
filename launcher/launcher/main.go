@@ -53,10 +53,14 @@ var exitMessage = "TEE container launcher exiting"
 var start time.Time
 
 func main() {
+	uptime, err := getUptime()
+	if err != nil {
+		logger.Error(fmt.Sprintf("error reading VM uptime: %v", err))
+	}
+	// Note the current time to later calculate launch time.
 	start = time.Now()
 
 	var exitCode int // by default exit code is 0
-	var err error
 	ctx := context.Background()
 
 	defer func() {
@@ -72,6 +76,7 @@ func main() {
 	}
 	defer logger.Close()
 
+	logger.Info("Boot completed", "duration_sec", uptime)
 	logger.Info(welcomeMessage, "build_commit", BuildCommit)
 
 	if err := verifyFsAndMount(); err != nil {
@@ -116,7 +121,7 @@ func main() {
 	workloadDuration := time.Since(start)
 	logger.Info("Workload completed",
 		"workload", launchSpec.ImageRef,
-		"latency_sec", workloadDuration.Seconds(),
+		"duration_sec", workloadDuration.Seconds(),
 	)
 
 	exitCode = getExitCode(launchSpec.Hardened, launchSpec.RestartPolicy, err)
@@ -198,11 +203,7 @@ func startLauncher(launchSpec spec.LaunchSpec, serialConsole *os.File) error {
 		logger.Info(fmt.Sprintf("failed to retrieve auth token: %v, using empty auth for image pulling\n", err))
 	}
 
-	uptime, err := getUptime()
-	if err != nil {
-		logger.Error(fmt.Sprintf("error reading VM uptime: %v", err))
-	}
-	logger.Info("Launch completed", "latency_sec", uptime)
+	logger.Info("Launch started", "duration_sec", time.Since(start))
 
 	ctx := namespaces.WithNamespace(context.Background(), namespaces.Default)
 	r, err := launcher.NewRunner(ctx, containerdClient, token, launchSpec, mdsClient, tpm, logger, serialConsole)
