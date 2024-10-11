@@ -85,6 +85,7 @@ const (
 	memoryMonitoringEnable     = "tee-monitoring-memory-enable"
 	devShmSizeKey              = "tee-dev-shm-size-kb"
 	mountKey                   = "tee-mount"
+	installGpuDriver           = "tee-install-gpu-driver"
 )
 
 const (
@@ -117,8 +118,9 @@ type LaunchSpec struct {
 	LogRedirect                LogRedirectLocation
 	Mounts                     []launchermount.Mount
 	// DevShmSize is specified in kiB.
-	DevShmSize  int64
-	Experiments experiments.Experiments
+	DevShmSize       int64
+	Experiments      experiments.Experiments
+	InstallGpuDriver bool
 }
 
 // UnmarshalJSON unmarshals an instance attributes list in JSON format from the metadata
@@ -152,6 +154,12 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 	if val, ok := unmarshaledMap[signedImageRepos]; ok && val != "" {
 		imageRepos := strings.Split(val, ",")
 		s.SignedImageRepos = append(s.SignedImageRepos, imageRepos...)
+	}
+
+	if val, ok := unmarshaledMap[installGpuDriver]; ok && val != "" {
+		if boolValue, err := strconv.ParseBool(val); err == nil {
+			s.InstallGpuDriver = boolValue
+		}
 	}
 
 	if val, ok := unmarshaledMap[memoryMonitoringEnable]; ok && val != "" {

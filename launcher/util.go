@@ -3,6 +3,9 @@ package launcher
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"google.golang.org/api/impersonate"
 	"google.golang.org/api/option"
@@ -27,4 +30,21 @@ func FetchImpersonatedToken(ctx context.Context, serviceAccount string, audience
 	}
 
 	return []byte(token.AccessToken), nil
+}
+
+func listFilesWithPrefix(targetDir string, prefix string) ([]string, error) {
+	var targetFiles []string
+	err := filepath.WalkDir(targetDir, func(path string, d os.DirEntry, err error) error {
+		if err != nil && d != nil && d.IsDir() {
+			return filepath.SkipDir
+		}
+		if d != nil && !d.IsDir() && strings.HasPrefix(filepath.Base(path), prefix) {
+			targetFiles = append(targetFiles, path)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("error walking directory: %v", err)
+	}
+	return targetFiles, nil
 }

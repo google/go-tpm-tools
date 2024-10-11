@@ -18,6 +18,7 @@ import (
 	"github.com/containerd/containerd/namespaces"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/launcher"
+	"github.com/google/go-tpm-tools/launcher/internal/gpu"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/registryauth"
 	"github.com/google/go-tpm-tools/launcher/spec"
@@ -154,6 +155,19 @@ func startLauncher(ctx context.Context, launchSpec spec.LaunchSpec, serialConsol
 		return &launcher.RetryableError{Err: err}
 	}
 	defer containerdClient.Close()
+
+	if launchSpec.InstallGpuDriver {
+		if launchSpec.Experiments.EnableGpuDriverInstallation {
+			installer := gpu.NewDriverInstaller(containerdClient, launchSpec, logger)
+			err = installer.InstallGPUDrivers(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to install gpu drivers: %v", err)
+			}
+		} else {
+			logger.Println("Gpu installation experiment flag is not enabled for this project. Ensure that it is enabled when tee-install-gpu-driver is set to true")
+			return fmt.Errorf("gpu installation experiment flag is not enabled")
+		}
+	}
 
 	tpm, err := tpm2.OpenTPM("/dev/tpmrm0")
 	if err != nil {
