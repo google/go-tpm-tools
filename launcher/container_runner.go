@@ -626,11 +626,17 @@ func openPorts(ports map[string]struct{}) error {
 			return fmt.Errorf("received unknown protocol: got %s, expected tcp or udp", protocol)
 		}
 
-		// This command will write a firewall rule to accept all INPUT packets for the given port/protocol.
+		// These 2 commands will write firewall rules to accept all INPUT packets for the given port/protocol
+		// for IPv4 and IPv6 traffic.
 		cmd := exec.Command("iptables", "-A", "INPUT", "-p", protocol, "--dport", port, "-j", "ACCEPT")
 		out, err := cmd.CombinedOutput()
 		if err != nil {
-			return fmt.Errorf("failed to open port %s %s: %v %s", port, protocol, err, out)
+			return fmt.Errorf("failed to open port on IPv4 %s %s: %v %s", port, protocol, err, out)
+		}
+		v6cmd := exec.Command("ip6tables", "-A", "INPUT", "-p", protocol, "--dport", port, "-j", "ACCEPT")
+		out, err = v6cmd.CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("failed to open port on IPv6 %s %s: %v %s", port, protocol, err, out)
 		}
 	}
 
