@@ -121,7 +121,7 @@ func main() {
 	workloadDuration := time.Since(start)
 	logger.Info("Workload completed",
 		"workload", launchSpec.ImageRef,
-		"duration_sec", workloadDuration.Seconds(),
+		"workload_execution_sec", workloadDuration.Seconds(),
 	)
 
 	exitCode = getExitCode(launchSpec.Hardened, launchSpec.RestartPolicy, err)
