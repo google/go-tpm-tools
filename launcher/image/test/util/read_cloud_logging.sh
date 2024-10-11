@@ -4,7 +4,7 @@
 # It assumes the PROJECT_ID environment variable is set.
 # Use var=$(read_cloud_logging <VM_NAME>) to capture the output of this command into a variable.
 read_cloud_logging() {
-  gcloud logging read "resource.type=\"gce_instance\" jsonPayload._HOSTNAME=\"$1\"
+  gcloud logging read "resource.type=\"gce_instance\" jsonPayload.instanceName=\"$1\"
 log_name=\"projects/$PROJECT_ID/logs/confidential-space-launcher\"" \
---format="value(jsonPayload.MESSAGE)" --order asc
+--format="value(jsonPayload.message)" --order asc
 }
