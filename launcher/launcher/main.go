@@ -203,7 +203,7 @@ func startLauncher(launchSpec spec.LaunchSpec, serialConsole *os.File) error {
 		logger.Info(fmt.Sprintf("failed to retrieve auth token: %v, using empty auth for image pulling\n", err))
 	}
 
-	logger.Info("Launch started", "duration_sec", time.Since(start))
+	logger.Info("Launch started", "duration_sec", time.Since(start).Seconds())
 
 	ctx := namespaces.WithNamespace(context.Background(), namespaces.Default)
 	r, err := launcher.NewRunner(ctx, containerdClient, token, launchSpec, mdsClient, tpm, logger, serialConsole)
