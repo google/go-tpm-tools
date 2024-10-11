@@ -213,6 +213,38 @@ func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error
 		return nil, fmt.Errorf("received an unsupported attestation type! %v", v)
 	}
 
+	attResult, err := a.ar.Attest(challenge.Nonce)
+	if err != nil {
+		return nil, fmt.Errorf("failed to attest: %v", err)
+	}
+
+	var cosCel bytes.Buffer
+	if err := a.cosCel.EncodeCEL(&cosCel); err != nil {
+		return nil, err
+	}
+
+	switch v := attResult.(type) {
+	case *pb.Attestation:
+		a.logger.Println("attestation through TPM quote")
+
+		v.CanonicalEventLog = cosCel.Bytes()
+		req.Attestation = v
+	case *verifier.TDCCELAttestation:
+		a.logger.Println("attestation through TDX quote")
+
+		certChain, err := internal.GetCertificateChain(a.fetchedAK.Cert(), http.DefaultClient)
+		if err != nil {
+			return nil, fmt.Errorf("failed when fetching certificate chain: %w", err)
+		}
+
+		v.CanonicalEventLog = cosCel.Bytes()
+		v.IntermediateCerts = certChain
+		v.AkCert = a.fetchedAK.CertDERBytes()
+		req.TDCCELAttestation = v
+	default:
+		return nil, fmt.Errorf("received an unsupported attestation type! %v", v)
+	}
+
 	signatures := a.sigsCache.get()
 	if len(signatures) > 0 {
 		for _, sig := range signatures {
