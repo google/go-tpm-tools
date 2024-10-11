@@ -190,7 +190,7 @@ func TestWriteLog(t *testing.T) {
 
 	// Add message and hostnames values to expected payload.
 	testPayload[payloadMessageKey] = testMsg
-	testPayload[payloadHostnameKey] = testLogger.instanceName
+	testPayload[payloadInstanceNameKey] = testLogger.instanceName
 
 	if !cmp.Equal(cloudLogger.log.Payload, testPayload) {
 		t.Errorf("Did not get expected payload in cloud logs: got %v, want %v", cloudLogger.log.Payload, testPayload)
@@ -260,8 +260,8 @@ func TestLogFunctions(t *testing.T) {
 			tc.logFunc(testLogger, msg)
 
 			expectedPayload := payload{
-				"MESSAGE":   msg,
-				"_HOSTNAME": testLogger.instanceName,
+				payloadMessageKey:      msg,
+				payloadInstanceNameKey: testLogger.instanceName,
 			}
 
 			if cloudLogs.log.Severity != tc.cloudSeverity {

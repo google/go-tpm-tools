@@ -17,8 +17,8 @@ const (
 	logName           = "confidential-space-launcher"
 	serialConsoleFile = "/dev/console"
 
-	payloadMessageKey  = "message"
-	payloadHostnameKey = "instanceName"
+	payloadMessageKey      = "message"
+	payloadInstanceNameKey = "instanceName"
 )
 
 // Logger defines the interface for the CS image logger.
@@ -168,7 +168,7 @@ func (l *logger) writeLog(severity clogging.Severity, msg string, args ...any) {
 
 	if len(l.instanceName) > 0 {
 		// Needed for backwards compatibility with Cloudbuild tests.
-		pl[payloadHostnameKey] = l.instanceName
+		pl[payloadInstanceNameKey] = l.instanceName
 	}
 
 	logEntry.Payload = pl
