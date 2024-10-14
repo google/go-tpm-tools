@@ -206,15 +206,19 @@ func GetLaunchPolicy(imageLabels map[string]string, logger *log.Logger) (LaunchP
 }
 
 func verifyMonitoringConfig(policy MonitoringType, spec MonitoringType) error {
-	if policy == None {
+	switch policy {
+	case All:
+		// If policy is 'All', spec can be anything.
+		return nil
+	case MemoryOnly:
+		// If policy is 'MemoryOnly', spec must be 'None' or 'MemoryOnly'.
+		if spec == All {
+			return fmt.Errorf("spec configured for all monitoring, policy only allows memory")
+		}
+	case None:
+		// If policy is 'None', spec must also be 'None'.
 		if spec != None {
 			return fmt.Errorf("spec configured for %v but policy is none", spec)
-		}
-
-		return nil
-	} else if policy == MemoryOnly {
-		if spec == All {
-			return fmt.Errorf("spec configured all monitoring, policy only allows memory")
 		}
 	}
 

@@ -32,7 +32,6 @@ type diskConfig struct {
 
 // SystemStatsConfig contains configurations for `System Stats Monitor`,
 // a problem daemon in node-problem-detector that collects pre-defined health-related metrics from different system components.
-// For now we only consider collecting memory related metrics.
 // View the comprehensive configuration details on https://github.com/kubernetes/node-problem-detector/tree/master/pkg/systemstatsmonitor#detailed-configuration-options
 type SystemStatsConfig struct {
 	CPU            *statsConfig `json:"cpu,omitempty"`

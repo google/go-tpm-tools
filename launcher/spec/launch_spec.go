@@ -160,17 +160,33 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 
 	if memOk && monOk {
 		return fmt.Errorf("both %v and %v are specified, only one is permitted", memoryMonitoringEnable, monitoringEnable)
-	} else if memOk && memVal != "" {
-		if boolValue, err := strconv.ParseBool(memVal); err == nil && boolValue {
-			s.MonitoringEnabled = MemoryOnly
-		} else {
+	} else if memOk {
+		// If value is empty, treat as the default.
+		if memVal == "" {
 			s.MonitoringEnabled = None
+		} else {
+			boolValue, err := strconv.ParseBool(memVal)
+			if err != nil {
+				return fmt.Errorf("invalid value for %v (not a boolean): %v", memoryMonitoringEnable, err)
+			}
+
+			if boolValue {
+				s.MonitoringEnabled = MemoryOnly
+			} else {
+				s.MonitoringEnabled = None
+			}
 		}
-	} else if monOk && monVal != "" {
-		var err error
-		s.MonitoringEnabled, err = toMonitoringType(monVal)
-		if err != nil {
-			return err
+	} else if monOk {
+		// If value is empty, treat as the default.
+		if monVal == "" {
+			s.MonitoringEnabled = None
+		} else {
+
+			var err error
+			s.MonitoringEnabled, err = toMonitoringType(monVal)
+			if err != nil {
+				return err
+			}
 		}
 	}
 
