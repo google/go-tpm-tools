@@ -102,7 +102,7 @@ func main() {
 		if launchSpec.MonitoringEnabled == spec.All {
 			logger.Printf("All health monitoring metrics enabled")
 			if err := nodeproblemdetector.EnableAllConfig(); err != nil {
-				logger.Printf("failed to enable full monitoring config: %v", err)
+				logger.Printf("Failed to enable full monitoring config: %v", err)
 				return
 			}
 		} else if launchSpec.MonitoringEnabled == spec.MemoryOnly {
