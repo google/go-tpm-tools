@@ -4,10 +4,10 @@ package nodeproblemdetector
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"time"
 
+	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/internal/systemctl"
 )
 
@@ -115,18 +115,18 @@ func (ssc *SystemStatsConfig) WriteFile(path string) error {
 }
 
 // StartService starts Node Problem Detector.
-func StartService(logger *log.Logger) error {
+func StartService(logger logging.Logger) error {
 	s, err := systemctl.New()
 	if err != nil {
 		return fmt.Errorf("failed to create systemctl client: %v", err)
 	}
 	defer s.Close()
 
-	logger.Printf("Starting node-problem-detector.service")
+	logger.Info("Starting node-problem-detector.service")
 	if err := s.Start("node-problem-detector.service"); err != nil {
 		return fmt.Errorf("failed to start node-problem-detector.service")
 	}
 
-	logger.Printf("node-problem-detector.service successfully started")
+	logger.Info("node-problem-detector.service successfully started")
 	return nil
 }
