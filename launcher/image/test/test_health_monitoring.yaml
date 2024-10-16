@@ -4,7 +4,7 @@ substitutions:
   '_CLEANUP': 'true'
   '_VM_NAME_PREFIX': 'health-monitoring'
   '_ZONE': 'us-west1-a'
-  '_WORKLOAD_IMAGE': 'us-west1-docker.pkg.dev/confidential-space-images-dev/cs-integ-test-images/healthmonitoring:latest'
+  '_WORKLOAD_IMAGE': 'us-west1-docker.pkg.dev/confidential-space-images-dev/cs-integ-test-images/allmonitoring:latest'
 
 steps:
 - name: 'gcr.io/cloud-builders/gcloud'
