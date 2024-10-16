@@ -159,7 +159,7 @@ steps:
 - name: 'gcr.io/cloud-builders/gcloud'
   id: MemoryMonitorDebugOnlyTest
   entrypoint: 'bash'
-  args: ['scripts/test_launchpolicy_memory_monitoring.sh', '${_MEMORY_MONITOR_VM_NAME_PREFIX}-debugonly-${BUILD_ID}', '${_ZONE}', 'tee\.launch_policy\.monitoring_memory_allow will be deprecated.*memory monitoring only allowed on debug environment by image']
+  args: ['scripts/test_launchpolicy_memory_monitoring.sh', '${_MEMORY_MONITOR_VM_NAME_PREFIX}-debugonly-${BUILD_ID}', '${_ZONE}', 'monitoring_memory_allow will be deprecated.*memory monitoring only allowed on debug environment by image']
   waitFor: ['CreateVMMemoryMonitorDebugOnly']
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CleanUpMemoryMonitorDebugOnly
@@ -184,7 +184,7 @@ steps:
 - name: 'gcr.io/cloud-builders/gcloud'
   id: MemoryMonitorNeverTest
   entrypoint: 'bash'
-  args: ['scripts/test_launchpolicy_memory_monitoring.sh', '${_MEMORY_MONITOR_VM_NAME_PREFIX}-never-${BUILD_ID}', '${_ZONE}', 'tee\.launch_policy\.monitoring_memory_allow will be deprecated.*memory monitoring not allowed by image']
+  args: ['scripts/test_launchpolicy_memory_monitoring.sh', '${_MEMORY_MONITOR_VM_NAME_PREFIX}-never-${BUILD_ID}', '${_ZONE}', 'monitoring_memory_allow will be deprecated.*memory monitoring not allowed by image']
   waitFor: ['CreateVMMemoryMonitorNever']
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CleanUpMemoryMonitorNever
