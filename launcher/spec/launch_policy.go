@@ -3,6 +3,7 @@ package spec
 import (
 	"errors"
 	"fmt"
+	"log"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -14,8 +15,9 @@ type LaunchPolicy struct {
 	AllowedEnvOverride       []string
 	AllowedCmdOverride       bool
 	AllowedLogRedirect       policy
-	AllowedMemoryMonitoring  policy
 	AllowedMountDestinations []string
+	HardenedImageMonitoring  MonitoringType
+	DebugImageMonitoring     MonitoringType
 }
 
 type policy int
@@ -25,6 +27,31 @@ const (
 	always
 	never
 )
+
+// MonitoringType represents the possible health monitoring presets for the client.
+type MonitoringType int
+
+const (
+	// None indicates no monitoring enabled.
+	None MonitoringType = iota
+	// MemoryOnly indicates only memory_bytes_used enabled.
+	MemoryOnly
+	// All indicates all supported metrics enabled.
+	All
+)
+
+func toMonitoringType(s string) (MonitoringType, error) {
+	switch strings.ToLower(s) {
+	case "none":
+		return None, nil
+	case "memoryonly":
+		return MemoryOnly, nil
+	case "all":
+		return All, nil
+	}
+
+	return None, fmt.Errorf("invalid monitoring type %v", s)
+}
 
 // String returns LaunchPolicy details.
 func (p policy) String() string {
@@ -57,10 +84,12 @@ func toPolicy(policy, s string) (policy, error) {
 }
 
 const (
-	envOverride      = "tee.launch_policy.allow_env_override"
-	cmdOverride      = "tee.launch_policy.allow_cmd_override"
-	logRedirect      = "tee.launch_policy.log_redirect"
-	memoryMonitoring = "tee.launch_policy.monitoring_memory_allow"
+	envOverride        = "tee.launch_policy.allow_env_override"
+	cmdOverride        = "tee.launch_policy.allow_cmd_override"
+	logRedirect        = "tee.launch_policy.log_redirect"
+	memoryMonitoring   = "tee.launch_policy.monitoring_memory_allow"
+	hardenedMonitoring = "tee.launch_policy.hardened_monitoring"
+	debugMonitoring    = "tee.launch_policy.debug_monitoring"
 	// Values look like a PATH list, with ':' as a separator.
 	// Empty paths will be ignored and relative paths will be interpreted as
 	// relative to "/".
@@ -68,9 +97,69 @@ const (
 	mountDestinations = "tee.launch_policy.allow_mount_destinations"
 )
 
+func configureMonitoringPolicy(imageLabels map[string]string, launchPolicy *LaunchPolicy, logger *log.Logger) error {
+	// Old policy.
+	memVal, memOk := imageLabels[memoryMonitoring]
+	// New policies.
+	hardenedVal, hardenedOk := imageLabels[hardenedMonitoring]
+	debugVal, debugOk := imageLabels[debugMonitoring]
+
+	var err error
+
+	// Return an error if old/new policies are both defined
+	if memOk && (hardenedOk || debugOk) {
+		return fmt.Errorf("use either %s or %s/%s in image labels,- not both", memoryMonitoring, hardenedMonitoring, debugMonitoring)
+	} else if memOk {
+		policy, err := toPolicy(memoryMonitoring, memVal)
+		if err != nil {
+			return fmt.Errorf("invalid image LABEL '%s'", memoryMonitoring)
+		}
+
+		logger.Printf("%s will be deprecated, use %s and %s instead", memoryMonitoring, hardenedMonitoring, debugMonitoring)
+
+		switch policy {
+		case always:
+			logger.Printf("%s=always will be treated as %s=memory_only and %s=memory_only", memoryMonitoring, hardenedMonitoring, debugMonitoring)
+			launchPolicy.HardenedImageMonitoring = MemoryOnly
+			launchPolicy.DebugImageMonitoring = MemoryOnly
+		case never:
+			logger.Printf("%s=never will be treated as %s=none and %s=none", memoryMonitoring, hardenedMonitoring, debugMonitoring)
+			logger.Printf("memory monitoring not allowed by image")
+			launchPolicy.HardenedImageMonitoring = None
+			launchPolicy.DebugImageMonitoring = None
+		case debugOnly:
+			logger.Printf("%s=debug_only will be treated as %s=none and %s=memory", memoryMonitoring, hardenedMonitoring, debugMonitoring)
+			logger.Printf("memory monitoring only allowed on debug environment by image")
+			launchPolicy.HardenedImageMonitoring = None
+			launchPolicy.DebugImageMonitoring = MemoryOnly
+		}
+		return nil
+	}
+
+	if hardenedOk {
+		launchPolicy.HardenedImageMonitoring, err = toMonitoringType(hardenedVal)
+		if err != nil {
+			return fmt.Errorf("invalid monitoring type for hardened image: %v", err)
+		}
+	} else {
+		launchPolicy.HardenedImageMonitoring = None
+	}
+
+	if debugOk {
+		launchPolicy.DebugImageMonitoring, err = toMonitoringType(debugVal)
+		if err != nil {
+			return fmt.Errorf("invalid monitoring type for debug image: %v", err)
+		}
+	} else {
+		launchPolicy.DebugImageMonitoring = MemoryOnly
+	}
+
+	return nil
+}
+
 // GetLaunchPolicy takes in a map[string] string which should come from image labels,
 // and will try to parse it into a LaunchPolicy. Extra fields will be ignored.
-func GetLaunchPolicy(imageLabels map[string]string) (LaunchPolicy, error) {
+func GetLaunchPolicy(imageLabels map[string]string, logger *log.Logger) (LaunchPolicy, error) {
 	var err error
 	launchPolicy := LaunchPolicy{}
 	if v, ok := imageLabels[envOverride]; ok {
@@ -97,12 +186,8 @@ func GetLaunchPolicy(imageLabels map[string]string) (LaunchPolicy, error) {
 		}
 	}
 
-	// default is debug only for memoryMonitoring
-	if v, ok := imageLabels[memoryMonitoring]; ok {
-		launchPolicy.AllowedMemoryMonitoring, err = toPolicy(memoryMonitoring, v)
-		if err != nil {
-			return LaunchPolicy{}, fmt.Errorf("invalid image LABEL '%s'; contact the image author", memoryMonitoring)
-		}
+	if err := configureMonitoringPolicy(imageLabels, &launchPolicy, logger); err != nil {
+		return LaunchPolicy{}, err
 	}
 
 	if v, ok := imageLabels[mountDestinations]; ok {
@@ -118,6 +203,26 @@ func GetLaunchPolicy(imageLabels map[string]string) (LaunchPolicy, error) {
 	}
 
 	return launchPolicy, nil
+}
+
+func verifyMonitoringConfig(policy MonitoringType, spec MonitoringType) error {
+	switch policy {
+	case All:
+		// If policy is 'All', spec can be anything.
+		return nil
+	case MemoryOnly:
+		// If policy is 'MemoryOnly', spec must be 'None' or 'MemoryOnly'.
+		if spec == All {
+			return fmt.Errorf("spec configured for all monitoring, policy only allows memory")
+		}
+	case None:
+		// If policy is 'None', spec must also be 'None'.
+		if spec != None {
+			return fmt.Errorf("spec configured for %v but policy is none", spec)
+		}
+	}
+
+	return nil
 }
 
 // Verify will use the LaunchPolicy to verify the given LaunchSpec. If the verification passed, will return nil.
@@ -140,12 +245,13 @@ func (p LaunchPolicy) Verify(ls LaunchSpec) error {
 		return fmt.Errorf("logging redirection only allowed on debug environment by image")
 	}
 
-	if p.AllowedMemoryMonitoring == never && ls.MemoryMonitoringEnabled {
-		return fmt.Errorf("memory monitoring not allowed by image")
+	monitoringPolicy := p.DebugImageMonitoring
+	if ls.Hardened {
+		monitoringPolicy = p.HardenedImageMonitoring
 	}
 
-	if p.AllowedMemoryMonitoring == debugOnly && ls.MemoryMonitoringEnabled && ls.Hardened {
-		return fmt.Errorf("memory monitoring only allowed on debug environment by image")
+	if err := verifyMonitoringConfig(monitoringPolicy, ls.MonitoringEnabled); err != nil {
+		return fmt.Errorf("error verifying monitoring config: %v", err)
 	}
 
 	var err error

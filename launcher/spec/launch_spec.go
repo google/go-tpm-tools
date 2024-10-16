@@ -83,6 +83,7 @@ const (
 	attestationServiceAddrKey  = "tee-attestation-service-endpoint"
 	logRedirectKey             = "tee-container-log-redirect"
 	memoryMonitoringEnable     = "tee-monitoring-memory-enable"
+	monitoringEnable           = "tee-monitoring-enable"
 	devShmSizeKey              = "tee-dev-shm-size-kb"
 	mountKey                   = "tee-mount"
 )
@@ -113,7 +114,7 @@ type LaunchSpec struct {
 	ProjectID                  string
 	Region                     string
 	Hardened                   bool
-	MemoryMonitoringEnabled    bool
+	MonitoringEnabled          MonitoringType
 	LogRedirect                LogRedirectLocation
 	Mounts                     []launchermount.Mount
 	// DevShmSize is specified in kiB.
@@ -154,9 +155,38 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 		s.SignedImageRepos = append(s.SignedImageRepos, imageRepos...)
 	}
 
-	if val, ok := unmarshaledMap[memoryMonitoringEnable]; ok && val != "" {
-		if boolValue, err := strconv.ParseBool(val); err == nil {
-			s.MemoryMonitoringEnabled = boolValue
+	memVal, memOk := unmarshaledMap[memoryMonitoringEnable]
+	monVal, monOk := unmarshaledMap[monitoringEnable]
+
+	if memOk && monOk {
+		return fmt.Errorf("both %v and %v are specified, only one is permitted", memoryMonitoringEnable, monitoringEnable)
+	} else if memOk {
+		// If value is empty, treat as the default.
+		if memVal == "" {
+			s.MonitoringEnabled = None
+		} else {
+			boolValue, err := strconv.ParseBool(memVal)
+			if err != nil {
+				return fmt.Errorf("invalid value for %v (not a boolean): %v", memoryMonitoringEnable, err)
+			}
+
+			if boolValue {
+				s.MonitoringEnabled = MemoryOnly
+			} else {
+				s.MonitoringEnabled = None
+			}
+		}
+	} else if monOk {
+		// If value is empty, treat as the default.
+		if monVal == "" {
+			s.MonitoringEnabled = None
+		} else {
+
+			var err error
+			s.MonitoringEnabled, err = toMonitoringType(monVal)
+			if err != nil {
+				return err
+			}
 		}
 	}
 

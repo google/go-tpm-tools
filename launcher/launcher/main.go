@@ -18,6 +18,7 @@ import (
 	"github.com/containerd/containerd/namespaces"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/launcher"
+	"github.com/google/go-tpm-tools/launcher/internal/healthmonitoring/nodeproblemdetector"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/registryauth"
 	"github.com/google/go-tpm-tools/launcher/spec"
@@ -93,6 +94,26 @@ func main() {
 		exitCode = failRC
 		logger.Printf("%s, exit code: %d (%s)\n", exitMessage, exitCode, rcMessage[exitCode])
 		return
+	}
+
+	if launchSpec.MonitoringEnabled != spec.None {
+		logger.Printf("Health Monitoring is enabled by the VM operator")
+
+		if launchSpec.MonitoringEnabled == spec.All {
+			logger.Printf("All health monitoring metrics enabled")
+			if err := nodeproblemdetector.EnableAllConfig(); err != nil {
+				logger.Printf("Failed to enable full monitoring config: %v", err)
+				return
+			}
+		} else if launchSpec.MonitoringEnabled == spec.MemoryOnly {
+			logger.Printf("memory/bytes_used enabled")
+		}
+
+		if err := nodeproblemdetector.StartService(logger); err != nil {
+			logger.Print(err)
+		}
+	} else {
+		logger.Printf("Health Monitoring is disabled")
 	}
 
 	defer func() {

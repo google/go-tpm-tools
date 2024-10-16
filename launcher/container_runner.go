@@ -30,7 +30,6 @@ import (
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/launcher/agent"
 	"github.com/google/go-tpm-tools/launcher/internal/signaturediscovery"
-	"github.com/google/go-tpm-tools/launcher/internal/systemctl"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/registryauth"
 	"github.com/google/go-tpm-tools/launcher/spec"
@@ -115,7 +114,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	}
 
 	logger.Printf("Image Labels               : %v\n", imageConfig.Labels)
-	launchPolicy, err := spec.GetLaunchPolicy(imageConfig.Labels)
+	launchPolicy, err := spec.GetLaunchPolicy(imageConfig.Labels, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -341,7 +340,7 @@ func (r *ContainerRunner) measureContainerClaims(ctx context.Context) error {
 // eventlog in the AttestationAgent.
 func (r *ContainerRunner) measureMemoryMonitor() error {
 	var enabled uint8
-	if r.launchSpec.MemoryMonitoringEnabled {
+	if r.launchSpec.MonitoringEnabled == spec.MemoryOnly {
 		enabled = 1
 	}
 	if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.MemoryMonitorType, EventContent: []byte{enabled}}); err != nil {
@@ -521,22 +520,9 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	go teeServer.Serve()
 	defer teeServer.Shutdown(ctx)
 
-	// start node-problem-detector.service to collect memory related metrics.
-	if r.launchSpec.MemoryMonitoringEnabled {
-		r.logger.Println("MemoryMonitoring is enabled by the VM operator")
-		s, err := systemctl.New()
-		if err != nil {
-			return fmt.Errorf("failed to create systemctl client: %v", err)
-		}
-		defer s.Close()
-
-		r.logger.Println("Starting a systemctl operation: systemctl start node-problem-detector.service")
-		if err := s.Start("node-problem-detector.service"); err != nil {
-			return fmt.Errorf("failed to start node-problem-detector.service: %v", err)
-		}
-		r.logger.Println("node-problem-detector.service successfully started.")
-	} else {
-		r.logger.Println("MemoryMonitoring is disabled by the VM operator")
+	// Avoids breaking existing memory monitoring tests that depend on this log.
+	if r.launchSpec.MonitoringEnabled == spec.None {
+		r.logger.Printf("MemoryMonitoring is disabled by the VM operator")
 	}
 
 	var streamOpt cio.Opt
