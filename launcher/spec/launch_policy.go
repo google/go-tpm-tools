@@ -3,10 +3,11 @@ package spec
 import (
 	"errors"
 	"fmt"
-	"log"
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/google/go-tpm-tools/launcher/internal/logging"
 )
 
 // LaunchPolicy contains policies on starting the container.
@@ -110,7 +111,7 @@ const (
 	mountDestinations = "tee.launch_policy.allow_mount_destinations"
 )
 
-func configureMonitoringPolicy(imageLabels map[string]string, launchPolicy *LaunchPolicy, logger *log.Logger) error {
+func configureMonitoringPolicy(imageLabels map[string]string, launchPolicy *LaunchPolicy, logger logging.Logger) error {
 	// Old policy.
 	memVal, memOk := imageLabels[memoryMonitoring]
 	// New policies.
@@ -128,21 +129,21 @@ func configureMonitoringPolicy(imageLabels map[string]string, launchPolicy *Laun
 			return fmt.Errorf("invalid image LABEL '%s'", memoryMonitoring)
 		}
 
-		logger.Printf("%s will be deprecated, use %s and %s instead", memoryMonitoring, hardenedMonitoring, debugMonitoring)
+		logger.Info(fmt.Sprintf("%s will be deprecated, use %s and %s instead", memoryMonitoring, hardenedMonitoring, debugMonitoring))
 
 		switch policy {
 		case always:
-			logger.Printf("%s=always will be treated as %s=memory_only and %s=memory_only", memoryMonitoring, hardenedMonitoring, debugMonitoring)
+			logger.Info(fmt.Sprintf("%s=always will be treated as %s=memory_only and %s=memory_only", memoryMonitoring, hardenedMonitoring, debugMonitoring))
 			launchPolicy.HardenedImageMonitoring = MemoryOnly
 			launchPolicy.DebugImageMonitoring = MemoryOnly
 		case never:
-			logger.Printf("%s=never will be treated as %s=none and %s=none", memoryMonitoring, hardenedMonitoring, debugMonitoring)
-			logger.Printf("memory monitoring not allowed by image")
+			logger.Info(fmt.Sprintf("%s=never will be treated as %s=none and %s=none", memoryMonitoring, hardenedMonitoring, debugMonitoring))
+			logger.Info("memory monitoring not allowed by image")
 			launchPolicy.HardenedImageMonitoring = None
 			launchPolicy.DebugImageMonitoring = None
 		case debugOnly:
-			logger.Printf("%s=debug_only will be treated as %s=none and %s=memory", memoryMonitoring, hardenedMonitoring, debugMonitoring)
-			logger.Printf("memory monitoring only allowed on debug environment by image")
+			logger.Info(fmt.Sprintf("%s=debug_only will be treated as %s=none and %s=memory", memoryMonitoring, hardenedMonitoring, debugMonitoring))
+			logger.Info("memory monitoring only allowed on debug environment by image")
 			launchPolicy.HardenedImageMonitoring = None
 			launchPolicy.DebugImageMonitoring = MemoryOnly
 		}
@@ -172,7 +173,7 @@ func configureMonitoringPolicy(imageLabels map[string]string, launchPolicy *Laun
 
 // GetLaunchPolicy takes in a map[string] string which should come from image labels,
 // and will try to parse it into a LaunchPolicy. Extra fields will be ignored.
-func GetLaunchPolicy(imageLabels map[string]string, logger *log.Logger) (LaunchPolicy, error) {
+func GetLaunchPolicy(imageLabels map[string]string, logger logging.Logger) (LaunchPolicy, error) {
 	var err error
 	launchPolicy := LaunchPolicy{}
 	if v, ok := imageLabels[envOverride]; ok {

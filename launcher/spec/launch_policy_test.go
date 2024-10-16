@@ -1,11 +1,11 @@
 package spec
 
 import (
-	"log"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-tpm-tools/launcher/internal/launchermount"
+	"github.com/google/go-tpm-tools/launcher/internal/logging"
 )
 
 func TestLaunchPolicy(t *testing.T) {
@@ -62,7 +62,7 @@ func TestLaunchPolicy(t *testing.T) {
 			testcase.expectedPolicy.HardenedImageMonitoring = None
 			testcase.expectedPolicy.DebugImageMonitoring = MemoryOnly
 
-			got, err := GetLaunchPolicy(testcase.imageLabels, log.Default())
+			got, err := GetLaunchPolicy(testcase.imageLabels, logging.SimpleLogger())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -808,7 +808,7 @@ func TestGetMonitoringPolicy(t *testing.T) {
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
 			policy := &LaunchPolicy{}
-			if err := configureMonitoringPolicy(tc.labels, policy, log.Default()); err != nil {
+			if err := configureMonitoringPolicy(tc.labels, policy, logging.SimpleLogger()); err != nil {
 				t.Errorf("getMonitoringPolicy returned error: %v", err)
 				return
 			}
@@ -870,7 +870,7 @@ func TestGetMonitoringPolicyErrors(t *testing.T) {
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
 			policy := &LaunchPolicy{}
-			if err := configureMonitoringPolicy(tc.labels, policy, log.Default()); err == nil {
+			if err := configureMonitoringPolicy(tc.labels, policy, logging.SimpleLogger()); err == nil {
 				t.Errorf("Expected getMonitoringPolicy to return error, returned successfully with policy %v", policy)
 			}
 		})
