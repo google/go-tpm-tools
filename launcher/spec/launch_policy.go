@@ -40,6 +40,19 @@ const (
 	All
 )
 
+func toString(mt MonitoringType) string {
+	switch mt {
+	case None:
+		return "none"
+	case MemoryOnly:
+		return "memoryOnly"
+	case All:
+		return "all"
+	}
+
+	return ""
+}
+
 func toMonitoringType(s string) (MonitoringType, error) {
 	switch strings.ToLower(s) {
 	case "none":
@@ -134,24 +147,24 @@ func configureMonitoringPolicy(imageLabels map[string]string, launchPolicy *Laun
 			launchPolicy.DebugImageMonitoring = MemoryOnly
 		}
 		return nil
-	}
-
-	if hardenedOk {
-		launchPolicy.HardenedImageMonitoring, err = toMonitoringType(hardenedVal)
-		if err != nil {
-			return fmt.Errorf("invalid monitoring type for hardened image: %v", err)
-		}
 	} else {
-		launchPolicy.HardenedImageMonitoring = None
-	}
-
-	if debugOk {
-		launchPolicy.DebugImageMonitoring, err = toMonitoringType(debugVal)
-		if err != nil {
-			return fmt.Errorf("invalid monitoring type for debug image: %v", err)
+		if hardenedOk {
+			launchPolicy.HardenedImageMonitoring, err = toMonitoringType(hardenedVal)
+			if err != nil {
+				return fmt.Errorf("invalid monitoring type for hardened image: %v", err)
+			}
+		} else {
+			launchPolicy.HardenedImageMonitoring = None
 		}
-	} else {
-		launchPolicy.DebugImageMonitoring = MemoryOnly
+
+		if debugOk {
+			launchPolicy.DebugImageMonitoring, err = toMonitoringType(debugVal)
+			if err != nil {
+				return fmt.Errorf("invalid monitoring type for debug image: %v", err)
+			}
+		} else {
+			launchPolicy.DebugImageMonitoring = MemoryOnly
+		}
 	}
 
 	return nil
@@ -218,7 +231,7 @@ func verifyMonitoringConfig(policy MonitoringType, spec MonitoringType) error {
 	case None:
 		// If policy is 'None', spec must also be 'None'.
 		if spec != None {
-			return fmt.Errorf("spec configured for %v but policy is none", spec)
+			return fmt.Errorf("spec configured for %v but policy is none", toString(spec))
 		}
 	}
 

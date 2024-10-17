@@ -29,6 +29,7 @@ import (
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/launcher/agent"
+	"github.com/google/go-tpm-tools/launcher/internal/healthmonitoring/nodeproblemdetector"
 	"github.com/google/go-tpm-tools/launcher/internal/signaturediscovery"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/registryauth"
@@ -120,6 +121,26 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	}
 	if err := launchPolicy.Verify(launchSpec); err != nil {
 		return nil, err
+	}
+
+	if launchSpec.MonitoringEnabled != spec.None {
+		logger.Printf("Health Monitoring is enabled by the VM operator")
+
+		if launchSpec.MonitoringEnabled == spec.All {
+			logger.Printf("All health monitoring metrics enabled")
+			if err := nodeproblemdetector.EnableAllConfig(); err != nil {
+				logger.Printf("Failed to enable full monitoring config: %v", err)
+				return nil, err
+			}
+		} else if launchSpec.MonitoringEnabled == spec.MemoryOnly {
+			logger.Printf("memory/bytes_used enabled")
+		}
+
+		if err := nodeproblemdetector.StartService(logger); err != nil {
+			logger.Print(err)
+		}
+	} else {
+		logger.Printf("Health Monitoring is disabled")
 	}
 
 	logger.Printf("Launch Policy              : %+v\n", launchPolicy)
