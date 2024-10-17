@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"log"
+	"os"
 	"strings"
 
 	sabi "github.com/google/go-sev-guest/abi"
@@ -243,6 +244,19 @@ func convertRequestToREST(request verifier.VerifyAttestationRequest) *confidenti
 				CcelData:          request.TDCCELAttestation.CcelData,
 				CanonicalEventLog: request.TDCCELAttestation.CanonicalEventLog,
 			},
+		}
+
+		if err := os.WriteFile("/tmp/container_launcher/tdquote", request.TDCCELAttestation.TdQuote, 0644); err != nil {
+			log.Printf("failed to write tdquote to file: %v", err)
+		}
+		if err := os.WriteFile("/tmp/container_launcher/acpitable", request.TDCCELAttestation.CcelAcpiTable, 0644); err != nil {
+			log.Printf("failed to write tdquote to file: %v", err)
+		}
+		if err := os.WriteFile("/tmp/container_launcher/cceldata", request.TDCCELAttestation.CcelData, 0644); err != nil {
+			log.Printf("failed to write tdquote to file: %v", err)
+		}
+		if err := os.WriteFile("/tmp/container_launcher/cel", request.TDCCELAttestation.CanonicalEventLog, 0644); err != nil {
+			log.Printf("failed to write tdquote to file: %v", err)
 		}
 	}
 
