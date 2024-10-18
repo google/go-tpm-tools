@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"cloud.google.com/go/compute/metadata"
-	"cloud.google.com/go/logging"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/cio"
@@ -240,24 +239,24 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 
 func enableMonitoring(enabled spec.MonitoringType, logger logging.Logger) error {
 	if enabled != spec.None {
-		logger.Printf("Health Monitoring is enabled by the VM operator")
+		logger.Info("Health Monitoring is enabled by the VM operator")
 
 		if enabled == spec.All {
-			logger.Printf("All health monitoring metrics enabled")
+			logger.Info("All health monitoring metrics enabled")
 			if err := nodeproblemdetector.EnableAllConfig(); err != nil {
-				logger.Printf("Failed to enable full monitoring config: %v", err)
+				logger.Error("Failed to enable full monitoring config: %v", err)
 				return err
 			}
 		} else if enabled == spec.MemoryOnly {
-			logger.Printf("memory/bytes_used enabled")
+			logger.Info("memory/bytes_used enabled")
 		}
 
 		if err := nodeproblemdetector.StartService(logger); err != nil {
-			logger.Print(err)
+			logger.Error(err.Error())
 			return err
 		}
 	} else {
-		logger.Printf("Health Monitoring is disabled")
+		logger.Info("Health Monitoring is disabled")
 	}
 
 	return nil
