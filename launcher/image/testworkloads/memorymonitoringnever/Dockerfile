@@ -7,8 +7,8 @@ COPY main /
 
 ENV env_bar="val_bar"
 
-LABEL "tee.launch_policy.hardened_monitoring"="NONE"
-LABEL "tee.launch_policy.debug_monitoring"="NONE"
+LABEL "tee.launch_policy.monitoring_memory_allow"="never"
+
 ENTRYPOINT ["/main"]
 
 CMD ["arg_foo"]

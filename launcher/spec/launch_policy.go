@@ -40,6 +40,19 @@ const (
 	All
 )
 
+func (mt MonitoringType) String() string {
+	switch mt {
+	case None:
+		return "none"
+	case MemoryOnly:
+		return "memoryOnly"
+	case All:
+		return "all"
+	}
+
+	return ""
+}
+
 func toMonitoringType(s string) (MonitoringType, error) {
 	switch strings.ToLower(s) {
 	case "none":
