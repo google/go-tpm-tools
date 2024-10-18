@@ -29,6 +29,7 @@ import (
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/launcher/agent"
+	"github.com/google/go-tpm-tools/launcher/internal/healthmonitoring/nodeproblemdetector"
 	"github.com/google/go-tpm-tools/launcher/internal/signaturediscovery"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/registryauth"
@@ -119,6 +120,10 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		return nil, err
 	}
 	if err := launchPolicy.Verify(launchSpec); err != nil {
+		return nil, err
+	}
+
+	if err := enableMonitoring(launchSpec.MonitoringEnabled, logger); err != nil {
 		return nil, err
 	}
 
@@ -225,6 +230,31 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		logger,
 		serialConsole,
 	}, nil
+}
+
+func enableMonitoring(enabled spec.MonitoringType, logger *log.Logger) error {
+	if enabled != spec.None {
+		logger.Printf("Health Monitoring is enabled by the VM operator")
+
+		if enabled == spec.All {
+			logger.Printf("All health monitoring metrics enabled")
+			if err := nodeproblemdetector.EnableAllConfig(); err != nil {
+				logger.Printf("Failed to enable full monitoring config: %v", err)
+				return err
+			}
+		} else if enabled == spec.MemoryOnly {
+			logger.Printf("memory/bytes_used enabled")
+		}
+
+		if err := nodeproblemdetector.StartService(logger); err != nil {
+			logger.Print(err)
+			return err
+		}
+	} else {
+		logger.Printf("Health Monitoring is disabled")
+	}
+
+	return nil
 }
 
 func getSignatureDiscoveryClient(cdClient *containerd.Client, mdsClient *metadata.Client, imageDesc v1.Descriptor) signaturediscovery.Fetcher {
