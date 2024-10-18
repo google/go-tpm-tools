@@ -40,7 +40,7 @@ const (
 	All
 )
 
-func toString(mt MonitoringType) string {
+func (mt MonitoringType) String() string {
 	switch mt {
 	case None:
 		return "none"
@@ -231,7 +231,7 @@ func verifyMonitoringConfig(policy MonitoringType, spec MonitoringType) error {
 	case None:
 		// If policy is 'None', spec must also be 'None'.
 		if spec != None {
-			return fmt.Errorf("spec configured for %v but policy is none", toString(spec))
+			return fmt.Errorf("spec configured for %v but policy is none", spec)
 		}
 	}
 

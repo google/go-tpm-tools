@@ -123,24 +123,8 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		return nil, err
 	}
 
-	if launchSpec.MonitoringEnabled != spec.None {
-		logger.Printf("Health Monitoring is enabled by the VM operator")
-
-		if launchSpec.MonitoringEnabled == spec.All {
-			logger.Printf("All health monitoring metrics enabled")
-			if err := nodeproblemdetector.EnableAllConfig(); err != nil {
-				logger.Printf("Failed to enable full monitoring config: %v", err)
-				return nil, err
-			}
-		} else if launchSpec.MonitoringEnabled == spec.MemoryOnly {
-			logger.Printf("memory/bytes_used enabled")
-		}
-
-		if err := nodeproblemdetector.StartService(logger); err != nil {
-			logger.Print(err)
-		}
-	} else {
-		logger.Printf("Health Monitoring is disabled")
+	if err := enableMonitoring(launchSpec.MonitoringEnabled, logger); err != nil {
+		return nil, err
 	}
 
 	logger.Printf("Launch Policy              : %+v\n", launchPolicy)
@@ -246,6 +230,31 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		logger,
 		serialConsole,
 	}, nil
+}
+
+func enableMonitoring(enabled spec.MonitoringType, logger *log.Logger) error {
+	if enabled != spec.None {
+		logger.Printf("Health Monitoring is enabled by the VM operator")
+
+		if enabled == spec.All {
+			logger.Printf("All health monitoring metrics enabled")
+			if err := nodeproblemdetector.EnableAllConfig(); err != nil {
+				logger.Printf("Failed to enable full monitoring config: %v", err)
+				return err
+			}
+		} else if enabled == spec.MemoryOnly {
+			logger.Printf("memory/bytes_used enabled")
+		}
+
+		if err := nodeproblemdetector.StartService(logger); err != nil {
+			logger.Print(err)
+			return err
+		}
+	} else {
+		logger.Printf("Health Monitoring is disabled")
+	}
+
+	return nil
 }
 
 func getSignatureDiscoveryClient(cdClient *containerd.Client, mdsClient *metadata.Client, imageDesc v1.Descriptor) signaturediscovery.Fetcher {
