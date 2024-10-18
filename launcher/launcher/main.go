@@ -212,8 +212,6 @@ func startLauncher(launchSpec spec.LaunchSpec, serialConsole *os.File) error {
 	}
 	defer r.Close(ctx)
 
-	// Start tracking time for workload execution.
-	start = time.Now()
 	return r.Run(ctx)
 }
 

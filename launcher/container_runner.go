@@ -532,6 +532,9 @@ func defaultRetryPolicy() *backoff.ExponentialBackOff {
 // Run the container
 // Container output will always be redirected to logger writer for now
 func (r *ContainerRunner) Run(ctx context.Context) error {
+	// Note start time for workload setup.
+	start := time.Now()
+
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -576,6 +579,11 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		return fmt.Errorf("unknown logging redirect location: %v", r.launchSpec.LogRedirect)
 	}
 
+	setupDuration := time.Since(start)
+	r.logger.Info("Workload setup completed",
+		"setup_sec", setupDuration.Seconds(),
+	)
+
 	task, err := r.container.NewTask(ctx, cio.NewCreator(streamOpt))
 	if err != nil {
 		return &RetryableError{err}
@@ -586,12 +594,15 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	if err != nil {
 		r.logger.Error(err.Error())
 	}
+	// Start timer for workload execution.
+	start = time.Now()
 	r.logger.Info("workload task started")
 
 	if err := task.Start(ctx); err != nil {
 		return &RetryableError{err}
 	}
 	status := <-exitStatusC
+	workloadDuration := time.Since(start)
 
 	code, _, err := status.Result()
 	if err != nil {
@@ -599,10 +610,14 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	}
 
 	if code != 0 {
-		r.logger.Error("workload task ended and returned non-zero")
+		r.logger.Error("workload task ended and returned non-zero",
+			"workload_execution_sec", workloadDuration.Seconds(),
+		)
 		return &WorkloadError{code}
 	}
-	r.logger.Info("workload task ended and returned 0")
+	r.logger.Info("workload task ended and returned 0",
+		"workload_execution_sec", workloadDuration.Seconds(),
+	)
 	return nil
 }
 
