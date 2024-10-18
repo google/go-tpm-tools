@@ -6,7 +6,6 @@ import (
 	"crypto/rsa"
 	"encoding/base64"
 	"fmt"
-	"log"
 	"math"
 	"runtime"
 	"sync"
@@ -19,6 +18,7 @@ import (
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal/test"
+	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/internal/signaturediscovery"
 	"github.com/google/go-tpm-tools/launcher/spec"
 	attestpb "github.com/google/go-tpm-tools/proto/attest"
@@ -59,7 +59,7 @@ func TestAttestRacing(t *testing.T) {
 	}
 
 	verifierClient := fake.NewClient(fakeSigner)
-	agent, err := CreateAttestationAgent(tpm, client.AttestationKeyECC, verifierClient, placeholderPrincipalFetcher, signaturediscovery.NewFakeClient(), spec.LaunchSpec{}, log.Default())
+	agent, err := CreateAttestationAgent(tpm, client.AttestationKeyECC, verifierClient, placeholderPrincipalFetcher, signaturediscovery.NewFakeClient(), spec.LaunchSpec{}, logging.SimpleLogger())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,9 +111,9 @@ func TestAttest(t *testing.T) {
 
 			verifierClient := fake.NewClient(fakeSigner)
 
-			agent, err := CreateAttestationAgent(tpm, client.AttestationKeyECC, verifierClient, tc.principalIDTokenFetcher, tc.containerSignaturesFetcher, tc.launchSpec, log.Default())
+			agent, err := CreateAttestationAgent(tpm, client.AttestationKeyECC, verifierClient, tc.principalIDTokenFetcher, tc.containerSignaturesFetcher, tc.launchSpec, logging.SimpleLogger())
 			if err != nil {
-				t.Fatalf("falied to create an attestation agent %v", err)
+				t.Fatalf("failed to create an attestation agent %v", err)
 			}
 			err = measureFakeEvents(agent)
 			if err != nil {
@@ -291,7 +291,7 @@ func TestFetchContainerImageSignatures(t *testing.T) {
 			}
 
 			sdClient := signaturediscovery.NewFakeClient()
-			gotSigs := fetchContainerImageSignatures(ctx, sdClient, tc.targetRepos, testRetryPolicy, log.Default())
+			gotSigs := fetchContainerImageSignatures(ctx, sdClient, tc.targetRepos, testRetryPolicy, logging.SimpleLogger())
 			if len(gotSigs) != len(tc.wantBase64Sigs) {
 				t.Errorf("fetchContainerImageSignatures did not return expected signatures for test case %s, got signatures length %d, but want %d", tc.name, len(gotSigs), len(tc.wantBase64Sigs))
 			}
@@ -498,7 +498,7 @@ func TestFetchContainerImageSignatures_RetriesOnFailure(t *testing.T) {
 				}
 			}
 
-			gotSigs := fetchContainerImageSignatures(ctx, sdClient, repos, retryPolicy, log.Default())
+			gotSigs := fetchContainerImageSignatures(ctx, sdClient, repos, retryPolicy, logging.SimpleLogger())
 
 			if len(gotSigs) != len(wantSigs) {
 				t.Errorf("fetchContainerImageSignatures did not return expected signatures for test case %s, got signatures length %d, but want %d", tc.name, len(gotSigs), len(wantSigs))
@@ -591,7 +591,7 @@ func TestWithAgent(t *testing.T) {
 	tpm := test.GetTPM(t)
 	defer client.CheckedClose(t, tpm)
 
-	agent, err := CreateAttestationAgent(tpm, client.AttestationKeyECC, vClient, testPrincipalIDTokenFetcher, signaturediscovery.NewFakeClient(), spec.LaunchSpec{}, log.Default())
+	agent, err := CreateAttestationAgent(tpm, client.AttestationKeyECC, vClient, testPrincipalIDTokenFetcher, signaturediscovery.NewFakeClient(), spec.LaunchSpec{}, logging.SimpleLogger())
 	if err != nil {
 		t.Fatalf("failed to create an attestation agent %v", err)
 	}
