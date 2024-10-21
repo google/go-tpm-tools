@@ -41,7 +41,7 @@ steps:
   args: ['create_vm.sh','-i', '${_IMAGE_NAME}',
           '-p', '${_IMAGE_PROJECT}',
           '-m', 'tee-image-reference=${_WORKLOAD_IMAGE},tee-monitoring-enable=memoryonly',
-          '-n', '${_VM_NAME_PREFIX}-enable-${BUILD_ID}',
+          '-n', '${_VM_NAME_PREFIX}-memoryonly-${BUILD_ID}',
           '-z', '${_ZONE}',
         ]
   waitFor: ['-']  # The '-' indicates that this step begins immediately.
@@ -56,7 +56,7 @@ steps:
   entrypoint: 'bash'
   env:
   - 'CLEANUP=$_CLEANUP'
-  args: ['cleanup.sh', '${_VM_NAME_PREFIX}-enable-${BUILD_ID}', '${_ZONE}']
+  args: ['cleanup.sh', '${_VM_NAME_PREFIX}-memoryonly-${BUILD_ID}', '${_ZONE}']
   waitFor: ['CheckMemoryOnlyMonitoringEnabled']
 
 - name: 'gcr.io/cloud-builders/gcloud'
