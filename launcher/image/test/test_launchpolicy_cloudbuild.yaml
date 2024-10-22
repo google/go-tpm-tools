@@ -12,7 +12,11 @@ substitutions:
   '_WORKLOAD_IMAGE_CMD': 'us-west1-docker.pkg.dev/confidential-space-images-dev/cs-integ-test-images/launchpolicycmd:latest'
   '_WORKLOAD_IMAGE_MEMORY_MONITOR_NEVER': 'us-west1-docker.pkg.dev/confidential-space-images-dev/cs-integ-test-images/memorymonitoringnever:latest'
   '_WORKLOAD_IMAGE_MEMORY_MONITOR_DEBUG': 'us-west1-docker.pkg.dev/confidential-space-images-dev/cs-integ-test-images/memorymonitoringdebug:latest'
+  '_WORKLOAD_IMAGE_HEALTH_MONITOR_NEVER': 'us-west1-docker.pkg.dev/confidential-space-images-dev/cs-integ-test-images/allmonitoringnever:latest'
+  '_WORKLOAD_IMAGE_HEALTH_MONITOR_DEBUG': 'us-west1-docker.pkg.dev/confidential-space-images-dev/cs-integ-test-images/allmonitoringdebug:latest'
+  '_WORKLOAD_IMAGE_HEALTH_MONITOR_MEMORY': 'us-west1-docker.pkg.dev/confidential-space-images-dev/cs-integ-test-images/allmonitoringmemory:latest'
   '_MEMORY_MONITOR_VM_NAME_PREFIX': 'memory-monitor'
+  '_HEALTH_MONITOR_VM_NAME_PREFIX': 'health-monitor'
 steps:
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CreateVMLogOverride
@@ -193,6 +197,81 @@ steps:
   - 'CLEANUP=$_CLEANUP'
   args: ['cleanup.sh', '${_MEMORY_MONITOR_VM_NAME_PREFIX}-never-${BUILD_ID}', '${_ZONE}']
   waitFor: ['MemoryMonitorNeverTest']
+
+  - name: 'gcr.io/cloud-builders/gcloud'
+  id: CreateVMHealthMonitorDebugOnly
+  entrypoint: 'bash'
+  env:
+  - 'BUILD_ID=$BUILD_ID'
+  args: ['create_vm.sh','-i', '${_HARDENED_IMAGE_NAME}',
+          '-p', '${_IMAGE_PROJECT}',
+          '-m', 'tee-image-reference=${_WORKLOAD_IMAGE_HEALTH_MONITOR_DEBUG},tee-monitoring-enable=all',
+          '-n', '${_HEALTH_MONITOR_VM_NAME_PREFIX}-debugonly-${BUILD_ID}',
+          '-z', '${_ZONE}',
+        ]
+  waitFor: ['-']  # The '-' indicates that this step begins immediately.
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: HealthMonitorDebugOnlyTest
+  entrypoint: 'bash'
+  args: ['scripts/test_launchpolicy_health_monitoring.sh', '${_HEALTH_MONITOR_VM_NAME_PREFIX}-debugonly-${BUILD_ID}', '${_ZONE}', '\'none\' monitoring allowed on hardened environment.*\'all\' monitoring allowed on debug environment']
+  waitFor: ['CreateVMHealthMonitorDebugOnly']
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CleanUpHealthMonitorDebugOnly
+  entrypoint: 'bash'
+  env:
+  - 'CLEANUP=$_CLEANUP'
+  args: ['cleanup.sh', '${_HEALTH_MONITOR_VM_NAME_PREFIX}-debugonly-${BUILD_ID}', '${_ZONE}']
+  waitFor: ['HealthMonitorDebugOnlyTest']
+
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CreateVMHealthMonitorNever
+  entrypoint: 'bash'
+  env:
+  - 'BUILD_ID=$BUILD_ID'
+  args: ['create_vm.sh','-i', '${_HARDENED_IMAGE_NAME}',
+          '-p', '${_IMAGE_PROJECT}',
+          '-m', 'tee-image-reference=${_WORKLOAD_IMAGE_HEALTH_MONITOR_NEVER},tee-monitoring-enable=all',
+          '-n', '${_HEALTH_MONITOR_VM_NAME_PREFIX}-never-${BUILD_ID}',
+          '-z', '${_ZONE}',
+        ]
+  waitFor: ['-']  # The '-' indicates that this step begins immediately.
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: HealthMonitorNeverTest
+  entrypoint: 'bash'
+  args: ['scripts/test_launchpolicy_health_monitoring.sh', '${_HEALTH_MONITOR_VM_NAME_PREFIX}-never-${BUILD_ID}', '${_ZONE}', '\'none\' monitoring allowed on hardened environment.*\'none\' monitoring allowed on debug environment']
+  waitFor: ['CreateVMHealthMonitorNever']
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CleanUpHealthMonitorNever
+  entrypoint: 'bash'
+  env:
+  - 'CLEANUP=$_CLEANUP'
+  args: ['cleanup.sh', '${_HEALTH_MONITOR_VM_NAME_PREFIX}-never-${BUILD_ID}', '${_ZONE}']
+  waitFor: ['HealthMonitorNeverTest']
+
+  - name: 'gcr.io/cloud-builders/gcloud'
+  id: CreateVMHealthMonitorMemory
+  entrypoint: 'bash'
+  env:
+  - 'BUILD_ID=$BUILD_ID'
+  args: ['create_vm.sh','-i', '${_HARDENED_IMAGE_NAME}',
+          '-p', '${_IMAGE_PROJECT}',
+          '-m', 'tee-image-reference=${_WORKLOAD_IMAGE_HEALTH_MONITOR_MEMORY},tee-monitoring-enable=all',
+          '-n', '${_HEALTH_MONITOR_VM_NAME_PREFIX}-mem-${BUILD_ID}',
+          '-z', '${_ZONE}',
+        ]
+  waitFor: ['-']  # The '-' indicates that this step begins immediately.
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: HealthMonitorMemoryTest
+  entrypoint: 'bash'
+  args: ['scripts/test_launchpolicy_health_monitoring.sh', '${_HEALTH_MONITOR_VM_NAME_PREFIX}-mem-${BUILD_ID}', '${_ZONE}', '\'memoryonly\' monitoring allowed on hardened environment.*\'memoryonly\' monitoring allowed on debug environment']
+  waitFor: ['CreateVMHealthMonitorMemory']
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CleanUpHealthMonitorMemory
+  entrypoint: 'bash'
+  env:
+  - 'CLEANUP=$_CLEANUP'
+  args: ['cleanup.sh', '${_HEALTH_MONITOR_VM_NAME_PREFIX}-mem-${BUILD_ID}', '${_ZONE}']
+  waitFor: ['HealthMonitorMemoryTest']
 
 # Must come after cleanup.
 - name: 'gcr.io/cloud-builders/gcloud'
