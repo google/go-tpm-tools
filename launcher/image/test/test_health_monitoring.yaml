@@ -41,7 +41,7 @@ steps:
   args: ['create_vm.sh','-i', '${_IMAGE_NAME}',
           '-p', '${_IMAGE_PROJECT}',
           '-m', 'tee-image-reference=${_WORKLOAD_IMAGE},tee-monitoring-enable=memoryonly',
-          '-n', '${_VM_NAME_PREFIX}-memoryonly-${BUILD_ID}',
+          '-n', '${_VM_NAME_PREFIX}-mem-${BUILD_ID}',
           '-z', '${_ZONE}',
         ]
   waitFor: ['-']  # The '-' indicates that this step begins immediately.
@@ -49,14 +49,14 @@ steps:
   id: CheckMemoryOnlyMonitoringEnabled
   entrypoint: 'bash'
   # Search a regex pattern that ensures all monitoring is enabled and measured into COS event logs.
-  args: ['scripts/test_memory_monitoring.sh', '${_VM_NAME_PREFIX}-memoryonly-${BUILD_ID}', '${_ZONE}', 'Health Monitoring is enabled by the VM operator.*memory/bytes_used enabled']
+  args: ['scripts/test_memory_monitoring.sh', '${_VM_NAME_PREFIX}-mem-${BUILD_ID}', '${_ZONE}', 'Health Monitoring is enabled by the VM operator.*memory/bytes_used enabled']
   waitFor: ['CreateVMMemoryOnlyMonitoringEnabled']
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CleanUpVMMemoryOnlyMonitoringEnabled
   entrypoint: 'bash'
   env:
   - 'CLEANUP=$_CLEANUP'
-  args: ['cleanup.sh', '${_VM_NAME_PREFIX}-memoryonly-${BUILD_ID}', '${_ZONE}']
+  args: ['cleanup.sh', '${_VM_NAME_PREFIX}-mem-${BUILD_ID}', '${_ZONE}']
   waitFor: ['CheckMemoryOnlyMonitoringEnabled']
 
 - name: 'gcr.io/cloud-builders/gcloud'
