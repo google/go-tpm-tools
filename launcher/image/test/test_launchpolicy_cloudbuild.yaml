@@ -213,7 +213,7 @@ steps:
 - name: 'gcr.io/cloud-builders/gcloud'
   id: HealthMonitorDebugOnlyTest
   entrypoint: 'bash'
-  args: ['scripts/test_launchpolicy_health_monitoring.sh', '${_HEALTH_MONITOR_VM_NAME_PREFIX}-debugonly-${BUILD_ID}', '${_ZONE}', '\'none\' monitoring allowed on hardened environment.*\'all\' monitoring allowed on debug environment']
+  args: ['scripts/test_launchpolicy_health_monitoring.sh', '${_HEALTH_MONITOR_VM_NAME_PREFIX}-debugonly-${BUILD_ID}', '${_ZONE}', "'none' monitoring allowed on hardened environment.*'all' monitoring allowed on debug environment"]
   waitFor: ['CreateVMHealthMonitorDebugOnly']
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CleanUpHealthMonitorDebugOnly
@@ -238,7 +238,7 @@ steps:
 - name: 'gcr.io/cloud-builders/gcloud'
   id: HealthMonitorNeverTest
   entrypoint: 'bash'
-  args: ['scripts/test_launchpolicy_health_monitoring.sh', '${_HEALTH_MONITOR_VM_NAME_PREFIX}-never-${BUILD_ID}', '${_ZONE}', '\'none\' monitoring allowed on hardened environment.*\'none\' monitoring allowed on debug environment']
+  args: ['scripts/test_launchpolicy_health_monitoring.sh', '${_HEALTH_MONITOR_VM_NAME_PREFIX}-never-${BUILD_ID}', '${_ZONE}', "'none' monitoring allowed on hardened environment.*'none' monitoring allowed on debug environment"]
   waitFor: ['CreateVMHealthMonitorNever']
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CleanUpHealthMonitorNever
@@ -263,7 +263,7 @@ steps:
 - name: 'gcr.io/cloud-builders/gcloud'
   id: HealthMonitorMemoryTest
   entrypoint: 'bash'
-  args: ['scripts/test_launchpolicy_health_monitoring.sh', '${_HEALTH_MONITOR_VM_NAME_PREFIX}-mem-${BUILD_ID}', '${_ZONE}', '\'memoryonly\' monitoring allowed on hardened environment.*\'memoryonly\' monitoring allowed on debug environment']
+  args: ['scripts/test_launchpolicy_health_monitoring.sh', '${_HEALTH_MONITOR_VM_NAME_PREFIX}-mem-${BUILD_ID}', '${_ZONE}', "'memoryonly' monitoring allowed on hardened environment.*'memoryonly' monitoring allowed on debug environment"]
   waitFor: ['CreateVMHealthMonitorMemory']
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CleanUpHealthMonitorMemory
