@@ -579,16 +579,16 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		return fmt.Errorf("unknown logging redirect location: %v", r.launchSpec.LogRedirect)
 	}
 
-	setupDuration := time.Since(start)
-	r.logger.Info("Workload setup completed",
-		"setup_sec", setupDuration.Seconds(),
-	)
-
 	task, err := r.container.NewTask(ctx, cio.NewCreator(streamOpt))
 	if err != nil {
 		return &RetryableError{err}
 	}
 	defer task.Delete(ctx)
+
+	setupDuration := time.Since(start)
+	r.logger.Info("Workload setup completed",
+		"setup_sec", setupDuration.Seconds(),
+	)
 
 	exitStatusC, err := task.Wait(ctx)
 	if err != nil {

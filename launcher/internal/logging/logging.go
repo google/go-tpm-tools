@@ -174,11 +174,13 @@ func (l *logger) writeLog(severity clogging.Severity, msg string, args ...any) {
 	logEntry.Payload = pl
 
 	l.cloudLogger.Log(logEntry)
-	l.cloudLogger.Flush()
+	if err := l.cloudLogger.Flush(); err != nil {
+		l.serialLogger.Error(fmt.Sprintf("cloud.Logger.Flush returned error: %v", err))
+	}
 
 	// Write to serial console.
 	switch severity {
-	case clogging.Info, clogging.Notice:
+	case clogging.Info, clogging.Notice, clogging.Debug:
 		l.serialLogger.Info(msg, args...)
 	case clogging.Warning:
 		l.serialLogger.Warn(msg, args...)
