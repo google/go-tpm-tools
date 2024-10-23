@@ -198,7 +198,7 @@ steps:
   args: ['cleanup.sh', '${_MEMORY_MONITOR_VM_NAME_PREFIX}-never-${BUILD_ID}', '${_ZONE}']
   waitFor: ['MemoryMonitorNeverTest']
 
-  - name: 'gcr.io/cloud-builders/gcloud'
+- name: 'gcr.io/cloud-builders/gcloud'
   id: CreateVMHealthMonitorDebugOnly
   entrypoint: 'bash'
   env:
