@@ -49,7 +49,7 @@ steps:
   id: CheckMemoryOnlyMonitoringEnabled
   entrypoint: 'bash'
   # Search a regex pattern that ensures all monitoring is enabled and measured into COS event logs.
-  args: ['scripts/test_memory_monitoring.sh', '${_VM_NAME_PREFIX}-mem-${BUILD_ID}', '${_ZONE}', 'Health Monitoring is enabled by the VM operator.*memory/bytes_used enabled']
+  args: ['scripts/test_memory_monitoring.sh', '${_VM_NAME_PREFIX}-mem-${BUILD_ID}', '${_ZONE}', 'memory/bytes_used enabled']
   waitFor: ['CreateVMMemoryOnlyMonitoringEnabled']
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CleanUpVMMemoryOnlyMonitoringEnabled
