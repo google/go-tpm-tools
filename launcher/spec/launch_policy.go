@@ -159,7 +159,7 @@ func configureMonitoringPolicy(imageLabels map[string]string, launchPolicy *Laun
 		if err != nil {
 			return fmt.Errorf("invalid monitoring type for hardened image: %v", err)
 		}
-		logger.Printf("'%s' monitoring allowed on hardened environment", launchPolicy.HardenedImageMonitoring)
+		logger.Info(fmt.Sprintf("'%s' monitoring allowed on hardened environment", launchPolicy.HardenedImageMonitoring))
 	} else {
 		launchPolicy.HardenedImageMonitoring = None
 	}
@@ -169,7 +169,7 @@ func configureMonitoringPolicy(imageLabels map[string]string, launchPolicy *Laun
 		if err != nil {
 			return fmt.Errorf("invalid monitoring type for debug image: %v", err)
 		}
-		logger.Printf("'%s' monitoring allowed on debug environment", launchPolicy.DebugImageMonitoring)
+		logger.Info(fmt.Sprintf("'%s' monitoring allowed on debug environment", launchPolicy.DebugImageMonitoring))
 	} else {
 		launchPolicy.DebugImageMonitoring = MemoryOnly
 	}

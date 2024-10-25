@@ -12,7 +12,7 @@ substitutions:
   '_WORKLOAD_IMAGE_CMD': 'us-west1-docker.pkg.dev/confidential-space-images-dev/cs-integ-test-images/launchpolicycmd:latest'
   '_WORKLOAD_IMAGE_MEMORY_MONITOR_NEVER': 'us-west1-docker.pkg.dev/confidential-space-images-dev/cs-integ-test-images/memorymonitoringnever:latest'
   '_WORKLOAD_IMAGE_MEMORY_MONITOR_DEBUG': 'us-west1-docker.pkg.dev/confidential-space-images-dev/cs-integ-test-images/memorymonitoringdebug:latest'
-  '_WORKLOAD_IMAGE_HEALTH_MONITOR_NEVER': 'us-west1-docker.pkg.dev/confidential-space-images-dev/cs-integ-test-images/allmonitoringnever:latest'
+  '_WORKLOAD_IMAGE_HEALTH_MONITOR_NEVER': 'us-west1-docker.pkg.dev/confidential-space-images-dev/cs-integ-test-images/allmonitoringnone:latest'
   '_WORKLOAD_IMAGE_HEALTH_MONITOR_DEBUG': 'us-west1-docker.pkg.dev/confidential-space-images-dev/cs-integ-test-images/allmonitoringdebug:latest'
   '_WORKLOAD_IMAGE_HEALTH_MONITOR_MEMORY': 'us-west1-docker.pkg.dev/confidential-space-images-dev/cs-integ-test-images/allmonitoringmemory:latest'
   '_MEMORY_MONITOR_VM_NAME_PREFIX': 'memory-monitor'
