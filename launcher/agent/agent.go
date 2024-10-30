@@ -46,6 +46,7 @@ type principalIDTokenFetcher func(audience string) ([][]byte, error)
 type AttestationAgent interface {
 	MeasureEvent(cel.Content) error
 	Attest(context.Context, AttestAgentOpts) ([]byte, error)
+	AttestationEvidence([]byte, string) (*evidence, error)
 	Refresh(context.Context) error
 	Close() error
 }
@@ -157,16 +158,18 @@ func (a *agent) MeasureEvent(event cel.Content) error {
 	return nil
 }
 
-// Attest fetches the nonce and connection ID from the Attestation Service,
-// creates an attestation message, and returns the resultant
-// principalIDTokens and Metadata Server-generated ID tokens for the instance.
-func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error) {
-	challenge, err := a.client.CreateChallenge(ctx)
-	if err != nil {
-		return nil, err
-	}
+type evidence struct {
+	TPMAttestation      *pb.Attestation
+	TDXAttestation      *verifier.TDCCELAttestation
+	PrincipalTokens     [][]byte
+	ContainerSignatures []oci.Signature
+}
 
-	principalTokens, err := a.principalFetcher(challenge.Name)
+func (a *agent) AttestationEvidence(nonce []byte, principalAud string) (*evidence, error) {
+	attEvidence := &evidence{}
+
+	var err error
+	attEvidence.PrincipalTokens, err = a.principalFetcher(principalAud)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get principal tokens: %w", err)
 	}
@@ -225,7 +228,7 @@ func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error
 		a.logger.Println("attestation through TPM quote")
 
 		v.CanonicalEventLog = cosCel.Bytes()
-		req.Attestation = v
+		attEvidence.TPMAttestation = v
 	case *verifier.TDCCELAttestation:
 		a.logger.Println("attestation through TDX quote")
 
@@ -237,7 +240,7 @@ func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error
 		v.CanonicalEventLog = cosCel.Bytes()
 		v.IntermediateCerts = certChain
 		v.AkCert = a.fetchedAK.CertDERBytes()
-		req.TDCCELAttestation = v
+		attEvidence.TDXAttestation = v
 	default:
 		return nil, fmt.Errorf("received an unsupported attestation type! %v", v)
 	}
@@ -246,6 +249,36 @@ func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error
 	if len(signatures) > 0 {
 		req.ContainerImageSignatures = signatures
 		a.logger.Info("Found container image signatures: %v\n", signatures)
+	}
+
+	return attEvidence, nil
+}
+
+// Attest fetches the nonce and connection ID from the Attestation Service,
+// creates an attestation message, and returns the resultant
+// principalIDTokens and Metadata Server-generated ID tokens for the instance.
+func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error) {
+	challenge, err := a.client.CreateChallenge(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	evidence, err := a.AttestationEvidence(challenge.Nonce, challenge.Name)
+	if err != nil {
+		return nil, err
+	}
+
+	req := verifier.VerifyAttestationRequest{
+		Challenge:                challenge,
+		GcpCredentials:           evidence.PrincipalTokens,
+		Attestation:              evidence.TPMAttestation,
+		TDCCELAttestation:        evidence.TDXAttestation,
+		ContainerImageSignatures: evidence.ContainerSignatures,
+		TokenOptions: verifier.TokenOptions{
+			CustomAudience: opts.Aud,
+			CustomNonce:    opts.Nonces,
+			TokenType:      opts.TokenType,
+		},
 	}
 
 	resp, err := a.client.VerifyAttestation(ctx, req)

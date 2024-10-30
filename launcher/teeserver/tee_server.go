@@ -15,6 +15,7 @@ import (
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/verifier/models"
+	"github.com/google/go-tpm-tools/verifier/oci"
 )
 
 type attestHandler struct {
@@ -62,6 +63,7 @@ func (a *attestHandler) Handler() http.Handler {
 	//   --unix-socket /tmp/container_launcher/teeserver.sock http://localhost/v1/token
 
 	mux.HandleFunc("/v1/token", a.getToken)
+	mux.HandleFunc("/v1/evidence", a.getEvidence)
 	return mux
 }
 
@@ -132,6 +134,114 @@ func (a *attestHandler) logAndWriteHTTPError(w http.ResponseWriter, statusCode i
 	a.logger.Error(err.Error())
 	w.WriteHeader(statusCode)
 	w.Write([]byte(err.Error()))
+}
+
+type evidenceRequest struct {
+	PrincipalAudience string `json:"gcp_credentials_aud"`
+	Nonce             []byte `json:"nonce"`
+}
+
+type confidentialSpaceInfo struct {
+	SignedEntities []oci.Signature `json:"signed_entities,omitempty"`
+	CosEventLog    []byte          `json:"cos_event_log,omitempty"`
+}
+
+type gcpEvidence struct {
+	GcpCredentials        [][]byte               `json:"gcp_credentials,omitempty"`
+	ConfidentialSpaceInfo *confidentialSpaceInfo `json:"confidential_space_info,omitempty"`
+	AkCert                []byte                 `json:"ak_cert,omitempty"`
+	IntermediateCerts     [][]byte               `json:"intermediate_certs,omitempty"`
+}
+
+type tdxEvidence struct {
+	EventLogTable []byte       `json:"ccel_table,omitempty"`
+	EventLogData  []byte       `json:"ccel_data,omitempty"`
+	TdxQuote      []byte       `json:"quote"`
+	GcpData       *gcpEvidence `json:"gcp_data,omitempty"`
+}
+
+func (a *attestHandler) getEvidence(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html")
+
+	switch r.Method {
+	case "GET":
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte("use POST request for evidence"))
+		return
+	case "POST":
+		var evidenceReq evidenceRequest
+		decoder := json.NewDecoder(r.Body)
+		decoder.DisallowUnknownFields()
+
+		err := decoder.Decode(&evidenceReq)
+		if err != nil {
+			a.logger.Print(err.Error())
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte(err.Error()))
+			return
+		}
+
+		if len(evidenceReq.Nonce) == 0 {
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte("nonce is a required parameter"))
+			return
+		}
+
+		if evidenceReq.PrincipalAudience == "" {
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte("gcp_credentials_aud is a required parameter"))
+			return
+		}
+
+		evidence, err := a.attestAgent.AttestationEvidence(evidenceReq.Nonce, evidenceReq.PrincipalAudience)
+		if err != nil {
+			a.logger.Print(err.Error())
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte(err.Error()))
+			return
+		}
+
+		// Check for TDX Attestation.
+		if evidence.TDXAttestation == nil {
+			err_msg := "getEvidence is only supported for TDX Attestation"
+			a.logger.Print(err_msg)
+			w.WriteHeader(http.StatusPreconditionFailed)
+			w.Write([]byte(err_msg))
+			return
+		}
+
+		tdxEvi := &tdxEvidence{
+			TdxQuote:      evidence.TDXAttestation.TdQuote,
+			EventLogTable: evidence.TDXAttestation.CcelAcpiTable,
+			EventLogData:  evidence.TDXAttestation.CcelData,
+			GcpData: &gcpEvidence{
+				GcpCredentials:    evidence.PrincipalTokens,
+				AkCert:            evidence.TDXAttestation.AkCert,
+				IntermediateCerts: evidence.TDXAttestation.IntermediateCerts,
+				ConfidentialSpaceInfo: &confidentialSpaceInfo{
+					SignedEntities: evidence.ContainerSignatures,
+					CosEventLog:    evidence.TDXAttestation.CanonicalEventLog,
+				},
+			},
+		}
+
+		jsonData, err := json.Marshal(tdxEvi)
+		if err != nil {
+			err_msg := "error marshalling response"
+			a.logger.Print(err_msg)
+			w.WriteHeader(http.StatusPreconditionFailed)
+			w.Write([]byte(err_msg))
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+		w.Write(jsonData)
+		return
+	}
+
+	w.WriteHeader(http.StatusBadRequest)
+	// TODO: add an url pointing to the REST API document
+	w.Write([]byte("TEE server received invalid request"))
 }
 
 // Serve starts the server, will block until the server shutdown.
