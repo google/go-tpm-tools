@@ -165,7 +165,7 @@ type tdxEvidence struct {
 }
 
 func (a *attestHandler) getEvidence(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/html")
+	w.Header().Set("Content-Type", "application/json")
 
 	switch r.Method {
 	case "GET":
