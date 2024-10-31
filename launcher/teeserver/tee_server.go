@@ -151,17 +151,17 @@ type confidentialSpaceInfo struct {
 }
 
 type gcpEvidence struct {
-	GcpCredentials        [][]byte               `json:"gcp_credentials,omitempty"`
-	ConfidentialSpaceInfo *confidentialSpaceInfo `json:"confidential_space_info,omitempty"`
-	AkCert                []byte                 `json:"ak_cert,omitempty"`
-	IntermediateCerts     [][]byte               `json:"intermediate_certs,omitempty"`
+	GcpCredentials        [][]byte              `json:"gcp_credentials,omitempty"`
+	ConfidentialSpaceInfo confidentialSpaceInfo `json:"confidential_space_info,omitempty"`
+	AkCert                []byte                `json:"ak_cert,omitempty"`
+	IntermediateCerts     [][]byte              `json:"intermediate_certs,omitempty"`
 }
 
 type tdxEvidence struct {
-	EventLogTable []byte       `json:"ccel_table,omitempty"`
-	EventLogData  []byte       `json:"ccel_data,omitempty"`
-	TdxQuote      []byte       `json:"quote"`
-	GcpData       *gcpEvidence `json:"gcp_data,omitempty"`
+	EventLogTable []byte      `json:"ccel_table,omitempty"`
+	EventLogData  []byte      `json:"ccel_data,omitempty"`
+	TdxQuote      []byte      `json:"quote"`
+	GcpData       gcpEvidence `json:"gcp_data,omitempty"`
 }
 
 func (a *attestHandler) getEvidence(w http.ResponseWriter, r *http.Request) {
@@ -218,11 +218,11 @@ func (a *attestHandler) getEvidence(w http.ResponseWriter, r *http.Request) {
 			TdxQuote:      evidence.TDXAttestation.TdQuote,
 			EventLogTable: evidence.TDXAttestation.CcelAcpiTable,
 			EventLogData:  evidence.TDXAttestation.CcelData,
-			GcpData: &gcpEvidence{
+			GcpData: gcpEvidence{
 				GcpCredentials:    evidence.PrincipalTokens,
 				AkCert:            evidence.TDXAttestation.AkCert,
 				IntermediateCerts: evidence.TDXAttestation.IntermediateCerts,
-				ConfidentialSpaceInfo: &confidentialSpaceInfo{
+				ConfidentialSpaceInfo: confidentialSpaceInfo{
 					SignedEntities: evidence.ContainerSignatures,
 					CosEventLog:    evidence.TDXAttestation.CanonicalEventLog,
 				},
