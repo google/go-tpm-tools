@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"crypto"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -24,10 +25,15 @@ import (
 	pb "github.com/google/go-tpm-tools/proto/attest"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/google/go-tpm-tools/verifier/oci"
+	"github.com/google/go-tpm-tools/verifier/rest"
 	"github.com/google/go-tpm-tools/verifier/util"
+	"go.uber.org/multierr"
 )
 
 var defaultCELHashAlgo = []crypto.Hash{crypto.SHA256, crypto.SHA1}
+
+// attestFunc is used for doAttest indirectly so that unit tests can stub it.
+var attestFunc = doAttest
 
 type principalIDTokenFetcher func(audience string) ([][]byte, error)
 
@@ -101,10 +107,44 @@ func (a *agent) MeasureEvent(event cel.Content) error {
 	return a.cosCel.AppendEvent(a.tpm, cel.CosEventPCR, defaultCELHashAlgo, event)
 }
 
-// Attest fetches the nonce and connection ID from the Attestation Service,
+// Attest is a thin wrapper of AttestWithRetries with defaultRetryPolicy.
+func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error) {
+	return a.AttestWithRetries(ctx, opts, defaultRetryPolicy)
+}
+
+// Attest executes doAttest with retries when 500 errors originate from VerifyAttestation API.
+func (a *agent) AttestWithRetries(ctx context.Context, opts AttestAgentOpts, retry func() backoff.BackOff) ([]byte, error) {
+	var token []byte
+	var err error
+
+	retryErr := backoff.Retry(
+		func() error {
+			var doErr error
+			token, doErr = attestFunc(ctx, a, opts)
+			var verifyErr *rest.VerifyAttestationError
+			// Retry for VerifyAttestation 500 errors.
+			if errors.As(doErr, &verifyErr) && verifyErr.StatusCode() == http.StatusInternalServerError {
+				return verifyErr
+			}
+
+			// Otherwise, save the error and exit the retry.
+			err = doErr
+			return nil
+		},
+		retry(),
+	)
+
+	if retryErr != nil || err != nil {
+		return nil, multierr.Append(retryErr, err)
+	}
+
+	return token, nil
+}
+
+// doAttest fetches the nonce and connection ID from the Attestation Service,
 // creates an attestation message, and returns the resultant
 // principalIDTokens and Metadata Server-generated ID tokens for the instance.
-func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error) {
+func doAttest(ctx context.Context, a *agent, opts AttestAgentOpts) ([]byte, error) {
 	challenge, err := a.client.CreateChallenge(ctx)
 	if err != nil {
 		return nil, err

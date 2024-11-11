@@ -32,14 +32,14 @@ var extends = map[tpm2.Algorithm][]struct {
 		{bytes.Repeat([]byte{0x02}, sha512.Size384)}},
 }
 
-func pcrExtend(alg tpm2.Algorithm, old, new []byte) ([]byte, error) {
+func pcrExtend(alg tpm2.Algorithm, old, newBytes []byte) ([]byte, error) {
 	hCon, err := alg.Hash()
 	if err != nil {
 		return nil, fmt.Errorf("not a valid hash type: %v", alg)
 	}
 	h := hCon.New()
 	h.Write(old)
-	h.Write(new)
+	h.Write(newBytes)
 	return h.Sum(nil), nil
 }
 

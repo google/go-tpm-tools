@@ -6,40 +6,58 @@ import (
 	"encoding/base64"
 	"fmt"
 	"log"
-	"strings"
+	"time"
 
+	"github.com/cenkalti/backoff/v4"
 	sabi "github.com/google/go-sev-guest/abi"
 	"github.com/google/go-sev-guest/proto/sevsnp"
 	tabi "github.com/google/go-tdx-guest/abi"
 	"github.com/google/go-tdx-guest/proto/tdx"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/google/go-tpm-tools/verifier/oci"
+	"github.com/googleapis/gax-go/v2"
 
 	v1 "cloud.google.com/go/confidentialcomputing/apiv1"
 	confidentialcomputingpb "cloud.google.com/go/confidentialcomputing/apiv1/confidentialcomputingpb"
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 	locationpb "google.golang.org/genproto/googleapis/cloud/location"
+	"google.golang.org/grpc/codes"
 )
 
-// BadRegionError indicates that:
-//   - the requested Region cannot be used with this API
-//   - other Regions _can_ be used with this API
-type BadRegionError struct {
-	RequestedRegion  string
-	AvailableRegions []string
-	err              error
+func confComputeBackoffPolicy() backoff.BackOff {
+	b := backoff.NewConstantBackOff(time.Millisecond * 500)
+	return backoff.WithMaxRetries(b, 3)
 }
 
-func (e *BadRegionError) Error() string {
-	return fmt.Sprintf(
-		"invalid region %q, available regions are [%s]: %v",
-		e.RequestedRegion, strings.Join(e.AvailableRegions, ", "), e.err,
-	)
-}
+/*
+confComputeCallOptions retries as follows for all confidential computing APIs:
 
-func (e *BadRegionError) Unwrap() error {
-	return e.err
+	Timeout = 1000 milliseconds
+	Initial interval = 500 milliseconds
+	Maximum interval = 1000 milliseconds
+	Maximum retries = 2
+*/
+func confComputeCallOptions() *v1.CallOptions {
+	callOption := []gax.CallOption{
+		gax.WithTimeout(1000 * time.Millisecond),
+		gax.WithRetry(func() gax.Retryer {
+			return gax.OnCodes([]codes.Code{
+				codes.Unavailable,
+				codes.Internal,
+			}, gax.Backoff{
+				Initial:    500 * time.Millisecond,
+				Max:        1000 * time.Millisecond,
+				Multiplier: 2.0,
+			})
+		}),
+	}
+	return &v1.CallOptions{
+		CreateChallenge:   callOption,
+		VerifyAttestation: callOption,
+		GetLocation:       callOption,
+		ListLocations:     callOption,
+	}
 }
 
 // NewClient creates a new REST client which is configured to perform
@@ -50,6 +68,9 @@ func NewClient(ctx context.Context, projectID string, region string, opts ...opt
 	if err != nil {
 		return nil, fmt.Errorf("can't create ConfidentialComputing v1 API client: %w", err)
 	}
+
+	// Override the default retry CallOptions with specific retry policies.
+	client.CallOptions = confComputeCallOptions()
 
 	projectName := fmt.Sprintf("projects/%s", projectID)
 	locationName := fmt.Sprintf("%s/locations/%v", projectName, region)
@@ -116,7 +137,10 @@ func (c *restClient) VerifyAttestation(ctx context.Context, request verifier.Ver
 	req.Challenge = request.Challenge.Name
 	response, err := c.v1Client.VerifyAttestation(ctx, req)
 	if err != nil {
-		return nil, fmt.Errorf("calling v1.VerifyAttestation in %v: %w", c.location.LocationId, err)
+		return nil, &VerifyAttestationError{
+			request: req,
+			err:     fmt.Errorf("calling v1.VerifyAttestation in %v: %w", c.location.LocationId, err),
+		}
 	}
 	return convertResponseFromREST(response)
 }
