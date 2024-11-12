@@ -7,7 +7,7 @@ replace github.com/google/go-tpm-tools v0.4.4 => ../
 require (
 	cloud.google.com/go/compute/metadata v0.5.0
 	cloud.google.com/go/confidentialcomputing v1.6.0
-	github.com/golang-jwt/jwt/v4 v4.5.0
+	github.com/golang-jwt/jwt/v4 v4.5.1
 	github.com/google/go-cmp v0.6.0
 	github.com/google/go-sev-guest v0.11.1
 	github.com/google/go-tdx-guest v0.3.2-0.20240902060211-1f7f7b9b42b9
