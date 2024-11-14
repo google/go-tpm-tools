@@ -147,7 +147,6 @@ type evidenceRequest struct {
 
 type confidentialSpaceInfo struct {
 	SignedEntities []oci.Signature `json:"signed_entities,omitempty"`
-	CosEventLog    []byte          `json:"cos_event_log,omitempty"`
 }
 
 type gcpEvidence struct {
@@ -157,11 +156,16 @@ type gcpEvidence struct {
 	IntermediateCerts     [][]byte              `json:"intermediate_certs,omitempty"`
 }
 
+type tdxAttestation struct {
+	CcelAcpiTable     []byte `json:"ccel_table,omitempty"`
+	CcelData          []byte `json:"ccel_data,omitempty"`
+	TdQuote           []byte `json:"quote"`
+	CanonicalEventLog []byte `json:"canonical_event_log,omitempty"`
+}
+
 type tdxEvidence struct {
-	EventLogTable []byte      `json:"ccel_table,omitempty"`
-	EventLogData  []byte      `json:"ccel_data,omitempty"`
-	TdxQuote      []byte      `json:"quote"`
-	GcpData       gcpEvidence `json:"gcp_data,omitempty"`
+	Attestation tdxAttestation `json:"attestation,omitempty"`
+	GcpData     gcpEvidence    `json:"gcp_data,omitempty"`
 }
 
 func (a *attestHandler) getEvidence(w http.ResponseWriter, r *http.Request) {
@@ -215,16 +219,18 @@ func (a *attestHandler) getEvidence(w http.ResponseWriter, r *http.Request) {
 		}
 
 		tdxEvi := &tdxEvidence{
-			TdxQuote:      evidence.TDXAttestation.TdQuote,
-			EventLogTable: evidence.TDXAttestation.CcelAcpiTable,
-			EventLogData:  evidence.TDXAttestation.CcelData,
+			Attestation: tdxAttestation{
+				TdQuote:           evidence.TDXAttestation.TdQuote,
+				CcelAcpiTable:     evidence.TDXAttestation.CcelAcpiTable,
+				CcelData:          evidence.TDXAttestation.CcelData,
+				CanonicalEventLog: evidence.TDXAttestation.CanonicalEventLog,
+			},
 			GcpData: gcpEvidence{
 				GcpCredentials:    evidence.PrincipalTokens,
 				AkCert:            evidence.TDXAttestation.AkCert,
 				IntermediateCerts: evidence.TDXAttestation.IntermediateCerts,
 				ConfidentialSpaceInfo: confidentialSpaceInfo{
 					SignedEntities: evidence.ContainerSignatures,
-					CosEventLog:    evidence.TDXAttestation.CanonicalEventLog,
 				},
 			},
 		}
