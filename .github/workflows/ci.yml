@@ -24,6 +24,7 @@ on:
       - main
   pull_request:
 
+
 jobs:
   build:
     strategy:
@@ -31,6 +32,11 @@ jobs:
         go-version: [1.21.x]
         # TODO: Get this working on windows-latest
         os: [ubuntu-latest]
+        # ci will build and run tests based on the following matrix
+        #             mac-os                linux                           windows
+        # x32         [no builds]           . ./cmd ./verifier ./launcher   [no builds]
+        # x64         . ./cmd ./verifier    . ./cmd ./verifier ./launcher   [no builds]
+        # arm64       . ./cmd ./verifier    [no builds]                     [no builds]
         architecture: [x32, x64]
         include:
           - os: macos-latest

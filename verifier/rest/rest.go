@@ -115,6 +115,8 @@ func (c *restClient) VerifyAttestation(ctx context.Context, request verifier.Ver
 
 	if request.Attestation == nil && request.TDCCELAttestation == nil {
 		return nil, fmt.Errorf("neither TPM nor TDX attestation is present")
+	} else if request.Attestation != nil && request.TDCCELAttestation != nil {
+		return nil, fmt.Errorf("both TPM and TDX attestation are present, only one should be present in the attestation request")
 	}
 
 	req := convertRequestToREST(request)
@@ -172,7 +174,6 @@ func convertRequestToREST(request verifier.VerifyAttestationRequest) *confidenti
 		GcpCredentials: &confidentialcomputingpb.GcpCredentials{
 			ServiceAccountIdTokens: idTokens,
 		},
-		TpmAttestation: nil,
 		ConfidentialSpaceInfo: &confidentialcomputingpb.ConfidentialSpaceInfo{
 			SignedEntities: []*confidentialcomputingpb.SignedEntity{{ContainerImageSignatures: signatures}},
 		},
