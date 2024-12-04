@@ -77,7 +77,11 @@ type agent struct {
 }
 
 // CreateAttestationAgent returns an agent capable of performing remote
-// attestation using the machine's (v)TPM to GCE's Attestation Service.
+// attestation using the machine's (v)TPM or TDX quote.
+//
+// For now, "tpm" and "akFetcher" is still needed even on a TDX quote,
+// because we need to extract GCE instance info from the TPM's AK.
+//
 // - tpm is a handle to the TPM on the instance
 // - akFetcher is a func to fetch an attestation key: see go-tpm-tools/client.
 // - principalFetcher is a func to fetch GCE principal tokens for a given audience.
@@ -100,17 +104,23 @@ func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher util.TpmKeyFetcher
 		sigsCache:        &sigsCache{},
 	}
 
-	// check if is a TDX machine
+	// check if this is running on a TDX machine
 	qp, err := tg.GetQuoteProvider()
 	if err != nil || qp.IsSupported() != nil {
-		logger.Info("Using TPM PCRs for measurement.")
+		if err != nil { // for now GetQuoteProvider always return a nil err, still adding just for safety
+			logger.Info(fmt.Sprintf("Cannot create the TDX quote provider (this is expected on a non-TDX machine): %v", err.Error()))
+		} else {
+			logger.Info(fmt.Sprintf("Cannot create the TDX quote provider (this is expected on a non-TDX machine): %v", qp.IsSupported().Error()))
+		}
+
+		logger.Info("Using TPM PCRs for measurement")
 		// by default using TPM
 		attestAgent.ar = &tpmAttestRoot{
 			fetchedAK: ak,
 			tpm:       tpm,
 		}
 	} else {
-		logger.Info("Using TDX RTMRs for measurement.")
+		logger.Info("Using TDX RTMRs for measurement (Public Preview)")
 		// try to create tsm client for tdx rtmr
 		tsm, err := linuxtsm.MakeClient()
 		if err != nil {
@@ -174,12 +184,12 @@ func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error
 
 	switch v := attResult.(type) {
 	case *pb.Attestation:
-		a.logger.Info("attestation through TPM quote")
+		a.logger.Info("Attest using TPM quote")
 
 		v.CanonicalEventLog = cosCel.Bytes()
 		req.Attestation = v
 	case *verifier.TDCCELAttestation:
-		a.logger.Info("attestation through TDX quote")
+		a.logger.Info("Attest using TDX quote (Public Preview)")
 
 		certChain, err := internal.GetCertificateChain(a.fetchedAK.Cert(), http.DefaultClient)
 		if err != nil {
