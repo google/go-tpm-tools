@@ -235,6 +235,8 @@ func (a *attestHandler) getEvidence(w http.ResponseWriter, r *http.Request) {
 			},
 		}
 
+		a.logger.Printf("%+v\n", tdxEvi)
+
 		jsonData, err := json.Marshal(tdxEvi)
 		if err != nil {
 			err_msg := "error marshalling response"
