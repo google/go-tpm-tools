@@ -4,6 +4,7 @@ package teeserver
 
 import (
 	"context"
+	"crypto/sha512"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -140,9 +141,14 @@ func (a *attestHandler) getToken(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("TEE server received invalid request"))
 }
 
+type itaNonce struct {
+	Val       []byte `json:"val"`
+	Iat       []byte `json:"iat"`
+	Signature []byte `json:"signature"`
+}
+
 type evidenceRequest struct {
-	PrincipalAudience string `json:"gcp_credentials_aud"`
-	Nonce             []byte `json:"nonce"`
+	Nonce itaNonce `json:"nonce"`
 }
 
 type confidentialSpaceInfo struct {
@@ -168,6 +174,26 @@ type tdxEvidence struct {
 	GcpData     gcpEvidence    `json:"gcp_data,omitempty"`
 }
 
+func processITANonce(input itaNonce) ([]byte, error) {
+	if len(input.Val) == 0 {
+		return nil, fmt.Errorf("no value in nonce")
+	}
+
+	if len(input.Iat) == 0 {
+		return nil, fmt.Errorf("no iat in nonce")
+	}
+
+	nonce := append(input.Val, input.Iat...)
+
+	hash := sha512.New()
+	_, err := hash.Write(nonce)
+	if err != nil {
+		return nil, err
+	}
+
+	return hash.Sum(nil), nil
+}
+
 func (a *attestHandler) getEvidence(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -189,19 +215,15 @@ func (a *attestHandler) getEvidence(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if len(evidenceReq.Nonce) == 0 {
+		nonce, err := processITANonce(evidenceReq.Nonce)
+		if err != nil {
+			a.logger.Print(err.Error())
 			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte("nonce is a required parameter"))
+			w.Write([]byte(err.Error()))
 			return
 		}
 
-		if evidenceReq.PrincipalAudience == "" {
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte("gcp_credentials_aud is a required parameter"))
-			return
-		}
-
-		evidence, err := a.attestAgent.AttestationEvidence(evidenceReq.Nonce, evidenceReq.PrincipalAudience)
+		evidence, err := a.attestAgent.AttestationEvidence(nonce, "ita://"+string(evidenceReq.Nonce.Val))
 		if err != nil {
 			a.logger.Print(err.Error())
 			w.WriteHeader(http.StatusBadRequest)
