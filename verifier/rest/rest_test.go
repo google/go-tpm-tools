@@ -11,7 +11,7 @@ import (
 	tpb "github.com/google/go-tdx-guest/proto/tdx"
 	tgtestdata "github.com/google/go-tdx-guest/testing/testdata"
 	"github.com/google/go-tpm-tools/verifier"
-	"github.com/pborman/uuid"
+	"github.com/google/uuid"
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/testing/protocmp"
 )
@@ -95,23 +95,41 @@ func testRawCertTable(t testing.TB) *testCertTable {
 	vcekraw := []byte("vcek")
 	vlekraw := []byte("vlek")
 	extraraw := []byte("extra")
-	headers[0].GUID = uuid.Parse(sabi.ArkGUID)
+
+	var err error
+	headers[0].GUID, err = uuid.Parse(sabi.ArkGUID)
+	if err != nil {
+		t.Fatalf("cannot parse uuid: %v", err)
+	}
 	headers[0].Offset = uint32(len(headers) * sabi.CertTableEntrySize)
 	headers[0].Length = uint32(len(arkraw))
 
-	headers[1].GUID = uuid.Parse(sabi.AskGUID)
+	headers[1].GUID, err = uuid.Parse(sabi.AskGUID)
+
+	if err != nil {
+		t.Fatalf("cannot parse uuid: %v", err)
+	}
 	headers[1].Offset = headers[0].Offset + headers[0].Length
 	headers[1].Length = uint32(len(askraw))
 
-	headers[2].GUID = uuid.Parse(sabi.VcekGUID)
+	headers[2].GUID, err = uuid.Parse(sabi.VcekGUID)
+	if err != nil {
+		t.Fatalf("cannot parse uuid: %v", err)
+	}
 	headers[2].Offset = headers[1].Offset + headers[1].Length
 	headers[2].Length = uint32(len(vcekraw))
 
-	headers[3].GUID = uuid.Parse(sabi.VlekGUID)
+	headers[3].GUID, err = uuid.Parse(sabi.VlekGUID)
+	if err != nil {
+		t.Fatalf("cannot parse uuid: %v", err)
+	}
 	headers[3].Offset = headers[2].Offset + headers[2].Length
 	headers[3].Length = uint32(len(vlekraw))
 
-	headers[4].GUID = uuid.Parse(extraGUID)
+	headers[4].GUID, err = uuid.Parse(extraGUID)
+	if err != nil {
+		t.Fatalf("cannot parse uuid: %v", err)
+	}
 	headers[4].Offset = headers[3].Offset + headers[3].Length
 	headers[4].Length = uint32(len(extraraw))
 
