@@ -13,6 +13,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"cloud.google.com/go/compute/metadata"
+	"cloud.google.com/go/logging"
 	"github.com/google/go-tpm-tools/launcher/agent"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/verifier/oci"
@@ -23,6 +25,7 @@ type attestHandler struct {
 	attestAgent      agent.AttestationAgent
 	defaultTokenFile string
 	logger           *log.Logger
+	cloudLogger      *logging.Logger
 }
 
 type customTokenRequest struct {
@@ -46,6 +49,20 @@ func New(ctx context.Context, unixSock string, a agent.AttestationAgent, logger 
 		return nil, fmt.Errorf("cannot listen to the socket [%s]: %v", unixSock, err)
 	}
 
+	// Configure Cloud Logging client.
+	mdsClient := metadata.NewClient(nil)
+
+	projectID, err := mdsClient.ProjectIDWithContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Configure Cloud Logging client/logger.
+	cloudLogger, err := logging.NewClient(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+
 	teeServer := TeeServer{
 		netListener: nl,
 		server: &http.Server{
@@ -54,6 +71,7 @@ func New(ctx context.Context, unixSock string, a agent.AttestationAgent, logger 
 				attestAgent:      a,
 				defaultTokenFile: filepath.Join(launcherfile.HostTmpPath, launcherfile.AttestationVerifierTokenFilename),
 				logger:           logger,
+				cloudLogger:      cloudLogger.Logger("ita-prototype-image"),
 			}).Handler(),
 		},
 	}
@@ -209,7 +227,7 @@ func (a *attestHandler) getEvidence(w http.ResponseWriter, r *http.Request) {
 
 		err := decoder.Decode(&evidenceReq)
 		if err != nil {
-			a.logger.Print(err.Error())
+			a.logger.Printf(err.Error())
 			w.WriteHeader(http.StatusBadRequest)
 			w.Write([]byte(err.Error()))
 			return
@@ -257,7 +275,13 @@ func (a *attestHandler) getEvidence(w http.ResponseWriter, r *http.Request) {
 			},
 		}
 
-		a.logger.Printf("%+v\n", tdxEvi)
+		logEntry := logging.Entry{
+			Severity: logging.Info,
+			Payload:  tdxEvi,
+		}
+
+		a.cloudLogger.Log(logEntry)
+		a.cloudLogger.Flush()
 
 		jsonData, err := json.Marshal(tdxEvi)
 		if err != nil {
