@@ -6,7 +6,7 @@ require (
 	cloud.google.com/go/compute/metadata v0.5.0
 	cloud.google.com/go/logging v1.10.0
 	github.com/containerd/containerd v1.7.16
-	github.com/golang-jwt/jwt/v4 v4.5.0
+	github.com/golang-jwt/jwt/v4 v4.5.1
 	github.com/golang/protobuf v1.5.4
 	github.com/google/go-sev-guest v0.11.2-0.20241009005433-de2ac900e958
 	github.com/google/go-tdx-guest v0.3.2-0.20240902060211-1f7f7b9b42b9
