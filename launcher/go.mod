@@ -10,6 +10,8 @@ require (
 	github.com/coreos/go-systemd/v22 v22.5.0
 	github.com/golang-jwt/jwt/v4 v4.5.0
 	github.com/google/go-cmp v0.6.0
+	github.com/google/go-configfs-tsm v0.3.3-0.20240919001351-b4b5b84fdcbc
+	github.com/google/go-tdx-guest v0.3.2-0.20241009005452-097ee70d0843
 	github.com/google/go-tpm v0.9.0
 	github.com/google/go-tpm-tools v0.4.4
 	github.com/google/go-tpm-tools/verifier v0.4.4
@@ -49,10 +51,8 @@ require (
 	github.com/google/certificate-transparency-go v1.1.2 // indirect
 	github.com/google/gce-tcb-verifier v0.2.3-0.20240905212129-12f728a62786 // indirect
 	github.com/google/go-attestation v0.5.1 // indirect
-	github.com/google/go-configfs-tsm v0.3.3-0.20240919001351-b4b5b84fdcbc // indirect
 	github.com/google/go-eventlog v0.0.2-0.20241003021507-01bb555f7cba // indirect
-	github.com/google/go-sev-guest v0.11.1 // indirect
-	github.com/google/go-tdx-guest v0.3.2-0.20240902060211-1f7f7b9b42b9 // indirect
+	github.com/google/go-sev-guest v0.11.2-0.20241009005433-de2ac900e958 // indirect
 	github.com/google/go-tspi v0.3.0 // indirect
 	github.com/google/logger v1.1.1 // indirect
 	github.com/google/s2a-go v0.1.7 // indirect
@@ -66,7 +66,6 @@ require (
 	github.com/moby/sys/signal v0.7.0 // indirect
 	github.com/moby/sys/user v0.1.0 // indirect
 	github.com/opencontainers/selinux v1.11.0 // indirect
-	github.com/pborman/uuid v1.2.1 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	go.opencensus.io v0.24.0 // indirect
