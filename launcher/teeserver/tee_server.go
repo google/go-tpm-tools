@@ -261,7 +261,6 @@ func (a *attestHandler) getEvidence(w http.ResponseWriter, r *http.Request) {
 		tdxEvi := &tdxEvidence{
 			Attestation: tdxAttestation{
 				TdQuote:           evidence.TDXAttestation.TdQuote,
-				CcelAcpiTable:     evidence.TDXAttestation.CcelAcpiTable,
 				CcelData:          evidence.TDXAttestation.CcelData,
 				CanonicalEventLog: evidence.TDXAttestation.CanonicalEventLog,
 			},
