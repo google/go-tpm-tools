@@ -14,6 +14,7 @@ import (
 	"github.com/containerd/containerd/namespaces"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-tpm-tools/client"
+	models "github.com/google/go-tpm-tools/internal/models"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/google/go-tpm-tools/verifier/util"
 	"github.com/google/go-tpm/legacy/tpm2"
@@ -138,7 +139,7 @@ The OIDC token includes claims regarding the GCE VM, which is verified by Attest
 			Challenge:      challenge,
 			GcpCredentials: principalTokens,
 			Attestation:    attestation,
-			TokenOptions:   verifier.TokenOptions{Audience: audience, Nonce: customNonce, TokenType: "OIDC"},
+			TokenOptions:   &models.TokenOptions{Audience: audience, Nonces: customNonce, TokenType: "OIDC"},
 		}
 
 		resp, err := verifierClient.VerifyAttestation(ctx, req)
