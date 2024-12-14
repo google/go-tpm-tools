@@ -11,7 +11,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-tpm-tools/cel"
+	models "github.com/google/go-tpm-tools/internal/models"
 	"github.com/google/go-tpm-tools/launcher/agent"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
@@ -135,7 +137,14 @@ func TestCustomToken(t *testing.T) {
 			body: `{
 				"audience": "audience",
 				"nonces": ["thisIsAcustomNonce"],
-				"token_type": "OIDC"
+				"token_type": "OIDC",
+				"aws_principal_tag_options" : {
+					"allowed_principal_tags": {
+						"container_image_signatures" : {
+							"key_ids": ["test1", "test2"]
+						}
+					}
+				}
 			}`,
 			attestFunc: func(context.Context, agent.AttestAgentOpts) ([]byte, error) {
 				return []byte{}, nil
@@ -166,6 +175,100 @@ func TestCustomToken(t *testing.T) {
 		}
 
 		if w.Code != test.want {
+			t.Errorf("testcase %d, '%v': got return code: %d, want: %d", i, test.testName, w.Code, test.want)
+		}
+	}
+}
+
+func TestCustomTokenDataParsedSuccessfully(t *testing.T) {
+	tests := []struct {
+		testName   string
+		body       string
+		attestFunc func(context.Context, agent.AttestAgentOpts) ([]byte, error)
+		want       int
+		wantOpts   agent.AttestAgentOpts
+	}{
+		{
+			testName: "TestKeyIdsReadSuccessfully",
+			body: `{
+				"audience": "audience",
+				"nonces": ["thisIsAcustomNonce"],
+				"token_type": "OIDC",
+				"aws_principal_tag_options" : {
+					"allowed_principal_tags": {
+						"container_image_signatures" : {
+							"key_ids": ["test1", "test2"]
+						}
+					}
+				}
+			}`,
+			wantOpts: agent.AttestAgentOpts{
+				TokenOptions: &models.TokenOptions{
+					Audience:  "audience",
+					Nonces:    []string{"thisIsAcustomNonce"},
+					TokenType: "OIDC",
+					PrincipalTagOptions: &models.AWSPrincipalTagsOptions{
+						AllowedPrincipalTags: &models.AllowedPrincipalTags{
+							ContainerImageSignatures: &models.ContainerImageSignatures{
+								KeyIds: []string{},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			testName: "PartialAwsPrincipalTagOptionsOK",
+			body: `{
+				"audience": "audience",
+				"nonces": ["thisIsAcustomNonce"],
+				"token_type": "OIDC",
+				"aws_principal_tag_options" : {
+				}
+			}`,
+			wantOpts: agent.AttestAgentOpts{
+				TokenOptions: &models.TokenOptions{
+					Audience:  "audience",
+					Nonces:    []string{"thisIsAcustomNonce"},
+					TokenType: "OIDC",
+					PrincipalTagOptions: &models.AWSPrincipalTagsOptions{
+						AllowedPrincipalTags: &models.AllowedPrincipalTags{
+							ContainerImageSignatures: &models.ContainerImageSignatures{
+								KeyIds: []string{},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	for i, test := range tests {
+		tmpDir := t.TempDir()
+		tmpToken := path.Join(tmpDir, launcherfile.AttestationVerifierTokenFilename)
+		ah := attestHandler{defaultTokenFile: tmpToken,
+			logger: logging.SimpleLogger(),
+			attestAgent: fakeAttestationAgent{
+				attestFunc: func(_ context.Context, gotOpts agent.AttestAgentOpts) ([]byte, error) {
+					diff := cmp.Diff(test.wantOpts, gotOpts)
+					if diff != "" {
+						t.Errorf("got unexpected agent.AttestAgentOpts. Want %v, got %v, diff %v", test.wantOpts, gotOpts, diff)
+					}
+					return []byte{}, nil
+				},
+			}}
+
+		b := strings.NewReader(test.body)
+
+		req := httptest.NewRequest(http.MethodPost, "/v1/token", b)
+		w := httptest.NewRecorder()
+		ah.getToken(w, req)
+		_, err := io.ReadAll(w.Result().Body)
+		if err != nil {
+			t.Error(err)
+		}
+
+		if w.Code != http.StatusOK {
 			t.Errorf("testcase %d, '%v': got return code: %d, want: %d", i, test.testName, w.Code, test.want)
 		}
 	}

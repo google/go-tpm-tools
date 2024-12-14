@@ -138,7 +138,7 @@ The OIDC token includes claims regarding the GCE VM, which is verified by Attest
 			Challenge:      challenge,
 			GcpCredentials: principalTokens,
 			Attestation:    attestation,
-			TokenOptions:   verifier.TokenOptions{CustomAudience: audience, CustomNonce: customNonce, TokenType: "OIDC"},
+			TokenOptions:   verifier.TokenOptions{Audience: audience, Nonce: customNonce, TokenType: "OIDC"},
 		}
 
 		resp, err := verifierClient.VerifyAttestation(ctx, req)

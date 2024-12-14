@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 
+	models "github.com/google/go-tpm-tools/internal/models"
 	"github.com/google/go-tpm-tools/launcher/agent"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
@@ -21,25 +22,6 @@ type attestHandler struct {
 	attestAgent      agent.AttestationAgent
 	defaultTokenFile string
 	logger           logging.Logger
-}
-
-type tokenOptions struct {
-	Audience            string                  `json:"audience"`
-	Nonce               []string                `json:"nonces"`
-	TokenType           string                  `json:"token_type"`
-	PrincipalTagOptions awsPrincipalTagsOptions `json:"aws_principal_tag_options"`
-}
-
-type containerImageSignatures struct {
-	KeyIds []string `json:"key_ids"`
-}
-
-type allowedPrincipalTags struct {
-	ContainerImageSignatures containerImageSignatures `json:"container_image_signatures"`
-}
-
-type awsPrincipalTagsOptions struct {
-	AllowedPrincipalTags allowedPrincipalTags `json:"allowed_principal_tags"`
 }
 
 // TeeServer is a server that can be called from a container through a unix
@@ -103,7 +85,7 @@ func (a *attestHandler) getToken(w http.ResponseWriter, r *http.Request) {
 		w.Write(data)
 		return
 	case http.MethodPost:
-		var tokenOptions tokenOptions
+		var tokenOptions models.TokenOptions
 		decoder := json.NewDecoder(r.Body)
 		decoder.DisallowUnknownFields()
 
@@ -113,18 +95,15 @@ func (a *attestHandler) getToken(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		err = validateTokenOptions(w, tokenOptions)
+		err = validateTokenOptions(tokenOptions)
 		if err != nil {
 			a.logAndWriteHttpError(w, http.StatusBadRequest, err)
 			return
 		}
 
-		tok, err := a.attestAgent.Attest(a.ctx,
-			agent.AttestAgentOpts{
-				Aud:       tokenOptions.Audience,
-				Nonces:    tokenOptions.Nonce,
-				TokenType: tokenOptions.TokenType,
-			})
+		tok, err := a.attestAgent.Attest(a.ctx, agent.AttestAgentOpts{
+			TokenOptions: &tokenOptions,
+		})
 		if err != nil {
 			a.logAndWriteHttpError(w, http.StatusBadRequest, err)
 			return
@@ -142,7 +121,7 @@ func (a *attestHandler) getToken(w http.ResponseWriter, r *http.Request) {
 
 func (a *attestHandler) logAndWriteHttpError(w http.ResponseWriter, statusCode int, err error) {
 	a.logger.Error(err.Error())
-	w.WriteHeader(http.StatusBadRequest)
+	w.WriteHeader(statusCode)
 	w.Write([]byte(err.Error()))
 }
 
@@ -165,7 +144,7 @@ func (s *TeeServer) Shutdown(ctx context.Context) error {
 	return nil
 }
 
-func validateTokenOptions(w http.ResponseWriter, opts tokenOptions) error {
+func validateTokenOptions(opts models.TokenOptions) error {
 	if opts.Audience == "" {
 		return fmt.Errorf("use GET request for the default identity token")
 	}
@@ -173,8 +152,6 @@ func validateTokenOptions(w http.ResponseWriter, opts tokenOptions) error {
 	if opts.TokenType == "" {
 		return fmt.Errorf("token_type is a required parameter")
 	}
-
-	//if opts.tokenType
 
 	return nil
 }

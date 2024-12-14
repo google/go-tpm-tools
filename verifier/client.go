@@ -5,6 +5,7 @@ package verifier
 import (
 	"context"
 
+	models "github.com/google/go-tpm-tools/internal/models"
 	attestpb "github.com/google/go-tpm-tools/proto/attest"
 	"github.com/google/go-tpm-tools/verifier/oci"
 	"google.golang.org/genproto/googleapis/rpc/status"
@@ -25,27 +26,6 @@ type Challenge struct {
 	ConnID string
 }
 
-// TokenOptions contains fields that will be passed to the Attestation Service TokenOptions field.
-// These fields are used to customize several claims in the token from the Attestation service.
-type TokenOptions struct {
-	CustomAudience      string                  `json:"audience"`
-	CustomNonce         []string                `json:"nonces"`
-	TokenType           string                  `json:"token_type"`
-	PrincipalTagOptions AWSPrincipalTagsOptions `json:"aws_principal_tag_options"`
-}
-
-type ContainerImageSignatures struct {
-	KeyIds []string `json:"key_ids"`
-}
-
-type AllowedPrincipalTags struct {
-	ContainerImageSignatures ContainerImageSignatures `json:"container_image_signatures"`
-}
-
-type AWSPrincipalTagsOptions struct {
-	AllowedPrincipalTags AllowedPrincipalTags `json:"allowed_principal_tags"`
-}
-
 // VerifyAttestationRequest is passed in on VerifyAttestation. It contains the
 // Challenge from CreateChallenge, optional GcpCredentials linked to the
 // attestation, the Attestation generated from the TPM, and optional container image signatures associated with the workload.
@@ -55,7 +35,7 @@ type VerifyAttestationRequest struct {
 	// Attestation is for TPM attestation
 	Attestation              *attestpb.Attestation
 	ContainerImageSignatures []oci.Signature
-	TokenOptions             TokenOptions
+	TokenOptions             *models.TokenOptions
 	// TDCCELAttestation is for TDX CCEL RTMR attestation
 	TDCCELAttestation *TDCCELAttestation
 }

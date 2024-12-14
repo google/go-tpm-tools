@@ -26,6 +26,7 @@ import (
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal"
+	models "github.com/google/go-tpm-tools/internal/models"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/internal/signaturediscovery"
 	"github.com/google/go-tpm-tools/launcher/spec"
@@ -59,9 +60,7 @@ type attestRoot interface {
 // AttestAgentOpts contains user generated options when calling the
 // VerifyAttestation API
 type AttestAgentOpts struct {
-	Aud       string
-	Nonces    []string
-	TokenType string
+	TokenOptions *models.TokenOptions
 }
 
 type agent struct {
@@ -166,11 +165,7 @@ func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error
 	req := verifier.VerifyAttestationRequest{
 		Challenge:      challenge,
 		GcpCredentials: principalTokens,
-		TokenOptions: verifier.TokenOptions{
-			CustomAudience: opts.Aud,
-			CustomNonce:    opts.Nonces,
-			TokenType:      opts.TokenType,
-		},
+		TokenOptions:   opts.TokenOptions,
 	}
 
 	attResult, err := a.ar.Attest(challenge.Nonce)
@@ -243,7 +238,7 @@ func (t *tpmAttestRoot) Attest(nonce []byte) (any, error) {
 
 type tdxAttestRoot struct {
 	tdxMu     sync.Mutex
-	qp        *tg.LinuxConfigFsQuoteProvider
+	qp        *tg.MacOsConfigFsQuoteProvider
 	tsmClient configfsi.Client
 }
 
