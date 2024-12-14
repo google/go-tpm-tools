@@ -28,9 +28,22 @@ type Challenge struct {
 // TokenOptions contains fields that will be passed to the Attestation Service TokenOptions field.
 // These fields are used to customize several claims in the token from the Attestation service.
 type TokenOptions struct {
-	CustomAudience string
-	CustomNonce    []string
-	TokenType      string
+	CustomAudience      string                  `json:"audience"`
+	CustomNonce         []string                `json:"nonces"`
+	TokenType           string                  `json:"token_type"`
+	PrincipalTagOptions AWSPrincipalTagsOptions `json:"aws_principal_tag_options"`
+}
+
+type ContainerImageSignatures struct {
+	KeyIds []string `json:"key_ids"`
+}
+
+type AllowedPrincipalTags struct {
+	ContainerImageSignatures ContainerImageSignatures `json:"container_image_signatures"`
+}
+
+type AWSPrincipalTagsOptions struct {
+	AllowedPrincipalTags AllowedPrincipalTags `json:"allowed_principal_tags"`
 }
 
 // VerifyAttestationRequest is passed in on VerifyAttestation. It contains the
