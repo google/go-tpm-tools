@@ -156,6 +156,8 @@ func convertRequestToREST(request verifier.VerifyAttestationRequest) *confidenti
 		tokenType = confidentialcomputingpb.TokenType_TOKEN_TYPE_PKI
 	case "LIMITED_AWS":
 		tokenType = confidentialcomputingpb.TokenType_TOKEN_TYPE_LIMITED_AWS
+	case "AWS_PRINCIPALTAGS":
+		tokenType = confidentialcomputingpb.TokenType_TOKEN_TYPE_AWS_PRINCIPALTAGS
 	default:
 		tokenType = confidentialcomputingpb.TokenType_TOKEN_TYPE_UNSPECIFIED
 	}
