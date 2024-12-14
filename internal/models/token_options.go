@@ -10,14 +10,19 @@ type TokenOptions struct {
 	PrincipalTagOptions *AWSPrincipalTagsOptions `json:"aws_principal_tag_options"`
 }
 
+// AWSPrincipalTagsOptions represents the options for the AWSPrincipalTag token type.
 type AWSPrincipalTagsOptions struct {
 	AllowedPrincipalTags *AllowedPrincipalTags `json:"allowed_principal_tags"`
 }
 
+// AllowedPrincipalTags allows for requestors to configure what principal tags are contained in the
+// resulting GCA token.
 type AllowedPrincipalTags struct {
 	ContainerImageSignatures *ContainerImageSignatures `json:"container_image_signatures"`
 }
 
+// ContainerImageSignatures represents the configuration for AllowedPrincipalTags for
+// ContainerImageSignature claims
 type ContainerImageSignatures struct {
 	KeyIds []string `json:"key_ids"`
 }
