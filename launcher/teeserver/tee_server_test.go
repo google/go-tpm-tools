@@ -185,11 +185,11 @@ func TestCustomTokenDataParsedSuccessfully(t *testing.T) {
 		testName   string
 		body       string
 		attestFunc func(context.Context, agent.AttestAgentOpts) ([]byte, error)
-		want       int
+		wantCode   int
 		wantOpts   agent.AttestAgentOpts
 	}{
 		{
-			testName: "TestKeyIdsReadSuccessfully",
+			testName: "TestKeyIdsReadSuccessfullyEvenWithInvalidTokenTypeMatch",
 			body: `{
 				"audience": "audience",
 				"nonces": ["thisIsAcustomNonce"],
@@ -202,6 +202,7 @@ func TestCustomTokenDataParsedSuccessfully(t *testing.T) {
 					}
 				}
 			}`,
+			wantCode: http.StatusOK,
 			wantOpts: agent.AttestAgentOpts{
 				TokenOptions: &models.TokenOptions{
 					Audience:  "audience",
@@ -210,7 +211,7 @@ func TestCustomTokenDataParsedSuccessfully(t *testing.T) {
 					PrincipalTagOptions: &models.AWSPrincipalTagsOptions{
 						AllowedPrincipalTags: &models.AllowedPrincipalTags{
 							ContainerImageSignatures: &models.ContainerImageSignatures{
-								KeyIds: []string{},
+								KeyIds: []string{"test1", "test2"},
 							},
 						},
 					},
@@ -226,17 +227,58 @@ func TestCustomTokenDataParsedSuccessfully(t *testing.T) {
 				"aws_principal_tag_options" : {
 				}
 			}`,
+			wantCode: http.StatusOK,
+			wantOpts: agent.AttestAgentOpts{
+				TokenOptions: &models.TokenOptions{
+					Audience:            "audience",
+					Nonces:              []string{"thisIsAcustomNonce"},
+					TokenType:           "OIDC",
+					PrincipalTagOptions: &models.AWSPrincipalTagsOptions{},
+				},
+			},
+		},
+		{
+			testName: "MorePartialAwsPrincipalTagOptionsOK",
+			body: `{
+				"audience": "audience",
+				"nonces": ["thisIsAcustomNonce"],
+				"token_type": "OIDC",
+				"aws_principal_tag_options" : {
+					"allowed_principal_tags": {
+					}
+				}
+			}`,
+			wantCode: http.StatusOK,
 			wantOpts: agent.AttestAgentOpts{
 				TokenOptions: &models.TokenOptions{
 					Audience:  "audience",
 					Nonces:    []string{"thisIsAcustomNonce"},
 					TokenType: "OIDC",
 					PrincipalTagOptions: &models.AWSPrincipalTagsOptions{
-						AllowedPrincipalTags: &models.AllowedPrincipalTags{
-							ContainerImageSignatures: &models.ContainerImageSignatures{
-								KeyIds: []string{},
-							},
-						},
+						AllowedPrincipalTags: &models.AllowedPrincipalTags{},
+					},
+				},
+			},
+		},
+		{
+			testName: "InvalidJSONNotOkay",
+			body: `{
+				"audience": "audience",
+				"nonces": ["thisIsAcustomNonce"],
+				"token_type": "OIDC",
+				"aws_principal_tag_options" : {
+					"allowed_principal_tag": {
+					}
+				}
+			}`,
+			wantCode: http.StatusBadRequest,
+			wantOpts: agent.AttestAgentOpts{
+				TokenOptions: &models.TokenOptions{
+					Audience:  "audience",
+					Nonces:    []string{"thisIsAcustomNonce"},
+					TokenType: "OIDC",
+					PrincipalTagOptions: &models.AWSPrincipalTagsOptions{
+						AllowedPrincipalTags: &models.AllowedPrincipalTags{},
 					},
 				},
 			},
@@ -252,7 +294,7 @@ func TestCustomTokenDataParsedSuccessfully(t *testing.T) {
 				attestFunc: func(_ context.Context, gotOpts agent.AttestAgentOpts) ([]byte, error) {
 					diff := cmp.Diff(test.wantOpts, gotOpts)
 					if diff != "" {
-						t.Errorf("got unexpected agent.AttestAgentOpts. Want %v, got %v, diff %v", test.wantOpts, gotOpts, diff)
+						t.Errorf("%v: got unexpected agent.AttestAgentOpts. diff:\n%v", test.testName, diff)
 					}
 					return []byte{}, nil
 				},
@@ -268,8 +310,8 @@ func TestCustomTokenDataParsedSuccessfully(t *testing.T) {
 			t.Error(err)
 		}
 
-		if w.Code != http.StatusOK {
-			t.Errorf("testcase %d, '%v': got return code: %d, want: %d", i, test.testName, w.Code, test.want)
+		if w.Code != test.wantCode {
+			t.Errorf("testcase %d, '%v': got return code: %d, want: %d", i, test.testName, w.Code, test.wantCode)
 		}
 	}
 }

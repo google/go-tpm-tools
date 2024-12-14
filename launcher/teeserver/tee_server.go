@@ -153,5 +153,7 @@ func validateTokenOptions(opts models.TokenOptions) error {
 		return fmt.Errorf("token_type is a required parameter")
 	}
 
+	// Do not check that TokenTypeOptions matches TokenType in the launcher.
+
 	return nil
 }
