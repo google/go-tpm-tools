@@ -24,5 +24,17 @@ type AllowedPrincipalTags struct {
 // ContainerImageSignatures represents the configuration for AllowedPrincipalTags for
 // ContainerImageSignature claims
 type ContainerImageSignatures struct {
-	KeyIds []string `json:"key_ids"`
+	KeyIDs []string `json:"key_ids"`
+}
+
+func (t TokenOptions) HasAWSPrincipalTagOptions() bool {
+	return t.PrincipalTagOptions != nil
+}
+
+func (a AWSPrincipalTagsOptions) HasAllowedPrincipalTags() bool {
+	return a.AllowedPrincipalTags != nil
+}
+
+func (a AllowedPrincipalTags) HasContainerImageSignatures() bool {
+	return a.ContainerImageSignatures != nil
 }

@@ -211,7 +211,7 @@ func TestCustomTokenDataParsedSuccessfully(t *testing.T) {
 					PrincipalTagOptions: &models.AWSPrincipalTagsOptions{
 						AllowedPrincipalTags: &models.AllowedPrincipalTags{
 							ContainerImageSignatures: &models.ContainerImageSignatures{
-								KeyIds: []string{"test1", "test2"},
+								KeyIDs: []string{"test1", "test2"},
 							},
 						},
 					},
