@@ -78,7 +78,7 @@ func (a *attestHandler) getToken(w http.ResponseWriter, r *http.Request) {
 
 		if err != nil {
 			err = fmt.Errorf("failed to get the token")
-			a.logAndWriteHttpError(w, http.StatusNotFound, err)
+			a.logAndWriteHTTPError(w, http.StatusNotFound, err)
 			return
 		}
 		w.WriteHeader(http.StatusOK)
@@ -91,13 +91,13 @@ func (a *attestHandler) getToken(w http.ResponseWriter, r *http.Request) {
 
 		err := decoder.Decode(&tokenOptions)
 		if err != nil {
-			a.logAndWriteHttpError(w, http.StatusBadRequest, err)
+			a.logAndWriteHTTPError(w, http.StatusBadRequest, err)
 			return
 		}
 
 		err = validateTokenOptions(tokenOptions)
 		if err != nil {
-			a.logAndWriteHttpError(w, http.StatusBadRequest, err)
+			a.logAndWriteHTTPError(w, http.StatusBadRequest, err)
 			return
 		}
 
@@ -105,7 +105,7 @@ func (a *attestHandler) getToken(w http.ResponseWriter, r *http.Request) {
 			TokenOptions: &tokenOptions,
 		})
 		if err != nil {
-			a.logAndWriteHttpError(w, http.StatusBadRequest, err)
+			a.logAndWriteHTTPError(w, http.StatusBadRequest, err)
 			return
 		}
 
@@ -114,12 +114,12 @@ func (a *attestHandler) getToken(w http.ResponseWriter, r *http.Request) {
 		return
 	default:
 		// TODO: add an url pointing to the REST API document
-		err := fmt.Errorf("TEE server recieved an invalid HTTP method: %s", r.Method)
-		a.logAndWriteHttpError(w, http.StatusBadRequest, err)
+		err := fmt.Errorf("TEE server received an invalid HTTP method: %s", r.Method)
+		a.logAndWriteHTTPError(w, http.StatusBadRequest, err)
 	}
 }
 
-func (a *attestHandler) logAndWriteHttpError(w http.ResponseWriter, statusCode int, err error) {
+func (a *attestHandler) logAndWriteHTTPError(w http.ResponseWriter, statusCode int, err error) {
 	a.logger.Error(err.Error())
 	w.WriteHeader(statusCode)
 	w.Write([]byte(err.Error()))

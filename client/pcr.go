@@ -26,7 +26,7 @@ const (
 // CertifyHashAlgTpm is the hard-coded algorithm used in certify PCRs.
 const CertifyHashAlgTpm = tpm2.AlgSHA256
 
-func min(a, b int) int {
+func minimum(a, b int) int {
 	if a < b {
 		return a
 	}
@@ -66,7 +66,7 @@ func ReadPCRs(rw io.ReadWriter, sel tpm2.PCRSelection) (*pb.PCRs, error) {
 	}
 
 	for i := 0; i < len(sel.PCRs); i += 8 {
-		end := min(i+8, len(sel.PCRs))
+		end := minimum(i+8, len(sel.PCRs))
 		pcrSel := tpm2.PCRSelection{
 			Hash: sel.Hash,
 			PCRs: sel.PCRs[i:end],

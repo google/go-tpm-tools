@@ -27,14 +27,17 @@ type ContainerImageSignatures struct {
 	KeyIDs []string `json:"key_ids"`
 }
 
+// HasAWSPrincipalTagOptions returns true if PrincipalTagOptions is not nil.
 func (t TokenOptions) HasAWSPrincipalTagOptions() bool {
 	return t.PrincipalTagOptions != nil
 }
 
+// HasAllowedPrincipalTags returns true if AllowedPrincipalTags is not nil.
 func (a AWSPrincipalTagsOptions) HasAllowedPrincipalTags() bool {
 	return a.AllowedPrincipalTags != nil
 }
 
+// HasContainerImageSignatures returns true if ContainerImageSignatures is not nil.
 func (a AllowedPrincipalTags) HasContainerImageSignatures() bool {
 	return a.ContainerImageSignatures != nil
 }
