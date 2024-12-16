@@ -8,7 +8,6 @@ import (
 	"log"
 	"time"
 
-	"github.com/cenkalti/backoff/v4"
 	sabi "github.com/google/go-sev-guest/abi"
 	"github.com/google/go-sev-guest/proto/sevsnp"
 	tabi "github.com/google/go-tdx-guest/abi"
@@ -24,11 +23,6 @@ import (
 	locationpb "google.golang.org/genproto/googleapis/cloud/location"
 	"google.golang.org/grpc/codes"
 )
-
-func confComputeBackoffPolicy() backoff.BackOff {
-	b := backoff.NewConstantBackOff(time.Millisecond * 500)
-	return backoff.WithMaxRetries(b, 3)
-}
 
 /*
 confComputeCallOptions retries as follows for all confidential computing APIs:
@@ -145,10 +139,7 @@ func (c *restClient) VerifyAttestation(ctx context.Context, request verifier.Ver
 
 	response, err := c.v1Client.VerifyAttestation(ctx, req)
 	if err != nil {
-		return nil, &VerifyAttestationError{
-			request: req,
-			err:     fmt.Errorf("calling v1.VerifyAttestation in %v: %w", c.location.LocationId, err),
-		}
+		return nil, fmt.Errorf("calling v1.VerifyAttestation in %v: %w", c.location.LocationId, err)
 	}
 	return convertResponseFromREST(response)
 }

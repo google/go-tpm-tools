@@ -3,9 +3,6 @@ package rest
 import (
 	"fmt"
 	"strings"
-
-	confidentialcomputingpb "cloud.google.com/go/confidentialcomputing/apiv1/confidentialcomputingpb"
-	"google.golang.org/api/googleapi"
 )
 
 // BadRegionError indicates that:
@@ -26,31 +23,4 @@ func (e *BadRegionError) Error() string {
 
 func (e *BadRegionError) Unwrap() error {
 	return e.err
-}
-
-type VerifyAttestationError struct {
-	request *confidentialcomputingpb.VerifyAttestationRequest
-	err     error
-}
-
-func NewVerifyAttestationError(request *confidentialcomputingpb.VerifyAttestationRequest, err error) *VerifyAttestationError {
-	return &VerifyAttestationError{
-		request: request,
-		err:     err,
-	}
-}
-
-func (e *VerifyAttestationError) Error() string {
-	return fmt.Sprintf("VerifyAttestationError from request [%+v]: %v", e.request, e.err)
-}
-
-func (e *VerifyAttestationError) Unwrap() error {
-	return e.err
-}
-
-func (e *VerifyAttestationError) StatusCode() int {
-	if gErr, ok := e.err.(*googleapi.Error); ok {
-		return int(gErr.Code)
-	}
-	return 0
 }

@@ -7,7 +7,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"math"
-	"net/http"
 	"runtime"
 	"sync"
 	"testing"
@@ -29,7 +28,6 @@ import (
 	"github.com/google/go-tpm-tools/verifier/oci/cosign"
 	"github.com/google/go-tpm-tools/verifier/rest"
 	"golang.org/x/oauth2/google"
-	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
 	"google.golang.org/protobuf/encoding/protojson"
 )
@@ -78,79 +76,6 @@ func TestAttestRacing(t *testing.T) {
 	}
 	wg.Wait()
 	agent.Close()
-}
-
-func TestAttestWithRetries(t *testing.T) {
-	testCases := []struct {
-		name         string
-		fn           func(int) ([]byte, error)
-		wantPass     bool
-		wantAttempts int
-	}{
-		{
-			name: "success",
-			fn: func(int) ([]byte, error) {
-				return []byte("test token"), nil
-			},
-			wantPass:     true,
-			wantAttempts: 1,
-		},
-		{
-			name: "failed with 500, then success",
-			fn: func(attempts int) ([]byte, error) {
-				if attempts == 1 {
-					return nil, rest.NewVerifyAttestationError(nil, &googleapi.Error{Code: http.StatusInternalServerError})
-				}
-				return []byte("test token"), nil
-			},
-			wantPass:     true,
-			wantAttempts: 2,
-		},
-		{
-			name: "failed with 500 after attempts exceed",
-			fn: func(int) ([]byte, error) {
-				return nil, rest.NewVerifyAttestationError(nil, &googleapi.Error{Code: http.StatusInternalServerError})
-			},
-			wantPass:     false,
-			wantAttempts: 4,
-		},
-		{
-			name: "failed with non-500 error",
-			fn: func(int) ([]byte, error) {
-				return nil, fmt.Errorf("other error")
-			},
-			wantPass:     false,
-			wantAttempts: 1,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			// Reset stub after test case is done.
-			af := attestFunc
-			t.Cleanup(func() { attestFunc = af })
-
-			attempts := 0
-			// Stub attestFunc.
-			attestFunc = func(context.Context, *agent, AttestAgentOpts) ([]byte, error) {
-				attempts++
-				return tc.fn(attempts)
-			}
-
-			a := &agent{}
-			testRetryPolicy := func() backoff.BackOff {
-				return backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Millisecond), 3)
-			}
-			_, err := a.AttestWithRetries(context.Background(), AttestAgentOpts{}, testRetryPolicy)
-			if gotPass := (err == nil); gotPass != tc.wantPass {
-				t.Errorf("AttestWithRetries failed, gotPass %v, but wantPass %v", gotPass, tc.wantPass)
-			}
-
-			if gotAttempts := attempts; gotAttempts != tc.wantAttempts {
-				t.Errorf("AttestWithRetries failed, gotAttempts %v, but wantAttempts %v", gotAttempts, tc.wantAttempts)
-			}
-		})
-	}
 }
 
 func TestAttest(t *testing.T) {
