@@ -1,4 +1,3 @@
-// Package internal contains private helper functions and models needed in client and server
 package internal
 
 import (
