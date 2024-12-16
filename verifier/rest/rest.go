@@ -12,7 +12,7 @@ import (
 	"github.com/google/go-sev-guest/proto/sevsnp"
 	tabi "github.com/google/go-tdx-guest/abi"
 	"github.com/google/go-tdx-guest/proto/tdx"
-	internal "github.com/google/go-tpm-tools/internal/models"
+	"github.com/google/go-tpm-tools/internal/models"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/google/go-tpm-tools/verifier/oci"
 
@@ -144,7 +144,7 @@ func convertChallengeFromREST(chal *ccpb.Challenge) (*verifier.Challenge, error)
 	}, nil
 }
 
-func convertTokenOptionsToREST(request *internal.TokenOptions) *ccpb.TokenOptions {
+func convertTokenOptionsToREST(request *models.TokenOptions) *ccpb.TokenOptions {
 	if request == nil {
 		return nil
 	}

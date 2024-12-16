@@ -5,7 +5,7 @@ package verifier
 import (
 	"context"
 
-	models "github.com/google/go-tpm-tools/internal/models"
+	"github.com/google/go-tpm-tools/internal/models"
 	attestpb "github.com/google/go-tpm-tools/proto/attest"
 	"github.com/google/go-tpm-tools/verifier/oci"
 	"google.golang.org/genproto/googleapis/rpc/status"

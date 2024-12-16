@@ -14,7 +14,7 @@ import (
 	"github.com/containerd/containerd/namespaces"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-tpm-tools/client"
-	models "github.com/google/go-tpm-tools/internal/models"
+	"github.com/google/go-tpm-tools/internal/models"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/google/go-tpm-tools/verifier/util"
 	"github.com/google/go-tpm/legacy/tpm2"

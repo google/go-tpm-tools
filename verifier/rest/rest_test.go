@@ -11,7 +11,7 @@ import (
 	tabi "github.com/google/go-tdx-guest/abi"
 	tpb "github.com/google/go-tdx-guest/proto/tdx"
 	tgtestdata "github.com/google/go-tdx-guest/testing/testdata"
-	internal "github.com/google/go-tpm-tools/internal/models"
+	"github.com/google/go-tpm-tools/internal/models"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/encoding/prototext"
@@ -200,7 +200,7 @@ func TestConvertTDXProtoToREST(t *testing.T) {
 func TestConvertTokenOptionsToREST(t *testing.T) {
 	testCases := []struct {
 		name         string
-		tokenOptions *internal.TokenOptions
+		tokenOptions *models.TokenOptions
 		wantpb       *ccpb.TokenOptions
 	}{
 		{
@@ -210,18 +210,18 @@ func TestConvertTokenOptionsToREST(t *testing.T) {
 		},
 		{
 			name:         "EmptyTokenOptions",
-			tokenOptions: &internal.TokenOptions{},
+			tokenOptions: &models.TokenOptions{},
 			wantpb:       &ccpb.TokenOptions{},
 		},
 		{
 			name: "TokenOptionsHappyPath",
-			tokenOptions: &internal.TokenOptions{
+			tokenOptions: &models.TokenOptions{
 				Audience:  "TestingAudience",
 				Nonces:    []string{"thisisthefirstnonce", "thisisthesecondnonce"},
 				TokenType: "AWS_PRINCIPALTAGS",
-				PrincipalTagOptions: &internal.AWSPrincipalTagsOptions{
-					AllowedPrincipalTags: &internal.AllowedPrincipalTags{
-						ContainerImageSignatures: &internal.ContainerImageSignatures{
+				PrincipalTagOptions: &models.AWSPrincipalTagsOptions{
+					AllowedPrincipalTags: &models.AllowedPrincipalTags{
+						ContainerImageSignatures: &models.ContainerImageSignatures{
 							KeyIDs: []string{"abcdefg", "12345"},
 						},
 					},
@@ -244,12 +244,12 @@ func TestConvertTokenOptionsToREST(t *testing.T) {
 		},
 		{
 			name: "TokenTypeOptionsMissingSubClasses",
-			tokenOptions: &internal.TokenOptions{
+			tokenOptions: &models.TokenOptions{
 				Audience:  "TestingAudience",
 				Nonces:    []string{"thisisthefirstnonce", "thisisthesecondnonce"},
 				TokenType: "AWS_PRINCIPALTAGS",
-				PrincipalTagOptions: &internal.AWSPrincipalTagsOptions{
-					AllowedPrincipalTags: &internal.AllowedPrincipalTags{},
+				PrincipalTagOptions: &models.AWSPrincipalTagsOptions{
+					AllowedPrincipalTags: &models.AllowedPrincipalTags{},
 				},
 			},
 			wantpb: &ccpb.TokenOptions{
@@ -265,9 +265,9 @@ func TestConvertTokenOptionsToREST(t *testing.T) {
 		},
 		{
 			name: "MissingAudNonceTokenType",
-			tokenOptions: &internal.TokenOptions{
-				PrincipalTagOptions: &internal.AWSPrincipalTagsOptions{
-					AllowedPrincipalTags: &internal.AllowedPrincipalTags{},
+			tokenOptions: &models.TokenOptions{
+				PrincipalTagOptions: &models.AWSPrincipalTagsOptions{
+					AllowedPrincipalTags: &models.AllowedPrincipalTags{},
 				},
 			},
 			wantpb: &ccpb.TokenOptions{
@@ -280,13 +280,13 @@ func TestConvertTokenOptionsToREST(t *testing.T) {
 		},
 		{
 			name: "TokenOptionsHappyPath",
-			tokenOptions: &internal.TokenOptions{
+			tokenOptions: &models.TokenOptions{
 				Audience:  "TestingAudience",
 				Nonces:    []string{"thisisthefirstnonce", "thisisthesecondnonce"},
 				TokenType: "AWS_PRINCIPALTAGS",
-				PrincipalTagOptions: &internal.AWSPrincipalTagsOptions{
-					AllowedPrincipalTags: &internal.AllowedPrincipalTags{
-						ContainerImageSignatures: &internal.ContainerImageSignatures{
+				PrincipalTagOptions: &models.AWSPrincipalTagsOptions{
+					AllowedPrincipalTags: &models.AllowedPrincipalTags{
+						ContainerImageSignatures: &models.ContainerImageSignatures{
 							KeyIDs: []string{"abcdefg", "12345"},
 						},
 					},
@@ -309,7 +309,7 @@ func TestConvertTokenOptionsToREST(t *testing.T) {
 		},
 		{
 			name: "OIDCTokenType",
-			tokenOptions: &internal.TokenOptions{
+			tokenOptions: &models.TokenOptions{
 				TokenType: "OIDC",
 			},
 			wantpb: &ccpb.TokenOptions{
@@ -318,7 +318,7 @@ func TestConvertTokenOptionsToREST(t *testing.T) {
 		},
 		{
 			name: "OIDCTokenType",
-			tokenOptions: &internal.TokenOptions{
+			tokenOptions: &models.TokenOptions{
 				TokenType: "OIDC",
 			},
 			wantpb: &ccpb.TokenOptions{
@@ -327,7 +327,7 @@ func TestConvertTokenOptionsToREST(t *testing.T) {
 		},
 		{
 			name: "LimitedAWSTokenType",
-			tokenOptions: &internal.TokenOptions{
+			tokenOptions: &models.TokenOptions{
 				TokenType: "LIMITED_AWS",
 			},
 			wantpb: &ccpb.TokenOptions{
@@ -336,7 +336,7 @@ func TestConvertTokenOptionsToREST(t *testing.T) {
 		},
 		{
 			name: "SingleNonce",
-			tokenOptions: &internal.TokenOptions{
+			tokenOptions: &models.TokenOptions{
 				Nonces: []string{"thisistheonlynonce"},
 			},
 			wantpb: &ccpb.TokenOptions{

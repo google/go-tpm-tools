@@ -1,4 +1,5 @@
-package internal
+// Package models contains models needed in client and server
+package models
 
 // TokenOptions contains fields that will be passed to the Attestation Service TokenOptions field.
 // These fields are used to customize several claims in the token from the Attestation service.
