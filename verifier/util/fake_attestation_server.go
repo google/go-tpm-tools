@@ -103,15 +103,18 @@ func validateCustomNonceAndAudienceFromRequest(r *http.Request) error {
 		return fmt.Errorf("error decoding attestation request: %v", err)
 	}
 
-	if req.TokenOptions.Nonce != nil {
-		if req.TokenOptions.Nonce[0] != FakeCustomNonce[0] || req.TokenOptions.Nonce[1] != FakeCustomNonce[1] {
-			return fmt.Errorf("error comparing custom nonce: %v", err)
+	if req.TokenOptions != nil {
+		if req.TokenOptions.Nonce != nil {
+			if req.TokenOptions.Nonce[0] != FakeCustomNonce[0] || req.TokenOptions.Nonce[1] != FakeCustomNonce[1] {
+				return fmt.Errorf("error comparing custom nonce: %v", err)
+			}
+		}
+		if req.TokenOptions.Audience != "" {
+			if req.TokenOptions.Audience != FakeCustomAudience {
+				return fmt.Errorf("error comparing custom audience: %v", err)
+			}
 		}
 	}
-	if req.TokenOptions.Audience != "" {
-		if req.TokenOptions.Audience != FakeCustomAudience {
-			return fmt.Errorf("error comparing custom audience: %v", err)
-		}
-	}
+
 	return nil
 }
