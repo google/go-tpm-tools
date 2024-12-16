@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/google/go-tpm-tools/internal/models"
 	"github.com/google/go-tpm-tools/launcher/agent"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
@@ -21,12 +22,6 @@ type attestHandler struct {
 	attestAgent      agent.AttestationAgent
 	defaultTokenFile string
 	logger           logging.Logger
-}
-
-type customTokenRequest struct {
-	Audience  string   `json:"audience"`
-	Nonces    []string `json:"nonces"`
-	TokenType string   `json:"token_type"`
 }
 
 // TeeServer is a server that can be called from a container through a unix
@@ -77,65 +72,57 @@ func (a *attestHandler) getToken(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html")
 
 	switch r.Method {
-	case "GET":
+	case http.MethodGet:
 		// this could call Attest(ctx) directly later.
 		data, err := os.ReadFile(a.defaultTokenFile)
 
 		if err != nil {
-			a.logger.Error(err.Error())
-			w.WriteHeader(http.StatusNotFound)
-			w.Write([]byte("failed to get the token"))
+			err = fmt.Errorf("failed to get the token")
+			a.logAndWriteHTTPError(w, http.StatusNotFound, err)
 			return
 		}
 		w.WriteHeader(http.StatusOK)
 		w.Write(data)
 		return
-	case "POST":
-		var tokenReq customTokenRequest
+	case http.MethodPost:
+		var tokenOptions models.TokenOptions
 		decoder := json.NewDecoder(r.Body)
 		decoder.DisallowUnknownFields()
 
-		err := decoder.Decode(&tokenReq)
+		err := decoder.Decode(&tokenOptions)
 		if err != nil {
-			a.logger.Error(err.Error())
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte(err.Error()))
+			a.logAndWriteHTTPError(w, http.StatusBadRequest, err)
 			return
 		}
 
-		if tokenReq.Audience == "" {
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte("use GET request for the default identity token"))
-			return
-		}
-
-		if tokenReq.TokenType == "" {
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte("token_type is a required parameter"))
-			return
-		}
-
-		tok, err := a.attestAgent.Attest(a.ctx,
-			agent.AttestAgentOpts{
-				Aud:       tokenReq.Audience,
-				Nonces:    tokenReq.Nonces,
-				TokenType: tokenReq.TokenType,
-			})
+		err = validateTokenOptions(tokenOptions)
 		if err != nil {
-			a.logger.Error(err.Error())
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte(err.Error()))
+			a.logAndWriteHTTPError(w, http.StatusBadRequest, err)
+			return
+		}
+
+		tok, err := a.attestAgent.Attest(a.ctx, agent.AttestAgentOpts{
+			TokenOptions: &tokenOptions,
+		})
+		if err != nil {
+			a.logAndWriteHTTPError(w, http.StatusBadRequest, err)
 			return
 		}
 
 		w.WriteHeader(http.StatusOK)
 		w.Write(tok)
 		return
+	default:
+		// TODO: add an url pointing to the REST API document
+		err := fmt.Errorf("TEE server received an invalid HTTP method: %s", r.Method)
+		a.logAndWriteHTTPError(w, http.StatusBadRequest, err)
 	}
+}
 
-	w.WriteHeader(http.StatusBadRequest)
-	// TODO: add an url pointing to the REST API document
-	w.Write([]byte("TEE server received invalid request"))
+func (a *attestHandler) logAndWriteHTTPError(w http.ResponseWriter, statusCode int, err error) {
+	a.logger.Error(err.Error())
+	w.WriteHeader(statusCode)
+	w.Write([]byte(err.Error()))
 }
 
 // Serve starts the server, will block until the server shutdown.
@@ -154,5 +141,19 @@ func (s *TeeServer) Shutdown(ctx context.Context) error {
 	if err2 != nil {
 		return err2
 	}
+	return nil
+}
+
+func validateTokenOptions(opts models.TokenOptions) error {
+	if opts.Audience == "" {
+		return fmt.Errorf("use GET request for the default identity token")
+	}
+
+	if opts.TokenType == "" {
+		return fmt.Errorf("token_type is a required parameter")
+	}
+
+	// Do not check that TokenTypeOptions matches TokenType in the launcher.
+
 	return nil
 }

@@ -12,11 +12,13 @@ import (
 	"github.com/google/go-sev-guest/proto/sevsnp"
 	tabi "github.com/google/go-tdx-guest/abi"
 	"github.com/google/go-tdx-guest/proto/tdx"
+	"github.com/google/go-tpm-tools/internal/models"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/google/go-tpm-tools/verifier/oci"
 
 	v1 "cloud.google.com/go/confidentialcomputing/apiv1"
-	confidentialcomputingpb "cloud.google.com/go/confidentialcomputing/apiv1/confidentialcomputingpb"
+	"cloud.google.com/go/confidentialcomputing/apiv1/confidentialcomputingpb"
+	ccpb "cloud.google.com/go/confidentialcomputing/apiv1/confidentialcomputingpb"
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 	locationpb "google.golang.org/genproto/googleapis/cloud/location"
@@ -96,9 +98,9 @@ type restClient struct {
 // CreateChallenge implements verifier.Client
 func (c *restClient) CreateChallenge(ctx context.Context) (*verifier.Challenge, error) {
 	// Pass an empty Challenge for the input (all params are output-only)
-	req := &confidentialcomputingpb.CreateChallengeRequest{
+	req := &ccpb.CreateChallengeRequest{
 		Parent:    c.location.Name,
-		Challenge: &confidentialcomputingpb.Challenge{},
+		Challenge: &ccpb.Challenge{},
 	}
 	chal, err := c.v1Client.CreateChallenge(ctx, req)
 	if err != nil {
@@ -131,7 +133,7 @@ func (c *restClient) VerifyAttestation(ctx context.Context, request verifier.Ver
 
 var encoding = base64.StdEncoding
 
-func convertChallengeFromREST(chal *confidentialcomputingpb.Challenge) (*verifier.Challenge, error) {
+func convertChallengeFromREST(chal *ccpb.Challenge) (*verifier.Challenge, error) {
 	nonce, err := encoding.DecodeString(chal.TpmNonce)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode Challenge.Nonce: %w", err)
@@ -142,22 +144,49 @@ func convertChallengeFromREST(chal *confidentialcomputingpb.Challenge) (*verifie
 	}, nil
 }
 
+func convertTokenOptionsToREST(request *models.TokenOptions) *ccpb.TokenOptions {
+	if request == nil {
+		return nil
+	}
+
+	tokenOptionspb := &ccpb.TokenOptions{
+		Audience: request.Audience,
+		Nonce:    request.Nonces,
+	}
+
+	switch request.TokenType {
+	case "OIDC":
+		tokenOptionspb.TokenType = ccpb.TokenType_TOKEN_TYPE_OIDC
+	case "PKI":
+		tokenOptionspb.TokenType = ccpb.TokenType_TOKEN_TYPE_PKI
+	case "LIMITED_AWS":
+		tokenOptionspb.TokenType = ccpb.TokenType_TOKEN_TYPE_LIMITED_AWS
+	case "AWS_PRINCIPALTAGS":
+		tokenOptionspb.TokenType = ccpb.TokenType_TOKEN_TYPE_AWS_PRINCIPALTAGS
+	default:
+		tokenOptionspb.TokenType = ccpb.TokenType_TOKEN_TYPE_UNSPECIFIED
+	}
+
+	if request.HasAWSPrincipalTagOptions() {
+		tokenOptionspb.TokenTypeOptions = &ccpb.TokenOptions_AwsPrincipalTagsOptions_{
+			AwsPrincipalTagsOptions: &ccpb.TokenOptions_AwsPrincipalTagsOptions{}}
+		if request.PrincipalTagOptions.HasAllowedPrincipalTags() {
+			tokenOptionspb.GetAwsPrincipalTagsOptions().AllowedPrincipalTags = &ccpb.TokenOptions_AwsPrincipalTagsOptions_AllowedPrincipalTags{}
+			if request.PrincipalTagOptions.AllowedPrincipalTags.HasContainerImageSignatures() {
+				tokenOptionspb.GetAwsPrincipalTagsOptions().GetAllowedPrincipalTags().ContainerImageSignatures = &ccpb.TokenOptions_AwsPrincipalTagsOptions_AllowedPrincipalTags_ContainerImageSignatures{
+					KeyIds: request.PrincipalTagOptions.AllowedPrincipalTags.ContainerImageSignatures.KeyIDs,
+				}
+			}
+		}
+	}
+
+	return tokenOptionspb
+}
+
 func convertRequestToREST(request verifier.VerifyAttestationRequest) *confidentialcomputingpb.VerifyAttestationRequest {
 	idTokens := make([]string, len(request.GcpCredentials))
 	for i, token := range request.GcpCredentials {
 		idTokens[i] = string(token)
-	}
-
-	var tokenType confidentialcomputingpb.TokenType
-	switch request.TokenOptions.TokenType {
-	case "OIDC":
-		tokenType = confidentialcomputingpb.TokenType_TOKEN_TYPE_OIDC
-	case "PKI":
-		tokenType = confidentialcomputingpb.TokenType_TOKEN_TYPE_PKI
-	case "LIMITED_AWS":
-		tokenType = confidentialcomputingpb.TokenType_TOKEN_TYPE_LIMITED_AWS
-	default:
-		tokenType = confidentialcomputingpb.TokenType_TOKEN_TYPE_UNSPECIFIED
 	}
 
 	signatures := make([]*confidentialcomputingpb.ContainerImageSignature, len(request.ContainerImageSignatures))
@@ -177,11 +206,7 @@ func convertRequestToREST(request verifier.VerifyAttestationRequest) *confidenti
 		ConfidentialSpaceInfo: &confidentialcomputingpb.ConfidentialSpaceInfo{
 			SignedEntities: []*confidentialcomputingpb.SignedEntity{{ContainerImageSignatures: signatures}},
 		},
-		TokenOptions: &confidentialcomputingpb.TokenOptions{
-			Audience:  request.TokenOptions.CustomAudience,
-			Nonce:     request.TokenOptions.CustomNonce,
-			TokenType: tokenType,
-		},
+		TokenOptions: convertTokenOptionsToREST(request.TokenOptions),
 	}
 
 	if request.Attestation != nil {

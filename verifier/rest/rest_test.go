@@ -1,15 +1,17 @@
 package rest
 
 import (
+	"fmt"
 	"testing"
 
-	confidentialcomputingpb "cloud.google.com/go/confidentialcomputing/apiv1/confidentialcomputingpb"
+	ccpb "cloud.google.com/go/confidentialcomputing/apiv1/confidentialcomputingpb"
 	"github.com/google/go-cmp/cmp"
 	sabi "github.com/google/go-sev-guest/abi"
 	spb "github.com/google/go-sev-guest/proto/sevsnp"
 	tabi "github.com/google/go-tdx-guest/abi"
 	tpb "github.com/google/go-tdx-guest/proto/tdx"
 	tgtestdata "github.com/google/go-tdx-guest/testing/testdata"
+	"github.com/google/go-tpm-tools/internal/models"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/encoding/prototext"
@@ -18,11 +20,11 @@ import (
 
 // Make sure our conversion function can handle empty values.
 func TestConvertEmpty(t *testing.T) {
-	if _, err := convertChallengeFromREST(&confidentialcomputingpb.Challenge{}); err != nil {
+	if _, err := convertChallengeFromREST(&ccpb.Challenge{}); err != nil {
 		t.Errorf("Converting empty challenge: %v", err)
 	}
 	_ = convertRequestToREST(verifier.VerifyAttestationRequest{})
-	if _, err := convertResponseFromREST(&confidentialcomputingpb.VerifyAttestationResponse{}); err != nil {
+	if _, err := convertResponseFromREST(&ccpb.VerifyAttestationResponse{}); err != nil {
 		t.Errorf("Converting empty challenge: %v", err)
 	}
 }
@@ -70,8 +72,8 @@ func TestConvertSEVSNPProtoToREST(t *testing.T) {
 		t.Fatalf("Unable to convert SEV-SNP report proto to ABI bytes: %v", err)
 	}
 
-	want := &confidentialcomputingpb.VerifyAttestationRequest_SevSnpAttestation{
-		SevSnpAttestation: &confidentialcomputingpb.SevSnpAttestation{
+	want := &ccpb.VerifyAttestationRequest_SevSnpAttestation{
+		SevSnpAttestation: &ccpb.SevSnpAttestation{
 			AuxBlob: rawCertTable.table,
 			Report:  wantReport,
 		},
@@ -182,8 +184,8 @@ func TestConvertTDXProtoToREST(t *testing.T) {
 		}
 
 		if tc.wantPass {
-			want := &confidentialcomputingpb.VerifyAttestationRequest_TdCcel{
-				TdCcel: &confidentialcomputingpb.TdxCcelAttestation{
+			want := &ccpb.VerifyAttestationRequest_TdCcel{
+				TdCcel: &ccpb.TdxCcelAttestation{
 					TdQuote: tgtestdata.RawQuote,
 				},
 			}
@@ -193,4 +195,223 @@ func TestConvertTDXProtoToREST(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestConvertTokenOptionsToREST(t *testing.T) {
+	testCases := []struct {
+		name         string
+		tokenOptions *models.TokenOptions
+		wantpb       *ccpb.TokenOptions
+	}{
+		{
+			name:         "NilTokenOptions",
+			tokenOptions: nil,
+			wantpb:       nil,
+		},
+		{
+			name:         "EmptyTokenOptions",
+			tokenOptions: &models.TokenOptions{},
+			wantpb:       &ccpb.TokenOptions{},
+		},
+		{
+			name: "TokenOptionsHappyPath",
+			tokenOptions: &models.TokenOptions{
+				Audience:  "TestingAudience",
+				Nonces:    []string{"thisisthefirstnonce", "thisisthesecondnonce"},
+				TokenType: "AWS_PRINCIPALTAGS",
+				PrincipalTagOptions: &models.AWSPrincipalTagsOptions{
+					AllowedPrincipalTags: &models.AllowedPrincipalTags{
+						ContainerImageSignatures: &models.ContainerImageSignatures{
+							KeyIDs: []string{"abcdefg", "12345"},
+						},
+					},
+				},
+			},
+			wantpb: &ccpb.TokenOptions{
+				Audience:  "TestingAudience",
+				Nonce:     []string{"thisisthefirstnonce", "thisisthesecondnonce"},
+				TokenType: ccpb.TokenType_TOKEN_TYPE_AWS_PRINCIPALTAGS,
+				TokenTypeOptions: &ccpb.TokenOptions_AwsPrincipalTagsOptions_{
+					AwsPrincipalTagsOptions: &ccpb.TokenOptions_AwsPrincipalTagsOptions{
+						AllowedPrincipalTags: &ccpb.TokenOptions_AwsPrincipalTagsOptions_AllowedPrincipalTags{
+							ContainerImageSignatures: &ccpb.TokenOptions_AwsPrincipalTagsOptions_AllowedPrincipalTags_ContainerImageSignatures{
+								KeyIds: []string{"abcdefg", "12345"},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "TokenTypeOptionsMissingSubClasses",
+			tokenOptions: &models.TokenOptions{
+				Audience:  "TestingAudience",
+				Nonces:    []string{"thisisthefirstnonce", "thisisthesecondnonce"},
+				TokenType: "AWS_PRINCIPALTAGS",
+				PrincipalTagOptions: &models.AWSPrincipalTagsOptions{
+					AllowedPrincipalTags: &models.AllowedPrincipalTags{},
+				},
+			},
+			wantpb: &ccpb.TokenOptions{
+				Audience:  "TestingAudience",
+				Nonce:     []string{"thisisthefirstnonce", "thisisthesecondnonce"},
+				TokenType: ccpb.TokenType_TOKEN_TYPE_AWS_PRINCIPALTAGS,
+				TokenTypeOptions: &ccpb.TokenOptions_AwsPrincipalTagsOptions_{
+					AwsPrincipalTagsOptions: &ccpb.TokenOptions_AwsPrincipalTagsOptions{
+						AllowedPrincipalTags: &ccpb.TokenOptions_AwsPrincipalTagsOptions_AllowedPrincipalTags{},
+					},
+				},
+			},
+		},
+		{
+			name: "MissingAudNonceTokenType",
+			tokenOptions: &models.TokenOptions{
+				PrincipalTagOptions: &models.AWSPrincipalTagsOptions{
+					AllowedPrincipalTags: &models.AllowedPrincipalTags{},
+				},
+			},
+			wantpb: &ccpb.TokenOptions{
+				TokenTypeOptions: &ccpb.TokenOptions_AwsPrincipalTagsOptions_{
+					AwsPrincipalTagsOptions: &ccpb.TokenOptions_AwsPrincipalTagsOptions{
+						AllowedPrincipalTags: &ccpb.TokenOptions_AwsPrincipalTagsOptions_AllowedPrincipalTags{},
+					},
+				},
+			},
+		},
+		{
+			name: "TokenOptionsHappyPath",
+			tokenOptions: &models.TokenOptions{
+				Audience:  "TestingAudience",
+				Nonces:    []string{"thisisthefirstnonce", "thisisthesecondnonce"},
+				TokenType: "AWS_PRINCIPALTAGS",
+				PrincipalTagOptions: &models.AWSPrincipalTagsOptions{
+					AllowedPrincipalTags: &models.AllowedPrincipalTags{
+						ContainerImageSignatures: &models.ContainerImageSignatures{
+							KeyIDs: []string{"abcdefg", "12345"},
+						},
+					},
+				},
+			},
+			wantpb: &ccpb.TokenOptions{
+				Audience:  "TestingAudience",
+				Nonce:     []string{"thisisthefirstnonce", "thisisthesecondnonce"},
+				TokenType: ccpb.TokenType_TOKEN_TYPE_AWS_PRINCIPALTAGS,
+				TokenTypeOptions: &ccpb.TokenOptions_AwsPrincipalTagsOptions_{
+					AwsPrincipalTagsOptions: &ccpb.TokenOptions_AwsPrincipalTagsOptions{
+						AllowedPrincipalTags: &ccpb.TokenOptions_AwsPrincipalTagsOptions_AllowedPrincipalTags{
+							ContainerImageSignatures: &ccpb.TokenOptions_AwsPrincipalTagsOptions_AllowedPrincipalTags_ContainerImageSignatures{
+								KeyIds: []string{"abcdefg", "12345"},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "OIDCTokenType",
+			tokenOptions: &models.TokenOptions{
+				TokenType: "OIDC",
+			},
+			wantpb: &ccpb.TokenOptions{
+				TokenType: ccpb.TokenType_TOKEN_TYPE_OIDC,
+			},
+		},
+		{
+			name: "OIDCTokenType",
+			tokenOptions: &models.TokenOptions{
+				TokenType: "OIDC",
+			},
+			wantpb: &ccpb.TokenOptions{
+				TokenType: ccpb.TokenType_TOKEN_TYPE_OIDC,
+			},
+		},
+		{
+			name: "LimitedAWSTokenType",
+			tokenOptions: &models.TokenOptions{
+				TokenType: "LIMITED_AWS",
+			},
+			wantpb: &ccpb.TokenOptions{
+				TokenType: ccpb.TokenType_TOKEN_TYPE_LIMITED_AWS,
+			},
+		},
+		{
+			name: "SingleNonce",
+			tokenOptions: &models.TokenOptions{
+				Nonces: []string{"thisistheonlynonce"},
+			},
+			wantpb: &ccpb.TokenOptions{
+				Nonce: []string{"thisistheonlynonce"},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		pbTokenOpts := convertTokenOptionsToREST(tc.tokenOptions)
+		ok, result := compareTokenOptionsPbs(tc.wantpb, pbTokenOpts)
+		if !ok {
+			t.Errorf("%v: %s", tc.name, result)
+		}
+	}
+}
+
+func compareTokenOptionsPbs(want *ccpb.TokenOptions, got *ccpb.TokenOptions) (bool, string) {
+	if (want == nil) != (got == nil) {
+		return false, fmt.Sprintf("tokenoptions mistmatch: want %v, got %v", want, got)
+	}
+
+	if want == nil {
+		return true, ""
+	}
+
+	if want.Audience != got.Audience {
+		return false, fmt.Sprintf("audience mismatch: want %s, got %s", want.Audience, got.Audience)
+	}
+	diff := cmp.Diff(want.Nonce, got.Nonce)
+	if diff != "" || len(want.Nonce) != len(got.Nonce) {
+		return false, fmt.Sprintf("nonce mismatch: want %v, got %v", want.Nonce, got.Nonce)
+	}
+	if want.TokenType != got.TokenType {
+		return false, fmt.Sprintf("tokentype mismatch: want %v, got %v", want.TokenType, got.TokenType)
+	}
+	ok, result := compareTokenTypeOptionsPb(want, got)
+	if !ok {
+		return ok, result
+	}
+
+	return true, ""
+}
+
+func compareTokenTypeOptionsPb(want *ccpb.TokenOptions, got *ccpb.TokenOptions) (bool, string) {
+	errmessage := fmt.Sprintf("TokenTypeOptions mismatch: want %v, got %v", want.TokenTypeOptions, got.TokenTypeOptions)
+
+	if (want.GetAwsPrincipalTagsOptions() == nil) != (got.GetAwsPrincipalTagsOptions() == nil) {
+		return false, errmessage
+	}
+	wantTagOptions := want.GetAwsPrincipalTagsOptions()
+	gotTagOptions := got.GetAwsPrincipalTagsOptions()
+	if wantTagOptions != nil {
+		wantAllowedTags := wantTagOptions.GetAllowedPrincipalTags()
+		gotAllowedTags := gotTagOptions.GetAllowedPrincipalTags()
+
+		if (wantAllowedTags == nil) != (gotAllowedTags == nil) {
+			return false, errmessage
+		}
+
+		if wantAllowedTags != nil {
+			wantSigs := wantAllowedTags.GetContainerImageSignatures()
+			gotSigs := gotAllowedTags.GetContainerImageSignatures()
+
+			if (wantSigs == nil) != (gotSigs == nil) {
+				return false, errmessage
+			}
+
+			if wantSigs != nil {
+				diff := cmp.Diff(wantSigs.GetKeyIds(), gotSigs.GetKeyIds())
+				if diff != "" {
+					return false, errmessage
+				}
+			}
+		}
+	}
+	return true, ""
 }
