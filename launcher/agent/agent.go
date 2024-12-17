@@ -12,20 +12,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"sync"
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
-	"github.com/google/go-configfs-tsm/configfs/configfsi"
-
-	"github.com/google/go-configfs-tsm/configfs/linuxtsm"
-	tg "github.com/google/go-tdx-guest/client"
-	tlabi "github.com/google/go-tdx-guest/client/linuxabi"
-
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
-	"github.com/google/go-tpm-tools/internal"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/internal/signaturediscovery"
 	"github.com/google/go-tpm-tools/launcher/spec"
@@ -49,13 +41,6 @@ type AttestationAgent interface {
 	Close() error
 }
 
-type attestRoot interface {
-	// Extend measures the cel content into a measurement register and appends to the CEL.
-	Extend(cel.Content, *cel.CEL) error
-	// Attest fetches a technology-specific quote from the root of trust.
-	Attest(nonce []byte) (any, error)
-}
-
 // AttestAgentOpts contains user generated options when calling the
 // VerifyAttestation API
 type AttestAgentOpts struct {
@@ -65,25 +50,20 @@ type AttestAgentOpts struct {
 }
 
 type agent struct {
-	ar               attestRoot
-	cosCel           cel.CEL
+	tpm              io.ReadWriteCloser
+	tpmMu            sync.Mutex
 	fetchedAK        *client.Key
 	client           verifier.Client
 	principalFetcher principalIDTokenFetcher
 	sigsFetcher      signaturediscovery.Fetcher
+	cosCel           cel.CEL
 	launchSpec       spec.LaunchSpec
 	logger           logging.Logger
 	sigsCache        *sigsCache
 }
 
 // CreateAttestationAgent returns an agent capable of performing remote
-// attestation using the machine's (v)TPM or TDX quote.
-//
-// For now, "tpm" and "akFetcher" is still needed even on a TDX quote,
-// because we need to extract GCE instance info from the TPM's AK.
-// TODO(jiankun): remove "tpm" and "akFetcher" from TDX attestAgent once
-// it no longer needs TPM AK for GCE info.
-//
+// attestation using the machine's (v)TPM to GCE's Attestation Service.
 // - tpm is a handle to the TPM on the instance
 // - akFetcher is a func to fetch an attestation key: see go-tpm-tools/client.
 // - principalFetcher is a func to fetch GCE principal tokens for a given audience.
@@ -95,8 +75,8 @@ func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher util.TpmKeyFetcher
 	if err != nil {
 		return nil, fmt.Errorf("failed to create an Attestation Agent: %w", err)
 	}
-
-	attestAgent := &agent{
+	return &agent{
+		tpm:              tpm,
 		client:           verifierClient,
 		fetchedAK:        ak,
 		principalFetcher: principalFetcher,
@@ -104,37 +84,7 @@ func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher util.TpmKeyFetcher
 		launchSpec:       launchSpec,
 		logger:           logger,
 		sigsCache:        &sigsCache{},
-	}
-
-	qp, err := tg.GetQuoteProvider()
-	if err != nil {
-		return nil, fmt.Errorf("GetQuoteProvider should always return nil error, but got %v", err)
-	}
-
-	if err := qp.IsSupported(); err != nil {
-		// check if the quote provider is backed by TDX
-		logger.Info(fmt.Sprintf("Cannot create the TDX quote provider (this is expected on a non-TDX machine): %v", err))
-		logger.Info("Using TPM PCRs for measurement")
-		// if cannot get a TDX Quote Provider, by default using TPM as the attest root
-		attestAgent.ar = &tpmAttestRoot{
-			fetchedAK: ak,
-			tpm:       tpm,
-		}
-	} else {
-		logger.Info("Using TDX RTMRs for measurement")
-		// try to create tsm client for tdx rtmr
-		tsm, err := linuxtsm.MakeClient()
-		if err != nil {
-			return nil, fmt.Errorf("failed to create TSM for TDX: %v", err)
-		}
-
-		attestAgent.ar = &tdxAttestRoot{
-			qp:        qp,
-			tsmClient: tsm,
-		}
-	}
-
-	return attestAgent, nil
+	}, nil
 }
 
 // Close cleans up the agent
@@ -146,7 +96,9 @@ func (a *agent) Close() error {
 // MeasureEvent takes in a cel.Content and appends it to the CEL eventlog
 // under the attestation agent.
 func (a *agent) MeasureEvent(event cel.Content) error {
-	return a.ar.Extend(event, &a.cosCel)
+	a.tpmMu.Lock()
+	defer a.tpmMu.Unlock()
+	return a.cosCel.AppendEvent(a.tpm, cel.CosEventPCR, defaultCELHashAlgo, event)
 }
 
 // Attest fetches the nonce and connection ID from the Attestation Service,
@@ -163,46 +115,25 @@ func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error
 		return nil, fmt.Errorf("failed to get principal tokens: %w", err)
 	}
 
+	var buf bytes.Buffer
+	if err := a.cosCel.EncodeCEL(&buf); err != nil {
+		return nil, err
+	}
+
+	attestation, err := a.attest(challenge.Nonce, buf.Bytes())
+	if err != nil {
+		return nil, fmt.Errorf("failed to attest: %v", err)
+	}
+
 	req := verifier.VerifyAttestationRequest{
 		Challenge:      challenge,
 		GcpCredentials: principalTokens,
+		Attestation:    attestation,
 		TokenOptions: verifier.TokenOptions{
 			CustomAudience: opts.Aud,
 			CustomNonce:    opts.Nonces,
 			TokenType:      opts.TokenType,
 		},
-	}
-
-	attResult, err := a.ar.Attest(challenge.Nonce)
-	if err != nil {
-		return nil, fmt.Errorf("failed to attest: %v", err)
-	}
-
-	var cosCel bytes.Buffer
-	if err := a.cosCel.EncodeCEL(&cosCel); err != nil {
-		return nil, err
-	}
-
-	switch v := attResult.(type) {
-	case *pb.Attestation:
-		a.logger.Info("Attest using TPM quote")
-
-		v.CanonicalEventLog = cosCel.Bytes()
-		req.Attestation = v
-	case *verifier.TDCCELAttestation:
-		a.logger.Info("Attest using TDX quote (Public Preview)")
-
-		certChain, err := internal.GetCertificateChain(a.fetchedAK.Cert(), http.DefaultClient)
-		if err != nil {
-			return nil, fmt.Errorf("failed when fetching certificate chain: %w", err)
-		}
-
-		v.CanonicalEventLog = cosCel.Bytes()
-		v.IntermediateCerts = certChain
-		v.AkCert = a.fetchedAK.CertDERBytes()
-		req.TDCCELAttestation = v
-	default:
-		return nil, fmt.Errorf("received an unsupported attestation type! %v", v)
 	}
 
 	signatures := a.sigsCache.get()
@@ -221,62 +152,10 @@ func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error
 	return resp.ClaimsToken, nil
 }
 
-type tpmAttestRoot struct {
-	tpmMu     sync.Mutex
-	fetchedAK *client.Key
-	tpm       io.ReadWriteCloser
-}
-
-func (t *tpmAttestRoot) Extend(c cel.Content, l *cel.CEL) error {
-	return l.AppendEventPCR(t.tpm, cel.CosEventPCR, defaultCELHashAlgo, c)
-}
-
-func (t *tpmAttestRoot) Attest(nonce []byte) (any, error) {
-	t.tpmMu.Lock()
-	defer t.tpmMu.Unlock()
-
-	return t.fetchedAK.Attest(client.AttestOpts{
-		Nonce:            nonce,
-		CertChainFetcher: http.DefaultClient,
-	})
-}
-
-type tdxAttestRoot struct {
-	tdxMu     sync.Mutex
-	qp        *tg.LinuxConfigFsQuoteProvider
-	tsmClient configfsi.Client
-}
-
-func (t *tdxAttestRoot) Extend(c cel.Content, l *cel.CEL) error {
-	return l.AppendEventRTMR(t.tsmClient, cel.CosRTMR, c)
-}
-
-func (t *tdxAttestRoot) Attest(nonce []byte) (any, error) {
-	t.tdxMu.Lock()
-	defer t.tdxMu.Unlock()
-
-	var tdxNonce [tlabi.TdReportDataSize]byte
-	copy(tdxNonce[:], nonce)
-
-	rawQuote, err := tg.GetRawQuote(t.qp, tdxNonce)
-	if err != nil {
-		return nil, err
-	}
-
-	ccelData, err := os.ReadFile("/sys/firmware/acpi/tables/data/CCEL")
-	if err != nil {
-		return nil, err
-	}
-	ccelTable, err := os.ReadFile("/sys/firmware/acpi/tables/CCEL")
-	if err != nil {
-		return nil, err
-	}
-
-	return &verifier.TDCCELAttestation{
-		CcelAcpiTable: ccelTable,
-		CcelData:      ccelData,
-		TdQuote:       rawQuote,
-	}, nil
+func (a *agent) attest(nonce []byte, cel []byte) (*pb.Attestation, error) {
+	a.tpmMu.Lock()
+	defer a.tpmMu.Unlock()
+	return a.fetchedAK.Attest(client.AttestOpts{Nonce: nonce, CanonicalEventLog: cel, CertChainFetcher: http.DefaultClient})
 }
 
 // Refresh refreshes the internal state of the attestation agent.
