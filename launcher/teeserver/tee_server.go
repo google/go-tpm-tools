@@ -290,31 +290,36 @@ func (a *attestHandler) getEvidence(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusPreconditionFailed)
 			w.Write([]byte(err_msg))
 			return
+		}
 
-			// Check if output file exists.
-			filename := "/tmp/container_launcher/ita_evidence"
-			_, err = os.Stat(filename)
-			if err != nil && !errors.Is(err, os.ErrNotExist) {
-				os.Exit(1)
-			} else if err == nil {
-				os.Remove(filename)
-			}
+		// Check if output file exists.
+		filename := "/tmp/container_launcher/ita_evidence"
+		_, err = os.Stat(filename)
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			w.WriteHeader(http.StatusPreconditionFailed)
+			w.Write([]byte(err.Error()))
+			return
+		} else if err == nil {
+			os.Remove(filename)
+		}
 
-			// Create output file.
-			f, err := os.Create(filename)
-			if err != nil {
-				fmt.Printf("failed to create output file: %v", err)
-				os.Exit(1)
-			}
-			defer f.Close()
+		// Create output file.
+		f, err := os.Create(filename)
+		if err != nil {
+			fmt.Printf("failed to create output file: %v", err)
+			w.WriteHeader(http.StatusPreconditionFailed)
+			w.Write([]byte(err.Error()))
+			return
+		}
+		defer f.Close()
 
-			// Write to output file.
-			_, err = f.WriteString(string(jsonData))
-			if err != nil {
-				fmt.Printf("failed to write to output file: %v", err)
-				os.Exit(1)
-			}
-
+		// Write to output file.
+		_, err = f.WriteString(string(jsonData))
+		if err != nil {
+			fmt.Printf("failed to write to output file: %v", err)
+			w.WriteHeader(http.StatusPreconditionFailed)
+			w.Write([]byte(err.Error()))
+			return
 		}
 
 		w.WriteHeader(http.StatusOK)
