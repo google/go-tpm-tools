@@ -24,7 +24,6 @@ on:
       - main
   pull_request:
 
-
 jobs:
   build:
     strategy:
@@ -32,11 +31,6 @@ jobs:
         go-version: [1.21.x]
         # TODO: Get this working on windows-latest
         os: [ubuntu-latest]
-        # ci will build and run tests based on the following matrix
-        #             mac-os                linux                           windows
-        # x32         [no builds]           . ./cmd ./verifier ./launcher   [no builds]
-        # x64         . ./cmd ./verifier    . ./cmd ./verifier ./launcher   [no builds]
-        # arm64       . ./cmd ./verifier    [no builds]                     [no builds]
         architecture: [x32, x64]
         include:
           - os: macos-latest
@@ -77,21 +71,17 @@ jobs:
       - name: Install Windows packages
         run: choco install openssl
         if: runner.os == 'Windows'
-      - name: Build all modules except launcher
-        run: go build -v ./... ./cmd/... ./verifier/...
-      - name: Build launcher module
-        run: go build -v ./launcher/...
-        if: runner.os == 'Linux'
+      - name: Build all modules
+        run: go build -v ./... ./cmd/... ./launcher/... ./verifier/...
       - name: Run specific tests under root permission
         run: |
           GO_EXECUTABLE_PATH=$(which go)
           sudo $GO_EXECUTABLE_PATH test -v -run "TestFetchImageSignaturesDockerPublic" ./launcher
-        if: runner.os == 'Linux'
       - name: Run all tests in launcher to capture potential data race
         run: go test -v -race ./launcher/...
-        if: (runner.os == 'Linux') && matrix.architecture == 'x64'
-      - name: Test all modules except launcher
-        run: go test -v ./... ./cmd/... ./verifier/... -skip='TestCacheConcurrentSetGet|TestHwAttestationPass|TestHardwareAttestationPass'
+        if: (runner.os == 'Linux' || runner.os == 'macOS') && matrix.architecture == 'x64'
+      - name: Test all modules
+        run: go test -v ./... ./cmd/... ./launcher/... ./verifier/... -skip='TestCacheConcurrentSetGet|TestHwAttestationPass|TestHardwareAttestationPass'
 
   lint:
     strategy:

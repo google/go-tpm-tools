@@ -433,12 +433,7 @@ func (r *ContainerRunner) refreshToken(ctx context.Context) (time.Duration, erro
 		return 0, fmt.Errorf("failed to parse token: %w", err)
 	}
 
-	claimsString, err := json.MarshalIndent(mapClaims, "", "  ")
-	if err != nil {
-		return 0, fmt.Errorf("failed to format claims: %w", err)
-	}
-
-	r.logger.Info("Successfully refreshed attestation token", "claims", string(claimsString))
+	r.logger.Info("successfully refreshed attestation token", "token", mapClaims)
 
 	return getNextRefreshFromExpiration(time.Until(claims.ExpiresAt.Time), rand.Float64()), nil
 }
