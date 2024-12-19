@@ -11,7 +11,6 @@ import (
 	"crypto"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"sync"
@@ -27,6 +26,7 @@ import (
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal"
+	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/internal/signaturediscovery"
 	"github.com/google/go-tpm-tools/launcher/spec"
 	pb "github.com/google/go-tpm-tools/proto/attest"
@@ -72,7 +72,7 @@ type agent struct {
 	principalFetcher principalIDTokenFetcher
 	sigsFetcher      signaturediscovery.Fetcher
 	launchSpec       spec.LaunchSpec
-	logger           *log.Logger
+	logger           logging.Logger
 	sigsCache        *sigsCache
 }
 
@@ -83,7 +83,7 @@ type agent struct {
 // - principalFetcher is a func to fetch GCE principal tokens for a given audience.
 // - signaturesFetcher is a func to fetch container image signatures associated with the running workload.
 // - logger will log any partial errors returned by VerifyAttestation.
-func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher util.TpmKeyFetcher, verifierClient verifier.Client, principalFetcher principalIDTokenFetcher, sigsFetcher signaturediscovery.Fetcher, launchSpec spec.LaunchSpec, logger *log.Logger) (AttestationAgent, error) {
+func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher util.TpmKeyFetcher, verifierClient verifier.Client, principalFetcher principalIDTokenFetcher, sigsFetcher signaturediscovery.Fetcher, launchSpec spec.LaunchSpec, logger logging.Logger) (AttestationAgent, error) {
 	// Fetched the AK and save it, so the agent doesn't need to create a new key everytime
 	ak, err := akFetcher(tpm)
 	if err != nil {
@@ -197,7 +197,7 @@ func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error
 	signatures := a.sigsCache.get()
 	if len(signatures) > 0 {
 		req.ContainerImageSignatures = signatures
-		a.logger.Printf("Found container image signatures: %v\n", signatures)
+		a.logger.Info("Found container image signatures: %v\n", "signatures", signatures)
 	}
 
 	resp, err := a.client.VerifyAttestation(ctx, req)
@@ -205,7 +205,7 @@ func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error
 		return nil, err
 	}
 	if len(resp.PartialErrs) > 0 {
-		a.logger.Printf("Partial errors from VerifyAttestation: %v", resp.PartialErrs)
+		a.logger.Error(fmt.Sprintf("Partial errors from VerifyAttestation: %v", resp.PartialErrs))
 	}
 	return resp.ClaimsToken, nil
 }
@@ -273,11 +273,11 @@ func (t *tdxAttestRoot) Attest(nonce []byte) (any, error) {
 func (a *agent) Refresh(ctx context.Context) error {
 	signatures := fetchContainerImageSignatures(ctx, a.sigsFetcher, a.launchSpec.SignedImageRepos, defaultRetryPolicy, a.logger)
 	a.sigsCache.set(signatures)
-	a.logger.Printf("Refreshed container image signature cache: %v\n", signatures)
+	a.logger.Info("Refreshed container image signature cache", "signatures", signatures)
 	return nil
 }
 
-func fetchContainerImageSignatures(ctx context.Context, fetcher signaturediscovery.Fetcher, targetRepos []string, retry func() backoff.BackOff, logger *log.Logger) []oci.Signature {
+func fetchContainerImageSignatures(ctx context.Context, fetcher signaturediscovery.Fetcher, targetRepos []string, retry func() backoff.BackOff, logger logging.Logger) []oci.Signature {
 	signatures := make([][]oci.Signature, len(targetRepos))
 
 	var wg sync.WaitGroup
@@ -296,10 +296,10 @@ func fetchContainerImageSignatures(ctx context.Context, fetcher signaturediscove
 				},
 				retry(),
 				func(err error, _ time.Duration) {
-					logger.Printf("Failed to fetch container image signatures from repo %q: %v", targetRepo, err)
+					logger.Error(fmt.Sprintf("Failed to fetch container image signatures from repo: %v", err.Error()), "repo", targetRepo)
 				})
 			if err != nil {
-				logger.Printf("Failed all attempts to refresh container signatures from repo %q: %v", targetRepo, err)
+				logger.Error(fmt.Sprintf("Failed all attempts to refresh container signatures from repo: %v", err.Error()), "repo", targetRepo)
 			} else {
 				signatures[index] = sigs
 			}

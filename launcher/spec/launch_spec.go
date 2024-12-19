@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"path"
@@ -19,6 +18,7 @@ import (
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/launcher/internal/experiments"
 	"github.com/google/go-tpm-tools/launcher/internal/launchermount"
+	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/verifier/util"
 )
@@ -83,6 +83,7 @@ const (
 	attestationServiceAddrKey  = "tee-attestation-service-endpoint"
 	logRedirectKey             = "tee-container-log-redirect"
 	memoryMonitoringEnable     = "tee-monitoring-memory-enable"
+	monitoringEnable           = "tee-monitoring-enable"
 	devShmSizeKey              = "tee-dev-shm-size-kb"
 	mountKey                   = "tee-mount"
 )
@@ -113,7 +114,7 @@ type LaunchSpec struct {
 	ProjectID                  string
 	Region                     string
 	Hardened                   bool
-	MemoryMonitoringEnabled    bool
+	MonitoringEnabled          MonitoringType
 	LogRedirect                LogRedirectLocation
 	Mounts                     []launchermount.Mount
 	// DevShmSize is specified in kiB.
@@ -154,9 +155,38 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 		s.SignedImageRepos = append(s.SignedImageRepos, imageRepos...)
 	}
 
-	if val, ok := unmarshaledMap[memoryMonitoringEnable]; ok && val != "" {
-		if boolValue, err := strconv.ParseBool(val); err == nil {
-			s.MemoryMonitoringEnabled = boolValue
+	memVal, memOk := unmarshaledMap[memoryMonitoringEnable]
+	monVal, monOk := unmarshaledMap[monitoringEnable]
+
+	if memOk && monOk {
+		return fmt.Errorf("both %v and %v are specified, only one is permitted", memoryMonitoringEnable, monitoringEnable)
+	} else if memOk {
+		// If value is empty, treat as the default.
+		if memVal == "" {
+			s.MonitoringEnabled = None
+		} else {
+			boolValue, err := strconv.ParseBool(memVal)
+			if err != nil {
+				return fmt.Errorf("invalid value for %v (not a boolean): %v", memoryMonitoringEnable, err)
+			}
+
+			if boolValue {
+				s.MonitoringEnabled = MemoryOnly
+			} else {
+				s.MonitoringEnabled = None
+			}
+		}
+	} else if monOk {
+		// If value is empty, treat as the default.
+		if monVal == "" {
+			s.MonitoringEnabled = None
+		} else {
+
+			var err error
+			s.MonitoringEnabled, err = toMonitoringType(monVal)
+			if err != nil {
+				return err
+			}
 		}
 	}
 
@@ -217,7 +247,7 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 // input to the GCE instance custom metadata and return a LaunchSpec.
 // ImageRef (tee-image-reference) is required, will return an error if
 // ImageRef is not presented in the metadata.
-func GetLaunchSpec(ctx context.Context, logger *log.Logger, client *metadata.Client) (LaunchSpec, error) {
+func GetLaunchSpec(ctx context.Context, logger logging.Logger, client *metadata.Client) (LaunchSpec, error) {
 	data, err := client.GetWithContext(ctx, instanceAttributesQuery)
 	if err != nil {
 		return LaunchSpec{}, err
@@ -271,17 +301,17 @@ func isHardened(kernelCmd string) bool {
 	return false
 }
 
-func fetchExperiments(logger *log.Logger) experiments.Experiments {
+func fetchExperiments(logger logging.Logger) experiments.Experiments {
 	experimentsFile := path.Join(launcherfile.HostTmpPath, experimentDataFile)
 
 	args := fmt.Sprintf("-output=%s", experimentsFile)
 	err := exec.Command(binaryPath, args).Run()
 	if err != nil {
-		logger.Printf("failure during experiment sync: %v\n", err)
+		logger.Error(fmt.Sprintf("failure during experiment sync: %v\n", err))
 	}
 	e, err := experiments.New(experimentsFile)
 	if err != nil {
-		logger.Printf("failed to read experiment file: %v\n", err)
+		logger.Error(fmt.Sprintf("failed to read experiment file: %v\n", err))
 		// do not fail if experiment retrieval fails
 	}
 	return e

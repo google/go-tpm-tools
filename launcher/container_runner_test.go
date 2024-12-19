@@ -7,7 +7,6 @@ import (
 	"crypto/rsa"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"path"
 	"strconv"
@@ -24,6 +23,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/launcher/agent"
+	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/spec"
 	"github.com/opencontainers/go-digest"
@@ -152,7 +152,7 @@ func TestRefreshToken(t *testing.T) {
 				return expectedToken, nil
 			},
 		},
-		logger: log.Default(),
+		logger: logging.SimpleLogger(),
 	}
 
 	if err := os.MkdirAll(launcherfile.HostTmpPath, 0744); err != nil {
@@ -197,7 +197,7 @@ func TestRefreshTokenWithSignedContainerCacheEnabled(t *testing.T) {
 
 	runner := ContainerRunner{
 		attestAgent: fakeAgent,
-		logger:      log.Default(),
+		logger:      logging.SimpleLogger(),
 	}
 
 	if err := os.MkdirAll(launcherfile.HostTmpPath, 0744); err != nil {
@@ -270,7 +270,7 @@ func TestRefreshTokenError(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			runner := ContainerRunner{
 				attestAgent: tc.agent,
-				logger:      log.Default(),
+				logger:      logging.SimpleLogger(),
 			}
 
 			if _, err := runner.refreshToken(context.Background()); err == nil {
@@ -293,7 +293,7 @@ func TestFetchAndWriteTokenSucceeds(t *testing.T) {
 				return expectedToken, nil
 			},
 		},
-		logger: log.Default(),
+		logger: logging.SimpleLogger(),
 	}
 
 	if err := runner.fetchAndWriteToken(ctx); err != nil {
@@ -333,7 +333,7 @@ func TestTokenIsNotChangedIfRefreshFails(t *testing.T) {
 
 	runner := ContainerRunner{
 		attestAgent: attestAgent,
-		logger:      log.Default(),
+		logger:      logging.SimpleLogger(),
 	}
 
 	if err := runner.fetchAndWriteToken(ctx); err != nil {
@@ -410,7 +410,7 @@ func testRetryPolicyWithNTries(t *testing.T, numTries int, expectRefresh bool) {
 	}
 	runner := ContainerRunner{
 		attestAgent: &fakeAttestationAgent{attestFunc: attestFunc},
-		logger:      log.Default(),
+		logger:      logging.SimpleLogger(),
 	}
 	if err := runner.fetchAndWriteTokenWithRetry(ctx, testRetryPolicyThreeTimes); err != nil {
 		t.Fatalf("fetchAndWriteTokenWithRetry failed: %v", err)
@@ -471,7 +471,7 @@ func TestFetchAndWriteTokenWithTokenRefresh(t *testing.T) {
 	}
 	runner := ContainerRunner{
 		attestAgent: attestAgent,
-		logger:      log.Default(),
+		logger:      logging.SimpleLogger(),
 	}
 
 	if err := runner.fetchAndWriteToken(ctx); err != nil {
@@ -624,7 +624,7 @@ func TestMeasureCELEvents(t *testing.T) {
 				attestAgent: fakeAgent,
 				container:   fakeContainer,
 				launchSpec:  tc.launchSpec,
-				logger:      log.Default(),
+				logger:      logging.SimpleLogger(),
 			}
 
 			if err := r.measureCELEvents(ctx); err != nil {
@@ -633,6 +633,57 @@ func TestMeasureCELEvents(t *testing.T) {
 
 			if !cmp.Equal(gotEvents, tc.wantCELEvents) {
 				t.Errorf("failed to measure CEL events, got %v, but want %v", gotEvents, tc.wantCELEvents)
+			}
+		})
+	}
+}
+
+func TestPullImageWithRetries(t *testing.T) {
+	testCases := []struct {
+		name        string
+		imagePuller func(int) (containerd.Image, error)
+		wantPass    bool
+	}{
+		{
+			name:        "success with single attempt",
+			imagePuller: func(int) (containerd.Image, error) { return &fakeImage{}, nil },
+			wantPass:    true,
+		},
+		{
+			name: "failure then success",
+			imagePuller: func(attempts int) (containerd.Image, error) {
+				if attempts%2 == 1 {
+					return nil, errors.New("fake error")
+				}
+				return &fakeImage{}, nil
+			},
+			wantPass: true,
+		},
+		{
+			name: "failure with attempts exceeded",
+			imagePuller: func(int) (containerd.Image, error) {
+				return nil, errors.New("fake error")
+			},
+			wantPass: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			retryPolicy := func() backoff.BackOff {
+				b := backoff.NewExponentialBackOff()
+				return backoff.WithMaxRetries(b, 2)
+			}
+
+			attempts := 0
+			_, err := pullImageWithRetries(
+				func() (containerd.Image, error) {
+					attempts++
+					return tc.imagePuller(attempts)
+				},
+				retryPolicy)
+			if gotPass := (err == nil); gotPass != tc.wantPass {
+				t.Errorf("pullImageWithRetries failed, got %v, but want %v", gotPass, tc.wantPass)
 			}
 		})
 	}
