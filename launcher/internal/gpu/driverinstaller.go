@@ -147,11 +147,11 @@ func (di *DriverInstaller) InstallGPUDrivers(ctx context.Context) error {
 }
 
 func getInstallerImageReference() (string, error) {
-	installerImageRefBytes, err := exec.Command("cos-extensions", "list", "--", "--gpu-installer").Output()
+	imageRefBytes, err := os.ReadFile(GpuInstallerImageRefFilepath)
 	if err != nil {
 		return "", fmt.Errorf("failed to get the cos-gpu-installer version: %v", err)
 	}
-	installerImageRef := strings.TrimSpace(string(installerImageRefBytes))
+	installerImageRef := strings.TrimSpace(string(imageRefBytes))
 	return installerImageRef, nil
 }
 
