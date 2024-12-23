@@ -107,7 +107,7 @@ The OIDC token includes claims regarding the GCE VM, which is verified by Attest
 			}
 
 			cloudLogger = cloudLogClient.Logger(toolName)
-			fmt.Fprint(debugOutput(), "cloudLogger created for project: "+projectID+"\n")
+			fmt.Fprintf(debugOutput(), "cloudLogger created for project: %s\n", projectID)
 		}
 
 		key = "gceAK"
@@ -175,7 +175,7 @@ The OIDC token includes claims regarding the GCE VM, which is verified by Attest
 		}
 
 		if output == "" {
-			fmt.Fprint(messageOutput(), string(token)+"\n")
+			fmt.Fprintf(messageOutput(), "%s\n", string(token))
 		} else {
 			out := []byte(token)
 			if _, err := dataOutput().Write(out); err != nil {
@@ -194,7 +194,7 @@ The OIDC token includes claims regarding the GCE VM, which is verified by Attest
 			}
 		}
 
-		fmt.Fprint(debugOutput(), string(claimsString)+"\n"+"Note: these Claims are for debugging purpose and not verified"+"\n")
+		fmt.Fprintf(debugOutput(), "%s\nNote: these Claims are for debugging purpose and not verified\n", string(claimsString))
 
 		return nil
 	},
