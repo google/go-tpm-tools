@@ -35,6 +35,12 @@ const (
 	holdRC   = 4 // hold
 )
 
+var expectedTPMDAParams = launcher.TPMDAParams{
+	MaxTries:        0x20,    // 32 tries
+	RecoveryTime:    0x1C20,  // 120 mins
+	LockoutRecovery: 0x15180, // 24 hrs
+}
+
 var rcMessage = map[int]string{
 	successRC: "workload finished successfully, shutting down the VM",
 	failRC:    "workload or launcher error, shutting down the VM",
@@ -176,7 +182,7 @@ func getUptime() (string, error) {
 }
 
 func startLauncher(launchSpec spec.LaunchSpec, serialConsole *os.File) error {
-	logger.Info(fmt.Sprintf("Launch Spec: %+v\n", launchSpec))
+	logger.Info(fmt.Sprintf("Launch Spec: %+v", launchSpec))
 	containerdClient, err := containerd.New(defaults.DefaultAddress)
 	if err != nil {
 		return &launcher.RetryableError{Err: err}
@@ -201,6 +207,27 @@ func startLauncher(launchSpec spec.LaunchSpec, serialConsole *os.File) error {
 		return &launcher.RetryableError{Err: err}
 	}
 	defer tpm.Close()
+
+	// check DA info, don't crash if failed
+	daInfo, err := launcher.GetTPMDAInfo(tpm)
+	if err != nil {
+		logger.Error(fmt.Sprintf("Failed to get DA Info: %v", err))
+	} else {
+		if !daInfo.StartupClearOrderly {
+			logger.Warn(fmt.Sprintf("Failed orderly startup. Avoid using instance reset. Instead, use instance stop/start. DA lockout counter incremented: LockoutCounter: %d / MaxAuthFail: %d", daInfo.LockoutCounter, daInfo.MaxTries))
+		}
+
+		if err := launcher.SetTPMDAParams(tpm, expectedTPMDAParams); err != nil {
+			logger.Error(fmt.Sprintf("Failed to set DA params: %v", err))
+		}
+
+		daInfo, err := launcher.GetTPMDAInfo(tpm)
+		if err != nil {
+			logger.Error(fmt.Sprintf("Failed to get DA Info: %v", err))
+		} else {
+			logger.Info(fmt.Sprintf("Updated TPM DA params: %+v", daInfo))
+		}
+	}
 
 	// check AK (EK signing) cert
 	gceAk, err := client.GceAttestationKeyECC(tpm)
