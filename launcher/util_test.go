@@ -2,6 +2,7 @@ package launcher
 
 import (
 	"bytes"
+
 	"context"
 	"encoding/json"
 	"fmt"
@@ -13,6 +14,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-tpm-tools/client"
+	"github.com/google/go-tpm-tools/internal/test"
 	"google.golang.org/api/option"
 )
 
@@ -44,6 +48,36 @@ var testClient = &http.Client{
 			}
 		},
 	},
+}
+
+func TestTPMDAOps(t *testing.T) {
+	rwc := test.GetTPM(t)
+	defer client.CheckedClose(t, rwc)
+
+	daInfo, err := GetTPMDAInfo(rwc)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// default simualator TPM params
+	expectedDaInfo := TPMDAParams{0, 3, 1000, 1000, true}
+	if !cmp.Equal(*daInfo, expectedDaInfo) {
+		t.Errorf("expected default DA parameters, got %+v, want %+v", daInfo, expectedDaInfo)
+	}
+
+	err = SetTPMDAParams(rwc, TPMDAParams{MaxTries: 123, RecoveryTime: 456, LockoutRecovery: 789})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	daInfo, err = GetTPMDAInfo(rwc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectedDaInfo = TPMDAParams{0 /*LockoutCounter*/, 123 /*MaxTries*/, 456 /*RecoveryTime*/, 789 /*LockoutRecovery*/, true}
+	if !cmp.Equal(*daInfo, expectedDaInfo) {
+		t.Errorf("expected default DA parameters, got %+v, want %+v", daInfo, expectedDaInfo)
+	}
 }
 
 func TestFetchImpersonatedToken(t *testing.T) {
