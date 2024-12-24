@@ -2,15 +2,16 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"os/exec"
 	"regexp"
 	"strings"
+	"time"
 
 	"cloud.google.com/go/compute/metadata"
 	"github.com/containerd/containerd"
@@ -19,6 +20,7 @@ import (
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/launcher"
 	"github.com/google/go-tpm-tools/launcher/internal/gpu"
+	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/registryauth"
 	"github.com/google/go-tpm-tools/launcher/spec"
@@ -43,75 +45,85 @@ var rcMessage = map[int]string{
 // BuildCommit shows the commit when building the binary, set by -ldflags when building
 var BuildCommit = "dev"
 
-var logger *log.Logger
+var logger logging.Logger
 var mdsClient *metadata.Client
 
 var welcomeMessage = "TEE container launcher initiating"
 var exitMessage = "TEE container launcher exiting"
 
+var start time.Time
+
 func main() {
+	uptime, err := getUptime()
+	if err != nil {
+		logger.Error(fmt.Sprintf("error reading VM uptime: %v", err))
+	}
+	// Note the current time to later calculate launch time.
+	start = time.Now()
+
 	var exitCode int // by default exit code is 0
-	var err error
 	ctx := context.Background()
 
-	logger = log.Default()
-	// log.Default() outputs to stderr; change to stdout.
-	log.SetOutput(os.Stdout)
 	defer func() {
 		os.Exit(exitCode)
 	}()
 
-	serialConsole, err := os.OpenFile("/dev/console", os.O_WRONLY, 0)
+	logger, err = logging.NewLogger(ctx)
 	if err != nil {
-		logger.Printf("failed to open serial console for writing: %v\n", err)
+		log.Default().Printf("failed to initialize logging")
 		exitCode = failRC
-		logger.Printf("%s, exit code: %d (%s)\n", exitMessage, exitCode, rcMessage[exitCode])
+		log.Default().Printf("%s, exit code: %d (%s)\n", exitMessage, exitCode, rcMessage[exitCode])
 		return
 	}
-	defer serialConsole.Close()
-	logger.SetOutput(io.MultiWriter(os.Stdout, serialConsole))
+	defer logger.Close()
 
-	logger.Println(welcomeMessage)
-	logger.Printf("Build commit: %s\n", BuildCommit)
+	logger.Info("Boot completed", "duration_sec", uptime)
+	logger.Info(welcomeMessage, "build_commit", BuildCommit)
 
 	if err := verifyFsAndMount(); err != nil {
-		logger.Printf("failed to verify filesystem and mounts: %v\n", err)
+		logger.Error(fmt.Sprintf("failed to verify filesystem and mounts: %v\n", err))
 		exitCode = rebootRC
-		logger.Printf("%s, exit code: %d (%s)\n", exitMessage, exitCode, rcMessage[exitCode])
+		logger.Error(exitMessage, "exit_code", exitCode, "exit_msg", rcMessage[exitCode])
 		return
 	}
 
 	if err := os.MkdirAll(launcherfile.HostTmpPath, 0744); err != nil {
-		logger.Printf("failed to create %s: %v", launcherfile.HostTmpPath, err)
+		logger.Error(fmt.Sprintf("failed to create %s: %v", launcherfile.HostTmpPath, err))
 	}
 
 	// Get RestartPolicy and IsHardened from spec
 	mdsClient = metadata.NewClient(nil)
 	launchSpec, err := spec.GetLaunchSpec(ctx, logger, mdsClient)
 	if err != nil {
-		logger.Printf("failed to get launchspec, make sure you're running inside a GCE VM: %v\n", err)
+		logger.Error(fmt.Sprintf("failed to get launchspec, make sure you're running inside a GCE VM: %v", err))
 		// if cannot get launchSpec, exit directly
 		exitCode = failRC
-		logger.Printf("%s, exit code: %d (%s)\n", exitMessage, exitCode, rcMessage[exitCode])
+		logger.Error(exitMessage, "exit_code", exitCode, "exit_msg", rcMessage[exitCode])
 		return
 	}
 
 	defer func() {
 		// Catch panic to attempt to output to Cloud Logging.
 		if r := recover(); r != nil {
-			logger.Println("Panic:", r)
+			logger.Error(fmt.Sprintf("Panic: %v", r))
 			exitCode = 2
 		}
 		msg, ok := rcMessage[exitCode]
 		if ok {
-			logger.Printf("%s, exit code: %d (%s)\n", exitMessage, exitCode, msg)
+			logger.Info(exitMessage, "exit_code", exitCode, "exit_msg", msg)
 		} else {
-			logger.Printf("%s, exit code: %d\n", exitMessage, exitCode)
+			logger.Info(exitMessage, "exit_code", exitCode)
 		}
 	}()
-	if err = startLauncher(ctx, launchSpec, serialConsole); err != nil {
-		logger.Println(err)
+	if err = startLauncher(launchSpec, logger.SerialConsoleFile()); err != nil {
+		logger.Error(err.Error())
 	}
+
+	workloadDuration := time.Since(start)
+	logger.Info("Workload completed",
+		"workload", launchSpec.ImageRef,
+		"workload_execution_sec", workloadDuration.Seconds(),
+	)
 
 	exitCode = getExitCode(launchSpec.Hardened, launchSpec.RestartPolicy, err)
 }
@@ -148,8 +160,23 @@ func getExitCode(isHardened bool, restartPolicy spec.RestartPolicy, err error) i
 	return exitCode
 }
 
-func startLauncher(ctx context.Context, launchSpec spec.LaunchSpec, serialConsole *os.File) error {
-	logger.Printf("Launch Spec: %+v\n", launchSpec)
+func getUptime() (string, error) {
+	file, err := os.ReadFile("/proc/uptime")
+	if err != nil {
+		return "", fmt.Errorf("error opening /proc/uptime: %v", err)
+	}
+
+	// proc/uptime contains two values separated by a space. We only need the first.
+	split := bytes.Split(file, []byte(" "))
+	if len(split) != 2 {
+		return "", fmt.Errorf("unexpected /proc/uptime contents: %s", file)
+	}
+
+	return string(split[0]), nil
+}
+
+func startLauncher(launchSpec spec.LaunchSpec, serialConsole *os.File) error {
+	logger.Info(fmt.Sprintf("Launch Spec: %+v\n", launchSpec))
 	containerdClient, err := containerd.New(defaults.DefaultAddress)
 	if err != nil {
 		return &launcher.RetryableError{Err: err}
@@ -185,12 +212,14 @@ func startLauncher(ctx context.Context, launchSpec spec.LaunchSpec, serialConsol
 	}
 	gceAk.Close()
 
-	token, err := registryauth.RetrieveAuthToken(ctx, mdsClient)
+	token, err := registryauth.RetrieveAuthToken(context.Background(), mdsClient)
 	if err != nil {
-		logger.Printf("failed to retrieve auth token: %v, using empty auth for image pulling\n", err)
+		logger.Info(fmt.Sprintf("failed to retrieve auth token: %v, using empty auth for image pulling\n", err))
 	}
 
-	ctx = namespaces.WithNamespace(ctx, namespaces.Default)
+	logger.Info("Launch started", "duration_sec", time.Since(start).Seconds())
+
+	ctx := namespaces.WithNamespace(context.Background(), namespaces.Default)
 	r, err := launcher.NewRunner(ctx, containerdClient, token, launchSpec, mdsClient, tpm, logger, serialConsole)
 	if err != nil {
 		return err

@@ -102,7 +102,7 @@ func (c *restClient) CreateChallenge(ctx context.Context) (*verifier.Challenge, 
 	}
 	chal, err := c.v1Client.CreateChallenge(ctx, req)
 	if err != nil {
-		return nil, fmt.Errorf("calling v1.CreateChallenge: %w", err)
+		return nil, fmt.Errorf("calling v1.CreateChallenge in %v: %w", c.location.LocationId, err)
 	}
 	return convertChallengeFromREST(chal)
 }
@@ -116,7 +116,7 @@ func (c *restClient) VerifyAttestation(ctx context.Context, request verifier.Ver
 	req.Challenge = request.Challenge.Name
 	response, err := c.v1Client.VerifyAttestation(ctx, req)
 	if err != nil {
-		return nil, fmt.Errorf("calling v1.VerifyAttestation: %w", err)
+		return nil, fmt.Errorf("calling v1.VerifyAttestation in %v: %w", c.location.LocationId, err)
 	}
 	return convertResponseFromREST(response)
 }
