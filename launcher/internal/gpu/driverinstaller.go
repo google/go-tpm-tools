@@ -4,7 +4,6 @@ package gpu
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"strings"
@@ -14,6 +13,7 @@ import (
 	"github.com/containerd/containerd/cio"
 	"github.com/containerd/containerd/namespaces"
 	"github.com/containerd/containerd/oci"
+	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/spec"
 	"github.com/opencontainers/runtime-spec/specs-go"
 )
@@ -35,11 +35,11 @@ var supportedGpuTypes = []deviceinfo.GPUType{
 type DriverInstaller struct {
 	cdClient   *containerd.Client
 	launchSpec spec.LaunchSpec
-	logger     *log.Logger
+	logger     logging.Logger
 }
 
 // NewDriverInstaller instanciates an object of driver installer
-func NewDriverInstaller(cdClient *containerd.Client, launchSpec spec.LaunchSpec, logger *log.Logger) *DriverInstaller {
+func NewDriverInstaller(cdClient *containerd.Client, launchSpec spec.LaunchSpec, logger logging.Logger) *DriverInstaller {
 	return &DriverInstaller{
 		cdClient:   cdClient,
 		launchSpec: launchSpec,
@@ -69,11 +69,11 @@ func (di *DriverInstaller) InstallGPUDrivers(ctx context.Context) error {
 	ctx = namespaces.WithNamespace(ctx, namespaces.Default)
 	installerImageRef, err := getInstallerImageReference()
 	if err != nil {
-		di.logger.Printf("failed to get the installer container image reference: %v", err)
+		di.logger.Info(fmt.Sprintf("failed to get the installer container image reference: %v", err))
 		return err
 	}
 
-	di.logger.Printf("cos gpu installer version : %s", installerImageRef)
+	di.logger.Info(fmt.Sprintf("cos gpu installer version : %s", installerImageRef))
 	image, err := di.cdClient.Pull(ctx, installerImageRef, containerd.WithPullUnpack)
 	if err != nil {
 		return fmt.Errorf("failed to pull installer image: %v", err)
@@ -95,7 +95,7 @@ func (di *DriverInstaller) InstallGPUDrivers(ctx context.Context) error {
 
 	hostname, err := os.Hostname()
 	if err != nil {
-		di.logger.Printf("cannot get hostname: %v", err)
+		di.logger.Info(fmt.Sprintf("cannot get hostname: %v", err))
 	}
 
 	container, err := di.cdClient.NewContainer(
@@ -138,11 +138,11 @@ func (di *DriverInstaller) InstallGPUDrivers(ctx context.Context) error {
 	code, _, _ := status.Result()
 
 	if code != 0 {
-		di.logger.Printf("Gpu driver installation task ended and returned non-zero status code %d", code)
+		di.logger.Info(fmt.Sprintf("Gpu driver installation task ended and returned non-zero status code %d", code))
 		return fmt.Errorf("gpu driver installation task ended with non-zero status code %d", code)
 	}
 
-	di.logger.Println("Gpu driver installation task exited with status: 0")
+	di.logger.Info("Gpu driver installation task exited with status: 0")
 	return nil
 }
 
