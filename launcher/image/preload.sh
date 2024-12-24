@@ -3,6 +3,7 @@
 readonly OEM_PATH='/usr/share/oem'
 readonly CS_PATH="${OEM_PATH}/confidential_space"
 readonly EXPERIMENTS_BINARY="confidential_space_experiments"
+readonly GPU_INSTALLER_IMAGE_REF="cos_gpu_installer_image_reference"
 
 copy_launcher() {
   cp launcher "${CS_PATH}/cs_container_launcher"
@@ -17,6 +18,10 @@ copy_experiment_client() {
 setup_launcher_systemd_unit() {
   cp container-runner.service "${CS_PATH}/container-runner.service"
   cp exit_script.sh "${CS_PATH}/exit_script.sh"
+}
+
+set_cos_gpu_installer_image_reference() {
+  cos-extensions list -- --gpu-installer >> "${CS_PATH}"/"${GPU_INSTALLER_IMAGE_REF}"
 }
 
 append_cmdline() {
@@ -116,6 +121,7 @@ main() {
   append_cmdline "cos.protected_stateful_partition=m"
   # Increase wait timeout of the protected stateful partition.
   append_cmdline "systemd.default_timeout_start_sec=900s"
+  set_cos_gpu_installer_image_reference
 
   if [[ "${IMAGE_ENV}" == "debug" ]]; then
     configure_systemd_units_for_debug
