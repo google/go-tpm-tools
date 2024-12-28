@@ -51,41 +51,20 @@ func NewSystemStatsConfig() SystemStatsConfig {
 
 var allConfig = &SystemStatsConfig{
 	CPU: &statsConfig{map[string]metricConfig{
-		"cpu/runnable_task_count": {"cpu/runnable_task_count"},
-		"cpu/usage_time":          {"cpu/usage_time"},
-		"cpu/load_1m":             {"cpu/load_1m"},
-		"cpu/load_5m":             {"cpu/load_5m"},
-		"cpu/load_15m":            {"cpu/load_15m"},
-		"system/cpu_stat":         {"system/cpu_stat"},
-		"system/interrupts_total": {"system/interrupts_total"},
-		"system/processes_total":  {"system/processes_total"},
-		"system/procs_blocked":    {"system/procs_blocked"},
-		"system/procs_running":    {"system/procs_running"},
+		"cpu/usage_time": {"cpu/usage_time"},
+		"cpu/load_1m":    {"cpu/load_1m"},
 	}},
 	Disk: &diskConfig{
 		true, true, "5s",
 		&statsConfig{map[string]metricConfig{
-			"disk/avg_queue_len":          {"disk/avg_queue_len"},
-			"disk/bytes_used":             {"disk/bytes_used"},
-			"disk/percent_used":           {"disk/percent_used"},
-			"disk/io_time":                {"disk/io_time"},
-			"disk/merged_operation_count": {"disk/merged_operation_count"},
-			"disk/operation_bytes_count":  {"disk/operation_bytes_count"},
-			"disk/operation_count":        {"disk/operation_count"},
-			"disk/operation_time":         {"disk/operation_time"},
-			"disk/weighted_io":            {"disk/weighted_io"},
+			"disk/io_time": {"disk/io_time"},
 		}},
 	},
 	Host: &statsConfig{map[string]metricConfig{
 		"host/uptime": {"host/uptime"},
 	}},
 	Memory: &statsConfig{map[string]metricConfig{
-		"memory/anonymous_used":   {"memory/anonymous_used"},
-		"memory/bytes_used":       {"memory/bytes_used"},
-		"memory/dirty_used":       {"memory/dirty_used"},
-		"memory/page_cache_used":  {"memory/page_cache_used"},
-		"memory/unevictable_used": {"memory/unevictable_used"},
-		"memory/percent_used":     {"memory/percent_used"},
+		"memory/bytes_used": {"memory/bytes_used"},
 	}},
 	InvokeInterval: defaultInvokeIntervalString,
 }
