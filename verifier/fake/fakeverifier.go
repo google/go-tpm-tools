@@ -4,6 +4,7 @@ package fake
 import (
 	"context"
 	"crypto"
+	"encoding/base64"
 	"encoding/binary"
 	"fmt"
 	"time"
@@ -11,10 +12,7 @@ import (
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-tpm-tools/server"
 	"github.com/google/go-tpm-tools/verifier"
-	"github.com/google/go-tpm-tools/verifier/oci"
 	"github.com/google/go-tpm/legacy/tpm2"
-	"go.uber.org/multierr"
-	"google.golang.org/genproto/googleapis/rpc/code"
 	"google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 )
@@ -81,12 +79,12 @@ func (fc *fakeClient) VerifyAttestation(_ context.Context, req verifier.VerifyAt
 	var signatureClaims []ContainerImageSignatureClaims
 	var partialErrs []*status.Status
 	for _, signature := range req.ContainerImageSignatures {
-		sc, err := verifyContainerImageSignature(signature)
-		if err != nil {
-			partialErrs = append(partialErrs, &status.Status{Code: int32(code.Code_INVALID_ARGUMENT), Message: err.Error()})
-		} else {
-			signatureClaims = append(signatureClaims, sc)
-		}
+		signatureClaims = append(signatureClaims, ContainerImageSignatureClaims{
+			Payload:   string(signature.Payload),
+			Signature: base64.StdEncoding.EncodeToString(signature.Signature),
+			PubKey:    string(signature.PubKey),
+			SigAlg:    string(signature.SigAlg),
+		})
 	}
 	claims.ContainerImageSignatures = signatureClaims
 
@@ -104,30 +102,4 @@ func (fc *fakeClient) VerifyAttestation(_ context.Context, req verifier.VerifyAt
 	}
 
 	return &response, nil
-}
-
-func verifyContainerImageSignature(signature oci.Signature) (ContainerImageSignatureClaims, error) {
-	var err error
-	payload, e := signature.Payload()
-	if e != nil {
-		err = multierr.Append(err, e)
-	}
-	b64Sig, e := signature.Base64Encoded()
-	if e != nil {
-		err = multierr.Append(err, e)
-	}
-	pubKey, e := signature.PublicKey()
-	if e != nil {
-		err = multierr.Append(err, e)
-	}
-	sigAlg, e := signature.SigningAlgorithm()
-	if e != nil {
-		err = multierr.Append(err, e)
-	}
-	return ContainerImageSignatureClaims{
-		Payload:   string(payload),
-		Signature: b64Sig,
-		PubKey:    string(pubKey),
-		SigAlg:    string(sigAlg),
-	}, err
 }

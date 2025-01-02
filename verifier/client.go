@@ -33,6 +33,13 @@ type TokenOptions struct {
 	TokenType      string
 }
 
+type ContainerSignature struct {
+	Payload   []byte
+	Signature []byte
+	PubKey    []byte
+	SigAlg    oci.SigningAlgorithm
+}
+
 // VerifyAttestationRequest is passed in on VerifyAttestation. It contains the
 // Challenge from CreateChallenge, optional GcpCredentials linked to the
 // attestation, the Attestation generated from the TPM, and optional container image signatures associated with the workload.
@@ -41,7 +48,7 @@ type VerifyAttestationRequest struct {
 	GcpCredentials [][]byte
 	// Attestation is for TPM attestation
 	Attestation              *attestpb.Attestation
-	ContainerImageSignatures []oci.Signature
+	ContainerImageSignatures []*ContainerSignature
 	TokenOptions             TokenOptions
 	// TDCCELAttestation is for TDX CCEL RTMR attestation
 	TDCCELAttestation *TDCCELAttestation

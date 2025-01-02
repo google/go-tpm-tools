@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"crypto"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"net/http"
@@ -218,8 +219,12 @@ func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error
 
 	signatures := a.sigsCache.get()
 	if len(signatures) > 0 {
-		req.ContainerImageSignatures = signatures
-		a.logger.Info("Found container image signatures: %v\n", "signatures", signatures)
+		verifierSigs, err := convertToContainerSignatures(signatures)
+		if err != nil {
+			return nil, fmt.Errorf("error converting container signatures: %v", err)
+		}
+		req.ContainerImageSignatures = verifierSigs
+		a.logger.Info("Found container image signatures: %v\n", signatures)
 	}
 
 	resp, err := a.client.VerifyAttestation(ctx, req)
@@ -230,6 +235,41 @@ func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error
 		a.logger.Error(fmt.Sprintf("Partial errors from VerifyAttestation: %v", resp.PartialErrs))
 	}
 	return resp.ClaimsToken, nil
+}
+
+func convertToContainerSignatures(ociSigs []oci.Signature) ([]*verifier.ContainerSignature, error) {
+	sigs := make([]*verifier.ContainerSignature, len(ociSigs))
+	for i, ociSig := range ociSigs {
+		payload, err := ociSig.Payload()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get payload from signature [%v]: %v", ociSig, err)
+		}
+		b64Sig, err := ociSig.Base64Encoded()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get base64 signature from signature [%v]: %v", ociSig, err)
+		}
+		sigBytes, err := base64.StdEncoding.DecodeString(b64Sig)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode signature for signature [%v]: %v", ociSig, err)
+		}
+		pubKey, err := ociSig.PublicKey()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get public key from signature [%v]: %v", ociSig, err)
+		}
+		sigAlg, err := ociSig.SigningAlgorithm()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get signing algorithm from signature [%v]: %v", ociSig, err)
+		}
+
+		sigs[i] = &verifier.ContainerSignature{
+			Payload:   payload,
+			Signature: sigBytes,
+			PubKey:    pubKey,
+			SigAlg:    sigAlg,
+		}
+	}
+
+	return sigs, nil
 }
 
 type tpmAttestRoot struct {
