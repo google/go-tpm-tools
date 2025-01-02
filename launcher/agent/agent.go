@@ -104,14 +104,14 @@ func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher util.TpmKeyFetcher
 	// check if is a TDX machine
 	qp, err := tg.GetQuoteProvider()
 	if err != nil || qp.IsSupported() != nil {
-		logger.Println("Using TPM PCRs for measurement.")
+		logger.Info("Using TPM PCRs for measurement.")
 		// by default using TPM
 		attestAgent.ar = &tpmAttestRoot{
 			fetchedAK: ak,
 			tpm:       tpm,
 		}
 	} else {
-		logger.Println("Using TDX RTMRs for measurement.")
+		logger.Info("Using TDX RTMRs for measurement.")
 		// try to create tsm client for tdx rtmr
 		tsm, err := linuxtsm.MakeClient()
 		if err != nil {
@@ -175,12 +175,12 @@ func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error
 
 	switch v := attResult.(type) {
 	case *pb.Attestation:
-		a.logger.Println("attestation through TPM quote")
+		a.logger.Info("attestation through TPM quote")
 
 		v.CanonicalEventLog = cosCel.Bytes()
 		req.Attestation = v
 	case *verifier.TDCCELAttestation:
-		a.logger.Println("attestation through TDX quote")
+		a.logger.Info("attestation through TDX quote")
 
 		certChain, err := internal.GetCertificateChain(a.fetchedAK.Cert(), http.DefaultClient)
 		if err != nil {
