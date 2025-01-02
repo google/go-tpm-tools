@@ -75,7 +75,7 @@ func main() {
 
 	logger, err = logging.NewLogger(ctx)
 	if err != nil {
-		log.Default().Printf("failed to initialize logging")
+		log.Default().Printf("failed to initialize logging: %v", err)
 		exitCode = failRC
 		log.Default().Printf("%s, exit code: %d (%s)\n", exitMessage, exitCode, rcMessage[exitCode])
 		return

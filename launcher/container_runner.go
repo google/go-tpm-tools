@@ -75,6 +75,9 @@ const (
 	defaultRefreshJitter = 0.1
 )
 
+// Default OOM score for a CS container.
+const defaultOOMScore = 1000
+
 // NewRunner returns a runner.
 func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.Token, launchSpec spec.LaunchSpec, mdsClient *metadata.Client, tpm io.ReadWriteCloser, logger logging.Logger, serialConsole *os.File) (*ContainerRunner, error) {
 	image, err := initImage(ctx, cdClient, launchSpec, token)
@@ -163,6 +166,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		oci.WithHostNamespace(specs.NetworkNamespace),
 		oci.WithEnv([]string{fmt.Sprintf("HOSTNAME=%s", hostname)}),
 		withRlimits(rlimits),
+		withOOMScoreAdj(defaultOOMScore),
 	}
 	if launchSpec.DevShmSize != 0 {
 		specOpts = append(specOpts, oci.WithDevShmSize(launchSpec.DevShmSize))
@@ -186,6 +190,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	if err != nil {
 		return nil, &RetryableError{err}
 	}
+
 	// Container process Args length should be strictly longer than the Cmd
 	// override length set by the operator, as we want the Entrypoint filed
 	// to be mandatory for the image.
@@ -740,6 +745,14 @@ func (r *ContainerRunner) Close(ctx context.Context) {
 func withRlimits(rlimits []specs.POSIXRlimit) oci.SpecOpts {
 	return func(_ context.Context, _ oci.Client, _ *containers.Container, s *oci.Spec) error {
 		s.Process.Rlimits = rlimits
+		return nil
+	}
+}
+
+// Set the container process's OOM score.
+func withOOMScoreAdj(oomScore int) oci.SpecOpts {
+	return func(_ context.Context, _ oci.Client, _ *containers.Container, s *oci.Spec) error {
+		s.Process.OOMScoreAdj = &oomScore
 		return nil
 	}
 }
