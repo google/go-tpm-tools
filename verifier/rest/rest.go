@@ -13,7 +13,6 @@ import (
 	tabi "github.com/google/go-tdx-guest/abi"
 	"github.com/google/go-tdx-guest/proto/tdx"
 	"github.com/google/go-tpm-tools/verifier"
-	"github.com/google/go-tpm-tools/verifier/oci"
 
 	v1 "cloud.google.com/go/confidentialcomputing/apiv1"
 	confidentialcomputingpb "cloud.google.com/go/confidentialcomputing/apiv1/confidentialcomputingpb"
@@ -160,12 +159,10 @@ func convertRequestToREST(request verifier.VerifyAttestationRequest) *confidenti
 
 	signatures := make([]*confidentialcomputingpb.ContainerImageSignature, len(request.ContainerImageSignatures))
 	for i, sig := range request.ContainerImageSignatures {
-		signature, err := convertOCISignatureToREST(sig)
-		if err != nil {
-			log.Printf("failed to convert OCI signature [%v] to ContainerImageSignature proto: %v", sig, err)
-			continue
+		signatures[i] = &confidentialcomputingpb.ContainerImageSignature{
+			Payload:   sig.Payload,
+			Signature: sig.Signature,
 		}
-		signatures[i] = signature
 	}
 
 	verifyReq := &confidentialcomputingpb.VerifyAttestationRequest{
@@ -254,25 +251,6 @@ func convertResponseFromREST(resp *confidentialcomputingpb.VerifyAttestationResp
 	return &verifier.VerifyAttestationResponse{
 		ClaimsToken: token,
 		PartialErrs: resp.PartialErrors,
-	}, nil
-}
-
-func convertOCISignatureToREST(signature oci.Signature) (*confidentialcomputingpb.ContainerImageSignature, error) {
-	payload, err := signature.Payload()
-	if err != nil {
-		return nil, err
-	}
-	b64Sig, err := signature.Base64Encoded()
-	if err != nil {
-		return nil, err
-	}
-	sigBytes, err := encoding.DecodeString(b64Sig)
-	if err != nil {
-		return nil, err
-	}
-	return &confidentialcomputingpb.ContainerImageSignature{
-		Payload:   payload,
-		Signature: sigBytes,
 	}, nil
 }
 

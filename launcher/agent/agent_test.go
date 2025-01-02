@@ -313,9 +313,14 @@ func TestFetchContainerImageSignatures(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to attest %v", err)
 			}
+
+			containerSigs, err := convertToContainerSignatures(gotSigs)
+			if err != nil {
+				t.Fatalf("failed to convert gotSigs: %v", err)
+			}
 			req := verifier.VerifyAttestationRequest{
 				Attestation:              attestation,
-				ContainerImageSignatures: gotSigs,
+				ContainerImageSignatures: containerSigs,
 			}
 			got, err := verifierClient.VerifyAttestation(context.Background(), req)
 			if err != nil {
