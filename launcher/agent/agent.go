@@ -252,20 +252,9 @@ func convertToContainerSignatures(ociSigs []oci.Signature) ([]*verifier.Containe
 		if err != nil {
 			return nil, fmt.Errorf("failed to decode signature for signature [%v]: %v", ociSig, err)
 		}
-		pubKey, err := ociSig.PublicKey()
-		if err != nil {
-			return nil, fmt.Errorf("failed to get public key from signature [%v]: %v", ociSig, err)
-		}
-		sigAlg, err := ociSig.SigningAlgorithm()
-		if err != nil {
-			return nil, fmt.Errorf("failed to get signing algorithm from signature [%v]: %v", ociSig, err)
-		}
-
 		sigs[i] = &verifier.ContainerSignature{
 			Payload:   payload,
 			Signature: sigBytes,
-			PubKey:    pubKey,
-			SigAlg:    sigAlg,
 		}
 	}
 
