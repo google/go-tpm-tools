@@ -5,6 +5,7 @@ package teeserver
 import (
 	"context"
 	"crypto/sha512"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,7 +17,6 @@ import (
 
 	"github.com/google/go-tpm-tools/launcher/agent"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
-	"github.com/google/go-tpm-tools/verifier/oci"
 )
 
 type attestHandler struct {
@@ -152,8 +152,13 @@ type evidenceRequest struct {
 	Nonce itaNonce `json:"nonce"`
 }
 
+type containerSignature struct {
+	Payload   []byte `json:"payload,omitempty"`
+	Signature []byte `json:"signature,omitempty"`
+}
+
 type confidentialSpaceInfo struct {
-	SignedEntities []oci.Signature `json:"signed_entities,omitempty"`
+	SignedEntities []containerSignature `json:"signed_entities,omitempty"`
 }
 
 type gcpEvidence struct {
@@ -252,9 +257,37 @@ func (a *attestHandler) getEvidence(w http.ResponseWriter, r *http.Request) {
 				AkCert:            evidence.TDXAttestation.AkCert,
 				IntermediateCerts: evidence.TDXAttestation.IntermediateCerts,
 				ConfidentialSpaceInfo: confidentialSpaceInfo{
-					SignedEntities: evidence.ContainerSignatures,
+					SignedEntities: make([]containerSignature, len(evidence.ContainerSignatures)),
 				},
 			},
+		}
+
+		for i, sig := range evidence.ContainerSignatures {
+			sigPayload, err := sig.Payload()
+			if err != nil {
+				a.logger.Print(err.Error())
+				w.WriteHeader(http.StatusPreconditionFailed)
+				w.Write([]byte(err.Error()))
+				return
+			}
+
+			b64Sig, err := sig.Base64Encoded()
+			if err != nil {
+				a.logger.Print(err.Error())
+				w.WriteHeader(http.StatusPreconditionFailed)
+				w.Write([]byte(err.Error()))
+				return
+			}
+
+			sigBytes, err := base64.StdEncoding.DecodeString(b64Sig)
+			if err != nil {
+				a.logger.Print(err.Error())
+				w.WriteHeader(http.StatusPreconditionFailed)
+				w.Write([]byte(err.Error()))
+				return
+			}
+
+			tdxEvi.GcpData.ConfidentialSpaceInfo.SignedEntities[i] = containerSignature{sigPayload, sigBytes}
 		}
 
 		a.logger.Printf("%+v\n", tdxEvi)
