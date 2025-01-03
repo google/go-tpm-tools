@@ -19,7 +19,7 @@ func NewFakeSignature(data string, sigAlg oci.SigningAlgorithm) oci.Signature {
 
 // Payload returns a fake payload.
 func (f fakeSig) Payload() ([]byte, error) {
-	return []byte(f.data), nil
+	return []byte(f.data + "," + string(f.sigAlg)), nil
 }
 
 // Base64Encoded returns a fake base64 encoded signature.
@@ -29,15 +29,10 @@ func (f fakeSig) Base64Encoded() (string, error) {
 
 // PublicKey returns a fake public key.
 func (f fakeSig) PublicKey() ([]byte, error) {
-	return []byte(f.data), nil
+	return nil, fmt.Errorf("not implemented")
 }
 
 // SigningAlgorithm returns a fake signature algorithm.
 func (f fakeSig) SigningAlgorithm() (oci.SigningAlgorithm, error) {
-	switch f.sigAlg {
-	case oci.ECDSAP256SHA256, oci.RSASSAPKCS1V152048SHA256, oci.RSASSAPSS2048SHA256:
-		return f.sigAlg, nil
-	default:
-		return "", fmt.Errorf("unsupported signing algorithm: %v", f.sigAlg)
-	}
+	return "", fmt.Errorf("not implemented")
 }
