@@ -22,6 +22,10 @@ type Challenge struct {
 	Name   string
 	Nonce  []byte
 	ConnID string
+
+	Val       []byte
+	Iat       []byte
+	Signature []byte
 }
 
 // TokenOptions contains fields that will be passed to the Attestation Service TokenOptions field.
