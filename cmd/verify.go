@@ -78,7 +78,7 @@ var debugCmd = &cobra.Command{
 		default:
 			validateOpts = nil
 		}
-		ms, err := server.VerifyAttestation(attestation, server.VerifyOpts{Nonce: nonce, TrustedAKs: []crypto.PublicKey{cryptoPub}, TEEOpts: validateOpts})
+		ms, err := server.VerifyAttestation(attestation, server.VerifyOpts{Nonce: nonce, TrustedAKs: []crypto.PublicKey{cryptoPub}, TEEOpts: validateOpts, Loader: server.GRUB})
 		if err != nil {
 			return fmt.Errorf("verifying attestation: %w", err)
 		}
