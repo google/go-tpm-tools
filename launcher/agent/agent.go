@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"crypto"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"net/http"
@@ -103,14 +104,14 @@ func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher util.TpmKeyFetcher
 	// check if is a TDX machine
 	qp, err := tg.GetQuoteProvider()
 	if err != nil || qp.IsSupported() != nil {
-		logger.Println("Using TPM PCRs for measurement.")
+		logger.Info("Using TPM PCRs for measurement.")
 		// by default using TPM
 		attestAgent.ar = &tpmAttestRoot{
 			fetchedAK: ak,
 			tpm:       tpm,
 		}
 	} else {
-		logger.Println("Using TDX RTMRs for measurement.")
+		logger.Info("Using TDX RTMRs for measurement.")
 		// try to create tsm client for tdx rtmr
 		tsm, err := linuxtsm.MakeClient()
 		if err != nil {
@@ -174,12 +175,12 @@ func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error
 
 	switch v := attResult.(type) {
 	case *pb.Attestation:
-		a.logger.Println("attestation through TPM quote")
+		a.logger.Info("attestation through TPM quote")
 
 		v.CanonicalEventLog = cosCel.Bytes()
 		req.Attestation = v
 	case *verifier.TDCCELAttestation:
-		a.logger.Println("attestation through TDX quote")
+		a.logger.Info("attestation through TDX quote")
 
 		certChain, err := internal.GetCertificateChain(a.fetchedAK.Cert(), http.DefaultClient)
 		if err != nil {
@@ -196,8 +197,15 @@ func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error
 
 	signatures := a.sigsCache.get()
 	if len(signatures) > 0 {
-		req.ContainerImageSignatures = signatures
-		a.logger.Info("Found container image signatures: %v\n", "signatures", signatures)
+		for _, sig := range signatures {
+			verifierSig, err := convertOCIToContainerSignature(sig)
+			if err != nil {
+				a.logger.Error(fmt.Sprintf("error converting container signatures: %v", err))
+				continue
+			}
+			req.ContainerImageSignatures = append(req.ContainerImageSignatures, verifierSig)
+		}
+		a.logger.Info("Found container image signatures: %v\n", signatures)
 	}
 
 	resp, err := a.client.VerifyAttestation(ctx, req)
@@ -208,6 +216,25 @@ func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error
 		a.logger.Error(fmt.Sprintf("Partial errors from VerifyAttestation: %v", resp.PartialErrs))
 	}
 	return resp.ClaimsToken, nil
+}
+
+func convertOCIToContainerSignature(ociSig oci.Signature) (*verifier.ContainerSignature, error) {
+	payload, err := ociSig.Payload()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get payload from signature [%v]: %v", ociSig, err)
+	}
+	b64Sig, err := ociSig.Base64Encoded()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get base64 signature from signature [%v]: %v", ociSig, err)
+	}
+	sigBytes, err := base64.StdEncoding.DecodeString(b64Sig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode signature for signature [%v]: %v", ociSig, err)
+	}
+	return &verifier.ContainerSignature{
+		Payload:   payload,
+		Signature: sigBytes,
+	}, nil
 }
 
 type tpmAttestRoot struct {

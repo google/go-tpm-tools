@@ -4,8 +4,10 @@ package fake
 import (
 	"context"
 	"crypto"
+	"encoding/base64"
 	"encoding/binary"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v4"
@@ -13,7 +15,6 @@ import (
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/google/go-tpm-tools/verifier/oci"
 	"github.com/google/go-tpm/legacy/tpm2"
-	"go.uber.org/multierr"
 	"google.golang.org/genproto/googleapis/rpc/code"
 	"google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -81,11 +82,11 @@ func (fc *fakeClient) VerifyAttestation(_ context.Context, req verifier.VerifyAt
 	var signatureClaims []ContainerImageSignatureClaims
 	var partialErrs []*status.Status
 	for _, signature := range req.ContainerImageSignatures {
-		sc, err := verifyContainerImageSignature(signature)
+		claims, err := extractClaims(signature)
 		if err != nil {
 			partialErrs = append(partialErrs, &status.Status{Code: int32(code.Code_INVALID_ARGUMENT), Message: err.Error()})
 		} else {
-			signatureClaims = append(signatureClaims, sc)
+			signatureClaims = append(signatureClaims, claims)
 		}
 	}
 	claims.ContainerImageSignatures = signatureClaims
@@ -106,28 +107,35 @@ func (fc *fakeClient) VerifyAttestation(_ context.Context, req verifier.VerifyAt
 	return &response, nil
 }
 
-func verifyContainerImageSignature(signature oci.Signature) (ContainerImageSignatureClaims, error) {
-	var err error
-	payload, e := signature.Payload()
-	if e != nil {
-		err = multierr.Append(err, e)
+type payload struct {
+	Optional map[string]any `json:"optional"` // Optional represents optional metadata about the image, and its value shouldn't contain any "=" signs.
+}
+
+func isValid(alg string) bool {
+	switch alg {
+	case string(oci.ECDSAP256SHA256), string(oci.RSASSAPKCS1V152048SHA256), string(oci.RSASSAPSS2048SHA256):
+		return true
+	default:
+		return false
 	}
-	b64Sig, e := signature.Base64Encoded()
-	if e != nil {
-		err = multierr.Append(err, e)
+}
+
+// Note: this is only compatible with the fake signature implementation.
+func extractClaims(signature *verifier.ContainerSignature) (ContainerImageSignatureClaims, error) {
+	payload := string(signature.Payload)
+
+	// Fake payload consists of the expected pubkey and sigalg separated by a comma.
+	separatorIndex := strings.LastIndex(payload, ",")
+
+	sigAlg := payload[separatorIndex+1:]
+	if !isValid(sigAlg) {
+		return ContainerImageSignatureClaims{}, fmt.Errorf("unsupported algorithm %v", sigAlg)
 	}
-	pubKey, e := signature.PublicKey()
-	if e != nil {
-		err = multierr.Append(err, e)
-	}
-	sigAlg, e := signature.SigningAlgorithm()
-	if e != nil {
-		err = multierr.Append(err, e)
-	}
+
 	return ContainerImageSignatureClaims{
-		Payload:   string(payload),
-		Signature: b64Sig,
-		PubKey:    string(pubKey),
-		SigAlg:    string(sigAlg),
-	}, err
+		Payload:   payload,
+		Signature: base64.StdEncoding.EncodeToString(signature.Signature),
+		PubKey:    payload[:separatorIndex],
+		SigAlg:    sigAlg,
+	}, nil
 }
