@@ -314,9 +314,14 @@ func TestFetchContainerImageSignatures(t *testing.T) {
 				t.Fatalf("failed to attest %v", err)
 			}
 
-			containerSigs, err := convertToContainerSignatures(gotSigs)
-			if err != nil {
-				t.Fatalf("failed to convert gotSigs: %v", err)
+			var containerSigs []*verifier.ContainerSignature
+			for _, gotSig := range gotSigs {
+				sig, err := convertOCIToContainerSignature(gotSig)
+				if err != nil {
+					t.Fatalf("failed to convert gotSigs: %v", err)
+				}
+
+				containerSigs = append(containerSigs, sig)
 			}
 			req := verifier.VerifyAttestationRequest{
 				Attestation:              attestation,
