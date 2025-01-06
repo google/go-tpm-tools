@@ -57,14 +57,26 @@ var allConfig = &SystemStatsConfig{
 	Disk: &diskConfig{
 		true, true, "5s",
 		&statsConfig{map[string]metricConfig{
-			"disk/io_time": {"disk/io_time"},
+			"disk/avg_queue_len":          {"disk/avg_queue_len"},
+			"disk/bytes_used":             {"disk/bytes_used"},
+			"disk/percent_used":           {"disk/percent_used"},
+			"disk/io_time":                {"disk/io_time"},
+			"disk/merged_operation_count": {"disk/merged_operation_count"},
+			"disk/operation_bytes_count":  {"disk/operation_bytes_count"},
+			"disk/operation_count":        {"disk/operation_count"},
+			"disk/operation_time":         {"disk/operation_time"},
+			"disk/weighted_io":            {"disk/weighted_io"},
 		}},
 	},
 	Host: &statsConfig{map[string]metricConfig{
 		"host/uptime": {"host/uptime"},
 	}},
 	Memory: &statsConfig{map[string]metricConfig{
-		"memory/bytes_used": {"memory/bytes_used"},
+		"memory/anonymous_used":  {"memory/anonymous_used"},
+		"memory/bytes_used":      {"memory/bytes_used"},
+		"memory/dirty_used":      {"memory/dirty_used"},
+		"memory/page_cache_used": {"memory/page_cache_used"},
+		"memory/percent_used":    {"memory/percent_used"},
 	}},
 	InvokeInterval: defaultInvokeIntervalString,
 }
