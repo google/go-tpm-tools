@@ -219,11 +219,14 @@ func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error
 
 	signatures := a.sigsCache.get()
 	if len(signatures) > 0 {
-		verifierSigs, err := convertToContainerSignatures(signatures)
-		if err != nil {
-			return nil, fmt.Errorf("error converting container signatures: %v", err)
+		for _, sig := range signatures {
+			verifierSig, err := convertOCIToContainerSignature(sig)
+			if err != nil {
+				a.logger.Error(fmt.Sprintf("error converting container signatures: %v", err))
+				continue
+			}
+			req.ContainerImageSignatures = append(req.ContainerImageSignatures, verifierSig)
 		}
-		req.ContainerImageSignatures = verifierSigs
 		a.logger.Info("Found container image signatures: %v\n", signatures)
 	}
 
@@ -237,28 +240,23 @@ func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error
 	return resp.ClaimsToken, nil
 }
 
-func convertToContainerSignatures(ociSigs []oci.Signature) ([]*verifier.ContainerSignature, error) {
-	sigs := make([]*verifier.ContainerSignature, len(ociSigs))
-	for i, ociSig := range ociSigs {
-		payload, err := ociSig.Payload()
-		if err != nil {
-			return nil, fmt.Errorf("failed to get payload from signature [%v]: %v", ociSig, err)
-		}
-		b64Sig, err := ociSig.Base64Encoded()
-		if err != nil {
-			return nil, fmt.Errorf("failed to get base64 signature from signature [%v]: %v", ociSig, err)
-		}
-		sigBytes, err := base64.StdEncoding.DecodeString(b64Sig)
-		if err != nil {
-			return nil, fmt.Errorf("failed to decode signature for signature [%v]: %v", ociSig, err)
-		}
-		sigs[i] = &verifier.ContainerSignature{
-			Payload:   payload,
-			Signature: sigBytes,
-		}
+func convertOCIToContainerSignature(ociSig oci.Signature) (*verifier.ContainerSignature, error) {
+	payload, err := ociSig.Payload()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get payload from signature [%v]: %v", ociSig, err)
 	}
-
-	return sigs, nil
+	b64Sig, err := ociSig.Base64Encoded()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get base64 signature from signature [%v]: %v", ociSig, err)
+	}
+	sigBytes, err := base64.StdEncoding.DecodeString(b64Sig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode signature for signature [%v]: %v", ociSig, err)
+	}
+	return &verifier.ContainerSignature{
+		Payload:   payload,
+		Signature: sigBytes,
+	}, nil
 }
 
 type tpmAttestRoot struct {
