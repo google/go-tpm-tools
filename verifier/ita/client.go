@@ -164,6 +164,7 @@ func convertRequestToTokenRequest(request verifier.VerifyAttestationRequest) tok
 				TokenOpts: tokenOptions{},
 			},
 		},
+		Evidence: &itaconnector.Evidence{},
 	}
 
 	if request.TokenOptions != nil {
