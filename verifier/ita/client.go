@@ -162,6 +162,7 @@ func convertRequestToTokenRequest(request verifier.VerifyAttestationRequest) tok
 				},
 			},
 		},
+		Evidence: &itaconnector.Evidence{},
 	}
 
 	for _, token := range request.GcpCredentials {
