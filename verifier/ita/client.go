@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/go-tpm-tools/verifier"
 	itaconnector "github.com/intel/trustauthority-client/go-connector/connector"
+	"golang.org/x/exp/slices"
 )
 
 const (
@@ -17,6 +18,51 @@ const (
 
 	namePrefix = "ita://"
 )
+
+// Available regions https://cloud.google.com/compute/docs/regions-zones#available.
+var euRegions []string = []string{
+	"europe-north1",
+	"europe-central2",
+	"europe-southwest1",
+	"europe-west1",
+	"europe-west3",
+	"europe-west4",
+	"europe-west8",
+	"europe-west9",
+	"europe-west10",
+	"europe-west12",
+}
+
+func NewClient(ctx context.Context, apiKey string, region string) (verifier.Client, error) {
+	baseURL := usBaseURL
+
+	// If region is in the EU, use the appropriate base URL.
+	if slices.Contains(euRegions, region) {
+		baseURL = euBaseURL
+	}
+
+	return NewClientWithBaseURL(ctx, apiKey, baseURL)
+}
+
+func NewClientWithBaseURL(ctx context.Context, apiKey string, baseURL string) (verifier.Client, error) {
+	if apiKey == "" {
+		return nil, errors.New("API Key required to initialize ITA connector")
+	}
+	cfg := &itaconnector.Config{
+		BaseURL: baseURL,
+		ApiUrl:  "https://api.trustauthority.intel.com",
+		TlsCfg:  &tls.Config{},
+		ApiKey:  apiKey,
+		RClient: &itaconnector.RetryConfig{},
+	}
+
+	connector, err := itaconnector.New(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("error creating ITA connector: %v, err")
+	}
+
+	return &client{connector}, nil
+}
 
 type client struct {
 	connector itaconnector.Connector
@@ -39,7 +85,7 @@ func (c *client) CreateChallenge(ctx context.Context) (*verifier.Challenge, erro
 	hash := sha512.New()
 	_, err = hash.Write(nonce)
 	if err != nil {
-		return nil, fmt.Errorf("Error hashing ITA nonce: %v", err)
+		return nil, fmt.Errorf("error hashing ITA nonce: %v", err)
 	}
 	// Do we have anything that needs to be in user data?
 	// _, err = hash.Write(adapter.uData)
@@ -60,37 +106,16 @@ func (c *client) VerifyAttestation(ctx context.Context, request verifier.VerifyA
 			Iat:       request.Challenge.Iat,
 			Signature: request.Challenge.Signature,
 		},
+		Evidence: &itaconnector.Evidence{},
 	}
 
-	return nil, nil
-}
-
-func NewClient(ctx context.Context, apiKey string, region string) (verifier.Client, error) {
-	baseURL := usBaseURL
-	if isEURegion(region) {
-		baseURL = euBaseURL
+	// TODO: Replace with Confidential Space endpoint.
+	resp, err := c.connector.GetToken(req)
+	if err != nil {
+		return nil, fmt.Errorf("GetToken error: %v", err)
 	}
 
-	return NewClientWithBaseURL(ctx, apiKey, baseURL)
-}
-
-func isEURegion(region string) bool {
-	return false
-}
-
-func NewClientWithBaseURL(ctx context.Context, apiKey string, baseURL string) (verifier.Client, error) {
-	if apiKey == "" {
-		return nil, errors.New("API Key required to initialize ITA connector")
-	}
-	cfg := &itaconnector.Config{
-		BaseURL: baseURL,
-		ApiUrl:  "https://api.trustauthority.intel.com",
-		TlsCfg:  &tls.Config{},
-		ApiKey:  apiKey,
-		RClient: &itaconnector.RetryConfig{},
-	}
-
-	connector, err := itaconnector.New(cfg)
-
-	return &client{connector}, nil
+	return &verifier.VerifyAttestationResponse{
+		ClaimsToken: []byte(resp.Token),
+	}, nil
 }
