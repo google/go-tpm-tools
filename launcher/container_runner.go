@@ -129,8 +129,15 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		return nil, err
 	}
 
-	if err := enableMonitoring(launchSpec.MonitoringEnabled, logger); err != nil {
-		return nil, err
+	if launchSpec.MonitoringEnabled == spec.All && !launchSpec.Experiments.EnableHealthMonitoring {
+		logger.Info("Health monitoring experiment is not enabled - falling back to memory-only.")
+		if err := enableMonitoring(spec.MemoryOnly, logger); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := enableMonitoring(launchSpec.MonitoringEnabled, logger); err != nil {
+			return nil, err
+		}
 	}
 
 	logger.Info(fmt.Sprintf("Launch Policy              : %+v\n", launchPolicy))
