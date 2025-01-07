@@ -13,6 +13,7 @@ import (
 type Experiments struct {
 	EnableTestFeatureForImage bool
 	EnableTempFSMount         bool
+	EnableHealthMonitoring    bool
 }
 
 // New takes a filepath, opens the file, and calls ReadJsonInput with the contents
