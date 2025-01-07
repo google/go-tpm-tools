@@ -130,7 +130,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	}
 
 	if launchSpec.MonitoringEnabled == spec.All && !launchSpec.Experiments.EnableHealthMonitoring {
-		logger.Info("Health monitoring experiment is not enabled - falling back to memory-only.")
+		logger.Info("Health Monitoring experiment is not enabled - falling back to memory-only.")
 		if err := enableMonitoring(spec.MemoryOnly, logger); err != nil {
 			return nil, err
 		}
