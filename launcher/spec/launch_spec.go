@@ -15,6 +15,7 @@ import (
 
 	"cloud.google.com/go/compute/metadata"
 
+	"github.com/containerd/containerd/v2/pkg/cap"
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/launcher/internal/experiments"
 	"github.com/google/go-tpm-tools/launcher/internal/launchermount"
@@ -86,6 +87,8 @@ const (
 	monitoringEnable           = "tee-monitoring-enable"
 	devShmSizeKey              = "tee-dev-shm-size-kb"
 	mountKey                   = "tee-mount"
+	addedCaps                  = "tee-added-capabilities"
+	cgroupNS                   = "tee-cgroup-ns"
 )
 
 const (
@@ -103,6 +106,8 @@ type EnvVar struct {
 // LaunchSpec contains specification set by the operator who wants to
 // launch a container.
 type LaunchSpec struct {
+	Experiments experiments.Experiments
+
 	// MDS-based values.
 	ImageRef                   string
 	SignedImageRepos           []string
@@ -118,8 +123,9 @@ type LaunchSpec struct {
 	LogRedirect                LogRedirectLocation
 	Mounts                     []launchermount.Mount
 	// DevShmSize is specified in kiB.
-	DevShmSize  int64
-	Experiments experiments.Experiments
+	DevShmSize        int64
+	AddedCapabilities []string
+	CgroupNamespace   bool
 }
 
 // UnmarshalJSON unmarshals an instance attributes list in JSON format from the metadata
@@ -240,6 +246,25 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 		}
 	}
 
+	// Populate capabilities override.
+	if val, ok := unmarshaledMap[addedCaps]; ok && val != "" {
+		if err := json.Unmarshal([]byte(val), &s.AddedCapabilities); err != nil {
+			return err
+		}
+	}
+
+	// Populate cgroup ns.
+	cgroupSetting, ok := unmarshaledMap[cgroupNS]
+	if ok {
+		cgroupOn, err := strconv.ParseBool(cgroupSetting)
+		if err != nil {
+			return fmt.Errorf("invalid value for %v (not a boolean): %v", cgroupNS, err)
+		}
+		if cgroupOn {
+			s.CgroupNamespace = true
+		}
+	}
+
 	return nil
 }
 
@@ -271,6 +296,21 @@ func GetLaunchSpec(ctx context.Context, logger logging.Logger, client *metadata.
 
 	if err := validateMemorySizeKb(uint64(spec.DevShmSize)); err != nil {
 		return LaunchSpec{}, fmt.Errorf("failed to validate /dev/shm size: %v", err)
+	}
+
+	caps, err := getCurrCaps()
+	if err != nil {
+		return LaunchSpec{}, fmt.Errorf("failed to fetch current capabilities: %v", err)
+	}
+	var notInCurr []string
+	for _, addedCap := range spec.AddedCapabilities {
+		if _, ok := caps[addedCap]; !ok {
+			notInCurr = append(notInCurr, addedCap)
+		}
+	}
+	if len(notInCurr) != 0 {
+		return LaunchSpec{}, fmt.Errorf("received added capabilities (%v) not allowed by current capabilities", notInCurr)
+
 	}
 
 	spec.ProjectID, err = client.ProjectIDWithContext(ctx)
@@ -401,4 +441,16 @@ func readCmdline() (string, error) {
 		return "", err
 	}
 	return string(kernelCmd), nil
+}
+
+func getCurrCaps() (map[string]bool, error) {
+	caps, err := cap.Current()
+	if err != nil {
+		return nil, err
+	}
+	capsMap := make(map[string]bool, len(caps))
+	for _, cap := range caps {
+		capsMap[cap] = true
+	}
+	return capsMap, nil
 }
