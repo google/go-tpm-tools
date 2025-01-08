@@ -148,6 +148,12 @@ type itaNonce struct {
 	Signature []byte `json:"signature"`
 }
 
+type tokenOptions struct {
+	Audience  string   `json:"audience"`
+	Nonce     []string `json:"nonce"`
+	TokenType string   `json:"tokenType"`
+}
+
 type evidenceRequest struct {
 	Nonce itaNonce `json:"nonce"`
 }
@@ -176,8 +182,8 @@ type tdxAttestation struct {
 }
 
 type tdxEvidence struct {
-	Attestation tdxAttestation `json:"attestation,omitempty"`
-	GcpData     gcpEvidence    `json:"gcp_data,omitempty"`
+	Attestation tdxAttestation `json:"tdx,omitempty"`
+	GcpData     gcpEvidence    `json:"gcpcs,omitempty"`
 }
 
 func processITANonce(input itaNonce) ([]byte, error) {
