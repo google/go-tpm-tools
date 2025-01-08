@@ -19,6 +19,7 @@ type LaunchPolicy struct {
 	AllowedMountDestinations []string
 	HardenedImageMonitoring  MonitoringType
 	DebugImageMonitoring     MonitoringType
+	Privileged               bool
 }
 
 type policy int
@@ -109,6 +110,7 @@ const (
 	// relative to "/".
 	// Paths will be cleaned using filepath.Clean.
 	mountDestinations = "tee.launch_policy.allow_mount_destinations"
+	privileged        = "tee.launch_policy.privileged"
 )
 
 func configureMonitoringPolicy(imageLabels map[string]string, launchPolicy *LaunchPolicy, logger logging.Logger) error {
@@ -188,7 +190,7 @@ func GetLaunchPolicy(imageLabels map[string]string, logger logging.Logger) (Laun
 
 	if v, ok := imageLabels[cmdOverride]; ok {
 		if launchPolicy.AllowedCmdOverride, err = strconv.ParseBool(v); err != nil {
-			return LaunchPolicy{}, fmt.Errorf("invalid image LABEL '%s' (not a boolean); contact the image author", cmdOverride)
+			return LaunchPolicy{}, fmt.Errorf("invalid image LABEL '%s' (not a boolean)", cmdOverride)
 		}
 	}
 
@@ -196,7 +198,7 @@ func GetLaunchPolicy(imageLabels map[string]string, logger logging.Logger) (Laun
 	if v, ok := imageLabels[logRedirect]; ok {
 		launchPolicy.AllowedLogRedirect, err = toPolicy(logRedirect, v)
 		if err != nil {
-			return LaunchPolicy{}, fmt.Errorf("invalid image LABEL '%s'; contact the image author", logRedirect)
+			return LaunchPolicy{}, fmt.Errorf("invalid image LABEL '%s'", logRedirect)
 		}
 	}
 
@@ -205,7 +207,6 @@ func GetLaunchPolicy(imageLabels map[string]string, logger logging.Logger) (Laun
 	}
 
 	if v, ok := imageLabels[mountDestinations]; ok {
-
 		paths := filepath.SplitList(v)
 		for _, path := range paths {
 			// Strip out empty path name.
@@ -213,6 +214,12 @@ func GetLaunchPolicy(imageLabels map[string]string, logger logging.Logger) (Laun
 				path = filepath.Clean(path)
 				launchPolicy.AllowedMountDestinations = append(launchPolicy.AllowedMountDestinations, path)
 			}
+		}
+	}
+
+	if v, ok := imageLabels[privileged]; ok {
+		if launchPolicy.Privileged, err = strconv.ParseBool(v); err != nil {
+			return LaunchPolicy{}, fmt.Errorf("invalid image LABEL '%s' (not a boolean)", privileged)
 		}
 	}
 
@@ -274,6 +281,10 @@ func (p LaunchPolicy) Verify(ls LaunchSpec) error {
 	}
 	if err != nil {
 		return fmt.Errorf("destination mount points are not allowed: %v", err)
+	}
+
+	if ls.isPrivileged() && !p.Privileged {
+		return errors.New("privileged configurations are not allowed on this image")
 	}
 
 	return nil
