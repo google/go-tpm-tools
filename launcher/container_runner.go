@@ -90,6 +90,14 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		mounts = append(mounts, lsMnt.SpecsMount())
 	}
 	mounts = appendTokenMounts(mounts)
+	var cgroupOpts []oci.SpecOpts
+	if launchSpec.CgroupNamespace {
+		mounts = appendCgroupRw(mounts)
+		cgroupOpts = []oci.SpecOpts{
+			oci.WithNamespacedCgroup(),
+			oci.WithLinuxNamespace(specs.LinuxNamespace{Type: specs.CgroupNamespace}),
+		}
+	}
 
 	envs, err := formatEnvVars(launchSpec.Envs)
 	if err != nil {
@@ -121,9 +129,8 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 
 	logger.Info(fmt.Sprintf("Image Labels               : %v\n", imageConfig.Labels))
 	launchPolicy, err := spec.GetLaunchPolicy(imageConfig.Labels, logger)
-
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to parse image Launch Policy: %v: contact the image author", err)
 	}
 	if err := launchPolicy.Verify(launchSpec); err != nil {
 		return nil, err
@@ -165,12 +172,14 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		oci.WithHostResolvconf,
 		oci.WithHostNamespace(specs.NetworkNamespace),
 		oci.WithEnv([]string{fmt.Sprintf("HOSTNAME=%s", hostname)}),
+		oci.WithAddedCapabilities(launchSpec.AddedCapabilities),
 		withRlimits(rlimits),
 		withOOMScoreAdj(defaultOOMScore),
 	}
 	if launchSpec.DevShmSize != 0 {
 		specOpts = append(specOpts, oci.WithDevShmSize(launchSpec.DevShmSize))
 	}
+	specOpts = append(specOpts, cgroupOpts...)
 
 	container, err = cdClient.NewContainer(
 		ctx,
@@ -755,4 +764,16 @@ func withOOMScoreAdj(oomScore int) oci.SpecOpts {
 		s.Process.OOMScoreAdj = &oomScore
 		return nil
 	}
+}
+
+// appendCgroupRw mount maps a cgroup as read-write.
+func appendCgroupRw(mounts []specs.Mount) []specs.Mount {
+	m := specs.Mount{
+		Destination: "/sys/fs/cgroup",
+		Type:        "cgroup",
+		Source:      "cgroup",
+		Options:     []string{"rw", "nosuid", "noexec", "nodev"},
+	}
+
+	return append(mounts, m)
 }
