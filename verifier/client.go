@@ -24,10 +24,6 @@ type Challenge struct {
 	Name   string
 	Nonce  []byte
 	ConnID string
-
-	Val       []byte
-	Iat       []byte
-	Signature []byte
 }
 
 // VerifyAttestationRequest is passed in on VerifyAttestation. It contains the
