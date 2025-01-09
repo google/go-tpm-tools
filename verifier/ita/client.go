@@ -19,11 +19,6 @@ const (
 	nonceEndpoint = "/appraisal/v2/nonce"
 	tokenEndpoint = "/appraisal/v2/attest/gcp/confidentialspace"
 
-	apiKeyHeader      = "x-api-key"
-	acceptHeader      = "Accept"
-	contentTypeHeader = "Content-Type"
-	applicationJSON   = "application/json"
-
 	challengeNamePrefix = "ita://"
 )
 
