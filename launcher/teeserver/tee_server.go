@@ -148,43 +148,43 @@ type itaNonce struct {
 	Signature []byte `json:"signature"`
 }
 
-type tokenOptions struct {
-	Audience  string   `json:"audience"`
-	Nonce     []string `json:"nonce"`
-	TokenType string   `json:"tokenType"`
-}
+// type tokenOptions struct {
+// 	Audience  string   `json:"audience"`
+// 	Nonce     []string `json:"nonce"`
+// 	TokenType string   `json:"tokenType"`
+// }
 
 type evidenceRequest struct {
 	Nonce itaNonce `json:"nonce"`
 }
 
-type containerSignature struct {
-	Payload   []byte `json:"payload,omitempty"`
-	Signature []byte `json:"signature,omitempty"`
-}
+// type containerSignature struct {
+// 	Payload   []byte `json:"payload,omitempty"`
+// 	Signature []byte `json:"signature,omitempty"`
+// }
 
-type confidentialSpaceInfo struct {
-	SignedEntities []containerSignature `json:"signed_entities,omitempty"`
-}
+// type confidentialSpaceInfo struct {
+// 	SignedEntities []containerSignature `json:"signed_entities,omitempty"`
+// }
 
-type gcpEvidence struct {
-	GcpCredentials        [][]byte              `json:"gcp_credentials,omitempty"`
-	ConfidentialSpaceInfo confidentialSpaceInfo `json:"confidential_space_info,omitempty"`
-	AkCert                []byte                `json:"ak_cert,omitempty"`
-	IntermediateCerts     [][]byte              `json:"intermediate_certs,omitempty"`
-}
+// type gcpEvidence struct {
+// 	GcpCredentials        [][]byte              `json:"gcp_credentials,omitempty"`
+// 	ConfidentialSpaceInfo confidentialSpaceInfo `json:"confidential_space_info,omitempty"`
+// 	AkCert                []byte                `json:"ak_cert,omitempty"`
+// 	IntermediateCerts     [][]byte              `json:"intermediate_certs,omitempty"`
+// }
 
-type tdxAttestation struct {
-	CcelAcpiTable     []byte `json:"ccel_table,omitempty"`
-	CcelData          []byte `json:"ccel_data,omitempty"`
-	TdQuote           []byte `json:"quote"`
-	CanonicalEventLog []byte `json:"canonical_event_log,omitempty"`
-}
+// type tdxAttestation struct {
+// 	CcelAcpiTable     []byte `json:"ccel_table,omitempty"`
+// 	CcelData          []byte `json:"ccel_data,omitempty"`
+// 	TdQuote           []byte `json:"quote"`
+// 	CanonicalEventLog []byte `json:"canonical_event_log,omitempty"`
+// }
 
-type tdxEvidence struct {
-	Attestation tdxAttestation `json:"tdx,omitempty"`
-	GcpData     gcpEvidence    `json:"gcpcs,omitempty"`
-}
+// type tdxEvidence struct {
+// 	Attestation tdxAttestation `json:"tdx,omitempty"`
+// 	GcpData     gcpEvidence    `json:"gcpcs,omitempty"`
+// }
 
 func processITANonce(input itaNonce) ([]byte, error) {
 	if len(input.Val) == 0 {
@@ -252,20 +252,40 @@ func (a *attestHandler) getEvidence(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		tdxEvi := &tdxEvidence{
-			Attestation: tdxAttestation{
-				TdQuote:           evidence.TDXAttestation.TdQuote,
+		tdxEvi := &tokenRequest{
+			PolicyMatch: true,
+			TDX: tdxEvidence{
+				Quote:             evidence.TDXAttestation.TdQuote,
 				CcelData:          evidence.TDXAttestation.CcelData,
 				CanonicalEventLog: evidence.TDXAttestation.CanonicalEventLog,
 			},
-			GcpData: gcpEvidence{
-				GcpCredentials:    evidence.PrincipalTokens,
-				AkCert:            evidence.TDXAttestation.AkCert,
+			SigAlg: "RS256",
+			GCP: gcpData{
+				GcpCredentials:    []string{},
+				AKCert:            evidence.TDXAttestation.AkCert,
 				IntermediateCerts: evidence.TDXAttestation.IntermediateCerts,
-				ConfidentialSpaceInfo: confidentialSpaceInfo{
+				CSInfo: confidentialSpaceInfo{
 					SignedEntities: make([]containerSignature, len(evidence.ContainerSignatures)),
+					TokenOpts: tokenOptions{
+						Audience:  "custom-audience",
+						Nonces:    []string{"nonce1", "nonce2"},
+						TokenType: "OIDC",
+						TokenTypeOpts: tokenTypeOptions{
+							AllowedPrincipalTags: principalTags{
+								ContainerSignatureKIDs: keyIDs{
+									map[string][]string{
+										"key_ids": []string{"kid1", "kid2"},
+									},
+								},
+							},
+						},
+					},
 				},
 			},
+		}
+
+		for _, token := range evidence.PrincipalTokens {
+			tdxEvi.GCP.GcpCredentials = append(tdxEvi.GCP.GcpCredentials, string(token))
 		}
 
 		for i, sig := range evidence.ContainerSignatures {
@@ -293,7 +313,7 @@ func (a *attestHandler) getEvidence(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			tdxEvi.GcpData.ConfidentialSpaceInfo.SignedEntities[i] = containerSignature{sigPayload, sigBytes}
+			tdxEvi.GCP.CSInfo.SignedEntities[i] = containerSignature{sigPayload, sigBytes}
 		}
 
 		a.logger.Printf("%+v\n", tdxEvi)
