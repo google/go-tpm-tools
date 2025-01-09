@@ -148,43 +148,9 @@ type itaNonce struct {
 	Signature []byte `json:"signature"`
 }
 
-// type tokenOptions struct {
-// 	Audience  string   `json:"audience"`
-// 	Nonce     []string `json:"nonce"`
-// 	TokenType string   `json:"tokenType"`
-// }
-
 type evidenceRequest struct {
 	Nonce itaNonce `json:"nonce"`
 }
-
-// type containerSignature struct {
-// 	Payload   []byte `json:"payload,omitempty"`
-// 	Signature []byte `json:"signature,omitempty"`
-// }
-
-// type confidentialSpaceInfo struct {
-// 	SignedEntities []containerSignature `json:"signed_entities,omitempty"`
-// }
-
-// type gcpEvidence struct {
-// 	GcpCredentials        [][]byte              `json:"gcp_credentials,omitempty"`
-// 	ConfidentialSpaceInfo confidentialSpaceInfo `json:"confidential_space_info,omitempty"`
-// 	AkCert                []byte                `json:"ak_cert,omitempty"`
-// 	IntermediateCerts     [][]byte              `json:"intermediate_certs,omitempty"`
-// }
-
-// type tdxAttestation struct {
-// 	CcelAcpiTable     []byte `json:"ccel_table,omitempty"`
-// 	CcelData          []byte `json:"ccel_data,omitempty"`
-// 	TdQuote           []byte `json:"quote"`
-// 	CanonicalEventLog []byte `json:"canonical_event_log,omitempty"`
-// }
-
-// type tdxEvidence struct {
-// 	Attestation tdxAttestation `json:"tdx,omitempty"`
-// 	GcpData     gcpEvidence    `json:"gcpcs,omitempty"`
-// }
 
 func processITANonce(input itaNonce) ([]byte, error) {
 	if len(input.Val) == 0 {
