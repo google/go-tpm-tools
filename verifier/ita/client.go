@@ -12,14 +12,10 @@ import (
 	"net/http"
 
 	"github.com/google/go-tpm-tools/verifier"
-	"golang.org/x/exp/slices"
 )
 
 const (
-	usBaseURL = "https://portal.trustauthority.intel.com"
-	euBaseURL = "https://portal.eu.trustauthority.intel.com"
-
-	apiURL = "https://api.trustauthority.intel.com"
+	itaURL = "https://api.trustauthority.intel.com"
 
 	nonceEndpoint = "/appraisal/v2/nonce"
 	tokenEndpoint = "/appraisal/v2/attest"
@@ -32,56 +28,27 @@ const (
 	challengeNamePrefix = "ita://"
 )
 
-// Available regions https://cloud.google.com/compute/docs/regions-zones#available.
-var euRegions []string = []string{
-	"europe-north1",
-	"europe-central2",
-	"europe-southwest1",
-	"europe-west1",
-	"europe-west3",
-	"europe-west4",
-	"europe-west8",
-	"europe-west9",
-	"europe-west10",
-	"europe-west12",
-}
-
 type client struct {
-	inner   *http.Client
-	baseURL string
-	apiURL  string
-	apiKey  string
+	inner  *http.Client
+	apiURL string
+	apiKey string
 }
 
-func NewClient(ctx context.Context, apiKey string, region string) (verifier.Client, error) {
-	baseURL := usBaseURL
-
-	// If region is in the EU, use the appropriate base URL.
-	if slices.Contains(euRegions, region) {
-		baseURL = euBaseURL
-	}
-
-	return NewClientWithBaseURL(ctx, apiKey, baseURL)
-}
-
-func NewClientWithBaseURL(ctx context.Context, apiKey string, baseURL string) (verifier.Client, error) {
+func NewClient(apiKey string) (verifier.Client, error) {
 	if apiKey == "" {
 		return nil, errors.New("API Key required to initialize ITA connector")
 	}
 
-	innerClient := &http.Client{
-		Transport: &http.Transport{
-			// TODO: See how this should be configured.
-			TLSClientConfig: &tls.Config{},
-			Proxy:           http.ProxyFromEnvironment,
-		},
-	}
-
 	return &client{
-		inner:   innerClient,
-		baseURL: baseURL,
-		apiURL:  apiURL,
-		apiKey:  apiKey,
+		inner: &http.Client{
+			Transport: &http.Transport{
+				// TODO: See how this should be configured.
+				TLSClientConfig: &tls.Config{},
+				Proxy:           http.ProxyFromEnvironment,
+			},
+		},
+		apiURL: itaURL,
+		apiKey: apiKey,
 	}, nil
 }
 
@@ -94,7 +61,23 @@ type itaNonce struct {
 	Signature []byte `json:"signature"`
 }
 
-func (c *client) CreateChallenge(ctx context.Context) (*verifier.Challenge, error) {
+// The ITA evidence nonce is a concatenation+hash of Val and Iat. See references below:
+// https://github.com/intel/trustauthority-client-for-go/blob/main/go-connector/attest.go#L22
+// https://github.com/intel/trustauthority-client-for-go/blob/main/go-tdx/tdx_adapter.go#L37
+func createHashedNonce(nonce *itaNonce) ([]byte, error) {
+	hash := sha512.New()
+	_, err := hash.Write(append(nonce.Val, nonce.Iat...))
+	if err != nil {
+		return nil, fmt.Errorf("error hashing ITA nonce: %v", err)
+	}
+
+	// Do we have anything that needs to be in user data?
+	// _, err = hash.Write(adapter.uData)
+
+	return hash.Sum(nil), err
+}
+
+func (c *client) CreateChallenge(_ context.Context) (*verifier.Challenge, error) {
 	url := c.apiURL + nonceEndpoint
 
 	headers := map[string]string{
@@ -102,35 +85,28 @@ func (c *client) CreateChallenge(ctx context.Context) (*verifier.Challenge, erro
 		acceptHeader: applicationJSON,
 	}
 
-	var resp itaNonce
+	resp := &itaNonce{}
 	if err := c.doHTTPRequest(http.MethodGet, url, nil, headers, &resp); err != nil {
 		return nil, err
 	}
 
-	// The ITA evidence nonce is a concatenation+hash of Val and Iat. See references below:
-	// https://github.com/intel/trustauthority-client-for-go/blob/main/go-connector/attest.go#L22
-	// https://github.com/intel/trustauthority-client-for-go/blob/main/go-tdx/tdx_adapter.go#L37
-	nonce := append(resp.Val, resp.Iat...)
-
-	hash := sha512.New()
-	_, err := hash.Write(nonce)
+	nonce, err := createHashedNonce(resp)
 	if err != nil {
-		return nil, fmt.Errorf("error hashing ITA nonce: %v", err)
+		return nil, err
 	}
-	// Do we have anything that needs to be in user data?
-	// _, err = hash.Write(adapter.uData)
 
 	return &verifier.Challenge{
 		Name:  challengeNamePrefix + string(resp.Val),
-		Nonce: hash.Sum(nil),
+		Nonce: nonce,
 	}, nil
 }
 
-func (c *client) VerifyAttestation(ctx context.Context, request verifier.VerifyAttestationRequest) (*verifier.VerifyAttestationResponse, error) {
+func convertRequestToTokenRequest(request verifier.VerifyAttestationRequest) tokenRequest {
 	tokenReq := tokenRequest{
 		PolicyMatch: true,
 		TDX: tdxEvidence{
 			// Add EventLog field.
+			EventLog:          request.TDCCELAttestation.CcelData,
 			CanonicalEventLog: request.TDCCELAttestation.CanonicalEventLog,
 			Quote:             request.TDCCELAttestation.TdQuote,
 		},
@@ -161,6 +137,12 @@ func (c *client) VerifyAttestation(ctx context.Context, request verifier.VerifyA
 		tokenReq.GCP.CSInfo.SignedEntities = append(tokenReq.GCP.CSInfo.SignedEntities, itaSig)
 	}
 
+	return tokenReq
+}
+
+func (c *client) VerifyAttestation(_ context.Context, request verifier.VerifyAttestationRequest) (*verifier.VerifyAttestationResponse, error) {
+	tokenReq := convertRequestToTokenRequest(request)
+
 	url := c.apiURL + tokenEndpoint
 	headers := map[string]string{
 		apiKeyHeader:      c.apiKey,
@@ -168,7 +150,7 @@ func (c *client) VerifyAttestation(ctx context.Context, request verifier.VerifyA
 		contentTypeHeader: applicationJSON,
 	}
 
-	var resp tokenResponse
+	resp := &tokenResponse{}
 	if err := c.doHTTPRequest(http.MethodPost, url, tokenReq, headers, &resp); err != nil {
 		return nil, err
 	}
@@ -180,19 +162,23 @@ func (c *client) VerifyAttestation(ctx context.Context, request verifier.VerifyA
 
 func (c *client) doHTTPRequest(method string, url string, reqStruct any, headers map[string]string, respStruct any) error {
 	// Create HTTP request.
-	var reqBody *bytes.Reader = nil
+	var req *http.Request
+	var err error
 	if reqStruct != nil {
 		body, err := json.Marshal(reqStruct)
 		if err != nil {
 			return fmt.Errorf("error marshaling request: %v", err)
 		}
 
-		reqBody = bytes.NewReader(body)
-	}
-
-	req, err := http.NewRequest(method, url, reqBody)
-	if err != nil {
-		return fmt.Errorf("error creating HTTP request: %v", err)
+		req, err = http.NewRequest(method, url, bytes.NewReader(body))
+		if err != nil {
+			return fmt.Errorf("error creating HTTP request: %v", err)
+		}
+	} else {
+		req, err = http.NewRequest(method, url, nil)
+		if err != nil {
+			return fmt.Errorf("error creating HTTP request: %v", err)
+		}
 	}
 
 	// Add headers to request.
@@ -217,23 +203,3 @@ func (c *client) doHTTPRequest(method string, url string, reqStruct any, headers
 
 	return nil
 }
-
-// func (c *client) doHTTPRequest2(req *http.Request, headers map[string]string) ([]byte, error) {
-// 	// Add headers to request.
-// 	for key, val := range headers {
-// 		req.Header.Add(key, val)
-// 	}
-
-// 	resp, err := c.inner.Do(req)
-// 	if err != nil {
-// 		return nil, fmt.Errorf("HTTP request error: %v", err)
-// 	}
-
-// 	// Read and return response body.
-// 	body, err := io.ReadAll(resp.Body)
-// 	if err != nil {
-// 		return nil, fmt.Errorf("error reading response body: %v", err)
-// 	}
-
-// 	return body, nil
-// }
