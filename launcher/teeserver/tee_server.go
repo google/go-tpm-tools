@@ -172,6 +172,19 @@ func processITANonce(input itaNonce) ([]byte, error) {
 	return hash.Sum(nil), nil
 }
 
+func trimCCELData(data []byte) []byte {
+	trimIndex := len(data)
+	for ; trimIndex >= 0; trimIndex-- {
+		c := data[trimIndex-1]
+		// Proceed until 0xFF padding ends.
+		if c != byte(255) {
+			break
+		}
+	}
+
+	return data[:trimIndex]
+}
+
 func (a *attestHandler) getEvidence(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -222,7 +235,7 @@ func (a *attestHandler) getEvidence(w http.ResponseWriter, r *http.Request) {
 			PolicyMatch: true,
 			TDX: tdxEvidence{
 				Quote:             evidence.TDXAttestation.TdQuote,
-				CcelData:          evidence.TDXAttestation.CcelData,
+				CcelData:          trimCCELData(evidence.TDXAttestation.CcelData),
 				CanonicalEventLog: evidence.TDXAttestation.CanonicalEventLog,
 			},
 			SigAlg: "RS256",
@@ -240,7 +253,7 @@ func (a *attestHandler) getEvidence(w http.ResponseWriter, r *http.Request) {
 							AllowedPrincipalTags: principalTags{
 								ContainerSignatureKIDs: keyIDs{
 									map[string][]string{
-										"key_ids": []string{"kid1", "kid2"},
+										"key_ids": {"kid1", "kid2"},
 									},
 								},
 							},
