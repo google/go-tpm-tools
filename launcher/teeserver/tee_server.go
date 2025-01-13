@@ -251,10 +251,8 @@ func (a *attestHandler) getEvidence(w http.ResponseWriter, r *http.Request) {
 						TokenType: "OIDC",
 						TokenTypeOpts: tokenTypeOptions{
 							AllowedPrincipalTags: principalTags{
-								ContainerSignatureKIDs: keyIDs{
-									map[string][]string{
-										"key_ids": {"kid1", "kid2"},
-									},
+								ContainerImageSigs: containerImageSignatures{
+									KeyIDs: []string{"kid1", "kid2"},
 								},
 							},
 						},

@@ -2,7 +2,7 @@ package teeserver
 
 type tdxEvidence struct {
 	CcelAcpiTable     []byte `json:"ccel_table,omitempty"`
-	CcelData          []byte `json:"ccel_data,omitempty"`
+	CcelData          []byte `json:"event_log,omitempty"`
 	CanonicalEventLog []byte `json:"canonical_event_log"`
 	Quote             []byte `json:"quote"`
 }
@@ -12,12 +12,12 @@ type containerSignature struct {
 	Signature []byte `json:"signature"`
 }
 
-type keyIDs struct {
-	IDs map[string][]string `json:"key_ids"`
+type containerImageSignatures struct {
+	KeyIDs []string `json:"key_ids"`
 }
 
 type principalTags struct {
-	ContainerSignatureKIDs keyIDs `json:"container_image_signatures"`
+	ContainerImageSigs containerImageSignatures `json:"container_image_signatures"`
 }
 
 type tokenTypeOptions struct {
