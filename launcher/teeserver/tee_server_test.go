@@ -13,10 +13,10 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-tpm-tools/cel"
-	"github.com/google/go-tpm-tools/internal/models"
 	"github.com/google/go-tpm-tools/launcher/agent"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
+	"github.com/google/go-tpm-tools/verifier/models"
 )
 
 type fakeAttestationAgent struct {
@@ -134,6 +134,18 @@ func TestCustomToken(t *testing.T) {
 		},
 		{
 			testName: "TestRequestSuccessPassedToCaller",
+			body: `{
+				"audience": "audience",
+				"nonces": ["thisIsAcustomNonce"],
+				"token_type": "OIDC"
+			}`,
+			attestFunc: func(context.Context, agent.AttestAgentOpts) ([]byte, error) {
+				return []byte{}, nil
+			},
+			want: http.StatusOK,
+		},
+		{
+			testName: "TestPrincipalTagOptionsSuccess",
 			body: `{
 				"audience": "audience",
 				"nonces": ["thisIsAcustomNonce"],

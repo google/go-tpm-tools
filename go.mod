@@ -1,8 +1,6 @@
 module github.com/google/go-tpm-tools
 
-go 1.21
-
-toolchain go1.21.0
+go 1.20
 
 require (
 	github.com/google/gce-tcb-verifier v0.2.3-0.20240905212129-12f728a62786
@@ -15,8 +13,6 @@ require (
 	github.com/google/logger v1.1.1
 	google.golang.org/protobuf v1.35.1
 )
-
-require cloud.google.com/go/confidentialcomputing v1.8.0 // indirect
 
 require (
 	github.com/golang/protobuf v1.5.4 // indirect
@@ -34,6 +30,6 @@ require (
 	golang.org/x/exp v0.0.0-20240531132922-fd00a4e0eefc // indirect
 	golang.org/x/net v0.30.0 // indirect
 	golang.org/x/sys v0.28.0 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20240722135656-d784300faade // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20241015192408-796eee8c2d53 // indirect
 	google.golang.org/grpc v1.67.1 // indirect
 )

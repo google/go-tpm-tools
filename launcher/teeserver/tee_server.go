@@ -11,10 +11,10 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/google/go-tpm-tools/internal/models"
 	"github.com/google/go-tpm-tools/launcher/agent"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
+	"github.com/google/go-tpm-tools/verifier/models"
 )
 
 type attestHandler struct {
@@ -77,7 +77,7 @@ func (a *attestHandler) getToken(w http.ResponseWriter, r *http.Request) {
 		data, err := os.ReadFile(a.defaultTokenFile)
 
 		if err != nil {
-			err = fmt.Errorf("failed to get the token")
+			err = fmt.Errorf("failed to get the token: %w", err)
 			a.logAndWriteHTTPError(w, http.StatusNotFound, err)
 			return
 		}
@@ -95,11 +95,19 @@ func (a *attestHandler) getToken(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		err = validateTokenOptions(tokenOptions)
-		if err != nil {
+		if tokenOptions.Audience == "" {
+			err := fmt.Errorf("use GET request for the default identity token")
 			a.logAndWriteHTTPError(w, http.StatusBadRequest, err)
 			return
 		}
+
+		if tokenOptions.TokenType == "" {
+			err := fmt.Errorf("token_type is a required parameter")
+			a.logAndWriteHTTPError(w, http.StatusBadRequest, err)
+			return
+		}
+
+		// Do not check that TokenTypeOptions matches TokenType in the launcher.
 
 		tok, err := a.attestAgent.Attest(a.ctx, agent.AttestAgentOpts{
 			TokenOptions: &tokenOptions,
@@ -141,19 +149,5 @@ func (s *TeeServer) Shutdown(ctx context.Context) error {
 	if err2 != nil {
 		return err2
 	}
-	return nil
-}
-
-func validateTokenOptions(opts models.TokenOptions) error {
-	if opts.Audience == "" {
-		return fmt.Errorf("use GET request for the default identity token")
-	}
-
-	if opts.TokenType == "" {
-		return fmt.Errorf("token_type is a required parameter")
-	}
-
-	// Do not check that TokenTypeOptions matches TokenType in the launcher.
-
 	return nil
 }
