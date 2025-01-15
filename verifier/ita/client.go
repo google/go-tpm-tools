@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/google/go-tpm-tools/verifier"
 )
@@ -18,6 +19,7 @@ const (
 	itaURL = "https://api.trustauthority.intel.com"
 
 	nonceEndpoint = "/appraisal/v2/nonce"
+	// TODO: update one Intel provides Confidential Space endpoint.
 	tokenEndpoint = "/appraisal/v2/attest"
 
 	apiKeyHeader      = "x-api-key"
@@ -28,26 +30,63 @@ const (
 	challengeNamePrefix = "ita://"
 )
 
+var regionalURLs map[string]string = map[string]string{
+	"US": "https://api.trustauthority.intel.com",
+	"EU": "https://api.eu.trustauthority.intel.com",
+}
+
 type client struct {
 	inner  *http.Client
 	apiURL string
 	apiKey string
 }
 
-func NewClient(apiKey string) (verifier.Client, error) {
-	if apiKey == "" {
-		return nil, errors.New("API Key required to initialize ITA connector")
+func urlAndKey(regionAndKey string) (string, string, error) {
+	if regionAndKey == "" {
+		return "", "", errors.New("API region and key required to initialize ITA client")
+	}
+
+	// Expect format <region>:<api key>.
+	split := strings.SplitN(regionAndKey, ":", 2)
+	if len(split) != 2 {
+		return "", "", errors.New("API region and key not in expected format <region>:<key>")
+	}
+	region := strings.ToUpper(split[0])
+	url, ok := regionalURLs[region]
+	if !ok {
+		// Create list of allowed regions.
+		keys := []string{}
+		for k := range regionalURLs {
+			keys = append(keys, k)
+		}
+		return "", "", fmt.Errorf("unsupported region %v, expect one of %v", region, keys)
+	}
+
+	return url, split[1], nil
+}
+
+func NewClient(regionAndKey string) (verifier.Client, error) {
+	url, apiKey, err := urlAndKey(regionAndKey)
+	if err != nil {
+		return nil, err
 	}
 
 	return &client{
 		inner: &http.Client{
 			Transport: &http.Transport{
-				// TODO: See how this should be configured.
-				TLSClientConfig: &tls.Config{},
-				Proxy:           http.ProxyFromEnvironment,
+				// https://github.com/intel/trustauthority-client-for-go/blob/main/go-connector/token.go#L130.
+				TLSClientConfig: &tls.Config{
+					CipherSuites: []uint16{
+						tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+						tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+					},
+					InsecureSkipVerify: false,
+					MinVersion:         tls.VersionTLS12,
+				},
+				Proxy: http.ProxyFromEnvironment,
 			},
 		},
-		apiURL: itaURL,
+		apiURL: url,
 		apiKey: apiKey,
 	}, nil
 }
