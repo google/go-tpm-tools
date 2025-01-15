@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -275,5 +276,65 @@ func TestConvertRequestToTokenRequest(t *testing.T) {
 
 	if diff := cmp.Diff(convertedReq, expectedRequest); diff != "" {
 		t.Errorf("convertRequestToTokenRequest did not return expected tokenRequest: %v", diff)
+	}
+}
+
+func TestURLAndKey(t *testing.T) {
+	testAPIKey := "testAPIKey"
+
+	for region, expectedURL := range regionalURLs {
+		t.Run(region+" region", func(t *testing.T) {
+			regionAndKey := region + ":" + testAPIKey
+
+			url, key, err := urlAndKey(regionAndKey)
+			if err != nil {
+				t.Fatalf("urlAndKey returned error: %v", err)
+			}
+
+			if url != expectedURL {
+				t.Errorf("urlAndKey did not return expected URL: got %v, want %v", url, expectedURL)
+			}
+
+			if key != testAPIKey {
+				t.Errorf("urlAndKey did not return expected API key: got %v, want %v", url, expectedURL)
+			}
+		})
+	}
+}
+
+func TestURLAndKeyError(t *testing.T) {
+	testcases := []struct {
+		name           string
+		regionAndKey   string
+		expectedSubstr string
+	}{
+		{
+			name:           "No colon separator",
+			regionAndKey:   "notAValidInput",
+			expectedSubstr: "not in expected format",
+		},
+		{
+			name:           "Unsupported region",
+			regionAndKey:   "Narnia:test-api-key",
+			expectedSubstr: "unsupported region",
+		},
+		{
+			name:           "Empty input",
+			regionAndKey:   "",
+			expectedSubstr: "region and key required",
+		},
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, err := urlAndKey(tc.regionAndKey)
+			if err == nil {
+				t.Fatal("urlAndKey returned successfully, expected error")
+			}
+
+			if !strings.Contains(err.Error(), tc.expectedSubstr) {
+				t.Errorf("urlAndKey did not return expected error: got %v, want %v", err.Error(), tc.expectedSubstr)
+			}
+		})
 	}
 }
