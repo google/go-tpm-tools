@@ -160,6 +160,8 @@ func (a *agent) MeasureEvent(event cel.Content) error {
 // Attest fetches the nonce and connection ID from the Attestation Service,
 // creates an attestation message, and returns the resultant
 // principalIDTokens and Metadata Server-generated ID tokens for the instance.
+// When possible, Attest uses the technology-specific attestation root-of-trust
+// (TDX RTMR), otherwise falls back to the vTPM.
 func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error) {
 	challenge, err := a.client.CreateChallenge(ctx)
 	if err != nil {
@@ -210,24 +212,24 @@ func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error
 		return nil, fmt.Errorf("received an unsupported attestation type! %v", v)
 	}
 
-	attResult, err := a.ar.Attest(challenge.Nonce)
+	attResult, err := a.avRot.Attest(challenge.Nonce)
 	if err != nil {
 		return nil, fmt.Errorf("failed to attest: %v", err)
 	}
 
 	var cosCel bytes.Buffer
-	if err := a.cosCel.EncodeCEL(&cosCel); err != nil {
+	if err := a.avRot.GetCEL().EncodeCEL(&cosCel); err != nil {
 		return nil, err
 	}
 
 	switch v := attResult.(type) {
 	case *pb.Attestation:
-		a.logger.Println("attestation through TPM quote")
+		a.logger.Info("attestation through TPM quote")
 
 		v.CanonicalEventLog = cosCel.Bytes()
 		req.Attestation = v
 	case *verifier.TDCCELAttestation:
-		a.logger.Println("attestation through TDX quote")
+		a.logger.Info("attestation through TDX quote")
 
 		certChain, err := internal.GetCertificateChain(a.fetchedAK.Cert(), http.DefaultClient)
 		if err != nil {
