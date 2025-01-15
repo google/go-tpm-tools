@@ -51,7 +51,10 @@ type AttestationAgent interface {
 
 type attestRoot interface {
 	// Extend measures the cel content into a measurement register and appends to the CEL.
-	Extend(cel.Content, *cel.CEL) error
+	Extend(cel.Content) error
+	// GetCEL fetches the CEL with events corresponding to the sequence of Extended measurements
+	// to this attestation root
+	GetCEL() *cel.CEL
 	// Attest fetches a technology-specific quote from the root of trust.
 	Attest(nonce []byte) (any, error)
 }
@@ -65,8 +68,8 @@ type AttestAgentOpts struct {
 }
 
 type agent struct {
-	ar               attestRoot
-	cosCel           cel.CEL
+	measuredRots     []attestRoot
+	avRot            attestRoot
 	fetchedAK        *client.Key
 	client           verifier.Client
 	principalFetcher principalIDTokenFetcher
@@ -100,27 +103,38 @@ func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher util.TpmKeyFetcher
 		sigsCache:        &sigsCache{},
 	}
 
+	// Add TPM
+	logger.Info("Adding TPM PCRs for measurement.")
+	var tpmAR = &tpmAttestRoot{
+		fetchedAK: ak,
+		tpm:       tpm,
+	}
+	attestAgent.measuredRots = append(attestAgent.measuredRots, tpmAR)
+
 	// check if is a TDX machine
 	qp, err := tg.GetQuoteProvider()
-	if err != nil || qp.IsSupported() != nil {
-		logger.Println("Using TPM PCRs for measurement.")
-		// by default using TPM
-		attestAgent.ar = &tpmAttestRoot{
-			fetchedAK: ak,
-			tpm:       tpm,
-		}
-	} else {
-		logger.Println("Using TDX RTMRs for measurement.")
+	if err != nil {
+		return nil, err
+	}
+	// Use qp.IsSupported to check the TDX RTMR interface is enabled
+	if qp.IsSupported() == nil {
+		logger.Info("Adding TDX RTMRs for measurement.")
 		// try to create tsm client for tdx rtmr
 		tsm, err := linuxtsm.MakeClient()
 		if err != nil {
 			return nil, fmt.Errorf("failed to create TSM for TDX: %v", err)
 		}
-
-		attestAgent.ar = &tdxAttestRoot{
+		var tdxAR = &tdxAttestRoot{
 			qp:        qp,
 			tsmClient: tsm,
 		}
+		attestAgent.measuredRots = append(attestAgent.measuredRots, tdxAR)
+
+		logger.Info("Using TDX RTMR as attestation root.")
+		attestAgent.avRot = tdxAR
+	} else {
+		logger.Info("Using TPM PCR as attestation root.")
+		attestAgent.avRot = tpmAR
 	}
 
 	return attestAgent, nil
@@ -134,13 +148,21 @@ func (a *agent) Close() error {
 
 // MeasureEvent takes in a cel.Content and appends it to the CEL eventlog
 // under the attestation agent.
+// MeasureEvent measures to all Attest Roots.
 func (a *agent) MeasureEvent(event cel.Content) error {
-	return a.ar.Extend(event, &a.cosCel)
+	for _, attestRoot := range a.measuredRots {
+		if err := attestRoot.Extend(event); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Attest fetches the nonce and connection ID from the Attestation Service,
 // creates an attestation message, and returns the resultant
 // principalIDTokens and Metadata Server-generated ID tokens for the instance.
+// When possible, Attest uses the technology-specific attestation root-of-trust
+// (TDX RTMR), otherwise falls back to the vTPM.
 func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error) {
 	challenge, err := a.client.CreateChallenge(ctx)
 	if err != nil {
@@ -162,24 +184,24 @@ func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error
 		},
 	}
 
-	attResult, err := a.ar.Attest(challenge.Nonce)
+	attResult, err := a.avRot.Attest(challenge.Nonce)
 	if err != nil {
 		return nil, fmt.Errorf("failed to attest: %v", err)
 	}
 
 	var cosCel bytes.Buffer
-	if err := a.cosCel.EncodeCEL(&cosCel); err != nil {
+	if err := a.avRot.GetCEL().EncodeCEL(&cosCel); err != nil {
 		return nil, err
 	}
 
 	switch v := attResult.(type) {
 	case *pb.Attestation:
-		a.logger.Println("attestation through TPM quote")
+		a.logger.Info("attestation through TPM quote")
 
 		v.CanonicalEventLog = cosCel.Bytes()
 		req.Attestation = v
 	case *verifier.TDCCELAttestation:
-		a.logger.Println("attestation through TDX quote")
+		a.logger.Info("attestation through TDX quote")
 
 		certChain, err := internal.GetCertificateChain(a.fetchedAK.Cert(), http.DefaultClient)
 		if err != nil {
@@ -214,10 +236,15 @@ type tpmAttestRoot struct {
 	tpmMu     sync.Mutex
 	fetchedAK *client.Key
 	tpm       io.ReadWriteCloser
+	cosCel    cel.CEL
 }
 
-func (t *tpmAttestRoot) Extend(c cel.Content, l *cel.CEL) error {
-	return l.AppendEventPCR(t.tpm, cel.CosEventPCR, defaultCELHashAlgo, c)
+func (t *tpmAttestRoot) GetCEL() *cel.CEL {
+	return &t.cosCel
+}
+
+func (t *tpmAttestRoot) Extend(c cel.Content) error {
+	return t.cosCel.AppendEventPCR(t.tpm, cel.CosEventPCR, defaultCELHashAlgo, c)
 }
 
 func (t *tpmAttestRoot) Attest(nonce []byte) (any, error) {
@@ -234,10 +261,15 @@ type tdxAttestRoot struct {
 	tdxMu     sync.Mutex
 	qp        *tg.LinuxConfigFsQuoteProvider
 	tsmClient configfsi.Client
+	cosCel    cel.CEL
 }
 
-func (t *tdxAttestRoot) Extend(c cel.Content, l *cel.CEL) error {
-	return l.AppendEventRTMR(t.tsmClient, cel.CosRTMR, c)
+func (t *tdxAttestRoot) GetCEL() *cel.CEL {
+	return &t.cosCel
+}
+
+func (t *tdxAttestRoot) Extend(c cel.Content) error {
+	return t.cosCel.AppendEventRTMR(t.tsmClient, cel.CosRTMR, c)
 }
 
 func (t *tdxAttestRoot) Attest(nonce []byte) (any, error) {
