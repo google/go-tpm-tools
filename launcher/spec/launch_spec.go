@@ -86,6 +86,7 @@ const (
 	monitoringEnable           = "tee-monitoring-enable"
 	devShmSizeKey              = "tee-dev-shm-size-kb"
 	mountKey                   = "tee-mount"
+	itaRegionAndKey            = "ita-regional-key"
 )
 
 const (
