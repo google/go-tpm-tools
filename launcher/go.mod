@@ -51,7 +51,7 @@ require (
 	github.com/google/go-attestation v0.5.1 // indirect
 	github.com/google/go-configfs-tsm v0.3.3-0.20240919001351-b4b5b84fdcbc // indirect
 	github.com/google/go-eventlog v0.0.2-0.20241003021507-01bb555f7cba // indirect
-	github.com/google/go-sev-guest v0.11.2-0.20241009005433-de2ac900e958 // indirect
+	github.com/google/go-sev-guest v0.12.1 // indirect
 	github.com/google/go-tdx-guest v0.3.2-0.20241009005452-097ee70d0843 // indirect
 	github.com/google/go-tspi v0.3.0 // indirect
 	github.com/google/logger v1.1.1 // indirect

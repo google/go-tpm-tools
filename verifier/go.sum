@@ -334,6 +334,8 @@ github.com/google/go-replayers/grpcreplay v0.1.0/go.mod h1:8Ig2Idjpr6gifRd6pNVgg
 github.com/google/go-replayers/httpreplay v0.1.0/go.mod h1:YKZViNhiGgqdBlUbI2MwGpq4pXxNmhJLPHQ7cv2b5no=
 github.com/google/go-sev-guest v0.11.2-0.20241009005433-de2ac900e958 h1:GfnkFZNr80qFGLR/EY75zwk8puz8+frGj4iwPwnJbSU=
 github.com/google/go-sev-guest v0.11.2-0.20241009005433-de2ac900e958/go.mod h1:8+UOtSaqVIZjJJ9DDmgRko3J/kNc6jI5KLHxoeao7cA=
+github.com/google/go-sev-guest v0.12.1 h1:H4rFYnPIn8HtqEsNTmh56Zxcf9BI9n48ZSYCnpYLYvc=
+github.com/google/go-sev-guest v0.12.1/go.mod h1:SK9vW+uyfuzYdVN0m8BShL3OQCtXZe/JPF7ZkpD3760=
 github.com/google/go-tdx-guest v0.3.2-0.20241009005452-097ee70d0843 h1:+MoPobRN9HrDhGyn6HnF5NYo4uMBKaiFqAtf/D/OB4A=
 github.com/google/go-tdx-guest v0.3.2-0.20241009005452-097ee70d0843/go.mod h1:g/n8sKITIT9xRivBUbizo34DTsUm2nN2uU3A662h09g=
 github.com/google/go-tpm v0.9.0 h1:sQF6YqWMi+SCXpsmS3fd21oPy/vSddwZry4JnmltHVk=
