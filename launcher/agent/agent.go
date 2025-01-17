@@ -19,6 +19,7 @@ import (
 
 	"github.com/cenkalti/backoff/v4"
 	"github.com/google/go-configfs-tsm/configfs/configfsi"
+	"github.com/google/logger"
 
 	"github.com/google/go-configfs-tsm/configfs/linuxtsm"
 	tg "github.com/google/go-tdx-guest/client"
@@ -68,26 +69,39 @@ type AttestAgentOpts struct {
 	TokenType string
 }
 
+type Clients struct {
+	GCA verifier.Client
+}
+
 type agent struct {
 	measuredRots     []attestRoot
 	avRot            attestRoot
 	fetchedAK        *client.Key
-	client           verifier.Client
 	principalFetcher principalIDTokenFetcher
 	sigsFetcher      signaturediscovery.Fetcher
 	launchSpec       spec.LaunchSpec
 	logger           logging.Logger
 	sigsCache        *sigsCache
+	clients          *Clients
+}
+
+// CreateAgentOpts contains parameters for creating an attestation agent.
+type CreateAgentOpts struct {
+	VerifierClients *Clients
+	// Func to fetch GCE principal tokens for a given audience.
+	PrincipalFetcher principalIDTokenFetcher
+	// Func to fetch container image signatures associated with the running workload.
+	SigsFetcher signaturediscovery.Fetcher
+	LaunchSpec  spec.LaunchSpec
+	// Will log any partial errors returned by VerifyAttestation.
+	Logger logging.Logger
 }
 
 // CreateAttestationAgent returns an agent capable of performing remote
 // attestation using the machine's (v)TPM to GCE's Attestation Service.
 // - tpm is a handle to the TPM on the instance
 // - akFetcher is a func to fetch an attestation key: see go-tpm-tools/client.
-// - principalFetcher is a func to fetch GCE principal tokens for a given audience.
-// - signaturesFetcher is a func to fetch container image signatures associated with the running workload.
-// - logger will log any partial errors returned by VerifyAttestation.
-func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher util.TpmKeyFetcher, verifierClient verifier.Client, principalFetcher principalIDTokenFetcher, sigsFetcher signaturediscovery.Fetcher, launchSpec spec.LaunchSpec, logger logging.Logger) (AttestationAgent, error) {
+func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher util.TpmKeyFetcher, opts *CreateAgentOpts) (AttestationAgent, error) {
 	// Fetched the AK and save it, so the agent doesn't need to create a new key everytime
 	ak, err := akFetcher(tpm)
 	if err != nil {
@@ -95,12 +109,12 @@ func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher util.TpmKeyFetcher
 	}
 
 	attestAgent := &agent{
-		client:           verifierClient,
+		clients:          opts.VerifierClients,
 		fetchedAK:        ak,
-		principalFetcher: principalFetcher,
-		sigsFetcher:      sigsFetcher,
-		launchSpec:       launchSpec,
-		logger:           logger,
+		principalFetcher: opts.PrincipalFetcher,
+		sigsFetcher:      opts.SigsFetcher,
+		launchSpec:       opts.LaunchSpec,
+		logger:           opts.Logger,
 		sigsCache:        &sigsCache{},
 	}
 
@@ -165,7 +179,11 @@ func (a *agent) MeasureEvent(event cel.Content) error {
 // When possible, Attest uses the technology-specific attestation root-of-trust
 // (TDX RTMR), otherwise falls back to the vTPM.
 func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error) {
-	challenge, err := a.client.CreateChallenge(ctx)
+	return a.AttestWithClient(ctx, a.clients.GCA, opts)
+}
+
+func (a *agent) AttestWithClient(ctx context.Context, client verifier.Client, opts AttestAgentOpts) ([]byte, error) {
+	challenge, err := client.CreateChallenge(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -230,7 +248,7 @@ func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error
 		a.logger.Info("Found container image signatures: %v\n", signatures)
 	}
 
-	resp, err := a.client.VerifyAttestation(ctx, req)
+	resp, err := client.VerifyAttestation(ctx, req)
 	if err != nil {
 		return nil, err
 	}

@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"os"
 	"path/filepath"
 
 	"github.com/google/go-tpm-tools/launcher/agent"
@@ -78,17 +77,25 @@ func (a *attestHandler) getToken(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case "GET":
-		// this could call Attest(ctx) directly later.
-		data, err := os.ReadFile(a.defaultTokenFile)
-
-		if err != nil {
-			a.logger.Error(err.Error())
-			w.WriteHeader(http.StatusNotFound)
-			w.Write([]byte("failed to get the token"))
+		if err := a.attestAgent.Refresh(a.ctx); err != nil {
+			errStr := fmt.Sprintf("failed to refresh attestation agent: %v", err)
+			a.logger.Error(errStr)
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte(errStr))
 			return
 		}
+
+		token, err := a.attestAgent.Attest(a.ctx, agent.AttestAgentOpts{})
+		if err != nil {
+			errStr := fmt.Sprintf("failed to retrieve attestation service token: %v", err)
+			a.logger.Error(errStr)
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte(errStr))
+			return
+		}
+
 		w.WriteHeader(http.StatusOK)
-		w.Write(data)
+		w.Write([]byte(token))
 		return
 	case "POST":
 		var tokenReq customTokenRequest
