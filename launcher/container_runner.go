@@ -216,18 +216,29 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 
 	asAddr := launchSpec.AttestationServiceAddr
 
-	verifierClient, err := util.NewRESTClient(ctx, asAddr, launchSpec.ProjectID, launchSpec.Region)
+	gcaClient, err := util.NewRESTClient(ctx, asAddr, launchSpec.ProjectID, launchSpec.Region)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create REST verifier client: %v", err)
 	}
 
+	clients := &agent.Clients{GCA: gcaClient}
+
 	// Create a new signaturediscovery client to fetch signatures.
 	sdClient := getSignatureDiscoveryClient(cdClient, mdsClient, image.Target())
 
-	attestAgent, err := agent.CreateAttestationAgent(tpm, client.GceAttestationKeyECC, verifierClient, principalFetcherWithImpersonate, sdClient, launchSpec, logger)
+	agentOpts := &agent.CreateAgentOpts{
+		VerifierClients:  clients,
+		PrincipalFetcher: principalFetcherWithImpersonate,
+		SigsFetcher:      sdClient,
+		LaunchSpec:       launchSpec,
+		Logger:           logger,
+	}
+
+	attestAgent, err := agent.CreateAttestationAgent(tpm, client.GceAttestationKeyECC, agentOpts)
 	if err != nil {
 		return nil, err
 	}
+
 	return &ContainerRunner{
 		container,
 		launchSpec,

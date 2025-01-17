@@ -59,7 +59,14 @@ func TestAttestRacing(t *testing.T) {
 	}
 
 	verifierClient := fake.NewClient(fakeSigner)
-	agent, err := CreateAttestationAgent(tpm, client.AttestationKeyECC, verifierClient, placeholderPrincipalFetcher, signaturediscovery.NewFakeClient(), spec.LaunchSpec{}, logging.SimpleLogger())
+	agentOpts := &CreateAgentOpts{
+		VerifierClients:  &Clients{GCA: verifierClient},
+		PrincipalFetcher: placeholderPrincipalFetcher,
+		SigsFetcher:      signaturediscovery.NewFakeClient(),
+		LaunchSpec:       spec.LaunchSpec{},
+		Logger:           logging.SimpleLogger(),
+	}
+	agent, err := CreateAttestationAgent(tpm, client.AttestationKeyECC, agentOpts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,8 +117,14 @@ func TestAttest(t *testing.T) {
 			}
 
 			verifierClient := fake.NewClient(fakeSigner)
-
-			agent, err := CreateAttestationAgent(tpm, client.AttestationKeyECC, verifierClient, tc.principalIDTokenFetcher, tc.containerSignaturesFetcher, tc.launchSpec, logging.SimpleLogger())
+			agentOpts := &CreateAgentOpts{
+				VerifierClients:  &Clients{GCA: verifierClient},
+				PrincipalFetcher: tc.principalIDTokenFetcher,
+				SigsFetcher:      tc.containerSignaturesFetcher,
+				LaunchSpec:       tc.launchSpec,
+				Logger:           logging.SimpleLogger(),
+			}
+			agent, err := CreateAttestationAgent(tpm, client.AttestationKeyECC, agentOpts)
 			if err != nil {
 				t.Fatalf("failed to create an attestation agent %v", err)
 			}
@@ -601,7 +614,14 @@ func TestWithAgent(t *testing.T) {
 	tpm := test.GetTPM(t)
 	defer client.CheckedClose(t, tpm)
 
-	agent, err := CreateAttestationAgent(tpm, client.AttestationKeyECC, vClient, testPrincipalIDTokenFetcher, signaturediscovery.NewFakeClient(), spec.LaunchSpec{}, logging.SimpleLogger())
+	agentOpts := &CreateAgentOpts{
+		VerifierClients:  &Clients{GCA: vClient},
+		PrincipalFetcher: testPrincipalIDTokenFetcher,
+		SigsFetcher:      signaturediscovery.NewFakeClient(),
+		LaunchSpec:       spec.LaunchSpec{},
+		Logger:           logging.SimpleLogger(),
+	}
+	agent, err := CreateAttestationAgent(tpm, client.AttestationKeyECC, agentOpts)
 	if err != nil {
 		t.Fatalf("failed to create an attestation agent %v", err)
 	}
