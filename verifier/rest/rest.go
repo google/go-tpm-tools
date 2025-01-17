@@ -212,12 +212,10 @@ func convertRequestToREST(request verifier.VerifyAttestationRequest) *ccpb.Verif
 
 	signatures := make([]*ccpb.ContainerImageSignature, len(request.ContainerImageSignatures))
 	for i, sig := range request.ContainerImageSignatures {
-		signature, err := convertOCISignatureToREST(sig)
-		if err != nil {
-			log.Printf("failed to convert OCI signature [%v] to ContainerImageSignature proto: %v", sig, err)
-			continue
+		signatures[i] = &confidentialcomputingpb.ContainerImageSignature{
+			Payload:   sig.Payload,
+			Signature: sig.Signature,
 		}
-		signatures[i] = signature
 	}
 
 	verifyReq := &ccpb.VerifyAttestationRequest{

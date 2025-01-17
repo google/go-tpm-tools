@@ -316,7 +316,7 @@ func TestFetchContainerImageSignatures(t *testing.T) {
 
 			req := verifier.VerifyAttestationRequest{
 				Attestation:              attestation,
-				ContainerImageSignatures: gotSigs,
+				ContainerImageSignatures: containerSigs,
 			}
 			got, err := verifierClient.VerifyAttestation(context.Background(), req)
 			if err != nil {
