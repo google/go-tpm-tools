@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"crypto"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"net/http"
@@ -218,8 +219,15 @@ func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error
 
 	signatures := a.sigsCache.get()
 	if len(signatures) > 0 {
-		req.ContainerImageSignatures = signatures
-		a.logger.Info("Found container image signatures: %v\n", "signatures", signatures)
+		for _, sig := range signatures {
+			verifierSig, err := convertOCIToContainerSignature(sig)
+			if err != nil {
+				a.logger.Error(fmt.Sprintf("error converting container signatures: %v", err))
+				continue
+			}
+			req.ContainerImageSignatures = append(req.ContainerImageSignatures, verifierSig)
+		}
+		a.logger.Info("Found container image signatures: %v\n", signatures)
 	}
 
 	resp, err := a.client.VerifyAttestation(ctx, req)
@@ -230,6 +238,25 @@ func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error
 		a.logger.Error(fmt.Sprintf("Partial errors from VerifyAttestation: %v", resp.PartialErrs))
 	}
 	return resp.ClaimsToken, nil
+}
+
+func convertOCIToContainerSignature(ociSig oci.Signature) (*verifier.ContainerSignature, error) {
+	payload, err := ociSig.Payload()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get payload from signature [%v]: %v", ociSig, err)
+	}
+	b64Sig, err := ociSig.Base64Encoded()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get base64 signature from signature [%v]: %v", ociSig, err)
+	}
+	sigBytes, err := base64.StdEncoding.DecodeString(b64Sig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode signature for signature [%v]: %v", ociSig, err)
+	}
+	return &verifier.ContainerSignature{
+		Payload:   payload,
+		Signature: sigBytes,
+	}, nil
 }
 
 type tpmAttestRoot struct {
