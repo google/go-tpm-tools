@@ -323,7 +323,6 @@ func TestFetchContainerImageSignatures(t *testing.T) {
 
 				containerSigs = append(containerSigs, sig)
 			}
-
 			req := verifier.VerifyAttestationRequest{
 				Attestation:              attestation,
 				ContainerImageSignatures: containerSigs,

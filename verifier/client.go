@@ -35,6 +35,11 @@ type ContainerSignature struct {
 	Signature []byte
 }
 
+type ContainerSignature struct {
+	Payload   []byte
+	Signature []byte
+}
+
 // VerifyAttestationRequest is passed in on VerifyAttestation. It contains the
 // Challenge from CreateChallenge, optional GcpCredentials linked to the
 // attestation, the Attestation generated from the TPM, and optional container image signatures associated with the workload.
