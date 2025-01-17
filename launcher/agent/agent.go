@@ -69,6 +69,7 @@ type AttestAgentOpts struct {
 	TokenType string
 }
 
+// Clients contains clients for supported verifier services.
 type Clients struct {
 	GCA verifier.Client
 }
