@@ -6,15 +6,12 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path"
 	"strings"
 	"testing"
 
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/launcher/agent"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
-	"github.com/google/go-tpm-tools/launcher/launcherfile"
 )
 
 type fakeAttestationAgent struct {
@@ -39,38 +36,18 @@ func (f fakeAttestationAgent) Close() error {
 }
 
 func TestGetDefaultToken(t *testing.T) {
-	tmpDir := t.TempDir()
-	tmpToken := path.Join(tmpDir, launcherfile.AttestationVerifierTokenFilename)
-	// An empty attestHandler is fine for now as it is not being used
-	// in the handler.
-	ah := attestHandler{defaultTokenFile: tmpToken,
+	testTokenContent := "test token"
+
+	ah := attestHandler{
 		logger: logging.SimpleLogger(),
 		attestAgent: fakeAttestationAgent{
 			attestFunc: func(context.Context, agent.AttestAgentOpts) ([]byte, error) {
-				t.Errorf("This method should not be called")
-				return nil, nil
+				return []byte(testTokenContent), nil
 			},
 		}}
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/token", nil)
 	w := httptest.NewRecorder()
-	ah.getToken(w, req)
-	_, err := io.ReadAll(w.Result().Body)
-	if err != nil {
-		t.Error(err)
-	}
-
-	// The token file doesn't exist yet, expect a 404
-	if w.Code != http.StatusNotFound {
-		t.Errorf("got return code: %d, want: %d", w.Code, http.StatusNotFound)
-	}
-
-	// create a fake test token file
-	testTokenContent := "test token"
-	os.WriteFile(tmpToken, []byte(testTokenContent), 0644)
-
-	// retry calling the handler, and now it should return the token file content
-	w = httptest.NewRecorder()
 	ah.getToken(w, req)
 	data, err := io.ReadAll(w.Result().Body)
 	if err != nil {
@@ -145,11 +122,9 @@ func TestCustomToken(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		tmpDir := t.TempDir()
-		tmpToken := path.Join(tmpDir, launcherfile.AttestationVerifierTokenFilename)
 		// An empty attestHandler is fine for now as it is not being used
 		// in the handler.
-		ah := attestHandler{defaultTokenFile: tmpToken,
+		ah := attestHandler{
 			logger: logging.SimpleLogger(),
 			attestAgent: fakeAttestationAgent{
 				attestFunc: test.attestFunc,

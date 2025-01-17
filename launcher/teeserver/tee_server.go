@@ -8,18 +8,16 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"path/filepath"
 
 	"github.com/google/go-tpm-tools/launcher/agent"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
-	"github.com/google/go-tpm-tools/launcher/launcherfile"
 )
 
 type attestHandler struct {
-	ctx              context.Context
-	attestAgent      agent.AttestationAgent
-	defaultTokenFile string
-	logger           logging.Logger
+	ctx         context.Context
+	attestAgent agent.AttestationAgent
+	// defaultTokenFile string
+	logger logging.Logger
 }
 
 type customTokenRequest struct {
@@ -47,10 +45,10 @@ func New(ctx context.Context, unixSock string, a agent.AttestationAgent, logger 
 		netListener: nl,
 		server: &http.Server{
 			Handler: (&attestHandler{
-				ctx:              ctx,
-				attestAgent:      a,
-				defaultTokenFile: filepath.Join(launcherfile.HostTmpPath, launcherfile.AttestationVerifierTokenFilename),
-				logger:           logger,
+				ctx:         ctx,
+				attestAgent: a,
+				// defaultTokenFile: filepath.Join(launcherfile.HostTmpPath, launcherfile.AttestationVerifierTokenFilename),
+				logger: logger,
 			}).Handler(),
 		},
 	}
