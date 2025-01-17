@@ -118,6 +118,7 @@ type LaunchSpec struct {
 	MonitoringEnabled          MonitoringType
 	LogRedirect                LogRedirectLocation
 	Mounts                     []launchermount.Mount
+	ITARegionalKey             string
 	// DevShmSize is specified in kiB.
 	DevShmSize  int64
 	Experiments experiments.Experiments
@@ -239,6 +240,10 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 				s.Mounts = append(s.Mounts, specMnt)
 			}
 		}
+	}
+
+	if val, ok := unmarshaledMap[itaRegionAndKey]; ok && val != "" {
+		s.ITARegionalKey = val
 	}
 
 	return nil
