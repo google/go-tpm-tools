@@ -6,6 +6,7 @@ import (
 	"context"
 
 	attestpb "github.com/google/go-tpm-tools/proto/attest"
+	"github.com/google/go-tpm-tools/verifier/models"
 	"github.com/google/go-tpm-tools/verifier/oci"
 	"google.golang.org/genproto/googleapis/rpc/status"
 )
@@ -25,14 +26,6 @@ type Challenge struct {
 	ConnID string
 }
 
-// TokenOptions contains fields that will be passed to the Attestation Service TokenOptions field.
-// These fields are used to customize several claims in the token from the Attestation service.
-type TokenOptions struct {
-	CustomAudience string
-	CustomNonce    []string
-	TokenType      string
-}
-
 // VerifyAttestationRequest is passed in on VerifyAttestation. It contains the
 // Challenge from CreateChallenge, optional GcpCredentials linked to the
 // attestation, the Attestation generated from the TPM, and optional container image signatures associated with the workload.
@@ -41,7 +34,7 @@ type VerifyAttestationRequest struct {
 	GcpCredentials           [][]byte
 	Attestation              *attestpb.Attestation
 	ContainerImageSignatures []oci.Signature
-	TokenOptions             TokenOptions
+	TokenOptions             *models.TokenOptions
 }
 
 // VerifyAttestationResponse is the response from a successful
