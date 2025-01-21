@@ -180,10 +180,10 @@ func (a *agent) MeasureEvent(event cel.Content) error {
 // When possible, Attest uses the technology-specific attestation root-of-trust
 // (TDX RTMR), otherwise falls back to the vTPM.
 func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error) {
-	return a.AttestWithClient(ctx, a.clients.GCA, opts)
+	return a.attestWithClient(ctx, a.clients.GCA, opts)
 }
 
-func (a *agent) AttestWithClient(ctx context.Context, client verifier.Client, opts AttestAgentOpts) ([]byte, error) {
+func (a *agent) attestWithClient(ctx context.Context, client verifier.Client, opts AttestAgentOpts) ([]byte, error) {
 	challenge, err := client.CreateChallenge(ctx)
 	if err != nil {
 		return nil, err
