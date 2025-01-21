@@ -11,13 +11,16 @@ import (
 
 	"github.com/google/go-tpm-tools/launcher/agent"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
+	"github.com/google/go-tpm-tools/launcher/spec"
+	"github.com/google/go-tpm-tools/verifier/util"
 )
 
 type attestHandler struct {
 	ctx         context.Context
 	attestAgent agent.AttestationAgent
 	// defaultTokenFile string
-	logger logging.Logger
+	logger     logging.Logger
+	launchSpec spec.LaunchSpec
 }
 
 type customTokenRequest struct {
@@ -34,7 +37,7 @@ type TeeServer struct {
 }
 
 // New takes in a socket and start to listen to it, and create a server
-func New(ctx context.Context, unixSock string, a agent.AttestationAgent, logger logging.Logger) (*TeeServer, error) {
+func New(ctx context.Context, unixSock string, a agent.AttestationAgent, logger logging.Logger, launchSpec spec.LaunchSpec) (*TeeServer, error) {
 	var err error
 	nl, err := net.Listen("unix", unixSock)
 	if err != nil {
@@ -48,7 +51,8 @@ func New(ctx context.Context, unixSock string, a agent.AttestationAgent, logger 
 				ctx:         ctx,
 				attestAgent: a,
 				// defaultTokenFile: filepath.Join(launcherfile.HostTmpPath, launcherfile.AttestationVerifierTokenFilename),
-				logger: logger,
+				logger:     logger,
+				launchSpec: launchSpec,
 			}).Handler(),
 		},
 	}
@@ -72,6 +76,20 @@ func (a *attestHandler) Handler() http.Handler {
 // Later, this function can use attestation agent to get a token directly.
 func (a *attestHandler) getToken(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html")
+
+	// If the agent does not have a GCA client, create one.
+	if !a.attestAgent.HasClient(agent.GCA) {
+		gcaClient, err := util.NewRESTClient(a.ctx, a.launchSpec.AttestationServiceAddr, a.launchSpec.ProjectID, a.launchSpec.Region)
+		if err != nil {
+			errStr := fmt.Sprintf("failed to create REST verifier client: %v", err)
+			a.logger.Error(errStr)
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte(errStr))
+			return
+		}
+
+		a.attestAgent.AddClient(gcaClient, agent.GCA)
+	}
 
 	switch r.Method {
 	case "GET":
