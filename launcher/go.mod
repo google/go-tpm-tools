@@ -3,6 +3,7 @@ module github.com/google/go-tpm-tools/launcher
 go 1.21
 
 require (
+	cos.googlesource.com/cos/tools.git v0.0.0-20241008015903-8431fe581b1f
 	cloud.google.com/go/compute/metadata v0.5.2
 	cloud.google.com/go/logging v1.12.0
 	github.com/cenkalti/backoff/v4 v4.2.1
