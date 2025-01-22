@@ -22,6 +22,11 @@ const (
 	// TODO: update one Intel provides Confidential Space endpoint.
 	tokenEndpoint = "/appraisal/v2/attest"
 
+	apiKeyHeader      = "x-api-key"
+	acceptHeader      = "Accept"
+	contentTypeHeader = "Content-Type"
+	applicationJSON   = "application/json"
+
 	challengeNamePrefix = "ita://"
 )
 
