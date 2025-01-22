@@ -41,32 +41,26 @@ type client struct {
 	apiKey string
 }
 
-func urlAndKey(regionAndKey string) (string, string, error) {
-	if regionAndKey == "" {
-		return "", "", errors.New("API region and key required to initialize ITA client")
+func urlFromRegion(region string) (string, error) {
+	if region == "" {
+		return "", errors.New("API region required to initialize ITA client")
 	}
 
-	// Expect format <region>:<api key>.
-	split := strings.SplitN(regionAndKey, ":", 2)
-	if len(split) != 2 {
-		return "", "", errors.New("API region and key not in expected format <region>:<key>")
-	}
-	region := strings.ToUpper(split[0])
-	url, ok := regionalURLs[region]
+	url, ok := regionalURLs[strings.ToUpper(region)]
 	if !ok {
 		// Create list of allowed regions.
 		keys := []string{}
 		for k := range regionalURLs {
 			keys = append(keys, k)
 		}
-		return "", "", fmt.Errorf("unsupported region %v, expect one of %v", region, keys)
+		return "", fmt.Errorf("unsupported region %v, expect one of %v", region, keys)
 	}
 
-	return url, split[1], nil
+	return url, nil
 }
 
-func NewClient(regionAndKey string) (verifier.Client, error) {
-	url, apiKey, err := urlAndKey(regionAndKey)
+func NewClient(region string, key string) (verifier.Client, error) {
+	url, err := urlFromRegion(region)
 	if err != nil {
 		return nil, err
 	}
@@ -87,7 +81,7 @@ func NewClient(regionAndKey string) (verifier.Client, error) {
 			},
 		},
 		apiURL: url,
-		apiKey: apiKey,
+		apiKey: key,
 	}, nil
 }
 

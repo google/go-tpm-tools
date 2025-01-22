@@ -279,14 +279,10 @@ func TestConvertRequestToTokenRequest(t *testing.T) {
 	}
 }
 
-func TestURLAndKey(t *testing.T) {
-	testAPIKey := "testAPIKey"
-
+func TestURLFromRegion(t *testing.T) {
 	for region, expectedURL := range regionalURLs {
 		t.Run(region+" region", func(t *testing.T) {
-			regionAndKey := region + ":" + testAPIKey
-
-			url, key, err := urlAndKey(regionAndKey)
+			url, err := urlFromRegion(region)
 			if err != nil {
 				t.Fatalf("urlAndKey returned error: %v", err)
 			}
@@ -294,40 +290,31 @@ func TestURLAndKey(t *testing.T) {
 			if url != expectedURL {
 				t.Errorf("urlAndKey did not return expected URL: got %v, want %v", url, expectedURL)
 			}
-
-			if key != testAPIKey {
-				t.Errorf("urlAndKey did not return expected API key: got %v, want %v", url, expectedURL)
-			}
 		})
 	}
 }
 
-func TestURLAndKeyError(t *testing.T) {
+func TestURLFromRegionError(t *testing.T) {
 	testcases := []struct {
 		name           string
-		regionAndKey   string
+		region         string
 		expectedSubstr string
 	}{
 		{
-			name:           "No colon separator",
-			regionAndKey:   "notAValidInput",
-			expectedSubstr: "not in expected format",
-		},
-		{
 			name:           "Unsupported region",
-			regionAndKey:   "Narnia:test-api-key",
+			region:         "ANTARCTICA",
 			expectedSubstr: "unsupported region",
 		},
 		{
 			name:           "Empty input",
-			regionAndKey:   "",
-			expectedSubstr: "region and key required",
+			region:         "",
+			expectedSubstr: "region required",
 		},
 	}
 
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, _, err := urlAndKey(tc.regionAndKey)
+			_, err := urlFromRegion(tc.region)
 			if err == nil {
 				t.Fatal("urlAndKey returned successfully, expected error")
 			}
