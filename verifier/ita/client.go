@@ -16,8 +16,6 @@ import (
 )
 
 const (
-	itaURL = "https://api.trustauthority.intel.com"
-
 	nonceEndpoint = "/appraisal/v2/nonce"
 	// TODO: update one Intel provides Confidential Space endpoint.
 	tokenEndpoint = "/appraisal/v2/attest"
