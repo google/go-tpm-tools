@@ -8,13 +8,18 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"os"
 
 	"github.com/google/go-tpm-tools/launcher/agent"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/spec"
+	"github.com/google/go-tpm-tools/verifier"
 	"github.com/google/go-tpm-tools/verifier/util"
 )
+
+type AttestClients struct {
+	GCA verifier.Client
+	ITA verifier.Client
+}
 
 type attestHandler struct {
 	ctx         context.Context
@@ -22,6 +27,7 @@ type attestHandler struct {
 	// defaultTokenFile string
 	logger     logging.Logger
 	launchSpec spec.LaunchSpec
+	clients    *AttestClients
 }
 
 type customTokenRequest struct {
@@ -38,7 +44,7 @@ type TeeServer struct {
 }
 
 // New takes in a socket and start to listen to it, and create a server
-func New(ctx context.Context, unixSock string, a agent.AttestationAgent, logger logging.Logger, launchSpec spec.LaunchSpec) (*TeeServer, error) {
+func New(ctx context.Context, unixSock string, a agent.AttestationAgent, logger logging.Logger, launchSpec spec.LaunchSpec, clients *AttestClients) (*TeeServer, error) {
 	var err error
 	nl, err := net.Listen("unix", unixSock)
 	if err != nil {
@@ -54,6 +60,7 @@ func New(ctx context.Context, unixSock string, a agent.AttestationAgent, logger 
 				// defaultTokenFile: filepath.Join(launcherfile.HostTmpPath, launcherfile.AttestationVerifierTokenFilename),
 				logger:     logger,
 				launchSpec: launchSpec,
+				clients:    clients,
 			}).Handler(),
 		},
 	}
@@ -72,39 +79,47 @@ func (a *attestHandler) Handler() http.Handler {
 	return mux
 }
 
+func (a *attestHandler) logAndWriteError(errStr string, status int, w http.ResponseWriter) {
+	a.logger.Error(errStr)
+	w.WriteHeader(status)
+	w.Write([]byte(errStr))
+}
+
 // getDefaultToken handles the request to get the default OIDC token.
 // For now this function will just read the content of the file and return.
 // Later, this function can use attestation agent to get a token directly.
 func (a *attestHandler) getToken(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html")
 
-	// If the agent does not have a GCA client, create one.
-	if !a.attestAgent.HasClient(agent.GCA) {
+	// If the handler does not have a GCA client, create one.
+	if a.clients.GCA == nil {
 		gcaClient, err := util.NewRESTClient(a.ctx, a.launchSpec.AttestationServiceAddr, a.launchSpec.ProjectID, a.launchSpec.Region)
 		if err != nil {
 			errStr := fmt.Sprintf("failed to create REST verifier client: %v", err)
-			a.logger.Error(errStr)
-			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte(errStr))
+			a.logAndWriteError(errStr, http.StatusInternalServerError, w)
 			return
 		}
 
-		a.attestAgent.AddClient(gcaClient, agent.GCA)
+		a.clients.GCA = gcaClient
 	}
 
 	switch r.Method {
 	case "GET":
-		// this could call Attest(ctx) directly later.
-		data, err := os.ReadFile(a.defaultTokenFile)
-
-		if err != nil {
-			a.logger.Error(err.Error())
-			w.WriteHeader(http.StatusNotFound)
-			w.Write([]byte("failed to get the token"))
+		if err := a.attestAgent.Refresh(a.ctx); err != nil {
+			errStr := fmt.Sprintf("failed to refresh attestation agent: %v", err)
+			a.logAndWriteError(errStr, http.StatusInternalServerError, w)
 			return
 		}
+
+		token, err := a.attestAgent.Attest(a.ctx, agent.AttestAgentOpts{})
+		if err != nil {
+			errStr := fmt.Sprintf("failed to retrieve attestation service token: %v", err)
+			a.logAndWriteError(errStr, http.StatusInternalServerError, w)
+			return
+		}
+
 		w.WriteHeader(http.StatusOK)
-		w.Write(data)
+		w.Write(token)
 		return
 	case "POST":
 		var tokenReq customTokenRequest
@@ -113,9 +128,7 @@ func (a *attestHandler) getToken(w http.ResponseWriter, r *http.Request) {
 
 		err := decoder.Decode(&tokenReq)
 		if err != nil {
-			a.logger.Error(err.Error())
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte(err.Error()))
+			a.logAndWriteError(err.Error(), http.StatusBadRequest, w)
 			return
 		}
 
@@ -138,9 +151,7 @@ func (a *attestHandler) getToken(w http.ResponseWriter, r *http.Request) {
 				TokenType: tokenReq.TokenType,
 			})
 		if err != nil {
-			a.logger.Error(err.Error())
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte(err.Error()))
+			a.logAndWriteError(err.Error(), http.StatusBadRequest, w)
 			return
 		}
 
