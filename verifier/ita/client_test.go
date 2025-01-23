@@ -1,6 +1,7 @@
 package ita
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io/ioutil"
@@ -273,6 +274,44 @@ func TestConvertRequestToTokenRequest(t *testing.T) {
 	}
 
 	convertedReq := convertRequestToTokenRequest(testVerifierRequest)
+
+	if diff := cmp.Diff(convertedReq, expectedRequest); diff != "" {
+		t.Errorf("convertRequestToTokenRequest did not return expected tokenRequest: %v", diff)
+	}
+}
+
+func TestConvertRequestToTokenRequestWithCCELDataPadding(t *testing.T) {
+	padding := bytes.Repeat([]byte{255}, 20)
+
+	request := verifier.VerifyAttestationRequest{
+		TDCCELAttestation: &verifier.TDCCELAttestation{
+			CcelData:          append(testVerifierRequest.TDCCELAttestation.CcelData, padding...),
+			CanonicalEventLog: []byte("test-cel"),
+			TdQuote:           []byte("test-quote"),
+			AkCert:            []byte("test-akcert"),
+			IntermediateCerts: [][]byte{
+				[]byte("test-intermediate1"),
+				[]byte("test-intermediate2"),
+			},
+		},
+	}
+
+	expectedRequest := tokenRequest{
+		PolicyMatch: true,
+		TDX: tdxEvidence{
+			// Expect padding to be stripped in converted request.
+			EventLog:          testVerifierRequest.TDCCELAttestation.CcelData,
+			CanonicalEventLog: request.TDCCELAttestation.CanonicalEventLog,
+			Quote:             request.TDCCELAttestation.TdQuote,
+		},
+		SigAlg: "RS256", // Figure out what this should be.
+		GCP: gcpData{
+			AKCert:            testVerifierRequest.TDCCELAttestation.AkCert,
+			IntermediateCerts: testVerifierRequest.TDCCELAttestation.IntermediateCerts,
+		},
+	}
+
+	convertedReq := convertRequestToTokenRequest(request)
 
 	if diff := cmp.Diff(convertedReq, expectedRequest); diff != "" {
 		t.Errorf("convertRequestToTokenRequest did not return expected tokenRequest: %v", diff)
