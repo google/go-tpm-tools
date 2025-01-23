@@ -133,11 +133,22 @@ func (c *client) CreateChallenge(_ context.Context) (*verifier.Challenge, error)
 }
 
 func convertRequestToTokenRequest(request verifier.VerifyAttestationRequest) tokenRequest {
+	// Trim trailing 0xFF bytes from CCEL Data.
+	data := request.TDCCELAttestation.CcelData
+	trimIndex := len(data)
+
+	for ; trimIndex >= 0; trimIndex-- {
+		c := data[trimIndex-1]
+		// Proceed until 0xFF padding ends.
+		if c != byte(255) {
+			break
+		}
+	}
+
 	tokenReq := tokenRequest{
 		PolicyMatch: true,
 		TDX: tdxEvidence{
-			// Add EventLog field.
-			EventLog:          request.TDCCELAttestation.CcelData,
+			EventLog:          data[:trimIndex],
 			CanonicalEventLog: request.TDCCELAttestation.CanonicalEventLog,
 			Quote:             request.TDCCELAttestation.TdQuote,
 		},
@@ -172,6 +183,10 @@ func convertRequestToTokenRequest(request verifier.VerifyAttestationRequest) tok
 }
 
 func (c *client) VerifyAttestation(_ context.Context, request verifier.VerifyAttestationRequest) (*verifier.VerifyAttestationResponse, error) {
+	if request.TDCCELAttestation == nil {
+		return nil, errors.New("TDX required for ITA attestation")
+	}
+
 	tokenReq := convertRequestToTokenRequest(request)
 
 	url := c.apiURL + tokenEndpoint
