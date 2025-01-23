@@ -26,7 +26,8 @@ func TestLaunchSpecUnmarshalJSONHappyCases(t *testing.T) {
 				"tee-container-log-redirect":"true",
 				"tee-monitoring-memory-enable":"true",
 				"tee-dev-shm-size-kb":"234234",
-				"tee-mount":"type=tmpfs,source=tmpfs,destination=/tmpmount;type=tmpfs,source=tmpfs,destination=/sized,size=222"
+				"tee-mount":"type=tmpfs,source=tmpfs,destination=/tmpmount;type=tmpfs,source=tmpfs,destination=/sized,size=222",
+				"ita-regional-key":"US:test-api-key"
 			}`,
 		},
 		{
@@ -43,7 +44,8 @@ func TestLaunchSpecUnmarshalJSONHappyCases(t *testing.T) {
 				"tee-container-log-redirect":"true",
 				"tee-monitoring-memory-enable":"TRUE",
 				"tee-dev-shm-size-kb":"234234",
-				"tee-mount":"type=tmpfs,source=tmpfs,destination=/tmpmount;type=tmpfs,source=tmpfs,destination=/sized,size=222"
+				"tee-mount":"type=tmpfs,source=tmpfs,destination=/tmpmount;type=tmpfs,source=tmpfs,destination=/sized,size=222",
+				"ita-regional-key":"US:test-api-key"
 			}`,
 		},
 	}
@@ -63,6 +65,7 @@ func TestLaunchSpecUnmarshalJSONHappyCases(t *testing.T) {
 		Experiments: experiments.Experiments{
 			EnableTempFSMount: true,
 		},
+		ITARegionalKey: "US:test-api-key",
 	}
 
 	for _, testcase := range testCases {

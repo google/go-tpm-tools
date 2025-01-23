@@ -48,6 +48,8 @@ type AttestationAgent interface {
 	Attest(context.Context, AttestAgentOpts) ([]byte, error)
 	Refresh(context.Context) error
 	Close() error
+	AddClient(client verifier.Client, verifier VerifierType) error
+	HasClient(verifier VerifierType) bool
 }
 
 type attestRoot interface {
@@ -257,6 +259,33 @@ func convertOCIToContainerSignature(ociSig oci.Signature) (*verifier.ContainerSi
 		Payload:   payload,
 		Signature: sigBytes,
 	}, nil
+}
+
+// AddClient adds the given client for the provided verifier service. Returns error if a client
+// already exists for the service.
+func (a *agent) AddClient(client verifier.Client, verifier VerifierType) error {
+	if a.HasClient(verifier) {
+		return fmt.Errorf("client for verifier service %v already exists", verifier)
+	}
+
+	switch verifier {
+	case GCA:
+		a.clients.GCA = client
+	case ITA:
+		a.clients.ITA = client
+	}
+	return nil
+}
+
+// HasClient returns whether a client has been added for the given verifier.
+func (a *agent) HasClient(verifier VerifierType) bool {
+	switch verifier {
+	case GCA:
+		return a.clients.GCA != nil
+	case ITA:
+		return a.clients.ITA != nil
+	}
+	return false
 }
 
 type tpmAttestRoot struct {
