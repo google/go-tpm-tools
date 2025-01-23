@@ -218,8 +218,8 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	asAddr := launchSpec.AttestationServiceAddr
 
 	clients := &agent.Clients{}
-	if launchSpec.ITARegionalKey != "" {
-		itaClient, err := ita.NewClient(launchSpec.ITARegionalKey)
+	if launchSpec.ITARegion != "" {
+		itaClient, err := ita.NewClient(launchSpec.ITARegion, launchSpec.ITAKey)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create ITA verifier client: %v", err)
 		}

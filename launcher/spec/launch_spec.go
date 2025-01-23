@@ -118,7 +118,8 @@ type LaunchSpec struct {
 	MonitoringEnabled          MonitoringType
 	LogRedirect                LogRedirectLocation
 	Mounts                     []launchermount.Mount
-	ITARegionalKey             string
+	ITARegion                  string
+	ITAKey                     string
 	// DevShmSize is specified in kiB.
 	DevShmSize  int64
 	Experiments experiments.Experiments
