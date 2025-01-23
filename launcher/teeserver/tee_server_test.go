@@ -15,6 +15,7 @@ import (
 	"github.com/google/go-tpm-tools/launcher/agent"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
+	"github.com/google/go-tpm-tools/verifier"
 )
 
 type fakeAttestationAgent struct {
@@ -36,6 +37,13 @@ func (f fakeAttestationAgent) Refresh(_ context.Context) error {
 
 func (f fakeAttestationAgent) Close() error {
 	return nil
+}
+func (f fakeAttestationAgent) AddClient(client verifier.Client, verifier agent.VerifierType) error {
+	return nil
+}
+
+func (f fakeAttestationAgent) HasClient(_ agent.VerifierType) bool {
+	return false
 }
 
 func TestGetDefaultToken(t *testing.T) {
