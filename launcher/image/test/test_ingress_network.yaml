@@ -23,27 +23,31 @@ steps:
   - name: 'gcr.io/cloud-builders/gcloud'
     id: CheckReachability
     waitFor: ['CreateServerWorkload']
-    entrypoint: 'bash'
-    args:
-      - -c
-      - |
-        echo "sleeping 200s, waiting for workload server to setup..."
-        sleep 200
-        internalIP=$(gcloud -q compute instances describe ingress-network-test-${BUILD_ID} --zone=${_ZONE} --format='get(networkInterfaces[0].networkIP)')
-        echo "workload internal IP: "${internalIP}
+    env:
+    - 'BUILD_ID=$BUILD_ID'
+    - '_ZONE=$_ZONE'
+    script: |
+      #!/bin/bash
+      set -euo pipefail
+      source util/read_serial.sh
+      echo "sleeping 200s, waiting for workload server to setup..."
+      sleep 200
+      internalIP=$(gcloud -q compute instances describe ingress-network-test-${BUILD_ID} --zone=${_ZONE} --format='get(networkInterfaces[0].networkIP)')
+      echo "workload internal IP: "${internalIP}
+      
+      # try to connect to the nginx server
+      response=$(curl -v ${internalIP}:80)
+      echo "got response [${response}]"
 
-        # try to connect to the nginx server
-        response=$(curl -v ${internalIP}:80)
-        echo "got response [${response}]"
-
-        # check nginx default response
-        if [[ "${response}" == *"Welcome to nginx!"* ]];
-        then
-          echo "workload reachable through the internal network"
-        else
-          echo "FAILED: workload not reachable through the internal network"
-          echo 'TEST FAILED' > /workspace/status.txt
-        fi
+      # check nginx default response
+      if [[ "${response}" == *"Welcome to nginx!"* ]];
+      then
+        echo "workload reachable through the internal network"
+      else
+        echo "FAILED: workload not reachable through the internal network"
+        echo 'TEST FAILED' > /workspace/status.txt
+        read_serial ingress-network-test-${BUILD_ID} ${_ZONE}
+      fi
 
   - name: 'gcr.io/cloud-builders/gcloud'
     id: CleanUp

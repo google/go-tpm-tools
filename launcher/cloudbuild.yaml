@@ -15,7 +15,7 @@ steps:
   - 'BASE_IMAGE_FAMILY=$_BASE_IMAGE_FAMILY'
   script: |
     #!/usr/bin/env bash
-
+    set -euxo pipefail
     # if BASE_IMAGE is not specified in the substitutions, use the latest COS dev image
     base_image=${BASE_IMAGE}
     if [ -z ${base_image} ]
@@ -73,7 +73,7 @@ steps:
   - 'PROJECT_ID=$PROJECT_ID'
   script: |
     #!/usr/bin/env bash
-
+    set -euxo pipefail
     cd launcher/image/test
     echo "running experiments client tests on ${OUTPUT_IMAGE_PREFIX}-debug-${OUTPUT_IMAGE_SUFFIX}"
     gcloud builds submit --config=test_experiments_client.yaml --region us-west1 \
@@ -89,7 +89,7 @@ steps:
   - 'PROJECT_ID=$PROJECT_ID'
   script: |
     #!/usr/bin/env bash
-
+    set -euxo pipefail
     cd launcher/image/test
     echo "running http server tests on ${OUTPUT_IMAGE_PREFIX}-debug-${OUTPUT_IMAGE_SUFFIX}"
     gcloud builds submit --config=test_http_server.yaml --region us-west1 \
@@ -105,7 +105,7 @@ steps:
   - 'PROJECT_ID=$PROJECT_ID'
   script: |
     #!/usr/bin/env bash
-
+    set -euxo pipefail
     cd launcher/image/test
     echo "running debug image tests on ${OUTPUT_IMAGE_PREFIX}-debug-${OUTPUT_IMAGE_SUFFIX}"
     gcloud builds submit --config=test_debug_cloudbuild.yaml --region us-west1 \
@@ -121,7 +121,7 @@ steps:
   - 'PROJECT_ID=$PROJECT_ID'
   script: |
     #!/usr/bin/env bash
-
+    set -euxo pipefail
     cd launcher/image/test
     echo "running hardened image tests on ${OUTPUT_IMAGE_PREFIX}-hardened-${OUTPUT_IMAGE_SUFFIX}"
     gcloud builds submit --config=test_hardened_cloudbuild.yaml --region us-west1 \
@@ -136,7 +136,7 @@ steps:
   - 'PROJECT_ID=$PROJECT_ID'
   script: |
     #!/usr/bin/env bash
-
+    set -euxo pipefail
     cd launcher/image/test
     echo "running launch policy tests on ${OUTPUT_IMAGE_PREFIX}-hardened-${OUTPUT_IMAGE_SUFFIX}"
     gcloud builds submit --config=test_launchpolicy_cloudbuild.yaml --region us-west1 \
@@ -152,6 +152,7 @@ steps:
   - 'PROJECT_ID=$PROJECT_ID'
   script: |
     #!/usr/bin/env bash
+    set -euxo pipefail
     cd launcher/image/test
     echo "running hardened image ingress network tests on ${OUTPUT_IMAGE_PREFIX}-hardened-${OUTPUT_IMAGE_SUFFIX}"
     gcloud builds submit --config=test_ingress_network.yaml --region us-west1 \
@@ -166,6 +167,7 @@ steps:
   - 'PROJECT_ID=$PROJECT_ID'
   script: |
     #!/usr/bin/env bash
+    set -euxo pipefail
     cd launcher/image/test
     echo "running debug image ingress network tests on ${OUTPUT_IMAGE_PREFIX}-debug-${OUTPUT_IMAGE_SUFFIX}"
     gcloud builds submit --config=test_ingress_network.yaml --region us-west1 \
@@ -180,7 +182,7 @@ steps:
   - 'PROJECT_ID=$PROJECT_ID'
   script: |
     #!/usr/bin/env bash
-
+    set -euxo pipefail
     cd launcher/image/test
     echo "running log redirection tests on ${OUTPUT_IMAGE_PREFIX}-hardened-${OUTPUT_IMAGE_SUFFIX}"
     gcloud builds submit --config=test_log_redirection.yaml --region us-west1 \
@@ -195,6 +197,7 @@ steps:
   - 'PROJECT_ID=$PROJECT_ID'
   script: |
     #!/usr/bin/env bash
+    set -euxo pipefail
     cd launcher/image/test
     echo "running hardened image container signature tests on ${OUTPUT_IMAGE_PREFIX}-hardened-${OUTPUT_IMAGE_SUFFIX}"
     gcloud builds submit --config=test_discover_signatures.yaml --region us-west1 \
@@ -209,6 +212,7 @@ steps:
   - 'PROJECT_ID=$PROJECT_ID'
   script: |
     #!/usr/bin/env bash
+    set -euxo pipefail
     cd launcher/image/test
     echo "running debug image container signature tests on ${OUTPUT_IMAGE_PREFIX}-debug-${OUTPUT_IMAGE_SUFFIX}"
     gcloud builds submit --config=test_discover_signatures.yaml --region us-west1 \
@@ -223,6 +227,7 @@ steps:
   - 'PROJECT_ID=$PROJECT_ID'
   script: |
     #!/usr/bin/env bash
+    set -euxo pipefail
     cd launcher/image/test
     echo "running memory monitoring tests on ${OUTPUT_IMAGE_PREFIX}-hardened-${OUTPUT_IMAGE_SUFFIX}"
     gcloud builds submit --config=test_memory_monitoring.yaml --region us-west1 \
@@ -237,6 +242,7 @@ steps:
   - 'PROJECT_ID=$PROJECT_ID'
   script: |
     #!/usr/bin/env bash
+    set -euxo pipefail
     cd launcher/image/test
     echo "running ODA and signed container tests on ${OUTPUT_IMAGE_PREFIX}-hardened-${OUTPUT_IMAGE_SUFFIX}"
     gcloud builds submit --config=test_oda_with_signed_container.yaml --region us-west1 \
