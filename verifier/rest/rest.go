@@ -130,6 +130,7 @@ func (c *restClient) VerifyAttestation(ctx context.Context, request verifier.Ver
 	}
 	req := convertRequestToREST(request)
 	req.Challenge = request.Challenge.Name
+	log.Printf("jkrstic request print: %+v", req)
 	response, err := c.v1Client.VerifyAttestation(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("calling v1.VerifyAttestation in %v: %w", c.location.LocationId, err)
