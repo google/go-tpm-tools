@@ -74,22 +74,14 @@ func rootOfTrust(certs [][]byte) (*x509.CertPool, error) {
 	return pool, nil
 }
 
-// the SEV-SNP attestation signature is already verified by this point.
-func evaluateSevSnpPolicy(state *spb.Attestation, policy *pb.SevSnpPolicy, opts *PolicyOptions) error {
-	if state == nil {
-		return fmt.Errorf("attestation is nil")
-	}
-	// No UEFI policy. Done.
-	if policy.GetUefi() == nil {
-		return nil
-	}
+func evaluateSevSnpRimPolicy(state *spb.Attestation, policy *pb.RIMPolicy, opts *PolicyOptions) error {
 	// Extract which certs to trust as root for keys that sign uefi measurements
-	uefirot, err := rootOfTrust(policy.GetUefi().GetRootCerts())
+	uefirot, err := rootOfTrust(policy.GetRootCerts())
 	if err != nil {
 		return err
 	}
 	kind := svalidate.CertEntryKind(svalidate.CertEntryAllowMissing)
-	if policy.GetUefi().GetRequireSigned() {
+	if policy.GetRequireSigned() {
 		kind = svalidate.CertEntryRequire
 	}
 	if opts == nil {
@@ -109,6 +101,46 @@ func evaluateSevSnpPolicy(state *spb.Attestation, policy *pb.SevSnpPolicy, opts 
 					Getter:       opts.Getter,
 				})}}}
 	return svalidate.SnpAttestation(state, vopts)
+}
+
+func evaluateReferenceSevSnpMeasurements(state *spb.Attestation, meas [][]byte) error {
+	rm := state.GetReport().GetMeasurement()
+	for _, m := range meas {
+		if bytes.Equal(m, rm) {
+			return nil
+		}
+	}
+	return fmt.Errorf("unrecognized SEV-SNP measurement")
+}
+
+func errAppend(e0, e1 error) error {
+	if e0 == nil {
+		return e1
+	}
+	if e1 == nil {
+		return e0
+	}
+	return fmt.Errorf("%s; %s", e0.Error(), e1.Error())
+}
+
+// the SEV-SNP attestation signature is already verified by this point.
+func evaluateSevSnpPolicy(state *spb.Attestation, policy *pb.SevSnpPolicy, opts *PolicyOptions) error {
+	if state == nil {
+		return fmt.Errorf("attestation is nil")
+	}
+	var err error
+	if policy.GetUefi() != nil {
+		err = evaluateSevSnpRimPolicy(state, policy.GetUefi(), opts)
+		if err == nil {
+			return nil
+		}
+	}
+	// If the RIMPolicy failed to verify and so did the explicitly permitted measurements, fail with
+	// both error messages.
+	if err2 := evaluateReferenceSevSnpMeasurements(state, policy.GetTrustedMeasurements()); err2 != nil {
+		return errAppend(err, err2)
+	}
+	return nil
 }
 
 func evaluatePlatformPolicy(state *pb.PlatformState, policy *pb.PlatformPolicy) error {
