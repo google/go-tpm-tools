@@ -244,19 +244,21 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 		}
 	}
 
-	itaRegionVal, itaRegionOK := unmarshaledMap[itaRegion]
-	itaKeyVal, itaKeyOK := unmarshaledMap[itaKey]
+	if s.Experiments.EnableItaVerifier {
+		itaRegionVal, itaRegionOK := unmarshaledMap[itaRegion]
+		itaKeyVal, itaKeyOK := unmarshaledMap[itaKey]
 
-	if itaRegionOK != itaKeyOK {
-		return fmt.Errorf("ITA fields %s and %s must both be provided", itaRegion, itaKey)
-	}
+		if itaRegionOK != itaKeyOK {
+			return fmt.Errorf("ITA fields %s and %s must both be provided", itaRegion, itaKey)
+		}
 
-	if itaRegionOK && itaRegionVal != "" {
-		s.ITARegion = itaRegionVal
-	}
+		if itaRegionOK && itaRegionVal != "" {
+			s.ITARegion = itaRegionVal
+		}
 
-	if itaKeyOK && itaKeyVal != "" {
-		s.ITAKey = itaKeyVal
+		if itaKeyOK && itaKeyVal != "" {
+			s.ITAKey = itaKeyVal
+		}
 	}
 
 	return nil
