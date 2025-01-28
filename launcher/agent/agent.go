@@ -46,6 +46,7 @@ type principalIDTokenFetcher func(audience string) ([][]byte, error)
 type AttestationAgent interface {
 	MeasureEvent(cel.Content) error
 	Attest(context.Context, AttestAgentOpts) ([]byte, error)
+	AttestWithClient(ctx context.Context, opts AttestAgentOpts, client verifier.Client) ([]byte, error)
 	Refresh(context.Context) error
 	Close() error
 }
@@ -165,7 +166,20 @@ func (a *agent) MeasureEvent(event cel.Content) error {
 // When possible, Attest uses the technology-specific attestation root-of-trust
 // (TDX RTMR), otherwise falls back to the vTPM.
 func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error) {
-	challenge, err := a.client.CreateChallenge(ctx)
+	if a.client == nil {
+		return nil, fmt.Errorf("attest agent does not have initalized verifier client")
+	}
+
+	return a.AttestWithClient(ctx, opts, a.client)
+}
+
+// Attest fetches the nonce and connection ID from the Attestation Service via the provided client,
+// creates an attestation message, and returns the resultant
+// principalIDTokens and Metadata Server-generated ID tokens for the instance.
+// When possible, Attest uses the technology-specific attestation root-of-trust
+// (TDX RTMR), otherwise falls back to the vTPM.
+func (a *agent) AttestWithClient(ctx context.Context, opts AttestAgentOpts, client verifier.Client) ([]byte, error) {
+	challenge, err := client.CreateChallenge(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -230,7 +244,7 @@ func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error
 		a.logger.Info("Found container image signatures: %v\n", signatures)
 	}
 
-	resp, err := a.client.VerifyAttestation(ctx, req)
+	resp, err := client.VerifyAttestation(ctx, req)
 	if err != nil {
 		return nil, err
 	}

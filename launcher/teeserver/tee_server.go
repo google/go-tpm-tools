@@ -76,6 +76,7 @@ func (a *attestHandler) Handler() http.Handler {
 	//   --unix-socket /tmp/container_launcher/teeserver.sock http://localhost/v1/token
 
 	mux.HandleFunc("/v1/token", a.getToken)
+	mux.HandleFunc("/v1/intel/token", a.getITAToken)
 	return mux
 }
 
@@ -103,6 +104,26 @@ func (a *attestHandler) getToken(w http.ResponseWriter, r *http.Request) {
 		a.clients.GCA = gcaClient
 	}
 
+	a.attest(w, r, a.clients.GCA)
+	return
+}
+
+// getITAToken retrieves a attestation token signed by ITA.
+func (a *attestHandler) getITAToken(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html")
+
+	// If the handler does not have an ITA client, return error.
+	if a.clients.ITA == nil {
+		errStr := fmt.Sprintf("no ITA verifier client present - ensure ITA Region and Key are defined in metadata")
+		a.logAndWriteError(errStr, http.StatusPreconditionFailed, w)
+		return
+	}
+
+	a.attest(w, r, a.clients.ITA)
+	return
+}
+
+func (a *attestHandler) attest(w http.ResponseWriter, r *http.Request, client verifier.Client) {
 	switch r.Method {
 	case "GET":
 		if err := a.attestAgent.Refresh(a.ctx); err != nil {
@@ -111,7 +132,7 @@ func (a *attestHandler) getToken(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		token, err := a.attestAgent.Attest(a.ctx, agent.AttestAgentOpts{})
+		token, err := a.attestAgent.AttestWithClient(a.ctx, agent.AttestAgentOpts{}, client)
 		if err != nil {
 			errStr := fmt.Sprintf("failed to retrieve attestation service token: %v", err)
 			a.logAndWriteError(errStr, http.StatusInternalServerError, w)
@@ -144,12 +165,12 @@ func (a *attestHandler) getToken(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		tok, err := a.attestAgent.Attest(a.ctx,
+		tok, err := a.attestAgent.AttestWithClient(a.ctx,
 			agent.AttestAgentOpts{
 				Aud:       tokenReq.Audience,
 				Nonces:    tokenReq.Nonces,
 				TokenType: tokenReq.TokenType,
-			})
+			}, client)
 		if err != nil {
 			a.logAndWriteError(err.Error(), http.StatusBadRequest, w)
 			return
