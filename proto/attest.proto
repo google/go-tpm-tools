@@ -149,6 +149,10 @@ message SecureBootState {
   // Authority events post-separator. Pre-separator authorities
   // are currently not supported.
   Database authority = 4;
+  // Platform Keys
+  Database pk = 5;
+  // Exchange Keys
+  Database kek = 6;
 }
 
 // The container's restart policy.
