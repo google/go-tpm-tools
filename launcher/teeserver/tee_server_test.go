@@ -3,28 +3,42 @@ package teeserver
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path"
 	"strings"
 	"testing"
 
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/launcher/agent"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
-	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/verifier"
 )
 
+// Implements verifier.Client interface so it can be used to initialize test attestHandlers
+type fakeVerifierClient struct{}
+
+func (f *fakeVerifierClient) CreateChallenge(ctx context.Context) (*verifier.Challenge, error) {
+	return nil, fmt.Errorf("unimplemented")
+}
+
+func (f *fakeVerifierClient) VerifyAttestation(ctx context.Context, request verifier.VerifyAttestationRequest) (*verifier.VerifyAttestationResponse, error) {
+	return nil, fmt.Errorf("unimplemented")
+}
+
 type fakeAttestationAgent struct {
-	measureEventFunc func(cel.Content) error
-	attestFunc       func(context.Context, agent.AttestAgentOpts) ([]byte, error)
+	measureEventFunc     func(cel.Content) error
+	attestFunc           func(context.Context, agent.AttestAgentOpts) ([]byte, error)
+	attestWithClientFunc func(context.Context, agent.AttestAgentOpts, verifier.Client) ([]byte, error)
 }
 
 func (f fakeAttestationAgent) Attest(c context.Context, a agent.AttestAgentOpts) ([]byte, error) {
 	return f.attestFunc(c, a)
+}
+
+func (f fakeAttestationAgent) AttestWithClient(c context.Context, a agent.AttestAgentOpts, v verifier.Client) ([]byte, error) {
+	return f.attestWithClientFunc(c, a, v)
 }
 
 func (f fakeAttestationAgent) MeasureEvent(c cel.Content) error {
@@ -38,47 +52,26 @@ func (f fakeAttestationAgent) Refresh(_ context.Context) error {
 func (f fakeAttestationAgent) Close() error {
 	return nil
 }
-func (f fakeAttestationAgent) AddClient(client verifier.Client, verifier agent.VerifierType) error {
-	return nil
-}
-
-func (f fakeAttestationAgent) HasClient(_ agent.VerifierType) bool {
-	return false
-}
 
 func TestGetDefaultToken(t *testing.T) {
-	tmpDir := t.TempDir()
-	tmpToken := path.Join(tmpDir, launcherfile.AttestationVerifierTokenFilename)
+	testTokenContent := "test token"
+
 	// An empty attestHandler is fine for now as it is not being used
 	// in the handler.
-	ah := attestHandler{defaultTokenFile: tmpToken,
+	ah := attestHandler{
 		logger: logging.SimpleLogger(),
+		clients: &AttestClients{
+			GCA: &fakeVerifierClient{},
+		},
 		attestAgent: fakeAttestationAgent{
-			attestFunc: func(context.Context, agent.AttestAgentOpts) ([]byte, error) {
-				t.Errorf("This method should not be called")
-				return nil, nil
+			attestWithClientFunc: func(context.Context, agent.AttestAgentOpts, verifier.Client) ([]byte, error) {
+				return []byte(testTokenContent), nil
 			},
 		}}
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/token", nil)
 	w := httptest.NewRecorder()
-	ah.getToken(w, req)
-	_, err := io.ReadAll(w.Result().Body)
-	if err != nil {
-		t.Error(err)
-	}
 
-	// The token file doesn't exist yet, expect a 404
-	if w.Code != http.StatusNotFound {
-		t.Errorf("got return code: %d, want: %d", w.Code, http.StatusNotFound)
-	}
-
-	// create a fake test token file
-	testTokenContent := "test token"
-	os.WriteFile(tmpToken, []byte(testTokenContent), 0644)
-
-	// retry calling the handler, and now it should return the token file content
-	w = httptest.NewRecorder()
 	ah.getToken(w, req)
 	data, err := io.ReadAll(w.Result().Body)
 	if err != nil {
@@ -95,10 +88,10 @@ func TestGetDefaultToken(t *testing.T) {
 
 func TestCustomToken(t *testing.T) {
 	tests := []struct {
-		testName   string
-		body       string
-		attestFunc func(context.Context, agent.AttestAgentOpts) ([]byte, error)
-		want       int
+		testName             string
+		body                 string
+		attestWithClientFunc func(context.Context, agent.AttestAgentOpts, verifier.Client) ([]byte, error)
+		want                 int
 	}{
 		{
 			testName: "TestNoAudiencePostRequest",
@@ -107,7 +100,7 @@ func TestCustomToken(t *testing.T) {
 				"nonces": ["thisIsAcustomNonce"],
 				"token_type": "OIDC"
 				}`,
-			attestFunc: func(context.Context, agent.AttestAgentOpts) ([]byte, error) {
+			attestWithClientFunc: func(context.Context, agent.AttestAgentOpts, verifier.Client) ([]byte, error) {
 				t.Errorf("This method should not be called")
 				return nil, nil
 			},
@@ -120,7 +113,7 @@ func TestCustomToken(t *testing.T) {
 				"nonces": ["thisIsAcustomNonce"],
 				"token_type": "OIDC"
 			}`,
-			attestFunc: func(context.Context, agent.AttestAgentOpts) ([]byte, error) {
+			attestWithClientFunc: func(context.Context, agent.AttestAgentOpts, verifier.Client) ([]byte, error) {
 				return nil, errors.New("Error")
 			},
 			want: http.StatusBadRequest,
@@ -132,7 +125,7 @@ func TestCustomToken(t *testing.T) {
 				"nonces": ["thisIsAcustomNonce"],
 				"token_type": ""
 			}`,
-			attestFunc: func(context.Context, agent.AttestAgentOpts) ([]byte, error) {
+			attestWithClientFunc: func(context.Context, agent.AttestAgentOpts, verifier.Client) ([]byte, error) {
 				t.Errorf("This method should not be called")
 				return nil, nil
 			},
@@ -145,7 +138,7 @@ func TestCustomToken(t *testing.T) {
 				"nonces": ["thisIsAcustomNonce"],
 				"token_type": "OIDC"
 			}`,
-			attestFunc: func(context.Context, agent.AttestAgentOpts) ([]byte, error) {
+			attestWithClientFunc: func(context.Context, agent.AttestAgentOpts, verifier.Client) ([]byte, error) {
 				return []byte{}, nil
 			},
 			want: http.StatusOK,
@@ -153,14 +146,15 @@ func TestCustomToken(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		tmpDir := t.TempDir()
-		tmpToken := path.Join(tmpDir, launcherfile.AttestationVerifierTokenFilename)
 		// An empty attestHandler is fine for now as it is not being used
 		// in the handler.
-		ah := attestHandler{defaultTokenFile: tmpToken,
+		ah := attestHandler{
 			logger: logging.SimpleLogger(),
+			clients: &AttestClients{
+				GCA: &fakeVerifierClient{},
+			},
 			attestAgent: fakeAttestationAgent{
-				attestFunc: test.attestFunc,
+				attestWithClientFunc: test.attestWithClientFunc,
 			}}
 
 		b := strings.NewReader(test.body)

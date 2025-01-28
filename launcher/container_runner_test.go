@@ -26,6 +26,7 @@ import (
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/spec"
+	"github.com/google/go-tpm-tools/verifier"
 	"github.com/opencontainers/go-digest"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
@@ -61,6 +62,10 @@ func (f *fakeAttestationAgent) Attest(ctx context.Context, _ agent.AttestAgentOp
 		return f.attestFunc(ctx, agent.AttestAgentOpts{})
 	}
 
+	return nil, fmt.Errorf("unimplemented")
+}
+
+func (f *fakeAttestationAgent) AttestWithClient(ctx context.Context, _ agent.AttestAgentOpts, _ verifier.Client) ([]byte, error) {
 	return nil, fmt.Errorf("unimplemented")
 }
 

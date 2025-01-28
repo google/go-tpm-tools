@@ -86,7 +86,8 @@ const (
 	monitoringEnable           = "tee-monitoring-enable"
 	devShmSizeKey              = "tee-dev-shm-size-kb"
 	mountKey                   = "tee-mount"
-	itaRegionAndKey            = "ita-regional-key"
+	itaRegion                  = "ita-region"
+	itaKey                     = "ita-api-key"
 )
 
 const (
@@ -243,8 +244,19 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 		}
 	}
 
-	if val, ok := unmarshaledMap[itaRegionAndKey]; ok && val != "" {
-		s.ITARegionalKey = val
+	itaRegionVal, itaRegionOK := unmarshaledMap[itaRegion]
+	itaKeyVal, itaKeyOK := unmarshaledMap[itaKey]
+
+	if itaRegionOK != itaKeyOK {
+		return fmt.Errorf("ITA fields %s and %s must both be provided", itaRegion, itaKey)
+	}
+
+	if itaRegionOK && itaRegionVal != "" {
+		s.ITARegion = itaRegionVal
+	}
+
+	if itaKeyOK && itaKeyVal != "" {
+		s.ITAKey = itaKeyVal
 	}
 
 	return nil
