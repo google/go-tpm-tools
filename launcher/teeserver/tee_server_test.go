@@ -19,11 +19,11 @@ import (
 // Implements verifier.Client interface so it can be used to initialize test attestHandlers
 type fakeVerifierClient struct{}
 
-func (f *fakeVerifierClient) CreateChallenge(ctx context.Context) (*verifier.Challenge, error) {
+func (f *fakeVerifierClient) CreateChallenge(_ context.Context) (*verifier.Challenge, error) {
 	return nil, fmt.Errorf("unimplemented")
 }
 
-func (f *fakeVerifierClient) VerifyAttestation(ctx context.Context, request verifier.VerifyAttestationRequest) (*verifier.VerifyAttestationResponse, error) {
+func (f *fakeVerifierClient) VerifyAttestation(_ context.Context, _ verifier.VerifyAttestationRequest) (*verifier.VerifyAttestationResponse, error) {
 	return nil, fmt.Errorf("unimplemented")
 }
 
