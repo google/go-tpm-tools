@@ -416,6 +416,7 @@ func (r *ContainerRunner) refreshToken(ctx context.Context) (time.Duration, erro
 	if err := r.attestAgent.Refresh(ctx); err != nil {
 		return 0, fmt.Errorf("failed to refresh attestation agent: %v", err)
 	}
+
 	// request a default token
 	token, err := r.attestAgent.Attest(ctx, agent.AttestAgentOpts{})
 	if err != nil {
