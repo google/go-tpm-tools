@@ -166,7 +166,7 @@ func (a *agent) MeasureEvent(event cel.Content) error {
 // (TDX RTMR), otherwise falls back to the vTPM.
 func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error) {
 	if a.client == nil {
-		return nil, fmt.Errorf("attest agent does not have initalized verifier client")
+		return nil, fmt.Errorf("attest agent does not have initialized verifier client")
 	}
 
 	return a.AttestWithClient(ctx, opts, a.client)

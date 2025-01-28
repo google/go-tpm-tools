@@ -18,6 +18,8 @@ import (
 	"github.com/google/go-tpm-tools/verifier/util"
 )
 
+// AttestClients contains clients for supported verifier services that can be used to
+// get attestation tokens.
 type AttestClients struct {
 	GCA verifier.Client
 	ITA verifier.Client
@@ -101,7 +103,6 @@ func (a *attestHandler) getToken(w http.ResponseWriter, r *http.Request) {
 	}
 
 	a.attest(w, r, a.clients.GCA)
-	return
 }
 
 // getITAToken retrieves a attestation token signed by ITA.
@@ -110,13 +111,12 @@ func (a *attestHandler) getITAToken(w http.ResponseWriter, r *http.Request) {
 
 	// If the handler does not have an ITA client, return error.
 	if a.clients.ITA == nil {
-		errStr := fmt.Sprintf("no ITA verifier client present - ensure ITA Region and Key are defined in metadata")
+		errStr := "no ITA verifier client present - ensure ITA Region and Key are defined in metadata"
 		a.logAndWriteError(errStr, http.StatusPreconditionFailed, w)
 		return
 	}
 
 	a.attest(w, r, a.clients.ITA)
-	return
 }
 
 func (a *attestHandler) attest(w http.ResponseWriter, r *http.Request, client verifier.Client) {
