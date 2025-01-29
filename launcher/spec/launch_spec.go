@@ -86,6 +86,8 @@ const (
 	monitoringEnable           = "tee-monitoring-enable"
 	devShmSizeKey              = "tee-dev-shm-size-kb"
 	mountKey                   = "tee-mount"
+	itaRegion                  = "ita-region"
+	itaKey                     = "ita-api-key"
 )
 
 const (
@@ -117,6 +119,8 @@ type LaunchSpec struct {
 	MonitoringEnabled          MonitoringType
 	LogRedirect                LogRedirectLocation
 	Mounts                     []launchermount.Mount
+	ITARegion                  string
+	ITAKey                     string
 	// DevShmSize is specified in kiB.
 	DevShmSize  int64
 	Experiments experiments.Experiments
@@ -237,6 +241,23 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 				}
 				s.Mounts = append(s.Mounts, specMnt)
 			}
+		}
+	}
+
+	if s.Experiments.EnableItaVerifier {
+		itaRegionVal, itaRegionOK := unmarshaledMap[itaRegion]
+		itaKeyVal, itaKeyOK := unmarshaledMap[itaKey]
+
+		if itaRegionOK != itaKeyOK {
+			return fmt.Errorf("ITA fields %s and %s must both be provided", itaRegion, itaKey)
+		}
+
+		if itaRegionOK && itaRegionVal != "" {
+			s.ITARegion = itaRegionVal
+		}
+
+		if itaKeyOK && itaKeyVal != "" {
+			s.ITAKey = itaKeyVal
 		}
 	}
 
