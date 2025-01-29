@@ -64,11 +64,12 @@ func TestLaunchSpecUnmarshalJSONHappyCases(t *testing.T) {
 		DevShmSize:                 234234,
 		Mounts: []launchermount.Mount{launchermount.TmpfsMount{Destination: "/tmpmount", Size: 0},
 			launchermount.TmpfsMount{Destination: "/sized", Size: 222}},
-		Experiments: experiments.Experiments{
-			EnableTempFSMount: true,
-		},
 		ITARegion: "US",
 		ITAKey:    "test-api-key",
+		Experiments: experiments.Experiments{
+			EnableTempFSMount: true,
+			EnableItaVerifier: true,
+		},
 	}
 
 	for _, testcase := range testCases {
@@ -76,6 +77,7 @@ func TestLaunchSpecUnmarshalJSONHappyCases(t *testing.T) {
 			spec := &LaunchSpec{}
 			spec.Experiments = experiments.Experiments{
 				EnableTempFSMount: true,
+				EnableItaVerifier: true,
 			}
 			if err := spec.UnmarshalJSON([]byte(testcase.mdsJSON)); err != nil {
 				t.Fatal(err)
