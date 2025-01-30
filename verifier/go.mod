@@ -18,7 +18,7 @@ require (
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.0
 	go.uber.org/multierr v1.11.0
-	golang.org/x/net v0.30.0
+	golang.org/x/net v0.33.0
 	golang.org/x/oauth2 v0.23.0
 	google.golang.org/api v0.203.0
 	google.golang.org/genproto v0.0.0-20241015192408-796eee8c2d53
