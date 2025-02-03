@@ -28,7 +28,7 @@ import (
 	"github.com/google/go-tpm/legacy/tpm2"
 )
 
-// Simulator represents a go-tpm compatible interface to the IBM TPM2 simulator.
+// Simulator represents a go-tpm compatible interface to the TPM2 simulator.
 // Similar to the file-based (for linux) or syscall-based (for Windows) TPM
 // handles, no synchronization is provided; the same simulator handle should not
 // be used from multiple threads.
