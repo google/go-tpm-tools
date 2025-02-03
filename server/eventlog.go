@@ -438,6 +438,8 @@ func getSecureBootState(attestEvents []attest.Event) (*pb.SecureBootState, error
 		Db:        convertToPbDatabase(attestSbState.PermittedKeys, attestSbState.PermittedHashes),
 		Dbx:       convertToPbDatabase(attestSbState.ForbiddenKeys, attestSbState.ForbiddenHashes),
 		Authority: convertToPbDatabase(attestSbState.PostSeparatorAuthority, nil),
+		Pk:        convertToPbDatabase(attestSbState.PlatformKeys, attestSbState.PlatformKeyHashes),
+		Kek:       convertToPbDatabase(attestSbState.ExchangeKeys, attestSbState.ExchangeKeyHashes),
 	}, nil
 }
 
