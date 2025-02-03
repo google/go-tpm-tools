@@ -149,9 +149,9 @@ message SecureBootState {
   // Authority events post-separator. Pre-separator authorities
   // are currently not supported.
   Database authority = 4;
-  // Platform Keys
+  // The Secure Boot Platform key, used to sign key exchange keys.
   Database pk = 5;
-  // Exchange Keys
+  // The Secure Boot Key Exchange Keys, used to sign db and dbx updates.
   Database kek = 6;
 }
 
