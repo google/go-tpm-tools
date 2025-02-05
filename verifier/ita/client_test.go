@@ -39,6 +39,11 @@ var testVerifierRequest = verifier.VerifyAttestationRequest{
 			[]byte("test-intermediate2"),
 		},
 	},
+	Challenge: &verifier.Challenge{
+		Val:       []byte("test-nonce-val"),
+		Iat:       []byte("123456"),
+		Signature: []byte("test-nonce-sig"),
+	},
 }
 
 func validateHTTPRequest(t *testing.T, r *http.Request, expectedMethod string, expectedHeaders map[string]string, expectedPath string) {
@@ -102,8 +107,11 @@ func TestCreateChallenge(t *testing.T) {
 	}
 
 	expectedChallenge := &verifier.Challenge{
-		Name:  challengeNamePrefix + string(testNonce.Val),
-		Nonce: expectedNonce,
+		Name:      challengeNamePrefix + string(testNonce.Val),
+		Nonce:     expectedNonce,
+		Val:       testNonce.Val,
+		Iat:       testNonce.Iat,
+		Signature: testNonce.Signature,
 	}
 
 	if diff := cmp.Diff(*challenge, *expectedChallenge); diff != "" {
@@ -243,6 +251,11 @@ func TestConvertRequestToTokenRequest(t *testing.T) {
 			EventLog:          testVerifierRequest.TDCCELAttestation.CcelData,
 			CanonicalEventLog: testVerifierRequest.TDCCELAttestation.CanonicalEventLog,
 			Quote:             testVerifierRequest.TDCCELAttestation.TdQuote,
+			VerifierNonce: nonce{
+				Val:       testVerifierRequest.Challenge.Val,
+				Iat:       testVerifierRequest.Challenge.Iat,
+				Signature: testVerifierRequest.Challenge.Signature,
+			},
 		},
 		SigAlg: "RS256", // Figure out what this should be.
 		GCP: gcpData{
@@ -294,6 +307,7 @@ func TestConvertRequestToTokenRequestWithCCELDataPadding(t *testing.T) {
 				[]byte("test-intermediate2"),
 			},
 		},
+		Challenge: testVerifierRequest.Challenge,
 	}
 
 	expectedRequest := tokenRequest{
@@ -303,6 +317,11 @@ func TestConvertRequestToTokenRequestWithCCELDataPadding(t *testing.T) {
 			EventLog:          testVerifierRequest.TDCCELAttestation.CcelData,
 			CanonicalEventLog: request.TDCCELAttestation.CanonicalEventLog,
 			Quote:             request.TDCCELAttestation.TdQuote,
+			VerifierNonce: nonce{
+				Val:       request.Challenge.Val,
+				Iat:       request.Challenge.Iat,
+				Signature: request.Challenge.Signature,
+			},
 		},
 		SigAlg: "RS256", // Figure out what this should be.
 		GCP: gcpData{
