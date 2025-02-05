@@ -422,6 +422,12 @@ func matchWellKnown(cert x509.Certificate) (pb.WellKnownCertificate, error) {
 	if bytes.Equal(MicrosoftUEFICA2011Cert, cert.Raw) {
 		return pb.WellKnownCertificate_MS_THIRD_PARTY_UEFI_CA_2011, nil
 	}
+	if bytes.Equal(MicrosoftKEKCA2011Cert, cert.Raw) {
+		return pb.WellKnownCertificate_MS_THIRD_PARTY_KEK_CA_2011, nil
+	}
+	if bytes.Equal(GceDefaultPKCert, cert.Raw) {
+		return pb.WellKnownCertificate_GCE_DEFAULT_PK, nil
+	}
 	return pb.WellKnownCertificate_UNKNOWN, errors.New("failed to find matching well known certificate")
 }
 

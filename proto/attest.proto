@@ -118,6 +118,11 @@ enum WellKnownCertificate {
   MS_WINDOWS_PROD_PCA_2011 = 1;
   // https://go.microsoft.com/fwlink/p/?linkid=321194
   MS_THIRD_PARTY_UEFI_CA_2011 = 2;
+  // https://go.microsoft.com/fwlink/p/?linkid=321185
+  MS_THIRD_PARTY_KEK_CA_2011 = 3;
+
+  // GCE certs:
+  GCE_DEFAULT_PK = 4;
 }
 
 message Certificate {
