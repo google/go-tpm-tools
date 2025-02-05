@@ -690,6 +690,38 @@ func TestParseSecureBootState(t *testing.T) {
 		if !contains3PUEFI || !containsWinProdPCA {
 			t.Error("expected to see both WinProdPCA and ThirdPartyUEFI certs")
 		}
+
+		if len(msState.GetSecureBoot().GetPk().GetHashes()) != 0 {
+			t.Error("found hashes in pk")
+		}
+		for _, cert := range msState.GetSecureBoot().GetPk().GetCerts() {
+			switch c := cert.GetRepresentation().(type) {
+			case *attestpb.Certificate_Der:
+				if !bytes.Equal(c.Der, GceDefaultPKCert) {
+					t.Errorf("found pk cert der: %+v expecing: %+v", c.Der, GceDefaultPKCert)
+				}
+			case *attestpb.Certificate_WellKnown:
+				t.Errorf("Unexpected well-known cert in pk")
+			default:
+				t.Errorf("Unexpected cert representation type in pk")
+			}
+		}
+
+		if len(msState.GetSecureBoot().GetKek().GetHashes()) != 0 {
+			t.Error("found hashes in kek")
+		}
+		for _, cert := range msState.GetSecureBoot().GetKek().GetCerts() {
+			switch c := cert.GetRepresentation().(type) {
+			case *attestpb.Certificate_Der:
+				if !bytes.Equal(c.Der, MicrosoftKEKCA2011Cert) {
+					t.Errorf("found kek cert der: %+v expecing: %+v", c.Der, MicrosoftKEKCA2011Cert)
+				}
+			case *attestpb.Certificate_WellKnown:
+				t.Errorf("Unexpected well-known cert in kek")
+			default:
+				t.Errorf("Unexpected cert representation type in kek")
+			}
+		}
 	}
 }
 
