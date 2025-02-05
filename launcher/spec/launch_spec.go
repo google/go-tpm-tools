@@ -264,6 +264,14 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+// LogFriendly creates a copy of the spec that is safe to log by censoring
+func (s *LaunchSpec) LogFriendly() LaunchSpec {
+	safeSpec := *s
+	safeSpec.ITAKey = strings.Repeat("*", len(s.ITAKey))
+
+	return safeSpec
+}
+
 // GetLaunchSpec takes in a metadata server client, reads and parse operator's
 // input to the GCE instance custom metadata and return a LaunchSpec.
 // ImageRef (tee-image-reference) is required, will return an error if
