@@ -126,8 +126,11 @@ func (c *client) CreateChallenge(_ context.Context) (*verifier.Challenge, error)
 	}
 
 	return &verifier.Challenge{
-		Name:  challengeNamePrefix + string(resp.Val),
-		Nonce: nonce,
+		Name:      challengeNamePrefix + string(resp.Val),
+		Nonce:     nonce,
+		Val:       resp.Val,
+		Iat:       resp.Iat,
+		Signature: resp.Signature,
 	}, nil
 }
 
@@ -150,6 +153,11 @@ func convertRequestToTokenRequest(request verifier.VerifyAttestationRequest) tok
 			EventLog:          data[:trimIndex],
 			CanonicalEventLog: request.TDCCELAttestation.CanonicalEventLog,
 			Quote:             request.TDCCELAttestation.TdQuote,
+			VerifierNonce: nonce{
+				Val:       request.Challenge.Val,
+				Iat:       request.Challenge.Iat,
+				Signature: request.Challenge.Signature,
+			},
 		},
 		SigAlg: "RS256", // Figure out what this should be.
 		GCP: gcpData{

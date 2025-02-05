@@ -21,9 +21,14 @@ type Client interface {
 // get challenge part of a remote attestation protocol. The challenge
 // will be verified as part of VerifyAttestation.
 type Challenge struct {
-	Name   string
-	Nonce  []byte
-	ConnID string
+	// Used as audience for GCP credential tokens.
+	Name string
+	// Used to generate attestation.
+	Nonce     []byte
+	ConnID    string
+	Val       []byte
+	Iat       []byte
+	Signature []byte
 }
 
 // VerifyAttestationRequest is passed in on VerifyAttestation. It contains the
