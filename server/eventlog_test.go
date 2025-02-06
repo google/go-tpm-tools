@@ -691,42 +691,38 @@ func TestParseSecureBootState(t *testing.T) {
 			t.Error("expected to see both WinProdPCA and ThirdPartyUEFI certs")
 		}
 
-		containsGCEDefaultPK := false
 		if len(msState.GetSecureBoot().GetPk().GetHashes()) != 0 {
 			t.Error("found hashes in pk")
 		}
-		for _, cert := range msState.GetSecureBoot().GetPk().GetCerts() {
-			switch c := cert.GetRepresentation().(type) {
+		pkCerts := msState.GetSecureBoot().GetPk().GetCerts()
+		if len(pkCerts) != 1 {
+			t.Errorf("expected to see exactly one cert in pk, but found %d", len(pkCerts))
+		} else {
+			switch c := pkCerts[0].GetRepresentation().(type) {
 			case *attestpb.Certificate_WellKnown:
-				if c.WellKnown == attestpb.WellKnownCertificate_UNKNOWN {
-					t.Error(("found WellKnownCertificate_UNKNOWN in pk"))
+				if c.WellKnown != attestpb.WellKnownCertificate_GCE_DEFAULT_PK {
+					t.Error("expected to see WellKnownCertificate_GCE_DEFAULT_PK in pk got a different well known cert")
 				}
-				if c.WellKnown == attestpb.WellKnownCertificate_GCE_DEFAULT_PK {
-					containsGCEDefaultPK = true
-				}
+			default:
+				t.Error("expected to see WellKnownCertificate_GCE_DEFAULT_PK in pk")
 			}
 		}
-		if !containsGCEDefaultPK {
-			t.Error("expected to see GCE_DEFAULT_PK cert")
-		}
 
-		containsMSKEKCA2011 := false
 		if len(msState.GetSecureBoot().GetKek().GetHashes()) != 0 {
 			t.Error("found hashes in kek")
 		}
-		for _, cert := range msState.GetSecureBoot().GetKek().GetCerts() {
-			switch c := cert.GetRepresentation().(type) {
+		kekCerts := msState.GetSecureBoot().GetKek().GetCerts()
+		if len(kekCerts) != 1 {
+			t.Errorf("expected to see exactly one cert in kek, but found %d", len(kekCerts))
+		} else {
+			switch c := kekCerts[0].GetRepresentation().(type) {
 			case *attestpb.Certificate_WellKnown:
-				if c.WellKnown == attestpb.WellKnownCertificate_UNKNOWN {
-					t.Error(("found WellKnownCertificate_UNKNOWN in kek"))
+				if c.WellKnown != attestpb.WellKnownCertificate_MS_THIRD_PARTY_KEK_CA_2011 {
+					t.Error("expected to see WellKnownCertificate_MS_THIRD_PARTY_KEK_CA_2011 in kek got a different well known cert")
 				}
-				if c.WellKnown == attestpb.WellKnownCertificate_MS_THIRD_PARTY_KEK_CA_2011 {
-					containsMSKEKCA2011 = true
-				}
+			default:
+				t.Error("expected to see WellKnownCertificate_MS_THIRD_PARTY_KEK_CA_2011 in kek")
 			}
-		}
-		if !containsMSKEKCA2011 {
-			t.Error("expected to see MS_THIRD_PARTY_KEK_CA_2011 cert")
 		}
 	}
 }
