@@ -8,8 +8,8 @@ func TestExperiments(t *testing.T) {
 	tests := []struct {
 		input string
 	}{
-		{input: "{\"EnableTestFeatureForImage\":true,\"EnableSignedContainerImage\":true}"},
-		{input: "{\"EnableTestFeatureForImage\":true,\"EnableSignedContainerImage\":true,\"FloatFeature\":-5.6,\"OtherTestFeatureForImage\":false}"},
+		{input: "{\"EnableTestFeatureForImage\":true,\"EnableSignedContainerImage\":true,\"EnableItaVerifier\":true}"},
+		{input: "{\"EnableTestFeatureForImage\":true,\"EnableSignedContainerImage\":true,\"EnableItaVerifier\":true,\"FloatFeature\":-5.6,\"OtherTestFeatureForImage\":false}"},
 	}
 
 	for i, test := range tests {
@@ -21,6 +21,10 @@ func TestExperiments(t *testing.T) {
 
 		if e.EnableTestFeatureForImage == false {
 			t.Errorf("testcase %d: expected EnableTestFeatureForImage to be true, got false", i)
+		}
+
+		if !e.EnableItaVerifier {
+			t.Errorf("testcase %d: expected EnableItaVerifier to be true, got false", i)
 		}
 	}
 }
