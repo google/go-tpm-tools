@@ -101,9 +101,6 @@ func createHashedNonce(nonce *itaNonce) ([]byte, error) {
 		return nil, fmt.Errorf("error hashing ITA nonce: %v", err)
 	}
 
-	// Do we have anything that needs to be in user data?
-	// _, err = hash.Write(adapter.uData)
-
 	return hash.Sum(nil), err
 }
 
