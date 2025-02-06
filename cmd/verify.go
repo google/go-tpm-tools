@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"io"
 
-	sv "github.com/google/go-sev-guest/verify"
-	tv "github.com/google/go-tdx-guest/verify"
 	pb "github.com/google/go-tpm-tools/proto/attest"
 	"github.com/google/go-tpm-tools/server"
 	"github.com/google/go-tpm/legacy/tpm2"
@@ -49,36 +47,8 @@ var debugCmd = &cobra.Command{
 			return err
 		}
 
-		var validateOpts interface{}
-		switch attestation.GetTeeAttestation().(type) {
-		case *pb.Attestation_TdxAttestation:
-			if len(teeNonce) != 0 {
-				validateOpts = &server.VerifyTdxOpts{
-					Validation:   server.TdxDefaultValidateOpts(teeNonce),
-					Verification: tv.DefaultOptions(),
-				}
-			} else {
-				validateOpts = &server.VerifyTdxOpts{
-					Validation:   server.TdxDefaultValidateOpts(nonce),
-					Verification: tv.DefaultOptions(),
-				}
-			}
-		case *pb.Attestation_SevSnpAttestation:
-			if len(teeNonce) != 0 {
-				validateOpts = &server.VerifySnpOpts{
-					Validation:   server.SevSnpDefaultValidateOpts(teeNonce),
-					Verification: &sv.Options{},
-				}
-			} else {
-				validateOpts = &server.VerifySnpOpts{
-					Validation:   server.SevSnpDefaultValidateOpts(nonce),
-					Verification: &sv.Options{},
-				}
-			}
-		default:
-			validateOpts = nil
-		}
-		ms, err := server.VerifyAttestation(attestation, server.VerifyOpts{Nonce: nonce, TrustedAKs: []crypto.PublicKey{cryptoPub}, TEEOpts: validateOpts})
+		// TODO(#524): create a new subcommand that verifies SNP and TDX attestation.
+		ms, err := server.VerifyAttestation(attestation, server.VerifyOpts{Nonce: nonce, TrustedAKs: []crypto.PublicKey{cryptoPub}})
 		if err != nil {
 			return fmt.Errorf("verifying attestation: %w", err)
 		}

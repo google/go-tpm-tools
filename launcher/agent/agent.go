@@ -32,6 +32,7 @@ import (
 	"github.com/google/go-tpm-tools/launcher/spec"
 	pb "github.com/google/go-tpm-tools/proto/attest"
 	"github.com/google/go-tpm-tools/verifier"
+	"github.com/google/go-tpm-tools/verifier/models"
 	"github.com/google/go-tpm-tools/verifier/oci"
 	"github.com/google/go-tpm-tools/verifier/util"
 )
@@ -63,9 +64,7 @@ type attestRoot interface {
 // AttestAgentOpts contains user generated options when calling the
 // VerifyAttestation API
 type AttestAgentOpts struct {
-	Aud       string
-	Nonces    []string
-	TokenType string
+	TokenOptions *models.TokenOptions
 }
 
 type agent struct {
@@ -178,11 +177,8 @@ func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error
 	req := verifier.VerifyAttestationRequest{
 		Challenge:      challenge,
 		GcpCredentials: principalTokens,
-		TokenOptions: verifier.TokenOptions{
-			CustomAudience: opts.Aud,
-			CustomNonce:    opts.Nonces,
-			TokenType:      opts.TokenType,
-		},
+		Attestation:    attestation,
+		TokenOptions:   opts.TokenOptions,
 	}
 
 	attResult, err := a.avRot.Attest(challenge.Nonce)

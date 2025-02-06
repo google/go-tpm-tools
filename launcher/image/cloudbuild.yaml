@@ -4,7 +4,7 @@ substitutions:
   '_OUTPUT_IMAGE_FAMILY': ''
   '_BASE_IMAGE_PROJECT': 'confidential-vm-images'
   '_IMAGE_ENV': ''
-  '_BUCKET_NAME': '${PROJECT_ID}_cloudbuild'
+  '_BUCKET_NAME': ''
   '_CS_LICENSE': ''
   '_SHORT_SHA': ''
 
