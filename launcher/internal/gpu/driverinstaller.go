@@ -4,16 +4,20 @@ package gpu
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"cos.googlesource.com/cos/tools.git/src/cmd/cos_gpu_installer/deviceinfo"
+	"cos.googlesource.com/cos/tools.git/src/pkg/cos"
+	"cos.googlesource.com/cos/tools.git/src/pkg/modules"
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/cio"
 	"github.com/containerd/containerd/namespaces"
 	"github.com/containerd/containerd/oci"
+	"github.com/google/go-tpm-tools/launcher/internal/logging"
+	"github.com/google/go-tpm-tools/launcher/internal/systemctl"
 	"github.com/google/go-tpm-tools/launcher/spec"
 	"github.com/opencontainers/runtime-spec/specs-go"
 )
@@ -35,11 +39,11 @@ var supportedGpuTypes = []deviceinfo.GPUType{
 type DriverInstaller struct {
 	cdClient   *containerd.Client
 	launchSpec spec.LaunchSpec
-	logger     *log.Logger
+	logger     logging.Logger
 }
 
 // NewDriverInstaller instanciates an object of driver installer
-func NewDriverInstaller(cdClient *containerd.Client, launchSpec spec.LaunchSpec, logger *log.Logger) *DriverInstaller {
+func NewDriverInstaller(cdClient *containerd.Client, launchSpec spec.LaunchSpec, logger logging.Logger) *DriverInstaller {
 	return &DriverInstaller{
 		cdClient:   cdClient,
 		launchSpec: launchSpec,
@@ -69,7 +73,7 @@ func (di *DriverInstaller) InstallGPUDrivers(ctx context.Context) error {
 	ctx = namespaces.WithNamespace(ctx, namespaces.Default)
 	installerImageRef, err := getInstallerImageReference()
 	if err != nil {
-		di.logger.Printf("failed to get the installer container image reference: %v", err)
+		di.logger.Error("failed to get the installer container image reference: %v", err)
 		return err
 	}
 
@@ -95,7 +99,7 @@ func (di *DriverInstaller) InstallGPUDrivers(ctx context.Context) error {
 
 	hostname, err := os.Hostname()
 	if err != nil {
-		di.logger.Printf("cannot get hostname: %v", err)
+		di.logger.Error("cannot get hostname: %v", err)
 	}
 
 	container, err := di.cdClient.NewContainer(
@@ -105,7 +109,7 @@ func (di *DriverInstaller) InstallGPUDrivers(ctx context.Context) error {
 		containerd.WithNewSnapshot(installerSnapshotID, image),
 		containerd.WithNewSpec(oci.WithImageConfig(image),
 			oci.WithPrivileged,
-			oci.WithProcessArgs("/cos-gpu-installer", "install", "-version=default", fmt.Sprintf("-host-dir=%s", InstallationHostDir)),
+			oci.WithProcessArgs("/cos-gpu-installer", "install", "-version=default", fmt.Sprintf("-host-dir=%s", InstallationHostDir), "--no-verify"),
 			oci.WithAllDevicesAllowed,
 			oci.WithHostDevices,
 			oci.WithMounts(mounts),
@@ -138,11 +142,28 @@ func (di *DriverInstaller) InstallGPUDrivers(ctx context.Context) error {
 	code, _, _ := status.Result()
 
 	if code != 0 {
-		di.logger.Printf("Gpu driver installation task ended and returned non-zero status code %d", code)
+		di.logger.Error("GPU driver installation task ended and returned non-zero status code %d", code)
 		return fmt.Errorf("gpu driver installation task ended with non-zero status code %d", code)
 	}
 
-	di.logger.Println("Gpu driver installation task exited with status: 0")
+	moduleParams := modules.NewModuleParameters()
+	if err = loadGPUDrivers(moduleParams); err != nil {
+		return fmt.Errorf("failed load GPU drivers: %v", err)
+	}
+
+	if err = startNvidiaPersistencedService(di.logger); err != nil {
+		return fmt.Errorf("failed to start nvidia-persistenced process: %v", err)
+	}
+
+	if err = verifyDriverInstallation(); err != nil {
+		return fmt.Errorf("failed to verify gpu driver installation: %v", err)
+	}
+
+	if err = setGPUStateToReady(); err != nil {
+		return fmt.Errorf("failed to set the gpu state to ready: %v", err)
+	}
+
+	di.logger.Info("GPU driver installation completed succesfully")
 	return nil
 }
 
@@ -164,6 +185,98 @@ func remountAsExecutable(dir string) error {
 	}
 	if err := exec.Command("mount", "-o", "remount,exec", dir).Run(); err != nil {
 		return fmt.Errorf("failed to remount %q: %v", dir, err)
+	}
+	return nil
+}
+
+func verifyDriverInstallation() error {
+	// Run nvidia-smi to check whether nvidia GPU driver is installed.
+	if err := exec.Command("nvidia-smi").Run(); err != nil {
+		return fmt.Errorf("failed to verify gpu driver installation : %v", err)
+	}
+	return nil
+}
+
+func setGPUStateToReady() error {
+	// Run nvidia-smi conf-compute command to set GPU state to READY.
+	if err := exec.Command("nvidia-smi", "conf-compute", "-srs", "1").Run(); err != nil {
+		return fmt.Errorf("failed to set the gpu state to ready: %v", err)
+	}
+	return nil
+}
+
+func startNvidiaPersistencedService(logger logging.Logger) error {
+	s, err := systemctl.New()
+	if err != nil {
+		return fmt.Errorf("failed to create systemctl client: %v", err)
+	}
+	defer s.Close()
+
+	logger.Info("Starting nvidia-persistenced.service")
+	if err := s.Start("nvidia-persistenced.service"); err != nil {
+		return fmt.Errorf("failed to start nvidia-persistenced.service")
+	}
+
+	logger.Info("nvidia-persistenced.service successfully started")
+	return nil
+}
+
+func loadGPUDrivers(moduleParams modules.ModuleParameters) error {
+	envReader, err := cos.NewEnvReader(HostRootPath)
+	if err != nil {
+		return fmt.Errorf("failed to create envReader with host root path %s", HostRootPath)
+	}
+	kernelDriversPath := filepath.Join(HostRootPath, "/lib/modules", envReader.KernelRelease(), "kernel/drivers")
+	kernelModulePath := filepath.Join(InstallationHostDir, "drivers")
+	drmPanel := &modules.Module{
+		Name:         "drm_panel_orientation_quirks",
+		Path:         filepath.Join(kernelDriversPath, "gpu/drm/drm_panel_orientation_quirks.ko"),
+		SkipNotFound: true,
+	}
+	i2c := &modules.Module{
+		Name:         "i2c_core",
+		Path:         filepath.Join(kernelDriversPath, "i2c/i2c-core.ko"),
+		Deps:         []*modules.Module{drmPanel},
+		SkipNotFound: true,
+	}
+	drm := &modules.Module{
+		Name:         "drm",
+		Path:         filepath.Join(kernelDriversPath, "gpu/drm/drm.ko"),
+		Deps:         []*modules.Module{i2c, drmPanel},
+		SkipNotFound: true,
+	}
+	drmKms := &modules.Module{
+		Name:         "drm_kms_helper",
+		Path:         filepath.Join(kernelDriversPath, "gpu/drm/drm_kms_helper.ko"),
+		Deps:         []*modules.Module{drm, i2c},
+		SkipNotFound: true,
+	}
+	nvidia := &modules.Module{
+		Name: "nvidia",
+		Path: filepath.Join(kernelModulePath, "nvidia.ko"),
+		Deps: []*modules.Module{drm, i2c},
+	}
+	nvidiaUvm := &modules.Module{
+		Name: "nvidia_uvm",
+		Path: filepath.Join(kernelModulePath, "nvidia-uvm.ko"),
+		Deps: []*modules.Module{nvidia},
+	}
+	nvidiaModeset := &modules.Module{
+		Name: "nvidia_modeset",
+		Path: filepath.Join(kernelModulePath, "nvidia-modeset.ko"),
+		Deps: []*modules.Module{nvidia},
+	}
+	nvidiaDrm := &modules.Module{
+		Name: "nvidia_drm",
+		Path: filepath.Join(kernelModulePath, "nvidia-drm.ko"),
+		Deps: []*modules.Module{nvidiaModeset, drmKms},
+	}
+	// Need to load modules in order due to module dependency.
+	gpuModules := []*modules.Module{nvidia, nvidiaUvm, nvidiaModeset, nvidiaDrm}
+	for _, module := range gpuModules {
+		if err := modules.LoadModule(module, moduleParams); err != nil {
+			return fmt.Errorf("failed to load module %s", module.Path)
+		}
 	}
 	return nil
 }
