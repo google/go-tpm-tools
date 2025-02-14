@@ -28,12 +28,9 @@ import (
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/launcher/agent"
-<<<<<<< HEAD
 	"github.com/google/go-tpm-tools/launcher/internal/gpu"
-=======
 	"github.com/google/go-tpm-tools/launcher/internal/healthmonitoring/nodeproblemdetector"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
->>>>>>> c891518e94cac1ada6963c035ab29a26f05af5f9
 	"github.com/google/go-tpm-tools/launcher/internal/signaturediscovery"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/registryauth"
@@ -194,7 +191,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		}
 
 		for _, deviceFile := range gpuDeviceFiles {
-			logger.Printf("device file : %s", deviceFile)
+			logger.Info("device file : %s", deviceFile)
 			specOpts = append(specOpts, oci.WithDevices(deviceFile, deviceFile, "crw-rw-rw-"))
 		}
 	}

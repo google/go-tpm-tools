@@ -189,6 +189,7 @@ func startLauncher(launchSpec spec.LaunchSpec, serialConsole *os.File) error {
 	}
 	defer containerdClient.Close()
 
+	ctx := namespaces.WithNamespace(context.Background(), namespaces.Default)
 	if launchSpec.InstallGpuDriver {
 		if launchSpec.Experiments.EnableGpuDriverInstallation {
 			installer := gpu.NewDriverInstaller(containerdClient, launchSpec, logger)
@@ -197,7 +198,7 @@ func startLauncher(launchSpec spec.LaunchSpec, serialConsole *os.File) error {
 				return fmt.Errorf("failed to install gpu drivers: %v", err)
 			}
 		} else {
-			logger.Println("Gpu installation experiment flag is not enabled for this project. Ensure that it is enabled when tee-install-gpu-driver is set to true")
+			logger.Info("GPU installation experiment flag is not enabled for this project. Ensure that it is enabled when tee-install-gpu-driver is set to true")
 			return fmt.Errorf("gpu installation experiment flag is not enabled")
 		}
 	}
@@ -246,7 +247,6 @@ func startLauncher(launchSpec spec.LaunchSpec, serialConsole *os.File) error {
 
 	logger.Info("Launch started", "duration_sec", time.Since(start).Seconds())
 
-	ctx := namespaces.WithNamespace(context.Background(), namespaces.Default)
 	r, err := launcher.NewRunner(ctx, containerdClient, token, launchSpec, mdsClient, tpm, logger, serialConsole)
 	if err != nil {
 		return err

@@ -1,0 +1,12 @@
+[Unit]
+Description=NVIDIA Persistence Daemon
+Wants=syslog.target container-runner.service
+After=syslog.target container-runner.service
+
+
+[Service]
+Type=forking
+ExecStart=/var/lib/nvidia/bin/nvidia-persistenced --user nvidia-persistenced
+
+[Install]
+WantedBy=multi-user.target
