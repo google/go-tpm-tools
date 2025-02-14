@@ -118,6 +118,11 @@ enum WellKnownCertificate {
   MS_WINDOWS_PROD_PCA_2011 = 1;
   // https://go.microsoft.com/fwlink/p/?linkid=321194
   MS_THIRD_PARTY_UEFI_CA_2011 = 2;
+  // https://go.microsoft.com/fwlink/p/?linkid=321185
+  MS_THIRD_PARTY_KEK_CA_2011 = 3;
+
+  // GCE certs:
+  GCE_DEFAULT_PK = 4;
 }
 
 message Certificate {
@@ -149,6 +154,10 @@ message SecureBootState {
   // Authority events post-separator. Pre-separator authorities
   // are currently not supported.
   Database authority = 4;
+  // The Secure Boot Platform key, used to sign key exchange keys.
+  Database pk = 5;
+  // The Secure Boot Key Exchange Keys, used to sign db and dbx updates.
+  Database kek = 6;
 }
 
 // The container's restart policy.
