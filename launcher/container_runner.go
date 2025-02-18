@@ -28,12 +28,9 @@ import (
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/launcher/agent"
-<<<<<<< HEAD
 	"github.com/google/go-tpm-tools/launcher/internal/gpu"
-=======
 	"github.com/google/go-tpm-tools/launcher/internal/healthmonitoring/nodeproblemdetector"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
->>>>>>> c891518e94cac1ada6963c035ab29a26f05af5f9
 	"github.com/google/go-tpm-tools/launcher/internal/signaturediscovery"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/registryauth"
@@ -134,7 +131,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		return nil, err
 	}
 
-	logger.Info("Launch Policy              : %+v\n", launchPolicy)
+	logger.Info(fmt.Sprintf("Launch Policy              : %+v\n", launchPolicy))
 
 	if imageConfigDescriptor, err := image.Config(ctx); err != nil {
 		logger.Error(err.Error())
@@ -194,7 +191,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		}
 
 		for _, deviceFile := range gpuDeviceFiles {
-			logger.Printf("device file : %s", deviceFile)
+			logger.Info("device file : %s", deviceFile)
 			specOpts = append(specOpts, oci.WithDevices(deviceFile, deviceFile, "crw-rw-rw-"))
 		}
 	}
@@ -298,7 +295,12 @@ func getSignatureDiscoveryClient(cdClient *containerd.Client, mdsClient *metadat
 		return registryauth.RefreshResolver(ctx, mdsClient)
 	}
 	imageFetcher := func(ctx context.Context, imageRef string, opts ...containerd.RemoteOpt) (containerd.Image, error) {
-		image, err := cdClient.Pull(ctx, imageRef, opts...)
+		image, err := pullImageWithRetries(
+			func() (containerd.Image, error) {
+				return cdClient.Pull(ctx, imageRef, opts...)
+			},
+			pullImageBackoffPolicy,
+		)
 		if err != nil {
 			return nil, fmt.Errorf("cannot pull signature objects from the signature image [%s]: %w", imageRef, err)
 		}
@@ -560,6 +562,11 @@ func defaultRetryPolicy() *backoff.ExponentialBackOff {
 	return expBack
 }
 
+func pullImageBackoffPolicy() backoff.BackOff {
+	b := backoff.NewConstantBackOff(time.Millisecond * 500)
+	return backoff.WithMaxRetries(b, 3)
+}
+
 // Run the container
 // Container output will always be redirected to logger writer for now
 func (r *ContainerRunner) Run(ctx context.Context) error {
@@ -652,17 +659,39 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	return nil
 }
 
+func pullImageWithRetries(f func() (containerd.Image, error), retry func() backoff.BackOff) (containerd.Image, error) {
+	var err error
+	var image containerd.Image
+	err = backoff.Retry(func() error {
+		image, err = f()
+		return err
+	}, retry())
+	if err != nil {
+		return nil, fmt.Errorf("failed to pull image with retries, the last error is: %w", err)
+	}
+	return image, nil
+}
+
 func initImage(ctx context.Context, cdClient *containerd.Client, launchSpec spec.LaunchSpec, token oauth2.Token) (containerd.Image, error) {
 	if token.Valid() {
 		remoteOpt := containerd.WithResolver(registryauth.Resolver(token.AccessToken))
-
-		image, err := cdClient.Pull(ctx, launchSpec.ImageRef, containerd.WithPullUnpack, remoteOpt)
+		image, err := pullImageWithRetries(
+			func() (containerd.Image, error) {
+				return cdClient.Pull(ctx, launchSpec.ImageRef, containerd.WithPullUnpack, remoteOpt)
+			},
+			pullImageBackoffPolicy,
+		)
 		if err != nil {
 			return nil, fmt.Errorf("cannot pull the image: %w", err)
 		}
 		return image, nil
 	}
-	image, err := cdClient.Pull(ctx, launchSpec.ImageRef, containerd.WithPullUnpack)
+	image, err := pullImageWithRetries(
+		func() (containerd.Image, error) {
+			return cdClient.Pull(ctx, launchSpec.ImageRef, containerd.WithPullUnpack)
+		},
+		pullImageBackoffPolicy,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("cannot pull the image (no token, only works for a public image): %w", err)
 	}
