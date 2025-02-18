@@ -158,13 +158,8 @@ func (di *DriverInstaller) InstallGPUDrivers(ctx context.Context) error {
 		return fmt.Errorf("failed to verify gpu driver installation: %v", err)
 	}
 
-	isCCModeEnabled, err := isGPUCCModeEnabled()
-	if err != nil {
-		return fmt.Errorf("failed to get the status of confidential computing mode: %v", err)
-	}
-
 	// Explicitly need to set the GPU state to READY for GPUs with confidential compute mode ON.
-	if isCCModeEnabled {
+	if isGPUCCModeEnabled() {
 		if err = setGPUStateToReady(); err != nil {
 			return fmt.Errorf("failed to set the gpu state to ready: %v", err)
 		}
@@ -214,16 +209,10 @@ func setGPUStateToReady() error {
 	return nil
 }
 
-func isGPUCCModeEnabled() (bool, error) {
+func isGPUCCModeEnabled() bool {
 	// Run nvidia-smi conf-compute command to check if confidential compute mode is ON.
-	ccModeOutput, err := exec.Command("nvidia-smi", "conf-compute", "-f").Output()
-	if err != nil {
-		return false, fmt.Errorf("failed to get confidential compute state: %v", err)
-	}
-	if strings.Contains(string(ccModeOutput), "CC status: ON") {
-		return true, nil
-	}
-	return false, nil
+	ccModeOutput, _ := exec.Command("nvidia-smi", "conf-compute", "-f").Output()
+	return strings.Contains(string(ccModeOutput), "CC status: ON")
 }
 
 func startNvidiaPersistencedService(logger logging.Logger) error {
