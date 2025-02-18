@@ -191,7 +191,11 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		}
 
 		for _, deviceFile := range gpuDeviceFiles {
+<<<<<<< HEAD
 			logger.Info("device file : %s", deviceFile)
+=======
+			logger.Info(fmt.Sprintf("device file : %s", deviceFile))
+>>>>>>> f0643da1f62548e214bde184697f55e1a1575f6a
 			specOpts = append(specOpts, oci.WithDevices(deviceFile, deviceFile, "crw-rw-rw-"))
 		}
 	}
