@@ -16,13 +16,13 @@ import (
 const minPCRIndex = uint32(0)
 
 func maxPCRIndex(p *pb.PCRs) uint32 {
-	high := minPCRIndex
+	max := minPCRIndex
 	for idx := range p.GetPcrs() {
-		if idx > high {
-			high = idx
+		if idx > max {
+			max = idx
 		}
 	}
-	return high
+	return max
 }
 
 // FormatPCRs writes a multiline representation of the PCR values to w.

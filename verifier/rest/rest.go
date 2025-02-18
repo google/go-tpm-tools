@@ -13,12 +13,10 @@ import (
 	tabi "github.com/google/go-tdx-guest/abi"
 	"github.com/google/go-tdx-guest/proto/tdx"
 	"github.com/google/go-tpm-tools/verifier"
-	"github.com/google/go-tpm-tools/verifier/models"
-	"github.com/google/go-tpm-tools/verifier/oci"
 	"github.com/googleapis/gax-go/v2"
 
 	v1 "cloud.google.com/go/confidentialcomputing/apiv1"
-	ccpb "cloud.google.com/go/confidentialcomputing/apiv1/confidentialcomputingpb"
+	confidentialcomputingpb "cloud.google.com/go/confidentialcomputing/apiv1/confidentialcomputingpb"
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 	locationpb "google.golang.org/genproto/googleapis/cloud/location"
@@ -112,9 +110,9 @@ type restClient struct {
 // CreateChallenge implements verifier.Client
 func (c *restClient) CreateChallenge(ctx context.Context) (*verifier.Challenge, error) {
 	// Pass an empty Challenge for the input (all params are output-only)
-	req := &ccpb.CreateChallengeRequest{
+	req := &confidentialcomputingpb.CreateChallengeRequest{
 		Parent:    c.location.Name,
-		Challenge: &ccpb.Challenge{},
+		Challenge: &confidentialcomputingpb.Challenge{},
 	}
 	chal, err := c.v1Client.CreateChallenge(ctx, req)
 	if err != nil {
@@ -145,7 +143,7 @@ func (c *restClient) VerifyAttestation(ctx context.Context, request verifier.Ver
 
 var encoding = base64.StdEncoding
 
-func convertChallengeFromREST(chal *ccpb.Challenge) (*verifier.Challenge, error) {
+func convertChallengeFromREST(chal *confidentialcomputingpb.Challenge) (*verifier.Challenge, error) {
 	nonce, err := encoding.DecodeString(chal.TpmNonce)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode Challenge.Nonce: %w", err)
@@ -156,84 +154,45 @@ func convertChallengeFromREST(chal *ccpb.Challenge) (*verifier.Challenge, error)
 	}, nil
 }
 
-func convertTokenOptionsToREST(tokenOpts *models.TokenOptions) *ccpb.TokenOptions {
-	if tokenOpts == nil {
-		return nil
-	}
-
-	optsPb := &ccpb.TokenOptions{
-		Audience: tokenOpts.Audience,
-		Nonce:    tokenOpts.Nonces,
-	}
-
-	switch tokenOpts.TokenType {
-	case "OIDC":
-		optsPb.TokenType = ccpb.TokenType_TOKEN_TYPE_OIDC
-	case "PKI":
-		optsPb.TokenType = ccpb.TokenType_TOKEN_TYPE_PKI
-	case "LIMITED_AWS":
-		optsPb.TokenType = ccpb.TokenType_TOKEN_TYPE_LIMITED_AWS
-	case "AWS_PRINCIPALTAGS":
-		optsPb.TokenType = ccpb.TokenType_TOKEN_TYPE_AWS_PRINCIPALTAGS
-		optsPb.TokenTypeOptions = setAwsPrincipalTagOptions(tokenOpts)
-	default:
-		optsPb.TokenType = ccpb.TokenType_TOKEN_TYPE_UNSPECIFIED
-	}
-
-	return optsPb
-}
-
-func convertRequestToREST(request verifier.VerifyAttestationRequest) *ccpb.VerifyAttestationRequest {
+func convertRequestToREST(request verifier.VerifyAttestationRequest) *confidentialcomputingpb.VerifyAttestationRequest {
 	idTokens := make([]string, len(request.GcpCredentials))
 	for i, token := range request.GcpCredentials {
 		idTokens[i] = string(token)
 	}
 
-	quotes := make([]*ccpb.TpmAttestation_Quote, len(request.Attestation.GetQuotes()))
-	for i, quote := range request.Attestation.GetQuotes() {
-		pcrVals := map[int32][]byte{}
-		for idx, val := range quote.GetPcrs().GetPcrs() {
-			pcrVals[int32(idx)] = val
-		}
-
-		quotes[i] = &ccpb.TpmAttestation_Quote{
-			RawQuote:     quote.GetQuote(),
-			RawSignature: quote.GetRawSig(),
-			HashAlgo:     int32(quote.GetPcrs().GetHash()),
-			PcrValues:    pcrVals,
-		}
+	var tokenType confidentialcomputingpb.TokenType
+	switch request.TokenOptions.TokenType {
+	case "OIDC":
+		tokenType = confidentialcomputingpb.TokenType_TOKEN_TYPE_OIDC
+	case "PKI":
+		tokenType = confidentialcomputingpb.TokenType_TOKEN_TYPE_PKI
+	case "LIMITED_AWS":
+		tokenType = confidentialcomputingpb.TokenType_TOKEN_TYPE_LIMITED_AWS
+	default:
+		tokenType = confidentialcomputingpb.TokenType_TOKEN_TYPE_UNSPECIFIED
 	}
 
-	certs := make([][]byte, len(request.Attestation.GetIntermediateCerts()))
-	for i, cert := range request.Attestation.GetIntermediateCerts() {
-		certs[i] = cert
-	}
-
-	signatures := make([]*ccpb.ContainerImageSignature, len(request.ContainerImageSignatures))
+	signatures := make([]*confidentialcomputingpb.ContainerImageSignature, len(request.ContainerImageSignatures))
 	for i, sig := range request.ContainerImageSignatures {
-		signature, err := convertOCISignatureToREST(sig)
-		if err != nil {
-			log.Printf("failed to convert OCI signature [%v] to ContainerImageSignature proto: %v", sig, err)
-			continue
+		signatures[i] = &confidentialcomputingpb.ContainerImageSignature{
+			Payload:   sig.Payload,
+			Signature: sig.Signature,
 		}
-		signatures[i] = signature
 	}
 
-	verifyReq := &ccpb.VerifyAttestationRequest{
-		GcpCredentials: &ccpb.GcpCredentials{
+	verifyReq := &confidentialcomputingpb.VerifyAttestationRequest{
+		GcpCredentials: &confidentialcomputingpb.GcpCredentials{
 			ServiceAccountIdTokens: idTokens,
 		},
-		TpmAttestation: &ccpb.TpmAttestation{
-			Quotes:            quotes,
-			TcgEventLog:       request.Attestation.GetEventLog(),
-			CanonicalEventLog: request.Attestation.GetCanonicalEventLog(),
-			AkCert:            request.Attestation.GetAkCert(),
-			CertChain:         certs,
+		TpmAttestation: nil,
+		ConfidentialSpaceInfo: &confidentialcomputingpb.ConfidentialSpaceInfo{
+			SignedEntities: []*confidentialcomputingpb.SignedEntity{{ContainerImageSignatures: signatures}},
 		},
-		ConfidentialSpaceInfo: &ccpb.ConfidentialSpaceInfo{
-			SignedEntities: []*ccpb.SignedEntity{{ContainerImageSignatures: signatures}},
+		TokenOptions: &confidentialcomputingpb.TokenOptions{
+			Audience:  request.TokenOptions.CustomAudience,
+			Nonce:     request.TokenOptions.CustomNonce,
+			TokenType: tokenType,
 		},
-		TokenOptions: convertTokenOptionsToREST(request.TokenOptions),
 	}
 
 	if request.Attestation != nil {
@@ -302,7 +261,7 @@ func convertRequestToREST(request verifier.VerifyAttestationRequest) *ccpb.Verif
 	return verifyReq
 }
 
-func convertResponseFromREST(resp *ccpb.VerifyAttestationResponse) (*verifier.VerifyAttestationResponse, error) {
+func convertResponseFromREST(resp *confidentialcomputingpb.VerifyAttestationResponse) (*verifier.VerifyAttestationResponse, error) {
 	token := []byte(resp.GetOidcClaimsToken())
 	return &verifier.VerifyAttestationResponse{
 		ClaimsToken: token,
@@ -310,71 +269,28 @@ func convertResponseFromREST(resp *ccpb.VerifyAttestationResponse) (*verifier.Ve
 	}, nil
 }
 
-func convertOCISignatureToREST(signature oci.Signature) (*ccpb.ContainerImageSignature, error) {
-	payload, err := signature.Payload()
-	if err != nil {
-		return nil, err
-	}
-	b64Sig, err := signature.Base64Encoded()
-	if err != nil {
-		return nil, err
-	}
-	sigBytes, err := encoding.DecodeString(b64Sig)
-	if err != nil {
-		return nil, err
-	}
-	return &ccpb.ContainerImageSignature{
-		Payload:   payload,
-		Signature: sigBytes,
-	}, nil
-}
-
-func convertSEVSNPProtoToREST(att *sevsnp.Attestation) (*ccpb.VerifyAttestationRequest_SevSnpAttestation, error) {
+func convertSEVSNPProtoToREST(att *sevsnp.Attestation) (*confidentialcomputingpb.VerifyAttestationRequest_SevSnpAttestation, error) {
 	auxBlob := sabi.CertsFromProto(att.GetCertificateChain()).Marshal()
 	rawReport, err := sabi.ReportToAbiBytes(att.GetReport())
 	if err != nil {
 		return nil, err
 	}
-	return &ccpb.VerifyAttestationRequest_SevSnpAttestation{
-		SevSnpAttestation: &ccpb.SevSnpAttestation{
+	return &confidentialcomputingpb.VerifyAttestationRequest_SevSnpAttestation{
+		SevSnpAttestation: &confidentialcomputingpb.SevSnpAttestation{
 			AuxBlob: auxBlob,
 			Report:  rawReport,
 		},
 	}, nil
 }
 
-func convertTDXProtoToREST(att *tdx.QuoteV4) (*ccpb.VerifyAttestationRequest_TdCcel, error) {
+func convertTDXProtoToREST(att *tdx.QuoteV4) (*confidentialcomputingpb.VerifyAttestationRequest_TdCcel, error) {
 	rawQuote, err := tabi.QuoteToAbiBytes(att)
 	if err != nil {
 		return nil, err
 	}
-	return &ccpb.VerifyAttestationRequest_TdCcel{
-		TdCcel: &ccpb.TdxCcelAttestation{
+	return &confidentialcomputingpb.VerifyAttestationRequest_TdCcel{
+		TdCcel: &confidentialcomputingpb.TdxCcelAttestation{
 			TdQuote: rawQuote,
 		},
 	}, nil
-}
-
-func setAwsPrincipalTagOptions(requestTokenOptions *models.TokenOptions) *ccpb.TokenOptions_AwsPrincipalTagsOptions_ {
-	if requestTokenOptions.PrincipalTagOptions == nil {
-		return nil
-	}
-	options := &ccpb.TokenOptions_AwsPrincipalTagsOptions_{
-		AwsPrincipalTagsOptions: &ccpb.TokenOptions_AwsPrincipalTagsOptions{},
-	}
-
-	if requestTokenOptions.PrincipalTagOptions.AllowedPrincipalTags == nil {
-		return options
-	}
-	options.AwsPrincipalTagsOptions.AllowedPrincipalTags = &ccpb.TokenOptions_AwsPrincipalTagsOptions_AllowedPrincipalTags{}
-
-	if requestTokenOptions.PrincipalTagOptions.AllowedPrincipalTags.ContainerImageSignatures == nil {
-		return options
-	}
-
-	options.AwsPrincipalTagsOptions.GetAllowedPrincipalTags().ContainerImageSignatures = &ccpb.TokenOptions_AwsPrincipalTagsOptions_AllowedPrincipalTags_ContainerImageSignatures{
-		KeyIds: requestTokenOptions.PrincipalTagOptions.AllowedPrincipalTags.ContainerImageSignatures.KeyIDs,
-	}
-
-	return options
 }
