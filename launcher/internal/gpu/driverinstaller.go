@@ -235,7 +235,7 @@ func startNvidiaPersistencedService(logger logging.Logger) error {
 
 	logger.Info("Starting nvidia-persistenced.service")
 	if err := s.Start("nvidia-persistenced.service"); err != nil {
-		return fmt.Errorf("failed to start nvidia-persistenced.service")
+		return fmt.Errorf("failed to start nvidia-persistenced.service: %v", err)
 	}
 
 	logger.Info("nvidia-persistenced.service successfully started")
