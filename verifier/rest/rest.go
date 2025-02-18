@@ -6,40 +6,51 @@ import (
 	"encoding/base64"
 	"fmt"
 	"log"
-	"strings"
+	"time"
 
 	sabi "github.com/google/go-sev-guest/abi"
 	"github.com/google/go-sev-guest/proto/sevsnp"
 	tabi "github.com/google/go-tdx-guest/abi"
 	"github.com/google/go-tdx-guest/proto/tdx"
 	"github.com/google/go-tpm-tools/verifier"
-	"github.com/google/go-tpm-tools/verifier/oci"
+	"github.com/googleapis/gax-go/v2"
 
 	v1 "cloud.google.com/go/confidentialcomputing/apiv1"
 	confidentialcomputingpb "cloud.google.com/go/confidentialcomputing/apiv1/confidentialcomputingpb"
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 	locationpb "google.golang.org/genproto/googleapis/cloud/location"
+	"google.golang.org/grpc/codes"
 )
 
-// BadRegionError indicates that:
-//   - the requested Region cannot be used with this API
-//   - other Regions _can_ be used with this API
-type BadRegionError struct {
-	RequestedRegion  string
-	AvailableRegions []string
-	err              error
-}
+/*
+confComputeCallOptions retries as follows for all confidential computing APIs:
 
-func (e *BadRegionError) Error() string {
-	return fmt.Sprintf(
-		"invalid region %q, available regions are [%s]: %v",
-		e.RequestedRegion, strings.Join(e.AvailableRegions, ", "), e.err,
-	)
-}
-
-func (e *BadRegionError) Unwrap() error {
-	return e.err
+	Timeout = 1000 milliseconds
+	Initial interval = 500 milliseconds
+	Maximum interval = 1000 milliseconds
+	Maximum retries = 2
+*/
+func confComputeCallOptions() *v1.CallOptions {
+	callOption := []gax.CallOption{
+		gax.WithTimeout(1000 * time.Millisecond),
+		gax.WithRetry(func() gax.Retryer {
+			return gax.OnCodes([]codes.Code{
+				codes.Unavailable,
+				codes.Internal,
+			}, gax.Backoff{
+				Initial:    500 * time.Millisecond,
+				Max:        1000 * time.Millisecond,
+				Multiplier: 2.0,
+			})
+		}),
+	}
+	return &v1.CallOptions{
+		CreateChallenge:   callOption,
+		VerifyAttestation: callOption,
+		GetLocation:       callOption,
+		ListLocations:     callOption,
+	}
 }
 
 // NewClient creates a new REST client which is configured to perform
@@ -50,6 +61,9 @@ func NewClient(ctx context.Context, projectID string, region string, opts ...opt
 	if err != nil {
 		return nil, fmt.Errorf("can't create ConfidentialComputing v1 API client: %w", err)
 	}
+
+	// Override the default retry CallOptions with specific retry policies.
+	client.CallOptions = confComputeCallOptions()
 
 	projectName := fmt.Sprintf("projects/%s", projectID)
 	locationName := fmt.Sprintf("%s/locations/%v", projectName, region)
@@ -109,11 +123,17 @@ func (c *restClient) CreateChallenge(ctx context.Context) (*verifier.Challenge, 
 
 // VerifyAttestation implements verifier.Client
 func (c *restClient) VerifyAttestation(ctx context.Context, request verifier.VerifyAttestationRequest) (*verifier.VerifyAttestationResponse, error) {
-	if request.Challenge == nil || request.Attestation == nil {
+	if request.Challenge == nil {
 		return nil, fmt.Errorf("nil value provided in challenge")
 	}
+
+	if request.Attestation == nil && request.TDCCELAttestation == nil {
+		return nil, fmt.Errorf("neither TPM nor TDX attestation is present")
+	}
+
 	req := convertRequestToREST(request)
 	req.Challenge = request.Challenge.Name
+
 	response, err := c.v1Client.VerifyAttestation(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("calling v1.VerifyAttestation in %v: %w", c.location.LocationId, err)
@@ -140,36 +160,6 @@ func convertRequestToREST(request verifier.VerifyAttestationRequest) *confidenti
 		idTokens[i] = string(token)
 	}
 
-	quotes := make([]*confidentialcomputingpb.TpmAttestation_Quote, len(request.Attestation.GetQuotes()))
-	for i, quote := range request.Attestation.GetQuotes() {
-		pcrVals := map[int32][]byte{}
-		for idx, val := range quote.GetPcrs().GetPcrs() {
-			pcrVals[int32(idx)] = val
-		}
-
-		quotes[i] = &confidentialcomputingpb.TpmAttestation_Quote{
-			RawQuote:     quote.GetQuote(),
-			RawSignature: quote.GetRawSig(),
-			HashAlgo:     int32(quote.GetPcrs().GetHash()),
-			PcrValues:    pcrVals,
-		}
-	}
-
-	certs := make([][]byte, len(request.Attestation.GetIntermediateCerts()))
-	for i, cert := range request.Attestation.GetIntermediateCerts() {
-		certs[i] = cert
-	}
-
-	signatures := make([]*confidentialcomputingpb.ContainerImageSignature, len(request.ContainerImageSignatures))
-	for i, sig := range request.ContainerImageSignatures {
-		signature, err := convertOCISignatureToREST(sig)
-		if err != nil {
-			log.Printf("failed to convert OCI signature [%v] to ContainerImageSignature proto: %v", sig, err)
-			continue
-		}
-		signatures[i] = signature
-	}
-
 	var tokenType confidentialcomputingpb.TokenType
 	switch request.TokenOptions.TokenType {
 	case "OIDC":
@@ -182,17 +172,19 @@ func convertRequestToREST(request verifier.VerifyAttestationRequest) *confidenti
 		tokenType = confidentialcomputingpb.TokenType_TOKEN_TYPE_UNSPECIFIED
 	}
 
+	signatures := make([]*confidentialcomputingpb.ContainerImageSignature, len(request.ContainerImageSignatures))
+	for i, sig := range request.ContainerImageSignatures {
+		signatures[i] = &confidentialcomputingpb.ContainerImageSignature{
+			Payload:   sig.Payload,
+			Signature: sig.Signature,
+		}
+	}
+
 	verifyReq := &confidentialcomputingpb.VerifyAttestationRequest{
 		GcpCredentials: &confidentialcomputingpb.GcpCredentials{
 			ServiceAccountIdTokens: idTokens,
 		},
-		TpmAttestation: &confidentialcomputingpb.TpmAttestation{
-			Quotes:            quotes,
-			TcgEventLog:       request.Attestation.GetEventLog(),
-			CanonicalEventLog: request.Attestation.GetCanonicalEventLog(),
-			AkCert:            request.Attestation.GetAkCert(),
-			CertChain:         certs,
-		},
+		TpmAttestation: nil,
 		ConfidentialSpaceInfo: &confidentialcomputingpb.ConfidentialSpaceInfo{
 			SignedEntities: []*confidentialcomputingpb.SignedEntity{{ContainerImageSignatures: signatures}},
 		},
@@ -203,20 +195,67 @@ func convertRequestToREST(request verifier.VerifyAttestationRequest) *confidenti
 		},
 	}
 
-	if request.Attestation.GetSevSnpAttestation() != nil {
-		sevsnp, err := convertSEVSNPProtoToREST(request.Attestation.GetSevSnpAttestation())
-		if err != nil {
-			log.Fatalf("Failed to convert SEVSNP proto to API proto: %v", err)
-		}
-		verifyReq.TeeAttestation = sevsnp
-	}
+	if request.Attestation != nil {
+		// TPM attestation route
+		quotes := make([]*confidentialcomputingpb.TpmAttestation_Quote, len(request.Attestation.GetQuotes()))
+		for i, quote := range request.Attestation.GetQuotes() {
+			pcrVals := map[int32][]byte{}
+			for idx, val := range quote.GetPcrs().GetPcrs() {
+				pcrVals[int32(idx)] = val
+			}
 
-	if request.Attestation.GetTdxAttestation() != nil {
-		tdx, err := convertTDXProtoToREST(request.Attestation.GetTdxAttestation())
-		if err != nil {
-			log.Fatalf("Failed to convert TD quote proto to API proto: %v", err)
+			quotes[i] = &confidentialcomputingpb.TpmAttestation_Quote{
+				RawQuote:     quote.GetQuote(),
+				RawSignature: quote.GetRawSig(),
+				HashAlgo:     int32(quote.GetPcrs().GetHash()),
+				PcrValues:    pcrVals,
+			}
 		}
-		verifyReq.TeeAttestation = tdx
+
+		certs := make([][]byte, len(request.Attestation.GetIntermediateCerts()))
+		for i, cert := range request.Attestation.GetIntermediateCerts() {
+			certs[i] = cert
+		}
+
+		verifyReq.TpmAttestation = &confidentialcomputingpb.TpmAttestation{
+			Quotes:            quotes,
+			TcgEventLog:       request.Attestation.GetEventLog(),
+			CanonicalEventLog: request.Attestation.GetCanonicalEventLog(),
+			AkCert:            request.Attestation.GetAkCert(),
+			CertChain:         certs,
+		}
+
+		if request.Attestation.GetSevSnpAttestation() != nil {
+			sevsnp, err := convertSEVSNPProtoToREST(request.Attestation.GetSevSnpAttestation())
+			if err != nil {
+				log.Fatalf("Failed to convert SEVSNP proto to API proto: %v", err)
+			}
+			verifyReq.TeeAttestation = sevsnp
+		}
+
+		if request.Attestation.GetTdxAttestation() != nil {
+			tdx, err := convertTDXProtoToREST(request.Attestation.GetTdxAttestation())
+			if err != nil {
+				log.Fatalf("Failed to convert TD quote proto to API proto: %v", err)
+			}
+			verifyReq.TeeAttestation = tdx
+		}
+	} else if request.TDCCELAttestation != nil {
+		// TDX attestation route
+		// still need AK for GCE info!
+		verifyReq.TpmAttestation = &confidentialcomputingpb.TpmAttestation{
+			AkCert:    request.TDCCELAttestation.AkCert,
+			CertChain: request.TDCCELAttestation.IntermediateCerts,
+		}
+
+		verifyReq.TeeAttestation = &confidentialcomputingpb.VerifyAttestationRequest_TdCcel{
+			TdCcel: &confidentialcomputingpb.TdxCcelAttestation{
+				TdQuote:           request.TDCCELAttestation.TdQuote,
+				CcelAcpiTable:     request.TDCCELAttestation.CcelAcpiTable,
+				CcelData:          request.TDCCELAttestation.CcelData,
+				CanonicalEventLog: request.TDCCELAttestation.CanonicalEventLog,
+			},
+		}
 	}
 
 	return verifyReq
@@ -227,25 +266,6 @@ func convertResponseFromREST(resp *confidentialcomputingpb.VerifyAttestationResp
 	return &verifier.VerifyAttestationResponse{
 		ClaimsToken: token,
 		PartialErrs: resp.PartialErrors,
-	}, nil
-}
-
-func convertOCISignatureToREST(signature oci.Signature) (*confidentialcomputingpb.ContainerImageSignature, error) {
-	payload, err := signature.Payload()
-	if err != nil {
-		return nil, err
-	}
-	b64Sig, err := signature.Base64Encoded()
-	if err != nil {
-		return nil, err
-	}
-	sigBytes, err := encoding.DecodeString(b64Sig)
-	if err != nil {
-		return nil, err
-	}
-	return &confidentialcomputingpb.ContainerImageSignature{
-		Payload:   payload,
-		Signature: sigBytes,
 	}, nil
 }
 
