@@ -1069,6 +1069,45 @@ func TestParseLinuxKernelState(t *testing.T) {
 	}
 }
 
+func TestNullTerminatedDataDigest(t *testing.T) {
+	rawdata := []byte("123456")
+	rawdataNullTerminated := []byte("123456\x00")
+	rawdataModifyLastByte := []byte("123456\xff")
+	hash := crypto.SHA256
+	hasher := hash.New()
+	hasher.Write(rawdata)
+	rawDigest := hasher.Sum(nil)
+	hasher.Reset()
+	hasher.Write(rawdataNullTerminated)
+	nullTerminatedDigest := hasher.Sum(nil)
+	hasher.Reset()
+
+	if err := verifyDataDigest(hasher, rawdata, rawDigest); err != nil {
+		t.Error(err)
+	}
+	if err := verifyDataDigest(hasher, rawdata, nullTerminatedDigest); err == nil {
+		t.Errorf("non null-terminated data should not match the null-terminated digest")
+	}
+
+	// "rawdata + '\x00'" can be verified with digest("rawdata") as well as digest("rawdata + '\x00'")
+	if err := verifyNullTerminatedDataDigest(hasher, rawdataNullTerminated, nullTerminatedDigest); err != nil {
+		t.Error(err)
+	}
+	if err := verifyNullTerminatedDataDigest(hasher, rawdataNullTerminated, rawDigest); err != nil {
+		t.Error(err)
+	}
+
+	if err := verifyNullTerminatedDataDigest(hasher, rawdata, nullTerminatedDigest); err == nil {
+		t.Errorf("non null-terminated data should always fail")
+	}
+	if err := verifyNullTerminatedDataDigest(hasher, rawdataModifyLastByte, nullTerminatedDigest); err == nil {
+		t.Errorf("manipulated null terminated data should fail")
+	}
+	if err := verifyNullTerminatedDataDigest(hasher, []byte{}, []byte{}); err == nil {
+		t.Errorf("len() == 0 should always fail")
+	}
+}
+
 func TestParseGrubState(t *testing.T) {
 	logs := []struct {
 		eventLog
@@ -1175,6 +1214,38 @@ func TestParseEfiState(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestGetGrubStateWithModifiedNullTerminator(t *testing.T) {
+	// Choose an eventlog with GRUB.
+	eventlog := UbuntuAmdSevGCE
+	// Just use the SHA256 bank.
+	events, err := parseReplayHelper(eventlog.RawLog, eventlog.Banks[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	cryptoHash, _ := tpm2.Algorithm(eventlog.Banks[1].Hash).Hash()
+
+	// Make sure the original events can parse successfully.
+	pbEvents := convertToPbEvents(cryptoHash, events)
+	if _, err := getGrubState(cryptoHash, pbEvents); err != nil {
+		t.Fatal(err)
+	}
+
+	// Change the null terminator.
+	for _, e := range events {
+		if e.Index == 8 {
+			if e.Data[len(e.Data)-1] == '\x00' {
+				e.Data[len(e.Data)-1] = '\xff'
+			}
+		}
+	}
+
+	// Parse again, make sure it will fail.
+	pbEvents = convertToPbEvents(cryptoHash, events)
+	if _, err := getGrubState(cryptoHash, pbEvents); err == nil {
+		t.Error("Expected getGrubState to fail after modifying the null terminator")
 	}
 }
 
