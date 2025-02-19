@@ -1,7 +1,7 @@
 substitutions:
   '_BASE_IMAGE': '' # If left empty, will use the latest image in _BASE_IMAGE_FAMILY of _BASE_IMAGE_PROJECT
-  '_BASE_IMAGE_FAMILY': 'cos-113-lts'
-  '_BASE_IMAGE_PROJECT': 'cos-cloud'
+  '_BASE_IMAGE_FAMILY': 'cos-tdx-113-lts'
+  '_BASE_IMAGE_PROJECT': 'confidential-vm-images'
   '_OUTPUT_IMAGE_PREFIX': 'confidential-space'
   '_OUTPUT_IMAGE_SUFFIX': ''
   '_OUTPUT_IMAGE_FAMILY': ''
@@ -33,9 +33,9 @@ steps:
   id: DebugImageBuild
   waitFor: ['BaseImageIdent']
   env:
-  - 'OUTPUT_IMAGE_PREFIX=$_OUTPUT_IMAGE_PREFIX'
-  - 'OUTPUT_IMAGE_SUFFIX=$_OUTPUT_IMAGE_SUFFIX'
-  - 'OUTPUT_IMAGE_FAMILY=$_OUTPUT_IMAGE_FAMILY'
+  - 'OUTPUT_IMAGE_PREFIX=${_OUTPUT_IMAGE_PREFIX}'
+  - 'OUTPUT_IMAGE_SUFFIX=${_OUTPUT_IMAGE_SUFFIX}'
+  - 'OUTPUT_IMAGE_FAMILY=${_OUTPUT_IMAGE_FAMILY}'
   - 'BUCKET_NAME=$_BUCKET_NAME'
   - 'SHORT_SHA=${SHORT_SHA}'
   - 'BASE_IMAGE_PROJECT=$_BASE_IMAGE_PROJECT'
@@ -61,9 +61,9 @@ steps:
   id: HardenedImageBuild
   waitFor: ['BaseImageIdent']
   env:
-  - 'OUTPUT_IMAGE_PREFIX=$_OUTPUT_IMAGE_PREFIX'
-  - 'OUTPUT_IMAGE_SUFFIX=$_OUTPUT_IMAGE_SUFFIX'
-  - 'OUTPUT_IMAGE_FAMILY=$_OUTPUT_IMAGE_FAMILY'
+  - 'OUTPUT_IMAGE_PREFIX=${_OUTPUT_IMAGE_PREFIX}'
+  - 'OUTPUT_IMAGE_SUFFIX=${_OUTPUT_IMAGE_SUFFIX}'
+  - 'OUTPUT_IMAGE_FAMILY=${_OUTPUT_IMAGE_FAMILY}'
   - 'BUCKET_NAME=$_BUCKET_NAME'
   - 'SHORT_SHA=${SHORT_SHA}'
   - 'BASE_IMAGE_PROJECT=$_BASE_IMAGE_PROJECT'
@@ -89,8 +89,8 @@ steps:
   id: ExperimentsTests
   waitFor: ['DebugImageBuild']
   env:
-  - 'OUTPUT_IMAGE_PREFIX=$_OUTPUT_IMAGE_PREFIX'
-  - 'OUTPUT_IMAGE_SUFFIX=$_OUTPUT_IMAGE_SUFFIX'
+  - 'OUTPUT_IMAGE_PREFIX=${_OUTPUT_IMAGE_PREFIX}'
+  - 'OUTPUT_IMAGE_SUFFIX=${_OUTPUT_IMAGE_SUFFIX}'
   - 'PROJECT_ID=$PROJECT_ID'
   script: |
     #!/usr/bin/env bash
@@ -105,8 +105,8 @@ steps:
   id: HttpServerTests
   waitFor: ['DebugImageBuild']
   env:
-  - 'OUTPUT_IMAGE_PREFIX=$_OUTPUT_IMAGE_PREFIX'
-  - 'OUTPUT_IMAGE_SUFFIX=$_OUTPUT_IMAGE_SUFFIX'
+  - 'OUTPUT_IMAGE_PREFIX=${_OUTPUT_IMAGE_PREFIX}'
+  - 'OUTPUT_IMAGE_SUFFIX=${_OUTPUT_IMAGE_SUFFIX}'
   - 'PROJECT_ID=$PROJECT_ID'
   script: |
     #!/usr/bin/env bash
@@ -121,8 +121,8 @@ steps:
   id: DebugImageTests
   waitFor: ['DebugImageBuild']
   env:
-  - 'OUTPUT_IMAGE_PREFIX=$_OUTPUT_IMAGE_PREFIX'
-  - 'OUTPUT_IMAGE_SUFFIX=$_OUTPUT_IMAGE_SUFFIX'
+  - 'OUTPUT_IMAGE_PREFIX=${_OUTPUT_IMAGE_PREFIX}'
+  - 'OUTPUT_IMAGE_SUFFIX=${_OUTPUT_IMAGE_SUFFIX}'
   - 'PROJECT_ID=$PROJECT_ID'
   script: |
     #!/usr/bin/env bash
@@ -137,8 +137,8 @@ steps:
   id: HardenedImageTests
   waitFor: ['HardenedImageBuild']
   env:
-  - 'OUTPUT_IMAGE_PREFIX=$_OUTPUT_IMAGE_PREFIX'
-  - 'OUTPUT_IMAGE_SUFFIX=$_OUTPUT_IMAGE_SUFFIX'
+  - 'OUTPUT_IMAGE_PREFIX=${_OUTPUT_IMAGE_PREFIX}'
+  - 'OUTPUT_IMAGE_SUFFIX=${_OUTPUT_IMAGE_SUFFIX}'
   - 'PROJECT_ID=$PROJECT_ID'
   script: |
     #!/usr/bin/env bash
@@ -152,8 +152,8 @@ steps:
   id: LaunchPolicyTests
   waitFor: ['HardenedImageBuild']
   env:
-  - 'OUTPUT_IMAGE_PREFIX=$_OUTPUT_IMAGE_PREFIX'
-  - 'OUTPUT_IMAGE_SUFFIX=$_OUTPUT_IMAGE_SUFFIX'
+  - 'OUTPUT_IMAGE_PREFIX=${_OUTPUT_IMAGE_PREFIX}'
+  - 'OUTPUT_IMAGE_SUFFIX=${_OUTPUT_IMAGE_SUFFIX}'
   - 'PROJECT_ID=$PROJECT_ID'
   script: |
     #!/usr/bin/env bash
@@ -168,8 +168,8 @@ steps:
   id: HardenedNetworkIngressTests
   waitFor: ['HardenedImageBuild']
   env:
-  - 'OUTPUT_IMAGE_PREFIX=$_OUTPUT_IMAGE_PREFIX'
-  - 'OUTPUT_IMAGE_SUFFIX=$_OUTPUT_IMAGE_SUFFIX'
+  - 'OUTPUT_IMAGE_PREFIX=${_OUTPUT_IMAGE_PREFIX}'
+  - 'OUTPUT_IMAGE_SUFFIX=${_OUTPUT_IMAGE_SUFFIX}'
   - 'PROJECT_ID=$PROJECT_ID'
   script: |
     #!/usr/bin/env bash
@@ -182,8 +182,8 @@ steps:
   id: DebugNetworkIngressTests
   waitFor: ['DebugImageBuild']
   env:
-  - 'OUTPUT_IMAGE_PREFIX=$_OUTPUT_IMAGE_PREFIX'
-  - 'OUTPUT_IMAGE_SUFFIX=$_OUTPUT_IMAGE_SUFFIX'
+  - 'OUTPUT_IMAGE_PREFIX=${_OUTPUT_IMAGE_PREFIX}'
+  - 'OUTPUT_IMAGE_SUFFIX=${_OUTPUT_IMAGE_SUFFIX}'
   - 'PROJECT_ID=$PROJECT_ID'
   script: |
     #!/usr/bin/env bash
@@ -196,8 +196,8 @@ steps:
   id: LogRedirectionTests
   waitFor: ['HardenedImageBuild']
   env:
-  - 'OUTPUT_IMAGE_PREFIX=$_OUTPUT_IMAGE_PREFIX'
-  - 'OUTPUT_IMAGE_SUFFIX=$_OUTPUT_IMAGE_SUFFIX'
+  - 'OUTPUT_IMAGE_PREFIX=${_OUTPUT_IMAGE_PREFIX}'
+  - 'OUTPUT_IMAGE_SUFFIX=${_OUTPUT_IMAGE_SUFFIX}'
   - 'PROJECT_ID=$PROJECT_ID'
   script: |
     #!/usr/bin/env bash
@@ -211,8 +211,8 @@ steps:
   id: HardenedDiscoverContainerSignatureTests
   waitFor: ['HardenedImageBuild']
   env:
-  - 'OUTPUT_IMAGE_PREFIX=$_OUTPUT_IMAGE_PREFIX'
-  - 'OUTPUT_IMAGE_SUFFIX=$_OUTPUT_IMAGE_SUFFIX'
+  - 'OUTPUT_IMAGE_PREFIX=${_OUTPUT_IMAGE_PREFIX}'
+  - 'OUTPUT_IMAGE_SUFFIX=${_OUTPUT_IMAGE_SUFFIX}'
   - 'PROJECT_ID=$PROJECT_ID'
   script: |
     #!/usr/bin/env bash
@@ -225,8 +225,8 @@ steps:
   id: DebugDiscoverContainerSignatureTests
   waitFor: ['DebugImageBuild']
   env:
-  - 'OUTPUT_IMAGE_PREFIX=$_OUTPUT_IMAGE_PREFIX'
-  - 'OUTPUT_IMAGE_SUFFIX=$_OUTPUT_IMAGE_SUFFIX'
+  - 'OUTPUT_IMAGE_PREFIX=${_OUTPUT_IMAGE_PREFIX}'
+  - 'OUTPUT_IMAGE_SUFFIX=${_OUTPUT_IMAGE_SUFFIX}'
   - 'PROJECT_ID=$PROJECT_ID'
   script: |
     #!/usr/bin/env bash
@@ -239,8 +239,8 @@ steps:
   id: MemoryMonitoringTests
   waitFor: ['HardenedImageBuild']
   env:
-  - 'OUTPUT_IMAGE_PREFIX=$_OUTPUT_IMAGE_PREFIX'
-  - 'OUTPUT_IMAGE_SUFFIX=$_OUTPUT_IMAGE_SUFFIX'
+  - 'OUTPUT_IMAGE_PREFIX=${_OUTPUT_IMAGE_PREFIX}'
+  - 'OUTPUT_IMAGE_SUFFIX=${_OUTPUT_IMAGE_SUFFIX}'
   - 'PROJECT_ID=$PROJECT_ID'
   script: |
     #!/usr/bin/env bash
@@ -253,8 +253,8 @@ steps:
   id: ODAWithSignedContainerTest
   waitFor: ['HardenedImageBuild']
   env:
-  - 'OUTPUT_IMAGE_PREFIX=$_OUTPUT_IMAGE_PREFIX'
-  - 'OUTPUT_IMAGE_SUFFIX=$_OUTPUT_IMAGE_SUFFIX'
+  - 'OUTPUT_IMAGE_PREFIX=${_OUTPUT_IMAGE_PREFIX}'
+  - 'OUTPUT_IMAGE_SUFFIX=${_OUTPUT_IMAGE_SUFFIX}'
   - 'PROJECT_ID=$PROJECT_ID'
   script: |
     #!/usr/bin/env bash
@@ -267,8 +267,8 @@ steps:
   id: MountTests
   waitFor: ['HardenedImageBuild']
   env:
-  - 'OUTPUT_IMAGE_PREFIX=$_OUTPUT_IMAGE_PREFIX'
-  - 'OUTPUT_IMAGE_SUFFIX=$_OUTPUT_IMAGE_SUFFIX'
+  - 'OUTPUT_IMAGE_PREFIX=${_OUTPUT_IMAGE_PREFIX}'
+  - 'OUTPUT_IMAGE_SUFFIX=${_OUTPUT_IMAGE_SUFFIX}'
   - 'PROJECT_ID=$PROJECT_ID'
   script: |
     #!/usr/bin/env bash

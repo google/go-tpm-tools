@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/google/go-tpm-tools/internal"
 	"github.com/google/go-tpm-tools/internal/test"
 	pb "github.com/google/go-tpm-tools/proto/attest"
 	"google.golang.org/protobuf/proto"
@@ -24,9 +25,7 @@ func TestNetworkFetchIssuingCertificate(t *testing.T) {
 		t.Fatalf("Error parsing AK Cert: %v", err)
 	}
 
-	key := &Key{cert: akCert}
-
-	certChain, err := key.getCertificateChain(externalClient)
+	certChain, err := internal.GetCertificateChain(akCert, externalClient)
 	if err != nil {
 		t.Error(err)
 	}
