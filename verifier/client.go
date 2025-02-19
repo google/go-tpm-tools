@@ -30,11 +30,24 @@ type Challenge struct {
 // Challenge from CreateChallenge, optional GcpCredentials linked to the
 // attestation, the Attestation generated from the TPM, and optional container image signatures associated with the workload.
 type VerifyAttestationRequest struct {
-	Challenge                *Challenge
-	GcpCredentials           [][]byte
+	Challenge      *Challenge
+	GcpCredentials [][]byte
+	// Attestation is for TPM attestation
 	Attestation              *attestpb.Attestation
 	ContainerImageSignatures []oci.Signature
 	TokenOptions             *models.TokenOptions
+	// TDCCELAttestation is for TDX CCEL RTMR attestation
+	TDCCELAttestation *TDCCELAttestation
+}
+
+type TDCCELAttestation struct {
+	CcelAcpiTable     []byte
+	CcelData          []byte
+	CanonicalEventLog []byte
+	TdQuote           []byte
+	// still needs following two for GCE info
+	AkCert            []byte
+	IntermediateCerts [][]byte
 }
 
 // VerifyAttestationResponse is the response from a successful
