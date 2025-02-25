@@ -16,7 +16,6 @@ import (
 	"github.com/containerd/containerd/namespaces"
 	"github.com/containerd/containerd/oci"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
-	"github.com/google/go-tpm-tools/launcher/internal/systemctl"
 	"github.com/google/go-tpm-tools/launcher/spec"
 	"github.com/opencontainers/runtime-spec/specs-go"
 )
@@ -108,6 +107,11 @@ func (di *DriverInstaller) InstallGPUDrivers(ctx context.Context) error {
 		containerd.WithNewSnapshot(installerSnapshotID, image),
 		containerd.WithNewSpec(oci.WithImageConfig(image),
 			oci.WithPrivileged,
+			// To support confidential GPUs, the nvidia-persistenced process should be started before the GPU driver verification step.
+			// It would not be possible to start the nvidia-persistenced process amidst GPU driver installation flow via cos_gpu_installer.
+			// For this reason, the GPU driver installation need to be triggered with –no-verify flag to skip the GPU driver verification step.
+			// As per the current implementation of cos_gpu_installer, use of –no-verify flag with cos_gpu_installer also skip the loading of
+			// nvidia kernel modules along with the verification step. These modules are loaded as post installation step.
 			oci.WithProcessArgs("/cos-gpu-installer", "install", "-version=default", fmt.Sprintf("-host-dir=%s", InstallationHostDir), "--no-verify"),
 			oci.WithAllDevicesAllowed,
 			oci.WithHostDevices,
@@ -146,11 +150,11 @@ func (di *DriverInstaller) InstallGPUDrivers(ctx context.Context) error {
 	}
 
 	moduleParams := modules.NewModuleParameters()
-	if err = loadGPUDrivers(moduleParams); err != nil {
+	if err = loadNvidiaKO(moduleParams); err != nil {
 		return fmt.Errorf("failed load GPU drivers: %v", err)
 	}
 
-	if err = startNvidiaPersistencedService(di.logger); err != nil {
+	if err = launchNvidiaPersistencedProcess(di.logger); err != nil {
 		return fmt.Errorf("failed to start nvidia-persistenced process: %v", err)
 	}
 
@@ -158,8 +162,12 @@ func (di *DriverInstaller) InstallGPUDrivers(ctx context.Context) error {
 		return fmt.Errorf("failed to verify gpu driver installation: %v", err)
 	}
 
+	ccEnabled, err := isGPUCCModeEnabled(di.logger, gpuType)
+	if err != nil {
+		return fmt.Errorf("failed to check confidential compute mode status: %v", err)
+	}
 	// Explicitly need to set the GPU state to READY for GPUs with confidential compute mode ON.
-	if isGPUCCModeEnabled() {
+	if ccEnabled {
 		if err = setGPUStateToReady(); err != nil {
 			return fmt.Errorf("failed to set the gpu state to ready: %v", err)
 		}
@@ -192,8 +200,6 @@ func remountAsExecutable(dir string) error {
 }
 
 func verifyDriverInstallation() error {
-	newPathEnv := fmt.Sprintf("%s/bin:%s", InstallationHostDir, os.Getenv("PATH"))
-	os.Setenv("PATH", newPathEnv)
 	// Run nvidia-smi to check whether nvidia GPU driver is installed.
 	if err := exec.Command("nvidia-smi").Run(); err != nil {
 		return fmt.Errorf("failed to verify gpu driver installation : %v", err)
@@ -209,29 +215,42 @@ func setGPUStateToReady() error {
 	return nil
 }
 
-func isGPUCCModeEnabled() bool {
+func isGPUCCModeEnabled(logger logging.Logger, gpuType deviceinfo.GPUType) (bool, error) {
+	// The nvidia-smi conf-compute command fails for GPU which doesn't support confidential computing.
+	// This check would bypass nvidia-smi conf-compute command for GPU not having confidential compute support.
+	if !isCCSupportedGpu(gpuType) {
+		logger.Info("Confidential Computing is not supported for GPU type : ", gpuType.String())
+		return false, nil
+	}
 	// Run nvidia-smi conf-compute command to check if confidential compute mode is ON.
-	ccModeOutput, _ := exec.Command("nvidia-smi", "conf-compute", "-f").Output()
-	return strings.Contains(string(ccModeOutput), "CC status: ON")
+	ccModeOutput, err := exec.Command("nvidia-smi", "conf-compute", "-f").Output()
+	if err != nil {
+		return false, err
+	}
+	return strings.Contains(string(ccModeOutput), "CC status: ON"), nil
 }
 
-func startNvidiaPersistencedService(logger logging.Logger) error {
-	s, err := systemctl.New()
-	if err != nil {
-		return fmt.Errorf("failed to create systemctl client: %v", err)
+func isCCSupportedGpu(gpuType deviceinfo.GPUType) bool {
+	switch gpuType {
+	case deviceinfo.H100:
+		return true
+	default:
+		return false
 	}
-	defer s.Close()
+}
 
-	logger.Info("Starting nvidia-persistenced.service")
-	if err := s.Start("nvidia-persistenced.service"); err != nil {
-		return fmt.Errorf("failed to start nvidia-persistenced.service: %v", err)
+func launchNvidiaPersistencedProcess(logger logging.Logger) error {
+	newPathEnv := fmt.Sprintf("%s/bin:%s", InstallationHostDir, os.Getenv("PATH"))
+	os.Setenv("PATH", newPathEnv)
+	logger.Info("Starting nvidia-persistenced process")
+	if err := exec.Command("nvidia-persistenced").Run(); err != nil {
+		return fmt.Errorf("failed to launch nvidia-persistenced daemon: %v", err)
 	}
-
-	logger.Info("nvidia-persistenced.service successfully started")
+	logger.Info("nvidia-persistenced daemon successfully started")
 	return nil
 }
 
-func loadGPUDrivers(moduleParams modules.ModuleParameters) error {
+func loadNvidiaKO(moduleParams modules.ModuleParameters) error {
 	kernelModulePath := filepath.Join(InstallationHostDir, "drivers")
 	nvidia := &modules.Module{
 		Name: "nvidia",
