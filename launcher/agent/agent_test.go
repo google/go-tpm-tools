@@ -154,13 +154,13 @@ func TestAttest(t *testing.T) {
 			got := claims.ContainerImageSignatures
 			want := []fake.ContainerImageSignatureClaims{
 				{
-					Payload:   "test data",
+					Payload:   "test data,ECDSA_P256_SHA256",
 					Signature: base64.StdEncoding.EncodeToString([]byte("test data")),
 					PubKey:    "test data",
 					SigAlg:    "ECDSA_P256_SHA256",
 				},
 				{
-					Payload:   "hello world",
+					Payload:   "hello world,RSASSA_PKCS1V15_SHA256",
 					Signature: base64.StdEncoding.EncodeToString([]byte("hello world")),
 					PubKey:    "hello world",
 					SigAlg:    "RSASSA_PKCS1V15_SHA256",
@@ -204,13 +204,13 @@ func TestFetchContainerImageSignatures(t *testing.T) {
 			},
 			wantSignatureClaims: []fake.ContainerImageSignatureClaims{
 				{
-					Payload:   "test data",
+					Payload:   "test data,ECDSA_P256_SHA256",
 					Signature: base64.StdEncoding.EncodeToString([]byte("test data")),
 					PubKey:    "test data",
 					SigAlg:    "ECDSA_P256_SHA256",
 				},
 				{
-					Payload:   "hello world",
+					Payload:   "hello world,RSASSA_PKCS1V15_SHA256",
 					Signature: base64.StdEncoding.EncodeToString([]byte("hello world")),
 					PubKey:    "hello world",
 					SigAlg:    "RSASSA_PKCS1V15_SHA256",
@@ -265,7 +265,7 @@ func TestFetchContainerImageSignatures(t *testing.T) {
 			},
 			wantSignatureClaims: []fake.ContainerImageSignatureClaims{
 				{
-					Payload:   "test data",
+					Payload:   "test data,ECDSA_P256_SHA256",
 					Signature: base64.StdEncoding.EncodeToString([]byte("test data")),
 					PubKey:    "test data",
 					SigAlg:    "ECDSA_P256_SHA256",
@@ -313,6 +313,7 @@ func TestFetchContainerImageSignatures(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to attest %v", err)
 			}
+
 			req := verifier.VerifyAttestationRequest{
 				Attestation:              attestation,
 				ContainerImageSignatures: gotSigs,
