@@ -65,58 +65,85 @@ func NewClient(ctx context.Context, projectID string, region string, opts ...opt
 	// Override the default retry CallOptions with specific retry policies.
 	client.CallOptions = confComputeCallOptions()
 
-	projectName := fmt.Sprintf("projects/%s", projectID)
-	locationName := fmt.Sprintf("%s/locations/%v", projectName, region)
+	locationFunc := func() (*locationpb.Location, error) {
+		projectName := fmt.Sprintf("projects/%s", projectID)
+		locationName := fmt.Sprintf("%s/locations/%v", projectName, region)
 
-	getReq := &locationpb.GetLocationRequest{
-		Name: locationName,
-	}
-	location, getErr := client.GetLocation(ctx, getReq)
-	if getErr == nil {
-		return &restClient{client, location}, nil
-	}
-
-	// If we can't get the location, try to list the locations. This handles
-	// situations where the projectID is invalid.
-	listReq := &locationpb.ListLocationsRequest{
-		Name: projectName,
-	}
-	listIter := client.ListLocations(ctx, listReq)
-
-	// The project is valid, but can't get the desired region.
-	var regions []string
-	for {
-		resp, err := listIter.Next()
-		if err == iterator.Done {
-			break
+		getReq := &locationpb.GetLocationRequest{
+			Name: locationName,
 		}
-		if err != nil {
-			return nil, fmt.Errorf("listing regions in project %q: %w", projectID, err)
+
+		location, getErr := client.GetLocation(ctx, getReq)
+		if getErr == nil {
+			return location, getErr
 		}
-		regions = append(regions, resp.LocationId)
+
+		// If we can't get the location, try to list the locations. This handles
+		// situations where the projectID is invalid.
+		listReq := &locationpb.ListLocationsRequest{
+			Name: projectName,
+		}
+		listIter := client.ListLocations(ctx, listReq)
+
+		// The project is valid, but can't get the desired region.
+		var regions []string
+		for {
+			resp, err := listIter.Next()
+			if err == iterator.Done {
+				break
+			}
+			if err != nil {
+				return nil, fmt.Errorf("listing regions in project %q: %w", projectID, err)
+			}
+			regions = append(regions, resp.LocationId)
+		}
+		return nil, &BadRegionError{
+			RequestedRegion:  region,
+			AvailableRegions: regions,
+			err:              getErr,
+		}
 	}
-	return nil, &BadRegionError{
-		RequestedRegion:  region,
-		AvailableRegions: regions,
-		err:              getErr,
-	}
+
+	return &restClient{
+		v1Client:          client,
+		locationFetchFunc: locationFunc,
+	}, nil
 }
 
 type restClient struct {
-	v1Client *v1.Client
-	location *locationpb.Location
+	v1Client          *v1.Client
+	locationFetchFunc func() (*locationpb.Location, error)
+	location          *locationpb.Location
+}
+
+func (c *restClient) getLocation() (*locationpb.Location, error) {
+	if c.location != nil {
+		return c.location, nil
+	}
+
+	tempLocation, err := c.locationFetchFunc()
+	if err != nil {
+		return nil, err
+	}
+
+	return tempLocation, nil
 }
 
 // CreateChallenge implements verifier.Client
 func (c *restClient) CreateChallenge(ctx context.Context) (*verifier.Challenge, error) {
+	location, err := c.getLocation()
+	if err != nil {
+		return nil, err
+	}
+
 	// Pass an empty Challenge for the input (all params are output-only)
 	req := &confidentialcomputingpb.CreateChallengeRequest{
-		Parent:    c.location.Name,
+		Parent:    location.Name,
 		Challenge: &confidentialcomputingpb.Challenge{},
 	}
 	chal, err := c.v1Client.CreateChallenge(ctx, req)
 	if err != nil {
-		return nil, fmt.Errorf("calling v1.CreateChallenge in %v: %w", c.location.LocationId, err)
+		return nil, fmt.Errorf("calling v1.CreateChallenge in %v: %w", location.LocationId, err)
 	}
 	return convertChallengeFromREST(chal)
 }
@@ -131,12 +158,17 @@ func (c *restClient) VerifyAttestation(ctx context.Context, request verifier.Ver
 		return nil, fmt.Errorf("neither TPM nor TDX attestation is present")
 	}
 
+	location, err := c.getLocation()
+	if err != nil {
+		return nil, err
+	}
+
 	req := convertRequestToREST(request)
 	req.Challenge = request.Challenge.Name
 
 	response, err := c.v1Client.VerifyAttestation(ctx, req)
 	if err != nil {
-		return nil, fmt.Errorf("calling v1.VerifyAttestation in %v: %w", c.location.LocationId, err)
+		return nil, fmt.Errorf("calling v1.VerifyAttestation in %v: %w", location.LocationId, err)
 	}
 	return convertResponseFromREST(response)
 }

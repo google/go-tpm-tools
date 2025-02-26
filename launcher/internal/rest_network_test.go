@@ -55,9 +55,8 @@ func TestNewRESTClient(t *testing.T) {
 
 	wantNonce, _ := base64.StdEncoding.DecodeString(util.FakeTpmNonce)
 	wantChallenge := &verifier.Challenge{
-		Name:   "projects/test-project/locations/us-central-1/challenges/" + util.FakeChallengeUUID,
-		Nonce:  []byte(wantNonce),
-		ConnID: ""}
+		Name:  "projects/test-project/locations/us-central-1/challenges/" + util.FakeChallengeUUID,
+		Nonce: []byte(wantNonce)}
 	wantToken := "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdWQiOiJ0ZXN0IiwiaWF0IjoxNzA5NzUyNTI1LCJleHAiOjE5MTk3NTI1MjV9.EBLA2zX3c-Fu0l--J9Gey6LIXMO1TFRCoe3bzuPGc1k"
 	if !reflect.DeepEqual(gotChallenge, wantChallenge) {
 		t.Error("Challenge Mismatch")

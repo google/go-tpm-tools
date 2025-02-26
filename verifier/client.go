@@ -22,11 +22,9 @@ type Challenge struct {
 	// Used as audience for GCP credential tokens.
 	Name string
 	// Used to generate attestation.
-	Nonce     []byte
-	ConnID    string
-	Val       []byte
-	Iat       []byte
-	Signature []byte
+	Nonce []byte
+	// Verifier specific data
+	VerifierData interface{}
 }
 
 // TokenOptions contains fields that will be passed to the Attestation Service TokenOptions field.

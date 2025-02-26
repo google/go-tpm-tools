@@ -1,13 +1,13 @@
 package ita
 
 type tdxEvidence struct {
-	EventLog          []byte `json:"event_log"`
-	CanonicalEventLog []byte `json:"canonical_event_log"`
-	Quote             []byte `json:"quote"`
-	VerifierNonce     nonce  `json:"verifier_nonce"`
+	EventLog          []byte   `json:"event_log"`
+	CanonicalEventLog []byte   `json:"canonical_event_log"`
+	Quote             []byte   `json:"quote"`
+	VerifierNonce     itaNonce `json:"verifier_nonce"`
 }
 
-type nonce struct {
+type itaNonce struct {
 	Val       []byte `json:"val"`
 	Iat       []byte `json:"iat"`
 	Signature []byte `json:"signature"`
