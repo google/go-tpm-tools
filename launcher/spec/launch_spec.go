@@ -102,6 +102,7 @@ type EnvVar struct {
 	Value string
 }
 
+// ITAConfig represents the configuration needed to integrate with ITA as a verifier.
 type ITAConfig struct {
 	ITARegion string
 	ITAKey    string

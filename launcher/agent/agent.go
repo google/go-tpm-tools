@@ -45,7 +45,6 @@ type principalIDTokenFetcher func(audience string) ([][]byte, error)
 // struct to make testing easier.
 type AttestationAgent interface {
 	MeasureEvent(cel.Content) error
-	//Attest(context.Context, AttestAgentOpts) ([]byte, error)
 	AttestWithClient(ctx context.Context, client verifier.Client, opts AttestAgentOpts) ([]byte, error)
 	Refresh(context.Context) error
 	Close() error
@@ -70,10 +69,9 @@ type AttestAgentOpts struct {
 }
 
 type agent struct {
-	measuredRots []attestRoot
-	avRot        attestRoot
-	fetchedAK    *client.Key
-	//client           verifier.Client
+	measuredRots     []attestRoot
+	avRot            attestRoot
+	fetchedAK        *client.Key
 	principalFetcher principalIDTokenFetcher
 	sigsFetcher      signaturediscovery.Fetcher
 	launchSpec       spec.LaunchSpec
@@ -159,20 +157,7 @@ func (a *agent) MeasureEvent(event cel.Content) error {
 	return nil
 }
 
-// Attest fetches the nonce and connection ID from the Attestation Service,
-// creates an attestation message, and returns the resultant
-// principalIDTokens and Metadata Server-generated ID tokens for the instance.
-// When possible, Attest uses the technology-specific attestation root-of-trust
-// (TDX RTMR), otherwise falls back to the vTPM.
-// func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error) {
-// 	if a.client == nil {
-// 		return nil, fmt.Errorf("attest agent does not have initialized verifier client")
-// 	}
-
-// 	return a.AttestWithClient(ctx, opts, a.client)
-// }
-
-// Attest fetches the nonce and connection ID from the Attestation Service via the provided client,
+// AttestWithClient fetches the nonce and connection ID from the Attestation Service via the provided client,
 // creates an attestation message, and returns the resultant
 // principalIDTokens and Metadata Server-generated ID tokens for the instance.
 // When possible, Attest uses the technology-specific attestation root-of-trust

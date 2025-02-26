@@ -65,10 +65,6 @@ func (f *fakeAttestationAgent) AttestWithClient(ctx context.Context, v verifier.
 	return nil, fmt.Errorf("unimplemented")
 }
 
-// func (f *fakeAttestationAgent) AttestWithClient(_ context.Context, _ agent.AttestAgentOpts, _ verifier.Client) ([]byte, error) {
-// 	return nil, fmt.Errorf("unimplemented")
-// }
-
 // Refresh simulates the behavior of an actual agent.
 func (f *fakeAttestationAgent) Refresh(ctx context.Context) error {
 	if f.sigsFetcherFunc != nil {
