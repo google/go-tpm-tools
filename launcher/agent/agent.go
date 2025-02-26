@@ -45,8 +45,8 @@ type principalIDTokenFetcher func(audience string) ([][]byte, error)
 // struct to make testing easier.
 type AttestationAgent interface {
 	MeasureEvent(cel.Content) error
-	Attest(context.Context, AttestAgentOpts) ([]byte, error)
-	AttestWithClient(ctx context.Context, opts AttestAgentOpts, client verifier.Client) ([]byte, error)
+	//Attest(context.Context, AttestAgentOpts) ([]byte, error)
+	AttestWithClient(ctx context.Context, client verifier.Client, opts AttestAgentOpts) ([]byte, error)
 	Refresh(context.Context) error
 	Close() error
 }
@@ -70,10 +70,10 @@ type AttestAgentOpts struct {
 }
 
 type agent struct {
-	measuredRots     []attestRoot
-	avRot            attestRoot
-	fetchedAK        *client.Key
-	client           verifier.Client
+	measuredRots []attestRoot
+	avRot        attestRoot
+	fetchedAK    *client.Key
+	//client           verifier.Client
 	principalFetcher principalIDTokenFetcher
 	sigsFetcher      signaturediscovery.Fetcher
 	launchSpec       spec.LaunchSpec
@@ -88,7 +88,7 @@ type agent struct {
 // - principalFetcher is a func to fetch GCE principal tokens for a given audience.
 // - signaturesFetcher is a func to fetch container image signatures associated with the running workload.
 // - logger will log any partial errors returned by VerifyAttestation.
-func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher util.TpmKeyFetcher, verifierClient verifier.Client, principalFetcher principalIDTokenFetcher, sigsFetcher signaturediscovery.Fetcher, launchSpec spec.LaunchSpec, logger logging.Logger) (AttestationAgent, error) {
+func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher util.TpmKeyFetcher, principalFetcher principalIDTokenFetcher, sigsFetcher signaturediscovery.Fetcher, launchSpec spec.LaunchSpec, logger logging.Logger) (AttestationAgent, error) {
 	// Fetched the AK and save it, so the agent doesn't need to create a new key everytime
 	ak, err := akFetcher(tpm)
 	if err != nil {
@@ -96,7 +96,6 @@ func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher util.TpmKeyFetcher
 	}
 
 	attestAgent := &agent{
-		client:           verifierClient,
 		fetchedAK:        ak,
 		principalFetcher: principalFetcher,
 		sigsFetcher:      sigsFetcher,
@@ -165,20 +164,20 @@ func (a *agent) MeasureEvent(event cel.Content) error {
 // principalIDTokens and Metadata Server-generated ID tokens for the instance.
 // When possible, Attest uses the technology-specific attestation root-of-trust
 // (TDX RTMR), otherwise falls back to the vTPM.
-func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error) {
-	if a.client == nil {
-		return nil, fmt.Errorf("attest agent does not have initialized verifier client")
-	}
+// func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error) {
+// 	if a.client == nil {
+// 		return nil, fmt.Errorf("attest agent does not have initialized verifier client")
+// 	}
 
-	return a.AttestWithClient(ctx, opts, a.client)
-}
+// 	return a.AttestWithClient(ctx, opts, a.client)
+// }
 
 // Attest fetches the nonce and connection ID from the Attestation Service via the provided client,
 // creates an attestation message, and returns the resultant
 // principalIDTokens and Metadata Server-generated ID tokens for the instance.
 // When possible, Attest uses the technology-specific attestation root-of-trust
 // (TDX RTMR), otherwise falls back to the vTPM.
-func (a *agent) AttestWithClient(ctx context.Context, opts AttestAgentOpts, client verifier.Client) ([]byte, error) {
+func (a *agent) AttestWithClient(ctx context.Context, client verifier.Client, opts AttestAgentOpts) ([]byte, error) {
 	challenge, err := client.CreateChallenge(ctx)
 	if err != nil {
 		return nil, err

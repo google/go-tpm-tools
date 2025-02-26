@@ -40,9 +40,13 @@ var testVerifierRequest = verifier.VerifyAttestationRequest{
 		},
 	},
 	Challenge: &verifier.Challenge{
-		Val:       []byte("test-nonce-val"),
-		Iat:       []byte("123456"),
-		Signature: []byte("test-nonce-sig"),
+		VerifierData: itaVerifierData{
+			itaNonce: itaNonce{
+				Val:       []byte("test-nonce-val"),
+				Iat:       []byte("123456"),
+				Signature: []byte("test-nonce-sig"),
+			},
+		},
 	},
 }
 
@@ -107,20 +111,24 @@ func TestCreateChallenge(t *testing.T) {
 	}
 
 	expectedChallenge := &verifier.Challenge{
-		Name:      challengeNamePrefix + string(testNonce.Val),
-		Nonce:     expectedNonce,
-		Val:       testNonce.Val,
-		Iat:       testNonce.Iat,
-		Signature: testNonce.Signature,
+		Name:  challengeNamePrefix + string(testNonce.Val),
+		Nonce: expectedNonce,
+		VerifierData: itaVerifierData{
+			itaNonce{
+				Val:       testNonce.Val,
+				Iat:       testNonce.Iat,
+				Signature: testNonce.Signature,
+			},
+		},
 	}
 
-	if diff := cmp.Diff(*challenge, *expectedChallenge); diff != "" {
+	if diff := cmp.Diff(*challenge, *expectedChallenge, cmp.AllowUnexported(itaVerifierData{})); diff != "" {
 		t.Errorf("CreateChallenge() did not return the expected challenge: %v", diff)
 	}
 }
 
 func TestVerifyAttestation(t *testing.T) {
-	expectedReq := convertRequestToTokenRequest(testVerifierRequest)
+	expectedReq, _ := convertRequestToTokenRequest(testVerifierRequest)
 
 	expectedResp := &verifier.VerifyAttestationResponse{
 		ClaimsToken: []byte("test-ita-token"),
@@ -244,6 +252,8 @@ func TestDoHTTPRequest(t *testing.T) {
 }
 
 func TestConvertRequestToTokenRequest(t *testing.T) {
+	verifierData, _ := testVerifierRequest.Challenge.VerifierData.(itaVerifierData)
+
 	expectedRequest := tokenRequest{
 		PolicyMatch: true,
 		TDX: tdxEvidence{
@@ -251,10 +261,10 @@ func TestConvertRequestToTokenRequest(t *testing.T) {
 			EventLog:          testVerifierRequest.TDCCELAttestation.CcelData,
 			CanonicalEventLog: testVerifierRequest.TDCCELAttestation.CanonicalEventLog,
 			Quote:             testVerifierRequest.TDCCELAttestation.TdQuote,
-			VerifierNonce: nonce{
-				Val:       testVerifierRequest.Challenge.Val,
-				Iat:       testVerifierRequest.Challenge.Iat,
-				Signature: testVerifierRequest.Challenge.Signature,
+			VerifierNonce: itaNonce{
+				Val:       verifierData.itaNonce.Val,
+				Iat:       verifierData.itaNonce.Iat,
+				Signature: verifierData.itaNonce.Signature,
 			},
 		},
 		SigAlg: "RS256", // Figure out what this should be.
@@ -286,7 +296,7 @@ func TestConvertRequestToTokenRequest(t *testing.T) {
 		},
 	}
 
-	convertedReq := convertRequestToTokenRequest(testVerifierRequest)
+	convertedReq, _ := convertRequestToTokenRequest(testVerifierRequest)
 
 	if diff := cmp.Diff(convertedReq, expectedRequest); diff != "" {
 		t.Errorf("convertRequestToTokenRequest did not return expected tokenRequest: %v", diff)
@@ -310,6 +320,8 @@ func TestConvertRequestToTokenRequestWithCCELDataPadding(t *testing.T) {
 		Challenge: testVerifierRequest.Challenge,
 	}
 
+	verifierData, _ := testVerifierRequest.Challenge.VerifierData.(itaVerifierData)
+
 	expectedRequest := tokenRequest{
 		PolicyMatch: true,
 		TDX: tdxEvidence{
@@ -317,10 +329,10 @@ func TestConvertRequestToTokenRequestWithCCELDataPadding(t *testing.T) {
 			EventLog:          testVerifierRequest.TDCCELAttestation.CcelData,
 			CanonicalEventLog: request.TDCCELAttestation.CanonicalEventLog,
 			Quote:             request.TDCCELAttestation.TdQuote,
-			VerifierNonce: nonce{
-				Val:       request.Challenge.Val,
-				Iat:       request.Challenge.Iat,
-				Signature: request.Challenge.Signature,
+			VerifierNonce: itaNonce{
+				Val:       verifierData.itaNonce.Val,
+				Iat:       verifierData.itaNonce.Iat,
+				Signature: verifierData.itaNonce.Signature,
 			},
 		},
 		SigAlg: "RS256", // Figure out what this should be.
@@ -330,7 +342,7 @@ func TestConvertRequestToTokenRequestWithCCELDataPadding(t *testing.T) {
 		},
 	}
 
-	convertedReq := convertRequestToTokenRequest(request)
+	convertedReq, _ := convertRequestToTokenRequest(request)
 
 	if diff := cmp.Diff(convertedReq, expectedRequest); diff != "" {
 		t.Errorf("convertRequestToTokenRequest did not return expected tokenRequest: %v", diff)

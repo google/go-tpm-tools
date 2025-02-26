@@ -39,10 +39,10 @@ const (
 
 // Fake attestation agent.
 type fakeAttestationAgent struct {
-	measureEventFunc func(cel.Content) error
-	attestFunc       func(context.Context, agent.AttestAgentOpts) ([]byte, error)
-	sigsCache        []string
-	sigsFetcherFunc  func(context.Context) []string
+	measureEventFunc     func(cel.Content) error
+	attestWithClientFunc func(context.Context, verifier.Client, agent.AttestAgentOpts) ([]byte, error)
+	sigsCache            []string
+	sigsFetcherFunc      func(context.Context) []string
 
 	// attMu sits on top of attempts field and protects attempts.
 	attMu    sync.Mutex
@@ -57,17 +57,17 @@ func (f *fakeAttestationAgent) MeasureEvent(event cel.Content) error {
 	return fmt.Errorf("unimplemented")
 }
 
-func (f *fakeAttestationAgent) Attest(ctx context.Context, _ agent.AttestAgentOpts) ([]byte, error) {
-	if f.attestFunc != nil {
-		return f.attestFunc(ctx, agent.AttestAgentOpts{})
+func (f *fakeAttestationAgent) AttestWithClient(ctx context.Context, v verifier.Client, opts agent.AttestAgentOpts) ([]byte, error) {
+	if f.attestWithClientFunc != nil {
+		return f.attestWithClientFunc(ctx, v, opts)
 	}
 
 	return nil, fmt.Errorf("unimplemented")
 }
 
-func (f *fakeAttestationAgent) AttestWithClient(_ context.Context, _ agent.AttestAgentOpts, _ verifier.Client) ([]byte, error) {
-	return nil, fmt.Errorf("unimplemented")
-}
+// func (f *fakeAttestationAgent) AttestWithClient(_ context.Context, _ agent.AttestAgentOpts, _ verifier.Client) ([]byte, error) {
+// 	return nil, fmt.Errorf("unimplemented")
+// }
 
 // Refresh simulates the behavior of an actual agent.
 func (f *fakeAttestationAgent) Refresh(ctx context.Context) error {
@@ -153,7 +153,7 @@ func TestRefreshToken(t *testing.T) {
 
 	runner := ContainerRunner{
 		attestAgent: &fakeAttestationAgent{
-			attestFunc: func(context.Context, agent.AttestAgentOpts) ([]byte, error) {
+			attestWithClientFunc: func(context.Context, verifier.Client, agent.AttestAgentOpts) ([]byte, error) {
 				return expectedToken, nil
 			},
 		},
@@ -196,7 +196,7 @@ func TestRefreshTokenWithSignedContainerCacheEnabled(t *testing.T) {
 			return oldCache
 		},
 	}
-	fakeAgent.attestFunc = func(context.Context, agent.AttestAgentOpts) ([]byte, error) {
+	fakeAgent.attestWithClientFunc = func(context.Context, verifier.Client, agent.AttestAgentOpts) ([]byte, error) {
 		return createJWTWithSignatures(t, fakeAgent.sigsCache), nil
 	}
 
@@ -256,7 +256,7 @@ func TestRefreshTokenError(t *testing.T) {
 		{
 			name: "Attest fails",
 			agent: &fakeAttestationAgent{
-				attestFunc: func(context.Context, agent.AttestAgentOpts) ([]byte, error) {
+				attestWithClientFunc: func(context.Context, verifier.Client, agent.AttestAgentOpts) ([]byte, error) {
 					return nil, errors.New("attest error")
 				},
 			},
@@ -264,7 +264,7 @@ func TestRefreshTokenError(t *testing.T) {
 		{
 			name: "Attest returns expired token",
 			agent: &fakeAttestationAgent{
-				attestFunc: func(context.Context, agent.AttestAgentOpts) ([]byte, error) {
+				attestWithClientFunc: func(context.Context, verifier.Client, agent.AttestAgentOpts) ([]byte, error) {
 					return createJWT(t, -5*time.Second), nil
 				},
 			},
@@ -294,7 +294,7 @@ func TestFetchAndWriteTokenSucceeds(t *testing.T) {
 
 	runner := ContainerRunner{
 		attestAgent: &fakeAttestationAgent{
-			attestFunc: func(context.Context, agent.AttestAgentOpts) ([]byte, error) {
+			attestWithClientFunc: func(context.Context, verifier.Client, agent.AttestAgentOpts) ([]byte, error) {
 				return expectedToken, nil
 			},
 		},
@@ -324,7 +324,7 @@ func TestTokenIsNotChangedIfRefreshFails(t *testing.T) {
 	ttl := 5 * time.Second
 
 	attestAgent := &fakeAttestationAgent{}
-	attestAgent.attestFunc = func(context.Context, agent.AttestAgentOpts) ([]byte, error) {
+	attestAgent.attestWithClientFunc = func(context.Context, verifier.Client, agent.AttestAgentOpts) ([]byte, error) {
 		attestAgent.attMu.Lock()
 		defer func() {
 			attestAgent.attempts = attestAgent.attempts + 1
@@ -402,7 +402,7 @@ func testRetryPolicyWithNTries(t *testing.T, numTries int, expectRefresh bool) {
 	// Wait the initial token's 5s plus a second per retry (MaxInterval).
 	ttl := time.Duration(numTries)*time.Second + 5*time.Second
 	retry := -1
-	attestFunc := func(context.Context, agent.AttestAgentOpts) ([]byte, error) {
+	attestWithClientFunc := func(context.Context, verifier.Client, agent.AttestAgentOpts) ([]byte, error) {
 		retry++
 		// Success on the initial fetch (subsequent calls use refresher goroutine).
 		if retry == 0 {
@@ -414,7 +414,7 @@ func testRetryPolicyWithNTries(t *testing.T, numTries int, expectRefresh bool) {
 		return nil, errors.New("attest unsuccessful")
 	}
 	runner := ContainerRunner{
-		attestAgent: &fakeAttestationAgent{attestFunc: attestFunc},
+		attestAgent: &fakeAttestationAgent{attestWithClientFunc: attestWithClientFunc},
 		logger:      logging.SimpleLogger(),
 	}
 	if err := runner.fetchAndWriteTokenWithRetry(ctx, testRetryPolicyThreeTimes); err != nil {
@@ -463,7 +463,7 @@ func TestFetchAndWriteTokenWithTokenRefresh(t *testing.T) {
 	ttl := 5 * time.Second
 
 	attestAgent := &fakeAttestationAgent{}
-	attestAgent.attestFunc = func(context.Context, agent.AttestAgentOpts) ([]byte, error) {
+	attestAgent.attestWithClientFunc = func(context.Context, verifier.Client, agent.AttestAgentOpts) ([]byte, error) {
 		attestAgent.attMu.Lock()
 		defer func() {
 			attestAgent.attempts = attestAgent.attempts + 1
