@@ -64,8 +64,10 @@ func TestLaunchSpecUnmarshalJSONHappyCases(t *testing.T) {
 		DevShmSize:                 234234,
 		Mounts: []launchermount.Mount{launchermount.TmpfsMount{Destination: "/tmpmount", Size: 0},
 			launchermount.TmpfsMount{Destination: "/sized", Size: 222}},
-		ITARegion: "US",
-		ITAKey:    "test-api-key",
+		ITAConfig: &ITAConfig{
+			ITARegion: "US",
+			ITAKey:    "test-api-key",
+		},
 		Experiments: experiments.Experiments{
 			EnableTempFSMount: true,
 			EnableItaVerifier: true,

@@ -13,32 +13,28 @@ import (
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/launcher/agent"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
+	"github.com/google/go-tpm-tools/launcher/models"
 	"github.com/google/go-tpm-tools/verifier"
 )
 
 // Implements verifier.Client interface so it can be used to initialize test attestHandlers
 type fakeVerifierClient struct{}
 
-func (f *fakeVerifierClient) CreateChallenge(_ context.Context) (*verifier.Challenge, error) {
+func (f fakeVerifierClient) CreateChallenge(_ context.Context) (*verifier.Challenge, error) {
 	return nil, fmt.Errorf("unimplemented")
 }
 
-func (f *fakeVerifierClient) VerifyAttestation(_ context.Context, _ verifier.VerifyAttestationRequest) (*verifier.VerifyAttestationResponse, error) {
+func (f fakeVerifierClient) VerifyAttestation(_ context.Context, _ verifier.VerifyAttestationRequest) (*verifier.VerifyAttestationResponse, error) {
 	return nil, fmt.Errorf("unimplemented")
 }
 
 type fakeAttestationAgent struct {
 	measureEventFunc     func(cel.Content) error
-	attestFunc           func(context.Context, agent.AttestAgentOpts) ([]byte, error)
-	attestWithClientFunc func(context.Context, agent.AttestAgentOpts, verifier.Client) ([]byte, error)
+	attestWithClientFunc func(context.Context, verifier.Client, agent.AttestAgentOpts) ([]byte, error)
 }
 
-func (f fakeAttestationAgent) Attest(c context.Context, a agent.AttestAgentOpts) ([]byte, error) {
-	return f.attestFunc(c, a)
-}
-
-func (f fakeAttestationAgent) AttestWithClient(c context.Context, a agent.AttestAgentOpts, v verifier.Client) ([]byte, error) {
-	return f.attestWithClientFunc(c, a, v)
+func (f fakeAttestationAgent) AttestWithClient(c context.Context, v verifier.Client, a agent.AttestAgentOpts) ([]byte, error) {
+	return f.attestWithClientFunc(c, v, a)
 }
 
 func (f fakeAttestationAgent) MeasureEvent(c cel.Content) error {
@@ -60,11 +56,11 @@ func TestGetDefaultToken(t *testing.T) {
 	// in the handler.
 	ah := attestHandler{
 		logger: logging.SimpleLogger(),
-		clients: &AttestClients{
-			GCA: &fakeVerifierClient{},
+		clients: models.AttestClients{
+			GCA: fakeVerifierClient{},
 		},
 		attestAgent: fakeAttestationAgent{
-			attestWithClientFunc: func(context.Context, agent.AttestAgentOpts, verifier.Client) ([]byte, error) {
+			attestWithClientFunc: func(context.Context, verifier.Client, agent.AttestAgentOpts) ([]byte, error) {
 				return []byte(testTokenContent), nil
 			},
 		}}
@@ -90,7 +86,7 @@ func TestCustomToken(t *testing.T) {
 	tests := []struct {
 		testName             string
 		body                 string
-		attestWithClientFunc func(context.Context, agent.AttestAgentOpts, verifier.Client) ([]byte, error)
+		attestWithClientFunc func(context.Context, verifier.Client, agent.AttestAgentOpts) ([]byte, error)
 		want                 int
 	}{
 		{
@@ -100,7 +96,7 @@ func TestCustomToken(t *testing.T) {
 				"nonces": ["thisIsAcustomNonce"],
 				"token_type": "OIDC"
 				}`,
-			attestWithClientFunc: func(context.Context, agent.AttestAgentOpts, verifier.Client) ([]byte, error) {
+			attestWithClientFunc: func(context.Context, verifier.Client, agent.AttestAgentOpts) ([]byte, error) {
 				t.Errorf("This method should not be called")
 				return nil, nil
 			},
@@ -113,7 +109,7 @@ func TestCustomToken(t *testing.T) {
 				"nonces": ["thisIsAcustomNonce"],
 				"token_type": "OIDC"
 			}`,
-			attestWithClientFunc: func(context.Context, agent.AttestAgentOpts, verifier.Client) ([]byte, error) {
+			attestWithClientFunc: func(context.Context, verifier.Client, agent.AttestAgentOpts) ([]byte, error) {
 				return nil, errors.New("Error")
 			},
 			want: http.StatusBadRequest,
@@ -125,7 +121,7 @@ func TestCustomToken(t *testing.T) {
 				"nonces": ["thisIsAcustomNonce"],
 				"token_type": ""
 			}`,
-			attestWithClientFunc: func(context.Context, agent.AttestAgentOpts, verifier.Client) ([]byte, error) {
+			attestWithClientFunc: func(context.Context, verifier.Client, agent.AttestAgentOpts) ([]byte, error) {
 				t.Errorf("This method should not be called")
 				return nil, nil
 			},
@@ -138,7 +134,7 @@ func TestCustomToken(t *testing.T) {
 				"nonces": ["thisIsAcustomNonce"],
 				"token_type": "OIDC"
 			}`,
-			attestWithClientFunc: func(context.Context, agent.AttestAgentOpts, verifier.Client) ([]byte, error) {
+			attestWithClientFunc: func(context.Context, verifier.Client, agent.AttestAgentOpts) ([]byte, error) {
 				return []byte{}, nil
 			},
 			want: http.StatusOK,
@@ -150,7 +146,7 @@ func TestCustomToken(t *testing.T) {
 		// in the handler.
 		ah := attestHandler{
 			logger: logging.SimpleLogger(),
-			clients: &AttestClients{
+			clients: models.AttestClients{
 				GCA: &fakeVerifierClient{},
 			},
 			attestAgent: fakeAttestationAgent{
