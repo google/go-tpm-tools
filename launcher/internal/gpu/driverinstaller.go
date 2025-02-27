@@ -33,7 +33,7 @@ var supportedGpuTypes = []deviceinfo.GPUType{
 	deviceinfo.H100,
 }
 
-// DriverInstaller contains information about the gpu driver installer settings
+// DriverInstaller contains information about the GPU driver installer settings
 type DriverInstaller struct {
 	cdClient   *containerd.Client
 	launchSpec spec.LaunchSpec
@@ -52,7 +52,7 @@ func NewDriverInstaller(cdClient *containerd.Client, launchSpec spec.LaunchSpec,
 // InstallGPUDrivers installs the GPU driver on host machine using the cos-gpu-installer container.
 // This function performs the same steps specified in this README file:
 // https://pkg.go.dev/cos.googlesource.com/cos/tools.git@v0.0.0-20241008015903-8431fe581b1f/src/cmd/cos_gpu_installer#section-readme
-// README specifies docker command where this function uses containerd for launching and managing the gpu driver installer container.
+// README specifies docker command where this function uses containerd for launching and managing the GPU driver installer container.
 func (di *DriverInstaller) InstallGPUDrivers(ctx context.Context) error {
 	err := remountAsExecutable(InstallationHostDir)
 	if err != nil {
@@ -61,21 +61,21 @@ func (di *DriverInstaller) InstallGPUDrivers(ctx context.Context) error {
 
 	gpuType, err := deviceinfo.GetGPUTypeInfo()
 	if err != nil {
-		return fmt.Errorf("failed to get the gpu type info: %v", err)
+		return fmt.Errorf("failed to get the GPU type info: %v", err)
 	}
 
 	if !gpuType.OpenSupported() {
-		return fmt.Errorf("unsupported gpu type %s, please retry with one of the supported gpu types: %v", gpuType.String(), supportedGpuTypes)
+		return fmt.Errorf("unsupported GPU type %s, please retry with one of the supported GPU types: %v", gpuType.String(), supportedGpuTypes)
 	}
 
 	ctx = namespaces.WithNamespace(ctx, namespaces.Default)
 	installerImageRef, err := getInstallerImageReference()
 	if err != nil {
-		di.logger.Error("failed to get the installer container image reference: %v", err)
+		di.logger.Error(fmt.Sprintf("failed to get the installer container image reference: %v", err))
 		return err
 	}
 
-	di.logger.Info("cos gpu installer version : %s", installerImageRef)
+	di.logger.Info(fmt.Sprintf("COS GPU installer version : %s", installerImageRef))
 	image, err := di.cdClient.Pull(ctx, installerImageRef, containerd.WithPullUnpack)
 	if err != nil {
 		return fmt.Errorf("failed to pull installer image: %v", err)
@@ -97,7 +97,7 @@ func (di *DriverInstaller) InstallGPUDrivers(ctx context.Context) error {
 
 	hostname, err := os.Hostname()
 	if err != nil {
-		di.logger.Error("cannot get hostname: %v", err)
+		di.logger.Error(fmt.Sprintf("cannot get hostname: %v", err))
 	}
 
 	container, err := di.cdClient.NewContainer(
@@ -122,36 +122,36 @@ func (di *DriverInstaller) InstallGPUDrivers(ctx context.Context) error {
 			oci.WithHostResolvconf,
 			oci.WithEnv([]string{fmt.Sprintf("HOSTNAME=%s", hostname)})))
 	if err != nil {
-		return fmt.Errorf("failed to create gpu driver installer container: %v", err)
+		return fmt.Errorf("failed to create GPU driver installer container: %v", err)
 	}
 	defer container.Delete(ctx, containerd.WithSnapshotCleanup)
 
 	task, err := container.NewTask(ctx, cio.NewCreator(cio.WithStdio))
 	if err != nil {
-		return fmt.Errorf("failed to create gpu driver installation task: %v", err)
+		return fmt.Errorf("failed to create GPU driver installation task: %v", err)
 	}
 	defer task.Delete(ctx)
 
 	statusC, err := task.Wait(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to wait for gpu driver installation task: %v", err)
+		return fmt.Errorf("failed to wait for GPU driver installation task: %v", err)
 	}
 
 	if err := task.Start(ctx); err != nil {
-		return fmt.Errorf("failed to start gpu driver installation task: %v", err)
+		return fmt.Errorf("failed to start GPU driver installation task: %v", err)
 	}
 
 	status := <-statusC
 	code, _, _ := status.Result()
 
 	if code != 0 {
-		di.logger.Error("GPU driver installation task ended and returned non-zero status code %d", code)
-		return fmt.Errorf("gpu driver installation task ended with non-zero status code %d", code)
+		di.logger.Error(fmt.Sprintf("GPU driver installation task ended and returned non-zero status code %d", code))
+		return fmt.Errorf("GPU driver installation task ended with non-zero status code %d", code)
 	}
 
 	moduleParams := modules.NewModuleParameters()
 	if err = loadNvidiaKO(moduleParams); err != nil {
-		return fmt.Errorf("failed load GPU drivers: %v", err)
+		return fmt.Errorf("failed to load GPU drivers: %v", err)
 	}
 
 	if err = launchNvidiaPersistencedProcess(di.logger); err != nil {
@@ -159,7 +159,7 @@ func (di *DriverInstaller) InstallGPUDrivers(ctx context.Context) error {
 	}
 
 	if err = verifyDriverInstallation(); err != nil {
-		return fmt.Errorf("failed to verify gpu driver installation: %v", err)
+		return fmt.Errorf("failed to verify GPU driver installation: %v", err)
 	}
 
 	ccEnabled, err := isGPUCCModeEnabled(di.logger, gpuType)
@@ -169,7 +169,7 @@ func (di *DriverInstaller) InstallGPUDrivers(ctx context.Context) error {
 	// Explicitly need to set the GPU state to READY for GPUs with confidential compute mode ON.
 	if ccEnabled {
 		if err = setGPUStateToReady(); err != nil {
-			return fmt.Errorf("failed to set the gpu state to ready: %v", err)
+			return fmt.Errorf("failed to set the GPU state to ready: %v", err)
 		}
 	}
 
@@ -201,49 +201,42 @@ func remountAsExecutable(dir string) error {
 
 func verifyDriverInstallation() error {
 	// Run nvidia-smi to check whether nvidia GPU driver is installed.
-	if err := exec.Command("nvidia-smi").Run(); err != nil {
-		return fmt.Errorf("failed to verify gpu driver installation : %v", err)
+	nvidiaSmiCmd := fmt.Sprintf("%s/bin/nvidia-smi", InstallationHostDir)
+	if err := exec.Command(nvidiaSmiCmd).Run(); err != nil {
+		return fmt.Errorf("failed to verify GPU driver installation : %v", err)
 	}
 	return nil
 }
 
 func setGPUStateToReady() error {
 	// Run nvidia-smi conf-compute command to set GPU state to READY.
-	if err := exec.Command("nvidia-smi", "conf-compute", "-srs", "1").Run(); err != nil {
-		return fmt.Errorf("failed to set the gpu state to ready: %v", err)
+	nvidiaSmiCmd := fmt.Sprintf("%s/bin/nvidia-smi", InstallationHostDir)
+	if err := exec.Command(nvidiaSmiCmd, "conf-compute", "-srs", "1").Run(); err != nil {
+		return fmt.Errorf("failed to set the GPU state to ready: %v", err)
 	}
 	return nil
 }
 
 func isGPUCCModeEnabled(logger logging.Logger, gpuType deviceinfo.GPUType) (bool, error) {
+	// Run nvidia-smi conf-compute command to check if confidential compute mode is ON.
+	nvidiaSmiCmd := fmt.Sprintf("%s/bin/nvidia-smi", InstallationHostDir)
+	ccModeOutput, err := exec.Command(nvidiaSmiCmd, "conf-compute", "-f").Output()
 	// The nvidia-smi conf-compute command fails for GPU which doesn't support confidential computing.
 	// This check would bypass nvidia-smi conf-compute command for GPU not having confidential compute support.
-	if !isCCSupportedGpu(gpuType) {
-		logger.Info("Confidential Computing is not supported for GPU type : ", gpuType.String())
+	if strings.Contains(string(ccModeOutput), "No CC capable devices found") {
+		logger.Info(fmt.Sprintf("Confidential Computing is not supported for GPU type : %s", gpuType.String()))
 		return false, nil
 	}
-	// Run nvidia-smi conf-compute command to check if confidential compute mode is ON.
-	ccModeOutput, err := exec.Command("nvidia-smi", "conf-compute", "-f").Output()
 	if err != nil {
 		return false, err
 	}
 	return strings.Contains(string(ccModeOutput), "CC status: ON"), nil
 }
 
-func isCCSupportedGpu(gpuType deviceinfo.GPUType) bool {
-	switch gpuType {
-	case deviceinfo.H100:
-		return true
-	default:
-		return false
-	}
-}
-
 func launchNvidiaPersistencedProcess(logger logging.Logger) error {
-	newPathEnv := fmt.Sprintf("%s/bin:%s", InstallationHostDir, os.Getenv("PATH"))
-	os.Setenv("PATH", newPathEnv)
+	nvidiaPersistencedCmd := fmt.Sprintf("%s/bin/nvidia-persistenced", InstallationHostDir)
 	logger.Info("Starting nvidia-persistenced process")
-	if err := exec.Command("nvidia-persistenced").Run(); err != nil {
+	if err := exec.Command(nvidiaPersistencedCmd).Run(); err != nil {
 		return fmt.Errorf("failed to launch nvidia-persistenced daemon: %v", err)
 	}
 	logger.Info("nvidia-persistenced daemon successfully started")
