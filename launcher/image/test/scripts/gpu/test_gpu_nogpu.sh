@@ -7,11 +7,11 @@ source util/read_serial.sh
 SERIAL_OUTPUT=$(read_serial $1 $2) 
 print_serial=false
 
-if echo $SERIAL_OUTPUT | grep -q 'failed to get the gpu type info'
+if echo $SERIAL_OUTPUT | grep -q 'failed to get the GPU type info'
 then
-    echo "- no gpu verified"
+    echo "- no GPU verified"
 else
-    echo "FAILED: gpu not detected"
+    echo "FAILED: GPU not detected"
     echo 'TEST FAILED.' > /workspace/status.txt
     print_serial=true
 fi

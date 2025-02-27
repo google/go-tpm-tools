@@ -7,11 +7,11 @@ source util/read_serial.sh
 SERIAL_OUTPUT=$(read_serial $1 $2) 
 print_serial=false
 
-if echo $SERIAL_OUTPUT | grep -q 'unsupported gpu type'
+if echo $SERIAL_OUTPUT | grep -q 'unsupported GPU type'
 then
-    echo "- unsupported gpu types verified"
+    echo "- unsupported GPU types verified"
 else
-    echo "FAILED: gpu type is not supported"
+    echo "FAILED: GPU type is not supported"
     echo 'TEST FAILED.' > /workspace/status.txt
     print_serial=true
 fi

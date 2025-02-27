@@ -9,9 +9,9 @@ print_serial=false
 
 if echo $SERIAL_OUTPUT | grep -q 'Test PASSED'
 then
-    echo "- gpu workload running verified"
+    echo "- GPU workload running verified"
 else
-    echo "FAILED: gpu workload not running"
+    echo "FAILED: GPU workload not running"
     echo 'TEST FAILED.' > /workspace/status.txt
     print_serial=true
 fi
