@@ -493,6 +493,77 @@ func TestVerify(t *testing.T) {
 			},
 			true,
 		},
+		{
+			"caps allowed unused",
+			LaunchPolicy{
+				PrivilegedCaps: true,
+			},
+			LaunchSpec{},
+			true,
+		},
+		{
+			"caps allowed",
+			LaunchPolicy{
+				PrivilegedCaps: true,
+			},
+			LaunchSpec{
+				AddedCapabilities: []string{"new", "no", "cap"},
+			},
+			true,
+		},
+		{
+			"caps not allowed but used",
+			LaunchPolicy{
+				PrivilegedCaps: false,
+			},
+			LaunchSpec{
+				AddedCapabilities: []string{"new", "no", "cap"},
+			},
+			false,
+		},
+		{
+			"caps allowed unset but used",
+			LaunchPolicy{},
+			LaunchSpec{
+				AddedCapabilities: []string{"new", "no", "cap"},
+			},
+			true,
+		},
+		{
+			"caps allowed unused",
+			LaunchPolicy{
+				AllowCgroups: true,
+			},
+			LaunchSpec{},
+			true,
+		},
+		{
+			"cgroups allowed",
+			LaunchPolicy{
+				AllowCgroups: true,
+			},
+			LaunchSpec{
+				CgroupNamespace: true,
+			},
+			true,
+		}, {
+			"cgroups not allowed but used",
+			LaunchPolicy{
+				AllowCgroups: false,
+			},
+			LaunchSpec{
+				CgroupNamespace: true,
+			},
+			false,
+		},
+		{
+			"caps allowed unset but used",
+			LaunchPolicy{},
+			LaunchSpec{
+				CgroupNamespace: true,
+			},
+			true,
+		},
 	}
 	for _, testCase := range testCases {
 		t.Run(testCase.testName, func(t *testing.T) {
