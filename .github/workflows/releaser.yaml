@@ -47,7 +47,7 @@ jobs:
         run: go build -v ./... ./cmd/... ./launcher/... ./verifier/...
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
-        if: success() && startsWith(github.ref, 'refs/tags/') && steps.cache.outputs.cache-hit != 'true'
+        if: success() && (startsWith(github.ref, 'refs/tags/') || startsWith(${{ inputs.refToBuild }}, 'refs/tags/'))  && steps.cache.outputs.cache-hit != 'true'
         with:
           version: latest
           args: release --clean
