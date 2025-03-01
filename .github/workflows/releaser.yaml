@@ -86,9 +86,9 @@ jobs:
         if: success()
         run: echo "SUCCESS"
       - name: StartsWith
-        if: startsWith(${{ inputs.refToBuild }}, 'refs/tags/')
         env:
           INPUT_CONTEXT: ${{ inputs }}
+        if: startsWith(${{ inputs.refToBuild }}, 'refs/tags/')
         run: echo "STARTSWITH" && echo $INPUT_CONTEXT
       - name: Cached
         if: steps.cache.outputs.cache-hit != 'true'
