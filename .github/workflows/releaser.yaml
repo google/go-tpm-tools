@@ -70,7 +70,11 @@ jobs:
         env:
           MATRIX_CONTEXT: ${{ toJson(matrix) }}
         run: echo "$MATRIX_CONTEXT"
-
+      - name: Dump input context
+        env:
+          INPUT_CONTEXT: ${{ toJson(inputs) }}
+        run: echo "$INPUT_CONTEXT"
+        
       - name: Show default environment variables
         run: |
           echo "The job_id is: $GITHUB_JOB"   # reference the default environment variables
