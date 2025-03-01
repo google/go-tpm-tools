@@ -99,20 +99,6 @@ jobs:
           INPUT_CONTEXT: ${{ toJson(inputs) }}
         if: startsWith('', 'refs/tags/')
         run: echo "STARTSWITH" && echo $INPUT_CONTEXT
-      - name: StartsWithEmptyStrDoubled
-        env:
-          INPUT_CONTEXT: ${{ toJson(inputs) }}
-        if: startsWith("", 'refs/tags/')
-        run: echo "STARTSWITH" && echo $INPUT_CONTEXT
-      - name: BothEmptyStr
-        env:
-          INPUT_CONTEXT: ${{ toJson(inputs) }}
-        if: startsWith("", "refs/tags/")
-        run: echo "STARTSWITH" && echo $INPUT_CONTEXT
-
-      - name: Cached
-        if: steps.cache.outputs.cache-hit != 'true'
-        run: echo "NOT CACHED"
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
@@ -124,7 +110,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Run GoReleaser Manually
         uses: goreleaser/goreleaser-action@v6
-        if: success() && startsWith(${{ inputs.refToBuild }}, 'refs/tags/') && steps.cache.outputs.cache-hit != 'true'
+        if: success() && ${{ env.VAR_NAME != '' }} && startsWith(${{ inputs.refToBuild }}, 'refs/tags/') && steps.cache.outputs.cache-hit != 'true'
         with:
           version: latest
           args: release --clean
