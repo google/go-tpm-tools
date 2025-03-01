@@ -87,7 +87,7 @@ jobs:
         run: echo "SUCCESS"
       - name: StartsWith
         env:
-          INPUT_CONTEXT: ${{ inputs }}
+          INPUT_CONTEXT: ${{ toJson(inputs) }}
         if: startsWith(${{ inputs.refToBuild }}, 'refs/tags/')
         run: echo "STARTSWITH" && echo $INPUT_CONTEXT
       - name: Cached
