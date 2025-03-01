@@ -122,7 +122,7 @@ jobs:
 
       - name: Run GoReleaser Dupe
         uses: goreleaser/goreleaser-action@v6
-        if: success() && startsWith(github.ref, 'refs/tags/') && steps.cache.outputs.cache-hit != 'true'
+        if: success() && startsWith(inputs.refToBuild, 'refs/tags/') && steps.cache.outputs.cache-hit != 'true'
         with:
           version: latest
           args: release --clean
