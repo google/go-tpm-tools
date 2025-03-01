@@ -92,8 +92,14 @@ jobs:
       - name: StartsWith
         env:
           INPUT_CONTEXT: ${{ toJson(inputs) }}
+        if: startsWith(${{ inputs.refToBuild }}, 'refs/tags/')
+        run: echo "STARTSWITH" && echo $INPUT_CONTEXT
+      - name: StartsWithEmptyStr
+        env:
+          INPUT_CONTEXT: ${{ toJson(inputs) }}
         if: startsWith('', 'refs/tags/')
         run: echo "STARTSWITH" && echo $INPUT_CONTEXT
+
       - name: Cached
         if: steps.cache.outputs.cache-hit != 'true'
         run: echo "NOT CACHED"
