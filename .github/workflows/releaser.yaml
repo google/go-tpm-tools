@@ -74,6 +74,10 @@ jobs:
         env:
           INPUT_CONTEXT: ${{ toJson(inputs) }}
         run: echo "$INPUT_CONTEXT"
+      - name: Dump ref to build
+        env:
+          INPUT_CONTEXT: ${{ inputs.refToBuild }}
+        run: echo "$INPUT_CONTEXT"
         
       - name: Show default environment variables
         run: |
