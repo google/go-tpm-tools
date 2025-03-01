@@ -10,7 +10,7 @@ on:
     inputs:
       refToBuild:
         description: 'Branch, tag or commit SHA1 to build'
-        required: false
+        required: true
         type: string
 
 jobs:
