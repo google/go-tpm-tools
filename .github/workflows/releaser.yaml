@@ -110,7 +110,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Run GoReleaser Manually
         uses: goreleaser/goreleaser-action@v6
-        if: success() && ${{ env.VAR_NAME != '' }} && startsWith(${{ inputs.refToBuild }}, 'refs/tags/') && steps.cache.outputs.cache-hit != 'true'
+        if: success() && ${{ inputs.refToBuild != '' }} && startsWith(${{ inputs.refToBuild }}, 'refs/tags/') && steps.cache.outputs.cache-hit != 'true'
         with:
           version: latest
           args: release --clean
