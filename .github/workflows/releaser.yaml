@@ -100,8 +100,6 @@ jobs:
         if: startsWith('', 'refs/tags/')
         run: echo "STARTSWITH" && echo $INPUT_CONTEXT
       - name: NotEmpty
-        env:
-          INPUT_CONTEXT: ${{ toJson(inputs) }}
         if: ${{ inputs.refToBuild != '' }}
         run: echo "NOTEMPTY"
 
