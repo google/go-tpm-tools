@@ -100,7 +100,7 @@ jobs:
         if: startsWith('', 'refs/tags/')
         run: echo "STARTSWITH" && echo $INPUT_CONTEXT
       - name: NotEmpty
-        if: ${{ inputs.refToBuild != '' }}
+        if: true && ${{ inputs.refToBuild != '' }}
         run: echo "NOTEMPTY"
 
       - name: Run GoReleaser
@@ -114,15 +114,6 @@ jobs:
       - name: Run GoReleaser Manually
         uses: goreleaser/goreleaser-action@v6
         if: success() && ${{ inputs.refToBuild != '' }} && startsWith(${{ inputs.refToBuild }}, 'refs/tags/') && steps.cache.outputs.cache-hit != 'true'
-        with:
-          version: latest
-          args: release --clean
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Run GoReleaser Dupe
-        uses: goreleaser/goreleaser-action@v6
-        if: success() && startsWith(inputs.refToBuild, 'refs/tags/') && steps.cache.outputs.cache-hit != 'true'
         with:
           version: latest
           args: release --clean
