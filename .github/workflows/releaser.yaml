@@ -82,6 +82,17 @@ jobs:
           echo "The run id is: $GITHUB_RUN_ID"
           echo "The GitHub Actor's username is: $GITHUB_ACTOR"
           echo "GitHub SHA: $GITHUB_SHA"
+      - name: Success
+        if: success()
+        run: echo "SUCCESS"
+      - name: StartsWith
+        if: startsWith(${{ inputs.refToBuild }}, 'refs/tags/')
+        env:
+          INPUT_CONTEXT: ${{ inputs }}
+        run: echo "STARTSWITH" && echo $INPUT_CONTEXT
+      - name: Cached
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: echo "NOT CACHED"
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
