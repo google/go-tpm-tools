@@ -52,8 +52,7 @@ require (
 	github.com/google/gce-tcb-verifier v0.2.3-0.20240905212129-12f728a62786 // indirect
 	github.com/google/go-attestation v0.5.1 // indirect
 	github.com/google/go-eventlog v0.0.2-0.20241003021507-01bb555f7cba // indirect
-	github.com/google/go-sev-guest v0.12.1 // indirect
-	github.com/google/go-tdx-guest v0.3.2-0.20241009005452-097ee70d0843 // indirect
+	github.com/google/go-sev-guest v0.13.0 // indirect
 	github.com/google/go-tspi v0.3.0 // indirect
 	github.com/google/logger v1.1.1 // indirect
 	github.com/google/s2a-go v0.1.8 // indirect
