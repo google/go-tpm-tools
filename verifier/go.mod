@@ -9,7 +9,7 @@ require (
 	cloud.google.com/go/confidentialcomputing v1.8.0
 	github.com/golang-jwt/jwt/v4 v4.5.1
 	github.com/google/go-cmp v0.6.0
-	github.com/google/go-sev-guest v0.12.1
+	github.com/google/go-sev-guest v0.13.0
 	github.com/google/go-tdx-guest v0.3.2-0.20241009005452-097ee70d0843
 	github.com/google/go-tpm v0.9.0
 	github.com/google/go-tpm-tools v0.4.4
@@ -17,7 +17,6 @@ require (
 	github.com/googleapis/gax-go/v2 v2.13.0
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.0
-	go.uber.org/multierr v1.11.0
 	golang.org/x/net v0.30.0
 	golang.org/x/oauth2 v0.23.0
 	google.golang.org/api v0.203.0
@@ -51,6 +50,7 @@ require (
 	go.opentelemetry.io/otel v1.29.0 // indirect
 	go.opentelemetry.io/otel/metric v1.29.0 // indirect
 	go.opentelemetry.io/otel/trace v1.29.0 // indirect
+	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/crypto v0.31.0 // indirect
 	golang.org/x/exp v0.0.0-20240531132922-fd00a4e0eefc // indirect
 	golang.org/x/sync v0.10.0 // indirect
