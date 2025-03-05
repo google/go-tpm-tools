@@ -6,11 +6,9 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 
 	"cos.googlesource.com/cos/tools.git/src/cmd/cos_gpu_installer/deviceinfo"
-	"cos.googlesource.com/cos/tools.git/src/pkg/modules"
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/cio"
 	"github.com/containerd/containerd/namespaces"
@@ -109,10 +107,8 @@ func (di *DriverInstaller) InstallGPUDrivers(ctx context.Context) error {
 			oci.WithPrivileged,
 			// To support confidential GPUs, the nvidia-persistenced process should be started before the GPU driver verification step.
 			// It would not be possible to start the nvidia-persistenced process amidst GPU driver installation flow via cos_gpu_installer.
-			// For this reason, the GPU driver installation need to be triggered with –no-verify flag to skip the GPU driver verification step.
-			// As per the current implementation of cos_gpu_installer, use of –no-verify flag with cos_gpu_installer also skip the loading of
-			// nvidia kernel modules along with the verification step. These modules are loaded as post installation step.
-			oci.WithProcessArgs("/cos-gpu-installer", "install", "-version=default", fmt.Sprintf("-host-dir=%s", InstallationHostDir), "--no-verify"),
+			// For this reason, the GPU driver installation need to be triggered with --skip-nvidia-smi flag to skip the GPU driver verification step.
+			oci.WithProcessArgs("/cos-gpu-installer", "install", "-version=default", fmt.Sprintf("-host-dir=%s", InstallationHostDir), "--skip-nvidia-smi"),
 			oci.WithAllDevicesAllowed,
 			oci.WithHostDevices,
 			oci.WithMounts(mounts),
@@ -147,11 +143,6 @@ func (di *DriverInstaller) InstallGPUDrivers(ctx context.Context) error {
 	if code != 0 {
 		di.logger.Error(fmt.Sprintf("GPU driver installation task ended and returned non-zero status code %d", code))
 		return fmt.Errorf("GPU driver installation task ended with non-zero status code %d", code)
-	}
-
-	moduleParams := modules.NewModuleParameters()
-	if err = loadNvidiaKO(moduleParams); err != nil {
-		return fmt.Errorf("failed to load GPU drivers: %v", err)
 	}
 
 	if err = launchNvidiaPersistencedProcess(di.logger); err != nil {
@@ -240,33 +231,5 @@ func launchNvidiaPersistencedProcess(logger logging.Logger) error {
 		return fmt.Errorf("failed to launch nvidia-persistenced daemon: %v", err)
 	}
 	logger.Info("nvidia-persistenced daemon successfully started")
-	return nil
-}
-
-func loadNvidiaKO(moduleParams modules.ModuleParameters) error {
-	kernelModulePath := filepath.Join(InstallationHostDir, "drivers")
-	nvidia := &modules.Module{
-		Name: "nvidia",
-		Path: filepath.Join(kernelModulePath, "nvidia.ko"),
-	}
-	nvidiaUvm := &modules.Module{
-		Name: "nvidia_uvm",
-		Path: filepath.Join(kernelModulePath, "nvidia-uvm.ko"),
-	}
-	nvidiaModeset := &modules.Module{
-		Name: "nvidia_modeset",
-		Path: filepath.Join(kernelModulePath, "nvidia-modeset.ko"),
-	}
-	nvidiaDrm := &modules.Module{
-		Name: "nvidia_drm",
-		Path: filepath.Join(kernelModulePath, "nvidia-drm.ko"),
-	}
-	// Need to load modules in order due to module dependency.
-	gpuModules := []*modules.Module{nvidia, nvidiaUvm, nvidiaModeset, nvidiaDrm}
-	for _, module := range gpuModules {
-		if err := modules.LoadModule(module, moduleParams); err != nil {
-			return fmt.Errorf("failed to load module %s", module.Path)
-		}
-	}
 	return nil
 }
