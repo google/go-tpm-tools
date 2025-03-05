@@ -253,7 +253,7 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 		itaRegionVal, itaRegionOK := unmarshaledMap[itaRegion]
 		itaKeyVal, itaKeyOK := unmarshaledMap[itaKey]
 
-		if itaRegionOK != itaKeyOK || (itaRegionOK && itaRegionVal != "" && itaKeyVal != "") {
+		if itaRegionOK != itaKeyOK || (itaRegionOK && itaRegionVal == "" && itaKeyVal == "") {
 			return fmt.Errorf("ITA fields %s and %s must both be provided and non-empty", itaRegion, itaKey)
 		}
 
