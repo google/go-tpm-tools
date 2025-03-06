@@ -196,7 +196,7 @@ func TestRefreshToken(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	ttl := 2 * time.Second
+	ttl := 3 * time.Second
 	expectedToken := createJWT(t, ttl)
 
 	tokenWriter := newFakeTokenWriter()
@@ -333,7 +333,7 @@ func TestFetchAndWriteTokenSucceeds(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	ttl := 2 * time.Second
+	ttl := 3 * time.Second
 	expectedToken := createJWT(t, ttl)
 
 	tokenWriter := newFakeTokenWriter()
@@ -366,7 +366,7 @@ func TestTokenIsNotChangedIfRefreshFails(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	ttl := 2 * time.Second
+	ttl := 3 * time.Second
 	expectedToken := createJWT(t, ttl)
 
 	attestAgent := &fakeAttestationAgent{}
@@ -418,7 +418,7 @@ func testRetryPolicyThreeTimes() *backoff.ExponentialBackOff {
 	expBack.InitialInterval = 500 * time.Millisecond
 	expBack.RandomizationFactor = 0
 	expBack.Multiplier = 1.5
-	expBack.MaxInterval = 2 * time.Second
+	expBack.MaxInterval = 3 * time.Second
 	expBack.MaxElapsedTime = 2249 * time.Millisecond
 	return expBack
 }
