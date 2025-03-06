@@ -32,6 +32,7 @@ import (
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/internal/signaturediscovery"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
+	"github.com/google/go-tpm-tools/launcher/models"
 	"github.com/google/go-tpm-tools/launcher/registryauth"
 	"github.com/google/go-tpm-tools/launcher/spec"
 	"github.com/google/go-tpm-tools/launcher/teeserver"
@@ -48,9 +49,9 @@ type ContainerRunner struct {
 	attestAgent   agent.AttestationAgent
 	logger        logging.Logger
 	serialConsole *os.File
+	tokenWriter   models.DataWriter
+	timer         models.Timer
 }
-
-const tokenFileTmp = ".token.tmp"
 
 const teeServerSocket = "teeserver.sock"
 
@@ -240,12 +241,24 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	if err != nil {
 		return nil, err
 	}
+	tokenWriter, err := models.NewFileWriter(launcherfile.HostTmpPath, launcherfile.AttestationVerifierTokenFilename)
+	if err != nil {
+		return nil, err
+	}
+
+	// Go < 1.23 only allows Reset to be called on stopped or expired timers with cleared channels.
+	// Create a timer that expires instantly and clear the chan as a workaround.
+	timer := models.NewRealTimer(0)
+	<-timer.C()
+
 	return &ContainerRunner{
 		container,
 		launchSpec,
 		attestAgent,
 		logger,
 		serialConsole,
+		tokenWriter,
+		timer,
 	}, nil
 }
 
@@ -427,16 +440,7 @@ func (r *ContainerRunner) refreshToken(ctx context.Context) (time.Duration, erro
 		return 0, errors.New("token is expired")
 	}
 
-	// Write to a temp file first.
-	tmpTokenPath := path.Join(launcherfile.HostTmpPath, tokenFileTmp)
-	if err = os.WriteFile(tmpTokenPath, token, 0644); err != nil {
-		return 0, fmt.Errorf("failed to write a tmp token file: %v", err)
-	}
-
-	// Rename the temp file to the token file (to avoid race conditions).
-	if err = os.Rename(tmpTokenPath, path.Join(launcherfile.HostTmpPath, launcherfile.AttestationVerifierTokenFilename)); err != nil {
-		return 0, fmt.Errorf("failed to rename the token file: %v", err)
-	}
+	r.tokenWriter.Write(token)
 
 	// Print out the claims in the jwt payload
 	mapClaims := jwt.MapClaims{}
@@ -459,24 +463,20 @@ func (r *ContainerRunner) fetchAndWriteToken(ctx context.Context) error {
 // retry specifies the refresher goroutine's retry policy.
 func (r *ContainerRunner) fetchAndWriteTokenWithRetry(ctx context.Context,
 	retry func() *backoff.ExponentialBackOff) error {
-	if err := os.MkdirAll(launcherfile.HostTmpPath, 0744); err != nil {
-		return err
-	}
 	duration, err := r.refreshToken(ctx)
 	if err != nil {
 		return err
 	}
 
-	// Set a timer to refresh the token before it expires.
-	timer := time.NewTimer(duration)
+	r.timer.Reset(duration)
 	go func() {
+		defer r.timer.Stop()
 		for {
 			select {
 			case <-ctx.Done():
-				timer.Stop()
 				r.logger.Info("token refreshing stopped")
 				return
-			case <-timer.C:
+			case <-r.timer.C():
 				r.logger.Info("refreshing attestation verifier OIDC token")
 				var duration time.Duration
 				// Refresh token with default retry policy.
@@ -494,7 +494,7 @@ func (r *ContainerRunner) fetchAndWriteTokenWithRetry(ctx context.Context,
 					return
 				}
 
-				timer.Reset(duration)
+				r.timer.Reset(duration)
 			}
 		}
 	}()
