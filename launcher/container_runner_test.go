@@ -105,7 +105,7 @@ func (f *fakeTokenWriter) getNextToken() ([]byte, error) {
 		return nil, errors.New("no new token added")
 	}
 
-	f.tokensReturned += 1
+	f.tokensReturned++
 	return f.tokens[f.tokensReturned-1], nil
 }
 
@@ -354,7 +354,7 @@ func TestFetchAndWriteTokenSucceeds(t *testing.T) {
 
 	data, err := tokenWriter.getNextToken()
 	if err != nil {
-		t.Fatalf("Failed to read inital token: %v", err)
+		t.Fatalf("Failed to read initial token: %v", err)
 	}
 
 	if !bytes.Equal(data, expectedToken) {
@@ -469,7 +469,7 @@ func testRetryPolicyWithNTries(t *testing.T, numTries int, expectRefresh bool) {
 	time.Sleep(50 * time.Millisecond) // wait a little for the sync/write to happen
 	data, err := tokenWriter.getNextToken()
 	if err != nil {
-		t.Fatalf("failed to read intial token: %v", err)
+		t.Fatalf("failed to read initial token: %v", err)
 	}
 
 	if !bytes.Equal(data, expectedInitialToken) {
@@ -529,7 +529,7 @@ func TestFetchAndWriteTokenWithTokenRefresh(t *testing.T) {
 
 	data, err := tokenWriter.getNextToken()
 	if err != nil {
-		t.Fatalf("Failed to read inital token: %v", err)
+		t.Fatalf("Failed to read initial token: %v", err)
 	}
 
 	if !bytes.Equal(data, expectedToken) {

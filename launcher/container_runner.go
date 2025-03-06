@@ -54,8 +54,7 @@ type ContainerRunner struct {
 	tokenWriter   tokenWriter
 }
 
-// TokenWriter is a struct for writing the token to the well known endpoint.
-// Separating the token writing functionality allows tests to not rely on the disk.
+// TokenWriter is an interface for writing the token to some destination.
 type tokenWriter interface {
 	Write(token []byte) error
 }
@@ -66,6 +65,7 @@ type fileWriter struct {
 	filename  string
 }
 
+// Write writes the data to a tmp file before copying it over to the desired location.
 func (t fileWriter) Write(token []byte) error {
 	// Write to a temp file first.
 	tmpTokenPath := path.Join(t.directory, tokenFileTmp)
