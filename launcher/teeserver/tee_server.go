@@ -11,17 +11,10 @@ import (
 
 	"github.com/google/go-tpm-tools/launcher/agent"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
+	"github.com/google/go-tpm-tools/launcher/models"
 	"github.com/google/go-tpm-tools/launcher/spec"
 	"github.com/google/go-tpm-tools/verifier"
-	"github.com/google/go-tpm-tools/verifier/util"
 )
-
-// AttestClients contains clients for supported verifier services that can be used to
-// get attestation tokens.
-type AttestClients struct {
-	GCA verifier.Client
-	ITA verifier.Client
-}
 
 type attestHandler struct {
 	ctx         context.Context
@@ -29,7 +22,7 @@ type attestHandler struct {
 	// defaultTokenFile string
 	logger     logging.Logger
 	launchSpec spec.LaunchSpec
-	clients    *AttestClients
+	clients    models.AttestClients
 }
 
 type customTokenRequest struct {
@@ -46,7 +39,7 @@ type TeeServer struct {
 }
 
 // New takes in a socket and start to listen to it, and create a server
-func New(ctx context.Context, unixSock string, a agent.AttestationAgent, logger logging.Logger, launchSpec spec.LaunchSpec, clients *AttestClients) (*TeeServer, error) {
+func New(ctx context.Context, unixSock string, a agent.AttestationAgent, logger logging.Logger, launchSpec spec.LaunchSpec, clients models.AttestClients) (*TeeServer, error) {
 	var err error
 	nl, err := net.Listen("unix", unixSock)
 	if err != nil {
@@ -94,18 +87,6 @@ func (a *attestHandler) logAndWriteError(errStr string, status int, w http.Respo
 func (a *attestHandler) getToken(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html")
 
-	// If the handler does not have a GCA client, create one.
-	if a.clients.GCA == nil {
-		gcaClient, err := util.NewRESTClient(a.ctx, a.launchSpec.AttestationServiceAddr, a.launchSpec.ProjectID, a.launchSpec.Region)
-		if err != nil {
-			errStr := fmt.Sprintf("failed to create REST verifier client: %v", err)
-			a.logAndWriteError(errStr, http.StatusInternalServerError, w)
-			return
-		}
-
-		a.clients.GCA = gcaClient
-	}
-
 	a.attest(w, r, a.clients.GCA)
 }
 
@@ -132,7 +113,7 @@ func (a *attestHandler) attest(w http.ResponseWriter, r *http.Request, client ve
 			return
 		}
 
-		token, err := a.attestAgent.AttestWithClient(a.ctx, agent.AttestAgentOpts{}, client)
+		token, err := a.attestAgent.AttestWithClient(a.ctx, client, agent.AttestAgentOpts{})
 		if err != nil {
 			errStr := fmt.Sprintf("failed to retrieve attestation service token: %v", err)
 			a.logAndWriteError(errStr, http.StatusInternalServerError, w)
@@ -165,12 +146,14 @@ func (a *attestHandler) attest(w http.ResponseWriter, r *http.Request, client ve
 			return
 		}
 
-		tok, err := a.attestAgent.AttestWithClient(a.ctx,
+		tok, err := a.attestAgent.AttestWithClient(
+			a.ctx,
+			client,
 			agent.AttestAgentOpts{
 				Aud:       tokenReq.Audience,
 				Nonces:    tokenReq.Nonces,
 				TokenType: tokenReq.TokenType,
-			}, client)
+			})
 		if err != nil {
 			a.logAndWriteError(err.Error(), http.StatusBadRequest, w)
 			return
