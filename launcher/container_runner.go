@@ -51,6 +51,33 @@ type ContainerRunner struct {
 	logger        logging.Logger
 	serialConsole *os.File
 	attestClients models.AttestClients
+	tokenWriter   tokenWriter
+}
+
+// TokenWriter is a struct for writing the token to the well known endpoint.
+// Separating the token writing functionality allows tests to not rely on the disk.
+type tokenWriter interface {
+	Write(token []byte) error
+}
+
+// FileWriter is a tokenWriter that writes the token to a file.
+type fileWriter struct {
+	directory string
+	filename  string
+}
+
+func (t fileWriter) Write(token []byte) error {
+	// Write to a temp file first.
+	tmpTokenPath := path.Join(t.directory, tokenFileTmp)
+	if err := os.WriteFile(tmpTokenPath, token, 0644); err != nil {
+		return fmt.Errorf("failed to write a tmp token file: %v", err)
+	}
+
+	// Rename the temp file to the token file (to avoid race conditions).
+	if err := os.Rename(tmpTokenPath, path.Join(launcherfile.HostTmpPath, t.filename)); err != nil {
+		return fmt.Errorf("failed to rename the token file: %v", err)
+	}
+	return nil
 }
 
 // Since we only allow one container on a VM, using a deterministic id is probably fine
@@ -231,6 +258,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		logger,
 		serialConsole,
 		attestClients,
+		&fileWriter{directory: launcherfile.HostTmpPath, filename: launcherfile.AttestationVerifierTokenFilename},
 	}, nil
 }
 
@@ -434,16 +462,7 @@ func (r *ContainerRunner) refreshToken(ctx context.Context) (time.Duration, erro
 		return 0, errors.New("token is expired")
 	}
 
-	// Write to a temp file first.
-	tmpTokenPath := path.Join(launcherfile.HostTmpPath, tokenFileTmp)
-	if err = os.WriteFile(tmpTokenPath, token, 0644); err != nil {
-		return 0, fmt.Errorf("failed to write a tmp token file: %v", err)
-	}
-
-	// Rename the temp file to the token file (to avoid race conditions).
-	if err = os.Rename(tmpTokenPath, path.Join(launcherfile.HostTmpPath, launcherfile.AttestationVerifierTokenFilename)); err != nil {
-		return 0, fmt.Errorf("failed to rename the token file: %v", err)
-	}
+	r.tokenWriter.Write(token)
 
 	// Print out the claims in the jwt payload
 	mapClaims := jwt.MapClaims{}
@@ -472,6 +491,7 @@ func (r *ContainerRunner) fetchAndWriteTokenWithRetry(ctx context.Context,
 
 	// Set a timer to refresh the token before it expires.
 	// The first timer expires immediately to trigger the refresh loop right away.
+	// TODO - Timers are flaky to test. We should wait for a timer interface or make our own.
 	timer := time.NewTimer(0)
 	go func() {
 		for {
