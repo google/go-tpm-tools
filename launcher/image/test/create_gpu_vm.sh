@@ -13,6 +13,7 @@ print_usage() {
     echo "  -v <machineType>: type of machine for VM"
     echo "  -g <gpuType>: type of GPU to use for the VM"
     echo "  -c <gpuCount>: number of GPU(s) to use for the VM"
+    echo "  -x <confidentialComputeType> : type of Confidential Compute technology. default is NONE"
     exit 1
 }
 
@@ -35,6 +36,11 @@ create_vm() {
   if [ -z "$MACHINE_TYPE" ]; then
     echo "Empty machine type supplied."
     exit 1
+  fi
+
+  CONFIDENTIAL_COMPUTE_FLAGS=""
+  if [ "$CONFIDENTIAL_COMPUTE_TYPE" != "NONE" ]; then
+    CONFIDENTIAL_COMPUTE_FLAGS="--confidential-compute-type=${CONFIDENTIAL_COMPUTE_TYPE}"
   fi
 
   APPEND_METADATA=''
@@ -61,7 +67,10 @@ create_vm() {
     --zone=$ZONE \
     --image=$IMAGE_NAME \
     --image-project=$PROJECT_NAME \
-    --shielded-secure-boot $APPEND_METADATA \
+    --shielded-secure-boot \
+    --preemptible \
+    $CONFIDENTIAL_COMPUTE_FLAGS \
+    $APPEND_METADATA \
     $APPEND_METADATA_FILE
 }
 
@@ -75,11 +84,12 @@ MACHINE_TYPE=''
 GPU_TYPE=''
 GPU_COUNT=''
 DISK_SIZE_GB=100
+CONFIDENTIAL_COMPUTE_TYPE='NONE'
 
 
 # In getopts, a ':' following a letter means that that flag takes an argument.
 # For example, i: means -i takes an additional argument.
-while getopts 'i:f:m:p:n:z:v:g:c:' flag; do
+while getopts 'i:f:m:p:n:z:v:g:c:x:' flag; do
   case "${flag}" in
     i) IMAGE_NAME=${OPTARG} ;;
     f) METADATA_FILE=${OPTARG} ;;
@@ -90,6 +100,7 @@ while getopts 'i:f:m:p:n:z:v:g:c:' flag; do
     v) MACHINE_TYPE=${OPTARG} ;;
     g) GPU_TYPE=${OPTARG} ;;
     c) GPU_COUNT=${OPTARG} ;;
+    x) CONFIDENTIAL_COMPUTE_TYPE=${OPTARG} ;;
     *) print_usage ;;
   esac
 done
