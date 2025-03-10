@@ -252,11 +252,11 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 			return fmt.Errorf("ITA fields %s and %s must both be provided", itaRegion, itaKey)
 		}
 
-		if itaRegionOK && itaRegionVal != "" {
+		if itaRegionOK {
 			s.ITARegion = itaRegionVal
 		}
 
-		if itaKeyOK && itaKeyVal != "" {
+		if itaKeyOK {
 			s.ITAKey = itaKeyVal
 		}
 	}
