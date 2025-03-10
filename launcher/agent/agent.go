@@ -213,16 +213,6 @@ func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error
 		return nil, fmt.Errorf("received an unsupported attestation type! %v", v)
 	}
 
-	attResult, err := a.avRot.Attest(challenge.Nonce)
-	if err != nil {
-		return nil, fmt.Errorf("failed to attest: %v", err)
-	}
-
-	var cosCel bytes.Buffer
-	if err := a.avRot.GetCEL().EncodeCEL(&cosCel); err != nil {
-		return nil, err
-	}
-
 	switch v := attResult.(type) {
 	case *pb.Attestation:
 		a.logger.Info("attestation through TPM quote")
@@ -247,7 +237,14 @@ func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error
 
 	signatures := a.sigsCache.get()
 	if len(signatures) > 0 {
-		req.ContainerImageSignatures = signatures
+		for _, sig := range signatures {
+			verifierSig, err := convertOCIToContainerSignature(sig)
+			if err != nil {
+				a.logger.Error(fmt.Sprintf("error converting container signatures: %v", err))
+				continue
+			}
+			req.ContainerImageSignatures = append(req.ContainerImageSignatures, verifierSig)
+		}
 		a.logger.Info("Found container image signatures: %v\n", signatures)
 	}
 

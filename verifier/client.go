@@ -7,7 +7,6 @@ import (
 
 	attestpb "github.com/google/go-tpm-tools/proto/attest"
 	"github.com/google/go-tpm-tools/verifier/models"
-	"github.com/google/go-tpm-tools/verifier/oci"
 	"google.golang.org/genproto/googleapis/rpc/status"
 )
 
@@ -31,6 +30,11 @@ type Challenge struct {
 	Signature []byte
 }
 
+type ContainerSignature struct {
+	Payload   []byte
+	Signature []byte
+}
+
 // VerifyAttestationRequest is passed in on VerifyAttestation. It contains the
 // Challenge from CreateChallenge, optional GcpCredentials linked to the
 // attestation, the Attestation generated from the TPM, and optional container image signatures associated with the workload.
@@ -39,7 +43,7 @@ type VerifyAttestationRequest struct {
 	GcpCredentials [][]byte
 	// Attestation is for TPM attestation
 	Attestation              *attestpb.Attestation
-	ContainerImageSignatures []oci.Signature
+	ContainerImageSignatures []*ContainerSignature
 	TokenOptions             *models.TokenOptions
 	// TDCCELAttestation is for TDX CCEL RTMR attestation
 	TDCCELAttestation *TDCCELAttestation

@@ -277,8 +277,8 @@ func TestConvertRequestToTokenRequest(t *testing.T) {
 					},
 				},
 				TokenOpts: tokenOptions{
-					Audience:      testVerifierRequest.TokenOptions.CustomAudience,
-					Nonces:        testVerifierRequest.TokenOptions.CustomNonce,
+					Audience:      testVerifierRequest.TokenOptions.Audience,
+					Nonces:        testVerifierRequest.TokenOptions.Nonces,
 					TokenType:     testVerifierRequest.TokenOptions.TokenType,
 					TokenTypeOpts: tokenTypeOptions{},
 				},

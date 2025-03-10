@@ -162,8 +162,8 @@ func convertRequestToTokenRequest(request verifier.VerifyAttestationRequest) tok
 			IntermediateCerts: request.TDCCELAttestation.IntermediateCerts,
 			CSInfo: confidentialSpaceInfo{
 				TokenOpts: tokenOptions{
-					Audience:      request.TokenOptions.CustomAudience,
-					Nonces:        request.TokenOptions.CustomNonce,
+					Audience:      request.TokenOptions.Audience,
+					Nonces:        request.TokenOptions.Nonces,
 					TokenType:     request.TokenOptions.TokenType,
 					TokenTypeOpts: tokenTypeOptions{},
 				},
