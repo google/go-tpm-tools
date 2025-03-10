@@ -102,6 +102,12 @@ type EnvVar struct {
 	Value string
 }
 
+// ITAConfig represents the configuration needed to integrate with ITA as a verifier.
+type ITAConfig struct {
+	ITARegion string
+	ITAKey    string
+}
+
 // LaunchSpec contains specification set by the operator who wants to
 // launch a container.
 type LaunchSpec struct {
@@ -119,8 +125,7 @@ type LaunchSpec struct {
 	MonitoringEnabled          MonitoringType
 	LogRedirect                LogRedirectLocation
 	Mounts                     []launchermount.Mount
-	ITARegion                  string
-	ITAKey                     string
+	ITAConfig                  *ITAConfig
 	// DevShmSize is specified in kiB.
 	DevShmSize  int64
 	Experiments experiments.Experiments
@@ -248,16 +253,15 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 		itaRegionVal, itaRegionOK := unmarshaledMap[itaRegion]
 		itaKeyVal, itaKeyOK := unmarshaledMap[itaKey]
 
-		if itaRegionOK != itaKeyOK {
-			return fmt.Errorf("ITA fields %s and %s must both be provided", itaRegion, itaKey)
+		if itaRegionOK != itaKeyOK || (itaRegionOK && itaRegionVal == "" && itaKeyVal == "") {
+			return fmt.Errorf("ITA fields %s and %s must both be provided and non-empty", itaRegion, itaKey)
 		}
 
-		if itaRegionOK && itaRegionVal != "" {
-			s.ITARegion = itaRegionVal
-		}
+		// If key and region are both not in the map, do not set up ITA config.
 
-		if itaKeyOK && itaKeyVal != "" {
-			s.ITAKey = itaKeyVal
+		s.ITAConfig = &ITAConfig{
+			ITARegion: itaRegionVal,
+			ITAKey:    itaKeyVal,
 		}
 	}
 
@@ -267,7 +271,9 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 // LogFriendly creates a copy of the spec that is safe to log by censoring
 func (s *LaunchSpec) LogFriendly() LaunchSpec {
 	safeSpec := *s
-	safeSpec.ITAKey = strings.Repeat("*", len(s.ITAKey))
+	if safeSpec.ITAConfig != nil {
+		safeSpec.ITAConfig.ITAKey = strings.Repeat("*", len(s.ITAConfig.ITAKey))
+	}
 
 	return safeSpec
 }

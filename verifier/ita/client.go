@@ -38,6 +38,10 @@ type client struct {
 	apiKey string
 }
 
+type itaVerifierData struct {
+	itaNonce itaNonce
+}
+
 func urlFromRegion(region string) (string, error) {
 	if region == "" {
 		return "", errors.New("API region required to initialize ITA client")
@@ -85,12 +89,6 @@ func NewClient(region string, key string) (verifier.Client, error) {
 // Confirm that client implements verifier.Client interface.
 var _ verifier.Client = (*client)(nil)
 
-type itaNonce struct {
-	Val       []byte `json:"val"`
-	Iat       []byte `json:"iat"`
-	Signature []byte `json:"signature"`
-}
-
 // The ITA evidence nonce is a concatenation+hash of Val and Iat. See references below:
 // https://github.com/intel/trustauthority-client-for-go/blob/main/go-connector/attest.go#L22
 // https://github.com/intel/trustauthority-client-for-go/blob/main/go-tdx/tdx_adapter.go#L37
@@ -123,15 +121,19 @@ func (c *client) CreateChallenge(_ context.Context) (*verifier.Challenge, error)
 	}
 
 	return &verifier.Challenge{
-		Name:      challengeNamePrefix + string(resp.Val),
-		Nonce:     nonce,
-		Val:       resp.Val,
-		Iat:       resp.Iat,
-		Signature: resp.Signature,
+		Name:  challengeNamePrefix + string(resp.Val),
+		Nonce: nonce,
+		VerifierData: itaVerifierData{
+			itaNonce{
+				Val:       resp.Val,
+				Iat:       resp.Iat,
+				Signature: resp.Signature,
+			},
+		},
 	}, nil
 }
 
-func convertRequestToTokenRequest(request verifier.VerifyAttestationRequest) tokenRequest {
+func convertRequestToTokenRequest(request verifier.VerifyAttestationRequest) (tokenRequest, error) {
 	// Trim trailing 0xFF bytes from CCEL Data.
 	data := request.TDCCELAttestation.CcelData
 	trimIndex := len(data)
@@ -144,16 +146,21 @@ func convertRequestToTokenRequest(request verifier.VerifyAttestationRequest) tok
 		}
 	}
 
+	verifierData, ok := request.Challenge.VerifierData.(itaVerifierData)
+	if !ok {
+		return tokenRequest{}, errors.New("failed to cast challenge data to itaChallengeData")
+	}
+
 	tokenReq := tokenRequest{
 		PolicyMatch: true,
 		TDX: tdxEvidence{
 			EventLog:          data[:trimIndex],
 			CanonicalEventLog: request.TDCCELAttestation.CanonicalEventLog,
 			Quote:             request.TDCCELAttestation.TdQuote,
-			VerifierNonce: nonce{
-				Val:       request.Challenge.Val,
-				Iat:       request.Challenge.Iat,
-				Signature: request.Challenge.Signature,
+			VerifierNonce: itaNonce{
+				Val:       verifierData.itaNonce.Val,
+				Iat:       verifierData.itaNonce.Iat,
+				Signature: verifierData.itaNonce.Signature,
 			},
 		},
 		SigAlg: "RS256", // Figure out what this should be.
@@ -183,7 +190,7 @@ func convertRequestToTokenRequest(request verifier.VerifyAttestationRequest) tok
 		tokenReq.GCP.CSInfo.SignedEntities = append(tokenReq.GCP.CSInfo.SignedEntities, itaSig)
 	}
 
-	return tokenReq
+	return tokenReq, nil
 }
 
 func (c *client) VerifyAttestation(_ context.Context, request verifier.VerifyAttestationRequest) (*verifier.VerifyAttestationResponse, error) {
@@ -191,7 +198,10 @@ func (c *client) VerifyAttestation(_ context.Context, request verifier.VerifyAtt
 		return nil, errors.New("TDX required for ITA attestation")
 	}
 
-	tokenReq := convertRequestToTokenRequest(request)
+	tokenReq, err := convertRequestToTokenRequest(request)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert verifier request to a token request: %w", err)
+	}
 
 	url := c.apiURL + tokenEndpoint
 	headers := map[string]string{

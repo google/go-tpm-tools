@@ -32,10 +32,10 @@ import (
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/internal/signaturediscovery"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
+	"github.com/google/go-tpm-tools/launcher/models"
 	"github.com/google/go-tpm-tools/launcher/registryauth"
 	"github.com/google/go-tpm-tools/launcher/spec"
 	"github.com/google/go-tpm-tools/launcher/teeserver"
-	"github.com/google/go-tpm-tools/verifier"
 	"github.com/google/go-tpm-tools/verifier/ita"
 	"github.com/google/go-tpm-tools/verifier/util"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
@@ -50,23 +50,20 @@ type ContainerRunner struct {
 	attestAgent   agent.AttestationAgent
 	logger        logging.Logger
 	serialConsole *os.File
+	attestClients models.AttestClients
+	tokenWriter   models.DataWriter
+	timer         models.Timer
 }
-
-const tokenFileTmp = ".token.tmp"
-
-const teeServerSocket = "teeserver.sock"
 
 // Since we only allow one container on a VM, using a deterministic id is probably fine
 const (
 	containerID = "tee-container"
 	snapshotID  = "tee-snapshot"
-)
 
-const (
+	teeServerSocket = "teeserver.sock"
+
 	nofile = 131072 // Max number of file descriptor
-)
 
-const (
 	// defaultRefreshMultiplier is a multiplier on the current token expiration
 	// time, at which the refresher goroutine will collect a new token.
 	// defaultRefreshMultiplier+defaultRefreshJitter should be <1.
@@ -216,22 +213,19 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		return tokens, nil
 	}
 
-	asAddr := launchSpec.AttestationServiceAddr
-
-	var verifierClient verifier.Client
-	if launchSpec.ITARegion == "" {
-		gcaClient, err := util.NewRESTClient(ctx, asAddr, launchSpec.ProjectID, launchSpec.Region)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create REST verifier client: %v", err)
-		}
-
-		verifierClient = gcaClient
+	attestClients, err := setUpAttestClients(ctx, launchSpec)
+	if err != nil {
+		return nil, err
 	}
 
 	// Create a new signaturediscovery client to fetch signatures.
 	sdClient := getSignatureDiscoveryClient(cdClient, mdsClient, image.Target())
 
-	attestAgent, err := agent.CreateAttestationAgent(tpm, client.GceAttestationKeyECC, verifierClient, principalFetcherWithImpersonate, sdClient, launchSpec, logger)
+	attestAgent, err := agent.CreateAttestationAgent(tpm, client.GceAttestationKeyECC, principalFetcherWithImpersonate, sdClient, launchSpec, logger)
+	if err != nil {
+		return nil, err
+	}
+	tokenWriter, err := models.NewFileWriter(launcherfile.HostTmpPath, launcherfile.AttestationVerifierTokenFilename)
 	if err != nil {
 		return nil, err
 	}
@@ -241,6 +235,9 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		attestAgent,
 		logger,
 		serialConsole,
+		attestClients,
+		tokenWriter,
+		models.NewRealTimer(),
 	}, nil
 }
 
@@ -383,6 +380,27 @@ func (r *ContainerRunner) measureContainerClaims(ctx context.Context) error {
 	return nil
 }
 
+func setUpAttestClients(ctx context.Context, launchSpec spec.LaunchSpec) (models.AttestClients, error) {
+	attestClients := models.AttestClients{}
+	gcaClient, err := util.NewRESTClient(ctx, launchSpec.AttestationServiceAddr, launchSpec.ProjectID, launchSpec.Region)
+	if err != nil {
+		return attestClients, fmt.Errorf("failed to create REST GCA client: %v", err)
+	}
+
+	attestClients.GCA = gcaClient
+
+	if launchSpec.ITAConfig != nil {
+		itaClient, err := ita.NewClient(launchSpec.ITAConfig.ITARegion, launchSpec.ITAConfig.ITAKey)
+		if err != nil {
+			return attestClients, fmt.Errorf("failed to create ITA client: %v", err)
+		}
+
+		attestClients.ITA = itaClient
+	}
+
+	return attestClients, nil
+}
+
 // measureMemoryMonitor will measure memory monitoring claims into the COS
 // eventlog in the AttestationAgent.
 func (r *ContainerRunner) measureMemoryMonitor() error {
@@ -397,8 +415,8 @@ func (r *ContainerRunner) measureMemoryMonitor() error {
 	return nil
 }
 
-// Retrieves the default OIDC token from the attestation service, and returns how long
-// to wait before attemping to refresh it.
+// Retrieves the default OIDC token from the GCA and returns how long to wait before attemping to
+// refresh it.
 // The token file will be written to a tmp file and then renamed.
 func (r *ContainerRunner) refreshToken(ctx context.Context) (time.Duration, error) {
 	if err := r.attestAgent.Refresh(ctx); err != nil {
@@ -406,7 +424,7 @@ func (r *ContainerRunner) refreshToken(ctx context.Context) (time.Duration, erro
 	}
 
 	// request a default token
-	token, err := r.attestAgent.Attest(ctx, agent.AttestAgentOpts{})
+	token, err := r.attestAgent.AttestWithClient(ctx, r.attestClients.GCA, agent.AttestAgentOpts{})
 	if err != nil {
 		return 0, fmt.Errorf("failed to retrieve attestation service token: %v", err)
 	}
@@ -423,16 +441,7 @@ func (r *ContainerRunner) refreshToken(ctx context.Context) (time.Duration, erro
 		return 0, errors.New("token is expired")
 	}
 
-	// Write to a temp file first.
-	tmpTokenPath := path.Join(launcherfile.HostTmpPath, tokenFileTmp)
-	if err = os.WriteFile(tmpTokenPath, token, 0644); err != nil {
-		return 0, fmt.Errorf("failed to write a tmp token file: %v", err)
-	}
-
-	// Rename the temp file to the token file (to avoid race conditions).
-	if err = os.Rename(tmpTokenPath, path.Join(launcherfile.HostTmpPath, launcherfile.AttestationVerifierTokenFilename)); err != nil {
-		return 0, fmt.Errorf("failed to rename the token file: %v", err)
-	}
+	r.tokenWriter.Write(token)
 
 	// Print out the claims in the jwt payload
 	mapClaims := jwt.MapClaims{}
@@ -455,29 +464,29 @@ func (r *ContainerRunner) fetchAndWriteToken(ctx context.Context) error {
 // retry specifies the refresher goroutine's retry policy.
 func (r *ContainerRunner) fetchAndWriteTokenWithRetry(ctx context.Context,
 	retry func() *backoff.ExponentialBackOff) error {
-	if err := os.MkdirAll(launcherfile.HostTmpPath, 0744); err != nil {
-		return err
-	}
 	duration, err := r.refreshToken(ctx)
 	if err != nil {
 		return err
 	}
 
+	r.timer.Reset(duration)
 	// Set a timer to refresh the token before it expires.
-	timer := time.NewTimer(duration)
+	// The first timer expires immediately to trigger the refresh loop right away.
 	go func() {
+		defer r.timer.Stop()
 		for {
 			select {
 			case <-ctx.Done():
-				timer.Stop()
+				r.timer.Stop()
 				r.logger.Info("token refreshing stopped")
 				return
-			case <-timer.C:
+			case <-r.timer.C():
 				r.logger.Info("refreshing attestation verifier OIDC token")
 				var duration time.Duration
 				// Refresh token with default retry policy.
 				err := backoff.RetryNotify(
 					func() error {
+						var err error
 						duration, err = r.refreshToken(ctx)
 						return err
 					},
@@ -490,7 +499,7 @@ func (r *ContainerRunner) fetchAndWriteTokenWithRetry(ctx context.Context,
 					return
 				}
 
-				timer.Reset(duration)
+				r.timer.Reset(duration)
 			}
 		}
 	}()
@@ -560,8 +569,8 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		return fmt.Errorf("failed to measure CEL events: %v", err)
 	}
 
-	// Only refresh token if agent has a default GCA client (not ITA use case).
-	if r.launchSpec.ITARegion == "" {
+	// Refresh token only if agent has a default GCA client (no third party verifier clients set up)
+	if !r.attestClients.HasThirdPartyClient() {
 		if err := r.fetchAndWriteToken(ctx); err != nil {
 			return fmt.Errorf("failed to fetch and write OIDC token: %v", err)
 		}
@@ -570,24 +579,7 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	// create and start the TEE server
 	r.logger.Info("EnableOnDemandAttestation is enabled: initializing TEE server.")
 
-	attestClients := &teeserver.AttestClients{}
-	if r.launchSpec.ITARegion != "" {
-		itaClient, err := ita.NewClient(r.launchSpec.ITARegion, r.launchSpec.ITAKey)
-		if err != nil {
-			return fmt.Errorf("failed to create ITA client: %v", err)
-		}
-
-		attestClients.ITA = itaClient
-	} else {
-		gcaClient, err := util.NewRESTClient(ctx, r.launchSpec.AttestationServiceAddr, r.launchSpec.ProjectID, r.launchSpec.Region)
-		if err != nil {
-			return fmt.Errorf("failed to create REST verifier client: %v", err)
-		}
-
-		attestClients.GCA = gcaClient
-	}
-
-	teeServer, err := teeserver.New(ctx, path.Join(launcherfile.HostTmpPath, teeServerSocket), r.attestAgent, r.logger, r.launchSpec, attestClients)
+	teeServer, err := teeserver.New(ctx, path.Join(launcherfile.HostTmpPath, teeServerSocket), r.attestAgent, r.logger, r.launchSpec, r.attestClients)
 	if err != nil {
 		return fmt.Errorf("failed to create the TEE server: %v", err)
 	}
