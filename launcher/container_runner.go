@@ -35,6 +35,8 @@ import (
 	"github.com/google/go-tpm-tools/launcher/registryauth"
 	"github.com/google/go-tpm-tools/launcher/spec"
 	"github.com/google/go-tpm-tools/launcher/teeserver"
+	"github.com/google/go-tpm-tools/verifier"
+	"github.com/google/go-tpm-tools/verifier/ita"
 	"github.com/google/go-tpm-tools/verifier/util"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
@@ -228,9 +230,14 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 
 	asAddr := launchSpec.AttestationServiceAddr
 
-	verifierClient, err := util.NewRESTClient(ctx, asAddr, launchSpec.ProjectID, launchSpec.Region)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create REST verifier client: %v", err)
+	var verifierClient verifier.Client
+	if launchSpec.ITARegion == "" {
+		gcaClient, err := util.NewRESTClient(ctx, asAddr, launchSpec.ProjectID, launchSpec.Region)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create REST verifier client: %v", err)
+		}
+
+		verifierClient = gcaClient
 	}
 
 	// Create a new signaturediscovery client to fetch signatures.
@@ -409,6 +416,7 @@ func (r *ContainerRunner) refreshToken(ctx context.Context) (time.Duration, erro
 	if err := r.attestAgent.Refresh(ctx); err != nil {
 		return 0, fmt.Errorf("failed to refresh attestation agent: %v", err)
 	}
+
 	// request a default token
 	token, err := r.attestAgent.Attest(ctx, agent.AttestAgentOpts{})
 	if err != nil {
@@ -564,13 +572,34 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		return fmt.Errorf("failed to measure CEL events: %v", err)
 	}
 
-	if err := r.fetchAndWriteToken(ctx); err != nil {
-		return fmt.Errorf("failed to fetch and write OIDC token: %v", err)
+	// Only refresh token if agent has a default GCA client (not ITA use case).
+	if r.launchSpec.ITARegion == "" {
+		if err := r.fetchAndWriteToken(ctx); err != nil {
+			return fmt.Errorf("failed to fetch and write OIDC token: %v", err)
+		}
 	}
 
 	// create and start the TEE server
 	r.logger.Info("EnableOnDemandAttestation is enabled: initializing TEE server.")
-	teeServer, err := teeserver.New(ctx, path.Join(launcherfile.HostTmpPath, teeServerSocket), r.attestAgent, r.logger)
+
+	attestClients := &teeserver.AttestClients{}
+	if r.launchSpec.ITARegion != "" {
+		itaClient, err := ita.NewClient(r.launchSpec.ITARegion, r.launchSpec.ITAKey)
+		if err != nil {
+			return fmt.Errorf("failed to create ITA client: %v", err)
+		}
+
+		attestClients.ITA = itaClient
+	} else {
+		gcaClient, err := util.NewRESTClient(ctx, r.launchSpec.AttestationServiceAddr, r.launchSpec.ProjectID, r.launchSpec.Region)
+		if err != nil {
+			return fmt.Errorf("failed to create REST verifier client: %v", err)
+		}
+
+		attestClients.GCA = gcaClient
+	}
+
+	teeServer, err := teeserver.New(ctx, path.Join(launcherfile.HostTmpPath, teeServerSocket), r.attestAgent, r.logger, r.launchSpec, attestClients)
 	if err != nil {
 		return fmt.Errorf("failed to create the TEE server: %v", err)
 	}

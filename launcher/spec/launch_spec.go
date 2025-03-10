@@ -86,6 +86,8 @@ const (
 	monitoringEnable           = "tee-monitoring-enable"
 	devShmSizeKey              = "tee-dev-shm-size-kb"
 	mountKey                   = "tee-mount"
+	itaRegion                  = "ita-region"
+	itaKey                     = "ita-api-key"
 )
 
 const (
@@ -117,6 +119,8 @@ type LaunchSpec struct {
 	MonitoringEnabled          MonitoringType
 	LogRedirect                LogRedirectLocation
 	Mounts                     []launchermount.Mount
+	ITARegion                  string
+	ITAKey                     string
 	// DevShmSize is specified in kiB.
 	DevShmSize  int64
 	Experiments experiments.Experiments
@@ -240,7 +244,32 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 		}
 	}
 
+	if s.Experiments.EnableItaVerifier {
+		itaRegionVal, itaRegionOK := unmarshaledMap[itaRegion]
+		itaKeyVal, itaKeyOK := unmarshaledMap[itaKey]
+
+		if itaRegionOK != itaKeyOK {
+			return fmt.Errorf("ITA fields %s and %s must both be provided", itaRegion, itaKey)
+		}
+
+		if itaRegionOK {
+			s.ITARegion = itaRegionVal
+		}
+
+		if itaKeyOK {
+			s.ITAKey = itaKeyVal
+		}
+	}
+
 	return nil
+}
+
+// LogFriendly creates a copy of the spec that is safe to log by censoring
+func (s *LaunchSpec) LogFriendly() LaunchSpec {
+	safeSpec := *s
+	safeSpec.ITAKey = strings.Repeat("*", len(s.ITAKey))
+
+	return safeSpec
 }
 
 // GetLaunchSpec takes in a metadata server client, reads and parse operator's

@@ -181,7 +181,7 @@ func getUptime() (string, error) {
 }
 
 func startLauncher(launchSpec spec.LaunchSpec, serialConsole *os.File) error {
-	logger.Info(fmt.Sprintf("Launch Spec: %+v", launchSpec))
+	logger.Info(fmt.Sprintf("Launch Spec: %+v", launchSpec.LogFriendly()))
 	containerdClient, err := containerd.New(defaults.DefaultAddress)
 	if err != nil {
 		return &launcher.RetryableError{Err: err}
