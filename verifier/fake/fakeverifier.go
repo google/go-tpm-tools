@@ -4,6 +4,7 @@ package fake
 import (
 	"context"
 	"crypto"
+	"encoding/base64"
 	"encoding/binary"
 	"fmt"
 	"strings"
@@ -120,12 +121,8 @@ func isValid(alg string) bool {
 }
 
 // Note: this is only compatible with the fake signature implementation.
-func extractClaims(signature oci.Signature) (ContainerImageSignatureClaims, error) {
-	payload, err := signature.Payload()
-	if err != nil {
-		return ContainerImageSignatureClaims{}, err
-	}
-	payloadStr := string(payload)
+func extractClaims(signature *verifier.ContainerSignature) (ContainerImageSignatureClaims, error) {
+	payloadStr := string(signature.Payload)
 
 	// Fake payload consists of the expected pubkey and sigalg separated by a comma.
 	separatorIndex := strings.LastIndex(payloadStr, ",")
@@ -135,14 +132,9 @@ func extractClaims(signature oci.Signature) (ContainerImageSignatureClaims, erro
 		return ContainerImageSignatureClaims{}, fmt.Errorf("unsupported algorithm %v", sigAlg)
 	}
 
-	sig, err := signature.Base64Encoded()
-	if err != nil {
-		return ContainerImageSignatureClaims{}, err
-	}
-
 	return ContainerImageSignatureClaims{
 		Payload:   payloadStr,
-		Signature: sig,
+		Signature: base64.StdEncoding.EncodeToString(signature.Signature),
 		PubKey:    payloadStr[:separatorIndex],
 		SigAlg:    sigAlg,
 	}, nil
