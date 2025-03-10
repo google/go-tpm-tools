@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-tpm-tools/verifier"
+	"github.com/google/go-tpm-tools/verifier/models"
 )
 
 var testVerifierRequest = verifier.VerifyAttestationRequest{
@@ -43,6 +44,11 @@ var testVerifierRequest = verifier.VerifyAttestationRequest{
 		Val:       []byte("test-nonce-val"),
 		Iat:       []byte("123456"),
 		Signature: []byte("test-nonce-sig"),
+	},
+	TokenOptions: &models.TokenOptions{
+		Audience:  "testaud",
+		Nonces:    []string{"testnonces"},
+		TokenType: "testtokentype",
 	},
 }
 
