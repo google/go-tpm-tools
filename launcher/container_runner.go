@@ -51,33 +51,8 @@ type ContainerRunner struct {
 	logger        logging.Logger
 	serialConsole *os.File
 	attestClients models.AttestClients
-	tokenWriter   tokenWriter
-}
-
-// TokenWriter is an interface for writing the token to some destination.
-type tokenWriter interface {
-	Write(token []byte) error
-}
-
-// FileWriter is a tokenWriter that writes the token to a file.
-type fileWriter struct {
-	directory string
-	filename  string
-}
-
-// Write writes the data to a tmp file before copying it over to the desired location.
-func (t fileWriter) Write(token []byte) error {
-	// Write to a temp file first.
-	tmpTokenPath := path.Join(t.directory, tokenFileTmp)
-	if err := os.WriteFile(tmpTokenPath, token, 0644); err != nil {
-		return fmt.Errorf("failed to write a tmp token file: %v", err)
-	}
-
-	// Rename the temp file to the token file (to avoid race conditions).
-	if err := os.Rename(tmpTokenPath, path.Join(launcherfile.HostTmpPath, t.filename)); err != nil {
-		return fmt.Errorf("failed to rename the token file: %v", err)
-	}
-	return nil
+	tokenWriter   models.DataWriter
+	timer         models.Timer
 }
 
 // Since we only allow one container on a VM, using a deterministic id is probably fine
@@ -85,7 +60,6 @@ const (
 	containerID = "tee-container"
 	snapshotID  = "tee-snapshot"
 
-	tokenFileTmp    = ".token.tmp"
 	teeServerSocket = "teeserver.sock"
 
 	nofile = 131072 // Max number of file descriptor
@@ -251,6 +225,10 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	if err != nil {
 		return nil, err
 	}
+	tokenWriter, err := models.NewFileWriter(launcherfile.HostTmpPath, launcherfile.AttestationVerifierTokenFilename)
+	if err != nil {
+		return nil, err
+	}
 	return &ContainerRunner{
 		container,
 		launchSpec,
@@ -258,7 +236,8 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		logger,
 		serialConsole,
 		attestClients,
-		&fileWriter{directory: launcherfile.HostTmpPath, filename: launcherfile.AttestationVerifierTokenFilename},
+		tokenWriter,
+		models.NewRealTimer(),
 	}, nil
 }
 
@@ -485,22 +464,23 @@ func (r *ContainerRunner) fetchAndWriteToken(ctx context.Context) error {
 // retry specifies the refresher goroutine's retry policy.
 func (r *ContainerRunner) fetchAndWriteTokenWithRetry(ctx context.Context,
 	retry func() *backoff.ExponentialBackOff) error {
-	if err := os.MkdirAll(launcherfile.HostTmpPath, 0744); err != nil {
+	duration, err := r.refreshToken(ctx)
+	if err != nil {
 		return err
 	}
 
+	r.timer.Reset(duration)
 	// Set a timer to refresh the token before it expires.
 	// The first timer expires immediately to trigger the refresh loop right away.
-	// TODO - Timers are flaky to test. We should wait for a timer interface or make our own.
-	timer := time.NewTimer(0)
 	go func() {
+		defer r.timer.Stop()
 		for {
 			select {
 			case <-ctx.Done():
-				timer.Stop()
+				r.timer.Stop()
 				r.logger.Info("token refreshing stopped")
 				return
-			case <-timer.C:
+			case <-r.timer.C():
 				r.logger.Info("refreshing attestation verifier OIDC token")
 				var duration time.Duration
 				// Refresh token with default retry policy.
@@ -519,7 +499,7 @@ func (r *ContainerRunner) fetchAndWriteTokenWithRetry(ctx context.Context,
 					return
 				}
 
-				timer.Reset(duration)
+				r.timer.Reset(duration)
 			}
 		}
 	}()
