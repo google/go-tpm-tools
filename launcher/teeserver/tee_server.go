@@ -54,10 +54,9 @@ func New(ctx context.Context, unixSock string, a agent.AttestationAgent, logger 
 			Handler: (&attestHandler{
 				ctx:         ctx,
 				attestAgent: a,
-				// defaultTokenFile: filepath.Join(launcherfile.HostTmpPath, launcherfile.AttestationVerifierTokenFilename),
-				logger:     logger,
-				launchSpec: launchSpec,
-				clients:    clients,
+				logger:      logger,
+				launchSpec:  launchSpec,
+				clients:     clients,
 			}).Handler(),
 		},
 	}

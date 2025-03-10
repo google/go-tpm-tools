@@ -172,7 +172,7 @@ func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error
 	return a.AttestWithClient(ctx, opts, a.client)
 }
 
-// AttestWihtClient fetches the nonce and connection ID from the Attestation Service via the provided client,
+// AttestWithClient fetches the nonce and connection ID from the Attestation Service via the provided client,
 // creates an attestation message, and returns the resultant
 // principalIDTokens and Metadata Server-generated ID tokens for the instance.
 // When possible, Attest uses the technology-specific attestation root-of-trust
