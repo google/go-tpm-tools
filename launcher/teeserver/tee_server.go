@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"os"
 
 	"github.com/google/go-tpm-tools/launcher/agent"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
@@ -122,12 +121,9 @@ func (a *attestHandler) getITAToken(w http.ResponseWriter, r *http.Request) {
 func (a *attestHandler) attest(w http.ResponseWriter, r *http.Request, client verifier.Client) {
 	switch r.Method {
 	case http.MethodGet:
-		// this could call Attest(ctx) directly later.
-		data, err := os.ReadFile(a.defaultTokenFile)
-
-		if err != nil {
-			err = fmt.Errorf("failed to get the token: %w", err)
-			a.logAndWriteHTTPError(w, http.StatusNotFound, err)
+		if err := a.attestAgent.Refresh(a.ctx); err != nil {
+			errStr := fmt.Sprintf("failed to refresh attestation agent: %v", err)
+			a.logAndWriteError(errStr, http.StatusInternalServerError, w)
 			return
 		}
 
@@ -167,9 +163,9 @@ func (a *attestHandler) attest(w http.ResponseWriter, r *http.Request, client ve
 
 		// Do not check that TokenTypeOptions matches TokenType in the launcher.
 
-		tok, err := a.attestAgent.Attest(a.ctx, agent.AttestAgentOpts{
+		tok, err := a.attestAgent.AttestWithClient(a.ctx, agent.AttestAgentOpts{
 			TokenOptions: &tokenOptions,
-		})
+		}, client)
 		if err != nil {
 			a.logAndWriteHTTPError(w, http.StatusBadRequest, err)
 			return

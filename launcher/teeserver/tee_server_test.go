@@ -159,7 +159,7 @@ func TestCustomToken(t *testing.T) {
 					}
 				}
 			}`,
-			attestFunc: func(context.Context, agent.AttestAgentOpts) ([]byte, error) {
+			attestWithClientFunc: func(context.Context, agent.AttestAgentOpts, verifier.Client) ([]byte, error) {
 				return []byte{}, nil
 			},
 			want: http.StatusOK,
@@ -300,12 +300,13 @@ func TestCustomTokenDataParsedSuccessfully(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		tmpDir := t.TempDir()
-		tmpToken := path.Join(tmpDir, launcherfile.AttestationVerifierTokenFilename)
-		ah := attestHandler{defaultTokenFile: tmpToken,
+		ah := attestHandler{
 			logger: logging.SimpleLogger(),
+			clients: &AttestClients{
+				GCA: &fakeVerifierClient{},
+			},
 			attestAgent: fakeAttestationAgent{
-				attestFunc: func(_ context.Context, gotOpts agent.AttestAgentOpts) ([]byte, error) {
+				attestWithClientFunc: func(_ context.Context, gotOpts agent.AttestAgentOpts, _ verifier.Client) ([]byte, error) {
 					diff := cmp.Diff(test.wantOpts, gotOpts)
 					if diff != "" {
 						t.Errorf("%v: got unexpected agent.AttestAgentOpts. diff:\n%v", test.testName, diff)
