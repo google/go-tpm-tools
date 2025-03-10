@@ -161,14 +161,18 @@ func convertRequestToTokenRequest(request verifier.VerifyAttestationRequest) tok
 			AKCert:            request.TDCCELAttestation.AkCert,
 			IntermediateCerts: request.TDCCELAttestation.IntermediateCerts,
 			CSInfo: confidentialSpaceInfo{
-				TokenOpts: tokenOptions{
-					Audience:      request.TokenOptions.Audience,
-					Nonces:        request.TokenOptions.Nonces,
-					TokenType:     request.TokenOptions.TokenType,
-					TokenTypeOpts: tokenTypeOptions{},
-				},
+				TokenOpts: tokenOptions{},
 			},
 		},
+	}
+
+	if request.TokenOptions != nil {
+		tokenReq.GCP.CSInfo.TokenOpts = tokenOptions{
+			Audience:      request.TokenOptions.Audience,
+			Nonces:        request.TokenOptions.Nonces,
+			TokenType:     request.TokenOptions.TokenType,
+			TokenTypeOpts: tokenTypeOptions{},
+		}
 	}
 
 	for _, token := range request.GcpCredentials {
