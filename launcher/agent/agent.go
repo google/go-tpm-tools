@@ -213,16 +213,6 @@ func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error
 		return nil, fmt.Errorf("received an unsupported attestation type! %v", v)
 	}
 
-	attResult, err := a.avRot.Attest(challenge.Nonce)
-	if err != nil {
-		return nil, fmt.Errorf("failed to attest: %v", err)
-	}
-
-	var cosCel bytes.Buffer
-	if err := a.avRot.GetCEL().EncodeCEL(&cosCel); err != nil {
-		return nil, err
-	}
-
 	switch v := attResult.(type) {
 	case *pb.Attestation:
 		a.logger.Info("attestation through TPM quote")
