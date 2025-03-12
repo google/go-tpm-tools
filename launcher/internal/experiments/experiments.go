@@ -15,6 +15,7 @@ type Experiments struct {
 	EnableTempFSMount         bool
 	EnableHealthMonitoring    bool
 	EnableItaVerifier         bool
+	EnablePrivilegedCS        bool
 }
 
 // New takes a filepath, opens the file, and calls ReadJsonInput with the contents
