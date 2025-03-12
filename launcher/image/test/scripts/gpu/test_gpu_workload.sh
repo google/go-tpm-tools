@@ -7,6 +7,7 @@ source util/read_serial.sh
 SERIAL_OUTPUT=$(read_serial $1 $2) 
 print_serial=false
 
+# CUDA sample workload code : https://github.com/NVIDIA/cuda-samples/blob/master/Samples/0_Introduction/vectorAdd/vectorAdd.cu#L176
 if echo $SERIAL_OUTPUT | grep -q 'Test PASSED'
 then
     echo "- GPU workload running verified"
