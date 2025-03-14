@@ -19,6 +19,8 @@ type LaunchPolicy struct {
 	AllowedMountDestinations []string
 	HardenedImageMonitoring  MonitoringType
 	DebugImageMonitoring     MonitoringType
+	PrivilegedCaps           bool
+	AllowCgroups             bool
 }
 
 type policy int
@@ -109,6 +111,8 @@ const (
 	// relative to "/".
 	// Paths will be cleaned using filepath.Clean.
 	mountDestinations = "tee.launch_policy.allow_mount_destinations"
+	privilegedCaps    = "tee.launch_policy.allow_capabilities"
+	allowCgroups      = "tee.launch_policy.allow_cgroups"
 )
 
 func configureMonitoringPolicy(imageLabels map[string]string, launchPolicy *LaunchPolicy, logger logging.Logger) error {
@@ -188,7 +192,7 @@ func GetLaunchPolicy(imageLabels map[string]string, logger logging.Logger) (Laun
 
 	if v, ok := imageLabels[cmdOverride]; ok {
 		if launchPolicy.AllowedCmdOverride, err = strconv.ParseBool(v); err != nil {
-			return LaunchPolicy{}, fmt.Errorf("invalid image LABEL '%s' (not a boolean); contact the image author", cmdOverride)
+			return LaunchPolicy{}, fmt.Errorf("invalid image LABEL '%s' (not a boolean)", cmdOverride)
 		}
 	}
 
@@ -196,7 +200,7 @@ func GetLaunchPolicy(imageLabels map[string]string, logger logging.Logger) (Laun
 	if v, ok := imageLabels[logRedirect]; ok {
 		launchPolicy.AllowedLogRedirect, err = toPolicy(logRedirect, v)
 		if err != nil {
-			return LaunchPolicy{}, fmt.Errorf("invalid image LABEL '%s'; contact the image author", logRedirect)
+			return LaunchPolicy{}, fmt.Errorf("invalid image LABEL '%s'", logRedirect)
 		}
 	}
 
@@ -205,7 +209,6 @@ func GetLaunchPolicy(imageLabels map[string]string, logger logging.Logger) (Laun
 	}
 
 	if v, ok := imageLabels[mountDestinations]; ok {
-
 		paths := filepath.SplitList(v)
 		for _, path := range paths {
 			// Strip out empty path name.
@@ -213,6 +216,18 @@ func GetLaunchPolicy(imageLabels map[string]string, logger logging.Logger) (Laun
 				path = filepath.Clean(path)
 				launchPolicy.AllowedMountDestinations = append(launchPolicy.AllowedMountDestinations, path)
 			}
+		}
+	}
+
+	if v, ok := imageLabels[privilegedCaps]; ok {
+		if launchPolicy.PrivilegedCaps, err = strconv.ParseBool(v); err != nil {
+			return LaunchPolicy{}, fmt.Errorf("invalid image LABEL '%s' (not a boolean)", privilegedCaps)
+		}
+	}
+
+	if v, ok := imageLabels[allowCgroups]; ok {
+		if launchPolicy.AllowCgroups, err = strconv.ParseBool(v); err != nil {
+			return LaunchPolicy{}, fmt.Errorf("invalid image LABEL '%s' (not a boolean)", allowCgroups)
 		}
 	}
 
@@ -274,6 +289,14 @@ func (p LaunchPolicy) Verify(ls LaunchSpec) error {
 	}
 	if err != nil {
 		return fmt.Errorf("destination mount points are not allowed: %v", err)
+	}
+
+	if len(ls.AddedCapabilities) != 0 && !p.PrivilegedCaps {
+		return errors.New("additional capabilities are not allowed")
+	}
+
+	if ls.CgroupNamespace && !p.AllowCgroups {
+		return errors.New("cgroups usage is not allowed")
 	}
 
 	return nil

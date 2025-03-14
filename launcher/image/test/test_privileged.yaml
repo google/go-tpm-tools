@@ -1,0 +1,146 @@
+
+substitutions:
+  '_IMAGE_NAME': ''
+  '_IMAGE_PROJECT': ''
+  '_CLEANUP': 'true'
+  '_VM_NAME_PREFIX': 'cs-priv'
+  '_ZONE': 'asia-east1-a'
+  '_WORKLOAD_IMAGE': 'us-west1-docker.pkg.dev/confidential-space-images-dev/cs-integ-test-images/privileged:latest'
+  '_BASIC_IMAGE': 'us-west1-docker.pkg.dev/confidential-space-images-dev/cs-integ-test-images/basic-test:latest'
+
+steps:
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CreateVMWithPrivileges
+  entrypoint: 'bash'
+  env:
+  - 'BUILD_ID=$BUILD_ID'
+  # Caps from https://github.com/containerd/containerd/blob/v2.0.3/pkg/cap/cap_linux.go#L118.
+  args: ['create_vm.sh','-i', '${_IMAGE_NAME}',
+          '-p', '${_IMAGE_PROJECT}',
+          '-m', '^~^tee-image-reference=${_WORKLOAD_IMAGE}~tee-container-log-redirect=true~tee-cgroup-ns=true~tee-added-capabilities=["CAP_CHOWN","CAP_DAC_OVERRIDE","CAP_DAC_READ_SEARCH","CAP_FOWNER","CAP_FSETID","CAP_KILL","CAP_SETGID","CAP_SETUID","CAP_SETPCAP","CAP_LINUX_IMMUTABLE","CAP_NET_BIND_SERVICE","CAP_NET_BROADCAST","CAP_NET_ADMIN","CAP_NET_RAW","CAP_IPC_LOCK","CAP_IPC_OWNER","CAP_SYS_MODULE","CAP_SYS_RAWIO","CAP_SYS_CHROOT","CAP_SYS_PTRACE","CAP_SYS_PACCT","CAP_SYS_ADMIN","CAP_SYS_BOOT","CAP_SYS_NICE","CAP_SYS_RESOURCE","CAP_SYS_TIME","CAP_SYS_TTY_CONFIG","CAP_MKNOD","CAP_LEASE","CAP_AUDIT_WRITE","CAP_AUDIT_CONTROL","CAP_SETFCAP","CAP_MAC_OVERRIDE","CAP_MAC_ADMIN","CAP_SYSLOG","CAP_WAKE_ALARM","CAP_BLOCK_SUSPEND","CAP_AUDIT_READ","CAP_PERFMON","CAP_BPF","CAP_CHECKPOINT_RESTORE"]',
+          '-n', '${_VM_NAME_PREFIX}-${BUILD_ID}-privileged',
+          '-z', '${_ZONE}',
+        ]
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CreateVMWithCgroupsDenied
+  entrypoint: 'bash'
+  env:
+  - 'BUILD_ID=$BUILD_ID'
+  args: ['create_vm.sh','-i', '${_IMAGE_NAME}',
+          '-p', '${_IMAGE_PROJECT}',
+          '-m', '^~^tee-image-reference=${_BASIC_IMAGE}~tee-container-log-redirect=true~tee-cgroup-ns=true',
+          '-n', '${_VM_NAME_PREFIX}-${BUILD_ID}-cgroupsdenied',
+          '-z', '${_ZONE}',
+        ]
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CreateVMWithCapsDenied
+  entrypoint: 'bash'
+  env:
+  - 'BUILD_ID=$BUILD_ID'
+  args: ['create_vm.sh','-i', '${_IMAGE_NAME}',
+          '-p', '${_IMAGE_PROJECT}',
+          '-m', '^~^tee-image-reference=${_BASIC_IMAGE}~tee-container-log-redirect=true~tee-added-capabilities=["CAP_SYS_ADMIN"]',
+          '-n', '${_VM_NAME_PREFIX}-${BUILD_ID}-capsdenied',
+          '-z', '${_ZONE}',
+        ]
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CheckPrivilegesExist
+  env:
+  - '_VM_NAME_PREFIX=$_VM_NAME_PREFIX'
+  - 'BUILD_ID=$BUILD_ID'
+  - '_ZONE=$_ZONE'
+  script: |
+    #!/bin/bash
+    set -euo pipefail
+    source util/read_serial.sh
+
+    sleep 45
+    SERIAL_OUTPUT=$(read_serial ${_VM_NAME_PREFIX}-${BUILD_ID}-privileged ${_ZONE})
+    if echo $SERIAL_OUTPUT | grep -q "=ep"
+    then
+        echo "- Verified added all caps"
+    else
+        echo "FAILED: caps not added"
+        echo 'TEST FAILED' > /workspace/status.txt
+        echo $SERIAL_OUTPUT
+    fi
+    if echo $SERIAL_OUTPUT | grep -q "testgroup"
+    then
+        echo "- Verified added cgroup"
+    else
+        echo "FAILED: cgroup not added"
+        echo 'TEST FAILED' > /workspace/status.txt
+        echo $SERIAL_OUTPUT
+    fi
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CheckCgroupDenied
+  env:
+  - '_VM_NAME_PREFIX=$_VM_NAME_PREFIX'
+  - 'BUILD_ID=$BUILD_ID'
+  - '_ZONE=$_ZONE'
+  script: |
+    #!/bin/bash
+    set -euo pipefail
+    source util/read_serial.sh
+
+    sleep 45
+    SERIAL_OUTPUT=$(read_serial ${_VM_NAME_PREFIX}-${BUILD_ID}-cgroupsdenied ${_ZONE})
+    if echo $SERIAL_OUTPUT | grep -q "cgroups usage is not allowed"
+    then
+        echo "- cgroup not added"
+    else
+        echo "FAILED: cgroup added even though policy denied"
+        echo 'TEST FAILED' > /workspace/status.txt
+        echo $SERIAL_OUTPUT
+    fi
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CheckCapsDenied
+  env:
+  - '_VM_NAME_PREFIX=$_VM_NAME_PREFIX'
+  - 'BUILD_ID=$BUILD_ID'
+  - '_ZONE=$_ZONE'
+  script: |
+    #!/bin/bash
+    set -euo pipefail
+    source util/read_serial.sh
+
+    sleep 45
+    SERIAL_OUTPUT=$(read_serial ${_VM_NAME_PREFIX}-${BUILD_ID}-capsdenied ${_ZONE})
+    if echo $SERIAL_OUTPUT | grep -q "additional capabilities are not allowed"
+    then
+        echo "- caps not added"
+    else
+        echo "FAILED: caps added even though policy denied"
+        echo 'TEST FAILED' > /workspace/status.txt
+        echo $SERIAL_OUTPUT
+    fi
+
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CleanupPrivileged
+  entrypoint: 'bash'
+  env:
+  - 'CLEANUP=$_CLEANUP'
+  args: ['cleanup.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}-privileged', '${_ZONE}']
+  waitFor: ['CheckPrivilegesExist']
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CleanupCgroupDenied
+  entrypoint: 'bash'
+  env:
+  - 'CLEANUP=$_CLEANUP'
+  args: ['cleanup.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}-cgroupsdenied', '${_ZONE}']
+  waitFor: ['CheckCgroupDenied']
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CleanupCapsDenied
+  entrypoint: 'bash'
+  env:
+  - 'CLEANUP=$_CLEANUP'
+  args: ['cleanup.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}-capsdenied', '${_ZONE}']
+  waitFor: ['CheckCapsDenied']
+
+# Must come after cleanup.
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CheckFailure
+  entrypoint: 'bash'
+  env:
+  - 'BUILD_ID=$BUILD_ID'
+  args: ['check_failure.sh']
