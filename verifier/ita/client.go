@@ -56,8 +56,8 @@ func urlFromRegion(region string) (string, error) {
 	// return url, nil
 }
 
-func NewClient(region string, key string) (verifier.Client, error) {
-	url, err := urlFromRegion(region)
+func NewClient(itaConfig verifier.ITAConfig) (verifier.Client, error) { //region string, key string) (verifier.Client, error) {
+	url, err := urlFromRegion(itaConfig.ITARegion)
 	if err != nil {
 		return nil, err
 	}
@@ -78,7 +78,7 @@ func NewClient(region string, key string) (verifier.Client, error) {
 			},
 		},
 		apiURL: url,
-		apiKey: key,
+		apiKey: itaConfig.ITAKey,
 	}, nil
 }
 

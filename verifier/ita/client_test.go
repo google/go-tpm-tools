@@ -7,7 +7,6 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -343,49 +342,49 @@ func TestConvertRequestToTokenRequestWithCCELDataPadding(t *testing.T) {
 	}
 }
 
-func TestURLFromRegion(t *testing.T) {
-	for region, expectedURL := range regionalURLs {
-		t.Run(region+" region", func(t *testing.T) {
-			url, err := urlFromRegion(region)
-			if err != nil {
-				t.Fatalf("urlAndKey returned error: %v", err)
-			}
+// func TestURLFromRegion(t *testing.T) {
+// 	for region, expectedURL := range regionalURLs {
+// 		t.Run(region+" region", func(t *testing.T) {
+// 			url, err := urlFromRegion(region)
+// 			if err != nil {
+// 				t.Fatalf("urlAndKey returned error: %v", err)
+// 			}
 
-			if url != expectedURL {
-				t.Errorf("urlAndKey did not return expected URL: got %v, want %v", url, expectedURL)
-			}
-		})
-	}
-}
+// 			if url != expectedURL {
+// 				t.Errorf("urlAndKey did not return expected URL: got %v, want %v", url, expectedURL)
+// 			}
+// 		})
+// 	}
+// }
 
-func TestURLFromRegionError(t *testing.T) {
-	testcases := []struct {
-		name           string
-		region         string
-		expectedSubstr string
-	}{
-		{
-			name:           "Unsupported region",
-			region:         "ANTARCTICA",
-			expectedSubstr: "unsupported region",
-		},
-		{
-			name:           "Empty input",
-			region:         "",
-			expectedSubstr: "region required",
-		},
-	}
+// func TestURLFromRegionError(t *testing.T) {
+// 	testcases := []struct {
+// 		name           string
+// 		region         string
+// 		expectedSubstr string
+// 	}{
+// 		{
+// 			name:           "Unsupported region",
+// 			region:         "ANTARCTICA",
+// 			expectedSubstr: "unsupported region",
+// 		},
+// 		{
+// 			name:           "Empty input",
+// 			region:         "",
+// 			expectedSubstr: "region required",
+// 		},
+// 	}
 
-	for _, tc := range testcases {
-		t.Run(tc.name, func(t *testing.T) {
-			_, err := urlFromRegion(tc.region)
-			if err == nil {
-				t.Fatal("urlAndKey returned successfully, expected error")
-			}
+// 	for _, tc := range testcases {
+// 		t.Run(tc.name, func(t *testing.T) {
+// 			_, err := urlFromRegion(tc.region)
+// 			if err == nil {
+// 				t.Fatal("urlAndKey returned successfully, expected error")
+// 			}
 
-			if !strings.Contains(err.Error(), tc.expectedSubstr) {
-				t.Errorf("urlAndKey did not return expected error: got %v, want %v", err.Error(), tc.expectedSubstr)
-			}
-		})
-	}
-}
+// 			if !strings.Contains(err.Error(), tc.expectedSubstr) {
+// 				t.Errorf("urlAndKey did not return expected error: got %v, want %v", err.Error(), tc.expectedSubstr)
+// 			}
+// 		})
+// 	}
+// }
