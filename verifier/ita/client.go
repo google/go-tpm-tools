@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 
 	"github.com/google/go-tpm-tools/verifier"
 )
@@ -43,17 +42,18 @@ func urlFromRegion(region string) (string, error) {
 		return "", errors.New("API region required to initialize ITA client")
 	}
 
-	url, ok := regionalURLs[strings.ToUpper(region)]
-	if !ok {
-		// Create list of allowed regions.
-		keys := []string{}
-		for k := range regionalURLs {
-			keys = append(keys, k)
-		}
-		return "", fmt.Errorf("unsupported region %v, expect one of %v", region, keys)
-	}
-
-	return url, nil
+	return region, nil
+	// url, ok := regionalURLs[strings.ToUpper(region)]
+	// if !ok {
+	// 	// Create list of allowed regions.
+	// 	keys := []string{}
+	// 	for k := range regionalURLs {
+	// 		keys = append(keys, k)
+	// 	}
+	// 	return "", fmt.Errorf("unsupported region %v, expect one of %v", region, keys)
+	// }
+	//
+	// return url, nil
 }
 
 func NewClient(region string, key string) (verifier.Client, error) {
