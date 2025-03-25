@@ -183,6 +183,8 @@ func (a *agent) AttestWithClient(ctx context.Context, opts AttestAgentOpts, clie
 	if err != nil {
 		return nil, err
 	}
+	// TODO - Do not log the raw nonce
+	a.logger.Info("Received challenge from verifier service", "nonce", challenge.Nonce, "connID", challenge.ConnID, "iat", challenge.Iat, "signature", challenge.Signature)
 
 	tokenOpts := opts.TokenOptions
 	if tokenOpts == nil {
@@ -258,6 +260,7 @@ func (a *agent) AttestWithClient(ctx context.Context, opts AttestAgentOpts, clie
 	if len(resp.PartialErrs) > 0 {
 		a.logger.Error(fmt.Sprintf("Partial errors from VerifyAttestation: %v", resp.PartialErrs))
 	}
+	a.logger.Info("Received claims token from verifier", "token", resp.ClaimsToken)
 	return resp.ClaimsToken, nil
 }
 

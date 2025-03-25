@@ -66,3 +66,22 @@ type VerifyAttestationResponse struct {
 	ClaimsToken []byte
 	PartialErrs []*status.Status
 }
+
+// ITAConfig represents the configuration needed to integrate with ITA as a verifier.
+type ITAConfig struct {
+	ITARegion string
+	ITAKey    string
+}
+
+// AttestClients contains clients for supported verifier services that can be used to
+// get attestation tokens.
+type AttestClients struct {
+	GCA Client
+	ITA Client
+}
+
+// HasThirdPartyClient returns true if AttestClients contains an initialzied
+// third-party verifier client.
+func (ac *AttestClients) HasThirdPartyClient() bool {
+	return ac.ITA != nil
+}
