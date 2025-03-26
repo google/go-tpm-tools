@@ -191,11 +191,29 @@ message HealthMonitoringState {
   optional bool memory_enabled = 1;
 }
 
+// Confidential Computing mode for GPU device. Reference for these CC mode values: https://developer.nvidia.com/blog/confidential-computing-on-h100-gpus-for-secure-and-trustworthy-ai/#hardware_security_for_nvidia_h100_gpus
+enum GPUDeviceCCMode {
+  UNSET = 0;
+  // The NVIDIA H100 hardware, firmware, and software have fully activated all the confidential computing features.
+  ON = 1;
+  // None of the confidential computing-specific features are active.
+  OFF = 2;
+  // The GPU is in a partial CC mode that will match the workflows of CC mode ON, but with security protections disabled.
+  DEVTOOLS = 3;
+}
+
+message GpuDeviceState {
+  // Whether Confidential Computing mode is enabled for GPU.
+  GPUDeviceCCMode cc_mode = 1;
+}
+
+
 message AttestedCosState {
   ContainerState container = 1;
   SemanticVersion cos_version = 2;
   SemanticVersion launcher_version = 3;
   HealthMonitoringState health_monitoring = 4;
+  GpuDeviceState gpu_device_state = 5;
 }
 
 message EfiApp {
