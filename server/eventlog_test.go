@@ -726,6 +726,7 @@ func TestParsingRTMREventlog(t *testing.T) {
 	coscel := &cel.CEL{}
 	emptyCosState := attestpb.ContainerState{}
 	emptyHealthMonitoringState := attestpb.HealthMonitoringState{}
+	emptyGpuDeviceState := attestpb.GpuDeviceState{}
 
 	var buf bytes.Buffer
 	// First, encode an empty CEL and try to parse it.
@@ -749,6 +750,9 @@ func TestParsingRTMREventlog(t *testing.T) {
 	if acosState.HealthMonitoring.MemoryEnabled != nil {
 		t.Errorf("unexpected MemoryEnabled state, want nil, but got %v", *acosState.HealthMonitoring.MemoryEnabled)
 	}
+	if diff := cmp.Diff(acosState.GpuDeviceState, &emptyGpuDeviceState, protocmp.Transform()); diff != "" {
+		t.Errorf("unexpected GPU device state difference:\n%v", diff)
+	}
 
 	// add events
 	testCELEvents := []struct {
@@ -768,6 +772,7 @@ func TestParsingRTMREventlog(t *testing.T) {
 		{cel.ArgType, cel.CosRTMR, []byte("--y")},
 		{cel.ArgType, cel.CosRTMR, []byte("")},
 		{cel.MemoryMonitorType, cel.CosRTMR, []byte{1}},
+		{cel.GpuCCModeType, cel.CosRTMR, []byte(attestpb.GPUDeviceCCMode_ON.String())},
 	}
 
 	expectedEnvVars := make(map[string]string)
@@ -787,6 +792,9 @@ func TestParsingRTMREventlog(t *testing.T) {
 	enabled := true
 	wantHealthMonitoringState := attestpb.HealthMonitoringState{
 		MemoryEnabled: &enabled,
+	}
+	wantGpuDeviceState := attestpb.GpuDeviceState{
+		CcMode: attestpb.GPUDeviceCCMode_ON,
 	}
 
 	for _, testEvent := range testCELEvents {
@@ -811,6 +819,9 @@ func TestParsingRTMREventlog(t *testing.T) {
 		if diff := cmp.Diff(acosState.HealthMonitoring, &wantHealthMonitoringState, protocmp.Transform()); diff != "" {
 			t.Errorf("unexpected health monitoring state difference:\n%v", diff)
 		}
+		if diff := cmp.Diff(acosState.GpuDeviceState, &wantGpuDeviceState, protocmp.Transform()); diff != "" {
+			t.Errorf("unexpected GPU device state difference:\n%v", diff)
+		}
 	}
 
 	// Faking PCR with RTMR should fail
@@ -834,6 +845,7 @@ func TestParsingCELEventLog(t *testing.T) {
 	coscel := &cel.CEL{}
 	emptyCosState := attestpb.ContainerState{}
 	emptyHealthMonitoringState := attestpb.HealthMonitoringState{}
+	emptyGpuDeviceState := attestpb.GpuDeviceState{}
 
 	var buf bytes.Buffer
 	// First, encode an empty CEL and try to parse it.
@@ -871,6 +883,9 @@ func TestParsingCELEventLog(t *testing.T) {
 		if acosState.HealthMonitoring.MemoryEnabled != nil {
 			t.Errorf("unexpected MemoryEnabled state, want nil, but got %v", *acosState.HealthMonitoring.MemoryEnabled)
 		}
+		if diff := cmp.Diff(acosState.GpuDeviceState, &emptyGpuDeviceState, protocmp.Transform()); diff != "" {
+			t.Errorf("unexpected GPU device state difference:\n%v", diff)
+		}
 	}
 
 	// Secondly, append some real COS events to the CEL. This time we should get content in the CosState.
@@ -891,6 +906,7 @@ func TestParsingCELEventLog(t *testing.T) {
 		{cel.ArgType, cel.CosEventPCR, []byte("--y")},
 		{cel.ArgType, cel.CosEventPCR, []byte("")},
 		{cel.MemoryMonitorType, cel.CosEventPCR, []byte{1}},
+		{cel.GpuCCModeType, cel.CosEventPCR, []byte(attestpb.GPUDeviceCCMode_OFF.String())},
 	}
 
 	expectedEnvVars := make(map[string]string)
@@ -910,6 +926,9 @@ func TestParsingCELEventLog(t *testing.T) {
 	enabled := true
 	wantHealthMonitoringState := attestpb.HealthMonitoringState{
 		MemoryEnabled: &enabled,
+	}
+	wantGpuDeviceState := attestpb.GpuDeviceState{
+		CcMode: attestpb.GPUDeviceCCMode_OFF,
 	}
 	for _, testEvent := range testCELEvents {
 		cosEvent := cel.CosTlv{EventType: testEvent.cosNestedEventType, EventContent: testEvent.eventPayload}
@@ -937,6 +956,9 @@ func TestParsingCELEventLog(t *testing.T) {
 			}
 			if diff := cmp.Diff(acosState.HealthMonitoring, &wantHealthMonitoringState, protocmp.Transform()); diff != "" {
 				t.Errorf("unexpected health monitoring state difference:\n%v", diff)
+			}
+			if diff := cmp.Diff(acosState.GpuDeviceState, &wantGpuDeviceState, protocmp.Transform()); diff != "" {
+				t.Errorf("unexpected GPU device state difference:\n%v", diff)
 			}
 		}
 	}
