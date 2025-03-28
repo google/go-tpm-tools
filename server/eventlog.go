@@ -135,6 +135,7 @@ func getVerifiedCosState(coscel cel.CEL, registerType uint8) (*pb.AttestedCosSta
 	cosState := &pb.AttestedCosState{}
 	cosState.Container = &pb.ContainerState{}
 	cosState.HealthMonitoring = &pb.HealthMonitoringState{}
+	cosState.GpuDeviceState = &pb.GpuDeviceState{}
 	cosState.Container.Args = make([]string, 0)
 	cosState.Container.EnvVars = make(map[string]string)
 	cosState.Container.OverriddenEnvVars = make(map[string]string)
@@ -231,6 +232,13 @@ func getVerifiedCosState(coscel cel.CEL, registerType uint8) (*pb.AttestedCosSta
 				enabled = true
 			}
 			cosState.HealthMonitoring.MemoryEnabled = &enabled
+		case cel.GpuCCModeType:
+			ccMode, ok := pb.GPUDeviceCCMode_value[string(cosTlv.EventContent)]
+			if !ok {
+				return nil, fmt.Errorf("unknown GPU device CC mode in COS eventlog: %s", string(cosTlv.EventContent))
+			}
+			cosState.GpuDeviceState.CcMode = pb.GPUDeviceCCMode(ccMode)
+
 		default:
 			return nil, fmt.Errorf("found unknown COS Event Type %v", cosTlv.EventType)
 		}
