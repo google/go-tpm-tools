@@ -225,28 +225,26 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 
 	s.AttestationServiceAddr = unmarshaledMap[attestationServiceAddrKey]
 
-	if s.Experiments.EnableTempFSMount {
-		// Populate /dev/shm size override.
-		if val, ok := unmarshaledMap[devShmSizeKey]; ok && val != "" {
-			size, err := strconv.ParseUint(val, 10, 64)
-			if err != nil {
-				return fmt.Errorf("failed to convert %v into uint64, got: %v", devShmSizeKey, val)
-			}
-			s.DevShmSize = int64(size)
+	// Populate /dev/shm size override.
+	if val, ok := unmarshaledMap[devShmSizeKey]; ok && val != "" {
+		size, err := strconv.ParseUint(val, 10, 64)
+		if err != nil {
+			return fmt.Errorf("failed to convert %v into uint64, got: %v", devShmSizeKey, val)
 		}
+		s.DevShmSize = int64(size)
+	}
 
-		// Populate mount override.
-		// https://cloud.google.com/compute/docs/disks/set-persistent-device-name-in-linux-vm
-		// https://cloud.google.com/compute/docs/disks/add-local-ssd
-		if val, ok := unmarshaledMap[mountKey]; ok && val != "" {
-			mounts := strings.Split(val, ";")
-			for _, mount := range mounts {
-				specMnt, err := processMount(mount)
-				if err != nil {
-					return err
-				}
-				s.Mounts = append(s.Mounts, specMnt)
+	// Populate mount override.
+	// https://cloud.google.com/compute/docs/disks/set-persistent-device-name-in-linux-vm
+	// https://cloud.google.com/compute/docs/disks/add-local-ssd
+	if val, ok := unmarshaledMap[mountKey]; ok && val != "" {
+		mounts := strings.Split(val, ";")
+		for _, mount := range mounts {
+			specMnt, err := processMount(mount)
+			if err != nil {
+				return err
 			}
+			s.Mounts = append(s.Mounts, specMnt)
 		}
 	}
 
@@ -267,24 +265,22 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 		}
 	}
 
-	if s.Experiments.EnablePrivilegedCS {
-		// Populate capabilities override.
-		if val, ok := unmarshaledMap[addedCaps]; ok && val != "" {
-			if err := json.Unmarshal([]byte(val), &s.AddedCapabilities); err != nil {
-				return err
-			}
+	// Populate capabilities override.
+	if val, ok := unmarshaledMap[addedCaps]; ok && val != "" {
+		if err := json.Unmarshal([]byte(val), &s.AddedCapabilities); err != nil {
+			return err
 		}
+	}
 
-		// Populate cgroup ns.
-		cgroupSetting, ok := unmarshaledMap[cgroupNS]
-		if ok {
-			cgroupOn, err := strconv.ParseBool(cgroupSetting)
-			if err != nil {
-				return fmt.Errorf("invalid value for %v (not a boolean): %v", cgroupNS, err)
-			}
-			if cgroupOn {
-				s.CgroupNamespace = true
-			}
+	// Populate cgroup ns.
+	cgroupSetting, ok := unmarshaledMap[cgroupNS]
+	if ok {
+		cgroupOn, err := strconv.ParseBool(cgroupSetting)
+		if err != nil {
+			return fmt.Errorf("invalid value for %v (not a boolean): %v", cgroupNS, err)
+		}
+		if cgroupOn {
+			s.CgroupNamespace = true
 		}
 	}
 
