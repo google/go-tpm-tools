@@ -19,6 +19,18 @@ message GCEInstanceInfo {
   uint64 instance_id = 5;
 }
 
+// A TSM report attributes that are relevant.
+message TsmReport {
+  string provider =1;
+  bytes out_blob = 2;
+  bytes aux_blob = 3;
+  string service_provider = 4;
+  bytes service_guid = 5; // In RFC4122 byte order.
+  uint64 manifest_version = 6;
+  bytes manifest_selector = 7;
+  bytes manifest_blob = 8;
+}
+
 message Attestation {
   // Attestation Key (AK) Public Area, encoded as a TPMT_PUBLIC
   bytes ak_pub = 1;
@@ -43,6 +55,7 @@ message Attestation {
   oneof tee_attestation {
     sevsnp.Attestation sev_snp_attestation = 8;
     tdx.QuoteV4 tdx_attestation = 9;
+    TsmReport tsm_report = 10;
   }
 }
 
