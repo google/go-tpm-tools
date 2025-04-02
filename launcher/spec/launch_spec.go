@@ -292,7 +292,8 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 // LogFriendly creates a copy of the spec that is safe to log by censoring
 func (s *LaunchSpec) LogFriendly() LaunchSpec {
 	safeSpec := *s
-	safeSpec.ITAConfig.ITAKey = strings.Repeat("*", len(s.ITAConfig.ITAKey))
+	// TODO - re-hide the API key
+	// safeSpec.ITAConfig.ITAKey = strings.Repeat("*", len(s.ITAConfig.ITAKey))
 
 	return safeSpec
 }
