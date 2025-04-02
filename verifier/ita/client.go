@@ -26,10 +26,10 @@ const (
 	challengeNamePrefix = "ita://"
 )
 
-var regionalURLs map[string]string = map[string]string{
-	"US": "https://api.trustauthority.intel.com",
-	"EU": "https://api.eu.trustauthority.intel.com",
-}
+// var regionalURLs map[string]string = map[string]string{
+// 	"US": "https://api.trustauthority.intel.com",
+// 	"EU": "https://api.eu.trustauthority.intel.com",
+// }
 
 type client struct {
 	inner  *http.Client
@@ -244,11 +244,15 @@ func (c *client) doHTTPRequest(method string, url string, reqStruct any, headers
 	if err != nil {
 		return fmt.Errorf("HTTP request error: %v", err)
 	}
+	defer resp.Body.Close()
 
 	// Read and unmarshal response body.
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return fmt.Errorf("error reading response body: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("HTTP request failed with status code %d, response body %s", resp.StatusCode, string(respBody))
 	}
 
 	if err := json.Unmarshal(respBody, respStruct); err != nil {
