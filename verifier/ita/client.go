@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/google/go-tpm-tools/verifier"
 )
@@ -26,10 +27,11 @@ const (
 	challengeNamePrefix = "ita://"
 )
 
-// var regionalURLs map[string]string = map[string]string{
-// 	"US": "https://api.trustauthority.intel.com",
-// 	"EU": "https://api.eu.trustauthority.intel.com",
-// }
+var regionalURLs map[string]string = map[string]string{
+	"US":    "https://api.trustauthority.intel.com",
+	"EU":    "https://api.eu.trustauthority.intel.com",
+	"PILOT": "https://api.pilot.trustauthority.intel.com",
+}
 
 type client struct {
 	inner  *http.Client
@@ -41,19 +43,17 @@ func urlFromRegion(region string) (string, error) {
 	if region == "" {
 		return "", errors.New("API region required to initialize ITA client")
 	}
+	url, ok := regionalURLs[strings.ToUpper(region)]
+	if !ok {
+		// Create list of allowed regions.
+		keys := []string{}
+		for k := range regionalURLs {
+			keys = append(keys, k)
+		}
+		return "", fmt.Errorf("unsupported region %v, expect one of %v", region, keys)
+	}
 
-	return region, nil
-	// url, ok := regionalURLs[strings.ToUpper(region)]
-	// if !ok {
-	// 	// Create list of allowed regions.
-	// 	keys := []string{}
-	// 	for k := range regionalURLs {
-	// 		keys = append(keys, k)
-	// 	}
-	// 	return "", fmt.Errorf("unsupported region %v, expect one of %v", region, keys)
-	// }
-	//
-	// return url, nil
+	return url, nil
 }
 
 func NewClient(itaConfig verifier.ITAConfig) (verifier.Client, error) { //region string, key string) (verifier.Client, error) {
