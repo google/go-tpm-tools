@@ -201,7 +201,7 @@ func (c *client) doHTTPRequest(method string, url string, reqStruct any, headers
 		req.Header.Add(key, val)
 	}
 
-	c.logger.Info("API request details", "url", url, "method", method, "headers", headers, "body", reqStruct)
+	c.logger.Info("API request details", "url", url, "method", method, "headers", headers, "body", req.Body)
 
 	resp, err := c.inner.Do(req)
 	if err != nil {
