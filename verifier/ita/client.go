@@ -178,8 +178,10 @@ func (c *client) doHTTPRequest(method string, url string, reqStruct any, headers
 	// Create HTTP request.
 	var req *http.Request
 	var err error
+	logBody := ""
 	if reqStruct != nil {
 		body, err := json.Marshal(reqStruct)
+		logBody = string(body)
 		if err != nil {
 			return fmt.Errorf("error marshaling request: %v", err)
 		}
@@ -201,7 +203,7 @@ func (c *client) doHTTPRequest(method string, url string, reqStruct any, headers
 		req.Header.Add(key, val)
 	}
 
-	c.logger.Info("API request details", "url", url, "method", method, "headers", headers, "body", req.Body)
+	c.logger.Info("API request details", "url", url, "method", method, "headers", headers, "body", logBody)
 
 	resp, err := c.inner.Do(req)
 	if err != nil {

@@ -183,7 +183,7 @@ func (a *agent) AttestWithClient(ctx context.Context, opts AttestAgentOpts, clie
 		return nil, err
 	}
 	// TODO - Do not log the raw nonce
-	a.logger.Info("Received challenge from verifier service: %s", challenge.Nonce)
+	a.logger.Info("Received challenge from verifier service: %s", "nonce", challenge.Nonce)
 
 	principalTokens, err := a.principalFetcher(challenge.Name)
 	if err != nil {
