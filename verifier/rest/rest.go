@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"log"
-	"log/slog"
 	"os"
 	"time"
 
@@ -58,28 +57,10 @@ func confComputeCallOptions() *v1.CallOptions {
 	}
 }
 
-const (
-	serialConsoleFile = "/dev/console"
-)
-
 // NewClient creates a new REST client which is configured to perform
 // attestations in a particular project and region. Returns a *BadRegionError
 // if the requested project is valid, but the region is invalid.
 func NewClient(ctx context.Context, projectID string, region string, opts ...option.ClientOption) (verifier.Client, error) {
-	// TODO - these clients should be able to accept a logger as they are only used in the launcher.
-	// Remove this when they get access to the launcher/internal logger.
-	// This is less than ideal to say the least.
-	slg := slog.Default()
-	serialConsole, err := os.OpenFile(serialConsoleFile, os.O_WRONLY, 0)
-	if err == nil {
-		// Only create logger if we have access to the serial console file.
-		slg = slog.New(slog.NewTextHandler(serialConsole, nil))
-		slg.Info("Serial Console logger initialized")
-
-		// This is necessary for DEBUG logs to propagate properly.
-		slog.SetDefault(slg)
-	}
-
 	client, err := v1.NewRESTClient(ctx, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("can't create ConfidentialComputing v1 API client: %w", err)
@@ -96,7 +77,7 @@ func NewClient(ctx context.Context, projectID string, region string, opts ...opt
 	}
 	location, getErr := client.GetLocation(ctx, getReq)
 	if getErr == nil {
-		return &restClient{client, location, slg}, nil
+		return &restClient{client, location}, nil
 	}
 
 	// If we can't get the location, try to list the locations. This handles
@@ -128,7 +109,6 @@ func NewClient(ctx context.Context, projectID string, region string, opts ...opt
 type restClient struct {
 	v1Client *v1.Client
 	location *locationpb.Location
-	logger   *slog.Logger
 }
 
 // CreateChallenge implements verifier.Client
@@ -158,7 +138,11 @@ func (c *restClient) VerifyAttestation(ctx context.Context, request verifier.Ver
 	req := convertRequestToREST(request)
 	req.Challenge = request.Challenge.Name
 
-	c.logger.Info("Raw VerifyAttestationRequest", "request", req)
+	f, err := os.OpenFile("/tmp/container_launcher/rawrequest", os.O_RDWR|os.O_CREATE, 0755)
+	if err == nil {
+		defer f.Close()
+		f.Write([]byte(fmt.Sprintf("%v", req)))
+	}
 
 	response, err := c.v1Client.VerifyAttestation(ctx, req)
 	if err != nil {
