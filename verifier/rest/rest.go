@@ -69,16 +69,16 @@ func NewClient(ctx context.Context, projectID string, region string, opts ...opt
 	// TODO - these clients should be able to accept a logger as they are only used in the launcher.
 	// Remove this when they get access to the launcher/internal logger.
 	// This is less than ideal to say the least.
+	slg := slog.Default()
 	serialConsole, err := os.OpenFile(serialConsoleFile, os.O_WRONLY, 0)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open serial console for writing: %v", err)
+	if err == nil {
+		// Only create logger if we have access to the serial console file.
+		slg = slog.New(slog.NewTextHandler(serialConsole, nil))
+		slg.Info("Serial Console logger initialized")
+
+		// This is necessary for DEBUG logs to propagate properly.
+		slog.SetDefault(slg)
 	}
-
-	slg := slog.New(slog.NewTextHandler(serialConsole, nil))
-	slg.Info("Serial Console logger initialized")
-
-	// This is necessary for DEBUG logs to propagate properly.
-	slog.SetDefault(slg)
 
 	client, err := v1.NewRESTClient(ctx, opts...)
 	if err != nil {
