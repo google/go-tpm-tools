@@ -255,7 +255,7 @@ steps:
   - 'BUILD_ID=$BUILD_ID'
   args: ['create_vm.sh','-i', '${_HARDENED_IMAGE_NAME}',
           '-p', '${_IMAGE_PROJECT}',
-          '-m', 'tee-image-reference=${_WORKLOAD_IMAGE_HEALTH_MONITOR_MEMORY},tee-monitoring-enable=all',
+          '-m', 'tee-image-reference=${_WORKLOAD_IMAGE_HEALTH_MONITOR_MEMORY},tee-monitoring-enable=memoryonly',
           '-n', '${_HEALTH_MONITOR_VM_NAME_PREFIX}-mem-${BUILD_ID}',
           '-z', '${_ZONE}',
         ]
