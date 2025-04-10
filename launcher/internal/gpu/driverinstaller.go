@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 
 	"cos.googlesource.com/cos/tools.git/src/cmd/cos_gpu_installer/deviceinfo"
@@ -18,17 +19,27 @@ import (
 	"github.com/opencontainers/runtime-spec/specs-go"
 )
 
+// CCMode enums
 const (
-	installerContainerID = "tee-gpu-driver-installer-container"
-	installerSnapshotID  = "tee-gpu-driver-installer-snapshot"
+	CCModeON             CCMode = "ON"
+	CCModeOFF            CCMode = "OFF"
+	installerContainerID        = "tee-gpu-driver-installer-container"
+	installerSnapshotID         = "tee-gpu-driver-installer-snapshot"
 )
 
-var supportedGpuTypes = []deviceinfo.GPUType{
-	deviceinfo.L4,
-	deviceinfo.T4,
-	deviceinfo.A100_40GB,
-	deviceinfo.A100_80GB,
+var supportedCGPUTypes = []deviceinfo.GPUType{
 	deviceinfo.H100,
+}
+
+// CCMode represents the status confidential computing mode of the GPU.
+type CCMode string
+
+func (ccm CCMode) isValid() error {
+	switch ccm {
+	case CCModeOFF, CCModeON:
+		return nil
+	}
+	return fmt.Errorf("invalid gpu cc mode: %s", ccm)
 }
 
 // DriverInstaller contains information about the GPU driver installer settings
@@ -63,7 +74,7 @@ func (di *DriverInstaller) InstallGPUDrivers(ctx context.Context) error {
 	}
 
 	if !gpuType.OpenSupported() {
-		return fmt.Errorf("unsupported GPU type %s, please retry with one of the supported GPU types: %v", gpuType.String(), supportedGpuTypes)
+		return fmt.Errorf("unsupported GPU type %s, please retry with one of the supported confidential GPU types: %v", gpuType.String(), supportedCGPUTypes)
 	}
 
 	ctx = namespaces.WithNamespace(ctx, namespaces.Default)
@@ -77,6 +88,11 @@ func (di *DriverInstaller) InstallGPUDrivers(ctx context.Context) error {
 	image, err := di.cdClient.Pull(ctx, installerImageRef, containerd.WithPullUnpack)
 	if err != nil {
 		return fmt.Errorf("failed to pull installer image: %v", err)
+	}
+
+	installerDigest := image.Target().Digest.String()
+	if err := verifyInstallerImageDigest(installerDigest); err != nil {
+		return err
 	}
 
 	mounts := []specs.Mount{
@@ -153,7 +169,7 @@ func (di *DriverInstaller) InstallGPUDrivers(ctx context.Context) error {
 		return fmt.Errorf("failed to verify GPU driver installation: %v", err)
 	}
 
-	ccEnabled, err := isGPUCCModeEnabled(di.logger, gpuType)
+	ccEnabled, err := isGPUCCModeEnabled()
 	if err != nil {
 		return fmt.Errorf("failed to check confidential compute mode status: %v", err)
 	}
@@ -162,6 +178,8 @@ func (di *DriverInstaller) InstallGPUDrivers(ctx context.Context) error {
 		if err = setGPUStateToReady(); err != nil {
 			return fmt.Errorf("failed to set the GPU state to ready: %v", err)
 		}
+	} else {
+		return fmt.Errorf("confidential compute is not enabled for the gpu type %s", gpuType)
 	}
 
 	di.logger.Info("GPU driver installation completed successfully")
@@ -169,12 +187,24 @@ func (di *DriverInstaller) InstallGPUDrivers(ctx context.Context) error {
 }
 
 func getInstallerImageReference() (string, error) {
-	installerImageRefBytes, err := exec.Command("cos-extensions", "list", "--", "--gpu-installer").Output()
+	imageRefBytes, err := os.ReadFile(InstallerImageRefFile)
 	if err != nil {
 		return "", fmt.Errorf("failed to get the cos-gpu-installer version: %v", err)
 	}
-	installerImageRef := strings.TrimSpace(string(installerImageRefBytes))
+	installerImageRef := strings.TrimSpace(string(imageRefBytes))
 	return installerImageRef, nil
+}
+
+func verifyInstallerImageDigest(installerDigest string) error {
+	imageDigestBytes, err := os.ReadFile(InstallerImageDigestFile)
+	if err != nil {
+		return fmt.Errorf("failed to get the cos-gpu-installer image digest: %v", err)
+	}
+	expectedInstallerDigest := strings.TrimSpace(string(imageDigestBytes))
+	if installerDigest == expectedInstallerDigest {
+		return nil
+	}
+	return fmt.Errorf("cos_gpu_installer image digest verification failed - expected : %s, actual : %s", expectedInstallerDigest, installerDigest)
 }
 
 func remountAsExecutable(dir string) error {
@@ -208,20 +238,42 @@ func setGPUStateToReady() error {
 	return nil
 }
 
-func isGPUCCModeEnabled(logger logging.Logger, gpuType deviceinfo.GPUType) (bool, error) {
-	// Run nvidia-smi conf-compute command to check if confidential compute mode is ON.
-	nvidiaSmiCmd := fmt.Sprintf("%s/bin/nvidia-smi", InstallationHostDir)
-	ccModeOutput, err := exec.Command(nvidiaSmiCmd, "conf-compute", "-f").Output()
-	// The nvidia-smi conf-compute command fails for GPU which doesn't support confidential computing.
-	// This check would bypass nvidia-smi conf-compute command for GPU not having confidential compute support.
-	if strings.Contains(string(ccModeOutput), "No CC capable devices found") {
-		logger.Info(fmt.Sprintf("Confidential Computing is not supported for GPU type : %s", gpuType.String()))
-		return false, nil
-	}
+func isGPUCCModeEnabled() (bool, error) {
+	ccMode, err := GetGPUCCMode()
 	if err != nil {
 		return false, err
 	}
-	return strings.Contains(string(ccModeOutput), "CC status: ON"), nil
+	return ccMode == CCModeON, nil
+}
+
+// GetGPUCCMode executes nvidia-smi to determine the current Confidential Computing (CC) mode status of the GPU.
+// It returns the CC mode ("ON" or "OFF") and an error if the command fails or if the output cannot be parsed.
+func GetGPUCCMode() (CCMode, error) {
+	// Run nvidia-smi conf-compute command to get the confidential computing mode status.
+	nvidiaSmiCmd := fmt.Sprintf("%s/bin/nvidia-smi", InstallationHostDir)
+	ccModeOutput, err := exec.Command(nvidiaSmiCmd, "conf-compute", "-f").Output()
+	if err != nil {
+		return "", err
+	}
+	ccMode, err := parseCCStatus(string(ccModeOutput))
+	if err != nil {
+		return "", err
+	}
+	return CCMode(ccMode), nil
+}
+
+func parseCCStatus(output string) (CCMode, error) {
+	re := regexp.MustCompile(`CC status:\s*(ON|OFF)`)
+	match := re.FindStringSubmatch(output)
+
+	if len(match) < 2 {
+		return "", fmt.Errorf("CC status not found in output: %s", output)
+	}
+	ccMode := CCMode(match[1])
+	if err := ccMode.isValid(); err != nil {
+		return "", err
+	}
+	return ccMode, nil
 }
 
 func launchNvidiaPersistencedProcess(logger logging.Logger) error {

@@ -169,7 +169,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		specOpts = append(specOpts, oci.WithDevShmSize(launchSpec.DevShmSize))
 	}
 
-	if launchSpec.Experiments.EnableGpuDriverInstallation && launchSpec.InstallGpuDriver {
+	if launchSpec.Experiments.EnableConfidentialGPUSupport && launchSpec.InstallGpuDriver {
 		gpuMounts := []specs.Mount{
 			{
 				Type:        "volume",
