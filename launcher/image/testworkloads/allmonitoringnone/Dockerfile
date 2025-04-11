@@ -5,11 +5,7 @@ FROM alpine
 
 COPY main /
 
-ENV env_bar="val_bar"
-
 LABEL "tee.launch_policy.hardened_monitoring"="NONE"
 LABEL "tee.launch_policy.debug_monitoring"="NONE"
 
 ENTRYPOINT ["/main"]
-
-CMD ["arg_foo"]
