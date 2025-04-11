@@ -67,7 +67,6 @@ func TestLaunchSpecUnmarshalJSONHappyCases(t *testing.T) {
 		ITARegion: "US",
 		ITAKey:    "test-api-key",
 		Experiments: experiments.Experiments{
-			EnableTempFSMount: true,
 			EnableItaVerifier: true,
 		},
 	}
@@ -76,7 +75,6 @@ func TestLaunchSpecUnmarshalJSONHappyCases(t *testing.T) {
 		t.Run(testcase.testName, func(t *testing.T) {
 			spec := &LaunchSpec{}
 			spec.Experiments = experiments.Experiments{
-				EnableTempFSMount: true,
 				EnableItaVerifier: true,
 			}
 			if err := spec.UnmarshalJSON([]byte(testcase.mdsJSON)); err != nil {
@@ -291,9 +289,6 @@ func TestLaunchSpecUnmarshalJSONWithBadMounts(t *testing.T) {
 	for _, testcase := range testCases {
 		t.Run(testcase.testName, func(t *testing.T) {
 			spec := &LaunchSpec{}
-			spec.Experiments = experiments.Experiments{
-				EnableTempFSMount: true,
-			}
 			err := spec.UnmarshalJSON([]byte(testcase.mdsJSON))
 			if match, _ := regexp.MatchString(testcase.errMatch, err.Error()); !match {
 				t.Errorf("got %v error, but expected %v error", err, testcase.errMatch)
