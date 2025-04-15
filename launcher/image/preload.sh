@@ -111,6 +111,7 @@ get_cos_gpu_installer_image_digest() {
   local manifest_url
   local image_digest
 
+  # Example match: gcr.io/cos-cloud/cos-gpu-installer:v2.4.8
   if [[ "$image_ref" =~ ^([^/]+)/([^:]+):([^:]+)$ ]]; then
     registry="${BASH_REMATCH[1]}"
     repo_with_image_name="${BASH_REMATCH[2]}"
@@ -132,10 +133,26 @@ set_gpu_driver_ref_values() {
 
   mkdir ${GPU_REF_VALUES_PATH}
   cos_gpu_installer_image_ref=$(cos-extensions list -- --gpu-installer)
+  if [ -z "${cos_gpu_installer_image_ref}" ]; then
+    echo "Error: cos-extensions list returned an empty image reference." >&2
+    return 1
+  fi
+
   cos_gpu_installer_image_digest=$(get_cos_gpu_installer_image_digest ${cos_gpu_installer_image_ref})
+  if [ -z "${cos_gpu_installer_image_ref}" ]; then
+    echo "Error: get_cos_gpu_installer_image_digest returned an empty or invalid digest for: ${cos_gpu_installer_image_ref}." >&2
+    return 1
+  fi
+
+  image_digest_hex_part=$(echo "${cos_gpu_installer_image_digest}" | sed 's/^sha256://' | tr -d '[:space:]')
+  # Check for the expected length of the SHA256 digest (64 hex characters)
+  if [ ${#image_digest_hex_part} -ne 64 ]; then
+    echo "Error: cos_gpu_installer image digest has an unexpected length: ${#image_digest_hex_part}, Expected 64." >&2
+    return 1
+  fi
   
-  echo ${cos_gpu_installer_image_ref} >> ${COS_GPU_INSTALLER_IMAGE_REF}
-  echo ${cos_gpu_installer_image_digest} >> ${COS_GPU_INSTALLER_IMAGE_DIGEST}
+  echo ${cos_gpu_installer_image_ref} > ${COS_GPU_INSTALLER_IMAGE_REF}
+  echo ${cos_gpu_installer_image_digest} > ${COS_GPU_INSTALLER_IMAGE_DIGEST}
 }
 
 main() {

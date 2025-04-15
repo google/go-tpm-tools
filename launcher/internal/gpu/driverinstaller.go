@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"regexp"
 	"strings"
 
 	"cos.googlesource.com/cos/tools.git/src/cmd/cos_gpu_installer/deviceinfo"
@@ -16,31 +15,21 @@ import (
 	"github.com/containerd/containerd/oci"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/spec"
+	"github.com/google/go-tpm-tools/proto/attest"
 	"github.com/opencontainers/runtime-spec/specs-go"
 )
 
-// CCMode enums
 const (
-	CCModeON             CCMode = "ON"
-	CCModeOFF            CCMode = "OFF"
-	installerContainerID        = "tee-gpu-driver-installer-container"
-	installerSnapshotID         = "tee-gpu-driver-installer-snapshot"
+	installerContainerID = "tee-gpu-driver-installer-container"
+	installerSnapshotID  = "tee-gpu-driver-installer-snapshot"
 )
 
 var supportedCGPUTypes = []deviceinfo.GPUType{
 	deviceinfo.H100,
 }
 
-// CCMode represents the status confidential computing mode of the GPU.
-type CCMode string
-
-func (ccm CCMode) isValid() error {
-	switch ccm {
-	case CCModeOFF, CCModeON:
-		return nil
-	}
-	return fmt.Errorf("invalid gpu cc mode: %s", ccm)
-}
+type nvidiaSmiCmdOutput func() ([]byte, error)
+type nvidiaSmiCmdRun func() error
 
 // DriverInstaller contains information about the GPU driver installer settings
 type DriverInstaller struct {
@@ -73,12 +62,13 @@ func (di *DriverInstaller) InstallGPUDrivers(ctx context.Context) error {
 		return fmt.Errorf("failed to get the GPU type info: %v", err)
 	}
 
-	if !gpuType.OpenSupported() {
-		return fmt.Errorf("unsupported GPU type %s, please retry with one of the supported confidential GPU types: %v", gpuType.String(), supportedCGPUTypes)
+	err = isConfidentialComputeSupported(gpuType, supportedCGPUTypes)
+	if err != nil {
+		return err
 	}
 
 	ctx = namespaces.WithNamespace(ctx, namespaces.Default)
-	installerImageRef, err := getInstallerImageReference()
+	installerImageRef, err := getInstallerImageReference(InstallerImageRefFile)
 	if err != nil {
 		di.logger.Error(fmt.Sprintf("failed to get the installer container image reference: %v", err))
 		return err
@@ -90,8 +80,7 @@ func (di *DriverInstaller) InstallGPUDrivers(ctx context.Context) error {
 		return fmt.Errorf("failed to pull installer image: %v", err)
 	}
 
-	installerDigest := image.Target().Digest.String()
-	if err := verifyInstallerImageDigest(installerDigest); err != nil {
+	if err := verifyInstallerImageDigest(image, InstallerImageDigestFile); err != nil {
 		return err
 	}
 
@@ -165,46 +154,53 @@ func (di *DriverInstaller) InstallGPUDrivers(ctx context.Context) error {
 		return fmt.Errorf("failed to start nvidia-persistenced process: %v", err)
 	}
 
-	if err = verifyDriverInstallation(); err != nil {
+	nvidiaSmiVerifyCmd := nvidiaSmiRunFunc()
+	if err = verifyDriverInstallation(nvidiaSmiVerifyCmd); err != nil {
 		return fmt.Errorf("failed to verify GPU driver installation: %v", err)
 	}
 
-	ccEnabled, err := isGPUCCModeEnabled()
+	ccModeCmd := nvidiaSmiOutputFunc("conf-compute", "-f")
+	devToolsCmd := nvidiaSmiOutputFunc("conf-compute", "-d")
+
+	ccEnabled, err := QueryCCMode(ccModeCmd, devToolsCmd)
 	if err != nil {
 		return fmt.Errorf("failed to check confidential compute mode status: %v", err)
 	}
 	// Explicitly need to set the GPU state to READY for GPUs with confidential compute mode ON.
-	if ccEnabled {
-		if err = setGPUStateToReady(); err != nil {
+	if ccEnabled == attest.GPUDeviceCCMode_ON {
+		setGPUStateCmd := nvidiaSmiRunFunc("conf-compute", "-srs", "1")
+		if err = setGPUStateToReady(setGPUStateCmd); err != nil {
 			return fmt.Errorf("failed to set the GPU state to ready: %v", err)
 		}
-	} else {
-		return fmt.Errorf("confidential compute is not enabled for the gpu type %s", gpuType)
 	}
 
 	di.logger.Info("GPU driver installation completed successfully")
 	return nil
 }
 
-func getInstallerImageReference() (string, error) {
-	imageRefBytes, err := os.ReadFile(InstallerImageRefFile)
+func getInstallerImageReference(installerImageRefFile string) (string, error) {
+	imageRefBytes, err := os.ReadFile(installerImageRefFile)
 	if err != nil {
 		return "", fmt.Errorf("failed to get the cos-gpu-installer version: %v", err)
 	}
 	installerImageRef := strings.TrimSpace(string(imageRefBytes))
+	if len(installerImageRef) == 0 {
+		return "", fmt.Errorf("empty value of cos-gpu-installer image reference")
+	}
 	return installerImageRef, nil
 }
 
-func verifyInstallerImageDigest(installerDigest string) error {
-	imageDigestBytes, err := os.ReadFile(InstallerImageDigestFile)
+func verifyInstallerImageDigest(image containerd.Image, referenceDigestFile string) error {
+	installerDigest := image.Target().Digest.String()
+	imageDigestBytes, err := os.ReadFile(referenceDigestFile)
 	if err != nil {
 		return fmt.Errorf("failed to get the cos-gpu-installer image digest: %v", err)
 	}
 	expectedInstallerDigest := strings.TrimSpace(string(imageDigestBytes))
-	if installerDigest == expectedInstallerDigest {
-		return nil
+	if installerDigest != expectedInstallerDigest {
+		return fmt.Errorf("cos_gpu_installer image digest verification failed - expected : %s, actual : %s", expectedInstallerDigest, installerDigest)
 	}
-	return fmt.Errorf("cos_gpu_installer image digest verification failed - expected : %s, actual : %s", expectedInstallerDigest, installerDigest)
+	return nil
 }
 
 func remountAsExecutable(dir string) error {
@@ -220,59 +216,44 @@ func remountAsExecutable(dir string) error {
 	return nil
 }
 
-func verifyDriverInstallation() error {
-	// Run nvidia-smi to check whether nvidia GPU driver is installed.
-	nvidiaSmiCmd := fmt.Sprintf("%s/bin/nvidia-smi", InstallationHostDir)
-	if err := exec.Command(nvidiaSmiCmd).Run(); err != nil {
+func verifyDriverInstallation(nvidiaSmiVerifyCmd nvidiaSmiCmdRun) error {
+	if err := nvidiaSmiVerifyCmd(); err != nil {
 		return fmt.Errorf("failed to verify GPU driver installation : %v", err)
 	}
 	return nil
 }
 
-func setGPUStateToReady() error {
-	// Run nvidia-smi conf-compute command to set GPU state to READY.
-	nvidiaSmiCmd := fmt.Sprintf("%s/bin/nvidia-smi", InstallationHostDir)
-	if err := exec.Command(nvidiaSmiCmd, "conf-compute", "-srs", "1").Run(); err != nil {
+func setGPUStateToReady(nvidiaSmiSetGPUStateCmd nvidiaSmiCmdRun) error {
+	if err := nvidiaSmiSetGPUStateCmd(); err != nil {
 		return fmt.Errorf("failed to set the GPU state to ready: %v", err)
 	}
 	return nil
 }
 
-func isGPUCCModeEnabled() (bool, error) {
-	ccMode, err := GetGPUCCMode()
+// QueryCCMode executes nvidia-smi to determine the current Confidential Computing (CC) mode status of the GPU.
+// If DEVTOOLS mode is enabled, it would override CC mode as DEVTOOLS. DEVTOOLS mode would be enabled only when CC mode is ON.
+func QueryCCMode(ccModeCmd, devToolsCmd nvidiaSmiCmdOutput) (attest.GPUDeviceCCMode, error) {
+	ccMode := attest.GPUDeviceCCMode_UNSET
+	ccModeOutput, err := ccModeCmd()
 	if err != nil {
-		return false, err
+		return attest.GPUDeviceCCMode_UNSET, err
 	}
-	return ccMode == CCModeON, nil
-}
 
-// GetGPUCCMode executes nvidia-smi to determine the current Confidential Computing (CC) mode status of the GPU.
-// It returns the CC mode ("ON" or "OFF") and an error if the command fails or if the output cannot be parsed.
-func GetGPUCCMode() (CCMode, error) {
-	// Run nvidia-smi conf-compute command to get the confidential computing mode status.
-	nvidiaSmiCmd := fmt.Sprintf("%s/bin/nvidia-smi", InstallationHostDir)
-	ccModeOutput, err := exec.Command(nvidiaSmiCmd, "conf-compute", "-f").Output()
+	devToolsOutput, err := devToolsCmd()
 	if err != nil {
-		return "", err
+		return attest.GPUDeviceCCMode_UNSET, err
 	}
-	ccMode, err := parseCCStatus(string(ccModeOutput))
-	if err != nil {
-		return "", err
-	}
-	return CCMode(ccMode), nil
-}
 
-func parseCCStatus(output string) (CCMode, error) {
-	re := regexp.MustCompile(`CC status:\s*(ON|OFF)`)
-	match := re.FindStringSubmatch(output)
+	if strings.Contains(string(ccModeOutput), "CC status: ON") {
+		ccMode = attest.GPUDeviceCCMode_ON
+	} else if strings.Contains(string(ccModeOutput), "CC status: OFF") {
+		ccMode = attest.GPUDeviceCCMode_OFF
+	}
 
-	if len(match) < 2 {
-		return "", fmt.Errorf("CC status not found in output: %s", output)
+	if ccMode == attest.GPUDeviceCCMode_ON && strings.Contains(string(devToolsOutput), "DevTools Mode: ON") {
+		ccMode = attest.GPUDeviceCCMode_DEVTOOLS
 	}
-	ccMode := CCMode(match[1])
-	if err := ccMode.isValid(); err != nil {
-		return "", err
-	}
+
 	return ccMode, nil
 }
 
@@ -284,4 +265,26 @@ func launchNvidiaPersistencedProcess(logger logging.Logger) error {
 	}
 	logger.Info("nvidia-persistenced daemon successfully started")
 	return nil
+}
+
+func isConfidentialComputeSupported(gpuType deviceinfo.GPUType, supportedCGPUTypes []deviceinfo.GPUType) error {
+	if !gpuType.OpenSupported() {
+		return fmt.Errorf("open sourced kernel modules are not supported for GPU type %s", gpuType)
+	}
+	for _, supportedType := range supportedCGPUTypes {
+		if gpuType == supportedType {
+			return nil
+		}
+	}
+	return fmt.Errorf("unsupported confidential GPU type %s, please retry with one of the supported confidential GPU types: %v", gpuType.String(), supportedCGPUTypes)
+}
+
+func nvidiaSmiOutputFunc(args ...string) nvidiaSmiCmdOutput {
+	cmd := fmt.Sprintf("%s/bin/nvidia-smi", InstallationHostDir)
+	return func() ([]byte, error) { return exec.Command(cmd, args...).Output() }
+}
+
+func nvidiaSmiRunFunc(args ...string) nvidiaSmiCmdRun {
+	cmd := fmt.Sprintf("%s/bin/nvidia-smi", InstallationHostDir)
+	return func() error { return exec.Command(cmd, args...).Run() }
 }
