@@ -7,7 +7,7 @@ source util/read_serial.sh
 SERIAL_OUTPUT=$(read_serial $1 $2) 
 print_serial=false
 
-if echo $SERIAL_OUTPUT | grep -q 'unsupported GPU type'
+if echo $SERIAL_OUTPUT | grep -q 'open sourced kernel modules are not supported for GPU type'
 then
     echo "- unsupported GPU types verified"
 else
