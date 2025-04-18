@@ -2,40 +2,12 @@ substitutions:
   '_IMAGE_NAME': ''
   '_IMAGE_PROJECT': ''
   '_CLEANUP': 'true'
-  '_VM_NAME_PREFIX': 'cs-gpu-test'
+  '_VM_NAME_PREFIX': 'cs-cgpu-test'
   '_ZONE': 'us-central1-f'
   '_WORKLOAD_IMAGE': 'us-west1-docker.pkg.dev/confidential-space-images-dev/cs-integ-test-images/gpu/cuda-vector-add:latest'
 steps:
 - name: 'gcr.io/cloud-builders/gcloud'
-  id: CreateShieldedVMWithSingleGPU
-  entrypoint: 'bash'
-  env:
-  - 'BUILD_ID=$BUILD_ID'
-  args: ['create_gpu_vm.sh','-i', '${_IMAGE_NAME}',
-          '-p', '${_IMAGE_PROJECT}',
-          '-m', 'tee-image-reference=${_WORKLOAD_IMAGE},tee-container-log-redirect=true,tee-install-gpu-driver=true',
-          '-n', '${_VM_NAME_PREFIX}-${BUILD_ID}',
-          '-z', '${_ZONE}',
-          '-v', 'n1-standard-4',
-          '-g', 'nvidia-tesla-t4',
-          '-c', '1'
-        ]
-- name: 'gcr.io/cloud-builders/gcloud'
-  id: CreateShieldedVMWithMultipleGPU
-  entrypoint: 'bash'
-  env:
-  - 'BUILD_ID=$BUILD_ID'
-  args: ['create_gpu_vm.sh','-i', '${_IMAGE_NAME}',
-          '-p', '${_IMAGE_PROJECT}',
-          '-m', 'tee-image-reference=${_WORKLOAD_IMAGE},tee-container-log-redirect=true,tee-install-gpu-driver=true',
-          '-n', '${_VM_NAME_PREFIX}-${BUILD_ID}-mul',
-          '-z', '${_ZONE}',
-          '-v', 'n1-standard-4',
-          '-g', 'nvidia-tesla-t4',
-          '-c', '2'
-        ]
-- name: 'gcr.io/cloud-builders/gcloud'
-  id: CreateShieldedVMWithUnsupportedGPU
+  id:  CreateTDXCVMWithUnsupportedGPU
   entrypoint: 'bash'
   env:
   - 'BUILD_ID=$BUILD_ID'
@@ -49,7 +21,7 @@ steps:
           '-c', '1'
         ]
 - name: 'gcr.io/cloud-builders/gcloud'
-  id: CreateShieldedVMWithNoGPU
+  id:  CreateTDXCVMWithNoGPU
   entrypoint: 'bash'
   env:
   - 'BUILD_ID=$BUILD_ID'
@@ -75,14 +47,6 @@ steps:
           '-x', 'TDX',
         ]
 - name: 'gcr.io/cloud-builders/gcloud'
-  id: SingleGpuWorkloadTest
-  entrypoint: 'bash'
-  args: ['scripts/gpu/test_gpu_workload.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}', '${_ZONE}']
-- name: 'gcr.io/cloud-builders/gcloud'
-  id: MultipleGpuWorkloadTest
-  entrypoint: 'bash'
-  args: ['scripts/gpu/test_gpu_workload.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}-mul', '${_ZONE}']
-- name: 'gcr.io/cloud-builders/gcloud'
   id: UnsupportedGpuWorkloadTest
   entrypoint: 'bash'
   args: ['scripts/gpu/test_gpu_unsupported_gputype.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}-unsup', '${_ZONE}']
@@ -94,18 +58,6 @@ steps:
   id: ConfidentialGpuWorkloadTest
   entrypoint: 'bash'
   args: ['scripts/gpu/test_gpu_workload.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}-tdxcvm-cgpu', 'us-east5-a']
-- name: 'gcr.io/cloud-builders/gcloud'
-  id: SingleGpuCleanUp
-  entrypoint: 'bash'
-  env:
-  - 'CLEANUP=$_CLEANUP'
-  args: ['cleanup.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}', '${_ZONE}']
-- name: 'gcr.io/cloud-builders/gcloud'
-  id: MultipleGpuCleanUp
-  entrypoint: 'bash'
-  env:
-  - 'CLEANUP=$_CLEANUP'
-  args: ['cleanup.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}-mul', '${_ZONE}']
 - name: 'gcr.io/cloud-builders/gcloud'
   id: UnsupportedGpuVmCleanUp
   entrypoint: 'bash'
