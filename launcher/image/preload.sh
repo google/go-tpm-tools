@@ -6,6 +6,8 @@ readonly EXPERIMENTS_BINARY="confidential_space_experiments"
 readonly GPU_REF_VALUES_PATH="${CS_PATH}/gpu"
 readonly COS_GPU_INSTALLER_IMAGE_REF="${GPU_REF_VALUES_PATH}/cos_gpu_installer_image_ref"
 readonly COS_GPU_INSTALLER_IMAGE_DIGEST="${GPU_REF_VALUES_PATH}/cos_gpu_installer_image_digest"
+readonly DRIVER_DIGEST_SHA256SUM="${GPU_REF_VALUES_PATH}/driver_digest_sha256sum"
+readonly DRIVERS_GCS_BUCKET="cos-nvidia-gpu-drivers"
 
 copy_launcher() {
   cp launcher "${CS_PATH}/cs_container_launcher"
@@ -126,6 +128,26 @@ get_cos_gpu_installer_image_digest() {
   echo "${image_digest}"
 }
 
+set_reference_driver_digest() {
+  local driver_version
+  local driver_digest_gcs_url
+
+  # Fetching the default driver version for H100 GPU.
+  driver_version=$(cos-extensions list -- --target-gpu NVIDIA_H100_80GB | grep DEFAULT | cut -d" " -f 1)
+  driver_digest_gcs_url="https://storage.googleapis.com/${DRIVERS_GCS_BUCKET}/sha256/NVIDIA-Linux-x86_64-${driver_version}.run.sha256"
+  if ! curl -sSL ${driver_digest_gcs_url} -o ${DRIVER_DIGEST_SHA256SUM}; then
+    echo "Error: failed to download the driver digest file from ${driver_digest_gcs_url}." >&2
+    return 1
+  fi
+  
+  driver_digest=$(cat ${DRIVER_DIGEST_SHA256SUM} | cut -d " " -f 1)
+  # Check for the expected length of the SHA256 digest (64 hex characters)
+  if [ ${#driver_digest} -ne 64 ]; then
+    echo "Error: driver digest has an unexpected length: ${#driver_digest}, Expected 64." >&2
+    return 1
+  fi
+}
+
 
 set_gpu_driver_ref_values() {
   local cos_gpu_installer_image_ref
@@ -153,6 +175,7 @@ set_gpu_driver_ref_values() {
   
   echo ${cos_gpu_installer_image_ref} > ${COS_GPU_INSTALLER_IMAGE_REF}
   echo ${cos_gpu_installer_image_digest} > ${COS_GPU_INSTALLER_IMAGE_DIGEST}
+  set_reference_driver_digest
 }
 
 main() {

@@ -271,3 +271,139 @@ func TestIsConfidentialComputeSupported(t *testing.T) {
 		})
 	}
 }
+
+func TestVerifyDriverDigest(t *testing.T) {
+	tests := []struct {
+		name            string
+		driverDigest    string
+		refDriverDigest string
+		wantErr         bool
+		errSubstr       string
+	}{
+		{
+			name:            "Driver digest matches",
+			driverDigest:    "test-digest",
+			refDriverDigest: "8edf273aa28919d86f9f0ab68b1f267280821a3251c281d19748f940c180d27f",
+			wantErr:         false,
+		},
+		{
+			name:            "Driver digest mismatch",
+			driverDigest:    "test-digest",
+			refDriverDigest: "8edf273aa28919d86f9f0ab68b1f267280821a3251c281d19748f940c180d27a",
+			wantErr:         true,
+			errSubstr:       "gpu driver digest verification failed",
+		},
+		{
+			name:            "Empty reference driver digest",
+			driverDigest:    "test-digest",
+			refDriverDigest: "",
+			wantErr:         true,
+			errSubstr:       "gpu driver digest verification failed",
+		},
+		{
+			name:            "Installed driver file does not exist",
+			driverDigest:    "",
+			refDriverDigest: "8edf273aa28919d86f9f0ab68b1f267280821a3251c281d19748f940c180d27f",
+			wantErr:         true,
+			errSubstr:       "failed to read the file",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+
+			tempDir := t.TempDir()
+			installedFile := fmt.Sprintf("%s/installed_driver_digest", tempDir)
+
+			if tt.name != "Installed driver file does not exist" {
+				err := os.WriteFile(installedFile, []byte(tt.driverDigest), 0644)
+				if err != nil {
+					t.Fatalf("failed to write to the driver digest testfile %s: %v", installedFile, err)
+				}
+			}
+			err := verifyDriverDigest(installedFile, tt.refDriverDigest)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("VerifyDriverDigest() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if tt.wantErr && !strings.Contains(err.Error(), tt.errSubstr) {
+				t.Errorf("VerifyDriverDigest() error message %s is expected to contain %s", err.Error(), tt.errSubstr)
+			}
+		})
+	}
+}
+
+func TestParseDriverDigestFile(t *testing.T) {
+	tests := []struct {
+		name             string
+		refFileContent   string
+		expectedFilename string
+		expectedDigest   string
+		wantErr          bool
+		errSubstr        string
+	}{
+		{
+			name:             "Valid content in reference digest file",
+			refFileContent:   "8edf273aa28919d86f9f0ab68b1f267280821a3251c281d19748f940c180d27f test-driver-file",
+			expectedDigest:   "8edf273aa28919d86f9f0ab68b1f267280821a3251c281d19748f940c180d27f",
+			expectedFilename: "test-driver-file",
+			wantErr:          false,
+		},
+		{
+			name:             "Valid content in reference digest file extra whitespaces",
+			refFileContent:   "8edf273aa28919d86f9f0ab68b1f267280821a3251c281d19748f940c180d27f   test-driver-file",
+			expectedDigest:   "8edf273aa28919d86f9f0ab68b1f267280821a3251c281d19748f940c180d27f",
+			expectedFilename: "test-driver-file",
+			wantErr:          false,
+		},
+		{
+			name:             "Malformed content in reference digest file",
+			refFileContent:   "8edf273aa28919d86f9f0ab68b1f267280821a3251c281d19748f940c180d27a test-driver-file some-more-data",
+			expectedFilename: "",
+			wantErr:          true,
+			errSubstr:        "unexpected content length in reference file",
+		},
+		{
+			name:             "Empty reference digest file",
+			refFileContent:   "",
+			expectedFilename: "",
+			wantErr:          true,
+			errSubstr:        "unexpected content length in reference file",
+		},
+		{
+			name:             "Reference file does not exist",
+			refFileContent:   "",
+			expectedFilename: "",
+			wantErr:          true,
+			errSubstr:        "failed to read the file",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+
+			tempDir := t.TempDir()
+			refFile := fmt.Sprintf("%s/reference_driver_digest", tempDir)
+
+			if tt.name != "Reference file does not exist" {
+				err := os.WriteFile(refFile, []byte(tt.refFileContent), 0644)
+				if err != nil {
+					t.Fatalf("failed to write to the reference digest testfile %s: %v", refFile, err)
+				}
+			}
+
+			digest, filename, err := parseDriverDigestFile(refFile)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("parseDriverDigestFile() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if tt.wantErr && !strings.Contains(err.Error(), tt.errSubstr) {
+				t.Errorf("parseDriverDigestFile() error message %s is expected to contain %s", err.Error(), tt.errSubstr)
+			}
+			if filename != tt.expectedFilename {
+				t.Errorf("parseDriverDigestFile() returned unexpected filename, got = %v, want %v", filename, tt.expectedFilename)
+			}
+			if digest != tt.expectedDigest {
+				t.Errorf("parseDriverDigestFile() returned unexpected digest, got = %v, want %v", digest, tt.expectedDigest)
+			}
+		})
+	}
+}

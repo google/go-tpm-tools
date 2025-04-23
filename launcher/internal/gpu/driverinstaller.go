@@ -3,6 +3,8 @@ package gpu
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"os/exec"
@@ -150,6 +152,15 @@ func (di *DriverInstaller) InstallGPUDrivers(ctx context.Context) error {
 		return fmt.Errorf("GPU driver installation task ended with non-zero status code %d", code)
 	}
 
+	referenceDigest, runFilename, err := parseDriverDigestFile(ReferenceDriverDigestFile)
+	if err != nil {
+		return fmt.Errorf("failed to get driver filename, got error: %v", err)
+	}
+	runFile := fmt.Sprintf("%s/%s", InstallationHostDir, runFilename)
+	if err = verifyDriverDigest(runFile, referenceDigest); err != nil {
+		return fmt.Errorf("failed to verify GPU driver digest: %v", err)
+	}
+
 	if err = launchNvidiaPersistencedProcess(di.logger); err != nil {
 		return fmt.Errorf("failed to start nvidia-persistenced process: %v", err)
 	}
@@ -199,6 +210,17 @@ func verifyInstallerImageDigest(image containerd.Image, referenceDigestFile stri
 	expectedInstallerDigest := strings.TrimSpace(string(imageDigestBytes))
 	if installerDigest != expectedInstallerDigest {
 		return fmt.Errorf("cos_gpu_installer image digest verification failed - expected : %s, actual : %s", expectedInstallerDigest, installerDigest)
+	}
+	return nil
+}
+
+func verifyDriverDigest(driverFile, referenceHash string) error {
+	calculatedHash, err := calculateSHA256Hash(driverFile)
+	if err != nil {
+		return err
+	}
+	if calculatedHash != referenceHash {
+		return fmt.Errorf("gpu driver digest verification failed - expected : %s, got : %s", referenceHash, calculatedHash)
 	}
 	return nil
 }
@@ -287,4 +309,30 @@ func nvidiaSmiOutputFunc(args ...string) nvidiaSmiCmdOutput {
 func nvidiaSmiRunFunc(args ...string) nvidiaSmiCmdRun {
 	cmd := fmt.Sprintf("%s/bin/nvidia-smi", InstallationHostDir)
 	return func() error { return exec.Command(cmd, args...).Run() }
+}
+
+func calculateSHA256Hash(filePath string) (string, error) {
+	contentBytes, err := os.ReadFile(filePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to read the file %s, got error %v", filePath, err)
+	}
+	hashBytes := sha256.Sum256(contentBytes)
+	return hex.EncodeToString(hashBytes[:]), nil
+}
+
+// Reference driver digest file contains driver digest along with driver .Run filename.
+// parseDriverDigestFile() gets reference digest file and returns the run file's digest and the run filename.
+// Sample reference driver digest file content:
+//
+//	65fe3e2236c1ddab26eaf8e1b3f3b2b0951b8824d7c4a5022552579288ff7fea  NVIDIA-Linux-aarch64-570.124.06.run
+func parseDriverDigestFile(digestFile string) (string, string, error) {
+	contentBytes, err := os.ReadFile(digestFile)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to read the file %s, got error %v", digestFile, err)
+	}
+	fields := strings.Fields(string(contentBytes))
+	if len(fields) != 2 {
+		return "", "", fmt.Errorf("unexpected content length in reference file %s", digestFile)
+	}
+	return fields[0], fields[1], nil
 }
