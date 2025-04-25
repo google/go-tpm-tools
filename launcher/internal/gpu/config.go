@@ -10,5 +10,5 @@ const (
 	// InstallerImageDigestFile is a filename which has the container image digest of cos_gpu_installer.
 	InstallerImageDigestFile = "/usr/share/oem/confidential_space/gpu/cos_gpu_installer_image_digest"
 	// ReferenceDriverDigestFile is a filename which has the reference digest of nvidia driver installer.
-	ReferenceDriverDigestFile = "/usr/share/oem/confidential_space/gpu/driver_digest_sha256sum"
+	ReferenceDriverDigestFile = "/usr/share/oem/confidential_space/gpu/driver_digest"
 )

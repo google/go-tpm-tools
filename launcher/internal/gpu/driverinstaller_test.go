@@ -291,14 +291,14 @@ func TestVerifyDriverDigest(t *testing.T) {
 			driverDigest:    "test-digest",
 			refDriverDigest: "8edf273aa28919d86f9f0ab68b1f267280821a3251c281d19748f940c180d27a",
 			wantErr:         true,
-			errSubstr:       "gpu driver digest verification failed",
+			errSubstr:       "GPU driver digest verification failed",
 		},
 		{
 			name:            "Empty reference driver digest",
 			driverDigest:    "test-digest",
 			refDriverDigest: "",
 			wantErr:         true,
-			errSubstr:       "gpu driver digest verification failed",
+			errSubstr:       "GPU driver digest verification failed",
 		},
 		{
 			name:            "Installed driver file does not exist",

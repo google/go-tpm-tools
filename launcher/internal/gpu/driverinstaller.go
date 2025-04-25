@@ -220,7 +220,7 @@ func verifyDriverDigest(driverFile, referenceHash string) error {
 		return err
 	}
 	if calculatedHash != referenceHash {
-		return fmt.Errorf("gpu driver digest verification failed - expected : %s, got : %s", referenceHash, calculatedHash)
+		return fmt.Errorf("GPU driver digest verification failed - expected : %s, got : %s", referenceHash, calculatedHash)
 	}
 	return nil
 }
