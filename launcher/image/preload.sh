@@ -6,6 +6,8 @@ readonly EXPERIMENTS_BINARY="confidential_space_experiments"
 readonly GPU_REF_VALUES_PATH="${CS_PATH}/gpu"
 readonly COS_GPU_INSTALLER_IMAGE_REF="${GPU_REF_VALUES_PATH}/cos_gpu_installer_image_ref"
 readonly COS_GPU_INSTALLER_IMAGE_DIGEST="${GPU_REF_VALUES_PATH}/cos_gpu_installer_image_digest"
+readonly DRIVER_DIGEST="${GPU_REF_VALUES_PATH}/driver_digest"
+readonly DRIVER_GCS_BUCKET="cos-nvidia-gpu-drivers"
 
 copy_launcher() {
   cp launcher "${CS_PATH}/cs_container_launcher"
@@ -126,6 +128,37 @@ get_cos_gpu_installer_image_digest() {
   echo "${image_digest}"
 }
 
+validate_sha256_hex() {
+  driver_digest="${1}"
+  # Check for the expected length of the SHA256 digest (64 hex characters)
+  if [ ${#driver_digest} -ne 64 ]; then
+    echo "Error: driver digest has an unexpected length: ${#driver_digest}, Expected 64." >&2
+    return 1
+  fi
+  # Check for valid hexadecimal string
+  if [[ ! ${driver_digest} =~ ^[0-9a-fA-F]+$ ]]; then
+    return "Error: driver digest ${driver_digest} is not a valid hexadecimal string." >&2
+    return 1
+  fi
+}
+
+store_driver_digest() {
+  local gpu_type="${1}"
+  local driver_version
+  local driver_digest_gcs_url
+
+  # Fetching the default driver version for the given GPU.
+  driver_version=$(cos-extensions list -- --target-gpu ${gpu_type} | grep DEFAULT | cut -d" " -f 1)
+  driver_digest_gcs_url="https://storage.googleapis.com/${DRIVER_GCS_BUCKET}/sha256/NVIDIA-Linux-x86_64-${driver_version}.run.sha256"
+  if ! curl -sSL ${driver_digest_gcs_url} -o ${DRIVER_DIGEST}; then
+    echo "Error: failed to download the driver digest file from ${driver_digest_gcs_url}." >&2
+    return 1
+  fi
+  
+  driver_digest=$(cat ${DRIVER_DIGEST} | cut -d " " -f 1)
+  validate_sha256_hex ${driver_digest}
+}
+
 
 set_gpu_driver_ref_values() {
   local cos_gpu_installer_image_ref
@@ -139,20 +172,17 @@ set_gpu_driver_ref_values() {
   fi
 
   cos_gpu_installer_image_digest=$(get_cos_gpu_installer_image_digest ${cos_gpu_installer_image_ref})
-  if [ -z "${cos_gpu_installer_image_ref}" ]; then
+  if [ -z "${cos_gpu_installer_image_digest}" ]; then
     echo "Error: get_cos_gpu_installer_image_digest returned an empty or invalid digest for: ${cos_gpu_installer_image_ref}." >&2
     return 1
   fi
 
   image_digest_hex_part=$(echo "${cos_gpu_installer_image_digest}" | sed 's/^sha256://' | tr -d '[:space:]')
-  # Check for the expected length of the SHA256 digest (64 hex characters)
-  if [ ${#image_digest_hex_part} -ne 64 ]; then
-    echo "Error: cos_gpu_installer image digest has an unexpected length: ${#image_digest_hex_part}, Expected 64." >&2
-    return 1
-  fi
+  validate_sha256_hex ${image_digest_hex_part}
   
   echo ${cos_gpu_installer_image_ref} > ${COS_GPU_INSTALLER_IMAGE_REF}
   echo ${cos_gpu_installer_image_digest} > ${COS_GPU_INSTALLER_IMAGE_DIGEST}
+  store_driver_digest "NVIDIA_H100_80GB"
 }
 
 main() {
