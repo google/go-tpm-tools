@@ -47,6 +47,21 @@ steps:
           '-x', 'TDX',
         ]
 - name: 'gcr.io/cloud-builders/gcloud'
+  id: CreateTDXCVMWithCGPUNoMetadataFlag
+  entrypoint: 'bash'
+  env:
+  - 'BUILD_ID=$BUILD_ID'
+  args: ['create_gpu_vm.sh','-i', '${_IMAGE_NAME}',
+          '-p', '${_IMAGE_PROJECT}',
+          '-m', 'tee-image-reference=${_WORKLOAD_IMAGE},tee-container-log-redirect=true',
+          '-n', '${_VM_NAME_PREFIX}-${BUILD_ID}-noflag',
+          '-z', 'us-east5-a', # H100 GPU with Confidential Compute on are available only under us-central1 and us-east5 regions.  
+          '-v', 'a3-highgpu-1g',
+          '-g', 'nvidia-h100-80gb',
+          '-c', '1',
+          '-x', 'TDX',
+        ]
+- name: 'gcr.io/cloud-builders/gcloud'
   id: UnsupportedGpuWorkloadTest
   entrypoint: 'bash'
   args: ['scripts/gpu/test_gpu_unsupported_gputype.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}-unsup', '${_ZONE}']
@@ -58,6 +73,10 @@ steps:
   id: ConfidentialGpuWorkloadTest
   entrypoint: 'bash'
   args: ['scripts/gpu/test_gpu_workload.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}-tdxcvm-cgpu', 'us-east5-a']
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: NoMetadataFlagWorkloadTest
+  entrypoint: 'bash'
+  args: ['scripts/gpu/test_gpu_nometadata.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}-noflag', 'us-east5-a']
 - name: 'gcr.io/cloud-builders/gcloud'
   id: UnsupportedGpuVmCleanUp
   entrypoint: 'bash'
@@ -76,6 +95,12 @@ steps:
   env:
   - 'CLEANUP=$_CLEANUP'
   args: ['cleanup.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}-tdxcvm-cgpu', 'us-east5-a']
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: NoMetadataVmCleanUp
+  entrypoint: 'bash'
+  env:
+  - 'CLEANUP=$_CLEANUP'
+  args: ['cleanup.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}-noflag', 'us-east5-a']
 # Must come after cleanup.
 - name: 'gcr.io/cloud-builders/gcloud'
   id: NoGpuVmCheckFailure

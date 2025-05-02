@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/compute/metadata"
+	"cos.googlesource.com/cos/tools.git/src/cmd/cos_gpu_installer/deviceinfo"
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/defaults"
 	"github.com/containerd/containerd/namespaces"
@@ -189,20 +190,6 @@ func startLauncher(launchSpec spec.LaunchSpec, serialConsole *os.File) error {
 	}
 	defer containerdClient.Close()
 
-	ctx := namespaces.WithNamespace(context.Background(), namespaces.Default)
-	if launchSpec.InstallGpuDriver {
-		if launchSpec.Experiments.EnableConfidentialGPUSupport {
-			installer := gpu.NewDriverInstaller(containerdClient, launchSpec, logger)
-			err = installer.InstallGPUDrivers(ctx)
-			if err != nil {
-				return fmt.Errorf("failed to install gpu drivers: %v", err)
-			}
-		} else {
-			logger.Info("Confidential GPU support experiment flag is not enabled for this project. Ensure that it is enabled when tee-install-gpu-driver is set to true")
-			return fmt.Errorf("confidential gpu support experiment flag is not enabled")
-		}
-	}
-
 	tpm, err := tpm2.OpenTPM("/dev/tpmrm0")
 	if err != nil {
 		return &launcher.RetryableError{Err: err}
@@ -243,6 +230,26 @@ func startLauncher(launchSpec spec.LaunchSpec, serialConsole *os.File) error {
 	token, err := registryauth.RetrieveAuthToken(context.Background(), mdsClient)
 	if err != nil {
 		logger.Info(fmt.Sprintf("failed to retrieve auth token: %v, using empty auth for image pulling\n", err))
+	}
+
+	ctx := namespaces.WithNamespace(context.Background(), namespaces.Default)
+	if launchSpec.InstallGpuDriver {
+		if launchSpec.Experiments.EnableConfidentialGPUSupport {
+			installer := gpu.NewDriverInstaller(containerdClient, launchSpec, logger)
+			err = installer.InstallGPUDrivers(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to install gpu drivers: %v", err)
+			}
+		} else {
+			logger.Error("Confidential GPU support experiment flag is not enabled for this project. Ensure that it is enabled when tee-install-gpu-driver is set to true")
+			return fmt.Errorf("confidential gpu support experiment flag is not enabled")
+		}
+	} else {
+		deviceInfo, _ := deviceinfo.GetGPUTypeInfo()
+		if deviceInfo != deviceinfo.NO_GPU {
+			logger.Error("GPU is attached, tee-install-gpu-driver is not set")
+			return fmt.Errorf("tee-install-gpu-driver is expected to set to true when GPU is attached")
+		}
 	}
 
 	logger.Info("Launch started", "duration_sec", time.Since(start).Seconds())

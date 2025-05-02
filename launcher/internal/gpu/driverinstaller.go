@@ -30,8 +30,13 @@ var supportedCGPUTypes = []deviceinfo.GPUType{
 	deviceinfo.H100,
 }
 
-type nvidiaSmiCmdOutput func() ([]byte, error)
-type nvidiaSmiCmdRun func() error
+// NvidiaSmiCmdOutput defines a function type for executing an NVIDIA SMI command
+// and returning the raw byte output along with any error.
+type NvidiaSmiCmdOutput func() ([]byte, error)
+
+// NvidiaSmiCmdRun defines a function type for executing an NVIDIA SMI command
+// and returning only an error, if any.
+type NvidiaSmiCmdRun func() error
 
 // DriverInstaller contains information about the GPU driver installer settings
 type DriverInstaller struct {
@@ -165,13 +170,13 @@ func (di *DriverInstaller) InstallGPUDrivers(ctx context.Context) error {
 		return fmt.Errorf("failed to start nvidia-persistenced process: %v", err)
 	}
 
-	nvidiaSmiVerifyCmd := nvidiaSmiRunFunc()
+	nvidiaSmiVerifyCmd := NvidiaSmiRunFunc()
 	if err = verifyDriverInstallation(nvidiaSmiVerifyCmd); err != nil {
 		return fmt.Errorf("failed to verify GPU driver installation: %v", err)
 	}
 
-	ccModeCmd := nvidiaSmiOutputFunc("conf-compute", "-f")
-	devToolsCmd := nvidiaSmiOutputFunc("conf-compute", "-d")
+	ccModeCmd := NvidiaSmiOutputFunc("conf-compute", "-f")
+	devToolsCmd := NvidiaSmiOutputFunc("conf-compute", "-d")
 
 	ccEnabled, err := QueryCCMode(ccModeCmd, devToolsCmd)
 	if err != nil {
@@ -179,7 +184,7 @@ func (di *DriverInstaller) InstallGPUDrivers(ctx context.Context) error {
 	}
 	// Explicitly need to set the GPU state to READY for GPUs with confidential compute mode ON.
 	if ccEnabled == attest.GPUDeviceCCMode_ON {
-		setGPUStateCmd := nvidiaSmiRunFunc("conf-compute", "-srs", "1")
+		setGPUStateCmd := NvidiaSmiRunFunc("conf-compute", "-srs", "1")
 		if err = setGPUStateToReady(setGPUStateCmd); err != nil {
 			return fmt.Errorf("failed to set the GPU state to ready: %v", err)
 		}
@@ -238,14 +243,14 @@ func remountAsExecutable(dir string) error {
 	return nil
 }
 
-func verifyDriverInstallation(nvidiaSmiVerifyCmd nvidiaSmiCmdRun) error {
+func verifyDriverInstallation(nvidiaSmiVerifyCmd NvidiaSmiCmdRun) error {
 	if err := nvidiaSmiVerifyCmd(); err != nil {
 		return fmt.Errorf("failed to verify GPU driver installation : %v", err)
 	}
 	return nil
 }
 
-func setGPUStateToReady(nvidiaSmiSetGPUStateCmd nvidiaSmiCmdRun) error {
+func setGPUStateToReady(nvidiaSmiSetGPUStateCmd NvidiaSmiCmdRun) error {
 	if err := nvidiaSmiSetGPUStateCmd(); err != nil {
 		return fmt.Errorf("failed to set the GPU state to ready: %v", err)
 	}
@@ -254,7 +259,7 @@ func setGPUStateToReady(nvidiaSmiSetGPUStateCmd nvidiaSmiCmdRun) error {
 
 // QueryCCMode executes nvidia-smi to determine the current Confidential Computing (CC) mode status of the GPU.
 // If DEVTOOLS mode is enabled, it would override CC mode as DEVTOOLS. DEVTOOLS mode would be enabled only when CC mode is ON.
-func QueryCCMode(ccModeCmd, devToolsCmd nvidiaSmiCmdOutput) (attest.GPUDeviceCCMode, error) {
+func QueryCCMode(ccModeCmd, devToolsCmd NvidiaSmiCmdOutput) (attest.GPUDeviceCCMode, error) {
 	ccMode := attest.GPUDeviceCCMode_UNSET
 	ccModeOutput, err := ccModeCmd()
 	if err != nil {
@@ -301,12 +306,16 @@ func isConfidentialComputeSupported(gpuType deviceinfo.GPUType, supportedCGPUTyp
 	return fmt.Errorf("unsupported confidential GPU type %s, please retry with one of the supported confidential GPU types: %v", gpuType.String(), supportedCGPUTypes)
 }
 
-func nvidiaSmiOutputFunc(args ...string) nvidiaSmiCmdOutput {
+// NvidiaSmiOutputFunc returns a function which executes the nvidia-smi command with the given arguments
+// and returns the raw byte output and any error.
+func NvidiaSmiOutputFunc(args ...string) NvidiaSmiCmdOutput {
 	cmd := fmt.Sprintf("%s/bin/nvidia-smi", InstallationHostDir)
 	return func() ([]byte, error) { return exec.Command(cmd, args...).Output() }
 }
 
-func nvidiaSmiRunFunc(args ...string) nvidiaSmiCmdRun {
+// NvidiaSmiRunFunc returns a function which executes the nvidia-smi command with the given arguments
+// and returns an error, if any.
+func NvidiaSmiRunFunc(args ...string) NvidiaSmiCmdRun {
 	cmd := fmt.Sprintf("%s/bin/nvidia-smi", InstallationHostDir)
 	return func() error { return exec.Command(cmd, args...).Run() }
 }

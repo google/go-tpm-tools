@@ -191,7 +191,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		}
 
 		for _, deviceFile := range gpuDeviceFiles {
-			logger.Info("device file : %s", deviceFile)
+			logger.Info(fmt.Sprintf("GPU device file : %s", deviceFile))
 			specOpts = append(specOpts, oci.WithDevices(deviceFile, deviceFile, "crw-rw-rw-"))
 		}
 	}
@@ -341,6 +341,14 @@ func (r *ContainerRunner) measureCELEvents(ctx context.Context) error {
 		return fmt.Errorf("failed to measure memory monitoring state: %v", err)
 	}
 
+	if r.launchSpec.Experiments.EnableConfidentialGPUSupport && r.launchSpec.InstallGpuDriver {
+		ccModeCmd := gpu.NvidiaSmiOutputFunc("conf-compute", "-f")
+		devToolsCmd := gpu.NvidiaSmiOutputFunc("conf-compute", "-d")
+		if err := r.measureGPUCCMode(ccModeCmd, devToolsCmd); err != nil {
+			return fmt.Errorf("failed to measure GPU CC mode status: %v", err)
+		}
+	}
+
 	separator := cel.CosTlv{
 		EventType:    cel.LaunchSeparatorType,
 		EventContent: nil, // Success
@@ -415,6 +423,18 @@ func (r *ContainerRunner) measureMemoryMonitor() error {
 		return err
 	}
 	r.logger.Info("Successfully measured memory monitoring event")
+	return nil
+}
+
+func (r *ContainerRunner) measureGPUCCMode(ccModeCmd, devToolsCmd gpu.NvidiaSmiCmdOutput) error {
+	ccMode, err := gpu.QueryCCMode(ccModeCmd, devToolsCmd)
+	if err != nil {
+		return err
+	}
+	if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.GpuCCModeType, EventContent: []byte(ccMode.String())}); err != nil {
+		return err
+	}
+	r.logger.Info("Successfully measured GPU CC mode status")
 	return nil
 }
 

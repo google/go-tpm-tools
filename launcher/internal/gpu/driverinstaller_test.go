@@ -77,7 +77,7 @@ func TestGetInstallerImageReference(t *testing.T) {
 func TestVerifyDriverInstallation(t *testing.T) {
 	tests := []struct {
 		name          string
-		mockVerifyCmd nvidiaSmiCmdRun
+		mockVerifyCmd NvidiaSmiCmdRun
 		wantErr       bool
 		errSubstr     string
 	}{
@@ -110,7 +110,7 @@ func TestVerifyDriverInstallation(t *testing.T) {
 func TestSetGPUStateToReady(t *testing.T) {
 	tests := []struct {
 		name      string
-		mockCmd   nvidiaSmiCmdRun
+		mockCmd   NvidiaSmiCmdRun
 		wantErr   bool
 		errSubstr string
 	}{
@@ -143,8 +143,8 @@ func TestSetGPUStateToReady(t *testing.T) {
 func TestQueryCCMode(t *testing.T) {
 	tests := []struct {
 		name            string
-		mockCCModeCmd   nvidiaSmiCmdOutput
-		mockDevToolsCmd nvidiaSmiCmdOutput
+		mockCCModeCmd   NvidiaSmiCmdOutput
+		mockDevToolsCmd NvidiaSmiCmdOutput
 		expectedCCMode  attest.GPUDeviceCCMode
 		wantErr         bool
 		errSubstr       string
