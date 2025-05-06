@@ -5,13 +5,14 @@ import (
 	"crypto"
 	"crypto/aes"
 	"crypto/cipher"
-	"crypto/elliptic"
+	"crypto/ecdsa"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/rsa"
 	"fmt"
 	"hash"
 	"io"
+	"math/big"
 
 	"github.com/google/go-tpm/legacy/tpm2"
 	"github.com/google/go-tpm/tpmutil"
@@ -131,29 +132,45 @@ func createECCSeed(ek tpm2.Public) (seed, encryptedSeed []byte, err error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	//nolint:staticcheck
-	// crypto/ecdh does not support P-224, while GCP vTPM supports P224. We should keep the deprecated library till P224 is supported by crypto/ecdh.
-	priv, x, y, err := elliptic.GenerateKey(curve, rand.Reader)
+
+	ecdsaPriv, err := ecdsa.GenerateKey(curve, rand.Reader)
 	if err != nil {
 		return nil, nil, err
 	}
-	ekPoint := ek.ECCParameters.Point
-	//nolint:staticcheck
-	// crypto/ecdh does not support P-224, while GCP vTPM supports P224. We should keep the deprecated library till P224 is supported by crypto/ecdh.
-	z, _ := curve.ScalarMult(ekPoint.X(), ekPoint.Y(), priv)
-	xBytes := eccIntToBytes(curve, x)
+
+	ecdhPriv, err := ecdsaPriv.ECDH()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	pub, err := ek.Key()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	ekPub, err := pub.(*ecdsa.PublicKey).ECDH()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	zBytes, err := ecdhPriv.ECDH(ekPub)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	xBytes := eccIntToBytes(curve, ecdsaPriv.X)
 
 	seed, err = tpm2.KDFe(
 		ek.NameAlg,
-		eccIntToBytes(curve, z),
+		eccIntToBytes(curve, new(big.Int).SetBytes(zBytes)),
 		"DUPLICATE",
 		xBytes,
-		eccIntToBytes(curve, ekPoint.X()),
+		eccIntToBytes(curve, ek.ECCParameters.Point.X()),
 		getHash(ek.NameAlg).Size()*8)
 	if err != nil {
 		return nil, nil, err
 	}
-	encryptedSeed, err = tpmutil.Pack(tpmutil.U16Bytes(xBytes), tpmutil.U16Bytes(eccIntToBytes(curve, y)))
+	encryptedSeed, err = tpmutil.Pack(tpmutil.U16Bytes(xBytes), tpmutil.U16Bytes(eccIntToBytes(curve, ecdsaPriv.Y)))
 	return seed, encryptedSeed, err
 }
 
