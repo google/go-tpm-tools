@@ -9,7 +9,7 @@ print_serial=false
 
 if echo $SERIAL_OUTPUT | grep -q 'open sourced kernel modules are not supported for GPU type'
 then
-    echo "- unsupported GPU types verified"
+    echo "- Verified: unsupported GPU for open sourced kernel modules"
 else
     echo "FAILED: GPU type is not supported"
     echo 'TEST FAILED.' > /workspace/status.txt

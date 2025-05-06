@@ -7,7 +7,7 @@ print_serial=false
 
 if echo $SERIAL_OUTPUT | grep -q 'tee-install-gpu-driver is expected to set to true'
 then
-    echo "- GPU driver installation without metadata flag is verified"
+    echo "- Verified: missing GPU driver installation flag"
 else
     echo "FAILED: Driver installation metadata flag is not set"
     echo 'TEST FAILED.' > /workspace/status.txt
