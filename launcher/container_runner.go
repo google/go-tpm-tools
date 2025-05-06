@@ -341,14 +341,6 @@ func (r *ContainerRunner) measureCELEvents(ctx context.Context) error {
 		return fmt.Errorf("failed to measure memory monitoring state: %v", err)
 	}
 
-	if r.launchSpec.Experiments.EnableConfidentialGPUSupport && r.launchSpec.InstallGpuDriver {
-		ccModeCmd := gpu.NvidiaSmiOutputFunc("conf-compute", "-f")
-		devToolsCmd := gpu.NvidiaSmiOutputFunc("conf-compute", "-d")
-		if err := r.measureGPUCCMode(ccModeCmd, devToolsCmd); err != nil {
-			return fmt.Errorf("failed to measure GPU CC mode status: %v", err)
-		}
-	}
-
 	separator := cel.CosTlv{
 		EventType:    cel.LaunchSeparatorType,
 		EventContent: nil, // Success
@@ -598,6 +590,14 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 
 	if err := r.measureCELEvents(ctx); err != nil {
 		return fmt.Errorf("failed to measure CEL events: %v", err)
+	}
+
+	if r.launchSpec.Experiments.EnableConfidentialGPUSupport && r.launchSpec.InstallGpuDriver {
+		ccModeCmd := gpu.NvidiaSmiOutputFunc("conf-compute", "-f")
+		devToolsCmd := gpu.NvidiaSmiOutputFunc("conf-compute", "-d")
+		if err := r.measureGPUCCMode(ccModeCmd, devToolsCmd); err != nil {
+			return fmt.Errorf("failed to measure GPU CC mode status: %v", err)
+		}
 	}
 
 	if err := r.fetchAndWriteToken(ctx); err != nil {

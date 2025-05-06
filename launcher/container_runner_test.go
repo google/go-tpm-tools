@@ -661,7 +661,7 @@ func TestMeasureGPUCCMode(t *testing.T) {
 		wantEvents      []cel.CosType
 	}{
 		{
-			name:            "Successful GPU CC mode measurement",
+			name:            "successful GPU CC mode measurement",
 			mockCCModeCmd:   func() ([]byte, error) { return []byte("CC status: ON"), nil },
 			mockDevToolsCmd: func() ([]byte, error) { return []byte("DevTools Mode: OFF"), nil },
 			wantErr:         false,
@@ -670,7 +670,7 @@ func TestMeasureGPUCCMode(t *testing.T) {
 			},
 		},
 		{
-			name:            "Failed GPU CC mode measurement",
+			name:            "failed to query GPU CC mode for measurement",
 			mockCCModeCmd:   func() ([]byte, error) { return []byte("CC status: ON"), nil },
 			mockDevToolsCmd: func() ([]byte, error) { return nil, fmt.Errorf("nvidia-smi DevTools mode error") },
 			wantErr:         true,
