@@ -684,7 +684,10 @@ func TestMeasureGPUCCMode(t *testing.T) {
 
 			fakeAgent := &fakeAttestationAgent{
 				measureEventFunc: func(content cel.Content) error {
-					got, _ := content.GetTLV()
+					got, err := content.GetTLV()
+					if err != nil {
+						t.Fatalf("failed to get content TLV: %v", err)
+					}
 					tlv := &cel.TLV{}
 					tlv.UnmarshalBinary(got.Value)
 					gotEvents = append(gotEvents, cel.CosType(tlv.Type))

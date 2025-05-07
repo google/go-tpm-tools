@@ -191,7 +191,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		}
 
 		for _, deviceFile := range gpuDeviceFiles {
-			logger.Info(fmt.Sprintf("GPU device file : %s", deviceFile))
+			logger.Info(fmt.Sprintf("Detected NVIDIA GPU device : %s", deviceFile))
 			specOpts = append(specOpts, oci.WithDevices(deviceFile, deviceFile, "crw-rw-rw-"))
 		}
 	}

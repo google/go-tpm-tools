@@ -242,7 +242,7 @@ func startLauncher(launchSpec spec.LaunchSpec, serialConsole *os.File) error {
 			}
 		} else {
 			logger.Error("Confidential GPU support experiment flag is not enabled for this project. Ensure that it is enabled when tee-install-gpu-driver is set to true")
-			return fmt.Errorf("confidential gpu support experiment flag is not enabled")
+			return fmt.Errorf("confidential GPU support experiment flag is not enabled")
 		}
 	} else {
 		deviceInfo, _ := deviceinfo.GetGPUTypeInfo()
