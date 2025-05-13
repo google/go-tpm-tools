@@ -8,25 +8,29 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"os"
-	"path/filepath"
 
 	"github.com/google/go-tpm-tools/launcher/agent"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
-	"github.com/google/go-tpm-tools/launcher/launcherfile"
+	"github.com/google/go-tpm-tools/launcher/spec"
+	"github.com/google/go-tpm-tools/verifier"
+	"github.com/google/go-tpm-tools/verifier/models"
+	"github.com/google/go-tpm-tools/verifier/util"
 )
 
-type attestHandler struct {
-	ctx              context.Context
-	attestAgent      agent.AttestationAgent
-	defaultTokenFile string
-	logger           logging.Logger
+// AttestClients contains clients for supported verifier services that can be used to
+// get attestation tokens.
+type AttestClients struct {
+	GCA verifier.Client
+	ITA verifier.Client
 }
 
-type customTokenRequest struct {
-	Audience  string   `json:"audience"`
-	Nonces    []string `json:"nonces"`
-	TokenType string   `json:"token_type"`
+type attestHandler struct {
+	ctx         context.Context
+	attestAgent agent.AttestationAgent
+	// defaultTokenFile string
+	logger     logging.Logger
+	launchSpec spec.LaunchSpec
+	clients    *AttestClients
 }
 
 // TeeServer is a server that can be called from a container through a unix
@@ -37,7 +41,7 @@ type TeeServer struct {
 }
 
 // New takes in a socket and start to listen to it, and create a server
-func New(ctx context.Context, unixSock string, a agent.AttestationAgent, logger logging.Logger) (*TeeServer, error) {
+func New(ctx context.Context, unixSock string, a agent.AttestationAgent, logger logging.Logger, launchSpec spec.LaunchSpec, clients *AttestClients) (*TeeServer, error) {
 	var err error
 	nl, err := net.Listen("unix", unixSock)
 	if err != nil {
@@ -48,10 +52,11 @@ func New(ctx context.Context, unixSock string, a agent.AttestationAgent, logger 
 		netListener: nl,
 		server: &http.Server{
 			Handler: (&attestHandler{
-				ctx:              ctx,
-				attestAgent:      a,
-				defaultTokenFile: filepath.Join(launcherfile.HostTmpPath, launcherfile.AttestationVerifierTokenFilename),
-				logger:           logger,
+				ctx:         ctx,
+				attestAgent: a,
+				logger:      logger,
+				launchSpec:  launchSpec,
+				clients:     clients,
 			}).Handler(),
 		},
 	}
@@ -67,7 +72,14 @@ func (a *attestHandler) Handler() http.Handler {
 	//   --unix-socket /tmp/container_launcher/teeserver.sock http://localhost/v1/token
 
 	mux.HandleFunc("/v1/token", a.getToken)
+	mux.HandleFunc("/v1/intel/token", a.getITAToken)
 	return mux
+}
+
+func (a *attestHandler) logAndWriteError(errStr string, status int, w http.ResponseWriter) {
+	a.logger.Error(errStr)
+	w.WriteHeader(status)
+	w.Write([]byte(errStr))
 }
 
 // getDefaultToken handles the request to get the default OIDC token.
@@ -76,66 +88,102 @@ func (a *attestHandler) Handler() http.Handler {
 func (a *attestHandler) getToken(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html")
 
-	switch r.Method {
-	case "GET":
-		// this could call Attest(ctx) directly later.
-		data, err := os.ReadFile(a.defaultTokenFile)
-
+	// If the handler does not have a GCA client, create one.
+	if a.clients.GCA == nil {
+		gcaClient, err := util.NewRESTClient(a.ctx, a.launchSpec.AttestationServiceAddr, a.launchSpec.ProjectID, a.launchSpec.Region)
 		if err != nil {
-			a.logger.Error(err.Error())
-			w.WriteHeader(http.StatusNotFound)
-			w.Write([]byte("failed to get the token"))
+			errStr := fmt.Sprintf("failed to create REST verifier client: %v", err)
+			a.logAndWriteError(errStr, http.StatusInternalServerError, w)
 			return
 		}
-		w.WriteHeader(http.StatusOK)
-		w.Write(data)
+
+		a.clients.GCA = gcaClient
+	}
+
+	a.attest(w, r, a.clients.GCA)
+}
+
+// getITAToken retrieves a attestation token signed by ITA.
+func (a *attestHandler) getITAToken(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html")
+
+	// If the handler does not have an ITA client, return error.
+	if a.clients.ITA == nil {
+		errStr := "no ITA verifier client present - ensure ITA Region and Key are defined in metadata"
+		a.logAndWriteError(errStr, http.StatusPreconditionFailed, w)
 		return
-	case "POST":
-		var tokenReq customTokenRequest
+	}
+
+	a.attest(w, r, a.clients.ITA)
+}
+
+func (a *attestHandler) attest(w http.ResponseWriter, r *http.Request, client verifier.Client) {
+	switch r.Method {
+	case http.MethodGet:
+		if err := a.attestAgent.Refresh(a.ctx); err != nil {
+			errStr := fmt.Sprintf("failed to refresh attestation agent: %v", err)
+			a.logAndWriteError(errStr, http.StatusInternalServerError, w)
+			return
+		}
+
+		token, err := a.attestAgent.AttestWithClient(a.ctx, agent.AttestAgentOpts{}, client)
+		if err != nil {
+			errStr := fmt.Sprintf("failed to retrieve attestation service token: %v", err)
+			a.logAndWriteError(errStr, http.StatusInternalServerError, w)
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+		w.Write(token)
+		return
+	case http.MethodPost:
+		var tokenOptions models.TokenOptions
 		decoder := json.NewDecoder(r.Body)
 		decoder.DisallowUnknownFields()
 
-		err := decoder.Decode(&tokenReq)
+		err := decoder.Decode(&tokenOptions)
 		if err != nil {
-			a.logger.Error(err.Error())
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte(err.Error()))
+			err = fmt.Errorf("failed to parse POST body as TokenOptions: %v", err)
+			a.logAndWriteHTTPError(w, http.StatusBadRequest, err)
 			return
 		}
 
-		if tokenReq.Audience == "" {
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte("use GET request for the default identity token"))
+		if tokenOptions.Audience == "" {
+			err := fmt.Errorf("use GET request for the default identity token")
+			a.logAndWriteHTTPError(w, http.StatusBadRequest, err)
 			return
 		}
 
-		if tokenReq.TokenType == "" {
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte("token_type is a required parameter"))
+		if tokenOptions.TokenType == "" {
+			err := fmt.Errorf("token_type is a required parameter")
+			a.logAndWriteHTTPError(w, http.StatusBadRequest, err)
 			return
 		}
 
-		tok, err := a.attestAgent.Attest(a.ctx,
-			agent.AttestAgentOpts{
-				Aud:       tokenReq.Audience,
-				Nonces:    tokenReq.Nonces,
-				TokenType: tokenReq.TokenType,
-			})
+		// Do not check that TokenTypeOptions matches TokenType in the launcher.
+
+		tok, err := a.attestAgent.AttestWithClient(a.ctx, agent.AttestAgentOpts{
+			TokenOptions: &tokenOptions,
+		}, client)
 		if err != nil {
-			a.logger.Error(err.Error())
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte(err.Error()))
+			a.logAndWriteHTTPError(w, http.StatusBadRequest, err)
 			return
 		}
 
 		w.WriteHeader(http.StatusOK)
 		w.Write(tok)
 		return
+	default:
+		// TODO: add an url pointing to the REST API document
+		err := fmt.Errorf("TEE server received an invalid HTTP method: %s", r.Method)
+		a.logAndWriteHTTPError(w, http.StatusBadRequest, err)
 	}
+}
 
-	w.WriteHeader(http.StatusBadRequest)
-	// TODO: add an url pointing to the REST API document
-	w.Write([]byte("TEE server received invalid request"))
+func (a *attestHandler) logAndWriteHTTPError(w http.ResponseWriter, statusCode int, err error) {
+	a.logger.Error(err.Error())
+	w.WriteHeader(statusCode)
+	w.Write([]byte(err.Error()))
 }
 
 // Serve starts the server, will block until the server shutdown.

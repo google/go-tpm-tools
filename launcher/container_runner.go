@@ -36,6 +36,8 @@ import (
 	"github.com/google/go-tpm-tools/launcher/registryauth"
 	"github.com/google/go-tpm-tools/launcher/spec"
 	"github.com/google/go-tpm-tools/launcher/teeserver"
+	"github.com/google/go-tpm-tools/verifier"
+	"github.com/google/go-tpm-tools/verifier/ita"
 	"github.com/google/go-tpm-tools/verifier/util"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
@@ -76,6 +78,9 @@ const (
 	defaultRefreshJitter = 0.1
 )
 
+// Default OOM score for a CS container.
+const defaultOOMScore = 1000
+
 // NewRunner returns a runner.
 func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.Token, launchSpec spec.LaunchSpec, mdsClient *metadata.Client, tpm io.ReadWriteCloser, logger logging.Logger, serialConsole *os.File) (*ContainerRunner, error) {
 	image, err := initImage(ctx, cdClient, launchSpec, token)
@@ -83,11 +88,19 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		return nil, err
 	}
 
-	mounts := make([]specs.Mount, 0, len(launchSpec.Mounts)+1)
+	var mounts []specs.Mount
 	for _, lsMnt := range launchSpec.Mounts {
 		mounts = append(mounts, lsMnt.SpecsMount())
 	}
 	mounts = appendTokenMounts(mounts)
+	var cgroupOpts []oci.SpecOpts
+	if launchSpec.CgroupNamespace {
+		mounts = appendCgroupRw(mounts)
+		cgroupOpts = []oci.SpecOpts{
+			oci.WithNamespacedCgroup(),
+			oci.WithLinuxNamespace(specs.LinuxNamespace{Type: specs.CgroupNamespace}),
+		}
+	}
 
 	envs, err := formatEnvVars(launchSpec.Envs)
 	if err != nil {
@@ -119,16 +132,22 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 
 	logger.Info(fmt.Sprintf("Image Labels               : %v\n", imageConfig.Labels))
 	launchPolicy, err := spec.GetLaunchPolicy(imageConfig.Labels, logger)
-
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to parse image Launch Policy: %v: contact the image author", err)
 	}
 	if err := launchPolicy.Verify(launchSpec); err != nil {
 		return nil, err
 	}
 
-	if err := enableMonitoring(launchSpec.MonitoringEnabled, logger); err != nil {
-		return nil, err
+	if launchSpec.MonitoringEnabled == spec.All && !launchSpec.Experiments.EnableHealthMonitoring {
+		logger.Info("Health Monitoring experiment is not enabled - falling back to memory-only.")
+		if err := enableMonitoring(spec.MemoryOnly, logger); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := enableMonitoring(launchSpec.MonitoringEnabled, logger); err != nil {
+			return nil, err
+		}
 	}
 
 	logger.Info(fmt.Sprintf("Launch Policy              : %+v\n", launchPolicy))
@@ -163,11 +182,14 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		oci.WithHostResolvconf,
 		oci.WithHostNamespace(specs.NetworkNamespace),
 		oci.WithEnv([]string{fmt.Sprintf("HOSTNAME=%s", hostname)}),
+		oci.WithAddedCapabilities(launchSpec.AddedCapabilities),
 		withRlimits(rlimits),
+		withOOMScoreAdj(defaultOOMScore),
 	}
 	if launchSpec.DevShmSize != 0 {
 		specOpts = append(specOpts, oci.WithDevShmSize(launchSpec.DevShmSize))
 	}
+	specOpts = append(specOpts, cgroupOpts...)
 
 	if launchSpec.Experiments.EnableConfidentialGPUSupport && launchSpec.InstallGpuDriver {
 		gpuMounts := []specs.Mount{
@@ -214,6 +236,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	if err != nil {
 		return nil, &RetryableError{err}
 	}
+
 	// Container process Args length should be strictly longer than the Cmd
 	// override length set by the operator, as we want the Entrypoint filed
 	// to be mandatory for the image.
@@ -244,9 +267,14 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 
 	asAddr := launchSpec.AttestationServiceAddr
 
-	verifierClient, err := util.NewRESTClient(ctx, asAddr, launchSpec.ProjectID, launchSpec.Region)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create REST verifier client: %v", err)
+	var verifierClient verifier.Client
+	if launchSpec.ITARegion == "" {
+		gcaClient, err := util.NewRESTClient(ctx, asAddr, launchSpec.ProjectID, launchSpec.Region)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create REST verifier client: %v", err)
+		}
+
+		verifierClient = gcaClient
 	}
 
 	// Create a new signaturediscovery client to fetch signatures.
@@ -445,6 +473,7 @@ func (r *ContainerRunner) refreshToken(ctx context.Context) (time.Duration, erro
 	if err := r.attestAgent.Refresh(ctx); err != nil {
 		return 0, fmt.Errorf("failed to refresh attestation agent: %v", err)
 	}
+
 	// request a default token
 	token, err := r.attestAgent.Attest(ctx, agent.AttestAgentOpts{})
 	if err != nil {
@@ -600,13 +629,34 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		return fmt.Errorf("failed to measure CEL events: %v", err)
 	}
 
-	if err := r.fetchAndWriteToken(ctx); err != nil {
-		return fmt.Errorf("failed to fetch and write OIDC token: %v", err)
+	// Only refresh token if agent has a default GCA client (not ITA use case).
+	if r.launchSpec.ITARegion == "" {
+		if err := r.fetchAndWriteToken(ctx); err != nil {
+			return fmt.Errorf("failed to fetch and write OIDC token: %v", err)
+		}
 	}
 
 	// create and start the TEE server
 	r.logger.Info("EnableOnDemandAttestation is enabled: initializing TEE server.")
-	teeServer, err := teeserver.New(ctx, path.Join(launcherfile.HostTmpPath, teeServerSocket), r.attestAgent, r.logger)
+
+	attestClients := &teeserver.AttestClients{}
+	if r.launchSpec.ITARegion != "" {
+		itaClient, err := ita.NewClient(r.launchSpec.ITARegion, r.launchSpec.ITAKey)
+		if err != nil {
+			return fmt.Errorf("failed to create ITA client: %v", err)
+		}
+
+		attestClients.ITA = itaClient
+	} else {
+		gcaClient, err := util.NewRESTClient(ctx, r.launchSpec.AttestationServiceAddr, r.launchSpec.ProjectID, r.launchSpec.Region)
+		if err != nil {
+			return fmt.Errorf("failed to create REST verifier client: %v", err)
+		}
+
+		attestClients.GCA = gcaClient
+	}
+
+	teeServer, err := teeserver.New(ctx, path.Join(launcherfile.HostTmpPath, teeServerSocket), r.attestAgent, r.logger, r.launchSpec, attestClients)
 	if err != nil {
 		return fmt.Errorf("failed to create the TEE server: %v", err)
 	}
@@ -790,4 +840,24 @@ func withRlimits(rlimits []specs.POSIXRlimit) oci.SpecOpts {
 		s.Process.Rlimits = rlimits
 		return nil
 	}
+}
+
+// Set the container process's OOM score.
+func withOOMScoreAdj(oomScore int) oci.SpecOpts {
+	return func(_ context.Context, _ oci.Client, _ *containers.Container, s *oci.Spec) error {
+		s.Process.OOMScoreAdj = &oomScore
+		return nil
+	}
+}
+
+// appendCgroupRw mount maps a cgroup as read-write.
+func appendCgroupRw(mounts []specs.Mount) []specs.Mount {
+	m := specs.Mount{
+		Destination: "/sys/fs/cgroup",
+		Type:        "cgroup",
+		Source:      "cgroup",
+		Options:     []string{"rw", "nosuid", "noexec", "nodev"},
+	}
+
+	return append(mounts, m)
 }

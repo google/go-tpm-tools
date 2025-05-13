@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"hash"
 
 	"github.com/google/go-attestation/attest"
 	"github.com/google/go-eventlog/register"
@@ -430,6 +431,12 @@ func matchWellKnown(cert x509.Certificate) (pb.WellKnownCertificate, error) {
 	if bytes.Equal(MicrosoftUEFICA2011Cert, cert.Raw) {
 		return pb.WellKnownCertificate_MS_THIRD_PARTY_UEFI_CA_2011, nil
 	}
+	if bytes.Equal(MicrosoftKEKCA2011Cert, cert.Raw) {
+		return pb.WellKnownCertificate_MS_THIRD_PARTY_KEK_CA_2011, nil
+	}
+	if bytes.Equal(GceDefaultPKCert, cert.Raw) {
+		return pb.WellKnownCertificate_GCE_DEFAULT_PK, nil
+	}
 	return pb.WellKnownCertificate_UNKNOWN, errors.New("failed to find matching well known certificate")
 }
 
@@ -446,6 +453,8 @@ func getSecureBootState(attestEvents []attest.Event) (*pb.SecureBootState, error
 		Db:        convertToPbDatabase(attestSbState.PermittedKeys, attestSbState.PermittedHashes),
 		Dbx:       convertToPbDatabase(attestSbState.ForbiddenKeys, attestSbState.ForbiddenHashes),
 		Authority: convertToPbDatabase(attestSbState.PostSeparatorAuthority, nil),
+		Pk:        convertToPbDatabase(attestSbState.PlatformKeys, attestSbState.PlatformKeyHashes),
+		Kek:       convertToPbDatabase(attestSbState.ExchangeKeys, attestSbState.ExchangeKeyHashes),
 	}, nil
 }
 
@@ -453,6 +462,7 @@ func getGrubState(hash crypto.Hash, events []*pb.Event) (*pb.GrubState, error) {
 	var files []*pb.GrubFile
 	var commands []string
 	for idx, event := range events {
+		hasher := hash.New()
 		index := event.GetPcrIndex()
 		if index != 8 && index != 9 {
 			continue
@@ -471,7 +481,6 @@ func getGrubState(hash crypto.Hash, events []*pb.Event) (*pb.GrubState, error) {
 			files = append(files, &pb.GrubFile{Digest: event.GetDigest(),
 				UntrustedFilename: event.GetData()})
 		} else if index == 8 {
-			hasher := hash.New()
 			suffixAt := -1
 			rawData := event.GetData()
 			for _, prefix := range validPrefixes {
@@ -483,14 +492,16 @@ func getGrubState(hash crypto.Hash, events []*pb.Event) (*pb.GrubState, error) {
 			if suffixAt == -1 {
 				return nil, fmt.Errorf("invalid prefix seen for PCR%d event: %s", index, rawData)
 			}
-			hasher.Write(rawData[suffixAt : len(rawData)-1])
-			if !bytes.Equal(event.Digest, hasher.Sum(nil)) {
-				// Older GRUBs measure "grub_cmd " with the null terminator.
-				// However, "grub_kernel_cmdline " measurements also ignore the null terminator.
-				hasher.Reset()
-				hasher.Write(rawData[suffixAt:])
-				if !bytes.Equal(event.Digest, hasher.Sum(nil)) {
-					return nil, fmt.Errorf("invalid digest seen for GRUB event log in event %d: %s", idx, hex.EncodeToString(event.Digest))
+
+			// Check the slice is not empty after the suffix, which ensures rawData[len(rawData)-1] is not part
+			// of the suffix.
+			if len(rawData[suffixAt:]) > 0 && rawData[len(rawData)-1] == '\x00' {
+				if err := verifyNullTerminatedDataDigest(hasher, rawData[suffixAt:], event.Digest); err != nil {
+					return nil, fmt.Errorf("invalid GRUB event (null-terminated) #%d: %v", idx, err)
+				}
+			} else {
+				if err := verifyDataDigest(hasher, rawData[suffixAt:], event.Digest); err != nil {
+					return nil, fmt.Errorf("invalid GRUB event #%d: %v", idx, err)
 				}
 			}
 			hasher.Reset()
@@ -501,6 +512,33 @@ func getGrubState(hash crypto.Hash, events []*pb.Event) (*pb.GrubState, error) {
 		return nil, errors.New("no GRUB measurements found")
 	}
 	return &pb.GrubState{Files: files, Commands: commands}, nil
+}
+
+// verifyNullTerminatedRawData checks the digest of the data.
+// Returns nil if digest match the hash of the data or the data without the last bytes (\x00).
+// The caller needs to make sure len(data) is at least 1, and data is ended with '\x00',
+// otherwise this function will return an error.
+func verifyNullTerminatedDataDigest(hasher hash.Hash, data []byte, digest []byte) error {
+	if len(data) == 0 || data[len(data)-1] != '\x00' {
+		return errors.New("given data is not null-terminated")
+	}
+	if err := verifyDataDigest(hasher, data, digest); err != nil {
+		if err := verifyDataDigest(hasher, data[:len(data)-1], digest); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// verifyDataDigest checks the digest of the data.
+func verifyDataDigest(hasher hash.Hash, data []byte, digest []byte) error {
+	hasher.Reset()
+	hasher.Write(data)
+	defer hasher.Reset()
+	if !bytes.Equal(digest, hasher.Sum(nil)) {
+		return fmt.Errorf("invalid digest: %s", hex.EncodeToString(digest))
+	}
+	return nil
 }
 
 func getEfiState(hash crypto.Hash, events []*pb.Event) (*pb.EfiState, error) {

@@ -77,7 +77,7 @@ func main() {
 
 	logger, err = logging.NewLogger(ctx)
 	if err != nil {
-		log.Default().Printf("failed to initialize logging")
+		log.Default().Printf("failed to initialize logging: %v", err)
 		exitCode = failRC
 		log.Default().Printf("%s, exit code: %d (%s)\n", exitMessage, exitCode, rcMessage[exitCode])
 		return
@@ -183,7 +183,7 @@ func getUptime() (string, error) {
 }
 
 func startLauncher(launchSpec spec.LaunchSpec, serialConsole *os.File) error {
-	logger.Info(fmt.Sprintf("Launch Spec: %+v", launchSpec))
+	logger.Info(fmt.Sprintf("Launch Spec: %+v", launchSpec.LogFriendly()))
 	containerdClient, err := containerd.New(defaults.DefaultAddress)
 	if err != nil {
 		return &launcher.RetryableError{Err: err}

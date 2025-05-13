@@ -12,9 +12,9 @@ import (
 // to treat experiment flags as their default value. The error should still be checked.
 type Experiments struct {
 	EnableTestFeatureForImage    bool
-	EnableTempFSMount            bool
-	EnableGpuDriverInstallation  bool
 	EnableConfidentialGPUSupport bool
+	EnableHealthMonitoring       bool
+	EnableItaVerifier            bool
 }
 
 // New takes a filepath, opens the file, and calls ReadJsonInput with the contents

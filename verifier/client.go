@@ -6,6 +6,7 @@ import (
 	"context"
 
 	attestpb "github.com/google/go-tpm-tools/proto/attest"
+	"github.com/google/go-tpm-tools/verifier/models"
 	"google.golang.org/genproto/googleapis/rpc/status"
 )
 
@@ -19,17 +20,14 @@ type Client interface {
 // get challenge part of a remote attestation protocol. The challenge
 // will be verified as part of VerifyAttestation.
 type Challenge struct {
-	Name   string
-	Nonce  []byte
-	ConnID string
-}
-
-// TokenOptions contains fields that will be passed to the Attestation Service TokenOptions field.
-// These fields are used to customize several claims in the token from the Attestation service.
-type TokenOptions struct {
-	CustomAudience string
-	CustomNonce    []string
-	TokenType      string
+	// Used as audience for GCP credential tokens.
+	Name string
+	// Used to generate attestation.
+	Nonce     []byte
+	ConnID    string
+	Val       []byte
+	Iat       []byte
+	Signature []byte
 }
 
 type ContainerSignature struct {
@@ -46,7 +44,7 @@ type VerifyAttestationRequest struct {
 	// Attestation is for TPM attestation
 	Attestation              *attestpb.Attestation
 	ContainerImageSignatures []*ContainerSignature
-	TokenOptions             TokenOptions
+	TokenOptions             *models.TokenOptions
 	// TDCCELAttestation is for TDX CCEL RTMR attestation
 	TDCCELAttestation *TDCCELAttestation
 }

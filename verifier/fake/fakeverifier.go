@@ -122,20 +122,20 @@ func isValid(alg string) bool {
 
 // Note: this is only compatible with the fake signature implementation.
 func extractClaims(signature *verifier.ContainerSignature) (ContainerImageSignatureClaims, error) {
-	payload := string(signature.Payload)
+	payloadStr := string(signature.Payload)
 
 	// Fake payload consists of the expected pubkey and sigalg separated by a comma.
-	separatorIndex := strings.LastIndex(payload, ",")
+	separatorIndex := strings.LastIndex(payloadStr, ",")
 
-	sigAlg := payload[separatorIndex+1:]
+	sigAlg := payloadStr[separatorIndex+1:]
 	if !isValid(sigAlg) {
 		return ContainerImageSignatureClaims{}, fmt.Errorf("unsupported algorithm %v", sigAlg)
 	}
 
 	return ContainerImageSignatureClaims{
-		Payload:   payload,
+		Payload:   payloadStr,
 		Signature: base64.StdEncoding.EncodeToString(signature.Signature),
-		PubKey:    payload[:separatorIndex],
+		PubKey:    payloadStr[:separatorIndex],
 		SigAlg:    sigAlg,
 	}, nil
 }

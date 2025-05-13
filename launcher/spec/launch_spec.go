@@ -15,6 +15,7 @@ import (
 
 	"cloud.google.com/go/compute/metadata"
 
+	"github.com/containerd/containerd/v2/pkg/cap"
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/launcher/internal/experiments"
 	"github.com/google/go-tpm-tools/launcher/internal/launchermount"
@@ -87,6 +88,10 @@ const (
 	devShmSizeKey              = "tee-dev-shm-size-kb"
 	mountKey                   = "tee-mount"
 	installGpuDriver           = "tee-install-gpu-driver"
+	itaRegion                  = "ita-region"
+	itaKey                     = "ita-api-key"
+	addedCaps                  = "tee-added-capabilities"
+	cgroupNS                   = "tee-cgroup-ns"
 )
 
 const (
@@ -104,6 +109,8 @@ type EnvVar struct {
 // LaunchSpec contains specification set by the operator who wants to
 // launch a container.
 type LaunchSpec struct {
+	Experiments experiments.Experiments
+
 	// MDS-based values.
 	ImageRef                   string
 	SignedImageRepos           []string
@@ -118,10 +125,13 @@ type LaunchSpec struct {
 	MonitoringEnabled          MonitoringType
 	LogRedirect                LogRedirectLocation
 	Mounts                     []launchermount.Mount
+	ITARegion                  string
+	ITAKey                     string
 	// DevShmSize is specified in kiB.
-	DevShmSize       int64
-	Experiments      experiments.Experiments
-	InstallGpuDriver bool
+	DevShmSize        int64
+	InstallGpuDriver  bool
+	AddedCapabilities []string
+	CgroupNamespace   bool
 }
 
 // UnmarshalJSON unmarshals an instance attributes list in JSON format from the metadata
@@ -223,32 +233,74 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 
 	s.AttestationServiceAddr = unmarshaledMap[attestationServiceAddrKey]
 
-	if s.Experiments.EnableTempFSMount {
-		// Populate /dev/shm size override.
-		if val, ok := unmarshaledMap[devShmSizeKey]; ok && val != "" {
-			size, err := strconv.ParseUint(val, 10, 64)
+	// Populate /dev/shm size override.
+	if val, ok := unmarshaledMap[devShmSizeKey]; ok && val != "" {
+		size, err := strconv.ParseUint(val, 10, 64)
+		if err != nil {
+			return fmt.Errorf("failed to convert %v into uint64, got: %v", devShmSizeKey, val)
+		}
+		s.DevShmSize = int64(size)
+	}
+
+	// Populate mount override.
+	// https://cloud.google.com/compute/docs/disks/set-persistent-device-name-in-linux-vm
+	// https://cloud.google.com/compute/docs/disks/add-local-ssd
+	if val, ok := unmarshaledMap[mountKey]; ok && val != "" {
+		mounts := strings.Split(val, ";")
+		for _, mount := range mounts {
+			specMnt, err := processMount(mount)
 			if err != nil {
-				return fmt.Errorf("failed to convert %v into uint64, got: %v", devShmSizeKey, val)
+				return err
 			}
-			s.DevShmSize = int64(size)
+			s.Mounts = append(s.Mounts, specMnt)
+		}
+	}
+
+	if s.Experiments.EnableItaVerifier {
+		itaRegionVal, itaRegionOK := unmarshaledMap[itaRegion]
+		itaKeyVal, itaKeyOK := unmarshaledMap[itaKey]
+
+		if itaRegionOK != itaKeyOK {
+			return fmt.Errorf("ITA fields %s and %s must both be provided", itaRegion, itaKey)
 		}
 
-		// Populate mount override.
-		// https://cloud.google.com/compute/docs/disks/set-persistent-device-name-in-linux-vm
-		// https://cloud.google.com/compute/docs/disks/add-local-ssd
-		if val, ok := unmarshaledMap[mountKey]; ok && val != "" {
-			mounts := strings.Split(val, ";")
-			for _, mount := range mounts {
-				specMnt, err := processMount(mount)
-				if err != nil {
-					return err
-				}
-				s.Mounts = append(s.Mounts, specMnt)
-			}
+		if itaRegionOK {
+			s.ITARegion = itaRegionVal
+		}
+
+		if itaKeyOK {
+			s.ITAKey = itaKeyVal
+		}
+	}
+
+	// Populate capabilities override.
+	if val, ok := unmarshaledMap[addedCaps]; ok && val != "" {
+		if err := json.Unmarshal([]byte(val), &s.AddedCapabilities); err != nil {
+			return err
+		}
+	}
+
+	// Populate cgroup ns.
+	cgroupSetting, ok := unmarshaledMap[cgroupNS]
+	if ok {
+		cgroupOn, err := strconv.ParseBool(cgroupSetting)
+		if err != nil {
+			return fmt.Errorf("invalid value for %v (not a boolean): %v", cgroupNS, err)
+		}
+		if cgroupOn {
+			s.CgroupNamespace = true
 		}
 	}
 
 	return nil
+}
+
+// LogFriendly creates a copy of the spec that is safe to log by censoring
+func (s *LaunchSpec) LogFriendly() LaunchSpec {
+	safeSpec := *s
+	safeSpec.ITAKey = strings.Repeat("*", len(s.ITAKey))
+
+	return safeSpec
 }
 
 // GetLaunchSpec takes in a metadata server client, reads and parse operator's
@@ -279,6 +331,10 @@ func GetLaunchSpec(ctx context.Context, logger logging.Logger, client *metadata.
 
 	if err := validateMemorySizeKb(uint64(spec.DevShmSize)); err != nil {
 		return LaunchSpec{}, fmt.Errorf("failed to validate /dev/shm size: %v", err)
+	}
+
+	if err := validateAddedCapsAllowed(spec.AddedCapabilities); err != nil {
+		return LaunchSpec{}, fmt.Errorf("failed to validate added capabilities: %v", err)
 	}
 
 	spec.ProjectID, err = client.ProjectIDWithContext(ctx)
@@ -409,4 +465,34 @@ func readCmdline() (string, error) {
 		return "", err
 	}
 	return string(kernelCmd), nil
+}
+
+func validateAddedCapsAllowed(addedCaps []string) error {
+	caps, err := getCurrCaps()
+	if err != nil {
+		return fmt.Errorf("failed to fetch current capabilities: %v", err)
+	}
+	var notInCurr []string
+	for _, addedCap := range addedCaps {
+		if _, ok := caps[addedCap]; !ok {
+			notInCurr = append(notInCurr, addedCap)
+		}
+	}
+	if len(notInCurr) != 0 {
+		return fmt.Errorf("received added capabilities (%v) not allowed by current capabilities", notInCurr)
+
+	}
+	return nil
+}
+
+func getCurrCaps() (map[string]bool, error) {
+	caps, err := cap.Current()
+	if err != nil {
+		return nil, err
+	}
+	capsMap := make(map[string]bool, len(caps))
+	for _, cap := range caps {
+		capsMap[cap] = true
+	}
+	return capsMap, nil
 }

@@ -26,7 +26,9 @@ func TestLaunchSpecUnmarshalJSONHappyCases(t *testing.T) {
 				"tee-container-log-redirect":"true",
 				"tee-monitoring-memory-enable":"true",
 				"tee-dev-shm-size-kb":"234234",
-				"tee-mount":"type=tmpfs,source=tmpfs,destination=/tmpmount;type=tmpfs,source=tmpfs,destination=/sized,size=222"
+				"tee-mount":"type=tmpfs,source=tmpfs,destination=/tmpmount;type=tmpfs,source=tmpfs,destination=/sized,size=222",
+				"ita-region":"US",
+				"ita-api-key":"test-api-key"
 			}`,
 		},
 		{
@@ -43,7 +45,9 @@ func TestLaunchSpecUnmarshalJSONHappyCases(t *testing.T) {
 				"tee-container-log-redirect":"true",
 				"tee-monitoring-memory-enable":"TRUE",
 				"tee-dev-shm-size-kb":"234234",
-				"tee-mount":"type=tmpfs,source=tmpfs,destination=/tmpmount;type=tmpfs,source=tmpfs,destination=/sized,size=222"
+				"tee-mount":"type=tmpfs,source=tmpfs,destination=/tmpmount;type=tmpfs,source=tmpfs,destination=/sized,size=222",
+				"ita-region":"US",
+				"ita-api-key":"test-api-key"
 			}`,
 		},
 	}
@@ -60,8 +64,10 @@ func TestLaunchSpecUnmarshalJSONHappyCases(t *testing.T) {
 		DevShmSize:                 234234,
 		Mounts: []launchermount.Mount{launchermount.TmpfsMount{Destination: "/tmpmount", Size: 0},
 			launchermount.TmpfsMount{Destination: "/sized", Size: 222}},
+		ITARegion: "US",
+		ITAKey:    "test-api-key",
 		Experiments: experiments.Experiments{
-			EnableTempFSMount: true,
+			EnableItaVerifier: true,
 		},
 	}
 
@@ -69,7 +75,7 @@ func TestLaunchSpecUnmarshalJSONHappyCases(t *testing.T) {
 		t.Run(testcase.testName, func(t *testing.T) {
 			spec := &LaunchSpec{}
 			spec.Experiments = experiments.Experiments{
-				EnableTempFSMount: true,
+				EnableItaVerifier: true,
 			}
 			if err := spec.UnmarshalJSON([]byte(testcase.mdsJSON)); err != nil {
 				t.Fatal(err)
@@ -283,9 +289,6 @@ func TestLaunchSpecUnmarshalJSONWithBadMounts(t *testing.T) {
 	for _, testcase := range testCases {
 		t.Run(testcase.testName, func(t *testing.T) {
 			spec := &LaunchSpec{}
-			spec.Experiments = experiments.Experiments{
-				EnableTempFSMount: true,
-			}
 			err := spec.UnmarshalJSON([]byte(testcase.mdsJSON))
 			if match, _ := regexp.MatchString(testcase.errMatch, err.Error()); !match {
 				t.Errorf("got %v error, but expected %v error", err, testcase.errMatch)
