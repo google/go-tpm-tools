@@ -23,6 +23,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/launcher/agent"
+	"github.com/google/go-tpm-tools/launcher/internal/gpu"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/spec"
@@ -633,6 +634,80 @@ func TestMeasureCELEvents(t *testing.T) {
 
 			if !cmp.Equal(gotEvents, tc.wantCELEvents) {
 				t.Errorf("failed to measure CEL events, got %v, but want %v", gotEvents, tc.wantCELEvents)
+			}
+		})
+	}
+}
+
+func TestMeasureGPUCCMode(t *testing.T) {
+	fakeContainer := &fakeContainer{
+		image: &fakeImage{
+			name:   "fake image name",
+			digest: "fake digest",
+			id:     "fake id",
+		},
+		args: []string{"fake args"},
+		env:  []string{"fake env"},
+	}
+	launchSpec := spec.LaunchSpec{
+		InstallGpuDriver: true,
+	}
+
+	tests := []struct {
+		name            string
+		mockCCModeCmd   gpu.NvidiaSmiCmdOutput
+		mockDevToolsCmd gpu.NvidiaSmiCmdOutput
+		wantErr         bool
+		wantEvents      []cel.CosType
+	}{
+		{
+			name:            "successful GPU CC mode measurement",
+			mockCCModeCmd:   func() ([]byte, error) { return []byte("CC status: ON"), nil },
+			mockDevToolsCmd: func() ([]byte, error) { return []byte("DevTools Mode: OFF"), nil },
+			wantErr:         false,
+			wantEvents: []cel.CosType{
+				cel.GpuCCModeType,
+			},
+		},
+		{
+			name:            "failed to query GPU CC mode for measurement",
+			mockCCModeCmd:   func() ([]byte, error) { return []byte("CC status: ON"), nil },
+			mockDevToolsCmd: func() ([]byte, error) { return nil, fmt.Errorf("nvidia-smi DevTools mode error") },
+			wantErr:         true,
+			wantEvents:      []cel.CosType{},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			gotEvents := []cel.CosType{}
+
+			fakeAgent := &fakeAttestationAgent{
+				measureEventFunc: func(content cel.Content) error {
+					got, err := content.GetTLV()
+					if err != nil {
+						t.Fatalf("failed to get content TLV: %v", err)
+					}
+					tlv := &cel.TLV{}
+					tlv.UnmarshalBinary(got.Value)
+					gotEvents = append(gotEvents, cel.CosType(tlv.Type))
+					return nil
+				},
+			}
+
+			r := ContainerRunner{
+				attestAgent: fakeAgent,
+				container:   fakeContainer,
+				launchSpec:  launchSpec,
+				logger:      logging.SimpleLogger(),
+			}
+
+			err := r.measureGPUCCMode(tc.mockCCModeCmd, tc.mockDevToolsCmd)
+			if (err != nil) != tc.wantErr {
+				t.Errorf("measureGPUCCMode() error = %v, wantErr %v", err, tc.wantErr)
+			}
+			if !cmp.Equal(gotEvents, tc.wantEvents) {
+				t.Errorf("failed to measure GPU CC mode event, got %v, but want %v", gotEvents, tc.wantEvents)
 			}
 		})
 	}

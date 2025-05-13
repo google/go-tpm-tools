@@ -77,18 +77,18 @@ func TestGetInstallerImageReference(t *testing.T) {
 func TestVerifyDriverInstallation(t *testing.T) {
 	tests := []struct {
 		name          string
-		mockVerifyCmd nvidiaSmiCmdRun
+		mockVerifyCmd NvidiaSmiCmdOutput
 		wantErr       bool
 		errSubstr     string
 	}{
 		{
 			name:          "Verification succeeds",
-			mockVerifyCmd: func() error { return nil },
+			mockVerifyCmd: func() ([]byte, error) { return []byte("OK"), nil },
 			wantErr:       false,
 		},
 		{
 			name:          "Verification fails",
-			mockVerifyCmd: func() error { return fmt.Errorf("nvidia-smi verification failed") },
+			mockVerifyCmd: func() ([]byte, error) { return []byte(""), fmt.Errorf("nvidia-smi verification failed") },
 			wantErr:       true,
 			errSubstr:     "failed to verify GPU driver installation",
 		},
@@ -110,18 +110,18 @@ func TestVerifyDriverInstallation(t *testing.T) {
 func TestSetGPUStateToReady(t *testing.T) {
 	tests := []struct {
 		name      string
-		mockCmd   nvidiaSmiCmdRun
+		mockCmd   NvidiaSmiCmdOutput
 		wantErr   bool
 		errSubstr string
 	}{
 		{
 			name:    "Set GPU state succeeds",
-			mockCmd: func() error { return nil },
+			mockCmd: func() ([]byte, error) { return []byte("OK"), nil },
 			wantErr: false,
 		},
 		{
 			name:      "Set GPU state fails",
-			mockCmd:   func() error { return fmt.Errorf("nvidia-smi set state failed") },
+			mockCmd:   func() ([]byte, error) { return []byte(""), fmt.Errorf("nvidia-smi set state failed") },
 			wantErr:   true,
 			errSubstr: "failed to set the GPU state to ready",
 		},
@@ -143,8 +143,8 @@ func TestSetGPUStateToReady(t *testing.T) {
 func TestQueryCCMode(t *testing.T) {
 	tests := []struct {
 		name            string
-		mockCCModeCmd   nvidiaSmiCmdOutput
-		mockDevToolsCmd nvidiaSmiCmdOutput
+		mockCCModeCmd   NvidiaSmiCmdOutput
+		mockDevToolsCmd NvidiaSmiCmdOutput
 		expectedCCMode  attest.GPUDeviceCCMode
 		wantErr         bool
 		errSubstr       string

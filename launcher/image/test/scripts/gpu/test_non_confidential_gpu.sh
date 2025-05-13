@@ -7,9 +7,9 @@ source util/read_serial.sh
 SERIAL_OUTPUT=$(read_serial $1 $2) 
 print_serial=false
 
-if echo $SERIAL_OUTPUT | grep -q 'failed to get the GPU type info'
+if echo $SERIAL_OUTPUT | grep -q 'unsupported confidential GPU type'
 then
-    echo "- Verified : no GPU attached"
+    echo "- Verified: unsupported non-confidential GPU"
 else
     echo "FAILED: GPU not detected"
     echo 'TEST FAILED.' > /workspace/status.txt
