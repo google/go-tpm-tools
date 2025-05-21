@@ -160,7 +160,7 @@ func TestRefreshToken(t *testing.T) {
 		logger: logging.SimpleLogger(),
 	}
 
-	if err := os.MkdirAll(launcherfile.HostTmpPath, 0744); err != nil {
+	if err := os.MkdirAll(launcherfile.HostTmpPath, 0755); err != nil {
 		t.Fatalf("Error creating host token path directory: %v", err)
 	}
 
@@ -205,7 +205,7 @@ func TestRefreshTokenWithSignedContainerCacheEnabled(t *testing.T) {
 		logger:      logging.SimpleLogger(),
 	}
 
-	if err := os.MkdirAll(launcherfile.HostTmpPath, 0744); err != nil {
+	if err := os.MkdirAll(launcherfile.HostTmpPath, 0755); err != nil {
 		t.Fatalf("Error creating host token path directory: %v", err)
 	}
 
@@ -245,7 +245,7 @@ func TestRefreshTokenWithSignedContainerCacheEnabled(t *testing.T) {
 }
 
 func TestRefreshTokenError(t *testing.T) {
-	if err := os.MkdirAll(launcherfile.HostTmpPath, 0744); err != nil {
+	if err := os.MkdirAll(launcherfile.HostTmpPath, 0755); err != nil {
 		t.Fatalf("Error creating host token path directory: %v", err)
 	}
 
