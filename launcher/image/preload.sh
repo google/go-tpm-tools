@@ -77,6 +77,8 @@ configure_node_problem_detector() {
 configure_systemd_units_for_debug() {
   configure_cloud_logging
   configure_node_problem_detector
+
+  disable_unit "konlet-startup.service"
 }
 configure_systemd_units_for_hardened() {
   configure_necessary_systemd_units
