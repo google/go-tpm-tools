@@ -65,7 +65,7 @@ func TestEvaluatePolicy(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			machineState, err := parsePCClientEventLog(test.log.RawLog, test.log.Banks[0], UnsupportedLoader)
+			machineState, err := parsePCClientEventLog(test.log.RawLog, test.log.Banks[0], VerifyOpts{Loader: UnsupportedLoader})
 			if err != nil {
 				t.Fatalf("failed to get machine state: %v", err)
 			}
@@ -83,7 +83,7 @@ func TestEvaluatePolicySCRTM(t *testing.T) {
 				0x4e, 0xf4, 0xbf, 0x17, 0xb8, 0x3a}},
 		},
 	}
-	machineState, err := parsePCClientEventLog(ArchLinuxWorkstation.RawLog, ArchLinuxWorkstation.Banks[0], UnsupportedLoader)
+	machineState, err := parsePCClientEventLog(ArchLinuxWorkstation.RawLog, ArchLinuxWorkstation.Banks[0], VerifyOpts{Loader: UnsupportedLoader, AllowEFIAppBeforeCallingEvent: true})
 	if err != nil {
 		gErr := err.(*GroupedError)
 		if !gErr.containsKnownSubstrings(archLinuxKnownParsingFailures) {
@@ -123,22 +123,23 @@ func TestEvaluatePolicyFailure(t *testing.T) {
 		name   string
 		log    eventLog
 		policy *pb.Policy
+		opts   VerifyOpts
 		// This field handles known issues with event log parsing or bad event
 		// logs.
 		// Set to nil when the event log has no known issues.
 		errorSubstrs []string
 	}{
-		{"Debian10-SHA1", Debian10GCE, &badGcePolicyVersion, nil},
-		{"Debian10-SHA1", Debian10GCE, &badGcePolicySEV, nil},
+		{"Debian10-SHA1", Debian10GCE, &badGcePolicyVersion, VerifyOpts{Loader: UnsupportedLoader}, nil},
+		{"Debian10-SHA1", Debian10GCE, &badGcePolicySEV, VerifyOpts{Loader: UnsupportedLoader}, nil},
 		{"Ubuntu1804AmdSev-CryptoAgile", UbuntuAmdSevGCE, &badGcePolicySEVES,
-			nil},
+			VerifyOpts{Loader: UnsupportedLoader}, nil},
 		{"ArchLinuxWorkstation-CryptoAgile", ArchLinuxWorkstation,
-			&badPhysicalPolicy, archLinuxKnownParsingFailures},
+			&badPhysicalPolicy, VerifyOpts{Loader: UnsupportedLoader, AllowEFIAppBeforeCallingEvent: true}, archLinuxKnownParsingFailures},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			machineState, err := parsePCClientEventLog(test.log.RawLog, test.log.Banks[0], UnsupportedLoader)
+			machineState, err := parsePCClientEventLog(test.log.RawLog, test.log.Banks[0], test.opts)
 			if err != nil {
 				gErr := err.(*GroupedError)
 				if len(test.errorSubstrs) == 0 || !gErr.containsKnownSubstrings(test.errorSubstrs) {

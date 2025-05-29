@@ -33,7 +33,6 @@ type eventLog struct {
 // The Arch Linux event log has two known failures due to our parser's strict checks.
 var archLinuxKnownParsingFailures = []string{
 	"SecureBoot data len is 0, expected 1",
-	"found EFIBootServicesApplication in PCR4 before CallingEFIApp event",
 }
 
 // Agile Event Log from a RHEL 8 GCE instance with Secure Boot enabled
@@ -534,30 +533,59 @@ var COS101AmdSev = eventLog{
 	},
 }
 
+var GdcHost = eventLog{
+	RawLog: test.GdcHost,
+	Banks: []*pb.PCRs{{
+		Hash: pb.HashAlgo_SHA256,
+		Pcrs: map[uint32][]byte{
+			0:  decodeHex("dab77c454bd12c27ff6b6ce1f9adca90b7a330c1cef0b5cd01cb89fb3bd0dffa"),
+			1:  decodeHex("e9c706539943b2d9770715914f9b3946fab0265327bace4c479913acb9014051"),
+			2:  decodeHex("7fde57284c6a0eabdc9b829db4e2ab0bb565c4189410de2474dd116bc18bafcc"),
+			3:  decodeHex("3d458cfe55cc03ea1f443f1562beec8df51c75e14a9fcf9a7234a13f198e7969"),
+			4:  decodeHex("ded8b5d91a09c328b9859d8c9db5a346f1065224616b0ba66d6c83dba2b465e8"),
+			5:  decodeHex("163ee251955b844012f1493aa962b2a18acbec194ea4856cdc45cd54c8540058"),
+			6:  decodeHex("3d458cfe55cc03ea1f443f1562beec8df51c75e14a9fcf9a7234a13f198e7969"),
+			7:  decodeHex("2c9252609eda09899d96abe16b947d0e736c43271997c1fa5189e9bcd37ba516"),
+			8:  decodeHex("8edecd4daa5194ea70a2a9f2c71c7c816bd3b1e0a1ca6f4abea7306250191eba"),
+			9:  decodeHex("731d336f9f3255e80b429de54fb77b2ad5e485829eb386d661c668245f30f44b"),
+			14: decodeHex("306f9d8b94f17d93dc6e7cf8f5c79d652eb4c6c4d13de2dddc24af416e13ecaf"),
+		},
+	}},
+	ExpectedEFIAppDigests: map[pb.HashAlgo][]string{
+		pb.HashAlgo_SHA256: {
+			"c7ac5d44444affd8d4a7c5d3dea0ce20a71e05812fc18777a428d092f78ae3ff",
+			"c5d3b47de11a9a2a4a15ef5cb7202d7800a10609c0dcecc46e3e963d476b76ce",
+			"af4161084115c9d5c1872f4473fe974b535e3a9a767688293720ac2cc6f7f9a3",
+			"af4161084115c9d5c1872f4473fe974b535e3a9a767688293720ac2cc6f7f9a3",
+		},
+	},
+}
+
 func TestParseEventLogs(t *testing.T) {
 	sbatErrorStr := "asn1: structure error: tags don't match (16 vs {class:0 tag:24 length:10 isCompound:true})"
 	logs := []struct {
 		eventLog
 		name string
-		Bootloader
+		opts VerifyOpts
 		// This field handles known issues with event log parsing or bad event
 		// logs.
 		// Set to nil when the event log has no known issues.
 		errorSubstrs []string
 	}{
-		{Debian10GCE, "Debian10GCE", UnsupportedLoader, nil},
-		{Rhel8GCE, "Rhel8GCE", GRUB, nil},
-		{UbuntuAmdSevGCE, "UbuntuAmdSevGCE", GRUB, nil},
+		{Debian10GCE, "Debian10GCE", VerifyOpts{Loader: UnsupportedLoader}, nil},
+		{Rhel8GCE, "Rhel8GCE", VerifyOpts{Loader: GRUB}, nil},
+		{UbuntuAmdSevGCE, "UbuntuAmdSevGCE", VerifyOpts{Loader: GRUB}, nil},
 		// TODO: remove once the fix is pulled in
 		// https://github.com/google/go-attestation/pull/222
-		{Ubuntu2104NoDbxGCE, "Ubuntu2104NoDbxGCE", GRUB, []string{sbatErrorStr}},
-		{Ubuntu2104NoSecureBootGCE, "Ubuntu2104NoSecureBootGCE", GRUB, []string{sbatErrorStr}},
+		{Ubuntu2104NoDbxGCE, "Ubuntu2104NoDbxGCE", VerifyOpts{Loader: GRUB}, []string{sbatErrorStr}},
+		{Ubuntu2104NoSecureBootGCE, "Ubuntu2104NoSecureBootGCE", VerifyOpts{Loader: GRUB}, []string{sbatErrorStr}},
 		// This event log has a SecureBoot variable length of 0.
-		{ArchLinuxWorkstation, "ArchLinuxWorkstation", UnsupportedLoader, archLinuxKnownParsingFailures},
-		{COS85AmdSev, "COS85AmdSev", GRUB, nil},
-		{COS93AmdSev, "COS93AmdSev", GRUB, nil},
-		{COS101AmdSev, "COS101AmdSev", GRUB, nil},
-		{Ubuntu2404AmdSevSnp, "Ubuntu2404AmdSevSnp", GRUB, nil},
+		{ArchLinuxWorkstation, "ArchLinuxWorkstation", VerifyOpts{Loader: UnsupportedLoader, AllowEFIAppBeforeCallingEvent: true}, archLinuxKnownParsingFailures},
+		{COS85AmdSev, "COS85AmdSev", VerifyOpts{Loader: GRUB}, nil},
+		{COS93AmdSev, "COS93AmdSev", VerifyOpts{Loader: GRUB}, nil},
+		{COS101AmdSev, "COS101AmdSev", VerifyOpts{Loader: GRUB}, nil},
+		{Ubuntu2404AmdSevSnp, "Ubuntu2404AmdSevSnp", VerifyOpts{Loader: GRUB}, nil},
+		{GdcHost, "GdcHost", VerifyOpts{Loader: GRUB, AllowEFIAppBeforeCallingEvent: true}, []string{"invalid SCRTM version event for PCR0"}},
 	}
 
 	for _, log := range logs {
@@ -566,7 +594,7 @@ func TestParseEventLogs(t *testing.T) {
 			hashName := pb.HashAlgo_name[int32(bank.Hash)]
 			subtestName := fmt.Sprintf("%s-%s", log.name, hashName)
 			t.Run(subtestName, func(t *testing.T) {
-				if _, err := parsePCClientEventLog(rawLog, bank, log.Bootloader); err != nil {
+				if _, err := parsePCClientEventLog(rawLog, bank, log.opts); err != nil {
 					gErr, ok := err.(*GroupedError)
 					if !ok {
 						t.Errorf("ParseMachineState should return a GroupedError")
@@ -589,7 +617,7 @@ func TestParseMachineStateReplayFail(t *testing.T) {
 	pcrMap[0] = []byte{0, 0, 0, 0}
 	badPcrs.Pcrs = pcrMap
 
-	_, err := parsePCClientEventLog(Debian10GCE.RawLog, &badPcrs, UnsupportedLoader)
+	_, err := parsePCClientEventLog(Debian10GCE.RawLog, &badPcrs, VerifyOpts{Loader: UnsupportedLoader})
 	if err == nil {
 		t.Errorf("ParseMachineState should fail to replay the event log")
 	}
@@ -614,7 +642,7 @@ func TestSystemParseEventLog(t *testing.T) {
 		t.Fatalf("failed to read PCRs: %v", err)
 	}
 
-	if _, err = parsePCClientEventLog(evtLog, pcrs, UnsupportedLoader); err != nil {
+	if _, err = parsePCClientEventLog(evtLog, pcrs, VerifyOpts{Loader: UnsupportedLoader}); err != nil {
 		t.Errorf("failed to parse MachineState: %v", err)
 	}
 }
@@ -652,7 +680,7 @@ func TestEmptyEventlog(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			state, err := parsePCClientEventLog(emptyLog, c.pcrs, UnsupportedLoader)
+			state, err := parsePCClientEventLog(emptyLog, c.pcrs, VerifyOpts{Loader: UnsupportedLoader})
 			if err != nil {
 				t.Errorf("parsing empty eventlog: %v", err)
 			}
@@ -665,7 +693,7 @@ func TestEmptyEventlog(t *testing.T) {
 
 func TestParseSecureBootState(t *testing.T) {
 	for _, bank := range UbuntuAmdSevGCE.Banks {
-		msState, err := parsePCClientEventLog(UbuntuAmdSevGCE.RawLog, bank, UnsupportedLoader)
+		msState, err := parsePCClientEventLog(UbuntuAmdSevGCE.RawLog, bank, VerifyOpts{Loader: UnsupportedLoader})
 		if err != nil {
 			t.Errorf("failed to parse and replay log: %v", err)
 		}
@@ -1071,7 +1099,7 @@ func TestParseLinuxKernelState(t *testing.T) {
 			hashName := pb.HashAlgo_name[int32(bank.Hash)]
 			subtestName := fmt.Sprintf("%s-%s", log.name, hashName)
 			t.Run(subtestName, func(t *testing.T) {
-				msState, err := parsePCClientEventLog(log.RawLog, bank, GRUB)
+				msState, err := parsePCClientEventLog(log.RawLog, bank, VerifyOpts{Loader: GRUB})
 				if err != nil {
 					t.Errorf("failed to parse and replay log: %v", err)
 				}
@@ -1145,7 +1173,7 @@ func TestParseGrubState(t *testing.T) {
 			hashName := pb.HashAlgo_name[int32(bank.Hash)]
 			subtestName := fmt.Sprintf("%s-%s", log.name, hashName)
 			t.Run(subtestName, func(t *testing.T) {
-				msState, err := parsePCClientEventLog(log.RawLog, bank, GRUB)
+				msState, err := parsePCClientEventLog(log.RawLog, bank, VerifyOpts{Loader: GRUB})
 				if err != nil {
 					t.Errorf("failed to parse and replay log: %v", err)
 				}
@@ -1175,7 +1203,7 @@ func TestParseGrubStateFail(t *testing.T) {
 		hashName := pb.HashAlgo_name[int32(bank.Hash)]
 		subtestName := fmt.Sprintf("GlinuxNoSecureBootLaptop-%s", hashName)
 		t.Run(subtestName, func(t *testing.T) {
-			_, err := parsePCClientEventLog(eventlog.RawLog, bank, GRUB)
+			_, err := parsePCClientEventLog(eventlog.RawLog, bank, VerifyOpts{Loader: GRUB})
 			if err == nil {
 				t.Error("expected error when parsing GRUB state")
 			}
@@ -1207,7 +1235,7 @@ func TestParseEfiState(t *testing.T) {
 			hashName := pb.HashAlgo_name[int32(bank.Hash)]
 			subtestName := fmt.Sprintf("%s-%s", log.name, hashName)
 			t.Run(subtestName, func(t *testing.T) {
-				msState, err := parsePCClientEventLog(log.RawLog, bank, UnsupportedLoader)
+				msState, err := parsePCClientEventLog(log.RawLog, bank, VerifyOpts{Loader: UnsupportedLoader})
 				if err != nil {
 					t.Errorf("parsePCClientEventLog(%v, %v) got err = %v, want nil", log.name, bank.GetHash().String(), err)
 				}
@@ -1268,6 +1296,25 @@ func TestGetGrubStateWithModifiedNullTerminator(t *testing.T) {
 	pbEvents = convertToPbEvents(cryptoHash, events)
 	if _, err := getGrubState(cryptoHash, pbEvents); err == nil {
 		t.Error("Expected getGrubState to fail after modifying the null terminator")
+	}
+}
+
+func TestParseEventLogCallingEFIAppError(t *testing.T) {
+	tests := []struct {
+		eventLog
+		name string
+	}{
+		{ArchLinuxWorkstation, "ArchLinuxWorkstation"},
+		{GdcHost, "GdcHost"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			for _, bank := range test.Banks {
+				if _, err := parsePCClientEventLog(test.RawLog, bank, VerifyOpts{AllowEFIAppBeforeCallingEvent: false}); err == nil || !strings.Contains(err.Error(), "before CallingEFIApp event") {
+					t.Errorf("parsePCClientEventLog(%s): expected Calling EFI App error, received %v", test.name, err)
+				}
+			}
+		})
 	}
 }
 
