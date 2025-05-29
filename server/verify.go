@@ -63,6 +63,11 @@ type VerifyOpts struct {
 	// Deprecated: go-tpm-tools no longer verifies SNP or TDX attestation.
 	// Please use go-sev-guest and go-tdx-guest.
 	TEEOpts interface{}
+	// AllowEFIAppBeforeCallingEvent skips a check that requires
+	// EV_EFI_BOOT_SERVICES_APPLICATION to occur after a
+	// "Calling EFI Application from Boot Option". This option is useful when
+	// the host platform loads EFI Applications unrelated to OS boot.
+	AllowEFIAppBeforeCallingEvent bool
 }
 
 // Bootloader refers to the second-stage bootloader that loads and transfers
@@ -353,7 +358,7 @@ func makePool(certs []*x509.Certificate) *x509.CertPool {
 // 2. verify GceTechnology since the GCE Technology event is directly related to the TPM.
 // 3. populate the machineState TeeAttestatation field with the verified TDX/SNP attestation data.
 func parseMachineStateFromTPM(attestation *pb.Attestation, pcrs *tpmpb.PCRs, opts VerifyOpts) (*pb.MachineState, error) {
-	ms, err := parsePCClientEventLog(attestation.GetEventLog(), pcrs, opts.Loader)
+	ms, err := parsePCClientEventLog(attestation.GetEventLog(), pcrs, opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to validate the PCClient event log: %w", err)
 	}
