@@ -7,8 +7,12 @@ import (
 	"strconv"
 
 	"cloud.google.com/go/compute/metadata"
+	"github.com/google/go-configfs-tsm/configfs/configfsi"
+	"github.com/google/go-configfs-tsm/report"
 	"github.com/google/go-tpm-tools/client"
+	"github.com/google/go-tpm-tools/internal"
 	"github.com/google/go-tpm-tools/proto/attest"
+	pb "github.com/google/go-tpm-tools/proto/attest"
 	"github.com/google/go-tpm/legacy/tpm2"
 	"github.com/spf13/cobra"
 	"google.golang.org/protobuf/proto"
@@ -23,19 +27,56 @@ var (
 const (
 	// SevSnp is a constant denotes device name for teeTechnology
 	SevSnp = "sev-snp"
+	// SevSnpSvsmVTpm is a constant denotes device name for teeTechnology
+	SevSnpSvsmVTpm = "sev-snp-svsm-vtpm"
 	// Tdx is a constant denotes device name for teeTechnology
 	Tdx = "tdx"
 )
 
-var attestationKeys = map[string]map[tpm2.Algorithm]func(rw io.ReadWriter) (*client.Key, error){
-	"AK": {
-		tpm2.AlgRSA: client.AttestationKeyRSA,
-		tpm2.AlgECC: client.AttestationKeyECC,
-	},
-	"gceAK": {
-		tpm2.AlgRSA: client.GceAttestationKeyRSA,
-		tpm2.AlgECC: client.GceAttestationKeyECC,
-	},
+var (
+	attestationKeys = map[string]map[tpm2.Algorithm]func(rw io.ReadWriter) (*client.Key, error){
+		"AK": {
+			tpm2.AlgRSA: client.AttestationKeyRSA,
+			tpm2.AlgECC: client.AttestationKeyECC,
+		},
+		"gceAK": {
+			tpm2.AlgRSA: client.GceAttestationKeyRSA,
+			tpm2.AlgECC: client.GceAttestationKeyECC,
+		},
+	}
+)
+
+type snpsvsmvtpm struct {
+	tsm configfsi.Client
+}
+
+// AddAttestation uses the TEE device's attestation driver or quote provider to collect an
+// attestation report, then adds it to the correct field of `attestation`.
+// The attestation is expected to have already populated the AkPub.
+func (p *snpsvsmvtpm) AddAttestation(attestation *pb.Attestation, options client.AttestOpts) error {
+	// TEENonce is for the SVSM manifest binding.
+	resp, err := report.Get(p.tsm, &report.Request{InBlob: options.TEENonce,
+		GetAuxBlob:             true,
+		ServiceProvider:        "svsm",
+		ServiceGuid:            internal.SvsmVtpmServiceUUID.String(),
+		ServiceManifestVersion: "0",
+	})
+	if err != nil {
+		return err
+	}
+	attestation.TeeAttestation = &pb.Attestation_TsmReport{
+		TsmReport: &pb.TsmReport{
+			Provider:        "sev_guest",
+			ServiceProvider: "svsm",
+			OutBlob:         resp.OutBlob,
+			AuxBlob:         resp.AuxBlob,
+			// Note this is not the mixed-endian GUID representation.
+			ServiceGuid:     internal.SvsmVtpmServiceUUID[:],
+			ManifestVersion: 0,
+			ManifestBlob:    resp.ManifestBlob,
+		},
+	}
+	return nil
 }
 
 // If hardware technology needs a variable length teenonce then please modify the flags description
@@ -43,13 +84,13 @@ var attestCmd = &cobra.Command{
 	Use:   "attest",
 	Short: "Create a remote attestation report",
 	Long: `Gather information for remote attestation.
-The Attestation report contains a quote on all available PCR banks, a way to validate 
+The Attestation report contains a quote on all available PCR banks, a way to validate
 the quote, and a TCG Event Log (Linux only).
 Use --key to specify the type of attestation key. It can be gceAK for GCE attestation
 key or AK for a custom attestation key. By default it uses AK.
 --algo flag overrides the public key algorithm for attestation key. If not provided then
 by default rsa is used.
---tee-nonce attaches a 64 bytes extra data to the attestation report of TDX and SEV-SNP 
+--tee-nonce attaches a 64 bytes extra data to the attestation report of TDX and SEV-SNP
 hardware and guarantees a fresh quote.
 `,
 	Args: cobra.NoArgs,
@@ -84,6 +125,12 @@ hardware and guarantees a fresh quote.
 		switch teeTechnology {
 		case SevSnp:
 			attestOpts.TEEDevice, err = client.CreateSevSnpQuoteProvider()
+			if err != nil {
+				return fmt.Errorf("failed to open %s device: %v", SevSnp, err)
+			}
+			attestOpts.TEENonce = teeNonce
+		case SevSnpSvsmVTpm:
+			attestOpts.TEEDevice, err = client.CreateSevSnpSvsmVTpmQuoteProvider(attestationKey.Template())
 			if err != nil {
 				return fmt.Errorf("failed to open %s device: %v", SevSnp, err)
 			}

@@ -294,7 +294,7 @@ func TestLoadCachedKey(t *testing.T) {
 			}
 			defer loadedKey.Close()
 
-			if !reflect.DeepEqual(createdKey, loadedKey) {
+			if !createdKey.Equals(loadedKey) {
 				t.Errorf("Loaded key does not match created key")
 			}
 		})

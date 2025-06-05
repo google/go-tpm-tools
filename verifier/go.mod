@@ -11,7 +11,7 @@ require (
 	cloud.google.com/go/confidentialcomputing v1.8.0
 	github.com/golang-jwt/jwt/v4 v4.5.1
 	github.com/google/go-cmp v0.6.0
-	github.com/google/go-sev-guest v0.12.1
+	github.com/google/go-sev-guest v0.13.0
 	github.com/google/go-tdx-guest v0.3.2-0.20241009005452-097ee70d0843
 	github.com/google/go-tpm v0.9.0
 	github.com/google/go-tpm-tools v0.4.4
@@ -39,7 +39,7 @@ require (
 	github.com/google/certificate-transparency-go v1.1.2 // indirect
 	github.com/google/gce-tcb-verifier v0.2.3-0.20240905212129-12f728a62786 // indirect
 	github.com/google/go-attestation v0.5.1 // indirect
-	github.com/google/go-configfs-tsm v0.3.3-0.20240919001351-b4b5b84fdcbc // indirect
+	github.com/google/go-configfs-tsm v0.3.3 // indirect
 	github.com/google/go-eventlog v0.0.2-0.20241003021507-01bb555f7cba // indirect
 	github.com/google/go-tspi v0.3.0 // indirect
 	github.com/google/logger v1.1.1 // indirect

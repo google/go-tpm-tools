@@ -38,7 +38,7 @@ require (
 	github.com/google/certificate-transparency-go v1.1.2 // indirect
 	github.com/google/gce-tcb-verifier v0.2.3-0.20240905212129-12f728a62786 // indirect
 	github.com/google/go-attestation v0.5.1 // indirect
-	github.com/google/go-configfs-tsm v0.3.3-0.20240919001351-b4b5b84fdcbc // indirect
+	github.com/google/go-configfs-tsm v0.3.3 // indirect
 	github.com/google/go-eventlog v0.0.2-0.20241003021507-01bb555f7cba // indirect
 	github.com/google/go-tspi v0.3.0 // indirect
 	github.com/google/logger v1.1.1 // indirect

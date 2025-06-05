@@ -2,6 +2,7 @@ package client
 
 import (
 	"crypto/sha256"
+	"reflect"
 
 	"github.com/google/go-tpm/legacy/tpm2"
 	"github.com/google/go-tpm/tpmutil"
@@ -140,4 +141,20 @@ func SRKTemplateECC() tpm2.Public {
 		Attributes:    defaultSRKAttributes(),
 		ECCParameters: defaultECCParams(),
 	}
+}
+
+func sameParameters(pub1, pub2 tpm2.Public) bool {
+	if pub1.RSAParameters != nil {
+		if pub2.RSAParameters == nil {
+			return false
+		}
+		return reflect.DeepEqual(pub1.RSAParameters, pub2.RSAParameters)
+	}
+	if pub1.ECCParameters != nil {
+		if pub2.ECCParameters == nil {
+			return false
+		}
+		return reflect.DeepEqual(pub1.ECCParameters, pub2.ECCParameters)
+	}
+	return false
 }

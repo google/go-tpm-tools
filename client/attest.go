@@ -3,7 +3,11 @@ package client
 import (
 	"fmt"
 	"net/http"
+	"strings"
 
+	"github.com/google/go-configfs-tsm/configfs/configfsi"
+	"github.com/google/go-configfs-tsm/configfs/linuxtsm"
+	"github.com/google/go-configfs-tsm/report"
 	sabi "github.com/google/go-sev-guest/abi"
 	sg "github.com/google/go-sev-guest/client"
 	tg "github.com/google/go-tdx-guest/client"
@@ -11,6 +15,7 @@ import (
 	tpb "github.com/google/go-tdx-guest/proto/tdx"
 	"github.com/google/go-tpm-tools/internal"
 	pb "github.com/google/go-tpm-tools/proto/attest"
+	"github.com/google/go-tpm/legacy/tpm2"
 )
 
 // TEEDevice is an interface to add an attestation report from a TEE technology's
@@ -124,6 +129,78 @@ func CreateSevSnpQuoteProvider() (TEEDevice, error) {
 	return &SevSnpQuoteProvider{QuoteProvider: qp}, nil
 }
 
+type snpsvsmvtpm struct {
+	tsm configfsi.Client
+}
+
+func createSevSnpSvsmVTpmQuoteProvider(tsm configfsi.Client, tmpl tpm2.Public) (TEEDevice, error) {
+	openreport, err := report.CreateOpenReport(tsm)
+	if err != nil {
+		return nil, err
+	}
+	defer openreport.Destroy()
+	prv, err := openreport.ReadOption("provider")
+	if err != nil {
+		return nil, err
+	}
+	if string(prv) != "sev_guest\n" {
+		return nil, fmt.Errorf("configfs-tsm report provider is not sev_guest: %q", string(prv))
+	}
+	// If running under SVSM, the privilege level will be above 0.
+	floor, err := openreport.ReadOption("privlevel_floor")
+	if err != nil || strings.TrimSpace(string(floor)) == "0" {
+		return nil, err
+	}
+	// TODO: drop when we can detect the manifest_selector attribute.
+	if !tmpl.MatchesTemplate(DefaultEKTemplateRSA()) {
+		return nil, fmt.Errorf("only EK credential with L-1 template supported. Got %v",
+			tmpl)
+	}
+	return &snpsvsmvtpm{tsm: tsm}, nil
+}
+
+// CreateSevSnpSvsmVTpmQuoteProvider creates a ConfigFS TSM report provider that
+// specifically requests binding the attestation report to the given key vis a vis
+// its creation template.
+func CreateSevSnpSvsmVTpmQuoteProvider(tmpl tpm2.Public) (TEEDevice, error) {
+	tsm, err := linuxtsm.MakeClient()
+	if err != nil {
+		return nil, err
+	}
+	return createSevSnpSvsmVTpmQuoteProvider(tsm, tmpl)
+}
+
+// AddAttestation uses the TEE device's attestation driver or quote provider to collect an
+// attestation report, then adds it to the correct field of `attestation`.
+// The attestation is expected to have already populated the AkPub.
+func (p *snpsvsmvtpm) AddAttestation(attestation *pb.Attestation, options AttestOpts) error {
+	// TEENonce is for the SVSM manifest binding.
+	resp, err := report.Get(p.tsm, &report.Request{InBlob: options.TEENonce,
+		GetAuxBlob:      true,
+		ServiceProvider: "svsm",
+		ServiceGuid:     internal.SvsmVtpmServiceGUID,
+	})
+	if err != nil {
+		return err
+	}
+	attestation.TeeAttestation = &pb.Attestation_TsmReport{
+		TsmReport: &pb.TsmReport{
+			Provider:        "sev_guest",
+			ServiceProvider: "svsm",
+			ServiceGuid:     internal.SvsmVtpmServiceUUID[:],
+			OutBlob:         resp.OutBlob,
+			AuxBlob:         resp.AuxBlob,
+			ManifestBlob:    resp.ManifestBlob,
+		},
+	}
+	return nil
+}
+
+// Close finalizes any resources in use by the TEEDevice.
+func (p *snpsvsmvtpm) Close() error {
+	return nil
+}
+
 // CreateTdxDevice opens the TDX attestation driver and wraps it with behavior
 // that allows it to add an attestation quote to pb.Attestation.
 // Deprecated: TdxDevice is deprecated, and use of CreateTdxQuoteProvider is
@@ -232,7 +309,7 @@ func setTeeAttestationTdxQuote(quote any, attestation *pb.Attestation) error {
 
 // Does best effort to get a TEE hardware rooted attestation, but won't fail fatally
 // unless the user provided a TEEDevice object.
-func getTEEAttestationReport(attestation *pb.Attestation, opts AttestOpts) error {
+func (k *Key) getTEEAttestationReport(attestation *pb.Attestation, opts AttestOpts) error {
 	device := opts.TEEDevice
 	if device != nil {
 		return device.AddAttestation(attestation, opts)
@@ -243,23 +320,12 @@ func getTEEAttestationReport(attestation *pb.Attestation, opts AttestOpts) error
 		return fmt.Errorf("got non-nil TEENonce when TEEDevice is nil: %v", opts.TEENonce)
 	}
 
-	// Try SEV-SNP.
-	if sevqp, err := CreateSevSnpQuoteProvider(); err == nil {
-		// Don't return errors if the attestation collection fails, since
-		// the user didn't specify a TEEDevice.
-		sevqp.AddAttestation(attestation, opts)
-		return nil
+	// Try SEV-SNP under SVSM with vTPM EK binding.
+	if svsmqp, err := CreateSevSnpSvsmVTpmQuoteProvider(k.Template()); err == nil {
+		if svsmqp.AddAttestation(attestation, opts) == nil {
+			return nil
+		}
 	}
-
-	// Try TDX.
-	if quoteProvider, err := CreateTdxQuoteProvider(); err == nil {
-		// Don't return errors if the attestation collection fails, since
-		// the user didn't specify a TEEDevice.
-		quoteProvider.AddAttestation(attestation, opts)
-		quoteProvider.Close()
-		return nil
-	}
-	// Add more devices here.
 	return nil
 }
 
@@ -313,8 +379,7 @@ func (k *Key) Attest(opts AttestOpts) (*pb.Attestation, error) {
 		}
 	}
 
-	// TODO: issues/504 this should be outside of this function, not related to TPM attestation
-	if err := getTEEAttestationReport(&attestation, opts); err != nil {
+	if err := k.getTEEAttestationReport(&attestation, opts); err != nil {
 		return nil, fmt.Errorf("collecting TEE attestation report: %w", err)
 	}
 

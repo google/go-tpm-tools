@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"reflect"
 
 	"github.com/google/go-tpm-tools/internal"
 	pb "github.com/google/go-tpm-tools/proto/tpm"
@@ -22,13 +23,14 @@ import (
 // Concurrent accesses on Key are not safe, with the exception of the
 // Sign method called on the crypto.Signer returned by Key.GetSigner.
 type Key struct {
-	rw      io.ReadWriter
-	handle  tpmutil.Handle
-	pubArea tpm2.Public
-	pubKey  crypto.PublicKey
-	name    tpm2.Name
-	session Session
-	cert    *x509.Certificate
+	rw       io.ReadWriter
+	handle   tpmutil.Handle
+	pubArea  tpm2.Public
+	pubKey   crypto.PublicKey
+	name     tpm2.Name
+	session  Session
+	cert     *x509.Certificate
+	template tpm2.Public
 }
 
 // EndorsementKeyRSA generates and loads a key from DefaultEKTemplateRSA.
@@ -205,7 +207,7 @@ func NewKey(rw io.ReadWriter, parent tpmutil.Handle, template tpm2.Public) (k *K
 		}
 	}()
 
-	k = &Key{rw: rw, handle: handle}
+	k = &Key{rw: rw, handle: handle, template: template}
 	if k.pubArea, err = tpm2.DecodePublic(pubArea); err != nil {
 		return
 	}
@@ -258,6 +260,11 @@ func (k *Key) PublicKey() crypto.PublicKey {
 	return k.pubKey
 }
 
+// Template provides a go interface to the template used for creating the key.
+func (k *Key) Template() tpm2.Public {
+	return k.template
+}
+
 // Close should be called when the key is no longer needed. This is important to
 // do as most TPMs can only have a small number of key simultaneously loaded.
 func (k *Key) Close() {
@@ -265,6 +272,23 @@ func (k *Key) Close() {
 		k.session.Close()
 	}
 	tpm2.FlushContext(k.rw, k.handle)
+}
+
+// Equals returns whether `k` represents the same key as `other`.
+func (k *Key) Equals(other *Key) bool {
+	if k.template.Type == tpm2.AlgUnknown && other.template.Type != tpm2.AlgUnknown {
+		if !k.pubArea.MatchesTemplate(other.template) {
+			return false
+		}
+		k.template = other.template
+	}
+	if k.template.Type != tpm2.AlgUnknown && other.template.Type == tpm2.AlgUnknown {
+		if !other.pubArea.MatchesTemplate(k.template) {
+			return false
+		}
+		other.template = k.template
+	}
+	return reflect.DeepEqual(k, other)
 }
 
 // Seal seals the sensitive byte buffer to a key. This key must be an SRK (we
