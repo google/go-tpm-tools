@@ -273,6 +273,10 @@ func (t *tdxAttestRoot) Attest(nonce []byte) (any, error) {
 	var tdxNonce [tlabi.TdReportDataSize]byte
 	copy(tdxNonce[:], nonce)
 
+	if err := os.WriteFile("/tmp/container_launcher/tdxnonce", tdxNonce[:], 0644); err != nil {
+		return nil, fmt.Errorf("failed to write tdx nonce: %v", err)
+	}
+
 	rawQuote, err := tg.GetRawQuote(t.qp, tdxNonce)
 	if err != nil {
 		return nil, err
