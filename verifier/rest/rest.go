@@ -9,16 +9,15 @@ import (
 	"time"
 
 	sabi "github.com/google/go-sev-guest/abi"
-	"github.com/google/go-sev-guest/proto/sevsnp"
+	spb "github.com/google/go-sev-guest/proto/sevsnp"
 	tabi "github.com/google/go-tdx-guest/abi"
-	"github.com/google/go-tdx-guest/proto/tdx"
+	tpb "github.com/google/go-tdx-guest/proto/tdx"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/google/go-tpm-tools/verifier/models"
 	"github.com/google/go-tpm-tools/verifier/oci"
 	"github.com/googleapis/gax-go/v2"
 
 	v1 "cloud.google.com/go/confidentialcomputing/apiv1"
-	"cloud.google.com/go/confidentialcomputing/apiv1/confidentialcomputingpb"
 	ccpb "cloud.google.com/go/confidentialcomputing/apiv1/confidentialcomputingpb"
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
@@ -212,7 +211,7 @@ func convertRequestToREST(request verifier.VerifyAttestationRequest) *ccpb.Verif
 
 	signatures := make([]*ccpb.ContainerImageSignature, len(request.ContainerImageSignatures))
 	for i, sig := range request.ContainerImageSignatures {
-		signatures[i] = &confidentialcomputingpb.ContainerImageSignature{
+		signatures[i] = &ccpb.ContainerImageSignature{
 			Payload:   sig.Payload,
 			Signature: sig.Signature,
 		}
@@ -237,14 +236,14 @@ func convertRequestToREST(request verifier.VerifyAttestationRequest) *ccpb.Verif
 
 	if request.Attestation != nil {
 		// TPM attestation route
-		quotes := make([]*confidentialcomputingpb.TpmAttestation_Quote, len(request.Attestation.GetQuotes()))
+		quotes := make([]*ccpb.TpmAttestation_Quote, len(request.Attestation.GetQuotes()))
 		for i, quote := range request.Attestation.GetQuotes() {
 			pcrVals := map[int32][]byte{}
 			for idx, val := range quote.GetPcrs().GetPcrs() {
 				pcrVals[int32(idx)] = val
 			}
 
-			quotes[i] = &confidentialcomputingpb.TpmAttestation_Quote{
+			quotes[i] = &ccpb.TpmAttestation_Quote{
 				RawQuote:     quote.GetQuote(),
 				RawSignature: quote.GetRawSig(),
 				HashAlgo:     int32(quote.GetPcrs().GetHash()),
@@ -257,7 +256,7 @@ func convertRequestToREST(request verifier.VerifyAttestationRequest) *ccpb.Verif
 			certs[i] = cert
 		}
 
-		verifyReq.TpmAttestation = &confidentialcomputingpb.TpmAttestation{
+		verifyReq.TpmAttestation = &ccpb.TpmAttestation{
 			Quotes:            quotes,
 			TcgEventLog:       request.Attestation.GetEventLog(),
 			CanonicalEventLog: request.Attestation.GetCanonicalEventLog(),
@@ -283,13 +282,13 @@ func convertRequestToREST(request verifier.VerifyAttestationRequest) *ccpb.Verif
 	} else if request.TDCCELAttestation != nil {
 		// TDX attestation route
 		// still need AK for GCE info!
-		verifyReq.TpmAttestation = &confidentialcomputingpb.TpmAttestation{
+		verifyReq.TpmAttestation = &ccpb.TpmAttestation{
 			AkCert:    request.TDCCELAttestation.AkCert,
 			CertChain: request.TDCCELAttestation.IntermediateCerts,
 		}
 
-		verifyReq.TeeAttestation = &confidentialcomputingpb.VerifyAttestationRequest_TdCcel{
-			TdCcel: &confidentialcomputingpb.TdxCcelAttestation{
+		verifyReq.TeeAttestation = &ccpb.VerifyAttestationRequest_TdCcel{
+			TdCcel: &ccpb.TdxCcelAttestation{
 				TdQuote:           request.TDCCELAttestation.TdQuote,
 				CcelAcpiTable:     request.TDCCELAttestation.CcelAcpiTable,
 				CcelData:          request.TDCCELAttestation.CcelData,
@@ -328,7 +327,7 @@ func convertOCISignatureToREST(signature oci.Signature) (*ccpb.ContainerImageSig
 	}, nil
 }
 
-func convertSEVSNPProtoToREST(att *sevsnp.Attestation) (*ccpb.VerifyAttestationRequest_SevSnpAttestation, error) {
+func convertSEVSNPProtoToREST(att *spb.Attestation) (*ccpb.VerifyAttestationRequest_SevSnpAttestation, error) {
 	auxBlob := sabi.CertsFromProto(att.GetCertificateChain()).Marshal()
 	rawReport, err := sabi.ReportToAbiBytes(att.GetReport())
 	if err != nil {
@@ -342,7 +341,7 @@ func convertSEVSNPProtoToREST(att *sevsnp.Attestation) (*ccpb.VerifyAttestationR
 	}, nil
 }
 
-func convertTDXProtoToREST(att *tdx.QuoteV4) (*ccpb.VerifyAttestationRequest_TdCcel, error) {
+func convertTDXProtoToREST(att *tpb.QuoteV4) (*ccpb.VerifyAttestationRequest_TdCcel, error) {
 	rawQuote, err := tabi.QuoteToAbiBytes(att)
 	if err != nil {
 		return nil, err
