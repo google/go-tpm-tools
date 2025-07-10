@@ -43,7 +43,7 @@ var (
 // It is the caller's responsibility to ensure that the passed PCR values can be
 // trusted. Users can establish trust in PCR values by either calling
 // client.ReadPCRs() themselves or by verifying the values via a PCR quote.
-func parsePCClientEventLog(rawEventLog []byte, pcrs *tpmpb.PCRs, loader Bootloader) (*pb.MachineState, error) {
+func parsePCClientEventLog(rawEventLog []byte, pcrs *tpmpb.PCRs, opts VerifyOpts) (*pb.MachineState, error) {
 	var errors []error
 	events, err := parseReplayHelper(rawEventLog, pcrs)
 	if err != nil {
@@ -61,14 +61,14 @@ func parsePCClientEventLog(rawEventLog []byte, pcrs *tpmpb.PCRs, loader Bootload
 	if err != nil {
 		errors = append(errors, err)
 	}
-	efiState, err := getEfiState(cryptoHash, rawEvents)
+	efiState, err := getEfiState(cryptoHash, rawEvents, opts)
 	if err != nil {
 		errors = append(errors, err)
 	}
 
 	var grub *pb.GrubState
 	var kernel *pb.LinuxKernelState
-	if loader == GRUB {
+	if opts.Loader == GRUB {
 		grub, err = getGrubState(cryptoHash, rawEvents)
 		if err != nil {
 			errors = append(errors, err)
@@ -541,7 +541,7 @@ func verifyDataDigest(hasher hash.Hash, data []byte, digest []byte) error {
 	return nil
 }
 
-func getEfiState(hash crypto.Hash, events []*pb.Event) (*pb.EfiState, error) {
+func getEfiState(hash crypto.Hash, events []*pb.Event, opts VerifyOpts) (*pb.EfiState, error) {
 	// We pre-compute various event digests, and check if those event type have
 	// been modified. We only trust events that come before the
 	// ExitBootServices() request.
@@ -590,7 +590,7 @@ func getEfiState(hash crypto.Hash, events []*pb.Event) (*pb.EfiState, error) {
 			}
 
 			if evtType == EFIBootServicesApplication {
-				if !seenCallingEfiApp {
+				if !opts.AllowEFIAppBeforeCallingEvent && !seenCallingEfiApp {
 					return nil, fmt.Errorf("found EFIBootServicesApplication in PCR%d before CallingEFIApp event", index)
 				}
 				efiAppStates = append(efiAppStates, &pb.EfiApp{Digest: event.GetDigest()})
