@@ -240,7 +240,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	asAddr := launchSpec.AttestationServiceAddr
 
 	var verifierClient verifier.Client
-	if launchSpec.ITARegion == "" {
+	if launchSpec.ITAConfig.ITARegion == "" {
 		gcaClient, err := util.NewRESTClient(ctx, asAddr, launchSpec.ProjectID, launchSpec.Region)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create REST verifier client: %v", err)
@@ -347,6 +347,27 @@ func (r *ContainerRunner) measureCELEvents(ctx context.Context) error {
 	}
 	return r.attestAgent.MeasureEvent(separator)
 }
+
+// func setUpAttestClients(ctx context.Context, launchSpec spec.LaunchSpec) (verifier.AttestClients, error) {
+// 	attestClients := verifier.AttestClients{}
+// 	gcaClient, err := util.NewRESTClient(ctx, launchSpec.AttestationServiceAddr, launchSpec.ProjectID, launchSpec.Region)
+// 	if err != nil {
+// 		return attestClients, fmt.Errorf("failed to create REST GCA client: %v", err)
+// 	}
+
+// 	attestClients.GCA = gcaClient
+
+// 	if launchSpec.ITAConfig != nil {
+// 		itaClient, err := ita.NewClient(launchSpec.ITAConfig)
+// 		if err != nil {
+// 			return attestClients, fmt.Errorf("failed to create ITA client: %v", err)
+// 		}
+
+// 		attestClients.ITA = itaClient
+// 	}
+
+// 	return attestClients, nil
+// }
 
 // measureContainerClaims will measure various container claims into the COS
 // eventlog in the AttestationAgent.
@@ -582,7 +603,7 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	}
 
 	// Only refresh token if agent has a default GCA client (not ITA use case).
-	if r.launchSpec.ITARegion == "" {
+	if r.launchSpec.ITAConfig.ITARegion == "" {
 		if err := r.fetchAndWriteToken(ctx); err != nil {
 			return fmt.Errorf("failed to fetch and write OIDC token: %v", err)
 		}
@@ -592,21 +613,24 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	r.logger.Info("EnableOnDemandAttestation is enabled: initializing TEE server.")
 
 	attestClients := &teeserver.AttestClients{}
-	if r.launchSpec.ITARegion != "" {
-		itaClient, err := ita.NewClient(r.launchSpec.ITARegion, r.launchSpec.ITAKey)
+	gcaClient, err := util.NewRESTClient(ctx, r.launchSpec.AttestationServiceAddr, r.launchSpec.ProjectID, r.launchSpec.Region)
+	if err != nil {
+		return fmt.Errorf("failed to create REST verifier client: %v", err)
+	}
+	attestClients.GCA = gcaClient
+	clients := "Google Cloud Attestation (GCA)"
+
+	if r.launchSpec.ITAConfig.ITARegion != "" {
+		itaClient, err := ita.NewClient(r.launchSpec.ITAConfig)
 		if err != nil {
 			return fmt.Errorf("failed to create ITA client: %v", err)
 		}
 
 		attestClients.ITA = itaClient
-	} else {
-		gcaClient, err := util.NewRESTClient(ctx, r.launchSpec.AttestationServiceAddr, r.launchSpec.ProjectID, r.launchSpec.Region)
-		if err != nil {
-			return fmt.Errorf("failed to create REST verifier client: %v", err)
-		}
-
-		attestClients.GCA = gcaClient
+		clients += ", Intel Trust Authority (ITA)"
 	}
+
+	r.logger.Info(fmt.Sprintf("Attestation clients created: %s", clients))
 
 	teeServer, err := teeserver.New(ctx, path.Join(launcherfile.HostTmpPath, teeServerSocket), r.attestAgent, r.logger, r.launchSpec, attestClients)
 	if err != nil {

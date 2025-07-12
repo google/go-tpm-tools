@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"log"
+	"os"
 	"time"
 
 	sabi "github.com/google/go-sev-guest/abi"
@@ -135,6 +136,12 @@ func (c *restClient) VerifyAttestation(ctx context.Context, request verifier.Ver
 
 	req := convertRequestToREST(request)
 	req.Challenge = request.Challenge.Name
+
+	f, err := os.OpenFile("/tmp/container_launcher/rawrequest", os.O_RDWR|os.O_CREATE, 0755)
+	if err == nil {
+		defer f.Close()
+		f.Write([]byte(fmt.Sprintf("%v", req)))
+	}
 
 	response, err := c.v1Client.VerifyAttestation(ctx, req)
 	if err != nil {
