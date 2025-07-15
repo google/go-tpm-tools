@@ -169,6 +169,7 @@ func (a *attestHandler) attest(w http.ResponseWriter, r *http.Request, client ve
 			// a.logAndWriteHTTPError(w, http.StatusBadRequest, err)
 >>>>>>> 0c04851 (Attest now will pass in a default audience instead of passing an error)
 			tokenOptions.Audience = audienceSTS
+			// return
 		}
 
 		if tokenOptions.TokenType == "" {
