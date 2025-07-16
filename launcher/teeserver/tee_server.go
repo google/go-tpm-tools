@@ -163,9 +163,7 @@ func (a *attestHandler) attest(w http.ResponseWriter, r *http.Request, client ve
 		}
 
 		if tokenOptions.Audience == "" {
-
 			tokenOptions.Audience = audienceSTS
-			// return
 		}
 
 		if tokenOptions.TokenType == "" {
