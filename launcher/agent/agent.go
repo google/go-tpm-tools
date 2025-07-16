@@ -211,7 +211,7 @@ func (a *agent) AttestWithClient(ctx context.Context, opts AttestAgentOpts, clie
 	req := verifier.VerifyAttestationRequest{
 		Challenge:      challenge,
 		GcpCredentials: principalTokens,
-		TokenOptions:   opts.TokenOptions,
+		TokenOptions:   tokenOpts,
 	}
 
 	switch v := attResult.(type) {
