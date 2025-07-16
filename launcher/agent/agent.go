@@ -39,6 +39,10 @@ import (
 
 var defaultCELHashAlgo = []crypto.Hash{crypto.SHA256, crypto.SHA1}
 
+const (
+	audienceSTS = "https://sts.googleapis.com"
+)
+
 type principalIDTokenFetcher func(audience string) ([][]byte, error)
 
 // AttestationAgent is an agent that interacts with GCE's Attestation Service
@@ -189,7 +193,7 @@ func (a *agent) AttestWithClient(ctx context.Context, opts AttestAgentOpts, clie
 	}
 
 	if tokenOpts.Audience == "" {
-		tokenOpts.Audience = "audienceSTS"
+		tokenOpts.Audience = audienceSTS
 	}
 
 	principalTokens, err := a.principalFetcher(challenge.Name)
