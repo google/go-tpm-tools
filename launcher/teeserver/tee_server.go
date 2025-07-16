@@ -40,10 +40,6 @@ type TeeServer struct {
 	netListener net.Listener
 }
 
-const (
-	audienceSTS = "https://sts.googleapis.com"
-)
-
 // New takes in a socket and start to listen to it, and create a server
 func New(ctx context.Context, unixSock string, a agent.AttestationAgent, logger logging.Logger, launchSpec spec.LaunchSpec, clients *AttestClients) (*TeeServer, error) {
 	var err error
