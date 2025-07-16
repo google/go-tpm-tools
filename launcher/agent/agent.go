@@ -39,6 +39,10 @@ import (
 
 var defaultCELHashAlgo = []crypto.Hash{crypto.SHA256, crypto.SHA1}
 
+const (
+	audienceSTS = "https://sts.googleapis.com"
+)
+
 type principalIDTokenFetcher func(audience string) ([][]byte, error)
 
 // AttestationAgent is an agent that interacts with GCE's Attestation Service
@@ -183,6 +187,15 @@ func (a *agent) AttestWithClient(ctx context.Context, opts AttestAgentOpts, clie
 		return nil, err
 	}
 
+	tokenOpts := opts.TokenOptions
+	if tokenOpts == nil {
+		tokenOpts = &models.TokenOptions{}
+	}
+
+	if tokenOpts.Audience == "" {
+		tokenOpts.Audience = audienceSTS
+	}
+
 	principalTokens, err := a.principalFetcher(challenge.Name)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get principal tokens: %w", err)
@@ -202,7 +215,7 @@ func (a *agent) AttestWithClient(ctx context.Context, opts AttestAgentOpts, clie
 	req := verifier.VerifyAttestationRequest{
 		Challenge:      challenge,
 		GcpCredentials: principalTokens,
-		TokenOptions:   opts.TokenOptions,
+		TokenOptions:   tokenOpts,
 	}
 
 	switch v := attResult.(type) {
