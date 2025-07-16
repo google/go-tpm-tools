@@ -183,6 +183,15 @@ func (a *agent) AttestWithClient(ctx context.Context, opts AttestAgentOpts, clie
 		return nil, err
 	}
 
+	tokenOpts := opts.TokenOptions
+	if tokenOpts == nil {
+		tokenOpts = &models.TokenOptions{}
+	}
+
+	if tokenOpts.Audience == "" {
+		tokenOpts.Audience = "audienceSTS"
+	}
+
 	principalTokens, err := a.principalFetcher(challenge.Name)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get principal tokens: %w", err)
