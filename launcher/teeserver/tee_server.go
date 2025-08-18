@@ -82,9 +82,8 @@ func (a *attestHandler) logAndWriteError(errStr string, status int, w http.Respo
 	w.Write([]byte(errStr))
 }
 
-// getDefaultToken handles the request to get the default OIDC token.
-// For now this function will just read the content of the file and return.
-// Later, this function can use attestation agent to get a token directly.
+// getDefaultToken handles the gets a token with the default audience for Confidential Space
+// and no nonce.
 func (a *attestHandler) getToken(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html")
 
