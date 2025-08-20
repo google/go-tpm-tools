@@ -133,3 +133,14 @@ func validatePCRDigest(quoteInfo *tpm2.QuoteInfo, pcrs *pb.PCRs, hash crypto.Has
 	}
 	return nil
 }
+
+func HashNonce(pubArea tpm2.Public, nonce []byte) ([]byte, error) {
+	sigHash, err := GetSigningHashAlg(pubArea)
+	chash, err := sigHash.Hash()
+	if err != nil {
+		return nil, fmt.Errorf("failed to hash the input nonce: %w", err)
+	}
+	hasher := chash.New()
+	hasher.Write(nonce)
+	return hasher.Sum(nil), nil
+}
