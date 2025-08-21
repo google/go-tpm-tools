@@ -74,6 +74,12 @@ func TestGetDefaultToken(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/v1/token", nil)
 	w := httptest.NewRecorder()
 
+	/*
+		TODO
+		okay here we have to change it so that the token is returning an error code by default and we
+		want to check if we can force a 500 and 400 error and then in tee server we differentiate and
+		return the correct error
+	*/
 	ah.getToken(w, req)
 	data, err := io.ReadAll(w.Result().Body)
 	if err != nil {
