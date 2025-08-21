@@ -133,7 +133,29 @@ func (a *attestHandler) getITAToken(w http.ResponseWriter, r *http.Request) {
 	a.attest(w, r, a.clients.ITA)
 }
 
+type verifyMethodBody struct {
+	Method string `json:"verify_method"`
+}
+
+func (a *attestHandler) parseVerifyMethod(r *http.Request) string {
+	if r == nil {
+		return "NO_METHOD"
+	}
+
+	var parsedBody verifyMethodBody
+	decoder := json.NewDecoder(r.Body)
+	if err := decoder.Decode(&parsedBody); err != nil {
+		return "UNSUCCESSFUL_DECODE"
+	}
+
+	return parsedBody.Method
+}
+
 func (a *attestHandler) attest(w http.ResponseWriter, r *http.Request, client verifier.Client) {
+	vMethod := a.parseVerifyMethod(r)
+	methodLog := fmt.Sprintf("TEEServer recieved verify method %s", vMethod)
+	a.logger.Info(methodLog)
+
 	switch r.Method {
 	case http.MethodGet:
 		if err := a.attestAgent.Refresh(a.ctx); err != nil {
@@ -154,7 +176,7 @@ func (a *attestHandler) attest(w http.ResponseWriter, r *http.Request, client ve
 	case http.MethodPost:
 		var tokenOptions models.TokenOptions
 		decoder := json.NewDecoder(r.Body)
-		decoder.DisallowUnknownFields()
+		// decoder.DisallowUnknownFields()
 
 		err := decoder.Decode(&tokenOptions)
 		if err != nil {
