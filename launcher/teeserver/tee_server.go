@@ -137,24 +137,23 @@ type verifyMethodBody struct {
 	Method string `json:"verify_method"`
 }
 
-func (a *attestHandler) parseVerifyMethod(r *http.Request) string {
-	if r == nil {
-		return "NO_METHOD"
+func parseVerifyMethod(headers http.Header) string {
+	if headers == nil {
+		return "NO_REQUEST"
 	}
 
-	var parsedBody verifyMethodBody
-	decoder := json.NewDecoder(r.Body)
-	if err := decoder.Decode(&parsedBody); err != nil {
-		return "UNSUCCESSFUL_DECODE"
+	methods, ok := headers["Verify-Method"]
+	if !ok {
+		return "NO_METHOD_HEADER"
 	}
 
-	return parsedBody.Method
+	return methods[0]
 }
 
 func (a *attestHandler) attest(w http.ResponseWriter, r *http.Request, client verifier.Client) {
-	vMethod := a.parseVerifyMethod(r)
-	methodLog := fmt.Sprintf("TEEServer recieved verify method %s", vMethod)
-	a.logger.Info(methodLog)
+	verifyMethod := parseVerifyMethod(r.Header)
+	logStr := fmt.Sprintf("Parsed VerifyMethod: %v", verifyMethod)
+	a.logger.Info(logStr)
 
 	switch r.Method {
 	case http.MethodGet:
@@ -176,7 +175,7 @@ func (a *attestHandler) attest(w http.ResponseWriter, r *http.Request, client ve
 	case http.MethodPost:
 		var tokenOptions models.TokenOptions
 		decoder := json.NewDecoder(r.Body)
-		// decoder.DisallowUnknownFields()
+		decoder.DisallowUnknownFields()
 
 		err := decoder.Decode(&tokenOptions)
 		if err != nil {
