@@ -192,7 +192,8 @@ func (a *agent) AttestWithClient(ctx context.Context, opts AttestAgentOpts, clie
 		tokenOpts = &models.TokenOptions{}
 	}
 
-	if tokenOpts.Audience == "" {
+	// The customer is responsible for providing an audience if they provided nonces.
+	if tokenOpts.Audience == "" && len(tokenOpts.Nonces) == 0 {
 		tokenOpts.Audience = audienceSTS
 	}
 
