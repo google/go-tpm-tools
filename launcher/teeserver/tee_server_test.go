@@ -16,6 +16,8 @@ import (
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/google/go-tpm-tools/verifier/models"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // Implements verifier.Client interface so it can be used to initialize test attestHandlers
@@ -91,6 +93,38 @@ func TestGetDefaultToken(t *testing.T) {
 	}
 	if string(data) != testTokenContent {
 		t.Errorf("got content: %v, want: %s", testTokenContent, string(data))
+	}
+}
+
+func TestGetDefaultTokenServerError(t *testing.T) {
+	// An empty attestHandler is fine for now as it is not being used
+	// in the handler.
+	ah := attestHandler{
+		logger: logging.SimpleLogger(),
+		clients: &AttestClients{
+			GCA: &fakeVerifierClient{},
+		},
+		attestAgent: fakeAttestationAgent{
+			attestWithClientFunc: func(context.Context, agent.AttestAgentOpts, verifier.Client) ([]byte, error) {
+				return nil, errors.New("internal server error from agent")
+			},
+		}}
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/token", nil)
+	w := httptest.NewRecorder()
+
+	ah.getToken(w, req)
+	data, err := io.ReadAll(w.Result().Body)
+	if err != nil {
+		t.Error(err)
+	}
+
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("got return code: %d, want: %d", w.Code, http.StatusInternalServerError)
+	}
+	expectedError := "failed to retrieve attestation service token: internal server error from agent"
+	if string(data) != expectedError {
+		t.Errorf("got content: %q, want: %q", string(data), expectedError)
 	}
 }
 
@@ -334,5 +368,76 @@ func TestCustomTokenDataParsedSuccessfully(t *testing.T) {
 		if w.Code != test.wantCode {
 			t.Errorf("testcase %d, '%v': got return code: %d, want: %d", i, test.testName, w.Code, test.wantCode)
 		}
+	}
+}
+
+func TestCustomHandleAttestError(t *testing.T) {
+	body := `{
+				"audience": "audience",
+				"nonces": ["thisIsAcustomNonce"],
+				"token_type": "OIDC"
+			}`
+
+	testcases := []struct {
+		name           string
+		err            error
+		wantStatusCode int
+		// wantBody is not currently asserted, but kept for potential future use.
+		wantBody string
+	}{
+		{
+			name:           "FailedPrecondition error",
+			err:            status.New(codes.FailedPrecondition, "bad state").Err(),
+			wantStatusCode: http.StatusBadRequest,
+		},
+		{
+			name:           "PermissionDenied error",
+			err:            status.New(codes.PermissionDenied, "denied").Err(),
+			wantStatusCode: http.StatusBadRequest,
+		},
+		{
+			name:           "Internal error",
+			err:            status.New(codes.Internal, "internal server error").Err(),
+			wantStatusCode: http.StatusInternalServerError,
+		},
+		{
+			name:           "Unavailable error",
+			err:            status.New(codes.Unavailable, "service unavailable").Err(),
+			wantStatusCode: http.StatusInternalServerError,
+		},
+		{
+			name:           "non-gRPC error",
+			err:            errors.New("a generic error"),
+			wantStatusCode: http.StatusInternalServerError,
+		},
+	}
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			ah := attestHandler{
+				logger: logging.SimpleLogger(),
+				clients: &AttestClients{
+					GCA: &fakeVerifierClient{},
+				},
+				attestAgent: fakeAttestationAgent{
+					attestWithClientFunc: func(context.Context, agent.AttestAgentOpts, verifier.Client) ([]byte, error) {
+						return nil, tc.err
+					},
+				},
+			}
+
+			req := httptest.NewRequest(http.MethodPost, "/v1/token", strings.NewReader(body))
+			w := httptest.NewRecorder()
+
+			ah.getToken(w, req)
+
+			if w.Code != tc.wantStatusCode {
+				t.Errorf("got status code %d, want %d", w.Code, tc.wantStatusCode)
+			}
+
+			_, err := io.ReadAll(w.Result().Body)
+			if err != nil {
+				t.Fatalf("failed to read response body: %v", err)
+			}
+		})
 	}
 }
