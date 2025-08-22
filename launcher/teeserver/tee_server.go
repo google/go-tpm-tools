@@ -15,6 +15,8 @@ import (
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/google/go-tpm-tools/verifier/models"
 	"github.com/google/go-tpm-tools/verifier/util"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // AttestClients contains clients for supported verifier services that can be used to
@@ -121,15 +123,13 @@ func (a *attestHandler) attest(w http.ResponseWriter, r *http.Request, client ve
 	switch r.Method {
 	case http.MethodGet:
 		if err := a.attestAgent.Refresh(a.ctx); err != nil {
-			errStr := fmt.Sprintf("failed to refresh attestation agent: %v", err)
-			a.logAndWriteError(errStr, http.StatusInternalServerError, w)
+			a.logAndWriteHTTPError(w, http.StatusInternalServerError, fmt.Errorf("failed to refresh attestation agent: %w", err))
 			return
 		}
 
 		token, err := a.attestAgent.AttestWithClient(a.ctx, agent.AttestAgentOpts{}, client)
 		if err != nil {
-			errStr := fmt.Sprintf("failed to retrieve attestation service token: %v", err)
-			a.logAndWriteError(errStr, http.StatusInternalServerError, w)
+			a.handleAttestError(w, err, "failed to retrieve attestation service token")
 			return
 		}
 
@@ -148,6 +148,12 @@ func (a *attestHandler) attest(w http.ResponseWriter, r *http.Request, client ve
 			return
 		}
 
+		if tokenOptions.Audience == "" {
+			err := fmt.Errorf("use GET request for the default identity token")
+			a.logAndWriteHTTPError(w, http.StatusBadRequest, err)
+			return
+		}
+
 		if tokenOptions.TokenType == "" {
 			err := fmt.Errorf("token_type is a required parameter")
 			a.logAndWriteHTTPError(w, http.StatusBadRequest, err)
@@ -160,7 +166,8 @@ func (a *attestHandler) attest(w http.ResponseWriter, r *http.Request, client ve
 			TokenOptions: &tokenOptions,
 		}, client)
 		if err != nil {
-			a.logAndWriteHTTPError(w, http.StatusBadRequest, err)
+
+			a.handleAttestError(w, err, "failed to retrieve custom attestation service token")
 			return
 		}
 
@@ -197,4 +204,22 @@ func (s *TeeServer) Shutdown(ctx context.Context) error {
 		return err2
 	}
 	return nil
+}
+
+func (a *attestHandler) handleAttestError(w http.ResponseWriter, err error, message string) {
+	st, ok := status.FromError(err)
+	if ok {
+		switch st.Code() {
+		// User errors, like invalid arguments.
+		case codes.InvalidArgument, codes.FailedPrecondition, codes.PermissionDenied:
+			a.logAndWriteHTTPError(w, http.StatusBadRequest, fmt.Errorf("%s: %w", message, err))
+			return
+		// Server-side or transient errors.
+		default:
+			a.logAndWriteHTTPError(w, http.StatusInternalServerError, fmt.Errorf("%s: %w", message, err))
+			return
+		}
+	}
+	// If it's not a gRPC error, it's likely an internal error within the launcher.
+	a.logAndWriteHTTPError(w, http.StatusInternalServerError, fmt.Errorf("%s: %w", message, err))
 }
