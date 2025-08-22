@@ -158,7 +158,7 @@ func TestCustomToken(t *testing.T) {
 			attestWithClientFunc: func(context.Context, agent.AttestAgentOpts, verifier.Client) ([]byte, error) {
 				return nil, errors.New("Error")
 			},
-			want: http.StatusBadRequest,
+			want: http.StatusInternalServerError,
 		},
 		{
 			testName: "TestTokenTypeRequired",
