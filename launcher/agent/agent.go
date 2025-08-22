@@ -189,7 +189,7 @@ func (a *agent) AttestWithClient(ctx context.Context, opts AttestAgentOpts, clie
 
 	tokenOpts := opts.TokenOptions
 	if tokenOpts == nil {
-		tokenOpts = &models.TokenOptions{}
+		tokenOpts = &models.TokenOptions{TokenType: "OIDC"}
 	}
 
 	// The customer is responsible for providing an audience if they provided nonces.
