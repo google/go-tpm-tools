@@ -19,6 +19,17 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+var clientErrorCodes = map[codes.Code]bool{
+	codes.InvalidArgument:    true,
+	codes.FailedPrecondition: true,
+	codes.PermissionDenied:   true,
+	codes.Unauthenticated:    true,
+	codes.NotFound:           true,
+	codes.Aborted:            true,
+	codes.OutOfRange:         true,
+	codes.Canceled:           true,
+}
+
 // AttestClients contains clients for supported verifier services that can be used to
 // get attestation tokens.
 type AttestClients struct {
@@ -209,16 +220,14 @@ func (s *TeeServer) Shutdown(ctx context.Context) error {
 func (a *attestHandler) handleAttestError(w http.ResponseWriter, err error, message string) {
 	st, ok := status.FromError(err)
 	if ok {
-		switch st.Code() {
-		// User errors, like invalid arguments.
-		case codes.InvalidArgument, codes.FailedPrecondition, codes.PermissionDenied:
+		if clientErrorCodes[st.Code()] {
+			// User errors, like invalid arguments. These are mapped to 400 Bad Request.
 			a.logAndWriteHTTPError(w, http.StatusBadRequest, fmt.Errorf("%s: %w", message, err))
 			return
-		// Server-side or transient errors.
-		default:
-			a.logAndWriteHTTPError(w, http.StatusInternalServerError, fmt.Errorf("%s: %w", message, err))
-			return
 		}
+		// Server-side or transient errors. These are mapped to 500 Internal Server Error.
+		a.logAndWriteHTTPError(w, http.StatusInternalServerError, fmt.Errorf("%s: %w", message, err))
+		return
 	}
 	// If it's not a gRPC error, it's likely an internal error within the launcher.
 	a.logAndWriteHTTPError(w, http.StatusInternalServerError, fmt.Errorf("%s: %w", message, err))

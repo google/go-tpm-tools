@@ -428,7 +428,7 @@ func TestCustomHandleAttestError(t *testing.T) {
 
 			_, err := io.ReadAll(w.Result().Body)
 			if err != nil {
-				t.Fatalf("failed to read response body: %v", err)
+				t.Errorf("failed to read response body: %v", err)
 			}
 		})
 	}
