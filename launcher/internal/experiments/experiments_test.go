@@ -2,29 +2,41 @@ package experiments
 
 import (
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestExperiments(t *testing.T) {
 	tests := []struct {
-		input string
+		input        string
+		expectedExps Experiments
 	}{
-		{input: "{\"EnableTestFeatureForImage\":true,\"EnableSignedContainerImage\":true,\"EnableItaVerifier\":true}"},
-		{input: "{\"EnableTestFeatureForImage\":true,\"EnableSignedContainerImage\":true,\"EnableItaVerifier\":true,\"FloatFeature\":-5.6,\"OtherTestFeatureForImage\":false}"},
+		{
+			input: "{\"EnableTestFeatureForImage\":true,\"EnableItaVerifier\":true}",
+			expectedExps: Experiments{
+				EnableTestFeatureForImage: true,
+				EnableItaVerifier:         true,
+			},
+		},
+		{
+			input: "{\"EnableTestFeatureForImage\":true,\"EnableSignedContainerImage\":true,\"EnableItaVerifier\":true,\"FloatFeature\":-5.6,\"OtherTestFeatureForImage\":false,\"EnableVerifyCS\":true}",
+			expectedExps: Experiments{
+				EnableTestFeatureForImage: true,
+				EnableItaVerifier:         true,
+				EnableVerifyCS:            true,
+			},
+		},
 	}
 
 	for i, test := range tests {
 		e, err := readJSONInput([]byte(test.input))
 
 		if err != nil {
-			t.Errorf("testcase %d: failed to create experiments object: %v", i, err)
+			t.Fatalf("testcase %d: failed to create experiments object: %v", i, err)
 		}
 
-		if e.EnableTestFeatureForImage == false {
-			t.Errorf("testcase %d: expected EnableTestFeatureForImage to be true, got false", i)
-		}
-
-		if !e.EnableItaVerifier {
-			t.Errorf("testcase %d: expected EnableItaVerifier to be true, got false", i)
+		if !cmp.Equal(e, test.expectedExps) {
+			t.Errorf("testcase %d: unexpected experiments returned: got %v, want %v", i, e, test.expectedExps)
 		}
 	}
 }
@@ -41,7 +53,7 @@ func TestExperimentsBadJson(t *testing.T) {
 	for i, test := range tests {
 		e, _ := readJSONInput([]byte(test.input))
 
-		if e.EnableTestFeatureForImage == true {
+		if e.EnableTestFeatureForImage {
 			t.Errorf("testcase %d: expected EnableTestFeatureForImage to be false, got true", i)
 		}
 	}
