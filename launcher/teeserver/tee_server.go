@@ -19,6 +19,8 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+const verifyMethodHeader = "Verify-Method"
+
 var clientErrorCodes = map[codes.Code]struct{}{
 	codes.InvalidArgument:    {},
 	codes.FailedPrecondition: {},
@@ -130,27 +132,39 @@ func (a *attestHandler) getITAToken(w http.ResponseWriter, r *http.Request) {
 	a.attest(w, r, a.clients.ITA)
 }
 
-type verifyMethodBody struct {
-	Method string `json:"verify_method"`
-}
-
-func parseVerifyMethod(headers http.Header) string {
+func (a *attestHandler) parseVerifyMethod(headers http.Header) agent.VerifyMethod {
 	if headers == nil {
-		return "NO_REQUEST"
+		a.logger.Info("No headers specified in request.")
+		return agent.VerifyUnset
 	}
 
-	methods, ok := headers["Verify-Method"]
+	methods, ok := headers[verifyMethodHeader]
 	if !ok {
-		return "NO_METHOD_HEADER"
+		a.logger.Info("No VerifyMethod specified in request.")
+		return agent.VerifyUnset
 	}
 
-	return methods[0]
+	if len(methods) != 1 {
+		a.logger.Warn(fmt.Sprintf("Unexpected number of values in VerifyMethod header: %d, expect 1", len(methods)))
+		return agent.VerifyUnset
+	}
+
+	switch methods[0] {
+	case string(agent.VerifyConfidentialSpaceMethod):
+		a.logger.Info("Parsed VerifyMethod: %v", agent.VerifyConfidentialSpaceMethod)
+		return agent.VerifyConfidentialSpaceMethod
+	case string(agent.VerifyAttestationMethod):
+		a.logger.Info("Parsed VerifyMethod: %v", agent.VerifyAttestationMethod)
+		return agent.VerifyAttestationMethod
+	default:
+		a.logger.Warn(fmt.Sprintf("Unsupported VerifyMethod: %v", methods[0]))
+	}
+
+	return agent.VerifyUnset
 }
 
 func (a *attestHandler) attest(w http.ResponseWriter, r *http.Request, client verifier.Client) {
-	verifyMethod := parseVerifyMethod(r.Header)
-	logStr := fmt.Sprintf("Parsed VerifyMethod: %v", verifyMethod)
-	a.logger.Info(logStr)
+	verifyMethod := a.parseVerifyMethod(r.Header)
 
 	switch r.Method {
 	case http.MethodGet:
@@ -159,7 +173,9 @@ func (a *attestHandler) attest(w http.ResponseWriter, r *http.Request, client ve
 			return
 		}
 
-		token, err := a.attestAgent.AttestWithClient(a.ctx, agent.AttestAgentOpts{}, client)
+		token, err := a.attestAgent.AttestWithClient(a.ctx, agent.AttestAgentOpts{
+			Method: verifyMethod,
+		}, client)
 		if err != nil {
 			a.handleAttestError(w, err, "failed to retrieve attestation service token")
 			return
@@ -197,6 +213,7 @@ func (a *attestHandler) attest(w http.ResponseWriter, r *http.Request, client ve
 
 		tok, err := a.attestAgent.AttestWithClient(a.ctx, agent.AttestAgentOpts{
 			TokenOptions: &tokenOptions,
+			Method:       verifyMethod,
 		}, client)
 
 		if err != nil {
