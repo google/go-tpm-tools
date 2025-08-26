@@ -79,6 +79,7 @@ type attestRoot interface {
 // VerifyAttestation API
 type AttestAgentOpts struct {
 	TokenOptions *models.TokenOptions
+	Method       VerifyMethod
 }
 
 type agent struct {

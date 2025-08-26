@@ -21,6 +21,8 @@ import (
 const (
 	gcaEndpoint = "/v1/token"
 	itaEndpoint = "/v1/intel/token"
+
+	verifyMethodHeader = "Verify-Method"
 )
 
 var clientErrorCodes = map[codes.Code]struct{}{
@@ -199,6 +201,7 @@ func (a *attestHandler) attest(w http.ResponseWriter, r *http.Request, client ve
 		// Do not check that TokenTypeOptions matches TokenType in the launcher.
 		opts := agent.AttestAgentOpts{
 			TokenOptions: &tokenOptions,
+			Method:       verifyMethod,
 		}
 		tok, err := a.attestAgent.AttestWithClient(a.ctx, opts, client)
 		if err != nil {
