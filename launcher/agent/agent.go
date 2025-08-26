@@ -42,6 +42,14 @@ const (
 
 type principalIDTokenFetcher func(audience string) ([][]byte, error)
 
+type VerifyMethod string
+
+const (
+	VerifyUnset                   VerifyMethod = "UNSET"
+	VerifyConfidentialSpaceMethod VerifyMethod = "VerifyConfidentialSpace"
+	VerifyAttestationMethod       VerifyMethod = "VerifyAttestation"
+)
+
 // AttestationAgent is an agent that interacts with GCE's Attestation Service
 // to Verify an attestation message. It is an interface instead of a concrete
 // struct to make testing easier.
@@ -67,6 +75,7 @@ type attestRoot interface {
 // VerifyAttestation API
 type AttestAgentOpts struct {
 	TokenOptions *models.TokenOptions
+	Method       VerifyMethod
 }
 
 type agent struct {
