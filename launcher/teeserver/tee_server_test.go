@@ -60,8 +60,6 @@ func (f fakeAttestationAgent) Close() error {
 func TestGetDefaultToken(t *testing.T) {
 	testTokenContent := "test token"
 
-	// An empty attestHandler is fine for now as it is not being used
-	// in the handler.
 	ah := attestHandler{
 		logger: logging.SimpleLogger(),
 		clients: &AttestClients{
@@ -85,8 +83,8 @@ func TestGetDefaultToken(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Errorf("got return code: %d, want: %d", w.Code, http.StatusOK)
 	}
-	if string(data) != testTokenContent {
-		t.Errorf("got content: %v, want: %s", testTokenContent, string(data))
+	if diff := cmp.Diff(testTokenContent, string(data)); diff != "" {
+		t.Errorf("getToken() response body mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -117,8 +115,8 @@ func TestGetDefaultTokenServerError(t *testing.T) {
 		t.Errorf("got return code: %d, want: %d", w.Code, http.StatusInternalServerError)
 	}
 	expectedError := "failed to retrieve attestation service token: internal server error from agent"
-	if string(data) != expectedError {
-		t.Errorf("got content: %q, want: %q", string(data), expectedError)
+	if diff := cmp.Diff(expectedError, string(data)); diff != "" {
+		t.Errorf("getToken() response body mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -201,8 +199,6 @@ func TestCustomToken(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		// An empty attestHandler is fine for now as it is not being used
-		// in the handler.
 		ah := attestHandler{
 			logger: logging.SimpleLogger(),
 			clients: &AttestClients{
