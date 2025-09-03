@@ -15,7 +15,20 @@ import (
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/google/go-tpm-tools/verifier/models"
 	"github.com/google/go-tpm-tools/verifier/util"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
+
+var clientErrorCodes = map[codes.Code]struct{}{
+	codes.InvalidArgument:    {},
+	codes.FailedPrecondition: {},
+	codes.PermissionDenied:   {},
+	codes.Unauthenticated:    {},
+	codes.NotFound:           {},
+	codes.Aborted:            {},
+	codes.OutOfRange:         {},
+	codes.Canceled:           {},
+}
 
 // AttestClients contains clients for supported verifier services that can be used to
 // get attestation tokens.
@@ -120,15 +133,13 @@ func (a *attestHandler) attest(w http.ResponseWriter, r *http.Request, client ve
 	switch r.Method {
 	case http.MethodGet:
 		if err := a.attestAgent.Refresh(a.ctx); err != nil {
-			errStr := fmt.Sprintf("failed to refresh attestation agent: %v", err)
-			a.logAndWriteError(errStr, http.StatusInternalServerError, w)
+			a.logAndWriteHTTPError(w, http.StatusInternalServerError, fmt.Errorf("failed to refresh attestation agent: %w", err))
 			return
 		}
 
 		token, err := a.attestAgent.AttestWithClient(a.ctx, agent.AttestAgentOpts{}, client)
 		if err != nil {
-			errStr := fmt.Sprintf("failed to retrieve attestation service token: %v", err)
-			a.logAndWriteError(errStr, http.StatusInternalServerError, w)
+			a.handleAttestError(w, err, "failed to retrieve attestation service token")
 			return
 		}
 
@@ -165,7 +176,8 @@ func (a *attestHandler) attest(w http.ResponseWriter, r *http.Request, client ve
 			TokenOptions: &tokenOptions,
 		}, client)
 		if err != nil {
-			a.logAndWriteHTTPError(w, http.StatusBadRequest, err)
+
+			a.handleAttestError(w, err, "failed to retrieve custom attestation service token")
 			return
 		}
 
@@ -202,4 +214,21 @@ func (s *TeeServer) Shutdown(ctx context.Context) error {
 		return err2
 	}
 	return nil
+}
+
+func (a *attestHandler) handleAttestError(w http.ResponseWriter, err error, message string) {
+	st, ok := status.FromError(err)
+	if ok {
+		if _, exists := clientErrorCodes[st.Code()]; exists {
+			// User errors, like invalid arguments. Map user errors to 400 Bad Request.
+			a.logAndWriteHTTPError(w, http.StatusBadRequest, fmt.Errorf("%s: %w", message, err))
+			return
+		}
+		// Server-side or transient errors. Map user errors 500 Internal Server Error.
+		a.logAndWriteHTTPError(w, http.StatusInternalServerError, fmt.Errorf("%s: %w", message, err))
+		return
+	}
+	// If it's not a gRPC error, it's likely an internal error within the launcher.
+	// Map user errors 500 Internal Server Error
+	a.logAndWriteHTTPError(w, http.StatusInternalServerError, fmt.Errorf("%s: %w", message, err))
 }
