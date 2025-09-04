@@ -189,26 +189,6 @@ func convertRequestToREST(request verifier.VerifyAttestationRequest) *ccpb.Verif
 		idTokens[i] = string(token)
 	}
 
-	quotes := make([]*ccpb.TpmAttestation_Quote, len(request.Attestation.GetQuotes()))
-	for i, quote := range request.Attestation.GetQuotes() {
-		pcrVals := map[int32][]byte{}
-		for idx, val := range quote.GetPcrs().GetPcrs() {
-			pcrVals[int32(idx)] = val
-		}
-
-		quotes[i] = &ccpb.TpmAttestation_Quote{
-			RawQuote:     quote.GetQuote(),
-			RawSignature: quote.GetRawSig(),
-			HashAlgo:     int32(quote.GetPcrs().GetHash()),
-			PcrValues:    pcrVals,
-		}
-	}
-
-	certs := make([][]byte, len(request.Attestation.GetIntermediateCerts()))
-	for i, cert := range request.Attestation.GetIntermediateCerts() {
-		certs[i] = cert
-	}
-
 	signatures := make([]*ccpb.ContainerImageSignature, len(request.ContainerImageSignatures))
 	for i, sig := range request.ContainerImageSignatures {
 		signatures[i] = &ccpb.ContainerImageSignature{
@@ -220,13 +200,6 @@ func convertRequestToREST(request verifier.VerifyAttestationRequest) *ccpb.Verif
 	verifyReq := &ccpb.VerifyAttestationRequest{
 		GcpCredentials: &ccpb.GcpCredentials{
 			ServiceAccountIdTokens: idTokens,
-		},
-		TpmAttestation: &ccpb.TpmAttestation{
-			Quotes:            quotes,
-			TcgEventLog:       request.Attestation.GetEventLog(),
-			CanonicalEventLog: request.Attestation.GetCanonicalEventLog(),
-			AkCert:            request.Attestation.GetAkCert(),
-			CertChain:         certs,
 		},
 		ConfidentialSpaceInfo: &ccpb.ConfidentialSpaceInfo{
 			SignedEntities: []*ccpb.SignedEntity{{ContainerImageSignatures: signatures}},
