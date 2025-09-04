@@ -135,9 +135,10 @@ func TestCustomToken(t *testing.T) {
 				"token_type": "OIDC"
 				}`,
 			attestWithClientFunc: func(context.Context, agent.AttestAgentOpts, verifier.Client) ([]byte, error) {
-				return []byte{}, nil
+				t.Errorf("This method should not be called")
+				return nil, nil
 			},
-			want: http.StatusOK,
+			want: http.StatusBadRequest,
 		},
 		{
 			testName: "TestRequestFailurePassedToCaller",
