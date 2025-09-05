@@ -12,7 +12,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-configfs-tsm/configfs/fakertmr"
 	configfstsmrtmr "github.com/google/go-configfs-tsm/rtmr"
-	"github.com/google/go-eventlog/proto/state"
+	gepb "github.com/google/go-eventlog/proto/state"
 	"github.com/google/go-eventlog/register"
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
@@ -602,7 +602,6 @@ var CGKE251000 = eventLog{
 }
 
 func TestParseEventLogs(t *testing.T) {
-	sbatErrorStr := "asn1: structure error: tags don't match (16 vs {class:0 tag:24 length:10 isCompound:true})"
 	logs := []struct {
 		eventLog
 		name string
@@ -615,10 +614,8 @@ func TestParseEventLogs(t *testing.T) {
 		{Debian10GCE, "Debian10GCE", VerifyOpts{Loader: UnsupportedLoader}, nil},
 		{Rhel8GCE, "Rhel8GCE", VerifyOpts{Loader: GRUB}, nil},
 		{UbuntuAmdSevGCE, "UbuntuAmdSevGCE", VerifyOpts{Loader: GRUB}, nil},
-		// TODO: remove once the fix is pulled in
-		// https://github.com/google/go-attestation/pull/222
-		{Ubuntu2104NoDbxGCE, "Ubuntu2104NoDbxGCE", VerifyOpts{Loader: GRUB}, []string{sbatErrorStr}},
-		{Ubuntu2104NoSecureBootGCE, "Ubuntu2104NoSecureBootGCE", VerifyOpts{Loader: GRUB}, []string{sbatErrorStr}},
+		{Ubuntu2104NoDbxGCE, "Ubuntu2104NoDbxGCE", VerifyOpts{Loader: GRUB}, nil},
+		{Ubuntu2104NoSecureBootGCE, "Ubuntu2104NoSecureBootGCE", VerifyOpts{Loader: GRUB}, nil},
 		// This event log has a SecureBoot variable length of 0.
 		{ArchLinuxWorkstation, "ArchLinuxWorkstation", VerifyOpts{Loader: UnsupportedLoader, AllowEFIAppBeforeCallingEvent: true}, archLinuxKnownParsingFailures},
 		{COS85AmdSev, "COS85AmdSev", VerifyOpts{Loader: GRUB}, nil},
@@ -637,15 +634,21 @@ func TestParseEventLogs(t *testing.T) {
 			subtestName := fmt.Sprintf("%s-%s", log.name, hashName)
 			t.Run(subtestName, func(t *testing.T) {
 				if _, err := parsePCClientEventLog(rawLog, bank, log.opts); err != nil {
-					gErr, ok := err.(*GroupedError)
-					if !ok {
-						t.Errorf("ParseMachineState should return a GroupedError")
+					if uw, ok := err.(interface{ Unwrap() []error }); ok {
+						errs := uw.Unwrap()
+						for _, err := range errs {
+							for _, expectedErr := range log.errorSubstrs {
+								if !strings.Contains(err.Error(), expectedErr) {
+									t.Errorf("got unexpected error when parsing eventlog: %v", expectedErr)
+								}
+							}
+						}
+					} else {
+						t.Errorf("got unexpected error when unwrapping err: %v", err)
 					}
-					if len(log.errorSubstrs) == 0 {
-						t.Errorf("expected no errors in GroupedError, received (%v)", err)
-					}
-					if !gErr.containsKnownSubstrings(log.errorSubstrs) {
-						t.Errorf("failed to parse and replay log: %v", err)
+				} else {
+					if log.errorSubstrs != nil {
+						t.Errorf("expected errors when parsing %v, received nil", log.errorSubstrs)
 					}
 				}
 			})
@@ -653,7 +656,7 @@ func TestParseEventLogs(t *testing.T) {
 	}
 }
 
-func TestParseMachineStateReplayFail(t *testing.T) {
+func TestParseMachineStateFail(t *testing.T) {
 	badPcrs := pb.PCRs{Hash: pb.HashAlgo_SHA1}
 	pcrMap := make(map[uint32][]byte)
 	pcrMap[0] = []byte{0, 0, 0, 0}
@@ -661,11 +664,7 @@ func TestParseMachineStateReplayFail(t *testing.T) {
 
 	_, err := parsePCClientEventLog(Debian10GCE.RawLog, &badPcrs, VerifyOpts{Loader: UnsupportedLoader})
 	if err == nil {
-		t.Errorf("ParseMachineState should fail to replay the event log")
-	}
-	_, ok := err.(*GroupedError)
-	if !ok {
-		t.Errorf("ParseMachineState should return a GroupedError")
+		t.Errorf("parsePCClientEventLog should fail to replay the event log")
 	}
 }
 
@@ -798,7 +797,7 @@ func TestParseSecureBootState(t *testing.T) {
 }
 
 func convertToPCRBank(t *testing.T, pcrs *pb.PCRs) register.PCRBank {
-	pcrBank := register.PCRBank{TCGHashAlgo: state.HashAlgo(pcrs.Hash)}
+	pcrBank := register.PCRBank{TCGHashAlgo: gepb.HashAlgo(pcrs.Hash)}
 	digestAlg, err := pcrBank.TCGHashAlgo.CryptoHash()
 	if err != nil {
 		t.Fatal(err)
@@ -1102,6 +1101,240 @@ func TestParsingCELEventLog(t *testing.T) {
 	}
 }
 
+func TestMatchWellKnownCert(t *testing.T) {
+	tests := []struct {
+		name    string
+		cert    *gepb.Certificate
+		want    attestpb.WellKnownCertificate
+		wantErr bool
+	}{
+		{
+			name: "Well-known certificate",
+			cert: &gepb.Certificate{
+				Representation: &gepb.Certificate_WellKnown{
+					WellKnown: gepb.WellKnownCertificate_GCE_DEFAULT_PK,
+				}},
+			want:    attestpb.WellKnownCertificate_GCE_DEFAULT_PK,
+			wantErr: false,
+		},
+		{
+			name: "Unknown well-known certificate",
+			cert: &gepb.Certificate{
+				Representation: &gepb.Certificate_WellKnown{
+					WellKnown: gepb.WellKnownCertificate_UNKNOWN,
+				}},
+			want:    attestpb.WellKnownCertificate_UNKNOWN,
+			wantErr: true,
+		},
+		{
+			name: "Certificate with DER",
+			cert: &gepb.Certificate{
+				Representation: &gepb.Certificate_Der{
+					Der: []byte("some DER bytes"),
+				}},
+			want:    attestpb.WellKnownCertificate_UNKNOWN,
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := matchWellKnownCert(tt.cert)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("matchWellKnownCert() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if got != tt.want {
+				t.Errorf("matchWellKnownCert() got = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestConvertToPbDatabase(t *testing.T) {
+	tests := []struct {
+		name   string
+		gepbdb *gepb.Database
+		want   *attestpb.Database
+	}{
+		{
+			name:   "Empty database",
+			gepbdb: &gepb.Database{},
+			want: &attestpb.Database{
+				Certs:  []*attestpb.Certificate{},
+				Hashes: [][]byte{},
+			},
+		},
+		{
+			name: "Database with DER certificate",
+			gepbdb: &gepb.Database{
+				Certs: []*gepb.Certificate{
+					{
+						Representation: &gepb.Certificate_Der{
+							Der: []byte("test_der_cert"),
+						},
+					},
+				},
+				Hashes: [][]byte{[]byte("test_hash")},
+			},
+			want: &attestpb.Database{
+				Certs: []*attestpb.Certificate{
+					{
+						Representation: &attestpb.Certificate_Der{
+							Der: []byte("test_der_cert"),
+						},
+					},
+				},
+				Hashes: [][]byte{[]byte("test_hash")},
+			},
+		},
+		{
+			name: "Database with well-known certificate",
+			gepbdb: &gepb.Database{
+				Certs: []*gepb.Certificate{
+					{
+						Representation: &gepb.Certificate_WellKnown{
+							WellKnown: gepb.WellKnownCertificate_GCE_DEFAULT_PK,
+						},
+					},
+				},
+			},
+			want: &attestpb.Database{
+				Certs: []*attestpb.Certificate{
+					{
+						Representation: &attestpb.Certificate_WellKnown{
+							WellKnown: attestpb.WellKnownCertificate_GCE_DEFAULT_PK,
+						},
+					},
+				},
+				Hashes: [][]byte{},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := convertToPbDatabase(tt.gepbdb)
+			if diff := cmp.Diff(got, tt.want, protocmp.Transform()); diff != "" {
+				t.Errorf("unexpected convertToPbDatabase diff: %s", diff)
+			}
+		})
+	}
+}
+
+func TestConvertToMachineState(t *testing.T) {
+	tests := []struct {
+		name   string
+		gepbdb *gepb.FirmwareLogState
+		want   *attestpb.MachineState
+	}{
+		{
+			name:   "Empty state",
+			gepbdb: &gepb.FirmwareLogState{},
+			want:   &attestpb.MachineState{},
+		},
+		{
+			name: "Full state",
+			gepbdb: &gepb.FirmwareLogState{
+				Platform: &gepb.PlatformState{
+					Technology: gepb.GCEConfidentialTechnology_AMD_SEV,
+					Firmware:   &gepb.PlatformState_GceVersion{GceVersion: 1},
+				},
+				SecureBoot: &gepb.SecureBootState{
+					Enabled: true,
+					Db: &gepb.Database{
+						Certs: []*gepb.Certificate{
+							{Representation: &gepb.Certificate_Der{Der: []byte("db_cert_der")}},
+						},
+					},
+					Kek: &gepb.Database{
+						Certs: []*gepb.Certificate{
+							{Representation: &gepb.Certificate_WellKnown{WellKnown: gepb.WellKnownCertificate_MS_THIRD_PARTY_KEK_CA_2011}},
+						},
+					},
+				},
+				RawEvents: []*gepb.Event{{
+					PcrIndex: 0,
+					Data:     []byte("12345678"),
+					Digest:   []byte("aabbccdd"),
+				}},
+				Efi: &gepb.EfiState{
+					Apps: []*gepb.EfiApp{
+						{
+							Digest: []byte("aabbccdd"),
+						},
+					},
+				},
+				Hash: gepb.HashAlgo_SHA256,
+				Grub: &gepb.GrubState{
+					Files: []*gepb.GrubFile{{Digest: []byte("aabbcc")}},
+				},
+				LinuxKernel: &gepb.LinuxKernelState{
+					CommandLine: "abcdefge",
+				},
+				LogType: gepb.LogType_LOG_TYPE_TCG2, // this will be ignored by the conversion
+			},
+			want: &attestpb.MachineState{
+				Platform: &attestpb.PlatformState{
+					Technology: attestpb.GCEConfidentialTechnology_AMD_SEV,
+					Firmware:   &attestpb.PlatformState_GceVersion{GceVersion: 1},
+				},
+				SecureBoot: &attestpb.SecureBootState{
+					Enabled: true,
+					Db: &attestpb.Database{
+						Certs: []*attestpb.Certificate{
+							{Representation: &attestpb.Certificate_Der{Der: []byte("db_cert_der")}},
+						},
+					},
+					Kek: &attestpb.Database{
+						Certs: []*attestpb.Certificate{
+							{Representation: &attestpb.Certificate_WellKnown{WellKnown: attestpb.WellKnownCertificate_MS_THIRD_PARTY_KEK_CA_2011}},
+						},
+					},
+				},
+				RawEvents: []*attestpb.Event{{
+					PcrIndex: 0,
+					Data:     []byte("12345678"),
+					Digest:   []byte("aabbccdd"),
+				}},
+				Efi: &attestpb.EfiState{
+					Apps: []*attestpb.EfiApp{
+						{
+							Digest: []byte("aabbccdd"),
+						},
+					},
+				},
+				Hash: pb.HashAlgo_SHA256,
+				Grub: &attestpb.GrubState{
+					Files: []*attestpb.GrubFile{{Digest: []byte("aabbcc")}},
+				},
+				LinuxKernel: &attestpb.LinuxKernelState{
+					CommandLine: "abcdefge",
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ConvertToMachineState(tt.gepbdb)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if diff := cmp.Diff(got, tt.want, protocmp.Transform()); diff != "" {
+				t.Errorf("unexpected converted machinestate diff: %s", diff)
+			}
+
+			// convert the result machine state back to a firmware state for safety check
+			ms, err := ConvertToFirmwareState(got)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// ignore the log_type as it is lost during the conversion
+			if diff := cmp.Diff(ms, tt.gepbdb, protocmp.Transform(), protocmp.IgnoreFields(&gepb.FirmwareLogState{}, "log_type")); diff != "" {
+				t.Errorf("unexpected inverse converted machinestate diff: %s", diff)
+			}
+		})
+	}
+}
+
 func generateNonCosCelEvent(hashAlgoList []crypto.Hash) (cel.Record, error) {
 	randRecord := cel.Record{}
 	randRecord.RecNum = 0
@@ -1161,45 +1394,6 @@ func TestParseLinuxKernelState(t *testing.T) {
 	}
 }
 
-func TestNullTerminatedDataDigest(t *testing.T) {
-	rawdata := []byte("123456")
-	rawdataNullTerminated := []byte("123456\x00")
-	rawdataModifyLastByte := []byte("123456\xff")
-	hash := crypto.SHA256
-	hasher := hash.New()
-	hasher.Write(rawdata)
-	rawDigest := hasher.Sum(nil)
-	hasher.Reset()
-	hasher.Write(rawdataNullTerminated)
-	nullTerminatedDigest := hasher.Sum(nil)
-	hasher.Reset()
-
-	if err := verifyDataDigest(hasher, rawdata, rawDigest); err != nil {
-		t.Error(err)
-	}
-	if err := verifyDataDigest(hasher, rawdata, nullTerminatedDigest); err == nil {
-		t.Errorf("non null-terminated data should not match the null-terminated digest")
-	}
-
-	// "rawdata + '\x00'" can be verified with digest("rawdata") as well as digest("rawdata + '\x00'")
-	if err := verifyNullTerminatedDataDigest(hasher, rawdataNullTerminated, nullTerminatedDigest); err != nil {
-		t.Error(err)
-	}
-	if err := verifyNullTerminatedDataDigest(hasher, rawdataNullTerminated, rawDigest); err != nil {
-		t.Error(err)
-	}
-
-	if err := verifyNullTerminatedDataDigest(hasher, rawdata, nullTerminatedDigest); err == nil {
-		t.Errorf("non null-terminated data should always fail")
-	}
-	if err := verifyNullTerminatedDataDigest(hasher, rawdataModifyLastByte, nullTerminatedDigest); err == nil {
-		t.Errorf("manipulated null terminated data should fail")
-	}
-	if err := verifyNullTerminatedDataDigest(hasher, []byte{}, []byte{}); err == nil {
-		t.Errorf("len() == 0 should always fail")
-	}
-}
-
 func TestParseGrubState(t *testing.T) {
 	logs := []struct {
 		eventLog
@@ -1245,16 +1439,12 @@ func TestParseGrubStateFail(t *testing.T) {
 		hashName := pb.HashAlgo_name[int32(bank.Hash)]
 		subtestName := fmt.Sprintf("GlinuxNoSecureBootLaptop-%s", hashName)
 		t.Run(subtestName, func(t *testing.T) {
-			_, err := parsePCClientEventLog(eventlog.RawLog, bank, VerifyOpts{Loader: GRUB})
-			if err == nil {
-				t.Error("expected error when parsing GRUB state")
-			}
-			gErr, ok := err.(*GroupedError)
-			if !ok {
-				t.Errorf("ParseMachineState should return a GroupedError")
-			}
-			if !gErr.containsSubstring("no GRUB measurements found") {
-				t.Errorf("expected GroupedError (%s) to contain no GRUB measurements error", err)
+			if _, err := parsePCClientEventLog(eventlog.RawLog, bank, VerifyOpts{Loader: GRUB}); err == nil {
+				t.Errorf("expected error when parsing GRUB state")
+			} else {
+				if !strings.Contains(err.Error(), "no GRUB measurements found") {
+					t.Errorf("expected error containing 'no GRUB measurements found'")
+				}
 			}
 		})
 	}
@@ -1306,38 +1496,6 @@ func TestParseEfiState(t *testing.T) {
 				}
 			})
 		}
-	}
-}
-
-func TestGetGrubStateWithModifiedNullTerminator(t *testing.T) {
-	// Choose an eventlog with GRUB.
-	eventlog := UbuntuAmdSevGCE
-	// Just use the SHA256 bank.
-	events, err := parseReplayHelper(eventlog.RawLog, eventlog.Banks[1])
-	if err != nil {
-		t.Fatal(err)
-	}
-	cryptoHash, _ := tpm2.Algorithm(eventlog.Banks[1].Hash).Hash()
-
-	// Make sure the original events can parse successfully.
-	pbEvents := convertToPbEvents(cryptoHash, events)
-	if _, err := getGrubState(cryptoHash, pbEvents); err != nil {
-		t.Fatal(err)
-	}
-
-	// Change the null terminator.
-	for _, e := range events {
-		if e.Index == 8 {
-			if e.Data[len(e.Data)-1] == '\x00' {
-				e.Data[len(e.Data)-1] = '\xff'
-			}
-		}
-	}
-
-	// Parse again, make sure it will fail.
-	pbEvents = convertToPbEvents(cryptoHash, events)
-	if _, err := getGrubState(cryptoHash, pbEvents); err == nil {
-		t.Error("Expected getGrubState to fail after modifying the null terminator")
 	}
 }
 

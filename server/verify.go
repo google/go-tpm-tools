@@ -66,6 +66,10 @@ type VerifyOpts struct {
 	// "Calling EFI Application from Boot Option". This option is useful when
 	// the host platform loads EFI Applications unrelated to OS boot.
 	AllowEFIAppBeforeCallingEvent bool
+	// AllowEmptySBVar allows the SecureBoot variable to be empty in addition
+	// to length 1 (0 or 1) during eventlog parsing.
+	// This can be used when the SecureBoot variable is not initialized.
+	AllowEmptySBVar bool
 }
 
 // Bootloader refers to the second-stage bootloader that loads and transfers
