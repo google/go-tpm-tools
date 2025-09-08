@@ -14,6 +14,7 @@ import (
 type Client interface {
 	CreateChallenge(ctx context.Context) (*Challenge, error)
 	VerifyAttestation(ctx context.Context, request VerifyAttestationRequest) (*VerifyAttestationResponse, error)
+	VerifyConfidentialSpace(ctx context.Context, request VerifyAttestationRequest) (*VerifyAttestationResponse, error)
 }
 
 // Challenge is the response for CreateChallenge. It is used in the
