@@ -95,8 +95,9 @@ func (a *attestHandler) logAndWriteError(errStr string, status int, w http.Respo
 	w.Write([]byte(errStr))
 }
 
-// getDefaultToken handles the gets a token with the default audience for Confidential Space
-// and no nonce.
+// getDefaultToken handles the request to get the default OIDC token.
+// For now this function will just read the content of the file and return.
+// Later, this function can use attestation agent to get a token directly.
 func (a *attestHandler) getToken(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html")
 
@@ -146,6 +147,7 @@ func (a *attestHandler) attest(w http.ResponseWriter, r *http.Request, client ve
 		w.WriteHeader(http.StatusOK)
 		w.Write(token)
 		return
+
 	case http.MethodPost:
 		var tokenOptions models.TokenOptions
 		decoder := json.NewDecoder(r.Body)
@@ -175,8 +177,8 @@ func (a *attestHandler) attest(w http.ResponseWriter, r *http.Request, client ve
 		tok, err := a.attestAgent.AttestWithClient(a.ctx, agent.AttestAgentOpts{
 			TokenOptions: &tokenOptions,
 		}, client)
-		if err != nil {
 
+		if err != nil {
 			a.handleAttestError(w, err, "failed to retrieve custom attestation service token")
 			return
 		}
