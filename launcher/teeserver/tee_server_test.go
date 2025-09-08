@@ -31,6 +31,10 @@ func (f *fakeVerifierClient) VerifyAttestation(_ context.Context, _ verifier.Ver
 	return nil, fmt.Errorf("unimplemented")
 }
 
+func (f *fakeVerifierClient) VerifyConfidentialSpace(_ context.Context, _ verifier.VerifyAttestationRequest) (*verifier.VerifyAttestationResponse, error) {
+	return nil, fmt.Errorf("unimplemented")
+}
+
 type fakeAttestationAgent struct {
 	measureEventFunc     func(cel.Content) error
 	attestFunc           func(context.Context, agent.AttestAgentOpts) ([]byte, error)
