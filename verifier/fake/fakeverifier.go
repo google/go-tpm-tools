@@ -107,6 +107,11 @@ func (fc *fakeClient) VerifyAttestation(_ context.Context, req verifier.VerifyAt
 	return &response, nil
 }
 
+// VerifyConfidentialSpace is identical in behavior to VerifyAttestation, necessary for implementing verifier.Client.
+func (fc *fakeClient) VerifyConfidentialSpace(ctx context.Context, req verifier.VerifyAttestationRequest) (*verifier.VerifyAttestationResponse, error) {
+	return fc.VerifyAttestation(ctx, req)
+}
+
 type payload struct {
 	Optional map[string]any `json:"optional"` // Optional represents optional metadata about the image, and its value shouldn't contain any "=" signs.
 }

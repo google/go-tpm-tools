@@ -143,6 +143,26 @@ func (c *restClient) VerifyAttestation(ctx context.Context, request verifier.Ver
 	return convertResponseFromREST(response)
 }
 
+func (c *restClient) VerifyConfidentialSpace(ctx context.Context, request verifier.VerifyAttestationRequest) (*verifier.VerifyAttestationResponse, error) {
+	if request.Challenge == nil {
+		return nil, fmt.Errorf("nil value provided in challenge")
+	}
+
+	if request.Attestation == nil && request.TDCCELAttestation == nil {
+		return nil, fmt.Errorf("neither TPM nor TDX attestation is present")
+	}
+
+	csReq := convertCSRequestToREST(request)
+	csReq.Challenge = request.Challenge.Name
+
+	response, err := c.v1Client.VerifyConfidentialSpace(ctx, csReq)
+	if err != nil {
+		return nil, fmt.Errorf("calling v1.VerifyConfidentialSpace in %v: %w", c.location.LocationId, err)
+	}
+
+	return convertCSResponseFromREST(response), nil
+}
+
 var encoding = base64.StdEncoding
 
 func convertChallengeFromREST(chal *ccpb.Challenge) (*verifier.Challenge, error) {
@@ -326,26 +346,103 @@ func convertTDXProtoToREST(att *tpb.QuoteV4) (*ccpb.VerifyAttestationRequest_TdC
 	}, nil
 }
 
-func setAwsPrincipalTagOptions(requestTokenOptions *models.TokenOptions) *ccpb.TokenOptions_AwsPrincipalTagsOptions_ {
+func setAwsPrincipalTagOptions(requestTokenOptions *models.TokenOptions) *ccpb.TokenOptions_AwsPrincipalTagsOptions {
 	if requestTokenOptions.PrincipalTagOptions == nil {
 		return nil
 	}
-	options := &ccpb.TokenOptions_AwsPrincipalTagsOptions_{
-		AwsPrincipalTagsOptions: &ccpb.TokenOptions_AwsPrincipalTagsOptions{},
+	options := &ccpb.TokenOptions_AwsPrincipalTagsOptions{
+		AwsPrincipalTagsOptions: &ccpb.AwsPrincipalTagsOptions{},
 	}
 
 	if requestTokenOptions.PrincipalTagOptions.AllowedPrincipalTags == nil {
 		return options
 	}
-	options.AwsPrincipalTagsOptions.AllowedPrincipalTags = &ccpb.TokenOptions_AwsPrincipalTagsOptions_AllowedPrincipalTags{}
+	options.AwsPrincipalTagsOptions.AllowedPrincipalTags = &ccpb.AwsPrincipalTagsOptions_AllowedPrincipalTags{}
 
 	if requestTokenOptions.PrincipalTagOptions.AllowedPrincipalTags.ContainerImageSignatures == nil {
 		return options
 	}
 
-	options.AwsPrincipalTagsOptions.GetAllowedPrincipalTags().ContainerImageSignatures = &ccpb.TokenOptions_AwsPrincipalTagsOptions_AllowedPrincipalTags_ContainerImageSignatures{
+	options.AwsPrincipalTagsOptions.GetAllowedPrincipalTags().ContainerImageSignatures = &ccpb.AwsPrincipalTagsOptions_AllowedPrincipalTags_ContainerImageSignatures{
 		KeyIds: requestTokenOptions.PrincipalTagOptions.AllowedPrincipalTags.ContainerImageSignatures.KeyIDs,
 	}
 
 	return options
+}
+
+func convertCSRequestToREST(request verifier.VerifyAttestationRequest) *ccpb.VerifyConfidentialSpaceRequest {
+	// Use convertRequestToREST to avoid duplicating conversion logic.
+	verifyAttRequest := convertRequestToREST(request)
+
+	csReq := &ccpb.VerifyConfidentialSpaceRequest{
+		Challenge:      verifyAttRequest.Challenge,
+		GcpCredentials: verifyAttRequest.GcpCredentials,
+		SignedEntities: verifyAttRequest.ConfidentialSpaceInfo.SignedEntities,
+	}
+
+	if request.TDCCELAttestation != nil { // TDX Attestation.
+		csReq.TeeAttestation = &ccpb.VerifyConfidentialSpaceRequest_TdCcel{
+			TdCcel: verifyAttRequest.GetTdCcel(),
+		}
+
+		// Set AK cert info.
+		csReq.GceShieldedIdentity = &ccpb.GceShieldedIdentity{
+			AkCert:      verifyAttRequest.TpmAttestation.AkCert,
+			AkCertChain: verifyAttRequest.TpmAttestation.CertChain,
+		}
+	} else { // TPM Attestation.
+		csReq.TeeAttestation = &ccpb.VerifyConfidentialSpaceRequest_TpmAttestation{
+			TpmAttestation: verifyAttRequest.TpmAttestation,
+		}
+	}
+
+	csReq.Options = convertToCSOpts(verifyAttRequest.TokenOptions)
+
+	return csReq
+}
+
+func convertToCSOpts(tokenOpts *ccpb.TokenOptions) *ccpb.VerifyConfidentialSpaceRequest_ConfidentialSpaceOptions {
+	if tokenOpts == nil {
+		return &ccpb.VerifyConfidentialSpaceRequest_ConfidentialSpaceOptions{
+			TokenProfile: ccpb.TokenProfile_TOKEN_PROFILE_DEFAULT_EAT,
+		}
+	}
+
+	csOpts := &ccpb.VerifyConfidentialSpaceRequest_ConfidentialSpaceOptions{
+		Audience: tokenOpts.Audience,
+		Nonce:    tokenOpts.Nonce,
+	}
+
+	switch tokenOpts.TokenType {
+	case ccpb.TokenType_TOKEN_TYPE_OIDC:
+		csOpts.SignatureType = ccpb.SignatureType_SIGNATURE_TYPE_OIDC
+		csOpts.TokenProfile = ccpb.TokenProfile_TOKEN_PROFILE_DEFAULT_EAT
+
+	case ccpb.TokenType_TOKEN_TYPE_PKI:
+		csOpts.SignatureType = ccpb.SignatureType_SIGNATURE_TYPE_PKI
+		csOpts.TokenProfile = ccpb.TokenProfile_TOKEN_PROFILE_DEFAULT_EAT
+
+	case ccpb.TokenType_TOKEN_TYPE_AWS_PRINCIPALTAGS, ccpb.TokenType_TOKEN_TYPE_LIMITED_AWS:
+		csOpts.SignatureType = ccpb.SignatureType_SIGNATURE_TYPE_OIDC
+		csOpts.TokenProfile = ccpb.TokenProfile_TOKEN_PROFILE_AWS
+
+		if tokenOpts.TokenTypeOptions != nil {
+			csOpts.TokenProfileOptions = &ccpb.VerifyConfidentialSpaceRequest_ConfidentialSpaceOptions_AwsPrincipalTagsOptions{
+				AwsPrincipalTagsOptions: tokenOpts.GetAwsPrincipalTagsOptions(),
+			}
+		}
+	default:
+		// TokenProfile must be specified.
+		csOpts.TokenProfile = ccpb.TokenProfile_TOKEN_PROFILE_DEFAULT_EAT
+	}
+
+	return csOpts
+}
+
+func convertCSResponseFromREST(resp *ccpb.VerifyConfidentialSpaceResponse) *verifier.VerifyAttestationResponse {
+	token := []byte(resp.GetAttestationToken())
+	return &verifier.VerifyAttestationResponse{
+		ClaimsToken: token,
+		PartialErrs: resp.PartialErrors,
+	}
 }

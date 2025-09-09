@@ -3,27 +3,33 @@ package rest
 import (
 	"testing"
 
-	ccpb "cloud.google.com/go/confidentialcomputing/apiv1/confidentialcomputingpb"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/google/go-tpm-tools/proto/tpm"
+	"github.com/google/go-tpm-tools/verifier"
+	"github.com/google/go-tpm-tools/verifier/models"
+	"github.com/google/uuid"
+	"google.golang.org/genproto/googleapis/rpc/status"
+	"google.golang.org/protobuf/encoding/prototext"
+	"google.golang.org/protobuf/testing/protocmp"
+
+	ccpb "cloud.google.com/go/confidentialcomputing/apiv1/confidentialcomputingpb"
 	sabi "github.com/google/go-sev-guest/abi"
 	spb "github.com/google/go-sev-guest/proto/sevsnp"
 	tabi "github.com/google/go-tdx-guest/abi"
 	tpb "github.com/google/go-tdx-guest/proto/tdx"
 	tgtestdata "github.com/google/go-tdx-guest/testing/testdata"
-	"github.com/google/go-tpm-tools/verifier"
-	"github.com/google/go-tpm-tools/verifier/models"
-	"github.com/google/uuid"
-	"google.golang.org/protobuf/encoding/prototext"
-	"google.golang.org/protobuf/testing/protocmp"
+	attestpb "github.com/google/go-tpm-tools/proto/attest"
 )
 
 var (
 	tokenOptionsCompareOpts = []cmp.Option{
 		cmpopts.IgnoreUnexported(ccpb.TokenOptions{}),
 		cmpopts.IgnoreUnexported(ccpb.TokenOptions_AwsPrincipalTagsOptions{}),
-		cmpopts.IgnoreUnexported(ccpb.TokenOptions_AwsPrincipalTagsOptions_AllowedPrincipalTags{}),
-		cmpopts.IgnoreUnexported(ccpb.TokenOptions_AwsPrincipalTagsOptions_AllowedPrincipalTags_ContainerImageSignatures{}),
+		cmpopts.IgnoreUnexported(ccpb.AwsPrincipalTagsOptions{}),
+		cmpopts.IgnoreUnexported(ccpb.AwsPrincipalTagsOptions_AllowedPrincipalTags{}),
+		cmpopts.IgnoreUnexported(ccpb.AwsPrincipalTagsOptions_AllowedPrincipalTags_ContainerImageSignatures{}),
+		cmpopts.IgnoreUnexported(ccpb.VerifyConfidentialSpaceRequest_ConfidentialSpaceOptions{}),
 	}
 )
 
@@ -240,10 +246,10 @@ func TestConvertTokenOptionsToREST(t *testing.T) {
 				Audience:  "TestingAudience",
 				Nonce:     []string{"thisisthefirstnonce", "thisisthesecondnonce"},
 				TokenType: ccpb.TokenType_TOKEN_TYPE_AWS_PRINCIPALTAGS,
-				TokenTypeOptions: &ccpb.TokenOptions_AwsPrincipalTagsOptions_{
-					AwsPrincipalTagsOptions: &ccpb.TokenOptions_AwsPrincipalTagsOptions{
-						AllowedPrincipalTags: &ccpb.TokenOptions_AwsPrincipalTagsOptions_AllowedPrincipalTags{
-							ContainerImageSignatures: &ccpb.TokenOptions_AwsPrincipalTagsOptions_AllowedPrincipalTags_ContainerImageSignatures{
+				TokenTypeOptions: &ccpb.TokenOptions_AwsPrincipalTagsOptions{
+					AwsPrincipalTagsOptions: &ccpb.AwsPrincipalTagsOptions{
+						AllowedPrincipalTags: &ccpb.AwsPrincipalTagsOptions_AllowedPrincipalTags{
+							ContainerImageSignatures: &ccpb.AwsPrincipalTagsOptions_AllowedPrincipalTags_ContainerImageSignatures{
 								KeyIds: []string{"abcdefg", "12345"},
 							},
 						},
@@ -265,9 +271,9 @@ func TestConvertTokenOptionsToREST(t *testing.T) {
 				Audience:  "TestingAudience",
 				Nonce:     []string{"thisisthefirstnonce", "thisisthesecondnonce"},
 				TokenType: ccpb.TokenType_TOKEN_TYPE_AWS_PRINCIPALTAGS,
-				TokenTypeOptions: &ccpb.TokenOptions_AwsPrincipalTagsOptions_{
-					AwsPrincipalTagsOptions: &ccpb.TokenOptions_AwsPrincipalTagsOptions{
-						AllowedPrincipalTags: &ccpb.TokenOptions_AwsPrincipalTagsOptions_AllowedPrincipalTags{},
+				TokenTypeOptions: &ccpb.TokenOptions_AwsPrincipalTagsOptions{
+					AwsPrincipalTagsOptions: &ccpb.AwsPrincipalTagsOptions{
+						AllowedPrincipalTags: &ccpb.AwsPrincipalTagsOptions_AllowedPrincipalTags{},
 					},
 				},
 			},
@@ -293,9 +299,9 @@ func TestConvertTokenOptionsToREST(t *testing.T) {
 			},
 			wantpb: &ccpb.TokenOptions{
 				TokenType: ccpb.TokenType_TOKEN_TYPE_AWS_PRINCIPALTAGS,
-				TokenTypeOptions: &ccpb.TokenOptions_AwsPrincipalTagsOptions_{
-					AwsPrincipalTagsOptions: &ccpb.TokenOptions_AwsPrincipalTagsOptions{
-						AllowedPrincipalTags: &ccpb.TokenOptions_AwsPrincipalTagsOptions_AllowedPrincipalTags{},
+				TokenTypeOptions: &ccpb.TokenOptions_AwsPrincipalTagsOptions{
+					AwsPrincipalTagsOptions: &ccpb.AwsPrincipalTagsOptions{
+						AllowedPrincipalTags: &ccpb.AwsPrincipalTagsOptions_AllowedPrincipalTags{},
 					},
 				},
 			},
@@ -318,10 +324,10 @@ func TestConvertTokenOptionsToREST(t *testing.T) {
 				Audience:  "TestingAudience",
 				Nonce:     []string{"thisisthefirstnonce", "thisisthesecondnonce"},
 				TokenType: ccpb.TokenType_TOKEN_TYPE_AWS_PRINCIPALTAGS,
-				TokenTypeOptions: &ccpb.TokenOptions_AwsPrincipalTagsOptions_{
-					AwsPrincipalTagsOptions: &ccpb.TokenOptions_AwsPrincipalTagsOptions{
-						AllowedPrincipalTags: &ccpb.TokenOptions_AwsPrincipalTagsOptions_AllowedPrincipalTags{
-							ContainerImageSignatures: &ccpb.TokenOptions_AwsPrincipalTagsOptions_AllowedPrincipalTags_ContainerImageSignatures{
+				TokenTypeOptions: &ccpb.TokenOptions_AwsPrincipalTagsOptions{
+					AwsPrincipalTagsOptions: &ccpb.AwsPrincipalTagsOptions{
+						AllowedPrincipalTags: &ccpb.AwsPrincipalTagsOptions_AllowedPrincipalTags{
+							ContainerImageSignatures: &ccpb.AwsPrincipalTagsOptions_AllowedPrincipalTags_ContainerImageSignatures{
 								KeyIds: []string{"abcdefg", "12345"},
 							},
 						},
@@ -373,5 +379,238 @@ func TestConvertTokenOptionsToREST(t *testing.T) {
 		if diff != "" {
 			t.Errorf("%v: %s", tc.name, diff)
 		}
+	}
+}
+
+func TestConvertTokenOptionsToCSOptions(t *testing.T) {
+	testcases := []struct {
+		name         string
+		tokenOpts    *ccpb.TokenOptions
+		expectedOpts *ccpb.VerifyConfidentialSpaceRequest_ConfidentialSpaceOptions
+	}{
+		{
+			name:      "nil input",
+			tokenOpts: nil,
+			expectedOpts: &ccpb.VerifyConfidentialSpaceRequest_ConfidentialSpaceOptions{
+				TokenProfile: ccpb.TokenProfile_TOKEN_PROFILE_DEFAULT_EAT,
+			},
+		},
+		{
+			name: "custom audience and nonce",
+			tokenOpts: &ccpb.TokenOptions{
+				Audience: "test-audience",
+				Nonce:    []string{"test-nonce-1", "test-nonce-2"},
+			},
+			expectedOpts: &ccpb.VerifyConfidentialSpaceRequest_ConfidentialSpaceOptions{
+				Audience:     "test-audience",
+				Nonce:        []string{"test-nonce-1", "test-nonce-2"},
+				TokenProfile: ccpb.TokenProfile_TOKEN_PROFILE_DEFAULT_EAT,
+			},
+		},
+		{
+			name: "OIDC token type",
+			tokenOpts: &ccpb.TokenOptions{
+				TokenType: ccpb.TokenType_TOKEN_TYPE_OIDC,
+			},
+			expectedOpts: &ccpb.VerifyConfidentialSpaceRequest_ConfidentialSpaceOptions{
+				SignatureType: ccpb.SignatureType_SIGNATURE_TYPE_OIDC,
+				TokenProfile:  ccpb.TokenProfile_TOKEN_PROFILE_DEFAULT_EAT,
+			},
+		},
+		{
+			name: "PKI token type",
+			tokenOpts: &ccpb.TokenOptions{
+				TokenType: ccpb.TokenType_TOKEN_TYPE_PKI,
+			},
+			expectedOpts: &ccpb.VerifyConfidentialSpaceRequest_ConfidentialSpaceOptions{
+				SignatureType: ccpb.SignatureType_SIGNATURE_TYPE_PKI,
+				TokenProfile:  ccpb.TokenProfile_TOKEN_PROFILE_DEFAULT_EAT,
+			},
+		},
+		{
+			name: "AWS token type",
+			tokenOpts: &ccpb.TokenOptions{
+				TokenType: ccpb.TokenType_TOKEN_TYPE_AWS_PRINCIPALTAGS,
+				TokenTypeOptions: &ccpb.TokenOptions_AwsPrincipalTagsOptions{
+					AwsPrincipalTagsOptions: &ccpb.AwsPrincipalTagsOptions{
+						AllowedPrincipalTags: &ccpb.AwsPrincipalTagsOptions_AllowedPrincipalTags{
+							ContainerImageSignatures: &ccpb.AwsPrincipalTagsOptions_AllowedPrincipalTags_ContainerImageSignatures{
+								KeyIds: []string{"keyid1", "keyid2"},
+							},
+						},
+					},
+				},
+			},
+			expectedOpts: &ccpb.VerifyConfidentialSpaceRequest_ConfidentialSpaceOptions{
+				SignatureType: ccpb.SignatureType_SIGNATURE_TYPE_OIDC,
+				TokenProfile:  ccpb.TokenProfile_TOKEN_PROFILE_AWS,
+				TokenProfileOptions: &ccpb.VerifyConfidentialSpaceRequest_ConfidentialSpaceOptions_AwsPrincipalTagsOptions{
+					AwsPrincipalTagsOptions: &ccpb.AwsPrincipalTagsOptions{
+						AllowedPrincipalTags: &ccpb.AwsPrincipalTagsOptions_AllowedPrincipalTags{
+							ContainerImageSignatures: &ccpb.AwsPrincipalTagsOptions_AllowedPrincipalTags_ContainerImageSignatures{
+								KeyIds: []string{"keyid1", "keyid2"},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			gotOpts := convertToCSOpts(tc.tokenOpts)
+			if diff := cmp.Diff(gotOpts, tc.expectedOpts, tokenOptionsCompareOpts...); diff != "" {
+				t.Errorf("convertToCSOpts did not return expected opts (-got, +want): %v", diff)
+			}
+		})
+	}
+}
+
+func TestConvertCSRequestToREST(t *testing.T) {
+	testcases := []struct {
+		name        string
+		verifierReq verifier.VerifyAttestationRequest
+		expectedReq *ccpb.VerifyConfidentialSpaceRequest
+	}{
+		{
+			name: "TPM attestation request",
+			verifierReq: verifier.VerifyAttestationRequest{
+				Attestation: &attestpb.Attestation{
+					Quotes: []*tpm.Quote{{
+						Quote:  []byte("raw quote 1"),
+						RawSig: []byte("raw sig 1"),
+						Pcrs: &tpm.PCRs{
+							Hash: tpm.HashAlgo_SHA1,
+							Pcrs: map[uint32][]byte{
+								1: []byte("PCR A"),
+								2: []byte("PCR B"),
+							},
+						},
+					}},
+					EventLog:          []byte("test-tcg-event-log"),
+					CanonicalEventLog: []byte("test-canonical-event-log"),
+					AkCert:            []byte("test-ak-cert"),
+					IntermediateCerts: [][]byte{[]byte("chain-1"), []byte("chain-2")},
+				},
+				ContainerImageSignatures: []*verifier.ContainerSignature{{
+					Payload:   []byte("test-payload"),
+					Signature: []byte("test-signature"),
+				}},
+				GcpCredentials: [][]byte{[]byte("testcredentials@google.com")},
+				TokenOptions: &models.TokenOptions{
+					Audience:  "test-aud",
+					Nonces:    []string{"test-nonce"},
+					TokenType: "PKI",
+				},
+			},
+			expectedReq: &ccpb.VerifyConfidentialSpaceRequest{
+				TeeAttestation: &ccpb.VerifyConfidentialSpaceRequest_TpmAttestation{
+					TpmAttestation: &ccpb.TpmAttestation{
+						Quotes: []*ccpb.TpmAttestation_Quote{
+							{
+								RawQuote:     []byte("raw quote 1"),
+								RawSignature: []byte("raw sig 1"),
+								HashAlgo:     int32(tpm.HashAlgo_SHA1),
+								PcrValues: map[int32][]byte{
+									1: []byte("PCR A"),
+									2: []byte("PCR B"),
+								},
+							},
+						},
+						TcgEventLog:       []byte("test-tcg-event-log"),
+						CanonicalEventLog: []byte("test-canonical-event-log"),
+						AkCert:            []byte("test-ak-cert"),
+						CertChain:         [][]byte{[]byte("chain-1"), []byte("chain-2")},
+					},
+				},
+				SignedEntities: []*ccpb.SignedEntity{{
+					ContainerImageSignatures: []*ccpb.ContainerImageSignature{{
+						Payload:   []byte("test-payload"),
+						Signature: []byte("test-signature"),
+					}},
+				}},
+				GcpCredentials: &ccpb.GcpCredentials{ServiceAccountIdTokens: []string{"testcredentials@google.com"}},
+				Options: &ccpb.VerifyConfidentialSpaceRequest_ConfidentialSpaceOptions{
+					Audience:      "test-aud",
+					Nonce:         []string{"test-nonce"},
+					TokenProfile:  ccpb.TokenProfile_TOKEN_PROFILE_DEFAULT_EAT,
+					SignatureType: ccpb.SignatureType_SIGNATURE_TYPE_PKI,
+				},
+			},
+		},
+		{
+			name: "TDCCEL Attestation",
+			verifierReq: verifier.VerifyAttestationRequest{
+				TDCCELAttestation: &verifier.TDCCELAttestation{
+					TdQuote:           []byte("test td quote"),
+					CcelAcpiTable:     []byte("test CCEL table"),
+					CcelData:          []byte("test CCEL data"),
+					CanonicalEventLog: []byte("test CEL"),
+					AkCert:            []byte("test-ak-cert"),
+					IntermediateCerts: [][]byte{[]byte("chain-1"), []byte("chain-2")},
+				},
+			},
+			expectedReq: &ccpb.VerifyConfidentialSpaceRequest{
+				TeeAttestation: &ccpb.VerifyConfidentialSpaceRequest_TdCcel{
+					TdCcel: &ccpb.TdxCcelAttestation{
+						TdQuote:           []byte("test td quote"),
+						CcelAcpiTable:     []byte("test CCEL table"),
+						CcelData:          []byte("test CCEL data"),
+						CanonicalEventLog: []byte("test CEL"),
+					},
+				},
+				GceShieldedIdentity: &ccpb.GceShieldedIdentity{
+					AkCert:      []byte("test-ak-cert"),
+					AkCertChain: [][]byte{[]byte("chain-1"), []byte("chain-2")},
+				},
+				Options: &ccpb.VerifyConfidentialSpaceRequest_ConfidentialSpaceOptions{
+					TokenProfile: ccpb.TokenProfile_TOKEN_PROFILE_DEFAULT_EAT,
+				},
+				GcpCredentials: &ccpb.GcpCredentials{ServiceAccountIdTokens: []string{}},
+				SignedEntities: []*ccpb.SignedEntity{{ContainerImageSignatures: []*ccpb.ContainerImageSignature{}}},
+			},
+		},
+	}
+
+	cmpOpts := append(
+		tokenOptionsCompareOpts,
+		cmpopts.IgnoreUnexported(ccpb.VerifyConfidentialSpaceRequest{}),
+		cmpopts.IgnoreUnexported(ccpb.TpmAttestation{}),
+		cmpopts.IgnoreUnexported(ccpb.TpmAttestation_Quote{}),
+		cmpopts.IgnoreUnexported(ccpb.TdxCcelAttestation{}),
+		cmpopts.IgnoreUnexported(ccpb.GceShieldedIdentity{}),
+		cmpopts.IgnoreUnexported(ccpb.GcpCredentials{}),
+		cmpopts.IgnoreUnexported(ccpb.VerifyConfidentialSpaceRequest_ConfidentialSpaceOptions{}),
+		cmpopts.IgnoreUnexported(ccpb.ContainerImageSignature{}),
+		cmpopts.IgnoreUnexported(ccpb.SignedEntity{}),
+	)
+
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			gotReq := convertCSRequestToREST(tc.verifierReq)
+			if diff := cmp.Diff(gotReq, tc.expectedReq, cmpOpts...); diff != "" {
+				t.Errorf("convertCSRequestToREST returned unexpected output (-got, +want): %v", diff)
+			}
+		})
+	}
+}
+
+func TestConvertCSResponseFromREST(t *testing.T) {
+	expectedResp := &verifier.VerifyAttestationResponse{
+		ClaimsToken: []byte("test-token"),
+		PartialErrs: []*status.Status{
+			{Code: 404, Message: "Partial Error Message"},
+		},
+	}
+
+	csResp := &ccpb.VerifyConfidentialSpaceResponse{
+		AttestationToken: string(expectedResp.ClaimsToken),
+		PartialErrors:    expectedResp.PartialErrs,
+	}
+
+	gotResp := convertCSResponseFromREST(csResp)
+	if diff := cmp.Diff(gotResp, expectedResp, cmpopts.IgnoreUnexported(status.Status{})); diff != "" {
+		t.Errorf("convertCSResponseFromREST(%v) did not return expected output(-got, +want): %v", csResp, diff)
 	}
 }
