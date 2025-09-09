@@ -15,6 +15,8 @@ require (
 	google.golang.org/protobuf v1.36.9
 )
 
+require github.com/stretchr/testify v1.11.1 // indirect
+
 require (
 	github.com/google/certificate-transparency-go v1.3.2 // indirect
 	github.com/google/go-eventlog v0.0.2
