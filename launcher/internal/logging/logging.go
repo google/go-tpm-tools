@@ -33,7 +33,6 @@ type Logger interface {
 	SerialConsoleFile() *os.File
 	Close()
 
-	// Add this line to the interface.
 	CloudOnlyWriter() io.Writer
 }
 
