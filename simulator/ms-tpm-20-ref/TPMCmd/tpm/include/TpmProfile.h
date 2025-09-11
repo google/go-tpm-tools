@@ -108,13 +108,13 @@
 #define SYMMETRIC_ALIGNMENT             4
 #endif
 #ifndef HASH_LIB
-#define HASH_LIB                        Ossl
+#define HASH_LIB                        ossl
 #endif
 #ifndef SYM_LIB
-#define SYM_LIB                         Ossl
+#define SYM_LIB                         ossl
 #endif
 #ifndef MATH_LIB
-#define MATH_LIB                        Ossl
+#define MATH_LIB                        ossl
 #endif
 #ifndef BSIZE
 #define BSIZE                           UINT16

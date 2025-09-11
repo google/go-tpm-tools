@@ -58,9 +58,9 @@ AS_IF([test "x$enable_usedeviceid" = "xyes"], [
 ])
 AX_PTHREAD([], [AC_MSG_ERROR([requires pthread])])
 
-AC_DEFINE([HASH_LIB], [Ossl], [Crypto lib for hash algorithms])
-AC_DEFINE([SYM_LIB], [Ossl], [Crypto lib for symmetric encryption algorithms])
-AC_DEFINE([MATH_LIB], [Ossl], [Crypto lib for bignum operations])
+AC_DEFINE([HASH_LIB], [ossl], [Crypto lib for hash algorithms])
+AC_DEFINE([SYM_LIB], [ossl], [Crypto lib for symmetric encryption algorithms])
+AC_DEFINE([MATH_LIB], [ossl], [Crypto lib for bignum operations])
 
 ADD_COMPILER_FLAG([-std=gnu11])
 ADD_COMPILER_FLAG([-Werror])
