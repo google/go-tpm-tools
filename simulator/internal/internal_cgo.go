@@ -4,11 +4,11 @@
 package internal
 
 // // Directories containing .h files in the simulator source
-// #cgo CFLAGS: -I ../ms-tpm-20-ref/Samples/Google
+// #cgo CFLAGS: -I ../ms-tpm-20-ref/Samples/google
 // #cgo CFLAGS: -I ../ms-tpm-20-ref/TPMCmd/tpm/include
 // #cgo CFLAGS: -I ../ms-tpm-20-ref/TPMCmd/tpm/include/prototypes
 // // Allows simulator.c to import files without repeating the source repo path.
-// #cgo CFLAGS: -I ../ms-tpm-20-ref/Samples/Google
+// #cgo CFLAGS: -I ../ms-tpm-20-ref/Samples/google
 // #cgo CFLAGS: -I ../ms-tpm-20-ref/TPMCmd/tpm/src
 // // Store NVDATA in memory, and we don't care about updates to failedTries.
 // #cgo CFLAGS: -DVTPM=NO -DSIMULATION=NO -DUSE_DA_USED=NO
