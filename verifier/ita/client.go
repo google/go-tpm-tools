@@ -214,6 +214,10 @@ func (c *client) VerifyAttestation(_ context.Context, request verifier.VerifyAtt
 	}, nil
 }
 
+func (c *client) VerifyConfidentialSpace(ctx context.Context, request verifier.VerifyAttestationRequest) (*verifier.VerifyAttestationResponse, error) {
+	return c.VerifyAttestation(ctx, request)
+}
+
 func (c *client) doHTTPRequest(method string, url string, reqStruct any, headers map[string]string, respStruct any) error {
 	// Create HTTP request.
 	var req *http.Request
