@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"math"
 	"runtime"
@@ -18,6 +19,7 @@ import (
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal/test"
+	"github.com/google/go-tpm-tools/launcher/internal/experiments"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/internal/signaturediscovery"
 	"github.com/google/go-tpm-tools/launcher/spec"
@@ -637,4 +639,104 @@ func measureFakeEvents(attestAgent AttestationAgent) error {
 		return err
 	}
 	return nil
+}
+
+type testClient struct {
+	verifyCSResp  *verifier.VerifyAttestationResponse
+	verifyAttResp *verifier.VerifyAttestationResponse
+}
+
+func (t *testClient) CreateChallenge(_ context.Context) (*verifier.Challenge, error) {
+	return nil, errors.New("unimplemented")
+}
+
+func (t *testClient) VerifyAttestation(_ context.Context, _ verifier.VerifyAttestationRequest) (*verifier.VerifyAttestationResponse, error) {
+	return t.verifyAttResp, nil
+}
+
+func (t *testClient) VerifyConfidentialSpace(_ context.Context, _ verifier.VerifyAttestationRequest) (*verifier.VerifyAttestationResponse, error) {
+	return t.verifyCSResp, nil
+}
+
+func TestVerify(t *testing.T) {
+	expectedCSResp := &verifier.VerifyAttestationResponse{
+		ClaimsToken: []byte("verify-cs-token"),
+	}
+	expectedAttResp := &verifier.VerifyAttestationResponse{
+		ClaimsToken: []byte("verify-att-token"),
+	}
+
+	vClient := &testClient{
+		verifyCSResp:  expectedCSResp,
+		verifyAttResp: expectedAttResp,
+	}
+
+	testcases := []struct {
+		name         string
+		opts         AttestAgentOpts
+		exps         experiments.Experiments
+		expectedResp *verifier.VerifyAttestationResponse
+	}{
+		{
+			name: "VerifyCS in options",
+			opts: AttestAgentOpts{
+				Method: VerifyConfidentialSpaceMethod,
+			},
+			exps: experiments.Experiments{
+				EnableVerifyCS: false,
+			},
+			expectedResp: expectedCSResp,
+		},
+		{
+			name: "VerifyAtt in options",
+			opts: AttestAgentOpts{
+				Method: VerifyAttestationMethod,
+			},
+			exps: experiments.Experiments{
+				EnableVerifyCS: true,
+			},
+			expectedResp: expectedAttResp,
+		},
+		{
+			name: "VerifyCS in experiment",
+			opts: AttestAgentOpts{
+				Method: VerifyUnset,
+			},
+			exps: experiments.Experiments{
+				EnableVerifyCS: true,
+			},
+			expectedResp: expectedCSResp,
+		},
+		{
+			name: "VerifyAtt in experiment",
+			opts: AttestAgentOpts{
+				Method: VerifyUnset,
+			},
+			exps: experiments.Experiments{
+				EnableVerifyCS: false,
+			},
+			expectedResp: expectedAttResp,
+		},
+	}
+
+	ctx := context.Background()
+
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			attAgent := agent{
+				launchSpec: spec.LaunchSpec{
+					Experiments: tc.exps,
+				},
+			}
+
+			resp, err := attAgent.verify(ctx, verifier.VerifyAttestationRequest{}, vClient, tc.opts)
+			if err != nil {
+				t.Fatalf("verify() returned failure: %v", err)
+			}
+
+			if diff := cmp.Diff(resp, tc.expectedResp); diff != "" {
+				t.Errorf("verify() did not return expected response (-got, +want): %v", diff)
+			}
+		})
+	}
 }
