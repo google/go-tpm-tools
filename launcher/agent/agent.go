@@ -42,6 +42,18 @@ const (
 
 type principalIDTokenFetcher func(audience string) ([][]byte, error)
 
+// VerifyMethod represents the possible atrestation verification methods.
+type VerifyMethod string
+
+const (
+	// VerifyUnset refers to an unspecified method.
+	VerifyUnset VerifyMethod = "UNSET"
+	// VerifyConfidentialSpaceMethod refers to VerifyConfidentialSpace.
+	VerifyConfidentialSpaceMethod VerifyMethod = "VerifyConfidentialSpace"
+	// VerifyAttestationMethod refers to VerifyAttestation.
+	VerifyAttestationMethod VerifyMethod = "VerifyAttestation"
+)
+
 // AttestationAgent is an agent that interacts with GCE's Attestation Service
 // to Verify an attestation message. It is an interface instead of a concrete
 // struct to make testing easier.
