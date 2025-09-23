@@ -8,7 +8,6 @@ package agent
 import (
 	"bytes"
 	"context"
-	"crypto"
 	"encoding/base64"
 	"fmt"
 	"io"
@@ -36,8 +35,6 @@ import (
 	"github.com/google/go-tpm-tools/verifier/oci"
 	"github.com/google/go-tpm-tools/verifier/util"
 )
-
-var defaultCELHashAlgo = []crypto.Hash{crypto.SHA256, crypto.SHA1}
 
 const (
 	audienceSTS = "https://sts.googleapis.com"
@@ -295,7 +292,7 @@ func (t *tpmAttestRoot) GetCEL() *cel.CEL {
 }
 
 func (t *tpmAttestRoot) Extend(c cel.Content) error {
-	return t.cosCel.AppendEventPCR(t.tpm, cel.CosEventPCR, defaultCELHashAlgo, c)
+	return t.cosCel.AppendEventPCR(t.tpm, cel.CosEventPCR, c)
 }
 
 func (t *tpmAttestRoot) Attest(nonce []byte) (any, error) {
