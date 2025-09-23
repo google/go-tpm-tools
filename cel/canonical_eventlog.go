@@ -12,6 +12,7 @@ import (
 	"github.com/google/go-configfs-tsm/configfs/configfsi"
 	"github.com/google/go-eventlog/register"
 	"github.com/google/go-tdx-guest/rtmr"
+	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm/legacy/tpm2"
 	"github.com/google/go-tpm/tpmutil"
 )
@@ -169,14 +170,29 @@ func (c *CEL) AppendEventRTMR(client configfsi.Client, rtmrIndex int, event Cont
 }
 
 // AppendEvent appends a new PCR record to the CEL.
-// This function is a wrapper of AppendEventPCR, for backward
-// compatibility.
-func (c *CEL) AppendEvent(tpm io.ReadWriteCloser, pcr int, hashAlgos []crypto.Hash, event Content) error {
-	return c.AppendEventPCR(tpm, pcr, hashAlgos, event)
+//
+// Deprecated: Use AppendEventPCR or AppendEventRTMR directly.
+func (c *CEL) AppendEvent(tpm io.ReadWriteCloser, pcr int, event Content) error {
+	return c.AppendEventPCR(tpm, pcr, event)
 }
 
-// AppendEventPCR appends a new PCR record to the CEL.
-func (c *CEL) AppendEventPCR(tpm io.ReadWriteCloser, pcr int, hashAlgos []crypto.Hash, event Content) error {
+// AppendEventPCR appends a new PCR record to the CEL and extend the digest of
+// event to the given PCR in all available banks.
+func (c *CEL) AppendEventPCR(tpm io.ReadWriteCloser, pcr int, event Content) error {
+	pcrSels, err := client.AllocatedPCRs(tpm)
+	if err != nil {
+		return err
+	}
+
+	var hashAlgos []crypto.Hash
+	for _, sel := range pcrSels {
+		hashAlgo, err := sel.Hash.Hash()
+		if err != nil {
+			return err
+		}
+		hashAlgos = append(hashAlgos, hashAlgo)
+	}
+
 	digestsMap, err := generateDigestMap(hashAlgos, event)
 	if err != nil {
 		return err

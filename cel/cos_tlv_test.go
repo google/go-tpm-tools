@@ -42,7 +42,7 @@ func TestCosEventlog(t *testing.T) {
 	for _, testEvent := range testEvents {
 		cosEvent := CosTlv{testEvent.cosNestedEventType, testEvent.eventPayload}
 
-		if err := cel.AppendEventPCR(tpm, testEvent.pcr, measuredHashes, cosEvent); err != nil {
+		if err := cel.AppendEventPCR(tpm, testEvent.pcr, cosEvent); err != nil {
 			t.Fatal(err)
 		}
 	}

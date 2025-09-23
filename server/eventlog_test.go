@@ -995,7 +995,7 @@ func TestParsingCELEventLog(t *testing.T) {
 	for _, testEvent := range testCELEvents {
 		cosEvent := cel.CosTlv{EventType: testEvent.cosNestedEventType, EventContent: testEvent.eventPayload}
 
-		if err := coscel.AppendEventPCR(tpm, testEvent.pcr, implementedHashes, cosEvent); err != nil {
+		if err := coscel.AppendEventPCR(tpm, testEvent.pcr, cosEvent); err != nil {
 			t.Fatal(err)
 		}
 	}

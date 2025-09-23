@@ -30,8 +30,6 @@ import (
 	"google.golang.org/protobuf/testing/protocmp"
 )
 
-var measuredHashes = []crypto.Hash{crypto.SHA1, crypto.SHA256}
-
 func getDigestHash(input string) []byte {
 	inputDigestHash := sha256.New()
 	inputDigestHash.Write([]byte(input))
@@ -313,7 +311,7 @@ func TestVerifyAttestationWithCEL(t *testing.T) {
 	}
 	for _, testEvent := range testEvents {
 		cosEvent := cel.CosTlv{EventType: testEvent.cosNestedEventType, EventContent: testEvent.eventPayload}
-		if err := coscel.AppendEventPCR(rwc, testEvent.pcr, measuredHashes, cosEvent); err != nil {
+		if err := coscel.AppendEventPCR(rwc, testEvent.pcr, cosEvent); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -385,11 +383,11 @@ func TestVerifyFailWithTamperedCELContent(t *testing.T) {
 	cosEvent := cel.CosTlv{EventType: cel.ImageRefType, EventContent: []byte("docker.io/bazel/experimental/test:latest")}
 	cosEvent2 := cel.CosTlv{EventType: cel.ImageDigestType, EventContent: []byte("sha256:781d8dfdd92118436bd914442c8339e653b83f6bf3c1a7a98efcfb7c4fed7483")}
 
-	if err := c.AppendEventPCR(rwc, cel.CosEventPCR, measuredHashes, cosEvent); err != nil {
+	if err := c.AppendEventPCR(rwc, cel.CosEventPCR, cosEvent); err != nil {
 		t.Fatalf("failed to append event: %v", err)
 	}
 
-	if err := c.AppendEventPCR(rwc, cel.CosEventPCR, measuredHashes, cosEvent2); err != nil {
+	if err := c.AppendEventPCR(rwc, cel.CosEventPCR, cosEvent2); err != nil {
 		t.Fatalf("failed to append event: %v", err)
 	}
 
