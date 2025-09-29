@@ -11,6 +11,10 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v4"
+	"github.com/google/go-eventlog/proto/state"
+	"github.com/google/go-eventlog/register"
+	"github.com/google/go-tpm-tools/proto/attest"
+	"github.com/google/go-tpm-tools/proto/tpm"
 	"github.com/google/go-tpm-tools/server"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/google/go-tpm-tools/verifier/oci"
@@ -62,6 +66,17 @@ func (fc *fakeClient) VerifyAttestation(_ context.Context, req verifier.VerifyAt
 	if err != nil {
 		return nil, fmt.Errorf("failed to verify attestation: %v", err)
 	}
+
+	pcrBank, err := extractPCRBank(req.Attestation, ms.GetHash())
+	if err != nil {
+		return nil, fmt.Errorf("failed to extract PCR bank: %w", err)
+	}
+
+	cosState, err := server.ParseCosCELPCR(req.Attestation.GetCanonicalEventLog(), *pcrBank)
+	if err != nil {
+		return nil, fmt.Errorf("failed to validate the Canonical event log: %w", err)
+	}
+	ms.Cos = cosState
 
 	msJSON, err := protojson.Marshal(ms)
 	if err != nil {
@@ -143,4 +158,27 @@ func extractClaims(signature *verifier.ContainerSignature) (ContainerImageSignat
 		PubKey:    payloadStr[:separatorIndex],
 		SigAlg:    sigAlg,
 	}, nil
+}
+
+// extractPCRBank finds the quote matching the given hash algorithm and returns the PCR bank.
+func extractPCRBank(attestation *attest.Attestation, hashAlgo tpm.HashAlgo) (*register.PCRBank, error) {
+	for _, quote := range attestation.GetQuotes() {
+		pcrs := quote.GetPcrs()
+		if pcrs.GetHash() == hashAlgo {
+			pcrBank := &register.PCRBank{TCGHashAlgo: state.HashAlgo(pcrs.Hash)}
+			digestAlg, err := pcrBank.TCGHashAlgo.CryptoHash()
+			if err != nil {
+				return nil, fmt.Errorf("invalid digest algorithm: %w", err)
+			}
+
+			for pcrIndex, digest := range pcrs.GetPcrs() {
+				pcrBank.PCRs = append(pcrBank.PCRs, register.PCR{
+					Index:     int(pcrIndex),
+					Digest:    digest,
+					DigestAlg: digestAlg})
+			}
+			return pcrBank, nil
+		}
+	}
+	return nil, fmt.Errorf("no PCRs found matching hash %s", hashAlgo.String())
 }

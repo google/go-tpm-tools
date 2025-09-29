@@ -1,7 +1,6 @@
 package server
 
 import (
-	"bytes"
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
@@ -14,11 +13,8 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
-	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal"
 	"github.com/google/go-tpm-tools/internal/test"
@@ -27,7 +23,6 @@ import (
 	"github.com/google/go-tpm/tpmutil"
 	"github.com/google/logger"
 	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/testing/protocmp"
 )
 
 func getDigestHash(input string) []byte {
@@ -275,149 +270,6 @@ func TestVerifySHA1Attestation(t *testing.T) {
 	opts.AllowSHA1 = false
 	if _, err = VerifyAttestation(attestation, opts); err == nil {
 		t.Error("expected attestation to fail with only SHA-1")
-	}
-}
-
-func TestVerifyAttestationWithCEL(t *testing.T) {
-	test.SkipForRealTPM(t)
-	rwc := test.GetTPM(t)
-	defer client.CheckedClose(t, rwc)
-
-	ak, err := client.AttestationKeyRSA(rwc)
-	if err != nil {
-		t.Fatalf("failed to generate AK: %v", err)
-	}
-	defer ak.Close()
-
-	coscel := &cel.CEL{}
-	testEvents := []struct {
-		cosNestedEventType cel.CosType
-		pcr                int
-		eventPayload       []byte
-	}{
-		{cel.ImageRefType, cel.CosEventPCR, []byte("docker.io/bazel/experimental/test:latest")},
-		{cel.ImageDigestType, cel.CosEventPCR, []byte("sha256:781d8dfdd92118436bd914442c8339e653b83f6bf3c1a7a98efcfb7c4fed7483")},
-		{cel.RestartPolicyType, cel.CosEventPCR, []byte(attestpb.RestartPolicy_Never.String())},
-		{cel.ImageIDType, cel.CosEventPCR, []byte("sha256:5DF4A1AC347DCF8CF5E9D0ABC04B04DB847D1B88D3B1CC1006F0ACB68E5A1F4B")},
-		{cel.EnvVarType, cel.CosEventPCR, []byte("foo=bar")},
-		{cel.EnvVarType, cel.CosEventPCR, []byte("bar=baz")},
-		{cel.EnvVarType, cel.CosEventPCR, []byte("baz=foo=bar")},
-		{cel.EnvVarType, cel.CosEventPCR, []byte("empty=")},
-		{cel.ArgType, cel.CosEventPCR, []byte("--x")},
-		{cel.ArgType, cel.CosEventPCR, []byte("--y")},
-		{cel.OverrideArgType, cel.CosEventPCR, []byte("--x")},
-		{cel.OverrideEnvType, cel.CosEventPCR, []byte("empty=")},
-		{cel.MemoryMonitorType, cel.CosEventPCR, []byte{1}},
-	}
-	for _, testEvent := range testEvents {
-		cosEvent := cel.CosTlv{EventType: testEvent.cosNestedEventType, EventContent: testEvent.eventPayload}
-		if err := coscel.AppendEventPCR(rwc, testEvent.pcr, cosEvent); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	var buf bytes.Buffer
-	if err := coscel.EncodeCEL(&buf); err != nil {
-		t.Fatal(err)
-	}
-
-	nonce := []byte("super secret nonce")
-	attestation, err := ak.Attest(client.AttestOpts{Nonce: nonce, CanonicalEventLog: buf.Bytes()})
-	if err != nil {
-		t.Fatalf("failed to attest: %v", err)
-	}
-
-	opts := VerifyOpts{
-		Nonce:      nonce,
-		TrustedAKs: []crypto.PublicKey{ak.PublicKey()},
-	}
-	state, err := VerifyAttestation(attestation, opts)
-	if err != nil {
-		t.Fatalf("failed to verify: %v", err)
-	}
-
-	expectedEnvVars := make(map[string]string)
-	expectedEnvVars["foo"] = "bar"
-	expectedEnvVars["bar"] = "baz"
-	expectedEnvVars["baz"] = "foo=bar"
-	expectedEnvVars["empty"] = ""
-
-	expectedOverriddenEnvVars := make(map[string]string)
-	expectedOverriddenEnvVars["empty"] = ""
-
-	wantContainerState := attestpb.ContainerState{
-		ImageReference:    string(testEvents[0].eventPayload),
-		ImageDigest:       string(testEvents[1].eventPayload),
-		RestartPolicy:     attestpb.RestartPolicy_Never,
-		ImageId:           string(testEvents[3].eventPayload),
-		EnvVars:           expectedEnvVars,
-		Args:              []string{string(testEvents[8].eventPayload), string(testEvents[9].eventPayload)},
-		OverriddenEnvVars: expectedOverriddenEnvVars,
-		OverriddenArgs:    []string{string(testEvents[10].eventPayload)},
-	}
-	enabled := true
-	wantHealthMonitoringState := attestpb.HealthMonitoringState{
-		MemoryEnabled: &enabled,
-	}
-	if diff := cmp.Diff(state.Cos.Container, &wantContainerState, protocmp.Transform()); diff != "" {
-		t.Errorf("unexpected container state difference:\n%v", diff)
-	}
-	if diff := cmp.Diff(state.Cos.HealthMonitoring, &wantHealthMonitoringState, protocmp.Transform()); diff != "" {
-		t.Errorf("unexpected health monitoring state difference:\n%v", diff)
-	}
-}
-
-func TestVerifyFailWithTamperedCELContent(t *testing.T) {
-	test.SkipForRealTPM(t)
-	rwc := test.GetTPM(t)
-	defer client.CheckedClose(t, rwc)
-
-	ak, err := client.AttestationKeyRSA(rwc)
-	if err != nil {
-		t.Fatalf("failed to generate AK: %v", err)
-	}
-	defer ak.Close()
-
-	c := &cel.CEL{}
-
-	cosEvent := cel.CosTlv{EventType: cel.ImageRefType, EventContent: []byte("docker.io/bazel/experimental/test:latest")}
-	cosEvent2 := cel.CosTlv{EventType: cel.ImageDigestType, EventContent: []byte("sha256:781d8dfdd92118436bd914442c8339e653b83f6bf3c1a7a98efcfb7c4fed7483")}
-
-	if err := c.AppendEventPCR(rwc, cel.CosEventPCR, cosEvent); err != nil {
-		t.Fatalf("failed to append event: %v", err)
-	}
-
-	if err := c.AppendEventPCR(rwc, cel.CosEventPCR, cosEvent2); err != nil {
-		t.Fatalf("failed to append event: %v", err)
-	}
-
-	// modify the first record content, but not the record digest
-	modifiedRecord := cel.CosTlv{EventType: cel.ImageDigestType, EventContent: []byte("sha256:000000000000000000000000000000000000000000000000000000000000000")}
-	modifiedTLV, err := modifiedRecord.GetTLV()
-	if err != nil {
-		t.Fatal(err)
-	}
-	c.Records[0].Content = modifiedTLV
-
-	var buf bytes.Buffer
-	if err := c.EncodeCEL(&buf); err != nil {
-		t.Fatal(err)
-	}
-
-	nonce := []byte("super secret nonce")
-	attestation, err := ak.Attest(client.AttestOpts{Nonce: nonce, CanonicalEventLog: buf.Bytes()})
-	if err != nil {
-		t.Fatalf("failed to attest: %v", err)
-	}
-
-	opts := VerifyOpts{
-		Nonce:      nonce,
-		TrustedAKs: []crypto.PublicKey{ak.PublicKey()},
-	}
-	if _, err := VerifyAttestation(attestation, opts); err == nil {
-		t.Fatalf("VerifyAttestation should fail due to modified content")
-	} else if !strings.Contains(err.Error(), "CEL record content digest verification failed") {
-		t.Fatalf("expect to get digest verification failed error, but got %v", err)
 	}
 }
 
