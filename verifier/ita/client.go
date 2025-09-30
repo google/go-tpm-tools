@@ -161,6 +161,7 @@ func (c *client) VerifyAttestation(_ context.Context, request verifier.VerifyAtt
 
 	url := c.apiURL + tokenEndpoint
 	headers := map[string]string{
+		apiKeyHeader:      c.apiKey,
 		acceptHeader:      applicationJSON,
 		contentTypeHeader: applicationJSON,
 	}
@@ -286,4 +287,8 @@ func convertRequestToTokenRequest(request verifier.VerifyAttestationRequest) tok
 	}
 
 	return tokenReq
+}
+
+func (c *client) VerifyConfidentialSpace(ctx context.Context, request verifier.VerifyAttestationRequest) (*verifier.VerifyAttestationResponse, error) {
+	return c.VerifyAttestation(ctx, request)
 }
