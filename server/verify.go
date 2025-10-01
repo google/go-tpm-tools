@@ -66,6 +66,10 @@ type VerifyOpts struct {
 	// "Calling EFI Application from Boot Option". This option is useful when
 	// the host platform loads EFI Applications unrelated to OS boot.
 	AllowEFIAppBeforeCallingEvent bool
+	// HashNonce will apply the attestation key's signing scheme hash algorithm
+	// to the input Nonce field and use the resulting digest in place of the
+	// original Nonce.
+	HashNonce bool
 }
 
 // Bootloader refers to the second-stage bootloader that loads and transfers
@@ -114,16 +118,24 @@ func VerifyAttestation(attestation *pb.Attestation, opts VerifyOpts) (*pb.Machin
 		return nil, fmt.Errorf("bad options: %w", err)
 	}
 
-	machineState, akPubKey, err := validateAK(attestation, opts)
+	machineState, akPub, akPubKey, err := validateAK(attestation, opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse and validate AK: %w", err)
+	}
+	extraData := opts.Nonce
+	if opts.HashNonce {
+		var err error
+		extraData, err = internal.HashNonce(akPub, extraData)
+		if err != nil {
+			return nil, fmt.Errorf("failed to hash the input nonce: %w", err)
+		}
 	}
 
 	// Attempt to replay the log against our PCRs in order of hash preference
 	var lastErr error
 	for _, quote := range supportedQuotes(attestation.GetQuotes()) {
 		// Verify the Quote
-		if err := internal.VerifyQuote(quote, akPubKey, opts.Nonce); err != nil {
+		if err := internal.VerifyQuote(quote, akPubKey, extraData); err != nil {
 			lastErr = fmt.Errorf("failed to verify quote: %w", err)
 			continue
 		}
@@ -158,44 +170,48 @@ func VerifyAttestation(attestation *pb.Attestation, opts VerifyOpts) (*pb.Machin
 
 // validateAK validates AK cert in the attestation, and returns AK cert (if exists) and public key.
 // It also pulls out the GCE Instance Info if it exists.
-func validateAK(attestation *pb.Attestation, opts VerifyOpts) (*pb.MachineState, crypto.PublicKey, error) {
+func validateAK(attestation *pb.Attestation, opts VerifyOpts) (*pb.MachineState, tpm2.Public, crypto.PublicKey, error) {
+	// If the AK Cert is not in the attestation, use the AK Public Area.
+	akPubArea, err := tpm2.DecodePublic(attestation.GetAkPub())
+	if err != nil {
+		return nil, tpm2.Public{}, nil, fmt.Errorf("failed to decode AK public area: %w", err)
+	}
+	akPubKey, err := akPubArea.Key()
+	if err != nil {
+		return nil, tpm2.Public{}, nil, fmt.Errorf("failed to get AK public key: %w", err)
+	}
 	if len(attestation.GetAkCert()) == 0 || len(opts.TrustedRootCerts) == 0 {
-		// If the AK Cert is not in the attestation, use the AK Public Area.
-		akPubArea, err := tpm2.DecodePublic(attestation.GetAkPub())
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to decode AK public area: %w", err)
-		}
-		akPubKey, err := akPubArea.Key()
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to get AK public key: %w", err)
-		}
 		if err := validateAKPub(akPubKey, opts); err != nil {
-			return nil, nil, fmt.Errorf("failed to validate AK public key: %w", err)
+			return nil, tpm2.Public{}, nil, fmt.Errorf("failed to validate AK public key: %w", err)
 		}
-		return &pb.MachineState{}, akPubKey, nil
+		return &pb.MachineState{}, akPubArea, akPubKey, nil
 	}
 
 	// If AK Cert is presented, ignore the AK Public Area.
 	akCert, err := x509.ParseCertificate(attestation.GetAkCert())
+	certPubKey := akCert.PublicKey.(crypto.PublicKey) // This cast cannot fail
+	if !internal.PubKeysEqual(certPubKey, akPubKey) {
+		return nil, tpm2.Public{}, nil, errors.New("AK certificate does not match key")
+	}
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to parse AK certificate: %w", err)
+		return nil, tpm2.Public{}, nil, fmt.Errorf("failed to parse AK certificate: %w", err)
 	}
 	// Use intermediate certs from the attestation if they exist.
 	certs, err := parseCerts(attestation.IntermediateCerts)
 	if err != nil {
-		return nil, nil, fmt.Errorf("attestation intermediates: %w", err)
+		return nil, tpm2.Public{}, nil, fmt.Errorf("attestation intermediates: %w", err)
 	}
 	opts.IntermediateCerts = append(opts.IntermediateCerts, certs...)
 
 	if err := VerifyAKCert(akCert, opts.TrustedRootCerts, opts.IntermediateCerts); err != nil {
-		return nil, nil, fmt.Errorf("failed to validate AK certificate: %w", err)
+		return nil, tpm2.Public{}, nil, fmt.Errorf("failed to validate AK certificate: %w", err)
 	}
 	instanceInfo, err := getInstanceInfoFromExtensions(akCert.Extensions)
 	if err != nil {
-		return nil, nil, fmt.Errorf("error getting instance info: %v", err)
+		return nil, tpm2.Public{}, nil, fmt.Errorf("error getting instance info: %v", err)
 	}
 
-	return &pb.MachineState{Platform: &pb.PlatformState{InstanceInfo: instanceInfo}}, akCert.PublicKey, nil
+	return &pb.MachineState{Platform: &pb.PlatformState{InstanceInfo: instanceInfo}}, akPubArea, akCert.PublicKey, nil
 }
 
 // GetGCEInstanceInfo takes a GCE-issued x509 EK/AK certificate and tries to
