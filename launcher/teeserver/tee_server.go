@@ -47,7 +47,7 @@ type attestHandler struct {
 	// defaultTokenFile string
 	logger     logging.Logger
 	launchSpec spec.LaunchSpec
-	clients    *AttestClients
+	clients    AttestClients
 }
 
 // TeeServer is a server that can be called from a container through a unix
@@ -58,7 +58,7 @@ type TeeServer struct {
 }
 
 // New takes in a socket and start to listen to it, and create a server
-func New(ctx context.Context, unixSock string, a agent.AttestationAgent, logger logging.Logger, launchSpec spec.LaunchSpec, clients *AttestClients) (*TeeServer, error) {
+func New(ctx context.Context, unixSock string, a agent.AttestationAgent, logger logging.Logger, launchSpec spec.LaunchSpec, clients AttestClients) (*TeeServer, error) {
 	var err error
 	nl, err := net.Listen("unix", unixSock)
 	if err != nil {

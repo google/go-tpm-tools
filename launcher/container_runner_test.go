@@ -286,7 +286,7 @@ func TestRefreshTokenError(t *testing.T) {
 	}
 }
 
-func TestFetchAndWriteTokenSucceeds(t *testing.T) {
+func TestStartTokenRefresherSucceeds(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -301,8 +301,8 @@ func TestFetchAndWriteTokenSucceeds(t *testing.T) {
 		logger: logging.SimpleLogger(),
 	}
 
-	if err := runner.fetchAndWriteToken(ctx); err != nil {
-		t.Fatalf("fetchAndWriteToken failed: %v", err)
+	if err := runner.startTokenRefresher(ctx, defaultRetryPolicy); err != nil {
+		t.Fatalf("startTokenRefresher failed: %v", err)
 	}
 
 	filepath := path.Join(launcherfile.HostTmpPath, launcherfile.AttestationVerifierTokenFilename)
@@ -341,8 +341,8 @@ func TestTokenIsNotChangedIfRefreshFails(t *testing.T) {
 		logger:      logging.SimpleLogger(),
 	}
 
-	if err := runner.fetchAndWriteToken(ctx); err != nil {
-		t.Fatalf("fetchAndWriteToken failed: %v", err)
+	if err := runner.startTokenRefresher(ctx, defaultRetryPolicy); err != nil {
+		t.Fatalf("startTokenRefresher failed: %v", err)
 	}
 
 	filepath := path.Join(launcherfile.HostTmpPath, launcherfile.AttestationVerifierTokenFilename)
@@ -417,8 +417,8 @@ func testRetryPolicyWithNTries(t *testing.T, numTries int, expectRefresh bool) {
 		attestAgent: &fakeAttestationAgent{attestFunc: attestFunc},
 		logger:      logging.SimpleLogger(),
 	}
-	if err := runner.fetchAndWriteTokenWithRetry(ctx, testRetryPolicyThreeTimes); err != nil {
-		t.Fatalf("fetchAndWriteTokenWithRetry failed: %v", err)
+	if err := runner.startTokenRefresher(ctx, testRetryPolicyThreeTimes); err != nil {
+		t.Fatalf("startTokenRefresherWithRetry failed: %v", err)
 	}
 	filepath := path.Join(launcherfile.HostTmpPath, launcherfile.AttestationVerifierTokenFilename)
 	data, err := os.ReadFile(filepath)
@@ -453,7 +453,7 @@ func testRetryPolicyWithNTries(t *testing.T, numTries int, expectRefresh bool) {
 	}
 }
 
-func TestFetchAndWriteTokenWithTokenRefresh(t *testing.T) {
+func TestStartTokenRefresherWithTokenRefresh(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -479,8 +479,8 @@ func TestFetchAndWriteTokenWithTokenRefresh(t *testing.T) {
 		logger:      logging.SimpleLogger(),
 	}
 
-	if err := runner.fetchAndWriteToken(ctx); err != nil {
-		t.Fatalf("fetchAndWriteToken failed: %v", err)
+	if err := runner.startTokenRefresher(ctx, defaultRetryPolicy); err != nil {
+		t.Fatalf("startTokenRefresher failed: %v", err)
 	}
 
 	filepath := path.Join(launcherfile.HostTmpPath, launcherfile.AttestationVerifierTokenFilename)

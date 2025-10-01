@@ -489,49 +489,43 @@ func (r *ContainerRunner) refreshToken(ctx context.Context) (time.Duration, erro
 }
 
 // ctx must be a cancellable context.
-func (r *ContainerRunner) fetchAndWriteToken(ctx context.Context) error {
-	return r.fetchAndWriteTokenWithRetry(ctx, defaultRetryPolicy)
-}
-
-// ctx must be a cancellable context.
 // retry specifies the refresher goroutine's retry policy.
-func (r *ContainerRunner) fetchAndWriteTokenWithRetry(ctx context.Context,
-	retry func() *backoff.ExponentialBackOff) error {
+func (r *ContainerRunner) startTokenRefresher(ctx context.Context, retry func() *backoff.ExponentialBackOff) error {
 	if err := os.MkdirAll(launcherfile.HostTmpPath, 0755); err != nil {
 		return err
 	}
-	duration, err := r.refreshToken(ctx)
-	if err != nil {
-		return err
-	}
-
-	// Set a timer to refresh the token before it expires.
-	timer := time.NewTimer(duration)
 	go func() {
+		// Start with a timer that fires immediately to get the first token.
+		timer := time.NewTimer(0)
+		defer timer.Stop()
+
 		for {
 			select {
 			case <-ctx.Done():
-				timer.Stop()
 				r.logger.Info("token refreshing stopped")
 				return
 			case <-timer.C:
 				r.logger.Info("refreshing attestation verifier OIDC token")
 				var duration time.Duration
-				// Refresh token with default retry policy.
+
 				err := backoff.RetryNotify(
 					func() error {
-						duration, err = r.refreshToken(ctx)
-						return err
+						var refreshErr error
+						duration, refreshErr = r.refreshToken(ctx)
+						return refreshErr
 					},
 					retry(),
 					func(err error, t time.Duration) {
-						r.logger.Error(fmt.Sprintf("failed to refresh attestation service token at time %v: %v", t, err))
+						r.logger.Error(fmt.Sprintf("failed to refresh token at time %v: %v", t, err))
 					})
+
 				if err != nil {
-					r.logger.Error(fmt.Sprintf("failed all attempts to refresh attestation service token, stopping refresher: %v", err))
+					// If all retry attempts fail, stop the refresher.
+					r.logger.Error(fmt.Sprintf("failed all attempts to get/refresh token, stopping refresher: %v", err))
 					return
 				}
 
+				// On success, reset the timer for the next refresh.
 				timer.Reset(duration)
 			}
 		}
@@ -589,6 +583,33 @@ func pullImageBackoffPolicy() backoff.BackOff {
 	return backoff.WithMaxRetries(b, 3)
 }
 
+func thirdPartyVerifiersConfigured(attestClients teeserver.AttestClients) bool {
+	return attestClients.ITA != nil
+}
+
+func (r *ContainerRunner) setUpAttestClients(ctx context.Context) (teeserver.AttestClients, error) {
+	attestClients := teeserver.AttestClients{}
+	gcaClient, err := util.NewRESTClient(ctx, r.launchSpec.AttestationServiceAddr, r.launchSpec.ProjectID, r.launchSpec.Region)
+	if err != nil {
+		return teeserver.AttestClients{}, fmt.Errorf("failed to create REST verifier client: %v", err)
+	}
+	attestClients.GCA = gcaClient
+	clients := "Google Cloud Attestation (GCA)"
+
+	if r.launchSpec.ITAConfig.ITARegion != "" {
+		itaClient, err := ita.NewClient(r.launchSpec.ITAConfig)
+		if err != nil {
+			return teeserver.AttestClients{}, fmt.Errorf("failed to create ITA client: %v", err)
+		}
+
+		attestClients.ITA = itaClient
+		clients += ", Intel Trust Authority (ITA)"
+	}
+
+	r.logger.Info(fmt.Sprintf("Attestation clients created: %s", clients))
+	return attestClients, nil
+}
+
 // Run the container
 // Container output will always be redirected to logger writer for now
 func (r *ContainerRunner) Run(ctx context.Context) error {
@@ -602,35 +623,20 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		return fmt.Errorf("failed to measure CEL events: %v", err)
 	}
 
-	// Only refresh token if agent has a default GCA client (not ITA use case).
-	if r.launchSpec.ITAConfig.ITARegion == "" {
-		if err := r.fetchAndWriteToken(ctx); err != nil {
+	attestClients, err := r.setUpAttestClients(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to set up attestation service clients: %v", err)
+	}
+
+	// Automatic refresher is only used if the GCA is the only configured verifier.
+	if !thirdPartyVerifiersConfigured(attestClients) {
+		if err := r.startTokenRefresher(ctx, defaultRetryPolicy); err != nil {
 			return fmt.Errorf("failed to fetch and write OIDC token: %v", err)
 		}
 	}
 
 	// create and start the TEE server
 	r.logger.Info("EnableOnDemandAttestation is enabled: initializing TEE server.")
-
-	attestClients := &teeserver.AttestClients{}
-	gcaClient, err := util.NewRESTClient(ctx, r.launchSpec.AttestationServiceAddr, r.launchSpec.ProjectID, r.launchSpec.Region)
-	if err != nil {
-		return fmt.Errorf("failed to create REST verifier client: %v", err)
-	}
-	attestClients.GCA = gcaClient
-	clients := "Google Cloud Attestation (GCA)"
-
-	if r.launchSpec.ITAConfig.ITARegion != "" {
-		itaClient, err := ita.NewClient(r.launchSpec.ITAConfig)
-		if err != nil {
-			return fmt.Errorf("failed to create ITA client: %v", err)
-		}
-
-		attestClients.ITA = itaClient
-		clients += ", Intel Trust Authority (ITA)"
-	}
-
-	r.logger.Info(fmt.Sprintf("Attestation clients created: %s", clients))
 
 	teeServer, err := teeserver.New(ctx, path.Join(launcherfile.HostTmpPath, teeServerSocket), r.attestAgent, r.logger, r.launchSpec, attestClients)
 	if err != nil {

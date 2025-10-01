@@ -183,8 +183,6 @@ func (a *agent) AttestWithClient(ctx context.Context, opts AttestAgentOpts, clie
 	if err != nil {
 		return nil, err
 	}
-	// TODO - Do not log the raw nonce
-	a.logger.Info("Received challenge from verifier service", "nonce", challenge.Nonce, "connID", challenge.ConnID, "iat", challenge.Iat, "signature", challenge.Signature)
 
 	tokenOpts := opts.TokenOptions
 	if tokenOpts == nil {
@@ -310,7 +308,7 @@ func (t *tpmAttestRoot) Attest(nonce []byte) (any, error) {
 
 type tdxAttestRoot struct {
 	tdxMu     sync.Mutex
-	qp        *tg.LinuxConfigFsQuoteProvider
+	qp        *tg.MacOsConfigFsQuoteProvider
 	tsmClient configfsi.Client
 	cosCel    cel.CEL
 }
