@@ -66,7 +66,7 @@ func TestGetDefaultToken(t *testing.T) {
 
 	ah := attestHandler{
 		logger: logging.SimpleLogger(),
-		clients: &AttestClients{
+		clients: AttestClients{
 			GCA: &fakeVerifierClient{},
 		},
 		attestAgent: fakeAttestationAgent{
@@ -97,7 +97,7 @@ func TestGetDefaultTokenServerError(t *testing.T) {
 	// in the handler.
 	ah := attestHandler{
 		logger: logging.SimpleLogger(),
-		clients: &AttestClients{
+		clients: AttestClients{
 			GCA: &fakeVerifierClient{},
 		},
 		attestAgent: fakeAttestationAgent{
@@ -205,7 +205,7 @@ func TestCustomToken(t *testing.T) {
 	for i, test := range tests {
 		ah := attestHandler{
 			logger: logging.SimpleLogger(),
-			clients: &AttestClients{
+			clients: AttestClients{
 				GCA: &fakeVerifierClient{},
 			},
 			attestAgent: fakeAttestationAgent{
@@ -336,7 +336,7 @@ func TestCustomTokenDataParsedSuccessfully(t *testing.T) {
 	for i, test := range tests {
 		ah := attestHandler{
 			logger: logging.SimpleLogger(),
-			clients: &AttestClients{
+			clients: AttestClients{
 				GCA: &fakeVerifierClient{},
 			},
 			attestAgent: fakeAttestationAgent{
@@ -407,7 +407,7 @@ func TestCustomHandleAttestError(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ah := attestHandler{
 				logger: logging.SimpleLogger(),
-				clients: &AttestClients{
+				clients: AttestClients{
 					GCA: &fakeVerifierClient{},
 				},
 				attestAgent: fakeAttestationAgent{

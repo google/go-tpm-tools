@@ -31,6 +31,7 @@ import (
 	"github.com/google/go-tpm-tools/launcher/internal/healthmonitoring/nodeproblemdetector"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/internal/signaturediscovery"
+	"github.com/google/go-tpm-tools/launcher/launcher/clock"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/registryauth"
 	"github.com/google/go-tpm-tools/launcher/spec"
@@ -418,10 +419,29 @@ func (r *ContainerRunner) measureMemoryMonitor() error {
 	return nil
 }
 
+type diskWriter struct{}
+
+func (d diskWriter) Write(p []byte) (n int, err error) {
+	// Write to a temp file first.
+	tmpTokenPath := path.Join(launcherfile.HostTmpPath, tokenFileTmp)
+	if err = os.WriteFile(tmpTokenPath, p, 0644); err != nil {
+		return 0, fmt.Errorf("failed to write a tmp token file: %v", err)
+	}
+
+	// Rename the temp file to the token file (to avoid race conditions).
+	if err = os.Rename(tmpTokenPath, path.Join(launcherfile.HostTmpPath, launcherfile.AttestationVerifierTokenFilename)); err != nil {
+		return 0, fmt.Errorf("failed to rename the token file: %v", err)
+	}
+
+	return len(p), nil
+}
+
+var _ io.Writer = (*diskWriter)(nil)
+
 // Retrieves the default OIDC token from the attestation service, and returns how long
 // to wait before attemping to refresh it.
 // The token file will be written to a tmp file and then renamed.
-func (r *ContainerRunner) refreshToken(ctx context.Context) (time.Duration, error) {
+func (r *ContainerRunner) refreshToken(ctx context.Context, writer io.Writer) (time.Duration, error) {
 	if err := r.attestAgent.Refresh(ctx); err != nil {
 		return 0, fmt.Errorf("failed to refresh attestation agent: %v", err)
 	}
@@ -444,15 +464,9 @@ func (r *ContainerRunner) refreshToken(ctx context.Context) (time.Duration, erro
 		return 0, errors.New("token is expired")
 	}
 
-	// Write to a temp file first.
-	tmpTokenPath := path.Join(launcherfile.HostTmpPath, tokenFileTmp)
-	if err = os.WriteFile(tmpTokenPath, token, 0644); err != nil {
-		return 0, fmt.Errorf("failed to write a tmp token file: %v", err)
-	}
-
-	// Rename the temp file to the token file (to avoid race conditions).
-	if err = os.Rename(tmpTokenPath, path.Join(launcherfile.HostTmpPath, launcherfile.AttestationVerifierTokenFilename)); err != nil {
-		return 0, fmt.Errorf("failed to rename the token file: %v", err)
+	_, err = writer.Write(token)
+	if err != nil {
+		return 0, err
 	}
 
 	// Print out the claims in the jwt payload
@@ -469,28 +483,32 @@ func (r *ContainerRunner) refreshToken(ctx context.Context) (time.Duration, erro
 
 // ctx must be a cancellable context.
 // retry specifies the refresher goroutine's retry policy.
-func (r *ContainerRunner) startTokenRefresher(ctx context.Context, retry func() *backoff.ExponentialBackOff) error {
+func (r *ContainerRunner) startTokenRefresher(ctx context.Context, retry func() *backoff.ExponentialBackOff,
+	newTimer func(d time.Duration) clock.Timer, tokenWriter io.Writer) error {
 	if err := os.MkdirAll(launcherfile.HostTmpPath, 0755); err != nil {
 		return err
 	}
+	r.logger.Info("Created directory0", launcherfile.HostTmpPath)
+	r.logger.Info("Starting token refresh goroutine")
 	go func() {
+		r.logger.Info("token refresher goroutine started")
 		// Start with a timer that fires immediately to get the first token.
-		timer := time.NewTimer(0)
+		timer := newTimer(0)
 		defer timer.Stop()
 
 		for {
 			select {
 			case <-ctx.Done():
-				r.logger.Info("token refreshing stopped")
+				r.logger.Info("Token refreshing stopped")
 				return
-			case <-timer.C:
-				r.logger.Info("refreshing attestation verifier OIDC token")
+			case <-timer.C():
+				r.logger.Info("Refreshing attestation verifier OIDC token")
 				var duration time.Duration
 
 				err := backoff.RetryNotify(
 					func() error {
 						var refreshErr error
-						duration, refreshErr = r.refreshToken(ctx)
+						duration, refreshErr = r.refreshToken(ctx, tokenWriter)
 						return refreshErr
 					},
 					retry(),
@@ -505,6 +523,7 @@ func (r *ContainerRunner) startTokenRefresher(ctx context.Context, retry func() 
 				}
 
 				// On success, reset the timer for the next refresh.
+				r.logger.Info("Resetting token refresh timer")
 				timer.Reset(duration)
 			}
 		}
@@ -609,7 +628,7 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 
 	// Automatic refresher is only used if the GCA is the only configured verifier.
 	if !thirdPartyVerifiersConfigured(attestClients) {
-		if err := r.startTokenRefresher(ctx, defaultRetryPolicy); err != nil {
+		if err := r.startTokenRefresher(ctx, defaultRetryPolicy, clock.NewRealTimer, diskWriter{}); err != nil {
 			return fmt.Errorf("failed to fetch and write OIDC token: %v", err)
 		}
 	}
