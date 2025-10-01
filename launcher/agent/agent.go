@@ -308,7 +308,7 @@ func (t *tpmAttestRoot) Attest(nonce []byte) (any, error) {
 
 type tdxAttestRoot struct {
 	tdxMu     sync.Mutex
-	qp        *tg.MacOsConfigFsQuoteProvider
+	qp        *tg.LinuxConfigFsQuoteProvider
 	tsmClient configfsi.Client
 	cosCel    cel.CEL
 }
