@@ -348,27 +348,6 @@ func (r *ContainerRunner) measureCELEvents(ctx context.Context) error {
 	return r.attestAgent.MeasureEvent(separator)
 }
 
-// func setUpAttestClients(ctx context.Context, launchSpec spec.LaunchSpec) (verifier.AttestClients, error) {
-// 	attestClients := verifier.AttestClients{}
-// 	gcaClient, err := util.NewRESTClient(ctx, launchSpec.AttestationServiceAddr, launchSpec.ProjectID, launchSpec.Region)
-// 	if err != nil {
-// 		return attestClients, fmt.Errorf("failed to create REST GCA client: %v", err)
-// 	}
-
-// 	attestClients.GCA = gcaClient
-
-// 	if launchSpec.ITAConfig != nil {
-// 		itaClient, err := ita.NewClient(launchSpec.ITAConfig)
-// 		if err != nil {
-// 			return attestClients, fmt.Errorf("failed to create ITA client: %v", err)
-// 		}
-
-// 		attestClients.ITA = itaClient
-// 	}
-
-// 	return attestClients, nil
-// }
-
 // measureContainerClaims will measure various container claims into the COS
 // eventlog in the AttestationAgent.
 func (r *ContainerRunner) measureContainerClaims(ctx context.Context) error {

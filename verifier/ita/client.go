@@ -38,7 +38,7 @@ var regionalURLs map[string]string = map[string]string{
 	"DEV":   "https://api-dev02-user10.ita-dev.adsdcsp.com",
 }
 
-type client struct {
+type itaClient struct {
 	inner  *http.Client
 	apiURL string
 	apiKey string
@@ -63,7 +63,7 @@ func urlFromRegion(region string) (string, error) {
 }
 
 // Confirm that client implements verifier.Client interface.
-var _ verifier.Client = (*client)(nil)
+var _ verifier.Client = (*itaClient)(nil)
 
 type itaNonce struct {
 	Val       []byte `json:"val"`
@@ -104,7 +104,7 @@ func NewClient(itaConfig verifier.ITAConfig) (verifier.Client, error) { //region
 		return nil, err
 	}
 
-	return &client{
+	return &itaClient{
 		inner: &http.Client{
 			Transport: &http.Transport{
 				// https://github.com/intel/trustauthority-client-for-go/blob/main/go-connector/token.go#L130.
@@ -125,9 +125,9 @@ func NewClient(itaConfig verifier.ITAConfig) (verifier.Client, error) { //region
 	}, nil
 }
 
-func (c *client) CreateChallenge(_ context.Context) (*verifier.Challenge, error) {
+func (c *itaClient) CreateChallenge(_ context.Context) (*verifier.Challenge, error) {
 	url := c.apiURL + nonceEndpoint
-	c.logger.Info("ITA URL", "url", url)
+	c.logger.Info("Calling ITA create challenge", "url", url)
 
 	headers := map[string]string{
 		acceptHeader: applicationJSON,
@@ -152,7 +152,7 @@ func (c *client) CreateChallenge(_ context.Context) (*verifier.Challenge, error)
 	}, nil
 }
 
-func (c *client) VerifyAttestation(_ context.Context, request verifier.VerifyAttestationRequest) (*verifier.VerifyAttestationResponse, error) {
+func (c *itaClient) VerifyAttestation(_ context.Context, request verifier.VerifyAttestationRequest) (*verifier.VerifyAttestationResponse, error) {
 	if request.TDCCELAttestation == nil {
 		return nil, errors.New("TDX required for ITA attestation")
 	}
@@ -176,7 +176,7 @@ func (c *client) VerifyAttestation(_ context.Context, request verifier.VerifyAtt
 	}, nil
 }
 
-func (c *client) doHTTPRequest(method string, url string, reqStruct any, headers map[string]string, respStruct any) error {
+func (c *itaClient) doHTTPRequest(method string, url string, reqStruct any, headers map[string]string, respStruct any) error {
 	// Create HTTP request.
 	var req *http.Request
 	var err error
@@ -289,6 +289,6 @@ func convertRequestToTokenRequest(request verifier.VerifyAttestationRequest) tok
 	return tokenReq
 }
 
-func (c *client) VerifyConfidentialSpace(ctx context.Context, request verifier.VerifyAttestationRequest) (*verifier.VerifyAttestationResponse, error) {
+func (c *itaClient) VerifyConfidentialSpace(ctx context.Context, request verifier.VerifyAttestationRequest) (*verifier.VerifyAttestationResponse, error) {
 	return c.VerifyAttestation(ctx, request)
 }

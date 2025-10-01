@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"io/ioutil"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -102,7 +102,7 @@ func TestCreateChallenge(t *testing.T) {
 		w.Write(marshaled)
 	}))
 
-	itaClient := &client{
+	itaClient := &itaClient{
 		inner:  http.DefaultClient,
 		apiURL: ts.URL,
 		apiKey: expectedAPIKey,
@@ -146,7 +146,7 @@ func TestVerifyAttestation(t *testing.T) {
 
 		// Verify HTTP Request body.
 		defer r.Body.Close()
-		reqBody, err := ioutil.ReadAll(r.Body)
+		reqBody, err := io.ReadAll(r.Body)
 		if err != nil {
 			t.Fatalf("Error reading HTTP request body: %s", err)
 		}
@@ -172,7 +172,7 @@ func TestVerifyAttestation(t *testing.T) {
 		w.Write(marshaled)
 	}))
 
-	itaClient := &client{
+	itaClient := &itaClient{
 		inner:  http.DefaultClient,
 		apiURL: ts.URL,
 		apiKey: expectedAPIKey,
@@ -215,7 +215,7 @@ func TestDoHTTPRequest(t *testing.T) {
 
 		// Verify HTTP Request body.
 		defer r.Body.Close()
-		reqBody, err := ioutil.ReadAll(r.Body)
+		reqBody, err := io.ReadAll(r.Body)
 		if err != nil {
 			t.Fatalf("Error reading HTTP request body: %s", err)
 		}
@@ -238,7 +238,7 @@ func TestDoHTTPRequest(t *testing.T) {
 		w.Write(marshaled)
 	}))
 
-	itaClient := client{
+	itaClient := itaClient{
 		inner:  http.DefaultClient,
 		logger: slog.Default(),
 	}
