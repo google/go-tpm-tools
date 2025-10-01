@@ -133,6 +133,24 @@ func TestLaunchSpecUnmarshalJSONBadInput(t *testing.T) {
 					"tee-monitoring-health-enable":"false",
 			}`,
 		},
+		{
+			"Attestation service endpoint not within allowlist",
+			`{
+				"tee-cmd":"[\"--foo\",\"--bar\",\"--baz\"]",
+				"tee-env-foo":"bar",
+				"tee-image-reference":"docker.io/library/hello-world:latest",
+				"tee-signed-image-repos":"docker.io/library/hello-world,gcr.io/cloudrun/hello",
+				"tee-restart-policy":"Always",
+				"tee-impersonate-service-accounts":"sv1@developer.gserviceaccount.com,sv2@developer.gserviceaccount.com",
+				"tee-container-log-redirect":"true",
+				"tee-monitoring-memory-enable":"true",
+				"tee-dev-shm-size-kb":"234234",
+				"tee-mount":"type=tmpfs,source=tmpfs,destination=/tmpmount;type=tmpfs,source=tmpfs,destination=/sized,size=222",
+				"ita-region":"US",
+				"ita-api-key":"test-api-key",
+				"tee-attestation-service-endpoint":"bad-proxy-server",
+			}`,
+		},
 	}
 
 	for _, testcase := range testCases {
@@ -153,7 +171,8 @@ func TestLaunchSpecUnmarshalJSONWithDefaultValue(t *testing.T) {
 		"tee-container-log-redirect":"",
 		"tee-restart-policy":"",
 		"tee-monitoring-memory-enable":"",
-		"tee-mount":""
+		"tee-mount":"",
+		"tee-attestation-service-endpoint":""
 		}`
 
 	spec := &LaunchSpec{}

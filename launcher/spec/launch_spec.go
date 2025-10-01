@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -96,6 +97,13 @@ const (
 const (
 	instanceAttributesQuery = "instance/attributes/?recursive=true"
 )
+
+var attestationServiceAllowlist = []string{
+	"", // empty string is allowlisted as it will default be the prod attestation service endpoint
+	"https://autopush-confidentialcomputing.sandbox.googleapis.com",
+	"https://staging-confidentialcomputing.sandbox.googleapis.com",
+	"https://confidentialcomputing.googleapis.com",
+}
 
 var errImageRefNotSpecified = fmt.Errorf("%s is not specified in the custom metadata", imageRefKey)
 
@@ -225,6 +233,9 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 
 	s.AttestationServiceAddr = unmarshaledMap[attestationServiceAddrKey]
 
+	if !slices.Contains[[]string](attestationServiceAllowlist, s.AttestationServiceAddr) {
+		return fmt.Errorf("the attestation service endpoint is not within the allowlist, want %+v, got %s", attestationServiceAllowlist, s.AttestationServiceAddr)
+	}
 	// Populate /dev/shm size override.
 	if val, ok := unmarshaledMap[devShmSizeKey]; ok && val != "" {
 		size, err := strconv.ParseUint(val, 10, 64)
