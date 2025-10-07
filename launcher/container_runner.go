@@ -464,11 +464,6 @@ func (r *ContainerRunner) refreshToken(ctx context.Context, writer io.Writer) (t
 		return 0, errors.New("token is expired")
 	}
 
-	_, err = writer.Write(token)
-	if err != nil {
-		return 0, err
-	}
-
 	// Print out the claims in the jwt payload
 	mapClaims := jwt.MapClaims{}
 	_, _, err = jwt.NewParser().ParseUnverified(string(token), mapClaims)
@@ -585,9 +580,15 @@ func thirdPartyVerifiersConfigured(attestClients teeserver.AttestClients) bool {
 	return attestClients.ITA != nil
 }
 
-func (r *ContainerRunner) setUpAttestClients(ctx context.Context) (teeserver.AttestClients, error) {
+type AttestClientFactories struct {
+	gcaClient func(ctx context.Context, asAddr, projectID, region string) (verifier.Client, error)
+	itaClient func(config verifier.ITAConfig) (verifier.Client, error)
+}
+
+func (r *ContainerRunner) setUpAttestClients(ctx context.Context, facs AttestClientFactories) (teeserver.AttestClients, error) {
 	attestClients := teeserver.AttestClients{}
-	gcaClient, err := util.NewRESTClient(ctx, r.launchSpec.AttestationServiceAddr, r.launchSpec.ProjectID, r.launchSpec.Region)
+	gcaClient, err := facs.gcaClient(ctx, r.launchSpec.AttestationServiceAddr, r.launchSpec.ProjectID, r.launchSpec.Region)
+
 	if err != nil {
 		return teeserver.AttestClients{}, fmt.Errorf("failed to create REST verifier client: %v", err)
 	}
@@ -595,7 +596,7 @@ func (r *ContainerRunner) setUpAttestClients(ctx context.Context) (teeserver.Att
 	clients := "Google Cloud Attestation (GCA)"
 
 	if r.launchSpec.ITAConfig.ITARegion != "" {
-		itaClient, err := ita.NewClient(r.launchSpec.ITAConfig)
+		itaClient, err := facs.itaClient(r.launchSpec.ITAConfig)
 		if err != nil {
 			return teeserver.AttestClients{}, fmt.Errorf("failed to create ITA client: %v", err)
 		}
@@ -621,7 +622,11 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		return fmt.Errorf("failed to measure CEL events: %v", err)
 	}
 
-	attestClients, err := r.setUpAttestClients(ctx)
+	clientFactories := AttestClientFactories{
+		gcaClient: util.NewRESTClient,
+		itaClient: ita.NewClient,
+	}
+	attestClients, err := r.setUpAttestClients(ctx, clientFactories)
 	if err != nil {
 		return fmt.Errorf("failed to set up attestation service clients: %v", err)
 	}

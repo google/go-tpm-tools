@@ -258,7 +258,6 @@ func (a *agent) AttestWithClient(ctx context.Context, opts AttestAgentOpts, clie
 	if len(resp.PartialErrs) > 0 {
 		a.logger.Error(fmt.Sprintf("Partial errors from VerifyAttestation: %v", resp.PartialErrs))
 	}
-	a.logger.Info("Received claims token from verifier", "token", resp.ClaimsToken)
 	return resp.ClaimsToken, nil
 }
 

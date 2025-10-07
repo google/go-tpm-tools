@@ -26,6 +26,7 @@ import (
 	"github.com/google/go-tpm-tools/launcher/launcher/clock"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/spec"
+	"github.com/google/go-tpm-tools/launcher/teeserver"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/opencontainers/go-digest"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
@@ -75,6 +76,22 @@ func (f *fakeAttestationAgent) Refresh(ctx context.Context) error {
 
 func (f *fakeAttestationAgent) Close() error {
 	return nil
+}
+
+type fakeClient struct{}
+
+var _ verifier.Client = (*fakeClient)(nil)
+
+func (f *fakeClient) CreateChallenge(ctx context.Context) (*verifier.Challenge, error) {
+	return nil, fmt.Errorf("unimplemented")
+}
+
+func (f *fakeClient) VerifyAttestation(ctx context.Context, request verifier.VerifyAttestationRequest) (*verifier.VerifyAttestationResponse, error) {
+	return nil, fmt.Errorf("unimplemented")
+}
+
+func (f *fakeClient) VerifyConfidentialSpace(ctx context.Context, request verifier.VerifyAttestationRequest) (*verifier.VerifyAttestationResponse, error) {
+	return nil, fmt.Errorf("unimplemented")
 }
 
 type fakeClaims struct {
@@ -625,6 +642,70 @@ func TestPullImageWithRetries(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSetUpAttestClients(t *testing.T) {
+	fakeFactories := AttestClientFactories{
+		gcaClient: func(ctx context.Context, asAddr string, projectID string, region string) (verifier.Client, error) {
+			return &fakeClient{}, nil
+		},
+		itaClient: func(itaConfig verifier.ITAConfig) (verifier.Client, error) {
+			return &fakeClient{}, nil
+		},
+	}
+
+	testcases := []struct {
+		name        string
+		launchSpec  spec.LaunchSpec
+		wantClients teeserver.AttestClients
+	}{
+		{
+			name: "GCA only",
+			launchSpec: spec.LaunchSpec{
+				AttestationServiceAddr: "us-central1-verifier.sandbox.googleapis.com",
+				ProjectID:              "fake-project-id",
+				Region:                 "us-central1",
+			},
+			wantClients: teeserver.AttestClients{
+				GCA: &fakeClient{},
+				ITA: nil,
+			},
+		},
+		{
+			name: "GCA and ITA",
+			launchSpec: spec.LaunchSpec{
+				AttestationServiceAddr: "us-central1-verifier.sandbox.googleapis.com",
+				ProjectID:              "fake-project-id",
+				Region:                 "us-central1",
+				ITAConfig: verifier.ITAConfig{
+					ITARegion: "test-region",
+					ITAKey:    "test-key",
+				},
+			},
+			wantClients: teeserver.AttestClients{
+				GCA: &fakeClient{},
+				ITA: &fakeClient{},
+			},
+		},
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := &ContainerRunner{
+				launchSpec: tc.launchSpec,
+				logger:     logging.SimpleLogger(),
+			}
+			clients, err := r.setUpAttestClients(context.Background(), fakeFactories)
+			if err != nil {
+				t.Fatalf("setUpAttestClients failed: %v", err)
+			}
+
+			if diff := cmp.Diff(clients, tc.wantClients); diff != "" {
+				t.Errorf("setUpAttestClients returned unexpected diff (-want +got):\n%s", diff)
+			}
+		})
+	}
+
 }
 
 // This ensures fakeContainer implements containerd.Container interface.

@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"io"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -106,7 +105,6 @@ func TestCreateChallenge(t *testing.T) {
 		inner:  http.DefaultClient,
 		apiURL: ts.URL,
 		apiKey: expectedAPIKey,
-		logger: slog.Default(),
 	}
 
 	challenge, err := itaClient.CreateChallenge(context.Background())
@@ -176,7 +174,6 @@ func TestVerifyAttestation(t *testing.T) {
 		inner:  http.DefaultClient,
 		apiURL: ts.URL,
 		apiKey: expectedAPIKey,
-		logger: slog.Default(),
 	}
 
 	verifyResp, err := itaClient.VerifyAttestation(context.Background(), testVerifierRequest)
@@ -239,8 +236,7 @@ func TestDoHTTPRequest(t *testing.T) {
 	}))
 
 	itaClient := itaClient{
-		inner:  http.DefaultClient,
-		logger: slog.Default(),
+		inner: http.DefaultClient,
 	}
 
 	resp := &tokenResponse{}

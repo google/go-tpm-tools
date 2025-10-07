@@ -126,7 +126,7 @@ func (a *attestHandler) getITAToken(w http.ResponseWriter, r *http.Request) {
 	// If the handler does not have an ITA client, return error.
 	if a.clients.ITA == nil {
 		errStr := "no ITA verifier client present - ensure ITA Region and Key are defined in metadata"
-		a.logAndWriteError(errStr, http.StatusPreconditionFailed, w)
+		a.logAndWriteError(errStr, http.StatusInternalServerError, w)
 		return
 	}
 
@@ -176,7 +176,6 @@ func (a *attestHandler) attest(w http.ResponseWriter, r *http.Request, client ve
 		}
 
 		// Do not check that TokenTypeOptions matches TokenType in the launcher.
-
 		opts := agent.AttestAgentOpts{
 			TokenOptions: &tokenOptions,
 		}

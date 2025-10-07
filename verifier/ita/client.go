@@ -9,9 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
-	"os"
 	"strings"
 
 	"github.com/google/go-tpm-tools/verifier"
@@ -27,8 +25,6 @@ const (
 	applicationJSON   = "application/json"
 
 	challengeNamePrefix = "ita://"
-
-	serialConsoleFile = "/dev/console"
 )
 
 var regionalURLs map[string]string = map[string]string{
@@ -40,7 +36,6 @@ type itaClient struct {
 	inner  *http.Client
 	apiURL string
 	apiKey string
-	logger *slog.Logger
 }
 
 func urlFromRegion(region string) (string, error) {
@@ -83,20 +78,6 @@ func createHashedNonce(nonce *itaNonce) ([]byte, error) {
 }
 
 func NewClient(itaConfig verifier.ITAConfig) (verifier.Client, error) { //region string, key string) (verifier.Client, error) {
-	// TODO - these clients should be able to accept a logger as they are only used in the launcher.
-	// Remove this when they get access to the launcher/internal logger.
-	// This is less than ideal to say the least.
-	serialConsole, err := os.OpenFile(serialConsoleFile, os.O_WRONLY, 0)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open serial console for writing: %v", err)
-	}
-
-	slg := slog.New(slog.NewTextHandler(serialConsole, nil))
-	slg.Info("Serial Console logger initialized")
-
-	// This is necessary for DEBUG logs to propagate properly.
-	slog.SetDefault(slg)
-
 	url, err := urlFromRegion(itaConfig.ITARegion)
 	if err != nil {
 		return nil, err
@@ -119,13 +100,11 @@ func NewClient(itaConfig verifier.ITAConfig) (verifier.Client, error) { //region
 		},
 		apiURL: url,
 		apiKey: itaConfig.ITAKey,
-		logger: slg,
 	}, nil
 }
 
 func (c *itaClient) CreateChallenge(_ context.Context) (*verifier.Challenge, error) {
 	url := c.apiURL + nonceEndpoint
-	c.logger.Info("Calling ITA create challenge", "url", url)
 
 	headers := map[string]string{
 		acceptHeader: applicationJSON,
@@ -178,10 +157,8 @@ func (c *itaClient) doHTTPRequest(method string, url string, reqStruct any, head
 	// Create HTTP request.
 	var req *http.Request
 	var err error
-	logBody := ""
 	if reqStruct != nil {
 		body, err := json.Marshal(reqStruct)
-		logBody = string(body)
 		if err != nil {
 			return fmt.Errorf("error marshaling request: %v", err)
 		}
@@ -203,8 +180,6 @@ func (c *itaClient) doHTTPRequest(method string, url string, reqStruct any, head
 		req.Header.Add(key, val)
 	}
 
-	c.logger.Info("API request details", "url", url, "method", method, "headers", headers, "body", logBody)
-
 	resp, err := c.inner.Do(req)
 	if err != nil {
 		return fmt.Errorf("HTTP request error: %v", err)
@@ -216,7 +191,6 @@ func (c *itaClient) doHTTPRequest(method string, url string, reqStruct any, head
 	if err != nil {
 		return fmt.Errorf("error reading response body: %v", err)
 	}
-	c.logger.Info("resp", "code", resp.StatusCode, "body", respBody)
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("HTTP request failed with status code %d, response body %s", resp.StatusCode, string(respBody))
 	}
