@@ -32,10 +32,8 @@ const (
 )
 
 var regionalURLs map[string]string = map[string]string{
-	"US":    "https://api.trustauthority.intel.com",
-	"EU":    "https://api.eu.trustauthority.intel.com",
-	"PILOT": "https://api.pilot.trustauthority.intel.com",
-	"DEV":   "https://api-dev02-user10.ita-dev.adsdcsp.com",
+	"US": "https://api.trustauthority.intel.com",
+	"EU": "https://api.eu.trustauthority.intel.com",
 }
 
 type itaClient struct {

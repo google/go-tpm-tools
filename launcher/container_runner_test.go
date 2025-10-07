@@ -10,7 +10,6 @@ import (
 	"io"
 	"os"
 	"strconv"
-	"sync"
 	"testing"
 	"time"
 
@@ -44,10 +43,6 @@ type fakeAttestationAgent struct {
 	attestFunc       func(context.Context, agent.AttestAgentOpts) ([]byte, error)
 	sigsCache        []string
 	sigsFetcherFunc  func(context.Context) []string
-
-	// attMu sits on top of attempts field and protects attempts.
-	attMu    sync.Mutex
-	attempts int
 }
 
 func (f *fakeAttestationAgent) MeasureEvent(event cel.Content) error {
@@ -413,7 +408,7 @@ func testRetryPolicyWithNTries(t *testing.T, numTries int, expectRefresh bool) {
 		t.Fatalf("startTokenRefresherWithRetry failed: %v", err)
 	}
 
-	// Trigger timer twice, always draining the reponse chan
+	// Trigger timer twice, always draining the response chan
 	for range 2 {
 		// Hit timer to trigger the goroutine logic
 		fakeTimer.OutChan <- time.Now()

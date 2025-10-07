@@ -1,3 +1,4 @@
+// Package clock contains time-related utilities
 package clock
 
 import "time"
