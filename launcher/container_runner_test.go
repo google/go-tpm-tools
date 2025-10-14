@@ -645,7 +645,7 @@ func TestPullImageWithRetries(t *testing.T) {
 }
 
 func TestSetUpAttestClients(t *testing.T) {
-	fakeFactories := AttestClientFactories{
+	fakeFactories := attestClientFactories{
 		gcaClient: func(ctx context.Context, asAddr string, projectID string, region string) (verifier.Client, error) {
 			return &fakeClient{}, nil
 		},

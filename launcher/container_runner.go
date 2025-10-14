@@ -419,9 +419,9 @@ func (r *ContainerRunner) measureMemoryMonitor() error {
 	return nil
 }
 
-type diskWriter struct{}
+type wellKnownFileLocationWriter struct{}
 
-func (d diskWriter) Write(p []byte) (n int, err error) {
+func (d wellKnownFileLocationWriter) Write(p []byte) (n int, err error) {
 	// Write to a temp file first.
 	tmpTokenPath := path.Join(launcherfile.HostTmpPath, tokenFileTmp)
 	if err = os.WriteFile(tmpTokenPath, p, 0644); err != nil {
@@ -436,7 +436,7 @@ func (d diskWriter) Write(p []byte) (n int, err error) {
 	return len(p), nil
 }
 
-var _ io.Writer = (*diskWriter)(nil)
+var _ io.Writer = (*wellKnownFileLocationWriter)(nil)
 
 // Retrieves the default OIDC token from the attestation service, and returns how long
 // to wait before attemping to refresh it.
@@ -462,6 +462,11 @@ func (r *ContainerRunner) refreshToken(ctx context.Context, writer io.Writer) (t
 	now := time.Now()
 	if !now.Before(claims.ExpiresAt.Time) {
 		return 0, errors.New("token is expired")
+	}
+
+	_, err = writer.Write(token)
+	if err != nil {
+		return 0, fmt.Errorf("failed to write token: %v", err)
 	}
 
 	// Print out the claims in the jwt payload
@@ -580,14 +585,14 @@ func thirdPartyVerifiersConfigured(attestClients teeserver.AttestClients) bool {
 	return attestClients.ITA != nil
 }
 
-type AttestClientFactories struct {
+type attestClientFactories struct {
 	gcaClient func(ctx context.Context, asAddr, projectID, region string) (verifier.Client, error)
 	itaClient func(config verifier.ITAConfig) (verifier.Client, error)
 }
 
-func (r *ContainerRunner) setUpAttestClients(ctx context.Context, facs AttestClientFactories) (teeserver.AttestClients, error) {
+func (r *ContainerRunner) setUpAttestClients(ctx context.Context, factories attestClientFactories) (teeserver.AttestClients, error) {
 	attestClients := teeserver.AttestClients{}
-	gcaClient, err := facs.gcaClient(ctx, r.launchSpec.AttestationServiceAddr, r.launchSpec.ProjectID, r.launchSpec.Region)
+	gcaClient, err := factories.gcaClient(ctx, r.launchSpec.AttestationServiceAddr, r.launchSpec.ProjectID, r.launchSpec.Region)
 
 	if err != nil {
 		return teeserver.AttestClients{}, fmt.Errorf("failed to create REST verifier client: %v", err)
@@ -596,7 +601,7 @@ func (r *ContainerRunner) setUpAttestClients(ctx context.Context, facs AttestCli
 	clients := "Google Cloud Attestation (GCA)"
 
 	if r.launchSpec.ITAConfig.ITARegion != "" {
-		itaClient, err := facs.itaClient(r.launchSpec.ITAConfig)
+		itaClient, err := factories.itaClient(r.launchSpec.ITAConfig)
 		if err != nil {
 			return teeserver.AttestClients{}, fmt.Errorf("failed to create ITA client: %v", err)
 		}
@@ -622,7 +627,7 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		return fmt.Errorf("failed to measure CEL events: %v", err)
 	}
 
-	clientFactories := AttestClientFactories{
+	clientFactories := attestClientFactories{
 		gcaClient: util.NewRESTClient,
 		itaClient: ita.NewClient,
 	}
@@ -633,7 +638,7 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 
 	// Automatic refresher is only used if the GCA is the only configured verifier.
 	if !thirdPartyVerifiersConfigured(attestClients) {
-		if err := r.startTokenRefresher(ctx, defaultRetryPolicy, clock.NewRealTimer, diskWriter{}); err != nil {
+		if err := r.startTokenRefresher(ctx, defaultRetryPolicy, clock.NewRealTimer, wellKnownFileLocationWriter{}); err != nil {
 			return fmt.Errorf("failed to fetch and write OIDC token: %v", err)
 		}
 	}
