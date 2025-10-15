@@ -485,7 +485,6 @@ func (r *ContainerRunner) refreshToken(ctx context.Context, writer io.Writer) (t
 // retry specifies the refresher goroutine's retry policy.
 func (r *ContainerRunner) startTokenRefresher(ctx context.Context, retry func() *backoff.ExponentialBackOff,
 	newTimer func(d time.Duration) clock.Timer, tokenWriter io.Writer) <-chan error {
-	r.logger.Info("Created directory", "path", launcherfile.HostTmpPath)
 	r.logger.Info("Starting token refresh goroutine")
 
 	initComplete := make(chan error, 1)
@@ -653,6 +652,7 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		if err := os.MkdirAll(launcherfile.HostTmpPath, 0755); err != nil {
 			return err
 		}
+		r.logger.Info("Created directory", "path", launcherfile.HostTmpPath)
 
 		errchan := r.startTokenRefresher(ctx, defaultRetryPolicy, clock.NewRealTimer, wellKnownFileLocationWriter{})
 		err := <-errchan
