@@ -82,15 +82,15 @@ type fakeClient struct{}
 
 var _ verifier.Client = (*fakeClient)(nil)
 
-func (f *fakeClient) CreateChallenge(ctx context.Context) (*verifier.Challenge, error) {
+func (f *fakeClient) CreateChallenge(_ context.Context) (*verifier.Challenge, error) {
 	return nil, fmt.Errorf("unimplemented")
 }
 
-func (f *fakeClient) VerifyAttestation(ctx context.Context, request verifier.VerifyAttestationRequest) (*verifier.VerifyAttestationResponse, error) {
+func (f *fakeClient) VerifyAttestation(_ context.Context, _ verifier.VerifyAttestationRequest) (*verifier.VerifyAttestationResponse, error) {
 	return nil, fmt.Errorf("unimplemented")
 }
 
-func (f *fakeClient) VerifyConfidentialSpace(ctx context.Context, request verifier.VerifyAttestationRequest) (*verifier.VerifyAttestationResponse, error) {
+func (f *fakeClient) VerifyConfidentialSpace(_ context.Context, _ verifier.VerifyAttestationRequest) (*verifier.VerifyAttestationResponse, error) {
 	return nil, fmt.Errorf("unimplemented")
 }
 
@@ -646,10 +646,10 @@ func TestPullImageWithRetries(t *testing.T) {
 
 func TestSetUpAttestClients(t *testing.T) {
 	fakeFactories := attestClientFactories{
-		gcaClient: func(ctx context.Context, asAddr string, projectID string, region string) (verifier.Client, error) {
+		gcaClient: func(_ context.Context, _ string, _ string, _ string) (verifier.Client, error) {
 			return &fakeClient{}, nil
 		},
-		itaClient: func(itaConfig verifier.ITAConfig) (verifier.Client, error) {
+		itaClient: func(_ verifier.ITAConfig) (verifier.Client, error) {
 			return &fakeClient{}, nil
 		},
 	}
