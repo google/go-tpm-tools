@@ -344,9 +344,7 @@ func TestStartTokenRefresherSucceeds(t *testing.T) {
 	}
 
 	fw := fakeWriter{}
-	if err := runner.startTokenRefresher(ctx, defaultRetryPolicy, fakeTimerFactory, &fw); err != nil {
-		t.Fatalf("startTokenRefresher failed: %v", err)
-	}
+	errchan := runner.startTokenRefresher(ctx, defaultRetryPolicy, fakeTimerFactory, &fw)
 
 	// Hit timer to trigger the goroutine logic
 	fakeTimer.OutChan <- time.Now()
@@ -362,6 +360,12 @@ func TestStartTokenRefresherSucceeds(t *testing.T) {
 
 	if !bytes.Equal(data, expectedToken) {
 		t.Errorf("Token written to file does not match expected token: got %v\nwant %v", string(data), string(expectedToken))
+	}
+
+	// Ensure the goroutine reported no error after the first sync.
+	err = <-errchan
+	if err != nil {
+		t.Fatalf("startTokenRefresher failed: %v", err)
 	}
 }
 
@@ -421,9 +425,7 @@ func testRetryPolicyWithNTries(t *testing.T, numTries int, expectRefresh bool) {
 	}
 	fw := fakeWriter{}
 
-	if err := runner.startTokenRefresher(ctx, testRetryPolicyThreeTimes, fakeTimerFactory, &fw); err != nil {
-		t.Fatalf("startTokenRefresherWithRetry failed: %v", err)
-	}
+	errchan := runner.startTokenRefresher(ctx, testRetryPolicyThreeTimes, fakeTimerFactory, &fw)
 
 	// Trigger timer twice, always draining the response chan
 	for range 2 {
@@ -464,7 +466,15 @@ func testRetryPolicyWithNTries(t *testing.T, numTries int, expectRefresh bool) {
 		wantClaims := extractJWTClaims(t, expectedRefreshedToken)
 		t.Errorf("refreshed token did not match expected token: got ID %v, want ID %v", gotClaims.ID, wantClaims.ID)
 	}
+
+	// Ensure the goroutine reported no error after the first sync.
+	err = <-errchan
+	if err != nil {
+		t.Fatalf("startTokenRefresher failed: %v", err)
+	}
 }
+
+//func Test
 
 func TestGetNextRefresh(t *testing.T) {
 	// 0 <= random < 1.

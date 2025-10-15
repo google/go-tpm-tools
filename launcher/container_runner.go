@@ -484,13 +484,21 @@ func (r *ContainerRunner) refreshToken(ctx context.Context, writer io.Writer) (t
 // ctx must be a cancellable context.
 // retry specifies the refresher goroutine's retry policy.
 func (r *ContainerRunner) startTokenRefresher(ctx context.Context, retry func() *backoff.ExponentialBackOff,
-	newTimer func(d time.Duration) clock.Timer, tokenWriter io.Writer) error {
-	if err := os.MkdirAll(launcherfile.HostTmpPath, 0755); err != nil {
-		return err
-	}
-	r.logger.Info("Created directory0", launcherfile.HostTmpPath)
+	newTimer func(d time.Duration) clock.Timer, tokenWriter io.Writer) <-chan error {
+	r.logger.Info("Created directory", "path", launcherfile.HostTmpPath)
 	r.logger.Info("Starting token refresh goroutine")
+
+	initComplete := make(chan error, 1)
+
 	go func() {
+		isInitialized := false // A flag to ensure we only send the initialization signal once.
+		signalDone := func(err error) {
+			if !isInitialized {
+				initComplete <- err // Signal to the calling function that the first refresh is done.
+				isInitialized = true
+			}
+		}
+
 		r.logger.Info("token refresher goroutine started")
 		// Start with a timer that fires immediately to get the first token.
 		timer := newTimer(0)
@@ -516,6 +524,9 @@ func (r *ContainerRunner) startTokenRefresher(ctx context.Context, retry func() 
 						r.logger.Error(fmt.Sprintf("failed to refresh token at time %v: %v", t, err))
 					})
 
+				// After the first attempt signal to the calling function that the refresh is done.
+				signalDone(err)
+
 				if err != nil {
 					// If all retry attempts fail, stop the refresher.
 					r.logger.Error(fmt.Sprintf("failed all attempts to get/refresh token, stopping refresher: %v", err))
@@ -529,7 +540,7 @@ func (r *ContainerRunner) startTokenRefresher(ctx context.Context, retry func() 
 		}
 	}()
 
-	return nil
+	return initComplete
 }
 
 // getNextRefreshFromExpiration returns the Duration for the next run of the
@@ -638,7 +649,14 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 
 	// Automatic refresher is only used if the GCA is the only configured verifier.
 	if !thirdPartyVerifiersConfigured(attestClients) {
-		if err := r.startTokenRefresher(ctx, defaultRetryPolicy, clock.NewRealTimer, wellKnownFileLocationWriter{}); err != nil {
+		// Create the well known token file location.
+		if err := os.MkdirAll(launcherfile.HostTmpPath, 0755); err != nil {
+			return err
+		}
+
+		errchan := r.startTokenRefresher(ctx, defaultRetryPolicy, clock.NewRealTimer, wellKnownFileLocationWriter{})
+		err := <-errchan
+		if err != nil {
 			return fmt.Errorf("failed to fetch and write OIDC token: %v", err)
 		}
 	}
