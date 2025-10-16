@@ -28,6 +28,10 @@ var (
 	Cos101AmdSevEventLog []byte
 	//go:embed eventlogs/gdc-host.bin
 	GdcHost []byte
+	//go:embed eventlogs/eventlogwithsp800155.bin
+	SP800155EventLog []byte
+	//go:embed eventlogs/confidential-gke-debug-251000_eventlog.bin
+	CGKE251000 []byte
 )
 
 // Kernel command lines from event logs.

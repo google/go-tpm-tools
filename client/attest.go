@@ -59,11 +59,6 @@ type AttestOpts struct {
 	// depending on the technology's size. Leaving this nil is not recommended. If
 	// nil, then TEEDevice must be nil.
 	TEENonce []byte
-	// HashNonce will apply the attestation key's signing scheme hash algorithm
-	// to the input Nonce field and use the resulting digest in place of the
-	// original Nonce.
-	// Nonce must still be unique and application-specific.
-	HashNonce bool
 }
 
 // SevSnpQuoteProvider encapsulates the SEV-SNP attestation device to add its attestation report
@@ -291,16 +286,8 @@ func (k *Key) Attest(opts AttestOpts) (*pb.Attestation, error) {
 		return nil, fmt.Errorf("failed to encode public area: %w", err)
 	}
 	attestation.AkCert = k.CertDERBytes()
-	extraData := opts.Nonce
-	if opts.HashNonce {
-		var err error
-		extraData, err = internal.HashNonce(k.PublicArea(), extraData)
-		if err != nil {
-			return nil, fmt.Errorf("failed to hash the input nonce: %w", err)
-		}
-	}
 	for _, sel := range sels {
-		quote, err := k.Quote(sel, extraData)
+		quote, err := k.Quote(sel, opts.Nonce)
 		if err != nil {
 			return nil, err
 		}
