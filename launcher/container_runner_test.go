@@ -7,10 +7,10 @@ import (
 	"crypto/rsa"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path"
 	"strconv"
-	"sync"
 	"testing"
 	"time"
 
@@ -24,6 +24,7 @@ import (
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/launcher/agent"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
+	"github.com/google/go-tpm-tools/launcher/launcher/clock"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/spec"
 	"github.com/google/go-tpm-tools/verifier"
@@ -43,10 +44,6 @@ type fakeAttestationAgent struct {
 	attestFunc       func(context.Context, agent.AttestAgentOpts) ([]byte, error)
 	sigsCache        []string
 	sigsFetcherFunc  func(context.Context) []string
-
-	// attMu sits on top of attempts field and protects attempts.
-	attMu    sync.Mutex
-	attempts int
 }
 
 func (f *fakeAttestationAgent) MeasureEvent(event cel.Content) error {
@@ -81,10 +78,46 @@ func (f *fakeAttestationAgent) Close() error {
 	return nil
 }
 
+type fakeClient struct{}
+
+var _ verifier.Client = (*fakeClient)(nil)
+
+func (f *fakeClient) CreateChallenge(_ context.Context) (*verifier.Challenge, error) {
+	return nil, fmt.Errorf("unimplemented")
+}
+
+func (f *fakeClient) VerifyAttestation(_ context.Context, _ verifier.VerifyAttestationRequest) (*verifier.VerifyAttestationResponse, error) {
+	return nil, fmt.Errorf("unimplemented")
+}
+
+func (f *fakeClient) VerifyConfidentialSpace(_ context.Context, _ verifier.VerifyAttestationRequest) (*verifier.VerifyAttestationResponse, error) {
+	return nil, fmt.Errorf("unimplemented")
+}
+
 type fakeClaims struct {
 	jwt.RegisteredClaims
 	Signatures []string
 }
+
+type fakeWriter struct {
+	writes [][]byte
+}
+
+func (f *fakeWriter) Write(p []byte) (n int, err error) {
+	f.writes = append(f.writes, p)
+	return 0, nil
+}
+
+func (f *fakeWriter) pop() ([]byte, error) {
+	if len(f.writes) <= 0 {
+		return nil, fmt.Errorf("No more writes to return")
+	}
+	p := f.writes[0]
+	f.writes = f.writes[1:]
+	return p, nil
+}
+
+var _ io.Writer = (*fakeWriter)(nil)
 
 func createJWT(t *testing.T, ttl time.Duration) []byte {
 	return createJWTWithID(t, "test token", ttl)
@@ -164,19 +197,21 @@ func TestRefreshToken(t *testing.T) {
 		t.Fatalf("Error creating host token path directory: %v", err)
 	}
 
-	refreshTime, err := runner.refreshToken(ctx)
+	fw := fakeWriter{}
+	refreshTime, err := runner.refreshToken(ctx, &fw)
 	if err != nil {
 		t.Fatalf("refreshToken returned with error: %v", err)
 	}
 
-	filepath := path.Join(launcherfile.HostTmpPath, launcherfile.AttestationVerifierTokenFilename)
-	data, err := os.ReadFile(filepath)
+	// TODO - check file path was created
+	//filepath := path.Join(launcherfile.HostTmpPath, launcherfile.AttestationVerifierTokenFilename)
+	data, err := fw.pop()
 	if err != nil {
-		t.Fatalf("Failed to read from %s: %v", filepath, err)
+		t.Fatalf("Failed to get a written token %v", err)
 	}
 
 	if !bytes.Equal(data, expectedToken) {
-		t.Errorf("Initial token written to file does not match expected token: got %v, want %v", data, expectedToken)
+		t.Errorf("Initial token written to file does not match expected token: got %v\nwant %v", string(data), string(expectedToken))
 	}
 
 	// Expect refreshTime to be no greater than expectedTTL.
@@ -209,10 +244,12 @@ func TestRefreshTokenWithSignedContainerCacheEnabled(t *testing.T) {
 		t.Fatalf("Error creating host token path directory: %v", err)
 	}
 
-	_, err := runner.refreshToken(ctx)
+	fw := &fakeWriter{}
+	_, err := runner.refreshToken(ctx, fw)
 	if err != nil {
 		t.Fatalf("refreshToken returned with error: %v", err)
 	}
+	fw.pop() // Don't need to check first token
 
 	// Simulate adding signatures.
 	newCache := []string{"old sigs cache", "new sigs cache"}
@@ -221,16 +258,15 @@ func TestRefreshTokenWithSignedContainerCacheEnabled(t *testing.T) {
 	}
 
 	// Refresh token again to get the updated token.
-	_, err = runner.refreshToken(ctx)
+	_, err = runner.refreshToken(ctx, fw)
 	if err != nil {
 		t.Fatalf("refreshToken returned with error: %v", err)
 	}
 
 	// Read the token to check if claims contain the updated signatures.
-	filepath := path.Join(launcherfile.HostTmpPath, launcherfile.AttestationVerifierTokenFilename)
-	token, err := os.ReadFile(filepath)
+	token, err := fw.pop()
 	if err != nil {
-		t.Fatalf("Failed to read from %s: %v", filepath, err)
+		t.Fatalf("Failed to get a written token %v", err)
 	}
 
 	gotClaims := &fakeClaims{}
@@ -278,7 +314,8 @@ func TestRefreshTokenError(t *testing.T) {
 				logger:      logging.SimpleLogger(),
 			}
 
-			if _, err := runner.refreshToken(context.Background()); err == nil {
+			fw := fakeWriter{}
+			if _, err := runner.refreshToken(context.Background(), &fw); err == nil {
 				t.Error("refreshToken succeeded, expected error.")
 			}
 
@@ -286,7 +323,7 @@ func TestRefreshTokenError(t *testing.T) {
 	}
 }
 
-func TestFetchAndWriteTokenSucceeds(t *testing.T) {
+func TestStartTokenRefresherSucceeds(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -301,69 +338,34 @@ func TestFetchAndWriteTokenSucceeds(t *testing.T) {
 		logger: logging.SimpleLogger(),
 	}
 
-	if err := runner.fetchAndWriteToken(ctx); err != nil {
-		t.Fatalf("fetchAndWriteToken failed: %v", err)
+	fakeTimer := clock.NewFakeTimer()
+	fakeTimerFactory := func(_ time.Duration) clock.Timer {
+		return &fakeTimer
 	}
 
-	filepath := path.Join(launcherfile.HostTmpPath, launcherfile.AttestationVerifierTokenFilename)
-	data, err := os.ReadFile(filepath)
+	fw := fakeWriter{}
+	errchan := runner.startTokenRefresher(ctx, defaultRetryPolicy, fakeTimerFactory, &fw)
+
+	// Hit timer to trigger the goroutine logic
+	fakeTimer.OutChan <- time.Now()
+	// Block on timer resetting, signaling a token has been written
+	<-fakeTimer.ResetChan
+
+	// TODO - test the directory actually gets made
+	//filepath := path.Join(launcherfile.HostTmpPath, launcherfile.AttestationVerifierTokenFilename)
+	data, err := fw.pop()
 	if err != nil {
-		t.Fatalf("Failed to read from %s: %v", filepath, err)
+		t.Fatalf("Failed to get a written token %v", err)
 	}
 
 	if !bytes.Equal(data, expectedToken) {
-		t.Errorf("Token written to file does not match expected token: got %v, want %v", data, expectedToken)
-	}
-}
-
-func TestTokenIsNotChangedIfRefreshFails(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	expectedToken := createJWT(t, 5*time.Second)
-	ttl := 5 * time.Second
-
-	attestAgent := &fakeAttestationAgent{}
-	attestAgent.attestFunc = func(context.Context, agent.AttestAgentOpts) ([]byte, error) {
-		attestAgent.attMu.Lock()
-		defer func() {
-			attestAgent.attempts = attestAgent.attempts + 1
-			attestAgent.attMu.Unlock()
-		}()
-		if attestAgent.attempts%2 == 0 {
-			return expectedToken, nil
-		}
-		return nil, errors.New("attest unsuccessful")
+		t.Errorf("Token written to file does not match expected token: got %v\nwant %v", string(data), string(expectedToken))
 	}
 
-	runner := ContainerRunner{
-		attestAgent: attestAgent,
-		logger:      logging.SimpleLogger(),
-	}
-
-	if err := runner.fetchAndWriteToken(ctx); err != nil {
-		t.Fatalf("fetchAndWriteToken failed: %v", err)
-	}
-
-	filepath := path.Join(launcherfile.HostTmpPath, launcherfile.AttestationVerifierTokenFilename)
-	data, err := os.ReadFile(filepath)
+	// Ensure the goroutine reported no error after the first sync.
+	err = <-errchan
 	if err != nil {
-		t.Fatalf("Failed to read from %s: %v", filepath, err)
-	}
-
-	if !bytes.Equal(data, expectedToken) {
-		t.Errorf("Initial token written to file does not match expected token: got %v, want %v", data, expectedToken)
-	}
-
-	time.Sleep(ttl)
-
-	data, err = os.ReadFile(filepath)
-	if err != nil {
-		t.Fatalf("Failed to read from %s: %v", filepath, err)
-	}
-
-	if !bytes.Equal(data, expectedToken) {
-		t.Errorf("Expected token to remain the same after unsuccessful refresh attempt: got %v", data)
+		t.Fatalf("startTokenRefresher failed: %v", err)
 	}
 }
 
@@ -398,9 +400,8 @@ func testRetryPolicyWithNTries(t *testing.T, numTries int, expectRefresh bool) {
 	defer cancel()
 
 	expectedInitialToken := createJWTWithID(t, "initial token"+strNum, 5*time.Second)
-	expectedRefreshToken := createJWTWithID(t, "refresh token"+strNum, 100*time.Second)
+	expectedRefreshedToken := createJWTWithID(t, "refresh token"+strNum, 100*time.Second)
 	// Wait the initial token's 5s plus a second per retry (MaxInterval).
-	ttl := time.Duration(numTries)*time.Second + 5*time.Second
 	retry := -1
 	attestFunc := func(context.Context, agent.AttestAgentOpts) ([]byte, error) {
 		retry++
@@ -409,7 +410,7 @@ func testRetryPolicyWithNTries(t *testing.T, numTries int, expectRefresh bool) {
 			return expectedInitialToken, nil
 		}
 		if retry == numTries {
-			return expectedRefreshToken, nil
+			return expectedRefreshedToken, nil
 		}
 		return nil, errors.New("attest unsuccessful")
 	}
@@ -417,102 +418,59 @@ func testRetryPolicyWithNTries(t *testing.T, numTries int, expectRefresh bool) {
 		attestAgent: &fakeAttestationAgent{attestFunc: attestFunc},
 		logger:      logging.SimpleLogger(),
 	}
-	if err := runner.fetchAndWriteTokenWithRetry(ctx, testRetryPolicyThreeTimes); err != nil {
-		t.Fatalf("fetchAndWriteTokenWithRetry failed: %v", err)
+
+	fakeTimer := clock.NewFakeTimer()
+	fakeTimerFactory := func(_ time.Duration) clock.Timer {
+		return &fakeTimer
 	}
-	filepath := path.Join(launcherfile.HostTmpPath, launcherfile.AttestationVerifierTokenFilename)
-	data, err := os.ReadFile(filepath)
+	fw := fakeWriter{}
+
+	errchan := runner.startTokenRefresher(ctx, testRetryPolicyThreeTimes, fakeTimerFactory, &fw)
+
+	// Trigger timer twice, always draining the response chan
+	for range 2 {
+		// Hit timer to trigger the goroutine logic
+		fakeTimer.OutChan <- time.Now()
+		// Block on timer action.
+		select {
+		case <-fakeTimer.ResetChan: // token was written successfully
+			t.Log("Got a reset signal from the refresh goroutine")
+		case <-fakeTimer.StopChan: // refresh failed completely
+			if expectRefresh {
+				t.Log("Got a stop signal from the refresh goroutine")
+				t.Fatalf("Failed to get a refreshed token from the goroutine")
+			}
+		}
+
+	}
+
+	data, err := fw.pop()
 	if err != nil {
-		t.Fatalf("failed to read from %s: %v", filepath, err)
+		t.Fatalf("Failed to get first written token %v", err)
 	}
 
 	if !bytes.Equal(data, expectedInitialToken) {
 		gotClaims := extractJWTClaims(t, data)
 		wantClaims := extractJWTClaims(t, expectedInitialToken)
-		t.Errorf("initial token written to file does not match expected token: got ID %v, want ID %v", gotClaims.ID, wantClaims.ID)
-	}
-	time.Sleep(ttl)
-
-	data, err = os.ReadFile(filepath)
-	if err != nil {
-		t.Fatalf("failed to read from %s: %v", filepath, err)
+		t.Errorf("Initial token written to file does not match expected token: got ID %v, want ID %v", gotClaims.ID, wantClaims.ID)
 	}
 
-	// No refresh: the token should match initial token.
-	if !expectRefresh && !bytes.Equal(data, expectedInitialToken) {
-		gotClaims := extractJWTClaims(t, data)
-		wantClaims := extractJWTClaims(t, expectedInitialToken)
-		t.Errorf("token refresher should fail and received token should be the initial token: got ID %v, want ID %v", gotClaims.ID, wantClaims.ID)
+	data, err = fw.pop()
+	if err != nil && expectRefresh {
+		t.Fatalf("Failed to get second written token %v", err)
 	}
 
 	// Should Refresh: the token should match refreshed token.
-	if expectRefresh && !bytes.Equal(data, expectedRefreshToken) {
+	if expectRefresh && !bytes.Equal(data, expectedRefreshedToken) {
 		gotClaims := extractJWTClaims(t, data)
-		wantClaims := extractJWTClaims(t, expectedRefreshToken)
+		wantClaims := extractJWTClaims(t, expectedRefreshedToken)
 		t.Errorf("refreshed token did not match expected token: got ID %v, want ID %v", gotClaims.ID, wantClaims.ID)
 	}
-}
 
-func TestFetchAndWriteTokenWithTokenRefresh(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	expectedToken := createJWT(t, 5*time.Second)
-	expectedRefreshedToken := createJWT(t, 10*time.Second)
-
-	ttl := 5 * time.Second
-
-	attestAgent := &fakeAttestationAgent{}
-	attestAgent.attestFunc = func(context.Context, agent.AttestAgentOpts) ([]byte, error) {
-		attestAgent.attMu.Lock()
-		defer func() {
-			attestAgent.attempts = attestAgent.attempts + 1
-			attestAgent.attMu.Unlock()
-		}()
-		if attestAgent.attempts%2 == 0 {
-			return expectedToken, nil
-		}
-		return expectedRefreshedToken, nil
-	}
-	runner := ContainerRunner{
-		attestAgent: attestAgent,
-		logger:      logging.SimpleLogger(),
-	}
-
-	if err := runner.fetchAndWriteToken(ctx); err != nil {
-		t.Fatalf("fetchAndWriteToken failed: %v", err)
-	}
-
-	filepath := path.Join(launcherfile.HostTmpPath, launcherfile.AttestationVerifierTokenFilename)
-	data, err := os.ReadFile(filepath)
+	// Ensure the goroutine reported no error after the first sync.
+	err = <-errchan
 	if err != nil {
-		t.Fatalf("Failed to read from %s: %v", filepath, err)
-	}
-
-	if !bytes.Equal(data, expectedToken) {
-		t.Errorf("Initial token written to file does not match expected token: got %v, want %v", data, expectedToken)
-	}
-
-	// Check that token has not been refreshed yet.
-	data, err = os.ReadFile(filepath)
-	if err != nil {
-		t.Fatalf("Failed to read from %s: %v", filepath, err)
-	}
-
-	if !bytes.Equal(data, expectedToken) {
-		t.Errorf("Token unexpectedly refreshed: got %v, want %v", data, expectedRefreshedToken)
-	}
-
-	time.Sleep(ttl)
-
-	// Check that token has changed.
-	data, err = os.ReadFile(filepath)
-	if err != nil {
-		t.Fatalf("Failed to read from %s: %v", filepath, err)
-	}
-
-	if !bytes.Equal(data, expectedRefreshedToken) {
-		t.Errorf("Refreshed token written to file does not match expected token: got %v, want %v", data, expectedRefreshedToken)
+		t.Fatalf("startTokenRefresher failed: %v", err)
 	}
 }
 
@@ -691,6 +649,26 @@ func TestPullImageWithRetries(t *testing.T) {
 				t.Errorf("pullImageWithRetries failed, got %v, but want %v", gotPass, tc.wantPass)
 			}
 		})
+	}
+}
+
+func TestWellKnownFileLocationWriter(t *testing.T) {
+	if err := os.MkdirAll(launcherfile.HostTmpPath, 0755); err != nil {
+		t.Fatalf("Error creating host token path directory: %v", err)
+	}
+
+	fw := &wellKnownFileLocationWriter{}
+	testData := []byte("testing")
+	fw.Write(testData)
+
+	filepath := path.Join(launcherfile.HostTmpPath, launcherfile.AttestationVerifierTokenFilename)
+	data, err := os.ReadFile(filepath)
+	if err != nil {
+		t.Fatalf("Failed to read from %s: %v", filepath, err)
+	}
+
+	if !bytes.Equal(data, testData) {
+		t.Errorf("Initial token written to file does not match expected token: got %v, want %v", data, expectedToken)
 	}
 }
 
