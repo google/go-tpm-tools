@@ -13,7 +13,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strconv"
 	"testing"
 
 	"github.com/google/go-tpm-tools/client"
@@ -218,47 +217,6 @@ func TestVerifyWithTrustedAK(t *testing.T) {
 	_, err = VerifyAttestation(attestation, opts)
 	if err != nil {
 		t.Errorf("failed to verify: %v", err)
-	}
-}
-
-func TestVerifyHashNonce(t *testing.T) {
-	rwc := test.GetTPM(t)
-	defer client.CheckedClose(t, rwc)
-
-	ak, err := client.AttestationKeyRSA(rwc)
-	if err != nil {
-		t.Fatalf("failed to generate AK: %v", err)
-	}
-	defer ak.Close()
-	tests := []struct {
-		attHash bool
-		verHash bool
-		wantErr bool
-	}{
-		{true, true, false},
-		{false, false, false},
-		{true, false, true},
-		{false, true, true},
-	}
-	nonce := []byte("super secret nonce")
-
-	for _, test := range tests {
-		t.Run("attest hash "+strconv.FormatBool(test.attHash)+" verify hash "+strconv.FormatBool(test.verHash), func(t *testing.T) {
-			attestation, err := ak.Attest(client.AttestOpts{Nonce: nonce, HashNonce: test.attHash})
-			if err != nil {
-				t.Fatalf("failed to attest: %v", err)
-			}
-
-			opts := VerifyOpts{
-				Nonce:      nonce,
-				TrustedAKs: []crypto.PublicKey{ak.PublicKey()},
-				HashNonce:  test.verHash,
-			}
-			_, err = VerifyAttestation(attestation, opts)
-			if test.wantErr != (err != nil) {
-				t.Errorf("Attest(HashNonce %v), Verify(HashNonce %v): got %v wantErr %v", test.attHash, test.verHash, err, test.wantErr)
-			}
-		})
 	}
 }
 
@@ -481,7 +439,7 @@ func TestValidateAK(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, _, _, err := validateAK(tc.att(), tc.opts)
+			_, _, err := validateAK(tc.att(), tc.opts)
 			if gotPass := (err == nil); gotPass != tc.wantPass {
 				t.Errorf("ValidateAK failed, got pass %v, but want %v", gotPass, tc.wantPass)
 			}
