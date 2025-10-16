@@ -561,6 +561,46 @@ var GdcHost = eventLog{
 	},
 }
 
+var SP800155EventLog = eventLog{
+	RawLog: test.SP800155EventLog,
+	Banks: []*pb.PCRs{{
+		Hash: pb.HashAlgo_SHA256,
+		Pcrs: map[uint32][]byte{
+			0:  decodeHex("d0c70a9310cd0b55767084333022ce53f42befbb69c059ee6c0a32766f160783"),
+			1:  decodeHex("f28e7dc5d058b98ba6f635c1de061a507426983b7ec370d3ba7ce90bdfd1a7c1"),
+			2:  decodeHex("3d458cfe55cc03ea1f443f1562beec8df51c75e14a9fcf9a7234a13f198e7969"),
+			3:  decodeHex("3d458cfe55cc03ea1f443f1562beec8df51c75e14a9fcf9a7234a13f198e7969"),
+			4:  decodeHex("18314f0c33adea45e461155e190199716256ca532cd89e9aa3b7d2f6407fa4c8"),
+			5:  decodeHex("7da8fcc5689af6d0f2a089b19bbe146702372ccfdc3d5758bf6b49ba50c7366e"),
+			6:  decodeHex("3d458cfe55cc03ea1f443f1562beec8df51c75e14a9fcf9a7234a13f198e7969"),
+			7:  decodeHex("8c5dc451764d0db9c1e17da03564bcae3a09fa3d7f8e467d9c381dc8698377d6"),
+			8:  decodeHex("98effecabbbdc67dd7627d0c50f24bbce548ca6e6fcca30ad284afde91a042a4"),
+			9:  decodeHex("06f41037a0f42d7308ff2d955ef6c0a5d2fe0a70f7c81ce288d3a158f4978b2f"),
+			14: decodeHex("6eb05e8a8a6272a8e4b925a67c650daa13c12b1a80cc797d40fd345e29660161"),
+		},
+	}},
+}
+
+var CGKE251000 = eventLog{
+	RawLog: test.CGKE251000,
+	Banks: []*pb.PCRs{{
+		Hash: pb.HashAlgo_SHA256,
+		Pcrs: map[uint32][]byte{
+			0:  decodeHex("d0c70a9310cd0b55767084333022ce53f42befbb69c059ee6c0a32766f160783"),
+			1:  decodeHex("f28e7dc5d058b98ba6f635c1de061a507426983b7ec370d3ba7ce90bdfd1a7c1"),
+			2:  decodeHex("3d458cfe55cc03ea1f443f1562beec8df51c75e14a9fcf9a7234a13f198e7969"),
+			3:  decodeHex("3d458cfe55cc03ea1f443f1562beec8df51c75e14a9fcf9a7234a13f198e7969"),
+			4:  decodeHex("18314f0c33adea45e461155e190199716256ca532cd89e9aa3b7d2f6407fa4c8"),
+			5:  decodeHex("7da8fcc5689af6d0f2a089b19bbe146702372ccfdc3d5758bf6b49ba50c7366e"),
+			6:  decodeHex("3d458cfe55cc03ea1f443f1562beec8df51c75e14a9fcf9a7234a13f198e7969"),
+			7:  decodeHex("8c5dc451764d0db9c1e17da03564bcae3a09fa3d7f8e467d9c381dc8698377d6"),
+			8:  decodeHex("98effecabbbdc67dd7627d0c50f24bbce548ca6e6fcca30ad284afde91a042a4"),
+			9:  decodeHex("4df4604236d15333b1a07acdb3c4655f3da5c0843b62e7a9df2f62844a9d92f1"),
+			14: decodeHex("6eb05e8a8a6272a8e4b925a67c650daa13c12b1a80cc797d40fd345e29660161"),
+		},
+	}},
+}
+
 func TestParseEventLogs(t *testing.T) {
 	sbatErrorStr := "asn1: structure error: tags don't match (16 vs {class:0 tag:24 length:10 isCompound:true})"
 	logs := []struct {
@@ -586,6 +626,8 @@ func TestParseEventLogs(t *testing.T) {
 		{COS101AmdSev, "COS101AmdSev", VerifyOpts{Loader: GRUB}, nil},
 		{Ubuntu2404AmdSevSnp, "Ubuntu2404AmdSevSnp", VerifyOpts{Loader: GRUB}, nil},
 		{GdcHost, "GdcHost", VerifyOpts{Loader: GRUB, AllowEFIAppBeforeCallingEvent: true}, []string{"invalid SCRTM version event for PCR0"}},
+		{SP800155EventLog, "SP800155EventLog", VerifyOpts{Loader: GRUB}, nil},
+		{CGKE251000, "CGKE251000", VerifyOpts{Loader: GRUB}, nil},
 	}
 
 	for _, log := range logs {

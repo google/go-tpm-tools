@@ -136,6 +136,10 @@ func simulateEventLogEvents(tb testing.TB, rw io.ReadWriter, eventLog []byte) {
 	for tpm2Alg, attestAlg := range hashAlgs {
 		events := attestEventLog.Events(attestAlg)
 		for _, event := range events {
+			// EV_NO_ACTION
+			if event.Type == 0x03 {
+				continue
+			}
 			extendOnePcr(tb, rw, event.Index, tpm2Alg, event.Digest)
 		}
 	}
