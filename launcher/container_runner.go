@@ -490,6 +490,9 @@ func (r *ContainerRunner) startTokenRefresher(ctx context.Context, retry func() 
 	initComplete := make(chan error, 1)
 
 	go func() {
+		r.logger.Info("token refresher goroutine started")
+		defer close(initComplete)
+
 		isInitialized := false // A flag to ensure we only send the initialization signal once.
 		signalDone := func(err error) {
 			if !isInitialized {
@@ -498,7 +501,6 @@ func (r *ContainerRunner) startTokenRefresher(ctx context.Context, retry func() 
 			}
 		}
 
-		r.logger.Info("token refresher goroutine started")
 		// Start with a timer that fires immediately to get the first token.
 		timer := newTimer(0)
 		defer timer.Stop()

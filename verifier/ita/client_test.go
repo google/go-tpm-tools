@@ -101,7 +101,7 @@ func TestCreateChallenge(t *testing.T) {
 		w.Write(marshaled)
 	}))
 
-	itaClient := &itaClient{
+	itaClient := &client{
 		inner:  http.DefaultClient,
 		apiURL: ts.URL,
 		apiKey: expectedAPIKey,
@@ -170,7 +170,7 @@ func TestVerifyAttestation(t *testing.T) {
 		w.Write(marshaled)
 	}))
 
-	itaClient := &itaClient{
+	itaClient := &client{
 		inner:  http.DefaultClient,
 		apiURL: ts.URL,
 		apiKey: expectedAPIKey,
@@ -235,7 +235,7 @@ func TestDoHTTPRequest(t *testing.T) {
 		w.Write(marshaled)
 	}))
 
-	itaClient := itaClient{
+	itaClient := client{
 		inner: http.DefaultClient,
 	}
 
