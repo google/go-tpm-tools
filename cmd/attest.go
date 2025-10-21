@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"strconv"
 
 	"cloud.google.com/go/compute/metadata"
@@ -116,7 +117,7 @@ hardware and guarantees a fresh quote.
 		if key == "gceAK" {
 			instanceInfo, err := getInstanceInfoFromMetadata()
 			if err != nil {
-				return err
+				log.Printf("Could not get GCE instance info, continuing without it: %v", err)
 			}
 			attestation.InstanceInfo = instanceInfo
 		}
