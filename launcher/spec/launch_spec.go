@@ -21,6 +21,7 @@ import (
 	"github.com/google/go-tpm-tools/launcher/internal/launchermount"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
+	"github.com/google/go-tpm-tools/verifier"
 	"github.com/google/go-tpm-tools/verifier/util"
 )
 
@@ -124,8 +125,7 @@ type LaunchSpec struct {
 	MonitoringEnabled          MonitoringType
 	LogRedirect                LogRedirectLocation
 	Mounts                     []launchermount.Mount
-	ITARegion                  string
-	ITAKey                     string
+	ITAConfig                  verifier.ITAConfig
 	// DevShmSize is specified in kiB.
 	DevShmSize        int64
 	AddedCapabilities []string
@@ -252,16 +252,14 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 		itaRegionVal, itaRegionOK := unmarshaledMap[itaRegion]
 		itaKeyVal, itaKeyOK := unmarshaledMap[itaKey]
 
+		// If key and region are both not in the map, do not set up ITA config.
 		if itaRegionOK != itaKeyOK {
-			return fmt.Errorf("ITA fields %s and %s must both be provided", itaRegion, itaKey)
+			return fmt.Errorf("ITA fields %s and %s must both be provided and non-empty", itaRegion, itaKey)
 		}
 
-		if itaRegionOK {
-			s.ITARegion = itaRegionVal
-		}
-
-		if itaKeyOK {
-			s.ITAKey = itaKeyVal
+		s.ITAConfig = verifier.ITAConfig{
+			ITARegion: itaRegionVal,
+			ITAKey:    itaKeyVal,
 		}
 	}
 
@@ -290,7 +288,7 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 // LogFriendly creates a copy of the spec that is safe to log by censoring
 func (s *LaunchSpec) LogFriendly() LaunchSpec {
 	safeSpec := *s
-	safeSpec.ITAKey = strings.Repeat("*", len(s.ITAKey))
+	safeSpec.ITAConfig.ITAKey = strings.Repeat("*", len(s.ITAConfig.ITAKey))
 
 	return safeSpec
 }

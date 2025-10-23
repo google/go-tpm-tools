@@ -240,7 +240,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	asAddr := launchSpec.AttestationServiceAddr
 
 	var verifierClient verifier.Client
-	if launchSpec.ITARegion == "" {
+	if launchSpec.ITAConfig.ITARegion == "" {
 		gcaClient, err := util.NewRESTClient(ctx, asAddr, launchSpec.ProjectID, launchSpec.Region)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create REST verifier client: %v", err)
@@ -582,7 +582,7 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	}
 
 	// Only refresh token if agent has a default GCA client (not ITA use case).
-	if r.launchSpec.ITARegion == "" {
+	if r.launchSpec.ITAConfig.ITARegion == "" {
 		if err := r.fetchAndWriteToken(ctx); err != nil {
 			return fmt.Errorf("failed to fetch and write OIDC token: %v", err)
 		}
@@ -591,9 +591,9 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	// create and start the TEE server
 	r.logger.Info("EnableOnDemandAttestation is enabled: initializing TEE server.")
 
-	attestClients := &teeserver.AttestClients{}
-	if r.launchSpec.ITARegion != "" {
-		itaClient, err := ita.NewClient(r.launchSpec.ITARegion, r.launchSpec.ITAKey)
+	attestClients := teeserver.AttestClients{}
+	if r.launchSpec.ITAConfig.ITARegion != "" {
+		itaClient, err := ita.NewClient(r.launchSpec.ITAConfig)
 		if err != nil {
 			return fmt.Errorf("failed to create ITA client: %v", err)
 		}

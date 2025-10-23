@@ -66,7 +66,7 @@ func TestGetDefaultToken(t *testing.T) {
 
 	ah := attestHandler{
 		logger: logging.SimpleLogger(),
-		clients: &AttestClients{
+		clients: AttestClients{
 			GCA: &fakeVerifierClient{},
 		},
 		attestAgent: fakeAttestationAgent{
@@ -93,11 +93,9 @@ func TestGetDefaultToken(t *testing.T) {
 }
 
 func TestGetDefaultTokenServerError(t *testing.T) {
-	// An empty attestHandler is fine for now as it is not being used
-	// in the handler.
 	ah := attestHandler{
 		logger: logging.SimpleLogger(),
-		clients: &AttestClients{
+		clients: AttestClients{
 			GCA: &fakeVerifierClient{},
 		},
 		attestAgent: fakeAttestationAgent{
@@ -202,29 +200,174 @@ func TestCustomToken(t *testing.T) {
 		},
 	}
 
-	for i, test := range tests {
-		ah := attestHandler{
-			logger: logging.SimpleLogger(),
-			clients: &AttestClients{
-				GCA: &fakeVerifierClient{},
-			},
-			attestAgent: fakeAttestationAgent{
-				attestWithClientFunc: test.attestWithClientFunc,
-			}}
+	verifiers := []struct {
+		name        string
+		url         string
+		tokenMethod func(ah *attestHandler, w http.ResponseWriter, r *http.Request)
+	}{
+		{
+			name:        "GCA Handler",
+			url:         "/v1/token",
+			tokenMethod: (*attestHandler).getToken,
+		},
+		{
+			name:        "ITA Handler",
+			url:         "/v1/intel/token",
+			tokenMethod: (*attestHandler).getITAToken,
+		},
+	}
 
-		b := strings.NewReader(test.body)
+	for _, vf := range verifiers {
+		t.Run(vf.name, func(t *testing.T) {
+			for _, test := range tests {
+				ah := attestHandler{
+					logger: logging.SimpleLogger(),
+					clients: AttestClients{
+						GCA: &fakeVerifierClient{},
+						ITA: &fakeVerifierClient{},
+					},
+					attestAgent: fakeAttestationAgent{
+						attestWithClientFunc: test.attestWithClientFunc,
+					}}
 
-		req := httptest.NewRequest(http.MethodPost, "/v1/token", b)
-		w := httptest.NewRecorder()
-		ah.getToken(w, req)
-		_, err := io.ReadAll(w.Result().Body)
-		if err != nil {
-			t.Error(err)
-		}
+				b := strings.NewReader(test.body)
 
-		if w.Code != test.want {
-			t.Errorf("testcase %d, '%v': got return code: %d, want: %d", i, test.testName, w.Code, test.want)
-		}
+				req := httptest.NewRequest(http.MethodPost, vf.url, b)
+				w := httptest.NewRecorder()
+
+				vf.tokenMethod(&ah, w, req)
+
+				_, err := io.ReadAll(w.Result().Body)
+				if err != nil {
+					t.Error(err)
+				}
+
+				if w.Code != test.want {
+					t.Errorf("testcase '%v': got return code: %d, want: %d", test.testName, w.Code, test.want)
+				}
+			}
+		})
+	}
+}
+
+func TestHandleAttestError(t *testing.T) {
+	body := `{
+				"audience": "audience",
+				"nonces": ["thisIsAcustomNonce"],
+				"token_type": "OIDC"
+			}`
+
+	errorCases := []struct {
+		name           string
+		err            error
+		wantStatusCode int
+	}{
+		{
+			name:           "FailedPrecondition error",
+			err:            status.New(codes.FailedPrecondition, "bad state").Err(),
+			wantStatusCode: http.StatusBadRequest,
+		},
+		{
+			name:           "PermissionDenied error",
+			err:            status.New(codes.PermissionDenied, "denied").Err(),
+			wantStatusCode: http.StatusBadRequest,
+		},
+		{
+			name:           "Internal error",
+			err:            status.New(codes.Internal, "internal server error").Err(),
+			wantStatusCode: http.StatusInternalServerError,
+		},
+		{
+			name:           "Unavailable error",
+			err:            status.New(codes.Unavailable, "service unavailable").Err(),
+			wantStatusCode: http.StatusInternalServerError,
+		},
+		{
+			name:           "non-gRPC error",
+			err:            errors.New("a generic error"),
+			wantStatusCode: http.StatusInternalServerError,
+		},
+	}
+
+	verifiers := []struct {
+		name        string
+		url         string
+		tokenMethod func(ah *attestHandler, w http.ResponseWriter, r *http.Request)
+	}{
+		{
+			name:        "GCA Handler",
+			url:         "/v1/token",
+			tokenMethod: (*attestHandler).getToken,
+		},
+		{
+			name:        "ITA Handler",
+			url:         "/v1/intel/token",
+			tokenMethod: (*attestHandler).getITAToken,
+		},
+	}
+
+	for _, vf := range verifiers {
+		t.Run(vf.name, func(t *testing.T) {
+			for _, tc := range errorCases {
+				t.Run(tc.name, func(t *testing.T) {
+					ah := attestHandler{
+						logger: logging.SimpleLogger(),
+						clients: AttestClients{
+							GCA: &fakeVerifierClient{},
+							ITA: &fakeVerifierClient{},
+						},
+						attestAgent: fakeAttestationAgent{
+							attestWithClientFunc: func(context.Context, agent.AttestAgentOpts, verifier.Client) ([]byte, error) {
+								return nil, tc.err
+							},
+						},
+					}
+
+					req := httptest.NewRequest(http.MethodPost, vf.url, strings.NewReader(body))
+					w := httptest.NewRecorder()
+
+					vf.tokenMethod(&ah, w, req)
+
+					if w.Code != tc.wantStatusCode {
+						t.Errorf("got status code %d, want %d", w.Code, tc.wantStatusCode)
+					}
+
+					_, err := io.ReadAll(w.Result().Body)
+					if err != nil {
+						t.Errorf("failed to read response body: %v", err)
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestHandleAttestError_NilClient(t *testing.T) {
+	verifiers := []struct {
+		name    string
+		url     string
+		handler func(ah *attestHandler, w http.ResponseWriter, r *http.Request)
+	}{
+		{name: "GCA Handler", url: "/v1/token", handler: (*attestHandler).getToken},
+		{name: "ITA Handler", url: "/v1/intel/token", handler: (*attestHandler).getITAToken},
+	}
+
+	for _, vf := range verifiers {
+		t.Run(vf.name, func(t *testing.T) {
+			ah := attestHandler{
+				logger:  logging.SimpleLogger(),
+				clients: AttestClients{}, // No clients defined
+			}
+
+			req := httptest.NewRequest(http.MethodPost, vf.url, strings.NewReader(""))
+			w := httptest.NewRecorder()
+			vf.handler(&ah, w, req)
+
+			const wantStatusCode = http.StatusInternalServerError
+			if w.Code != wantStatusCode {
+				t.Errorf("got status code %d, want %d", w.Code, wantStatusCode)
+			}
+		})
 	}
 }
 
@@ -336,7 +479,7 @@ func TestCustomTokenDataParsedSuccessfully(t *testing.T) {
 	for i, test := range tests {
 		ah := attestHandler{
 			logger: logging.SimpleLogger(),
-			clients: &AttestClients{
+			clients: AttestClients{
 				GCA: &fakeVerifierClient{},
 			},
 			attestAgent: fakeAttestationAgent{
@@ -362,74 +505,5 @@ func TestCustomTokenDataParsedSuccessfully(t *testing.T) {
 		if w.Code != test.wantCode {
 			t.Errorf("testcase %d, '%v': got return code: %d, want: %d", i, test.testName, w.Code, test.wantCode)
 		}
-	}
-}
-
-func TestCustomHandleAttestError(t *testing.T) {
-	body := `{
-				"audience": "audience",
-				"nonces": ["thisIsAcustomNonce"],
-				"token_type": "OIDC"
-			}`
-
-	testcases := []struct {
-		name           string
-		err            error
-		wantStatusCode int
-	}{
-		{
-			name:           "FailedPrecondition error",
-			err:            status.New(codes.FailedPrecondition, "bad state").Err(),
-			wantStatusCode: http.StatusBadRequest,
-		},
-		{
-			name:           "PermissionDenied error",
-			err:            status.New(codes.PermissionDenied, "denied").Err(),
-			wantStatusCode: http.StatusBadRequest,
-		},
-		{
-			name:           "Internal error",
-			err:            status.New(codes.Internal, "internal server error").Err(),
-			wantStatusCode: http.StatusInternalServerError,
-		},
-		{
-			name:           "Unavailable error",
-			err:            status.New(codes.Unavailable, "service unavailable").Err(),
-			wantStatusCode: http.StatusInternalServerError,
-		},
-		{
-			name:           "non-gRPC error",
-			err:            errors.New("a generic error"),
-			wantStatusCode: http.StatusInternalServerError,
-		},
-	}
-	for _, tc := range testcases {
-		t.Run(tc.name, func(t *testing.T) {
-			ah := attestHandler{
-				logger: logging.SimpleLogger(),
-				clients: &AttestClients{
-					GCA: &fakeVerifierClient{},
-				},
-				attestAgent: fakeAttestationAgent{
-					attestWithClientFunc: func(context.Context, agent.AttestAgentOpts, verifier.Client) ([]byte, error) {
-						return nil, tc.err
-					},
-				},
-			}
-
-			req := httptest.NewRequest(http.MethodPost, "/v1/token", strings.NewReader(body))
-			w := httptest.NewRecorder()
-
-			ah.getToken(w, req)
-
-			if w.Code != tc.wantStatusCode {
-				t.Errorf("got status code %d, want %d", w.Code, tc.wantStatusCode)
-			}
-
-			_, err := io.ReadAll(w.Result().Body)
-			if err != nil {
-				t.Errorf("failed to read response body: %v", err)
-			}
-		})
 	}
 }

@@ -33,8 +33,8 @@ type tokenTypeOptions struct {
 type tokenOptions struct {
 	Audience      string           `json:"audience"`
 	Nonces        []string         `json:"nonce"`
-	TokenType     string           `json:"tokenType"`
-	TokenTypeOpts tokenTypeOptions `json:"tokenTypeOptions"`
+	TokenType     string           `json:"token_type"`
+	TokenTypeOpts tokenTypeOptions `json:"token_type_options"`
 }
 
 type confidentialSpaceInfo struct {
