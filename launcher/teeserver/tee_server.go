@@ -14,9 +14,13 @@ import (
 	"github.com/google/go-tpm-tools/launcher/spec"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/google/go-tpm-tools/verifier/models"
-	"github.com/google/go-tpm-tools/verifier/util"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+)
+
+const (
+	gcaEndpoint = "/v1/token"
+	itaEndpoint = "/v1/intel/token"
 )
 
 var clientErrorCodes = map[codes.Code]struct{}{
@@ -43,7 +47,7 @@ type attestHandler struct {
 	// defaultTokenFile string
 	logger     logging.Logger
 	launchSpec spec.LaunchSpec
-	clients    *AttestClients
+	clients    AttestClients
 }
 
 // TeeServer is a server that can be called from a container through a unix
@@ -54,7 +58,7 @@ type TeeServer struct {
 }
 
 // New takes in a socket and start to listen to it, and create a server
-func New(ctx context.Context, unixSock string, a agent.AttestationAgent, logger logging.Logger, launchSpec spec.LaunchSpec, clients *AttestClients) (*TeeServer, error) {
+func New(ctx context.Context, unixSock string, a agent.AttestationAgent, logger logging.Logger, launchSpec spec.LaunchSpec, clients AttestClients) (*TeeServer, error) {
 	var err error
 	nl, err := net.Listen("unix", unixSock)
 	if err != nil {
@@ -84,8 +88,8 @@ func (a *attestHandler) Handler() http.Handler {
 	// curl -d '{"audience":"<aud>", "nonces":["<nonce1>"]}' -H "Content-Type: application/json" -X POST
 	//   --unix-socket /tmp/container_launcher/teeserver.sock http://localhost/v1/token
 
-	mux.HandleFunc("/v1/token", a.getToken)
-	mux.HandleFunc("/v1/intel/token", a.getITAToken)
+	mux.HandleFunc(gcaEndpoint, a.getToken)
+	mux.HandleFunc(itaEndpoint, a.getITAToken)
 	return mux
 }
 
@@ -101,16 +105,13 @@ func (a *attestHandler) logAndWriteError(errStr string, status int, w http.Respo
 func (a *attestHandler) getToken(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html")
 
-	// If the handler does not have a GCA client, create one.
-	if a.clients.GCA == nil {
-		gcaClient, err := util.NewRESTClient(a.ctx, a.launchSpec.AttestationServiceAddr, a.launchSpec.ProjectID, a.launchSpec.Region)
-		if err != nil {
-			errStr := fmt.Sprintf("failed to create REST verifier client: %v", err)
-			a.logAndWriteError(errStr, http.StatusInternalServerError, w)
-			return
-		}
+	a.logger.Info(fmt.Sprintf("%s called", gcaEndpoint))
 
-		a.clients.GCA = gcaClient
+	// If the handler does not have an GCA client, return error.
+	if a.clients.GCA == nil {
+		errStr := "no GCA verifier client present, please try rebooting your VM"
+		a.logAndWriteError(errStr, http.StatusInternalServerError, w)
+		return
 	}
 
 	a.attest(w, r, a.clients.GCA)
@@ -120,10 +121,12 @@ func (a *attestHandler) getToken(w http.ResponseWriter, r *http.Request) {
 func (a *attestHandler) getITAToken(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html")
 
+	a.logger.Info(fmt.Sprintf("%s called", itaEndpoint))
+
 	// If the handler does not have an ITA client, return error.
 	if a.clients.ITA == nil {
 		errStr := "no ITA verifier client present - ensure ITA Region and Key are defined in metadata"
-		a.logAndWriteError(errStr, http.StatusPreconditionFailed, w)
+		a.logAndWriteError(errStr, http.StatusInternalServerError, w)
 		return
 	}
 
@@ -173,11 +176,10 @@ func (a *attestHandler) attest(w http.ResponseWriter, r *http.Request, client ve
 		}
 
 		// Do not check that TokenTypeOptions matches TokenType in the launcher.
-
-		tok, err := a.attestAgent.AttestWithClient(a.ctx, agent.AttestAgentOpts{
+		opts := agent.AttestAgentOpts{
 			TokenOptions: &tokenOptions,
-		}, client)
-
+		}
+		tok, err := a.attestAgent.AttestWithClient(a.ctx, opts, client)
 		if err != nil {
 			a.handleAttestError(w, err, "failed to retrieve custom attestation service token")
 			return

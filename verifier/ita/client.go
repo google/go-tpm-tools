@@ -42,7 +42,6 @@ func urlFromRegion(region string) (string, error) {
 	if region == "" {
 		return "", errors.New("API region required to initialize ITA client")
 	}
-
 	url, ok := regionalURLs[strings.ToUpper(region)]
 	if !ok {
 		// Create list of allowed regions.
@@ -54,32 +53,6 @@ func urlFromRegion(region string) (string, error) {
 	}
 
 	return url, nil
-}
-
-func NewClient(region string, key string) (verifier.Client, error) {
-	url, err := urlFromRegion(region)
-	if err != nil {
-		return nil, err
-	}
-
-	return &client{
-		inner: &http.Client{
-			Transport: &http.Transport{
-				// https://github.com/intel/trustauthority-client-for-go/blob/main/go-connector/token.go#L130.
-				TLSClientConfig: &tls.Config{
-					CipherSuites: []uint16{
-						tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
-						tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
-					},
-					InsecureSkipVerify: false,
-					MinVersion:         tls.VersionTLS12,
-				},
-				Proxy: http.ProxyFromEnvironment,
-			},
-		},
-		apiURL: url,
-		apiKey: key,
-	}, nil
 }
 
 // Confirm that client implements verifier.Client interface.
@@ -104,11 +77,36 @@ func createHashedNonce(nonce *itaNonce) ([]byte, error) {
 	return hash.Sum(nil), err
 }
 
+func NewClient(itaConfig verifier.ITAConfig) (verifier.Client, error) { //region string, key string) (verifier.Client, error) {
+	url, err := urlFromRegion(itaConfig.ITARegion)
+	if err != nil {
+		return nil, err
+	}
+
+	return &client{
+		inner: &http.Client{
+			Transport: &http.Transport{
+				// https://github.com/intel/trustauthority-client-for-go/blob/main/go-connector/token.go#L130.
+				TLSClientConfig: &tls.Config{
+					CipherSuites: []uint16{
+						tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+						tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+					},
+					InsecureSkipVerify: false,
+					MinVersion:         tls.VersionTLS12,
+				},
+				Proxy: http.ProxyFromEnvironment,
+			},
+		},
+		apiURL: url,
+		apiKey: itaConfig.ITAKey,
+	}, nil
+}
+
 func (c *client) CreateChallenge(_ context.Context) (*verifier.Challenge, error) {
 	url := c.apiURL + nonceEndpoint
 
 	headers := map[string]string{
-		apiKeyHeader: c.apiKey,
 		acceptHeader: applicationJSON,
 	}
 
@@ -129,6 +127,79 @@ func (c *client) CreateChallenge(_ context.Context) (*verifier.Challenge, error)
 		Iat:       resp.Iat,
 		Signature: resp.Signature,
 	}, nil
+}
+
+func (c *client) VerifyAttestation(_ context.Context, request verifier.VerifyAttestationRequest) (*verifier.VerifyAttestationResponse, error) {
+	if request.TDCCELAttestation == nil {
+		return nil, errors.New("TDX required for ITA attestation")
+	}
+
+	tokenReq := convertRequestToTokenRequest(request)
+
+	url := c.apiURL + tokenEndpoint
+	headers := map[string]string{
+		apiKeyHeader:      c.apiKey,
+		acceptHeader:      applicationJSON,
+		contentTypeHeader: applicationJSON,
+	}
+
+	resp := &tokenResponse{}
+	if err := c.doHTTPRequest(http.MethodPost, url, tokenReq, headers, &resp); err != nil {
+		return nil, err
+	}
+
+	return &verifier.VerifyAttestationResponse{
+		ClaimsToken: []byte(resp.Token),
+	}, nil
+}
+
+func (c *client) doHTTPRequest(method string, url string, reqStruct any, headers map[string]string, respStruct any) error {
+	// Create HTTP request.
+	var req *http.Request
+	var err error
+	if reqStruct != nil {
+		body, err := json.Marshal(reqStruct)
+		if err != nil {
+			return fmt.Errorf("error marshaling request: %v", err)
+		}
+
+		req, err = http.NewRequest(method, url, bytes.NewReader(body))
+		if err != nil {
+			return fmt.Errorf("error creating HTTP request: %v", err)
+		}
+	} else {
+		req, err = http.NewRequest(method, url, nil)
+		if err != nil {
+			return fmt.Errorf("error creating HTTP request: %v", err)
+		}
+	}
+
+	// Add headers to request.
+	headers[apiKeyHeader] = string(c.apiKey)
+	for key, val := range headers {
+		req.Header.Add(key, val)
+	}
+
+	resp, err := c.inner.Do(req)
+	if err != nil {
+		return fmt.Errorf("HTTP request error: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// Read and unmarshal response body.
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("error reading response body: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("HTTP request failed with status code %d, response body %s", resp.StatusCode, string(respBody))
+	}
+
+	if err := json.Unmarshal(respBody, respStruct); err != nil {
+		return fmt.Errorf("error unmarshaling response: %v", err)
+	}
+
+	return nil
 }
 
 func convertRequestToTokenRequest(request verifier.VerifyAttestationRequest) tokenRequest {
@@ -190,74 +261,6 @@ func convertRequestToTokenRequest(request verifier.VerifyAttestationRequest) tok
 	return tokenReq
 }
 
-func (c *client) VerifyAttestation(_ context.Context, request verifier.VerifyAttestationRequest) (*verifier.VerifyAttestationResponse, error) {
-	if request.TDCCELAttestation == nil {
-		return nil, errors.New("TDX required for ITA attestation")
-	}
-
-	tokenReq := convertRequestToTokenRequest(request)
-
-	url := c.apiURL + tokenEndpoint
-	headers := map[string]string{
-		apiKeyHeader:      c.apiKey,
-		acceptHeader:      applicationJSON,
-		contentTypeHeader: applicationJSON,
-	}
-
-	resp := &tokenResponse{}
-	if err := c.doHTTPRequest(http.MethodPost, url, tokenReq, headers, &resp); err != nil {
-		return nil, err
-	}
-
-	return &verifier.VerifyAttestationResponse{
-		ClaimsToken: []byte(resp.Token),
-	}, nil
-}
-
 func (c *client) VerifyConfidentialSpace(ctx context.Context, request verifier.VerifyAttestationRequest) (*verifier.VerifyAttestationResponse, error) {
 	return c.VerifyAttestation(ctx, request)
-}
-
-func (c *client) doHTTPRequest(method string, url string, reqStruct any, headers map[string]string, respStruct any) error {
-	// Create HTTP request.
-	var req *http.Request
-	var err error
-	if reqStruct != nil {
-		body, err := json.Marshal(reqStruct)
-		if err != nil {
-			return fmt.Errorf("error marshaling request: %v", err)
-		}
-
-		req, err = http.NewRequest(method, url, bytes.NewReader(body))
-		if err != nil {
-			return fmt.Errorf("error creating HTTP request: %v", err)
-		}
-	} else {
-		req, err = http.NewRequest(method, url, nil)
-		if err != nil {
-			return fmt.Errorf("error creating HTTP request: %v", err)
-		}
-	}
-
-	// Add headers to request.
-	for key, val := range headers {
-		req.Header.Add(key, val)
-	}
-
-	resp, err := c.inner.Do(req)
-	if err != nil {
-		return fmt.Errorf("HTTP request error: %v", err)
-	}
-
-	// Read and unmarshal response body.
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("error reading response body: %v", err)
-	}
-
-	if err := json.Unmarshal(respBody, respStruct); err != nil {
-		return fmt.Errorf("error unmarshaling response: %v", err)
-	}
-
-	return nil
 }
