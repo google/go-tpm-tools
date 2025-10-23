@@ -11,7 +11,6 @@ import (
 
 	"cloud.google.com/go/compute/metadata"
 	"cloud.google.com/go/logging"
-	"github.com/containerd/containerd/namespaces"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/verifier"
@@ -47,7 +46,7 @@ The OIDC token includes claims regarding the GCE VM, which is verified by Attest
 		// Metadata Server (MDS). A GCP specific client.
 		mdsClient := metadata.NewClient(nil)
 
-		ctx := namespaces.WithNamespace(context.Background(), namespaces.Default)
+		ctx := context.Background()
 
 		fmt.Fprintf(debugOutput(), "Attestation Address is set to %s\n", asAddress)
 
