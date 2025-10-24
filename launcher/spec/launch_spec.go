@@ -76,7 +76,7 @@ const (
 
 // Metadata variable names.
 const (
-	fakeVerifierKey            = "tee-fake-verifier"
+	fakeVerifierKey            = "test-fake-verifier"
 	imageRefKey                = "tee-image-reference"
 	signedImageRepos           = "tee-signed-image-repos"
 	restartPolicyKey           = "tee-restart-policy"
