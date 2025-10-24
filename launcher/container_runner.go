@@ -4,7 +4,7 @@ package launcher
 import (
 	"context"
 	"encoding/json"
-	"crypto/rand"
+	crypto_rand "crypto/rand"
 	"crypto/rsa"
 	"errors"
 	"fmt"
@@ -826,7 +826,7 @@ func appendCgroupRw(mounts []specs.Mount) []specs.Mount {
 
 func fakeAttestationClient() verifier.Client {
 	// Hardcoded fake signer
-	fakeSigner, err := rsa.GenerateKey(rand.Reader, 2048)
+	fakeSigner, err := rsa.GenerateKey(crypto_rand.Reader, 2048)
 	if err != nil {
 		// This should not happen.
 		panic(fmt.Sprintf("failed to generate signing key for fake client: %v", err))
