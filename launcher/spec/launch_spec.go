@@ -76,6 +76,7 @@ const (
 
 // Metadata variable names.
 const (
+	fakeVerifierKey            = "tee-fake-verifier"
 	imageRefKey                = "tee-image-reference"
 	signedImageRepos           = "tee-signed-image-repos"
 	restartPolicyKey           = "tee-restart-policy"
@@ -109,7 +110,8 @@ type EnvVar struct {
 // LaunchSpec contains specification set by the operator who wants to
 // launch a container.
 type LaunchSpec struct {
-	Experiments experiments.Experiments
+	Experiments         experiments.Experiments
+	FakeVerifierEnabled bool
 
 	// MDS-based values.
 	ImageRef                   string
@@ -140,6 +142,9 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 	if err := json.Unmarshal(b, &unmarshaledMap); err != nil {
 		return err
 	}
+
+	// 
+	s.FakeVerifierEnabled, _ = strconv.ParseBool(unmarshaledMap[fakeVerifierKey])
 
 	s.ImageRef = unmarshaledMap[imageRefKey]
 	if s.ImageRef == "" {

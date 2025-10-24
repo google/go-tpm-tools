@@ -4,6 +4,8 @@ package launcher
 import (
 	"context"
 	"encoding/json"
+	"crypto/rand"
+	"crypto/rsa"
 	"errors"
 	"fmt"
 	"io"
@@ -36,6 +38,7 @@ import (
 	"github.com/google/go-tpm-tools/launcher/spec"
 	"github.com/google/go-tpm-tools/launcher/teeserver"
 	"github.com/google/go-tpm-tools/verifier"
+	"github.com/google/go-tpm-tools/verifier/fake"
 	"github.com/google/go-tpm-tools/verifier/ita"
 	"github.com/google/go-tpm-tools/verifier/util"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
@@ -240,7 +243,9 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	asAddr := launchSpec.AttestationServiceAddr
 
 	var verifierClient verifier.Client
-	if launchSpec.ITAConfig.ITARegion == "" {
+	if launchSpec.FakeVerifierEnabled {
+		verifierClient = fakeAttestationClient()
+	} else if launchSpec.ITAConfig.ITARegion == "" {
 		gcaClient, err := util.NewRESTClient(ctx, asAddr, launchSpec.ProjectID, launchSpec.Region)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create REST verifier client: %v", err)
@@ -592,7 +597,12 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	r.logger.Info("EnableOnDemandAttestation is enabled: initializing TEE server.")
 
 	attestClients := teeserver.AttestClients{}
-	if r.launchSpec.ITAConfig.ITARegion != "" {
+
+	if r.launchSpec.FakeVerifierEnabled {
+		fakeClient := fakeAttestationClient()
+		attestClients.GCA = fakeClient
+		attestClients.ITA = fakeClient
+	} else if r.launchSpec.ITAConfig.ITARegion != "" {
 		itaClient, err := ita.NewClient(r.launchSpec.ITAConfig)
 		if err != nil {
 			return fmt.Errorf("failed to create ITA client: %v", err)
@@ -812,4 +822,14 @@ func appendCgroupRw(mounts []specs.Mount) []specs.Mount {
 	}
 
 	return append(mounts, m)
+}
+
+func fakeAttestationClient() verifier.Client {
+	// Hardcoded fake signer
+	fakeSigner, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		// This should not happen.
+		panic(fmt.Sprintf("failed to generate signing key for fake client: %v", err))
+	}
+	return fake.NewClient(fakeSigner)
 }
