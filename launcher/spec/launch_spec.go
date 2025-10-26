@@ -143,7 +143,7 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 		return err
 	}
 
-	// 
+	//
 	s.FakeVerifierEnabled, _ = strconv.ParseBool(unmarshaledMap[fakeVerifierKey])
 
 	s.ImageRef = unmarshaledMap[imageRefKey]
