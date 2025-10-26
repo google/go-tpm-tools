@@ -18,11 +18,11 @@ create_vm() {
     exit 1
   fi
 
-  # Set the fake verifier variable
+  # Set the fake verifier variable - disabled for now
   if [ -z "$METADATA" ]; then
-    METADATA="test-fake-verifier=true"
+    METADATA="test-fake-verifier=false"
   else
-    METADATA+=",test-fake-verifier=true"
+    METADATA+=",test-fake-verifier=false"
   fi
 
   APPEND_METADATA=''
