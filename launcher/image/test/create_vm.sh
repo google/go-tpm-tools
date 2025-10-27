@@ -20,9 +20,13 @@ create_vm() {
 
   APPEND_METADATA=''
   if ! [ -z "$METADATA" ]; then
-    APPEND_METADATA="--metadata=${METADATA},test-fake-verifier=false"
+    if [[ "${METADATA}" == *"^~^"* ]]; then
+      APPEND_METADATA="--metadata ${METADATA}~test-fake-verifier=false"
+    else
+      APPEND_METADATA="--metadata ${METADATA},test-fake-verifier=false"
+    fi
   else
-    APPEND_METADATA="--metadata=test-fake-verifier=false"
+    APPEND_METADATA="--metadata test-fake-verifier=false"
   fi
 
   APPEND_METADATA_FILE=''
