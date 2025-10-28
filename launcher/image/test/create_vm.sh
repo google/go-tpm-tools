@@ -19,7 +19,7 @@ create_vm() {
   fi
 
   # TODO: Should be true, for all tests.
-  FAKE_VERIFIER='test-fake-verifier=false'
+  FAKE_VERIFIER='test-fake-verifier=true'
 
   APPEND_METADATA=''
   if ! [ -z "$METADATA" ]; then
