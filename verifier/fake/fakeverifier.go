@@ -88,8 +88,6 @@ func (fc *fakeClient) VerifyAttestation(_ context.Context, req verifier.VerifyAt
 		audience = req.TokenOptions.Audience
 	} 
 
-	fmt.Println(audience)
-
 	claims := Claims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			IssuedAt:  &jwt.NumericDate{Time: now},
@@ -101,8 +99,6 @@ func (fc *fakeClient) VerifyAttestation(_ context.Context, req verifier.VerifyAt
 		},
 		MachineStateMarshaled: string(msJSON),
 	}
-
-	fmt.Println(claims.Audience)
 
 	var signatureClaims []ContainerImageSignatureClaims
 	var partialErrs []*status.Status
