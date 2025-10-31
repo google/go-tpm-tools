@@ -88,17 +88,21 @@ func (fc *fakeClient) VerifyAttestation(_ context.Context, req verifier.VerifyAt
 		audience = req.TokenOptions.Audience
 	} 
 
+	fmt.Println(audience)
+
 	claims := Claims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			IssuedAt:  &jwt.NumericDate{Time: now},
 			NotBefore: &jwt.NumericDate{Time: now},
 			ExpiresAt: &jwt.NumericDate{Time: now.Add(time.Hour)},
-			Audience:  jwt.ClaimStrings{audience},
+			Audience:  []string{audience},
 			Issuer:    "fake-issuer-for-testing",
 			Subject:   "https://www.googleapis.com/compute/v1/projects/fakeProject/zones/fakeZone/instances/fakeInstance",
 		},
 		MachineStateMarshaled: string(msJSON),
 	}
+
+	fmt.Println(claims.Audience)
 
 	var signatureClaims []ContainerImageSignatureClaims
 	var partialErrs []*status.Status
