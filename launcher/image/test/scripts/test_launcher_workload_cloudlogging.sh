@@ -46,7 +46,7 @@ else
     print_logs=true
 fi
 
-if echo $CLOUD_LOGGING_OUTPUT | grep -q 'aud: [https://sts.googleapis.com]'
+if echo $CLOUD_LOGGING_OUTPUT | grep -q 'aud:\[https://sts.googleapis.com\]'
 then
     echo "- token aud verified"
 else

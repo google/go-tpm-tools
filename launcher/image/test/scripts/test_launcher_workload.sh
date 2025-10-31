@@ -43,7 +43,7 @@ else
     print_serial=true
 fi
 
-if echo $SERIAL_OUTPUT | grep -q 'aud: [https://sts.googleapis.com]'
+if echo $SERIAL_OUTPUT | grep -q 'aud: \[https://sts.googleapis.com\]'
 then
     echo "- token aud verified"
 else
