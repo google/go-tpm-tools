@@ -91,7 +91,7 @@ func decodeAndValidateToken(tokenBytes []byte, keyFunc func(t *jwt.Token) (any, 
 	return nil, fmt.Errorf("couldn't handle this token or couldn't read a validation error: %v", err)
 }
 
-func getTestRSAPublicKey(t *jwt.Token) (any, error) {
+func getTestRSAPublicKey(_ *jwt.Token) (any, error) {
 	const publicKeyPEM = `-----BEGIN PUBLIC KEY-----
 MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAjz/x1INhnRfOm2eE71YE
 FByB9mDyyjyQJ4HN+Vha8vqvtjM9T5DaFguG3LGlA9sTKEz72VWPs0K5ftlcI+/G

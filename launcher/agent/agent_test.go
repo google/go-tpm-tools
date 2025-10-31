@@ -135,7 +135,7 @@ func TestAttest(t *testing.T) {
 				t.Errorf("Invalid aud")
 			}
 
-			if !claims.VerifyIssuer("https://confidentialcomputing.googleapis.com/", true) {
+			if !claims.VerifyIssuer("fake-issuer-for-testing", true) {
 				t.Errorf("Invalid iss")
 			}
 

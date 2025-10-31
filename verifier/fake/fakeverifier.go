@@ -83,10 +83,10 @@ func (fc *fakeClient) VerifyAttestation(_ context.Context, req verifier.VerifyAt
 		return nil, fmt.Errorf("failed to convert proto object to JSON: %v", err)
 	}
 
-	audience := req.TokenOptions.Audience
-	if audience == "" {
-		audience = "https://sts.googleapis.com/"
-	}
+	audience := "https://sts.googleapis.com/"
+	if req.TokenOptions != nil && req.TokenOptions.Audience != "" {
+		audience = req.TokenOptions.Audience
+	} 
 
 	claims := Claims{
 		RegisteredClaims: jwt.RegisteredClaims{
