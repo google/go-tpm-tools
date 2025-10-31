@@ -82,12 +82,18 @@ func (fc *fakeClient) VerifyAttestation(_ context.Context, req verifier.VerifyAt
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert proto object to JSON: %v", err)
 	}
+
+	audience := req.TokenOptions.Audience
+	if audience == "" {
+		audience = "https://sts.googleapis.com/"
+	}
+
 	claims := Claims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			IssuedAt:  &jwt.NumericDate{Time: now},
 			NotBefore: &jwt.NumericDate{Time: now},
 			ExpiresAt: &jwt.NumericDate{Time: now.Add(time.Hour)},
-			Audience:  jwt.ClaimStrings{req.TokenOptions.Audience},
+			Audience:  jwt.ClaimStrings{audience},
 			Issuer:    "fake-issuer-for-testing",
 			Subject:   "https://www.googleapis.com/compute/v1/projects/fakeProject/zones/fakeZone/instances/fakeInstance",
 		},
