@@ -131,7 +131,7 @@ func TestAttest(t *testing.T) {
 				t.Errorf("Invalid exp, iat, or nbf: %s", err)
 			}
 
-			if !claims.VerifyAudience("https://sts.googleapis.com/", true) {
+			if !claims.VerifyAudience("https://sts.googleapis.com", true) {
 				t.Errorf("Invalid aud")
 			}
 
