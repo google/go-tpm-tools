@@ -92,11 +92,9 @@ func decodeAndValidateToken(tokenBytes []byte, keyFunc func(t *jwt.Token) (any, 
 }
 
 func getTestRSAPublicKey(token *jwt.Token) (any, error) {
-	// This is a simplified key function. For this test, we know there is only
-	// one possible key, so we ignore the token's `kid` header and always
-	// return the same hardcoded public key.
+	// Always return the same hardcoded public key.
 	
-	// verify the signing method
+	// Verify the signing method
 	if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
 		return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 	}
