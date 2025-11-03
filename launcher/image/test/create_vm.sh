@@ -18,7 +18,7 @@ create_vm() {
     exit 1
   fi
 
-  # TODO: Should be true, for all tests.
+  # use the fake verifier for all tests
   FAKE_VERIFIER='test-fake-verifier=true'
 
   APPEND_METADATA=''
