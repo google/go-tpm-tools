@@ -91,7 +91,7 @@ func decodeAndValidateToken(tokenBytes []byte, keyFunc func(t *jwt.Token) (any, 
 	return nil, fmt.Errorf("couldn't handle this token or couldn't read a validation error: %v", err)
 }
 
-func getTestRSAPublicKey(_ *jwt.Token) (any, error) {
+func getTestRSAPublicKey(token *jwt.Token) (any, error) {
 	// This is a simplified key function. For this test, we know there is only
 	// one possible key, so we ignore the token's `kid` header and always
 	// return the same hardcoded public key.
