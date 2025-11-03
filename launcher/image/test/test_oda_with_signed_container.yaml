@@ -7,7 +7,7 @@ substitutions:
   # If the workload image changes, the commit author should change the cosign signature as well to not break tests.
   '_WORKLOAD_IMAGE': 'us-west1-docker.pkg.dev/confidential-space-images-dev/cs-integ-test-images/ipc/happypath@sha256:36ba628076b4de46ada0226cfea198a25b396ce11e8b69710ae9172b2e4382b0'
   '_SIGNATURE_REPO': 'us-docker.pkg.dev/confidential-space-images-dev/cs-cosign-tests/oda'
-  '_EXPECTED_SIG': 'MEQCIF7zynbQxAlNGHU0pG2rgu/VIZJaXanhvj1Ev9g5xH1jAiBqr77XfYjgaYz/1JArSMVzNHr5t6/XkxkMUna631Jh0A=='
+  '_EXPECTED_SIG': 'MEYCIQD7s2ozy2hSIafSVW/kQUCLJ6aOELI4Z0W9+vX/xgmDcAIhAMsic7ET83kEHtCxZXBXQfgIGWTSYiS1mbv58rSDpqdQ'
 
 steps:
 - name: 'gcr.io/cloud-builders/gcloud'
