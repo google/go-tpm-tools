@@ -117,7 +117,6 @@ func (fc *fakeClient) VerifyAttestation(_ context.Context, req verifier.VerifyAt
 	claims.ContainerImageSignatures = signatureClaims
 
 	token := jwt.NewWithClaims(signingMethod, claims)
-	token.Header["kid"] = "fake-key-for-testing"
 
 	// Instead of a private key, provide the signer.
 	signed, err := token.SignedString(fc.signer)
