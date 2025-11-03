@@ -7,7 +7,6 @@ source util/read_serial.sh
 SERIAL_OUTPUT=$(read_serial $2 $3) 
 print_serial=false
 
-
 if echo $SERIAL_OUTPUT | grep -q "Token valid: $1"
 then
     echo "- test custom token"
