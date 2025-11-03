@@ -10,6 +10,10 @@ type Claims struct {
 	jwt.RegisteredClaims
 	ContainerImageSignatures []ContainerImageSignatureClaims `json:"container_image_signatures"`
 	MachineStateMarshaled    string
+	OEMID                    string `json:"oemid"`
+	HWModel                  string `json:"hwmodel"`
+	SecBoot                  bool   `json:"secboot"`
+	SWName                   string `json:"swname"`
 }
 
 // ContainerImageSignatureClaims contains claims about a container image signature.

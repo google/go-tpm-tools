@@ -102,6 +102,10 @@ func (fc *fakeClient) VerifyAttestation(_ context.Context, req verifier.VerifyAt
 			Subject:   "https://www.googleapis.com/compute/v1/projects/fakeProject/zones/fakeZone/instances/fakeInstance",
 		},
 		MachineStateMarshaled: string(msJSON),
+		OEMID:                 "fake-oem-id",
+		HWModel:               "fake-hw-model",
+		SecBoot:               true,
+		SWName:                "fake-sw-name",
 	}
 
 	var signatureClaims []ContainerImageSignatureClaims

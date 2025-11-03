@@ -61,41 +61,41 @@ else
     print_serial=true
 fi
 
-# if echo $SERIAL_OUTPUT | grep -q 'secboot: true'
-# then
-#     echo "- token secboot verified"
-# else
-#     echo "FAILED: token secboot not verified"
-#     echo 'TEST FAILED.' > /workspace/status.txt
-#     print_serial=true
-# fi
+if echo $SERIAL_OUTPUT | grep -q 'secboot: true'
+then
+    echo "- token secboot verified"
+else
+    echo "FAILED: token secboot not verified"
+    echo 'TEST FAILED.' > /workspace/status.txt
+    print_serial=true
+fi
 
-# if echo $SERIAL_OUTPUT | grep -q 'oemid: 11129'
-# then
-#     echo "- token oemid verified"
-# else
-#     echo "FAILED: token oemid not verified"
-#     echo 'TEST FAILED.' > /workspace/status.txt
-#     print_serial=true
-# fi
+if echo $SERIAL_OUTPUT | grep -q 'oemid: fake-oem-id'
+then
+    echo "- token oemid verified"
+else
+    echo "FAILED: token oemid not verified"
+    echo 'TEST FAILED.' > /workspace/status.txt
+    print_serial=true
+fi
 
-# if echo $SERIAL_OUTPUT | grep -q 'hwmodel: GCP_AMD_SEV'
-# then
-#     echo "- token hwmodel verified"
-# else
-#     echo "FAILED: token hwmodel not verified"
-#     echo 'TEST FAILED.' > /workspace/status.txt
-#     print_serial=true
-# fi
+if echo $SERIAL_OUTPUT | grep -q 'hwmodel: fake-hw-model'
+then
+    echo "- token hwmodel verified"
+else
+    echo "FAILED: token hwmodel not verified"
+    echo 'TEST FAILED.' > /workspace/status.txt
+    print_serial=true
+fi
 
-# if echo $SERIAL_OUTPUT | grep -q 'swname: GCE'
-# then
-#     echo "- token swname verified"
-# else
-#     echo "FAILED: token swname not verified"
-#     echo 'TEST FAILED.' > /workspace/status.txt
-#     print_serial=true
-# fi
+if echo $SERIAL_OUTPUT | grep -q 'swname: fake-sw-name'
+then
+    echo "- token swname verified"
+else
+    echo "FAILED: token swname not verified"
+    echo 'TEST FAILED.' > /workspace/status.txt
+    print_serial=true
+fi
 
 if echo $SERIAL_OUTPUT | grep -q 'Token looks okay'
 then
