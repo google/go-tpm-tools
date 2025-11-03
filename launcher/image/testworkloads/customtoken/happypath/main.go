@@ -114,7 +114,6 @@ RwIDAQAB
 
 func main() {
 	// Format token request
-	// TODO: check these fields
 	body := `{
         "audience": "<YOURAUDIENCE>",
         "nonces": ["thisIsAcustomNonce", "thisIsAMuchLongerCustomNonceWithPaddingFor74Bytes0000000000000000000000000"],
@@ -129,7 +128,7 @@ func main() {
 		return
 	}
 
-	// Write a method to return a public key used for testing
+	// Method to return a public key used for testing
 	keyFunc := getTestRSAPublicKey
 
 	// The following code could be run by a remote party (not necessarily in a
