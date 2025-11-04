@@ -11,6 +11,7 @@ import (
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm/legacy/tpm2"
 	"github.com/spf13/cobra"
+	"google.golang.org/protobuf/proto"
 )
 
 var (
@@ -218,6 +219,38 @@ func dataOutput() io.Writer {
 	return file
 }
 
+func openForWrite(path string) io.Writer {
+	if path == "" {
+		return os.Stdout
+	}
+
+	file, err := os.Create(path)
+	if err != nil {
+		return alwaysError{err}
+	}
+	return file
+}
+
+func writeProtoToOutput(message proto.Message) error {
+	var out []byte
+	var err error
+	switch format {
+	case "binarypb":
+		out, err = proto.Marshal(message)
+		if err != nil {
+			return fmt.Errorf("failed to marshal proto: %v", message)
+		}
+	case "textproto":
+		out = []byte(marshalOptions.Format(message))
+	default:
+		return fmt.Errorf("format should be either binarypb or textproto")
+	}
+	if _, err := dataOutput().Write(out); err != nil {
+		return fmt.Errorf("failed to write attestation report: %v", err)
+	}
+	return nil
+}
+
 // Handle to input data file. If there is an issue opening the file, the Reader
 // returned will return the error upon any call to Read()
 func dataInput() io.Reader {
@@ -230,6 +263,37 @@ func dataInput() io.Reader {
 		return alwaysError{err}
 	}
 	return file
+}
+
+var errMustSpecifyPath = errors.New("must specify path to read file")
+
+func readBytes(path string) ([]byte, error) {
+	if path == "" {
+		return nil, errMustSpecifyPath
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	bytes, err := io.ReadAll(file)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read proto: %v", err)
+	}
+	return bytes, nil
+}
+
+// Reads binarypb file from path
+func readProtoFromPath(path string, message proto.Message) error {
+	requestBytes, err := readBytes(path)
+	if err != nil {
+		return fmt.Errorf("failed to read proto: %v", err)
+	}
+
+	err = proto.Unmarshal(requestBytes, message)
+	if err != nil {
+		return fmt.Errorf("failed to unmarshal proto: %v", err)
+	}
+	return nil
 }
 
 // Load SRK based on tpm2.Algorithm set in the global flag vars.
