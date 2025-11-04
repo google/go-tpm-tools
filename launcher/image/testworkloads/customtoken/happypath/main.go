@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -92,24 +93,18 @@ func decodeAndValidateToken(tokenBytes []byte, keyFunc func(t *jwt.Token) (any, 
 }
 
 func getTestRSAPublicKey(token *jwt.Token) (any, error) {
-	// Always return the same hardcoded public key.
-
 	// Verify the signing method
 	if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
 		return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 	}
 
-	const publicKeyPEM = `-----BEGIN PUBLIC KEY-----
-MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAjz/x1INhnRfOm2eE71YE
-FByB9mDyyjyQJ4HN+Vha8vqvtjM9T5DaFguG3LGlA9sTKEz72VWPs0K5ftlcI+/G
-cbF4J4wH+j4T9VTprvQ8WE+3r6Kd+gqmmTDX8H/lZQqf/EgqmZ8rXzUSaXEGttBE
-ZKitCpgbucE47981dhEqdX7zPGJUIuKW5T+JcRVwZ2I5sZyqXV7cVX9x/Uo+i2B+
-fWS+zQFz3qXN8oeEAHPthrFfCv82+TRaqIWX9BOzJWo6TkCh+kkRG4rMcWXQqE+Z
-tsRwRDo362eMUQqsowckm5XAsLWbHUz/JwVJNPLqT5zeQn7ru0xlAhi0wcb31OAU
-RwIDAQAB
------END PUBLIC KEY-----`
+	// The testing public key is at ../../../../../verifier/fake/signer_rsa.pub
+	keyBytes, err := os.ReadFile("../../../../../verifier/fake/signer_rsa.pub")
+	if err != nil {
+		return nil, fmt.Errorf("failed to read public key file: %w", err)
+	}
 
-	return jwt.ParseRSAPublicKeyFromPEM([]byte(publicKeyPEM))
+	return jwt.ParseRSAPublicKeyFromPEM(keyBytes)
 }
 
 func main() {

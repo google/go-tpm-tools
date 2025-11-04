@@ -143,8 +143,12 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 		return err
 	}
 
-	//
-	s.FakeVerifierEnabled, _ = strconv.ParseBool(unmarshaledMap[fakeVerifierKey])
+	if val, ok := unmarshaledMap[fakeVerifierKey]; ok && val != "" {
+		var err error
+		if s.FakeVerifierEnabled, err = strconv.ParseBool(val); err != nil {
+			return fmt.Errorf("invalid value for %v (not a boolean): %w", fakeVerifierKey, err)
+		}
+	}
 
 	s.ImageRef = unmarshaledMap[imageRefKey]
 	if s.ImageRef == "" {
@@ -196,7 +200,6 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 		if monVal == "" {
 			s.MonitoringEnabled = None
 		} else {
-
 			var err error
 			s.MonitoringEnabled, err = toMonitoringType(monVal)
 			if err != nil {
