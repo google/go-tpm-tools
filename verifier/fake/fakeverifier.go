@@ -202,12 +202,12 @@ func extractPCRBank(attestation *attest.Attestation, hashAlgo tpm.HashAlgo) (*re
 }
 
 func fakePrivateKey() crypto.Signer {
-	// Get path of current file, to find signer_rsa.pem.
+	// Get path of current file, to find signer_rsa.
 	_, filename, _, ok := runtime.Caller(0)
 	if !ok {
 		panic("failed to get current file path")
 	}
-	keyPath := filepath.Join(filepath.Dir(filename), "signer_rsa.pem")
+	keyPath := filepath.Join(filepath.Dir(filename), "signer_rsa")
 
 	keyBytes, err := os.ReadFile(keyPath)
 	if err != nil {
