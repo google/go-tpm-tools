@@ -7,9 +7,6 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"fmt"
-	"os"
-	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 
@@ -39,7 +36,7 @@ func NewClient(signer crypto.Signer) verifier.Client {
 
 	// If signer is nil, test keys found in verifier/fake/ will be used.
 	if signer == nil {
-		signer = fakePrivateKey()
+		signer = TestPrivateKey()
 	}
 
 	return &fakeClient{signer, nonce}
@@ -199,24 +196,4 @@ func extractPCRBank(attestation *attest.Attestation, hashAlgo tpm.HashAlgo) (*re
 		}
 	}
 	return nil, fmt.Errorf("no PCRs found matching hash %s", hashAlgo.String())
-}
-
-func fakePrivateKey() crypto.Signer {
-	// Get path of current file, to find signer_rsa.
-	_, filename, _, ok := runtime.Caller(0)
-	if !ok {
-		panic("failed to get current file path")
-	}
-	keyPath := filepath.Join(filepath.Dir(filename), "signer_rsa")
-
-	keyBytes, err := os.ReadFile(keyPath)
-	if err != nil {
-		panic(fmt.Sprintf("failed to read private key file: %v", err))
-	}
-	fakeSigner, err := jwt.ParseRSAPrivateKeyFromPEM(keyBytes)
-	if err != nil {
-		// This should not happen unless key is formatted incorrectly
-		panic(fmt.Sprintf("failed to parse provided private key: %v", err))
-	}
-	return fakeSigner
 }

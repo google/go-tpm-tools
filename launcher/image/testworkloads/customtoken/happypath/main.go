@@ -9,11 +9,11 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v4"
+	"github.com/google/go-tpm-tools/verifier/fake"
 )
 
 const (
@@ -98,13 +98,7 @@ func getTestRSAPublicKey(token *jwt.Token) (any, error) {
 		return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 	}
 
-	// The testing public key is at ../../../../../verifier/fake/signer_rsa.pub
-	keyBytes, err := os.ReadFile("../../../../../verifier/fake/signer_rsa.pub")
-	if err != nil {
-		return nil, fmt.Errorf("failed to read public key file: %w", err)
-	}
-
-	return jwt.ParseRSAPublicKeyFromPEM(keyBytes)
+	return fake.TestPublicKey(), nil
 }
 
 func main() {
