@@ -46,6 +46,20 @@ message Attestation {
   }
 }
 
+// For VMs running SEV-SNP with an SVSM-based e-vTPM, this contains a TPM quote
+// and all the information needed to verify it.
+message SevSnpSvsmAttestation {
+  Attestation attestation = 1;
+  sevsnp.Attestation sev_snp_attestation = 2;
+  // vTPM service manifest is retrieved from configfs-tsm-report via manifest blob
+  // See https://github.com/torvalds/linux/blob/v6.16/Documentation/ABI/testing/configfs-tsm-report
+  // The manifest format is defined by the SVSM spec at https://www.amd.com/en/developer/sev.html
+  bytes vtpm_service_manifest = 3;
+  string vtpm_service_manifest_version = 4;
+  // This contains a launch endorsement for guest firmware that includes SVSM.
+  bytes launch_endorsement = 5;
+}
+
 // Type of hardware technology used to protect this instance
 enum GCEConfidentialTechnology {
   NONE = 0;

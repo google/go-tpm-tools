@@ -52,3 +52,13 @@ message PCRs {
   HashAlgo hash = 1;
   map<uint32, bytes> pcrs = 2;
 }
+
+// Contains information corresponding an object certified with TPM2_Certify.
+message CertifiedBlob {
+  // Public area of certified object, encoded as a TPMT_PUBLIC
+  bytes pub_area = 1;
+  // TPM2 certification, encoded as a TPMS_ATTEST
+  bytes certify_info = 2;
+  // TPM2 signature, encoded as a TPMT_Signature
+  bytes raw_sig = 3;
+}
