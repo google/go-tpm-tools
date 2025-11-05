@@ -34,6 +34,11 @@ func NewClient(signer crypto.Signer) verifier.Client {
 	nonce := make([]byte, 2)
 	binary.LittleEndian.PutUint16(nonce, 15)
 
+	// If signer is nil, test keys found in verifier/fake/ will be used.
+	if signer == nil {
+		signer = TestPrivateKey()
+	}
+
 	return &fakeClient{signer, nonce}
 }
 
@@ -82,16 +87,26 @@ func (fc *fakeClient) VerifyAttestation(_ context.Context, req verifier.VerifyAt
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert proto object to JSON: %v", err)
 	}
+
+	audience := "https://sts.googleapis.com/"
+	if req.TokenOptions != nil && req.TokenOptions.Audience != "" {
+		audience = req.TokenOptions.Audience
+	}
+
 	claims := Claims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			IssuedAt:  &jwt.NumericDate{Time: now},
 			NotBefore: &jwt.NumericDate{Time: now},
 			ExpiresAt: &jwt.NumericDate{Time: now.Add(time.Hour)},
-			Audience:  []string{"https://sts.googleapis.com/"},
-			Issuer:    "https://confidentialcomputing.googleapis.com/",
+			Audience:  []string{audience},
+			Issuer:    "fake-issuer-for-testing",
 			Subject:   "https://www.googleapis.com/compute/v1/projects/fakeProject/zones/fakeZone/instances/fakeInstance",
 		},
 		MachineStateMarshaled: string(msJSON),
+		OEMID:                 "fake-oem-id",
+		HWModel:               "fake-hw-model",
+		SecBoot:               true,
+		SWName:                "fake-sw-name",
 	}
 
 	var signatureClaims []ContainerImageSignatureClaims
