@@ -196,4 +196,5 @@ func init() {
 	addOutputFlag(attestCmd)
 	addFormatFlag(attestCmd)
 	addTeeTechnology(attestCmd)
+	attestCmd.AddCommand(attestSVSMCmd)
 }
