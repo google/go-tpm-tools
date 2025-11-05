@@ -253,7 +253,8 @@ func (GPUDeviceCCMode) EnumDescriptor() ([]byte, []int) {
 
 // Information uniquely identifying a GCE instance. Can be used to create an
 // instance URL, which can then be used with GCE APIs. Formatted like:
-//   https://www.googleapis.com/compute/v1/projects/{project_id}/zones/{zone}/instances/{instance_name}
+//
+//	https://www.googleapis.com/compute/v1/projects/{project_id}/zones/{zone}/instances/{instance_name}
 type GCEInstanceInfo struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
@@ -360,6 +361,7 @@ type Attestation struct {
 	// environment.
 	//
 	// Types that are assignable to TeeAttestation:
+	//
 	//	*Attestation_SevSnpAttestation
 	//	*Attestation_TdxAttestation
 	TeeAttestation isAttestation_TeeAttestation `protobuf_oneof:"tee_attestation"`
@@ -575,6 +577,7 @@ type PlatformState struct {
 	unknownFields protoimpl.UnknownFields
 
 	// Types that are assignable to Firmware:
+	//
 	//	*PlatformState_ScrtmVersionId
 	//	*PlatformState_GceVersion
 	Firmware isPlatformState_Firmware `protobuf_oneof:"firmware"`
@@ -933,6 +936,7 @@ type Certificate struct {
 	// the enum. Otherwise, it will contain the raw DER.
 	//
 	// Types that are assignable to Representation:
+	//
 	//	*Certificate_Der
 	//	*Certificate_WellKnown
 	Representation isCertificate_Representation `protobuf_oneof:"representation"`
@@ -1631,6 +1635,7 @@ type MachineState struct {
 	// verified.
 	//
 	// Types that are assignable to TeeAttestation:
+	//
 	//	*MachineState_SevSnpAttestation
 	//	*MachineState_TdxAttestation
 	TeeAttestation isMachineState_TeeAttestation `protobuf_oneof:"tee_attestation"`
