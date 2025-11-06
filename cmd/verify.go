@@ -158,4 +158,8 @@ func init() {
 	addInputFlag(debugCmd)
 	addFormatFlag(debugCmd)
 	addTeeNonceflag(debugCmd)
+	addCertifiedAKBlobFlag(debugCmd)
+	debugCmd.AddCommand(verifySVSMCmd)
+	addEKPubFlag(verifySVSMCmd)
+	addTeeTechnology(verifySVSMCmd)
 }

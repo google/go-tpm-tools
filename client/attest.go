@@ -59,6 +59,9 @@ type AttestOpts struct {
 	// depending on the technology's size. Leaving this nil is not recommended. If
 	// nil, then TEEDevice must be nil.
 	TEENonce []byte
+
+	// Setting this skips attaching the TEE attestation
+	SkipTeeAttestation bool
 }
 
 // SevSnpQuoteProvider encapsulates the SEV-SNP attestation device to add its attestation report
@@ -233,6 +236,9 @@ func setTeeAttestationTdxQuote(quote any, attestation *pb.Attestation) error {
 // Does best effort to get a TEE hardware rooted attestation, but won't fail fatally
 // unless the user provided a TEEDevice object.
 func getTEEAttestationReport(attestation *pb.Attestation, opts AttestOpts) error {
+	if opts.SkipTeeAttestation {
+		return nil
+	}
 	device := opts.TEEDevice
 	if device != nil {
 		return device.AddAttestation(attestation, opts)
