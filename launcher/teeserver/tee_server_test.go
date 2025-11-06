@@ -551,7 +551,7 @@ func TestCustomHandleAttestError(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ah := attestHandler{
 				logger: logging.SimpleLogger(),
-				clients: &AttestClients{
+				clients: AttestClients{
 					GCA: &fakeVerifierClient{},
 				},
 				attestAgent: fakeAttestationAgent{
