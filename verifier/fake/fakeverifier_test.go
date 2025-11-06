@@ -187,7 +187,10 @@ func TestVerifyAttestation(t *testing.T) {
 						t.Errorf("expected 1 partial error, got %d", len(resp.PartialErrs))
 					}
 					claims := &Claims{}
-					jwt.NewParser().ParseUnverified(string(resp.ClaimsToken), claims)
+					_, _, err := jwt.NewParser().ParseUnverified(string(resp.ClaimsToken), claims)
+					if err != nil {
+						t.Fatalf("Failed to parse claims token: %v", err)
+					}
 					if len(claims.ContainerImageSignatures) != 2 {
 						t.Errorf("expected 2 container image signatures in claims, got %d", len(claims.ContainerImageSignatures))
 					}
