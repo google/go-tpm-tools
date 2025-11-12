@@ -18,6 +18,8 @@ import (
 	"github.com/google/go-tpm-tools/verifier/models"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	attestpb "github.com/google/go-tpm-tools/proto/attest"
 )
 
 // Implements verifier.Client interface so it can be used to initialize test attestHandlers
@@ -51,6 +53,10 @@ func (f fakeAttestationAgent) AttestWithClient(c context.Context, a agent.Attest
 
 func (f fakeAttestationAgent) MeasureEvent(c gecel.Content) error {
 	return f.measureEventFunc(c)
+}
+
+func (f fakeAttestationAgent) VerifyLocal() (*attestpb.MachineState, error) {
+	return nil, fmt.Errorf("unimplemented")
 }
 
 func (f fakeAttestationAgent) Refresh(_ context.Context) error {
