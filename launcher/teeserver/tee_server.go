@@ -23,6 +23,7 @@ const (
 	itaEndpoint = "/v1/intel/token"
 
 	verifyMethodHeader = "Verify-Method"
+	msEndpoint         = "/v1/verifylocal"
 )
 
 var clientErrorCodes = map[codes.Code]struct{}{
@@ -92,6 +93,7 @@ func (a *attestHandler) Handler() http.Handler {
 
 	mux.HandleFunc(gcaEndpoint, a.getToken)
 	mux.HandleFunc(itaEndpoint, a.getITAToken)
+	mux.HandleFunc(msEndpoint, a.getMachineState)
 	return mux
 }
 
@@ -231,6 +233,30 @@ func (a *attestHandler) attest(w http.ResponseWriter, r *http.Request, client ve
 		err := fmt.Errorf("TEE server received an invalid HTTP method: %s", r.Method)
 		a.logAndWriteHTTPError(w, http.StatusBadRequest, err)
 	}
+}
+
+// getDefaultToken handles the request to get the default OIDC token.
+// For now this function will just read the content of the file and return.
+// Later, this function can use attestation agent to get a token directly.
+func (a *attestHandler) getMachineState(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html")
+
+	a.logger.Info(fmt.Sprintf("%s called", msEndpoint))
+
+	ms, err := a.attestAgent.VerifyLocal()
+	if err != nil {
+		a.logAndWriteHTTPError(w, http.StatusInternalServerError, fmt.Errorf("failed to retrieve machine state: %w", err))
+		return
+	}
+
+	respBytes, err := json.Marshal(ms)
+	if err != nil {
+		a.logAndWriteHTTPError(w, http.StatusInternalServerError, fmt.Errorf("failed to marshal machine state: %w", err))
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Write(respBytes)
 }
 
 func (a *attestHandler) logAndWriteHTTPError(w http.ResponseWriter, statusCode int, err error) {
