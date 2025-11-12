@@ -238,7 +238,7 @@ func (a *attestHandler) attest(w http.ResponseWriter, r *http.Request, client ve
 // getDefaultToken handles the request to get the default OIDC token.
 // For now this function will just read the content of the file and return.
 // Later, this function can use attestation agent to get a token directly.
-func (a *attestHandler) getMachineState(w http.ResponseWriter, r *http.Request) {
+func (a *attestHandler) getMachineState(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/html")
 
 	a.logger.Info(fmt.Sprintf("%s called", msEndpoint))
