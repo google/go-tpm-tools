@@ -16,6 +16,7 @@ import (
 	"github.com/google/go-tpm-tools/verifier/models"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
 const (
@@ -210,7 +211,7 @@ func (a *attestHandler) getMachineState(w http.ResponseWriter, _ *http.Request) 
 		return
 	}
 
-	respBytes, err := json.Marshal(ms)
+	respBytes, err := protojson.Marshal(ms)
 	if err != nil {
 		a.logAndWriteHTTPError(w, http.StatusInternalServerError, fmt.Errorf("failed to marshal machine state: %w", err))
 		return
