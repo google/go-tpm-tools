@@ -42,6 +42,18 @@ const (
 
 type principalIDTokenFetcher func(audience string) ([][]byte, error)
 
+// VerifyMethod represents the possible atrestation verification methods.
+type VerifyMethod string
+
+const (
+	// VerifyUnset refers to an unspecified method.
+	VerifyUnset VerifyMethod = "UNSET"
+	// VerifyConfidentialSpaceMethod refers to VerifyConfidentialSpace.
+	VerifyConfidentialSpaceMethod VerifyMethod = "VerifyConfidentialSpace"
+	// VerifyAttestationMethod refers to VerifyAttestation.
+	VerifyAttestationMethod VerifyMethod = "VerifyAttestation"
+)
+
 // AttestationAgent is an agent that interacts with GCE's Attestation Service
 // to Verify an attestation message. It is an interface instead of a concrete
 // struct to make testing easier.
@@ -67,6 +79,7 @@ type attestRoot interface {
 // VerifyAttestation API
 type AttestAgentOpts struct {
 	TokenOptions *models.TokenOptions
+	Method       VerifyMethod
 }
 
 type agent struct {
@@ -251,14 +264,32 @@ func (a *agent) AttestWithClient(ctx context.Context, opts AttestAgentOpts, clie
 		a.logger.Info("Found container image signatures: %v\n", signatures)
 	}
 
-	resp, err := client.VerifyAttestation(ctx, req)
+	resp, err := a.verify(ctx, req, client, opts)
 	if err != nil {
 		return nil, err
 	}
+
 	if len(resp.PartialErrs) > 0 {
 		a.logger.Error(fmt.Sprintf("Partial errors from VerifyAttestation: %v", resp.PartialErrs))
 	}
 	return resp.ClaimsToken, nil
+}
+
+func (a *agent) verify(ctx context.Context, req verifier.VerifyAttestationRequest, client verifier.Client, opts AttestAgentOpts) (*verifier.VerifyAttestationResponse, error) {
+	// If not specified in opts, use experiment to determine verify method.
+	// method := opts.Method
+	// if method == VerifyUnset {
+	// 	if a.launchSpec.Experiments.EnableVerifyCS {
+	// 		method = VerifyConfidentialSpaceMethod
+	// 	} else {
+	// 		method = VerifyAttestationMethod
+	// 	}
+	// }
+
+	// if method == VerifyConfidentialSpaceMethod {
+	return client.VerifyConfidentialSpace(ctx, req)
+	// }
+	// return client.VerifyAttestation(ctx, req)
 }
 
 func convertOCIToContainerSignature(ociSig oci.Signature) (*verifier.ContainerSignature, error) {

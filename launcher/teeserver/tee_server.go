@@ -21,6 +21,8 @@ import (
 const (
 	gcaEndpoint = "/v1/token"
 	itaEndpoint = "/v1/intel/token"
+
+	verifyMethodHeader = "Verify-Method"
 )
 
 var clientErrorCodes = map[codes.Code]struct{}{
@@ -133,7 +135,40 @@ func (a *attestHandler) getITAToken(w http.ResponseWriter, r *http.Request) {
 	a.attest(w, r, a.clients.ITA)
 }
 
+func (a *attestHandler) parseVerifyMethod(headers http.Header) agent.VerifyMethod {
+	if headers == nil {
+		a.logger.Info("No headers specified in request.")
+		return agent.VerifyUnset
+	}
+
+	methods, ok := headers[verifyMethodHeader]
+	if !ok {
+		a.logger.Info("No VerifyMethod specified in request.")
+		return agent.VerifyUnset
+	}
+
+	if len(methods) != 1 {
+		a.logger.Warn(fmt.Sprintf("Unexpected number of values in VerifyMethod header: %d, expect 1", len(methods)))
+		return agent.VerifyUnset
+	}
+
+	switch methods[0] {
+	case string(agent.VerifyConfidentialSpaceMethod):
+		a.logger.Info("Parsed VerifyMethod: %v", agent.VerifyConfidentialSpaceMethod)
+		return agent.VerifyConfidentialSpaceMethod
+	case string(agent.VerifyAttestationMethod):
+		a.logger.Info("Parsed VerifyMethod: %v", agent.VerifyAttestationMethod)
+		return agent.VerifyAttestationMethod
+	default:
+		a.logger.Warn(fmt.Sprintf("Unsupported VerifyMethod: %v", methods[0]))
+	}
+
+	return agent.VerifyUnset
+}
+
 func (a *attestHandler) attest(w http.ResponseWriter, r *http.Request, client verifier.Client) {
+	verifyMethod := a.parseVerifyMethod(r.Header)
+
 	switch r.Method {
 	case http.MethodGet:
 		if err := a.attestAgent.Refresh(a.ctx); err != nil {
@@ -141,7 +176,9 @@ func (a *attestHandler) attest(w http.ResponseWriter, r *http.Request, client ve
 			return
 		}
 
-		token, err := a.attestAgent.AttestWithClient(a.ctx, agent.AttestAgentOpts{}, client)
+		token, err := a.attestAgent.AttestWithClient(a.ctx, agent.AttestAgentOpts{
+			Method: verifyMethod,
+		}, client)
 		if err != nil {
 			a.handleAttestError(w, err, "failed to retrieve attestation service token")
 			return
@@ -178,6 +215,7 @@ func (a *attestHandler) attest(w http.ResponseWriter, r *http.Request, client ve
 		// Do not check that TokenTypeOptions matches TokenType in the launcher.
 		opts := agent.AttestAgentOpts{
 			TokenOptions: &tokenOptions,
+			Method:       verifyMethod,
 		}
 		tok, err := a.attestAgent.AttestWithClient(a.ctx, opts, client)
 		if err != nil {
