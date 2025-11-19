@@ -277,19 +277,19 @@ func (a *agent) AttestWithClient(ctx context.Context, opts AttestAgentOpts, clie
 
 func (a *agent) verify(ctx context.Context, req verifier.VerifyAttestationRequest, client verifier.Client, opts AttestAgentOpts) (*verifier.VerifyAttestationResponse, error) {
 	// If not specified in opts, use experiment to determine verify method.
-	method := opts.Method
-	if method == VerifyUnset {
-		if a.launchSpec.Experiments.EnableVerifyCS {
-			method = VerifyConfidentialSpaceMethod
-		} else {
-			method = VerifyAttestationMethod
-		}
-	}
+	// method := opts.Method
+	// if method == VerifyUnset {
+	// 	if a.launchSpec.Experiments.EnableVerifyCS {
+	// 		method = VerifyConfidentialSpaceMethod
+	// 	} else {
+	// 		method = VerifyAttestationMethod
+	// 	}
+	// }
 
-	if method == VerifyConfidentialSpaceMethod {
-		return client.VerifyConfidentialSpace(ctx, req)
-	}
-	return client.VerifyAttestation(ctx, req)
+	// if method == VerifyConfidentialSpaceMethod {
+	return client.VerifyConfidentialSpace(ctx, req)
+	// }
+	// return client.VerifyAttestation(ctx, req)
 }
 
 func convertOCIToContainerSignature(ociSig oci.Signature) (*verifier.ContainerSignature, error) {
