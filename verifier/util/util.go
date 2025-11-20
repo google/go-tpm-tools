@@ -41,16 +41,19 @@ func PrincipalFetcher(audience string, mdsClient *metadata.Client) ([][]byte, er
 // NewRESTClient returns a REST verifier.Client that points to the given address.
 // It defaults to the Attestation Verifier instance at
 // https://confidentialcomputing.googleapis.com.
-func NewRESTClient(ctx context.Context, asAddr string, ProjectID string, Region string) (verifier.Client, error) {
+func NewRESTClient(ctx context.Context, _ string, ProjectID string, Region string) (verifier.Client, error) {
 	httpClient, err := google.DefaultClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create HTTP client: %v", err)
 	}
 
-	opts := []option.ClientOption{option.WithHTTPClient(httpClient)}
-	if asAddr != "" {
-		opts = append(opts, option.WithEndpoint(asAddr))
+	opts := []option.ClientOption{
+		option.WithHTTPClient(httpClient),
+		option.WithEndpoint("https://staging-confidentialcomputing.sandbox.googleapis.com"),
 	}
+	// if asAddr != "" {
+	// 	opts = append(opts, option.WithEndpoint(asAddr))
+	// }
 
 	restClient, err := rest.NewClient(ctx, ProjectID, Region, opts...)
 	if err != nil {
