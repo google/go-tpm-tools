@@ -1,0 +1,22 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "simulator",
+    srcs = ["simulator.go"],
+    importpath = "github.com/google/go-tpm-tools/simulator",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_google_go_tpm//legacy/tpm2",
+        "//simulator/internal",
+    ],
+)
+
+go_test(
+    name = "simulator_test",
+    srcs = ["simulator_test.go"],
+    embed = [":simulator"],
+    deps = [
+        "@com_github_google_go_tpm//legacy/tpm2",
+        "//client",
+    ],
+)

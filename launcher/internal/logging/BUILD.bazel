@@ -1,0 +1,24 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "logging",
+    srcs = ["logging.go"],
+    importpath = "github.com/google/go-tpm-tools/launcher/internal/logging",
+    visibility = ["//launcher:__subpackages__"],
+    deps = [
+        "@com_google_cloud_go_compute_metadata//:go_default_library",
+        "@com_google_cloud_go_logging//:go_default_library",
+        "@org_golang_google_genproto_googleapis_api//monitoredres",
+    ],
+)
+
+go_test(
+    name = "logging_test",
+    srcs = ["logging_test.go"],
+    embed = [":logging"],
+    deps = [
+        "@com_github_google_go_cmp//cmp",
+        "@com_google_cloud_go_logging//:go_default_library",
+        "@org_golang_google_genproto_googleapis_api//monitoredres",
+    ],
+)

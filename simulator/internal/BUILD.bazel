@@ -1,0 +1,17 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "internal",
+    importpath = "github.com/google/go-tpm-tools/simulator/internal",
+    visibility = ["//visibility:public"],
+    srcs = [
+        "doc.go",
+        "internal_cgo.go",
+        "internal_cross.go",
+    ],
+    cgo = True,
+    cdeps = [
+        "//simulator/ms-tpm-20-ref:mstpm20",
+        "//simulator/ms-tpm-20-ref:tpm",
+    ],
+)

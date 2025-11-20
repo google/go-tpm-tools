@@ -1,0 +1,35 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "util",
+    srcs = [
+        "fake_attestation_server.go",
+        "fake_metadata.go",
+        "fake_oauth2_server.go",
+        "util.go",
+    ],
+    importpath = "github.com/google/go-tpm-tools/verifier/util",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//client",
+        "//verifier",
+        "//verifier/rest",
+        "@com_github_golang_jwt_jwt_v4//:go_default_library",
+        "@com_google_cloud_go_compute_metadata//:go_default_library",
+        "@com_google_cloud_go_confidentialcomputing//apiv1/confidentialcomputingpb:go_default_library",
+        "@org_golang_google_api//option:go_default_library",
+        "@org_golang_google_protobuf//encoding/protojson",
+        "@org_golang_x_net//http2",
+        "@org_golang_x_oauth2//google:go_default_library",
+    ],
+)
+
+go_test(
+    name = "util_test",
+    srcs = ["util_test.go"],
+    embed = [":util"],
+    deps = [
+        "@com_github_google_go_cmp//cmp",
+        "@com_google_cloud_go_compute_metadata//:go_default_library",
+    ],
+)

@@ -1,0 +1,51 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "rest",
+    srcs = [
+        "errors.go",
+        "rest.go",
+    ],
+    importpath = "github.com/google/go-tpm-tools/verifier/rest",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//verifier",
+        "//verifier/models",
+        "//verifier/oci",
+        "@com_github_google_go_sev_guest//abi",
+        "@com_github_google_go_sev_guest//proto/sevsnp",
+        "@com_github_google_go_tdx_guest//abi",
+        "@com_github_google_go_tdx_guest//proto/tdx",
+        "@com_github_googleapis_gax_go_v2//:go_default_library",
+        "@com_google_cloud_go_confidentialcomputing//apiv1:go_default_library",
+        "@com_google_cloud_go_confidentialcomputing//apiv1/confidentialcomputingpb:go_default_library",
+        "@org_golang_google_api//iterator:go_default_library",
+        "@org_golang_google_api//option:go_default_library",
+        "@org_golang_google_genproto//googleapis/cloud/location",
+        "@org_golang_google_grpc//codes",
+    ],
+)
+
+go_test(
+    name = "rest_test",
+    srcs = ["rest_test.go"],
+    embed = [":rest"],
+    deps = [
+        "//proto/attest",
+        "//proto/tpm",
+        "//verifier",
+        "//verifier/models",
+        "@com_github_google_go_cmp//cmp",
+        "@com_github_google_go_cmp//cmp/cmpopts",
+        "@com_github_google_go_sev_guest//abi",
+        "@com_github_google_go_sev_guest//proto/sevsnp",
+        "@com_github_google_go_tdx_guest//abi",
+        "@com_github_google_go_tdx_guest//proto/tdx",
+        "@com_github_google_go_tdx_guest//testing/testdata",
+        "@com_github_google_uuid//:uuid",
+        "@com_google_cloud_go_confidentialcomputing//apiv1/confidentialcomputingpb:go_default_library",
+        "@org_golang_google_genproto_googleapis_rpc//status",
+        "@org_golang_google_protobuf//encoding/prototext",
+        "@org_golang_google_protobuf//testing/protocmp",
+    ],
+)

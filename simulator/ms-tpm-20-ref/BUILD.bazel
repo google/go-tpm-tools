@@ -1,0 +1,85 @@
+load("@io_bazel_rules_cc//cc:defs.bzl", "cc_library")
+
+# Add any overrides to TpmBuildSwitches.h or TpmProfile.h here
+defines = [
+    # We want a debuggable simulator
+    "DEBUG=YES",
+    # !!!INSECURE!!!
+    # This *must* be set to SIMULATION=NO for use outside of tests as it causes
+    # the DRNG to be deterministic.
+    "SIMULATION=YES",
+    # These 2 checks are cheep, so we might as well keep them.
+    "COMPILER_CHECKS=DEBUG",
+    "RUNTIME_SIZE_CHECKS=DEBUG",
+    # Not needed as our NVRAM reads/writes always succeed
+    "USE_DA_USED=NO",
+    # Avoids the need for an additional platform stub
+    "CERTIFYX509_DEBUG=NO",
+    # Enable P224/P521 ECC curves
+    "ECC_NIST_P224=YES",
+    "ECC_NIST_P521=YES",
+    # Enable SHA512
+    "ALG_SHA512=ALG_YES",
+    "MAX_CONTEXT_SIZE=1360",
+]
+
+cc_library(
+    name = "mstpm20",
+    visibility = ["//visibility:public"],
+    srcs = ["Samples/Google/Run.c"],
+    hdrs = ["Samples/Google/Platform.h"],
+    deps = [
+        ":platform",
+        ":tpm",
+    ],
+)
+
+cc_library(
+    name = "tpm",
+    visibility = ["//visibility:public"],
+    srcs = glob(["TPMCmd/tpm/src/**/*.c"]),
+    copts = [
+        "-Wno-empty-body",
+        "-fno-sanitize=null",
+    ],
+    textual_hdrs = glob([
+        "TPMCmd/tpm/include/*.h",
+        "TPMCmd/tpm/include/Ossl/*.h",
+        "TPMCmd/tpm/include/prototypes/*.h",
+    ]),
+    deps = [
+        ":base",
+        ":platform",
+        "@com_github_openssl_openssl//:crypto",
+    ],
+)
+
+cc_library(
+    name = "platform",
+    srcs = [
+        "Samples/Google/Clock.c",
+        "Samples/Google/Entropy.c",
+        "Samples/Google/NVMem.c",
+    ],
+    hdrs = [
+        "Samples/Google/PlatformData.h",
+        "Samples/Google/Platform_fp.h",
+    ],
+    deps = [
+        ":base",
+        "@com_github_openssl_openssl//:crypto",
+    ],
+)
+
+cc_library(
+    name = "base",
+    hdrs = [
+        "TPMCmd/tpm/include/TpmProfile.h",
+    ],
+    defines = defines,
+    includes = [
+        "Samples/Google",
+        "TPMCmd/tpm/include",
+        "TPMCmd/tpm/include/prototypes",
+    ],
+)

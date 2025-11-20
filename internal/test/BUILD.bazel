@@ -1,0 +1,59 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "test",
+    srcs = [
+        "load_random_external_key.go",
+        "test_cert.go",
+        "test_data.go",
+        "test_other.go",
+        "test_tpm.go",
+        "test_windows.go",
+    ],
+    embedsrcs = [
+        "attestations/gce-cos-85-no-nonce.pb",
+        "attestations/gce-cos-85-nonce9009.pb",
+        "certificates/pca_tpm_ecc_enc_cert.pem",
+        "certificates/pca_tpm_ecc_sign_cert.pem",
+        "certificates/pca_tpm_rsa_enc_cert.pem",
+        "certificates/pca_tpm_rsa_sign_cert.pem",
+        "certificates/uca_tpm_ecc_enc_cert.pem",
+        "certificates/uca_tpm_ecc_sign_cert.pem",
+        "certificates/uca_tpm_rsa_enc_cert.pem",
+        "certificates/uca_tpm_rsa_sign_cert.pem",
+        "eventlogs/arch-linux-workstation.bin",
+        "eventlogs/confidential-gke-debug-251000_eventlog.bin",
+        "eventlogs/cos-101-amd-sev.bin",
+        "eventlogs/cos-85-amd-sev.bin",
+        "eventlogs/cos-93-amd-sev.bin",
+        "eventlogs/debian-10.bin",
+        "eventlogs/eventlogwithsp800155.bin",
+        "eventlogs/gdc-host.bin",
+        "eventlogs/glinux-alex.bin",
+        "eventlogs/rhel8-uefi.bin",
+        "eventlogs/ubuntu-1804-amd-sev.bin",
+        "eventlogs/ubuntu-2104-no-dbx.bin",
+        "eventlogs/ubuntu-2104-no-secure-boot.bin",
+        "eventlogs/ubuntu-2404-amd-sevsnp.bin",
+        "tdx_test_files/tdxReportData.bin",
+    ],
+    importpath = "github.com/google/go-tpm-tools/internal/test",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//simulator",
+        "@com_github_google_go_attestation//attest",
+        "@com_github_google_go_tpm//legacy/tpm2",
+        "@com_github_google_go_tpm//tpm2",
+        "@com_github_google_go_tpm//tpmutil",
+    ],
+)
+
+go_test(
+    name = "test_test",
+    srcs = ["simulate_test.go"],
+    embed = [":test"],
+    deps = [
+        "//client",
+        "//server",
+    ],
+)
