@@ -8,7 +8,10 @@ package agent
 import (
 	"bytes"
 	"context"
+	"crypto"
+	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -30,6 +33,7 @@ import (
 	"github.com/google/go-tpm-tools/launcher/internal/signaturediscovery"
 	"github.com/google/go-tpm-tools/launcher/spec"
 	pb "github.com/google/go-tpm-tools/proto/attest"
+	"github.com/google/go-tpm-tools/server"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/google/go-tpm-tools/verifier/models"
 	"github.com/google/go-tpm-tools/verifier/oci"
@@ -42,6 +46,18 @@ const (
 
 type principalIDTokenFetcher func(audience string) ([][]byte, error)
 
+// VerifyMethod represents the possible atrestation verification methods.
+type VerifyMethod string
+
+const (
+	// VerifyUnset refers to an unspecified method.
+	VerifyUnset VerifyMethod = "UNSET"
+	// VerifyConfidentialSpaceMethod refers to VerifyConfidentialSpace.
+	VerifyConfidentialSpaceMethod VerifyMethod = "VerifyConfidentialSpace"
+	// VerifyAttestationMethod refers to VerifyAttestation.
+	VerifyAttestationMethod VerifyMethod = "VerifyAttestation"
+)
+
 // AttestationAgent is an agent that interacts with GCE's Attestation Service
 // to Verify an attestation message. It is an interface instead of a concrete
 // struct to make testing easier.
@@ -49,6 +65,7 @@ type AttestationAgent interface {
 	MeasureEvent(cel.Content) error
 	Attest(context.Context, AttestAgentOpts) ([]byte, error)
 	AttestWithClient(ctx context.Context, opts AttestAgentOpts, client verifier.Client) ([]byte, error)
+	VerifyLocal() (*pb.MachineState, error)
 	Refresh(context.Context) error
 	Close() error
 }
@@ -61,12 +78,14 @@ type attestRoot interface {
 	GetCEL() *cel.CEL
 	// Attest fetches a technology-specific quote from the root of trust.
 	Attest(nonce []byte) (any, error)
+	VerifyLocal() (*pb.MachineState, error)
 }
 
 // AttestAgentOpts contains user generated options when calling the
 // VerifyAttestation API
 type AttestAgentOpts struct {
 	TokenOptions *models.TokenOptions
+	Method       VerifyMethod
 }
 
 type agent struct {
@@ -251,14 +270,32 @@ func (a *agent) AttestWithClient(ctx context.Context, opts AttestAgentOpts, clie
 		a.logger.Info("Found container image signatures: %v\n", signatures)
 	}
 
-	resp, err := client.VerifyAttestation(ctx, req)
+	resp, err := a.verify(ctx, req, client, opts)
 	if err != nil {
 		return nil, err
 	}
+
 	if len(resp.PartialErrs) > 0 {
 		a.logger.Error(fmt.Sprintf("Partial errors from VerifyAttestation: %v", resp.PartialErrs))
 	}
 	return resp.ClaimsToken, nil
+}
+
+func (a *agent) verify(ctx context.Context, req verifier.VerifyAttestationRequest, client verifier.Client, opts AttestAgentOpts) (*verifier.VerifyAttestationResponse, error) {
+	// If not specified in opts, use experiment to determine verify method.
+	// method := opts.Method
+	// if method == VerifyUnset {
+	// 	if a.launchSpec.Experiments.EnableVerifyCS {
+	// 		method = VerifyConfidentialSpaceMethod
+	// 	} else {
+	// 		method = VerifyAttestationMethod
+	// 	}
+	// }
+
+	// if method == VerifyConfidentialSpaceMethod {
+	return client.VerifyConfidentialSpace(ctx, req)
+	// }
+	// return client.VerifyAttestation(ctx, req)
 }
 
 func convertOCIToContainerSignature(ociSig oci.Signature) (*verifier.ContainerSignature, error) {
@@ -278,6 +315,25 @@ func convertOCIToContainerSignature(ociSig oci.Signature) (*verifier.ContainerSi
 		Payload:   payload,
 		Signature: sigBytes,
 	}, nil
+}
+
+func (a *agent) VerifyLocal() (*pb.MachineState, error) {
+	// Use TPM attest root.
+	var tpmAR attestRoot
+	for _, ar := range a.measuredRots {
+		if ar == nil {
+			continue
+		} else if _, ok := ar.(*tpmAttestRoot); ok {
+			tpmAR = ar
+			break
+		}
+	}
+
+	if tpmAR == nil {
+		return nil, fmt.Errorf("failed to find TPM attest root for local verification")
+	}
+
+	return tpmAR.VerifyLocal()
 }
 
 type tpmAttestRoot struct {
@@ -303,6 +359,31 @@ func (t *tpmAttestRoot) Attest(nonce []byte) (any, error) {
 		Nonce:            nonce,
 		CertChainFetcher: http.DefaultClient,
 	})
+}
+
+// VerifyLocal collects a TPM attestation and performs a local verification.
+// It does not check the contents of the verified evidence, and it does not
+// process the CEL.
+func (t *tpmAttestRoot) VerifyLocal() (*pb.MachineState, error) {
+	nonce := make([]byte, 32)
+	_, err := rand.Read(nonce)
+	if err != nil {
+		return nil, err
+	}
+	attestation, err := t.Attest(nonce)
+	if err != nil {
+		return nil, err
+	}
+	tpmAttest, ok := attestation.(*pb.Attestation)
+	if !ok {
+		return nil, fmt.Errorf("unsupported attestation type, expect TPM quote")
+	}
+	return server.VerifyAttestation(tpmAttest,
+		server.VerifyOpts{
+			TrustedAKs: []crypto.PublicKey{t.fetchedAK.PublicKey()},
+			Nonce:      nonce,
+			Loader:     server.GRUB,
+		})
 }
 
 type tdxAttestRoot struct {
@@ -346,6 +427,10 @@ func (t *tdxAttestRoot) Attest(nonce []byte) (any, error) {
 		CcelData:      ccelData,
 		TdQuote:       rawQuote,
 	}, nil
+}
+
+func (t *tdxAttestRoot) VerifyLocal() (*pb.MachineState, error) {
+	return nil, errors.New("not implemented")
 }
 
 // Refresh refreshes the internal state of the attestation agent.

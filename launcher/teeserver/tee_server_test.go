@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/launcher/agent"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
@@ -18,6 +19,8 @@ import (
 	"github.com/google/go-tpm-tools/verifier/models"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	attestpb "github.com/google/go-tpm-tools/proto/attest"
 )
 
 // Implements verifier.Client interface so it can be used to initialize test attestHandlers
@@ -51,6 +54,10 @@ func (f fakeAttestationAgent) AttestWithClient(c context.Context, a agent.Attest
 
 func (f fakeAttestationAgent) MeasureEvent(c cel.Content) error {
 	return f.measureEventFunc(c)
+}
+
+func (f fakeAttestationAgent) VerifyLocal() (*attestpb.MachineState, error) {
+	return nil, fmt.Errorf("unimplemented")
 }
 
 func (f fakeAttestationAgent) Refresh(_ context.Context) error {
@@ -484,7 +491,7 @@ func TestCustomTokenDataParsedSuccessfully(t *testing.T) {
 			},
 			attestAgent: fakeAttestationAgent{
 				attestWithClientFunc: func(_ context.Context, gotOpts agent.AttestAgentOpts, _ verifier.Client) ([]byte, error) {
-					diff := cmp.Diff(test.wantOpts, gotOpts)
+					diff := cmp.Diff(test.wantOpts, gotOpts, cmpopts.IgnoreFields(agent.AttestAgentOpts{}, "Method"))
 					if diff != "" {
 						t.Errorf("%v: got unexpected agent.AttestAgentOpts. diff:\n%v", test.testName, diff)
 					}
@@ -504,6 +511,219 @@ func TestCustomTokenDataParsedSuccessfully(t *testing.T) {
 
 		if w.Code != test.wantCode {
 			t.Errorf("testcase %d, '%v': got return code: %d, want: %d", i, test.testName, w.Code, test.wantCode)
+		}
+	}
+}
+
+func TestCustomHandleAttestError(t *testing.T) {
+	body := `{
+				"audience": "audience",
+				"nonces": ["thisIsAcustomNonce"],
+				"token_type": "OIDC"
+			}`
+
+	testcases := []struct {
+		name           string
+		err            error
+		wantStatusCode int
+	}{
+		{
+			name:           "FailedPrecondition error",
+			err:            status.New(codes.FailedPrecondition, "bad state").Err(),
+			wantStatusCode: http.StatusBadRequest,
+		},
+		{
+			name:           "PermissionDenied error",
+			err:            status.New(codes.PermissionDenied, "denied").Err(),
+			wantStatusCode: http.StatusBadRequest,
+		},
+		{
+			name:           "Internal error",
+			err:            status.New(codes.Internal, "internal server error").Err(),
+			wantStatusCode: http.StatusInternalServerError,
+		},
+		{
+			name:           "Unavailable error",
+			err:            status.New(codes.Unavailable, "service unavailable").Err(),
+			wantStatusCode: http.StatusInternalServerError,
+		},
+		{
+			name:           "non-gRPC error",
+			err:            errors.New("a generic error"),
+			wantStatusCode: http.StatusInternalServerError,
+		},
+	}
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			ah := attestHandler{
+				logger: logging.SimpleLogger(),
+				clients: AttestClients{
+					GCA: &fakeVerifierClient{},
+				},
+				attestAgent: fakeAttestationAgent{
+					attestWithClientFunc: func(context.Context, agent.AttestAgentOpts, verifier.Client) ([]byte, error) {
+						return nil, tc.err
+					},
+				},
+			}
+
+			req := httptest.NewRequest(http.MethodPost, "/v1/token", strings.NewReader(body))
+			w := httptest.NewRecorder()
+
+			ah.getToken(w, req)
+
+			if w.Code != tc.wantStatusCode {
+				t.Errorf("got status code %d, want %d", w.Code, tc.wantStatusCode)
+			}
+
+			_, err := io.ReadAll(w.Result().Body)
+			if err != nil {
+				t.Errorf("failed to read response body: %v", err)
+			}
+		})
+	}
+}
+
+func TestParseVerifyMethod(t *testing.T) {
+	testcases := []struct {
+		inputMethod    []string
+		expectedMethod agent.VerifyMethod
+	}{
+		{
+			[]string{string(agent.VerifyConfidentialSpaceMethod)},
+			agent.VerifyConfidentialSpaceMethod,
+		},
+		{
+			[]string{string(agent.VerifyAttestationMethod)},
+			agent.VerifyAttestationMethod,
+		},
+		{
+			[]string{string(agent.VerifyUnset)},
+			agent.VerifyUnset,
+		},
+		{
+			[]string{"not a valid method"},
+			agent.VerifyUnset,
+		},
+		{
+			[]string{
+				string(agent.VerifyConfidentialSpaceMethod),
+				string(agent.VerifyAttestationMethod),
+			},
+			agent.VerifyUnset,
+		},
+	}
+
+	handler := &attestHandler{
+		logger: logging.SimpleLogger(),
+	}
+
+	for _, tc := range testcases {
+		headers := http.Header{
+			verifyMethodHeader: tc.inputMethod,
+		}
+
+		gotMethod := handler.parseVerifyMethod(headers)
+
+		if gotMethod != tc.expectedMethod {
+			t.Errorf("parseVerifyMethod(%v) got %v, want %v", headers, gotMethod, tc.expectedMethod)
+		}
+	}
+}
+
+// Implements http.ResponseWriter
+type testRespWriter struct {
+	headerStatus int
+	writeBody    []byte
+}
+
+func (t *testRespWriter) Header() http.Header { return http.Header{} }
+func (t *testRespWriter) Write(body []byte) (int, error) {
+	t.writeBody = append(t.writeBody, body...)
+
+	return len(body), nil
+}
+func (t *testRespWriter) WriteHeader(statusCode int) {
+	t.headerStatus = statusCode
+}
+
+func TestGetWithVerifyMethod(t *testing.T) {
+	handler := &attestHandler{
+		attestAgent: fakeAttestationAgent{
+			attestWithClientFunc: func(_ context.Context, opts agent.AttestAgentOpts, _ verifier.Client) ([]byte, error) {
+				if len(opts.Method) == 0 {
+					t.Fatal("no method provided in attest agent opts")
+				}
+
+				return []byte(opts.Method), nil
+			},
+		},
+		logger: logging.SimpleLogger(),
+	}
+
+	testcases := []agent.VerifyMethod{
+		agent.VerifyConfidentialSpaceMethod,
+		agent.VerifyAttestationMethod,
+		agent.VerifyUnset,
+	}
+
+	for _, method := range testcases {
+		req := &http.Request{
+			Method: http.MethodGet,
+			Header: http.Header{
+				verifyMethodHeader: []string{string(method)},
+			},
+		}
+
+		resp := &testRespWriter{writeBody: []byte{}}
+
+		handler.attest(resp, req, nil)
+
+		if string(resp.writeBody) != string(method) {
+			t.Errorf("attest(%v) did not use expected verify method: got %v, want %v", req, string(resp.writeBody), method)
+		}
+	}
+}
+
+func TestPostWithVerifyMethod(t *testing.T) {
+	handler := &attestHandler{
+		attestAgent: fakeAttestationAgent{
+			attestWithClientFunc: func(_ context.Context, opts agent.AttestAgentOpts, _ verifier.Client) ([]byte, error) {
+				if len(opts.Method) == 0 {
+					t.Fatal("no method provided in attest agent opts")
+				}
+
+				return []byte(opts.Method), nil
+			},
+		},
+		logger: logging.SimpleLogger(),
+	}
+
+	testcases := []agent.VerifyMethod{
+		agent.VerifyConfidentialSpaceMethod,
+		agent.VerifyAttestationMethod,
+		agent.VerifyUnset,
+	}
+
+	for _, method := range testcases {
+		reqBody := `{
+			"audience": "<YOURAUDIENCE>",
+			"nonces": ["thisIsAcustomNonce",			"thisIsAMuchLongerCustomNonceWithPaddingFor74Bytes0000000000000000000000000"],
+			"token_type": "OIDC"
+    	}`
+		req, err := http.NewRequest(http.MethodPost, "", strings.NewReader(reqBody))
+		if err != nil {
+			t.Fatalf("http.NewRequest error for method %v: %v", method, err)
+		}
+
+		req.Header.Add(verifyMethodHeader, string(method))
+
+		resp := &testRespWriter{writeBody: []byte{}}
+
+		handler.attest(resp, req, nil)
+
+		if string(resp.writeBody) != string(method) {
+			t.Errorf("attest(%v) did not use expected verify method: got %v, want %v", req, string(resp.writeBody), method)
 		}
 	}
 }

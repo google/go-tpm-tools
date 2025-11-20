@@ -14,7 +14,6 @@ import (
 	tpb "github.com/google/go-tdx-guest/proto/tdx"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/google/go-tpm-tools/verifier/models"
-	"github.com/google/go-tpm-tools/verifier/oci"
 	"github.com/googleapis/gax-go/v2"
 
 	v1 "cloud.google.com/go/confidentialcomputing/apiv1"
@@ -298,25 +297,6 @@ func convertResponseFromREST(resp *ccpb.VerifyAttestationResponse) (*verifier.Ve
 	return &verifier.VerifyAttestationResponse{
 		ClaimsToken: token,
 		PartialErrs: resp.PartialErrors,
-	}, nil
-}
-
-func convertOCISignatureToREST(signature oci.Signature) (*ccpb.ContainerImageSignature, error) {
-	payload, err := signature.Payload()
-	if err != nil {
-		return nil, err
-	}
-	b64Sig, err := signature.Base64Encoded()
-	if err != nil {
-		return nil, err
-	}
-	sigBytes, err := encoding.DecodeString(b64Sig)
-	if err != nil {
-		return nil, err
-	}
-	return &ccpb.ContainerImageSignature{
-		Payload:   payload,
-		Signature: sigBytes,
 	}, nil
 }
 

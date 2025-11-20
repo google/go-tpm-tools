@@ -16,11 +16,15 @@ import (
 	"github.com/google/go-tpm-tools/verifier/models"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
 const (
 	gcaEndpoint = "/v1/token"
 	itaEndpoint = "/v1/intel/token"
+
+	verifyMethodHeader = "Verify-Method"
+	msEndpoint         = "/v1/verifylocal"
 )
 
 var clientErrorCodes = map[codes.Code]struct{}{
@@ -90,6 +94,7 @@ func (a *attestHandler) Handler() http.Handler {
 
 	mux.HandleFunc(gcaEndpoint, a.getToken)
 	mux.HandleFunc(itaEndpoint, a.getITAToken)
+	mux.HandleFunc(msEndpoint, a.getMachineState)
 	return mux
 }
 
@@ -133,7 +138,40 @@ func (a *attestHandler) getITAToken(w http.ResponseWriter, r *http.Request) {
 	a.attest(w, r, a.clients.ITA)
 }
 
+func (a *attestHandler) parseVerifyMethod(headers http.Header) agent.VerifyMethod {
+	if headers == nil {
+		a.logger.Info("No headers specified in request.")
+		return agent.VerifyUnset
+	}
+
+	methods, ok := headers[verifyMethodHeader]
+	if !ok {
+		a.logger.Info("No VerifyMethod specified in request.")
+		return agent.VerifyUnset
+	}
+
+	if len(methods) != 1 {
+		a.logger.Warn(fmt.Sprintf("Unexpected number of values in VerifyMethod header: %d, expect 1", len(methods)))
+		return agent.VerifyUnset
+	}
+
+	switch methods[0] {
+	case string(agent.VerifyConfidentialSpaceMethod):
+		a.logger.Info("Parsed VerifyMethod: %v", agent.VerifyConfidentialSpaceMethod)
+		return agent.VerifyConfidentialSpaceMethod
+	case string(agent.VerifyAttestationMethod):
+		a.logger.Info("Parsed VerifyMethod: %v", agent.VerifyAttestationMethod)
+		return agent.VerifyAttestationMethod
+	default:
+		a.logger.Warn(fmt.Sprintf("Unsupported VerifyMethod: %v", methods[0]))
+	}
+
+	return agent.VerifyUnset
+}
+
 func (a *attestHandler) attest(w http.ResponseWriter, r *http.Request, client verifier.Client) {
+	verifyMethod := a.parseVerifyMethod(r.Header)
+
 	switch r.Method {
 	case http.MethodGet:
 		if err := a.attestAgent.Refresh(a.ctx); err != nil {
@@ -141,7 +179,9 @@ func (a *attestHandler) attest(w http.ResponseWriter, r *http.Request, client ve
 			return
 		}
 
-		token, err := a.attestAgent.AttestWithClient(a.ctx, agent.AttestAgentOpts{}, client)
+		token, err := a.attestAgent.AttestWithClient(a.ctx, agent.AttestAgentOpts{
+			Method: verifyMethod,
+		}, client)
 		if err != nil {
 			a.handleAttestError(w, err, "failed to retrieve attestation service token")
 			return
@@ -178,6 +218,7 @@ func (a *attestHandler) attest(w http.ResponseWriter, r *http.Request, client ve
 		// Do not check that TokenTypeOptions matches TokenType in the launcher.
 		opts := agent.AttestAgentOpts{
 			TokenOptions: &tokenOptions,
+			Method:       verifyMethod,
 		}
 		tok, err := a.attestAgent.AttestWithClient(a.ctx, opts, client)
 		if err != nil {
@@ -193,6 +234,30 @@ func (a *attestHandler) attest(w http.ResponseWriter, r *http.Request, client ve
 		err := fmt.Errorf("TEE server received an invalid HTTP method: %s", r.Method)
 		a.logAndWriteHTTPError(w, http.StatusBadRequest, err)
 	}
+}
+
+// getDefaultToken handles the request to get the default OIDC token.
+// For now this function will just read the content of the file and return.
+// Later, this function can use attestation agent to get a token directly.
+func (a *attestHandler) getMachineState(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "text/html")
+
+	a.logger.Info(fmt.Sprintf("%s called", msEndpoint))
+
+	ms, err := a.attestAgent.VerifyLocal()
+	if err != nil {
+		a.logAndWriteHTTPError(w, http.StatusInternalServerError, fmt.Errorf("failed to retrieve machine state: %w", err))
+		return
+	}
+
+	respBytes, err := protojson.Marshal(ms)
+	if err != nil {
+		a.logAndWriteHTTPError(w, http.StatusInternalServerError, fmt.Errorf("failed to marshal machine state: %w", err))
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Write(respBytes)
 }
 
 func (a *attestHandler) logAndWriteHTTPError(w http.ResponseWriter, statusCode int, err error) {
