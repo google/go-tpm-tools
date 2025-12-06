@@ -83,7 +83,6 @@ const (
 	cmdKey                     = "tee-cmd"
 	envKeyPrefix               = "tee-env-"
 	impersonateServiceAccounts = "tee-impersonate-service-accounts"
-	attestationServiceAddrKey  = "tee-attestation-service-endpoint"
 	logRedirectKey             = "tee-container-log-redirect"
 	memoryMonitoringEnable     = "tee-monitoring-memory-enable"
 	monitoringEnable           = "tee-monitoring-enable"
@@ -93,11 +92,18 @@ const (
 	itaKey                     = "ita-api-key"
 	addedCaps                  = "tee-added-capabilities"
 	cgroupNS                   = "tee-cgroup-ns"
+	gcaServiceEnv              = "gca-service-env"
 )
 
 const (
 	instanceAttributesQuery = "instance/attributes/?recursive=true"
 )
+
+var gcaInstances = map[string]string{
+	"prod":     "https://confidentialcomputing.googleapis.com",
+	"autopush": "https://autopush-confidentialcomputing.sandbox.googleapis.com",
+	"staging":  "https://staging-confidentialcomputing.sandbox.googleapis.com",
+}
 
 var errImageRefNotSpecified = fmt.Errorf("%s is not specified in the custom metadata", imageRefKey)
 
@@ -119,7 +125,7 @@ type LaunchSpec struct {
 	RestartPolicy              RestartPolicy
 	Cmd                        []string
 	Envs                       []EnvVar
-	AttestationServiceAddr     string
+	GcaAddress                 string
 	ImpersonateServiceAccounts []string
 	ProjectID                  string
 	Region                     string
@@ -231,7 +237,9 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 		return err
 	}
 
-	s.AttestationServiceAddr = unmarshaledMap[attestationServiceAddrKey]
+	if err := s.setAttestationServiceVars(unmarshaledMap); err != nil {
+		return err
+	}
 
 	// Populate /dev/shm size override.
 	if val, ok := unmarshaledMap[devShmSizeKey]; ok && val != "" {
@@ -288,6 +296,18 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 		if cgroupOn {
 			s.CgroupNamespace = true
 		}
+	}
+
+	return nil
+}
+
+func (s *LaunchSpec) setAttestationServiceVars(unmarshaledMap map[string]string) error {
+	if gcaServiceEnv, ok := unmarshaledMap[gcaServiceEnv]; ok {
+		v, ok := gcaInstances[strings.ToLower(gcaServiceEnv)]
+		if !ok {
+			return fmt.Errorf("the gca service env is not within the allowlist, want %+v, got %s", gcaInstances, gcaServiceEnv)
+		}
+		s.GcaAddress = v
 	}
 
 	return nil
