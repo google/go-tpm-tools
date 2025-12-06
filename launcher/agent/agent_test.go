@@ -678,30 +678,7 @@ func TestVerify(t *testing.T) {
 		expectedResp *verifier.VerifyAttestationResponse
 	}{
 		{
-			name: "VerifyCS in options",
-			opts: AttestAgentOpts{
-				Method: VerifyConfidentialSpaceMethod,
-			},
-			exps: experiments.Experiments{
-				EnableVerifyCS: false,
-			},
-			expectedResp: expectedCSResp,
-		},
-		{
-			name: "VerifyAtt in options",
-			opts: AttestAgentOpts{
-				Method: VerifyAttestationMethod,
-			},
-			exps: experiments.Experiments{
-				EnableVerifyCS: true,
-			},
-			expectedResp: expectedAttResp,
-		},
-		{
 			name: "VerifyCS in experiment",
-			opts: AttestAgentOpts{
-				Method: VerifyUnset,
-			},
 			exps: experiments.Experiments{
 				EnableVerifyCS: true,
 			},
@@ -709,9 +686,6 @@ func TestVerify(t *testing.T) {
 		},
 		{
 			name: "VerifyAtt in experiment",
-			opts: AttestAgentOpts{
-				Method: VerifyUnset,
-			},
 			exps: experiments.Experiments{
 				EnableVerifyCS: false,
 			},
@@ -729,7 +703,7 @@ func TestVerify(t *testing.T) {
 				},
 			}
 
-			resp, err := attAgent.verify(ctx, verifier.VerifyAttestationRequest{}, vClient, tc.opts)
+			resp, err := attAgent.verify(ctx, verifier.VerifyAttestationRequest{}, vClient)
 			if err != nil {
 				t.Fatalf("verify() returned failure: %v", err)
 			}

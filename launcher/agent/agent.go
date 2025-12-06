@@ -251,7 +251,7 @@ func (a *agent) AttestWithClient(ctx context.Context, opts AttestAgentOpts, clie
 		a.logger.Info("Found container image signatures: %v\n", signatures)
 	}
 
-	resp, err := a.verify(ctx, req, client, opts)
+	resp, err := a.verify(ctx, req, client)
 	if err != nil {
 		return nil, err
 	}
@@ -262,18 +262,8 @@ func (a *agent) AttestWithClient(ctx context.Context, opts AttestAgentOpts, clie
 	return resp.ClaimsToken, nil
 }
 
-func (a *agent) verify(ctx context.Context, req verifier.VerifyAttestationRequest, client verifier.Client, opts AttestAgentOpts) (*verifier.VerifyAttestationResponse, error) {
-	// If not specified in opts, use experiment to determine verify method.
-	method := opts.Method
-	if method == VerifyUnset {
-		if a.launchSpec.Experiments.EnableVerifyCS {
-			method = VerifyConfidentialSpaceMethod
-		} else {
-			method = VerifyAttestationMethod
-		}
-	}
-
-	if method == VerifyConfidentialSpaceMethod {
+func (a *agent) verify(ctx context.Context, req verifier.VerifyAttestationRequest, client verifier.Client) (*verifier.VerifyAttestationResponse, error) {
+	if a.launchSpec.Experiments.EnableVerifyCS {
 		return client.VerifyConfidentialSpace(ctx, req)
 	}
 	return client.VerifyAttestation(ctx, req)
