@@ -640,7 +640,7 @@ func (t *testRespWriter) WriteHeader(statusCode int) {
 func TestGetWithVerifyMethod(t *testing.T) {
 	handler := &attestHandler{
 		attestAgent: fakeAttestationAgent{
-			attestWithClientFunc: func(ctx context.Context, opts agent.AttestAgentOpts, c verifier.Client) ([]byte, error) {
+			attestWithClientFunc: func(_ context.Context, opts agent.AttestAgentOpts, c verifier.Client) ([]byte, error) {
 				if len(opts.Method) == 0 {
 					t.Fatal("no method provided in attest agent opts")
 				}
@@ -678,7 +678,7 @@ func TestGetWithVerifyMethod(t *testing.T) {
 func TestPostWithVerifyMethod(t *testing.T) {
 	handler := &attestHandler{
 		attestAgent: fakeAttestationAgent{
-			attestWithClientFunc: func(ctx context.Context, opts agent.AttestAgentOpts, c verifier.Client) ([]byte, error) {
+			attestWithClientFunc: func(_ context.Context, opts agent.AttestAgentOpts, c verifier.Client) ([]byte, error) {
 				if len(opts.Method) == 0 {
 					t.Fatal("no method provided in attest agent opts")
 				}
