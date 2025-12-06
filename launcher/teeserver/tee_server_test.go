@@ -608,16 +608,12 @@ func TestParseVerifyMethod(t *testing.T) {
 		},
 	}
 
-	handler := &attestHandler{
-		logger: logging.SimpleLogger(),
-	}
-
 	for _, tc := range testcases {
 		headers := http.Header{
 			verifyMethodHeader: tc.inputMethod,
 		}
 
-		gotMethod := handler.parseVerifyMethod(headers)
+		gotMethod := parseVerifyMethod(headers)
 
 		if gotMethod != tc.expectedMethod {
 			t.Errorf("parseVerifyMethod(%v) got %v, want %v", headers, gotMethod, tc.expectedMethod)

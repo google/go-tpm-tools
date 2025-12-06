@@ -135,21 +135,29 @@ func (a *attestHandler) getITAToken(w http.ResponseWriter, r *http.Request) {
 	a.attest(w, r, a.clients.ITA)
 }
 
-type verifyMethodBody struct {
-	Method string `json:"verify_method"`
-}
-
-func parseVerifyMethod(headers http.Header) string {
+func parseVerifyMethod(headers http.Header) agent.VerifyMethod {
 	if headers == nil {
-		return "NO_REQUEST"
+		return agent.VerifyUnset
 	}
 
-	methods, ok := headers["Verify-Method"]
+	methods, ok := headers[verifyMethodHeader]
 	if !ok {
-		return "NO_METHOD_HEADER"
+		return agent.VerifyUnset
 	}
 
-	return methods[0]
+	// Expect only one method specified.
+	if len(methods) != 1 {
+		return agent.VerifyUnset
+	}
+
+	switch methods[0] {
+	case string(agent.VerifyConfidentialSpaceMethod):
+		return agent.VerifyConfidentialSpaceMethod
+	case string(agent.VerifyAttestationMethod):
+		return agent.VerifyAttestationMethod
+	default:
+		return agent.VerifyUnset
+	}
 }
 
 func (a *attestHandler) attest(w http.ResponseWriter, r *http.Request, client verifier.Client) {
@@ -164,7 +172,9 @@ func (a *attestHandler) attest(w http.ResponseWriter, r *http.Request, client ve
 			return
 		}
 
-		token, err := a.attestAgent.AttestWithClient(a.ctx, agent.AttestAgentOpts{}, client)
+		token, err := a.attestAgent.AttestWithClient(a.ctx, agent.AttestAgentOpts{
+			Method: verifyMethod,
+		}, client)
 		if err != nil {
 			a.handleAttestError(w, err, "failed to retrieve attestation service token")
 			return
