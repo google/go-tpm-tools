@@ -2,17 +2,21 @@ package cmd
 
 import (
 	"context"
+	_ "crypto/sha512" // Ensure SHA384 is available
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"time"
 
 	"cloud.google.com/go/compute/metadata"
 	"cloud.google.com/go/logging"
 	"github.com/golang-jwt/jwt/v4"
+	tabi "github.com/google/go-tdx-guest/abi"
 	"github.com/google/go-tpm-tools/client"
+	"github.com/google/go-tpm-tools/internal"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/google/go-tpm-tools/verifier/models"
 	"github.com/google/go-tpm-tools/verifier/util"
@@ -134,11 +138,44 @@ The OIDC token includes claims regarding the GCE VM, which is verified by Attest
 		}
 		ak.Close()
 
+		// If teeTechnology is not set, try to detect it from the attestation.
+		if teeTechnology == "" {
+			if attestation.GetTdxAttestation() != nil {
+				teeTechnology = Tdx
+			}
+		}
+
 		req := verifier.VerifyAttestationRequest{
 			Challenge:      challenge,
 			GcpCredentials: principalTokens,
 			Attestation:    attestation,
 			TokenOptions:   &models.TokenOptions{Audience: audience, Nonces: customNonce, TokenType: "OIDC"},
+		}
+
+		if teeTechnology == Tdx {
+			// If TDX, check if we should populate TDCCELAttestation
+			if attestation.GetTdxAttestation() != nil {
+				fmt.Fprintln(debugOutput(), "Using Explicit TDCCELAttestation Path (ACPI tables)")
+
+				rawQuote, err := tabi.QuoteToAbiBytes(attestation.GetTdxAttestation())
+				if err != nil {
+					return fmt.Errorf("failed to convert TDX quote to bytes: %v", err)
+				}
+
+				// Try to read CCEL Table and Data
+				ccelTable, _ := os.ReadFile(internal.AcpiTableFile)
+				ccelData, _ := os.ReadFile(internal.CcelEventLogFile)
+
+				req.TDCCELAttestation = &verifier.TDCCELAttestation{
+					TdQuote:           rawQuote,
+					CcelAcpiTable:     ccelTable,
+					CcelData:          ccelData,
+					AkCert:            attestation.AkCert,
+					IntermediateCerts: attestation.IntermediateCerts,
+				}
+				// Force using TDCCELAttestation path in verifier client
+				req.Attestation = nil
+			}
 		}
 
 		resp, err := verifierClient.VerifyAttestation(ctx, req)
@@ -210,6 +247,6 @@ func init() {
 	addEventLogFlag(tokenCmd)
 	addCustomNonceFlag(tokenCmd)
 	// TODO: Add TEE hardware OIDC token generation
-	// addTeeNonceflag(tokenCmd)
-	// addTeeTechnology(tokenCmd)
+	addTeeNonceflag(tokenCmd)
+	addTeeTechnology(tokenCmd)
 }

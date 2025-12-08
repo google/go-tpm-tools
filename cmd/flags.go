@@ -15,19 +15,28 @@ import (
 )
 
 var (
-	output      string
-	input       string
-	nvIndex     uint32
-	nonce       []byte
-	teeNonce    []byte
-	keyAlgo     = tpm2.AlgRSA
-	pcrs        []int
-	format      string
-	asAddress   string
-	audience    string
-	eventLog    string
-	cloudLog    bool
-	customNonce []string
+	output        string
+	input         string
+	nvIndex       uint32
+	nonce         []byte
+	teeNonce      []byte
+	teeTechnology string
+	keyAlgo       = tpm2.AlgRSA
+	pcrs          []int
+	format        string
+	asAddress     string
+	audience      string
+	eventLog      string
+	cloudLog      bool
+	customNonce   []string
+)
+
+// Add constants for other devices when required
+const (
+	// SevSnp is a constant denotes device name for teeTechnology
+	SevSnp = "sev-snp"
+	// Tdx is a constant denotes device name for teeTechnology
+	Tdx = "tdx"
 )
 
 type pcrsFlag struct {
@@ -190,6 +199,10 @@ func addFormatFlag(cmd *cobra.Command) {
 
 func addTeeNonceflag(cmd *cobra.Command) {
 	cmd.PersistentFlags().BytesHexVar(&teeNonce, "tee-nonce", []byte{}, "hex encoded teenonce for hardware attestation, can be empty")
+}
+
+func addTeeTechnology(cmd *cobra.Command) {
+	cmd.PersistentFlags().StringVar(&teeTechnology, "tee-technology", "", "indicates the type of TEE hardware. Should be either empty or one of sev-snp or tdx")
 }
 
 // alwaysError implements io.ReadWriter by always returning an error
