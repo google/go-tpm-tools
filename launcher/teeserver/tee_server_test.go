@@ -507,3 +507,72 @@ func TestCustomTokenDataParsedSuccessfully(t *testing.T) {
 		}
 	}
 }
+
+func TestCustomHandleAttestError(t *testing.T) {
+	body := `{
+				"audience": "audience",
+				"nonces": ["thisIsAcustomNonce"],
+				"token_type": "OIDC"
+			}`
+
+	testcases := []struct {
+		name           string
+		err            error
+		wantStatusCode int
+	}{
+		{
+			name:           "FailedPrecondition error",
+			err:            status.New(codes.FailedPrecondition, "bad state").Err(),
+			wantStatusCode: http.StatusBadRequest,
+		},
+		{
+			name:           "PermissionDenied error",
+			err:            status.New(codes.PermissionDenied, "denied").Err(),
+			wantStatusCode: http.StatusBadRequest,
+		},
+		{
+			name:           "Internal error",
+			err:            status.New(codes.Internal, "internal server error").Err(),
+			wantStatusCode: http.StatusInternalServerError,
+		},
+		{
+			name:           "Unavailable error",
+			err:            status.New(codes.Unavailable, "service unavailable").Err(),
+			wantStatusCode: http.StatusInternalServerError,
+		},
+		{
+			name:           "non-gRPC error",
+			err:            errors.New("a generic error"),
+			wantStatusCode: http.StatusInternalServerError,
+		},
+	}
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			ah := attestHandler{
+				logger: logging.SimpleLogger(),
+				clients: AttestClients{
+					GCA: &fakeVerifierClient{},
+				},
+				attestAgent: fakeAttestationAgent{
+					attestWithClientFunc: func(context.Context, agent.AttestAgentOpts, verifier.Client) ([]byte, error) {
+						return nil, tc.err
+					},
+				},
+			}
+
+			req := httptest.NewRequest(http.MethodPost, "/v1/token", strings.NewReader(body))
+			w := httptest.NewRecorder()
+
+			ah.getToken(w, req)
+
+			if w.Code != tc.wantStatusCode {
+				t.Errorf("got status code %d, want %d", w.Code, tc.wantStatusCode)
+			}
+
+			_, err := io.ReadAll(w.Result().Body)
+			if err != nil {
+				t.Errorf("failed to read response body: %v", err)
+			}
+		})
+	}
+}

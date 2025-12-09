@@ -251,14 +251,22 @@ func (a *agent) AttestWithClient(ctx context.Context, opts AttestAgentOpts, clie
 		a.logger.Info("Found container image signatures: %v\n", signatures)
 	}
 
-	resp, err := client.VerifyAttestation(ctx, req)
+	resp, err := a.verify(ctx, req, client)
 	if err != nil {
 		return nil, err
 	}
+
 	if len(resp.PartialErrs) > 0 {
 		a.logger.Error(fmt.Sprintf("Partial errors from VerifyAttestation: %v", resp.PartialErrs))
 	}
 	return resp.ClaimsToken, nil
+}
+
+func (a *agent) verify(ctx context.Context, req verifier.VerifyAttestationRequest, client verifier.Client) (*verifier.VerifyAttestationResponse, error) {
+	if a.launchSpec.Experiments.EnableVerifyCS {
+		return client.VerifyConfidentialSpace(ctx, req)
+	}
+	return client.VerifyAttestation(ctx, req)
 }
 
 func convertOCIToContainerSignature(ociSig oci.Signature) (*verifier.ContainerSignature, error) {
