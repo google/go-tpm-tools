@@ -28,7 +28,7 @@ jobs:
   build:
     strategy:
       matrix:
-        go-version: [1.21.x]
+        go-version: [1.24.x]
         # TODO: Get this working on windows-latest
         os: [ubuntu-latest]
         architecture: [x32, x64]
