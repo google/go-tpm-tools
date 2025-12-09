@@ -238,7 +238,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		return tokens, nil
 	}
 
-	asAddr := launchSpec.AttestationServiceAddr
+	asAddr := launchSpec.GcaAddress
 
 	var verifierClient verifier.Client
 	if launchSpec.FakeVerifierEnabled {
@@ -608,7 +608,7 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 
 		attestClients.ITA = itaClient
 	} else {
-		gcaClient, err := util.NewRESTClient(ctx, r.launchSpec.AttestationServiceAddr, r.launchSpec.ProjectID, r.launchSpec.Region)
+		gcaClient, err := util.NewRESTClient(ctx, r.launchSpec.GcaAddress, r.launchSpec.ProjectID, r.launchSpec.Region)
 		if err != nil {
 			return fmt.Errorf("failed to create REST verifier client: %v", err)
 		}
