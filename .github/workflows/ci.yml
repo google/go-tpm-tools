@@ -35,10 +35,10 @@ jobs:
         include:
           - os: macos-latest
             architecture: arm64
-            go-version: 1.21.x
+            go-version: 1.24.x
           - os: macos-14-large
             architecture: x64
-            go-version: 1.21.x
+            go-version: 1.24.x
     name: Generate/Build/Test (${{ matrix.os }}, ${{ matrix.architecture }}, Go ${{ matrix.go-version }})
     runs-on: ${{ matrix.os }}
     steps:
@@ -90,7 +90,7 @@ jobs:
   lint:
     strategy:
       matrix:
-        go-version: [1.21.x]
+        go-version: [1.24.x]
         os: [ubuntu-latest]
         dir: ["./", "./cmd", "./launcher"]
     name: Lint ${{ matrix.dir }} (${{ matrix.os }}, Go ${{ matrix.go-version }})
@@ -121,7 +121,7 @@ jobs:
   lintc:
     strategy:
       matrix:
-        go-version: [1.21.x]
+        go-version: [1.24.x]
         os: [ubuntu-latest]
     name: Lint CGO (${{ matrix.os }}, Go ${{ matrix.go-version }})
     runs-on: ${{ matrix.os }}
