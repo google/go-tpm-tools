@@ -1,0 +1,13 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "verifier",
+    srcs = ["client.go"],
+    importpath = "github.com/google/go-tpm-tools/verifier",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//proto/attest",
+        "//verifier/models",
+        "@org_golang_google_genproto_googleapis_rpc//status",
+    ],
+)

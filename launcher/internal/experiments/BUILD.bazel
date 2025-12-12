@@ -1,0 +1,15 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "experiments",
+    srcs = ["experiments.go"],
+    importpath = "github.com/google/go-tpm-tools/launcher/internal/experiments",
+    visibility = ["//launcher:__subpackages__"],
+)
+
+go_test(
+    name = "experiments_test",
+    srcs = ["experiments_test.go"],
+    embed = [":experiments"],
+    deps = ["@com_github_google_go_cmp//cmp"],
+)

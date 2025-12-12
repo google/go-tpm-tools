@@ -1,0 +1,30 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "fake",
+    srcs = [
+        "fakeclaims.go",
+        "fakeverifier.go",
+        "testkeys.go",
+    ],
+    embedsrcs = [
+        "signer_rsa",
+        "signer_rsa.pub",
+    ],
+    importpath = "github.com/google/go-tpm-tools/verifier/fake",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//proto/attest",
+        "//proto/tpm",
+        "//server",
+        "//verifier",
+        "//verifier/oci",
+        "@com_github_golang_jwt_jwt_v4//:go_default_library",
+        "@com_github_google_go_eventlog//proto/state",
+        "@com_github_google_go_eventlog//register",
+        "@com_github_google_go_tpm//legacy/tpm2",
+        "@org_golang_google_genproto_googleapis_rpc//code",
+        "@org_golang_google_genproto_googleapis_rpc//status",
+        "@org_golang_google_protobuf//encoding/protojson",
+    ],
+)
