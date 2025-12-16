@@ -108,8 +108,7 @@ func (a *attestHandler) getToken(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html")
 
 	a.logger.Info(fmt.Sprintf("%s called", gcaEndpoint))
-
-	// If the handler does not have an GCA client, return error.
+	// If the handler does not have a GCA client, create one.
 	if a.clients.GCA == nil {
 		errStr := "no GCA verifier client present, please try rebooting your VM"
 		a.logAndWriteError(errStr, http.StatusInternalServerError, w)
