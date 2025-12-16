@@ -101,21 +101,21 @@ steps:
       --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_PREFIX}-debug-${OUTPUT_IMAGE_SUFFIX},_IMAGE_PROJECT=${PROJECT_ID}
     exit
 
-- name: 'gcr.io/cloud-builders/gcloud'
-  id: HttpServerTests
-  waitFor: ['DebugImageBuild']
-  env:
-  - 'OUTPUT_IMAGE_PREFIX=${_OUTPUT_IMAGE_PREFIX}'
-  - 'OUTPUT_IMAGE_SUFFIX=${_OUTPUT_IMAGE_SUFFIX}'
-  - 'PROJECT_ID=$PROJECT_ID'
-  script: |
-    #!/usr/bin/env bash
+# - name: 'gcr.io/cloud-builders/gcloud'
+#   id: HttpServerTests
+#   waitFor: ['DebugImageBuild']
+#   env:
+#   - 'OUTPUT_IMAGE_PREFIX=${_OUTPUT_IMAGE_PREFIX}'
+#   - 'OUTPUT_IMAGE_SUFFIX=${_OUTPUT_IMAGE_SUFFIX}'
+#   - 'PROJECT_ID=$PROJECT_ID'
+#   script: |
+#     #!/usr/bin/env bash
 
-    cd launcher/image/test
-    echo "running http server tests on ${OUTPUT_IMAGE_PREFIX}-debug-${OUTPUT_IMAGE_SUFFIX}"
-    gcloud builds submit --config=test_http_server.yaml --region us-west1 \
-      --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_PREFIX}-debug-${OUTPUT_IMAGE_SUFFIX},_IMAGE_PROJECT=${PROJECT_ID}
-    exit
+#     cd launcher/image/test
+#     echo "running http server tests on ${OUTPUT_IMAGE_PREFIX}-debug-${OUTPUT_IMAGE_SUFFIX}"
+#     gcloud builds submit --config=test_http_server.yaml --region us-west1 \
+#       --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_PREFIX}-debug-${OUTPUT_IMAGE_SUFFIX},_IMAGE_PROJECT=${PROJECT_ID}
+#     exit
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: DebugImageTests

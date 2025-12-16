@@ -9,7 +9,9 @@ import (
 	"bytes"
 	"context"
 	"crypto"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
@@ -24,6 +26,8 @@ import (
 	tg "github.com/google/go-tdx-guest/client"
 	tlabi "github.com/google/go-tdx-guest/client/linuxabi"
 
+	"github.com/NVIDIA/go-nvml/pkg/nvml"
+	"github.com/confidentsecurity/go-nvtrust/pkg/gonvtrust/gpu"
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal"
@@ -223,6 +227,14 @@ func (a *agent) AttestWithClient(ctx context.Context, opts AttestAgentOpts, clie
 		v.IntermediateCerts = certChain
 		v.AkCert = a.fetchedAK.CertDERBytes()
 		req.TDCCELAttestation = v
+		// log TDCCEL attestation data
+		a.logger.Info(fmt.Sprintf("TDX nonce: [%s]\n", hex.EncodeToString(req.Challenge.Nonce)))
+		a.logger.Info(fmt.Sprintf("CCEL data: [%s]\n", base64.StdEncoding.EncodeToString(v.CcelData)))
+		a.logger.Info(fmt.Sprintf("CCEL ACPI table data: [%s]\n", base64.StdEncoding.EncodeToString(v.CcelAcpiTable)))
+		a.logger.Info(fmt.Sprintf("TDX quote: [%s]\n", base64.StdEncoding.EncodeToString(v.TdQuote)))
+		a.logger.Info(fmt.Sprintf("CEL data: [%s]\n", base64.StdEncoding.EncodeToString(v.CanonicalEventLog)))
+		// collect GPU attestation
+		a.collectGpuAttestation(challenge.Nonce)
 	default:
 		return nil, fmt.Errorf("received an unsupported attestation type! %v", v)
 	}
@@ -405,4 +417,49 @@ func (c *sigsCache) get() []oci.Signature {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.items
+}
+
+func (a *agent) collectGpuAttestation(nonce []byte) {
+	handler := &gpu.DefaultNVMLHandler{}
+	gpuAdmin, err := gpu.NewNvmlGPUAdmin(handler)
+	if err != nil {
+		a.logger.Error(fmt.Sprintf("Failed to create GPU admin: %v\n", err))
+	}
+	defer gpuAdmin.Shutdown()
+
+	// The 34-byte raw nonce follows TPM 2.0 specs. We need to convert it to 32 bytes for Nvidia to meet SPDM specs.
+	nvNonce := sha256.Sum256(nonce)
+	deviceInfos, err := gpuAdmin.CollectEvidence(nvNonce[:])
+	if err != nil {
+		a.logger.Error(fmt.Sprintf("Failed to collect GPU evidence\n: %v", err))
+	}
+
+	for i, deviceInfo := range deviceInfos {
+		device, ret := handler.DeviceGetHandleByIndex(i)
+		if ret != nvml.SUCCESS {
+			a.logger.Error(fmt.Sprintf("Failed to get GPU device: %v\n", nvml.ErrorString(ret)))
+		}
+		uuid, ret := device.GetUUID()
+		if ret != nvml.SUCCESS {
+			a.logger.Error(fmt.Sprintf("Failed to get UUID: %v\n", nvml.ErrorString(ret)))
+		}
+
+		vbiosVersion, ret := device.GetVbiosVersion()
+		if ret != nvml.SUCCESS {
+			a.logger.Error(fmt.Sprintf("Failed to get vbios version: %v\n", nvml.ErrorString(ret)))
+		}
+
+		driverVersion, ret := handler.SystemGetDriverVersion()
+		if ret != nvml.SUCCESS {
+			a.logger.Error(fmt.Sprintf("Failed to get vbios version: %v\n", nvml.ErrorString(ret)))
+		}
+		a.logger.Info(fmt.Sprintf("NV nonce is [%s] \n", hex.EncodeToString(nvNonce[:])))
+		a.logger.Info(fmt.Sprintf("Found GPU UUID [%s] at index %d\n", uuid, i))
+		a.logger.Info(fmt.Sprintf("Found GPU VBIOS version [%s] at index %d\n", vbiosVersion, i))
+		a.logger.Info(fmt.Sprintf("Found GPU DRIVER version [%s] at index %d\n", driverVersion, i))
+		a.logger.Info(fmt.Sprintf("Found GPU Arch [%s] at index %d\n", deviceInfo.Arch(), i))
+		a.logger.Info(fmt.Sprintf("Found GPU attetation data [%s] at index %d\n", base64.StdEncoding.EncodeToString(deviceInfo.AttestationReport()), i))
+		b64CertChainData, _ := deviceInfo.Certificate().EncodeBase64()
+		a.logger.Info(fmt.Sprintf("Found GPU attestation cert chain data [%s] at index %d\n", b64CertChainData, i))
+	}
 }

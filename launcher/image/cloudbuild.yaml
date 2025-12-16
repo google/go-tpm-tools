@@ -9,13 +9,13 @@ substitutions:
   '_SHORT_SHA': ''
 
 steps:
-  - name: golang:1.23
+  - name: golang:1.24
     entrypoint: /bin/bash
     args:
       - -c
       - |
         cd launcher/launcher
-        CGO_ENABLED=0 go build -o ../image/launcher -ldflags="-X 'main.BuildCommit=${_SHORT_SHA}'"
+        go build -o ../image/launcher -ldflags="-extldflags=-Wl,-z,lazy -X 'main.BuildCommit=${_SHORT_SHA}'"
   - name: 'gcr.io/cloud-builders/gcloud'
     id: DownloadExpBinary
     entrypoint: 'gcloud'
