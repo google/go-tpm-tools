@@ -3,6 +3,7 @@ package launcher
 
 import (
 	"context"
+	cryptorand "crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,7 +17,9 @@ import (
 	"time"
 
 	"cloud.google.com/go/compute/metadata"
+	"github.com/NVIDIA/go-nvml/pkg/nvml"
 	"github.com/cenkalti/backoff/v4"
+	trustgpu "github.com/confidentsecurity/go-nvtrust/pkg/gonvtrust/gpu"
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/cio"
 	"github.com/containerd/containerd/containers"
@@ -80,6 +83,54 @@ const (
 
 // Default OOM score for a CS container.
 const defaultOOMScore = 1000
+
+func collectGpuAttestation(logger logging.Logger) {
+	handler := &trustgpu.DefaultNVMLHandler{}
+	gpuAdmin, err := trustgpu.NewNvmlGPUAdmin(handler)
+	if err != nil {
+		logger.Error("Failed to create GPU admin: %v\n", err)
+	}
+	defer gpuAdmin.Shutdown()
+
+	// Generate a random nonce (32 bytes)
+	nonce := make([]byte, 32)
+	if _, err := cryptorand.Read(nonce); err != nil {
+		logger.Error("Failed to generate nonce: %v\n", err)
+	}
+
+	deviceInfos, err := gpuAdmin.CollectEvidence(nonce)
+	if err != nil {
+		logger.Error("Failed to collect GPU evidence\n: %w", err)
+	}
+
+	for i := range deviceInfos {
+		device, ret := handler.DeviceGetHandleByIndex(i)
+		if ret != nvml.SUCCESS {
+			logger.Error("Failed to get GPU device: %w\n", nvml.ErrorString(ret))
+		}
+		uuid, ret := device.GetUUID()
+		if ret != nvml.SUCCESS {
+			logger.Error("Failed to get UUID: %w\n", nvml.ErrorString(ret))
+		}
+
+		vbiosVersion, ret := device.GetVbiosVersion()
+		if ret != nvml.SUCCESS {
+			logger.Error("Failed to get vbios version: %w\n", nvml.ErrorString(ret))
+		}
+
+		driverVersion, ret := handler.SystemGetDriverVersion()
+		if ret != nvml.SUCCESS {
+			logger.Error("Failed to get vbios version: %w\n", nvml.ErrorString(ret))
+		}
+		logger.Info("Found GPU UUID [%s] at index %d\n", uuid, i)
+		logger.Info("Found GPU VBIOS version [%s] at index %d\n", vbiosVersion, i)
+		logger.Info("Found GPU DRIVER version [%s] at index %d\n", driverVersion, i)
+		// The following attestation data can be accessed by device Info
+		// logger.Info("Found GPU Arch [%s] at index %d\n", deviceInfo.Arch(), i)
+		// logger.Info("Found GPU attetation data size [%d] at index %d\n", len(deviceInfo.AttestationReport()), i)
+		// logger.Info("Found GPU attestation cert chain data [%s] at index %d\n", b64CertChainData, i)
+	}
+}
 
 // NewRunner returns a runner.
 func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.Token, launchSpec spec.LaunchSpec, mdsClient *metadata.Client, tpm io.ReadWriteCloser, logger logging.Logger, serialConsole *os.File) (*ContainerRunner, error) {
@@ -375,6 +426,7 @@ func (r *ContainerRunner) measureCELEvents(ctx context.Context) error {
 		if err := r.measureGPUCCMode(ccModeCmd, devToolsCmd); err != nil {
 			return fmt.Errorf("failed to measure GPU CC mode status: %v", err)
 		}
+		collectGpuAttestation(r.logger)
 	}
 
 	separator := cel.CosTlv{
