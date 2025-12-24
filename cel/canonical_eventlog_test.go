@@ -78,10 +78,13 @@ func TestCELMeasureAndReplay(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer tpm2.PCRReset(tpm, tpmutil.Handle(test.DebugPCR))
+
 	err = tpm2.PCRReset(tpm, tpmutil.Handle(test.ApplicationPCR))
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer tpm2.PCRReset(tpm, tpmutil.Handle(test.ApplicationPCR))
 
 	cel := &CEL{}
 	celRTMR := &CEL{}
@@ -120,6 +123,18 @@ func TestCELReplayFailTamperedDigest(t *testing.T) {
 	tpm := test.GetTPM(t)
 	defer client.CheckedClose(t, tpm)
 
+	err := tpm2.PCRReset(tpm, tpmutil.Handle(test.DebugPCR))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tpm2.PCRReset(tpm, tpmutil.Handle(test.DebugPCR))
+
+	err = tpm2.PCRReset(tpm, tpmutil.Handle(test.ApplicationPCR))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tpm2.PCRReset(tpm, tpmutil.Handle(test.ApplicationPCR))
+
 	cel := &CEL{}
 
 	cosEvent := CosTlv{ImageRefType, []byte("docker.io/bazel/experimental/test:latest")}
@@ -147,6 +162,18 @@ func TestCELReplayEmpty(t *testing.T) {
 	tpm := test.GetTPM(t)
 	defer client.CheckedClose(t, tpm)
 
+	err := tpm2.PCRReset(tpm, tpmutil.Handle(test.DebugPCR))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = tpm2.PCRReset(tpm, tpmutil.Handle(test.ApplicationPCR))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tpm2.PCRExtend(tpm, tpmutil.Handle(test.DebugPCR), tpm2.AlgSHA256, []byte("333"), "")
+
 	cel := &CEL{}
 	replay(t, cel, tpm, []crypto.Hash{crypto.SHA1, crypto.SHA256},
 		[]int{test.DebugPCR, test.ApplicationPCR}, true /*shouldSucceed*/)
@@ -155,6 +182,18 @@ func TestCELReplayEmpty(t *testing.T) {
 func TestCELReplayFailMissingPCRsInBank(t *testing.T) {
 	tpm := test.GetTPM(t)
 	defer client.CheckedClose(t, tpm)
+
+	err := tpm2.PCRReset(tpm, tpmutil.Handle(test.DebugPCR))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tpm2.PCRReset(tpm, tpmutil.Handle(test.DebugPCR))
+
+	err = tpm2.PCRReset(tpm, tpmutil.Handle(test.ApplicationPCR))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tpm2.PCRReset(tpm, tpmutil.Handle(test.ApplicationPCR))
 
 	cel := &CEL{}
 
@@ -174,6 +213,12 @@ func TestCELReplayFailMissingPCRsInBank(t *testing.T) {
 func TestCELMeasureToAllPCRBanks(t *testing.T) {
 	tpm := test.GetTPM(t)
 	defer client.CheckedClose(t, tpm)
+
+	err := tpm2.PCRReset(tpm, tpmutil.Handle(test.DebugPCR))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tpm2.PCRReset(tpm, tpmutil.Handle(test.DebugPCR))
 
 	pcrs, err := client.ReadAllPCRs(tpm)
 	if err != nil {
