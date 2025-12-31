@@ -16,16 +16,7 @@ import (
 )
 
 var (
-	key           string
-	teeTechnology string
-)
-
-// Add constants for other devices when required
-const (
-	// SevSnp is a constant denotes device name for teeTechnology
-	SevSnp = "sev-snp"
-	// Tdx is a constant denotes device name for teeTechnology
-	Tdx = "tdx"
+	key string
 )
 
 var attestationKeys = map[string]map[tpm2.Algorithm]func(rw io.ReadWriter) (*client.Key, error){
@@ -181,10 +172,6 @@ func getInstanceInfoFromMetadata() (*attest.GCEInstanceInfo, error) {
 
 func addKeyFlag(cmd *cobra.Command) {
 	cmd.PersistentFlags().StringVar(&key, "key", "AK", "indicates type of attestation key to use <gceAK|AK>")
-}
-
-func addTeeTechnology(cmd *cobra.Command) {
-	cmd.PersistentFlags().StringVar(&teeTechnology, "tee-technology", "", "indicates the type of TEE hardware. Should be either empty or one of sev-snp or tdx")
 }
 
 func init() {
