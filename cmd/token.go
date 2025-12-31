@@ -132,18 +132,37 @@ The OIDC token includes claims regarding the GCE VM, which is verified by Attest
 		if err != nil {
 			return fmt.Errorf("failed to get an AK: %w", err)
 		}
-		attestation, err := ak.Attest(client.AttestOpts{Nonce: challenge.Nonce, CertChainFetcher: http.DefaultClient})
+
+		attestOpts := client.AttestOpts{Nonce: challenge.Nonce, CertChainFetcher: http.DefaultClient}
+
+		// Add logic to open other hardware devices when required.
+		switch teeTechnology {
+		case SevSnp:
+			attestOpts.TEEDevice, err = client.CreateSevSnpQuoteProvider()
+			if err != nil {
+				return fmt.Errorf("failed to open %s device: %v", SevSnp, err)
+			}
+			attestOpts.TEENonce = teeNonce
+		case Tdx:
+			attestOpts.TEEDevice, err = client.CreateTdxQuoteProvider()
+			if err != nil {
+				return fmt.Errorf("failed to create %s quote provider: %v", Tdx, err)
+			}
+			attestOpts.TEENonce = teeNonce
+		case "":
+			if len(teeNonce) != 0 {
+				return fmt.Errorf("use of --tee-nonce requires specifying TEE hardware type with --tee-technology")
+			}
+		default:
+			// Change the return statement when more devices are added
+			return fmt.Errorf("tee-technology should be either empty or should have values %s or %s", SevSnp, Tdx)
+		}
+
+		attestation, err := ak.Attest(attestOpts)
 		if err != nil {
 			return fmt.Errorf("failed to attest: %v", err)
 		}
 		ak.Close()
-
-		// If teeTechnology is not set, try to detect it from the attestation.
-		if teeTechnology == "" {
-			if attestation.GetTdxAttestation() != nil {
-				teeTechnology = Tdx
-			}
-		}
 
 		req := verifier.VerifyAttestationRequest{
 			Challenge:      challenge,
