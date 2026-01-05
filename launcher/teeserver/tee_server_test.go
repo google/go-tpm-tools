@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/launcher/agent"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
@@ -484,7 +485,7 @@ func TestCustomTokenDataParsedSuccessfully(t *testing.T) {
 			},
 			attestAgent: fakeAttestationAgent{
 				attestWithClientFunc: func(_ context.Context, gotOpts agent.AttestAgentOpts, _ verifier.Client) ([]byte, error) {
-					diff := cmp.Diff(test.wantOpts, gotOpts)
+					diff := cmp.Diff(test.wantOpts, gotOpts, cmpopts.IgnoreFields(agent.AttestAgentOpts{}, "Method"))
 					if diff != "" {
 						t.Errorf("%v: got unexpected agent.AttestAgentOpts. diff:\n%v", test.testName, diff)
 					}
@@ -574,5 +575,145 @@ func TestCustomHandleAttestError(t *testing.T) {
 				t.Errorf("failed to read response body: %v", err)
 			}
 		})
+	}
+}
+
+func TestParseVerifyMethod(t *testing.T) {
+	testcases := []struct {
+		inputMethod    []string
+		expectedMethod agent.VerifyMethod
+	}{
+		{
+			[]string{string(agent.VerifyConfidentialSpaceMethod)},
+			agent.VerifyConfidentialSpaceMethod,
+		},
+		{
+			[]string{string(agent.VerifyAttestationMethod)},
+			agent.VerifyAttestationMethod,
+		},
+		{
+			[]string{string(agent.VerifyUnset)},
+			agent.VerifyUnset,
+		},
+		{
+			[]string{"not a valid method"},
+			agent.VerifyUnset,
+		},
+		{
+			[]string{
+				string(agent.VerifyConfidentialSpaceMethod),
+				string(agent.VerifyAttestationMethod),
+			},
+			agent.VerifyUnset,
+		},
+	}
+
+	for _, tc := range testcases {
+		headers := http.Header{
+			verifyMethodHeader: tc.inputMethod,
+		}
+
+		gotMethod := parseVerifyMethod(headers)
+
+		if gotMethod != tc.expectedMethod {
+			t.Errorf("parseVerifyMethod(%v) got %v, want %v", headers, gotMethod, tc.expectedMethod)
+		}
+	}
+}
+
+// Implements http.ResponseWriter
+type testRespWriter struct {
+	headerStatus int
+	writeBody    []byte
+}
+
+func (t *testRespWriter) Header() http.Header { return http.Header{} }
+func (t *testRespWriter) Write(body []byte) (int, error) {
+	t.writeBody = append(t.writeBody, body...)
+
+	return len(body), nil
+}
+func (t *testRespWriter) WriteHeader(statusCode int) {
+	t.headerStatus = statusCode
+}
+
+func TestGetWithVerifyMethod(t *testing.T) {
+	handler := &attestHandler{
+		attestAgent: fakeAttestationAgent{
+			attestWithClientFunc: func(_ context.Context, opts agent.AttestAgentOpts, _ verifier.Client) ([]byte, error) {
+				if len(opts.Method) == 0 {
+					t.Fatal("no method provided in attest agent opts")
+				}
+
+				return []byte(opts.Method), nil
+			},
+		},
+		logger: logging.SimpleLogger(),
+	}
+
+	testcases := []agent.VerifyMethod{
+		agent.VerifyConfidentialSpaceMethod,
+		agent.VerifyAttestationMethod,
+		agent.VerifyUnset,
+	}
+
+	for _, method := range testcases {
+		req := &http.Request{
+			Method: http.MethodGet,
+			Header: http.Header{
+				verifyMethodHeader: []string{string(method)},
+			},
+		}
+
+		resp := &testRespWriter{writeBody: []byte{}}
+
+		handler.attest(resp, req, nil)
+
+		if string(resp.writeBody) != string(method) {
+			t.Errorf("attest(%v) did not use expected verify method: got %v, want %v", req, string(resp.writeBody), method)
+		}
+	}
+}
+
+func TestPostWithVerifyMethod(t *testing.T) {
+	handler := &attestHandler{
+		attestAgent: fakeAttestationAgent{
+			attestWithClientFunc: func(_ context.Context, opts agent.AttestAgentOpts, _ verifier.Client) ([]byte, error) {
+				if len(opts.Method) == 0 {
+					t.Fatal("no method provided in attest agent opts")
+				}
+
+				return []byte(opts.Method), nil
+			},
+		},
+		logger: logging.SimpleLogger(),
+	}
+
+	testcases := []agent.VerifyMethod{
+		agent.VerifyConfidentialSpaceMethod,
+		agent.VerifyAttestationMethod,
+		agent.VerifyUnset,
+	}
+
+	for _, method := range testcases {
+		reqBody := `{
+			"audience": "<YOURAUDIENCE>",
+			"nonces": ["thisIsAcustomNonce",			"thisIsAMuchLongerCustomNonceWithPaddingFor74Bytes0000000000000000000000000"],
+			"token_type": "OIDC"
+    	}`
+		req, err := http.NewRequest(http.MethodPost, "", strings.NewReader(reqBody))
+		if err != nil {
+			t.Fatalf("http.NewRequest error for method %v: %v", method, err)
+		}
+
+		req.Header.Add(verifyMethodHeader, string(method))
+
+		resp := &testRespWriter{writeBody: []byte{}}
+
+		handler.attest(resp, req, nil)
+
+		if string(resp.writeBody) != string(method) {
+			t.Errorf("attest(%v) did not use expected verify method: got %v, want %v", req, string(resp.writeBody), method)
+		}
 	}
 }
