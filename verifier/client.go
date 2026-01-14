@@ -50,6 +50,12 @@ type VerifyAttestationRequest struct {
 	TDCCELAttestation *TDCCELAttestation
 }
 
+// AttestationEvidence contains either a TPM attestation or a TDX attestation.
+type AttestationEvidence struct {
+	Attestation       *attestpb.Attestation `json:"attestation,omitempty"`
+	TDCCELAttestation *TDCCELAttestation    `json:"tdccel_attestation,omitempty"`
+}
+
 type TDCCELAttestation struct {
 	CcelAcpiTable     []byte
 	CcelData          []byte

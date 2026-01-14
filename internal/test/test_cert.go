@@ -1,6 +1,7 @@
 package test
 
 import (
+	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
@@ -44,4 +45,29 @@ func GetTestCert(t *testing.T, issuingURL []string, parentCert *x509.Certificate
 	}
 
 	return cert, certKey
+}
+
+// GetTestCertForKey returns an x509 Certificate for the provided public key.
+// The certificate is self-signed by a newly generated key.
+func GetTestCertForKey(t *testing.T, pubKey crypto.PublicKey) *x509.Certificate {
+	t.Helper()
+
+	priv, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("failed to generate signing key: %v", err)
+	}
+	template := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		NotBefore:    time.Now(),
+		NotAfter:     time.Now().Add(time.Hour),
+	}
+	certBytes, err := x509.CreateCertificate(rand.Reader, template, template, pubKey, priv)
+	if err != nil {
+		t.Fatalf("failed to create certificate: %v", err)
+	}
+	cert, err := x509.ParseCertificate(certBytes)
+	if err != nil {
+		t.Fatalf("failed to parse certificate: %v", err)
+	}
+	return cert
 }

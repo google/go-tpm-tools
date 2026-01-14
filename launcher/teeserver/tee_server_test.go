@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	gecel "github.com/google/go-eventlog/cel"
+	gcel "github.com/google/go-eventlog/cel"
 	"github.com/google/go-tpm-tools/launcher/agent"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/verifier"
@@ -36,9 +36,10 @@ func (f *fakeVerifierClient) VerifyConfidentialSpace(_ context.Context, _ verifi
 }
 
 type fakeAttestationAgent struct {
-	measureEventFunc     func(gecel.Content) error
-	attestFunc           func(context.Context, agent.AttestAgentOpts) ([]byte, error)
-	attestWithClientFunc func(context.Context, agent.AttestAgentOpts, verifier.Client) ([]byte, error)
+	measureEventFunc           func(gcel.Content) error
+	attestFunc                 func(context.Context, agent.AttestAgentOpts) ([]byte, error)
+	attestWithClientFunc       func(context.Context, agent.AttestAgentOpts, verifier.Client) ([]byte, error)
+	getAttestationEvidenceFunc func(context.Context, []byte) (*verifier.AttestationEvidence, error)
 }
 
 func (f fakeAttestationAgent) Attest(c context.Context, a agent.AttestAgentOpts) ([]byte, error) {
@@ -49,7 +50,11 @@ func (f fakeAttestationAgent) AttestWithClient(c context.Context, a agent.Attest
 	return f.attestWithClientFunc(c, a, v)
 }
 
-func (f fakeAttestationAgent) MeasureEvent(c gecel.Content) error {
+func (f fakeAttestationAgent) GetAttestationEvidence(c context.Context, nonce []byte) (*verifier.AttestationEvidence, error) {
+	return f.getAttestationEvidenceFunc(c, nonce)
+}
+
+func (f fakeAttestationAgent) MeasureEvent(c gcel.Content) error {
 	return f.measureEventFunc(c)
 }
 
@@ -574,5 +579,25 @@ func TestCustomHandleAttestError(t *testing.T) {
 				t.Errorf("failed to read response body: %v", err)
 			}
 		})
+	}
+}
+
+func TestGetAttestationEvidence(t *testing.T) {
+	ah := attestHandler{
+		logger: logging.SimpleLogger(),
+		attestAgent: fakeAttestationAgent{
+			getAttestationEvidenceFunc: func(_ context.Context, _ []byte) (*verifier.AttestationEvidence, error) {
+				return &verifier.AttestationEvidence{}, nil
+			},
+		},
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/evidence", strings.NewReader("{\"nonce\": \"dGVzdA==\"}"))
+	w := httptest.NewRecorder()
+
+	ah.getAttestationEvidence(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("got return code: %d, want: %d", w.Code, http.StatusOK)
 	}
 }

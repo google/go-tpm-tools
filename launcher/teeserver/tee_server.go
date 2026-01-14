@@ -19,8 +19,9 @@ import (
 )
 
 const (
-	gcaEndpoint = "/v1/token"
-	itaEndpoint = "/v1/intel/token"
+	gcaEndpoint      = "/v1/token"
+	itaEndpoint      = "/v1/intel/token"
+	evidenceEndpoint = "/v1/evidence"
 )
 
 var clientErrorCodes = map[codes.Code]struct{}{
@@ -87,9 +88,13 @@ func (a *attestHandler) Handler() http.Handler {
 	// to test custom token:
 	// curl -d '{"audience":"<aud>", "nonces":["<nonce1>"]}' -H "Content-Type: application/json" -X POST
 	//   --unix-socket /tmp/container_launcher/teeserver.sock http://localhost/v1/token
+	// to test attestation evidence:
+	// curl -d '{"nonce":"<nonce>"}' -H "Content-Type: application/json" -X POST
+	//   --unix-socket /tmp/container_launcher/teeserver.sock http://localhost/v1/evidence
 
 	mux.HandleFunc(gcaEndpoint, a.getToken)
 	mux.HandleFunc(itaEndpoint, a.getITAToken)
+	mux.HandleFunc(evidenceEndpoint, a.getAttestationEvidence)
 	return mux
 }
 
@@ -130,6 +135,36 @@ func (a *attestHandler) getITAToken(w http.ResponseWriter, r *http.Request) {
 	}
 
 	a.attest(w, r, a.clients.ITA)
+}
+
+// getAttestationEvidence retrieves the attestation evidence.
+func (a *attestHandler) getAttestationEvidence(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		a.logAndWriteHTTPError(w, http.StatusMethodNotAllowed, fmt.Errorf("method not allowed"))
+		return
+	}
+
+	var req struct {
+		Nonce []byte `json:"nonce"`
+	}
+	// Allow empty body/nonce
+	if r.ContentLength > 0 {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			a.logAndWriteHTTPError(w, http.StatusBadRequest, fmt.Errorf("failed to decode request: %v", err))
+			return
+		}
+	}
+
+	evidence, err := a.attestAgent.GetAttestationEvidence(a.ctx, req.Nonce)
+	if err != nil {
+		a.logAndWriteHTTPError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(evidence); err != nil {
+		a.logger.Error(fmt.Sprintf("failed to encode response: %v", err))
+	}
 }
 
 func (a *attestHandler) attest(w http.ResponseWriter, r *http.Request, client verifier.Client) {

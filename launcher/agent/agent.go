@@ -53,6 +53,7 @@ type AttestationAgent interface {
 	MeasureEvent(gecel.Content) error
 	Attest(context.Context, AttestAgentOpts) ([]byte, error)
 	AttestWithClient(ctx context.Context, opts AttestAgentOpts, client verifier.Client) ([]byte, error)
+	GetAttestationEvidence(ctx context.Context, nonce []byte) (*verifier.AttestationEvidence, error)
 	Refresh(context.Context) error
 	Close() error
 }
@@ -241,14 +242,9 @@ func (a *agent) AttestWithClient(ctx context.Context, opts AttestAgentOpts, clie
 	case *verifier.TDCCELAttestation:
 		a.logger.Info("attestation through TDX quote")
 
-		certChain, err := internal.GetCertificateChain(a.fetchedAK.Cert(), http.DefaultClient)
-		if err != nil {
-			return nil, fmt.Errorf("failed when fetching certificate chain: %w", err)
+		if err := a.populateTdxAttestation(v, cosCel.Bytes()); err != nil {
+			return nil, err
 		}
-
-		v.CanonicalEventLog = cosCel.Bytes()
-		v.IntermediateCerts = certChain
-		v.AkCert = a.fetchedAK.CertDERBytes()
 		req.TDCCELAttestation = v
 	default:
 		return nil, fmt.Errorf("received an unsupported attestation type! %v", v)
@@ -276,6 +272,48 @@ func (a *agent) AttestWithClient(ctx context.Context, opts AttestAgentOpts, clie
 		a.logger.Error(fmt.Sprintf("Partial errors from VerifyAttestation: %v", resp.PartialErrs))
 	}
 	return resp.ClaimsToken, nil
+}
+
+// GetAttestationEvidence returns the attestation evidence (TPM or TDX).
+func (a *agent) GetAttestationEvidence(_ context.Context, nonce []byte) (*verifier.AttestationEvidence, error) {
+	if a.avRot == nil {
+		return nil, fmt.Errorf("attestation agent does not have an initialized attestation root")
+	}
+
+	attResult, err := a.avRot.Attest(nonce)
+	if err != nil {
+		return nil, fmt.Errorf("failed to attest: %v", err)
+	}
+
+	var cosCel bytes.Buffer
+	if err := a.avRot.GetCEL().EncodeCEL(&cosCel); err != nil {
+		return nil, err
+	}
+
+	switch v := attResult.(type) {
+	case *pb.Attestation:
+		v.CanonicalEventLog = cosCel.Bytes()
+		return &verifier.AttestationEvidence{Attestation: v}, nil
+	case *verifier.TDCCELAttestation:
+		if err := a.populateTdxAttestation(v, cosCel.Bytes()); err != nil {
+			return nil, err
+		}
+		return &verifier.AttestationEvidence{TDCCELAttestation: v}, nil
+	default:
+		return nil, fmt.Errorf("unknown attestation type: %T", v)
+	}
+}
+
+func (a *agent) populateTdxAttestation(v *verifier.TDCCELAttestation, celBytes []byte) error {
+	certChain, err := internal.GetCertificateChain(a.fetchedAK.Cert(), http.DefaultClient)
+	if err != nil {
+		return fmt.Errorf("failed when fetching certificate chain: %w", err)
+	}
+
+	v.CanonicalEventLog = celBytes
+	v.IntermediateCerts = certChain
+	v.AkCert = a.fetchedAK.CertDERBytes()
+	return nil
 }
 
 func (a *agent) verify(ctx context.Context, req verifier.VerifyAttestationRequest, client verifier.Client) (*verifier.VerifyAttestationResponse, error) {

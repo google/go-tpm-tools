@@ -641,6 +641,98 @@ func measureFakeEvents(attestAgent AttestationAgent) error {
 	return nil
 }
 
+type fakeTdxAttestRoot struct {
+	cel cel.CEL
+}
+
+func (f *fakeTdxAttestRoot) Extend(c cel.Content) error {
+	return f.cel.AppendEventRTMR(nil, cel.CosRTMR, c)
+}
+
+func (f *fakeTdxAttestRoot) GetCEL() *cel.CEL {
+	return &f.cel
+}
+
+func (f *fakeTdxAttestRoot) Attest(_ []byte) (any, error) {
+	return &verifier.TDCCELAttestation{
+		TdQuote: []byte("fake-tdx-quote"),
+	}, nil
+}
+
+func TestGetAttestationEvidence_TDX_Success(t *testing.T) {
+	ctx := context.Background()
+	tpm := test.GetTPM(t)
+	defer client.CheckedClose(t, tpm)
+
+	ak, err := client.AttestationKeyECC(tpm)
+	if err != nil {
+		t.Fatalf("failed to create AK: %v", err)
+	}
+	defer ak.Close()
+	fakeCert := test.GetTestCertForKey(t, ak.PublicKey())
+	if err := ak.SetCert(fakeCert); err != nil {
+		t.Fatal(err)
+	}
+
+	fakeRoot := &fakeTdxAttestRoot{}
+	attestAgent := &agent{
+		avRot:     fakeRoot,
+		fetchedAK: ak,
+	}
+
+	nonce := []byte("test-nonce")
+	att, err := attestAgent.GetAttestationEvidence(ctx, nonce)
+	if err != nil {
+		t.Fatalf("GetAttestationEvidence failed: %v", err)
+	}
+
+	if att.TDCCELAttestation == nil {
+		t.Fatal("expected TDCCELAttestation to be populated for TDX")
+	}
+
+	if string(att.TDCCELAttestation.TdQuote) != "fake-tdx-quote" {
+		t.Errorf("got quote %s, want fake-tdx-quote", string(att.TDCCELAttestation.TdQuote))
+	}
+	if len(att.TDCCELAttestation.AkCert) == 0 {
+		t.Error("AkCert should be populated")
+	}
+}
+
+func TestGetAttestationEvidence_TPM_Success(t *testing.T) {
+	ctx := context.Background()
+	tpm := test.GetTPM(t)
+	defer client.CheckedClose(t, tpm)
+
+	fakeSigner, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("failed to generate signing key %v", err)
+	}
+	verifierClient := fake.NewClient(fakeSigner)
+
+	agent, err := CreateAttestationAgent(tpm, client.AttestationKeyECC, verifierClient, placeholderPrincipalFetcher, signaturediscovery.NewFakeClient(), spec.LaunchSpec{}, logging.SimpleLogger())
+	if err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+	defer agent.Close()
+
+	if err := measureFakeEvents(agent); err != nil {
+		t.Errorf("failed to measure events: %v", err)
+	}
+
+	nonce := []byte("test-nonce")
+	att, err := agent.GetAttestationEvidence(ctx, nonce)
+	if err != nil {
+		t.Fatalf("GetAttestationEvidence failed on TPM: %v", err)
+	}
+
+	if att.Attestation == nil {
+		t.Error("expected Attestation to be populated for TPM")
+	}
+	if att.TDCCELAttestation != nil {
+		t.Error("expected TDCCELAttestation to be nil for TPM")
+	}
+}
+
 type testClient struct {
 	verifyCSResp  *verifier.VerifyAttestationResponse
 	verifyAttResp *verifier.VerifyAttestationResponse
