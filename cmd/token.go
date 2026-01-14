@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"cloud.google.com/go/compute/metadata"
@@ -143,7 +144,10 @@ The OIDC token includes claims regarding the GCE VM, which is verified by Attest
 
 		resp, err := verifierClient.VerifyAttestation(ctx, req)
 		if err != nil {
-			return err
+			if strings.Contains(err.Error(), "unexpected_tdx_ccel_attestation") || strings.Contains(err.Error(), "unexpected_snp_attestation") {
+				return fmt.Errorf("verification failed: Google Cloud Attestation does not support token issuance for TDX / SNP confidential VMs at this time. You can verify your attestation evidence using go-tpm-tools, Google Cloud Confidential Space, or another verifier service")
+			}
+			return fmt.Errorf("verification failed: %w; note: Google Cloud Attestation service may not support this Confidential VM type: https://docs.cloud.google.com/confidential-computing/docs/attestation", err)
 		}
 		if len(resp.PartialErrs) > 0 {
 			fmt.Fprintf(debugOutput(), "partial errors from VerifyAttestation: %v", resp.PartialErrs)
