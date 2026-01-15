@@ -725,7 +725,7 @@ func TestGetAttestationEvidence_TPM_Success(t *testing.T) {
 		t.Fatalf("GetAttestationEvidence failed on TPM: %v", err)
 	}
 
-	if att.Attestation == nil {
+	if att.TPMAttestation == nil {
 		t.Error("expected Attestation to be populated for TPM")
 	}
 	if att.TDCCELAttestation != nil {

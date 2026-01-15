@@ -293,7 +293,7 @@ func (a *agent) GetAttestationEvidence(_ context.Context, nonce []byte) (*verifi
 	switch v := attResult.(type) {
 	case *pb.Attestation:
 		v.CanonicalEventLog = cosCel.Bytes()
-		return &verifier.AttestationEvidence{Attestation: v}, nil
+		return &verifier.AttestationEvidence{TPMAttestation: v}, nil
 	case *verifier.TDCCELAttestation:
 		if err := a.populateTdxAttestation(v, cosCel.Bytes()); err != nil {
 			return nil, err
