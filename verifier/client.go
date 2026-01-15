@@ -52,7 +52,7 @@ type VerifyAttestationRequest struct {
 
 // AttestationEvidence contains either a TPM attestation or a TDX attestation.
 type AttestationEvidence struct {
-	Attestation       *attestpb.Attestation `json:"attestation,omitempty"`
+	TPMAttestation    *attestpb.Attestation `json:"tpm_attestation,omitempty"`
 	TDCCELAttestation *TDCCELAttestation    `json:"tdccel_attestation,omitempty"`
 }
 
