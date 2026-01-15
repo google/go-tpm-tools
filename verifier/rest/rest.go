@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	sabi "github.com/google/go-sev-guest/abi"
@@ -137,7 +138,10 @@ func (c *restClient) VerifyAttestation(ctx context.Context, request verifier.Ver
 
 	response, err := c.v1Client.VerifyAttestation(ctx, req)
 	if err != nil {
-		return nil, fmt.Errorf("calling v1.VerifyAttestation in %v: %w", c.location.LocationId, err)
+		if strings.Contains(err.Error(), "unexpected_tdx_ccel_attestation") || strings.Contains(err.Error(), "unexpected_snp_attestation") {
+			return nil, fmt.Errorf("calling v1.VerifyAttestation in %v: %w; Google Cloud Attestation does not support token issuance for TDX / SNP confidential VMs at this time. You can verify your attestation evidence using go-tpm-tools, Google Cloud Confidential Space, or another verifier service", c.location.LocationId, err)
+		}
+		return nil, fmt.Errorf("calling v1.VerifyAttestation in %v: %w; note: Google Cloud Attestation service may not support this Confidential VM type: https://docs.cloud.google.com/confidential-computing/docs/attestation", c.location.LocationId, err)
 	}
 	return convertResponseFromREST(response)
 }
