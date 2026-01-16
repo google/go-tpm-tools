@@ -116,7 +116,7 @@ func (di *DriverInstaller) InstallGPUDrivers(ctx context.Context) error {
 			// To support confidential GPUs, the nvidia-persistenced process should be started before the GPU driver verification step.
 			// It would not be possible to start the nvidia-persistenced process amidst GPU driver installation flow via cos_gpu_installer.
 			// For this reason, the GPU driver installation need to be triggered with --skip-nvidia-smi flag to skip the GPU driver verification step.
-			oci.WithProcessArgs("/cos-gpu-installer", "install", "-version=default", fmt.Sprintf("-host-dir=%s", InstallationHostDir), "--skip-nvidia-smi"),
+			oci.WithProcessArgs("/cos-gpu-installer", "install", "-version=latest", fmt.Sprintf("-host-dir=%s", InstallationHostDir), "--skip-nvidia-smi"),
 			oci.WithAllDevicesAllowed,
 			oci.WithHostDevices,
 			oci.WithMounts(mounts),

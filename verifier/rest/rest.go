@@ -353,24 +353,24 @@ func convertTDXProtoToREST(att *tpb.QuoteV4) (*ccpb.VerifyAttestationRequest_TdC
 	}, nil
 }
 
-func setAwsPrincipalTagOptions(requestTokenOptions *models.TokenOptions) *ccpb.TokenOptions_AwsPrincipalTagsOptions_ {
+func setAwsPrincipalTagOptions(requestTokenOptions *models.TokenOptions) *ccpb.TokenOptions_AwsPrincipalTagsOptions {
 	if requestTokenOptions.PrincipalTagOptions == nil {
 		return nil
 	}
-	options := &ccpb.TokenOptions_AwsPrincipalTagsOptions_{
-		AwsPrincipalTagsOptions: &ccpb.TokenOptions_AwsPrincipalTagsOptions{},
+	options := &ccpb.TokenOptions_AwsPrincipalTagsOptions{
+		AwsPrincipalTagsOptions: &ccpb.AwsPrincipalTagsOptions{},
 	}
 
 	if requestTokenOptions.PrincipalTagOptions.AllowedPrincipalTags == nil {
 		return options
 	}
-	options.AwsPrincipalTagsOptions.AllowedPrincipalTags = &ccpb.TokenOptions_AwsPrincipalTagsOptions_AllowedPrincipalTags{}
+	options.AwsPrincipalTagsOptions.AllowedPrincipalTags = &ccpb.AwsPrincipalTagsOptions_AllowedPrincipalTags{}
 
 	if requestTokenOptions.PrincipalTagOptions.AllowedPrincipalTags.ContainerImageSignatures == nil {
 		return options
 	}
 
-	options.AwsPrincipalTagsOptions.GetAllowedPrincipalTags().ContainerImageSignatures = &ccpb.TokenOptions_AwsPrincipalTagsOptions_AllowedPrincipalTags_ContainerImageSignatures{
+	options.AwsPrincipalTagsOptions.GetAllowedPrincipalTags().ContainerImageSignatures = &ccpb.AwsPrincipalTagsOptions_AllowedPrincipalTags_ContainerImageSignatures{
 		KeyIds: requestTokenOptions.PrincipalTagOptions.AllowedPrincipalTags.ContainerImageSignatures.KeyIDs,
 	}
 

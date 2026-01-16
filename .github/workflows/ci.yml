@@ -74,15 +74,15 @@ jobs:
       - name: Build all modules except launcher
         run: go build -v ./... ./cmd/... ./verifier/...
       - name: Build launcher module
-        run: go build -v ./launcher/...
+        run: go build -v -ldflags="-extldflags=-Wl,-z,lazy" ./launcher/...
         if: runner.os == 'Linux'
       - name: Run specific tests under root permission
         run: |
           GO_EXECUTABLE_PATH=$(which go)
-          sudo $GO_EXECUTABLE_PATH test -v -run "TestFetchImageSignaturesDockerPublic" ./launcher
+          sudo $GO_EXECUTABLE_PATH test -v -ldflags="-extldflags=-Wl,-z,lazy" -run "TestFetchImageSignaturesDockerPublic" ./launcher
         if: runner.os == 'Linux'
       - name: Run all tests in launcher to capture potential data race
-        run: go test -v -race ./launcher/...
+        run: go test -v -ldflags="-extldflags=-Wl,-z,lazy" -race ./launcher/...
         if: (runner.os == 'Linux') && matrix.architecture == 'x64'
       - name: Test all modules except launcher
         run: go test -v ./... ./cmd/... ./verifier/... -skip='TestCacheConcurrentSetGet|TestHwAttestationPass|TestHardwareAttestationPass'

@@ -149,8 +149,8 @@ store_driver_digest() {
   local driver_version
   local driver_digest_gcs_url
 
-  # Fetching the default driver version for the given GPU.
-  driver_version=$(cos-extensions list -- --target-gpu ${gpu_type} | grep DEFAULT | cut -d" " -f 1)
+  # Fetching the latest driver version for the given GPU.
+  driver_version=$(cos-extensions list -- --target-gpu ${gpu_type} | grep LATEST | cut -d" " -f 1)
   driver_digest_gcs_url="https://storage.googleapis.com/${DRIVER_GCS_BUCKET}/sha256/NVIDIA-Linux-x86_64-${driver_version}.run.sha256"
   if ! curl -sSL ${driver_digest_gcs_url} -o ${DRIVER_DIGEST}; then
     echo "Error: failed to download the driver digest file from ${driver_digest_gcs_url}." >&2

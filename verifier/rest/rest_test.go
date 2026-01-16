@@ -22,8 +22,9 @@ var (
 	tokenOptionsCompareOpts = []cmp.Option{
 		cmpopts.IgnoreUnexported(ccpb.TokenOptions{}),
 		cmpopts.IgnoreUnexported(ccpb.TokenOptions_AwsPrincipalTagsOptions{}),
-		cmpopts.IgnoreUnexported(ccpb.TokenOptions_AwsPrincipalTagsOptions_AllowedPrincipalTags{}),
-		cmpopts.IgnoreUnexported(ccpb.TokenOptions_AwsPrincipalTagsOptions_AllowedPrincipalTags_ContainerImageSignatures{}),
+		cmpopts.IgnoreUnexported(ccpb.AwsPrincipalTagsOptions{}),
+		cmpopts.IgnoreUnexported(ccpb.AwsPrincipalTagsOptions_AllowedPrincipalTags{}),
+		cmpopts.IgnoreUnexported(ccpb.AwsPrincipalTagsOptions_AllowedPrincipalTags_ContainerImageSignatures{}),
 	}
 )
 
@@ -240,10 +241,10 @@ func TestConvertTokenOptionsToREST(t *testing.T) {
 				Audience:  "TestingAudience",
 				Nonce:     []string{"thisisthefirstnonce", "thisisthesecondnonce"},
 				TokenType: ccpb.TokenType_TOKEN_TYPE_AWS_PRINCIPALTAGS,
-				TokenTypeOptions: &ccpb.TokenOptions_AwsPrincipalTagsOptions_{
-					AwsPrincipalTagsOptions: &ccpb.TokenOptions_AwsPrincipalTagsOptions{
-						AllowedPrincipalTags: &ccpb.TokenOptions_AwsPrincipalTagsOptions_AllowedPrincipalTags{
-							ContainerImageSignatures: &ccpb.TokenOptions_AwsPrincipalTagsOptions_AllowedPrincipalTags_ContainerImageSignatures{
+				TokenTypeOptions: &ccpb.TokenOptions_AwsPrincipalTagsOptions{
+					AwsPrincipalTagsOptions: &ccpb.AwsPrincipalTagsOptions{
+						AllowedPrincipalTags: &ccpb.AwsPrincipalTagsOptions_AllowedPrincipalTags{
+							ContainerImageSignatures: &ccpb.AwsPrincipalTagsOptions_AllowedPrincipalTags_ContainerImageSignatures{
 								KeyIds: []string{"abcdefg", "12345"},
 							},
 						},
@@ -265,9 +266,9 @@ func TestConvertTokenOptionsToREST(t *testing.T) {
 				Audience:  "TestingAudience",
 				Nonce:     []string{"thisisthefirstnonce", "thisisthesecondnonce"},
 				TokenType: ccpb.TokenType_TOKEN_TYPE_AWS_PRINCIPALTAGS,
-				TokenTypeOptions: &ccpb.TokenOptions_AwsPrincipalTagsOptions_{
-					AwsPrincipalTagsOptions: &ccpb.TokenOptions_AwsPrincipalTagsOptions{
-						AllowedPrincipalTags: &ccpb.TokenOptions_AwsPrincipalTagsOptions_AllowedPrincipalTags{},
+				TokenTypeOptions: &ccpb.TokenOptions_AwsPrincipalTagsOptions{
+					AwsPrincipalTagsOptions: &ccpb.AwsPrincipalTagsOptions{
+						AllowedPrincipalTags: &ccpb.AwsPrincipalTagsOptions_AllowedPrincipalTags{},
 					},
 				},
 			},
@@ -293,9 +294,9 @@ func TestConvertTokenOptionsToREST(t *testing.T) {
 			},
 			wantpb: &ccpb.TokenOptions{
 				TokenType: ccpb.TokenType_TOKEN_TYPE_AWS_PRINCIPALTAGS,
-				TokenTypeOptions: &ccpb.TokenOptions_AwsPrincipalTagsOptions_{
-					AwsPrincipalTagsOptions: &ccpb.TokenOptions_AwsPrincipalTagsOptions{
-						AllowedPrincipalTags: &ccpb.TokenOptions_AwsPrincipalTagsOptions_AllowedPrincipalTags{},
+				TokenTypeOptions: &ccpb.TokenOptions_AwsPrincipalTagsOptions{
+					AwsPrincipalTagsOptions: &ccpb.AwsPrincipalTagsOptions{
+						AllowedPrincipalTags: &ccpb.AwsPrincipalTagsOptions_AllowedPrincipalTags{},
 					},
 				},
 			},
@@ -318,10 +319,10 @@ func TestConvertTokenOptionsToREST(t *testing.T) {
 				Audience:  "TestingAudience",
 				Nonce:     []string{"thisisthefirstnonce", "thisisthesecondnonce"},
 				TokenType: ccpb.TokenType_TOKEN_TYPE_AWS_PRINCIPALTAGS,
-				TokenTypeOptions: &ccpb.TokenOptions_AwsPrincipalTagsOptions_{
-					AwsPrincipalTagsOptions: &ccpb.TokenOptions_AwsPrincipalTagsOptions{
-						AllowedPrincipalTags: &ccpb.TokenOptions_AwsPrincipalTagsOptions_AllowedPrincipalTags{
-							ContainerImageSignatures: &ccpb.TokenOptions_AwsPrincipalTagsOptions_AllowedPrincipalTags_ContainerImageSignatures{
+				TokenTypeOptions: &ccpb.TokenOptions_AwsPrincipalTagsOptions{
+					AwsPrincipalTagsOptions: &ccpb.AwsPrincipalTagsOptions{
+						AllowedPrincipalTags: &ccpb.AwsPrincipalTagsOptions_AllowedPrincipalTags{
+							ContainerImageSignatures: &ccpb.AwsPrincipalTagsOptions_AllowedPrincipalTags_ContainerImageSignatures{
 								KeyIds: []string{"abcdefg", "12345"},
 							},
 						},
