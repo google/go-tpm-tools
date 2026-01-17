@@ -325,7 +325,7 @@ func (t *tdxAttestRoot) GetCEL() *cel.CEL {
 }
 
 func (t *tdxAttestRoot) Extend(c cel.Content) error {
-	return t.cosCel.AppendEventRTMR(t.tsmClient, cel.CosRTMR, c)
+	return t.cosCel.AppendEventRTMRSysfs(cel.CosRTMR, c)
 }
 
 func (t *tdxAttestRoot) Attest(nonce []byte) (any, error) {

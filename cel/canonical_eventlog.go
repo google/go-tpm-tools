@@ -139,9 +139,7 @@ func generateDigestMap(hashAlgos []crypto.Hash, event Content) (map[crypto.Hash]
 	return digestsMap, nil
 }
 
-// AppendEventRTMR appends a new RTMR record to the CEL. rtmrIndex indicates the RTMR to extend.
-// The index showing up in the record will be rtmrIndex + 1.
-func (c *CEL) AppendEventRTMR(client configfsi.Client, rtmrIndex int, event Content) error {
+func (c *CEL) appendEventRTMR(rtmrIndex int, event Content, extendFunc func([]byte) error) error {
 	digestsMap, err := generateDigestMap([]crypto.Hash{crypto.SHA384}, event)
 	if err != nil {
 		return err
@@ -152,8 +150,7 @@ func (c *CEL) AppendEventRTMR(client configfsi.Client, rtmrIndex int, event Cont
 		return err
 	}
 
-	err = rtmr.ExtendDigestClient(client, rtmrIndex, digestsMap[crypto.SHA384])
-	if err != nil {
+	if err := extendFunc(digestsMap[crypto.SHA384]); err != nil {
 		return err
 	}
 
@@ -169,9 +166,28 @@ func (c *CEL) AppendEventRTMR(client configfsi.Client, rtmrIndex int, event Cont
 	return nil
 }
 
+// AppendEventRTMRSysfs appends a new RTMR record to the CEL. rtmrIndex indicates the RTMR to extend.
+// The index showing up in the record will be rtmrIndex + 1.
+// This function uses thesysfs interface to extend the RTMR.
+func (c *CEL) AppendEventRTMRSysfs(rtmrIndex int, event Content) error {
+	return c.appendEventRTMR(rtmrIndex, event, func(digest []byte) error {
+		return rtmr.ExtendDigestSysfs(rtmrIndex, digest)
+	})
+}
+
+// AppendEventRTMR appends a new RTMR record to the CEL. rtmrIndex indicates the RTMR to extend.
+// The index showing up in the record will be rtmrIndex + 1.
+// This function uses the configfs interface to extend the RTMR.
+// Use AppendEventRTMRSysfs as the sysfs interface is available in later kernels.
+func (c *CEL) AppendEventRTMR(client configfsi.Client, rtmrIndex int, event Content) error {
+	return c.appendEventRTMR(rtmrIndex, event, func(digest []byte) error {
+		return rtmr.ExtendDigestClient(client, rtmrIndex, digest)
+	})
+}
+
 // AppendEvent appends a new PCR record to the CEL.
 //
-// Deprecated: Use AppendEventPCR or AppendEventRTMR directly.
+// Deprecated: Use AppendEventPCR or AppendEventRTMRSysfs/AppendEventRTMR directly.
 func (c *CEL) AppendEvent(tpm io.ReadWriteCloser, pcr int, event Content) error {
 	return c.AppendEventPCR(tpm, pcr, event)
 }

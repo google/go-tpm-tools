@@ -1,7 +1,7 @@
 substitutions:
   '_BASE_IMAGE': '' # If left empty, will use the latest image in _BASE_IMAGE_FAMILY of _BASE_IMAGE_PROJECT
-  '_BASE_IMAGE_FAMILY': 'cos-tdx-113-lts'
-  '_BASE_IMAGE_PROJECT': 'confidential-vm-images'
+  '_BASE_IMAGE_FAMILY': 'cos-125-lts'
+  '_BASE_IMAGE_PROJECT': 'cos-cloud'
   '_OUTPUT_IMAGE_PREFIX': 'confidential-space'
   '_OUTPUT_IMAGE_SUFFIX': ''
   '_OUTPUT_IMAGE_FAMILY': ''
