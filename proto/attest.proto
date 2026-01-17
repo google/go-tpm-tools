@@ -252,6 +252,12 @@ message EfiState {
   // UEFI applications are typically bootloaders such as shim and GRUB.
   // These run and are measured using the UEFI LoadImage() service.
   repeated EfiApp apps = 1;
+  // The EFI drivers,
+  // obtained from https://trustedcomputinggroup.org/wp-content/uploads/TCG_EFI_Platform_1_22_Final_-v15.pdf#page=22.
+  // The EFI Boot Services Drivers from adapter or loaded bydriver in adapter.
+  repeated EfiApp boot_services_drivers = 2;
+  // The EFI Runtime Drivers from adapter or loaded bydriver in adapter.
+  repeated EfiApp runtime_services_drivers = 3;
 }
 
 // The verified state of a booted machine, obtained from an Attestation

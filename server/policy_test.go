@@ -83,12 +83,10 @@ func TestEvaluatePolicySCRTM(t *testing.T) {
 				0x4e, 0xf4, 0xbf, 0x17, 0xb8, 0x3a}},
 		},
 	}
-	machineState, err := parsePCClientEventLog(ArchLinuxWorkstation.RawLog, ArchLinuxWorkstation.Banks[0], VerifyOpts{Loader: UnsupportedLoader, AllowEFIAppBeforeCallingEvent: true})
+	machineState, err := parsePCClientEventLog(ArchLinuxWorkstation.RawLog, ArchLinuxWorkstation.Banks[0],
+		VerifyOpts{Loader: UnsupportedLoader, AllowEFIAppBeforeCallingEvent: true, AllowEmptySBVar: true})
 	if err != nil {
-		gErr := err.(*GroupedError)
-		if !gErr.containsKnownSubstrings(archLinuxKnownParsingFailures) {
-			t.Fatalf("failed to get machine state: %v", err)
-		}
+		t.Fatalf("failed to get machine state: %v", err)
 	}
 	if err := EvaluatePolicy(machineState, &archLinuxWorkstationSCRTMPolicy); err != nil {
 		t.Errorf("failed to apply policy: %v", err)
@@ -124,27 +122,21 @@ func TestEvaluatePolicyFailure(t *testing.T) {
 		log    eventLog
 		policy *pb.Policy
 		opts   VerifyOpts
-		// This field handles known issues with event log parsing or bad event
-		// logs.
-		// Set to nil when the event log has no known issues.
-		errorSubstrs []string
 	}{
-		{"Debian10-SHA1", Debian10GCE, &badGcePolicyVersion, VerifyOpts{Loader: UnsupportedLoader}, nil},
-		{"Debian10-SHA1", Debian10GCE, &badGcePolicySEV, VerifyOpts{Loader: UnsupportedLoader}, nil},
+		{"Debian10-SHA1", Debian10GCE, &badGcePolicyVersion, VerifyOpts{Loader: UnsupportedLoader}},
+		{"Debian10-SHA1", Debian10GCE, &badGcePolicySEV, VerifyOpts{Loader: UnsupportedLoader}},
 		{"Ubuntu1804AmdSev-CryptoAgile", UbuntuAmdSevGCE, &badGcePolicySEVES,
-			VerifyOpts{Loader: UnsupportedLoader}, nil},
+			VerifyOpts{Loader: UnsupportedLoader}},
 		{"ArchLinuxWorkstation-CryptoAgile", ArchLinuxWorkstation,
-			&badPhysicalPolicy, VerifyOpts{Loader: UnsupportedLoader, AllowEFIAppBeforeCallingEvent: true}, archLinuxKnownParsingFailures},
+			&badPhysicalPolicy,
+			VerifyOpts{Loader: UnsupportedLoader, AllowEFIAppBeforeCallingEvent: true, AllowEmptySBVar: true}},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			machineState, err := parsePCClientEventLog(test.log.RawLog, test.log.Banks[0], test.opts)
 			if err != nil {
-				gErr := err.(*GroupedError)
-				if len(test.errorSubstrs) == 0 || !gErr.containsKnownSubstrings(test.errorSubstrs) {
-					t.Fatalf("failed to get machine state: %v", err)
-				}
+				t.Fatalf("failed to get machine state: %v", err)
 			}
 			if err := EvaluatePolicy(machineState, test.policy); err == nil {
 				t.Errorf("expected policy failure; got success")
