@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"crypto"
+	"crypto/sha512"
 	"encoding/base64"
 	"fmt"
 	"io"
@@ -280,7 +281,11 @@ func (a *agent) GetAttestationEvidence(_ context.Context, nonce []byte) (*verifi
 		return nil, fmt.Errorf("attestation agent does not have an initialized attestation root")
 	}
 
-	attResult, err := a.avRot.Attest(nonce)
+	// Use nested SHA512 hashing to separate the prefix and the nonce
+	// and normalize input length.
+	nonceDigest := sha512.Sum512(nonce)
+	finalNonce := sha512.Sum512(append([]byte(verifier.RawEvidenceV1), nonceDigest[:]...))
+	attResult, err := a.avRot.Attest(finalNonce[:])
 	if err != nil {
 		return nil, fmt.Errorf("failed to attest: %v", err)
 	}

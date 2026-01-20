@@ -147,12 +147,14 @@ func (a *attestHandler) getAttestationEvidence(w http.ResponseWriter, r *http.Re
 	var req struct {
 		Nonce []byte `json:"nonce"`
 	}
-	// Allow empty body/nonce
-	if r.ContentLength > 0 {
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			a.logAndWriteHTTPError(w, http.StatusBadRequest, fmt.Errorf("failed to decode request: %v", err))
-			return
-		}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		a.logAndWriteHTTPError(w, http.StatusBadRequest, fmt.Errorf("failed to decode request: %v", err))
+		return
+	}
+	if len(req.Nonce) == 0 {
+		a.logAndWriteHTTPError(w, http.StatusBadRequest, fmt.Errorf("nonce is required"))
+		return
 	}
 
 	evidence, err := a.attestAgent.GetAttestationEvidence(a.ctx, req.Nonce)
