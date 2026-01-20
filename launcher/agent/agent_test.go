@@ -1,9 +1,11 @@
 package agent
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha512"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -642,7 +644,8 @@ func measureFakeEvents(attestAgent AttestationAgent) error {
 }
 
 type fakeTdxAttestRoot struct {
-	cel cel.CEL
+	cel           cel.CEL
+	receivedNonce []byte
 }
 
 func (f *fakeTdxAttestRoot) Extend(c cel.Content) error {
@@ -653,7 +656,8 @@ func (f *fakeTdxAttestRoot) GetCEL() *cel.CEL {
 	return &f.cel
 }
 
-func (f *fakeTdxAttestRoot) Attest(_ []byte) (any, error) {
+func (f *fakeTdxAttestRoot) Attest(nonce []byte) (any, error) {
+	f.receivedNonce = nonce
 	return &verifier.TDCCELAttestation{
 		TdQuote: []byte("fake-tdx-quote"),
 	}, nil
@@ -695,6 +699,12 @@ func TestGetAttestationEvidence_TDX_Success(t *testing.T) {
 	}
 	if len(att.TDCCELAttestation.AkCert) == 0 {
 		t.Error("AkCert should be populated")
+	}
+
+	nonceDigest := sha512.Sum512(nonce)
+	expectedHash := sha512.Sum512(append([]byte(verifier.RawEvidenceV1), nonceDigest[:]...))
+	if !bytes.Equal(fakeRoot.receivedNonce, expectedHash[:]) {
+		t.Errorf("got nonce %x, want %x", fakeRoot.receivedNonce, expectedHash[:])
 	}
 }
 

@@ -31,6 +31,8 @@ type Challenge struct {
 	Signature []byte
 }
 
+const RawEvidenceV1 = "RawEvidenceV1"
+
 type ContainerSignature struct {
 	Payload   []byte
 	Signature []byte
