@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -144,7 +144,7 @@ func TestVerifyAttestation(t *testing.T) {
 
 		// Verify HTTP Request body.
 		defer r.Body.Close()
-		reqBody, err := ioutil.ReadAll(r.Body)
+		reqBody, err := io.ReadAll(r.Body)
 		if err != nil {
 			t.Fatalf("Error reading HTTP request body: %s", err)
 		}
@@ -212,7 +212,7 @@ func TestDoHTTPRequest(t *testing.T) {
 
 		// Verify HTTP Request body.
 		defer r.Body.Close()
-		reqBody, err := ioutil.ReadAll(r.Body)
+		reqBody, err := io.ReadAll(r.Body)
 		if err != nil {
 			t.Fatalf("Error reading HTTP request body: %s", err)
 		}

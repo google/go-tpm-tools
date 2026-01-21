@@ -43,7 +43,7 @@ else
     print_serial=true
 fi
 
-if echo $SERIAL_OUTPUT | grep -q 'aud: https://sts.googleapis.com'
+if echo $SERIAL_OUTPUT | grep -q 'aud: \[https://sts.googleapis.com\]'
 then
     echo "- token aud verified"
 else
@@ -52,7 +52,7 @@ else
     print_serial=true
 fi
 
-if echo $SERIAL_OUTPUT | grep -q 'iss: https://confidentialcomputing.googleapis.com'
+if echo $SERIAL_OUTPUT | grep -q 'iss: fake-issuer-for-testing'
 then
     echo "- token iss verified"
 else
@@ -70,7 +70,7 @@ else
     print_serial=true
 fi
 
-if echo $SERIAL_OUTPUT | grep -q 'oemid: 11129'
+if echo $SERIAL_OUTPUT | grep -q 'oemid: fake-oem-id'
 then
     echo "- token oemid verified"
 else
@@ -79,7 +79,7 @@ else
     print_serial=true
 fi
 
-if echo $SERIAL_OUTPUT | grep -q 'hwmodel: GCP_AMD_SEV'
+if echo $SERIAL_OUTPUT | grep -q 'hwmodel: fake-hw-model'
 then
     echo "- token hwmodel verified"
 else
@@ -88,7 +88,7 @@ else
     print_serial=true
 fi
 
-if echo $SERIAL_OUTPUT | grep -q 'swname: GCE'
+if echo $SERIAL_OUTPUT | grep -q 'swname: fake-sw-name'
 then
     echo "- token swname verified"
 else

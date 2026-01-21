@@ -8,8 +8,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/google/go-eventlog/proto/state"
-	"github.com/google/go-eventlog/register"
 	"github.com/google/go-tpm-tools/internal"
 	pb "github.com/google/go-tpm-tools/proto/attest"
 	tpmpb "github.com/google/go-tpm-tools/proto/tpm"
@@ -68,6 +66,10 @@ type VerifyOpts struct {
 	// "Calling EFI Application from Boot Option". This option is useful when
 	// the host platform loads EFI Applications unrelated to OS boot.
 	AllowEFIAppBeforeCallingEvent bool
+	// AllowEmptySBVar allows the SecureBoot variable to be empty in addition
+	// to length 1 (0 or 1) during eventlog parsing.
+	// This can be used when the SecureBoot variable is not initialized.
+	AllowEmptySBVar bool
 }
 
 // Bootloader refers to the second-stage bootloader that loads and transfers
@@ -137,26 +139,6 @@ func VerifyAttestation(attestation *pb.Attestation, opts VerifyOpts) (*pb.Machin
 			lastErr = fmt.Errorf("failed to parse machine state from TCG event log: %w", err)
 			continue
 		}
-
-		pcrBank := register.PCRBank{TCGHashAlgo: state.HashAlgo(pcrs.Hash)}
-		digestAlg, err := pcrBank.TCGHashAlgo.CryptoHash()
-		if err != nil {
-			return nil, fmt.Errorf("invalid digest algorithm")
-		}
-
-		for pcrIndex, digest := range pcrs.GetPcrs() {
-			pcrBank.PCRs = append(pcrBank.PCRs, register.PCR{
-				Index:     int(pcrIndex),
-				Digest:    digest,
-				DigestAlg: digestAlg})
-		}
-
-		celState, err := ParseCosCELPCR(attestation.GetCanonicalEventLog(), pcrBank)
-		if err != nil {
-			lastErr = fmt.Errorf("failed to validate the Canonical event log: %w", err)
-			continue
-		}
-		machineState.Cos = celState
 
 		// Verify the PCR hash algorithm. We have this check here (instead of at
 		// the start of the loop) so that the user gets a "SHA-1 not supported"

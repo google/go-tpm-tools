@@ -21,6 +21,7 @@ import (
 	"github.com/google/go-tpm-tools/launcher/internal/launchermount"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
+	"github.com/google/go-tpm-tools/verifier"
 	"github.com/google/go-tpm-tools/verifier/util"
 )
 
@@ -75,13 +76,13 @@ const (
 
 // Metadata variable names.
 const (
+	fakeVerifierKey            = "test-fake-verifier"
 	imageRefKey                = "tee-image-reference"
 	signedImageRepos           = "tee-signed-image-repos"
 	restartPolicyKey           = "tee-restart-policy"
 	cmdKey                     = "tee-cmd"
 	envKeyPrefix               = "tee-env-"
 	impersonateServiceAccounts = "tee-impersonate-service-accounts"
-	attestationServiceAddrKey  = "tee-attestation-service-endpoint"
 	logRedirectKey             = "tee-container-log-redirect"
 	memoryMonitoringEnable     = "tee-monitoring-memory-enable"
 	monitoringEnable           = "tee-monitoring-enable"
@@ -91,11 +92,18 @@ const (
 	itaKey                     = "ita-api-key"
 	addedCaps                  = "tee-added-capabilities"
 	cgroupNS                   = "tee-cgroup-ns"
+	gcaServiceEnv              = "gca-service-env"
 )
 
 const (
 	instanceAttributesQuery = "instance/attributes/?recursive=true"
 )
+
+var gcaInstances = map[string]string{
+	"prod":     "https://confidentialcomputing.googleapis.com",
+	"autopush": "https://autopush-confidentialcomputing.sandbox.googleapis.com",
+	"staging":  "https://staging-confidentialcomputing.sandbox.googleapis.com",
+}
 
 var errImageRefNotSpecified = fmt.Errorf("%s is not specified in the custom metadata", imageRefKey)
 
@@ -108,7 +116,8 @@ type EnvVar struct {
 // LaunchSpec contains specification set by the operator who wants to
 // launch a container.
 type LaunchSpec struct {
-	Experiments experiments.Experiments
+	Experiments         experiments.Experiments
+	FakeVerifierEnabled bool
 
 	// MDS-based values.
 	ImageRef                   string
@@ -116,7 +125,7 @@ type LaunchSpec struct {
 	RestartPolicy              RestartPolicy
 	Cmd                        []string
 	Envs                       []EnvVar
-	AttestationServiceAddr     string
+	GcaAddress                 string
 	ImpersonateServiceAccounts []string
 	ProjectID                  string
 	Region                     string
@@ -124,8 +133,7 @@ type LaunchSpec struct {
 	MonitoringEnabled          MonitoringType
 	LogRedirect                LogRedirectLocation
 	Mounts                     []launchermount.Mount
-	ITARegion                  string
-	ITAKey                     string
+	ITAConfig                  verifier.ITAConfig
 	// DevShmSize is specified in kiB.
 	DevShmSize        int64
 	AddedCapabilities []string
@@ -139,6 +147,13 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 	var unmarshaledMap map[string]string
 	if err := json.Unmarshal(b, &unmarshaledMap); err != nil {
 		return err
+	}
+
+	if val, ok := unmarshaledMap[fakeVerifierKey]; ok && val != "" {
+		var err error
+		if s.FakeVerifierEnabled, err = strconv.ParseBool(val); err != nil {
+			return fmt.Errorf("invalid value for %v (not a boolean): %w", fakeVerifierKey, err)
+		}
 	}
 
 	s.ImageRef = unmarshaledMap[imageRefKey]
@@ -191,7 +206,6 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 		if monVal == "" {
 			s.MonitoringEnabled = None
 		} else {
-
 			var err error
 			s.MonitoringEnabled, err = toMonitoringType(monVal)
 			if err != nil {
@@ -223,7 +237,9 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 		return err
 	}
 
-	s.AttestationServiceAddr = unmarshaledMap[attestationServiceAddrKey]
+	if err := s.setAttestationServiceVars(unmarshaledMap); err != nil {
+		return err
+	}
 
 	// Populate /dev/shm size override.
 	if val, ok := unmarshaledMap[devShmSizeKey]; ok && val != "" {
@@ -252,16 +268,14 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 		itaRegionVal, itaRegionOK := unmarshaledMap[itaRegion]
 		itaKeyVal, itaKeyOK := unmarshaledMap[itaKey]
 
+		// If key and region are both not in the map, do not set up ITA config.
 		if itaRegionOK != itaKeyOK {
-			return fmt.Errorf("ITA fields %s and %s must both be provided", itaRegion, itaKey)
+			return fmt.Errorf("ITA fields %s and %s must both be provided and non-empty", itaRegion, itaKey)
 		}
 
-		if itaRegionOK {
-			s.ITARegion = itaRegionVal
-		}
-
-		if itaKeyOK {
-			s.ITAKey = itaKeyVal
+		s.ITAConfig = verifier.ITAConfig{
+			ITARegion: itaRegionVal,
+			ITAKey:    itaKeyVal,
 		}
 	}
 
@@ -287,10 +301,22 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+func (s *LaunchSpec) setAttestationServiceVars(unmarshaledMap map[string]string) error {
+	if gcaServiceEnv, ok := unmarshaledMap[gcaServiceEnv]; ok {
+		v, ok := gcaInstances[strings.ToLower(gcaServiceEnv)]
+		if !ok {
+			return fmt.Errorf("the gca service env is not within the allowlist, want %+v, got %s", gcaInstances, gcaServiceEnv)
+		}
+		s.GcaAddress = v
+	}
+
+	return nil
+}
+
 // LogFriendly creates a copy of the spec that is safe to log by censoring
 func (s *LaunchSpec) LogFriendly() LaunchSpec {
 	safeSpec := *s
-	safeSpec.ITAKey = strings.Repeat("*", len(s.ITAKey))
+	safeSpec.ITAConfig.ITAKey = strings.Repeat("*", len(s.ITAConfig.ITAKey))
 
 	return safeSpec
 }

@@ -8,11 +8,17 @@ import (
 	"io"
 
 	"github.com/google/go-tpm-tools/client"
-	"github.com/google/go-tpm/tpmutil"
-
 	"github.com/google/go-tpm/legacy/tpm2"
+	directtpm2 "github.com/google/go-tpm/tpm2"
+	"github.com/google/go-tpm/tpmutil"
 	"github.com/spf13/cobra"
 )
+
+var keyFormat string
+
+func addKeyFormatFlag(cmd *cobra.Command) {
+	cmd.PersistentFlags().StringVar(&keyFormat, "key-format", "pem", "type of format for the outputted key, defaults to pem, but can also specify tpmt-public")
+}
 
 var hierarchyNames = map[string]tpmutil.Handle{
 	"endorsement": tpm2.HandleEndorsement,
@@ -58,7 +64,22 @@ NVDATA instead (and --algo is ignored).`,
 		}
 		defer key.Close()
 
-		return writeKey(key.PublicKey())
+		if keyFormat == "pem" {
+			return writeKey(key.PublicKey())
+		}
+		if keyFormat == "tpmt-public" {
+			encoded, err := key.PublicArea().Encode()
+			if err != nil {
+				return fmt.Errorf("failed to encode public area: %v", err)
+			}
+			_, err = dataOutput().Write(encoded)
+			if err != nil {
+				return fmt.Errorf("failed to write key: %v", err)
+			}
+			return nil
+		}
+		return fmt.Errorf("key format must be either pem or tpmt-public")
+
 	},
 }
 
@@ -67,6 +88,7 @@ func init() {
 	addIndexFlag(pubkeyCmd)
 	addOutputFlag(pubkeyCmd)
 	addPublicKeyAlgoFlag(pubkeyCmd)
+	addKeyFormatFlag(pubkeyCmd)
 }
 
 func getKey(rw io.ReadWriter, hierarchy tpmutil.Handle, _ tpm2.Algorithm) (*client.Key, error) {
@@ -97,4 +119,16 @@ func writeKey(pubKey crypto.PublicKey) error {
 		Type:  "PUBLIC KEY",
 		Bytes: asn1Bytes,
 	})
+}
+
+func readTPMTPublic(rw io.Reader) (*directtpm2.TPMTPublic, error) {
+	data, err := io.ReadAll(rw)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read public key: %v", err)
+	}
+	tPublic, err := directtpm2.Unmarshal[directtpm2.TPMTPublic](data)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal public area: %v", err)
+	}
+	return tPublic, nil
 }
