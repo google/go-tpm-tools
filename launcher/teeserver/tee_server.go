@@ -21,6 +21,8 @@ import (
 const (
 	gcaEndpoint = "/v1/token"
 	itaEndpoint = "/v1/intel/token"
+
+	verifyMethodHeader = "Verify-Method"
 )
 
 var clientErrorCodes = map[codes.Code]struct{}{
@@ -132,7 +134,36 @@ func (a *attestHandler) getITAToken(w http.ResponseWriter, r *http.Request) {
 	a.attest(w, r, a.clients.ITA)
 }
 
+func parseVerifyMethod(headers http.Header) agent.VerifyMethod {
+	if headers == nil {
+		return agent.VerifyUnset
+	}
+
+	methods, ok := headers[verifyMethodHeader]
+	if !ok {
+		return agent.VerifyUnset
+	}
+
+	// Expect only one method specified.
+	if len(methods) != 1 {
+		return agent.VerifyUnset
+	}
+
+	switch methods[0] {
+	case string(agent.VerifyConfidentialSpaceMethod):
+		return agent.VerifyConfidentialSpaceMethod
+	case string(agent.VerifyAttestationMethod):
+		return agent.VerifyAttestationMethod
+	default:
+		return agent.VerifyUnset
+	}
+}
+
 func (a *attestHandler) attest(w http.ResponseWriter, r *http.Request, client verifier.Client) {
+	verifyMethod := parseVerifyMethod(r.Header)
+	logStr := fmt.Sprintf("Parsed VerifyMethod: %v", verifyMethod)
+	a.logger.Info(logStr)
+
 	switch r.Method {
 	case http.MethodGet:
 		if err := a.attestAgent.Refresh(a.ctx); err != nil {
@@ -140,7 +171,9 @@ func (a *attestHandler) attest(w http.ResponseWriter, r *http.Request, client ve
 			return
 		}
 
-		token, err := a.attestAgent.AttestWithClient(a.ctx, agent.AttestAgentOpts{}, client)
+		token, err := a.attestAgent.AttestWithClient(a.ctx, agent.AttestAgentOpts{
+			Method: verifyMethod,
+		}, client)
 		if err != nil {
 			a.handleAttestError(w, err, "failed to retrieve attestation service token")
 			return
@@ -177,6 +210,7 @@ func (a *attestHandler) attest(w http.ResponseWriter, r *http.Request, client ve
 		// Do not check that TokenTypeOptions matches TokenType in the launcher.
 		opts := agent.AttestAgentOpts{
 			TokenOptions: &tokenOptions,
+			Method:       verifyMethod,
 		}
 		tok, err := a.attestAgent.AttestWithClient(a.ctx, opts, client)
 		if err != nil {
