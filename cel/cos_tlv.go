@@ -1,3 +1,4 @@
+// Package cel contains implementation for COS TLV event
 package cel
 
 import (
@@ -6,6 +7,8 @@ import (
 	"regexp"
 	"strings"
 	"unicode/utf8"
+
+	gecel "github.com/google/go-eventlog/cel"
 )
 
 const (
@@ -54,14 +57,14 @@ type CosTlv struct {
 	EventContent []byte
 }
 
-// GetTLV returns the TLV representation of the COS TLV.
-func (c CosTlv) GetTLV() (TLV, error) {
-	data, err := TLV{uint8(c.EventType), c.EventContent}.MarshalBinary()
+// TLV returns the TLV representation of the COS TLV.
+func (c CosTlv) TLV() (gecel.TLV, error) {
+	data, err := gecel.TLV{Type: uint8(c.EventType), Value: c.EventContent}.MarshalBinary()
 	if err != nil {
-		return TLV{}, err
+		return gecel.TLV{}, err
 	}
 
-	return TLV{
+	return gecel.TLV{
 		Type:  CosEventType,
 		Value: data,
 	}, nil
@@ -70,7 +73,7 @@ func (c CosTlv) GetTLV() (TLV, error) {
 // GenerateDigest generates the digest for the given COS TLV. The whole TLV struct will
 // be marshaled to bytes and feed into the hash algo.
 func (c CosTlv) GenerateDigest(hashAlgo crypto.Hash) ([]byte, error) {
-	contentTLV, err := c.GetTLV()
+	contentTLV, err := c.TLV()
 	if err != nil {
 		return nil, err
 	}
@@ -89,11 +92,11 @@ func (c CosTlv) GenerateDigest(hashAlgo crypto.Hash) ([]byte, error) {
 
 // ParseToCosTlv constructs a CosTlv from a TLV. It will check for the correct COS event
 // type, and unmarshal the nested event.
-func (t TLV) ParseToCosTlv() (CosTlv, error) {
-	if !t.IsCosTlv() {
+func ParseToCosTlv(t gecel.TLV) (CosTlv, error) {
+	if !IsCosTlv(t) {
 		return CosTlv{}, fmt.Errorf("TLV type %v is not a COS event", t.Type)
 	}
-	nestedEvent := TLV{}
+	nestedEvent := gecel.TLV{}
 	err := nestedEvent.UnmarshalBinary(t.Value)
 	if err != nil {
 		return CosTlv{}, err
@@ -102,7 +105,7 @@ func (t TLV) ParseToCosTlv() (CosTlv, error) {
 }
 
 // IsCosTlv check whether a TLV is a COS TLV by its Type value.
-func (t TLV) IsCosTlv() bool {
+func IsCosTlv(t gecel.TLV) bool {
 	return t.Type == CosEventType
 }
 
