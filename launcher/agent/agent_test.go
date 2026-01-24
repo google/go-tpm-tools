@@ -702,7 +702,7 @@ func TestGetAttestationEvidence_TDX_Success(t *testing.T) {
 	}
 
 	nonceDigest := sha512.Sum512(nonce)
-	expectedHash := sha512.Sum512(append([]byte(verifier.RawEvidenceV1), nonceDigest[:]...))
+	expectedHash := sha512.Sum512(append([]byte(verifier.WorkloadAttestation), nonceDigest[:]...))
 	if !bytes.Equal(fakeRoot.receivedNonce, expectedHash[:]) {
 		t.Errorf("got nonce %x, want %x", fakeRoot.receivedNonce, expectedHash[:])
 	}
@@ -735,7 +735,7 @@ func TestGetAttestationEvidence_TPM_Success(t *testing.T) {
 		t.Fatalf("GetAttestationEvidence failed on TPM: %v", err)
 	}
 
-	if att.TPMAttestation == nil {
+	if att.VTPMAttestation == nil {
 		t.Error("expected Attestation to be populated for TPM")
 	}
 	if att.TDCCELAttestation != nil {
