@@ -2,19 +2,24 @@ package cel
 
 import (
 	"bytes"
+	"crypto"
+	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	gecel "github.com/google/go-eventlog/cel"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal/test"
 	pb "github.com/google/go-tpm-tools/proto/attest"
+	"github.com/google/go-tpm/legacy/tpm2"
+	"github.com/google/go-tpm/tpmutil"
 )
 
 func TestCosEventlog(t *testing.T) {
 	tpm := test.GetTPM(t)
 	defer client.CheckedClose(t, tpm)
-	cel := &CEL{}
+	cel := gecel.NewPCR()
 
 	testEvents := []struct {
 		cosNestedEventType CosType
@@ -42,26 +47,47 @@ func TestCosEventlog(t *testing.T) {
 	for _, testEvent := range testEvents {
 		cosEvent := CosTlv{testEvent.cosNestedEventType, testEvent.eventPayload}
 
-		if err := cel.AppendEventPCR(tpm, testEvent.pcr, cosEvent); err != nil {
+		pcrSels, err := client.AllocatedPCRs(tpm)
+		if err != nil {
 			t.Fatal(err)
 		}
+
+		var hashAlgos []crypto.Hash
+		for _, sel := range pcrSels {
+			hashAlgo, err := sel.Hash.Hash()
+			if err != nil {
+				t.Fatal(err)
+			}
+			hashAlgos = append(hashAlgos, hashAlgo)
+		}
+
+		cel.AppendEvent(cosEvent, hashAlgos, testEvent.pcr, func(hs crypto.Hash, pcr int, digest []byte) error {
+			tpm2Alg, err := tpm2.HashToAlgorithm(hs)
+			if err != nil {
+				return err
+			}
+			if err := tpm2.PCRExtend(tpm, tpmutil.Handle(pcr), tpm2Alg, digest, ""); err != nil {
+				return fmt.Errorf("failed to extend event to PCR%d: %v", pcr, err)
+			}
+			return nil
+		})
 	}
 
 	var buf bytes.Buffer
 	if err := cel.EncodeCEL(&buf); err != nil {
 		t.Fatal(err)
 	}
-	decodedcel, err := DecodeToCEL(&buf)
+	decodedcel, err := gecel.DecodeToCEL(&buf)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if len(decodedcel.Records) != len(testEvents) {
-		t.Errorf("should have %d records, but got %d", len(testEvents), len(decodedcel.Records))
+	if len(decodedcel.Records()) != len(testEvents) {
+		t.Errorf("should have %d records, but got %d", len(testEvents), len(decodedcel.Records()))
 	}
 
 	for i, testEvent := range testEvents {
-		extractedCos, err := decodedcel.Records[i].Content.ParseToCosTlv()
+		extractedCos, err := ParseToCosTlv(decodedcel.Records()[i].Content)
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -21,6 +21,7 @@ import (
 	"github.com/containerd/containerd/oci"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-cmp/cmp"
+	gecel "github.com/google/go-eventlog/cel"
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/launcher/agent"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
@@ -39,7 +40,7 @@ const (
 
 // Fake attestation agent.
 type fakeAttestationAgent struct {
-	measureEventFunc func(cel.Content) error
+	measureEventFunc func(gecel.Content) error
 	attestFunc       func(context.Context, agent.AttestAgentOpts) ([]byte, error)
 	sigsCache        []string
 	sigsFetcherFunc  func(context.Context) []string
@@ -49,7 +50,7 @@ type fakeAttestationAgent struct {
 	attempts int
 }
 
-func (f *fakeAttestationAgent) MeasureEvent(event cel.Content) error {
+func (f *fakeAttestationAgent) MeasureEvent(event gecel.Content) error {
 	if f.measureEventFunc != nil {
 		return f.measureEventFunc(event)
 	}
@@ -616,9 +617,9 @@ func TestMeasureCELEvents(t *testing.T) {
 			gotEvents := []cel.CosType{}
 
 			fakeAgent := &fakeAttestationAgent{
-				measureEventFunc: func(content cel.Content) error {
-					got, _ := content.GetTLV()
-					tlv := &cel.TLV{}
+				measureEventFunc: func(content gecel.Content) error {
+					got, _ := content.TLV()
+					tlv := &gecel.TLV{}
 					tlv.UnmarshalBinary(got.Value)
 					gotEvents = append(gotEvents, cel.CosType(tlv.Type))
 					return nil
