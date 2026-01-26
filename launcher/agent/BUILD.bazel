@@ -1,0 +1,49 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "agent",
+    srcs = ["agent.go"],
+    importpath = "github.com/google/go-tpm-tools/launcher/agent",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//cel",
+        "//client",
+        "//internal",
+        "//launcher/internal/logging",
+        "//launcher/internal/signaturediscovery",
+        "//launcher/spec",
+        "//proto/attest",
+        "//verifier",
+        "//verifier/models",
+        "//verifier/oci",
+        "//verifier/util",
+        "@com_github_cenkalti_backoff_v4//:go_default_library",
+        "@com_github_google_go_configfs_tsm//configfs/configfsi",
+        "@com_github_google_go_configfs_tsm//configfs/linuxtsm",
+        "@com_github_google_go_tdx_guest//client",
+        "@com_github_google_go_tdx_guest//client/linuxabi",
+    ],
+)
+
+go_test(
+    name = "agent_test",
+    srcs = ["agent_test.go"],
+    embed = [":agent"],
+    deps = [
+        "//cel",
+        "//client",
+        "//internal/test",
+        "//launcher/internal/logging",
+        "//launcher/internal/signaturediscovery",
+        "//launcher/spec",
+        "//proto/attest",
+        "//verifier",
+        "//verifier/fake",
+        "//verifier/oci",
+        "//verifier/oci/cosign",
+        "@com_github_cenkalti_backoff_v4//:go_default_library",
+        "@com_github_golang_jwt_jwt_v4//:go_default_library",
+        "@com_github_google_go_cmp//cmp",
+        "@org_golang_google_protobuf//encoding/protojson",
+    ],
+)

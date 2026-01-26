@@ -1,0 +1,14 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_test")
+
+go_test(
+    name = "internal_test",
+    srcs = ["rest_network_test.go"],
+    deps = [
+        "//proto/attest",
+        "//verifier",
+        "//verifier/util",
+        "@com_github_containerd_containerd//namespaces:go_default_library",
+        "@org_golang_x_oauth2//:go_default_library",
+        "@org_golang_x_oauth2//google:go_default_library",
+    ],
+)
