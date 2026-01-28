@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/google/go-tpm-tools/client"
@@ -788,6 +789,89 @@ func TestValidateAKGCEAndGetGCEInstanceInfo(t *testing.T) {
 			} else {
 				t.Log(gceInfo)
 				fmt.Print(gceInfo)
+			}
+		})
+	}
+}
+
+func TestVerifyAttestationHashAlgo(t *testing.T) {
+	tests := []struct {
+		name       string
+		allowSHA1  bool
+		hashAlgo   tpm2.Algorithm
+		wantErrStr string
+	}{
+		{
+			"SHA1, Allowed",
+			true,
+			tpm2.AlgSHA1,
+			"",
+		},
+		{
+			"SHA1, Not Allowed",
+			false,
+			tpm2.AlgSHA1,
+			errSHA1NotAllowed.Error(),
+		},
+		{
+			"SHA256",
+			false,
+			tpm2.AlgSHA256,
+			"",
+		},
+		{
+			"SHA384",
+			false,
+			tpm2.AlgSHA384,
+			"",
+		},
+		{
+			"SHA256, SHA1 Allowed",
+			true,
+			tpm2.AlgSHA256,
+			"",
+		},
+		{
+			"SHA384, SHA1 Allowed",
+			true,
+			tpm2.AlgSHA384,
+			"",
+		},
+		{
+			"SHA512",
+			false,
+			tpm2.AlgSHA512,
+			errNoSupportedQuote.Error(),
+		},
+		{
+			"AES",
+			false,
+			tpm2.AlgAES,
+			"hash algorithm AES is not supported",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			attestBytes := test.COS85NoNonce
+			att := &attestpb.Attestation{}
+			if err := proto.Unmarshal(attestBytes, att); err != nil {
+				t.Fatalf("failed to unmarshal attestation: %v", err)
+			}
+
+			_, err := VerifyAttestation(att, VerifyOpts{
+				AllowSHA1:         tc.allowSHA1,
+				HashAlgo:          tc.hashAlgo,
+				TrustedRootCerts:  GceEKRoots,
+				IntermediateCerts: GceEKIntermediates,
+			})
+			if tc.wantErrStr == "" {
+				if err != nil {
+					t.Errorf("VerifyAttestation(%v) unexpected error: %v", tc.name, err)
+				}
+			} else {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErrStr) {
+					t.Errorf("VerifyAttestation(%v) err = %v, want substring = %v", tc.name, err, tc.wantErrStr)
+				}
 			}
 		})
 	}

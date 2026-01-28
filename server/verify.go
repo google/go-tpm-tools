@@ -7,6 +7,7 @@ import (
 	"encoding/asn1"
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/google/go-tpm-tools/internal"
 	pb "github.com/google/go-tpm-tools/proto/attest"
@@ -15,7 +16,12 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// We conditinally support SHA-1 for PCR hashes, but at the lowest priority.
+var (
+	errSHA1NotAllowed   = fmt.Errorf("SHA-1 is not allowed for verification (set VerifyOpts.AllowSHA1 to true to allow)")
+	errNoSupportedQuote = fmt.Errorf("attestation does not contain a supported quote")
+)
+
+// We conditionally support SHA-1 for PCR hashes, but at the lowest priority.
 var pcrHashAlgs = append(internal.SignatureHashAlgs, tpm2.AlgSHA1)
 
 var oidExtensionSubjectAltName = []int{2, 5, 29, 17}
@@ -70,6 +76,13 @@ type VerifyOpts struct {
 	// to length 1 (0 or 1) during eventlog parsing.
 	// This can be used when the SecureBoot variable is not initialized.
 	AllowEmptySBVar bool
+	// The TPM hash algorithm to use to verify attestations.
+	// SHA512, SHA384, SHA256, and SHA1 are supported. To use SHA1, also set
+	// AllowSHA1.
+	// If HashAlgo is the zero value (tpm2.AlgUnknown), VerifyAttestation will
+	// try all supported hashes in the order [SHA512 SHA384 SHA256 SHA1] until
+	// one quote and eventlog is successfully verified.
+	HashAlgo tpm2.Algorithm
 }
 
 // Bootloader refers to the second-stage bootloader that loads and transfers
@@ -123,9 +136,19 @@ func VerifyAttestation(attestation *pb.Attestation, opts VerifyOpts) (*pb.Machin
 		return nil, fmt.Errorf("failed to parse and validate AK: %w", err)
 	}
 
+	var algos []tpm2.Algorithm
+	if opts.HashAlgo != tpm2.AlgUnknown {
+		if err := supportedAlgo(opts.HashAlgo); err != nil {
+			return nil, err
+		}
+		algos = append(algos, opts.HashAlgo)
+	} else {
+		algos = pcrHashAlgs
+	}
+
 	// Attempt to replay the log against our PCRs in order of hash preference
 	var lastErr error
-	for _, quote := range supportedQuotes(attestation.GetQuotes()) {
+	for _, quote := range supportedQuotes(attestation.GetQuotes(), algos) {
 		// Verify the Quote
 		if err := internal.VerifyQuote(quote, akPubKey, opts.Nonce); err != nil {
 			lastErr = fmt.Errorf("failed to verify quote: %w", err)
@@ -145,7 +168,7 @@ func VerifyAttestation(attestation *pb.Attestation, opts VerifyOpts) (*pb.Machin
 		// error only if allowing SHA-1 support would actually allow the log
 		// to be verified. This makes debugging failed verifications easier.
 		if !opts.AllowSHA1 && tpm2.Algorithm(pcrs.GetHash()) == tpm2.AlgSHA1 {
-			lastErr = fmt.Errorf("SHA-1 is not allowed for verification (set VerifyOpts.AllowSHA1 to true to allow)")
+			lastErr = errSHA1NotAllowed
 			continue
 		}
 
@@ -157,7 +180,7 @@ func VerifyAttestation(attestation *pb.Attestation, opts VerifyOpts) (*pb.Machin
 	if lastErr != nil {
 		return nil, lastErr
 	}
-	return nil, fmt.Errorf("attestation does not contain a supported quote")
+	return nil, errNoSupportedQuote
 }
 
 // validateAK validates AK cert in the attestation, and returns AK cert (if exists) and public key.
@@ -313,10 +336,17 @@ func VerifyAKCert(akCert *x509.Certificate, trustedRootCerts []*x509.Certificate
 	return nil
 }
 
-// Retrieve the supported quotes in order of hash preference.
-func supportedQuotes(quotes []*tpmpb.Quote) []*tpmpb.Quote {
+func supportedAlgo(algo tpm2.Algorithm) error {
+	if slices.Contains(pcrHashAlgs, algo) {
+		return nil
+	}
+	return fmt.Errorf("hash algorithm %s is not supported, use one of %s", algo, pcrHashAlgs)
+}
+
+// Retrieve the supported quotes in order of preference based on supportedAlgos.
+func supportedQuotes(quotes []*tpmpb.Quote, supportedAlgos []tpm2.Algorithm) []*tpmpb.Quote {
 	out := make([]*tpmpb.Quote, 0, len(quotes))
-	for _, alg := range pcrHashAlgs {
+	for _, alg := range supportedAlgos {
 		for _, quote := range quotes {
 			if tpm2.Algorithm(quote.GetPcrs().GetHash()) == alg {
 				out = append(out, quote)
