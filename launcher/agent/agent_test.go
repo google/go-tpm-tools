@@ -1,9 +1,11 @@
 package agent
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha512"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -639,6 +641,106 @@ func measureFakeEvents(attestAgent AttestationAgent) error {
 		return err
 	}
 	return nil
+}
+
+type fakeTdxAttestRoot struct {
+	cel           cel.CEL
+	receivedNonce []byte
+}
+
+func (f *fakeTdxAttestRoot) Extend(c cel.Content) error {
+	return f.cel.AppendEventRTMR(nil, cel.CosRTMR, c)
+}
+
+func (f *fakeTdxAttestRoot) GetCEL() *cel.CEL {
+	return &f.cel
+}
+
+func (f *fakeTdxAttestRoot) Attest(nonce []byte) (any, error) {
+	f.receivedNonce = nonce
+	return &verifier.TDCCELAttestation{
+		TdQuote: []byte("fake-tdx-quote"),
+	}, nil
+}
+
+func TestGetAttestationEvidence_TDX_Success(t *testing.T) {
+	ctx := context.Background()
+	tpm := test.GetTPM(t)
+	defer client.CheckedClose(t, tpm)
+
+	ak, err := client.AttestationKeyECC(tpm)
+	if err != nil {
+		t.Fatalf("failed to create AK: %v", err)
+	}
+	defer ak.Close()
+	fakeCert := test.GetTestCertForKey(t, ak.PublicKey())
+	if err := ak.SetCert(fakeCert); err != nil {
+		t.Fatal(err)
+	}
+
+	fakeRoot := &fakeTdxAttestRoot{}
+	attestAgent := &agent{
+		avRot:     fakeRoot,
+		fetchedAK: ak,
+	}
+
+	nonce := []byte("test-nonce")
+	att, err := attestAgent.GetAttestationEvidence(ctx, nonce)
+	if err != nil {
+		t.Fatalf("GetAttestationEvidence failed: %v", err)
+	}
+
+	if att.TDCCELAttestation == nil {
+		t.Fatal("expected TDCCELAttestation to be populated for TDX")
+	}
+
+	if string(att.TDCCELAttestation.TdQuote) != "fake-tdx-quote" {
+		t.Errorf("got quote %s, want fake-tdx-quote", string(att.TDCCELAttestation.TdQuote))
+	}
+	if len(att.TDCCELAttestation.AkCert) == 0 {
+		t.Error("AkCert should be populated")
+	}
+
+	nonceDigest := sha512.Sum512(nonce)
+	expectedHash := sha512.Sum512(append([]byte(verifier.WorkloadAttestation), nonceDigest[:]...))
+	if !bytes.Equal(fakeRoot.receivedNonce, expectedHash[:]) {
+		t.Errorf("got nonce %x, want %x", fakeRoot.receivedNonce, expectedHash[:])
+	}
+}
+
+func TestGetAttestationEvidence_TPM_Success(t *testing.T) {
+	ctx := context.Background()
+	tpm := test.GetTPM(t)
+	defer client.CheckedClose(t, tpm)
+
+	fakeSigner, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("failed to generate signing key %v", err)
+	}
+	verifierClient := fake.NewClient(fakeSigner)
+
+	agent, err := CreateAttestationAgent(tpm, client.AttestationKeyECC, verifierClient, placeholderPrincipalFetcher, signaturediscovery.NewFakeClient(), spec.LaunchSpec{}, logging.SimpleLogger())
+	if err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+	defer agent.Close()
+
+	if err := measureFakeEvents(agent); err != nil {
+		t.Errorf("failed to measure events: %v", err)
+	}
+
+	nonce := []byte("test-nonce")
+	att, err := agent.GetAttestationEvidence(ctx, nonce)
+	if err != nil {
+		t.Fatalf("GetAttestationEvidence failed on TPM: %v", err)
+	}
+
+	if att.VTPMAttestation == nil {
+		t.Error("expected Attestation to be populated for TPM")
+	}
+	if att.TDCCELAttestation != nil {
+		t.Error("expected TDCCELAttestation to be nil for TPM")
+	}
 }
 
 type testClient struct {
