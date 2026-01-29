@@ -3,7 +3,6 @@ package server
 import (
 	"bytes"
 	"crypto"
-	"crypto/rand"
 	"encoding/hex"
 	"fmt"
 	"strings"
@@ -12,8 +11,10 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-configfs-tsm/configfs/fakertmr"
 	configfstsmrtmr "github.com/google/go-configfs-tsm/rtmr"
+	gecel "github.com/google/go-eventlog/cel"
 	gepb "github.com/google/go-eventlog/proto/state"
 	"github.com/google/go-eventlog/register"
+	"github.com/google/go-tdx-guest/rtmr"
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal/test"
@@ -826,7 +827,7 @@ func getRTMRBank(t *testing.T, fakeRTMR *fakertmr.RtmrSubsystem) register.RTMRBa
 }
 
 func TestParsingRTMREventlog(t *testing.T) {
-	coscel := &cel.CEL{}
+	coscel := gecel.NewConfComputeMR()
 	emptyCosState := attestpb.ContainerState{}
 	emptyHealthMonitoringState := attestpb.HealthMonitoringState{}
 	emptyGpuDeviceState := attestpb.GpuDeviceState{}
@@ -863,19 +864,19 @@ func TestParsingRTMREventlog(t *testing.T) {
 		register           int
 		eventPayload       []byte
 	}{
-		{cel.ImageRefType, cel.CosRTMR, []byte("docker.io/bazel/experimental/test:latest")},
-		{cel.ImageDigestType, cel.CosRTMR, []byte("sha256:781d8dfdd92118436bd914442c8339e653b83f6bf3c1a7a98efcfb7c4fed7483")},
-		{cel.RestartPolicyType, cel.CosRTMR, []byte(attestpb.RestartPolicy_Always.String())},
-		{cel.ImageIDType, cel.CosRTMR, []byte("sha256:5DF4A1AC347DCF8CF5E9D0ABC04B04DB847D1B88D3B1CC1006F0ACB68E5A1F4B")},
-		{cel.EnvVarType, cel.CosRTMR, []byte("foo=bar")},
-		{cel.EnvVarType, cel.CosRTMR, []byte("bar=baz")},
-		{cel.EnvVarType, cel.CosRTMR, []byte("baz=foo=bar")},
-		{cel.EnvVarType, cel.CosRTMR, []byte("empty=")},
-		{cel.ArgType, cel.CosRTMR, []byte("--x")},
-		{cel.ArgType, cel.CosRTMR, []byte("--y")},
-		{cel.ArgType, cel.CosRTMR, []byte("")},
-		{cel.MemoryMonitorType, cel.CosRTMR, []byte{1}},
-		{cel.GpuCCModeType, cel.CosRTMR, []byte(attestpb.GPUDeviceCCMode_ON.String())},
+		{cel.ImageRefType, cel.CosCCELMRIndex, []byte("docker.io/bazel/experimental/test:latest")},
+		{cel.ImageDigestType, cel.CosCCELMRIndex, []byte("sha256:781d8dfdd92118436bd914442c8339e653b83f6bf3c1a7a98efcfb7c4fed7483")},
+		{cel.RestartPolicyType, cel.CosCCELMRIndex, []byte(attestpb.RestartPolicy_Always.String())},
+		{cel.ImageIDType, cel.CosCCELMRIndex, []byte("sha256:5DF4A1AC347DCF8CF5E9D0ABC04B04DB847D1B88D3B1CC1006F0ACB68E5A1F4B")},
+		{cel.EnvVarType, cel.CosCCELMRIndex, []byte("foo=bar")},
+		{cel.EnvVarType, cel.CosCCELMRIndex, []byte("bar=baz")},
+		{cel.EnvVarType, cel.CosCCELMRIndex, []byte("baz=foo=bar")},
+		{cel.EnvVarType, cel.CosCCELMRIndex, []byte("empty=")},
+		{cel.ArgType, cel.CosCCELMRIndex, []byte("--x")},
+		{cel.ArgType, cel.CosCCELMRIndex, []byte("--y")},
+		{cel.ArgType, cel.CosCCELMRIndex, []byte("")},
+		{cel.MemoryMonitorType, cel.CosCCELMRIndex, []byte{1}},
+		{cel.GpuCCModeType, cel.CosCCELMRIndex, []byte(attestpb.GPUDeviceCCMode_ON.String())},
 	}
 
 	expectedEnvVars := make(map[string]string)
@@ -902,10 +903,11 @@ func TestParsingRTMREventlog(t *testing.T) {
 
 	for _, testEvent := range testCELEvents {
 		cosEvent := cel.CosTlv{EventType: testEvent.cosNestedEventType, EventContent: testEvent.eventPayload}
-		if err := coscel.AppendEventRTMR(fakeRTMR, testEvent.register, cosEvent); err != nil {
-			t.Fatal(err)
-		}
+		coscel.AppendEvent(cosEvent, []crypto.Hash{crypto.SHA384}, testEvent.register, func(_ crypto.Hash, mrIndex int, digest []byte) error {
+			return rtmr.ExtendDigestClient(fakeRTMR, mrIndex-1, digest) // MR_INDEX - 1 == RTMR_INDEX
+		})
 	}
+
 	buf = bytes.Buffer{}
 	if err := coscel.EncodeCEL(&buf); err != nil {
 		t.Fatal(err)
@@ -945,7 +947,7 @@ func TestParsingCELEventLog(t *testing.T) {
 	tpm := test.GetTPM(t)
 	defer client.CheckedClose(t, tpm)
 
-	coscel := &cel.CEL{}
+	coscel := gecel.NewPCR()
 	emptyCosState := attestpb.ContainerState{}
 	emptyHealthMonitoringState := attestpb.HealthMonitoringState{}
 	emptyGpuDeviceState := attestpb.GpuDeviceState{}
@@ -1036,9 +1038,16 @@ func TestParsingCELEventLog(t *testing.T) {
 	for _, testEvent := range testCELEvents {
 		cosEvent := cel.CosTlv{EventType: testEvent.cosNestedEventType, EventContent: testEvent.eventPayload}
 
-		if err := coscel.AppendEventPCR(tpm, testEvent.pcr, cosEvent); err != nil {
-			t.Fatal(err)
-		}
+		coscel.AppendEvent(cosEvent, implementedHashes, testEvent.pcr, func(hs crypto.Hash, pcr int, digest []byte) error {
+			tpm2Alg, err := tpm2.HashToAlgorithm(hs)
+			if err != nil {
+				return err
+			}
+			if err := tpm2.PCRExtend(tpm, tpmutil.Handle(pcr), tpm2Alg, digest, ""); err != nil {
+				return fmt.Errorf("failed to extend event to PCR%d: %v", pcr, err)
+			}
+			return nil
+		})
 	}
 	buf = bytes.Buffer{}
 	if err := coscel.EncodeCEL(&buf); err != nil {
@@ -1069,24 +1078,24 @@ func TestParsingCELEventLog(t *testing.T) {
 	// Thirdly, append a random non-COS event, encode and try to parse it.
 	// Because there is no COS TLV event, attestation should fail as we do not
 	// understand the content type.
-	event, err := generateNonCosCelEvent(implementedHashes)
-	if err != nil {
-		t.Fatal(err)
+	event := generateNonCosCelEvent()
+
+	if err := coscel.AppendEvent(event, implementedHashes, cel.CosEventPCR, func(hs crypto.Hash, pcr int, digest []byte) error {
+		tpm2Alg, err := tpm2.HashToAlgorithm(hs)
+		if err != nil {
+			return err
+		}
+
+		if err := tpm2.PCRExtend(tpm, tpmutil.Handle(pcr), tpm2Alg, digest, ""); err != nil {
+			return fmt.Errorf("failed to extend event to PCR%d: %v", pcr, err)
+		}
+		return nil
+	}); err != nil {
+		t.Error(err)
 	}
-	coscel.Records = append(coscel.Records, event)
 	buf = bytes.Buffer{}
 	if err := coscel.EncodeCEL(&buf); err != nil {
 		t.Fatal(err)
-	}
-	// extend digests to the PCR
-	for _, hash := range implementedHashes {
-		algo, err := tpm2.HashToAlgorithm(hash)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := tpm2.PCRExtend(tpm, tpmutil.Handle(cel.CosEventPCR), algo, event.Digests[hash], ""); err != nil {
-			t.Fatal(err)
-		}
 	}
 	banks, err = client.ReadAllPCRs(tpm)
 	if err != nil {
@@ -1335,27 +1344,23 @@ func TestConvertToMachineState(t *testing.T) {
 	}
 }
 
-func generateNonCosCelEvent(hashAlgoList []crypto.Hash) (cel.Record, error) {
-	randRecord := cel.Record{}
-	randRecord.RecNum = 0
-	randRecord.Index = cel.CosEventPCR
-	contentValue := make([]byte, 10)
-	rand.Read(contentValue)
-	randRecord.Content = cel.TLV{Type: 250, Value: contentValue}
-	contentBytes, err := randRecord.Content.MarshalBinary()
-	if err != nil {
-		return cel.Record{}, err
-	}
+func generateNonCosCelEvent() gecel.Content {
+	r := randomTLV{gecel.TLV{Type: 123, Value: []byte("12345")}}
+	return r
+}
 
-	digestMap := make(map[crypto.Hash][]byte)
-	for _, hash := range hashAlgoList {
-		h := hash.New()
-		h.Write(contentBytes)
-		digestMap[hash] = h.Sum(nil)
-	}
-	randRecord.Digests = digestMap
+type randomTLV struct {
+	tlv gecel.TLV
+}
 
-	return randRecord, nil
+func (r randomTLV) GenerateDigest(ch crypto.Hash) ([]byte, error) {
+	h := ch.New()
+	h.Write(r.tlv.Value)
+	return h.Sum(nil), nil
+}
+
+func (r randomTLV) TLV() (gecel.TLV, error) {
+	return r.tlv, nil
 }
 
 func TestParseLinuxKernelState(t *testing.T) {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	gecel "github.com/google/go-eventlog/cel"
 	"github.com/google/go-eventlog/extract"
 	gepb "github.com/google/go-eventlog/proto/state"
 	"github.com/google/go-eventlog/register"
@@ -312,17 +313,17 @@ func convertFromPbDatabase(pbdb *pb.Database) *gepb.Database {
 // ParseCosCELPCR takes an encoded COS CEL and PCR bank, replays the CEL against the PCRs,
 // and returns the AttestedCosState
 func ParseCosCELPCR(cosEventLog []byte, p register.PCRBank) (*pb.AttestedCosState, error) {
-	return getCosStateFromCEL(cosEventLog, p, cel.PCRTypeValue)
+	return getCosStateFromCEL(cosEventLog, p, gecel.PCRType)
 }
 
 // ParseCosCELRTMR takes in a raw COS CEL and a RTMR bank, validates and returns it's
 // COS states as parts of the MachineState.
 func ParseCosCELRTMR(cosEventLog []byte, r register.RTMRBank) (*pb.AttestedCosState, error) {
-	return getCosStateFromCEL(cosEventLog, r, cel.CCMRTypeValue)
+	return getCosStateFromCEL(cosEventLog, r, gecel.CCMRType)
 }
 
-func getCosStateFromCEL(rawCanonicalEventLog []byte, register register.MRBank, trustingRegisterType uint8) (*pb.AttestedCosState, error) {
-	decodedCEL, err := cel.DecodeToCEL(bytes.NewBuffer(rawCanonicalEventLog))
+func getCosStateFromCEL(rawCanonicalEventLog []byte, register register.MRBank, trustingRegisterType gecel.MRType) (*pb.AttestedCosState, error) {
+	decodedCEL, err := gecel.DecodeToCEL(bytes.NewBuffer(rawCanonicalEventLog))
 	if err != nil {
 		return nil, err
 	}
@@ -341,7 +342,7 @@ func getCosStateFromCEL(rawCanonicalEventLog []byte, register register.MRBank, t
 
 // getVerifiedCosState takes in CEL and a register type (can be PCR or CCELMR), and returns the state
 // in the CEL. It will only include events using the correct registerType.
-func getVerifiedCosState(coscel cel.CEL, registerType uint8) (*pb.AttestedCosState, error) {
+func getVerifiedCosState(coscel gecel.CEL, registerType gecel.MRType) (*pb.AttestedCosState, error) {
 	cosState := &pb.AttestedCosState{}
 	cosState.Container = &pb.ContainerState{}
 	cosState.HealthMonitoring = &pb.HealthMonitoringState{}
@@ -351,17 +352,17 @@ func getVerifiedCosState(coscel cel.CEL, registerType uint8) (*pb.AttestedCosSta
 	cosState.Container.OverriddenEnvVars = make(map[string]string)
 
 	seenSeparator := false
-	for _, record := range coscel.Records {
+	for _, record := range coscel.Records() {
 		if record.IndexType != registerType {
 			return nil, fmt.Errorf("expect registerType: %d, but get %d in a CEL record", registerType, record.IndexType)
 		}
 
 		switch record.IndexType {
-		case cel.PCRTypeValue:
+		case gecel.PCRType:
 			if record.Index != cel.CosEventPCR {
 				return nil, fmt.Errorf("found unexpected PCR %d in COS CEL log", record.Index)
 			}
-		case cel.CCMRTypeValue:
+		case gecel.CCMRType:
 			if record.Index != cel.CosCCELMRIndex {
 				return nil, fmt.Errorf("found unexpected CCELMR %d in COS CEL log", record.Index)
 			}
@@ -374,13 +375,13 @@ func getVerifiedCosState(coscel cel.CEL, registerType uint8) (*pb.AttestedCosSta
 		// we either verify the digest of event event in this PCR, or we fail
 		// to replay the event log.
 		// TODO: See if we can fix this to have the Content Type be verified.
-		cosTlv, err := record.Content.ParseToCosTlv()
+		cosTlv, err := cel.ParseToCosTlv(record.Content)
 		if err != nil {
 			return nil, err
 		}
 
 		// verify digests for the cos cel content
-		if err := cel.VerifyDigests(cosTlv, record.Digests); err != nil {
+		if err := gecel.VerifyDigests(cosTlv, record.Digests); err != nil {
 			return nil, err
 		}
 

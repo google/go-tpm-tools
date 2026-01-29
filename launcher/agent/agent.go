@@ -8,6 +8,7 @@ package agent
 import (
 	"bytes"
 	"context"
+	"crypto"
 	"encoding/base64"
 	"fmt"
 	"io"
@@ -17,11 +18,14 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
-	"github.com/google/go-configfs-tsm/configfs/configfsi"
+	"github.com/google/go-tpm/legacy/tpm2"
+	"github.com/google/go-tpm/tpmutil"
 
-	"github.com/google/go-configfs-tsm/configfs/linuxtsm"
 	tg "github.com/google/go-tdx-guest/client"
 	tlabi "github.com/google/go-tdx-guest/client/linuxabi"
+	"github.com/google/go-tdx-guest/rtmr"
+
+	gecel "github.com/google/go-eventlog/cel"
 
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
@@ -46,7 +50,7 @@ type principalIDTokenFetcher func(audience string) ([][]byte, error)
 // to Verify an attestation message. It is an interface instead of a concrete
 // struct to make testing easier.
 type AttestationAgent interface {
-	MeasureEvent(cel.Content) error
+	MeasureEvent(gecel.Content) error
 	Attest(context.Context, AttestAgentOpts) ([]byte, error)
 	AttestWithClient(ctx context.Context, opts AttestAgentOpts, client verifier.Client) ([]byte, error)
 	Refresh(context.Context) error
@@ -55,10 +59,10 @@ type AttestationAgent interface {
 
 type attestRoot interface {
 	// Extend measures the cel content into a measurement register and appends to the CEL.
-	Extend(cel.Content) error
+	Extend(gecel.Content) error
 	// GetCEL fetches the CEL with events corresponding to the sequence of Extended measurements
 	// to this attestation root
-	GetCEL() *cel.CEL
+	GetCEL() gecel.CEL
 	// Attest fetches a technology-specific quote from the root of trust.
 	Attest(nonce []byte) (any, error)
 }
@@ -107,9 +111,28 @@ func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher util.TpmKeyFetcher
 
 	// Add TPM
 	logger.Info("Adding TPM PCRs for measurement.")
+
+	pcrSels, err := client.AllocatedPCRs(tpm)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get PCR selections: %v", err)
+	}
+
+	var hashAlgos []crypto.Hash
+	for _, sel := range pcrSels {
+		hashAlgo, err := sel.Hash.Hash()
+		if err != nil {
+			if err != nil {
+				return nil, fmt.Errorf("failed to get TPM hash algorithm: %v", err)
+			}
+		}
+		hashAlgos = append(hashAlgos, hashAlgo)
+	}
+
 	var tpmAR = &tpmAttestRoot{
 		fetchedAK: ak,
 		tpm:       tpm,
+		hashAlgos: hashAlgos,
+		cosCel:    gecel.NewPCR(),
 	}
 	attestAgent.measuredRots = append(attestAgent.measuredRots, tpmAR)
 
@@ -121,14 +144,9 @@ func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher util.TpmKeyFetcher
 	// Use qp.IsSupported to check the TDX RTMR interface is enabled
 	if qp.IsSupported() == nil {
 		logger.Info("Adding TDX RTMRs for measurement.")
-		// try to create tsm client for tdx rtmr
-		tsm, err := linuxtsm.MakeClient()
-		if err != nil {
-			return nil, fmt.Errorf("failed to create TSM for TDX: %v", err)
-		}
 		var tdxAR = &tdxAttestRoot{
-			qp:        qp,
-			tsmClient: tsm,
+			qp:     qp,
+			cosCel: gecel.NewConfComputeMR(),
 		}
 		attestAgent.measuredRots = append(attestAgent.measuredRots, tdxAR)
 
@@ -151,7 +169,7 @@ func (a *agent) Close() error {
 // MeasureEvent takes in a cel.Content and appends it to the CEL eventlog
 // under the attestation agent.
 // MeasureEvent measures to all Attest Roots.
-func (a *agent) MeasureEvent(event cel.Content) error {
+func (a *agent) MeasureEvent(event gecel.Content) error {
 	for _, attestRoot := range a.measuredRots {
 		if err := attestRoot.Extend(event); err != nil {
 			return err
@@ -292,15 +310,25 @@ type tpmAttestRoot struct {
 	tpmMu     sync.Mutex
 	fetchedAK *client.Key
 	tpm       io.ReadWriteCloser
-	cosCel    cel.CEL
+	cosCel    gecel.CEL
+	hashAlgos []crypto.Hash
 }
 
-func (t *tpmAttestRoot) GetCEL() *cel.CEL {
-	return &t.cosCel
+func (t *tpmAttestRoot) GetCEL() gecel.CEL {
+	return t.cosCel
 }
 
-func (t *tpmAttestRoot) Extend(c cel.Content) error {
-	return t.cosCel.AppendEventPCR(t.tpm, cel.CosEventPCR, c)
+func (t *tpmAttestRoot) Extend(c gecel.Content) error {
+	return t.cosCel.AppendEvent(c, t.hashAlgos, cel.CosEventPCR, func(hs crypto.Hash, pcr int, digest []byte) error {
+		tpm2Alg, err := tpm2.HashToAlgorithm(hs)
+		if err != nil {
+			return err
+		}
+		if err := tpm2.PCRExtend(t.tpm, tpmutil.Handle(pcr), tpm2Alg, digest, ""); err != nil {
+			return fmt.Errorf("failed to extend event to PCR%d: %v", pcr, err)
+		}
+		return nil
+	})
 }
 
 func (t *tpmAttestRoot) Attest(nonce []byte) (any, error) {
@@ -314,18 +342,19 @@ func (t *tpmAttestRoot) Attest(nonce []byte) (any, error) {
 }
 
 type tdxAttestRoot struct {
-	tdxMu     sync.Mutex
-	qp        *tg.LinuxConfigFsQuoteProvider
-	tsmClient configfsi.Client
-	cosCel    cel.CEL
+	tdxMu  sync.Mutex
+	qp     *tg.LinuxConfigFsQuoteProvider
+	cosCel gecel.CEL
 }
 
-func (t *tdxAttestRoot) GetCEL() *cel.CEL {
-	return &t.cosCel
+func (t *tdxAttestRoot) GetCEL() gecel.CEL {
+	return t.cosCel
 }
 
-func (t *tdxAttestRoot) Extend(c cel.Content) error {
-	return t.cosCel.AppendEventRTMRSysfs(cel.CosRTMR, c)
+func (t *tdxAttestRoot) Extend(c gecel.Content) error {
+	return t.cosCel.AppendEvent(c, []crypto.Hash{crypto.SHA384}, cel.CosRTMR+1, func(ch crypto.Hash, mrIndex int, digest []byte) error {
+		return rtmr.ExtendEventLogSysfs(mrIndex-1, ch, digest) // MR_INDEX - 1 == RTMR_INDEX
+	})
 }
 
 func (t *tdxAttestRoot) Attest(nonce []byte) (any, error) {

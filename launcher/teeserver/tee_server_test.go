@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/google/go-tpm-tools/cel"
+	gecel "github.com/google/go-eventlog/cel"
 	"github.com/google/go-tpm-tools/launcher/agent"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/verifier"
@@ -36,7 +36,7 @@ func (f *fakeVerifierClient) VerifyConfidentialSpace(_ context.Context, _ verifi
 }
 
 type fakeAttestationAgent struct {
-	measureEventFunc     func(cel.Content) error
+	measureEventFunc     func(gecel.Content) error
 	attestFunc           func(context.Context, agent.AttestAgentOpts) ([]byte, error)
 	attestWithClientFunc func(context.Context, agent.AttestAgentOpts, verifier.Client) ([]byte, error)
 }
@@ -49,7 +49,7 @@ func (f fakeAttestationAgent) AttestWithClient(c context.Context, a agent.Attest
 	return f.attestWithClientFunc(c, a, v)
 }
 
-func (f fakeAttestationAgent) MeasureEvent(c cel.Content) error {
+func (f fakeAttestationAgent) MeasureEvent(c gecel.Content) error {
 	return f.measureEventFunc(c)
 }
 
