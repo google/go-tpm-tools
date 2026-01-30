@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"crypto"
+	"crypto/sha256"
 	"crypto/sha512"
 	"encoding/base64"
 	"fmt"
@@ -54,7 +55,7 @@ type AttestationAgent interface {
 	MeasureEvent(gecel.Content) error
 	Attest(context.Context, AttestAgentOpts) ([]byte, error)
 	AttestWithClient(ctx context.Context, opts AttestAgentOpts, client verifier.Client) ([]byte, error)
-	GetAttestationEvidence(ctx context.Context, nonce []byte) (*verifier.AttestationEvidence, error)
+	GetAttestationEvidence(ctx context.Context, challenge []byte) (*verifier.AttestationEvidence, error)
 	Refresh(context.Context) error
 	Close() error
 }
@@ -67,6 +68,8 @@ type attestRoot interface {
 	GetCEL() gecel.CEL
 	// Attest fetches a technology-specific quote from the root of trust.
 	Attest(nonce []byte) (any, error)
+	// HashChallenge hashes the challenge using the algorithm preferred by the attestation root.
+	HashChallenge(challenge []byte) []byte
 }
 
 // AttestAgentOpts contains user generated options when calling the
@@ -243,9 +246,15 @@ func (a *agent) AttestWithClient(ctx context.Context, opts AttestAgentOpts, clie
 	case *verifier.TDCCELAttestation:
 		a.logger.Info("attestation through TDX quote")
 
-		if err := a.populateTdxAttestation(v, cosCel.Bytes()); err != nil {
-			return nil, err
+		certChain, err := internal.GetCertificateChain(a.fetchedAK.Cert(), http.DefaultClient)
+		if err != nil {
+			return nil, fmt.Errorf("failed when fetching certificate chain: %w", err)
 		}
+
+		v.CanonicalEventLog = cosCel.Bytes()
+		v.IntermediateCerts = certChain
+		v.AkCert = a.fetchedAK.CertDERBytes()
+
 		req.TDCCELAttestation = v
 	default:
 		return nil, fmt.Errorf("received an unsupported attestation type! %v", v)
@@ -276,16 +285,19 @@ func (a *agent) AttestWithClient(ctx context.Context, opts AttestAgentOpts, clie
 }
 
 // GetAttestationEvidence returns the attestation evidence (TPM or TDX).
-func (a *agent) GetAttestationEvidence(_ context.Context, nonce []byte) (*verifier.AttestationEvidence, error) {
+func (a *agent) GetAttestationEvidence(_ context.Context, challenge []byte) (*verifier.AttestationEvidence, error) {
+	if !a.launchSpec.Experiments.EnableAttestationEvidence {
+		return nil, fmt.Errorf("attestation evidence experiment is disabled")
+	}
+
 	if a.avRot == nil {
 		return nil, fmt.Errorf("attestation agent does not have an initialized attestation root")
 	}
 
-	// Use nested SHA512 hashing to separate the prefix and the nonce
+	// Use nested hashing to separate the prefix and the nonce
 	// and normalize input length.
-	nonceDigest := sha512.Sum512(nonce)
-	finalNonce := sha512.Sum512(append([]byte(verifier.WorkloadAttestation), nonceDigest[:]...))
-	attResult, err := a.avRot.Attest(finalNonce[:])
+	finalNonce := a.avRot.HashChallenge(challenge)
+	attResult, err := a.avRot.Attest(finalNonce)
 	if err != nil {
 		return nil, fmt.Errorf("failed to attest: %v", err)
 	}
@@ -300,25 +312,11 @@ func (a *agent) GetAttestationEvidence(_ context.Context, nonce []byte) (*verifi
 		v.CanonicalEventLog = cosCel.Bytes()
 		return &verifier.AttestationEvidence{VTPMAttestation: v}, nil
 	case *verifier.TDCCELAttestation:
-		if err := a.populateTdxAttestation(v, cosCel.Bytes()); err != nil {
-			return nil, err
-		}
+		v.CanonicalEventLog = cosCel.Bytes()
 		return &verifier.AttestationEvidence{TDCCELAttestation: v}, nil
 	default:
 		return nil, fmt.Errorf("unknown attestation type: %T", v)
 	}
-}
-
-func (a *agent) populateTdxAttestation(v *verifier.TDCCELAttestation, celBytes []byte) error {
-	certChain, err := internal.GetCertificateChain(a.fetchedAK.Cert(), http.DefaultClient)
-	if err != nil {
-		return fmt.Errorf("failed when fetching certificate chain: %w", err)
-	}
-
-	v.CanonicalEventLog = celBytes
-	v.IntermediateCerts = certChain
-	v.AkCert = a.fetchedAK.CertDERBytes()
-	return nil
 }
 
 func (a *agent) verify(ctx context.Context, req verifier.VerifyAttestationRequest, client verifier.Client) (*verifier.VerifyAttestationResponse, error) {
@@ -382,6 +380,12 @@ func (t *tpmAttestRoot) Attest(nonce []byte) (any, error) {
 	})
 }
 
+func (t *tpmAttestRoot) HashChallenge(challenge []byte) []byte {
+	nonceDigest := sha256.Sum256(challenge)
+	finalNonce := sha256.Sum256(append([]byte(verifier.WorkloadAttestationPrefix), nonceDigest[:]...))
+	return finalNonce[:]
+}
+
 type tdxAttestRoot struct {
 	tdxMu  sync.Mutex
 	qp     *tg.LinuxConfigFsQuoteProvider
@@ -424,6 +428,12 @@ func (t *tdxAttestRoot) Attest(nonce []byte) (any, error) {
 		CcelData:      ccelData,
 		TdQuote:       rawQuote,
 	}, nil
+}
+
+func (t *tdxAttestRoot) HashChallenge(challenge []byte) []byte {
+	nonceDigest := sha512.Sum512(challenge)
+	finalNonce := sha512.Sum512(append([]byte(verifier.WorkloadAttestationPrefix), nonceDigest[:]...))
+	return finalNonce[:]
 }
 
 // Refresh refreshes the internal state of the attestation agent.

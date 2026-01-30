@@ -15,6 +15,7 @@ type Experiments struct {
 	EnableHealthMonitoring    bool
 	EnableItaVerifier         bool
 	EnableVerifyCS            bool
+	EnableAttestationEvidence bool
 }
 
 // New takes a filepath, opens the file, and calls ReadJsonInput with the contents

@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	gcel "github.com/google/go-eventlog/cel"
+	gecel "github.com/google/go-eventlog/cel"
 	"github.com/google/go-tpm-tools/launcher/agent"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/verifier"
@@ -36,7 +36,7 @@ func (f *fakeVerifierClient) VerifyConfidentialSpace(_ context.Context, _ verifi
 }
 
 type fakeAttestationAgent struct {
-	measureEventFunc           func(gcel.Content) error
+	measureEventFunc           func(gecel.Content) error
 	attestFunc                 func(context.Context, agent.AttestAgentOpts) ([]byte, error)
 	attestWithClientFunc       func(context.Context, agent.AttestAgentOpts, verifier.Client) ([]byte, error)
 	getAttestationEvidenceFunc func(context.Context, []byte) (*verifier.AttestationEvidence, error)
@@ -54,7 +54,7 @@ func (f fakeAttestationAgent) GetAttestationEvidence(c context.Context, nonce []
 	return f.getAttestationEvidenceFunc(c, nonce)
 }
 
-func (f fakeAttestationAgent) MeasureEvent(c gcel.Content) error {
+func (f fakeAttestationAgent) MeasureEvent(c gecel.Content) error {
 	return f.measureEventFunc(c)
 }
 
@@ -592,7 +592,7 @@ func TestGetAttestationEvidence(t *testing.T) {
 		},
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/v1/evidence", strings.NewReader("{\"nonce\": \"dGVzdA==\"}"))
+	req := httptest.NewRequest(http.MethodPost, "/v1/evidence", strings.NewReader("{\"challenge\": \"dGVzdA==\"}"))
 	w := httptest.NewRecorder()
 
 	ah.getAttestationEvidence(w, req)

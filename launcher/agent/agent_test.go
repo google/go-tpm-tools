@@ -3,6 +3,7 @@ package agent
 import (
 	"bytes"
 	"context"
+	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha512"
@@ -18,6 +19,7 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-cmp/cmp"
+	gecel "github.com/google/go-eventlog/cel"
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal/test"
@@ -644,16 +646,18 @@ func measureFakeEvents(attestAgent AttestationAgent) error {
 }
 
 type fakeTdxAttestRoot struct {
-	cel           cel.CEL
+	cel           gecel.CEL
 	receivedNonce []byte
 }
 
-func (f *fakeTdxAttestRoot) Extend(c cel.Content) error {
-	return f.cel.AppendEventRTMR(nil, cel.CosRTMR, c)
+func (f *fakeTdxAttestRoot) Extend(c gecel.Content) error {
+	return f.cel.AppendEvent(c, []crypto.Hash{crypto.SHA384}, cel.CosRTMR, func(_ crypto.Hash, _ int, _ []byte) error {
+		return nil
+	})
 }
 
-func (f *fakeTdxAttestRoot) GetCEL() *cel.CEL {
-	return &f.cel
+func (f *fakeTdxAttestRoot) GetCEL() gecel.CEL {
+	return f.cel
 }
 
 func (f *fakeTdxAttestRoot) Attest(nonce []byte) (any, error) {
@@ -661,6 +665,12 @@ func (f *fakeTdxAttestRoot) Attest(nonce []byte) (any, error) {
 	return &verifier.TDCCELAttestation{
 		TdQuote: []byte("fake-tdx-quote"),
 	}, nil
+}
+
+func (f *fakeTdxAttestRoot) HashChallenge(challenge []byte) []byte {
+	nonceDigest := sha512.Sum512(challenge)
+	finalNonce := sha512.Sum512(append([]byte(verifier.WorkloadAttestationPrefix), nonceDigest[:]...))
+	return finalNonce[:]
 }
 
 func TestGetAttestationEvidence_TDX_Success(t *testing.T) {
@@ -678,14 +688,25 @@ func TestGetAttestationEvidence_TDX_Success(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	fakeRoot := &fakeTdxAttestRoot{}
+	fakeRoot := &fakeTdxAttestRoot{
+		cel: gecel.NewConfComputeMR(),
+	}
 	attestAgent := &agent{
 		avRot:     fakeRoot,
 		fetchedAK: ak,
+		launchSpec: spec.LaunchSpec{
+			Experiments: experiments.Experiments{
+				EnableAttestationEvidence: true,
+			},
+		},
 	}
 
-	nonce := []byte("test-nonce")
-	att, err := attestAgent.GetAttestationEvidence(ctx, nonce)
+	if err := measureFakeEvents(attestAgent); err != nil {
+		t.Fatalf("failed to measure events: %v", err)
+	}
+
+	challenge := []byte("test-challenge")
+	att, err := attestAgent.GetAttestationEvidence(ctx, challenge)
 	if err != nil {
 		t.Fatalf("GetAttestationEvidence failed: %v", err)
 	}
@@ -697,12 +718,9 @@ func TestGetAttestationEvidence_TDX_Success(t *testing.T) {
 	if string(att.TDCCELAttestation.TdQuote) != "fake-tdx-quote" {
 		t.Errorf("got quote %s, want fake-tdx-quote", string(att.TDCCELAttestation.TdQuote))
 	}
-	if len(att.TDCCELAttestation.AkCert) == 0 {
-		t.Error("AkCert should be populated")
-	}
 
-	nonceDigest := sha512.Sum512(nonce)
-	expectedHash := sha512.Sum512(append([]byte(verifier.WorkloadAttestation), nonceDigest[:]...))
+	nonceDigest := sha512.Sum512(challenge)
+	expectedHash := sha512.Sum512(append([]byte(verifier.WorkloadAttestationPrefix), nonceDigest[:]...))
 	if !bytes.Equal(fakeRoot.receivedNonce, expectedHash[:]) {
 		t.Errorf("got nonce %x, want %x", fakeRoot.receivedNonce, expectedHash[:])
 	}
@@ -719,7 +737,11 @@ func TestGetAttestationEvidence_TPM_Success(t *testing.T) {
 	}
 	verifierClient := fake.NewClient(fakeSigner)
 
-	agent, err := CreateAttestationAgent(tpm, client.AttestationKeyECC, verifierClient, placeholderPrincipalFetcher, signaturediscovery.NewFakeClient(), spec.LaunchSpec{}, logging.SimpleLogger())
+	agent, err := CreateAttestationAgent(tpm, client.AttestationKeyECC, verifierClient, placeholderPrincipalFetcher, signaturediscovery.NewFakeClient(), spec.LaunchSpec{
+		Experiments: experiments.Experiments{
+			EnableAttestationEvidence: true,
+		},
+	}, logging.SimpleLogger())
 	if err != nil {
 		t.Fatalf("failed to create agent: %v", err)
 	}
@@ -729,8 +751,8 @@ func TestGetAttestationEvidence_TPM_Success(t *testing.T) {
 		t.Errorf("failed to measure events: %v", err)
 	}
 
-	nonce := []byte("test-nonce")
-	att, err := agent.GetAttestationEvidence(ctx, nonce)
+	challenge := []byte("test-challenge")
+	att, err := agent.GetAttestationEvidence(ctx, challenge)
 	if err != nil {
 		t.Fatalf("GetAttestationEvidence failed on TPM: %v", err)
 	}

@@ -89,7 +89,7 @@ func (a *attestHandler) Handler() http.Handler {
 	// curl -d '{"audience":"<aud>", "nonces":["<nonce1>"]}' -H "Content-Type: application/json" -X POST
 	//   --unix-socket /tmp/container_launcher/teeserver.sock http://localhost/v1/token
 	// to test attestation evidence:
-	// curl -d '{"nonce":"<nonce>"}' -H "Content-Type: application/json" -X POST
+	// curl -d '{"challenge":"<challenge>"}' -H "Content-Type: application/json" -X POST
 	//   --unix-socket /tmp/container_launcher/teeserver.sock http://localhost/v1/evidence
 
 	mux.HandleFunc(gcaEndpoint, a.getToken)
@@ -145,19 +145,19 @@ func (a *attestHandler) getAttestationEvidence(w http.ResponseWriter, r *http.Re
 	}
 
 	var req struct {
-		Nonce []byte `json:"nonce"`
+		Challenge []byte `json:"challenge"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		a.logAndWriteHTTPError(w, http.StatusBadRequest, fmt.Errorf("failed to decode request: %v", err))
 		return
 	}
-	if len(req.Nonce) == 0 {
-		a.logAndWriteHTTPError(w, http.StatusBadRequest, fmt.Errorf("nonce is required"))
+	if len(req.Challenge) == 0 {
+		a.logAndWriteHTTPError(w, http.StatusBadRequest, fmt.Errorf("challenge is required"))
 		return
 	}
 
-	evidence, err := a.attestAgent.GetAttestationEvidence(a.ctx, req.Nonce)
+	evidence, err := a.attestAgent.GetAttestationEvidence(a.ctx, req.Challenge)
 	if err != nil {
 		a.logAndWriteHTTPError(w, http.StatusInternalServerError, err)
 		return
