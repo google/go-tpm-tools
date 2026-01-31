@@ -16,11 +16,13 @@ import (
 	"github.com/google/go-tpm-tools/verifier/models"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
 const (
 	gcaEndpoint = "/v1/token"
 	itaEndpoint = "/v1/intel/token"
+	msEndpoint  = "/v1/verifylocal"
 )
 
 var clientErrorCodes = map[codes.Code]struct{}{
@@ -45,9 +47,10 @@ type attestHandler struct {
 	ctx         context.Context
 	attestAgent agent.AttestationAgent
 	// defaultTokenFile string
-	logger     logging.Logger
-	launchSpec spec.LaunchSpec
-	clients    AttestClients
+	logger             logging.Logger
+	launchSpec         spec.LaunchSpec
+	clients            AttestClients
+	localVerifyAllowed bool
 }
 
 // TeeServer is a server that can be called from a container through a unix
@@ -57,8 +60,17 @@ type TeeServer struct {
 	netListener net.Listener
 }
 
+// Options represents the options that can be used to create a TeeServer.
+type Options struct {
+	AttAgent           agent.AttestationAgent
+	Logger             logging.Logger
+	Spec               spec.LaunchSpec
+	Clients            AttestClients
+	LocalVerifyAllowed bool
+}
+
 // New takes in a socket and start to listen to it, and create a server
-func New(ctx context.Context, unixSock string, a agent.AttestationAgent, logger logging.Logger, launchSpec spec.LaunchSpec, clients AttestClients) (*TeeServer, error) {
+func New(ctx context.Context, unixSock string, opts *Options) (*TeeServer, error) {
 	var err error
 	nl, err := net.Listen("unix", unixSock)
 	if err != nil {
@@ -69,11 +81,12 @@ func New(ctx context.Context, unixSock string, a agent.AttestationAgent, logger 
 		netListener: nl,
 		server: &http.Server{
 			Handler: (&attestHandler{
-				ctx:         ctx,
-				attestAgent: a,
-				logger:      logger,
-				launchSpec:  launchSpec,
-				clients:     clients,
+				ctx:                ctx,
+				attestAgent:        opts.AttAgent,
+				logger:             opts.Logger,
+				launchSpec:         opts.Spec,
+				clients:            opts.Clients,
+				localVerifyAllowed: opts.LocalVerifyAllowed,
 			}).Handler(),
 		},
 	}
@@ -90,6 +103,7 @@ func (a *attestHandler) Handler() http.Handler {
 
 	mux.HandleFunc(gcaEndpoint, a.getToken)
 	mux.HandleFunc(itaEndpoint, a.getITAToken)
+	mux.HandleFunc(msEndpoint, a.getMachineState)
 	return mux
 }
 
@@ -192,6 +206,36 @@ func (a *attestHandler) attest(w http.ResponseWriter, r *http.Request, client ve
 		err := fmt.Errorf("TEE server received an invalid HTTP method: %s", r.Method)
 		a.logAndWriteHTTPError(w, http.StatusBadRequest, err)
 	}
+}
+
+// getDefaultToken handles the request to get the default OIDC token.
+// For now this function will just read the content of the file and return.
+// Later, this function can use attestation agent to get a token directly.
+func (a *attestHandler) getMachineState(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "text/html")
+
+	a.logger.Info(fmt.Sprintf("%s called", msEndpoint))
+
+	if !a.localVerifyAllowed {
+		errStr := "local machine state verification is not allowed by launch policy"
+		a.logAndWriteError(errStr, http.StatusForbidden, w)
+		return
+	}
+
+	ms, err := a.attestAgent.VerifyLocal()
+	if err != nil {
+		a.logAndWriteHTTPError(w, http.StatusInternalServerError, fmt.Errorf("failed to retrieve machine state: %w", err))
+		return
+	}
+
+	respBytes, err := protojson.Marshal(ms)
+	if err != nil {
+		a.logAndWriteHTTPError(w, http.StatusInternalServerError, fmt.Errorf("failed to marshal machine state: %w", err))
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Write(respBytes)
 }
 
 func (a *attestHandler) logAndWriteHTTPError(w http.ResponseWriter, statusCode int, err error) {

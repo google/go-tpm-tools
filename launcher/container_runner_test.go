@@ -32,6 +32,8 @@ import (
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/oauth2"
+
+	attestpb "github.com/google/go-tpm-tools/proto/attest"
 )
 
 const (
@@ -67,6 +69,10 @@ func (f *fakeAttestationAgent) Attest(ctx context.Context, _ agent.AttestAgentOp
 }
 
 func (f *fakeAttestationAgent) AttestWithClient(_ context.Context, _ agent.AttestAgentOpts, _ verifier.Client) ([]byte, error) {
+	return nil, fmt.Errorf("unimplemented")
+}
+
+func (f *fakeAttestationAgent) VerifyLocal() (*attestpb.MachineState, error) {
 	return nil, fmt.Errorf("unimplemented")
 }
 

@@ -51,6 +51,8 @@ type ContainerRunner struct {
 	attestAgent   agent.AttestationAgent
 	logger        logging.Logger
 	serialConsole *os.File
+
+	localVerificationAllowed bool
 }
 
 const tokenFileTmp = ".token.tmp"
@@ -265,6 +267,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		attestAgent,
 		logger,
 		serialConsole,
+		launchPolicy.AllowLocalVerify,
 	}, nil
 }
 
@@ -616,7 +619,14 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		attestClients.GCA = gcaClient
 	}
 
-	teeServer, err := teeserver.New(ctx, path.Join(launcherfile.HostTmpPath, teeServerSocket), r.attestAgent, r.logger, r.launchSpec, attestClients)
+	serverOpts := &teeserver.Options{
+		AttAgent:           r.attestAgent,
+		Logger:             r.logger,
+		Spec:               r.launchSpec,
+		Clients:            attestClients,
+		LocalVerifyAllowed: r.localVerificationAllowed,
+	}
+	teeServer, err := teeserver.New(ctx, path.Join(launcherfile.HostTmpPath, teeServerSocket), serverOpts)
 	if err != nil {
 		return fmt.Errorf("failed to create the TEE server: %v", err)
 	}
