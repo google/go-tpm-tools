@@ -60,6 +60,7 @@ type TeeServer struct {
 	netListener net.Listener
 }
 
+// Options represents the options that can be used to create a TeeServer.
 type Options struct {
 	AttAgent           agent.AttestationAgent
 	Logger             logging.Logger
