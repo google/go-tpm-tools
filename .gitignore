@@ -13,3 +13,4 @@ files/go-tpm-tools
 main
 go.work
 go.work.sum
+kcc/target/*
