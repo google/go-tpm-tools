@@ -82,6 +82,30 @@ pub unsafe extern "C" fn key_manager_generate_kem_keypair(
     0
 }
 
+
+/// Destroys a key.
+///
+/// # Arguments
+/// * `key_handle_ptr` - Pointer to a 16-byte buffer containing the key handle.
+///
+/// # Returns
+/// 0 on success, -1 on failure (e.g., key not found).
+///
+/// # Safety
+/// Assumes `key_handle_ptr` is a valid pointer to 16 bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn key_manager_destroy_key(key_handle_ptr: *const u8) -> i32 {
+    let handle_bytes = slice::from_raw_parts(key_handle_ptr, 16);
+    let handle = match Uuid::from_slice(handle_bytes) {
+        Ok(h) => h,
+        Err(_) => return -1,
+    };
+    match MANAGER.destroy_key(handle) {
+        Ok(_) => 0,
+        Err(_) => -1,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -153,5 +177,54 @@ mod tests {
         assert_ne!(handle_buffer, [0u8; 16]);
         let handle = Uuid::from_bytes(handle_buffer);
         assert!(!handle.is_nil());
+    }
+
+    #[test]
+    fn test_ffi_destroy_key_success() {
+        // 1. Generate a key first to get a valid handle
+        let mut handle_buffer = vec![0u8; 16];
+        unsafe {
+            let gen_res = key_manager_generate_binding_keypair(handle_buffer.as_mut_ptr());
+            assert_eq!(gen_res, 0, "Key generation failed");
+        }
+
+        // 2. Call the destroy FFI
+        unsafe {
+            let destroy_res = key_manager_destroy_key(handle_buffer.as_ptr());
+            assert_eq!(destroy_res, 0, "FFI failed to destroy a valid key");
+        }
+
+        // 3. Verify it is actually gone from the registry
+        // Note: This assumes MANAGER.binding_keys is accessible for verification
+        let handle = Uuid::from_slice(&handle_buffer).unwrap();
+        let registry_lock = MANAGER.binding_keys.keys.read().unwrap();
+        assert!(!registry_lock.contains_key(&handle), "Key still exists in registry after destruction");
+    }
+
+    #[test]
+    fn test_ffi_destroy_key_not_found() {
+        // Create a random UUID that was never generated
+        let fake_handle = Uuid::new_v4();
+        let handle_bytes = fake_handle.as_bytes();
+
+        unsafe {
+            // Attempt to destroy a non-existent key
+            let res = key_manager_destroy_key(handle_bytes.as_ptr());
+            assert_eq!(res, -1, "FFI should return -1 for non-existent key");
+        }
+    }
+
+    #[test]
+    fn test_ffi_destroy_key_null_pointer() {
+        // Technically unsafe, but let's ensure the match logic handles errors if passed bad data
+        // In a real scenario, passing null to slice::from_raw_parts is UB, 
+        // but here we test the Uuid::from_slice result path.
+        
+        let invalid_bytes = [0u8; 16]; // All zeros is a "nil" UUID
+        unsafe {
+            let res = key_manager_destroy_key(invalid_bytes.as_ptr());
+            // Should return -1 because the key (nil UUID) doesn't exist in registry
+            assert_eq!(res, -1);
+        }
     }
 }

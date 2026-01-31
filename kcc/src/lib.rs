@@ -152,6 +152,16 @@ impl KeyManager {
             (handle, kem_pub)
         })
     }
+
+    pub fn destroy_key(&self, handle: KeyHandle) -> Result<(), Error> {
+        if self.binding_keys.destroy_key(handle).is_ok() {
+            return Ok(());
+        }
+        if self.kem_keys.destroy_key(handle).is_ok() {
+            return Ok(());
+        }
+        Err(Error::KeyNotFound)
+    }
 }
 
 
@@ -290,6 +300,109 @@ mod tests {
             assert_eq!(binding_public_key, &binding_pub);
         } else {
             panic!("Metadata did not store binding public key correctly");
+        }
+    }
+
+    #[test]
+    fn test_destroy_key_from_binding_registry() {
+        let manager = KeyManager::new();
+        
+        // 1. Generate a binding key
+        let (handle, _) = manager.generate_binding_keypair();
+        
+        // 2. Verify it exists in binding_keys
+        {
+            let lock = manager.binding_keys.keys.read().unwrap();
+            assert!(lock.contains_key(&handle));
+        }
+
+        // 3. Destroy it using the top-level Manager method
+        let result = manager.destroy_key(handle);
+        assert!(result.is_ok(), "Should successfully destroy key from binding registry");
+
+        // 4. Verify it's gone
+        let lock = manager.binding_keys.keys.read().unwrap();
+        assert!(!lock.contains_key(&handle));
+    }
+
+    #[test]
+    fn test_destroy_key_from_kem_registry() {
+        let manager = KeyManager::new();
+        let dummy_pk = vec![0u8; 32];
+        
+        // 1. Generate a KEM key
+        let (handle, _) = manager.generate_kem_keypair(&dummy_pk);
+        
+        // 2. Verify it exists in kem_keys
+        {
+            let lock = manager.kem_keys.keys.read().unwrap();
+            assert!(lock.contains_key(&handle));
+        }
+
+        // 3. Destroy it
+        let result = manager.destroy_key(handle);
+        assert!(result.is_ok(), "Should successfully destroy key from KEM registry");
+
+        // 4. Verify it's gone
+        let lock = manager.kem_keys.keys.read().unwrap();
+        assert!(!lock.contains_key(&handle));
+    }
+
+    #[test]
+    fn test_destroy_key_not_found_error() {
+        let manager = KeyManager::new();
+        let fake_handle = Uuid::new_v4();
+
+        // Attempt to destroy a key that exists in neither registry
+        let result = manager.destroy_key(fake_handle);
+        
+        match result {
+            Err(Error::KeyNotFound) => (), // Success: received correct error
+            _ => panic!("Expected KeyNotFound error, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_destroy_key_precedence() {
+        let manager = KeyManager::new();
+        let handle = Uuid::new_v4();
+        
+        // Setup: Manually insert the same handle into BOTH registries
+        // (This shouldn't happen in normal use, but tests the logic flow)
+        let record1 = create_dummy_record(handle);
+        let record2 = create_dummy_record(handle);
+        
+        manager.binding_keys.add_key(record1);
+        manager.kem_keys.add_key(record2);
+
+        // Action: The method should return Ok(()) after the first successful removal
+        let result = manager.destroy_key(handle);
+        assert!(result.is_ok());
+
+        // Result: It should be removed from binding_keys but still exist in kem_keys
+        // because the method returns early after the first successful if-block.
+        assert!(!manager.binding_keys.keys.read().unwrap().contains_key(&handle));
+        assert!(manager.kem_keys.keys.read().unwrap().contains_key(&handle));
+    }
+
+    // Helper to create a dummy record for testing
+    fn create_dummy_record(id: Uuid) -> KeyRecord {
+        let test_key = vec![0u8; 32];
+        KeyRecord {
+            meta: KeyMetadata {
+                id,
+                created_at: Instant::now(),
+                delete_after: None,
+                spec: PublicSpec::Binding {
+                    algo: HpkeAlgorithm {
+                        kem: KemAlgorithm::DhKemX25519HkdfSha256,
+                        kdf: KdfAlgorithm::HkdfSha256,
+                        aead: AeadAlgorithm::Aes256Gcm,
+                    },
+                    binding_public_key: vec![0u8; 32],
+                },
+            },
+            secret: Vault::new("dummy", &test_key).unwrap(),
         }
     }
 }
