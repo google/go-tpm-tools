@@ -17,6 +17,7 @@ type LaunchPolicy struct {
 	AllowedCmdOverride       bool
 	AllowedLogRedirect       policy
 	AllowedMountDestinations []string
+	AllowLocalVerify         bool
 	HardenedImageMonitoring  MonitoringType
 	DebugImageMonitoring     MonitoringType
 	PrivilegedCaps           bool
@@ -103,6 +104,7 @@ const (
 	envOverride        = "tee.launch_policy.allow_env_override"
 	cmdOverride        = "tee.launch_policy.allow_cmd_override"
 	logRedirect        = "tee.launch_policy.log_redirect"
+	localVerify        = "tee.launch_policy.allow_local_verification"
 	memoryMonitoring   = "tee.launch_policy.monitoring_memory_allow"
 	hardenedMonitoring = "tee.launch_policy.hardened_monitoring"
 	debugMonitoring    = "tee.launch_policy.debug_monitoring"
@@ -203,6 +205,12 @@ func GetLaunchPolicy(imageLabels map[string]string, logger logging.Logger) (Laun
 		launchPolicy.AllowedLogRedirect, err = toPolicy(logRedirect, v)
 		if err != nil {
 			return LaunchPolicy{}, fmt.Errorf("invalid image LABEL '%s'", logRedirect)
+		}
+	}
+
+	if v, ok := imageLabels[localVerify]; ok {
+		if launchPolicy.AllowLocalVerify, err = strconv.ParseBool(v); err != nil {
+			return LaunchPolicy{}, fmt.Errorf("invalid image LABEL '%s' (not a boolean)", localVerify)
 		}
 	}
 

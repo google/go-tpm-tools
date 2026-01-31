@@ -47,9 +47,10 @@ type attestHandler struct {
 	ctx         context.Context
 	attestAgent agent.AttestationAgent
 	// defaultTokenFile string
-	logger     logging.Logger
-	launchSpec spec.LaunchSpec
-	clients    AttestClients
+	logger             logging.Logger
+	launchSpec         spec.LaunchSpec
+	clients            AttestClients
+	localVerifyAllowed bool
 }
 
 // TeeServer is a server that can be called from a container through a unix
@@ -59,8 +60,16 @@ type TeeServer struct {
 	netListener net.Listener
 }
 
+type Options struct {
+	AttAgent           agent.AttestationAgent
+	Logger             logging.Logger
+	Spec               spec.LaunchSpec
+	Clients            AttestClients
+	LocalVerifyAllowed bool
+}
+
 // New takes in a socket and start to listen to it, and create a server
-func New(ctx context.Context, unixSock string, a agent.AttestationAgent, logger logging.Logger, launchSpec spec.LaunchSpec, clients AttestClients) (*TeeServer, error) {
+func New(ctx context.Context, unixSock string, opts *Options) (*TeeServer, error) {
 	var err error
 	nl, err := net.Listen("unix", unixSock)
 	if err != nil {
@@ -71,11 +80,12 @@ func New(ctx context.Context, unixSock string, a agent.AttestationAgent, logger 
 		netListener: nl,
 		server: &http.Server{
 			Handler: (&attestHandler{
-				ctx:         ctx,
-				attestAgent: a,
-				logger:      logger,
-				launchSpec:  launchSpec,
-				clients:     clients,
+				ctx:                ctx,
+				attestAgent:        opts.AttAgent,
+				logger:             opts.Logger,
+				launchSpec:         opts.Spec,
+				clients:            opts.Clients,
+				localVerifyAllowed: opts.LocalVerifyAllowed,
 			}).Handler(),
 		},
 	}
@@ -204,6 +214,12 @@ func (a *attestHandler) getMachineState(w http.ResponseWriter, _ *http.Request) 
 	w.Header().Set("Content-Type", "text/html")
 
 	a.logger.Info(fmt.Sprintf("%s called", msEndpoint))
+
+	if !a.localVerifyAllowed {
+		errStr := "local machine state verification is not allowed by launch policy"
+		a.logAndWriteError(errStr, http.StatusForbidden, w)
+		return
+	}
 
 	ms, err := a.attestAgent.VerifyLocal()
 	if err != nil {

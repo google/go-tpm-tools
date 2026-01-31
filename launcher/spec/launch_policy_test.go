@@ -54,6 +54,15 @@ func TestLaunchPolicy(t *testing.T) {
 				AllowedCmdOverride: false,
 			},
 		},
+		{
+			"local verify enabled",
+			map[string]string{
+				localVerify: "true",
+			},
+			LaunchPolicy{
+				AllowLocalVerify: true,
+			},
+		},
 	}
 
 	for _, testcase := range testCases {

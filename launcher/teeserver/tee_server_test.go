@@ -18,6 +18,8 @@ import (
 	"github.com/google/go-tpm-tools/verifier/models"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/testing/protocmp"
 
 	attestpb "github.com/google/go-tpm-tools/proto/attest"
 )
@@ -41,6 +43,7 @@ type fakeAttestationAgent struct {
 	measureEventFunc     func(gecel.Content) error
 	attestFunc           func(context.Context, agent.AttestAgentOpts) ([]byte, error)
 	attestWithClientFunc func(context.Context, agent.AttestAgentOpts, verifier.Client) ([]byte, error)
+	verifyLocalFunc      func() (*attestpb.MachineState, error)
 }
 
 func (f fakeAttestationAgent) Attest(c context.Context, a agent.AttestAgentOpts) ([]byte, error) {
@@ -56,7 +59,7 @@ func (f fakeAttestationAgent) MeasureEvent(c gecel.Content) error {
 }
 
 func (f fakeAttestationAgent) VerifyLocal() (*attestpb.MachineState, error) {
-	return nil, fmt.Errorf("unimplemented")
+	return f.verifyLocalFunc()
 }
 
 func (f fakeAttestationAgent) Refresh(_ context.Context) error {
@@ -580,5 +583,97 @@ func TestCustomHandleAttestError(t *testing.T) {
 				t.Errorf("failed to read response body: %v", err)
 			}
 		})
+	}
+}
+
+func TestGetMachineState(t *testing.T) {
+	testMachineState := &attestpb.MachineState{
+		Platform: &attestpb.PlatformState{
+			Technology: attestpb.GCEConfidentialTechnology_AMD_SEV,
+			InstanceInfo: &attestpb.GCEInstanceInfo{
+				Zone:          "us-west2-c",
+				ProjectId:     "test-project",
+				ProjectNumber: 12345,
+				InstanceName:  "test-instance",
+				InstanceId:    67890,
+			},
+			Firmware: &attestpb.PlatformState_GceVersion{GceVersion: 2},
+		},
+	}
+
+	handler := attestHandler{
+		logger: logging.SimpleLogger(),
+		clients: AttestClients{
+			GCA: &fakeVerifierClient{},
+		},
+		attestAgent: fakeAttestationAgent{
+			verifyLocalFunc: func() (*attestpb.MachineState, error) {
+				return testMachineState, nil
+			},
+		},
+		localVerifyAllowed: true,
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/verifylocal", nil)
+	w := httptest.NewRecorder()
+	handler.getMachineState(w, req)
+	data, err := io.ReadAll(w.Result().Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("got return code: %d, want: %d", w.Code, http.StatusOK)
+	}
+
+	var gotMachineState attestpb.MachineState
+	err = protojson.Unmarshal(data, &gotMachineState)
+	if err != nil {
+		t.Fatalf("failed to unmarshal response body to MachineState: %v", err)
+	}
+
+	if diff := cmp.Diff(testMachineState, &gotMachineState, protocmp.Transform()); diff != "" {
+		t.Errorf("getMachineState() response body mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestGetMachineStateDisabled(t *testing.T) {
+	testMachineState := &attestpb.MachineState{
+		Platform: &attestpb.PlatformState{
+			Technology: attestpb.GCEConfidentialTechnology_AMD_SEV,
+			InstanceInfo: &attestpb.GCEInstanceInfo{
+				Zone:          "us-west2-c",
+				ProjectId:     "test-project",
+				ProjectNumber: 12345,
+				InstanceName:  "test-instance",
+				InstanceId:    67890,
+			},
+			Firmware: &attestpb.PlatformState_GceVersion{GceVersion: 2},
+		},
+	}
+
+	handler := attestHandler{
+		logger: logging.SimpleLogger(),
+		clients: AttestClients{
+			GCA: &fakeVerifierClient{},
+		},
+		attestAgent: fakeAttestationAgent{
+			verifyLocalFunc: func() (*attestpb.MachineState, error) {
+				return testMachineState, nil
+			},
+		},
+		localVerifyAllowed: false,
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/verifylocal", nil)
+	w := httptest.NewRecorder()
+	handler.getMachineState(w, req)
+	_, err := io.ReadAll(w.Result().Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if w.Code != http.StatusForbidden {
+		t.Errorf("got return code: %d, want: %d", w.Code, http.StatusForbidden)
 	}
 }
