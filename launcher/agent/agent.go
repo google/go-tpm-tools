@@ -121,9 +121,7 @@ func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher util.TpmKeyFetcher
 	for _, sel := range pcrSels {
 		hashAlgo, err := sel.Hash.Hash()
 		if err != nil {
-			if err != nil {
-				return nil, fmt.Errorf("failed to get TPM hash algorithm: %v", err)
-			}
+			return nil, fmt.Errorf("failed to get TPM hash algorithm: %v", err)
 		}
 		hashAlgos = append(hashAlgos, hashAlgo)
 	}
@@ -352,8 +350,8 @@ func (t *tdxAttestRoot) GetCEL() gecel.CEL {
 }
 
 func (t *tdxAttestRoot) Extend(c gecel.Content) error {
-	return t.cosCel.AppendEvent(c, []crypto.Hash{crypto.SHA384}, cel.CosRTMR+1, func(ch crypto.Hash, mrIndex int, digest []byte) error {
-		return rtmr.ExtendEventLogSysfs(mrIndex-1, ch, digest) // MR_INDEX - 1 == RTMR_INDEX
+	return t.cosCel.AppendEvent(c, []crypto.Hash{crypto.SHA384}, cel.CosCCELMRIndex, func(_ crypto.Hash, mrIndex int, digest []byte) error {
+		return rtmr.ExtendDigestSysfs(mrIndex-1, digest) // MR_INDEX - 1 == RTMR_INDEX
 	})
 }
 
