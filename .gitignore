@@ -13,3 +13,7 @@ files/go-tpm-tools
 main
 go.work
 go.work.sum
+kcc/wsd_kcc/target/*
+kcc/kps_kcc/target/*
+kcc/wsd_kcc/Cargo.lock
+kcc/kps_kcc/Cargo.lock
