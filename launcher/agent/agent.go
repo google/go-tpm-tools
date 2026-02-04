@@ -35,6 +35,7 @@ import (
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/internal/signaturediscovery"
 	"github.com/google/go-tpm-tools/launcher/spec"
+	teemodels "github.com/google/go-tpm-tools/launcher/teeserver/models"
 	pb "github.com/google/go-tpm-tools/proto/attest"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/google/go-tpm-tools/verifier/models"
@@ -55,7 +56,7 @@ type AttestationAgent interface {
 	MeasureEvent(gecel.Content) error
 	Attest(context.Context, AttestAgentOpts) ([]byte, error)
 	AttestWithClient(ctx context.Context, opts AttestAgentOpts, client verifier.Client) ([]byte, error)
-	GetAttestationEvidence(ctx context.Context, challenge []byte) (*verifier.AttestationEvidence, error)
+	AttestationEvidence(ctx context.Context, challenge []byte) (*teemodels.CVMAttestation, error)
 	Refresh(context.Context) error
 	Close() error
 }
@@ -284,10 +285,10 @@ func (a *agent) AttestWithClient(ctx context.Context, opts AttestAgentOpts, clie
 	return resp.ClaimsToken, nil
 }
 
-// GetAttestationEvidence returns the attestation evidence (TPM or TDX).
-func (a *agent) GetAttestationEvidence(_ context.Context, challenge []byte) (*verifier.AttestationEvidence, error) {
+// AttestationEvidence returns the attestation evidence (TPM or TDX).
+func (a *agent) AttestationEvidence(_ context.Context, challenge []byte) (*teemodels.CVMAttestation, error) {
 	if !a.launchSpec.Experiments.EnableAttestationEvidence {
-		return nil, fmt.Errorf("attestation evidence experiment is disabled")
+		return nil, fmt.Errorf("attestation evidence is disabled")
 	}
 
 	if a.avRot == nil {
@@ -307,16 +308,26 @@ func (a *agent) GetAttestationEvidence(_ context.Context, challenge []byte) (*ve
 		return nil, err
 	}
 
+	attestation := &teemodels.CVMAttestation{
+		Label:       []byte(teemodels.WorkloadAttestationLabel),
+		Challenge:   challenge,
+		Attestation: &teemodels.CVMAttestationQuote{},
+	}
+
 	switch v := attResult.(type) {
 	case *pb.Attestation:
 		v.CanonicalEventLog = cosCel.Bytes()
-		return &verifier.AttestationEvidence{VTPMAttestation: v}, nil
+		attestation.Attestation.TPMAttestation = v
 	case *verifier.TDCCELAttestation:
-		v.CanonicalEventLog = cosCel.Bytes()
-		return &verifier.AttestationEvidence{TDCCELAttestation: v}, nil
+		attestation.Attestation.TDXAttestation = &teemodels.TDXCCELAttestation{
+			CCELBootEventLog:  v.CcelData,
+			CELLaunchEventLog: cosCel.Bytes(),
+			TDQuote:           v.TdQuote,
+		}
 	default:
 		return nil, fmt.Errorf("unknown attestation type: %T", v)
 	}
+	return attestation, nil
 }
 
 func (a *agent) verify(ctx context.Context, req verifier.VerifyAttestationRequest, client verifier.Client) (*verifier.VerifyAttestationResponse, error) {
@@ -382,7 +393,7 @@ func (t *tpmAttestRoot) Attest(nonce []byte) (any, error) {
 
 func (t *tpmAttestRoot) HashChallenge(challenge []byte) []byte {
 	nonceDigest := sha256.Sum256(challenge)
-	finalNonce := sha256.Sum256(append([]byte(verifier.WorkloadAttestationPrefix), nonceDigest[:]...))
+	finalNonce := sha256.Sum256(append([]byte(teemodels.WorkloadAttestationLabel), nonceDigest[:]...))
 	return finalNonce[:]
 }
 
@@ -432,7 +443,7 @@ func (t *tdxAttestRoot) Attest(nonce []byte) (any, error) {
 
 func (t *tdxAttestRoot) HashChallenge(challenge []byte) []byte {
 	nonceDigest := sha512.Sum512(challenge)
-	finalNonce := sha512.Sum512(append([]byte(verifier.WorkloadAttestationPrefix), nonceDigest[:]...))
+	finalNonce := sha512.Sum512(append([]byte(teemodels.WorkloadAttestationLabel), nonceDigest[:]...))
 	return finalNonce[:]
 }
 

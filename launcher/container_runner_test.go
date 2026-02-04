@@ -27,6 +27,7 @@ import (
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/spec"
+	teemodels "github.com/google/go-tpm-tools/launcher/teeserver/models"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/opencontainers/go-digest"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
@@ -70,7 +71,7 @@ func (f *fakeAttestationAgent) AttestWithClient(_ context.Context, _ agent.Attes
 	return nil, fmt.Errorf("unimplemented")
 }
 
-func (f *fakeAttestationAgent) GetAttestationEvidence(_ context.Context, _ []byte) (*verifier.AttestationEvidence, error) {
+func (f *fakeAttestationAgent) AttestationEvidence(_ context.Context, _ []byte) (*teemodels.CVMAttestation, error) {
 	return nil, fmt.Errorf("unimplemented")
 }
 

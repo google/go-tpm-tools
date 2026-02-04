@@ -5,6 +5,11 @@ import (
 	attestpb "github.com/google/go-tpm-tools/proto/attest"
 )
 
+const (
+	// WorkloadAttestationLabel is the label used by Confidential Space.
+	WorkloadAttestationLabel = "WORKLOAD_ATTESTATION"
+)
+
 // VMAttestation represents a standalone attestation over a challenge provided by the workload.
 type VMAttestation struct {
 	// Label provided by the attesting entity. For Confidential Space, this shall be "WORKLOAD_ATTESTATION".

@@ -80,7 +80,7 @@ func TestVMAttestationMarshaling(t *testing.T) {
 			}
 
 			if diff := cmp.Diff(tc.in, &out, protocmp.Transform()); diff != "" {
-				t.Errorf("Marshaling roundtrip mismatch (-want +got):\n%s", diff)
+				t.Fatalf("Marshaling roundtrip mismatch (-want +got):\n%s", diff)
 			}
 
 			// 2. Check the JSON string output matches our expectation

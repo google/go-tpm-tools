@@ -31,8 +31,6 @@ type Challenge struct {
 	Signature []byte
 }
 
-const WorkloadAttestationPrefix = "WORKLOAD_ATTESTATION"
-
 type ContainerSignature struct {
 	Payload   []byte
 	Signature []byte
@@ -50,12 +48,6 @@ type VerifyAttestationRequest struct {
 	TokenOptions             *models.TokenOptions
 	// TDCCELAttestation is for TDX CCEL RTMR attestation
 	TDCCELAttestation *TDCCELAttestation
-}
-
-// AttestationEvidence contains either a TPM attestation or a TDX attestation.
-type AttestationEvidence struct {
-	VTPMAttestation   *attestpb.Attestation `json:"vtpm_attestation,omitempty"`
-	TDCCELAttestation *TDCCELAttestation    `json:"tdccel_attestation,omitempty"`
 }
 
 type TDCCELAttestation struct {

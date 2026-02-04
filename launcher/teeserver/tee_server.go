@@ -157,7 +157,7 @@ func (a *attestHandler) getAttestationEvidence(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	evidence, err := a.attestAgent.GetAttestationEvidence(a.ctx, req.Challenge)
+	evidence, err := a.attestAgent.AttestationEvidence(a.ctx, req.Challenge)
 	if err != nil {
 		a.logAndWriteHTTPError(w, http.StatusInternalServerError, err)
 		return

@@ -14,6 +14,7 @@ import (
 	gecel "github.com/google/go-eventlog/cel"
 	"github.com/google/go-tpm-tools/launcher/agent"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
+	teemodels "github.com/google/go-tpm-tools/launcher/teeserver/models"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/google/go-tpm-tools/verifier/models"
 	"google.golang.org/grpc/codes"
@@ -36,10 +37,10 @@ func (f *fakeVerifierClient) VerifyConfidentialSpace(_ context.Context, _ verifi
 }
 
 type fakeAttestationAgent struct {
-	measureEventFunc           func(gecel.Content) error
-	attestFunc                 func(context.Context, agent.AttestAgentOpts) ([]byte, error)
-	attestWithClientFunc       func(context.Context, agent.AttestAgentOpts, verifier.Client) ([]byte, error)
-	getAttestationEvidenceFunc func(context.Context, []byte) (*verifier.AttestationEvidence, error)
+	measureEventFunc        func(gecel.Content) error
+	attestFunc              func(context.Context, agent.AttestAgentOpts) ([]byte, error)
+	attestWithClientFunc    func(context.Context, agent.AttestAgentOpts, verifier.Client) ([]byte, error)
+	attestationEvidenceFunc func(context.Context, []byte) (*teemodels.CVMAttestation, error)
 }
 
 func (f fakeAttestationAgent) Attest(c context.Context, a agent.AttestAgentOpts) ([]byte, error) {
@@ -50,8 +51,8 @@ func (f fakeAttestationAgent) AttestWithClient(c context.Context, a agent.Attest
 	return f.attestWithClientFunc(c, a, v)
 }
 
-func (f fakeAttestationAgent) GetAttestationEvidence(c context.Context, nonce []byte) (*verifier.AttestationEvidence, error) {
-	return f.getAttestationEvidenceFunc(c, nonce)
+func (f fakeAttestationAgent) AttestationEvidence(c context.Context, nonce []byte) (*teemodels.CVMAttestation, error) {
+	return f.attestationEvidenceFunc(c, nonce)
 }
 
 func (f fakeAttestationAgent) MeasureEvent(c gecel.Content) error {
@@ -582,12 +583,12 @@ func TestCustomHandleAttestError(t *testing.T) {
 	}
 }
 
-func TestGetAttestationEvidence(t *testing.T) {
+func TestAttestationEvidence(t *testing.T) {
 	ah := attestHandler{
 		logger: logging.SimpleLogger(),
 		attestAgent: fakeAttestationAgent{
-			getAttestationEvidenceFunc: func(_ context.Context, _ []byte) (*verifier.AttestationEvidence, error) {
-				return &verifier.AttestationEvidence{}, nil
+			attestationEvidenceFunc: func(_ context.Context, _ []byte) (*teemodels.CVMAttestation, error) {
+				return &teemodels.CVMAttestation{}, nil
 			},
 		},
 	}

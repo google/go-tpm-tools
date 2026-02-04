@@ -27,6 +27,7 @@ import (
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/internal/signaturediscovery"
 	"github.com/google/go-tpm-tools/launcher/spec"
+	teemodels "github.com/google/go-tpm-tools/launcher/teeserver/models"
 	attestpb "github.com/google/go-tpm-tools/proto/attest"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/google/go-tpm-tools/verifier/fake"
@@ -669,11 +670,11 @@ func (f *fakeTdxAttestRoot) Attest(nonce []byte) (any, error) {
 
 func (f *fakeTdxAttestRoot) HashChallenge(challenge []byte) []byte {
 	nonceDigest := sha512.Sum512(challenge)
-	finalNonce := sha512.Sum512(append([]byte(verifier.WorkloadAttestationPrefix), nonceDigest[:]...))
+	finalNonce := sha512.Sum512(append([]byte(teemodels.WorkloadAttestationLabel), nonceDigest[:]...))
 	return finalNonce[:]
 }
 
-func TestGetAttestationEvidence_TDX_Success(t *testing.T) {
+func TestAttestationEvidence_TDX_Success(t *testing.T) {
 	ctx := context.Background()
 	tpm := test.GetTPM(t)
 	defer client.CheckedClose(t, tpm)
@@ -706,27 +707,27 @@ func TestGetAttestationEvidence_TDX_Success(t *testing.T) {
 	}
 
 	challenge := []byte("test-challenge")
-	att, err := attestAgent.GetAttestationEvidence(ctx, challenge)
+	att, err := attestAgent.AttestationEvidence(ctx, challenge)
 	if err != nil {
-		t.Fatalf("GetAttestationEvidence failed: %v", err)
+		t.Fatalf("AttestationEvidence failed: %v", err)
 	}
 
-	if att.TDCCELAttestation == nil {
+	if att.Attestation.TDXAttestation == nil {
 		t.Fatal("expected TDCCELAttestation to be populated for TDX")
 	}
 
-	if string(att.TDCCELAttestation.TdQuote) != "fake-tdx-quote" {
-		t.Errorf("got quote %s, want fake-tdx-quote", string(att.TDCCELAttestation.TdQuote))
+	if string(att.Attestation.TDXAttestation.TDQuote) != "fake-tdx-quote" {
+		t.Errorf("got quote %s, want fake-tdx-quote", string(att.Attestation.TDXAttestation.TDQuote))
 	}
 
 	nonceDigest := sha512.Sum512(challenge)
-	expectedHash := sha512.Sum512(append([]byte(verifier.WorkloadAttestationPrefix), nonceDigest[:]...))
+	expectedHash := sha512.Sum512(append([]byte(teemodels.WorkloadAttestationLabel), nonceDigest[:]...))
 	if !bytes.Equal(fakeRoot.receivedNonce, expectedHash[:]) {
 		t.Errorf("got nonce %x, want %x", fakeRoot.receivedNonce, expectedHash[:])
 	}
 }
 
-func TestGetAttestationEvidence_TPM_Success(t *testing.T) {
+func TestAttestationEvidence_TPM_Success(t *testing.T) {
 	ctx := context.Background()
 	tpm := test.GetTPM(t)
 	defer client.CheckedClose(t, tpm)
@@ -748,20 +749,20 @@ func TestGetAttestationEvidence_TPM_Success(t *testing.T) {
 	defer agent.Close()
 
 	if err := measureFakeEvents(agent); err != nil {
-		t.Errorf("failed to measure events: %v", err)
+		t.Fatalf("failed to measure events: %v", err)
 	}
 
 	challenge := []byte("test-challenge")
-	att, err := agent.GetAttestationEvidence(ctx, challenge)
+	att, err := agent.AttestationEvidence(ctx, challenge)
 	if err != nil {
-		t.Fatalf("GetAttestationEvidence failed on TPM: %v", err)
+		t.Fatalf("AttestationEvidence failed on TPM: %v", err)
 	}
 
-	if att.VTPMAttestation == nil {
-		t.Error("expected Attestation to be populated for TPM")
+	if att.Attestation.TPMAttestation == nil {
+		t.Fatal("expected Attestation to be populated for TPM")
 	}
-	if att.TDCCELAttestation != nil {
-		t.Error("expected TDCCELAttestation to be nil for TPM")
+	if att.Attestation.TDXAttestation != nil {
+		t.Fatal("expected TDCCELAttestation to be nil for TPM")
 	}
 }
 
