@@ -93,6 +93,8 @@ const (
 	addedCaps                  = "tee-added-capabilities"
 	cgroupNS                   = "tee-cgroup-ns"
 	gcaServiceEnv              = "gca-service-env"
+	installGpuDriver           = "tee-install-gpu-driver"
+	gpuDriverVersion           = "tee-gpu-driver-version"
 )
 
 const (
@@ -138,6 +140,8 @@ type LaunchSpec struct {
 	DevShmSize        int64
 	AddedCapabilities []string
 	CgroupNamespace   bool
+	InstallGpuDriver  bool
+	GpuDriverVersion  string
 }
 
 // UnmarshalJSON unmarshals an instance attributes list in JSON format from the metadata
@@ -154,6 +158,17 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 		if s.FakeVerifierEnabled, err = strconv.ParseBool(val); err != nil {
 			return fmt.Errorf("invalid value for %v (not a boolean): %w", fakeVerifierKey, err)
 		}
+	}
+
+	if val, ok := unmarshaledMap[installGpuDriver]; ok && val != "" {
+		if boolValue, err := strconv.ParseBool(val); err == nil {
+			s.InstallGpuDriver = boolValue
+		}
+	}
+
+	s.GpuDriverVersion = unmarshaledMap[gpuDriverVersion]
+	if s.GpuDriverVersion == "" {
+		s.GpuDriverVersion = "DEFAULT"
 	}
 
 	s.ImageRef = unmarshaledMap[imageRefKey]

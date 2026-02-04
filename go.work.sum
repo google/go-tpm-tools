@@ -815,6 +815,8 @@ cloud.google.com/go/workflows v1.12.6/go.mod h1:oDbEHKa4otYg4abwdw2Z094jB0TLLiFG
 cloud.google.com/go/workflows v1.12.8/go.mod h1:b7akG38W6lHmyPc+WYJxIYl1rEv79bBMYVwEZmp3aJQ=
 cloud.google.com/go/workflows v1.13.1/go.mod h1:xNdYtD6Sjoug+khNCAtBMK/rdh8qkjyL6aBas2XlkNc=
 cloud.google.com/go/workflows v1.14.2/go.mod h1:5nqKjMD+MsJs41sJhdVrETgvD5cOK3hUcAs8ygqYvXQ=
+cos.googlesource.com/cos/tools.git v0.0.0-20250414225215-0cf736c0714c h1:hjXKAm2rooZ+IbC+qcg56iwBjMamLFN4yFcJkjrQshw=
+cos.googlesource.com/cos/tools.git v0.0.0-20250414225215-0cf736c0714c/go.mod h1:nkYLCskTK/yNLzK+tBeK8LERdbGvwlxpL8FuqQSORmU=
 dario.cat/mergo v1.0.0/go.mod h1:uNxQE+84aUszobStD9th8a29P2fMDhsBdgRYvZOxGmk=
 dario.cat/mergo v1.0.1/go.mod h1:uNxQE+84aUszobStD9th8a29P2fMDhsBdgRYvZOxGmk=
 github.com/AdaLogics/go-fuzz-headers v0.0.0-20210715213245-6c3934b029d8/go.mod h1:CzsSbkDixRphAF5hS6wbMKq0eI6ccJRb7/A0M6JBnwg=
