@@ -1,0 +1,6 @@
+[workspace]
+resolver = "2"
+members = [
+    "workload_service/key_custody_core",
+    "key_protection_service/key_custody_core",
+]
