@@ -1,5 +1,5 @@
 [package]
-name = "wsd_kcc"
+name = "ws_key_custody_core"
 version = "0.1.0"
 edition = "2024"
 
