@@ -9,6 +9,11 @@ memmap2 = "0.9.9"
 prost = "0.13"
 uuid = { version = "1.20.0", features = ["v4", "serde"] }
 zeroize = { version = "1.8.2", features = ["derive"] }
+thiserror = "2.0"
+bssl-crypto = { path = "../bssl/boringssl/rust/bssl-crypto" }
+
+[dev-dependencies]
+hex = "0.4"
 
 [build-dependencies]
 prost-build = "0.13"
