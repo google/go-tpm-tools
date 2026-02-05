@@ -145,7 +145,6 @@ mod tests {
         let mut statfs: libc::statfs = unsafe { std::mem::zeroed() };
         let ret = unsafe { libc::fstatfs(fd, &mut statfs) };
         assert_eq!(ret, 0, "fstatfs failed");
-
         // SECRETMEM_MAGIC is 0x5345434d ("SECM")
         const SECRETMEM_MAGIC: libc::c_long = 0x5345434d;
         assert_eq!(
