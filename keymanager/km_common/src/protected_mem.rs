@@ -57,7 +57,6 @@ impl Vault {
         let fd = fd as RawFd;
 
         // Wrap the raw FD in a File object to manage its lifetime.
-        // Safety: We just created this FD and verified it is valid.
         let file = unsafe { File::from_raw_fd(fd) };
 
         // Set the size of the secret memory region.
@@ -67,9 +66,7 @@ impl Vault {
         let mut mmap = unsafe { MmapMut::map_mut(&file)? };
 
         // Copy the sensitive data into the secure region.
-        if !data.is_empty() {
-            mmap.copy_from_slice(data);
-        }
+        mmap.copy_from_slice(data);
 
         Ok(Vault {
             mmap,
