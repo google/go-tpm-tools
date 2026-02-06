@@ -1,14 +1,160 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
+use km_common::algorithms::HpkeAlgorithm;
+use km_common::key_types::{KeyRecord, KeyRegistry, KeySpec};
+use lazy_static::lazy_static;
+use std::slice;
+
+lazy_static! {
+    static ref KEY_REGISTRY: KeyRegistry = KeyRegistry::default();
+}
+
+fn create_kem_key(
+    algo: HpkeAlgorithm,
+    binding_pubkey: &[u8],
+    expiry_secs: u64,
+) -> Result<KeyRecord, i32> {
+    km_common::key_types::create_key_record(algo, expiry_secs, |algo, kem_pub_key| {
+        KeySpec::KemWithBindingPub {
+            algo,
+            kem_public_key: kem_pub_key,
+            binding_public_key: binding_pubkey.to_vec(),
+        }
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn key_manager_generate_kem_keypair(
+    algo: HpkeAlgorithm,
+    binding_pubkey: *const u8,
+    binding_pubkey_len: usize,
+    expiry_secs: u64,
+    out_uuid: *mut u8,
+) -> i32 {
+    if binding_pubkey.is_null() || binding_pubkey_len == 0 {
+        return -1;
+    }
+
+    let binding_pubkey_slice = unsafe { slice::from_raw_parts(binding_pubkey, binding_pubkey_len) };
+
+    match create_kem_key(algo, binding_pubkey_slice, expiry_secs) {
+        Ok(record) => {
+            let id = record.meta.id;
+            KEY_REGISTRY.add_key(record);
+            unsafe {
+                if !out_uuid.is_null() {
+                    std::ptr::copy_nonoverlapping(id.as_bytes().as_ptr(), out_uuid, 16);
+                }
+            }
+            0 // Success
+        }
+        Err(e) => e,
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use km_common::algorithms::{AeadAlgorithm, KdfAlgorithm, KemAlgorithm};
 
     #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
+    fn test_create_kem_key_success_and_zeroization() {
+        let binding_pubkey = [1u8; 32];
+        let algo = HpkeAlgorithm {
+            kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
+            kdf: KdfAlgorithm::HkdfSha256 as i32,
+            aead: AeadAlgorithm::Aes256Gcm as i32,
+        };
+
+        let result = create_kem_key(algo, &binding_pubkey, 3600);
+        assert!(result.is_ok());
+
+        let record = result.unwrap();
+        
+        // Verify UUID is present
+        assert!(!record.meta.id.is_nil());
+    }
+
+    #[test]
+    fn test_generate_kem_keypair_ffi_success() {
+        let binding_pubkey = [1u8; 32];
+        let mut uuid_bytes = [0u8; 16];
+        let algo = HpkeAlgorithm {
+            kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
+            kdf: KdfAlgorithm::HkdfSha256 as i32,
+            aead: AeadAlgorithm::Aes256Gcm as i32,
+        };
+
+        let result = key_manager_generate_kem_keypair(
+            algo,
+            binding_pubkey.as_ptr(),
+            binding_pubkey.len(),
+            3600,
+            uuid_bytes.as_mut_ptr(),
+        );
+
+        assert_eq!(result, 0);
+        assert_ne!(uuid_bytes, [0u8; 16]);
+    }
+
+    #[test]
+    fn test_generate_kem_keypair_invalid_algo() {
+        let binding_pubkey = [1u8; 32];
+        let mut uuid_bytes = [0u8; 16];
+        let algo = HpkeAlgorithm {
+            kem: 999, // Invalid KEM
+            kdf: KdfAlgorithm::HkdfSha256 as i32,
+            aead: AeadAlgorithm::Aes256Gcm as i32,
+        };
+
+        let result = key_manager_generate_kem_keypair(
+            algo,
+            binding_pubkey.as_ptr(),
+            binding_pubkey.len(),
+            3600,
+            uuid_bytes.as_mut_ptr(),
+        );
+
+        assert_eq!(result, -1);
+        assert_eq!(uuid_bytes, [0u8; 16]);
+    }
+
+    #[test]
+    fn test_generate_kem_keypair_null_binding_key() {
+        let mut uuid_bytes = [0u8; 16];
+        let algo = HpkeAlgorithm {
+            kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
+            kdf: KdfAlgorithm::HkdfSha256 as i32,
+            aead: AeadAlgorithm::Aes256Gcm as i32,
+        };
+
+        let result = key_manager_generate_kem_keypair(
+            algo,
+            std::ptr::null(), // Null ptr
+            32,
+            3600,
+            uuid_bytes.as_mut_ptr(),
+        );
+
+        assert_eq!(result, -1);
+    }
+
+    #[test]
+    fn test_generate_kem_keypair_empty_binding_key_len() {
+        let binding_pubkey = [1u8; 32];
+        let mut uuid_bytes = [0u8; 16];
+        let algo = HpkeAlgorithm {
+            kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
+            kdf: KdfAlgorithm::HkdfSha256 as i32,
+            aead: AeadAlgorithm::Aes256Gcm as i32,
+        };
+
+        let result = key_manager_generate_kem_keypair(
+            algo,
+            binding_pubkey.as_ptr(),
+            0, // Empty length
+            3600,
+            uuid_bytes.as_mut_ptr(),
+        );
+
+        assert_eq!(result, -1);
     }
 }
