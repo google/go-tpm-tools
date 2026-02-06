@@ -7,6 +7,11 @@ use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 use uuid::Uuid;
 
+#[cfg(not(test))]
+const REAPER_INTERVAL_SECS: u64 = 60;
+#[cfg(test)]
+const REAPER_INTERVAL_SECS: u64 = 1;
+
 /// Represents the purpose of the Key and its associated algorithms.
 #[derive(Clone)]
 pub enum KeySpec {
@@ -50,13 +55,50 @@ pub type KeyHandle = Uuid;
 /// Thread-safe registry for storing encryption keys.
 #[derive(Default, Clone)]
 pub struct KeyRegistry {
-    keys: Arc<RwLock<HashMap<KeyHandle, KeyRecord>>>,
+    keys: Arc<RwLock<HashMap<KeyHandle, Arc<KeyRecord>>>>,
 }
 
 impl KeyRegistry {
     pub fn add_key(&self, record: KeyRecord) {
         let mut keys = self.keys.write().unwrap();
-        keys.insert(record.meta.id, record);
+        keys.insert(record.meta.id, Arc::new(record));
+    }
+
+    pub fn remove_key(&self, id: &KeyHandle) -> Option<Arc<KeyRecord>> {
+        let mut keys = self.keys.write().unwrap();
+        keys.remove(id)
+    }
+
+    pub fn get_key(&self, id: &KeyHandle) -> Option<Arc<KeyRecord>> {
+        let keys = self.keys.read().unwrap();
+        keys.get(id).and_then(|record| {
+            if record.meta.delete_after > Instant::now() {
+                Some(Arc::clone(record))
+            } else {
+                None
+            }
+        })
+    }
+
+    /// Spawns a background reaper thread to walk through the KeyRegistry every 60s and sanitize expired keys.
+    pub fn start_reaper(&self, stop_signal: Arc<std::sync::atomic::AtomicBool>) -> std::thread::JoinHandle<()> {
+        let keys_clone = Arc::clone(&self.keys);
+        std::thread::spawn(move || {
+            while !stop_signal.load(std::sync::atomic::Ordering::Relaxed) {
+                std::thread::sleep(Duration::from_secs(REAPER_INTERVAL_SECS));
+                if stop_signal.load(std::sync::atomic::Ordering::Relaxed) {
+                    break;
+                }
+                let now = Instant::now();
+                // We only expire KemWithBindingPub keys as per requirements.
+                keys_clone.write().unwrap().retain(|_, key| {
+                    match key.meta.spec {
+                        KeySpec::KemWithBindingPub { .. } => key.meta.delete_after > now,
+                        _ => true,
+                    }
+                });
+            }
+        })
     }
 }
 
@@ -224,5 +266,102 @@ mod tests {
         let keys = registry.keys.read().unwrap();
         assert!(keys.contains_key(&id));
         assert_eq!(keys.get(&id).unwrap().meta.id, id);
+    }
+
+    #[test]
+    fn test_remove_key() {
+        let registry = KeyRegistry::default();
+        let algo = HpkeAlgorithm {
+            kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
+            kdf: KdfAlgorithm::HkdfSha256 as i32,
+            aead: AeadAlgorithm::Aes256Gcm as i32,
+        };
+        
+        let record = create_key_record(algo, 3600, |a, pk| KeySpec::Binding {
+            algo: a,
+            binding_public_key: pk,
+        }).expect("failed to create key");
+
+        let id = record.meta.id;
+        registry.add_key(record);
+        assert!(registry.remove_key(&id).is_some());
+        assert!(registry.remove_key(&id).is_none());
+    }
+
+    #[test]
+    fn test_get_key_liveness() {
+        let registry = KeyRegistry::default();
+        let algo = HpkeAlgorithm {
+            kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
+            kdf: KdfAlgorithm::HkdfSha256 as i32,
+            aead: AeadAlgorithm::Aes256Gcm as i32,
+        };
+        
+        // Key that expires in 0 seconds (already expired)
+        let record = create_key_record(algo, 0, |a, pk| KeySpec::Binding {
+            algo: a,
+            binding_public_key: pk,
+        }).expect("failed to create key");
+
+        let id = record.meta.id;
+        registry.add_key(record);
+
+        // Should be None because it's expired
+        assert!(registry.get_key(&id).is_none());
+
+        // Key that is still alive
+        let record2 = create_key_record(algo, 3600, |a, pk| KeySpec::Binding {
+            algo: a,
+            binding_public_key: pk,
+        }).expect("failed to create key");
+
+        let id2 = record2.meta.id;
+        registry.add_key(record2);
+        assert!(registry.get_key(&id2).is_some());
+    }
+
+    #[test]
+    fn test_reaper_functionality() {
+        let registry = KeyRegistry::default();
+        let algo = HpkeAlgorithm {
+            kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
+            kdf: KdfAlgorithm::HkdfSha256 as i32,
+            aead: AeadAlgorithm::Aes256Gcm as i32,
+        };
+
+        // Create a key that expires in 2 seconds (reaper interval is 1s in test)
+        // We use KemWithBindingPub because the reaper logic specifically targets this type.
+        let binding_pubkey = [42u8; 32];
+        let expiry = 2;
+        let record = create_key_record(algo, expiry, |a, pk| KeySpec::KemWithBindingPub {
+            algo: a,
+            kem_public_key: pk,
+            binding_public_key: binding_pubkey.to_vec(),
+        }).expect("failed to create key");
+        
+        let id = record.meta.id;
+        registry.add_key(record);
+
+        // Start reaper
+        let stop_signal = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let handle = registry.start_reaper(stop_signal.clone());
+
+        // Wait for < expiry (1s) - key should still be there
+        std::thread::sleep(Duration::from_secs(1));
+        assert!(registry.get_key(&id).is_some());
+
+        // Wait for > expiry (2s total) - key should be gone (reaper runs every 1s)
+        std::thread::sleep(Duration::from_secs(2));
+        
+        // Check raw storage directly to verify reaper removed it, 
+        // as get_key() also filters by expiry.
+        {
+            let keys = registry.keys.read().unwrap();
+            assert!(!keys.contains_key(&id), "Key should have been removed by reaper");
+        }
+
+        // Clean up
+        stop_signal.store(true, std::sync::atomic::Ordering::Relaxed);
+        handle.join().unwrap();
     }
 }
