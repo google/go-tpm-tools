@@ -53,8 +53,8 @@ func TestCVMAttestationMarshaling(t *testing.T) {
 		{
 			name: "Empty Quote",
 			in: &CVMAttestation{
-				Label:     []byte("label"),
-				Challenge: []byte("challenge"),
+				Label:       []byte("label"),
+				Challenge:   []byte("challenge"),
 				Attestation: &CVMAttestationQuote{},
 			},
 			want: `{"label":"bGFiZWw=","challenge":"Y2hhbGxlbmdl","cvm_attestation_quote":{}}`,
