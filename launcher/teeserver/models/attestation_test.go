@@ -14,6 +14,7 @@ func TestCVMAttestationMarshaling(t *testing.T) {
 	tests := []struct {
 		name string
 		in   *CVMAttestation
+		want string
 	}{
 		{
 			name: "TDX Attestation",
@@ -29,6 +30,7 @@ func TestCVMAttestationMarshaling(t *testing.T) {
 					DeviceReports: []DeviceAttestationReport{{}},
 				},
 			},
+			want: `{"label":"dGVzdC1sYWJlbA==","challenge":"dGVzdC1jaGFsbGVuZ2U=","cvm_attestation_quote":{"tdx_ccel_attestation":{"ccel_boot_event_log":"Y2NlbC1kYXRh","cel_launch_event_log":"Y2VsLWRhdGE=","td_quote":"dGQtcXVvdGU="},"device_attestation_reports":[{}]}}`,
 		},
 		{
 			name: "TPM Attestation",
@@ -46,10 +48,21 @@ func TestCVMAttestationMarshaling(t *testing.T) {
 					},
 				},
 			},
+			want: `{"label":"dGVzdC1sYWJlbC10cG0=","challenge":"dGVzdC1jaGFsbGVuZ2UtdHBt","cvm_attestation_quote":{"tpm_attestation":{"quotes":[{"quote":"cXVvdGUtYnl0ZXM="}],"ak_pub":"YWstcHVi","TeeAttestation":null}}}`,
+		},
+		{
+			name: "Empty Quote",
+			in: &CVMAttestation{
+				Label:     []byte("label"),
+				Challenge: []byte("challenge"),
+				Attestation: &CVMAttestationQuote{},
+			},
+			want: `{"label":"bGFiZWw=","challenge":"Y2hhbGxlbmdl","cvm_attestation_quote":{}}`,
 		},
 		{
 			name: "Empty",
 			in:   &CVMAttestation{},
+			want: `{"label":null,"challenge":null,"cvm_attestation_quote":null}`,
 		},
 	}
 
@@ -67,6 +80,24 @@ func TestCVMAttestationMarshaling(t *testing.T) {
 
 			if diff := cmp.Diff(tc.in, &out, protocmp.Transform()); diff != "" {
 				t.Errorf("Marshaling roundtrip mismatch (-want +got):\n%s", diff)
+			}
+
+			// 2. Check the JSON string output matches our expectation
+			if tc.want != "" {
+				// Unmarshal both into map[string]any to ignore key ordering and formatting
+				var gotMap map[string]any
+				if err := json.Unmarshal(blob, &gotMap); err != nil {
+					t.Fatalf("Failed to unmarshal got JSON: %v", err)
+				}
+
+				var wantMap map[string]any
+				if err := json.Unmarshal([]byte(tc.want), &wantMap); err != nil {
+					t.Fatalf("Failed to unmarshal want JSON: %v", err)
+				}
+
+				if diff := cmp.Diff(wantMap, gotMap); diff != "" {
+					t.Errorf("JSON mismatch (-want +got):\n%s", diff)
+				}
 			}
 		})
 	}

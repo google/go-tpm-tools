@@ -20,13 +20,13 @@ type CVMAttestation struct {
 // CVMAttestationQuote represents a quote from a Confidential VM.
 type CVMAttestationQuote struct {
 	// A TDX with CCEL and RTMR Attestation Quote.
-	TDXAttestation *TDXCCELAttestation `json:"tdx_ccel_attestation"`
+	TDXAttestation *TDXCCELAttestation `json:"tdx_ccel_attestation,omitempty"`
 
 	// A TPM Attestation Quote.
-	TPMAttestation *attestpb.Attestation `json:"tpm_attestation"`
+	TPMAttestation *attestpb.Attestation `json:"tpm_attestation,omitempty"`
 
 	// Attestation reports for attached devices.
-	DeviceReports []DeviceAttestationReport `json:"device_attestation_reports"`
+	DeviceReports []DeviceAttestationReport `json:"device_attestation_reports,omitempty"`
 }
 
 // TDXCCELAttestation represents a TDX attestation with CCEL event logs.
