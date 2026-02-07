@@ -1,8 +1,6 @@
 package workload_service
 
 import (
-	"bytes"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -14,34 +12,47 @@ import (
 
 // mockBindingKeyGen implements BindingKeyGenerator for testing.
 type mockBindingKeyGen struct {
-	uuid uuid.UUID
-	err  error
+	uuid   uuid.UUID
+	pubKey []byte
+	err    error
 }
 
-func (m *mockBindingKeyGen) GenerateBindingKeypair() (uuid.UUID, error) {
-	return m.uuid, m.err
+func (m *mockBindingKeyGen) GenerateBindingKeypair() (uuid.UUID, []byte, error) {
+	return m.uuid, m.pubKey, m.err
 }
 
 // mockKEMKeyGen implements KEMKeyGenerator for testing.
 type mockKEMKeyGen struct {
-	uuid          uuid.UUID
-	err           error
+	uuid           uuid.UUID
+	pubKey         []byte
+	err            error
 	receivedPubKey []byte
 }
 
-func (m *mockKEMKeyGen) GenerateKEMKeypair(bindingPubKey []byte) (uuid.UUID, error) {
+func (m *mockKEMKeyGen) GenerateKEMKeypair(bindingPubKey []byte) (uuid.UUID, []byte, error) {
 	m.receivedPubKey = bindingPubKey
-	return m.uuid, m.err
+	return m.uuid, m.pubKey, m.err
 }
 
-func TestHandleGenerateBindingKeypair(t *testing.T) {
-	expectedUUID := uuid.New()
+func TestHandleGenerateKeysSuccess(t *testing.T) {
+	bindingUUID := uuid.New()
+	kemUUID := uuid.New()
+	bindingPubKey := make([]byte, 32)
+	for i := range bindingPubKey {
+		bindingPubKey[i] = byte(i)
+	}
+	kemPubKey := make([]byte, 32)
+	for i := range kemPubKey {
+		kemPubKey[i] = byte(i + 100)
+	}
+
+	kemGen := &mockKEMKeyGen{uuid: kemUUID, pubKey: kemPubKey}
 	srv := NewServer(
-		&mockBindingKeyGen{uuid: expectedUUID},
-		&mockKEMKeyGen{},
+		&mockBindingKeyGen{uuid: bindingUUID, pubKey: bindingPubKey},
+		kemGen,
 	)
 
-	req := httptest.NewRequest(http.MethodPost, "/keys:generateBindingKeypair", nil)
+	req := httptest.NewRequest(http.MethodPost, "/keys:generate", nil)
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 
@@ -49,19 +60,41 @@ func TestHandleGenerateBindingKeypair(t *testing.T) {
 		t.Fatalf("expected status 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	var resp GenerateBindingKeypairResponse
+	var resp GenerateKeysResponse
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	if resp.BindingKeyHandle != expectedUUID.String() {
-		t.Fatalf("expected UUID %s, got %s", expectedUUID, resp.BindingKeyHandle)
+	if resp.KEMKeyHandle != kemUUID.String() {
+		t.Fatalf("expected KEM UUID %s, got %s", kemUUID, resp.KEMKeyHandle)
+	}
+
+	// Verify the binding public key was passed to KEM generator.
+	if len(kemGen.receivedPubKey) != 32 {
+		t.Fatalf("expected 32-byte binding pub key passed to KEM gen, got %d", len(kemGen.receivedPubKey))
+	}
+	for i, b := range kemGen.receivedPubKey {
+		if b != byte(i) {
+			t.Fatalf("binding pub key mismatch at index %d", i)
+		}
+	}
+
+	// Verify the KEM → Binding mapping was stored.
+	mappedBinding, ok := srv.LookupBindingUUID(kemUUID)
+	if !ok {
+		t.Fatal("expected KEM UUID to be in kemToBindingMap")
+	}
+	if mappedBinding != bindingUUID {
+		t.Fatalf("expected mapped binding UUID %s, got %s", bindingUUID, mappedBinding)
 	}
 }
 
-func TestHandleGenerateBindingKeypairMethodNotAllowed(t *testing.T) {
-	srv := NewServer(&mockBindingKeyGen{}, &mockKEMKeyGen{})
+func TestHandleGenerateKeysMethodNotAllowed(t *testing.T) {
+	srv := NewServer(
+		&mockBindingKeyGen{pubKey: make([]byte, 32)},
+		&mockKEMKeyGen{pubKey: make([]byte, 32)},
+	)
 
-	req := httptest.NewRequest(http.MethodGet, "/keys:generateBindingKeypair", nil)
+	req := httptest.NewRequest(http.MethodGet, "/keys:generate", nil)
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 
@@ -70,13 +103,13 @@ func TestHandleGenerateBindingKeypairMethodNotAllowed(t *testing.T) {
 	}
 }
 
-func TestHandleGenerateBindingKeypairError(t *testing.T) {
+func TestHandleGenerateKeysBindingGenError(t *testing.T) {
 	srv := NewServer(
-		&mockBindingKeyGen{err: fmt.Errorf("FFI error")},
-		&mockKEMKeyGen{},
+		&mockBindingKeyGen{err: fmt.Errorf("binding FFI error")},
+		&mockKEMKeyGen{pubKey: make([]byte, 32)},
 	)
 
-	req := httptest.NewRequest(http.MethodPost, "/keys:generateBindingKeypair", nil)
+	req := httptest.NewRequest(http.MethodPost, "/keys:generate", nil)
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 
@@ -85,108 +118,79 @@ func TestHandleGenerateBindingKeypairError(t *testing.T) {
 	}
 }
 
-func TestHandleGenerateKEMKeypair(t *testing.T) {
-	expectedUUID := uuid.New()
-	bindingPK := make([]byte, 32)
-	for i := range bindingPK {
-		bindingPK[i] = byte(i)
-	}
+func TestHandleGenerateKeysKEMGenError(t *testing.T) {
+	srv := NewServer(
+		&mockBindingKeyGen{uuid: uuid.New(), pubKey: make([]byte, 32)},
+		&mockKEMKeyGen{err: fmt.Errorf("KEM FFI error")},
+	)
 
-	kemGen := &mockKEMKeyGen{uuid: expectedUUID}
-	srv := NewServer(&mockBindingKeyGen{}, kemGen)
-
-	body, _ := json.Marshal(GenerateKEMKeypairRequest{
-		BindingPublicKey: base64.StdEncoding.EncodeToString(bindingPK),
-	})
-	req := httptest.NewRequest(http.MethodPost, "/keys:generateKEMKeypair", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/keys:generate", nil)
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected status 500, got %d", w.Code)
+	}
+}
+
+func TestHandleGenerateKeysMapUniqueness(t *testing.T) {
+	bindingPubKey := make([]byte, 32)
+
+	bindingUUID1 := uuid.New()
+	bindingUUID2 := uuid.New()
+	kemUUID1 := uuid.New()
+	kemUUID2 := uuid.New()
+
+	callCount := 0
+	bindingGen := &mockBindingKeyGen{}
+	kemGen := &mockKEMKeyGen{}
+
+	srv := NewServer(bindingGen, kemGen)
+
+	// First call.
+	bindingGen.uuid = bindingUUID1
+	bindingGen.pubKey = bindingPubKey
+	kemGen.uuid = kemUUID1
+	kemGen.pubKey = make([]byte, 32)
+
+	req := httptest.NewRequest(http.MethodPost, "/keys:generate", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
-		t.Fatalf("expected status 200, got %d: %s", w.Code, w.Body.String())
+		t.Fatalf("call 1: expected status 200, got %d: %s", w.Code, w.Body.String())
 	}
+	callCount++
 
-	var resp GenerateKEMKeypairResponse
-	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
-		t.Fatalf("failed to decode response: %v", err)
-	}
-	if resp.KEMKeyHandle != expectedUUID.String() {
-		t.Fatalf("expected UUID %s, got %s", expectedUUID, resp.KEMKeyHandle)
-	}
+	// Second call.
+	bindingGen.uuid = bindingUUID2
+	kemGen.uuid = kemUUID2
 
-	if !bytes.Equal(kemGen.receivedPubKey, bindingPK) {
-		t.Fatalf("expected binding public key to be passed through")
-	}
-}
-
-func TestHandleGenerateKEMKeypairMethodNotAllowed(t *testing.T) {
-	srv := NewServer(&mockBindingKeyGen{}, &mockKEMKeyGen{})
-
-	req := httptest.NewRequest(http.MethodGet, "/keys:generateKEMKeypair", nil)
-	w := httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/keys:generate", nil)
+	w = httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
-
-	if w.Code != http.StatusMethodNotAllowed {
-		t.Fatalf("expected status 405, got %d", w.Code)
+	if w.Code != http.StatusOK {
+		t.Fatalf("call 2: expected status 200, got %d: %s", w.Code, w.Body.String())
 	}
-}
+	callCount++
 
-func TestHandleGenerateKEMKeypairInvalidJSON(t *testing.T) {
-	srv := NewServer(&mockBindingKeyGen{}, &mockKEMKeyGen{})
-
-	req := httptest.NewRequest(http.MethodPost, "/keys:generateKEMKeypair", bytes.NewReader([]byte("invalid")))
-	w := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(w, req)
-
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("expected status 400, got %d", w.Code)
+	// Verify both mappings exist.
+	mapped1, ok := srv.LookupBindingUUID(kemUUID1)
+	if !ok {
+		t.Fatal("expected kemUUID1 in map")
 	}
-}
-
-func TestHandleGenerateKEMKeypairInvalidBase64(t *testing.T) {
-	srv := NewServer(&mockBindingKeyGen{}, &mockKEMKeyGen{})
-
-	body, _ := json.Marshal(GenerateKEMKeypairRequest{
-		BindingPublicKey: "not-valid-base64!!!",
-	})
-	req := httptest.NewRequest(http.MethodPost, "/keys:generateKEMKeypair", bytes.NewReader(body))
-	w := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(w, req)
-
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("expected status 400, got %d", w.Code)
+	if mapped1 != bindingUUID1 {
+		t.Fatalf("expected binding UUID %s for kem UUID %s, got %s", bindingUUID1, kemUUID1, mapped1)
 	}
-}
 
-func TestHandleGenerateKEMKeypairEmptyBindingKey(t *testing.T) {
-	srv := NewServer(&mockBindingKeyGen{}, &mockKEMKeyGen{})
-
-	body, _ := json.Marshal(GenerateKEMKeypairRequest{
-		BindingPublicKey: base64.StdEncoding.EncodeToString([]byte{}),
-	})
-	req := httptest.NewRequest(http.MethodPost, "/keys:generateKEMKeypair", bytes.NewReader(body))
-	w := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(w, req)
-
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("expected status 400, got %d", w.Code)
+	mapped2, ok := srv.LookupBindingUUID(kemUUID2)
+	if !ok {
+		t.Fatal("expected kemUUID2 in map")
 	}
-}
+	if mapped2 != bindingUUID2 {
+		t.Fatalf("expected binding UUID %s for kem UUID %s, got %s", bindingUUID2, kemUUID2, mapped2)
+	}
 
-func TestHandleGenerateKEMKeypairError(t *testing.T) {
-	srv := NewServer(
-		&mockBindingKeyGen{},
-		&mockKEMKeyGen{err: fmt.Errorf("FFI error")},
-	)
-
-	body, _ := json.Marshal(GenerateKEMKeypairRequest{
-		BindingPublicKey: base64.StdEncoding.EncodeToString(make([]byte, 32)),
-	})
-	req := httptest.NewRequest(http.MethodPost, "/keys:generateKEMKeypair", bytes.NewReader(body))
-	w := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(w, req)
-
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("expected status 500, got %d", w.Code)
+	if callCount != 2 {
+		t.Fatalf("expected 2 calls, got %d", callCount)
 	}
 }

@@ -15,18 +15,21 @@ func TestIntegrationGenerateKEMKeypair(t *testing.T) {
 		bindingPK[i] = byte(i + 1)
 	}
 
-	id, err := GenerateKEMKeypair(bindingPK)
+	id, pubKey, err := GenerateKEMKeypair(bindingPK)
 	if err != nil {
 		t.Fatalf("GenerateKEMKeypair failed: %v", err)
 	}
 	if id == uuid.Nil {
 		t.Fatal("expected non-nil UUID")
 	}
-	t.Logf("Generated KEM key handle: %s", id)
+	if len(pubKey) == 0 {
+		t.Fatal("expected non-empty public key")
+	}
+	t.Logf("Generated KEM key handle: %s, pubkey len: %d", id, len(pubKey))
 }
 
 func TestIntegrationGenerateKEMKeypairEmptyPK(t *testing.T) {
-	_, err := GenerateKEMKeypair([]byte{})
+	_, _, err := GenerateKEMKeypair([]byte{})
 	if err == nil {
 		t.Fatal("expected error for empty binding public key")
 	}
@@ -38,11 +41,11 @@ func TestIntegrationGenerateKEMKeypairUniqueness(t *testing.T) {
 		bindingPK[i] = byte(i + 1)
 	}
 
-	id1, err := GenerateKEMKeypair(bindingPK)
+	id1, _, err := GenerateKEMKeypair(bindingPK)
 	if err != nil {
 		t.Fatalf("first GenerateKEMKeypair failed: %v", err)
 	}
-	id2, err := GenerateKEMKeypair(bindingPK)
+	id2, _, err := GenerateKEMKeypair(bindingPK)
 	if err != nil {
 		t.Fatalf("second GenerateKEMKeypair failed: %v", err)
 	}

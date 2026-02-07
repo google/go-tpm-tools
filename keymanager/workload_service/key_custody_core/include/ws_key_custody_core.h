@@ -17,13 +17,19 @@ typedef struct {
 #define AEAD_ALGORITHM_AES_256_GCM 1
 
 // key_manager_generate_binding_keypair generates an X25519 HPKE binding keypair,
-// stores the private key in a memfd_secret-backed vault, and writes the 16-byte
-// UUID key handle to out_uuid.
+// stores the private key in a memfd_secret-backed vault, writes the 16-byte
+// UUID key handle to out_uuid, and the public key to out_pubkey.
 //
-// Returns 0 on success, non-zero on error.
+// out_pubkey_len is an in/out param: pass buffer capacity in, receives actual
+// key length out. For X25519 keys this is 32 bytes.
+//
+// Returns 0 on success, -1 on key generation error, -2 if out_pubkey buffer
+// is too small.
 int32_t key_manager_generate_binding_keypair(
     HpkeAlgorithm algo,
     uint64_t expiry_secs,
-    uint8_t *out_uuid);
+    uint8_t *out_uuid,
+    uint8_t *out_pubkey,
+    size_t *out_pubkey_len);
 
 #endif // WS_KEY_CUSTODY_CORE_H_

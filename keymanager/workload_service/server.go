@@ -5,7 +5,6 @@ package workload_service
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -17,26 +16,16 @@ import (
 
 // BindingKeyGenerator generates binding keypairs via the WSD KCC FFI.
 type BindingKeyGenerator interface {
-	GenerateBindingKeypair() (uuid.UUID, error)
+	GenerateBindingKeypair() (uuid.UUID, []byte, error)
 }
 
 // KEMKeyGenerator generates KEM keypairs via the KPS KOL/KCC.
 type KEMKeyGenerator interface {
-	GenerateKEMKeypair(bindingPubKey []byte) (uuid.UUID, error)
+	GenerateKEMKeypair(bindingPubKey []byte) (uuid.UUID, []byte, error)
 }
 
-// GenerateBindingKeypairResponse is returned by POST /keys:generateBindingKeypair.
-type GenerateBindingKeypairResponse struct {
-	BindingKeyHandle string `json:"bindingKeyHandle"`
-}
-
-// GenerateKEMKeypairRequest is the body for POST /keys:generateKEMKeypair.
-type GenerateKEMKeypairRequest struct {
-	BindingPublicKey string `json:"bindingPublicKey"` // base64-encoded
-}
-
-// GenerateKEMKeypairResponse is returned by POST /keys:generateKEMKeypair.
-type GenerateKEMKeypairResponse struct {
+// GenerateKeysResponse is returned by POST /keys:generate.
+type GenerateKeysResponse struct {
 	KEMKeyHandle string `json:"kemKeyHandle"`
 }
 
@@ -61,8 +50,7 @@ func NewServer(bindingGen BindingKeyGenerator, kemGen KEMKeyGenerator) *Server {
 	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/keys:generateBindingKeypair", s.handleGenerateBindingKeypair)
-	mux.HandleFunc("/keys:generateKEMKeypair", s.handleGenerateKEMKeypair)
+	mux.HandleFunc("/keys:generate", s.handleGenerateKeys)
 
 	s.httpServer = &http.Server{Handler: mux}
 	return s
@@ -88,54 +76,41 @@ func (s *Server) Handler() http.Handler {
 	return s.httpServer.Handler
 }
 
-func (s *Server) handleGenerateBindingKeypair(w http.ResponseWriter, r *http.Request) {
+// LookupBindingUUID returns the binding UUID associated with the given KEM UUID.
+func (s *Server) LookupBindingUUID(kemUUID uuid.UUID) (uuid.UUID, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	id, ok := s.kemToBindingMap[kemUUID]
+	return id, ok
+}
+
+func (s *Server) handleGenerateKeys(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	bindingUUID, err := s.bindingGen.GenerateBindingKeypair()
+	// Step 1: Generate binding keypair via WSD KCC FFI.
+	bindingUUID, bindingPubKey, err := s.bindingGen.GenerateBindingKeypair()
 	if err != nil {
 		http.Error(w, fmt.Sprintf("failed to generate binding keypair: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	resp := GenerateBindingKeypairResponse{
-		BindingKeyHandle: bindingUUID.String(),
-	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
-}
-
-func (s *Server) handleGenerateKEMKeypair(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	var req GenerateKEMKeypairRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, fmt.Sprintf("invalid request body: %v", err), http.StatusBadRequest)
-		return
-	}
-
-	bindingPubKey, err := base64.StdEncoding.DecodeString(req.BindingPublicKey)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("invalid base64 bindingPublicKey: %v", err), http.StatusBadRequest)
-		return
-	}
-	if len(bindingPubKey) == 0 {
-		http.Error(w, "bindingPublicKey must not be empty", http.StatusBadRequest)
-		return
-	}
-
-	kemUUID, err := s.kemGen.GenerateKEMKeypair(bindingPubKey)
+	// Step 2: Generate KEM keypair via KPS KOL, passing the binding public key.
+	kemUUID, _, err := s.kemGen.GenerateKEMKeypair(bindingPubKey)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("failed to generate KEM keypair: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	resp := GenerateKEMKeypairResponse{
+	// Step 3: Store the KEM UUID → Binding UUID mapping.
+	s.mu.Lock()
+	s.kemToBindingMap[kemUUID] = bindingUUID
+	s.mu.Unlock()
+
+	// Step 4: Return KEM UUID to workload.
+	resp := GenerateKeysResponse{
 		KEMKeyHandle: kemUUID.String(),
 	}
 	w.Header().Set("Content-Type", "application/json")

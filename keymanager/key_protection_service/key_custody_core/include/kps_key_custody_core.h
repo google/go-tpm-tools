@@ -18,15 +18,21 @@ typedef struct {
 
 // key_manager_generate_kem_keypair generates an X25519 HPKE KEM keypair linked
 // to the provided binding public key. Stores the private key in a
-// memfd_secret-backed vault and writes the 16-byte UUID key handle to out_uuid.
+// memfd_secret-backed vault, writes the 16-byte UUID key handle to out_uuid,
+// and the KEM public key to out_pubkey.
 //
 // binding_pubkey must be non-null with binding_pubkey_len > 0.
-// Returns 0 on success, non-zero on error.
+// out_pubkey_len is an in/out param: pass buffer capacity in, receives actual
+// key length out. For X25519 keys this is 32 bytes.
+//
+// Returns 0 on success, -1 on error, -2 if out_pubkey buffer is too small.
 int32_t key_manager_generate_kem_keypair(
     KpsHpkeAlgorithm algo,
     const uint8_t *binding_pubkey,
     size_t binding_pubkey_len,
     uint64_t expiry_secs,
-    uint8_t *out_uuid);
+    uint8_t *out_uuid,
+    uint8_t *out_pubkey,
+    size_t *out_pubkey_len);
 
 #endif // KPS_KEY_CUSTODY_CORE_H_

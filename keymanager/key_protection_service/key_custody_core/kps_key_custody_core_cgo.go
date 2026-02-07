@@ -19,13 +19,15 @@ import (
 
 // GenerateKEMKeypair generates an X25519 HPKE KEM keypair linked to the
 // provided binding public key via Rust FFI.
-// Returns the UUID key handle of the generated KEM key.
-func GenerateKEMKeypair(bindingPubKey []byte) (uuid.UUID, error) {
+// Returns the UUID key handle and the KEM public key bytes.
+func GenerateKEMKeypair(bindingPubKey []byte) (uuid.UUID, []byte, error) {
 	if len(bindingPubKey) == 0 {
-		return uuid.Nil, fmt.Errorf("binding public key must not be empty")
+		return uuid.Nil, nil, fmt.Errorf("binding public key must not be empty")
 	}
 
 	var uuidBytes [16]byte
+	var pubkeyBuf [64]byte
+	pubkeyLen := C.size_t(len(pubkeyBuf))
 
 	algo := C.KpsHpkeAlgorithm{
 		kem:  C.KPS_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
@@ -39,14 +41,19 @@ func GenerateKEMKeypair(bindingPubKey []byte) (uuid.UUID, error) {
 		C.size_t(len(bindingPubKey)),
 		C.uint64_t(3600), // 1 hour TTL
 		(*C.uint8_t)(unsafe.Pointer(&uuidBytes[0])),
+		(*C.uint8_t)(unsafe.Pointer(&pubkeyBuf[0])),
+		&pubkeyLen,
 	)
 	if rc != 0 {
-		return uuid.Nil, fmt.Errorf("key_manager_generate_kem_keypair failed with code %d", rc)
+		return uuid.Nil, nil, fmt.Errorf("key_manager_generate_kem_keypair failed with code %d", rc)
 	}
 
 	id, err := uuid.FromBytes(uuidBytes[:])
 	if err != nil {
-		return uuid.Nil, fmt.Errorf("invalid UUID from FFI: %w", err)
+		return uuid.Nil, nil, fmt.Errorf("invalid UUID from FFI: %w", err)
 	}
-	return id, nil
+
+	pubkey := make([]byte, pubkeyLen)
+	copy(pubkey, pubkeyBuf[:pubkeyLen])
+	return id, pubkey, nil
 }

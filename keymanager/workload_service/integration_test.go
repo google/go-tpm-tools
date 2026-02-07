@@ -3,8 +3,6 @@
 package workload_service
 
 import (
-	"bytes"
-	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 
+	kps "github.com/google/go-tpm-tools/keymanager/key_protection_service"
 	kpskcc "github.com/google/go-tpm-tools/keymanager/key_protection_service/key_custody_core"
 	wskcc "github.com/google/go-tpm-tools/keymanager/workload_service/key_custody_core"
 )
@@ -19,21 +18,16 @@ import (
 // realBindingKeyGen wraps the actual WSD KCC FFI.
 type realBindingKeyGen struct{}
 
-func (r *realBindingKeyGen) GenerateBindingKeypair() (uuid.UUID, error) {
+func (r *realBindingKeyGen) GenerateBindingKeypair() (uuid.UUID, []byte, error) {
 	return wskcc.GenerateBindingKeypair()
 }
 
-// realKEMKeyGen wraps the actual KPS KCC FFI.
-type realKEMKeyGen struct{}
+func TestIntegrationGenerateKeysEndToEnd(t *testing.T) {
+	// Wire up real FFI calls: WSD KCC for binding, KPS KCC (via KPS KOL) for KEM.
+	kpsSvc := kps.NewService(kpskcc.GenerateKEMKeypair)
+	srv := NewServer(&realBindingKeyGen{}, kpsSvc)
 
-func (r *realKEMKeyGen) GenerateKEMKeypair(bindingPubKey []byte) (uuid.UUID, error) {
-	return kpskcc.GenerateKEMKeypair(bindingPubKey)
-}
-
-func TestIntegrationGenerateBindingKeypairEndToEnd(t *testing.T) {
-	srv := NewServer(&realBindingKeyGen{}, &realKEMKeyGen{})
-
-	req := httptest.NewRequest(http.MethodPost, "/keys:generateBindingKeypair", nil)
+	req := httptest.NewRequest(http.MethodPost, "/keys:generate", nil)
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 
@@ -41,52 +35,69 @@ func TestIntegrationGenerateBindingKeypairEndToEnd(t *testing.T) {
 		t.Fatalf("expected status 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	var resp GenerateBindingKeypairResponse
+	var resp GenerateKeysResponse
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
 
-	id, err := uuid.Parse(resp.BindingKeyHandle)
+	kemUUID, err := uuid.Parse(resp.KEMKeyHandle)
 	if err != nil {
 		t.Fatalf("invalid UUID in response: %v", err)
 	}
-	if id == uuid.Nil {
-		t.Fatal("expected non-nil UUID")
+	if kemUUID == uuid.Nil {
+		t.Fatal("expected non-nil KEM UUID")
 	}
-	t.Logf("E2E binding key handle: %s", id)
+
+	// Verify the KEM → Binding mapping was stored.
+	bindingUUID, ok := srv.LookupBindingUUID(kemUUID)
+	if !ok {
+		t.Fatal("expected KEM UUID to have a mapping to binding UUID")
+	}
+	if bindingUUID == uuid.Nil {
+		t.Fatal("expected non-nil binding UUID in map")
+	}
+
+	t.Logf("E2E: KEM key handle=%s, mapped binding handle=%s", kemUUID, bindingUUID)
 }
 
-func TestIntegrationGenerateKEMKeypairEndToEnd(t *testing.T) {
-	srv := NewServer(&realBindingKeyGen{}, &realKEMKeyGen{})
+func TestIntegrationGenerateKeysUniqueMappings(t *testing.T) {
+	kpsSvc := kps.NewService(kpskcc.GenerateKEMKeypair)
+	srv := NewServer(&realBindingKeyGen{}, kpsSvc)
 
-	// Use a 32-byte dummy binding public key (X25519).
-	bindingPK := make([]byte, 32)
-	for i := range bindingPK {
-		bindingPK[i] = byte(i + 1)
+	// Generate two key sets.
+	var kemUUIDs [2]uuid.UUID
+	for i := 0; i < 2; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/keys:generate", nil)
+		w := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("call %d: expected status 200, got %d: %s", i+1, w.Code, w.Body.String())
+		}
+
+		var resp GenerateKeysResponse
+		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+			t.Fatalf("call %d: failed to decode response: %v", i+1, err)
+		}
+
+		id, err := uuid.Parse(resp.KEMKeyHandle)
+		if err != nil {
+			t.Fatalf("call %d: invalid UUID: %v", i+1, err)
+		}
+		kemUUIDs[i] = id
 	}
 
-	body, _ := json.Marshal(GenerateKEMKeypairRequest{
-		BindingPublicKey: base64.StdEncoding.EncodeToString(bindingPK),
-	})
-	req := httptest.NewRequest(http.MethodPost, "/keys:generateKEMKeypair", bytes.NewReader(body))
-	w := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected status 200, got %d: %s", w.Code, w.Body.String())
+	if kemUUIDs[0] == kemUUIDs[1] {
+		t.Fatalf("expected unique KEM UUIDs, got same: %s", kemUUIDs[0])
 	}
 
-	var resp GenerateKEMKeypairResponse
-	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
-		t.Fatalf("failed to decode response: %v", err)
+	// Verify mappings are unique.
+	binding1, _ := srv.LookupBindingUUID(kemUUIDs[0])
+	binding2, _ := srv.LookupBindingUUID(kemUUIDs[1])
+	if binding1 == binding2 {
+		t.Fatalf("expected unique binding UUIDs, got same: %s", binding1)
 	}
 
-	id, err := uuid.Parse(resp.KEMKeyHandle)
-	if err != nil {
-		t.Fatalf("invalid UUID in response: %v", err)
-	}
-	if id == uuid.Nil {
-		t.Fatal("expected non-nil UUID")
-	}
-	t.Logf("E2E KEM key handle: %s", id)
+	t.Logf("E2E uniqueness: KEM1=%s→Binding1=%s, KEM2=%s→Binding2=%s",
+		kemUUIDs[0], binding1, kemUUIDs[1], binding2)
 }

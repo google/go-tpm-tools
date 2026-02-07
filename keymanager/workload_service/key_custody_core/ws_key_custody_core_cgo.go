@@ -18,9 +18,11 @@ import (
 )
 
 // GenerateBindingKeypair generates an X25519 HPKE binding keypair via Rust FFI.
-// Returns the UUID key handle of the generated key.
-func GenerateBindingKeypair() (uuid.UUID, error) {
+// Returns the UUID key handle and the public key bytes.
+func GenerateBindingKeypair() (uuid.UUID, []byte, error) {
 	var uuidBytes [16]byte
+	var pubkeyBuf [64]byte
+	pubkeyLen := C.size_t(len(pubkeyBuf))
 
 	algo := C.HpkeAlgorithm{
 		kem:  C.KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
@@ -32,14 +34,19 @@ func GenerateBindingKeypair() (uuid.UUID, error) {
 		algo,
 		C.uint64_t(3600), // 1 hour TTL
 		(*C.uint8_t)(unsafe.Pointer(&uuidBytes[0])),
+		(*C.uint8_t)(unsafe.Pointer(&pubkeyBuf[0])),
+		&pubkeyLen,
 	)
 	if rc != 0 {
-		return uuid.Nil, fmt.Errorf("key_manager_generate_binding_keypair failed with code %d", rc)
+		return uuid.Nil, nil, fmt.Errorf("key_manager_generate_binding_keypair failed with code %d", rc)
 	}
 
 	id, err := uuid.FromBytes(uuidBytes[:])
 	if err != nil {
-		return uuid.Nil, fmt.Errorf("invalid UUID from FFI: %w", err)
+		return uuid.Nil, nil, fmt.Errorf("invalid UUID from FFI: %w", err)
 	}
-	return id, nil
+
+	pubkey := make([]byte, pubkeyLen)
+	copy(pubkey, pubkeyBuf[:pubkeyLen])
+	return id, pubkey, nil
 }
