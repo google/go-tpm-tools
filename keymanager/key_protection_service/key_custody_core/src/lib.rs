@@ -28,6 +28,8 @@ pub extern "C" fn key_manager_generate_kem_keypair(
     binding_pubkey_len: usize,
     expiry_secs: u64,
     out_uuid: *mut u8,
+    out_pubkey: *mut u8,
+    out_pubkey_len: *mut usize,
 ) -> i32 {
     if binding_pubkey.is_null() || binding_pubkey_len == 0 {
         return -1;
@@ -38,10 +40,23 @@ pub extern "C" fn key_manager_generate_kem_keypair(
     match create_kem_key(algo, binding_pubkey_slice, expiry_secs) {
         Ok(record) => {
             let id = record.meta.id;
+            let pubkey = match &record.meta.spec {
+                KeySpec::KemWithBindingPub { kem_public_key, .. } => kem_public_key.clone(),
+                _ => return -1,
+            };
             KEY_REGISTRY.add_key(record);
             unsafe {
                 if !out_uuid.is_null() {
                     std::ptr::copy_nonoverlapping(id.as_bytes().as_ptr(), out_uuid, 16);
+                }
+                if !out_pubkey.is_null() && !out_pubkey_len.is_null() {
+                    let buf_len = *out_pubkey_len;
+                    if buf_len >= pubkey.len() {
+                        std::ptr::copy_nonoverlapping(pubkey.as_ptr(), out_pubkey, pubkey.len());
+                        *out_pubkey_len = pubkey.len();
+                    } else {
+                        return -2; // buffer too small
+                    }
                 }
             }
             0 // Success
@@ -77,6 +92,8 @@ mod tests {
     fn test_generate_kem_keypair_ffi_success() {
         let binding_pubkey = [1u8; 32];
         let mut uuid_bytes = [0u8; 16];
+        let mut pubkey_bytes = [0u8; 64];
+        let mut pubkey_len: usize = pubkey_bytes.len();
         let algo = HpkeAlgorithm {
             kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
             kdf: KdfAlgorithm::HkdfSha256 as i32,
@@ -89,16 +106,22 @@ mod tests {
             binding_pubkey.len(),
             3600,
             uuid_bytes.as_mut_ptr(),
+            pubkey_bytes.as_mut_ptr(),
+            &mut pubkey_len,
         );
 
         assert_eq!(result, 0);
         assert_ne!(uuid_bytes, [0u8; 16]);
+        assert_eq!(pubkey_len, 32); // X25519 public key is 32 bytes
+        assert_ne!(&pubkey_bytes[..32], &[0u8; 32]);
     }
 
     #[test]
     fn test_generate_kem_keypair_invalid_algo() {
         let binding_pubkey = [1u8; 32];
         let mut uuid_bytes = [0u8; 16];
+        let mut pubkey_bytes = [0u8; 64];
+        let mut pubkey_len: usize = pubkey_bytes.len();
         let algo = HpkeAlgorithm {
             kem: 999, // Invalid KEM
             kdf: KdfAlgorithm::HkdfSha256 as i32,
@@ -111,6 +134,8 @@ mod tests {
             binding_pubkey.len(),
             3600,
             uuid_bytes.as_mut_ptr(),
+            pubkey_bytes.as_mut_ptr(),
+            &mut pubkey_len,
         );
 
         assert_eq!(result, -1);
@@ -132,6 +157,8 @@ mod tests {
             32,
             3600,
             uuid_bytes.as_mut_ptr(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
         );
 
         assert_eq!(result, -1);
@@ -153,6 +180,8 @@ mod tests {
             0, // Empty length
             3600,
             uuid_bytes.as_mut_ptr(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
         );
 
         assert_eq!(result, -1);
