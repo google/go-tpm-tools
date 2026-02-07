@@ -4,7 +4,7 @@ package kpskcc
 
 /*
 #cgo LDFLAGS: -L${SRCDIR}/../../target/release -lkps_key_custody_core
-#cgo LDFLAGS: -lcrypto -lssl -lrust_wrapper
+#cgo LDFLAGS: -lcrypto -lssl
 #cgo LDFLAGS: -lpthread -ldl -lm -lstdc++
 #include "include/kps_key_custody_core.h"
 */

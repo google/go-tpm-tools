@@ -29,13 +29,56 @@ type GenerateKeysResponse struct {
 	KEMKeyHandle string `json:"kemKeyHandle"`
 }
 
+// ActiveKeyRegistry manages the mapping between KEM keys and Binding keys.
+type ActiveKeyRegistry interface {
+	// Register records the association between a KEM key and its Binding key.
+	Register(kemUUID, bindingUUID uuid.UUID)
+	// GetBinding returns the binding UUID associated with the given KEM UUID.
+	GetBinding(kemUUID uuid.UUID) (uuid.UUID, bool)
+	// Unregister removes the mapping for a KEM key.
+	Unregister(kemUUID uuid.UUID)
+}
+
+// MemoryActiveKeyRegistry is a thread-safe in-memory implementation of ActiveKeyRegistry.
+type MemoryActiveKeyRegistry struct {
+	mu   sync.RWMutex
+	data map[uuid.UUID]uuid.UUID
+}
+
+// NewMemoryActiveKeyRegistry creates a new MemoryActiveKeyRegistry.
+func NewMemoryActiveKeyRegistry() *MemoryActiveKeyRegistry {
+	return &MemoryActiveKeyRegistry{
+		data: make(map[uuid.UUID]uuid.UUID),
+	}
+}
+
+// Register records the association between a KEM key and its Binding key.
+func (r *MemoryActiveKeyRegistry) Register(kemUUID, bindingUUID uuid.UUID) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.data[kemUUID] = bindingUUID
+}
+
+// GetBinding returns the binding UUID associated with the given KEM UUID.
+func (r *MemoryActiveKeyRegistry) GetBinding(kemUUID uuid.UUID) (uuid.UUID, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	val, ok := r.data[kemUUID]
+	return val, ok
+}
+
+// Unregister removes the mapping for a KEM key.
+func (r *MemoryActiveKeyRegistry) Unregister(kemUUID uuid.UUID) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.data, kemUUID)
+}
+
 // Server is the WSD HTTP server.
 type Server struct {
 	bindingGen BindingKeyGenerator
 	kemGen     KEMKeyGenerator
-
-	mu              sync.RWMutex
-	kemToBindingMap map[uuid.UUID]uuid.UUID
+	registry   ActiveKeyRegistry
 
 	httpServer *http.Server
 	listener   net.Listener
@@ -44,9 +87,9 @@ type Server struct {
 // NewServer creates a new WSD server with the given dependencies.
 func NewServer(bindingGen BindingKeyGenerator, kemGen KEMKeyGenerator) *Server {
 	s := &Server{
-		bindingGen:      bindingGen,
-		kemGen:          kemGen,
-		kemToBindingMap: make(map[uuid.UUID]uuid.UUID),
+		bindingGen: bindingGen,
+		kemGen:     kemGen,
+		registry:   NewMemoryActiveKeyRegistry(),
 	}
 
 	mux := http.NewServeMux()
@@ -78,10 +121,7 @@ func (s *Server) Handler() http.Handler {
 
 // LookupBindingUUID returns the binding UUID associated with the given KEM UUID.
 func (s *Server) LookupBindingUUID(kemUUID uuid.UUID) (uuid.UUID, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	id, ok := s.kemToBindingMap[kemUUID]
-	return id, ok
+	return s.registry.GetBinding(kemUUID)
 }
 
 func (s *Server) handleGenerateKeys(w http.ResponseWriter, r *http.Request) {
@@ -105,9 +145,7 @@ func (s *Server) handleGenerateKeys(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Step 3: Store the KEM UUID → Binding UUID mapping.
-	s.mu.Lock()
-	s.kemToBindingMap[kemUUID] = bindingUUID
-	s.mu.Unlock()
+	s.registry.Register(kemUUID, bindingUUID)
 
 	// Step 4: Return KEM UUID to workload.
 	resp := GenerateKeysResponse{

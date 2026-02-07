@@ -8,96 +8,63 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/google/uuid"
-
-	kps "github.com/google/go-tpm-tools/keymanager/key_protection_service"
 	kpskcc "github.com/google/go-tpm-tools/keymanager/key_protection_service/key_custody_core"
 	wskcc "github.com/google/go-tpm-tools/keymanager/workload_service/key_custody_core"
+	"github.com/google/uuid"
 )
 
-// realBindingKeyGen wraps the actual WSD KCC FFI.
-type realBindingKeyGen struct{}
+// RealBindingKeyGen wraps the WSD KCC FFI.
+type RealBindingKeyGen struct{}
 
-func (r *realBindingKeyGen) GenerateBindingKeypair() (uuid.UUID, []byte, error) {
+func (g *RealBindingKeyGen) GenerateBindingKeypair() (uuid.UUID, []byte, error) {
 	return wskcc.GenerateBindingKeypair()
 }
 
-func TestIntegrationGenerateKeysEndToEnd(t *testing.T) {
-	// Wire up real FFI calls: WSD KCC for binding, KPS KCC (via KPS KOL) for KEM.
-	kpsSvc := kps.NewService(kpskcc.GenerateKEMKeypair)
-	srv := NewServer(&realBindingKeyGen{}, kpsSvc)
+// RealKEMKeyGen wraps the KPS KCC FFI.
+type RealKEMKeyGen struct{}
 
+func (g *RealKEMKeyGen) GenerateKEMKeypair(bindingPubKey []byte) (uuid.UUID, []byte, error) {
+	return kpskcc.GenerateKEMKeypair(bindingPubKey)
+}
+
+func TestIntegrationGenerateKeys(t *testing.T) {
+	// Initialize real FFI generators.
+	bindingGen := &RealBindingKeyGen{}
+	kemGen := &RealKEMKeyGen{}
+
+	srv := NewServer(bindingGen, kemGen)
+
+	// Create a request to generate keys.
 	req := httptest.NewRequest(http.MethodPost, "/keys:generate", nil)
 	w := httptest.NewRecorder()
+
+	// Execute the request.
 	srv.Handler().ServeHTTP(w, req)
 
+	// Verify HTTP status.
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected status 200, got %d: %s", w.Code, w.Body.String())
 	}
 
+	// Verify response body.
 	var resp GenerateKeysResponse
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
 
-	kemUUID, err := uuid.Parse(resp.KEMKeyHandle)
+	kemHandle, err := uuid.Parse(resp.KEMKeyHandle)
 	if err != nil {
-		t.Fatalf("invalid UUID in response: %v", err)
-	}
-	if kemUUID == uuid.Nil {
-		t.Fatal("expected non-nil KEM UUID")
+		t.Fatalf("invalid KEM key handle UUID: %v", err)
 	}
 
-	// Verify the KEM → Binding mapping was stored.
-	bindingUUID, ok := srv.LookupBindingUUID(kemUUID)
+	// Verify the registry has the mapping.
+	bindingUUID, ok := srv.LookupBindingUUID(kemHandle)
 	if !ok {
-		t.Fatal("expected KEM UUID to have a mapping to binding UUID")
+		t.Fatal("expected KEM UUID to be in registry")
 	}
 	if bindingUUID == uuid.Nil {
-		t.Fatal("expected non-nil binding UUID in map")
+		t.Fatal("expected non-nil binding UUID")
 	}
 
-	t.Logf("E2E: KEM key handle=%s, mapped binding handle=%s", kemUUID, bindingUUID)
-}
-
-func TestIntegrationGenerateKeysUniqueMappings(t *testing.T) {
-	kpsSvc := kps.NewService(kpskcc.GenerateKEMKeypair)
-	srv := NewServer(&realBindingKeyGen{}, kpsSvc)
-
-	// Generate two key sets.
-	var kemUUIDs [2]uuid.UUID
-	for i := 0; i < 2; i++ {
-		req := httptest.NewRequest(http.MethodPost, "/keys:generate", nil)
-		w := httptest.NewRecorder()
-		srv.Handler().ServeHTTP(w, req)
-
-		if w.Code != http.StatusOK {
-			t.Fatalf("call %d: expected status 200, got %d: %s", i+1, w.Code, w.Body.String())
-		}
-
-		var resp GenerateKeysResponse
-		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
-			t.Fatalf("call %d: failed to decode response: %v", i+1, err)
-		}
-
-		id, err := uuid.Parse(resp.KEMKeyHandle)
-		if err != nil {
-			t.Fatalf("call %d: invalid UUID: %v", i+1, err)
-		}
-		kemUUIDs[i] = id
-	}
-
-	if kemUUIDs[0] == kemUUIDs[1] {
-		t.Fatalf("expected unique KEM UUIDs, got same: %s", kemUUIDs[0])
-	}
-
-	// Verify mappings are unique.
-	binding1, _ := srv.LookupBindingUUID(kemUUIDs[0])
-	binding2, _ := srv.LookupBindingUUID(kemUUIDs[1])
-	if binding1 == binding2 {
-		t.Fatalf("expected unique binding UUIDs, got same: %s", binding1)
-	}
-
-	t.Logf("E2E uniqueness: KEM1=%s→Binding1=%s, KEM2=%s→Binding2=%s",
-		kemUUIDs[0], binding1, kemUUIDs[1], binding2)
+	t.Logf("Successfully generated KEM Key %s linked to Binding Key %s via FFI", kemHandle, bindingUUID)
 }

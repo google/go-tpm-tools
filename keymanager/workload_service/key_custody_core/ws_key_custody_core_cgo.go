@@ -4,7 +4,7 @@ package wskcc
 
 /*
 #cgo LDFLAGS: -L${SRCDIR}/../../target/release -lws_key_custody_core
-#cgo LDFLAGS: -lcrypto -lssl -lrust_wrapper
+#cgo LDFLAGS: -lcrypto -lssl
 #cgo LDFLAGS: -lpthread -ldl -lm -lstdc++
 #include "include/ws_key_custody_core.h"
 */
