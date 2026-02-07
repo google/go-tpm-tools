@@ -21,34 +21,34 @@ func TestCVMAttestationMarshaling(t *testing.T) {
 			in: &CVMAttestation{
 				Label:     []byte("test-label"),
 				Challenge: []byte("test-challenge"),
+				ExtraData: []byte("test-extra"),
 				Attestation: &CVMAttestationQuote{
 					TDXAttestation: &TDXCCELAttestation{
 						CCELBootEventLog:  []byte("ccel-data"),
 						CELLaunchEventLog: []byte("cel-data"),
 						TDQuote:           []byte("td-quote"),
 					},
-					DeviceReports: []DeviceAttestationReport{{}},
 				},
+				DeviceReports: []DeviceAttestationReport{{}},
 			},
-			want: `{"label":"dGVzdC1sYWJlbA==","challenge":"dGVzdC1jaGFsbGVuZ2U=","cvm_attestation_quote":{"tdx_ccel_attestation":{"ccel_boot_event_log":"Y2NlbC1kYXRh","cel_launch_event_log":"Y2VsLWRhdGE=","td_quote":"dGQtcXVvdGU="},"device_attestation_reports":[{}]}}`,
+			want: `{"label":"dGVzdC1sYWJlbA==","challenge":"dGVzdC1jaGFsbGVuZ2U=","extra_data":"dGVzdC1leHRyYQ==","cvm_attestation_quote":{"tdx_ccel_attestation":{"ccel_boot_event_log":"Y2NlbC1kYXRh","cel_launch_event_log":"Y2VsLWRhdGE=","td_quote":"dGQtcXVvdGU="}},"device_attestation_reports":[{}]}`,
 		},
 		{
 			name: "TPM Attestation",
 			in: &CVMAttestation{
-				Label:     []byte("test-label-tpm"),
-				Challenge: []byte("test-challenge-tpm"),
-				Attestation: &CVMAttestationQuote{
-					TPMAttestation: &attestpb.Attestation{
-						AkPub: []byte("ak-pub"),
-						Quotes: []*tpmpb.Quote{
-							{
-								Quote: []byte("quote-bytes"),
-							},
+				Label:       []byte("test-label-tpm"),
+				Challenge:   []byte("test-challenge-tpm"),
+				Attestation: &CVMAttestationQuote{},
+				VTPMAttestation: &attestpb.Attestation{
+					AkPub: []byte("ak-pub"),
+					Quotes: []*tpmpb.Quote{
+						{
+							Quote: []byte("quote-bytes"),
 						},
 					},
 				},
 			},
-			want: `{"label":"dGVzdC1sYWJlbC10cG0=","challenge":"dGVzdC1jaGFsbGVuZ2UtdHBt","cvm_attestation_quote":{"tpm_attestation":{"quotes":[{"quote":"cXVvdGUtYnl0ZXM="}],"ak_pub":"YWstcHVi","TeeAttestation":null}}}`,
+			want: `{"label":"dGVzdC1sYWJlbC10cG0=","challenge":"dGVzdC1jaGFsbGVuZ2UtdHBt","cvm_attestation_quote":{},"vtpm_attestation":{"quotes":[{"quote":"cXVvdGUtYnl0ZXM="}],"ak_pub":"YWstcHVi","TeeAttestation":null}}`,
 		},
 		{
 			name: "Empty Quote",

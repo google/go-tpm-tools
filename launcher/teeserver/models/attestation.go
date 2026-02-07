@@ -13,20 +13,23 @@ type CVMAttestation struct {
 	// Challenge provided by the workload.
 	Challenge []byte `json:"challenge"`
 
+	// Optional, provided by WSD.
+	ExtraData []byte `json:"extra_data,omitempty"`
+
 	// Attestation from the CVM.
 	Attestation *CVMAttestationQuote `json:"cvm_attestation_quote"`
+
+	// A vTPM Attestation Quote.
+	VTPMAttestation *attestpb.Attestation `json:"vtpm_attestation,omitempty"`
+
+	// Attestation reports for attached devices.
+	DeviceReports []DeviceAttestationReport `json:"device_attestation_reports,omitempty"`
 }
 
 // CVMAttestationQuote represents a quote from a Confidential VM.
 type CVMAttestationQuote struct {
 	// A TDX with CCEL and RTMR Attestation Quote.
 	TDXAttestation *TDXCCELAttestation `json:"tdx_ccel_attestation,omitempty"`
-
-	// A TPM Attestation Quote.
-	TPMAttestation *attestpb.Attestation `json:"tpm_attestation,omitempty"`
-
-	// Attestation reports for attached devices.
-	DeviceReports []DeviceAttestationReport `json:"device_attestation_reports,omitempty"`
 }
 
 // TDXCCELAttestation represents a TDX attestation with CCEL event logs.
