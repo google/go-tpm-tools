@@ -668,9 +668,11 @@ func (f *fakeTdxAttestRoot) Attest(nonce []byte) (any, error) {
 	}, nil
 }
 
-func (f *fakeTdxAttestRoot) HashChallenge(challenge []byte) []byte {
-	nonceDigest := sha512.Sum512(challenge)
-	finalNonce := sha512.Sum512(append([]byte(teemodels.WorkloadAttestationLabel), nonceDigest[:]...))
+func (f *fakeTdxAttestRoot) ComputeNonce(challenge []byte, extraData []byte) []byte {
+	extraDataDigest := sha512.Sum512(extraData)
+	challengeData := append(challenge, extraDataDigest[:]...)
+	challengeDigest := sha512.Sum512(challengeData)
+	finalNonce := sha512.Sum512(append([]byte(teemodels.WorkloadAttestationLabel), challengeDigest[:]...))
 	return finalNonce[:]
 }
 
@@ -707,23 +709,23 @@ func TestAttestationEvidence_TDX_Success(t *testing.T) {
 	}
 
 	challenge := []byte("test-challenge")
-	att, err := attestAgent.AttestationEvidence(ctx, challenge)
+	extraData := []byte("test-extra-data")
+	att, err := attestAgent.AttestationEvidence(ctx, challenge, extraData)
 	if err != nil {
 		t.Fatalf("AttestationEvidence failed: %v", err)
 	}
 
-	if att.Attestation.TDXAttestation == nil {
+	if att.Quote.TDXCCELQuote == nil {
 		t.Fatal("expected TDCCELAttestation to be populated for TDX")
 	}
 
-	if string(att.Attestation.TDXAttestation.TDQuote) != "fake-tdx-quote" {
-		t.Errorf("got quote %s, want fake-tdx-quote", string(att.Attestation.TDXAttestation.TDQuote))
+	if string(att.Quote.TDXCCELQuote.TDQuote) != "fake-tdx-quote" {
+		t.Errorf("got quote %s, want fake-tdx-quote", string(att.Quote.TDXCCELQuote.TDQuote))
 	}
 
-	nonceDigest := sha512.Sum512(challenge)
-	expectedHash := sha512.Sum512(append([]byte(teemodels.WorkloadAttestationLabel), nonceDigest[:]...))
-	if !bytes.Equal(fakeRoot.receivedNonce, expectedHash[:]) {
-		t.Errorf("got nonce %x, want %x", fakeRoot.receivedNonce, expectedHash[:])
+	expectedHash := fakeRoot.ComputeNonce(challenge, extraData)
+	if !bytes.Equal(fakeRoot.receivedNonce, expectedHash) {
+		t.Errorf("got nonce %x, want %x", fakeRoot.receivedNonce, expectedHash)
 	}
 }
 
@@ -753,15 +755,16 @@ func TestAttestationEvidence_TPM_Success(t *testing.T) {
 	}
 
 	challenge := []byte("test-challenge")
-	att, err := agent.AttestationEvidence(ctx, challenge)
+	extraData := []byte("test-extra-data")
+	att, err := agent.AttestationEvidence(ctx, challenge, extraData)
 	if err != nil {
 		t.Fatalf("AttestationEvidence failed on TPM: %v", err)
 	}
 
-	if att.Attestation.TPMAttestation == nil {
+	if att.Quote.VTPMAttestation == nil {
 		t.Fatal("expected Attestation to be populated for TPM")
 	}
-	if att.Attestation.TDXAttestation != nil {
+	if att.Quote.TDXCCELQuote != nil {
 		t.Fatal("expected TDCCELAttestation to be nil for TPM")
 	}
 }

@@ -146,6 +146,7 @@ func (a *attestHandler) getAttestationEvidence(w http.ResponseWriter, r *http.Re
 
 	var req struct {
 		Challenge []byte `json:"challenge"`
+		ExtraData []byte `json:"extra_data,omitempty"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -157,7 +158,7 @@ func (a *attestHandler) getAttestationEvidence(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	evidence, err := a.attestAgent.AttestationEvidence(a.ctx, req.Challenge)
+	evidence, err := a.attestAgent.AttestationEvidence(a.ctx, req.Challenge, req.ExtraData)
 	if err != nil {
 		a.logAndWriteHTTPError(w, http.StatusInternalServerError, err)
 		return

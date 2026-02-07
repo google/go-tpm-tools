@@ -56,7 +56,7 @@ type AttestationAgent interface {
 	MeasureEvent(gecel.Content) error
 	Attest(context.Context, AttestAgentOpts) ([]byte, error)
 	AttestWithClient(ctx context.Context, opts AttestAgentOpts, client verifier.Client) ([]byte, error)
-	AttestationEvidence(ctx context.Context, challenge []byte) (*teemodels.CVMAttestation, error)
+	AttestationEvidence(ctx context.Context, challenge []byte, extraData []byte) (*teemodels.VMAttestation, error)
 	Refresh(context.Context) error
 	Close() error
 }
@@ -69,8 +69,8 @@ type attestRoot interface {
 	GetCEL() gecel.CEL
 	// Attest fetches a technology-specific quote from the root of trust.
 	Attest(nonce []byte) (any, error)
-	// HashChallenge hashes the challenge using the algorithm preferred by the attestation root.
-	HashChallenge(challenge []byte) []byte
+	// ComputeNonce hashes the challenge and extraData using the algorithm preferred by the attestation root.
+	ComputeNonce(challenge []byte, extraData []byte) []byte
 }
 
 // AttestAgentOpts contains user generated options when calling the
@@ -286,7 +286,7 @@ func (a *agent) AttestWithClient(ctx context.Context, opts AttestAgentOpts, clie
 }
 
 // AttestationEvidence returns the attestation evidence (TPM or TDX).
-func (a *agent) AttestationEvidence(_ context.Context, challenge []byte) (*teemodels.CVMAttestation, error) {
+func (a *agent) AttestationEvidence(_ context.Context, challenge []byte, extraData []byte) (*teemodels.VMAttestation, error) {
 	if !a.launchSpec.Experiments.EnableAttestationEvidence {
 		return nil, fmt.Errorf("attestation evidence is disabled")
 	}
@@ -295,9 +295,9 @@ func (a *agent) AttestationEvidence(_ context.Context, challenge []byte) (*teemo
 		return nil, fmt.Errorf("attestation agent does not have an initialized attestation root")
 	}
 
-	// Use nested hashing to separate the prefix and the nonce
+	// Use nested hashing to separate the prefix, the challenge, and extraData
 	// and normalize input length.
-	finalNonce := a.avRot.HashChallenge(challenge)
+	finalNonce := a.avRot.ComputeNonce(challenge, extraData)
 	attResult, err := a.avRot.Attest(finalNonce)
 	if err != nil {
 		return nil, fmt.Errorf("failed to attest: %v", err)
@@ -308,18 +308,19 @@ func (a *agent) AttestationEvidence(_ context.Context, challenge []byte) (*teemo
 		return nil, err
 	}
 
-	attestation := &teemodels.CVMAttestation{
-		Label:       []byte(teemodels.WorkloadAttestationLabel),
-		Challenge:   challenge,
-		Attestation: &teemodels.CVMAttestationQuote{},
+	attestation := &teemodels.VMAttestation{
+		Label:     []byte(teemodels.WorkloadAttestationLabel),
+		Challenge: challenge,
+		ExtraData: extraData,
+		Quote:     &teemodels.VMAttestationQuote{},
 	}
 
 	switch v := attResult.(type) {
 	case *pb.Attestation:
 		v.CanonicalEventLog = cosCel.Bytes()
-		attestation.Attestation.TPMAttestation = v
+		attestation.Quote.VTPMAttestation = v
 	case *verifier.TDCCELAttestation:
-		attestation.Attestation.TDXAttestation = &teemodels.TDXCCELAttestation{
+		attestation.Quote.TDXCCELQuote = &teemodels.TDXCCELQuote{
 			CCELBootEventLog:  v.CcelData,
 			CELLaunchEventLog: cosCel.Bytes(),
 			TDQuote:           v.TdQuote,
@@ -391,9 +392,11 @@ func (t *tpmAttestRoot) Attest(nonce []byte) (any, error) {
 	})
 }
 
-func (t *tpmAttestRoot) HashChallenge(challenge []byte) []byte {
-	nonceDigest := sha256.Sum256(challenge)
-	finalNonce := sha256.Sum256(append([]byte(teemodels.WorkloadAttestationLabel), nonceDigest[:]...))
+func (t *tpmAttestRoot) ComputeNonce(challenge []byte, extraData []byte) []byte {
+	extraDataDigest := sha256.Sum256(extraData)
+	challengeData := append(challenge, extraDataDigest[:]...)
+	challengeDigest := sha256.Sum256(challengeData)
+	finalNonce := sha256.Sum256(append([]byte(teemodels.WorkloadAttestationLabel), challengeDigest[:]...))
 	return finalNonce[:]
 }
 
@@ -441,9 +444,11 @@ func (t *tdxAttestRoot) Attest(nonce []byte) (any, error) {
 	}, nil
 }
 
-func (t *tdxAttestRoot) HashChallenge(challenge []byte) []byte {
-	nonceDigest := sha512.Sum512(challenge)
-	finalNonce := sha512.Sum512(append([]byte(teemodels.WorkloadAttestationLabel), nonceDigest[:]...))
+func (t *tdxAttestRoot) ComputeNonce(challenge []byte, extraData []byte) []byte {
+	extraDataDigest := sha512.Sum512(extraData)
+	challengeData := append(challenge, extraDataDigest[:]...)
+	challengeDigest := sha512.Sum512(challengeData)
+	finalNonce := sha512.Sum512(append([]byte(teemodels.WorkloadAttestationLabel), challengeDigest[:]...))
 	return finalNonce[:]
 }
 

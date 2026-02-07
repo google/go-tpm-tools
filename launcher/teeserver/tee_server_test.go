@@ -40,7 +40,7 @@ type fakeAttestationAgent struct {
 	measureEventFunc        func(gecel.Content) error
 	attestFunc              func(context.Context, agent.AttestAgentOpts) ([]byte, error)
 	attestWithClientFunc    func(context.Context, agent.AttestAgentOpts, verifier.Client) ([]byte, error)
-	attestationEvidenceFunc func(context.Context, []byte) (*teemodels.CVMAttestation, error)
+	attestationEvidenceFunc func(context.Context, []byte, []byte) (*teemodels.VMAttestation, error)
 }
 
 func (f fakeAttestationAgent) Attest(c context.Context, a agent.AttestAgentOpts) ([]byte, error) {
@@ -51,8 +51,8 @@ func (f fakeAttestationAgent) AttestWithClient(c context.Context, a agent.Attest
 	return f.attestWithClientFunc(c, a, v)
 }
 
-func (f fakeAttestationAgent) AttestationEvidence(c context.Context, nonce []byte) (*teemodels.CVMAttestation, error) {
-	return f.attestationEvidenceFunc(c, nonce)
+func (f fakeAttestationAgent) AttestationEvidence(c context.Context, nonce []byte, extraData []byte) (*teemodels.VMAttestation, error) {
+	return f.attestationEvidenceFunc(c, nonce, extraData)
 }
 
 func (f fakeAttestationAgent) MeasureEvent(c gecel.Content) error {
@@ -587,8 +587,8 @@ func TestAttestationEvidence(t *testing.T) {
 	ah := attestHandler{
 		logger: logging.SimpleLogger(),
 		attestAgent: fakeAttestationAgent{
-			attestationEvidenceFunc: func(_ context.Context, _ []byte) (*teemodels.CVMAttestation, error) {
-				return &teemodels.CVMAttestation{}, nil
+			attestationEvidenceFunc: func(_ context.Context, _ []byte, _ []byte) (*teemodels.VMAttestation, error) {
+				return &teemodels.VMAttestation{}, nil
 			},
 		},
 	}

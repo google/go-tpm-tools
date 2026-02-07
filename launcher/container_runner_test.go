@@ -71,7 +71,7 @@ func (f *fakeAttestationAgent) AttestWithClient(_ context.Context, _ agent.Attes
 	return nil, fmt.Errorf("unimplemented")
 }
 
-func (f *fakeAttestationAgent) AttestationEvidence(_ context.Context, _ []byte) (*teemodels.CVMAttestation, error) {
+func (f *fakeAttestationAgent) AttestationEvidence(_ context.Context, _ []byte, _ []byte) (*teemodels.VMAttestation, error) {
 	return nil, fmt.Errorf("unimplemented")
 }
 
