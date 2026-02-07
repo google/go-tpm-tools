@@ -1,0 +1,26 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "cosign",
+    srcs = [
+        "fakesignature.go",
+        "signature.go",
+    ],
+    importpath = "github.com/google/go-tpm-tools/verifier/oci/cosign",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//verifier/oci",
+        "@com_github_opencontainers_go_digest//:go_default_library",
+        "@com_github_opencontainers_image_spec//specs-go/v1:go_default_library",
+    ],
+)
+
+go_test(
+    name = "cosign_test",
+    srcs = ["signature_test.go"],
+    embed = [":cosign"],
+    deps = [
+        "@com_github_opencontainers_go_digest//:go_default_library",
+        "@com_github_opencontainers_image_spec//specs-go/v1:go_default_library",
+    ],
+)

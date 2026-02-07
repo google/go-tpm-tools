@@ -1,0 +1,38 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "spec",
+    srcs = [
+        "launch_policy.go",
+        "launch_spec.go",
+    ],
+    importpath = "github.com/google/go-tpm-tools/launcher/spec",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//cel",
+        "//launcher/internal/experiments",
+        "//launcher/internal/launchermount",
+        "//launcher/internal/logging",
+        "//launcher/launcherfile",
+        "//verifier",
+        "//verifier/util",
+        "@com_github_containerd_containerd_v2//pkg/cap:go_default_library",
+        "@com_google_cloud_go_compute_metadata//:go_default_library",
+    ],
+)
+
+go_test(
+    name = "spec_test",
+    srcs = [
+        "launch_policy_test.go",
+        "launch_spec_test.go",
+    ],
+    embed = [":spec"],
+    deps = [
+        "//launcher/internal/experiments",
+        "//launcher/internal/launchermount",
+        "//launcher/internal/logging",
+        "//verifier",
+        "@com_github_google_go_cmp//cmp",
+    ],
+)

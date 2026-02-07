@@ -1,0 +1,15 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "basic_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/google/go-tpm-tools/launcher/image/testworkloads/basic",
+    visibility = ["//visibility:private"],
+    deps = ["@com_github_golang_jwt_jwt_v4//:go_default_library"],
+)
+
+go_binary(
+    name = "basic",
+    embed = [":basic_lib"],
+    visibility = ["//visibility:public"],
+)

@@ -1,0 +1,41 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "cel",
+    srcs = [
+        "canonical_eventlog.go",
+        "cos_tlv.go",
+    ],
+    importpath = "github.com/google/go-tpm-tools/cel",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//client",
+        "@com_github_google_go_configfs_tsm//configfs/configfsi",
+        "@com_github_google_go_eventlog//register",
+        "@com_github_google_go_tdx_guest//rtmr",
+        "@com_github_google_go_tpm//legacy/tpm2",
+        "@com_github_google_go_tpm//tpmutil",
+    ],
+)
+
+go_test(
+    name = "cel_test",
+    srcs = [
+        "canonical_eventlog_test.go",
+        "cos_tlv_test.go",
+    ],
+    embed = [":cel"],
+    deps = [
+        "//client",
+        "//internal/test",
+        "//proto/attest",
+        "@com_github_google_go_cmp//cmp",
+        "@com_github_google_go_configfs_tsm//configfs/configfsi",
+        "@com_github_google_go_configfs_tsm//configfs/fakertmr",
+        "@com_github_google_go_configfs_tsm//rtmr",
+        "@com_github_google_go_eventlog//proto/state",
+        "@com_github_google_go_eventlog//register",
+        "@com_github_google_go_tpm//legacy/tpm2",
+        "@com_github_google_go_tpm//tpmutil",
+    ],
+)

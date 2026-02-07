@@ -1,0 +1,37 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+
+go_library(
+    name = "launcher_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/google/go-tpm-tools/launcher/launcher",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//client",
+        "//launcher",
+        "//launcher/internal/logging",
+        "//launcher/launcherfile",
+        "//launcher/registryauth",
+        "//launcher/spec",
+        "@com_github_containerd_containerd//:go_default_library",
+        "@com_github_containerd_containerd//defaults:go_default_library",
+        "@com_github_containerd_containerd//namespaces:go_default_library",
+        "@com_github_google_go_tpm//legacy/tpm2",
+        "@com_google_cloud_go_compute_metadata//:go_default_library",
+    ],
+)
+
+go_binary(
+    name = "launcher",
+    embed = [":launcher_lib"],
+    visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "launcher_test",
+    srcs = ["main_test.go"],
+    embed = [":launcher_lib"],
+    deps = [
+        "//launcher",
+        "//launcher/spec",
+    ],
+)

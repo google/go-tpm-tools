@@ -1,0 +1,19 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "nodeproblemdetector",
+    srcs = ["systemstats_config.go"],
+    importpath = "github.com/google/go-tpm-tools/launcher/internal/healthmonitoring/nodeproblemdetector",
+    visibility = ["//launcher:__subpackages__"],
+    deps = [
+        "//launcher/internal/logging",
+        "//launcher/internal/systemctl",
+    ],
+)
+
+go_test(
+    name = "nodeproblemdetector_test",
+    srcs = ["systemstats_config_test.go"],
+    embed = [":nodeproblemdetector"],
+    deps = ["@com_github_google_go_cmp//cmp"],
+)
