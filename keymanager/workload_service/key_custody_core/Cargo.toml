@@ -3,6 +3,9 @@ name = "ws_key_custody_core"
 version = "0.1.0"
 edition = "2024"
 
+[lib]
+crate-type = ["staticlib", "rlib"]
+
 [dependencies]
 km_common = { path = "../../km_common" }
 uuid = { version = "1.20.0", features = ["v4"] }
