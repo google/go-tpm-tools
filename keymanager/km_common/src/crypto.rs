@@ -19,6 +19,7 @@ pub enum Error {
     CryptoError,
 }
 
+/// Generates an X25519 keypair for the given KEM algorithm.
 pub fn generate_x25519_keypair(algo: KemAlgorithm) -> Result<(Vec<u8>, Vec<u8>), Error> {
     clear_stack_on_return(2, || match algo {
         KemAlgorithm::DhkemX25519HkdfSha256 => {
@@ -28,6 +29,8 @@ pub fn generate_x25519_keypair(algo: KemAlgorithm) -> Result<(Vec<u8>, Vec<u8>),
     })
 }
 
+/// BoringSSL lacks a DHKEM decap API which can perform and DH + KDF operation to generate a shared secret key.
+/// Manual implementation to decapsulate a shared secret from an encapsulated key using an X25519 private key.
 pub fn decaps_x25519(priv_key_bytes: &[u8], enc: &[u8]) -> Result<Vec<u8>, Error> {
     clear_stack_on_return(2, || {
         if priv_key_bytes.len() != 32 || enc.len() != 32 {
@@ -80,6 +83,7 @@ pub fn decaps_x25519(priv_key_bytes: &[u8], enc: &[u8]) -> Result<Vec<u8>, Error
     })
 }
 
+/// Decapsulates the shared secret from an encapsulated key using the specified KEM algorithm.
 pub fn decaps(priv_key_bytes: &[u8], enc: &[u8], algo: KemAlgorithm) -> Result<Vec<u8>, Error> {
     clear_stack_on_return(2, || match algo {
         KemAlgorithm::DhkemX25519HkdfSha256 => decaps_x25519(priv_key_bytes, enc),
@@ -87,6 +91,7 @@ pub fn decaps(priv_key_bytes: &[u8], enc: &[u8], algo: KemAlgorithm) -> Result<V
     })
 }
 
+/// Decrypts a ciphertext using HPKE (Hybrid Public Key Encryption).
 pub fn hpke_open(
     priv_key_bytes: &[u8],
     enc: &[u8],
@@ -124,6 +129,9 @@ pub fn hpke_open(
     })
 }
 
+/// Encrypts a plaintext using HPKE (Hybrid Public Key Encryption).
+/// 
+/// Returns a tuple containing the encapsulated key and the ciphertext.
 pub fn hpke_seal(
     pub_key_bytes: &[u8],
     plaintext: &[u8],
