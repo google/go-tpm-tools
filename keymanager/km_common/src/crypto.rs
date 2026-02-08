@@ -11,6 +11,8 @@ pub enum Error {
     DecapsError,
     #[error("HPKE decryption error")]
     HpkeDecryptionError,
+    #[error("HPKE encryption error")]
+    HpkeEncryptionError,
     #[error("Unsupported algorithm")]
     UnsupportedAlgorithm,
     #[error("Crypto library error")]
@@ -85,7 +87,7 @@ pub fn decaps(priv_key_bytes: &[u8], enc: &[u8], algo: KemAlgorithm) -> Result<V
     })
 }
 
-pub fn decrypt(
+pub fn hpke_open(
     priv_key_bytes: &[u8],
     enc: &[u8],
     ciphertext: &[u8],
@@ -116,6 +118,41 @@ pub fn decrypt(
                 recipient_ctx
                     .open(ciphertext, aad)
                     .ok_or(Error::HpkeDecryptionError)
+            }
+            _ => Err(Error::UnsupportedAlgorithm),
+        }
+    })
+}
+
+pub fn hpke_seal(
+    pub_key_bytes: &[u8],
+    plaintext: &[u8],
+    aad: &[u8],
+    algo: &HpkeAlgorithm,
+) -> Result<(Vec<u8>, Vec<u8>), Error> {
+    clear_stack_on_return(2, || {
+        let kem = KemAlgorithm::try_from(algo.kem).map_err(|_| Error::UnsupportedAlgorithm)?;
+        let kdf = KdfAlgorithm::try_from(algo.kdf).map_err(|_| Error::UnsupportedAlgorithm)?;
+        let aead = AeadAlgorithm::try_from(algo.aead).map_err(|_| Error::UnsupportedAlgorithm)?;
+
+        match (kem, kdf, aead) {
+            (
+                KemAlgorithm::DhkemX25519HkdfSha256,
+                KdfAlgorithm::HkdfSha256,
+                AeadAlgorithm::Aes256Gcm,
+            ) => {
+                let params = hpke::Params::new(
+                    hpke::Kem::X25519HkdfSha256,
+                    hpke::Kdf::HkdfSha256,
+                    hpke::Aead::Aes256Gcm,
+                );
+
+                let (mut sender_ctx, encapsulated_key) =
+                    hpke::SenderContext::new(&params, pub_key_bytes, b"")
+                        .ok_or(Error::HpkeEncryptionError)?;
+
+                let ciphertext = sender_ctx.seal(plaintext, aad);
+                Ok((encapsulated_key, ciphertext))
             }
             _ => Err(Error::UnsupportedAlgorithm),
         }
@@ -196,7 +233,7 @@ mod tests {
     }
 
     #[test]
-    fn test_decrypt_success() {
+    fn test_hpke_open_success() {
         let hpke_algo = HpkeAlgorithm {
             kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
             kdf: KdfAlgorithm::HkdfSha256 as i32,
@@ -221,13 +258,13 @@ mod tests {
             .expect("HPKE setup sender failed");
         let ciphertext = sender_ctx.seal(pt, aad);
 
-        let decrypted = decrypt(&sk_r, &enc, &ciphertext, aad, &hpke_algo).expect("Decryption failed");
+        let decrypted = hpke_open(&sk_r, &enc, &ciphertext, aad, &hpke_algo).expect("Decryption failed");
 
         assert_eq!(decrypted, pt);
     }
 
     #[test]
-    fn test_decrypt_failure() {
+    fn test_hpke_open_failure() {
         let hpke_algo = HpkeAlgorithm {
             kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
             kdf: KdfAlgorithm::HkdfSha256 as i32,
@@ -256,8 +293,30 @@ mod tests {
             *byte ^= 1;
         }
 
-        let result = decrypt(&sk_r, &enc, &ciphertext, aad, &hpke_algo);
+        let result = hpke_open(&sk_r, &enc, &ciphertext, aad, &hpke_algo);
         assert!(matches!(result, Err(Error::HpkeDecryptionError)));
+    }
+
+    #[test]
+    fn test_hpke_seal_success() {
+        let hpke_algo = HpkeAlgorithm {
+            kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
+            kdf: KdfAlgorithm::HkdfSha256 as i32,
+            aead: AeadAlgorithm::Aes256Gcm as i32,
+        };
+        let kem_algo = KemAlgorithm::DhkemX25519HkdfSha256;
+
+        let (pk_r, sk_r) = generate_x25519_keypair(kem_algo).expect("HPKE generation failed");
+
+        let pt = b"hello world";
+        let aad = b"additional data";
+
+        // Seal
+        let (enc, ciphertext) = hpke_seal(&pk_r, pt, aad, &hpke_algo).expect("HPKE seal failed");
+
+        // Decrypt to verify
+        let decrypted = hpke_open(&sk_r, &enc, &ciphertext, aad, &hpke_algo).expect("Decryption failed");
+        assert_eq!(decrypted, pt);
     }
 
     #[test]
