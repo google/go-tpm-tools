@@ -1,7 +1,7 @@
 use crate::algorithms::{AeadAlgorithm, HpkeAlgorithm, KdfAlgorithm, KemAlgorithm};
 use crate::crypto::secret_box::SecretBox;
 use bssl_crypto::aead::Aead;
-use bssl_crypto::{aead, hkdf, hpke};
+use bssl_crypto::{aead, hkdf, hpke, x25519};
 pub mod secret_box;
 use clear_on_drop::clear_stack_on_return;
 use thiserror::Error;
