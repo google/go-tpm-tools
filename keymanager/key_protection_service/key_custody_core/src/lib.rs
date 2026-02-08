@@ -524,7 +524,7 @@ mod tests {
         let pt = b"ignored_plaintext";
         let aad = b"test_aad";
         // We use `hpke_seal` to act as the client to generate a valid encapsulation
-        let (client_enc, _client_ct) =
+        let (client_enc, client_ct) =
             km_common::crypto::hpke_seal(&kem_pubkey_bytes, pt, aad, &algo).unwrap();
 
         // Step 3: Call `decap_and_seal`.
@@ -568,14 +568,14 @@ mod tests {
         );
 
         // 6. Verify that this secret correctly decrypts the original client ciphertext
-        let decrypted_pt = km_common::crypto::hpke_open(
-            key_record.private_key.as_bytes(),
-            &client_enc,
-            &_client_ct,
+        // using the shared secret directly instead of the private key.
+        let decrypted_pt = km_common::crypto::hpke_open_with_shared_secret(
+            &recovered_shared_secret,
+            &client_ct,
             aad,
             &algo,
         )
-        .expect("Failed to decrypt client message");
+        .expect("Failed to decrypt client message with shared secret");
 
         assert_eq!(decrypted_pt, pt);
     }
