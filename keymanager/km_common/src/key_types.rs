@@ -81,7 +81,10 @@ impl KeyRegistry {
     }
 
     /// Spawns a background reaper thread to walk through the KeyRegistry every 60s and sanitize expired keys.
-    pub fn start_reaper(&self, stop_signal: Arc<std::sync::atomic::AtomicBool>) -> std::thread::JoinHandle<()> {
+    pub fn start_reaper(
+        &self,
+        stop_signal: Arc<std::sync::atomic::AtomicBool>,
+    ) -> std::thread::JoinHandle<()> {
         let keys_clone = Arc::clone(&self.keys);
         std::thread::spawn(move || {
             while !stop_signal.load(std::sync::atomic::Ordering::Relaxed) {
@@ -91,12 +94,13 @@ impl KeyRegistry {
                 }
                 let now = Instant::now();
                 // We only expire KemWithBindingPub keys as per requirements.
-                keys_clone.write().unwrap().retain(|_, key| {
-                    match key.meta.spec {
+                keys_clone
+                    .write()
+                    .unwrap()
+                    .retain(|_, key| match key.meta.spec {
                         KeySpec::KemWithBindingPub { .. } => key.meta.delete_after > now,
                         _ => true,
-                    }
-                });
+                    });
             }
         })
     }
@@ -276,11 +280,12 @@ mod tests {
             kdf: KdfAlgorithm::HkdfSha256 as i32,
             aead: AeadAlgorithm::Aes256Gcm as i32,
         };
-        
+
         let record = create_key_record(algo, 3600, |a, pk| KeySpec::Binding {
             algo: a,
             binding_public_key: pk,
-        }).expect("failed to create key");
+        })
+        .expect("failed to create key");
 
         let id = record.meta.id;
         registry.add_key(record);
@@ -296,12 +301,13 @@ mod tests {
             kdf: KdfAlgorithm::HkdfSha256 as i32,
             aead: AeadAlgorithm::Aes256Gcm as i32,
         };
-        
+
         // Key that expires in 0 seconds (already expired)
         let record = create_key_record(algo, 0, |a, pk| KeySpec::Binding {
             algo: a,
             binding_public_key: pk,
-        }).expect("failed to create key");
+        })
+        .expect("failed to create key");
 
         let id = record.meta.id;
         registry.add_key(record);
@@ -313,7 +319,8 @@ mod tests {
         let record2 = create_key_record(algo, 3600, |a, pk| KeySpec::Binding {
             algo: a,
             binding_public_key: pk,
-        }).expect("failed to create key");
+        })
+        .expect("failed to create key");
 
         let id2 = record2.meta.id;
         registry.add_key(record2);
@@ -337,8 +344,9 @@ mod tests {
             algo: a,
             kem_public_key: pk,
             binding_public_key: binding_pubkey.to_vec(),
-        }).expect("failed to create key");
-        
+        })
+        .expect("failed to create key");
+
         let id = record.meta.id;
         registry.add_key(record);
 
@@ -352,12 +360,15 @@ mod tests {
 
         // Wait for > expiry (2s total) - key should be gone (reaper runs every 1s)
         std::thread::sleep(Duration::from_secs(2));
-        
-        // Check raw storage directly to verify reaper removed it, 
+
+        // Check raw storage directly to verify reaper removed it,
         // as get_key() also filters by expiry.
         {
             let keys = registry.keys.read().unwrap();
-            assert!(!keys.contains_key(&id), "Key should have been removed by reaper");
+            assert!(
+                !keys.contains_key(&id),
+                "Key should have been removed by reaper"
+            );
         }
 
         // Clean up

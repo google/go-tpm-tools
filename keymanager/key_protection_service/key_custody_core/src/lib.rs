@@ -108,11 +108,15 @@ pub unsafe extern "C" fn key_manager_generate_kem_keypair(
 /// ## Arguments
 /// * `uuid_bytes` - A pointer to a 16-byte buffer containing the key UUID.
 ///
+/// ## Safety
+/// This function is unsafe because it dereferences the provided raw pointer.
+/// The caller must ensure that `uuid_bytes` points to a valid 16-byte buffer.
+///
 /// ## Returns
 /// * `0` on success.
 /// * `-1` if the UUID pointer is null or the key was not found.
 #[unsafe(no_mangle)]
-pub extern "C" fn key_manager_destroy_kem_key(uuid_bytes: *const u8) -> i32 {
+pub unsafe extern "C" fn key_manager_destroy_kem_key(uuid_bytes: *const u8) -> i32 {
     if uuid_bytes.is_null() {
         return -1;
     }
@@ -301,34 +305,36 @@ mod tests {
             aead: AeadAlgorithm::Aes256Gcm as i32,
         };
 
-        key_manager_generate_kem_keypair(
-            algo,
-            binding_pubkey.as_ptr(),
-            binding_pubkey.len(),
-            3600,
-            uuid_bytes.as_mut_ptr(),
-            std::ptr::null_mut(),
-            std::ptr::null_mut(),
-        );
+        unsafe {
+            key_manager_generate_kem_keypair(
+                algo,
+                binding_pubkey.as_ptr(),
+                binding_pubkey.len(),
+                3600,
+                uuid_bytes.as_mut_ptr(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            );
+        }
 
-        let result = key_manager_destroy_kem_key(uuid_bytes.as_ptr());
+        let result = unsafe { key_manager_destroy_kem_key(uuid_bytes.as_ptr()) };
         assert_eq!(result, 0);
 
         // Second destroy should fail
-        let result = key_manager_destroy_kem_key(uuid_bytes.as_ptr());
+        let result = unsafe { key_manager_destroy_kem_key(uuid_bytes.as_ptr()) };
         assert_eq!(result, -1);
     }
 
     #[test]
     fn test_destroy_kem_key_not_found() {
         let uuid_bytes = [0u8; 16];
-        let result = key_manager_destroy_kem_key(uuid_bytes.as_ptr());
+        let result = unsafe { key_manager_destroy_kem_key(uuid_bytes.as_ptr()) };
         assert_eq!(result, -1);
     }
 
     #[test]
     fn test_destroy_kem_key_null_ptr() {
-        let result = key_manager_destroy_kem_key(std::ptr::null());
+        let result = unsafe { key_manager_destroy_kem_key(std::ptr::null()) };
         assert_eq!(result, -1);
     }
 }
