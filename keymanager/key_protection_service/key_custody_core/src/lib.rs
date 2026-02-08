@@ -7,6 +7,7 @@ lazy_static! {
     static ref KEY_REGISTRY: KeyRegistry = KeyRegistry::default();
 }
 
+/// Creates a new KEM key record with the specified HPKE algorithm, binding public key, and expiration.
 fn create_kem_key(
     algo: HpkeAlgorithm,
     binding_pubkey: &[u8],
@@ -21,6 +22,22 @@ fn create_kem_key(
     })
 }
 
+/// Generates a new KEM keypair associated with a binding public key.
+///
+/// ## Arguments
+/// * `algo` - The HPKE algorithm to use for the keypair.
+/// * `binding_pubkey` - A pointer to the binding public key bytes.
+/// * `binding_pubkey_len` - The length of the binding public key.
+/// * `expiry_secs` - The expiration time of the key in seconds from now.
+/// * `out_uuid` - A pointer to a 16-byte buffer where the key UUID will be written.
+/// * `out_pubkey` - A pointer to a buffer where the public key will be written.
+/// * `out_pubkey_len` - A pointer to a `usize` that contains the size of `out_pubkey` buffer.
+///                      On success, it will be updated with the actual size of the public key.
+///
+/// ## Returns
+/// * `0` on success.
+/// * `-1` if an error occurred during key generation or if `binding_pubkey` is null/empty.
+/// * `-2` if the `out_pubkey` buffer is too small.
 #[unsafe(no_mangle)]
 pub extern "C" fn key_manager_generate_kem_keypair(
     algo: HpkeAlgorithm,

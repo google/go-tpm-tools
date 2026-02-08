@@ -6,6 +6,7 @@ lazy_static! {
     static ref KEY_REGISTRY: KeyRegistry = KeyRegistry::default();
 }
 
+/// Creates a new binding key record with the specified HPKE algorithm and expiration.
 fn create_binding_key(
     algo: HpkeAlgorithm,
     expiry_secs: u64,
@@ -16,6 +17,20 @@ fn create_binding_key(
     })
 }
 
+/// Generates a new binding HPKE keypair.
+///
+/// ## Arguments
+/// * `algo` - The HPKE algorithm to use for the keypair.
+/// * `expiry_secs` - The expiration time of the key in seconds from now.
+/// * `out_uuid` - A pointer to a 16-byte buffer where the key UUID will be written.
+/// * `out_pubkey` - A pointer to a buffer where the public key will be written.
+/// * `out_pubkey_len` - A pointer to a `usize` that contains the size of `out_pubkey` buffer.
+///                      On success, it will be updated with the actual size of the public key.
+///
+/// ## Returns
+/// * `0` on success.
+/// * `-1` if an error occurred during key generation.
+/// * `-2` if the `out_pubkey` buffer is too small.
 #[unsafe(no_mangle)]
 pub extern "C" fn key_manager_generate_binding_keypair(
     algo: HpkeAlgorithm,
