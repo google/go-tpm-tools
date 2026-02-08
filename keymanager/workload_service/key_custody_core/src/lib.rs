@@ -7,10 +7,7 @@ lazy_static! {
 }
 
 /// Creates a new binding key record with the specified HPKE algorithm and expiration.
-fn create_binding_key(
-    algo: HpkeAlgorithm,
-    expiry_secs: u64,
-) -> Result<KeyRecord, i32> {
+fn create_binding_key(algo: HpkeAlgorithm, expiry_secs: u64) -> Result<KeyRecord, i32> {
     km_common::key_types::create_key_record(algo, expiry_secs, |algo, pub_key| KeySpec::Binding {
         algo,
         binding_public_key: pub_key,
@@ -25,14 +22,21 @@ fn create_binding_key(
 /// * `out_uuid` - A pointer to a 16-byte buffer where the key UUID will be written.
 /// * `out_pubkey` - A pointer to a buffer where the public key will be written.
 /// * `out_pubkey_len` - A pointer to a `usize` that contains the size of `out_pubkey` buffer.
-///                      On success, it will be updated with the actual size of the public key.
+///   On success, it will be updated with the actual size of the public key.
+///
+/// ## Safety
+/// This function is unsafe because it dereferences the provided raw pointers.
+/// The caller must ensure that:
+/// * `out_uuid` is either null or points to a valid 16-byte buffer.
+/// * `out_pubkey` is either null or points to a valid buffer of at least `*out_pubkey_len` bytes.
+/// * `out_pubkey_len` is either null or points to a valid `usize`.
 ///
 /// ## Returns
 /// * `0` on success.
 /// * `-1` if an error occurred during key generation.
 /// * `-2` if the `out_pubkey` buffer is too small.
 #[unsafe(no_mangle)]
-pub extern "C" fn key_manager_generate_binding_keypair(
+pub unsafe extern "C" fn key_manager_generate_binding_keypair(
     algo: HpkeAlgorithm,
     expiry_secs: u64,
     out_uuid: *mut u8,
@@ -43,7 +47,9 @@ pub extern "C" fn key_manager_generate_binding_keypair(
         Ok(record) => {
             let id = record.meta.id;
             let pubkey = match &record.meta.spec {
-                KeySpec::Binding { binding_public_key, .. } => binding_public_key.clone(),
+                KeySpec::Binding {
+                    binding_public_key, ..
+                } => binding_public_key.clone(),
                 _ => return -1,
             };
             KEY_REGISTRY.add_key(record);
@@ -84,7 +90,7 @@ mod tests {
         assert!(result.is_ok());
 
         let record = result.unwrap();
-        
+
         // Verify UUID is present
         assert!(!record.meta.id.is_nil());
     }
@@ -100,10 +106,15 @@ mod tests {
             aead: AeadAlgorithm::Aes256Gcm as i32,
         };
 
-        let result = key_manager_generate_binding_keypair(
-            algo, 3600, uuid_bytes.as_mut_ptr(),
-            pubkey_bytes.as_mut_ptr(), &mut pubkey_len,
-        );
+        let result = unsafe {
+            key_manager_generate_binding_keypair(
+                algo,
+                3600,
+                uuid_bytes.as_mut_ptr(),
+                pubkey_bytes.as_mut_ptr(),
+                &mut pubkey_len,
+            )
+        };
 
         assert_eq!(result, 0);
         assert_ne!(uuid_bytes, [0u8; 16]);
@@ -122,10 +133,15 @@ mod tests {
             aead: AeadAlgorithm::Aes256Gcm as i32,
         };
 
-        let result = key_manager_generate_binding_keypair(
-            algo, 3600, uuid_bytes.as_mut_ptr(),
-            pubkey_bytes.as_mut_ptr(), &mut pubkey_len,
-        );
+        let result = unsafe {
+            key_manager_generate_binding_keypair(
+                algo,
+                3600,
+                uuid_bytes.as_mut_ptr(),
+                pubkey_bytes.as_mut_ptr(),
+                &mut pubkey_len,
+            )
+        };
 
         assert_eq!(result, -1);
         assert_eq!(uuid_bytes, [0u8; 16]); // Should remain untouched/zero
@@ -140,10 +156,15 @@ mod tests {
         };
 
         // Pass null pointers, should succeed (return 0) but not crash
-        let result = key_manager_generate_binding_keypair(
-            algo, 3600, std::ptr::null_mut(),
-            std::ptr::null_mut(), std::ptr::null_mut(),
-        );
+        let result = unsafe {
+            key_manager_generate_binding_keypair(
+                algo,
+                3600,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            )
+        };
 
         assert_eq!(result, 0);
     }

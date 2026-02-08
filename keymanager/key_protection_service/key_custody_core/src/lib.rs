@@ -32,14 +32,22 @@ fn create_kem_key(
 /// * `out_uuid` - A pointer to a 16-byte buffer where the key UUID will be written.
 /// * `out_pubkey` - A pointer to a buffer where the public key will be written.
 /// * `out_pubkey_len` - A pointer to a `usize` that contains the size of `out_pubkey` buffer.
-///                      On success, it will be updated with the actual size of the public key.
+///   On success, it will be updated with the actual size of the public key.
+///
+/// ## Safety
+/// This function is unsafe because it dereferences the provided raw pointers.
+/// The caller must ensure that:
+/// * `binding_pubkey` points to a valid buffer of at least `binding_pubkey_len` bytes.
+/// * `out_uuid` is either null or points to a valid 16-byte buffer.
+/// * `out_pubkey` is either null or points to a valid buffer of at least `*out_pubkey_len` bytes.
+/// * `out_pubkey_len` is either null or points to a valid `usize`.
 ///
 /// ## Returns
 /// * `0` on success.
 /// * `-1` if an error occurred during key generation or if `binding_pubkey` is null/empty.
 /// * `-2` if the `out_pubkey` buffer is too small.
 #[unsafe(no_mangle)]
-pub extern "C" fn key_manager_generate_kem_keypair(
+pub unsafe extern "C" fn key_manager_generate_kem_keypair(
     algo: HpkeAlgorithm,
     binding_pubkey: *const u8,
     binding_pubkey_len: usize,
@@ -100,7 +108,7 @@ mod tests {
         assert!(result.is_ok());
 
         let record = result.unwrap();
-        
+
         // Verify UUID is present
         assert!(!record.meta.id.is_nil());
     }
@@ -117,15 +125,17 @@ mod tests {
             aead: AeadAlgorithm::Aes256Gcm as i32,
         };
 
-        let result = key_manager_generate_kem_keypair(
-            algo,
-            binding_pubkey.as_ptr(),
-            binding_pubkey.len(),
-            3600,
-            uuid_bytes.as_mut_ptr(),
-            pubkey_bytes.as_mut_ptr(),
-            &mut pubkey_len,
-        );
+        let result = unsafe {
+            key_manager_generate_kem_keypair(
+                algo,
+                binding_pubkey.as_ptr(),
+                binding_pubkey.len(),
+                3600,
+                uuid_bytes.as_mut_ptr(),
+                pubkey_bytes.as_mut_ptr(),
+                &mut pubkey_len,
+            )
+        };
 
         assert_eq!(result, 0);
         assert_ne!(uuid_bytes, [0u8; 16]);
@@ -145,15 +155,17 @@ mod tests {
             aead: AeadAlgorithm::Aes256Gcm as i32,
         };
 
-        let result = key_manager_generate_kem_keypair(
-            algo,
-            binding_pubkey.as_ptr(),
-            binding_pubkey.len(),
-            3600,
-            uuid_bytes.as_mut_ptr(),
-            pubkey_bytes.as_mut_ptr(),
-            &mut pubkey_len,
-        );
+        let result = unsafe {
+            key_manager_generate_kem_keypair(
+                algo,
+                binding_pubkey.as_ptr(),
+                binding_pubkey.len(),
+                3600,
+                uuid_bytes.as_mut_ptr(),
+                pubkey_bytes.as_mut_ptr(),
+                &mut pubkey_len,
+            )
+        };
 
         assert_eq!(result, -1);
         assert_eq!(uuid_bytes, [0u8; 16]);
@@ -168,15 +180,17 @@ mod tests {
             aead: AeadAlgorithm::Aes256Gcm as i32,
         };
 
-        let result = key_manager_generate_kem_keypair(
-            algo,
-            std::ptr::null(), // Null ptr
-            32,
-            3600,
-            uuid_bytes.as_mut_ptr(),
-            std::ptr::null_mut(),
-            std::ptr::null_mut(),
-        );
+        let result = unsafe {
+            key_manager_generate_kem_keypair(
+                algo,
+                std::ptr::null(), // Null ptr
+                32,
+                3600,
+                uuid_bytes.as_mut_ptr(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            )
+        };
 
         assert_eq!(result, -1);
     }
@@ -191,15 +205,17 @@ mod tests {
             aead: AeadAlgorithm::Aes256Gcm as i32,
         };
 
-        let result = key_manager_generate_kem_keypair(
-            algo,
-            binding_pubkey.as_ptr(),
-            0, // Empty length
-            3600,
-            uuid_bytes.as_mut_ptr(),
-            std::ptr::null_mut(),
-            std::ptr::null_mut(),
-        );
+        let result = unsafe {
+            key_manager_generate_kem_keypair(
+                algo,
+                binding_pubkey.as_ptr(),
+                0, // Empty length
+                3600,
+                uuid_bytes.as_mut_ptr(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            )
+        };
 
         assert_eq!(result, -1);
     }
