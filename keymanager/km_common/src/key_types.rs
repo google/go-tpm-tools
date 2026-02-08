@@ -36,7 +36,6 @@ pub struct KeyMetadata {
     pub spec: KeySpec,
 }
 
-
 /// Internal struct to hold the Key Metadata and the secret key material.
 pub struct KeyRecord {
     pub meta: KeyMetadata,

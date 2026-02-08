@@ -1,6 +1,6 @@
 use crate::algorithms::{AeadAlgorithm, HpkeAlgorithm, KdfAlgorithm, KemAlgorithm};
-use clear_on_drop::clear_stack_on_return;
 use bssl_crypto::{hkdf, hpke, x25519};
+use clear_on_drop::clear_stack_on_return;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -22,9 +22,7 @@ pub enum Error {
 /// Generates an X25519 keypair for the given KEM algorithm.
 pub fn generate_x25519_keypair(algo: KemAlgorithm) -> Result<(Vec<u8>, Vec<u8>), Error> {
     clear_stack_on_return(2, || match algo {
-        KemAlgorithm::DhkemX25519HkdfSha256 => {
-            Ok(hpke::Kem::X25519HkdfSha256.generate_keypair())
-        }
+        KemAlgorithm::DhkemX25519HkdfSha256 => Ok(hpke::Kem::X25519HkdfSha256.generate_keypair()),
         _ => Err(Error::UnsupportedAlgorithm),
     })
 }
@@ -52,7 +50,7 @@ pub fn decaps_x25519(priv_key_bytes: &[u8], enc: &[u8]) -> Result<Vec<u8>, Error
         // LabeledExtract(salt, label, ikm) = HKDF-Extract(salt, "HPKE-v1" || suite_id || label || ikm)
         // suite_id = "KEM" || I2OSP(kem_id, 2)
         let suite_id = [b'K', b'E', b'M', 0, 0x20];
-        
+
         // Extract eae_prk
         // labeled_ikm = "HPKE-v1" || suite_id || "eae_prk" || shared_key
         let mut labeled_ikm = Vec::with_capacity(7 + 5 + 7 + 32);
@@ -130,7 +128,7 @@ pub fn hpke_open(
 }
 
 /// Encrypts a plaintext using HPKE (Hybrid Public Key Encryption).
-/// 
+///
 /// Returns a tuple containing the encapsulated key and the ciphertext.
 pub fn hpke_seal(
     pub_key_bytes: &[u8],
@@ -174,12 +172,12 @@ mod tests {
 
     #[test]
     fn test_decaps_x25519_clamped_vector() {
-        // Since BoringSSL X25519 always clamps the private key, we use vectors that 
+        // Since BoringSSL X25519 always clamps the private key, we use vectors that
         // are consistent with clamping.
         // Input private key (clamped internally by BoringSSL):
         let sk_r_hex = "468c86c75053df4d0925e01f5446700e57288f3316c5b610c3b9b94090b8f2cb";
         let enc_hex = "1b2767097950294d300c2830366c3c58853c83a736466336e392576b9762194d";
-        
+
         // This is what we get when we run with clamping:
         let expected_shared_secret_hex =
             "b1e179eefbcdfe490a1929c3c6e5de6d98f3ed4463b6d94627390119610baa83";
@@ -206,8 +204,8 @@ mod tests {
         let hpke_aead = hpke::Aead::Aes256Gcm;
         let params = hpke::Params::new(hpke_kem, hpke_kdf, hpke_aead);
 
-        let (_sender_ctx, enc) = hpke::SenderContext::new(&params, &pk_r, b"")
-            .expect("HPKE setup sender failed");
+        let (_sender_ctx, enc) =
+            hpke::SenderContext::new(&params, &pk_r, b"").expect("HPKE setup sender failed");
 
         let result = decaps(&sk_r, &enc, kem_algo).expect("Decaps wrapper failed");
         assert_eq!(result.len(), 32);
@@ -250,7 +248,6 @@ mod tests {
 
         let kem_algo = KemAlgorithm::DhkemX25519HkdfSha256;
 
-
         let (pk_r, sk_r) = generate_x25519_keypair(kem_algo).expect("HPKE generation failed");
 
         let pt = b"hello world";
@@ -262,11 +259,12 @@ mod tests {
         let hpke_aead = hpke::Aead::Aes256Gcm;
         let params = hpke::Params::new(hpke_kem, hpke_kdf, hpke_aead);
 
-        let (mut sender_ctx, enc) = hpke::SenderContext::new(&params, &pk_r, info)
-            .expect("HPKE setup sender failed");
+        let (mut sender_ctx, enc) =
+            hpke::SenderContext::new(&params, &pk_r, info).expect("HPKE setup sender failed");
         let ciphertext = sender_ctx.seal(pt, aad);
 
-        let decrypted = hpke_open(&sk_r, &enc, &ciphertext, aad, &hpke_algo).expect("Decryption failed");
+        let decrypted =
+            hpke_open(&sk_r, &enc, &ciphertext, aad, &hpke_algo).expect("Decryption failed");
 
         assert_eq!(decrypted, pt);
     }
@@ -292,8 +290,8 @@ mod tests {
         let hpke_aead = hpke::Aead::Aes256Gcm;
         let params = hpke::Params::new(hpke_kem, hpke_kdf, hpke_aead);
 
-        let (mut sender_ctx, enc) = hpke::SenderContext::new(&params, &pk_r, info)
-            .expect("HPKE setup sender failed");
+        let (mut sender_ctx, enc) =
+            hpke::SenderContext::new(&params, &pk_r, info).expect("HPKE setup sender failed");
         let mut ciphertext = sender_ctx.seal(pt, aad);
 
         // Tamper with ciphertext
@@ -323,7 +321,8 @@ mod tests {
         let (enc, ciphertext) = hpke_seal(&pk_r, pt, aad, &hpke_algo).expect("HPKE seal failed");
 
         // Decrypt to verify
-        let decrypted = hpke_open(&sk_r, &enc, &ciphertext, aad, &hpke_algo).expect("Decryption failed");
+        let decrypted =
+            hpke_open(&sk_r, &enc, &ciphertext, aad, &hpke_algo).expect("Decryption failed");
         assert_eq!(decrypted, pt);
     }
 
