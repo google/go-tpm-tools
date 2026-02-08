@@ -103,6 +103,14 @@ pub unsafe extern "C" fn key_manager_generate_kem_keypair(
     }
 }
 
+/// Destroys the KEM key associated with the given UUID.
+///
+/// ## Arguments
+/// * `uuid_bytes` - A pointer to a 16-byte buffer containing the key UUID.
+///
+/// ## Returns
+/// * `0` on success.
+/// * `-1` if the UUID pointer is null or the key was not found.
 #[unsafe(no_mangle)]
 pub extern "C" fn key_manager_destroy_kem_key(uuid_bytes: *const u8) -> i32 {
     if uuid_bytes.is_null() {
@@ -299,6 +307,8 @@ mod tests {
             binding_pubkey.len(),
             3600,
             uuid_bytes.as_mut_ptr(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
         );
 
         let result = key_manager_destroy_kem_key(uuid_bytes.as_ptr());

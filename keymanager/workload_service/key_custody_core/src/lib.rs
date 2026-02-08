@@ -83,6 +83,14 @@ pub unsafe extern "C" fn key_manager_generate_binding_keypair(
     }
 }
 
+/// Destroys the binding key associated with the given UUID.
+///
+/// ## Arguments
+/// * `uuid_bytes` - A pointer to a 16-byte buffer containing the key UUID.
+///
+/// ## Returns
+/// * `0` on success.
+/// * `-1` if the UUID pointer is null or the key was not found.
 #[unsafe(no_mangle)]
 pub extern "C" fn key_manager_destroy_binding_key(uuid_bytes: *const u8) -> i32 {
     if uuid_bytes.is_null() {
