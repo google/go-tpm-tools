@@ -2,8 +2,8 @@ use km_common::algorithms::HpkeAlgorithm;
 use km_common::crypto::PublicKey;
 use km_common::key_types::{KeyRecord, KeyRegistry, KeySpec};
 use std::slice;
-use std::sync::{Arc, LazyLock};
 use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 use uuid::Uuid;
 use zeroize::Zeroize;
@@ -171,12 +171,11 @@ pub extern "C" fn key_manager_decap_and_seal(
     let enc_key_slice = unsafe { slice::from_raw_parts(encapsulated_key, encapsulated_key_len) };
 
     // Decapsulate
-    let mut shared_secret =
-        match km_common::crypto::decaps(&key_record.private_key, enc_key_slice)
-        {
-            Ok(s) => s,
-            Err(_) => return -3,
-        };
+    let mut shared_secret = match km_common::crypto::decaps(&key_record.private_key, enc_key_slice)
+    {
+        Ok(s) => s,
+        Err(_) => return -3,
+    };
 
     let aad_slice = if !aad.is_null() && aad_len > 0 {
         unsafe { slice::from_raw_parts(aad, aad_len) }
@@ -201,29 +200,20 @@ pub extern "C" fn key_manager_decap_and_seal(
 
     // Copy outputs
     unsafe {
-        let enc_len = *out_encapsulated_key_len;
-        if enc_len < new_enc_key.len() {
-            *out_encapsulated_key_len = new_enc_key.len();
-            return -2;
-        }
-        std::ptr::copy_nonoverlapping(
-            new_enc_key.as_ptr(),
-            out_encapsulated_key,
-            new_enc_key.len(),
-        );
-        *out_encapsulated_key_len = new_enc_key.len();
+        let enc_len_req = new_enc_key.len();
+        let ct_len_req = sealed_ciphertext.len();
+        let enc_len_avail = *out_encapsulated_key_len;
+        let ct_len_avail = *out_ciphertext_len;
 
-        let ct_len = *out_ciphertext_len;
-        if ct_len < sealed_ciphertext.len() {
-            *out_ciphertext_len = sealed_ciphertext.len();
+        if enc_len_avail < enc_len_req || ct_len_avail < ct_len_req {
             return -2;
         }
-        std::ptr::copy_nonoverlapping(
-            sealed_ciphertext.as_ptr(),
-            out_ciphertext,
-            sealed_ciphertext.len(),
-        );
-        *out_ciphertext_len = sealed_ciphertext.len();
+
+        std::ptr::copy_nonoverlapping(new_enc_key.as_ptr(), out_encapsulated_key, enc_len_req);
+        *out_encapsulated_key_len = enc_len_req;
+
+        std::ptr::copy_nonoverlapping(sealed_ciphertext.as_ptr(), out_ciphertext, ct_len_req);
+        *out_ciphertext_len = ct_len_req;
     }
 
     0
@@ -550,4 +540,139 @@ mod tests {
         assert_eq!(decrypted_pt, pt);
     }
 
+    #[test]
+    fn test_decap_and_seal_invalid_uuid() {
+        let mut out_enc_key = [0u8; 32];
+        let mut out_enc_key_len = 32;
+        let mut out_ct = [0u8; 48];
+        let mut out_ct_len = 48;
+
+        let result = key_manager_decap_and_seal(
+            [0u8; 16].as_ptr(),
+            [0u8; 32].as_ptr(),
+            32,
+            std::ptr::null(),
+            0,
+            out_enc_key.as_mut_ptr(),
+            &mut out_enc_key_len,
+            out_ct.as_mut_ptr(),
+            &mut out_ct_len,
+        );
+
+        assert_eq!(result, -1);
+    }
+
+    #[test]
+    fn test_decap_and_seal_null_args() {
+        let mut out_enc_key = [0u8; 32];
+        let mut out_enc_key_len = 32;
+
+        let result = key_manager_decap_and_seal(
+            std::ptr::null(),
+            std::ptr::null(),
+            0,
+            std::ptr::null(),
+            0,
+            out_enc_key.as_mut_ptr(),
+            &mut out_enc_key_len,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+        );
+
+        assert_eq!(result, -1);
+    }
+
+    #[test]
+    fn test_decap_and_seal_decaps_fail() {
+        // 1. Setup binding key
+        let binding_kem_algo = KemAlgorithm::DhkemX25519HkdfSha256;
+        let (binding_pk, _) = km_common::crypto::generate_x25519_keypair(binding_kem_algo).unwrap();
+
+        // 2. Generate KEM key
+        let mut uuid_bytes = [0u8; 16];
+        let algo = HpkeAlgorithm {
+            kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
+            kdf: KdfAlgorithm::HkdfSha256 as i32,
+            aead: AeadAlgorithm::Aes256Gcm as i32,
+        };
+        key_manager_generate_kem_keypair(
+            algo,
+            binding_pk.as_ptr(),
+            binding_pk.len(),
+            3600,
+            uuid_bytes.as_mut_ptr(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+        );
+
+        // 3. Call with invalid encapsulated key (wrong length for X25519)
+        let mut out_enc_key = [0u8; 32];
+        let mut out_enc_key_len = 32;
+        let mut out_ct = [0u8; 48];
+        let mut out_ct_len = 48;
+
+        let result = key_manager_decap_and_seal(
+            uuid_bytes.as_ptr(),
+            [0u8; 31].as_ptr(),
+            31,
+            std::ptr::null(),
+            0,
+            out_enc_key.as_mut_ptr(),
+            &mut out_enc_key_len,
+            out_ct.as_mut_ptr(),
+            &mut out_ct_len,
+        );
+
+        assert_eq!(result, -3);
+    }
+
+    #[test]
+    fn test_decap_and_seal_buffer_too_small() {
+        // 1. Setup binding key
+        let binding_kem_algo = KemAlgorithm::DhkemX25519HkdfSha256;
+        let (binding_pk, _) = km_common::crypto::generate_x25519_keypair(binding_kem_algo).unwrap();
+
+        // 2. Generate KEM key
+        let mut uuid_bytes = [0u8; 16];
+        let mut kem_pubkey_bytes = [0u8; 32];
+        let mut kem_pubkey_len = 32;
+        let algo = HpkeAlgorithm {
+            kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
+            kdf: KdfAlgorithm::HkdfSha256 as i32,
+            aead: AeadAlgorithm::Aes256Gcm as i32,
+        };
+        key_manager_generate_kem_keypair(
+            algo.clone(),
+            binding_pk.as_ptr(),
+            binding_pk.len(),
+            3600,
+            uuid_bytes.as_mut_ptr(),
+            kem_pubkey_bytes.as_mut_ptr(),
+            &mut kem_pubkey_len,
+        );
+
+        // 3. Generate valid client encapsulation
+        let (client_enc, _) =
+            km_common::crypto::hpke_seal_raw(&kem_pubkey_bytes, b"secret", b"", &algo).unwrap();
+
+        // 4. Call with small output buffers
+        let mut out_enc_key = [0u8; 31]; // Small
+        let mut out_enc_key_len = 31;
+        let mut out_ct = [0u8; 47]; // Small
+        let mut out_ct_len = 47;
+
+        let result = key_manager_decap_and_seal(
+            uuid_bytes.as_ptr(),
+            client_enc.as_ptr(),
+            client_enc.len(),
+            std::ptr::null(),
+            0,
+            out_enc_key.as_mut_ptr(),
+            &mut out_enc_key_len,
+            out_ct.as_mut_ptr(),
+            &mut out_ct_len,
+        );
+
+        assert_eq!(result, -2);
+    }
 }
