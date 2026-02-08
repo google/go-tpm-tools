@@ -132,7 +132,7 @@ mod tests {
         let mut statfs: libc::statfs = unsafe { std::mem::zeroed() };
         let ret = unsafe { libc::fstatfs(fd, &mut statfs) };
         assert_eq!(ret, 0, "fstatfs failed");
-        
+
         // SECRETMEM_MAGIC is 0x5345434d ("SECM")
         const SECRETMEM_MAGIC: libc::c_long = 0x5345434d;
         assert_eq!(
@@ -148,10 +148,13 @@ mod tests {
         assert_eq!(ret, 0, "fstat failed");
         let expected_inode = stat.st_ino;
 
-        let maps = std::fs::read_to_string("/proc/self/maps").expect("Failed to read /proc/self/maps");
+        let maps =
+            std::fs::read_to_string("/proc/self/maps").expect("Failed to read /proc/self/maps");
         let found = maps.lines().any(|line| {
             let parts: Vec<&str> = line.split_whitespace().collect();
-            if parts.len() < 6 { return false; }
+            if parts.len() < 6 {
+                return false;
+            }
 
             let range: Vec<&str> = parts[0].split('-').collect();
             let start = usize::from_str_radix(range[0], 16).unwrap();
@@ -164,7 +167,10 @@ mod tests {
             false
         });
 
-        assert!(found, "Could not verify memfd_secret mapping in /proc/self/maps");
+        assert!(
+            found,
+            "Could not verify memfd_secret mapping in /proc/self/maps"
+        );
     }
 
     #[test]
@@ -183,6 +189,9 @@ mod tests {
         drop(vault);
 
         // Verify the memory was zeroed
-        assert!(spy.iter().all(|&b| b == 0), "Memory was not zeroed after drop");
+        assert!(
+            spy.iter().all(|&b| b == 0),
+            "Memory was not zeroed after drop"
+        );
     }
 }
