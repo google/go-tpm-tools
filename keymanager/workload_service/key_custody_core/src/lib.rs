@@ -138,7 +138,16 @@ pub unsafe extern "C" fn key_manager_destroy_binding_key(uuid_bytes: *const u8) 
 /// * `aad_len` - The length of the additional authenticated data.
 /// * `out_plaintext` - A pointer to a buffer where the decrypted plaintext will be written.
 /// * `out_plaintext_len` - A pointer to a `usize` that contains the size of `out_plaintext` buffer.
-///                         On success, it will be updated with the actual size of the plaintext.
+///   On success, it will be updated with the actual size of the plaintext.
+///
+/// ## Safety
+/// This function is unsafe because it dereferences raw pointers. The caller must ensure that:
+/// * `uuid_bytes` points to a valid 16-byte buffer.
+/// * `enc` points to a valid buffer of at least `enc_len` bytes.
+/// * `ciphertext` points to a valid buffer of at least `ciphertext_len` bytes.
+/// * `aad` points to a valid buffer of at least `aad_len` bytes.
+/// * `out_plaintext` is either null or points to a valid buffer of at least `*out_plaintext_len` bytes.
+/// * `out_plaintext_len` points to a valid `usize`.
 ///
 /// ## Returns
 /// * `0` on success.
@@ -146,7 +155,7 @@ pub unsafe extern "C" fn key_manager_destroy_binding_key(uuid_bytes: *const u8) 
 /// * `-2` if the `out_plaintext` buffer is too small.
 /// * `-3` if decryption failed.
 #[unsafe(no_mangle)]
-pub extern "C" fn key_manager_open(
+pub unsafe extern "C" fn key_manager_open(
     uuid_bytes: *const u8,
     enc: *const u8,
     enc_len: usize,
@@ -499,13 +508,15 @@ mod tests {
         };
 
         // 1. Generate keypair
-        key_manager_generate_binding_keypair(
-            algo.clone(),
-            3600,
-            uuid_bytes.as_mut_ptr(),
-            pubkey_bytes.as_mut_ptr(),
-            &mut pubkey_len,
-        );
+        unsafe {
+            key_manager_generate_binding_keypair(
+                algo,
+                3600,
+                uuid_bytes.as_mut_ptr(),
+                pubkey_bytes.as_mut_ptr(),
+                &mut pubkey_len,
+            );
+        }
 
         // 2. Encrypt something for this key
         let pt = b"secret message";
@@ -515,17 +526,19 @@ mod tests {
         // 3. Decrypt using key_manager_open
         let mut out_pt = [0u8; 64];
         let mut out_pt_len = out_pt.len();
-        let result = key_manager_open(
-            uuid_bytes.as_ptr(),
-            enc.as_ptr(),
-            enc.len(),
-            ct.as_ptr(),
-            ct.len(),
-            aad.as_ptr(),
-            aad.len(),
-            out_pt.as_mut_ptr(),
-            &mut out_pt_len,
-        );
+        let result = unsafe {
+            key_manager_open(
+                uuid_bytes.as_ptr(),
+                enc.as_ptr(),
+                enc.len(),
+                ct.as_ptr(),
+                ct.len(),
+                aad.as_ptr(),
+                aad.len(),
+                out_pt.as_mut_ptr(),
+                &mut out_pt_len,
+            )
+        };
 
         assert_eq!(result, 0);
         assert_eq!(out_pt_len, pt.len());
@@ -537,17 +550,19 @@ mod tests {
         let uuid_bytes = [0u8; 16];
         let mut out_pt = [0u8; 64];
         let mut out_pt_len = out_pt.len();
-        let result = key_manager_open(
-            uuid_bytes.as_ptr(),
-            [0u8; 32].as_ptr(),
-            32,
-            [0u8; 32].as_ptr(),
-            32,
-            [0u8; 8].as_ptr(),
-            8,
-            out_pt.as_mut_ptr(),
-            &mut out_pt_len,
-        );
+        let result = unsafe {
+            key_manager_open(
+                uuid_bytes.as_ptr(),
+                [0u8; 32].as_ptr(),
+                32,
+                [0u8; 32].as_ptr(),
+                32,
+                [0u8; 8].as_ptr(),
+                8,
+                out_pt.as_mut_ptr(),
+                &mut out_pt_len,
+            )
+        };
         assert_eq!(result, -1);
     }
 
@@ -561,31 +576,34 @@ mod tests {
             kdf: KdfAlgorithm::HkdfSha256 as i32,
             aead: AeadAlgorithm::Aes256Gcm as i32,
         };
-
-        key_manager_generate_binding_keypair(
-            algo.clone(),
-            3600,
-            uuid_bytes.as_mut_ptr(),
-            pubkey_bytes.as_mut_ptr(),
-            &mut pubkey_len,
-        );
+        unsafe {
+            key_manager_generate_binding_keypair(
+                algo,
+                3600,
+                uuid_bytes.as_mut_ptr(),
+                pubkey_bytes.as_mut_ptr(),
+                &mut pubkey_len,
+            );
+        }
 
         let pt = b"secret message";
         let (enc, ct) = km_common::crypto::hpke_seal(&pubkey_bytes, pt, b"", &algo).unwrap();
 
         let mut out_pt = [0u8; 5]; // smaller than pt
         let mut out_pt_len = out_pt.len();
-        let result = key_manager_open(
-            uuid_bytes.as_ptr(),
-            enc.as_ptr(),
-            enc.len(),
-            ct.as_ptr(),
-            ct.len(),
-            b"".as_ptr(),
-            0,
-            out_pt.as_mut_ptr(),
-            &mut out_pt_len,
-        );
+        let result = unsafe {
+            key_manager_open(
+                uuid_bytes.as_ptr(),
+                enc.as_ptr(),
+                enc.len(),
+                ct.as_ptr(),
+                ct.len(),
+                b"".as_ptr(),
+                0,
+                out_pt.as_mut_ptr(),
+                &mut out_pt_len,
+            )
+        };
 
         assert_eq!(result, -2);
     }

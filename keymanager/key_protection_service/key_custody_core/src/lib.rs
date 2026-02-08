@@ -155,10 +155,20 @@ pub unsafe extern "C" fn key_manager_destroy_kem_key(uuid_bytes: *const u8) -> i
 /// * `aad_len` - The length of the AAD.
 /// * `out_encapsulated_key` - A pointer to a buffer where the new encapsulated key will be written.
 /// * `out_encapsulated_key_len` - A pointer to a `usize` containing the size of `out_encapsulated_key`.
-///                                On success, updated with the actual size.
+///   On success, updated with the actual size.
 /// * `out_ciphertext` - A pointer to a buffer where the sealed ciphertext will be written.
 /// * `out_ciphertext_len` - A pointer to a `usize` containing the size of `out_ciphertext`.
-///                          On success, updated with the actual size.
+///   On success, updated with the actual size.
+///
+/// ## Safety
+/// This function is unsafe because it dereferences raw pointers. The caller must ensure that:
+/// * `uuid_bytes` points to a valid 16-byte buffer.
+/// * `encapsulated_key` points to a valid buffer of at least `encapsulated_key_len` bytes.
+/// * `aad` is either null or points to a valid buffer of at least `aad_len` bytes.
+/// * `out_encapsulated_key` points to a valid buffer of at least `*out_encapsulated_key_len` bytes.
+/// * `out_encapsulated_key_len` points to a valid `usize`.
+/// * `out_ciphertext` points to a valid buffer of at least `*out_ciphertext_len` bytes.
+/// * `out_ciphertext_len` points to a valid `usize`.
 ///
 /// ## Returns
 /// * `0` on success.
@@ -167,7 +177,7 @@ pub unsafe extern "C" fn key_manager_destroy_kem_key(uuid_bytes: *const u8) -> i
 /// * `-3` if decapsulation fails.
 /// * `-4` if sealing (HPKE encryption) fails.
 #[unsafe(no_mangle)]
-pub extern "C" fn key_manager_decap_and_seal(
+pub unsafe extern "C" fn key_manager_decap_and_seal(
     uuid_bytes: *const u8,
     encapsulated_key: *const u8,
     encapsulated_key_len: usize,
@@ -524,17 +534,19 @@ mod tests {
         let mut out_ct = [0u8; 48]; // 32 bytes secret + 16 tag
         let mut out_ct_len = 48;
 
-        let result = key_manager_decap_and_seal(
-            uuid_bytes.as_ptr(),
-            client_enc.as_ptr(),
-            client_enc.len(),
-            aad.as_ptr(),
-            aad.len(),
-            out_enc_key.as_mut_ptr(),
-            &mut out_enc_key_len,
-            out_ct.as_mut_ptr(),
-            &mut out_ct_len,
-        );
+        let result = unsafe {
+            key_manager_decap_and_seal(
+                uuid_bytes.as_ptr(),
+                client_enc.as_ptr(),
+                client_enc.len(),
+                aad.as_ptr(),
+                aad.len(),
+                out_enc_key.as_mut_ptr(),
+                &mut out_enc_key_len,
+                out_ct.as_mut_ptr(),
+                &mut out_ct_len,
+            )
+        };
 
         assert_eq!(result, 0);
 
@@ -578,17 +590,19 @@ mod tests {
         let mut out_ct = [0u8; 48];
         let mut out_ct_len = 48;
 
-        let result = key_manager_decap_and_seal(
-            [0u8; 16].as_ptr(),
-            [0u8; 32].as_ptr(),
-            32,
-            std::ptr::null(),
-            0,
-            out_enc_key.as_mut_ptr(),
-            &mut out_enc_key_len,
-            out_ct.as_mut_ptr(),
-            &mut out_ct_len,
-        );
+        let result = unsafe {
+            key_manager_decap_and_seal(
+                [0u8; 16].as_ptr(),
+                [0u8; 32].as_ptr(),
+                32,
+                std::ptr::null(),
+                0,
+                out_enc_key.as_mut_ptr(),
+                &mut out_enc_key_len,
+                out_ct.as_mut_ptr(),
+                &mut out_ct_len,
+            )
+        };
 
         assert_eq!(result, -1);
     }
@@ -598,17 +612,19 @@ mod tests {
         let mut out_enc_key = [0u8; 32];
         let mut out_enc_key_len = 32;
 
-        let result = key_manager_decap_and_seal(
-            std::ptr::null(),
-            std::ptr::null(),
-            0,
-            std::ptr::null(),
-            0,
-            out_enc_key.as_mut_ptr(),
-            &mut out_enc_key_len,
-            std::ptr::null_mut(),
-            std::ptr::null_mut(),
-        );
+        let result = unsafe {
+            key_manager_decap_and_seal(
+                std::ptr::null(),
+                std::ptr::null(),
+                0,
+                std::ptr::null(),
+                0,
+                out_enc_key.as_mut_ptr(),
+                &mut out_enc_key_len,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            )
+        };
 
         assert_eq!(result, -1);
     }
@@ -626,15 +642,17 @@ mod tests {
             kdf: KdfAlgorithm::HkdfSha256 as i32,
             aead: AeadAlgorithm::Aes256Gcm as i32,
         };
-        key_manager_generate_kem_keypair(
-            algo,
-            binding_pk.as_ptr(),
-            binding_pk.len(),
-            3600,
-            uuid_bytes.as_mut_ptr(),
-            std::ptr::null_mut(),
-            std::ptr::null_mut(),
-        );
+        unsafe {
+            key_manager_generate_kem_keypair(
+                algo,
+                binding_pk.as_ptr(),
+                binding_pk.len(),
+                3600,
+                uuid_bytes.as_mut_ptr(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            );
+        }
 
         // 3. Call with invalid encapsulated key (wrong length for X25519)
         let mut out_enc_key = [0u8; 32];
@@ -642,17 +660,19 @@ mod tests {
         let mut out_ct = [0u8; 48];
         let mut out_ct_len = 48;
 
-        let result = key_manager_decap_and_seal(
-            uuid_bytes.as_ptr(),
-            [0u8; 31].as_ptr(),
-            31,
-            std::ptr::null(),
-            0,
-            out_enc_key.as_mut_ptr(),
-            &mut out_enc_key_len,
-            out_ct.as_mut_ptr(),
-            &mut out_ct_len,
-        );
+        let result = unsafe {
+            key_manager_decap_and_seal(
+                uuid_bytes.as_ptr(),
+                [0u8; 31].as_ptr(),
+                31,
+                std::ptr::null(),
+                0,
+                out_enc_key.as_mut_ptr(),
+                &mut out_enc_key_len,
+                out_ct.as_mut_ptr(),
+                &mut out_ct_len,
+            )
+        };
 
         assert_eq!(result, -3);
     }
@@ -672,15 +692,17 @@ mod tests {
             kdf: KdfAlgorithm::HkdfSha256 as i32,
             aead: AeadAlgorithm::Aes256Gcm as i32,
         };
-        key_manager_generate_kem_keypair(
-            algo.clone(),
-            binding_pk.as_ptr(),
-            binding_pk.len(),
-            3600,
-            uuid_bytes.as_mut_ptr(),
-            kem_pubkey_bytes.as_mut_ptr(),
-            &mut kem_pubkey_len,
-        );
+        unsafe {
+            key_manager_generate_kem_keypair(
+                algo,
+                binding_pk.as_ptr(),
+                binding_pk.len(),
+                3600,
+                uuid_bytes.as_mut_ptr(),
+                kem_pubkey_bytes.as_mut_ptr(),
+                &mut kem_pubkey_len,
+            );
+        }
 
         // 3. Generate valid client encapsulation
         let (client_enc, _) =
@@ -692,17 +714,19 @@ mod tests {
         let mut out_ct = [0u8; 47]; // Small
         let mut out_ct_len = 47;
 
-        let result = key_manager_decap_and_seal(
-            uuid_bytes.as_ptr(),
-            client_enc.as_ptr(),
-            client_enc.len(),
-            std::ptr::null(),
-            0,
-            out_enc_key.as_mut_ptr(),
-            &mut out_enc_key_len,
-            out_ct.as_mut_ptr(),
-            &mut out_ct_len,
-        );
+        let result = unsafe {
+            key_manager_decap_and_seal(
+                uuid_bytes.as_ptr(),
+                client_enc.as_ptr(),
+                client_enc.len(),
+                std::ptr::null(),
+                0,
+                out_enc_key.as_mut_ptr(),
+                &mut out_enc_key_len,
+                out_ct.as_mut_ptr(),
+                &mut out_ct_len,
+            )
+        };
 
         assert_eq!(result, -2);
     }
