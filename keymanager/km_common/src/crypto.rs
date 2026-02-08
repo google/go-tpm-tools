@@ -1,6 +1,8 @@
-use crate::algorithms::{HpkeAlgorithm, KemAlgorithm};
-pub mod secret_box;
+use crate::algorithms::{AeadAlgorithm, HpkeAlgorithm, KdfAlgorithm, KemAlgorithm};
 use crate::crypto::secret_box::SecretBox;
+use bssl_crypto::aead::Aead;
+use bssl_crypto::{aead, hkdf, hpke};
+pub mod secret_box;
 use clear_on_drop::clear_stack_on_return;
 use thiserror::Error;
 
@@ -149,6 +151,139 @@ pub fn generate_keypair(algo: KemAlgorithm) -> Result<(PublicKey, PrivateKey), E
     })
 }
 
+#[cfg(any(test, feature = "test-utils"))]
+/// Helper for HPKE LabeledExtract
+fn labeled_extract(suite_id: &[u8], salt: hkdf::Salt, label: &[u8], ikm: &[u8]) -> hkdf::Prk {
+    let mut labeled_ikm = Vec::with_capacity(7 + suite_id.len() + label.len() + ikm.len());
+    labeled_ikm.extend_from_slice(b"HPKE-v1");
+    labeled_ikm.extend_from_slice(suite_id);
+    labeled_ikm.extend_from_slice(label);
+    labeled_ikm.extend_from_slice(ikm);
+    hkdf::HkdfSha256::extract(&labeled_ikm, salt)
+}
+
+#[cfg(any(test, feature = "test-utils"))]
+/// Helper for HPKE LabeledExpand
+fn labeled_expand(
+    suite_id: &[u8],
+    prk: &hkdf::Prk,
+    label: &[u8],
+    info: &[u8],
+    out: &mut [u8],
+) -> Result<(), Error> {
+    let mut labeled_info = Vec::with_capacity(2 + 7 + suite_id.len() + label.len() + info.len());
+    labeled_info.extend_from_slice(&(out.len() as u16).to_be_bytes());
+    labeled_info.extend_from_slice(b"HPKE-v1");
+    labeled_info.extend_from_slice(suite_id);
+    labeled_info.extend_from_slice(label);
+    labeled_info.extend_from_slice(info);
+    prk.expand_into(&labeled_info, out)
+        .map_err(|_| Error::CryptoError)
+}
+
+#[cfg(any(test, feature = "test-utils"))]
+/// [Test-Only] BoringSSL lacks a public API to initialize a RecipientContext directly from a shared-secret.
+/// Manual HPKE open implementation to decrypt a ciphertext using HPKE with a pre-calculated shared secret.
+pub fn hpke_open_with_shared_secret(
+    shared_secret: &[u8],
+    ciphertext: &[u8],
+    aad: &[u8],
+    algo: &HpkeAlgorithm,
+) -> Result<Vec<u8>, Error> {
+    clear_stack_on_return(2, || {
+        let kem = KemAlgorithm::try_from(algo.kem).map_err(|_| Error::UnsupportedAlgorithm)?;
+        let kdf = KdfAlgorithm::try_from(algo.kdf).map_err(|_| Error::UnsupportedAlgorithm)?;
+        let aead_algo =
+            AeadAlgorithm::try_from(algo.aead).map_err(|_| Error::UnsupportedAlgorithm)?;
+
+        if kem != KemAlgorithm::DhkemX25519HkdfSha256
+            || kdf != KdfAlgorithm::HkdfSha256
+            || aead_algo != AeadAlgorithm::Aes256Gcm
+        {
+            return Err(Error::UnsupportedAlgorithm);
+        }
+
+        // suite_id = "HPKE" || I2OSP(kem_id, 2) || I2OSP(kdf_id, 2) || I2OSP(aead_id, 2)
+        let suite_id = [b'H', b'P', b'K', b'E', 0, 0x20, 0, 0x01, 0, 0x02];
+        let info = b""; // Default info used in hpke_seal/open
+
+        // KeySchedule(mode_base, shared_secret, info, psk, psk_id)
+        // 1. psk_id_hash = LabeledExtract("", "psk_id_hash", psk_id)
+        let psk_id_hash_prk = labeled_extract(&suite_id, hkdf::Salt::None, b"psk_id_hash", b"");
+        let psk_id_hash = psk_id_hash_prk.as_bytes();
+
+        // 2. info_hash = LabeledExtract("", "info_hash", info)
+        let info_hash_prk = labeled_extract(&suite_id, hkdf::Salt::None, b"info_hash", info);
+        let info_hash = info_hash_prk.as_bytes();
+
+        // 3. key_schedule_context = mode || psk_id_hash || info_hash
+        let mut key_schedule_context = Vec::with_capacity(1 + psk_id_hash.len() + info_hash.len());
+        key_schedule_context.push(0); // mode_base
+        key_schedule_context.extend_from_slice(psk_id_hash);
+        key_schedule_context.extend_from_slice(info_hash);
+
+        // 4. secret = LabeledExtract(shared_secret, "secret", psk)
+        let secret_prk = labeled_extract(
+            &suite_id,
+            hkdf::Salt::NonEmpty(shared_secret),
+            b"secret",
+            b"",
+        );
+
+        // 5. key = LabeledExpand(secret, "key", key_schedule_context, Nk)
+        let mut key = [0u8; 32];
+        labeled_expand(
+            &suite_id,
+            &secret_prk,
+            b"key",
+            &key_schedule_context,
+            &mut key,
+        )?;
+
+        // 6. nonce = LabeledExpand(secret, "base_nonce", key_schedule_context, Nn)
+        let mut nonce = [0u8; 12];
+        labeled_expand(
+            &suite_id,
+            &secret_prk,
+            b"base_nonce",
+            &key_schedule_context,
+            &mut nonce,
+        )?;
+
+        // 7. AEAD Open
+        let aead = aead::Aes256Gcm::new(&key);
+        aead.open(&nonce, ciphertext, aad)
+            .ok_or(Error::HpkeDecryptionError)
+    })
+}
+
+/// Generates an X25519 keypair for the given KEM algorithm.
+pub fn generate_x25519_keypair(algo: KemAlgorithm) -> Result<(Vec<u8>, Vec<u8>), Error> {
+    clear_stack_on_return(2, || match algo {
+        KemAlgorithm::DhkemX25519HkdfSha256 => Ok(hpke::Kem::X25519HkdfSha256.generate_keypair()),
+        _ => Err(Error::UnsupportedAlgorithm),
+    })
+}
+
+/// BoringSSL lacks a DHKEM decap API which can perform and DH + KDF operation to generate a shared secret key.
+/// Manual implementation to decapsulate a shared secret from an encapsulated key using an X25519 private key.
+pub fn decaps_x25519(priv_key_bytes: &[u8], enc: &[u8]) -> Result<Vec<u8>, Error> {
+    clear_stack_on_return(2, || {
+        if priv_key_bytes.len() != 32 || enc.len() != 32 {
+            return Err(Error::KeyLenMismatch);
+        }
+        let sk = hpke::Kem::X25519HkdfSha256
+            .new_private_key(priv_key_bytes)
+            .map_err(|_| Error::InvalidKey)?;
+        let pk = hpke::Kem::X25519HkdfSha256
+            .new_public_key(enc)
+            .map_err(|_| Error::InvalidKey)?;
+        hpke::Kem::X25519HkdfSha256
+            .decapsulate(&pk, &sk)
+            .map_err(|_| Error::DecapsError)
+    })
+}
+
 /// Decapsulates the shared secret from an encapsulated key using the specified private key.
 ///
 /// Returns the decapsulated shared secret as a `SecretBox`.
@@ -185,11 +320,75 @@ pub fn hpke_seal(
     })
 }
 
+/// Encrypts a plaintext using HPKE (Hybrid Public Key Encryption).
+///
+/// Returns a tuple containing the encapsulated key and the ciphertext.
+/// Note: This version accepts raw public key bytes and plaintext bytes.
+pub fn hpke_seal_raw(
+    pub_key_bytes: &[u8],
+    plaintext: &[u8],
+    aad: &[u8],
+    algo: &HpkeAlgorithm,
+) -> Result<(Vec<u8>, Vec<u8>), Error> {
+    clear_stack_on_return(2, || {
+        let kem = KemAlgorithm::try_from(algo.kem).map_err(|_| Error::UnsupportedAlgorithm)?;
+        let kdf = KdfAlgorithm::try_from(algo.kdf).map_err(|_| Error::UnsupportedAlgorithm)?;
+        let aead = AeadAlgorithm::try_from(algo.aead).map_err(|_| Error::UnsupportedAlgorithm)?;
+
+        match (kem, kdf, aead) {
+            (
+                KemAlgorithm::DhkemX25519HkdfSha256,
+                KdfAlgorithm::HkdfSha256,
+                AeadAlgorithm::Aes256Gcm,
+            ) => {
+                let params = hpke::Params::new(
+                    hpke::Kem::X25519HkdfSha256,
+                    hpke::Kdf::HkdfSha256,
+                    hpke::Aead::Aes256Gcm,
+                );
+
+                let (mut sender_ctx, encapsulated_key) =
+                    hpke::SenderContext::new(&params, pub_key_bytes, b"")
+                        .ok_or(Error::HpkeEncryptionError)?;
+
+                let ciphertext = sender_ctx.seal(plaintext, aad);
+                Ok((encapsulated_key, ciphertext))
+            }
+            _ => Err(Error::UnsupportedAlgorithm),
+        }
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::algorithms::{AeadAlgorithm, KdfAlgorithm};
     use bssl_crypto::hpke;
+    use hex;
+
+    #[test]
+    fn test_decaps_x25519_clamped_vector() {
+        // Since BoringSSL X25519 always clamps the private key, we use vectors that
+        // are consistent with clamping.
+        // Input private key (clamped internally by BoringSSL):
+        let sk_r_hex = "468c86c75053df4d0925e01f5446700e57288f3316c5b610c3b9b94090b8f2cb";
+        let enc_hex = "1b2767097950294d300c2830366c3c58853c83a736466336e392576b9762194d";
+
+        // This is what we get when we run with clamping:
+        let expected_shared_secret_hex =
+            "b1e179eefbcdfe490a1929c3c6e5de6d98f3ed4463b6d94627390119610baa83";
+
+        let sk_r = hex::decode(sk_r_hex).unwrap();
+        let enc = hex::decode(enc_hex).unwrap();
+
+        let result = decaps_x25519(&sk_r, &enc).expect("Decapsulation failed");
+
+        assert_eq!(
+            hex::encode(&result),
+            expected_shared_secret_hex,
+            "Shared secret mismatch"
+        );
+    }
 
     #[test]
     fn test_decaps_wrapper() {
@@ -222,6 +421,24 @@ mod tests {
 
         let result = hpke_open(&sk_r, &enc, &[], &[], &algo);
         assert!(matches!(result, Err(Error::UnsupportedAlgorithm)));
+    }
+
+    #[test]
+    fn test_decaps_invalid_lengths() {
+        let sk_r_bytes = [0u8; 32];
+        let enc_bytes = [0u8; 32];
+
+        // Short private key
+        assert!(matches!(
+            decaps_x25519(&[0u8; 31], &enc_bytes),
+            Err(Error::KeyLenMismatch)
+        ));
+
+        // Short encapsulated key
+        assert!(matches!(
+            decaps_x25519(&sk_r_bytes, &[0u8; 31]),
+            Err(Error::KeyLenMismatch)
+        ));
     }
 
     #[test]

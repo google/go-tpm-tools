@@ -172,7 +172,7 @@ pub extern "C" fn key_manager_decap_and_seal(
 
     // Decapsulate
     let mut shared_secret =
-        match km_common::crypto::decaps(key_record.private_key.as_bytes(), enc_key_slice, kem_algo)
+        match km_common::crypto::decaps(&key_record.private_key, enc_key_slice)
         {
             Ok(s) => s,
             Err(_) => return -3,
@@ -493,9 +493,9 @@ mod tests {
         // 3. Generate a "client" ciphertext/encapsulation targeting KEM key.
         let pt = b"ignored_plaintext";
         let aad = b"test_aad";
-        // We use `hpke_seal` to act as the client to generate a valid encapsulation
-        let (client_enc, _client_ct) =
-            km_common::crypto::hpke_seal(&kem_pubkey_bytes, pt, aad, &algo).unwrap();
+        // We use `hpke_seal_raw` to act as the client to generate a valid encapsulation
+        let (client_enc, client_ct) =
+            km_common::crypto::hpke_seal_raw(&kem_pubkey_bytes, pt, aad, &algo).unwrap();
 
         // Step 3: Call `decap_and_seal`.
         let mut out_enc_key = [0u8; 32];
@@ -538,14 +538,14 @@ mod tests {
         );
 
         // 6. Verify that this secret correctly decrypts the original client ciphertext
-        let decrypted_pt = km_common::crypto::hpke_open(
-            key_record.private_key.as_bytes(),
-            &client_enc,
-            &_client_ct,
+        // using the shared secret directly instead of the private key.
+        let decrypted_pt = km_common::crypto::hpke_open_with_shared_secret(
+            &recovered_shared_secret,
+            &client_ct,
             aad,
             &algo,
         )
-        .expect("Failed to decrypt client message");
+        .expect("Failed to decrypt client message with shared secret");
 
         assert_eq!(decrypted_pt, pt);
     }
