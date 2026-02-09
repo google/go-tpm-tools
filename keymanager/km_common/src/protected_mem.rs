@@ -12,6 +12,7 @@ use std::os::unix::io::{FromRawFd, RawFd};
 use zeroize::Zeroize;
 
 /// The system call number for `memfd_secret` on x86_64.
+#[cfg(target_arch = "x86_64")]
 const SYS_MEMFD_SECRET: i64 = 447;
 
 /// A secure container for sensitive data backed by `memfd_secret`.
@@ -42,11 +43,14 @@ impl Drop for Vault {
 impl Vault {
     /// Creates a new `Vault` containing the provided data.
     ///
+    /// The provided `data` is copied into the vault and then zeroized in-place
+    /// to ensure the original sensitive data is cleared from memory.
+    ///
     /// # Errors
     ///
     /// Returns an error if the `memfd_secret` syscall fails or if the memory
     /// cannot be mapped.
-    pub fn new(data: &[u8]) -> IoResult<Self> {
+    pub fn new(data: &mut [u8]) -> IoResult<Self> {
         // Create the secret memory file descriptor.
         // O_CLOEXEC ensures the FD is closed on exec.
         let fd = unsafe { libc::syscall(SYS_MEMFD_SECRET, libc::O_CLOEXEC as libc::c_long) };
@@ -67,6 +71,9 @@ impl Vault {
 
         // Copy the sensitive data into the secure region.
         mmap.copy_from_slice(data);
+
+        // Zeroize the source data.
+        data.zeroize();
 
         Ok(Vault {
             mmap,
@@ -94,22 +101,27 @@ mod tests {
 
     #[test]
     fn test_vault_creation_and_retrieval() {
-        let data = b"sensitive information";
-        let vault = Vault::new(data).expect("Failed to create vault");
-        assert_eq!(vault.as_bytes(), data);
-        assert_eq!(vault.as_ref(), data);
+        let mut data = *b"sensitive information";
+        let original_data = data;
+        let vault = Vault::new(&mut data).expect("Failed to create vault");
+        assert_eq!(vault.as_bytes(), &original_data);
+        assert_eq!(vault.as_ref(), &original_data);
+        assert_ne!(data, original_data, "Source data should be zeroed");
+        assert!(data.iter().all(|&b| b == 0), "Source data should be all zeros");
     }
 
     #[test]
     fn test_vault_with_empty_data() {
-        let vault = Vault::new(&[]).expect("Failed to create empty vault");
+        let vault = Vault::new(&mut []).expect("Failed to create empty vault");
         assert!(vault.as_bytes().is_empty());
     }
 
     #[test]
     fn test_multiple_vaults() {
-        let v1 = Vault::new(b"secret1").unwrap();
-        let v2 = Vault::new(b"secret2").unwrap();
+        let mut s1 = *b"secret1";
+        let v1 = Vault::new(&mut s1).unwrap();
+        let mut s2 = *b"secret2";
+        let v2 = Vault::new(&mut s2).unwrap();
         assert_ne!(v1.as_bytes(), v2.as_bytes());
         assert_eq!(v1.as_bytes(), b"secret1");
         assert_eq!(v2.as_bytes(), b"secret2");
@@ -117,15 +129,16 @@ mod tests {
 
     #[test]
     fn test_large_vault() {
-        let data = vec![0u8; 1024 * 1024]; // 1MB
-        let vault = Vault::new(&data).expect("Failed to create large vault");
-        assert_eq!(vault.as_bytes().len(), data.len());
+        let mut data = vec![0u8; 1024 * 1024]; // 1MB
+        let len = data.len();
+        let vault = Vault::new(&mut data).expect("Failed to create large vault");
+        assert_eq!(vault.as_bytes().len(), len);
     }
 
     #[test]
     fn test_memfd_backing_verification() {
-        let data = b"verification data";
-        let vault = Vault::new(data).unwrap();
+        let mut data = *b"verification data";
+        let vault = Vault::new(&mut data).unwrap();
         let fd = vault.as_raw_fd();
 
         // 1. Verify filesystem magic number using fstatfs
@@ -175,15 +188,16 @@ mod tests {
 
     #[test]
     fn test_zeroize_on_drop() {
-        let data = b"secret to be zeroed";
-        let vault = Vault::new(data).unwrap();
+        let mut data = *b"secret to be zeroed";
+        let original_data = data;
+        let vault = Vault::new(&mut data).unwrap();
 
         // Create a second mapping of the same memory to spy on it
         // This is possible because we have access to the underlying File in tests
         let spy = unsafe { MmapMut::map_mut(&vault.file).expect("Failed to create spy mapping") };
 
         // Verify spy sees the data
-        assert_eq!(&spy[..], data);
+        assert_eq!(&spy[..], &original_data);
 
         // Drop the vault, which should trigger zeroize
         drop(vault);
