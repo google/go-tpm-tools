@@ -14,7 +14,8 @@
 // limitations under the License.
 
 use std::env;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+use std::process::Command;
 
 // Keep in sync with the list in include/openssl/opensslconf.h
 const OSSL_CONF_DEFINES: &[&str] = &[
@@ -93,6 +94,17 @@ fn main() {
     // keymanager/third_party/bssl-sys -> keymanager/boringssl
     let bssl_source_dir = Path::new(&manifest_dir).join("../../boringssl");
 
+    // Auto-init git submodule if BoringSSL source is missing.
+    // Follows the curl-sys / libgit2-sys pattern: attempt silently, discard
+    // errors (on crates.io the source is already present as a regular directory,
+    // so git may not be available and that's fine).
+    if !bssl_source_dir.join("CMakeLists.txt").exists() {
+        let _ = Command::new("git")
+            .args(["submodule", "update", "--init", "boringssl"])
+            .current_dir(Path::new(&manifest_dir).join("../.."))
+            .status();
+    }
+
     if !bssl_source_dir.join("CMakeLists.txt").exists() {
         panic!(
             "BoringSSL source not found at {}. Run 'git submodule update --init --recursive'",
@@ -100,8 +112,14 @@ fn main() {
         );
     }
 
-    // Use cmake crate to build BoringSSL
-    // It will automatically handle compilation flags, finding cmake, etc.
+    // Rebuild when the BoringSSL source tree changes (e.g. submodule update).
+    // Cargo 1.50+ recursively scans directories for mtime changes.
+    println!("cargo:rerun-if-changed={}", bssl_source_dir.display());
+
+    // Use cmake crate to build BoringSSL.
+    // The cmake crate itself panics with a diagnostic "is `cmake` not installed?"
+    // message if cmake is not found, so no pre-check is needed (standard practice
+    // per cmake-rs, libz-sys, and other sys crates).
     let dst = cmake::Config::new(&bssl_source_dir)
         .define("RUST_BINDINGS", &target)
         .build_target("bssl_sys") // We specifically want this target which generates bindings
@@ -114,8 +132,15 @@ fn main() {
     // BUT `bssl_sys` target might not install the wrapper?
     // Let's verify where `cmake` crate puts it. It usually puts build artifacts in `build/`.
     
+    // cmake::Config::build() guarantees this path exists on success (it
+    // panics on failure), but assert for clarity since the layout matters.
     let build_dir = dst.join("build");
-    
+    assert!(
+        build_dir.exists(),
+        "Expected cmake build directory not found at {}. This is a bug in the build script.",
+        build_dir.display()
+    );
+
     // Link Search Paths
     // Note: We might need to look in `dst/lib` if it was installed, or `build_dir` if not.
     // BoringSSL puts static libs in the top level of build dir usually, or `crypto/` `ssl/` subdirs.
