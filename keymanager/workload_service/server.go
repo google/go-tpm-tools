@@ -5,6 +5,7 @@ package workload_service
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -14,6 +15,7 @@ import (
 	"strings"
 	"sync"
 
+	kpskcc "github.com/google/go-tpm-tools/keymanager/key_protection_service/key_custody_core"
 	"github.com/google/uuid"
 )
 
@@ -25,6 +27,11 @@ type BindingKeyGenerator interface {
 // KEMKeyGenerator generates KEM keypairs via the KPS KOL/KCC.
 type KEMKeyGenerator interface {
 	GenerateKEMKeypair(bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error)
+}
+
+// KEMKeyEnumerator enumerates active KEM keys from the KPS registry.
+type KEMKeyEnumerator interface {
+	EnumerateKEMKeys() ([]kpskcc.KEMKeyInfo, error)
 }
 
 // KeyHandle represents a key handle returned from the API.
@@ -74,10 +81,48 @@ type GenerateKemResponse struct {
 	KeyHandle KeyHandle `json:"key_handle"`
 }
 
+// KemPublicKey represents a KEM public key with its algorithm identifier.
+type KemPublicKey struct {
+	Algorithm KemAlgorithm `json:"algorithm"`
+	PublicKey string       `json:"public_key"`
+}
+
+// HpkeAlgorithm identifies the HPKE algorithm suite (KEM, KDF, AEAD).
+type HpkeAlgorithm struct {
+	Kem  KemAlgorithm  `json:"kem"`
+	Kdf  KdfAlgorithm  `json:"kdf"`
+	Aead AeadAlgorithm `json:"aead"`
+}
+
+// HpkePublicKey represents an HPKE public key with its full algorithm suite.
+type HpkePublicKey struct {
+	Algorithm HpkeAlgorithm `json:"algorithm"`
+	PublicKey string        `json:"public_key"`
+}
+
+// BoundKEMInfo holds the full metadata for a bound KEM key.
+type BoundKEMInfo struct {
+	KeyHandle         KeyHandle     `json:"key_handle"`
+	KemPubKey         KemPublicKey  `json:"kem_pub_key"`
+	BindingPubKey     HpkePublicKey `json:"binding_pub_key"`
+	RemainingLifespan ProtoDuration `json:"remaining_lifespan"`
+}
+
+// KeyInfo wraps a single key entry in the enumerate response.
+type KeyInfo struct {
+	BoundKemInfo *BoundKEMInfo `json:"bound_kem_info,omitempty"`
+}
+
+// EnumerateKeysResponse is returned by GET /v1/keys.
+type EnumerateKeysResponse struct {
+	KeyInfos []KeyInfo `json:"key_infos"`
+}
+
 // Server is the WSD HTTP server.
 type Server struct {
 	bindingGen BindingKeyGenerator
 	kemGen     KEMKeyGenerator
+	kemEnum    KEMKeyEnumerator
 
 	mu              sync.RWMutex
 	kemToBindingMap map[uuid.UUID]uuid.UUID
@@ -87,15 +132,17 @@ type Server struct {
 }
 
 // NewServer creates a new WSD server with the given dependencies.
-func NewServer(bindingGen BindingKeyGenerator, kemGen KEMKeyGenerator) *Server {
+func NewServer(bindingGen BindingKeyGenerator, kemGen KEMKeyGenerator, kemEnum KEMKeyEnumerator) *Server {
 	s := &Server{
 		bindingGen:      bindingGen,
 		kemGen:          kemGen,
+		kemEnum:         kemEnum,
 		kemToBindingMap: make(map[uuid.UUID]uuid.UUID),
 	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/keys:generate_kem", s.handleGenerateKem)
+	mux.HandleFunc("/v1/keys", s.handleEnumerateKeys)
 
 	s.httpServer = &http.Server{Handler: mux}
 	return s
@@ -129,6 +176,45 @@ func (s *Server) LookupBindingUUID(kemUUID uuid.UUID) (uuid.UUID, bool) {
 	return id, ok
 }
 
+func (s *Server) handleEnumerateKeys(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	keys, err := s.kemEnum.EnumerateKEMKeys()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("failed to enumerate keys: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	keyInfos := make([]KeyInfo, 0, len(keys))
+	for _, k := range keys {
+		info := KeyInfo{
+			BoundKemInfo: &BoundKEMInfo{
+				KeyHandle: KeyHandle{Handle: k.ID.String()},
+				KemPubKey: KemPublicKey{
+					Algorithm: KemAlgorithm(k.KemAlgorithm),
+					PublicKey: base64.StdEncoding.EncodeToString(k.KEMPubKey),
+				},
+				BindingPubKey: HpkePublicKey{
+					Algorithm: HpkeAlgorithm{
+						Kem:  KemAlgorithm(k.KemAlgorithm),
+						Kdf:  KdfAlgorithm(k.KdfAlgorithm),
+						Aead: AeadAlgorithm(k.AeadAlgorithm),
+					},
+					PublicKey: base64.StdEncoding.EncodeToString(k.BindingPubKey),
+				},
+				RemainingLifespan: ProtoDuration{Seconds: k.RemainingLifespanSecs},
+			},
+		}
+		keyInfos = append(keyInfos, info)
+	}
+
+	resp := EnumerateKeysResponse{KeyInfos: keyInfos}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
 func (s *Server) handleGenerateKem(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

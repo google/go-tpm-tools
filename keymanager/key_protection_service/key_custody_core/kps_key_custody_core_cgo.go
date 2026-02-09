@@ -57,3 +57,47 @@ func GenerateKEMKeypair(bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, [
 	copy(pubkey, pubkeyBuf[:pubkeyLen])
 	return id, pubkey, nil
 }
+
+// EnumerateKEMKeys retrieves all active KEM key entries from the Rust KCC registry.
+func EnumerateKEMKeys() ([]KEMKeyInfo, error) {
+	const maxEntries = 256
+	var entries [maxEntries]C.KpsKeyInfo
+	var count C.size_t
+
+	rc := C.key_manager_enumerate_kem_keys(
+		&entries[0],
+		C.size_t(maxEntries),
+		&count,
+	)
+	if rc != 0 {
+		return nil, fmt.Errorf("key_manager_enumerate_kem_keys failed with code %d", rc)
+	}
+
+	result := make([]KEMKeyInfo, count)
+	for i := C.size_t(0); i < count; i++ {
+		e := entries[i]
+
+		id, err := uuid.FromBytes(C.GoBytes(unsafe.Pointer(&e.uuid[0]), 16))
+		if err != nil {
+			return nil, fmt.Errorf("invalid UUID at index %d: %w", i, err)
+		}
+
+		kemPubKey := make([]byte, e.kem_pub_key_len)
+		copy(kemPubKey, C.GoBytes(unsafe.Pointer(&e.kem_pub_key[0]), C.int(e.kem_pub_key_len)))
+
+		bindingPubKey := make([]byte, e.binding_pub_key_len)
+		copy(bindingPubKey, C.GoBytes(unsafe.Pointer(&e.binding_pub_key[0]), C.int(e.binding_pub_key_len)))
+
+		result[i] = KEMKeyInfo{
+			ID:                    id,
+			KemAlgorithm:          int32(e.algorithm.kem),
+			KdfAlgorithm:          int32(e.algorithm.kdf),
+			AeadAlgorithm:         int32(e.algorithm.aead),
+			KEMPubKey:             kemPubKey,
+			BindingPubKey:         bindingPubKey,
+			RemainingLifespanSecs: uint64(e.remaining_lifespan_secs),
+		}
+	}
+
+	return result, nil
+}
