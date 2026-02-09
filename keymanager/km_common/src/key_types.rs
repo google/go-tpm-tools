@@ -68,19 +68,19 @@ pub fn create_key_record<F>(
     spec_builder: F,
 ) -> Result<KeyRecord, i32>
 where
-    F: FnOnce(HpkeAlgorithm, Vec<u8>) -> KeySpec,
+    F: FnOnce(HpkeAlgorithm, PublicKey) -> KeySpec,
 {
     let (pub_key, mut priv_key) = match KemAlgorithm::try_from(algo.kem)
         .ok()
-        .and_then(|k| crypto::generate_x25519_keypair(k).ok())
+        .and_then(|k| crypto::generate_keypair(k).ok())
     {
         Some(pair) => pair,
         None => return Err(-1),
     };
 
     let id = Uuid::new_v4();
-    let vault = Vault::new(&priv_key);
-    priv_key.zeroize();
+    let vault = Vault::new(&mut priv_key.0);
+    priv_key.0.zeroize();
     let vault = vault.map_err(|_| -1)?;
 
     let record = KeyRecord {
@@ -129,7 +129,7 @@ mod tests {
         } = record.meta.spec
         {
             assert_eq!(a.kem, algo.kem);
-            assert_eq!(pk.len(), 32);
+            assert_eq!(pk.as_ref().len(), 32);
         } else {
             panic!("Unexpected KeySpec variant");
         }
@@ -142,13 +142,13 @@ mod tests {
             kdf: KdfAlgorithm::HkdfSha256 as i32,
             aead: AeadAlgorithm::Aes256Gcm as i32,
         };
-        let binding_pubkey = [42u8; 32];
+        let binding_pubkey = PublicKey([42u8; 32].to_vec());
         let expiry = 3600;
 
         let result = create_key_record(algo, expiry, |a, pk| KeySpec::KemWithBindingPub {
             algo: a,
             kem_public_key: pk,
-            binding_public_key: binding_pubkey.to_vec(),
+            binding_public_key: binding_pubkey.clone(),
         });
 
         assert!(result.is_ok());
@@ -161,8 +161,8 @@ mod tests {
         } = record.meta.spec
         {
             assert_eq!(a.kem, algo.kem);
-            assert_eq!(kpk.len(), 32);
-            assert_eq!(bpk, binding_pubkey.to_vec());
+            assert_eq!(kpk.as_ref().len(), 32);
+            assert_eq!(bpk, binding_pubkey);
         } else {
             panic!("Unexpected KeySpec variant");
         }

@@ -1,23 +1,22 @@
 use km_common::algorithms::HpkeAlgorithm;
+use km_common::crypto::PublicKey;
 use km_common::key_types::{KeyRecord, KeyRegistry, KeySpec};
-use lazy_static::lazy_static;
 use std::slice;
+use std::sync::LazyLock;
 
-lazy_static! {
-    static ref KEY_REGISTRY: KeyRegistry = KeyRegistry::default();
-}
+static KEY_REGISTRY: LazyLock<KeyRegistry> = LazyLock::new(KeyRegistry::default);
 
 /// Creates a new KEM key record with the specified HPKE algorithm, binding public key, and expiration.
 fn create_kem_key(
     algo: HpkeAlgorithm,
-    binding_pubkey: &[u8],
+    binding_pubkey: PublicKey,
     expiry_secs: u64,
 ) -> Result<KeyRecord, i32> {
     km_common::key_types::create_key_record(algo, expiry_secs, |algo, kem_pub_key| {
         KeySpec::KemWithBindingPub {
             algo,
             kem_public_key: kem_pub_key,
-            binding_public_key: binding_pubkey.to_vec(),
+            binding_public_key: binding_pubkey,
         }
     })
 }
@@ -62,7 +61,11 @@ pub unsafe extern "C" fn key_manager_generate_kem_keypair(
 
     let binding_pubkey_slice = unsafe { slice::from_raw_parts(binding_pubkey, binding_pubkey_len) };
 
-    match create_kem_key(algo, binding_pubkey_slice, expiry_secs) {
+    match create_kem_key(
+        algo,
+        PublicKey::from(binding_pubkey_slice.to_vec()),
+        expiry_secs,
+    ) {
         Ok(record) => {
             let id = record.meta.id;
             let pubkey = match &record.meta.spec {
@@ -76,9 +79,13 @@ pub unsafe extern "C" fn key_manager_generate_kem_keypair(
                 }
                 if !out_pubkey.is_null() && !out_pubkey_len.is_null() {
                     let buf_len = *out_pubkey_len;
-                    if buf_len >= pubkey.len() {
-                        std::ptr::copy_nonoverlapping(pubkey.as_ptr(), out_pubkey, pubkey.len());
-                        *out_pubkey_len = pubkey.len();
+                    if buf_len >= pubkey.as_ref().len() {
+                        std::ptr::copy_nonoverlapping(
+                            pubkey.as_ref().as_ptr(),
+                            out_pubkey,
+                            pubkey.as_ref().len(),
+                        );
+                        *out_pubkey_len = pubkey.as_ref().len();
                     } else {
                         return -2; // buffer too small
                     }
@@ -104,7 +111,7 @@ mod tests {
             aead: AeadAlgorithm::Aes256Gcm as i32,
         };
 
-        let result = create_kem_key(algo, &binding_pubkey, 3600);
+        let result = create_kem_key(algo, PublicKey::from(binding_pubkey.to_vec()), 3600);
         assert!(result.is_ok());
 
         let record = result.unwrap();

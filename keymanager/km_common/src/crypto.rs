@@ -3,6 +3,7 @@ pub mod secret_box;
 use crate::crypto::secret_box::SecretBox;
 use clear_on_drop::clear_stack_on_return;
 use thiserror::Error;
+use zeroize::{ZeroizeOnDrop, Zeroizing};
 
 mod x25519;
 pub use x25519::{X25519PrivateKey, X25519PublicKey};

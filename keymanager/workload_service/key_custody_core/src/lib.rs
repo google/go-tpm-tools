@@ -1,10 +1,8 @@
 use km_common::algorithms::HpkeAlgorithm;
 use km_common::key_types::{KeyRecord, KeyRegistry, KeySpec};
-use lazy_static::lazy_static;
+use std::sync::LazyLock;
 
-lazy_static! {
-    static ref KEY_REGISTRY: KeyRegistry = KeyRegistry::default();
-}
+static KEY_REGISTRY: LazyLock<KeyRegistry> = LazyLock::new(KeyRegistry::default);
 
 /// Creates a new binding key record with the specified HPKE algorithm and expiration.
 fn create_binding_key(algo: HpkeAlgorithm, expiry_secs: u64) -> Result<KeyRecord, i32> {
@@ -59,9 +57,13 @@ pub unsafe extern "C" fn key_manager_generate_binding_keypair(
                 }
                 if !out_pubkey.is_null() && !out_pubkey_len.is_null() {
                     let buf_len = *out_pubkey_len;
-                    if buf_len >= pubkey.len() {
-                        std::ptr::copy_nonoverlapping(pubkey.as_ptr(), out_pubkey, pubkey.len());
-                        *out_pubkey_len = pubkey.len();
+                    if buf_len >= pubkey.as_ref().len() {
+                        std::ptr::copy_nonoverlapping(
+                            pubkey.as_ref().as_ptr(),
+                            out_pubkey,
+                            pubkey.as_ref().len(),
+                        );
+                        *out_pubkey_len = pubkey.as_ref().len();
                     } else {
                         return -2; // buffer too small
                     }
