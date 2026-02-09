@@ -1,4 +1,5 @@
 use crate::algorithms::HpkeAlgorithm;
+use crate::crypto::PublicKey;
 use crate::protected_mem::Vault;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
@@ -13,14 +14,14 @@ pub enum KeySpec {
         /// The KEM and binding public keys share the same algorithm suite.
         algo: HpkeAlgorithm,
         /// The KEM public key
-        kem_public_key: Vec<u8>,
+        kem_public_key: PublicKey,
         /// Binding public key for HPKE encrypt after decaps
-        binding_public_key: Vec<u8>,
+        binding_public_key: PublicKey,
     },
     Binding {
         algo: HpkeAlgorithm,
         /// The Binding key-pair
-        binding_public_key: Vec<u8>,
+        binding_public_key: PublicKey,
     },
 }
 

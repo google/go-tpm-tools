@@ -3,6 +3,40 @@ use bssl_crypto::{hkdf, hpke, x25519};
 use clear_on_drop::clear_stack_on_return;
 use thiserror::Error;
 
+const CLEAR_STACK_PAGES: usize = 2;
+
+/// A wrapper around a public key to avoid mixing with private keys.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PublicKey(pub Vec<u8>);
+
+impl AsRef<[u8]> for PublicKey {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+impl From<Vec<u8>> for PublicKey {
+    fn from(v: Vec<u8>) -> Self {
+        Self(v)
+    }
+}
+
+/// A wrapper around a private key to avoid mixing with public keys.
+#[derive(PartialEq, Eq)]
+pub struct PrivateKey(pub Vec<u8>);
+
+impl AsRef<[u8]> for PrivateKey {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+impl From<Vec<u8>> for PrivateKey {
+    fn from(v: Vec<u8>) -> Self {
+        Self(v)
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("Key length mismatch")]
@@ -19,24 +53,24 @@ pub enum Error {
     CryptoError,
 }
 
-/// Generates an X25519 keypair for the given KEM algorithm.
-pub fn generate_x25519_keypair(algo: KemAlgorithm) -> Result<(Vec<u8>, Vec<u8>), Error> {
-    clear_stack_on_return(2, || match algo {
-        KemAlgorithm::DhkemX25519HkdfSha256 => Ok(hpke::Kem::X25519HkdfSha256.generate_keypair()),
+/// Generates a keypair for the given KEM algorithm.
+pub fn generate_keypair(algo: KemAlgorithm) -> Result<(PublicKey, PrivateKey), Error> {
+    clear_stack_on_return(CLEAR_STACK_PAGES, || match algo {
+        KemAlgorithm::DhkemX25519HkdfSha256 => {
+            let (pk, sk) = hpke::Kem::X25519HkdfSha256.generate_keypair();
+            Ok((PublicKey(pk), PrivateKey(sk)))
+        }
         _ => Err(Error::UnsupportedAlgorithm),
     })
 }
 
 /// BoringSSL lacks a DHKEM decap API which can perform and DH + KDF operation to generate a shared secret key.
 /// Manual implementation to decapsulate a shared secret from an encapsulated key using an X25519 private key.
-pub fn decaps_x25519(priv_key_bytes: &[u8], enc: &[u8]) -> Result<Vec<u8>, Error> {
-    clear_stack_on_return(2, || {
-        if priv_key_bytes.len() != 32 || enc.len() != 32 {
-            return Err(Error::KeyLenMismatch);
-        }
-
+pub fn decaps_x25519(priv_key: &PrivateKey, enc: &[u8]) -> Result<Vec<u8>, Error> {
+    clear_stack_on_return(CLEAR_STACK_PAGES, || {
         let priv_key = x25519::PrivateKey(
-            priv_key_bytes
+            priv_key
+                .as_ref()
                 .try_into()
                 .map_err(|_| Error::KeyLenMismatch)?,
         );
@@ -53,11 +87,7 @@ pub fn decaps_x25519(priv_key_bytes: &[u8], enc: &[u8]) -> Result<Vec<u8>, Error
 
         // Extract eae_prk
         // labeled_ikm = "HPKE-v1" || suite_id || "eae_prk" || shared_key
-        let mut labeled_ikm = Vec::with_capacity(7 + 5 + 7 + 32);
-        labeled_ikm.extend_from_slice(b"HPKE-v1");
-        labeled_ikm.extend_from_slice(&suite_id);
-        labeled_ikm.extend_from_slice(b"eae_prk");
-        labeled_ikm.extend_from_slice(&shared_key);
+        let labeled_ikm = [b"HPKE-v1".as_slice(), &suite_id, b"eae_prk", &shared_key].concat();
 
         let prk = hkdf::HkdfSha256::extract(&labeled_ikm, hkdf::Salt::None);
 
@@ -65,13 +95,15 @@ pub fn decaps_x25519(priv_key_bytes: &[u8], enc: &[u8]) -> Result<Vec<u8>, Error
 
         // Expand shared_secret
         // labeled_info = I2OSP(L, 2) || "HPKE-v1" || suite_id || "shared_secret" || enc || pkR
-        let mut labeled_info = Vec::with_capacity(2 + 7 + 5 + 13 + 32 + 32);
-        labeled_info.extend_from_slice(&[0x00, 0x20]); // L = 32
-        labeled_info.extend_from_slice(b"HPKE-v1");
-        labeled_info.extend_from_slice(&suite_id);
-        labeled_info.extend_from_slice(b"shared_secret");
-        labeled_info.extend_from_slice(enc);
-        labeled_info.extend_from_slice(&pub_key);
+        let labeled_info = [
+            &[0x00u8, 0x20] as &[u8], // L = 32
+            b"HPKE-v1",
+            &suite_id,
+            b"shared_secret",
+            enc,
+            &pub_key,
+        ]
+        .concat();
 
         let mut result = vec![0u8; 32];
         prk.expand_into(&labeled_info, &mut result)
@@ -82,22 +114,22 @@ pub fn decaps_x25519(priv_key_bytes: &[u8], enc: &[u8]) -> Result<Vec<u8>, Error
 }
 
 /// Decapsulates the shared secret from an encapsulated key using the specified KEM algorithm.
-pub fn decaps(priv_key_bytes: &[u8], enc: &[u8], algo: KemAlgorithm) -> Result<Vec<u8>, Error> {
-    clear_stack_on_return(2, || match algo {
-        KemAlgorithm::DhkemX25519HkdfSha256 => decaps_x25519(priv_key_bytes, enc),
+pub fn decaps(priv_key: &PrivateKey, enc: &[u8], algo: KemAlgorithm) -> Result<Vec<u8>, Error> {
+    clear_stack_on_return(CLEAR_STACK_PAGES, || match algo {
+        KemAlgorithm::DhkemX25519HkdfSha256 => decaps_x25519(priv_key, enc),
         _ => Err(Error::UnsupportedAlgorithm),
     })
 }
 
 /// Decrypts a ciphertext using HPKE (Hybrid Public Key Encryption).
 pub fn hpke_open(
-    priv_key_bytes: &[u8],
+    priv_key: &PrivateKey,
     enc: &[u8],
     ciphertext: &[u8],
     aad: &[u8],
     algo: &HpkeAlgorithm,
 ) -> Result<Vec<u8>, Error> {
-    clear_stack_on_return(2, || {
+    clear_stack_on_return(CLEAR_STACK_PAGES, || {
         let kem = KemAlgorithm::try_from(algo.kem).map_err(|_| Error::UnsupportedAlgorithm)?;
         let kdf = KdfAlgorithm::try_from(algo.kdf).map_err(|_| Error::UnsupportedAlgorithm)?;
         let aead = AeadAlgorithm::try_from(algo.aead).map_err(|_| Error::UnsupportedAlgorithm)?;
@@ -115,7 +147,7 @@ pub fn hpke_open(
                 );
 
                 let mut recipient_ctx =
-                    hpke::RecipientContext::new(&params, priv_key_bytes, enc, b"")
+                    hpke::RecipientContext::new(&params, priv_key.as_ref(), enc, b"")
                         .ok_or(Error::HpkeDecryptionError)?;
 
                 recipient_ctx
@@ -131,12 +163,12 @@ pub fn hpke_open(
 ///
 /// Returns a tuple containing the encapsulated key and the ciphertext.
 pub fn hpke_seal(
-    pub_key_bytes: &[u8],
+    pub_key: &PublicKey,
     plaintext: &[u8],
     aad: &[u8],
     algo: &HpkeAlgorithm,
 ) -> Result<(Vec<u8>, Vec<u8>), Error> {
-    clear_stack_on_return(2, || {
+    clear_stack_on_return(CLEAR_STACK_PAGES, || {
         let kem = KemAlgorithm::try_from(algo.kem).map_err(|_| Error::UnsupportedAlgorithm)?;
         let kdf = KdfAlgorithm::try_from(algo.kdf).map_err(|_| Error::UnsupportedAlgorithm)?;
         let aead = AeadAlgorithm::try_from(algo.aead).map_err(|_| Error::UnsupportedAlgorithm)?;
@@ -154,7 +186,7 @@ pub fn hpke_seal(
                 );
 
                 let (mut sender_ctx, encapsulated_key) =
-                    hpke::SenderContext::new(&params, pub_key_bytes, b"")
+                    hpke::SenderContext::new(&params, pub_key.as_ref(), b"")
                         .ok_or(Error::HpkeEncryptionError)?;
 
                 let ciphertext = sender_ctx.seal(plaintext, aad);
@@ -182,7 +214,7 @@ mod tests {
         let expected_shared_secret_hex =
             "b1e179eefbcdfe490a1929c3c6e5de6d98f3ed4463b6d94627390119610baa83";
 
-        let sk_r = hex::decode(sk_r_hex).unwrap();
+        let sk_r = PrivateKey(hex::decode(sk_r_hex).unwrap());
         let enc = hex::decode(enc_hex).unwrap();
 
         let result = decaps_x25519(&sk_r, &enc).expect("Decapsulation failed");
@@ -197,7 +229,7 @@ mod tests {
     #[test]
     fn test_decaps_wrapper() {
         let kem_algo = KemAlgorithm::DhkemX25519HkdfSha256;
-        let (pk_r, sk_r) = generate_x25519_keypair(kem_algo).expect("KEM generation failed");
+        let (pk_r, sk_r) = generate_keypair(kem_algo).expect("KEM generation failed");
 
         let hpke_kem = hpke::Kem::X25519HkdfSha256;
         let hpke_kdf = hpke::Kdf::HkdfSha256;
@@ -205,7 +237,7 @@ mod tests {
         let params = hpke::Params::new(hpke_kem, hpke_kdf, hpke_aead);
 
         let (_sender_ctx, enc) =
-            hpke::SenderContext::new(&params, &pk_r, b"").expect("HPKE setup sender failed");
+            hpke::SenderContext::new(&params, &pk_r.0, b"").expect("HPKE setup sender failed");
 
         let result = decaps(&sk_r, &enc, kem_algo).expect("Decaps wrapper failed");
         assert_eq!(result.len(), 32);
@@ -213,7 +245,7 @@ mod tests {
 
     #[test]
     fn test_decaps_unsupported() {
-        let sk_r = [0u8; 32];
+        let sk_r = PrivateKey(vec![0u8; 32]);
         let enc = [0u8; 32];
         let algo = KemAlgorithm::Unspecified;
 
@@ -227,13 +259,13 @@ mod tests {
 
         // Short private key
         assert!(matches!(
-            decaps(&[0u8; 31], &[0u8; 32], algo),
+            decaps(&PrivateKey(vec![0u8; 31]), &[0u8; 32], algo),
             Err(Error::KeyLenMismatch)
         ));
 
         // Short encapsulated key
         assert!(matches!(
-            decaps(&[0u8; 32], &[0u8; 31], algo),
+            decaps(&PrivateKey(vec![0u8; 32]), &[0u8; 31], algo),
             Err(Error::KeyLenMismatch)
         ));
     }
@@ -248,7 +280,7 @@ mod tests {
 
         let kem_algo = KemAlgorithm::DhkemX25519HkdfSha256;
 
-        let (pk_r, sk_r) = generate_x25519_keypair(kem_algo).expect("HPKE generation failed");
+        let (pk_r, sk_r) = generate_keypair(kem_algo).expect("HPKE generation failed");
 
         let pt = b"hello world";
         let aad = b"additional data";
@@ -260,7 +292,7 @@ mod tests {
         let params = hpke::Params::new(hpke_kem, hpke_kdf, hpke_aead);
 
         let (mut sender_ctx, enc) =
-            hpke::SenderContext::new(&params, &pk_r, info).expect("HPKE setup sender failed");
+            hpke::SenderContext::new(&params, &pk_r.0, info).expect("HPKE setup sender failed");
         let ciphertext = sender_ctx.seal(pt, aad);
 
         let decrypted =
@@ -279,7 +311,7 @@ mod tests {
 
         let kem_algo = KemAlgorithm::DhkemX25519HkdfSha256;
 
-        let (pk_r, sk_r) = generate_x25519_keypair(kem_algo).expect("HPKE generation failed");
+        let (pk_r, sk_r) = generate_keypair(kem_algo).expect("HPKE generation failed");
 
         let pt = b"hello world";
         let aad = b"additional data";
@@ -291,7 +323,7 @@ mod tests {
         let params = hpke::Params::new(hpke_kem, hpke_kdf, hpke_aead);
 
         let (mut sender_ctx, enc) =
-            hpke::SenderContext::new(&params, &pk_r, info).expect("HPKE setup sender failed");
+            hpke::SenderContext::new(&params, &pk_r.0, info).expect("HPKE setup sender failed");
         let mut ciphertext = sender_ctx.seal(pt, aad);
 
         // Tamper with ciphertext
@@ -312,7 +344,7 @@ mod tests {
         };
         let kem_algo = KemAlgorithm::DhkemX25519HkdfSha256;
 
-        let (pk_r, sk_r) = generate_x25519_keypair(kem_algo).expect("HPKE generation failed");
+        let (pk_r, sk_r) = generate_keypair(kem_algo).expect("HPKE generation failed");
 
         let pt = b"hello world";
         let aad = b"additional data";
@@ -329,25 +361,25 @@ mod tests {
     #[test]
     fn test_generate_kem_success() {
         let algo = KemAlgorithm::DhkemX25519HkdfSha256;
-        let (pub_key, priv_key) = generate_x25519_keypair(algo).expect("KEM generation failed");
-        assert_eq!(pub_key.len(), 32);
-        assert_eq!(priv_key.len(), 32);
+        let (pub_key, priv_key) = generate_keypair(algo).expect("KEM generation failed");
+        assert_eq!(pub_key.0.len(), 32);
+        assert_eq!(priv_key.0.len(), 32);
     }
 
     #[test]
     fn test_generate_hpke_success() {
         let algo = KemAlgorithm::DhkemX25519HkdfSha256;
 
-        let (pub_key, priv_key) = generate_x25519_keypair(algo).expect("HPKE generation failed");
-        assert_eq!(pub_key.len(), 32);
-        assert_eq!(priv_key.len(), 32);
+        let (pub_key, priv_key) = generate_keypair(algo).expect("HPKE generation failed");
+        assert_eq!(pub_key.0.len(), 32);
+        assert_eq!(priv_key.0.len(), 32);
     }
 
     #[test]
     fn test_generate_hpke_unsupported() {
         let algo = KemAlgorithm::Unspecified;
 
-        let result = generate_x25519_keypair(algo);
+        let result = generate_keypair(algo);
         assert!(matches!(result, Err(Error::UnsupportedAlgorithm)));
     }
 }
