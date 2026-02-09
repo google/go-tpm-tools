@@ -66,25 +66,29 @@ pub unsafe extern "C" fn key_manager_generate_binding_keypair(
     expiry_secs: u64,
     out_uuid: *mut u8,
     out_pubkey: *mut u8,
-    out_pubkey_len: usize,
+    out_pubkey_len: *mut usize,
 ) -> i32 {
     // Safety Invariant Checks
-    if out_pubkey.is_null() || out_uuid.is_null() {
+    if out_pubkey.is_null() || out_uuid.is_null() || out_pubkey_len.is_null() {
         return -1;
     }
 
     // Convert to Safe Types
     let out_uuid = unsafe { slice::from_raw_parts_mut(out_uuid, 16) };
-    let out_pubkey = unsafe { slice::from_raw_parts_mut(out_pubkey, out_pubkey_len) };
+    // We cannot verify pubkey length safely without dereferencing out_pubkey_len
+    let pubkey_capacity = unsafe { *out_pubkey_len };
+    let out_pubkey = unsafe { slice::from_raw_parts_mut(out_pubkey, pubkey_capacity) };
 
     // Call Safe Internal Function
     match generate_binding_keypair_internal(algo.into(), expiry_secs) {
         Ok((id, pubkey)) => {
-            if out_pubkey_len != pubkey.as_bytes().len() {
-                return -2;
+            let actual_len = pubkey.as_bytes().len();
+            if pubkey_capacity < actual_len {
+                 return -2;
             }
+            unsafe { *out_pubkey_len = actual_len };
             out_uuid.copy_from_slice(id.as_bytes());
-            out_pubkey.copy_from_slice(pubkey.as_bytes());
+            out_pubkey[..actual_len].copy_from_slice(pubkey.as_bytes());
             0 // Success
         }
         Err(e) => e,
@@ -103,6 +107,21 @@ pub unsafe extern "C" fn key_manager_generate_binding_keypair(
 /// ## Returns
 /// * `0` on success.
 /// * `-1` if the UUID pointer is null or the key was not found.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn key_manager_open(
+    _uuid_bytes: *const u8,
+    _enc: *const u8,
+    _enc_len: usize,
+    _ciphertext: *const u8,
+    _ciphertext_len: usize,
+    _aad: *const u8,
+    _aad_len: usize,
+    _out_plaintext: *mut u8,
+    _out_plaintext_len: *mut usize,
+) -> i32 {
+    -1 // Not implemented
+}
+
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn key_manager_destroy_binding_key(uuid_bytes: *const u8) -> i32 {
     if uuid_bytes.is_null() {
