@@ -54,9 +54,9 @@ func TestVMAttestationMarshaling(t *testing.T) {
 		{
 			name: "Empty Quote",
 			in: &VMAttestation{
-				Label:       []byte("label"),
-				Challenge:   []byte("challenge"),
-				Quote: &VMAttestationQuote{},
+				Label:     []byte("label"),
+				Challenge: []byte("challenge"),
+				Quote:     &VMAttestationQuote{},
 			},
 			want: `{"label":"bGFiZWw=","challenge":"Y2hhbGxlbmdl","vm_attestation_quote":{}}`,
 		},
