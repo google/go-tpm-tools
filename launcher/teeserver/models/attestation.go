@@ -5,8 +5,8 @@ import (
 	attestpb "github.com/google/go-tpm-tools/proto/attest"
 )
 
-// CVMAttestation represents a standalone attestation over a challenge provided by the workload.
-type CVMAttestation struct {
+// VMAttestation represents a standalone attestation over a challenge provided by the workload.
+type VMAttestation struct {
 	// Label provided by the attesting entity. For Confidential Space, this shall be "WORKLOAD_ATTESTATION".
 	Label []byte `json:"label"`
 
@@ -16,24 +16,25 @@ type CVMAttestation struct {
 	// Optional, provided by WSD.
 	ExtraData []byte `json:"extra_data,omitempty"`
 
-	// Attestation from the CVM.
-	Attestation *CVMAttestationQuote `json:"cvm_attestation_quote"`
-
-	// A vTPM Attestation Quote.
-	VTPMAttestation *attestpb.Attestation `json:"vtpm_attestation,omitempty"`
+	// Quote from the CVM.
+	Quote *VMAttestationQuote `json:"vm_attestation_quote"`
 
 	// Attestation reports for attached devices.
-	DeviceReports []DeviceAttestationReport `json:"device_attestation_reports,omitempty"`
+	DeviceReports []DeviceAttestationReport `json:"device_reports,omitempty"`
 }
 
-// CVMAttestationQuote represents a quote from a Confidential VM.
-type CVMAttestationQuote struct {
+// VMAttestationQuote represents a quote from a Confidential VM.
+type VMAttestationQuote struct {
 	// A TDX with CCEL and RTMR Attestation Quote.
-	TDXAttestation *TDXCCELAttestation `json:"tdx_ccel_attestation,omitempty"`
+	TDXCCELQuote *TDXCCELQuote `json:"tdx_ccel_quote,omitempty"`
+
+	// A vTPM Attestation Quote.
+	// TODO: Fork the definition of attestpb.Attestation to here.
+	VTPMAttestation *attestpb.Attestation `json:"vtpm_attestation,omitempty"`
 }
 
-// TDXCCELAttestation represents a TDX attestation with CCEL event logs.
-type TDXCCELAttestation struct {
+// TDXCCELQuote represents a TDX attestation with CCEL event logs.
+type TDXCCELQuote struct {
 	// The CCEL event log. Formatted as described in the UEFI 2.10.
 	// Contains events for guest OS boot.
 	CCELBootEventLog []byte `json:"ccel_boot_event_log"`

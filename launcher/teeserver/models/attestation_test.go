@@ -10,20 +10,20 @@ import (
 	"google.golang.org/protobuf/testing/protocmp"
 )
 
-func TestCVMAttestationMarshaling(t *testing.T) {
+func TestVMAttestationMarshaling(t *testing.T) {
 	tests := []struct {
 		name string
-		in   *CVMAttestation
+		in   *VMAttestation
 		want string
 	}{
 		{
 			name: "TDX Attestation",
-			in: &CVMAttestation{
+			in: &VMAttestation{
 				Label:     []byte("test-label"),
 				Challenge: []byte("test-challenge"),
 				ExtraData: []byte("test-extra"),
-				Attestation: &CVMAttestationQuote{
-					TDXAttestation: &TDXCCELAttestation{
+				Quote: &VMAttestationQuote{
+					TDXCCELQuote: &TDXCCELQuote{
 						CCELBootEventLog:  []byte("ccel-data"),
 						CELLaunchEventLog: []byte("cel-data"),
 						TDQuote:           []byte("td-quote"),
@@ -31,38 +31,39 @@ func TestCVMAttestationMarshaling(t *testing.T) {
 				},
 				DeviceReports: []DeviceAttestationReport{{}},
 			},
-			want: `{"label":"dGVzdC1sYWJlbA==","challenge":"dGVzdC1jaGFsbGVuZ2U=","extra_data":"dGVzdC1leHRyYQ==","cvm_attestation_quote":{"tdx_ccel_attestation":{"ccel_boot_event_log":"Y2NlbC1kYXRh","cel_launch_event_log":"Y2VsLWRhdGE=","td_quote":"dGQtcXVvdGU="}},"device_attestation_reports":[{}]}`,
+			want: `{"label":"dGVzdC1sYWJlbA==","challenge":"dGVzdC1jaGFsbGVuZ2U=","extra_data":"dGVzdC1leHRyYQ==","vm_attestation_quote":{"tdx_ccel_quote":{"ccel_boot_event_log":"Y2NlbC1kYXRh","cel_launch_event_log":"Y2VsLWRhdGE=","td_quote":"dGQtcXVvdGU="}},"device_reports":[{}]}`,
 		},
 		{
 			name: "TPM Attestation",
-			in: &CVMAttestation{
-				Label:       []byte("test-label-tpm"),
-				Challenge:   []byte("test-challenge-tpm"),
-				Attestation: &CVMAttestationQuote{},
-				VTPMAttestation: &attestpb.Attestation{
-					AkPub: []byte("ak-pub"),
-					Quotes: []*tpmpb.Quote{
-						{
-							Quote: []byte("quote-bytes"),
+			in: &VMAttestation{
+				Label:     []byte("test-label-tpm"),
+				Challenge: []byte("test-challenge-tpm"),
+				Quote: &VMAttestationQuote{
+					VTPMAttestation: &attestpb.Attestation{
+						AkPub: []byte("ak-pub"),
+						Quotes: []*tpmpb.Quote{
+							{
+								Quote: []byte("quote-bytes"),
+							},
 						},
 					},
 				},
 			},
-			want: `{"label":"dGVzdC1sYWJlbC10cG0=","challenge":"dGVzdC1jaGFsbGVuZ2UtdHBt","cvm_attestation_quote":{},"vtpm_attestation":{"quotes":[{"quote":"cXVvdGUtYnl0ZXM="}],"ak_pub":"YWstcHVi","TeeAttestation":null}}`,
+			want: `{"label":"dGVzdC1sYWJlbC10cG0=","challenge":"dGVzdC1jaGFsbGVuZ2UtdHBt","vm_attestation_quote":{"vtpm_attestation":{"quotes":[{"quote":"cXVvdGUtYnl0ZXM="}],"ak_pub":"YWstcHVi","TeeAttestation":null}}}`,
 		},
 		{
 			name: "Empty Quote",
-			in: &CVMAttestation{
+			in: &VMAttestation{
 				Label:       []byte("label"),
 				Challenge:   []byte("challenge"),
-				Attestation: &CVMAttestationQuote{},
+				Quote: &VMAttestationQuote{},
 			},
-			want: `{"label":"bGFiZWw=","challenge":"Y2hhbGxlbmdl","cvm_attestation_quote":{}}`,
+			want: `{"label":"bGFiZWw=","challenge":"Y2hhbGxlbmdl","vm_attestation_quote":{}}`,
 		},
 		{
 			name: "Empty",
-			in:   &CVMAttestation{},
-			want: `{"label":null,"challenge":null,"cvm_attestation_quote":null}`,
+			in:   &VMAttestation{},
+			want: `{"label":null,"challenge":null,"vm_attestation_quote":null}`,
 		},
 	}
 
@@ -73,7 +74,7 @@ func TestCVMAttestationMarshaling(t *testing.T) {
 				t.Fatalf("Failed to marshal: %v", err)
 			}
 
-			var out CVMAttestation
+			var out VMAttestation
 			if err := json.Unmarshal(blob, &out); err != nil {
 				t.Fatalf("Failed to unmarshal: %v", err)
 			}
