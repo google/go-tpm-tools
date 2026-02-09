@@ -1,4 +1,5 @@
 use crate::algorithms::HpkeAlgorithm;
+use crate::protected_mem::Vault;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::time::Instant;
@@ -35,9 +36,6 @@ pub struct KeyMetadata {
     pub spec: KeySpec,
 }
 
-pub struct Vault {
-    // placeholder
-}
 
 /// Internal struct to hold the Key Metadata and the secret key material.
 pub struct KeyRecord {
