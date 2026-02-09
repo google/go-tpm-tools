@@ -89,18 +89,15 @@ fn main() {
     let target = env::var("TARGET").unwrap();
     let out_dir = env::var("OUT_DIR").unwrap();
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
-    
+
     // Locate the BoringSSL source relative to this cargo manifest
     // keymanager/third_party/bssl-sys -> keymanager/boringssl
     let bssl_source_dir = Path::new(&manifest_dir).join("../../boringssl");
 
     // Auto-init git submodule if BoringSSL source is missing.
-    // Follows the curl-sys / libgit2-sys pattern: attempt silently, discard
-    // errors (on crates.io the source is already present as a regular directory,
-    // so git may not be available and that's fine).
     if !bssl_source_dir.join("CMakeLists.txt").exists() {
         let _ = Command::new("git")
-            .args(["submodule", "update", "--init", "boringssl"])
+            .args(["submodule", "update", "--init", "--recursive", "boringssl"])
             .current_dir(Path::new(&manifest_dir).join("../.."))
             .status();
     }
@@ -131,7 +128,7 @@ fn main() {
     // BoringSSL install target puts libs in `lib/` and includes in `include/`.
     // BUT `bssl_sys` target might not install the wrapper?
     // Let's verify where `cmake` crate puts it. It usually puts build artifacts in `build/`.
-    
+
     // cmake::Config::build() guarantees this path exists on success (it
     // panics on failure), but assert for clarity since the layout matters.
     let build_dir = dst.join("build");
@@ -145,11 +142,17 @@ fn main() {
     // Note: We might need to look in `dst/lib` if it was installed, or `build_dir` if not.
     // BoringSSL puts static libs in the top level of build dir usually, or `crypto/` `ssl/` subdirs.
     // Let's add multiple search paths to be safe, similar to original script logic but adapted.
-    
+
     println!("cargo:rustc-link-search=native={}", build_dir.display());
-    println!("cargo:rustc-link-search=native={}/crypto", build_dir.display());
+    println!(
+        "cargo:rustc-link-search=native={}/crypto",
+        build_dir.display()
+    );
     println!("cargo:rustc-link-search=native={}/ssl", build_dir.display());
-    println!("cargo:rustc-link-search=native={}/rust/bssl-sys", build_dir.display());
+    println!(
+        "cargo:rustc-link-search=native={}/rust/bssl-sys",
+        build_dir.display()
+    );
 
     // Also check `dst/lib` just in case `cmake` crate installed them there
     println!("cargo:rustc-link-search=native={}/lib", dst.display());
@@ -169,9 +172,10 @@ fn main() {
     // The `bssl_sys` target generates `wrapper_{target}.rs` in `rust/bssl-sys` inside build dir.
     let bssl_sys_build_dir = build_dir.join("rust/bssl-sys");
     let bindgen_source_file = bssl_sys_build_dir.join(format!("wrapper_{}.rs", target));
-    
+
     // We also need the prefix header from source
-    let prefix_inc_source_file = bssl_source_dir.join("rust/bssl-sys/boringssl_prefix_symbols_bindgen.rs.in");
+    let prefix_inc_source_file =
+        bssl_source_dir.join("rust/bssl-sys/boringssl_prefix_symbols_bindgen.rs.in");
 
     let bindgen_out_file = Path::new(&out_dir).join("bindgen.rs");
 
@@ -183,14 +187,12 @@ fn main() {
     println!("cargo:rerun-if-changed={}", bindgen_source_file.display());
 
     let prefix_source = match env::var("BORINGSSL_PREFIX") {
-        Ok(prefix) => {
-             std::fs::read_to_string(&prefix_inc_source_file)
-                .expect(&format!(
-                    "Could not read prefixing data from '{}'",
-                    prefix_inc_source_file.display(),
-                ))
-                .replace("${BORINGSSL_PREFIX}", prefix.as_str())
-        }
+        Ok(prefix) => std::fs::read_to_string(&prefix_inc_source_file)
+            .expect(&format!(
+                "Could not read prefixing data from '{}'",
+                prefix_inc_source_file.display(),
+            ))
+            .replace("${BORINGSSL_PREFIX}", prefix.as_str()),
         Err(env::VarError::NotPresent) => "".to_string(),
         Err(e) => panic!("failed to read BORINGSSL_PREFIX variable: {}", e),
     };
@@ -204,6 +206,9 @@ fn main() {
         bindgen_out_file.display()
     ));
 
-    println!("cargo:rerun-if-changed={}", prefix_inc_source_file.display());
+    println!(
+        "cargo:rerun-if-changed={}",
+        prefix_inc_source_file.display()
+    );
     println!("cargo:rerun-if-env-changed=BORINGSSL_PREFIX");
 }
