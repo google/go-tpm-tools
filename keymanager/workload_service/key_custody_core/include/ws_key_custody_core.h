@@ -17,6 +17,30 @@ int32_t key_manager_generate_binding_keypair(KmHpkeAlgorithm algo,
                                              uint8_t *out_pubkey,
                                              size_t out_pubkey_len);
 
+// key_manager_open decrypts a ciphertext using the binding key identified by
+// uuid_bytes via HPKE Open.
+//
+// uuid_bytes must point to a 16-byte binding key UUID.
+// enc is the encapsulated shared secret from the seal operation.
+// ciphertext is the sealed ciphertext to decrypt.
+// aad is the Additional Authenticated Data (must not be NULL; pass empty data
+// with aad_len == 0 if unused).
+// out_plaintext_len is an in/out param: pass buffer capacity in, receives
+// actual plaintext length out.
+//
+// Returns 0 on success, -1 on invalid args/key not found, -2 if out_plaintext
+// buffer is too small, -3 if decryption fails.
+int32_t key_manager_open(
+    const uint8_t *uuid_bytes,
+    const uint8_t *enc,
+    size_t enc_len,
+    const uint8_t *ciphertext,
+    size_t ciphertext_len,
+    const uint8_t *aad,
+    size_t aad_len,
+    uint8_t *out_plaintext,
+    size_t *out_plaintext_len);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif  // __cplusplus

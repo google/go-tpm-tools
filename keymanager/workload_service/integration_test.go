@@ -23,10 +23,17 @@ func (r *realBindingKeyGen) GenerateBindingKeypair(lifespanSecs uint64) (uuid.UU
 	return wskcc.GenerateBindingKeypair(lifespanSecs)
 }
 
+// realOpener wraps the actual WSD KCC FFI for Open.
+type realOpener struct{}
+
+func (r *realOpener) Open(bindingUUID uuid.UUID, enc, ciphertext, aad []byte) ([]byte, error) {
+	return wskcc.Open(bindingUUID, enc, ciphertext, aad)
+}
+
 func TestIntegrationGenerateKeysEndToEnd(t *testing.T) {
 	// Wire up real FFI calls: WSD KCC for binding, KPS KCC (via KPS KOL) for KEM.
-	kpsSvc := kps.NewService(kpskcc.GenerateKEMKeypair)
-	srv := NewServer(&realBindingKeyGen{}, kpsSvc)
+	kpsSvc := kps.NewService(kpskcc.GenerateKEMKeypair, kpskcc.DecapAndSeal)
+	srv := NewServer(&realBindingKeyGen{}, kpsSvc, kpsSvc, &realOpener{})
 
 	reqBody, err := json.Marshal(GenerateKemRequest{
 		Algorithm:              KemAlgorithmDHKEMX25519HKDFSHA256,
@@ -71,8 +78,8 @@ func TestIntegrationGenerateKeysEndToEnd(t *testing.T) {
 }
 
 func TestIntegrationGenerateKeysUniqueMappings(t *testing.T) {
-	kpsSvc := kps.NewService(kpskcc.GenerateKEMKeypair)
-	srv := NewServer(&realBindingKeyGen{}, kpsSvc)
+	kpsSvc := kps.NewService(kpskcc.GenerateKEMKeypair, kpskcc.DecapAndSeal)
+	srv := NewServer(&realBindingKeyGen{}, kpsSvc, kpsSvc, &realOpener{})
 
 	// Generate two key sets.
 	var kemUUIDs [2]uuid.UUID

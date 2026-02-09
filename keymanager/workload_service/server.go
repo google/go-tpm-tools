@@ -1,10 +1,11 @@
 // Package workload_service implements the Key Orchestration Layer (KOL) for the
 // Workload Service Daemon (WSD). It provides an HTTP server on a unix socket
-// exposing key generation endpoints.
+// exposing key management endpoints.
 package workload_service
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -74,10 +75,35 @@ type GenerateKemResponse struct {
 	KeyHandle KeyHandle `json:"key_handle"`
 }
 
+// DecapSealer decapsulates a shared secret and reseals it with the binding key
+// via the KPS KCC FFI.
+type DecapSealer interface {
+	DecapAndSeal(kemUUID uuid.UUID, encapsulatedKey, aad []byte) (sealEnc []byte, sealedCT []byte, err error)
+}
+
+// Opener decrypts a sealed ciphertext using a binding key via the WSD KCC FFI.
+type Opener interface {
+	Open(bindingUUID uuid.UUID, enc, ciphertext, aad []byte) ([]byte, error)
+}
+
+// DecapsRequest is the JSON body for POST /v1/keys:decaps.
+type DecapsRequest struct {
+	KEMKeyHandle    string `json:"kemKeyHandle"`
+	EncapsulatedKey string `json:"encapsulatedKey"` // base64-encoded
+	AAD             string `json:"aad,omitempty"`   // base64-encoded, optional
+}
+
+// DecapsResponse is returned by POST /v1/keys:decaps.
+type DecapsResponse struct {
+	SharedSecret string `json:"sharedSecret"` // base64-encoded
+}
+
 // Server is the WSD HTTP server.
 type Server struct {
-	bindingGen BindingKeyGenerator
-	kemGen     KEMKeyGenerator
+	bindingGen  BindingKeyGenerator
+	kemGen      KEMKeyGenerator
+	decapSealer DecapSealer
+	opener      Opener
 
 	mu              sync.RWMutex
 	kemToBindingMap map[uuid.UUID]uuid.UUID
@@ -87,15 +113,18 @@ type Server struct {
 }
 
 // NewServer creates a new WSD server with the given dependencies.
-func NewServer(bindingGen BindingKeyGenerator, kemGen KEMKeyGenerator) *Server {
+func NewServer(bindingGen BindingKeyGenerator, kemGen KEMKeyGenerator, decapSealer DecapSealer, opener Opener) *Server {
 	s := &Server{
 		bindingGen:      bindingGen,
 		kemGen:          kemGen,
+		decapSealer:     decapSealer,
+		opener:          opener,
 		kemToBindingMap: make(map[uuid.UUID]uuid.UUID),
 	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/keys:generate_kem", s.handleGenerateKem)
+	mux.HandleFunc("/v1/keys:decaps", s.handleDecaps)
 
 	s.httpServer = &http.Server{Handler: mux}
 	return s
@@ -127,6 +156,68 @@ func (s *Server) LookupBindingUUID(kemUUID uuid.UUID) (uuid.UUID, bool) {
 	defer s.mu.RUnlock()
 	id, ok := s.kemToBindingMap[kemUUID]
 	return id, ok
+}
+
+func (s *Server) handleDecaps(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req DecapsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("invalid request body: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	kemUUID, err := uuid.Parse(req.KEMKeyHandle)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("invalid kemKeyHandle: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	encapsulatedKey, err := base64.StdEncoding.DecodeString(req.EncapsulatedKey)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("invalid encapsulatedKey base64: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	var aad []byte
+	if req.AAD != "" {
+		aad, err = base64.StdEncoding.DecodeString(req.AAD)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("invalid aad base64: %v", err), http.StatusBadRequest)
+			return
+		}
+	}
+
+	// Step 1: Look up the binding UUID for this KEM key.
+	bindingUUID, ok := s.LookupBindingUUID(kemUUID)
+	if !ok {
+		http.Error(w, fmt.Sprintf("KEM key handle not found: %s", kemUUID), http.StatusNotFound)
+		return
+	}
+
+	// Step 2: Decapsulate and reseal via KPS.
+	sealEnc, sealedCT, err := s.decapSealer.DecapAndSeal(kemUUID, encapsulatedKey, aad)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("failed to decap and seal: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Step 3: Open the sealed secret using the binding key via WSD KCC.
+	plaintext, err := s.opener.Open(bindingUUID, sealEnc, sealedCT, aad)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("failed to open sealed secret: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Step 4: Return the shared secret.
+	resp := DecapsResponse{
+		SharedSecret: base64.StdEncoding.EncodeToString(plaintext),
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
 }
 
 func (s *Server) handleGenerateKem(w http.ResponseWriter, r *http.Request) {

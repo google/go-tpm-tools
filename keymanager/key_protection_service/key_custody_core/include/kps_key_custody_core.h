@@ -18,6 +18,27 @@ int32_t key_manager_generate_kem_keypair(KmHpkeAlgorithm algo,
                                          uint8_t *out_uuid,
                                          uint8_t *out_pubkey,
                                          size_t out_pubkey_len);
+// key_manager_decap_and_seal decapsulates a shared secret using the stored KEM
+// key identified by uuid_bytes, then reseals the shared secret with the
+// associated binding public key via HPKE.
+//
+// uuid_bytes must point to a 16-byte KEM key UUID.
+// encapsulated_key is the client-provided encapsulated key.
+// aad is optional Additional Authenticated Data (may be NULL if aad_len == 0).
+// out_encapsulated_key_len and out_ciphertext_len are in/out params.
+//
+// Returns 0 on success, -1 on invalid args/key not found, -2 if output buffers
+// are too small, -3 if decapsulation fails, -4 if sealing fails.
+int32_t key_manager_decap_and_seal(
+    const uint8_t *uuid_bytes,
+    const uint8_t *encapsulated_key,
+    size_t encapsulated_key_len,
+    const uint8_t *aad,
+    size_t aad_len,
+    uint8_t *out_encapsulated_key,
+    size_t *out_encapsulated_key_len,
+    uint8_t *out_ciphertext,
+    size_t *out_ciphertext_len);
 
 #ifdef __cplusplus
 }  // extern "C"

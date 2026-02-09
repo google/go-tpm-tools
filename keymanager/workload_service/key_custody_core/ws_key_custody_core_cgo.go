@@ -50,3 +50,49 @@ func GenerateBindingKeypair(lifespanSecs uint64) (uuid.UUID, []byte, error) {
 	copy(pubkey, pubkeyBuf[:pubkeyLen])
 	return id, pubkey, nil
 }
+
+// Open decrypts a sealed ciphertext using the binding key identified by
+// bindingUUID via Rust FFI (HPKE Open).
+// Returns the decrypted plaintext (shared secret).
+func Open(bindingUUID uuid.UUID, enc, ciphertext, aad []byte) ([]byte, error) {
+	if len(enc) == 0 {
+		return nil, fmt.Errorf("enc must not be empty")
+	}
+	if len(ciphertext) == 0 {
+		return nil, fmt.Errorf("ciphertext must not be empty")
+	}
+
+	uuidBytes := bindingUUID[:]
+
+	var outPT [64]byte
+	outPTLen := C.size_t(len(outPT))
+
+	// Rust key_manager_open requires non-null aad pointer.
+	// Use a sentinel byte so the pointer is always valid.
+	var aadSentinel [1]byte
+	aadPtr := (*C.uint8_t)(unsafe.Pointer(&aadSentinel[0]))
+	aadLen := C.size_t(0)
+	if len(aad) > 0 {
+		aadPtr = (*C.uint8_t)(unsafe.Pointer(&aad[0]))
+		aadLen = C.size_t(len(aad))
+	}
+
+	rc := C.key_manager_open(
+		(*C.uint8_t)(unsafe.Pointer(&uuidBytes[0])),
+		(*C.uint8_t)(unsafe.Pointer(&enc[0])),
+		C.size_t(len(enc)),
+		(*C.uint8_t)(unsafe.Pointer(&ciphertext[0])),
+		C.size_t(len(ciphertext)),
+		aadPtr,
+		aadLen,
+		(*C.uint8_t)(unsafe.Pointer(&outPT[0])),
+		&outPTLen,
+	)
+	if rc != 0 {
+		return nil, fmt.Errorf("key_manager_open failed with code %d", rc)
+	}
+
+	plaintext := make([]byte, outPTLen)
+	copy(plaintext, outPT[:outPTLen])
+	return plaintext, nil
+}
