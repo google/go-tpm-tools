@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	attestpb "github.com/google/go-tpm-tools/proto/attest"
 	tpmpb "github.com/google/go-tpm-tools/proto/tpm"
 	"google.golang.org/protobuf/testing/protocmp"
 )
@@ -39,8 +38,10 @@ func TestVMAttestationMarshaling(t *testing.T) {
 				Label:     []byte("test-label-tpm"),
 				Challenge: []byte("test-challenge-tpm"),
 				Quote: &VMAttestationQuote{
-					VTPMAttestation: &attestpb.Attestation{
-						AkPub: []byte("ak-pub"),
+					VTPMAttestation: &VTPMAttestation{
+						AkPub:                []byte("ak-pub"),
+						PCClientBootEventLog: []byte("pcclient-log"),
+						CELLaunchEventLog:    []byte("cel-log"),
 						Quotes: []*tpmpb.Quote{
 							{
 								Quote: []byte("quote-bytes"),
@@ -49,7 +50,7 @@ func TestVMAttestationMarshaling(t *testing.T) {
 					},
 				},
 			},
-			want: `{"label":"dGVzdC1sYWJlbC10cG0=","challenge":"dGVzdC1jaGFsbGVuZ2UtdHBt","vm_attestation_quote":{"vtpm_attestation":{"quotes":[{"quote":"cXVvdGUtYnl0ZXM="}],"ak_pub":"YWstcHVi","TeeAttestation":null}}}`,
+			want: `{"label":"dGVzdC1sYWJlbC10cG0=","challenge":"dGVzdC1jaGFsbGVuZ2UtdHBt","vm_attestation_quote":{"vtpm_attestation":{"pcclient_boot_event_log":"cGNjbGllbnQtbG9n","cel_launch_event_log":"Y2VsLWxvZw==","quotes":[{"quote":"cXVvdGUtYnl0ZXM="}],"ak_pub":"YWstcHVi"}}}`,
 		},
 		{
 			name: "Empty Quote",

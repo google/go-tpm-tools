@@ -16,6 +16,8 @@ import (
 	"testing"
 	"time"
 
+	tpmpb "github.com/google/go-tpm-tools/proto/tpm"
+
 	"github.com/cenkalti/backoff/v4"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-cmp/cmp"
@@ -34,6 +36,7 @@ import (
 	"github.com/google/go-tpm-tools/verifier/oci"
 	"github.com/google/go-tpm-tools/verifier/oci/cosign"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/testing/protocmp"
 )
 
 const (
@@ -669,8 +672,11 @@ func (f *fakeTdxAttestRoot) Attest(nonce []byte) (any, error) {
 }
 
 func (f *fakeTdxAttestRoot) ComputeNonce(challenge []byte, extraData []byte) []byte {
-	extraDataDigest := sha512.Sum512(extraData)
-	challengeData := append(challenge, extraDataDigest[:]...)
+	challengeData := challenge
+	if extraData != nil {
+		extraDataDigest := sha512.Sum512(extraData)
+		challengeData = append(challenge, extraDataDigest[:]...)
+	}
 	challengeDigest := sha512.Sum512(challengeData)
 	finalNonce := sha512.Sum512(append([]byte(teemodels.WorkloadAttestationLabel), challengeDigest[:]...))
 	return finalNonce[:]
@@ -840,5 +846,35 @@ func TestVerify(t *testing.T) {
 				t.Errorf("verify() did not return expected response (-got, +want): %v", diff)
 			}
 		})
+	}
+}
+
+func TestConvertPBToVTPMAttestation(t *testing.T) {
+	pbAtt := &attestpb.Attestation{
+		AkPub: []byte("ak-pub"),
+		Quotes: []*tpmpb.Quote{
+			{Quote: []byte("quote")},
+		},
+		EventLog:          []byte("pcclient-boot-event-log"),
+		CanonicalEventLog: []byte("cel-launch-event-log"),
+		AkCert:            []byte("ak-cert"),
+		IntermediateCerts: [][]byte{[]byte("intermediate-cert")},
+	}
+
+	want := &teemodels.VTPMAttestation{
+		AkPub: []byte("ak-pub"),
+		Quotes: []*tpmpb.Quote{
+			{Quote: []byte("quote")},
+		},
+		PCClientBootEventLog: []byte("pcclient-boot-event-log"),
+		CELLaunchEventLog:    []byte("cel-launch-event-log"),
+		AkCert:               []byte("ak-cert"),
+		IntermediateCerts:    [][]byte{[]byte("intermediate-cert")},
+	}
+
+	got := convertPBToVTPMAttestation(pbAtt)
+
+	if diff := cmp.Diff(got, want, protocmp.Transform()); diff != "" {
+		t.Errorf("convertPBToVTPMAttestation() mismatch (-got +want):\n%s", diff)
 	}
 }

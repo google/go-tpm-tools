@@ -2,7 +2,7 @@
 package models
 
 import (
-	attestpb "github.com/google/go-tpm-tools/proto/attest"
+	"github.com/google/go-tpm-tools/proto/tpm"
 )
 
 const (
@@ -33,9 +33,8 @@ type VMAttestationQuote struct {
 	// A TDX with CCEL and RTMR Attestation Quote.
 	TDXCCELQuote *TDXCCELQuote `json:"tdx_ccel_quote,omitempty"`
 
-	// A vTPM Attestation Quote.
-	// TODO: Fork the definition of attestpb.Attestation to here.
-	VTPMAttestation *attestpb.Attestation `json:"vtpm_attestation,omitempty"`
+	// VTPMAttestation represents the standalone vTPM Attestation Quote.
+	VTPMAttestation *VTPMAttestation `json:"vtpm_attestation,omitempty"`
 }
 
 // TDXCCELQuote represents a TDX attestation with CCEL event logs.
@@ -55,4 +54,29 @@ type TDXCCELQuote struct {
 // DeviceAttestationReport represents an attestation report from a device.
 // TODO: Define this.
 type DeviceAttestationReport struct {
+}
+
+// VTPMAttestation represents a vTPM attestation quote.
+type VTPMAttestation struct {
+	// Attestation Key (AK) Public Area, encoded as a TPMT_PUBLIC
+	AkPub []byte `json:"ak_pub,omitempty"`
+
+	// Quotes over all supported PCR banks
+	Quotes []*tpm.Quote `json:"quotes,omitempty"`
+
+	// TCG PC Client Boot Event Log, encoded in the raw binary format.
+	// Can be SHA-1 or crypto-agile.
+	PCClientBootEventLog []byte `json:"pcclient_boot_event_log"`
+
+	// Formatted as a Canonical Event Log.
+	// The event log containing Attested COS launcher events.
+	CELLaunchEventLog []byte `json:"cel_launch_event_log"`
+
+	// Attestation Key (AK) Certificate, encoded as ASN.1 DER.
+	// Optional.
+	AkCert []byte `json:"ak_cert,omitempty"`
+
+	// Intermediate Certificates for verifying the AK Certificate, encoded as
+	// ASN.1 DER. Optional.
+	IntermediateCerts [][]byte `json:"intermediate_certs,omitempty"`
 }

@@ -318,7 +318,7 @@ func (a *agent) AttestationEvidence(_ context.Context, challenge []byte, extraDa
 	switch v := attResult.(type) {
 	case *pb.Attestation:
 		v.CanonicalEventLog = cosCel.Bytes()
-		attestation.Quote.VTPMAttestation = v
+		attestation.Quote.VTPMAttestation = convertPBToVTPMAttestation(v)
 	case *verifier.TDCCELAttestation:
 		attestation.Quote.TDXCCELQuote = &teemodels.TDXCCELQuote{
 			CCELBootEventLog:  v.CcelData,
@@ -393,8 +393,11 @@ func (t *tpmAttestRoot) Attest(nonce []byte) (any, error) {
 }
 
 func (t *tpmAttestRoot) ComputeNonce(challenge []byte, extraData []byte) []byte {
-	extraDataDigest := sha256.Sum256(extraData)
-	challengeData := append(challenge, extraDataDigest[:]...)
+	challengeData := challenge
+	if extraData != nil {
+		extraDataDigest := sha256.Sum256(extraData)
+		challengeData = append(challenge, extraDataDigest[:]...)
+	}
 	challengeDigest := sha256.Sum256(challengeData)
 	finalNonce := sha256.Sum256(append([]byte(teemodels.WorkloadAttestationLabel), challengeDigest[:]...))
 	return finalNonce[:]
@@ -445,8 +448,11 @@ func (t *tdxAttestRoot) Attest(nonce []byte) (any, error) {
 }
 
 func (t *tdxAttestRoot) ComputeNonce(challenge []byte, extraData []byte) []byte {
-	extraDataDigest := sha512.Sum512(extraData)
-	challengeData := append(challenge, extraDataDigest[:]...)
+	challengeData := challenge
+	if extraData != nil {
+		extraDataDigest := sha512.Sum512(extraData)
+		challengeData = append(challenge, extraDataDigest[:]...)
+	}
 	challengeDigest := sha512.Sum512(challengeData)
 	finalNonce := sha512.Sum512(append([]byte(teemodels.WorkloadAttestationLabel), challengeDigest[:]...))
 	return finalNonce[:]
@@ -520,4 +526,15 @@ func (c *sigsCache) get() []oci.Signature {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.items
+}
+
+func convertPBToVTPMAttestation(v *pb.Attestation) *teemodels.VTPMAttestation {
+	return &teemodels.VTPMAttestation{
+		AkPub:                v.GetAkPub(),
+		Quotes:               v.GetQuotes(),
+		PCClientBootEventLog: v.GetEventLog(),
+		CELLaunchEventLog:    v.GetCanonicalEventLog(),
+		AkCert:               v.GetAkCert(),
+		IntermediateCerts:    v.GetIntermediateCerts(),
+	}
 }
