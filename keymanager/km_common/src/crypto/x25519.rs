@@ -2,7 +2,6 @@ use crate::algorithms::{AeadAlgorithm, HpkeAlgorithm, KdfAlgorithm, KemAlgorithm
 use crate::crypto::secret_box::SecretBox;
 use crate::crypto::{Error, PrivateKeyOps, PublicKeyOps};
 use bssl_crypto::{hkdf, hpke, x25519};
-use zeroize::{Zeroize, ZeroizeOnDrop};
 
 /// X25519-based public key implementation.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -29,7 +28,8 @@ impl PublicKeyOps for X25519PublicKey {
             KemAlgorithm::try_from(algo.kem),
             KdfAlgorithm::try_from(algo.kdf),
             AeadAlgorithm::try_from(algo.aead),
-        ) else {
+        )
+        else {
             return Err(Error::UnsupportedAlgorithm);
         };
 
@@ -53,14 +53,18 @@ impl PublicKeyOps for X25519PublicKey {
 }
 
 /// X25519-based private key implementation.
-#[derive(Zeroize, ZeroizeOnDrop)]
-pub struct X25519PrivateKey([u8; 32]);
+pub struct X25519PrivateKey(SecretBox);
 
 impl PrivateKeyOps for X25519PrivateKey {
     /// Decapsulates the shared secret from an encapsulated key.
     /// Follows RFC 9180 Section 4.1. DHKEM(Group, Hash).
     fn decaps_internal(&self, enc: &[u8]) -> Result<SecretBox, Error> {
-        let priv_key = x25519::PrivateKey(self.0);
+        let priv_key = x25519::PrivateKey(
+            self.0
+                .as_slice()
+                .try_into()
+                .map_err(|_| Error::KeyLenMismatch)?,
+        );
 
         // 1. Compute Diffie-Hellman shared secret
         // dh = dhExchange(skR, pkE)
@@ -104,7 +108,8 @@ impl PrivateKeyOps for X25519PrivateKey {
             KemAlgorithm::try_from(algo.kem),
             KdfAlgorithm::try_from(algo.kdf),
             AeadAlgorithm::try_from(algo.aead),
-        ) else {
+        )
+        else {
             return Err(Error::UnsupportedAlgorithm);
         };
 
@@ -114,7 +119,7 @@ impl PrivateKeyOps for X25519PrivateKey {
             hpke::Aead::Aes256Gcm,
         );
 
-        let mut recipient_ctx = hpke::RecipientContext::new(&params, &self.0, enc, b"")
+        let mut recipient_ctx = hpke::RecipientContext::new(&params, self.0.as_slice(), enc, b"")
             .ok_or(Error::HpkeDecryptionError)?;
 
         recipient_ctx
@@ -161,7 +166,7 @@ pub(crate) fn generate_keypair() -> (X25519PublicKey, X25519PrivateKey) {
     let (pk, sk) = hpke::Kem::X25519HkdfSha256.generate_keypair();
     (
         X25519PublicKey(pk.try_into().expect("X25519 public key must be 32 bytes")),
-        X25519PrivateKey(sk.try_into().expect("X25519 private key must be 32 bytes")),
+        X25519PrivateKey(SecretBox::new(sk)),
     )
 }
 
@@ -182,8 +187,8 @@ mod tests {
         let expected_shared_secret_hex =
             "b1e179eefbcdfe490a1929c3c6e5de6d98f3ed4463b6d94627390119610baa83";
 
-        let sk_r_bytes: [u8; 32] = hex::decode(sk_r_hex).unwrap().try_into().unwrap();
-        let sk_r = X25519PrivateKey(sk_r_bytes);
+        let sk_r_bytes: Vec<u8> = hex::decode(sk_r_hex).unwrap();
+        let sk_r = X25519PrivateKey(SecretBox::new(sk_r_bytes));
         let enc = hex::decode(enc_hex).unwrap();
 
         let result = sk_r.decaps_internal(&enc).expect("Decapsulation failed");
