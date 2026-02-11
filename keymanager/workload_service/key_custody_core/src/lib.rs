@@ -57,13 +57,13 @@ pub unsafe extern "C" fn key_manager_generate_binding_keypair(
                 }
                 if !out_pubkey.is_null() && !out_pubkey_len.is_null() {
                     let buf_len = *out_pubkey_len;
-                    if buf_len >= pubkey.as_ref().len() {
+                    if buf_len >= pubkey.as_bytes().len() {
                         std::ptr::copy_nonoverlapping(
-                            pubkey.as_ref().as_ptr(),
+                            pubkey.as_bytes().as_ptr(),
                             out_pubkey,
-                            pubkey.as_ref().len(),
+                            pubkey.as_bytes().len(),
                         );
-                        *out_pubkey_len = pubkey.as_ref().len();
+                        *out_pubkey_len = pubkey.as_bytes().len();
                     } else {
                         return -2; // buffer too small
                     }

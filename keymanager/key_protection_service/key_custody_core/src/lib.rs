@@ -61,11 +61,12 @@ pub unsafe extern "C" fn key_manager_generate_kem_keypair(
 
     let binding_pubkey_slice = unsafe { slice::from_raw_parts(binding_pubkey, binding_pubkey_len) };
 
-    match create_kem_key(
-        algo,
-        PublicKey::from(binding_pubkey_slice.to_vec()),
-        expiry_secs,
-    ) {
+    let binding_pubkey = match PublicKey::try_from(binding_pubkey_slice.to_vec()) {
+        Ok(pk) => pk,
+        Err(_) => return -1,
+    };
+
+    match create_kem_key(algo, binding_pubkey, expiry_secs) {
         Ok(record) => {
             let id = record.meta.id;
             let pubkey = match &record.meta.spec {
@@ -79,13 +80,13 @@ pub unsafe extern "C" fn key_manager_generate_kem_keypair(
                 }
                 if !out_pubkey.is_null() && !out_pubkey_len.is_null() {
                     let buf_len = *out_pubkey_len;
-                    if buf_len >= pubkey.as_ref().len() {
+                    if buf_len >= pubkey.as_bytes().len() {
                         std::ptr::copy_nonoverlapping(
-                            pubkey.as_ref().as_ptr(),
+                            pubkey.as_bytes().as_ptr(),
                             out_pubkey,
-                            pubkey.as_ref().len(),
+                            pubkey.as_bytes().len(),
                         );
-                        *out_pubkey_len = pubkey.as_ref().len();
+                        *out_pubkey_len = pubkey.as_bytes().len();
                     } else {
                         return -2; // buffer too small
                     }
@@ -111,7 +112,11 @@ mod tests {
             aead: AeadAlgorithm::Aes256Gcm as i32,
         };
 
-        let result = create_kem_key(algo, PublicKey::from(binding_pubkey.to_vec()), 3600);
+        let result = create_kem_key(
+            algo,
+            PublicKey::try_from(binding_pubkey.to_vec()).unwrap(),
+            3600,
+        );
         assert!(result.is_ok());
 
         let record = result.unwrap();

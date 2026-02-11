@@ -6,7 +6,6 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 use uuid::Uuid;
-use zeroize::Zeroize;
 
 /// Represents the purpose of the Key and its associated algorithms.
 #[derive(Clone)]
@@ -70,7 +69,7 @@ pub fn create_key_record<F>(
 where
     F: FnOnce(HpkeAlgorithm, PublicKey) -> KeySpec,
 {
-    let (pub_key, mut priv_key) = match KemAlgorithm::try_from(algo.kem)
+    let (pub_key, priv_key) = match KemAlgorithm::try_from(algo.kem)
         .ok()
         .and_then(|k| crypto::generate_keypair(k).ok())
     {
@@ -79,8 +78,7 @@ where
     };
 
     let id = Uuid::new_v4();
-    let vault = Vault::new(&mut priv_key.0);
-    priv_key.0.zeroize();
+    let vault = Vault::new(priv_key.into_secret());
     let vault = vault.map_err(|_| -1)?;
 
     let record = KeyRecord {
@@ -129,7 +127,7 @@ mod tests {
         } = record.meta.spec
         {
             assert_eq!(a.kem, algo.kem);
-            assert_eq!(pk.as_ref().len(), 32);
+            assert_eq!(pk.as_bytes().len(), 32);
         } else {
             panic!("Unexpected KeySpec variant");
         }
@@ -142,7 +140,7 @@ mod tests {
             kdf: KdfAlgorithm::HkdfSha256 as i32,
             aead: AeadAlgorithm::Aes256Gcm as i32,
         };
-        let binding_pubkey = PublicKey([42u8; 32].to_vec());
+        let binding_pubkey = PublicKey::try_from([42u8; 32].to_vec()).unwrap();
         let expiry = 3600;
 
         let result = create_key_record(algo, expiry, |a, pk| KeySpec::KemWithBindingPub {
@@ -161,7 +159,7 @@ mod tests {
         } = record.meta.spec
         {
             assert_eq!(a.kem, algo.kem);
-            assert_eq!(kpk.as_ref().len(), 32);
+            assert_eq!(kpk.as_bytes().len(), 32);
             assert_eq!(bpk, binding_pubkey);
         } else {
             panic!("Unexpected KeySpec variant");
