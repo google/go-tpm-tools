@@ -52,22 +52,22 @@ pub unsafe extern "C" fn key_manager_generate_binding_keypair(
             };
             KEY_REGISTRY.add_key(record);
             unsafe {
-                if !out_uuid.is_null() {
-                    std::ptr::copy_nonoverlapping(id.as_bytes().as_ptr(), out_uuid, 16);
+                if out_pubkey.is_null() || out_pubkey_len.is_null() || out_uuid.is_null() {
+                    return -1;
                 }
-                if !out_pubkey.is_null() && !out_pubkey_len.is_null() {
-                    let buf_len = *out_pubkey_len;
-                    if buf_len >= pubkey.as_bytes().len() {
-                        std::ptr::copy_nonoverlapping(
-                            pubkey.as_bytes().as_ptr(),
-                            out_pubkey,
-                            pubkey.as_bytes().len(),
-                        );
-                        *out_pubkey_len = pubkey.as_bytes().len();
-                    } else {
-                        return -2; // buffer too small
-                    }
+
+                std::ptr::copy_nonoverlapping(id.as_bytes().as_ptr(), out_uuid, 16);
+                let buf_len = *out_pubkey_len;
+                if buf_len < pubkey.as_bytes().len() {
+                    return -2;
                 }
+
+                std::ptr::copy_nonoverlapping(
+                    pubkey.as_bytes().as_ptr(),
+                    out_pubkey,
+                    pubkey.as_bytes().len(),
+                );
+                *out_pubkey_len = pubkey.as_bytes().len();
             }
             0 // Success
         }
@@ -168,6 +168,6 @@ mod tests {
             )
         };
 
-        assert_eq!(result, 0);
+        assert_eq!(result, -1);
     }
 }
