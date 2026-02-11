@@ -1,7 +1,8 @@
 use crate::algorithms::{AeadAlgorithm, HpkeAlgorithm, KdfAlgorithm, KemAlgorithm};
+use crate::crypto::secret_box::SecretBox;
 use crate::crypto::{Error, PrivateKeyOps, PublicKeyOps};
 use bssl_crypto::{hkdf, hpke, x25519};
-use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 /// X25519-based public key implementation.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -59,15 +60,16 @@ pub struct X25519PrivateKey([u8; 32]);
 impl PrivateKeyOps for X25519PrivateKey {
     /// Decapsulates the shared secret from an encapsulated key.
     /// Follows RFC 9180 Section 4.1. DHKEM(Group, Hash).
-    fn decaps_internal(&self, enc: &[u8]) -> Result<Vec<u8>, Error> {
+    fn decaps_internal(&self, enc: &[u8]) -> Result<SecretBox, Error> {
         let priv_key = x25519::PrivateKey(self.0);
 
         // 1. Compute Diffie-Hellman shared secret
         // dh = dhExchange(skR, pkE)
-        let shared_key = Zeroizing::new(
+        let shared_key = SecretBox::new(
             priv_key
                 .compute_shared_key(enc.try_into().map_err(|_| Error::KeyLenMismatch)?)
-                .ok_or(Error::DecapsError)?,
+                .ok_or(Error::DecapsError)?
+                .to_vec(),
         );
 
         // DHKEM(X25519, HKDF-SHA256)
@@ -77,41 +79,15 @@ impl PrivateKeyOps for X25519PrivateKey {
 
         // 2. Extract eae_prk
         // eae_prk = LabeledExtract("", "eae_prk", dh)
-        // LabeledExtract(salt, label, ikm) = HKDF-Extract(salt, "HPKE-v1" || suite_id || label || ikm)
-        let labeled_ikm = Zeroizing::new(
-            [
-                b"HPKE-v1".as_slice(),
-                &suite_id,
-                b"eae_prk",
-                shared_key.as_ref(),
-            ]
-            .concat(),
-        );
-
-        let prk = hkdf::HkdfSha256::extract(&labeled_ikm, hkdf::Salt::None);
+        let prk = labeled_extract(b"", b"eae_prk", shared_key.as_slice(), &suite_id);
 
         let pub_key = priv_key.to_public();
 
         // 3. Expand shared_secret
         // shared_secret = LabeledExpand(eae_prk, "shared_secret", enc || pkR, L)
-        // LabeledExpand(prk, label, info, L) = HKDF-Expand(prk, "HPKE-v1" || suite_id || label || info, L)
-        let labeled_info = Zeroizing::new(
-            [
-                &[0x00u8, 0x20] as &[u8], // L = 32
-                b"HPKE-v1",
-                &suite_id,
-                b"shared_secret",
-                enc,
-                &pub_key,
-            ]
-            .concat(),
-        );
+        let info = [enc, &pub_key].concat();
 
-        let mut result = vec![0u8; 32];
-        prk.expand_into(labeled_info.as_ref(), &mut result)
-            .map_err(|_| Error::DecapsError)?;
-
-        Ok(result)
+        labeled_expand(&prk, b"shared_secret", &info, &suite_id, 32)
     }
 
     fn hpke_open_internal(
@@ -120,7 +96,7 @@ impl PrivateKeyOps for X25519PrivateKey {
         ciphertext: &[u8],
         aad: &[u8],
         algo: &HpkeAlgorithm,
-    ) -> Result<Vec<u8>, Error> {
+    ) -> Result<SecretBox, Error> {
         match (
             KemAlgorithm::try_from(algo.kem),
             KdfAlgorithm::try_from(algo.kdf),
@@ -142,6 +118,7 @@ impl PrivateKeyOps for X25519PrivateKey {
 
                 recipient_ctx
                     .open(ciphertext, aad)
+                    .map(SecretBox::new)
                     .ok_or(Error::HpkeDecryptionError)
             }
             _ => Err(Error::UnsupportedAlgorithm),
@@ -156,6 +133,36 @@ pub(crate) fn generate_keypair() -> (X25519PublicKey, X25519PrivateKey) {
         X25519PublicKey(pk.try_into().expect("X25519 public key must be 32 bytes")),
         X25519PrivateKey(sk.try_into().expect("X25519 private key must be 32 bytes")),
     )
+}
+
+fn labeled_extract(salt: &[u8], label: &[u8], ikm: &[u8], suite_id: &[u8]) -> hkdf::Prk {
+    let labeled_ikm = SecretBox::new([b"HPKE-v1".as_slice(), suite_id, label, ikm].concat());
+    hkdf::HkdfSha256::extract(labeled_ikm.as_slice(), hkdf::Salt::NonEmpty(salt))
+}
+
+fn labeled_expand(
+    prk: &hkdf::Prk,
+    label: &[u8],
+    info: &[u8],
+    suite_id: &[u8],
+    len: u16,
+) -> Result<SecretBox, Error> {
+    let labeled_info = SecretBox::new(
+        [
+            &len.to_be_bytes() as &[u8],
+            b"HPKE-v1",
+            suite_id,
+            label,
+            info,
+        ]
+        .concat(),
+    );
+
+    let mut result = vec![0u8; len as usize];
+    prk.expand_into(labeled_info.as_slice(), &mut result)
+        .map_err(|_| Error::DecapsError)?;
+
+    Ok(SecretBox::new(result))
 }
 
 #[cfg(test)]
@@ -182,9 +189,36 @@ mod tests {
         let result = sk_r.decaps_internal(&enc).expect("Decapsulation failed");
 
         assert_eq!(
-            hex::encode(&result),
+            hex::encode(result.as_slice()),
             expected_shared_secret_hex,
             "Shared secret mismatch"
         );
+    }
+
+    #[test]
+    fn test_labeled_extract_and_expand() {
+        let suite_id = [b'K', b'E', b'M', 0, 0x20];
+        let salt = b"test_salt";
+        let label = b"test_label";
+        let ikm = b"test_ikm";
+        let info = b"test_info";
+
+        // Test labeled_extract
+        let prk = labeled_extract(salt, label, ikm, &suite_id);
+
+        // Test labeled_expand with length 32
+        let len = 32;
+        let result = labeled_expand(&prk, label, info, &suite_id, len).expect("expand failed");
+        assert_eq!(result.as_slice().len(), len as usize);
+
+        // Test labeled_expand with different info produces different result
+        let result2 =
+            labeled_expand(&prk, label, b"other_info", &suite_id, len).expect("expand failed");
+        assert_ne!(result.as_slice(), result2.as_slice());
+
+        // Test labeled_expand with different label produces different result
+        let result3 =
+            labeled_expand(&prk, b"other_label", info, &suite_id, len).expect("expand failed");
+        assert_ne!(result.as_slice(), result3.as_slice());
     }
 }
