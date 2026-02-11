@@ -366,12 +366,12 @@ steps:
   script: |
     #!/usr/bin/env bash
     echo "downloading hardened image ${OUTPUT_IMAGE_PREFIX}-hardened-${OUTPUT_IMAGE_SUFFIX}"
-    gsutil cp gs://confidential-space-images-dev_raw-images/${OUTPUT_IMAGE_PREFIX}-hardened-${OUTPUT_IMAGE_SUFFIX}.tar.gz .
+    gcloud storage cp gs://confidential-space-images-dev_raw-images/${OUTPUT_IMAGE_PREFIX}-hardened-${OUTPUT_IMAGE_SUFFIX}.tar.gz .
     tar xzf ${OUTPUT_IMAGE_PREFIX}-hardened-${OUTPUT_IMAGE_SUFFIX}.tar.gz
     echo "measuring image ${OUTPUT_IMAGE_PREFIX}-hardened-${OUTPUT_IMAGE_SUFFIX}"
     /usr/local/bin/measure.sh disk.raw measure_output_hardened.json hardened x86_64
     cat measure_output_hardened.json
-    gsutil cp measure_output_hardened.json gs://${PROJECT_ID}-rims/${OUTPUT_IMAGE_PREFIX}-hardened-${OUTPUT_IMAGE_SUFFIX}.json
+    gcloud storage cp measure_output_hardened.json gs://${PROJECT_ID}-rims/${OUTPUT_IMAGE_PREFIX}-hardened-${OUTPUT_IMAGE_SUFFIX}.json
 - name: 'us-docker.pkg.dev/confidential-space-images-dev/cs-tools/measure@sha256:b82c8ca459b863cfdf9faf8e4c06d506a50f3fe86ca1f3756ca6fee42a5cd7f4'
   id: MeasureDebugImage
   waitFor: ['ExportDebugImage']
@@ -382,12 +382,12 @@ steps:
   script: |
     #!/usr/bin/env bash
     echo "downloading debug image ${OUTPUT_IMAGE_PREFIX}-debug-${OUTPUT_IMAGE_SUFFIX}"
-    gsutil cp gs://confidential-space-images-dev_raw-images/${OUTPUT_IMAGE_PREFIX}-debug-${OUTPUT_IMAGE_SUFFIX}.tar.gz .
+    gcloud storage cp gs://confidential-space-images-dev_raw-images/${OUTPUT_IMAGE_PREFIX}-debug-${OUTPUT_IMAGE_SUFFIX}.tar.gz .
     tar xzf ${OUTPUT_IMAGE_PREFIX}-debug-${OUTPUT_IMAGE_SUFFIX}.tar.gz
     echo "measuring image ${OUTPUT_IMAGE_PREFIX}-debug-${OUTPUT_IMAGE_SUFFIX}"
     /usr/local/bin/measure.sh disk.raw measure_output_debug.json debug x86_64
     cat measure_output_debug.json
-    gsutil cp measure_output_debug.json gs://${PROJECT_ID}-rims/${OUTPUT_IMAGE_PREFIX}-debug-${OUTPUT_IMAGE_SUFFIX}.json
+    gcloud storage cp measure_output_debug.json gs://${PROJECT_ID}-rims/${OUTPUT_IMAGE_PREFIX}-debug-${OUTPUT_IMAGE_SUFFIX}.json
 options:
   pool:
     name: 'projects/confidential-space-images-dev/locations/us-west1/workerPools/cs-image-build-vpc'
