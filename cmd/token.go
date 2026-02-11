@@ -2,17 +2,21 @@ package cmd
 
 import (
 	"context"
+	_ "crypto/sha512" // Ensure SHA384 is available
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"time"
 
 	"cloud.google.com/go/compute/metadata"
 	"cloud.google.com/go/logging"
 	"github.com/golang-jwt/jwt/v4"
+	tabi "github.com/google/go-tdx-guest/abi"
 	"github.com/google/go-tpm-tools/client"
+	"github.com/google/go-tpm-tools/internal"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/google/go-tpm-tools/verifier/models"
 	"github.com/google/go-tpm-tools/verifier/util"
@@ -128,7 +132,33 @@ The OIDC token includes claims regarding the GCE VM, which is verified by Attest
 		if err != nil {
 			return fmt.Errorf("failed to get an AK: %w", err)
 		}
-		attestation, err := ak.Attest(client.AttestOpts{Nonce: challenge.Nonce, CertChainFetcher: http.DefaultClient})
+
+		attestOpts := client.AttestOpts{Nonce: challenge.Nonce, CertChainFetcher: http.DefaultClient}
+
+		// Add logic to open other hardware devices when required.
+		switch teeTechnology {
+		case SevSnp:
+			attestOpts.TEEDevice, err = client.CreateSevSnpQuoteProvider()
+			if err != nil {
+				return fmt.Errorf("failed to open %s device: %v", SevSnp, err)
+			}
+			attestOpts.TEENonce = teeNonce
+		case Tdx:
+			attestOpts.TEEDevice, err = client.CreateTdxQuoteProvider()
+			if err != nil {
+				return fmt.Errorf("failed to create %s quote provider: %v", Tdx, err)
+			}
+			attestOpts.TEENonce = teeNonce
+		case "":
+			if len(teeNonce) != 0 {
+				return fmt.Errorf("use of --tee-nonce requires specifying TEE hardware type with --tee-technology")
+			}
+		default:
+			// Change the return statement when more devices are added
+			return fmt.Errorf("tee-technology should be either empty or should have values %s or %s", SevSnp, Tdx)
+		}
+
+		attestation, err := ak.Attest(attestOpts)
 		if err != nil {
 			return fmt.Errorf("failed to attest: %v", err)
 		}
@@ -139,6 +169,32 @@ The OIDC token includes claims regarding the GCE VM, which is verified by Attest
 			GcpCredentials: principalTokens,
 			Attestation:    attestation,
 			TokenOptions:   &models.TokenOptions{Audience: audience, Nonces: customNonce, TokenType: "OIDC"},
+		}
+
+		if teeTechnology == Tdx {
+			// If TDX, check if we should populate TDCCELAttestation
+			if attestation.GetTdxAttestation() != nil {
+				fmt.Fprintln(debugOutput(), "Using Explicit TDCCELAttestation Path (ACPI tables)")
+
+				rawQuote, err := tabi.QuoteToAbiBytes(attestation.GetTdxAttestation())
+				if err != nil {
+					return fmt.Errorf("failed to convert TDX quote to bytes: %v", err)
+				}
+
+				// Try to read CCEL Table and Data
+				ccelTable, _ := os.ReadFile(internal.AcpiTableFile)
+				ccelData, _ := os.ReadFile(internal.CcelEventLogFile)
+
+				req.TDCCELAttestation = &verifier.TDCCELAttestation{
+					TdQuote:           rawQuote,
+					CcelAcpiTable:     ccelTable,
+					CcelData:          ccelData,
+					AkCert:            attestation.AkCert,
+					IntermediateCerts: attestation.IntermediateCerts,
+				}
+				// Force using TDCCELAttestation path in verifier client
+				req.Attestation = nil
+			}
 		}
 
 		resp, err := verifierClient.VerifyAttestation(ctx, req)
@@ -210,6 +266,6 @@ func init() {
 	addEventLogFlag(tokenCmd)
 	addCustomNonceFlag(tokenCmd)
 	// TODO: Add TEE hardware OIDC token generation
-	// addTeeNonceflag(tokenCmd)
-	// addTeeTechnology(tokenCmd)
+	addTeeNonceflag(tokenCmd)
+	addTeeTechnology(tokenCmd)
 }
