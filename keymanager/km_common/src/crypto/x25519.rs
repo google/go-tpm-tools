@@ -126,20 +126,13 @@ impl PrivateKeyOps for X25519PrivateKey {
     }
 }
 
-/// Generates a new X25519 keypair.
-pub(crate) fn generate_keypair() -> (X25519PublicKey, X25519PrivateKey) {
-    let (pk, sk) = hpke::Kem::X25519HkdfSha256.generate_keypair();
-    (
-        X25519PublicKey(pk.try_into().expect("X25519 public key must be 32 bytes")),
-        X25519PrivateKey(sk.try_into().expect("X25519 private key must be 32 bytes")),
-    )
-}
-
+/// LabeledExtract(salt, label, ikm) = HKDF-Extract(salt, "HPKE-v1" || suite_id || label || ikm)
 fn labeled_extract(salt: &[u8], label: &[u8], ikm: &[u8], suite_id: &[u8]) -> hkdf::Prk {
     let labeled_ikm = SecretBox::new([b"HPKE-v1".as_slice(), suite_id, label, ikm].concat());
     hkdf::HkdfSha256::extract(labeled_ikm.as_slice(), hkdf::Salt::NonEmpty(salt))
 }
 
+/// LabeledExpand(prk, label, info, L) = HKDF-Expand(prk, "HPKE-v1" || suite_id || label || info, L)
 fn labeled_expand(
     prk: &hkdf::Prk,
     label: &[u8],
@@ -163,6 +156,15 @@ fn labeled_expand(
         .map_err(|_| Error::DecapsError)?;
 
     Ok(SecretBox::new(result))
+}
+
+/// Generates a new X25519 keypair.
+pub(crate) fn generate_keypair() -> (X25519PublicKey, X25519PrivateKey) {
+    let (pk, sk) = hpke::Kem::X25519HkdfSha256.generate_keypair();
+    (
+        X25519PublicKey(pk.try_into().expect("X25519 public key must be 32 bytes")),
+        X25519PrivateKey(sk.try_into().expect("X25519 private key must be 32 bytes")),
+    )
 }
 
 #[cfg(test)]

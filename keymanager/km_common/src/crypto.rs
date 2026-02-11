@@ -1,4 +1,6 @@
 use crate::algorithms::{HpkeAlgorithm, KemAlgorithm};
+pub mod secret_box;
+use crate::crypto::secret_box::SecretBox;
 use clear_on_drop::clear_stack_on_return;
 use thiserror::Error;
 use zeroize::ZeroizeOnDrop;
@@ -25,7 +27,7 @@ pub(crate) trait PublicKeyOps: Send + Sync {
 /// A trait for private keys with algorithm-specific implementations.
 pub(crate) trait PrivateKeyOps: Send + Sync {
     /// Decapsulates the shared secret from an encapsulated key.
-    fn decaps_internal(&self, enc: &[u8]) -> Result<Vec<u8>, Error>;
+    fn decaps_internal(&self, enc: &[u8]) -> Result<SecretBox, Error>;
 
     /// Decrypts a ciphertext using HPKE.
     fn hpke_open_internal(
@@ -34,7 +36,7 @@ pub(crate) trait PrivateKeyOps: Send + Sync {
         ciphertext: &[u8],
         aad: &[u8],
         algo: &HpkeAlgorithm,
-    ) -> Result<Vec<u8>, Error>;
+    ) -> Result<SecretBox, Error>;
 }
 
 /// A wrapper enum for different public key types.
@@ -76,7 +78,7 @@ pub enum PrivateKey {
 }
 
 impl PrivateKeyOps for PrivateKey {
-    fn decaps_internal(&self, enc: &[u8]) -> Result<Vec<u8>, Error> {
+    fn decaps_internal(&self, enc: &[u8]) -> Result<SecretBox, Error> {
         match self {
             PrivateKey::X25519(sk) => sk.decaps_internal(enc),
         }
@@ -88,7 +90,7 @@ impl PrivateKeyOps for PrivateKey {
         ciphertext: &[u8],
         aad: &[u8],
         algo: &HpkeAlgorithm,
-    ) -> Result<Vec<u8>, Error> {
+    ) -> Result<SecretBox, Error> {
         match self {
             PrivateKey::X25519(sk) => sk.hpke_open_internal(enc, ciphertext, aad, algo),
         }
@@ -123,7 +125,7 @@ pub fn generate_keypair(algo: KemAlgorithm) -> Result<(PublicKey, PrivateKey), E
 }
 
 /// Decapsulates the shared secret from an encapsulated key using the specified private key.
-pub fn decaps(priv_key: &PrivateKey, enc: &[u8]) -> Result<Vec<u8>, Error> {
+pub fn decaps(priv_key: &PrivateKey, enc: &[u8]) -> Result<SecretBox, Error> {
     clear_stack_on_return(CLEAR_STACK_PAGES, || priv_key.decaps_internal(enc))
 }
 
@@ -134,7 +136,7 @@ pub fn hpke_open(
     ciphertext: &[u8],
     aad: &[u8],
     algo: &HpkeAlgorithm,
-) -> Result<Vec<u8>, Error> {
+) -> Result<SecretBox, Error> {
     clear_stack_on_return(CLEAR_STACK_PAGES, || {
         priv_key.hpke_open_internal(enc, ciphertext, aad, algo)
     })
@@ -174,7 +176,7 @@ mod tests {
             .expect("HPKE setup sender failed");
 
         let result = decaps(&sk_r, &enc).expect("Decaps wrapper failed");
-        assert_eq!(result.len(), 32);
+        assert_eq!(result.as_slice().len(), 32);
     }
 
     #[test]
@@ -221,7 +223,7 @@ mod tests {
         let decrypted =
             hpke_open(&sk_r, &enc, &ciphertext, aad, &hpke_algo).expect("Decryption failed");
 
-        assert_eq!(decrypted, pt);
+        assert_eq!(decrypted.as_slice(), pt);
     }
 
     #[test]
@@ -278,7 +280,7 @@ mod tests {
         // Decrypt to verify
         let decrypted =
             hpke_open(&sk_r, &enc, &ciphertext, aad, &hpke_algo).expect("Decryption failed");
-        assert_eq!(decrypted, pt);
+        assert_eq!(decrypted.as_slice(), pt);
     }
 
     #[test]
