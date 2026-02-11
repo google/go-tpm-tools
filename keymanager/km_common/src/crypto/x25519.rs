@@ -17,35 +17,34 @@ impl AsRef<[u8]> for X25519PublicKey {
 impl PublicKeyOps for X25519PublicKey {
     fn hpke_seal_internal(
         &self,
-        plaintext: &[u8],
+        plaintext: &SecretBox,
         aad: &[u8],
         algo: &HpkeAlgorithm,
     ) -> Result<(Vec<u8>, Vec<u8>), Error> {
-        match (
+        let (
+            Ok(KemAlgorithm::DhkemX25519HkdfSha256),
+            Ok(KdfAlgorithm::HkdfSha256),
+            Ok(AeadAlgorithm::Aes256Gcm),
+        ) = (
             KemAlgorithm::try_from(algo.kem),
             KdfAlgorithm::try_from(algo.kdf),
             AeadAlgorithm::try_from(algo.aead),
-        ) {
-            (
-                Ok(KemAlgorithm::DhkemX25519HkdfSha256),
-                Ok(KdfAlgorithm::HkdfSha256),
-                Ok(AeadAlgorithm::Aes256Gcm),
-            ) => {
-                let params = hpke::Params::new(
-                    hpke::Kem::X25519HkdfSha256,
-                    hpke::Kdf::HkdfSha256,
-                    hpke::Aead::Aes256Gcm,
-                );
+        ) else {
+            return Err(Error::UnsupportedAlgorithm);
+        };
 
-                let (mut sender_ctx, encapsulated_key) =
-                    hpke::SenderContext::new(&params, self.as_ref(), b"")
-                        .ok_or(Error::HpkeEncryptionError)?;
+        let params = hpke::Params::new(
+            hpke::Kem::X25519HkdfSha256,
+            hpke::Kdf::HkdfSha256,
+            hpke::Aead::Aes256Gcm,
+        );
 
-                let ciphertext = sender_ctx.seal(plaintext, aad);
-                Ok((encapsulated_key, ciphertext))
-            }
-            _ => Err(Error::UnsupportedAlgorithm),
-        }
+        let (mut sender_ctx, encapsulated_key) =
+            hpke::SenderContext::new(&params, self.as_ref(), b"")
+                .ok_or(Error::HpkeEncryptionError)?;
+
+        let ciphertext = sender_ctx.seal(plaintext.as_slice(), aad);
+        Ok((encapsulated_key, ciphertext))
     }
 
     fn as_bytes(&self) -> &[u8] {
@@ -97,32 +96,31 @@ impl PrivateKeyOps for X25519PrivateKey {
         aad: &[u8],
         algo: &HpkeAlgorithm,
     ) -> Result<SecretBox, Error> {
-        match (
+        let (
+            Ok(KemAlgorithm::DhkemX25519HkdfSha256),
+            Ok(KdfAlgorithm::HkdfSha256),
+            Ok(AeadAlgorithm::Aes256Gcm),
+        ) = (
             KemAlgorithm::try_from(algo.kem),
             KdfAlgorithm::try_from(algo.kdf),
             AeadAlgorithm::try_from(algo.aead),
-        ) {
-            (
-                Ok(KemAlgorithm::DhkemX25519HkdfSha256),
-                Ok(KdfAlgorithm::HkdfSha256),
-                Ok(AeadAlgorithm::Aes256Gcm),
-            ) => {
-                let params = hpke::Params::new(
-                    hpke::Kem::X25519HkdfSha256,
-                    hpke::Kdf::HkdfSha256,
-                    hpke::Aead::Aes256Gcm,
-                );
+        ) else {
+            return Err(Error::UnsupportedAlgorithm);
+        };
 
-                let mut recipient_ctx = hpke::RecipientContext::new(&params, &self.0, enc, b"")
-                    .ok_or(Error::HpkeDecryptionError)?;
+        let params = hpke::Params::new(
+            hpke::Kem::X25519HkdfSha256,
+            hpke::Kdf::HkdfSha256,
+            hpke::Aead::Aes256Gcm,
+        );
 
-                recipient_ctx
-                    .open(ciphertext, aad)
-                    .map(SecretBox::new)
-                    .ok_or(Error::HpkeDecryptionError)
-            }
-            _ => Err(Error::UnsupportedAlgorithm),
-        }
+        let mut recipient_ctx = hpke::RecipientContext::new(&params, &self.0, enc, b"")
+            .ok_or(Error::HpkeDecryptionError)?;
+
+        recipient_ctx
+            .open(ciphertext, aad)
+            .map(SecretBox::new)
+            .ok_or(Error::HpkeDecryptionError)
     }
 }
 

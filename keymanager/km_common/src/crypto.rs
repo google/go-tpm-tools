@@ -13,9 +13,11 @@ const CLEAR_STACK_PAGES: usize = 2;
 /// A trait for public keys with algorithm-specific implementations.
 pub(crate) trait PublicKeyOps: Send + Sync {
     /// Encrypts a plaintext using HPKE.
+    ///
+    /// Returns a tuple containing the encapsulated key and the ciphertext respectively.
     fn hpke_seal_internal(
         &self,
-        plaintext: &[u8],
+        plaintext: &SecretBox,
         aad: &[u8],
         algo: &HpkeAlgorithm,
     ) -> Result<(Vec<u8>, Vec<u8>), Error>;
@@ -27,9 +29,13 @@ pub(crate) trait PublicKeyOps: Send + Sync {
 /// A trait for private keys with algorithm-specific implementations.
 pub(crate) trait PrivateKeyOps: Send + Sync {
     /// Decapsulates the shared secret from an encapsulated key.
+    ///
+    /// Returns the decapsulated shared secret as a `SecretBox`.
     fn decaps_internal(&self, enc: &[u8]) -> Result<SecretBox, Error>;
 
     /// Decrypts a ciphertext using HPKE.
+    ///
+    /// Returns the decrypted plaintext as a `SecretBox`.
     fn hpke_open_internal(
         &self,
         enc: &[u8],
@@ -57,7 +63,7 @@ impl PublicKey {
 impl PublicKeyOps for PublicKey {
     fn hpke_seal_internal(
         &self,
-        plaintext: &[u8],
+        plaintext: &SecretBox,
         aad: &[u8],
         algo: &HpkeAlgorithm,
     ) -> Result<(Vec<u8>, Vec<u8>), Error> {
@@ -114,6 +120,8 @@ pub enum Error {
 }
 
 /// Generates a keypair for the given KEM algorithm.
+///
+/// Returns a tuple containing the public and private keys respectively.
 pub fn generate_keypair(algo: KemAlgorithm) -> Result<(PublicKey, PrivateKey), Error> {
     clear_stack_on_return(CLEAR_STACK_PAGES, || match algo {
         KemAlgorithm::DhkemX25519HkdfSha256 => {
@@ -125,11 +133,15 @@ pub fn generate_keypair(algo: KemAlgorithm) -> Result<(PublicKey, PrivateKey), E
 }
 
 /// Decapsulates the shared secret from an encapsulated key using the specified private key.
+///
+/// Returns the decapsulated shared secret as a `SecretBox`.
 pub fn decaps(priv_key: &PrivateKey, enc: &[u8]) -> Result<SecretBox, Error> {
     clear_stack_on_return(CLEAR_STACK_PAGES, || priv_key.decaps_internal(enc))
 }
 
 /// Decrypts a ciphertext using HPKE (Hybrid Public Key Encryption).
+///
+/// Returns the decrypted plaintext as a `SecretBox`.
 pub fn hpke_open(
     priv_key: &PrivateKey,
     enc: &[u8],
@@ -147,7 +159,7 @@ pub fn hpke_open(
 /// Returns a tuple containing the encapsulated key and the ciphertext.
 pub fn hpke_seal(
     pub_key: &PublicKey,
-    plaintext: &[u8],
+    plaintext: &SecretBox,
     aad: &[u8],
     algo: &HpkeAlgorithm,
 ) -> Result<(Vec<u8>, Vec<u8>), Error> {
@@ -271,16 +283,16 @@ mod tests {
 
         let (pk_r, sk_r) = generate_keypair(kem_algo).expect("HPKE generation failed");
 
-        let pt = b"hello world";
+        let pt = SecretBox::new(b"hello world".to_vec());
         let aad = b"additional data";
 
         // Seal
-        let (enc, ciphertext) = hpke_seal(&pk_r, pt, aad, &hpke_algo).expect("HPKE seal failed");
+        let (enc, ciphertext) = hpke_seal(&pk_r, &pt, aad, &hpke_algo).expect("HPKE seal failed");
 
         // Decrypt to verify
         let decrypted =
             hpke_open(&sk_r, &enc, &ciphertext, aad, &hpke_algo).expect("Decryption failed");
-        assert_eq!(decrypted.as_slice(), pt);
+        assert_eq!(decrypted.as_slice(), pt.as_slice());
     }
 
     #[test]
