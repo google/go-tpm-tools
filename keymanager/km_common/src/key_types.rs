@@ -274,6 +274,9 @@ mod tests {
 
     #[test]
     fn test_remove_key() {
+        use memmap2::MmapMut;
+        use std::os::unix::io::{AsRawFd, FromRawFd};
+
         let registry = KeyRegistry::default();
         let algo = HpkeAlgorithm {
             kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
@@ -281,15 +284,36 @@ mod tests {
             aead: AeadAlgorithm::Aes256Gcm as i32,
         };
 
-        let record = create_key_record(algo, 3600, |a, pk| KeySpec::Binding {
-            algo: a,
-            binding_public_key: pk,
-        })
-        .expect("failed to create key");
+        let record = KeyRecord::create_binding_key(algo, Duration::from_secs(3600))
+            .expect("failed to create key");
 
         let id = record.meta.id;
         registry.add_key(record);
-        assert!(registry.remove_key(&id).is_some());
+
+        let removed = registry.remove_key(&id).expect("Key should be present");
+
+        // Prepare spy mapping to check for zeroization after drop
+        let fd = removed.private_key.as_raw_fd();
+        let len = removed.private_key.as_bytes().len();
+
+        let spy = unsafe {
+            let fd_dup = libc::dup(fd);
+            let file = std::fs::File::from_raw_fd(fd_dup);
+            MmapMut::map_mut(&file).expect("Failed to map spy")
+        };
+
+        // Verify spy sees the data before drop
+        assert_eq!(&spy[..len], removed.private_key.as_bytes());
+        assert!(!spy[..len].iter().all(|&b| b == 0));
+
+        drop(removed);
+
+        // Verify zeroization
+        assert!(
+            spy[..len].iter().all(|&b| b == 0),
+            "Key material was not zeroized on drop"
+        );
+
         assert!(registry.remove_key(&id).is_none());
     }
 
@@ -303,11 +327,8 @@ mod tests {
         };
 
         // Key that expires in 0 seconds (already expired)
-        let record = create_key_record(algo, 0, |a, pk| KeySpec::Binding {
-            algo: a,
-            binding_public_key: pk,
-        })
-        .expect("failed to create key");
+        let record = KeyRecord::create_binding_key(algo, Duration::from_secs(0))
+            .expect("failed to create key");
 
         let id = record.meta.id;
         registry.add_key(record);
@@ -316,11 +337,8 @@ mod tests {
         assert!(registry.get_key(&id).is_none());
 
         // Key that is still alive
-        let record2 = create_key_record(algo, 3600, |a, pk| KeySpec::Binding {
-            algo: a,
-            binding_public_key: pk,
-        })
-        .expect("failed to create key");
+        let record2 = KeyRecord::create_binding_key(algo, Duration::from_secs(3600))
+            .expect("failed to create key");
 
         let id2 = record2.meta.id;
         registry.add_key(record2);
@@ -338,14 +356,10 @@ mod tests {
 
         // Create a key that expires in 2 seconds (reaper interval is 1s in test)
         // We use KemWithBindingPub because the reaper logic specifically targets this type.
-        let binding_pubkey = [42u8; 32];
-        let expiry = 2;
-        let record = create_key_record(algo, expiry, |a, pk| KeySpec::KemWithBindingPub {
-            algo: a,
-            kem_public_key: pk,
-            binding_public_key: binding_pubkey.to_vec(),
-        })
-        .expect("failed to create key");
+        let binding_pubkey = PublicKey::try_from([42u8; 32].to_vec()).unwrap();
+        let expiry = Duration::from_secs(2);
+        let record = KeyRecord::create_bound_kem_key(algo.clone(), binding_pubkey.clone(), expiry)
+            .expect("failed to create key");
 
         let id = record.meta.id;
         registry.add_key(record);

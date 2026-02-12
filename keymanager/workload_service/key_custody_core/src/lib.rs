@@ -2,11 +2,17 @@ use km_common::algorithms::HpkeAlgorithm;
 use km_common::crypto::PublicKey;
 use km_common::key_types::{KeyRecord, KeyRegistry, KeySpec};
 use std::slice;
+use std::sync::Arc;
 use std::sync::LazyLock;
+use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 use uuid::Uuid;
 
-static KEY_REGISTRY: LazyLock<KeyRegistry> = LazyLock::new(KeyRegistry::default);
+static KEY_REGISTRY: LazyLock<KeyRegistry> = LazyLock::new(|| {
+    let registry = KeyRegistry::default();
+    registry.start_reaper(Arc::new(AtomicBool::new(false)));
+    registry
+});
 
 /// Internal function to generate a binding keypair and store it in the registry.
 fn generate_binding_keypair_internal(
@@ -246,13 +252,14 @@ mod tests {
         };
 
         unsafe {
-            key_manager_generate_binding_keypair(
+            let res = key_manager_generate_binding_keypair(
                 algo,
                 3600,
                 uuid_bytes.as_mut_ptr(),
                 pubkey_bytes.as_mut_ptr(),
                 pubkey_len,
-            )
+            );
+            assert_eq!(res, 0);
         };
 
         let result = unsafe { key_manager_destroy_binding_key(uuid_bytes.as_ptr()) };

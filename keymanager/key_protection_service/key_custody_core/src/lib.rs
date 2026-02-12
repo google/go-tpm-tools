@@ -3,16 +3,16 @@ use km_common::crypto::PublicKey;
 use km_common::key_types::{KeyRecord, KeyRegistry, KeySpec};
 use std::slice;
 use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
-use uuid::Uuid;
 use std::sync::LazyLock;
+use std::sync::atomic::AtomicBool;
 use std::time::Duration;
+use uuid::Uuid;
 
-static KEY_REGISTRY: LazyLock<KeyRegistry> = {
-        let registry = LazyLock::new(KeyRegistry::default);
-        registry.start_reaper(Arc::new(AtomicBool::new(false)));
-        registry
-    };
+static KEY_REGISTRY: LazyLock<KeyRegistry> = LazyLock::new(|| {
+    let registry = KeyRegistry::default();
+    registry.start_reaper(Arc::new(AtomicBool::new(false)));
+    registry
+});
 
 /// Internal function to generate a KEM keypair and store it in the registry.
 fn generate_kem_keypair_internal(
@@ -299,6 +299,8 @@ mod tests {
     fn test_destroy_kem_key_success() {
         let binding_pubkey = [1u8; 32];
         let mut uuid_bytes = [0u8; 16];
+        let mut pubkey_bytes = [0u8; 32];
+        let pubkey_len = pubkey_bytes.len();
         let algo = HpkeAlgorithm {
             kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
             kdf: KdfAlgorithm::HkdfSha256 as i32,
@@ -306,15 +308,16 @@ mod tests {
         };
 
         unsafe {
-            key_manager_generate_kem_keypair(
+            let res = key_manager_generate_kem_keypair(
                 algo,
                 binding_pubkey.as_ptr(),
                 binding_pubkey.len(),
                 3600,
                 uuid_bytes.as_mut_ptr(),
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
+                pubkey_bytes.as_mut_ptr(),
+                pubkey_len,
             );
+            assert_eq!(res, 0);
         }
 
         let result = unsafe { key_manager_destroy_kem_key(uuid_bytes.as_ptr()) };
