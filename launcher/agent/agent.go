@@ -317,8 +317,9 @@ func (a *agent) AttestationEvidence(_ context.Context, challenge []byte, extraDa
 
 	switch v := attResult.(type) {
 	case *pb.Attestation:
-		v.CanonicalEventLog = cosCel.Bytes()
-		attestation.Quote.VTPMAttestation = convertPBToVTPMAttestation(v)
+		attestation.Quote = &teemodels.VMAttestationQuote{
+			TPMQuote: convertPBToTPMQuote(v),
+		}
 	case *verifier.TDCCELAttestation:
 		attestation.Quote.TDXCCELQuote = &teemodels.TDXCCELQuote{
 			CCELBootEventLog:  v.CcelData,
@@ -528,13 +529,29 @@ func (c *sigsCache) get() []oci.Signature {
 	return c.items
 }
 
-func convertPBToVTPMAttestation(v *pb.Attestation) *teemodels.VTPMAttestation {
-	return &teemodels.VTPMAttestation{
-		AkPub:                v.GetAkPub(),
-		Quotes:               v.GetQuotes(),
+func convertPBToTPMQuote(v *pb.Attestation) *teemodels.TPMQuote {
+	var quotes []*teemodels.SignedQuote
+	for _, q := range v.GetQuotes() {
+		quote := &teemodels.SignedQuote{
+			TPMSAttest:    q.GetQuote(),
+			TPMTSignature: q.GetRawSig(),
+		}
+		if pcrs := q.GetPcrs(); pcrs != nil {
+			quote.HashAlgorithm = uint32(pcrs.GetHash())
+			quote.PCRValues = pcrs.GetPcrs()
+		}
+		quotes = append(quotes, quote)
+	}
+
+	return &teemodels.TPMQuote{
+		Quotes:               quotes,
 		PCClientBootEventLog: v.GetEventLog(),
 		CELLaunchEventLog:    v.GetCanonicalEventLog(),
-		AkCert:               v.GetAkCert(),
-		IntermediateCerts:    v.GetIntermediateCerts(),
+		Endorsement: &teemodels.TPMAttestationEndorsement{
+			AKCertEndorsement: &teemodels.AKCertEndorsement{
+				AKCert:      v.GetAkCert(),
+				AKCertChain: v.GetIntermediateCerts(),
+			},
+		},
 	}
 }

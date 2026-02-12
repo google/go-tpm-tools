@@ -16,8 +16,6 @@ import (
 	"testing"
 	"time"
 
-	tpmpb "github.com/google/go-tpm-tools/proto/tpm"
-
 	"github.com/cenkalti/backoff/v4"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-cmp/cmp"
@@ -31,6 +29,7 @@ import (
 	"github.com/google/go-tpm-tools/launcher/spec"
 	teemodels "github.com/google/go-tpm-tools/launcher/teeserver/models"
 	attestpb "github.com/google/go-tpm-tools/proto/attest"
+	tpmpb "github.com/google/go-tpm-tools/proto/tpm"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/google/go-tpm-tools/verifier/fake"
 	"github.com/google/go-tpm-tools/verifier/oci"
@@ -767,7 +766,7 @@ func TestAttestationEvidence_TPM_Success(t *testing.T) {
 		t.Fatalf("AttestationEvidence failed on TPM: %v", err)
 	}
 
-	if att.Quote.VTPMAttestation == nil {
+	if att.Quote.TPMQuote == nil {
 		t.Fatal("expected Attestation to be populated for TPM")
 	}
 	if att.Quote.TDXCCELQuote != nil {
@@ -849,32 +848,29 @@ func TestVerify(t *testing.T) {
 	}
 }
 
-func TestConvertPBToVTPMAttestation(t *testing.T) {
+func TestConvertPBToTPMQuote(t *testing.T) {
 	pbAtt := &attestpb.Attestation{
-		AkPub: []byte("ak-pub"),
 		Quotes: []*tpmpb.Quote{
 			{Quote: []byte("quote")},
 		},
 		EventLog:          []byte("pcclient-boot-event-log"),
 		CanonicalEventLog: []byte("cel-launch-event-log"),
-		AkCert:            []byte("ak-cert"),
-		IntermediateCerts: [][]byte{[]byte("intermediate-cert")},
 	}
 
-	want := &teemodels.VTPMAttestation{
-		AkPub: []byte("ak-pub"),
-		Quotes: []*tpmpb.Quote{
-			{Quote: []byte("quote")},
+	want := &teemodels.TPMQuote{
+		Quotes: []*teemodels.SignedQuote{
+			{TPMSAttest: []byte("quote")},
 		},
 		PCClientBootEventLog: []byte("pcclient-boot-event-log"),
 		CELLaunchEventLog:    []byte("cel-launch-event-log"),
-		AkCert:               []byte("ak-cert"),
-		IntermediateCerts:    [][]byte{[]byte("intermediate-cert")},
+		Endorsement: &teemodels.TPMAttestationEndorsement{
+			AKCertEndorsement: &teemodels.AKCertEndorsement{},
+		},
 	}
 
-	got := convertPBToVTPMAttestation(pbAtt)
+	got := convertPBToTPMQuote(pbAtt)
 
 	if diff := cmp.Diff(got, want, protocmp.Transform()); diff != "" {
-		t.Errorf("convertPBToVTPMAttestation() mismatch (-got +want):\n%s", diff)
+		t.Errorf("convertPBToTPMQuote() mismatch (-got +want):\n%s", diff)
 	}
 }
