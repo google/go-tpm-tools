@@ -5,8 +5,6 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	attestpb "github.com/google/go-tpm-tools/proto/attest"
-	tpmpb "github.com/google/go-tpm-tools/proto/tpm"
 	"google.golang.org/protobuf/testing/protocmp"
 )
 
@@ -39,17 +37,18 @@ func TestVMAttestationMarshaling(t *testing.T) {
 				Label:     []byte("test-label-tpm"),
 				Challenge: []byte("test-challenge-tpm"),
 				Quote: &VMAttestationQuote{
-					VTPMAttestation: &attestpb.Attestation{
-						AkPub: []byte("ak-pub"),
-						Quotes: []*tpmpb.Quote{
+					TPMQuote: &TPMQuote{
+						PCClientBootEventLog: []byte("pcclient-log"),
+						CELLaunchEventLog:    []byte("cel-log"),
+						Quotes: []*SignedQuote{
 							{
-								Quote: []byte("quote-bytes"),
+								TPMSAttest: []byte("quote-bytes"),
 							},
 						},
 					},
 				},
 			},
-			want: `{"label":"dGVzdC1sYWJlbC10cG0=","challenge":"dGVzdC1jaGFsbGVuZ2UtdHBt","vm_attestation_quote":{"vtpm_attestation":{"quotes":[{"quote":"cXVvdGUtYnl0ZXM="}],"ak_pub":"YWstcHVi","TeeAttestation":null}}}`,
+			want: `{"label":"dGVzdC1sYWJlbC10cG0=","challenge":"dGVzdC1jaGFsbGVuZ2UtdHBt","vm_attestation_quote":{"tpm_quote":{"cel_launch_event_log":"Y2VsLWxvZw==","endorsement":null,"pcclient_boot_event_log":"cGNjbGllbnQtbG9n","quotes":[{"hash_algorithm":0,"pcr_values":null,"tpms_attest":"cXVvdGUtYnl0ZXM=","tpmt_signature":null}]}}}`,
 		},
 		{
 			name: "Empty Quote",
@@ -80,7 +79,7 @@ func TestVMAttestationMarshaling(t *testing.T) {
 			}
 
 			if diff := cmp.Diff(tc.in, &out, protocmp.Transform()); diff != "" {
-				t.Errorf("Marshaling roundtrip mismatch (-want +got):\n%s", diff)
+				t.Fatalf("Marshaling roundtrip mismatch (-want +got):\n%s", diff)
 			}
 
 			// 2. Check the JSON string output matches our expectation

@@ -9,6 +9,8 @@ import (
 	"bytes"
 	"context"
 	"crypto"
+	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/base64"
 	"fmt"
 	"io"
@@ -33,6 +35,7 @@ import (
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/internal/signaturediscovery"
 	"github.com/google/go-tpm-tools/launcher/spec"
+	teemodels "github.com/google/go-tpm-tools/launcher/teeserver/models"
 	pb "github.com/google/go-tpm-tools/proto/attest"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/google/go-tpm-tools/verifier/models"
@@ -53,6 +56,7 @@ type AttestationAgent interface {
 	MeasureEvent(gecel.Content) error
 	Attest(context.Context, AttestAgentOpts) ([]byte, error)
 	AttestWithClient(ctx context.Context, opts AttestAgentOpts, client verifier.Client) ([]byte, error)
+	AttestationEvidence(ctx context.Context, challenge []byte, extraData []byte) (*teemodels.VMAttestation, error)
 	Refresh(context.Context) error
 	Close() error
 }
@@ -65,6 +69,8 @@ type attestRoot interface {
 	GetCEL() gecel.CEL
 	// Attest fetches a technology-specific quote from the root of trust.
 	Attest(nonce []byte) (any, error)
+	// ComputeNonce hashes the challenge and extraData using the algorithm preferred by the attestation root.
+	ComputeNonce(challenge []byte, extraData []byte) []byte
 }
 
 // AttestAgentOpts contains user generated options when calling the
@@ -249,6 +255,7 @@ func (a *agent) AttestWithClient(ctx context.Context, opts AttestAgentOpts, clie
 		v.CanonicalEventLog = cosCel.Bytes()
 		v.IntermediateCerts = certChain
 		v.AkCert = a.fetchedAK.CertDERBytes()
+
 		req.TDCCELAttestation = v
 	default:
 		return nil, fmt.Errorf("received an unsupported attestation type! %v", v)
@@ -276,6 +283,53 @@ func (a *agent) AttestWithClient(ctx context.Context, opts AttestAgentOpts, clie
 		a.logger.Error(fmt.Sprintf("Partial errors from VerifyAttestation: %v", resp.PartialErrs))
 	}
 	return resp.ClaimsToken, nil
+}
+
+// AttestationEvidence returns the attestation evidence (TPM or TDX).
+func (a *agent) AttestationEvidence(_ context.Context, challenge []byte, extraData []byte) (*teemodels.VMAttestation, error) {
+	if !a.launchSpec.Experiments.EnableAttestationEvidence {
+		return nil, fmt.Errorf("attestation evidence is disabled")
+	}
+
+	if a.avRot == nil {
+		return nil, fmt.Errorf("attestation agent does not have an initialized attestation root")
+	}
+
+	// Use nested hashing to separate the prefix, the challenge, and extraData
+	// and normalize input length.
+	finalNonce := a.avRot.ComputeNonce(challenge, extraData)
+	attResult, err := a.avRot.Attest(finalNonce)
+	if err != nil {
+		return nil, fmt.Errorf("failed to attest: %v", err)
+	}
+
+	var cosCel bytes.Buffer
+	if err := a.avRot.GetCEL().EncodeCEL(&cosCel); err != nil {
+		return nil, err
+	}
+
+	attestation := &teemodels.VMAttestation{
+		Label:     []byte(teemodels.WorkloadAttestationLabel),
+		Challenge: challenge,
+		ExtraData: extraData,
+		Quote:     &teemodels.VMAttestationQuote{},
+	}
+
+	switch v := attResult.(type) {
+	case *pb.Attestation:
+		attestation.Quote = &teemodels.VMAttestationQuote{
+			TPMQuote: convertPBToTPMQuote(v),
+		}
+	case *verifier.TDCCELAttestation:
+		attestation.Quote.TDXCCELQuote = &teemodels.TDXCCELQuote{
+			CCELBootEventLog:  v.CcelData,
+			CELLaunchEventLog: cosCel.Bytes(),
+			TDQuote:           v.TdQuote,
+		}
+	default:
+		return nil, fmt.Errorf("unknown attestation type: %T", v)
+	}
+	return attestation, nil
 }
 
 func (a *agent) verify(ctx context.Context, req verifier.VerifyAttestationRequest, client verifier.Client) (*verifier.VerifyAttestationResponse, error) {
@@ -339,6 +393,17 @@ func (t *tpmAttestRoot) Attest(nonce []byte) (any, error) {
 	})
 }
 
+func (t *tpmAttestRoot) ComputeNonce(challenge []byte, extraData []byte) []byte {
+	challengeData := challenge
+	if extraData != nil {
+		extraDataDigest := sha256.Sum256(extraData)
+		challengeData = append(challenge, extraDataDigest[:]...)
+	}
+	challengeDigest := sha256.Sum256(challengeData)
+	finalNonce := sha256.Sum256(append([]byte(teemodels.WorkloadAttestationLabel), challengeDigest[:]...))
+	return finalNonce[:]
+}
+
 type tdxAttestRoot struct {
 	tdxMu  sync.Mutex
 	qp     *tg.LinuxConfigFsQuoteProvider
@@ -381,6 +446,17 @@ func (t *tdxAttestRoot) Attest(nonce []byte) (any, error) {
 		CcelData:      ccelData,
 		TdQuote:       rawQuote,
 	}, nil
+}
+
+func (t *tdxAttestRoot) ComputeNonce(challenge []byte, extraData []byte) []byte {
+	challengeData := challenge
+	if extraData != nil {
+		extraDataDigest := sha512.Sum512(extraData)
+		challengeData = append(challenge, extraDataDigest[:]...)
+	}
+	challengeDigest := sha512.Sum512(challengeData)
+	finalNonce := sha512.Sum512(append([]byte(teemodels.WorkloadAttestationLabel), challengeDigest[:]...))
+	return finalNonce[:]
 }
 
 // Refresh refreshes the internal state of the attestation agent.
@@ -451,4 +527,31 @@ func (c *sigsCache) get() []oci.Signature {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.items
+}
+
+func convertPBToTPMQuote(v *pb.Attestation) *teemodels.TPMQuote {
+	var quotes []*teemodels.SignedQuote
+	for _, q := range v.GetQuotes() {
+		quote := &teemodels.SignedQuote{
+			TPMSAttest:    q.GetQuote(),
+			TPMTSignature: q.GetRawSig(),
+		}
+		if pcrs := q.GetPcrs(); pcrs != nil {
+			quote.HashAlgorithm = uint32(pcrs.GetHash())
+			quote.PCRValues = pcrs.GetPcrs()
+		}
+		quotes = append(quotes, quote)
+	}
+
+	return &teemodels.TPMQuote{
+		Quotes:               quotes,
+		PCClientBootEventLog: v.GetEventLog(),
+		CELLaunchEventLog:    v.GetCanonicalEventLog(),
+		Endorsement: &teemodels.TPMAttestationEndorsement{
+			AKCertEndorsement: &teemodels.AKCertEndorsement{
+				AKCert:      v.GetAkCert(),
+				AKCertChain: v.GetIntermediateCerts(),
+			},
+		},
+	}
 }
