@@ -55,10 +55,9 @@ impl PublicKeyOps for X25519PublicKey {
 /// X25519-based private key implementation.
 pub struct X25519PrivateKey(SecretBox);
 
-impl X25519PrivateKey {
-    /// Consumes the `X25519PrivateKey` and returns the inner `SecretBox`.
-    pub fn into_secret(self) -> SecretBox {
-        self.0
+impl From<X25519PrivateKey> for SecretBox {
+    fn from(key: X25519PrivateKey) -> SecretBox {
+        key.0
     }
 }
 

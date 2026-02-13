@@ -90,11 +90,10 @@ pub enum PrivateKey {
     X25519(X25519PrivateKey),
 }
 
-impl PrivateKey {
-    /// Consumes the `PrivateKey` and returns the inner `SecretBox`.
-    pub fn into_secret(self) -> SecretBox {
-        match self {
-            PrivateKey::X25519(sk) => sk.into_secret(),
+impl From<PrivateKey> for SecretBox {
+    fn from(key: PrivateKey) -> SecretBox {
+        match key {
+            PrivateKey::X25519(sk) => SecretBox::from(sk),
         }
     }
 }
@@ -131,6 +130,8 @@ pub enum Error {
     HpkeEncryptionError,
     #[error("Unsupported algorithm")]
     UnsupportedAlgorithm,
+    #[error("Invalid key")]
+    InvalidKey,
     #[error("Crypto library error")]
     CryptoError,
 }

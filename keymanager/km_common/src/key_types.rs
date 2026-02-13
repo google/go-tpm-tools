@@ -1,6 +1,6 @@
-use crate::algorithms::{HpkeAlgorithm, KemAlgorithm};
+use crate::algorithms::{AeadAlgorithm, HpkeAlgorithm, KdfAlgorithm, KemAlgorithm};
 use crate::crypto;
-use crate::crypto::PublicKey;
+use crate::crypto::{PublicKey, secret_box};
 use crate::protected_mem::Vault;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
@@ -60,38 +60,84 @@ impl KeyRegistry {
     }
 }
 
-/// Helper function to create a KeyRecord and generate the underlying keypair.
-pub fn create_key_record<F>(
-    algo: HpkeAlgorithm,
-    expiry_secs: u64,
-    spec_builder: F,
-) -> Result<KeyRecord, i32>
-where
-    F: FnOnce(HpkeAlgorithm, PublicKey) -> KeySpec,
-{
-    let (pub_key, priv_key) = match KemAlgorithm::try_from(algo.kem)
-        .ok()
-        .and_then(|k| crypto::generate_keypair(k).ok())
+impl KeyRecord {
+    /// Creates a new long-term Binding key.
+    pub fn create_binding_key(
+        algo: HpkeAlgorithm,
+        expiry: Duration,
+    ) -> Result<Self, crypto::Error> {
+        Self::create_key_internal(algo, expiry, |algo, pub_key| KeySpec::Binding {
+            algo,
+            binding_public_key: pub_key,
+        })
+    }
+
+    /// Creates a new ephemeral KEM key bound to an existing Binding key.
+    pub fn create_bound_kem_key(
+        algo: HpkeAlgorithm,
+        binding_public_key: PublicKey,
+        expiry: Duration,
+    ) -> Result<Self, crypto::Error> {
+        // Validate that the binding key is compatible with the algorithm suite.
+        // Currently only X25519 is supported.
+        match (&binding_public_key, KemAlgorithm::try_from(algo.kem)) {
+            (PublicKey::X25519(_), Ok(KemAlgorithm::DhkemX25519HkdfSha256)) => (),
+            _ => return Err(crypto::Error::InvalidKey),
+        }
+
+        Self::create_key_internal(algo, expiry, move |algo, pub_key| {
+            KeySpec::KemWithBindingPub {
+                algo,
+                kem_public_key: pub_key,
+                binding_public_key,
+            }
+        })
+    }
+
+    fn create_key_internal<F>(
+        algo: HpkeAlgorithm,
+        expiry: Duration,
+        spec_builder: F,
+    ) -> Result<Self, crypto::Error>
+    where
+        F: FnOnce(HpkeAlgorithm, PublicKey) -> KeySpec,
     {
-        Some(pair) => pair,
-        None => return Err(-1),
-    };
+        let (
+            Ok(KemAlgorithm::DhkemX25519HkdfSha256),
+            Ok(KdfAlgorithm::HkdfSha256),
+            Ok(AeadAlgorithm::Aes256Gcm),
+        ) = (
+            KemAlgorithm::try_from(algo.kem),
+            KdfAlgorithm::try_from(algo.kdf),
+            AeadAlgorithm::try_from(algo.aead),
+        )
+        else {
+            return Err(crypto::Error::UnsupportedAlgorithm);
+        };
 
-    let id = Uuid::new_v4();
-    let vault = Vault::new(priv_key.into_secret());
-    let vault = vault.map_err(|_| -1)?;
+        let (pub_key, priv_key) = crypto::generate_keypair(KemAlgorithm::DhkemX25519HkdfSha256)?;
 
-    let record = KeyRecord {
-        meta: KeyMetadata {
-            id,
-            created_at: Instant::now(),
-            delete_after: Instant::now() + Duration::from_secs(expiry_secs),
-            spec: spec_builder(algo, pub_key),
-        },
-        private_key: vault,
-    };
+        let id = Uuid::new_v4();
+        let vault = Vault::new(secret_box::SecretBox::from(priv_key))
+            .map_err(|_| crypto::Error::CryptoError)?;
 
-    Ok(record)
+        let now = Instant::now();
+        let delete_after = now
+            .checked_add(expiry)
+            .ok_or(crypto::Error::UnsupportedAlgorithm)?;
+
+        let record = KeyRecord {
+            meta: KeyMetadata {
+                id,
+                created_at: now,
+                delete_after,
+                spec: spec_builder(algo, pub_key),
+            },
+            private_key: vault,
+        };
+
+        Ok(record)
+    }
 }
 
 #[cfg(test)]
@@ -100,18 +146,15 @@ mod tests {
     use crate::algorithms::{AeadAlgorithm, KdfAlgorithm, KemAlgorithm};
 
     #[test]
-    fn test_create_key_record_success() {
+    fn test_create_binding_key_success() {
         let algo = HpkeAlgorithm {
             kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
             kdf: KdfAlgorithm::HkdfSha256 as i32,
             aead: AeadAlgorithm::Aes256Gcm as i32,
         };
-        let expiry = 3600;
+        let expiry = Duration::from_secs(3600);
 
-        let result = create_key_record(algo, expiry, |a, pk| KeySpec::Binding {
-            algo: a,
-            binding_public_key: pk,
-        });
+        let result = KeyRecord::create_binding_key(algo.clone(), expiry);
 
         assert!(result.is_ok());
         let record = result.unwrap();
@@ -134,20 +177,16 @@ mod tests {
     }
 
     #[test]
-    fn test_create_key_record_kem_with_binding_pub_success() {
+    fn test_create_bound_kem_success() {
         let algo = HpkeAlgorithm {
             kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
             kdf: KdfAlgorithm::HkdfSha256 as i32,
             aead: AeadAlgorithm::Aes256Gcm as i32,
         };
         let binding_pubkey = PublicKey::try_from([42u8; 32].to_vec()).unwrap();
-        let expiry = 3600;
+        let expiry = Duration::from_secs(3600);
 
-        let result = create_key_record(algo, expiry, |a, pk| KeySpec::KemWithBindingPub {
-            algo: a,
-            kem_public_key: pk,
-            binding_public_key: binding_pubkey.clone(),
-        });
+        let result = KeyRecord::create_bound_kem_key(algo.clone(), binding_pubkey.clone(), expiry);
 
         assert!(result.is_ok());
         let record = result.unwrap();
@@ -175,11 +214,8 @@ mod tests {
             aead: AeadAlgorithm::Aes256Gcm as i32,
         };
 
-        let record = create_key_record(algo, 3600, |a, pk| KeySpec::Binding {
-            algo: a,
-            binding_public_key: pk,
-        })
-        .expect("failed to create key");
+        let record = KeyRecord::create_binding_key(algo, Duration::from_secs(3600))
+            .expect("failed to create key");
 
         let id = record.meta.id;
         registry.add_key(record);

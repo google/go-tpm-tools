@@ -1,7 +1,9 @@
 use km_common::algorithms::HpkeAlgorithm;
 use km_common::crypto::PublicKey;
-use km_common::key_types::{KeyRegistry, KeySpec};
+use km_common::key_types::{KeyRecord, KeyRegistry, KeySpec};
+use std::slice;
 use std::sync::LazyLock;
+use std::time::Duration;
 
 static KEY_REGISTRY: LazyLock<KeyRegistry> = LazyLock::new(KeyRegistry::default);
 
@@ -10,12 +12,7 @@ fn generate_binding_keypair_internal(
     algo: HpkeAlgorithm,
     expiry_secs: u64,
 ) -> Result<(uuid::Uuid, PublicKey), i32> {
-    let result = km_common::key_types::create_key_record(algo, expiry_secs, |algo, pub_key| {
-        KeySpec::Binding {
-            algo,
-            binding_public_key: pub_key,
-        }
-    });
+    let result = KeyRecord::create_binding_key(algo, Duration::from_secs(expiry_secs));
 
     match result {
         Ok(record) => {
@@ -29,7 +26,7 @@ fn generate_binding_keypair_internal(
             KEY_REGISTRY.add_key(record);
             Ok((id, pubkey))
         }
-        Err(e) => Err(e),
+        Err(_) => Err(-1),
     }
 }
 
@@ -60,29 +57,25 @@ pub unsafe extern "C" fn key_manager_generate_binding_keypair(
     expiry_secs: u64,
     out_uuid: *mut u8,
     out_pubkey: *mut u8,
-    out_pubkey_len: *mut usize,
+    out_pubkey_len: usize,
 ) -> i32 {
     // Safety Invariant Checks
-    if out_pubkey.is_null() || out_pubkey_len.is_null() || out_uuid.is_null() {
+    if out_pubkey.is_null() || out_uuid.is_null() {
         return -1;
     }
+
+    // Convert to Safe Types
+    let out_uuid = unsafe { slice::from_raw_parts_mut(out_uuid, 16) };
+    let out_pubkey = unsafe { slice::from_raw_parts_mut(out_pubkey, out_pubkey_len) };
 
     // Call Safe Internal Function
     match generate_binding_keypair_internal(algo, expiry_secs) {
         Ok((id, pubkey)) => {
-            // Handle Output (FFI boundary)
-            unsafe {
-                let buf_len = *out_pubkey_len;
-                if buf_len != pubkey.as_bytes().len() {
-                    return -2;
-                }
-                std::ptr::copy_nonoverlapping(id.as_bytes().as_ptr(), out_uuid, 16);
-                std::ptr::copy_nonoverlapping(
-                    pubkey.as_bytes().as_ptr(),
-                    out_pubkey,
-                    pubkey.as_bytes().len(),
-                );
+            if out_pubkey_len != pubkey.as_bytes().len() {
+                return -2;
             }
+            out_uuid.copy_from_slice(id.as_bytes());
+            out_pubkey.copy_from_slice(pubkey.as_bytes());
             0 // Success
         }
         Err(e) => e,
@@ -115,7 +108,7 @@ mod tests {
     fn test_generate_binding_keypair_ffi_success() {
         let mut uuid_bytes = [0u8; 16];
         let mut pubkey_bytes = [0u8; 32];
-        let mut pubkey_len: usize = pubkey_bytes.len();
+        let pubkey_len: usize = pubkey_bytes.len();
         let algo = HpkeAlgorithm {
             kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
             kdf: KdfAlgorithm::HkdfSha256 as i32,
@@ -128,7 +121,7 @@ mod tests {
                 3600,
                 uuid_bytes.as_mut_ptr(),
                 pubkey_bytes.as_mut_ptr(),
-                &mut pubkey_len,
+                pubkey_len,
             )
         };
 
@@ -142,7 +135,7 @@ mod tests {
     fn test_generate_binding_keypair_invalid_algo() {
         let mut uuid_bytes = [0u8; 16];
         let mut pubkey_bytes = [0u8; 32];
-        let mut pubkey_len: usize = pubkey_bytes.len();
+        let pubkey_len: usize = pubkey_bytes.len();
         let algo = HpkeAlgorithm {
             kem: 999, // Invalid KEM
             kdf: KdfAlgorithm::HkdfSha256 as i32,
@@ -155,7 +148,7 @@ mod tests {
                 3600,
                 uuid_bytes.as_mut_ptr(),
                 pubkey_bytes.as_mut_ptr(),
-                &mut pubkey_len,
+                pubkey_len,
             )
         };
 
@@ -178,7 +171,7 @@ mod tests {
                 3600,
                 std::ptr::null_mut(),
                 std::ptr::null_mut(),
-                std::ptr::null_mut(),
+                0,
             )
         };
 
@@ -189,7 +182,7 @@ mod tests {
     fn test_generate_binding_keypair_invalid_pubkey_len() {
         let mut uuid_bytes = [0u8; 16];
         let mut pubkey_bytes = [0u8; 64];
-        let mut pubkey_len: usize = pubkey_bytes.len();
+        let pubkey_len: usize = pubkey_bytes.len();
         let algo = HpkeAlgorithm {
             kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
             kdf: KdfAlgorithm::HkdfSha256 as i32,
@@ -202,7 +195,7 @@ mod tests {
                 3600,
                 uuid_bytes.as_mut_ptr(),
                 pubkey_bytes.as_mut_ptr(),
-                &mut pubkey_len,
+                pubkey_len,
             )
         };
 
