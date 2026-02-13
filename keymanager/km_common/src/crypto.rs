@@ -271,6 +271,38 @@ mod tests {
     }
 
     #[test]
+    fn test_hpke_bad_aad() {
+        let hpke_algo = HpkeAlgorithm {
+            kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
+            kdf: KdfAlgorithm::HkdfSha256 as i32,
+            aead: AeadAlgorithm::Aes256Gcm as i32,
+        };
+
+        let kem_algo = KemAlgorithm::DhkemX25519HkdfSha256;
+
+        let (pk_r, sk_r) = generate_keypair(kem_algo).expect("HPKE generation failed");
+
+        let pt = b"hello world";
+        let aad = b"foo";
+        let info = b"";
+
+        let hpke_kem = hpke::Kem::X25519HkdfSha256;
+        let hpke_kdf = hpke::Kdf::HkdfSha256;
+        let hpke_aead = hpke::Aead::Aes256Gcm;
+        let params = hpke::Params::new(hpke_kem, hpke_kdf, hpke_aead);
+
+        let (mut sender_ctx, enc) = hpke::SenderContext::new(&params, pk_r.as_bytes(), info)
+            .expect("HPKE setup sender failed");
+        let ciphertext = sender_ctx.seal(pt, aad);
+
+        // Tamper with aad
+        let tampered_aad = b"bar";
+
+        let result = hpke_open(&sk_r, &enc, &ciphertext, tampered_aad, &hpke_algo);
+        assert!(matches!(result, Err(Error::HpkeDecryptionError)));
+    }
+
+    #[test]
     fn test_hpke_seal_success() {
         let hpke_algo = HpkeAlgorithm {
             kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
