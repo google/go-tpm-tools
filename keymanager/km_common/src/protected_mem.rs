@@ -5,6 +5,7 @@
 //! the kernel's page tables and most other processes, providing a secure
 //! location for sensitive cryptographic material.
 
+use crate::crypto::secret_box::SecretBox;
 use memmap2::MmapMut;
 use std::fs::File;
 use std::io::{Error as IoError, Result as IoResult};
@@ -43,14 +44,15 @@ impl Drop for Vault {
 impl Vault {
     /// Creates a new `Vault` containing the provided data.
     ///
-    /// The provided `data` is copied into the vault and then zeroized in-place
-    /// to ensure the original sensitive data is cleared from memory.
+    /// The provided `data` is copied into the vault. The source `SecretBox` is
+    /// dropped at the end, ensuring the original sensitive data is zeroized 
+    /// from memory.
     ///
     /// # Errors
     ///
     /// Returns an error if the `memfd_secret` syscall fails or if the memory
     /// cannot be mapped.
-    pub fn new(data: &mut [u8]) -> IoResult<Self> {
+    pub fn new(data: SecretBox) -> IoResult<Self> {
         // Create the secret memory file descriptor.
         // O_CLOEXEC ensures the FD is closed on exec.
         let fd = unsafe { libc::syscall(SYS_MEMFD_SECRET, libc::O_CLOEXEC as libc::c_long) };
@@ -64,16 +66,13 @@ impl Vault {
         let file = unsafe { File::from_raw_fd(fd) };
 
         // Set the size of the secret memory region.
-        file.set_len(data.len() as u64)?;
+        file.set_len(data.as_slice().len() as u64)?;
 
         // Map the secret memory region into the process's address space.
         let mut mmap = unsafe { MmapMut::map_mut(&file)? };
 
         // Copy the sensitive data into the secure region.
-        mmap.copy_from_slice(data);
-
-        // Zeroize the source data.
-        data.zeroize();
+        mmap.copy_from_slice(data.as_slice());
 
         Ok(Vault {
             mmap,
@@ -101,27 +100,27 @@ mod tests {
 
     #[test]
     fn test_vault_creation_and_retrieval() {
-        let mut data = *b"sensitive information";
+        let data = *b"sensitive information";
         let original_data = data;
-        let vault = Vault::new(&mut data).expect("Failed to create vault");
+        let secret = SecretBox::new(data.to_vec());
+        let vault = Vault::new(secret).expect("Failed to create vault");
         assert_eq!(vault.as_bytes(), &original_data);
         assert_eq!(vault.as_ref(), &original_data);
-        assert_ne!(data, original_data, "Source data should be zeroed");
-        assert!(data.iter().all(|&b| b == 0), "Source data should be all zeros");
     }
 
     #[test]
     fn test_vault_with_empty_data() {
-        let vault = Vault::new(&mut []).expect("Failed to create empty vault");
+        let secret = SecretBox::new(vec![]);
+        let vault = Vault::new(secret).expect("Failed to create empty vault");
         assert!(vault.as_bytes().is_empty());
     }
 
     #[test]
     fn test_multiple_vaults() {
-        let mut s1 = *b"secret1";
-        let v1 = Vault::new(&mut s1).unwrap();
-        let mut s2 = *b"secret2";
-        let v2 = Vault::new(&mut s2).unwrap();
+        let s1 = *b"secret1";
+        let v1 = Vault::new(SecretBox::new(s1.to_vec())).unwrap();
+        let s2 = *b"secret2";
+        let v2 = Vault::new(SecretBox::new(s2.to_vec())).unwrap();
         assert_ne!(v1.as_bytes(), v2.as_bytes());
         assert_eq!(v1.as_bytes(), b"secret1");
         assert_eq!(v2.as_bytes(), b"secret2");
@@ -129,16 +128,16 @@ mod tests {
 
     #[test]
     fn test_large_vault() {
-        let mut data = vec![0u8; 1024 * 1024]; // 1MB
+        let data = vec![0u8; 1024 * 1024]; // 1MB
         let len = data.len();
-        let vault = Vault::new(&mut data).expect("Failed to create large vault");
+        let vault = Vault::new(SecretBox::new(data)).expect("Failed to create large vault");
         assert_eq!(vault.as_bytes().len(), len);
     }
 
     #[test]
     fn test_memfd_backing_verification() {
-        let mut data = *b"verification data";
-        let vault = Vault::new(&mut data).unwrap();
+        let data = *b"verification data";
+        let vault = Vault::new(SecretBox::new(data.to_vec())).unwrap();
         let fd = vault.as_raw_fd();
 
         // 1. Verify filesystem magic number using fstatfs
@@ -188,9 +187,9 @@ mod tests {
 
     #[test]
     fn test_zeroize_on_drop() {
-        let mut data = *b"secret to be zeroed";
+        let data = *b"secret to be zeroed";
         let original_data = data;
-        let vault = Vault::new(&mut data).unwrap();
+        let vault = Vault::new(SecretBox::new(data.to_vec())).unwrap();
 
         // Create a second mapping of the same memory to spy on it
         // This is possible because we have access to the underlying File in tests
