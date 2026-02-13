@@ -1,9 +1,12 @@
 package agent
 
 import (
+	"bytes"
 	"context"
+	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha512"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -16,6 +19,7 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-cmp/cmp"
+	gecel "github.com/google/go-eventlog/cel"
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal/test"
@@ -23,12 +27,15 @@ import (
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/internal/signaturediscovery"
 	"github.com/google/go-tpm-tools/launcher/spec"
+	teemodels "github.com/google/go-tpm-tools/launcher/teeserver/models"
 	attestpb "github.com/google/go-tpm-tools/proto/attest"
+	tpmpb "github.com/google/go-tpm-tools/proto/tpm"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/google/go-tpm-tools/verifier/fake"
 	"github.com/google/go-tpm-tools/verifier/oci"
 	"github.com/google/go-tpm-tools/verifier/oci/cosign"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/testing/protocmp"
 )
 
 const (
@@ -641,6 +648,132 @@ func measureFakeEvents(attestAgent AttestationAgent) error {
 	return nil
 }
 
+type fakeTdxAttestRoot struct {
+	cel           gecel.CEL
+	receivedNonce []byte
+}
+
+func (f *fakeTdxAttestRoot) Extend(c gecel.Content) error {
+	return f.cel.AppendEvent(c, []crypto.Hash{crypto.SHA384}, cel.CosRTMR, func(_ crypto.Hash, _ int, _ []byte) error {
+		return nil
+	})
+}
+
+func (f *fakeTdxAttestRoot) GetCEL() gecel.CEL {
+	return f.cel
+}
+
+func (f *fakeTdxAttestRoot) Attest(nonce []byte) (any, error) {
+	f.receivedNonce = nonce
+	return &verifier.TDCCELAttestation{
+		TdQuote: []byte("fake-tdx-quote"),
+	}, nil
+}
+
+func (f *fakeTdxAttestRoot) ComputeNonce(challenge []byte, extraData []byte) []byte {
+	challengeData := challenge
+	if extraData != nil {
+		extraDataDigest := sha512.Sum512(extraData)
+		challengeData = append(challenge, extraDataDigest[:]...)
+	}
+	challengeDigest := sha512.Sum512(challengeData)
+	finalNonce := sha512.Sum512(append([]byte(teemodels.WorkloadAttestationLabel), challengeDigest[:]...))
+	return finalNonce[:]
+}
+
+func TestAttestationEvidence_TDX_Success(t *testing.T) {
+	ctx := context.Background()
+	tpm := test.GetTPM(t)
+	defer client.CheckedClose(t, tpm)
+
+	ak, err := client.AttestationKeyECC(tpm)
+	if err != nil {
+		t.Fatalf("failed to create AK: %v", err)
+	}
+	defer ak.Close()
+	fakeCert := test.GetTestCertForKey(t, ak.PublicKey())
+	if err := ak.SetCert(fakeCert); err != nil {
+		t.Fatal(err)
+	}
+
+	fakeRoot := &fakeTdxAttestRoot{
+		cel: gecel.NewConfComputeMR(),
+	}
+	attestAgent := &agent{
+		avRot:     fakeRoot,
+		fetchedAK: ak,
+		launchSpec: spec.LaunchSpec{
+			Experiments: experiments.Experiments{
+				EnableAttestationEvidence: true,
+			},
+		},
+	}
+
+	if err := measureFakeEvents(attestAgent); err != nil {
+		t.Fatalf("failed to measure events: %v", err)
+	}
+
+	challenge := []byte("test-challenge")
+	extraData := []byte("test-extra-data")
+	att, err := attestAgent.AttestationEvidence(ctx, challenge, extraData)
+	if err != nil {
+		t.Fatalf("AttestationEvidence failed: %v", err)
+	}
+
+	if att.Quote.TDXCCELQuote == nil {
+		t.Fatal("expected TDCCELAttestation to be populated for TDX")
+	}
+
+	if string(att.Quote.TDXCCELQuote.TDQuote) != "fake-tdx-quote" {
+		t.Errorf("got quote %s, want fake-tdx-quote", string(att.Quote.TDXCCELQuote.TDQuote))
+	}
+
+	expectedHash := fakeRoot.ComputeNonce(challenge, extraData)
+	if !bytes.Equal(fakeRoot.receivedNonce, expectedHash) {
+		t.Errorf("got nonce %x, want %x", fakeRoot.receivedNonce, expectedHash)
+	}
+}
+
+func TestAttestationEvidence_TPM_Success(t *testing.T) {
+	ctx := context.Background()
+	tpm := test.GetTPM(t)
+	defer client.CheckedClose(t, tpm)
+
+	fakeSigner, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("failed to generate signing key %v", err)
+	}
+	verifierClient := fake.NewClient(fakeSigner)
+
+	agent, err := CreateAttestationAgent(tpm, client.AttestationKeyECC, verifierClient, placeholderPrincipalFetcher, signaturediscovery.NewFakeClient(), spec.LaunchSpec{
+		Experiments: experiments.Experiments{
+			EnableAttestationEvidence: true,
+		},
+	}, logging.SimpleLogger())
+	if err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+	defer agent.Close()
+
+	if err := measureFakeEvents(agent); err != nil {
+		t.Fatalf("failed to measure events: %v", err)
+	}
+
+	challenge := []byte("test-challenge")
+	extraData := []byte("test-extra-data")
+	att, err := agent.AttestationEvidence(ctx, challenge, extraData)
+	if err != nil {
+		t.Fatalf("AttestationEvidence failed on TPM: %v", err)
+	}
+
+	if att.Quote.TPMQuote == nil {
+		t.Fatal("expected Attestation to be populated for TPM")
+	}
+	if att.Quote.TDXCCELQuote != nil {
+		t.Fatal("expected TDCCELAttestation to be nil for TPM")
+	}
+}
+
 type testClient struct {
 	verifyCSResp  *verifier.VerifyAttestationResponse
 	verifyAttResp *verifier.VerifyAttestationResponse
@@ -712,5 +845,32 @@ func TestVerify(t *testing.T) {
 				t.Errorf("verify() did not return expected response (-got, +want): %v", diff)
 			}
 		})
+	}
+}
+
+func TestConvertPBToTPMQuote(t *testing.T) {
+	pbAtt := &attestpb.Attestation{
+		Quotes: []*tpmpb.Quote{
+			{Quote: []byte("quote")},
+		},
+		EventLog:          []byte("pcclient-boot-event-log"),
+		CanonicalEventLog: []byte("cel-launch-event-log"),
+	}
+
+	want := &teemodels.TPMQuote{
+		Quotes: []*teemodels.SignedQuote{
+			{TPMSAttest: []byte("quote")},
+		},
+		PCClientBootEventLog: []byte("pcclient-boot-event-log"),
+		CELLaunchEventLog:    []byte("cel-launch-event-log"),
+		Endorsement: &teemodels.TPMAttestationEndorsement{
+			AKCertEndorsement: &teemodels.AKCertEndorsement{},
+		},
+	}
+
+	got := convertPBToTPMQuote(pbAtt)
+
+	if diff := cmp.Diff(got, want, protocmp.Transform()); diff != "" {
+		t.Errorf("convertPBToTPMQuote() mismatch (-got +want):\n%s", diff)
 	}
 }

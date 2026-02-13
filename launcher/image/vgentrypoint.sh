@@ -6,6 +6,10 @@ main() {
   # Override default fluent-bit config.
   cp /usr/share/oem/confidential_space/fluent-bit-cs.conf /etc/fluent-bit/fluent-bit.conf
 
+  mkdir /tmp/container_launcher
+  chmod +rw /tmp/container_launcher
+  cp /usr/share/oem/confidential_space/vgexperiment.json /tmp/container_launcher/experiment_data
+
   # Override default system-stats-monitor.json for node-problem-detector.
   cp /usr/share/oem/confidential_space/system-stats-monitor-cs.json /etc/node_problem_detector/system-stats-monitor.json
   # Override default boot-disk-size-consistency-monitor.json for node-problem-detector.

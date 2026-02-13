@@ -21,11 +21,13 @@ import (
 	"github.com/containerd/containerd/oci"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-cmp/cmp"
+	gecel "github.com/google/go-eventlog/cel"
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/launcher/agent"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/spec"
+	teemodels "github.com/google/go-tpm-tools/launcher/teeserver/models"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/opencontainers/go-digest"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
@@ -39,7 +41,7 @@ const (
 
 // Fake attestation agent.
 type fakeAttestationAgent struct {
-	measureEventFunc func(cel.Content) error
+	measureEventFunc func(gecel.Content) error
 	attestFunc       func(context.Context, agent.AttestAgentOpts) ([]byte, error)
 	sigsCache        []string
 	sigsFetcherFunc  func(context.Context) []string
@@ -49,7 +51,7 @@ type fakeAttestationAgent struct {
 	attempts int
 }
 
-func (f *fakeAttestationAgent) MeasureEvent(event cel.Content) error {
+func (f *fakeAttestationAgent) MeasureEvent(event gecel.Content) error {
 	if f.measureEventFunc != nil {
 		return f.measureEventFunc(event)
 	}
@@ -66,6 +68,10 @@ func (f *fakeAttestationAgent) Attest(ctx context.Context, _ agent.AttestAgentOp
 }
 
 func (f *fakeAttestationAgent) AttestWithClient(_ context.Context, _ agent.AttestAgentOpts, _ verifier.Client) ([]byte, error) {
+	return nil, fmt.Errorf("unimplemented")
+}
+
+func (f *fakeAttestationAgent) AttestationEvidence(_ context.Context, _ []byte, _ []byte) (*teemodels.VMAttestation, error) {
 	return nil, fmt.Errorf("unimplemented")
 }
 
@@ -616,9 +622,9 @@ func TestMeasureCELEvents(t *testing.T) {
 			gotEvents := []cel.CosType{}
 
 			fakeAgent := &fakeAttestationAgent{
-				measureEventFunc: func(content cel.Content) error {
-					got, _ := content.GetTLV()
-					tlv := &cel.TLV{}
+				measureEventFunc: func(content gecel.Content) error {
+					got, _ := content.TLV()
+					tlv := &gecel.TLV{}
 					tlv.UnmarshalBinary(got.Value)
 					gotEvents = append(gotEvents, cel.CosType(tlv.Type))
 					return nil

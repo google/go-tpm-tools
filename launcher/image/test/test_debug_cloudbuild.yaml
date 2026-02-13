@@ -4,6 +4,7 @@ substitutions:
   '_CLEANUP': 'true'
   '_VM_NAME_PREFIX': 'cs-debug-test'
   '_ZONE': 'us-central1-a'
+  '_CC': ''
   '_WORKLOAD_IMAGE': 'us-west1-docker.pkg.dev/confidential-space-images-dev/cs-integ-test-images/basic-test:latest,tee-cmd=["newCmd"],tee-env-ALLOWED_OVERRIDE=overridden'
 steps:
 - name: 'gcr.io/cloud-builders/gcloud'
@@ -16,6 +17,7 @@ steps:
           '-m', 'tee-image-reference=${_WORKLOAD_IMAGE},tee-container-log-redirect=true',
           '-n', '${_VM_NAME_PREFIX}-${BUILD_ID}',
           '-z', '${_ZONE}',
+          '-c', '${_CC}',
         ]
 - name: 'gcr.io/cloud-builders/gcloud'
   id: BasicWorkloadTest

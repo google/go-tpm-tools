@@ -6,23 +6,9 @@ substitutions:
   '_IMAGE_ENV': ''
   '_BUCKET_NAME': ''
   '_CS_LICENSE': ''
-  '_SHORT_SHA': ''
+  '_PRELOAD_SCRIPT': ''
 
 steps:
-  - name: golang:1.23
-    entrypoint: /bin/bash
-    args:
-      - -c
-      - |
-        cd launcher/launcher
-        CGO_ENABLED=0 go build -o ../image/launcher -ldflags="-X 'main.BuildCommit=${_SHORT_SHA}'"
-  - name: 'gcr.io/cloud-builders/gcloud'
-    id: DownloadExpBinary
-    entrypoint: 'gcloud'
-    args: ['storage',
-           'cp',
-           'gs://confidential-space-images_third-party/confidential_space_experiments',
-           './launcher/image/confidential_space_experiments']
   - name: 'gcr.io/cos-cloud/cos-customizer'
     args: ['start-image-build',
            '-build-context=launcher/image',
@@ -32,7 +18,7 @@ steps:
            '-image-project=${_BASE_IMAGE_PROJECT}']
   - name: 'gcr.io/cos-cloud/cos-customizer'
     args: ['run-script',
-           '-script=preload.sh',
+           '-script=${_PRELOAD_SCRIPT}',
            '-env=IMAGE_ENV=${_IMAGE_ENV}']
   - name: 'gcr.io/cos-cloud/cos-customizer'
     args: ['seal-oem']
