@@ -219,20 +219,23 @@ pub unsafe extern "C" fn key_manager_decap_and_seal(
         _ => return -1, // Wrong key type
     };
 
-    let kem_algo = match km_common::algorithms::KemAlgorithm::try_from(hpke_algo.kem) {
+    let _kem_algo = match km_common::algorithms::KemAlgorithm::try_from(hpke_algo.kem) {
         Ok(k) => k,
         Err(_) => return -1,
     };
 
     let enc_key_slice = unsafe { slice::from_raw_parts(encapsulated_key, encapsulated_key_len) };
 
+    // Convert Vault bytes to SecretBox for active usage
+    let secret =
+        km_common::crypto::secret_box::SecretBox::new(key_record.private_key.as_bytes().to_vec());
+    let priv_key = km_common::crypto::PrivateKey::from_secret(secret);
+
     // Decapsulate
-    let mut shared_secret =
-        match km_common::crypto::decaps(key_record.private_key.as_bytes(), enc_key_slice, kem_algo)
-        {
-            Ok(s) => s,
-            Err(_) => return -3,
-        };
+    let mut shared_secret = match km_common::crypto::decaps(&priv_key, enc_key_slice) {
+        Ok(s) => s,
+        Err(_) => return -3,
+    };
 
     let aad_slice = if !aad.is_null() && aad_len > 0 {
         unsafe { slice::from_raw_parts(aad, aad_len) }
@@ -525,8 +528,10 @@ mod tests {
         let pt = b"ignored_plaintext";
         let aad = b"test_aad";
         // We use `hpke_seal` to act as the client to generate a valid encapsulation
+        let kem_pub_key_obj = PublicKey::try_from(kem_pubkey_bytes.to_vec()).unwrap();
+        let pt_box = km_common::crypto::secret_box::SecretBox::new(pt.to_vec());
         let (client_enc, client_ct) =
-            km_common::crypto::hpke_seal(&kem_pubkey_bytes, pt, aad, &algo).unwrap();
+            km_common::crypto::hpke_seal(&kem_pub_key_obj, &pt_box, aad, &algo).unwrap();
 
         // Step 3: Call `decap_and_seal`.
         let mut out_enc_key = [0u8; 32];
@@ -555,25 +560,28 @@ mod tests {
             km_common::crypto::hpke_open(&binding_sk, &out_enc_key, &out_ct, aad, &algo)
                 .expect("Failed to decrypt the resealed secret");
 
-        assert_eq!(recovered_shared_secret.len(), 32);
+        assert_eq!(recovered_shared_secret.as_slice().len(), 32);
 
         // 5. Verify the recovered secret matches what decaps would produce
         let key_record = KEY_REGISTRY.get_key(&Uuid::from_bytes(uuid_bytes)).unwrap();
-        let expected_shared_secret = km_common::crypto::decaps(
-            key_record.private_key.as_bytes(),
-            &client_enc,
-            KemAlgorithm::DhkemX25519HkdfSha256,
-        )
-        .expect("decaps failed");
+
+        let secret = km_common::crypto::secret_box::SecretBox::new(
+            key_record.private_key.as_bytes().to_vec(),
+        );
+        let priv_key = km_common::crypto::PrivateKey::from_secret(secret);
+
+        let expected_shared_secret =
+            km_common::crypto::decaps(&priv_key, &client_enc).expect("decaps failed");
         assert_eq!(
-            recovered_shared_secret, expected_shared_secret,
+            recovered_shared_secret.as_slice(),
+            expected_shared_secret.as_slice(),
             "Recovered secret mismatch"
         );
 
         // 6. Verify that this secret correctly decrypts the original client ciphertext
         // using the shared secret directly instead of the private key.
         let decrypted_pt = km_common::crypto::hpke_open_with_shared_secret(
-            &recovered_shared_secret,
+            recovered_shared_secret.as_slice(),
             &client_ct,
             aad,
             &algo,
@@ -633,26 +641,29 @@ mod tests {
     fn test_decap_and_seal_decaps_fail() {
         // 1. Setup binding key
         let binding_kem_algo = KemAlgorithm::DhkemX25519HkdfSha256;
-        let (binding_pk, _) = km_common::crypto::generate_x25519_keypair(binding_kem_algo).unwrap();
+        let (binding_pk, _) = km_common::crypto::generate_keypair(binding_kem_algo).unwrap();
 
         // 2. Generate KEM key
         let mut uuid_bytes = [0u8; 16];
+        let mut kem_pubkey_bytes = [0u8; 32];
+        let mut kem_pubkey_len = 32;
         let algo = HpkeAlgorithm {
             kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
             kdf: KdfAlgorithm::HkdfSha256 as i32,
             aead: AeadAlgorithm::Aes256Gcm as i32,
         };
-        unsafe {
+        let res = unsafe {
             key_manager_generate_kem_keypair(
                 algo,
-                binding_pk.as_ptr(),
-                binding_pk.len(),
+                binding_pk.as_bytes().as_ptr(),
+                binding_pk.as_bytes().len(),
                 3600,
                 uuid_bytes.as_mut_ptr(),
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
-            );
-        }
+                kem_pubkey_bytes.as_mut_ptr(),
+                &mut kem_pubkey_len,
+            )
+        };
+        assert_eq!(res, 0);
 
         // 3. Call with invalid encapsulated key (wrong length for X25519)
         let mut out_enc_key = [0u8; 32];
@@ -681,7 +692,7 @@ mod tests {
     fn test_decap_and_seal_buffer_too_small() {
         // 1. Setup binding key
         let binding_kem_algo = KemAlgorithm::DhkemX25519HkdfSha256;
-        let (binding_pk, _) = km_common::crypto::generate_x25519_keypair(binding_kem_algo).unwrap();
+        let (binding_pk, _) = km_common::crypto::generate_keypair(binding_kem_algo).unwrap();
 
         // 2. Generate KEM key
         let mut uuid_bytes = [0u8; 16];
@@ -695,8 +706,8 @@ mod tests {
         unsafe {
             key_manager_generate_kem_keypair(
                 algo,
-                binding_pk.as_ptr(),
-                binding_pk.len(),
+                binding_pk.as_bytes().as_ptr(),
+                binding_pk.as_bytes().len(),
                 3600,
                 uuid_bytes.as_mut_ptr(),
                 kem_pubkey_bytes.as_mut_ptr(),
@@ -705,8 +716,10 @@ mod tests {
         }
 
         // 3. Generate valid client encapsulation
+        let kem_pub_key_obj = PublicKey::try_from(kem_pubkey_bytes.to_vec()).unwrap();
+        let pt = km_common::crypto::secret_box::SecretBox::new(b"secret".to_vec());
         let (client_enc, _) =
-            km_common::crypto::hpke_seal(&kem_pubkey_bytes, b"secret", b"", &algo).unwrap();
+            km_common::crypto::hpke_seal(&kem_pub_key_obj, &pt, b"", &algo).unwrap();
 
         // 4. Call with small output buffers
         let mut out_enc_key = [0u8; 31]; // Small

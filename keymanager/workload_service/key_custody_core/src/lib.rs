@@ -8,6 +8,7 @@ use std::sync::LazyLock;
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 use uuid::Uuid;
+use zeroize::Zeroize;
 
 static KEY_REGISTRY: LazyLock<KeyRegistry> = LazyLock::new(|| {
     let registry = KeyRegistry::default();
@@ -195,28 +196,28 @@ pub unsafe extern "C" fn key_manager_open(
     let ct_slice = unsafe { std::slice::from_raw_parts(ciphertext, ciphertext_len) };
     let aad_slice = unsafe { std::slice::from_raw_parts(aad, aad_len) };
 
-    match km_common::crypto::hpke_open(
-        record.private_key.as_bytes(),
-        enc_slice,
-        ct_slice,
-        aad_slice,
-        algo,
-    ) {
+    // Convert Vault bytes to SecretBox for active usage
+    let secret =
+        km_common::crypto::secret_box::SecretBox::new(record.private_key.as_bytes().to_vec());
+    let priv_key = km_common::crypto::PrivateKey::from_secret(secret);
+
+    match km_common::crypto::hpke_open(&priv_key, enc_slice, ct_slice, aad_slice, algo) {
         Ok(mut pt) => {
             unsafe {
                 let buf_len = *out_plaintext_len;
-                if buf_len < pt.len() {
-                    pt.zeroize();
+                if buf_len < pt.as_slice().len() {
                     return -2;
                 }
                 if out_plaintext.is_null() {
-                    pt.zeroize();
                     return -1;
                 }
-                std::ptr::copy_nonoverlapping(pt.as_ptr(), out_plaintext, pt.len());
-                *out_plaintext_len = pt.len();
+                std::ptr::copy_nonoverlapping(
+                    pt.as_slice().as_ptr(),
+                    out_plaintext,
+                    pt.as_slice().len(),
+                );
+                *out_plaintext_len = pt.as_slice().len();
             }
-            pt.zeroize();
             0
         }
         Err(_) => -3,
@@ -521,7 +522,10 @@ mod tests {
         // 2. Encrypt something for this key
         let pt = b"secret message";
         let aad = b"test aad";
-        let (enc, ct) = km_common::crypto::hpke_seal(&pubkey_bytes, pt, aad, &algo).unwrap();
+        let pub_key =
+            km_common::crypto::PublicKey::try_from(pubkey_bytes[..pubkey_len].to_vec()).unwrap();
+        let pt_box = km_common::crypto::secret_box::SecretBox::new(pt.to_vec());
+        let (enc, ct) = km_common::crypto::hpke_seal(&pub_key, &pt_box, aad, &algo).unwrap();
 
         // 3. Decrypt using key_manager_open
         let mut out_pt = [0u8; 64];
@@ -587,7 +591,10 @@ mod tests {
         }
 
         let pt = b"secret message";
-        let (enc, ct) = km_common::crypto::hpke_seal(&pubkey_bytes, pt, b"", &algo).unwrap();
+        let pub_key =
+            km_common::crypto::PublicKey::try_from(pubkey_bytes[..pubkey_len].to_vec()).unwrap();
+        let pt_box = km_common::crypto::secret_box::SecretBox::new(pt.to_vec());
+        let (enc, ct) = km_common::crypto::hpke_seal(&pub_key, &pt_box, b"", &algo).unwrap();
 
         let mut out_pt = [0u8; 5]; // smaller than pt
         let mut out_pt_len = out_pt.len();
