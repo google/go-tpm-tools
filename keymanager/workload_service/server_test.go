@@ -365,30 +365,29 @@ func newDecapsTestServer(kemUUID, bindingUUID uuid.UUID, ds *mockDecapSealer, op
 	return srv
 }
 
-func decapsRequestBody(kemUUID uuid.UUID, encKey, aad []byte) string {
-	body := fmt.Sprintf(`{"kemKeyHandle":"%s","encapsulatedKey":"%s"`,
-		kemUUID.String(), base64.StdEncoding.EncodeToString(encKey))
-	if aad != nil {
-		body += fmt.Sprintf(`,"aad":"%s"`, base64.StdEncoding.EncodeToString(aad))
-	}
-	body += "}"
-	return body
+func decapsRequestBody(kemUUID uuid.UUID, algo KemAlgorithm, encKey []byte) string {
+	return fmt.Sprintf(
+		`{"keyHandle":{"handle":"%s"},"ciphertext":{"algorithm":%d,"ciphertext":"%s"}}`,
+		kemUUID.String(),
+		algo,
+		base64.StdEncoding.EncodeToString(encKey),
+	)
 }
 
 func TestHandleDecapsSuccess(t *testing.T) {
 	kemUUID := uuid.New()
 	bindingUUID := uuid.New()
 	encKey := []byte("test-encapsulated-key-32-bytes!!")
-	aad := []byte("test-aad")
 	sealEnc := []byte("seal-encapsulated-key-32-bytes!!")
 	sealedCT := []byte("sealed-ciphertext-48-bytes-with-tag!!!!!!!!!!!!!!")
 	plaintext := []byte("shared-secret-32-bytes-value!!!!") // 32 bytes
+	expectedAAD := decapsAADContext(kemUUID, KemAlgorithmDHKEMX25519HKDFSHA256)
 
 	ds := &mockDecapSealer{sealEnc: sealEnc, sealedCT: sealedCT}
 	op := &mockOpener{plaintext: plaintext}
 	srv := newDecapsTestServer(kemUUID, bindingUUID, ds, op)
 
-	body := decapsRequestBody(kemUUID, encKey, aad)
+	body := decapsRequestBody(kemUUID, KemAlgorithmDHKEMX25519HKDFSHA256, encKey)
 	req := httptest.NewRequest(http.MethodPost, "/v1/keys:decaps", strings.NewReader(body))
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
@@ -401,8 +400,11 @@ func TestHandleDecapsSuccess(t *testing.T) {
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
+	if resp.SharedSecret.Algorithm != KemAlgorithmDHKEMX25519HKDFSHA256 {
+		t.Fatalf("expected sharedSecret.algorithm=%d, got %d", KemAlgorithmDHKEMX25519HKDFSHA256, resp.SharedSecret.Algorithm)
+	}
 
-	decoded, err := base64.StdEncoding.DecodeString(resp.SharedSecret)
+	decoded, err := base64.StdEncoding.DecodeString(resp.SharedSecret.Secret)
 	if err != nil {
 		t.Fatalf("failed to base64-decode shared secret: %v", err)
 	}
@@ -417,8 +419,8 @@ func TestHandleDecapsSuccess(t *testing.T) {
 	if string(ds.receivedEncKey) != string(encKey) {
 		t.Fatalf("expected DecapSealer to receive enc key %q, got %q", encKey, ds.receivedEncKey)
 	}
-	if string(ds.receivedAAD) != string(aad) {
-		t.Fatalf("expected DecapSealer to receive AAD %q, got %q", aad, ds.receivedAAD)
+	if string(ds.receivedAAD) != string(expectedAAD) {
+		t.Fatalf("expected DecapSealer to receive AAD %q, got %q", expectedAAD, ds.receivedAAD)
 	}
 
 	// Verify Opener received correct args.
@@ -431,8 +433,8 @@ func TestHandleDecapsSuccess(t *testing.T) {
 	if string(op.receivedCT) != string(sealedCT) {
 		t.Fatalf("expected Opener to receive CT %q, got %q", sealedCT, op.receivedCT)
 	}
-	if string(op.receivedAAD) != string(aad) {
-		t.Fatalf("expected Opener to receive AAD %q, got %q", aad, op.receivedAAD)
+	if string(op.receivedAAD) != string(expectedAAD) {
+		t.Fatalf("expected Opener to receive AAD %q, got %q", expectedAAD, op.receivedAAD)
 	}
 }
 
@@ -478,7 +480,7 @@ func TestHandleDecapsInvalidKEMUUID(t *testing.T) {
 		noopOpener(),
 	)
 
-	body := `{"kemKeyHandle":"not-a-uuid","encapsulatedKey":"AAAA"}`
+	body := `{"keyHandle":{"handle":"not-a-uuid"},"ciphertext":{"algorithm":1,"ciphertext":"AAAA"}}`
 	req := httptest.NewRequest(http.MethodPost, "/v1/keys:decaps", strings.NewReader(body))
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
@@ -498,7 +500,7 @@ func TestHandleDecapsKEMKeyNotFound(t *testing.T) {
 	)
 	// Don't populate kemToBindingMap.
 
-	body := decapsRequestBody(kemUUID, []byte("enc-key"), nil)
+	body := decapsRequestBody(kemUUID, KemAlgorithmDHKEMX25519HKDFSHA256, []byte("enc-key"))
 	req := httptest.NewRequest(http.MethodPost, "/v1/keys:decaps", strings.NewReader(body))
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
@@ -515,7 +517,7 @@ func TestHandleDecapsDecapSealError(t *testing.T) {
 	ds := &mockDecapSealer{err: fmt.Errorf("decap FFI error")}
 	srv := newDecapsTestServer(kemUUID, bindingUUID, ds, noopOpener())
 
-	body := decapsRequestBody(kemUUID, []byte("enc-key"), nil)
+	body := decapsRequestBody(kemUUID, KemAlgorithmDHKEMX25519HKDFSHA256, []byte("enc-key"))
 	req := httptest.NewRequest(http.MethodPost, "/v1/keys:decaps", strings.NewReader(body))
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
@@ -533,12 +535,27 @@ func TestHandleDecapsOpenError(t *testing.T) {
 	op := &mockOpener{err: fmt.Errorf("open FFI error")}
 	srv := newDecapsTestServer(kemUUID, bindingUUID, ds, op)
 
-	body := decapsRequestBody(kemUUID, []byte("enc-key"), nil)
+	body := decapsRequestBody(kemUUID, KemAlgorithmDHKEMX25519HKDFSHA256, []byte("enc-key"))
 	req := httptest.NewRequest(http.MethodPost, "/v1/keys:decaps", strings.NewReader(body))
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("expected status 500, got %d", w.Code)
+	}
+}
+
+func TestHandleDecapsUnsupportedAlgorithm(t *testing.T) {
+	kemUUID := uuid.New()
+	bindingUUID := uuid.New()
+	srv := newDecapsTestServer(kemUUID, bindingUUID, noopDecapSealer(), noopOpener())
+
+	body := decapsRequestBody(kemUUID, KemAlgorithm(999), []byte("enc-key"))
+	req := httptest.NewRequest(http.MethodPost, "/v1/keys:decaps", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", w.Code)
 	}
 }

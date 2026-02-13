@@ -86,16 +86,27 @@ type Opener interface {
 	Open(bindingUUID uuid.UUID, enc, ciphertext, aad []byte) ([]byte, error)
 }
 
-// DecapsRequest is the JSON body for POST /v1/keys:decaps.
+// KemCiphertext carries raw encapsulated key bytes and the KEM algorithm.
+type KemCiphertext struct {
+	Algorithm  KemAlgorithm `json:"algorithm"`
+	Ciphertext string       `json:"ciphertext"` // base64-encoded raw bytes
+}
+
+// DecapsRequest is the JSON body for POST /keys:decaps.
 type DecapsRequest struct {
-	KEMKeyHandle    string `json:"kemKeyHandle"`
-	EncapsulatedKey string `json:"encapsulatedKey"` // base64-encoded
-	AAD             string `json:"aad,omitempty"`   // base64-encoded, optional
+	KeyHandle  KeyHandle     `json:"keyHandle"`
+	Ciphertext KemCiphertext `json:"ciphertext"`
+}
+
+// KemSharedSecret is the Decaps result payload.
+type KemSharedSecret struct {
+	Algorithm KemAlgorithm `json:"algorithm"`
+	Secret    string       `json:"secret"` // base64-encoded raw bytes
 }
 
 // DecapsResponse is returned by POST /v1/keys:decaps.
 type DecapsResponse struct {
-	SharedSecret string `json:"sharedSecret"` // base64-encoded
+	SharedSecret KemSharedSecret `json:"sharedSecret"`
 }
 
 // Server is the WSD HTTP server.
@@ -158,6 +169,11 @@ func (s *Server) LookupBindingUUID(kemUUID uuid.UUID) (uuid.UUID, bool) {
 	return id, ok
 }
 
+func decapsAADContext(kemUUID uuid.UUID, algorithm KemAlgorithm) []byte {
+	// Bind the KPS->WSD transport ciphertext to this decapsulation context.
+	return []byte(fmt.Sprintf("wsd:keys:decaps:v1:%d:%s", algorithm, kemUUID))
+}
+
 func (s *Server) handleDecaps(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -170,26 +186,27 @@ func (s *Server) handleDecaps(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	kemUUID, err := uuid.Parse(req.KEMKeyHandle)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("invalid kemKeyHandle: %v", err), http.StatusBadRequest)
+	if req.Ciphertext.Algorithm != KemAlgorithmDHKEMX25519HKDFSHA256 {
+		http.Error(w, fmt.Sprintf("unsupported ciphertext algorithm: %d", req.Ciphertext.Algorithm), http.StatusBadRequest)
 		return
 	}
 
-	encapsulatedKey, err := base64.StdEncoding.DecodeString(req.EncapsulatedKey)
+	kemUUID, err := uuid.Parse(req.KeyHandle.Handle)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("invalid encapsulatedKey base64: %v", err), http.StatusBadRequest)
+		http.Error(w, fmt.Sprintf("invalid keyHandle.handle: %v", err), http.StatusBadRequest)
 		return
 	}
 
-	var aad []byte
-	if req.AAD != "" {
-		aad, err = base64.StdEncoding.DecodeString(req.AAD)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("invalid aad base64: %v", err), http.StatusBadRequest)
-			return
-		}
+	encapsulatedKey, err := base64.StdEncoding.DecodeString(req.Ciphertext.Ciphertext)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("invalid ciphertext.ciphertext base64: %v", err), http.StatusBadRequest)
+		return
 	}
+	if len(encapsulatedKey) == 0 {
+		http.Error(w, "ciphertext.ciphertext must not be empty", http.StatusBadRequest)
+		return
+	}
+	aad := decapsAADContext(kemUUID, req.Ciphertext.Algorithm)
 
 	// Step 1: Look up the binding UUID for this KEM key.
 	bindingUUID, ok := s.LookupBindingUUID(kemUUID)
@@ -214,7 +231,10 @@ func (s *Server) handleDecaps(w http.ResponseWriter, r *http.Request) {
 
 	// Step 4: Return the shared secret.
 	resp := DecapsResponse{
-		SharedSecret: base64.StdEncoding.EncodeToString(plaintext),
+		SharedSecret: KemSharedSecret{
+			Algorithm: req.Ciphertext.Algorithm,
+			Secret:    base64.StdEncoding.EncodeToString(plaintext),
+		},
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
