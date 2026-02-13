@@ -143,16 +143,8 @@ fn labeled_expand(
     suite_id: &[u8],
     len: u16,
 ) -> Result<SecretBox, Error> {
-    let labeled_info = SecretBox::new(
-        [
-            &len.to_be_bytes() as &[u8],
-            b"HPKE-v1",
-            suite_id,
-            label,
-            info,
-        ]
-        .concat(),
-    );
+    let labeled_info =
+        SecretBox::new([&len.to_be_bytes()[..], b"HPKE-v1", suite_id, label, info].concat());
 
     let mut result = vec![0u8; len as usize];
     prk.expand_into(labeled_info.as_slice(), &mut result)
