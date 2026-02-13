@@ -1,15 +1,36 @@
 use km_common::algorithms::HpkeAlgorithm;
-use km_common::key_types::{KeyRecord, KeyRegistry, KeySpec};
+use km_common::crypto::PublicKey;
+use km_common::key_types::{KeyRegistry, KeySpec};
 use std::sync::LazyLock;
 
 static KEY_REGISTRY: LazyLock<KeyRegistry> = LazyLock::new(KeyRegistry::default);
 
-/// Creates a new binding key record with the specified HPKE algorithm and expiration.
-fn create_binding_key(algo: HpkeAlgorithm, expiry_secs: u64) -> Result<KeyRecord, i32> {
-    km_common::key_types::create_key_record(algo, expiry_secs, |algo, pub_key| KeySpec::Binding {
-        algo,
-        binding_public_key: pub_key,
-    })
+/// Internal function to generate a binding keypair and store it in the registry.
+fn generate_binding_keypair_internal(
+    algo: HpkeAlgorithm,
+    expiry_secs: u64,
+) -> Result<(uuid::Uuid, PublicKey), i32> {
+    let result = km_common::key_types::create_key_record(algo, expiry_secs, |algo, pub_key| {
+        KeySpec::Binding {
+            algo,
+            binding_public_key: pub_key,
+        }
+    });
+
+    match result {
+        Ok(record) => {
+            let id = record.meta.id;
+            let pubkey = match &record.meta.spec {
+                KeySpec::Binding {
+                    binding_public_key, ..
+                } => binding_public_key.clone(),
+                _ => return Err(-1),
+            };
+            KEY_REGISTRY.add_key(record);
+            Ok((id, pubkey))
+        }
+        Err(e) => Err(e),
+    }
 }
 
 /// Generates a new binding HPKE keypair.
@@ -32,7 +53,7 @@ fn create_binding_key(algo: HpkeAlgorithm, expiry_secs: u64) -> Result<KeyRecord
 /// ## Returns
 /// * `0` on success.
 /// * `-1` if an error occurred during key generation.
-/// * `-2` if the `out_pubkey` buffer is too small.
+/// * `-2` if the `out_pubkey` buffer size does not match the key size.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn key_manager_generate_binding_keypair(
     algo: HpkeAlgorithm,
@@ -41,33 +62,26 @@ pub unsafe extern "C" fn key_manager_generate_binding_keypair(
     out_pubkey: *mut u8,
     out_pubkey_len: *mut usize,
 ) -> i32 {
-    match create_binding_key(algo, expiry_secs) {
-        Ok(record) => {
-            let id = record.meta.id;
-            let pubkey = match &record.meta.spec {
-                KeySpec::Binding {
-                    binding_public_key, ..
-                } => binding_public_key.clone(),
-                _ => return -1,
-            };
-            KEY_REGISTRY.add_key(record);
-            unsafe {
-                if out_pubkey.is_null() || out_pubkey_len.is_null() || out_uuid.is_null() {
-                    return -1;
-                }
+    // Safety Invariant Checks
+    if out_pubkey.is_null() || out_pubkey_len.is_null() || out_uuid.is_null() {
+        return -1;
+    }
 
-                std::ptr::copy_nonoverlapping(id.as_bytes().as_ptr(), out_uuid, 16);
+    // Call Safe Internal Function
+    match generate_binding_keypair_internal(algo, expiry_secs) {
+        Ok((id, pubkey)) => {
+            // Handle Output (FFI boundary)
+            unsafe {
                 let buf_len = *out_pubkey_len;
-                if buf_len < pubkey.as_bytes().len() {
+                if buf_len != pubkey.as_bytes().len() {
                     return -2;
                 }
-
+                std::ptr::copy_nonoverlapping(id.as_bytes().as_ptr(), out_uuid, 16);
                 std::ptr::copy_nonoverlapping(
                     pubkey.as_bytes().as_ptr(),
                     out_pubkey,
                     pubkey.as_bytes().len(),
                 );
-                *out_pubkey_len = pubkey.as_bytes().len();
             }
             0 // Success
         }
@@ -81,26 +95,26 @@ mod tests {
     use km_common::algorithms::{AeadAlgorithm, KdfAlgorithm, KemAlgorithm};
 
     #[test]
-    fn test_create_binding_key_success_and_zeroization() {
+    fn test_create_binding_keypair_internal_success() {
         let algo = HpkeAlgorithm {
             kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
             kdf: KdfAlgorithm::HkdfSha256 as i32,
             aead: AeadAlgorithm::Aes256Gcm as i32,
         };
 
-        let result = create_binding_key(algo, 3600);
+        let result = generate_binding_keypair_internal(algo, 3600);
         assert!(result.is_ok());
 
-        let record = result.unwrap();
+        let (id, _) = result.unwrap();
 
         // Verify UUID is present
-        assert!(!record.meta.id.is_nil());
+        assert!(!id.is_nil());
     }
 
     #[test]
     fn test_generate_binding_keypair_ffi_success() {
         let mut uuid_bytes = [0u8; 16];
-        let mut pubkey_bytes = [0u8; 64];
+        let mut pubkey_bytes = [0u8; 32];
         let mut pubkey_len: usize = pubkey_bytes.len();
         let algo = HpkeAlgorithm {
             kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
@@ -127,7 +141,7 @@ mod tests {
     #[test]
     fn test_generate_binding_keypair_invalid_algo() {
         let mut uuid_bytes = [0u8; 16];
-        let mut pubkey_bytes = [0u8; 64];
+        let mut pubkey_bytes = [0u8; 32];
         let mut pubkey_len: usize = pubkey_bytes.len();
         let algo = HpkeAlgorithm {
             kem: 999, // Invalid KEM
@@ -169,5 +183,31 @@ mod tests {
         };
 
         assert_eq!(result, -1);
+    }
+
+    #[test]
+    fn test_generate_binding_keypair_invalid_pubkey_len() {
+        let mut uuid_bytes = [0u8; 16];
+        let mut pubkey_bytes = [0u8; 64];
+        let mut pubkey_len: usize = pubkey_bytes.len();
+        let algo = HpkeAlgorithm {
+            kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
+            kdf: KdfAlgorithm::HkdfSha256 as i32,
+            aead: AeadAlgorithm::Aes256Gcm as i32,
+        };
+
+        let result = unsafe {
+            key_manager_generate_binding_keypair(
+                algo,
+                3600,
+                uuid_bytes.as_mut_ptr(),
+                pubkey_bytes.as_mut_ptr(),
+                &mut pubkey_len,
+            )
+        };
+
+        assert_eq!(result, -2);
+        assert_eq!(uuid_bytes, [0u8; 16]); // Should remain untouched/zero
+        assert_eq!(&pubkey_bytes[..32], &[0u8; 32]); // Should remain untouched/zero
     }
 }
