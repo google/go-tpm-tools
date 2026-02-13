@@ -1,5 +1,8 @@
 ## Example Dev Workflow
 
+> [!NOTE]
+> The `teeserver` binary is only supported on Linux OS due to internal dependencies.
+
 1. **Set `launchSpec.Experiments.EnableAttestationEvidence` to `true` in `cmd/teeserver/serve.go`**
 
 2. **Build the `teeserver` binary from the repository root:**

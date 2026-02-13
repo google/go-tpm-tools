@@ -1,3 +1,5 @@
+//go:build linux
+
 // Package main implements the teeserver binary.
 package main
 
@@ -29,7 +31,7 @@ var evidenceCmd = &cobra.Command{
 	Short:         "Get VM attestation evidence from the TEE server",
 	SilenceUsage:  true,
 	SilenceErrors: true, // we handle printing the error ourselves
-	RunE: func(_ *cobra.Command, args []string) error {
+	RunE: func(_ *cobra.Command, _ []string) error {
 		if challengeString == "" {
 			err := errors.New("--challenge is required")
 			fmt.Fprintln(os.Stderr, "Error:", err)
