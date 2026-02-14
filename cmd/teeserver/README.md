@@ -1,3 +1,8 @@
+# teeserver
+
+> [!WARNING]
+> The `teeserver` binary is for development and testing purposes only. It is not intended for production environments.
+
 ## Example Dev Workflow
 
 > [!NOTE]

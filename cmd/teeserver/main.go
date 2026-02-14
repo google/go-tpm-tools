@@ -19,8 +19,8 @@ func init() {
 
 var rootCmd = &cobra.Command{
 	Use:   "teeserver",
-	Short: "Standalone TEE server and client",
-	Long:  `A standalone binary to run a TEE server or query its endpoints.`,
+	Short: "Standalone TEE server and client (development only)",
+	Long:  `A standalone binary to run a TEE server or query its endpoints. NOTE: This binary is intended for development and testing purposes only.`,
 }
 
 func main() {
