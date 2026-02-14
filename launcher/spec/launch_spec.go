@@ -93,6 +93,7 @@ const (
 	addedCaps                  = "tee-added-capabilities"
 	cgroupNS                   = "tee-cgroup-ns"
 	gcaServiceEnv              = "gca-service-env"
+	installGpuDriver           = "tee-install-gpu-driver"
 )
 
 const (
@@ -138,6 +139,7 @@ type LaunchSpec struct {
 	DevShmSize        int64
 	AddedCapabilities []string
 	CgroupNamespace   bool
+	InstallGpuDriver  bool
 }
 
 // UnmarshalJSON unmarshals an instance attributes list in JSON format from the metadata
@@ -153,6 +155,12 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 		var err error
 		if s.FakeVerifierEnabled, err = strconv.ParseBool(val); err != nil {
 			return fmt.Errorf("invalid value for %v (not a boolean): %w", fakeVerifierKey, err)
+		}
+	}
+
+	if val, ok := unmarshaledMap[installGpuDriver]; ok && val != "" {
+		if boolValue, err := strconv.ParseBool(val); err == nil {
+			s.InstallGpuDriver = boolValue
 		}
 	}
 
@@ -345,6 +353,10 @@ func GetLaunchSpec(ctx context.Context, logger logging.Logger, client *metadata.
 	}
 	if len(errs) != 0 {
 		return LaunchSpec{}, fmt.Errorf("failed to validate mounts: %v", errors.Join(errs...))
+	}
+
+	if !(spec.Experiments.EnableB200DriverInstallation || spec.Experiments.EnableH100DriverInstallation) && spec.InstallGpuDriver {
+		return LaunchSpec{}, fmt.Errorf("GPU Driver installation is not supported")
 	}
 
 	if err := validateMemorySizeKb(uint64(spec.DevShmSize)); err != nil {

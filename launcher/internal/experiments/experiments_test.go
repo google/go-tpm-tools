@@ -12,10 +12,18 @@ func TestExperiments(t *testing.T) {
 		expectedExps Experiments
 	}{
 		{
-			input: "{\"EnableTestFeatureForImage\":true,\"EnableItaVerifier\":true}",
+			input: "{\"EnableH100DriverInstallation\":true,\"EnableB200DriverInstallation\":true,\"EnableTestFeatureForImage\":true,\"EnableItaVerifier\":true}",
 			expectedExps: Experiments{
-				EnableTestFeatureForImage: true,
-				EnableItaVerifier:         true,
+				EnableTestFeatureForImage:    true,
+				EnableItaVerifier:            true,
+				EnableB200DriverInstallation: true,
+				EnableH100DriverInstallation: true,
+			},
+		},
+		{
+			input: "{\"EnableB200DriverInstallation\":true}",
+			expectedExps: Experiments{
+				EnableB200DriverInstallation: true,
 			},
 		},
 		{

@@ -6,7 +6,7 @@ substitutions:
   '_OUTPUT_IMAGE_SUFFIX': ''
   '_OUTPUT_IMAGE_FAMILY': ''
   '_BUCKET_NAME': '${PROJECT_ID}_cloudbuild'
-  '_VG_BASE_IMAGE': 'cos-125-19216-104-89'
+  '_VG_BASE_IMAGE': 'cos-125-19216-104-149'
 
 steps:
 # determine the base image
