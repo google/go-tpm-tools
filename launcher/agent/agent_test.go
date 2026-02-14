@@ -645,6 +645,9 @@ func measureFakeEvents(attestAgent AttestationAgent) error {
 	if err := attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.OverrideArgType, EventContent: []byte(arg)}); err != nil {
 		return err
 	}
+	if err := attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.GPUDeviceAttestationBindingType, EventContent: []byte(arg)}); err != nil {
+		return err
+	}
 	return nil
 }
 
