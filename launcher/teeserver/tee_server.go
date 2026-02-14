@@ -58,10 +58,6 @@ type TeeServer struct {
 	netListener net.Listener
 }
 
-const (
-	audienceSTS = "https://sts.googleapis.com"
-)
-
 // New takes in a socket and start to listen to it, and create a server
 func New(ctx context.Context, unixSock string, a agent.AttestationAgent, logger logging.Logger, launchSpec spec.LaunchSpec, clients AttestClients) (*TeeServer, error) {
 	var err error
@@ -205,7 +201,9 @@ func (a *attestHandler) attest(w http.ResponseWriter, r *http.Request, client ve
 
 		if tokenOptions.Audience == "" {
 
-			tokenOptions.Audience = audienceSTS
+			err := fmt.Errorf("use GET request for the default identity token")
+			a.logAndWriteHTTPError(w, http.StatusBadRequest, err)
+			return
 		}
 
 		if tokenOptions.TokenType == "" {
