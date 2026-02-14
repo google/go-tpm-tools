@@ -5,7 +5,7 @@ use bssl_crypto::{hkdf, hpke, x25519};
 
 /// X25519-based public key implementation.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct X25519PublicKey([u8; 32]);
+pub struct X25519PublicKey(pub(crate) [u8; 32]);
 
 impl AsRef<[u8]> for X25519PublicKey {
     fn as_ref(&self) -> &[u8] {
@@ -54,6 +54,12 @@ impl PublicKeyOps for X25519PublicKey {
 
 /// X25519-based private key implementation.
 pub struct X25519PrivateKey(SecretBox);
+
+impl From<X25519PrivateKey> for SecretBox {
+    fn from(key: X25519PrivateKey) -> SecretBox {
+        key.0
+    }
+}
 
 impl PrivateKeyOps for X25519PrivateKey {
     /// Decapsulates the shared secret from an encapsulated key.
