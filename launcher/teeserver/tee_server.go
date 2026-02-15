@@ -200,6 +200,7 @@ func (a *attestHandler) attest(w http.ResponseWriter, r *http.Request, client ve
 		}
 
 		if tokenOptions.Audience == "" {
+
 			err := fmt.Errorf("use GET request for the default identity token")
 			a.logAndWriteHTTPError(w, http.StatusBadRequest, err)
 			return

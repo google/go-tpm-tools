@@ -50,7 +50,34 @@ type TDXCCELQuote struct {
 // DeviceAttestationReport represents an attestation report from a device.
 // TODO: Define this.
 type DeviceAttestationReport struct {
+	NvidiaReport *NvidiaAttestationReport `json:"nvidia_report,omitempty"`
 }
+
+// NVIDIAGPUAttestation holds the collection of GPU devices being attested.
+type NVIDIAGPUAttestation struct {
+	CcFeature IsNvidiaCcFeature `json:"cc_feature"`
+}
+
+type IsNvidiaCcFeature interface {
+	isNvidiaCcFeature()
+}
+
+// SinglePassthroughAttestation is a placeholder for the 'spt' field (tag 1).
+type SinglePassthroughAttestation struct{}
+
+func (*SinglePassthroughAttestation) isNvidiaCcFeature() {}
+
+// ProtectedPcieAttestation is a placeholder for the 'ppcie' field (tag 2).
+type ProtectedPcieAttestation struct{}
+
+func (*ProtectedPcieAttestation) isNvidiaCcFeature() {}
+
+// MultiGpuSecurePassthroughAttestation mirrors the 'mpt' field (tag 3).
+type MultiGpuSecurePassthroughAttestation struct {
+	GpuQuotes []GpuInfo `json:"gpu_quotes"`
+}
+
+func (*MultiGpuSecurePassthroughAttestation) isNvidiaCcFeature() {}
 
 // TPMAttestationEndorsement represents the endorsement of a TPM attestation.
 type TPMAttestationEndorsement struct {
@@ -103,4 +130,14 @@ type SignedQuote struct {
 	PCRValues     map[uint32][]byte `json:"pcr_values"`     // Raw binary values of each PCR being quoted.
 	TPMSAttest    []byte            `json:"tpms_attest"`    // Contains a TPMS_QUOTE_INFO.
 	TPMTSignature []byte            `json:"tpmt_signature"` // Contains the signature.
+}
+
+// GPUDevice contains the specific hardware identity and evidence for a single GPU.
+type GpuInfo struct {
+	DeviceUuid                     string `json:"device_uuid"`
+	DriverVersion                  string `json:"driver_version"`
+	VbiosVersion                   string `json:"vbios_version"`
+	GpuArchitectureType            string `json:"gpu_architecture_type"`
+	RawAttestationCertificateChain []byte `json:"raw_attestation_certificate_chain"`
+	RawAttestationReport           []byte `json:"raw_attestation_report"`
 }
