@@ -1,0 +1,37 @@
+syntax = "proto3";
+
+package keymanager.workload_service.v1;
+
+option go_package = "github.com/google/go-tpm-tools/keymanager/workload_service/proto;workloadservicepb";
+
+// Supported KEM algorithms for decapsulation.
+enum KemAlgorithm {
+  KEM_ALGORITHM_UNSPECIFIED = 0;
+  DHKEM_X25519_HKDF_SHA256 = 1;
+}
+
+// Used to refer to key instances held by daemons.
+message KeyHandle {
+  string handle = 1;
+}
+
+// The results of an Encaps operation.
+message KemCiphertext {
+  KemAlgorithm algorithm = 1;
+  bytes ciphertext = 2;  // `Nenc` bytes long.
+}
+
+// The results of a Decaps operation.
+message KemSharedSecret {
+  KemAlgorithm algorithm = 1;
+  bytes secret = 2;  // `Nsecret` bytes long.
+}
+
+message DecapsRequest {
+  KeyHandle key_handle = 1;
+  KemCiphertext ciphertext = 2;
+}
+
+message DecapsResponse {
+  KemSharedSecret shared_secret = 1;
+}

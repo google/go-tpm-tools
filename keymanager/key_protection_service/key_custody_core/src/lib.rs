@@ -163,8 +163,8 @@ pub unsafe extern "C" fn key_manager_decap_and_seal(
     };
 
     let key_record = match KEY_REGISTRY.get_key(&uuid) {
-        Some(record) => record,
-        None => return -1,
+        Ok(record) => record,
+        Err(_) => return -1,
     };
 
     let (hpke_algo, binding_public_key) = match &key_record.meta.spec {
@@ -184,9 +184,14 @@ pub unsafe extern "C" fn key_manager_decap_and_seal(
     let enc_key_slice = unsafe { slice::from_raw_parts(encapsulated_key, encapsulated_key_len) };
 
     // Decapsulate
-    let mut shared_secret = match km_common::crypto::decaps(&key_record.private_key, enc_key_slice)
+    let private_key = match km_common::crypto::PrivateKey::try_from(key_record.private_key.as_bytes().to_vec()) {
+        Ok(pk) => pk,
+        Err(_) => return -3,
+    };
+
+    let mut shared_secret = match km_common::crypto::decaps(&private_key, enc_key_slice)
     {
-        Ok(s) => s,
+        Ok(secret) => secret,
         Err(_) => return -3,
     };
 
@@ -198,10 +203,10 @@ pub unsafe extern "C" fn key_manager_decap_and_seal(
 
     // Seal
     let (new_enc_key, sealed_ciphertext) = match km_common::crypto::hpke_seal(
-        binding_public_key,
+        &binding_public_key,
         &shared_secret,
         aad_slice,
-        hpke_algo,
+        &hpke_algo,
     ) {
         Ok(res) => res,
         Err(_) => {
@@ -427,21 +432,22 @@ mod tests {
     fn test_destroy_kem_key_success() {
         let binding_pubkey = [1u8; 32];
         let mut uuid_bytes = [0u8; 16];
-        let algo = HpkeAlgorithm {
+        let algo = KmHpkeAlgorithm {
             kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
             kdf: KdfAlgorithm::HkdfSha256 as i32,
             aead: AeadAlgorithm::Aes256Gcm as i32,
         };
 
         unsafe {
+            let mut pubkey_bytes = [0u8; 32];
             key_manager_generate_kem_keypair(
                 algo,
                 binding_pubkey.as_ptr(),
                 binding_pubkey.len(),
                 3600,
                 uuid_bytes.as_mut_ptr(),
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
+                pubkey_bytes.as_mut_ptr(),
+                32,
             );
         }
 
@@ -467,6 +473,38 @@ mod tests {
     }
 
     #[test]
+    fn test_key_manager_generate_kem_keypair() {
+        // 1. Setup binding key
+        let binding_kem_algo = KemAlgorithm::DhkemX25519HkdfSha256;
+        let (binding_pk, _) = km_common::crypto::generate_x25519_keypair(binding_kem_algo).unwrap();
+
+        // 2. Call generate_kem_keypair
+        let mut uuid_bytes = [0u8; 16];
+        let mut kem_pubkey_bytes = [0u8; 32];
+        let kem_pubkey_len = 32;
+        let algo = KmHpkeAlgorithm {
+            kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
+            kdf: KdfAlgorithm::HkdfSha256 as i32,
+            aead: AeadAlgorithm::Aes256Gcm as i32,
+        };
+        let result = unsafe {
+            key_manager_generate_kem_keypair(
+                algo,
+                binding_pk.as_ptr(),
+                binding_pk.len(),
+                3600,
+                uuid_bytes.as_mut_ptr(),
+                kem_pubkey_bytes.as_mut_ptr(),
+                kem_pubkey_len,
+            )
+        };
+
+        assert_eq!(result, 0);
+        assert_ne!(uuid_bytes, [0u8; 16]);
+        assert_ne!(kem_pubkey_bytes, [0u8; 32]);
+    }
+
+    #[test]
     fn test_decap_and_seal_success() {
         // 1. Setup binding key (receiver for seal)
         let binding_kem_algo = KemAlgorithm::DhkemX25519HkdfSha256;
@@ -476,12 +514,13 @@ mod tests {
         // 2. Generate KEM key in registry
         let mut uuid_bytes = [0u8; 16];
         let mut kem_pubkey_bytes = [0u8; 32];
-        let mut kem_pubkey_len = 32;
-        let algo = HpkeAlgorithm {
+        let kem_pubkey_len = 32;
+        let algo = KmHpkeAlgorithm {
             kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
             kdf: KdfAlgorithm::HkdfSha256 as i32,
             aead: AeadAlgorithm::Aes256Gcm as i32,
         };
+        let hpke_algo: HpkeAlgorithm = algo.into();
         unsafe {
             key_manager_generate_kem_keypair(
                 algo,
@@ -490,7 +529,7 @@ mod tests {
                 3600,
                 uuid_bytes.as_mut_ptr(),
                 kem_pubkey_bytes.as_mut_ptr(),
-                &mut kem_pubkey_len,
+                kem_pubkey_len,
             );
         }
 
@@ -499,7 +538,7 @@ mod tests {
         let aad = b"test_aad";
         // We use `hpke_seal_raw` to act as the client to generate a valid encapsulation
         let (client_enc, client_ct) =
-            km_common::crypto::hpke_seal_raw(&kem_pubkey_bytes, pt, aad, &algo).unwrap();
+            km_common::crypto::hpke_seal_raw(&kem_pubkey_bytes, pt, aad, &hpke_algo).unwrap();
 
         // Step 3: Call `decap_and_seal`.
         let mut out_enc_key = [0u8; 32];
@@ -524,32 +563,33 @@ mod tests {
         assert_eq!(result, 0);
 
         // 4. Verify we can decrypt the result using binding_sk
+        let binding_sk_priv = km_common::crypto::PrivateKey::try_from(binding_sk.clone()).unwrap();
         let recovered_shared_secret =
-            km_common::crypto::hpke_open(&binding_sk, &out_enc_key, &out_ct, aad, &algo)
+            km_common::crypto::hpke_open(&binding_sk_priv, &out_enc_key, &out_ct, aad, &hpke_algo)
                 .expect("Failed to decrypt the resealed secret");
 
-        assert_eq!(recovered_shared_secret.len(), 32);
+        assert_eq!(recovered_shared_secret.as_slice().len(), 32);
 
         // 5. Verify the recovered secret matches what decaps would produce
         let key_record = KEY_REGISTRY.get_key(&Uuid::from_bytes(uuid_bytes)).unwrap();
+        let private_key = km_common::crypto::PrivateKey::try_from(key_record.private_key.as_bytes().to_vec()).unwrap();
         let expected_shared_secret = km_common::crypto::decaps(
-            key_record.private_key.as_bytes(),
+            &private_key,
             &client_enc,
-            KemAlgorithm::DhkemX25519HkdfSha256,
         )
         .expect("decaps failed");
         assert_eq!(
-            recovered_shared_secret, expected_shared_secret,
+            recovered_shared_secret.as_slice(), expected_shared_secret.as_slice(),
             "Recovered secret mismatch"
         );
 
         // 6. Verify that this secret correctly decrypts the original client ciphertext
         // using the shared secret directly instead of the private key.
         let decrypted_pt = km_common::crypto::hpke_open_with_shared_secret(
-            &recovered_shared_secret,
+            recovered_shared_secret.as_slice(),
             &client_ct,
             aad,
-            &algo,
+            &hpke_algo,
         )
         .expect("Failed to decrypt client message with shared secret");
 
@@ -610,11 +650,12 @@ mod tests {
 
         // 2. Generate KEM key
         let mut uuid_bytes = [0u8; 16];
-        let algo = HpkeAlgorithm {
+        let algo = KmHpkeAlgorithm {
             kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
             kdf: KdfAlgorithm::HkdfSha256 as i32,
             aead: AeadAlgorithm::Aes256Gcm as i32,
         };
+        let mut kem_pubkey_bytes = [0u8; 32];
         unsafe {
             key_manager_generate_kem_keypair(
                 algo,
@@ -622,8 +663,8 @@ mod tests {
                 binding_pk.len(),
                 3600,
                 uuid_bytes.as_mut_ptr(),
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
+                kem_pubkey_bytes.as_mut_ptr(),
+                32,
             );
         }
 
@@ -659,8 +700,14 @@ mod tests {
         // 2. Generate KEM key
         let mut uuid_bytes = [0u8; 16];
         let mut kem_pubkey_bytes = [0u8; 32];
+        let mut kem_pubkey_bytes = [0u8; 32];
         let mut kem_pubkey_len = 32;
-        let algo = HpkeAlgorithm {
+        let algo = KmHpkeAlgorithm {
+            kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
+            kdf: KdfAlgorithm::HkdfSha256 as i32,
+            aead: AeadAlgorithm::Aes256Gcm as i32,
+        };
+        let client_algo = HpkeAlgorithm {
             kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
             kdf: KdfAlgorithm::HkdfSha256 as i32,
             aead: AeadAlgorithm::Aes256Gcm as i32,
@@ -673,13 +720,13 @@ mod tests {
                 3600,
                 uuid_bytes.as_mut_ptr(),
                 kem_pubkey_bytes.as_mut_ptr(),
-                &mut kem_pubkey_len,
+                kem_pubkey_len,
             );
         }
 
         // 3. Generate valid client encapsulation
         let (client_enc, _) =
-            km_common::crypto::hpke_seal_raw(&kem_pubkey_bytes, b"secret", b"", &algo).unwrap();
+            km_common::crypto::hpke_seal_raw(&kem_pubkey_bytes, b"secret", b"", &client_algo).unwrap();
 
         // 4. Call with small output buffers
         let mut out_enc_key = [0u8; 31]; // Small

@@ -1,10 +1,11 @@
 // Package workload_service implements the Key Orchestration Layer (KOL) for the
 // Workload Service Daemon (WSD). It provides an HTTP server on a unix socket
-// exposing key generation endpoints.
+// exposing key management endpoints.
 package workload_service
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -74,10 +75,46 @@ type GenerateKemResponse struct {
 	KeyHandle KeyHandle `json:"key_handle"`
 }
 
+// DecapSealer decapsulates a shared secret and reseals it with the binding key
+// via the KPS KCC FFI.
+type DecapSealer interface {
+	DecapAndSeal(kemUUID uuid.UUID, encapsulatedKey, aad []byte) (sealEnc []byte, sealedCT []byte, err error)
+}
+
+// Opener decrypts a sealed ciphertext using a binding key via the WSD KCC FFI.
+type Opener interface {
+	Open(bindingUUID uuid.UUID, enc, ciphertext, aad []byte) ([]byte, error)
+}
+
+// KemCiphertext carries raw encapsulated key bytes and the KEM algorithm.
+type KemCiphertext struct {
+	Algorithm  KemAlgorithm `json:"algorithm"`
+	Ciphertext string       `json:"ciphertext"` // base64-encoded raw bytes
+}
+
+// DecapsRequest is the JSON body for POST /keys:decap.
+type DecapsRequest struct {
+	KeyHandle  KeyHandle     `json:"key_handle"`
+	Ciphertext KemCiphertext `json:"ciphertext"`
+}
+
+// KemSharedSecret is the Decaps result payload.
+type KemSharedSecret struct {
+	Algorithm KemAlgorithm `json:"algorithm"`
+	Secret    string       `json:"secret"` // base64-encoded raw bytes
+}
+
+// DecapsResponse is returned by POST /v1/keys:decap.
+type DecapsResponse struct {
+	SharedSecret KemSharedSecret `json:"shared_secret"`
+}
+
 // Server is the WSD HTTP server.
 type Server struct {
-	bindingGen BindingKeyGenerator
-	kemGen     KEMKeyGenerator
+	bindingGen  BindingKeyGenerator
+	kemGen      KEMKeyGenerator
+	decapSealer DecapSealer
+	opener      Opener
 
 	mu              sync.RWMutex
 	kemToBindingMap map[uuid.UUID]uuid.UUID
@@ -87,14 +124,17 @@ type Server struct {
 }
 
 // NewServer creates a new WSD server with the given dependencies.
-func NewServer(bindingGen BindingKeyGenerator, kemGen KEMKeyGenerator) *Server {
+func NewServer(bindingGen BindingKeyGenerator, kemGen KEMKeyGenerator, decapSealer DecapSealer, opener Opener) *Server {
 	s := &Server{
 		bindingGen:      bindingGen,
 		kemGen:          kemGen,
+		decapSealer:     decapSealer,
+		opener:          opener,
 		kemToBindingMap: make(map[uuid.UUID]uuid.UUID),
 	}
 
 	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/keys:decap", s.handleDecaps)
 	mux.HandleFunc("/v1/keys:generate_kem", s.handleGenerateKem)
 
 	s.httpServer = &http.Server{Handler: mux}
@@ -127,6 +167,80 @@ func (s *Server) LookupBindingUUID(kemUUID uuid.UUID) (uuid.UUID, bool) {
 	defer s.mu.RUnlock()
 	id, ok := s.kemToBindingMap[kemUUID]
 	return id, ok
+}
+
+func decapsAADContext(kemUUID uuid.UUID, algorithm KemAlgorithm) []byte {
+	// Bind the KPS->WSD transport ciphertext to this decapsulation context.
+	// Note: The AAD context string retains `decaps` as it is part of the internal binding protocol
+	// and changing it might affect backward compatibility if keys were already persisted (though lifespan is short).
+	// For API alignment, we only change the external endpoint and JSON.
+	return []byte(fmt.Sprintf("wsd:keys:decaps:v1:%d:%s", algorithm, kemUUID))
+}
+
+func (s *Server) handleDecaps(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req DecapsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("invalid request body: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	if req.Ciphertext.Algorithm != KemAlgorithmDHKEMX25519HKDFSHA256 {
+		http.Error(w, fmt.Sprintf("unsupported ciphertext algorithm: %d", req.Ciphertext.Algorithm), http.StatusBadRequest)
+		return
+	}
+
+	kemUUID, err := uuid.Parse(req.KeyHandle.Handle)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("invalid key_handle.handle: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	encapsulatedKey, err := base64.StdEncoding.DecodeString(req.Ciphertext.Ciphertext)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("invalid ciphertext.ciphertext base64: %v", err), http.StatusBadRequest)
+		return
+	}
+	if len(encapsulatedKey) == 0 {
+		http.Error(w, "ciphertext.ciphertext must not be empty", http.StatusBadRequest)
+		return
+	}
+	aad := decapsAADContext(kemUUID, req.Ciphertext.Algorithm)
+
+	// Step 1: Look up the binding UUID for this KEM key.
+	bindingUUID, ok := s.LookupBindingUUID(kemUUID)
+	if !ok {
+		http.Error(w, fmt.Sprintf("KEM key handle not found: %s", kemUUID), http.StatusNotFound)
+		return
+	}
+
+	// Step 2: Decapsulate and reseal via KPS.
+	sealEnc, sealedCT, err := s.decapSealer.DecapAndSeal(kemUUID, encapsulatedKey, aad)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("failed to decap and seal: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Step 3: Open the sealed secret using the binding key via WSD KCC.
+	plaintext, err := s.opener.Open(bindingUUID, sealEnc, sealedCT, aad)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("failed to open sealed secret: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Step 4: Return the shared secret.
+	resp := DecapsResponse{
+		SharedSecret: KemSharedSecret{
+			Algorithm: req.Ciphertext.Algorithm,
+			Secret:    base64.StdEncoding.EncodeToString(plaintext),
+		},
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
 }
 
 func (s *Server) handleGenerateKem(w http.ResponseWriter, r *http.Request) {
