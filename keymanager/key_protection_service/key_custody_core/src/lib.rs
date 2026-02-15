@@ -53,9 +53,11 @@ fn generate_kem_keypair_internal(
 /// * `0` on success.
 /// * `-1` if an error occurred during key generation or if `binding_pubkey` is null/empty.
 /// * `-2` if the `out_pubkey` buffer size does not match the key size.
+use km_common::ffi::KmHpkeAlgorithm;
+
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn key_manager_generate_kem_keypair(
-    algo: HpkeAlgorithm,
+    algo: KmHpkeAlgorithm,
     binding_pubkey: *const u8,
     binding_pubkey_len: usize,
     expiry_secs: u64,
@@ -83,7 +85,8 @@ pub unsafe extern "C" fn key_manager_generate_kem_keypair(
     };
 
     // Call Safe Internal Function
-    match generate_kem_keypair_internal(algo, binding_pubkey, expiry_secs) {
+    // Call Safe Internal Function
+    match generate_kem_keypair_internal(algo.into(), binding_pubkey, expiry_secs) {
         Ok((id, pubkey)) => {
             if out_pubkey_len != pubkey.as_bytes().len() {
                 return -2;
@@ -129,7 +132,7 @@ mod tests {
         let mut uuid_bytes = [0u8; 16];
         let mut pubkey_bytes = [0u8; 32];
         let pubkey_len: usize = pubkey_bytes.len();
-        let algo = HpkeAlgorithm {
+        let algo = KmHpkeAlgorithm {
             kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
             kdf: KdfAlgorithm::HkdfSha256 as i32,
             aead: AeadAlgorithm::Aes256Gcm as i32,
@@ -159,7 +162,7 @@ mod tests {
         let mut uuid_bytes = [0u8; 16];
         let mut pubkey_bytes = [0u8; 32];
         let pubkey_len: usize = pubkey_bytes.len();
-        let algo = HpkeAlgorithm {
+        let algo = KmHpkeAlgorithm {
             kem: 999, // Invalid KEM
             kdf: KdfAlgorithm::HkdfSha256 as i32,
             aead: AeadAlgorithm::Aes256Gcm as i32,
@@ -187,7 +190,7 @@ mod tests {
         let mut uuid_bytes = [0u8; 16];
         let mut pubkey_bytes = [0u8; 64];
         let pubkey_len: usize = pubkey_bytes.len();
-        let algo = HpkeAlgorithm {
+        let algo = KmHpkeAlgorithm {
             kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
             kdf: KdfAlgorithm::HkdfSha256 as i32,
             aead: AeadAlgorithm::Aes256Gcm as i32,
@@ -213,7 +216,7 @@ mod tests {
     #[test]
     fn test_generate_kem_keypair_null_binding_key() {
         let mut uuid_bytes = [0u8; 16];
-        let algo = HpkeAlgorithm {
+        let algo = KmHpkeAlgorithm {
             kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
             kdf: KdfAlgorithm::HkdfSha256 as i32,
             aead: AeadAlgorithm::Aes256Gcm as i32,
@@ -238,7 +241,7 @@ mod tests {
     fn test_generate_kem_keypair_empty_binding_key_len() {
         let binding_pubkey = [1u8; 32];
         let mut uuid_bytes = [0u8; 16];
-        let algo = HpkeAlgorithm {
+        let algo = KmHpkeAlgorithm {
             kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
             kdf: KdfAlgorithm::HkdfSha256 as i32,
             aead: AeadAlgorithm::Aes256Gcm as i32,
