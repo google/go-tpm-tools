@@ -42,7 +42,7 @@ pub struct KeyMetadata {
 pub struct KeyRecord {
     pub meta: KeyMetadata,
     /// memfd_secrets backed secret key-material
-    pub private_key: Vault,
+    private_key: Vault,
 }
 
 pub type KeyHandle = Uuid;
@@ -50,17 +50,27 @@ pub type KeyHandle = Uuid;
 /// Thread-safe registry for storing encryption keys.
 #[derive(Default, Clone)]
 pub struct KeyRegistry {
-    keys: Arc<RwLock<HashMap<KeyHandle, KeyRecord>>>,
+    keys: Arc<RwLock<HashMap<KeyHandle, Arc<KeyRecord>>>>,
 }
 
 impl KeyRegistry {
     pub fn add_key(&self, record: KeyRecord) {
         let mut keys = self.keys.write().unwrap();
-        keys.insert(record.meta.id, record);
+        keys.insert(record.meta.id, Arc::new(record));
+    }
+
+    pub fn get_key(&self, id: &KeyHandle) -> Option<Arc<KeyRecord>> {
+        let keys = self.keys.read().unwrap();
+        keys.get(id).cloned()
     }
 }
 
 impl KeyRecord {
+    /// Returns the private key material.
+    pub fn get_private_key(&self) -> crypto::PrivateKey {
+        crypto::PrivateKey::from(self.private_key.get_secret())
+    }
+
     /// Creates a new long-term Binding key.
     pub fn create_binding_key(
         algo: HpkeAlgorithm,
