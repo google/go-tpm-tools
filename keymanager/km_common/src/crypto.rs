@@ -1,9 +1,8 @@
 use crate::algorithms::{AeadAlgorithm, HpkeAlgorithm, KdfAlgorithm, KemAlgorithm};
 pub mod secret_box;
 use crate::crypto::secret_box::SecretBox;
-use bssl_crypto::hkdf;
 #[cfg(any(test, feature = "test-utils"))]
-use bssl_crypto::{aead, aead::Aead};
+use bssl_crypto::{aead, aead::Aead, hkdf};
 use clear_on_drop::clear_stack_on_return;
 use thiserror::Error;
 
@@ -91,6 +90,12 @@ impl PublicKeyOps for PublicKey {
 /// A wrapper enum for different private key types.
 pub enum PrivateKey {
     X25519(X25519PrivateKey),
+}
+
+impl From<SecretBox> for PrivateKey {
+    fn from(secret: SecretBox) -> Self {
+        PrivateKey::X25519(X25519PrivateKey(secret))
+    }
 }
 
 impl From<PrivateKey> for SecretBox {

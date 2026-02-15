@@ -47,7 +47,7 @@ pub struct KeyMetadata {
 pub struct KeyRecord {
     pub meta: KeyMetadata,
     /// memfd_secrets backed secret key-material
-    pub private_key: Vault,
+    private_key: Vault,
 }
 
 pub type KeyHandle = Uuid;
@@ -102,6 +102,11 @@ impl KeyRegistry {
 }
 
 impl KeyRecord {
+    /// Returns the private key material.
+    pub fn get_private_key(&self) -> crypto::PrivateKey {
+        crypto::PrivateKey::from(self.private_key.get_secret())
+    }
+
     /// Creates a new long-term Binding key.
     pub fn create_binding_key(
         algo: HpkeAlgorithm,

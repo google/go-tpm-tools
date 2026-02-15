@@ -5,10 +5,8 @@ use prost::Message;
 use std::slice;
 use std::sync::Arc;
 use std::sync::LazyLock;
-use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 use uuid::Uuid;
-use zeroize::Zeroize;
 
 static KEY_REGISTRY: LazyLock<KeyRegistry> = LazyLock::new(|| {
     let registry = KeyRegistry::default();
@@ -152,7 +150,7 @@ pub unsafe extern "C" fn key_manager_destroy_binding_key(uuid_bytes: *const u8) 
 ///
 /// ## Returns
 /// * `0` on success.
-/// * `-1` if an error occurred (e.g., key not found, null pointers).
+/// * `-1` if arguments are invalid (e.g., key not found, null pointers).
 /// * `-2` if the `out_plaintext` buffer is too small.
 /// * `-3` if decryption failed.
 #[unsafe(no_mangle)]
@@ -165,24 +163,30 @@ pub unsafe extern "C" fn key_manager_open(
     aad: *const u8,
     aad_len: usize,
     out_plaintext: *mut u8,
-    out_plaintext_len: *mut usize,
+    out_plaintext_len: usize,
 ) -> i32 {
     if uuid_bytes.is_null()
         || enc.is_null()
         || ciphertext.is_null()
         || aad.is_null()
-        || out_plaintext_len.is_null()
+        || out_plaintext.is_null()
+        || out_plaintext_len == 0
     {
         return -1;
     }
 
-    let uuid = unsafe {
-        let mut bytes = [0u8; 16];
-        std::ptr::copy_nonoverlapping(uuid_bytes, bytes.as_mut_ptr(), 16);
-        Uuid::from_bytes(bytes)
+    let uuid = unsafe { std::slice::from_raw_parts(uuid_bytes, 16) };
+    let enc_slice = unsafe { std::slice::from_raw_parts(enc, enc_len) };
+    let ct_slice = unsafe { std::slice::from_raw_parts(ciphertext, ciphertext_len) };
+    let aad_slice = unsafe { std::slice::from_raw_parts(aad, aad_len) };
+    let out_plaintext = unsafe { std::slice::from_raw_parts_mut(out_plaintext, out_plaintext_len) };
+
+    let uuid_val = match Uuid::from_slice(uuid) {
+        Ok(u) => u,
+        Err(_) => return -1,
     };
 
-    let record = match KEY_REGISTRY.get_key(&uuid) {
+    let record = match KEY_REGISTRY.get_key(&uuid_val) {
         Some(r) => r,
         None => return -1,
     };
@@ -192,33 +196,15 @@ pub unsafe extern "C" fn key_manager_open(
         _ => return -1,
     };
 
-    let enc_slice = unsafe { std::slice::from_raw_parts(enc, enc_len) };
-    let ct_slice = unsafe { std::slice::from_raw_parts(ciphertext, ciphertext_len) };
-    let aad_slice = unsafe { std::slice::from_raw_parts(aad, aad_len) };
-
-    // Convert Vault bytes to SecretBox for active usage
-    let secret =
-        km_common::crypto::secret_box::SecretBox::new(record.private_key.as_bytes().to_vec());
-    let priv_key = km_common::crypto::PrivateKey::from_secret(secret);
+    let priv_key = record.get_private_key();
 
     match km_common::crypto::hpke_open(&priv_key, enc_slice, ct_slice, aad_slice, algo) {
-        Ok(mut pt) => {
-            unsafe {
-                let buf_len = *out_plaintext_len;
-                if buf_len < pt.as_slice().len() {
-                    return -2;
-                }
-                if out_plaintext.is_null() {
-                    return -1;
-                }
-                std::ptr::copy_nonoverlapping(
-                    pt.as_slice().as_ptr(),
-                    out_plaintext,
-                    pt.as_slice().len(),
-                );
-                *out_plaintext_len = pt.as_slice().len();
+        Ok(pt) => {
+            if out_plaintext_len != pt.as_slice().len() {
+                return -2;
             }
-            0
+            out_plaintext.copy_from_slice(pt.as_slice());
+            0 // Success
         }
         Err(_) => -3,
     }
@@ -398,110 +384,7 @@ mod tests {
     fn test_key_manager_open_success() {
         let mut uuid_bytes = [0u8; 16];
         let mut pubkey_bytes = [0u8; 32];
-        let mut pubkey_len: usize = pubkey_bytes.len();
-        let algo = HpkeAlgorithm {
-            kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
-            kdf: KdfAlgorithm::HkdfSha256 as i32,
-            aead: AeadAlgorithm::Aes256Gcm as i32,
-        };
-
-        // 1. Generate keypair
-        key_manager_generate_binding_keypair(
-            algo.clone(),
-            3600,
-            uuid_bytes.as_mut_ptr(),
-            pubkey_bytes.as_mut_ptr(),
-            &mut pubkey_len,
-        );
-
-        // 2. Encrypt something for this key
-        let pt = b"secret message";
-        let aad = b"test aad";
-        let (enc, ct) = km_common::crypto::hpke_seal(&pubkey_bytes, pt, aad, &algo).unwrap();
-
-        // 3. Decrypt using key_manager_open
-        let mut out_pt = [0u8; 64];
-        let mut out_pt_len = out_pt.len();
-        let result = key_manager_open(
-            uuid_bytes.as_ptr(),
-            enc.as_ptr(),
-            enc.len(),
-            ct.as_ptr(),
-            ct.len(),
-            aad.as_ptr(),
-            aad.len(),
-            out_pt.as_mut_ptr(),
-            &mut out_pt_len,
-        );
-
-        assert_eq!(result, 0);
-        assert_eq!(out_pt_len, pt.len());
-        assert_eq!(&out_pt[..out_pt_len], pt);
-    }
-
-    #[test]
-    fn test_key_manager_open_invalid_uuid() {
-        let uuid_bytes = [0u8; 16];
-        let mut out_pt = [0u8; 64];
-        let mut out_pt_len = out_pt.len();
-        let result = key_manager_open(
-            uuid_bytes.as_ptr(),
-            [0u8; 32].as_ptr(),
-            32,
-            [0u8; 32].as_ptr(),
-            32,
-            [0u8; 8].as_ptr(),
-            8,
-            out_pt.as_mut_ptr(),
-            &mut out_pt_len,
-        );
-        assert_eq!(result, -1);
-    }
-
-    #[test]
-    fn test_key_manager_open_buffer_too_small() {
-        let mut uuid_bytes = [0u8; 16];
-        let mut pubkey_bytes = [0u8; 32];
-        let mut pubkey_len: usize = pubkey_bytes.len();
-        let algo = HpkeAlgorithm {
-            kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
-            kdf: KdfAlgorithm::HkdfSha256 as i32,
-            aead: AeadAlgorithm::Aes256Gcm as i32,
-        };
-
-        key_manager_generate_binding_keypair(
-            algo.clone(),
-            3600,
-            uuid_bytes.as_mut_ptr(),
-            pubkey_bytes.as_mut_ptr(),
-            &mut pubkey_len,
-        );
-
-        let pt = b"secret message";
-        let (enc, ct) = km_common::crypto::hpke_seal(&pubkey_bytes, pt, b"", &algo).unwrap();
-
-        let mut out_pt = [0u8; 5]; // smaller than pt
-        let mut out_pt_len = out_pt.len();
-        let result = key_manager_open(
-            uuid_bytes.as_ptr(),
-            enc.as_ptr(),
-            enc.len(),
-            ct.as_ptr(),
-            ct.len(),
-            b"".as_ptr(),
-            0,
-            out_pt.as_mut_ptr(),
-            &mut out_pt_len,
-        );
-
-        assert_eq!(result, -2);
-    }
-
-    #[test]
-    fn test_key_manager_open_success() {
-        let mut uuid_bytes = [0u8; 16];
-        let mut pubkey_bytes = [0u8; 32];
-        let mut pubkey_len: usize = pubkey_bytes.len();
+        let pubkey_len: usize = pubkey_bytes.len();
         let algo = HpkeAlgorithm {
             kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
             kdf: KdfAlgorithm::HkdfSha256 as i32,
@@ -515,21 +398,20 @@ mod tests {
                 3600,
                 uuid_bytes.as_mut_ptr(),
                 pubkey_bytes.as_mut_ptr(),
-                &mut pubkey_len,
+                pubkey_len,
             );
         }
 
         // 2. Encrypt something for this key
-        let pt = b"secret message";
-        let aad = b"test aad";
-        let pub_key =
-            km_common::crypto::PublicKey::try_from(pubkey_bytes[..pubkey_len].to_vec()).unwrap();
-        let pt_box = km_common::crypto::secret_box::SecretBox::new(pt.to_vec());
-        let (enc, ct) = km_common::crypto::hpke_seal(&pub_key, &pt_box, aad, &algo).unwrap();
+        const PT: &[u8] = b"secret message";
+        const AAD: &[u8] = b"test aad";
+        let pub_key = PublicKey::try_from(pubkey_bytes.to_vec()).unwrap();
+        let pt_box = km_common::crypto::secret_box::SecretBox::new(PT.to_vec());
+        let (enc, ct) = km_common::crypto::hpke_seal(&pub_key, &pt_box, AAD, &algo).unwrap();
 
         // 3. Decrypt using key_manager_open
-        let mut out_pt = [0u8; 64];
-        let mut out_pt_len = out_pt.len();
+        let mut out_pt = [0u8; PT.len()];
+        let out_pt_len = out_pt.len();
         let result = unsafe {
             key_manager_open(
                 uuid_bytes.as_ptr(),
@@ -537,23 +419,22 @@ mod tests {
                 enc.len(),
                 ct.as_ptr(),
                 ct.len(),
-                aad.as_ptr(),
-                aad.len(),
+                AAD.as_ptr(),
+                AAD.len(),
                 out_pt.as_mut_ptr(),
-                &mut out_pt_len,
+                out_pt_len,
             )
         };
 
         assert_eq!(result, 0);
-        assert_eq!(out_pt_len, pt.len());
-        assert_eq!(&out_pt[..out_pt_len], pt);
+        assert_eq!(&out_pt, PT);
     }
 
     #[test]
     fn test_key_manager_open_invalid_uuid() {
         let uuid_bytes = [0u8; 16];
         let mut out_pt = [0u8; 64];
-        let mut out_pt_len = out_pt.len();
+        let out_pt_len = out_pt.len();
         let result = unsafe {
             key_manager_open(
                 uuid_bytes.as_ptr(),
@@ -564,7 +445,7 @@ mod tests {
                 [0u8; 8].as_ptr(),
                 8,
                 out_pt.as_mut_ptr(),
-                &mut out_pt_len,
+                out_pt_len,
             )
         };
         assert_eq!(result, -1);
@@ -574,7 +455,7 @@ mod tests {
     fn test_key_manager_open_buffer_too_small() {
         let mut uuid_bytes = [0u8; 16];
         let mut pubkey_bytes = [0u8; 32];
-        let mut pubkey_len: usize = pubkey_bytes.len();
+        let pubkey_len: usize = pubkey_bytes.len();
         let algo = HpkeAlgorithm {
             kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
             kdf: KdfAlgorithm::HkdfSha256 as i32,
@@ -586,18 +467,17 @@ mod tests {
                 3600,
                 uuid_bytes.as_mut_ptr(),
                 pubkey_bytes.as_mut_ptr(),
-                &mut pubkey_len,
+                pubkey_len,
             );
         }
 
         let pt = b"secret message";
-        let pub_key =
-            km_common::crypto::PublicKey::try_from(pubkey_bytes[..pubkey_len].to_vec()).unwrap();
+        let pub_key = PublicKey::try_from(pubkey_bytes.to_vec()).unwrap();
         let pt_box = km_common::crypto::secret_box::SecretBox::new(pt.to_vec());
         let (enc, ct) = km_common::crypto::hpke_seal(&pub_key, &pt_box, b"", &algo).unwrap();
 
         let mut out_pt = [0u8; 5]; // smaller than pt
-        let mut out_pt_len = out_pt.len();
+        let out_pt_len = out_pt.len();
         let result = unsafe {
             key_manager_open(
                 uuid_bytes.as_ptr(),
@@ -608,10 +488,11 @@ mod tests {
                 b"".as_ptr(),
                 0,
                 out_pt.as_mut_ptr(),
-                &mut out_pt_len,
+                out_pt_len,
             )
         };
 
         assert_eq!(result, -2);
+        assert_eq!(out_pt, [0u8; 5]); // Should remain untouched/zero
     }
 }
