@@ -6,6 +6,7 @@ toolchain go1.24.4
 
 require (
 	cloud.google.com/go/compute/metadata v0.8.0
+	cos.googlesource.com/cos/tools.git v0.0.0-20250414225215-0cf736c0714c
 	cloud.google.com/go/logging v1.13.0
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/containerd/containerd v1.7.23
