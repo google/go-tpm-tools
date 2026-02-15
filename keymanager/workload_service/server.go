@@ -146,7 +146,7 @@ func (s *Server) handleGenerateKem(w http.ResponseWriter, r *http.Request) {
 		http.Error(
 			w,
 			fmt.Sprintf(
-				"unsupported algorithm: only KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256 (%d) is supported",
+				"unsupported algorithm: only DHKEM_X25519_HKDF_SHA256 (%d) is supported",
 				KemAlgorithmDHKEMX25519HKDFSHA256,
 			),
 			http.StatusBadRequest,
