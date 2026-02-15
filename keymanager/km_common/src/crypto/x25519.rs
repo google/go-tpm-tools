@@ -55,6 +55,12 @@ impl PublicKeyOps for X25519PublicKey {
 /// X25519-based private key implementation.
 pub struct X25519PrivateKey(SecretBox);
 
+impl X25519PrivateKey {
+    pub(crate) fn new(key: SecretBox) -> Self {
+        Self(key)
+    }
+}
+
 impl From<X25519PrivateKey> for SecretBox {
     fn from(key: X25519PrivateKey) -> SecretBox {
         key.0

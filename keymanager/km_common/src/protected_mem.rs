@@ -85,6 +85,11 @@ impl Vault {
     pub fn as_bytes(&self) -> &[u8] {
         &self.mmap
     }
+
+    /// Creates a deep copy of the Vault.
+    pub fn try_clone(&self) -> IoResult<Self> {
+        Self::new(SecretBox::new(self.as_bytes().to_vec()))
+    }
 }
 
 impl AsRef<[u8]> for Vault {
