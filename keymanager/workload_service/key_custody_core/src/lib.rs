@@ -86,6 +86,93 @@ pub unsafe extern "C" fn key_manager_generate_binding_keypair(
     }
 }
 
+/// Decrypts a ciphertext using a key from the registry.
+///
+/// ## Arguments
+/// * `handle` - The 16-byte UUID of the key to use (as bytes).
+/// * `enc` - The encapsulated key.
+/// * `enc_len` - The length of the encapsulated key.
+/// * `ciphertext` - The ciphertext to decrypt.
+/// * `ciphertext_len` - The length of the ciphertext.
+/// * `aad` - Associated data (optional/can be empty).
+/// * `aad_len` - The length of the associated data.
+/// * `out_plaintext` - Buffer to write the plaintext to.
+/// * `out_plaintext_len` - Pointer to the size of the output buffer. Updated with actual size.
+///
+/// ## Returns
+/// * `0` on success.
+/// * `-1` on error (key not found, decryption failed, invalid input).
+/// * `-2` if output buffer is too small.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn key_manager_open(
+    handle: *const u8,
+    enc: *const u8,
+    enc_len: usize,
+    ciphertext: *const u8,
+    ciphertext_len: usize,
+    aad: *const u8,
+    aad_len: usize,
+    out_plaintext: *mut u8,
+    out_plaintext_len: *mut usize,
+) -> i32 {
+    use km_common::key_types::KeySpec;
+    use km_common::crypto::PrivateKey;
+
+    if handle.is_null()
+        || enc.is_null()
+        || ciphertext.is_null()
+        || out_plaintext.is_null()
+        || out_plaintext_len.is_null()
+        || (aad_len > 0 && aad.is_null())
+    {
+        return -1;
+    }
+
+    let handle_bytes = slice::from_raw_parts(handle, 16);
+    let enc = slice::from_raw_parts(enc, enc_len);
+    let ciphertext = slice::from_raw_parts(ciphertext, ciphertext_len);
+    let aad = if aad_len > 0 {
+        slice::from_raw_parts(aad, aad_len)
+    } else {
+        &[]
+    };
+
+    let id = match Uuid::from_slice(handle_bytes) {
+        Ok(id) => id,
+        Err(_) => return -1,
+    };
+
+    let record = match KEY_REGISTRY.get_key(&id) {
+        Ok(r) => r,
+        Err(_) => return -1,
+    };
+
+    let (algo_spec, priv_key_vault) = match &record.meta.spec {
+        KeySpec::Binding { algo, .. } => (algo, &record.private_key),
+        _ => return -1,
+    };
+
+    // Assuming we use the binding key to decrypt.
+    let priv_key = match PrivateKey::try_from(priv_key_vault.as_bytes().to_vec()) {
+        Ok(k) => k,
+        Err(_) => return -1,
+    };
+
+    match km_common::crypto::hpke_open(&priv_key, enc, ciphertext, aad, algo_spec) {
+        Ok(plaintext) => {
+            let pt_bytes = plaintext.as_slice();
+            if *out_plaintext_len < pt_bytes.len() {
+                return -2;
+            }
+            let out_buf = slice::from_raw_parts_mut(out_plaintext, *out_plaintext_len);
+            out_buf[..pt_bytes.len()].copy_from_slice(pt_bytes);
+            *out_plaintext_len = pt_bytes.len();
+            0
+        }
+        Err(_) => -1,
+    }
+}
+
 
 #[cfg(test)]
 mod tests {
@@ -215,7 +302,7 @@ mod tests {
         let mut uuid_bytes = [0u8; 16];
         let mut pubkey_bytes = [0u8; 32];
         let mut pubkey_len: usize = pubkey_bytes.len();
-        let algo = HpkeAlgorithm {
+        let algo = KmHpkeAlgorithm {
             kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
             kdf: KdfAlgorithm::HkdfSha256 as i32,
             aead: AeadAlgorithm::Aes256Gcm as i32,
@@ -228,14 +315,16 @@ mod tests {
                 3600,
                 uuid_bytes.as_mut_ptr(),
                 pubkey_bytes.as_mut_ptr(),
-                &mut pubkey_len,
+                pubkey_len,
             );
         }
 
         // 2. Encrypt something for this key
         let pt = b"secret message";
         let aad = b"test aad";
-        let (enc, ct) = km_common::crypto::hpke_seal(&pubkey_bytes, pt, aad, &algo).unwrap();
+        // Convert KmHpkeAlgorithm to HpkeAlgorithm for helper calls
+        let hpke_algo: HpkeAlgorithm = algo.into();
+        let (enc, ct) = km_common::crypto::hpke_seal_raw(&pubkey_bytes, pt, aad, &hpke_algo).unwrap();
 
         // 3. Decrypt using key_manager_open
         let mut out_pt = [0u8; 64];
@@ -285,23 +374,28 @@ mod tests {
         let mut uuid_bytes = [0u8; 16];
         let mut pubkey_bytes = [0u8; 32];
         let mut pubkey_len: usize = pubkey_bytes.len();
-        let algo = HpkeAlgorithm {
+        let algo = KmHpkeAlgorithm {
             kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
             kdf: KdfAlgorithm::HkdfSha256 as i32,
             aead: AeadAlgorithm::Aes256Gcm as i32,
         };
+
+        // 1. Generate keypair
         unsafe {
             key_manager_generate_binding_keypair(
                 algo,
                 3600,
                 uuid_bytes.as_mut_ptr(),
                 pubkey_bytes.as_mut_ptr(),
-                &mut pubkey_len,
+                pubkey_len,
             );
         }
 
+        // 2. Encrypt something
         let pt = b"secret message";
-        let (enc, ct) = km_common::crypto::hpke_seal(&pubkey_bytes, pt, b"", &algo).unwrap();
+        // Convert KmHpkeAlgorithm to HpkeAlgorithm for helper calls
+        let hpke_algo: HpkeAlgorithm = algo.into();
+        let (enc, ct) = km_common::crypto::hpke_seal_raw(&pubkey_bytes, pt, b"", &hpke_algo).unwrap();
 
         let mut out_pt = [0u8; 5]; // smaller than pt
         let mut out_pt_len = out_pt.len();

@@ -58,9 +58,30 @@ impl KeyRegistry {
         let mut keys = self.keys.write().unwrap();
         keys.insert(record.meta.id, record);
     }
+
+    pub fn get_key(&self, id: &KeyHandle) -> Result<KeyRecord, crypto::Error> {
+        let keys = self.keys.read().unwrap();
+        keys.get(id)
+            .ok_or(crypto::Error::KeyNotFound)
+            .and_then(|record: &KeyRecord| record.try_clone())
+    }
+
+    pub fn remove_key(&self, id: &KeyHandle) -> Option<KeyRecord> {
+        let mut keys = self.keys.write().unwrap();
+        keys.remove(id)
+    }
 }
 
 impl KeyRecord {
+    pub fn try_clone(&self) -> Result<Self, crypto::Error> {
+        Ok(Self {
+            meta: self.meta.clone(),
+            private_key: self
+                .private_key
+                .try_clone()
+                .map_err(|_| crypto::Error::CryptoError)?,
+        })
+    }
     /// Creates a new long-term Binding key.
     pub fn create_binding_key(
         algo: HpkeAlgorithm,

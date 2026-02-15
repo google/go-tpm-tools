@@ -349,7 +349,7 @@ func TestHandleGenerateKemMapUniqueness(t *testing.T) {
 	}
 }
 
-// --- /keys:decaps tests ---
+// --- /keys:decap tests ---
 
 // newDecapsTestServer creates a server pre-populated with a KEM→Binding mapping.
 func newDecapsTestServer(kemUUID, bindingUUID uuid.UUID, ds *mockDecapSealer, op *mockOpener) *Server {
@@ -367,7 +367,7 @@ func newDecapsTestServer(kemUUID, bindingUUID uuid.UUID, ds *mockDecapSealer, op
 
 func decapsRequestBody(kemUUID uuid.UUID, algo KemAlgorithm, encKey []byte) string {
 	return fmt.Sprintf(
-		`{"keyHandle":{"handle":"%s"},"ciphertext":{"algorithm":%d,"ciphertext":"%s"}}`,
+		`{"key_handle":{"handle":"%s"},"ciphertext":{"algorithm":"%s","ciphertext":"%s"}}`,
 		kemUUID.String(),
 		algo,
 		base64.StdEncoding.EncodeToString(encKey),
@@ -388,7 +388,7 @@ func TestHandleDecapsSuccess(t *testing.T) {
 	srv := newDecapsTestServer(kemUUID, bindingUUID, ds, op)
 
 	body := decapsRequestBody(kemUUID, KemAlgorithmDHKEMX25519HKDFSHA256, encKey)
-	req := httptest.NewRequest(http.MethodPost, "/v1/keys:decaps", strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/v1/keys:decap", strings.NewReader(body))
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 
@@ -401,7 +401,7 @@ func TestHandleDecapsSuccess(t *testing.T) {
 		t.Fatalf("failed to decode response: %v", err)
 	}
 	if resp.SharedSecret.Algorithm != KemAlgorithmDHKEMX25519HKDFSHA256 {
-		t.Fatalf("expected sharedSecret.algorithm=%d, got %d", KemAlgorithmDHKEMX25519HKDFSHA256, resp.SharedSecret.Algorithm)
+		t.Fatalf("expected shared_secret.algorithm=%d, got %d", KemAlgorithmDHKEMX25519HKDFSHA256, resp.SharedSecret.Algorithm)
 	}
 
 	decoded, err := base64.StdEncoding.DecodeString(resp.SharedSecret.Secret)
@@ -446,7 +446,7 @@ func TestHandleDecapsMethodNotAllowed(t *testing.T) {
 		noopOpener(),
 	)
 
-	req := httptest.NewRequest(http.MethodGet, "/v1/keys:decaps", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/keys:decap", nil)
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 
@@ -463,7 +463,7 @@ func TestHandleDecapsBadRequestBody(t *testing.T) {
 		noopOpener(),
 	)
 
-	req := httptest.NewRequest(http.MethodPost, "/v1/keys:decaps", strings.NewReader("not-json"))
+	req := httptest.NewRequest(http.MethodPost, "/v1/keys:decap", strings.NewReader("not-json"))
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 
@@ -480,8 +480,8 @@ func TestHandleDecapsInvalidKEMUUID(t *testing.T) {
 		noopOpener(),
 	)
 
-	body := `{"keyHandle":{"handle":"not-a-uuid"},"ciphertext":{"algorithm":1,"ciphertext":"AAAA"}}`
-	req := httptest.NewRequest(http.MethodPost, "/v1/keys:decaps", strings.NewReader(body))
+	body := `{"key_handle":{"handle":"not-a-uuid"},"ciphertext":{"algorithm":1,"ciphertext":"AAAA"}}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/keys:decap", strings.NewReader(body))
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 
@@ -501,7 +501,7 @@ func TestHandleDecapsKEMKeyNotFound(t *testing.T) {
 	// Don't populate kemToBindingMap.
 
 	body := decapsRequestBody(kemUUID, KemAlgorithmDHKEMX25519HKDFSHA256, []byte("enc-key"))
-	req := httptest.NewRequest(http.MethodPost, "/v1/keys:decaps", strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/v1/keys:decap", strings.NewReader(body))
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 
@@ -518,7 +518,7 @@ func TestHandleDecapsDecapSealError(t *testing.T) {
 	srv := newDecapsTestServer(kemUUID, bindingUUID, ds, noopOpener())
 
 	body := decapsRequestBody(kemUUID, KemAlgorithmDHKEMX25519HKDFSHA256, []byte("enc-key"))
-	req := httptest.NewRequest(http.MethodPost, "/v1/keys:decaps", strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/v1/keys:decap", strings.NewReader(body))
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 
@@ -536,7 +536,7 @@ func TestHandleDecapsOpenError(t *testing.T) {
 	srv := newDecapsTestServer(kemUUID, bindingUUID, ds, op)
 
 	body := decapsRequestBody(kemUUID, KemAlgorithmDHKEMX25519HKDFSHA256, []byte("enc-key"))
-	req := httptest.NewRequest(http.MethodPost, "/v1/keys:decaps", strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/v1/keys:decap", strings.NewReader(body))
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 
@@ -551,7 +551,7 @@ func TestHandleDecapsUnsupportedAlgorithm(t *testing.T) {
 	srv := newDecapsTestServer(kemUUID, bindingUUID, noopDecapSealer(), noopOpener())
 
 	body := decapsRequestBody(kemUUID, KemAlgorithm(999), []byte("enc-key"))
-	req := httptest.NewRequest(http.MethodPost, "/v1/keys:decaps", strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/v1/keys:decap", strings.NewReader(body))
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 

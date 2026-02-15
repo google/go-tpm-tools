@@ -1,7 +1,7 @@
 use crate::algorithms::{AeadAlgorithm, HpkeAlgorithm, KdfAlgorithm, KemAlgorithm};
 use crate::crypto::secret_box::SecretBox;
 use bssl_crypto::aead::Aead;
-use bssl_crypto::{aead, hkdf, hpke, x25519};
+use bssl_crypto::{aead, hkdf, hpke};
 pub mod secret_box;
 use clear_on_drop::clear_stack_on_return;
 use thiserror::Error;
@@ -100,6 +100,17 @@ impl From<PrivateKey> for SecretBox {
     }
 }
 
+impl TryFrom<Vec<u8>> for PrivateKey {
+    type Error = Error;
+
+    fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
+        if value.len() != 32 {
+            return Err(Error::KeyLenMismatch);
+        }
+        Ok(PrivateKey::X25519(X25519PrivateKey::new(SecretBox::new(value))))
+    }
+}
+
 impl PrivateKeyOps for PrivateKey {
     fn decaps_internal(&self, enc: &[u8]) -> Result<SecretBox, Error> {
         match self {
@@ -136,6 +147,8 @@ pub enum Error {
     InvalidKey,
     #[error("Crypto library error")]
     CryptoError,
+    #[error("Key not found")]
+    KeyNotFound,
 }
 
 /// Generates a keypair for the given KEM algorithm.
@@ -269,18 +282,13 @@ pub fn generate_x25519_keypair(algo: KemAlgorithm) -> Result<(Vec<u8>, Vec<u8>),
 /// Manual implementation to decapsulate a shared secret from an encapsulated key using an X25519 private key.
 pub fn decaps_x25519(priv_key_bytes: &[u8], enc: &[u8]) -> Result<Vec<u8>, Error> {
     clear_stack_on_return(2, || {
-        if priv_key_bytes.len() != 32 || enc.len() != 32 {
+        if priv_key_bytes.len() != 32 {
             return Err(Error::KeyLenMismatch);
         }
-        let sk = hpke::Kem::X25519HkdfSha256
-            .new_private_key(priv_key_bytes)
-            .map_err(|_| Error::InvalidKey)?;
-        let pk = hpke::Kem::X25519HkdfSha256
-            .new_public_key(enc)
-            .map_err(|_| Error::InvalidKey)?;
-        hpke::Kem::X25519HkdfSha256
-            .decapsulate(&pk, &sk)
-            .map_err(|_| Error::DecapsError)
+        // BoringSSL private keys are 32 bytes
+        let sk = x25519::X25519PrivateKey::new(SecretBox::new(priv_key_bytes.to_vec()));
+        let shared = sk.decaps_internal(enc)?;
+        Ok(shared.as_slice().to_vec())
     })
 }
 

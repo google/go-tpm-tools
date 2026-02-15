@@ -92,9 +92,9 @@ type KemCiphertext struct {
 	Ciphertext string       `json:"ciphertext"` // base64-encoded raw bytes
 }
 
-// DecapsRequest is the JSON body for POST /keys:decaps.
+// DecapsRequest is the JSON body for POST /keys:decap.
 type DecapsRequest struct {
-	KeyHandle  KeyHandle     `json:"keyHandle"`
+	KeyHandle  KeyHandle     `json:"key_handle"`
 	Ciphertext KemCiphertext `json:"ciphertext"`
 }
 
@@ -104,9 +104,9 @@ type KemSharedSecret struct {
 	Secret    string       `json:"secret"` // base64-encoded raw bytes
 }
 
-// DecapsResponse is returned by POST /v1/keys:decaps.
+// DecapsResponse is returned by POST /v1/keys:decap.
 type DecapsResponse struct {
-	SharedSecret KemSharedSecret `json:"sharedSecret"`
+	SharedSecret KemSharedSecret `json:"shared_secret"`
 }
 
 // Server is the WSD HTTP server.
@@ -134,8 +134,8 @@ func NewServer(bindingGen BindingKeyGenerator, kemGen KEMKeyGenerator, decapSeal
 	}
 
 	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/keys:decap", s.handleDecaps)
 	mux.HandleFunc("/v1/keys:generate_kem", s.handleGenerateKem)
-	mux.HandleFunc("/v1/keys:decaps", s.handleDecaps)
 
 	s.httpServer = &http.Server{Handler: mux}
 	return s
@@ -171,6 +171,9 @@ func (s *Server) LookupBindingUUID(kemUUID uuid.UUID) (uuid.UUID, bool) {
 
 func decapsAADContext(kemUUID uuid.UUID, algorithm KemAlgorithm) []byte {
 	// Bind the KPS->WSD transport ciphertext to this decapsulation context.
+	// Note: The AAD context string retains `decaps` as it is part of the internal binding protocol
+	// and changing it might affect backward compatibility if keys were already persisted (though lifespan is short).
+	// For API alignment, we only change the external endpoint and JSON.
 	return []byte(fmt.Sprintf("wsd:keys:decaps:v1:%d:%s", algorithm, kemUUID))
 }
 
@@ -193,7 +196,7 @@ func (s *Server) handleDecaps(w http.ResponseWriter, r *http.Request) {
 
 	kemUUID, err := uuid.Parse(req.KeyHandle.Handle)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("invalid keyHandle.handle: %v", err), http.StatusBadRequest)
+		http.Error(w, fmt.Sprintf("invalid key_handle.handle: %v", err), http.StatusBadRequest)
 		return
 	}
 
