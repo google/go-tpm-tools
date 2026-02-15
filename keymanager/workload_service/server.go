@@ -65,13 +65,13 @@ func (d ProtoDuration) MarshalJSON() ([]byte, error) {
 // GenerateKemRequest is the JSON body for POST /v1/keys:generate_kem.
 type GenerateKemRequest struct {
 	Algorithm              KemAlgorithm           `json:"algorithm"`
-	KeyProtectionMechanism KeyProtectionMechanism `json:"keyProtectionMechanism"`
+	KeyProtectionMechanism KeyProtectionMechanism `json:"key_protection_mechanism"`
 	Lifespan               ProtoDuration          `json:"lifespan"`
 }
 
 // GenerateKemResponse is returned by POST /v1/keys:generate.
 type GenerateKemResponse struct {
-	KeyHandle KeyHandle `json:"keyHandle"`
+	KeyHandle KeyHandle `json:"key_handle"`
 }
 
 // Server is the WSD HTTP server.
