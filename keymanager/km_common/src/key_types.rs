@@ -1,6 +1,6 @@
 use crate::algorithms::{AeadAlgorithm, HpkeAlgorithm, KdfAlgorithm, KemAlgorithm};
 use crate::crypto;
-use crate::crypto::{PublicKey, secret_box};
+use crate::crypto::{secret_box, PublicKey};
 use crate::protected_mem::Vault;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
@@ -57,6 +57,11 @@ impl KeyRegistry {
     pub fn add_key(&self, record: KeyRecord) {
         let mut keys = self.keys.write().unwrap();
         keys.insert(record.meta.id, record);
+    }
+
+    pub fn enumerate_keys(&self) -> Vec<KeyMetadata> {
+        let keys = self.keys.read().unwrap();
+        keys.values().map(|r| r.meta.clone()).collect()
     }
 }
 
@@ -145,6 +150,33 @@ mod tests {
     use super::*;
     use crate::algorithms::{AeadAlgorithm, KdfAlgorithm, KemAlgorithm};
 
+    fn create_key_record<F>(
+        algo: HpkeAlgorithm,
+        expiry_secs: u64,
+        spec_builder: F,
+    ) -> Result<KeyRecord, crypto::Error>
+    where
+        F: FnOnce(HpkeAlgorithm, PublicKey) -> KeySpec,
+    {
+        let (pub_key, priv_key) = crypto::generate_keypair(KemAlgorithm::DhkemX25519HkdfSha256)?;
+        let id = Uuid::new_v4();
+        let vault = Vault::new(secret_box::SecretBox::from(priv_key))
+            .map_err(|_| crypto::Error::CryptoError)?;
+        let now = Instant::now();
+        let delete_after = now
+            .checked_add(Duration::from_secs(expiry_secs))
+            .ok_or(crypto::Error::UnsupportedAlgorithm)?;
+        Ok(KeyRecord {
+            meta: KeyMetadata {
+                id,
+                created_at: now,
+                delete_after,
+                spec: spec_builder(algo, pub_key),
+            },
+            private_key: vault,
+        })
+    }
+
     #[test]
     fn test_create_binding_key_success() {
         let algo = HpkeAlgorithm {
@@ -203,6 +235,51 @@ mod tests {
         } else {
             panic!("Unexpected KeySpec variant");
         }
+    }
+
+    #[test]
+    fn test_enumerate_keys_empty() {
+        let registry = KeyRegistry::default();
+        let keys = registry.enumerate_keys();
+        assert!(keys.is_empty());
+    }
+
+    #[test]
+    fn test_enumerate_keys() {
+        let registry = KeyRegistry::default();
+        let algo = HpkeAlgorithm {
+            kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
+            kdf: KdfAlgorithm::HkdfSha256 as i32,
+            aead: AeadAlgorithm::Aes256Gcm as i32,
+        };
+
+        let binding_pubkey = [42u8; 32];
+
+        let record1 = create_key_record(algo, 3600, |a, pk| KeySpec::KemWithBindingPub {
+            algo: a,
+            kem_public_key: pk,
+            binding_public_key: PublicKey::try_from(binding_pubkey.to_vec()).unwrap(),
+        })
+        .expect("failed to create key 1");
+        let id1 = record1.meta.id;
+
+        let record2 = create_key_record(algo, 7200, |a, pk| KeySpec::KemWithBindingPub {
+            algo: a,
+            kem_public_key: pk,
+            binding_public_key: PublicKey::try_from(binding_pubkey.to_vec()).unwrap(),
+        })
+        .expect("failed to create key 2");
+        let id2 = record2.meta.id;
+
+        registry.add_key(record1);
+        registry.add_key(record2);
+
+        let metas = registry.enumerate_keys();
+        assert_eq!(metas.len(), 2);
+
+        let ids: Vec<Uuid> = metas.iter().map(|m| m.id).collect();
+        assert!(ids.contains(&id1));
+        assert!(ids.contains(&id2));
     }
 
     #[test]

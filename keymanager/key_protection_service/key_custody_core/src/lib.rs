@@ -3,7 +3,7 @@ use km_common::crypto::PublicKey;
 use km_common::key_types::{KeyRecord, KeyRegistry, KeySpec};
 use std::slice;
 use std::sync::LazyLock;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 static KEY_REGISTRY: LazyLock<KeyRegistry> = LazyLock::new(KeyRegistry::default);
 
@@ -53,9 +53,11 @@ fn generate_kem_keypair_internal(
 /// * `0` on success.
 /// * `-1` if an error occurred during key generation or if `binding_pubkey` is null/empty.
 /// * `-2` if the `out_pubkey` buffer size does not match the key size.
+use km_common::ffi::KmHpkeAlgorithm;
+
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn key_manager_generate_kem_keypair(
-    algo: HpkeAlgorithm,
+    algo: KmHpkeAlgorithm,
     binding_pubkey: *const u8,
     binding_pubkey_len: usize,
     expiry_secs: u64,
@@ -83,7 +85,8 @@ pub unsafe extern "C" fn key_manager_generate_kem_keypair(
     };
 
     // Call Safe Internal Function
-    match generate_kem_keypair_internal(algo, binding_pubkey, expiry_secs) {
+    // Call Safe Internal Function
+    match generate_kem_keypair_internal(algo.into(), binding_pubkey, expiry_secs) {
         Ok((id, pubkey)) => {
             if out_pubkey_len != pubkey.as_bytes().len() {
                 return -2;
@@ -94,6 +97,75 @@ pub unsafe extern "C" fn key_manager_generate_kem_keypair(
         }
         Err(e) => e,
     }
+}
+
+#[repr(C)]
+pub struct KpsKeyInfo {
+    pub uuid: [u8; 16],
+    pub algorithm: KmHpkeAlgorithm,
+    pub kem_pub_key: [u8; 64],
+    pub kem_pub_key_len: usize,
+    pub binding_pub_key: [u8; 64],
+    pub binding_pub_key_len: usize,
+    pub remaining_lifespan_secs: u64,
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn key_manager_enumerate_kem_keys(
+    out_entries: *mut KpsKeyInfo,
+    max_entries: usize,
+    out_count: *mut usize,
+) -> i32 {
+    if out_entries.is_null() || out_count.is_null() {
+        return -1;
+    }
+
+    let metas = KEY_REGISTRY.enumerate_keys();
+    let now = Instant::now();
+    let mut count = 0usize;
+
+    for meta in &metas {
+        if count >= max_entries {
+            break;
+        }
+        if let KeySpec::KemWithBindingPub {
+            algo,
+            kem_public_key,
+            binding_public_key,
+        } = &meta.spec
+        {
+            if kem_public_key.as_bytes().len() > 64 || binding_public_key.as_bytes().len() > 64 {
+                continue;
+            }
+
+            let remaining = meta.delete_after.saturating_duration_since(now).as_secs();
+
+            let entry = unsafe { &mut *out_entries.add(count) };
+            entry.uuid.copy_from_slice(meta.id.as_bytes());
+            entry.algorithm = KmHpkeAlgorithm {
+                kem: (*algo).kem,
+                kdf: (*algo).kdf,
+                aead: (*algo).aead,
+            };
+
+            entry.kem_pub_key = [0u8; 64];
+            entry.kem_pub_key[..kem_public_key.as_bytes().len()].copy_from_slice(kem_public_key.as_bytes());
+            entry.kem_pub_key_len = kem_public_key.as_bytes().len();
+
+            entry.binding_pub_key = [0u8; 64];
+            entry.binding_pub_key[..binding_public_key.as_bytes().len()].copy_from_slice(binding_public_key.as_bytes());
+            entry.binding_pub_key_len = binding_public_key.as_bytes().len();
+
+            entry.remaining_lifespan_secs = remaining;
+
+            count += 1;
+        }
+    }
+
+    unsafe {
+        *out_count = count;
+    }
+    0
 }
 
 #[cfg(test)]
@@ -129,7 +201,7 @@ mod tests {
         let mut uuid_bytes = [0u8; 16];
         let mut pubkey_bytes = [0u8; 32];
         let pubkey_len: usize = pubkey_bytes.len();
-        let algo = HpkeAlgorithm {
+        let algo = KmHpkeAlgorithm {
             kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
             kdf: KdfAlgorithm::HkdfSha256 as i32,
             aead: AeadAlgorithm::Aes256Gcm as i32,
@@ -159,7 +231,7 @@ mod tests {
         let mut uuid_bytes = [0u8; 16];
         let mut pubkey_bytes = [0u8; 32];
         let pubkey_len: usize = pubkey_bytes.len();
-        let algo = HpkeAlgorithm {
+        let algo = KmHpkeAlgorithm {
             kem: 999, // Invalid KEM
             kdf: KdfAlgorithm::HkdfSha256 as i32,
             aead: AeadAlgorithm::Aes256Gcm as i32,
@@ -187,7 +259,7 @@ mod tests {
         let mut uuid_bytes = [0u8; 16];
         let mut pubkey_bytes = [0u8; 64];
         let pubkey_len: usize = pubkey_bytes.len();
-        let algo = HpkeAlgorithm {
+        let algo = KmHpkeAlgorithm {
             kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
             kdf: KdfAlgorithm::HkdfSha256 as i32,
             aead: AeadAlgorithm::Aes256Gcm as i32,
@@ -213,7 +285,7 @@ mod tests {
     #[test]
     fn test_generate_kem_keypair_null_binding_key() {
         let mut uuid_bytes = [0u8; 16];
-        let algo = HpkeAlgorithm {
+        let algo = KmHpkeAlgorithm {
             kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
             kdf: KdfAlgorithm::HkdfSha256 as i32,
             aead: AeadAlgorithm::Aes256Gcm as i32,
@@ -238,7 +310,7 @@ mod tests {
     fn test_generate_kem_keypair_empty_binding_key_len() {
         let binding_pubkey = [1u8; 32];
         let mut uuid_bytes = [0u8; 16];
-        let algo = HpkeAlgorithm {
+        let algo = KmHpkeAlgorithm {
             kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
             kdf: KdfAlgorithm::HkdfSha256 as i32,
             aead: AeadAlgorithm::Aes256Gcm as i32,
@@ -257,5 +329,83 @@ mod tests {
         };
 
         assert_eq!(result, -1);
+    }
+
+    #[test]
+    fn test_enumerate_kem_keys_null_pointers() {
+        let result = key_manager_enumerate_kem_keys(std::ptr::null_mut(), 10, std::ptr::null_mut());
+        assert_eq!(result, -1);
+    }
+
+    #[test]
+    fn test_enumerate_kem_keys_after_generate() {
+        let binding_pubkey = [7u8; 32];
+        let mut uuid_bytes = [0u8; 16];
+        let mut pubkey_bytes = [0u8; 64];
+        let pubkey_len: usize = 32;
+        let algo = HpkeAlgorithm {
+            kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
+            kdf: KdfAlgorithm::HkdfSha256 as i32,
+            aead: AeadAlgorithm::Aes256Gcm as i32,
+        };
+
+        // Generate a key first.
+        let rc = unsafe {
+            key_manager_generate_kem_keypair(
+                KmHpkeAlgorithm {
+                    kem: algo.kem,
+                    kdf: algo.kdf,
+                    aead: algo.aead,
+                },
+                binding_pubkey.as_ptr(),
+                binding_pubkey.len(),
+                3600,
+                uuid_bytes.as_mut_ptr(),
+                pubkey_bytes.as_mut_ptr(),
+                pubkey_len,
+            )
+        };
+        assert_eq!(rc, 0);
+
+        // Enumerate.
+        let mut entries: Vec<KpsKeyInfo> = Vec::with_capacity(256);
+        entries.resize_with(256, || KpsKeyInfo {
+            uuid: [0; 16],
+            algorithm: KmHpkeAlgorithm {
+                kem: 0,
+                kdf: 0,
+                aead: 0,
+            },
+            kem_pub_key: [0; 64],
+            kem_pub_key_len: 0,
+            binding_pub_key: [0; 64],
+            binding_pub_key_len: 0,
+            remaining_lifespan_secs: 0,
+        });
+        let mut count: usize = 0;
+
+        let rc = unsafe { key_manager_enumerate_kem_keys(entries.as_mut_ptr(), entries.len(), &mut count) };
+        assert_eq!(rc, 0);
+        // At least 1 key should be enumerated (the one we just generated).
+        // Note: other tests may have added keys to the global registry too.
+        assert!(count >= 1);
+
+        // Find our key in the results.
+        let mut found = false;
+        for i in 0..count {
+            if entries[i].uuid == uuid_bytes {
+                found = true;
+                assert_eq!(
+                    entries[i].algorithm.kem,
+                    KemAlgorithm::DhkemX25519HkdfSha256 as i32
+                );
+                assert_eq!(entries[i].kem_pub_key_len, 32);
+                assert_eq!(entries[i].binding_pub_key_len, 32);
+                assert_eq!(&entries[i].binding_pub_key[..32], &binding_pubkey);
+                assert!(entries[i].remaining_lifespan_secs > 0);
+                break;
+            }
+        }
+        assert!(found, "generated key not found in enumerate results");
     }
 }
