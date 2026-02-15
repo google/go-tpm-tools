@@ -144,7 +144,7 @@ func TestHandleGenerateKemBadRequest(t *testing.T) {
 			body: GenerateKemRequest{Algorithm: KemAlgorithmDHKEMX25519HKDFSHA256, KeyProtectionMechanism: KeyProtectionMechanismVM, Lifespan: ProtoDuration{Seconds: 0}},
 		},
 		{
-			name: "missing algorithm (defaults to 0)",
+			name: "missing algorithm (defaults to UNSPECIFIED)",
 			body: GenerateKemRequest{KeyProtectionMechanism: KeyProtectionMechanismVM, Lifespan: ProtoDuration{Seconds: 3600}},
 		},
 	}
@@ -175,9 +175,14 @@ func TestHandleGenerateKemBadJSON(t *testing.T) {
 		body string
 	}{
 		{"not json", "not json"},
-		{"lifespan as integer", `{"algorithm":1,"keyProtectionMechanism":2,"lifespan":3600}`},
-		{"lifespan missing s suffix", `{"algorithm":1,"keyProtectionMechanism":2,"lifespan":"3600"}`},
-		{"lifespan negative", `{"algorithm":1,"keyProtectionMechanism":2,"lifespan":"-1s"}`},
+		{"lifespan as integer", `{"algorithm":"KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256","key_protection_mechanism":"KEY_PROTECTION_VM","lifespan":3600}`},
+		{"lifespan missing s suffix", `{"algorithm":"KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256","key_protection_mechanism":"KEY_PROTECTION_VM","lifespan":"3600"}`},
+		{"lifespan negative", `{"algorithm":"KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256","key_protection_mechanism":"KEY_PROTECTION_VM","lifespan":"-1s"}`},
+		// Added tests for invalid enum strings
+		{"invalid algorithm", `{"algorithm":"INVALID","key_protection_mechanism":"KEY_PROTECTION_VM","lifespan":"3600s"}`},
+		{"invalid protection mechanism", `{"algorithm":"KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256","key_protection_mechanism":"INVALID","lifespan":"3600s"}`},
+		// Test wrong type for enums (int instead of string), if we want to enforce string only
+		{"algorithm as int", `{"algorithm":1,"key_protection_mechanism":"KEY_PROTECTION_VM","lifespan":"3600s"}`},
 	}
 
 	for _, tc := range badBodies {
