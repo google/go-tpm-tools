@@ -13,6 +13,9 @@ thiserror = "2.0"
 bssl-crypto = { path = "../third_party/bssl-crypto" }
 clear_on_drop = "0.2"
 
+[features]
+test-utils = []
+
 [dev-dependencies]
 hex = "0.4"
 

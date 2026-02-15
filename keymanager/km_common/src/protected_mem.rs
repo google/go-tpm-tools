@@ -45,7 +45,7 @@ impl Vault {
     /// Creates a new `Vault` containing the provided data.
     ///
     /// The provided `data` is copied into the vault. The source `SecretBox` is
-    /// dropped at the end, ensuring the original sensitive data is zeroized 
+    /// dropped at the end, ensuring the original sensitive data is zeroized
     /// from memory.
     ///
     /// # Errors
@@ -81,15 +81,9 @@ impl Vault {
         })
     }
 
-    /// Returns a slice referencing the secret key material.
-    pub fn as_bytes(&self) -> &[u8] {
-        &self.mmap
-    }
-}
-
-impl AsRef<[u8]> for Vault {
-    fn as_ref(&self) -> &[u8] {
-        self.as_bytes()
+    /// Returns a new SecretBox containing a copy of the secret key material.
+    pub fn get_secret(&self) -> SecretBox {
+        SecretBox::new(self.mmap.to_vec())
     }
 }
 
@@ -104,15 +98,14 @@ mod tests {
         let original_data = data;
         let secret = SecretBox::new(data.to_vec());
         let vault = Vault::new(secret).expect("Failed to create vault");
-        assert_eq!(vault.as_bytes(), &original_data);
-        assert_eq!(vault.as_ref(), &original_data);
+        assert_eq!(vault.get_secret().as_slice(), &original_data);
     }
 
     #[test]
     fn test_vault_with_empty_data() {
         let secret = SecretBox::new(vec![]);
         let vault = Vault::new(secret).expect("Failed to create empty vault");
-        assert!(vault.as_bytes().is_empty());
+        assert!(vault.get_secret().as_slice().is_empty());
     }
 
     #[test]
@@ -121,9 +114,9 @@ mod tests {
         let v1 = Vault::new(SecretBox::new(s1.to_vec())).unwrap();
         let s2 = *b"secret2";
         let v2 = Vault::new(SecretBox::new(s2.to_vec())).unwrap();
-        assert_ne!(v1.as_bytes(), v2.as_bytes());
-        assert_eq!(v1.as_bytes(), b"secret1");
-        assert_eq!(v2.as_bytes(), b"secret2");
+        assert_ne!(v1.get_secret().as_slice(), v2.get_secret().as_slice());
+        assert_eq!(v1.get_secret().as_slice(), b"secret1");
+        assert_eq!(v2.get_secret().as_slice(), b"secret2");
     }
 
     #[test]
@@ -131,7 +124,7 @@ mod tests {
         let data = vec![0u8; 1024 * 1024]; // 1MB
         let len = data.len();
         let vault = Vault::new(SecretBox::new(data)).expect("Failed to create large vault");
-        assert_eq!(vault.as_bytes().len(), len);
+        assert_eq!(vault.get_secret().as_slice().len(), len);
     }
 
     #[test]
@@ -154,7 +147,7 @@ mod tests {
         );
 
         // 2. Verify mapping in /proc/self/maps
-        let ptr = vault.as_bytes().as_ptr() as usize;
+        let ptr = vault.mmap.as_ptr() as usize;
         let mut stat: libc::stat = unsafe { std::mem::zeroed() };
         let ret = unsafe { libc::fstat(fd, &mut stat) };
         assert_eq!(ret, 0, "fstat failed");

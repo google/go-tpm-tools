@@ -7,3 +7,6 @@ edition = "2024"
 km_common = { path = "../../km_common" }
 uuid = { version = "1.20.0", features = ["v4"] }
 zeroize = "1.8"
+
+[dev-dependencies]
+km_common = { path = "../../km_common", features = ["test-utils"] }
