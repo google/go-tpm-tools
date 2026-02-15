@@ -19,11 +19,11 @@ const (
 var (
 	kemAlgorithmToString = map[KemAlgorithm]string{
 		KemAlgorithmUnspecified:           "KEM_ALGORITHM_UNSPECIFIED",
-		KemAlgorithmDHKEMX25519HKDFSHA256: "KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256",
+		KemAlgorithmDHKEMX25519HKDFSHA256: "DHKEM_X25519_HKDF_SHA256",
 	}
 	stringToKemAlgorithm = map[string]KemAlgorithm{
-		"KEM_ALGORITHM_UNSPECIFIED":              KemAlgorithmUnspecified,
-		"KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256": KemAlgorithmDHKEMX25519HKDFSHA256,
+		"KEM_ALGORITHM_UNSPECIFIED": KemAlgorithmUnspecified,
+		"DHKEM_X25519_HKDF_SHA256":  KemAlgorithmDHKEMX25519HKDFSHA256,
 	}
 )
 
