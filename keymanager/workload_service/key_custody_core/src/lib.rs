@@ -106,11 +106,8 @@ pub unsafe extern "C" fn key_manager_destroy_binding_key(uuid_bytes: *const u8) 
     if uuid_bytes.is_null() {
         return -1;
     }
-    let uuid = unsafe {
-        let mut bytes = [0u8; 16];
-        std::ptr::copy_nonoverlapping(uuid_bytes, bytes.as_mut_ptr(), 16);
-        Uuid::from_bytes(bytes)
-    };
+    let bytes = unsafe { slice::from_raw_parts(uuid_bytes, 16) };
+    let uuid = Uuid::from_bytes(bytes.try_into().expect("invalid UUID bytes"));
 
     match KEY_REGISTRY.remove_key(&uuid) {
         Some(_) => 0, // Success
