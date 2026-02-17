@@ -86,7 +86,7 @@ func NewServer(bindingGen BindingKeyGenerator, kemGen KEMKeyGenerator) *Server {
 	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/keys:generate_kem", s.handleGenerateKem)
+	mux.HandleFunc("POST /v1/keys:generate_kem", s.handleGenerateKem)
 
 	s.httpServer = &http.Server{Handler: mux}
 	return s
@@ -121,11 +121,6 @@ func (s *Server) LookupBindingUUID(kemUUID uuid.UUID) (uuid.UUID, bool) {
 }
 
 func (s *Server) handleGenerateKem(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
 	var req GenerateKemRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, fmt.Sprintf("invalid request body: %v", err), http.StatusBadRequest)
