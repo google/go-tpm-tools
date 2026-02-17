@@ -10,8 +10,6 @@ import (
 	"math"
 	"net"
 	"net/http"
-	"strconv"
-	"strings"
 	"sync"
 
 	"github.com/google/uuid"
@@ -37,29 +35,22 @@ type ProtoDuration struct {
 	Seconds uint64
 }
 
-// UnmarshalJSON parses a proto3 Duration JSON string (e.g. "300s", "1.5s").
+// UnmarshalJSON parses a proto3 Duration JSON number (as seconds).
 func (d *ProtoDuration) UnmarshalJSON(data []byte) error {
-	var s string
-	if err := json.Unmarshal(data, &s); err != nil {
-		return fmt.Errorf("duration must be a string: %w", err)
-	}
-	if !strings.HasSuffix(s, "s") {
-		return fmt.Errorf("duration %q missing trailing 's'", s)
-	}
-	v, err := strconv.ParseFloat(strings.TrimSuffix(s, "s"), 64)
-	if err != nil {
-		return fmt.Errorf("invalid duration %q: %w", s, err)
+	var v float64
+	if err := json.Unmarshal(data, &v); err != nil {
+		return fmt.Errorf("duration must be a numeric value (seconds): %w", err)
 	}
 	if v < 0 || v > math.MaxUint64 {
-		return fmt.Errorf("duration %q out of range", s)
+		return fmt.Errorf("duration %f out of range", v)
 	}
 	d.Seconds = uint64(v)
 	return nil
 }
 
-// MarshalJSON encodes as a proto3 Duration JSON string.
+// MarshalJSON encodes as a proto3 Duration JSON number (as seconds).
 func (d ProtoDuration) MarshalJSON() ([]byte, error) {
-	return json.Marshal(fmt.Sprintf("%ds", d.Seconds))
+	return json.Marshal(d.Seconds)
 }
 
 // GenerateKemRequest is the JSON body for POST /v1/keys:generate_kem.

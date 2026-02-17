@@ -175,9 +175,9 @@ func TestHandleGenerateKemBadJSON(t *testing.T) {
 		body string
 	}{
 		{"not json", "not json"},
-		{"lifespan as integer", `{"algorithm":1,"key_protection_mechanism":2,"lifespan":3600}`},
-		{"lifespan missing s suffix", `{"algorithm":1,"key_protection_mechanism":2,"lifespan":"3600"}`},
-		{"lifespan negative", `{"algorithm":1,"key_protection_mechanism":2,"lifespan":"-1s"}`},
+		{"lifespan as string", `{"algorithm":1,"key_protection_mechanism":2,"lifespan":"3600"}`},
+		{"lifespan as string with suffix", `{"algorithm":1,"key_protection_mechanism":2,"lifespan":"3600s"}`},
+		{"lifespan negative", `{"algorithm":1,"key_protection_mechanism":2,"lifespan":-1}`},
 	}
 
 	for _, tc := range badBodies {
@@ -207,6 +207,48 @@ func TestHandleGenerateKemBindingGenError(t *testing.T) {
 
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("expected status 500, got %d", w.Code)
+	}
+}
+
+func TestHandleGenerateKemFlexibleLifespan(t *testing.T) {
+	srv := NewServer(
+		&mockBindingKeyGen{uuid: uuid.New(), pubKey: make([]byte, 32)},
+		&mockKEMKeyGen{uuid: uuid.New(), pubKey: make([]byte, 32)},
+	)
+
+	tests := []struct {
+		name     string
+		body     string
+		expected uint64
+	}{
+		{
+			name:     "integer seconds",
+			body:     `{"algorithm":"DHKEM_X25519_HKDF_SHA256","key_protection_mechanism":"KEY_PROTECTION_VM","lifespan":3600}`,
+			expected: 3600,
+		},
+		{
+			name:     "float seconds",
+			body:     `{"algorithm":"DHKEM_X25519_HKDF_SHA256","key_protection_mechanism":"KEY_PROTECTION_VM","lifespan":1.5}`,
+			expected: 1, // Truncated to 1
+		},
+		{
+			name:     "float seconds round down",
+			body:     `{"algorithm":"DHKEM_X25519_HKDF_SHA256","key_protection_mechanism":"KEY_PROTECTION_VM","lifespan":3600.9}`,
+			expected: 3600,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/v1/keys:generate_kem", bytes.NewReader([]byte(tc.body)))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			srv.Handler().ServeHTTP(w, req)
+
+			if w.Code != http.StatusOK {
+				t.Fatalf("expected status 200, got %d: %s", w.Code, w.Body.String())
+			}
+		})
 	}
 }
 
