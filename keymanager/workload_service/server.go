@@ -123,47 +123,39 @@ func (s *Server) LookupBindingUUID(kemUUID uuid.UUID) (uuid.UUID, bool) {
 func (s *Server) handleGenerateKem(w http.ResponseWriter, r *http.Request) {
 	var req GenerateKemRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, fmt.Sprintf("invalid request body: %v", err), http.StatusBadRequest)
+		writeError(w, fmt.Sprintf("invalid request body: %v", err), http.StatusBadRequest)
 		return
 	}
 
 	// Validate algorithm.
 	if !req.Algorithm.IsSupported() {
-		http.Error(
-			w,
-			fmt.Sprintf("unsupported algorithm: %s", req.Algorithm),
-			http.StatusBadRequest,
-		)
+		writeError(w, fmt.Sprintf("unsupported algorithm: %s", req.Algorithm), http.StatusBadRequest)
 		return
 	}
 
 	// Validate keyProtectionMechanism.
 	if !req.KeyProtectionMechanism.IsSupported() {
-		http.Error(
-			w,
-			fmt.Sprintf("unsupported keyProtectionMechanism: %s", req.KeyProtectionMechanism),
-			http.StatusBadRequest,
-		)
+		writeError(w, fmt.Sprintf("unsupported keyProtectionMechanism: %s", req.KeyProtectionMechanism), http.StatusBadRequest)
 		return
 	}
 
 	// Validate lifespan is positive.
 	if req.Lifespan.Seconds == 0 {
-		http.Error(w, "lifespan must be greater than 0s", http.StatusBadRequest)
+		writeError(w, "lifespan must be greater than 0s", http.StatusBadRequest)
 		return
 	}
 
 	// Step 1: Generate binding keypair via WSD KCC FFI.
 	bindingUUID, bindingPubKey, err := s.bindingGen.GenerateBindingKeypair(req.Lifespan.Seconds)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("failed to generate binding keypair: %v", err), http.StatusInternalServerError)
+		writeError(w, fmt.Sprintf("failed to generate binding keypair: %v", err), http.StatusInternalServerError)
 		return
 	}
 
 	// Step 2: Generate KEM keypair via KPS KOL, passing the binding public key.
 	kemUUID, _, err := s.kemGen.GenerateKEMKeypair(bindingPubKey, req.Lifespan.Seconds)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("failed to generate KEM keypair: %v", err), http.StatusInternalServerError)
+		writeError(w, fmt.Sprintf("failed to generate KEM keypair: %v", err), http.StatusInternalServerError)
 		return
 	}
 
@@ -178,4 +170,12 @@ func (s *Server) handleGenerateKem(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
+}
+
+// writeError writes a JSON error response.
+func writeError(w http.ResponseWriter, message string, code int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.WriteHeader(code)
+	json.NewEncoder(w).Encode(map[string]string{"error": message})
 }
