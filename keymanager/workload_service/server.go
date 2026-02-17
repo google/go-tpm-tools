@@ -127,27 +127,21 @@ func (s *Server) handleGenerateKem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate algorithm: only DHKEM_X25519_HKDF_SHA256 supported.
-	if req.Algorithm != KemAlgorithmDHKEMX25519HKDFSHA256 {
+	// Validate algorithm.
+	if !req.Algorithm.IsSupported() {
 		http.Error(
 			w,
-			fmt.Sprintf(
-				"unsupported algorithm: only DHKEM_X25519_HKDF_SHA256 (%d) is supported",
-				KemAlgorithmDHKEMX25519HKDFSHA256,
-			),
+			fmt.Sprintf("unsupported algorithm: %s", req.Algorithm),
 			http.StatusBadRequest,
 		)
 		return
 	}
 
-	// Validate keyProtectionMechanism: only KEY_PROTECTION_VM supported.
-	if req.KeyProtectionMechanism != KeyProtectionMechanismVM {
+	// Validate keyProtectionMechanism.
+	if !req.KeyProtectionMechanism.IsSupported() {
 		http.Error(
 			w,
-			fmt.Sprintf(
-				"unsupported keyProtectionMechanism: only KEY_PROTECTION_VM (%d) is supported",
-				KeyProtectionMechanismVM,
-			),
+			fmt.Sprintf("unsupported keyProtectionMechanism: %s", req.KeyProtectionMechanism),
 			http.StatusBadRequest,
 		)
 		return

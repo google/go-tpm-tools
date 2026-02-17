@@ -91,3 +91,23 @@ func (k *KeyProtectionMechanism) UnmarshalJSON(data []byte) error {
 	}
 	return fmt.Errorf("unknown KeyProtectionMechanism: %q", s)
 }
+
+// Supported algorithms and mechanisms.
+var (
+	SupportedKemAlgorithms = map[KemAlgorithm]bool{
+		KemAlgorithmDHKEMX25519HKDFSHA256: true,
+	}
+	SupportedKeyProtectionMechanisms = map[KeyProtectionMechanism]bool{
+		KeyProtectionMechanismVM: true,
+	}
+)
+
+// IsSupported returns true if the KEM algorithm is supported.
+func (k KemAlgorithm) IsSupported() bool {
+	return SupportedKemAlgorithms[k]
+}
+
+// IsSupported returns true if the key protection mechanism is supported.
+func (k KeyProtectionMechanism) IsSupported() bool {
+	return SupportedKeyProtectionMechanisms[k]
+}
