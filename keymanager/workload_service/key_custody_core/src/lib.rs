@@ -5,6 +5,7 @@ use prost::Message;
 use std::slice;
 use std::sync::Arc;
 use std::sync::LazyLock;
+use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 use uuid::Uuid;
 

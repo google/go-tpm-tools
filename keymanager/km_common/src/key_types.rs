@@ -294,7 +294,7 @@ mod tests {
 
         // Prepare spy mapping to check for zeroization after drop
         let fd = removed.private_key.as_raw_fd();
-        let len = removed.private_key.as_bytes().len();
+        let len = removed.private_key.get_secret().as_slice().len();
 
         let spy = unsafe {
             let fd_dup = libc::dup(fd);
@@ -303,7 +303,7 @@ mod tests {
         };
 
         // Verify spy sees the data before drop
-        assert_eq!(&spy[..len], removed.private_key.as_bytes());
+        assert_eq!(&spy[..len], removed.private_key.get_secret().as_slice());
         assert!(!spy[..len].iter().all(|&b| b == 0));
 
         drop(removed);
