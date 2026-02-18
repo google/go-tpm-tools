@@ -129,7 +129,7 @@ func (s *Server) handleGenerateKem(w http.ResponseWriter, r *http.Request) {
 
 	// Validate algorithm.
 	if !req.Algorithm.IsSupported() {
-		writeError(w, fmt.Sprintf("unsupported algorithm: %s", req.Algorithm), http.StatusBadRequest)
+		writeError(w, fmt.Sprintf("unsupported algorithm: %s. Supported algorithms: %s", req.Algorithm, SupportedKemAlgorithmsString()), http.StatusBadRequest)
 		return
 	}
 

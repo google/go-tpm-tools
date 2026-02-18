@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -133,7 +134,7 @@ func TestHandleGenerateKemBadRequest(t *testing.T) {
 	}{
 		{
 			name: "unsupported algorithm",
-			body: GenerateKemRequest{Algorithm: KemAlgorithm(99), KeyProtectionMechanism: KeyProtectionMechanismVM, Lifespan: ProtoDuration{Seconds: 3600}},
+			body: GenerateKemRequest{Algorithm: KemAlgorithmUnspecified, KeyProtectionMechanism: KeyProtectionMechanismVM, Lifespan: ProtoDuration{Seconds: 3600}},
 		},
 		{
 			name: "unsupported key protection mechanism",
@@ -159,6 +160,17 @@ func TestHandleGenerateKemBadRequest(t *testing.T) {
 
 			if w.Code != http.StatusBadRequest {
 				t.Fatalf("expected status 400, got %d: %s", w.Code, w.Body.String())
+			}
+
+			if tc.name == "unsupported algorithm" {
+				var resp map[string]string
+				if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+					t.Fatalf("failed to decode response: %v", err)
+				}
+				expectedSubstr := "Supported algorithms: DHKEM_X25519_HKDF_SHA256"
+				if errMsg, ok := resp["error"]; !ok || !strings.Contains(errMsg, expectedSubstr) {
+					t.Errorf("expected error message to contain %q, got %q", expectedSubstr, errMsg)
+				}
 			}
 		})
 	}

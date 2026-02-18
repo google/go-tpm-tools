@@ -111,3 +111,9 @@ func (k KemAlgorithm) IsSupported() bool {
 func (k KeyProtectionMechanism) IsSupported() bool {
 	return SupportedKeyProtectionMechanisms[k]
 }
+
+// SupportedKemAlgorithmsString returns a comma-separated list of supported KEM algorithms.
+func SupportedKemAlgorithmsString() string {
+	// We only have one supported algorithm right now, so we can just return it.
+	return KemAlgorithmDHKEMX25519HKDFSHA256.String()
+}
