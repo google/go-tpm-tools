@@ -87,16 +87,15 @@ impl KeyRegistry {
     ) -> std::thread::JoinHandle<()> {
         let keys_clone = Arc::clone(&self.keys);
         std::thread::spawn(move || {
-            while !stop_signal.load(std::sync::atomic::Ordering::Relaxed) {
+            loop {
                 std::thread::sleep(Duration::from_secs(REAPER_INTERVAL_SECS));
                 if stop_signal.load(std::sync::atomic::Ordering::Relaxed) {
                     break;
                 }
                 let now = Instant::now();
-                keys_clone
-                    .write()
-                    .unwrap()
-                    .retain(|_, key| key.meta.delete_after > now);
+                if let Ok(mut keys) = keys_clone.write() {
+                    keys.retain(|_, key| key.meta.delete_after > now);
+                }
             }
         })
     }
