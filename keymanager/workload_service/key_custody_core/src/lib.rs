@@ -1,6 +1,7 @@
 use km_common::algorithms::HpkeAlgorithm;
 use km_common::crypto::PublicKey;
 use km_common::key_types::{KeyRecord, KeyRegistry, KeySpec};
+use prost::Message;
 use std::slice;
 use std::sync::LazyLock;
 use std::time::Duration;
@@ -53,7 +54,6 @@ fn generate_binding_keypair_internal(
 /// * `0` on success.
 /// * `-1` if an error occurred during key generation.
 /// * `-2` if the `out_pubkey` buffer size does not match the key size.
-use prost::Message;
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn key_manager_generate_binding_keypair(
