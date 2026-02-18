@@ -5,13 +5,13 @@
 
 #include <stddef.h>
 #include <stdint.h>
-#include "../../../km_common/include/km_algorithms.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif // __cplusplus
 
-int32_t key_manager_generate_kem_keypair(KmHpkeAlgorithm algo,
+int32_t key_manager_generate_kem_keypair(const uint8_t *algo_ptr,
+                                         size_t algo_len,
                                          const uint8_t *binding_pubkey,
                                          size_t binding_pubkey_len,
                                          uint64_t expiry_secs,

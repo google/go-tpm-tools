@@ -51,27 +51,34 @@ fn generate_binding_keypair_internal(
 /// * `0` on success.
 /// * `-1` if an error occurred during key generation.
 /// * `-2` if the `out_pubkey` buffer size does not match the key size.
-use km_common::ffi::KmHpkeAlgorithm;
+use prost::Message;
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn key_manager_generate_binding_keypair(
-    algo: KmHpkeAlgorithm,
+    algo_ptr: *const u8,
+    algo_len: usize,
     expiry_secs: u64,
     out_uuid: *mut u8,
     out_pubkey: *mut u8,
     out_pubkey_len: usize,
 ) -> i32 {
     // Safety Invariant Checks
-    if out_pubkey.is_null() || out_uuid.is_null() {
+    if out_pubkey.is_null() || out_uuid.is_null() || algo_ptr.is_null() || algo_len == 0 {
         return -1;
     }
 
     // Convert to Safe Types
+    let algo_slice = unsafe { slice::from_raw_parts(algo_ptr, algo_len) };
     let out_uuid = unsafe { slice::from_raw_parts_mut(out_uuid, 16) };
     let out_pubkey = unsafe { slice::from_raw_parts_mut(out_pubkey, out_pubkey_len) };
 
+    let algo = match HpkeAlgorithm::decode(algo_slice) {
+        Ok(a) => a,
+        Err(_) => return -1,
+    };
+
     // Call Safe Internal Function
-    match generate_binding_keypair_internal(algo.into(), expiry_secs) {
+    match generate_binding_keypair_internal(algo, expiry_secs) {
         Ok((id, pubkey)) => {
             if out_pubkey_len != pubkey.as_bytes().len() {
                 return -2;
@@ -88,6 +95,7 @@ pub unsafe extern "C" fn key_manager_generate_binding_keypair(
 mod tests {
     use super::*;
     use km_common::algorithms::{AeadAlgorithm, KdfAlgorithm, KemAlgorithm};
+    use prost::Message;
 
     #[test]
     fn test_create_binding_keypair_internal_success() {
@@ -111,15 +119,17 @@ mod tests {
         let mut uuid_bytes = [0u8; 16];
         let mut pubkey_bytes = [0u8; 32];
         let pubkey_len: usize = pubkey_bytes.len();
-        let algo = KmHpkeAlgorithm {
+        let algo = HpkeAlgorithm {
             kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
             kdf: KdfAlgorithm::HkdfSha256 as i32,
             aead: AeadAlgorithm::Aes256Gcm as i32,
         };
+        let algo_bytes = algo.encode_to_vec();
 
         let result = unsafe {
             key_manager_generate_binding_keypair(
-                algo,
+                algo_bytes.as_ptr(),
+                algo_bytes.len(),
                 3600,
                 uuid_bytes.as_mut_ptr(),
                 pubkey_bytes.as_mut_ptr(),
@@ -138,15 +148,13 @@ mod tests {
         let mut uuid_bytes = [0u8; 16];
         let mut pubkey_bytes = [0u8; 32];
         let pubkey_len: usize = pubkey_bytes.len();
-        let algo = KmHpkeAlgorithm {
-            kem: 999, // Invalid KEM
-            kdf: KdfAlgorithm::HkdfSha256 as i32,
-            aead: AeadAlgorithm::Aes256Gcm as i32,
-        };
+        // Invalid protobuf bytes
+        let algo_bytes = vec![0xFF, 0xFF];
 
         let result = unsafe {
             key_manager_generate_binding_keypair(
-                algo,
+                algo_bytes.as_ptr(),
+                algo_bytes.len(),
                 3600,
                 uuid_bytes.as_mut_ptr(),
                 pubkey_bytes.as_mut_ptr(),
@@ -160,16 +168,18 @@ mod tests {
 
     #[test]
     fn test_generate_binding_keypair_null_uuid_ptr() {
-        let algo = KmHpkeAlgorithm {
+        let algo = HpkeAlgorithm {
             kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
             kdf: KdfAlgorithm::HkdfSha256 as i32,
             aead: AeadAlgorithm::Aes256Gcm as i32,
         };
+        let algo_bytes = algo.encode_to_vec();
 
         // Pass null pointers, should succeed (return 0) but not crash
         let result = unsafe {
             key_manager_generate_binding_keypair(
-                algo,
+                algo_bytes.as_ptr(),
+                algo_bytes.len(),
                 3600,
                 std::ptr::null_mut(),
                 std::ptr::null_mut(),
@@ -185,16 +195,17 @@ mod tests {
         let mut uuid_bytes = [0u8; 16];
         let mut pubkey_bytes = [0u8; 64];
         let pubkey_len: usize = pubkey_bytes.len();
-        let pubkey_len: usize = pubkey_bytes.len();
-        let algo = KmHpkeAlgorithm {
+        let algo = HpkeAlgorithm {
             kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
             kdf: KdfAlgorithm::HkdfSha256 as i32,
             aead: AeadAlgorithm::Aes256Gcm as i32,
         };
+        let algo_bytes = algo.encode_to_vec();
 
         let result = unsafe {
             key_manager_generate_binding_keypair(
-                algo,
+                algo_bytes.as_ptr(),
+                algo_bytes.len(),
                 3600,
                 uuid_bytes.as_mut_ptr(),
                 pubkey_bytes.as_mut_ptr(),
