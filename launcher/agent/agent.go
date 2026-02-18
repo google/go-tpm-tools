@@ -115,30 +115,32 @@ func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher util.TpmKeyFetcher
 		sigsCache:        &sigsCache{},
 	}
 
-	// Add TPM
-	logger.Info("Adding TPM PCRs for measurement.")
+	var tpmAR *tpmAttestRoot
+	if tpm != nil {
+		logger.Info("Adding TPM PCRs for measurement.")
 
-	pcrSels, err := client.AllocatedPCRs(tpm)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get PCR selections: %v", err)
-	}
-
-	var hashAlgos []crypto.Hash
-	for _, sel := range pcrSels {
-		hashAlgo, err := sel.Hash.Hash()
+		pcrSels, err := client.AllocatedPCRs(tpm)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get TPM hash algorithm: %v", err)
+			return nil, fmt.Errorf("failed to get PCR selections: %v", err)
 		}
-		hashAlgos = append(hashAlgos, hashAlgo)
-	}
 
-	var tpmAR = &tpmAttestRoot{
-		fetchedAK: ak,
-		tpm:       tpm,
-		hashAlgos: hashAlgos,
-		cosCel:    gecel.NewPCR(),
+		var hashAlgos []crypto.Hash
+		for _, sel := range pcrSels {
+			hashAlgo, err := sel.Hash.Hash()
+			if err != nil {
+				return nil, fmt.Errorf("failed to get TPM hash algorithm: %v", err)
+			}
+			hashAlgos = append(hashAlgos, hashAlgo)
+		}
+
+		tpmAR = &tpmAttestRoot{
+			fetchedAK: ak,
+			tpm:       tpm,
+			hashAlgos: hashAlgos,
+			cosCel:    gecel.NewPCR(),
+		}
+		attestAgent.measuredRots = append(attestAgent.measuredRots, tpmAR)
 	}
-	attestAgent.measuredRots = append(attestAgent.measuredRots, tpmAR)
 
 	// check if is a TDX machine
 	qp, err := tg.GetQuoteProvider()
@@ -157,6 +159,9 @@ func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher util.TpmKeyFetcher
 		logger.Info("Using TDX RTMR as attestation root.")
 		attestAgent.avRot = tdxAR
 	} else {
+		if tpmAR == nil {
+			return nil, fmt.Errorf("no valid attestation root available (TPM or TDX RTMR)")
+		}
 		logger.Info("Using TPM PCR as attestation root.")
 		attestAgent.avRot = tpmAR
 	}
