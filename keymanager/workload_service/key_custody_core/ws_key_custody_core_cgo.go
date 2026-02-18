@@ -22,16 +22,10 @@ import (
 
 // GenerateBindingKeypair generates an X25519 HPKE binding keypair via Rust FFI.
 // Returns the UUID key handle and the public key bytes.
-func GenerateBindingKeypair(lifespanSecs uint64) (uuid.UUID, []byte, error) {
+func GenerateBindingKeypair(algo *algorithms.HpkeAlgorithm, lifespanSecs uint64) (uuid.UUID, []byte, error) {
 	var uuidBytes [16]byte
 	var pubkeyBuf [32]byte
 	pubkeyLen := C.size_t(len(pubkeyBuf))
-
-	algo := &algorithms.HpkeAlgorithm{
-		Kem:  algorithms.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
-		Kdf:  algorithms.KdfAlgorithm_KDF_ALGORITHM_HKDF_SHA256,
-		Aead: algorithms.AeadAlgorithm_AEAD_ALGORITHM_AES_256_GCM,
-	}
 
 	algoBytes, err := proto.Marshal(algo)
 	if err != nil {

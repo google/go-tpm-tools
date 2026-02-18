@@ -19,6 +19,8 @@ int32_t key_manager_generate_kem_keypair(const uint8_t *algo_ptr,
                                          uint8_t *out_pubkey,
                                          size_t out_pubkey_len);
 
+int32_t key_manager_destroy_kem_key(const uint8_t *uuid_bytes);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif  // __cplusplus

@@ -13,16 +13,18 @@ import (
 	"sync"
 
 	"github.com/google/uuid"
+
+	algorithms "github.com/google/go-tpm-tools/keymanager/km_common/proto"
 )
 
 // BindingKeyGenerator generates binding keypairs via the WSD KCC FFI.
 type BindingKeyGenerator interface {
-	GenerateBindingKeypair(lifespanSecs uint64) (uuid.UUID, []byte, error)
+	GenerateBindingKeypair(algo *algorithms.HpkeAlgorithm, lifespanSecs uint64) (uuid.UUID, []byte, error)
 }
 
 // KEMKeyGenerator generates KEM keypairs via the KPS KOL/KCC.
 type KEMKeyGenerator interface {
-	GenerateKEMKeypair(bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error)
+	GenerateKEMKeypair(algo *algorithms.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error)
 }
 
 // KeyHandle represents a key handle returned from the API.
@@ -145,15 +147,25 @@ func (s *Server) handleGenerateKem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Construct the full HPKE algorithm suite based on the requested KEM.
+	// We currently only support one suite.
+	// Construct the full HPKE algorithm suite based on the requested KEM.
+	// We currently only support one suite.
+	algo, err := kemAlgorithmToHpkeAlgorithm(req.Algorithm)
+	if err != nil {
+		writeError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	// Step 1: Generate binding keypair via WSD KCC FFI.
-	bindingUUID, bindingPubKey, err := s.bindingGen.GenerateBindingKeypair(req.Lifespan.Seconds)
+	bindingUUID, bindingPubKey, err := s.bindingGen.GenerateBindingKeypair(algo, req.Lifespan.Seconds)
 	if err != nil {
 		writeError(w, fmt.Sprintf("failed to generate binding keypair: %v", err), http.StatusInternalServerError)
 		return
 	}
 
 	// Step 2: Generate KEM keypair via KPS KOL, passing the binding public key.
-	kemUUID, _, err := s.kemGen.GenerateKEMKeypair(bindingPubKey, req.Lifespan.Seconds)
+	kemUUID, _, err := s.kemGen.GenerateKEMKeypair(algo, bindingPubKey, req.Lifespan.Seconds)
 	if err != nil {
 		writeError(w, fmt.Sprintf("failed to generate KEM keypair: %v", err), http.StatusInternalServerError)
 		return
@@ -178,4 +190,18 @@ func writeError(w http.ResponseWriter, message string, code int) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(code)
 	json.NewEncoder(w).Encode(map[string]string{"error": message})
+}
+
+// kemAlgorithmToHpkeAlgorithm maps the public KEM algorithm to the internal HPKE suite.
+func kemAlgorithmToHpkeAlgorithm(kem KemAlgorithm) (*algorithms.HpkeAlgorithm, error) {
+	switch kem {
+	case KemAlgorithmDHKEMX25519HKDFSHA256:
+		return &algorithms.HpkeAlgorithm{
+			Kem:  algorithms.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
+			Kdf:  algorithms.KdfAlgorithm_KDF_ALGORITHM_HKDF_SHA256,
+			Aead: algorithms.AeadAlgorithm_AEAD_ALGORITHM_AES_256_GCM,
+		}, nil
+	default:
+		return nil, fmt.Errorf("unsupported algorithm: %s", kem)
+	}
 }

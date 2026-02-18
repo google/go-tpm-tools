@@ -23,7 +23,7 @@ import (
 // GenerateKEMKeypair generates an X25519 HPKE KEM keypair linked to the
 // provided binding public key via Rust FFI.
 // Returns the UUID key handle and the KEM public key bytes.
-func GenerateKEMKeypair(bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
+func GenerateKEMKeypair(algo *algorithms.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
 	if len(bindingPubKey) == 0 {
 		return uuid.Nil, nil, fmt.Errorf("binding public key must not be empty")
 	}
@@ -31,12 +31,6 @@ func GenerateKEMKeypair(bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, [
 	var uuidBytes [16]byte
 	var pubkeyBuf [32]byte
 	pubkeyLen := C.size_t(len(pubkeyBuf))
-
-	algo := &algorithms.HpkeAlgorithm{
-		Kem:  algorithms.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
-		Kdf:  algorithms.KdfAlgorithm_KDF_ALGORITHM_HKDF_SHA256,
-		Aead: algorithms.AeadAlgorithm_AEAD_ALGORITHM_AES_256_GCM,
-	}
 
 	algoBytes, err := proto.Marshal(algo)
 	if err != nil {

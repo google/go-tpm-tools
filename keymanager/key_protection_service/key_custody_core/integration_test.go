@@ -6,7 +6,15 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+
+	algorithms "github.com/google/go-tpm-tools/keymanager/km_common/proto"
 )
+
+var defaultAlgo = &algorithms.HpkeAlgorithm{
+	Kem:  algorithms.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
+	Kdf:  algorithms.KdfAlgorithm_KDF_ALGORITHM_HKDF_SHA256,
+	Aead: algorithms.AeadAlgorithm_AEAD_ALGORITHM_AES_256_GCM,
+}
 
 func TestIntegrationGenerateKEMKeypair(t *testing.T) {
 	// 32-byte X25519 public key (dummy for testing)
@@ -15,7 +23,7 @@ func TestIntegrationGenerateKEMKeypair(t *testing.T) {
 		bindingPK[i] = byte(i + 1)
 	}
 
-	id, pubKey, err := GenerateKEMKeypair(bindingPK, 3600)
+	id, pubKey, err := GenerateKEMKeypair(defaultAlgo, bindingPK, 3600)
 	if err != nil {
 		t.Fatalf("GenerateKEMKeypair failed: %v", err)
 	}
@@ -29,7 +37,7 @@ func TestIntegrationGenerateKEMKeypair(t *testing.T) {
 }
 
 func TestIntegrationGenerateKEMKeypairEmptyPK(t *testing.T) {
-	_, _, err := GenerateKEMKeypair([]byte{}, 3600)
+	_, _, err := GenerateKEMKeypair(defaultAlgo, []byte{}, 3600)
 	if err == nil {
 		t.Fatal("expected error for empty binding public key")
 	}
@@ -41,11 +49,11 @@ func TestIntegrationGenerateKEMKeypairUniqueness(t *testing.T) {
 		bindingPK[i] = byte(i + 1)
 	}
 
-	id1, _, err := GenerateKEMKeypair(bindingPK, 3600)
+	id1, _, err := GenerateKEMKeypair(defaultAlgo, bindingPK, 3600)
 	if err != nil {
 		t.Fatalf("first GenerateKEMKeypair failed: %v", err)
 	}
-	id2, _, err := GenerateKEMKeypair(bindingPK, 3600)
+	id2, _, err := GenerateKEMKeypair(defaultAlgo, bindingPK, 3600)
 	if err != nil {
 		t.Fatalf("second GenerateKEMKeypair failed: %v", err)
 	}

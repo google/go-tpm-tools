@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+
+	algorithms "github.com/google/go-tpm-tools/keymanager/km_common/proto"
 )
 
 // mockBindingKeyGen implements BindingKeyGenerator for testing.
@@ -19,7 +21,7 @@ type mockBindingKeyGen struct {
 	err    error
 }
 
-func (m *mockBindingKeyGen) GenerateBindingKeypair(lifespanSecs uint64) (uuid.UUID, []byte, error) {
+func (m *mockBindingKeyGen) GenerateBindingKeypair(algo *algorithms.HpkeAlgorithm, lifespanSecs uint64) (uuid.UUID, []byte, error) {
 	return m.uuid, m.pubKey, m.err
 }
 
@@ -32,7 +34,7 @@ type mockKEMKeyGen struct {
 	receivedLifespan uint64
 }
 
-func (m *mockKEMKeyGen) GenerateKEMKeypair(bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
+func (m *mockKEMKeyGen) GenerateKEMKeypair(algo *algorithms.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
 	m.receivedPubKey = bindingPubKey
 	m.receivedLifespan = lifespanSecs
 	return m.uuid, m.pubKey, m.err
@@ -341,5 +343,46 @@ func TestHandleGenerateKemMapUniqueness(t *testing.T) {
 
 	if callCount != 2 {
 		t.Fatalf("expected 2 calls, got %d", callCount)
+	}
+}
+
+func TestKemAlgorithmToHpkeAlgorithm(t *testing.T) {
+	tests := []struct {
+		input    KemAlgorithm
+		want     *algorithms.HpkeAlgorithm
+		wantErr  bool
+	}{
+		{
+			input: KemAlgorithmDHKEMX25519HKDFSHA256,
+			want: &algorithms.HpkeAlgorithm{
+				Kem:  algorithms.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
+				Kdf:  algorithms.KdfAlgorithm_KDF_ALGORITHM_HKDF_SHA256,
+				Aead: algorithms.AeadAlgorithm_AEAD_ALGORITHM_AES_256_GCM,
+			},
+			wantErr: false,
+		},
+		{
+			input:   KemAlgorithmUnspecified,
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			input:   KemAlgorithm(999),
+			want:    nil,
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		got, err := kemAlgorithmToHpkeAlgorithm(tc.input)
+		if (err != nil) != tc.wantErr {
+			t.Errorf("kemAlgorithmToHpkeAlgorithm(%v) error = %v, wantErr %v", tc.input, err, tc.wantErr)
+			continue
+		}
+		if !tc.wantErr {
+			if got.Kem != tc.want.Kem || got.Kdf != tc.want.Kdf || got.Aead != tc.want.Aead {
+				t.Errorf("kemAlgorithmToHpkeAlgorithm(%v) = %v, want %v", tc.input, got, tc.want)
+			}
+		}
 	}
 }

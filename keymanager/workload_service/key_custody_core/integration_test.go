@@ -6,10 +6,18 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+
+	algorithms "github.com/google/go-tpm-tools/keymanager/km_common/proto"
 )
 
+var defaultAlgo = &algorithms.HpkeAlgorithm{
+	Kem:  algorithms.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
+	Kdf:  algorithms.KdfAlgorithm_KDF_ALGORITHM_HKDF_SHA256,
+	Aead: algorithms.AeadAlgorithm_AEAD_ALGORITHM_AES_256_GCM,
+}
+
 func TestIntegrationGenerateBindingKeypair(t *testing.T) {
-	id, pubKey, err := GenerateBindingKeypair(3600)
+	id, pubKey, err := GenerateBindingKeypair(defaultAlgo, 3600)
 	if err != nil {
 		t.Fatalf("GenerateBindingKeypair failed: %v", err)
 	}
@@ -23,11 +31,11 @@ func TestIntegrationGenerateBindingKeypair(t *testing.T) {
 }
 
 func TestIntegrationGenerateBindingKeypairUniqueness(t *testing.T) {
-	id1, pubKey1, err := GenerateBindingKeypair(3600)
+	id1, pubKey1, err := GenerateBindingKeypair(defaultAlgo, 3600)
 	if err != nil {
 		t.Fatalf("first GenerateBindingKeypair failed: %v", err)
 	}
-	id2, pubKey2, err := GenerateBindingKeypair(3600)
+	id2, pubKey2, err := GenerateBindingKeypair(defaultAlgo, 3600)
 	if err != nil {
 		t.Fatalf("second GenerateBindingKeypair failed: %v", err)
 	}
