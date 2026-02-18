@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package algorithms;
 
+option go_package = "github.com/google/go-tpm-tools/keymanager/km_common/proto/algorithms";
+
 // Key Encapsulation Mechanism (KEM)
 enum KemAlgorithm {
   KEM_ALGORITHM_UNSPECIFIED = 0;

@@ -15,6 +15,9 @@ import (
 	"unsafe"
 
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/proto"
+
+	algorithms "github.com/google/go-tpm-tools/keymanager/km_common/proto"
 )
 
 // GenerateKEMKeypair generates an X25519 HPKE KEM keypair linked to the
@@ -29,14 +32,20 @@ func GenerateKEMKeypair(bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, [
 	var pubkeyBuf [32]byte
 	pubkeyLen := C.size_t(len(pubkeyBuf))
 
-	algo := C.KmHpkeAlgorithm{
-		kem:  C.KM_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
-		kdf:  C.KM_KDF_ALGORITHM_HKDF_SHA256,
-		aead: C.KM_AEAD_ALGORITHM_AES_256_GCM,
+	algo := &algorithms.HpkeAlgorithm{
+		Kem:  algorithms.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
+		Kdf:  algorithms.KdfAlgorithm_KDF_ALGORITHM_HKDF_SHA256,
+		Aead: algorithms.AeadAlgorithm_AEAD_ALGORITHM_AES_256_GCM,
+	}
+
+	algoBytes, err := proto.Marshal(algo)
+	if err != nil {
+		return uuid.Nil, nil, fmt.Errorf("failed to marshal HpkeAlgorithm: %v", err)
 	}
 
 	rc := C.key_manager_generate_kem_keypair(
-		algo,
+		(*C.uint8_t)(unsafe.Pointer(&algoBytes[0])),
+		C.size_t(len(algoBytes)),
 		(*C.uint8_t)(unsafe.Pointer(&bindingPubKey[0])),
 		C.size_t(len(bindingPubKey)),
 		C.uint64_t(lifespanSecs),

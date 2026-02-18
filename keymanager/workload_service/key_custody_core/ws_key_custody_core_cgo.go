@@ -15,6 +15,9 @@ import (
 	"unsafe"
 
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/proto"
+
+	algorithms "github.com/google/go-tpm-tools/keymanager/km_common/proto"
 )
 
 // GenerateBindingKeypair generates an X25519 HPKE binding keypair via Rust FFI.
@@ -24,14 +27,20 @@ func GenerateBindingKeypair(lifespanSecs uint64) (uuid.UUID, []byte, error) {
 	var pubkeyBuf [32]byte
 	pubkeyLen := C.size_t(len(pubkeyBuf))
 
-	algo := C.KmHpkeAlgorithm{
-		kem:  C.KM_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
-		kdf:  C.KM_KDF_ALGORITHM_HKDF_SHA256,
-		aead: C.KM_AEAD_ALGORITHM_AES_256_GCM,
+	algo := &algorithms.HpkeAlgorithm{
+		Kem:  algorithms.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
+		Kdf:  algorithms.KdfAlgorithm_KDF_ALGORITHM_HKDF_SHA256,
+		Aead: algorithms.AeadAlgorithm_AEAD_ALGORITHM_AES_256_GCM,
+	}
+
+	algoBytes, err := proto.Marshal(algo)
+	if err != nil {
+		return uuid.Nil, nil, fmt.Errorf("failed to marshal HpkeAlgorithm: %v", err)
 	}
 
 	rc := C.key_manager_generate_binding_keypair(
-		algo,
+		(*C.uint8_t)(unsafe.Pointer(&algoBytes[0])),
+		C.size_t(len(algoBytes)),
 		C.uint64_t(lifespanSecs),
 		(*C.uint8_t)(unsafe.Pointer(&uuidBytes[0])),
 		(*C.uint8_t)(unsafe.Pointer(&pubkeyBuf[0])),
