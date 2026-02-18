@@ -33,7 +33,8 @@ fn generate_binding_keypair_internal(
 /// Generates a new binding HPKE keypair.
 ///
 /// ## Arguments
-/// * `algo` - The HPKE algorithm to use for the keypair.
+/// * `algo_ptr` - A pointer to the serialized HPKE algorithm proto bytes.
+/// * `algo_len` - The length of the serialized HPKE algorithm proto bytes.
 /// * `expiry_secs` - The expiration time of the key in seconds from now.
 /// * `out_uuid` - A pointer to a 16-byte buffer where the key UUID will be written.
 /// * `out_pubkey` - A pointer to a buffer where the public key will be written.
@@ -43,6 +44,7 @@ fn generate_binding_keypair_internal(
 /// ## Safety
 /// This function is unsafe because it dereferences the provided raw pointers.
 /// The caller must ensure that:
+/// * `algo_ptr` points to a valid buffer of at least `algo_len` bytes.
 /// * `out_uuid` is either null or points to a valid 16-byte buffer.
 /// * `out_pubkey` is either null or points to a valid buffer of at least `*out_pubkey_len` bytes.
 /// * `out_pubkey_len` is either null or points to a valid `usize`.

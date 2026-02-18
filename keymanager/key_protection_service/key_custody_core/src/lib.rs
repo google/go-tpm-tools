@@ -1,6 +1,7 @@
 use km_common::algorithms::HpkeAlgorithm;
 use km_common::crypto::PublicKey;
 use km_common::key_types::{KeyRecord, KeyRegistry, KeySpec};
+use prost::Message;
 use std::slice;
 use std::sync::LazyLock;
 use std::time::Duration;
@@ -33,7 +34,8 @@ fn generate_kem_keypair_internal(
 /// Generates a new KEM keypair associated with a binding public key.
 ///
 /// ## Arguments
-/// * `algo` - The HPKE algorithm to use for the keypair.
+/// * `algo_ptr` - A pointer to the serialized HPKE algorithm proto bytes.
+/// * `algo_len` - The length of the serialized HPKE algorithm proto bytes.
 /// * `binding_pubkey` - A pointer to the binding public key bytes.
 /// * `binding_pubkey_len` - The length of the binding public key.
 /// * `expiry_secs` - The expiration time of the key in seconds from now.
@@ -44,6 +46,7 @@ fn generate_kem_keypair_internal(
 /// ## Safety
 /// This function is unsafe because it dereferences the provided raw pointers.
 /// The caller must ensure that:
+/// * `algo_ptr` points to a valid buffer of at least `algo_len` bytes.
 /// * `binding_pubkey` points to a valid buffer of at least `binding_pubkey_len` bytes.
 /// * `out_uuid` is either null or points to a valid 16-byte buffer.
 /// * `out_pubkey` is either null or points to a valid buffer of at least `*out_pubkey_len` bytes.
@@ -53,7 +56,6 @@ fn generate_kem_keypair_internal(
 /// * `0` on success.
 /// * `-1` if an error occurred during key generation or if `binding_pubkey` is null/empty.
 /// * `-2` if the `out_pubkey` buffer size does not match the key size.
-use prost::Message;
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn key_manager_generate_kem_keypair(
