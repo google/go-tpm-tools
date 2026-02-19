@@ -71,7 +71,6 @@ pub unsafe extern "C" fn key_manager_generate_binding_keypair(
     out_pubkey: *mut u8,
     out_pubkey_len: usize,
 ) -> i32 {
-
     // Safety Invariant Checks
     if out_pubkey.is_null() || out_uuid.is_null() || algo_ptr.is_null() || algo_len == 0 {
         return -1;
