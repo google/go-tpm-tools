@@ -10,6 +10,7 @@ import (
 	"math"
 	"net"
 	"net/http"
+	"os"
 	"sync"
 
 	"github.com/google/uuid"
@@ -96,6 +97,7 @@ func NewServer(bindingGen BindingKeyGenerator, kemGen KEMKeyGenerator) *Server {
 
 // Serve starts the HTTP server listening on the given unix socket path.
 func (s *Server) Serve(socketPath string) error {
+	_ = os.Remove(socketPath)
 	ln, err := net.Listen("unix", socketPath)
 	if err != nil {
 		return fmt.Errorf("failed to listen on unix socket %s: %w", socketPath, err)
