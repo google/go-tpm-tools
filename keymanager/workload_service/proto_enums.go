@@ -3,6 +3,8 @@ package workload_service
 import (
 	"encoding/json"
 	"fmt"
+
+	algorithms "github.com/google/go-tpm-tools/keymanager/km_common/proto"
 )
 
 // These enum values mirror the proto definitions in PROTOS.md and are used by
@@ -116,4 +118,18 @@ func (k KeyProtectionMechanism) IsSupported() bool {
 func SupportedKemAlgorithmsString() string {
 	// We only have one supported algorithm right now, so we can just return it.
 	return KemAlgorithmDHKEMX25519HKDFSHA256.String()
+}
+
+// ToHpkeAlgorithm returns the full HPKE suite configuration for this algorithm.
+func (k KemAlgorithm) ToHpkeAlgorithm() (*algorithms.HpkeAlgorithm, error) {
+	switch k {
+	case KemAlgorithmDHKEMX25519HKDFSHA256:
+		return &algorithms.HpkeAlgorithm{
+			Kem:  algorithms.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
+			Kdf:  algorithms.KdfAlgorithm_KDF_ALGORITHM_HKDF_SHA256,
+			Aead: algorithms.AeadAlgorithm_AEAD_ALGORITHM_AES_256_GCM,
+		}, nil
+	default:
+		return nil, fmt.Errorf("unsupported algorithm: %s", k)
+	}
 }

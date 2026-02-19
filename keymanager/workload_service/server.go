@@ -149,9 +149,7 @@ func (s *Server) handleGenerateKem(w http.ResponseWriter, r *http.Request) {
 
 	// Construct the full HPKE algorithm suite based on the requested KEM.
 	// We currently only support one suite.
-	// Construct the full HPKE algorithm suite based on the requested KEM.
-	// We currently only support one suite.
-	algo, err := kemAlgorithmToHpkeAlgorithm(req.Algorithm)
+	algo, err := req.Algorithm.ToHpkeAlgorithm()
 	if err != nil {
 		writeError(w, err.Error(), http.StatusBadRequest)
 		return
@@ -192,16 +190,4 @@ func writeError(w http.ResponseWriter, message string, code int) {
 	json.NewEncoder(w).Encode(map[string]string{"error": message})
 }
 
-// kemAlgorithmToHpkeAlgorithm maps the public KEM algorithm to the internal HPKE suite.
-func kemAlgorithmToHpkeAlgorithm(kem KemAlgorithm) (*algorithms.HpkeAlgorithm, error) {
-	switch kem {
-	case KemAlgorithmDHKEMX25519HKDFSHA256:
-		return &algorithms.HpkeAlgorithm{
-			Kem:  algorithms.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
-			Kdf:  algorithms.KdfAlgorithm_KDF_ALGORITHM_HKDF_SHA256,
-			Aead: algorithms.AeadAlgorithm_AEAD_ALGORITHM_AES_256_GCM,
-		}, nil
-	default:
-		return nil, fmt.Errorf("unsupported algorithm: %s", kem)
-	}
-}
+

@@ -346,11 +346,11 @@ func TestHandleGenerateKemMapUniqueness(t *testing.T) {
 	}
 }
 
-func TestKemAlgorithmToHpkeAlgorithm(t *testing.T) {
+func TestToHpkeAlgorithm(t *testing.T) {
 	tests := []struct {
-		input    KemAlgorithm
-		want     *algorithms.HpkeAlgorithm
-		wantErr  bool
+		input   KemAlgorithm
+		want    *algorithms.HpkeAlgorithm
+		wantErr bool
 	}{
 		{
 			input: KemAlgorithmDHKEMX25519HKDFSHA256,
@@ -374,15 +374,17 @@ func TestKemAlgorithmToHpkeAlgorithm(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		got, err := kemAlgorithmToHpkeAlgorithm(tc.input)
-		if (err != nil) != tc.wantErr {
-			t.Errorf("kemAlgorithmToHpkeAlgorithm(%v) error = %v, wantErr %v", tc.input, err, tc.wantErr)
-			continue
-		}
-		if !tc.wantErr {
-			if got.Kem != tc.want.Kem || got.Kdf != tc.want.Kdf || got.Aead != tc.want.Aead {
-				t.Errorf("kemAlgorithmToHpkeAlgorithm(%v) = %v, want %v", tc.input, got, tc.want)
+		t.Run(fmt.Sprintf("%v", tc.input), func(t *testing.T) {
+			got, err := tc.input.ToHpkeAlgorithm()
+			if (err != nil) != tc.wantErr {
+				t.Errorf("ToHpkeAlgorithm() error = %v, wantErr %v", err, tc.wantErr)
+				return
 			}
-		}
+			if !tc.wantErr {
+				if got.Kem != tc.want.Kem || got.Kdf != tc.want.Kdf || got.Aead != tc.want.Aead {
+					t.Errorf("ToHpkeAlgorithm() = %v, want %v", got, tc.want)
+				}
+			}
+		})
 	}
 }
