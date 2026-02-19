@@ -13,14 +13,15 @@ import (
 
 	kps "github.com/google/go-tpm-tools/keymanager/key_protection_service"
 	kpskcc "github.com/google/go-tpm-tools/keymanager/key_protection_service/key_custody_core"
+	algorithms "github.com/google/go-tpm-tools/keymanager/km_common/proto"
 	wskcc "github.com/google/go-tpm-tools/keymanager/workload_service/key_custody_core"
 )
 
 // realBindingKeyGen wraps the actual WSD KCC FFI.
 type realBindingKeyGen struct{}
 
-func (r *realBindingKeyGen) GenerateBindingKeypair(lifespanSecs uint64) (uuid.UUID, []byte, error) {
-	return wskcc.GenerateBindingKeypair(lifespanSecs)
+func (r *realBindingKeyGen) GenerateBindingKeypair(algo *algorithms.HpkeAlgorithm, lifespanSecs uint64) (uuid.UUID, []byte, error) {
+	return wskcc.GenerateBindingKeypair(algo, lifespanSecs)
 }
 
 func TestIntegrationGenerateKeysEndToEnd(t *testing.T) {
