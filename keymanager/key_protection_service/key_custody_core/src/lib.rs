@@ -1,6 +1,7 @@
 use km_common::algorithms::HpkeAlgorithm;
 use km_common::crypto::PublicKey;
 use km_common::key_types::{KeyRecord, KeyRegistry, KeySpec};
+use prost::Message;
 use std::slice;
 use std::sync::Arc;
 use std::sync::LazyLock;
@@ -40,7 +41,8 @@ fn generate_kem_keypair_internal(
 /// Generates a new KEM keypair associated with a binding public key.
 ///
 /// ## Arguments
-/// * `algo` - The HPKE algorithm to use for the keypair.
+/// * `algo_ptr` - A pointer to the serialized HPKE algorithm proto bytes.
+/// * `algo_len` - The length of the serialized HPKE algorithm proto bytes.
 /// * `binding_pubkey` - A pointer to the binding public key bytes.
 /// * `binding_pubkey_len` - The length of the binding public key.
 /// * `expiry_secs` - The expiration time of the key in seconds from now.
@@ -51,6 +53,7 @@ fn generate_kem_keypair_internal(
 /// ## Safety
 /// This function is unsafe because it dereferences the provided raw pointers.
 /// The caller must ensure that:
+/// * `algo_ptr` points to a valid buffer of at least `algo_len` bytes.
 /// * `binding_pubkey` points to a valid buffer of at least `binding_pubkey_len` bytes.
 /// * `out_uuid` is either null or points to a valid 16-byte buffer.
 /// * `out_pubkey` is either null or points to a valid buffer of at least `*out_pubkey_len` bytes.
@@ -60,9 +63,11 @@ fn generate_kem_keypair_internal(
 /// * `0` on success.
 /// * `-1` if an error occurred during key generation or if `binding_pubkey` is null/empty.
 /// * `-2` if the `out_pubkey` buffer size does not match the key size.
+
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn key_manager_generate_kem_keypair(
-    algo: HpkeAlgorithm,
+    algo_ptr: *const u8,
+    algo_len: usize,
     binding_pubkey: *const u8,
     binding_pubkey_len: usize,
     expiry_secs: u64,
@@ -75,17 +80,25 @@ pub unsafe extern "C" fn key_manager_generate_kem_keypair(
         || binding_pubkey_len == 0
         || out_pubkey.is_null()
         || out_uuid.is_null()
+        || algo_ptr.is_null()
+        || algo_len == 0
     {
         return -1;
     }
 
     // Convert to Safe Types
     let binding_pubkey_slice = unsafe { slice::from_raw_parts(binding_pubkey, binding_pubkey_len) };
+    let algo_slice = unsafe { slice::from_raw_parts(algo_ptr, algo_len) };
     let out_uuid = unsafe { slice::from_raw_parts_mut(out_uuid, 16) };
     let out_pubkey = unsafe { slice::from_raw_parts_mut(out_pubkey, out_pubkey_len) };
 
     let binding_pubkey = match PublicKey::try_from(binding_pubkey_slice.to_vec()) {
         Ok(pk) => pk,
+        Err(_) => return -1,
+    };
+
+    let algo = match HpkeAlgorithm::decode(algo_slice) {
+        Ok(a) => a,
         Err(_) => return -1,
     };
 
@@ -136,6 +149,7 @@ pub unsafe extern "C" fn key_manager_destroy_kem_key(uuid_bytes: *const u8) -> i
 mod tests {
     use super::*;
     use km_common::algorithms::{AeadAlgorithm, KdfAlgorithm, KemAlgorithm};
+    use prost::Message;
 
     #[test]
     fn test_create_kem_key_success_and_zeroization() {
@@ -170,10 +184,12 @@ mod tests {
             kdf: KdfAlgorithm::HkdfSha256 as i32,
             aead: AeadAlgorithm::Aes256Gcm as i32,
         };
+        let algo_bytes = algo.encode_to_vec();
 
         let result = unsafe {
             key_manager_generate_kem_keypair(
-                algo,
+                algo_bytes.as_ptr(),
+                algo_bytes.len(),
                 binding_pubkey.as_ptr(),
                 binding_pubkey.len(),
                 3600,
@@ -195,15 +211,13 @@ mod tests {
         let mut uuid_bytes = [0u8; 16];
         let mut pubkey_bytes = [0u8; 32];
         let pubkey_len: usize = pubkey_bytes.len();
-        let algo = HpkeAlgorithm {
-            kem: 999, // Invalid KEM
-            kdf: KdfAlgorithm::HkdfSha256 as i32,
-            aead: AeadAlgorithm::Aes256Gcm as i32,
-        };
+        // Invalid protobuf bytes
+        let algo_bytes = vec![0xFF, 0xFF];
 
         let result = unsafe {
             key_manager_generate_kem_keypair(
-                algo,
+                algo_bytes.as_ptr(),
+                algo_bytes.len(),
                 binding_pubkey.as_ptr(),
                 binding_pubkey.len(),
                 3600,
@@ -228,10 +242,12 @@ mod tests {
             kdf: KdfAlgorithm::HkdfSha256 as i32,
             aead: AeadAlgorithm::Aes256Gcm as i32,
         };
+        let algo_bytes = algo.encode_to_vec();
 
         let result = unsafe {
             key_manager_generate_kem_keypair(
-                algo,
+                algo_bytes.as_ptr(),
+                algo_bytes.len(),
                 binding_pubkey.as_ptr(),
                 binding_pubkey.len(),
                 3600,
@@ -254,10 +270,12 @@ mod tests {
             kdf: KdfAlgorithm::HkdfSha256 as i32,
             aead: AeadAlgorithm::Aes256Gcm as i32,
         };
+        let algo_bytes = algo.encode_to_vec();
 
         let result = unsafe {
             key_manager_generate_kem_keypair(
-                algo,
+                algo_bytes.as_ptr(),
+                algo_bytes.len(),
                 std::ptr::null(), // Null ptr
                 32,
                 3600,
@@ -279,10 +297,12 @@ mod tests {
             kdf: KdfAlgorithm::HkdfSha256 as i32,
             aead: AeadAlgorithm::Aes256Gcm as i32,
         };
+        let algo_bytes = algo.encode_to_vec();
 
         let result = unsafe {
             key_manager_generate_kem_keypair(
-                algo,
+                algo_bytes.as_ptr(),
+                algo_bytes.len(),
                 binding_pubkey.as_ptr(),
                 0, // Empty length
                 3600,
