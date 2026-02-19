@@ -30,7 +30,8 @@ func TestLaunchSpecUnmarshalJSONHappyCases(t *testing.T) {
 		Experiments: experiments.Experiments{
 			EnableItaVerifier: true,
 		},
-		GcaAddress: "https://confidentialcomputing.googleapis.com",
+		GcaAddress:       "https://confidentialcomputing.googleapis.com",
+		InstallGpuDriver: true,
 	}
 
 	var testCases = []struct {
@@ -53,7 +54,8 @@ func TestLaunchSpecUnmarshalJSONHappyCases(t *testing.T) {
 				"tee-mount":"type=tmpfs,source=tmpfs,destination=/tmpmount;type=tmpfs,source=tmpfs,destination=/sized,size=222",
 				"ita-region":"US",
 				"ita-api-key":"test-api-key",
-				"gca-service-env":"STAGING"
+				"gca-service-env":"STAGING",
+				"tee-install-gpu-driver":"true"
 			}`,
 			modifyWant: func(ls LaunchSpec) LaunchSpec {
 				ls.GcaAddress = "https://staging-confidentialcomputing.sandbox.googleapis.com"
@@ -76,7 +78,9 @@ func TestLaunchSpecUnmarshalJSONHappyCases(t *testing.T) {
 				"tee-dev-shm-size-kb":"234234",
 				"tee-mount":"type=tmpfs,source=tmpfs,destination=/tmpmount;type=tmpfs,source=tmpfs,destination=/sized,size=222",
 				"ita-region":"US",
-				"ita-api-key":"test-api-key"
+				"ita-api-key":"test-api-key",
+				"tee-install-gpu-driver":"true",
+				"tee-gpu-driver-version":"590.48.01"
 			}`,
 			modifyWant: func(ls LaunchSpec) LaunchSpec {
 				ls.GcaAddress = ""
@@ -100,7 +104,9 @@ func TestLaunchSpecUnmarshalJSONHappyCases(t *testing.T) {
 				"tee-mount":"type=tmpfs,source=tmpfs,destination=/tmpmount;type=tmpfs,source=tmpfs,destination=/sized,size=222",
 				"ita-region":"US",
 				"ita-api-key":"test-api-key",
-				"gca-service-env":"prod"
+				"gca-service-env":"prod",
+				"tee-install-gpu-driver":"true",
+				"tee-gpu-driver-version":"590.48.01"
 			}`,
 			modifyWant: func(ls LaunchSpec) LaunchSpec {
 				return ls
@@ -123,7 +129,9 @@ func TestLaunchSpecUnmarshalJSONHappyCases(t *testing.T) {
 				"tee-mount":"type=tmpfs,source=tmpfs,destination=/tmpmount;type=tmpfs,source=tmpfs,destination=/sized,size=222",
 				"ita-region":"US",
 				"ita-api-key":"test-api-key",
-				"gca-service-env":"staging"
+				"gca-service-env":"staging",
+				"tee-install-gpu-driver":"true",
+				"tee-gpu-driver-version":"590.48.01"
 			}`,
 			modifyWant: func(ls LaunchSpec) LaunchSpec {
 				ls.GcaAddress = "https://staging-confidentialcomputing.sandbox.googleapis.com"
@@ -265,6 +273,7 @@ func TestLaunchSpecUnmarshalJSONWithDefaultValue(t *testing.T) {
 		LogRedirect:       Nowhere,
 		MonitoringEnabled: None,
 		GcaAddress:        "",
+		InstallGpuDriver:  false,
 	}
 
 	if !cmp.Equal(spec, want) {

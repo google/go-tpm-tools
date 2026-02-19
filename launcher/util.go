@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/google/go-tpm/legacy/tpm2"
 	"google.golang.org/api/impersonate"
@@ -104,4 +107,22 @@ func getCapabilityProperty(tpm io.ReadWriter, property tpm2.TPMProp) (*tpm2.Tagg
 		return nil, fmt.Errorf("failed to get expected property from the TPM, want: %v, got: %v", property, val)
 	}
 	return &val, nil
+}
+
+func listFilesWithPrefix(targetDir string, prefix string) ([]string, error) {
+	var targetFiles []string
+
+	entries, err := os.ReadDir(targetDir)
+	if err != nil {
+		return nil, fmt.Errorf("error reading directory: %v", err)
+	}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		if strings.HasPrefix(entry.Name(), prefix) {
+			targetFiles = append(targetFiles, filepath.Join(targetDir, entry.Name()))
+		}
+	}
+	return targetFiles, nil
 }
