@@ -3,9 +3,9 @@ use km_common::crypto::PublicKey;
 use km_common::key_types::{KeyRecord, KeyRegistry, KeySpec};
 use prost::Message;
 use std::slice;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::sync::LazyLock;
-use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 use uuid::Uuid;
 
