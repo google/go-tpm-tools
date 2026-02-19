@@ -68,6 +68,12 @@ type GenerateKemResponse struct {
 	KeyHandle KeyHandle `json:"key_handle"`
 }
 
+// GetCapabilitiesResponse represents the JSON body for GET /v1/capabilities.
+type GetCapabilitiesResponse struct {
+	SupportedAlgorithms           []KemAlgorithm           `json:"supported_algorithms"`
+	SupportedProtectionMechanisms []KeyProtectionMechanism `json:"supported_protection_mechanisms"`
+}
+
 // Server is the WSD HTTP server.
 type Server struct {
 	bindingGen BindingKeyGenerator
@@ -90,6 +96,7 @@ func NewServer(bindingGen BindingKeyGenerator, kemGen KEMKeyGenerator) *Server {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/keys:generate_kem", s.handleGenerateKem)
+	mux.HandleFunc("GET /v1/capabilities", s.handleGetCapabilities)
 
 	s.httpServer = &http.Server{Handler: mux}
 	return s
@@ -180,6 +187,21 @@ func (s *Server) handleGenerateKem(w http.ResponseWriter, r *http.Request) {
 	resp := GenerateKemResponse{
 		KeyHandle: KeyHandle{Handle: kemUUID.String()},
 	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+func (s *Server) handleGetCapabilities(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	resp := GetCapabilitiesResponse{
+		SupportedAlgorithms:           SupportedKemAlgorithms,
+		SupportedProtectionMechanisms: SupportedKeyProtectionMechanisms,
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
 }

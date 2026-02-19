@@ -388,3 +388,51 @@ func TestToHpkeAlgorithm(t *testing.T) {
 		})
 	}
 }
+
+func TestHandleGetCapabilities(t *testing.T) {
+	srv := NewServer(
+		&mockBindingKeyGen{},
+		&mockKEMKeyGen{},
+	)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/capabilities", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	contentType := w.Header().Get("Content-Type")
+	if contentType != "application/json" {
+		t.Fatalf("expected Content-Type application/json, got %s", contentType)
+	}
+
+	var resp GetCapabilitiesResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if len(resp.SupportedAlgorithms) != 1 || resp.SupportedAlgorithms[0] != KemAlgorithmDHKEMX25519HKDFSHA256 {
+		t.Errorf("unexpected supported algorithms: %v", resp.SupportedAlgorithms)
+	}
+
+	if len(resp.SupportedProtectionMechanisms) != 1 || resp.SupportedProtectionMechanisms[0] != KeyProtectionMechanismVM {
+		t.Errorf("unexpected supported protection mechanisms: %v", resp.SupportedProtectionMechanisms)
+	}
+}
+
+func TestHandleGetCapabilitiesInvalidMethod(t *testing.T) {
+	srv := NewServer(
+		&mockBindingKeyGen{},
+		&mockKEMKeyGen{},
+	)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/capabilities", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status 405, got %d", w.Code)
+	}
+}

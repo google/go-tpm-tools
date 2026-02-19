@@ -3,6 +3,7 @@ package workload_service
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	algorithms "github.com/google/go-tpm-tools/keymanager/km_common/proto"
 )
@@ -96,28 +97,44 @@ func (k *KeyProtectionMechanism) UnmarshalJSON(data []byte) error {
 
 // Supported algorithms and mechanisms.
 var (
-	SupportedKemAlgorithms = map[KemAlgorithm]bool{
-		KemAlgorithmDHKEMX25519HKDFSHA256: true,
+	// SupportedKemAlgorithms is the source of truth for supported algorithms.
+	SupportedKemAlgorithms = []KemAlgorithm{
+		KemAlgorithmDHKEMX25519HKDFSHA256,
 	}
-	SupportedKeyProtectionMechanisms = map[KeyProtectionMechanism]bool{
-		KeyProtectionMechanismVM: true,
+
+	// SupportedKeyProtectionMechanisms is the source of truth for supported mechanisms.
+	SupportedKeyProtectionMechanisms = []KeyProtectionMechanism{
+		KeyProtectionMechanismVM,
 	}
 )
 
 // IsSupported returns true if the KEM algorithm is supported.
 func (k KemAlgorithm) IsSupported() bool {
-	return SupportedKemAlgorithms[k]
+	for _, supported := range SupportedKemAlgorithms {
+		if k == supported {
+			return true
+		}
+	}
+	return false
 }
 
 // IsSupported returns true if the key protection mechanism is supported.
 func (k KeyProtectionMechanism) IsSupported() bool {
-	return SupportedKeyProtectionMechanisms[k]
+	for _, supported := range SupportedKeyProtectionMechanisms {
+		if k == supported {
+			return true
+		}
+	}
+	return false
 }
 
 // SupportedKemAlgorithmsString returns a comma-separated list of supported KEM algorithms.
 func SupportedKemAlgorithmsString() string {
-	// We only have one supported algorithm right now, so we can just return it.
-	return KemAlgorithmDHKEMX25519HKDFSHA256.String()
+	var names []string
+	for _, k := range SupportedKemAlgorithms {
+		names = append(names, k.String())
+	}
+	return strings.Join(names, ", ")
 }
 
 // ToHpkeAlgorithm returns the full HPKE suite configuration for this algorithm.
