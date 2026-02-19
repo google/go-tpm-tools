@@ -71,33 +71,36 @@ pub unsafe extern "C" fn key_manager_generate_binding_keypair(
     out_pubkey: *mut u8,
     out_pubkey_len: usize,
 ) -> i32 {
-    // Safety Invariant Checks
-    if out_pubkey.is_null() || out_uuid.is_null() || algo_ptr.is_null() || algo_len == 0 {
-        return -1;
-    }
-
-    // Convert to Safe Types
-    let algo_slice = unsafe { slice::from_raw_parts(algo_ptr, algo_len) };
-    let out_uuid = unsafe { slice::from_raw_parts_mut(out_uuid, 16) };
-    let out_pubkey = unsafe { slice::from_raw_parts_mut(out_pubkey, out_pubkey_len) };
-
-    let algo = match HpkeAlgorithm::decode(algo_slice) {
-        Ok(a) => a,
-        Err(_) => return -1,
-    };
-
-    // Call Safe Internal Function
-    match generate_binding_keypair_internal(algo, expiry_secs) {
-        Ok((id, pubkey)) => {
-            if out_pubkey_len != pubkey.as_bytes().len() {
-                return -2;
-            }
-            out_uuid.copy_from_slice(id.as_bytes());
-            out_pubkey.copy_from_slice(pubkey.as_bytes());
-            0 // Success
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        // Safety Invariant Checks
+        if out_pubkey.is_null() || out_uuid.is_null() || algo_ptr.is_null() || algo_len == 0 {
+            return -1;
         }
-        Err(e) => e,
-    }
+
+        // Convert to Safe Types
+        let algo_slice = unsafe { slice::from_raw_parts(algo_ptr, algo_len) };
+        let out_uuid = unsafe { slice::from_raw_parts_mut(out_uuid, 16) };
+        let out_pubkey = unsafe { slice::from_raw_parts_mut(out_pubkey, out_pubkey_len) };
+
+        let algo = match HpkeAlgorithm::decode(algo_slice) {
+            Ok(a) => a,
+            Err(_) => return -1,
+        };
+
+        // Call Safe Internal Function
+        match generate_binding_keypair_internal(algo, expiry_secs) {
+            Ok((id, pubkey)) => {
+                if out_pubkey_len != pubkey.as_bytes().len() {
+                    return -2;
+                }
+                out_uuid.copy_from_slice(id.as_bytes());
+                out_pubkey.copy_from_slice(pubkey.as_bytes());
+                0 // Success
+            }
+            Err(e) => e,
+        }
+    }))
+    .unwrap_or(-1)
 }
 
 /// Destroys the binding key associated with the given UUID.
@@ -114,16 +117,19 @@ pub unsafe extern "C" fn key_manager_generate_binding_keypair(
 /// * `-1` if the UUID pointer is null or the key was not found.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn key_manager_destroy_binding_key(uuid_bytes: *const u8) -> i32 {
-    if uuid_bytes.is_null() {
-        return -1;
-    }
-    let bytes = unsafe { slice::from_raw_parts(uuid_bytes, 16) };
-    let uuid = Uuid::from_bytes(bytes.try_into().expect("invalid UUID bytes"));
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        if uuid_bytes.is_null() {
+            return -1;
+        }
+        let bytes = unsafe { slice::from_raw_parts(uuid_bytes, 16) };
+        let uuid = Uuid::from_bytes(bytes.try_into().expect("invalid UUID bytes"));
 
-    match KEY_REGISTRY.remove_key(&uuid) {
-        Some(_) => 0, // Success
-        None => -1,   // Not found
-    }
+        match KEY_REGISTRY.remove_key(&uuid) {
+            Some(_) => 0, // Success
+            None => -1,   // Not found
+        }
+    }))
+    .unwrap_or(-1)
 }
 
 /// Decrypts a ciphertext using the binding key associated with the given UUID.
@@ -137,16 +143,16 @@ pub unsafe extern "C" fn key_manager_destroy_binding_key(uuid_bytes: *const u8) 
 /// * `aad` - A pointer to the additional authenticated data.
 /// * `aad_len` - The length of the additional authenticated data.
 /// * `out_plaintext` - A pointer to a buffer where the decrypted plaintext will be written.
-/// * `out_plaintext_len` - A pointer to a `usize` that contains the size of `out_plaintext` buffer.
+/// * `out_plaintext_len` - The size of `out_plaintext` buffer.
 ///   On success, it will be updated with the actual size of the plaintext.
 ///
 /// ## Safety
 /// This function is unsafe because it dereferences raw pointers. The caller must ensure that:
 /// * `uuid_bytes` points to a valid 16-byte buffer.
 /// * `enc` points to a valid buffer of at least `enc_len` bytes.
-/// * `ciphertext` points to a valid buffer of at least `ciphertext_len` bytes.
+/// * `ciphertext` points to a valid buffer of `ciphertext_len` bytes.
 /// * `aad` points to a valid buffer of at least `aad_len` bytes.
-/// * `out_plaintext` is either null or points to a valid buffer of at least `*out_plaintext_len` bytes.
+/// * `out_plaintext` points to a valid buffer of at least `*out_plaintext_len` bytes.
 /// * `out_plaintext_len` points to a valid `usize`.
 ///
 /// ## Returns
@@ -166,49 +172,56 @@ pub unsafe extern "C" fn key_manager_open(
     out_plaintext: *mut u8,
     out_plaintext_len: usize,
 ) -> i32 {
-    if uuid_bytes.is_null()
-        || enc.is_null()
-        || ciphertext.is_null()
-        || aad.is_null()
-        || out_plaintext.is_null()
-        || out_plaintext_len == 0
-    {
-        return -1;
-    }
-
-    let uuid = unsafe { std::slice::from_raw_parts(uuid_bytes, 16) };
-    let enc_slice = unsafe { std::slice::from_raw_parts(enc, enc_len) };
-    let ct_slice = unsafe { std::slice::from_raw_parts(ciphertext, ciphertext_len) };
-    let aad_slice = unsafe { std::slice::from_raw_parts(aad, aad_len) };
-    let out_plaintext = unsafe { std::slice::from_raw_parts_mut(out_plaintext, out_plaintext_len) };
-
-    let uuid_val = match Uuid::from_slice(uuid) {
-        Ok(u) => u,
-        Err(_) => return -1,
-    };
-
-    let record = match KEY_REGISTRY.get_key(&uuid_val) {
-        Some(r) => r,
-        None => return -1,
-    };
-
-    let algo = match &record.meta.spec {
-        KeySpec::Binding { algo, .. } => algo,
-        _ => return -1,
-    };
-
-    let priv_key = record.get_private_key();
-
-    match km_common::crypto::hpke_open(&priv_key, enc_slice, ct_slice, aad_slice, algo) {
-        Ok(pt) => {
-            if out_plaintext_len != pt.as_slice().len() {
-                return -2;
-            }
-            out_plaintext.copy_from_slice(pt.as_slice());
-            0 // Success
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        if uuid_bytes.is_null()
+            || enc.is_null()
+            || ciphertext.is_null()
+            || out_plaintext.is_null()
+            || out_plaintext_len == 0
+        {
+            return -1;
         }
-        Err(_) => -3,
-    }
+
+        let uuid = unsafe { std::slice::from_raw_parts(uuid_bytes, 16) };
+        let enc_slice = unsafe { std::slice::from_raw_parts(enc, enc_len) };
+        let ct_slice = unsafe { std::slice::from_raw_parts(ciphertext, ciphertext_len) };
+        let aad_slice = if !aad.is_null() && aad_len > 0 {
+            unsafe { slice::from_raw_parts(aad, aad_len) }
+        } else {
+            &[]
+        };
+        let out_plaintext =
+            unsafe { std::slice::from_raw_parts_mut(out_plaintext, out_plaintext_len) };
+
+        let uuid_val = match Uuid::from_slice(uuid) {
+            Ok(u) => u,
+            Err(_) => return -1,
+        };
+
+        let record = match KEY_REGISTRY.get_key(&uuid_val) {
+            Some(r) => r,
+            None => return -1,
+        };
+
+        let algo = match &record.meta.spec {
+            KeySpec::Binding { algo, .. } => algo,
+            _ => return -1,
+        };
+
+        let priv_key = record.get_private_key();
+
+        match km_common::crypto::hpke_open(&priv_key, enc_slice, ct_slice, aad_slice, algo) {
+            Ok(pt) => {
+                if out_plaintext_len != pt.as_slice().len() {
+                    return -2;
+                }
+                out_plaintext.copy_from_slice(pt.as_slice());
+                0 // Success
+            }
+            Err(_) => -3,
+        }
+    }))
+    .unwrap_or(-1)
 }
 
 #[cfg(test)]
@@ -462,16 +475,16 @@ mod tests {
             kdf: KdfAlgorithm::HkdfSha256 as i32,
             aead: AeadAlgorithm::Aes256Gcm as i32,
         };
-        unsafe {
+        let res = unsafe {
             key_manager_generate_binding_keypair(
                 algo,
                 3600,
                 uuid_bytes.as_mut_ptr(),
                 pubkey_bytes.as_mut_ptr(),
                 pubkey_len,
-            );
-        }
-
+            )
+        };
+        assert_eq!(res, 0, "Setup failed: key generation returned error");
         let pt = b"secret message";
         let pub_key = PublicKey::try_from(pubkey_bytes.to_vec()).unwrap();
         let pt_box = km_common::crypto::secret_box::SecretBox::new(pt.to_vec());

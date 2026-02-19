@@ -3,9 +3,9 @@ use km_common::crypto::PublicKey;
 use km_common::key_types::{KeyRecord, KeyRegistry, KeySpec};
 use prost::Message;
 use std::slice;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::sync::LazyLock;
+use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 use uuid::Uuid;
 
@@ -48,7 +48,7 @@ fn generate_kem_keypair_internal(
 /// * `expiry_secs` - The expiration time of the key in seconds from now.
 /// * `out_uuid` - A pointer to a 16-byte buffer where the key UUID will be written.
 /// * `out_pubkey` - A pointer to a buffer where the public key will be written.
-/// * `out_pubkey_len` - A pointer to a `usize` that contains the size of `out_pubkey` buffer.
+/// * `out_pubkey_len` - The size of `out_pubkey` buffer.
 ///
 /// ## Safety
 /// This function is unsafe because it dereferences the provided raw pointers.
@@ -75,45 +75,49 @@ pub unsafe extern "C" fn key_manager_generate_kem_keypair(
     out_pubkey: *mut u8,
     out_pubkey_len: usize,
 ) -> i32 {
-    // Safety Invariant Checks
-    if binding_pubkey.is_null()
-        || binding_pubkey_len == 0
-        || out_pubkey.is_null()
-        || out_uuid.is_null()
-        || algo_ptr.is_null()
-        || algo_len == 0
-    {
-        return -1;
-    }
-
-    // Convert to Safe Types
-    let binding_pubkey_slice = unsafe { slice::from_raw_parts(binding_pubkey, binding_pubkey_len) };
-    let algo_slice = unsafe { slice::from_raw_parts(algo_ptr, algo_len) };
-    let out_uuid = unsafe { slice::from_raw_parts_mut(out_uuid, 16) };
-    let out_pubkey = unsafe { slice::from_raw_parts_mut(out_pubkey, out_pubkey_len) };
-
-    let binding_pubkey = match PublicKey::try_from(binding_pubkey_slice.to_vec()) {
-        Ok(pk) => pk,
-        Err(_) => return -1,
-    };
-
-    let algo = match HpkeAlgorithm::decode(algo_slice) {
-        Ok(a) => a,
-        Err(_) => return -1,
-    };
-
-    // Call Safe Internal Function
-    match generate_kem_keypair_internal(algo, binding_pubkey, expiry_secs) {
-        Ok((id, pubkey)) => {
-            if out_pubkey_len != pubkey.as_bytes().len() {
-                return -2;
-            }
-            out_uuid.copy_from_slice(id.as_bytes());
-            out_pubkey.copy_from_slice(pubkey.as_bytes());
-            0 // Success
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        // Safety Invariant Checks
+        if binding_pubkey.is_null()
+            || binding_pubkey_len == 0
+            || out_pubkey.is_null()
+            || out_uuid.is_null()
+            || algo_ptr.is_null()
+            || algo_len == 0
+        {
+            return -1;
         }
-        Err(e) => e,
-    }
+
+        // Convert to Safe Types
+        let binding_pubkey_slice =
+            unsafe { slice::from_raw_parts(binding_pubkey, binding_pubkey_len) };
+        let algo_slice = unsafe { slice::from_raw_parts(algo_ptr, algo_len) };
+        let out_uuid = unsafe { slice::from_raw_parts_mut(out_uuid, 16) };
+        let out_pubkey = unsafe { slice::from_raw_parts_mut(out_pubkey, out_pubkey_len) };
+
+        let binding_pubkey = match PublicKey::try_from(binding_pubkey_slice.to_vec()) {
+            Ok(pk) => pk,
+            Err(_) => return -1,
+        };
+
+        let algo = match HpkeAlgorithm::decode(algo_slice) {
+            Ok(a) => a,
+            Err(_) => return -1,
+        };
+
+        // Call Safe Internal Function
+        match generate_kem_keypair_internal(algo, binding_pubkey, expiry_secs) {
+            Ok((id, pubkey)) => {
+                if out_pubkey_len != pubkey.as_bytes().len() {
+                    return -2;
+                }
+                out_uuid.copy_from_slice(id.as_bytes());
+                out_pubkey.copy_from_slice(pubkey.as_bytes());
+                0 // Success
+            }
+            Err(e) => e,
+        }
+    }))
+    .unwrap_or(-1)
 }
 
 /// Destroys the KEM key associated with the given UUID.
@@ -130,19 +134,22 @@ pub unsafe extern "C" fn key_manager_generate_kem_keypair(
 /// * `-1` if the UUID pointer is null or the key was not found.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn key_manager_destroy_kem_key(uuid_bytes: *const u8) -> i32 {
-    if uuid_bytes.is_null() {
-        return -1;
-    }
-    let uuid = unsafe {
-        let mut bytes = [0u8; 16];
-        std::ptr::copy_nonoverlapping(uuid_bytes, bytes.as_mut_ptr(), 16);
-        Uuid::from_bytes(bytes)
-    };
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        if uuid_bytes.is_null() {
+            return -1;
+        }
+        let uuid = unsafe {
+            let mut bytes = [0u8; 16];
+            std::ptr::copy_nonoverlapping(uuid_bytes, bytes.as_mut_ptr(), 16);
+            Uuid::from_bytes(bytes)
+        };
 
-    match KEY_REGISTRY.remove_key(&uuid) {
-        Some(_) => 0, // Success
-        None => -1,   // Not found
-    }
+        match KEY_REGISTRY.remove_key(&uuid) {
+            Some(_) => 0, // Success
+            None => -1,   // Not found
+        }
+    }))
+    .unwrap_or(-1)
 }
 
 /// Decapsulates a shared secret using a stored KEM key and immediately reseals it using the associated binding public key.
@@ -188,85 +195,90 @@ pub unsafe extern "C" fn key_manager_decap_and_seal(
     out_ciphertext: *mut u8,
     out_ciphertext_len: usize,
 ) -> i32 {
-    if uuid_bytes.is_null()
-        || encapsulated_key.is_null()
-        || encapsulated_key_len == 0
-        || out_encapsulated_key.is_null()
-        || out_encapsulated_key_len == 0
-        || out_ciphertext.is_null()
-        || out_ciphertext_len == 0
-    {
-        return -1;
-    }
-
-    // Convert to Safe Types
-    let uuid = unsafe { std::slice::from_raw_parts(uuid_bytes, 16) };
-    let enc_key_slice = unsafe { slice::from_raw_parts(encapsulated_key, encapsulated_key_len) };
-    let aad_slice = if !aad.is_null() && aad_len > 0 {
-        unsafe { slice::from_raw_parts(aad, aad_len) }
-    } else {
-        &[]
-    };
-    let out_encapsulated_key =
-        unsafe { slice::from_raw_parts_mut(out_encapsulated_key, out_encapsulated_key_len) };
-    let out_ciphertext = unsafe { slice::from_raw_parts_mut(out_ciphertext, out_ciphertext_len) };
-
-    let uuid_val = match Uuid::from_slice(uuid) {
-        Ok(u) => u,
-        Err(_) => return -1,
-    };
-
-    // Get key record from registry
-    let key_record = match KEY_REGISTRY.get_key(&uuid_val) {
-        Some(record) => record,
-        None => return -1,
-    };
-
-    let (hpke_algo, binding_public_key) = match &key_record.meta.spec {
-        KeySpec::KemWithBindingPub {
-            algo,
-            binding_public_key,
-            ..
-        } => (algo, binding_public_key),
-        _ => return -1, // Wrong key type
-    };
-
-    let _kem_algo = match km_common::algorithms::KemAlgorithm::try_from(hpke_algo.kem) {
-        Ok(k) => k,
-        Err(_) => return -1, // Invalid KEM algorithm
-    };
-
-    let priv_key = key_record.get_private_key();
-
-    // Decapsulate
-    let shared_secret = match km_common::crypto::decaps(&priv_key, enc_key_slice) {
-        Ok(s) => s,
-        Err(_) => return -3,
-    };
-
-    // Seal
-    let (enc_key, sealed_ciphertext) = match km_common::crypto::hpke_seal(
-        binding_public_key,
-        &shared_secret,
-        aad_slice,
-        hpke_algo,
-    ) {
-        Ok(res) => res,
-        Err(_) => {
-            return -4;
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        if uuid_bytes.is_null()
+            || encapsulated_key.is_null()
+            || encapsulated_key_len == 0
+            || out_encapsulated_key.is_null()
+            || out_encapsulated_key_len == 0
+            || out_ciphertext.is_null()
+            || out_ciphertext_len == 0
+        {
+            return -1;
         }
-    };
 
-    // Copy outputs
-    let enc_len_req = enc_key.len();
-    let ct_len_req = sealed_ciphertext.len();
+        // Convert to Safe Types
+        let uuid = unsafe { std::slice::from_raw_parts(uuid_bytes, 16) };
+        let enc_key_slice =
+            unsafe { slice::from_raw_parts(encapsulated_key, encapsulated_key_len) };
+        let aad_slice = if !aad.is_null() && aad_len > 0 {
+            unsafe { slice::from_raw_parts(aad, aad_len) }
+        } else {
+            &[]
+        };
+        let out_encapsulated_key =
+            unsafe { slice::from_raw_parts_mut(out_encapsulated_key, out_encapsulated_key_len) };
+        let out_ciphertext =
+            unsafe { slice::from_raw_parts_mut(out_ciphertext, out_ciphertext_len) };
 
-    if out_encapsulated_key_len != enc_len_req || out_ciphertext_len != ct_len_req {
-        return -2;
-    }
-    out_encapsulated_key.copy_from_slice(enc_key.as_slice());
-    out_ciphertext.copy_from_slice(sealed_ciphertext.as_slice());
-    0
+        let uuid_val = match Uuid::from_slice(uuid) {
+            Ok(u) => u,
+            Err(_) => return -1,
+        };
+
+        // Get key record from registry
+        let key_record = match KEY_REGISTRY.get_key(&uuid_val) {
+            Some(record) => record,
+            None => return -1,
+        };
+
+        let (hpke_algo, binding_public_key) = match &key_record.meta.spec {
+            KeySpec::KemWithBindingPub {
+                algo,
+                binding_public_key,
+                ..
+            } => (algo, binding_public_key),
+            _ => return -1, // Wrong key type
+        };
+
+        let _kem_algo = match km_common::algorithms::KemAlgorithm::try_from(hpke_algo.kem) {
+            Ok(k) => k,
+            Err(_) => return -1, // Invalid KEM algorithm
+        };
+
+        let priv_key = key_record.get_private_key();
+
+        // Decapsulate
+        let shared_secret = match km_common::crypto::decaps(&priv_key, enc_key_slice) {
+            Ok(s) => s,
+            Err(_) => return -3,
+        };
+
+        // Seal
+        let (enc_key, sealed_ciphertext) = match km_common::crypto::hpke_seal(
+            binding_public_key,
+            &shared_secret,
+            aad_slice,
+            hpke_algo,
+        ) {
+            Ok(res) => res,
+            Err(_) => {
+                return -4;
+            }
+        };
+
+        // Copy outputs
+        let enc_len_req = enc_key.len();
+        let ct_len_req = sealed_ciphertext.len();
+
+        if out_encapsulated_key_len != enc_len_req || out_ciphertext_len != ct_len_req {
+            return -2;
+        }
+        out_encapsulated_key.copy_from_slice(enc_key.as_slice());
+        out_ciphertext.copy_from_slice(sealed_ciphertext.as_slice());
+        0
+    }))
+    .unwrap_or(-1)
 }
 
 #[cfg(test)]
@@ -515,13 +527,11 @@ mod tests {
         };
 
         // 3. Generate a "client" ciphertext/encapsulation targeting KEM key.
-        let pt = b"ignored_plaintext";
         let aad = b"test_aad";
-        // We use `hpke_seal` to act as the client to generate a valid encapsulation
+        // We use `encap` to act as the client to generate a valid encapsulation
         let kem_pub_key_obj = PublicKey::try_from(kem_pubkey_bytes.to_vec()).unwrap();
-        let pt_box = km_common::crypto::secret_box::SecretBox::new(pt.to_vec());
-        let (client_enc, client_ct) =
-            km_common::crypto::hpke_seal(&kem_pub_key_obj, &pt_box, aad, &algo).unwrap();
+        let (client_shared_secret, client_enc) =
+            km_common::crypto::encap(&kem_pub_key_obj).unwrap();
 
         // Step 3: Call `decap_and_seal`.
         let mut out_enc_key = [0u8; 32];
@@ -553,29 +563,12 @@ mod tests {
         assert_eq!(recovered_shared_secret.as_slice().len(), 32);
 
         // 5. Verify the recovered secret matches what decaps would produce
-        let key_record = KEY_REGISTRY.get_key(&Uuid::from_bytes(uuid_bytes)).unwrap();
-
-        let priv_key = key_record.get_private_key();
-
-        let expected_shared_secret =
-            km_common::crypto::decaps(&priv_key, &client_enc).expect("decaps failed");
+        // And also matches the original client shared secret
         assert_eq!(
             recovered_shared_secret.as_slice(),
-            expected_shared_secret.as_slice(),
+            client_shared_secret.as_slice(),
             "Recovered secret mismatch"
         );
-
-        // 6. Verify that this secret correctly decrypts the original client ciphertext
-        // using the shared secret directly instead of the private key.
-        let decrypted_pt = km_common::crypto::hpke_open_with_shared_secret(
-            recovered_shared_secret.as_slice(),
-            &client_ct,
-            aad,
-            &algo,
-        )
-        .expect("Failed to decrypt client message with shared secret");
-
-        assert_eq!(decrypted_pt, pt);
     }
 
     #[test]
@@ -690,7 +683,7 @@ mod tests {
             kdf: KdfAlgorithm::HkdfSha256 as i32,
             aead: AeadAlgorithm::Aes256Gcm as i32,
         };
-        unsafe {
+        let res = unsafe {
             key_manager_generate_kem_keypair(
                 algo,
                 binding_pk.as_bytes().as_ptr(),
@@ -699,8 +692,9 @@ mod tests {
                 uuid_bytes.as_mut_ptr(),
                 kem_pubkey_bytes.as_mut_ptr(),
                 kem_pubkey_len,
-            );
-        }
+            )
+        };
+        assert_eq!(res, 0, "Setup failed: key generation returned error");
 
         // 3. Generate valid client encapsulation
         let kem_pub_key_obj = PublicKey::try_from(kem_pubkey_bytes.to_vec()).unwrap();
