@@ -216,12 +216,12 @@ pub unsafe extern "C" fn key_manager_decap_and_seal(
         } else {
             &[]
         };
-        let out_encapsulated_key =
+        let out_encapsulated_key_slice =
             unsafe { slice::from_raw_parts_mut(out_encapsulated_key, out_encapsulated_key_len) };
         let out_ciphertext =
             unsafe { slice::from_raw_parts_mut(out_ciphertext, out_ciphertext_len) };
 
-        let uuid_val = match Uuid::from_slice(uuid) {
+        let uuid = match Uuid::from_slice(uuid_slice) {
             Ok(u) => u,
             Err(_) => return -1,
         };

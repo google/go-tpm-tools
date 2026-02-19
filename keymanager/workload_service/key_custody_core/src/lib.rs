@@ -1,4 +1,5 @@
 use km_common::algorithms::HpkeAlgorithm;
+use km_common::crypto::secret_box::SecretBox;
 use km_common::crypto::PublicKey;
 use km_common::key_types::{KeyRecord, KeyRegistry, KeySpec};
 use prost::Message;
@@ -132,6 +133,31 @@ pub unsafe extern "C" fn key_manager_destroy_binding_key(uuid_bytes: *const u8) 
     .unwrap_or(-1)
 }
 
+/// Internal function to decrypt a ciphertext using a stored binding key.
+fn open_internal(
+    uuid: Uuid,
+    enc: &[u8],
+    ciphertext: &[u8],
+    aad: &[u8],
+) -> Result<SecretBox, i32> {
+    let record = match KEY_REGISTRY.get_key(&uuid) {
+        Some(r) => r,
+        None => return Err(-1),
+    };
+
+    let algo = match &record.meta.spec {
+        KeySpec::Binding { algo, .. } => algo,
+        _ => return Err(-1),
+    };
+
+    let priv_key = record.get_private_key();
+
+    match km_common::crypto::hpke_open(&priv_key, enc, ciphertext, aad, algo) {
+        Ok(pt) => Ok(pt),
+        Err(_) => Err(-3),
+    }
+}
+
 /// Decrypts a ciphertext using the binding key associated with the given UUID.
 ///
 /// ## Arguments
@@ -182,7 +208,7 @@ pub unsafe extern "C" fn key_manager_open(
             return -1;
         }
 
-        let uuid = unsafe { std::slice::from_raw_parts(uuid_bytes, 16) };
+        let uuid_slice = unsafe { std::slice::from_raw_parts(uuid_bytes, 16) };
         let enc_slice = unsafe { std::slice::from_raw_parts(enc, enc_len) };
         let ct_slice = unsafe { std::slice::from_raw_parts(ciphertext, ciphertext_len) };
         let aad_slice = if !aad.is_null() && aad_len > 0 {
@@ -190,35 +216,24 @@ pub unsafe extern "C" fn key_manager_open(
         } else {
             &[]
         };
-        let out_plaintext =
+        let out_plaintext_slice =
             unsafe { std::slice::from_raw_parts_mut(out_plaintext, out_plaintext_len) };
 
-        let uuid_val = match Uuid::from_slice(uuid) {
+        let uuid = match Uuid::from_slice(uuid_slice) {
             Ok(u) => u,
             Err(_) => return -1,
         };
 
-        let record = match KEY_REGISTRY.get_key(&uuid_val) {
-            Some(r) => r,
-            None => return -1,
-        };
-
-        let algo = match &record.meta.spec {
-            KeySpec::Binding { algo, .. } => algo,
-            _ => return -1,
-        };
-
-        let priv_key = record.get_private_key();
-
-        match km_common::crypto::hpke_open(&priv_key, enc_slice, ct_slice, aad_slice, algo) {
+        // Call Safe Internal Function
+        match open_internal(uuid, enc_slice, ct_slice, aad_slice) {
             Ok(pt) => {
                 if out_plaintext_len != pt.as_slice().len() {
                     return -2;
                 }
-                out_plaintext.copy_from_slice(pt.as_slice());
+                out_plaintext_slice.copy_from_slice(pt.as_slice());
                 0 // Success
             }
-            Err(_) => -3,
+            Err(e) => e,
         }
     }))
     .unwrap_or(-1)
