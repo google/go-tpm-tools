@@ -94,6 +94,7 @@ const (
 	cgroupNS                   = "tee-cgroup-ns"
 	gcaServiceEnv              = "gca-service-env"
 	installGpuDriver           = "tee-install-gpu-driver"
+	disableGcaRefreshKey       = "tee-disable-gca-refresh"
 )
 
 const (
@@ -135,11 +136,11 @@ type LaunchSpec struct {
 	LogRedirect                LogRedirectLocation
 	Mounts                     []launchermount.Mount
 	ITAConfig                  verifier.ITAConfig
-	// DevShmSize is specified in kiB.
-	DevShmSize        int64
-	AddedCapabilities []string
-	CgroupNamespace   bool
-	InstallGpuDriver  bool
+	DevShmSize                 int64 // DevShmSize is specified in kiB.
+	AddedCapabilities          []string
+	CgroupNamespace            bool
+	InstallGpuDriver           bool
+	DisableGcaRefresh          bool
 }
 
 // UnmarshalJSON unmarshals an instance attributes list in JSON format from the metadata
@@ -303,6 +304,13 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 		}
 		if cgroupOn {
 			s.CgroupNamespace = true
+		}
+	}
+
+	if val, ok := unmarshaledMap[disableGcaRefreshKey]; ok && val != "" {
+		var err error
+		if s.DisableGcaRefresh, err = strconv.ParseBool(val); err != nil {
+			return fmt.Errorf("invalid value for %v (not a boolean): %w", disableGcaRefreshKey, err)
 		}
 	}
 

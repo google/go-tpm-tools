@@ -30,8 +30,9 @@ func TestLaunchSpecUnmarshalJSONHappyCases(t *testing.T) {
 		Experiments: experiments.Experiments{
 			EnableItaVerifier: true,
 		},
-		GcaAddress:       "https://confidentialcomputing.googleapis.com",
-		InstallGpuDriver: true,
+		GcaAddress:        "https://confidentialcomputing.googleapis.com",
+		InstallGpuDriver:  true,
+		DisableGcaRefresh: false,
 	}
 
 	var testCases = []struct {
@@ -79,8 +80,7 @@ func TestLaunchSpecUnmarshalJSONHappyCases(t *testing.T) {
 				"tee-mount":"type=tmpfs,source=tmpfs,destination=/tmpmount;type=tmpfs,source=tmpfs,destination=/sized,size=222",
 				"ita-region":"US",
 				"ita-api-key":"test-api-key",
-				"tee-install-gpu-driver":"true",
-				"tee-gpu-driver-version":"590.48.01"
+				"tee-install-gpu-driver":"true"
 			}`,
 			modifyWant: func(ls LaunchSpec) LaunchSpec {
 				ls.GcaAddress = ""
@@ -105,8 +105,7 @@ func TestLaunchSpecUnmarshalJSONHappyCases(t *testing.T) {
 				"ita-region":"US",
 				"ita-api-key":"test-api-key",
 				"gca-service-env":"prod",
-				"tee-install-gpu-driver":"true",
-				"tee-gpu-driver-version":"590.48.01"
+				"tee-install-gpu-driver":"true"
 			}`,
 			modifyWant: func(ls LaunchSpec) LaunchSpec {
 				return ls
@@ -130,11 +129,34 @@ func TestLaunchSpecUnmarshalJSONHappyCases(t *testing.T) {
 				"ita-region":"US",
 				"ita-api-key":"test-api-key",
 				"gca-service-env":"staging",
-				"tee-install-gpu-driver":"true",
-				"tee-gpu-driver-version":"590.48.01"
+				"tee-install-gpu-driver":"true"
 			}`,
 			modifyWant: func(ls LaunchSpec) LaunchSpec {
 				ls.GcaAddress = "https://staging-confidentialcomputing.sandbox.googleapis.com"
+				return ls
+			},
+		},
+		{
+			testName: "DisableGcaRefreshSetToTrue",
+			mdsJSON: `{
+				"tee-cmd":"[\"--foo\",\"--bar\",\"--baz\"]",
+				"tee-env-foo":"bar",
+				"tee-image-reference":"docker.io/library/hello-world:latest",
+				"tee-signed-image-repos":"docker.io/library/hello-world,gcr.io/cloudrun/hello",
+				"tee-restart-policy":"Always",
+				"tee-impersonate-service-accounts":"sv1@developer.gserviceaccount.com,sv2@developer.gserviceaccount.com",
+				"tee-container-log-redirect":"true",
+				"tee-monitoring-memory-enable":"true",
+				"tee-dev-shm-size-kb":"234234",
+				"tee-mount":"type=tmpfs,source=tmpfs,destination=/tmpmount;type=tmpfs,source=tmpfs,destination=/sized,size=222",
+				"ita-region":"US",
+				"ita-api-key":"test-api-key",
+				"tee-install-gpu-driver":"true",
+				"tee-disable-gca-refresh":"true"
+			}`,
+			modifyWant: func(ls LaunchSpec) LaunchSpec {
+				ls.GcaAddress = ""
+				ls.DisableGcaRefresh = true
 				return ls
 			},
 		},
@@ -239,6 +261,13 @@ func TestLaunchSpecUnmarshalJSONBadInput(t *testing.T) {
 				"gca-service-env":""
 			}`,
 		},
+		{
+			"EmptyStringAsDisableGcaRefresh",
+			`{
+				"tee-image-reference":"docker.io/library/hello-world:latest",
+				"tee-disable-gca-refresh":"badvalue"
+			}`,
+		},
 	}
 
 	for _, testcase := range testCases {
@@ -274,6 +303,7 @@ func TestLaunchSpecUnmarshalJSONWithDefaultValue(t *testing.T) {
 		MonitoringEnabled: None,
 		GcaAddress:        "",
 		InstallGpuDriver:  false,
+		DisableGcaRefresh: false,
 	}
 
 	if !cmp.Equal(spec, want) {
