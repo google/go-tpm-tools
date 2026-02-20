@@ -29,15 +29,14 @@ enum KeyProtectionMechanism {
 }
 
 message KemPublicKey {
-  KemAlgorithm algorithm = 1;
-  bytes public_key = 2; // `Npk` bytes long; see the KemAlgorithm definition.
+  KemAlgorithm algorithm  = 1;
+  bytes        public_key = 2; // `Npk` bytes long; see the KemAlgorithm definition.
 }
 
 message HpkePublicKey {
-  HpkeAlgorithm algorithm = 1;
-  bytes public_key = 2; // `Npk` bytes long. Raw bytes.
+  HpkeAlgorithm algorithm  = 1;
+  bytes         public_key = 2; // `Npk` bytes long. Raw bytes.
 }
-
 
 message KeyClaims {
   // The following two messages are used for keys whose protection mechanism is
@@ -51,7 +50,7 @@ message KeyClaims {
   message VmProtectionKeyClaims {
     // The Key Protection Service attests that it controls the KEM private key, and that
     // it will encrypt all resulting shared secrets to the binding key.
-    KemPublicKey kem_pub_key = 1;
+    KemPublicKey  kem_pub_key     = 1;
     HpkePublicKey binding_pub_key = 2;
 
     // The remaining time until the Key Protection Service will autonomously delete its
@@ -61,7 +60,6 @@ message KeyClaims {
 
   oneof claims {
     VmProtectionBindingClaims vm_binding_claims = 1;
-    VmProtectionKeyClaims vm_key_claims = 2;
+    VmProtectionKeyClaims     vm_key_claims     = 2;
   }
 }
-
