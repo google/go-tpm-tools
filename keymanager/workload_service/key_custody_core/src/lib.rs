@@ -1,6 +1,6 @@
 use km_common::algorithms::HpkeAlgorithm;
-use km_common::crypto::secret_box::SecretBox;
 use km_common::crypto::PublicKey;
+use km_common::crypto::secret_box::SecretBox;
 use km_common::key_types::{KeyRecord, KeyRegistry, KeySpec};
 use prost::Message;
 use std::slice;
@@ -62,7 +62,6 @@ fn generate_binding_keypair_internal(
 /// * `0` on success.
 /// * `-1` if an error occurred during key generation.
 /// * `-2` if the `out_pubkey` buffer size does not match the key size.
-
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn key_manager_generate_binding_keypair(
     algo_ptr: *const u8,
@@ -134,15 +133,9 @@ pub unsafe extern "C" fn key_manager_destroy_binding_key(uuid_bytes: *const u8) 
 }
 
 /// Internal function to decrypt a ciphertext using a stored binding key.
-fn open_internal(
-    uuid: Uuid,
-    enc: &[u8],
-    ciphertext: &[u8],
-    aad: &[u8],
-) -> Result<SecretBox, i32> {
-    let record = match KEY_REGISTRY.get_key(&uuid) {
-        Some(r) => r,
-        None => return Err(-1),
+fn open_internal(uuid: Uuid, enc: &[u8], ciphertext: &[u8], aad: &[u8]) -> Result<SecretBox, i32> {
+    let Some(record) = KEY_REGISTRY.get_key(&uuid) else {
+        Err(-1)? // Key not found
     };
 
     let algo = match &record.meta.spec {
@@ -376,10 +369,11 @@ mod tests {
             kdf: KdfAlgorithm::HkdfSha256 as i32,
             aead: AeadAlgorithm::Aes256Gcm as i32,
         };
-
+        let algo_bytes = algo.encode_to_vec();
         unsafe {
             let res = key_manager_generate_binding_keypair(
-                algo,
+                algo_bytes.as_ptr(),
+                algo_bytes.len(),
                 3600,
                 uuid_bytes.as_mut_ptr(),
                 pubkey_bytes.as_mut_ptr(),
@@ -421,9 +415,11 @@ mod tests {
         };
 
         // 1. Generate keypair
+        let algo_bytes = algo.encode_to_vec();
         unsafe {
             key_manager_generate_binding_keypair(
-                algo,
+                algo_bytes.as_ptr(),
+                algo_bytes.len(),
                 3600,
                 uuid_bytes.as_mut_ptr(),
                 pubkey_bytes.as_mut_ptr(),
@@ -490,9 +486,11 @@ mod tests {
             kdf: KdfAlgorithm::HkdfSha256 as i32,
             aead: AeadAlgorithm::Aes256Gcm as i32,
         };
+        let algo_bytes = algo.encode_to_vec();
         let res = unsafe {
             key_manager_generate_binding_keypair(
-                algo,
+                algo_bytes.as_ptr(),
+                algo_bytes.len(),
                 3600,
                 uuid_bytes.as_mut_ptr(),
                 pubkey_bytes.as_mut_ptr(),

@@ -152,6 +152,41 @@ pub unsafe extern "C" fn key_manager_destroy_kem_key(uuid_bytes: *const u8) -> i
     .unwrap_or(-1)
 }
 
+/// Internal function to decapsulate and reseal a shared secret.
+fn decap_and_seal_internal(
+    uuid: Uuid,
+    encapsulated_key: &[u8],
+    aad: &[u8],
+) -> Result<(Vec<u8>, Vec<u8>), i32> {
+    // Get key record from registry
+    let Some(key_record) = KEY_REGISTRY.get_key(&uuid) else {
+        Err(-1)? // Key not found
+    };
+
+    let KeySpec::KemWithBindingPub {
+        algo: hpke_algo,
+        binding_public_key,
+        ..
+    } = &key_record.meta.spec
+    else {
+        Err(-1)? // Invalid key type
+    };
+
+    let priv_key = key_record.get_private_key();
+
+    // Decapsulate
+    let shared_secret = match km_common::crypto::decaps(&priv_key, encapsulated_key) {
+        Ok(s) => s,
+        Err(_) => return Err(-3),
+    };
+
+    // Seal
+    match km_common::crypto::hpke_seal(binding_public_key, &shared_secret, aad, hpke_algo) {
+        Ok((enc, ct)) => Ok((enc.to_vec(), ct.to_vec())),
+        Err(_) => Err(-4),
+    }
+}
+
 /// Decapsulates a shared secret using a stored KEM key and immediately reseals it using the associated binding public key.
 ///
 /// ## Arguments
@@ -161,10 +196,10 @@ pub unsafe extern "C" fn key_manager_destroy_kem_key(uuid_bytes: *const u8) -> i
 /// * `aad` - A pointer to the Additional Authenticated Data (AAD) for the sealing operation.
 /// * `aad_len` - The length of the AAD.
 /// * `out_encapsulated_key` - A pointer to a buffer where the new encapsulated key will be written.
-/// * `out_encapsulated_key_len` - A pointer to a `usize` containing the size of `out_encapsulated_key`.
+/// * `out_encapsulated_key_len` - The size of `out_encapsulated_key`.
 ///   On success, updated with the actual size.
 /// * `out_ciphertext` - A pointer to a buffer where the sealed ciphertext will be written.
-/// * `out_ciphertext_len` - A pointer to a `usize` containing the size of `out_ciphertext`.
+/// * `out_ciphertext_len` -The size of `out_ciphertext`.
 ///   On success, updated with the actual size.
 ///
 /// ## Safety
@@ -208,7 +243,7 @@ pub unsafe extern "C" fn key_manager_decap_and_seal(
         }
 
         // Convert to Safe Types
-        let uuid = unsafe { std::slice::from_raw_parts(uuid_bytes, 16) };
+        let uuid_slice = unsafe { slice::from_raw_parts(uuid_bytes, 16) };
         let enc_key_slice =
             unsafe { slice::from_raw_parts(encapsulated_key, encapsulated_key_len) };
         let aad_slice = if !aad.is_null() && aad_len > 0 {
@@ -218,7 +253,7 @@ pub unsafe extern "C" fn key_manager_decap_and_seal(
         };
         let out_encapsulated_key_slice =
             unsafe { slice::from_raw_parts_mut(out_encapsulated_key, out_encapsulated_key_len) };
-        let out_ciphertext =
+        let out_ciphertext_slice =
             unsafe { slice::from_raw_parts_mut(out_ciphertext, out_ciphertext_len) };
 
         let uuid = match Uuid::from_slice(uuid_slice) {
@@ -226,57 +261,18 @@ pub unsafe extern "C" fn key_manager_decap_and_seal(
             Err(_) => return -1,
         };
 
-        // Get key record from registry
-        let key_record = match KEY_REGISTRY.get_key(&uuid_val) {
-            Some(record) => record,
-            None => return -1,
-        };
-
-        let (hpke_algo, binding_public_key) = match &key_record.meta.spec {
-            KeySpec::KemWithBindingPub {
-                algo,
-                binding_public_key,
-                ..
-            } => (algo, binding_public_key),
-            _ => return -1, // Wrong key type
-        };
-
-        let _kem_algo = match km_common::algorithms::KemAlgorithm::try_from(hpke_algo.kem) {
-            Ok(k) => k,
-            Err(_) => return -1, // Invalid KEM algorithm
-        };
-
-        let priv_key = key_record.get_private_key();
-
-        // Decapsulate
-        let shared_secret = match km_common::crypto::decaps(&priv_key, enc_key_slice) {
-            Ok(s) => s,
-            Err(_) => return -3,
-        };
-
-        // Seal
-        let (enc_key, sealed_ciphertext) = match km_common::crypto::hpke_seal(
-            binding_public_key,
-            &shared_secret,
-            aad_slice,
-            hpke_algo,
-        ) {
-            Ok(res) => res,
-            Err(_) => {
-                return -4;
+        // Call Safe Internal Function
+        match decap_and_seal_internal(uuid, enc_key_slice, aad_slice) {
+            Ok((enc, ct)) => {
+                if out_encapsulated_key_len != enc.len() || out_ciphertext_len != ct.len() {
+                    return -2;
+                }
+                out_encapsulated_key_slice.copy_from_slice(&enc);
+                out_ciphertext_slice.copy_from_slice(&ct);
+                0 // Success
             }
-        };
-
-        // Copy outputs
-        let enc_len_req = enc_key.len();
-        let ct_len_req = sealed_ciphertext.len();
-
-        if out_encapsulated_key_len != enc_len_req || out_ciphertext_len != ct_len_req {
-            return -2;
+            Err(e) => e,
         }
-        out_encapsulated_key.copy_from_slice(enc_key.as_slice());
-        out_ciphertext.copy_from_slice(sealed_ciphertext.as_slice());
-        0
     }))
     .unwrap_or(-1)
 }
@@ -462,10 +458,11 @@ mod tests {
             kdf: KdfAlgorithm::HkdfSha256 as i32,
             aead: AeadAlgorithm::Aes256Gcm as i32,
         };
-
+        let algo_bytes = algo.encode_to_vec();
         unsafe {
             let res = key_manager_generate_kem_keypair(
-                algo,
+                algo_bytes.as_ptr(),
+                algo_bytes.len(),
                 binding_pubkey.as_ptr(),
                 binding_pubkey.len(),
                 3600,
@@ -513,10 +510,11 @@ mod tests {
             kdf: KdfAlgorithm::HkdfSha256 as i32,
             aead: AeadAlgorithm::Aes256Gcm as i32,
         };
-
+        let algo_bytes = algo.encode_to_vec();
         unsafe {
             key_manager_generate_kem_keypair(
-                algo,
+                algo_bytes.as_ptr(),
+                algo_bytes.len(),
                 binding_pk.as_bytes().as_ptr(),
                 binding_pk.as_bytes().len(),
                 3600,
@@ -632,9 +630,11 @@ mod tests {
             kdf: KdfAlgorithm::HkdfSha256 as i32,
             aead: AeadAlgorithm::Aes256Gcm as i32,
         };
+        let algo_bytes = algo.encode_to_vec();
         let res = unsafe {
             key_manager_generate_kem_keypair(
-                algo,
+                algo_bytes.as_ptr(),
+                algo_bytes.len(),
                 binding_pk.as_bytes().as_ptr(),
                 binding_pk.as_bytes().len(),
                 3600,
@@ -683,9 +683,12 @@ mod tests {
             kdf: KdfAlgorithm::HkdfSha256 as i32,
             aead: AeadAlgorithm::Aes256Gcm as i32,
         };
+
+        let algo_bytes = algo.encode_to_vec();
         let res = unsafe {
             key_manager_generate_kem_keypair(
-                algo,
+                algo_bytes.as_ptr(),
+                algo_bytes.len(),
                 binding_pk.as_bytes().as_ptr(),
                 binding_pk.as_bytes().len(),
                 3600,
