@@ -1,0 +1,287 @@
+syntax = "proto3";
+
+package key_claims;
+
+import "google/protobuf/duration.proto";
+import "keymanager/km_common/proto/algorithms.proto";
+
+option go_package = "github.com/google/go-tpm-tools/keymanager/km_common/proto/key_claims";
+
+// Used to refer to key instances held by various daemons.
+message KeyHandle {
+  string handle = 1;
+}
+
+enum KeyProtectionMechanism {
+  KEY_PROTECTION_MECHANISM_UNSPECIFIED = 0;
+
+  // The key is held by the Workload Services Daemon, and is endorsed by a single CVM
+  // attestation.
+  DEFAULT = 1;
+
+  // The key is held by the Key Protection Services VM, and is endorsed by a pair of CVM
+  // attestations, from the Workload Services Daemon and Key Protection VM.
+  KEY_PROTECTION_VM = 2;
+}
+
+message HpkeAlgorithm {
+  algorithms.KemAlgorithm kem = 1;
+  algorithms.KdfAlgorithm kdf = 2;
+  algorithms.AeadAlgorithm aead = 3;
+}
+
+message KemPublicKey {
+  algorithms.KemAlgorithm algorithm = 1;
+  bytes public_key = 2; // `Npk` bytes long; see the KemAlgorithm definition.
+}
+
+message HpkePublicKey {
+  HpkeAlgorithm algorithm = 1;
+  bytes public_key = 2; // `Npk` bytes long. Raw bytes.
+}
+
+// The results of an Encaps operation.
+message KemCiphertext {
+  algorithms.KemAlgorithm algorithm = 1;
+  bytes ciphertext = 2; // `Nenc` bytes long.
+}
+
+// The results of a Decaps operation.
+message KemSharedSecret {
+  algorithms.KemAlgorithm algorithm = 1;
+  bytes secret = 2; // `Nsecret` bytes long.
+}
+
+message HpkePayload {
+  HpkeAlgorithm algorithm = 1;
+  bytes kem_ciphertext = 2; // `Nenc` bytes long.
+  bytes payload_ciphertext = 3; // Encrypted data.
+  bytes authentication_tag = 4; // `Nt` bytes long.
+}
+
+// Enumerates the supported GPU architecture types.
+enum GpuArchitectureType {
+  GPU_ARCHITECTURE_UNSPECIFIED = 0;
+  GPU_ARCHITECTURE_KEPLER = 1;
+  GPU_ARCHITECTURE_MAXWELL = 2;
+  GPU_ARCHITECTURE_PASCAL = 3;
+  GPU_ARCHITECTURE_VOLTA = 4;
+  GPU_ARCHITECTURE_TURING = 5;
+  GPU_ARCHITECTURE_AMPERE = 6;
+  GPU_ARCHITECTURE_ADA = 7;
+  GPU_ARCHITECTURE_HOPPER = 8;
+  GPU_ARCHITECTURE_UNKNOWN = 9;
+  GPU_ARCHITECTURE_BLACKWELL = 10;
+}
+
+message GpuInfo {
+  string uuid = 1;
+  string driver_version = 2;
+  string vbios_version = 3;
+  GpuArchitectureType gpu_architecture_type = 4;
+  bytes attestation_certificate_chain = 5;
+
+  // This field contains SPDM request/response defined in
+  // https://www.dmtf.org/sites/default/files/standards/documents/DSP0274_1.1.0.pdf
+  bytes attestation_report = 6;
+}
+
+// An Nvidia attestation report for GPU and NVSwitch devices.
+// Contains necessary attestation evidence that the client collects for
+// verification.
+message NvidiaAttestationReport {
+  // (Placeholders)
+  message SinglePassthroughAttestation {}
+  message ProtectedPcieAttestation {}
+
+  // MultiGpuSecurePassthroughAttestation contains the attestation evidence
+  // for a Multi-GPU Secure Passthrough (MPT) attestation.
+  message MultiGpuSecurePassthroughAttestation {
+    // A list of GPU quotes.
+    repeated GpuInfo gpu_quotes = 1;
+  }
+
+  // The Confidential Computing feature that the attestation is for.
+  oneof cc_feature {
+    SinglePassthroughAttestation spt = 1; // SPT attestation.
+    ProtectedPcieAttestation ppcie = 2; // PPCIE attestation.
+    MultiGpuSecurePassthroughAttestation mpt = 3; // MPT attestation.
+  }
+}
+
+message DeviceAttestationReport {
+  oneof report {
+    NvidiaAttestationReport nvidia_report = 1;
+  }
+}
+
+message TdxCcelQuote {
+  // The CCEL event log. Formatted as described in the UEFI 2.10.
+  // Contains events for guest OS boot.
+  bytes ccel_boot_event_log = 1;
+
+  // Formatted as a Canonical Event Log.
+  // The event log containing Attested COS launcher events.
+  bytes cel_launch_event_log = 2;
+
+  // The TDX attestation quote from the guest. A serialized QuoteV4 from
+  // https://github.com/google/go-tdx-guest/blob/main/proto/tdx.proto
+  bytes td_quote = 3;
+}
+
+message VmAttestationQuote {
+  oneof quote {
+    // A TDX with CCEL and RTMR Attestation Quote.
+    TdxCcelQuote tdx_ccel_quote = 1;
+    // Future expansion for AMD SEV-SNP, ARM CCA, etc.
+  }
+}
+
+// Represents an attestation over a challenge provided by the workload.
+message VmAttestation {
+  // Chosen by WSD.
+  bytes label = 1;
+
+  // Provided by the workload.
+  bytes challenge = 2;
+
+  // Optional, provided by WSD.
+  bytes extra_data = 3;
+
+  // report_data is `SHA512(label || SHA512(challenge || SHA512(extra_data)))`
+  VmAttestationQuote quote = 4;
+
+  // Attestation reports for attached devices.
+  repeated DeviceAttestationReport device_reports = 5;
+}
+
+message KeyClaims {
+  // The following two messages are used for keys whose protection mechanism is
+  // KEY_PROTECTION_VM.
+
+  message VmProtectionBindingClaims {
+    // The workload attests that it controls the corresponding private key.
+    HpkePublicKey binding_pub_key = 1;
+  }
+
+  message VmProtectionKeyClaims {
+    // The Key Protection Service attests that it controls the KEM private key, and that
+    // it will encrypt all resulting shared secrets to the binding key.
+    KemPublicKey kem_pub_key = 1;
+    HpkePublicKey binding_pub_key = 2;
+
+    // The remaining time until the Key Protection Service will autonomously delete its
+    // KEM keypair.
+    google.protobuf.Duration remaining_lifespan = 3;
+  }
+
+  oneof claims {
+    VmProtectionBindingClaims vm_binding_claims = 1;
+    VmProtectionKeyClaims vm_key_claims = 2;
+  }
+}
+
+message KeyAttestation {
+  // label is "KEY_ATTESTATION"
+  // extra_data is a binary-serialized instance of KeyClaims.
+  VmAttestation attestation = 1;
+}
+
+// Container for keys whose protection mechanism is KEY_PROTECTION_VM.
+message VmProtectedKeyEndorsement {
+  // Contains a VmProtectionBindingClaims.
+  KeyAttestation binding_key_attestation = 1;
+
+  // Contains a VmProtectionKeyClaims.
+  KeyAttestation protected_key_attestation = 2;
+}
+
+// Container message for endorsing keys with various levels of protection.
+message KeyEndorsement {
+  oneof endorsement {
+    VmProtectedKeyEndorsement vm_protected_key_endorsement = 1;
+  }
+}
+
+// Host attestation evidence
+message TpmAttestationEndorsement {
+  // An attestation key (AK) certificate and cert chain
+  // Placeholder
+  message AkCertEndorsement {}
+
+  message TitanEndorsement {
+    // Certificate signed by Titan's DICE alias key over the EK used to generate the
+    // quotes. On Titan, the EK is a signing key that can be used directly.
+    bytes ek_cert = 4;
+
+    // Certificate signed by Titan's DeviceID public key over the alias key used to
+    // endorse the EK.
+    bytes alias_cert = 5;
+
+    // Device ID certificate for the Titan chip.
+    bytes device_id_cert = 6;
+  }
+
+  oneof endorsement {
+    AkCertEndorsement ak_cert_endorsement = 1;
+    TitanEndorsement titan_endorsement = 2;
+  }
+}
+
+message TpmQuote {
+  message SignedQuote {
+    uint32 hash_algorithm = 1; // Encoded as a TPM_ALG_ID.
+    map<uint32, bytes> pcr_values = 2; // Raw binary values of each PCR being quoted.
+    bytes tpms_attest = 3; // Contains a TPMS_QUOTE_INFO.
+    bytes tpmt_signature = 4; // Contains the signature.
+  }
+
+  // Generated by calling TPM2_Quote on each PCR bank.
+  repeated SignedQuote quotes = 1;
+
+  // The binary TCG Event Log containing events measured into the TPM by the
+  // platform firmware and operating system. Formatted as described in the
+  // "TCG PC Client Platform Firmware Profile Specification" as a series of
+  // TCG_PCR_EVENT2 entries.
+  bytes pcclient_boot_event_log = 2;
+
+  // Formatted as a Canonical Event Log.
+  // The event log containing Attested COS launcher events.
+  bytes cel_launch_event_log = 3;
+
+  TpmAttestationEndorsement endorsement = 4;
+}
+
+// Provides attestations for values not present in PCRs. For example, the Titan TPM
+// on certain platforms is electrically integrated such that it can report, via reserved
+// NV index, the number of warm resets the CPU has undergone since the last power cycle.
+message TpmAuxiliaryAttestation {
+  message SignedNvCertify {
+    uint32 hash_algorithm = 1; // Encoded as a TPM_ALG_ID.
+    bytes nv_data = 2;
+    bytes tpms_nv_public = 3; // Used to compute the Name of the NV index.
+    bytes tpms_attest = 4; // Contains a TPMS_NV_DIGEST_CERTIFY_INFO.
+    bytes tpmt_signature = 5; // Contains the signature.
+  }
+
+  repeated SignedNvCertify signed_nvs = 1;
+
+  TpmAttestationEndorsement endorsement = 2;
+}
+
+message HostAttestation {
+  // Shall be "HOST_ATTESTATION".
+  bytes label = 1;
+
+  // Provided by the workload.
+  bytes challenge = 2;
+
+  // Shall be empty (set by WSD, present for future expansion).
+  bytes extra_data = 3;
+
+  // Within each of the below fields, the TPMS_ATTEST's extraData contains
+  // `SHA256(label || SHA256(challenge || SHA256(extra_data)))`
+  TpmQuote tpm_quote = 4;
+
+  TpmAuxiliaryAttestation aux_attestation = 5;
+}
