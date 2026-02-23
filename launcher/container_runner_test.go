@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	teemodels "github.com/GoogleCloudPlatform/confidential-space/server/models"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/defaults"
@@ -27,7 +28,6 @@ import (
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/spec"
-	teemodels "github.com/google/go-tpm-tools/launcher/teeserver/models"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/opencontainers/go-digest"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"

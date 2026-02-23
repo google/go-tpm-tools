@@ -29,13 +29,13 @@ import (
 
 	gecel "github.com/google/go-eventlog/cel"
 
+	teemodels "github.com/GoogleCloudPlatform/confidential-space/server/models"
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/internal/signaturediscovery"
 	"github.com/google/go-tpm-tools/launcher/spec"
-	teemodels "github.com/google/go-tpm-tools/launcher/teeserver/models"
 	pb "github.com/google/go-tpm-tools/proto/attest"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/google/go-tpm-tools/verifier/models"

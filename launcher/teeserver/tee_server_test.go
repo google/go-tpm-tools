@@ -10,11 +10,11 @@ import (
 	"strings"
 	"testing"
 
+	teemodels "github.com/GoogleCloudPlatform/confidential-space/server/models"
 	"github.com/google/go-cmp/cmp"
 	gecel "github.com/google/go-eventlog/cel"
 	"github.com/google/go-tpm-tools/launcher/agent"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
-	teemodels "github.com/google/go-tpm-tools/launcher/teeserver/models"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/google/go-tpm-tools/verifier/models"
 	"google.golang.org/grpc/codes"
