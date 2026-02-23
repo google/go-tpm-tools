@@ -18,13 +18,13 @@ import (
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
 
-	algorithms "github.com/google/go-tpm-tools/keymanager/km_common/proto"
+	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
 )
 
 // GenerateKEMKeypair generates an X25519 HPKE KEM keypair linked to the
 // provided binding public key via Rust FFI.
 // Returns the UUID key handle and the KEM public key bytes.
-func GenerateKEMKeypair(algo *algorithms.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
+func GenerateKEMKeypair(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
 	if len(bindingPubKey) == 0 {
 		return uuid.Nil, nil, fmt.Errorf("binding public key must not be empty")
 	}
