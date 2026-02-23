@@ -68,9 +68,15 @@ type GenerateKemResponse struct {
 	KeyHandle KeyHandle `json:"key_handle"`
 }
 
+// SupportedAlgorithm represents a single algorithm capability.
+type SupportedAlgorithm struct {
+	Algorithm string       `json:"algorithm"`
+	Param     KemAlgorithm `json:"param"`
+}
+
 // GetCapabilitiesResponse represents the JSON body for GET /v1/capabilities.
 type GetCapabilitiesResponse struct {
-	SupportedAlgorithms           []KemAlgorithm           `json:"supported_algorithms"`
+	SupportedAlgorithms           []SupportedAlgorithm     `json:"supported_algorithms"`
 	SupportedProtectionMechanisms []KeyProtectionMechanism `json:"supported_protection_mechanisms"`
 }
 
@@ -197,8 +203,16 @@ func (s *Server) handleGetCapabilities(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var supportedAlgos []SupportedAlgorithm
+	for _, algo := range SupportedKemAlgorithms {
+		supportedAlgos = append(supportedAlgos, SupportedAlgorithm{
+			Algorithm: "kem",
+			Param:     algo,
+		})
+	}
+
 	resp := GetCapabilitiesResponse{
-		SupportedAlgorithms:           SupportedKemAlgorithms,
+		SupportedAlgorithms:           supportedAlgos,
 		SupportedProtectionMechanisms: SupportedKeyProtectionMechanisms,
 	}
 

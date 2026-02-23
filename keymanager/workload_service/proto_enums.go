@@ -63,12 +63,12 @@ const (
 
 var (
 	keyProtectionMechanismToString = map[KeyProtectionMechanism]string{
-		KeyProtectionMechanismDefault: "KEY_PROTECTION_DEFAULT",
+		KeyProtectionMechanismDefault: "DEFAULT",
 		KeyProtectionMechanismVM:      "KEY_PROTECTION_VM",
 	}
 	stringToKeyProtectionMechanism = map[string]KeyProtectionMechanism{
-		"KEY_PROTECTION_DEFAULT": KeyProtectionMechanismDefault,
-		"KEY_PROTECTION_VM":      KeyProtectionMechanismVM,
+		"DEFAULT":           KeyProtectionMechanismDefault,
+		"KEY_PROTECTION_VM": KeyProtectionMechanismVM,
 	}
 )
 
@@ -104,6 +104,7 @@ var (
 
 	// SupportedKeyProtectionMechanisms is the source of truth for supported mechanisms.
 	SupportedKeyProtectionMechanisms = []KeyProtectionMechanism{
+		KeyProtectionMechanismDefault,
 		KeyProtectionMechanismVM,
 	}
 )
