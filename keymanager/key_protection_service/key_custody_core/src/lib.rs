@@ -157,7 +157,9 @@ fn decap_and_seal_internal(
     uuid: Uuid,
     encapsulated_key: &[u8],
     aad: &[u8],
-) -> Result<(Vec<u8>, Vec<u8>), i32> {
+    out_encapsulated_key: &mut [u8],
+    out_ciphertext: &mut [u8],
+) -> Result<(), i32> {
     // Get key record from registry
     let Some(key_record) = KEY_REGISTRY.get_key(&uuid) else {
         Err(-1)? // Key not found
@@ -182,7 +184,14 @@ fn decap_and_seal_internal(
 
     // Seal
     match km_common::crypto::hpke_seal(binding_public_key, &shared_secret, aad, hpke_algo) {
-        Ok((enc, ct)) => Ok((enc.to_vec(), ct.to_vec())),
+        Ok((enc, ct)) => {
+            if out_encapsulated_key.len() != enc.len() || out_ciphertext.len() != ct.len() {
+                return Err(-2);
+            }
+            out_encapsulated_key.copy_from_slice(&enc);
+            out_ciphertext.copy_from_slice(&ct);
+            Ok(())
+        }
         Err(_) => Err(-4),
     }
 }
@@ -197,20 +206,16 @@ fn decap_and_seal_internal(
 /// * `aad_len` - The length of the AAD.
 /// * `out_encapsulated_key` - A pointer to a buffer where the new encapsulated key will be written.
 /// * `out_encapsulated_key_len` - The size of `out_encapsulated_key`.
-///   On success, updated with the actual size.
 /// * `out_ciphertext` - A pointer to a buffer where the sealed ciphertext will be written.
 /// * `out_ciphertext_len` -The size of `out_ciphertext`.
-///   On success, updated with the actual size.
 ///
 /// ## Safety
 /// This function is unsafe because it dereferences raw pointers. The caller must ensure that:
 /// * `uuid_bytes` points to a valid 16-byte buffer.
-/// * `encapsulated_key` points to a valid buffer of at least `encapsulated_key_len` bytes.
-/// * `aad` is either null or points to a valid buffer of at least `aad_len` bytes.
-/// * `out_encapsulated_key` points to a valid buffer of at least `*out_encapsulated_key_len` bytes.
-/// * `out_encapsulated_key_len` points to a valid `usize`.
-/// * `out_ciphertext` points to a valid buffer of at least `*out_ciphertext_len` bytes.
-/// * `out_ciphertext_len` points to a valid `usize`.
+/// * `encapsulated_key` points to a valid buffer of `encapsulated_key_len` bytes.
+/// * `aad` is either null or points to a valid buffer of `aad_len` bytes.
+/// * `out_encapsulated_key` points to a valid buffer of `out_encapsulated_key_len` bytes.
+/// * `out_ciphertext` points to a valid buffer of `out_ciphertext_len` bytes.
 ///
 /// ## Returns
 /// * `0` on success.
@@ -262,15 +267,14 @@ pub unsafe extern "C" fn key_manager_decap_and_seal(
         };
 
         // Call Safe Internal Function
-        match decap_and_seal_internal(uuid, enc_key_slice, aad_slice) {
-            Ok((enc, ct)) => {
-                if out_encapsulated_key_len != enc.len() || out_ciphertext_len != ct.len() {
-                    return -2;
-                }
-                out_encapsulated_key_slice.copy_from_slice(&enc);
-                out_ciphertext_slice.copy_from_slice(&ct);
-                0 // Success
-            }
+        match decap_and_seal_internal(
+            uuid,
+            enc_key_slice,
+            aad_slice,
+            out_encapsulated_key_slice,
+            out_ciphertext_slice,
+        ) {
+            Ok(_) => 0, // Success
             Err(e) => e,
         }
     }))

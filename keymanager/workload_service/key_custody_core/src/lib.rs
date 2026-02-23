@@ -134,9 +134,7 @@ pub unsafe extern "C" fn key_manager_destroy_binding_key(uuid_bytes: *const u8) 
 
 /// Internal function to decrypt a ciphertext using a stored binding key.
 fn open_internal(uuid: Uuid, enc: &[u8], ciphertext: &[u8], aad: &[u8]) -> Result<SecretBox, i32> {
-    let Some(record) = KEY_REGISTRY.get_key(&uuid) else {
-        Err(-1)? // Key not found
-    };
+    let record = KEY_REGISTRY.get_key(&uuid).ok_or(-1)?;
 
     let algo = match &record.meta.spec {
         KeySpec::Binding { algo, .. } => algo,
@@ -163,15 +161,14 @@ fn open_internal(uuid: Uuid, enc: &[u8], ciphertext: &[u8], aad: &[u8]) -> Resul
 /// * `aad_len` - The length of the additional authenticated data.
 /// * `out_plaintext` - A pointer to a buffer where the decrypted plaintext will be written.
 /// * `out_plaintext_len` - The size of `out_plaintext` buffer.
-///   On success, it will be updated with the actual size of the plaintext.
 ///
 /// ## Safety
 /// This function is unsafe because it dereferences raw pointers. The caller must ensure that:
 /// * `uuid_bytes` points to a valid 16-byte buffer.
-/// * `enc` points to a valid buffer of at least `enc_len` bytes.
+/// * `enc` points to a valid buffer of `enc_len` bytes.
 /// * `ciphertext` points to a valid buffer of `ciphertext_len` bytes.
-/// * `aad` points to a valid buffer of at least `aad_len` bytes.
-/// * `out_plaintext` points to a valid buffer of at least `*out_plaintext_len` bytes.
+/// * `aad` points to a valid buffer of `aad_len` bytes.
+/// * `out_plaintext` points to a valid buffer of `*out_plaintext_len` bytes.
 /// * `out_plaintext_len` points to a valid `usize`.
 ///
 /// ## Returns
