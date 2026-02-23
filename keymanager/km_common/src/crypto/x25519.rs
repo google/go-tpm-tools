@@ -185,8 +185,14 @@ impl PrivateKeyOps for X25519PrivateKey {
 
 /// LabeledExtract(salt, label, ikm) = HKDF-Extract(salt, "HPKE-v1" || suite_id || label || ikm)
 fn labeled_extract(salt: &[u8], label: &[u8], ikm: &[u8], suite_id: &[u8]) -> hkdf::Prk {
+    // print the params received
+    println!(
+        "labeled_extract: salt={:?}, label={:?}, ikm={:?}, suite_id={:?}",
+        salt, label, ikm, suite_id
+    );
+
     let labeled_ikm = SecretBox::new([b"HPKE-v1".as_slice(), suite_id, label, ikm].concat());
-    hkdf::HkdfSha256::extract(labeled_ikm.as_slice(), hkdf::Salt::NonEmpty(salt))
+    hkdf::HkdfSha256::extract(labeled_ikm.as_slice(), hkdf::Salt::None)
 }
 
 /// LabeledExpand(prk, label, info, L) = HKDF-Expand(prk, "HPKE-v1" || suite_id || label || info, L)
@@ -223,15 +229,12 @@ mod tests {
 
     #[test]
     fn test_decaps_x25519_clamped_vector() {
-        // Since BoringSSL X25519 always clamps the private key, we use vectors that
-        // are consistent with clamping.
-        // Input private key (clamped internally by BoringSSL):
-        let sk_r_hex = "468c86c75053df4d0925e01f5446700e57288f3316c5b610c3b9b94090b8f2cb";
-        let enc_hex = "1b2767097950294d300c2830366c3c58853c83a736466336e392576b9762194d";
+        // Vectors from https://www.rfc-editor.org/rfc/rfc9180.html#appendix-A.1
+        let sk_r_hex = "4612c550263fc8ad58375df3f557aac531d26850903e55a9f23f21d8534e8ac8";
+        let enc_hex = "37fda3567bdbd628e88668c3c8d7e97d1d1253b6d4ea6d44c150f741f1bf4431";
 
-        // This is what we get when we run with clamping:
         let expected_shared_secret_hex =
-            "b1e179eefbcdfe490a1929c3c6e5de6d98f3ed4463b6d94627390119610baa83";
+            "fe0e18c9f024ce43799ae393c7e8fe8fce9d218875e8227b0187c04e7d2ea1fc";
 
         let sk_r_bytes: Vec<u8> = hex::decode(sk_r_hex).unwrap();
         let sk_r = X25519PrivateKey(SecretBox::new(sk_r_bytes));
@@ -275,13 +278,12 @@ mod tests {
 
     #[test]
     fn test_encaps_x25519_clamped_vector() {
-        // Since BoringSSL X25519 always clamps the private key, we use vectors that
-        // are consistent with clamping.
-        let sk_e_hex = "1cbbe38b923164ec953f62fb8d182090a68e7b4d7bf2af0e1315284ed5cd2814";
-        let pk_e_hex = "1c7be5f4cd9e5217cec0af5d53e5512516c23ef232f8e9921c18d4cf9561f42d";
-        let pk_r_hex = "e7a1b035517828a006dcdb862da34f0a7846ba64ba94a066b3bf5f428dfa0c4c";
+        // Vectors from https://www.rfc-editor.org/rfc/rfc9180.html#appendix-A.1
+        let sk_e_hex = "52c4a758a802cd8b936eceea314432798d5baf2d7e9235dc084ab1b9cfa2f736";
+        let pk_e_hex = "37fda3567bdbd628e88668c3c8d7e97d1d1253b6d4ea6d44c150f741f1bf4431";
+        let pk_r_hex = "3948cfe0ad1ddb695d780e59077195da6c56506b027329794ab02bca80815c4d";
         let expected_shared_secret_hex =
-            "8feafe5dfc6bf39bfe8e872f31c36fd66ba9d846e6256c98e0f0f6134f867dfc";
+            "fe0e18c9f024ce43799ae393c7e8fe8fce9d218875e8227b0187c04e7d2ea1fc";
 
         let sk_e_bytes: Vec<u8> = hex::decode(sk_e_hex).unwrap();
         let pk_r_bytes: [u8; 32] = hex::decode(pk_r_hex).unwrap().try_into().unwrap();
