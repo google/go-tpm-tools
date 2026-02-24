@@ -52,7 +52,7 @@ func TestCreateSigningKeysInHierarchies(t *testing.T) {
 	}
 }
 
-func TestCachedRSAKeys(t *testing.T) {
+func TestNewCachedRSAKeys(t *testing.T) {
 	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
 	keys := []struct {
@@ -100,6 +100,44 @@ func TestCachedRSAKeys(t *testing.T) {
 
 			if !reflect.DeepEqual(srk.PublicKey(), pub) {
 				t.Errorf("Expected pub key: %v got: %v", pub, srk.PublicKey())
+			}
+		})
+	}
+}
+
+func TestCachedRSAKeys(t *testing.T) {
+	rwc := test.GetTPM(t)
+	defer client.CheckedClose(t, rwc)
+	keys := []struct {
+		name         string
+		cachedHandle tpmutil.Handle
+		getKey       func(io.ReadWriter) (*client.Key, error)
+		checkKey     func(io.ReadWriter, tpmutil.Handle) (*client.Key, error)
+		shouldPass   bool
+	}{
+		{"SRKExists", client.SRKReservedHandle, client.StorageRootKeyRSA, client.LoadStorageRootKeyRSA, true},
+		{"SRKDoesNotExist", client.EKReservedHandle, client.EndorsementKeyRSA, client.LoadStorageRootKeyRSA, false},
+	}
+
+	for _, k := range keys {
+		t.Run(k.name, func(t *testing.T) {
+			// Get the key the first time and persist
+			srk, err := k.getKey(rwc)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer srk.Close()
+
+			// Get the cached key (should be the same)
+			_, err = k.checkKey(rwc, k.cachedHandle)
+			if k.shouldPass {
+				if err != nil {
+					t.Errorf("Expected checkKey to Pass: %v", err)
+				}
+			} else {
+				if err == nil {
+					t.Errorf("Expected checkKey to Fail.")
+				}
 			}
 		})
 	}
