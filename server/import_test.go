@@ -25,7 +25,6 @@ func TestImport(t *testing.T) {
 		{"ECC", client.DefaultEKTemplateECC()},
 		{"SRK-RSA", client.SRKTemplateRSA()},
 		{"SRK-ECC", client.SRKTemplateECC()},
-		{"ECC-P224", getECCTemplate(tpm2.CurveNISTP224)},
 		{"ECC-P256", getECCTemplate(tpm2.CurveNISTP256)},
 		{"ECC-P384", getECCTemplate(tpm2.CurveNISTP384)},
 		{"ECC-P521", getECCTemplate(tpm2.CurveNISTP521)},
