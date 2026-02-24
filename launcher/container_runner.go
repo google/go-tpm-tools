@@ -621,8 +621,9 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		return fmt.Errorf("failed to measure CEL events: %v", err)
 	}
 
-	// Only refresh token if agent has a default GCA client (not ITA use case).
-	if r.launchSpec.ITAConfig.ITARegion == "" {
+	// Only refresh token if agent has a default GCA client (not ITA use case)
+	// AND GcaRefresh is not disabled
+	if r.launchSpec.ITAConfig.ITARegion == "" && !r.launchSpec.DisableGcaRefresh {
 		if err := r.fetchAndWriteToken(ctx); err != nil {
 			return fmt.Errorf("failed to fetch and write OIDC token: %v", err)
 		}
