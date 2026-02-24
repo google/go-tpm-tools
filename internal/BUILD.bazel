@@ -1,0 +1,32 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "internal",
+    srcs = [
+        "cert.go",
+        "pcrs.go",
+        "public.go",
+        "quote.go",
+    ],
+    importpath = "github.com/google/go-tpm-tools/internal",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//proto/tpm",
+        "@com_github_google_go_tpm//legacy/tpm2",
+        "@com_github_google_go_tpm//tpmutil",
+    ],
+)
+
+go_test(
+    name = "internal_test",
+    srcs = [
+        "cert_test.go",
+        "pcrs_test.go",
+    ],
+    embed = [":internal"],
+    deps = [
+        "//internal/test",
+        "//proto/tpm",
+        "@com_github_google_go_tpm//legacy/tpm2",
+    ],
+)

@@ -1,0 +1,15 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "systemctl",
+    srcs = ["systemctl.go"],
+    importpath = "github.com/google/go-tpm-tools/launcher/internal/systemctl",
+    visibility = ["//launcher:__subpackages__"],
+    deps = ["@com_github_coreos_go_systemd_v22//dbus:go_default_library"],
+)
+
+go_test(
+    name = "systemctl_test",
+    srcs = ["systemctl_test.go"],
+    embed = [":systemctl"],
+)

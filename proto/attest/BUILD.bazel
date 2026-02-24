@@ -1,0 +1,15 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "attest",
+    srcs = ["attest.pb.go"],
+    importpath = "github.com/google/go-tpm-tools/proto/attest",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//proto/tpm",
+        "@com_github_google_go_sev_guest//proto/sevsnp",
+        "@com_github_google_go_tdx_guest//proto/tdx",
+        "@org_golang_google_protobuf//reflect/protoreflect",
+        "@org_golang_google_protobuf//runtime/protoimpl",
+    ],
+)
