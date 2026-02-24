@@ -461,13 +461,14 @@ func (r *ContainerRunner) measureMemoryMonitor() error {
 // TODO: Test functionality once GPU support is available.
 // measureGPUAttestationEvidence will measure GPU attestation claims into the COS
 // eventlog in the AttestationAgent.
-func (r *ContainerRunner) measureGPUAttestationEvidence() error {
-	if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.GPUDeviceAttestationBindingType, EventContent: []byte{}}); err != nil {
-		return err
-	}
-	r.logger.Info("Successfully measured GPU device attestation binding event")
-	return nil
-}
+
+// func (r *ContainerRunner) measureGPUAttestationEvidence() error {
+// 	if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.GPUDeviceAttestationBindingType, EventContent: []byte{}}); err != nil {
+// 		return err
+// 	}
+// 	r.logger.Info("Successfully measured GPU device attestation binding event")
+// 	return nil
+// }
 
 // Retrieves the default OIDC token from the attestation service, and returns how long
 // to wait before attemping to refresh it.
