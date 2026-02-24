@@ -68,16 +68,25 @@ type GenerateKemResponse struct {
 	KeyHandle KeyHandle `json:"key_handle"`
 }
 
+// AlgorithmParams represents the parameters for a specific algorithm type.
+type AlgorithmParams struct {
+	KemID KemAlgorithm `json:"kem_id"`
+}
+
+// AlgorithmDetails captures type and specific params.
+type AlgorithmDetails struct {
+	Type   string          `json:"type"`
+	Params AlgorithmParams `json:"params"`
+}
+
 // SupportedAlgorithm represents a single algorithm capability.
 type SupportedAlgorithm struct {
-	Algorithm string       `json:"algorithm"`
-	Param     KemAlgorithm `json:"param"`
+	Algorithm AlgorithmDetails `json:"algorithm"`
 }
 
 // GetCapabilitiesResponse represents the JSON body for GET /v1/capabilities.
 type GetCapabilitiesResponse struct {
-	SupportedAlgorithms           []SupportedAlgorithm     `json:"supported_algorithms"`
-	SupportedProtectionMechanisms []KeyProtectionMechanism `json:"supported_protection_mechanisms"`
+	SupportedAlgorithms []SupportedAlgorithm `json:"supported_algorithms"`
 }
 
 // Server is the WSD HTTP server.
@@ -206,14 +215,17 @@ func (s *Server) handleGetCapabilities(w http.ResponseWriter, r *http.Request) {
 	var supportedAlgos []SupportedAlgorithm
 	for _, algo := range SupportedKemAlgorithms {
 		supportedAlgos = append(supportedAlgos, SupportedAlgorithm{
-			Algorithm: "kem",
-			Param:     algo,
+			Algorithm: AlgorithmDetails{
+				Type: "kem",
+				Params: AlgorithmParams{
+					KemID: algo,
+				},
+			},
 		})
 	}
 
 	resp := GetCapabilitiesResponse{
-		SupportedAlgorithms:           supportedAlgos,
-		SupportedProtectionMechanisms: SupportedKeyProtectionMechanisms,
+		SupportedAlgorithms: supportedAlgos,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -227,5 +239,3 @@ func writeError(w http.ResponseWriter, message string, code int) {
 	w.WriteHeader(code)
 	json.NewEncoder(w).Encode(map[string]string{"error": message})
 }
-
-

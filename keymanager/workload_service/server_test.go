@@ -413,12 +413,10 @@ func TestHandleGetCapabilities(t *testing.T) {
 		t.Fatalf("failed to decode response: %v", err)
 	}
 
-	if len(resp.SupportedAlgorithms) != 1 || resp.SupportedAlgorithms[0].Param != KemAlgorithmDHKEMX25519HKDFSHA256 || resp.SupportedAlgorithms[0].Algorithm != "kem" {
+	if len(resp.SupportedAlgorithms) != 1 ||
+		resp.SupportedAlgorithms[0].Algorithm.Params.KemID != KemAlgorithmDHKEMX25519HKDFSHA256 ||
+		resp.SupportedAlgorithms[0].Algorithm.Type != "kem" {
 		t.Errorf("unexpected supported algorithms: %v", resp.SupportedAlgorithms)
-	}
-
-	if len(resp.SupportedProtectionMechanisms) != 2 || resp.SupportedProtectionMechanisms[0] != KeyProtectionMechanismDefault || resp.SupportedProtectionMechanisms[1] != KeyProtectionMechanismVM {
-		t.Errorf("unexpected supported protection mechanisms: %v", resp.SupportedProtectionMechanisms)
 	}
 }
 
