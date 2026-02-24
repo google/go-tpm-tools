@@ -3,9 +3,9 @@ use km_common::crypto::PublicKey;
 use km_common::key_types::{KeyRecord, KeyRegistry, KeySpec};
 use prost::Message;
 use std::slice;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::sync::LazyLock;
+use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 use uuid::Uuid;
 
@@ -48,7 +48,7 @@ fn generate_kem_keypair_internal(
 /// * `expiry_secs` - The expiration time of the key in seconds from now.
 /// * `out_uuid` - A pointer to a 16-byte buffer where the key UUID will be written.
 /// * `out_pubkey` - A pointer to a buffer where the public key will be written.
-/// * `out_pubkey_len` - A pointer to a `usize` that contains the size of `out_pubkey` buffer.
+/// * `out_pubkey_len` - The size of `out_pubkey` buffer.
 ///
 /// ## Safety
 /// This function is unsafe because it dereferences the provided raw pointers.
@@ -75,45 +75,49 @@ pub unsafe extern "C" fn key_manager_generate_kem_keypair(
     out_pubkey: *mut u8,
     out_pubkey_len: usize,
 ) -> i32 {
-    // Safety Invariant Checks
-    if binding_pubkey.is_null()
-        || binding_pubkey_len == 0
-        || out_pubkey.is_null()
-        || out_uuid.is_null()
-        || algo_ptr.is_null()
-        || algo_len == 0
-    {
-        return -1;
-    }
-
-    // Convert to Safe Types
-    let binding_pubkey_slice = unsafe { slice::from_raw_parts(binding_pubkey, binding_pubkey_len) };
-    let algo_slice = unsafe { slice::from_raw_parts(algo_ptr, algo_len) };
-    let out_uuid = unsafe { slice::from_raw_parts_mut(out_uuid, 16) };
-    let out_pubkey = unsafe { slice::from_raw_parts_mut(out_pubkey, out_pubkey_len) };
-
-    let binding_pubkey = match PublicKey::try_from(binding_pubkey_slice.to_vec()) {
-        Ok(pk) => pk,
-        Err(_) => return -1,
-    };
-
-    let algo = match HpkeAlgorithm::decode(algo_slice) {
-        Ok(a) => a,
-        Err(_) => return -1,
-    };
-
-    // Call Safe Internal Function
-    match generate_kem_keypair_internal(algo, binding_pubkey, expiry_secs) {
-        Ok((id, pubkey)) => {
-            if out_pubkey_len != pubkey.as_bytes().len() {
-                return -2;
-            }
-            out_uuid.copy_from_slice(id.as_bytes());
-            out_pubkey.copy_from_slice(pubkey.as_bytes());
-            0 // Success
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        // Safety Invariant Checks
+        if binding_pubkey.is_null()
+            || binding_pubkey_len == 0
+            || out_pubkey.is_null()
+            || out_uuid.is_null()
+            || algo_ptr.is_null()
+            || algo_len == 0
+        {
+            return -1;
         }
-        Err(e) => e,
-    }
+
+        // Convert to Safe Types
+        let binding_pubkey_slice =
+            unsafe { slice::from_raw_parts(binding_pubkey, binding_pubkey_len) };
+        let algo_slice = unsafe { slice::from_raw_parts(algo_ptr, algo_len) };
+        let out_uuid = unsafe { slice::from_raw_parts_mut(out_uuid, 16) };
+        let out_pubkey = unsafe { slice::from_raw_parts_mut(out_pubkey, out_pubkey_len) };
+
+        let binding_pubkey = match PublicKey::try_from(binding_pubkey_slice.to_vec()) {
+            Ok(pk) => pk,
+            Err(_) => return -1,
+        };
+
+        let algo = match HpkeAlgorithm::decode(algo_slice) {
+            Ok(a) => a,
+            Err(_) => return -1,
+        };
+
+        // Call Safe Internal Function
+        match generate_kem_keypair_internal(algo, binding_pubkey, expiry_secs) {
+            Ok((id, pubkey)) => {
+                if out_pubkey_len != pubkey.as_bytes().len() {
+                    return -2;
+                }
+                out_uuid.copy_from_slice(id.as_bytes());
+                out_pubkey.copy_from_slice(pubkey.as_bytes());
+                0 // Success
+            }
+            Err(e) => e,
+        }
+    }))
+    .unwrap_or(-1)
 }
 
 /// Destroys the KEM key associated with the given UUID.
@@ -130,19 +134,151 @@ pub unsafe extern "C" fn key_manager_generate_kem_keypair(
 /// * `-1` if the UUID pointer is null or the key was not found.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn key_manager_destroy_kem_key(uuid_bytes: *const u8) -> i32 {
-    if uuid_bytes.is_null() {
-        return -1;
-    }
-    let uuid = unsafe {
-        let mut bytes = [0u8; 16];
-        std::ptr::copy_nonoverlapping(uuid_bytes, bytes.as_mut_ptr(), 16);
-        Uuid::from_bytes(bytes)
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        if uuid_bytes.is_null() {
+            return -1;
+        }
+        let uuid = unsafe {
+            let mut bytes = [0u8; 16];
+            std::ptr::copy_nonoverlapping(uuid_bytes, bytes.as_mut_ptr(), 16);
+            Uuid::from_bytes(bytes)
+        };
+
+        match KEY_REGISTRY.remove_key(&uuid) {
+            Some(_) => 0, // Success
+            None => -1,   // Not found
+        }
+    }))
+    .unwrap_or(-1)
+}
+
+/// Internal function to decapsulate and reseal a shared secret.
+fn decap_and_seal_internal(
+    uuid: Uuid,
+    encapsulated_key: &[u8],
+    aad: &[u8],
+    out_encapsulated_key: &mut [u8],
+    out_ciphertext: &mut [u8],
+) -> Result<(), i32> {
+    // Get key record from registry
+    let Some(key_record) = KEY_REGISTRY.get_key(&uuid) else {
+        Err(-1)? // Key not found
     };
 
-    match KEY_REGISTRY.remove_key(&uuid) {
-        Some(_) => 0, // Success
-        None => -1,   // Not found
+    let KeySpec::KemWithBindingPub {
+        algo: hpke_algo,
+        binding_public_key,
+        ..
+    } = &key_record.meta.spec
+    else {
+        Err(-1)? // Invalid key type
+    };
+
+    let priv_key = key_record.get_private_key();
+
+    // Decapsulate
+    let shared_secret = match km_common::crypto::decaps(&priv_key, encapsulated_key) {
+        Ok(s) => s,
+        Err(_) => return Err(-3),
+    };
+
+    // Seal
+    match km_common::crypto::hpke_seal(binding_public_key, &shared_secret, aad, hpke_algo) {
+        Ok((enc, ct)) => {
+            if out_encapsulated_key.len() != enc.len() || out_ciphertext.len() != ct.len() {
+                return Err(-2);
+            }
+            out_encapsulated_key.copy_from_slice(&enc);
+            out_ciphertext.copy_from_slice(&ct);
+            Ok(())
+        }
+        Err(_) => Err(-4),
     }
+}
+
+/// Decapsulates a shared secret using a stored KEM key and immediately reseals it using the associated binding public key.
+///
+/// ## Arguments
+/// * `uuid_bytes` - A pointer to the 16-byte UUID of the KEM key.
+/// * `encapsulated_key` - A pointer to the encapsulated key bytes (ciphertext from client).
+/// * `encapsulated_key_len` - The length of the encapsulated key.
+/// * `aad` - A pointer to the Additional Authenticated Data (AAD) for the sealing operation.
+/// * `aad_len` - The length of the AAD.
+/// * `out_encapsulated_key` - A pointer to a buffer where the new encapsulated key will be written.
+/// * `out_encapsulated_key_len` - The size of `out_encapsulated_key`.
+/// * `out_ciphertext` - A pointer to a buffer where the sealed ciphertext will be written.
+/// * `out_ciphertext_len` -The size of `out_ciphertext`.
+///
+/// ## Safety
+/// This function is unsafe because it dereferences raw pointers. The caller must ensure that:
+/// * `uuid_bytes` points to a valid 16-byte buffer.
+/// * `encapsulated_key` points to a valid buffer of `encapsulated_key_len` bytes.
+/// * `aad` is either null or points to a valid buffer of `aad_len` bytes.
+/// * `out_encapsulated_key` points to a valid buffer of `out_encapsulated_key_len` bytes.
+/// * `out_ciphertext` points to a valid buffer of `out_ciphertext_len` bytes.
+///
+/// ## Returns
+/// * `0` on success.
+/// * `-1` if arguments are invalid or key is not found.
+/// * `-2` if output buffers are too small.
+/// * `-3` if decapsulation fails.
+/// * `-4` if sealing (HPKE encryption) fails.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn key_manager_decap_and_seal(
+    uuid_bytes: *const u8,
+    encapsulated_key: *const u8,
+    encapsulated_key_len: usize,
+    aad: *const u8,
+    aad_len: usize,
+    out_encapsulated_key: *mut u8,
+    out_encapsulated_key_len: usize,
+    out_ciphertext: *mut u8,
+    out_ciphertext_len: usize,
+) -> i32 {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        if uuid_bytes.is_null()
+            || encapsulated_key.is_null()
+            || encapsulated_key_len == 0
+            || out_encapsulated_key.is_null()
+            || out_encapsulated_key_len == 0
+            || out_ciphertext.is_null()
+            || out_ciphertext_len == 0
+        {
+            return -1;
+        }
+
+        // Convert to Safe Types
+        let uuid_slice = unsafe { slice::from_raw_parts(uuid_bytes, 16) };
+        let enc_key_slice =
+            unsafe { slice::from_raw_parts(encapsulated_key, encapsulated_key_len) };
+        let aad_slice = if !aad.is_null() && aad_len > 0 {
+            unsafe { slice::from_raw_parts(aad, aad_len) }
+        } else {
+            &[]
+        };
+        let out_encapsulated_key_slice =
+            unsafe { slice::from_raw_parts_mut(out_encapsulated_key, out_encapsulated_key_len) };
+        let out_ciphertext_slice =
+            unsafe { slice::from_raw_parts_mut(out_ciphertext, out_ciphertext_len) };
+
+        let uuid = match Uuid::from_slice(uuid_slice) {
+            Ok(u) => u,
+            Err(_) => return -1,
+        };
+
+        // Call Safe Internal Function
+        match decap_and_seal_internal(
+            uuid,
+            enc_key_slice,
+            aad_slice,
+            out_encapsulated_key_slice,
+            out_ciphertext_slice,
+        ) {
+            Ok(_) => 0, // Success
+            Err(e) => e,
+        }
+    }))
+    .unwrap_or(-1)
 }
 
 #[cfg(test)]
@@ -326,10 +462,11 @@ mod tests {
             kdf: KdfAlgorithm::HkdfSha256 as i32,
             aead: AeadAlgorithm::Aes256Gcm as i32,
         };
-
+        let algo_bytes = algo.encode_to_vec();
         unsafe {
             let res = key_manager_generate_kem_keypair(
-                algo,
+                algo_bytes.as_ptr(),
+                algo_bytes.len(),
                 binding_pubkey.as_ptr(),
                 binding_pubkey.len(),
                 3600,
@@ -359,5 +496,239 @@ mod tests {
     fn test_destroy_kem_key_null_ptr() {
         let result = unsafe { key_manager_destroy_kem_key(std::ptr::null()) };
         assert_eq!(result, -1);
+    }
+
+    #[test]
+    fn test_decap_and_seal_success() {
+        // 1. Setup binding key (receiver for seal)
+        let binding_kem_algo = KemAlgorithm::DhkemX25519HkdfSha256;
+        let (binding_pk, binding_sk) =
+            km_common::crypto::generate_keypair(binding_kem_algo).unwrap();
+
+        // 2. Generate KEM key in registry
+        let mut uuid_bytes = [0u8; 16];
+        let mut kem_pubkey_bytes = [0u8; 32];
+        let kem_pubkey_len = 32;
+        let algo = HpkeAlgorithm {
+            kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
+            kdf: KdfAlgorithm::HkdfSha256 as i32,
+            aead: AeadAlgorithm::Aes256Gcm as i32,
+        };
+        let algo_bytes = algo.encode_to_vec();
+        unsafe {
+            key_manager_generate_kem_keypair(
+                algo_bytes.as_ptr(),
+                algo_bytes.len(),
+                binding_pk.as_bytes().as_ptr(),
+                binding_pk.as_bytes().len(),
+                3600,
+                uuid_bytes.as_mut_ptr(),
+                kem_pubkey_bytes.as_mut_ptr(),
+                kem_pubkey_len,
+            )
+        };
+
+        // 3. Generate a "client" ciphertext/encapsulation targeting KEM key.
+        let aad = b"test_aad";
+        // We use `encap` to act as the client to generate a valid encapsulation
+        let kem_pub_key_obj = PublicKey::try_from(kem_pubkey_bytes.to_vec()).unwrap();
+        let (client_shared_secret, client_enc) =
+            km_common::crypto::encap(&kem_pub_key_obj).unwrap();
+
+        // Step 3: Call `decap_and_seal`.
+        let mut out_enc_key = [0u8; 32];
+        let out_enc_key_len = 32;
+        let mut out_ct = [0u8; 48]; // 32 bytes secret + 16 tag
+        let out_ct_len = 48;
+
+        let result = unsafe {
+            key_manager_decap_and_seal(
+                uuid_bytes.as_ptr(),
+                client_enc.as_ptr(),
+                client_enc.len(),
+                aad.as_ptr(),
+                aad.len(),
+                out_enc_key.as_mut_ptr(),
+                out_enc_key_len,
+                out_ct.as_mut_ptr(),
+                out_ct_len,
+            )
+        };
+
+        assert_eq!(result, 0);
+
+        // 4. Verify we can decrypt the result using binding_sk
+        let recovered_shared_secret =
+            km_common::crypto::hpke_open(&binding_sk, &out_enc_key, &out_ct, aad, &algo)
+                .expect("Failed to decrypt the resealed secret");
+
+        assert_eq!(recovered_shared_secret.as_slice().len(), 32);
+
+        // 5. Verify the recovered secret matches what decaps would produce
+        // And also matches the original client shared secret
+        assert_eq!(
+            recovered_shared_secret.as_slice(),
+            client_shared_secret.as_slice(),
+            "Recovered secret mismatch"
+        );
+    }
+
+    #[test]
+    fn test_decap_and_seal_invalid_uuid() {
+        let mut out_enc_key = [0u8; 32];
+        let out_enc_key_len = 32;
+        let mut out_ct = [0u8; 48];
+        let out_ct_len = 48;
+
+        let result = unsafe {
+            key_manager_decap_and_seal(
+                [0u8; 16].as_ptr(),
+                [0u8; 32].as_ptr(),
+                32,
+                std::ptr::null(),
+                0,
+                out_enc_key.as_mut_ptr(),
+                out_enc_key_len,
+                out_ct.as_mut_ptr(),
+                out_ct_len,
+            )
+        };
+
+        assert_eq!(result, -1);
+    }
+
+    #[test]
+    fn test_decap_and_seal_null_args() {
+        let mut out_enc_key = [0u8; 32];
+        let out_enc_key_len = 32;
+
+        let result = unsafe {
+            key_manager_decap_and_seal(
+                std::ptr::null(),
+                std::ptr::null(),
+                0,
+                std::ptr::null(),
+                0,
+                out_enc_key.as_mut_ptr(),
+                out_enc_key_len,
+                std::ptr::null_mut(),
+                0,
+            )
+        };
+
+        assert_eq!(result, -1);
+    }
+
+    #[test]
+    fn test_decap_and_seal_decaps_fail() {
+        // 1. Setup binding key
+        let binding_kem_algo = KemAlgorithm::DhkemX25519HkdfSha256;
+        let (binding_pk, _) = km_common::crypto::generate_keypair(binding_kem_algo).unwrap();
+
+        // 2. Generate KEM key
+        let mut uuid_bytes = [0u8; 16];
+        let mut kem_pubkey_bytes = [0u8; 32];
+        let kem_pubkey_len = 32;
+        let algo = HpkeAlgorithm {
+            kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
+            kdf: KdfAlgorithm::HkdfSha256 as i32,
+            aead: AeadAlgorithm::Aes256Gcm as i32,
+        };
+        let algo_bytes = algo.encode_to_vec();
+        let res = unsafe {
+            key_manager_generate_kem_keypair(
+                algo_bytes.as_ptr(),
+                algo_bytes.len(),
+                binding_pk.as_bytes().as_ptr(),
+                binding_pk.as_bytes().len(),
+                3600,
+                uuid_bytes.as_mut_ptr(),
+                kem_pubkey_bytes.as_mut_ptr(),
+                kem_pubkey_len,
+            )
+        };
+        assert_eq!(res, 0);
+
+        // 3. Call with invalid encapsulated key (wrong length for X25519)
+        let mut out_enc_key = [0u8; 32];
+        let out_enc_key_len = 32;
+        let mut out_ct = [0u8; 48];
+        let out_ct_len = 48;
+
+        let result = unsafe {
+            key_manager_decap_and_seal(
+                uuid_bytes.as_ptr(),
+                [0u8; 31].as_ptr(),
+                31,
+                std::ptr::null(),
+                0,
+                out_enc_key.as_mut_ptr(),
+                out_enc_key_len,
+                out_ct.as_mut_ptr(),
+                out_ct_len,
+            )
+        };
+
+        assert_eq!(result, -3);
+    }
+
+    #[test]
+    fn test_decap_and_seal_buffer_too_small() {
+        // 1. Setup binding key
+        let binding_kem_algo = KemAlgorithm::DhkemX25519HkdfSha256;
+        let (binding_pk, _) = km_common::crypto::generate_keypair(binding_kem_algo).unwrap();
+
+        // 2. Generate KEM key
+        let mut uuid_bytes = [0u8; 16];
+        let mut kem_pubkey_bytes = [0u8; 32];
+        let kem_pubkey_len = 32;
+        let algo = HpkeAlgorithm {
+            kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
+            kdf: KdfAlgorithm::HkdfSha256 as i32,
+            aead: AeadAlgorithm::Aes256Gcm as i32,
+        };
+
+        let algo_bytes = algo.encode_to_vec();
+        let res = unsafe {
+            key_manager_generate_kem_keypair(
+                algo_bytes.as_ptr(),
+                algo_bytes.len(),
+                binding_pk.as_bytes().as_ptr(),
+                binding_pk.as_bytes().len(),
+                3600,
+                uuid_bytes.as_mut_ptr(),
+                kem_pubkey_bytes.as_mut_ptr(),
+                kem_pubkey_len,
+            )
+        };
+        assert_eq!(res, 0, "Setup failed: key generation returned error");
+
+        // 3. Generate valid client encapsulation
+        let kem_pub_key_obj = PublicKey::try_from(kem_pubkey_bytes.to_vec()).unwrap();
+        let pt = km_common::crypto::secret_box::SecretBox::new(b"secret".to_vec());
+        let (client_enc, _) =
+            km_common::crypto::hpke_seal(&kem_pub_key_obj, &pt, b"", &algo).unwrap();
+
+        // 4. Call with small output buffers
+        let mut out_enc_key = [0u8; 31]; // Small
+        let out_enc_key_len = 31;
+        let mut out_ct = [0u8; 47]; // Small
+        let out_ct_len = 47;
+
+        let result = unsafe {
+            key_manager_decap_and_seal(
+                uuid_bytes.as_ptr(),
+                client_enc.as_ptr(),
+                client_enc.len(),
+                std::ptr::null(),
+                0,
+                out_enc_key.as_mut_ptr(),
+                out_enc_key_len,
+                out_ct.as_mut_ptr(),
+                out_ct_len,
+            )
+        };
+
+        assert_eq!(result, -2);
     }
 }

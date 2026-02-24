@@ -1,4 +1,6 @@
 use crate::algorithms::{AeadAlgorithm, HpkeAlgorithm, KdfAlgorithm, KemAlgorithm};
+#[cfg(any(test, feature = "test-utils"))]
+use crate::crypto::PrivateKey;
 use crate::crypto::secret_box::SecretBox;
 use crate::crypto::{Error, PrivateKeyOps, PublicKeyOps};
 use bssl_crypto::{hkdf, hpke, x25519};
@@ -47,13 +49,59 @@ impl PublicKeyOps for X25519PublicKey {
         Ok((encapsulated_key, ciphertext))
     }
 
+    #[cfg(any(test, feature = "test-utils"))]
+    fn encap_internal(
+        &self,
+        ephemeral_sk: Option<&PrivateKey>,
+    ) -> Result<(SecretBox, Vec<u8>), Error> {
+        let (pk_e_bytes, sk_e_bytes) = match ephemeral_sk {
+            Some(PrivateKey::X25519(sk)) => {
+                let sk_e = x25519::PrivateKey(
+                    sk.0.as_slice()
+                        .try_into()
+                        .map_err(|_| Error::KeyLenMismatch)?,
+                );
+                (sk_e.to_public().to_vec(), sk.0.as_slice().to_vec())
+            }
+            None => hpke::Kem::X25519HkdfSha256.generate_keypair(),
+        };
+
+        let sk_e = x25519::PrivateKey(sk_e_bytes.try_into().map_err(|_| Error::CryptoError)?);
+        let pk_r = self.0;
+
+        // 1. Compute Diffie-Hellman shared secret
+        // dh = dhExchange(skE, pkR)
+        let shared_key = SecretBox::new(
+            sk_e.compute_shared_key(&pk_r)
+                .ok_or(Error::CryptoError)?
+                .to_vec(),
+        );
+
+        // DHKEM(X25519, HKDF-SHA256)
+        // suite_id = "KEM" || I2OSP(kem_id, 2)
+        // For X25519 (0x0020)
+        let suite_id = [b'K', b'E', b'M', 0, 0x20];
+
+        // 2. Extract eae_prk
+        // eae_prk = LabeledExtract("", "eae_prk", dh)
+        let prk = labeled_extract(b"", b"eae_prk", shared_key.as_slice(), &suite_id);
+
+        // 3. Expand shared_secret
+        // shared_secret = LabeledExpand(eae_prk, "shared_secret", enc || pkR, L)
+        let info = [&pk_e_bytes[..], &pk_r[..]].concat();
+
+        let shared_secret = labeled_expand(&prk, b"shared_secret", &info, &suite_id, 32)?;
+
+        Ok((shared_secret, pk_e_bytes.to_vec()))
+    }
+
     fn as_bytes(&self) -> &[u8] {
         &self.0
     }
 }
 
 /// X25519-based private key implementation.
-pub struct X25519PrivateKey(SecretBox);
+pub struct X25519PrivateKey(pub(crate) SecretBox);
 
 impl From<X25519PrivateKey> for SecretBox {
     fn from(key: X25519PrivateKey) -> SecretBox {
@@ -137,8 +185,14 @@ impl PrivateKeyOps for X25519PrivateKey {
 
 /// LabeledExtract(salt, label, ikm) = HKDF-Extract(salt, "HPKE-v1" || suite_id || label || ikm)
 fn labeled_extract(salt: &[u8], label: &[u8], ikm: &[u8], suite_id: &[u8]) -> hkdf::Prk {
+    // print the params received
+    println!(
+        "labeled_extract: salt={:?}, label={:?}, ikm={:?}, suite_id={:?}",
+        salt, label, ikm, suite_id
+    );
+
     let labeled_ikm = SecretBox::new([b"HPKE-v1".as_slice(), suite_id, label, ikm].concat());
-    hkdf::HkdfSha256::extract(labeled_ikm.as_slice(), hkdf::Salt::NonEmpty(salt))
+    hkdf::HkdfSha256::extract(labeled_ikm.as_slice(), hkdf::Salt::None)
 }
 
 /// LabeledExpand(prk, label, info, L) = HKDF-Expand(prk, "HPKE-v1" || suite_id || label || info, L)
@@ -175,15 +229,12 @@ mod tests {
 
     #[test]
     fn test_decaps_x25519_clamped_vector() {
-        // Since BoringSSL X25519 always clamps the private key, we use vectors that
-        // are consistent with clamping.
-        // Input private key (clamped internally by BoringSSL):
-        let sk_r_hex = "468c86c75053df4d0925e01f5446700e57288f3316c5b610c3b9b94090b8f2cb";
-        let enc_hex = "1b2767097950294d300c2830366c3c58853c83a736466336e392576b9762194d";
+        // Vectors from https://www.rfc-editor.org/rfc/rfc9180.html#appendix-A.1
+        let sk_r_hex = "4612c550263fc8ad58375df3f557aac531d26850903e55a9f23f21d8534e8ac8";
+        let enc_hex = "37fda3567bdbd628e88668c3c8d7e97d1d1253b6d4ea6d44c150f741f1bf4431";
 
-        // This is what we get when we run with clamping:
         let expected_shared_secret_hex =
-            "b1e179eefbcdfe490a1929c3c6e5de6d98f3ed4463b6d94627390119610baa83";
+            "fe0e18c9f024ce43799ae393c7e8fe8fce9d218875e8227b0187c04e7d2ea1fc";
 
         let sk_r_bytes: Vec<u8> = hex::decode(sk_r_hex).unwrap();
         let sk_r = X25519PrivateKey(SecretBox::new(sk_r_bytes));
@@ -223,5 +274,30 @@ mod tests {
         let result3 =
             labeled_expand(&prk, b"other_label", info, &suite_id, len).expect("expand failed");
         assert_ne!(result.as_slice(), result3.as_slice());
+    }
+
+    #[test]
+    fn test_encaps_x25519_clamped_vector() {
+        // Vectors from https://www.rfc-editor.org/rfc/rfc9180.html#appendix-A.1
+        let sk_e_hex = "52c4a758a802cd8b936eceea314432798d5baf2d7e9235dc084ab1b9cfa2f736";
+        let pk_e_hex = "37fda3567bdbd628e88668c3c8d7e97d1d1253b6d4ea6d44c150f741f1bf4431";
+        let pk_r_hex = "3948cfe0ad1ddb695d780e59077195da6c56506b027329794ab02bca80815c4d";
+        let expected_shared_secret_hex =
+            "fe0e18c9f024ce43799ae393c7e8fe8fce9d218875e8227b0187c04e7d2ea1fc";
+
+        let sk_e_bytes: Vec<u8> = hex::decode(sk_e_hex).unwrap();
+        let pk_r_bytes: [u8; 32] = hex::decode(pk_r_hex).unwrap().try_into().unwrap();
+
+        let pk_r = X25519PublicKey(pk_r_bytes);
+        let sk_e = PrivateKey::X25519(X25519PrivateKey(SecretBox::new(sk_e_bytes)));
+
+        let (shared_secret, enc) = pk_r.encap_internal(Some(&sk_e)).expect("encap failed");
+
+        assert_eq!(hex::encode(enc), pk_e_hex, "Encapsulated key mismatch");
+        assert_eq!(
+            hex::encode(shared_secret.as_slice()),
+            expected_shared_secret_hex,
+            "Shared secret mismatch"
+        );
     }
 }

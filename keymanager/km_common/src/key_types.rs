@@ -47,7 +47,7 @@ pub struct KeyMetadata {
 pub struct KeyRecord {
     pub meta: KeyMetadata,
     /// memfd_secrets backed secret key-material
-    pub private_key: Vault,
+    private_key: Vault,
 }
 
 pub type KeyHandle = Uuid;
@@ -102,6 +102,11 @@ impl KeyRegistry {
 }
 
 impl KeyRecord {
+    /// Returns the private key material.
+    pub fn get_private_key(&self) -> crypto::PrivateKey {
+        crypto::PrivateKey::from(self.private_key.get_secret())
+    }
+
     /// Creates a new long-term Binding key.
     pub fn create_binding_key(
         algo: HpkeAlgorithm,
@@ -289,7 +294,7 @@ mod tests {
 
         // Prepare spy mapping to check for zeroization after drop
         let fd = removed.private_key.as_raw_fd();
-        let len = removed.private_key.as_bytes().len();
+        let len = removed.private_key.get_secret().as_slice().len();
 
         let spy = unsafe {
             let fd_dup = libc::dup(fd);
@@ -298,7 +303,7 @@ mod tests {
         };
 
         // Verify spy sees the data before drop
-        assert_eq!(&spy[..len], removed.private_key.as_bytes());
+        assert_eq!(&spy[..len], removed.private_key.get_secret().as_slice());
         assert!(!spy[..len].iter().all(|&b| b == 0));
 
         drop(removed);

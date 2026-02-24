@@ -5,3 +5,21 @@ members = [
     "key_protection_service/key_custody_core",
     "km_common",
 ]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+
+[workspace.dependencies]
+km_common = { path = "km_common" }
+uuid = { version = "1.20.0", features = ["v4"] }
+zeroize = "1.8.2"
+prost = "0.13"
+libc = "0.2.180"
+memmap2 = "0.9.9"
+thiserror = "2.0"
+clear_on_drop = "0.2"
+bssl-crypto = { path = "third_party/bssl-crypto" }
+hex = "0.4"
+prost-build = "0.13"
+protoc-bin-vendored = "3.2.0"

@@ -21,6 +21,18 @@ pub(crate) trait PublicKeyOps: Send + Sync {
         algo: &HpkeAlgorithm,
     ) -> Result<(Vec<u8>, Vec<u8>), Error>;
 
+    #[cfg(any(test, feature = "test-utils"))]
+    /// Performs DHKEM encapsulation operation.
+    ///
+    /// Returns a tuple containing the shared secret as a `SecretBox` and the encapsulated key respectively.
+    ///
+    /// If `ephemeral_sk` is provided, it is used as the ephemeral private key.
+    /// Otherwise, a random ephemeral key is generated.
+    fn encap_internal(
+        &self,
+        ephemeral_sk: Option<&PrivateKey>,
+    ) -> Result<(SecretBox, Vec<u8>), Error>;
+
     /// Returns the raw bytes of the public key.
     fn as_bytes(&self) -> &[u8];
 }
@@ -80,6 +92,16 @@ impl PublicKeyOps for PublicKey {
         }
     }
 
+    #[cfg(any(test, feature = "test-utils"))]
+    fn encap_internal(
+        &self,
+        ephemeral_sk: Option<&PrivateKey>,
+    ) -> Result<(SecretBox, Vec<u8>), Error> {
+        match self {
+            PublicKey::X25519(pk) => pk.encap_internal(ephemeral_sk),
+        }
+    }
+
     fn as_bytes(&self) -> &[u8] {
         self.as_bytes()
     }
@@ -88,6 +110,12 @@ impl PublicKeyOps for PublicKey {
 /// A wrapper enum for different private key types.
 pub enum PrivateKey {
     X25519(X25519PrivateKey),
+}
+
+impl From<SecretBox> for PrivateKey {
+    fn from(secret: SecretBox) -> Self {
+        PrivateKey::X25519(X25519PrivateKey(secret))
+    }
 }
 
 impl From<PrivateKey> for SecretBox {
@@ -147,6 +175,14 @@ pub fn generate_keypair(algo: KemAlgorithm) -> Result<(PublicKey, PrivateKey), E
         }
         _ => Err(Error::UnsupportedAlgorithm),
     })
+}
+
+/// Encapsulates the shared secret using the specified public key.
+///
+/// Returns the shared secret as a `SecretBox` and the encapsulated key respectively.
+#[cfg(any(test, feature = "test-utils"))]
+pub fn encap(pub_key: &PublicKey) -> Result<(SecretBox, Vec<u8>), Error> {
+    clear_stack_on_return(CLEAR_STACK_PAGES, || pub_key.encap_internal(None))
 }
 
 /// Decapsulates the shared secret from an encapsulated key using the specified private key.
