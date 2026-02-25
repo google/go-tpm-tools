@@ -60,15 +60,15 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Install Build Dependencies (Linux)
         run: sudo apt-get update && sudo apt-get install -y cmake clang pkg-config libssl-dev
-        if: runner.os == 'Linux' && (matrix.architecture == 'x64' || matrix.architecture == 'arm64')
+        if: runner.os == 'Linux' && matrix.architecture == 'x64'
       - name: Install bindgen-cli
         run: cargo install bindgen-cli
-        if: matrix.architecture == 'x64' || matrix.architecture == 'arm64'
+        if: runner.os == 'Linux' && matrix.architecture == 'x64'
       - name: Build KeyManager Rust library
         run: |
           cd keymanager
           cargo build --release
-        if: matrix.architecture == 'x64' || matrix.architecture == 'arm64'
+        if: runner.os == 'Linux' && matrix.architecture == 'x64'
       - name: Check Protobuf Generation
         run: |
           go generate ./... ./cmd/... ./launcher/... ./verifier/...
@@ -90,7 +90,7 @@ jobs:
         run: go build -v ./... ./cmd/... ./verifier/...
       - name: Build keymanager module
         run: go build -v ./keymanager/...
-        if: matrix.architecture == 'x64' || matrix.architecture == 'arm64'
+        if: runner.os == 'Linux' && matrix.architecture == 'x64'
       - name: Build launcher module
         run: go build -v ./launcher/...
         if: runner.os == 'Linux'
@@ -106,7 +106,7 @@ jobs:
         run: go test -v ./... ./cmd/... ./verifier/... -skip='TestCacheConcurrentSetGet|TestHwAttestationPass|TestHardwareAttestationPass'
       - name: Test keymanager module
         run: go test -v ./keymanager/...
-        if: matrix.architecture == 'x64' || matrix.architecture == 'arm64'
+        if: runner.os == 'Linux' && matrix.architecture == 'x64'
 
   lint:
     strategy:
