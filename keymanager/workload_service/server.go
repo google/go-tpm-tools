@@ -202,8 +202,7 @@ func (s *Server) handleGenerateKem(w http.ResponseWriter, r *http.Request) {
 	resp := GenerateKemResponse{
 		KeyHandle: KeyHandle{Handle: kemUUID.String()},
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	writeJSON(w, resp, http.StatusOK)
 }
 
 func (s *Server) handleGetCapabilities(w http.ResponseWriter, r *http.Request) {
@@ -228,14 +227,18 @@ func (s *Server) handleGetCapabilities(w http.ResponseWriter, r *http.Request) {
 		SupportedAlgorithms: supportedAlgos,
 	}
 
+	writeJSON(w, resp, http.StatusOK)
+}
+
+// writeJSON writes a JSON response with the given status code.
+func writeJSON(w http.ResponseWriter, v any, code int) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.WriteHeader(code)
+	json.NewEncoder(w).Encode(v)
 }
 
 // writeError writes a JSON error response.
 func writeError(w http.ResponseWriter, message string, code int) {
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.WriteHeader(code)
-	json.NewEncoder(w).Encode(map[string]string{"error": message})
+	writeJSON(w, map[string]string{"error": message}, code)
 }
