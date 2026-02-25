@@ -43,6 +43,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v3
+        with:
+          submodules: recursive
       - uses: actions/setup-go@v6
         with:
           go-version: ${{ matrix.go-version }}
@@ -59,6 +61,9 @@ jobs:
       - name: Install Build Dependencies (Linux)
         run: sudo apt-get update && sudo apt-get install -y cmake clang pkg-config libssl-dev
         if: runner.os == 'Linux' && (matrix.architecture == 'x64' || matrix.architecture == 'arm64')
+      - name: Install bindgen-cli
+        run: cargo install bindgen-cli
+        if: matrix.architecture == 'x64' || matrix.architecture == 'arm64'
       - name: Build KeyManager Rust library
         run: |
           cd keymanager
@@ -113,6 +118,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v3
+        with:
+          submodules: recursive
       - uses: actions/setup-go@v2
         with:
           go-version: ${{ matrix.go-version }}
@@ -120,6 +127,8 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Install Build Dependencies (Linux)
         run: sudo apt-get update && sudo apt-get install -y cmake clang pkg-config libssl-dev
+      - name: Install bindgen-cli
+        run: cargo install bindgen-cli
       - name: Build KeyManager Rust library
         run: |
           cd keymanager
@@ -151,6 +160,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v3
+        with:
+          submodules: recursive
       - uses: actions/setup-go@v2
         with:
           go-version: ${{ matrix.go-version }}
@@ -158,6 +169,8 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Install Build Dependencies (Linux)
         run: sudo apt-get update && sudo apt-get install -y cmake clang pkg-config libssl-dev
+      - name: Install bindgen-cli
+        run: cargo install bindgen-cli
       - name: Build KeyManager Rust library
         run: |
           cd keymanager

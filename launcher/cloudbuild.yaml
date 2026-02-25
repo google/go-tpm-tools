@@ -41,6 +41,9 @@ steps:
       curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
       source $$HOME/.cargo/env
       
+      # Install bindgen-cli
+      cargo install bindgen-cli
+      
       # Build the Rust keymanager libraries
       cd keymanager
       cargo build --release
