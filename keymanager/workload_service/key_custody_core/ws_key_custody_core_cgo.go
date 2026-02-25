@@ -1,4 +1,4 @@
-//go:build cgo
+//go:build cgo && (amd64 || arm64)
 
 package wskcc
 
