@@ -390,9 +390,11 @@ func TestToHpkeAlgorithm(t *testing.T) {
 }
 
 func TestHandleGetCapabilities(t *testing.T) {
+	bindingGen := &mockWorkloadService{}
+	kemGen := &mockKeyProtectionService{}
 	srv := NewServer(
-		&mockBindingKeyGen{},
-		&mockKEMKeyGen{},
+		kemGen,
+		bindingGen,
 	)
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/capabilities", nil)
@@ -421,9 +423,11 @@ func TestHandleGetCapabilities(t *testing.T) {
 }
 
 func TestHandleGetCapabilitiesInvalidMethod(t *testing.T) {
+	bindingGen := &mockWorkloadService{}
+	kemGen := &mockKeyProtectionService{}
 	srv := NewServer(
-		&mockBindingKeyGen{},
-		&mockKEMKeyGen{},
+		kemGen,
+		bindingGen,
 	)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/capabilities", nil)
