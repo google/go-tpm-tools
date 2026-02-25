@@ -1,4 +1,4 @@
-package workload_service
+package workloadservice
 
 import (
 	"encoding/json"
@@ -15,7 +15,9 @@ import (
 type KemAlgorithm int32
 
 const (
-	KemAlgorithmUnspecified           KemAlgorithm = 0
+	// KemAlgorithmUnspecified indicates an unspecified or invalid KEM algorithm.
+	KemAlgorithmUnspecified KemAlgorithm = 0
+	// KemAlgorithmDHKEMX25519HKDFSHA256 specifies the DHKEM(X25519, HKDF-SHA256) algorithm.
 	KemAlgorithmDHKEMX25519HKDFSHA256 KemAlgorithm = 1
 )
 
@@ -37,10 +39,12 @@ func (k KemAlgorithm) String() string {
 	return fmt.Sprintf("KEM_ALGORITHM_UNKNOWN(%d)", k)
 }
 
+// MarshalJSON converts a KemAlgorithm enum value to its JSON string representation.
 func (k KemAlgorithm) MarshalJSON() ([]byte, error) {
 	return json.Marshal(k.String())
 }
 
+// UnmarshalJSON converts a JSON string back into a KemAlgorithm enum value.
 func (k *KemAlgorithm) UnmarshalJSON(data []byte) error {
 	var s string
 	if err := json.Unmarshal(data, &s); err != nil {
@@ -57,8 +61,10 @@ func (k *KemAlgorithm) UnmarshalJSON(data []byte) error {
 type KeyProtectionMechanism int32
 
 const (
+	// KeyProtectionMechanismDefault is the default but invalid value.
 	KeyProtectionMechanismDefault KeyProtectionMechanism = 1
-	KeyProtectionMechanismVM      KeyProtectionMechanism = 2
+	// KeyProtectionMechanismVM specifies that the key is protected by the VM.
+	KeyProtectionMechanismVM KeyProtectionMechanism = 2
 )
 
 var (
@@ -79,10 +85,12 @@ func (k KeyProtectionMechanism) String() string {
 	return fmt.Sprintf("KEY_PROTECTION_MECHANISM_UNKNOWN(%d)", k)
 }
 
+// MarshalJSON converts a KeyProtectionMechanism enum value to its JSON string representation.
 func (k KeyProtectionMechanism) MarshalJSON() ([]byte, error) {
 	return json.Marshal(k.String())
 }
 
+// UnmarshalJSON parses a JSON string into a KeyProtectionMechanism enum value.
 func (k *KeyProtectionMechanism) UnmarshalJSON(data []byte) error {
 	var s string
 	if err := json.Unmarshal(data, &s); err != nil {

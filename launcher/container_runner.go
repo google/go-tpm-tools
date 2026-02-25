@@ -27,7 +27,7 @@ import (
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
-	"github.com/google/go-tpm-tools/keymanager/workload_service"
+	workloadservice "github.com/google/go-tpm-tools/keymanager/workload_service"
 	"github.com/google/go-tpm-tools/launcher/agent"
 	"github.com/google/go-tpm-tools/launcher/internal/gpu"
 	"github.com/google/go-tpm-tools/launcher/internal/healthmonitoring/nodeproblemdetector"
@@ -666,7 +666,7 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	// create and start the key manager server
 	if r.launchSpec.Experiments.EnableKeyManager {
 		r.logger.Info("EnableKeyManager experiment is enabled: initializing KeyManager server.")
-		keyManagerServer := workload_service.New(ctx, path.Join(launcherfile.HostTmpPath, keyManagerSocket))
+		keyManagerServer := workloadservice.New(ctx, path.Join(launcherfile.HostTmpPath, keyManagerSocket))
 		go keyManagerServer.Serve(path.Join(launcherfile.HostTmpPath, keyManagerSocket))
 		defer keyManagerServer.Shutdown(ctx)
 	}

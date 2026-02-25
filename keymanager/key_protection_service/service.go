@@ -1,7 +1,7 @@
-// Package key_protection_service implements the Key Orchestration Layer (KOL)
+// Package keyprotectionservice implements the Key Orchestration Layer (KOL)
 // for the Key Protection Service. It wraps the KPS Key Custody Core (KCC) FFI
 // to provide a Go-native interface for KEM key generation.
-package key_protection_service
+package keyprotectionservice
 
 import (
 	"github.com/google/uuid"

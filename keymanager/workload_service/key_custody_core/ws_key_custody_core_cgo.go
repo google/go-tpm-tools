@@ -1,5 +1,6 @@
 //go:build cgo && linux && amd64
 
+// Package wskcc implements the Workload Service Key Custody Core interface via Rust FFI.
 package wskcc
 
 /*

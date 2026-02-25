@@ -1,4 +1,4 @@
-package key_protection_service
+package keyprotectionservice
 
 import (
 	"fmt"
@@ -16,7 +16,7 @@ func TestServiceGenerateKEMKeypairSuccess(t *testing.T) {
 		expectedPubKey[i] = byte(i + 10)
 	}
 
-	svc := NewService(func(algo *algorithms.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
+	svc := NewService(func(_ *algorithms.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
 		if len(bindingPubKey) != 32 {
 			t.Fatalf("expected 32-byte binding public key, got %d", len(bindingPubKey))
 		}
@@ -39,7 +39,7 @@ func TestServiceGenerateKEMKeypairSuccess(t *testing.T) {
 }
 
 func TestServiceGenerateKEMKeypairError(t *testing.T) {
-	svc := NewService(func(algo *algorithms.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
+	svc := NewService(func(_ *algorithms.HpkeAlgorithm, _ []byte, _ uint64) (uuid.UUID, []byte, error) {
 		return uuid.Nil, nil, fmt.Errorf("FFI error")
 	})
 

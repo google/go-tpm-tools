@@ -1,7 +1,7 @@
-// Package workload_service implements the Key Orchestration Layer (KOL) for the
+// Package workloadservice implements the Key Orchestration Layer (KOL) for the
 // Workload Service Daemon (WSD). It provides an HTTP server on a unix socket
 // exposing key generation endpoints.
-package workload_service
+package workloadservice
 
 import (
 	"context"
@@ -115,7 +115,7 @@ type Server struct {
 }
 
 // New creates a new WSD Server
-func New(ctx context.Context, unixSock string) *Server {
+func New(_ context.Context, _ string) *Server {
 	s := NewServer(&keyProtectionService{}, &workloadService{})
 	return s
 }

@@ -1,6 +1,6 @@
 //go:build integration
 
-package workload_service
+package workloadservice
 
 import (
 	"bytes"

@@ -1,4 +1,4 @@
-package workload_service
+package workloadservice
 
 import (
 	"bytes"
@@ -21,7 +21,7 @@ type mockWorkloadService struct {
 	err    error
 }
 
-func (m *mockWorkloadService) GenerateBindingKeypair(algo *algorithms.HpkeAlgorithm, lifespanSecs uint64) (uuid.UUID, []byte, error) {
+func (m *mockWorkloadService) GenerateBindingKeypair(_ *algorithms.HpkeAlgorithm, _ uint64) (uuid.UUID, []byte, error) {
 	return m.uuid, m.pubKey, m.err
 }
 
@@ -34,7 +34,7 @@ type mockKeyProtectionService struct {
 	receivedLifespan uint64
 }
 
-func (m *mockKeyProtectionService) GenerateKEMKeypair(algo *algorithms.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
+func (m *mockKeyProtectionService) GenerateKEMKeypair(_ *algorithms.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
 	m.receivedPubKey = bindingPubKey
 	m.receivedLifespan = lifespanSecs
 	return m.uuid, m.pubKey, m.err
