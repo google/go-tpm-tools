@@ -17,17 +17,17 @@ import (
 	wskcc "github.com/google/go-tpm-tools/keymanager/workload_service/key_custody_core"
 )
 
-// realBindingKeyGen wraps the actual WSD KCC FFI.
-type realBindingKeyGen struct{}
+// realWorkloadService wraps the actual WSD KCC FFI.
+type realWorkloadService struct{}
 
-func (r *realBindingKeyGen) GenerateBindingKeypair(algo *algorithms.HpkeAlgorithm, lifespanSecs uint64) (uuid.UUID, []byte, error) {
+func (r *realWorkloadService) GenerateBindingKeypair(algo *algorithms.HpkeAlgorithm, lifespanSecs uint64) (uuid.UUID, []byte, error) {
 	return wskcc.GenerateBindingKeypair(algo, lifespanSecs)
 }
 
 func TestIntegrationGenerateKeysEndToEnd(t *testing.T) {
 	// Wire up real FFI calls: WSD KCC for binding, KPS KCC (via KPS KOL) for KEM.
 	kpsSvc := kps.NewService(kpskcc.GenerateKEMKeypair)
-	srv := NewServer(&realBindingKeyGen{}, kpsSvc)
+	srv := NewServer(kpsSvc, &realWorkloadService{})
 
 	reqBody, err := json.Marshal(GenerateKemRequest{
 		Algorithm:              KemAlgorithmDHKEMX25519HKDFSHA256,
@@ -73,7 +73,7 @@ func TestIntegrationGenerateKeysEndToEnd(t *testing.T) {
 
 func TestIntegrationGenerateKeysUniqueMappings(t *testing.T) {
 	kpsSvc := kps.NewService(kpskcc.GenerateKEMKeypair)
-	srv := NewServer(&realBindingKeyGen{}, kpsSvc)
+	srv := NewServer(kpsSvc, &realWorkloadService{})
 
 	// Generate two key sets.
 	var kemUUIDs [2]uuid.UUID

@@ -36,8 +36,19 @@ steps:
   args:
     - -c
     - |
+      # Install required build tools and Rust toolchain
+      apt-get update && apt-get install -y cmake clang pkg-config libssl-dev build-essential
+      curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+      source $$HOME/.cargo/env
+      
+      # Build the Rust keymanager libraries
+      cd keymanager
+      cargo build --release
+      cd ..
+      
+      # Build the launcher with CGO enabled
       cd launcher/launcher
-      CGO_ENABLED=0 go build -o ../image/launcher -ldflags="-X 'main.BuildCommit=${SHORT_SHA}'"
+      CGO_ENABLED=1 go build -o ../image/launcher -ldflags="-X 'main.BuildCommit=${SHORT_SHA}'"
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: DownloadExpBinary

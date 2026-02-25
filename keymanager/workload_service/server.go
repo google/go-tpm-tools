@@ -15,17 +15,29 @@ import (
 
 	"github.com/google/uuid"
 
+	kpscc "github.com/google/go-tpm-tools/keymanager/key_protection_service/key_custody_core"
 	algorithms "github.com/google/go-tpm-tools/keymanager/km_common/proto"
+	wskcc "github.com/google/go-tpm-tools/keymanager/workload_service/key_custody_core"
 )
 
-// BindingKeyGenerator generates binding keypairs via the WSD KCC FFI.
-type BindingKeyGenerator interface {
+// WorkloadService defines the interface for generating binding keypairs.
+type WorkloadService interface {
 	GenerateBindingKeypair(algo *algorithms.HpkeAlgorithm, lifespanSecs uint64) (uuid.UUID, []byte, error)
 }
+type keyProtectionService struct{}
 
-// KEMKeyGenerator generates KEM keypairs via the KPS KOL/KCC.
-type KEMKeyGenerator interface {
+// KeyProtectionService defines the interface for generating KEM keypairs.
+type KeyProtectionService interface {
 	GenerateKEMKeypair(algo *algorithms.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error)
+}
+type workloadService struct{}
+
+func (r *workloadService) GenerateBindingKeypair(algo *algorithms.HpkeAlgorithm, lifespanSecs uint64) (uuid.UUID, []byte, error) {
+	return wskcc.GenerateBindingKeypair(algo, lifespanSecs)
+}
+
+func (r *keyProtectionService) GenerateKEMKeypair(algo *algorithms.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
+	return kpscc.GenerateKEMKeypair(algo, bindingPubKey, lifespanSecs)
 }
 
 // KeyHandle represents a key handle returned from the API.
@@ -91,22 +103,30 @@ type GetCapabilitiesResponse struct {
 
 // Server is the WSD HTTP server.
 type Server struct {
-	bindingGen BindingKeyGenerator
-	kemGen     KEMKeyGenerator
+	keyProtectionService KeyProtectionService
+	workloadService      WorkloadService
 
 	mu              sync.RWMutex
 	kemToBindingMap map[uuid.UUID]uuid.UUID
 
 	httpServer *http.Server
 	listener   net.Listener
+	// todo: add logging mechanism here
+}
+
+// New creates a new WSD Server
+func New(ctx context.Context, unixSock string) *Server {
+	s := NewServer(&keyProtectionService{}, &workloadService{})
+	return s
 }
 
 // NewServer creates a new WSD server with the given dependencies.
-func NewServer(bindingGen BindingKeyGenerator, kemGen KEMKeyGenerator) *Server {
+func NewServer(keyProtectionService KeyProtectionService, workloadService WorkloadService) *Server {
 	s := &Server{
-		bindingGen:      bindingGen,
-		kemGen:          kemGen,
-		kemToBindingMap: make(map[uuid.UUID]uuid.UUID),
+		keyProtectionService: keyProtectionService,
+		workloadService:      workloadService,
+		kemToBindingMap:      make(map[uuid.UUID]uuid.UUID),
+		mu:                   sync.RWMutex{},
 	}
 
 	mux := http.NewServeMux()
@@ -180,14 +200,14 @@ func (s *Server) handleGenerateKem(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Step 1: Generate binding keypair via WSD KCC FFI.
-	bindingUUID, bindingPubKey, err := s.bindingGen.GenerateBindingKeypair(algo, req.Lifespan.Seconds)
+	bindingUUID, bindingPubKey, err := s.workloadService.GenerateBindingKeypair(algo, req.Lifespan.Seconds)
 	if err != nil {
 		writeError(w, fmt.Sprintf("failed to generate binding keypair: %v", err), http.StatusInternalServerError)
 		return
 	}
 
 	// Step 2: Generate KEM keypair via KPS KOL, passing the binding public key.
-	kemUUID, _, err := s.kemGen.GenerateKEMKeypair(algo, bindingPubKey, req.Lifespan.Seconds)
+	kemUUID, _, err := s.keyProtectionService.GenerateKEMKeypair(algo, bindingPubKey, req.Lifespan.Seconds)
 	if err != nil {
 		writeError(w, fmt.Sprintf("failed to generate KEM keypair: %v", err), http.StatusInternalServerError)
 		return
