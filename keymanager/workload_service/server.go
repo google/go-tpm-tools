@@ -68,6 +68,27 @@ type GenerateKemResponse struct {
 	KeyHandle KeyHandle `json:"key_handle"`
 }
 
+// AlgorithmParams represents the parameters for a specific algorithm type.
+type AlgorithmParams struct {
+	KemID KemAlgorithm `json:"kem_id"`
+}
+
+// AlgorithmDetails captures type and specific params.
+type AlgorithmDetails struct {
+	Type   string          `json:"type"`
+	Params AlgorithmParams `json:"params"`
+}
+
+// SupportedAlgorithm represents a single algorithm capability.
+type SupportedAlgorithm struct {
+	Algorithm AlgorithmDetails `json:"algorithm"`
+}
+
+// GetCapabilitiesResponse represents the JSON body for GET /v1/capabilities.
+type GetCapabilitiesResponse struct {
+	SupportedAlgorithms []SupportedAlgorithm `json:"supported_algorithms"`
+}
+
 // Server is the WSD HTTP server.
 type Server struct {
 	bindingGen BindingKeyGenerator
@@ -90,6 +111,7 @@ func NewServer(bindingGen BindingKeyGenerator, kemGen KEMKeyGenerator) *Server {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/keys:generate_kem", s.handleGenerateKem)
+	mux.HandleFunc("GET /v1/capabilities", s.handleGetCapabilities)
 
 	s.httpServer = &http.Server{Handler: mux}
 	return s
@@ -180,16 +202,43 @@ func (s *Server) handleGenerateKem(w http.ResponseWriter, r *http.Request) {
 	resp := GenerateKemResponse{
 		KeyHandle: KeyHandle{Handle: kemUUID.String()},
 	}
+	writeJSON(w, resp, http.StatusOK)
+}
+
+func (s *Server) handleGetCapabilities(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var supportedAlgos []SupportedAlgorithm
+	for _, algo := range SupportedKemAlgorithms {
+		supportedAlgos = append(supportedAlgos, SupportedAlgorithm{
+			Algorithm: AlgorithmDetails{
+				Type: "kem",
+				Params: AlgorithmParams{
+					KemID: algo,
+				},
+			},
+		})
+	}
+
+	resp := GetCapabilitiesResponse{
+		SupportedAlgorithms: supportedAlgos,
+	}
+
+	writeJSON(w, resp, http.StatusOK)
+}
+
+// writeJSON writes a JSON response with the given status code.
+func writeJSON(w http.ResponseWriter, v any, code int) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.WriteHeader(code)
+	json.NewEncoder(w).Encode(v)
 }
 
 // writeError writes a JSON error response.
 func writeError(w http.ResponseWriter, message string, code int) {
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.WriteHeader(code)
-	json.NewEncoder(w).Encode(map[string]string{"error": message})
+	writeJSON(w, map[string]string{"error": message}, code)
 }
-
-
