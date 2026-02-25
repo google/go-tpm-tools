@@ -29,15 +29,15 @@ func TestIntegrationGenerateKeysEndToEnd(t *testing.T) {
 	kpsSvc := kps.NewService(kpskcc.GenerateKEMKeypair)
 	srv := NewServer(kpsSvc, &realWorkloadService{})
 
-	reqBody, err := json.Marshal(GenerateKemRequest{
-		Algorithm:              KemAlgorithmDHKEMX25519HKDFSHA256,
-		KeyProtectionMechanism: KeyProtectionMechanismVM,
+	reqBody, err := json.Marshal(GenerateKeyRequest{
+		Algorithm:              AlgorithmDetails{Type: "kem", Params: AlgorithmParams{KemID: KemAlgorithmDHKEMX25519HKDFSHA256}},
+		KeyProtectionMechanism: KeyProtectionMechanismVMEmulated,
 		Lifespan:               ProtoDuration{Seconds: 3600},
 	})
 	if err != nil {
 		t.Fatalf("failed to marshal request: %v", err)
 	}
-	req := httptest.NewRequest(http.MethodPost, "/v1/keys:generate_kem", bytes.NewReader(reqBody))
+	req := httptest.NewRequest(http.MethodPost, "/v1/keys:generate_key", bytes.NewReader(reqBody))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
@@ -46,7 +46,7 @@ func TestIntegrationGenerateKeysEndToEnd(t *testing.T) {
 		t.Fatalf("expected status 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	var resp GenerateKemResponse
+	var resp GenerateKeyResponse
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
@@ -78,15 +78,15 @@ func TestIntegrationGenerateKeysUniqueMappings(t *testing.T) {
 	// Generate two key sets.
 	var kemUUIDs [2]uuid.UUID
 	for i := 0; i < 2; i++ {
-		reqBody, err := json.Marshal(GenerateKemRequest{
-			Algorithm:              KemAlgorithmDHKEMX25519HKDFSHA256,
-			KeyProtectionMechanism: KeyProtectionMechanismVM,
+		reqBody, err := json.Marshal(GenerateKeyRequest{
+			Algorithm:              AlgorithmDetails{Type: "kem", Params: AlgorithmParams{KemID: KemAlgorithmDHKEMX25519HKDFSHA256}},
+			KeyProtectionMechanism: KeyProtectionMechanismVMEmulated,
 			Lifespan:               ProtoDuration{Seconds: 3600},
 		})
 		if err != nil {
 			t.Fatalf("call %d: failed to marshal request: %v", i+1, err)
 		}
-		req := httptest.NewRequest(http.MethodPost, "/v1/keys:generate_kem", bytes.NewReader(reqBody))
+		req := httptest.NewRequest(http.MethodPost, "/v1/keys:generate_key", bytes.NewReader(reqBody))
 		req.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
 		srv.Handler().ServeHTTP(w, req)
@@ -95,7 +95,7 @@ func TestIntegrationGenerateKeysUniqueMappings(t *testing.T) {
 			t.Fatalf("call %d: expected status 200, got %d: %s", i+1, w.Code, w.Body.String())
 		}
 
-		var resp GenerateKemResponse
+		var resp GenerateKeyResponse
 		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 			t.Fatalf("call %d: failed to decode response: %v", i+1, err)
 		}

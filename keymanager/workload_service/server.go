@@ -68,15 +68,15 @@ func (d ProtoDuration) MarshalJSON() ([]byte, error) {
 	return json.Marshal(d.Seconds)
 }
 
-// GenerateKemRequest is the JSON body for POST /v1/keys:generate_kem.
-type GenerateKemRequest struct {
-	Algorithm              KemAlgorithm           `json:"algorithm"`
-	KeyProtectionMechanism KeyProtectionMechanism `json:"key_protection_mechanism"`
+// GenerateKeyRequest is the JSON body for POST /v1/keys:generate_key.
+type GenerateKeyRequest struct {
+	Algorithm              AlgorithmDetails       `json:"algorithm"`
+	KeyProtectionMechanism KeyProtectionMechanism `json:"key_protection_mechanism,omitempty"`
 	Lifespan               ProtoDuration          `json:"lifespan"`
 }
 
-// GenerateKemResponse is returned by POST /v1/keys:generate_kem.
-type GenerateKemResponse struct {
+// GenerateKeyResponse is returned by POST /v1/keys:generate_key.
+type GenerateKeyResponse struct {
 	KeyHandle KeyHandle `json:"key_handle"`
 }
 
@@ -129,7 +129,7 @@ func NewServer(keyProtectionService KeyProtectionService, workloadService Worklo
 	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /v1/keys:generate_kem", s.handleGenerateKem)
+	mux.HandleFunc("POST /v1/keys:generate_key", s.handleGenerateKey)
 	mux.HandleFunc("GET /v1/capabilities", s.handleGetCapabilities)
 
 	s.httpServer = &http.Server{Handler: mux}
@@ -166,20 +166,28 @@ func (s *Server) LookupBindingUUID(kemUUID uuid.UUID) (uuid.UUID, bool) {
 	return id, ok
 }
 
-func (s *Server) handleGenerateKem(w http.ResponseWriter, r *http.Request) {
-	var req GenerateKemRequest
+func (s *Server) handleGenerateKey(w http.ResponseWriter, r *http.Request) {
+	var req GenerateKeyRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, fmt.Sprintf("invalid request body: %v", err), http.StatusBadRequest)
 		return
 	}
 
+	if req.Algorithm.Type != "kem" {
+		writeError(w, fmt.Sprintf("unsupported algorithm type: %q. Only 'kem' is supported.", req.Algorithm.Type), http.StatusBadRequest)
+		return
+	}
+
 	// Validate algorithm.
-	if !req.Algorithm.IsSupported() {
-		writeError(w, fmt.Sprintf("unsupported algorithm: %s. Supported algorithms: %s", req.Algorithm, SupportedKemAlgorithmsString()), http.StatusBadRequest)
+	if !req.Algorithm.Params.KemID.IsSupported() {
+		writeError(w, fmt.Sprintf("unsupported algorithm: %s. Supported algorithms: %s", req.Algorithm.Params.KemID, SupportedKemAlgorithmsString()), http.StatusBadRequest)
 		return
 	}
 
 	// Validate keyProtectionMechanism.
+	if req.KeyProtectionMechanism == KeyProtectionMechanismUnspecified {
+		req.KeyProtectionMechanism = KeyProtectionMechanismVMEmulated
+	}
 	if !req.KeyProtectionMechanism.IsSupported() {
 		writeError(w, fmt.Sprintf("unsupported keyProtectionMechanism: %s", req.KeyProtectionMechanism), http.StatusBadRequest)
 		return
@@ -193,7 +201,7 @@ func (s *Server) handleGenerateKem(w http.ResponseWriter, r *http.Request) {
 
 	// Construct the full HPKE algorithm suite based on the requested KEM.
 	// We currently only support one suite.
-	algo, err := req.Algorithm.ToHpkeAlgorithm()
+	algo, err := req.Algorithm.Params.KemID.ToHpkeAlgorithm()
 	if err != nil {
 		writeError(w, err.Error(), http.StatusBadRequest)
 		return
@@ -219,7 +227,7 @@ func (s *Server) handleGenerateKem(w http.ResponseWriter, r *http.Request) {
 	s.mu.Unlock()
 
 	// Step 4: Return KEM UUID to workload.
-	resp := GenerateKemResponse{
+	resp := GenerateKeyResponse{
 		KeyHandle: KeyHandle{Handle: kemUUID.String()},
 	}
 	writeJSON(w, resp, http.StatusOK)

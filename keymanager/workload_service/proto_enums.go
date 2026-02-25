@@ -61,20 +61,26 @@ func (k *KemAlgorithm) UnmarshalJSON(data []byte) error {
 type KeyProtectionMechanism int32
 
 const (
+	KeyProtectionMechanismUnspecified KeyProtectionMechanism = 0
 	// KeyProtectionMechanismDefault is the default but invalid value.
 	KeyProtectionMechanismDefault KeyProtectionMechanism = 1
 	// KeyProtectionMechanismVM specifies that the key is protected by the VM.
-	KeyProtectionMechanismVM KeyProtectionMechanism = 2
+	KeyProtectionMechanismVM         KeyProtectionMechanism = 2
+	KeyProtectionMechanismVMEmulated KeyProtectionMechanism = 3
 )
 
 var (
 	keyProtectionMechanismToString = map[KeyProtectionMechanism]string{
-		KeyProtectionMechanismDefault: "DEFAULT",
-		KeyProtectionMechanismVM:      "KEY_PROTECTION_VM",
+		KeyProtectionMechanismUnspecified: "KEY_PROTECTION_UNSPECIFIED",
+		KeyProtectionMechanismDefault:     "DEFAULT",
+		KeyProtectionMechanismVM:          "KEY_PROTECTION_VM",
+		KeyProtectionMechanismVMEmulated:  "KEY_PROTECTION_VM_EMULATED",
 	}
 	stringToKeyProtectionMechanism = map[string]KeyProtectionMechanism{
-		"DEFAULT":           KeyProtectionMechanismDefault,
-		"KEY_PROTECTION_VM": KeyProtectionMechanismVM,
+		"KEY_PROTECTION_UNSPECIFIED": KeyProtectionMechanismUnspecified,
+		"DEFAULT":                    KeyProtectionMechanismDefault,
+		"KEY_PROTECTION_VM":          KeyProtectionMechanismVM,
+		"KEY_PROTECTION_VM_EMULATED": KeyProtectionMechanismVMEmulated,
 	}
 )
 
@@ -112,8 +118,7 @@ var (
 
 	// SupportedKeyProtectionMechanisms is the source of truth for supported mechanisms.
 	SupportedKeyProtectionMechanisms = []KeyProtectionMechanism{
-		KeyProtectionMechanismDefault,
-		KeyProtectionMechanismVM,
+		KeyProtectionMechanismVMEmulated,
 	}
 )
 
