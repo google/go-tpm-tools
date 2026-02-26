@@ -30,7 +30,7 @@ steps:
     echo "base image:" ${base_image} "project:" ${BASE_IMAGE_PROJECT} 
     echo ${base_image} > /workspace/base_image.txt
 
-- name: golang:1.24-bullseye
+- name: golang:1.24
   id: LauncherCompile
   entrypoint: /bin/bash
   args:
@@ -51,7 +51,8 @@ steps:
       
       # Build the launcher with CGO enabled
       cd launcher/launcher
-      CGO_ENABLED=1 go build -o ../image/launcher -ldflags="-X 'main.BuildCommit=${SHORT_SHA}'"
+      export CGO_LDFLAGS="-L/workspace/keymanager/target/release -L/workspace/keymanager/target/debug"
+      CGO_ENABLED=1 go build -o ../image/launcher -ldflags="-X 'main.BuildCommit=${SHORT_SHA}' -extldflags '-static'"
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: DownloadExpBinary
