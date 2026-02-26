@@ -21,6 +21,16 @@ int32_t key_manager_generate_kem_keypair(const uint8_t *algo_ptr,
 
 int32_t key_manager_destroy_kem_key(const uint8_t *uuid_bytes);
 
+int32_t key_manager_decap_and_seal(const uint8_t *uuid_bytes,
+                                   const uint8_t *encapsulated_key,
+                                   size_t encapsulated_key_len,
+                                   const uint8_t *aad,
+                                   size_t aad_len,
+                                   uint8_t *out_encapsulated_key,
+                                   size_t out_encapsulated_key_len,
+                                   uint8_t *out_ciphertext,
+                                   size_t out_ciphertext_len);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif  // __cplusplus
