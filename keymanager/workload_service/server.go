@@ -114,6 +114,7 @@ type Server struct {
 	// todo: add logging mechanism here
 }
 
+// New creates a new WSD Server listening on the given unix socket path.
 func New(_ context.Context, socketPath string) (*Server, error) {
 	return NewServer(&keyProtectionService{}, &workloadService{}, socketPath)
 }
