@@ -25,13 +25,20 @@ func newTestServer(t *testing.T, kemGen KeyProtectionService, bindingGen Workloa
 
 // mockWorkloadService implements WorkloadService for testing.
 type mockWorkloadService struct {
-	uuid   uuid.UUID
-	pubKey []byte
-	err    error
+	uuid          uuid.UUID
+	pubKey        []byte
+	err           error
+	destroyErr    error
+	destroyedUUID uuid.UUID
 }
 
 func (m *mockWorkloadService) GenerateBindingKeypair(_ *algorithms.HpkeAlgorithm, _ uint64) (uuid.UUID, []byte, error) {
 	return m.uuid, m.pubKey, m.err
+}
+
+func (m *mockWorkloadService) DestroyBindingKey(bindingUUID uuid.UUID) error {
+	m.destroyedUUID = bindingUUID
+	return m.destroyErr
 }
 
 // mockKeyProtectionService implements KeyProtectionService for testing.
@@ -39,6 +46,8 @@ type mockKeyProtectionService struct {
 	uuid             uuid.UUID
 	pubKey           []byte
 	err              error
+	destroyErr       error
+	destroyedUUID    uuid.UUID
 	receivedPubKey   []byte
 	receivedLifespan uint64
 }
@@ -49,6 +58,11 @@ func (m *mockKeyProtectionService) GenerateKEMKeypair(_ *algorithms.HpkeAlgorith
 	return m.uuid, m.pubKey, m.err
 }
 
+func (m *mockKeyProtectionService) DestroyKEMKey(kemUUID uuid.UUID) error {
+	m.destroyedUUID = kemUUID
+	return m.destroyErr
+}
+
 func validGenerateBody() []byte {
 	body, _ := json.Marshal(GenerateKemRequest{
 		Algorithm:              KemAlgorithmDHKEMX25519HKDFSHA256,
@@ -57,6 +71,10 @@ func validGenerateBody() []byte {
 	})
 	return body
 }
+
+
+
+// --- /keys:generate_kem tests ---
 
 func TestHandleGenerateKemSuccess(t *testing.T) {
 	bindingUUID := uuid.New()
@@ -445,5 +463,132 @@ func TestHandleGetCapabilitiesInvalidMethod(t *testing.T) {
 
 	if w.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("expected status 405, got %d", w.Code)
+	}
+}
+
+func validDestroyBody(handle string) []byte {
+	body, _ := json.Marshal(DestroyRequest{
+		KeyHandle: KeyHandle{Handle: handle},
+	})
+	return body
+}
+
+func TestHandleDestroy(t *testing.T) {
+	validKEMUUID := uuid.New()
+	validBindingUUID := uuid.New()
+
+	tests := []struct {
+		name                   string
+		method                 string
+		body                   []byte
+		setupMap               bool
+		kemDestroyerErr        error
+		bindingDestroyerErr    error
+		expectedStatus         int
+		expectKEMDestroyed     bool
+		expectBindingDestroyed bool
+		expectMapRemoved       bool
+	}{
+		{
+			name:                   "success",
+			method:                 http.MethodPost,
+			body:                   validDestroyBody(validKEMUUID.String()),
+			setupMap:               true,
+			expectedStatus:         http.StatusNoContent,
+			expectKEMDestroyed:     true,
+			expectBindingDestroyed: true,
+			expectMapRemoved:       true,
+		},
+		{
+			name:           "invalid method",
+			method:         http.MethodGet,
+			body:           nil,
+			expectedStatus: http.StatusMethodNotAllowed,
+		},
+		{
+			name:           "bad json",
+			method:         http.MethodPost,
+			body:           []byte("not json"),
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name:           "invalid uuid",
+			method:         http.MethodPost,
+			body:           validDestroyBody("invalid-uuid"),
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name:           "key not found",
+			method:         http.MethodPost,
+			body:           validDestroyBody(uuid.New().String()),
+			setupMap:       false,
+			expectedStatus: http.StatusNotFound,
+		},
+		{
+			name:             "kps failure",
+			method:           http.MethodPost,
+			body:             validDestroyBody(validKEMUUID.String()),
+			setupMap:         true,
+			kemDestroyerErr:  fmt.Errorf("KPS error"),
+			expectedStatus:   http.StatusInternalServerError,
+			expectMapRemoved: false,
+		},
+		{
+			name:                "binding failure",
+			method:              http.MethodPost,
+			body:                validDestroyBody(validKEMUUID.String()),
+			setupMap:            true,
+			bindingDestroyerErr: fmt.Errorf("Binding error"),
+			expectedStatus:      http.StatusInternalServerError,
+			expectKEMDestroyed:  true,
+			expectMapRemoved:    false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			kemDestroyer := &mockKeyProtectionService{destroyErr: tc.kemDestroyerErr}
+			bindingDestroyer := &mockWorkloadService{destroyErr: tc.bindingDestroyerErr}
+
+			srv := newTestServer(t, kemDestroyer, bindingDestroyer)
+
+			if tc.setupMap {
+				srv.mu.Lock()
+				srv.kemToBindingMap[validKEMUUID] = validBindingUUID
+				srv.mu.Unlock()
+			}
+
+			req := httptest.NewRequest(tc.method, "/v1/keys:destroy", bytes.NewReader(tc.body))
+			if tc.body != nil {
+				req.Header.Set("Content-Type", "application/json")
+			}
+			w := httptest.NewRecorder()
+			srv.Handler().ServeHTTP(w, req)
+
+			if w.Code != tc.expectedStatus {
+				t.Fatalf("expected status %d, got %d: %s", tc.expectedStatus, w.Code, w.Body.String())
+			}
+
+			if tc.expectKEMDestroyed {
+				if kemDestroyer.destroyedUUID != validKEMUUID {
+					t.Fatalf("expected KEM destroy for %s, got %s", validKEMUUID, kemDestroyer.destroyedUUID)
+				}
+			}
+
+			if tc.expectBindingDestroyed {
+				if bindingDestroyer.destroyedUUID != validBindingUUID {
+					t.Fatalf("expected Binding destroy for %s, got %s", validBindingUUID, bindingDestroyer.destroyedUUID)
+				}
+			}
+
+			if tc.setupMap {
+				_, ok := srv.LookupBindingUUID(validKEMUUID)
+				if tc.expectMapRemoved && ok {
+					t.Fatalf("expected KEM UUID to be removed from map")
+				} else if !tc.expectMapRemoved && !ok {
+					t.Fatalf("expected KEM UUID to persist in map on failure")
+				}
+			}
+		})
 	}
 }

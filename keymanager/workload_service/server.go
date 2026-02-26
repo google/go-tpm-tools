@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"math"
 	"net"
 	"net/http"
@@ -23,12 +24,14 @@ import (
 // WorkloadService defines the interface for generating binding keypairs.
 type WorkloadService interface {
 	GenerateBindingKeypair(algo *algorithms.HpkeAlgorithm, lifespanSecs uint64) (uuid.UUID, []byte, error)
+	DestroyBindingKey(bindingUUID uuid.UUID) error
 }
 type keyProtectionService struct{}
 
 // KeyProtectionService defines the interface for generating KEM keypairs.
 type KeyProtectionService interface {
 	GenerateKEMKeypair(algo *algorithms.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error)
+	DestroyKEMKey(kemUUID uuid.UUID) error
 }
 type workloadService struct{}
 
@@ -36,8 +39,16 @@ func (r *workloadService) GenerateBindingKeypair(algo *algorithms.HpkeAlgorithm,
 	return wskcc.GenerateBindingKeypair(algo, lifespanSecs)
 }
 
+func (r *workloadService) DestroyBindingKey(bindingUUID uuid.UUID) error {
+	return wskcc.DestroyBindingKey(bindingUUID)
+}
+
 func (r *keyProtectionService) GenerateKEMKeypair(algo *algorithms.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
 	return kpscc.GenerateKEMKeypair(algo, bindingPubKey, lifespanSecs)
+}
+
+func (r *keyProtectionService) DestroyKEMKey(kemUUID uuid.UUID) error {
+	return kpscc.DestroyKEMKey(kemUUID)
 }
 
 // KeyHandle represents a key handle returned from the API.
@@ -76,6 +87,10 @@ type GenerateKemRequest struct {
 }
 
 // GenerateKemResponse is returned by POST /v1/keys:generate_kem.
+type DestroyRequest struct {
+	KeyHandle KeyHandle `json:"key_handle"`
+}
+
 type GenerateKemResponse struct {
 	KeyHandle KeyHandle `json:"key_handle"`
 }
@@ -105,9 +120,8 @@ type GetCapabilitiesResponse struct {
 type Server struct {
 	keyProtectionService KeyProtectionService
 	workloadService      WorkloadService
-
-	mu              sync.RWMutex
-	kemToBindingMap map[uuid.UUID]uuid.UUID
+	mu                   sync.RWMutex
+	kemToBindingMap      map[uuid.UUID]uuid.UUID
 
 	httpServer *http.Server
 	listener   net.Listener
@@ -131,6 +145,7 @@ func NewServer(keyProtectionService KeyProtectionService, workloadService Worklo
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/keys:generate_kem", s.handleGenerateKem)
 	mux.HandleFunc("GET /v1/capabilities", s.handleGetCapabilities)
+	mux.HandleFunc("POST /v1/keys:destroy", s.handleDestroy)
 
 	s.httpServer = &http.Server{Handler: mux}
 
@@ -255,10 +270,50 @@ func writeJSON(w http.ResponseWriter, v any, code int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(code)
-	json.NewEncoder(w).Encode(v)
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		log.Printf("failed to write JSON response: %v", err)
+	}
 }
 
 // writeError writes a JSON error response.
 func writeError(w http.ResponseWriter, message string, code int) {
 	writeJSON(w, map[string]string{"error": message}, code)
+}
+
+func (s *Server) handleDestroy(w http.ResponseWriter, r *http.Request) {
+	var req DestroyRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, fmt.Sprintf("invalid request body: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	kemUUID, err := uuid.Parse(req.KeyHandle.Handle)
+	if err != nil {
+		writeError(w, fmt.Sprintf("invalid key handle: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	// Step 1: Look up the binding UUID for this KEM key.
+	bindingUUID, ok := s.LookupBindingUUID(kemUUID)
+	if !ok {
+		writeError(w, fmt.Sprintf("KEM key handle not found: %s", kemUUID), http.StatusNotFound)
+		return
+	}
+
+	if err := s.keyProtectionService.DestroyKEMKey(kemUUID); err != nil {
+		writeError(w, fmt.Sprintf("failed to destroy KEM key: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	if err := s.workloadService.DestroyBindingKey(bindingUUID); err != nil {
+		writeError(w, fmt.Sprintf("failed to destroy binding key: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Step 4: Remove the mapping.
+	s.mu.Lock()
+	delete(s.kemToBindingMap, kemUUID)
+	s.mu.Unlock()
+
+	w.WriteHeader(http.StatusNoContent)
 }
