@@ -401,7 +401,7 @@ func TestToHpkeAlgorithm(t *testing.T) {
 func TestHandleGetCapabilities(t *testing.T) {
 	bindingGen := &mockWorkloadService{}
 	kemGen := &mockKeyProtectionService{}
-	srv := NewServer(
+	srv := newTestServer(t, 
 		kemGen,
 		bindingGen,
 	)
@@ -434,7 +434,7 @@ func TestHandleGetCapabilities(t *testing.T) {
 func TestHandleGetCapabilitiesInvalidMethod(t *testing.T) {
 	bindingGen := &mockWorkloadService{}
 	kemGen := &mockKeyProtectionService{}
-	srv := NewServer(
+	srv := newTestServer(t, 
 		kemGen,
 		bindingGen,
 	)
