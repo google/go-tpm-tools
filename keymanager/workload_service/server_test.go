@@ -49,6 +49,77 @@ func validGenerateBody() []byte {
 	return body
 }
 
+// mockDecapSealer implements DecapSealer for testing.
+type mockDecapSealer struct {
+	sealEnc         []byte
+	sealedCT        []byte
+	err             error
+	receivedKEMUUID uuid.UUID
+	receivedEncKey  []byte
+	receivedAAD     []byte
+}
+
+func (m *mockDecapSealer) DecapAndSeal(kemUUID uuid.UUID, encapsulatedKey, aad []byte) ([]byte, []byte, error) {
+	m.receivedKEMUUID = kemUUID
+	m.receivedEncKey = encapsulatedKey
+	m.receivedAAD = aad
+	return m.sealEnc, m.sealedCT, m.err
+}
+
+// mockOpener implements Opener for testing.
+type mockOpener struct {
+	plaintext    []byte
+	err          error
+	receivedUUID uuid.UUID
+	receivedEnc  []byte
+	receivedCT   []byte
+	receivedAAD  []byte
+}
+
+func (m *mockOpener) Open(bindingUUID uuid.UUID, enc, ciphertext, aad []byte) ([]byte, error) {
+	m.receivedUUID = bindingUUID
+	m.receivedEnc = enc
+	m.receivedCT = ciphertext
+	m.receivedAAD = aad
+	return m.plaintext, m.err
+}
+
+// mockKEMKeyDestroyer implements KEMKeyDestroyer for testing.
+type mockKEMKeyDestroyer struct {
+	err          error
+	receivedUUID uuid.UUID
+}
+
+func (m *mockKEMKeyDestroyer) DestroyKEMKey(kemUUID uuid.UUID) error {
+	m.receivedUUID = kemUUID
+	return m.err
+}
+
+// mockBindingKeyDestroyer implements BindingKeyDestroyer for testing.
+type mockBindingKeyDestroyer struct {
+	err          error
+	receivedUUID uuid.UUID
+}
+
+func (m *mockBindingKeyDestroyer) DestroyBindingKey(bindingUUID uuid.UUID) error {
+	m.receivedUUID = bindingUUID
+	return m.err
+}
+
+// noopDecapSealer returns a no-op DecapSealer for tests that don't use it.
+func noopDecapSealer() *mockDecapSealer { return &mockDecapSealer{} }
+
+// noopOpener returns a no-op Opener for tests that don't use it.
+func noopOpener() *mockOpener { return &mockOpener{} }
+
+// noopKEMDestroyer returns a no-op KEMKeyDestroyer for tests that don't use it.
+func noopKEMDestroyer() *mockKEMKeyDestroyer { return &mockKEMKeyDestroyer{} }
+
+// noopBindingDestroyer returns a no-op BindingKeyDestroyer for tests that don't use it.
+func noopBindingDestroyer() *mockBindingKeyDestroyer { return &mockBindingKeyDestroyer{} }
+
+// --- /keys:generate_kem tests ---
+
 func TestHandleGenerateKemSuccess(t *testing.T) {
 	bindingUUID := uuid.New()
 	kemUUID := uuid.New()
@@ -65,6 +136,8 @@ func TestHandleGenerateKemSuccess(t *testing.T) {
 	srv := NewServer(
 		&mockBindingKeyGen{uuid: bindingUUID, pubKey: bindingPubKey},
 		kemGen,
+		noopKEMDestroyer(),
+		noopBindingDestroyer(),
 	)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/keys:generate_kem", bytes.NewReader(validGenerateBody()))
@@ -113,6 +186,8 @@ func TestHandleGenerateKemInvalidMethod(t *testing.T) {
 	srv := NewServer(
 		&mockBindingKeyGen{pubKey: make([]byte, 32)},
 		&mockKEMKeyGen{pubKey: make([]byte, 32)},
+		noopKEMDestroyer(),
+		noopBindingDestroyer(),
 	)
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/keys:generate_kem", nil)
@@ -128,6 +203,8 @@ func TestHandleGenerateKemBadRequest(t *testing.T) {
 	srv := NewServer(
 		&mockBindingKeyGen{uuid: uuid.New(), pubKey: make([]byte, 32)},
 		&mockKEMKeyGen{uuid: uuid.New(), pubKey: make([]byte, 32)},
+		noopKEMDestroyer(),
+		noopBindingDestroyer(),
 	)
 
 	tests := []struct {
@@ -182,6 +259,8 @@ func TestHandleGenerateKemBadJSON(t *testing.T) {
 	srv := NewServer(
 		&mockBindingKeyGen{pubKey: make([]byte, 32)},
 		&mockKEMKeyGen{pubKey: make([]byte, 32)},
+		noopKEMDestroyer(),
+		noopBindingDestroyer(),
 	)
 
 	badBodies := []struct {
@@ -212,6 +291,8 @@ func TestHandleGenerateKemBindingGenError(t *testing.T) {
 	srv := NewServer(
 		&mockBindingKeyGen{err: fmt.Errorf("binding FFI error")},
 		&mockKEMKeyGen{pubKey: make([]byte, 32)},
+		noopKEMDestroyer(),
+		noopBindingDestroyer(),
 	)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/keys:generate_kem", bytes.NewReader(validGenerateBody()))
@@ -228,6 +309,8 @@ func TestHandleGenerateKemFlexibleLifespan(t *testing.T) {
 	srv := NewServer(
 		&mockBindingKeyGen{uuid: uuid.New(), pubKey: make([]byte, 32)},
 		&mockKEMKeyGen{uuid: uuid.New(), pubKey: make([]byte, 32)},
+		noopKEMDestroyer(),
+		noopBindingDestroyer(),
 	)
 
 	tests := []struct {
@@ -270,6 +353,8 @@ func TestHandleGenerateKemKEMGenError(t *testing.T) {
 	srv := NewServer(
 		&mockBindingKeyGen{uuid: uuid.New(), pubKey: make([]byte, 32)},
 		&mockKEMKeyGen{err: fmt.Errorf("KEM FFI error")},
+		noopKEMDestroyer(),
+		noopBindingDestroyer(),
 	)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/keys:generate_kem", bytes.NewReader(validGenerateBody()))
@@ -294,7 +379,7 @@ func TestHandleGenerateKemMapUniqueness(t *testing.T) {
 	bindingGen := &mockBindingKeyGen{}
 	kemGen := &mockKEMKeyGen{}
 
-	srv := NewServer(bindingGen, kemGen)
+	srv := NewServer(bindingGen, kemGen, noopKEMDestroyer(), noopBindingDestroyer())
 
 	// First call.
 	bindingGen.uuid = bindingUUID1
@@ -393,6 +478,8 @@ func TestHandleGetCapabilities(t *testing.T) {
 	srv := NewServer(
 		&mockBindingKeyGen{},
 		&mockKEMKeyGen{},
+		noopKEMDestroyer(),
+		noopBindingDestroyer(),
 	)
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/capabilities", nil)
@@ -424,6 +511,8 @@ func TestHandleGetCapabilitiesInvalidMethod(t *testing.T) {
 	srv := NewServer(
 		&mockBindingKeyGen{},
 		&mockKEMKeyGen{},
+		noopKEMDestroyer(),
+		noopBindingDestroyer(),
 	)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/capabilities", nil)
@@ -432,5 +521,137 @@ func TestHandleGetCapabilitiesInvalidMethod(t *testing.T) {
 
 	if w.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("expected status 405, got %d", w.Code)
+	}
+}
+
+func validDestroyBody(handle string) []byte {
+	body, _ := json.Marshal(DestroyRequest{
+		KeyHandle: KeyHandle{Handle: handle},
+	})
+	return body
+}
+
+func TestHandleDestroy(t *testing.T) {
+	validKEMUUID := uuid.New()
+	validBindingUUID := uuid.New()
+
+	tests := []struct {
+		name                   string
+		method                 string
+		body                   []byte
+		setupMap               bool
+		kemDestroyerErr        error
+		bindingDestroyerErr    error
+		expectedStatus         int
+		expectKEMDestroyed     bool
+		expectBindingDestroyed bool
+		expectMapRemoved       bool
+	}{
+		{
+			name:                   "success",
+			method:                 http.MethodPost,
+			body:                   validDestroyBody(validKEMUUID.String()),
+			setupMap:               true,
+			expectedStatus:         http.StatusNoContent,
+			expectKEMDestroyed:     true,
+			expectBindingDestroyed: true,
+			expectMapRemoved:       true,
+		},
+		{
+			name:           "invalid method",
+			method:         http.MethodGet,
+			body:           nil,
+			expectedStatus: http.StatusMethodNotAllowed,
+		},
+		{
+			name:           "bad json",
+			method:         http.MethodPost,
+			body:           []byte("not json"),
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name:           "invalid uuid",
+			method:         http.MethodPost,
+			body:           validDestroyBody("invalid-uuid"),
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name:           "key not found",
+			method:         http.MethodPost,
+			body:           validDestroyBody(uuid.New().String()),
+			setupMap:       false,
+			expectedStatus: http.StatusNotFound,
+		},
+		{
+			name:             "kps failure",
+			method:           http.MethodPost,
+			body:             validDestroyBody(validKEMUUID.String()),
+			setupMap:         true,
+			kemDestroyerErr:  fmt.Errorf("KPS error"),
+			expectedStatus:   http.StatusInternalServerError,
+			expectMapRemoved: false,
+		},
+		{
+			name:                "binding failure",
+			method:              http.MethodPost,
+			body:                validDestroyBody(validKEMUUID.String()),
+			setupMap:            true,
+			bindingDestroyerErr: fmt.Errorf("Binding error"),
+			expectedStatus:      http.StatusInternalServerError,
+			expectKEMDestroyed:  true,
+			expectMapRemoved:    false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			kemDestroyer := &mockKEMKeyDestroyer{err: tc.kemDestroyerErr}
+			bindingDestroyer := &mockBindingKeyDestroyer{err: tc.bindingDestroyerErr}
+
+			srv := NewServer(
+				&mockBindingKeyGen{},
+				&mockKEMKeyGen{},
+				kemDestroyer,
+				bindingDestroyer,
+			)
+
+			if tc.setupMap {
+				srv.mu.Lock()
+				srv.kemToBindingMap[validKEMUUID] = validBindingUUID
+				srv.mu.Unlock()
+			}
+
+			req := httptest.NewRequest(tc.method, "/v1/keys:destroy", bytes.NewReader(tc.body))
+			if tc.body != nil {
+				req.Header.Set("Content-Type", "application/json")
+			}
+			w := httptest.NewRecorder()
+			srv.Handler().ServeHTTP(w, req)
+
+			if w.Code != tc.expectedStatus {
+				t.Fatalf("expected status %d, got %d: %s", tc.expectedStatus, w.Code, w.Body.String())
+			}
+
+			if tc.expectKEMDestroyed {
+				if kemDestroyer.receivedUUID != validKEMUUID {
+					t.Fatalf("expected KEM destroy for %s, got %s", validKEMUUID, kemDestroyer.receivedUUID)
+				}
+			}
+
+			if tc.expectBindingDestroyed {
+				if bindingDestroyer.receivedUUID != validBindingUUID {
+					t.Fatalf("expected Binding destroy for %s, got %s", validBindingUUID, bindingDestroyer.receivedUUID)
+				}
+			}
+
+			if tc.setupMap {
+				_, ok := srv.LookupBindingUUID(validKEMUUID)
+				if tc.expectMapRemoved && ok {
+					t.Fatalf("expected KEM UUID to be removed from map")
+				} else if !tc.expectMapRemoved && !ok {
+					t.Fatalf("expected KEM UUID to persist in map on failure")
+				}
+			}
+		})
 	}
 }

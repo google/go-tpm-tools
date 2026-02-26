@@ -24,6 +24,16 @@ type BindingKeyGenerator interface {
 }
 
 // KEMKeyGenerator generates KEM keypairs via the KPS KOL/KCC.
+// KEMKeyDestroyer destroys a KEM key by UUID via the KPS KCC FFI.
+type KEMKeyDestroyer interface {
+	DestroyKEMKey(kemUUID uuid.UUID) error
+}
+
+// BindingKeyDestroyer destroys a binding key by UUID via the WSD KCC FFI.
+type BindingKeyDestroyer interface {
+	DestroyBindingKey(bindingUUID uuid.UUID) error
+}
+
 type KEMKeyGenerator interface {
 	GenerateKEMKeypair(algo *algorithms.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error)
 }
@@ -64,6 +74,10 @@ type GenerateKemRequest struct {
 }
 
 // GenerateKemResponse is returned by POST /v1/keys:generate_kem.
+type DestroyRequest struct {
+	KeyHandle KeyHandle `json:"key_handle"`
+}
+
 type GenerateKemResponse struct {
 	KeyHandle KeyHandle `json:"key_handle"`
 }
@@ -91,8 +105,10 @@ type GetCapabilitiesResponse struct {
 
 // Server is the WSD HTTP server.
 type Server struct {
-	bindingGen BindingKeyGenerator
-	kemGen     KEMKeyGenerator
+	bindingGen          BindingKeyGenerator
+	kemGen              KEMKeyGenerator
+	kemKeyDestroyer     KEMKeyDestroyer
+	bindingKeyDestroyer BindingKeyDestroyer
 
 	mu              sync.RWMutex
 	kemToBindingMap map[uuid.UUID]uuid.UUID
@@ -102,16 +118,19 @@ type Server struct {
 }
 
 // NewServer creates a new WSD server with the given dependencies.
-func NewServer(bindingGen BindingKeyGenerator, kemGen KEMKeyGenerator) *Server {
+func NewServer(bindingGen BindingKeyGenerator, kemGen KEMKeyGenerator, kemKeyDestroyer KEMKeyDestroyer, bindingKeyDestroyer BindingKeyDestroyer) *Server {
 	s := &Server{
-		bindingGen:      bindingGen,
-		kemGen:          kemGen,
-		kemToBindingMap: make(map[uuid.UUID]uuid.UUID),
+		bindingGen:          bindingGen,
+		kemGen:              kemGen,
+		kemKeyDestroyer:     kemKeyDestroyer,
+		bindingKeyDestroyer: bindingKeyDestroyer,
+		kemToBindingMap:     make(map[uuid.UUID]uuid.UUID),
 	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/keys:generate_kem", s.handleGenerateKem)
 	mux.HandleFunc("GET /v1/capabilities", s.handleGetCapabilities)
+	mux.HandleFunc("POST /v1/keys:destroy", s.handleDestroy)
 
 	s.httpServer = &http.Server{Handler: mux}
 	return s
@@ -241,4 +260,44 @@ func writeJSON(w http.ResponseWriter, v any, code int) {
 // writeError writes a JSON error response.
 func writeError(w http.ResponseWriter, message string, code int) {
 	writeJSON(w, map[string]string{"error": message}, code)
+}
+
+func (s *Server) handleDestroy(w http.ResponseWriter, r *http.Request) {
+	var req DestroyRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, fmt.Sprintf("invalid request body: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	kemUUID, err := uuid.Parse(req.KeyHandle.Handle)
+	if err != nil {
+		writeError(w, fmt.Sprintf("invalid key handle: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	// Step 1: Look up the binding UUID for this KEM key.
+	bindingUUID, ok := s.LookupBindingUUID(kemUUID)
+	if !ok {
+		writeError(w, fmt.Sprintf("KEM key handle not found: %s", kemUUID), http.StatusNotFound)
+		return
+	}
+
+	// Step 2: Destroy the KEM key via KPS.
+	if err := s.kemKeyDestroyer.DestroyKEMKey(kemUUID); err != nil {
+		writeError(w, fmt.Sprintf("failed to destroy KEM key: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Step 3: Destroy the binding key via WSD KCC.
+	if err := s.bindingKeyDestroyer.DestroyBindingKey(bindingUUID); err != nil {
+		writeError(w, fmt.Sprintf("failed to destroy binding key: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Step 4: Remove the mapping.
+	s.mu.Lock()
+	delete(s.kemToBindingMap, kemUUID)
+	s.mu.Unlock()
+
+	w.WriteHeader(http.StatusNoContent)
 }
