@@ -30,14 +30,21 @@ steps:
     echo "base image:" ${base_image} "project:" ${BASE_IMAGE_PROJECT} 
     echo ${base_image} > /workspace/base_image.txt
 
-- name: golang:1.24
+- name: golang:1.24-bullseye
   id: LauncherCompile
   entrypoint: /bin/bash
   args:
     - -c
     - |
-      # Install required build tools and Rust toolchain
-      apt-get update && apt-get install -y cmake clang pkg-config libssl-dev build-essential
+      set -exuo pipefail
+      # Install required build tools (excluding the old cmake) and Rust toolchain
+      apt-get update && apt-get install -y clang pkg-config libssl-dev build-essential curl
+      
+      # Install a newer CMake (need 3.22+, Bullseye has 3.18)
+      curl -sSL https://github.com/Kitware/CMake/releases/download/v3.28.3/cmake-3.28.3-linux-x86_64.sh -o cmake-install.sh
+      sh cmake-install.sh --skip-license --prefix=/usr/local
+      rm cmake-install.sh
+      
       curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
       source $$HOME/.cargo/env
       
@@ -52,7 +59,7 @@ steps:
       # Build the launcher with CGO enabled
       cd launcher/launcher
       export CGO_LDFLAGS="-L/workspace/keymanager/target/release -L/workspace/keymanager/target/debug"
-      CGO_ENABLED=1 go build -o ../image/launcher -ldflags="-X 'main.BuildCommit=${SHORT_SHA}' -extldflags '-static'"
+      CGO_ENABLED=1 go build -o ../image/launcher -ldflags="-X 'main.BuildCommit=${SHORT_SHA}'"
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: DownloadExpBinary
