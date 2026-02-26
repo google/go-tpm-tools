@@ -114,14 +114,12 @@ type Server struct {
 	// todo: add logging mechanism here
 }
 
-// New creates a new WSD Server
-func New(_ context.Context, _ string) *Server {
-	s := NewServer(&keyProtectionService{}, &workloadService{})
-	return s
+func New(_ context.Context, socketPath string) (*Server, error) {
+	return NewServer(&keyProtectionService{}, &workloadService{}, socketPath)
 }
 
 // NewServer creates a new WSD server with the given dependencies.
-func NewServer(keyProtectionService KeyProtectionService, workloadService WorkloadService) *Server {
+func NewServer(keyProtectionService KeyProtectionService, workloadService WorkloadService, socketPath string) (*Server, error) {
 	s := &Server{
 		keyProtectionService: keyProtectionService,
 		workloadService:      workloadService,
@@ -134,18 +132,19 @@ func NewServer(keyProtectionService KeyProtectionService, workloadService Worklo
 	mux.HandleFunc("GET /v1/capabilities", s.handleGetCapabilities)
 
 	s.httpServer = &http.Server{Handler: mux}
-	return s
-}
 
-// Serve starts the HTTP server listening on the given unix socket path.
-func (s *Server) Serve(socketPath string) error {
 	_ = os.Remove(socketPath)
 	ln, err := net.Listen("unix", socketPath)
 	if err != nil {
-		return fmt.Errorf("failed to listen on unix socket %s: %w", socketPath, err)
+		return nil, fmt.Errorf("failed to listen on unix socket %s: %w", socketPath, err)
 	}
 	s.listener = ln
-	return s.httpServer.Serve(ln)
+	return s, nil
+}
+
+// Serve starts the HTTP server listening on the given unix socket path.
+func (s *Server) Serve() error {
+	return s.httpServer.Serve(s.listener)
 }
 
 // Shutdown gracefully shuts down the server.

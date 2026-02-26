@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -13,6 +14,14 @@ import (
 
 	algorithms "github.com/google/go-tpm-tools/keymanager/km_common/proto"
 )
+
+func newTestServer(t *testing.T, kemGen KeyProtectionService, bindingGen WorkloadService) *Server {
+	srv, err := NewServer(kemGen, bindingGen, filepath.Join(t.TempDir(), "test.sock"))
+	if err != nil {
+		t.Fatalf("failed to create test server: %v", err)
+	}
+	return srv
+}
 
 // mockWorkloadService implements WorkloadService for testing.
 type mockWorkloadService struct {
@@ -62,7 +71,7 @@ func TestHandleGenerateKemSuccess(t *testing.T) {
 	}
 
 	kemGen := &mockKeyProtectionService{uuid: kemUUID, pubKey: kemPubKey}
-	srv := NewServer(
+	srv := newTestServer(t, 
 		kemGen,
 		&mockWorkloadService{uuid: bindingUUID, pubKey: bindingPubKey},
 	)
@@ -110,7 +119,7 @@ func TestHandleGenerateKemSuccess(t *testing.T) {
 }
 
 func TestHandleGenerateKemInvalidMethod(t *testing.T) {
-	srv := NewServer(
+	srv := newTestServer(t, 
 		&mockKeyProtectionService{pubKey: make([]byte, 32)},
 		&mockWorkloadService{pubKey: make([]byte, 32)},
 	)
@@ -125,7 +134,7 @@ func TestHandleGenerateKemInvalidMethod(t *testing.T) {
 }
 
 func TestHandleGenerateKemBadRequest(t *testing.T) {
-	srv := NewServer(
+	srv := newTestServer(t, 
 		&mockKeyProtectionService{uuid: uuid.New(), pubKey: make([]byte, 32)},
 		&mockWorkloadService{uuid: uuid.New(), pubKey: make([]byte, 32)},
 	)
@@ -179,7 +188,7 @@ func TestHandleGenerateKemBadRequest(t *testing.T) {
 }
 
 func TestHandleGenerateKemBadJSON(t *testing.T) {
-	srv := NewServer(
+	srv := newTestServer(t, 
 		&mockKeyProtectionService{pubKey: make([]byte, 32)},
 		&mockWorkloadService{pubKey: make([]byte, 32)},
 	)
@@ -209,7 +218,7 @@ func TestHandleGenerateKemBadJSON(t *testing.T) {
 }
 
 func TestHandleGenerateKemBindingGenError(t *testing.T) {
-	srv := NewServer(
+	srv := newTestServer(t, 
 		&mockKeyProtectionService{pubKey: make([]byte, 32)},
 		&mockWorkloadService{err: fmt.Errorf("binding FFI error")},
 	)
@@ -225,7 +234,7 @@ func TestHandleGenerateKemBindingGenError(t *testing.T) {
 }
 
 func TestHandleGenerateKemFlexibleLifespan(t *testing.T) {
-	srv := NewServer(
+	srv := newTestServer(t, 
 		&mockKeyProtectionService{uuid: uuid.New(), pubKey: make([]byte, 32)},
 		&mockWorkloadService{uuid: uuid.New(), pubKey: make([]byte, 32)},
 	)
@@ -267,7 +276,7 @@ func TestHandleGenerateKemFlexibleLifespan(t *testing.T) {
 }
 
 func TestHandleGenerateKemKEMGenError(t *testing.T) {
-	srv := NewServer(
+	srv := newTestServer(t, 
 		&mockKeyProtectionService{err: fmt.Errorf("KEM FFI error")},
 		&mockWorkloadService{uuid: uuid.New(), pubKey: make([]byte, 32)},
 	)
@@ -294,7 +303,7 @@ func TestHandleGenerateKemMapUniqueness(t *testing.T) {
 	bindingGen := &mockWorkloadService{}
 	kemGen := &mockKeyProtectionService{}
 
-	srv := NewServer(kemGen, bindingGen)
+	srv := newTestServer(t, kemGen, bindingGen)
 
 	// First call.
 	bindingGen.uuid = bindingUUID1
@@ -392,7 +401,7 @@ func TestToHpkeAlgorithm(t *testing.T) {
 func TestHandleGetCapabilities(t *testing.T) {
 	bindingGen := &mockWorkloadService{}
 	kemGen := &mockKeyProtectionService{}
-	srv := NewServer(
+	srv := newTestServer(t, 
 		kemGen,
 		bindingGen,
 	)
@@ -425,7 +434,7 @@ func TestHandleGetCapabilities(t *testing.T) {
 func TestHandleGetCapabilitiesInvalidMethod(t *testing.T) {
 	bindingGen := &mockWorkloadService{}
 	kemGen := &mockKeyProtectionService{}
-	srv := NewServer(
+	srv := newTestServer(t, 
 		kemGen,
 		bindingGen,
 	)
