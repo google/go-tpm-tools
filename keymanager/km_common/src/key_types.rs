@@ -1,6 +1,6 @@
 use crate::algorithms::{AeadAlgorithm, HpkeAlgorithm, KdfAlgorithm, KemAlgorithm};
 use crate::crypto;
-use crate::crypto::{PublicKey, secret_box};
+use crate::crypto::{secret_box, PublicKey};
 use crate::protected_mem::Vault;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
@@ -86,18 +86,40 @@ impl KeyRegistry {
         stop_signal: Arc<std::sync::atomic::AtomicBool>,
     ) -> std::thread::JoinHandle<()> {
         let keys_clone = Arc::clone(&self.keys);
-        std::thread::spawn(move || {
-            loop {
-                std::thread::sleep(Duration::from_secs(REAPER_INTERVAL_SECS));
-                if stop_signal.load(std::sync::atomic::Ordering::Relaxed) {
-                    break;
-                }
-                let now = Instant::now();
-                if let Ok(mut keys) = keys_clone.write() {
-                    keys.retain(|_, key| key.meta.delete_after > now);
-                }
+        std::thread::spawn(move || loop {
+            std::thread::sleep(Duration::from_secs(REAPER_INTERVAL_SECS));
+            if stop_signal.load(std::sync::atomic::Ordering::Relaxed) {
+                break;
+            }
+            let now = Instant::now();
+            if let Ok(mut keys) = keys_clone.write() {
+                keys.retain(|_, key| key.meta.delete_after > now);
             }
         })
+    }
+
+    /// Lists all Keys with pagination support.
+    pub fn list_all_keys(&self, offset: usize, limit: usize) -> (Vec<KeyMetadata>, usize) {
+        let keys = self.keys.read().unwrap();
+        let total_count = keys.len();
+        let mut refs: Vec<&Arc<KeyRecord>> = keys.values().collect();
+
+        // Sort for stable pagination: created_at, then id
+        refs.sort_by(|a, b| {
+            a.meta
+                .created_at
+                .cmp(&b.meta.created_at)
+                .then(a.meta.id.cmp(&b.meta.id))
+        });
+
+        let page = refs
+            .into_iter()
+            .skip(offset)
+            .take(limit)
+            .map(|r| r.meta.clone())
+            .collect();
+
+        (page, total_count)
     }
 }
 
@@ -190,6 +212,33 @@ impl KeyRecord {
 mod tests {
     use super::*;
     use crate::algorithms::{AeadAlgorithm, KdfAlgorithm, KemAlgorithm};
+
+    fn create_key_record<F>(
+        algo: HpkeAlgorithm,
+        expiry_secs: u64,
+        spec_builder: F,
+    ) -> Result<KeyRecord, crypto::Error>
+    where
+        F: FnOnce(HpkeAlgorithm, PublicKey) -> KeySpec,
+    {
+        let (pub_key, priv_key) = crypto::generate_keypair(KemAlgorithm::DhkemX25519HkdfSha256)?;
+        let id = Uuid::new_v4();
+        let vault = Vault::new(secret_box::SecretBox::from(priv_key))
+            .map_err(|_| crypto::Error::CryptoError)?;
+        let now = Instant::now();
+        let delete_after = now
+            .checked_add(Duration::from_secs(expiry_secs))
+            .ok_or(crypto::Error::UnsupportedAlgorithm)?;
+        Ok(KeyRecord {
+            meta: KeyMetadata {
+                id,
+                created_at: now,
+                delete_after,
+                spec: spec_builder(algo, pub_key),
+            },
+            private_key: vault,
+        })
+    }
 
     #[test]
     fn test_create_binding_key_success() {

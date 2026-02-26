@@ -1,12 +1,12 @@
 use km_common::algorithms::HpkeAlgorithm;
-use km_common::crypto::PublicKey;
 use km_common::crypto::secret_box::SecretBox;
+use km_common::crypto::PublicKey;
 use km_common::key_types::{KeyRecord, KeyRegistry, KeySpec};
 use prost::Message;
 use std::slice;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::sync::LazyLock;
-use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 use uuid::Uuid;
 
@@ -229,6 +229,108 @@ pub unsafe extern "C" fn key_manager_open(
     .unwrap_or(-1)
 }
 
+pub const MAX_ALGORITHM_LEN: usize = 128;
+pub const MAX_PUBLIC_KEY_LEN: usize = 2048;
+
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct WsKeyInfo {
+    pub uuid: [u8; 16],
+    pub algorithm: [u8; MAX_ALGORITHM_LEN],
+    pub algorithm_len: usize,
+    pub pub_key: [u8; MAX_PUBLIC_KEY_LEN],
+    pub pub_key_len: usize,
+    pub remaining_lifespan_secs: u64,
+}
+
+impl Default for WsKeyInfo {
+    fn default() -> Self {
+        WsKeyInfo {
+            uuid: [0; 16],
+            algorithm: [0; MAX_ALGORITHM_LEN],
+            algorithm_len: 0,
+            pub_key: [0; MAX_PUBLIC_KEY_LEN],
+            pub_key_len: 0,
+            remaining_lifespan_secs: 0,
+        }
+    }
+}
+
+fn enumerate_binding_keys_internal(
+    entries: &mut [WsKeyInfo],
+    offset: usize,
+) -> Result<(usize, bool), i32> {
+    let (metas, total_count) = KEY_REGISTRY.list_all_keys(offset, entries.len());
+    let count = metas.len();
+    let has_more = offset + count < total_count;
+
+    for (entry, meta) in entries.iter_mut().zip(metas.into_iter()) {
+        let KeySpec::Binding {
+            algo,
+            binding_public_key: pub_key,
+        } = &meta.spec
+        else {
+            return Err(-1);
+        };
+
+        let algo_bytes = algo.encode_to_vec();
+
+        if pub_key.as_bytes().len() > MAX_PUBLIC_KEY_LEN || algo_bytes.len() > MAX_ALGORITHM_LEN {
+            debug_assert!(
+                false,
+                "Implementation error: Key size exceeds buffer limits! (algo={}, pub={})",
+                algo_bytes.len(),
+                pub_key.as_bytes().len()
+            );
+            return Err(-2); // Buffer Limit Exceeded
+        }
+
+        let now = std::time::Instant::now();
+        let remaining = meta.delete_after.saturating_duration_since(now).as_secs();
+
+        *entry = WsKeyInfo::default();
+
+        entry.uuid.copy_from_slice(meta.id.as_bytes());
+
+        entry.algorithm[..algo_bytes.len()].copy_from_slice(&algo_bytes);
+        entry.algorithm_len = algo_bytes.len();
+
+        entry.pub_key[..pub_key.as_bytes().len()].copy_from_slice(pub_key.as_bytes());
+        entry.pub_key_len = pub_key.as_bytes().len();
+
+        entry.remaining_lifespan_secs = remaining;
+    }
+
+    Ok((count, has_more))
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn key_manager_enumerate_binding_keys(
+    out_entries: *mut WsKeyInfo,
+    max_entries: usize,
+    offset: usize,
+    out_has_more: Option<&mut bool>,
+) -> i32 {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        if out_entries.is_null() {
+            return -1;
+        }
+
+        let entries = unsafe { slice::from_raw_parts_mut(out_entries, max_entries) };
+
+        match enumerate_binding_keys_internal(entries, offset) {
+            Ok((count, has_more)) => {
+                if let Some(has_more_ref) = out_has_more {
+                    *has_more_ref = has_more;
+                }
+                count as i32
+            }
+            Err(e) => e,
+        }
+    }))
+    .unwrap_or(-1)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -367,17 +469,17 @@ mod tests {
             aead: AeadAlgorithm::Aes256Gcm as i32,
         };
         let algo_bytes = algo.encode_to_vec();
-        unsafe {
-            let res = key_manager_generate_binding_keypair(
+        let res = unsafe {
+            key_manager_generate_binding_keypair(
                 algo_bytes.as_ptr(),
                 algo_bytes.len(),
                 3600,
                 uuid_bytes.as_mut_ptr(),
                 pubkey_bytes.as_mut_ptr(),
                 pubkey_len,
-            );
-            assert_eq!(res, 0);
+            )
         };
+        assert_eq!(res, 0);
 
         let result = unsafe { key_manager_destroy_binding_key(uuid_bytes.as_ptr()) };
         assert_eq!(result, 0);
@@ -518,5 +620,54 @@ mod tests {
 
         assert_eq!(result, -2);
         assert_eq!(out_pt, [0u8; 5]); // Should remain untouched/zero
+    }
+
+    #[test]
+    fn test_key_manager_enumerate_binding_keys_success() {
+        let mut uuid_bytes = [0u8; 16];
+        let mut pubkey_bytes = [0u8; 32];
+        let pubkey_len: usize = pubkey_bytes.len();
+        let algo = HpkeAlgorithm {
+            kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
+            kdf: KdfAlgorithm::HkdfSha256 as i32,
+            aead: AeadAlgorithm::Aes256Gcm as i32,
+        };
+        let algo_bytes = algo.encode_to_vec();
+
+        // Create a key so there is something to enumerate
+        let result = unsafe {
+            key_manager_generate_binding_keypair(
+                algo_bytes.as_ptr(),
+                algo_bytes.len(),
+                3600,
+                uuid_bytes.as_mut_ptr(),
+                pubkey_bytes.as_mut_ptr(),
+                pubkey_len,
+            )
+        };
+        assert_eq!(result, 0);
+
+        let mut out_entries = [WsKeyInfo::default(); 32];
+        let mut out_has_more = false;
+
+        let enum_result = unsafe {
+            key_manager_enumerate_binding_keys(
+                out_entries.as_mut_ptr(),
+                out_entries.len(),
+                0,
+                Some(&mut out_has_more),
+            )
+        };
+
+        assert!(enum_result >= 1, "Should have enumerated at least one key");
+
+        let mut found_uuid = false;
+        for i in 0..enum_result as usize {
+            if out_entries[i].uuid == uuid_bytes {
+                found_uuid = true;
+                break;
+            }
+        }
+        assert!(found_uuid, "Generated UUID should be in returned keys");
     }
 }
