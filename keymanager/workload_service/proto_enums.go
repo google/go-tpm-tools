@@ -97,3 +97,88 @@ func (k KemAlgorithm) ToHpkeAlgorithm() (*keymanager.HpkeAlgorithm, error) {
 		return nil, fmt.Errorf("unsupported algorithm: %s", k)
 	}
 }
+
+// KdfAlgorithm represents the requested KDF algorithm.
+type KdfAlgorithm int32
+
+const (
+	KdfAlgorithmUnspecified KdfAlgorithm = 0
+	// Corrected from HKDF_SHA384 to HKDF_SHA256 based on ToHpkeAlgorithm usage which maps to HKDF_SHA256 (val 1)
+	KdfAlgorithmHKDFSHA256 KdfAlgorithm = 1
+)
+
+var (
+	kdfAlgorithmToString = map[KdfAlgorithm]string{
+		KdfAlgorithmUnspecified: "KDF_ALGORITHM_UNSPECIFIED",
+		KdfAlgorithmHKDFSHA256:  "HKDF_SHA256",
+	}
+	stringToKdfAlgorithm = map[string]KdfAlgorithm{
+		"KDF_ALGORITHM_UNSPECIFIED": KdfAlgorithmUnspecified,
+		"HKDF_SHA256":               KdfAlgorithmHKDFSHA256,
+	}
+)
+
+func (k KdfAlgorithm) String() string {
+	if s, ok := kdfAlgorithmToString[k]; ok {
+		return s
+	}
+	return fmt.Sprintf("KDF_ALGORITHM_UNKNOWN(%d)", k)
+}
+
+func (k KdfAlgorithm) MarshalJSON() ([]byte, error) {
+	return json.Marshal(k.String())
+}
+
+func (k *KdfAlgorithm) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return fmt.Errorf("KdfAlgorithm must be a string")
+	}
+	if v, ok := stringToKdfAlgorithm[s]; ok {
+		*k = v
+		return nil
+	}
+	return fmt.Errorf("unknown KdfAlgorithm: %q", s)
+}
+
+// AeadAlgorithm represents the requested AEAD algorithm.
+type AeadAlgorithm int32
+
+const (
+	AeadAlgorithmUnspecified AeadAlgorithm = 0
+	AeadAlgorithmAES256GCM   AeadAlgorithm = 1
+)
+
+var (
+	aeadAlgorithmToString = map[AeadAlgorithm]string{
+		AeadAlgorithmUnspecified: "AEAD_ALGORITHM_UNSPECIFIED",
+		AeadAlgorithmAES256GCM:   "AES_256_GCM",
+	}
+	stringToAeadAlgorithm = map[string]AeadAlgorithm{
+		"AEAD_ALGORITHM_UNSPECIFIED": AeadAlgorithmUnspecified,
+		"AES_256_GCM":                AeadAlgorithmAES256GCM,
+	}
+)
+
+func (k AeadAlgorithm) String() string {
+	if s, ok := aeadAlgorithmToString[k]; ok {
+		return s
+	}
+	return fmt.Sprintf("AEAD_ALGORITHM_UNKNOWN(%d)", k)
+}
+
+func (k AeadAlgorithm) MarshalJSON() ([]byte, error) {
+	return json.Marshal(k.String())
+}
+
+func (k *AeadAlgorithm) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return fmt.Errorf("AeadAlgorithm must be a string")
+	}
+	if v, ok := stringToAeadAlgorithm[s]; ok {
+		*k = v
+		return nil
+	}
+	return fmt.Errorf("unknown AeadAlgorithm: %q", s)
+}

@@ -1,10 +1,11 @@
 // Package workloadservice implements the Key Orchestration Layer (KOL) for the
 // Workload Service Daemon (WSD). It provides an HTTP server on a unix socket
-// exposing key generation endpoints.
+// exposing cryptographic and key management endpoints.
 package workloadservice
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -29,6 +30,7 @@ type keyProtectionService struct{}
 // KeyProtectionService defines the interface for generating KEM keypairs.
 type KeyProtectionService interface {
 	GenerateKEMKeypair(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error)
+	EnumerateKEMKeys(limit, offset int) ([]kpscc.KEMKeyInfo, bool, error)
 }
 type workloadService struct{}
 
@@ -38,6 +40,10 @@ func (r *workloadService) GenerateBindingKeypair(algo *keymanager.HpkeAlgorithm,
 
 func (r *keyProtectionService) GenerateKEMKeypair(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
 	return kpscc.GenerateKEMKeypair(algo, bindingPubKey, lifespanSecs)
+}
+
+func (r *keyProtectionService) EnumerateKEMKeys(limit, offset int) ([]kpscc.KEMKeyInfo, bool, error) {
+	return kpscc.EnumerateKEMKeys(limit, offset)
 }
 
 // KeyHandle represents a key handle returned from the API.
@@ -100,6 +106,24 @@ type GetCapabilitiesResponse struct {
 	SupportedAlgorithms []SupportedAlgorithm `json:"supported_algorithms"`
 }
 
+// EnumerateKeysResponse represents the response for GET /v1/keys.
+type EnumerateKeysResponse struct {
+	KeyInfos []KeyInfo `json:"key_infos"`
+}
+
+// KeyInfo contains information about a single key.
+type KeyInfo struct {
+	KeyHandle         KeyHandle     `json:"key_handle"`
+	PubKey            PubKeyInfo    `json:"pub_key"`
+	RemainingLifespan ProtoDuration `json:"remaining_lifespan"`
+}
+
+// PubKeyInfo contains the public key and its algorithm.
+type PubKeyInfo struct {
+	Algorithm AlgorithmDetails `json:"algorithm"`
+	PublicKey string           `json:"public_key"` // Base64 encoded public key
+}
+
 // Server is the WSD HTTP server.
 type Server struct {
 	keyProtectionService KeyProtectionService
@@ -130,6 +154,7 @@ func NewServer(keyProtectionService KeyProtectionService, workloadService Worklo
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/keys:generate_key", s.handleGenerateKey)
 	mux.HandleFunc("GET /v1/capabilities", s.handleGetCapabilities)
+	mux.HandleFunc("GET /v1/keys", s.handleEnumerateKeys)
 
 	s.httpServer = &http.Server{Handler: mux}
 
@@ -247,6 +272,54 @@ func (s *Server) handleGetCapabilities(w http.ResponseWriter, r *http.Request) {
 
 	resp := GetCapabilitiesResponse{
 		SupportedAlgorithms: supportedAlgos,
+	}
+
+	writeJSON(w, resp, http.StatusOK)
+}
+
+func (s *Server) handleEnumerateKeys(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	keys, _, err := s.keyProtectionService.EnumerateKEMKeys(100, 0)
+	if err != nil {
+		writeError(w, fmt.Sprintf("failed to enumerate keys: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	var keyInfos []KeyInfo
+	for _, key := range keys {
+		kemAlgo := KemAlgorithmUnspecified
+		if key.Algorithm != nil {
+			switch key.Algorithm.Kem {
+			case keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256:
+				kemAlgo = KemAlgorithmDHKEMX25519HKDFSHA256
+			}
+		}
+
+		keyInfos = append(keyInfos, KeyInfo{
+			KeyHandle: KeyHandle{Handle: key.ID.String()},
+			PubKey: PubKeyInfo{
+				Algorithm: AlgorithmDetails{
+					Type: "kem",
+					Params: AlgorithmParams{
+						KemID: kemAlgo,
+					},
+				},
+				PublicKey: base64.StdEncoding.EncodeToString(key.KEMPubKey),
+			},
+			RemainingLifespan: ProtoDuration{Seconds: key.RemainingLifespanSecs},
+		})
+	}
+
+	if keyInfos == nil {
+		keyInfos = make([]KeyInfo, 0) // Ensure empty slice rather than null in JSON
+	}
+
+	resp := EnumerateKeysResponse{
+		KeyInfos: keyInfos,
 	}
 
 	writeJSON(w, resp, http.StatusOK)
