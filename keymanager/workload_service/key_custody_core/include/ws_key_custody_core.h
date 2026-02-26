@@ -19,6 +19,16 @@ int32_t key_manager_generate_binding_keypair(const uint8_t *algo_ptr,
 
 int32_t key_manager_destroy_binding_key(const uint8_t *uuid_bytes);
 
+int32_t key_manager_open(const uint8_t *uuid_bytes,
+                         const uint8_t *enc,
+                         size_t enc_len,
+                         const uint8_t *ciphertext,
+                         size_t ciphertext_len,
+                         const uint8_t *aad,
+                         size_t aad_len,
+                         uint8_t *out_plaintext,
+                         size_t out_plaintext_len);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif  // __cplusplus
