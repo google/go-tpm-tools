@@ -6,6 +6,21 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#define MAX_ALGORITHM_LEN 128
+
+#define MAX_PUBLIC_KEY_LEN 2048
+
+typedef struct {
+  uint8_t uuid[16];
+  uint8_t algorithm[MAX_ALGORITHM_LEN];
+  size_t algorithm_len;
+  uint8_t pub_key[MAX_PUBLIC_KEY_LEN];
+  size_t pub_key_len;
+  uint8_t binding_pub_key[MAX_PUBLIC_KEY_LEN];
+  size_t binding_pub_key_len;
+  uint64_t remaining_lifespan_secs;
+} KpsKeyInfo;
+
 #ifdef __cplusplus
 extern "C" {
 #endif // __cplusplus
@@ -20,6 +35,11 @@ int32_t key_manager_generate_kem_keypair(const uint8_t *algo_ptr,
                                          size_t out_pubkey_len);
 
 int32_t key_manager_destroy_kem_key(const uint8_t *uuid_bytes);
+
+int32_t key_manager_enumerate_kem_keys(KpsKeyInfo *out_entries,
+                                       size_t max_entries,
+                                       size_t offset,
+                                       bool *out_has_more);
 
 int32_t key_manager_decap_and_seal(const uint8_t *uuid_bytes,
                                    const uint8_t *encapsulated_key,

@@ -6,6 +6,19 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#define MAX_ALGORITHM_LEN 128
+
+#define MAX_PUBLIC_KEY_LEN 2048
+
+typedef struct {
+  uint8_t uuid[16];
+  uint8_t algorithm[MAX_ALGORITHM_LEN];
+  size_t algorithm_len;
+  uint8_t pub_key[MAX_PUBLIC_KEY_LEN];
+  size_t pub_key_len;
+  uint64_t remaining_lifespan_secs;
+} WsKeyInfo;
+
 #ifdef __cplusplus
 extern "C" {
 #endif // __cplusplus
@@ -28,6 +41,11 @@ int32_t key_manager_open(const uint8_t *uuid_bytes,
                          size_t aad_len,
                          uint8_t *out_plaintext,
                          size_t out_plaintext_len);
+
+int32_t key_manager_enumerate_binding_keys(WsKeyInfo *out_entries,
+                                           size_t max_entries,
+                                           size_t offset,
+                                           bool *out_has_more);
 
 #ifdef __cplusplus
 }  // extern "C"
