@@ -30,9 +30,8 @@ func TestIntegrationGenerateKeysEndToEnd(t *testing.T) {
 	srv := NewServer(kpsSvc, &realWorkloadService{})
 
 	reqBody, err := json.Marshal(GenerateKeyRequest{
-		Algorithm:              AlgorithmDetails{Type: "kem", Params: AlgorithmParams{KemID: KemAlgorithmDHKEMX25519HKDFSHA256}},
-		KeyProtectionMechanism: KeyProtectionMechanismVMEmulated,
-		Lifespan:               ProtoDuration{Seconds: 3600},
+		Algorithm: AlgorithmDetails{Type: "kem", Params: AlgorithmParams{KemID: KemAlgorithmDHKEMX25519HKDFSHA256}},
+		Lifespan:  ProtoDuration{Seconds: 3600},
 	})
 	if err != nil {
 		t.Fatalf("failed to marshal request: %v", err)
@@ -79,9 +78,8 @@ func TestIntegrationGenerateKeysUniqueMappings(t *testing.T) {
 	var kemUUIDs [2]uuid.UUID
 	for i := 0; i < 2; i++ {
 		reqBody, err := json.Marshal(GenerateKeyRequest{
-			Algorithm:              AlgorithmDetails{Type: "kem", Params: AlgorithmParams{KemID: KemAlgorithmDHKEMX25519HKDFSHA256}},
-			KeyProtectionMechanism: KeyProtectionMechanismVMEmulated,
-			Lifespan:               ProtoDuration{Seconds: 3600},
+			Algorithm: AlgorithmDetails{Type: "kem", Params: AlgorithmParams{KemID: KemAlgorithmDHKEMX25519HKDFSHA256}},
+			Lifespan:  ProtoDuration{Seconds: 3600},
 		})
 		if err != nil {
 			t.Fatalf("call %d: failed to marshal request: %v", i+1, err)

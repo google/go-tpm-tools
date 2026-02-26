@@ -70,9 +70,8 @@ func (d ProtoDuration) MarshalJSON() ([]byte, error) {
 
 // GenerateKeyRequest is the JSON body for POST /v1/keys:generate_key.
 type GenerateKeyRequest struct {
-	Algorithm              AlgorithmDetails       `json:"algorithm"`
-	KeyProtectionMechanism KeyProtectionMechanism `json:"key_protection_mechanism,omitempty"`
-	Lifespan               ProtoDuration          `json:"lifespan"`
+	Algorithm AlgorithmDetails `json:"algorithm"`
+	Lifespan  ProtoDuration    `json:"lifespan"`
 }
 
 // GenerateKeyResponse is returned by POST /v1/keys:generate_key.
@@ -173,29 +172,24 @@ func (s *Server) handleGenerateKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Algorithm.Type != "kem" {
-		writeError(w, fmt.Sprintf("unsupported algorithm type: %q. Only 'kem' is supported.", req.Algorithm.Type), http.StatusBadRequest)
-		return
-	}
-
-	// Validate algorithm.
-	if !req.Algorithm.Params.KemID.IsSupported() {
-		writeError(w, fmt.Sprintf("unsupported algorithm: %s. Supported algorithms: %s", req.Algorithm.Params.KemID, SupportedKemAlgorithmsString()), http.StatusBadRequest)
-		return
-	}
-
-	// Validate keyProtectionMechanism.
-	if req.KeyProtectionMechanism == KeyProtectionMechanismUnspecified {
-		req.KeyProtectionMechanism = KeyProtectionMechanismVMEmulated
-	}
-	if !req.KeyProtectionMechanism.IsSupported() {
-		writeError(w, fmt.Sprintf("unsupported keyProtectionMechanism: %s", req.KeyProtectionMechanism), http.StatusBadRequest)
-		return
-	}
-
 	// Validate lifespan is positive.
 	if req.Lifespan.Seconds == 0 {
 		writeError(w, "lifespan must be greater than 0s", http.StatusBadRequest)
+		return
+	}
+
+	switch req.Algorithm.Type {
+	case "kem":
+		s.generateKEMKey(w, req)
+	default:
+		writeError(w, fmt.Sprintf("unsupported algorithm type: %q. Only 'kem' is supported.", req.Algorithm.Type), http.StatusBadRequest)
+	}
+}
+
+func (s *Server) generateKEMKey(w http.ResponseWriter, req GenerateKeyRequest) {
+	// Validate algorithm.
+	if !req.Algorithm.Params.KemID.IsSupported() {
+		writeError(w, fmt.Sprintf("unsupported algorithm: %s. Supported algorithms: %s", req.Algorithm.Params.KemID, SupportedKemAlgorithmsString()), http.StatusBadRequest)
 		return
 	}
 

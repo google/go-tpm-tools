@@ -213,33 +213,6 @@ mod tests {
     use super::*;
     use crate::algorithms::{AeadAlgorithm, KdfAlgorithm, KemAlgorithm};
 
-    fn create_key_record<F>(
-        algo: HpkeAlgorithm,
-        expiry_secs: u64,
-        spec_builder: F,
-    ) -> Result<KeyRecord, crypto::Error>
-    where
-        F: FnOnce(HpkeAlgorithm, PublicKey) -> KeySpec,
-    {
-        let (pub_key, priv_key) = crypto::generate_keypair(KemAlgorithm::DhkemX25519HkdfSha256)?;
-        let id = Uuid::new_v4();
-        let vault = Vault::new(secret_box::SecretBox::from(priv_key))
-            .map_err(|_| crypto::Error::CryptoError)?;
-        let now = Instant::now();
-        let delete_after = now
-            .checked_add(Duration::from_secs(expiry_secs))
-            .ok_or(crypto::Error::UnsupportedAlgorithm)?;
-        Ok(KeyRecord {
-            meta: KeyMetadata {
-                id,
-                created_at: now,
-                delete_after,
-                spec: spec_builder(algo, pub_key),
-            },
-            private_key: vault,
-        })
-    }
-
     #[test]
     fn test_create_binding_key_success() {
         let algo = HpkeAlgorithm {

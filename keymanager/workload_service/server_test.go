@@ -57,8 +57,7 @@ func validGenerateBody() []byte {
 				KemID: KemAlgorithmDHKEMX25519HKDFSHA256,
 			},
 		},
-		KeyProtectionMechanism: KeyProtectionMechanismVMEmulated,
-		Lifespan:               ProtoDuration{Seconds: 3600},
+		Lifespan: ProtoDuration{Seconds: 3600},
 	})
 	return body
 }
@@ -150,23 +149,19 @@ func TestHandleGenerateKeyBadRequest(t *testing.T) {
 	}{
 		{
 			name: "unsupported algorithm type",
-			body: GenerateKeyRequest{Algorithm: AlgorithmDetails{Type: "mac", Params: AlgorithmParams{KemID: KemAlgorithmDHKEMX25519HKDFSHA256}}, KeyProtectionMechanism: KeyProtectionMechanismVMEmulated, Lifespan: ProtoDuration{Seconds: 3600}},
+			body: GenerateKeyRequest{Algorithm: AlgorithmDetails{Type: "mac", Params: AlgorithmParams{KemID: KemAlgorithmDHKEMX25519HKDFSHA256}}, Lifespan: ProtoDuration{Seconds: 3600}},
 		},
 		{
 			name: "unsupported algorithm",
-			body: GenerateKeyRequest{Algorithm: AlgorithmDetails{Type: "kem", Params: AlgorithmParams{KemID: KemAlgorithmUnspecified}}, KeyProtectionMechanism: KeyProtectionMechanismVMEmulated, Lifespan: ProtoDuration{Seconds: 3600}},
-		},
-		{
-			name: "unsupported key protection mechanism",
-			body: GenerateKeyRequest{Algorithm: AlgorithmDetails{Type: "kem", Params: AlgorithmParams{KemID: KemAlgorithmDHKEMX25519HKDFSHA256}}, KeyProtectionMechanism: KeyProtectionMechanism(99), Lifespan: ProtoDuration{Seconds: 3600}},
+			body: GenerateKeyRequest{Algorithm: AlgorithmDetails{Type: "kem", Params: AlgorithmParams{KemID: KemAlgorithmUnspecified}}, Lifespan: ProtoDuration{Seconds: 3600}},
 		},
 		{
 			name: "zero lifespan",
-			body: GenerateKeyRequest{Algorithm: AlgorithmDetails{Type: "kem", Params: AlgorithmParams{KemID: KemAlgorithmDHKEMX25519HKDFSHA256}}, KeyProtectionMechanism: KeyProtectionMechanismVMEmulated, Lifespan: ProtoDuration{Seconds: 0}},
+			body: GenerateKeyRequest{Algorithm: AlgorithmDetails{Type: "kem", Params: AlgorithmParams{KemID: KemAlgorithmDHKEMX25519HKDFSHA256}}, Lifespan: ProtoDuration{Seconds: 0}},
 		},
 		{
 			name: "missing algorithm (defaults to 0, type empty)",
-			body: GenerateKeyRequest{KeyProtectionMechanism: KeyProtectionMechanismVMEmulated, Lifespan: ProtoDuration{Seconds: 3600}},
+			body: GenerateKeyRequest{Lifespan: ProtoDuration{Seconds: 3600}},
 		},
 	}
 
@@ -207,9 +202,9 @@ func TestHandleGenerateKeyBadJSON(t *testing.T) {
 		body string
 	}{
 		{"not json", "not json"},
-		{"lifespan as string", `{"algorithm":1,"key_protection_mechanism":2,"lifespan":"3600"}`},
-		{"lifespan as string with suffix", `{"algorithm":1,"key_protection_mechanism":2,"lifespan":"3600s"}`},
-		{"lifespan negative", `{"algorithm":1,"key_protection_mechanism":2,"lifespan":-1}`},
+		{"lifespan as string", `{"algorithm":1,"lifespan":"3600"}`},
+		{"lifespan as string with suffix", `{"algorithm":1,"lifespan":"3600s"}`},
+		{"lifespan negative", `{"algorithm":1,"lifespan":-1}`},
 	}
 
 	for _, tc := range badBodies {
@@ -255,17 +250,17 @@ func TestHandleGenerateKeyFlexibleLifespan(t *testing.T) {
 	}{
 		{
 			name:     "integer seconds",
-			body:     `{"algorithm":{"type":"kem","params":{"kem_id":"DHKEM_X25519_HKDF_SHA256"}},"key_protection_mechanism":"KEY_PROTECTION_VM_EMULATED","lifespan":3600}`,
+			body:     `{"algorithm":{"type":"kem","params":{"kem_id":"DHKEM_X25519_HKDF_SHA256"}},"lifespan":3600}`,
 			expected: 3600,
 		},
 		{
 			name:     "float seconds",
-			body:     `{"algorithm":{"type":"kem","params":{"kem_id":"DHKEM_X25519_HKDF_SHA256"}},"key_protection_mechanism":"KEY_PROTECTION_VM_EMULATED","lifespan":1.5}`,
+			body:     `{"algorithm":{"type":"kem","params":{"kem_id":"DHKEM_X25519_HKDF_SHA256"}},"lifespan":1.5}`,
 			expected: 1, // Truncated to 1
 		},
 		{
 			name:     "float seconds round down",
-			body:     `{"algorithm":{"type":"kem","params":{"kem_id":"DHKEM_X25519_HKDF_SHA256"}},"key_protection_mechanism":"KEY_PROTECTION_VM_EMULATED","lifespan":3600.9}`,
+			body:     `{"algorithm":{"type":"kem","params":{"kem_id":"DHKEM_X25519_HKDF_SHA256"}},"lifespan":3600.9}`,
 			expected: 3600,
 		},
 	}
