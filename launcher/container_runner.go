@@ -27,7 +27,9 @@ import (
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
+	workloadservice "github.com/google/go-tpm-tools/keymanager/workload_service"
 	"github.com/google/go-tpm-tools/launcher/agent"
+	"github.com/google/go-tpm-tools/launcher/internal/gpu"
 	"github.com/google/go-tpm-tools/launcher/internal/healthmonitoring/nodeproblemdetector"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/internal/signaturediscovery"
@@ -56,6 +58,7 @@ type ContainerRunner struct {
 const tokenFileTmp = ".token.tmp"
 
 const teeServerSocket = "teeserver.sock"
+const keyManagerSocket = "kmaserver.sock"
 
 // Since we only allow one container on a VM, using a deterministic id is probably fine
 const (
@@ -191,6 +194,44 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	}
 	specOpts = append(specOpts, cgroupOpts...)
 
+	var deviceROTs []agent.DeviceROT
+	if launchSpec.InstallGpuDriver {
+		gpuMounts := []specs.Mount{
+			{
+				Type:        "volume",
+				Source:      fmt.Sprintf("%s/lib64", gpu.InstallationHostDir),
+				Destination: fmt.Sprintf("%s/lib64", gpu.InstallationContainerDir),
+				Options:     []string{"rbind", "rw"},
+			}, {
+				Type:        "volume",
+				Source:      fmt.Sprintf("%s/bin", gpu.InstallationHostDir),
+				Destination: fmt.Sprintf("%s/bin", gpu.InstallationContainerDir),
+				Options:     []string{"rbind", "rw"},
+			},
+		}
+		specOpts = append(specOpts, oci.WithMounts(gpuMounts))
+
+		// /dev/nvidia-caps/* will not be listed here and will not be passed to
+		// the container workload
+		//
+		// following devices should be listed:
+		// /dev/nvidiactl
+		// /dev/nvidia-uvm
+		// /dev/nvidia-uvm-tools
+		// /dev/nvidia{0,1,2,...}
+		// /dev/nvidia-modeset
+		gpuDeviceFiles, err := listFilesWithPrefix("/dev", "nvidia")
+		if err != nil {
+			return nil, fmt.Errorf("failed to list nvidia devices: [%w]", err)
+		}
+
+		for _, deviceFile := range gpuDeviceFiles {
+			logger.Info(fmt.Sprintf("Detected nvidia device : %s", deviceFile))
+			specOpts = append(specOpts, oci.WithDevices(deviceFile, deviceFile, "crw-rw-rw-"))
+		}
+		deviceROTs = append(deviceROTs, &gpu.NvidiaAttester{})
+	}
+
 	container, err = cdClient.NewContainer(
 		ctx,
 		containerID,
@@ -238,7 +279,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		return tokens, nil
 	}
 
-	asAddr := launchSpec.AttestationServiceAddr
+	asAddr := launchSpec.GcaAddress
 
 	var verifierClient verifier.Client
 	if launchSpec.FakeVerifierEnabled {
@@ -255,7 +296,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	// Create a new signaturediscovery client to fetch signatures.
 	sdClient := getSignatureDiscoveryClient(cdClient, mdsClient, image.Target())
 
-	attestAgent, err := agent.CreateAttestationAgent(tpm, client.GceAttestationKeyECC, verifierClient, principalFetcherWithImpersonate, sdClient, launchSpec, logger)
+	attestAgent, err := agent.CreateAttestationAgent(tpm, client.GceAttestationKeyECC, verifierClient, principalFetcherWithImpersonate, sdClient, launchSpec, logger, deviceROTs)
 	if err != nil {
 		return nil, err
 	}
@@ -584,8 +625,9 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		return fmt.Errorf("failed to measure CEL events: %v", err)
 	}
 
-	// Only refresh token if agent has a default GCA client (not ITA use case).
-	if r.launchSpec.ITAConfig.ITARegion == "" {
+	// Only refresh token if agent has a default GCA client (not ITA use case)
+	// AND GcaRefresh is not disabled
+	if r.launchSpec.ITAConfig.ITARegion == "" && !r.launchSpec.DisableGcaRefresh {
 		if err := r.fetchAndWriteToken(ctx); err != nil {
 			return fmt.Errorf("failed to fetch and write OIDC token: %v", err)
 		}
@@ -608,7 +650,7 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 
 		attestClients.ITA = itaClient
 	} else {
-		gcaClient, err := util.NewRESTClient(ctx, r.launchSpec.AttestationServiceAddr, r.launchSpec.ProjectID, r.launchSpec.Region)
+		gcaClient, err := util.NewRESTClient(ctx, r.launchSpec.GcaAddress, r.launchSpec.ProjectID, r.launchSpec.Region)
 		if err != nil {
 			return fmt.Errorf("failed to create REST verifier client: %v", err)
 		}
@@ -622,6 +664,17 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	}
 	go teeServer.Serve()
 	defer teeServer.Shutdown(ctx)
+
+	// create and start the key manager server
+	if r.launchSpec.Experiments.EnableKeyManager {
+		r.logger.Info("EnableKeyManager experiment is enabled: initializing KeyManager server.")
+		keyManagerServer, err := workloadservice.New(ctx, path.Join(launcherfile.HostTmpPath, keyManagerSocket))
+		if err != nil {
+			return fmt.Errorf("failed to create the KeyManager server: %v", err)
+		}
+		go keyManagerServer.Serve()
+		defer keyManagerServer.Shutdown(ctx)
+	}
 
 	// Avoids breaking existing memory monitoring tests that depend on this log.
 	if r.launchSpec.MonitoringEnabled == spec.None {

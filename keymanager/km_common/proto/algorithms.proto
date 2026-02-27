@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+package algorithms;
+
+option go_package = "github.com/google/go-tpm-tools/keymanager/km_common/proto/algorithms";
+
+// Key Encapsulation Mechanism (KEM)
+enum KemAlgorithm {
+  KEM_ALGORITHM_UNSPECIFIED = 0;
+  KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256 = 1;
+}
+
+// Key Derivation Function (KDF)
+enum KdfAlgorithm {
+  KDF_ALGORITHM_UNSPECIFIED = 0;
+  KDF_ALGORITHM_HKDF_SHA256 = 1;
+}
+
+// Authenticated Encryption with Associated Data (AEAD)
+enum AeadAlgorithm {
+  AEAD_ALGORITHM_UNSPECIFIED = 0;
+  AEAD_ALGORITHM_AES_256_GCM = 1;
+}
+
+// Composite HPKE Algorithm suite
+message HpkeAlgorithm {
+  KemAlgorithm kem = 1;
+  KdfAlgorithm kdf = 2;
+  AeadAlgorithm aead = 3;
+}

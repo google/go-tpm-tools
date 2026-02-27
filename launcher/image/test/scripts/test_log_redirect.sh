@@ -3,8 +3,8 @@ set -euxo pipefail
 source util/read_serial.sh
 source util/read_cloud_logging.sh
 
-# Allow VM some time to boot and write to serial console.
-sleep 120
+# Allow VM some time to boot and start the workload.
+sleep 150
 
 output=""
 if [[ "$1" == "serial" ]]; then

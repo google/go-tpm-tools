@@ -14,11 +14,13 @@ import (
 	"time"
 
 	"cloud.google.com/go/compute/metadata"
+	"cos.googlesource.com/cos/tools.git/src/cmd/cos_gpu_installer/deviceinfo"
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/defaults"
 	"github.com/containerd/containerd/namespaces"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/launcher"
+	"github.com/google/go-tpm-tools/launcher/internal/gpu"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/registryauth"
@@ -229,10 +231,24 @@ func startLauncher(launchSpec spec.LaunchSpec, serialConsole *os.File) error {
 	if err != nil {
 		logger.Info(fmt.Sprintf("failed to retrieve auth token: %v, using empty auth for image pulling\n", err))
 	}
+	ctx := namespaces.WithNamespace(context.Background(), namespaces.Default)
+
+	if launchSpec.InstallGpuDriver {
+		installer := gpu.NewDriverInstaller(containerdClient, launchSpec, logger)
+		err = installer.InstallGPUDrivers(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to install gpu drivers: %v", err)
+		}
+	} else {
+		deviceInfo, _ := deviceinfo.GetGPUTypeInfo()
+		if deviceInfo != deviceinfo.NO_GPU {
+			logger.Error("GPU is attached, tee-install-gpu-driver is not set")
+			return fmt.Errorf("failed to install GPU drivers: tee-install-gpu-driver must be set to true")
+		}
+	}
 
 	logger.Info("Launch started", "duration_sec", time.Since(start).Seconds())
 
-	ctx := namespaces.WithNamespace(context.Background(), namespaces.Default)
 	r, err := launcher.NewRunner(ctx, containerdClient, token, launchSpec, mdsClient, tpm, logger, serialConsole)
 	if err != nil {
 		return err

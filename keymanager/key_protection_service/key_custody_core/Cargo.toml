@@ -1,0 +1,16 @@
+[package]
+name = "kps_key_custody_core"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+km_common.workspace = true
+uuid.workspace = true
+zeroize.workspace = true
+prost.workspace = true
+
+[dev-dependencies]
+km_common = { workspace = true, features = ["test-utils"] }

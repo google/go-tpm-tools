@@ -83,7 +83,6 @@ const (
 	cmdKey                     = "tee-cmd"
 	envKeyPrefix               = "tee-env-"
 	impersonateServiceAccounts = "tee-impersonate-service-accounts"
-	attestationServiceAddrKey  = "tee-attestation-service-endpoint"
 	logRedirectKey             = "tee-container-log-redirect"
 	memoryMonitoringEnable     = "tee-monitoring-memory-enable"
 	monitoringEnable           = "tee-monitoring-enable"
@@ -93,11 +92,20 @@ const (
 	itaKey                     = "ita-api-key"
 	addedCaps                  = "tee-added-capabilities"
 	cgroupNS                   = "tee-cgroup-ns"
+	gcaServiceEnv              = "gca-service-env"
+	installGpuDriver           = "tee-install-gpu-driver"
+	disableGcaRefreshKey       = "tee-disable-gca-refresh"
 )
 
 const (
 	instanceAttributesQuery = "instance/attributes/?recursive=true"
 )
+
+var gcaInstances = map[string]string{
+	"prod":     "https://confidentialcomputing.googleapis.com",
+	"autopush": "https://autopush-confidentialcomputing.sandbox.googleapis.com",
+	"staging":  "https://staging-confidentialcomputing.sandbox.googleapis.com",
+}
 
 var errImageRefNotSpecified = fmt.Errorf("%s is not specified in the custom metadata", imageRefKey)
 
@@ -119,7 +127,7 @@ type LaunchSpec struct {
 	RestartPolicy              RestartPolicy
 	Cmd                        []string
 	Envs                       []EnvVar
-	AttestationServiceAddr     string
+	GcaAddress                 string
 	ImpersonateServiceAccounts []string
 	ProjectID                  string
 	Region                     string
@@ -128,10 +136,11 @@ type LaunchSpec struct {
 	LogRedirect                LogRedirectLocation
 	Mounts                     []launchermount.Mount
 	ITAConfig                  verifier.ITAConfig
-	// DevShmSize is specified in kiB.
-	DevShmSize        int64
-	AddedCapabilities []string
-	CgroupNamespace   bool
+	DevShmSize                 int64 // DevShmSize is specified in kiB.
+	AddedCapabilities          []string
+	CgroupNamespace            bool
+	InstallGpuDriver           bool
+	DisableGcaRefresh          bool
 }
 
 // UnmarshalJSON unmarshals an instance attributes list in JSON format from the metadata
@@ -147,6 +156,12 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 		var err error
 		if s.FakeVerifierEnabled, err = strconv.ParseBool(val); err != nil {
 			return fmt.Errorf("invalid value for %v (not a boolean): %w", fakeVerifierKey, err)
+		}
+	}
+
+	if val, ok := unmarshaledMap[installGpuDriver]; ok && val != "" {
+		if boolValue, err := strconv.ParseBool(val); err == nil {
+			s.InstallGpuDriver = boolValue
 		}
 	}
 
@@ -231,7 +246,9 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 		return err
 	}
 
-	s.AttestationServiceAddr = unmarshaledMap[attestationServiceAddrKey]
+	if err := s.setAttestationServiceVars(unmarshaledMap); err != nil {
+		return err
+	}
 
 	// Populate /dev/shm size override.
 	if val, ok := unmarshaledMap[devShmSizeKey]; ok && val != "" {
@@ -290,6 +307,25 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 		}
 	}
 
+	if val, ok := unmarshaledMap[disableGcaRefreshKey]; ok && val != "" {
+		var err error
+		if s.DisableGcaRefresh, err = strconv.ParseBool(val); err != nil {
+			return fmt.Errorf("invalid value for %v (not a boolean): %w", disableGcaRefreshKey, err)
+		}
+	}
+
+	return nil
+}
+
+func (s *LaunchSpec) setAttestationServiceVars(unmarshaledMap map[string]string) error {
+	if gcaServiceEnv, ok := unmarshaledMap[gcaServiceEnv]; ok {
+		v, ok := gcaInstances[strings.ToLower(gcaServiceEnv)]
+		if !ok {
+			return fmt.Errorf("the gca service env is not within the allowlist, want %+v, got %s", gcaInstances, gcaServiceEnv)
+		}
+		s.GcaAddress = v
+	}
+
 	return nil
 }
 
@@ -325,6 +361,10 @@ func GetLaunchSpec(ctx context.Context, logger logging.Logger, client *metadata.
 	}
 	if len(errs) != 0 {
 		return LaunchSpec{}, fmt.Errorf("failed to validate mounts: %v", errors.Join(errs...))
+	}
+
+	if !(spec.Experiments.EnableB200DriverInstallation || spec.Experiments.EnableH100DriverInstallation) && spec.InstallGpuDriver {
+		return LaunchSpec{}, fmt.Errorf("GPU Driver installation is not supported")
 	}
 
 	if err := validateMemorySizeKb(uint64(spec.DevShmSize)); err != nil {

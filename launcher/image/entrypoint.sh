@@ -18,7 +18,6 @@ main() {
   systemctl enable container-runner.service
   systemctl start container-runner.service
   systemctl start fluent-bit.service
-
 }
 
 main

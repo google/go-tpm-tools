@@ -1,0 +1,450 @@
+use crate::algorithms::{AeadAlgorithm, HpkeAlgorithm, KdfAlgorithm, KemAlgorithm};
+use crate::crypto;
+use crate::crypto::{secret_box, PublicKey};
+use crate::protected_mem::Vault;
+use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
+use std::time::{Duration, Instant};
+use uuid::Uuid;
+
+#[cfg(not(test))]
+const REAPER_INTERVAL_SECS: u64 = 60;
+#[cfg(test)]
+const REAPER_INTERVAL_SECS: u64 = 1;
+
+/// Represents the purpose of the Key and its associated algorithms.
+#[derive(Clone)]
+pub enum KeySpec {
+    /// Represents the composite key used by the Key Protection Service for the decaps-and-encrypt flow.
+    KemWithBindingPub {
+        /// The KEM and binding public keys share the same algorithm suite.
+        algo: HpkeAlgorithm,
+        /// The KEM public key
+        kem_public_key: PublicKey,
+        /// Binding public key for HPKE encrypt after decaps
+        binding_public_key: PublicKey,
+    },
+    Binding {
+        algo: HpkeAlgorithm,
+        /// The Binding key-pair
+        binding_public_key: PublicKey,
+    },
+}
+
+/// Internal Rust struct to hold the Key Metadata
+#[derive(Clone)]
+pub struct KeyMetadata {
+    /// UUID key handle for internal tracking
+    pub id: Uuid,
+    pub created_at: Instant,
+    /// TTL-bound deletion time
+    pub delete_after: Instant,
+    /// (non-secret) Cryptographic material
+    pub spec: KeySpec,
+}
+
+/// Internal struct to hold the Key Metadata and the secret key material.
+pub struct KeyRecord {
+    pub meta: KeyMetadata,
+    /// memfd_secrets backed secret key-material
+    private_key: Vault,
+}
+
+pub type KeyHandle = Uuid;
+
+/// Thread-safe registry for storing encryption keys.
+#[derive(Default, Clone)]
+pub struct KeyRegistry {
+    keys: Arc<RwLock<HashMap<KeyHandle, Arc<KeyRecord>>>>,
+}
+
+impl KeyRegistry {
+    pub fn add_key(&self, record: KeyRecord) {
+        let mut keys = self.keys.write().unwrap();
+        keys.insert(record.meta.id, Arc::new(record));
+    }
+
+    pub fn remove_key(&self, id: &KeyHandle) -> Option<Arc<KeyRecord>> {
+        let mut keys = self.keys.write().unwrap();
+        keys.remove(id)
+    }
+
+    pub fn get_key(&self, id: &KeyHandle) -> Option<Arc<KeyRecord>> {
+        let keys = self.keys.read().unwrap();
+        keys.get(id).and_then(|record| {
+            if record.meta.delete_after > Instant::now() {
+                Some(Arc::clone(record))
+            } else {
+                None
+            }
+        })
+    }
+
+    /// Spawns a background reaper thread to walk through the KeyRegistry every 60s and sanitize expired keys.
+    pub fn start_reaper(
+        &self,
+        stop_signal: Arc<std::sync::atomic::AtomicBool>,
+    ) -> std::thread::JoinHandle<()> {
+        let keys_clone = Arc::clone(&self.keys);
+        std::thread::spawn(move || loop {
+            std::thread::sleep(Duration::from_secs(REAPER_INTERVAL_SECS));
+            if stop_signal.load(std::sync::atomic::Ordering::Relaxed) {
+                break;
+            }
+            let now = Instant::now();
+            if let Ok(mut keys) = keys_clone.write() {
+                keys.retain(|_, key| key.meta.delete_after > now);
+            }
+        })
+    }
+
+    /// Lists all Keys with pagination support.
+    pub fn list_all_keys(&self, offset: usize, limit: usize) -> (Vec<KeyMetadata>, usize) {
+        let keys = self.keys.read().unwrap();
+        let total_count = keys.len();
+        let mut refs: Vec<&Arc<KeyRecord>> = keys.values().collect();
+
+        // Sort for stable pagination: created_at, then id
+        refs.sort_by(|a, b| {
+            a.meta
+                .created_at
+                .cmp(&b.meta.created_at)
+                .then(a.meta.id.cmp(&b.meta.id))
+        });
+
+        let page = refs
+            .into_iter()
+            .skip(offset)
+            .take(limit)
+            .map(|r| r.meta.clone())
+            .collect();
+
+        (page, total_count)
+    }
+}
+
+impl KeyRecord {
+    /// Returns the private key material.
+    pub fn get_private_key(&self) -> crypto::PrivateKey {
+        crypto::PrivateKey::from(self.private_key.get_secret())
+    }
+
+    /// Creates a new long-term Binding key.
+    pub fn create_binding_key(
+        algo: HpkeAlgorithm,
+        expiry: Duration,
+    ) -> Result<Self, crypto::Error> {
+        Self::create_key_internal(algo, expiry, |algo, pub_key| KeySpec::Binding {
+            algo,
+            binding_public_key: pub_key,
+        })
+    }
+
+    /// Creates a new ephemeral KEM key bound to an existing Binding key.
+    pub fn create_bound_kem_key(
+        algo: HpkeAlgorithm,
+        binding_public_key: PublicKey,
+        expiry: Duration,
+    ) -> Result<Self, crypto::Error> {
+        // Validate that the binding key is compatible with the algorithm suite.
+        // Currently only X25519 is supported.
+        match (&binding_public_key, KemAlgorithm::try_from(algo.kem)) {
+            (PublicKey::X25519(_), Ok(KemAlgorithm::DhkemX25519HkdfSha256)) => (),
+            _ => return Err(crypto::Error::InvalidKey),
+        }
+
+        Self::create_key_internal(algo, expiry, move |algo, pub_key| {
+            KeySpec::KemWithBindingPub {
+                algo,
+                kem_public_key: pub_key,
+                binding_public_key,
+            }
+        })
+    }
+
+    fn create_key_internal<F>(
+        algo: HpkeAlgorithm,
+        expiry: Duration,
+        spec_builder: F,
+    ) -> Result<Self, crypto::Error>
+    where
+        F: FnOnce(HpkeAlgorithm, PublicKey) -> KeySpec,
+    {
+        let (
+            Ok(KemAlgorithm::DhkemX25519HkdfSha256),
+            Ok(KdfAlgorithm::HkdfSha256),
+            Ok(AeadAlgorithm::Aes256Gcm),
+        ) = (
+            KemAlgorithm::try_from(algo.kem),
+            KdfAlgorithm::try_from(algo.kdf),
+            AeadAlgorithm::try_from(algo.aead),
+        )
+        else {
+            return Err(crypto::Error::UnsupportedAlgorithm);
+        };
+
+        let (pub_key, priv_key) = crypto::generate_keypair(KemAlgorithm::DhkemX25519HkdfSha256)?;
+
+        let id = Uuid::new_v4();
+        let vault = Vault::new(secret_box::SecretBox::from(priv_key))
+            .map_err(|_| crypto::Error::CryptoError)?;
+
+        let now = Instant::now();
+        let delete_after = now
+            .checked_add(expiry)
+            .ok_or(crypto::Error::UnsupportedAlgorithm)?;
+
+        let record = KeyRecord {
+            meta: KeyMetadata {
+                id,
+                created_at: now,
+                delete_after,
+                spec: spec_builder(algo, pub_key),
+            },
+            private_key: vault,
+        };
+
+        Ok(record)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::algorithms::{AeadAlgorithm, KdfAlgorithm, KemAlgorithm};
+
+    fn create_key_record<F>(
+        algo: HpkeAlgorithm,
+        expiry_secs: u64,
+        spec_builder: F,
+    ) -> Result<KeyRecord, crypto::Error>
+    where
+        F: FnOnce(HpkeAlgorithm, PublicKey) -> KeySpec,
+    {
+        let (pub_key, priv_key) = crypto::generate_keypair(KemAlgorithm::DhkemX25519HkdfSha256)?;
+        let id = Uuid::new_v4();
+        let vault = Vault::new(secret_box::SecretBox::from(priv_key))
+            .map_err(|_| crypto::Error::CryptoError)?;
+        let now = Instant::now();
+        let delete_after = now
+            .checked_add(Duration::from_secs(expiry_secs))
+            .ok_or(crypto::Error::UnsupportedAlgorithm)?;
+        Ok(KeyRecord {
+            meta: KeyMetadata {
+                id,
+                created_at: now,
+                delete_after,
+                spec: spec_builder(algo, pub_key),
+            },
+            private_key: vault,
+        })
+    }
+
+    #[test]
+    fn test_create_binding_key_success() {
+        let algo = HpkeAlgorithm {
+            kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
+            kdf: KdfAlgorithm::HkdfSha256 as i32,
+            aead: AeadAlgorithm::Aes256Gcm as i32,
+        };
+        let expiry = Duration::from_secs(3600);
+
+        let result = KeyRecord::create_binding_key(algo.clone(), expiry);
+
+        assert!(result.is_ok());
+        let record = result.unwrap();
+
+        // Check metadata
+        assert!(!record.meta.id.is_nil());
+        assert!(record.meta.delete_after > record.meta.created_at);
+
+        // Check spec
+        if let KeySpec::Binding {
+            algo: a,
+            binding_public_key: pk,
+        } = record.meta.spec
+        {
+            assert_eq!(a.kem, algo.kem);
+            assert_eq!(pk.as_bytes().len(), 32);
+        } else {
+            panic!("Unexpected KeySpec variant");
+        }
+    }
+
+    #[test]
+    fn test_create_bound_kem_success() {
+        let algo = HpkeAlgorithm {
+            kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
+            kdf: KdfAlgorithm::HkdfSha256 as i32,
+            aead: AeadAlgorithm::Aes256Gcm as i32,
+        };
+        let binding_pubkey = PublicKey::try_from([42u8; 32].to_vec()).unwrap();
+        let expiry = Duration::from_secs(3600);
+
+        let result = KeyRecord::create_bound_kem_key(algo.clone(), binding_pubkey.clone(), expiry);
+
+        assert!(result.is_ok());
+        let record = result.unwrap();
+
+        if let KeySpec::KemWithBindingPub {
+            algo: a,
+            kem_public_key: kpk,
+            binding_public_key: bpk,
+        } = record.meta.spec
+        {
+            assert_eq!(a.kem, algo.kem);
+            assert_eq!(kpk.as_bytes().len(), 32);
+            assert_eq!(bpk, binding_pubkey);
+        } else {
+            panic!("Unexpected KeySpec variant");
+        }
+    }
+
+    #[test]
+    fn test_add_key() {
+        let registry = KeyRegistry::default();
+        let algo = HpkeAlgorithm {
+            kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
+            kdf: KdfAlgorithm::HkdfSha256 as i32,
+            aead: AeadAlgorithm::Aes256Gcm as i32,
+        };
+
+        let record = KeyRecord::create_binding_key(algo, Duration::from_secs(3600))
+            .expect("failed to create key");
+
+        let id = record.meta.id;
+        registry.add_key(record);
+
+        // Access private field for testing
+        let keys = registry.keys.read().unwrap();
+        assert!(keys.contains_key(&id));
+        assert_eq!(keys.get(&id).unwrap().meta.id, id);
+    }
+
+    #[test]
+    fn test_remove_key() {
+        use memmap2::MmapMut;
+        use std::os::unix::io::{AsRawFd, FromRawFd};
+
+        let registry = KeyRegistry::default();
+        let algo = HpkeAlgorithm {
+            kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
+            kdf: KdfAlgorithm::HkdfSha256 as i32,
+            aead: AeadAlgorithm::Aes256Gcm as i32,
+        };
+
+        let record = KeyRecord::create_binding_key(algo, Duration::from_secs(3600))
+            .expect("failed to create key");
+
+        let id = record.meta.id;
+        registry.add_key(record);
+
+        let removed = registry.remove_key(&id).expect("Key should be present");
+
+        // Prepare spy mapping to check for zeroization after drop
+        let fd = removed.private_key.as_raw_fd();
+        let len = removed.private_key.get_secret().as_slice().len();
+
+        let spy = unsafe {
+            let fd_dup = libc::dup(fd);
+            let file = std::fs::File::from_raw_fd(fd_dup);
+            MmapMut::map_mut(&file).expect("Failed to map spy")
+        };
+
+        // Verify spy sees the data before drop
+        assert_eq!(&spy[..len], removed.private_key.get_secret().as_slice());
+        assert!(!spy[..len].iter().all(|&b| b == 0));
+
+        drop(removed);
+
+        // Verify zeroization
+        assert!(
+            spy[..len].iter().all(|&b| b == 0),
+            "Key material was not zeroized on drop"
+        );
+
+        assert!(registry.remove_key(&id).is_none());
+    }
+
+    #[test]
+    fn test_get_key_liveness() {
+        let registry = KeyRegistry::default();
+        let algo = HpkeAlgorithm {
+            kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
+            kdf: KdfAlgorithm::HkdfSha256 as i32,
+            aead: AeadAlgorithm::Aes256Gcm as i32,
+        };
+
+        // Key that expires in 0 seconds (already expired)
+        let record = KeyRecord::create_binding_key(algo, Duration::from_secs(0))
+            .expect("failed to create key");
+
+        let id = record.meta.id;
+        registry.add_key(record);
+
+        // Should be None because it's expired
+        assert!(registry.get_key(&id).is_none());
+
+        // Key that is still alive
+        let record2 = KeyRecord::create_binding_key(algo, Duration::from_secs(3600))
+            .expect("failed to create key");
+
+        let id2 = record2.meta.id;
+        registry.add_key(record2);
+        assert!(registry.get_key(&id2).is_some());
+    }
+
+    #[test]
+    fn test_reaper_functionality() {
+        let registry = KeyRegistry::default();
+        let algo = HpkeAlgorithm {
+            kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
+            kdf: KdfAlgorithm::HkdfSha256 as i32,
+            aead: AeadAlgorithm::Aes256Gcm as i32,
+        };
+
+        // Create keys that expire in 2 seconds (reaper test interval is 1s in test)
+        let binding_pubkey = PublicKey::try_from([42u8; 32].to_vec()).unwrap();
+        let expiry = Duration::from_secs(4);
+        let kem_record =
+            KeyRecord::create_bound_kem_key(algo.clone(), binding_pubkey.clone(), expiry)
+                .expect("failed to create key");
+        let binding_record = KeyRecord::create_binding_key(algo.clone(), expiry)
+            .expect("failed to create binding key");
+
+        let kem_id = kem_record.meta.id;
+        let binding_id = binding_record.meta.id;
+        registry.add_key(kem_record);
+        registry.add_key(binding_record);
+
+        // Start reaper
+        let stop_signal = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let handle = registry.start_reaper(stop_signal.clone());
+
+        // Wait for < expiry (1s) - keys should still be there
+        std::thread::sleep(Duration::from_secs(1));
+        assert!(registry.get_key(&kem_id).is_some());
+        assert!(registry.get_key(&binding_id).is_some());
+
+        // Wait for > expiry (6s total) - keys should be gone (reaper runs every 1s)
+        std::thread::sleep(Duration::from_secs(6));
+
+        // Check raw storage directly to verify reaper removed it,
+        // as get_key() also filters by expiry.
+        {
+            let keys = registry.keys.read().unwrap();
+            assert!(
+                !keys.contains_key(&kem_id),
+                "KEM key should have been removed by reaper"
+            );
+            assert!(
+                !keys.contains_key(&binding_id),
+                "Binding key should have been removed by reaper"
+            );
+        }
+
+        // Clean up
+        stop_signal.store(true, std::sync::atomic::Ordering::Relaxed);
+        handle.join().unwrap();
+    }
+}

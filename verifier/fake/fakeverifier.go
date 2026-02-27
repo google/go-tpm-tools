@@ -6,6 +6,7 @@ import (
 	"crypto"
 	"encoding/base64"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -13,6 +14,9 @@ import (
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-eventlog/proto/state"
 	"github.com/google/go-eventlog/register"
+	tabi "github.com/google/go-tdx-guest/abi"
+	tdxpb "github.com/google/go-tdx-guest/proto/tdx"
+	"github.com/google/go-tdx-guest/rtmr"
 	"github.com/google/go-tpm-tools/proto/attest"
 	"github.com/google/go-tpm-tools/proto/tpm"
 	"github.com/google/go-tpm-tools/server"
@@ -53,12 +57,37 @@ func (fc *fakeClient) CreateChallenge(_ context.Context) (*verifier.Challenge, e
 	}, nil
 }
 
-// VerifyAttestation calls server.VerifyAttestation against the request's public key.
-// It returns the marshaled MachineState as a claim.
-func (fc *fakeClient) VerifyAttestation(_ context.Context, req verifier.VerifyAttestationRequest) (*verifier.VerifyAttestationResponse, error) {
-	// Determine signing algorithm.
-	signingMethod := jwt.SigningMethodRS256
-	now := jwt.TimeFunc()
+func verifyTDX(req verifier.VerifyAttestationRequest, nonce []byte) (*attest.MachineState, error) {
+	tdQuote, err := tabi.QuoteToProto(req.TDCCELAttestation.TdQuote)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal TdQuote: %v", err)
+	}
+	quoteV4, ok := tdQuote.(*tdxpb.QuoteV4)
+	if !ok {
+		return nil, errors.New("failed to convert TdQuote: not of type QuoteV4")
+	}
+	rtmrbank, err := rtmr.GetRtmrsFromTdQuote(quoteV4)
+	if err != nil {
+		return nil, err
+	}
+	cosState, err := server.ParseCosCELRTMR(req.TDCCELAttestation.CanonicalEventLog, *rtmrbank)
+	if err != nil {
+		return nil, fmt.Errorf("failed to validate the Canonical event log: %w", err)
+	}
+	opts := rtmr.TdxDefaultOpts(nonce)
+	fls, err := rtmr.ParseCcelWithTdQuote(req.TDCCELAttestation.CcelData, req.TDCCELAttestation.CcelAcpiTable, quoteV4, &opts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse CCEL: %w", err)
+	}
+	ms, err := server.ConvertToMachineState(fls)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert to MachineState: %w", err)
+	}
+	ms.Cos = cosState
+	return ms, nil
+}
+
+func verifyTPM(req verifier.VerifyAttestationRequest, nonce []byte) (*attest.MachineState, error) {
 	akPub, err := tpm2.DecodePublic(req.Attestation.GetAkPub())
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode AKPub as TPMT_PUBLIC: %v", err)
@@ -67,7 +96,7 @@ func (fc *fakeClient) VerifyAttestation(_ context.Context, req verifier.VerifyAt
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert TPMT_PUBLIC to crypto.PublicKey: %v", err)
 	}
-	ms, err := server.VerifyAttestation(req.Attestation, server.VerifyOpts{Nonce: fc.nonce, TrustedAKs: []crypto.PublicKey{akCrypto}})
+	ms, err := server.VerifyAttestation(req.Attestation, server.VerifyOpts{Nonce: nonce, TrustedAKs: []crypto.PublicKey{akCrypto}})
 	if err != nil {
 		return nil, fmt.Errorf("failed to verify attestation: %v", err)
 	}
@@ -82,6 +111,31 @@ func (fc *fakeClient) VerifyAttestation(_ context.Context, req verifier.VerifyAt
 		return nil, fmt.Errorf("failed to validate the Canonical event log: %w", err)
 	}
 	ms.Cos = cosState
+	return ms, nil
+}
+
+// VerifyAttestation calls server.VerifyAttestation against the request's public key.
+// It returns the marshaled MachineState as a claim.
+func (fc *fakeClient) VerifyAttestation(_ context.Context, req verifier.VerifyAttestationRequest) (*verifier.VerifyAttestationResponse, error) {
+	// Determine signing algorithm.
+	signingMethod := jwt.SigningMethodRS256
+	now := jwt.TimeFunc()
+	var ms *attest.MachineState
+	var err error
+
+	if req.TDCCELAttestation != nil {
+		ms, err = verifyTDX(req, fc.nonce)
+		if err != nil {
+			return nil, err
+		}
+	} else if req.Attestation != nil {
+		ms, err = verifyTPM(req, fc.nonce)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		return nil, errors.New("contains no attestation in the request")
+	}
 
 	msJSON, err := protojson.Marshal(ms)
 	if err != nil {

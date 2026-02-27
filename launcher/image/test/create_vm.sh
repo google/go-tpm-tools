@@ -9,12 +9,27 @@ print_usage() {
     echo "  -f <metadataFromFile>: read a metadata value from a file; specified in format key=filePath"
     echo "  -n <instanceName>: instance name"
     echo "  -z <instanceZone>: instance zone"
+    echo "  -c <confidentialComputing>: TDX or SEV"
     exit 1
 }
 
 create_vm() {
   if [ -z "$IMAGE_NAME" ]; then
     echo "Empty image name supplied."
+    exit 1
+  fi
+
+  if [ -z "$CC" ]; then
+    CC='SEV'
+  fi
+
+  MACHINE_TYPE=''
+  if [[ "${CC}" == "SEV" ]]; then
+    MACHINE_TYPE='n2d-standard-2'
+  elif [[ "${CC}" == "TDX" ]]; then
+    MACHINE_TYPE='c3-standard-4'
+  else
+    echo "unsupported confidential computing type: ${CC}"
     exit 1
   fi
 
@@ -48,10 +63,10 @@ create_vm() {
   ADDTL_DISK_RANGE=$(($MAX_DISK_SIZE_GB - $MIN_DISK_SIZE + 1))
   DISK_SIZE_GB=$(($MIN_DISK_SIZE + ($RANDOM % $ADDTL_DISK_RANGE)))
 
-  gcloud compute instances create $VM_NAME --confidential-compute --maintenance-policy=TERMINATE \
-    --machine-type=n2d-standard-2 --boot-disk-size=$DISK_SIZE_GB --scopes=cloud-platform --zone $ZONE \
-    --image=$IMAGE_NAME --image-project=$PROJECT_NAME --shielded-secure-boot $APPEND_METADATA \
-    $APPEND_METADATA_FILE
+  gcloud compute instances create $VM_NAME --confidential-compute-type=$CC --maintenance-policy=TERMINATE \
+  --machine-type=$MACHINE_TYPE --boot-disk-size=$DISK_SIZE_GB --scopes=cloud-platform --zone $ZONE \
+  --image=$IMAGE_NAME --image-project=$PROJECT_NAME --shielded-secure-boot $APPEND_METADATA \
+  $APPEND_METADATA_FILE
 }
 
 IMAGE_NAME=''
@@ -60,10 +75,11 @@ METADATA=''
 PROJECT_NAME=''
 VM_NAME=''
 ZONE=''
+CC='SEV' # default using sev
 
 # In getopts, a ':' following a letter means that that flag takes an argument.
 # For example, i: means -i takes an additional argument.
-while getopts 'i:f:m:p:n:z:' flag; do
+while getopts 'i:f:m:p:n:z:c:' flag; do
   case "${flag}" in
     i) IMAGE_NAME=${OPTARG} ;;
     f) METADATA_FILE=${OPTARG} ;;
@@ -71,6 +87,7 @@ while getopts 'i:f:m:p:n:z:' flag; do
     p) PROJECT_NAME=${OPTARG} ;;
     n) VM_NAME=${OPTARG} ;;
     z) ZONE=${OPTARG} ;;
+    c) CC=${OPTARG} ;;
     *) print_usage ;;
   esac
 done

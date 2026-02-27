@@ -11,9 +11,10 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/google/go-tpm-tools/cel"
+	gecel "github.com/google/go-eventlog/cel"
 	"github.com/google/go-tpm-tools/launcher/agent"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
+	teemodels "github.com/google/go-tpm-tools/launcher/teeserver/models"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/google/go-tpm-tools/verifier/models"
 	"google.golang.org/grpc/codes"
@@ -36,9 +37,10 @@ func (f *fakeVerifierClient) VerifyConfidentialSpace(_ context.Context, _ verifi
 }
 
 type fakeAttestationAgent struct {
-	measureEventFunc     func(cel.Content) error
-	attestFunc           func(context.Context, agent.AttestAgentOpts) ([]byte, error)
-	attestWithClientFunc func(context.Context, agent.AttestAgentOpts, verifier.Client) ([]byte, error)
+	measureEventFunc        func(gecel.Content) error
+	attestFunc              func(context.Context, agent.AttestAgentOpts) ([]byte, error)
+	attestWithClientFunc    func(context.Context, agent.AttestAgentOpts, verifier.Client) ([]byte, error)
+	attestationEvidenceFunc func(context.Context, []byte, []byte) (*teemodels.VMAttestation, error)
 }
 
 func (f fakeAttestationAgent) Attest(c context.Context, a agent.AttestAgentOpts) ([]byte, error) {
@@ -49,7 +51,11 @@ func (f fakeAttestationAgent) AttestWithClient(c context.Context, a agent.Attest
 	return f.attestWithClientFunc(c, a, v)
 }
 
-func (f fakeAttestationAgent) MeasureEvent(c cel.Content) error {
+func (f fakeAttestationAgent) AttestationEvidence(c context.Context, nonce []byte, extraData []byte) (*teemodels.VMAttestation, error) {
+	return f.attestationEvidenceFunc(c, nonce, extraData)
+}
+
+func (f fakeAttestationAgent) MeasureEvent(c gecel.Content) error {
 	return f.measureEventFunc(c)
 }
 
@@ -505,5 +511,94 @@ func TestCustomTokenDataParsedSuccessfully(t *testing.T) {
 		if w.Code != test.wantCode {
 			t.Errorf("testcase %d, '%v': got return code: %d, want: %d", i, test.testName, w.Code, test.wantCode)
 		}
+	}
+}
+
+func TestCustomHandleAttestError(t *testing.T) {
+	body := `{
+				"audience": "audience",
+				"nonces": ["thisIsAcustomNonce"],
+				"token_type": "OIDC"
+			}`
+
+	testcases := []struct {
+		name           string
+		err            error
+		wantStatusCode int
+	}{
+		{
+			name:           "FailedPrecondition error",
+			err:            status.New(codes.FailedPrecondition, "bad state").Err(),
+			wantStatusCode: http.StatusBadRequest,
+		},
+		{
+			name:           "PermissionDenied error",
+			err:            status.New(codes.PermissionDenied, "denied").Err(),
+			wantStatusCode: http.StatusBadRequest,
+		},
+		{
+			name:           "Internal error",
+			err:            status.New(codes.Internal, "internal server error").Err(),
+			wantStatusCode: http.StatusInternalServerError,
+		},
+		{
+			name:           "Unavailable error",
+			err:            status.New(codes.Unavailable, "service unavailable").Err(),
+			wantStatusCode: http.StatusInternalServerError,
+		},
+		{
+			name:           "non-gRPC error",
+			err:            errors.New("a generic error"),
+			wantStatusCode: http.StatusInternalServerError,
+		},
+	}
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			ah := attestHandler{
+				logger: logging.SimpleLogger(),
+				clients: AttestClients{
+					GCA: &fakeVerifierClient{},
+				},
+				attestAgent: fakeAttestationAgent{
+					attestWithClientFunc: func(context.Context, agent.AttestAgentOpts, verifier.Client) ([]byte, error) {
+						return nil, tc.err
+					},
+				},
+			}
+
+			req := httptest.NewRequest(http.MethodPost, "/v1/token", strings.NewReader(body))
+			w := httptest.NewRecorder()
+
+			ah.getToken(w, req)
+
+			if w.Code != tc.wantStatusCode {
+				t.Errorf("got status code %d, want %d", w.Code, tc.wantStatusCode)
+			}
+
+			_, err := io.ReadAll(w.Result().Body)
+			if err != nil {
+				t.Errorf("failed to read response body: %v", err)
+			}
+		})
+	}
+}
+
+func TestAttestationEvidence(t *testing.T) {
+	ah := attestHandler{
+		logger: logging.SimpleLogger(),
+		attestAgent: fakeAttestationAgent{
+			attestationEvidenceFunc: func(_ context.Context, _ []byte, _ []byte) (*teemodels.VMAttestation, error) {
+				return &teemodels.VMAttestation{}, nil
+			},
+		},
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/evidence", strings.NewReader("{\"challenge\": \"dGVzdA==\"}"))
+	w := httptest.NewRecorder()
+
+	ah.getAttestationEvidence(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("got return code: %d, want: %d", w.Code, http.StatusOK)
 	}
 }

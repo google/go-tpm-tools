@@ -19,8 +19,9 @@ import (
 )
 
 const (
-	gcaEndpoint = "/v1/token"
-	itaEndpoint = "/v1/intel/token"
+	gcaEndpoint      = "/v1/token"
+	itaEndpoint      = "/v1/intel/token"
+	evidenceEndpoint = "/v1/evidence"
 )
 
 var clientErrorCodes = map[codes.Code]struct{}{
@@ -87,9 +88,13 @@ func (a *attestHandler) Handler() http.Handler {
 	// to test custom token:
 	// curl -d '{"audience":"<aud>", "nonces":["<nonce1>"]}' -H "Content-Type: application/json" -X POST
 	//   --unix-socket /tmp/container_launcher/teeserver.sock http://localhost/v1/token
+	// to test attestation evidence:
+	// curl -d '{"challenge":"<challenge>"}' -H "Content-Type: application/json" -X POST
+	//   --unix-socket /tmp/container_launcher/teeserver.sock http://localhost/v1/evidence
 
 	mux.HandleFunc(gcaEndpoint, a.getToken)
 	mux.HandleFunc(itaEndpoint, a.getITAToken)
+	mux.HandleFunc(evidenceEndpoint, a.getAttestationEvidence)
 	return mux
 }
 
@@ -106,8 +111,7 @@ func (a *attestHandler) getToken(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html")
 
 	a.logger.Info(fmt.Sprintf("%s called", gcaEndpoint))
-
-	// If the handler does not have an GCA client, return error.
+	// If the handler does not have a GCA client, create one.
 	if a.clients.GCA == nil {
 		errStr := "no GCA verifier client present, please try rebooting your VM"
 		a.logAndWriteError(errStr, http.StatusInternalServerError, w)
@@ -131,6 +135,38 @@ func (a *attestHandler) getITAToken(w http.ResponseWriter, r *http.Request) {
 	}
 
 	a.attest(w, r, a.clients.ITA)
+}
+
+// getAttestationEvidence retrieves the attestation evidence.
+func (a *attestHandler) getAttestationEvidence(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		a.logAndWriteHTTPError(w, http.StatusMethodNotAllowed, fmt.Errorf("method not allowed"))
+		return
+	}
+
+	var req struct {
+		Challenge []byte `json:"challenge"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		a.logAndWriteHTTPError(w, http.StatusBadRequest, fmt.Errorf("failed to decode request: %v", err))
+		return
+	}
+	if len(req.Challenge) == 0 {
+		a.logAndWriteHTTPError(w, http.StatusBadRequest, fmt.Errorf("challenge is required"))
+		return
+	}
+
+	evidence, err := a.attestAgent.AttestationEvidence(a.ctx, req.Challenge, nil)
+	if err != nil {
+		a.logAndWriteHTTPError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(evidence); err != nil {
+		a.logger.Error(fmt.Sprintf("failed to encode response: %v", err))
+	}
 }
 
 func (a *attestHandler) attest(w http.ResponseWriter, r *http.Request, client verifier.Client) {

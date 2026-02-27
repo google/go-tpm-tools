@@ -5,6 +5,7 @@ toolchain go1.24.4
 use (
 	.
 	./cmd
+	./keymanager
 	./launcher
 	./verifier
 )

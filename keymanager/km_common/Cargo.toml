@@ -1,0 +1,24 @@
+[package]
+name = "km_common"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+libc.workspace = true
+memmap2.workspace = true
+prost.workspace = true
+uuid = { workspace = true, features = ["serde"] }
+zeroize = { workspace = true, features = ["derive"] }
+thiserror.workspace = true
+bssl-crypto.workspace = true
+clear_on_drop.workspace = true
+
+[features]
+test-utils = []
+
+[dev-dependencies]
+hex.workspace = true
+
+[build-dependencies]
+prost-build.workspace = true
+protoc-bin-vendored.workspace = true

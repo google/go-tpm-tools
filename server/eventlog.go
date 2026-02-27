@@ -2,32 +2,17 @@ package server
 
 import (
 	"bytes"
-	"crypto"
-	"crypto/x509"
-	"encoding/hex"
 	"errors"
 	"fmt"
-	"hash"
 
-	"github.com/google/go-attestation/attest"
+	gecel "github.com/google/go-eventlog/cel"
+	"github.com/google/go-eventlog/extract"
+	gepb "github.com/google/go-eventlog/proto/state"
 	"github.com/google/go-eventlog/register"
+	"github.com/google/go-eventlog/tpmeventlog"
 	"github.com/google/go-tpm-tools/cel"
 	pb "github.com/google/go-tpm-tools/proto/attest"
 	tpmpb "github.com/google/go-tpm-tools/proto/tpm"
-	"github.com/google/go-tpm/legacy/tpm2"
-)
-
-var (
-	newGrubKernelCmdlinePrefix = []byte("kernel_cmdline: ")
-	oldGrubKernelCmdlinePrefix = []byte("grub_kernel_cmdline ")
-	// See https://www.gnu.org/software/grub/manual/grub/grub.html#Measured-Boot.
-	validPrefixes = [][]byte{[]byte("grub_cmd: "),
-		newGrubKernelCmdlinePrefix,
-		[]byte("module_cmdline: "),
-		// Older style prefixes:
-		// https://src.fedoraproject.org/rpms/grub2/blob/c789522f7cfa19a10cd716a1db24dab5499c6e5c/f/0224-Rework-TPM-measurements.patch
-		oldGrubKernelCmdlinePrefix,
-		[]byte("grub_cmd ")}
 )
 
 // parsePCClientEventLog parses a raw event log and replays the parsed event
@@ -43,67 +28,302 @@ var (
 // It is the caller's responsibility to ensure that the passed PCR values can be
 // trusted. Users can establish trust in PCR values by either calling
 // client.ReadPCRs() themselves or by verifying the values via a PCR quote.
+//
+// Return a grouped error for backward compatibility.
 func parsePCClientEventLog(rawEventLog []byte, pcrs *tpmpb.PCRs, opts VerifyOpts) (*pb.MachineState, error) {
-	var errors []error
-	events, err := parseReplayHelper(rawEventLog, pcrs)
+	extractOpts := extract.Opts{
+		AllowEmptySBVar:               opts.AllowEmptySBVar,
+		AllowEFIAppBeforeCallingEvent: opts.AllowEFIAppBeforeCallingEvent,
+	}
+	switch opts.Loader {
+	case GRUB:
+		extractOpts.Loader = extract.GRUB
+	case UnsupportedLoader:
+		extractOpts.Loader = extract.UnsupportedLoader
+	default:
+		return nil, createGroupedError("", []error{fmt.Errorf("unsupported bootloader option for event log extraction: %v", opts.Loader)})
+	}
+
+	tcghashalgo := gepb.HashAlgo(pcrs.GetHash())
+	cryptoHashAlg, err := tcghashalgo.CryptoHash()
 	if err != nil {
 		return nil, createGroupedError("", []error{err})
 	}
-	// error is already checked in convertToAttestPcrs
-	cryptoHash, _ := tpm2.Algorithm(pcrs.GetHash()).Hash()
 
-	rawEvents := convertToPbEvents(cryptoHash, events)
-	platform, err := getPlatformState(cryptoHash, rawEvents)
-	if err != nil {
-		errors = append(errors, err)
-	}
-	sbState, err := getSecureBootState(events)
-	if err != nil {
-		errors = append(errors, err)
-	}
-	efiState, err := getEfiState(cryptoHash, rawEvents, opts)
-	if err != nil {
-		errors = append(errors, err)
+	pcrRegs := make([]register.PCR, 0)
+
+	for pcrIndex, digest := range pcrs.GetPcrs() {
+		pcrRegs = append(pcrRegs, register.PCR{
+			Index:     int(pcrIndex),
+			Digest:    digest,
+			DigestAlg: cryptoHashAlg,
+		})
 	}
 
-	var grub *pb.GrubState
-	var kernel *pb.LinuxKernelState
-	if opts.Loader == GRUB {
-		grub, err = getGrubState(cryptoHash, rawEvents)
-		if err != nil {
-			errors = append(errors, err)
+	pcrbank := register.PCRBank{
+		TCGHashAlgo: tcghashalgo,
+		PCRs:        pcrRegs,
+	}
+
+	tpmfirmwarestate, err := tpmeventlog.ReplayAndExtract(rawEventLog, pcrbank, extractOpts)
+	if err != nil {
+		return nil, err
+	}
+
+	machineState, err := ConvertToMachineState(tpmfirmwarestate)
+	if err != nil {
+		return nil, err
+	}
+	return machineState, nil
+}
+
+// ConvertToMachineState converts a go-eventlog FirmwareLogState to a MachineState.
+func ConvertToMachineState(tpmfirmwarestate *gepb.FirmwareLogState) (*pb.MachineState, error) {
+	var platformstate *pb.PlatformState
+	if tpmfirmwarestate.GetPlatform() != nil {
+		platformstate = &pb.PlatformState{}
+		switch tpmfirmwarestate.GetPlatform().GetTechnology() {
+		case gepb.GCEConfidentialTechnology_AMD_SEV:
+			platformstate.Technology = pb.GCEConfidentialTechnology_AMD_SEV
+		case gepb.GCEConfidentialTechnology_AMD_SEV_ES:
+			platformstate.Technology = pb.GCEConfidentialTechnology_AMD_SEV_ES
+		case gepb.GCEConfidentialTechnology_INTEL_TDX:
+			platformstate.Technology = pb.GCEConfidentialTechnology_INTEL_TDX
+		case gepb.GCEConfidentialTechnology_AMD_SEV_SNP:
+			platformstate.Technology = pb.GCEConfidentialTechnology_AMD_SEV_SNP
+		case gepb.GCEConfidentialTechnology_NONE:
+			platformstate.Technology = pb.GCEConfidentialTechnology_NONE
+		default:
+			return nil, fmt.Errorf("unsupported GCE confidential technology: %v", tpmfirmwarestate.GetPlatform().GetTechnology())
 		}
-		kernel, err = getLinuxKernelStateFromGRUB(grub)
-		if err != nil {
-			errors = append(errors, err)
+		switch fw := tpmfirmwarestate.GetPlatform().GetFirmware().(type) {
+		case *gepb.PlatformState_GceVersion:
+			platformstate.Firmware = &pb.PlatformState_GceVersion{GceVersion: fw.GceVersion}
+		case *gepb.PlatformState_ScrtmVersionId:
+			platformstate.Firmware = &pb.PlatformState_ScrtmVersionId{ScrtmVersionId: fw.ScrtmVersionId}
 		}
+	}
+
+	var secureBootState *pb.SecureBootState
+	if tpmfirmwarestate.GetSecureBoot() != nil {
+		secureBootState = &pb.SecureBootState{
+			Enabled: tpmfirmwarestate.GetSecureBoot().GetEnabled(),
+			Db:      convertToPbDatabase(tpmfirmwarestate.GetSecureBoot().GetDb()),
+			Dbx:     convertToPbDatabase(tpmfirmwarestate.GetSecureBoot().GetDbx()),
+			Pk:      convertToPbDatabase(tpmfirmwarestate.GetSecureBoot().GetPk()),
+			Kek:     convertToPbDatabase(tpmfirmwarestate.GetSecureBoot().GetKek()),
+		}
+	}
+
+	var efiState *pb.EfiState
+	if tpmfirmwarestate.GetEfi() != nil {
+		efiState = &pb.EfiState{}
+		efiState.Apps = make([]*pb.EfiApp, len(tpmfirmwarestate.GetEfi().GetApps()))
+		efiState.BootServicesDrivers = make([]*pb.EfiApp, len(tpmfirmwarestate.GetEfi().GetBootServicesDrivers()))
+		efiState.RuntimeServicesDrivers = make([]*pb.EfiApp, len(tpmfirmwarestate.GetEfi().GetRuntimeServicesDrivers()))
+
+		for i, app := range tpmfirmwarestate.GetEfi().GetApps() {
+			efiState.Apps[i] = &pb.EfiApp{Digest: app.GetDigest()}
+		}
+		for i, app := range tpmfirmwarestate.GetEfi().GetBootServicesDrivers() {
+			efiState.BootServicesDrivers[i] = &pb.EfiApp{Digest: app.GetDigest()}
+		}
+		for i, app := range tpmfirmwarestate.GetEfi().GetRuntimeServicesDrivers() {
+			efiState.RuntimeServicesDrivers[i] = &pb.EfiApp{Digest: app.GetDigest()}
+		}
+	}
+
+	var rawEvents []*pb.Event
+	if tpmfirmwarestate.GetRawEvents() != nil {
+		rawEvents = make([]*pb.Event, len(tpmfirmwarestate.GetRawEvents()))
+		for i, event := range tpmfirmwarestate.GetRawEvents() {
+			rawEvents[i] = &pb.Event{
+				PcrIndex:       uint32(event.GetPcrIndex()),
+				UntrustedType:  uint32(event.GetUntrustedType()),
+				Data:           event.GetData(),
+				Digest:         event.GetDigest(),
+				DigestVerified: event.GetDigestVerified(),
+			}
+		}
+	}
+
+	var grubState *pb.GrubState
+	if tpmfirmwarestate.GetGrub() != nil {
+		grubState = &pb.GrubState{}
+		files := make([]*pb.GrubFile, len(tpmfirmwarestate.GetGrub().GetFiles()))
+		for i, file := range tpmfirmwarestate.GetGrub().GetFiles() {
+			files[i] = &pb.GrubFile{
+				Digest:            file.GetDigest(),
+				UntrustedFilename: file.GetUntrustedFilename(),
+			}
+		}
+		grubState.Files = files
+		grubState.Commands = tpmfirmwarestate.GetGrub().GetCommands()
+	}
+
+	var linuxKernel *pb.LinuxKernelState
+	if tpmfirmwarestate.GetLinuxKernel() != nil {
+		linuxKernel = &pb.LinuxKernelState{CommandLine: tpmfirmwarestate.GetLinuxKernel().GetCommandLine()}
 	}
 
 	return &pb.MachineState{
-		Platform:    platform,
-		SecureBoot:  sbState,
+		Platform:    platformstate,
+		SecureBoot:  secureBootState,
 		Efi:         efiState,
 		RawEvents:   rawEvents,
-		Hash:        pcrs.GetHash(),
-		Grub:        grub,
-		LinuxKernel: kernel,
-	}, createGroupedError("failed to fully parse MachineState:", errors)
+		Hash:        tpmpb.HashAlgo(tpmfirmwarestate.GetHash()),
+		Grub:        grubState,
+		LinuxKernel: linuxKernel,
+	}, nil
+}
+
+// ConvertToFirmwareState converts a MachineState to a go-eventlog FirmwareLogState
+// This is essentially an inverse function for ConvertToMachineState
+func ConvertToFirmwareState(ms *pb.MachineState) (*gepb.FirmwareLogState, error) {
+	if ms == nil {
+		return nil, nil
+	}
+
+	var platformState *gepb.PlatformState
+	if ms.GetPlatform() != nil {
+		platformState = &gepb.PlatformState{}
+		switch ms.GetPlatform().GetTechnology() {
+		case pb.GCEConfidentialTechnology_AMD_SEV:
+			platformState.Technology = gepb.GCEConfidentialTechnology_AMD_SEV
+		case pb.GCEConfidentialTechnology_AMD_SEV_ES:
+			platformState.Technology = gepb.GCEConfidentialTechnology_AMD_SEV_ES
+		case pb.GCEConfidentialTechnology_INTEL_TDX:
+			platformState.Technology = gepb.GCEConfidentialTechnology_INTEL_TDX
+		case pb.GCEConfidentialTechnology_AMD_SEV_SNP:
+			platformState.Technology = gepb.GCEConfidentialTechnology_AMD_SEV_SNP
+		case pb.GCEConfidentialTechnology_NONE:
+			platformState.Technology = gepb.GCEConfidentialTechnology_NONE
+		default:
+			return nil, fmt.Errorf("unsupported GCE confidential technology: %v", ms.GetPlatform().GetTechnology())
+		}
+		switch fw := ms.GetPlatform().GetFirmware().(type) {
+		case *pb.PlatformState_GceVersion:
+			platformState.Firmware = &gepb.PlatformState_GceVersion{GceVersion: fw.GceVersion}
+		case *pb.PlatformState_ScrtmVersionId:
+			platformState.Firmware = &gepb.PlatformState_ScrtmVersionId{ScrtmVersionId: fw.ScrtmVersionId}
+		}
+	}
+
+	var secureBootState *gepb.SecureBootState
+	if ms.GetSecureBoot() != nil {
+		secureBootState = &gepb.SecureBootState{
+			Enabled: ms.GetSecureBoot().GetEnabled(),
+			Db:      convertFromPbDatabase(ms.GetSecureBoot().GetDb()),
+			Dbx:     convertFromPbDatabase(ms.GetSecureBoot().GetDbx()),
+			Pk:      convertFromPbDatabase(ms.GetSecureBoot().GetPk()),
+			Kek:     convertFromPbDatabase(ms.GetSecureBoot().GetKek()),
+		}
+	}
+
+	var efiState *gepb.EfiState
+	if ms.GetEfi() != nil {
+		efiState = &gepb.EfiState{}
+		efiState.Apps = make([]*gepb.EfiApp, len(ms.GetEfi().GetApps()))
+		efiState.BootServicesDrivers = make([]*gepb.EfiApp, len(ms.GetEfi().GetBootServicesDrivers()))
+		efiState.RuntimeServicesDrivers = make([]*gepb.EfiApp, len(ms.GetEfi().GetRuntimeServicesDrivers()))
+
+		for i, app := range ms.GetEfi().GetApps() {
+			efiState.Apps[i] = &gepb.EfiApp{Digest: app.GetDigest()}
+		}
+		for i, app := range ms.GetEfi().GetBootServicesDrivers() {
+			efiState.BootServicesDrivers[i] = &gepb.EfiApp{Digest: app.GetDigest()}
+		}
+		for i, app := range ms.GetEfi().GetRuntimeServicesDrivers() {
+			efiState.RuntimeServicesDrivers[i] = &gepb.EfiApp{Digest: app.GetDigest()}
+		}
+	}
+
+	var rawEvents []*gepb.Event
+	if ms.GetRawEvents() != nil {
+		rawEvents = make([]*gepb.Event, len(ms.GetRawEvents()))
+		for i, event := range ms.GetRawEvents() {
+			rawEvents[i] = &gepb.Event{
+				PcrIndex: uint32(event.GetPcrIndex()),
+				// UntrustedType is not present in pb.Event, so it will be 0
+				Data:           event.GetData(),
+				Digest:         event.GetDigest(),
+				DigestVerified: event.GetDigestVerified(),
+			}
+		}
+	}
+
+	var grubState *gepb.GrubState
+	if ms.GetGrub() != nil {
+		grubState = &gepb.GrubState{}
+		files := make([]*gepb.GrubFile, len(ms.GetGrub().GetFiles()))
+		for i, file := range ms.GetGrub().GetFiles() {
+			files[i] = &gepb.GrubFile{
+				Digest: file.GetDigest(),
+				// UntrustedFilename is not present in pb.GrubFile, so it will be nil
+			}
+		}
+		grubState.Files = files
+		grubState.Commands = ms.GetGrub().GetCommands()
+	}
+
+	var linuxKernel *gepb.LinuxKernelState
+	if ms.GetLinuxKernel() != nil {
+		linuxKernel = &gepb.LinuxKernelState{CommandLine: ms.GetLinuxKernel().GetCommandLine()}
+	}
+
+	return &gepb.FirmwareLogState{
+		Platform:    platformState,
+		SecureBoot:  secureBootState,
+		Efi:         efiState,
+		RawEvents:   rawEvents,
+		Hash:        gepb.HashAlgo(ms.GetHash()),
+		Grub:        grubState,
+		LinuxKernel: linuxKernel,
+	}, nil
+}
+
+// convertFromPbDatabase converts a MachineState.Database to a go-eventlog.Database.
+func convertFromPbDatabase(pbdb *pb.Database) *gepb.Database {
+	if pbdb == nil {
+		return nil
+	}
+	gepbCerts := make([]*gepb.Certificate, 0, len(pbdb.GetCerts()))
+	for _, c := range pbdb.GetCerts() {
+		var gepbCert gepb.Certificate
+		switch rep := c.GetRepresentation().(type) {
+		case *pb.Certificate_Der:
+			gepbCert.Representation = &gepb.Certificate_Der{Der: rep.Der}
+		case *pb.Certificate_WellKnown:
+			if wkEnum, ok := gepb.WellKnownCertificate_value[rep.WellKnown.String()]; ok {
+				gepbCert.Representation = &gepb.Certificate_WellKnown{WellKnown: gepb.WellKnownCertificate(wkEnum)}
+			} else {
+				// If the well-known enum doesn't map directly, treat it as unknown
+				gepbCert.Representation = &gepb.Certificate_WellKnown{WellKnown: gepb.WellKnownCertificate_UNKNOWN}
+			}
+		}
+		gepbCerts = append(gepbCerts, &gepbCert)
+	}
+	return &gepb.Database{
+		Certs:  gepbCerts,
+		Hashes: pbdb.GetHashes(),
+	}
+
 }
 
 // ParseCosCELPCR takes an encoded COS CEL and PCR bank, replays the CEL against the PCRs,
 // and returns the AttestedCosState
 func ParseCosCELPCR(cosEventLog []byte, p register.PCRBank) (*pb.AttestedCosState, error) {
-	return getCosStateFromCEL(cosEventLog, p, cel.PCRTypeValue)
+	return getCosStateFromCEL(cosEventLog, p, gecel.PCRType)
 }
 
 // ParseCosCELRTMR takes in a raw COS CEL and a RTMR bank, validates and returns it's
 // COS states as parts of the MachineState.
 func ParseCosCELRTMR(cosEventLog []byte, r register.RTMRBank) (*pb.AttestedCosState, error) {
-	return getCosStateFromCEL(cosEventLog, r, cel.CCMRTypeValue)
+	return getCosStateFromCEL(cosEventLog, r, gecel.CCMRType)
 }
 
-func getCosStateFromCEL(rawCanonicalEventLog []byte, register register.MRBank, trustingRegisterType uint8) (*pb.AttestedCosState, error) {
-	decodedCEL, err := cel.DecodeToCEL(bytes.NewBuffer(rawCanonicalEventLog))
+func getCosStateFromCEL(rawCanonicalEventLog []byte, register register.MRBank, trustingRegisterType gecel.MRType) (*pb.AttestedCosState, error) {
+	decodedCEL, err := gecel.DecodeToCEL(bytes.NewBuffer(rawCanonicalEventLog))
 	if err != nil {
 		return nil, err
 	}
@@ -120,18 +340,9 @@ func getCosStateFromCEL(rawCanonicalEventLog []byte, register register.MRBank, t
 	return cosState, err
 }
 
-func contains(set [][]byte, value []byte) bool {
-	for _, setItem := range set {
-		if bytes.Equal(value, setItem) {
-			return true
-		}
-	}
-	return false
-}
-
 // getVerifiedCosState takes in CEL and a register type (can be PCR or CCELMR), and returns the state
 // in the CEL. It will only include events using the correct registerType.
-func getVerifiedCosState(coscel cel.CEL, registerType uint8) (*pb.AttestedCosState, error) {
+func getVerifiedCosState(coscel gecel.CEL, registerType gecel.MRType) (*pb.AttestedCosState, error) {
 	cosState := &pb.AttestedCosState{}
 	cosState.Container = &pb.ContainerState{}
 	cosState.HealthMonitoring = &pb.HealthMonitoringState{}
@@ -141,17 +352,17 @@ func getVerifiedCosState(coscel cel.CEL, registerType uint8) (*pb.AttestedCosSta
 	cosState.Container.OverriddenEnvVars = make(map[string]string)
 
 	seenSeparator := false
-	for _, record := range coscel.Records {
+	for _, record := range coscel.Records() {
 		if record.IndexType != registerType {
 			return nil, fmt.Errorf("expect registerType: %d, but get %d in a CEL record", registerType, record.IndexType)
 		}
 
 		switch record.IndexType {
-		case cel.PCRTypeValue:
+		case gecel.PCRType:
 			if record.Index != cel.CosEventPCR {
 				return nil, fmt.Errorf("found unexpected PCR %d in COS CEL log", record.Index)
 			}
-		case cel.CCMRTypeValue:
+		case gecel.CCMRType:
 			if record.Index != cel.CosCCELMRIndex {
 				return nil, fmt.Errorf("found unexpected CCELMR %d in COS CEL log", record.Index)
 			}
@@ -164,13 +375,13 @@ func getVerifiedCosState(coscel cel.CEL, registerType uint8) (*pb.AttestedCosSta
 		// we either verify the digest of event event in this PCR, or we fail
 		// to replay the event log.
 		// TODO: See if we can fix this to have the Content Type be verified.
-		cosTlv, err := record.Content.ParseToCosTlv()
+		cosTlv, err := cel.ParseToCosTlv(record.Content)
 		if err != nil {
 			return nil, err
 		}
 
 		// verify digests for the cos cel content
-		if err := cel.VerifyDigests(cosTlv, record.Digests); err != nil {
+		if err := gecel.VerifyDigests(cosTlv, record.Digests); err != nil {
 			return nil, err
 		}
 
@@ -247,431 +458,33 @@ func getVerifiedCosState(coscel cel.CEL, registerType uint8) (*pb.AttestedCosSta
 	return cosState, nil
 }
 
-type separatorInfo struct {
-	separatorData    [][]byte
-	separatorDigests [][]byte
-}
-
-// getSeparatorInfo is used to return the valid event data and their corresponding
-// digests. This is useful for events like separators, where the data is known
-// ahead of time.
-func getSeparatorInfo(hash crypto.Hash) *separatorInfo {
-	hasher := hash.New()
-	// From the PC Client Firmware Profile spec, on the separator event:
-	// The event field MUST contain the hex value 00000000h or FFFFFFFFh.
-	sepData := [][]byte{{0, 0, 0, 0}, {0xff, 0xff, 0xff, 0xff}}
-	sepDigests := make([][]byte, 0, len(sepData))
-	for _, value := range sepData {
-		hasher.Write(value)
-		sepDigests = append(sepDigests, hasher.Sum(nil))
+func convertToPbDatabase(gedb *gepb.Database) *pb.Database {
+	if gedb == nil {
+		return nil
 	}
-	return &separatorInfo{separatorData: sepData, separatorDigests: sepDigests}
-}
-
-// checkIfValidSeparator returns true if both the separator event's type and
-// digest match the expected event data.
-// If the event type is Separator, but the data is invalid, it returns false
-// and an error.
-// checkIfValidSeparator returns false and a nil error on other event types.
-func checkIfValidSeparator(event *pb.Event, sepInfo *separatorInfo) (bool, error) {
-	evtType := event.GetUntrustedType()
-	index := event.GetPcrIndex()
-	if (evtType != Separator) && !contains(sepInfo.separatorDigests, event.GetDigest()) {
-		return false, nil
-	}
-	// To make sure we have a valid event, we check any event (e.g., separator)
-	// that claims to be of the event type or "looks like" the event to prevent
-	// certain vulnerabilities in event parsing. For more info see:
-	// https://github.com/google/go-attestation/blob/master/docs/event-log-disclosure.md
-	if evtType != Separator {
-		return false, fmt.Errorf("PCR%d event contains separator data but non-separator type %d", index, evtType)
-	}
-	if !event.GetDigestVerified() {
-		return false, fmt.Errorf("unverified separator digest for PCR%d", index)
-	}
-	if !contains(sepInfo.separatorData, event.GetData()) {
-		return false, fmt.Errorf("invalid separator data for PCR%d", index)
-	}
-	return true, nil
-}
-
-func getPlatformState(hash crypto.Hash, events []*pb.Event) (*pb.PlatformState, error) {
-	// We pre-compute the separator and EFI Action event hash.
-	// We check if these events have been modified, since the event type is
-	// untrusted.
-	sepInfo := getSeparatorInfo(hash)
-	var versionString []byte
-	var nonHostInfo []byte
-	for _, event := range events {
-		index := event.GetPcrIndex()
-		if index != 0 {
-			continue
-		}
-		evtType := event.GetUntrustedType()
-
-		isSeparator, err := checkIfValidSeparator(event, sepInfo)
-		if err != nil {
-			return nil, err
-		}
-		if isSeparator {
-			// Don't trust any PCR0 events after the separator
-			break
-		}
-
-		if evtType == SCRTMVersion {
-			if !event.GetDigestVerified() {
-				return nil, fmt.Errorf("invalid SCRTM version event for PCR%d", index)
-			}
-			versionString = event.GetData()
-		}
-
-		if evtType == NonhostInfo {
-			if !event.GetDigestVerified() {
-				return nil, fmt.Errorf("invalid Non-Host info event for PCR%d", index)
-			}
-			nonHostInfo = event.GetData()
-		}
-	}
-
-	state := &pb.PlatformState{}
-	if gceVersion, err := ConvertSCRTMVersionToGCEFirmwareVersion(versionString); err == nil {
-		state.Firmware = &pb.PlatformState_GceVersion{GceVersion: gceVersion}
-	} else {
-		state.Firmware = &pb.PlatformState_ScrtmVersionId{ScrtmVersionId: versionString}
-	}
-
-	if tech, err := ParseGCENonHostInfo(nonHostInfo); err == nil {
-		state.Technology = tech
-	}
-
-	return state, nil
-}
-
-// Separate helper function so we can use attest.ParseSecurebootState without
-// needing to reparse the entire event log.
-func parseReplayHelper(rawEventLog []byte, pcrs *tpmpb.PCRs) ([]attest.Event, error) {
-	// Similar to ParseCosCanonicalEventLogPCR, just return an empty array of events for an empty log
-	if len(rawEventLog) == 0 {
-		return nil, nil
-	}
-
-	attestPcrs, err := convertToAttestPcrs(pcrs)
-	if err != nil {
-		return nil, fmt.Errorf("received bad PCR proto: %v", err)
-	}
-	eventLog, err := attest.ParseEventLog(rawEventLog)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse event log: %v", err)
-	}
-	events, err := eventLog.Verify(attestPcrs)
-	if err != nil {
-		return nil, fmt.Errorf("failed to replay event log: %v", err)
-	}
-	return events, nil
-}
-
-func convertToAttestPcrs(pcrProto *tpmpb.PCRs) ([]attest.PCR, error) {
-	hash := tpm2.Algorithm(pcrProto.GetHash())
-	cryptoHash, err := hash.Hash()
-	if err != nil {
-		return nil, err
-	}
-
-	attestPcrs := make([]attest.PCR, 0, len(pcrProto.GetPcrs()))
-	for index, digest := range pcrProto.GetPcrs() {
-		attestPcrs = append(attestPcrs, attest.PCR{
-			Index:     int(index),
-			Digest:    digest,
-			DigestAlg: cryptoHash,
-		})
-	}
-	return attestPcrs, nil
-}
-
-func convertToPbEvents(hash crypto.Hash, events []attest.Event) []*pb.Event {
-	pbEvents := make([]*pb.Event, len(events))
-	for i, event := range events {
-		hasher := hash.New()
-		hasher.Write(event.Data)
-		digest := hasher.Sum(nil)
-
-		pbEvents[i] = &pb.Event{
-			PcrIndex:       uint32(event.Index),
-			UntrustedType:  uint32(event.Type),
-			Data:           event.Data,
-			Digest:         event.Digest,
-			DigestVerified: bytes.Equal(digest, event.Digest),
-		}
-	}
-	return pbEvents
-}
-
-func convertToPbDatabase(certs []x509.Certificate, hashes [][]byte) *pb.Database {
-	protoCerts := make([]*pb.Certificate, 0, len(certs))
-	for _, cert := range certs {
-		wkEnum, err := matchWellKnown(cert)
+	protoCerts := make([]*pb.Certificate, 0, len(gedb.GetCerts()))
+	for _, c := range gedb.GetCerts() {
 		var pbCert pb.Certificate
-		if err == nil {
-			pbCert.Representation = &pb.Certificate_WellKnown{WellKnown: wkEnum}
+		if wkEnum, err := matchWellKnownCert(c); err != nil {
+			pbCert.Representation = &pb.Certificate_Der{Der: c.GetDer()}
 		} else {
-			pbCert.Representation = &pb.Certificate_Der{Der: cert.Raw}
+			pbCert.Representation = &pb.Certificate_WellKnown{WellKnown: wkEnum}
+
 		}
 		protoCerts = append(protoCerts, &pbCert)
 	}
 	return &pb.Database{
 		Certs:  protoCerts,
-		Hashes: hashes,
+		Hashes: gedb.GetHashes(),
 	}
 }
 
-func matchWellKnown(cert x509.Certificate) (pb.WellKnownCertificate, error) {
-	if bytes.Equal(WindowsProductionPCA2011Cert, cert.Raw) {
-		return pb.WellKnownCertificate_MS_WINDOWS_PROD_PCA_2011, nil
+func matchWellKnownCert(cert *gepb.Certificate) (pb.WellKnownCertificate, error) {
+	if cert.GetWellKnown() == gepb.WellKnownCertificate_UNKNOWN {
+		return pb.WellKnownCertificate_UNKNOWN, errors.New("failed to match well known certificate")
 	}
-	if bytes.Equal(MicrosoftUEFICA2011Cert, cert.Raw) {
-		return pb.WellKnownCertificate_MS_THIRD_PARTY_UEFI_CA_2011, nil
+	if wkEnum, ok := pb.WellKnownCertificate_value[cert.GetWellKnown().String()]; ok {
+		return pb.WellKnownCertificate(wkEnum), nil
 	}
-	if bytes.Equal(MicrosoftKEKCA2011Cert, cert.Raw) {
-		return pb.WellKnownCertificate_MS_THIRD_PARTY_KEK_CA_2011, nil
-	}
-	if bytes.Equal(GceDefaultPKCert, cert.Raw) {
-		return pb.WellKnownCertificate_GCE_DEFAULT_PK, nil
-	}
-	return pb.WellKnownCertificate_UNKNOWN, errors.New("failed to find matching well known certificate")
-}
-
-func getSecureBootState(attestEvents []attest.Event) (*pb.SecureBootState, error) {
-	attestSbState, err := attest.ParseSecurebootState(attestEvents)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse SecureBootState: %v", err)
-	}
-	if len(attestSbState.PreSeparatorAuthority) != 0 {
-		return nil, fmt.Errorf("event log contained %v pre-separator authorities, which are not expected or supported", len(attestSbState.PreSeparatorAuthority))
-	}
-	return &pb.SecureBootState{
-		Enabled:   attestSbState.Enabled,
-		Db:        convertToPbDatabase(attestSbState.PermittedKeys, attestSbState.PermittedHashes),
-		Dbx:       convertToPbDatabase(attestSbState.ForbiddenKeys, attestSbState.ForbiddenHashes),
-		Authority: convertToPbDatabase(attestSbState.PostSeparatorAuthority, nil),
-		Pk:        convertToPbDatabase(attestSbState.PlatformKeys, attestSbState.PlatformKeyHashes),
-		Kek:       convertToPbDatabase(attestSbState.ExchangeKeys, attestSbState.ExchangeKeyHashes),
-	}, nil
-}
-
-func getGrubState(hash crypto.Hash, events []*pb.Event) (*pb.GrubState, error) {
-	var files []*pb.GrubFile
-	var commands []string
-	for idx, event := range events {
-		hasher := hash.New()
-		index := event.GetPcrIndex()
-		if index != 8 && index != 9 {
-			continue
-		}
-
-		// Skip parsing EV_EVENT_TAG event since it likely comes from Linux.
-		if event.GetUntrustedType() == EventTag {
-			continue
-		}
-
-		if event.GetUntrustedType() != IPL {
-			return nil, fmt.Errorf("invalid event type for PCR%d, expected EV_IPL", index)
-		}
-
-		if index == 9 {
-			files = append(files, &pb.GrubFile{Digest: event.GetDigest(),
-				UntrustedFilename: event.GetData()})
-		} else if index == 8 {
-			suffixAt := -1
-			rawData := event.GetData()
-			for _, prefix := range validPrefixes {
-				if bytes.HasPrefix(rawData, prefix) {
-					suffixAt = len(prefix)
-					break
-				}
-			}
-			if suffixAt == -1 {
-				return nil, fmt.Errorf("invalid prefix seen for PCR%d event: %s", index, rawData)
-			}
-
-			// Check the slice is not empty after the suffix, which ensures rawData[len(rawData)-1] is not part
-			// of the suffix.
-			if len(rawData[suffixAt:]) > 0 && rawData[len(rawData)-1] == '\x00' {
-				if err := verifyNullTerminatedDataDigest(hasher, rawData[suffixAt:], event.Digest); err != nil {
-					return nil, fmt.Errorf("invalid GRUB event (null-terminated) #%d: %v", idx, err)
-				}
-			} else {
-				if err := verifyDataDigest(hasher, rawData[suffixAt:], event.Digest); err != nil {
-					return nil, fmt.Errorf("invalid GRUB event #%d: %v", idx, err)
-				}
-			}
-			hasher.Reset()
-			commands = append(commands, string(rawData))
-		}
-	}
-	if len(files) == 0 && len(commands) == 0 {
-		return nil, errors.New("no GRUB measurements found")
-	}
-	return &pb.GrubState{Files: files, Commands: commands}, nil
-}
-
-// verifyNullTerminatedRawData checks the digest of the data.
-// Returns nil if digest match the hash of the data or the data without the last bytes (\x00).
-// The caller needs to make sure len(data) is at least 1, and data is ended with '\x00',
-// otherwise this function will return an error.
-func verifyNullTerminatedDataDigest(hasher hash.Hash, data []byte, digest []byte) error {
-	if len(data) == 0 || data[len(data)-1] != '\x00' {
-		return errors.New("given data is not null-terminated")
-	}
-	if err := verifyDataDigest(hasher, data, digest); err != nil {
-		if err := verifyDataDigest(hasher, data[:len(data)-1], digest); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// verifyDataDigest checks the digest of the data.
-func verifyDataDigest(hasher hash.Hash, data []byte, digest []byte) error {
-	hasher.Reset()
-	hasher.Write(data)
-	defer hasher.Reset()
-	if !bytes.Equal(digest, hasher.Sum(nil)) {
-		return fmt.Errorf("invalid digest: %s", hex.EncodeToString(digest))
-	}
-	return nil
-}
-
-func getEfiState(hash crypto.Hash, events []*pb.Event, opts VerifyOpts) (*pb.EfiState, error) {
-	// We pre-compute various event digests, and check if those event type have
-	// been modified. We only trust events that come before the
-	// ExitBootServices() request.
-	separatorInfo := getSeparatorInfo(hash)
-
-	hasher := hash.New()
-	hasher.Write([]byte(CallingEFIApplication))
-	callingEFIAppDigest := hasher.Sum(nil)
-
-	hasher.Reset()
-	hasher.Write([]byte(ExitBootServicesInvocation))
-	exitBootSvcDigest := hasher.Sum(nil)
-
-	var efiAppStates []*pb.EfiApp
-	var seenSeparator4 bool
-	var seenSeparator5 bool
-	var seenCallingEfiApp bool
-	var seenExitBootServices bool
-	for _, event := range events {
-		index := event.GetPcrIndex()
-		// getEfiState should only ever process PCRs 4 and 5.
-		if index != 4 && index != 5 {
-			continue
-		}
-		evtType := event.GetUntrustedType()
-
-		switch index {
-		case 4:
-			// Process Calling EFI Application event.
-			if bytes.Equal(callingEFIAppDigest, event.GetDigest()) {
-				if evtType != EFIAction {
-					return nil, fmt.Errorf("PCR%d contains CallingEFIApp event but non EFIAction type: %d",
-						index, evtType)
-				}
-				if !event.GetDigestVerified() {
-					return nil, fmt.Errorf("unverified CallingEFIApp digest for PCR%d", index)
-				}
-				// We don't support calling more than one boot device.
-				if seenCallingEfiApp {
-					return nil, fmt.Errorf("found duplicate CallingEFIApp event in PCR%d", index)
-				}
-				if seenSeparator4 {
-					return nil, fmt.Errorf("found CallingEFIApp event in PCR%d after separator event", index)
-				}
-				seenCallingEfiApp = true
-			}
-
-			if evtType == EFIBootServicesApplication {
-				if !opts.AllowEFIAppBeforeCallingEvent && !seenCallingEfiApp {
-					return nil, fmt.Errorf("found EFIBootServicesApplication in PCR%d before CallingEFIApp event", index)
-				}
-				efiAppStates = append(efiAppStates, &pb.EfiApp{Digest: event.GetDigest()})
-			}
-
-			isSeparator, err := checkIfValidSeparator(event, separatorInfo)
-			if err != nil {
-				return nil, err
-			}
-			if !isSeparator {
-				continue
-			}
-			if seenSeparator4 {
-				return nil, errors.New("found duplicate Separator event in PCR4")
-			}
-			seenSeparator4 = true
-		case 5:
-			// Process ExitBootServices event.
-			if bytes.Equal(exitBootSvcDigest, event.GetDigest()) {
-				if evtType != EFIAction {
-					return nil, fmt.Errorf("PCR%d contains ExitBootServices event but non EFIAction type: %d",
-						index, evtType)
-				}
-				if !event.GetDigestVerified() {
-					return nil, fmt.Errorf("unverified ExitBootServices digest for PCR%d", index)
-				}
-				// Don't process any PCR4 or PCR5 events after Boot Manager has
-				// requested ExitBootServices().
-				seenExitBootServices = true
-				break
-			}
-
-			isSeparator, err := checkIfValidSeparator(event, separatorInfo)
-			if err != nil {
-				return nil, err
-			}
-			if !isSeparator {
-				continue
-			}
-			if seenSeparator5 {
-				return nil, errors.New("found duplicate Separator event in PCR5")
-			}
-			seenSeparator5 = true
-		}
-	}
-	// Only write EFI digests if we see an ExitBootServices invocation.
-	// Otherwise, software further down the bootchain could extend bad
-	// PCR4 measurements.
-	if seenExitBootServices {
-		return &pb.EfiState{Apps: efiAppStates}, nil
-	}
-	return nil, nil
-}
-
-func getLinuxKernelStateFromGRUB(grub *pb.GrubState) (*pb.LinuxKernelState, error) {
-	var cmdline string
-	seen := false
-
-	for _, command := range grub.GetCommands() {
-		// GRUB config is always in UTF-8: https://www.gnu.org/software/grub/manual/grub/html_node/Internationalisation.html.
-		cmdBytes := []byte(command)
-		suffixAt := getGrubKernelCmdlineSuffix(cmdBytes)
-		if suffixAt == -1 {
-			continue
-		}
-
-		if seen {
-			return nil, fmt.Errorf("more than one kernel commandline in GRUB commands")
-		}
-		seen = true
-		cmdline = command[suffixAt:]
-	}
-
-	return &pb.LinuxKernelState{CommandLine: cmdline}, nil
-}
-
-func getGrubKernelCmdlineSuffix(grubCmd []byte) int {
-	for _, prefix := range [][]byte{oldGrubKernelCmdlinePrefix, newGrubKernelCmdlinePrefix} {
-		if bytes.HasPrefix(grubCmd, prefix) {
-			return len(prefix)
-		}
-	}
-	return -1
+	return pb.WellKnownCertificate_UNKNOWN, errors.New("failed to match well known certificate")
 }
