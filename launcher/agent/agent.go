@@ -432,11 +432,11 @@ func (t *tdxAttestRoot) Attest(nonce []byte) (any, error) {
 		return nil, err
 	}
 
-	ccelData, err := os.ReadFile("/sys/firmware/acpi/tables/data/CCEL")
+	ccelData, err := os.ReadFile(internal.CcelEventLogFile)
 	if err != nil {
 		return nil, err
 	}
-	ccelTable, err := os.ReadFile("/sys/firmware/acpi/tables/CCEL")
+	ccelTable, err := os.ReadFile(internal.AcpiTableFile)
 	if err != nil {
 		return nil, err
 	}
