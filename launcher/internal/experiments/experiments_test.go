@@ -12,18 +12,20 @@ func TestExperiments(t *testing.T) {
 		expectedExps Experiments
 	}{
 		{
-			input: "{\"EnableH100DriverInstallation\":true,\"EnableB200DriverInstallation\":true,\"EnableTestFeatureForImage\":true,\"EnableItaVerifier\":true}",
+			input: "{\"EnableH100DriverInstallation\":true,\"EnableB200DriverInstallation\":true,\"EnableTestFeatureForImage\":true,\"EnableItaVerifier\":true,\"EnableKeyManager\":false}",
 			expectedExps: Experiments{
 				EnableTestFeatureForImage:    true,
 				EnableItaVerifier:            true,
 				EnableB200DriverInstallation: true,
 				EnableH100DriverInstallation: true,
+				EnableKeyManager:             false,
 			},
 		},
 		{
 			input: "{\"EnableB200DriverInstallation\":true}",
 			expectedExps: Experiments{
 				EnableB200DriverInstallation: true,
+				EnableKeyManager:             false,
 			},
 		},
 		{
@@ -32,6 +34,13 @@ func TestExperiments(t *testing.T) {
 				EnableTestFeatureForImage: true,
 				EnableItaVerifier:         true,
 				EnableVerifyCS:            true,
+			},
+		},
+		{
+			input: "{\"EnableB200DriverInstallation\":true,\"EnableKeyManager\":true}",
+			expectedExps: Experiments{
+				EnableB200DriverInstallation: true,
+				EnableKeyManager:             true,
 			},
 		},
 	}

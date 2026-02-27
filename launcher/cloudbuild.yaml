@@ -30,14 +30,47 @@ steps:
     echo "base image:" ${base_image} "project:" ${BASE_IMAGE_PROJECT} 
     echo ${base_image} > /workspace/base_image.txt
 
-- name: golang:1.24
-  id: LauncherCompile
+- name: rust:1.85-bullseye
+  id: KeyManagerCompile
   entrypoint: /bin/bash
   args:
     - -c
     - |
+      set -exuo pipefail
+      # Install build dependencies for Rust
+      apt-get update && apt-get install -y clang build-essential curl tar
+      
+      # Install CMake 3.28.3 from pre-compiled binaries for flexibility across environments
+      curl -sSL https://github.com/Kitware/CMake/releases/download/v3.28.3/cmake-3.28.3-linux-x86_64.tar.gz -o cmake.tar.gz
+      tar -zxvf cmake.tar.gz -C /opt/
+      export PATH="/opt/cmake-3.28.3-linux-x86_64/bin:$$PATH"
+      rm cmake.tar.gz
+
+      # Install bindgen-cli (needed by BoringSSL's CMake build)
+      cargo install bindgen-cli
+      export PATH="$$HOME/.cargo/bin:$$PATH"
+
+      # Build the Rust keymanager libraries
+      cd keymanager
+      cargo build --release
+
+# `golang:1.24-bullseye` is needed to maintain `glibc` compatibility. 
+# Revert back to golang:1.24 COS 129 onwards.
+- name: golang:1.24-bullseye
+  id: LauncherCompile
+  waitFor: ['KeyManagerCompile']
+  entrypoint: /bin/bash
+  args:
+    - -c
+    - |
+      set -exuo pipefail
+      # Install Go build tools (clang is needed for CGO)
+      apt-get update && apt-get install -y clang pkg-config libssl-dev build-essential
+
+      # Build the launcher with CGO enabled
       cd launcher/launcher
-      CGO_ENABLED=0 go build -o ../image/launcher -ldflags="-X 'main.BuildCommit=${SHORT_SHA}'"
+      export CGO_LDFLAGS="-L/workspace/keymanager/target/release"
+      CGO_ENABLED=1 go build -o ../image/launcher -ldflags="-X 'main.BuildCommit=${SHORT_SHA}'"
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: DownloadExpBinary

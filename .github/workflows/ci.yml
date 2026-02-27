@@ -43,6 +43,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v3
+        with:
+          submodules: recursive
       - uses: actions/setup-go@v6
         with:
           go-version: ${{ matrix.go-version }}
@@ -54,6 +56,19 @@ jobs:
           version: "3.20.1"
       - name: Install protoc-gen-go
         run: go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.28.0
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install Build Dependencies (Linux)
+        run: sudo apt-get update && sudo apt-get install -y cmake clang pkg-config libssl-dev
+        if: runner.os == 'Linux' && matrix.architecture == 'x64'
+      - name: Install bindgen-cli
+        run: cargo install bindgen-cli
+        if: runner.os == 'Linux' && matrix.architecture == 'x64'
+      - name: Build KeyManager Rust library
+        run: |
+          cd keymanager
+          cargo build --release
+        if: runner.os == 'Linux' && matrix.architecture == 'x64'
       - name: Check Protobuf Generation
         run: |
           go generate ./... ./cmd/... ./launcher/... ./verifier/...
@@ -71,8 +86,11 @@ jobs:
       - name: Install Windows packages
         run: choco install openssl
         if: runner.os == 'Windows'
-      - name: Build all modules except launcher
+      - name: Build all modules except launcher and keymanager
         run: go build -v ./... ./cmd/... ./verifier/...
+      - name: Build keymanager module
+        run: go build -v ./keymanager/...
+        if: runner.os == 'Linux' && matrix.architecture == 'x64'
       - name: Build launcher module
         run: go build -v ./launcher/...
         if: runner.os == 'Linux'
@@ -84,22 +102,37 @@ jobs:
       - name: Run all tests in launcher to capture potential data race
         run: go test -v -race ./launcher/...
         if: (runner.os == 'Linux') && matrix.architecture == 'x64'
-      - name: Test all modules except launcher
+      - name: Test all modules except launcher and keymanager
         run: go test -v ./... ./cmd/... ./verifier/... -skip='TestCacheConcurrentSetGet|TestHwAttestationPass|TestHardwareAttestationPass'
+      - name: Test keymanager module
+        run: go test -v ./keymanager/...
+        if: runner.os == 'Linux' && matrix.architecture == 'x64'
 
   lint:
     strategy:
       matrix:
         go-version: [1.24.x]
         os: [ubuntu-latest]
-        dir: ["./", "./cmd", "./launcher"]
+        dir: ["./", "./cmd", "./launcher", "./keymanager"]
     name: Lint ${{ matrix.dir }} (${{ matrix.os }}, Go ${{ matrix.go-version }})
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v3
+        with:
+          submodules: recursive
       - uses: actions/setup-go@v2
         with:
           go-version: ${{ matrix.go-version }}
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install Build Dependencies (Linux)
+        run: sudo apt-get update && sudo apt-get install -y cmake clang pkg-config libssl-dev
+      - name: Install bindgen-cli
+        run: cargo install bindgen-cli
+      - name: Build KeyManager Rust library
+        run: |
+          cd keymanager
+          cargo build --release
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v3.2.0
         with:
@@ -127,11 +160,21 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v3
+        with:
+          submodules: recursive
       - uses: actions/setup-go@v2
         with:
           go-version: ${{ matrix.go-version }}
-      - name: Install Linux packages
-        run: sudo apt-get -y install libssl-dev
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install Build Dependencies (Linux)
+        run: sudo apt-get update && sudo apt-get install -y cmake clang pkg-config libssl-dev
+      - name: Install bindgen-cli
+        run: cargo install bindgen-cli
+      - name: Build KeyManager Rust library
+        run: |
+          cd keymanager
+          cargo build --release
       - name: Check for CGO Warnings (gcc)
         run: CGO_CFLAGS=-Werror CC=gcc go build ./...
       - name: Check for CGO Warnings (clang)

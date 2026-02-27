@@ -27,6 +27,7 @@ import (
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
+	workloadservice "github.com/google/go-tpm-tools/keymanager/workload_service"
 	"github.com/google/go-tpm-tools/launcher/agent"
 	"github.com/google/go-tpm-tools/launcher/internal/gpu"
 	"github.com/google/go-tpm-tools/launcher/internal/healthmonitoring/nodeproblemdetector"
@@ -57,6 +58,7 @@ type ContainerRunner struct {
 const tokenFileTmp = ".token.tmp"
 
 const teeServerSocket = "teeserver.sock"
+const keyManagerSocket = "kmaserver.sock"
 
 // Since we only allow one container on a VM, using a deterministic id is probably fine
 const (
@@ -660,6 +662,17 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	}
 	go teeServer.Serve()
 	defer teeServer.Shutdown(ctx)
+
+	// create and start the key manager server
+	if r.launchSpec.Experiments.EnableKeyManager {
+		r.logger.Info("EnableKeyManager experiment is enabled: initializing KeyManager server.")
+		keyManagerServer, err := workloadservice.New(ctx, path.Join(launcherfile.HostTmpPath, keyManagerSocket))
+		if err != nil {
+			return fmt.Errorf("failed to create the KeyManager server: %v", err)
+		}
+		go keyManagerServer.Serve()
+		defer keyManagerServer.Shutdown(ctx)
+	}
 
 	// Avoids breaking existing memory monitoring tests that depend on this log.
 	if r.launchSpec.MonitoringEnabled == spec.None {

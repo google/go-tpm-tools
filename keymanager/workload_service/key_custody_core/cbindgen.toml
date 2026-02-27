@@ -7,7 +7,7 @@ no_includes = true
 style = "type"
 documentation = false
 usize_is_size_t = true
-sys_includes = ["stddef.h", "stdint.h"]
+sys_includes = ["stdbool.h", "stddef.h", "stdint.h"]
 
 
 [parse]
