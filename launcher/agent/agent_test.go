@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha512"
+	_ "embed"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -651,6 +652,12 @@ func measureFakeEvents(attestAgent AttestationAgent) error {
 type fakeTdxAttestRoot struct {
 	cel           gecel.CEL
 	receivedNonce []byte
+	tdxQuote      []byte
+}
+
+func (f *fakeTdxAttestRoot) Attest(nonce []byte) (any, error) {
+	f.receivedNonce = nonce
+	return &verifier.TDCCELAttestation{TdQuote: f.tdxQuote}, nil
 }
 
 func (f *fakeTdxAttestRoot) Extend(c gecel.Content) error {
@@ -663,13 +670,6 @@ func (f *fakeTdxAttestRoot) GetCEL() gecel.CEL {
 	return f.cel
 }
 
-func (f *fakeTdxAttestRoot) Attest(nonce []byte) (any, error) {
-	f.receivedNonce = nonce
-	return &verifier.TDCCELAttestation{
-		TdQuote: []byte("fake-tdx-quote"),
-	}, nil
-}
-
 func (f *fakeTdxAttestRoot) ComputeNonce(challenge []byte, extraData []byte) []byte {
 	challengeData := challenge
 	if extraData != nil {
@@ -680,6 +680,11 @@ func (f *fakeTdxAttestRoot) ComputeNonce(challenge []byte, extraData []byte) []b
 	finalNonce := sha512.Sum512(append([]byte(teemodels.WorkloadAttestationLabel), challengeDigest[:]...))
 	return finalNonce[:]
 }
+
+//go:embed tdx_quote.b64
+var tdxQuoteB64 string
+//go:embed cel.b64
+var celB64 string
 
 func TestAttestationEvidence_TDX_Success(t *testing.T) {
 	ctx := context.Background()
@@ -696,8 +701,17 @@ func TestAttestationEvidence_TDX_Success(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	testTDXQuote, err := base64.StdEncoding.DecodeString(tdxQuoteB64)
+	if err != nil {
+		t.Fatalf("failed to decode tdx_quote.b64: %v", err)
+	}
+	testCEL, err := base64.StdEncoding.DecodeString(celB64)
+	if err != nil {
+		t.Fatalf("failed to decode cel.b64: %v", err)
+	}
 	fakeRoot := &fakeTdxAttestRoot{
-		cel: gecel.NewConfComputeMR(),
+		cel:      cel.NewFromBytes(testCEL),
+		tdxQuote: testTDXQuote,
 	}
 	attestAgent := &agent{
 		avRot:     fakeRoot,
@@ -720,17 +734,29 @@ func TestAttestationEvidence_TDX_Success(t *testing.T) {
 		t.Fatalf("AttestationEvidence failed: %v", err)
 	}
 
+	// Verify the nonce passed to Attest was derived from challenge+extraData.
+	expectedNonce := fakeRoot.ComputeNonce(challenge, extraData)
+	if !bytes.Equal(fakeRoot.receivedNonce, expectedNonce) {
+		t.Errorf("got nonce %x, want %x", fakeRoot.receivedNonce, expectedNonce)
+	}
+
 	if att.Quote.TDXCCELQuote == nil {
-		t.Fatal("expected TDCCELAttestation to be populated for TDX")
+		t.Fatal("expected TDXCCELQuote to be populated for TDX")
 	}
-
-	if string(att.Quote.TDXCCELQuote.TDQuote) != "fake-tdx-quote" {
-		t.Errorf("got quote %s, want fake-tdx-quote", string(att.Quote.TDXCCELQuote.TDQuote))
+	if !bytes.Equal(att.Quote.TDXCCELQuote.TDQuote, testTDXQuote) {
+		t.Errorf("TDQuote mismatch: got %x, want %x", att.Quote.TDXCCELQuote.TDQuote, testTDXQuote)
 	}
-
-	expectedHash := fakeRoot.ComputeNonce(challenge, extraData)
-	if !bytes.Equal(fakeRoot.receivedNonce, expectedHash) {
-		t.Errorf("got nonce %x, want %x", fakeRoot.receivedNonce, expectedHash)
+	if att.Quote.TPMQuote != nil {
+		t.Error("expected TPMQuote to be nil for TDX attestation")
+	}
+	if len(att.Quote.TDXCCELQuote.CELLaunchEventLog) == 0 {
+		t.Error("expected CELLaunchEventLog to be non-empty after MeasureEvent calls")
+	}
+	if !bytes.Equal(att.Challenge, challenge) {
+		t.Errorf("challenge mismatch: got %x, want %x", att.Challenge, challenge)
+	}
+	if !bytes.Equal(att.ExtraData, extraData) {
+		t.Errorf("extraData mismatch: got %x, want %x", att.ExtraData, extraData)
 	}
 }
 
@@ -772,6 +798,27 @@ func TestAttestationEvidence_TPM_Success(t *testing.T) {
 	if att.Quote.TDXCCELQuote != nil {
 		t.Fatal("expected TDCCELAttestation to be nil for TPM")
 	}
+
+	// ms, err := server.VerifyAttestation(att.Quote.TPMQuote)
+	// if err != nil {
+	// 	t.Fatalf("server.VerifyAttestation failed: %v", err)
+	// }
+	// validateContainerState(t, ms.GetCos())
+
+	// Placeholder: Call server.VerifyAttestation from github.com/google/go-tpm-tools/server.
+	// You will need to convert the teemodels.Attestation to a pb.Attestation and supply the correct VerifyOpts.
+	// machineState, err := server.VerifyAttestation(pbAttestation, server.VerifyOpts{...})
+	// if err != nil {
+	// 	t.Fatalf("server.VerifyAttestation failed: %v", err)
+	// }
+	//
+	// Placeholder: Call server.VerifiedCOSState (or extract.VerifiedCOSState) from
+	// github.com/GoogleCloudPlatform/confidential-space/blob/main/server/extract/cos_state.go#L13.
+	// This requires importing the external package and passing the machineState obtained above.
+	// cosState, err := extract.VerifiedCOSState(machineState)
+	// if err != nil {
+	// 	t.Fatalf("server.VerifiedCOSState failed: %v", err)
+	// }
 }
 
 type testClient struct {
@@ -872,5 +919,74 @@ func TestConvertPBToTPMQuote(t *testing.T) {
 
 	if diff := cmp.Diff(got, want, protocmp.Transform()); diff != "" {
 		t.Errorf("convertPBToTPMQuote() mismatch (-got +want):\n%s", diff)
+	}
+}
+
+// TestAttestationEvidence_ExperimentDisabled verifies that AttestationEvidence
+// returns an error when the EnableAttestationEvidence experiment flag is off.
+func TestAttestationEvidence_ExperimentDisabled(t *testing.T) {
+	ctx := context.Background()
+	tpm := test.GetTPM(t)
+	defer client.CheckedClose(t, tpm)
+
+	fakeSigner, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("failed to generate signing key: %v", err)
+	}
+	agent, err := CreateAttestationAgent(tpm, client.AttestationKeyECC, fake.NewClient(fakeSigner),
+		placeholderPrincipalFetcher, signaturediscovery.NewFakeClient(),
+		spec.LaunchSpec{ /* EnableAttestationEvidence defaults to false */ },
+		logging.SimpleLogger())
+	if err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+	defer agent.Close()
+
+	_, err = agent.AttestationEvidence(ctx, []byte("challenge"), nil)
+	if err == nil {
+		t.Error("expected error when EnableAttestationEvidence is disabled, got nil")
+	}
+}
+
+// TestAttestationEvidence_TDX_NilExtraData verifies that AttestationEvidence
+// handles nil extraData correctly, deriving the nonce from the challenge alone.
+func TestAttestationEvidence_TDX_NilExtraData(t *testing.T) {
+	ctx := context.Background()
+	tpm := test.GetTPM(t)
+	defer client.CheckedClose(t, tpm)
+
+	ak, err := client.AttestationKeyECC(tpm)
+	if err != nil {
+		t.Fatalf("failed to create AK: %v", err)
+	}
+	defer ak.Close()
+
+	fakeRoot := &fakeTdxAttestRoot{
+		cel:      gecel.NewConfComputeMR(),
+		tdxQuote: []byte("fake-tdx-quote"),
+	}
+	attestatAgent := &agent{
+		avRot:     fakeRoot,
+		fetchedAK: ak,
+		launchSpec: spec.LaunchSpec{
+			Experiments: experiments.Experiments{
+				EnableAttestationEvidence: true,
+			},
+		},
+	}
+
+	challenge := []byte("test-challenge")
+	att, err := attestatAgent.AttestationEvidence(ctx, challenge, nil)
+	if err != nil {
+		t.Fatalf("AttestationEvidence failed with nil extraData: %v", err)
+	}
+
+	expectedNonce := fakeRoot.ComputeNonce(challenge, nil)
+	if !bytes.Equal(fakeRoot.receivedNonce, expectedNonce) {
+		t.Errorf("nonce mismatch with nil extraData: got %x, want %x",
+			fakeRoot.receivedNonce, expectedNonce)
+	}
+	if att.ExtraData != nil {
+		t.Errorf("expected nil ExtraData in attestation, got %x", att.ExtraData)
 	}
 }
