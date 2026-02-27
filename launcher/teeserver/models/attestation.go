@@ -11,17 +11,17 @@ type GPUArchitectureType int32
 
 // The following values are based on NVIDIA's GPU architecture generations.
 const (
-	GpuArchitectureUnspecified GPUArchitectureType = 0  // Unspecified architecture.
-	GpuArchitectureKepler      GPUArchitectureType = 1  // Kepler architecture.
-	GpuArchitectureMaxwell     GPUArchitectureType = 2  // Maxwell architecture.
-	GpuArchitecturePascal      GPUArchitectureType = 3  // Pascal architecture.
-	GpuArchitectureVolta       GPUArchitectureType = 4  // Volta architecture.
-	GpuArchitectureTuring      GPUArchitectureType = 5  // Turing architecture.
-	GpuArchitectureAmpere      GPUArchitectureType = 6  // Ampere architecture.
-	GpuArchitectureAda         GPUArchitectureType = 7  // Ada architecture.
-	GpuArchitectureHopper      GPUArchitectureType = 8  // Hopper architecture.
-	GpuArchitectureUnknown     GPUArchitectureType = 9  // Unknown architecture.
-	GpuArchitectureBlackwell   GPUArchitectureType = 10 // Blackwell architecture.
+	GpuArchitectureUnspecified GPUArchitectureType = iota // Unspecified architecture.
+	GpuArchitectureKepler      GPUArchitectureType = 1    // Kepler architecture.
+	GpuArchitectureMaxwell     GPUArchitectureType = 2    // Maxwell architecture.
+	GpuArchitecturePascal      GPUArchitectureType = 3    // Pascal architecture.
+	GpuArchitectureVolta       GPUArchitectureType = 4    // Volta architecture.
+	GpuArchitectureTuring      GPUArchitectureType = 5    // Turing architecture.
+	GpuArchitectureAmpere      GPUArchitectureType = 6    // Ampere architecture.
+	GpuArchitectureAda         GPUArchitectureType = 7    // Ada architecture.
+	GpuArchitectureHopper      GPUArchitectureType = 8    // Hopper architecture.
+	GpuArchitectureUnsupported GPUArchitectureType = 9    // Unknown architecture.
+	GpuArchitectureBlackwell   GPUArchitectureType = 10   // Blackwell architecture.
 )
 
 // String returns the string representation of a GPUArchitectureType based upon value.
@@ -29,28 +29,12 @@ func (g GPUArchitectureType) String() string {
 	switch g {
 	case GpuArchitectureKepler:
 		return "GPU_ARCHITECTURE_KEPLER"
-	case GpuArchitectureMaxwell:
-		return "GPU_ARCHITECTURE_MAXWELL"
-	case GpuArchitecturePascal:
-		return "GPU_ARCHITECTURE_PASCAL"
-	case GpuArchitectureVolta:
-		return "GPU_ARCHITECTURE_VOLTA"
-	case GpuArchitectureTuring:
-		return "GPU_ARCHITECTURE_TURING"
-	case GpuArchitectureAmpere:
-		return "GPU_ARCHITECTURE_AMPERE"
-	case GpuArchitectureAda:
-		return "GPU_ARCHITECTURE_ADA"
-	case GpuArchitectureHopper:
-		return "GPU_ARCHITECTURE_HOPPER"
-	case GpuArchitectureUnknown:
-		return "GPU_ARCHITECTURE_UNKNOWN"
 	case GpuArchitectureBlackwell:
 		return "GPU_ARCHITECTURE_BLACKWELL"
 	case GpuArchitectureUnspecified:
 		return "GPU_ARCHITECTURE_UNSPECIFIED"
 	default:
-		return "GPU_ARCHITECTURE_UNKNOWN"
+		return "GPU_ARCHITECTURE_UNSUPPORTED"
 	}
 }
 
@@ -106,18 +90,10 @@ type NvidiaAttestationReport struct {
 	Mpt *MultiGpuSecurePassthroughAttestation `json:"mpt,omitempty"` //  Multiple GPU Passthrough (MPT) attestation report
 }
 
-// NvidiaAttestationReportSpt represents the SPT attestation report for NVIDIA GPUs.
-type NvidiaAttestationReportSpt struct {
-	Spt *SinglePassthroughAttestation `json:"spt,omitempty"`
-}
-
-// NvidiaAttestationReportMpt represents the MPT attestation report for NVIDIA GPUs, containing multiple GPU quotes.
-type NvidiaAttestationReportMpt struct {
-	Mpt *MultiGpuSecurePassthroughAttestation `json:"mpt,omitempty"`
-}
-
 // SinglePassthroughAttestation is a placeholder for the 'spt' field.
-type SinglePassthroughAttestation struct{}
+type SinglePassthroughAttestation struct {
+	GPUQuote GPUInfo `json:"gpu_quote"`
+}
 
 // MultiGpuSecurePassthroughAttestation contains the actual GPU quotes.
 type MultiGpuSecurePassthroughAttestation struct {
