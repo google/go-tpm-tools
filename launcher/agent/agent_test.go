@@ -812,16 +812,12 @@ func TestAttestationEvidence_TPM_Success(t *testing.T) {
 		t.Fatal("expected TDCCELAttestation to be nil for TPM")
 	}
 
-	// --- Enhancement 1: server.VerifyAttestation (go-tpm-tools) ---
-	// The nonce sent to the TPM was computed from challenge + extraData by tpmAttestRoot.
-	// Re-compute it the same way: sha256(WorkloadAttestationLabel || sha256(challenge || sha256(extraData)))
+	// Test the evidence can be verified by the server by re-computing the nonce and calling server.VerifyAttestation.
 	extraDataDigest := sha256.Sum256(extraData)
 	challengeData := append(challenge, extraDataDigest[:]...)
 	challengeDigest := sha256.Sum256(challengeData)
 	tpmNonce := sha256.Sum256(append([]byte(teemodels.WorkloadAttestationLabel), challengeDigest[:]...))
 
-	// Re-attest the TPM directly using the same nonce, producing an *attestpb.Attestation
-	// that server.VerifyAttestation can consume.
 	pbAttestation, err := ak.Attest(client.AttestOpts{Nonce: tpmNonce[:]})
 	if err != nil {
 		t.Fatalf("ak.Attest() failed: %v", err)
@@ -833,19 +829,14 @@ func TestAttestationEvidence_TPM_Success(t *testing.T) {
 	})
 	if err != nil {
 		t.Errorf("server.VerifyAttestation failed: %v", err)
-	} else {
-		t.Logf("server.VerifyAttestation succeeded, hash: %v", machineState.GetHash())
 	}
 
-	// --- Enhancement 2: extract.VerifiedCOSState (confidential-space) ---
-	// The CEL was serialized into att.Quote.TPMQuote.CELLaunchEventLog.
-	// Decode it back to a gecel.CEL and pass to extract.VerifiedCOSState.
+	// Test that the COS state can be extracted from the CEL and contains the expected values.
 	decodedCEL, err := gecel.DecodeToCEL(bytes.NewBuffer(att.Quote.TPMQuote.CELLaunchEventLog))
 	if err != nil {
 		t.Fatalf("gecel.DecodeToCEL failed: %v", err)
 	}
 
-	// TPM path uses PCR registers (PCRType), not CCMR.
 	cosState, err := extract.VerifiedCOSState(decodedCEL, uint8(gecel.PCRType))
 	if err != nil {
 		t.Errorf("extract.VerifiedCOSState failed: %v", err)
