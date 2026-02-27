@@ -20,30 +20,31 @@ type KEMKeyEnumerator interface {
 	EnumerateKEMKeys(limit, offset int) ([]kpskcc.KEMKeyInfo, bool, error)
 }
 
-// Service implements KEMKeyGenerator and KEMKeyEnumerator by delegating to the KPS KCC FFI.
-type Service struct {
-	generateKEMKeypairFn func(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error)
-	enumerateKEMKeysFn   func(limit, offset int) ([]kpskcc.KEMKeyInfo, bool, error)
+// KeyCustodyCore defines the required FFI interactions for KPS.
+type KeyCustodyCore interface {
+	GenerateKEMKeypair(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error)
+	EnumerateKEMKeys(limit, offset int) ([]kpskcc.KEMKeyInfo, bool, error)
 }
 
-// NewService creates a new KPS KOL service with the given KCC functions.
-func NewService(
-	generateKEMKeypairFn func(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error),
-	enumerateKEMKeysFn func(limit, offset int) ([]kpskcc.KEMKeyInfo, bool, error),
-) *Service {
+// Service implements KEMKeyGenerator and KEMKeyEnumerator by delegating to the KPS KCC FFI.
+type Service struct {
+	kcc KeyCustodyCore
+}
+
+// NewService creates a new KPS KOL service with the given KCC implementation.
+func NewService(kcc KeyCustodyCore) *Service {
 	return &Service{
-		generateKEMKeypairFn: generateKEMKeypairFn,
-		enumerateKEMKeysFn:   enumerateKEMKeysFn,
+		kcc: kcc,
 	}
 }
 
 // GenerateKEMKeypair generates a KEM keypair linked to the provided binding
 // public key by calling the KPS KCC FFI.
 func (s *Service) GenerateKEMKeypair(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
-	return s.generateKEMKeypairFn(algo, bindingPubKey, lifespanSecs)
+	return s.kcc.GenerateKEMKeypair(algo, bindingPubKey, lifespanSecs)
 }
 
 // EnumerateKEMKeys retrieves all active KEM key entries from the KPS KCC registry.
 func (s *Service) EnumerateKEMKeys(limit, offset int) ([]kpskcc.KEMKeyInfo, bool, error) {
-	return s.enumerateKEMKeysFn(limit, offset)
+	return s.kcc.EnumerateKEMKeys(limit, offset)
 }

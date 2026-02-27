@@ -10,6 +10,25 @@ import (
 	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
 )
 
+type mockKCC struct {
+	generateFn  func(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error)
+	enumerateFn func(limit, offset int) ([]kpskcc.KEMKeyInfo, bool, error)
+}
+
+func (m *mockKCC) GenerateKEMKeypair(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
+	if m.generateFn != nil {
+		return m.generateFn(algo, bindingPubKey, lifespanSecs)
+	}
+	return uuid.Nil, nil, nil
+}
+
+func (m *mockKCC) EnumerateKEMKeys(limit, offset int) ([]kpskcc.KEMKeyInfo, bool, error) {
+	if m.enumerateFn != nil {
+		return m.enumerateFn(limit, offset)
+	}
+	return nil, false, nil
+}
+
 func TestServiceGenerateKEMKeypairSuccess(t *testing.T) {
 	expectedUUID := uuid.New()
 	expectedPubKey := make([]byte, 32)
@@ -17,8 +36,8 @@ func TestServiceGenerateKEMKeypairSuccess(t *testing.T) {
 		expectedPubKey[i] = byte(i + 10)
 	}
 
-	svc := NewService(
-		func(_ *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
+	svc := NewService(&mockKCC{
+		generateFn: func(_ *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
 			if len(bindingPubKey) != 32 {
 				t.Fatalf("expected 32-byte binding public key, got %d", len(bindingPubKey))
 			}
@@ -27,10 +46,7 @@ func TestServiceGenerateKEMKeypairSuccess(t *testing.T) {
 			}
 			return expectedUUID, expectedPubKey, nil
 		},
-		func(_, _ int) ([]kpskcc.KEMKeyInfo, bool, error) {
-			return nil, false, nil
-		},
-	)
+	})
 
 	id, pubKey, err := svc.GenerateKEMKeypair(&keymanager.HpkeAlgorithm{}, make([]byte, 32), 7200)
 	if err != nil {
@@ -45,14 +61,11 @@ func TestServiceGenerateKEMKeypairSuccess(t *testing.T) {
 }
 
 func TestServiceGenerateKEMKeypairError(t *testing.T) {
-	svc := NewService(
-		func(_ *keymanager.HpkeAlgorithm, _ []byte, _ uint64) (uuid.UUID, []byte, error) {
+	svc := NewService(&mockKCC{
+		generateFn: func(_ *keymanager.HpkeAlgorithm, _ []byte, _ uint64) (uuid.UUID, []byte, error) {
 			return uuid.Nil, nil, fmt.Errorf("FFI error")
 		},
-		func(_, _ int) ([]kpskcc.KEMKeyInfo, bool, error) {
-			return nil, false, nil
-		},
-	)
+	})
 
 	_, _, err := svc.GenerateKEMKeypair(&keymanager.HpkeAlgorithm{}, make([]byte, 32), 3600)
 	if err == nil {
@@ -74,17 +87,14 @@ func TestServiceEnumerateKEMKeysSuccess(t *testing.T) {
 		},
 	}
 
-	svc := NewService(
-		func(_ *keymanager.HpkeAlgorithm, _ []byte, _ uint64) (uuid.UUID, []byte, error) {
-			return uuid.Nil, nil, nil
-		},
-		func(limit, offset int) ([]kpskcc.KEMKeyInfo, bool, error) {
+	svc := NewService(&mockKCC{
+		enumerateFn: func(limit, offset int) ([]kpskcc.KEMKeyInfo, bool, error) {
 			if limit != 100 || offset != 0 {
 				return nil, false, fmt.Errorf("unexpected limit/offset: %d/%d", limit, offset)
 			}
 			return expectedKeys, false, nil
 		},
-	)
+	})
 
 	keys, _, err := svc.EnumerateKEMKeys(100, 0)
 	if err != nil {
@@ -99,14 +109,11 @@ func TestServiceEnumerateKEMKeysSuccess(t *testing.T) {
 }
 
 func TestServiceEnumerateKEMKeysError(t *testing.T) {
-	svc := NewService(
-		func(_ *keymanager.HpkeAlgorithm, _ []byte, _ uint64) (uuid.UUID, []byte, error) {
-			return uuid.Nil, nil, nil
-		},
-		func(_, _ int) ([]kpskcc.KEMKeyInfo, bool, error) {
+	svc := NewService(&mockKCC{
+		enumerateFn: func(_, _ int) ([]kpskcc.KEMKeyInfo, bool, error) {
 			return nil, false, fmt.Errorf("enumerate error")
 		},
-	)
+	})
 
 	_, _, err := svc.EnumerateKEMKeys(100, 0)
 	if err == nil {
