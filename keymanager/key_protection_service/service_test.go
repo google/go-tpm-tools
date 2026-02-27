@@ -9,16 +9,16 @@ import (
 	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
 )
 
-type mockKCC struct {
+type mockKeyProtectionService struct {
 	generateKEMKeypairFn func(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error)
 	getKemKeyFn          func(id uuid.UUID) ([]byte, []byte, uint64, error)
 }
 
-func (m *mockKCC) GenerateKEMKeypair(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
+func (m *mockKeyProtectionService) GenerateKEMKeypair(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
 	return m.generateKEMKeypairFn(algo, bindingPubKey, lifespanSecs)
 }
 
-func (m *mockKCC) GetKemKey(id uuid.UUID) ([]byte, []byte, uint64, error) {
+func (m *mockKeyProtectionService) GetKemKey(id uuid.UUID) ([]byte, []byte, uint64, error) {
 	return m.getKemKeyFn(id)
 }
 
@@ -29,7 +29,7 @@ func TestServiceGenerateKEMKeypairSuccess(t *testing.T) {
 		expectedPubKey[i] = byte(i + 10)
 	}
 
-	svc := NewService(&mockKCC{
+	svc := NewService(&mockKeyProtectionService{
 		generateKEMKeypairFn: func(_ *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
 			if len(bindingPubKey) != 32 {
 				t.Fatalf("expected 32-byte binding public key, got %d", len(bindingPubKey))
@@ -54,7 +54,7 @@ func TestServiceGenerateKEMKeypairSuccess(t *testing.T) {
 }
 
 func TestServiceGenerateKEMKeypairError(t *testing.T) {
-	svc := NewService(&mockKCC{
+	svc := NewService(&mockKeyProtectionService{
 		generateKEMKeypairFn: func(_ *keymanager.HpkeAlgorithm, _ []byte, _ uint64) (uuid.UUID, []byte, error) {
 			return uuid.Nil, nil, fmt.Errorf("FFI error")
 		},
@@ -72,7 +72,7 @@ func TestServiceGetKemKeySuccess(t *testing.T) {
 	expectedDeleteAfter := uint64(12345678)
 	keyID := uuid.New()
 
-	svc := NewService(&mockKCC{
+	svc := NewService(&mockKeyProtectionService{
 		getKemKeyFn: func(id uuid.UUID) ([]byte, []byte, uint64, error) {
 			if id != keyID {
 				t.Fatalf("expected UUID %s, got %s", keyID, id)
