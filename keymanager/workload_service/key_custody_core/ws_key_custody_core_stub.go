@@ -11,6 +11,6 @@ import (
 )
 
 // GenerateBindingKeypair is a stub for architectures where the Rust library is not supported.
-func GenerateBindingKeypair(algo *algorithms.HpkeAlgorithm, lifespanSecs uint64) (uuid.UUID, []byte, error) {
+func GenerateBindingKeypair(_ *algorithms.HpkeAlgorithm, _ uint64) (uuid.UUID, []byte, error) {
 	return uuid.Nil, nil, fmt.Errorf("GenerateBindingKeypair is not supported on this architecture")
 }
