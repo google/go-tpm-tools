@@ -27,8 +27,8 @@ const (
 // String returns the string representation of a GPUArchitectureType based upon value.
 func (g GPUArchitectureType) String() string {
 	switch g {
-	case GpuArchitectureKepler:
-		return "GPU_ARCHITECTURE_KEPLER"
+	case GpuArchitectureHopper:
+		return "GPU_ARCHITECTURE_HOPPER"
 	case GpuArchitectureBlackwell:
 		return "GPU_ARCHITECTURE_BLACKWELL"
 	case GpuArchitectureUnspecified:
