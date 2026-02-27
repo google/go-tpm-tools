@@ -289,7 +289,7 @@ func writeJSON(w http.ResponseWriter, v any, code int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(code)
-	json.NewEncoder(w).Encode(v)
+	_ = json.NewEncoder(w).Encode(v)
 }
 
 // writeError writes a JSON error response.
@@ -312,8 +312,7 @@ func (s *Server) GetBindingKeyClaims(id uuid.UUID) (*keymanager.KeyClaims, error
 	}
 
 	// Step 3: Create KeyClaims
-	var claims *keymanager.KeyClaims
-	claims = &keymanager.KeyClaims{
+	claims := &keymanager.KeyClaims{
 		Claims: &keymanager.KeyClaims_VmBindingClaims{
 			VmBindingClaims: &keymanager.KeyClaims_VmProtectionBindingClaims{
 				BindingPubKey: &keymanager.HpkePublicKey{
@@ -345,8 +344,7 @@ func (s *Server) GetKemKeyClaims(id uuid.UUID) (*keymanager.KeyClaims, error) {
 	}
 
 	// Step 3: Create KeyClaims
-	var claims *keymanager.KeyClaims
-	claims = &keymanager.KeyClaims{
+	claims := &keymanager.KeyClaims{
 		Claims: &keymanager.KeyClaims_VmKeyClaims{
 			VmKeyClaims: &keymanager.KeyClaims_VmProtectionKeyClaims{
 				KemPubKey: &keymanager.KemPublicKey{
@@ -376,7 +374,7 @@ func (s *Server) processClaims() {
 
 		id, err := uuid.Parse(keyHandle)
 		if err != nil {
-			call.RespChan <- &ClaimsResult{Err: fmt.Errorf("Failed to retrieve key claims: %w", err)}
+			call.RespChan <- &ClaimsResult{Err: fmt.Errorf("failed to retrieve key claims: %w", err)}
 			continue
 		}
 		var claims *keymanager.KeyClaims
@@ -384,14 +382,14 @@ func (s *Server) processClaims() {
 		case keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING:
 			claims, err = s.GetBindingKeyClaims(id)
 			if err != nil {
-				call.RespChan <- &ClaimsResult{Err: fmt.Errorf("Failed to retrieve key claims: %w", err)}
+				call.RespChan <- &ClaimsResult{Err: fmt.Errorf("failed to retrieve key claims: %w", err)}
 				continue
 			}
 
 		case keymanager.KeyType_KEY_TYPE_VM_PROTECTION_KEY:
 			claims, err = s.GetKemKeyClaims(id)
 			if err != nil {
-				call.RespChan <- &ClaimsResult{Err: fmt.Errorf("Failed to retrieve key claims: %w", err)}
+				call.RespChan <- &ClaimsResult{Err: fmt.Errorf("failed to retrieve key claims: %w", err)}
 				continue
 			}
 		default:
