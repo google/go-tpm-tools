@@ -657,11 +657,6 @@ type fakeTdxAttestRoot struct {
 	cel           gecel.CEL
 	receivedNonce []byte
 	tdxQuote      []byte
-}
-
-func (f *fakeTdxAttestRoot) Attest(nonce []byte) (any, error) {
-	f.receivedNonce = nonce
-	return &verifier.TDCCELAttestation{TdQuote: f.tdxQuote}, nil
 	deviceRoTS    []DeviceROT
 }
 
@@ -912,7 +907,7 @@ func TestAttestationEvidence_TPM_Success(t *testing.T) {
 		t.Fatalf("ak.Attest() failed: %v", err)
 	}
 
-	machineState, err := server.VerifyAttestation(pbAttestation, server.VerifyOpts{
+	_, err = server.VerifyAttestation(pbAttestation, server.VerifyOpts{
 		Nonce:      tpmNonce[:],
 		TrustedAKs: []crypto.PublicKey{ak.PublicKey()},
 	})
@@ -1065,7 +1060,7 @@ func TestAttestationEvidence_ExperimentDisabled(t *testing.T) {
 	agent, err := CreateAttestationAgent(tpm, client.AttestationKeyECC, fake.NewClient(fakeSigner),
 		placeholderPrincipalFetcher, signaturediscovery.NewFakeClient(),
 		spec.LaunchSpec{ /* EnableAttestationEvidence defaults to false */ },
-		logging.SimpleLogger())
+		logging.SimpleLogger(), nil)
 	if err != nil {
 		t.Fatalf("failed to create agent: %v", err)
 	}
