@@ -61,3 +61,34 @@ func GenerateKEMKeypair(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, li
 	copy(pubkey, pubkeyBuf[:pubkeyLen])
 	return id, pubkey, nil
 }
+
+// GetKemKey retrieves KEM and binding public keys and delete_after timestamp via Rust FFI.
+func GetKemKey(id uuid.UUID) ([]byte, []byte, uint64, error) {
+	uuidBytes, err := id.MarshalBinary()
+	if err != nil {
+		return nil, nil, 0, fmt.Errorf("failed to marshal UUID: %v", err)
+	}
+
+	var kemPubkeyBuf [32]byte
+	var bindingPubkeyBuf [32]byte
+	var deleteAfter C.uint64_t
+
+	rc := C.key_manager_get_kem_key(
+		(*C.uint8_t)(unsafe.Pointer(&uuidBytes[0])),
+		(*C.uint8_t)(unsafe.Pointer(&kemPubkeyBuf[0])),
+		C.size_t(len(kemPubkeyBuf)),
+		(*C.uint8_t)(unsafe.Pointer(&bindingPubkeyBuf[0])),
+		C.size_t(len(bindingPubkeyBuf)),
+		&deleteAfter,
+	)
+	if rc != 0 {
+		return nil, nil, 0, fmt.Errorf("key_manager_get_kem_key failed with code %d", rc)
+	}
+
+	kemPubkey := make([]byte, len(kemPubkeyBuf))
+	copy(kemPubkey, kemPubkeyBuf[:])
+	bindingPubkey := make([]byte, len(bindingPubkeyBuf))
+	copy(bindingPubkey, bindingPubkeyBuf[:])
+
+	return kemPubkey, bindingPubkey, uint64(deleteAfter), nil
+}

@@ -54,3 +54,27 @@ func GenerateBindingKeypair(algo *keymanager.HpkeAlgorithm, lifespanSecs uint64)
 	copy(pubkey, pubkeyBuf[:pubkeyLen])
 	return id, pubkey, nil
 }
+
+// GetBindingKey retrieves the binding public key via Rust FFI.
+func GetBindingKey(id uuid.UUID) ([]byte, error) {
+	uuidBytes, err := id.MarshalBinary()
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal UUID: %v", err)
+	}
+
+	var pubkeyBuf [32]byte
+	pubkeyLen := C.size_t(len(pubkeyBuf))
+
+	rc := C.key_manager_get_binding_key(
+		(*C.uint8_t)(unsafe.Pointer(&uuidBytes[0])),
+		(*C.uint8_t)(unsafe.Pointer(&pubkeyBuf[0])),
+		pubkeyLen,
+	)
+	if rc != 0 {
+		return nil, fmt.Errorf("key_manager_get_binding_key failed with code %d", rc)
+	}
+
+	pubkey := make([]byte, pubkeyLen)
+	copy(pubkey, pubkeyBuf[:pubkeyLen])
+	return pubkey, nil
+}

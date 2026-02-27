@@ -14,3 +14,8 @@ import (
 func GenerateBindingKeypair(_ *algorithms.HpkeAlgorithm, _ uint64) (uuid.UUID, []byte, error) {
 	return uuid.Nil, nil, fmt.Errorf("GenerateBindingKeypair is not supported on this architecture")
 }
+
+// GetBindingKey is a stub for architectures where the Rust library is not supported.
+func GetBindingKey(id uuid.UUID) ([]byte, error) {
+	return nil, fmt.Errorf("GetBindingKey is not supported on this architecture")
+}

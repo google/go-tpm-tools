@@ -61,3 +61,49 @@ func TestIntegrationGenerateKEMKeypairUniqueness(t *testing.T) {
 		t.Fatalf("expected unique UUIDs, got same: %s", id1)
 	}
 }
+
+func TestIntegrationGetKemKey(t *testing.T) {
+	bindingPK := make([]byte, 32)
+	for i := range bindingPK {
+		bindingPK[i] = byte(i + 50)
+	}
+
+	id, pubKey, err := GenerateKEMKeypair(defaultAlgo, bindingPK, 3600)
+	if err != nil {
+		t.Fatalf("GenerateKEMKeypair failed: %v", err)
+	}
+
+	retrievedKemPK, retrievedBindingPK, deleteAfter, err := GetKemKey(id)
+	if err != nil {
+		t.Fatalf("GetKemKey failed: %v", err)
+	}
+
+	if len(retrievedKemPK) != len(pubKey) {
+		t.Fatalf("expected KEM pubkey length %d, got %d", len(pubKey), len(retrievedKemPK))
+	}
+	for i := range pubKey {
+		if pubKey[i] != retrievedKemPK[i] {
+			t.Fatalf("KEM pubkey mismatch at index %d", i)
+		}
+	}
+
+	if len(retrievedBindingPK) != len(bindingPK) {
+		t.Fatalf("expected binding pubkey length %d, got %d", len(bindingPK), len(retrievedBindingPK))
+	}
+	for i := range bindingPK {
+		if bindingPK[i] != retrievedBindingPK[i] {
+			t.Fatalf("binding pubkey mismatch at index %d", i)
+		}
+	}
+
+	if deleteAfter == 0 {
+		t.Fatal("expected non-zero deleteAfter timestamp")
+	}
+}
+
+func TestIntegrationGetKemKeyNotFound(t *testing.T) {
+	_, _, _, err := GetKemKey(uuid.New())
+	if err == nil {
+		t.Fatal("expected error for non-existent UUID")
+	}
+}

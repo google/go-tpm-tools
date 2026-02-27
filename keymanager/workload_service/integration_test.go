@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"testing"
 
 	"github.com/google/uuid"
@@ -24,10 +25,28 @@ func (r *realWorkloadService) GenerateBindingKeypair(algo *keymanager.HpkeAlgori
 	return wskcc.GenerateBindingKeypair(algo, lifespanSecs)
 }
 
+func (r *realWorkloadService) GetBindingKey(id uuid.UUID) ([]byte, error) {
+	return wskcc.GetBindingKey(id)
+}
+
+// realKCC wraps the actual KPS KCC FFI.
+type realKCC struct{}
+
+func (r *realKCC) GenerateKEMKeypair(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
+	return kpskcc.GenerateKEMKeypair(algo, bindingPubKey, lifespanSecs)
+}
+
+func (r *realKCC) GetKemKey(id uuid.UUID) ([]byte, []byte, uint64, error) {
+	return kpskcc.GetKemKey(id)
+}
+
 func TestIntegrationGenerateKeysEndToEnd(t *testing.T) {
 	// Wire up real FFI calls: WSD KCC for binding, KPS KCC (via KPS KOL) for KEM.
-	kpsSvc := kps.NewService(kpskcc.GenerateKEMKeypair)
-	srv := NewServer(kpsSvc, &realWorkloadService{})
+	kpsSvc := kps.NewService(&realKCC{})
+	srv, err := NewServer(kpsSvc, &realWorkloadService{}, filepath.Join(t.TempDir(), "test.sock"))
+	if err != nil {
+		t.Fatalf("failed to create server: %v", err)
+	}
 
 	reqBody, err := json.Marshal(GenerateKemRequest{
 		Algorithm:              KemAlgorithmDHKEMX25519HKDFSHA256,
@@ -72,8 +91,11 @@ func TestIntegrationGenerateKeysEndToEnd(t *testing.T) {
 }
 
 func TestIntegrationGenerateKeysUniqueMappings(t *testing.T) {
-	kpsSvc := kps.NewService(kpskcc.GenerateKEMKeypair)
-	srv := NewServer(kpsSvc, &realWorkloadService{})
+	kpsSvc := kps.NewService(&realKCC{})
+	srv, err := NewServer(kpsSvc, &realWorkloadService{}, filepath.Join(t.TempDir(), "test.sock"))
+	if err != nil {
+		t.Fatalf("failed to create server: %v", err)
+	}
 
 	// Generate two key sets.
 	var kemUUIDs [2]uuid.UUID
@@ -120,4 +142,98 @@ func TestIntegrationGenerateKeysUniqueMappings(t *testing.T) {
 
 	t.Logf("E2E uniqueness: KEM1=%s→Binding1=%s, KEM2=%s→Binding2=%s",
 		kemUUIDs[0], binding1, kemUUIDs[1], binding2)
+}
+
+func TestIntegrationKeyClaims(t *testing.T) {
+	kpsSvc := kps.NewService(&realKCC{})
+	srv, err := NewServer(kpsSvc, &realWorkloadService{}, filepath.Join(t.TempDir(), "test.sock"))
+	if err != nil {
+		t.Fatalf("failed to create server: %v", err)
+	}
+
+	// 1. Generate a KEM key
+	reqBody, _ := json.Marshal(GenerateKemRequest{
+		Algorithm:              KemAlgorithmDHKEMX25519HKDFSHA256,
+		KeyProtectionMechanism: KeyProtectionMechanismVM,
+		Lifespan:               ProtoDuration{Seconds: 3600},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/keys:generate_kem", bytes.NewReader(reqBody))
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("failed to generate KEM key: %s", w.Body.String())
+	}
+
+	var resp GenerateKemResponse
+	json.NewDecoder(w.Body).Decode(&resp)
+	kemHandle := resp.KeyHandle.Handle
+
+	// 2. Test GetKeyClaims for KEM key
+	t.Run("KemClaimsSuccess", func(t *testing.T) {
+		respChan := make(chan *ClaimsResult)
+		req := &keymanager.GetKeyClaimsRequest{
+			KeyHandle: &keymanager.KeyHandle{Handle: kemHandle},
+			KeyType:   keymanager.KeyType_KEY_TYPE_VM_PROTECTION_KEY,
+		}
+		srv.claimsChan <- &ClaimsCall{Request: req, RespChan: respChan}
+
+		res := <-respChan
+		if res.Err != nil {
+			t.Fatalf("unexpected error for KEM claims: %v", res.Err)
+		}
+		if res.Reply.GetVmKeyClaims() == nil {
+			t.Fatal("expected VmKeyClaims")
+		}
+	})
+
+	// 3. Test GetKeyClaims for Binding key
+	t.Run("BindingClaimsSuccess", func(t *testing.T) {
+		kemUUID, _ := uuid.Parse(kemHandle)
+		bindingUUID, _ := srv.LookupBindingUUID(kemUUID)
+
+		respChan := make(chan *ClaimsResult)
+		req := &keymanager.GetKeyClaimsRequest{
+			KeyHandle: &keymanager.KeyHandle{Handle: bindingUUID.String()},
+			KeyType:   keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING,
+		}
+		srv.claimsChan <- &ClaimsCall{Request: req, RespChan: respChan}
+
+		res := <-respChan
+		if res.Err != nil {
+			t.Fatalf("unexpected error for binding claims: %v", res.Err)
+		}
+		if res.Reply.GetVmBindingClaims() == nil {
+			t.Fatal("expected VmBindingClaims")
+		}
+	})
+
+	// 4. Test non-happy cases
+	t.Run("NonExistentKey", func(t *testing.T) {
+		respChan := make(chan *ClaimsResult)
+		req := &keymanager.GetKeyClaimsRequest{
+			KeyHandle: &keymanager.KeyHandle{Handle: uuid.New().String()},
+			KeyType:   keymanager.KeyType_KEY_TYPE_VM_PROTECTION_KEY,
+		}
+		srv.claimsChan <- &ClaimsCall{Request: req, RespChan: respChan}
+
+		res := <-respChan
+		if res.Err == nil {
+			t.Fatal("expected error for non-existent key")
+		}
+	})
+
+	t.Run("UnsupportedKeyType", func(t *testing.T) {
+		respChan := make(chan *ClaimsResult)
+		req := &keymanager.GetKeyClaimsRequest{
+			KeyHandle: &keymanager.KeyHandle{Handle: kemHandle},
+			KeyType:   keymanager.KeyType_KEY_TYPE_UNSPECIFIED,
+		}
+		srv.claimsChan <- &ClaimsCall{Request: req, RespChan: respChan}
+
+		res := <-respChan
+		if res.Err == nil {
+			t.Fatal("expected error for unsupported key type")
+		}
+	})
 }

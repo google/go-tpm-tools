@@ -46,3 +46,32 @@ func TestIntegrationGenerateBindingKeypairUniqueness(t *testing.T) {
 		t.Fatal("expected non-empty public keys")
 	}
 }
+
+func TestIntegrationGetBindingKey(t *testing.T) {
+	id, pubKey, err := GenerateBindingKeypair(defaultAlgo, 3600)
+	if err != nil {
+		t.Fatalf("GenerateBindingKeypair failed: %v", err)
+	}
+
+	retrievedPubKey, err := GetBindingKey(id)
+	if err != nil {
+		t.Fatalf("GetBindingKey failed: %v", err)
+	}
+
+	if len(retrievedPubKey) != len(pubKey) {
+		t.Fatalf("expected pubkey length %d, got %d", len(pubKey), len(retrievedPubKey))
+	}
+
+	for i := range pubKey {
+		if pubKey[i] != retrievedPubKey[i] {
+			t.Fatalf("mismatch at index %d: expected %d, got %d", i, pubKey[i], retrievedPubKey[i])
+		}
+	}
+}
+
+func TestIntegrationGetBindingKeyNotFound(t *testing.T) {
+	_, err := GetBindingKey(uuid.New())
+	if err == nil {
+		t.Fatal("expected error for non-existent UUID")
+	}
+}

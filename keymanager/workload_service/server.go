@@ -12,9 +12,12 @@ import (
 	"net/http"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/types/known/durationpb"
 
+	kps "github.com/google/go-tpm-tools/keymanager/key_protection_service"
 	kpscc "github.com/google/go-tpm-tools/keymanager/key_protection_service/key_custody_core"
 	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
 	wskcc "github.com/google/go-tpm-tools/keymanager/workload_service/key_custody_core"
@@ -23,21 +26,45 @@ import (
 // WorkloadService defines the interface for generating binding keypairs.
 type WorkloadService interface {
 	GenerateBindingKeypair(algo *keymanager.HpkeAlgorithm, lifespanSecs uint64) (uuid.UUID, []byte, error)
+	GetBindingKey(id uuid.UUID) ([]byte, error)
 }
-type keyProtectionService struct{}
+type kpsBackend struct{}
 
-// KeyProtectionService defines the interface for generating KEM keypairs.
-type KeyProtectionService interface {
-	GenerateKEMKeypair(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error)
-}
 type workloadService struct{}
 
 func (r *workloadService) GenerateBindingKeypair(algo *keymanager.HpkeAlgorithm, lifespanSecs uint64) (uuid.UUID, []byte, error) {
 	return wskcc.GenerateBindingKeypair(algo, lifespanSecs)
 }
 
-func (r *keyProtectionService) GenerateKEMKeypair(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
+func (r *workloadService) GetBindingKey(id uuid.UUID) ([]byte, error) {
+	return wskcc.GetBindingKey(id)
+}
+
+func (b *kpsBackend) GenerateKEMKeypair(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
 	return kpscc.GenerateKEMKeypair(algo, bindingPubKey, lifespanSecs)
+}
+
+func (b *kpsBackend) GetKemKey(id uuid.UUID) ([]byte, []byte, uint64, error) {
+	return kpscc.GetKemKey(id)
+}
+
+// KeyClaimsProvider defines the interface for retrieving key claims.
+// This abstraction allows the underlying implementation to be a local channel
+// or a remote RPC call in future.
+type KeyClaimsProvider interface {
+	GetKeyClaims(ctx context.Context, keyHandle string, keyType keymanager.KeyType) (*keymanager.KeyClaims, error)
+}
+
+// ClaimsCall acts as the internal "envelope" for the channel.
+type ClaimsCall struct {
+	Request  *keymanager.GetKeyClaimsRequest
+	RespChan chan *ClaimsResult
+}
+
+// ClaimsResult wraps the protobuf response with an error.
+type ClaimsResult struct {
+	Reply *keymanager.KeyClaims
+	Err   error
 }
 
 // KeyHandle represents a key handle returned from the API.
@@ -103,11 +130,13 @@ type GetCapabilitiesResponse struct {
 
 // Server is the WSD HTTP server.
 type Server struct {
-	keyProtectionService KeyProtectionService
+	keyProtectionService kps.KeyProtectionService
 	workloadService      WorkloadService
 
 	mu              sync.RWMutex
 	kemToBindingMap map[uuid.UUID]uuid.UUID
+
+	claimsChan chan *ClaimsCall
 
 	httpServer *http.Server
 	listener   net.Listener
@@ -116,16 +145,18 @@ type Server struct {
 
 // New creates a new WSD Server listening on the given unix socket path.
 func New(_ context.Context, socketPath string) (*Server, error) {
-	return NewServer(&keyProtectionService{}, &workloadService{}, socketPath)
+	kpsService := kps.NewService(&kpsBackend{})
+	return NewServer(kpsService, &workloadService{}, socketPath)
 }
 
 // NewServer creates a new WSD server with the given dependencies.
-func NewServer(keyProtectionService KeyProtectionService, workloadService WorkloadService, socketPath string) (*Server, error) {
+func NewServer(keyProtectionService kps.KeyProtectionService, workloadService WorkloadService, socketPath string) (*Server, error) {
 	s := &Server{
 		keyProtectionService: keyProtectionService,
 		workloadService:      workloadService,
 		kemToBindingMap:      make(map[uuid.UUID]uuid.UUID),
 		mu:                   sync.RWMutex{},
+		claimsChan:           make(chan *ClaimsCall, 100),
 	}
 
 	mux := http.NewServeMux()
@@ -140,6 +171,9 @@ func NewServer(keyProtectionService KeyProtectionService, workloadService Worklo
 		return nil, fmt.Errorf("failed to listen on unix socket %s: %w", socketPath, err)
 	}
 	s.listener = ln
+
+	go s.processClaims()
+
 	return s, nil
 }
 
@@ -261,4 +295,110 @@ func writeJSON(w http.ResponseWriter, v any, code int) {
 // writeError writes a JSON error response.
 func writeError(w http.ResponseWriter, message string, code int) {
 	writeJSON(w, map[string]string{"error": message}, code)
+}
+
+func (s *Server) GetBindingKeyClaims(id uuid.UUID) (*keymanager.KeyClaims, error) {
+	// Step 1: Key ID Lookup. The orchestration layer will look-up the key_handle
+	// in its ActiveKeyRegistry to find the Binding Key ID.
+	bindingID := id
+	if bid, ok := s.LookupBindingUUID(id); ok {
+		bindingID = bid
+	}
+
+	// Step 2: Key Metadata Lookup.
+	pubKey, err := s.workloadService.GetBindingKey(bindingID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get binding key: %w", err)
+	}
+
+	// Step 3: Create KeyClaims
+	var claims *keymanager.KeyClaims
+	claims = &keymanager.KeyClaims{
+		Claims: &keymanager.KeyClaims_VmBindingClaims{
+			VmBindingClaims: &keymanager.KeyClaims_VmProtectionBindingClaims{
+				BindingPubKey: &keymanager.HpkePublicKey{
+					Algorithm: &keymanager.HpkeAlgorithm{
+						Kem:  keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
+						Kdf:  keymanager.KdfAlgorithm_KDF_ALGORITHM_HKDF_SHA256,
+						Aead: keymanager.AeadAlgorithm_AEAD_ALGORITHM_AES_256_GCM,
+					},
+					PublicKey: pubKey,
+				},
+			},
+		},
+	}
+	return claims, nil
+}
+
+func (s *Server) GetKemKeyClaims(id uuid.UUID) (*keymanager.KeyClaims, error) {
+	// Step 1: Key Metadata Lookup.
+	kemPubKey, bindingPubKey, deleteAfter, err := s.keyProtectionService.GetKemKey(id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get KEM key: %w", err)
+	}
+
+	// Step 2: Calculate remaining time.
+	remaining := time.Duration(0)
+	if deleteAfter > 0 {
+		expiry := time.Unix(int64(deleteAfter), 0)
+		remaining = max(time.Until(expiry), 0)
+	}
+
+	// Step 3: Create KeyClaims
+	var claims *keymanager.KeyClaims
+	claims = &keymanager.KeyClaims{
+		Claims: &keymanager.KeyClaims_VmKeyClaims{
+			VmKeyClaims: &keymanager.KeyClaims_VmProtectionKeyClaims{
+				KemPubKey: &keymanager.KemPublicKey{
+					Algorithm: keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
+					PublicKey: kemPubKey,
+				},
+				BindingPubKey: &keymanager.HpkePublicKey{
+					Algorithm: &keymanager.HpkeAlgorithm{
+						Kem:  keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
+						Kdf:  keymanager.KdfAlgorithm_KDF_ALGORITHM_HKDF_SHA256,
+						Aead: keymanager.AeadAlgorithm_AEAD_ALGORITHM_AES_256_GCM,
+					},
+					PublicKey: bindingPubKey,
+				},
+				RemainingLifespan: durationpb.New(remaining),
+			},
+		},
+	}
+	return claims, nil
+}
+
+func (s *Server) processClaims() {
+	for call := range s.claimsChan {
+		req := call.Request
+		keyHandle := req.GetKeyHandle().GetHandle()
+		keyType := req.GetKeyType()
+
+		id, err := uuid.Parse(keyHandle)
+		if err != nil {
+			call.RespChan <- &ClaimsResult{Err: fmt.Errorf("Failed to retrieve key claims: %w", err)}
+			continue
+		}
+		var claims *keymanager.KeyClaims
+		switch keyType {
+		case keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING:
+			claims, err = s.GetBindingKeyClaims(id)
+			if err != nil {
+				call.RespChan <- &ClaimsResult{Err: fmt.Errorf("Failed to retrieve key claims: %w", err)}
+				continue
+			}
+
+		case keymanager.KeyType_KEY_TYPE_VM_PROTECTION_KEY:
+			claims, err = s.GetKemKeyClaims(id)
+			if err != nil {
+				call.RespChan <- &ClaimsResult{Err: fmt.Errorf("Failed to retrieve key claims: %w", err)}
+				continue
+			}
+		default:
+			call.RespChan <- &ClaimsResult{Err: fmt.Errorf("unsupported key type: %v", keyType)}
+			continue
+		}
+
+		call.RespChan <- &ClaimsResult{Reply: claims}
+	}
 }

@@ -400,6 +400,105 @@ pub unsafe extern "C" fn key_manager_decap_and_seal(
     .unwrap_or(-1)
 }
 
+/// Internal function to retrieve a KEM key's public keys and expiration.
+fn get_kem_key_internal(uuid: Uuid) -> Result<(PublicKey, PublicKey, u64), i32> {
+    let record = KEY_REGISTRY.get_key(&uuid).ok_or(-1)?;
+    match &record.meta.spec {
+        KeySpec::KemWithBindingPub {
+            kem_public_key,
+            binding_public_key,
+            ..
+        } => {
+            let remaining = record
+                .meta
+                .delete_after
+                .saturating_duration_since(std::time::Instant::now());
+            let unix_expiry = std::time::SystemTime::now() + remaining;
+            let unix_secs = unix_expiry
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or(std::time::Duration::from_secs(0))
+                .as_secs();
+            Ok((
+                kem_public_key.clone(),
+                binding_public_key.clone(),
+                unix_secs,
+            ))
+        }
+        _ => Err(-1),
+    }
+}
+
+/// Retrieves the KEM and binding public keys associated with the given UUID.
+///
+/// ## Arguments
+/// * `uuid_bytes` - A pointer to a 16-byte buffer containing the key UUID.
+/// * `out_kem_pubkey` - A pointer to a buffer where the KEM public key will be written.
+/// * `out_kem_pubkey_len` - The size of `out_kem_pubkey` buffer.
+/// * `out_binding_pubkey` - A pointer to a buffer where the binding public key will be written.
+/// * `out_binding_pubkey_len` - The size of `out_binding_pubkey` buffer.
+/// * `out_delete_after` - A pointer to a u64 where the UNIX expiration timestamp will be written.
+///
+/// ## Safety
+/// This function is unsafe because it dereferences raw pointers.
+///
+/// ## Returns
+/// * `0` on success.
+/// * `-1` if arguments are invalid or key is not found.
+/// * `-2` if either public key buffer is too small.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn key_manager_get_kem_key(
+    uuid_bytes: *const u8,
+    out_kem_pubkey: *mut u8,
+    out_kem_pubkey_len: usize,
+    out_binding_pubkey: *mut u8,
+    out_binding_pubkey_len: usize,
+    out_delete_after: *mut u64,
+) -> i32 {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        if uuid_bytes.is_null()
+            || out_kem_pubkey.is_null()
+            || out_kem_pubkey_len == 0
+            || out_binding_pubkey.is_null()
+            || out_binding_pubkey_len == 0
+            || out_delete_after.is_null()
+        {
+            return -1;
+        }
+
+        // Convert to Safe Types
+        let uuid_slice = unsafe { std::slice::from_raw_parts(uuid_bytes, 16) };
+        let out_kem_pubkey_slice =
+            unsafe { std::slice::from_raw_parts_mut(out_kem_pubkey, out_kem_pubkey_len) };
+        let out_binding_pubkey_slice = unsafe {
+            std::slice::from_raw_parts_mut(out_binding_pubkey, out_binding_pubkey_len)
+        };
+        let out_delete_after_ref = unsafe { &mut *out_delete_after };
+
+        let uuid = match Uuid::from_slice(uuid_slice) {
+            Ok(u) => u,
+            Err(_) => return -1,
+        };
+
+        // Call Safe Internal Function
+        match get_kem_key_internal(uuid) {
+            Ok((kem_pubkey, binding_pubkey, delete_after)) => {
+                if out_kem_pubkey_len != kem_pubkey.as_bytes().len()
+                    || out_binding_pubkey_len != binding_pubkey.as_bytes().len()
+                {
+                    return -2;
+                }
+
+                out_kem_pubkey_slice.copy_from_slice(kem_pubkey.as_bytes());
+                out_binding_pubkey_slice.copy_from_slice(binding_pubkey.as_bytes());
+                *out_delete_after_ref = delete_after;
+                0 // Success
+            }
+            Err(e) => e,
+        }
+    }))
+    .unwrap_or(-1)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -991,5 +1090,79 @@ mod tests {
         };
 
         assert_eq!(result, -2);
+    }
+
+    #[test]
+    fn test_get_kem_key_success() {
+        let binding_pubkey = [42u8; 32];
+        let mut uuid_bytes = [0u8; 16];
+        let mut generated_kem_pubkey_bytes = [0u8; 32];
+        let pubkey_len = generated_kem_pubkey_bytes.len();
+        let algo = HpkeAlgorithm {
+            kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
+            kdf: KdfAlgorithm::HkdfSha256 as i32,
+            aead: AeadAlgorithm::Aes256Gcm as i32,
+        };
+        let algo_bytes = algo.encode_to_vec();
+
+        // Generate a key to retrieve.
+        let res = unsafe {
+            key_manager_generate_kem_keypair(
+                algo_bytes.as_ptr(),
+                algo_bytes.len(),
+                binding_pubkey.as_ptr(),
+                binding_pubkey.len(),
+                3600,
+                uuid_bytes.as_mut_ptr(),
+                generated_kem_pubkey_bytes.as_mut_ptr(),
+                pubkey_len,
+            )
+        };
+        assert_eq!(res, 0);
+
+        // Now, retrieve it.
+        let mut retrieved_kem_pubkey_bytes = [0u8; 32];
+        let mut retrieved_binding_pubkey_bytes = [0u8; 32];
+        let mut delete_after: u64 = 0;
+
+        let result = unsafe {
+            key_manager_get_kem_key(
+                uuid_bytes.as_ptr(),
+                retrieved_kem_pubkey_bytes.as_mut_ptr(),
+                retrieved_kem_pubkey_bytes.len(),
+                retrieved_binding_pubkey_bytes.as_mut_ptr(),
+                retrieved_binding_pubkey_bytes.len(),
+                &mut delete_after,
+            )
+        };
+
+        assert_eq!(result, 0);
+        assert_eq!(generated_kem_pubkey_bytes, retrieved_kem_pubkey_bytes);
+        assert_eq!(binding_pubkey, retrieved_binding_pubkey_bytes);
+        let now_unix = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        assert!(delete_after > now_unix);
+    }
+
+    #[test]
+    fn test_get_kem_key_not_found() {
+        let uuid_bytes = [42u8; 16]; // Some non-existent UUID.
+        let mut kem_pubkey_bytes = [0u8; 32];
+        let mut binding_pubkey_bytes = [0u8; 32];
+        let mut delete_after: u64 = 0;
+
+        let result = unsafe {
+            key_manager_get_kem_key(
+                uuid_bytes.as_ptr(),
+                kem_pubkey_bytes.as_mut_ptr(),
+                kem_pubkey_bytes.len(),
+                binding_pubkey_bytes.as_mut_ptr(),
+                binding_pubkey_bytes.len(),
+                &mut delete_after,
+            )
+        };
+        assert_eq!(result, -1);
     }
 }

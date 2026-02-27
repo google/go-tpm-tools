@@ -9,23 +9,30 @@ import (
 	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
 )
 
-// KEMKeyGenerator generates KEM keypairs linked to a binding public key.
-type KEMKeyGenerator interface {
-	GenerateKEMKeypair(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) ([]byte, []byte, error)
+// KeyProtectionService defines the interface for the underlying Key Custody Core operations.
+type KeyProtectionService interface {
+	GenerateKEMKeypair(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error)
+	GetKemKey(id uuid.UUID) ([]byte, []byte, uint64, error)
 }
 
-// Service implements KEMKeyGenerator by delegating to the KPS KCC FFI.
+// Service implements KEM keypair operations by delegating to a KeyProtectionService backend.
 type Service struct {
-	generateKEMKeypairFn func(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error)
+	kps KeyProtectionService
 }
 
-// NewService creates a new KPS KOL service with the given KCC function.
-func NewService(generateKEMKeypairFn func(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error)) *Service {
-	return &Service{generateKEMKeypairFn: generateKEMKeypairFn}
+// NewService creates a new Service with the given KeyProtectionService backend.
+func NewService(kps KeyProtectionService) *Service {
+	return &Service{kps: kps}
 }
 
 // GenerateKEMKeypair generates a KEM keypair linked to the provided binding
-// public key by calling the KPS KCC FFI.
+// public key by calling the underlying KeyProtectionService backend.
 func (s *Service) GenerateKEMKeypair(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
-	return s.generateKEMKeypairFn(algo, bindingPubKey, lifespanSecs)
+	return s.kps.GenerateKEMKeypair(algo, bindingPubKey, lifespanSecs)
+}
+
+// GetKemKey retrieves KEM and binding public keys and delete_after timestamp
+// by calling the underlying KeyProtectionService backend.
+func (s *Service) GetKemKey(id uuid.UUID) ([]byte, []byte, uint64, error) {
+	return s.kps.GetKemKey(id)
 }

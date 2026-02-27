@@ -12,6 +12,23 @@ message KeyHandle {
   string handle = 1;
 }
 
+enum KeyType {
+  KEY_TYPE_UNSPECIFIED = 0;
+  // A standard HPKE binding key-pair used for internal isolation.
+  KEY_TYPE_VM_PROTECTION_BINDING = 1;
+  // A KEM key-pair managed by the Key Protection Service.
+  KEY_TYPE_VM_PROTECTION_KEY = 2;
+}
+
+// GetKeyClaimsRequest defines the input required to retrieve claims for a key.
+message GetKeyClaimsRequest {
+  // The unique identifier (UUID) for the key.
+  KeyHandle key_handle = 1;
+
+  // The type of key (Binding or KEM) which determines the claim format.
+  KeyType key_type = 2;
+}
+
 enum KeyProtectionMechanism {
   KEY_PROTECTION_MECHANISM_UNSPECIFIED = 0;
 

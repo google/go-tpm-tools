@@ -52,6 +52,13 @@ int32_t key_manager_decap_and_seal(const uint8_t *uuid_bytes,
                                    uint8_t *out_ciphertext,
                                    size_t out_ciphertext_len);
 
+int32_t key_manager_get_kem_key(const uint8_t *uuid_bytes,
+                                uint8_t *out_kem_pubkey,
+                                size_t out_kem_pubkey_len,
+                                uint8_t *out_binding_pubkey,
+                                size_t out_binding_pubkey_len,
+                                uint64_t *out_delete_after);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif  // __cplusplus

@@ -331,6 +331,67 @@ pub unsafe extern "C" fn key_manager_enumerate_binding_keys(
     .unwrap_or(-1)
 }
 
+/// Internal function to retrieve a binding key's public key.
+fn get_binding_key_internal(uuid: Uuid) -> Result<PublicKey, i32> {
+    let record = KEY_REGISTRY.get_key(&uuid).ok_or(-1)?;
+    match &record.meta.spec {
+        KeySpec::Binding {
+            binding_public_key, ..
+        } => Ok(binding_public_key.clone()),
+        _ => Err(-1),
+    }
+}
+
+/// Retrieves the binding public key associated with the given UUID.
+///
+/// ## Arguments
+/// * `uuid_bytes` - A pointer to a 16-byte buffer containing the key UUID.
+/// * `out_pubkey` - A pointer to a buffer where the public key will be written.
+/// * `out_pubkey_len` - The size of `out_pubkey` buffer.
+///
+/// ## Safety
+/// This function is unsafe because it dereferences raw pointers.
+///
+/// ## Returns
+/// * `0` on success.
+/// * `-1` if arguments are invalid or key is not found.
+/// * `-2` if the `out_pubkey` buffer is too small.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn key_manager_get_binding_key(
+    uuid_bytes: *const u8,
+    out_pubkey: *mut u8,
+    out_pubkey_len: usize,
+) -> i32 {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        if uuid_bytes.is_null() || out_pubkey.is_null() || out_pubkey_len == 0 {
+            return -1;
+        }
+
+        // Convert to Safe Types
+        let uuid_slice = unsafe { std::slice::from_raw_parts(uuid_bytes, 16) };
+        let out_pubkey_slice =
+            unsafe { std::slice::from_raw_parts_mut(out_pubkey, out_pubkey_len) };
+
+        let uuid = match Uuid::from_slice(uuid_slice) {
+            Ok(u) => u,
+            Err(_) => return -1,
+        };
+
+        // Call Safe Internal Function
+        match get_binding_key_internal(uuid) {
+            Ok(pubkey) => {
+                if out_pubkey_len != pubkey.as_bytes().len() {
+                    return -2;
+                }
+                out_pubkey_slice.copy_from_slice(pubkey.as_bytes());
+                0 // Success
+            }
+            Err(e) => e,
+        }
+    }))
+    .unwrap_or(-1)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -669,5 +730,59 @@ mod tests {
             }
         }
         assert!(found_uuid, "Generated UUID should be in returned keys");
+    }
+
+    #[test]
+    fn test_get_binding_key_success() {
+        let mut uuid_bytes = [0u8; 16];
+        let mut generated_pubkey_bytes = [0u8; 32];
+        let pubkey_len: usize = generated_pubkey_bytes.len();
+        let algo = HpkeAlgorithm {
+            kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
+            kdf: KdfAlgorithm::HkdfSha256 as i32,
+            aead: AeadAlgorithm::Aes256Gcm as i32,
+        };
+        let algo_bytes = algo.encode_to_vec();
+
+        // Generate a key to retrieve.
+        let res = unsafe {
+            key_manager_generate_binding_keypair(
+                algo_bytes.as_ptr(),
+                algo_bytes.len(),
+                3600,
+                uuid_bytes.as_mut_ptr(),
+                generated_pubkey_bytes.as_mut_ptr(),
+                pubkey_len,
+            )
+        };
+        assert_eq!(res, 0);
+
+        // Now, retrieve it.
+        let mut retrieved_pubkey_bytes = [0u8; 32];
+        let result = unsafe {
+            key_manager_get_binding_key(
+                uuid_bytes.as_ptr(),
+                retrieved_pubkey_bytes.as_mut_ptr(),
+                retrieved_pubkey_bytes.len(),
+            )
+        };
+
+        assert_eq!(result, 0);
+        assert_eq!(generated_pubkey_bytes, retrieved_pubkey_bytes);
+    }
+
+    #[test]
+    fn test_get_binding_key_not_found() {
+        let uuid_bytes = [42u8; 16]; // Some non-existent UUID.
+        let mut pubkey_bytes = [0u8; 32];
+
+        let result = unsafe {
+            key_manager_get_binding_key(
+                uuid_bytes.as_ptr(),
+                pubkey_bytes.as_mut_ptr(),
+                pubkey_bytes.len(),
+            )
+        };
+        assert_eq!(result, -1);
     }
 }
