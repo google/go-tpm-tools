@@ -71,6 +71,14 @@ type attestRoot interface {
 	Attest(nonce []byte) (any, error)
 	// ComputeNonce hashes the challenge and extraData using the algorithm preferred by the attestation root.
 	ComputeNonce(challenge []byte, extraData []byte) []byte
+	// AddDeviceROTs adds detected device RoTs(root of trust).
+	AddDeviceROTs([]DeviceROT)
+}
+
+// DeviceROT defines an interface for all attached devices to collect attestation.
+type DeviceROT interface {
+	// Attest fetches an attestation from the attached device detected by launcher.
+	Attest(nonce []byte) (any, error)
 }
 
 // AttestAgentOpts contains user generated options when calling the
@@ -98,7 +106,7 @@ type agent struct {
 // - principalFetcher is a func to fetch GCE principal tokens for a given audience.
 // - signaturesFetcher is a func to fetch container image signatures associated with the running workload.
 // - logger will log any partial errors returned by VerifyAttestation.
-func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher util.TpmKeyFetcher, verifierClient verifier.Client, principalFetcher principalIDTokenFetcher, sigsFetcher signaturediscovery.Fetcher, launchSpec spec.LaunchSpec, logger logging.Logger) (AttestationAgent, error) {
+func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher util.TpmKeyFetcher, verifierClient verifier.Client, principalFetcher principalIDTokenFetcher, sigsFetcher signaturediscovery.Fetcher, launchSpec spec.LaunchSpec, logger logging.Logger, deviceROTs []DeviceROT) (AttestationAgent, error) {
 	// Fetched the AK and save it, so the agent doesn't need to create a new key everytime
 	ak, err := akFetcher(tpm)
 	if err != nil {
@@ -161,6 +169,8 @@ func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher util.TpmKeyFetcher
 		attestAgent.avRot = tpmAR
 	}
 
+	// Add deviceRoTs to the CPU attestation root.
+	attestAgent.avRot.AddDeviceROTs(deviceROTs)
 	return attestAgent, nil
 }
 
@@ -360,11 +370,12 @@ func convertOCIToContainerSignature(ociSig oci.Signature) (*verifier.ContainerSi
 }
 
 type tpmAttestRoot struct {
-	tpmMu     sync.Mutex
-	fetchedAK *client.Key
-	tpm       io.ReadWriteCloser
-	cosCel    gecel.CEL
-	hashAlgos []crypto.Hash
+	tpmMu      sync.Mutex
+	fetchedAK  *client.Key
+	tpm        io.ReadWriteCloser
+	cosCel     gecel.CEL
+	hashAlgos  []crypto.Hash
+	deviceROTs []DeviceROT
 }
 
 func (t *tpmAttestRoot) GetCEL() gecel.CEL {
@@ -405,10 +416,15 @@ func (t *tpmAttestRoot) ComputeNonce(challenge []byte, extraData []byte) []byte 
 	return finalNonce[:]
 }
 
+func (t *tpmAttestRoot) AddDeviceROTs(deviceROTs []DeviceROT) {
+	t.deviceROTs = append(t.deviceROTs, deviceROTs...)
+}
+
 type tdxAttestRoot struct {
-	tdxMu  sync.Mutex
-	qp     *tg.LinuxConfigFsQuoteProvider
-	cosCel gecel.CEL
+	tdxMu      sync.Mutex
+	qp         *tg.LinuxConfigFsQuoteProvider
+	cosCel     gecel.CEL
+	deviceROTs []DeviceROT
 }
 
 func (t *tdxAttestRoot) GetCEL() gecel.CEL {
@@ -442,10 +458,25 @@ func (t *tdxAttestRoot) Attest(nonce []byte) (any, error) {
 		return nil, err
 	}
 
+	var nvAtt *models.NvidiaAttestation
+	for _, deviceRoT := range t.deviceROTs {
+		att, err := deviceRoT.Attest(nonce)
+		if err != nil {
+			return nil, err
+		}
+		switch v := att.(type) {
+		case *models.NvidiaAttestation:
+			nvAtt = v
+		default:
+			return nil, fmt.Errorf("unknown device attestation type: %T", v)
+		}
+	}
+
 	return &verifier.TDCCELAttestation{
-		CcelAcpiTable: ccelTable,
-		CcelData:      ccelData,
-		TdQuote:       rawQuote,
+		CcelAcpiTable:     ccelTable,
+		CcelData:          ccelData,
+		TdQuote:           rawQuote,
+		NvidiaAttestation: nvAtt,
 	}, nil
 }
 
@@ -458,6 +489,10 @@ func (t *tdxAttestRoot) ComputeNonce(challenge []byte, extraData []byte) []byte 
 	challengeDigest := sha512.Sum512(challengeData)
 	finalNonce := sha512.Sum512(append([]byte(teemodels.WorkloadAttestationLabel), challengeDigest[:]...))
 	return finalNonce[:]
+}
+
+func (t *tdxAttestRoot) AddDeviceROTs(deviceROTs []DeviceROT) {
+	t.deviceROTs = append(t.deviceROTs, deviceROTs...)
 }
 
 // Refresh refreshes the internal state of the attestation agent.

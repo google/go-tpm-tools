@@ -36,6 +36,7 @@ import (
 	tpmpb "github.com/google/go-tpm-tools/proto/tpm"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/google/go-tpm-tools/verifier/fake"
+	"github.com/google/go-tpm-tools/verifier/models"
 	"github.com/google/go-tpm-tools/verifier/oci"
 	"github.com/google/go-tpm-tools/verifier/oci/cosign"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -64,7 +65,7 @@ func TestAttestRacing(t *testing.T) {
 	}
 
 	verifierClient := fake.NewClient(fakeSigner)
-	agent, err := CreateAttestationAgent(tpm, client.AttestationKeyECC, verifierClient, placeholderPrincipalFetcher, signaturediscovery.NewFakeClient(), spec.LaunchSpec{}, logging.SimpleLogger())
+	agent, err := CreateAttestationAgent(tpm, client.AttestationKeyECC, verifierClient, placeholderPrincipalFetcher, signaturediscovery.NewFakeClient(), spec.LaunchSpec{}, logging.SimpleLogger(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +117,7 @@ func TestAttest(t *testing.T) {
 
 			verifierClient := fake.NewClient(fakeSigner)
 
-			agent, err := CreateAttestationAgent(tpm, client.AttestationKeyECC, verifierClient, tc.principalIDTokenFetcher, tc.containerSignaturesFetcher, tc.launchSpec, logging.SimpleLogger())
+			agent, err := CreateAttestationAgent(tpm, client.AttestationKeyECC, verifierClient, tc.principalIDTokenFetcher, tc.containerSignaturesFetcher, tc.launchSpec, logging.SimpleLogger(), nil)
 			if err != nil {
 				t.Fatalf("failed to create an attestation agent %v", err)
 			}
@@ -661,6 +662,7 @@ type fakeTdxAttestRoot struct {
 func (f *fakeTdxAttestRoot) Attest(nonce []byte) (any, error) {
 	f.receivedNonce = nonce
 	return &verifier.TDCCELAttestation{TdQuote: f.tdxQuote}, nil
+	deviceRoTS    []DeviceROT
 }
 
 func (f *fakeTdxAttestRoot) Extend(c gecel.Content) error {
@@ -671,6 +673,28 @@ func (f *fakeTdxAttestRoot) Extend(c gecel.Content) error {
 
 func (f *fakeTdxAttestRoot) GetCEL() gecel.CEL {
 	return f.cel
+}
+
+func (f *fakeTdxAttestRoot) Attest(nonce []byte) (any, error) {
+	f.receivedNonce = nonce
+	var nvAtt *models.NvidiaAttestation
+	for _, deviceRoT := range f.deviceRoTS {
+		att, err := deviceRoT.Attest(nonce)
+		if err != nil {
+			return nil, err
+		}
+		switch v := att.(type) {
+		case *models.NvidiaAttestation:
+			nvAtt = v
+		default:
+			return nil, fmt.Errorf("unknown device attestation type: %T", v)
+		}
+	}
+
+	return &verifier.TDCCELAttestation{
+		TdQuote:           []byte("fake-tdx-quote"),
+		NvidiaAttestation: nvAtt,
+	}, nil
 }
 
 func (f *fakeTdxAttestRoot) ComputeNonce(challenge []byte, extraData []byte) []byte {
@@ -688,6 +712,71 @@ func (f *fakeTdxAttestRoot) ComputeNonce(challenge []byte, extraData []byte) []b
 var tdxQuoteB64 string
 //go:embed cel.b64
 var celB64 string
+
+func (f *fakeTdxAttestRoot) AddDeviceROTs(deviceRoTS []DeviceROT) {
+	f.deviceRoTS = append(f.deviceRoTS, deviceRoTS...)
+}
+
+type fakeGPURoT struct{}
+
+func (f *fakeGPURoT) Attest(nonce []byte) (any, error) {
+	if len(nonce) == 0 {
+		return nil, fmt.Errorf("fake GPU attestation failed")
+	}
+	return &models.NvidiaAttestation{
+		CCFeature: &models.NvidiaSinglePassthroughAttestation{
+			GPUInfo: models.GPUInfo{UUID: "fake-gpu-uuid"},
+		},
+	}, nil
+}
+func TestTdxAttestRoot(t *testing.T) {
+	testCases := []struct {
+		name          string
+		tdxAttestRoot *fakeTdxAttestRoot
+		nonce         []byte
+		wantGPU       bool
+		wantPass      bool
+	}{
+		{
+			name:          "success tdxAttestRoot w/o GPU device",
+			tdxAttestRoot: &fakeTdxAttestRoot{},
+			nonce:         []byte("test-nonce"),
+			wantPass:      true,
+		},
+		{
+			name: "success tdxAttestRoot w/ GPU device",
+			tdxAttestRoot: &fakeTdxAttestRoot{
+				deviceRoTS: []DeviceROT{&fakeGPURoT{}},
+			},
+			nonce:    []byte("test-nonce"),
+			wantGPU:  true,
+			wantPass: true,
+		},
+		{
+			name: "failed tdxAttestRoot w/ GPU device",
+			tdxAttestRoot: &fakeTdxAttestRoot{
+				deviceRoTS: []DeviceROT{&fakeGPURoT{}},
+			},
+			nonce:    []byte(""),
+			wantPass: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			attestation, err := tc.tdxAttestRoot.Attest(tc.nonce)
+			if gotPass := (err == nil); gotPass != tc.wantPass {
+				t.Errorf("tdxAttestRoot.Attest() did not return expected attestation result, got %v, want %v", gotPass, tc.wantPass)
+			}
+			if tc.wantPass && tc.wantGPU {
+				if att := attestation.(*verifier.TDCCELAttestation); att.NvidiaAttestation == nil {
+					t.Error("tdxAttestRoot.Attest() did not return expected GPU attestation, want GPU attestation, but got nil")
+				}
+			}
+		})
+	}
+
+}
 
 func TestAttestationEvidence_TDX_Success(t *testing.T) {
 	ctx := context.Background()
@@ -788,7 +877,7 @@ func TestAttestationEvidence_TPM_Success(t *testing.T) {
 		Experiments: experiments.Experiments{
 			EnableAttestationEvidence: true,
 		},
-	}, logging.SimpleLogger())
+	}, logging.SimpleLogger(), nil)
 	if err != nil {
 		t.Fatalf("failed to create agent: %v", err)
 	}
