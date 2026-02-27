@@ -297,6 +297,7 @@ func writeError(w http.ResponseWriter, message string, code int) {
 	writeJSON(w, map[string]string{"error": message}, code)
 }
 
+// GetBindingKeyClaims returns the claims for a binding key identified by its UUID.
 func (s *Server) GetBindingKeyClaims(id uuid.UUID) (*keymanager.KeyClaims, error) {
 	// Step 1: Key ID Lookup. The orchestration layer will look-up the key_handle
 	// in its ActiveKeyRegistry to find the Binding Key ID.
@@ -329,6 +330,7 @@ func (s *Server) GetBindingKeyClaims(id uuid.UUID) (*keymanager.KeyClaims, error
 	return claims, nil
 }
 
+// GetKemKeyClaims returns the claims for a KEM key identified by its UUID.
 func (s *Server) GetKemKeyClaims(id uuid.UUID) (*keymanager.KeyClaims, error) {
 	// Step 1: Key Metadata Lookup.
 	kemPubKey, bindingPubKey, deleteAfter, err := s.keyProtectionService.GetKemKey(id)
