@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha512"
+	"crypto/sha256"
 	_ "embed"
 	"encoding/base64"
 	"errors"
@@ -28,6 +29,8 @@ import (
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/internal/signaturediscovery"
 	"github.com/google/go-tpm-tools/launcher/spec"
+	"github.com/google/go-tpm-tools/server"
+	"github.com/GoogleCloudPlatform/confidential-space/server/extract"
 	teemodels "github.com/google/go-tpm-tools/launcher/teeserver/models"
 	attestpb "github.com/google/go-tpm-tools/proto/attest"
 	tpmpb "github.com/google/go-tpm-tools/proto/tpm"
@@ -709,8 +712,12 @@ func TestAttestationEvidence_TDX_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to decode cel.b64: %v", err)
 	}
+	decodedCEL, err := gecel.DecodeToCEL(bytes.NewBuffer(testCEL))
+	if err != nil {
+		t.Fatalf("failed to decode test CEL: %v", err)
+	}
 	fakeRoot := &fakeTdxAttestRoot{
-		cel:      cel.NewFromBytes(testCEL),
+		cel:      decodedCEL,
 		tdxQuote: testTDXQuote,
 	}
 	attestAgent := &agent{
@@ -771,6 +778,12 @@ func TestAttestationEvidence_TPM_Success(t *testing.T) {
 	}
 	verifierClient := fake.NewClient(fakeSigner)
 
+	ak, err := client.AttestationKeyECC(tpm)
+	if err != nil {
+		t.Fatalf("failed to create AK: %v", err)
+	}
+	defer ak.Close()
+
 	agent, err := CreateAttestationAgent(tpm, client.AttestationKeyECC, verifierClient, placeholderPrincipalFetcher, signaturediscovery.NewFakeClient(), spec.LaunchSpec{
 		Experiments: experiments.Experiments{
 			EnableAttestationEvidence: true,
@@ -799,26 +812,62 @@ func TestAttestationEvidence_TPM_Success(t *testing.T) {
 		t.Fatal("expected TDCCELAttestation to be nil for TPM")
 	}
 
-	// ms, err := server.VerifyAttestation(att.Quote.TPMQuote)
-	// if err != nil {
-	// 	t.Fatalf("server.VerifyAttestation failed: %v", err)
-	// }
-	// validateContainerState(t, ms.GetCos())
+	// --- Enhancement 1: server.VerifyAttestation (go-tpm-tools) ---
+	// The nonce sent to the TPM was computed from challenge + extraData by tpmAttestRoot.
+	// Re-compute it the same way: sha256(WorkloadAttestationLabel || sha256(challenge || sha256(extraData)))
+	extraDataDigest := sha256.Sum256(extraData)
+	challengeData := append(challenge, extraDataDigest[:]...)
+	challengeDigest := sha256.Sum256(challengeData)
+	tpmNonce := sha256.Sum256(append([]byte(teemodels.WorkloadAttestationLabel), challengeDigest[:]...))
 
-	// Placeholder: Call server.VerifyAttestation from github.com/google/go-tpm-tools/server.
-	// You will need to convert the teemodels.Attestation to a pb.Attestation and supply the correct VerifyOpts.
-	// machineState, err := server.VerifyAttestation(pbAttestation, server.VerifyOpts{...})
-	// if err != nil {
-	// 	t.Fatalf("server.VerifyAttestation failed: %v", err)
-	// }
-	//
-	// Placeholder: Call server.VerifiedCOSState (or extract.VerifiedCOSState) from
-	// github.com/GoogleCloudPlatform/confidential-space/blob/main/server/extract/cos_state.go#L13.
-	// This requires importing the external package and passing the machineState obtained above.
-	// cosState, err := extract.VerifiedCOSState(machineState)
-	// if err != nil {
-	// 	t.Fatalf("server.VerifiedCOSState failed: %v", err)
-	// }
+	// Re-attest the TPM directly using the same nonce, producing an *attestpb.Attestation
+	// that server.VerifyAttestation can consume.
+	pbAttestation, err := ak.Attest(client.AttestOpts{Nonce: tpmNonce[:]})
+	if err != nil {
+		t.Fatalf("ak.Attest() failed: %v", err)
+	}
+
+	machineState, err := server.VerifyAttestation(pbAttestation, server.VerifyOpts{
+		Nonce:      tpmNonce[:],
+		TrustedAKs: []crypto.PublicKey{ak.PublicKey()},
+	})
+	if err != nil {
+		t.Errorf("server.VerifyAttestation failed: %v", err)
+	} else {
+		t.Logf("server.VerifyAttestation succeeded, hash: %v", machineState.GetHash())
+	}
+
+	// --- Enhancement 2: extract.VerifiedCOSState (confidential-space) ---
+	// The CEL was serialized into att.Quote.TPMQuote.CELLaunchEventLog.
+	// Decode it back to a gecel.CEL and pass to extract.VerifiedCOSState.
+	decodedCEL, err := gecel.DecodeToCEL(bytes.NewBuffer(att.Quote.TPMQuote.CELLaunchEventLog))
+	if err != nil {
+		t.Fatalf("gecel.DecodeToCEL failed: %v", err)
+	}
+
+	// TPM path uses PCR registers (PCRType), not CCMR.
+	cosState, err := extract.VerifiedCOSState(decodedCEL, uint8(gecel.PCRType))
+	if err != nil {
+		t.Errorf("extract.VerifiedCOSState failed: %v", err)
+	} else {
+		ctr := cosState.GetContainer()
+		if ctr.GetImageReference() != imageRef {
+			t.Errorf("ImageReference: got %q, want %q", ctr.GetImageReference(), imageRef)
+		}
+		if ctr.GetImageDigest() != imageDigest {
+			t.Errorf("ImageDigest: got %q, want %q", ctr.GetImageDigest(), imageDigest)
+		}
+		if ctr.GetImageId() != imageID {
+			t.Errorf("ImageId: got %q, want %q", ctr.GetImageId(), imageID)
+		}
+		if len(ctr.GetArgs()) == 0 || ctr.GetArgs()[0] != arg {
+			t.Errorf("Args[0]: got %v, want %q", ctr.GetArgs(), arg)
+		}
+		if ctr.GetEnvVars()[envK] != envV {
+			t.Errorf("EnvVars[%q]: got %q, want %q", envK, ctr.GetEnvVars()[envK], envV)
+		}
+		t.Logf("extract.VerifiedCOSState succeeded: ImageRef=%s", ctr.GetImageReference())
+	}
 }
 
 type testClient struct {
