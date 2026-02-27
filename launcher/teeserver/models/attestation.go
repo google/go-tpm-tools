@@ -12,16 +12,16 @@ type GPUArchitectureType int32
 // The following values are based on NVIDIA's GPU architecture generations.
 const (
 	GpuArchitectureUnspecified GPUArchitectureType = iota // Unspecified architecture.
-	GpuArchitectureKepler      GPUArchitectureType = 1    // Kepler architecture.
-	GpuArchitectureMaxwell     GPUArchitectureType = 2    // Maxwell architecture.
-	GpuArchitecturePascal      GPUArchitectureType = 3    // Pascal architecture.
-	GpuArchitectureVolta       GPUArchitectureType = 4    // Volta architecture.
-	GpuArchitectureTuring      GPUArchitectureType = 5    // Turing architecture.
-	GpuArchitectureAmpere      GPUArchitectureType = 6    // Ampere architecture.
-	GpuArchitectureAda         GPUArchitectureType = 7    // Ada architecture.
-	GpuArchitectureHopper      GPUArchitectureType = 8    // Hopper architecture.
-	GpuArchitectureUnsupported GPUArchitectureType = 9    // Unknown architecture.
-	GpuArchitectureBlackwell   GPUArchitectureType = 10   // Blackwell architecture.
+	GpuArchitectureKepler                                 // Kepler architecture.
+	GpuArchitectureMaxwell                                // Maxwell architecture.
+	GpuArchitecturePascal                                 // Pascal architecture.
+	GpuArchitectureVolta                                  // Volta architecture.
+	GpuArchitectureTuring                                 // Turing architecture.
+	GpuArchitectureAmpere                                 // Ampere architecture.
+	GpuArchitectureAda                                    // Ada architecture.
+	GpuArchitectureHopper                                 // Hopper architecture.
+	GpuArchitectureUnsupported                            // Unknown architecture.
+	GpuArchitectureBlackwell                              // Blackwell architecture.
 )
 
 // String returns the string representation of a GPUArchitectureType based upon value.
