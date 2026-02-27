@@ -1,6 +1,9 @@
 #!/bin/bash
 
 main() {
+  # Configure sysctls.
+  sysctl -w kernel.kexec_load_disabled=1
+
   # Copy service files.
   cp /usr/share/oem/confidential_space/container-runner.service /etc/systemd/system/container-runner.service
   # Override default fluent-bit config.
