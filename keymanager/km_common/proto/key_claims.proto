@@ -38,25 +38,6 @@ message HpkePublicKey {
   bytes public_key = 2; // `Npk` bytes long. Raw bytes.
 }
 
-// The results of an Encaps operation.
-message KemCiphertext {
-  KemAlgorithm algorithm = 1;
-  bytes ciphertext = 2; // `Nenc` bytes long.
-}
-
-// The results of a Decaps operation.
-message KemSharedSecret {
-  KemAlgorithm algorithm = 1;
-  bytes secret = 2; // `Nsecret` bytes long.
-}
-
-message HpkePayload {
-  HpkeAlgorithm algorithm = 1;
-  bytes kem_ciphertext = 2; // `Nenc` bytes long.
-  bytes payload_ciphertext = 3; // Encrypted data.
-  bytes authentication_tag = 4; // `Nt` bytes long.
-}
-
 
 message KeyClaims {
   // The following two messages are used for keys whose protection mechanism is
