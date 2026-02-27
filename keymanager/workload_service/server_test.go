@@ -2,6 +2,7 @@ package workloadservice
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -25,13 +26,26 @@ func newTestServer(t *testing.T, kemGen KeyProtectionService, bindingGen Workloa
 
 // mockWorkloadService implements WorkloadService for testing.
 type mockWorkloadService struct {
-	uuid   uuid.UUID
-	pubKey []byte
-	err    error
+	uuid         uuid.UUID
+	pubKey       []byte
+	err          error
+	plaintext    []byte
+	receivedUUID uuid.UUID
+	receivedEnc  []byte
+	receivedCT   []byte
+	receivedAAD  []byte
 }
 
 func (m *mockWorkloadService) GenerateBindingKeypair(_ *keymanager.HpkeAlgorithm, _ uint64) (uuid.UUID, []byte, error) {
 	return m.uuid, m.pubKey, m.err
+}
+
+func (m *mockWorkloadService) Open(bindingUUID uuid.UUID, enc, ciphertext, aad []byte) ([]byte, error) {
+	m.receivedUUID = bindingUUID
+	m.receivedEnc = enc
+	m.receivedCT = ciphertext
+	m.receivedAAD = aad
+	return m.plaintext, m.err
 }
 
 // mockKeyProtectionService implements KeyProtectionService for testing.
@@ -41,12 +55,24 @@ type mockKeyProtectionService struct {
 	err              error
 	receivedPubKey   []byte
 	receivedLifespan uint64
+	sealEnc          []byte
+	sealedCT         []byte
+	receivedKEMUUID  uuid.UUID
+	receivedEncKey   []byte
+	receivedAAD      []byte
 }
 
 func (m *mockKeyProtectionService) GenerateKEMKeypair(_ *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
 	m.receivedPubKey = bindingPubKey
 	m.receivedLifespan = lifespanSecs
 	return m.uuid, m.pubKey, m.err
+}
+
+func (m *mockKeyProtectionService) DecapAndSeal(kemUUID uuid.UUID, encapsulatedKey, aad []byte) ([]byte, []byte, error) {
+	m.receivedKEMUUID = kemUUID
+	m.receivedEncKey = encapsulatedKey
+	m.receivedAAD = aad
+	return m.sealEnc, m.sealedCT, m.err
 }
 
 func validGenerateBody() []byte {
@@ -445,5 +471,191 @@ func TestHandleGetCapabilitiesInvalidMethod(t *testing.T) {
 
 	if w.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("expected status 405, got %d", w.Code)
+	}
+}
+
+// --- /keys:decap tests ---
+
+// newDecapsTestServer creates a server pre-populated with a KEM→Binding mapping.
+func newDecapsTestServer(t *testing.T, kemUUID, bindingUUID uuid.UUID, ds *mockKeyProtectionService, op *mockWorkloadService) *Server {
+	srv := newTestServer(t, ds, op)
+	srv.mu.Lock()
+	srv.kemToBindingMap[kemUUID] = bindingUUID
+	srv.mu.Unlock()
+	return srv
+}
+
+func decapsRequestBody(kemUUID uuid.UUID, algo KemAlgorithm, encKey []byte) string {
+	return fmt.Sprintf(
+		`{"key_handle":{"handle":"%s"},"ciphertext":{"algorithm":"%s","ciphertext":"%s"}}`,
+		kemUUID.String(),
+		algo,
+		base64.StdEncoding.EncodeToString(encKey),
+	)
+}
+
+func TestHandleDecapsSuccess(t *testing.T) {
+	kemUUID := uuid.New()
+	bindingUUID := uuid.New()
+	encKey := []byte("test-encapsulated-key-32-bytes!!")
+	sealEnc := []byte("seal-encapsulated-key-32-bytes!!")
+	sealedCT := []byte("sealed-ciphertext-48-bytes-with-tag!!!!!!!!!!!!!!")
+	plaintext := []byte("shared-secret-32-bytes-value!!!!") // 32 bytes
+	expectedAAD := decapsAADContext(kemUUID, KemAlgorithmDHKEMX25519HKDFSHA256)
+
+	ds := &mockKeyProtectionService{sealEnc: sealEnc, sealedCT: sealedCT}
+	op := &mockWorkloadService{plaintext: plaintext}
+	srv := newDecapsTestServer(t, kemUUID, bindingUUID, ds, op)
+
+	body := decapsRequestBody(kemUUID, KemAlgorithmDHKEMX25519HKDFSHA256, encKey)
+	req := httptest.NewRequest(http.MethodPost, "/v1/keys:decap", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp DecapsResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp.SharedSecret.Algorithm != KemAlgorithmDHKEMX25519HKDFSHA256 {
+		t.Fatalf("expected shared_secret.algorithm=%d, got %d", KemAlgorithmDHKEMX25519HKDFSHA256, resp.SharedSecret.Algorithm)
+	}
+
+	decoded, err := base64.StdEncoding.DecodeString(resp.SharedSecret.Secret)
+	if err != nil {
+		t.Fatalf("failed to base64-decode shared secret: %v", err)
+	}
+	if string(decoded) != string(plaintext) {
+		t.Fatalf("expected plaintext %q, got %q", plaintext, decoded)
+	}
+
+	// Verify DecapSealer received correct args.
+	if ds.receivedKEMUUID != kemUUID {
+		t.Fatalf("expected DecapSealer to receive KEM UUID %s, got %s", kemUUID, ds.receivedKEMUUID)
+	}
+	if string(ds.receivedEncKey) != string(encKey) {
+		t.Fatalf("expected DecapSealer to receive enc key %q, got %q", encKey, ds.receivedEncKey)
+	}
+	if string(ds.receivedAAD) != string(expectedAAD) {
+		t.Fatalf("expected DecapSealer to receive AAD %q, got %q", expectedAAD, ds.receivedAAD)
+	}
+
+	// Verify Opener received correct args.
+	if op.receivedUUID != bindingUUID {
+		t.Fatalf("expected Opener to receive binding UUID %s, got %s", bindingUUID, op.receivedUUID)
+	}
+	if string(op.receivedEnc) != string(sealEnc) {
+		t.Fatalf("expected Opener to receive enc %q, got %q", sealEnc, op.receivedEnc)
+	}
+	if string(op.receivedCT) != string(sealedCT) {
+		t.Fatalf("expected Opener to receive CT %q, got %q", sealedCT, op.receivedCT)
+	}
+	if string(op.receivedAAD) != string(expectedAAD) {
+		t.Fatalf("expected Opener to receive AAD %q, got %q", expectedAAD, op.receivedAAD)
+	}
+}
+
+func TestHandleDecapsMethodNotAllowed(t *testing.T) {
+	srv := newTestServer(t, &mockKeyProtectionService{}, &mockWorkloadService{})
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/keys:decap", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status 405, got %d", w.Code)
+	}
+}
+
+func TestHandleDecapsBadRequestBody(t *testing.T) {
+	srv := newTestServer(t, &mockKeyProtectionService{}, &mockWorkloadService{})
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/keys:decap", strings.NewReader("not-json"))
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", w.Code)
+	}
+}
+
+func TestHandleDecapsInvalidKEMUUID(t *testing.T) {
+	srv := newTestServer(t, &mockKeyProtectionService{}, &mockWorkloadService{})
+
+	body := `{"key_handle":{"handle":"not-a-uuid"},"ciphertext":{"algorithm":1,"ciphertext":"AAAA"}}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/keys:decap", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", w.Code)
+	}
+}
+
+func TestHandleDecapsKEMKeyNotFound(t *testing.T) {
+	kemUUID := uuid.New()
+	srv := newTestServer(t, &mockKeyProtectionService{}, &mockWorkloadService{})
+	// Don't populate kemToBindingMap.
+
+	body := decapsRequestBody(kemUUID, KemAlgorithmDHKEMX25519HKDFSHA256, []byte("enc-key"))
+	req := httptest.NewRequest(http.MethodPost, "/v1/keys:decap", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected status 404, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestHandleDecapsDecapSealError(t *testing.T) {
+	kemUUID := uuid.New()
+	bindingUUID := uuid.New()
+
+	ds := &mockKeyProtectionService{err: fmt.Errorf("decap FFI error")}
+	srv := newDecapsTestServer(t, kemUUID, bindingUUID, ds, &mockWorkloadService{})
+
+	body := decapsRequestBody(kemUUID, KemAlgorithmDHKEMX25519HKDFSHA256, []byte("enc-key"))
+	req := httptest.NewRequest(http.MethodPost, "/v1/keys:decap", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected status 500, got %d", w.Code)
+	}
+}
+
+func TestHandleDecapsOpenError(t *testing.T) {
+	kemUUID := uuid.New()
+	bindingUUID := uuid.New()
+
+	ds := &mockKeyProtectionService{sealEnc: []byte("enc"), sealedCT: []byte("ct")}
+	op := &mockWorkloadService{err: fmt.Errorf("open FFI error")}
+	srv := newDecapsTestServer(t, kemUUID, bindingUUID, ds, op)
+
+	body := decapsRequestBody(kemUUID, KemAlgorithmDHKEMX25519HKDFSHA256, []byte("enc-key"))
+	req := httptest.NewRequest(http.MethodPost, "/v1/keys:decap", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected status 500, got %d", w.Code)
+	}
+}
+
+func TestHandleDecapsUnsupportedAlgorithm(t *testing.T) {
+	kemUUID := uuid.New()
+	bindingUUID := uuid.New()
+	srv := newDecapsTestServer(t, kemUUID, bindingUUID, &mockKeyProtectionService{}, &mockWorkloadService{})
+
+	body := decapsRequestBody(kemUUID, KemAlgorithm(999), []byte("enc-key"))
+	req := httptest.NewRequest(http.MethodPost, "/v1/keys:decap", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", w.Code)
 	}
 }
