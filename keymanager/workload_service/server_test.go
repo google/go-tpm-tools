@@ -53,7 +53,7 @@ func (m *mockKeyProtectionService) GenerateKEMKeypair(_ *keymanager.HpkeAlgorith
 	return m.uuid, m.pubKey, m.err
 }
 
-func (m *mockKeyProtectionService) EnumerateKEMKeys(limit, offset int) ([]kpskcc.KEMKeyInfo, bool, error) {
+func (m *mockKeyProtectionService) EnumerateKEMKeys(_, _ int) ([]kpskcc.KEMKeyInfo, bool, error) {
 	return m.enumeratedKeys, false, m.enumerateErr
 }
 

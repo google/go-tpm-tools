@@ -330,7 +330,7 @@ func writeJSON(w http.ResponseWriter, v any, code int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(code)
-	json.NewEncoder(w).Encode(v)
+	_ = json.NewEncoder(w).Encode(v)
 }
 
 // writeError writes a JSON error response.

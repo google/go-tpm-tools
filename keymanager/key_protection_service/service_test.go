@@ -18,7 +18,7 @@ func TestServiceGenerateKEMKeypairSuccess(t *testing.T) {
 	}
 
 	svc := NewService(
-		func(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
+		func(_ *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
 			if len(bindingPubKey) != 32 {
 				t.Fatalf("expected 32-byte binding public key, got %d", len(bindingPubKey))
 			}
@@ -27,7 +27,7 @@ func TestServiceGenerateKEMKeypairSuccess(t *testing.T) {
 			}
 			return expectedUUID, expectedPubKey, nil
 		},
-		func(limit, offset int) ([]kpskcc.KEMKeyInfo, bool, error) {
+		func(_, _ int) ([]kpskcc.KEMKeyInfo, bool, error) {
 			return nil, false, nil
 		},
 	)
@@ -46,10 +46,10 @@ func TestServiceGenerateKEMKeypairSuccess(t *testing.T) {
 
 func TestServiceGenerateKEMKeypairError(t *testing.T) {
 	svc := NewService(
-		func(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
+		func(_ *keymanager.HpkeAlgorithm, _ []byte, _ uint64) (uuid.UUID, []byte, error) {
 			return uuid.Nil, nil, fmt.Errorf("FFI error")
 		},
-		func(limit, offset int) ([]kpskcc.KEMKeyInfo, bool, error) {
+		func(_, _ int) ([]kpskcc.KEMKeyInfo, bool, error) {
 			return nil, false, nil
 		},
 	)
@@ -75,7 +75,7 @@ func TestServiceEnumerateKEMKeysSuccess(t *testing.T) {
 	}
 
 	svc := NewService(
-		func(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
+		func(_ *keymanager.HpkeAlgorithm, _ []byte, _ uint64) (uuid.UUID, []byte, error) {
 			return uuid.Nil, nil, nil
 		},
 		func(limit, offset int) ([]kpskcc.KEMKeyInfo, bool, error) {
@@ -100,10 +100,10 @@ func TestServiceEnumerateKEMKeysSuccess(t *testing.T) {
 
 func TestServiceEnumerateKEMKeysError(t *testing.T) {
 	svc := NewService(
-		func(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
+		func(_ *keymanager.HpkeAlgorithm, _ []byte, _ uint64) (uuid.UUID, []byte, error) {
 			return uuid.Nil, nil, nil
 		},
-		func(limit, offset int) ([]kpskcc.KEMKeyInfo, bool, error) {
+		func(_, _ int) ([]kpskcc.KEMKeyInfo, bool, error) {
 			return nil, false, fmt.Errorf("enumerate error")
 		},
 	)

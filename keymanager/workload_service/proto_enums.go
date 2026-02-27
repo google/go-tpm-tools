@@ -8,9 +8,6 @@ import (
 	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
 )
 
-// These enum values mirror the proto definitions in PROTOS.md and are used by
-// the WSD JSON API contract.
-
 // KemAlgorithm represents the requested KEM algorithm.
 type KemAlgorithm int32
 
@@ -102,8 +99,9 @@ func (k KemAlgorithm) ToHpkeAlgorithm() (*keymanager.HpkeAlgorithm, error) {
 type KdfAlgorithm int32
 
 const (
+	// KdfAlgorithmUnspecified indicates an unspecified KDF algorithm.
 	KdfAlgorithmUnspecified KdfAlgorithm = 0
-	// Corrected from HKDF_SHA384 to HKDF_SHA256 based on ToHpkeAlgorithm usage which maps to HKDF_SHA256 (val 1)
+	// KdfAlgorithmHKDFSHA256 specifies the HKDF-SHA256 KDF algorithm.
 	KdfAlgorithmHKDFSHA256 KdfAlgorithm = 1
 )
 
@@ -125,10 +123,12 @@ func (k KdfAlgorithm) String() string {
 	return fmt.Sprintf("KDF_ALGORITHM_UNKNOWN(%d)", k)
 }
 
+// MarshalJSON converts a KdfAlgorithm enum value to its JSON string representation.
 func (k KdfAlgorithm) MarshalJSON() ([]byte, error) {
 	return json.Marshal(k.String())
 }
 
+// UnmarshalJSON converts a JSON string back into a KdfAlgorithm enum value.
 func (k *KdfAlgorithm) UnmarshalJSON(data []byte) error {
 	var s string
 	if err := json.Unmarshal(data, &s); err != nil {
@@ -145,8 +145,10 @@ func (k *KdfAlgorithm) UnmarshalJSON(data []byte) error {
 type AeadAlgorithm int32
 
 const (
+	// AeadAlgorithmUnspecified indicates an unspecified AEAD algorithm.
 	AeadAlgorithmUnspecified AeadAlgorithm = 0
-	AeadAlgorithmAES256GCM   AeadAlgorithm = 1
+	// AeadAlgorithmAES256GCM specifies the AES-256-GCM AEAD algorithm.
+	AeadAlgorithmAES256GCM AeadAlgorithm = 1
 )
 
 var (
@@ -167,10 +169,12 @@ func (k AeadAlgorithm) String() string {
 	return fmt.Sprintf("AEAD_ALGORITHM_UNKNOWN(%d)", k)
 }
 
+// MarshalJSON converts an AeadAlgorithm enum value to its JSON string representation.
 func (k AeadAlgorithm) MarshalJSON() ([]byte, error) {
 	return json.Marshal(k.String())
 }
 
+// UnmarshalJSON converts a JSON string back into an AeadAlgorithm enum value.
 func (k *AeadAlgorithm) UnmarshalJSON(data []byte) error {
 	var s string
 	if err := json.Unmarshal(data, &s); err != nil {
