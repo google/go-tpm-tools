@@ -58,6 +58,7 @@ type TDCCELAttestation struct {
 	// still needs following two for GCE info
 	AkCert            []byte
 	IntermediateCerts [][]byte
+	NvidiaAttestation *models.NvidiaAttestation
 }
 
 // VerifyAttestationResponse is the response from a successful
