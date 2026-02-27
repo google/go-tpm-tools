@@ -46,6 +46,10 @@ steps:
       export PATH="/opt/cmake-3.28.3-linux-x86_64/bin:$$PATH"
       rm cmake.tar.gz
 
+      # Install bindgen-cli (needed by BoringSSL's CMake build)
+      cargo install bindgen-cli
+      export PATH="$$HOME/.cargo/bin:$$PATH"
+
       # Build the Rust keymanager libraries
       cd keymanager
       cargo build --release
