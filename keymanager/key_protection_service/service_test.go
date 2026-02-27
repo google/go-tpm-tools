@@ -1,6 +1,7 @@
 package keyprotectionservice
 
 import (
+	"bytes"
 	"fmt"
 	"testing"
 
@@ -13,6 +14,7 @@ type mockKPS struct {
 	generateKEMKeypairFn func(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error)
 	decapAndSealFn       func(kemUUID uuid.UUID, encapsulatedKey, aad []byte) ([]byte, []byte, error)
 	destroyKEMKeyFn      func(kemUUID uuid.UUID) error
+	GetKEMKeyFn          func(id uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error)
 }
 
 func (m *mockKPS) GenerateKEMKeypair(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
@@ -29,12 +31,17 @@ func (m *mockKPS) DecapAndSeal(kemUUID uuid.UUID, encapsulatedKey, aad []byte) (
 	return nil, nil, nil
 }
 
+func (m *mockKPS) GetKEMKey(id uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error) {
+	return m.GetKEMKeyFn(id)
+}
+
 func (m *mockKPS) DestroyKEMKey(kemUUID uuid.UUID) error {
 	if m.destroyKEMKeyFn != nil {
 		return m.destroyKEMKeyFn(kemUUID)
 	}
 	return nil
 }
+
 func TestServiceGenerateKEMKeypairSuccess(t *testing.T) {
 	expectedUUID := uuid.New()
 	expectedPubKey := make([]byte, 32)
@@ -156,5 +163,51 @@ func TestServiceDecapAndSealError(t *testing.T) {
 	_, _, err := svc.DecapAndSeal(uuid.New(), []byte("enc-key"), nil)
 	if err == nil {
 		t.Fatal("expected error, got nil")
+	}
+}
+
+func TestServiceGetKEMKeySuccess(t *testing.T) {
+	expectedKemPubKey := make([]byte, 32)
+	for i := range expectedKemPubKey {
+		expectedKemPubKey[i] = byte(i + 1)
+	}
+	expectedBindingPubKey := make([]byte, 32)
+	for i := range expectedBindingPubKey {
+		expectedBindingPubKey[i] = byte(i + 10)
+	}
+	expectedAlgo := &keymanager.HpkeAlgorithm{
+		Kem:  keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
+		Kdf:  keymanager.KdfAlgorithm_KDF_ALGORITHM_HKDF_SHA256,
+		Aead: keymanager.AeadAlgorithm_AEAD_ALGORITHM_AES_256_GCM,
+	}
+	expectedRemainingLifespanSecs := uint64(3600)
+	keyID := uuid.New()
+
+	mock := &mockKPS{
+		GetKEMKeyFn: func(id uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error) {
+			if id != keyID {
+				t.Fatalf("expected UUID %s, got %s", keyID, id)
+			}
+			return expectedKemPubKey, expectedBindingPubKey, expectedAlgo, expectedRemainingLifespanSecs, nil
+		},
+	}
+
+	svc := newServiceWithKPS(mock)
+
+	kemPubKey, bindingPubKey, algo, remainingLifespanSecs, err := svc.GetKEMKey(keyID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !bytes.Equal(kemPubKey, expectedKemPubKey) {
+		t.Fatalf("expected KEM public key %x, got %x", expectedKemPubKey, kemPubKey)
+	}
+	if !bytes.Equal(bindingPubKey, expectedBindingPubKey) {
+		t.Fatalf("expected binding public key %x, got %x", expectedBindingPubKey, bindingPubKey)
+	}
+	if algo.Kem != expectedAlgo.Kem || algo.Kdf != expectedAlgo.Kdf || algo.Aead != expectedAlgo.Aead {
+		t.Fatalf("expected algorithm %v, got %v", expectedAlgo, algo)
+	}
+	if remainingLifespanSecs != expectedRemainingLifespanSecs {
+		t.Fatalf("expected remainingLifespanSecs %d, got %d", expectedRemainingLifespanSecs, remainingLifespanSecs)
 	}
 }

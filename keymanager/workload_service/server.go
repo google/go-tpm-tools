@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"math"
@@ -27,6 +26,7 @@ import (
 type WorkloadService interface {
 	GenerateBindingKeypair(algo *keymanager.HpkeAlgorithm, lifespanSecs uint64) (uuid.UUID, []byte, error)
 	DestroyBindingKey(bindingUUID uuid.UUID) error
+	GetBindingKey(id uuid.UUID) ([]byte, *keymanager.HpkeAlgorithm, error)
 	Open(bindingUUID uuid.UUID, enc, ciphertext, aad []byte) ([]byte, error)
 }
 type keyProtectionService struct{}
@@ -35,6 +35,7 @@ type keyProtectionService struct{}
 type KeyProtectionService interface {
 	GenerateKEMKeypair(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error)
 	DestroyKEMKey(kemUUID uuid.UUID) error
+	GetKEMKey(id uuid.UUID) (kemPubKey []byte, bindingPubKey []byte, algo *keymanager.HpkeAlgorithm, deleteAfter uint64, err error)
 	DecapAndSeal(kemUUID uuid.UUID, encapsulatedKey, aad []byte) (sealEnc []byte, sealedCT []byte, err error)
 }
 type workloadService struct{}
@@ -51,6 +52,10 @@ func (r *workloadService) Open(bindingUUID uuid.UUID, enc, ciphertext, aad []byt
 	return wskcc.Open(bindingUUID, enc, ciphertext, aad)
 }
 
+func (r *workloadService) GetBindingKey(id uuid.UUID) ([]byte, *keymanager.HpkeAlgorithm, error) {
+	return wskcc.GetBindingKey(id)
+}
+
 func (r *keyProtectionService) GenerateKEMKeypair(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
 	return kpscc.GenerateKEMKeypair(algo, bindingPubKey, lifespanSecs)
 }
@@ -61,6 +66,29 @@ func (r *keyProtectionService) DestroyKEMKey(kemUUID uuid.UUID) error {
 
 func (r *keyProtectionService) DecapAndSeal(kemUUID uuid.UUID, encapsulatedKey, aad []byte) (sealEnc []byte, sealedCT []byte, err error) {
 	return kpscc.DecapAndSeal(kemUUID, encapsulatedKey, aad)
+}
+
+func (r *keyProtectionService) GetKEMKey(id uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error) {
+	return kpscc.GetKEMKey(id)
+}
+
+// KeyClaimsProvider defines the interface for retrieving key claims.
+// This abstraction allows the underlying implementation to be a local channel
+// or a remote RPC call in future.
+type KeyClaimsProvider interface {
+	GetKeyClaims(ctx context.Context, keyHandle string, keyType keymanager.KeyType) (*keymanager.KeyClaims, error)
+}
+
+// ClaimsCall acts as the internal "envelope" for the channel.
+type ClaimsCall struct {
+	Request  *keymanager.GetKeyClaimsRequest
+	RespChan chan *ClaimsResult
+}
+
+// ClaimsResult wraps the protobuf response with an error.
+type ClaimsResult struct {
+	Reply *keymanager.KeyClaims
+	Err   error
 }
 
 // KeyHandle represents a key handle returned from the API.
@@ -158,6 +186,8 @@ type Server struct {
 	mu                   sync.RWMutex
 	kemToBindingMap      map[uuid.UUID]uuid.UUID
 
+	claimsChan chan *ClaimsCall
+
 	httpServer *http.Server
 	listener   net.Listener
 	// todo: add logging mechanism here
@@ -175,6 +205,7 @@ func NewServer(keyProtectionService KeyProtectionService, workloadService Worklo
 		workloadService:      workloadService,
 		kemToBindingMap:      make(map[uuid.UUID]uuid.UUID),
 		mu:                   sync.RWMutex{},
+		claimsChan:           make(chan *ClaimsCall, 100),
 	}
 
 	mux := http.NewServeMux()
@@ -190,6 +221,9 @@ func NewServer(keyProtectionService KeyProtectionService, workloadService Worklo
 		return nil, fmt.Errorf("failed to listen on unix socket %s: %w", socketPath, err)
 	}
 	s.listener = ln
+
+	go s.processClaims()
+
 	return s, nil
 }
 
@@ -418,4 +452,98 @@ func (s *Server) handleDestroy(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// GetBindingKeyClaims returns the claims for a binding key identified by its UUID.
+func (s *Server) GetBindingKeyClaims(id uuid.UUID) (*keymanager.KeyClaims, error) {
+	// Step 1: Key ID Lookup. The orchestration layer will look-up the key_handle
+	// in its ActiveKeyRegistry to find the Binding Key ID.
+	bindingID := id
+	if bid, ok := s.LookupBindingUUID(id); ok {
+		bindingID = bid
+	}
+
+	// Step 2: Key Metadata Lookup.
+	pubKey, algo, err := s.workloadService.GetBindingKey(bindingID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get binding key: %w", err)
+	}
+
+	// Step 3: Create KeyClaims
+	claims := &keymanager.KeyClaims{
+		Claims: &keymanager.KeyClaims_VmBindingClaims{
+			VmBindingClaims: &keymanager.KeyClaims_VmProtectionBindingClaims{
+				BindingPubKey: &keymanager.HpkePublicKey{
+					Algorithm: algo,
+					PublicKey: pubKey,
+				},
+			},
+		},
+	}
+	return claims, nil
+}
+
+// GetKEMKeyClaims returns the claims for a KEM key identified by its UUID.
+func (s *Server) GetKEMKeyClaims(id uuid.UUID) (*keymanager.KeyClaims, error) {
+	// Step 1: Key Metadata Lookup.
+	kemPubKey, bindingPubKey, algo, remainingLifespanSecs, err := s.keyProtectionService.GetKEMKey(id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get KEM key: %w", err)
+	}
+
+	// Step 2: Calculate remaining time.
+	remaining := time.Duration(remainingLifespanSecs) * time.Second
+
+	// Step 3: Create KeyClaims
+	claims := &keymanager.KeyClaims{
+		Claims: &keymanager.KeyClaims_VmKeyClaims{
+			VmKeyClaims: &keymanager.KeyClaims_VmProtectionKeyClaims{
+				KemPubKey: &keymanager.KemPublicKey{
+					Algorithm: algo.GetKem(),
+					PublicKey: kemPubKey,
+				},
+				BindingPubKey: &keymanager.HpkePublicKey{
+					Algorithm: algo,
+					PublicKey: bindingPubKey,
+				},
+				RemainingLifespan: durationpb.New(remaining),
+			},
+		},
+	}
+	return claims, nil
+}
+
+func (s *Server) processClaims() {
+	for call := range s.claimsChan {
+		req := call.Request
+		keyHandle := req.GetKeyHandle().GetHandle()
+		keyType := req.GetKeyType()
+
+		id, err := uuid.Parse(keyHandle)
+		if err != nil {
+			call.RespChan <- &ClaimsResult{Err: fmt.Errorf("failed to retrieve key claims: %w", err)}
+			continue
+		}
+		var claims *keymanager.KeyClaims
+		switch keyType {
+		case keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING:
+			claims, err = s.GetBindingKeyClaims(id)
+			if err != nil {
+				call.RespChan <- &ClaimsResult{Err: fmt.Errorf("failed to retrieve key claims: %w", err)}
+				continue
+			}
+
+		case keymanager.KeyType_KEY_TYPE_VM_PROTECTION_KEY:
+			claims, err = s.GetKEMKeyClaims(id)
+			if err != nil {
+				call.RespChan <- &ClaimsResult{Err: fmt.Errorf("failed to retrieve key claims: %w", err)}
+				continue
+			}
+		default:
+			call.RespChan <- &ClaimsResult{Err: fmt.Errorf("unsupported key type: %v", keyType)}
+			continue
+		}
+
+		call.RespChan <- &ClaimsResult{Reply: claims}
+	}
 }

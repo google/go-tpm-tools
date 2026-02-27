@@ -22,6 +22,57 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type KeyType int32
+
+const (
+	KeyType_KEY_TYPE_UNSPECIFIED KeyType = 0
+	// A standard HPKE binding key-pair used for internal isolation.
+	KeyType_KEY_TYPE_VM_PROTECTION_BINDING KeyType = 1
+	// A KEM key-pair managed by the Key Protection Service.
+	KeyType_KEY_TYPE_VM_PROTECTION_KEY KeyType = 2
+)
+
+// Enum value maps for KeyType.
+var (
+	KeyType_name = map[int32]string{
+		0: "KEY_TYPE_UNSPECIFIED",
+		1: "KEY_TYPE_VM_PROTECTION_BINDING",
+		2: "KEY_TYPE_VM_PROTECTION_KEY",
+	}
+	KeyType_value = map[string]int32{
+		"KEY_TYPE_UNSPECIFIED":           0,
+		"KEY_TYPE_VM_PROTECTION_BINDING": 1,
+		"KEY_TYPE_VM_PROTECTION_KEY":     2,
+	}
+)
+
+func (x KeyType) Enum() *KeyType {
+	p := new(KeyType)
+	*p = x
+	return p
+}
+
+func (x KeyType) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (KeyType) Descriptor() protoreflect.EnumDescriptor {
+	return file_keymanager_km_common_proto_key_claims_proto_enumTypes[0].Descriptor()
+}
+
+func (KeyType) Type() protoreflect.EnumType {
+	return &file_keymanager_km_common_proto_key_claims_proto_enumTypes[0]
+}
+
+func (x KeyType) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use KeyType.Descriptor instead.
+func (KeyType) EnumDescriptor() ([]byte, []int) {
+	return file_keymanager_km_common_proto_key_claims_proto_rawDescGZIP(), []int{0}
+}
+
 type KeyProtectionMechanism int32
 
 const (
@@ -64,11 +115,11 @@ func (x KeyProtectionMechanism) String() string {
 }
 
 func (KeyProtectionMechanism) Descriptor() protoreflect.EnumDescriptor {
-	return file_keymanager_km_common_proto_key_claims_proto_enumTypes[0].Descriptor()
+	return file_keymanager_km_common_proto_key_claims_proto_enumTypes[1].Descriptor()
 }
 
 func (KeyProtectionMechanism) Type() protoreflect.EnumType {
-	return &file_keymanager_km_common_proto_key_claims_proto_enumTypes[0]
+	return &file_keymanager_km_common_proto_key_claims_proto_enumTypes[1]
 }
 
 func (x KeyProtectionMechanism) Number() protoreflect.EnumNumber {
@@ -77,7 +128,7 @@ func (x KeyProtectionMechanism) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use KeyProtectionMechanism.Descriptor instead.
 func (KeyProtectionMechanism) EnumDescriptor() ([]byte, []int) {
-	return file_keymanager_km_common_proto_key_claims_proto_rawDescGZIP(), []int{0}
+	return file_keymanager_km_common_proto_key_claims_proto_rawDescGZIP(), []int{1}
 }
 
 // Used to refer to key instances held by various daemons.
@@ -125,6 +176,61 @@ func (x *KeyHandle) GetHandle() string {
 	return ""
 }
 
+// GetKeyClaimsRequest defines the input required to retrieve claims for a key.
+type GetKeyClaimsRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The unique identifier (UUID) for the key.
+	KeyHandle *KeyHandle `protobuf:"bytes,1,opt,name=key_handle,json=keyHandle,proto3" json:"key_handle,omitempty"`
+	// The type of key (Binding or KEM) which determines the claim format.
+	KeyType       KeyType `protobuf:"varint,2,opt,name=key_type,json=keyType,proto3,enum=keymanager.KeyType" json:"key_type,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetKeyClaimsRequest) Reset() {
+	*x = GetKeyClaimsRequest{}
+	mi := &file_keymanager_km_common_proto_key_claims_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetKeyClaimsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetKeyClaimsRequest) ProtoMessage() {}
+
+func (x *GetKeyClaimsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_keymanager_km_common_proto_key_claims_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetKeyClaimsRequest.ProtoReflect.Descriptor instead.
+func (*GetKeyClaimsRequest) Descriptor() ([]byte, []int) {
+	return file_keymanager_km_common_proto_key_claims_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *GetKeyClaimsRequest) GetKeyHandle() *KeyHandle {
+	if x != nil {
+		return x.KeyHandle
+	}
+	return nil
+}
+
+func (x *GetKeyClaimsRequest) GetKeyType() KeyType {
+	if x != nil {
+		return x.KeyType
+	}
+	return KeyType_KEY_TYPE_UNSPECIFIED
+}
+
 type KemPublicKey struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Algorithm     KemAlgorithm           `protobuf:"varint,1,opt,name=algorithm,proto3,enum=keymanager.KemAlgorithm" json:"algorithm,omitempty"`
@@ -135,7 +241,7 @@ type KemPublicKey struct {
 
 func (x *KemPublicKey) Reset() {
 	*x = KemPublicKey{}
-	mi := &file_keymanager_km_common_proto_key_claims_proto_msgTypes[1]
+	mi := &file_keymanager_km_common_proto_key_claims_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -147,7 +253,7 @@ func (x *KemPublicKey) String() string {
 func (*KemPublicKey) ProtoMessage() {}
 
 func (x *KemPublicKey) ProtoReflect() protoreflect.Message {
-	mi := &file_keymanager_km_common_proto_key_claims_proto_msgTypes[1]
+	mi := &file_keymanager_km_common_proto_key_claims_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -160,7 +266,7 @@ func (x *KemPublicKey) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use KemPublicKey.ProtoReflect.Descriptor instead.
 func (*KemPublicKey) Descriptor() ([]byte, []int) {
-	return file_keymanager_km_common_proto_key_claims_proto_rawDescGZIP(), []int{1}
+	return file_keymanager_km_common_proto_key_claims_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *KemPublicKey) GetAlgorithm() KemAlgorithm {
@@ -187,7 +293,7 @@ type HpkePublicKey struct {
 
 func (x *HpkePublicKey) Reset() {
 	*x = HpkePublicKey{}
-	mi := &file_keymanager_km_common_proto_key_claims_proto_msgTypes[2]
+	mi := &file_keymanager_km_common_proto_key_claims_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -199,7 +305,7 @@ func (x *HpkePublicKey) String() string {
 func (*HpkePublicKey) ProtoMessage() {}
 
 func (x *HpkePublicKey) ProtoReflect() protoreflect.Message {
-	mi := &file_keymanager_km_common_proto_key_claims_proto_msgTypes[2]
+	mi := &file_keymanager_km_common_proto_key_claims_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -212,7 +318,7 @@ func (x *HpkePublicKey) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HpkePublicKey.ProtoReflect.Descriptor instead.
 func (*HpkePublicKey) Descriptor() ([]byte, []int) {
-	return file_keymanager_km_common_proto_key_claims_proto_rawDescGZIP(), []int{2}
+	return file_keymanager_km_common_proto_key_claims_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *HpkePublicKey) GetAlgorithm() *HpkeAlgorithm {
@@ -242,7 +348,7 @@ type KeyClaims struct {
 
 func (x *KeyClaims) Reset() {
 	*x = KeyClaims{}
-	mi := &file_keymanager_km_common_proto_key_claims_proto_msgTypes[3]
+	mi := &file_keymanager_km_common_proto_key_claims_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -254,7 +360,7 @@ func (x *KeyClaims) String() string {
 func (*KeyClaims) ProtoMessage() {}
 
 func (x *KeyClaims) ProtoReflect() protoreflect.Message {
-	mi := &file_keymanager_km_common_proto_key_claims_proto_msgTypes[3]
+	mi := &file_keymanager_km_common_proto_key_claims_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -267,7 +373,7 @@ func (x *KeyClaims) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use KeyClaims.ProtoReflect.Descriptor instead.
 func (*KeyClaims) Descriptor() ([]byte, []int) {
-	return file_keymanager_km_common_proto_key_claims_proto_rawDescGZIP(), []int{3}
+	return file_keymanager_km_common_proto_key_claims_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *KeyClaims) GetClaims() isKeyClaims_Claims {
@@ -321,7 +427,7 @@ type KeyClaims_VmProtectionBindingClaims struct {
 
 func (x *KeyClaims_VmProtectionBindingClaims) Reset() {
 	*x = KeyClaims_VmProtectionBindingClaims{}
-	mi := &file_keymanager_km_common_proto_key_claims_proto_msgTypes[4]
+	mi := &file_keymanager_km_common_proto_key_claims_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -333,7 +439,7 @@ func (x *KeyClaims_VmProtectionBindingClaims) String() string {
 func (*KeyClaims_VmProtectionBindingClaims) ProtoMessage() {}
 
 func (x *KeyClaims_VmProtectionBindingClaims) ProtoReflect() protoreflect.Message {
-	mi := &file_keymanager_km_common_proto_key_claims_proto_msgTypes[4]
+	mi := &file_keymanager_km_common_proto_key_claims_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -346,7 +452,7 @@ func (x *KeyClaims_VmProtectionBindingClaims) ProtoReflect() protoreflect.Messag
 
 // Deprecated: Use KeyClaims_VmProtectionBindingClaims.ProtoReflect.Descriptor instead.
 func (*KeyClaims_VmProtectionBindingClaims) Descriptor() ([]byte, []int) {
-	return file_keymanager_km_common_proto_key_claims_proto_rawDescGZIP(), []int{3, 0}
+	return file_keymanager_km_common_proto_key_claims_proto_rawDescGZIP(), []int{4, 0}
 }
 
 func (x *KeyClaims_VmProtectionBindingClaims) GetBindingPubKey() *HpkePublicKey {
@@ -371,7 +477,7 @@ type KeyClaims_VmProtectionKeyClaims struct {
 
 func (x *KeyClaims_VmProtectionKeyClaims) Reset() {
 	*x = KeyClaims_VmProtectionKeyClaims{}
-	mi := &file_keymanager_km_common_proto_key_claims_proto_msgTypes[5]
+	mi := &file_keymanager_km_common_proto_key_claims_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -383,7 +489,7 @@ func (x *KeyClaims_VmProtectionKeyClaims) String() string {
 func (*KeyClaims_VmProtectionKeyClaims) ProtoMessage() {}
 
 func (x *KeyClaims_VmProtectionKeyClaims) ProtoReflect() protoreflect.Message {
-	mi := &file_keymanager_km_common_proto_key_claims_proto_msgTypes[5]
+	mi := &file_keymanager_km_common_proto_key_claims_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -396,7 +502,7 @@ func (x *KeyClaims_VmProtectionKeyClaims) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use KeyClaims_VmProtectionKeyClaims.ProtoReflect.Descriptor instead.
 func (*KeyClaims_VmProtectionKeyClaims) Descriptor() ([]byte, []int) {
-	return file_keymanager_km_common_proto_key_claims_proto_rawDescGZIP(), []int{3, 1}
+	return file_keymanager_km_common_proto_key_claims_proto_rawDescGZIP(), []int{4, 1}
 }
 
 func (x *KeyClaims_VmProtectionKeyClaims) GetKemPubKey() *KemPublicKey {
@@ -427,7 +533,11 @@ const file_keymanager_km_common_proto_key_claims_proto_rawDesc = "" +
 	"+keymanager/km_common/proto/key_claims.proto\x12\n" +
 	"keymanager\x1a\x1egoogle/protobuf/duration.proto\x1a+keymanager/km_common/proto/algorithms.proto\"#\n" +
 	"\tKeyHandle\x12\x16\n" +
-	"\x06handle\x18\x01 \x01(\tR\x06handle\"e\n" +
+	"\x06handle\x18\x01 \x01(\tR\x06handle\"{\n" +
+	"\x13GetKeyClaimsRequest\x124\n" +
+	"\n" +
+	"key_handle\x18\x01 \x01(\v2\x15.keymanager.KeyHandleR\tkeyHandle\x12.\n" +
+	"\bkey_type\x18\x02 \x01(\x0e2\x13.keymanager.KeyTypeR\akeyType\"e\n" +
 	"\fKemPublicKey\x126\n" +
 	"\talgorithm\x18\x01 \x01(\x0e2\x18.keymanager.KemAlgorithmR\talgorithm\x12\x1d\n" +
 	"\n" +
@@ -445,7 +555,11 @@ const file_keymanager_km_common_proto_key_claims_proto_rawDesc = "" +
 	"\vkem_pub_key\x18\x01 \x01(\v2\x18.keymanager.KemPublicKeyR\tkemPubKey\x12A\n" +
 	"\x0fbinding_pub_key\x18\x02 \x01(\v2\x19.keymanager.HpkePublicKeyR\rbindingPubKey\x12H\n" +
 	"\x12remaining_lifespan\x18\x03 \x01(\v2\x19.google.protobuf.DurationR\x11remainingLifespanB\b\n" +
-	"\x06claims*\x86\x01\n" +
+	"\x06claims*g\n" +
+	"\aKeyType\x12\x18\n" +
+	"\x14KEY_TYPE_UNSPECIFIED\x10\x00\x12\"\n" +
+	"\x1eKEY_TYPE_VM_PROTECTION_BINDING\x10\x01\x12\x1e\n" +
+	"\x1aKEY_TYPE_VM_PROTECTION_KEY\x10\x02*\x86\x01\n" +
 	"\x16KeyProtectionMechanism\x12(\n" +
 	"$KEY_PROTECTION_MECHANISM_UNSPECIFIED\x10\x00\x12\v\n" +
 	"\aDEFAULT\x10\x01\x12\x15\n" +
@@ -464,34 +578,38 @@ func file_keymanager_km_common_proto_key_claims_proto_rawDescGZIP() []byte {
 	return file_keymanager_km_common_proto_key_claims_proto_rawDescData
 }
 
-var file_keymanager_km_common_proto_key_claims_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_keymanager_km_common_proto_key_claims_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_keymanager_km_common_proto_key_claims_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
+var file_keymanager_km_common_proto_key_claims_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
 var file_keymanager_km_common_proto_key_claims_proto_goTypes = []any{
-	(KeyProtectionMechanism)(0),                 // 0: keymanager.KeyProtectionMechanism
-	(*KeyHandle)(nil),                           // 1: keymanager.KeyHandle
-	(*KemPublicKey)(nil),                        // 2: keymanager.KemPublicKey
-	(*HpkePublicKey)(nil),                       // 3: keymanager.HpkePublicKey
-	(*KeyClaims)(nil),                           // 4: keymanager.KeyClaims
-	(*KeyClaims_VmProtectionBindingClaims)(nil), // 5: keymanager.KeyClaims.VmProtectionBindingClaims
-	(*KeyClaims_VmProtectionKeyClaims)(nil),     // 6: keymanager.KeyClaims.VmProtectionKeyClaims
-	(KemAlgorithm)(0),                           // 7: keymanager.KemAlgorithm
-	(*HpkeAlgorithm)(nil),                       // 8: keymanager.HpkeAlgorithm
-	(*durationpb.Duration)(nil),                 // 9: google.protobuf.Duration
+	(KeyType)(0),                                // 0: keymanager.KeyType
+	(KeyProtectionMechanism)(0),                 // 1: keymanager.KeyProtectionMechanism
+	(*KeyHandle)(nil),                           // 2: keymanager.KeyHandle
+	(*GetKeyClaimsRequest)(nil),                 // 3: keymanager.GetKeyClaimsRequest
+	(*KemPublicKey)(nil),                        // 4: keymanager.KemPublicKey
+	(*HpkePublicKey)(nil),                       // 5: keymanager.HpkePublicKey
+	(*KeyClaims)(nil),                           // 6: keymanager.KeyClaims
+	(*KeyClaims_VmProtectionBindingClaims)(nil), // 7: keymanager.KeyClaims.VmProtectionBindingClaims
+	(*KeyClaims_VmProtectionKeyClaims)(nil),     // 8: keymanager.KeyClaims.VmProtectionKeyClaims
+	(KemAlgorithm)(0),                           // 9: keymanager.KemAlgorithm
+	(*HpkeAlgorithm)(nil),                       // 10: keymanager.HpkeAlgorithm
+	(*durationpb.Duration)(nil),                 // 11: google.protobuf.Duration
 }
 var file_keymanager_km_common_proto_key_claims_proto_depIdxs = []int32{
-	7, // 0: keymanager.KemPublicKey.algorithm:type_name -> keymanager.KemAlgorithm
-	8, // 1: keymanager.HpkePublicKey.algorithm:type_name -> keymanager.HpkeAlgorithm
-	5, // 2: keymanager.KeyClaims.vm_binding_claims:type_name -> keymanager.KeyClaims.VmProtectionBindingClaims
-	6, // 3: keymanager.KeyClaims.vm_key_claims:type_name -> keymanager.KeyClaims.VmProtectionKeyClaims
-	3, // 4: keymanager.KeyClaims.VmProtectionBindingClaims.binding_pub_key:type_name -> keymanager.HpkePublicKey
-	2, // 5: keymanager.KeyClaims.VmProtectionKeyClaims.kem_pub_key:type_name -> keymanager.KemPublicKey
-	3, // 6: keymanager.KeyClaims.VmProtectionKeyClaims.binding_pub_key:type_name -> keymanager.HpkePublicKey
-	9, // 7: keymanager.KeyClaims.VmProtectionKeyClaims.remaining_lifespan:type_name -> google.protobuf.Duration
-	8, // [8:8] is the sub-list for method output_type
-	8, // [8:8] is the sub-list for method input_type
-	8, // [8:8] is the sub-list for extension type_name
-	8, // [8:8] is the sub-list for extension extendee
-	0, // [0:8] is the sub-list for field type_name
+	2,  // 0: keymanager.GetKeyClaimsRequest.key_handle:type_name -> keymanager.KeyHandle
+	0,  // 1: keymanager.GetKeyClaimsRequest.key_type:type_name -> keymanager.KeyType
+	9,  // 2: keymanager.KemPublicKey.algorithm:type_name -> keymanager.KemAlgorithm
+	10, // 3: keymanager.HpkePublicKey.algorithm:type_name -> keymanager.HpkeAlgorithm
+	7,  // 4: keymanager.KeyClaims.vm_binding_claims:type_name -> keymanager.KeyClaims.VmProtectionBindingClaims
+	8,  // 5: keymanager.KeyClaims.vm_key_claims:type_name -> keymanager.KeyClaims.VmProtectionKeyClaims
+	5,  // 6: keymanager.KeyClaims.VmProtectionBindingClaims.binding_pub_key:type_name -> keymanager.HpkePublicKey
+	4,  // 7: keymanager.KeyClaims.VmProtectionKeyClaims.kem_pub_key:type_name -> keymanager.KemPublicKey
+	5,  // 8: keymanager.KeyClaims.VmProtectionKeyClaims.binding_pub_key:type_name -> keymanager.HpkePublicKey
+	11, // 9: keymanager.KeyClaims.VmProtectionKeyClaims.remaining_lifespan:type_name -> google.protobuf.Duration
+	10, // [10:10] is the sub-list for method output_type
+	10, // [10:10] is the sub-list for method input_type
+	10, // [10:10] is the sub-list for extension type_name
+	10, // [10:10] is the sub-list for extension extendee
+	0,  // [0:10] is the sub-list for field type_name
 }
 
 func init() { file_keymanager_km_common_proto_key_claims_proto_init() }
@@ -500,7 +618,7 @@ func file_keymanager_km_common_proto_key_claims_proto_init() {
 		return
 	}
 	file_keymanager_km_common_proto_algorithms_proto_init()
-	file_keymanager_km_common_proto_key_claims_proto_msgTypes[3].OneofWrappers = []any{
+	file_keymanager_km_common_proto_key_claims_proto_msgTypes[4].OneofWrappers = []any{
 		(*KeyClaims_VmBindingClaims)(nil),
 		(*KeyClaims_VmKeyClaims)(nil),
 	}
@@ -509,8 +627,8 @@ func file_keymanager_km_common_proto_key_claims_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_keymanager_km_common_proto_key_claims_proto_rawDesc), len(file_keymanager_km_common_proto_key_claims_proto_rawDesc)),
-			NumEnums:      1,
-			NumMessages:   6,
+			NumEnums:      2,
+			NumMessages:   7,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -15,6 +15,7 @@ type KeyProtectionService interface {
 	GenerateKEMKeypair(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error)
 	DecapAndSeal(kemUUID uuid.UUID, encapsulatedKey, aad []byte) ([]byte, []byte, error)
 	DestroyKEMKey(kemUUID uuid.UUID) error
+	GetKEMKey(id uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error)
 }
 
 // defaultKPS implements KeyProtectionService by delegating to the KPS KCC FFI.
@@ -30,6 +31,10 @@ func (d *defaultKPS) DecapAndSeal(kemUUID uuid.UUID, encapsulatedKey, aad []byte
 
 func (d *defaultKPS) DestroyKEMKey(kemUUID uuid.UUID) error {
 	return kpscc.DestroyKEMKey(kemUUID)
+}
+
+func (d *defaultKPS) GetKEMKey(id uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error) {
+	return kpscc.GetKEMKey(id)
 }
 
 // Service implements KeyProtectionService by delegating to an underlying KeyProtectionService.
@@ -66,4 +71,10 @@ func (s *Service) DecapAndSeal(kemUUID uuid.UUID, encapsulatedKey, aad []byte) (
 // DestroyKEMKey destroys the KEM key identified by kemUUID by calling the KPS KCC FFI.
 func (s *Service) DestroyKEMKey(kemUUID uuid.UUID) error {
 	return s.kps.DestroyKEMKey(kemUUID)
+}
+
+// GetKEMKey retrieves KEM and binding public keys, HpkeAlgorithm and remaining lifespan in seconds
+// by calling the underlying KeyProtectionService backend.
+func (s *Service) GetKEMKey(id uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error) {
+	return s.kps.GetKEMKey(id)
 }
