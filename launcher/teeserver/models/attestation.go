@@ -6,6 +6,38 @@ const (
 	WorkloadAttestationLabel = "WORKLOAD_ATTESTATION"
 )
 
+// GPUArchitectureType enums are represented as integers with a custom type
+type GPUArchitectureType int32
+
+// The following values are based on NVIDIA's GPU architecture generations.
+const (
+	GpuArchitectureUnspecified GPUArchitectureType = iota // Unspecified architecture.
+	GpuArchitectureKepler                                 // Kepler architecture.
+	GpuArchitectureMaxwell                                // Maxwell architecture.
+	GpuArchitecturePascal                                 // Pascal architecture.
+	GpuArchitectureVolta                                  // Volta architecture.
+	GpuArchitectureTuring                                 // Turing architecture.
+	GpuArchitectureAmpere                                 // Ampere architecture.
+	GpuArchitectureAda                                    // Ada architecture.
+	GpuArchitectureHopper                                 // Hopper architecture.
+	GpuArchitectureUnsupported                            // Unknown architecture.
+	GpuArchitectureBlackwell                              // Blackwell architecture.
+)
+
+// String returns the string representation of a GPUArchitectureType based upon value.
+func (g GPUArchitectureType) String() string {
+	switch g {
+	case GpuArchitectureHopper:
+		return "GPU_ARCHITECTURE_HOPPER"
+	case GpuArchitectureBlackwell:
+		return "GPU_ARCHITECTURE_BLACKWELL"
+	case GpuArchitectureUnspecified:
+		return "GPU_ARCHITECTURE_UNSPECIFIED"
+	default:
+		return "GPU_ARCHITECTURE_UNSUPPORTED"
+	}
+}
+
 // VMAttestation represents a standalone attestation over a challenge provided by the workload.
 type VMAttestation struct {
 	// Label provided by the attesting entity. For Confidential Space, this shall be "WORKLOAD_ATTESTATION".
@@ -48,8 +80,24 @@ type TDXCCELQuote struct {
 }
 
 // DeviceAttestationReport represents an attestation report from a device.
-// TODO: Define this.
 type DeviceAttestationReport struct {
+	NvidiaReport *NvidiaAttestationReport `json:"nvidia_report,omitempty"`
+}
+
+// NvidiaAttestationReport represents the attestation report for NVIDIA GPUs, which may include SPT or MPT reports.
+type NvidiaAttestationReport struct {
+	Spt *SinglePassthroughAttestation         `json:"spt,omitempty"` // Single GPU Passthrough (SPT) attestation report
+	Mpt *MultiGpuSecurePassthroughAttestation `json:"mpt,omitempty"` //  Multiple GPU Passthrough (MPT) attestation report
+}
+
+// SinglePassthroughAttestation is a placeholder for the 'spt' field.
+type SinglePassthroughAttestation struct {
+	GPUQuote GPUInfo `json:"gpu_quote"`
+}
+
+// MultiGpuSecurePassthroughAttestation contains the actual GPU quotes.
+type MultiGpuSecurePassthroughAttestation struct {
+	GPUQuotes []GPUInfo `json:"gpu_quotes"`
 }
 
 // TPMAttestationEndorsement represents the endorsement of a TPM attestation.
@@ -103,4 +151,14 @@ type SignedQuote struct {
 	PCRValues     map[uint32][]byte `json:"pcr_values"`     // Raw binary values of each PCR being quoted.
 	TPMSAttest    []byte            `json:"tpms_attest"`    // Contains a TPMS_QUOTE_INFO.
 	TPMTSignature []byte            `json:"tpmt_signature"` // Contains the signature.
+}
+
+// GPUInfo contains the specific hardware identity and evidence for a single GPU.
+type GPUInfo struct {
+	UUID                        string `json:"uuid"`                          // The UUID of the GPU device.
+	DriverVersion               string `json:"driver_version"`                // The driver version of the GPU.
+	VBIOSVersion                string `json:"vbios_version"`                 // The VBIOS version of the GPU.
+	GPUArchitectureType         string `json:"gpu_architecture_type"`         // The architecture type of the GPU.
+	AttestationCertificateChain []byte `json:"attestation_certificate_chain"` // The raw certificate chain for attestation.
+	AttestationReport           []byte `json:"attestation_report"`            // The raw attestation report for the GPU.
 }
