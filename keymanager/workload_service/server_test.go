@@ -404,20 +404,20 @@ func TestHandleEnumerateKeysWithKeys(t *testing.T) {
 	mockEnumKeys := []kpskcc.KEMKeyInfo{
 		{
 			ID: kem1,
-			Algorithm: &algorithms.HpkeAlgorithm{
-				Kem:  algorithms.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
-				Kdf:  algorithms.KdfAlgorithm_KDF_ALGORITHM_HKDF_SHA256,
-				Aead: algorithms.AeadAlgorithm_AEAD_ALGORITHM_AES_256_GCM,
+			Algorithm: &keymanager.HpkeAlgorithm{
+				Kem:  keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
+				Kdf:  keymanager.KdfAlgorithm_KDF_ALGORITHM_HKDF_SHA256,
+				Aead: keymanager.AeadAlgorithm_AEAD_ALGORITHM_AES_256_GCM,
 			},
 			KEMPubKey:             kemPubKey1,
 			RemainingLifespanSecs: 3500,
 		},
 		{
 			ID: kem2,
-			Algorithm: &algorithms.HpkeAlgorithm{
-				Kem:  algorithms.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
-				Kdf:  algorithms.KdfAlgorithm_KDF_ALGORITHM_HKDF_SHA256,
-				Aead: algorithms.AeadAlgorithm_AEAD_ALGORITHM_AES_256_GCM,
+			Algorithm: &keymanager.HpkeAlgorithm{
+				Kem:  keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
+				Kdf:  keymanager.KdfAlgorithm_KDF_ALGORITHM_HKDF_SHA256,
+				Aead: keymanager.AeadAlgorithm_AEAD_ALGORITHM_AES_256_GCM,
 			},
 			KEMPubKey:             kemPubKey2,
 			RemainingLifespanSecs: 7100,

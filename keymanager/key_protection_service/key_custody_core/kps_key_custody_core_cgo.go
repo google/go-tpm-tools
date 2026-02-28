@@ -97,7 +97,7 @@ func EnumerateKEMKeys(limit, offset int) ([]KEMKeyInfo, bool, error) {
 		kemPubKey := C.GoBytes(unsafe.Pointer(&e.pub_key[0]), C.int(e.pub_key_len))
 
 		algoBytes := C.GoBytes(unsafe.Pointer(&e.algorithm[0]), C.int(e.algorithm_len))
-		algo := &algorithms.HpkeAlgorithm{}
+		algo := &keymanager.HpkeAlgorithm{}
 		if err := proto.Unmarshal(algoBytes, algo); err != nil {
 			return nil, false, fmt.Errorf("failed to unmarshal algorithm for key %d: %w", i, err)
 		}
