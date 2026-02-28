@@ -6,26 +6,26 @@ package keyprotectionservice
 import (
 	"github.com/google/uuid"
 
-	algorithms "github.com/google/go-tpm-tools/keymanager/km_common/proto"
+	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
 )
 
 // KEMKeyGenerator generates KEM keypairs linked to a binding public key.
 type KEMKeyGenerator interface {
-	GenerateKEMKeypair(algo *algorithms.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error)
+	GenerateKEMKeypair(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) ([]byte, []byte, error)
 }
 
 // Service implements KEMKeyGenerator by delegating to the KPS KCC FFI.
 type Service struct {
-	generateKEMKeypairFn func(algo *algorithms.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error)
+	generateKEMKeypairFn func(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error)
 }
 
 // NewService creates a new KPS KOL service with the given KCC function.
-func NewService(generateKEMKeypairFn func(algo *algorithms.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error)) *Service {
+func NewService(generateKEMKeypairFn func(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error)) *Service {
 	return &Service{generateKEMKeypairFn: generateKEMKeypairFn}
 }
 
 // GenerateKEMKeypair generates a KEM keypair linked to the provided binding
 // public key by calling the KPS KCC FFI.
-func (s *Service) GenerateKEMKeypair(algo *algorithms.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
+func (s *Service) GenerateKEMKeypair(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
 	return s.generateKEMKeypairFn(algo, bindingPubKey, lifespanSecs)
 }

@@ -13,14 +13,14 @@ import (
 
 	kps "github.com/google/go-tpm-tools/keymanager/key_protection_service"
 	kpskcc "github.com/google/go-tpm-tools/keymanager/key_protection_service/key_custody_core"
-	algorithms "github.com/google/go-tpm-tools/keymanager/km_common/proto"
+	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
 	wskcc "github.com/google/go-tpm-tools/keymanager/workload_service/key_custody_core"
 )
 
 // realWorkloadService wraps the actual WSD KCC FFI.
 type realWorkloadService struct{}
 
-func (r *realWorkloadService) GenerateBindingKeypair(algo *algorithms.HpkeAlgorithm, lifespanSecs uint64) (uuid.UUID, []byte, error) {
+func (r *realWorkloadService) GenerateBindingKeypair(algo *keymanager.HpkeAlgorithm, lifespanSecs uint64) (uuid.UUID, []byte, error) {
 	return wskcc.GenerateBindingKeypair(algo, lifespanSecs)
 }
 

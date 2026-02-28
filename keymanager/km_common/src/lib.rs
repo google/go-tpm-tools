@@ -1,5 +1,5 @@
 pub mod algorithms {
-    include!(concat!(env!("OUT_DIR"), "/algorithms.rs"));
+    include!(concat!(env!("OUT_DIR"), "/keymanager.rs"));
 }
 
 pub mod crypto;

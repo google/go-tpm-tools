@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+package keymanager;
+
+import "keymanager/km_common/proto/algorithms.proto";
+
+option go_package = "github.com/google/go-tpm-tools/keymanager/km_common/proto;keymanager";
+
+// The results of an Encaps operation.
+message KemCiphertext {
+  KemAlgorithm algorithm = 1;
+  bytes ciphertext = 2; // `Nenc` bytes long.
+}
+
+// The results of a Decaps operation.
+message KemSharedSecret {
+  KemAlgorithm algorithm = 1;
+  bytes secret = 2; // `Nsecret` bytes long.
+}
+
+message HpkePayload {
+  HpkeAlgorithm algorithm = 1;
+  bytes kem_ciphertext = 2; // `Nenc` bytes long.
+  bytes payload_ciphertext = 3; // Encrypted data.
+  bytes authentication_tag = 4; // `Nt` bytes long.
+}

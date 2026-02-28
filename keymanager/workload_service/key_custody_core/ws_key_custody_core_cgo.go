@@ -18,12 +18,12 @@ import (
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
 
-	algorithms "github.com/google/go-tpm-tools/keymanager/km_common/proto"
+	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
 )
 
 // GenerateBindingKeypair generates an X25519 HPKE binding keypair via Rust FFI.
 // Returns the UUID key handle and the public key bytes.
-func GenerateBindingKeypair(algo *algorithms.HpkeAlgorithm, lifespanSecs uint64) (uuid.UUID, []byte, error) {
+func GenerateBindingKeypair(algo *keymanager.HpkeAlgorithm, lifespanSecs uint64) (uuid.UUID, []byte, error) {
 	var uuidBytes [16]byte
 	var pubkeyBuf [32]byte
 	pubkeyLen := C.size_t(len(pubkeyBuf))

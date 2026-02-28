@@ -12,7 +12,7 @@ import (
 
 	"github.com/google/uuid"
 
-	algorithms "github.com/google/go-tpm-tools/keymanager/km_common/proto"
+	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
 )
 
 func newTestServer(t *testing.T, kemGen KeyProtectionService, bindingGen WorkloadService) *Server {
@@ -30,7 +30,7 @@ type mockWorkloadService struct {
 	err    error
 }
 
-func (m *mockWorkloadService) GenerateBindingKeypair(_ *algorithms.HpkeAlgorithm, _ uint64) (uuid.UUID, []byte, error) {
+func (m *mockWorkloadService) GenerateBindingKeypair(_ *keymanager.HpkeAlgorithm, _ uint64) (uuid.UUID, []byte, error) {
 	return m.uuid, m.pubKey, m.err
 }
 
@@ -43,7 +43,7 @@ type mockKeyProtectionService struct {
 	receivedLifespan uint64
 }
 
-func (m *mockKeyProtectionService) GenerateKEMKeypair(_ *algorithms.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
+func (m *mockKeyProtectionService) GenerateKEMKeypair(_ *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
 	m.receivedPubKey = bindingPubKey
 	m.receivedLifespan = lifespanSecs
 	return m.uuid, m.pubKey, m.err
@@ -358,15 +358,15 @@ func TestHandleGenerateKemMapUniqueness(t *testing.T) {
 func TestToHpkeAlgorithm(t *testing.T) {
 	tests := []struct {
 		input   KemAlgorithm
-		want    *algorithms.HpkeAlgorithm
+		want    *keymanager.HpkeAlgorithm
 		wantErr bool
 	}{
 		{
 			input: KemAlgorithmDHKEMX25519HKDFSHA256,
-			want: &algorithms.HpkeAlgorithm{
-				Kem:  algorithms.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
-				Kdf:  algorithms.KdfAlgorithm_KDF_ALGORITHM_HKDF_SHA256,
-				Aead: algorithms.AeadAlgorithm_AEAD_ALGORITHM_AES_256_GCM,
+			want: &keymanager.HpkeAlgorithm{
+				Kem:  keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
+				Kdf:  keymanager.KdfAlgorithm_KDF_ALGORITHM_HKDF_SHA256,
+				Aead: keymanager.AeadAlgorithm_AEAD_ALGORITHM_AES_256_GCM,
 			},
 			wantErr: false,
 		},
