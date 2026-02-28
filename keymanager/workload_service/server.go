@@ -1,10 +1,11 @@
 // Package workloadservice implements the Key Orchestration Layer (KOL) for the
 // Workload Service Daemon (WSD). It provides an HTTP server on a unix socket
-// exposing key generation endpoints.
+// exposing key management endpoints.
 package workloadservice
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -23,12 +24,14 @@ import (
 // WorkloadService defines the interface for generating binding keypairs.
 type WorkloadService interface {
 	GenerateBindingKeypair(algo *keymanager.HpkeAlgorithm, lifespanSecs uint64) (uuid.UUID, []byte, error)
+	Open(bindingUUID uuid.UUID, enc, ciphertext, aad []byte) ([]byte, error)
 }
 type keyProtectionService struct{}
 
 // KeyProtectionService defines the interface for generating KEM keypairs.
 type KeyProtectionService interface {
 	GenerateKEMKeypair(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error)
+	DecapAndSeal(kemUUID uuid.UUID, encapsulatedKey, aad []byte) (sealEnc []byte, sealedCT []byte, err error)
 }
 type workloadService struct{}
 
@@ -36,8 +39,16 @@ func (r *workloadService) GenerateBindingKeypair(algo *keymanager.HpkeAlgorithm,
 	return wskcc.GenerateBindingKeypair(algo, lifespanSecs)
 }
 
+func (r *workloadService) Open(bindingUUID uuid.UUID, enc, ciphertext, aad []byte) ([]byte, error) {
+	return wskcc.Open(bindingUUID, enc, ciphertext, aad)
+}
+
 func (r *keyProtectionService) GenerateKEMKeypair(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
 	return kpscc.GenerateKEMKeypair(algo, bindingPubKey, lifespanSecs)
+}
+
+func (r *keyProtectionService) DecapAndSeal(kemUUID uuid.UUID, encapsulatedKey, aad []byte) (sealEnc []byte, sealedCT []byte, err error) {
+	return kpscc.DecapAndSeal(kemUUID, encapsulatedKey, aad)
 }
 
 // KeyHandle represents a key handle returned from the API.
@@ -101,6 +112,29 @@ type GetCapabilitiesResponse struct {
 	SupportedAlgorithms []SupportedAlgorithm `json:"supported_algorithms"`
 }
 
+// KemCiphertext carries raw encapsulated key bytes and the KEM algorithm.
+type KemCiphertext struct {
+	Algorithm  KemAlgorithm `json:"algorithm"`
+	Ciphertext string       `json:"ciphertext"` // base64-encoded raw bytes
+}
+
+// DecapsRequest is the JSON body for POST /keys:decap.
+type DecapsRequest struct {
+	KeyHandle  KeyHandle     `json:"key_handle"`
+	Ciphertext KemCiphertext `json:"ciphertext"`
+}
+
+// KemSharedSecret is the Decaps result payload.
+type KemSharedSecret struct {
+	Algorithm KemAlgorithm `json:"algorithm"`
+	Secret    string       `json:"secret"` // base64-encoded raw bytes
+}
+
+// DecapsResponse is returned by POST /v1/keys:decap.
+type DecapsResponse struct {
+	SharedSecret KemSharedSecret `json:"shared_secret"`
+}
+
 // Server is the WSD HTTP server.
 type Server struct {
 	keyProtectionService KeyProtectionService
@@ -129,9 +163,9 @@ func NewServer(keyProtectionService KeyProtectionService, workloadService Worklo
 	}
 
 	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/keys:decap", s.handleDecaps)
 	mux.HandleFunc("POST /v1/keys:generate_kem", s.handleGenerateKem)
 	mux.HandleFunc("GET /v1/capabilities", s.handleGetCapabilities)
-
 	s.httpServer = &http.Server{Handler: mux}
 
 	_ = os.Remove(socketPath)
@@ -164,6 +198,80 @@ func (s *Server) LookupBindingUUID(kemUUID uuid.UUID) (uuid.UUID, bool) {
 	defer s.mu.RUnlock()
 	id, ok := s.kemToBindingMap[kemUUID]
 	return id, ok
+}
+
+func decapsAADContext(kemUUID uuid.UUID, algorithm KemAlgorithm) []byte {
+	// Bind the KPS->WSD transport ciphertext to this decapsulation context.
+	// Note: The AAD context string retains `decaps` as it is part of the internal binding protocol
+	// and changing it might affect backward compatibility if keys were already persisted (though lifespan is short).
+	// For API alignment, we only change the external endpoint and JSON.
+	return []byte(fmt.Sprintf("wsd:keys:decaps:v1:%d:%s", algorithm, kemUUID))
+}
+
+func (s *Server) handleDecaps(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req DecapsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("invalid request body: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	if req.Ciphertext.Algorithm != KemAlgorithmDHKEMX25519HKDFSHA256 {
+		http.Error(w, fmt.Sprintf("unsupported ciphertext algorithm: %d", req.Ciphertext.Algorithm), http.StatusBadRequest)
+		return
+	}
+
+	kemUUID, err := uuid.Parse(req.KeyHandle.Handle)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("invalid key_handle.handle: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	encapsulatedKey, err := base64.StdEncoding.DecodeString(req.Ciphertext.Ciphertext)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("invalid ciphertext.ciphertext base64: %v", err), http.StatusBadRequest)
+		return
+	}
+	if len(encapsulatedKey) == 0 {
+		http.Error(w, "ciphertext.ciphertext must not be empty", http.StatusBadRequest)
+		return
+	}
+	aad := decapsAADContext(kemUUID, req.Ciphertext.Algorithm)
+
+	// Step 1: Look up the binding UUID for this KEM key.
+	bindingUUID, ok := s.LookupBindingUUID(kemUUID)
+	if !ok {
+		http.Error(w, fmt.Sprintf("KEM key handle not found: %s", kemUUID), http.StatusNotFound)
+		return
+	}
+
+	// Step 2: Decapsulate and reseal via KPS.
+	sealEnc, sealedCT, err := s.keyProtectionService.DecapAndSeal(kemUUID, encapsulatedKey, aad)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("failed to decap and seal: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Step 3: Open the sealed secret using the binding key via WSD KCC.
+	plaintext, err := s.workloadService.Open(bindingUUID, sealEnc, sealedCT, aad)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("failed to open sealed secret: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Step 4: Return the shared secret.
+	resp := DecapsResponse{
+		SharedSecret: KemSharedSecret{
+			Algorithm: req.Ciphertext.Algorithm,
+			Secret:    base64.StdEncoding.EncodeToString(plaintext),
+		},
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 func (s *Server) handleGenerateKem(w http.ResponseWriter, r *http.Request) {
@@ -255,7 +363,7 @@ func writeJSON(w http.ResponseWriter, v any, code int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(code)
-	json.NewEncoder(w).Encode(v)
+	_ = json.NewEncoder(w).Encode(v)
 }
 
 // writeError writes a JSON error response.
