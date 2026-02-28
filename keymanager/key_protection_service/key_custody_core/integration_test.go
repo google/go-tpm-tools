@@ -7,13 +7,13 @@ import (
 
 	"github.com/google/uuid"
 
-	algorithms "github.com/google/go-tpm-tools/keymanager/km_common/proto"
+	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
 )
 
-var defaultAlgo = &algorithms.HpkeAlgorithm{
-	Kem:  algorithms.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
-	Kdf:  algorithms.KdfAlgorithm_KDF_ALGORITHM_HKDF_SHA256,
-	Aead: algorithms.AeadAlgorithm_AEAD_ALGORITHM_AES_256_GCM,
+var defaultAlgo = &keymanager.HpkeAlgorithm{
+	Kem:  keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
+	Kdf:  keymanager.KdfAlgorithm_KDF_ALGORITHM_HKDF_SHA256,
+	Aead: keymanager.AeadAlgorithm_AEAD_ALGORITHM_AES_256_GCM,
 }
 
 func TestIntegrationGenerateKEMKeypair(t *testing.T) {
