@@ -327,6 +327,7 @@ func (a *agent) AttestationEvidence(_ context.Context, challenge []byte, extraDa
 
 	switch v := attResult.(type) {
 	case *pb.Attestation:
+		v.CanonicalEventLog = cosCel.Bytes()
 		attestation.Quote = &teemodels.VMAttestationQuote{
 			TPMQuote: convertPBToTPMQuote(v),
 		}

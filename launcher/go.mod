@@ -19,7 +19,7 @@ require (
 	github.com/google/go-eventlog v0.0.3-0.20250820210646-0f4d84deece4
 	github.com/google/go-tdx-guest v0.3.2-0.20250814004405-ffb0869e6f4d
 	github.com/google/go-tpm v0.9.6
-	github.com/google/go-tpm-tools v0.4.4
+	github.com/google/go-tpm-tools v0.4.6
 	github.com/google/go-tpm-tools/verifier v0.4.4
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.0
@@ -39,6 +39,7 @@ require (
 	cloud.google.com/go/longrunning v0.8.0 // indirect
 	github.com/AdaLogics/go-fuzz-headers v0.0.0-20240806141605-e8a1dd7889d6 // indirect
 	github.com/AdamKorcz/go-118-fuzz-build v0.0.0-20231105174938-2b5cbb29f3e2 // indirect
+	github.com/GoogleCloudPlatform/confidential-space/server v0.0.0-20260227215608-998bdbe721d1 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/Microsoft/hcsshim v0.12.9 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
