@@ -163,7 +163,7 @@ func NewServer(keyProtectionService KeyProtectionService, workloadService Worklo
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/keys:generate_key", s.handleGenerateKey)
-	mux.HandleFunc("/v1/keys:decap", s.handleDecaps)
+	mux.HandleFunc("POST /v1/keys:decap", s.handleDecaps)
 	mux.HandleFunc("GET /v1/capabilities", s.handleGetCapabilities)
 	s.httpServer = &http.Server{Handler: mux}
 
@@ -208,10 +208,6 @@ func decapsAADContext(kemUUID uuid.UUID, algorithm KemAlgorithm) []byte {
 }
 
 func (s *Server) handleDecaps(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
 
 	var req DecapsRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -219,8 +215,8 @@ func (s *Server) handleDecaps(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Ciphertext.Algorithm != KemAlgorithmDHKEMX25519HKDFSHA256 {
-		http.Error(w, fmt.Sprintf("unsupported ciphertext algorithm: %d", req.Ciphertext.Algorithm), http.StatusBadRequest)
+	if !req.Ciphertext.Algorithm.IsSupported() {
+		http.Error(w, fmt.Sprintf("unsupported ciphertext algorithm: %d. Supported algorithms: %s", req.Ciphertext.Algorithm, SupportedKemAlgorithmsString()), http.StatusBadRequest)
 		return
 	}
 
@@ -335,11 +331,7 @@ func (s *Server) generateKEMKey(w http.ResponseWriter, req GenerateKeyRequest) {
 	writeJSON(w, resp, http.StatusOK)
 }
 
-func (s *Server) handleGetCapabilities(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
+func (s *Server) handleGetCapabilities(w http.ResponseWriter, _ *http.Request) {
 
 	var supportedAlgos []SupportedAlgorithm
 	for _, algo := range SupportedKemAlgorithms {

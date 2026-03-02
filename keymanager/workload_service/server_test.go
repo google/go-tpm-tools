@@ -536,29 +536,29 @@ func TestHandleDecapsSuccess(t *testing.T) {
 		t.Fatalf("expected plaintext %q, got %q", plaintext, decoded)
 	}
 
-	// Verify DecapSealer received correct args.
+	// Verify KeyProtectionService received correct args.
 	if ds.receivedKEMUUID != kemUUID {
-		t.Fatalf("expected DecapSealer to receive KEM UUID %s, got %s", kemUUID, ds.receivedKEMUUID)
+		t.Fatalf("expected KeyProtectionService to receive KEM UUID %s, got %s", kemUUID, ds.receivedKEMUUID)
 	}
 	if string(ds.receivedEncKey) != string(encKey) {
-		t.Fatalf("expected DecapSealer to receive enc key %q, got %q", encKey, ds.receivedEncKey)
+		t.Fatalf("expected KeyProtectionService to receive enc key %q, got %q", encKey, ds.receivedEncKey)
 	}
 	if string(ds.receivedAAD) != string(expectedAAD) {
-		t.Fatalf("expected DecapSealer to receive AAD %q, got %q", expectedAAD, ds.receivedAAD)
+		t.Fatalf("expected KeyProtectionService to receive AAD %q, got %q", expectedAAD, ds.receivedAAD)
 	}
 
-	// Verify Opener received correct args.
+	// Verify WorkloadService received correct args.
 	if op.receivedUUID != bindingUUID {
-		t.Fatalf("expected Opener to receive binding UUID %s, got %s", bindingUUID, op.receivedUUID)
+		t.Fatalf("expected WorkloadService to receive binding UUID %s, got %s", bindingUUID, op.receivedUUID)
 	}
 	if string(op.receivedEnc) != string(sealEnc) {
-		t.Fatalf("expected Opener to receive enc %q, got %q", sealEnc, op.receivedEnc)
+		t.Fatalf("expected WorkloadService to receive enc %q, got %q", sealEnc, op.receivedEnc)
 	}
 	if string(op.receivedCT) != string(sealedCT) {
-		t.Fatalf("expected Opener to receive CT %q, got %q", sealedCT, op.receivedCT)
+		t.Fatalf("expected WorkloadService to receive CT %q, got %q", sealedCT, op.receivedCT)
 	}
 	if string(op.receivedAAD) != string(expectedAAD) {
-		t.Fatalf("expected Opener to receive AAD %q, got %q", expectedAAD, op.receivedAAD)
+		t.Fatalf("expected WorkloadService to receive AAD %q, got %q", expectedAAD, op.receivedAAD)
 	}
 }
 

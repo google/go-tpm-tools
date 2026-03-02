@@ -9,17 +9,13 @@ import (
 	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
 )
 
-// KEMKeyGenerator generates KEM keypairs linked to a binding public key.
-type KEMKeyGenerator interface {
-	GenerateKEMKeypair(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) ([]byte, []byte, error)
-}
-
-// DecapSealer decapsulates a shared secret and reseals it with the binding key.
-type DecapSealer interface {
+// KeyProtectionService generates KEM keypairs and decapsulates/reseals shared secrets.
+type KeyProtectionService interface {
+	GenerateKEMKeypair(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error)
 	DecapAndSeal(kemUUID uuid.UUID, encapsulatedKey, aad []byte) (sealEnc []byte, sealedCT []byte, err error)
 }
 
-// Service implements KEMKeyGenerator and DecapSealer by delegating to the KPS KCC FFI.
+// Service implements KeyProtectionService by delegating to the KPS KCC FFI.
 type Service struct {
 	generateKEMKeypairFn func(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error)
 	decapAndSealFn       func(kemUUID uuid.UUID, encapsulatedKey, aad []byte) ([]byte, []byte, error)
