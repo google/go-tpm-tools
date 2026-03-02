@@ -33,6 +33,7 @@ func newTestServer(t *testing.T, kemGen kps.KeyProtectionService, bindingGen Wor
 type mockWorkloadService struct {
 	uuid   uuid.UUID
 	pubKey []byte
+	algo   *keymanager.HpkeAlgorithm
 	err    error
 }
 
@@ -40,8 +41,8 @@ func (m *mockWorkloadService) GenerateBindingKeypair(_ *keymanager.HpkeAlgorithm
 	return m.uuid, m.pubKey, m.err
 }
 
-func (m *mockWorkloadService) GetBindingKey(_ uuid.UUID) ([]byte, error) {
-	return m.pubKey, m.err
+func (m *mockWorkloadService) GetBindingKey(_ uuid.UUID) ([]byte, *keymanager.HpkeAlgorithm, error) {
+	return m.pubKey, m.algo, m.err
 }
 
 // mockKeyProtectionService implements KeyProtectionService for testing.
@@ -49,6 +50,7 @@ type mockKeyProtectionService struct {
 	uuid             uuid.UUID
 	pubKey           []byte
 	bindingPubKey    []byte
+	algo             *keymanager.HpkeAlgorithm
 	deleteAfter      uint64
 	err              error
 	receivedPubKey   []byte
@@ -61,8 +63,8 @@ func (m *mockKeyProtectionService) GenerateKEMKeypair(_ *keymanager.HpkeAlgorith
 	return m.uuid, m.pubKey, m.err
 }
 
-func (m *mockKeyProtectionService) GetKemKey(_ uuid.UUID) ([]byte, []byte, uint64, error) {
-	return m.pubKey, m.bindingPubKey, m.deleteAfter, m.err
+func (m *mockKeyProtectionService) GetKemKey(_ uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error) {
+	return m.pubKey, m.bindingPubKey, m.algo, m.deleteAfter, m.err
 }
 
 func validGenerateBody() []byte {
@@ -459,11 +461,22 @@ func TestProcessClaims(t *testing.T) {
 		kemPubKey[i] = byte(i + 100)
 	}
 
-	ws := &mockWorkloadService{uuid: bindingUUID, pubKey: bindingPubKey}
+	expectedAlgo := &keymanager.HpkeAlgorithm{
+		Kem:  keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
+		Kdf:  keymanager.KdfAlgorithm_KDF_ALGORITHM_HKDF_SHA256,
+		Aead: keymanager.AeadAlgorithm_AEAD_ALGORITHM_AES_256_GCM,
+	}
+
+	ws := &mockWorkloadService{
+		uuid:   bindingUUID,
+		pubKey: bindingPubKey,
+		algo:   expectedAlgo,
+	}
 	kps := &mockKeyProtectionService{
 		uuid:          kemUUID,
 		pubKey:        kemPubKey,
 		bindingPubKey: bindingPubKey,
+		algo:          expectedAlgo,
 		deleteAfter:   uint64(time.Now().Add(1 * time.Hour).Unix()),
 	}
 
@@ -488,6 +501,11 @@ func TestProcessClaims(t *testing.T) {
 			}
 			if !bytes.Equal(claims.BindingPubKey.PublicKey, bindingPubKey) {
 				t.Errorf("expected binding pubkey %v, got %v", bindingPubKey, claims.BindingPubKey.PublicKey)
+			}
+			if claims.BindingPubKey.Algorithm.Kem != expectedAlgo.Kem ||
+				claims.BindingPubKey.Algorithm.Kdf != expectedAlgo.Kdf ||
+				claims.BindingPubKey.Algorithm.Aead != expectedAlgo.Aead {
+				t.Errorf("expected binding algorithm %v, got %v", expectedAlgo, claims.BindingPubKey.Algorithm)
 			}
 		case <-time.After(2 * time.Second):
 			t.Fatal("timed out waiting for response")
@@ -514,8 +532,16 @@ func TestProcessClaims(t *testing.T) {
 			if !bytes.Equal(claims.KemPubKey.PublicKey, kemPubKey) {
 				t.Errorf("expected KEM pubkey %v, got %v", kemPubKey, claims.KemPubKey.PublicKey)
 			}
+			if claims.KemPubKey.Algorithm != expectedAlgo.Kem {
+				t.Errorf("expected KEM algorithm %v, got %v", expectedAlgo.Kem, claims.KemPubKey.Algorithm)
+			}
 			if !bytes.Equal(claims.BindingPubKey.PublicKey, bindingPubKey) {
 				t.Errorf("expected binding pubkey %v, got %v", bindingPubKey, claims.BindingPubKey.PublicKey)
+			}
+			if claims.BindingPubKey.Algorithm.Kem != expectedAlgo.Kem ||
+				claims.BindingPubKey.Algorithm.Kdf != expectedAlgo.Kdf ||
+				claims.BindingPubKey.Algorithm.Aead != expectedAlgo.Aead {
+				t.Errorf("expected binding algorithm %v, got %v", expectedAlgo, claims.BindingPubKey.Algorithm)
 			}
 			if claims.RemainingLifespan.AsDuration() <= 0 {
 				t.Errorf("expected positive remaining lifespan, got %v", claims.RemainingLifespan.AsDuration())

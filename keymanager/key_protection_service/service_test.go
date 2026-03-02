@@ -12,14 +12,14 @@ import (
 
 type mockKeyProtectionService struct {
 	generateKEMKeypairFn func(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error)
-	getKemKeyFn          func(id uuid.UUID) ([]byte, []byte, uint64, error)
+	getKemKeyFn          func(id uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error)
 }
 
 func (m *mockKeyProtectionService) GenerateKEMKeypair(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
 	return m.generateKEMKeypairFn(algo, bindingPubKey, lifespanSecs)
 }
 
-func (m *mockKeyProtectionService) GetKemKey(id uuid.UUID) ([]byte, []byte, uint64, error) {
+func (m *mockKeyProtectionService) GetKemKey(id uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error) {
 	return m.getKemKeyFn(id)
 }
 
@@ -76,19 +76,24 @@ func TestServiceGetKemKeySuccess(t *testing.T) {
 	for i := range expectedBindingPubKey {
 		expectedBindingPubKey[i] = byte(i + 10)
 	}
+	expectedAlgo := &keymanager.HpkeAlgorithm{
+		Kem:  keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
+		Kdf:  keymanager.KdfAlgorithm_KDF_ALGORITHM_HKDF_SHA256,
+		Aead: keymanager.AeadAlgorithm_AEAD_ALGORITHM_AES_256_GCM,
+	}
 	expectedDeleteAfter := uint64(12345678)
 	keyID := uuid.New()
 
 	svc := NewService(&mockKeyProtectionService{
-		getKemKeyFn: func(id uuid.UUID) ([]byte, []byte, uint64, error) {
+		getKemKeyFn: func(id uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error) {
 			if id != keyID {
 				t.Fatalf("expected UUID %s, got %s", keyID, id)
 			}
-			return expectedKemPubKey, expectedBindingPubKey, expectedDeleteAfter, nil
+			return expectedKemPubKey, expectedBindingPubKey, expectedAlgo, expectedDeleteAfter, nil
 		},
 	})
 
-	kemPubKey, bindingPubKey, deleteAfter, err := svc.GetKemKey(keyID)
+	kemPubKey, bindingPubKey, algo, deleteAfter, err := svc.GetKemKey(keyID)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -97,6 +102,9 @@ func TestServiceGetKemKeySuccess(t *testing.T) {
 	}
 	if !bytes.Equal(bindingPubKey, expectedBindingPubKey) {
 		t.Fatalf("expected binding public key %x, got %x", expectedBindingPubKey, bindingPubKey)
+	}
+	if algo.Kem != expectedAlgo.Kem || algo.Kdf != expectedAlgo.Kdf || algo.Aead != expectedAlgo.Aead {
+		t.Fatalf("expected algorithm %v, got %v", expectedAlgo, algo)
 	}
 	if deleteAfter != expectedDeleteAfter {
 		t.Fatalf("expected deleteAfter %d, got %d", expectedDeleteAfter, deleteAfter)

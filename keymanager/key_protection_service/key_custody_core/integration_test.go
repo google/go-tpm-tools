@@ -75,7 +75,7 @@ func TestIntegrationGetKemKey(t *testing.T) {
 		t.Fatalf("GenerateKEMKeypair failed: %v", err)
 	}
 
-	retrievedKemPK, retrievedBindingPK, deleteAfter, err := GetKemKey(id)
+	retrievedKemPK, retrievedBindingPK, retrievedAlgo, deleteAfter, err := GetKemKey(id)
 	if err != nil {
 		t.Fatalf("GetKemKey failed: %v", err)
 	}
@@ -88,13 +88,17 @@ func TestIntegrationGetKemKey(t *testing.T) {
 		t.Fatalf("binding pubkey mismatch: expected %x, got %x", bindingPK, retrievedBindingPK)
 	}
 
+	if retrievedAlgo.Kem != defaultAlgo.Kem || retrievedAlgo.Kdf != defaultAlgo.Kdf || retrievedAlgo.Aead != defaultAlgo.Aead {
+		t.Fatalf("algorithm mismatch: expected %v, got %v", defaultAlgo, retrievedAlgo)
+	}
+
 	if deleteAfter == 0 {
 		t.Fatal("expected non-zero deleteAfter timestamp")
 	}
 }
 
 func TestIntegrationGetKemKeyNotFound(t *testing.T) {
-	_, _, _, err := GetKemKey(uuid.New())
+	_, _, _, _, err := GetKemKey(uuid.New())
 	if err == nil {
 		t.Fatal("expected error for non-existent UUID")
 	}

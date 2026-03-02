@@ -26,7 +26,7 @@ import (
 // WorkloadService defines the interface for generating binding keypairs.
 type WorkloadService interface {
 	GenerateBindingKeypair(algo *keymanager.HpkeAlgorithm, lifespanSecs uint64) (uuid.UUID, []byte, error)
-	GetBindingKey(id uuid.UUID) ([]byte, error)
+	GetBindingKey(id uuid.UUID) ([]byte, *keymanager.HpkeAlgorithm, error)
 }
 type kpsBackend struct{}
 
@@ -36,7 +36,7 @@ func (r *workloadService) GenerateBindingKeypair(algo *keymanager.HpkeAlgorithm,
 	return wskcc.GenerateBindingKeypair(algo, lifespanSecs)
 }
 
-func (r *workloadService) GetBindingKey(id uuid.UUID) ([]byte, error) {
+func (r *workloadService) GetBindingKey(id uuid.UUID) ([]byte, *keymanager.HpkeAlgorithm, error) {
 	return wskcc.GetBindingKey(id)
 }
 
@@ -44,7 +44,7 @@ func (b *kpsBackend) GenerateKEMKeypair(algo *keymanager.HpkeAlgorithm, bindingP
 	return kpscc.GenerateKEMKeypair(algo, bindingPubKey, lifespanSecs)
 }
 
-func (b *kpsBackend) GetKemKey(id uuid.UUID) ([]byte, []byte, uint64, error) {
+func (b *kpsBackend) GetKemKey(id uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error) {
 	return kpscc.GetKemKey(id)
 }
 
@@ -307,7 +307,7 @@ func (s *Server) GetBindingKeyClaims(id uuid.UUID) (*keymanager.KeyClaims, error
 	}
 
 	// Step 2: Key Metadata Lookup.
-	pubKey, err := s.workloadService.GetBindingKey(bindingID)
+	pubKey, algo, err := s.workloadService.GetBindingKey(bindingID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get binding key: %w", err)
 	}
@@ -317,11 +317,7 @@ func (s *Server) GetBindingKeyClaims(id uuid.UUID) (*keymanager.KeyClaims, error
 		Claims: &keymanager.KeyClaims_VmBindingClaims{
 			VmBindingClaims: &keymanager.KeyClaims_VmProtectionBindingClaims{
 				BindingPubKey: &keymanager.HpkePublicKey{
-					Algorithm: &keymanager.HpkeAlgorithm{
-						Kem:  keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
-						Kdf:  keymanager.KdfAlgorithm_KDF_ALGORITHM_HKDF_SHA256,
-						Aead: keymanager.AeadAlgorithm_AEAD_ALGORITHM_AES_256_GCM,
-					},
+					Algorithm: algo,
 					PublicKey: pubKey,
 				},
 			},
@@ -333,7 +329,7 @@ func (s *Server) GetBindingKeyClaims(id uuid.UUID) (*keymanager.KeyClaims, error
 // GetKemKeyClaims returns the claims for a KEM key identified by its UUID.
 func (s *Server) GetKemKeyClaims(id uuid.UUID) (*keymanager.KeyClaims, error) {
 	// Step 1: Key Metadata Lookup.
-	kemPubKey, bindingPubKey, deleteAfter, err := s.keyProtectionService.GetKemKey(id)
+	kemPubKey, bindingPubKey, algo, deleteAfter, err := s.keyProtectionService.GetKemKey(id)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get KEM key: %w", err)
 	}
@@ -350,15 +346,11 @@ func (s *Server) GetKemKeyClaims(id uuid.UUID) (*keymanager.KeyClaims, error) {
 		Claims: &keymanager.KeyClaims_VmKeyClaims{
 			VmKeyClaims: &keymanager.KeyClaims_VmProtectionKeyClaims{
 				KemPubKey: &keymanager.KemPublicKey{
-					Algorithm: keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
+					Algorithm: algo.GetKem(),
 					PublicKey: kemPubKey,
 				},
 				BindingPubKey: &keymanager.HpkePublicKey{
-					Algorithm: &keymanager.HpkeAlgorithm{
-						Kem:  keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
-						Kdf:  keymanager.KdfAlgorithm_KDF_ALGORITHM_HKDF_SHA256,
-						Aead: keymanager.AeadAlgorithm_AEAD_ALGORITHM_AES_256_GCM,
-					},
+					Algorithm: algo,
 					PublicKey: bindingPubKey,
 				},
 				RemainingLifespan: durationpb.New(remaining),

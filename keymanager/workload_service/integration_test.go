@@ -25,7 +25,7 @@ func (r *realWorkloadService) GenerateBindingKeypair(algo *keymanager.HpkeAlgori
 	return wskcc.GenerateBindingKeypair(algo, lifespanSecs)
 }
 
-func (r *realWorkloadService) GetBindingKey(id uuid.UUID) ([]byte, error) {
+func (r *realWorkloadService) GetBindingKey(id uuid.UUID) ([]byte, *keymanager.HpkeAlgorithm, error) {
 	return wskcc.GetBindingKey(id)
 }
 
@@ -36,7 +36,7 @@ func (r *realKCC) GenerateKEMKeypair(algo *keymanager.HpkeAlgorithm, bindingPubK
 	return kpskcc.GenerateKEMKeypair(algo, bindingPubKey, lifespanSecs)
 }
 
-func (r *realKCC) GetKemKey(id uuid.UUID) ([]byte, []byte, uint64, error) {
+func (r *realKCC) GetKemKey(id uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error) {
 	return kpskcc.GetKemKey(id)
 }
 
@@ -150,6 +150,7 @@ func TestIntegrationKeyClaims(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
+	t.Cleanup(func() { close(srv.claimsChan) })
 
 	// 1. Generate a KEM key
 	reqBody, _ := json.Marshal(GenerateKemRequest{

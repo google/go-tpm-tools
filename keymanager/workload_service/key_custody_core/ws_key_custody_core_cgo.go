@@ -55,26 +55,36 @@ func GenerateBindingKeypair(algo *keymanager.HpkeAlgorithm, lifespanSecs uint64)
 	return id, pubkey, nil
 }
 
-// GetBindingKey retrieves the binding public key via Rust FFI.
-func GetBindingKey(id uuid.UUID) ([]byte, error) {
+// GetBindingKey retrieves the binding public key and HpkeAlgorithm via Rust FFI.
+func GetBindingKey(id uuid.UUID) ([]byte, *keymanager.HpkeAlgorithm, error) {
 	uuidBytes, err := id.MarshalBinary()
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal UUID: %v", err)
+		return nil, nil, fmt.Errorf("failed to marshal UUID: %v", err)
 	}
 
 	var pubkeyBuf [32]byte
 	pubkeyLen := C.size_t(len(pubkeyBuf))
+	var algoBuf [C.MAX_ALGORITHM_LEN]byte
+	algoLenC := C.size_t(len(algoBuf))
 
 	rc := C.key_manager_get_binding_key(
 		(*C.uint8_t)(unsafe.Pointer(&uuidBytes[0])),
 		(*C.uint8_t)(unsafe.Pointer(&pubkeyBuf[0])),
 		pubkeyLen,
+		(*C.uint8_t)(unsafe.Pointer(&algoBuf[0])),
+		&algoLenC,
 	)
 	if rc != 0 {
-		return nil, fmt.Errorf("key_manager_get_binding_key failed with code %d", rc)
+		return nil, nil, fmt.Errorf("key_manager_get_binding_key failed with code %d", rc)
 	}
 
 	pubkey := make([]byte, pubkeyLen)
 	copy(pubkey, pubkeyBuf[:pubkeyLen])
-	return pubkey, nil
+
+	algo := &keymanager.HpkeAlgorithm{}
+	if err := proto.Unmarshal(algoBuf[:algoLenC], algo); err != nil {
+		return nil, nil, fmt.Errorf("failed to unmarshal HpkeAlgorithm: %v", err)
+	}
+
+	return pubkey, algo, nil
 }

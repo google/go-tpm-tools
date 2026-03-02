@@ -1,12 +1,12 @@
 use km_common::algorithms::HpkeAlgorithm;
-use km_common::crypto::secret_box::SecretBox;
 use km_common::crypto::PublicKey;
+use km_common::crypto::secret_box::SecretBox;
 use km_common::key_types::{KeyRecord, KeyRegistry, KeySpec};
 use prost::Message;
 use std::slice;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::sync::LazyLock;
+use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 use uuid::Uuid;
 
@@ -331,13 +331,14 @@ pub unsafe extern "C" fn key_manager_enumerate_binding_keys(
     .unwrap_or(-1)
 }
 
-/// Internal function to retrieve a binding key's public key.
-fn get_binding_key_internal(uuid: Uuid) -> Result<PublicKey, i32> {
+/// Internal function to retrieve a binding key's public key and algorithm.
+fn get_binding_key_internal(uuid: Uuid) -> Result<(HpkeAlgorithm, PublicKey), i32> {
     let record = KEY_REGISTRY.get_key(&uuid).ok_or(-1)?;
     match &record.meta.spec {
         KeySpec::Binding {
-            binding_public_key, ..
-        } => Ok(binding_public_key.clone()),
+            algo,
+            binding_public_key,
+        } => Ok((algo.clone(), binding_public_key.clone())),
         _ => Err(-1),
     }
 }
@@ -348,6 +349,8 @@ fn get_binding_key_internal(uuid: Uuid) -> Result<PublicKey, i32> {
 /// * `uuid_bytes` - A pointer to a 16-byte buffer containing the key UUID.
 /// * `out_pubkey` - A pointer to a buffer where the public key will be written.
 /// * `out_pubkey_len` - The size of `out_pubkey` buffer.
+/// * `out_algo` - A pointer to a buffer where the serialized HPKE algorithm proto bytes will be written.
+/// * `out_algo_len` - A pointer to a `usize` that contains the size of `out_algo` buffer. On success, updated with actual size.
 ///
 /// ## Safety
 /// This function is unsafe because it dereferences raw pointers.
@@ -355,15 +358,22 @@ fn get_binding_key_internal(uuid: Uuid) -> Result<PublicKey, i32> {
 /// ## Returns
 /// * `0` on success.
 /// * `-1` if arguments are invalid or key is not found.
-/// * `-2` if the `out_pubkey` buffer is too small.
+/// * `-2` if either output buffer is too small.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn key_manager_get_binding_key(
     uuid_bytes: *const u8,
     out_pubkey: *mut u8,
     out_pubkey_len: usize,
+    out_algo: *mut u8,
+    out_algo_len: *mut usize,
 ) -> i32 {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        if uuid_bytes.is_null() || out_pubkey.is_null() || out_pubkey_len == 0 {
+        if uuid_bytes.is_null()
+            || out_pubkey.is_null()
+            || out_pubkey_len == 0
+            || out_algo.is_null()
+            || out_algo_len.is_null()
+        {
             return -1;
         }
 
@@ -371,6 +381,8 @@ pub unsafe extern "C" fn key_manager_get_binding_key(
         let uuid_slice = unsafe { std::slice::from_raw_parts(uuid_bytes, 16) };
         let out_pubkey_slice =
             unsafe { std::slice::from_raw_parts_mut(out_pubkey, out_pubkey_len) };
+        let out_algo_len_ref = unsafe { &mut *out_algo_len };
+        let out_algo_slice = unsafe { std::slice::from_raw_parts_mut(out_algo, *out_algo_len) };
 
         let uuid = match Uuid::from_slice(uuid_slice) {
             Ok(u) => u,
@@ -379,11 +391,16 @@ pub unsafe extern "C" fn key_manager_get_binding_key(
 
         // Call Safe Internal Function
         match get_binding_key_internal(uuid) {
-            Ok(pubkey) => {
-                if out_pubkey_len != pubkey.as_bytes().len() {
+            Ok((algo, pubkey)) => {
+                let algo_bytes = algo.encode_to_vec();
+                if out_pubkey_slice.len() != pubkey.as_bytes().len()
+                    || *out_algo_len_ref < algo_bytes.len()
+                {
                     return -2;
                 }
                 out_pubkey_slice.copy_from_slice(pubkey.as_bytes());
+                out_algo_slice[..algo_bytes.len()].copy_from_slice(&algo_bytes);
+                *out_algo_len_ref = algo_bytes.len();
                 0 // Success
             }
             Err(e) => e,
@@ -759,28 +776,37 @@ mod tests {
 
         // Now, retrieve it.
         let mut retrieved_pubkey_bytes = [0u8; 32];
+        let mut retrieved_algo_bytes = [0u8; 64];
+        let mut retrieved_algo_len = retrieved_algo_bytes.len();
         let result = unsafe {
             key_manager_get_binding_key(
                 uuid_bytes.as_ptr(),
                 retrieved_pubkey_bytes.as_mut_ptr(),
                 retrieved_pubkey_bytes.len(),
+                retrieved_algo_bytes.as_mut_ptr(),
+                &mut retrieved_algo_len,
             )
         };
 
         assert_eq!(result, 0);
         assert_eq!(generated_pubkey_bytes, retrieved_pubkey_bytes);
+        assert_eq!(algo_bytes, &retrieved_algo_bytes[..retrieved_algo_len]);
     }
 
     #[test]
     fn test_get_binding_key_not_found() {
         let uuid_bytes = [42u8; 16]; // Some non-existent UUID.
         let mut pubkey_bytes = [0u8; 32];
+        let mut retrieved_algo_bytes = [0u8; 64];
+        let mut retrieved_algo_len = retrieved_algo_bytes.len();
 
         let result = unsafe {
             key_manager_get_binding_key(
                 uuid_bytes.as_ptr(),
                 pubkey_bytes.as_mut_ptr(),
                 pubkey_bytes.len(),
+                retrieved_algo_bytes.as_mut_ptr(),
+                &mut retrieved_algo_len,
             )
         };
         assert_eq!(result, -1);

@@ -57,6 +57,8 @@ int32_t key_manager_get_kem_key(const uint8_t *uuid_bytes,
                                 size_t out_kem_pubkey_len,
                                 uint8_t *out_binding_pubkey,
                                 size_t out_binding_pubkey_len,
+                                uint8_t *out_algo,
+                                size_t *out_algo_len,
                                 uint64_t *out_delete_after);
 
 #ifdef __cplusplus

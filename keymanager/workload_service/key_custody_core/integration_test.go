@@ -3,6 +3,7 @@
 package wskcc
 
 import (
+	"bytes"
 	"testing"
 
 	"github.com/google/uuid"
@@ -53,7 +54,7 @@ func TestIntegrationGetBindingKey(t *testing.T) {
 		t.Fatalf("GenerateBindingKeypair failed: %v", err)
 	}
 
-	retrievedPubKey, err := GetBindingKey(id)
+	retrievedPubKey, retrievedAlgo, err := GetBindingKey(id)
 	if err != nil {
 		t.Fatalf("GetBindingKey failed: %v", err)
 	}
@@ -62,15 +63,17 @@ func TestIntegrationGetBindingKey(t *testing.T) {
 		t.Fatalf("expected pubkey length %d, got %d", len(pubKey), len(retrievedPubKey))
 	}
 
-	for i := range pubKey {
-		if pubKey[i] != retrievedPubKey[i] {
-			t.Fatalf("mismatch at index %d: expected %d, got %d", i, pubKey[i], retrievedPubKey[i])
-		}
+	if !bytes.Equal(pubKey, retrievedPubKey) {
+		t.Fatalf("retrieved public key does not match generated public key.\nExpected: %x\nGot:      %x", pubKey, retrievedPubKey)
+	}
+
+	if retrievedAlgo.Kem != defaultAlgo.Kem || retrievedAlgo.Kdf != defaultAlgo.Kdf || retrievedAlgo.Aead != defaultAlgo.Aead {
+		t.Fatalf("algorithm mismatch: expected %v, got %v", defaultAlgo, retrievedAlgo)
 	}
 }
 
 func TestIntegrationGetBindingKeyNotFound(t *testing.T) {
-	_, err := GetBindingKey(uuid.New())
+	_, _, err := GetBindingKey(uuid.New())
 	if err == nil {
 		t.Fatal("expected error for non-existent UUID")
 	}

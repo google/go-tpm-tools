@@ -12,7 +12,7 @@ import (
 // KeyProtectionService defines the interface for the underlying Key Custody Core operations.
 type KeyProtectionService interface {
 	GenerateKEMKeypair(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error)
-	GetKemKey(id uuid.UUID) ([]byte, []byte, uint64, error)
+	GetKemKey(id uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error)
 }
 
 // Service implements KEM keypair operations by delegating to a KeyProtectionService backend.
@@ -31,8 +31,8 @@ func (s *Service) GenerateKEMKeypair(algo *keymanager.HpkeAlgorithm, bindingPubK
 	return s.kps.GenerateKEMKeypair(algo, bindingPubKey, lifespanSecs)
 }
 
-// GetKemKey retrieves KEM and binding public keys and delete_after timestamp
+// GetKemKey retrieves KEM and binding public keys, HpkeAlgorithm and delete_after timestamp
 // by calling the underlying KeyProtectionService backend.
-func (s *Service) GetKemKey(id uuid.UUID) ([]byte, []byte, uint64, error) {
+func (s *Service) GetKemKey(id uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error) {
 	return s.kps.GetKemKey(id)
 }

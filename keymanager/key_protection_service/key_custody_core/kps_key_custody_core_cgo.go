@@ -62,14 +62,16 @@ func GenerateKEMKeypair(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, li
 	return id, pubkey, nil
 }
 
-// GetKemKey retrieves KEM and binding public keys and delete_after timestamp via Rust FFI.
-func GetKemKey(id uuid.UUID) ([]byte, []byte, uint64, error) {
+// GetKemKey retrieves KEM and binding public keys, HpkeAlgorithm and delete_after timestamp via Rust FFI.
+func GetKemKey(id uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error) {
 	var uuidBytes [16]byte
 	copy(uuidBytes[:], id[:])
 
 	var kemPubkeyBuf [32]byte
 	var bindingPubkeyBuf [32]byte
 	var deleteAfter C.uint64_t
+	var algoBuf [C.MAX_ALGORITHM_LEN]byte
+	algoLenC := C.size_t(len(algoBuf))
 
 	rc := C.key_manager_get_kem_key(
 		(*C.uint8_t)(unsafe.Pointer(&uuidBytes[0])),
@@ -77,16 +79,23 @@ func GetKemKey(id uuid.UUID) ([]byte, []byte, uint64, error) {
 		C.size_t(len(kemPubkeyBuf)),
 		(*C.uint8_t)(unsafe.Pointer(&bindingPubkeyBuf[0])),
 		C.size_t(len(bindingPubkeyBuf)),
+		(*C.uint8_t)(unsafe.Pointer(&algoBuf[0])),
+		&algoLenC,
 		&deleteAfter,
 	)
 	if rc != 0 {
-		return nil, nil, 0, fmt.Errorf("key_manager_get_kem_key failed with code %d", rc)
+		return nil, nil, nil, 0, fmt.Errorf("key_manager_get_kem_key failed with code %d", rc)
 	}
 
 	kemPubkey := make([]byte, len(kemPubkeyBuf))
 	copy(kemPubkey, kemPubkeyBuf[:])
 	bindingPubkey := make([]byte, len(bindingPubkeyBuf))
 	copy(bindingPubkey, bindingPubkeyBuf[:])
+	fmt.Println(algoBuf)
+	algo := &keymanager.HpkeAlgorithm{}
+	if err := proto.Unmarshal(algoBuf[:algoLenC], algo); err != nil {
+		return nil, nil, nil, 0, fmt.Errorf("failed to unmarshal HpkeAlgorithm: %v", err)
+	}
 
-	return kemPubkey, bindingPubkey, uint64(deleteAfter), nil
+	return kemPubkey, bindingPubkey, algo, uint64(deleteAfter), nil
 }

@@ -50,7 +50,9 @@ int32_t key_manager_enumerate_binding_keys(WsKeyInfo *out_entries,
 
 int32_t key_manager_get_binding_key(const uint8_t *uuid_bytes,
                                     uint8_t *out_pubkey,
-                                    size_t out_pubkey_len);
+                                    size_t out_pubkey_len,
+                                    uint8_t *out_algo,
+                                    size_t *out_algo_len);
 
 #ifdef __cplusplus
 }  // extern "C"
