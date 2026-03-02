@@ -1,6 +1,8 @@
 //go:build cgo && linux && amd64
 
 // Package kpskcc implements the Key Protection Service Key Custody Core interface via Rust FFI.
+//
+//go:generate cargo build --manifest-path ../../Cargo.toml
 package kpskcc
 
 /*
