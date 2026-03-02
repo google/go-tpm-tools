@@ -8,9 +8,6 @@ import (
 	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
 )
 
-// These enum values mirror the proto definitions in PROTOS.md and are used by
-// the WSD JSON API contract.
-
 // KemAlgorithm represents the requested KEM algorithm.
 type KemAlgorithm int32
 
@@ -96,4 +93,96 @@ func (k KemAlgorithm) ToHpkeAlgorithm() (*keymanager.HpkeAlgorithm, error) {
 	default:
 		return nil, fmt.Errorf("unsupported algorithm: %s", k)
 	}
+}
+
+// KdfAlgorithm represents the requested KDF algorithm.
+type KdfAlgorithm int32
+
+const (
+	// KdfAlgorithmUnspecified indicates an unspecified KDF algorithm.
+	KdfAlgorithmUnspecified KdfAlgorithm = 0
+	// KdfAlgorithmHKDFSHA256 specifies the HKDF-SHA256 KDF algorithm.
+	KdfAlgorithmHKDFSHA256 KdfAlgorithm = 1
+)
+
+var (
+	kdfAlgorithmToString = map[KdfAlgorithm]string{
+		KdfAlgorithmUnspecified: "KDF_ALGORITHM_UNSPECIFIED",
+		KdfAlgorithmHKDFSHA256:  "HKDF_SHA256",
+	}
+	stringToKdfAlgorithm = map[string]KdfAlgorithm{
+		"KDF_ALGORITHM_UNSPECIFIED": KdfAlgorithmUnspecified,
+		"HKDF_SHA256":               KdfAlgorithmHKDFSHA256,
+	}
+)
+
+func (k KdfAlgorithm) String() string {
+	if s, ok := kdfAlgorithmToString[k]; ok {
+		return s
+	}
+	return fmt.Sprintf("KDF_ALGORITHM_UNKNOWN(%d)", k)
+}
+
+// MarshalJSON converts a KdfAlgorithm enum value to its JSON string representation.
+func (k KdfAlgorithm) MarshalJSON() ([]byte, error) {
+	return json.Marshal(k.String())
+}
+
+// UnmarshalJSON converts a JSON string back into a KdfAlgorithm enum value.
+func (k *KdfAlgorithm) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return fmt.Errorf("KdfAlgorithm must be a string")
+	}
+	if v, ok := stringToKdfAlgorithm[s]; ok {
+		*k = v
+		return nil
+	}
+	return fmt.Errorf("unknown KdfAlgorithm: %q", s)
+}
+
+// AeadAlgorithm represents the requested AEAD algorithm.
+type AeadAlgorithm int32
+
+const (
+	// AeadAlgorithmUnspecified indicates an unspecified AEAD algorithm.
+	AeadAlgorithmUnspecified AeadAlgorithm = 0
+	// AeadAlgorithmAES256GCM specifies the AES-256-GCM AEAD algorithm.
+	AeadAlgorithmAES256GCM AeadAlgorithm = 1
+)
+
+var (
+	aeadAlgorithmToString = map[AeadAlgorithm]string{
+		AeadAlgorithmUnspecified: "AEAD_ALGORITHM_UNSPECIFIED",
+		AeadAlgorithmAES256GCM:   "AES_256_GCM",
+	}
+	stringToAeadAlgorithm = map[string]AeadAlgorithm{
+		"AEAD_ALGORITHM_UNSPECIFIED": AeadAlgorithmUnspecified,
+		"AES_256_GCM":                AeadAlgorithmAES256GCM,
+	}
+)
+
+func (k AeadAlgorithm) String() string {
+	if s, ok := aeadAlgorithmToString[k]; ok {
+		return s
+	}
+	return fmt.Sprintf("AEAD_ALGORITHM_UNKNOWN(%d)", k)
+}
+
+// MarshalJSON converts an AeadAlgorithm enum value to its JSON string representation.
+func (k AeadAlgorithm) MarshalJSON() ([]byte, error) {
+	return json.Marshal(k.String())
+}
+
+// UnmarshalJSON converts a JSON string back into an AeadAlgorithm enum value.
+func (k *AeadAlgorithm) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return fmt.Errorf("AeadAlgorithm must be a string")
+	}
+	if v, ok := stringToAeadAlgorithm[s]; ok {
+		*k = v
+		return nil
+	}
+	return fmt.Errorf("unknown AeadAlgorithm: %q", s)
 }

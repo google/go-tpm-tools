@@ -2,6 +2,7 @@ package workloadservice
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	kpskcc "github.com/google/go-tpm-tools/keymanager/key_protection_service/key_custody_core"
 	"github.com/google/uuid"
 
 	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
@@ -41,12 +43,18 @@ type mockKeyProtectionService struct {
 	err              error
 	receivedPubKey   []byte
 	receivedLifespan uint64
+	enumeratedKeys   []kpskcc.KEMKeyInfo
+	enumerateErr     error
 }
 
 func (m *mockKeyProtectionService) GenerateKEMKeypair(_ *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
 	m.receivedPubKey = bindingPubKey
 	m.receivedLifespan = lifespanSecs
 	return m.uuid, m.pubKey, m.err
+}
+
+func (m *mockKeyProtectionService) EnumerateKEMKeys(_, _ int) ([]kpskcc.KEMKeyInfo, bool, error) {
+	return m.enumeratedKeys, false, m.enumerateErr
 }
 
 func validGenerateBody() []byte {
@@ -356,6 +364,147 @@ func TestHandleGenerateKeyMapUniqueness(t *testing.T) {
 
 	if callCount != 2 {
 		t.Fatalf("expected 2 calls, got %d", callCount)
+	}
+}
+
+func TestHandleEnumerateKeysEmpty(t *testing.T) {
+	srv := newTestServer(t,
+		&mockKeyProtectionService{enumeratedKeys: []kpskcc.KEMKeyInfo{}},
+		&mockWorkloadService{},
+	)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/keys", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp EnumerateKeysResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if len(resp.KeyInfos) != 0 {
+		t.Fatalf("expected 0 key infos, got %d", len(resp.KeyInfos))
+	}
+}
+
+func TestHandleEnumerateKeysWithKeys(t *testing.T) {
+	kem1 := uuid.New()
+	kem2 := uuid.New()
+	kemPubKey1 := make([]byte, 32)
+	kemPubKey2 := make([]byte, 32)
+	// BindingPubKey no longer used in response
+	for i := range kemPubKey1 {
+		kemPubKey1[i] = byte(i)
+		kemPubKey2[i] = byte(i + 50)
+	}
+
+	mockEnumKeys := []kpskcc.KEMKeyInfo{
+		{
+			ID: kem1,
+			Algorithm: &keymanager.HpkeAlgorithm{
+				Kem:  keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
+				Kdf:  keymanager.KdfAlgorithm_KDF_ALGORITHM_HKDF_SHA256,
+				Aead: keymanager.AeadAlgorithm_AEAD_ALGORITHM_AES_256_GCM,
+			},
+			KEMPubKey:             kemPubKey1,
+			RemainingLifespanSecs: 3500,
+		},
+		{
+			ID: kem2,
+			Algorithm: &keymanager.HpkeAlgorithm{
+				Kem:  keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
+				Kdf:  keymanager.KdfAlgorithm_KDF_ALGORITHM_HKDF_SHA256,
+				Aead: keymanager.AeadAlgorithm_AEAD_ALGORITHM_AES_256_GCM,
+			},
+			KEMPubKey:             kemPubKey2,
+			RemainingLifespanSecs: 7100,
+		},
+	}
+
+	srv := newTestServer(t,
+		&mockKeyProtectionService{enumeratedKeys: mockEnumKeys},
+		&mockWorkloadService{},
+	)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/keys", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp EnumerateKeysResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if len(resp.KeyInfos) != 2 {
+		t.Fatalf("expected 2 key infos, got %d", len(resp.KeyInfos))
+	}
+
+	// Verify both keys appear (order-independent).
+	found := make(map[string]*KeyInfo)
+	for i := range resp.KeyInfos {
+		ki := &resp.KeyInfos[i]
+		found[ki.KeyHandle.Handle] = ki
+	}
+
+	// Verify key 1.
+	info1, ok := found[kem1.String()]
+	if !ok {
+		t.Fatalf("expected kem1 %s in response", kem1)
+	}
+	if info1.PubKey.Algorithm.Params.KemID != KemAlgorithmDHKEMX25519HKDFSHA256 {
+		t.Fatalf("expected algorithm %v, got %v", KemAlgorithmDHKEMX25519HKDFSHA256, info1.PubKey.Algorithm.Params.KemID)
+	}
+	if info1.PubKey.PublicKey != base64.StdEncoding.EncodeToString(kemPubKey1) {
+		t.Fatalf("KEM pub key mismatch for kem1")
+	}
+	// BindingPubKey check removed
+	if info1.RemainingLifespan.Seconds != 3500 {
+		t.Fatalf("expected remaining lifespan 3500, got %d", info1.RemainingLifespan.Seconds)
+	}
+
+	// Verify key 2.
+	info2, ok := found[kem2.String()]
+	if !ok {
+		t.Fatalf("expected kem2 %s in response", kem2)
+	}
+	if info2.RemainingLifespan.Seconds != 7100 {
+		t.Fatalf("expected remaining lifespan 7100, got %d", info2.RemainingLifespan.Seconds)
+	}
+}
+
+func TestHandleEnumerateKeysMethodNotAllowed(t *testing.T) {
+	srv := newTestServer(t,
+		&mockKeyProtectionService{},
+		&mockWorkloadService{},
+	)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/keys", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status 405, got %d", w.Code)
+	}
+}
+
+func TestHandleEnumerateKeysError(t *testing.T) {
+	srv := newTestServer(t,
+		&mockKeyProtectionService{enumerateErr: fmt.Errorf("enumerate error")},
+		&mockWorkloadService{},
+	)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/keys", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected status 500, got %d: %s", w.Code, w.Body.String())
 	}
 }
 
