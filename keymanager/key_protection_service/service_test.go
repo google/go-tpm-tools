@@ -1,6 +1,7 @@
 package keyprotectionservice
 
 import (
+	"bytes"
 	"fmt"
 	"testing"
 
@@ -68,7 +69,13 @@ func TestServiceGenerateKEMKeypairError(t *testing.T) {
 
 func TestServiceGetKemKeySuccess(t *testing.T) {
 	expectedKemPubKey := make([]byte, 32)
+	for i := range expectedKemPubKey {
+		expectedKemPubKey[i] = byte(i + 1)
+	}
 	expectedBindingPubKey := make([]byte, 32)
+	for i := range expectedBindingPubKey {
+		expectedBindingPubKey[i] = byte(i + 10)
+	}
 	expectedDeleteAfter := uint64(12345678)
 	keyID := uuid.New()
 
@@ -85,11 +92,11 @@ func TestServiceGetKemKeySuccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(kemPubKey) != 32 {
-		t.Fatalf("expected 32-byte KEM public key, got %d", len(kemPubKey))
+	if !bytes.Equal(kemPubKey, expectedKemPubKey) {
+		t.Fatalf("expected KEM public key %x, got %x", expectedKemPubKey, kemPubKey)
 	}
-	if len(bindingPubKey) != 32 {
-		t.Fatalf("expected 32-byte binding public key, got %d", len(bindingPubKey))
+	if !bytes.Equal(bindingPubKey, expectedBindingPubKey) {
+		t.Fatalf("expected binding public key %x, got %x", expectedBindingPubKey, bindingPubKey)
 	}
 	if deleteAfter != expectedDeleteAfter {
 		t.Fatalf("expected deleteAfter %d, got %d", expectedDeleteAfter, deleteAfter)

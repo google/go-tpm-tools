@@ -3,9 +3,9 @@ use km_common::crypto::PublicKey;
 use km_common::key_types::{KeyRecord, KeyRegistry, KeySpec};
 use prost::Message;
 use std::slice;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::sync::LazyLock;
+use std::sync::atomic::AtomicBool;
 use std::time::{Duration, Instant};
 use uuid::Uuid;
 
@@ -469,9 +469,8 @@ pub unsafe extern "C" fn key_manager_get_kem_key(
         let uuid_slice = unsafe { std::slice::from_raw_parts(uuid_bytes, 16) };
         let out_kem_pubkey_slice =
             unsafe { std::slice::from_raw_parts_mut(out_kem_pubkey, out_kem_pubkey_len) };
-        let out_binding_pubkey_slice = unsafe {
-            std::slice::from_raw_parts_mut(out_binding_pubkey, out_binding_pubkey_len)
-        };
+        let out_binding_pubkey_slice =
+            unsafe { std::slice::from_raw_parts_mut(out_binding_pubkey, out_binding_pubkey_len) };
         let out_delete_after_ref = unsafe { &mut *out_delete_after };
 
         let uuid = match Uuid::from_slice(uuid_slice) {
@@ -1164,5 +1163,65 @@ mod tests {
             )
         };
         assert_eq!(result, -1);
+    }
+
+    #[test]
+    fn test_get_kem_key_invalid_buffer_len() {
+        let binding_pubkey = [42u8; 32];
+        let mut uuid_bytes = [0u8; 16];
+        let mut generated_kem_pubkey_bytes = [0u8; 32];
+        let pubkey_len = generated_kem_pubkey_bytes.len();
+        let algo = HpkeAlgorithm {
+            kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
+            kdf: KdfAlgorithm::HkdfSha256 as i32,
+            aead: AeadAlgorithm::Aes256Gcm as i32,
+        };
+        let algo_bytes = algo.encode_to_vec();
+
+        // Generate a key to retrieve.
+        let res = unsafe {
+            key_manager_generate_kem_keypair(
+                algo_bytes.as_ptr(),
+                algo_bytes.len(),
+                binding_pubkey.as_ptr(),
+                binding_pubkey.len(),
+                3600,
+                uuid_bytes.as_mut_ptr(),
+                generated_kem_pubkey_bytes.as_mut_ptr(),
+                pubkey_len,
+            )
+        };
+        assert_eq!(res, 0);
+
+        // Now, retrieve it with invalid buffer lengths.
+        let mut retrieved_kem_pubkey_bytes = [0u8; 32];
+        let mut retrieved_binding_pubkey_bytes = [0u8; 32];
+        let mut delete_after: u64 = 0;
+
+        // KEM pubkey buffer too small.
+        let result = unsafe {
+            key_manager_get_kem_key(
+                uuid_bytes.as_ptr(),
+                retrieved_kem_pubkey_bytes.as_mut_ptr(),
+                31, // Invalid length
+                retrieved_binding_pubkey_bytes.as_mut_ptr(),
+                32,
+                &mut delete_after,
+            )
+        };
+        assert_eq!(result, -2);
+
+        // Binding pubkey buffer too small.
+        let result = unsafe {
+            key_manager_get_kem_key(
+                uuid_bytes.as_ptr(),
+                retrieved_kem_pubkey_bytes.as_mut_ptr(),
+                32,
+                retrieved_binding_pubkey_bytes.as_mut_ptr(),
+                33, // Invalid length
+                &mut delete_after,
+            )
+        };
+        assert_eq!(result, -2);
     }
 }

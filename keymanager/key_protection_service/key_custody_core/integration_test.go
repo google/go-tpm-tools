@@ -3,6 +3,8 @@
 package kpskcc
 
 import (
+	"bytes"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -78,22 +80,12 @@ func TestIntegrationGetKemKey(t *testing.T) {
 		t.Fatalf("GetKemKey failed: %v", err)
 	}
 
-	if len(retrievedKemPK) != len(pubKey) {
-		t.Fatalf("expected KEM pubkey length %d, got %d", len(pubKey), len(retrievedKemPK))
-	}
-	for i := range pubKey {
-		if pubKey[i] != retrievedKemPK[i] {
-			t.Fatalf("KEM pubkey mismatch at index %d", i)
-		}
+	if !bytes.Equal(pubKey, retrievedKemPK) {
+		t.Fatalf("KEM pubkey mismatch: expected %x, got %x", pubKey, retrievedKemPK)
 	}
 
-	if len(retrievedBindingPK) != len(bindingPK) {
-		t.Fatalf("expected binding pubkey length %d, got %d", len(bindingPK), len(retrievedBindingPK))
-	}
-	for i := range bindingPK {
-		if bindingPK[i] != retrievedBindingPK[i] {
-			t.Fatalf("binding pubkey mismatch at index %d", i)
-		}
+	if !bytes.Equal(bindingPK, retrievedBindingPK) {
+		t.Fatalf("binding pubkey mismatch: expected %x, got %x", bindingPK, retrievedBindingPK)
 	}
 
 	if deleteAfter == 0 {
@@ -105,5 +97,10 @@ func TestIntegrationGetKemKeyNotFound(t *testing.T) {
 	_, _, _, err := GetKemKey(uuid.New())
 	if err == nil {
 		t.Fatal("expected error for non-existent UUID")
+	}
+
+	expectedErrMsg := "key_manager_get_kem_key failed with code -1"
+	if !strings.Contains(err.Error(), expectedErrMsg) {
+		t.Fatalf("expected error containing %q, got: %v", expectedErrMsg, err)
 	}
 }

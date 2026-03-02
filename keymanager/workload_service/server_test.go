@@ -22,6 +22,10 @@ func newTestServer(t *testing.T, kemGen kps.KeyProtectionService, bindingGen Wor
 	if err != nil {
 		t.Fatalf("failed to create test server: %v", err)
 	}
+	t.Cleanup(func() {
+		srv.listener.Close()
+		close(srv.claimsChan)
+	})
 	return srv
 }
 
@@ -463,13 +467,10 @@ func TestProcessClaims(t *testing.T) {
 		deleteAfter:   uint64(time.Now().Add(1 * time.Hour).Unix()),
 	}
 
-	srv, err := NewServer(kps, ws, filepath.Join(t.TempDir(), "test.sock"))
-	if err != nil {
-		t.Fatalf("failed to create test server: %v", err)
-	}
+	srv := newTestServer(t, kps, ws)
 
 	t.Run("BindingClaims", func(t *testing.T) {
-		respChan := make(chan *ClaimsResult)
+		respChan := make(chan *ClaimsResult, 1)
 		req := &keymanager.GetKeyClaimsRequest{
 			KeyHandle: &keymanager.KeyHandle{Handle: bindingUUID.String()},
 			KeyType:   keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING,
@@ -494,7 +495,7 @@ func TestProcessClaims(t *testing.T) {
 	})
 
 	t.Run("KemClaims", func(t *testing.T) {
-		respChan := make(chan *ClaimsResult)
+		respChan := make(chan *ClaimsResult, 1)
 		req := &keymanager.GetKeyClaimsRequest{
 			KeyHandle: &keymanager.KeyHandle{Handle: kemUUID.String()},
 			KeyType:   keymanager.KeyType_KEY_TYPE_VM_PROTECTION_KEY,
@@ -525,7 +526,7 @@ func TestProcessClaims(t *testing.T) {
 	})
 
 	t.Run("InvalidUUID", func(t *testing.T) {
-		respChan := make(chan *ClaimsResult)
+		respChan := make(chan *ClaimsResult, 1)
 		req := &keymanager.GetKeyClaimsRequest{
 			KeyHandle: &keymanager.KeyHandle{Handle: "invalid-uuid"},
 			KeyType:   keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING,
@@ -543,7 +544,7 @@ func TestProcessClaims(t *testing.T) {
 	})
 
 	t.Run("UnsupportedKeyType", func(t *testing.T) {
-		respChan := make(chan *ClaimsResult)
+		respChan := make(chan *ClaimsResult, 1)
 		req := &keymanager.GetKeyClaimsRequest{
 			KeyHandle: &keymanager.KeyHandle{Handle: bindingUUID.String()},
 			KeyType:   keymanager.KeyType_KEY_TYPE_UNSPECIFIED,
@@ -564,7 +565,7 @@ func TestProcessClaims(t *testing.T) {
 	})
 
 	t.Run("BindingKeyNotFound", func(t *testing.T) {
-		respChan := make(chan *ClaimsResult)
+		respChan := make(chan *ClaimsResult, 1)
 		// Use a random UUID that isn't the mock's UUID
 		notFoundUUID := uuid.New()
 		req := &keymanager.GetKeyClaimsRequest{
@@ -576,7 +577,7 @@ func TestProcessClaims(t *testing.T) {
 		// Actually, the current mock returns its fixed pubKey/err regardless of input ID.
 		// Let's create a new server with a mock that returns error.
 		wsErr := &mockWorkloadService{err: fmt.Errorf("not found")}
-		srvErr, _ := NewServer(kps, wsErr, filepath.Join(t.TempDir(), "test_err.sock"))
+		srvErr := newTestServer(t, kps, wsErr)
 
 		srvErr.claimsChan <- &ClaimsCall{Request: req, RespChan: respChan}
 
@@ -594,14 +595,14 @@ func TestProcessClaims(t *testing.T) {
 	})
 
 	t.Run("KemKeyNotFound", func(t *testing.T) {
-		respChan := make(chan *ClaimsResult)
+		respChan := make(chan *ClaimsResult, 1)
 		req := &keymanager.GetKeyClaimsRequest{
 			KeyHandle: &keymanager.KeyHandle{Handle: kemUUID.String()},
 			KeyType:   keymanager.KeyType_KEY_TYPE_VM_PROTECTION_KEY,
 		}
 
 		kpsErr := &mockKeyProtectionService{err: fmt.Errorf("not found")}
-		srvErr, _ := NewServer(kpsErr, ws, filepath.Join(t.TempDir(), "test_err_kem.sock"))
+		srvErr := newTestServer(t, kpsErr, ws)
 
 		srvErr.claimsChan <- &ClaimsCall{Request: req, RespChan: respChan}
 
