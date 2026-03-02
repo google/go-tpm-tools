@@ -16,6 +16,6 @@ clean = true
 
 [export]
 item_types = ["functions", "structs", "constants", "enums"]
-include = ["key_manager_generate_kem_keypair", "key_manager_destroy_kem_key", "key_manager_enumerate_kem_keys", "KpsKeyInfo", "MAX_ALGORITHM_LEN", "MAX_PUBLIC_KEY_LEN"]
+include = ["key_manager_generate_kem_keypair", "key_manager_get_kem_key", "key_manager_destroy_kem_key", "key_manager_enumerate_kem_keys", "KpsKeyInfo", "MAX_ALGORITHM_LEN", "MAX_PUBLIC_KEY_LEN"]
 
 

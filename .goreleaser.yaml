@@ -8,6 +8,11 @@ builds:
       - arm64
     env:
       - CGO_ENABLED=0
+    overrides:
+      - goos: linux
+        goarch: amd64
+        env:
+          - CGO_ENABLED=1
     id: "gotpm"
     main: ./cmd/gotpm
     binary: gotpm

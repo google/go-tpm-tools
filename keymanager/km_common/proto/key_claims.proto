@@ -12,6 +12,23 @@ message KeyHandle {
   string handle = 1;
 }
 
+enum KeyType {
+  KEY_TYPE_UNSPECIFIED = 0;
+  // A standard HPKE binding key-pair used for internal isolation.
+  KEY_TYPE_VM_PROTECTION_BINDING = 1;
+  // A KEM key-pair managed by the Key Protection Service.
+  KEY_TYPE_VM_PROTECTION_KEY = 2;
+}
+
+// GetKeyClaimsRequest defines the input required to retrieve claims for a key.
+message GetKeyClaimsRequest {
+  // The unique identifier (UUID) for the key.
+  KeyHandle key_handle = 1;
+
+  // The type of key (Binding or KEM) which determines the claim format.
+  KeyType key_type = 2;
+}
+
 enum KeyProtectionMechanism {
   KEY_PROTECTION_MECHANISM_UNSPECIFIED = 0;
 
@@ -29,15 +46,14 @@ enum KeyProtectionMechanism {
 }
 
 message KemPublicKey {
-  KemAlgorithm algorithm = 1;
-  bytes public_key = 2; // `Npk` bytes long; see the KemAlgorithm definition.
+  KemAlgorithm algorithm  = 1;
+  bytes        public_key = 2; // `Npk` bytes long; see the KemAlgorithm definition.
 }
 
 message HpkePublicKey {
-  HpkeAlgorithm algorithm = 1;
-  bytes public_key = 2; // `Npk` bytes long. Raw bytes.
+  HpkeAlgorithm algorithm  = 1;
+  bytes         public_key = 2; // `Npk` bytes long. Raw bytes.
 }
-
 
 message KeyClaims {
   // The following two messages are used for keys whose protection mechanism is
@@ -51,7 +67,7 @@ message KeyClaims {
   message VmProtectionKeyClaims {
     // The Key Protection Service attests that it controls the KEM private key, and that
     // it will encrypt all resulting shared secrets to the binding key.
-    KemPublicKey kem_pub_key = 1;
+    KemPublicKey  kem_pub_key     = 1;
     HpkePublicKey binding_pub_key = 2;
 
     // The remaining time until the Key Protection Service will autonomously delete its
@@ -61,7 +77,6 @@ message KeyClaims {
 
   oneof claims {
     VmProtectionBindingClaims vm_binding_claims = 1;
-    VmProtectionKeyClaims vm_key_claims = 2;
+    VmProtectionKeyClaims     vm_key_claims     = 2;
   }
 }
-
