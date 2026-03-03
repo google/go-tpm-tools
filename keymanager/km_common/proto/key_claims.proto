@@ -1,0 +1,67 @@
+syntax = "proto3";
+
+package keymanager;
+
+import "google/protobuf/duration.proto";
+import "keymanager/km_common/proto/algorithms.proto";
+
+option go_package = "github.com/google/go-tpm-tools/keymanager/km_common/proto;keymanager";
+
+// Used to refer to key instances held by various daemons.
+message KeyHandle {
+  string handle = 1;
+}
+
+enum KeyProtectionMechanism {
+  KEY_PROTECTION_MECHANISM_UNSPECIFIED = 0;
+
+  // The key is held by the Workload Services Daemon, and is endorsed by a single CVM
+  // attestation.
+  DEFAULT = 1;
+
+  // The key is held by the Key Protection Services VM, and is endorsed by a pair of CVM
+  // attestations, from the Workload Services Daemon and Key Protection VM.
+  KEY_PROTECTION_VM = 2;
+
+  // An interim solution where the key is held by the Workload Services Daemon emulating
+  // the Key Protection Service. It is endorsed by a single CVM attestation.
+  KEY_PROTECTION_VM_EMULATED = 3;
+}
+
+message KemPublicKey {
+  KemAlgorithm algorithm = 1;
+  bytes public_key = 2; // `Npk` bytes long; see the KemAlgorithm definition.
+}
+
+message HpkePublicKey {
+  HpkeAlgorithm algorithm = 1;
+  bytes public_key = 2; // `Npk` bytes long. Raw bytes.
+}
+
+
+message KeyClaims {
+  // The following two messages are used for keys whose protection mechanism is
+  // KEY_PROTECTION_VM or KEY_PROTECTION_VM_EMULATED.
+
+  message VmProtectionBindingClaims {
+    // The workload attests that it controls the corresponding private key.
+    HpkePublicKey binding_pub_key = 1;
+  }
+
+  message VmProtectionKeyClaims {
+    // The Key Protection Service attests that it controls the KEM private key, and that
+    // it will encrypt all resulting shared secrets to the binding key.
+    KemPublicKey kem_pub_key = 1;
+    HpkePublicKey binding_pub_key = 2;
+
+    // The remaining time until the Key Protection Service will autonomously delete its
+    // KEM keypair.
+    google.protobuf.Duration remaining_lifespan = 3;
+  }
+
+  oneof claims {
+    VmProtectionBindingClaims vm_binding_claims = 1;
+    VmProtectionKeyClaims vm_key_claims = 2;
+  }
+}
+

@@ -4,7 +4,7 @@
 // 	protoc        v3.21.12
 // source: keymanager/km_common/proto/algorithms.proto
 
-package algorithms
+package keymanager
 
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
@@ -165,9 +165,9 @@ func (AeadAlgorithm) EnumDescriptor() ([]byte, []int) {
 // Composite HPKE Algorithm suite
 type HpkeAlgorithm struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Kem           KemAlgorithm           `protobuf:"varint,1,opt,name=kem,proto3,enum=algorithms.KemAlgorithm" json:"kem,omitempty"`
-	Kdf           KdfAlgorithm           `protobuf:"varint,2,opt,name=kdf,proto3,enum=algorithms.KdfAlgorithm" json:"kdf,omitempty"`
-	Aead          AeadAlgorithm          `protobuf:"varint,3,opt,name=aead,proto3,enum=algorithms.AeadAlgorithm" json:"aead,omitempty"`
+	Kem           KemAlgorithm           `protobuf:"varint,1,opt,name=kem,proto3,enum=keymanager.KemAlgorithm" json:"kem,omitempty"`
+	Kdf           KdfAlgorithm           `protobuf:"varint,2,opt,name=kdf,proto3,enum=keymanager.KdfAlgorithm" json:"kdf,omitempty"`
+	Aead          AeadAlgorithm          `protobuf:"varint,3,opt,name=aead,proto3,enum=keymanager.AeadAlgorithm" json:"aead,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -228,11 +228,11 @@ var File_keymanager_km_common_proto_algorithms_proto protoreflect.FileDescriptor
 const file_keymanager_km_common_proto_algorithms_proto_rawDesc = "" +
 	"\n" +
 	"+keymanager/km_common/proto/algorithms.proto\x12\n" +
-	"algorithms\"\x96\x01\n" +
+	"keymanager\"\x96\x01\n" +
 	"\rHpkeAlgorithm\x12*\n" +
-	"\x03kem\x18\x01 \x01(\x0e2\x18.algorithms.KemAlgorithmR\x03kem\x12*\n" +
-	"\x03kdf\x18\x02 \x01(\x0e2\x18.algorithms.KdfAlgorithmR\x03kdf\x12-\n" +
-	"\x04aead\x18\x03 \x01(\x0e2\x19.algorithms.AeadAlgorithmR\x04aead*Y\n" +
+	"\x03kem\x18\x01 \x01(\x0e2\x18.keymanager.KemAlgorithmR\x03kem\x12*\n" +
+	"\x03kdf\x18\x02 \x01(\x0e2\x18.keymanager.KdfAlgorithmR\x03kdf\x12-\n" +
+	"\x04aead\x18\x03 \x01(\x0e2\x19.keymanager.AeadAlgorithmR\x04aead*Y\n" +
 	"\fKemAlgorithm\x12\x1d\n" +
 	"\x19KEM_ALGORITHM_UNSPECIFIED\x10\x00\x12*\n" +
 	"&KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256\x10\x01*L\n" +
@@ -241,7 +241,7 @@ const file_keymanager_km_common_proto_algorithms_proto_rawDesc = "" +
 	"\x19KDF_ALGORITHM_HKDF_SHA256\x10\x01*O\n" +
 	"\rAeadAlgorithm\x12\x1e\n" +
 	"\x1aAEAD_ALGORITHM_UNSPECIFIED\x10\x00\x12\x1e\n" +
-	"\x1aAEAD_ALGORITHM_AES_256_GCM\x10\x01BFZDgithub.com/google/go-tpm-tools/keymanager/km_common/proto/algorithmsb\x06proto3"
+	"\x1aAEAD_ALGORITHM_AES_256_GCM\x10\x01BFZDgithub.com/google/go-tpm-tools/keymanager/km_common/proto;keymanagerb\x06proto3"
 
 var (
 	file_keymanager_km_common_proto_algorithms_proto_rawDescOnce sync.Once
@@ -258,15 +258,15 @@ func file_keymanager_km_common_proto_algorithms_proto_rawDescGZIP() []byte {
 var file_keymanager_km_common_proto_algorithms_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
 var file_keymanager_km_common_proto_algorithms_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
 var file_keymanager_km_common_proto_algorithms_proto_goTypes = []any{
-	(KemAlgorithm)(0),     // 0: algorithms.KemAlgorithm
-	(KdfAlgorithm)(0),     // 1: algorithms.KdfAlgorithm
-	(AeadAlgorithm)(0),    // 2: algorithms.AeadAlgorithm
-	(*HpkeAlgorithm)(nil), // 3: algorithms.HpkeAlgorithm
+	(KemAlgorithm)(0),     // 0: keymanager.KemAlgorithm
+	(KdfAlgorithm)(0),     // 1: keymanager.KdfAlgorithm
+	(AeadAlgorithm)(0),    // 2: keymanager.AeadAlgorithm
+	(*HpkeAlgorithm)(nil), // 3: keymanager.HpkeAlgorithm
 }
 var file_keymanager_km_common_proto_algorithms_proto_depIdxs = []int32{
-	0, // 0: algorithms.HpkeAlgorithm.kem:type_name -> algorithms.KemAlgorithm
-	1, // 1: algorithms.HpkeAlgorithm.kdf:type_name -> algorithms.KdfAlgorithm
-	2, // 2: algorithms.HpkeAlgorithm.aead:type_name -> algorithms.AeadAlgorithm
+	0, // 0: keymanager.HpkeAlgorithm.kem:type_name -> keymanager.KemAlgorithm
+	1, // 1: keymanager.HpkeAlgorithm.kdf:type_name -> keymanager.KdfAlgorithm
+	2, // 2: keymanager.HpkeAlgorithm.aead:type_name -> keymanager.AeadAlgorithm
 	3, // [3:3] is the sub-list for method output_type
 	3, // [3:3] is the sub-list for method input_type
 	3, // [3:3] is the sub-list for extension type_name

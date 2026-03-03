@@ -17,25 +17,25 @@ import (
 	"github.com/google/uuid"
 
 	kpscc "github.com/google/go-tpm-tools/keymanager/key_protection_service/key_custody_core"
-	algorithms "github.com/google/go-tpm-tools/keymanager/km_common/proto"
+	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
 	wskcc "github.com/google/go-tpm-tools/keymanager/workload_service/key_custody_core"
 )
 
 // WorkloadService defines the interface for generating binding keypairs.
 type WorkloadService interface {
-	GenerateBindingKeypair(algo *algorithms.HpkeAlgorithm, lifespanSecs uint64) (uuid.UUID, []byte, error)
+	GenerateBindingKeypair(algo *keymanager.HpkeAlgorithm, lifespanSecs uint64) (uuid.UUID, []byte, error)
 	DestroyBindingKey(bindingUUID uuid.UUID) error
 }
 type keyProtectionService struct{}
 
 // KeyProtectionService defines the interface for generating KEM keypairs.
 type KeyProtectionService interface {
-	GenerateKEMKeypair(algo *algorithms.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error)
+	GenerateKEMKeypair(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error)
 	DestroyKEMKey(kemUUID uuid.UUID) error
 }
 type workloadService struct{}
 
-func (r *workloadService) GenerateBindingKeypair(algo *algorithms.HpkeAlgorithm, lifespanSecs uint64) (uuid.UUID, []byte, error) {
+func (r *workloadService) GenerateBindingKeypair(algo *keymanager.HpkeAlgorithm, lifespanSecs uint64) (uuid.UUID, []byte, error) {
 	return wskcc.GenerateBindingKeypair(algo, lifespanSecs)
 }
 
@@ -43,7 +43,7 @@ func (r *workloadService) DestroyBindingKey(bindingUUID uuid.UUID) error {
 	return wskcc.DestroyBindingKey(bindingUUID)
 }
 
-func (r *keyProtectionService) GenerateKEMKeypair(algo *algorithms.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
+func (r *keyProtectionService) GenerateKEMKeypair(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
 	return kpscc.GenerateKEMKeypair(algo, bindingPubKey, lifespanSecs)
 }
 
@@ -79,19 +79,18 @@ func (d ProtoDuration) MarshalJSON() ([]byte, error) {
 	return json.Marshal(d.Seconds)
 }
 
-// GenerateKemRequest is the JSON body for POST /v1/keys:generate_kem.
-type GenerateKemRequest struct {
-	Algorithm              KemAlgorithm           `json:"algorithm"`
-	KeyProtectionMechanism KeyProtectionMechanism `json:"key_protection_mechanism"`
-	Lifespan               ProtoDuration          `json:"lifespan"`
+// GenerateKeyRequest is the JSON body for POST /v1/keys:generate_key.
+type GenerateKeyRequest struct {
+	Algorithm AlgorithmDetails `json:"algorithm"`
+	Lifespan  ProtoDuration    `json:"lifespan"`
 }
 
-// GenerateKemResponse is returned by POST /v1/keys:generate_kem.
 type DestroyRequest struct {
 	KeyHandle KeyHandle `json:"key_handle"`
 }
 
-type GenerateKemResponse struct {
+// GenerateKeyResponse is returned by POST /v1/keys:generate_key.
+type GenerateKeyResponse struct {
 	KeyHandle KeyHandle `json:"key_handle"`
 }
 
@@ -143,7 +142,7 @@ func NewServer(keyProtectionService KeyProtectionService, workloadService Worklo
 	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /v1/keys:generate_kem", s.handleGenerateKem)
+	mux.HandleFunc("POST /v1/keys:generate_key", s.handleGenerateKey)
 	mux.HandleFunc("GET /v1/capabilities", s.handleGetCapabilities)
 	mux.HandleFunc("POST /v1/keys:destroy", s.handleDestroy)
 
@@ -181,22 +180,10 @@ func (s *Server) LookupBindingUUID(kemUUID uuid.UUID) (uuid.UUID, bool) {
 	return id, ok
 }
 
-func (s *Server) handleGenerateKem(w http.ResponseWriter, r *http.Request) {
-	var req GenerateKemRequest
+func (s *Server) handleGenerateKey(w http.ResponseWriter, r *http.Request) {
+	var req GenerateKeyRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, fmt.Sprintf("invalid request body: %v", err), http.StatusBadRequest)
-		return
-	}
-
-	// Validate algorithm.
-	if !req.Algorithm.IsSupported() {
-		writeError(w, fmt.Sprintf("unsupported algorithm: %s. Supported algorithms: %s", req.Algorithm, SupportedKemAlgorithmsString()), http.StatusBadRequest)
-		return
-	}
-
-	// Validate keyProtectionMechanism.
-	if !req.KeyProtectionMechanism.IsSupported() {
-		writeError(w, fmt.Sprintf("unsupported keyProtectionMechanism: %s", req.KeyProtectionMechanism), http.StatusBadRequest)
 		return
 	}
 
@@ -206,9 +193,24 @@ func (s *Server) handleGenerateKem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	switch req.Algorithm.Type {
+	case "kem":
+		s.generateKEMKey(w, req)
+	default:
+		writeError(w, fmt.Sprintf("unsupported algorithm type: %q. Only 'kem' is supported.", req.Algorithm.Type), http.StatusBadRequest)
+	}
+}
+
+func (s *Server) generateKEMKey(w http.ResponseWriter, req GenerateKeyRequest) {
+	// Validate algorithm.
+	if !req.Algorithm.Params.KemID.IsSupported() {
+		writeError(w, fmt.Sprintf("unsupported algorithm: %s. Supported algorithms: %s", req.Algorithm.Params.KemID, SupportedKemAlgorithmsString()), http.StatusBadRequest)
+		return
+	}
+
 	// Construct the full HPKE algorithm suite based on the requested KEM.
 	// We currently only support one suite.
-	algo, err := req.Algorithm.ToHpkeAlgorithm()
+	algo, err := req.Algorithm.Params.KemID.ToHpkeAlgorithm()
 	if err != nil {
 		writeError(w, err.Error(), http.StatusBadRequest)
 		return
@@ -234,7 +236,7 @@ func (s *Server) handleGenerateKem(w http.ResponseWriter, r *http.Request) {
 	s.mu.Unlock()
 
 	// Step 4: Return KEM UUID to workload.
-	resp := GenerateKemResponse{
+	resp := GenerateKeyResponse{
 		KeyHandle: KeyHandle{Handle: kemUUID.String()},
 	}
 	writeJSON(w, resp, http.StatusOK)

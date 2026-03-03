@@ -70,7 +70,7 @@ steps:
       # Build the launcher with CGO enabled
       cd launcher/launcher
       export CGO_LDFLAGS="-L/workspace/keymanager/target/release"
-      CGO_ENABLED=1 go build -o ../image/launcher -ldflags="-X 'main.BuildCommit=${SHORT_SHA}'"
+      go build -o ../image/launcher -ldflags="-extldflags=-Wl,-z,lazy -X 'main.BuildCommit=${SHORT_SHA}'"
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: DownloadExpBinary

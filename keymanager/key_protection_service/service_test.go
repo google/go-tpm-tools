@@ -6,7 +6,7 @@ import (
 
 	"github.com/google/uuid"
 
-	algorithms "github.com/google/go-tpm-tools/keymanager/km_common/proto"
+	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
 )
 
 // noopDestroyKEMKey is a placeholder for tests that don't exercise DestroyKEMKey.
@@ -20,7 +20,7 @@ func TestServiceGenerateKEMKeypairSuccess(t *testing.T) {
 		expectedPubKey[i] = byte(i + 10)
 	}
 
-	svc := NewService(func(_ *algorithms.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
+	svc := NewService(func(_ *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
 		if len(bindingPubKey) != 32 {
 			t.Fatalf("expected 32-byte binding public key, got %d", len(bindingPubKey))
 		}
@@ -30,7 +30,7 @@ func TestServiceGenerateKEMKeypairSuccess(t *testing.T) {
 		return expectedUUID, expectedPubKey, nil
 	}, noopDestroyKEMKey)
 
-	id, pubKey, err := svc.GenerateKEMKeypair(&algorithms.HpkeAlgorithm{}, make([]byte, 32), 7200)
+	id, pubKey, err := svc.GenerateKEMKeypair(&keymanager.HpkeAlgorithm{}, make([]byte, 32), 7200)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -43,11 +43,11 @@ func TestServiceGenerateKEMKeypairSuccess(t *testing.T) {
 }
 
 func TestServiceGenerateKEMKeypairError(t *testing.T) {
-	svc := NewService(func(_ *algorithms.HpkeAlgorithm, _ []byte, _ uint64) (uuid.UUID, []byte, error) {
+	svc := NewService(func(_ *keymanager.HpkeAlgorithm, _ []byte, _ uint64) (uuid.UUID, []byte, error) {
 		return uuid.Nil, nil, fmt.Errorf("FFI error")
 	}, noopDestroyKEMKey)
 
-	_, _, err := svc.GenerateKEMKeypair(&algorithms.HpkeAlgorithm{}, make([]byte, 32), 3600)
+	_, _, err := svc.GenerateKEMKeypair(&keymanager.HpkeAlgorithm{}, make([]byte, 32), 3600)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}

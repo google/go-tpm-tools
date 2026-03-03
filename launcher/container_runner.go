@@ -194,6 +194,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	}
 	specOpts = append(specOpts, cgroupOpts...)
 
+	var deviceROTs []agent.DeviceROT
 	if launchSpec.InstallGpuDriver {
 		gpuMounts := []specs.Mount{
 			{
@@ -228,6 +229,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 			logger.Info(fmt.Sprintf("Detected nvidia device : %s", deviceFile))
 			specOpts = append(specOpts, oci.WithDevices(deviceFile, deviceFile, "crw-rw-rw-"))
 		}
+		deviceROTs = append(deviceROTs, &gpu.NvidiaAttester{})
 	}
 
 	container, err = cdClient.NewContainer(
@@ -294,7 +296,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	// Create a new signaturediscovery client to fetch signatures.
 	sdClient := getSignatureDiscoveryClient(cdClient, mdsClient, image.Target())
 
-	attestAgent, err := agent.CreateAttestationAgent(tpm, client.GceAttestationKeyECC, verifierClient, principalFetcherWithImpersonate, sdClient, launchSpec, logger)
+	attestAgent, err := agent.CreateAttestationAgent(tpm, client.GceAttestationKeyECC, verifierClient, principalFetcherWithImpersonate, sdClient, launchSpec, logger, deviceROTs)
 	if err != nil {
 		return nil, err
 	}

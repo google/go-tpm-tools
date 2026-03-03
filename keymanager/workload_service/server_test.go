@@ -12,7 +12,7 @@ import (
 
 	"github.com/google/uuid"
 
-	algorithms "github.com/google/go-tpm-tools/keymanager/km_common/proto"
+	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
 )
 
 func newTestServer(t *testing.T, kemGen KeyProtectionService, bindingGen WorkloadService) *Server {
@@ -32,7 +32,7 @@ type mockWorkloadService struct {
 	destroyedUUID uuid.UUID
 }
 
-func (m *mockWorkloadService) GenerateBindingKeypair(_ *algorithms.HpkeAlgorithm, _ uint64) (uuid.UUID, []byte, error) {
+func (m *mockWorkloadService) GenerateBindingKeypair(_ *keymanager.HpkeAlgorithm, _ uint64) (uuid.UUID, []byte, error) {
 	return m.uuid, m.pubKey, m.err
 }
 
@@ -52,7 +52,7 @@ type mockKeyProtectionService struct {
 	receivedLifespan uint64
 }
 
-func (m *mockKeyProtectionService) GenerateKEMKeypair(_ *algorithms.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
+func (m *mockKeyProtectionService) GenerateKEMKeypair(_ *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
 	m.receivedPubKey = bindingPubKey
 	m.receivedLifespan = lifespanSecs
 	return m.uuid, m.pubKey, m.err
@@ -64,19 +64,21 @@ func (m *mockKeyProtectionService) DestroyKEMKey(kemUUID uuid.UUID) error {
 }
 
 func validGenerateBody() []byte {
-	body, _ := json.Marshal(GenerateKemRequest{
-		Algorithm:              KemAlgorithmDHKEMX25519HKDFSHA256,
-		KeyProtectionMechanism: KeyProtectionMechanismVM,
-		Lifespan:               ProtoDuration{Seconds: 3600},
+	body, _ := json.Marshal(GenerateKeyRequest{
+		Algorithm: AlgorithmDetails{
+			Type: "kem",
+			Params: AlgorithmParams{
+				KemID: KemAlgorithmDHKEMX25519HKDFSHA256,
+			},
+		},
+		Lifespan: ProtoDuration{Seconds: 3600},
 	})
 	return body
 }
 
-
-
 // --- /keys:generate_kem tests ---
 
-func TestHandleGenerateKemSuccess(t *testing.T) {
+func TestHandleGenerateKeySuccess(t *testing.T) {
 	bindingUUID := uuid.New()
 	kemUUID := uuid.New()
 	bindingPubKey := make([]byte, 32)
@@ -94,7 +96,7 @@ func TestHandleGenerateKemSuccess(t *testing.T) {
 		&mockWorkloadService{uuid: bindingUUID, pubKey: bindingPubKey},
 	)
 
-	req := httptest.NewRequest(http.MethodPost, "/v1/keys:generate_kem", bytes.NewReader(validGenerateBody()))
+	req := httptest.NewRequest(http.MethodPost, "/v1/keys:generate_key", bytes.NewReader(validGenerateBody()))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
@@ -103,7 +105,7 @@ func TestHandleGenerateKemSuccess(t *testing.T) {
 		t.Fatalf("expected status 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	var resp GenerateKemResponse
+	var resp GenerateKeyResponse
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
@@ -136,13 +138,13 @@ func TestHandleGenerateKemSuccess(t *testing.T) {
 	}
 }
 
-func TestHandleGenerateKemInvalidMethod(t *testing.T) {
+func TestHandleGenerateKeyInvalidMethod(t *testing.T) {
 	srv := newTestServer(t,
 		&mockKeyProtectionService{pubKey: make([]byte, 32)},
 		&mockWorkloadService{pubKey: make([]byte, 32)},
 	)
 
-	req := httptest.NewRequest(http.MethodGet, "/v1/keys:generate_kem", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/keys:generate_key", nil)
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 
@@ -151,7 +153,7 @@ func TestHandleGenerateKemInvalidMethod(t *testing.T) {
 	}
 }
 
-func TestHandleGenerateKemBadRequest(t *testing.T) {
+func TestHandleGenerateKeyBadRequest(t *testing.T) {
 	srv := newTestServer(t,
 		&mockKeyProtectionService{uuid: uuid.New(), pubKey: make([]byte, 32)},
 		&mockWorkloadService{uuid: uuid.New(), pubKey: make([]byte, 32)},
@@ -159,30 +161,30 @@ func TestHandleGenerateKemBadRequest(t *testing.T) {
 
 	tests := []struct {
 		name string
-		body GenerateKemRequest
+		body GenerateKeyRequest
 	}{
 		{
-			name: "unsupported algorithm",
-			body: GenerateKemRequest{Algorithm: KemAlgorithmUnspecified, KeyProtectionMechanism: KeyProtectionMechanismVM, Lifespan: ProtoDuration{Seconds: 3600}},
+			name: "unsupported algorithm type",
+			body: GenerateKeyRequest{Algorithm: AlgorithmDetails{Type: "mac", Params: AlgorithmParams{KemID: KemAlgorithmDHKEMX25519HKDFSHA256}}, Lifespan: ProtoDuration{Seconds: 3600}},
 		},
 		{
-			name: "unsupported key protection mechanism",
-			body: GenerateKemRequest{Algorithm: KemAlgorithmDHKEMX25519HKDFSHA256, KeyProtectionMechanism: KeyProtectionMechanism(99), Lifespan: ProtoDuration{Seconds: 3600}},
+			name: "unsupported algorithm",
+			body: GenerateKeyRequest{Algorithm: AlgorithmDetails{Type: "kem", Params: AlgorithmParams{KemID: KemAlgorithmUnspecified}}, Lifespan: ProtoDuration{Seconds: 3600}},
 		},
 		{
 			name: "zero lifespan",
-			body: GenerateKemRequest{Algorithm: KemAlgorithmDHKEMX25519HKDFSHA256, KeyProtectionMechanism: KeyProtectionMechanismVM, Lifespan: ProtoDuration{Seconds: 0}},
+			body: GenerateKeyRequest{Algorithm: AlgorithmDetails{Type: "kem", Params: AlgorithmParams{KemID: KemAlgorithmDHKEMX25519HKDFSHA256}}, Lifespan: ProtoDuration{Seconds: 0}},
 		},
 		{
-			name: "missing algorithm (defaults to 0)",
-			body: GenerateKemRequest{KeyProtectionMechanism: KeyProtectionMechanismVM, Lifespan: ProtoDuration{Seconds: 3600}},
+			name: "missing algorithm (defaults to 0, type empty)",
+			body: GenerateKeyRequest{Lifespan: ProtoDuration{Seconds: 3600}},
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			body, _ := json.Marshal(tc.body)
-			req := httptest.NewRequest(http.MethodPost, "/v1/keys:generate_kem", bytes.NewReader(body))
+			req := httptest.NewRequest(http.MethodPost, "/v1/keys:generate_key", bytes.NewReader(body))
 			req.Header.Set("Content-Type", "application/json")
 			w := httptest.NewRecorder()
 			srv.Handler().ServeHTTP(w, req)
@@ -205,7 +207,7 @@ func TestHandleGenerateKemBadRequest(t *testing.T) {
 	}
 }
 
-func TestHandleGenerateKemBadJSON(t *testing.T) {
+func TestHandleGenerateKeyBadJSON(t *testing.T) {
 	srv := newTestServer(t,
 		&mockKeyProtectionService{pubKey: make([]byte, 32)},
 		&mockWorkloadService{pubKey: make([]byte, 32)},
@@ -216,14 +218,14 @@ func TestHandleGenerateKemBadJSON(t *testing.T) {
 		body string
 	}{
 		{"not json", "not json"},
-		{"lifespan as string", `{"algorithm":1,"key_protection_mechanism":2,"lifespan":"3600"}`},
-		{"lifespan as string with suffix", `{"algorithm":1,"key_protection_mechanism":2,"lifespan":"3600s"}`},
-		{"lifespan negative", `{"algorithm":1,"key_protection_mechanism":2,"lifespan":-1}`},
+		{"lifespan as string", `{"algorithm":1,"lifespan":"3600"}`},
+		{"lifespan as string with suffix", `{"algorithm":1,"lifespan":"3600s"}`},
+		{"lifespan negative", `{"algorithm":1,"lifespan":-1}`},
 	}
 
 	for _, tc := range badBodies {
 		t.Run(tc.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodPost, "/v1/keys:generate_kem", bytes.NewReader([]byte(tc.body)))
+			req := httptest.NewRequest(http.MethodPost, "/v1/keys:generate_key", bytes.NewReader([]byte(tc.body)))
 			req.Header.Set("Content-Type", "application/json")
 			w := httptest.NewRecorder()
 			srv.Handler().ServeHTTP(w, req)
@@ -235,13 +237,13 @@ func TestHandleGenerateKemBadJSON(t *testing.T) {
 	}
 }
 
-func TestHandleGenerateKemBindingGenError(t *testing.T) {
+func TestHandleGenerateKeyBindingGenError(t *testing.T) {
 	srv := newTestServer(t,
 		&mockKeyProtectionService{pubKey: make([]byte, 32)},
 		&mockWorkloadService{err: fmt.Errorf("binding FFI error")},
 	)
 
-	req := httptest.NewRequest(http.MethodPost, "/v1/keys:generate_kem", bytes.NewReader(validGenerateBody()))
+	req := httptest.NewRequest(http.MethodPost, "/v1/keys:generate_key", bytes.NewReader(validGenerateBody()))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
@@ -251,7 +253,7 @@ func TestHandleGenerateKemBindingGenError(t *testing.T) {
 	}
 }
 
-func TestHandleGenerateKemFlexibleLifespan(t *testing.T) {
+func TestHandleGenerateKeyFlexibleLifespan(t *testing.T) {
 	srv := newTestServer(t,
 		&mockKeyProtectionService{uuid: uuid.New(), pubKey: make([]byte, 32)},
 		&mockWorkloadService{uuid: uuid.New(), pubKey: make([]byte, 32)},
@@ -264,24 +266,24 @@ func TestHandleGenerateKemFlexibleLifespan(t *testing.T) {
 	}{
 		{
 			name:     "integer seconds",
-			body:     `{"algorithm":"DHKEM_X25519_HKDF_SHA256","key_protection_mechanism":"KEY_PROTECTION_VM","lifespan":3600}`,
+			body:     `{"algorithm":{"type":"kem","params":{"kem_id":"DHKEM_X25519_HKDF_SHA256"}},"lifespan":3600}`,
 			expected: 3600,
 		},
 		{
 			name:     "float seconds",
-			body:     `{"algorithm":"DHKEM_X25519_HKDF_SHA256","key_protection_mechanism":"KEY_PROTECTION_VM","lifespan":1.5}`,
+			body:     `{"algorithm":{"type":"kem","params":{"kem_id":"DHKEM_X25519_HKDF_SHA256"}},"lifespan":1.5}`,
 			expected: 1, // Truncated to 1
 		},
 		{
 			name:     "float seconds round down",
-			body:     `{"algorithm":"DHKEM_X25519_HKDF_SHA256","key_protection_mechanism":"KEY_PROTECTION_VM","lifespan":3600.9}`,
+			body:     `{"algorithm":{"type":"kem","params":{"kem_id":"DHKEM_X25519_HKDF_SHA256"}},"lifespan":3600.9}`,
 			expected: 3600,
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodPost, "/v1/keys:generate_kem", bytes.NewReader([]byte(tc.body)))
+			req := httptest.NewRequest(http.MethodPost, "/v1/keys:generate_key", bytes.NewReader([]byte(tc.body)))
 			req.Header.Set("Content-Type", "application/json")
 			w := httptest.NewRecorder()
 			srv.Handler().ServeHTTP(w, req)
@@ -293,13 +295,13 @@ func TestHandleGenerateKemFlexibleLifespan(t *testing.T) {
 	}
 }
 
-func TestHandleGenerateKemKEMGenError(t *testing.T) {
+func TestHandleGenerateKeyKEMGenError(t *testing.T) {
 	srv := newTestServer(t,
 		&mockKeyProtectionService{err: fmt.Errorf("KEM FFI error")},
 		&mockWorkloadService{uuid: uuid.New(), pubKey: make([]byte, 32)},
 	)
 
-	req := httptest.NewRequest(http.MethodPost, "/v1/keys:generate_kem", bytes.NewReader(validGenerateBody()))
+	req := httptest.NewRequest(http.MethodPost, "/v1/keys:generate_key", bytes.NewReader(validGenerateBody()))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
@@ -309,7 +311,7 @@ func TestHandleGenerateKemKEMGenError(t *testing.T) {
 	}
 }
 
-func TestHandleGenerateKemMapUniqueness(t *testing.T) {
+func TestHandleGenerateKeyMapUniqueness(t *testing.T) {
 	bindingPubKey := make([]byte, 32)
 
 	bindingUUID1 := uuid.New()
@@ -329,7 +331,7 @@ func TestHandleGenerateKemMapUniqueness(t *testing.T) {
 	kemGen.uuid = kemUUID1
 	kemGen.pubKey = make([]byte, 32)
 
-	req := httptest.NewRequest(http.MethodPost, "/v1/keys:generate_kem", bytes.NewReader(validGenerateBody()))
+	req := httptest.NewRequest(http.MethodPost, "/v1/keys:generate_key", bytes.NewReader(validGenerateBody()))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
@@ -342,7 +344,7 @@ func TestHandleGenerateKemMapUniqueness(t *testing.T) {
 	bindingGen.uuid = bindingUUID2
 	kemGen.uuid = kemUUID2
 
-	req = httptest.NewRequest(http.MethodPost, "/v1/keys:generate_kem", bytes.NewReader(validGenerateBody()))
+	req = httptest.NewRequest(http.MethodPost, "/v1/keys:generate_key", bytes.NewReader(validGenerateBody()))
 	req.Header.Set("Content-Type", "application/json")
 	w = httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
@@ -376,15 +378,15 @@ func TestHandleGenerateKemMapUniqueness(t *testing.T) {
 func TestToHpkeAlgorithm(t *testing.T) {
 	tests := []struct {
 		input   KemAlgorithm
-		want    *algorithms.HpkeAlgorithm
+		want    *keymanager.HpkeAlgorithm
 		wantErr bool
 	}{
 		{
 			input: KemAlgorithmDHKEMX25519HKDFSHA256,
-			want: &algorithms.HpkeAlgorithm{
-				Kem:  algorithms.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
-				Kdf:  algorithms.KdfAlgorithm_KDF_ALGORITHM_HKDF_SHA256,
-				Aead: algorithms.AeadAlgorithm_AEAD_ALGORITHM_AES_256_GCM,
+			want: &keymanager.HpkeAlgorithm{
+				Kem:  keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
+				Kdf:  keymanager.KdfAlgorithm_KDF_ALGORITHM_HKDF_SHA256,
+				Aead: keymanager.AeadAlgorithm_AEAD_ALGORITHM_AES_256_GCM,
 			},
 			wantErr: false,
 		},
