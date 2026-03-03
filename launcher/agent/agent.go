@@ -47,7 +47,7 @@ const (
 	audienceSTS = "https://sts.googleapis.com"
 
 	// TODO: move to Confidential Space repository.
-	WorkloadAttestationLabel = "WORKLOAD_ATTESTATION"
+	workloadAttestationLabel = "WORKLOAD_ATTESTATION"
 )
 
 type principalIDTokenFetcher func(audience string) ([][]byte, error)
@@ -322,7 +322,7 @@ func (a *agent) AttestationEvidence(_ context.Context, challenge []byte, extraDa
 	}
 
 	attestation := &attestationpb.VmAttestation{
-		Label:     []byte(WorkloadAttestationLabel),
+		Label:     []byte(workloadAttestationLabel),
 		Challenge: challenge,
 		ExtraData: extraData,
 		Quote:     &attestationpb.VmAttestationQuote{},
@@ -416,7 +416,7 @@ func (t *tpmAttestRoot) ComputeNonce(challenge []byte, extraData []byte) []byte 
 		challengeData = append(challenge, extraDataDigest[:]...)
 	}
 	challengeDigest := sha256.Sum256(challengeData)
-	finalNonce := sha256.Sum256(append([]byte(WorkloadAttestationLabel), challengeDigest[:]...))
+	finalNonce := sha256.Sum256(append([]byte(workloadAttestationLabel), challengeDigest[:]...))
 	return finalNonce[:]
 }
 
@@ -491,7 +491,7 @@ func (t *tdxAttestRoot) ComputeNonce(challenge []byte, extraData []byte) []byte 
 		challengeData = append(challenge, extraDataDigest[:]...)
 	}
 	challengeDigest := sha512.Sum512(challengeData)
-	finalNonce := sha512.Sum512(append([]byte(WorkloadAttestationLabel), challengeDigest[:]...))
+	finalNonce := sha512.Sum512(append([]byte(workloadAttestationLabel), challengeDigest[:]...))
 	return finalNonce[:]
 }
 

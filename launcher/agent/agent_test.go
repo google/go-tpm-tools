@@ -694,7 +694,7 @@ func (f *fakeTdxAttestRoot) ComputeNonce(challenge []byte, extraData []byte) []b
 		challengeData = append(challenge, extraDataDigest[:]...)
 	}
 	challengeDigest := sha512.Sum512(challengeData)
-	finalNonce := sha512.Sum512(append([]byte(WorkloadAttestationLabel), challengeDigest[:]...))
+	finalNonce := sha512.Sum512(append([]byte(workloadAttestationLabel), challengeDigest[:]...))
 	return finalNonce[:]
 }
 
