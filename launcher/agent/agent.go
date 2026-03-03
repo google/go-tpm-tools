@@ -29,13 +29,13 @@ import (
 
 	gecel "github.com/google/go-eventlog/cel"
 
+	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/internal/signaturediscovery"
 	"github.com/google/go-tpm-tools/launcher/spec"
-	teemodels "github.com/google/go-tpm-tools/launcher/teeserver/models"
 	pb "github.com/google/go-tpm-tools/proto/attest"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/google/go-tpm-tools/verifier/models"
@@ -45,6 +45,9 @@ import (
 
 const (
 	audienceSTS = "https://sts.googleapis.com"
+
+	// TODO: move to Confidential Space repository.
+	WorkloadAttestationLabel = "WORKLOAD_ATTESTATION"
 )
 
 type principalIDTokenFetcher func(audience string) ([][]byte, error)
@@ -56,7 +59,7 @@ type AttestationAgent interface {
 	MeasureEvent(gecel.Content) error
 	Attest(context.Context, AttestAgentOpts) ([]byte, error)
 	AttestWithClient(ctx context.Context, opts AttestAgentOpts, client verifier.Client) ([]byte, error)
-	AttestationEvidence(ctx context.Context, challenge []byte, extraData []byte) (*teemodels.VMAttestation, error)
+	AttestationEvidence(ctx context.Context, challenge []byte, extraData []byte) (*attestationpb.VmAttestation, error)
 	Refresh(context.Context) error
 	Close() error
 }
@@ -296,7 +299,7 @@ func (a *agent) AttestWithClient(ctx context.Context, opts AttestAgentOpts, clie
 }
 
 // AttestationEvidence returns the attestation evidence (TPM or TDX).
-func (a *agent) AttestationEvidence(_ context.Context, challenge []byte, extraData []byte) (*teemodels.VMAttestation, error) {
+func (a *agent) AttestationEvidence(_ context.Context, challenge []byte, extraData []byte) (*attestationpb.VmAttestation, error) {
 	if !a.launchSpec.Experiments.EnableAttestationEvidence {
 		return nil, fmt.Errorf("attestation evidence is disabled")
 	}
@@ -318,23 +321,25 @@ func (a *agent) AttestationEvidence(_ context.Context, challenge []byte, extraDa
 		return nil, err
 	}
 
-	attestation := &teemodels.VMAttestation{
-		Label:     []byte(teemodels.WorkloadAttestationLabel),
+	attestation := &attestationpb.VmAttestation{
+		Label:     []byte(WorkloadAttestationLabel),
 		Challenge: challenge,
 		ExtraData: extraData,
-		Quote:     &teemodels.VMAttestationQuote{},
+		Quote:     &attestationpb.VmAttestationQuote{},
 	}
 
 	switch v := attResult.(type) {
 	case *pb.Attestation:
-		attestation.Quote = &teemodels.VMAttestationQuote{
-			TPMQuote: convertPBToTPMQuote(v),
+		attestation.Quote.Quote = &attestationpb.VmAttestationQuote_TpmQuote{
+			TpmQuote: convertToTPMQuote(v),
 		}
 	case *verifier.TDCCELAttestation:
-		attestation.Quote.TDXCCELQuote = &teemodels.TDXCCELQuote{
-			CCELBootEventLog:  v.CcelData,
-			CELLaunchEventLog: cosCel.Bytes(),
-			TDQuote:           v.TdQuote,
+		attestation.Quote.Quote = &attestationpb.VmAttestationQuote_TdxCcelQuote{
+			TdxCcelQuote: &attestationpb.TdxCcelQuote{
+				CcelBootEventLog:  v.CcelData,
+				CelLaunchEventLog: cosCel.Bytes(),
+				TdQuote:           v.TdQuote,
+			},
 		}
 	default:
 		return nil, fmt.Errorf("unknown attestation type: %T", v)
@@ -411,7 +416,7 @@ func (t *tpmAttestRoot) ComputeNonce(challenge []byte, extraData []byte) []byte 
 		challengeData = append(challenge, extraDataDigest[:]...)
 	}
 	challengeDigest := sha256.Sum256(challengeData)
-	finalNonce := sha256.Sum256(append([]byte(teemodels.WorkloadAttestationLabel), challengeDigest[:]...))
+	finalNonce := sha256.Sum256(append([]byte(WorkloadAttestationLabel), challengeDigest[:]...))
 	return finalNonce[:]
 }
 
@@ -486,7 +491,7 @@ func (t *tdxAttestRoot) ComputeNonce(challenge []byte, extraData []byte) []byte 
 		challengeData = append(challenge, extraDataDigest[:]...)
 	}
 	challengeDigest := sha512.Sum512(challengeData)
-	finalNonce := sha512.Sum512(append([]byte(teemodels.WorkloadAttestationLabel), challengeDigest[:]...))
+	finalNonce := sha512.Sum512(append([]byte(WorkloadAttestationLabel), challengeDigest[:]...))
 	return finalNonce[:]
 }
 
@@ -564,28 +569,30 @@ func (c *sigsCache) get() []oci.Signature {
 	return c.items
 }
 
-func convertPBToTPMQuote(v *pb.Attestation) *teemodels.TPMQuote {
-	var quotes []*teemodels.SignedQuote
+func convertToTPMQuote(v *pb.Attestation) *attestationpb.TpmQuote {
+	var quotes []*attestationpb.TpmQuote_SignedQuote
 	for _, q := range v.GetQuotes() {
-		quote := &teemodels.SignedQuote{
-			TPMSAttest:    q.GetQuote(),
-			TPMTSignature: q.GetRawSig(),
+		quote := &attestationpb.TpmQuote_SignedQuote{
+			TpmsAttest:    q.GetQuote(),
+			TpmtSignature: q.GetRawSig(),
 		}
 		if pcrs := q.GetPcrs(); pcrs != nil {
 			quote.HashAlgorithm = uint32(pcrs.GetHash())
-			quote.PCRValues = pcrs.GetPcrs()
+			quote.PcrValues = pcrs.GetPcrs()
 		}
 		quotes = append(quotes, quote)
 	}
 
-	return &teemodels.TPMQuote{
+	return &attestationpb.TpmQuote{
 		Quotes:               quotes,
-		PCClientBootEventLog: v.GetEventLog(),
-		CELLaunchEventLog:    v.GetCanonicalEventLog(),
-		Endorsement: &teemodels.TPMAttestationEndorsement{
-			AKCertEndorsement: &teemodels.AKCertEndorsement{
-				AKCert:      v.GetAkCert(),
-				AKCertChain: v.GetIntermediateCerts(),
+		PcclientBootEventLog: v.GetEventLog(),
+		CelLaunchEventLog:    v.GetCanonicalEventLog(),
+		Endorsement: &attestationpb.TpmAttestationEndorsement{
+			Endorsement: &attestationpb.TpmAttestationEndorsement_AkCertEndorsement_{
+				AkCertEndorsement: &attestationpb.TpmAttestationEndorsement_AkCertEndorsement{
+					AkCert:      v.GetAkCert(),
+					AkCertChain: v.GetIntermediateCerts(),
+				},
 			},
 		},
 	}
