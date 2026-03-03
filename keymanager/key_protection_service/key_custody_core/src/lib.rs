@@ -797,7 +797,7 @@ mod tests {
         let pub_key_obj = PublicKey::try_from(kem_pubkey_bytes.to_vec()).unwrap();
         let (client_shared_secret, client_enc) = km_common::crypto::encap(&pub_key_obj).unwrap();
 
-        // Step 3: Call `decap_and_seal`.
+        // Call `decap_and_seal`.
         let mut out_enc_key = [0u8; 32];
         let out_enc_key_len = 32;
         let mut out_ct = [0u8; 48]; // 32 bytes secret + 16 tag
