@@ -71,10 +71,9 @@ func GenerateKEMKeypair(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, li
 // DestroyKEMKey destroys the KEM key identified by kemUUID via Rust FFI.
 func DestroyKEMKey(kemUUID uuid.UUID) error {
 	uuidBytes := kemUUID[:]
-	rc := C.key_manager_destroy_kem_key(
+	if rc := C.key_manager_destroy_kem_key(
 		(*C.uint8_t)(unsafe.Pointer(&uuidBytes[0])),
-	)
-	if rc != 0 {
+	); rc != 0 {
 		return fmt.Errorf("key_manager_destroy_kem_key failed with code %d", rc)
 	}
 	return nil

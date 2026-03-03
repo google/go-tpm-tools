@@ -404,20 +404,23 @@ func (s *Server) handleDestroy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.keyProtectionService.DestroyKEMKey(kemUUID); err != nil {
-		writeError(w, fmt.Sprintf("failed to destroy KEM key: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	if err := s.workloadService.DestroyBindingKey(bindingUUID); err != nil {
-		writeError(w, fmt.Sprintf("failed to destroy binding key: %v", err), http.StatusInternalServerError)
-		return
-	}
+	errKps := s.keyProtectionService.DestroyKEMKey(kemUUID)
+	errWs := s.workloadService.DestroyBindingKey(bindingUUID)
 
 	// Step 4: Remove the mapping.
 	s.mu.Lock()
 	delete(s.kemToBindingMap, kemUUID)
 	s.mu.Unlock()
+
+	if errKps != nil {
+		writeError(w, fmt.Sprintf("failed to destroy KEM key: %v", errKps), http.StatusInternalServerError)
+		return
+	}
+
+	if errWs != nil {
+		writeError(w, fmt.Sprintf("failed to destroy binding key: %v", errWs), http.StatusInternalServerError)
+		return
+	}
 
 	w.WriteHeader(http.StatusNoContent)
 }

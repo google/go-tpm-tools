@@ -553,13 +553,14 @@ func TestHandleDestroy(t *testing.T) {
 			expectedStatus: http.StatusNotFound,
 		},
 		{
-			name:             "kps failure",
-			method:           http.MethodPost,
-			body:             validDestroyBody(validKEMUUID.String()),
-			setupMap:         true,
-			kemDestroyerErr:  fmt.Errorf("KPS error"),
-			expectedStatus:   http.StatusInternalServerError,
-			expectMapRemoved: false,
+			name:                   "kps failure",
+			method:                 http.MethodPost,
+			body:                   validDestroyBody(validKEMUUID.String()),
+			setupMap:               true,
+			kemDestroyerErr:        fmt.Errorf("KPS error"),
+			expectedStatus:         http.StatusInternalServerError,
+			expectBindingDestroyed: true,
+			expectMapRemoved:       true,
 		},
 		{
 			name:                "binding failure",
@@ -569,7 +570,7 @@ func TestHandleDestroy(t *testing.T) {
 			bindingDestroyerErr: fmt.Errorf("Binding error"),
 			expectedStatus:      http.StatusInternalServerError,
 			expectKEMDestroyed:  true,
-			expectMapRemoved:    false,
+			expectMapRemoved:    true,
 		},
 	}
 

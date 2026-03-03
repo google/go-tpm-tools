@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -198,5 +199,48 @@ func TestIntegrationDestroyKey(t *testing.T) {
 
 	if wDestroy2.Code != http.StatusNotFound {
 		t.Fatalf("expected second destroy to return 404, got %d", wDestroy2.Code)
+	}
+}
+
+func TestIntegrationAutoDestroy(t *testing.T) {
+	kpsSvc := kps.NewService()
+	srv, err := NewServer(kpsSvc, &realWorkloadService{}, "test.sock")
+	if err != nil {
+		t.Fatalf("failed to create server: %v", err)
+	}
+
+	// 1. Generate a key with 1-second lifespan
+	reqBody, _ := json.Marshal(GenerateKeyRequest{
+		Algorithm: AlgorithmDetails{Type: "kem", Params: AlgorithmParams{KemID: KemAlgorithmDHKEMX25519HKDFSHA256}},
+		Lifespan:  ProtoDuration{Seconds: 1},
+	})
+	reqGen := httptest.NewRequest(http.MethodPost, "/v1/keys:generate_key", bytes.NewReader(reqBody))
+	reqGen.Header.Set("Content-Type", "application/json")
+	wGen := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(wGen, reqGen)
+
+	if wGen.Code != http.StatusOK {
+		t.Fatalf("setup: expected generate status 200, got %d: %s", wGen.Code, wGen.Body.String())
+	}
+
+	var respGen GenerateKeyResponse
+	json.NewDecoder(wGen.Body).Decode(&respGen)
+	kemHandle := respGen.KeyHandle.Handle
+
+	// Wait for auto-destroy
+	time.Sleep(2 * time.Second)
+
+	// 2. Destroy the explicitly auto-destroyed key
+	reqDestroyBody, _ := json.Marshal(DestroyRequest{
+		KeyHandle: KeyHandle{Handle: kemHandle},
+	})
+	reqDestroy := httptest.NewRequest(http.MethodPost, "/v1/keys:destroy", bytes.NewReader(reqDestroyBody))
+	reqDestroy.Header.Set("Content-Type", "application/json")
+	wDestroy := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(wDestroy, reqDestroy)
+
+	// In the real system, it gracefully handles destruction and cleans up the KOL mapping.
+	if wDestroy.Code != http.StatusNoContent {
+		t.Fatalf("expected destroy status 204 or some success, got %d: %s", wDestroy.Code, wDestroy.Body.String())
 	}
 }
