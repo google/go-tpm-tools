@@ -12,7 +12,6 @@ import (
 	"github.com/google/uuid"
 
 	kps "github.com/google/go-tpm-tools/keymanager/key_protection_service"
-	kpskcc "github.com/google/go-tpm-tools/keymanager/key_protection_service/key_custody_core"
 	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
 	wskcc "github.com/google/go-tpm-tools/keymanager/workload_service/key_custody_core"
 )
@@ -28,10 +27,14 @@ func (r *realWorkloadService) DestroyBindingKey(bindingUUID uuid.UUID) error {
 	return wskcc.DestroyBindingKey(bindingUUID)
 }
 
+func (r *realWorkloadService) Open(bindingUUID uuid.UUID, enc, ciphertext, aad []byte) ([]byte, error) {
+	return wskcc.Open(bindingUUID, enc, ciphertext, aad)
+}
+
 func TestIntegrationGenerateKeysEndToEnd(t *testing.T) {
 	// Wire up real FFI calls: WSD KCC for binding, KPS KCC (via KPS KOL) for KEM.
-	kpsSvc := kps.NewService(kpskcc.GenerateKEMKeypair, kpskcc.DestroyKEMKey)
-	srv, err := NewServer(kpsSvc, &realWorkloadService{}, "")
+	kpsSvc := kps.NewService()
+	srv, err := NewServer(kpsSvc, &realWorkloadService{}, "test.sock")
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -78,8 +81,8 @@ func TestIntegrationGenerateKeysEndToEnd(t *testing.T) {
 }
 
 func TestIntegrationGenerateKeysUniqueMappings(t *testing.T) {
-	kpsSvc := kps.NewService(kpskcc.GenerateKEMKeypair, kpskcc.DestroyKEMKey)
-	srv, err := NewServer(kpsSvc, &realWorkloadService{}, "")
+	kpsSvc := kps.NewService()
+	srv, err := NewServer(kpsSvc, &realWorkloadService{}, "test.sock")
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -131,7 +134,7 @@ func TestIntegrationGenerateKeysUniqueMappings(t *testing.T) {
 }
 
 func TestIntegrationDestroyKey(t *testing.T) {
-	kpsSvc := kps.NewService(kpskcc.GenerateKEMKeypair, kpskcc.DestroyKEMKey)
+	kpsSvc := kps.NewService()
 	srv, err := NewServer(kpsSvc, &realWorkloadService{}, "")
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
