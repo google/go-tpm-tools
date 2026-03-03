@@ -12,7 +12,6 @@ import (
 	"github.com/google/uuid"
 
 	kps "github.com/google/go-tpm-tools/keymanager/key_protection_service"
-	kpskcc "github.com/google/go-tpm-tools/keymanager/key_protection_service/key_custody_core"
 	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
 	wskcc "github.com/google/go-tpm-tools/keymanager/workload_service/key_custody_core"
 )
@@ -24,10 +23,17 @@ func (r *realWorkloadService) GenerateBindingKeypair(algo *keymanager.HpkeAlgori
 	return wskcc.GenerateBindingKeypair(algo, lifespanSecs)
 }
 
+// realOpener wraps the actual WSD KCC FFI for Open.
+type realOpener struct{}
+
+func (r *realOpener) Open(bindingUUID uuid.UUID, enc, ciphertext, aad []byte) ([]byte, error) {
+	return wskcc.Open(bindingUUID, enc, ciphertext, aad)
+}
+
 func TestIntegrationGenerateKeysEndToEnd(t *testing.T) {
 	// Wire up real FFI calls: WSD KCC for binding, KPS KCC (via KPS KOL) for KEM.
-	kpsSvc := kps.NewService(kpskcc.GenerateKEMKeypair)
-	srv := NewServer(kpsSvc, &realWorkloadService{})
+	kpsSvc := kps.NewService()
+	srv, _ := NewServer(kpsSvc, &realWorkloadService{}, "test.sock")
 
 	reqBody, err := json.Marshal(GenerateKeyRequest{
 		Algorithm: AlgorithmDetails{Type: "kem", Params: AlgorithmParams{KemID: KemAlgorithmDHKEMX25519HKDFSHA256}},
@@ -71,8 +77,8 @@ func TestIntegrationGenerateKeysEndToEnd(t *testing.T) {
 }
 
 func TestIntegrationGenerateKeysUniqueMappings(t *testing.T) {
-	kpsSvc := kps.NewService(kpskcc.GenerateKEMKeypair)
-	srv := NewServer(kpsSvc, &realWorkloadService{})
+	kpsSvc := kps.NewService()
+	srv, _ := NewServer(kpsSvc, &realWorkloadService{}, "test.sock")
 
 	// Generate two key sets.
 	var kemUUIDs [2]uuid.UUID
