@@ -96,6 +96,7 @@ type GenerateKeyRequest struct {
 	Lifespan  ProtoDuration    `json:"lifespan"`
 }
 
+// DestroyRequest is the JSON body for POST /v1/keys:destroy.
 type DestroyRequest struct {
 	KeyHandle KeyHandle `json:"key_handle"`
 }
