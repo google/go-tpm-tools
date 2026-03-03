@@ -21,11 +21,17 @@ import (
 	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
 )
 
+const (
+	uuidSize          = 16
+	bindingPubKeySize = 32
+	sharedSecretSize  = 32
+)
+
 // GenerateBindingKeypair generates an X25519 HPKE binding keypair via Rust FFI.
 // Returns the UUID key handle and the public key bytes.
 func GenerateBindingKeypair(algo *keymanager.HpkeAlgorithm, lifespanSecs uint64) (uuid.UUID, []byte, error) {
-	var uuidBytes [16]byte
-	var pubkeyBuf [32]byte
+	var uuidBytes [uuidSize]byte
+	var pubkeyBuf [bindingPubKeySize]byte
 	pubkeyLen := C.size_t(len(pubkeyBuf))
 
 	algoBytes, err := proto.Marshal(algo)
@@ -33,15 +39,14 @@ func GenerateBindingKeypair(algo *keymanager.HpkeAlgorithm, lifespanSecs uint64)
 		return uuid.Nil, nil, fmt.Errorf("failed to marshal HpkeAlgorithm: %v", err)
 	}
 
-	rc := C.key_manager_generate_binding_keypair(
+	if rc := C.key_manager_generate_binding_keypair(
 		(*C.uint8_t)(unsafe.Pointer(&algoBytes[0])),
 		C.size_t(len(algoBytes)),
 		C.uint64_t(lifespanSecs),
 		(*C.uint8_t)(unsafe.Pointer(&uuidBytes[0])),
 		(*C.uint8_t)(unsafe.Pointer(&pubkeyBuf[0])),
 		pubkeyLen,
-	)
-	if rc != 0 {
+	); rc != 0 {
 		return uuid.Nil, nil, fmt.Errorf("key_manager_generate_binding_keypair failed with code %d", rc)
 	}
 
@@ -68,7 +73,7 @@ func Open(bindingUUID uuid.UUID, enc, ciphertext, aad []byte) ([]byte, error) {
 
 	uuidBytes := bindingUUID[:]
 
-	var outPT [32]byte
+	var outPT [sharedSecretSize]byte
 	outPTLen := C.size_t(len(outPT))
 
 	// Rust key_manager_open requires non-null aad pointer.
@@ -81,7 +86,7 @@ func Open(bindingUUID uuid.UUID, enc, ciphertext, aad []byte) ([]byte, error) {
 		aadLen = C.size_t(len(aad))
 	}
 
-	rc := C.key_manager_open(
+	if rc := C.key_manager_open(
 		(*C.uint8_t)(unsafe.Pointer(&uuidBytes[0])),
 		(*C.uint8_t)(unsafe.Pointer(&enc[0])),
 		C.size_t(len(enc)),
@@ -91,8 +96,7 @@ func Open(bindingUUID uuid.UUID, enc, ciphertext, aad []byte) ([]byte, error) {
 		aadLen,
 		(*C.uint8_t)(unsafe.Pointer(&outPT[0])),
 		outPTLen,
-	)
-	if rc != 0 {
+	); rc != 0 {
 		return nil, fmt.Errorf("key_manager_open failed with code %d", rc)
 	}
 

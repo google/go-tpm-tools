@@ -237,28 +237,28 @@ func (s *Server) handleDecaps(w http.ResponseWriter, r *http.Request) {
 	}
 	aad := decapsAADContext(kemUUID, req.Ciphertext.Algorithm)
 
-	// Step 1: Look up the binding UUID for this KEM key.
+	// Look up the binding UUID for this KEM key.
 	bindingUUID, ok := s.LookupBindingUUID(kemUUID)
 	if !ok {
 		http.Error(w, fmt.Sprintf("KEM key handle not found: %s", kemUUID), http.StatusNotFound)
 		return
 	}
 
-	// Step 2: Decapsulate and reseal via KPS.
+	// Decapsulate and reseal via KPS.
 	sealEnc, sealedCT, err := s.keyProtectionService.DecapAndSeal(kemUUID, encapsulatedKey, aad)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("failed to decap and seal: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	// Step 3: Open the sealed secret using the binding key via WSD KCC.
+	// Open the sealed secret using the binding key via WSD KCC.
 	plaintext, err := s.workloadService.Open(bindingUUID, sealEnc, sealedCT, aad)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("failed to open sealed secret: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	// Step 4: Return the shared secret.
+	// Return the shared secret.
 	resp := DecapsResponse{
 		SharedSecret: KemSharedSecret{
 			Algorithm: req.Ciphertext.Algorithm,
@@ -305,26 +305,26 @@ func (s *Server) generateKEMKey(w http.ResponseWriter, req GenerateKeyRequest) {
 		return
 	}
 
-	// Step 1: Generate binding keypair via WSD KCC FFI.
+	// Generate binding keypair via WSD KCC FFI.
 	bindingUUID, bindingPubKey, err := s.workloadService.GenerateBindingKeypair(algo, req.Lifespan.Seconds)
 	if err != nil {
 		writeError(w, fmt.Sprintf("failed to generate binding keypair: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	// Step 2: Generate KEM keypair via KPS KOL, passing the binding public key.
+	// Generate KEM keypair via KPS KOL, passing the binding public key.
 	kemUUID, _, err := s.keyProtectionService.GenerateKEMKeypair(algo, bindingPubKey, req.Lifespan.Seconds)
 	if err != nil {
 		writeError(w, fmt.Sprintf("failed to generate KEM keypair: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	// Step 3: Store the KEM UUID → Binding UUID mapping.
+	// Store the KEM UUID → Binding UUID mapping.
 	s.mu.Lock()
 	s.kemToBindingMap[kemUUID] = bindingUUID
 	s.mu.Unlock()
 
-	// Step 4: Return KEM UUID to workload.
+	// Return KEM UUID to workload.
 	resp := GenerateKeyResponse{
 		KeyHandle: KeyHandle{Handle: kemUUID.String()},
 	}

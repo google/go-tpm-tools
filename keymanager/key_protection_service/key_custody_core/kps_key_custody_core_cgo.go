@@ -21,6 +21,13 @@ import (
 	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
 )
 
+const (
+	uuidSize      = 16
+	kemPubKeySize = 32
+	encKeySize    = 32
+	sealedCTSize  = 48 // 32-byte secret + 16-byte GCM tag
+)
+
 // GenerateKEMKeypair generates an X25519 HPKE KEM keypair linked to the
 // provided binding public key via Rust FFI.
 // Returns the UUID key handle and the KEM public key bytes.
@@ -29,8 +36,8 @@ func GenerateKEMKeypair(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, li
 		return uuid.Nil, nil, fmt.Errorf("binding public key must not be empty")
 	}
 
-	var uuidBytes [16]byte
-	var pubkeyBuf [32]byte
+	var uuidBytes [uuidSize]byte
+	var pubkeyBuf [kemPubKeySize]byte
 	pubkeyLen := C.size_t(len(pubkeyBuf))
 
 	algoBytes, err := proto.Marshal(algo)
@@ -38,7 +45,7 @@ func GenerateKEMKeypair(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, li
 		return uuid.Nil, nil, fmt.Errorf("failed to marshal HpkeAlgorithm: %v", err)
 	}
 
-	rc := C.key_manager_generate_kem_keypair(
+	if rc := C.key_manager_generate_kem_keypair(
 		(*C.uint8_t)(unsafe.Pointer(&algoBytes[0])),
 		C.size_t(len(algoBytes)),
 		(*C.uint8_t)(unsafe.Pointer(&bindingPubKey[0])),
@@ -47,8 +54,7 @@ func GenerateKEMKeypair(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, li
 		(*C.uint8_t)(unsafe.Pointer(&uuidBytes[0])),
 		(*C.uint8_t)(unsafe.Pointer(&pubkeyBuf[0])),
 		pubkeyLen,
-	)
-	if rc != 0 {
+	); rc != 0 {
 		return uuid.Nil, nil, fmt.Errorf("key_manager_generate_kem_keypair failed with code %d", rc)
 	}
 
@@ -72,9 +78,9 @@ func DecapAndSeal(kemUUID uuid.UUID, encapsulatedKey, aad []byte) ([]byte, []byt
 
 	uuidBytes := kemUUID[:]
 
-	var outEncKey [32]byte
+	var outEncKey [encKeySize]byte
 	outEncKeyLen := C.size_t(len(outEncKey))
-	var outCT [48]byte // 32-byte secret + 16-byte GCM tag
+	var outCT [sealedCTSize]byte // 32-byte secret + 16-byte GCM tag
 	outCTLen := C.size_t(len(outCT))
 
 	var aadPtr *C.uint8_t
@@ -84,7 +90,7 @@ func DecapAndSeal(kemUUID uuid.UUID, encapsulatedKey, aad []byte) ([]byte, []byt
 		aadLen = C.size_t(len(aad))
 	}
 
-	rc := C.key_manager_decap_and_seal(
+	if rc := C.key_manager_decap_and_seal(
 		(*C.uint8_t)(unsafe.Pointer(&uuidBytes[0])),
 		(*C.uint8_t)(unsafe.Pointer(&encapsulatedKey[0])),
 		C.size_t(len(encapsulatedKey)),
@@ -94,8 +100,7 @@ func DecapAndSeal(kemUUID uuid.UUID, encapsulatedKey, aad []byte) ([]byte, []byt
 		outEncKeyLen,
 		(*C.uint8_t)(unsafe.Pointer(&outCT[0])),
 		outCTLen,
-	)
-	if rc != 0 {
+	); rc != 0 {
 		return nil, nil, fmt.Errorf("key_manager_decap_and_seal failed with code %d", rc)
 	}
 
