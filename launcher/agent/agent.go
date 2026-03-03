@@ -29,6 +29,7 @@ import (
 
 	gecel "github.com/google/go-eventlog/cel"
 
+	"github.com/GoogleCloudPlatform/confidential-space/server/labels"
 	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
@@ -45,9 +46,6 @@ import (
 
 const (
 	audienceSTS = "https://sts.googleapis.com"
-
-	// TODO: move to Confidential Space repository.
-	workloadAttestationLabel = "WORKLOAD_ATTESTATION"
 )
 
 type principalIDTokenFetcher func(audience string) ([][]byte, error)
@@ -322,7 +320,7 @@ func (a *agent) AttestationEvidence(_ context.Context, challenge []byte, extraDa
 	}
 
 	attestation := &attestationpb.VmAttestation{
-		Label:     []byte(workloadAttestationLabel),
+		Label:     []byte(labels.WorkloadAttestation),
 		Challenge: challenge,
 		ExtraData: extraData,
 		Quote:     &attestationpb.VmAttestationQuote{},
@@ -416,7 +414,7 @@ func (t *tpmAttestRoot) ComputeNonce(challenge []byte, extraData []byte) []byte 
 		challengeData = append(challenge, extraDataDigest[:]...)
 	}
 	challengeDigest := sha256.Sum256(challengeData)
-	finalNonce := sha256.Sum256(append([]byte(workloadAttestationLabel), challengeDigest[:]...))
+	finalNonce := sha256.Sum256(append([]byte(labels.WorkloadAttestation), challengeDigest[:]...))
 	return finalNonce[:]
 }
 
@@ -491,7 +489,7 @@ func (t *tdxAttestRoot) ComputeNonce(challenge []byte, extraData []byte) []byte 
 		challengeData = append(challenge, extraDataDigest[:]...)
 	}
 	challengeDigest := sha512.Sum512(challengeData)
-	finalNonce := sha512.Sum512(append([]byte(workloadAttestationLabel), challengeDigest[:]...))
+	finalNonce := sha512.Sum512(append([]byte(labels.WorkloadAttestation), challengeDigest[:]...))
 	return finalNonce[:]
 }
 

@@ -9,6 +9,7 @@ require (
 	cloud.google.com/go/logging v1.13.1
 	cos.googlesource.com/cos/tools.git v0.0.0-20250414225215-0cf736c0714c
 	github.com/NVIDIA/go-nvml v0.13.0-1
+	github.com/GoogleCloudPlatform/confidential-space/server v0.0.0-20260303223307-8e0b07455f87
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/confidentsecurity/go-nvtrust v0.2.2
 	github.com/containerd/containerd v1.7.23
@@ -39,7 +40,6 @@ require (
 	cloud.google.com/go/longrunning v0.8.0 // indirect
 	github.com/AdaLogics/go-fuzz-headers v0.0.0-20240806141605-e8a1dd7889d6 // indirect
 	github.com/AdamKorcz/go-118-fuzz-build v0.0.0-20231105174938-2b5cbb29f3e2 // indirect
-	github.com/GoogleCloudPlatform/confidential-space/server v0.0.0-20260303183751-a3bcf10f93b5 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/Microsoft/hcsshim v0.12.9 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
