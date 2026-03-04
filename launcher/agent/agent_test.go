@@ -33,7 +33,6 @@ import (
 	tpmpb "github.com/google/go-tpm-tools/proto/tpm"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/google/go-tpm-tools/verifier/fake"
-	"github.com/google/go-tpm-tools/verifier/models"
 	"github.com/google/go-tpm-tools/verifier/oci"
 	"github.com/google/go-tpm-tools/verifier/oci/cosign"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -668,14 +667,14 @@ func (f *fakeTdxAttestRoot) GetCEL() gecel.CEL {
 
 func (f *fakeTdxAttestRoot) Attest(nonce []byte) (any, error) {
 	f.receivedNonce = nonce
-	var nvAtt *models.NvidiaAttestation
+	var nvAtt *attestationpb.NvidiaAttestationReport
 	for _, deviceRoT := range f.deviceRoTS {
 		att, err := deviceRoT.Attest(nonce)
 		if err != nil {
 			return nil, err
 		}
 		switch v := att.(type) {
-		case *models.NvidiaAttestation:
+		case *attestationpb.NvidiaAttestationReport:
 			nvAtt = v
 		default:
 			return nil, fmt.Errorf("unknown device attestation type: %T", v)
@@ -709,9 +708,11 @@ func (f *fakeGPURoT) Attest(nonce []byte) (any, error) {
 	if len(nonce) == 0 {
 		return nil, fmt.Errorf("fake GPU attestation failed")
 	}
-	return &models.NvidiaAttestation{
-		CCFeature: &models.NvidiaSinglePassthroughAttestation{
-			GPUInfo: models.GPUInfo{UUID: "fake-gpu-uuid"},
+	return &attestationpb.NvidiaAttestationReport{
+		CcFeature: &attestationpb.NvidiaAttestationReport_Spt{
+			Spt: &attestationpb.NvidiaAttestationReport_SinglePassthroughAttestation{
+				GpuQuote: &attestationpb.GpuInfo{Uuid: "fake-gpu-uuid"},
+			},
 		},
 	}, nil
 }

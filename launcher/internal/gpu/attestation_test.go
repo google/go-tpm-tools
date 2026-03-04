@@ -5,7 +5,8 @@ import (
 
 	"cos.googlesource.com/cos/tools.git/src/cmd/cos_gpu_installer/deviceinfo"
 	"github.com/confidentsecurity/go-nvtrust/pkg/gonvtrust/gpu"
-	"github.com/google/go-tpm-tools/verifier/models"
+
+	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
 )
 
 func TestCollectAttestationEvidence(t *testing.T) {
@@ -59,8 +60,8 @@ func TestCollectAttestationEvidence(t *testing.T) {
 			}
 			if tc.wantPass {
 				if tc.wantSPT {
-					if _, ok := attesation.CCFeature.(*models.NvidiaSinglePassthroughAttestation); !ok {
-						t.Errorf("CollectAttestationEvidence() = %v, want %v", attesation.CCFeature, &models.NvidiaSinglePassthroughAttestation{})
+					if _, ok := attesation.CcFeature.(*attestationpb.NvidiaAttestationReport_Spt); !ok {
+						t.Errorf("CollectAttestationEvidence() = %v, want %v", attesation.CcFeature, &attestationpb.NvidiaAttestationReport_Spt{})
 					}
 				}
 			}
@@ -71,39 +72,39 @@ func TestCollectAttestationEvidence(t *testing.T) {
 func TestDetermineAttestationType(t *testing.T) {
 	testCases := []struct {
 		name     string
-		gpuInfos []models.GPUInfo
+		gpuInfos []*attestationpb.GpuInfo
 		gpuType  deviceinfo.GPUType
 		want     attestationType
 	}{
 		{
 			name: "UNSUPPORTED GPU type",
-			gpuInfos: []models.GPUInfo{
-				{UUID: "gpu-0"},
+			gpuInfos: []*attestationpb.GpuInfo{
+				{Uuid: "gpu-0"},
 			},
 			gpuType: deviceinfo.Others,
 			want:    UNSUPPORTED,
 		},
 		{
 			name: "SPT attestation type (H100)",
-			gpuInfos: []models.GPUInfo{
-				{UUID: "gpu-0"},
+			gpuInfos: []*attestationpb.GpuInfo{
+				{Uuid: "gpu-0"},
 			},
 			gpuType: deviceinfo.H100,
 			want:    SPT,
 		},
 		{
 			name: "SPT attestation type (B200 with single GPU)",
-			gpuInfos: []models.GPUInfo{
-				{UUID: "gpu-0"},
+			gpuInfos: []*attestationpb.GpuInfo{
+				{Uuid: "gpu-0"},
 			},
 			gpuType: deviceinfo.B200,
 			want:    SPT,
 		},
 		{
 			name: "MPT attestation type (B200 with multiple GPUs)",
-			gpuInfos: []models.GPUInfo{
-				{UUID: "gpu-0"},
-				{UUID: "gpu-1"},
+			gpuInfos: []*attestationpb.GpuInfo{
+				{Uuid: "gpu-0"},
+				{Uuid: "gpu-1"},
 			},
 			gpuType: deviceinfo.B200,
 			want:    MPT,
@@ -121,6 +122,34 @@ func TestDetermineAttestationType(t *testing.T) {
 
 			if got := determineAttestationType(tc.gpuInfos); got != tc.want {
 				t.Errorf("determineAttestationType() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestConvertGPUArchToPB(t *testing.T) {
+	testCases := []struct {
+		arch     string
+		wantArch attestationpb.GpuArchitectureType
+	}{
+		{
+			arch:     "HOPPER",
+			wantArch: attestationpb.GpuArchitectureType_GPU_ARCHITECTURE_TYPE_HOPPER,
+		},
+		{
+			arch:     "BLACKWELL",
+			wantArch: attestationpb.GpuArchitectureType_GPU_ARCHITECTURE_TYPE_BLACKWELL,
+		},
+		{
+			arch:     "UNSPECIFIED",
+			wantArch: attestationpb.GpuArchitectureType_GPU_ARCHITECTURE_TYPE_UNSPECIFIED,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.arch, func(t *testing.T) {
+			if got := convertGPUArchToPB(tc.arch); got != tc.wantArch {
+				t.Errorf("convertGPUArchToPB() = %v, want %v", got, tc.wantArch)
 			}
 		})
 	}
