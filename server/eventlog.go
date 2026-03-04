@@ -449,9 +449,7 @@ func getVerifiedCosState(coscel gecel.CEL, registerType gecel.MRType) (*pb.Attes
 				return nil, fmt.Errorf("unknown GPU device CC mode in COS eventlog: %s", string(cosTlv.EventContent))
 			}
 			cosState.GpuDeviceState.CcMode = pb.GPUDeviceCCMode(ccMode)
-
-		// TODO: add support for GPU Device Attestation Binding Event
-		// case cel.GPUDeviceAttestationBindingType:
+		case cel.GPUDeviceAttestationBindingType:
 
 		default:
 			return nil, fmt.Errorf("found unknown COS Event Type %v", cosTlv.EventType)
