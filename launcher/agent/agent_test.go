@@ -25,6 +25,7 @@ import (
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-cmp/cmp"
 	gecel "github.com/google/go-eventlog/cel"
+	"github.com/google/go-tdx-guest/testing/testdata"
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal/test"
@@ -704,10 +705,7 @@ func (f *fakeTdxAttestRoot) ComputeNonce(challenge []byte, extraData []byte) []b
 	return finalNonce[:]
 }
 
-//go:embed tdx_quote.b64
-var tdxQuoteB64 string
-
-//go:embed cel.b64
+//go:embed testdata/cel.b64
 var celB64 string
 
 func (f *fakeTdxAttestRoot) AddDeviceROTs(deviceRoTS []DeviceROT) {
@@ -790,10 +788,7 @@ func TestAttestationEvidence_TDX_Success(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	testTDXQuote, err := base64.StdEncoding.DecodeString(tdxQuoteB64)
-	if err != nil {
-		t.Fatalf("failed to decode tdx_quote.b64: %v", err)
-	}
+	testTDXQuote := testdata.RawQuote
 	testCEL, err := base64.StdEncoding.DecodeString(celB64)
 	if err != nil {
 		t.Fatalf("failed to decode cel.b64: %v", err)
@@ -843,8 +838,8 @@ func TestAttestationEvidence_TDX_Success(t *testing.T) {
 	if att.GetQuote().GetTpmQuote() != nil {
 		t.Error("expected TPMQuote to be nil for TDX attestation")
 	}
-	if len(att.GetQuote().GetTdxCcelQuote().GetCelLaunchEventLog()) == 0 {
-		t.Error("expected CELLaunchEventLog to be non-empty after MeasureEvent calls")
+	if !bytes.Equal(att.GetQuote().GetTdxCcelQuote().GetCelLaunchEventLog(), testCEL) {
+		t.Errorf("CELLaunchEventLog mismatch: got %x, want %x", att.GetQuote().GetTdxCcelQuote().GetCelLaunchEventLog(), testCEL)
 	}
 	if !bytes.Equal(att.Challenge, challenge) {
 		t.Errorf("challenge mismatch: got %x, want %x", att.Challenge, challenge)
