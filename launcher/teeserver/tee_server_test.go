@@ -14,11 +14,12 @@ import (
 	gecel "github.com/google/go-eventlog/cel"
 	"github.com/google/go-tpm-tools/launcher/agent"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
-	teemodels "github.com/google/go-tpm-tools/launcher/teeserver/models"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/google/go-tpm-tools/verifier/models"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
 )
 
 // Implements verifier.Client interface so it can be used to initialize test attestHandlers
@@ -40,7 +41,7 @@ type fakeAttestationAgent struct {
 	measureEventFunc        func(gecel.Content) error
 	attestFunc              func(context.Context, agent.AttestAgentOpts) ([]byte, error)
 	attestWithClientFunc    func(context.Context, agent.AttestAgentOpts, verifier.Client) ([]byte, error)
-	attestationEvidenceFunc func(context.Context, []byte, []byte) (*teemodels.VMAttestation, error)
+	attestationEvidenceFunc func(context.Context, []byte, []byte) (*attestationpb.VmAttestation, error)
 }
 
 func (f fakeAttestationAgent) Attest(c context.Context, a agent.AttestAgentOpts) ([]byte, error) {
@@ -51,7 +52,7 @@ func (f fakeAttestationAgent) AttestWithClient(c context.Context, a agent.Attest
 	return f.attestWithClientFunc(c, a, v)
 }
 
-func (f fakeAttestationAgent) AttestationEvidence(c context.Context, nonce []byte, extraData []byte) (*teemodels.VMAttestation, error) {
+func (f fakeAttestationAgent) AttestationEvidence(c context.Context, nonce []byte, extraData []byte) (*attestationpb.VmAttestation, error) {
 	return f.attestationEvidenceFunc(c, nonce, extraData)
 }
 
@@ -587,8 +588,8 @@ func TestAttestationEvidence(t *testing.T) {
 	ah := attestHandler{
 		logger: logging.SimpleLogger(),
 		attestAgent: fakeAttestationAgent{
-			attestationEvidenceFunc: func(_ context.Context, _ []byte, _ []byte) (*teemodels.VMAttestation, error) {
-				return &teemodels.VMAttestation{}, nil
+			attestationEvidenceFunc: func(_ context.Context, _ []byte, _ []byte) (*attestationpb.VmAttestation, error) {
+				return &attestationpb.VmAttestation{}, nil
 			},
 		},
 	}

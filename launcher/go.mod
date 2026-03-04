@@ -9,6 +9,7 @@ require (
 	cloud.google.com/go/logging v1.13.1
 	cos.googlesource.com/cos/tools.git v0.0.0-20250414225215-0cf736c0714c
 	github.com/NVIDIA/go-nvml v0.13.0-1
+	github.com/GoogleCloudPlatform/confidential-space/server v0.0.0-20260303223307-8e0b07455f87
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/confidentsecurity/go-nvtrust v0.2.2
 	github.com/containerd/containerd v1.7.23
@@ -19,7 +20,7 @@ require (
 	github.com/google/go-eventlog v0.0.3-0.20250820210646-0f4d84deece4
 	github.com/google/go-tdx-guest v0.3.2-0.20250814004405-ffb0869e6f4d
 	github.com/google/go-tpm v0.9.6
-	github.com/google/go-tpm-tools v0.4.4
+	github.com/google/go-tpm-tools v0.4.6
 	github.com/google/go-tpm-tools/verifier v0.4.4
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.0

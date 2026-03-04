@@ -16,6 +16,7 @@ import (
 	"github.com/google/go-tpm-tools/verifier/models"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
 const (
@@ -163,10 +164,14 @@ func (a *attestHandler) getAttestationEvidence(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(evidence); err != nil {
-		a.logger.Error(fmt.Sprintf("failed to encode response: %v", err))
+	evidenceBytes, err := protojson.Marshal(evidence)
+	if err != nil {
+		a.logAndWriteHTTPError(w, http.StatusInternalServerError, fmt.Errorf("failed to marshal evidence: %v", err))
+		return
 	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(evidenceBytes)
 }
 
 func (a *attestHandler) attest(w http.ResponseWriter, r *http.Request, client verifier.Client) {
