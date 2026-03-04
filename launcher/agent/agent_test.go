@@ -18,7 +18,12 @@ import (
 	"testing"
 	"time"
 
+<<<<<<< HEAD
 	"github.com/GoogleCloudPlatform/confidential-space/server/extract"
+=======
+	"github.com/GoogleCloudPlatform/confidential-space/server/labels"
+	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
+>>>>>>> 262ec22 (Migrate getEvidence API to attestation proto library (#690))
 	"github.com/cenkalti/backoff/v4"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-cmp/cmp"
@@ -30,7 +35,6 @@ import (
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/internal/signaturediscovery"
 	"github.com/google/go-tpm-tools/launcher/spec"
-	teemodels "github.com/google/go-tpm-tools/launcher/teeserver/models"
 	attestpb "github.com/google/go-tpm-tools/proto/attest"
 	tpmpb "github.com/google/go-tpm-tools/proto/tpm"
 	"github.com/google/go-tpm-tools/server"
@@ -699,7 +703,7 @@ func (f *fakeTdxAttestRoot) ComputeNonce(challenge []byte, extraData []byte) []b
 		challengeData = append(challenge, extraDataDigest[:]...)
 	}
 	challengeDigest := sha512.Sum512(challengeData)
-	finalNonce := sha512.Sum512(append([]byte(teemodels.WorkloadAttestationLabel), challengeDigest[:]...))
+	finalNonce := sha512.Sum512(append([]byte(labels.WorkloadAttestation), challengeDigest[:]...))
 	return finalNonce[:]
 }
 
@@ -826,6 +830,7 @@ func TestAttestationEvidence_TDX_Success(t *testing.T) {
 		t.Fatalf("AttestationEvidence failed: %v", err)
 	}
 
+<<<<<<< HEAD
 	// Verify the nonce passed to Attest was derived from challenge+extraData.
 	expectedNonce := fakeRoot.ComputeNonce(challenge, extraData)
 	if !bytes.Equal(fakeRoot.receivedNonce, expectedNonce) {
@@ -837,6 +842,14 @@ func TestAttestationEvidence_TDX_Success(t *testing.T) {
 	}
 	if !bytes.Equal(att.Quote.TDXCCELQuote.TDQuote, testTDXQuote) {
 		t.Errorf("TDQuote mismatch: got %x, want %x", att.Quote.TDXCCELQuote.TDQuote, testTDXQuote)
+=======
+	if att.GetQuote().GetTdxCcelQuote() == nil {
+		t.Fatal("expected TDCCELAttestation to be populated for TDX")
+	}
+
+	if string(att.GetQuote().GetTdxCcelQuote().GetTdQuote()) != "fake-tdx-quote" {
+		t.Errorf("got quote %s, want fake-tdx-quote", string(att.GetQuote().GetTdxCcelQuote().GetTdQuote()))
+>>>>>>> 262ec22 (Migrate getEvidence API to attestation proto library (#690))
 	}
 	if att.Quote.TPMQuote != nil {
 		t.Error("expected TPMQuote to be nil for TDX attestation")
@@ -890,10 +903,10 @@ func TestAttestationEvidence_TPM_Success(t *testing.T) {
 		t.Fatalf("AttestationEvidence failed on TPM: %v", err)
 	}
 
-	if att.Quote.TPMQuote == nil {
+	if att.GetQuote().GetTpmQuote() == nil {
 		t.Fatal("expected Attestation to be populated for TPM")
 	}
-	if att.Quote.TDXCCELQuote != nil {
+	if att.GetQuote().GetTdxCcelQuote() != nil {
 		t.Fatal("expected TDCCELAttestation to be nil for TPM")
 	}
 
@@ -1029,18 +1042,20 @@ func TestConvertPBToTPMQuote(t *testing.T) {
 		CanonicalEventLog: []byte("cel-launch-event-log"),
 	}
 
-	want := &teemodels.TPMQuote{
-		Quotes: []*teemodels.SignedQuote{
-			{TPMSAttest: []byte("quote")},
+	want := &attestationpb.TpmQuote{
+		Quotes: []*attestationpb.TpmQuote_SignedQuote{
+			{TpmsAttest: []byte("quote")},
 		},
-		PCClientBootEventLog: []byte("pcclient-boot-event-log"),
-		CELLaunchEventLog:    []byte("cel-launch-event-log"),
-		Endorsement: &teemodels.TPMAttestationEndorsement{
-			AKCertEndorsement: &teemodels.AKCertEndorsement{},
+		PcclientBootEventLog: []byte("pcclient-boot-event-log"),
+		CelLaunchEventLog:    []byte("cel-launch-event-log"),
+		Endorsement: &attestationpb.TpmAttestationEndorsement{
+			Endorsement: &attestationpb.TpmAttestationEndorsement_AkCertEndorsement_{
+				AkCertEndorsement: &attestationpb.TpmAttestationEndorsement_AkCertEndorsement{},
+			},
 		},
 	}
 
-	got := convertPBToTPMQuote(pbAtt)
+	got := convertToTPMQuote(pbAtt)
 
 	if diff := cmp.Diff(got, want, protocmp.Transform()); diff != "" {
 		t.Errorf("convertPBToTPMQuote() mismatch (-got +want):\n%s", diff)

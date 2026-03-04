@@ -94,8 +94,13 @@ github.com/Azure/go-autorest v12.0.0+incompatible/go.mod h1:r+4oMnoxhatjLLJ6zxSW
 github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=
 github.com/BurntSushi/xgb v0.0.0-20160522181843-27f122750802/go.mod h1:IVnqGOEym/WlBOVXweHU+Q+/VP0lqqI8lqeDx9IjBqo=
 github.com/GoogleCloudPlatform/cloudsql-proxy v0.0.0-20191009163259-e802c2cb94ae/go.mod h1:mjwGPas4yKduTyubHvD1Atl9r1rUq8DfVy+gkVvZ+oo=
+<<<<<<< HEAD
 github.com/GoogleCloudPlatform/confidential-space/server v0.0.0-20260227215608-998bdbe721d1 h1:QDGDC9sTIlwQ0IMOVKctqUBF0u17s0cvBcVFiO4N15E=
 github.com/GoogleCloudPlatform/confidential-space/server v0.0.0-20260227215608-998bdbe721d1/go.mod h1:5SswqTFF1P+mhlxN5SH3d/1xq3bCeNDBkN3i31sH/uA=
+=======
+github.com/GoogleCloudPlatform/confidential-space/server v0.0.0-20260303223307-8e0b07455f87 h1:RA7fYPtxxpae7mtT3pa3WLWJNk+wKItsndvA+t50nUA=
+github.com/GoogleCloudPlatform/confidential-space/server v0.0.0-20260303223307-8e0b07455f87/go.mod h1:sNFt/HcARjGxR3/2s7hwlqvHlUzXdaCiS62u7A4rnHg=
+>>>>>>> 262ec22 (Migrate getEvidence API to attestation proto library (#690))
 github.com/Knetic/govaluate v3.0.1-0.20171022003610-9aa49832a739+incompatible/go.mod h1:r7JcOSlj0wfOMncg0iLm8Leh48TZaKVeNIfJntJ2wa0=
 github.com/Masterminds/goutils v1.1.0/go.mod h1:8cTjp+g8YejhMuvIA5y2vz3BpJxksy863GQaJW2MFNU=
 github.com/Masterminds/semver v1.4.2/go.mod h1:MB6lktGJrhw8PrUyiEoblNEGEQ+RzHPF078ddwwvV3Y=

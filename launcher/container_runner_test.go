@@ -27,12 +27,13 @@ import (
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/spec"
-	teemodels "github.com/google/go-tpm-tools/launcher/teeserver/models"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/opencontainers/go-digest"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/oauth2"
+
+	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
 )
 
 const (
@@ -71,7 +72,7 @@ func (f *fakeAttestationAgent) AttestWithClient(_ context.Context, _ agent.Attes
 	return nil, fmt.Errorf("unimplemented")
 }
 
-func (f *fakeAttestationAgent) AttestationEvidence(_ context.Context, _ []byte, _ []byte) (*teemodels.VMAttestation, error) {
+func (f *fakeAttestationAgent) AttestationEvidence(_ context.Context, _ []byte, _ []byte) (*attestationpb.VmAttestation, error) {
 	return nil, fmt.Errorf("unimplemented")
 }
 
