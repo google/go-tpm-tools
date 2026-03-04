@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"math"
@@ -14,19 +15,58 @@ import (
 	"net/http"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	kpscc "github.com/google/go-tpm-tools/keymanager/key_protection_service/key_custody_core"
 	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
 	wskcc "github.com/google/go-tpm-tools/keymanager/workload_service/key_custody_core"
 )
 
-// WorkloadService defines the interface for generating binding keypairs.
+// WorkloadService defines the interface for generating and managing binding keypairs.
+// These keypairs are used by workloads to securely bind shared secrets to their identity.
 type WorkloadService interface {
+	// GenerateBindingKeypair generates a new binding keypair for a workload.
+	// This keypair ensures that only the workload possessing the private key
+	// can open (decrypt) sealed secrets intended for it.
+	//
+	// Parameters:
+	//   - algo: The HPKE algorithm suite to use for the binding keypair.
+	//   - lifespanSecs: The duration (in seconds) for which the generated keypair remains valid.
+	//
+	// Returns:
+	//   - uuid.UUID: A unique identifier representing the stored binding keypair.
+	//   - []byte: The public binding key bytes to be shared with the Key Protection Service.
+	//   - error: An error if generation or storage fails.
 	GenerateBindingKeypair(algo *keymanager.HpkeAlgorithm, lifespanSecs uint64) (uuid.UUID, []byte, error)
 	DestroyBindingKey(bindingUUID uuid.UUID) error
+
+	// GetBindingKey retrieves metadata and public keys associated with a stored binding keypair.
+	//
+	// Parameters:
+	//   - id: The unique identifier of the stored binding keypair.
+	//
+	// Returns:
+	//   - []byte: The public binding key bytes.
+	//   - *keymanager.HpkeAlgorithm: The HPKE algorithm suite of the binding key.
+	//   - error: An error if the key is not found or has expired.
 	GetBindingKey(id uuid.UUID) ([]byte, *keymanager.HpkeAlgorithm, error)
+
+	// Open decrypts a sealed ciphertext using the specified binding private key.
+	// It is used by the workload to access shared secrets that have been resealed
+	// for its specific binding key.
+	//
+	// Parameters:
+	//   - bindingUUID: The unique identifier of the stored binding keypair.
+	//   - enc: The encapsulated key for the resealed shared secret (seal_enc).
+	//   - ciphertext: The authenticated ciphertext of the resealed shared secret (sealed_ct).
+	//   - aad: Additional Authenticated Data used during the sealing process.
+	//
+	// Returns:
+	//   - []byte: The original plaintext (the shared secret).
+	//   - error: An error if the binding key is not found, expired, or decryption fails.
 	Open(bindingUUID uuid.UUID, enc, ciphertext, aad []byte) ([]byte, error)
 }
 type keyProtectionService struct{}
@@ -38,8 +78,12 @@ type KeyProtectionService interface {
 	GetKEMKey(id uuid.UUID) (kemPubKey []byte, bindingPubKey []byte, algo *keymanager.HpkeAlgorithm, deleteAfter uint64, err error)
 	DecapAndSeal(kemUUID uuid.UUID, encapsulatedKey, aad []byte) (sealEnc []byte, sealedCT []byte, err error)
 }
+
+// workloadService implements WorkloadService by delegating to the WSD KCC FFI.
 type workloadService struct{}
 
+// GenerateBindingKeypair generates a new binding keypair for the workload by
+// delegating to the underlying WorkloadService backend (WSD KCC FFI).
 func (r *workloadService) GenerateBindingKeypair(algo *keymanager.HpkeAlgorithm, lifespanSecs uint64) (uuid.UUID, []byte, error) {
 	return wskcc.GenerateBindingKeypair(algo, lifespanSecs)
 }
@@ -48,10 +92,14 @@ func (r *workloadService) DestroyBindingKey(bindingUUID uuid.UUID) error {
 	return wskcc.DestroyBindingKey(bindingUUID)
 }
 
+// Open decrypts a sealed ciphertext securely using the specified binding private key
+// by delegating to the underlying WorkloadService backend (WSD KCC FFI).
 func (r *workloadService) Open(bindingUUID uuid.UUID, enc, ciphertext, aad []byte) ([]byte, error) {
 	return wskcc.Open(bindingUUID, enc, ciphertext, aad)
 }
 
+// GetBindingKey retrieves the public binding key and HPKE algorithm of a stored
+// binding keypair by delegating to the underlying WorkloadService backend (WSD KCC FFI).
 func (r *workloadService) GetBindingKey(id uuid.UUID) ([]byte, *keymanager.HpkeAlgorithm, error) {
 	return wskcc.GetBindingKey(id)
 }
@@ -205,7 +253,7 @@ func NewServer(keyProtectionService KeyProtectionService, workloadService Worklo
 		workloadService:      workloadService,
 		kemToBindingMap:      make(map[uuid.UUID]uuid.UUID),
 		mu:                   sync.RWMutex{},
-		claimsChan:           make(chan *ClaimsCall, 100),
+		claimsChan:           make(chan *ClaimsCall, 4),
 	}
 
 	mux := http.NewServeMux()
@@ -454,22 +502,22 @@ func (s *Server) handleDestroy(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// GetBindingKeyClaims returns the claims for a binding key identified by its UUID.
+// GetBindingKeyClaims returns the claims for a binding key identified by its KEM UUID.
 func (s *Server) GetBindingKeyClaims(id uuid.UUID) (*keymanager.KeyClaims, error) {
-	// Step 1: Key ID Lookup. The orchestration layer will look-up the key_handle
+	// Key ID Lookup. The orchestration layer will look-up the key_handle
 	// in its ActiveKeyRegistry to find the Binding Key ID.
-	bindingID := id
-	if bid, ok := s.LookupBindingUUID(id); ok {
-		bindingID = bid
+	bindingID, ok := s.LookupBindingUUID(id)
+	if !ok {
+		return nil, fmt.Errorf("binding key ID not found for key handle: %s", id)
 	}
 
-	// Step 2: Key Metadata Lookup.
+	// Key Metadata Lookup.
 	pubKey, algo, err := s.workloadService.GetBindingKey(bindingID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get binding key: %w", err)
 	}
 
-	// Step 3: Create KeyClaims
+	// Create KeyClaims
 	claims := &keymanager.KeyClaims{
 		Claims: &keymanager.KeyClaims_VmBindingClaims{
 			VmBindingClaims: &keymanager.KeyClaims_VmProtectionBindingClaims{
@@ -485,16 +533,16 @@ func (s *Server) GetBindingKeyClaims(id uuid.UUID) (*keymanager.KeyClaims, error
 
 // GetKEMKeyClaims returns the claims for a KEM key identified by its UUID.
 func (s *Server) GetKEMKeyClaims(id uuid.UUID) (*keymanager.KeyClaims, error) {
-	// Step 1: Key Metadata Lookup.
+	// Key Metadata Lookup.
 	kemPubKey, bindingPubKey, algo, remainingLifespanSecs, err := s.keyProtectionService.GetKEMKey(id)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get KEM key: %w", err)
 	}
 
-	// Step 2: Calculate remaining time.
+	// Calculate remaining time.
 	remaining := time.Duration(remainingLifespanSecs) * time.Second
 
-	// Step 3: Create KeyClaims
+	// Create KeyClaims
 	claims := &keymanager.KeyClaims{
 		Claims: &keymanager.KeyClaims_VmKeyClaims{
 			VmKeyClaims: &keymanager.KeyClaims_VmProtectionKeyClaims{
@@ -529,14 +577,14 @@ func (s *Server) processClaims() {
 		case keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING:
 			claims, err = s.GetBindingKeyClaims(id)
 			if err != nil {
-				call.RespChan <- &ClaimsResult{Err: fmt.Errorf("failed to retrieve key claims: %w", err)}
+				call.RespChan <- &ClaimsResult{Err: fmt.Errorf("failed to retrieve binding key claims: %w", err)}
 				continue
 			}
 
 		case keymanager.KeyType_KEY_TYPE_VM_PROTECTION_KEY:
 			claims, err = s.GetKEMKeyClaims(id)
 			if err != nil {
-				call.RespChan <- &ClaimsResult{Err: fmt.Errorf("failed to retrieve key claims: %w", err)}
+				call.RespChan <- &ClaimsResult{Err: fmt.Errorf("failed to retrieve VM protection key claims: %w", err)}
 				continue
 			}
 		default:

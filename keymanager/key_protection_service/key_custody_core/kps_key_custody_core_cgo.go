@@ -81,7 +81,7 @@ func DestroyKEMKey(kemUUID uuid.UUID) error {
 
 // GetKEMKey retrieves KEM and binding public keys, HpkeAlgorithm and remaining lifespan via Rust FFI.
 func GetKEMKey(id uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error) {
-	var uuidBytes [16]byte
+	var uuidBytes [uuidSize]byte
 	copy(uuidBytes[:], id[:])
 
 	var kemPubkeyBuf [kemPubKeySize]byte

@@ -527,11 +527,13 @@ func TestProcessClaims(t *testing.T) {
 	}
 
 	srv := newTestServer(t, kps, ws)
+	// Populate kemToBindingMap for the claims test.
+	srv.kemToBindingMap[kemUUID] = bindingUUID
 
 	t.Run("BindingClaims", func(t *testing.T) {
 		respChan := make(chan *ClaimsResult, 1)
 		req := &keymanager.GetKeyClaimsRequest{
-			KeyHandle: &keymanager.KeyHandle{Handle: bindingUUID.String()},
+			KeyHandle: &keymanager.KeyHandle{Handle: kemUUID.String()},
 			KeyType:   keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING,
 		}
 		srv.claimsChan <- &ClaimsCall{Request: req, RespChan: respChan}
@@ -658,8 +660,8 @@ func TestProcessClaims(t *testing.T) {
 			if res.Err == nil {
 				t.Fatal("expected error for binding key not found")
 			}
-			if !strings.Contains(res.Err.Error(), "failed to get binding key") {
-				t.Errorf("expected error to contain 'failed to get binding key', got %v", res.Err)
+			if !strings.Contains(res.Err.Error(), "failed to retrieve binding key claims") {
+				t.Errorf("expected error to contain 'failed to retrieve binding key claims', got %v", res.Err)
 			}
 		case <-time.After(2 * time.Second):
 			t.Fatal("timed out waiting for response")

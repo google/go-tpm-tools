@@ -119,12 +119,10 @@ func Open(bindingUUID uuid.UUID, enc, ciphertext, aad []byte) ([]byte, error) {
 
 // GetBindingKey retrieves the binding public key and HpkeAlgorithm via Rust FFI.
 func GetBindingKey(id uuid.UUID) ([]byte, *keymanager.HpkeAlgorithm, error) {
-	uuidBytes, err := id.MarshalBinary()
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to marshal UUID: %v", err)
-	}
+	var uuidBytes [uuidSize]byte
+	copy(uuidBytes[:], id[:])
 
-	var pubkeyBuf [32]byte
+	var pubkeyBuf [bindingPubKeySize]byte
 	pubkeyLen := C.size_t(len(pubkeyBuf))
 	var algoBuf [C.MAX_ALGORITHM_LEN]byte
 	algoLenC := C.size_t(len(algoBuf))

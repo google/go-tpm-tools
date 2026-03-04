@@ -298,12 +298,10 @@ func TestIntegrationKeyClaims(t *testing.T) {
 
 	// 3. Test GetKeyClaims for Binding key
 	t.Run("BindingClaimsSuccess", func(t *testing.T) {
-		kemUUID, _ := uuid.Parse(kemHandle)
-		bindingUUID, _ := srv.LookupBindingUUID(kemUUID)
 
 		respChan := make(chan *ClaimsResult)
 		req := &keymanager.GetKeyClaimsRequest{
-			KeyHandle: &keymanager.KeyHandle{Handle: bindingUUID.String()},
+			KeyHandle: &keymanager.KeyHandle{Handle: kemHandle},
 			KeyType:   keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING,
 		}
 		srv.claimsChan <- &ClaimsCall{Request: req, RespChan: respChan}
