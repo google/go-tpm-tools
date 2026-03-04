@@ -84,8 +84,8 @@ func GetKEMKey(id uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64,
 	var uuidBytes [16]byte
 	copy(uuidBytes[:], id[:])
 
-	var kemPubkeyBuf [32]byte
-	var bindingPubkeyBuf [32]byte
+	var kemPubkeyBuf [kemPubKeySize]byte
+	var bindingPubkeyBuf [kemPubKeySize]byte
 	var remainingLifespanSecs C.uint64_t
 	var algoBuf [C.MAX_ALGORITHM_LEN]byte
 	algoLenC := C.size_t(len(algoBuf))
