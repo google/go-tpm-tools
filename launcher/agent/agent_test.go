@@ -18,12 +18,9 @@ import (
 	"testing"
 	"time"
 
-<<<<<<< HEAD
 	"github.com/GoogleCloudPlatform/confidential-space/server/extract"
-=======
 	"github.com/GoogleCloudPlatform/confidential-space/server/labels"
 	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
->>>>>>> 262ec22 (Migrate getEvidence API to attestation proto library (#690))
 	"github.com/cenkalti/backoff/v4"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-cmp/cmp"
@@ -830,31 +827,23 @@ func TestAttestationEvidence_TDX_Success(t *testing.T) {
 		t.Fatalf("AttestationEvidence failed: %v", err)
 	}
 
-<<<<<<< HEAD
 	// Verify the nonce passed to Attest was derived from challenge+extraData.
 	expectedNonce := fakeRoot.ComputeNonce(challenge, extraData)
 	if !bytes.Equal(fakeRoot.receivedNonce, expectedNonce) {
 		t.Errorf("got nonce %x, want %x", fakeRoot.receivedNonce, expectedNonce)
 	}
 
-	if att.Quote.TDXCCELQuote == nil {
-		t.Fatal("expected TDXCCELQuote to be populated for TDX")
-	}
-	if !bytes.Equal(att.Quote.TDXCCELQuote.TDQuote, testTDXQuote) {
-		t.Errorf("TDQuote mismatch: got %x, want %x", att.Quote.TDXCCELQuote.TDQuote, testTDXQuote)
-=======
 	if att.GetQuote().GetTdxCcelQuote() == nil {
 		t.Fatal("expected TDCCELAttestation to be populated for TDX")
 	}
 
-	if string(att.GetQuote().GetTdxCcelQuote().GetTdQuote()) != "fake-tdx-quote" {
-		t.Errorf("got quote %s, want fake-tdx-quote", string(att.GetQuote().GetTdxCcelQuote().GetTdQuote()))
->>>>>>> 262ec22 (Migrate getEvidence API to attestation proto library (#690))
+	if !bytes.Equal(att.GetQuote().GetTdxCcelQuote().GetTdQuote(), testTDXQuote) {
+		t.Errorf("TDQuote mismatch: got %x, want %x", att.GetQuote().GetTdxCcelQuote().GetTdQuote(), testTDXQuote)
 	}
-	if att.Quote.TPMQuote != nil {
+	if att.GetQuote().GetTpmQuote() != nil {
 		t.Error("expected TPMQuote to be nil for TDX attestation")
 	}
-	if len(att.Quote.TDXCCELQuote.CELLaunchEventLog) == 0 {
+	if len(att.GetQuote().GetTdxCcelQuote().GetCelLaunchEventLog()) == 0 {
 		t.Error("expected CELLaunchEventLog to be non-empty after MeasureEvent calls")
 	}
 	if !bytes.Equal(att.Challenge, challenge) {
@@ -914,7 +903,7 @@ func TestAttestationEvidence_TPM_Success(t *testing.T) {
 	extraDataDigest := sha256.Sum256(extraData)
 	challengeData := append(challenge, extraDataDigest[:]...)
 	challengeDigest := sha256.Sum256(challengeData)
-	tpmNonce := sha256.Sum256(append([]byte(teemodels.WorkloadAttestationLabel), challengeDigest[:]...))
+	tpmNonce := sha256.Sum256(append([]byte(labels.WorkloadAttestation), challengeDigest[:]...))
 
 	pbAttestation, err := ak.Attest(client.AttestOpts{Nonce: tpmNonce[:]})
 	if err != nil {
@@ -930,7 +919,7 @@ func TestAttestationEvidence_TPM_Success(t *testing.T) {
 	}
 
 	// Test that the COS state can be extracted from the CEL and contains the expected values.
-	decodedCEL, err := gecel.DecodeToCEL(bytes.NewBuffer(att.Quote.TPMQuote.CELLaunchEventLog))
+	decodedCEL, err := gecel.DecodeToCEL(bytes.NewBuffer(att.GetQuote().GetTpmQuote().GetCelLaunchEventLog()))
 	if err != nil {
 		t.Fatalf("gecel.DecodeToCEL failed: %v", err)
 	}

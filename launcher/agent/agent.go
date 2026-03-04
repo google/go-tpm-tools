@@ -328,14 +328,9 @@ func (a *agent) AttestationEvidence(_ context.Context, challenge []byte, extraDa
 
 	switch v := attResult.(type) {
 	case *pb.Attestation:
-<<<<<<< HEAD
 		v.CanonicalEventLog = cosCel.Bytes()
-		attestation.Quote = &teemodels.VMAttestationQuote{
-			TPMQuote: convertPBToTPMQuote(v),
-=======
 		attestation.Quote.Quote = &attestationpb.VmAttestationQuote_TpmQuote{
 			TpmQuote: convertToTPMQuote(v),
->>>>>>> 262ec22 (Migrate getEvidence API to attestation proto library (#690))
 		}
 	case *verifier.TDCCELAttestation:
 		attestation.Quote.Quote = &attestationpb.VmAttestationQuote_TdxCcelQuote{
