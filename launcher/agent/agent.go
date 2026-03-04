@@ -460,14 +460,14 @@ func (t *tdxAttestRoot) Attest(nonce []byte) (any, error) {
 		return nil, err
 	}
 
-	var nvAtt *models.NvidiaAttestation
+	var nvAtt *attestationpb.NvidiaAttestationReport
 	for _, deviceRoT := range t.deviceROTs {
 		att, err := deviceRoT.Attest(nonce)
 		if err != nil {
 			return nil, err
 		}
 		switch v := att.(type) {
-		case *models.NvidiaAttestation:
+		case *attestationpb.NvidiaAttestationReport:
 			nvAtt = v
 		default:
 			return nil, fmt.Errorf("unknown device attestation type: %T", v)

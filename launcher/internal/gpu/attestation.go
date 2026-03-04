@@ -9,7 +9,8 @@ import (
 	"cos.googlesource.com/cos/tools.git/src/cmd/cos_gpu_installer/deviceinfo"
 	"github.com/NVIDIA/go-nvml/pkg/nvml"
 	"github.com/confidentsecurity/go-nvtrust/pkg/gonvtrust/gpu"
-	"github.com/google/go-tpm-tools/verifier/models"
+
+	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
 )
 
 type attestationType int
@@ -40,7 +41,7 @@ func (a *NvidiaAttester) Attest(nonce []byte) (any, error) {
 
 // collectAttestationEvidence assumes CC GPU devices are in place w/ driver support
 // and will try to collect raw attestation evidence and convert it to known data models.
-func (a *NvidiaAttester) collectAttestationEvidence(handler gpu.NvmlHandler, nonce []byte) (*models.NvidiaAttestation, error) {
+func (a *NvidiaAttester) collectAttestationEvidence(handler gpu.NvmlHandler, nonce []byte) (*attestationpb.NvidiaAttestationReport, error) {
 	gpuAdmin, err := gpu.NewNvmlGPUAdmin(handler)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create GPU admin: %v", err)
@@ -53,7 +54,7 @@ func (a *NvidiaAttester) collectAttestationEvidence(handler gpu.NvmlHandler, non
 		return nil, fmt.Errorf("failed to collect GPU evidence: %v", err)
 	}
 
-	var gpuInfos []models.GPUInfo
+	var gpuInfos []*attestationpb.GpuInfo
 	for i, deviceInfo := range deviceInfos {
 		device, ret := handler.DeviceGetHandleByIndex(i)
 		if ret != nvml.SUCCESS {
@@ -84,11 +85,11 @@ func (a *NvidiaAttester) collectAttestationEvidence(handler gpu.NvmlHandler, non
 			return nil, fmt.Errorf("failed to decode GPU certificate chain: %v", err)
 		}
 
-		gpuInfo := models.GPUInfo{
-			UUID:                        uuid,
+		gpuInfo := &attestationpb.GpuInfo{
+			Uuid:                        uuid,
 			DriverVersion:               driverVersion,
-			VBIOSVersion:                vbiosVersion,
-			GPUArchitectureType:         deviceInfo.Arch(),
+			VbiosVersion:                vbiosVersion,
+			GpuArchitectureType:         convertGPUArchToPB(deviceInfo.Arch()),
 			AttestationReport:           deviceInfo.AttestationReport(),
 			AttestationCertificateChain: attestationCertChainData,
 		}
@@ -97,15 +98,19 @@ func (a *NvidiaAttester) collectAttestationEvidence(handler gpu.NvmlHandler, non
 
 	switch determineAttestationType(gpuInfos) {
 	case SPT:
-		return &models.NvidiaAttestation{
-			CCFeature: &models.NvidiaSinglePassthroughAttestation{
-				GPUInfo: gpuInfos[0],
+		return &attestationpb.NvidiaAttestationReport{
+			CcFeature: &attestationpb.NvidiaAttestationReport_Spt{
+				Spt: &attestationpb.NvidiaAttestationReport_SinglePassthroughAttestation{
+					GpuQuote: gpuInfos[0],
+				},
 			},
 		}, nil
 	case MPT:
-		return &models.NvidiaAttestation{
-			CCFeature: &models.NvidiaMultiGpuSecurePassthroughAttestation{
-				GPUInfos: gpuInfos,
+		return &attestationpb.NvidiaAttestationReport{
+			CcFeature: &attestationpb.NvidiaAttestationReport_Mpt{
+				Mpt: &attestationpb.NvidiaAttestationReport_MultiGpuSecurePassthroughAttestation{
+					GpuQuotes: gpuInfos,
+				},
 			},
 		}, nil
 	default:
@@ -116,7 +121,7 @@ func (a *NvidiaAttester) collectAttestationEvidence(handler gpu.NvmlHandler, non
 // determineAttesationType auto-detects the GPU attestation type.
 // The current implementations "guess" the attestation type.
 // Further improvement should be made to parse GPU attesation report to get the actual attestation type.
-func determineAttestationType(gpuInfos []models.GPUInfo) attestationType {
+func determineAttestationType(gpuInfos []*attestationpb.GpuInfo) attestationType {
 	gpuType, _ := getGpuTypeInfo()
 	if gpuType != deviceinfo.H100 && gpuType != deviceinfo.B200 {
 		return UNSUPPORTED
@@ -125,4 +130,15 @@ func determineAttestationType(gpuInfos []models.GPUInfo) attestationType {
 		return MPT
 	}
 	return SPT
+}
+
+func convertGPUArchToPB(arch string) attestationpb.GpuArchitectureType {
+	switch arch {
+	case "HOPPER":
+		return attestationpb.GpuArchitectureType_GPU_ARCHITECTURE_TYPE_HOPPER
+	case "BLACKWELL":
+		return attestationpb.GpuArchitectureType_GPU_ARCHITECTURE_TYPE_BLACKWELL
+	default:
+		return attestationpb.GpuArchitectureType_GPU_ARCHITECTURE_TYPE_UNSPECIFIED
+	}
 }
