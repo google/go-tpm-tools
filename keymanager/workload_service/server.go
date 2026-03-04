@@ -329,12 +329,11 @@ func (s *Server) generateKEMKey(w http.ResponseWriter, req GenerateKeyRequest) {
 	}
 
 	// Generate KEM keypair via KPS KOL, passing the binding public key.
-	kemUUID, kemPubKey, err := s.keyProtectionService.GenerateKEMKeypair(algo, bindingPubKey, req.Lifespan.Seconds)
+	kemUUID, _, err := s.keyProtectionService.GenerateKEMKeypair(algo, bindingPubKey, req.Lifespan.Seconds)
 	if err != nil {
 		writeError(w, fmt.Sprintf("failed to generate KEM keypair: %v", err), http.StatusInternalServerError)
 		return
 	}
-	log.Printf("Generated KEM Public Key (base64): %s", base64.StdEncoding.EncodeToString(kemPubKey))
 
 	// Store the KEM UUID → Binding UUID mapping.
 	s.mu.Lock()
