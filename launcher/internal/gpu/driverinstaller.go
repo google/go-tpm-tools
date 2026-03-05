@@ -176,9 +176,6 @@ func (di *DriverInstaller) InstallGPUDrivers(ctx context.Context) error {
 		return fmt.Errorf("failed to verify GPU driver installation: %v", err)
 	}
 
-	ccModeCmd := NvidiaSmiOutputFunc("conf-compute", "-f")
-	devToolsCmd := NvidiaSmiOutputFunc("conf-compute", "-d")
-
 	if gpuType == deviceinfo.B200 {
 		topologyVerificationCmd := NvidiaSmiOutputFunc("topo", "-m")
 		if err = verifyDriverInstallation(topologyVerificationCmd); err != nil {
@@ -186,20 +183,52 @@ func (di *DriverInstaller) InstallGPUDrivers(ctx context.Context) error {
 		}
 	}
 
+	di.logger.Info("GPU driver installation completed successfully")
+	return nil
+}
+
+// EnableGPUReadyState checks the Confidential Computing mode and transitions
+// the GPU to a READY state if CC is enabled.
+func EnableGPUReadyState() error {
+	ccModeCmd := NvidiaSmiOutputFunc("conf-compute", "-f")
+	devToolsCmd := NvidiaSmiOutputFunc("conf-compute", "-d")
+
 	ccEnabled, err := QueryCCMode(ccModeCmd, devToolsCmd)
 	if err != nil {
 		return fmt.Errorf("failed to check confidential compute mode status: %v", err)
 	}
+
 	// Explicitly need to set the GPU state to READY for GPUs with confidential compute mode ON.
 	if ccEnabled == attest.GPUDeviceCCMode_ON {
 		setGPUStateCmd := NvidiaSmiOutputFunc("conf-compute", "-srs", "1")
-		if err = setGPUStateToReady(setGPUStateCmd); err != nil {
+		if err := setGPUStateToReady(setGPUStateCmd); err != nil {
 			return fmt.Errorf("failed to set the GPU state to ready: %v", err)
 		}
 	}
-
-	di.logger.Info("GPU driver installation completed successfully")
 	return nil
+}
+
+// EnableConfidentialComputeReadyState checks the current CC mode and, if enabled,
+// transitions the GPU state to READY.
+func (di *DriverInstaller) EnableConfidentialComputeReadyState() (attest.GPUDeviceCCMode, error) {
+	ccModeCmd := NvidiaSmiOutputFunc("conf-compute", "-f")
+	devToolsCmd := NvidiaSmiOutputFunc("conf-compute", "-d")
+
+	ccEnabled, err := QueryCCMode(ccModeCmd, devToolsCmd)
+	if err != nil {
+		return attest.GPUDeviceCCMode_UNSET, fmt.Errorf("failed to check confidential compute mode status: %v", err)
+	}
+
+	// Explicitly need to set the GPU state to READY for GPUs with confidential compute mode ON.
+	if ccEnabled == attest.GPUDeviceCCMode_ON {
+		di.logger.Info("Confidential Compute is ON, setting GPU state to READY")
+		setGPUStateCmd := NvidiaSmiOutputFunc("conf-compute", "-srs", "1")
+		if err = setGPUStateToReady(setGPUStateCmd); err != nil {
+			return ccEnabled, fmt.Errorf("failed to set the GPU state to ready: %v", err)
+		}
+	}
+
+	return ccEnabled, nil
 }
 
 func verifyInstallerImageDigest(image containerd.Image, referenceDigest string) error {

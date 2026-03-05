@@ -3,11 +3,11 @@ package launcher
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"math/rand"
 	"os"
 	"os/exec"
 	"path"
@@ -456,9 +456,34 @@ func (r *ContainerRunner) measureContainerClaims(ctx context.Context) error {
 // measureGPUAttestationEvidence will measure GPU attestation claims into the COS
 // eventlog in the AttestationAgent.
 func (r *ContainerRunner) measureGPUAttestationEvidence(ctx context.Context) error {
-	if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.GPUDeviceAttestationBindingType, EventContent: []byte{}}); err != nil {
+	if !r.launchSpec.InstallGpuDriver {
+		return nil
+	}
+
+	// We use an empty nonce for the measurement binding as the measurement itself
+	// is the binding to the TEE's RTMRs.
+	nonce := make([]byte, 32)
+	if _, err := rand.Read(nonce); err != nil {
+		return fmt.Errorf("failed to generate random nonce: %v", err)
+	}
+	// The 34-byte raw nonce follows TPM 2.0 specs. We need to convert it to 32 bytes for Nvidia to meet SPDM specs.
+	evidence, err := r.attestAgent.AttestationEvidence(ctx, nonce, nil)
+	// gpuEvidence, ok := evidence.(*attestationpb.NvidiaAttestationReport)
+
+	if err != nil {
+		return fmt.Errorf("failed to collect GPU evidence for measurement: %v", err)
+	}
+	// TODO add nonce to evidence
+
+	if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.GPUDeviceAttestationBindingType, EventContent: []byte(evidence)}); err != nil {
 		return err
 	}
+
+	// Set GPU stat after GPU measurements are extended into RTMR3
+	if err := gpu.EnableGPUReadyState(); err != nil {
+		return err
+	}
+
 	r.logger.Info("Successfully measured GPU device attestation binding event")
 	return nil
 }
@@ -523,7 +548,7 @@ func (r *ContainerRunner) refreshToken(ctx context.Context) (time.Duration, erro
 
 	r.logger.Info("successfully refreshed attestation token", "token", mapClaims)
 
-	return getNextRefreshFromExpiration(time.Until(claims.ExpiresAt.Time), rand.Float64()), nil
+	return getNextRefreshFromExpiration(time.Until(claims.ExpiresAt.Time), randFloat64()), nil
 }
 
 // ctx must be a cancellable context.
@@ -588,6 +613,14 @@ func getNextRefreshFromExpiration(expiration time.Duration, random float64) time
 	return time.Duration(minRange + random*2*diff)
 }
 
+func randFloat64() float64 {
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return 0
+	}
+	return float64(uint64(b[0])|uint64(b[1])<<8|uint64(b[2])<<16|uint64(b[3])<<24|uint64(b[4])<<32|uint64(b[5])<<40|uint64(b[6])<<48|uint64(b[7])<<56) / (1 << 64)
+}
+
 /*
 defaultRetryPolicy retries as follows:
 
@@ -635,6 +668,8 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+
+	r.attestAgent.Attest(x)
 
 	if err := r.measureCELEvents(ctx); err != nil {
 		return fmt.Errorf("failed to measure CEL events: %v", err)
