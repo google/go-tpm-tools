@@ -652,9 +652,13 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	} else {
 		gcaClient, err := util.NewRESTClient(ctx, r.launchSpec.GcaAddress, r.launchSpec.ProjectID, r.launchSpec.Region)
 		if err != nil {
-			return fmt.Errorf("failed to create REST verifier client: %v", err)
+			if !r.launchSpec.DisableGcaRefresh {
+				return fmt.Errorf("failed to create REST verifier client: %v", err)
+			}
+			// If GCA refresh is disabled, swallow the error and continue.
+			r.logger.Info("Failed to create the GCA client, but GCA refresh is disabled so the launch will continue: %v", err)
+			gcaClient = nil
 		}
-
 		attestClients.GCA = gcaClient
 	}
 
