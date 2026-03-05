@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"math"
@@ -396,7 +397,7 @@ func (s *Server) handleDestroy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Step 1: Look up the binding UUID for this KEM key.
+	// Look up the binding UUID for this KEM key.
 	bindingUUID, ok := s.LookupBindingUUID(kemUUID)
 	if !ok {
 		writeError(w, fmt.Sprintf("KEM key handle not found: %s", kemUUID), http.StatusNotFound)
@@ -406,18 +407,13 @@ func (s *Server) handleDestroy(w http.ResponseWriter, r *http.Request) {
 	errKps := s.keyProtectionService.DestroyKEMKey(kemUUID)
 	errWs := s.workloadService.DestroyBindingKey(bindingUUID)
 
-	// Step 4: Remove the mapping.
+	// Remove the mapping.
 	s.mu.Lock()
 	delete(s.kemToBindingMap, kemUUID)
 	s.mu.Unlock()
 
-	if errKps != nil {
-		writeError(w, fmt.Sprintf("failed to destroy KEM key: %v", errKps), http.StatusInternalServerError)
-		return
-	}
-
-	if errWs != nil {
-		writeError(w, fmt.Sprintf("failed to destroy binding key: %v", errWs), http.StatusInternalServerError)
+	if err := errors.Join(errKps, errWs); err != nil {
+		writeError(w, fmt.Sprintf("failed to destroy keys: %v", err), http.StatusInternalServerError)
 		return
 	}
 
