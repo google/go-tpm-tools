@@ -553,7 +553,7 @@ func (r *ContainerRunner) refreshToken(ctx context.Context) (time.Duration, erro
 
 	r.logger.Info("successfully refreshed attestation token", "token", mapClaims)
 
-	return getNextRefreshFromExpiration(time.Until(claims.ExpiresAt.Time), randFloat64()), nil
+	return getNextRefreshFromExpiration(time.Until(claims.ExpiresAt.Time), rand.Float64()), nil
 }
 
 // ctx must be a cancellable context.
@@ -618,14 +618,6 @@ func getNextRefreshFromExpiration(expiration time.Duration, random float64) time
 	return time.Duration(minRange + random*2*diff)
 }
 
-func randFloat64() float64 {
-	var b [8]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return 0
-	}
-	return float64(uint64(b[0])|uint64(b[1])<<8|uint64(b[2])<<16|uint64(b[3])<<24|uint64(b[4])<<32|uint64(b[5])<<40|uint64(b[6])<<48|uint64(b[7])<<56) / (1 << 64)
-}
-
 /*
 defaultRetryPolicy retries as follows:
 
@@ -673,8 +665,6 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-
-	r.attestAgent.Attest(x)
 
 	if err := r.measureCELEvents(ctx); err != nil {
 		return fmt.Errorf("failed to measure CEL events: %v", err)
