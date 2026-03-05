@@ -121,61 +121,53 @@ sequenceDiagram
 
 ### 3. Key Exchange (Decap & Seal)
 
-The exchange operation is a secure "Decapsulate and Seal" handshake, initiated by the [`POST /v1/keys:decap`](#decapsulate-decap) endpoint. This guarantees that raw shared secrets are never exposed in plaintext within the Go orchestration layer's memory during transit from the KPS.
+The exchange operation is a secure "Decapsulate and Seal" handshake, initiated by the [`POST /v1/keys:decap`](#decapsulate-decap) endpoint. This guarantees the raw shared secret never exists in the Go orchestration layer's memory unencrypted.
 
 ```mermaid
 sequenceDiagram
-    participant TP as Trusted Proxy
-    participant WC as Workload Container
-    participant KOL as Key Orchestration Layer
-    participant KPS_KCC as KPS Module KCC
-    participant WSD_KCC as WSD KCC
-
-    TP->>WC: Encapsulated Shared Secret (ss)
-    WC->>KOL: POST /v1/keys:decap (KEM UUID, ss)
-
-    Note over KOL, KPS_KCC: Forward decapsulation request
-    KOL->>KPS_KCC: key_manager_decap_and_seal(KEM UUID, ss)
-
-    Note over KPS_KCC: 1. Decapsulate 'ss' using KEM Private Key<br/>2. Seal 'ss' using Binding Public Key
-    KPS_KCC-->>KOL: HPKE Sealed Shared Secret
-
-    Note over KOL, WSD_KCC: WSD Decryption (HPKE Open)
-    KOL->>KOL: Lookup Binding Key ID from kemToBindingMap
-    KOL->>WSD_KCC: key_manager_open(Binding UUID, Sealed ss)
-
-    Note over WSD_KCC: Open (decrypt) using Binding Private Key
-    WSD_KCC-->>KOL: Plaintext Shared Secret
-
-    KOL-->>WC: 200 OK { shared_secret }
+    participant W as Workload Container
+    participant KOL as Orchestration Layer (Go)
+    participant KCC as Custody Core (Rust)
+    
+    W->>KOL: POST /v1/keys:decap {key_handle, ciphertext}
+    
+    Note over KOL,KCC: Decap & Seal as a single atomic FFI call
+    KOL->>KCC: key_manager_decap_and_seal(key_handle, ciphertext)
+    
+    KCC->>KCC: Decapsulate ciphertext to raw shared_secret
+    KCC->>KCC: HPKE Seal shared_secret using Binding PubKey
+    
+    KCC-->>KOL: sealed_secret (Encrypted)
+    
+    Note over KOL,KCC: WSD Decrypts internally
+    KOL->>KOL: Look up binding_uuid for key_handle
+    KOL->>KCC: key_manager_open(binding_uuid, sealed_secret)
+    KCC-->>KOL: plaintext_shared_secret
+    
+    KOL-->>W: return {shared_secret: {algorithm: "...", secret: "..."}}
 ```
 
 ### 4. Key Destruction
 
-Workloads can proactively trigger key deletion via the [`POST /v1/keys:destroy`](#destroy-key) endpoint. This action drops the Vault and unmaps the memfd_secret pages across both modules.
+Workloads can proactively trigger key deletion via the [`POST /v1/keys:destroy`](#destroy-key) endpoint. This action drops the Vault and unmaps the memfd_secret pages immediately.
 
 ```mermaid
 sequenceDiagram
-    participant WC as Workload Container
-    participant KOL as Key Orchestration Layer
-    participant KPS_KCC as KPS Module KCC
-    participant WSD_KCC as WSD KCC
-
-    WC->>KOL: POST /v1/keys:destroy (KEM UUID)
-
-    Note over KOL, KPS_KCC: Step 1: Destroy KEM Keys
-    KOL->>KPS_KCC: key_manager_destroy_kem_key(KEM UUID)
-    KPS_KCC-->>KOL: Success
-
-    Note over KOL, WSD_KCC: Step 2: Destroy Binding keys
-    KOL->>KOL: Lookup Binding Key ID from kemToBindingMap
-    KOL->>WSD_KCC: key_manager_destroy_binding_key(Binding UUID)
-    WSD_KCC-->>KOL: Success
-
-    Note over KOL: Step 3: Update kemToBindingMap
-    KOL->>KOL: Delete KEM UUID from map
+    participant W as Workload Container
+    participant KOL as Orchestration Layer (Go)
+    participant KCC as Custody Core (Rust)
     
-    KOL-->>WC: 200 OK {}
+    W->>KOL: POST /v1/keys:destroy {key_handle}
+    
+    KOL->>KCC: key_manager_destroy_kem_key(key_handle)
+    KCC->>KCC: Zeroize & Unmap memfd Vault
+    
+    KOL->>KOL: Lookup binding_uuid
+    KOL->>KCC: key_manager_destroy_binding_key(binding_uuid)
+    KCC->>KCC: Zeroize & Unmap memfd Vault
+    
+    KOL->>KOL: ActiveKeysRegistry.Unregister(key_handle)
+    KOL-->>W: 204 No Content
 ```
 
 
@@ -183,7 +175,7 @@ sequenceDiagram
 
 The Key Manager exposes internal goroutine channels to supply the TEE Attestation Service with Key Claims (`VmProtectionBindingClaims`, `VmProtectionKeyClaims`).
 
-The `kemToBindingMap` allows the Attestation service to query the metadata (public keys, TTLs, and cryptographic specs) necessary to bake the keys into hardware-rooted attestation quotes (e.g., using a vTPM or AMD SEV-SNP report) proving the keys originated within an authentic confidential VM.
+The `ActiveKeysRegistry` allows the Attestation service to query the metadata (public keys, TTLs, and cryptographic specs) necessary to bake the keys into hardware-rooted attestation quotes (e.g., using a vTPM or AMD SEV-SNP report) proving the keys originated within an authentic confidential VM.
 
 ## Build and Test
 
