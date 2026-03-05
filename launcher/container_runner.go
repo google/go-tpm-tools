@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/compute/metadata"
+	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/cio"
@@ -466,16 +467,20 @@ func (r *ContainerRunner) measureGPUAttestationEvidence(ctx context.Context) err
 	if _, err := rand.Read(nonce); err != nil {
 		return fmt.Errorf("failed to generate random nonce: %v", err)
 	}
-	// The 34-byte raw nonce follows TPM 2.0 specs. We need to convert it to 32 bytes for Nvidia to meet SPDM specs.
-	evidence, err := r.attestAgent.AttestationEvidence(ctx, nonce, nil)
-	// gpuEvidence, ok := evidence.(*attestationpb.NvidiaAttestationReport)
 
+	attester := &gpu.NvidiaAttester{}
+	evidence, err := attester.Attest(nonce)
 	if err != nil {
 		return fmt.Errorf("failed to collect GPU evidence for measurement: %v", err)
 	}
-	// TODO add nonce to evidence
 
-	if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.GPUDeviceAttestationBindingType, EventContent: []byte(evidence)}); err != nil {
+	gpuEvidence, ok := evidence.(*attestationpb.NvidiaAttestationReport)
+	if !ok {
+		return fmt.Errorf("failed to cast GPU evidence to NvidiaAttestationReport")
+	}
+	// TODO: add nonce to evidence
+
+	if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.GPUDeviceAttestationBindingType, EventContent: []byte(gpuEvidence.String())}); err != nil {
 		return err
 	}
 
