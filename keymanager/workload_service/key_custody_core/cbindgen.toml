@@ -16,6 +16,6 @@ clean = true
 
 [export]
 item_types = ["functions", "structs", "constants", "enums"]
-include = ["key_manager_generate_binding_keypair", "key_manager_destroy_binding_key", "key_manager_open", "key_manager_enumerate_binding_keys", "WsKeyInfo", "MAX_ALGORITHM_LEN", "MAX_PUBLIC_KEY_LEN"]
+include = ["key_manager_generate_binding_keypair", "key_manager_get_binding_key", "key_manager_destroy_binding_key", "key_manager_open", "key_manager_enumerate_binding_keys", "WsKeyInfo", "MAX_ALGORITHM_LEN", "MAX_PUBLIC_KEY_LEN"]
 
 

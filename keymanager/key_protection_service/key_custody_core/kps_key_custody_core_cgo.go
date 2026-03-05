@@ -79,6 +79,43 @@ func DestroyKEMKey(kemUUID uuid.UUID) error {
 	return nil
 }
 
+// GetKEMKey retrieves KEM and binding public keys, HpkeAlgorithm and remaining lifespan via Rust FFI.
+func GetKEMKey(id uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error) {
+	var uuidBytes [uuidSize]byte
+	copy(uuidBytes[:], id[:])
+
+	var kemPubkeyBuf [kemPubKeySize]byte
+	var bindingPubkeyBuf [kemPubKeySize]byte
+	var remainingLifespanSecs C.uint64_t
+	var algoBuf [C.MAX_ALGORITHM_LEN]byte
+	algoLenC := C.size_t(len(algoBuf))
+
+	rc := C.key_manager_get_kem_key(
+		(*C.uint8_t)(unsafe.Pointer(&uuidBytes[0])),
+		(*C.uint8_t)(unsafe.Pointer(&kemPubkeyBuf[0])),
+		C.size_t(len(kemPubkeyBuf)),
+		(*C.uint8_t)(unsafe.Pointer(&bindingPubkeyBuf[0])),
+		C.size_t(len(bindingPubkeyBuf)),
+		(*C.uint8_t)(unsafe.Pointer(&algoBuf[0])),
+		&algoLenC,
+		&remainingLifespanSecs,
+	)
+	if rc != 0 {
+		return nil, nil, nil, 0, fmt.Errorf("key_manager_get_kem_key failed with code %d", rc)
+	}
+
+	kemPubkey := make([]byte, len(kemPubkeyBuf))
+	copy(kemPubkey, kemPubkeyBuf[:])
+	bindingPubkey := make([]byte, len(bindingPubkeyBuf))
+	copy(bindingPubkey, bindingPubkeyBuf[:])
+	algo := &keymanager.HpkeAlgorithm{}
+	if err := proto.Unmarshal(algoBuf[:algoLenC], algo); err != nil {
+		return nil, nil, nil, 0, fmt.Errorf("failed to unmarshal HpkeAlgorithm: %v", err)
+	}
+
+	return kemPubkey, bindingPubkey, algo, uint64(remainingLifespanSecs), nil
+}
+
 // DecapAndSeal decapsulates a shared secret using the stored KEM key and
 // reseals it with the associated binding public key via Rust FFI.
 // Returns the new encapsulated key and sealed ciphertext.

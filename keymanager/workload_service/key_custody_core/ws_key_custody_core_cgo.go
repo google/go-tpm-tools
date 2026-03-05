@@ -116,3 +116,35 @@ func Open(bindingUUID uuid.UUID, enc, ciphertext, aad []byte) ([]byte, error) {
 	copy(plaintext, outPT[:outPTLen])
 	return plaintext, nil
 }
+
+// GetBindingKey retrieves the binding public key and HpkeAlgorithm via Rust FFI.
+func GetBindingKey(id uuid.UUID) ([]byte, *keymanager.HpkeAlgorithm, error) {
+	var uuidBytes [uuidSize]byte
+	copy(uuidBytes[:], id[:])
+
+	var pubkeyBuf [bindingPubKeySize]byte
+	pubkeyLen := C.size_t(len(pubkeyBuf))
+	var algoBuf [C.MAX_ALGORITHM_LEN]byte
+	algoLenC := C.size_t(len(algoBuf))
+
+	rc := C.key_manager_get_binding_key(
+		(*C.uint8_t)(unsafe.Pointer(&uuidBytes[0])),
+		(*C.uint8_t)(unsafe.Pointer(&pubkeyBuf[0])),
+		pubkeyLen,
+		(*C.uint8_t)(unsafe.Pointer(&algoBuf[0])),
+		&algoLenC,
+	)
+	if rc != 0 {
+		return nil, nil, fmt.Errorf("key_manager_get_binding_key failed with code %d", rc)
+	}
+
+	pubkey := make([]byte, pubkeyLen)
+	copy(pubkey, pubkeyBuf[:pubkeyLen])
+
+	algo := &keymanager.HpkeAlgorithm{}
+	if err := proto.Unmarshal(algoBuf[:algoLenC], algo); err != nil {
+		return nil, nil, fmt.Errorf("failed to unmarshal HpkeAlgorithm: %v", err)
+	}
+
+	return pubkey, algo, nil
+}

@@ -3,9 +3,9 @@ use km_common::crypto::PublicKey;
 use km_common::key_types::{KeyRecord, KeyRegistry, KeySpec};
 use prost::Message;
 use std::slice;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::sync::LazyLock;
+use std::sync::atomic::AtomicBool;
 use std::time::{Duration, Instant};
 use uuid::Uuid;
 
@@ -400,11 +400,125 @@ pub unsafe extern "C" fn key_manager_decap_and_seal(
     .unwrap_or(-1)
 }
 
+/// Internal function to retrieve a KEM key's public keys and expiration.
+fn get_kem_key_internal(uuid: Uuid) -> Result<(HpkeAlgorithm, PublicKey, PublicKey, u64), i32> {
+    let record = KEY_REGISTRY.get_key(&uuid).ok_or(-1)?;
+    match &record.meta.spec {
+        KeySpec::KemWithBindingPub {
+            algo,
+            kem_public_key,
+            binding_public_key,
+            ..
+        } => {
+            let remaining = record
+                .meta
+                .delete_after
+                .saturating_duration_since(std::time::Instant::now());
+            Ok((
+                algo.clone(),
+                kem_public_key.clone(),
+                binding_public_key.clone(),
+                remaining.as_secs(),
+            ))
+        }
+        _ => Err(-1),
+    }
+}
+
+/// Retrieves the KEM and binding public keys associated with the given UUID.
+///
+/// ## Arguments
+/// * `uuid_bytes` - A pointer to a 16-byte buffer containing the key UUID.
+/// * `out_kem_pubkey` - A pointer to a buffer where the KEM public key will be written.
+/// * `out_kem_pubkey_len` - The size of `out_kem_pubkey` buffer.
+/// * `out_binding_pubkey` - A pointer to a buffer where the binding public key will be written.
+/// * `out_binding_pubkey_len` - The size of `out_binding_pubkey` buffer.
+/// * `out_algo` - A pointer to a buffer where the serialized HPKE algorithm proto bytes will be written.
+/// * `out_algo_len` - A pointer to a `usize` that contains the size of `out_algo` buffer. On success, updated with actual size.
+/// * `out_remaining_lifespan_secs` - A pointer to a u64 where the remaining lifespan in seconds will be written.
+///
+/// ## Safety
+/// This function is unsafe because it dereferences raw pointers.
+///
+/// ## Returns
+/// * `0` on success.
+/// * `-1` if arguments are invalid or key is not found.
+/// * `-2` if any output buffer is too small.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn key_manager_get_kem_key(
+    uuid_bytes: *const u8,
+    out_kem_pubkey: *mut u8,
+    out_kem_pubkey_len: usize,
+    out_binding_pubkey: *mut u8,
+    out_binding_pubkey_len: usize,
+    out_algo: *mut u8,
+    out_algo_len: *mut usize,
+    out_remaining_lifespan_secs: *mut u64,
+) -> i32 {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        if uuid_bytes.is_null()
+            || out_kem_pubkey.is_null()
+            || out_kem_pubkey_len == 0
+            || out_binding_pubkey.is_null()
+            || out_binding_pubkey_len == 0
+            || out_algo.is_null()
+            || out_algo_len.is_null()
+            || out_remaining_lifespan_secs.is_null()
+        {
+            return -1;
+        }
+
+        // Convert to Safe Types first
+        let uuid_slice = unsafe { std::slice::from_raw_parts(uuid_bytes, 16) };
+        let out_kem_pubkey_slice =
+            unsafe { std::slice::from_raw_parts_mut(out_kem_pubkey, out_kem_pubkey_len) };
+        let out_binding_pubkey_slice =
+            unsafe { std::slice::from_raw_parts_mut(out_binding_pubkey, out_binding_pubkey_len) };
+        let out_remaining_lifespan_secs_ref = unsafe { &mut *out_remaining_lifespan_secs };
+        let out_algo_len_ref = unsafe { &mut *out_algo_len };
+        let out_algo_slice = unsafe { std::slice::from_raw_parts_mut(out_algo, *out_algo_len_ref) };
+
+        let uuid = match Uuid::from_slice(uuid_slice) {
+            Ok(u) => u,
+            Err(_) => return -1,
+        };
+
+        // Call Safe Internal Function
+        match get_kem_key_internal(uuid) {
+            Ok((algo, kem_pubkey, binding_pubkey, remaining_secs)) => {
+                let algo_bytes = algo.encode_to_vec();
+                if out_kem_pubkey_slice.len() != kem_pubkey.as_bytes().len()
+                    || out_binding_pubkey_slice.len() != binding_pubkey.as_bytes().len()
+                    || *out_algo_len_ref < algo_bytes.len()
+                {
+                    return -2;
+                }
+
+                out_kem_pubkey_slice.copy_from_slice(kem_pubkey.as_bytes());
+                out_binding_pubkey_slice.copy_from_slice(binding_pubkey.as_bytes());
+                out_algo_slice[..algo_bytes.len()].copy_from_slice(&algo_bytes);
+                *out_algo_len_ref = algo_bytes.len();
+                *out_remaining_lifespan_secs_ref = remaining_secs;
+                0 // Success
+            }
+            Err(e) => e,
+        }
+    }))
+    .unwrap_or(-1)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use km_common::algorithms::{AeadAlgorithm, KdfAlgorithm, KemAlgorithm};
     use prost::Message;
+
+    struct KeyCleanup(Uuid);
+    impl Drop for KeyCleanup {
+        fn drop(&mut self) {
+            let _ = KEY_REGISTRY.remove_key(&self.0);
+        }
+    }
 
     #[test]
     fn test_create_kem_key_success_and_zeroization() {
@@ -423,6 +537,7 @@ mod tests {
         assert!(result.is_ok());
 
         let (id, _) = result.unwrap();
+        let _cleanup = KeyCleanup(id);
 
         // Verify UUID is present
         assert!(!id.is_nil());
@@ -455,6 +570,8 @@ mod tests {
         };
 
         assert_eq!(result, 0);
+        let _cleanup = KeyCleanup(Uuid::from_bytes(uuid_bytes));
+
         assert_ne!(uuid_bytes, [0u8; 16]);
         assert_eq!(pubkey_len, 32); // X25519 public key is 32 bytes
         assert_ne!(&pubkey_bytes[..32], &[0u8; 32]);
@@ -595,6 +712,7 @@ mod tests {
             );
             assert_eq!(res, 0);
         }
+        let _cleanup = KeyCleanup(Uuid::from_bytes(uuid_bytes));
 
         let result = unsafe { key_manager_destroy_kem_key(uuid_bytes.as_ptr()) };
         assert_eq!(result, 0);
@@ -651,6 +769,7 @@ mod tests {
             )
         };
         assert_eq!(rc, 0);
+        let _cleanup = KeyCleanup(Uuid::from_bytes(uuid_bytes));
 
         // Enumerate.
         let mut entries: Vec<KpsKeyInfo> = Vec::with_capacity(256);
@@ -720,6 +839,7 @@ mod tests {
                 32,
             );
         }
+        let _cleanup = KeyCleanup(Uuid::from_bytes(uuid_bytes));
 
         let mut entries: Vec<KpsKeyInfo> = Vec::with_capacity(256);
         entries.resize_with(100, || KpsKeyInfo {
@@ -790,6 +910,7 @@ mod tests {
                 kem_pubkey_len,
             )
         };
+        let _cleanup = KeyCleanup(Uuid::from_bytes(uuid_bytes));
 
         // 3. Generate a "client" ciphertext/encapsulation targeting KEM key.
         let aad = b"test_aad";
@@ -910,6 +1031,7 @@ mod tests {
             )
         };
         assert_eq!(res, 0);
+        let _cleanup = KeyCleanup(Uuid::from_bytes(uuid_bytes));
 
         // 3. Call with invalid encapsulated key (wrong length for X25519)
         let mut out_enc_key = [0u8; 32];
@@ -964,6 +1086,7 @@ mod tests {
             )
         };
         assert_eq!(res, 0, "Setup failed: key generation returned error");
+        let _cleanup = KeyCleanup(Uuid::from_bytes(uuid_bytes));
 
         // 3. Generate valid client encapsulation
         let pub_key_obj = PublicKey::try_from(kem_pubkey_bytes.to_vec()).unwrap();
@@ -990,6 +1113,154 @@ mod tests {
             )
         };
 
+        assert_eq!(result, -2);
+    }
+
+    #[test]
+    fn test_get_kem_key_success() {
+        let binding_pubkey = [42u8; 32];
+        let mut uuid_bytes = [0u8; 16];
+        let mut generated_kem_pubkey_bytes = [0u8; 32];
+        let pubkey_len = generated_kem_pubkey_bytes.len();
+        let algo = HpkeAlgorithm {
+            kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
+            kdf: KdfAlgorithm::HkdfSha256 as i32,
+            aead: AeadAlgorithm::Aes256Gcm as i32,
+        };
+        let algo_bytes = algo.encode_to_vec();
+
+        // Generate a key to retrieve.
+        let res = unsafe {
+            key_manager_generate_kem_keypair(
+                algo_bytes.as_ptr(),
+                algo_bytes.len(),
+                binding_pubkey.as_ptr(),
+                binding_pubkey.len(),
+                3600,
+                uuid_bytes.as_mut_ptr(),
+                generated_kem_pubkey_bytes.as_mut_ptr(),
+                pubkey_len,
+            )
+        };
+        assert_eq!(res, 0);
+        let _cleanup = KeyCleanup(Uuid::from_bytes(uuid_bytes));
+
+        // Now, retrieve it.
+        let mut retrieved_kem_pubkey_bytes = [0u8; 32];
+        let mut retrieved_binding_pubkey_bytes = [0u8; 32];
+        let mut retrieved_algo_bytes = [0u8; 128];
+        let mut retrieved_algo_len: usize = retrieved_algo_bytes.len();
+        let mut remaining_lifespan_secs: u64 = 0;
+
+        let result = unsafe {
+            key_manager_get_kem_key(
+                uuid_bytes.as_ptr(),
+                retrieved_kem_pubkey_bytes.as_mut_ptr(),
+                retrieved_kem_pubkey_bytes.len(),
+                retrieved_binding_pubkey_bytes.as_mut_ptr(),
+                retrieved_binding_pubkey_bytes.len(),
+                retrieved_algo_bytes.as_mut_ptr(),
+                &mut retrieved_algo_len,
+                &mut remaining_lifespan_secs,
+            )
+        };
+
+        assert_eq!(result, 0);
+        assert_eq!(generated_kem_pubkey_bytes, retrieved_kem_pubkey_bytes);
+        assert_eq!(binding_pubkey, retrieved_binding_pubkey_bytes);
+        assert_eq!(algo_bytes, &retrieved_algo_bytes[..retrieved_algo_len]);
+        assert!(remaining_lifespan_secs > 0);
+        assert!(remaining_lifespan_secs <= 3600);
+    }
+
+    #[test]
+    fn test_get_kem_key_not_found() {
+        let uuid_bytes = [42u8; 16]; // Some non-existent UUID.
+        let mut kem_pubkey_bytes = [0u8; 32];
+        let mut binding_pubkey_bytes = [0u8; 32];
+        let mut retrieved_algo_bytes = [0u8; 128];
+        let mut retrieved_algo_len: usize = retrieved_algo_bytes.len();
+        let mut remaining_lifespan_secs: u64 = 0;
+
+        let result = unsafe {
+            key_manager_get_kem_key(
+                uuid_bytes.as_ptr(),
+                kem_pubkey_bytes.as_mut_ptr(),
+                kem_pubkey_bytes.len(),
+                binding_pubkey_bytes.as_mut_ptr(),
+                binding_pubkey_bytes.len(),
+                retrieved_algo_bytes.as_mut_ptr(),
+                &mut retrieved_algo_len,
+                &mut remaining_lifespan_secs,
+            )
+        };
+        assert_eq!(result, -1);
+    }
+
+    #[test]
+    fn test_get_kem_key_invalid_buffer_len() {
+        let binding_pubkey = [42u8; 32];
+        let mut uuid_bytes = [0u8; 16];
+        let mut generated_kem_pubkey_bytes = [0u8; 32];
+        let pubkey_len = generated_kem_pubkey_bytes.len();
+        let algo = HpkeAlgorithm {
+            kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
+            kdf: KdfAlgorithm::HkdfSha256 as i32,
+            aead: AeadAlgorithm::Aes256Gcm as i32,
+        };
+        let algo_bytes = algo.encode_to_vec();
+
+        // Generate a key to retrieve.
+        let res = unsafe {
+            key_manager_generate_kem_keypair(
+                algo_bytes.as_ptr(),
+                algo_bytes.len(),
+                binding_pubkey.as_ptr(),
+                binding_pubkey.len(),
+                3600,
+                uuid_bytes.as_mut_ptr(),
+                generated_kem_pubkey_bytes.as_mut_ptr(),
+                pubkey_len,
+            )
+        };
+        assert_eq!(res, 0);
+        let _cleanup = KeyCleanup(Uuid::from_bytes(uuid_bytes));
+
+        // Now, retrieve it with invalid buffer lengths.
+        let mut retrieved_kem_pubkey_bytes = [0u8; 32];
+        let mut retrieved_binding_pubkey_bytes = [0u8; 32];
+        let mut retrieved_algo_bytes = [0u8; 128];
+        let mut retrieved_algo_len: usize = retrieved_algo_bytes.len();
+        let mut remaining_lifespan_secs: u64 = 0;
+
+        // KEM pubkey buffer too small.
+        let result = unsafe {
+            key_manager_get_kem_key(
+                uuid_bytes.as_ptr(),
+                retrieved_kem_pubkey_bytes.as_mut_ptr(),
+                31, // Invalid length
+                retrieved_binding_pubkey_bytes.as_mut_ptr(),
+                32,
+                retrieved_algo_bytes.as_mut_ptr(),
+                &mut retrieved_algo_len,
+                &mut remaining_lifespan_secs,
+            )
+        };
+        assert_eq!(result, -2);
+
+        // Binding pubkey buffer too small.
+        let result = unsafe {
+            key_manager_get_kem_key(
+                uuid_bytes.as_ptr(),
+                retrieved_kem_pubkey_bytes.as_mut_ptr(),
+                32,
+                retrieved_binding_pubkey_bytes.as_mut_ptr(),
+                33, // Invalid length
+                retrieved_algo_bytes.as_mut_ptr(),
+                &mut retrieved_algo_len,
+                &mut remaining_lifespan_secs,
+            )
+        };
         assert_eq!(result, -2);
     }
 }
