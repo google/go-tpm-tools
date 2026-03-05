@@ -513,6 +513,13 @@ mod tests {
     use km_common::algorithms::{AeadAlgorithm, KdfAlgorithm, KemAlgorithm};
     use prost::Message;
 
+    struct KeyCleanup(Uuid);
+    impl Drop for KeyCleanup {
+        fn drop(&mut self) {
+            let _ = KEY_REGISTRY.remove_key(&self.0);
+        }
+    }
+
     #[test]
     fn test_create_kem_key_success_and_zeroization() {
         let binding_pubkey = [1u8; 32];
@@ -530,6 +537,7 @@ mod tests {
         assert!(result.is_ok());
 
         let (id, _) = result.unwrap();
+        let _cleanup = KeyCleanup(id);
 
         // Verify UUID is present
         assert!(!id.is_nil());
@@ -562,6 +570,8 @@ mod tests {
         };
 
         assert_eq!(result, 0);
+        let _cleanup = KeyCleanup(Uuid::from_bytes(uuid_bytes));
+
         assert_ne!(uuid_bytes, [0u8; 16]);
         assert_eq!(pubkey_len, 32); // X25519 public key is 32 bytes
         assert_ne!(&pubkey_bytes[..32], &[0u8; 32]);
@@ -702,6 +712,7 @@ mod tests {
             );
             assert_eq!(res, 0);
         }
+        let _cleanup = KeyCleanup(Uuid::from_bytes(uuid_bytes));
 
         let result = unsafe { key_manager_destroy_kem_key(uuid_bytes.as_ptr()) };
         assert_eq!(result, 0);
@@ -758,6 +769,7 @@ mod tests {
             )
         };
         assert_eq!(rc, 0);
+        let _cleanup = KeyCleanup(Uuid::from_bytes(uuid_bytes));
 
         // Enumerate.
         let mut entries: Vec<KpsKeyInfo> = Vec::with_capacity(256);
@@ -827,6 +839,7 @@ mod tests {
                 32,
             );
         }
+        let _cleanup = KeyCleanup(Uuid::from_bytes(uuid_bytes));
 
         let mut entries: Vec<KpsKeyInfo> = Vec::with_capacity(256);
         entries.resize_with(100, || KpsKeyInfo {
@@ -897,6 +910,7 @@ mod tests {
                 kem_pubkey_len,
             )
         };
+        let _cleanup = KeyCleanup(Uuid::from_bytes(uuid_bytes));
 
         // 3. Generate a "client" ciphertext/encapsulation targeting KEM key.
         let aad = b"test_aad";
@@ -1017,6 +1031,7 @@ mod tests {
             )
         };
         assert_eq!(res, 0);
+        let _cleanup = KeyCleanup(Uuid::from_bytes(uuid_bytes));
 
         // 3. Call with invalid encapsulated key (wrong length for X25519)
         let mut out_enc_key = [0u8; 32];
@@ -1071,6 +1086,7 @@ mod tests {
             )
         };
         assert_eq!(res, 0, "Setup failed: key generation returned error");
+        let _cleanup = KeyCleanup(Uuid::from_bytes(uuid_bytes));
 
         // 3. Generate valid client encapsulation
         let pub_key_obj = PublicKey::try_from(kem_pubkey_bytes.to_vec()).unwrap();
@@ -1127,6 +1143,7 @@ mod tests {
             )
         };
         assert_eq!(res, 0);
+        let _cleanup = KeyCleanup(Uuid::from_bytes(uuid_bytes));
 
         // Now, retrieve it.
         let mut retrieved_kem_pubkey_bytes = [0u8; 32];
@@ -1207,6 +1224,7 @@ mod tests {
             )
         };
         assert_eq!(res, 0);
+        let _cleanup = KeyCleanup(Uuid::from_bytes(uuid_bytes));
 
         // Now, retrieve it with invalid buffer lengths.
         let mut retrieved_kem_pubkey_bytes = [0u8; 32];

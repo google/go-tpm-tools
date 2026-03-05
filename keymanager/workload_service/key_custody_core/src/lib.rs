@@ -415,6 +415,13 @@ mod tests {
     use km_common::algorithms::{AeadAlgorithm, KdfAlgorithm, KemAlgorithm};
     use prost::Message;
 
+    struct KeyCleanup(Uuid);
+    impl Drop for KeyCleanup {
+        fn drop(&mut self) {
+            let _ = KEY_REGISTRY.remove_key(&self.0);
+        }
+    }
+
     #[test]
     fn test_create_binding_keypair_internal_success() {
         let algo = HpkeAlgorithm {
@@ -427,6 +434,7 @@ mod tests {
         assert!(result.is_ok());
 
         let (id, _) = result.unwrap();
+        let _cleanup = KeyCleanup(id);
 
         // Verify UUID is present
         assert!(!id.is_nil());
@@ -456,6 +464,8 @@ mod tests {
         };
 
         assert_eq!(result, 0);
+        let _cleanup = KeyCleanup(Uuid::from_bytes(uuid_bytes));
+
         assert_ne!(uuid_bytes, [0u8; 16]);
         assert_eq!(pubkey_len, 32); // X25519 public key is 32 bytes
         assert_ne!(&pubkey_bytes[..32], &[0u8; 32]);
@@ -558,6 +568,7 @@ mod tests {
             )
         };
         assert_eq!(res, 0);
+        let _cleanup = KeyCleanup(Uuid::from_bytes(uuid_bytes));
 
         let result = unsafe { key_manager_destroy_binding_key(uuid_bytes.as_ptr()) };
         assert_eq!(result, 0);
@@ -603,6 +614,7 @@ mod tests {
                 pubkey_len,
             );
         }
+        let _cleanup = KeyCleanup(Uuid::from_bytes(uuid_bytes));
 
         // 2. Encrypt something for this key
         const PT: &[u8] = b"secret message";
@@ -675,6 +687,8 @@ mod tests {
             )
         };
         assert_eq!(res, 0, "Setup failed: key generation returned error");
+        let _cleanup = KeyCleanup(Uuid::from_bytes(uuid_bytes));
+
         let pt = b"secret message";
         let pub_key = PublicKey::try_from(pubkey_bytes.to_vec()).unwrap();
         let pt_box = km_common::crypto::secret_box::SecretBox::new(pt.to_vec());
@@ -724,6 +738,7 @@ mod tests {
             )
         };
         assert_eq!(result, 0);
+        let _cleanup = KeyCleanup(Uuid::from_bytes(uuid_bytes));
 
         let mut out_entries = [WsKeyInfo::default(); 32];
         let mut out_has_more = false;
@@ -773,6 +788,7 @@ mod tests {
             )
         };
         assert_eq!(res, 0);
+        let _cleanup = KeyCleanup(Uuid::from_bytes(uuid_bytes));
 
         // Now, retrieve it.
         let mut retrieved_pubkey_bytes = [0u8; 32];

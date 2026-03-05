@@ -42,6 +42,15 @@ type KeyProtectionService interface {
 	//   - []byte: The authenticated ciphertext of the resealed shared secret (sealed_ct).
 	//   - error: An error if the KEM key is not found, expired, or if decapsulation/sealing fails.
 	DecapAndSeal(kemUUID uuid.UUID, encapsulatedKey, aad []byte) ([]byte, []byte, error)
+
+	// DestroyKEMKey removes the specified KEM keypair from the active key registry.
+	// This prevents any future decapsulation operations using this key.
+	//
+	// Parameters:
+	//   - kemUUID: The unique identifier of the stored KEM keypair to destroy.
+	//
+	// Returns:
+	//   - error: An error if the key is not found or deletion fails.
 	DestroyKEMKey(kemUUID uuid.UUID) error
 
 	// GetKEMKey retrieves metadata and public keys associated with a stored KEM keypair.
@@ -112,7 +121,8 @@ func (s *Service) DecapAndSeal(kemUUID uuid.UUID, encapsulatedKey, aad []byte) (
 	return s.kps.DecapAndSeal(kemUUID, encapsulatedKey, aad)
 }
 
-// DestroyKEMKey destroys the KEM key identified by kemUUID by calling the KPS KCC FFI.
+// DestroyKEMKey removes the specified KEM keypair from the active key registry
+// by delegating to the underlying KeyProtectionService backend.
 func (s *Service) DestroyKEMKey(kemUUID uuid.UUID) error {
 	return s.kps.DestroyKEMKey(kemUUID)
 }

@@ -41,6 +41,15 @@ type WorkloadService interface {
 	//   - []byte: The public binding key bytes to be shared with the Key Protection Service.
 	//   - error: An error if generation or storage fails.
 	GenerateBindingKeypair(algo *keymanager.HpkeAlgorithm, lifespanSecs uint64) (uuid.UUID, []byte, error)
+
+	// DestroyBindingKey removes the specified binding keypair from the active key registry.
+	// It ensures that the keypair can no longer be used to decrypt (open) sealed secrets.
+	//
+	// Parameters:
+	//   - bindingUUID: The unique identifier of the stored binding keypair to destroy.
+	//
+	// Returns:
+	//   - error: An error if the key is not found or deletion fails.
 	DestroyBindingKey(bindingUUID uuid.UUID) error
 
 	// GetBindingKey retrieves metadata and public keys associated with a stored binding keypair.
@@ -88,6 +97,8 @@ func (r *workloadService) GenerateBindingKeypair(algo *keymanager.HpkeAlgorithm,
 	return wskcc.GenerateBindingKeypair(algo, lifespanSecs)
 }
 
+// DestroyBindingKey removes the specified binding keypair from the active key registry
+// by delegating to the underlying WorkloadService backend (WSD KCC FFI).
 func (r *workloadService) DestroyBindingKey(bindingUUID uuid.UUID) error {
 	return wskcc.DestroyBindingKey(bindingUUID)
 }
