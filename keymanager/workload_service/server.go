@@ -492,19 +492,14 @@ func (s *Server) handleGetCapabilities(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, resp, http.StatusOK)
 }
 
-func (s *Server) handleEnumerateKeys(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
+func (s *Server) handleEnumerateKeys(w http.ResponseWriter, _ *http.Request) {
 	keys, _, err := s.keyProtectionService.EnumerateKEMKeys(100, 0)
 	if err != nil {
 		writeError(w, fmt.Sprintf("failed to enumerate keys: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	var keyInfos []KeyInfo
+	keyInfos := make([]KeyInfo, 0, len(keys))
 	for _, key := range keys {
 		kemAlgo := KemAlgorithmUnspecified
 		if key.Algorithm != nil {
@@ -527,10 +522,6 @@ func (s *Server) handleEnumerateKeys(w http.ResponseWriter, r *http.Request) {
 			},
 			RemainingLifespan: ProtoDuration{Seconds: key.RemainingLifespanSecs},
 		})
-	}
-
-	if keyInfos == nil {
-		keyInfos = make([]KeyInfo, 0) // Ensure empty slice rather than null in JSON
 	}
 
 	resp := EnumerateKeysResponse{
