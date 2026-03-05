@@ -252,6 +252,12 @@ type Server struct {
 	// todo: add logging mechanism here
 }
 
+var (
+	// ClaimsResponseTimeout is the maximum time to wait for the caller to receive
+	// the result of a GetKeyClaims request before timing out.
+	ClaimsResponseTimeout = 5 * time.Second
+)
+
 // New creates a new WSD Server listening on the given unix socket path.
 func New(_ context.Context, socketPath string) (*Server, error) {
 	return NewServer(&keyProtectionService{}, &workloadService{}, socketPath)
@@ -513,8 +519,8 @@ func (s *Server) handleDestroy(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// GetBindingKeyClaims returns the claims for a binding key identified by its KEM UUID.
-func (s *Server) GetBindingKeyClaims(id uuid.UUID) (*keymanager.KeyClaims, error) {
+// handleGetBindingKeyClaims returns the claims for a binding key identified by its KEM UUID.
+func (s *Server) handleGetBindingKeyClaims(id uuid.UUID) (*keymanager.KeyClaims, error) {
 	// Key ID Lookup. The orchestration layer will look-up the key_handle
 	// in its ActiveKeyRegistry to find the Binding Key ID.
 	bindingID, ok := s.LookupBindingUUID(id)
@@ -542,8 +548,8 @@ func (s *Server) GetBindingKeyClaims(id uuid.UUID) (*keymanager.KeyClaims, error
 	return claims, nil
 }
 
-// GetKEMKeyClaims returns the claims for a KEM key identified by its UUID.
-func (s *Server) GetKEMKeyClaims(id uuid.UUID) (*keymanager.KeyClaims, error) {
+// handleGetKEMKeyClaims returns the claims for a KEM key identified by its UUID.
+func (s *Server) handleGetKEMKeyClaims(id uuid.UUID) (*keymanager.KeyClaims, error) {
 	// Key Metadata Lookup.
 	kemPubKey, bindingPubKey, algo, remainingLifespanSecs, err := s.keyProtectionService.GetKEMKey(id)
 	if err != nil {
@@ -572,37 +578,45 @@ func (s *Server) GetKEMKeyClaims(id uuid.UUID) (*keymanager.KeyClaims, error) {
 	return claims, nil
 }
 
+// processClaims is a background worker that processes key claims requests from claimsChan.
 func (s *Server) processClaims() {
 	for call := range s.claimsChan {
-		req := call.Request
-		keyHandle := req.GetKeyHandle().GetHandle()
-		keyType := req.GetKeyType()
+		result := s.handleGetClaims(call.Request)
 
-		id, err := uuid.Parse(keyHandle)
-		if err != nil {
-			call.RespChan <- &ClaimsResult{Err: fmt.Errorf("failed to retrieve key claims: %w", err)}
-			continue
+		select {
+		case call.RespChan <- result:
+		case <-time.After(ClaimsResponseTimeout):
+			log.Printf("processClaims: timed out sending response for key %s", call.Request.GetKeyHandle().GetHandle())
 		}
-		var claims *keymanager.KeyClaims
-		switch keyType {
-		case keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING:
-			claims, err = s.GetBindingKeyClaims(id)
-			if err != nil {
-				call.RespChan <- &ClaimsResult{Err: fmt.Errorf("failed to retrieve binding key claims: %w", err)}
-				continue
-			}
-
-		case keymanager.KeyType_KEY_TYPE_VM_PROTECTION_KEY:
-			claims, err = s.GetKEMKeyClaims(id)
-			if err != nil {
-				call.RespChan <- &ClaimsResult{Err: fmt.Errorf("failed to retrieve VM protection key claims: %w", err)}
-				continue
-			}
-		default:
-			call.RespChan <- &ClaimsResult{Err: fmt.Errorf("unsupported key type: %v", keyType)}
-			continue
-		}
-
-		call.RespChan <- &ClaimsResult{Reply: claims}
 	}
+}
+
+// handleGetClaims processes a single GetKeyClaimsRequest and returns the result.
+func (s *Server) handleGetClaims(req *keymanager.GetKeyClaimsRequest) *ClaimsResult {
+	keyHandle := req.GetKeyHandle().GetHandle()
+	keyType := req.GetKeyType()
+
+	id, err := uuid.Parse(keyHandle)
+	if err != nil {
+		return &ClaimsResult{Err: fmt.Errorf("failed to retrieve key claims: %w", err)}
+	}
+
+	var claims *keymanager.KeyClaims
+	switch keyType {
+	case keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING:
+		claims, err = s.handleGetBindingKeyClaims(id)
+		if err != nil {
+			return &ClaimsResult{Err: fmt.Errorf("failed to retrieve binding key claims: %w", err)}
+		}
+
+	case keymanager.KeyType_KEY_TYPE_VM_PROTECTION_KEY:
+		claims, err = s.handleGetKEMKeyClaims(id)
+		if err != nil {
+			return &ClaimsResult{Err: fmt.Errorf("failed to retrieve VM protection key claims: %w", err)}
+		}
+	default:
+		return &ClaimsResult{Err: fmt.Errorf("unsupported key type: %v", keyType)}
+	}
+
+	return &ClaimsResult{Reply: claims}
 }

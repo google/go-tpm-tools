@@ -1024,3 +1024,50 @@ func TestHandleDecapsUnsupportedAlgorithm(t *testing.T) {
 		t.Fatalf("expected status 400, got %d", w.Code)
 	}
 }
+
+func TestProcessClaimsTimeout(t *testing.T) {
+	oldTimeout := ClaimsResponseTimeout
+	ClaimsResponseTimeout = 10 * time.Millisecond
+	defer func() { ClaimsResponseTimeout = oldTimeout }()
+
+	srv := newTestServer(t, &mockKeyProtectionService{}, &mockWorkloadService{})
+	// processClaims is already started in newTestServer -> NewServer -> New
+
+	respChan1 := make(chan *ClaimsResult) // Unbuffered
+	req1 := &keymanager.GetKeyClaimsRequest{
+		KeyHandle: &keymanager.KeyHandle{Handle: uuid.New().String()},
+		KeyType:   keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING,
+	}
+
+	// 1. Send first request and DO NOT read from it.
+	// This should timeout in 10ms.
+	srv.claimsChan <- &ClaimsCall{Request: req1, RespChan: respChan1}
+
+	// 2. Send second request and read from it.
+	// We need a valid UUID in the map for this to succeed easily.
+	kemUUID := uuid.New()
+	bindingUUID := uuid.New()
+	srv.mu.Lock()
+	srv.kemToBindingMap[kemUUID] = bindingUUID
+	srv.mu.Unlock()
+
+	respChan2 := make(chan *ClaimsResult, 1)
+	req2 := &keymanager.GetKeyClaimsRequest{
+		KeyHandle: &keymanager.KeyHandle{Handle: kemUUID.String()},
+		KeyType:   keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING,
+	}
+
+	// Give it a bit of time for the first one to timeout
+	time.Sleep(20 * time.Millisecond)
+
+	srv.claimsChan <- &ClaimsCall{Request: req2, RespChan: respChan2}
+
+	select {
+	case res := <-respChan2:
+		if res.Err != nil {
+			t.Errorf("expected no error for second request, got: %v", res.Err)
+		}
+	case <-time.After(1 * time.Second):
+		t.Fatal("timed out waiting for second request response - background worker might be blocked!")
+	}
+}
