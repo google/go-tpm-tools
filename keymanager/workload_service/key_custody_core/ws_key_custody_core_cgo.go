@@ -60,6 +60,18 @@ func GenerateBindingKeypair(algo *keymanager.HpkeAlgorithm, lifespanSecs uint64)
 	return id, pubkey, nil
 }
 
+// DestroyBindingKey destroys the binding key identified by bindingUUID via Rust FFI.
+func DestroyBindingKey(bindingUUID uuid.UUID) error {
+	uuidBytes := bindingUUID[:]
+	rc := C.key_manager_destroy_binding_key(
+		(*C.uint8_t)(unsafe.Pointer(&uuidBytes[0])),
+	)
+	if rc != 0 {
+		return fmt.Errorf("key_manager_destroy_binding_key failed with code %d", rc)
+	}
+	return nil
+}
+
 // Open decrypts a sealed ciphertext using the binding key identified by
 // bindingUUID via Rust FFI (HPKE Open).
 // Returns the decrypted plaintext (shared secret).

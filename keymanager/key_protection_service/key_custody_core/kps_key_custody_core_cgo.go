@@ -68,6 +68,17 @@ func GenerateKEMKeypair(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, li
 	return id, pubkey, nil
 }
 
+// DestroyKEMKey destroys the KEM key identified by kemUUID via Rust FFI.
+func DestroyKEMKey(kemUUID uuid.UUID) error {
+	uuidBytes := kemUUID[:]
+	if rc := C.key_manager_destroy_kem_key(
+		(*C.uint8_t)(unsafe.Pointer(&uuidBytes[0])),
+	); rc != 0 {
+		return fmt.Errorf("key_manager_destroy_kem_key failed with code %d", rc)
+	}
+	return nil
+}
+
 // DecapAndSeal decapsulates a shared secret using the stored KEM key and
 // reseals it with the associated binding public key via Rust FFI.
 // Returns the new encapsulated key and sealed ciphertext.

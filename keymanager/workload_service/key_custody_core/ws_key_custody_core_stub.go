@@ -19,3 +19,8 @@ func GenerateBindingKeypair(_ *algorithms.HpkeAlgorithm, _ uint64) (uuid.UUID, [
 func Open(_ uuid.UUID, _, _, _ []byte) ([]byte, error) {
 	return nil, fmt.Errorf("Open is not supported on this architecture")
 }
+
+// DestroyBindingKey is a stub for architectures where the Rust library is not supported.
+func DestroyBindingKey(_ uuid.UUID) error {
+	return fmt.Errorf("DestroyBindingKey is not supported on this architecture")
+}

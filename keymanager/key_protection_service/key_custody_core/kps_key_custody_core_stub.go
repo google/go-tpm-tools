@@ -19,3 +19,8 @@ func GenerateKEMKeypair(_ *algorithms.HpkeAlgorithm, _ []byte, _ uint64) (uuid.U
 func DecapAndSeal(_ uuid.UUID, _, _ []byte) ([]byte, []byte, error) {
 	return nil, nil, fmt.Errorf("DecapAndSeal is not supported on this architecture")
 }
+
+// DestroyKEMKey is a stub for architectures where the Rust library is not supported.
+func DestroyKEMKey(_ uuid.UUID) error {
+	return fmt.Errorf("DestroyKEMKey is not supported on this architecture")
+}

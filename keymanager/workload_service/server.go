@@ -7,7 +7,9 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log"
 	"math"
 	"net"
 	"net/http"
@@ -24,6 +26,7 @@ import (
 // WorkloadService defines the interface for generating binding keypairs.
 type WorkloadService interface {
 	GenerateBindingKeypair(algo *keymanager.HpkeAlgorithm, lifespanSecs uint64) (uuid.UUID, []byte, error)
+	DestroyBindingKey(bindingUUID uuid.UUID) error
 	Open(bindingUUID uuid.UUID, enc, ciphertext, aad []byte) ([]byte, error)
 }
 type keyProtectionService struct{}
@@ -31,6 +34,7 @@ type keyProtectionService struct{}
 // KeyProtectionService defines the interface for generating KEM keypairs.
 type KeyProtectionService interface {
 	GenerateKEMKeypair(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error)
+	DestroyKEMKey(kemUUID uuid.UUID) error
 	DecapAndSeal(kemUUID uuid.UUID, encapsulatedKey, aad []byte) (sealEnc []byte, sealedCT []byte, err error)
 }
 type workloadService struct{}
@@ -39,12 +43,20 @@ func (r *workloadService) GenerateBindingKeypair(algo *keymanager.HpkeAlgorithm,
 	return wskcc.GenerateBindingKeypair(algo, lifespanSecs)
 }
 
+func (r *workloadService) DestroyBindingKey(bindingUUID uuid.UUID) error {
+	return wskcc.DestroyBindingKey(bindingUUID)
+}
+
 func (r *workloadService) Open(bindingUUID uuid.UUID, enc, ciphertext, aad []byte) ([]byte, error) {
 	return wskcc.Open(bindingUUID, enc, ciphertext, aad)
 }
 
 func (r *keyProtectionService) GenerateKEMKeypair(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
 	return kpscc.GenerateKEMKeypair(algo, bindingPubKey, lifespanSecs)
+}
+
+func (r *keyProtectionService) DestroyKEMKey(kemUUID uuid.UUID) error {
+	return kpscc.DestroyKEMKey(kemUUID)
 }
 
 func (r *keyProtectionService) DecapAndSeal(kemUUID uuid.UUID, encapsulatedKey, aad []byte) (sealEnc []byte, sealedCT []byte, err error) {
@@ -83,6 +95,11 @@ func (d ProtoDuration) MarshalJSON() ([]byte, error) {
 type GenerateKeyRequest struct {
 	Algorithm AlgorithmDetails `json:"algorithm"`
 	Lifespan  ProtoDuration    `json:"lifespan"`
+}
+
+// DestroyRequest is the JSON body for POST /v1/keys:destroy.
+type DestroyRequest struct {
+	KeyHandle KeyHandle `json:"key_handle"`
 }
 
 // GenerateKeyResponse is returned by POST /v1/keys:generate_key.
@@ -138,9 +155,8 @@ type DecapsResponse struct {
 type Server struct {
 	keyProtectionService KeyProtectionService
 	workloadService      WorkloadService
-
-	mu              sync.RWMutex
-	kemToBindingMap map[uuid.UUID]uuid.UUID
+	mu                   sync.RWMutex
+	kemToBindingMap      map[uuid.UUID]uuid.UUID
 
 	httpServer *http.Server
 	listener   net.Listener
@@ -165,6 +181,7 @@ func NewServer(keyProtectionService KeyProtectionService, workloadService Worklo
 	mux.HandleFunc("POST /v1/keys:generate_key", s.handleGenerateKey)
 	mux.HandleFunc("POST /v1/keys:decap", s.handleDecaps)
 	mux.HandleFunc("GET /v1/capabilities", s.handleGetCapabilities)
+	mux.HandleFunc("POST /v1/keys:destroy", s.handleDestroy)
 	s.httpServer = &http.Server{Handler: mux}
 
 	_ = os.Remove(socketPath)
@@ -357,10 +374,48 @@ func writeJSON(w http.ResponseWriter, v any, code int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(code)
-	_ = json.NewEncoder(w).Encode(v)
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		log.Printf("failed to write JSON response: %v", err)
+	}
 }
 
 // writeError writes a JSON error response.
 func writeError(w http.ResponseWriter, message string, code int) {
 	writeJSON(w, map[string]string{"error": message}, code)
+}
+
+func (s *Server) handleDestroy(w http.ResponseWriter, r *http.Request) {
+	var req DestroyRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, fmt.Sprintf("invalid request body: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	kemUUID, err := uuid.Parse(req.KeyHandle.Handle)
+	if err != nil {
+		writeError(w, fmt.Sprintf("invalid key handle: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	// Look up the binding UUID for this KEM key.
+	bindingUUID, ok := s.LookupBindingUUID(kemUUID)
+	if !ok {
+		writeError(w, fmt.Sprintf("KEM key handle not found: %s", kemUUID), http.StatusNotFound)
+		return
+	}
+
+	errKps := s.keyProtectionService.DestroyKEMKey(kemUUID)
+	errWs := s.workloadService.DestroyBindingKey(bindingUUID)
+
+	// Remove the mapping.
+	s.mu.Lock()
+	delete(s.kemToBindingMap, kemUUID)
+	s.mu.Unlock()
+
+	if err := errors.Join(errKps, errWs); err != nil {
+		writeError(w, fmt.Sprintf("failed to destroy keys: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
