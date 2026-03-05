@@ -8,9 +8,6 @@ import (
 	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
 )
 
-// These enum values mirror the proto definitions in PROTOS.md and are used by
-// the WSD JSON API contract.
-
 // KemAlgorithm represents the requested KEM algorithm.
 type KemAlgorithm int32
 
