@@ -15,6 +15,11 @@ func GenerateKEMKeypair(_ *keymanager.HpkeAlgorithm, _ []byte, _ uint64) (uuid.U
 	return uuid.Nil, nil, fmt.Errorf("GenerateKEMKeypair is not supported on this architecture")
 }
 
+// EnumerateKEMKeys is a stub for architectures where the Rust library is not supported.
+func EnumerateKEMKeys(limit, offset int) ([]KEMKeyInfo, bool, error) {
+	return nil, false, fmt.Errorf("EnumerateKEMKeys is not supported on this architecture")
+}
+
 // GetKEMKey is a stub for architectures where the Rust library is not supported.
 func GetKEMKey(_ uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error) {
 	return nil, nil, nil, 0, fmt.Errorf("GetKEMKey is not supported on this architecture")

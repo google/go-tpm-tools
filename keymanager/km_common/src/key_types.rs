@@ -101,8 +101,12 @@ impl KeyRegistry {
     /// Lists all Keys with pagination support.
     pub fn list_all_keys(&self, offset: usize, limit: usize) -> (Vec<KeyMetadata>, usize) {
         let keys = self.keys.read().unwrap();
-        let total_count = keys.len();
-        let mut refs: Vec<&Arc<KeyRecord>> = keys.values().collect();
+        let now = Instant::now();
+        let mut refs: Vec<&Arc<KeyRecord>> = keys
+            .values()
+            .filter(|record| record.meta.delete_after > now)
+            .collect();
+        let total_count = refs.len();
 
         // Sort for stable pagination: created_at, then id
         refs.sort_by(|a, b| {
@@ -419,5 +423,32 @@ mod tests {
         // Clean up
         stop_signal.store(true, std::sync::atomic::Ordering::Relaxed);
         handle.join().unwrap();
+    }
+
+    #[test]
+    fn test_list_all_keys_filters_expired() {
+        let registry = KeyRegistry::default();
+        let algo = HpkeAlgorithm {
+            kem: KemAlgorithm::DhkemX25519HkdfSha256 as i32,
+            kdf: KdfAlgorithm::HkdfSha256 as i32,
+            aead: AeadAlgorithm::Aes256Gcm as i32,
+        };
+
+        // Key that expires in 0 seconds (already expired)
+        let record1 = KeyRecord::create_binding_key(algo.clone(), Duration::from_secs(0))
+            .expect("failed to create key");
+
+        // Key that expires in 3600 seconds (not expired)
+        let record2 = KeyRecord::create_binding_key(algo.clone(), Duration::from_secs(3600))
+            .expect("failed to create key");
+
+        let id2 = record2.meta.id;
+        registry.add_key(record1);
+        registry.add_key(record2);
+
+        let (keys, total_count) = registry.list_all_keys(0, 10);
+        assert_eq!(total_count, 1);
+        assert_eq!(keys.len(), 1);
+        assert_eq!(keys[0].id, id2);
     }
 }

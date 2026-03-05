@@ -1,12 +1,12 @@
 // Package keyprotectionservice implements the Key Orchestration Layer (KOL)
 // for the Key Protection Service. It wraps the KPS Key Custody Core (KCC) FFI
-// to provide a Go-native interface for KEM key operations.
+// to provide a Go-native interface for cryptographic operations and key management.
 package keyprotectionservice
 
 import (
+	kpskcc "github.com/google/go-tpm-tools/keymanager/key_protection_service/key_custody_core"
 	"github.com/google/uuid"
 
-	kpscc "github.com/google/go-tpm-tools/keymanager/key_protection_service/key_custody_core"
 	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
 )
 
@@ -43,6 +43,19 @@ type KeyProtectionService interface {
 	//   - error: An error if the KEM key is not found, expired, or if decapsulation/sealing fails.
 	DecapAndSeal(kemUUID uuid.UUID, encapsulatedKey, aad []byte) ([]byte, []byte, error)
 
+	// EnumerateKEMKeys retrieves a list of active KEM keys, up to a specified limit
+	// and starting from a given offset.
+	//
+	// Parameters:
+	//   - limit: The maximum number of keys to return.
+	//   - offset: The index of the first key to return.
+	//
+	// Returns:
+	//   - []kpskcc.KEMKeyInfo: A slice of KEM key information structs.
+	//   - bool: True if there are more keys available.
+	//   - error: An error if the enumeration fails.
+	EnumerateKEMKeys(limit, offset int) ([]kpskcc.KEMKeyInfo, bool, error)
+
 	// DestroyKEMKey removes the specified KEM keypair from the active key registry.
 	// This prevents any future decapsulation operations using this key.
 	//
@@ -71,19 +84,23 @@ type KeyProtectionService interface {
 type defaultKPS struct{}
 
 func (d *defaultKPS) GenerateKEMKeypair(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
-	return kpscc.GenerateKEMKeypair(algo, bindingPubKey, lifespanSecs)
+	return kpskcc.GenerateKEMKeypair(algo, bindingPubKey, lifespanSecs)
 }
 
 func (d *defaultKPS) DecapAndSeal(kemUUID uuid.UUID, encapsulatedKey, aad []byte) ([]byte, []byte, error) {
-	return kpscc.DecapAndSeal(kemUUID, encapsulatedKey, aad)
+	return kpskcc.DecapAndSeal(kemUUID, encapsulatedKey, aad)
+}
+
+func (d *defaultKPS) EnumerateKEMKeys(limit, offset int) ([]kpskcc.KEMKeyInfo, bool, error) {
+	return kpskcc.EnumerateKEMKeys(limit, offset)
 }
 
 func (d *defaultKPS) DestroyKEMKey(kemUUID uuid.UUID) error {
-	return kpscc.DestroyKEMKey(kemUUID)
+	return kpskcc.DestroyKEMKey(kemUUID)
 }
 
 func (d *defaultKPS) GetKEMKey(id uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error) {
-	return kpscc.GetKEMKey(id)
+	return kpskcc.GetKEMKey(id)
 }
 
 // Service implements KeyProtectionService by delegating to an underlying KeyProtectionService.
@@ -121,6 +138,12 @@ func (s *Service) DecapAndSeal(kemUUID uuid.UUID, encapsulatedKey, aad []byte) (
 	return s.kps.DecapAndSeal(kemUUID, encapsulatedKey, aad)
 }
 
+// EnumerateKEMKeys enumerates active KEM keys up to limit by offset calling the underlying KPS.
+func (s *Service) EnumerateKEMKeys(limit, offset int) ([]kpskcc.KEMKeyInfo, bool, error) {
+	return s.kps.EnumerateKEMKeys(limit, offset)
+}
+
+// DestroyKEMKey destroys the KEM key identified by kemUUID by calling the KPS KCC FFI.
 // DestroyKEMKey removes the specified KEM keypair from the active key registry
 // by delegating to the underlying KeyProtectionService backend.
 func (s *Service) DestroyKEMKey(kemUUID uuid.UUID) error {
