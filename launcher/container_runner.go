@@ -381,6 +381,11 @@ func (r *ContainerRunner) measureCELEvents(ctx context.Context) error {
 	if err := r.measureContainerClaims(ctx); err != nil {
 		return fmt.Errorf("failed to measure container claims: %v", err)
 	}
+
+	if err := r.measureGPUAttestationEvidence(ctx); err != nil {
+		return fmt.Errorf("failed to measure container claims: %v", err)
+	}
+
 	if err := r.measureMemoryMonitor(); err != nil {
 		return fmt.Errorf("failed to measure memory monitoring state: %v", err)
 	}
@@ -448,6 +453,16 @@ func (r *ContainerRunner) measureContainerClaims(ctx context.Context) error {
 	return nil
 }
 
+// measureGPUAttestationEvidence will measure GPU attestation claims into the COS
+// eventlog in the AttestationAgent.
+func (r *ContainerRunner) measureGPUAttestationEvidence(ctx context.Context) error {
+	if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.GPUDeviceAttestationBindingType, EventContent: []byte{}}); err != nil {
+		return err
+	}
+	r.logger.Info("Successfully measured GPU device attestation binding event")
+	return nil
+}
+
 // measureMemoryMonitor will measure memory monitoring claims into the COS
 // eventlog in the AttestationAgent.
 func (r *ContainerRunner) measureMemoryMonitor() error {
@@ -459,16 +474,6 @@ func (r *ContainerRunner) measureMemoryMonitor() error {
 		return err
 	}
 	r.logger.Info("Successfully measured memory monitoring event")
-	return nil
-}
-
-// measureGPUAttestationEvidence will measure GPU attestation claims into the COS
-// eventlog in the AttestationAgent.
-func (r *ContainerRunner) measureGPUAttestationEvidence() error {
-	if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.GPUDeviceAttestationBindingType, EventContent: []byte{}}); err != nil {
-		return err
-	}
-	r.logger.Info("Successfully measured GPU device attestation binding event")
 	return nil
 }
 
