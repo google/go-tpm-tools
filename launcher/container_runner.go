@@ -3,7 +3,6 @@ package launcher
 
 import (
 	"context"
-	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -385,7 +384,7 @@ func (r *ContainerRunner) measureCELEvents(ctx context.Context) error {
 		return fmt.Errorf("failed to measure container claims: %v", err)
 	}
 
-	if err := r.measureGPUAttestationEvidence(ctx); err != nil {
+	if err := r.measureGPUAttestationEvidence(); err != nil {
 		return fmt.Errorf("failed to measure container claims: %v", err)
 	}
 
