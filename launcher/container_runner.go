@@ -7,7 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math/rand"
+	"math/rand/v2"
 	"os"
 	"os/exec"
 	"path"
@@ -465,10 +465,10 @@ func (r *ContainerRunner) measureGPUAttestationEvidence() error {
 	// We use an empty nonce for the measurement binding as the measurement itself
 	// is the binding to the TEE's RTMRs.
 	nonce := make([]byte, 32)
-	if _, err := rand.Read(nonce); err != nil {
+	rng := rand.ChaCha8{}
+	if _, err := rng.Read(nonce); err != nil {
 		return fmt.Errorf("failed to generate random nonce: %v", err)
 	}
-
 	attester := &gpu.NvidiaAttester{}
 	evidence, err := attester.Attest(nonce)
 	if err != nil {
