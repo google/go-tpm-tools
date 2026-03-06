@@ -3,6 +3,7 @@ package launcher
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+
 	"time"
 
 	"cloud.google.com/go/compute/metadata"
@@ -456,7 +458,7 @@ func (r *ContainerRunner) measureContainerClaims(ctx context.Context) error {
 
 // measureGPUAttestationEvidence will measure GPU attestation claims into the COS
 // eventlog in the AttestationAgent.
-func (r *ContainerRunner) measureGPUAttestationEvidence(ctx context.Context) error {
+func (r *ContainerRunner) measureGPUAttestationEvidence() error {
 	if !r.launchSpec.InstallGpuDriver {
 		return nil
 	}
