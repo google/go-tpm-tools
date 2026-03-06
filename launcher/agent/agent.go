@@ -268,6 +268,10 @@ func (a *agent) AttestWithClient(ctx context.Context, opts AttestAgentOpts, clie
 		v.AkCert = a.fetchedAK.CertDERBytes()
 
 		req.TDCCELAttestation = v
+		// Override the attached Nvidia GPU attestation as nil if the experiment flag is OFF.
+		if !a.launchSpec.Experiments.EnableGpuGcaSupport {
+			req.TDCCELAttestation.NvidiaAttestation = nil
+		}
 	default:
 		return nil, fmt.Errorf("received an unsupported attestation type! %v", v)
 	}
