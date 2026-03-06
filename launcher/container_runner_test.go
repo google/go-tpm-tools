@@ -72,7 +72,7 @@ func (f *fakeAttestationAgent) AttestWithClient(_ context.Context, _ agent.Attes
 	return nil, fmt.Errorf("unimplemented")
 }
 
-func (f *fakeAttestationAgent) AttestationEvidence(_ context.Context, _ []byte, _ []byte) (*attestationpb.VmAttestation, error) {
+func (f *fakeAttestationAgent) AttestationEvidence(_ context.Context, _ []byte, _ []byte, _ agent.AttestAgentOpts) (*attestationpb.VmAttestation, error) {
 	return nil, fmt.Errorf("unimplemented")
 }
 

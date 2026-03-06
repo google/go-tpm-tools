@@ -52,7 +52,7 @@ func (f fakeAttestationAgent) AttestWithClient(c context.Context, a agent.Attest
 	return f.attestWithClientFunc(c, a, v)
 }
 
-func (f fakeAttestationAgent) AttestationEvidence(c context.Context, nonce []byte, extraData []byte) (*attestationpb.VmAttestation, error) {
+func (f fakeAttestationAgent) AttestationEvidence(c context.Context, nonce []byte, extraData []byte, _ agent.AttestAgentOpts) (*attestationpb.VmAttestation, error) {
 	return f.attestationEvidenceFunc(c, nonce, extraData)
 }
 

@@ -139,6 +139,7 @@ func (a *attestHandler) getITAToken(w http.ResponseWriter, r *http.Request) {
 
 // getAttestationEvidence retrieves the attestation evidence.
 func (a *attestHandler) getAttestationEvidence(w http.ResponseWriter, r *http.Request) {
+
 	if r.Method != http.MethodPost {
 		a.logAndWriteHTTPError(w, http.StatusMethodNotAllowed, fmt.Errorf("method not allowed"))
 		return
@@ -157,7 +158,7 @@ func (a *attestHandler) getAttestationEvidence(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	evidence, err := a.attestAgent.AttestationEvidence(a.ctx, req.Challenge, nil)
+	evidence, err := a.attestAgent.AttestationEvidence(a.ctx, req.Challenge, nil, agent.AttestAgentOpts{EnableRuntimeGPUAttestation: true})
 	if err != nil {
 		a.logAndWriteHTTPError(w, http.StatusInternalServerError, err)
 		return

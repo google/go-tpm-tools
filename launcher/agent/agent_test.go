@@ -41,6 +41,7 @@ import (
 	"github.com/google/go-tpm-tools/verifier/oci"
 	"github.com/google/go-tpm-tools/verifier/oci/cosign"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 )
 
@@ -811,6 +812,7 @@ func TestAttestationEvidence_TDX_Success(t *testing.T) {
 			},
 		},
 	}
+	attestAgent.avRot.AddDeviceROTs([]DeviceROT{&fakeGPURoT{}})
 
 	if err := measureFakeEvents(attestAgent); err != nil {
 		t.Fatalf("failed to measure events: %v", err)
@@ -818,35 +820,80 @@ func TestAttestationEvidence_TDX_Success(t *testing.T) {
 
 	challenge := []byte("test-challenge")
 	extraData := []byte("test-extra-data")
-	att, err := attestAgent.AttestationEvidence(ctx, challenge, extraData)
-	if err != nil {
-		t.Fatalf("AttestationEvidence failed: %v", err)
+
+	testCases := []struct {
+		name          string
+		opts          AttestAgentOpts
+		wantGPUReport *attestationpb.NvidiaAttestationReport
+	}{
+		{
+			name: "TDX attestation",
+			opts: AttestAgentOpts{},
+		},
+		{
+			name: "TDX attestation + runtime GPU attestation",
+			opts: AttestAgentOpts{
+				EnableRuntimeGPUAttestation: true,
+			},
+			wantGPUReport: &attestationpb.NvidiaAttestationReport{
+				CcFeature: &attestationpb.NvidiaAttestationReport_Spt{
+					Spt: &attestationpb.NvidiaAttestationReport_SinglePassthroughAttestation{
+						GpuQuote: &attestationpb.GpuInfo{Uuid: "fake-gpu-uuid"},
+					},
+				},
+			},
+		},
 	}
 
-	// Verify the nonce passed to Attest was derived from challenge+extraData.
-	expectedNonce := fakeRoot.ComputeNonce(challenge, extraData)
-	if !bytes.Equal(fakeRoot.receivedNonce, expectedNonce) {
-		t.Errorf("got nonce %x, want %x", fakeRoot.receivedNonce, expectedNonce)
-	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			att, err := attestAgent.AttestationEvidence(ctx, challenge, extraData, tc.opts)
+			if err != nil {
+				t.Fatalf("AttestationEvidence failed: %v", err)
+			}
 
-	if att.GetQuote().GetTdxCcelQuote() == nil {
-		t.Fatal("expected TDCCELAttestation to be populated for TDX")
-	}
+			// Verify the nonce passed to Attest was derived from challenge+extraData.
+			expectedNonce := fakeRoot.ComputeNonce(challenge, extraData)
+			if !bytes.Equal(fakeRoot.receivedNonce, expectedNonce) {
+				t.Errorf("got nonce %x, want %x", fakeRoot.receivedNonce, expectedNonce)
+			}
 
-	if !bytes.Equal(att.GetQuote().GetTdxCcelQuote().GetTdQuote(), testTDXQuote) {
-		t.Errorf("TDQuote mismatch: got %x, want %x", att.GetQuote().GetTdxCcelQuote().GetTdQuote(), testTDXQuote)
-	}
-	if att.GetQuote().GetTpmQuote() != nil {
-		t.Error("expected TPMQuote to be nil for TDX attestation")
-	}
-	if !bytes.Equal(att.GetQuote().GetTdxCcelQuote().GetCelLaunchEventLog(), testCEL) {
-		t.Errorf("CELLaunchEventLog mismatch: got %x, want %x", att.GetQuote().GetTdxCcelQuote().GetCelLaunchEventLog(), testCEL)
-	}
-	if !bytes.Equal(att.Challenge, challenge) {
-		t.Errorf("challenge mismatch: got %x, want %x", att.Challenge, challenge)
-	}
-	if !bytes.Equal(att.ExtraData, extraData) {
-		t.Errorf("extraData mismatch: got %x, want %x", att.ExtraData, extraData)
+			if att.GetQuote().GetTdxCcelQuote() == nil {
+				t.Fatal("expected TDCCELAttestation to be populated for TDX")
+			}
+
+			if !bytes.Equal(att.GetQuote().GetTdxCcelQuote().GetTdQuote(), testTDXQuote) {
+				t.Errorf("TDQuote mismatch: got %x, want %x", att.GetQuote().GetTdxCcelQuote().GetTdQuote(), testTDXQuote)
+			}
+			if att.GetQuote().GetTpmQuote() != nil {
+				t.Error("expected TPMQuote to be nil for TDX attestation")
+			}
+			if !bytes.Equal(att.GetQuote().GetTdxCcelQuote().GetCelLaunchEventLog(), testCEL) {
+				t.Errorf("CELLaunchEventLog mismatch: got %x, want %x", att.GetQuote().GetTdxCcelQuote().GetCelLaunchEventLog(), testCEL)
+			}
+			if !bytes.Equal(att.Challenge, challenge) {
+				t.Errorf("challenge mismatch: got %x, want %x", att.Challenge, challenge)
+			}
+			if !bytes.Equal(att.ExtraData, extraData) {
+				t.Errorf("extraData mismatch: got %x, want %x", att.ExtraData, extraData)
+			}
+			if tc.wantGPUReport != nil {
+				if len(att.DeviceReports) == 0 {
+					t.Fatalf("Failed to get runtime GPU attestation")
+				}
+				rawBytes, err := base64.StdEncoding.DecodeString(att.DeviceReports[0])
+				if err != nil {
+					t.Fatalf("Failed to decode runtime GPU attestation: %v", err)
+				}
+				gotDeviceReport := &attestationpb.DeviceAttestationReport{}
+				if err := proto.Unmarshal(rawBytes, gotDeviceReport); err != nil {
+					t.Fatalf("Failed to unmarshal runtime device report attestation: %v", err)
+				}
+				if gotGPUReport, wantGPUReport := gotDeviceReport.GetNvidiaReport(), tc.wantGPUReport; !proto.Equal(gotGPUReport, wantGPUReport) {
+					t.Errorf("runtime GPU attestation mismatch: got %v, want %v", gotGPUReport, wantGPUReport)
+				}
+			}
+		})
 	}
 }
 
@@ -883,7 +930,7 @@ func TestAttestationEvidence_TPM_Success(t *testing.T) {
 
 	challenge := []byte("test-challenge")
 	extraData := []byte("test-extra-data")
-	att, err := agent.AttestationEvidence(ctx, challenge, extraData)
+	att, err := agent.AttestationEvidence(ctx, challenge, extraData, AttestAgentOpts{})
 	if err != nil {
 		t.Fatalf("AttestationEvidence failed on TPM: %v", err)
 	}
@@ -1067,7 +1114,7 @@ func TestAttestationEvidence_ExperimentDisabled(t *testing.T) {
 	}
 	defer agent.Close()
 
-	_, err = agent.AttestationEvidence(ctx, []byte("challenge"), nil)
+	_, err = agent.AttestationEvidence(ctx, []byte("challenge"), nil, AttestAgentOpts{})
 	if err == nil {
 		t.Error("expected error when EnableAttestationEvidence is disabled, got nil")
 	}
@@ -1101,7 +1148,7 @@ func TestAttestationEvidence_TDX_NilExtraData(t *testing.T) {
 	}
 
 	challenge := []byte("test-challenge")
-	att, err := attestatAgent.AttestationEvidence(ctx, challenge, nil)
+	att, err := attestatAgent.AttestationEvidence(ctx, challenge, nil, AttestAgentOpts{})
 	if err != nil {
 		t.Fatalf("AttestationEvidence failed with nil extraData: %v", err)
 	}
