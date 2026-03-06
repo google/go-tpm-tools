@@ -12,8 +12,10 @@ require (
 	github.com/google/go-tdx-guest v0.3.2-0.20250814004405-ffb0869e6f4d
 	github.com/google/go-tpm v0.9.6
 	github.com/google/logger v1.1.1
-	google.golang.org/protobuf v1.35.1
+	google.golang.org/protobuf v1.35.2
 )
+
+require github.com/GoogleCloudPlatform/confidential-space/server v0.0.0-20260306205006-9e9ec5040a5f // indirect
 
 require (
 	github.com/google/certificate-transparency-go v1.1.2 // indirect

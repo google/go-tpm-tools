@@ -472,22 +472,28 @@ func (r *ContainerRunner) measureGPUAttestationEvidence() error {
 	attester := &gpu.NvidiaAttester{}
 	evidence, err := attester.Attest(nonce)
 	if err != nil {
-		return fmt.Errorf("failed to collect GPU evidence for measurement: %v", err)
+		return fmt.Errorf("failed to collect GPU evidence: %w", err)
 	}
 
 	gpuEvidence, ok := evidence.(*attestationpb.NvidiaAttestationReport)
 	if !ok {
-		return fmt.Errorf("failed to cast GPU evidence to NvidiaAttestationReport")
-	}
-	// TODO: add nonce to evidence
-
-	if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.GPUDeviceAttestationBindingType, EventContent: []byte(gpuEvidence.String())}); err != nil {
-		return err
+		return fmt.Errorf("unexpected evidence type: %T", evidence)
 	}
 
-	// Set GPU stat after GPU measurements are extended into RTMR3
+	// Ensure the report reflects the nonce used for the signature.
+	gpuEvidence.Nonce = nonce
+
+	// Measure the evidence into the TEE's RTMR via the Attestation Agent.
+	event := cel.CosTlv{
+		EventType:    cel.GPUDeviceAttestationBindingType,
+		EventContent: []byte(gpuEvidence.String()),
+	}
+	if err := r.attestAgent.MeasureEvent(event); err != nil {
+		return fmt.Errorf("failed to measure GPU attestation: %w", err)
+	}
+
 	if err := gpu.EnableGPUReadyState(); err != nil {
-		return err
+		return fmt.Errorf("failed to set GPU ready state: %w", err)
 	}
 
 	r.logger.Info("Successfully measured GPU device attestation binding event")
