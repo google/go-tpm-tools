@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	mathrand "math/rand"
 	"os"
 	"os/exec"
 	"path"
@@ -553,7 +554,7 @@ func (r *ContainerRunner) refreshToken(ctx context.Context) (time.Duration, erro
 
 	r.logger.Info("successfully refreshed attestation token", "token", mapClaims)
 
-	return getNextRefreshFromExpiration(time.Until(claims.ExpiresAt.Time), rand.Float64()), nil
+	return getNextRefreshFromExpiration(time.Until(claims.ExpiresAt.Time), mathrand.Float64()), nil
 }
 
 // ctx must be a cancellable context.
