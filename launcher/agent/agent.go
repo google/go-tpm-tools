@@ -22,6 +22,7 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	"github.com/google/go-tpm/legacy/tpm2"
 	"github.com/google/go-tpm/tpmutil"
+	"google.golang.org/protobuf/proto"
 
 	tg "github.com/google/go-tdx-guest/client"
 	tlabi "github.com/google/go-tdx-guest/client/linuxabi"
@@ -57,7 +58,7 @@ type AttestationAgent interface {
 	MeasureEvent(gecel.Content) error
 	Attest(context.Context, AttestAgentOpts) ([]byte, error)
 	AttestWithClient(ctx context.Context, opts AttestAgentOpts, client verifier.Client) ([]byte, error)
-	AttestationEvidence(ctx context.Context, challenge []byte, extraData []byte) (*attestationpb.VmAttestation, error)
+	AttestationEvidence(ctx context.Context, challenge []byte, extraData []byte, opts AttestAgentOpts) (*attestationpb.VmAttestation, error)
 	Refresh(context.Context) error
 	Close() error
 }
@@ -85,7 +86,8 @@ type DeviceROT interface {
 // AttestAgentOpts contains user generated options when calling the
 // VerifyAttestation API
 type AttestAgentOpts struct {
-	TokenOptions *models.TokenOptions
+	TokenOptions                *models.TokenOptions
+	EnableRuntimeGPUAttestation bool
 }
 
 type agent struct {
@@ -297,7 +299,7 @@ func (a *agent) AttestWithClient(ctx context.Context, opts AttestAgentOpts, clie
 }
 
 // AttestationEvidence returns the attestation evidence (TPM or TDX).
-func (a *agent) AttestationEvidence(_ context.Context, challenge []byte, extraData []byte) (*attestationpb.VmAttestation, error) {
+func (a *agent) AttestationEvidence(_ context.Context, challenge []byte, extraData []byte, opts AttestAgentOpts) (*attestationpb.VmAttestation, error) {
 	if !a.launchSpec.Experiments.EnableAttestationEvidence {
 		return nil, fmt.Errorf("attestation evidence is disabled")
 	}
@@ -339,6 +341,18 @@ func (a *agent) AttestationEvidence(_ context.Context, challenge []byte, extraDa
 				CelLaunchEventLog: cosCel.Bytes(),
 				TdQuote:           v.TdQuote,
 			},
+		}
+		if opts.EnableRuntimeGPUAttestation && v.NvidiaAttestation != nil {
+			gpuReport := &attestationpb.DeviceAttestationReport{
+				Report: &attestationpb.DeviceAttestationReport_NvidiaReport{
+					NvidiaReport: v.NvidiaAttestation,
+				},
+			}
+			rawGPUReportBytes, err := proto.Marshal(gpuReport)
+			if err != nil {
+				return nil, err
+			}
+			attestation.DeviceReports = append(attestation.DeviceReports, base64.StdEncoding.EncodeToString(rawGPUReportBytes))
 		}
 	default:
 		return nil, fmt.Errorf("unknown attestation type: %T", v)
