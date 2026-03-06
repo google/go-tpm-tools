@@ -3,7 +3,6 @@ package launcher
 
 import (
 	"context"
-	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"

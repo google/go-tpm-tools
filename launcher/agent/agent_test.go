@@ -53,7 +53,7 @@ const (
 	envK          = "foo"
 	envV          = "foo"
 	env           = envK + "=" + envV
-	// TODO make this look like real evidence
+	// TODO make this look like real gpu evidence
 	gpuEvidence = "fake evidence"
 )
 
