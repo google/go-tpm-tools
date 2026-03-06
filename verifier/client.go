@@ -5,7 +5,6 @@ package verifier
 import (
 	"context"
 
-	csattestpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
 	attestpb "github.com/google/go-tpm-tools/proto/attest"
 	"github.com/google/go-tpm-tools/verifier/models"
 	"google.golang.org/genproto/googleapis/rpc/status"
@@ -59,7 +58,6 @@ type TDCCELAttestation struct {
 	// still needs following two for GCE info
 	AkCert            []byte
 	IntermediateCerts [][]byte
-	NvidiaAttestation *csattestpb.NvidiaAttestationReport
 }
 
 // VerifyAttestationResponse is the response from a successful
