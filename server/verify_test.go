@@ -222,6 +222,7 @@ func TestVerifyWithTrustedAK(t *testing.T) {
 }
 
 func TestVerifySHA1Attestation(t *testing.T) {
+	// If running against a real TPM which supports less usual hash algos, this test might fail.
 	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
 
@@ -237,7 +238,7 @@ func TestVerifySHA1Attestation(t *testing.T) {
 		t.Fatalf("failed to attest: %v", err)
 	}
 
-	// We should get a SHA-256 state, even if we allow SHA-1
+	// We should at least get a SHA-256 state, even if we allow SHA-1
 	opts := VerifyOpts{
 		Nonce:      nonce,
 		TrustedAKs: []crypto.PublicKey{ak.PublicKey()},
@@ -248,13 +249,15 @@ func TestVerifySHA1Attestation(t *testing.T) {
 		t.Errorf("failed to verify: %v", err)
 	}
 	h := tpm2.Algorithm(state.GetHash())
-	if h != tpm2.AlgSHA256 {
-		t.Errorf("expected SHA-256 state, got: %v", h)
+	if h != tpm2.AlgSHA256 && h != tpm2.AlgSHA384 && h != tpm2.AlgSHA512 {
+		t.Errorf("expected at least a non SHA-1 state, got: %v", h)
 	}
 
-	// Now we mess up the SHA-256 state to force SHA-1 fallback
+	// Now we mess up all other states to force SHA-1 fallback
 	for _, quote := range attestation.GetQuotes() {
-		if tpm2.Algorithm(quote.GetPcrs().GetHash()) == tpm2.AlgSHA256 {
+		if tpm2.Algorithm(quote.GetPcrs().GetHash()) == tpm2.AlgSHA256 ||
+			tpm2.Algorithm(quote.GetPcrs().GetHash()) == tpm2.AlgSHA384 ||
+			tpm2.Algorithm(quote.GetPcrs().GetHash()) == tpm2.AlgSHA512 {
 			quote.Quote = nil
 		}
 	}
