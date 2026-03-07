@@ -104,6 +104,7 @@ func (a *NvidiaAttester) collectAttestationEvidence(handler gpu.NvmlHandler, non
 					GpuQuote: gpuInfos[0],
 				},
 			},
+			Nonce: nonce,
 		}, nil
 	case MPT:
 		return &attestationpb.NvidiaAttestationReport{
@@ -112,6 +113,7 @@ func (a *NvidiaAttester) collectAttestationEvidence(handler gpu.NvmlHandler, non
 					GpuQuotes: gpuInfos,
 				},
 			},
+			Nonce: nonce,
 		}, nil
 	default:
 		return nil, fmt.Errorf("unsupported GPU attestation")

@@ -3,11 +3,11 @@ package launcher
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"math/rand/v2"
 	"os"
 	"os/exec"
 	"path"
@@ -46,6 +46,7 @@ import (
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/oauth2"
+	"google.golang.org/protobuf/proto"
 )
 
 // ContainerRunner contains information about the container settings
@@ -465,8 +466,7 @@ func (r *ContainerRunner) measureGPUAttestationEvidence() error {
 	// We use an empty nonce for the measurement binding as the measurement itself
 	// is the binding to the TEE's RTMRs.
 	nonce := make([]byte, 32)
-	rng := rand.ChaCha8{}
-	if _, err := rng.Read(nonce); err != nil {
+	if _, err := rand.Read(nonce); err != nil {
 		return fmt.Errorf("failed to generate random nonce: %v", err)
 	}
 	attester := &gpu.NvidiaAttester{}
@@ -480,13 +480,15 @@ func (r *ContainerRunner) measureGPUAttestationEvidence() error {
 		return fmt.Errorf("unexpected evidence type: %T", evidence)
 	}
 
-	// Ensure the report reflects the nonce used for the signature.
-	gpuEvidence.Nonce = nonce
+	evidenceBytes, err := proto.Marshal(gpuEvidence)
+	if err != nil {
+		return fmt.Errorf("failed to marshal GPU evidence: %w", err)
+	}
 
 	// Measure the evidence into the TEE's RTMR via the Attestation Agent.
 	event := cel.CosTlv{
 		EventType:    cel.GPUDeviceAttestationBindingType,
-		EventContent: []byte(gpuEvidence.String()),
+		EventContent: evidenceBytes,
 	}
 	if err := r.attestAgent.MeasureEvent(event); err != nil {
 		return fmt.Errorf("failed to measure GPU attestation: %w", err)

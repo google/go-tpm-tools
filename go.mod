@@ -15,8 +15,6 @@ require (
 	google.golang.org/protobuf v1.35.2
 )
 
-require github.com/GoogleCloudPlatform/confidential-space/server v0.0.0-20260306205006-9e9ec5040a5f // indirect
-
 require (
 	github.com/google/certificate-transparency-go v1.1.2 // indirect
 	github.com/google/go-eventlog v0.0.3-0.20250820210646-0f4d84deece4

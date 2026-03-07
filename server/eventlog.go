@@ -5,6 +5,10 @@ import (
 	"errors"
 	"fmt"
 
+	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
+
+	"encoding/json"
+
 	gecel "github.com/google/go-eventlog/cel"
 	"github.com/google/go-eventlog/extract"
 	gepb "github.com/google/go-eventlog/proto/state"
@@ -450,6 +454,10 @@ func getVerifiedCosState(coscel gecel.CEL, registerType gecel.MRType) (*pb.Attes
 			}
 			cosState.GpuDeviceState.CcMode = pb.GPUDeviceCCMode(ccMode)
 		case cel.GPUDeviceAttestationBindingType:
+			report := &attestationpb.NvidiaAttestationReport{}
+			if err := json.Unmarshal(cosTlv.EventContent, report); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal GPU attestation report: %v", err)
+			}
 
 		default:
 			return nil, fmt.Errorf("found unknown COS Event Type %v", cosTlv.EventType)
