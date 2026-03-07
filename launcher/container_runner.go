@@ -3,19 +3,21 @@ package launcher
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"math/rand"
 	"os"
 	"os/exec"
 	"path"
 	"strconv"
 	"strings"
+
 	"time"
 
 	"cloud.google.com/go/compute/metadata"
+	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/cio"
@@ -44,6 +46,7 @@ import (
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/oauth2"
+	"google.golang.org/protobuf/proto"
 )
 
 // ContainerRunner contains information about the container settings
@@ -381,6 +384,11 @@ func (r *ContainerRunner) measureCELEvents(ctx context.Context) error {
 	if err := r.measureContainerClaims(ctx); err != nil {
 		return fmt.Errorf("failed to measure container claims: %v", err)
 	}
+
+	if err := r.measureGPUAttestationEvidence(); err != nil {
+		return fmt.Errorf("failed to measure container claims: %v", err)
+	}
+
 	if err := r.measureMemoryMonitor(); err != nil {
 		return fmt.Errorf("failed to measure memory monitoring state: %v", err)
 	}
@@ -445,6 +453,52 @@ func (r *ContainerRunner) measureContainerClaims(ctx context.Context) error {
 		}
 	}
 
+	return nil
+}
+
+// measureGPUAttestationEvidence will measure GPU attestation claims into the COS
+// eventlog in the AttestationAgent.
+func (r *ContainerRunner) measureGPUAttestationEvidence() error {
+	if !r.launchSpec.InstallGpuDriver {
+		return nil
+	}
+
+	// We use an empty nonce for the measurement binding as the measurement itself
+	// is the binding to the TEE's RTMRs.
+	nonce := make([]byte, 32)
+	if _, err := rand.Read(nonce); err != nil {
+		return fmt.Errorf("failed to generate random nonce: %v", err)
+	}
+	attester := &gpu.NvidiaAttester{}
+	evidence, err := attester.Attest(nonce)
+	if err != nil {
+		return fmt.Errorf("failed to collect GPU evidence: %w", err)
+	}
+
+	gpuEvidence, ok := evidence.(*attestationpb.NvidiaAttestationReport)
+	if !ok {
+		return fmt.Errorf("unexpected evidence type: %T", evidence)
+	}
+
+	evidenceBytes, err := proto.Marshal(gpuEvidence)
+	if err != nil {
+		return fmt.Errorf("failed to marshal GPU evidence: %w", err)
+	}
+
+	// Measure the evidence into the TEE's RTMR via the Attestation Agent.
+	event := cel.CosTlv{
+		EventType:    cel.GPUDeviceAttestationBindingType,
+		EventContent: evidenceBytes,
+	}
+	if err := r.attestAgent.MeasureEvent(event); err != nil {
+		return fmt.Errorf("failed to measure GPU attestation: %w", err)
+	}
+
+	if err := gpu.EnableGPUReadyState(); err != nil {
+		return fmt.Errorf("failed to set GPU ready state: %w", err)
+	}
+
+	r.logger.Info("Successfully measured GPU device attestation binding event")
 	return nil
 }
 

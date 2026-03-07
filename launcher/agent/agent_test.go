@@ -53,6 +53,7 @@ const (
 	envK          = "foo"
 	envV          = "foo"
 	env           = envK + "=" + envV
+	gpuEvidence   = "fake evidence"
 )
 
 func TestAttestRacing(t *testing.T) {
@@ -649,6 +650,9 @@ func measureFakeEvents(attestAgent AttestationAgent) error {
 		return err
 	}
 	if err := attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.OverrideArgType, EventContent: []byte(arg)}); err != nil {
+		return err
+	}
+	if err := attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.GPUDeviceAttestationBindingType, EventContent: []byte(gpuEvidence)}); err != nil {
 		return err
 	}
 	return nil
