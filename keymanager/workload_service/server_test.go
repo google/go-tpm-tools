@@ -122,7 +122,7 @@ func validGenerateBody() []byte {
 				KemID: KemAlgorithmDHKEMX25519HKDFSHA256,
 			},
 		},
-		Lifespan: ProtoDuration{Seconds: 3600},
+		Lifespan: 3600,
 	})
 	return body
 }
@@ -162,6 +162,15 @@ func TestHandleGenerateKeySuccess(t *testing.T) {
 	}
 	if resp.KeyHandle.Handle != kemUUID.String() {
 		t.Fatalf("expected KEM UUID %s, got %s", kemUUID, resp.KeyHandle.Handle)
+	}
+	if resp.PubKey.PublicKey != base64.StdEncoding.EncodeToString(kemPubKey) {
+		t.Fatalf("expected KEM pub key %s, got %s", base64.StdEncoding.EncodeToString(kemPubKey), resp.PubKey.PublicKey)
+	}
+	if resp.KeyProtectionMechanism != keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED.String() {
+		t.Fatalf("expected %s, got %s", keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED.String(), resp.KeyProtectionMechanism)
+	}
+	if resp.ExpirationTime <= time.Now().Unix() {
+		t.Fatalf("expected expiration time in the future, got %d", resp.ExpirationTime)
 	}
 
 	// Verify the binding public key was passed to KEM generator.
@@ -216,19 +225,19 @@ func TestHandleGenerateKeyBadRequest(t *testing.T) {
 	}{
 		{
 			name: "unsupported algorithm type",
-			body: GenerateKeyRequest{Algorithm: AlgorithmDetails{Type: "mac", Params: AlgorithmParams{KemID: KemAlgorithmDHKEMX25519HKDFSHA256}}, Lifespan: ProtoDuration{Seconds: 3600}},
+			body: GenerateKeyRequest{Algorithm: AlgorithmDetails{Type: "mac", Params: AlgorithmParams{KemID: KemAlgorithmDHKEMX25519HKDFSHA256}}, Lifespan: 3600},
 		},
 		{
 			name: "unsupported algorithm",
-			body: GenerateKeyRequest{Algorithm: AlgorithmDetails{Type: "kem", Params: AlgorithmParams{KemID: KemAlgorithmUnspecified}}, Lifespan: ProtoDuration{Seconds: 3600}},
+			body: GenerateKeyRequest{Algorithm: AlgorithmDetails{Type: "kem", Params: AlgorithmParams{KemID: KemAlgorithmUnspecified}}, Lifespan: 3600},
 		},
 		{
 			name: "zero lifespan",
-			body: GenerateKeyRequest{Algorithm: AlgorithmDetails{Type: "kem", Params: AlgorithmParams{KemID: KemAlgorithmDHKEMX25519HKDFSHA256}}, Lifespan: ProtoDuration{Seconds: 0}},
+			body: GenerateKeyRequest{Algorithm: AlgorithmDetails{Type: "kem", Params: AlgorithmParams{KemID: KemAlgorithmDHKEMX25519HKDFSHA256}}, Lifespan: 0},
 		},
 		{
 			name: "missing algorithm (defaults to 0, type empty)",
-			body: GenerateKeyRequest{Lifespan: ProtoDuration{Seconds: 3600}},
+			body: GenerateKeyRequest{Lifespan: 3600},
 		},
 	}
 
@@ -272,6 +281,7 @@ func TestHandleGenerateKeyBadJSON(t *testing.T) {
 		{"lifespan as string", `{"algorithm":{"type":"kem","params":{"kem_id":"DHKEM_X25519_HKDF_SHA256"}},"lifespan":"3600"}`},
 		{"lifespan as string with suffix", `{"algorithm":{"type":"kem","params":{"kem_id":"DHKEM_X25519_HKDF_SHA256"}},"lifespan":"3600s"}`},
 		{"lifespan negative", `{"algorithm":{"type":"kem","params":{"kem_id":"DHKEM_X25519_HKDF_SHA256"}},"lifespan":-1}`},
+		{"lifespan too large", `{"algorithm":{"type":"kem","params":{"kem_id":"DHKEM_X25519_HKDF_SHA256"}},"lifespan":9223372036854775808}`},
 	}
 
 	for _, tc := range badBodies {
@@ -318,16 +328,6 @@ func TestHandleGenerateKeyFlexibleLifespan(t *testing.T) {
 		{
 			name:     "integer seconds",
 			body:     `{"algorithm":{"type":"kem","params":{"kem_id":"DHKEM_X25519_HKDF_SHA256"}},"lifespan":3600}`,
-			expected: 3600,
-		},
-		{
-			name:     "float seconds",
-			body:     `{"algorithm":{"type":"kem","params":{"kem_id":"DHKEM_X25519_HKDF_SHA256"}},"lifespan":1.5}`,
-			expected: 1, // Truncated to 1
-		},
-		{
-			name:     "float seconds round down",
-			body:     `{"algorithm":{"type":"kem","params":{"kem_id":"DHKEM_X25519_HKDF_SHA256"}},"lifespan":3600.9}`,
 			expected: 3600,
 		},
 	}
@@ -522,9 +522,12 @@ func TestHandleEnumerateKeysWithKeys(t *testing.T) {
 	if info1.PubKey.PublicKey != base64.StdEncoding.EncodeToString(kemPubKey1) {
 		t.Fatalf("KEM pub key mismatch for kem1")
 	}
-	// BindingPubKey check removed
-	if info1.RemainingLifespan.Seconds != 3500 {
-		t.Fatalf("expected remaining lifespan 3500, got %d", info1.RemainingLifespan.Seconds)
+	if info1.KeyProtectionMechanism != keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED.String() {
+		t.Fatalf("expected key protection mechanism %s, got %s", keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED.String(), info1.KeyProtectionMechanism)
+	}
+	// Approximate check for expiration time
+	if info1.ExpirationTime <= time.Now().Unix() {
+		t.Fatalf("expected expiration time in the future, got %d", info1.ExpirationTime)
 	}
 
 	// Verify key 2.
@@ -532,8 +535,9 @@ func TestHandleEnumerateKeysWithKeys(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected kem2 %s in response", kem2)
 	}
-	if info2.RemainingLifespan.Seconds != 7100 {
-		t.Fatalf("expected remaining lifespan 7100, got %d", info2.RemainingLifespan.Seconds)
+	// Approximate check for expiration time
+	if info2.ExpirationTime <= time.Now().Unix() {
+		t.Fatalf("expected expiration time in the future, got %d", info2.ExpirationTime)
 	}
 }
 

@@ -160,33 +160,10 @@ type KeyHandle struct {
 	Handle string `json:"handle"`
 }
 
-// ProtoDuration represents a google.protobuf.Duration in JSON (e.g. "3600s").
-type ProtoDuration struct {
-	Seconds uint64
-}
-
-// UnmarshalJSON parses a proto3 Duration JSON number (as seconds).
-func (d *ProtoDuration) UnmarshalJSON(data []byte) error {
-	var v float64
-	if err := json.Unmarshal(data, &v); err != nil {
-		return fmt.Errorf("duration must be a numeric value (seconds): %w", err)
-	}
-	if v < 0 || v > math.MaxUint64 {
-		return fmt.Errorf("duration %f out of range", v)
-	}
-	d.Seconds = uint64(v)
-	return nil
-}
-
-// MarshalJSON encodes as a proto3 Duration JSON number (as seconds).
-func (d ProtoDuration) MarshalJSON() ([]byte, error) {
-	return json.Marshal(d.Seconds)
-}
-
 // GenerateKeyRequest is the JSON body for POST /v1/keys:generate_key.
 type GenerateKeyRequest struct {
 	Algorithm AlgorithmDetails `json:"algorithm"`
-	Lifespan  ProtoDuration    `json:"lifespan"`
+	Lifespan  uint64           `json:"lifespan"`
 }
 
 // DestroyRequest is the JSON body for POST /v1/keys:destroy.
@@ -196,7 +173,10 @@ type DestroyRequest struct {
 
 // GenerateKeyResponse is returned by POST /v1/keys:generate_key.
 type GenerateKeyResponse struct {
-	KeyHandle KeyHandle `json:"key_handle"`
+	KeyHandle              KeyHandle  `json:"key_handle"`
+	PubKey                 PubKeyInfo `json:"pub_key"`
+	KeyProtectionMechanism string     `json:"key_protection_mechanism"`
+	ExpirationTime         int64      `json:"expiration_time"`
 }
 
 // AlgorithmParams represents the parameters for a specific algorithm type.
@@ -227,9 +207,10 @@ type EnumerateKeysResponse struct {
 
 // KeyInfo contains information about a single key.
 type KeyInfo struct {
-	KeyHandle         KeyHandle     `json:"key_handle"`
-	PubKey            PubKeyInfo    `json:"pub_key"`
-	RemainingLifespan ProtoDuration `json:"remaining_lifespan"`
+	KeyHandle              KeyHandle  `json:"key_handle"`
+	PubKey                 PubKeyInfo `json:"pub_key"`
+	KeyProtectionMechanism string     `json:"key_protection_mechanism"`
+	ExpirationTime         int64      `json:"expiration_time"`
 }
 
 // PubKeyInfo contains the public key and its algorithm.
@@ -416,9 +397,13 @@ func (s *Server) handleGenerateKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate lifespan is positive.
-	if req.Lifespan.Seconds == 0 {
+	// Validate lifespan is positive and does not cause int64 overflow.
+	if req.Lifespan == 0 {
 		writeError(w, "lifespan must be greater than 0s", http.StatusBadRequest)
+		return
+	}
+	if req.Lifespan > math.MaxInt64 {
+		writeError(w, "lifespan exceeds maximum allowed value", http.StatusBadRequest)
 		return
 	}
 
@@ -446,14 +431,14 @@ func (s *Server) generateKEMKey(w http.ResponseWriter, req GenerateKeyRequest) {
 	}
 
 	// Generate binding keypair via WSD KCC FFI.
-	bindingUUID, bindingPubKey, err := s.workloadService.GenerateBindingKeypair(algo, req.Lifespan.Seconds)
+	bindingUUID, bindingPubKey, err := s.workloadService.GenerateBindingKeypair(algo, req.Lifespan)
 	if err != nil {
 		writeError(w, fmt.Sprintf("failed to generate binding keypair: %v", err), http.StatusInternalServerError)
 		return
 	}
 
 	// Generate KEM keypair via KPS KOL, passing the binding public key.
-	kemUUID, _, err := s.keyProtectionService.GenerateKEMKeypair(algo, bindingPubKey, req.Lifespan.Seconds)
+	kemUUID, kemPubKey, err := s.keyProtectionService.GenerateKEMKeypair(algo, bindingPubKey, req.Lifespan)
 	if err != nil {
 		writeError(w, fmt.Sprintf("failed to generate KEM keypair: %v", err), http.StatusInternalServerError)
 		return
@@ -467,6 +452,17 @@ func (s *Server) generateKEMKey(w http.ResponseWriter, req GenerateKeyRequest) {
 	// Return KEM UUID to workload.
 	resp := GenerateKeyResponse{
 		KeyHandle: KeyHandle{Handle: kemUUID.String()},
+		PubKey: PubKeyInfo{
+			Algorithm: AlgorithmDetails{
+				Type: "kem",
+				Params: AlgorithmParams{
+					KemID: req.Algorithm.Params.KemID,
+				},
+			},
+			PublicKey: base64.StdEncoding.EncodeToString(kemPubKey),
+		},
+		KeyProtectionMechanism: keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED.String(),
+		ExpirationTime:         time.Now().Unix() + int64(req.Lifespan),
 	}
 	writeJSON(w, resp, http.StatusOK)
 }
@@ -520,7 +516,8 @@ func (s *Server) handleEnumerateKeys(w http.ResponseWriter, _ *http.Request) {
 				},
 				PublicKey: base64.StdEncoding.EncodeToString(key.KEMPubKey),
 			},
-			RemainingLifespan: ProtoDuration{Seconds: key.RemainingLifespanSecs},
+			KeyProtectionMechanism: keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED.String(),
+			ExpirationTime:         time.Now().Unix() + int64(key.RemainingLifespanSecs),
 		})
 	}
 
