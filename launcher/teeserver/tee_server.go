@@ -9,6 +9,10 @@ import (
 	"net"
 	"net/http"
 
+	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
+	"github.com/containerd/containerd/protobuf/proto"
+	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
+	wsd "github.com/google/go-tpm-tools/keymanager/workload_service"
 	"github.com/google/go-tpm-tools/launcher/agent"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/spec"
@@ -20,9 +24,10 @@ import (
 )
 
 const (
-	gcaEndpoint      = "/v1/token"
-	itaEndpoint      = "/v1/intel/token"
-	evidenceEndpoint = "/v1/evidence"
+	gcaEndpoint         = "/v1/token"
+	itaEndpoint         = "/v1/intel/token"
+	evidenceEndpoint    = "/v1/evidence"
+	endorsementEndpoint = "/v1/keys:getEndorsement"
 )
 
 var clientErrorCodes = map[codes.Code]struct{}{
@@ -47,9 +52,10 @@ type attestHandler struct {
 	ctx         context.Context
 	attestAgent agent.AttestationAgent
 	// defaultTokenFile string
-	logger     logging.Logger
-	launchSpec spec.LaunchSpec
-	clients    AttestClients
+	logger          logging.Logger
+	launchSpec      spec.LaunchSpec
+	clients         AttestClients
+	workloadService *wsd.Server
 }
 
 // TeeServer is a server that can be called from a container through a unix
@@ -60,22 +66,27 @@ type TeeServer struct {
 }
 
 // New takes in a socket and start to listen to it, and create a server
-func New(ctx context.Context, unixSock string, a agent.AttestationAgent, logger logging.Logger, launchSpec spec.LaunchSpec, clients AttestClients) (*TeeServer, error) {
+func New(ctx context.Context, unixSock string, a agent.AttestationAgent, logger logging.Logger, launchSpec spec.LaunchSpec, clients AttestClients, workloadService *wsd.Server) (*TeeServer, error) {
 	var err error
 	nl, err := net.Listen("unix", unixSock)
 	if err != nil {
 		return nil, fmt.Errorf("cannot listen to the socket [%s]: %v", unixSock, err)
 	}
 
+	if launchSpec.Experiments.EnableKeyManager && workloadService == nil {
+		return nil, fmt.Errorf("workload service cannot be nil when key manager is enabled")
+	}
+
 	teeServer := TeeServer{
 		netListener: nl,
 		server: &http.Server{
 			Handler: (&attestHandler{
-				ctx:         ctx,
-				attestAgent: a,
-				logger:      logger,
-				launchSpec:  launchSpec,
-				clients:     clients,
+				ctx:             ctx,
+				attestAgent:     a,
+				logger:          logger,
+				launchSpec:      launchSpec,
+				clients:         clients,
+				workloadService: workloadService,
 			}).Handler(),
 		},
 	}
@@ -96,6 +107,7 @@ func (a *attestHandler) Handler() http.Handler {
 	mux.HandleFunc(gcaEndpoint, a.getToken)
 	mux.HandleFunc(itaEndpoint, a.getITAToken)
 	mux.HandleFunc(evidenceEndpoint, a.getAttestationEvidence)
+	mux.HandleFunc(endorsementEndpoint, a.getKeyEndorsement)
 	return mux
 }
 
@@ -171,6 +183,90 @@ func (a *attestHandler) getAttestationEvidence(w http.ResponseWriter, r *http.Re
 
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(evidenceBytes)
+}
+
+// getKeyEndorsement retrieves the attestation evidence with KEM and binding key claims.
+func (a *attestHandler) getKeyEndorsement(w http.ResponseWriter, r *http.Request) {
+	if !a.launchSpec.Experiments.EnableKeyManager {
+		a.logAndWriteHTTPError(w, http.StatusForbidden, fmt.Errorf("keymanager should be enabled"))
+		return
+	}
+
+	if r.Method != http.MethodPost {
+		a.logAndWriteHTTPError(w, http.StatusMethodNotAllowed, fmt.Errorf("method not allowed"))
+		return
+	}
+
+	var req struct {
+		Challenge []byte `json:"challenge"`
+		KeyHandle struct {
+			Handle string `json:"handle"`
+		} `json:"key_handle"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		a.logAndWriteHTTPError(w, http.StatusBadRequest, fmt.Errorf("failed to decode request: %v", err))
+		return
+	}
+
+	if len(req.Challenge) == 0 {
+		a.logAndWriteHTTPError(w, http.StatusBadRequest, fmt.Errorf("challenge is required"))
+		return
+	}
+
+	if len(req.KeyHandle.Handle) == 0 {
+		a.logAndWriteHTTPError(w, http.StatusBadRequest, fmt.Errorf("key_handle is required"))
+		return
+	}
+
+	kemKeyClaims, err := a.workloadService.GetClaimsFromChannel(a.ctx, req.KeyHandle.Handle, keymanager.KeyType_KEY_TYPE_VM_PROTECTION_KEY)
+	if err != nil {
+		a.logAndWriteHTTPError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	bindinghKeyClaims, err := a.workloadService.GetClaimsFromChannel(a.ctx, req.KeyHandle.Handle, keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING)
+	if err != nil {
+		a.logAndWriteHTTPError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	bindingBytes, _ := proto.Marshal(bindinghKeyClaims)
+	kemBytes, _ := proto.Marshal(kemKeyClaims)
+
+	kemEvidence, err := a.attestAgent.AttestationEvidence(a.ctx, req.Challenge, kemBytes)
+	if err != nil {
+		a.logAndWriteHTTPError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	bindingEvidence, err := a.attestAgent.AttestationEvidence(a.ctx, req.Challenge, bindingBytes)
+	if err != nil {
+		a.logAndWriteHTTPError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	keyEndoresment := &attestationpb.KeyEndorsement{
+		Endorsement: &attestationpb.KeyEndorsement_VmProtectedKeyEndorsement{
+			VmProtectedKeyEndorsement: &attestationpb.VmProtectedKeyEndorsement{
+				BindingKeyAttestation: &attestationpb.KeyAttestation{
+					Attestation: kemEvidence,
+				},
+				ProtectedKeyAttestation: &attestationpb.KeyAttestation{
+					Attestation: bindingEvidence,
+				},
+			},
+		},
+	}
+
+	keyEndorsementBytes, err := protojson.Marshal(keyEndoresment)
+	if err != nil {
+		a.logAndWriteHTTPError(w, http.StatusInternalServerError, fmt.Errorf("failed to marshal evidence: %v", err))
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(keyEndorsementBytes)
 }
 
 func (a *attestHandler) attest(w http.ResponseWriter, r *http.Request, client verifier.Client) {
