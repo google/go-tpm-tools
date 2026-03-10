@@ -3,6 +3,7 @@ package launcher
 
 import (
 	"context"
+	cryt "crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,9 +14,11 @@ import (
 	"path"
 	"strconv"
 	"strings"
+
 	"time"
 
 	"cloud.google.com/go/compute/metadata"
+	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/cio"
@@ -44,6 +47,7 @@ import (
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/oauth2"
+	"google.golang.org/protobuf/proto"
 )
 
 // ContainerRunner contains information about the container settings
@@ -52,7 +56,14 @@ type ContainerRunner struct {
 	launchSpec    spec.LaunchSpec
 	attestAgent   agent.AttestationAgent
 	logger        logging.Logger
+	gpuAttester   gpuAttester
 	serialConsole *os.File
+}
+
+// gpuAttester defines the interface for GPU attestation.
+type gpuAttester interface {
+	Attest(nonce []byte) (any, error)
+	EnableReadyState() error
 }
 
 const tokenFileTmp = ".token.tmp"
@@ -195,6 +206,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	specOpts = append(specOpts, cgroupOpts...)
 
 	var deviceROTs []agent.DeviceROT
+	var nvidiaAttester *gpu.NvidiaAttester
 	if launchSpec.InstallGpuDriver {
 		gpuMounts := []specs.Mount{
 			{
@@ -229,7 +241,8 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 			logger.Info(fmt.Sprintf("Detected nvidia device : %s", deviceFile))
 			specOpts = append(specOpts, oci.WithDevices(deviceFile, deviceFile, "crw-rw-rw-"))
 		}
-		deviceROTs = append(deviceROTs, &gpu.NvidiaAttester{})
+		nvidiaAttester = &gpu.NvidiaAttester{}
+		deviceROTs = append(deviceROTs, nvidiaAttester)
 	}
 
 	container, err = cdClient.NewContainer(
@@ -305,6 +318,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		launchSpec,
 		attestAgent,
 		logger,
+		nvidiaAttester,
 		serialConsole,
 	}, nil
 }
@@ -381,6 +395,11 @@ func (r *ContainerRunner) measureCELEvents(ctx context.Context) error {
 	if err := r.measureContainerClaims(ctx); err != nil {
 		return fmt.Errorf("failed to measure container claims: %v", err)
 	}
+
+	if err := r.measureGPUAttestationEvidence(); err != nil {
+		return fmt.Errorf("failed to measure GPU claims: %v", err)
+	}
+
 	if err := r.measureMemoryMonitor(); err != nil {
 		return fmt.Errorf("failed to measure memory monitoring state: %v", err)
 	}
@@ -445,6 +464,48 @@ func (r *ContainerRunner) measureContainerClaims(ctx context.Context) error {
 		}
 	}
 
+	return nil
+}
+
+// measureGPUAttestationEvidence will measure GPU attestation claims into the COS
+// eventlog in the AttestationAgent.
+func (r *ContainerRunner) measureGPUAttestationEvidence() error {
+	if r.gpuAttester == nil {
+		return nil
+	}
+
+	nonce := make([]byte, 32)
+	if _, err := cryt.Read(nonce); err != nil {
+		return fmt.Errorf("failed to generate random nonce: %v", err)
+	}
+
+	evidence, err := r.gpuAttester.Attest(nonce)
+	if err != nil {
+		return fmt.Errorf("failed to collect GPU evidence: %w", err)
+	}
+
+	gpuEvidence, ok := evidence.(*attestationpb.NvidiaAttestationReport)
+	if !ok {
+		return fmt.Errorf("unexpected evidence type: %T", evidence)
+	}
+
+	evidenceBytes, err := proto.Marshal(gpuEvidence)
+	if err != nil {
+		return fmt.Errorf("failed to marshal GPU evidence: %w", err)
+	}
+
+	event := cel.CosTlv{
+		EventType:    cel.GPUDeviceAttestationBindingType,
+		EventContent: evidenceBytes,
+	}
+	if err := r.attestAgent.MeasureEvent(event); err != nil {
+		return fmt.Errorf("failed to measure GPU attestation: %w", err)
+	}
+
+	if err := r.gpuAttester.EnableReadyState(); err != nil {
+		return fmt.Errorf("failed to set GPU ready state: %w", err)
+	}
+	r.logger.Info("Successfully measured GPU device attestation binding event and set GPU state to ready")
 	return nil
 }
 

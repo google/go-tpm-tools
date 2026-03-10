@@ -88,6 +88,21 @@ func (f *fakeAttestationAgent) Close() error {
 	return nil
 }
 
+type fakeGPUAttester struct {
+	attestFunc func(nonce []byte) (any, error)
+}
+
+func (f *fakeGPUAttester) Attest(nonce []byte) (any, error) {
+	if f.attestFunc != nil {
+		return f.attestFunc(nonce)
+	}
+	return &attestationpb.NvidiaAttestationReport{}, nil
+}
+
+func (f *fakeGPUAttester) EnableReadyState() error {
+	return nil
+}
+
 type fakeClaims struct {
 	jwt.RegisteredClaims
 	Signatures []string
@@ -595,12 +610,14 @@ func TestMeasureCELEvents(t *testing.T) {
 				cel.EnvVarType,
 				cel.OverrideEnvType,
 				cel.OverrideArgType,
+				cel.GPUDeviceAttestationBindingType,
 				cel.MemoryMonitorType,
 				cel.LaunchSeparatorType,
 			},
 			launchSpec: spec.LaunchSpec{
-				Envs: []spec.EnvVar{{Name: "hello", Value: "world"}},
-				Cmd:  []string{"hello world"},
+				Envs:             []spec.EnvVar{{Name: "hello", Value: "world"}},
+				Cmd:              []string{"hello world"},
+				InstallGpuDriver: true,
 			},
 		},
 		{
@@ -614,6 +631,10 @@ func TestMeasureCELEvents(t *testing.T) {
 				cel.EnvVarType,
 				cel.MemoryMonitorType,
 				cel.LaunchSeparatorType,
+				// GPUDeviceAttestationBindingType is NOT here because InstallGpuDriver is false
+			},
+			launchSpec: spec.LaunchSpec{
+				InstallGpuDriver: false,
 			},
 		},
 	}
@@ -632,8 +653,18 @@ func TestMeasureCELEvents(t *testing.T) {
 				},
 			}
 
+			var fakeGpu gpuAttester
+			if tc.launchSpec.InstallGpuDriver {
+				fakeGpu = &fakeGPUAttester{
+					attestFunc: func(_ []byte) (any, error) {
+						return &attestationpb.NvidiaAttestationReport{}, nil
+					},
+				}
+			}
+
 			r := ContainerRunner{
 				attestAgent: fakeAgent,
+				gpuAttester: fakeGpu,
 				container:   fakeContainer,
 				launchSpec:  tc.launchSpec,
 				logger:      logging.SimpleLogger(),

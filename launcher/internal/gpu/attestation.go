@@ -11,6 +11,7 @@ import (
 	"github.com/confidentsecurity/go-nvtrust/pkg/gonvtrust/gpu"
 
 	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
+	"github.com/google/go-tpm-tools/proto/attest"
 )
 
 type attestationType int
@@ -37,6 +38,26 @@ func (a *NvidiaAttester) Attest(nonce []byte) (any, error) {
 		return nil, err
 	}
 	return gpuAttestation, nil
+}
+
+// EnableReadyState checks the Confidential Computing mode and transitions the GPU to a READY state if CC is enabled.
+func (a *NvidiaAttester) EnableReadyState() error {
+	ccModeCmd := NvidiaSmiOutputFunc("conf-compute", "-f")
+	devToolsCmd := NvidiaSmiOutputFunc("conf-compute", "-d")
+
+	ccEnabled, err := QueryCCMode(ccModeCmd, devToolsCmd)
+	if err != nil {
+		return fmt.Errorf("failed to check confidential compute mode status: %v", err)
+	}
+
+	// Explicitly need to set the GPU state to READY for GPUs with confidential compute mode ON.
+	if ccEnabled == attest.GPUDeviceCCMode_ON {
+		setGPUStateCmd := NvidiaSmiOutputFunc("conf-compute", "-srs", "1")
+		if err := setGPUStateToReady(setGPUStateCmd); err != nil {
+			return fmt.Errorf("failed to set the GPU state to ready: %v", err)
+		}
+	}
+	return nil
 }
 
 // collectAttestationEvidence assumes CC GPU devices are in place w/ driver support
@@ -104,6 +125,7 @@ func (a *NvidiaAttester) collectAttestationEvidence(handler gpu.NvmlHandler, non
 					GpuQuote: gpuInfos[0],
 				},
 			},
+			Nonce: nvNonce[:],
 		}, nil
 	case MPT:
 		return &attestationpb.NvidiaAttestationReport{
@@ -112,6 +134,7 @@ func (a *NvidiaAttester) collectAttestationEvidence(handler gpu.NvmlHandler, non
 					GpuQuotes: gpuInfos,
 				},
 			},
+			Nonce: nvNonce[:],
 		}, nil
 	default:
 		return nil, fmt.Errorf("unsupported GPU attestation")
