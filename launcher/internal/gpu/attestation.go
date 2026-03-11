@@ -28,11 +28,28 @@ const (
 // Stub this func for testing purpose.
 var getGpuTypeInfo = deviceinfo.GetGPUTypeInfo
 
+// Attester defines the interface for GPU attestation.
+type Attester interface {
+	Attest(nonce []byte) (any, error)
+	EnableReadyState() error
+}
+
 // NvidiaAttester is responsible for collecting GPU attestation.
 type NvidiaAttester struct{}
 
+// NewNvidiaAttester returns a new NvidiaAttester if installGpuDriver is true, otherwise nil.
+func NewNvidiaAttester(installGpuDriver bool) Attester {
+	if !installGpuDriver {
+		return nil
+	}
+	return &NvidiaAttester{}
+}
+
 // Attest returns a GPU attestation.
 func (a *NvidiaAttester) Attest(nonce []byte) (any, error) {
+	if a == nil {
+		return nil, fmt.Errorf("nil Nvidia attester")
+	}
 	gpuAttestation, err := a.collectAttestationEvidence(&gpu.DefaultNVMLHandler{}, nonce)
 	if err != nil {
 		return nil, err
@@ -42,6 +59,10 @@ func (a *NvidiaAttester) Attest(nonce []byte) (any, error) {
 
 // EnableReadyState checks the Confidential Computing mode and transitions the GPU to a READY state if CC is enabled.
 func (a *NvidiaAttester) EnableReadyState() error {
+	if a == nil {
+		return fmt.Errorf("nil Nvidia attester")
+	}
+
 	ccModeCmd := NvidiaSmiOutputFunc("conf-compute", "-f")
 	devToolsCmd := NvidiaSmiOutputFunc("conf-compute", "-d")
 

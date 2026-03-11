@@ -14,7 +14,6 @@ import (
 	"path"
 	"strconv"
 	"strings"
-
 	"time"
 
 	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
@@ -200,7 +199,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	specOpts = append(specOpts, cgroupOpts...)
 
 	var deviceROTs []agent.DeviceROT
-	var nvidiaAttester *gpu.NvidiaAttester
+	nvidiaAttester := gpu.NewNvidiaAttester(launchSpec.InstallGpuDriver)
 	if launchSpec.InstallGpuDriver {
 		gpuMounts := []specs.Mount{
 			{
@@ -235,7 +234,6 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 			logger.Info(fmt.Sprintf("Detected nvidia device : %s", deviceFile))
 			specOpts = append(specOpts, oci.WithDevices(deviceFile, deviceFile, "crw-rw-rw-"))
 		}
-		nvidiaAttester = &gpu.NvidiaAttester{}
 		deviceROTs = append(deviceROTs, nvidiaAttester)
 	}
 
