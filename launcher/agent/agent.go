@@ -59,6 +59,7 @@ type AttestationAgent interface {
 	AttestWithClient(ctx context.Context, opts AttestAgentOpts, client verifier.Client) ([]byte, error)
 	AttestationEvidence(ctx context.Context, challenge []byte, extraData []byte) (*attestationpb.VmAttestation, error)
 	Refresh(context.Context) error
+	HasGPU() bool
 	EnableGPUReadyState() error
 	GetGPUAttestation(nonce []byte) (any, error)
 	Close() error
@@ -611,6 +612,10 @@ func convertToTPMQuote(v *pb.Attestation) *attestationpb.TpmQuote {
 			},
 		},
 	}
+}
+
+func (a *agent) HasGPU() bool {
+	return a.nvidiaAttester != nil
 }
 
 func (a *agent) EnableGPUReadyState() error {
