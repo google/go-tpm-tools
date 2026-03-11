@@ -42,6 +42,10 @@ type fakeAttestationAgent struct {
 	attestFunc              func(context.Context, agent.AttestAgentOpts) ([]byte, error)
 	attestWithClientFunc    func(context.Context, agent.AttestAgentOpts, verifier.Client) ([]byte, error)
 	attestationEvidenceFunc func(context.Context, []byte, []byte) (*attestationpb.VmAttestation, error)
+
+	hasGPU        bool
+	gpuAttestFunc func(nonce []byte) (any, error)
+	gpuReadyFunc  func() error
 }
 
 func (f fakeAttestationAgent) Attest(c context.Context, a agent.AttestAgentOpts) ([]byte, error) {
@@ -68,6 +72,25 @@ func (f fakeAttestationAgent) Close() error {
 	return nil
 }
 
+func (f *fakeAttestationAgent) HasGPU() bool {
+	return f.hasGPU
+}
+
+func (f *fakeAttestationAgent) GetGPUAttestation(nonce []byte) (any, error) {
+	if f.gpuAttestFunc != nil {
+		return f.gpuAttestFunc(nonce)
+	}
+	// Default mock return
+	return &attestationpb.NvidiaAttestationReport{}, nil
+}
+
+func (f *fakeAttestationAgent) EnableGPUReadyState() error {
+	if f.gpuReadyFunc != nil {
+		return f.gpuReadyFunc()
+	}
+	return nil
+}
+
 func TestGetDefaultToken(t *testing.T) {
 	testTokenContent := "test token"
 
@@ -76,7 +99,7 @@ func TestGetDefaultToken(t *testing.T) {
 		clients: AttestClients{
 			GCA: &fakeVerifierClient{},
 		},
-		attestAgent: fakeAttestationAgent{
+		attestAgent: &fakeAttestationAgent{
 			attestWithClientFunc: func(context.Context, agent.AttestAgentOpts, verifier.Client) ([]byte, error) {
 				return []byte(testTokenContent), nil
 			},
@@ -105,7 +128,7 @@ func TestGetDefaultTokenServerError(t *testing.T) {
 		clients: AttestClients{
 			GCA: &fakeVerifierClient{},
 		},
-		attestAgent: fakeAttestationAgent{
+		attestAgent: &fakeAttestationAgent{
 			attestWithClientFunc: func(context.Context, agent.AttestAgentOpts, verifier.Client) ([]byte, error) {
 				return nil, errors.New("internal server error from agent")
 			},
@@ -233,7 +256,7 @@ func TestCustomToken(t *testing.T) {
 						GCA: &fakeVerifierClient{},
 						ITA: &fakeVerifierClient{},
 					},
-					attestAgent: fakeAttestationAgent{
+					attestAgent: &fakeAttestationAgent{
 						attestWithClientFunc: test.attestWithClientFunc,
 					}}
 
@@ -323,7 +346,7 @@ func TestHandleAttestError(t *testing.T) {
 							GCA: &fakeVerifierClient{},
 							ITA: &fakeVerifierClient{},
 						},
-						attestAgent: fakeAttestationAgent{
+						attestAgent: &fakeAttestationAgent{
 							attestWithClientFunc: func(context.Context, agent.AttestAgentOpts, verifier.Client) ([]byte, error) {
 								return nil, tc.err
 							},
@@ -489,7 +512,7 @@ func TestCustomTokenDataParsedSuccessfully(t *testing.T) {
 			clients: AttestClients{
 				GCA: &fakeVerifierClient{},
 			},
-			attestAgent: fakeAttestationAgent{
+			attestAgent: &fakeAttestationAgent{
 				attestWithClientFunc: func(_ context.Context, gotOpts agent.AttestAgentOpts, _ verifier.Client) ([]byte, error) {
 					diff := cmp.Diff(test.wantOpts, gotOpts)
 					if diff != "" {
@@ -560,7 +583,7 @@ func TestCustomHandleAttestError(t *testing.T) {
 				clients: AttestClients{
 					GCA: &fakeVerifierClient{},
 				},
-				attestAgent: fakeAttestationAgent{
+				attestAgent: &fakeAttestationAgent{
 					attestWithClientFunc: func(context.Context, agent.AttestAgentOpts, verifier.Client) ([]byte, error) {
 						return nil, tc.err
 					},
@@ -587,7 +610,7 @@ func TestCustomHandleAttestError(t *testing.T) {
 func TestAttestationEvidence(t *testing.T) {
 	ah := attestHandler{
 		logger: logging.SimpleLogger(),
-		attestAgent: fakeAttestationAgent{
+		attestAgent: &fakeAttestationAgent{
 			attestationEvidenceFunc: func(_ context.Context, _ []byte, _ []byte) (*attestationpb.VmAttestation, error) {
 				return &attestationpb.VmAttestation{}, nil
 			},
