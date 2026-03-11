@@ -52,10 +52,10 @@ type attestHandler struct {
 	ctx         context.Context
 	attestAgent agent.AttestationAgent
 	// defaultTokenFile string
-	logger          logging.Logger
-	launchSpec      spec.LaunchSpec
-	clients         AttestClients
-	workloadService *wsd.Server
+	logger            logging.Logger
+	launchSpec        spec.LaunchSpec
+	clients           AttestClients
+	keyClaimsProvider wsd.KeyClaimsProvider
 }
 
 // TeeServer is a server that can be called from a container through a unix
@@ -66,27 +66,27 @@ type TeeServer struct {
 }
 
 // New takes in a socket and start to listen to it, and create a server
-func New(ctx context.Context, unixSock string, a agent.AttestationAgent, logger logging.Logger, launchSpec spec.LaunchSpec, clients AttestClients, workloadService *wsd.Server) (*TeeServer, error) {
+func New(ctx context.Context, unixSock string, a agent.AttestationAgent, logger logging.Logger, launchSpec spec.LaunchSpec, clients AttestClients, keyClaimsProvider wsd.KeyClaimsProvider) (*TeeServer, error) {
 	var err error
 	nl, err := net.Listen("unix", unixSock)
 	if err != nil {
 		return nil, fmt.Errorf("cannot listen to the socket [%s]: %v", unixSock, err)
 	}
 
-	if launchSpec.Experiments.EnableKeyManager && workloadService == nil {
-		return nil, fmt.Errorf("workload service cannot be nil when key manager is enabled")
+	if launchSpec.Experiments.EnableKeyManager && keyClaimsProvider == nil {
+		return nil, fmt.Errorf("key claims provider cannot be nil when key manager is enabled")
 	}
 
 	teeServer := TeeServer{
 		netListener: nl,
 		server: &http.Server{
 			Handler: (&attestHandler{
-				ctx:             ctx,
-				attestAgent:     a,
-				logger:          logger,
-				launchSpec:      launchSpec,
-				clients:         clients,
-				workloadService: workloadService,
+				ctx:               ctx,
+				attestAgent:       a,
+				logger:            logger,
+				launchSpec:        launchSpec,
+				clients:           clients,
+				keyClaimsProvider: keyClaimsProvider,
 			}).Handler(),
 		},
 	}
@@ -219,30 +219,39 @@ func (a *attestHandler) getKeyEndorsement(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	kemKeyClaims, err := a.workloadService.GetClaimsFromChannel(a.ctx, req.KeyHandle.Handle, keymanager.KeyType_KEY_TYPE_VM_PROTECTION_KEY)
+	kemKeyClaims, err := a.keyClaimsProvider.GetKeyClaims(a.ctx, req.KeyHandle.Handle, keymanager.KeyType_KEY_TYPE_VM_PROTECTION_KEY)
 	if err != nil {
-		a.logAndWriteHTTPError(w, http.StatusInternalServerError, err)
+		a.logAndWriteHTTPError(w, http.StatusInternalServerError, fmt.Errorf("failed to get kem key claims"))
 		return
 	}
 
-	bindinghKeyClaims, err := a.workloadService.GetClaimsFromChannel(a.ctx, req.KeyHandle.Handle, keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING)
+	bindingKeyClaims, err := a.keyClaimsProvider.GetKeyClaims(a.ctx, req.KeyHandle.Handle, keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING)
 	if err != nil {
-		a.logAndWriteHTTPError(w, http.StatusInternalServerError, err)
+		a.logAndWriteHTTPError(w, http.StatusInternalServerError, fmt.Errorf("failed to get binding key claims"))
 		return
 	}
 
-	bindingBytes, _ := proto.Marshal(bindinghKeyClaims)
-	kemBytes, _ := proto.Marshal(kemKeyClaims)
+	bindingBytes, err := proto.Marshal(bindingKeyClaims)
+	if err != nil {
+		a.logAndWriteHTTPError(w, http.StatusInternalServerError, fmt.Errorf("failed to marshal binding key claims: %v", err))
+		return
+	}
+
+	kemBytes, err := proto.Marshal(kemKeyClaims)
+	if err != nil {
+		a.logAndWriteHTTPError(w, http.StatusInternalServerError, fmt.Errorf("failed to marshal kem key claims: %v", err))
+		return
+	}
 
 	kemEvidence, err := a.attestAgent.AttestationEvidence(a.ctx, req.Challenge, kemBytes)
 	if err != nil {
-		a.logAndWriteHTTPError(w, http.StatusInternalServerError, err)
+		a.logAndWriteHTTPError(w, http.StatusInternalServerError, fmt.Errorf("failed to collect attestation evidence with kem key claims"))
 		return
 	}
 
 	bindingEvidence, err := a.attestAgent.AttestationEvidence(a.ctx, req.Challenge, bindingBytes)
 	if err != nil {
-		a.logAndWriteHTTPError(w, http.StatusInternalServerError, err)
+		a.logAndWriteHTTPError(w, http.StatusInternalServerError, fmt.Errorf("failed to collect attestation evidence with binding key claims"))
 		return
 	}
 
@@ -250,10 +259,10 @@ func (a *attestHandler) getKeyEndorsement(w http.ResponseWriter, r *http.Request
 		Endorsement: &attestationpb.KeyEndorsement_VmProtectedKeyEndorsement{
 			VmProtectedKeyEndorsement: &attestationpb.VmProtectedKeyEndorsement{
 				BindingKeyAttestation: &attestationpb.KeyAttestation{
-					Attestation: kemEvidence,
+					Attestation: bindingEvidence,
 				},
 				ProtectedKeyAttestation: &attestationpb.KeyAttestation{
-					Attestation: bindingEvidence,
+					Attestation: kemEvidence,
 				},
 			},
 		},

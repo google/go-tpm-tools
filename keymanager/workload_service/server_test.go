@@ -1297,7 +1297,7 @@ func TestGetClaimsFromChannel(t *testing.T) {
 				}
 			}()
 
-			result, err := s.GetClaimsFromChannel(ctx, keyHandle, tt.keyType)
+			result, err := s.GetKeyClaims(ctx, keyHandle, tt.keyType)
 
 			if tt.wantErr != "" {
 				if err == nil {

@@ -687,15 +687,13 @@ func (s *Server) handleGetClaims(req *keymanager.GetKeyClaimsRequest) *ClaimsRes
 	return &ClaimsResult{Reply: claims}
 }
 
-// GetClaimsFromChannel enqueues GetKeyClaims request to claims channel for getting the key claims.
-func (s *Server) GetClaimsFromChannel(ctx context.Context, keyHandle string, keyType keymanager.KeyType) (*keymanager.KeyClaims, error) {
-
+// GetKeyClaims enqueues request for getting key claims to claims channel.
+func (s *Server) GetKeyClaims(ctx context.Context, keyHandle string, keyType keymanager.KeyType) (*keymanager.KeyClaims, error) {
 	respChan := make(chan *ClaimsResult, 1)
 	req := &keymanager.GetKeyClaimsRequest{
 		KeyHandle: &keymanager.KeyHandle{Handle: keyHandle},
 		KeyType:   keyType,
 	}
-
 	select {
 	case s.claimsChan <- &ClaimsCall{Request: req, RespChan: respChan}:
 	case <-ctx.Done():
@@ -703,17 +701,14 @@ func (s *Server) GetClaimsFromChannel(ctx context.Context, keyHandle string, key
 	case <-time.After(ClaimsRequestTimeout):
 		return nil, fmt.Errorf("failed to send request: claims channel is full or worker is stuck")
 	}
-
 	select {
 	case result := <-respChan:
 		if result.Err != nil {
 			return nil, fmt.Errorf("worker error: %w", result.Err)
 		}
 		return result.Reply, nil
-
 	case <-ctx.Done():
 		return nil, ctx.Err()
-
 	case <-time.After(ClaimsResponseTimeout):
 		return nil, fmt.Errorf("timed out waiting for processClaims to respond for key: %s", keyHandle)
 	}
