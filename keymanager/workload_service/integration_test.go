@@ -47,7 +47,7 @@ func TestIntegrationGenerateKeysEndToEnd(t *testing.T) {
 
 	reqBody, err := json.Marshal(GenerateKeyRequest{
 		Algorithm: AlgorithmDetails{Type: "kem", Params: AlgorithmParams{KemID: KemAlgorithmDHKEMX25519HKDFSHA256}},
-		Lifespan:  ProtoDuration{Seconds: 3600},
+		Lifespan:  3600,
 	})
 	if err != nil {
 		t.Fatalf("failed to marshal request: %v", err)
@@ -98,7 +98,7 @@ func TestIntegrationGenerateKeysUniqueMappings(t *testing.T) {
 	for i := 0; i < 2; i++ {
 		reqBody, err := json.Marshal(GenerateKeyRequest{
 			Algorithm: AlgorithmDetails{Type: "kem", Params: AlgorithmParams{KemID: KemAlgorithmDHKEMX25519HKDFSHA256}},
-			Lifespan:  ProtoDuration{Seconds: 3600},
+			Lifespan:  3600,
 		})
 		if err != nil {
 			t.Fatalf("call %d: failed to marshal request: %v", i+1, err)
@@ -149,7 +149,7 @@ func TestIntegrationDestroyKey(t *testing.T) {
 	// 1. Generate a key first
 	reqBody, _ := json.Marshal(GenerateKeyRequest{
 		Algorithm: AlgorithmDetails{Type: "kem", Params: AlgorithmParams{KemID: KemAlgorithmDHKEMX25519HKDFSHA256}},
-		Lifespan:  ProtoDuration{Seconds: 3600},
+		Lifespan:  3600,
 	})
 	reqGen := httptest.NewRequest(http.MethodPost, "/v1/keys:generate_key", bytes.NewReader(reqBody))
 	reqGen.Header.Set("Content-Type", "application/json")
@@ -217,7 +217,7 @@ func TestIntegrationAutoDestroy(t *testing.T) {
 	// 1. Generate a key with 1-second lifespan
 	reqBody, _ := json.Marshal(GenerateKeyRequest{
 		Algorithm: AlgorithmDetails{Type: "kem", Params: AlgorithmParams{KemID: KemAlgorithmDHKEMX25519HKDFSHA256}},
-		Lifespan:  ProtoDuration{Seconds: 1},
+		Lifespan:  1,
 	})
 	reqGen := httptest.NewRequest(http.MethodPost, "/v1/keys:generate_key", bytes.NewReader(reqBody))
 	reqGen.Header.Set("Content-Type", "application/json")
@@ -264,7 +264,7 @@ func TestIntegrationKeyClaims(t *testing.T) {
 	// 1. Generate a KEM key
 	reqBody, _ := json.Marshal(GenerateKeyRequest{
 		Algorithm: AlgorithmDetails{Type: "kem", Params: AlgorithmParams{KemID: KemAlgorithmDHKEMX25519HKDFSHA256}},
-		Lifespan:  ProtoDuration{Seconds: 3600},
+		Lifespan:  3600,
 	})
 	req := httptest.NewRequest(http.MethodPost, "/v1/keys:generate_key", bytes.NewReader(reqBody))
 	w := httptest.NewRecorder()
