@@ -8,6 +8,9 @@ import (
 	"strings"
 	"testing"
 
+	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
+
+	"github.com/containerd/containerd/protobuf/proto"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-configfs-tsm/configfs/fakertmr"
 	configfstsmrtmr "github.com/google/go-configfs-tsm/rtmr"
@@ -832,6 +835,25 @@ func TestParsingRTMREventlog(t *testing.T) {
 	emptyHealthMonitoringState := attestpb.HealthMonitoringState{}
 	emptyGpuDeviceState := attestpb.GpuDeviceState{}
 
+	report := &attestationpb.NvidiaAttestationReport{
+		CcFeature: &attestationpb.NvidiaAttestationReport_Spt{
+			Spt: &attestationpb.NvidiaAttestationReport_SinglePassthroughAttestation{
+				GpuQuote: &attestationpb.GpuInfo{
+					//
+					Uuid:                "fake-gpu-uuid",
+					VbiosVersion:        "fake-vbios-version",
+					DriverVersion:       "fake-driver-version",
+					GpuArchitectureType: attestationpb.GpuArchitectureType_GPU_ARCHITECTURE_TYPE_BLACKWELL,
+				},
+			},
+		},
+	}
+
+	gpuEvidenceBytes, err := proto.Marshal(report)
+	if err != nil {
+		t.Fatalf("failed to marshal mock GPU evidence: %v", err)
+	}
+
 	var buf bytes.Buffer
 	// First, encode an empty CEL and try to parse it.
 	if err := coscel.EncodeCEL(&buf); err != nil {
@@ -877,6 +899,7 @@ func TestParsingRTMREventlog(t *testing.T) {
 		{cel.ArgType, cel.CosCCELMRIndex, []byte("")},
 		{cel.MemoryMonitorType, cel.CosCCELMRIndex, []byte{1}},
 		{cel.GpuCCModeType, cel.CosCCELMRIndex, []byte(attestpb.GPUDeviceCCMode_ON.String())},
+		{cel.GPUDeviceAttestationBindingType, cel.CosCCELMRIndex, gpuEvidenceBytes},
 	}
 
 	expectedEnvVars := make(map[string]string)
