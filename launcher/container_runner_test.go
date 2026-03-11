@@ -393,7 +393,6 @@ func TestMeasureGPUAttestationEvidence(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			r := &ContainerRunner{
-				// The fakeGPUAttester doesn't have EnableReadyState, so we wrap it.
 				attestAgent: tc.attestAgent,
 				logger:      logging.SimpleLogger(),
 			}
@@ -745,7 +744,7 @@ func TestMeasureCELEvents(t *testing.T) {
 			gotEvents := []cel.CosType{}
 
 			fakeAgent := &fakeAttestationAgent{
-				hasGPU: tc.launchSpec.InstallGpuDriver, // This is the toggle!
+				hasGPU: tc.launchSpec.InstallGpuDriver,
 				measureEventFunc: func(content gecel.Content) error {
 					got, _ := content.TLV()
 					tlv := &gecel.TLV{}
@@ -753,7 +752,6 @@ func TestMeasureCELEvents(t *testing.T) {
 					gotEvents = append(gotEvents, cel.CosType(tlv.Type))
 					return nil
 				},
-				// Provide a default report so GetGPUAttestation doesn't fail
 				gpuAttestFunc: func(_ []byte) (any, error) {
 					return &attestationpb.NvidiaAttestationReport{}, nil
 				},
