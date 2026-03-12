@@ -26,18 +26,18 @@ jobs:
     name: Release (${{ matrix.os}}, Go ${{ matrix.go-version }})
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
           ref: ${{ inputs.refToBuild }}
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: ${{ matrix.go-version }}
           cache: true
       - shell: bash
         run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
       - id: cache
-        uses: actions/cache@v3
+        uses: actions/cache@v5
         with:
           path: dist/${{ matrix.os }}
           key: ${{ matrix.go }}-${{ env.sha_short }}
