@@ -715,13 +715,7 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		attestClients.GCA = gcaClient
 	}
 
-	teeServer, err := teeserver.New(ctx, path.Join(launcherfile.HostTmpPath, teeServerSocket), r.attestAgent, r.logger, r.launchSpec, attestClients)
-	if err != nil {
-		return fmt.Errorf("failed to create the TEE server: %v", err)
-	}
-	go teeServer.Serve()
-	defer teeServer.Shutdown(ctx)
-
+	var workloadService *workloadservice.Server
 	// create and start the key manager server
 	if r.launchSpec.Experiments.EnableKeyManager {
 		r.logger.Info("EnableKeyManager experiment is enabled: initializing KeyManager server.")
@@ -729,9 +723,17 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("failed to create the KeyManager server: %v", err)
 		}
+		workloadService = keyManagerServer
 		go keyManagerServer.Serve()
 		defer keyManagerServer.Shutdown(ctx)
 	}
+
+	teeServer, err := teeserver.New(ctx, path.Join(launcherfile.HostTmpPath, teeServerSocket), r.attestAgent, r.logger, r.launchSpec, attestClients, workloadService)
+	if err != nil {
+		return fmt.Errorf("failed to create the TEE server: %v", err)
+	}
+	go teeServer.Serve()
+	defer teeServer.Shutdown(ctx)
 
 	// Avoids breaking existing memory monitoring tests that depend on this log.
 	if r.launchSpec.MonitoringEnabled == spec.None {

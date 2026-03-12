@@ -1,7 +1,9 @@
 package teeserver
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -12,12 +14,16 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	gecel "github.com/google/go-eventlog/cel"
+	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
 	"github.com/google/go-tpm-tools/launcher/agent"
+	"github.com/google/go-tpm-tools/launcher/internal/experiments"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
+	"github.com/google/go-tpm-tools/launcher/spec"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/google/go-tpm-tools/verifier/models"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protojson"
 
 	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
 )
@@ -66,6 +72,19 @@ func (f fakeAttestationAgent) Refresh(_ context.Context) error {
 
 func (f fakeAttestationAgent) Close() error {
 	return nil
+}
+
+// Mock for KeyClaimsProvider interface
+type mockClaimsProvider struct {
+	claims map[keymanager.KeyType]*keymanager.KeyClaims
+	err    error
+}
+
+func (m *mockClaimsProvider) GetKeyClaims(_ context.Context, _ string, kt keymanager.KeyType) (*keymanager.KeyClaims, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	return m.claims[kt], nil
 }
 
 func TestGetDefaultToken(t *testing.T) {
@@ -601,5 +620,119 @@ func TestAttestationEvidence(t *testing.T) {
 
 	if w.Code != http.StatusOK {
 		t.Errorf("got return code: %d, want: %d", w.Code, http.StatusOK)
+	}
+}
+
+func TestGetKeyEndorsement(t *testing.T) {
+	testHandle := "66eeec4b-0b20-4b30-987b-9c46b74ecc16"
+	testChallenge := []byte("test-challenge")
+
+	tests := []struct {
+		name         string
+		reqBody      interface{}
+		enableKM     bool
+		claimsErr    error
+		attestErr    error
+		wantStatus   int
+		expectErrMsg string
+	}{
+		{
+			name: "success",
+			reqBody: map[string]interface{}{
+				"challenge":  testChallenge,
+				"key_handle": map[string]string{"handle": testHandle},
+			},
+			enableKM:   true,
+			wantStatus: http.StatusOK,
+		},
+		{
+			name: "key manager disabled",
+			reqBody: map[string]interface{}{
+				"challenge":  testChallenge,
+				"key_handle": map[string]string{"handle": testHandle},
+			},
+			enableKM:   false,
+			wantStatus: http.StatusForbidden,
+		},
+		{
+			name: "missing key handle",
+			reqBody: map[string]interface{}{
+				"challenge":  testChallenge,
+				"key_handle": map[string]string{"handle": ""},
+			},
+			enableKM:   true,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name: "claims provider error",
+			reqBody: map[string]interface{}{
+				"challenge":  testChallenge,
+				"key_handle": map[string]string{"handle": testHandle},
+			},
+			enableKM:   true,
+			claimsErr:  fmt.Errorf("internal provider error"),
+			wantStatus: http.StatusInternalServerError,
+		},
+		{
+			name: "attestation agent error",
+			reqBody: map[string]interface{}{
+				"challenge":  testChallenge,
+				"key_handle": map[string]string{"handle": testHandle},
+			},
+			enableKM:   true,
+			attestErr:  fmt.Errorf("tpm failure"),
+			wantStatus: http.StatusInternalServerError,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mClaims := &mockClaimsProvider{
+				err: tt.claimsErr,
+				claims: map[keymanager.KeyType]*keymanager.KeyClaims{
+					keymanager.KeyType_KEY_TYPE_VM_PROTECTION_KEY:     {Claims: &keymanager.KeyClaims_VmKeyClaims{}},
+					keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING: {Claims: &keymanager.KeyClaims_VmBindingClaims{}},
+				},
+			}
+			mAgent := &fakeAttestationAgent{
+				attestationEvidenceFunc: func(_ context.Context, _, b2 []byte) (*attestationpb.VmAttestation, error) {
+					if tt.attestErr != nil {
+						return nil, tt.attestErr
+					}
+					return &attestationpb.VmAttestation{ExtraData: b2}, nil
+				},
+			}
+			handler := &attestHandler{
+				ctx:               context.Background(),
+				attestAgent:       mAgent,
+				keyClaimsProvider: mClaims,
+				logger:            logging.SimpleLogger(),
+				launchSpec: spec.LaunchSpec{
+					Experiments: experiments.Experiments{EnableKeyManager: tt.enableKM},
+				},
+			}
+			body, _ := json.Marshal(tt.reqBody)
+			req := httptest.NewRequest(http.MethodPost, endorsementEndpoint, bytes.NewBuffer(body))
+			rr := httptest.NewRecorder()
+			handler.getKeyEndorsement(rr, req)
+
+			if rr.Code != tt.wantStatus {
+				t.Errorf("%s: got status %v, want %v. Body: %s", tt.name, rr.Code, tt.wantStatus, rr.Body.String())
+			}
+			if tt.wantStatus == http.StatusOK {
+				var endorsement attestationpb.KeyEndorsement
+				if err := protojson.Unmarshal(rr.Body.Bytes(), &endorsement); err != nil {
+					t.Fatalf("failed to unmarshal response: %v", err)
+				}
+				vmEndorsement := endorsement.GetVmProtectedKeyEndorsement()
+				if vmEndorsement == nil {
+					t.Fatal("response missing VmProtectedKeyEndorsement")
+				}
+				if vmEndorsement.BindingKeyAttestation.Attestation == nil ||
+					vmEndorsement.ProtectedKeyAttestation.Attestation == nil {
+					t.Error("one or both attestations are nil")
+				}
+			}
+		})
 	}
 }
