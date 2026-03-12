@@ -499,6 +499,10 @@ func (k *Key) CertDERBytes() []byte {
 
 // SetCert assigns the provided certificate to the key after verifying it matches the key.
 func (k *Key) SetCert(cert *x509.Certificate) error {
+	if cert == nil || cert.PublicKey == nil {
+		return errors.New("no certificate publickey provided")
+	}
+
 	certPubKey := cert.PublicKey.(crypto.PublicKey) // This cast cannot fail
 	if !internal.PubKeysEqual(certPubKey, k.pubKey) {
 		return errors.New("certificate does not match key")

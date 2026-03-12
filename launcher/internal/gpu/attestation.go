@@ -11,6 +11,7 @@ import (
 	"github.com/confidentsecurity/go-nvtrust/pkg/gonvtrust/gpu"
 
 	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
+	"github.com/google/go-tpm-tools/proto/attest"
 )
 
 type attestationType int
@@ -27,16 +28,57 @@ const (
 // Stub this func for testing purpose.
 var getGpuTypeInfo = deviceinfo.GetGPUTypeInfo
 
+// Attester defines the interface for GPU attestation.
+type Attester interface {
+	Attest(nonce []byte) (any, error)
+	EnableReadyState() error
+}
+
 // NvidiaAttester is responsible for collecting GPU attestation.
 type NvidiaAttester struct{}
 
+// NewNvidiaAttester returns a new NvidiaAttester if installGpuDriver is true, otherwise nil.
+func NewNvidiaAttester(installGpuDriver bool) Attester {
+	if !installGpuDriver {
+		return nil
+	}
+	return &NvidiaAttester{}
+}
+
 // Attest returns a GPU attestation.
 func (a *NvidiaAttester) Attest(nonce []byte) (any, error) {
+	if a == nil {
+		return nil, fmt.Errorf("nil Nvidia attester")
+	}
 	gpuAttestation, err := a.collectAttestationEvidence(&gpu.DefaultNVMLHandler{}, nonce)
 	if err != nil {
 		return nil, err
 	}
 	return gpuAttestation, nil
+}
+
+// EnableReadyState checks the Confidential Computing mode and transitions the GPU to a READY state if CC is enabled.
+func (a *NvidiaAttester) EnableReadyState() error {
+	if a == nil {
+		return fmt.Errorf("nil Nvidia attester")
+	}
+
+	ccModeCmd := NvidiaSmiOutputFunc("conf-compute", "-f")
+	devToolsCmd := NvidiaSmiOutputFunc("conf-compute", "-d")
+
+	ccEnabled, err := QueryCCMode(ccModeCmd, devToolsCmd)
+	if err != nil {
+		return fmt.Errorf("failed to check confidential compute mode status: %v", err)
+	}
+
+	// Explicitly need to set the GPU state to READY for GPUs with confidential compute mode ON.
+	if ccEnabled == attest.GPUDeviceCCMode_ON {
+		setGPUStateCmd := NvidiaSmiOutputFunc("conf-compute", "-srs", "1")
+		if err := setGPUStateToReady(setGPUStateCmd); err != nil {
+			return fmt.Errorf("failed to set the GPU state to ready: %v", err)
+		}
+	}
+	return nil
 }
 
 // collectAttestationEvidence assumes CC GPU devices are in place w/ driver support
@@ -104,6 +146,7 @@ func (a *NvidiaAttester) collectAttestationEvidence(handler gpu.NvmlHandler, non
 					GpuQuote: gpuInfos[0],
 				},
 			},
+			Nonce: nvNonce[:],
 		}, nil
 	case MPT:
 		return &attestationpb.NvidiaAttestationReport{
@@ -112,6 +155,7 @@ func (a *NvidiaAttester) collectAttestationEvidence(handler gpu.NvmlHandler, non
 					GpuQuotes: gpuInfos,
 				},
 			},
+			Nonce: nvNonce[:],
 		}, nil
 	default:
 		return nil, fmt.Errorf("unsupported GPU attestation")

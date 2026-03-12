@@ -176,25 +176,10 @@ func (di *DriverInstaller) InstallGPUDrivers(ctx context.Context) error {
 		return fmt.Errorf("failed to verify GPU driver installation: %v", err)
 	}
 
-	ccModeCmd := NvidiaSmiOutputFunc("conf-compute", "-f")
-	devToolsCmd := NvidiaSmiOutputFunc("conf-compute", "-d")
-
 	if gpuType == deviceinfo.B200 {
 		topologyVerificationCmd := NvidiaSmiOutputFunc("topo", "-m")
 		if err = verifyDriverInstallation(topologyVerificationCmd); err != nil {
 			return fmt.Errorf("failed to verify Multi GPU topology: %v", err)
-		}
-	}
-
-	ccEnabled, err := QueryCCMode(ccModeCmd, devToolsCmd)
-	if err != nil {
-		return fmt.Errorf("failed to check confidential compute mode status: %v", err)
-	}
-	// Explicitly need to set the GPU state to READY for GPUs with confidential compute mode ON.
-	if ccEnabled == attest.GPUDeviceCCMode_ON {
-		setGPUStateCmd := NvidiaSmiOutputFunc("conf-compute", "-srs", "1")
-		if err = setGPUStateToReady(setGPUStateCmd); err != nil {
-			return fmt.Errorf("failed to set the GPU state to ready: %v", err)
 		}
 	}
 
