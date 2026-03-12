@@ -2,8 +2,10 @@ package workloadservice
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -1221,5 +1223,102 @@ func TestProcessClaimsTimeout(t *testing.T) {
 		}
 	case <-time.After(1 * time.Second):
 		t.Fatal("timed out waiting for second request response - background worker might be blocked!")
+	}
+}
+
+func TestGetClaimsFromChannel(t *testing.T) {
+	keyHandle := "test-uuid-123"
+	expectedReply := &keymanager.KeyClaims{
+		Claims: &keymanager.KeyClaims_VmBindingClaims{},
+	}
+
+	tests := []struct {
+		name           string
+		keyType        keymanager.KeyType
+		workerBehavior func(call *ClaimsCall)
+		ctxTimeout     time.Duration
+		wantErr        string
+	}{
+		{
+			name:    "success",
+			keyType: keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING,
+			workerBehavior: func(call *ClaimsCall) {
+				call.RespChan <- &ClaimsResult{Reply: expectedReply}
+			},
+			ctxTimeout: 5 * time.Second,
+			wantErr:    "",
+		},
+		{
+			name:    "worker returns error",
+			keyType: keymanager.KeyType_KEY_TYPE_VM_PROTECTION_KEY,
+			workerBehavior: func(call *ClaimsCall) {
+				call.RespChan <- &ClaimsResult{Err: errors.New("db connection failed")}
+			},
+			ctxTimeout: 5 * time.Second,
+			wantErr:    "worker error: db connection failed",
+		},
+		{
+			name:    "context already cancelled",
+			keyType: keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING,
+			workerBehavior: func(_ *ClaimsCall) {
+				// Worker won't even be reached if ctx is canceled early
+			},
+			ctxTimeout: -1, // Force immediate cancel
+			wantErr:    context.Canceled.Error(),
+		},
+		{
+			name:    "response timeout",
+			keyType: keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING,
+			workerBehavior: func(_ *ClaimsCall) {
+				// Simulate worker hanging by doing nothing
+			},
+			ctxTimeout: 5 * time.Second,
+			wantErr:    "timed out waiting for processClaims",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			claimsChan := make(chan *ClaimsCall, 1)
+			s := &Server{claimsChan: claimsChan}
+
+			var ctx context.Context
+			var cancel context.CancelFunc
+			if tt.ctxTimeout < 0 {
+				ctx, cancel = context.WithCancel(context.Background())
+				cancel() // Pre-cancel
+			} else {
+				ctx, cancel = context.WithTimeout(context.Background(), tt.ctxTimeout)
+				defer cancel()
+			}
+
+			go func() {
+				select {
+				case call := <-claimsChan:
+					tt.workerBehavior(call)
+				case <-ctx.Done():
+					return
+				}
+			}()
+
+			result, err := s.GetKeyClaims(ctx, keyHandle, tt.keyType)
+
+			if tt.wantErr != "" {
+				if err == nil {
+					t.Fatalf("expected error containing %q, got nil", tt.wantErr)
+				}
+				if !strings.Contains(err.Error(), tt.wantErr) {
+					t.Errorf("expected error %q, got %q", tt.wantErr, err.Error())
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if result != expectedReply {
+				t.Errorf("result mismatch: expected %v, got %v", expectedReply, result)
+			}
+		})
 	}
 }
