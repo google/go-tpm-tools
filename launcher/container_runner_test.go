@@ -25,7 +25,6 @@ import (
 	gecel "github.com/google/go-eventlog/cel"
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/launcher/agent"
-	"github.com/google/go-tpm-tools/launcher/internal/gpu"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/spec"
@@ -110,21 +109,6 @@ func (f *fakeAttestationAgent) Refresh(ctx context.Context) error {
 }
 
 func (f *fakeAttestationAgent) Close() error {
-	return nil
-}
-
-type fakeGPUAttester struct {
-	attestFunc func(nonce []byte) (any, error)
-}
-
-func (f *fakeGPUAttester) Attest(nonce []byte) (any, error) {
-	if f.attestFunc != nil {
-		return f.attestFunc(nonce)
-	}
-	return &attestationpb.NvidiaAttestationReport{}, nil
-}
-
-func (f *fakeGPUAttester) EnableReadyState() error {
 	return nil
 }
 
@@ -336,7 +320,6 @@ func TestRefreshTokenError(t *testing.T) {
 func TestMeasureGPUAttestationEvidence(t *testing.T) {
 	testCases := []struct {
 		name        string
-		gpuAttester gpu.Attester
 		attestAgent *fakeAttestationAgent
 		wantErr     bool
 		wantErrStr  string
@@ -355,7 +338,7 @@ func TestMeasureGPUAttestationEvidence(t *testing.T) {
 		{
 			name: "NoGpuDetected",
 			attestAgent: &fakeAttestationAgent{
-				hasGPU: false, // Runner will return nil immediately
+				hasGPU: false,
 			},
 			wantErr: false,
 		},
@@ -375,7 +358,7 @@ func TestMeasureGPUAttestationEvidence(t *testing.T) {
 			attestAgent: &fakeAttestationAgent{
 				hasGPU: true,
 				gpuAttestFunc: func(_ []byte) (any, error) {
-					return "not a proto report", nil
+					return "wrong type", nil
 				},
 			},
 			wantErr:    true,
