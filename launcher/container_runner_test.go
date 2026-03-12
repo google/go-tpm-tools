@@ -342,45 +342,52 @@ func TestMeasureGPUAttestationEvidence(t *testing.T) {
 		wantErrStr  string
 	}{
 		{
-			name:        "Success",
-			gpuAttester: &fakeGPUAttester{},
+			name: "Success",
 			attestAgent: &fakeAttestationAgent{
+				hasGPU:           true,
 				measureEventFunc: func(gecel.Content) error { return nil },
+				gpuAttestFunc: func(_ []byte) (any, error) {
+					return &attestationpb.NvidiaAttestationReport{}, nil
+				},
 			},
 			wantErr: false,
 		},
 		{
-			name:        "NilGpuAttester",
-			gpuAttester: nil,
-			attestAgent: &fakeAttestationAgent{},
-			wantErr:     false,
+			name: "NoGpuDetected",
+			attestAgent: &fakeAttestationAgent{
+				hasGPU: false, // Runner will return nil immediately
+			},
+			wantErr: false,
 		},
 		{
 			name: "AttestError",
-			gpuAttester: &fakeGPUAttester{
-				attestFunc: func(_ []byte) (any, error) {
+			attestAgent: &fakeAttestationAgent{
+				hasGPU: true,
+				gpuAttestFunc: func(_ []byte) (any, error) {
 					return nil, errors.New("attest failed")
 				},
 			},
-			attestAgent: &fakeAttestationAgent{},
-			wantErr:     true,
-			wantErrStr:  "failed to collect GPU evidence",
+			wantErr:    true,
+			wantErrStr: "failed to collect GPU evidence",
 		},
 		{
 			name: "WrongEvidenceType",
-			gpuAttester: &fakeGPUAttester{
-				attestFunc: func(_ []byte) (any, error) {
-					return "wrong type", nil
+			attestAgent: &fakeAttestationAgent{
+				hasGPU: true,
+				gpuAttestFunc: func(_ []byte) (any, error) {
+					return "not a proto report", nil
 				},
 			},
-			attestAgent: &fakeAttestationAgent{},
-			wantErr:     true,
-			wantErrStr:  "unexpected evidence type",
+			wantErr:    true,
+			wantErrStr: "unexpected evidence type",
 		},
 		{
-			name:        "MeasureEventError",
-			gpuAttester: &fakeGPUAttester{},
+			name: "MeasureEventError",
 			attestAgent: &fakeAttestationAgent{
+				hasGPU: true,
+				gpuAttestFunc: func(_ []byte) (any, error) {
+					return &attestationpb.NvidiaAttestationReport{}, nil
+				},
 				measureEventFunc: func(gecel.Content) error {
 					return errors.New("measure event failed")
 				},
