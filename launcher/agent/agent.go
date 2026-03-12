@@ -85,7 +85,7 @@ type DeviceROT interface {
 	Attest(nonce []byte) (any, error)
 }
 
-// gpuAttester defines the interface for GPU attestation.
+// GPUAttester defines the interface for GPU attestation.
 type GPUAttester interface {
 	Attest(nonce []byte) (any, error)
 	EnableReadyState() error
