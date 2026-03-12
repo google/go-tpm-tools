@@ -5,7 +5,7 @@ FROM python:3.10-slim
 WORKDIR /app
 
 # Install the required Python packages
-RUN pip install requests requests-unixsocket pyhpke
+RUN pip install requests requests-unixsocket pyhpke jsonschema
 
 # Copy the client script
 COPY client_test.py /app/client_test.py
