@@ -188,7 +188,7 @@ func (a *attestHandler) getAttestationEvidence(w http.ResponseWriter, r *http.Re
 // getKeyEndorsement retrieves the attestation evidence with KEM and binding key claims.
 func (a *attestHandler) getKeyEndorsement(w http.ResponseWriter, r *http.Request) {
 	if !a.launchSpec.Experiments.EnableKeyManager {
-		a.logAndWriteHTTPError(w, http.StatusForbidden, fmt.Errorf("keymanager should be enabled"))
+		a.logAndWriteHTTPError(w, http.StatusForbidden, fmt.Errorf("keymanager not enabled"))
 		return
 	}
 
@@ -221,7 +221,7 @@ func (a *attestHandler) getKeyEndorsement(w http.ResponseWriter, r *http.Request
 
 	kemKeyClaims, err := a.keyClaimsProvider.GetKeyClaims(a.ctx, req.KeyHandle.Handle, keymanager.KeyType_KEY_TYPE_VM_PROTECTION_KEY)
 	if err != nil {
-		a.logAndWriteHTTPError(w, http.StatusInternalServerError, fmt.Errorf("failed to get kem key claims"))
+		a.logAndWriteHTTPError(w, http.StatusInternalServerError, fmt.Errorf("failed to get KEM key claims"))
 		return
 	}
 
@@ -239,7 +239,7 @@ func (a *attestHandler) getKeyEndorsement(w http.ResponseWriter, r *http.Request
 
 	kemBytes, err := proto.Marshal(kemKeyClaims)
 	if err != nil {
-		a.logAndWriteHTTPError(w, http.StatusInternalServerError, fmt.Errorf("failed to marshal kem key claims: %v", err))
+		a.logAndWriteHTTPError(w, http.StatusInternalServerError, fmt.Errorf("failed to marshal KEM key claims: %v", err))
 		return
 	}
 
@@ -255,7 +255,7 @@ func (a *attestHandler) getKeyEndorsement(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	keyEndoresment := &attestationpb.KeyEndorsement{
+	keyEndorsement := &attestationpb.KeyEndorsement{
 		Endorsement: &attestationpb.KeyEndorsement_VmProtectedKeyEndorsement{
 			VmProtectedKeyEndorsement: &attestationpb.VmProtectedKeyEndorsement{
 				BindingKeyAttestation: &attestationpb.KeyAttestation{
@@ -268,7 +268,7 @@ func (a *attestHandler) getKeyEndorsement(w http.ResponseWriter, r *http.Request
 		},
 	}
 
-	keyEndorsementBytes, err := protojson.Marshal(keyEndoresment)
+	keyEndorsementBytes, err := protojson.Marshal(keyEndorsement)
 	if err != nil {
 		a.logAndWriteHTTPError(w, http.StatusInternalServerError, fmt.Errorf("failed to marshal evidence: %v", err))
 		return
