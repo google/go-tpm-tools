@@ -16,8 +16,9 @@ import (
 	"strings"
 	"time"
 
-	"cloud.google.com/go/compute/metadata"
 	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
+
+	"cloud.google.com/go/compute/metadata"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/cio"
@@ -55,7 +56,6 @@ type ContainerRunner struct {
 	launchSpec    spec.LaunchSpec
 	attestAgent   agent.AttestationAgent
 	logger        logging.Logger
-	gpuAttester   gpu.Attester
 	serialConsole *os.File
 }
 
@@ -310,7 +310,6 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		launchSpec,
 		attestAgent,
 		logger,
-		nvidiaAttester,
 		serialConsole,
 	}, nil
 }
@@ -462,7 +461,7 @@ func (r *ContainerRunner) measureContainerClaims(ctx context.Context) error {
 // measureGPUAttestationEvidence will measure GPU attestation claims into the COS
 // eventlog in the AttestationAgent.
 func (r *ContainerRunner) measureGPUAttestationEvidence() error {
-	if r.gpuAttester == nil {
+	if !r.attestAgent.HasGPU() {
 		return nil
 	}
 
@@ -471,7 +470,7 @@ func (r *ContainerRunner) measureGPUAttestationEvidence() error {
 		return fmt.Errorf("failed to generate random nonce: %v", err)
 	}
 
-	evidence, err := r.gpuAttester.Attest(nonce)
+	evidence, err := r.attestAgent.GetGPUAttestation(nonce)
 	if err != nil {
 		return fmt.Errorf("failed to collect GPU evidence: %w", err)
 	}
@@ -494,7 +493,7 @@ func (r *ContainerRunner) measureGPUAttestationEvidence() error {
 		return fmt.Errorf("failed to measure GPU attestation: %w", err)
 	}
 
-	if err := r.gpuAttester.EnableReadyState(); err != nil {
+	if err := r.attestAgent.EnableGPUReadyState(); err != nil {
 		return fmt.Errorf("failed to set GPU ready state: %w", err)
 	}
 	r.logger.Info("Successfully measured GPU device attestation binding event and set GPU state to ready")
