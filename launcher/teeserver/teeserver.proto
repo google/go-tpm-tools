@@ -1,0 +1,71 @@
+syntax = "proto3";
+
+package teeserver;
+
+option go_package = "github.com/google/go-tpm-tools/launcher/teeserver";
+
+// ContainerImageSignatures represents the configuration for AllowedPrincipalTags for
+// ContainerImageSignature claims
+message ContainerImageSignatures {
+  repeated string key_ids = 1 [json_name = "key_ids"];
+}
+
+// AllowedPrincipalTags allows for requestors to configure what principal tags are contained in the
+// resulting GCA token.
+message AllowedPrincipalTags {
+  ContainerImageSignatures container_image_signatures = 1 [json_name = "container_image_signatures"];
+}
+
+// AWSPrincipalTagsOptions represents the options for the AWSPrincipalTag token type.
+message AWSPrincipalTagsOptions {
+  AllowedPrincipalTags allowed_principal_tags = 1 [json_name = "allowed_principal_tags"];
+}
+
+// TokenOptions contains fields that will be passed to the Attestation Service TokenOptions field.
+message TokenOptions {
+  string audience = 1 [json_name = "audience"];
+  repeated string nonces = 2 [json_name = "nonces"];
+  string token_type = 3 [json_name = "token_type"];
+  AWSPrincipalTagsOptions aws_principal_tag_options = 4 [json_name = "aws_principal_tag_options"];
+}
+
+message GetTokenRequest {
+  string audience = 1 [json_name = "audience"];
+  repeated string nonces = 2 [json_name = "nonces"];
+  string token_type = 3 [json_name = "token_type"];
+  AWSPrincipalTagsOptions aws_principal_tag_options = 4 [json_name = "aws_principal_tag_options"];
+}
+
+
+message GetTokenResponse {
+  bytes token = 1 [json_name = "token"];
+}
+
+message GetAttestationEvidenceRequest {
+  bytes challenge = 1 [json_name = "challenge"];
+}
+
+message GetAttestationEvidenceResponse {
+  bytes evidence = 1 [json_name = "evidence"];
+}
+
+message KeyHandle {
+  string handle = 1 [json_name = "handle"];
+}
+
+message GetKeyEndorsementRequest {
+  bytes challenge = 1 [json_name = "challenge"];
+  KeyHandle key_handle = 2 [json_name = "key_handle"];
+}
+
+message GetKeyEndorsementResponse {
+  bytes endorsement = 1 [json_name = "endorsement"];
+}
+
+service TeeServer {
+  rpc GetToken(GetTokenRequest) returns (GetTokenResponse);
+  rpc GetITAToken(GetTokenRequest) returns (GetTokenResponse);
+  rpc GetAttestationEvidence(GetAttestationEvidenceRequest) returns (GetAttestationEvidenceResponse);
+  rpc GetKeyEndorsement(GetKeyEndorsementRequest) returns (GetKeyEndorsementResponse);
+}
+

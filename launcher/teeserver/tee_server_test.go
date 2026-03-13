@@ -22,11 +22,13 @@ import (
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/google/go-tpm-tools/verifier/models"
 	"google.golang.org/grpc/codes"
+
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 
 	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
 )
+
 
 // Implements verifier.Client interface so it can be used to initialize test attestHandlers
 type fakeVerifierClient struct{}
@@ -91,7 +93,8 @@ func TestGetDefaultToken(t *testing.T) {
 	testTokenContent := "test token"
 
 	ah := attestHandler{
-		logger: logging.SimpleLogger(),
+		UnimplementedTeeServerServer: UnimplementedTeeServerServer{},
+		logger:                       logging.SimpleLogger(),
 		clients: AttestClients{
 			GCA: &fakeVerifierClient{},
 		},
@@ -120,7 +123,8 @@ func TestGetDefaultToken(t *testing.T) {
 
 func TestGetDefaultTokenServerError(t *testing.T) {
 	ah := attestHandler{
-		logger: logging.SimpleLogger(),
+		UnimplementedTeeServerServer: UnimplementedTeeServerServer{},
+		logger:                       logging.SimpleLogger(),
 		clients: AttestClients{
 			GCA: &fakeVerifierClient{},
 		},
@@ -247,7 +251,8 @@ func TestCustomToken(t *testing.T) {
 		t.Run(vf.name, func(t *testing.T) {
 			for _, test := range tests {
 				ah := attestHandler{
-					logger: logging.SimpleLogger(),
+					UnimplementedTeeServerServer: UnimplementedTeeServerServer{},
+					logger:                       logging.SimpleLogger(),
 					clients: AttestClients{
 						GCA: &fakeVerifierClient{},
 						ITA: &fakeVerifierClient{},
@@ -296,7 +301,7 @@ func TestHandleAttestError(t *testing.T) {
 		{
 			name:           "PermissionDenied error",
 			err:            status.New(codes.PermissionDenied, "denied").Err(),
-			wantStatusCode: http.StatusBadRequest,
+			wantStatusCode: http.StatusForbidden,
 		},
 		{
 			name:           "Internal error",
@@ -337,7 +342,8 @@ func TestHandleAttestError(t *testing.T) {
 			for _, tc := range errorCases {
 				t.Run(tc.name, func(t *testing.T) {
 					ah := attestHandler{
-						logger: logging.SimpleLogger(),
+						UnimplementedTeeServerServer: UnimplementedTeeServerServer{},
+						logger:                       logging.SimpleLogger(),
 						clients: AttestClients{
 							GCA: &fakeVerifierClient{},
 							ITA: &fakeVerifierClient{},
@@ -381,8 +387,9 @@ func TestHandleAttestError_NilClient(t *testing.T) {
 	for _, vf := range verifiers {
 		t.Run(vf.name, func(t *testing.T) {
 			ah := attestHandler{
-				logger:  logging.SimpleLogger(),
-				clients: AttestClients{}, // No clients defined
+				UnimplementedTeeServerServer: UnimplementedTeeServerServer{},
+				logger:                       logging.SimpleLogger(),
+				clients:                      AttestClients{}, // No clients defined
 			}
 
 			req := httptest.NewRequest(http.MethodPost, vf.url, strings.NewReader(""))
@@ -504,7 +511,8 @@ func TestCustomTokenDataParsedSuccessfully(t *testing.T) {
 
 	for i, test := range tests {
 		ah := attestHandler{
-			logger: logging.SimpleLogger(),
+			UnimplementedTeeServerServer: UnimplementedTeeServerServer{},
+			logger:                       logging.SimpleLogger(),
 			clients: AttestClients{
 				GCA: &fakeVerifierClient{},
 			},
@@ -554,7 +562,7 @@ func TestCustomHandleAttestError(t *testing.T) {
 		{
 			name:           "PermissionDenied error",
 			err:            status.New(codes.PermissionDenied, "denied").Err(),
-			wantStatusCode: http.StatusBadRequest,
+			wantStatusCode: http.StatusForbidden,
 		},
 		{
 			name:           "Internal error",
@@ -575,7 +583,8 @@ func TestCustomHandleAttestError(t *testing.T) {
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
 			ah := attestHandler{
-				logger: logging.SimpleLogger(),
+				UnimplementedTeeServerServer: UnimplementedTeeServerServer{},
+				logger:                       logging.SimpleLogger(),
 				clients: AttestClients{
 					GCA: &fakeVerifierClient{},
 				},
@@ -605,7 +614,8 @@ func TestCustomHandleAttestError(t *testing.T) {
 
 func TestAttestationEvidence(t *testing.T) {
 	ah := attestHandler{
-		logger: logging.SimpleLogger(),
+		UnimplementedTeeServerServer: UnimplementedTeeServerServer{},
+		logger:                       logging.SimpleLogger(),
 		attestAgent: fakeAttestationAgent{
 			attestationEvidenceFunc: func(_ context.Context, _ []byte, _ []byte) (*attestationpb.VmAttestation, error) {
 				return &attestationpb.VmAttestation{}, nil
@@ -703,10 +713,11 @@ func TestGetKeyEndorsement(t *testing.T) {
 				},
 			}
 			handler := &attestHandler{
-				ctx:               context.Background(),
-				attestAgent:       mAgent,
-				keyClaimsProvider: mClaims,
-				logger:            logging.SimpleLogger(),
+				UnimplementedTeeServerServer: UnimplementedTeeServerServer{},
+				ctx:                          context.Background(),
+				attestAgent:                  mAgent,
+				keyClaimsProvider:            mClaims,
+				logger:                       logging.SimpleLogger(),
 				launchSpec: spec.LaunchSpec{
 					Experiments: experiments.Experiments{EnableKeyManager: tt.enableKM},
 				},
