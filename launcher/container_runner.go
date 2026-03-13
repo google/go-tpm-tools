@@ -62,7 +62,9 @@ type ContainerRunner struct {
 const tokenFileTmp = ".token.tmp"
 
 const teeServerSocket = "teeserver.sock"
+const teeServerGRPCSocket = "teeserver_grpc.sock"
 const keyManagerSocket = "kmaserver.sock"
+
 
 // Since we only allow one container on a VM, using a deterministic id is probably fine
 const (
@@ -728,7 +730,8 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		defer keyManagerServer.Shutdown(ctx)
 	}
 
-	teeServer, err := teeserver.New(ctx, path.Join(launcherfile.HostTmpPath, teeServerSocket), r.attestAgent, r.logger, r.launchSpec, attestClients, workloadService)
+	teeServer, err := teeserver.New(ctx, path.Join(launcherfile.HostTmpPath, teeServerSocket), path.Join(launcherfile.HostTmpPath, teeServerGRPCSocket), r.attestAgent, r.logger, r.launchSpec, attestClients, workloadService)
+
 	if err != nil {
 		return fmt.Errorf("failed to create the TEE server: %v", err)
 	}
