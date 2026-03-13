@@ -8,11 +8,11 @@ WORKDIR /app
 RUN pip install requests requests-unixsocket pyhpke jsonschema
 
 # Copy the client script
-COPY client_test.py /app/client_test.py
+COPY workload.py /app/workload.py
 
 LABEL "tee.launch_policy.allow_env_override"="ALLOWED_OVERRIDE"
 LABEL "tee.launch_policy.allow_cmd_override"="true"
 LABEL "tee.launch_policy.log_redirect"="always"
 
 # Set the entrypoint to explicitly use unbuffered output so logs appear instantly
-ENTRYPOINT ["python3", "-u", "/app/client_test.py"]
+ENTRYPOINT ["python3", "-u", "/app/workload.py"]

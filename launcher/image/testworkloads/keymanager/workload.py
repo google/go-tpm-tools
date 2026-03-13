@@ -21,6 +21,10 @@ except Exception:
 
 session = requests_unixsocket.Session()
 # Use the correct socket path for confidential space environment
+socket_path = "/run/container_launcher/kmaserver.sock"
+encoded_path = quote(socket_path, safe='')
+base_url = f"http+unix://{encoded_path}"
+
 # Define JSON Schemas for API responses
 KEY_HANDLE_SCHEMA = {
     "type": "object",
