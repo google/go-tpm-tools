@@ -30,6 +30,7 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ inputs.refToBuild }}
+          submodules: recursive
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.go-version }}
