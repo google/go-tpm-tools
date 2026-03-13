@@ -42,7 +42,7 @@ ALGORITHM_SCHEMA = {
         "params": {
             "type": "object",
             "properties": {
-                "kem_id": {"type": "integer"}
+                "kem_id": {"type": "string"}
             },
             "required": ["kem_id"],
             "additionalProperties": False
@@ -99,7 +99,7 @@ DECAPS_RESPONSE_SCHEMA = {
         "shared_secret": {
             "type": "object",
             "properties": {
-                "algorithm": {"type": "integer"},
+                "algorithm": {"type": "string"},
                 "secret": {"type": "string"}
             },
             "required": ["algorithm", "secret"],
