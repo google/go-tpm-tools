@@ -11,13 +11,6 @@ import requests
 import requests_unixsocket
 import jsonschema
 
-# Redirect stdout and stderr to serial console for VM logs
-try:
-  console_file = open('/dev/console', 'a')
-  sys.stdout = console_file
-  sys.stderr = console_file
-except Exception:
-  pass
 
 session = requests_unixsocket.Session()
 # Use the correct socket path for confidential space environment
