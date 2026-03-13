@@ -87,7 +87,12 @@ type DeviceROT interface {
 // AttestAgentOpts contains user generated options when calling the
 // VerifyAttestation API
 type AttestAgentOpts struct {
-	TokenOptions                *models.TokenOptions
+	TokenOptions *models.TokenOptions
+	*DeviceReportOpts
+}
+
+// DeviceReportOpts contains options for runtime device attestations.
+type DeviceReportOpts struct {
 	EnableRuntimeGPUAttestation bool
 }
 
@@ -355,6 +360,9 @@ func (a *agent) AttestationEvidence(_ context.Context, challenge []byte, extraDa
 }
 
 func (a *agent) attestDeviceROTs(nonce []byte, opts AttestAgentOpts) ([]*attestationpb.DeviceAttestationReport, error) {
+	if opts.DeviceReportOpts == nil {
+		return nil, nil
+	}
 	deviceROTs, err := a.avRot.AttestDeviceROTs(nonce)
 	if err != nil {
 		return nil, err
@@ -364,7 +372,7 @@ func (a *agent) attestDeviceROTs(nonce []byte, opts AttestAgentOpts) ([]*attesta
 	for _, dr := range deviceROTs {
 		switch v := dr.(type) {
 		case *attestationpb.NvidiaAttestationReport:
-			if opts.EnableRuntimeGPUAttestation {
+			if opts.DeviceReportOpts.EnableRuntimeGPUAttestation {
 				deviceReports = append(deviceReports, &attestationpb.DeviceAttestationReport{
 					Report: &attestationpb.DeviceAttestationReport_NvidiaReport{
 						NvidiaReport: v,
@@ -457,15 +465,7 @@ func (t *tpmAttestRoot) AttestDeviceROTs(nonce []byte) ([]any, error) {
 	t.tpmMu.Lock()
 	defer t.tpmMu.Unlock()
 
-	var deviceReports []any
-	for _, deviceROT := range t.deviceROTs {
-		deviceReport, err := deviceROT.Attest(nonce)
-		if err != nil {
-			return nil, err
-		}
-		deviceReports = append(deviceReports, deviceReport)
-	}
-	return deviceReports, nil
+	return doAttestDeviceROTs(t.deviceROTs, nonce)
 }
 
 type tdxAttestRoot struct {
@@ -517,20 +517,7 @@ func (t *tdxAttestRoot) AttestDeviceROTs(nonce []byte) ([]any, error) {
 	t.tdxMu.Lock()
 	defer t.tdxMu.Unlock()
 
-	var deviceReports []any
-	for _, deviceRoT := range t.deviceROTs {
-		att, err := deviceRoT.Attest(nonce)
-		if err != nil {
-			return nil, err
-		}
-		switch v := att.(type) {
-		case *attestationpb.NvidiaAttestationReport:
-			deviceReports = append(deviceReports, v)
-		default:
-			return nil, fmt.Errorf("unknown device attestation type: %T", v)
-		}
-	}
-	return deviceReports, nil
+	return doAttestDeviceROTs(t.deviceROTs, nonce)
 }
 
 func (t *tdxAttestRoot) ComputeNonce(challenge []byte, extraData []byte) []byte {
@@ -645,4 +632,16 @@ func convertToTPMQuote(v *pb.Attestation) *attestationpb.TpmQuote {
 			},
 		},
 	}
+}
+
+func doAttestDeviceROTs(deviceROTs []DeviceROT, nonce []byte) ([]any, error) {
+	var deviceReports []any
+	for _, deviceROT := range deviceROTs {
+		deviceReport, err := deviceROT.Attest(nonce)
+		if err != nil {
+			return nil, err
+		}
+		deviceReports = append(deviceReports, deviceReport)
+	}
+	return deviceReports, nil
 }

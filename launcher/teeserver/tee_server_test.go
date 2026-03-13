@@ -24,6 +24,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 
 	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
 	"google.golang.org/protobuf/testing/protocmp"
@@ -59,8 +60,19 @@ func (f fakeAttestationAgent) AttestWithClient(c context.Context, a agent.Attest
 	return f.attestWithClientFunc(c, a, v)
 }
 
-func (f fakeAttestationAgent) AttestationEvidence(c context.Context, nonce []byte, extraData []byte, _ agent.AttestAgentOpts) (*attestationpb.VmAttestation, error) {
-	return f.attestationEvidenceFunc(c, nonce, extraData)
+func (f fakeAttestationAgent) AttestationEvidence(c context.Context, nonce []byte, extraData []byte, opts agent.AttestAgentOpts) (*attestationpb.VmAttestation, error) {
+	attestation, err := f.attestationEvidenceFunc(c, nonce, extraData)
+	if err != nil {
+		return nil, err
+	}
+	if opts.DeviceReportOpts != nil && opts.DeviceReportOpts.EnableRuntimeGPUAttestation {
+		attestation.DeviceReports = append(attestation.DeviceReports, &attestationpb.DeviceAttestationReport{
+			Report: &attestationpb.DeviceAttestationReport_NvidiaReport{
+				NvidiaReport: &attestationpb.NvidiaAttestationReport{},
+			},
+		})
+	}
+	return attestation, nil
 }
 
 func (f fakeAttestationAgent) MeasureEvent(c gecel.Content) error {
@@ -605,20 +617,13 @@ func TestCustomHandleAttestError(t *testing.T) {
 }
 
 func TestAttestationEvidence(t *testing.T) {
-	fullAttestation := &attestationpb.VmAttestation{
+	testAttestation := &attestationpb.VmAttestation{
 		Label:     []byte("test-label"),
 		Challenge: []byte("test-challenge"),
 		ExtraData: []byte("test-extra-data"),
 		Quote: &attestationpb.VmAttestationQuote{
 			Quote: &attestationpb.VmAttestationQuote_TdxCcelQuote{
 				TdxCcelQuote: &attestationpb.TdxCcelQuote{},
-			},
-		},
-		DeviceReports: []*attestationpb.DeviceAttestationReport{
-			{
-				Report: &attestationpb.DeviceAttestationReport_NvidiaReport{
-					NvidiaReport: &attestationpb.NvidiaAttestationReport{},
-				},
 			},
 		},
 	}
@@ -639,7 +644,18 @@ func TestAttestationEvidence(t *testing.T) {
 			body:           `{"challenge": "dGVzdA=="}`,
 			wantStatusCode: http.StatusOK,
 			attestationEvidenceFunc: func(_ context.Context, _ []byte, _ []byte) (*attestationpb.VmAttestation, error) {
-				return fullAttestation, nil
+				return testAttestation, nil
+			},
+			wantBodyContains: `{"label":"dGVzdC1sYWJlbA==","challenge":"dGVzdC1jaGFsbGVuZ2U=","extraData":"dGVzdC1leHRyYS1kYXRh","quote":{"tdxCcelQuote":{}}}`,
+		},
+		{
+			name:           "success with * fields",
+			method:         http.MethodPost,
+			url:            "/v1/evidence?fields=*",
+			body:           `{"challenge": "dGVzdA=="}`,
+			wantStatusCode: http.StatusOK,
+			attestationEvidenceFunc: func(_ context.Context, _ []byte, _ []byte) (*attestationpb.VmAttestation, error) {
+				return testAttestation, nil
 			},
 			wantBodyContains: `{"label":"dGVzdC1sYWJlbA==","challenge":"dGVzdC1jaGFsbGVuZ2U=","extraData":"dGVzdC1leHRyYS1kYXRh","quote":{"tdxCcelQuote":{}},"deviceReports":[{"nvidiaReport":{}}]}`,
 		},
@@ -650,7 +666,7 @@ func TestAttestationEvidence(t *testing.T) {
 			body:           `{"challenge": "dGVzdA=="}`,
 			wantStatusCode: http.StatusOK,
 			attestationEvidenceFunc: func(_ context.Context, _ []byte, _ []byte) (*attestationpb.VmAttestation, error) {
-				return fullAttestation, nil
+				return testAttestation, nil
 			},
 			wantBodyContains: `{"label":"dGVzdC1sYWJlbA==","quote":{"tdxCcelQuote":{}}}`,
 		},
@@ -715,13 +731,23 @@ func TestAttestationEvidence(t *testing.T) {
 				t.Errorf("getAttestationEvidence() got status code %d, want %d", w.Code, tc.wantStatusCode)
 			}
 
-			respBody, _ := io.ReadAll(w.Body)
-			gotRespBody := string(respBody)
 			if tc.wantStatusCode == http.StatusOK {
-				gotRespBody = strings.TrimSpace(gotRespBody)
-			}
-			if !strings.Contains(gotRespBody, tc.wantBodyContains) {
-				t.Errorf("getAttestationEvidence() response body = %q, want to contain %q", string(respBody), tc.wantBodyContains)
+				var gotEvidence attestationpb.VmAttestation
+				if err := protojson.Unmarshal(w.Body.Bytes(), &gotEvidence); err != nil {
+					t.Fatalf("failed to unmarshal response: %v", err)
+				}
+				var wantEvidence attestationpb.VmAttestation
+				if err := protojson.Unmarshal([]byte(tc.wantBodyContains), &wantEvidence); err != nil {
+					t.Fatalf("failed to unmarshal wantBodyContains: %v", err)
+				}
+				if diff := cmp.Diff(&wantEvidence, &gotEvidence, protocmp.Transform()); diff != "" {
+					t.Errorf("getAttestationEvidence() response body mismatch (-want +got):\n%s", diff)
+				}
+			} else {
+				respBody, _ := io.ReadAll(w.Body)
+				if !strings.Contains(string(respBody), tc.wantBodyContains) {
+					t.Errorf("getAttestationEvidence() response body = %q, want to contain %q", string(respBody), tc.wantBodyContains)
+				}
 			}
 		})
 	}
@@ -749,12 +775,21 @@ func TestFilterVMAttestationFields(t *testing.T) {
 	testCases := []struct {
 		name   string
 		fields string
+		mutate func(att *attestationpb.VmAttestation)
 		want   *attestationpb.VmAttestation
 	}{
 		{
 			name:   "no fields",
 			fields: "",
-			want:   &attestationpb.VmAttestation{},
+			mutate: func(att *attestationpb.VmAttestation) {
+				att.DeviceReports = nil
+			},
+			want: &attestationpb.VmAttestation{
+				Label:     fullAttestation.Label,
+				Challenge: fullAttestation.Challenge,
+				ExtraData: fullAttestation.ExtraData,
+				Quote:     fullAttestation.Quote,
+			},
 		},
 		{
 			name:   "single field label",
@@ -813,6 +848,11 @@ func TestFilterVMAttestationFields(t *testing.T) {
 			},
 		},
 		{
+			name:   "all fields with *",
+			fields: "*",
+			want:   fullAttestation,
+		},
+		{
 			name:   "unknown fields are ignored",
 			fields: "label,foo,bar",
 			want: &attestationpb.VmAttestation{
@@ -823,7 +863,11 @@ func TestFilterVMAttestationFields(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := filterVMAttestationFields(fullAttestation, tc.fields)
+			attestation := proto.Clone(fullAttestation).(*attestationpb.VmAttestation)
+			if tc.mutate != nil {
+				tc.mutate(attestation)
+			}
+			got, err := filterVMAttestationFields(attestation, tc.fields)
 			if err != nil {
 				t.Fatalf("filterVMAttestationFields() returned an unexpected error: %v", err)
 			}

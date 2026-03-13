@@ -10,7 +10,6 @@ import (
 
 	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
 
-	"github.com/containerd/containerd/protobuf/proto"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-configfs-tsm/configfs/fakertmr"
 	configfstsmrtmr "github.com/google/go-configfs-tsm/rtmr"
@@ -25,6 +24,7 @@ import (
 	pb "github.com/google/go-tpm-tools/proto/tpm"
 	"github.com/google/go-tpm/legacy/tpm2"
 	"github.com/google/go-tpm/tpmutil"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 )
 

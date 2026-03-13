@@ -838,7 +838,9 @@ func TestAttestationEvidence_TDX_Success(t *testing.T) {
 		{
 			name: "TDX attestation + runtime GPU attestation",
 			opts: AttestAgentOpts{
-				EnableRuntimeGPUAttestation: true,
+				DeviceReportOpts: &DeviceReportOpts{
+					EnableRuntimeGPUAttestation: true,
+				},
 			},
 			wantGPUReport: &attestationpb.NvidiaAttestationReport{
 				CcFeature: &attestationpb.NvidiaAttestationReport_Spt{
