@@ -15,6 +15,8 @@ else
     print_serial=true
 fi
 
-if $print_serial; then
-    echo "$SERIAL_OUTPUT"
-fi
+# TODO: Revert this temporary logic to always print serial output
+# if $print_serial; then
+#     echo "$SERIAL_OUTPUT"
+# fi
+echo "$SERIAL_OUTPUT"
