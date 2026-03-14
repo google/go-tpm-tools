@@ -25,6 +25,7 @@ import (
 	gecel "github.com/google/go-eventlog/cel"
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/launcher/agent"
+	"github.com/google/go-tpm-tools/launcher/device"
 	"github.com/google/go-tpm-tools/launcher/internal/gpu"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
@@ -103,6 +104,10 @@ func (f *fakeGPUAttester) Attest(nonce []byte) (any, error) {
 
 func (f *fakeGPUAttester) EnableReadyState() error {
 	return nil
+}
+
+func (f *fakeGPUAttester) Vendor() device.Vendor {
+	return device.NvidiaGPU
 }
 
 type fakeClaims struct {

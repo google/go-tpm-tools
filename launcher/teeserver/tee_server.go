@@ -14,6 +14,7 @@ import (
 	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
 	wsd "github.com/google/go-tpm-tools/keymanager/workload_service"
 	"github.com/google/go-tpm-tools/launcher/agent"
+	"github.com/google/go-tpm-tools/launcher/device"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/spec"
 	"github.com/google/go-tpm-tools/verifier"
@@ -177,7 +178,7 @@ func (a *attestHandler) getAttestationEvidence(w http.ResponseWriter, r *http.Re
 
 	fields := r.URL.Query().Get("fields")
 	attestOpts := agent.AttestAgentOpts{
-		DeviceReportOpts: &agent.DeviceReportOpts{
+		DeviceReportOpts: device.ReportOpts{
 			EnableRuntimeGPUAttestation: fields == "*" || strings.Contains(fields, "deviceReports"),
 		},
 	}

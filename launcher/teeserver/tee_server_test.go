@@ -65,7 +65,7 @@ func (f fakeAttestationAgent) AttestationEvidence(c context.Context, nonce []byt
 	if err != nil {
 		return nil, err
 	}
-	if opts.DeviceReportOpts != nil && opts.DeviceReportOpts.EnableRuntimeGPUAttestation {
+	if opts.DeviceReportOpts.EnableRuntimeGPUAttestation {
 		attestation.DeviceReports = append(attestation.DeviceReports, &attestationpb.DeviceAttestationReport{
 			Report: &attestationpb.DeviceAttestationReport_NvidiaReport{
 				NvidiaReport: &attestationpb.NvidiaAttestationReport{},
