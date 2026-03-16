@@ -242,14 +242,21 @@ type DecapsResponse struct {
 	SharedSecret KemSharedSecret `json:"shared_secret"`
 }
 
+// bindingInfo stores binding UUID and expiration time for a KEM key.
+type bindingInfo struct {
+	bindingUUID uuid.UUID
+	expiresAt   time.Time
+}
+
 // Server is the WSD HTTP server.
 type Server struct {
 	keyProtectionService KeyProtectionService
 	workloadService      WorkloadService
 	mu                   sync.RWMutex
-	kemToBindingMap      map[uuid.UUID]uuid.UUID
+	kemToBindingMap      map[uuid.UUID]bindingInfo
 
 	claimsChan chan *ClaimsCall
+	stopChan   chan struct{}
 
 	httpServer *http.Server
 	listener   net.Listener
@@ -263,6 +270,9 @@ var (
 	// ClaimsRequestTimeout is the maximum time to wait for enqueuing the request to
 	// claims channel for getting the key claims.
 	ClaimsRequestTimeout = 5 * time.Second
+
+	// ReaperInterval is the interval at which the background reaper runs.
+	ReaperInterval = 1 * time.Minute
 )
 
 // New creates a new WSD Server listening on the given unix socket path.
@@ -275,9 +285,10 @@ func NewServer(keyProtectionService KeyProtectionService, workloadService Worklo
 	s := &Server{
 		keyProtectionService: keyProtectionService,
 		workloadService:      workloadService,
-		kemToBindingMap:      make(map[uuid.UUID]uuid.UUID),
+		kemToBindingMap:      make(map[uuid.UUID]bindingInfo),
 		mu:                   sync.RWMutex{},
 		claimsChan:           make(chan *ClaimsCall, 4),
+		stopChan:             make(chan struct{}),
 	}
 
 	mux := http.NewServeMux()
@@ -295,6 +306,7 @@ func NewServer(keyProtectionService KeyProtectionService, workloadService Worklo
 	}
 	s.listener = ln
 
+	go s.startReaper()
 	go s.processClaims()
 
 	return s, nil
@@ -318,9 +330,17 @@ func (s *Server) Handler() http.Handler {
 // LookupBindingUUID returns the binding UUID associated with the given KEM UUID.
 func (s *Server) LookupBindingUUID(kemUUID uuid.UUID) (uuid.UUID, bool) {
 	s.mu.RLock()
-	defer s.mu.RUnlock()
-	id, ok := s.kemToBindingMap[kemUUID]
-	return id, ok
+	info, ok := s.kemToBindingMap[kemUUID]
+	s.mu.RUnlock()
+	return info.bindingUUID, ok
+}
+
+// GetBindingInfo returns the binding information associated with the given KEM UUID.
+func (s *Server) GetBindingInfo(kemUUID uuid.UUID) (bindingInfo, bool) {
+	s.mu.RLock()
+	info, ok := s.kemToBindingMap[kemUUID]
+	s.mu.RUnlock()
+	return info, ok
 }
 
 func decapsAADContext(kemUUID uuid.UUID, algorithm KemAlgorithm) []byte {
@@ -340,38 +360,56 @@ func (s *Server) handleDecaps(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !req.Ciphertext.Algorithm.IsSupported() {
-		http.Error(w, fmt.Sprintf("unsupported ciphertext algorithm: %d. Supported algorithms: %s", req.Ciphertext.Algorithm, SupportedKemAlgorithmsString()), http.StatusBadRequest)
+		writeError(w, fmt.Sprintf("unsupported ciphertext algorithm: %d. Supported algorithms: %s", req.Ciphertext.Algorithm, SupportedKemAlgorithmsString()), http.StatusBadRequest)
 		return
 	}
 
 	kemUUID, err := uuid.Parse(req.KeyHandle.Handle)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("invalid key_handle.handle: %v", err), http.StatusBadRequest)
+		writeError(w, fmt.Sprintf("invalid key_handle.handle: %v", err), http.StatusBadRequest)
 		return
 	}
 
 	encapsulatedKey, err := base64.StdEncoding.DecodeString(req.Ciphertext.Ciphertext)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("invalid ciphertext.ciphertext base64: %v", err), http.StatusBadRequest)
+		writeError(w, fmt.Sprintf("invalid ciphertext.ciphertext base64: %v", err), http.StatusBadRequest)
 		return
 	}
 	if len(encapsulatedKey) == 0 {
-		http.Error(w, "ciphertext.ciphertext must not be empty", http.StatusBadRequest)
+		writeError(w, "ciphertext.ciphertext must not be empty", http.StatusBadRequest)
 		return
 	}
 	aad := decapsAADContext(kemUUID, req.Ciphertext.Algorithm)
 
-	// Look up the binding UUID for this KEM key.
-	bindingUUID, ok := s.LookupBindingUUID(kemUUID)
+	// Look up the binding information for this KEM key.
+	info, ok := s.GetBindingInfo(kemUUID)
 	if !ok {
 		http.Error(w, fmt.Sprintf("KEM key handle not found: %s", kemUUID), http.StatusNotFound)
 		return
 	}
 
+	if time.Now().After(info.expiresAt) {
+		// Prune map proactively if we encounter an expired key.
+		s.mu.Lock()
+		delete(s.kemToBindingMap, kemUUID)
+		s.mu.Unlock()
+		writeError(w, fmt.Sprintf("KEM key expired: %s", kemUUID), http.StatusGone)
+		return
+	}
+
+	bindingUUID := info.bindingUUID
+
 	// Decapsulate and reseal via KPS.
 	sealEnc, sealedCT, err := s.keyProtectionService.DecapAndSeal(kemUUID, encapsulatedKey, aad)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("failed to decap and seal: %v", err), http.StatusInternalServerError)
+		if errors.Is(err, kpscc.ErrKeyNotFound) {
+			s.mu.Lock()
+			delete(s.kemToBindingMap, kemUUID)
+			s.mu.Unlock()
+			writeError(w, fmt.Sprintf("KEM key expired or not found: %s", kemUUID), http.StatusGone)
+			return
+		}
+		writeError(w, fmt.Sprintf("failed to decap and seal: %v", err), http.StatusInternalServerError)
 		return
 	}
 
@@ -449,7 +487,10 @@ func (s *Server) generateKEMKey(w http.ResponseWriter, req GenerateKeyRequest) {
 
 	// Store the KEM UUID → Binding UUID mapping.
 	s.mu.Lock()
-	s.kemToBindingMap[kemUUID] = bindingUUID
+	s.kemToBindingMap[kemUUID] = bindingInfo{
+		bindingUUID: bindingUUID,
+		expiresAt:   time.Now().Add(time.Duration(req.Lifespan) * time.Second),
+	}
 	s.mu.Unlock()
 
 	// Return KEM UUID to workload.
@@ -567,6 +608,9 @@ func (s *Server) handleDestroy(w http.ResponseWriter, r *http.Request) {
 	}
 
 	errKps := s.keyProtectionService.DestroyKEMKey(kemUUID)
+	if errKps != nil && errors.Is(errKps, kpscc.ErrKeyNotFound) {
+		errKps = nil // Ignore!
+	}
 	errWs := s.workloadService.DestroyBindingKey(bindingUUID)
 
 	// Remove the mapping.
@@ -584,16 +628,30 @@ func (s *Server) handleDestroy(w http.ResponseWriter, r *http.Request) {
 
 // handleGetBindingKeyClaims returns the claims for a binding key identified by its KEM UUID.
 func (s *Server) handleGetBindingKeyClaims(id uuid.UUID) (*keymanager.KeyClaims, error) {
-	// Key ID Lookup. The orchestration layer will look-up the key_handle
-	// in its ActiveKeyRegistry to find the Binding Key ID.
-	bindingID, ok := s.LookupBindingUUID(id)
+	// Look up the binding information for this KEM key.
+	info, ok := s.GetBindingInfo(id)
 	if !ok {
 		return nil, fmt.Errorf("binding key ID not found for key handle: %s", id)
 	}
 
+	if time.Now().After(info.expiresAt) {
+		// Prune map proactively if we encounter an expired key.
+		s.mu.Lock()
+		delete(s.kemToBindingMap, id)
+		s.mu.Unlock()
+		return nil, kpscc.ErrKeyNotFound
+	}
+
+	bindingID := info.bindingUUID
+
 	// Key Metadata Lookup.
 	pubKey, algo, err := s.workloadService.GetBindingKey(bindingID)
 	if err != nil {
+		if errors.Is(err, kpscc.ErrKeyNotFound) {
+			s.mu.Lock()
+			delete(s.kemToBindingMap, id)
+			s.mu.Unlock()
+		}
 		return nil, fmt.Errorf("failed to get binding key: %w", err)
 	}
 
@@ -613,9 +671,28 @@ func (s *Server) handleGetBindingKeyClaims(id uuid.UUID) (*keymanager.KeyClaims,
 
 // handleGetKEMKeyClaims returns the claims for a KEM key identified by its UUID.
 func (s *Server) handleGetKEMKeyClaims(id uuid.UUID) (*keymanager.KeyClaims, error) {
+	// Look up the binding information for this KEM key.
+	info, ok := s.GetBindingInfo(id)
+	if !ok {
+		return nil, fmt.Errorf("KEM key handle not found: %s", id)
+	}
+
+	if time.Now().After(info.expiresAt) {
+		// Prune map proactively if we encounter an expired key.
+		s.mu.Lock()
+		delete(s.kemToBindingMap, id)
+		s.mu.Unlock()
+		return nil, kpscc.ErrKeyNotFound
+	}
+
 	// Key Metadata Lookup.
 	kemPubKey, bindingPubKey, algo, remainingLifespanSecs, err := s.keyProtectionService.GetKEMKey(id)
 	if err != nil {
+		if errors.Is(err, kpscc.ErrKeyNotFound) {
+			s.mu.Lock()
+			delete(s.kemToBindingMap, id)
+			s.mu.Unlock()
+		}
 		return nil, fmt.Errorf("failed to get KEM key: %w", err)
 	}
 
@@ -708,5 +785,44 @@ func (s *Server) GetKeyClaims(ctx context.Context, keyHandle string, keyType key
 		return nil, ctx.Err()
 	case <-time.After(ClaimsResponseTimeout):
 		return nil, fmt.Errorf("timed out waiting for processClaims to respond for key: %s", keyHandle)
+	}
+}
+
+// Close stops the server, closing listener and background goroutines.
+func (s *Server) Close() error {
+	close(s.stopChan)
+	close(s.claimsChan)
+	if s.httpServer != nil {
+		_ = s.httpServer.Close() // Best effort.
+	}
+	if s.listener != nil {
+		return s.listener.Close()
+	}
+	return nil
+}
+
+func (s *Server) startReaper() {
+	ticker := time.NewTicker(ReaperInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			s.pruneExpiredKeys()
+		case <-s.stopChan:
+			return
+		}
+	}
+}
+
+func (s *Server) pruneExpiredKeys() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	now := time.Now()
+	for kemUUID, info := range s.kemToBindingMap {
+		if now.After(info.expiresAt) {
+			delete(s.kemToBindingMap, kemUUID)
+		}
 	}
 }

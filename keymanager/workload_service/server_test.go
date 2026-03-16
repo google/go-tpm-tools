@@ -27,8 +27,7 @@ func newTestServer(t *testing.T, kemGen kps.KeyProtectionService, bindingGen Wor
 		t.Fatalf("failed to create test server: %v", err)
 	}
 	t.Cleanup(func() {
-		srv.listener.Close()
-		close(srv.claimsChan)
+		srv.Close()
 	})
 	return srv
 }
@@ -65,7 +64,8 @@ func (m *mockWorkloadService) Open(bindingUUID uuid.UUID, enc, ciphertext, aad [
 	return m.plaintext, m.err
 }
 
-func (m *mockWorkloadService) GetBindingKey(_ uuid.UUID) ([]byte, *keymanager.HpkeAlgorithm, error) {
+func (m *mockWorkloadService) GetBindingKey(id uuid.UUID) ([]byte, *keymanager.HpkeAlgorithm, error) {
+	m.receivedUUID = id
 	return m.pubKey, m.algo, m.err
 }
 
@@ -112,7 +112,8 @@ func (m *mockKeyProtectionService) DecapAndSeal(kemUUID uuid.UUID, encapsulatedK
 	return m.sealEnc, m.sealedCT, m.err
 }
 
-func (m *mockKeyProtectionService) GetKEMKey(_ uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error) {
+func (m *mockKeyProtectionService) GetKEMKey(id uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error) {
+	m.receivedKEMUUID = id
 	return m.pubKey, m.bindingPubKey, m.algo, m.remainingLifespanSecs, m.err
 }
 
@@ -682,7 +683,10 @@ func TestProcessClaims(t *testing.T) {
 
 	srv := newTestServer(t, kps, ws)
 	// Populate kemToBindingMap for the claims test.
-	srv.kemToBindingMap[kemUUID] = bindingUUID
+	srv.kemToBindingMap[kemUUID] = bindingInfo{
+		bindingUUID: bindingUUID,
+		expiresAt:   time.Now().Add(1 * time.Hour),
+	}
 
 	t.Run("BindingClaims", func(t *testing.T) {
 		respChan := make(chan *ClaimsResult, 1)
@@ -806,6 +810,12 @@ func TestProcessClaims(t *testing.T) {
 		// Let's create a new server with a mock that returns error.
 		wsErr := &mockWorkloadService{err: fmt.Errorf("not found")}
 		srvErr := newTestServer(t, kps, wsErr)
+		
+		// Populate map so WL service is called.
+		srvErr.kemToBindingMap[notFoundUUID] = bindingInfo{
+			bindingUUID: uuid.New(),
+			expiresAt:   time.Now().Add(1 * time.Hour),
+		}
 
 		srvErr.claimsChan <- &ClaimsCall{Request: req, RespChan: respChan}
 
@@ -831,6 +841,12 @@ func TestProcessClaims(t *testing.T) {
 
 		kpsErr := &mockKeyProtectionService{err: fmt.Errorf("not found")}
 		srvErr := newTestServer(t, kpsErr, ws)
+		
+		// Populate map so KPS is called.
+		srvErr.kemToBindingMap[kemUUID] = bindingInfo{
+			bindingUUID: bindingUUID,
+			expiresAt:   time.Now().Add(1 * time.Hour),
+		}
 
 		srvErr.claimsChan <- &ClaimsCall{Request: req, RespChan: respChan}
 
@@ -924,6 +940,16 @@ func TestHandleDestroy(t *testing.T) {
 			expectedStatus: http.StatusNotFound,
 		},
 		{
+			name:                   "kps key not found",
+			method:                 http.MethodPost,
+			body:                   validDestroyBody(validKEMUUID.String()),
+			setupMap:               true,
+			kemDestroyerErr:        kpskcc.ErrKeyNotFound,
+			expectedStatus:         http.StatusNoContent,
+			expectBindingDestroyed: true,
+			expectMapRemoved:       true,
+		},
+		{
 			name:                   "kps failure",
 			method:                 http.MethodPost,
 			body:                   validDestroyBody(validKEMUUID.String()),
@@ -954,7 +980,10 @@ func TestHandleDestroy(t *testing.T) {
 
 			if tc.setupMap {
 				srv.mu.Lock()
-				srv.kemToBindingMap[validKEMUUID] = validBindingUUID
+				srv.kemToBindingMap[validKEMUUID] = bindingInfo{
+					bindingUUID: validBindingUUID,
+					expiresAt:   time.Now().Add(1 * time.Hour),
+				}
 				srv.mu.Unlock()
 			}
 
@@ -999,7 +1028,10 @@ func TestHandleDestroy(t *testing.T) {
 func newDecapsTestServer(t *testing.T, kemUUID, bindingUUID uuid.UUID, ds *mockKeyProtectionService, op *mockWorkloadService) *Server {
 	srv := newTestServer(t, ds, op)
 	srv.mu.Lock()
-	srv.kemToBindingMap[kemUUID] = bindingUUID
+	srv.kemToBindingMap[kemUUID] = bindingInfo{
+		bindingUUID: bindingUUID,
+		expiresAt:   time.Now().Add(1 * time.Hour),
+	}
 	srv.mu.Unlock()
 	return srv
 }
@@ -1074,6 +1106,89 @@ func TestHandleDecapsSuccess(t *testing.T) {
 	}
 	if string(op.receivedAAD) != string(expectedAAD) {
 		t.Fatalf("expected WorkloadService to receive AAD %q, got %q", expectedAAD, op.receivedAAD)
+	}
+}
+
+func TestHandleDecap_ExpiredKey(t *testing.T) {
+	kemUUID := uuid.New()
+	bindingUUID := uuid.New()
+	encKey := []byte("test-encapsulated-key-32-bytes!!")
+
+	tests := []struct {
+		name                 string
+		mapExpiresAt        time.Time
+		kpsErr              error
+		expectStatus        int
+		expectKPSCalled     bool
+		expectMapRemoved    bool
+	}{
+		{
+			name:              "Expired in map",
+			mapExpiresAt:     time.Now().Add(-1 * time.Hour),
+			kpsErr:           nil,
+			expectStatus:     http.StatusGone,
+			expectKPSCalled:    false,
+			expectMapRemoved:   true,
+		},
+		{
+			name:              "No map entry",
+			mapExpiresAt:     time.Time{}, // Not added to map
+			kpsErr:           nil,
+			expectStatus:     http.StatusNotFound,
+			expectKPSCalled:    false,
+			expectMapRemoved:   false,
+		},
+		{
+			name:              "Expired in KPS",
+			mapExpiresAt:     time.Now().Add(1 * time.Hour),
+			kpsErr:           kpskcc.ErrKeyNotFound,
+			expectStatus:     http.StatusGone,
+			expectKPSCalled:    true,
+			expectMapRemoved:   true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ds := &mockKeyProtectionService{err: tc.kpsErr}
+			op := &mockWorkloadService{}
+			srv := newTestServer(t, ds, op)
+
+			if !tc.mapExpiresAt.IsZero() {
+				srv.mu.Lock()
+				srv.kemToBindingMap[kemUUID] = bindingInfo{
+					bindingUUID: bindingUUID,
+					expiresAt:   tc.mapExpiresAt,
+				}
+				srv.mu.Unlock()
+			}
+
+			body := decapsRequestBody(kemUUID, KemAlgorithmDHKEMX25519HKDFSHA256, encKey)
+			req := httptest.NewRequest(http.MethodPost, "/v1/keys:decap", strings.NewReader(body))
+			w := httptest.NewRecorder()
+			srv.Handler().ServeHTTP(w, req)
+
+			if w.Code != tc.expectStatus {
+				t.Fatalf("expected status %d, got %d", tc.expectStatus, w.Code)
+			}
+
+			if tc.expectKPSCalled && ds.receivedKEMUUID == uuid.Nil {
+				t.Fatalf("expected KPS to be called, but it was not")
+			}
+			if !tc.expectKPSCalled && ds.receivedKEMUUID != uuid.Nil {
+				t.Fatalf("expected KPS NOT to be called, but it was")
+			}
+
+			srv.mu.Lock()
+			_, ok := srv.kemToBindingMap[kemUUID]
+			srv.mu.Unlock()
+			if tc.expectMapRemoved && ok {
+				t.Fatalf("expected map entry to be removed")
+			}
+			if !tc.expectMapRemoved && !tc.mapExpiresAt.IsZero() && !ok {
+				t.Fatalf("expected map entry to persist")
+			}
+		})
 	}
 }
 
@@ -1202,7 +1317,10 @@ func TestProcessClaimsTimeout(t *testing.T) {
 	kemUUID := uuid.New()
 	bindingUUID := uuid.New()
 	srv.mu.Lock()
-	srv.kemToBindingMap[kemUUID] = bindingUUID
+	srv.kemToBindingMap[kemUUID] = bindingInfo{
+		bindingUUID: bindingUUID,
+		expiresAt:   time.Now().Add(1 * time.Hour),
+	}
 	srv.mu.Unlock()
 
 	respChan2 := make(chan *ClaimsResult, 1)
@@ -1223,6 +1341,134 @@ func TestProcessClaimsTimeout(t *testing.T) {
 		}
 	case <-time.After(1 * time.Second):
 		t.Fatal("timed out waiting for second request response - background worker might be blocked!")
+	}
+}
+
+func TestGetKeyClaims_ExpiredKey(t *testing.T) {
+	kemUUID := uuid.New()
+	bindingUUID := uuid.New()
+
+	tests := []struct {
+		name                 string
+		keyType              keymanager.KeyType
+		mapExpiresAt        time.Time
+		kpsErr              error
+		expectErr            error
+		expectKPSCalled     bool
+		expectMapRemoved    bool
+	}{
+		{
+			name:              "KEM key expired in map",
+			keyType:           keymanager.KeyType_KEY_TYPE_VM_PROTECTION_KEY,
+			mapExpiresAt:     time.Now().Add(-1 * time.Hour),
+			kpsErr:           nil,
+			expectErr:        kpskcc.ErrKeyNotFound,
+			expectKPSCalled:    false,
+			expectMapRemoved:   true,
+		},
+		{
+			name:              "Binding key expired in map",
+			keyType:           keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING,
+			mapExpiresAt:     time.Now().Add(-1 * time.Hour),
+			kpsErr:           nil,
+			expectErr:        kpskcc.ErrKeyNotFound,
+			expectKPSCalled:    false,
+			expectMapRemoved:   true,
+		},
+		{
+			name:              "KEM key no map entry",
+			keyType:           keymanager.KeyType_KEY_TYPE_VM_PROTECTION_KEY,
+			mapExpiresAt:     time.Time{}, // Not added to map
+			kpsErr:           nil,
+			expectErr:        errors.New("KEM key handle not found"),
+			expectKPSCalled:    false,
+			expectMapRemoved:   false,
+		},
+		{
+			name:              "Binding key no map entry",
+			keyType:           keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING,
+			mapExpiresAt:     time.Time{}, // Not added to map
+			kpsErr:           nil,
+			expectErr:        errors.New("binding key ID not found"),
+			expectKPSCalled:    false,
+			expectMapRemoved:   false,
+		},
+		{
+			name:              "KEM key expired in KPS",
+			keyType:           keymanager.KeyType_KEY_TYPE_VM_PROTECTION_KEY,
+			mapExpiresAt:     time.Now().Add(1 * time.Hour),
+			kpsErr:           kpskcc.ErrKeyNotFound,
+			expectErr:        kpskcc.ErrKeyNotFound,
+			expectKPSCalled:    true,
+			expectMapRemoved:   true,
+		},
+		{
+			name:              "Binding key expired in WL",
+			keyType:           keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING,
+			mapExpiresAt:     time.Now().Add(1 * time.Hour),
+			kpsErr:           kpskcc.ErrKeyNotFound,
+			expectErr:        kpskcc.ErrKeyNotFound,
+			expectKPSCalled:    true,
+			expectMapRemoved:   true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ds := &mockKeyProtectionService{err: tc.kpsErr}
+			op := &mockWorkloadService{err: tc.kpsErr}
+			srv := newTestServer(t, ds, op)
+
+			if !tc.mapExpiresAt.IsZero() {
+				srv.mu.Lock()
+				srv.kemToBindingMap[kemUUID] = bindingInfo{
+					bindingUUID: bindingUUID,
+					expiresAt:   tc.mapExpiresAt,
+				}
+				srv.mu.Unlock()
+			}
+
+			_, err := srv.GetKeyClaims(context.Background(), kemUUID.String(), tc.keyType)
+			if err == nil {
+				t.Fatalf("expected error, got nil")
+			}
+			
+			if tc.expectErr == kpskcc.ErrKeyNotFound {
+				if !errors.Is(err, kpskcc.ErrKeyNotFound) {
+					t.Errorf("expected ErrKeyNotFound, got %v", err)
+				}
+			} else {
+				if !strings.Contains(err.Error(), tc.expectErr.Error()) {
+					t.Errorf("expected error containing %q, got %v", tc.expectErr.Error(), err)
+				}
+			}
+
+			if tc.keyType == keymanager.KeyType_KEY_TYPE_VM_PROTECTION_KEY {
+				if tc.expectKPSCalled && ds.receivedKEMUUID == uuid.Nil {
+					t.Fatalf("expected KPS to be called, but it was not")
+				}
+				if !tc.expectKPSCalled && ds.receivedKEMUUID != uuid.Nil {
+					t.Fatalf("expected KPS NOT to be called, but it was")
+				}
+			} else {
+				if tc.expectKPSCalled && op.receivedUUID == uuid.Nil {
+					t.Fatalf("expected WL service to be called, but it was not")
+				}
+				if !tc.expectKPSCalled && op.receivedUUID != uuid.Nil {
+					t.Fatalf("expected WL service NOT to be called, but it was")
+				}
+			}
+
+			srv.mu.Lock()
+			_, ok := srv.kemToBindingMap[kemUUID]
+			srv.mu.Unlock()
+			if tc.expectMapRemoved && ok {
+				t.Fatalf("expected map entry to be removed")
+			}
+			if !tc.expectMapRemoved && !tc.mapExpiresAt.IsZero() && !ok {
+				t.Fatalf("expected map entry to persist")
+			}
+		})
 	}
 }
 
@@ -1320,5 +1566,37 @@ func TestGetClaimsFromChannel(t *testing.T) {
 				t.Errorf("result mismatch: expected %v, got %v", expectedReply, result)
 			}
 		})
+	}
+}
+
+func TestGoReaper(t *testing.T) {
+	// Override ReaperInterval for test.
+	oldInterval := ReaperInterval
+	ReaperInterval = 10 * time.Millisecond
+	defer func() { ReaperInterval = oldInterval }()
+
+	kemGen := &mockKeyProtectionService{}
+	bindingGen := &mockWorkloadService{}
+	srv := newTestServer(t, kemGen, bindingGen)
+
+	// Insert an expired key directly into the map.
+	kemUUID := uuid.New()
+	bindingUUID := uuid.New()
+	srv.mu.Lock()
+	srv.kemToBindingMap[kemUUID] = bindingInfo{
+		bindingUUID: bindingUUID,
+		expiresAt:   time.Now().Add(-1 * time.Second), // Already expired.
+	}
+	srv.mu.Unlock()
+
+	// Wait for reaper to run.
+	time.Sleep(50 * time.Millisecond) // Reaper runs every 10ms.
+
+	srv.mu.RLock()
+	_, ok := srv.kemToBindingMap[kemUUID]
+	srv.mu.RUnlock()
+
+	if ok {
+		t.Errorf("expected expired key to be pruned, but it was found")
 	}
 }
