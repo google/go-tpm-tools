@@ -17,16 +17,12 @@ import "C"
 import (
 	"fmt"
 	"unsafe"
-	"errors"
 
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
 
 	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
 )
-
-// ErrKeyNotFound is returned when a key is not found in the KPS core.
-var ErrKeyNotFound = errors.New("key not found in KPS")
 
 const (
 	uuidSize      = 16

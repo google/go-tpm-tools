@@ -335,8 +335,8 @@ func (s *Server) LookupBindingUUID(kemUUID uuid.UUID) (uuid.UUID, bool) {
 	return info.bindingUUID, ok
 }
 
-// GetBindingInfo returns the binding information associated with the given KEM UUID.
-func (s *Server) GetBindingInfo(kemUUID uuid.UUID) (bindingInfo, bool) {
+// getBindingInfo returns the binding information associated with the given KEM UUID.
+func (s *Server) getBindingInfo(kemUUID uuid.UUID) (bindingInfo, bool) {
 	s.mu.RLock()
 	info, ok := s.kemToBindingMap[kemUUID]
 	s.mu.RUnlock()
@@ -382,7 +382,7 @@ func (s *Server) handleDecaps(w http.ResponseWriter, r *http.Request) {
 	aad := decapsAADContext(kemUUID, req.Ciphertext.Algorithm)
 
 	// Look up the binding information for this KEM key.
-	info, ok := s.GetBindingInfo(kemUUID)
+	info, ok := s.getBindingInfo(kemUUID)
 	if !ok {
 		http.Error(w, fmt.Sprintf("KEM key handle not found: %s", kemUUID), http.StatusNotFound)
 		return
@@ -629,7 +629,7 @@ func (s *Server) handleDestroy(w http.ResponseWriter, r *http.Request) {
 // handleGetBindingKeyClaims returns the claims for a binding key identified by its KEM UUID.
 func (s *Server) handleGetBindingKeyClaims(id uuid.UUID) (*keymanager.KeyClaims, error) {
 	// Look up the binding information for this KEM key.
-	info, ok := s.GetBindingInfo(id)
+	info, ok := s.getBindingInfo(id)
 	if !ok {
 		return nil, fmt.Errorf("binding key ID not found for key handle: %s", id)
 	}
@@ -672,7 +672,7 @@ func (s *Server) handleGetBindingKeyClaims(id uuid.UUID) (*keymanager.KeyClaims,
 // handleGetKEMKeyClaims returns the claims for a KEM key identified by its UUID.
 func (s *Server) handleGetKEMKeyClaims(id uuid.UUID) (*keymanager.KeyClaims, error) {
 	// Look up the binding information for this KEM key.
-	info, ok := s.GetBindingInfo(id)
+	info, ok := s.getBindingInfo(id)
 	if !ok {
 		return nil, fmt.Errorf("KEM key handle not found: %s", id)
 	}

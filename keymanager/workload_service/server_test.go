@@ -810,7 +810,7 @@ func TestProcessClaims(t *testing.T) {
 		// Let's create a new server with a mock that returns error.
 		wsErr := &mockWorkloadService{err: fmt.Errorf("not found")}
 		srvErr := newTestServer(t, kps, wsErr)
-		
+
 		// Populate map so WL service is called.
 		srvErr.kemToBindingMap[notFoundUUID] = bindingInfo{
 			bindingUUID: uuid.New(),
@@ -841,7 +841,7 @@ func TestProcessClaims(t *testing.T) {
 
 		kpsErr := &mockKeyProtectionService{err: fmt.Errorf("not found")}
 		srvErr := newTestServer(t, kpsErr, ws)
-		
+
 		// Populate map so KPS is called.
 		srvErr.kemToBindingMap[kemUUID] = bindingInfo{
 			bindingUUID: bindingUUID,
@@ -1115,36 +1115,36 @@ func TestHandleDecap_ExpiredKey(t *testing.T) {
 	encKey := []byte("test-encapsulated-key-32-bytes!!")
 
 	tests := []struct {
-		name                 string
-		mapExpiresAt        time.Time
-		kpsErr              error
-		expectStatus        int
-		expectKPSCalled     bool
-		expectMapRemoved    bool
+		name             string
+		mapExpiresAt     time.Time
+		kpsErr           error
+		expectStatus     int
+		expectKPSCalled  bool
+		expectMapRemoved bool
 	}{
 		{
-			name:              "Expired in map",
+			name:             "Expired in map",
 			mapExpiresAt:     time.Now().Add(-1 * time.Hour),
 			kpsErr:           nil,
 			expectStatus:     http.StatusGone,
-			expectKPSCalled:    false,
-			expectMapRemoved:   true,
+			expectKPSCalled:  false,
+			expectMapRemoved: true,
 		},
 		{
-			name:              "No map entry",
+			name:             "No map entry",
 			mapExpiresAt:     time.Time{}, // Not added to map
 			kpsErr:           nil,
 			expectStatus:     http.StatusNotFound,
-			expectKPSCalled:    false,
-			expectMapRemoved:   false,
+			expectKPSCalled:  false,
+			expectMapRemoved: false,
 		},
 		{
-			name:              "Expired in KPS",
+			name:             "Expired in KPS",
 			mapExpiresAt:     time.Now().Add(1 * time.Hour),
 			kpsErr:           kpskcc.ErrKeyNotFound,
 			expectStatus:     http.StatusGone,
-			expectKPSCalled:    true,
-			expectMapRemoved:   true,
+			expectKPSCalled:  true,
+			expectMapRemoved: true,
 		},
 	}
 
@@ -1349,67 +1349,67 @@ func TestGetKeyClaims_ExpiredKey(t *testing.T) {
 	bindingUUID := uuid.New()
 
 	tests := []struct {
-		name                 string
-		keyType              keymanager.KeyType
-		mapExpiresAt        time.Time
-		kpsErr              error
-		expectErr            error
-		expectKPSCalled     bool
-		expectMapRemoved    bool
+		name             string
+		keyType          keymanager.KeyType
+		mapExpiresAt     time.Time
+		kpsErr           error
+		expectErr        error
+		expectKPSCalled  bool
+		expectMapRemoved bool
 	}{
 		{
-			name:              "KEM key expired in map",
-			keyType:           keymanager.KeyType_KEY_TYPE_VM_PROTECTION_KEY,
+			name:             "KEM key expired in map",
+			keyType:          keymanager.KeyType_KEY_TYPE_VM_PROTECTION_KEY,
 			mapExpiresAt:     time.Now().Add(-1 * time.Hour),
 			kpsErr:           nil,
 			expectErr:        kpskcc.ErrKeyNotFound,
-			expectKPSCalled:    false,
-			expectMapRemoved:   true,
+			expectKPSCalled:  false,
+			expectMapRemoved: true,
 		},
 		{
-			name:              "Binding key expired in map",
-			keyType:           keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING,
+			name:             "Binding key expired in map",
+			keyType:          keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING,
 			mapExpiresAt:     time.Now().Add(-1 * time.Hour),
 			kpsErr:           nil,
 			expectErr:        kpskcc.ErrKeyNotFound,
-			expectKPSCalled:    false,
-			expectMapRemoved:   true,
+			expectKPSCalled:  false,
+			expectMapRemoved: true,
 		},
 		{
-			name:              "KEM key no map entry",
-			keyType:           keymanager.KeyType_KEY_TYPE_VM_PROTECTION_KEY,
+			name:             "KEM key no map entry",
+			keyType:          keymanager.KeyType_KEY_TYPE_VM_PROTECTION_KEY,
 			mapExpiresAt:     time.Time{}, // Not added to map
 			kpsErr:           nil,
 			expectErr:        errors.New("KEM key handle not found"),
-			expectKPSCalled:    false,
-			expectMapRemoved:   false,
+			expectKPSCalled:  false,
+			expectMapRemoved: false,
 		},
 		{
-			name:              "Binding key no map entry",
-			keyType:           keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING,
+			name:             "Binding key no map entry",
+			keyType:          keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING,
 			mapExpiresAt:     time.Time{}, // Not added to map
 			kpsErr:           nil,
 			expectErr:        errors.New("binding key ID not found"),
-			expectKPSCalled:    false,
-			expectMapRemoved:   false,
+			expectKPSCalled:  false,
+			expectMapRemoved: false,
 		},
 		{
-			name:              "KEM key expired in KPS",
-			keyType:           keymanager.KeyType_KEY_TYPE_VM_PROTECTION_KEY,
+			name:             "KEM key expired in KPS",
+			keyType:          keymanager.KeyType_KEY_TYPE_VM_PROTECTION_KEY,
 			mapExpiresAt:     time.Now().Add(1 * time.Hour),
 			kpsErr:           kpskcc.ErrKeyNotFound,
 			expectErr:        kpskcc.ErrKeyNotFound,
-			expectKPSCalled:    true,
-			expectMapRemoved:   true,
+			expectKPSCalled:  true,
+			expectMapRemoved: true,
 		},
 		{
-			name:              "Binding key expired in WL",
-			keyType:           keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING,
+			name:             "Binding key expired in WL",
+			keyType:          keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING,
 			mapExpiresAt:     time.Now().Add(1 * time.Hour),
 			kpsErr:           kpskcc.ErrKeyNotFound,
 			expectErr:        kpskcc.ErrKeyNotFound,
-			expectKPSCalled:    true,
-			expectMapRemoved:   true,
+			expectKPSCalled:  true,
+			expectMapRemoved: true,
 		},
 	}
 
@@ -1432,7 +1432,7 @@ func TestGetKeyClaims_ExpiredKey(t *testing.T) {
 			if err == nil {
 				t.Fatalf("expected error, got nil")
 			}
-			
+
 			if tc.expectErr == kpskcc.ErrKeyNotFound {
 				if !errors.Is(err, kpskcc.ErrKeyNotFound) {
 					t.Errorf("expected ErrKeyNotFound, got %v", err)
