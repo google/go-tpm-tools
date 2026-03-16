@@ -95,6 +95,8 @@ func (f *fakeAttestationAgent) EnableGPUReadyState() error {
 		return f.gpuReadyFunc()
 	}
 	return nil
+
+
 // Mock for KeyClaimsProvider interface
 type mockClaimsProvider struct {
 	claims map[keymanager.KeyType]*keymanager.KeyClaims

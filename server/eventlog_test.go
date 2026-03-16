@@ -9,8 +9,8 @@ import (
 	"testing"
 
 	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
+	"google.golang.org/protobuf/proto"
 
-	"github.com/containerd/containerd/protobuf/proto"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-configfs-tsm/configfs/fakertmr"
 	configfstsmrtmr "github.com/google/go-configfs-tsm/rtmr"
