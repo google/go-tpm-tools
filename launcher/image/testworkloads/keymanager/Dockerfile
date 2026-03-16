@@ -1,3 +1,6 @@
+# From current directory:
+# gcloud builds submit --tag us-west1-docker.pkg.dev/confidential-space-images-dev/cs-integ-test-images/keymanager_workload:latest --project confidential-space-images-dev
+
 # Base image with Python support
 FROM python:3.10-slim
 

@@ -9,6 +9,8 @@ substitutions:
   '_ZONE': 'asia-east1-a'
   # Important notes: the actual real URL shouldn't be hardcoded since it requires building
   # The run_cloudbuild.sh script or user's invocation will override _WORKLOAD_IMAGE
+  # This workload image is built from launcher/image/testworkloads/keymanager
+  # Registry reference: us-west1-docker.pkg.dev/confidential-space-images-dev/cs-integ-test-images/keymanager_workload:latest
   '_WORKLOAD_IMAGE': 'us-west1-docker.pkg.dev/confidential-space-images-dev/cs-integ-test-images/keymanager_workload:latest'
 steps:
 - name: 'gcr.io/cloud-builders/gcloud'
