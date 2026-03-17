@@ -1,4 +1,4 @@
-use crate::algorithms::{AeadAlgorithm, HpkeAlgorithm, KdfAlgorithm, KemAlgorithm};
+use crate::proto::{AeadAlgorithm, HpkeAlgorithm, KdfAlgorithm, KemAlgorithm};
 use crate::crypto::secret_box::SecretBox;
 #[cfg(any(test, feature = "test-utils"))]
 use crate::crypto::PrivateKey;
@@ -43,7 +43,7 @@ impl PublicKeyOps for X25519PublicKey {
 
         let (mut sender_ctx, encapsulated_key) =
             hpke::SenderContext::new(&params, self.as_ref(), b"")
-                .ok_or(Error::HpkeEncryptionError)?;
+                .ok_or(Error::EncryptionFailure)?;
 
         let ciphertext = sender_ctx.seal(plaintext.as_slice(), aad);
         Ok((encapsulated_key, ciphertext))
@@ -59,7 +59,7 @@ impl PublicKeyOps for X25519PublicKey {
                 let sk_e = x25519::PrivateKey(
                     sk.0.as_slice()
                         .try_into()
-                        .map_err(|_| Error::KeyLenMismatch)?,
+                        .map_err(|_| Error::InvalidArgument)?,
                 );
                 (sk_e.to_public().to_vec(), sk.0.as_slice().to_vec())
             }
@@ -117,15 +117,15 @@ impl PrivateKeyOps for X25519PrivateKey {
             self.0
                 .as_slice()
                 .try_into()
-                .map_err(|_| Error::KeyLenMismatch)?,
+                .map_err(|_| Error::InvalidArgument)?,
         );
 
         // 1. Compute Diffie-Hellman shared secret
         // dh = dhExchange(skR, pkE)
         let shared_key = SecretBox::new(
             priv_key
-                .compute_shared_key(enc.try_into().map_err(|_| Error::KeyLenMismatch)?)
-                .ok_or(Error::DecapsError)?
+                .compute_shared_key(enc.try_into().map_err(|_| Error::DecapsulationFailure)?)
+                .ok_or(Error::DecapsulationFailure)?
                 .to_vec(),
         );
 
@@ -174,12 +174,12 @@ impl PrivateKeyOps for X25519PrivateKey {
         );
 
         let mut recipient_ctx = hpke::RecipientContext::new(&params, self.0.as_slice(), enc, b"")
-            .ok_or(Error::HpkeDecryptionError)?;
+            .ok_or(Error::DecryptionFailure)?;
 
         recipient_ctx
             .open(ciphertext, aad)
             .map(SecretBox::new)
-            .ok_or(Error::HpkeDecryptionError)
+            .ok_or(Error::DecryptionFailure)
     }
 }
 
@@ -202,7 +202,7 @@ fn labeled_expand(
 
     let mut result = vec![0u8; len as usize];
     prk.expand_into(labeled_info.as_slice(), &mut result)
-        .map_err(|_| Error::DecapsError)?;
+        .map_err(|_| Error::DecapsulationFailure)?;
 
     Ok(SecretBox::new(result))
 }
