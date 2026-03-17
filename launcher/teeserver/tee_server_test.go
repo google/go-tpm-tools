@@ -446,6 +446,7 @@ func TestCustomTokenDataParsedSuccessfully(t *testing.T) {
 						},
 					},
 				},
+				DeviceReportOpts: &agent.DeviceReportOpts{EnableRuntimeGPUAttestation: true},
 			},
 		},
 		{
@@ -465,6 +466,7 @@ func TestCustomTokenDataParsedSuccessfully(t *testing.T) {
 					TokenType:           "OIDC",
 					PrincipalTagOptions: &models.AWSPrincipalTagsOptions{},
 				},
+				DeviceReportOpts: &agent.DeviceReportOpts{EnableRuntimeGPUAttestation: true},
 			},
 		},
 		{
@@ -488,6 +490,7 @@ func TestCustomTokenDataParsedSuccessfully(t *testing.T) {
 						AllowedPrincipalTags: &models.AllowedPrincipalTags{},
 					},
 				},
+				DeviceReportOpts: &agent.DeviceReportOpts{EnableRuntimeGPUAttestation: true},
 			},
 		},
 		{
@@ -511,6 +514,7 @@ func TestCustomTokenDataParsedSuccessfully(t *testing.T) {
 						AllowedPrincipalTags: &models.AllowedPrincipalTags{},
 					},
 				},
+				DeviceReportOpts: &agent.DeviceReportOpts{EnableRuntimeGPUAttestation: true},
 			},
 		},
 	}
