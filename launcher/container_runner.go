@@ -524,7 +524,7 @@ func (r *ContainerRunner) refreshToken(ctx context.Context) (time.Duration, erro
 	}
 
 	// request a default token
-	token, err := r.attestAgent.Attest(ctx, agent.AttestAgentOpts{})
+	token, err := r.attestAgent.Attest(ctx, agent.AttestAgentOpts{DeviceReportOpts: &agent.DeviceReportOpts{EnableRuntimeGPUAttestation: true}})
 	if err != nil {
 		return 0, fmt.Errorf("failed to retrieve attestation service token: %v", err)
 	}

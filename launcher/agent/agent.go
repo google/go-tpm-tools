@@ -280,6 +280,19 @@ func (a *agent) AttestWithClient(ctx context.Context, opts AttestAgentOpts, clie
 		return nil, fmt.Errorf("received an unsupported attestation type! %v", v)
 	}
 
+	if a.launchSpec.Experiments.EnableGpuGcaSupport {
+		deviceReports, err := a.attestDeviceROTs(challenge.Nonce, opts)
+		if err != nil {
+			return nil, fmt.Errorf("failed to attest device RoTs: %v", err)
+		}
+		for _, dr := range deviceReports {
+			if dr.GetNvidiaReport() != nil {
+				a.logger.Info("Adding GPU device reports to attestation request.")
+				req.NvidiaAttestation = dr.GetNvidiaReport()
+			}
+		}
+	}
+
 	signatures := a.sigsCache.get()
 	if len(signatures) > 0 {
 		for _, sig := range signatures {
