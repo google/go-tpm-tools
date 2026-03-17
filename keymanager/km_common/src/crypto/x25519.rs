@@ -185,14 +185,8 @@ impl PrivateKeyOps for X25519PrivateKey {
 
 /// LabeledExtract(salt, label, ikm) = HKDF-Extract(salt, "HPKE-v1" || suite_id || label || ikm)
 fn labeled_extract(salt: &[u8], label: &[u8], ikm: &[u8], suite_id: &[u8]) -> hkdf::Prk {
-    // print the params received
-    println!(
-        "labeled_extract: salt={:?}, label={:?}, ikm={:?}, suite_id={:?}",
-        salt, label, ikm, suite_id
-    );
-
     let labeled_ikm = SecretBox::new([b"HPKE-v1".as_slice(), suite_id, label, ikm].concat());
-    hkdf::HkdfSha256::extract(labeled_ikm.as_slice(), hkdf::Salt::None)
+    hkdf::HkdfSha256::extract(labeled_ikm.as_slice(), hkdf::Salt::NonEmpty(salt))
 }
 
 /// LabeledExpand(prk, label, info, L) = HKDF-Expand(prk, "HPKE-v1" || suite_id || label || info, L)
@@ -257,23 +251,57 @@ mod tests {
         let ikm = b"test_ikm";
         let info = b"test_info";
 
-        // Test labeled_extract
+        // 1. Test labeled_extract against manual HKDF
         let prk = labeled_extract(salt, label, ikm, &suite_id);
 
-        // Test labeled_expand with length 32
+        let expected_labeled_ikm = [b"HPKE-v1".as_slice(), &suite_id, label, ikm].concat();
+        let expected_prk =
+            hkdf::HkdfSha256::extract(&expected_labeled_ikm, hkdf::Salt::NonEmpty(salt));
+
+        // We can't directly compare Prk objects, so we expand them and compare the results
+        let mut prk_output = vec![0u8; 32];
+        prk.expand_into(b"test", &mut prk_output).unwrap();
+        let mut expected_prk_output = vec![0u8; 32];
+        expected_prk
+            .expand_into(b"test", &mut expected_prk_output)
+            .unwrap();
+        assert_eq!(prk_output, expected_prk_output);
+
+        // 2. Test labeled_expand against manual HKDF
         let len = 32;
         let result = labeled_expand(&prk, label, info, &suite_id, len).expect("expand failed");
-        assert_eq!(result.as_slice().len(), len as usize);
 
-        // Test labeled_expand with different info produces different result
-        let result2 =
-            labeled_expand(&prk, label, b"other_info", &suite_id, len).expect("expand failed");
-        assert_ne!(result.as_slice(), result2.as_slice());
+        let expected_labeled_info =
+            [&len.to_be_bytes()[..], b"HPKE-v1", &suite_id, label, info].concat();
+        let mut expected_result = vec![0u8; len as usize];
+        expected_prk
+            .expand_into(&expected_labeled_info, &mut expected_result)
+            .unwrap();
 
-        // Test labeled_expand with different label produces different result
+        assert_eq!(result.as_slice(), expected_result.as_slice());
+
+        // 3. Test labeled_expand with different length
+        let len2 = 16;
+        let result2 = labeled_expand(&prk, label, info, &suite_id, len2).expect("expand failed");
+        assert_eq!(result2.as_slice().len(), len2 as usize);
+
+        let expected_labeled_info2 =
+            [&len2.to_be_bytes()[..], b"HPKE-v1", &suite_id, label, info].concat();
+        let mut expected_result2 = vec![0u8; len2 as usize];
+        expected_prk
+            .expand_into(&expected_labeled_info2, &mut expected_result2)
+            .unwrap();
+        assert_eq!(result2.as_slice(), expected_result2.as_slice());
+
+        // 4. Test labeled_expand with different info produces different result
         let result3 =
-            labeled_expand(&prk, b"other_label", info, &suite_id, len).expect("expand failed");
+            labeled_expand(&prk, label, b"other_info", &suite_id, len).expect("expand failed");
         assert_ne!(result.as_slice(), result3.as_slice());
+
+        // 5. Test labeled_expand with different label produces different result
+        let result4 =
+            labeled_expand(&prk, b"other_label", info, &suite_id, len).expect("expand failed");
+        assert_ne!(result.as_slice(), result4.as_slice());
     }
 
     #[test]
