@@ -1,7 +1,6 @@
 pub mod keymanager {
     include!(concat!(env!("OUT_DIR"), "/keymanager.rs"));
 }
-pub use keymanager as algorithms;
 pub use keymanager as proto;
 
 pub use proto::Status;

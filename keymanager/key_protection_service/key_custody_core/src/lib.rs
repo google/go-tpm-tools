@@ -1,6 +1,6 @@
-use km_common::algorithms::HpkeAlgorithm;
 use km_common::crypto::PublicKey;
 use km_common::key_types::{KeyRecord, KeyRegistry, KeySpec};
+use km_common::proto::{Error, HpkeAlgorithm};
 use prost::Message;
 use std::slice;
 use std::sync::Arc;
@@ -20,7 +20,7 @@ fn generate_kem_keypair_internal(
     algo: HpkeAlgorithm,
     binding_pubkey: PublicKey,
     expiry_secs: u64,
-) -> Result<(uuid::Uuid, PublicKey), i32> {
+) -> Result<(uuid::Uuid, PublicKey), Error> {
     let result =
         KeyRecord::create_bound_kem_key(algo, binding_pubkey, Duration::from_secs(expiry_secs));
 
@@ -29,12 +29,12 @@ fn generate_kem_keypair_internal(
             let id = record.meta.id;
             let pubkey = match &record.meta.spec {
                 KeySpec::KemWithBindingPub { kem_public_key, .. } => kem_public_key.clone(),
-                _ => return Err(-1),
+                _ => return Err(Error::Internal),
             };
             KEY_REGISTRY.add_key(record);
             Ok((id, pubkey))
         }
-        Err(_) => Err(-1),
+        Err(e) => Err(Error::from(e)),
     }
 }
 
@@ -60,9 +60,10 @@ fn generate_kem_keypair_internal(
 /// * `out_pubkey_len` is either null or points to a valid `usize`.
 ///
 /// ## Returns
-/// * `0` on success.
-/// * `-1` if an error occurred during key generation or if `binding_pubkey` is null/empty.
-/// * `-2` if the `out_pubkey` buffer size does not match the key size.
+/// * `Error::Success` on success.
+/// * `Error::InvalidArgument` if `binding_pubkey` or `algo_ptr` is null/empty.
+/// * `Error::InvalidArgument` if the `out_pubkey` buffer size does not match the key size.
+/// * Other `Error` values on failure.
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn key_manager_generate_kem_keypair(
@@ -74,9 +75,9 @@ pub unsafe extern "C" fn key_manager_generate_kem_keypair(
     out_uuid: *mut u8,
     out_pubkey: *mut u8,
     out_pubkey_len: usize,
-) -> i32 {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        // Safety Invariant Checks
+) -> Error {
+    km_common::ffi_call(|| {
+        // Convert to Safe Types
         if binding_pubkey.is_null()
             || binding_pubkey_len == 0
             || out_pubkey.is_null()
@@ -84,7 +85,7 @@ pub unsafe extern "C" fn key_manager_generate_kem_keypair(
             || algo_ptr.is_null()
             || algo_len == 0
         {
-            return -1;
+            return Err(Error::InvalidArgument);
         }
 
         // Convert to Safe Types
@@ -94,30 +95,18 @@ pub unsafe extern "C" fn key_manager_generate_kem_keypair(
         let out_uuid = unsafe { slice::from_raw_parts_mut(out_uuid, 16) };
         let out_pubkey = unsafe { slice::from_raw_parts_mut(out_pubkey, out_pubkey_len) };
 
-        let binding_pubkey = match PublicKey::try_from(binding_pubkey_slice.to_vec()) {
-            Ok(pk) => pk,
-            Err(_) => return -1,
-        };
-
-        let algo = match HpkeAlgorithm::decode(algo_slice) {
-            Ok(a) => a,
-            Err(_) => return -1,
-        };
+        let binding_pubkey = PublicKey::try_from(binding_pubkey_slice.to_vec())?;
+        let algo = HpkeAlgorithm::decode(algo_slice).map_err(|_| Error::InvalidArgument)?;
 
         // Call Safe Internal Function
-        match generate_kem_keypair_internal(algo, binding_pubkey, expiry_secs) {
-            Ok((id, pubkey)) => {
-                if out_pubkey_len != pubkey.as_bytes().len() {
-                    return -2;
-                }
-                out_uuid.copy_from_slice(id.as_bytes());
-                out_pubkey.copy_from_slice(pubkey.as_bytes());
-                0 // Success
-            }
-            Err(e) => e,
+        let (id, pubkey) = generate_kem_keypair_internal(algo, binding_pubkey, expiry_secs)?;
+        if out_pubkey_len != pubkey.as_bytes().len() {
+            return Err(Error::InvalidArgument);
         }
-    }))
-    .unwrap_or(-1)
+        out_uuid.copy_from_slice(id.as_bytes());
+        out_pubkey.copy_from_slice(pubkey.as_bytes());
+        Ok(())
+    })
 }
 
 /// Destroys the KEM key associated with the given UUID.
@@ -130,13 +119,14 @@ pub unsafe extern "C" fn key_manager_generate_kem_keypair(
 /// The caller must ensure that `uuid_bytes` points to a valid 16-byte buffer.
 ///
 /// ## Returns
-/// * `0` on success.
-/// * `-1` if the UUID pointer is null or the key was not found.
+/// * `Error::Success` on success.
+/// * `Error::InvalidArgument` if the UUID pointer is null.
+/// * `Error::NotFound` if the key was not found.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn key_manager_destroy_kem_key(uuid_bytes: *const u8) -> i32 {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+pub unsafe extern "C" fn key_manager_destroy_kem_key(uuid_bytes: *const u8) -> Error {
+    km_common::ffi_call(|| {
         if uuid_bytes.is_null() {
-            return -1;
+            return Err(Error::InvalidArgument);
         }
         let uuid = unsafe {
             let mut bytes = [0u8; 16];
@@ -144,12 +134,9 @@ pub unsafe extern "C" fn key_manager_destroy_kem_key(uuid_bytes: *const u8) -> i
             Uuid::from_bytes(bytes)
         };
 
-        match KEY_REGISTRY.remove_key(&uuid) {
-            Some(_) => 0, // Success
-            None => -1,   // Not found
-        }
-    }))
-    .unwrap_or(-1)
+        KEY_REGISTRY.remove_key(&uuid).ok_or(Error::NotFound)?;
+        Ok(())
+    })
 }
 
 /// Internal function to decapsulate and reseal a shared secret.
@@ -159,10 +146,10 @@ fn decap_and_seal_internal(
     aad: &[u8],
     out_encapsulated_key: &mut [u8],
     out_ciphertext: &mut [u8],
-) -> Result<(), i32> {
+) -> Result<(), Error> {
     // Get key record from registry
     let Some(key_record) = KEY_REGISTRY.get_key(&uuid) else {
-        Err(-1)? // Key not found
+        Err(Error::NotFound)? // Key not found
     };
 
     let KeySpec::KemWithBindingPub {
@@ -171,29 +158,23 @@ fn decap_and_seal_internal(
         ..
     } = &key_record.meta.spec
     else {
-        Err(-1)? // Invalid key type
+        Err(Error::Internal)? // Invalid key type
     };
 
     let priv_key = key_record.get_private_key();
 
     // Decapsulate
-    let shared_secret = match km_common::crypto::decaps(&priv_key, encapsulated_key) {
-        Ok(s) => s,
-        Err(_) => return Err(-3),
-    };
+    let shared_secret = km_common::crypto::decaps(&priv_key, encapsulated_key)?;
 
     // Seal
-    match km_common::crypto::hpke_seal(binding_public_key, &shared_secret, aad, hpke_algo) {
-        Ok((enc, ct)) => {
-            if out_encapsulated_key.len() != enc.len() || out_ciphertext.len() != ct.len() {
-                return Err(-2);
-            }
-            out_encapsulated_key.copy_from_slice(&enc);
-            out_ciphertext.copy_from_slice(&ct);
-            Ok(())
-        }
-        Err(_) => Err(-4),
+    let (enc, ct) =
+        km_common::crypto::hpke_seal(binding_public_key, &shared_secret, aad, hpke_algo)?;
+    if out_encapsulated_key.len() != enc.len() || out_ciphertext.len() != ct.len() {
+        return Err(Error::InvalidArgument);
     }
+    out_encapsulated_key.copy_from_slice(&enc);
+    out_ciphertext.copy_from_slice(&ct);
+    Ok(())
 }
 
 pub const MAX_ALGORITHM_LEN: usize = 128;
@@ -229,7 +210,7 @@ impl Default for KpsKeyInfo {
 fn enumerate_kem_keys_internal(
     entries: &mut [KpsKeyInfo],
     offset: usize,
-) -> Result<(usize, bool), i32> {
+) -> Result<(usize, bool), Error> {
     let (metas, total_count) = KEY_REGISTRY.list_all_keys(offset, entries.len());
     let count = metas.len();
     let has_more = offset + count < total_count;
@@ -242,7 +223,7 @@ fn enumerate_kem_keys_internal(
             ..
         } = &meta.spec
         else {
-            return Err(-1); // Implementation error, KPS should only contain KEM keys.
+            return Err(Error::Internal); // Implementation error, KPS should only contain KEM keys.
         };
 
         let algo_bytes = algo.encode_to_vec();
@@ -254,7 +235,7 @@ fn enumerate_kem_keys_internal(
                 algo_bytes.len(),
                 pub_key.as_bytes().len()
             );
-            return Err(-2); // Buffer Limit Exceeded
+            return Err(Error::Internal); // Buffer Limit Exceeded
         }
         if binding_pub_key.as_bytes().len() > MAX_PUBLIC_KEY_LEN {
             debug_assert!(
@@ -262,7 +243,7 @@ fn enumerate_kem_keys_internal(
                 "Implementation error: Binding Key size exceeds buffer limits! (bpk={})",
                 binding_pub_key.as_bytes().len()
             );
-            return Err(-2);
+            return Err(Error::Internal);
         }
 
         let now = Instant::now();
@@ -295,24 +276,19 @@ pub unsafe extern "C" fn key_manager_enumerate_kem_keys(
     offset: usize,
     out_has_more: Option<&mut bool>,
 ) -> i32 {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    km_common::ffi_call_i32(|| {
         if out_entries.is_null() {
-            return -1;
+            return Err(Error::InvalidArgument);
         }
 
         let entries = unsafe { slice::from_raw_parts_mut(out_entries, max_entries) };
 
-        match enumerate_kem_keys_internal(entries, offset) {
-            Ok((count, has_more)) => {
-                if let Some(has_more_ref) = out_has_more {
-                    *has_more_ref = has_more;
-                }
-                count as i32
-            }
-            Err(e) => e,
+        let (count, has_more) = enumerate_kem_keys_internal(entries, offset)?;
+        if let Some(has_more_ref) = out_has_more {
+            *has_more_ref = has_more;
         }
-    }))
-    .unwrap_or(-1)
+        Ok(count as i32)
+    })
 }
 
 /// Decapsulates a shared secret using a stored KEM key and immediately reseals it using the associated binding public key.
@@ -337,11 +313,10 @@ pub unsafe extern "C" fn key_manager_enumerate_kem_keys(
 /// * `out_ciphertext` points to a valid buffer of `out_ciphertext_len` bytes.
 ///
 /// ## Returns
-/// * `0` on success.
-/// * `-1` if arguments are invalid or key is not found.
-/// * `-2` if output buffers are too small.
-/// * `-3` if decapsulation fails.
-/// * `-4` if sealing (HPKE encryption) fails.
+/// * `Error::Success` on success.
+/// * `Error::InvalidArgument` if arguments are invalid.
+/// * `Error::NotFound` if key is not found.
+/// * Other `Error` values on failure.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn key_manager_decap_and_seal(
     uuid_bytes: *const u8,
@@ -353,8 +328,8 @@ pub unsafe extern "C" fn key_manager_decap_and_seal(
     out_encapsulated_key_len: usize,
     out_ciphertext: *mut u8,
     out_ciphertext_len: usize,
-) -> i32 {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+) -> Error {
+    km_common::ffi_call(|| {
         if uuid_bytes.is_null()
             || encapsulated_key.is_null()
             || encapsulated_key_len == 0
@@ -363,7 +338,7 @@ pub unsafe extern "C" fn key_manager_decap_and_seal(
             || out_ciphertext.is_null()
             || out_ciphertext_len == 0
         {
-            return -1;
+            return Err(Error::InvalidArgument);
         }
 
         // Convert to Safe Types
@@ -380,29 +355,22 @@ pub unsafe extern "C" fn key_manager_decap_and_seal(
         let out_ciphertext_slice =
             unsafe { slice::from_raw_parts_mut(out_ciphertext, out_ciphertext_len) };
 
-        let uuid = match Uuid::from_slice(uuid_slice) {
-            Ok(u) => u,
-            Err(_) => return -1,
-        };
+        let uuid = Uuid::from_slice(uuid_slice).map_err(|_| Error::InvalidArgument)?;
 
         // Call Safe Internal Function
-        match decap_and_seal_internal(
+        decap_and_seal_internal(
             uuid,
             enc_key_slice,
             aad_slice,
             out_encapsulated_key_slice,
             out_ciphertext_slice,
-        ) {
-            Ok(_) => 0, // Success
-            Err(e) => e,
-        }
-    }))
-    .unwrap_or(-1)
+        )
+    })
 }
 
 /// Internal function to retrieve a KEM key's public keys and expiration.
-fn get_kem_key_internal(uuid: Uuid) -> Result<(HpkeAlgorithm, PublicKey, PublicKey, u64), i32> {
-    let record = KEY_REGISTRY.get_key(&uuid).ok_or(-1)?;
+fn get_kem_key_internal(uuid: Uuid) -> Result<(HpkeAlgorithm, PublicKey, PublicKey, u64), Error> {
+    let record = KEY_REGISTRY.get_key(&uuid).ok_or(Error::NotFound)?;
     match &record.meta.spec {
         KeySpec::KemWithBindingPub {
             algo,
@@ -421,7 +389,7 @@ fn get_kem_key_internal(uuid: Uuid) -> Result<(HpkeAlgorithm, PublicKey, PublicK
                 remaining.as_secs(),
             ))
         }
-        _ => Err(-1),
+        _ => Err(Error::Internal),
     }
 }
 
@@ -441,9 +409,9 @@ fn get_kem_key_internal(uuid: Uuid) -> Result<(HpkeAlgorithm, PublicKey, PublicK
 /// This function is unsafe because it dereferences raw pointers.
 ///
 /// ## Returns
-/// * `0` on success.
-/// * `-1` if arguments are invalid or key is not found.
-/// * `-2` if any output buffer is too small.
+/// * `Error::Success` on success.
+/// * `Error::InvalidArgument` if arguments are invalid.
+/// * `Error::NotFound` if key is not found.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn key_manager_get_kem_key(
     uuid_bytes: *const u8,
@@ -454,8 +422,8 @@ pub unsafe extern "C" fn key_manager_get_kem_key(
     out_algo: *mut u8,
     out_algo_len: *mut usize,
     out_remaining_lifespan_secs: *mut u64,
-) -> i32 {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+) -> Error {
+    km_common::ffi_call(|| {
         if uuid_bytes.is_null()
             || out_kem_pubkey.is_null()
             || out_kem_pubkey_len == 0
@@ -465,7 +433,7 @@ pub unsafe extern "C" fn key_manager_get_kem_key(
             || out_algo_len.is_null()
             || out_remaining_lifespan_secs.is_null()
         {
-            return -1;
+            return Err(Error::InvalidArgument);
         }
 
         // Convert to Safe Types first
@@ -478,39 +446,31 @@ pub unsafe extern "C" fn key_manager_get_kem_key(
         let out_algo_len_ref = unsafe { &mut *out_algo_len };
         let out_algo_slice = unsafe { std::slice::from_raw_parts_mut(out_algo, *out_algo_len_ref) };
 
-        let uuid = match Uuid::from_slice(uuid_slice) {
-            Ok(u) => u,
-            Err(_) => return -1,
-        };
+        let uuid = Uuid::from_slice(uuid_slice).map_err(|_| Error::InvalidArgument)?;
 
         // Call Safe Internal Function
-        match get_kem_key_internal(uuid) {
-            Ok((algo, kem_pubkey, binding_pubkey, remaining_secs)) => {
-                let algo_bytes = algo.encode_to_vec();
-                if out_kem_pubkey_slice.len() != kem_pubkey.as_bytes().len()
-                    || out_binding_pubkey_slice.len() != binding_pubkey.as_bytes().len()
-                    || *out_algo_len_ref < algo_bytes.len()
-                {
-                    return -2;
-                }
-
-                out_kem_pubkey_slice.copy_from_slice(kem_pubkey.as_bytes());
-                out_binding_pubkey_slice.copy_from_slice(binding_pubkey.as_bytes());
-                out_algo_slice[..algo_bytes.len()].copy_from_slice(&algo_bytes);
-                *out_algo_len_ref = algo_bytes.len();
-                *out_remaining_lifespan_secs_ref = remaining_secs;
-                0 // Success
-            }
-            Err(e) => e,
+        let (algo, kem_pubkey, binding_pubkey, remaining_secs) = get_kem_key_internal(uuid)?;
+        let algo_bytes = algo.encode_to_vec();
+        if out_kem_pubkey_slice.len() != kem_pubkey.as_bytes().len()
+            || out_binding_pubkey_slice.len() != binding_pubkey.as_bytes().len()
+            || *out_algo_len_ref < algo_bytes.len()
+        {
+            return Err(Error::InvalidArgument);
         }
-    }))
-    .unwrap_or(-1)
+
+        out_kem_pubkey_slice.copy_from_slice(kem_pubkey.as_bytes());
+        out_binding_pubkey_slice.copy_from_slice(binding_pubkey.as_bytes());
+        out_algo_slice[..algo_bytes.len()].copy_from_slice(&algo_bytes);
+        *out_algo_len_ref = algo_bytes.len();
+        *out_remaining_lifespan_secs_ref = remaining_secs;
+        Ok(())
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use km_common::algorithms::{AeadAlgorithm, KdfAlgorithm, KemAlgorithm};
+    use km_common::proto::{AeadAlgorithm, KdfAlgorithm, KemAlgorithm};
     use prost::Message;
 
     struct KeyCleanup(Uuid);
@@ -569,7 +529,7 @@ mod tests {
             )
         };
 
-        assert_eq!(result, 0);
+        assert_eq!(result, Error::Success);
         let _cleanup = KeyCleanup(Uuid::from_bytes(uuid_bytes));
 
         assert_ne!(uuid_bytes, [0u8; 16]);
@@ -599,7 +559,7 @@ mod tests {
             )
         };
 
-        assert_eq!(result, -1);
+        assert_eq!(result, Error::InvalidArgument);
         assert_eq!(uuid_bytes, [0u8; 16]);
     }
 
@@ -629,7 +589,7 @@ mod tests {
             )
         };
 
-        assert_eq!(result, -2);
+        assert_eq!(result, Error::InvalidArgument);
         assert_eq!(uuid_bytes, [0u8; 16]); // Should remain untouched/zero
         assert_eq!(&pubkey_bytes[..32], &[0u8; 32]); // Should remain untouched/zero
     }
@@ -657,7 +617,7 @@ mod tests {
             )
         };
 
-        assert_eq!(result, -1);
+        assert_eq!(result, Error::InvalidArgument);
     }
 
     #[test]
@@ -684,7 +644,7 @@ mod tests {
             )
         };
 
-        assert_eq!(result, -1);
+        assert_eq!(result, Error::InvalidArgument);
     }
 
     #[test]
@@ -710,35 +670,35 @@ mod tests {
                 pubkey_bytes.as_mut_ptr(),
                 pubkey_len,
             );
-            assert_eq!(res, 0);
+            assert_eq!(res, Error::Success);
         }
         let _cleanup = KeyCleanup(Uuid::from_bytes(uuid_bytes));
 
         let result = unsafe { key_manager_destroy_kem_key(uuid_bytes.as_ptr()) };
-        assert_eq!(result, 0);
+        assert_eq!(result, Error::Success);
 
         // Second destroy should fail
         let result = unsafe { key_manager_destroy_kem_key(uuid_bytes.as_ptr()) };
-        assert_eq!(result, -1);
+        assert_eq!(result, Error::NotFound.into());
     }
 
     #[test]
     fn test_destroy_kem_key_not_found() {
         let uuid_bytes = [0u8; 16];
         let result = unsafe { key_manager_destroy_kem_key(uuid_bytes.as_ptr()) };
-        assert_eq!(result, -1);
+        assert_eq!(result, Error::NotFound.into());
     }
 
     #[test]
     fn test_destroy_kem_key_null_ptr() {
         let result = unsafe { key_manager_destroy_kem_key(std::ptr::null()) };
-        assert_eq!(result, -1);
+        assert_eq!(result, Error::InvalidArgument);
     }
 
     #[test]
     fn test_enumerate_kem_keys_null_pointers() {
         let result = unsafe { key_manager_enumerate_kem_keys(std::ptr::null_mut(), 10, 0, None) };
-        assert_eq!(result, -1);
+        assert_eq!(result, -(Error::InvalidArgument as i32));
     }
 
     #[test]
@@ -768,7 +728,7 @@ mod tests {
                 pubkey_len,
             )
         };
-        assert_eq!(rc, 0);
+        assert_eq!(rc, Error::Success);
         let _cleanup = KeyCleanup(Uuid::from_bytes(uuid_bytes));
 
         // Enumerate.
@@ -938,7 +898,7 @@ mod tests {
             )
         };
 
-        assert_eq!(result, 0);
+        assert_eq!(result, Error::Success);
 
         // 4. Verify we can decrypt the result using binding_sk
         let recovered_shared_secret =
@@ -977,7 +937,7 @@ mod tests {
             )
         };
 
-        assert_eq!(result, -1);
+        assert_eq!(result, Error::NotFound.into());
     }
 
     #[test]
@@ -999,7 +959,7 @@ mod tests {
             )
         };
 
-        assert_eq!(result, -1);
+        assert_eq!(result, Error::InvalidArgument);
     }
 
     #[test]
@@ -1030,7 +990,7 @@ mod tests {
                 kem_pubkey_len,
             )
         };
-        assert_eq!(res, 0);
+        assert_eq!(res, Error::Success);
         let _cleanup = KeyCleanup(Uuid::from_bytes(uuid_bytes));
 
         // 3. Call with invalid encapsulated key (wrong length for X25519)
@@ -1053,7 +1013,7 @@ mod tests {
             )
         };
 
-        assert_eq!(result, -3);
+        assert_eq!(result, Error::DecapsulationFailure.into());
     }
 
     #[test]
@@ -1085,7 +1045,11 @@ mod tests {
                 kem_pubkey_len,
             )
         };
-        assert_eq!(res, 0, "Setup failed: key generation returned error");
+        assert_eq!(
+            res,
+            Error::Success,
+            "Setup failed: key generation returned error"
+        );
         let _cleanup = KeyCleanup(Uuid::from_bytes(uuid_bytes));
 
         // 3. Generate valid client encapsulation
@@ -1113,7 +1077,7 @@ mod tests {
             )
         };
 
-        assert_eq!(result, -2);
+        assert_eq!(result, Error::InvalidArgument);
     }
 
     #[test]
@@ -1142,7 +1106,7 @@ mod tests {
                 pubkey_len,
             )
         };
-        assert_eq!(res, 0);
+        assert_eq!(res, Error::Success);
         let _cleanup = KeyCleanup(Uuid::from_bytes(uuid_bytes));
 
         // Now, retrieve it.
@@ -1165,7 +1129,7 @@ mod tests {
             )
         };
 
-        assert_eq!(result, 0);
+        assert_eq!(result, Error::Success);
         assert_eq!(generated_kem_pubkey_bytes, retrieved_kem_pubkey_bytes);
         assert_eq!(binding_pubkey, retrieved_binding_pubkey_bytes);
         assert_eq!(algo_bytes, &retrieved_algo_bytes[..retrieved_algo_len]);
@@ -1194,7 +1158,7 @@ mod tests {
                 &mut remaining_lifespan_secs,
             )
         };
-        assert_eq!(result, -1);
+        assert_eq!(result, Error::NotFound.into());
     }
 
     #[test]
@@ -1223,7 +1187,7 @@ mod tests {
                 pubkey_len,
             )
         };
-        assert_eq!(res, 0);
+        assert_eq!(res, Error::Success);
         let _cleanup = KeyCleanup(Uuid::from_bytes(uuid_bytes));
 
         // Now, retrieve it with invalid buffer lengths.
@@ -1246,7 +1210,7 @@ mod tests {
                 &mut remaining_lifespan_secs,
             )
         };
-        assert_eq!(result, -2);
+        assert_eq!(result, Error::InvalidArgument);
 
         // Binding pubkey buffer too small.
         let result = unsafe {
@@ -1261,6 +1225,6 @@ mod tests {
                 &mut remaining_lifespan_secs,
             )
         };
-        assert_eq!(result, -2);
+        assert_eq!(result, Error::InvalidArgument.into());
     }
 }

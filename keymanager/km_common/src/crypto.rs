@@ -1,8 +1,7 @@
-use crate::algorithms::{HpkeAlgorithm, KemAlgorithm};
+use crate::proto::{Error, HpkeAlgorithm, KemAlgorithm};
 pub mod secret_box;
 use crate::crypto::secret_box::SecretBox;
 use clear_on_drop::clear_stack_on_return;
-use thiserror::Error;
 
 mod x25519;
 pub use x25519::{X25519PrivateKey, X25519PublicKey};
@@ -75,7 +74,7 @@ impl TryFrom<Vec<u8>> for PublicKey {
     type Error = Error;
 
     fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
-        let bytes: [u8; 32] = value.try_into().map_err(|_| Error::KeyLenMismatch)?;
+        let bytes: [u8; 32] = value.try_into().map_err(|_| Error::InvalidArgument)?;
         Ok(PublicKey::X25519(X25519PublicKey(bytes)))
     }
 }
@@ -146,24 +145,6 @@ impl PrivateKeyOps for PrivateKey {
     }
 }
 
-#[derive(Debug, Error)]
-pub enum Error {
-    #[error("Key length mismatch")]
-    KeyLenMismatch,
-    #[error("Decapsulation error")]
-    DecapsError,
-    #[error("HPKE decryption error")]
-    HpkeDecryptionError,
-    #[error("HPKE encryption error")]
-    HpkeEncryptionError,
-    #[error("Unsupported algorithm")]
-    UnsupportedAlgorithm,
-    #[error("Invalid key")]
-    InvalidKey,
-    #[error("Crypto library error")]
-    CryptoError,
-}
-
 /// Generates a keypair for the given KEM algorithm.
 ///
 /// Returns a tuple containing the public and private keys respectively.
@@ -224,7 +205,7 @@ pub fn hpke_seal(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::algorithms::{AeadAlgorithm, KdfAlgorithm};
+    use crate::proto::{AeadAlgorithm, KdfAlgorithm};
     use bssl_crypto::hpke;
 
     #[test]
@@ -322,7 +303,7 @@ mod tests {
         }
 
         let result = hpke_open(&sk_r, &enc, &ciphertext, aad, &hpke_algo);
-        assert!(matches!(result, Err(Error::HpkeDecryptionError)));
+        assert!(matches!(result, Err(Error::DecryptionFailure)));
     }
 
     #[test]
@@ -354,7 +335,7 @@ mod tests {
         let tampered_aad = b"bar";
 
         let result = hpke_open(&sk_r, &enc, &ciphertext, tampered_aad, &hpke_algo);
-        assert!(matches!(result, Err(Error::HpkeDecryptionError)));
+        assert!(matches!(result, Err(Error::DecryptionFailure)));
     }
 
     #[test]
