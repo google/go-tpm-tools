@@ -15,7 +15,9 @@ import (
 	"time"
 
 	kpskcc "github.com/google/go-tpm-tools/keymanager/key_protection_service/key_custody_core"
+	api "github.com/google/go-tpm-tools/keymanager/workload_service/proto"
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/encoding/protojson"
 
 	kps "github.com/google/go-tpm-tools/keymanager/key_protection_service"
 	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
@@ -117,11 +119,11 @@ func (m *mockKeyProtectionService) GetKEMKey(_ uuid.UUID) ([]byte, []byte, *keym
 }
 
 func validGenerateBody() []byte {
-	body, _ := json.Marshal(GenerateKeyRequest{
-		Algorithm: AlgorithmDetails{
+	body, _ := protojson.MarshalOptions{EmitUnpopulated: true, UseProtoNames: true}.Marshal(&api.GenerateKeyRequest{
+		Algorithm: &api.AlgorithmDetails{
 			Type: "kem",
-			Params: AlgorithmParams{
-				KemID: KemAlgorithmDHKEMX25519HKDFSHA256,
+			Params: &api.AlgorithmParams{
+				KemId: api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256,
 			},
 		},
 		Lifespan: 3600,
@@ -158,8 +160,8 @@ func TestHandleGenerateKeySuccess(t *testing.T) {
 		t.Fatalf("expected status 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	var resp GenerateKeyResponse
-	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+	var resp api.GenerateKeyResponse
+	if err := protojson.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
 	if resp.KeyHandle.Handle != kemUUID.String() {
@@ -171,8 +173,8 @@ func TestHandleGenerateKeySuccess(t *testing.T) {
 	if resp.KeyProtectionMechanism != keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED.String() {
 		t.Fatalf("expected %s, got %s", keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED.String(), resp.KeyProtectionMechanism)
 	}
-	if resp.ExpirationTime <= time.Now().Unix() {
-		t.Fatalf("expected expiration time in the future, got %d", resp.ExpirationTime)
+	if resp.ExpirationTime <= float64(time.Now().Unix()) {
+		t.Fatalf("expected expiration time in the future, got %f", resp.ExpirationTime)
 	}
 
 	// Verify the binding public key was passed to KEM generator.
@@ -223,29 +225,29 @@ func TestHandleGenerateKeyBadRequest(t *testing.T) {
 
 	tests := []struct {
 		name string
-		body GenerateKeyRequest
+		body *api.GenerateKeyRequest
 	}{
 		{
 			name: "unsupported algorithm type",
-			body: GenerateKeyRequest{Algorithm: AlgorithmDetails{Type: "mac", Params: AlgorithmParams{KemID: KemAlgorithmDHKEMX25519HKDFSHA256}}, Lifespan: 3600},
+			body: &api.GenerateKeyRequest{Algorithm: &api.AlgorithmDetails{Type: "mac", Params: &api.AlgorithmParams{KemId: api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256}}, Lifespan: 3600},
 		},
 		{
 			name: "unsupported algorithm",
-			body: GenerateKeyRequest{Algorithm: AlgorithmDetails{Type: "kem", Params: AlgorithmParams{KemID: KemAlgorithmUnspecified}}, Lifespan: 3600},
+			body: &api.GenerateKeyRequest{Algorithm: &api.AlgorithmDetails{Type: "kem", Params: &api.AlgorithmParams{KemId: api.KemAlgorithm_KEM_ALGORITHM_UNSPECIFIED}}, Lifespan: 3600},
 		},
 		{
 			name: "zero lifespan",
-			body: GenerateKeyRequest{Algorithm: AlgorithmDetails{Type: "kem", Params: AlgorithmParams{KemID: KemAlgorithmDHKEMX25519HKDFSHA256}}, Lifespan: 0},
+			body: &api.GenerateKeyRequest{Algorithm: &api.AlgorithmDetails{Type: "kem", Params: &api.AlgorithmParams{KemId: api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256}}, Lifespan: 0},
 		},
 		{
 			name: "missing algorithm (defaults to 0, type empty)",
-			body: GenerateKeyRequest{Lifespan: 3600},
+			body: &api.GenerateKeyRequest{Lifespan: 3600},
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			body, _ := json.Marshal(tc.body)
+			body, _ := protojson.MarshalOptions{EmitUnpopulated: true, UseProtoNames: true}.Marshal(tc.body)
 			req := httptest.NewRequest(http.MethodPost, "/v1/keys:generate_key", bytes.NewReader(body))
 			req.Header.Set("Content-Type", "application/json")
 			w := httptest.NewRecorder()
@@ -257,7 +259,7 @@ func TestHandleGenerateKeyBadRequest(t *testing.T) {
 
 			if tc.name == "unsupported algorithm" {
 				var resp map[string]string
-				if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+				if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 					t.Fatalf("failed to decode response: %v", err)
 				}
 				expectedSubstr := "Supported algorithms: DHKEM_X25519_HKDF_SHA256"
@@ -280,7 +282,6 @@ func TestHandleGenerateKeyBadJSON(t *testing.T) {
 		body string
 	}{
 		{"not json", "not json"},
-		{"lifespan as string", `{"algorithm":{"type":"kem","params":{"kem_id":"DHKEM_X25519_HKDF_SHA256"}},"lifespan":"3600"}`},
 		{"lifespan as string with suffix", `{"algorithm":{"type":"kem","params":{"kem_id":"DHKEM_X25519_HKDF_SHA256"}},"lifespan":"3600s"}`},
 		{"lifespan negative", `{"algorithm":{"type":"kem","params":{"kem_id":"DHKEM_X25519_HKDF_SHA256"}},"lifespan":-1}`},
 		{"lifespan too large", `{"algorithm":{"type":"kem","params":{"kem_id":"DHKEM_X25519_HKDF_SHA256"}},"lifespan":9223372036854775808}`},
@@ -442,8 +443,8 @@ func TestHandleEnumerateKeysEmpty(t *testing.T) {
 		t.Fatalf("expected status 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	var resp EnumerateKeysResponse
-	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+	var resp api.EnumerateKeysResponse
+	if err := protojson.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
 	if len(resp.KeyInfos) != 0 {
@@ -498,8 +499,8 @@ func TestHandleEnumerateKeysWithKeys(t *testing.T) {
 		t.Fatalf("expected status 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	var resp EnumerateKeysResponse
-	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+	var resp api.EnumerateKeysResponse
+	if err := protojson.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
 	if len(resp.KeyInfos) != 2 {
@@ -507,9 +508,9 @@ func TestHandleEnumerateKeysWithKeys(t *testing.T) {
 	}
 
 	// Verify both keys appear (order-independent).
-	found := make(map[string]*KeyInfo)
+	found := make(map[string]*api.KeyInfo)
 	for i := range resp.KeyInfos {
-		ki := &resp.KeyInfos[i]
+		ki := resp.KeyInfos[i]
 		found[ki.KeyHandle.Handle] = ki
 	}
 
@@ -518,8 +519,8 @@ func TestHandleEnumerateKeysWithKeys(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected kem1 %s in response", kem1)
 	}
-	if info1.PubKey.Algorithm.Params.KemID != KemAlgorithmDHKEMX25519HKDFSHA256 {
-		t.Fatalf("expected algorithm %v, got %v", KemAlgorithmDHKEMX25519HKDFSHA256, info1.PubKey.Algorithm.Params.KemID)
+	if info1.PubKey.Algorithm.Params.KemId != api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256 {
+		t.Fatalf("expected algorithm %v, got %v", api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256, info1.PubKey.Algorithm.Params.KemId)
 	}
 	if info1.PubKey.PublicKey != base64.StdEncoding.EncodeToString(kemPubKey1) {
 		t.Fatalf("KEM pub key mismatch for kem1")
@@ -528,8 +529,8 @@ func TestHandleEnumerateKeysWithKeys(t *testing.T) {
 		t.Fatalf("expected key protection mechanism %s, got %s", keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED.String(), info1.KeyProtectionMechanism)
 	}
 	// Approximate check for expiration time
-	if info1.ExpirationTime <= time.Now().Unix() {
-		t.Fatalf("expected expiration time in the future, got %d", info1.ExpirationTime)
+	if info1.ExpirationTime <= float64(time.Now().Unix()) {
+		t.Fatalf("expected expiration time in the future, got %f", info1.ExpirationTime)
 	}
 
 	// Verify key 2.
@@ -538,8 +539,8 @@ func TestHandleEnumerateKeysWithKeys(t *testing.T) {
 		t.Fatalf("expected kem2 %s in response", kem2)
 	}
 	// Approximate check for expiration time
-	if info2.ExpirationTime <= time.Now().Unix() {
-		t.Fatalf("expected expiration time in the future, got %d", info2.ExpirationTime)
+	if info2.ExpirationTime <= float64(time.Now().Unix()) {
+		t.Fatalf("expected expiration time in the future, got %f", info2.ExpirationTime)
 	}
 }
 
@@ -575,12 +576,12 @@ func TestHandleEnumerateKeysError(t *testing.T) {
 
 func TestToHpkeAlgorithm(t *testing.T) {
 	tests := []struct {
-		input   KemAlgorithm
+		input   api.KemAlgorithm
 		want    *keymanager.HpkeAlgorithm
 		wantErr bool
 	}{
 		{
-			input: KemAlgorithmDHKEMX25519HKDFSHA256,
+			input: api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256,
 			want: &keymanager.HpkeAlgorithm{
 				Kem:  keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
 				Kdf:  keymanager.KdfAlgorithm_KDF_ALGORITHM_HKDF_SHA256,
@@ -589,12 +590,12 @@ func TestToHpkeAlgorithm(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			input:   KemAlgorithmUnspecified,
+			input:   api.KemAlgorithm_KEM_ALGORITHM_UNSPECIFIED,
 			want:    nil,
 			wantErr: true,
 		},
 		{
-			input:   KemAlgorithm(999),
+			input:   api.KemAlgorithm(999),
 			want:    nil,
 			wantErr: true,
 		},
@@ -602,7 +603,7 @@ func TestToHpkeAlgorithm(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(fmt.Sprintf("%v", tc.input), func(t *testing.T) {
-			got, err := tc.input.ToHpkeAlgorithm()
+			got, err := KemToHpkeAlgorithm(tc.input)
 			if (err != nil) != tc.wantErr {
 				t.Errorf("ToHpkeAlgorithm() error = %v, wantErr %v", err, tc.wantErr)
 				return
@@ -637,13 +638,13 @@ func TestHandleGetCapabilities(t *testing.T) {
 		t.Fatalf("expected Content-Type application/json, got %s", contentType)
 	}
 
-	var resp GetCapabilitiesResponse
-	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+	var resp api.GetCapabilitiesResponse
+	if err := protojson.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
 
 	if len(resp.SupportedAlgorithms) != 1 ||
-		resp.SupportedAlgorithms[0].Algorithm.Params.KemID != KemAlgorithmDHKEMX25519HKDFSHA256 ||
+		resp.SupportedAlgorithms[0].Algorithm.Params.KemId != api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256 ||
 		resp.SupportedAlgorithms[0].Algorithm.Type != "kem" {
 		t.Errorf("unexpected supported algorithms: %v", resp.SupportedAlgorithms)
 	}
@@ -866,8 +867,8 @@ func TestHandleGetCapabilitiesInvalidMethod(t *testing.T) {
 }
 
 func validDestroyBody(handle string) []byte {
-	body, _ := json.Marshal(DestroyRequest{
-		KeyHandle: KeyHandle{Handle: handle},
+	body, _ := protojson.MarshalOptions{EmitUnpopulated: true, UseProtoNames: true}.Marshal(&api.DestroyRequest{
+		KeyHandle: &api.KeyHandle{Handle: handle},
 	})
 	return body
 }
@@ -1004,7 +1005,7 @@ func newDecapsTestServer(t *testing.T, kemUUID, bindingUUID uuid.UUID, ds *mockK
 	return srv
 }
 
-func decapsRequestBody(kemUUID uuid.UUID, algo KemAlgorithm, encKey []byte) string {
+func decapsRequestBody(kemUUID uuid.UUID, algo api.KemAlgorithm, encKey []byte) string {
 	return fmt.Sprintf(
 		`{"key_handle":{"handle":"%s"},"ciphertext":{"algorithm":"%s","ciphertext":"%s"}}`,
 		kemUUID.String(),
@@ -1020,13 +1021,13 @@ func TestHandleDecapsSuccess(t *testing.T) {
 	sealEnc := []byte("seal-encapsulated-key-32-bytes!!")
 	sealedCT := []byte("sealed-ciphertext-48-bytes-with-tag!!!!!!!!!!!!!!")
 	plaintext := []byte("shared-secret-32-bytes-value!!!!") // 32 bytes
-	expectedAAD := decapsAADContext(kemUUID, KemAlgorithmDHKEMX25519HKDFSHA256)
+	expectedAAD := decapsAADContext(kemUUID, api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256)
 
 	ds := &mockKeyProtectionService{sealEnc: sealEnc, sealedCT: sealedCT}
 	op := &mockWorkloadService{plaintext: plaintext}
 	srv := newDecapsTestServer(t, kemUUID, bindingUUID, ds, op)
 
-	body := decapsRequestBody(kemUUID, KemAlgorithmDHKEMX25519HKDFSHA256, encKey)
+	body := decapsRequestBody(kemUUID, api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256, encKey)
 	req := httptest.NewRequest(http.MethodPost, "/v1/keys:decap", strings.NewReader(body))
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
@@ -1035,12 +1036,12 @@ func TestHandleDecapsSuccess(t *testing.T) {
 		t.Fatalf("expected status 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	var resp DecapsResponse
-	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+	var resp api.DecapsResponse
+	if err := protojson.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	if resp.SharedSecret.Algorithm != KemAlgorithmDHKEMX25519HKDFSHA256 {
-		t.Fatalf("expected shared_secret.algorithm=%d, got %d", KemAlgorithmDHKEMX25519HKDFSHA256, resp.SharedSecret.Algorithm)
+	if resp.SharedSecret.Algorithm != api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256 {
+		t.Fatalf("expected shared_secret.algorithm=%d, got %d", api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256, resp.SharedSecret.Algorithm)
 	}
 
 	decoded, err := base64.StdEncoding.DecodeString(resp.SharedSecret.Secret)
@@ -1119,7 +1120,7 @@ func TestHandleDecapsKEMKeyNotFound(t *testing.T) {
 	srv := newTestServer(t, &mockKeyProtectionService{}, &mockWorkloadService{})
 	// Don't populate kemToBindingMap.
 
-	body := decapsRequestBody(kemUUID, KemAlgorithmDHKEMX25519HKDFSHA256, []byte("enc-key"))
+	body := decapsRequestBody(kemUUID, api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256, []byte("enc-key"))
 	req := httptest.NewRequest(http.MethodPost, "/v1/keys:decap", strings.NewReader(body))
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
@@ -1136,7 +1137,7 @@ func TestHandleDecapsDecapSealError(t *testing.T) {
 	ds := &mockKeyProtectionService{err: fmt.Errorf("decap FFI error")}
 	srv := newDecapsTestServer(t, kemUUID, bindingUUID, ds, &mockWorkloadService{})
 
-	body := decapsRequestBody(kemUUID, KemAlgorithmDHKEMX25519HKDFSHA256, []byte("enc-key"))
+	body := decapsRequestBody(kemUUID, api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256, []byte("enc-key"))
 	req := httptest.NewRequest(http.MethodPost, "/v1/keys:decap", strings.NewReader(body))
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
@@ -1154,7 +1155,7 @@ func TestHandleDecapsOpenError(t *testing.T) {
 	op := &mockWorkloadService{err: fmt.Errorf("open FFI error")}
 	srv := newDecapsTestServer(t, kemUUID, bindingUUID, ds, op)
 
-	body := decapsRequestBody(kemUUID, KemAlgorithmDHKEMX25519HKDFSHA256, []byte("enc-key"))
+	body := decapsRequestBody(kemUUID, api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256, []byte("enc-key"))
 	req := httptest.NewRequest(http.MethodPost, "/v1/keys:decap", strings.NewReader(body))
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
@@ -1169,7 +1170,7 @@ func TestHandleDecapsUnsupportedAlgorithm(t *testing.T) {
 	bindingUUID := uuid.New()
 	srv := newDecapsTestServer(t, kemUUID, bindingUUID, &mockKeyProtectionService{}, &mockWorkloadService{})
 
-	body := decapsRequestBody(kemUUID, KemAlgorithm(999), []byte("enc-key"))
+	body := decapsRequestBody(kemUUID, api.KemAlgorithm(999), []byte("enc-key"))
 	req := httptest.NewRequest(http.MethodPost, "/v1/keys:decap", strings.NewReader(body))
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)

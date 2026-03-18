@@ -8,7 +8,7 @@ require (
 	cloud.google.com/go/compute/metadata v0.9.0
 	cloud.google.com/go/logging v1.13.1
 	cos.googlesource.com/cos/tools.git v0.0.0-20250414225215-0cf736c0714c
-	github.com/GoogleCloudPlatform/confidential-space/server v0.0.0-20260307011055-895ec9019dd7
+	github.com/GoogleCloudPlatform/confidential-space/server v0.0.0-20260313232128-53cb34b09004
 	github.com/NVIDIA/go-nvml v0.13.0-1
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/confidentsecurity/go-nvtrust v0.2.2
