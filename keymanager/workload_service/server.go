@@ -6,12 +6,9 @@ package workloadservice
 import (
 	"context"
 	"encoding/base64"
-
 	"encoding/json"
 	"errors"
 	"fmt"
-	"google.golang.org/protobuf/encoding/protojson"
-	"google.golang.org/protobuf/proto"
 	"io"
 	"log"
 	"math"
@@ -20,6 +17,9 @@ import (
 	"os"
 	"sync"
 	"time"
+
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 
 	api "github.com/google/go-tpm-tools/keymanager/workload_service/proto"
 	"github.com/google/uuid"

@@ -49,8 +49,8 @@ func KemToHpkeAlgorithm(k api.KemAlgorithm) (*keymanager.HpkeAlgorithm, error) {
 	}
 }
 
-// MapKemToApi converts keymanager.KemAlgorithm to api.KemAlgorithm
-func MapKemToApi(k keymanager.KemAlgorithm) api.KemAlgorithm {
+// MapKemToAPI converts keymanager.KemAlgorithm to api.KemAlgorithm
+func MapKemToAPI(k keymanager.KemAlgorithm) api.KemAlgorithm {
 	switch k {
 	case keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256:
 		return api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256
