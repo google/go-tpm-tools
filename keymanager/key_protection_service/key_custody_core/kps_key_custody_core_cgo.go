@@ -127,6 +127,9 @@ func DestroyKEMKey(kemUUID uuid.UUID) error {
 	if rc := C.key_manager_destroy_kem_key(
 		(*C.uint8_t)(unsafe.Pointer(&uuidBytes[0])),
 	); rc != 0 {
+		if rc == -1 {
+			return ErrKeyNotFound
+		}
 		return fmt.Errorf("key_manager_destroy_kem_key failed with code %d", rc)
 	}
 	return nil
@@ -154,6 +157,9 @@ func GetKEMKey(id uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64,
 		&remainingLifespanSecs,
 	)
 	if rc != 0 {
+		if rc == -1 {
+			return nil, nil, nil, 0, ErrKeyNotFound
+		}
 		return nil, nil, nil, 0, fmt.Errorf("key_manager_get_kem_key failed with code %d", rc)
 	}
 
@@ -202,6 +208,9 @@ func DecapAndSeal(kemUUID uuid.UUID, encapsulatedKey, aad []byte) ([]byte, []byt
 		(*C.uint8_t)(unsafe.Pointer(&outCT[0])),
 		outCTLen,
 	); rc != 0 {
+		if rc == -1 {
+			return nil, nil, ErrKeyNotFound
+		}
 		return nil, nil, fmt.Errorf("key_manager_decap_and_seal failed with code %d", rc)
 	}
 
