@@ -1,0 +1,82 @@
+syntax = "proto3";
+
+package keymanager.workload_service;
+
+option go_package = "github.com/google/go-tpm-tools/keymanager/workload_service/proto;api";
+
+enum KemAlgorithm {
+  KEM_ALGORITHM_UNSPECIFIED = 0;
+  DHKEM_X25519_HKDF_SHA256 = 1;
+}
+
+message KeyHandle {
+  string handle = 1;
+}
+
+message AlgorithmParams {
+  KemAlgorithm kem_id = 1;
+}
+
+message AlgorithmDetails {
+  string type = 1;
+  AlgorithmParams params = 2;
+}
+
+message SupportedAlgorithm {
+  AlgorithmDetails algorithm = 1;
+}
+
+message GetCapabilitiesResponse {
+  repeated SupportedAlgorithm supported_algorithms = 1;
+}
+
+message GenerateKeyRequest {
+  AlgorithmDetails algorithm = 1;
+  uint64 lifespan = 2;
+}
+
+message PubKeyInfo {
+  AlgorithmDetails algorithm = 1;
+  string public_key = 2;
+}
+
+message GenerateKeyResponse {
+  KeyHandle key_handle = 1;
+  PubKeyInfo pub_key = 2;
+  string key_protection_mechanism = 3;
+  int64 expiration_time = 4;
+}
+
+message KeyInfo {
+  KeyHandle key_handle = 1;
+  PubKeyInfo pub_key = 2;
+  string key_protection_mechanism = 3;
+  int64 expiration_time = 4;
+}
+
+message EnumerateKeysResponse {
+  repeated KeyInfo key_infos = 1;
+}
+
+message KemCiphertext {
+  KemAlgorithm algorithm = 1;
+  string ciphertext = 2;
+}
+
+message DecapsRequest {
+  KeyHandle key_handle = 1;
+  KemCiphertext ciphertext = 2;
+}
+
+message KemSharedSecret {
+  KemAlgorithm algorithm = 1;
+  string secret = 2;
+}
+
+message DecapsResponse {
+  KemSharedSecret shared_secret = 1;
+}
+
+message DestroyRequest {
+  KeyHandle key_handle = 1;
+}
