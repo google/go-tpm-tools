@@ -225,29 +225,29 @@ func TestHandleGenerateKeyBadRequest(t *testing.T) {
 
 	tests := []struct {
 		name string
-		body api.GenerateKeyRequest
+		body *api.GenerateKeyRequest
 	}{
 		{
 			name: "unsupported algorithm type",
-			body: api.GenerateKeyRequest{Algorithm: &api.AlgorithmDetails{Type: "mac", Params: &api.AlgorithmParams{KemId: api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256}}, Lifespan: 3600},
+			body: &api.GenerateKeyRequest{Algorithm: &api.AlgorithmDetails{Type: "mac", Params: &api.AlgorithmParams{KemId: api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256}}, Lifespan: 3600},
 		},
 		{
 			name: "unsupported algorithm",
-			body: api.GenerateKeyRequest{Algorithm: &api.AlgorithmDetails{Type: "kem", Params: &api.AlgorithmParams{KemId: api.KemAlgorithm_KEM_ALGORITHM_UNSPECIFIED}}, Lifespan: 3600},
+			body: &api.GenerateKeyRequest{Algorithm: &api.AlgorithmDetails{Type: "kem", Params: &api.AlgorithmParams{KemId: api.KemAlgorithm_KEM_ALGORITHM_UNSPECIFIED}}, Lifespan: 3600},
 		},
 		{
 			name: "zero lifespan",
-			body: api.GenerateKeyRequest{Algorithm: &api.AlgorithmDetails{Type: "kem", Params: &api.AlgorithmParams{KemId: api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256}}, Lifespan: 0},
+			body: &api.GenerateKeyRequest{Algorithm: &api.AlgorithmDetails{Type: "kem", Params: &api.AlgorithmParams{KemId: api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256}}, Lifespan: 0},
 		},
 		{
 			name: "missing algorithm (defaults to 0, type empty)",
-			body: api.GenerateKeyRequest{Lifespan: 3600},
+			body: &api.GenerateKeyRequest{Lifespan: 3600},
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			body, _ := protojson.MarshalOptions{EmitUnpopulated: true, UseProtoNames: true}.Marshal(&tc.body)
+			body, _ := protojson.MarshalOptions{EmitUnpopulated: true, UseProtoNames: true}.Marshal(tc.body)
 			req := httptest.NewRequest(http.MethodPost, "/v1/keys:generate_key", bytes.NewReader(body))
 			req.Header.Set("Content-Type", "application/json")
 			w := httptest.NewRecorder()

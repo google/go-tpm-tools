@@ -340,13 +340,13 @@ func (s *Server) handleGenerateKey(w http.ResponseWriter, r *http.Request) {
 
 	switch req.Algorithm.Type {
 	case "kem":
-		s.generateKEMKey(w, req)
+		s.generateKEMKey(w, &req)
 	default:
 		writeError(w, fmt.Sprintf("unsupported algorithm type: %q. Only 'kem' is supported.", req.Algorithm.Type), http.StatusBadRequest)
 	}
 }
 
-func (s *Server) generateKEMKey(w http.ResponseWriter, req api.GenerateKeyRequest) {
+func (s *Server) generateKEMKey(w http.ResponseWriter, req *api.GenerateKeyRequest) {
 	// Validate algorithm.
 	if !IsSupportedKemAlgorithm(req.Algorithm.Params.KemId) {
 		writeError(w, fmt.Sprintf("unsupported algorithm: %s. Supported algorithms: %s", req.Algorithm.Params.KemId, SupportedKemAlgorithmsString()), http.StatusBadRequest)
