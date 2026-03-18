@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/GoogleCloudPlatform/confidential-space/server/extract"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-eventlog/proto/state"
 	"github.com/google/go-eventlog/register"
@@ -70,7 +71,7 @@ func verifyTDX(req verifier.VerifyAttestationRequest, nonce []byte) (*attest.Mac
 	if err != nil {
 		return nil, err
 	}
-	cosState, err := server.ParseCosCELRTMR(req.TDCCELAttestation.CanonicalEventLog, *rtmrbank)
+	cosState, err := extract.ParseCOSCEL(req.TDCCELAttestation.CanonicalEventLog, *rtmrbank)
 	if err != nil {
 		return nil, fmt.Errorf("failed to validate the Canonical event log: %w", err)
 	}
@@ -106,7 +107,7 @@ func verifyTPM(req verifier.VerifyAttestationRequest, nonce []byte) (*attest.Mac
 		return nil, fmt.Errorf("failed to extract PCR bank: %w", err)
 	}
 
-	cosState, err := server.ParseCosCELPCR(req.Attestation.GetCanonicalEventLog(), *pcrBank)
+	cosState, err := extract.ParseCOSCEL(req.Attestation.GetCanonicalEventLog(), *pcrBank)
 	if err != nil {
 		return nil, fmt.Errorf("failed to validate the Canonical event log: %w", err)
 	}
