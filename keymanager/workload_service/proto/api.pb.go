@@ -405,7 +405,7 @@ type GenerateKeyResponse struct {
 	KeyHandle              *KeyHandle             `protobuf:"bytes,1,opt,name=key_handle,json=keyHandle,proto3" json:"key_handle,omitempty"`
 	PubKey                 *PubKeyInfo            `protobuf:"bytes,2,opt,name=pub_key,json=pubKey,proto3" json:"pub_key,omitempty"`
 	KeyProtectionMechanism string                 `protobuf:"bytes,3,opt,name=key_protection_mechanism,json=keyProtectionMechanism,proto3" json:"key_protection_mechanism,omitempty"`
-	ExpirationTime         int64                  `protobuf:"varint,4,opt,name=expiration_time,json=expirationTime,proto3" json:"expiration_time,omitempty"`
+	ExpirationTime         int32                  `protobuf:"varint,4,opt,name=expiration_time,json=expirationTime,proto3" json:"expiration_time,omitempty"`
 	unknownFields          protoimpl.UnknownFields
 	sizeCache              protoimpl.SizeCache
 }
@@ -461,7 +461,7 @@ func (x *GenerateKeyResponse) GetKeyProtectionMechanism() string {
 	return ""
 }
 
-func (x *GenerateKeyResponse) GetExpirationTime() int64 {
+func (x *GenerateKeyResponse) GetExpirationTime() int32 {
 	if x != nil {
 		return x.ExpirationTime
 	}
@@ -473,7 +473,7 @@ type KeyInfo struct {
 	KeyHandle              *KeyHandle             `protobuf:"bytes,1,opt,name=key_handle,json=keyHandle,proto3" json:"key_handle,omitempty"`
 	PubKey                 *PubKeyInfo            `protobuf:"bytes,2,opt,name=pub_key,json=pubKey,proto3" json:"pub_key,omitempty"`
 	KeyProtectionMechanism string                 `protobuf:"bytes,3,opt,name=key_protection_mechanism,json=keyProtectionMechanism,proto3" json:"key_protection_mechanism,omitempty"`
-	ExpirationTime         int64                  `protobuf:"varint,4,opt,name=expiration_time,json=expirationTime,proto3" json:"expiration_time,omitempty"`
+	ExpirationTime         int32                  `protobuf:"varint,4,opt,name=expiration_time,json=expirationTime,proto3" json:"expiration_time,omitempty"`
 	unknownFields          protoimpl.UnknownFields
 	sizeCache              protoimpl.SizeCache
 }
@@ -529,7 +529,7 @@ func (x *KeyInfo) GetKeyProtectionMechanism() string {
 	return ""
 }
 
-func (x *KeyInfo) GetExpirationTime() int64 {
+func (x *KeyInfo) GetExpirationTime() int32 {
 	if x != nil {
 		return x.ExpirationTime
 	}
@@ -853,13 +853,13 @@ const file_workload_service_proto_api_proto_rawDesc = "" +
 	"key_handle\x18\x01 \x01(\v2&.keymanager.workload_service.KeyHandleR\tkeyHandle\x12@\n" +
 	"\apub_key\x18\x02 \x01(\v2'.keymanager.workload_service.PubKeyInfoR\x06pubKey\x128\n" +
 	"\x18key_protection_mechanism\x18\x03 \x01(\tR\x16keyProtectionMechanism\x12'\n" +
-	"\x0fexpiration_time\x18\x04 \x01(\x03R\x0eexpirationTime\"\xf5\x01\n" +
+	"\x0fexpiration_time\x18\x04 \x01(\x05R\x0eexpirationTime\"\xf5\x01\n" +
 	"\aKeyInfo\x12E\n" +
 	"\n" +
 	"key_handle\x18\x01 \x01(\v2&.keymanager.workload_service.KeyHandleR\tkeyHandle\x12@\n" +
 	"\apub_key\x18\x02 \x01(\v2'.keymanager.workload_service.PubKeyInfoR\x06pubKey\x128\n" +
 	"\x18key_protection_mechanism\x18\x03 \x01(\tR\x16keyProtectionMechanism\x12'\n" +
-	"\x0fexpiration_time\x18\x04 \x01(\x03R\x0eexpirationTime\"Z\n" +
+	"\x0fexpiration_time\x18\x04 \x01(\x05R\x0eexpirationTime\"Z\n" +
 	"\x15EnumerateKeysResponse\x12A\n" +
 	"\tkey_infos\x18\x01 \x03(\v2$.keymanager.workload_service.KeyInfoR\bkeyInfos\"x\n" +
 	"\rKemCiphertext\x12G\n" +

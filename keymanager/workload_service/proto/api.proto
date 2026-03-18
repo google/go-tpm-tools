@@ -44,14 +44,14 @@ message GenerateKeyResponse {
   KeyHandle key_handle = 1;
   PubKeyInfo pub_key = 2;
   string key_protection_mechanism = 3;
-  int64 expiration_time = 4;
+  int32 expiration_time = 4;
 }
 
 message KeyInfo {
   KeyHandle key_handle = 1;
   PubKeyInfo pub_key = 2;
   string key_protection_mechanism = 3;
-  int64 expiration_time = 4;
+  int32 expiration_time = 4;
 }
 
 message EnumerateKeysResponse {
