@@ -393,7 +393,7 @@ func (s *Server) generateKEMKey(w http.ResponseWriter, req *api.GenerateKeyReque
 			PublicKey: base64.StdEncoding.EncodeToString(kemPubKey),
 		},
 		KeyProtectionMechanism: keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED.String(),
-		ExpirationTime:         int32(time.Now().Unix()) + int32(req.Lifespan),
+		ExpirationTime:         float64(time.Now().Unix()) + float64(req.Lifespan),
 	}
 	writeJSON(w, &resp, http.StatusOK)
 }
@@ -448,7 +448,7 @@ func (s *Server) handleEnumerateKeys(w http.ResponseWriter, _ *http.Request) {
 				PublicKey: base64.StdEncoding.EncodeToString(key.KEMPubKey),
 			},
 			KeyProtectionMechanism: keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED.String(),
-			ExpirationTime:         int32(time.Now().Unix()) + int32(key.RemainingLifespanSecs),
+			ExpirationTime:         float64(time.Now().Unix()) + float64(key.RemainingLifespanSecs),
 		})
 	}
 

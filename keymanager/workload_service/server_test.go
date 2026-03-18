@@ -173,8 +173,8 @@ func TestHandleGenerateKeySuccess(t *testing.T) {
 	if resp.KeyProtectionMechanism != keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED.String() {
 		t.Fatalf("expected %s, got %s", keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED.String(), resp.KeyProtectionMechanism)
 	}
-	if resp.ExpirationTime <= int32(time.Now().Unix()) {
-		t.Fatalf("expected expiration time in the future, got %d", resp.ExpirationTime)
+	if resp.ExpirationTime <= float64(time.Now().Unix()) {
+		t.Fatalf("expected expiration time in the future, got %f", resp.ExpirationTime)
 	}
 
 	// Verify the binding public key was passed to KEM generator.
@@ -529,8 +529,8 @@ func TestHandleEnumerateKeysWithKeys(t *testing.T) {
 		t.Fatalf("expected key protection mechanism %s, got %s", keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED.String(), info1.KeyProtectionMechanism)
 	}
 	// Approximate check for expiration time
-	if info1.ExpirationTime <= int32(time.Now().Unix()) {
-		t.Fatalf("expected expiration time in the future, got %d", info1.ExpirationTime)
+	if info1.ExpirationTime <= float64(time.Now().Unix()) {
+		t.Fatalf("expected expiration time in the future, got %f", info1.ExpirationTime)
 	}
 
 	// Verify key 2.
@@ -539,8 +539,8 @@ func TestHandleEnumerateKeysWithKeys(t *testing.T) {
 		t.Fatalf("expected kem2 %s in response", kem2)
 	}
 	// Approximate check for expiration time
-	if info2.ExpirationTime <= int32(time.Now().Unix()) {
-		t.Fatalf("expected expiration time in the future, got %d", info2.ExpirationTime)
+	if info2.ExpirationTime <= float64(time.Now().Unix()) {
+		t.Fatalf("expected expiration time in the future, got %f", info2.ExpirationTime)
 	}
 }
 
