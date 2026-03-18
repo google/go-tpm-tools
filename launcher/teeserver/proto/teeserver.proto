@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package teeserver;
+
+import "keymanager/workload_service/proto/api.proto";
+
+option go_package = "github.com/google/go-tpm-tools/launcher/teeserver/proto/gen/teeserver";
+
+message GetKeyEndorsementRequest {
+  bytes challenge = 1;
+  keymanager.workload_service.KeyHandle key_handle = 2;
+}
+
+message GetAttestationEvidenceRequest {
+  bytes challenge = 1;
+}
