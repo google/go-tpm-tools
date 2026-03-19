@@ -4,7 +4,9 @@ package workloadservice
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -36,14 +38,23 @@ func (r *realWorkloadService) Open(bindingUUID uuid.UUID, enc, ciphertext, aad [
 func (r *realWorkloadService) GetBindingKey(id uuid.UUID) ([]byte, *keymanager.HpkeAlgorithm, error) {
 	return wskcc.GetBindingKey(id)
 }
-
-func TestIntegrationGenerateKeysEndToEnd(t *testing.T) {
-	// Wire up real FFI calls: WSD KCC for binding, KPS KCC (via KPS KOL) for KEM.
+// setupTestServer initializes a test server with a temporary socket path
+// and wires up the workload service with real FFI calls.
+func setupTestServer(t *testing.T, socketPath string) *Server {
+	t.Helper()
 	kpsSvc := kps.NewService()
-	srv, err := NewServer(kpsSvc, &realWorkloadService{}, "test.sock")
+	srv, err := NewServer(kpsSvc, &realWorkloadService{}, socketPath)
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
+	return srv
+}
+
+// TestIntegrationGenerateKeysEndToEnd tests the key generation flow end-to-end,
+// verifying that keys are generated correctly and their metadata is valid.
+func TestIntegrationGenerateKeysEndToEnd(t *testing.T) {
+	// Wire up real FFI calls: WSD KCC for binding, KPS KCC (via KPS KOL) for KEM.
+	srv := setupTestServer(t, "test.sock")
 
 	reqBody, err := json.Marshal(GenerateKeyRequest{
 		Algorithm: AlgorithmDetails{Type: "kem", Params: AlgorithmParams{KemID: KemAlgorithmDHKEMX25519HKDFSHA256}},
@@ -60,6 +71,8 @@ func TestIntegrationGenerateKeysEndToEnd(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected status 200, got %d: %s", w.Code, w.Body.String())
 	}
+
+	validateJSONSchema(t, w.Body.Bytes(), keyInfoSchema)
 
 	var resp GenerateKeyResponse
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
@@ -87,11 +100,7 @@ func TestIntegrationGenerateKeysEndToEnd(t *testing.T) {
 }
 
 func TestIntegrationGenerateKeysUniqueMappings(t *testing.T) {
-	kpsSvc := kps.NewService()
-	srv, err := NewServer(kpsSvc, &realWorkloadService{}, "test.sock")
-	if err != nil {
-		t.Fatalf("failed to create server: %v", err)
-	}
+	srv := setupTestServer(t, "test.sock")
 
 	// Generate two key sets.
 	var kemUUIDs [2]uuid.UUID
@@ -111,6 +120,8 @@ func TestIntegrationGenerateKeysUniqueMappings(t *testing.T) {
 		if w.Code != http.StatusOK {
 			t.Fatalf("call %d: expected status 200, got %d: %s", i+1, w.Code, w.Body.String())
 		}
+
+		validateJSONSchema(t, w.Body.Bytes(), keyInfoSchema)
 
 		var resp GenerateKeyResponse
 		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
@@ -140,11 +151,7 @@ func TestIntegrationGenerateKeysUniqueMappings(t *testing.T) {
 }
 
 func TestIntegrationDestroyKey(t *testing.T) {
-	kpsSvc := kps.NewService()
-	srv, err := NewServer(kpsSvc, &realWorkloadService{}, "")
-	if err != nil {
-		t.Fatalf("failed to create server: %v", err)
-	}
+	srv := setupTestServer(t, "")
 
 	// 1. Generate a key first
 	reqBody, _ := json.Marshal(GenerateKeyRequest{
@@ -159,6 +166,8 @@ func TestIntegrationDestroyKey(t *testing.T) {
 	if wGen.Code != http.StatusOK {
 		t.Fatalf("setup: expected generate status 200, got %d: %s", wGen.Code, wGen.Body.String())
 	}
+
+	validateJSONSchema(t, wGen.Body.Bytes(), keyInfoSchema)
 
 	var respGen GenerateKeyResponse
 	if err := json.NewDecoder(wGen.Body).Decode(&respGen); err != nil {
@@ -208,11 +217,7 @@ func TestIntegrationDestroyKey(t *testing.T) {
 }
 
 func TestIntegrationAutoDestroy(t *testing.T) {
-	kpsSvc := kps.NewService()
-	srv, err := NewServer(kpsSvc, &realWorkloadService{}, "test.sock")
-	if err != nil {
-		t.Fatalf("failed to create server: %v", err)
-	}
+	srv := setupTestServer(t, "test.sock")
 
 	// 1. Generate a key with 1-second lifespan
 	reqBody, _ := json.Marshal(GenerateKeyRequest{
@@ -228,8 +233,12 @@ func TestIntegrationAutoDestroy(t *testing.T) {
 		t.Fatalf("setup: expected generate status 200, got %d: %s", wGen.Code, wGen.Body.String())
 	}
 
+	validateJSONSchema(t, wGen.Body.Bytes(), keyInfoSchema)
+
 	var respGen GenerateKeyResponse
-	json.NewDecoder(wGen.Body).Decode(&respGen)
+	if err := json.NewDecoder(wGen.Body).Decode(&respGen); err != nil {
+		t.Fatalf("failed to decode generate response: %v", err)
+	}
 	kemHandle := respGen.KeyHandle.Handle
 
 	// Wait for auto-destroy
@@ -251,11 +260,7 @@ func TestIntegrationAutoDestroy(t *testing.T) {
 }
 
 func TestIntegrationKeyClaims(t *testing.T) {
-	kpsSvc := kps.NewService()
-	srv, err := NewServer(kpsSvc, &realWorkloadService{}, filepath.Join(t.TempDir(), "test.sock"))
-	if err != nil {
-		t.Fatalf("failed to create server: %v", err)
-	}
+	srv := setupTestServer(t, filepath.Join(t.TempDir(), "test.sock"))
 	t.Cleanup(func() {
 		srv.listener.Close()
 		close(srv.claimsChan)
@@ -275,7 +280,9 @@ func TestIntegrationKeyClaims(t *testing.T) {
 	}
 
 	var resp GenerateKeyResponse
-	json.NewDecoder(w.Body).Decode(&resp)
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode generate response: %v", err)
+	}
 	kemHandle := resp.KeyHandle.Handle
 
 	// 2. Test GetKeyClaims for KEM key
@@ -343,4 +350,274 @@ func TestIntegrationKeyClaims(t *testing.T) {
 			t.Fatal("expected error for unsupported key type")
 		}
 	})
+}
+
+// TestIntegrationGetCapabilities tests the /v1/capabilities endpoint,
+// verifying that it returns the expected supported algorithms.
+func TestIntegrationGetCapabilities(t *testing.T) {
+	srv := setupTestServer(t, filepath.Join(t.TempDir(), "test.sock"))
+	t.Cleanup(func() {
+		srv.listener.Close()
+		close(srv.claimsChan)
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/capabilities", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	validateJSONSchema(t, w.Body.Bytes(), getCapabilitiesSchema)
+
+	var resp GetCapabilitiesResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if len(resp.SupportedAlgorithms) == 0 {
+		t.Fatal("expected at least one supported algorithm")
+	}
+}
+
+// TestIntegrationEnumerateKeys tests the /v1/keys endpoint,
+// verifying that it lists generated keys and their details correctly.
+func TestIntegrationEnumerateKeys(t *testing.T) {
+	srv := setupTestServer(t, filepath.Join(t.TempDir(), "test.sock"))
+	t.Cleanup(func() {
+		srv.listener.Close()
+		close(srv.claimsChan)
+	})
+
+	// 1. Generate a key to ensure the list is not empty
+	reqBody, _ := json.Marshal(GenerateKeyRequest{
+		Algorithm: AlgorithmDetails{Type: "kem", Params: AlgorithmParams{KemID: KemAlgorithmDHKEMX25519HKDFSHA256}},
+		Lifespan:  3600,
+	})
+	reqGen := httptest.NewRequest(http.MethodPost, "/v1/keys:generate_key", bytes.NewReader(reqBody))
+	wGen := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(wGen, reqGen)
+
+	if wGen.Code != http.StatusOK {
+		t.Fatalf("setup: failed to generate key: %s", wGen.Body.String())
+	}
+
+	var respGen GenerateKeyResponse
+	if err := json.NewDecoder(wGen.Body).Decode(&respGen); err != nil {
+		t.Fatalf("failed to decode generate response: %v", err)
+	}
+
+	// 2. Enumerate keys
+	reqEnum := httptest.NewRequest(http.MethodGet, "/v1/keys", nil)
+	wEnum := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(wEnum, reqEnum)
+
+	if wEnum.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", wEnum.Code, wEnum.Body.String())
+	}
+
+	validateJSONSchema(t, wEnum.Body.Bytes(), enumerateKeysSchema)
+
+	var respEnum EnumerateKeysResponse
+	if err := json.NewDecoder(wEnum.Body).Decode(&respEnum); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	found := false
+	for _, ki := range respEnum.KeyInfos {
+		if ki.KeyHandle.Handle == respGen.KeyHandle.Handle {
+			found = true
+			if ki.PubKey.PublicKey != respGen.PubKey.PublicKey {
+				t.Errorf("expected PubKey.PublicKey %q, got %q", respGen.PubKey.PublicKey, ki.PubKey.PublicKey)
+			}
+			if ki.PubKey.Algorithm.Type != respGen.PubKey.Algorithm.Type {
+				t.Errorf("expected PubKey.Algorithm.Type %q, got %q", respGen.PubKey.Algorithm.Type, ki.PubKey.Algorithm.Type)
+			}
+			if ki.PubKey.Algorithm.Params.KemID != respGen.PubKey.Algorithm.Params.KemID {
+				t.Errorf("expected PubKey.Algorithm.Params.KemID %q, got %q", respGen.PubKey.Algorithm.Params.KemID, ki.PubKey.Algorithm.Params.KemID)
+			}
+			if ki.KeyProtectionMechanism != respGen.KeyProtectionMechanism {
+				t.Errorf("expected KeyProtectionMechanism %q, got %q", respGen.KeyProtectionMechanism, ki.KeyProtectionMechanism)
+			}
+			diff := ki.ExpirationTime - respGen.ExpirationTime
+			if diff < -2 || diff > 2 {
+				t.Errorf("expected ExpirationTime %d (or within 2s), got %d (diff %d)", respGen.ExpirationTime, ki.ExpirationTime, diff)
+			}
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected generated key %s to be in the list", respGen.KeyHandle.Handle)
+	}
+}
+
+// TestIntegrationDecapsulation tests the /v1/keys:decapsulate endpoint,
+// verifying that it can correctly decapsulate a shared secret.
+func TestIntegrationDecapsulation(t *testing.T) {
+	srv := setupTestServer(t, "test.sock")
+
+	// 1. Generate a KEM key
+	reqBody, _ := json.Marshal(GenerateKeyRequest{
+		Algorithm: AlgorithmDetails{Type: "kem", Params: AlgorithmParams{KemID: KemAlgorithmDHKEMX25519HKDFSHA256}},
+		Lifespan:  3600,
+	})
+	reqGen := httptest.NewRequest(http.MethodPost, "/v1/keys:generate_key", bytes.NewReader(reqBody))
+	reqGen.Header.Set("Content-Type", "application/json")
+	wGen := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(wGen, reqGen)
+
+	if wGen.Code != http.StatusOK {
+		t.Fatalf("setup: expected generate status 200, got %d: %s", wGen.Code, wGen.Body.String())
+	}
+
+	var respGen GenerateKeyResponse
+	if err := json.NewDecoder(wGen.Body).Decode(&respGen); err != nil {
+		t.Fatalf("setup: failed to decode generate response: %v", err)
+	}
+	pkRHex := respGen.PubKey.PublicKey
+	pkR, err := base64.StdEncoding.DecodeString(pkRHex)
+	if err != nil {
+		t.Fatalf("setup: failed to decode recipient public key: %v", err)
+	}
+
+	// 2. Encapsulate using helper
+	sharedSecret, enc, err := encapsulateDHKEMX25519HKDFSHA256(pkR)
+	if err != nil {
+		t.Fatalf("failed to encapsulate: %v", err)
+	}
+
+	// 3. Call Decapsulate API
+	decapReq := DecapsRequest{
+		KeyHandle: KeyHandle{Handle: respGen.KeyHandle.Handle},
+		Ciphertext: KemCiphertext{
+			Algorithm:  KemAlgorithmDHKEMX25519HKDFSHA256,
+			Ciphertext: base64.StdEncoding.EncodeToString(enc),
+		},
+	}
+	decapBody, _ := json.Marshal(decapReq)
+	reqDecap := httptest.NewRequest(http.MethodPost, "/v1/keys:decap", bytes.NewReader(decapBody))
+	reqDecap.Header.Set("Content-Type", "application/json")
+	wDecap := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(wDecap, reqDecap)
+
+	if wDecap.Code != http.StatusOK {
+		t.Fatalf("expected decap status 200, got %d: %s", wDecap.Code, wDecap.Body.String())
+	}
+
+	// 4. Validate schema and response
+	validateJSONSchema(t, wDecap.Body.Bytes(), decapsResponseSchema)
+
+	var respDecap DecapsResponse
+	if err := json.NewDecoder(wDecap.Body).Decode(&respDecap); err != nil {
+		t.Fatalf("failed to decode decap response: %v", err)
+	}
+
+	if respDecap.SharedSecret.Algorithm != KemAlgorithmDHKEMX25519HKDFSHA256 {
+		t.Errorf("expected algorithm %v, got %v", KemAlgorithmDHKEMX25519HKDFSHA256, respDecap.SharedSecret.Algorithm)
+	}
+
+	if respDecap.SharedSecret.Secret != base64.StdEncoding.EncodeToString(sharedSecret) {
+		t.Errorf("shared secret mismatch.\nExpected: %s\nGot:      %s", base64.StdEncoding.EncodeToString(sharedSecret), respDecap.SharedSecret.Secret)
+	}
+}
+
+// validateJSONSchema validates that the given JSON data matches the specified schema.
+func validateJSONSchema(t *testing.T, data []byte, schema map[string]interface{}) {
+	t.Helper()
+	var v interface{}
+	if err := json.Unmarshal(data, &v); err != nil {
+		t.Fatalf("failed to unmarshal JSON: %v", err)
+	}
+	validateValue(t, v, schema, "")
+}
+
+// validateValue is a recursive helper that validates a JSON value against a schema node.
+func validateValue(t *testing.T, value interface{}, schema map[string]interface{}, path string) {
+	t.Helper()
+	if schema == nil {
+		return
+	}
+
+	schemaType, _ := schema["type"].(string)
+	if schemaType == "" {
+		return
+	}
+
+	switch schemaType {
+	case "object":
+		valMap, ok := value.(map[string]interface{})
+		if !ok {
+			t.Errorf("path %s: expected object, got %T", path, value)
+			return
+		}
+
+		if req, ok := schema["required"].([]interface{}); ok {
+			for _, r := range req {
+				reqStr, _ := r.(string)
+				if _, present := valMap[reqStr]; !present {
+					t.Errorf("path %s: missing required field %q", path, reqStr)
+				}
+			}
+		}
+
+		if props, ok := schema["properties"].(map[string]interface{}); ok {
+			for k, v := range valMap {
+				if propSchema, present := props[k]; present {
+					propSchemaMap, _ := propSchema.(map[string]interface{})
+					validateValue(t, v, propSchemaMap, path+"."+k)
+				} else {
+					if addProps, present := schema["additionalProperties"]; present {
+						if addPropsBool, ok := addProps.(bool); ok && !addPropsBool {
+							t.Errorf("path %s: additional property %q not allowed", path, k)
+						}
+					}
+				}
+			}
+		}
+
+	case "string":
+		strVal, ok := value.(string)
+		if !ok {
+			t.Errorf("path %s: expected string, got %T", path, value)
+			return
+		}
+		if enum, ok := schema["enum"].([]interface{}); ok {
+			found := false
+			for _, e := range enum {
+				if eStr, ok := e.(string); ok && eStr == strVal {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("path %s: value %q not in enum %v", path, strVal, enum)
+			}
+		}
+
+	case "integer":
+		_, ok := value.(float64)
+		if !ok {
+			_, okInt := value.(int)
+			_, okInt64 := value.(int64)
+			if !okInt && !okInt64 {
+				t.Errorf("path %s: expected integer (float64), got %T", path, value)
+			}
+		}
+
+	case "array":
+		valArr, ok := value.([]interface{})
+		if !ok {
+			t.Errorf("path %s: expected array, got %T", path, value)
+			return
+		}
+		if itemsSchema, ok := schema["items"].(map[string]interface{}); ok {
+			for i, item := range valArr {
+				validateValue(t, item, itemsSchema, fmt.Sprintf("%s[%d]", path, i))
+			}
+		}
+
+	default:
+		t.Errorf("path %s: unknown schema type %q", path, schemaType)
+	}
 }
