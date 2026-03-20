@@ -8,8 +8,6 @@ import "keymanager/km_common/proto/crypto_types.proto";
 
 option go_package = "github.com/google/go-tpm-tools/keymanager/km_common/proto;keymanager";
 
-// Used to refer to key instances held by various daemons.
-
 enum KeyType {
   KEY_TYPE_UNSPECIFIED = 0;
   // A standard HPKE binding key-pair used for internal isolation.

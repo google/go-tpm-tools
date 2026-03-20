@@ -251,17 +251,8 @@ func decapsAADContext(kemUUID uuid.UUID, algorithm keymanager.KemAlgorithm) []by
 
 func (s *Server) handleDecaps(w http.ResponseWriter, r *http.Request) {
 	var req api.DecapsRequest
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("failed to read request body: %v", err), http.StatusBadRequest)
-		return
-	}
-	if err := protojson.Unmarshal(body, &req); err != nil {
-		writeError(w, fmt.Sprintf("invalid request body: %v", err), http.StatusBadRequest)
-		return
-	}
-	if err := protovalidate.Validate(&req); err != nil {
-		writeError(w, fmt.Sprintf("invalid request: %v", err), http.StatusBadRequest)
+	if err := readRequest(r, &req); err != nil {
+		writeError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -316,18 +307,8 @@ func (s *Server) handleDecaps(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleGenerateKey(w http.ResponseWriter, r *http.Request) {
 	var req api.GenerateKeyRequest
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		writeError(w, fmt.Sprintf("failed to read request body: %v", err), http.StatusBadRequest)
-		return
-	}
-	if err := protojson.Unmarshal(body, &req); err != nil {
-		writeError(w, fmt.Sprintf("invalid request body: %v", err), http.StatusBadRequest)
-		return
-	}
-
-	if err := protovalidate.Validate(&req); err != nil {
-		writeError(w, fmt.Sprintf("invalid request: %v", err), http.StatusBadRequest)
+	if err := readRequest(r, &req); err != nil {
+		writeError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -476,23 +457,36 @@ func writeError(w http.ResponseWriter, message string, code int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(code)
-	b, _ := json.Marshal(map[string]string{"error": message})
-	_, _ = w.Write(b)
+	b, err := json.Marshal(map[string]string{"error": message})
+	if err != nil {
+		log.Printf("failed to marshal error response: %v", err)
+		b = []byte(`{"error":"internal error serializing response"}`)
+	}
+	if _, err := w.Write(b); err != nil {
+		log.Printf("failed to write error response: %v", err)
+	}
+}
+
+// readRequest reads the HTTP request body, unmarshals it into a proto.Message,
+// and validates it.
+func readRequest(r *http.Request, req proto.Message) error {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read request body: %w", err)
+	}
+	if err := protojson.Unmarshal(body, req); err != nil {
+		return fmt.Errorf("invalid request body: %w", err)
+	}
+	if err := protovalidate.Validate(req); err != nil {
+		return fmt.Errorf("invalid request: %w", err)
+	}
+	return nil
 }
 
 func (s *Server) handleDestroy(w http.ResponseWriter, r *http.Request) {
 	var req api.DestroyRequest
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		writeError(w, fmt.Sprintf("failed to read request body: %v", err), http.StatusBadRequest)
-		return
-	}
-	if err := protojson.Unmarshal(body, &req); err != nil {
-		writeError(w, fmt.Sprintf("invalid request body: %v", err), http.StatusBadRequest)
-		return
-	}
-	if err := protovalidate.Validate(&req); err != nil {
-		writeError(w, fmt.Sprintf("invalid request: %v", err), http.StatusBadRequest)
+	if err := readRequest(r, &req); err != nil {
+		writeError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 

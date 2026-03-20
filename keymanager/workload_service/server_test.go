@@ -151,47 +151,30 @@ func assertProtoJSONRoundTrip(t *testing.T, want, got proto.Message) {
 	}
 }
 
-func TestGenerateKeyRequestProtoJSONRoundTrip(t *testing.T) {
-	want := &api.GenerateKeyRequest{
-		Algorithm: &keymanager.AlgorithmDetails{
-			Type: "kem",
-			Params: &keymanager.AlgorithmParams{
-				Params: &keymanager.AlgorithmParams_KemId{
-					KemId: keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
-				},
-			},
-		},
-		Lifespan: 3600,
-	}
-
-	assertProtoJSONRoundTrip(t, want, &api.GenerateKeyRequest{})
-}
-
-func TestGenerateKeyResponseProtoJSONRoundTrip(t *testing.T) {
-	want := &api.GenerateKeyResponse{
-		KeyHandle: &keymanager.KeyHandle{Handle: uuid.NewString()},
-		PubKey: &keymanager.PubKeyInfo{
-			Algorithm: &keymanager.AlgorithmDetails{
-				Type: "kem",
-				Params: &keymanager.AlgorithmParams{
-					Params: &keymanager.AlgorithmParams_KemId{
-						KemId: keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
+func TestProtoJSONRoundTrips(t *testing.T) {
+	tests := []struct {
+		name string
+		want proto.Message
+		got  proto.Message
+	}{
+		{
+			name: "GenerateKeyRequest",
+			want: &api.GenerateKeyRequest{
+				Algorithm: &keymanager.AlgorithmDetails{
+					Type: "kem",
+					Params: &keymanager.AlgorithmParams{
+						Params: &keymanager.AlgorithmParams_KemId{
+							KemId: keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
+						},
 					},
 				},
+				Lifespan: 3600,
 			},
-			PublicKey: []byte{1, 2, 3, 4},
+			got: &api.GenerateKeyRequest{},
 		},
-		KeyProtectionMechanism: keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED.String(),
-		ExpirationTime:         1742467200,
-	}
-
-	assertProtoJSONRoundTrip(t, want, &api.GenerateKeyResponse{})
-}
-
-func TestEnumerateKeysResponseProtoJSONRoundTrip(t *testing.T) {
-	want := &api.EnumerateKeysResponse{
-		KeyInfos: []*api.KeyInfo{
-			{
+		{
+			name: "GenerateKeyResponse",
+			want: &api.GenerateKeyResponse{
 				KeyHandle: &keymanager.KeyHandle{Handle: uuid.NewString()},
 				PubKey: &keymanager.PubKeyInfo{
 					Algorithm: &keymanager.AlgorithmDetails{
@@ -202,57 +185,83 @@ func TestEnumerateKeysResponseProtoJSONRoundTrip(t *testing.T) {
 							},
 						},
 					},
-					PublicKey: []byte{5, 6, 7, 8},
+					PublicKey: []byte{1, 2, 3, 4},
 				},
 				KeyProtectionMechanism: keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED.String(),
-				ExpirationTime:         1742468200,
+				ExpirationTime:         1742467200,
 			},
+			got: &api.GenerateKeyResponse{},
 		},
-	}
-
-	assertProtoJSONRoundTrip(t, want, &api.EnumerateKeysResponse{})
-}
-
-func TestDecapsRequestProtoJSONRoundTrip(t *testing.T) {
-	want := &api.DecapsRequest{
-		KeyHandle: &keymanager.KeyHandle{Handle: uuid.NewString()},
-		Ciphertext: &keymanager.KemCiphertext{
-			Algorithm:  keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
-			Ciphertext: []byte{9, 10, 11, 12},
+		{
+			name: "EnumerateKeysResponse",
+			want: &api.EnumerateKeysResponse{
+				KeyInfos: []*api.KeyInfo{
+					{
+						KeyHandle: &keymanager.KeyHandle{Handle: uuid.NewString()},
+						PubKey: &keymanager.PubKeyInfo{
+							Algorithm: &keymanager.AlgorithmDetails{
+								Type: "kem",
+								Params: &keymanager.AlgorithmParams{
+									Params: &keymanager.AlgorithmParams_KemId{
+										KemId: keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
+									},
+								},
+							},
+							PublicKey: []byte{5, 6, 7, 8},
+						},
+						KeyProtectionMechanism: keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED.String(),
+						ExpirationTime:         1742468200,
+					},
+				},
+			},
+			got: &api.EnumerateKeysResponse{},
 		},
-	}
-
-	assertProtoJSONRoundTrip(t, want, &api.DecapsRequest{})
-}
-
-func TestDecapsResponseProtoJSONRoundTrip(t *testing.T) {
-	want := &api.DecapsResponse{
-		SharedSecret: &keymanager.KemSharedSecret{
-			Algorithm: keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
-			Secret:    []byte{13, 14, 15, 16},
+		{
+			name: "DecapsRequest",
+			want: &api.DecapsRequest{
+				KeyHandle: &keymanager.KeyHandle{Handle: uuid.NewString()},
+				Ciphertext: &keymanager.KemCiphertext{
+					Algorithm:  keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
+					Ciphertext: []byte{9, 10, 11, 12},
+				},
+			},
+			got: &api.DecapsRequest{},
 		},
-	}
-
-	assertProtoJSONRoundTrip(t, want, &api.DecapsResponse{})
-}
-
-func TestGetCapabilitiesResponseProtoJSONRoundTrip(t *testing.T) {
-	want := &api.GetCapabilitiesResponse{
-		SupportedAlgorithms: []*keymanager.SupportedAlgorithm{
-			{
-				Algorithm: &keymanager.AlgorithmDetails{
-					Type: "kem",
-					Params: &keymanager.AlgorithmParams{
-						Params: &keymanager.AlgorithmParams_KemId{
-							KemId: keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
+		{
+			name: "DecapsResponse",
+			want: &api.DecapsResponse{
+				SharedSecret: &keymanager.KemSharedSecret{
+					Algorithm: keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
+					Secret:    []byte{13, 14, 15, 16},
+				},
+			},
+			got: &api.DecapsResponse{},
+		},
+		{
+			name: "GetCapabilitiesResponse",
+			want: &api.GetCapabilitiesResponse{
+				SupportedAlgorithms: []*keymanager.SupportedAlgorithm{
+					{
+						Algorithm: &keymanager.AlgorithmDetails{
+							Type: "kem",
+							Params: &keymanager.AlgorithmParams{
+								Params: &keymanager.AlgorithmParams_KemId{
+									KemId: keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
+								},
+							},
 						},
 					},
 				},
 			},
+			got: &api.GetCapabilitiesResponse{},
 		},
 	}
 
-	assertProtoJSONRoundTrip(t, want, &api.GetCapabilitiesResponse{})
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			assertProtoJSONRoundTrip(t, tc.want, tc.got)
+		})
+	}
 }
 
 // --- /keys:generate_kem tests ---
