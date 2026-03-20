@@ -93,19 +93,20 @@ impl AeadAlgorithm {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum Status {
-    Success = 0,
-    InternalError = 1,
-    InvalidArgument = 2,
-    NotFound = 3,
-    AlreadyExists = 4,
-    PermissionDenied = 5,
-    Unauthenticated = 6,
-    UnsupportedAlgorithm = 7,
-    InvalidKey = 8,
-    CryptoError = 9,
-    DecryptionFailure = 10,
-    EncryptionFailure = 11,
-    DecapsulationFailure = 12,
+    Unspecified = 0,
+    Success = 1,
+    InternalError = 2,
+    InvalidArgument = 3,
+    NotFound = 4,
+    AlreadyExists = 5,
+    PermissionDenied = 6,
+    Unauthenticated = 7,
+    UnsupportedAlgorithm = 8,
+    InvalidKey = 9,
+    CryptoError = 10,
+    DecryptionFailure = 11,
+    EncryptionFailure = 12,
+    DecapsulationFailure = 13,
 }
 impl Status {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -114,6 +115,7 @@ impl Status {
     /// (if the ProtoBuf definition does not change) and safe for programmatic use.
     pub fn as_str_name(&self) -> &'static str {
         match self {
+            Self::Unspecified => "STATUS_UNSPECIFIED",
             Self::Success => "STATUS_SUCCESS",
             Self::InternalError => "STATUS_INTERNAL_ERROR",
             Self::InvalidArgument => "STATUS_INVALID_ARGUMENT",
@@ -132,6 +134,7 @@ impl Status {
     /// Creates an enum from field names used in the ProtoBuf definition.
     pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
         match value {
+            "STATUS_UNSPECIFIED" => Some(Self::Unspecified),
             "STATUS_SUCCESS" => Some(Self::Success),
             "STATUS_INTERNAL_ERROR" => Some(Self::InternalError),
             "STATUS_INVALID_ARGUMENT" => Some(Self::InvalidArgument),

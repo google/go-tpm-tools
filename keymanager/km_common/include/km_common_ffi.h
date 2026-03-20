@@ -14,19 +14,20 @@ enum Status
   : int32_t
 #endif // __cplusplus
  {
-  Status_Success = 0,
-  Status_InternalError = 1,
-  Status_InvalidArgument = 2,
-  Status_NotFound = 3,
-  Status_AlreadyExists = 4,
-  Status_PermissionDenied = 5,
-  Status_Unauthenticated = 6,
-  Status_UnsupportedAlgorithm = 7,
-  Status_InvalidKey = 8,
-  Status_CryptoError = 9,
-  Status_DecryptionFailure = 10,
-  Status_EncryptionFailure = 11,
-  Status_DecapsulationFailure = 12,
+  Status_Unspecified = 0,
+  Status_Success = 1,
+  Status_InternalError = 2,
+  Status_InvalidArgument = 3,
+  Status_NotFound = 4,
+  Status_AlreadyExists = 5,
+  Status_PermissionDenied = 6,
+  Status_Unauthenticated = 7,
+  Status_UnsupportedAlgorithm = 8,
+  Status_InvalidKey = 9,
+  Status_CryptoError = 10,
+  Status_DecryptionFailure = 11,
+  Status_EncryptionFailure = 12,
+  Status_DecapsulationFailure = 13,
 };
 #ifndef __cplusplus
 typedef int32_t Status;
