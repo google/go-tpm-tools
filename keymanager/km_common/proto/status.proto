@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package keymanager;
+
+option go_package = "github.com/google/go-tpm-tools/keymanager/km_common/proto;keymanager";
+
+enum Status {
+  STATUS_SUCCESS = 0;
+  STATUS_INTERNAL_ERROR = 1;
+  STATUS_INVALID_ARGUMENT = 2;
+  STATUS_NOT_FOUND = 3;
+  STATUS_ALREADY_EXISTS = 4;
+  STATUS_PERMISSION_DENIED = 5;
+  STATUS_UNAUTHENTICATED = 6;
+  STATUS_UNSUPPORTED_ALGORITHM = 7;
+  STATUS_INVALID_KEY = 8;
+  STATUS_CRYPTO_ERROR = 9;
+  STATUS_DECRYPTION_FAILURE = 10;
+  STATUS_ENCRYPTION_FAILURE = 11;
+  STATUS_DECAPSULATION_FAILURE = 12;
+}
