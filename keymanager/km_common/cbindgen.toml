@@ -11,7 +11,7 @@ sys_includes = ["stdint.h"]
 
 [export]
 item_types = ["enums", "constants"]
-include = ["Error", "MAX_ALGORITHM_LEN", "MAX_PUBLIC_KEY_LEN"]
+include = ["Status", "MAX_ALGORITHM_LEN", "MAX_PUBLIC_KEY_LEN"]
 
 [enum]
 prefix_with_name = true
