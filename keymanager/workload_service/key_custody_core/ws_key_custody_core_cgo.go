@@ -6,6 +6,7 @@
 package wskcc
 
 /*
+#cgo CFLAGS: -I${SRCDIR}/../../km_common/include
 #cgo LDFLAGS: -L${SRCDIR}/../../target/release -L${SRCDIR}/../../target/debug -lws_key_custody_core
 #cgo LDFLAGS: -lcrypto -lssl
 #cgo LDFLAGS: -lpthread -ldl -lm -lstdc++
@@ -48,7 +49,7 @@ func GenerateBindingKeypair(algo *keymanager.HpkeAlgorithm, lifespanSecs uint64)
 		(*C.uint8_t)(unsafe.Pointer(&uuidBytes[0])),
 		(*C.uint8_t)(unsafe.Pointer(&pubkeyBuf[0])),
 		pubkeyLen,
-	); rc != C.Success {
+	); rc != C.Error_Success {
 		return uuid.Nil, nil, keymanager.Error(rc).ToError()
 	}
 
@@ -68,7 +69,7 @@ func DestroyBindingKey(bindingUUID uuid.UUID) error {
 	rc := C.key_manager_destroy_binding_key(
 		(*C.uint8_t)(unsafe.Pointer(&uuidBytes[0])),
 	)
-	if rc != C.Success {
+	if rc != C.Error_Success {
 		return keymanager.Error(rc).ToError()
 	}
 	return nil
@@ -110,7 +111,7 @@ func Open(bindingUUID uuid.UUID, enc, ciphertext, aad []byte) ([]byte, error) {
 		aadLen,
 		(*C.uint8_t)(unsafe.Pointer(&outPT[0])),
 		outPTLen,
-	); rc != C.Success {
+	); rc != C.Error_Success {
 		return nil, keymanager.Error(rc).ToError()
 	}
 
@@ -136,7 +137,7 @@ func GetBindingKey(id uuid.UUID) ([]byte, *keymanager.HpkeAlgorithm, error) {
 		(*C.uint8_t)(unsafe.Pointer(&algoBuf[0])),
 		&algoLenC,
 	)
-	if rc != C.Success {
+	if rc != C.Error_Success {
 		return nil, nil, keymanager.Error(rc).ToError()
 	}
 

@@ -8,6 +8,9 @@ fn main() -> Result<()> {
 
     let mut config = prost_build::Config::new();
 
+    // Output the generated code to src/ so cbindgen can find it.
+    config.out_dir("src");
+
     config.compile_protos(
         &["proto/algorithms.proto", "proto/status.proto"],
         &["proto/"],

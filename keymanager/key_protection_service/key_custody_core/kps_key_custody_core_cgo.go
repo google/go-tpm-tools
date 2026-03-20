@@ -6,6 +6,7 @@
 package kpskcc
 
 /*
+#cgo CFLAGS: -I${SRCDIR}/../../km_common/include
 #cgo LDFLAGS: -L${SRCDIR}/../../target/release -L${SRCDIR}/../../target/debug -lkps_key_custody_core
 #cgo LDFLAGS: -lcrypto -lssl
 #cgo LDFLAGS: -lpthread -ldl -lm -lstdc++
@@ -57,7 +58,7 @@ func GenerateKEMKeypair(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, li
 		(*C.uint8_t)(unsafe.Pointer(&uuidBytes[0])),
 		(*C.uint8_t)(unsafe.Pointer(&pubkeyBuf[0])),
 		pubkeyLen,
-	); rc != C.Success {
+	); rc != C.Error_Success {
 		return uuid.Nil, nil, keymanager.Error(rc).ToError()
 	}
 
@@ -126,7 +127,7 @@ func DestroyKEMKey(kemUUID uuid.UUID) error {
 	uuidBytes := kemUUID[:]
 	if rc := C.key_manager_destroy_kem_key(
 		(*C.uint8_t)(unsafe.Pointer(&uuidBytes[0])),
-	); rc != C.Success {
+	); rc != C.Error_Success {
 		return keymanager.Error(rc).ToError()
 	}
 	return nil
@@ -153,7 +154,7 @@ func GetKEMKey(id uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64,
 		&algoLenC,
 		&remainingLifespanSecs,
 	)
-	if rc != C.Success {
+	if rc != C.Error_Success {
 		return nil, nil, nil, 0, keymanager.Error(rc).ToError()
 	}
 
@@ -201,7 +202,7 @@ func DecapAndSeal(kemUUID uuid.UUID, encapsulatedKey, aad []byte) ([]byte, []byt
 		outEncKeyLen,
 		(*C.uint8_t)(unsafe.Pointer(&outCT[0])),
 		outCTLen,
-	); rc != C.Success {
+	); rc != C.Error_Success {
 		return nil, nil, keymanager.Error(rc).ToError()
 	}
 
