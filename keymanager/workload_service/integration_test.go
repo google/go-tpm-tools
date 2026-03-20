@@ -48,7 +48,7 @@ func TestIntegrationGenerateKeysEndToEnd(t *testing.T) {
 	}
 
 	reqBody, err := protojson.MarshalOptions{EmitUnpopulated: true, UseProtoNames: true}.Marshal(&api.GenerateKeyRequest{
-		Algorithm: &api.AlgorithmDetails{Type: "kem", Params: &api.AlgorithmParams{Params: &api.AlgorithmParams_KemId{KemId: keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256}}},
+		Algorithm: &keymanager.AlgorithmDetails{Type: "kem", Params: &keymanager.AlgorithmParams{Params: &keymanager.AlgorithmParams_KemId{KemId: keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256}}},
 		Lifespan:  3600,
 	})
 	if err != nil {
@@ -99,7 +99,7 @@ func TestIntegrationGenerateKeysUniqueMappings(t *testing.T) {
 	var kemUUIDs [2]uuid.UUID
 	for i := 0; i < 2; i++ {
 		reqBody, err := protojson.MarshalOptions{EmitUnpopulated: true, UseProtoNames: true}.Marshal(&api.GenerateKeyRequest{
-			Algorithm: &api.AlgorithmDetails{Type: "kem", Params: &api.AlgorithmParams{Params: &api.AlgorithmParams_KemId{KemId: keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256}}},
+			Algorithm: &keymanager.AlgorithmDetails{Type: "kem", Params: &keymanager.AlgorithmParams{Params: &keymanager.AlgorithmParams_KemId{KemId: keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256}}},
 			Lifespan:  3600,
 		})
 		if err != nil {
@@ -150,7 +150,7 @@ func TestIntegrationDestroyKey(t *testing.T) {
 
 	// 1. Generate a key first
 	reqBody, _ := protojson.MarshalOptions{EmitUnpopulated: true, UseProtoNames: true}.Marshal(&api.GenerateKeyRequest{
-		Algorithm: &api.AlgorithmDetails{Type: "kem", Params: &api.AlgorithmParams{Params: &api.AlgorithmParams_KemId{KemId: keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256}}},
+		Algorithm: &keymanager.AlgorithmDetails{Type: "kem", Params: &keymanager.AlgorithmParams{Params: &keymanager.AlgorithmParams_KemId{KemId: keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256}}},
 		Lifespan:  3600,
 	})
 	reqGen := httptest.NewRequest(http.MethodPost, "/v1/keys:generate_key", bytes.NewReader(reqBody))
@@ -180,7 +180,7 @@ func TestIntegrationDestroyKey(t *testing.T) {
 
 	// 2. Destroy the key
 	reqDestroyBody, _ := protojson.MarshalOptions{EmitUnpopulated: true, UseProtoNames: true}.Marshal(&api.DestroyRequest{
-		KeyHandle: &api.KeyHandle{Handle: kemHandle},
+		KeyHandle: &keymanager.KeyHandle{Handle: kemHandle},
 	})
 	reqDestroy := httptest.NewRequest(http.MethodPost, "/v1/keys:destroy", bytes.NewReader(reqDestroyBody))
 	reqDestroy.Header.Set("Content-Type", "application/json")
@@ -218,7 +218,7 @@ func TestIntegrationAutoDestroy(t *testing.T) {
 
 	// 1. Generate a key with 1-second lifespan
 	reqBody, _ := protojson.MarshalOptions{EmitUnpopulated: true, UseProtoNames: true}.Marshal(&api.GenerateKeyRequest{
-		Algorithm: &api.AlgorithmDetails{Type: "kem", Params: &api.AlgorithmParams{Params: &api.AlgorithmParams_KemId{KemId: keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256}}},
+		Algorithm: &keymanager.AlgorithmDetails{Type: "kem", Params: &keymanager.AlgorithmParams{Params: &keymanager.AlgorithmParams_KemId{KemId: keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256}}},
 		Lifespan:  1,
 	})
 	reqGen := httptest.NewRequest(http.MethodPost, "/v1/keys:generate_key", bytes.NewReader(reqBody))
@@ -239,7 +239,7 @@ func TestIntegrationAutoDestroy(t *testing.T) {
 
 	// 2. Destroy the explicitly auto-destroyed key
 	reqDestroyBody, _ := protojson.MarshalOptions{EmitUnpopulated: true, UseProtoNames: true}.Marshal(&api.DestroyRequest{
-		KeyHandle: &api.KeyHandle{Handle: kemHandle},
+		KeyHandle: &keymanager.KeyHandle{Handle: kemHandle},
 	})
 	reqDestroy := httptest.NewRequest(http.MethodPost, "/v1/keys:destroy", bytes.NewReader(reqDestroyBody))
 	reqDestroy.Header.Set("Content-Type", "application/json")
@@ -265,7 +265,7 @@ func TestIntegrationKeyClaims(t *testing.T) {
 
 	// 1. Generate a KEM key
 	reqBody, _ := protojson.MarshalOptions{EmitUnpopulated: true, UseProtoNames: true}.Marshal(&api.GenerateKeyRequest{
-		Algorithm: &api.AlgorithmDetails{Type: "kem", Params: &api.AlgorithmParams{Params: &api.AlgorithmParams_KemId{KemId: keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256}}},
+		Algorithm: &keymanager.AlgorithmDetails{Type: "kem", Params: &keymanager.AlgorithmParams{Params: &keymanager.AlgorithmParams_KemId{KemId: keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256}}},
 		Lifespan:  3600,
 	})
 	req := httptest.NewRequest(http.MethodPost, "/v1/keys:generate_key", bytes.NewReader(reqBody))

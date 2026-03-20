@@ -5,7 +5,6 @@ package workloadservice
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -272,11 +271,7 @@ func (s *Server) handleDecaps(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	encapsulatedKey, err := base64.StdEncoding.DecodeString(req.Ciphertext.Ciphertext)
-	if err != nil {
-		writeError(w, fmt.Sprintf("invalid ciphertext.ciphertext base64: %v", err), http.StatusBadRequest)
-		return
-	}
+	encapsulatedKey := req.Ciphertext.Ciphertext
 	if len(encapsulatedKey) == 0 {
 		writeError(w, "ciphertext.ciphertext must not be empty", http.StatusBadRequest)
 		return
@@ -306,9 +301,9 @@ func (s *Server) handleDecaps(w http.ResponseWriter, r *http.Request) {
 
 	// Return the shared secret.
 	resp := api.DecapsResponse{
-		SharedSecret: &api.KemSharedSecret{
+		SharedSecret: &keymanager.KemSharedSecret{
 			Algorithm: req.Ciphertext.Algorithm,
-			Secret:    base64.StdEncoding.EncodeToString(plaintext),
+			Secret:    plaintext,
 		},
 	}
 	writeJSON(w, &resp, http.StatusOK)
@@ -384,17 +379,17 @@ func (s *Server) generateKEMKey(w http.ResponseWriter, req *api.GenerateKeyReque
 
 	// Return KEM UUID to workload.
 	resp := api.GenerateKeyResponse{
-		KeyHandle: &api.KeyHandle{Handle: kemUUID.String()},
-		PubKey: &api.PubKeyInfo{
-			Algorithm: &api.AlgorithmDetails{
+		KeyHandle: &keymanager.KeyHandle{Handle: kemUUID.String()},
+		PubKey: &keymanager.PubKeyInfo{
+			Algorithm: &keymanager.AlgorithmDetails{
 				Type: req.Algorithm.Type,
-				Params: &api.AlgorithmParams{
-					Params: &api.AlgorithmParams_KemId{
+				Params: &keymanager.AlgorithmParams{
+					Params: &keymanager.AlgorithmParams_KemId{
 						KemId: req.Algorithm.GetParams().GetKemId(),
 					},
 				},
 			},
-			PublicKey: base64.StdEncoding.EncodeToString(kemPubKey),
+			PublicKey: kemPubKey,
 		},
 		KeyProtectionMechanism: keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED.String(),
 		ExpirationTime:         float64(time.Now().Unix()) + float64(req.Lifespan),
@@ -404,13 +399,13 @@ func (s *Server) generateKEMKey(w http.ResponseWriter, req *api.GenerateKeyReque
 
 func (s *Server) handleGetCapabilities(w http.ResponseWriter, _ *http.Request) {
 
-	var supportedAlgos []*api.SupportedAlgorithm
+	var supportedAlgos []*keymanager.SupportedAlgorithm
 	for _, algo := range SupportedKemAlgorithms {
-		supportedAlgos = append(supportedAlgos, &api.SupportedAlgorithm{
-			Algorithm: &api.AlgorithmDetails{
+		supportedAlgos = append(supportedAlgos, &keymanager.SupportedAlgorithm{
+			Algorithm: &keymanager.AlgorithmDetails{
 				Type: "kem",
-				Params: &api.AlgorithmParams{
-					Params: &api.AlgorithmParams_KemId{
+				Params: &keymanager.AlgorithmParams{
+					Params: &keymanager.AlgorithmParams_KemId{
 						KemId: algo,
 					},
 				},
@@ -440,17 +435,17 @@ func (s *Server) handleEnumerateKeys(w http.ResponseWriter, _ *http.Request) {
 		}
 
 		keyInfos = append(keyInfos, &api.KeyInfo{
-			KeyHandle: &api.KeyHandle{Handle: key.ID.String()},
-			PubKey: &api.PubKeyInfo{
-				Algorithm: &api.AlgorithmDetails{
+			KeyHandle: &keymanager.KeyHandle{Handle: key.ID.String()},
+			PubKey: &keymanager.PubKeyInfo{
+				Algorithm: &keymanager.AlgorithmDetails{
 					Type: "kem",
-					Params: &api.AlgorithmParams{
-						Params: &api.AlgorithmParams_KemId{
+					Params: &keymanager.AlgorithmParams{
+						Params: &keymanager.AlgorithmParams_KemId{
 							KemId: kemAlgo,
 						},
 					},
 				},
-				PublicKey: base64.StdEncoding.EncodeToString(key.KEMPubKey),
+				PublicKey: key.KEMPubKey,
 			},
 			KeyProtectionMechanism: keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED.String(),
 			ExpirationTime:         float64(time.Now().Unix()) + float64(key.RemainingLifespanSecs),

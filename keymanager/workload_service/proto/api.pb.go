@@ -24,233 +24,18 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// Used to refer to key instances held by the service.
-type KeyHandle struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// A unique identifier (UUID) used to reference this key in subsequent operations.
-	Handle        string `protobuf:"bytes,1,opt,name=handle,proto3" json:"handle,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *KeyHandle) Reset() {
-	*x = KeyHandle{}
-	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[0]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *KeyHandle) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*KeyHandle) ProtoMessage() {}
-
-func (x *KeyHandle) ProtoReflect() protoreflect.Message {
-	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[0]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use KeyHandle.ProtoReflect.Descriptor instead.
-func (*KeyHandle) Descriptor() ([]byte, []int) {
-	return file_keymanager_workload_service_proto_api_proto_rawDescGZIP(), []int{0}
-}
-
-func (x *KeyHandle) GetHandle() string {
-	if x != nil {
-		return x.Handle
-	}
-	return ""
-}
-
-// Specifies parameters for a particular algorithm type.
-type AlgorithmParams struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// Types that are valid to be assigned to Params:
-	//
-	//	*AlgorithmParams_KemId
-	Params        isAlgorithmParams_Params `protobuf_oneof:"params"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *AlgorithmParams) Reset() {
-	*x = AlgorithmParams{}
-	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[1]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *AlgorithmParams) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*AlgorithmParams) ProtoMessage() {}
-
-func (x *AlgorithmParams) ProtoReflect() protoreflect.Message {
-	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[1]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use AlgorithmParams.ProtoReflect.Descriptor instead.
-func (*AlgorithmParams) Descriptor() ([]byte, []int) {
-	return file_keymanager_workload_service_proto_api_proto_rawDescGZIP(), []int{1}
-}
-
-func (x *AlgorithmParams) GetParams() isAlgorithmParams_Params {
-	if x != nil {
-		return x.Params
-	}
-	return nil
-}
-
-func (x *AlgorithmParams) GetKemId() proto.KemAlgorithm {
-	if x != nil {
-		if x, ok := x.Params.(*AlgorithmParams_KemId); ok {
-			return x.KemId
-		}
-	}
-	return proto.KemAlgorithm(0)
-}
-
-type isAlgorithmParams_Params interface {
-	isAlgorithmParams_Params()
-}
-
-type AlgorithmParams_KemId struct {
-	// KEM algorithm identifier (e.g., DHKEM_X25519_HKDF_SHA256).
-	KemId proto.KemAlgorithm `protobuf:"varint,1,opt,name=kem_id,json=kemId,proto3,enum=keymanager.KemAlgorithm,oneof"`
-}
-
-func (*AlgorithmParams_KemId) isAlgorithmParams_Params() {}
-
-// Description of an algorithm.
-type AlgorithmDetails struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// The type of algorithm, e.g., "kem".
-	Type string `protobuf:"bytes,1,opt,name=type,proto3" json:"type,omitempty"`
-	// Specific parameters associated with the algorithm type.
-	Params        *AlgorithmParams `protobuf:"bytes,2,opt,name=params,proto3" json:"params,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *AlgorithmDetails) Reset() {
-	*x = AlgorithmDetails{}
-	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[2]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *AlgorithmDetails) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*AlgorithmDetails) ProtoMessage() {}
-
-func (x *AlgorithmDetails) ProtoReflect() protoreflect.Message {
-	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[2]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use AlgorithmDetails.ProtoReflect.Descriptor instead.
-func (*AlgorithmDetails) Descriptor() ([]byte, []int) {
-	return file_keymanager_workload_service_proto_api_proto_rawDescGZIP(), []int{2}
-}
-
-func (x *AlgorithmDetails) GetType() string {
-	if x != nil {
-		return x.Type
-	}
-	return ""
-}
-
-func (x *AlgorithmDetails) GetParams() *AlgorithmParams {
-	if x != nil {
-		return x.Params
-	}
-	return nil
-}
-
-// Represents a cryptographic algorithm supported by the service.
-type SupportedAlgorithm struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// algorithm details.
-	Algorithm     *AlgorithmDetails `protobuf:"bytes,1,opt,name=algorithm,proto3" json:"algorithm,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *SupportedAlgorithm) Reset() {
-	*x = SupportedAlgorithm{}
-	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[3]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *SupportedAlgorithm) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*SupportedAlgorithm) ProtoMessage() {}
-
-func (x *SupportedAlgorithm) ProtoReflect() protoreflect.Message {
-	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[3]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use SupportedAlgorithm.ProtoReflect.Descriptor instead.
-func (*SupportedAlgorithm) Descriptor() ([]byte, []int) {
-	return file_keymanager_workload_service_proto_api_proto_rawDescGZIP(), []int{3}
-}
-
-func (x *SupportedAlgorithm) GetAlgorithm() *AlgorithmDetails {
-	if x != nil {
-		return x.Algorithm
-	}
-	return nil
-}
-
 // Response containing the list of supported cryptographic algorithms for operations like HPKE/KEM.
 type GetCapabilitiesResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// List of supported algorithms (e.g., KEM algorithms).
-	SupportedAlgorithms []*SupportedAlgorithm `protobuf:"bytes,1,rep,name=supported_algorithms,json=supportedAlgorithms,proto3" json:"supported_algorithms,omitempty"`
+	SupportedAlgorithms []*proto.SupportedAlgorithm `protobuf:"bytes,1,rep,name=supported_algorithms,json=supportedAlgorithms,proto3" json:"supported_algorithms,omitempty"`
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
 }
 
 func (x *GetCapabilitiesResponse) Reset() {
 	*x = GetCapabilitiesResponse{}
-	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[4]
+	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -262,7 +47,7 @@ func (x *GetCapabilitiesResponse) String() string {
 func (*GetCapabilitiesResponse) ProtoMessage() {}
 
 func (x *GetCapabilitiesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[4]
+	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -275,10 +60,10 @@ func (x *GetCapabilitiesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetCapabilitiesResponse.ProtoReflect.Descriptor instead.
 func (*GetCapabilitiesResponse) Descriptor() ([]byte, []int) {
-	return file_keymanager_workload_service_proto_api_proto_rawDescGZIP(), []int{4}
+	return file_keymanager_workload_service_proto_api_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *GetCapabilitiesResponse) GetSupportedAlgorithms() []*SupportedAlgorithm {
+func (x *GetCapabilitiesResponse) GetSupportedAlgorithms() []*proto.SupportedAlgorithm {
 	if x != nil {
 		return x.SupportedAlgorithms
 	}
@@ -289,7 +74,7 @@ func (x *GetCapabilitiesResponse) GetSupportedAlgorithms() []*SupportedAlgorithm
 type GenerateKeyRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The specific algorithm to use for the new keypair.
-	Algorithm *AlgorithmDetails `protobuf:"bytes,1,opt,name=algorithm,proto3" json:"algorithm,omitempty"`
+	Algorithm *proto.AlgorithmDetails `protobuf:"bytes,1,opt,name=algorithm,proto3" json:"algorithm,omitempty"`
 	// The requested duration (in seconds) before the key is automatically destroyed.
 	Lifespan      uint64 `protobuf:"varint,2,opt,name=lifespan,proto3" json:"lifespan,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -298,7 +83,7 @@ type GenerateKeyRequest struct {
 
 func (x *GenerateKeyRequest) Reset() {
 	*x = GenerateKeyRequest{}
-	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[5]
+	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -310,7 +95,7 @@ func (x *GenerateKeyRequest) String() string {
 func (*GenerateKeyRequest) ProtoMessage() {}
 
 func (x *GenerateKeyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[5]
+	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -323,10 +108,10 @@ func (x *GenerateKeyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GenerateKeyRequest.ProtoReflect.Descriptor instead.
 func (*GenerateKeyRequest) Descriptor() ([]byte, []int) {
-	return file_keymanager_workload_service_proto_api_proto_rawDescGZIP(), []int{5}
+	return file_keymanager_workload_service_proto_api_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *GenerateKeyRequest) GetAlgorithm() *AlgorithmDetails {
+func (x *GenerateKeyRequest) GetAlgorithm() *proto.AlgorithmDetails {
 	if x != nil {
 		return x.Algorithm
 	}
@@ -340,68 +125,13 @@ func (x *GenerateKeyRequest) GetLifespan() uint64 {
 	return 0
 }
 
-// Information about a public key.
-type PubKeyInfo struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// The algorithm associated with this public key.
-	Algorithm *AlgorithmDetails `protobuf:"bytes,1,opt,name=algorithm,proto3" json:"algorithm,omitempty"`
-	// The base64-encoded bytes of the public key.
-	PublicKey     string `protobuf:"bytes,2,opt,name=public_key,json=publicKey,proto3" json:"public_key,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *PubKeyInfo) Reset() {
-	*x = PubKeyInfo{}
-	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[6]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *PubKeyInfo) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*PubKeyInfo) ProtoMessage() {}
-
-func (x *PubKeyInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[6]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use PubKeyInfo.ProtoReflect.Descriptor instead.
-func (*PubKeyInfo) Descriptor() ([]byte, []int) {
-	return file_keymanager_workload_service_proto_api_proto_rawDescGZIP(), []int{6}
-}
-
-func (x *PubKeyInfo) GetAlgorithm() *AlgorithmDetails {
-	if x != nil {
-		return x.Algorithm
-	}
-	return nil
-}
-
-func (x *PubKeyInfo) GetPublicKey() string {
-	if x != nil {
-		return x.PublicKey
-	}
-	return ""
-}
-
 // Response from generating a new key.
 type GenerateKeyResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// A unique handle (UUID) used to reference the generated key.
-	KeyHandle *KeyHandle `protobuf:"bytes,1,opt,name=key_handle,json=keyHandle,proto3" json:"key_handle,omitempty"`
+	KeyHandle *proto.KeyHandle `protobuf:"bytes,1,opt,name=key_handle,json=keyHandle,proto3" json:"key_handle,omitempty"`
 	// The public key information for the generated keypair.
-	PubKey *PubKeyInfo `protobuf:"bytes,2,opt,name=pub_key,json=pubKey,proto3" json:"pub_key,omitempty"`
+	PubKey *proto.PubKeyInfo `protobuf:"bytes,2,opt,name=pub_key,json=pubKey,proto3" json:"pub_key,omitempty"`
 	// The isolation level/protection mechanism for the key
 	// (e.g., "KEY_PROTECTION_VM_EMULATED", "KEY_PROTECTION_VM", or "DEFAULT").
 	KeyProtectionMechanism string `protobuf:"bytes,3,opt,name=key_protection_mechanism,json=keyProtectionMechanism,proto3" json:"key_protection_mechanism,omitempty"`
@@ -414,7 +144,7 @@ type GenerateKeyResponse struct {
 
 func (x *GenerateKeyResponse) Reset() {
 	*x = GenerateKeyResponse{}
-	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[7]
+	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -426,7 +156,7 @@ func (x *GenerateKeyResponse) String() string {
 func (*GenerateKeyResponse) ProtoMessage() {}
 
 func (x *GenerateKeyResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[7]
+	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -439,17 +169,17 @@ func (x *GenerateKeyResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GenerateKeyResponse.ProtoReflect.Descriptor instead.
 func (*GenerateKeyResponse) Descriptor() ([]byte, []int) {
-	return file_keymanager_workload_service_proto_api_proto_rawDescGZIP(), []int{7}
+	return file_keymanager_workload_service_proto_api_proto_rawDescGZIP(), []int{2}
 }
 
-func (x *GenerateKeyResponse) GetKeyHandle() *KeyHandle {
+func (x *GenerateKeyResponse) GetKeyHandle() *proto.KeyHandle {
 	if x != nil {
 		return x.KeyHandle
 	}
 	return nil
 }
 
-func (x *GenerateKeyResponse) GetPubKey() *PubKeyInfo {
+func (x *GenerateKeyResponse) GetPubKey() *proto.PubKeyInfo {
 	if x != nil {
 		return x.PubKey
 	}
@@ -474,9 +204,9 @@ func (x *GenerateKeyResponse) GetExpirationTime() float64 {
 type KeyInfo struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// A unique handle (UUID) used to reference the keypair.
-	KeyHandle *KeyHandle `protobuf:"bytes,1,opt,name=key_handle,json=keyHandle,proto3" json:"key_handle,omitempty"`
+	KeyHandle *proto.KeyHandle `protobuf:"bytes,1,opt,name=key_handle,json=keyHandle,proto3" json:"key_handle,omitempty"`
 	// The public key information for the keypair.
-	PubKey *PubKeyInfo `protobuf:"bytes,2,opt,name=pub_key,json=pubKey,proto3" json:"pub_key,omitempty"`
+	PubKey *proto.PubKeyInfo `protobuf:"bytes,2,opt,name=pub_key,json=pubKey,proto3" json:"pub_key,omitempty"`
 	// The isolation level/protection mechanism for the key.
 	KeyProtectionMechanism string `protobuf:"bytes,3,opt,name=key_protection_mechanism,json=keyProtectionMechanism,proto3" json:"key_protection_mechanism,omitempty"`
 	// A Unix timestamp indicating when the key will be automatically deleted.
@@ -487,7 +217,7 @@ type KeyInfo struct {
 
 func (x *KeyInfo) Reset() {
 	*x = KeyInfo{}
-	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[8]
+	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -499,7 +229,7 @@ func (x *KeyInfo) String() string {
 func (*KeyInfo) ProtoMessage() {}
 
 func (x *KeyInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[8]
+	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -512,17 +242,17 @@ func (x *KeyInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use KeyInfo.ProtoReflect.Descriptor instead.
 func (*KeyInfo) Descriptor() ([]byte, []int) {
-	return file_keymanager_workload_service_proto_api_proto_rawDescGZIP(), []int{8}
+	return file_keymanager_workload_service_proto_api_proto_rawDescGZIP(), []int{3}
 }
 
-func (x *KeyInfo) GetKeyHandle() *KeyHandle {
+func (x *KeyInfo) GetKeyHandle() *proto.KeyHandle {
 	if x != nil {
 		return x.KeyHandle
 	}
 	return nil
 }
 
-func (x *KeyInfo) GetPubKey() *PubKeyInfo {
+func (x *KeyInfo) GetPubKey() *proto.PubKeyInfo {
 	if x != nil {
 		return x.PubKey
 	}
@@ -554,7 +284,7 @@ type EnumerateKeysResponse struct {
 
 func (x *EnumerateKeysResponse) Reset() {
 	*x = EnumerateKeysResponse{}
-	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[9]
+	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -566,7 +296,7 @@ func (x *EnumerateKeysResponse) String() string {
 func (*EnumerateKeysResponse) ProtoMessage() {}
 
 func (x *EnumerateKeysResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[9]
+	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -579,7 +309,7 @@ func (x *EnumerateKeysResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EnumerateKeysResponse.ProtoReflect.Descriptor instead.
 func (*EnumerateKeysResponse) Descriptor() ([]byte, []int) {
-	return file_keymanager_workload_service_proto_api_proto_rawDescGZIP(), []int{9}
+	return file_keymanager_workload_service_proto_api_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *EnumerateKeysResponse) GetKeyInfos() []*KeyInfo {
@@ -589,75 +319,20 @@ func (x *EnumerateKeysResponse) GetKeyInfos() []*KeyInfo {
 	return nil
 }
 
-// An encapsulated shared secret.
-type KemCiphertext struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// KEM algorithm used to generate this ciphertext.
-	Algorithm proto.KemAlgorithm `protobuf:"varint,1,opt,name=algorithm,proto3,enum=keymanager.KemAlgorithm" json:"algorithm,omitempty"`
-	// The base64-encoded encapsulated shared secret (ciphertext).
-	Ciphertext    string `protobuf:"bytes,2,opt,name=ciphertext,proto3" json:"ciphertext,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *KemCiphertext) Reset() {
-	*x = KemCiphertext{}
-	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[10]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *KemCiphertext) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*KemCiphertext) ProtoMessage() {}
-
-func (x *KemCiphertext) ProtoReflect() protoreflect.Message {
-	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[10]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use KemCiphertext.ProtoReflect.Descriptor instead.
-func (*KemCiphertext) Descriptor() ([]byte, []int) {
-	return file_keymanager_workload_service_proto_api_proto_rawDescGZIP(), []int{10}
-}
-
-func (x *KemCiphertext) GetAlgorithm() proto.KemAlgorithm {
-	if x != nil {
-		return x.Algorithm
-	}
-	return proto.KemAlgorithm(0)
-}
-
-func (x *KemCiphertext) GetCiphertext() string {
-	if x != nil {
-		return x.Ciphertext
-	}
-	return ""
-}
-
 // Request to perform a decapsulation operation using a specific key handle. (POST /v1/keys:decap)
 type DecapsRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The handle (UUID) of the KEM key instance to use for decapsulation.
-	KeyHandle *KeyHandle `protobuf:"bytes,1,opt,name=key_handle,json=keyHandle,proto3" json:"key_handle,omitempty"`
+	KeyHandle *proto.KeyHandle `protobuf:"bytes,1,opt,name=key_handle,json=keyHandle,proto3" json:"key_handle,omitempty"`
 	// The encapsulated shared secret received from the client/proxy.
-	Ciphertext    *KemCiphertext `protobuf:"bytes,2,opt,name=ciphertext,proto3" json:"ciphertext,omitempty"`
+	Ciphertext    *proto.KemCiphertext `protobuf:"bytes,2,opt,name=ciphertext,proto3" json:"ciphertext,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *DecapsRequest) Reset() {
 	*x = DecapsRequest{}
-	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[11]
+	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -669,7 +344,7 @@ func (x *DecapsRequest) String() string {
 func (*DecapsRequest) ProtoMessage() {}
 
 func (x *DecapsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[11]
+	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -682,90 +357,35 @@ func (x *DecapsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DecapsRequest.ProtoReflect.Descriptor instead.
 func (*DecapsRequest) Descriptor() ([]byte, []int) {
-	return file_keymanager_workload_service_proto_api_proto_rawDescGZIP(), []int{11}
+	return file_keymanager_workload_service_proto_api_proto_rawDescGZIP(), []int{5}
 }
 
-func (x *DecapsRequest) GetKeyHandle() *KeyHandle {
+func (x *DecapsRequest) GetKeyHandle() *proto.KeyHandle {
 	if x != nil {
 		return x.KeyHandle
 	}
 	return nil
 }
 
-func (x *DecapsRequest) GetCiphertext() *KemCiphertext {
+func (x *DecapsRequest) GetCiphertext() *proto.KemCiphertext {
 	if x != nil {
 		return x.Ciphertext
 	}
 	return nil
 }
 
-// A plaintext shared secret derived via decapsulation.
-type KemSharedSecret struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// The KEM algorithm used to derive this secret.
-	Algorithm proto.KemAlgorithm `protobuf:"varint,1,opt,name=algorithm,proto3,enum=keymanager.KemAlgorithm" json:"algorithm,omitempty"`
-	// The base64-encoded plaintext shared secret.
-	Secret        string `protobuf:"bytes,2,opt,name=secret,proto3" json:"secret,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *KemSharedSecret) Reset() {
-	*x = KemSharedSecret{}
-	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[12]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *KemSharedSecret) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*KemSharedSecret) ProtoMessage() {}
-
-func (x *KemSharedSecret) ProtoReflect() protoreflect.Message {
-	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[12]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use KemSharedSecret.ProtoReflect.Descriptor instead.
-func (*KemSharedSecret) Descriptor() ([]byte, []int) {
-	return file_keymanager_workload_service_proto_api_proto_rawDescGZIP(), []int{12}
-}
-
-func (x *KemSharedSecret) GetAlgorithm() proto.KemAlgorithm {
-	if x != nil {
-		return x.Algorithm
-	}
-	return proto.KemAlgorithm(0)
-}
-
-func (x *KemSharedSecret) GetSecret() string {
-	if x != nil {
-		return x.Secret
-	}
-	return ""
-}
-
 // Response from a decapsulation operation.
 type DecapsResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The plaintext shared secret derived from the ciphertext.
-	SharedSecret  *KemSharedSecret `protobuf:"bytes,1,opt,name=shared_secret,json=sharedSecret,proto3" json:"shared_secret,omitempty"`
+	SharedSecret  *proto.KemSharedSecret `protobuf:"bytes,1,opt,name=shared_secret,json=sharedSecret,proto3" json:"shared_secret,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *DecapsResponse) Reset() {
 	*x = DecapsResponse{}
-	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[13]
+	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -777,7 +397,7 @@ func (x *DecapsResponse) String() string {
 func (*DecapsResponse) ProtoMessage() {}
 
 func (x *DecapsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[13]
+	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -790,10 +410,10 @@ func (x *DecapsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DecapsResponse.ProtoReflect.Descriptor instead.
 func (*DecapsResponse) Descriptor() ([]byte, []int) {
-	return file_keymanager_workload_service_proto_api_proto_rawDescGZIP(), []int{13}
+	return file_keymanager_workload_service_proto_api_proto_rawDescGZIP(), []int{6}
 }
 
-func (x *DecapsResponse) GetSharedSecret() *KemSharedSecret {
+func (x *DecapsResponse) GetSharedSecret() *proto.KemSharedSecret {
 	if x != nil {
 		return x.SharedSecret
 	}
@@ -804,14 +424,14 @@ func (x *DecapsResponse) GetSharedSecret() *KemSharedSecret {
 type DestroyRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The handle (UUID) of the keypair to destroy.
-	KeyHandle     *KeyHandle `protobuf:"bytes,1,opt,name=key_handle,json=keyHandle,proto3" json:"key_handle,omitempty"`
+	KeyHandle     *proto.KeyHandle `protobuf:"bytes,1,opt,name=key_handle,json=keyHandle,proto3" json:"key_handle,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *DestroyRequest) Reset() {
 	*x = DestroyRequest{}
-	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[14]
+	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -823,7 +443,7 @@ func (x *DestroyRequest) String() string {
 func (*DestroyRequest) ProtoMessage() {}
 
 func (x *DestroyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[14]
+	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -836,10 +456,10 @@ func (x *DestroyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DestroyRequest.ProtoReflect.Descriptor instead.
 func (*DestroyRequest) Descriptor() ([]byte, []int) {
-	return file_keymanager_workload_service_proto_api_proto_rawDescGZIP(), []int{14}
+	return file_keymanager_workload_service_proto_api_proto_rawDescGZIP(), []int{7}
 }
 
-func (x *DestroyRequest) GetKeyHandle() *KeyHandle {
+func (x *DestroyRequest) GetKeyHandle() *proto.KeyHandle {
 	if x != nil {
 		return x.KeyHandle
 	}
@@ -850,60 +470,37 @@ var File_keymanager_workload_service_proto_api_proto protoreflect.FileDescriptor
 
 const file_keymanager_workload_service_proto_api_proto_rawDesc = "" +
 	"\n" +
-	"+keymanager/workload_service/proto/api.proto\x12\x1bkeymanager.workload_service\x1a+keymanager/km_common/proto/algorithms.proto\"#\n" +
-	"\tKeyHandle\x12\x16\n" +
-	"\x06handle\x18\x01 \x01(\tR\x06handle\"N\n" +
-	"\x0fAlgorithmParams\x121\n" +
-	"\x06kem_id\x18\x01 \x01(\x0e2\x18.keymanager.KemAlgorithmH\x00R\x05kemIdB\b\n" +
-	"\x06params\"l\n" +
-	"\x10AlgorithmDetails\x12\x12\n" +
-	"\x04type\x18\x01 \x01(\tR\x04type\x12D\n" +
-	"\x06params\x18\x02 \x01(\v2,.keymanager.workload_service.AlgorithmParamsR\x06params\"a\n" +
-	"\x12SupportedAlgorithm\x12K\n" +
-	"\talgorithm\x18\x01 \x01(\v2-.keymanager.workload_service.AlgorithmDetailsR\talgorithm\"}\n" +
-	"\x17GetCapabilitiesResponse\x12b\n" +
-	"\x14supported_algorithms\x18\x01 \x03(\v2/.keymanager.workload_service.SupportedAlgorithmR\x13supportedAlgorithms\"}\n" +
-	"\x12GenerateKeyRequest\x12K\n" +
-	"\talgorithm\x18\x01 \x01(\v2-.keymanager.workload_service.AlgorithmDetailsR\talgorithm\x12\x1a\n" +
-	"\blifespan\x18\x02 \x01(\x04R\blifespan\"x\n" +
+	"+keymanager/workload_service/proto/api.proto\x12\x1bkeymanager.workload_service\x1a+keymanager/km_common/proto/algorithms.proto\x1a-keymanager/km_common/proto/crypto_types.proto\x1a(keymanager/km_common/proto/payload.proto\"l\n" +
+	"\x17GetCapabilitiesResponse\x12Q\n" +
+	"\x14supported_algorithms\x18\x01 \x03(\v2\x1e.keymanager.SupportedAlgorithmR\x13supportedAlgorithms\"l\n" +
+	"\x12GenerateKeyRequest\x12:\n" +
+	"\talgorithm\x18\x01 \x01(\v2\x1c.keymanager.AlgorithmDetailsR\talgorithm\x12\x1a\n" +
+	"\blifespan\x18\x02 \x01(\x04R\blifespan\"\xdf\x01\n" +
+	"\x13GenerateKeyResponse\x124\n" +
 	"\n" +
-	"PubKeyInfo\x12K\n" +
-	"\talgorithm\x18\x01 \x01(\v2-.keymanager.workload_service.AlgorithmDetailsR\talgorithm\x12\x1d\n" +
-	"\n" +
-	"public_key\x18\x02 \x01(\tR\tpublicKey\"\x81\x02\n" +
-	"\x13GenerateKeyResponse\x12E\n" +
-	"\n" +
-	"key_handle\x18\x01 \x01(\v2&.keymanager.workload_service.KeyHandleR\tkeyHandle\x12@\n" +
-	"\apub_key\x18\x02 \x01(\v2'.keymanager.workload_service.PubKeyInfoR\x06pubKey\x128\n" +
+	"key_handle\x18\x01 \x01(\v2\x15.keymanager.KeyHandleR\tkeyHandle\x12/\n" +
+	"\apub_key\x18\x02 \x01(\v2\x16.keymanager.PubKeyInfoR\x06pubKey\x128\n" +
 	"\x18key_protection_mechanism\x18\x03 \x01(\tR\x16keyProtectionMechanism\x12'\n" +
-	"\x0fexpiration_time\x18\x04 \x01(\x01R\x0eexpirationTime\"\xf5\x01\n" +
-	"\aKeyInfo\x12E\n" +
+	"\x0fexpiration_time\x18\x04 \x01(\x01R\x0eexpirationTime\"\xd3\x01\n" +
+	"\aKeyInfo\x124\n" +
 	"\n" +
-	"key_handle\x18\x01 \x01(\v2&.keymanager.workload_service.KeyHandleR\tkeyHandle\x12@\n" +
-	"\apub_key\x18\x02 \x01(\v2'.keymanager.workload_service.PubKeyInfoR\x06pubKey\x128\n" +
+	"key_handle\x18\x01 \x01(\v2\x15.keymanager.KeyHandleR\tkeyHandle\x12/\n" +
+	"\apub_key\x18\x02 \x01(\v2\x16.keymanager.PubKeyInfoR\x06pubKey\x128\n" +
 	"\x18key_protection_mechanism\x18\x03 \x01(\tR\x16keyProtectionMechanism\x12'\n" +
 	"\x0fexpiration_time\x18\x04 \x01(\x01R\x0eexpirationTime\"Z\n" +
 	"\x15EnumerateKeysResponse\x12A\n" +
-	"\tkey_infos\x18\x01 \x03(\v2$.keymanager.workload_service.KeyInfoR\bkeyInfos\"g\n" +
-	"\rKemCiphertext\x126\n" +
-	"\talgorithm\x18\x01 \x01(\x0e2\x18.keymanager.KemAlgorithmR\talgorithm\x12\x1e\n" +
+	"\tkey_infos\x18\x01 \x03(\v2$.keymanager.workload_service.KeyInfoR\bkeyInfos\"\x80\x01\n" +
+	"\rDecapsRequest\x124\n" +
 	"\n" +
-	"ciphertext\x18\x02 \x01(\tR\n" +
-	"ciphertext\"\xa2\x01\n" +
-	"\rDecapsRequest\x12E\n" +
+	"key_handle\x18\x01 \x01(\v2\x15.keymanager.KeyHandleR\tkeyHandle\x129\n" +
 	"\n" +
-	"key_handle\x18\x01 \x01(\v2&.keymanager.workload_service.KeyHandleR\tkeyHandle\x12J\n" +
+	"ciphertext\x18\x02 \x01(\v2\x19.keymanager.KemCiphertextR\n" +
+	"ciphertext\"R\n" +
+	"\x0eDecapsResponse\x12@\n" +
+	"\rshared_secret\x18\x01 \x01(\v2\x1b.keymanager.KemSharedSecretR\fsharedSecret\"F\n" +
+	"\x0eDestroyRequest\x124\n" +
 	"\n" +
-	"ciphertext\x18\x02 \x01(\v2*.keymanager.workload_service.KemCiphertextR\n" +
-	"ciphertext\"a\n" +
-	"\x0fKemSharedSecret\x126\n" +
-	"\talgorithm\x18\x01 \x01(\x0e2\x18.keymanager.KemAlgorithmR\talgorithm\x12\x16\n" +
-	"\x06secret\x18\x02 \x01(\tR\x06secret\"c\n" +
-	"\x0eDecapsResponse\x12Q\n" +
-	"\rshared_secret\x18\x01 \x01(\v2,.keymanager.workload_service.KemSharedSecretR\fsharedSecret\"W\n" +
-	"\x0eDestroyRequest\x12E\n" +
-	"\n" +
-	"key_handle\x18\x01 \x01(\v2&.keymanager.workload_service.KeyHandleR\tkeyHandleBFZDgithub.com/google/go-tpm-tools/keymanager/workload_service/proto;apib\x06proto3"
+	"key_handle\x18\x01 \x01(\v2\x15.keymanager.KeyHandleR\tkeyHandleBFZDgithub.com/google/go-tpm-tools/keymanager/workload_service/proto;apib\x06proto3"
 
 var (
 	file_keymanager_workload_service_proto_api_proto_rawDescOnce sync.Once
@@ -917,48 +514,40 @@ func file_keymanager_workload_service_proto_api_proto_rawDescGZIP() []byte {
 	return file_keymanager_workload_service_proto_api_proto_rawDescData
 }
 
-var file_keymanager_workload_service_proto_api_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
+var file_keymanager_workload_service_proto_api_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_keymanager_workload_service_proto_api_proto_goTypes = []any{
-	(*KeyHandle)(nil),               // 0: keymanager.workload_service.KeyHandle
-	(*AlgorithmParams)(nil),         // 1: keymanager.workload_service.AlgorithmParams
-	(*AlgorithmDetails)(nil),        // 2: keymanager.workload_service.AlgorithmDetails
-	(*SupportedAlgorithm)(nil),      // 3: keymanager.workload_service.SupportedAlgorithm
-	(*GetCapabilitiesResponse)(nil), // 4: keymanager.workload_service.GetCapabilitiesResponse
-	(*GenerateKeyRequest)(nil),      // 5: keymanager.workload_service.GenerateKeyRequest
-	(*PubKeyInfo)(nil),              // 6: keymanager.workload_service.PubKeyInfo
-	(*GenerateKeyResponse)(nil),     // 7: keymanager.workload_service.GenerateKeyResponse
-	(*KeyInfo)(nil),                 // 8: keymanager.workload_service.KeyInfo
-	(*EnumerateKeysResponse)(nil),   // 9: keymanager.workload_service.EnumerateKeysResponse
-	(*KemCiphertext)(nil),           // 10: keymanager.workload_service.KemCiphertext
-	(*DecapsRequest)(nil),           // 11: keymanager.workload_service.DecapsRequest
-	(*KemSharedSecret)(nil),         // 12: keymanager.workload_service.KemSharedSecret
-	(*DecapsResponse)(nil),          // 13: keymanager.workload_service.DecapsResponse
-	(*DestroyRequest)(nil),          // 14: keymanager.workload_service.DestroyRequest
-	(proto.KemAlgorithm)(0),         // 15: keymanager.KemAlgorithm
+	(*GetCapabilitiesResponse)(nil),  // 0: keymanager.workload_service.GetCapabilitiesResponse
+	(*GenerateKeyRequest)(nil),       // 1: keymanager.workload_service.GenerateKeyRequest
+	(*GenerateKeyResponse)(nil),      // 2: keymanager.workload_service.GenerateKeyResponse
+	(*KeyInfo)(nil),                  // 3: keymanager.workload_service.KeyInfo
+	(*EnumerateKeysResponse)(nil),    // 4: keymanager.workload_service.EnumerateKeysResponse
+	(*DecapsRequest)(nil),            // 5: keymanager.workload_service.DecapsRequest
+	(*DecapsResponse)(nil),           // 6: keymanager.workload_service.DecapsResponse
+	(*DestroyRequest)(nil),           // 7: keymanager.workload_service.DestroyRequest
+	(*proto.SupportedAlgorithm)(nil), // 8: keymanager.SupportedAlgorithm
+	(*proto.AlgorithmDetails)(nil),   // 9: keymanager.AlgorithmDetails
+	(*proto.KeyHandle)(nil),          // 10: keymanager.KeyHandle
+	(*proto.PubKeyInfo)(nil),         // 11: keymanager.PubKeyInfo
+	(*proto.KemCiphertext)(nil),      // 12: keymanager.KemCiphertext
+	(*proto.KemSharedSecret)(nil),    // 13: keymanager.KemSharedSecret
 }
 var file_keymanager_workload_service_proto_api_proto_depIdxs = []int32{
-	15, // 0: keymanager.workload_service.AlgorithmParams.kem_id:type_name -> keymanager.KemAlgorithm
-	1,  // 1: keymanager.workload_service.AlgorithmDetails.params:type_name -> keymanager.workload_service.AlgorithmParams
-	2,  // 2: keymanager.workload_service.SupportedAlgorithm.algorithm:type_name -> keymanager.workload_service.AlgorithmDetails
-	3,  // 3: keymanager.workload_service.GetCapabilitiesResponse.supported_algorithms:type_name -> keymanager.workload_service.SupportedAlgorithm
-	2,  // 4: keymanager.workload_service.GenerateKeyRequest.algorithm:type_name -> keymanager.workload_service.AlgorithmDetails
-	2,  // 5: keymanager.workload_service.PubKeyInfo.algorithm:type_name -> keymanager.workload_service.AlgorithmDetails
-	0,  // 6: keymanager.workload_service.GenerateKeyResponse.key_handle:type_name -> keymanager.workload_service.KeyHandle
-	6,  // 7: keymanager.workload_service.GenerateKeyResponse.pub_key:type_name -> keymanager.workload_service.PubKeyInfo
-	0,  // 8: keymanager.workload_service.KeyInfo.key_handle:type_name -> keymanager.workload_service.KeyHandle
-	6,  // 9: keymanager.workload_service.KeyInfo.pub_key:type_name -> keymanager.workload_service.PubKeyInfo
-	8,  // 10: keymanager.workload_service.EnumerateKeysResponse.key_infos:type_name -> keymanager.workload_service.KeyInfo
-	15, // 11: keymanager.workload_service.KemCiphertext.algorithm:type_name -> keymanager.KemAlgorithm
-	0,  // 12: keymanager.workload_service.DecapsRequest.key_handle:type_name -> keymanager.workload_service.KeyHandle
-	10, // 13: keymanager.workload_service.DecapsRequest.ciphertext:type_name -> keymanager.workload_service.KemCiphertext
-	15, // 14: keymanager.workload_service.KemSharedSecret.algorithm:type_name -> keymanager.KemAlgorithm
-	12, // 15: keymanager.workload_service.DecapsResponse.shared_secret:type_name -> keymanager.workload_service.KemSharedSecret
-	0,  // 16: keymanager.workload_service.DestroyRequest.key_handle:type_name -> keymanager.workload_service.KeyHandle
-	17, // [17:17] is the sub-list for method output_type
-	17, // [17:17] is the sub-list for method input_type
-	17, // [17:17] is the sub-list for extension type_name
-	17, // [17:17] is the sub-list for extension extendee
-	0,  // [0:17] is the sub-list for field type_name
+	8,  // 0: keymanager.workload_service.GetCapabilitiesResponse.supported_algorithms:type_name -> keymanager.SupportedAlgorithm
+	9,  // 1: keymanager.workload_service.GenerateKeyRequest.algorithm:type_name -> keymanager.AlgorithmDetails
+	10, // 2: keymanager.workload_service.GenerateKeyResponse.key_handle:type_name -> keymanager.KeyHandle
+	11, // 3: keymanager.workload_service.GenerateKeyResponse.pub_key:type_name -> keymanager.PubKeyInfo
+	10, // 4: keymanager.workload_service.KeyInfo.key_handle:type_name -> keymanager.KeyHandle
+	11, // 5: keymanager.workload_service.KeyInfo.pub_key:type_name -> keymanager.PubKeyInfo
+	3,  // 6: keymanager.workload_service.EnumerateKeysResponse.key_infos:type_name -> keymanager.workload_service.KeyInfo
+	10, // 7: keymanager.workload_service.DecapsRequest.key_handle:type_name -> keymanager.KeyHandle
+	12, // 8: keymanager.workload_service.DecapsRequest.ciphertext:type_name -> keymanager.KemCiphertext
+	13, // 9: keymanager.workload_service.DecapsResponse.shared_secret:type_name -> keymanager.KemSharedSecret
+	10, // 10: keymanager.workload_service.DestroyRequest.key_handle:type_name -> keymanager.KeyHandle
+	11, // [11:11] is the sub-list for method output_type
+	11, // [11:11] is the sub-list for method input_type
+	11, // [11:11] is the sub-list for extension type_name
+	11, // [11:11] is the sub-list for extension extendee
+	0,  // [0:11] is the sub-list for field type_name
 }
 
 func init() { file_keymanager_workload_service_proto_api_proto_init() }
@@ -966,16 +555,13 @@ func file_keymanager_workload_service_proto_api_proto_init() {
 	if File_keymanager_workload_service_proto_api_proto != nil {
 		return
 	}
-	file_keymanager_workload_service_proto_api_proto_msgTypes[1].OneofWrappers = []any{
-		(*AlgorithmParams_KemId)(nil),
-	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_keymanager_workload_service_proto_api_proto_rawDesc), len(file_keymanager_workload_service_proto_api_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   15,
+			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
