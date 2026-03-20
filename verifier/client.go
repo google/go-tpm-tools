@@ -5,6 +5,7 @@ package verifier
 import (
 	"context"
 
+	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
 	attestpb "github.com/google/go-tpm-tools/proto/attest"
 	"github.com/google/go-tpm-tools/verifier/models"
 	"google.golang.org/genproto/googleapis/rpc/status"
@@ -48,6 +49,7 @@ type VerifyAttestationRequest struct {
 	TokenOptions             *models.TokenOptions
 	// TDCCELAttestation is for TDX CCEL RTMR attestation
 	TDCCELAttestation *TDCCELAttestation
+	NvidiaAttestation *attestationpb.NvidiaAttestationReport
 }
 
 type TDCCELAttestation struct {

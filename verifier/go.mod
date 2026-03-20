@@ -9,7 +9,7 @@ replace github.com/google/go-tpm-tools v0.4.4 => ../
 require (
 	cloud.google.com/go/compute/metadata v0.9.0
 	cloud.google.com/go/confidentialcomputing v1.11.0
-	github.com/GoogleCloudPlatform/confidential-space/server v0.0.0-20260307011055-895ec9019dd7
+	github.com/GoogleCloudPlatform/confidential-space/server v0.0.0-20260313232128-53cb34b09004
 	github.com/golang-jwt/jwt/v4 v4.5.1
 	github.com/google/go-cmp v0.7.0
 	github.com/google/go-eventlog v0.0.3-0.20260305053119-5cd85087f9f9
