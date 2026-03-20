@@ -10,12 +10,13 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"math"
 	"net"
 	"net/http"
 	"os"
 	"sync"
 	"time"
+
+	"buf.build/go/protovalidate"
 
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
@@ -259,6 +260,10 @@ func (s *Server) handleDecaps(w http.ResponseWriter, r *http.Request) {
 		writeError(w, fmt.Sprintf("invalid request body: %v", err), http.StatusBadRequest)
 		return
 	}
+	if err := protovalidate.Validate(&req); err != nil {
+		writeError(w, fmt.Sprintf("invalid request: %v", err), http.StatusBadRequest)
+		return
+	}
 
 	if !IsSupportedKemAlgorithm(req.Ciphertext.Algorithm) {
 		writeError(w, fmt.Sprintf("unsupported ciphertext algorithm: %d. Supported algorithms: %s", req.Ciphertext.Algorithm, SupportedKemAlgorithmsString()), http.StatusBadRequest)
@@ -321,17 +326,8 @@ func (s *Server) handleGenerateKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Algorithm == nil {
-		writeError(w, "missing algorithm", http.StatusBadRequest)
-		return
-	}
-	if req.Lifespan == 0 {
-		writeError(w, "lifespan must be greater than 0s", http.StatusBadRequest)
-		return
-	}
-	// Validate lifespan is positive and does not cause int64 overflow.
-	if req.Lifespan > math.MaxInt64 {
-		writeError(w, "lifespan exceeds maximum allowed value", http.StatusBadRequest)
+	if err := protovalidate.Validate(&req); err != nil {
+		writeError(w, fmt.Sprintf("invalid request: %v", err), http.StatusBadRequest)
 		return
 	}
 
@@ -493,6 +489,10 @@ func (s *Server) handleDestroy(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := protojson.Unmarshal(body, &req); err != nil {
 		writeError(w, fmt.Sprintf("invalid request body: %v", err), http.StatusBadRequest)
+		return
+	}
+	if err := protovalidate.Validate(&req); err != nil {
+		writeError(w, fmt.Sprintf("invalid request: %v", err), http.StatusBadRequest)
 		return
 	}
 

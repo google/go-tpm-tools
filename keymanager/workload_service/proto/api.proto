@@ -8,6 +8,7 @@ option go_package = "github.com/google/go-tpm-tools/keymanager/workload_service/
 import "keymanager/km_common/proto/algorithms.proto";
 import "keymanager/km_common/proto/crypto_types.proto";
 import "keymanager/km_common/proto/payload.proto";
+import "buf/validate/validate.proto";
 
 // Response containing the list of supported cryptographic algorithms for operations like HPKE/KEM.
 message GetCapabilitiesResponse {
@@ -18,15 +19,15 @@ message GetCapabilitiesResponse {
 // Request to orchestrate the creation of a new keypair (e.g., a KEM keypair). (POST /v1/keys:generate_key)
 message GenerateKeyRequest {
   // The specific algorithm to use for the new keypair.
-  keymanager.AlgorithmDetails algorithm = 1;
+  keymanager.AlgorithmDetails algorithm = 1 [(buf.validate.field).required = true];
   // The requested duration (in seconds) before the key is automatically destroyed.
-  uint64 lifespan = 2;
+  uint64 lifespan = 2 [(buf.validate.field).uint64 = {gt: 0, lte: 9223372036854775807}];
 }
 
 // Response from generating a new key.
 message GenerateKeyResponse {
   // A unique handle (UUID) used to reference the generated key.
-  keymanager.KeyHandle key_handle = 1;
+  keymanager.KeyHandle key_handle = 1 [(buf.validate.field).required = true];
   // The public key information for the generated keypair.
   keymanager.PubKeyInfo pub_key = 2;
   // The isolation level/protection mechanism for the key 
@@ -40,7 +41,7 @@ message GenerateKeyResponse {
 // Detailed information about an active key.
 message KeyInfo {
   // A unique handle (UUID) used to reference the keypair.
-  keymanager.KeyHandle key_handle = 1;
+  keymanager.KeyHandle key_handle = 1 [(buf.validate.field).required = true];
   // The public key information for the keypair.
   keymanager.PubKeyInfo pub_key = 2;
   // The isolation level/protection mechanism for the key.
@@ -58,9 +59,9 @@ message EnumerateKeysResponse {
 // Request to perform a decapsulation operation using a specific key handle. (POST /v1/keys:decap)
 message DecapsRequest {
   // The handle (UUID) of the KEM key instance to use for decapsulation.
-  keymanager.KeyHandle key_handle = 1;
+  keymanager.KeyHandle key_handle = 1 [(buf.validate.field).required = true];
   // The encapsulated shared secret received from the client/proxy.
-  keymanager.KemCiphertext ciphertext = 2;
+  keymanager.KemCiphertext ciphertext = 2 [(buf.validate.field).required = true];
 }
 
 // Response from a decapsulation operation.
@@ -72,5 +73,5 @@ message DecapsResponse {
 // Request to manually trigger the destruction of a keypair before its lifespan expires. (POST /v1/keys:destroy)
 message DestroyRequest {
   // The handle (UUID) of the keypair to destroy.
-  keymanager.KeyHandle key_handle = 1;
+  keymanager.KeyHandle key_handle = 1 [(buf.validate.field).required = true];
 }

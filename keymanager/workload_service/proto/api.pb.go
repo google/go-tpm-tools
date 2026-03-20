@@ -9,6 +9,7 @@
 package api
 
 import (
+	_ "buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go/buf/validate"
 	proto "github.com/google/go-tpm-tools/keymanager/km_common/proto"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
@@ -470,37 +471,37 @@ var File_keymanager_workload_service_proto_api_proto protoreflect.FileDescriptor
 
 const file_keymanager_workload_service_proto_api_proto_rawDesc = "" +
 	"\n" +
-	"+keymanager/workload_service/proto/api.proto\x12\x1bkeymanager.workload_service\x1a+keymanager/km_common/proto/algorithms.proto\x1a-keymanager/km_common/proto/crypto_types.proto\x1a(keymanager/km_common/proto/payload.proto\"l\n" +
+	"+keymanager/workload_service/proto/api.proto\x12\x1bkeymanager.workload_service\x1a+keymanager/km_common/proto/algorithms.proto\x1a-keymanager/km_common/proto/crypto_types.proto\x1a(keymanager/km_common/proto/payload.proto\x1a\x1bbuf/validate/validate.proto\"l\n" +
 	"\x17GetCapabilitiesResponse\x12Q\n" +
-	"\x14supported_algorithms\x18\x01 \x03(\v2\x1e.keymanager.SupportedAlgorithmR\x13supportedAlgorithms\"l\n" +
-	"\x12GenerateKeyRequest\x12:\n" +
-	"\talgorithm\x18\x01 \x01(\v2\x1c.keymanager.AlgorithmDetailsR\talgorithm\x12\x1a\n" +
-	"\blifespan\x18\x02 \x01(\x04R\blifespan\"\xdf\x01\n" +
-	"\x13GenerateKeyResponse\x124\n" +
+	"\x14supported_algorithms\x18\x01 \x03(\v2\x1e.keymanager.SupportedAlgorithmR\x13supportedAlgorithms\"\x87\x01\n" +
+	"\x12GenerateKeyRequest\x12B\n" +
+	"\talgorithm\x18\x01 \x01(\v2\x1c.keymanager.AlgorithmDetailsB\x06\xbaH\x03\xc8\x01\x01R\talgorithm\x12-\n" +
+	"\blifespan\x18\x02 \x01(\x04B\x11\xbaH\x0e2\f\x18\xff\xff\xff\xff\xff\xff\xff\xff\x7f \x00R\blifespan\"\xe7\x01\n" +
+	"\x13GenerateKeyResponse\x12<\n" +
 	"\n" +
-	"key_handle\x18\x01 \x01(\v2\x15.keymanager.KeyHandleR\tkeyHandle\x12/\n" +
+	"key_handle\x18\x01 \x01(\v2\x15.keymanager.KeyHandleB\x06\xbaH\x03\xc8\x01\x01R\tkeyHandle\x12/\n" +
 	"\apub_key\x18\x02 \x01(\v2\x16.keymanager.PubKeyInfoR\x06pubKey\x128\n" +
 	"\x18key_protection_mechanism\x18\x03 \x01(\tR\x16keyProtectionMechanism\x12'\n" +
-	"\x0fexpiration_time\x18\x04 \x01(\x01R\x0eexpirationTime\"\xd3\x01\n" +
-	"\aKeyInfo\x124\n" +
+	"\x0fexpiration_time\x18\x04 \x01(\x01R\x0eexpirationTime\"\xdb\x01\n" +
+	"\aKeyInfo\x12<\n" +
 	"\n" +
-	"key_handle\x18\x01 \x01(\v2\x15.keymanager.KeyHandleR\tkeyHandle\x12/\n" +
+	"key_handle\x18\x01 \x01(\v2\x15.keymanager.KeyHandleB\x06\xbaH\x03\xc8\x01\x01R\tkeyHandle\x12/\n" +
 	"\apub_key\x18\x02 \x01(\v2\x16.keymanager.PubKeyInfoR\x06pubKey\x128\n" +
 	"\x18key_protection_mechanism\x18\x03 \x01(\tR\x16keyProtectionMechanism\x12'\n" +
 	"\x0fexpiration_time\x18\x04 \x01(\x01R\x0eexpirationTime\"Z\n" +
 	"\x15EnumerateKeysResponse\x12A\n" +
-	"\tkey_infos\x18\x01 \x03(\v2$.keymanager.workload_service.KeyInfoR\bkeyInfos\"\x80\x01\n" +
-	"\rDecapsRequest\x124\n" +
+	"\tkey_infos\x18\x01 \x03(\v2$.keymanager.workload_service.KeyInfoR\bkeyInfos\"\x90\x01\n" +
+	"\rDecapsRequest\x12<\n" +
 	"\n" +
-	"key_handle\x18\x01 \x01(\v2\x15.keymanager.KeyHandleR\tkeyHandle\x129\n" +
+	"key_handle\x18\x01 \x01(\v2\x15.keymanager.KeyHandleB\x06\xbaH\x03\xc8\x01\x01R\tkeyHandle\x12A\n" +
 	"\n" +
-	"ciphertext\x18\x02 \x01(\v2\x19.keymanager.KemCiphertextR\n" +
+	"ciphertext\x18\x02 \x01(\v2\x19.keymanager.KemCiphertextB\x06\xbaH\x03\xc8\x01\x01R\n" +
 	"ciphertext\"R\n" +
 	"\x0eDecapsResponse\x12@\n" +
-	"\rshared_secret\x18\x01 \x01(\v2\x1b.keymanager.KemSharedSecretR\fsharedSecret\"F\n" +
-	"\x0eDestroyRequest\x124\n" +
+	"\rshared_secret\x18\x01 \x01(\v2\x1b.keymanager.KemSharedSecretR\fsharedSecret\"N\n" +
+	"\x0eDestroyRequest\x12<\n" +
 	"\n" +
-	"key_handle\x18\x01 \x01(\v2\x15.keymanager.KeyHandleR\tkeyHandleBFZDgithub.com/google/go-tpm-tools/keymanager/workload_service/proto;apib\x06proto3"
+	"key_handle\x18\x01 \x01(\v2\x15.keymanager.KeyHandleB\x06\xbaH\x03\xc8\x01\x01R\tkeyHandleBFZDgithub.com/google/go-tpm-tools/keymanager/workload_service/proto;apib\x06proto3"
 
 var (
 	file_keymanager_workload_service_proto_api_proto_rawDescOnce sync.Once
