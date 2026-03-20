@@ -1,3 +1,4 @@
+// Package keymanager provides common cryptographic utilities and FFI wrappers.
 package keymanager
 
 import (
