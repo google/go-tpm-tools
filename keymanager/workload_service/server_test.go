@@ -156,7 +156,9 @@ func TestGenerateKeyRequestProtoJSONRoundTrip(t *testing.T) {
 		Algorithm: &api.AlgorithmDetails{
 			Type: "kem",
 			Params: &api.AlgorithmParams{
-				KemId: api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256,
+				Params: &api.AlgorithmParams_KemId{
+					KemId: api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256,
+				},
 			},
 		},
 		Lifespan: 3600,
@@ -172,7 +174,9 @@ func TestGenerateKeyResponseProtoJSONRoundTrip(t *testing.T) {
 			Algorithm: &api.AlgorithmDetails{
 				Type: "kem",
 				Params: &api.AlgorithmParams{
-					KemId: api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256,
+					Params: &api.AlgorithmParams_KemId{
+						KemId: api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256,
+					},
 				},
 			},
 			PublicKey: base64.StdEncoding.EncodeToString([]byte{1, 2, 3, 4}),
@@ -193,7 +197,9 @@ func TestEnumerateKeysResponseProtoJSONRoundTrip(t *testing.T) {
 					Algorithm: &api.AlgorithmDetails{
 						Type: "kem",
 						Params: &api.AlgorithmParams{
-							KemId: api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256,
+							Params: &api.AlgorithmParams_KemId{
+								KemId: api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256,
+							},
 						},
 					},
 					PublicKey: base64.StdEncoding.EncodeToString([]byte{5, 6, 7, 8}),
@@ -237,7 +243,9 @@ func TestGetCapabilitiesResponseProtoJSONRoundTrip(t *testing.T) {
 				Algorithm: &api.AlgorithmDetails{
 					Type: "kem",
 					Params: &api.AlgorithmParams{
-						KemId: api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256,
+						Params: &api.AlgorithmParams_KemId{
+							KemId: api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256,
+						},
 					},
 				},
 			},
