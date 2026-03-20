@@ -5,19 +5,18 @@ import (
 	"strings"
 
 	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
-	api "github.com/google/go-tpm-tools/keymanager/workload_service/proto"
 )
 
 // Supported algorithms and mechanisms.
 var (
 	// SupportedKemAlgorithms is the source of truth for supported algorithms.
-	SupportedKemAlgorithms = []api.KemAlgorithm{
-		api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256,
+	SupportedKemAlgorithms = []keymanager.KemAlgorithm{
+		keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
 	}
 )
 
 // IsSupportedKemAlgorithm returns true if the KEM algorithm is supported.
-func IsSupportedKemAlgorithm(k api.KemAlgorithm) bool {
+func IsSupportedKemAlgorithm(k keymanager.KemAlgorithm) bool {
 	for _, supported := range SupportedKemAlgorithms {
 		if k == supported {
 			return true
@@ -36,11 +35,11 @@ func SupportedKemAlgorithmsString() string {
 }
 
 // KemToHpkeAlgorithm returns the full HPKE suite configuration for this algorithm.
-func KemToHpkeAlgorithm(k api.KemAlgorithm) (*keymanager.HpkeAlgorithm, error) {
+func KemToHpkeAlgorithm(k keymanager.KemAlgorithm) (*keymanager.HpkeAlgorithm, error) {
 	switch k {
-	case api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256:
+	case keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256:
 		return &keymanager.HpkeAlgorithm{
-			Kem:  keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
+			Kem:  k,
 			Kdf:  keymanager.KdfAlgorithm_KDF_ALGORITHM_HKDF_SHA256,
 			Aead: keymanager.AeadAlgorithm_AEAD_ALGORITHM_AES_256_GCM,
 		}, nil

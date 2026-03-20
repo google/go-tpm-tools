@@ -125,7 +125,7 @@ func validGenerateBody() []byte {
 			Type: "kem",
 			Params: &api.AlgorithmParams{
 				Params: &api.AlgorithmParams_KemId{
-					KemId: api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256,
+					KemId: keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
 				},
 			},
 		},
@@ -157,7 +157,7 @@ func TestGenerateKeyRequestProtoJSONRoundTrip(t *testing.T) {
 			Type: "kem",
 			Params: &api.AlgorithmParams{
 				Params: &api.AlgorithmParams_KemId{
-					KemId: api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256,
+					KemId: keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
 				},
 			},
 		},
@@ -175,7 +175,7 @@ func TestGenerateKeyResponseProtoJSONRoundTrip(t *testing.T) {
 				Type: "kem",
 				Params: &api.AlgorithmParams{
 					Params: &api.AlgorithmParams_KemId{
-						KemId: api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256,
+						KemId: keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
 					},
 				},
 			},
@@ -198,7 +198,7 @@ func TestEnumerateKeysResponseProtoJSONRoundTrip(t *testing.T) {
 						Type: "kem",
 						Params: &api.AlgorithmParams{
 							Params: &api.AlgorithmParams_KemId{
-								KemId: api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256,
+								KemId: keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
 							},
 						},
 					},
@@ -217,7 +217,7 @@ func TestDecapsRequestProtoJSONRoundTrip(t *testing.T) {
 	want := &api.DecapsRequest{
 		KeyHandle: &api.KeyHandle{Handle: uuid.NewString()},
 		Ciphertext: &api.KemCiphertext{
-			Algorithm:  api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256,
+			Algorithm:  keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
 			Ciphertext: base64.StdEncoding.EncodeToString([]byte{9, 10, 11, 12}),
 		},
 	}
@@ -228,7 +228,7 @@ func TestDecapsRequestProtoJSONRoundTrip(t *testing.T) {
 func TestDecapsResponseProtoJSONRoundTrip(t *testing.T) {
 	want := &api.DecapsResponse{
 		SharedSecret: &api.KemSharedSecret{
-			Algorithm: api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256,
+			Algorithm: keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
 			Secret:    base64.StdEncoding.EncodeToString([]byte{13, 14, 15, 16}),
 		},
 	}
@@ -244,7 +244,7 @@ func TestGetCapabilitiesResponseProtoJSONRoundTrip(t *testing.T) {
 					Type: "kem",
 					Params: &api.AlgorithmParams{
 						Params: &api.AlgorithmParams_KemId{
-							KemId: api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256,
+							KemId: keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
 						},
 					},
 				},
@@ -353,15 +353,15 @@ func TestHandleGenerateKeyBadRequest(t *testing.T) {
 	}{
 		{
 			name: "unsupported algorithm type",
-			body: &api.GenerateKeyRequest{Algorithm: &api.AlgorithmDetails{Type: "mac", Params: &api.AlgorithmParams{Params: &api.AlgorithmParams_KemId{KemId: api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256}}}, Lifespan: 3600},
+			body: &api.GenerateKeyRequest{Algorithm: &api.AlgorithmDetails{Type: "mac", Params: &api.AlgorithmParams{Params: &api.AlgorithmParams_KemId{KemId: keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256}}}, Lifespan: 3600},
 		},
 		{
 			name: "unsupported algorithm",
-			body: &api.GenerateKeyRequest{Algorithm: &api.AlgorithmDetails{Type: "kem", Params: &api.AlgorithmParams{Params: &api.AlgorithmParams_KemId{KemId: api.KemAlgorithm_KEM_ALGORITHM_UNSPECIFIED}}}, Lifespan: 3600},
+			body: &api.GenerateKeyRequest{Algorithm: &api.AlgorithmDetails{Type: "kem", Params: &api.AlgorithmParams{Params: &api.AlgorithmParams_KemId{KemId: keymanager.KemAlgorithm_KEM_ALGORITHM_UNSPECIFIED}}}, Lifespan: 3600},
 		},
 		{
 			name: "zero lifespan",
-			body: &api.GenerateKeyRequest{Algorithm: &api.AlgorithmDetails{Type: "kem", Params: &api.AlgorithmParams{Params: &api.AlgorithmParams_KemId{KemId: api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256}}}, Lifespan: 0},
+			body: &api.GenerateKeyRequest{Algorithm: &api.AlgorithmDetails{Type: "kem", Params: &api.AlgorithmParams{Params: &api.AlgorithmParams_KemId{KemId: keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256}}}, Lifespan: 0},
 		},
 		{
 			name: "missing algorithm (defaults to 0, type empty)",
@@ -386,7 +386,7 @@ func TestHandleGenerateKeyBadRequest(t *testing.T) {
 				if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 					t.Fatalf("failed to decode response: %v", err)
 				}
-				expectedSubstr := "Supported algorithms: DHKEM_X25519_HKDF_SHA256"
+				expectedSubstr := "Supported algorithms: KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256"
 				if errMsg, ok := resp["error"]; !ok || !strings.Contains(errMsg, expectedSubstr) {
 					t.Errorf("expected error message to contain %q, got %q", expectedSubstr, errMsg)
 				}
@@ -406,9 +406,9 @@ func TestHandleGenerateKeyBadJSON(t *testing.T) {
 		body string
 	}{
 		{"not json", "not json"},
-		{"lifespan as string with suffix", `{"algorithm":{"type":"kem","params":{"kem_id":"DHKEM_X25519_HKDF_SHA256"}},"lifespan":"3600s"}`},
-		{"lifespan negative", `{"algorithm":{"type":"kem","params":{"kem_id":"DHKEM_X25519_HKDF_SHA256"}},"lifespan":-1}`},
-		{"lifespan too large", `{"algorithm":{"type":"kem","params":{"kem_id":"DHKEM_X25519_HKDF_SHA256"}},"lifespan":9223372036854775808}`},
+		{"lifespan as string with suffix", `{"algorithm":{"type":"kem","params":{"kem_id":"KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256"}},"lifespan":"3600s"}`},
+		{"lifespan negative", `{"algorithm":{"type":"kem","params":{"kem_id":"KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256"}},"lifespan":-1}`},
+		{"lifespan too large", `{"algorithm":{"type":"kem","params":{"kem_id":"KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256"}},"lifespan":9223372036854775808}`},
 	}
 
 	for _, tc := range badBodies {
@@ -454,7 +454,7 @@ func TestHandleGenerateKeyFlexibleLifespan(t *testing.T) {
 	}{
 		{
 			name:     "integer seconds",
-			body:     `{"algorithm":{"type":"kem","params":{"kem_id":"DHKEM_X25519_HKDF_SHA256"}},"lifespan":3600}`,
+			body:     `{"algorithm":{"type":"kem","params":{"kem_id":"KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256"}},"lifespan":3600}`,
 			expected: 3600,
 		},
 	}
@@ -643,8 +643,8 @@ func TestHandleEnumerateKeysWithKeys(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected kem1 %s in response", kem1)
 	}
-	if info1.PubKey.Algorithm.GetParams().GetKemId() != api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256 {
-		t.Fatalf("expected algorithm %v, got %v", api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256, info1.PubKey.Algorithm.GetParams().GetKemId())
+	if info1.PubKey.Algorithm.GetParams().GetKemId() != keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256 {
+		t.Fatalf("expected algorithm %v, got %v", keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256, info1.PubKey.Algorithm.GetParams().GetKemId())
 	}
 	if info1.PubKey.PublicKey != base64.StdEncoding.EncodeToString(kemPubKey1) {
 		t.Fatalf("KEM pub key mismatch for kem1")
@@ -700,12 +700,12 @@ func TestHandleEnumerateKeysError(t *testing.T) {
 
 func TestToHpkeAlgorithm(t *testing.T) {
 	tests := []struct {
-		input   api.KemAlgorithm
+		input   keymanager.KemAlgorithm
 		want    *keymanager.HpkeAlgorithm
 		wantErr bool
 	}{
 		{
-			input: api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256,
+			input: keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
 			want: &keymanager.HpkeAlgorithm{
 				Kem:  keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
 				Kdf:  keymanager.KdfAlgorithm_KDF_ALGORITHM_HKDF_SHA256,
@@ -714,12 +714,12 @@ func TestToHpkeAlgorithm(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			input:   api.KemAlgorithm_KEM_ALGORITHM_UNSPECIFIED,
+			input:   keymanager.KemAlgorithm_KEM_ALGORITHM_UNSPECIFIED,
 			want:    nil,
 			wantErr: true,
 		},
 		{
-			input:   api.KemAlgorithm(999),
+			input:   keymanager.KemAlgorithm(999),
 			want:    nil,
 			wantErr: true,
 		},
@@ -768,7 +768,7 @@ func TestHandleGetCapabilities(t *testing.T) {
 	}
 
 	if len(resp.SupportedAlgorithms) != 1 ||
-		resp.SupportedAlgorithms[0].Algorithm.GetParams().GetKemId() != api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256 ||
+		resp.SupportedAlgorithms[0].Algorithm.GetParams().GetKemId() != keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256 ||
 		resp.SupportedAlgorithms[0].Algorithm.Type != "kem" {
 		t.Errorf("unexpected supported algorithms: %v", resp.SupportedAlgorithms)
 	}
@@ -1129,7 +1129,7 @@ func newDecapsTestServer(t *testing.T, kemUUID, bindingUUID uuid.UUID, ds *mockK
 	return srv
 }
 
-func decapsRequestBody(kemUUID uuid.UUID, algo api.KemAlgorithm, encKey []byte) string {
+func decapsRequestBody(kemUUID uuid.UUID, algo keymanager.KemAlgorithm, encKey []byte) string {
 	return fmt.Sprintf(
 		`{"key_handle":{"handle":"%s"},"ciphertext":{"algorithm":"%s","ciphertext":"%s"}}`,
 		kemUUID.String(),
@@ -1145,13 +1145,13 @@ func TestHandleDecapsSuccess(t *testing.T) {
 	sealEnc := []byte("seal-encapsulated-key-32-bytes!!")
 	sealedCT := []byte("sealed-ciphertext-48-bytes-with-tag!!!!!!!!!!!!!!")
 	plaintext := []byte("shared-secret-32-bytes-value!!!!") // 32 bytes
-	expectedAAD := decapsAADContext(kemUUID, api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256)
+	expectedAAD := decapsAADContext(kemUUID, keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256)
 
 	ds := &mockKeyProtectionService{sealEnc: sealEnc, sealedCT: sealedCT}
 	op := &mockWorkloadService{plaintext: plaintext}
 	srv := newDecapsTestServer(t, kemUUID, bindingUUID, ds, op)
 
-	body := decapsRequestBody(kemUUID, api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256, encKey)
+	body := decapsRequestBody(kemUUID, keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256, encKey)
 	req := httptest.NewRequest(http.MethodPost, "/v1/keys:decap", strings.NewReader(body))
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
@@ -1164,8 +1164,8 @@ func TestHandleDecapsSuccess(t *testing.T) {
 	if err := protojson.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	if resp.SharedSecret.Algorithm != api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256 {
-		t.Fatalf("expected shared_secret.algorithm=%d, got %d", api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256, resp.SharedSecret.Algorithm)
+	if resp.SharedSecret.Algorithm != keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256 {
+		t.Fatalf("expected shared_secret.algorithm=%d, got %d", keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256, resp.SharedSecret.Algorithm)
 	}
 
 	decoded, err := base64.StdEncoding.DecodeString(resp.SharedSecret.Secret)
@@ -1229,7 +1229,7 @@ func TestHandleDecapsBadRequestBody(t *testing.T) {
 func TestHandleDecapsInvalidKEMUUID(t *testing.T) {
 	srv := newTestServer(t, &mockKeyProtectionService{}, &mockWorkloadService{})
 
-	body := `{"key_handle":{"handle":"not-a-uuid"},"ciphertext":{"algorithm":"DHKEM_X25519_HKDF_SHA256","ciphertext":"AAAA"}}`
+	body := `{"key_handle":{"handle":"not-a-uuid"},"ciphertext":{"algorithm":"KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256","ciphertext":"AAAA"}}`
 	req := httptest.NewRequest(http.MethodPost, "/v1/keys:decap", strings.NewReader(body))
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
@@ -1244,7 +1244,7 @@ func TestHandleDecapsKEMKeyNotFound(t *testing.T) {
 	srv := newTestServer(t, &mockKeyProtectionService{}, &mockWorkloadService{})
 	// Don't populate kemToBindingMap.
 
-	body := decapsRequestBody(kemUUID, api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256, []byte("enc-key"))
+	body := decapsRequestBody(kemUUID, keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256, []byte("enc-key"))
 	req := httptest.NewRequest(http.MethodPost, "/v1/keys:decap", strings.NewReader(body))
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
@@ -1261,7 +1261,7 @@ func TestHandleDecapsDecapSealError(t *testing.T) {
 	ds := &mockKeyProtectionService{err: fmt.Errorf("decap FFI error")}
 	srv := newDecapsTestServer(t, kemUUID, bindingUUID, ds, &mockWorkloadService{})
 
-	body := decapsRequestBody(kemUUID, api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256, []byte("enc-key"))
+	body := decapsRequestBody(kemUUID, keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256, []byte("enc-key"))
 	req := httptest.NewRequest(http.MethodPost, "/v1/keys:decap", strings.NewReader(body))
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
@@ -1279,7 +1279,7 @@ func TestHandleDecapsOpenError(t *testing.T) {
 	op := &mockWorkloadService{err: fmt.Errorf("open FFI error")}
 	srv := newDecapsTestServer(t, kemUUID, bindingUUID, ds, op)
 
-	body := decapsRequestBody(kemUUID, api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256, []byte("enc-key"))
+	body := decapsRequestBody(kemUUID, keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256, []byte("enc-key"))
 	req := httptest.NewRequest(http.MethodPost, "/v1/keys:decap", strings.NewReader(body))
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
@@ -1294,7 +1294,7 @@ func TestHandleDecapsUnsupportedAlgorithm(t *testing.T) {
 	bindingUUID := uuid.New()
 	srv := newDecapsTestServer(t, kemUUID, bindingUUID, &mockKeyProtectionService{}, &mockWorkloadService{})
 
-	body := decapsRequestBody(kemUUID, api.KemAlgorithm(999), []byte("enc-key"))
+	body := decapsRequestBody(kemUUID, keymanager.KemAlgorithm(999), []byte("enc-key"))
 	req := httptest.NewRequest(http.MethodPost, "/v1/keys:decap", strings.NewReader(body))
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)

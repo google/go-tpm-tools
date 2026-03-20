@@ -132,7 +132,7 @@ def generate_key():
       "algorithm": {
           "type": "kem",
           "params": {
-              "kem_id": "DHKEM_X25519_HKDF_SHA256"
+              "kem_id": "KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256"
           }
       },
       "lifespan": 3600,
@@ -187,7 +187,7 @@ def decap_key(key_handle, enc_bytes):
   payload = {
       "key_handle": key_handle,
       "ciphertext": {
-          "algorithm": "DHKEM_X25519_HKDF_SHA256",
+          "algorithm": "KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256",
           "ciphertext": enc_b64,
       },
   }

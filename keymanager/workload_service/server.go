@@ -241,7 +241,7 @@ func (s *Server) LookupBindingUUID(kemUUID uuid.UUID) (uuid.UUID, bool) {
 	return id, ok
 }
 
-func decapsAADContext(kemUUID uuid.UUID, algorithm api.KemAlgorithm) []byte {
+func decapsAADContext(kemUUID uuid.UUID, algorithm keymanager.KemAlgorithm) []byte {
 	// Bind the KPS->WSD transport ciphertext to this decapsulation context.
 	// Note: The AAD context string retains `decaps` as it is part of the internal binding protocol
 	// and changing it might affect backward compatibility if keys were already persisted (though lifespan is short).
@@ -434,12 +434,9 @@ func (s *Server) handleEnumerateKeys(w http.ResponseWriter, _ *http.Request) {
 
 	keyInfos := make([]*api.KeyInfo, 0, len(keys))
 	for _, key := range keys {
-		kemAlgo := api.KemAlgorithm_KEM_ALGORITHM_UNSPECIFIED
+		var kemAlgo keymanager.KemAlgorithm
 		if key.Algorithm != nil {
-			switch key.Algorithm.Kem {
-			case keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256:
-				kemAlgo = api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256
-			}
+			kemAlgo = key.Algorithm.Kem
 		}
 
 		keyInfos = append(keyInfos, &api.KeyInfo{

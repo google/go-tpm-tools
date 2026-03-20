@@ -29,7 +29,7 @@ def generate_key():
         "algorithm": {
             "type": "kem",
             "params": {
-                "kem_id": "DHKEM_X25519_HKDF_SHA256",
+                "kem_id": "KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256",
                 }
             },
             "lifespan": 3600

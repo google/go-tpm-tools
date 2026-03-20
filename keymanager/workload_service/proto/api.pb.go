@@ -7,6 +7,7 @@
 package api
 
 import (
+	proto "github.com/google/go-tpm-tools/keymanager/km_common/proto"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
@@ -20,52 +21,6 @@ const (
 	// Verify that runtime/protoimpl is sufficiently up-to-date.
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
-
-type KemAlgorithm int32
-
-const (
-	KemAlgorithm_KEM_ALGORITHM_UNSPECIFIED KemAlgorithm = 0
-	KemAlgorithm_DHKEM_X25519_HKDF_SHA256  KemAlgorithm = 1
-)
-
-// Enum value maps for KemAlgorithm.
-var (
-	KemAlgorithm_name = map[int32]string{
-		0: "KEM_ALGORITHM_UNSPECIFIED",
-		1: "DHKEM_X25519_HKDF_SHA256",
-	}
-	KemAlgorithm_value = map[string]int32{
-		"KEM_ALGORITHM_UNSPECIFIED": 0,
-		"DHKEM_X25519_HKDF_SHA256":  1,
-	}
-)
-
-func (x KemAlgorithm) Enum() *KemAlgorithm {
-	p := new(KemAlgorithm)
-	*p = x
-	return p
-}
-
-func (x KemAlgorithm) String() string {
-	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
-}
-
-func (KemAlgorithm) Descriptor() protoreflect.EnumDescriptor {
-	return file_keymanager_workload_service_proto_api_proto_enumTypes[0].Descriptor()
-}
-
-func (KemAlgorithm) Type() protoreflect.EnumType {
-	return &file_keymanager_workload_service_proto_api_proto_enumTypes[0]
-}
-
-func (x KemAlgorithm) Number() protoreflect.EnumNumber {
-	return protoreflect.EnumNumber(x)
-}
-
-// Deprecated: Use KemAlgorithm.Descriptor instead.
-func (KemAlgorithm) EnumDescriptor() ([]byte, []int) {
-	return file_keymanager_workload_service_proto_api_proto_rawDescGZIP(), []int{0}
-}
 
 type KeyHandle struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -158,13 +113,13 @@ func (x *AlgorithmParams) GetParams() isAlgorithmParams_Params {
 	return nil
 }
 
-func (x *AlgorithmParams) GetKemId() KemAlgorithm {
+func (x *AlgorithmParams) GetKemId() proto.KemAlgorithm {
 	if x != nil {
 		if x, ok := x.Params.(*AlgorithmParams_KemId); ok {
 			return x.KemId
 		}
 	}
-	return KemAlgorithm_KEM_ALGORITHM_UNSPECIFIED
+	return proto.KemAlgorithm(0)
 }
 
 type isAlgorithmParams_Params interface {
@@ -172,7 +127,7 @@ type isAlgorithmParams_Params interface {
 }
 
 type AlgorithmParams_KemId struct {
-	KemId KemAlgorithm `protobuf:"varint,1,opt,name=kem_id,json=kemId,proto3,enum=keymanager.workload_service.KemAlgorithm,oneof"`
+	KemId proto.KemAlgorithm `protobuf:"varint,1,opt,name=kem_id,json=kemId,proto3,enum=keymanager.KemAlgorithm,oneof"`
 }
 
 func (*AlgorithmParams_KemId) isAlgorithmParams_Params() {}
@@ -603,7 +558,7 @@ func (x *EnumerateKeysResponse) GetKeyInfos() []*KeyInfo {
 
 type KemCiphertext struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Algorithm     KemAlgorithm           `protobuf:"varint,1,opt,name=algorithm,proto3,enum=keymanager.workload_service.KemAlgorithm" json:"algorithm,omitempty"`
+	Algorithm     proto.KemAlgorithm     `protobuf:"varint,1,opt,name=algorithm,proto3,enum=keymanager.KemAlgorithm" json:"algorithm,omitempty"`
 	Ciphertext    string                 `protobuf:"bytes,2,opt,name=ciphertext,proto3" json:"ciphertext,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -639,11 +594,11 @@ func (*KemCiphertext) Descriptor() ([]byte, []int) {
 	return file_keymanager_workload_service_proto_api_proto_rawDescGZIP(), []int{10}
 }
 
-func (x *KemCiphertext) GetAlgorithm() KemAlgorithm {
+func (x *KemCiphertext) GetAlgorithm() proto.KemAlgorithm {
 	if x != nil {
 		return x.Algorithm
 	}
-	return KemAlgorithm_KEM_ALGORITHM_UNSPECIFIED
+	return proto.KemAlgorithm(0)
 }
 
 func (x *KemCiphertext) GetCiphertext() string {
@@ -707,7 +662,7 @@ func (x *DecapsRequest) GetCiphertext() *KemCiphertext {
 
 type KemSharedSecret struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Algorithm     KemAlgorithm           `protobuf:"varint,1,opt,name=algorithm,proto3,enum=keymanager.workload_service.KemAlgorithm" json:"algorithm,omitempty"`
+	Algorithm     proto.KemAlgorithm     `protobuf:"varint,1,opt,name=algorithm,proto3,enum=keymanager.KemAlgorithm" json:"algorithm,omitempty"`
 	Secret        string                 `protobuf:"bytes,2,opt,name=secret,proto3" json:"secret,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -743,11 +698,11 @@ func (*KemSharedSecret) Descriptor() ([]byte, []int) {
 	return file_keymanager_workload_service_proto_api_proto_rawDescGZIP(), []int{12}
 }
 
-func (x *KemSharedSecret) GetAlgorithm() KemAlgorithm {
+func (x *KemSharedSecret) GetAlgorithm() proto.KemAlgorithm {
 	if x != nil {
 		return x.Algorithm
 	}
-	return KemAlgorithm_KEM_ALGORITHM_UNSPECIFIED
+	return proto.KemAlgorithm(0)
 }
 
 func (x *KemSharedSecret) GetSecret() string {
@@ -849,11 +804,11 @@ var File_keymanager_workload_service_proto_api_proto protoreflect.FileDescriptor
 
 const file_keymanager_workload_service_proto_api_proto_rawDesc = "" +
 	"\n" +
-	"+keymanager/workload_service/proto/api.proto\x12\x1bkeymanager.workload_service\"#\n" +
+	"+keymanager/workload_service/proto/api.proto\x12\x1bkeymanager.workload_service\x1a+keymanager/km_common/proto/algorithms.proto\"#\n" +
 	"\tKeyHandle\x12\x16\n" +
-	"\x06handle\x18\x01 \x01(\tR\x06handle\"_\n" +
-	"\x0fAlgorithmParams\x12B\n" +
-	"\x06kem_id\x18\x01 \x01(\x0e2).keymanager.workload_service.KemAlgorithmH\x00R\x05kemIdB\b\n" +
+	"\x06handle\x18\x01 \x01(\tR\x06handle\"N\n" +
+	"\x0fAlgorithmParams\x121\n" +
+	"\x06kem_id\x18\x01 \x01(\x0e2\x18.keymanager.KemAlgorithmH\x00R\x05kemIdB\b\n" +
 	"\x06params\"l\n" +
 	"\x10AlgorithmDetails\x12\x12\n" +
 	"\x04type\x18\x01 \x01(\tR\x04type\x12D\n" +
@@ -883,9 +838,9 @@ const file_keymanager_workload_service_proto_api_proto_rawDesc = "" +
 	"\x18key_protection_mechanism\x18\x03 \x01(\tR\x16keyProtectionMechanism\x12'\n" +
 	"\x0fexpiration_time\x18\x04 \x01(\x01R\x0eexpirationTime\"Z\n" +
 	"\x15EnumerateKeysResponse\x12A\n" +
-	"\tkey_infos\x18\x01 \x03(\v2$.keymanager.workload_service.KeyInfoR\bkeyInfos\"x\n" +
-	"\rKemCiphertext\x12G\n" +
-	"\talgorithm\x18\x01 \x01(\x0e2).keymanager.workload_service.KemAlgorithmR\talgorithm\x12\x1e\n" +
+	"\tkey_infos\x18\x01 \x03(\v2$.keymanager.workload_service.KeyInfoR\bkeyInfos\"g\n" +
+	"\rKemCiphertext\x126\n" +
+	"\talgorithm\x18\x01 \x01(\x0e2\x18.keymanager.KemAlgorithmR\talgorithm\x12\x1e\n" +
 	"\n" +
 	"ciphertext\x18\x02 \x01(\tR\n" +
 	"ciphertext\"\xa2\x01\n" +
@@ -894,18 +849,15 @@ const file_keymanager_workload_service_proto_api_proto_rawDesc = "" +
 	"key_handle\x18\x01 \x01(\v2&.keymanager.workload_service.KeyHandleR\tkeyHandle\x12J\n" +
 	"\n" +
 	"ciphertext\x18\x02 \x01(\v2*.keymanager.workload_service.KemCiphertextR\n" +
-	"ciphertext\"r\n" +
-	"\x0fKemSharedSecret\x12G\n" +
-	"\talgorithm\x18\x01 \x01(\x0e2).keymanager.workload_service.KemAlgorithmR\talgorithm\x12\x16\n" +
+	"ciphertext\"a\n" +
+	"\x0fKemSharedSecret\x126\n" +
+	"\talgorithm\x18\x01 \x01(\x0e2\x18.keymanager.KemAlgorithmR\talgorithm\x12\x16\n" +
 	"\x06secret\x18\x02 \x01(\tR\x06secret\"c\n" +
 	"\x0eDecapsResponse\x12Q\n" +
 	"\rshared_secret\x18\x01 \x01(\v2,.keymanager.workload_service.KemSharedSecretR\fsharedSecret\"W\n" +
 	"\x0eDestroyRequest\x12E\n" +
 	"\n" +
-	"key_handle\x18\x01 \x01(\v2&.keymanager.workload_service.KeyHandleR\tkeyHandle*K\n" +
-	"\fKemAlgorithm\x12\x1d\n" +
-	"\x19KEM_ALGORITHM_UNSPECIFIED\x10\x00\x12\x1c\n" +
-	"\x18DHKEM_X25519_HKDF_SHA256\x10\x01BFZDgithub.com/google/go-tpm-tools/keymanager/workload_service/proto;apib\x06proto3"
+	"key_handle\x18\x01 \x01(\v2&.keymanager.workload_service.KeyHandleR\tkeyHandleBFZDgithub.com/google/go-tpm-tools/keymanager/workload_service/proto;apib\x06proto3"
 
 var (
 	file_keymanager_workload_service_proto_api_proto_rawDescOnce sync.Once
@@ -919,44 +871,43 @@ func file_keymanager_workload_service_proto_api_proto_rawDescGZIP() []byte {
 	return file_keymanager_workload_service_proto_api_proto_rawDescData
 }
 
-var file_keymanager_workload_service_proto_api_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
 var file_keymanager_workload_service_proto_api_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
 var file_keymanager_workload_service_proto_api_proto_goTypes = []any{
-	(KemAlgorithm)(0),               // 0: keymanager.workload_service.KemAlgorithm
-	(*KeyHandle)(nil),               // 1: keymanager.workload_service.KeyHandle
-	(*AlgorithmParams)(nil),         // 2: keymanager.workload_service.AlgorithmParams
-	(*AlgorithmDetails)(nil),        // 3: keymanager.workload_service.AlgorithmDetails
-	(*SupportedAlgorithm)(nil),      // 4: keymanager.workload_service.SupportedAlgorithm
-	(*GetCapabilitiesResponse)(nil), // 5: keymanager.workload_service.GetCapabilitiesResponse
-	(*GenerateKeyRequest)(nil),      // 6: keymanager.workload_service.GenerateKeyRequest
-	(*PubKeyInfo)(nil),              // 7: keymanager.workload_service.PubKeyInfo
-	(*GenerateKeyResponse)(nil),     // 8: keymanager.workload_service.GenerateKeyResponse
-	(*KeyInfo)(nil),                 // 9: keymanager.workload_service.KeyInfo
-	(*EnumerateKeysResponse)(nil),   // 10: keymanager.workload_service.EnumerateKeysResponse
-	(*KemCiphertext)(nil),           // 11: keymanager.workload_service.KemCiphertext
-	(*DecapsRequest)(nil),           // 12: keymanager.workload_service.DecapsRequest
-	(*KemSharedSecret)(nil),         // 13: keymanager.workload_service.KemSharedSecret
-	(*DecapsResponse)(nil),          // 14: keymanager.workload_service.DecapsResponse
-	(*DestroyRequest)(nil),          // 15: keymanager.workload_service.DestroyRequest
+	(*KeyHandle)(nil),               // 0: keymanager.workload_service.KeyHandle
+	(*AlgorithmParams)(nil),         // 1: keymanager.workload_service.AlgorithmParams
+	(*AlgorithmDetails)(nil),        // 2: keymanager.workload_service.AlgorithmDetails
+	(*SupportedAlgorithm)(nil),      // 3: keymanager.workload_service.SupportedAlgorithm
+	(*GetCapabilitiesResponse)(nil), // 4: keymanager.workload_service.GetCapabilitiesResponse
+	(*GenerateKeyRequest)(nil),      // 5: keymanager.workload_service.GenerateKeyRequest
+	(*PubKeyInfo)(nil),              // 6: keymanager.workload_service.PubKeyInfo
+	(*GenerateKeyResponse)(nil),     // 7: keymanager.workload_service.GenerateKeyResponse
+	(*KeyInfo)(nil),                 // 8: keymanager.workload_service.KeyInfo
+	(*EnumerateKeysResponse)(nil),   // 9: keymanager.workload_service.EnumerateKeysResponse
+	(*KemCiphertext)(nil),           // 10: keymanager.workload_service.KemCiphertext
+	(*DecapsRequest)(nil),           // 11: keymanager.workload_service.DecapsRequest
+	(*KemSharedSecret)(nil),         // 12: keymanager.workload_service.KemSharedSecret
+	(*DecapsResponse)(nil),          // 13: keymanager.workload_service.DecapsResponse
+	(*DestroyRequest)(nil),          // 14: keymanager.workload_service.DestroyRequest
+	(proto.KemAlgorithm)(0),         // 15: keymanager.KemAlgorithm
 }
 var file_keymanager_workload_service_proto_api_proto_depIdxs = []int32{
-	0,  // 0: keymanager.workload_service.AlgorithmParams.kem_id:type_name -> keymanager.workload_service.KemAlgorithm
-	2,  // 1: keymanager.workload_service.AlgorithmDetails.params:type_name -> keymanager.workload_service.AlgorithmParams
-	3,  // 2: keymanager.workload_service.SupportedAlgorithm.algorithm:type_name -> keymanager.workload_service.AlgorithmDetails
-	4,  // 3: keymanager.workload_service.GetCapabilitiesResponse.supported_algorithms:type_name -> keymanager.workload_service.SupportedAlgorithm
-	3,  // 4: keymanager.workload_service.GenerateKeyRequest.algorithm:type_name -> keymanager.workload_service.AlgorithmDetails
-	3,  // 5: keymanager.workload_service.PubKeyInfo.algorithm:type_name -> keymanager.workload_service.AlgorithmDetails
-	1,  // 6: keymanager.workload_service.GenerateKeyResponse.key_handle:type_name -> keymanager.workload_service.KeyHandle
-	7,  // 7: keymanager.workload_service.GenerateKeyResponse.pub_key:type_name -> keymanager.workload_service.PubKeyInfo
-	1,  // 8: keymanager.workload_service.KeyInfo.key_handle:type_name -> keymanager.workload_service.KeyHandle
-	7,  // 9: keymanager.workload_service.KeyInfo.pub_key:type_name -> keymanager.workload_service.PubKeyInfo
-	9,  // 10: keymanager.workload_service.EnumerateKeysResponse.key_infos:type_name -> keymanager.workload_service.KeyInfo
-	0,  // 11: keymanager.workload_service.KemCiphertext.algorithm:type_name -> keymanager.workload_service.KemAlgorithm
-	1,  // 12: keymanager.workload_service.DecapsRequest.key_handle:type_name -> keymanager.workload_service.KeyHandle
-	11, // 13: keymanager.workload_service.DecapsRequest.ciphertext:type_name -> keymanager.workload_service.KemCiphertext
-	0,  // 14: keymanager.workload_service.KemSharedSecret.algorithm:type_name -> keymanager.workload_service.KemAlgorithm
-	13, // 15: keymanager.workload_service.DecapsResponse.shared_secret:type_name -> keymanager.workload_service.KemSharedSecret
-	1,  // 16: keymanager.workload_service.DestroyRequest.key_handle:type_name -> keymanager.workload_service.KeyHandle
+	15, // 0: keymanager.workload_service.AlgorithmParams.kem_id:type_name -> keymanager.KemAlgorithm
+	1,  // 1: keymanager.workload_service.AlgorithmDetails.params:type_name -> keymanager.workload_service.AlgorithmParams
+	2,  // 2: keymanager.workload_service.SupportedAlgorithm.algorithm:type_name -> keymanager.workload_service.AlgorithmDetails
+	3,  // 3: keymanager.workload_service.GetCapabilitiesResponse.supported_algorithms:type_name -> keymanager.workload_service.SupportedAlgorithm
+	2,  // 4: keymanager.workload_service.GenerateKeyRequest.algorithm:type_name -> keymanager.workload_service.AlgorithmDetails
+	2,  // 5: keymanager.workload_service.PubKeyInfo.algorithm:type_name -> keymanager.workload_service.AlgorithmDetails
+	0,  // 6: keymanager.workload_service.GenerateKeyResponse.key_handle:type_name -> keymanager.workload_service.KeyHandle
+	6,  // 7: keymanager.workload_service.GenerateKeyResponse.pub_key:type_name -> keymanager.workload_service.PubKeyInfo
+	0,  // 8: keymanager.workload_service.KeyInfo.key_handle:type_name -> keymanager.workload_service.KeyHandle
+	6,  // 9: keymanager.workload_service.KeyInfo.pub_key:type_name -> keymanager.workload_service.PubKeyInfo
+	8,  // 10: keymanager.workload_service.EnumerateKeysResponse.key_infos:type_name -> keymanager.workload_service.KeyInfo
+	15, // 11: keymanager.workload_service.KemCiphertext.algorithm:type_name -> keymanager.KemAlgorithm
+	0,  // 12: keymanager.workload_service.DecapsRequest.key_handle:type_name -> keymanager.workload_service.KeyHandle
+	10, // 13: keymanager.workload_service.DecapsRequest.ciphertext:type_name -> keymanager.workload_service.KemCiphertext
+	15, // 14: keymanager.workload_service.KemSharedSecret.algorithm:type_name -> keymanager.KemAlgorithm
+	12, // 15: keymanager.workload_service.DecapsResponse.shared_secret:type_name -> keymanager.workload_service.KemSharedSecret
+	0,  // 16: keymanager.workload_service.DestroyRequest.key_handle:type_name -> keymanager.workload_service.KeyHandle
 	17, // [17:17] is the sub-list for method output_type
 	17, // [17:17] is the sub-list for method input_type
 	17, // [17:17] is the sub-list for extension type_name
@@ -977,14 +928,13 @@ func file_keymanager_workload_service_proto_api_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_keymanager_workload_service_proto_api_proto_rawDesc), len(file_keymanager_workload_service_proto_api_proto_rawDesc)),
-			NumEnums:      1,
+			NumEnums:      0,
 			NumMessages:   15,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
 		GoTypes:           file_keymanager_workload_service_proto_api_proto_goTypes,
 		DependencyIndexes: file_keymanager_workload_service_proto_api_proto_depIdxs,
-		EnumInfos:         file_keymanager_workload_service_proto_api_proto_enumTypes,
 		MessageInfos:      file_keymanager_workload_service_proto_api_proto_msgTypes,
 	}.Build()
 	File_keymanager_workload_service_proto_api_proto = out.File

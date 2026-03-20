@@ -4,10 +4,7 @@ package keymanager.workload_service;
 
 option go_package = "github.com/google/go-tpm-tools/keymanager/workload_service/proto;api";
 
-enum KemAlgorithm {
-  KEM_ALGORITHM_UNSPECIFIED = 0;
-  DHKEM_X25519_HKDF_SHA256 = 1;
-}
+import "keymanager/km_common/proto/algorithms.proto";
 
 message KeyHandle {
   string handle = 1;
@@ -15,7 +12,7 @@ message KeyHandle {
 
 message AlgorithmParams {
   oneof params {
-    KemAlgorithm kem_id = 1;
+    keymanager.KemAlgorithm kem_id = 1;
   }
 }
 
@@ -61,7 +58,7 @@ message EnumerateKeysResponse {
 }
 
 message KemCiphertext {
-  KemAlgorithm algorithm = 1;
+  keymanager.KemAlgorithm algorithm = 1;
   string ciphertext = 2;
 }
 
@@ -71,7 +68,7 @@ message DecapsRequest {
 }
 
 message KemSharedSecret {
-  KemAlgorithm algorithm = 1;
+  keymanager.KemAlgorithm algorithm = 1;
   string secret = 2;
 }
 
