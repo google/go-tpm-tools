@@ -250,7 +250,6 @@ func decapsAADContext(kemUUID uuid.UUID, algorithm api.KemAlgorithm) []byte {
 }
 
 func (s *Server) handleDecaps(w http.ResponseWriter, r *http.Request) {
-
 	var req api.DecapsRequest
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -258,28 +257,28 @@ func (s *Server) handleDecaps(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := protojson.Unmarshal(body, &req); err != nil {
-		http.Error(w, fmt.Sprintf("invalid request body: %v", err), http.StatusBadRequest)
+		writeError(w, fmt.Sprintf("invalid request body: %v", err), http.StatusBadRequest)
 		return
 	}
 
 	if !IsSupportedKemAlgorithm(req.Ciphertext.Algorithm) {
-		http.Error(w, fmt.Sprintf("unsupported ciphertext algorithm: %d. Supported algorithms: %s", req.Ciphertext.Algorithm, SupportedKemAlgorithmsString()), http.StatusBadRequest)
+		writeError(w, fmt.Sprintf("unsupported ciphertext algorithm: %d. Supported algorithms: %s", req.Ciphertext.Algorithm, SupportedKemAlgorithmsString()), http.StatusBadRequest)
 		return
 	}
 
 	kemUUID, err := uuid.Parse(req.KeyHandle.Handle)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("invalid key_handle.handle: %v", err), http.StatusBadRequest)
+		writeError(w, fmt.Sprintf("invalid key_handle.handle: %v", err), http.StatusBadRequest)
 		return
 	}
 
 	encapsulatedKey, err := base64.StdEncoding.DecodeString(req.Ciphertext.Ciphertext)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("invalid ciphertext.ciphertext base64: %v", err), http.StatusBadRequest)
+		writeError(w, fmt.Sprintf("invalid ciphertext.ciphertext base64: %v", err), http.StatusBadRequest)
 		return
 	}
 	if len(encapsulatedKey) == 0 {
-		http.Error(w, "ciphertext.ciphertext must not be empty", http.StatusBadRequest)
+		writeError(w, "ciphertext.ciphertext must not be empty", http.StatusBadRequest)
 		return
 	}
 	aad := decapsAADContext(kemUUID, req.Ciphertext.Algorithm)
@@ -287,21 +286,21 @@ func (s *Server) handleDecaps(w http.ResponseWriter, r *http.Request) {
 	// Look up the binding UUID for this KEM key.
 	bindingUUID, ok := s.LookupBindingUUID(kemUUID)
 	if !ok {
-		http.Error(w, fmt.Sprintf("KEM key handle not found: %s", kemUUID), http.StatusNotFound)
+		writeError(w, fmt.Sprintf("KEM key handle not found: %s", kemUUID), http.StatusNotFound)
 		return
 	}
 
 	// Decapsulate and reseal via KPS.
 	sealEnc, sealedCT, err := s.keyProtectionService.DecapAndSeal(kemUUID, encapsulatedKey, aad)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("failed to decap and seal: %v", err), http.StatusInternalServerError)
+		writeError(w, fmt.Sprintf("failed to decap and seal: %v", err), http.StatusInternalServerError)
 		return
 	}
 
 	// Open the sealed secret using the binding key via WSD KCC.
 	plaintext, err := s.workloadService.Open(bindingUUID, sealEnc, sealedCT, aad)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("failed to open sealed secret: %v", err), http.StatusInternalServerError)
+		writeError(w, fmt.Sprintf("failed to open sealed secret: %v", err), http.StatusInternalServerError)
 		return
 	}
 
@@ -312,9 +311,7 @@ func (s *Server) handleDecaps(w http.ResponseWriter, r *http.Request) {
 			Secret:    base64.StdEncoding.EncodeToString(plaintext),
 		},
 	}
-	w.Header().Set("Content-Type", "application/json")
-	b, _ := protojson.MarshalOptions{EmitUnpopulated: true, UseProtoNames: true}.Marshal(&resp)
-	_, _ = w.Write(b)
+	writeJSON(w, &resp, http.StatusOK)
 }
 
 func (s *Server) handleGenerateKey(w http.ResponseWriter, r *http.Request) {
@@ -472,14 +469,15 @@ func (s *Server) handleEnumerateKeys(w http.ResponseWriter, _ *http.Request) {
 
 // writeJSON writes a JSON response with the given status code.
 func writeJSON(w http.ResponseWriter, v proto.Message, code int) {
+	b, err := protojson.MarshalOptions{EmitUnpopulated: true, UseProtoNames: true}.Marshal(v)
+	if err != nil {
+		writeError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(code)
-	b, err := protojson.MarshalOptions{EmitUnpopulated: true, UseProtoNames: true}.Marshal(v)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
 	if _, err := w.Write(b); err != nil {
 		log.Printf("failed to write JSON response: %v", err)
 	}
