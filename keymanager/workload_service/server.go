@@ -328,11 +328,12 @@ func httpStatusFromError(err error) int {
 		return http.StatusOK
 	}
 
+	if errors.Is(err, keymanager.Status_STATUS_NOT_FOUND) {
+		return http.StatusNotFound
+	}
 	var ffiErr *keymanager.FFIStatus
 	if errors.As(err, &ffiErr) {
 		switch ffiErr.Code {
-		case keymanager.Status_STATUS_NOT_FOUND:
-			return http.StatusNotFound
 		case keymanager.Status_STATUS_INVALID_ARGUMENT,
 			keymanager.Status_STATUS_UNSUPPORTED_ALGORITHM,
 			keymanager.Status_STATUS_INVALID_KEY:
