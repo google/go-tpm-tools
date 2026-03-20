@@ -328,34 +328,22 @@ func httpStatusFromError(err error) int {
 		return http.StatusOK
 	}
 
-	if errors.Is(err, keymanager.Status_STATUS_NOT_FOUND) {
+	switch {
+	case errors.Is(err, keymanager.Status_STATUS_NOT_FOUND):
 		return http.StatusNotFound
+	case errors.Is(err, keymanager.Status_STATUS_INVALID_ARGUMENT),
+		errors.Is(err, keymanager.Status_STATUS_UNSUPPORTED_ALGORITHM),
+		errors.Is(err, keymanager.Status_STATUS_INVALID_KEY):
+		return http.StatusBadRequest
+	case errors.Is(err, keymanager.Status_STATUS_PERMISSION_DENIED):
+		return http.StatusForbidden
+	case errors.Is(err, keymanager.Status_STATUS_UNAUTHENTICATED):
+		return http.StatusUnauthorized
+	case errors.Is(err, keymanager.Status_STATUS_ALREADY_EXISTS):
+		return http.StatusConflict
+	default:
+		return http.StatusInternalServerError
 	}
-	var ffiErr *keymanager.FFIStatus
-	if errors.As(err, &ffiErr) {
-		switch ffiErr.Code {
-		case keymanager.Status_STATUS_INVALID_ARGUMENT,
-			keymanager.Status_STATUS_UNSUPPORTED_ALGORITHM,
-			keymanager.Status_STATUS_INVALID_KEY:
-			return http.StatusBadRequest
-		case keymanager.Status_STATUS_PERMISSION_DENIED:
-			return http.StatusForbidden
-		case keymanager.Status_STATUS_UNAUTHENTICATED:
-			return http.StatusUnauthorized
-		case keymanager.Status_STATUS_ALREADY_EXISTS:
-			return http.StatusConflict
-		case keymanager.Status_STATUS_CRYPTO_ERROR,
-			keymanager.Status_STATUS_ENCRYPTION_FAILURE,
-			keymanager.Status_STATUS_DECRYPTION_FAILURE,
-			keymanager.Status_STATUS_DECAPSULATION_FAILURE,
-			keymanager.Status_STATUS_INTERNAL_ERROR:
-			fallthrough
-		default:
-			return http.StatusInternalServerError
-		}
-	}
-
-	return http.StatusInternalServerError
 }
 
 func decapsAADContext(kemUUID uuid.UUID, algorithm KemAlgorithm) []byte {
