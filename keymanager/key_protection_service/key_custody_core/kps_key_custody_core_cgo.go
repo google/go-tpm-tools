@@ -58,8 +58,8 @@ func GenerateKEMKeypair(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, li
 		(*C.uint8_t)(unsafe.Pointer(&uuidBytes[0])),
 		(*C.uint8_t)(unsafe.Pointer(&pubkeyBuf[0])),
 		pubkeyLen,
-	); rc != C.Error_Success {
-		return uuid.Nil, nil, keymanager.Error(rc).ToError()
+	); rc != C.Status_Success {
+		return uuid.Nil, nil, keymanager.Status(rc).ToStatus()
 	}
 
 	id, err := uuid.FromBytes(uuidBytes[:])
@@ -92,7 +92,7 @@ func EnumerateKEMKeys(limit, offset int) ([]KEMKeyInfo, bool, error) {
 		&hasMore,
 	)
 	if rc < 0 {
-		return nil, false, keymanager.Error(-rc).ToError()
+		return nil, false, keymanager.Status(-rc).ToStatus()
 	}
 
 	count := int(rc)
@@ -127,8 +127,8 @@ func DestroyKEMKey(kemUUID uuid.UUID) error {
 	uuidBytes := kemUUID[:]
 	if rc := C.key_manager_destroy_kem_key(
 		(*C.uint8_t)(unsafe.Pointer(&uuidBytes[0])),
-	); rc != C.Error_Success {
-		return keymanager.Error(rc).ToError()
+	); rc != C.Status_Success {
+		return keymanager.Status(rc).ToStatus()
 	}
 	return nil
 }
@@ -154,8 +154,8 @@ func GetKEMKey(id uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64,
 		&algoLenC,
 		&remainingLifespanSecs,
 	)
-	if rc != C.Error_Success {
-		return nil, nil, nil, 0, keymanager.Error(rc).ToError()
+	if rc != C.Status_Success {
+		return nil, nil, nil, 0, keymanager.Status(rc).ToStatus()
 	}
 
 	kemPubkey := make([]byte, len(kemPubkeyBuf))
@@ -202,8 +202,8 @@ func DecapAndSeal(kemUUID uuid.UUID, encapsulatedKey, aad []byte) ([]byte, []byt
 		outEncKeyLen,
 		(*C.uint8_t)(unsafe.Pointer(&outCT[0])),
 		outCTLen,
-	); rc != C.Error_Success {
-		return nil, nil, keymanager.Error(rc).ToError()
+	); rc != C.Status_Success {
+		return nil, nil, keymanager.Status(rc).ToStatus()
 	}
 
 	sealEnc := make([]byte, outEncKeyLen)

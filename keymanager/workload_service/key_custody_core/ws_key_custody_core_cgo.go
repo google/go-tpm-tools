@@ -49,8 +49,8 @@ func GenerateBindingKeypair(algo *keymanager.HpkeAlgorithm, lifespanSecs uint64)
 		(*C.uint8_t)(unsafe.Pointer(&uuidBytes[0])),
 		(*C.uint8_t)(unsafe.Pointer(&pubkeyBuf[0])),
 		pubkeyLen,
-	); rc != C.Error_Success {
-		return uuid.Nil, nil, keymanager.Error(rc).ToError()
+	); rc != C.Status_Success {
+		return uuid.Nil, nil, keymanager.Status(rc).ToStatus()
 	}
 
 	id, err := uuid.FromBytes(uuidBytes[:])
@@ -69,8 +69,8 @@ func DestroyBindingKey(bindingUUID uuid.UUID) error {
 	rc := C.key_manager_destroy_binding_key(
 		(*C.uint8_t)(unsafe.Pointer(&uuidBytes[0])),
 	)
-	if rc != C.Error_Success {
-		return keymanager.Error(rc).ToError()
+	if rc != C.Status_Success {
+		return keymanager.Status(rc).ToStatus()
 	}
 	return nil
 }
@@ -111,8 +111,8 @@ func Open(bindingUUID uuid.UUID, enc, ciphertext, aad []byte) ([]byte, error) {
 		aadLen,
 		(*C.uint8_t)(unsafe.Pointer(&outPT[0])),
 		outPTLen,
-	); rc != C.Error_Success {
-		return nil, keymanager.Error(rc).ToError()
+	); rc != C.Status_Success {
+		return nil, keymanager.Status(rc).ToStatus()
 	}
 
 	plaintext := make([]byte, outPTLen)
@@ -137,8 +137,8 @@ func GetBindingKey(id uuid.UUID) ([]byte, *keymanager.HpkeAlgorithm, error) {
 		(*C.uint8_t)(unsafe.Pointer(&algoBuf[0])),
 		&algoLenC,
 	)
-	if rc != C.Error_Success {
-		return nil, nil, keymanager.Error(rc).ToError()
+	if rc != C.Status_Success {
+		return nil, nil, keymanager.Status(rc).ToStatus()
 	}
 
 	pubkey := make([]byte, pubkeyLen)

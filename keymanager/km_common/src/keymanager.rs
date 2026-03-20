@@ -92,9 +92,9 @@ impl AeadAlgorithm {
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
-pub enum Error {
+pub enum Status {
     Success = 0,
-    Internal = 1,
+    InternalError = 1,
     InvalidArgument = 2,
     NotFound = 3,
     AlreadyExists = 4,
@@ -107,44 +107,44 @@ pub enum Error {
     EncryptionFailure = 11,
     DecapsulationFailure = 12,
 }
-impl Error {
+impl Status {
     /// String value of the enum field names used in the ProtoBuf definition.
     ///
     /// The values are not transformed in any way and thus are considered stable
     /// (if the ProtoBuf definition does not change) and safe for programmatic use.
     pub fn as_str_name(&self) -> &'static str {
         match self {
-            Self::Success => "ERROR_SUCCESS",
-            Self::Internal => "ERROR_INTERNAL",
-            Self::InvalidArgument => "ERROR_INVALID_ARGUMENT",
-            Self::NotFound => "ERROR_NOT_FOUND",
-            Self::AlreadyExists => "ERROR_ALREADY_EXISTS",
-            Self::PermissionDenied => "ERROR_PERMISSION_DENIED",
-            Self::Unauthenticated => "ERROR_UNAUTHENTICATED",
-            Self::UnsupportedAlgorithm => "ERROR_UNSUPPORTED_ALGORITHM",
-            Self::InvalidKey => "ERROR_INVALID_KEY",
-            Self::CryptoError => "ERROR_CRYPTO_ERROR",
-            Self::DecryptionFailure => "ERROR_DECRYPTION_FAILURE",
-            Self::EncryptionFailure => "ERROR_ENCRYPTION_FAILURE",
-            Self::DecapsulationFailure => "ERROR_DECAPSULATION_FAILURE",
+            Self::Success => "STATUS_SUCCESS",
+            Self::InternalError => "STATUS_INTERNAL_ERROR",
+            Self::InvalidArgument => "STATUS_INVALID_ARGUMENT",
+            Self::NotFound => "STATUS_NOT_FOUND",
+            Self::AlreadyExists => "STATUS_ALREADY_EXISTS",
+            Self::PermissionDenied => "STATUS_PERMISSION_DENIED",
+            Self::Unauthenticated => "STATUS_UNAUTHENTICATED",
+            Self::UnsupportedAlgorithm => "STATUS_UNSUPPORTED_ALGORITHM",
+            Self::InvalidKey => "STATUS_INVALID_KEY",
+            Self::CryptoError => "STATUS_CRYPTO_ERROR",
+            Self::DecryptionFailure => "STATUS_DECRYPTION_FAILURE",
+            Self::EncryptionFailure => "STATUS_ENCRYPTION_FAILURE",
+            Self::DecapsulationFailure => "STATUS_DECAPSULATION_FAILURE",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
     pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
         match value {
-            "ERROR_SUCCESS" => Some(Self::Success),
-            "ERROR_INTERNAL" => Some(Self::Internal),
-            "ERROR_INVALID_ARGUMENT" => Some(Self::InvalidArgument),
-            "ERROR_NOT_FOUND" => Some(Self::NotFound),
-            "ERROR_ALREADY_EXISTS" => Some(Self::AlreadyExists),
-            "ERROR_PERMISSION_DENIED" => Some(Self::PermissionDenied),
-            "ERROR_UNAUTHENTICATED" => Some(Self::Unauthenticated),
-            "ERROR_UNSUPPORTED_ALGORITHM" => Some(Self::UnsupportedAlgorithm),
-            "ERROR_INVALID_KEY" => Some(Self::InvalidKey),
-            "ERROR_CRYPTO_ERROR" => Some(Self::CryptoError),
-            "ERROR_DECRYPTION_FAILURE" => Some(Self::DecryptionFailure),
-            "ERROR_ENCRYPTION_FAILURE" => Some(Self::EncryptionFailure),
-            "ERROR_DECAPSULATION_FAILURE" => Some(Self::DecapsulationFailure),
+            "STATUS_SUCCESS" => Some(Self::Success),
+            "STATUS_INTERNAL_ERROR" => Some(Self::InternalError),
+            "STATUS_INVALID_ARGUMENT" => Some(Self::InvalidArgument),
+            "STATUS_NOT_FOUND" => Some(Self::NotFound),
+            "STATUS_ALREADY_EXISTS" => Some(Self::AlreadyExists),
+            "STATUS_PERMISSION_DENIED" => Some(Self::PermissionDenied),
+            "STATUS_UNAUTHENTICATED" => Some(Self::Unauthenticated),
+            "STATUS_UNSUPPORTED_ALGORITHM" => Some(Self::UnsupportedAlgorithm),
+            "STATUS_INVALID_KEY" => Some(Self::InvalidKey),
+            "STATUS_CRYPTO_ERROR" => Some(Self::CryptoError),
+            "STATUS_DECRYPTION_FAILURE" => Some(Self::DecryptionFailure),
+            "STATUS_ENCRYPTION_FAILURE" => Some(Self::EncryptionFailure),
+            "STATUS_DECAPSULATION_FAILURE" => Some(Self::DecapsulationFailure),
             _ => None,
         }
     }

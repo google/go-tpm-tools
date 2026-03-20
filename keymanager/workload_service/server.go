@@ -328,26 +328,26 @@ func httpStatusFromError(err error) int {
 		return http.StatusOK
 	}
 
-	var ffiErr *keymanager.FFIError
+	var ffiErr *keymanager.FFIStatus
 	if errors.As(err, &ffiErr) {
 		switch ffiErr.Code {
-		case keymanager.Error_ERROR_NOT_FOUND:
+		case keymanager.Status_STATUS_NOT_FOUND:
 			return http.StatusNotFound
-		case keymanager.Error_ERROR_INVALID_ARGUMENT,
-			keymanager.Error_ERROR_UNSUPPORTED_ALGORITHM,
-			keymanager.Error_ERROR_INVALID_KEY:
+		case keymanager.Status_STATUS_INVALID_ARGUMENT,
+			keymanager.Status_STATUS_UNSUPPORTED_ALGORITHM,
+			keymanager.Status_STATUS_INVALID_KEY:
 			return http.StatusBadRequest
-		case keymanager.Error_ERROR_PERMISSION_DENIED:
+		case keymanager.Status_STATUS_PERMISSION_DENIED:
 			return http.StatusForbidden
-		case keymanager.Error_ERROR_UNAUTHENTICATED:
+		case keymanager.Status_STATUS_UNAUTHENTICATED:
 			return http.StatusUnauthorized
-		case keymanager.Error_ERROR_ALREADY_EXISTS:
+		case keymanager.Status_STATUS_ALREADY_EXISTS:
 			return http.StatusConflict
-		case keymanager.Error_ERROR_CRYPTO_ERROR,
-			keymanager.Error_ERROR_ENCRYPTION_FAILURE,
-			keymanager.Error_ERROR_DECRYPTION_FAILURE,
-			keymanager.Error_ERROR_DECAPSULATION_FAILURE,
-			keymanager.Error_ERROR_INTERNAL:
+		case keymanager.Status_STATUS_CRYPTO_ERROR,
+			keymanager.Status_STATUS_ENCRYPTION_FAILURE,
+			keymanager.Status_STATUS_DECRYPTION_FAILURE,
+			keymanager.Status_STATUS_DECAPSULATION_FAILURE,
+			keymanager.Status_STATUS_INTERNAL_ERROR:
 			fallthrough
 		default:
 			return http.StatusInternalServerError

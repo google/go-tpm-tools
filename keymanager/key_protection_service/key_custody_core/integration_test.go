@@ -106,7 +106,7 @@ func TestIntegrationGetKEMKeyNotFound(t *testing.T) {
 		t.Fatal("expected error for non-existent UUID")
 	}
 
-	expectedErrMsg := "FFI error: ERROR_NOT_FOUND"
+	expectedErrMsg := "FFI status: STATUS_NOT_FOUND"
 	if !strings.Contains(err.Error(), expectedErrMsg) {
 		t.Fatalf("expected error containing %q, got: %v", expectedErrMsg, err)
 	}
