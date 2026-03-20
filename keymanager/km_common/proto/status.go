@@ -14,8 +14,11 @@ func (e *FFIStatus) Error() string {
 	return fmt.Sprintf("FFI status: %s", e.Code.String())
 }
 
-// Is allows users to check errors.Is(err, Status_CODE.ToStatus()) or errors.Is(err, &FFIStatus{Code: Status_CODE}).
+// Is allows users to check errors.Is(err, Status_CODE) or errors.Is(err, &FFIStatus{Code: Status_CODE}).
 func (e *FFIStatus) Is(target error) bool {
+	if t, ok := target.(Status); ok {
+		return e.Code == t
+	}
 	if t, ok := target.(*FFIStatus); ok {
 		return e.Code == t.Code
 	}
@@ -24,6 +27,11 @@ func (e *FFIStatus) Is(target error) bool {
 
 // Status returns the string representation of the Status.
 func (e Status) Status() string {
+	return e.String()
+}
+
+// Error allows Status to be used as a Go error for comparison in errors.Is.
+func (e Status) Error() string {
 	return e.String()
 }
 
