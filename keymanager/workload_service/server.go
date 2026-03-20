@@ -382,7 +382,7 @@ func (s *Server) generateKEMKey(w http.ResponseWriter, req *api.GenerateKeyReque
 		KeyHandle: &api.KeyHandle{Handle: kemUUID.String()},
 		PubKey: &api.PubKeyInfo{
 			Algorithm: &api.AlgorithmDetails{
-				Type: "kem",
+				Type: req.Algorithm.Type,
 				Params: &api.AlgorithmParams{
 					Params: &api.AlgorithmParams_KemId{
 						KemId: req.Algorithm.GetParams().GetKemId(),
