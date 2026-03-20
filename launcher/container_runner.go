@@ -31,6 +31,7 @@ import (
 	"github.com/google/go-tpm-tools/client"
 	workloadservice "github.com/google/go-tpm-tools/keymanager/workload_service"
 	"github.com/google/go-tpm-tools/launcher/agent"
+	"github.com/google/go-tpm-tools/launcher/device"
 	"github.com/google/go-tpm-tools/launcher/internal/gpu"
 	"github.com/google/go-tpm-tools/launcher/internal/healthmonitoring/nodeproblemdetector"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
@@ -198,7 +199,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	}
 	specOpts = append(specOpts, cgroupOpts...)
 
-	var deviceROTs []agent.DeviceROT
+	var deviceROTs []device.ROT
 	nvidiaAttester := gpu.NewNvidiaAttester(launchSpec.InstallGpuDriver)
 	if launchSpec.InstallGpuDriver {
 		gpuMounts := []specs.Mount{
