@@ -24,52 +24,55 @@ const (
 type Status int32
 
 const (
-	Status_STATUS_SUCCESS               Status = 0
-	Status_STATUS_INTERNAL_ERROR        Status = 1
-	Status_STATUS_INVALID_ARGUMENT      Status = 2
-	Status_STATUS_NOT_FOUND             Status = 3
-	Status_STATUS_ALREADY_EXISTS        Status = 4
-	Status_STATUS_PERMISSION_DENIED     Status = 5
-	Status_STATUS_UNAUTHENTICATED       Status = 6
-	Status_STATUS_UNSUPPORTED_ALGORITHM Status = 7
-	Status_STATUS_INVALID_KEY           Status = 8
-	Status_STATUS_CRYPTO_ERROR          Status = 9
-	Status_STATUS_DECRYPTION_FAILURE    Status = 10
-	Status_STATUS_ENCRYPTION_FAILURE    Status = 11
-	Status_STATUS_DECAPSULATION_FAILURE Status = 12
+	Status_STATUS_UNSPECIFIED           Status = 0
+	Status_STATUS_SUCCESS               Status = 1
+	Status_STATUS_INTERNAL_ERROR        Status = 2
+	Status_STATUS_INVALID_ARGUMENT      Status = 3
+	Status_STATUS_NOT_FOUND             Status = 4
+	Status_STATUS_ALREADY_EXISTS        Status = 5
+	Status_STATUS_PERMISSION_DENIED     Status = 6
+	Status_STATUS_UNAUTHENTICATED       Status = 7
+	Status_STATUS_UNSUPPORTED_ALGORITHM Status = 8
+	Status_STATUS_INVALID_KEY           Status = 9
+	Status_STATUS_CRYPTO_ERROR          Status = 10
+	Status_STATUS_DECRYPTION_FAILURE    Status = 11
+	Status_STATUS_ENCRYPTION_FAILURE    Status = 12
+	Status_STATUS_DECAPSULATION_FAILURE Status = 13
 )
 
 // Enum value maps for Status.
 var (
 	Status_name = map[int32]string{
-		0:  "STATUS_SUCCESS",
-		1:  "STATUS_INTERNAL_ERROR",
-		2:  "STATUS_INVALID_ARGUMENT",
-		3:  "STATUS_NOT_FOUND",
-		4:  "STATUS_ALREADY_EXISTS",
-		5:  "STATUS_PERMISSION_DENIED",
-		6:  "STATUS_UNAUTHENTICATED",
-		7:  "STATUS_UNSUPPORTED_ALGORITHM",
-		8:  "STATUS_INVALID_KEY",
-		9:  "STATUS_CRYPTO_ERROR",
-		10: "STATUS_DECRYPTION_FAILURE",
-		11: "STATUS_ENCRYPTION_FAILURE",
-		12: "STATUS_DECAPSULATION_FAILURE",
+		0:  "STATUS_UNSPECIFIED",
+		1:  "STATUS_SUCCESS",
+		2:  "STATUS_INTERNAL_ERROR",
+		3:  "STATUS_INVALID_ARGUMENT",
+		4:  "STATUS_NOT_FOUND",
+		5:  "STATUS_ALREADY_EXISTS",
+		6:  "STATUS_PERMISSION_DENIED",
+		7:  "STATUS_UNAUTHENTICATED",
+		8:  "STATUS_UNSUPPORTED_ALGORITHM",
+		9:  "STATUS_INVALID_KEY",
+		10: "STATUS_CRYPTO_ERROR",
+		11: "STATUS_DECRYPTION_FAILURE",
+		12: "STATUS_ENCRYPTION_FAILURE",
+		13: "STATUS_DECAPSULATION_FAILURE",
 	}
 	Status_value = map[string]int32{
-		"STATUS_SUCCESS":               0,
-		"STATUS_INTERNAL_ERROR":        1,
-		"STATUS_INVALID_ARGUMENT":      2,
-		"STATUS_NOT_FOUND":             3,
-		"STATUS_ALREADY_EXISTS":        4,
-		"STATUS_PERMISSION_DENIED":     5,
-		"STATUS_UNAUTHENTICATED":       6,
-		"STATUS_UNSUPPORTED_ALGORITHM": 7,
-		"STATUS_INVALID_KEY":           8,
-		"STATUS_CRYPTO_ERROR":          9,
-		"STATUS_DECRYPTION_FAILURE":    10,
-		"STATUS_ENCRYPTION_FAILURE":    11,
-		"STATUS_DECAPSULATION_FAILURE": 12,
+		"STATUS_UNSPECIFIED":           0,
+		"STATUS_SUCCESS":               1,
+		"STATUS_INTERNAL_ERROR":        2,
+		"STATUS_INVALID_ARGUMENT":      3,
+		"STATUS_NOT_FOUND":             4,
+		"STATUS_ALREADY_EXISTS":        5,
+		"STATUS_PERMISSION_DENIED":     6,
+		"STATUS_UNAUTHENTICATED":       7,
+		"STATUS_UNSUPPORTED_ALGORITHM": 8,
+		"STATUS_INVALID_KEY":           9,
+		"STATUS_CRYPTO_ERROR":          10,
+		"STATUS_DECRYPTION_FAILURE":    11,
+		"STATUS_ENCRYPTION_FAILURE":    12,
+		"STATUS_DECAPSULATION_FAILURE": 13,
 	}
 )
 
@@ -105,22 +108,23 @@ var File_keymanager_km_common_proto_status_proto protoreflect.FileDescriptor
 const file_keymanager_km_common_proto_status_proto_rawDesc = "" +
 	"\n" +
 	"'keymanager/km_common/proto/status.proto\x12\n" +
-	"keymanager*\xf2\x02\n" +
-	"\x06Status\x12\x12\n" +
-	"\x0eSTATUS_SUCCESS\x10\x00\x12\x19\n" +
-	"\x15STATUS_INTERNAL_ERROR\x10\x01\x12\x1b\n" +
-	"\x17STATUS_INVALID_ARGUMENT\x10\x02\x12\x14\n" +
-	"\x10STATUS_NOT_FOUND\x10\x03\x12\x19\n" +
-	"\x15STATUS_ALREADY_EXISTS\x10\x04\x12\x1c\n" +
-	"\x18STATUS_PERMISSION_DENIED\x10\x05\x12\x1a\n" +
-	"\x16STATUS_UNAUTHENTICATED\x10\x06\x12 \n" +
-	"\x1cSTATUS_UNSUPPORTED_ALGORITHM\x10\a\x12\x16\n" +
-	"\x12STATUS_INVALID_KEY\x10\b\x12\x17\n" +
-	"\x13STATUS_CRYPTO_ERROR\x10\t\x12\x1d\n" +
-	"\x19STATUS_DECRYPTION_FAILURE\x10\n" +
+	"keymanager*\x8a\x03\n" +
+	"\x06Status\x12\x16\n" +
+	"\x12STATUS_UNSPECIFIED\x10\x00\x12\x12\n" +
+	"\x0eSTATUS_SUCCESS\x10\x01\x12\x19\n" +
+	"\x15STATUS_INTERNAL_ERROR\x10\x02\x12\x1b\n" +
+	"\x17STATUS_INVALID_ARGUMENT\x10\x03\x12\x14\n" +
+	"\x10STATUS_NOT_FOUND\x10\x04\x12\x19\n" +
+	"\x15STATUS_ALREADY_EXISTS\x10\x05\x12\x1c\n" +
+	"\x18STATUS_PERMISSION_DENIED\x10\x06\x12\x1a\n" +
+	"\x16STATUS_UNAUTHENTICATED\x10\a\x12 \n" +
+	"\x1cSTATUS_UNSUPPORTED_ALGORITHM\x10\b\x12\x16\n" +
+	"\x12STATUS_INVALID_KEY\x10\t\x12\x17\n" +
+	"\x13STATUS_CRYPTO_ERROR\x10\n" +
 	"\x12\x1d\n" +
-	"\x19STATUS_ENCRYPTION_FAILURE\x10\v\x12 \n" +
-	"\x1cSTATUS_DECAPSULATION_FAILURE\x10\fBFZDgithub.com/google/go-tpm-tools/keymanager/km_common/proto;keymanagerb\x06proto3"
+	"\x19STATUS_DECRYPTION_FAILURE\x10\v\x12\x1d\n" +
+	"\x19STATUS_ENCRYPTION_FAILURE\x10\f\x12 \n" +
+	"\x1cSTATUS_DECAPSULATION_FAILURE\x10\rBFZDgithub.com/google/go-tpm-tools/keymanager/km_common/proto;keymanagerb\x06proto3"
 
 var (
 	file_keymanager_km_common_proto_status_proto_rawDescOnce sync.Once
