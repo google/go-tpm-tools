@@ -58,7 +58,7 @@ func GenerateKEMKeypair(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, li
 		(*C.uint8_t)(unsafe.Pointer(&uuidBytes[0])),
 		(*C.uint8_t)(unsafe.Pointer(&pubkeyBuf[0])),
 		pubkeyLen,
-	); rc != C.Status_Success {
+	); keymanager.Status(rc) != keymanager.Status_STATUS_SUCCESS {
 		return uuid.Nil, nil, keymanager.Status(rc).ToStatus()
 	}
 
@@ -127,7 +127,7 @@ func DestroyKEMKey(kemUUID uuid.UUID) error {
 	uuidBytes := kemUUID[:]
 	if rc := C.key_manager_destroy_kem_key(
 		(*C.uint8_t)(unsafe.Pointer(&uuidBytes[0])),
-	); rc != C.Status_Success {
+	); keymanager.Status(rc) != keymanager.Status_STATUS_SUCCESS {
 		return keymanager.Status(rc).ToStatus()
 	}
 	return nil
@@ -154,7 +154,7 @@ func GetKEMKey(id uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64,
 		&algoLenC,
 		&remainingLifespanSecs,
 	)
-	if rc != C.Status_Success {
+	if keymanager.Status(rc) != keymanager.Status_STATUS_SUCCESS {
 		return nil, nil, nil, 0, keymanager.Status(rc).ToStatus()
 	}
 
@@ -202,7 +202,7 @@ func DecapAndSeal(kemUUID uuid.UUID, encapsulatedKey, aad []byte) ([]byte, []byt
 		outEncKeyLen,
 		(*C.uint8_t)(unsafe.Pointer(&outCT[0])),
 		outCTLen,
-	); rc != C.Status_Success {
+	); keymanager.Status(rc) != keymanager.Status_STATUS_SUCCESS {
 		return nil, nil, keymanager.Status(rc).ToStatus()
 	}
 
