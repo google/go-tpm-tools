@@ -4,6 +4,8 @@
 // 	protoc        v3.21.12
 // source: keymanager/workload_service/proto/api.proto
 
+// API definitions for the Workload Services Daemon (WSD)
+
 package api
 
 import (
@@ -22,9 +24,11 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// Used to refer to key instances held by the service.
 type KeyHandle struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Handle        string                 `protobuf:"bytes,1,opt,name=handle,proto3" json:"handle,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// A unique identifier (UUID) used to reference this key in subsequent operations.
+	Handle        string `protobuf:"bytes,1,opt,name=handle,proto3" json:"handle,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -66,6 +70,7 @@ func (x *KeyHandle) GetHandle() string {
 	return ""
 }
 
+// Specifies parameters for a particular algorithm type.
 type AlgorithmParams struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Types that are valid to be assigned to Params:
@@ -127,15 +132,19 @@ type isAlgorithmParams_Params interface {
 }
 
 type AlgorithmParams_KemId struct {
+	// KEM algorithm identifier (e.g., DHKEM_X25519_HKDF_SHA256).
 	KemId proto.KemAlgorithm `protobuf:"varint,1,opt,name=kem_id,json=kemId,proto3,enum=keymanager.KemAlgorithm,oneof"`
 }
 
 func (*AlgorithmParams_KemId) isAlgorithmParams_Params() {}
 
+// Description of an algorithm.
 type AlgorithmDetails struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Type          string                 `protobuf:"bytes,1,opt,name=type,proto3" json:"type,omitempty"`
-	Params        *AlgorithmParams       `protobuf:"bytes,2,opt,name=params,proto3" json:"params,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The type of algorithm, e.g., "kem".
+	Type string `protobuf:"bytes,1,opt,name=type,proto3" json:"type,omitempty"`
+	// Specific parameters associated with the algorithm type.
+	Params        *AlgorithmParams `protobuf:"bytes,2,opt,name=params,proto3" json:"params,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -184,9 +193,11 @@ func (x *AlgorithmDetails) GetParams() *AlgorithmParams {
 	return nil
 }
 
+// Represents a cryptographic algorithm supported by the service.
 type SupportedAlgorithm struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Algorithm     *AlgorithmDetails      `protobuf:"bytes,1,opt,name=algorithm,proto3" json:"algorithm,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// algorithm details.
+	Algorithm     *AlgorithmDetails `protobuf:"bytes,1,opt,name=algorithm,proto3" json:"algorithm,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -228,9 +239,11 @@ func (x *SupportedAlgorithm) GetAlgorithm() *AlgorithmDetails {
 	return nil
 }
 
+// Response containing the list of supported cryptographic algorithms for operations like HPKE/KEM.
 type GetCapabilitiesResponse struct {
-	state               protoimpl.MessageState `protogen:"open.v1"`
-	SupportedAlgorithms []*SupportedAlgorithm  `protobuf:"bytes,1,rep,name=supported_algorithms,json=supportedAlgorithms,proto3" json:"supported_algorithms,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// List of supported algorithms (e.g., KEM algorithms).
+	SupportedAlgorithms []*SupportedAlgorithm `protobuf:"bytes,1,rep,name=supported_algorithms,json=supportedAlgorithms,proto3" json:"supported_algorithms,omitempty"`
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
 }
@@ -272,10 +285,13 @@ func (x *GetCapabilitiesResponse) GetSupportedAlgorithms() []*SupportedAlgorithm
 	return nil
 }
 
+// Request to orchestrate the creation of a new keypair (e.g., a KEM keypair). (POST /v1/keys:generate_key)
 type GenerateKeyRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Algorithm     *AlgorithmDetails      `protobuf:"bytes,1,opt,name=algorithm,proto3" json:"algorithm,omitempty"`
-	Lifespan      uint64                 `protobuf:"varint,2,opt,name=lifespan,proto3" json:"lifespan,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The specific algorithm to use for the new keypair.
+	Algorithm *AlgorithmDetails `protobuf:"bytes,1,opt,name=algorithm,proto3" json:"algorithm,omitempty"`
+	// The requested duration (in seconds) before the key is automatically destroyed.
+	Lifespan      uint64 `protobuf:"varint,2,opt,name=lifespan,proto3" json:"lifespan,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -324,10 +340,13 @@ func (x *GenerateKeyRequest) GetLifespan() uint64 {
 	return 0
 }
 
+// Information about a public key.
 type PubKeyInfo struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Algorithm     *AlgorithmDetails      `protobuf:"bytes,1,opt,name=algorithm,proto3" json:"algorithm,omitempty"`
-	PublicKey     string                 `protobuf:"bytes,2,opt,name=public_key,json=publicKey,proto3" json:"public_key,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The algorithm associated with this public key.
+	Algorithm *AlgorithmDetails `protobuf:"bytes,1,opt,name=algorithm,proto3" json:"algorithm,omitempty"`
+	// The base64-encoded bytes of the public key.
+	PublicKey     string `protobuf:"bytes,2,opt,name=public_key,json=publicKey,proto3" json:"public_key,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -376,14 +395,21 @@ func (x *PubKeyInfo) GetPublicKey() string {
 	return ""
 }
 
+// Response from generating a new key.
 type GenerateKeyResponse struct {
-	state                  protoimpl.MessageState `protogen:"open.v1"`
-	KeyHandle              *KeyHandle             `protobuf:"bytes,1,opt,name=key_handle,json=keyHandle,proto3" json:"key_handle,omitempty"`
-	PubKey                 *PubKeyInfo            `protobuf:"bytes,2,opt,name=pub_key,json=pubKey,proto3" json:"pub_key,omitempty"`
-	KeyProtectionMechanism string                 `protobuf:"bytes,3,opt,name=key_protection_mechanism,json=keyProtectionMechanism,proto3" json:"key_protection_mechanism,omitempty"`
-	ExpirationTime         float64                `protobuf:"fixed64,4,opt,name=expiration_time,json=expirationTime,proto3" json:"expiration_time,omitempty"`
-	unknownFields          protoimpl.UnknownFields
-	sizeCache              protoimpl.SizeCache
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// A unique handle (UUID) used to reference the generated key.
+	KeyHandle *KeyHandle `protobuf:"bytes,1,opt,name=key_handle,json=keyHandle,proto3" json:"key_handle,omitempty"`
+	// The public key information for the generated keypair.
+	PubKey *PubKeyInfo `protobuf:"bytes,2,opt,name=pub_key,json=pubKey,proto3" json:"pub_key,omitempty"`
+	// The isolation level/protection mechanism for the key
+	// (e.g., "KEY_PROTECTION_VM_EMULATED", "KEY_PROTECTION_VM", or "DEFAULT").
+	KeyProtectionMechanism string `protobuf:"bytes,3,opt,name=key_protection_mechanism,json=keyProtectionMechanism,proto3" json:"key_protection_mechanism,omitempty"`
+	// A Unix timestamp indicating when the key is scheduled for automatic deletion.
+	// Note: relies on network clock time and is subject to hypervisor clock drift/skew.
+	ExpirationTime float64 `protobuf:"fixed64,4,opt,name=expiration_time,json=expirationTime,proto3" json:"expiration_time,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *GenerateKeyResponse) Reset() {
@@ -444,14 +470,19 @@ func (x *GenerateKeyResponse) GetExpirationTime() float64 {
 	return 0
 }
 
+// Detailed information about an active key.
 type KeyInfo struct {
-	state                  protoimpl.MessageState `protogen:"open.v1"`
-	KeyHandle              *KeyHandle             `protobuf:"bytes,1,opt,name=key_handle,json=keyHandle,proto3" json:"key_handle,omitempty"`
-	PubKey                 *PubKeyInfo            `protobuf:"bytes,2,opt,name=pub_key,json=pubKey,proto3" json:"pub_key,omitempty"`
-	KeyProtectionMechanism string                 `protobuf:"bytes,3,opt,name=key_protection_mechanism,json=keyProtectionMechanism,proto3" json:"key_protection_mechanism,omitempty"`
-	ExpirationTime         float64                `protobuf:"fixed64,4,opt,name=expiration_time,json=expirationTime,proto3" json:"expiration_time,omitempty"`
-	unknownFields          protoimpl.UnknownFields
-	sizeCache              protoimpl.SizeCache
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// A unique handle (UUID) used to reference the keypair.
+	KeyHandle *KeyHandle `protobuf:"bytes,1,opt,name=key_handle,json=keyHandle,proto3" json:"key_handle,omitempty"`
+	// The public key information for the keypair.
+	PubKey *PubKeyInfo `protobuf:"bytes,2,opt,name=pub_key,json=pubKey,proto3" json:"pub_key,omitempty"`
+	// The isolation level/protection mechanism for the key.
+	KeyProtectionMechanism string `protobuf:"bytes,3,opt,name=key_protection_mechanism,json=keyProtectionMechanism,proto3" json:"key_protection_mechanism,omitempty"`
+	// A Unix timestamp indicating when the key will be automatically deleted.
+	ExpirationTime float64 `protobuf:"fixed64,4,opt,name=expiration_time,json=expirationTime,proto3" json:"expiration_time,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *KeyInfo) Reset() {
@@ -512,9 +543,11 @@ func (x *KeyInfo) GetExpirationTime() float64 {
 	return 0
 }
 
+// Response containing a list of all active keys managed by the daemon.
 type EnumerateKeysResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	KeyInfos      []*KeyInfo             `protobuf:"bytes,1,rep,name=key_infos,json=keyInfos,proto3" json:"key_infos,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// A list of active keys along with their metadata.
+	KeyInfos      []*KeyInfo `protobuf:"bytes,1,rep,name=key_infos,json=keyInfos,proto3" json:"key_infos,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -556,10 +589,13 @@ func (x *EnumerateKeysResponse) GetKeyInfos() []*KeyInfo {
 	return nil
 }
 
+// An encapsulated shared secret.
 type KemCiphertext struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Algorithm     proto.KemAlgorithm     `protobuf:"varint,1,opt,name=algorithm,proto3,enum=keymanager.KemAlgorithm" json:"algorithm,omitempty"`
-	Ciphertext    string                 `protobuf:"bytes,2,opt,name=ciphertext,proto3" json:"ciphertext,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// KEM algorithm used to generate this ciphertext.
+	Algorithm proto.KemAlgorithm `protobuf:"varint,1,opt,name=algorithm,proto3,enum=keymanager.KemAlgorithm" json:"algorithm,omitempty"`
+	// The base64-encoded encapsulated shared secret (ciphertext).
+	Ciphertext    string `protobuf:"bytes,2,opt,name=ciphertext,proto3" json:"ciphertext,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -608,10 +644,13 @@ func (x *KemCiphertext) GetCiphertext() string {
 	return ""
 }
 
+// Request to perform a decapsulation operation using a specific key handle. (POST /v1/keys:decap)
 type DecapsRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	KeyHandle     *KeyHandle             `protobuf:"bytes,1,opt,name=key_handle,json=keyHandle,proto3" json:"key_handle,omitempty"`
-	Ciphertext    *KemCiphertext         `protobuf:"bytes,2,opt,name=ciphertext,proto3" json:"ciphertext,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The handle (UUID) of the KEM key instance to use for decapsulation.
+	KeyHandle *KeyHandle `protobuf:"bytes,1,opt,name=key_handle,json=keyHandle,proto3" json:"key_handle,omitempty"`
+	// The encapsulated shared secret received from the client/proxy.
+	Ciphertext    *KemCiphertext `protobuf:"bytes,2,opt,name=ciphertext,proto3" json:"ciphertext,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -660,10 +699,13 @@ func (x *DecapsRequest) GetCiphertext() *KemCiphertext {
 	return nil
 }
 
+// A plaintext shared secret derived via decapsulation.
 type KemSharedSecret struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Algorithm     proto.KemAlgorithm     `protobuf:"varint,1,opt,name=algorithm,proto3,enum=keymanager.KemAlgorithm" json:"algorithm,omitempty"`
-	Secret        string                 `protobuf:"bytes,2,opt,name=secret,proto3" json:"secret,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The KEM algorithm used to derive this secret.
+	Algorithm proto.KemAlgorithm `protobuf:"varint,1,opt,name=algorithm,proto3,enum=keymanager.KemAlgorithm" json:"algorithm,omitempty"`
+	// The base64-encoded plaintext shared secret.
+	Secret        string `protobuf:"bytes,2,opt,name=secret,proto3" json:"secret,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -712,9 +754,11 @@ func (x *KemSharedSecret) GetSecret() string {
 	return ""
 }
 
+// Response from a decapsulation operation.
 type DecapsResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	SharedSecret  *KemSharedSecret       `protobuf:"bytes,1,opt,name=shared_secret,json=sharedSecret,proto3" json:"shared_secret,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The plaintext shared secret derived from the ciphertext.
+	SharedSecret  *KemSharedSecret `protobuf:"bytes,1,opt,name=shared_secret,json=sharedSecret,proto3" json:"shared_secret,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -756,9 +800,11 @@ func (x *DecapsResponse) GetSharedSecret() *KemSharedSecret {
 	return nil
 }
 
+// Request to manually trigger the destruction of a keypair before its lifespan expires. (POST /v1/keys:destroy)
 type DestroyRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	KeyHandle     *KeyHandle             `protobuf:"bytes,1,opt,name=key_handle,json=keyHandle,proto3" json:"key_handle,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The handle (UUID) of the keypair to destroy.
+	KeyHandle     *KeyHandle `protobuf:"bytes,1,opt,name=key_handle,json=keyHandle,proto3" json:"key_handle,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
