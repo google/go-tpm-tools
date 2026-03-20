@@ -348,14 +348,14 @@ func (s *Server) handleGenerateKey(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) generateKEMKey(w http.ResponseWriter, req *api.GenerateKeyRequest) {
 	// Validate algorithm.
-	if !IsSupportedKemAlgorithm(req.Algorithm.Params.KemId) {
-		writeError(w, fmt.Sprintf("unsupported algorithm: %s. Supported algorithms: %s", req.Algorithm.Params.KemId, SupportedKemAlgorithmsString()), http.StatusBadRequest)
+	if !IsSupportedKemAlgorithm(req.Algorithm.GetParams().GetKemId()) {
+		writeError(w, fmt.Sprintf("unsupported algorithm: %s. Supported algorithms: %s", req.Algorithm.GetParams().GetKemId(), SupportedKemAlgorithmsString()), http.StatusBadRequest)
 		return
 	}
 
 	// Construct the full HPKE algorithm suite based on the requested KEM.
 	// We currently only support one suite.
-	algo, err := KemToHpkeAlgorithm(req.Algorithm.Params.KemId)
+	algo, err := KemToHpkeAlgorithm(req.Algorithm.GetParams().GetKemId())
 	if err != nil {
 		writeError(w, err.Error(), http.StatusBadRequest)
 		return
@@ -387,7 +387,9 @@ func (s *Server) generateKEMKey(w http.ResponseWriter, req *api.GenerateKeyReque
 			Algorithm: &api.AlgorithmDetails{
 				Type: "kem",
 				Params: &api.AlgorithmParams{
-					KemId: req.Algorithm.Params.KemId,
+					Params: &api.AlgorithmParams_KemId{
+						KemId: req.Algorithm.GetParams().GetKemId(),
+					},
 				},
 			},
 			PublicKey: base64.StdEncoding.EncodeToString(kemPubKey),
@@ -406,7 +408,9 @@ func (s *Server) handleGetCapabilities(w http.ResponseWriter, _ *http.Request) {
 			Algorithm: &api.AlgorithmDetails{
 				Type: "kem",
 				Params: &api.AlgorithmParams{
-					KemId: algo,
+					Params: &api.AlgorithmParams_KemId{
+						KemId: algo,
+					},
 				},
 			},
 		})
@@ -442,7 +446,9 @@ func (s *Server) handleEnumerateKeys(w http.ResponseWriter, _ *http.Request) {
 				Algorithm: &api.AlgorithmDetails{
 					Type: "kem",
 					Params: &api.AlgorithmParams{
-						KemId: kemAlgo,
+						Params: &api.AlgorithmParams_KemId{
+							KemId: kemAlgo,
+						},
 					},
 				},
 				PublicKey: base64.StdEncoding.EncodeToString(key.KEMPubKey),

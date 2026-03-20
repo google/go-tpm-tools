@@ -48,4 +48,3 @@ func KemToHpkeAlgorithm(k api.KemAlgorithm) (*keymanager.HpkeAlgorithm, error) {
 		return nil, fmt.Errorf("unsupported algorithm: %s", k)
 	}
 }
-

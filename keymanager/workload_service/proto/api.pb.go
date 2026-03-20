@@ -2,7 +2,7 @@
 // versions:
 // 	protoc-gen-go v1.36.11
 // 	protoc        v3.21.12
-// source: workload_service/proto/api.proto
+// source: keymanager/workload_service/proto/api.proto
 
 package api
 
@@ -51,11 +51,11 @@ func (x KemAlgorithm) String() string {
 }
 
 func (KemAlgorithm) Descriptor() protoreflect.EnumDescriptor {
-	return file_workload_service_proto_api_proto_enumTypes[0].Descriptor()
+	return file_keymanager_workload_service_proto_api_proto_enumTypes[0].Descriptor()
 }
 
 func (KemAlgorithm) Type() protoreflect.EnumType {
-	return &file_workload_service_proto_api_proto_enumTypes[0]
+	return &file_keymanager_workload_service_proto_api_proto_enumTypes[0]
 }
 
 func (x KemAlgorithm) Number() protoreflect.EnumNumber {
@@ -64,7 +64,7 @@ func (x KemAlgorithm) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use KemAlgorithm.Descriptor instead.
 func (KemAlgorithm) EnumDescriptor() ([]byte, []int) {
-	return file_workload_service_proto_api_proto_rawDescGZIP(), []int{0}
+	return file_keymanager_workload_service_proto_api_proto_rawDescGZIP(), []int{0}
 }
 
 type KeyHandle struct {
@@ -76,7 +76,7 @@ type KeyHandle struct {
 
 func (x *KeyHandle) Reset() {
 	*x = KeyHandle{}
-	mi := &file_workload_service_proto_api_proto_msgTypes[0]
+	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -88,7 +88,7 @@ func (x *KeyHandle) String() string {
 func (*KeyHandle) ProtoMessage() {}
 
 func (x *KeyHandle) ProtoReflect() protoreflect.Message {
-	mi := &file_workload_service_proto_api_proto_msgTypes[0]
+	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -101,7 +101,7 @@ func (x *KeyHandle) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use KeyHandle.ProtoReflect.Descriptor instead.
 func (*KeyHandle) Descriptor() ([]byte, []int) {
-	return file_workload_service_proto_api_proto_rawDescGZIP(), []int{0}
+	return file_keymanager_workload_service_proto_api_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *KeyHandle) GetHandle() string {
@@ -112,15 +112,18 @@ func (x *KeyHandle) GetHandle() string {
 }
 
 type AlgorithmParams struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	KemId         KemAlgorithm           `protobuf:"varint,1,opt,name=kem_id,json=kemId,proto3,enum=keymanager.workload_service.KemAlgorithm" json:"kem_id,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Params:
+	//
+	//	*AlgorithmParams_KemId
+	Params        isAlgorithmParams_Params `protobuf_oneof:"params"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *AlgorithmParams) Reset() {
 	*x = AlgorithmParams{}
-	mi := &file_workload_service_proto_api_proto_msgTypes[1]
+	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -132,7 +135,7 @@ func (x *AlgorithmParams) String() string {
 func (*AlgorithmParams) ProtoMessage() {}
 
 func (x *AlgorithmParams) ProtoReflect() protoreflect.Message {
-	mi := &file_workload_service_proto_api_proto_msgTypes[1]
+	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -145,15 +148,34 @@ func (x *AlgorithmParams) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AlgorithmParams.ProtoReflect.Descriptor instead.
 func (*AlgorithmParams) Descriptor() ([]byte, []int) {
-	return file_workload_service_proto_api_proto_rawDescGZIP(), []int{1}
+	return file_keymanager_workload_service_proto_api_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *AlgorithmParams) GetParams() isAlgorithmParams_Params {
+	if x != nil {
+		return x.Params
+	}
+	return nil
 }
 
 func (x *AlgorithmParams) GetKemId() KemAlgorithm {
 	if x != nil {
-		return x.KemId
+		if x, ok := x.Params.(*AlgorithmParams_KemId); ok {
+			return x.KemId
+		}
 	}
 	return KemAlgorithm_KEM_ALGORITHM_UNSPECIFIED
 }
+
+type isAlgorithmParams_Params interface {
+	isAlgorithmParams_Params()
+}
+
+type AlgorithmParams_KemId struct {
+	KemId KemAlgorithm `protobuf:"varint,1,opt,name=kem_id,json=kemId,proto3,enum=keymanager.workload_service.KemAlgorithm,oneof"`
+}
+
+func (*AlgorithmParams_KemId) isAlgorithmParams_Params() {}
 
 type AlgorithmDetails struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -165,7 +187,7 @@ type AlgorithmDetails struct {
 
 func (x *AlgorithmDetails) Reset() {
 	*x = AlgorithmDetails{}
-	mi := &file_workload_service_proto_api_proto_msgTypes[2]
+	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -177,7 +199,7 @@ func (x *AlgorithmDetails) String() string {
 func (*AlgorithmDetails) ProtoMessage() {}
 
 func (x *AlgorithmDetails) ProtoReflect() protoreflect.Message {
-	mi := &file_workload_service_proto_api_proto_msgTypes[2]
+	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -190,7 +212,7 @@ func (x *AlgorithmDetails) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AlgorithmDetails.ProtoReflect.Descriptor instead.
 func (*AlgorithmDetails) Descriptor() ([]byte, []int) {
-	return file_workload_service_proto_api_proto_rawDescGZIP(), []int{2}
+	return file_keymanager_workload_service_proto_api_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *AlgorithmDetails) GetType() string {
@@ -216,7 +238,7 @@ type SupportedAlgorithm struct {
 
 func (x *SupportedAlgorithm) Reset() {
 	*x = SupportedAlgorithm{}
-	mi := &file_workload_service_proto_api_proto_msgTypes[3]
+	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -228,7 +250,7 @@ func (x *SupportedAlgorithm) String() string {
 func (*SupportedAlgorithm) ProtoMessage() {}
 
 func (x *SupportedAlgorithm) ProtoReflect() protoreflect.Message {
-	mi := &file_workload_service_proto_api_proto_msgTypes[3]
+	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -241,7 +263,7 @@ func (x *SupportedAlgorithm) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SupportedAlgorithm.ProtoReflect.Descriptor instead.
 func (*SupportedAlgorithm) Descriptor() ([]byte, []int) {
-	return file_workload_service_proto_api_proto_rawDescGZIP(), []int{3}
+	return file_keymanager_workload_service_proto_api_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *SupportedAlgorithm) GetAlgorithm() *AlgorithmDetails {
@@ -260,7 +282,7 @@ type GetCapabilitiesResponse struct {
 
 func (x *GetCapabilitiesResponse) Reset() {
 	*x = GetCapabilitiesResponse{}
-	mi := &file_workload_service_proto_api_proto_msgTypes[4]
+	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -272,7 +294,7 @@ func (x *GetCapabilitiesResponse) String() string {
 func (*GetCapabilitiesResponse) ProtoMessage() {}
 
 func (x *GetCapabilitiesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_workload_service_proto_api_proto_msgTypes[4]
+	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -285,7 +307,7 @@ func (x *GetCapabilitiesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetCapabilitiesResponse.ProtoReflect.Descriptor instead.
 func (*GetCapabilitiesResponse) Descriptor() ([]byte, []int) {
-	return file_workload_service_proto_api_proto_rawDescGZIP(), []int{4}
+	return file_keymanager_workload_service_proto_api_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *GetCapabilitiesResponse) GetSupportedAlgorithms() []*SupportedAlgorithm {
@@ -305,7 +327,7 @@ type GenerateKeyRequest struct {
 
 func (x *GenerateKeyRequest) Reset() {
 	*x = GenerateKeyRequest{}
-	mi := &file_workload_service_proto_api_proto_msgTypes[5]
+	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -317,7 +339,7 @@ func (x *GenerateKeyRequest) String() string {
 func (*GenerateKeyRequest) ProtoMessage() {}
 
 func (x *GenerateKeyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_workload_service_proto_api_proto_msgTypes[5]
+	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -330,7 +352,7 @@ func (x *GenerateKeyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GenerateKeyRequest.ProtoReflect.Descriptor instead.
 func (*GenerateKeyRequest) Descriptor() ([]byte, []int) {
-	return file_workload_service_proto_api_proto_rawDescGZIP(), []int{5}
+	return file_keymanager_workload_service_proto_api_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *GenerateKeyRequest) GetAlgorithm() *AlgorithmDetails {
@@ -357,7 +379,7 @@ type PubKeyInfo struct {
 
 func (x *PubKeyInfo) Reset() {
 	*x = PubKeyInfo{}
-	mi := &file_workload_service_proto_api_proto_msgTypes[6]
+	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -369,7 +391,7 @@ func (x *PubKeyInfo) String() string {
 func (*PubKeyInfo) ProtoMessage() {}
 
 func (x *PubKeyInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_workload_service_proto_api_proto_msgTypes[6]
+	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -382,7 +404,7 @@ func (x *PubKeyInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PubKeyInfo.ProtoReflect.Descriptor instead.
 func (*PubKeyInfo) Descriptor() ([]byte, []int) {
-	return file_workload_service_proto_api_proto_rawDescGZIP(), []int{6}
+	return file_keymanager_workload_service_proto_api_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *PubKeyInfo) GetAlgorithm() *AlgorithmDetails {
@@ -411,7 +433,7 @@ type GenerateKeyResponse struct {
 
 func (x *GenerateKeyResponse) Reset() {
 	*x = GenerateKeyResponse{}
-	mi := &file_workload_service_proto_api_proto_msgTypes[7]
+	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -423,7 +445,7 @@ func (x *GenerateKeyResponse) String() string {
 func (*GenerateKeyResponse) ProtoMessage() {}
 
 func (x *GenerateKeyResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_workload_service_proto_api_proto_msgTypes[7]
+	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -436,7 +458,7 @@ func (x *GenerateKeyResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GenerateKeyResponse.ProtoReflect.Descriptor instead.
 func (*GenerateKeyResponse) Descriptor() ([]byte, []int) {
-	return file_workload_service_proto_api_proto_rawDescGZIP(), []int{7}
+	return file_keymanager_workload_service_proto_api_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *GenerateKeyResponse) GetKeyHandle() *KeyHandle {
@@ -479,7 +501,7 @@ type KeyInfo struct {
 
 func (x *KeyInfo) Reset() {
 	*x = KeyInfo{}
-	mi := &file_workload_service_proto_api_proto_msgTypes[8]
+	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -491,7 +513,7 @@ func (x *KeyInfo) String() string {
 func (*KeyInfo) ProtoMessage() {}
 
 func (x *KeyInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_workload_service_proto_api_proto_msgTypes[8]
+	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -504,7 +526,7 @@ func (x *KeyInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use KeyInfo.ProtoReflect.Descriptor instead.
 func (*KeyInfo) Descriptor() ([]byte, []int) {
-	return file_workload_service_proto_api_proto_rawDescGZIP(), []int{8}
+	return file_keymanager_workload_service_proto_api_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *KeyInfo) GetKeyHandle() *KeyHandle {
@@ -544,7 +566,7 @@ type EnumerateKeysResponse struct {
 
 func (x *EnumerateKeysResponse) Reset() {
 	*x = EnumerateKeysResponse{}
-	mi := &file_workload_service_proto_api_proto_msgTypes[9]
+	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -556,7 +578,7 @@ func (x *EnumerateKeysResponse) String() string {
 func (*EnumerateKeysResponse) ProtoMessage() {}
 
 func (x *EnumerateKeysResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_workload_service_proto_api_proto_msgTypes[9]
+	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -569,7 +591,7 @@ func (x *EnumerateKeysResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EnumerateKeysResponse.ProtoReflect.Descriptor instead.
 func (*EnumerateKeysResponse) Descriptor() ([]byte, []int) {
-	return file_workload_service_proto_api_proto_rawDescGZIP(), []int{9}
+	return file_keymanager_workload_service_proto_api_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *EnumerateKeysResponse) GetKeyInfos() []*KeyInfo {
@@ -589,7 +611,7 @@ type KemCiphertext struct {
 
 func (x *KemCiphertext) Reset() {
 	*x = KemCiphertext{}
-	mi := &file_workload_service_proto_api_proto_msgTypes[10]
+	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -601,7 +623,7 @@ func (x *KemCiphertext) String() string {
 func (*KemCiphertext) ProtoMessage() {}
 
 func (x *KemCiphertext) ProtoReflect() protoreflect.Message {
-	mi := &file_workload_service_proto_api_proto_msgTypes[10]
+	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -614,7 +636,7 @@ func (x *KemCiphertext) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use KemCiphertext.ProtoReflect.Descriptor instead.
 func (*KemCiphertext) Descriptor() ([]byte, []int) {
-	return file_workload_service_proto_api_proto_rawDescGZIP(), []int{10}
+	return file_keymanager_workload_service_proto_api_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *KemCiphertext) GetAlgorithm() KemAlgorithm {
@@ -641,7 +663,7 @@ type DecapsRequest struct {
 
 func (x *DecapsRequest) Reset() {
 	*x = DecapsRequest{}
-	mi := &file_workload_service_proto_api_proto_msgTypes[11]
+	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -653,7 +675,7 @@ func (x *DecapsRequest) String() string {
 func (*DecapsRequest) ProtoMessage() {}
 
 func (x *DecapsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_workload_service_proto_api_proto_msgTypes[11]
+	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -666,7 +688,7 @@ func (x *DecapsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DecapsRequest.ProtoReflect.Descriptor instead.
 func (*DecapsRequest) Descriptor() ([]byte, []int) {
-	return file_workload_service_proto_api_proto_rawDescGZIP(), []int{11}
+	return file_keymanager_workload_service_proto_api_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *DecapsRequest) GetKeyHandle() *KeyHandle {
@@ -693,7 +715,7 @@ type KemSharedSecret struct {
 
 func (x *KemSharedSecret) Reset() {
 	*x = KemSharedSecret{}
-	mi := &file_workload_service_proto_api_proto_msgTypes[12]
+	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -705,7 +727,7 @@ func (x *KemSharedSecret) String() string {
 func (*KemSharedSecret) ProtoMessage() {}
 
 func (x *KemSharedSecret) ProtoReflect() protoreflect.Message {
-	mi := &file_workload_service_proto_api_proto_msgTypes[12]
+	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -718,7 +740,7 @@ func (x *KemSharedSecret) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use KemSharedSecret.ProtoReflect.Descriptor instead.
 func (*KemSharedSecret) Descriptor() ([]byte, []int) {
-	return file_workload_service_proto_api_proto_rawDescGZIP(), []int{12}
+	return file_keymanager_workload_service_proto_api_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *KemSharedSecret) GetAlgorithm() KemAlgorithm {
@@ -744,7 +766,7 @@ type DecapsResponse struct {
 
 func (x *DecapsResponse) Reset() {
 	*x = DecapsResponse{}
-	mi := &file_workload_service_proto_api_proto_msgTypes[13]
+	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -756,7 +778,7 @@ func (x *DecapsResponse) String() string {
 func (*DecapsResponse) ProtoMessage() {}
 
 func (x *DecapsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_workload_service_proto_api_proto_msgTypes[13]
+	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -769,7 +791,7 @@ func (x *DecapsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DecapsResponse.ProtoReflect.Descriptor instead.
 func (*DecapsResponse) Descriptor() ([]byte, []int) {
-	return file_workload_service_proto_api_proto_rawDescGZIP(), []int{13}
+	return file_keymanager_workload_service_proto_api_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *DecapsResponse) GetSharedSecret() *KemSharedSecret {
@@ -788,7 +810,7 @@ type DestroyRequest struct {
 
 func (x *DestroyRequest) Reset() {
 	*x = DestroyRequest{}
-	mi := &file_workload_service_proto_api_proto_msgTypes[14]
+	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -800,7 +822,7 @@ func (x *DestroyRequest) String() string {
 func (*DestroyRequest) ProtoMessage() {}
 
 func (x *DestroyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_workload_service_proto_api_proto_msgTypes[14]
+	mi := &file_keymanager_workload_service_proto_api_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -813,7 +835,7 @@ func (x *DestroyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DestroyRequest.ProtoReflect.Descriptor instead.
 func (*DestroyRequest) Descriptor() ([]byte, []int) {
-	return file_workload_service_proto_api_proto_rawDescGZIP(), []int{14}
+	return file_keymanager_workload_service_proto_api_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *DestroyRequest) GetKeyHandle() *KeyHandle {
@@ -823,15 +845,16 @@ func (x *DestroyRequest) GetKeyHandle() *KeyHandle {
 	return nil
 }
 
-var File_workload_service_proto_api_proto protoreflect.FileDescriptor
+var File_keymanager_workload_service_proto_api_proto protoreflect.FileDescriptor
 
-const file_workload_service_proto_api_proto_rawDesc = "" +
+const file_keymanager_workload_service_proto_api_proto_rawDesc = "" +
 	"\n" +
-	" workload_service/proto/api.proto\x12\x1bkeymanager.workload_service\"#\n" +
+	"+keymanager/workload_service/proto/api.proto\x12\x1bkeymanager.workload_service\"#\n" +
 	"\tKeyHandle\x12\x16\n" +
-	"\x06handle\x18\x01 \x01(\tR\x06handle\"S\n" +
-	"\x0fAlgorithmParams\x12@\n" +
-	"\x06kem_id\x18\x01 \x01(\x0e2).keymanager.workload_service.KemAlgorithmR\x05kemId\"l\n" +
+	"\x06handle\x18\x01 \x01(\tR\x06handle\"_\n" +
+	"\x0fAlgorithmParams\x12B\n" +
+	"\x06kem_id\x18\x01 \x01(\x0e2).keymanager.workload_service.KemAlgorithmH\x00R\x05kemIdB\b\n" +
+	"\x06params\"l\n" +
 	"\x10AlgorithmDetails\x12\x12\n" +
 	"\x04type\x18\x01 \x01(\tR\x04type\x12D\n" +
 	"\x06params\x18\x02 \x01(\v2,.keymanager.workload_service.AlgorithmParamsR\x06params\"a\n" +
@@ -885,20 +908,20 @@ const file_workload_service_proto_api_proto_rawDesc = "" +
 	"\x18DHKEM_X25519_HKDF_SHA256\x10\x01BFZDgithub.com/google/go-tpm-tools/keymanager/workload_service/proto;apib\x06proto3"
 
 var (
-	file_workload_service_proto_api_proto_rawDescOnce sync.Once
-	file_workload_service_proto_api_proto_rawDescData []byte
+	file_keymanager_workload_service_proto_api_proto_rawDescOnce sync.Once
+	file_keymanager_workload_service_proto_api_proto_rawDescData []byte
 )
 
-func file_workload_service_proto_api_proto_rawDescGZIP() []byte {
-	file_workload_service_proto_api_proto_rawDescOnce.Do(func() {
-		file_workload_service_proto_api_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_workload_service_proto_api_proto_rawDesc), len(file_workload_service_proto_api_proto_rawDesc)))
+func file_keymanager_workload_service_proto_api_proto_rawDescGZIP() []byte {
+	file_keymanager_workload_service_proto_api_proto_rawDescOnce.Do(func() {
+		file_keymanager_workload_service_proto_api_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_keymanager_workload_service_proto_api_proto_rawDesc), len(file_keymanager_workload_service_proto_api_proto_rawDesc)))
 	})
-	return file_workload_service_proto_api_proto_rawDescData
+	return file_keymanager_workload_service_proto_api_proto_rawDescData
 }
 
-var file_workload_service_proto_api_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_workload_service_proto_api_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
-var file_workload_service_proto_api_proto_goTypes = []any{
+var file_keymanager_workload_service_proto_api_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_keymanager_workload_service_proto_api_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
+var file_keymanager_workload_service_proto_api_proto_goTypes = []any{
 	(KemAlgorithm)(0),               // 0: keymanager.workload_service.KemAlgorithm
 	(*KeyHandle)(nil),               // 1: keymanager.workload_service.KeyHandle
 	(*AlgorithmParams)(nil),         // 2: keymanager.workload_service.AlgorithmParams
@@ -916,7 +939,7 @@ var file_workload_service_proto_api_proto_goTypes = []any{
 	(*DecapsResponse)(nil),          // 14: keymanager.workload_service.DecapsResponse
 	(*DestroyRequest)(nil),          // 15: keymanager.workload_service.DestroyRequest
 }
-var file_workload_service_proto_api_proto_depIdxs = []int32{
+var file_keymanager_workload_service_proto_api_proto_depIdxs = []int32{
 	0,  // 0: keymanager.workload_service.AlgorithmParams.kem_id:type_name -> keymanager.workload_service.KemAlgorithm
 	2,  // 1: keymanager.workload_service.AlgorithmDetails.params:type_name -> keymanager.workload_service.AlgorithmParams
 	3,  // 2: keymanager.workload_service.SupportedAlgorithm.algorithm:type_name -> keymanager.workload_service.AlgorithmDetails
@@ -941,27 +964,30 @@ var file_workload_service_proto_api_proto_depIdxs = []int32{
 	0,  // [0:17] is the sub-list for field type_name
 }
 
-func init() { file_workload_service_proto_api_proto_init() }
-func file_workload_service_proto_api_proto_init() {
-	if File_workload_service_proto_api_proto != nil {
+func init() { file_keymanager_workload_service_proto_api_proto_init() }
+func file_keymanager_workload_service_proto_api_proto_init() {
+	if File_keymanager_workload_service_proto_api_proto != nil {
 		return
+	}
+	file_keymanager_workload_service_proto_api_proto_msgTypes[1].OneofWrappers = []any{
+		(*AlgorithmParams_KemId)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_workload_service_proto_api_proto_rawDesc), len(file_workload_service_proto_api_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_keymanager_workload_service_proto_api_proto_rawDesc), len(file_keymanager_workload_service_proto_api_proto_rawDesc)),
 			NumEnums:      1,
 			NumMessages:   15,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
-		GoTypes:           file_workload_service_proto_api_proto_goTypes,
-		DependencyIndexes: file_workload_service_proto_api_proto_depIdxs,
-		EnumInfos:         file_workload_service_proto_api_proto_enumTypes,
-		MessageInfos:      file_workload_service_proto_api_proto_msgTypes,
+		GoTypes:           file_keymanager_workload_service_proto_api_proto_goTypes,
+		DependencyIndexes: file_keymanager_workload_service_proto_api_proto_depIdxs,
+		EnumInfos:         file_keymanager_workload_service_proto_api_proto_enumTypes,
+		MessageInfos:      file_keymanager_workload_service_proto_api_proto_msgTypes,
 	}.Build()
-	File_workload_service_proto_api_proto = out.File
-	file_workload_service_proto_api_proto_goTypes = nil
-	file_workload_service_proto_api_proto_depIdxs = nil
+	File_keymanager_workload_service_proto_api_proto = out.File
+	file_keymanager_workload_service_proto_api_proto_goTypes = nil
+	file_keymanager_workload_service_proto_api_proto_depIdxs = nil
 }

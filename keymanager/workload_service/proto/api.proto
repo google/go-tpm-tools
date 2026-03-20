@@ -14,7 +14,9 @@ message KeyHandle {
 }
 
 message AlgorithmParams {
-  KemAlgorithm kem_id = 1;
+  oneof params {
+    KemAlgorithm kem_id = 1;
+  }
 }
 
 message AlgorithmDetails {

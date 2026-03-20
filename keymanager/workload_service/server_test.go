@@ -124,7 +124,9 @@ func validGenerateBody() []byte {
 		Algorithm: &api.AlgorithmDetails{
 			Type: "kem",
 			Params: &api.AlgorithmParams{
-				KemId: api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256,
+				Params: &api.AlgorithmParams_KemId{
+					KemId: api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256,
+				},
 			},
 		},
 		Lifespan: 3600,
@@ -343,15 +345,15 @@ func TestHandleGenerateKeyBadRequest(t *testing.T) {
 	}{
 		{
 			name: "unsupported algorithm type",
-			body: &api.GenerateKeyRequest{Algorithm: &api.AlgorithmDetails{Type: "mac", Params: &api.AlgorithmParams{KemId: api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256}}, Lifespan: 3600},
+			body: &api.GenerateKeyRequest{Algorithm: &api.AlgorithmDetails{Type: "mac", Params: &api.AlgorithmParams{Params: &api.AlgorithmParams_KemId{KemId: api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256}}}, Lifespan: 3600},
 		},
 		{
 			name: "unsupported algorithm",
-			body: &api.GenerateKeyRequest{Algorithm: &api.AlgorithmDetails{Type: "kem", Params: &api.AlgorithmParams{KemId: api.KemAlgorithm_KEM_ALGORITHM_UNSPECIFIED}}, Lifespan: 3600},
+			body: &api.GenerateKeyRequest{Algorithm: &api.AlgorithmDetails{Type: "kem", Params: &api.AlgorithmParams{Params: &api.AlgorithmParams_KemId{KemId: api.KemAlgorithm_KEM_ALGORITHM_UNSPECIFIED}}}, Lifespan: 3600},
 		},
 		{
 			name: "zero lifespan",
-			body: &api.GenerateKeyRequest{Algorithm: &api.AlgorithmDetails{Type: "kem", Params: &api.AlgorithmParams{KemId: api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256}}, Lifespan: 0},
+			body: &api.GenerateKeyRequest{Algorithm: &api.AlgorithmDetails{Type: "kem", Params: &api.AlgorithmParams{Params: &api.AlgorithmParams_KemId{KemId: api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256}}}, Lifespan: 0},
 		},
 		{
 			name: "missing algorithm (defaults to 0, type empty)",
@@ -633,8 +635,8 @@ func TestHandleEnumerateKeysWithKeys(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected kem1 %s in response", kem1)
 	}
-	if info1.PubKey.Algorithm.Params.KemId != api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256 {
-		t.Fatalf("expected algorithm %v, got %v", api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256, info1.PubKey.Algorithm.Params.KemId)
+	if info1.PubKey.Algorithm.GetParams().GetKemId() != api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256 {
+		t.Fatalf("expected algorithm %v, got %v", api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256, info1.PubKey.Algorithm.GetParams().GetKemId())
 	}
 	if info1.PubKey.PublicKey != base64.StdEncoding.EncodeToString(kemPubKey1) {
 		t.Fatalf("KEM pub key mismatch for kem1")
@@ -758,7 +760,7 @@ func TestHandleGetCapabilities(t *testing.T) {
 	}
 
 	if len(resp.SupportedAlgorithms) != 1 ||
-		resp.SupportedAlgorithms[0].Algorithm.Params.KemId != api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256 ||
+		resp.SupportedAlgorithms[0].Algorithm.GetParams().GetKemId() != api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256 ||
 		resp.SupportedAlgorithms[0].Algorithm.Type != "kem" {
 		t.Errorf("unexpected supported algorithms: %v", resp.SupportedAlgorithms)
 	}
