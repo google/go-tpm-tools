@@ -1,7 +1,7 @@
-use crate::proto::{AeadAlgorithm, HpkeAlgorithm, KdfAlgorithm, KemAlgorithm};
 use crate::crypto;
 use crate::crypto::{secret_box, PublicKey};
 use crate::protected_mem::Vault;
+use crate::proto::{AeadAlgorithm, HpkeAlgorithm, KdfAlgorithm, KemAlgorithm};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
@@ -134,10 +134,7 @@ impl KeyRecord {
     }
 
     /// Creates a new long-term Binding key.
-    pub fn create_binding_key(
-        algo: HpkeAlgorithm,
-        expiry: Duration,
-    ) -> Result<Self, crate::Error> {
+    pub fn create_binding_key(algo: HpkeAlgorithm, expiry: Duration) -> Result<Self, crate::Error> {
         Self::create_key_internal(algo, expiry, |algo, pub_key| KeySpec::Binding {
             algo,
             binding_public_key: pub_key,
