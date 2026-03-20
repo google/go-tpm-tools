@@ -160,9 +160,6 @@ type ClaimsResult struct {
 	Err   error
 }
 
-// The API request and response structs (e.g., api.GenerateKeyRequest, api.KeyHandle)
-// are now defined in github.com/google/go-tpm-tools/keymanager/workload_service/proto.
-
 // Server is the WSD HTTP server.
 type Server struct {
 	keyProtectionService KeyProtectionService
@@ -324,7 +321,6 @@ func (s *Server) handleGenerateKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate lifespan is positive and does not cause int64 overflow.
 	if req.Algorithm == nil {
 		writeError(w, "missing algorithm", http.StatusBadRequest)
 		return
@@ -333,6 +329,7 @@ func (s *Server) handleGenerateKey(w http.ResponseWriter, r *http.Request) {
 		writeError(w, "lifespan must be greater than 0s", http.StatusBadRequest)
 		return
 	}
+	// Validate lifespan is positive and does not cause int64 overflow.
 	if req.Lifespan > math.MaxInt64 {
 		writeError(w, "lifespan exceeds maximum allowed value", http.StatusBadRequest)
 		return
