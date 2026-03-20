@@ -3,9 +3,9 @@ use km_common::key_types::{KeyRecord, KeyRegistry, KeySpec};
 use km_common::proto::{Error, HpkeAlgorithm};
 use prost::Message;
 use std::slice;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::sync::LazyLock;
-use std::sync::atomic::AtomicBool;
 use std::time::{Duration, Instant};
 use uuid::Uuid;
 

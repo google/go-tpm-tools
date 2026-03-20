@@ -1,8 +1,8 @@
-use crate::proto::{AeadAlgorithm, HpkeAlgorithm, KdfAlgorithm, KemAlgorithm};
 use crate::crypto::secret_box::SecretBox;
 #[cfg(any(test, feature = "test-utils"))]
 use crate::crypto::PrivateKey;
 use crate::crypto::{Error, PrivateKeyOps, PublicKeyOps};
+use crate::proto::{AeadAlgorithm, HpkeAlgorithm, KdfAlgorithm, KemAlgorithm};
 use bssl_crypto::{hkdf, hpke, x25519};
 
 /// X25519-based public key implementation.
