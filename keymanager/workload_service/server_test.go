@@ -18,6 +18,7 @@ import (
 	api "github.com/google/go-tpm-tools/keymanager/workload_service/proto"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 
 	kps "github.com/google/go-tpm-tools/keymanager/key_protection_service"
 	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
@@ -129,6 +130,119 @@ func validGenerateBody() []byte {
 		Lifespan: 3600,
 	})
 	return body
+}
+
+func assertProtoJSONRoundTrip(t *testing.T, want, got proto.Message) {
+	t.Helper()
+
+	body, err := protojson.MarshalOptions{EmitUnpopulated: true, UseProtoNames: true}.Marshal(want)
+	if err != nil {
+		t.Fatalf("protojson.Marshal() failed: %v", err)
+	}
+
+	if err := protojson.Unmarshal(body, got); err != nil {
+		t.Fatalf("protojson.Unmarshal() failed: %v", err)
+	}
+
+	if !proto.Equal(want, got) {
+		t.Fatalf("protojson roundtrip mismatch\njson: %s\nwant: %v\ngot: %v", body, want, got)
+	}
+}
+
+func TestGenerateKeyRequestProtoJSONRoundTrip(t *testing.T) {
+	want := &api.GenerateKeyRequest{
+		Algorithm: &api.AlgorithmDetails{
+			Type: "kem",
+			Params: &api.AlgorithmParams{
+				KemId: api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256,
+			},
+		},
+		Lifespan: 3600,
+	}
+
+	assertProtoJSONRoundTrip(t, want, &api.GenerateKeyRequest{})
+}
+
+func TestGenerateKeyResponseProtoJSONRoundTrip(t *testing.T) {
+	want := &api.GenerateKeyResponse{
+		KeyHandle: &api.KeyHandle{Handle: uuid.NewString()},
+		PubKey: &api.PubKeyInfo{
+			Algorithm: &api.AlgorithmDetails{
+				Type: "kem",
+				Params: &api.AlgorithmParams{
+					KemId: api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256,
+				},
+			},
+			PublicKey: base64.StdEncoding.EncodeToString([]byte{1, 2, 3, 4}),
+		},
+		KeyProtectionMechanism: keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED.String(),
+		ExpirationTime:         1742467200,
+	}
+
+	assertProtoJSONRoundTrip(t, want, &api.GenerateKeyResponse{})
+}
+
+func TestEnumerateKeysResponseProtoJSONRoundTrip(t *testing.T) {
+	want := &api.EnumerateKeysResponse{
+		KeyInfos: []*api.KeyInfo{
+			{
+				KeyHandle: &api.KeyHandle{Handle: uuid.NewString()},
+				PubKey: &api.PubKeyInfo{
+					Algorithm: &api.AlgorithmDetails{
+						Type: "kem",
+						Params: &api.AlgorithmParams{
+							KemId: api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256,
+						},
+					},
+					PublicKey: base64.StdEncoding.EncodeToString([]byte{5, 6, 7, 8}),
+				},
+				KeyProtectionMechanism: keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED.String(),
+				ExpirationTime:         1742468200,
+			},
+		},
+	}
+
+	assertProtoJSONRoundTrip(t, want, &api.EnumerateKeysResponse{})
+}
+
+func TestDecapsRequestProtoJSONRoundTrip(t *testing.T) {
+	want := &api.DecapsRequest{
+		KeyHandle: &api.KeyHandle{Handle: uuid.NewString()},
+		Ciphertext: &api.KemCiphertext{
+			Algorithm:  api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256,
+			Ciphertext: base64.StdEncoding.EncodeToString([]byte{9, 10, 11, 12}),
+		},
+	}
+
+	assertProtoJSONRoundTrip(t, want, &api.DecapsRequest{})
+}
+
+func TestDecapsResponseProtoJSONRoundTrip(t *testing.T) {
+	want := &api.DecapsResponse{
+		SharedSecret: &api.KemSharedSecret{
+			Algorithm: api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256,
+			Secret:    base64.StdEncoding.EncodeToString([]byte{13, 14, 15, 16}),
+		},
+	}
+
+	assertProtoJSONRoundTrip(t, want, &api.DecapsResponse{})
+}
+
+func TestGetCapabilitiesResponseProtoJSONRoundTrip(t *testing.T) {
+	want := &api.GetCapabilitiesResponse{
+		SupportedAlgorithms: []*api.SupportedAlgorithm{
+			{
+				Algorithm: &api.AlgorithmDetails{
+					Type: "kem",
+					Params: &api.AlgorithmParams{
+						KemId: api.KemAlgorithm_DHKEM_X25519_HKDF_SHA256,
+					},
+				},
+			},
+		},
+	}
+
+	assertProtoJSONRoundTrip(t, want, &api.GetCapabilitiesResponse{})
 }
 
 // --- /keys:generate_kem tests ---
