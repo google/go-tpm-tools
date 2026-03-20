@@ -1,9 +1,10 @@
-pub mod keymanager {
-    include!(concat!(env!("OUT_DIR"), "/keymanager.rs"));
-}
+pub mod keymanager;
 pub use keymanager as proto;
 
 pub use proto::Status;
+
+pub const MAX_ALGORITHM_LEN: usize = 128;
+pub const MAX_PUBLIC_KEY_LEN: usize = 2048;
 
 impl std::error::Error for Status {}
 impl std::fmt::Display for Status {

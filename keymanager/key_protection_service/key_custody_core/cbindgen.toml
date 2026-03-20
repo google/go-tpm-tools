@@ -8,6 +8,7 @@ style = "type"
 documentation = false
 usize_is_size_t = true
 sys_includes = ["stdbool.h", "stddef.h", "stdint.h"]
+includes = ["km_common_ffi.h"]
 
 
 [parse]
@@ -17,6 +18,8 @@ clean = true
 
 [export]
 item_types = ["functions", "structs", "constants", "enums"]
-include = ["Error", "key_manager_generate_kem_keypair", "key_manager_get_kem_key", "key_manager_destroy_kem_key", "key_manager_enumerate_kem_keys", "KpsKeyInfo", "MAX_ALGORITHM_LEN", "MAX_PUBLIC_KEY_LEN"]
+include = ["key_manager_generate_kem_keypair", "key_manager_get_kem_key", "key_manager_destroy_kem_key", "key_manager_enumerate_kem_keys", "KpsKeyInfo"]
+exclude = ["Error", "MAX_ALGORITHM_LEN", "MAX_PUBLIC_KEY_LEN"]
 
-
+[enum]
+prefix_with_name = true

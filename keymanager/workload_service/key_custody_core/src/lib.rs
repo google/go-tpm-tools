@@ -1,12 +1,13 @@
-use km_common::crypto::secret_box::SecretBox;
 use km_common::crypto::PublicKey;
+use km_common::crypto::secret_box::SecretBox;
 use km_common::key_types::{KeyRecord, KeyRegistry, KeySpec};
 use km_common::proto::{Error, HpkeAlgorithm};
+use km_common::{MAX_ALGORITHM_LEN, MAX_PUBLIC_KEY_LEN};
 use prost::Message;
 use std::slice;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::sync::LazyLock;
+use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 use uuid::Uuid;
 
@@ -211,9 +212,6 @@ pub unsafe extern "C" fn key_manager_open(
         Ok(())
     })
 }
-
-pub const MAX_ALGORITHM_LEN: usize = 128;
-pub const MAX_PUBLIC_KEY_LEN: usize = 2048;
 
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]

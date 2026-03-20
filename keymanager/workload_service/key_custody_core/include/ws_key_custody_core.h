@@ -6,33 +6,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-
-#define MAX_ALGORITHM_LEN 128
-
-#define MAX_PUBLIC_KEY_LEN 2048
-
-enum Error
-#ifdef __cplusplus
-  : int32_t
-#endif // __cplusplus
- {
-  Success = 0,
-  Internal = 1,
-  InvalidArgument = 2,
-  NotFound = 3,
-  AlreadyExists = 4,
-  PermissionDenied = 5,
-  Unauthenticated = 6,
-  UnsupportedAlgorithm = 7,
-  InvalidKey = 8,
-  CryptoError = 9,
-  DecryptionFailure = 10,
-  EncryptionFailure = 11,
-  DecapsulationFailure = 12,
-};
-#ifndef __cplusplus
-typedef int32_t Error;
-#endif // __cplusplus
+#include "km_common_ffi.h"
 
 typedef struct {
   uint8_t uuid[16];
