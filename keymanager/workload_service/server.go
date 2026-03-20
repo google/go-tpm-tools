@@ -252,7 +252,11 @@ func decapsAADContext(kemUUID uuid.UUID, algorithm api.KemAlgorithm) []byte {
 func (s *Server) handleDecaps(w http.ResponseWriter, r *http.Request) {
 
 	var req api.DecapsRequest
-	body, _ := io.ReadAll(r.Body)
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("failed to read request body: %v", err), http.StatusBadRequest)
+		return
+	}
 	if err := protojson.Unmarshal(body, &req); err != nil {
 		http.Error(w, fmt.Sprintf("invalid request body: %v", err), http.StatusBadRequest)
 		return
@@ -315,7 +319,11 @@ func (s *Server) handleDecaps(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleGenerateKey(w http.ResponseWriter, r *http.Request) {
 	var req api.GenerateKeyRequest
-	body, _ := io.ReadAll(r.Body)
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeError(w, fmt.Sprintf("failed to read request body: %v", err), http.StatusBadRequest)
+		return
+	}
 	if err := protojson.Unmarshal(body, &req); err != nil {
 		writeError(w, fmt.Sprintf("invalid request body: %v", err), http.StatusBadRequest)
 		return
@@ -488,7 +496,11 @@ func writeError(w http.ResponseWriter, message string, code int) {
 
 func (s *Server) handleDestroy(w http.ResponseWriter, r *http.Request) {
 	var req api.DestroyRequest
-	body, _ := io.ReadAll(r.Body)
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeError(w, fmt.Sprintf("failed to read request body: %v", err), http.StatusBadRequest)
+		return
+	}
 	if err := protojson.Unmarshal(body, &req); err != nil {
 		writeError(w, fmt.Sprintf("invalid request body: %v", err), http.StatusBadRequest)
 		return
