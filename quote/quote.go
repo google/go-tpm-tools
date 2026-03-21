@@ -1,3 +1,4 @@
+// Package quote contains utilities for verifying TPM quotes.
 package quote
 
 import (
