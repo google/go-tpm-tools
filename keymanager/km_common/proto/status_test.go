@@ -31,6 +31,12 @@ func TestFFIStatus(t *testing.T) {
 	}
 }
 
+func TestFFIStatusSuccess(t *testing.T) {
+	if err := Status_STATUS_SUCCESS.ToStatus(); err != nil {
+		t.Errorf("Status_STATUS_SUCCESS.ToStatus() = %v, want nil", err)
+	}
+}
+
 func TestStatusMethod(t *testing.T) {
 	val := Status_STATUS_INTERNAL_ERROR
 	if val.Status() != "STATUS_INTERNAL_ERROR" {
