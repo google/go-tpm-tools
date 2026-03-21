@@ -12,6 +12,7 @@ import (
 	"github.com/google/go-tpm-tools/internal"
 	pb "github.com/google/go-tpm-tools/proto/attest"
 	tpmpb "github.com/google/go-tpm-tools/proto/tpm"
+	quoteutil "github.com/google/go-tpm-tools/quote"
 	"github.com/google/go-tpm/legacy/tpm2"
 	"google.golang.org/protobuf/proto"
 )
@@ -22,7 +23,7 @@ var (
 )
 
 // We conditionally support SHA-1 for PCR hashes, but at the lowest priority.
-var pcrHashAlgs = append(internal.SignatureHashAlgs, tpm2.AlgSHA1)
+var pcrHashAlgs = append(quoteutil.SignatureHashAlgs, tpm2.AlgSHA1)
 
 var oidExtensionSubjectAltName = []int{2, 5, 29, 17}
 
@@ -150,7 +151,7 @@ func VerifyAttestation(attestation *pb.Attestation, opts VerifyOpts) (*pb.Machin
 	var lastErr error
 	for _, quote := range supportedQuotes(attestation.GetQuotes(), algos) {
 		// Verify the Quote
-		if err := internal.VerifyQuote(quote, akPubKey, opts.Nonce); err != nil {
+		if err := quoteutil.Verify(quote, akPubKey, opts.Nonce); err != nil {
 			lastErr = fmt.Errorf("failed to verify quote: %w", err)
 			continue
 		}

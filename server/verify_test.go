@@ -17,9 +17,9 @@ import (
 	"testing"
 
 	"github.com/google/go-tpm-tools/client"
-	"github.com/google/go-tpm-tools/internal"
 	"github.com/google/go-tpm-tools/internal/test"
 	attestpb "github.com/google/go-tpm-tools/proto/attest"
+	quoteutil "github.com/google/go-tpm-tools/quote"
 	"github.com/google/go-tpm/legacy/tpm2"
 	"github.com/google/go-tpm/tpmutil"
 	"github.com/google/logger"
@@ -107,7 +107,7 @@ func TestVerifyHappyCases(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to quote: %v", err)
 			}
-			err = internal.VerifyQuote(quote, ak.PublicKey(), subtest.extraData)
+			err = quoteutil.Verify(quote, ak.PublicKey(), subtest.extraData)
 			if err != nil {
 				t.Fatalf("failed to verify: %v", err)
 			}
@@ -149,7 +149,7 @@ func TestVerifyPCRChanged(t *testing.T) {
 	if err != nil {
 		t.Errorf("failed to read PCRs: %v", err)
 	}
-	err = internal.VerifyQuote(quote, ak.PublicKey(), nonce)
+	err = quoteutil.Verify(quote, ak.PublicKey(), nonce)
 	if err == nil {
 		t.Errorf("Verify should fail as Verify read a modified PCR")
 	}
@@ -189,7 +189,7 @@ func TestVerifyUsingDifferentPCR(t *testing.T) {
 	if err != nil {
 		t.Errorf("failed to read PCRs: %v", err)
 	}
-	err = internal.VerifyQuote(quote, ak.PublicKey(), nonce)
+	err = quoteutil.Verify(quote, ak.PublicKey(), nonce)
 	if err == nil {
 		t.Errorf("Verify should fail as Verify read a different PCR")
 	}
