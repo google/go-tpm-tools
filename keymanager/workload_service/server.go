@@ -438,6 +438,11 @@ func (s *Server) handleEnumerateKeys(w http.ResponseWriter, _ *http.Request) {
 
 // writeJSON writes a JSON response with the given status code.
 func writeJSON(w http.ResponseWriter, v proto.Message, code int) {
+	if err := protovalidate.Validate(v); err != nil {
+		writeError(w, fmt.Sprintf("validation failed for response: %v", err), http.StatusInternalServerError)
+		return
+	}
+
 	b, err := protojson.MarshalOptions{EmitUnpopulated: true, UseProtoNames: true}.Marshal(v)
 	if err != nil {
 		writeError(w, err.Error(), http.StatusInternalServerError)
