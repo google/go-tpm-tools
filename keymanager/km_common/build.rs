@@ -8,7 +8,10 @@ fn main() -> Result<()> {
 
     let mut config = prost_build::Config::new();
 
-    config.compile_protos(&["proto/algorithms.proto"], &["proto/"])?;
+    config.compile_protos(
+        &["proto/algorithms.proto", "proto/status.proto"],
+        &["proto/"],
+    )?;
 
     Ok(())
 }

@@ -7,3 +7,5 @@ protoc -I. --go_out=. --go_opt=paths=source_relative keymanager/km_common/proto/
 protoc -I. --go_out=. --go_opt=paths=source_relative keymanager/km_common/proto/key_claims.proto
 # Generate payload.pb.go
 protoc -I. --go_out=. --go_opt=paths=source_relative keymanager/km_common/proto/payload.proto
+# Generate status.pb.go
+protoc -I. --go_out=. --go_opt=paths=source_relative keymanager/km_common/proto/status.proto
