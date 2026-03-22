@@ -69,10 +69,7 @@ func DestroyBindingKey(bindingUUID uuid.UUID) error {
 	rc := C.key_manager_destroy_binding_key(
 		(*C.uint8_t)(unsafe.Pointer(&uuidBytes[0])),
 	)
-	if keymanager.Status(rc) != keymanager.Status_STATUS_SUCCESS {
-		return keymanager.Status(rc).ToStatus()
-	}
-	return nil
+	return keymanager.Status(rc).ToStatus()
 }
 
 // Open decrypts a sealed ciphertext using the binding key identified by
@@ -130,14 +127,13 @@ func GetBindingKey(id uuid.UUID) ([]byte, *keymanager.HpkeAlgorithm, error) {
 	var algoBuf [C.MAX_ALGORITHM_LEN]byte
 	algoLenC := C.size_t(len(algoBuf))
 
-	rc := C.key_manager_get_binding_key(
+	if rc := C.key_manager_get_binding_key(
 		(*C.uint8_t)(unsafe.Pointer(&uuidBytes[0])),
 		(*C.uint8_t)(unsafe.Pointer(&pubkeyBuf[0])),
 		pubkeyLen,
 		(*C.uint8_t)(unsafe.Pointer(&algoBuf[0])),
 		&algoLenC,
-	)
-	if keymanager.Status(rc) != keymanager.Status_STATUS_SUCCESS {
+	); keymanager.Status(rc) != keymanager.Status_STATUS_SUCCESS {
 		return nil, nil, keymanager.Status(rc).ToStatus()
 	}
 
