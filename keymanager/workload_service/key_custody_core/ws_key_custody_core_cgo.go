@@ -6,6 +6,7 @@
 package wskcc
 
 /*
+#cgo CFLAGS: -I${SRCDIR}/../../km_common/include
 #cgo LDFLAGS: -L${SRCDIR}/../../target/release -L${SRCDIR}/../../target/debug -lws_key_custody_core
 #cgo LDFLAGS: -lcrypto -lssl
 #cgo LDFLAGS: -lpthread -ldl -lm -lstdc++
@@ -48,8 +49,8 @@ func GenerateBindingKeypair(algo *keymanager.HpkeAlgorithm, lifespanSecs uint64)
 		(*C.uint8_t)(unsafe.Pointer(&uuidBytes[0])),
 		(*C.uint8_t)(unsafe.Pointer(&pubkeyBuf[0])),
 		pubkeyLen,
-	); rc != 0 {
-		return uuid.Nil, nil, fmt.Errorf("key_manager_generate_binding_keypair failed with code %d", rc)
+	); keymanager.Status(rc) != keymanager.Status_STATUS_SUCCESS {
+		return uuid.Nil, nil, keymanager.Status(rc).ToStatus()
 	}
 
 	id, err := uuid.FromBytes(uuidBytes[:])
@@ -68,10 +69,7 @@ func DestroyBindingKey(bindingUUID uuid.UUID) error {
 	rc := C.key_manager_destroy_binding_key(
 		(*C.uint8_t)(unsafe.Pointer(&uuidBytes[0])),
 	)
-	if rc != 0 {
-		return fmt.Errorf("key_manager_destroy_binding_key failed with code %d", rc)
-	}
-	return nil
+	return keymanager.Status(rc).ToStatus()
 }
 
 // Open decrypts a sealed ciphertext using the binding key identified by
@@ -110,8 +108,8 @@ func Open(bindingUUID uuid.UUID, enc, ciphertext, aad []byte) ([]byte, error) {
 		aadLen,
 		(*C.uint8_t)(unsafe.Pointer(&outPT[0])),
 		outPTLen,
-	); rc != 0 {
-		return nil, fmt.Errorf("key_manager_open failed with code %d", rc)
+	); keymanager.Status(rc) != keymanager.Status_STATUS_SUCCESS {
+		return nil, keymanager.Status(rc).ToStatus()
 	}
 
 	plaintext := make([]byte, outPTLen)
@@ -129,15 +127,14 @@ func GetBindingKey(id uuid.UUID) ([]byte, *keymanager.HpkeAlgorithm, error) {
 	var algoBuf [C.MAX_ALGORITHM_LEN]byte
 	algoLenC := C.size_t(len(algoBuf))
 
-	rc := C.key_manager_get_binding_key(
+	if rc := C.key_manager_get_binding_key(
 		(*C.uint8_t)(unsafe.Pointer(&uuidBytes[0])),
 		(*C.uint8_t)(unsafe.Pointer(&pubkeyBuf[0])),
 		pubkeyLen,
 		(*C.uint8_t)(unsafe.Pointer(&algoBuf[0])),
 		&algoLenC,
-	)
-	if rc != 0 {
-		return nil, nil, fmt.Errorf("key_manager_get_binding_key failed with code %d", rc)
+	); keymanager.Status(rc) != keymanager.Status_STATUS_SUCCESS {
+		return nil, nil, keymanager.Status(rc).ToStatus()
 	}
 
 	pubkey := make([]byte, pubkeyLen)

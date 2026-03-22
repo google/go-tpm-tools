@@ -1,8 +1,8 @@
-use crate::algorithms::{AeadAlgorithm, HpkeAlgorithm, KdfAlgorithm, KemAlgorithm};
 use crate::crypto::secret_box::SecretBox;
 #[cfg(any(test, feature = "test-utils"))]
 use crate::crypto::PrivateKey;
-use crate::crypto::{Error, PrivateKeyOps, PublicKeyOps};
+use crate::crypto::{Status, PrivateKeyOps, PublicKeyOps};
+use crate::proto::{AeadAlgorithm, HpkeAlgorithm, KdfAlgorithm, KemAlgorithm};
 use bssl_crypto::{hkdf, hpke, x25519};
 
 /// X25519-based public key implementation.
@@ -21,7 +21,7 @@ impl PublicKeyOps for X25519PublicKey {
         plaintext: &SecretBox,
         aad: &[u8],
         algo: &HpkeAlgorithm,
-    ) -> Result<(Vec<u8>, Vec<u8>), Error> {
+    ) -> Result<(Vec<u8>, Vec<u8>), Status> {
         let (
             Ok(KemAlgorithm::DhkemX25519HkdfSha256),
             Ok(KdfAlgorithm::HkdfSha256),
@@ -32,7 +32,7 @@ impl PublicKeyOps for X25519PublicKey {
             AeadAlgorithm::try_from(algo.aead),
         )
         else {
-            return Err(Error::UnsupportedAlgorithm);
+            return Err(Status::UnsupportedAlgorithm);
         };
 
         let params = hpke::Params::new(
@@ -43,7 +43,7 @@ impl PublicKeyOps for X25519PublicKey {
 
         let (mut sender_ctx, encapsulated_key) =
             hpke::SenderContext::new(&params, self.as_ref(), b"")
-                .ok_or(Error::HpkeEncryptionError)?;
+                .ok_or(Status::EncryptionFailure)?;
 
         let ciphertext = sender_ctx.seal(plaintext.as_slice(), aad);
         Ok((encapsulated_key, ciphertext))
@@ -53,27 +53,27 @@ impl PublicKeyOps for X25519PublicKey {
     fn encap_internal(
         &self,
         ephemeral_sk: Option<&PrivateKey>,
-    ) -> Result<(SecretBox, Vec<u8>), Error> {
+    ) -> Result<(SecretBox, Vec<u8>), Status> {
         let (pk_e_bytes, sk_e_bytes) = match ephemeral_sk {
             Some(PrivateKey::X25519(sk)) => {
                 let sk_e = x25519::PrivateKey(
                     sk.0.as_slice()
                         .try_into()
-                        .map_err(|_| Error::KeyLenMismatch)?,
+                        .map_err(|_| Status::InvalidArgument)?,
                 );
                 (sk_e.to_public().to_vec(), sk.0.as_slice().to_vec())
             }
             None => hpke::Kem::X25519HkdfSha256.generate_keypair(),
         };
 
-        let sk_e = x25519::PrivateKey(sk_e_bytes.try_into().map_err(|_| Error::CryptoError)?);
+        let sk_e = x25519::PrivateKey(sk_e_bytes.try_into().map_err(|_| Status::CryptoError)?);
         let pk_r = self.0;
 
         // 1. Compute Diffie-Hellman shared secret
         // dh = dhExchange(skE, pkR)
         let shared_key = SecretBox::new(
             sk_e.compute_shared_key(&pk_r)
-                .ok_or(Error::CryptoError)?
+                .ok_or(Status::CryptoError)?
                 .to_vec(),
         );
 
@@ -112,20 +112,20 @@ impl From<X25519PrivateKey> for SecretBox {
 impl PrivateKeyOps for X25519PrivateKey {
     /// Decapsulates the shared secret from an encapsulated key.
     /// Follows RFC 9180 Section 4.1. DHKEM(Group, Hash).
-    fn decaps_internal(&self, enc: &[u8]) -> Result<SecretBox, Error> {
+    fn decaps_internal(&self, enc: &[u8]) -> Result<SecretBox, Status> {
         let priv_key = x25519::PrivateKey(
             self.0
                 .as_slice()
                 .try_into()
-                .map_err(|_| Error::KeyLenMismatch)?,
+                .map_err(|_| Status::InvalidArgument)?,
         );
 
         // 1. Compute Diffie-Hellman shared secret
         // dh = dhExchange(skR, pkE)
         let shared_key = SecretBox::new(
             priv_key
-                .compute_shared_key(enc.try_into().map_err(|_| Error::KeyLenMismatch)?)
-                .ok_or(Error::DecapsError)?
+                .compute_shared_key(enc.try_into().map_err(|_| Status::DecapsulationFailure)?)
+                .ok_or(Status::DecapsulationFailure)?
                 .to_vec(),
         );
 
@@ -153,7 +153,7 @@ impl PrivateKeyOps for X25519PrivateKey {
         ciphertext: &[u8],
         aad: &[u8],
         algo: &HpkeAlgorithm,
-    ) -> Result<SecretBox, Error> {
+    ) -> Result<SecretBox, Status> {
         let (
             Ok(KemAlgorithm::DhkemX25519HkdfSha256),
             Ok(KdfAlgorithm::HkdfSha256),
@@ -164,7 +164,7 @@ impl PrivateKeyOps for X25519PrivateKey {
             AeadAlgorithm::try_from(algo.aead),
         )
         else {
-            return Err(Error::UnsupportedAlgorithm);
+            return Err(Status::UnsupportedAlgorithm);
         };
 
         let params = hpke::Params::new(
@@ -174,12 +174,12 @@ impl PrivateKeyOps for X25519PrivateKey {
         );
 
         let mut recipient_ctx = hpke::RecipientContext::new(&params, self.0.as_slice(), enc, b"")
-            .ok_or(Error::HpkeDecryptionError)?;
+            .ok_or(Status::DecryptionFailure)?;
 
         recipient_ctx
             .open(ciphertext, aad)
             .map(SecretBox::new)
-            .ok_or(Error::HpkeDecryptionError)
+            .ok_or(Status::DecryptionFailure)
     }
 }
 
@@ -196,13 +196,13 @@ fn labeled_expand(
     info: &[u8],
     suite_id: &[u8],
     len: u16,
-) -> Result<SecretBox, Error> {
+) -> Result<SecretBox, Status> {
     let labeled_info =
         SecretBox::new([&len.to_be_bytes()[..], b"HPKE-v1", suite_id, label, info].concat());
 
     let mut result = vec![0u8; len as usize];
     prk.expand_into(labeled_info.as_slice(), &mut result)
-        .map_err(|_| Error::DecapsError)?;
+        .map_err(|_| Status::DecapsulationFailure)?;
 
     Ok(SecretBox::new(result))
 }

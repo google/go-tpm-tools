@@ -323,6 +323,29 @@ func (s *Server) LookupBindingUUID(kemUUID uuid.UUID) (uuid.UUID, bool) {
 	return id, ok
 }
 
+func httpStatusFromError(err error) int {
+	if err == nil {
+		return http.StatusOK
+	}
+
+	switch {
+	case errors.Is(err, keymanager.Status_STATUS_NOT_FOUND):
+		return http.StatusNotFound
+	case errors.Is(err, keymanager.Status_STATUS_INVALID_ARGUMENT),
+		errors.Is(err, keymanager.Status_STATUS_UNSUPPORTED_ALGORITHM),
+		errors.Is(err, keymanager.Status_STATUS_INVALID_KEY):
+		return http.StatusBadRequest
+	case errors.Is(err, keymanager.Status_STATUS_PERMISSION_DENIED):
+		return http.StatusForbidden
+	case errors.Is(err, keymanager.Status_STATUS_UNAUTHENTICATED):
+		return http.StatusUnauthorized
+	case errors.Is(err, keymanager.Status_STATUS_ALREADY_EXISTS):
+		return http.StatusConflict
+	default:
+		return http.StatusInternalServerError
+	}
+}
+
 func decapsAADContext(kemUUID uuid.UUID, algorithm KemAlgorithm) []byte {
 	// Bind the KPS->WSD transport ciphertext to this decapsulation context.
 	// Note: The AAD context string retains `decaps` as it is part of the internal binding protocol
@@ -371,14 +394,14 @@ func (s *Server) handleDecaps(w http.ResponseWriter, r *http.Request) {
 	// Decapsulate and reseal via KPS.
 	sealEnc, sealedCT, err := s.keyProtectionService.DecapAndSeal(kemUUID, encapsulatedKey, aad)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("failed to decap and seal: %v", err), http.StatusInternalServerError)
+		http.Error(w, fmt.Sprintf("failed to decap and seal: %v", err), httpStatusFromError(err))
 		return
 	}
 
 	// Open the sealed secret using the binding key via WSD KCC.
 	plaintext, err := s.workloadService.Open(bindingUUID, sealEnc, sealedCT, aad)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("failed to open sealed secret: %v", err), http.StatusInternalServerError)
+		http.Error(w, fmt.Sprintf("failed to open sealed secret: %v", err), httpStatusFromError(err))
 		return
 	}
 
@@ -436,14 +459,14 @@ func (s *Server) generateKEMKey(w http.ResponseWriter, req GenerateKeyRequest) {
 	// Generate binding keypair via WSD KCC FFI.
 	bindingUUID, bindingPubKey, err := s.workloadService.GenerateBindingKeypair(algo, req.Lifespan)
 	if err != nil {
-		writeError(w, fmt.Sprintf("failed to generate binding keypair: %v", err), http.StatusInternalServerError)
+		writeError(w, fmt.Sprintf("failed to generate binding keypair: %v", err), httpStatusFromError(err))
 		return
 	}
 
 	// Generate KEM keypair via KPS KOL, passing the binding public key.
 	kemUUID, kemPubKey, err := s.keyProtectionService.GenerateKEMKeypair(algo, bindingPubKey, req.Lifespan)
 	if err != nil {
-		writeError(w, fmt.Sprintf("failed to generate KEM keypair: %v", err), http.StatusInternalServerError)
+		writeError(w, fmt.Sprintf("failed to generate KEM keypair: %v", err), httpStatusFromError(err))
 		return
 	}
 
@@ -494,7 +517,7 @@ func (s *Server) handleGetCapabilities(w http.ResponseWriter, _ *http.Request) {
 func (s *Server) handleEnumerateKeys(w http.ResponseWriter, _ *http.Request) {
 	keys, _, err := s.keyProtectionService.EnumerateKEMKeys(100, 0)
 	if err != nil {
-		writeError(w, fmt.Sprintf("failed to enumerate keys: %v", err), http.StatusInternalServerError)
+		writeError(w, fmt.Sprintf("failed to enumerate keys: %v", err), httpStatusFromError(err))
 		return
 	}
 
@@ -575,7 +598,7 @@ func (s *Server) handleDestroy(w http.ResponseWriter, r *http.Request) {
 	s.mu.Unlock()
 
 	if err := errors.Join(errKps, errWs); err != nil {
-		writeError(w, fmt.Sprintf("failed to destroy keys: %v", err), http.StatusInternalServerError)
+		writeError(w, fmt.Sprintf("failed to destroy keys: %v", err), httpStatusFromError(err))
 		return
 	}
 

@@ -6,6 +6,7 @@
 package kpskcc
 
 /*
+#cgo CFLAGS: -I${SRCDIR}/../../km_common/include
 #cgo LDFLAGS: -L${SRCDIR}/../../target/release -L${SRCDIR}/../../target/debug -lkps_key_custody_core
 #cgo LDFLAGS: -lcrypto -lssl
 #cgo LDFLAGS: -lpthread -ldl -lm -lstdc++
@@ -57,8 +58,8 @@ func GenerateKEMKeypair(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, li
 		(*C.uint8_t)(unsafe.Pointer(&uuidBytes[0])),
 		(*C.uint8_t)(unsafe.Pointer(&pubkeyBuf[0])),
 		pubkeyLen,
-	); rc != 0 {
-		return uuid.Nil, nil, fmt.Errorf("key_manager_generate_kem_keypair failed with code %d", rc)
+	); keymanager.Status(rc) != keymanager.Status_STATUS_SUCCESS {
+		return uuid.Nil, nil, keymanager.Status(rc).ToStatus()
 	}
 
 	id, err := uuid.FromBytes(uuidBytes[:])
@@ -91,7 +92,7 @@ func EnumerateKEMKeys(limit, offset int) ([]KEMKeyInfo, bool, error) {
 		&hasMore,
 	)
 	if rc < 0 {
-		return nil, false, fmt.Errorf("key_manager_enumerate_kem_keys failed with code %d", rc)
+		return nil, false, keymanager.Status(-rc).ToStatus()
 	}
 
 	count := int(rc)
@@ -124,12 +125,10 @@ func EnumerateKEMKeys(limit, offset int) ([]KEMKeyInfo, bool, error) {
 // DestroyKEMKey destroys the KEM key identified by kemUUID via Rust FFI.
 func DestroyKEMKey(kemUUID uuid.UUID) error {
 	uuidBytes := kemUUID[:]
-	if rc := C.key_manager_destroy_kem_key(
+	rc := C.key_manager_destroy_kem_key(
 		(*C.uint8_t)(unsafe.Pointer(&uuidBytes[0])),
-	); rc != 0 {
-		return fmt.Errorf("key_manager_destroy_kem_key failed with code %d", rc)
-	}
-	return nil
+	)
+	return keymanager.Status(rc).ToStatus()
 }
 
 // GetKEMKey retrieves KEM and binding public keys, HpkeAlgorithm and remaining lifespan via Rust FFI.
@@ -153,8 +152,8 @@ func GetKEMKey(id uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64,
 		&algoLenC,
 		&remainingLifespanSecs,
 	)
-	if rc != 0 {
-		return nil, nil, nil, 0, fmt.Errorf("key_manager_get_kem_key failed with code %d", rc)
+	if keymanager.Status(rc) != keymanager.Status_STATUS_SUCCESS {
+		return nil, nil, nil, 0, keymanager.Status(rc).ToStatus()
 	}
 
 	kemPubkey := make([]byte, len(kemPubkeyBuf))
@@ -201,8 +200,8 @@ func DecapAndSeal(kemUUID uuid.UUID, encapsulatedKey, aad []byte) ([]byte, []byt
 		outEncKeyLen,
 		(*C.uint8_t)(unsafe.Pointer(&outCT[0])),
 		outCTLen,
-	); rc != 0 {
-		return nil, nil, fmt.Errorf("key_manager_decap_and_seal failed with code %d", rc)
+	); keymanager.Status(rc) != keymanager.Status_STATUS_SUCCESS {
+		return nil, nil, keymanager.Status(rc).ToStatus()
 	}
 
 	sealEnc := make([]byte, outEncKeyLen)
