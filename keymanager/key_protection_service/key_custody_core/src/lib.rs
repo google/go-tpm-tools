@@ -1,6 +1,6 @@
 use km_common::crypto::PublicKey;
 use km_common::key_types::{KeyRecord, KeyRegistry, KeySpec};
-use km_common::proto::{Status, HpkeAlgorithm};
+use km_common::proto::{HpkeAlgorithm, Status};
 use km_common::{MAX_ALGORITHM_LEN, MAX_PUBLIC_KEY_LEN};
 
 use prost::Message;
@@ -23,21 +23,16 @@ fn generate_kem_keypair_internal(
     binding_pubkey: PublicKey,
     expiry_secs: u64,
 ) -> Result<(uuid::Uuid, PublicKey), Status> {
-    let result =
-        KeyRecord::create_bound_kem_key(algo, binding_pubkey, Duration::from_secs(expiry_secs));
+    let record =
+        KeyRecord::create_bound_kem_key(algo, binding_pubkey, Duration::from_secs(expiry_secs))?;
 
-    match result {
-        Ok(record) => {
-            let id = record.meta.id;
-            let pubkey = match &record.meta.spec {
-                KeySpec::KemWithBindingPub { kem_public_key, .. } => kem_public_key.clone(),
-                _ => return Err(Status::InternalError),
-            };
-            KEY_REGISTRY.add_key(record);
-            Ok((id, pubkey))
-        }
-        Err(e) => Err(Status::from(e)),
-    }
+    let id = record.meta.id;
+    let pubkey = match &record.meta.spec {
+        KeySpec::KemWithBindingPub { kem_public_key, .. } => kem_public_key.clone(),
+        _ => return Err(Status::InternalError),
+    };
+    KEY_REGISTRY.add_key(record);
+    Ok((id, pubkey))
 }
 
 /// Generates a new KEM keypair associated with a binding public key.

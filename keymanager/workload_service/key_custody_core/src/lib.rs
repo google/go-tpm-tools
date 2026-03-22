@@ -1,7 +1,7 @@
 use km_common::crypto::PublicKey;
 use km_common::crypto::secret_box::SecretBox;
 use km_common::key_types::{KeyRecord, KeyRegistry, KeySpec};
-use km_common::proto::{Status, HpkeAlgorithm};
+use km_common::proto::{HpkeAlgorithm, Status};
 use km_common::{MAX_ALGORITHM_LEN, MAX_PUBLIC_KEY_LEN};
 use prost::Message;
 use std::slice;
@@ -22,22 +22,17 @@ fn generate_binding_keypair_internal(
     algo: HpkeAlgorithm,
     expiry_secs: u64,
 ) -> Result<(uuid::Uuid, PublicKey), Status> {
-    let result = KeyRecord::create_binding_key(algo, Duration::from_secs(expiry_secs));
+    let record = KeyRecord::create_binding_key(algo, Duration::from_secs(expiry_secs))?;
 
-    match result {
-        Ok(record) => {
-            let id = record.meta.id;
-            let pubkey = match &record.meta.spec {
-                KeySpec::Binding {
-                    binding_public_key, ..
-                } => binding_public_key.clone(),
-                _ => return Err(Status::InternalError),
-            };
-            KEY_REGISTRY.add_key(record);
-            Ok((id, pubkey))
-        }
-        Err(e) => Err(Status::from(e)),
-    }
+    let id = record.meta.id;
+    let pubkey = match &record.meta.spec {
+        KeySpec::Binding {
+            binding_public_key, ..
+        } => binding_public_key.clone(),
+        _ => return Err(Status::InternalError),
+    };
+    KEY_REGISTRY.add_key(record);
+    Ok((id, pubkey))
 }
 
 /// Generates a new binding HPKE keypair.

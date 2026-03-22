@@ -125,12 +125,10 @@ func EnumerateKEMKeys(limit, offset int) ([]KEMKeyInfo, bool, error) {
 // DestroyKEMKey destroys the KEM key identified by kemUUID via Rust FFI.
 func DestroyKEMKey(kemUUID uuid.UUID) error {
 	uuidBytes := kemUUID[:]
-	if rc := C.key_manager_destroy_kem_key(
+	rc := C.key_manager_destroy_kem_key(
 		(*C.uint8_t)(unsafe.Pointer(&uuidBytes[0])),
-	); keymanager.Status(rc) != keymanager.Status_STATUS_SUCCESS {
-		return keymanager.Status(rc).ToStatus()
-	}
-	return nil
+	)
+	return keymanager.Status(rc).ToStatus()
 }
 
 // GetKEMKey retrieves KEM and binding public keys, HpkeAlgorithm and remaining lifespan via Rust FFI.
