@@ -10,11 +10,13 @@ func TestFFIStatus(t *testing.T) {
 	if err == nil {
 		t.Fatalf("ToStatus() = nil, want error")
 	}
-	if !errors.Is(err, Status_STATUS_INTERNAL_ERROR.ToStatus()) {
-		t.Errorf("errors.Is(err, Status_STATUS_INTERNAL_ERROR.ToStatus()) = false, want true")
+
+	// Test simplified comparison
+	if !errors.Is(err, Status_STATUS_INTERNAL_ERROR) {
+		t.Errorf("errors.Is(err, Status_STATUS_INTERNAL_ERROR) = false, want true")
 	}
-	if errors.Is(err, Status_STATUS_INVALID_ARGUMENT.ToStatus()) {
-		t.Errorf("errors.Is(err, Status_STATUS_INVALID_ARGUMENT.ToStatus()) = true, want false")
+	if errors.Is(err, Status_STATUS_INVALID_ARGUMENT) {
+		t.Errorf("errors.Is(err, Status_STATUS_INVALID_ARGUMENT) = true, want false")
 	}
 
 	// Test with FFIStatus pointer

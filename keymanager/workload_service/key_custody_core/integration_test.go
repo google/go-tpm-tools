@@ -4,6 +4,7 @@ package wskcc
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -76,5 +77,10 @@ func TestIntegrationGetBindingKeyNotFound(t *testing.T) {
 	_, _, err := GetBindingKey(uuid.New())
 	if err == nil {
 		t.Fatal("expected error for non-existent UUID")
+	}
+
+	expectedErrMsg := "FFI status: STATUS_NOT_FOUND"
+	if !strings.Contains(err.Error(), expectedErrMsg) {
+		t.Fatalf("expected error containing %q, got: %v", expectedErrMsg, err)
 	}
 }

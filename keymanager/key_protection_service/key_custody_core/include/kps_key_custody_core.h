@@ -6,10 +6,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-
-#define MAX_ALGORITHM_LEN 128
-
-#define MAX_PUBLIC_KEY_LEN 2048
+#include "km_common_ffi.h"
 
 typedef struct {
   uint8_t uuid[16];
@@ -26,40 +23,40 @@ typedef struct {
 extern "C" {
 #endif // __cplusplus
 
-int32_t key_manager_generate_kem_keypair(const uint8_t *algo_ptr,
-                                         size_t algo_len,
-                                         const uint8_t *binding_pubkey,
-                                         size_t binding_pubkey_len,
-                                         uint64_t expiry_secs,
-                                         uint8_t *out_uuid,
-                                         uint8_t *out_pubkey,
-                                         size_t out_pubkey_len);
+Status key_manager_generate_kem_keypair(const uint8_t *algo_ptr,
+                                        size_t algo_len,
+                                        const uint8_t *binding_pubkey,
+                                        size_t binding_pubkey_len,
+                                        uint64_t expiry_secs,
+                                        uint8_t *out_uuid,
+                                        uint8_t *out_pubkey,
+                                        size_t out_pubkey_len);
 
-int32_t key_manager_destroy_kem_key(const uint8_t *uuid_bytes);
+Status key_manager_destroy_kem_key(const uint8_t *uuid_bytes);
 
 int32_t key_manager_enumerate_kem_keys(KpsKeyInfo *out_entries,
                                        size_t max_entries,
                                        size_t offset,
                                        bool *out_has_more);
 
-int32_t key_manager_decap_and_seal(const uint8_t *uuid_bytes,
-                                   const uint8_t *encapsulated_key,
-                                   size_t encapsulated_key_len,
-                                   const uint8_t *aad,
-                                   size_t aad_len,
-                                   uint8_t *out_encapsulated_key,
-                                   size_t out_encapsulated_key_len,
-                                   uint8_t *out_ciphertext,
-                                   size_t out_ciphertext_len);
+Status key_manager_decap_and_seal(const uint8_t *uuid_bytes,
+                                  const uint8_t *encapsulated_key,
+                                  size_t encapsulated_key_len,
+                                  const uint8_t *aad,
+                                  size_t aad_len,
+                                  uint8_t *out_encapsulated_key,
+                                  size_t out_encapsulated_key_len,
+                                  uint8_t *out_ciphertext,
+                                  size_t out_ciphertext_len);
 
-int32_t key_manager_get_kem_key(const uint8_t *uuid_bytes,
-                                uint8_t *out_kem_pubkey,
-                                size_t out_kem_pubkey_len,
-                                uint8_t *out_binding_pubkey,
-                                size_t out_binding_pubkey_len,
-                                uint8_t *out_algo,
-                                size_t *out_algo_len,
-                                uint64_t *out_delete_after);
+Status key_manager_get_kem_key(const uint8_t *uuid_bytes,
+                               uint8_t *out_kem_pubkey,
+                               size_t out_kem_pubkey_len,
+                               uint8_t *out_binding_pubkey,
+                               size_t out_binding_pubkey_len,
+                               uint8_t *out_algo,
+                               size_t *out_algo_len,
+                               uint64_t *out_remaining_lifespan_secs);
 
 #ifdef __cplusplus
 }  // extern "C"

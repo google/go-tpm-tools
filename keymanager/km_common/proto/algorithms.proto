@@ -32,7 +32,7 @@ message HpkeAlgorithm {
 // Specifies parameters for a particular algorithm type.
 message AlgorithmParams {
   oneof params {
-    // KEM algorithm identifier (e.g., DHKEM_X25519_HKDF_SHA256).
+    // KEM algorithm identifier (e.g., KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256).
     KemAlgorithm kem_id = 1;
   }
 }

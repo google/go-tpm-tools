@@ -1,8 +1,7 @@
-use crate::algorithms::{HpkeAlgorithm, KemAlgorithm};
+use crate::proto::{Status, HpkeAlgorithm, KemAlgorithm};
 pub mod secret_box;
 use crate::crypto::secret_box::SecretBox;
 use clear_on_drop::clear_stack_on_return;
-use thiserror::Error;
 
 mod x25519;
 pub use x25519::{X25519PrivateKey, X25519PublicKey};
@@ -19,7 +18,7 @@ pub(crate) trait PublicKeyOps: Send + Sync {
         plaintext: &SecretBox,
         aad: &[u8],
         algo: &HpkeAlgorithm,
-    ) -> Result<(Vec<u8>, Vec<u8>), Error>;
+    ) -> Result<(Vec<u8>, Vec<u8>), Status>;
 
     #[cfg(any(test, feature = "test-utils"))]
     /// Performs DHKEM encapsulation operation.
@@ -31,7 +30,7 @@ pub(crate) trait PublicKeyOps: Send + Sync {
     fn encap_internal(
         &self,
         ephemeral_sk: Option<&PrivateKey>,
-    ) -> Result<(SecretBox, Vec<u8>), Error>;
+    ) -> Result<(SecretBox, Vec<u8>), Status>;
 
     /// Returns the raw bytes of the public key.
     fn as_bytes(&self) -> &[u8];
@@ -42,7 +41,7 @@ pub(crate) trait PrivateKeyOps: Send + Sync {
     /// Decapsulates the shared secret from an encapsulated key.
     ///
     /// Returns the decapsulated shared secret as a `SecretBox`.
-    fn decaps_internal(&self, enc: &[u8]) -> Result<SecretBox, Error>;
+    fn decaps_internal(&self, enc: &[u8]) -> Result<SecretBox, Status>;
 
     /// Decrypts a ciphertext using HPKE.
     ///
@@ -53,7 +52,7 @@ pub(crate) trait PrivateKeyOps: Send + Sync {
         ciphertext: &[u8],
         aad: &[u8],
         algo: &HpkeAlgorithm,
-    ) -> Result<SecretBox, Error>;
+    ) -> Result<SecretBox, Status>;
 }
 
 /// A wrapper enum for different public key types.
@@ -72,10 +71,10 @@ impl PublicKey {
 }
 
 impl TryFrom<Vec<u8>> for PublicKey {
-    type Error = Error;
+    type Error = Status;
 
     fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
-        let bytes: [u8; 32] = value.try_into().map_err(|_| Error::KeyLenMismatch)?;
+        let bytes: [u8; 32] = value.try_into().map_err(|_| Status::InvalidArgument)?;
         Ok(PublicKey::X25519(X25519PublicKey(bytes)))
     }
 }
@@ -86,7 +85,7 @@ impl PublicKeyOps for PublicKey {
         plaintext: &SecretBox,
         aad: &[u8],
         algo: &HpkeAlgorithm,
-    ) -> Result<(Vec<u8>, Vec<u8>), Error> {
+    ) -> Result<(Vec<u8>, Vec<u8>), Status> {
         match self {
             PublicKey::X25519(pk) => pk.hpke_seal_internal(plaintext, aad, algo),
         }
@@ -96,7 +95,7 @@ impl PublicKeyOps for PublicKey {
     fn encap_internal(
         &self,
         ephemeral_sk: Option<&PrivateKey>,
-    ) -> Result<(SecretBox, Vec<u8>), Error> {
+    ) -> Result<(SecretBox, Vec<u8>), Status> {
         match self {
             PublicKey::X25519(pk) => pk.encap_internal(ephemeral_sk),
         }
@@ -127,7 +126,7 @@ impl From<PrivateKey> for SecretBox {
 }
 
 impl PrivateKeyOps for PrivateKey {
-    fn decaps_internal(&self, enc: &[u8]) -> Result<SecretBox, Error> {
+    fn decaps_internal(&self, enc: &[u8]) -> Result<SecretBox, Status> {
         match self {
             PrivateKey::X25519(sk) => sk.decaps_internal(enc),
         }
@@ -139,41 +138,23 @@ impl PrivateKeyOps for PrivateKey {
         ciphertext: &[u8],
         aad: &[u8],
         algo: &HpkeAlgorithm,
-    ) -> Result<SecretBox, Error> {
+    ) -> Result<SecretBox, Status> {
         match self {
             PrivateKey::X25519(sk) => sk.hpke_open_internal(enc, ciphertext, aad, algo),
         }
     }
 }
 
-#[derive(Debug, Error)]
-pub enum Error {
-    #[error("Key length mismatch")]
-    KeyLenMismatch,
-    #[error("Decapsulation error")]
-    DecapsError,
-    #[error("HPKE decryption error")]
-    HpkeDecryptionError,
-    #[error("HPKE encryption error")]
-    HpkeEncryptionError,
-    #[error("Unsupported algorithm")]
-    UnsupportedAlgorithm,
-    #[error("Invalid key")]
-    InvalidKey,
-    #[error("Crypto library error")]
-    CryptoError,
-}
-
 /// Generates a keypair for the given KEM algorithm.
 ///
 /// Returns a tuple containing the public and private keys respectively.
-pub fn generate_keypair(algo: KemAlgorithm) -> Result<(PublicKey, PrivateKey), Error> {
+pub fn generate_keypair(algo: KemAlgorithm) -> Result<(PublicKey, PrivateKey), Status> {
     clear_stack_on_return(CLEAR_STACK_PAGES, || match algo {
         KemAlgorithm::DhkemX25519HkdfSha256 => {
             let (pk, sk) = x25519::generate_keypair();
             Ok((PublicKey::X25519(pk), PrivateKey::X25519(sk)))
         }
-        _ => Err(Error::UnsupportedAlgorithm),
+        _ => Err(Status::UnsupportedAlgorithm),
     })
 }
 
@@ -181,14 +162,14 @@ pub fn generate_keypair(algo: KemAlgorithm) -> Result<(PublicKey, PrivateKey), E
 ///
 /// Returns the shared secret as a `SecretBox` and the encapsulated key respectively.
 #[cfg(any(test, feature = "test-utils"))]
-pub fn encap(pub_key: &PublicKey) -> Result<(SecretBox, Vec<u8>), Error> {
+pub fn encap(pub_key: &PublicKey) -> Result<(SecretBox, Vec<u8>), Status> {
     clear_stack_on_return(CLEAR_STACK_PAGES, || pub_key.encap_internal(None))
 }
 
 /// Decapsulates the shared secret from an encapsulated key using the specified private key.
 ///
 /// Returns the decapsulated shared secret as a `SecretBox`.
-pub fn decaps(priv_key: &PrivateKey, enc: &[u8]) -> Result<SecretBox, Error> {
+pub fn decaps(priv_key: &PrivateKey, enc: &[u8]) -> Result<SecretBox, Status> {
     clear_stack_on_return(CLEAR_STACK_PAGES, || priv_key.decaps_internal(enc))
 }
 
@@ -201,7 +182,7 @@ pub fn hpke_open(
     ciphertext: &[u8],
     aad: &[u8],
     algo: &HpkeAlgorithm,
-) -> Result<SecretBox, Error> {
+) -> Result<SecretBox, Status> {
     clear_stack_on_return(CLEAR_STACK_PAGES, || {
         priv_key.hpke_open_internal(enc, ciphertext, aad, algo)
     })
@@ -215,7 +196,7 @@ pub fn hpke_seal(
     plaintext: &SecretBox,
     aad: &[u8],
     algo: &HpkeAlgorithm,
-) -> Result<(Vec<u8>, Vec<u8>), Error> {
+) -> Result<(Vec<u8>, Vec<u8>), Status> {
     clear_stack_on_return(CLEAR_STACK_PAGES, || {
         pub_key.hpke_seal_internal(plaintext, aad, algo)
     })
@@ -224,7 +205,7 @@ pub fn hpke_seal(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::algorithms::{AeadAlgorithm, KdfAlgorithm};
+    use crate::proto::{AeadAlgorithm, KdfAlgorithm};
     use bssl_crypto::hpke;
 
     #[test]
@@ -257,7 +238,7 @@ mod tests {
         };
 
         let result = hpke_open(&sk_r, &enc, &[], &[], &algo);
-        assert!(matches!(result, Err(Error::UnsupportedAlgorithm)));
+        assert!(matches!(result, Err(Status::UnsupportedAlgorithm)));
     }
 
     #[test]
@@ -322,7 +303,7 @@ mod tests {
         }
 
         let result = hpke_open(&sk_r, &enc, &ciphertext, aad, &hpke_algo);
-        assert!(matches!(result, Err(Error::HpkeDecryptionError)));
+        assert!(matches!(result, Err(Status::DecryptionFailure)));
     }
 
     #[test]
@@ -354,7 +335,7 @@ mod tests {
         let tampered_aad = b"bar";
 
         let result = hpke_open(&sk_r, &enc, &ciphertext, tampered_aad, &hpke_algo);
-        assert!(matches!(result, Err(Error::HpkeDecryptionError)));
+        assert!(matches!(result, Err(Status::DecryptionFailure)));
     }
 
     #[test]
@@ -400,6 +381,6 @@ mod tests {
         let algo = KemAlgorithm::Unspecified;
 
         let result = generate_keypair(algo);
-        assert!(matches!(result, Err(Error::UnsupportedAlgorithm)));
+        assert!(matches!(result, Err(Status::UnsupportedAlgorithm)));
     }
 }
