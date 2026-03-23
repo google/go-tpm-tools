@@ -223,6 +223,175 @@ func (x *HpkeAlgorithm) GetAead() AeadAlgorithm {
 	return AeadAlgorithm_AEAD_ALGORITHM_UNSPECIFIED
 }
 
+// Specifies parameters for a particular algorithm type.
+type AlgorithmParams struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Params:
+	//
+	//	*AlgorithmParams_KemId
+	Params        isAlgorithmParams_Params `protobuf_oneof:"params"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AlgorithmParams) Reset() {
+	*x = AlgorithmParams{}
+	mi := &file_keymanager_km_common_proto_algorithms_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AlgorithmParams) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AlgorithmParams) ProtoMessage() {}
+
+func (x *AlgorithmParams) ProtoReflect() protoreflect.Message {
+	mi := &file_keymanager_km_common_proto_algorithms_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AlgorithmParams.ProtoReflect.Descriptor instead.
+func (*AlgorithmParams) Descriptor() ([]byte, []int) {
+	return file_keymanager_km_common_proto_algorithms_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *AlgorithmParams) GetParams() isAlgorithmParams_Params {
+	if x != nil {
+		return x.Params
+	}
+	return nil
+}
+
+func (x *AlgorithmParams) GetKemId() KemAlgorithm {
+	if x != nil {
+		if x, ok := x.Params.(*AlgorithmParams_KemId); ok {
+			return x.KemId
+		}
+	}
+	return KemAlgorithm_KEM_ALGORITHM_UNSPECIFIED
+}
+
+type isAlgorithmParams_Params interface {
+	isAlgorithmParams_Params()
+}
+
+type AlgorithmParams_KemId struct {
+	// KEM algorithm identifier (e.g., DHKEM_X25519_HKDF_SHA256).
+	KemId KemAlgorithm `protobuf:"varint,1,opt,name=kem_id,json=kemId,proto3,enum=keymanager.KemAlgorithm,oneof"`
+}
+
+func (*AlgorithmParams_KemId) isAlgorithmParams_Params() {}
+
+// Description of an algorithm.
+type AlgorithmDetails struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The type of algorithm, e.g., "kem".
+	Type string `protobuf:"bytes,1,opt,name=type,proto3" json:"type,omitempty"`
+	// Specific parameters associated with the algorithm type.
+	Params        *AlgorithmParams `protobuf:"bytes,2,opt,name=params,proto3" json:"params,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AlgorithmDetails) Reset() {
+	*x = AlgorithmDetails{}
+	mi := &file_keymanager_km_common_proto_algorithms_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AlgorithmDetails) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AlgorithmDetails) ProtoMessage() {}
+
+func (x *AlgorithmDetails) ProtoReflect() protoreflect.Message {
+	mi := &file_keymanager_km_common_proto_algorithms_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AlgorithmDetails.ProtoReflect.Descriptor instead.
+func (*AlgorithmDetails) Descriptor() ([]byte, []int) {
+	return file_keymanager_km_common_proto_algorithms_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *AlgorithmDetails) GetType() string {
+	if x != nil {
+		return x.Type
+	}
+	return ""
+}
+
+func (x *AlgorithmDetails) GetParams() *AlgorithmParams {
+	if x != nil {
+		return x.Params
+	}
+	return nil
+}
+
+// Represents a cryptographic algorithm supported by the service.
+type SupportedAlgorithm struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// algorithm details.
+	Algorithm     *AlgorithmDetails `protobuf:"bytes,1,opt,name=algorithm,proto3" json:"algorithm,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SupportedAlgorithm) Reset() {
+	*x = SupportedAlgorithm{}
+	mi := &file_keymanager_km_common_proto_algorithms_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SupportedAlgorithm) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SupportedAlgorithm) ProtoMessage() {}
+
+func (x *SupportedAlgorithm) ProtoReflect() protoreflect.Message {
+	mi := &file_keymanager_km_common_proto_algorithms_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SupportedAlgorithm.ProtoReflect.Descriptor instead.
+func (*SupportedAlgorithm) Descriptor() ([]byte, []int) {
+	return file_keymanager_km_common_proto_algorithms_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *SupportedAlgorithm) GetAlgorithm() *AlgorithmDetails {
+	if x != nil {
+		return x.Algorithm
+	}
+	return nil
+}
+
 var File_keymanager_km_common_proto_algorithms_proto protoreflect.FileDescriptor
 
 const file_keymanager_km_common_proto_algorithms_proto_rawDesc = "" +
@@ -232,7 +401,15 @@ const file_keymanager_km_common_proto_algorithms_proto_rawDesc = "" +
 	"\rHpkeAlgorithm\x12*\n" +
 	"\x03kem\x18\x01 \x01(\x0e2\x18.keymanager.KemAlgorithmR\x03kem\x12*\n" +
 	"\x03kdf\x18\x02 \x01(\x0e2\x18.keymanager.KdfAlgorithmR\x03kdf\x12-\n" +
-	"\x04aead\x18\x03 \x01(\x0e2\x19.keymanager.AeadAlgorithmR\x04aead*Y\n" +
+	"\x04aead\x18\x03 \x01(\x0e2\x19.keymanager.AeadAlgorithmR\x04aead\"N\n" +
+	"\x0fAlgorithmParams\x121\n" +
+	"\x06kem_id\x18\x01 \x01(\x0e2\x18.keymanager.KemAlgorithmH\x00R\x05kemIdB\b\n" +
+	"\x06params\"[\n" +
+	"\x10AlgorithmDetails\x12\x12\n" +
+	"\x04type\x18\x01 \x01(\tR\x04type\x123\n" +
+	"\x06params\x18\x02 \x01(\v2\x1b.keymanager.AlgorithmParamsR\x06params\"P\n" +
+	"\x12SupportedAlgorithm\x12:\n" +
+	"\talgorithm\x18\x01 \x01(\v2\x1c.keymanager.AlgorithmDetailsR\talgorithm*Y\n" +
 	"\fKemAlgorithm\x12\x1d\n" +
 	"\x19KEM_ALGORITHM_UNSPECIFIED\x10\x00\x12*\n" +
 	"&KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256\x10\x01*L\n" +
@@ -256,22 +433,28 @@ func file_keymanager_km_common_proto_algorithms_proto_rawDescGZIP() []byte {
 }
 
 var file_keymanager_km_common_proto_algorithms_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_keymanager_km_common_proto_algorithms_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
+var file_keymanager_km_common_proto_algorithms_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_keymanager_km_common_proto_algorithms_proto_goTypes = []any{
-	(KemAlgorithm)(0),     // 0: keymanager.KemAlgorithm
-	(KdfAlgorithm)(0),     // 1: keymanager.KdfAlgorithm
-	(AeadAlgorithm)(0),    // 2: keymanager.AeadAlgorithm
-	(*HpkeAlgorithm)(nil), // 3: keymanager.HpkeAlgorithm
+	(KemAlgorithm)(0),          // 0: keymanager.KemAlgorithm
+	(KdfAlgorithm)(0),          // 1: keymanager.KdfAlgorithm
+	(AeadAlgorithm)(0),         // 2: keymanager.AeadAlgorithm
+	(*HpkeAlgorithm)(nil),      // 3: keymanager.HpkeAlgorithm
+	(*AlgorithmParams)(nil),    // 4: keymanager.AlgorithmParams
+	(*AlgorithmDetails)(nil),   // 5: keymanager.AlgorithmDetails
+	(*SupportedAlgorithm)(nil), // 6: keymanager.SupportedAlgorithm
 }
 var file_keymanager_km_common_proto_algorithms_proto_depIdxs = []int32{
 	0, // 0: keymanager.HpkeAlgorithm.kem:type_name -> keymanager.KemAlgorithm
 	1, // 1: keymanager.HpkeAlgorithm.kdf:type_name -> keymanager.KdfAlgorithm
 	2, // 2: keymanager.HpkeAlgorithm.aead:type_name -> keymanager.AeadAlgorithm
-	3, // [3:3] is the sub-list for method output_type
-	3, // [3:3] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	0, // 3: keymanager.AlgorithmParams.kem_id:type_name -> keymanager.KemAlgorithm
+	4, // 4: keymanager.AlgorithmDetails.params:type_name -> keymanager.AlgorithmParams
+	5, // 5: keymanager.SupportedAlgorithm.algorithm:type_name -> keymanager.AlgorithmDetails
+	6, // [6:6] is the sub-list for method output_type
+	6, // [6:6] is the sub-list for method input_type
+	6, // [6:6] is the sub-list for extension type_name
+	6, // [6:6] is the sub-list for extension extendee
+	0, // [0:6] is the sub-list for field type_name
 }
 
 func init() { file_keymanager_km_common_proto_algorithms_proto_init() }
@@ -279,13 +462,16 @@ func file_keymanager_km_common_proto_algorithms_proto_init() {
 	if File_keymanager_km_common_proto_algorithms_proto != nil {
 		return
 	}
+	file_keymanager_km_common_proto_algorithms_proto_msgTypes[1].OneofWrappers = []any{
+		(*AlgorithmParams_KemId)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_keymanager_km_common_proto_algorithms_proto_rawDesc), len(file_keymanager_km_common_proto_algorithms_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   1,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

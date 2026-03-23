@@ -5,18 +5,23 @@ package workloadservice
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
-	"math"
 	"net"
 	"net/http"
 	"os"
 	"sync"
 	"time"
 
+	"buf.build/go/protovalidate"
+
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
+
+	api "github.com/google/go-tpm-tools/keymanager/workload_service/proto"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/types/known/durationpb"
 
@@ -155,93 +160,6 @@ type ClaimsResult struct {
 	Err   error
 }
 
-// KeyHandle represents a key handle returned from the API.
-type KeyHandle struct {
-	Handle string `json:"handle"`
-}
-
-// GenerateKeyRequest is the JSON body for POST /v1/keys:generate_key.
-type GenerateKeyRequest struct {
-	Algorithm AlgorithmDetails `json:"algorithm"`
-	Lifespan  uint64           `json:"lifespan"`
-}
-
-// DestroyRequest is the JSON body for POST /v1/keys:destroy.
-type DestroyRequest struct {
-	KeyHandle KeyHandle `json:"key_handle"`
-}
-
-// GenerateKeyResponse is returned by POST /v1/keys:generate_key.
-type GenerateKeyResponse struct {
-	KeyHandle              KeyHandle  `json:"key_handle"`
-	PubKey                 PubKeyInfo `json:"pub_key"`
-	KeyProtectionMechanism string     `json:"key_protection_mechanism"`
-	ExpirationTime         int64      `json:"expiration_time"`
-}
-
-// AlgorithmParams represents the parameters for a specific algorithm type.
-type AlgorithmParams struct {
-	KemID KemAlgorithm `json:"kem_id"`
-}
-
-// AlgorithmDetails captures type and specific params.
-type AlgorithmDetails struct {
-	Type   string          `json:"type"`
-	Params AlgorithmParams `json:"params"`
-}
-
-// SupportedAlgorithm represents a single algorithm capability.
-type SupportedAlgorithm struct {
-	Algorithm AlgorithmDetails `json:"algorithm"`
-}
-
-// GetCapabilitiesResponse represents the JSON body for GET /v1/capabilities.
-type GetCapabilitiesResponse struct {
-	SupportedAlgorithms []SupportedAlgorithm `json:"supported_algorithms"`
-}
-
-// EnumerateKeysResponse represents the response for GET /v1/keys.
-type EnumerateKeysResponse struct {
-	KeyInfos []KeyInfo `json:"key_infos"`
-}
-
-// KeyInfo contains information about a single key.
-type KeyInfo struct {
-	KeyHandle              KeyHandle  `json:"key_handle"`
-	PubKey                 PubKeyInfo `json:"pub_key"`
-	KeyProtectionMechanism string     `json:"key_protection_mechanism"`
-	ExpirationTime         int64      `json:"expiration_time"`
-}
-
-// PubKeyInfo contains the public key and its algorithm.
-type PubKeyInfo struct {
-	Algorithm AlgorithmDetails `json:"algorithm"`
-	PublicKey string           `json:"public_key"` // Base64 encoded public key
-}
-
-// KemCiphertext carries raw encapsulated key bytes and the KEM algorithm.
-type KemCiphertext struct {
-	Algorithm  KemAlgorithm `json:"algorithm"`
-	Ciphertext string       `json:"ciphertext"` // base64-encoded raw bytes
-}
-
-// DecapsRequest is the JSON body for POST /keys:decap.
-type DecapsRequest struct {
-	KeyHandle  KeyHandle     `json:"key_handle"`
-	Ciphertext KemCiphertext `json:"ciphertext"`
-}
-
-// KemSharedSecret is the Decaps result payload.
-type KemSharedSecret struct {
-	Algorithm KemAlgorithm `json:"algorithm"`
-	Secret    string       `json:"secret"` // base64-encoded raw bytes
-}
-
-// DecapsResponse is returned by POST /v1/keys:decap.
-type DecapsResponse struct {
-	SharedSecret KemSharedSecret `json:"shared_secret"`
-}
-
 // Server is the WSD HTTP server.
 type Server struct {
 	keyProtectionService KeyProtectionService
@@ -323,7 +241,7 @@ func (s *Server) LookupBindingUUID(kemUUID uuid.UUID) (uuid.UUID, bool) {
 	return id, ok
 }
 
-func decapsAADContext(kemUUID uuid.UUID, algorithm KemAlgorithm) []byte {
+func decapsAADContext(kemUUID uuid.UUID, algorithm keymanager.KemAlgorithm) []byte {
 	// Bind the KPS->WSD transport ciphertext to this decapsulation context.
 	// Note: The AAD context string retains `decaps` as it is part of the internal binding protocol
 	// and changing it might affect backward compatibility if keys were already persisted (though lifespan is short).
@@ -332,31 +250,26 @@ func decapsAADContext(kemUUID uuid.UUID, algorithm KemAlgorithm) []byte {
 }
 
 func (s *Server) handleDecaps(w http.ResponseWriter, r *http.Request) {
-
-	var req DecapsRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, fmt.Sprintf("invalid request body: %v", err), http.StatusBadRequest)
+	var req api.DecapsRequest
+	if err := readRequest(r, &req); err != nil {
+		writeError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	if !req.Ciphertext.Algorithm.IsSupported() {
-		http.Error(w, fmt.Sprintf("unsupported ciphertext algorithm: %d. Supported algorithms: %s", req.Ciphertext.Algorithm, SupportedKemAlgorithmsString()), http.StatusBadRequest)
+	if !IsSupportedKemAlgorithm(req.Ciphertext.Algorithm) {
+		writeError(w, fmt.Sprintf("unsupported ciphertext algorithm: %d. Supported algorithms: %s", req.Ciphertext.Algorithm, SupportedKemAlgorithmsString()), http.StatusBadRequest)
 		return
 	}
 
 	kemUUID, err := uuid.Parse(req.KeyHandle.Handle)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("invalid key_handle.handle: %v", err), http.StatusBadRequest)
+		writeError(w, fmt.Sprintf("invalid key_handle.handle: %v", err), http.StatusBadRequest)
 		return
 	}
 
-	encapsulatedKey, err := base64.StdEncoding.DecodeString(req.Ciphertext.Ciphertext)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("invalid ciphertext.ciphertext base64: %v", err), http.StatusBadRequest)
-		return
-	}
+	encapsulatedKey := req.Ciphertext.Ciphertext
 	if len(encapsulatedKey) == 0 {
-		http.Error(w, "ciphertext.ciphertext must not be empty", http.StatusBadRequest)
+		writeError(w, "ciphertext.ciphertext must not be empty", http.StatusBadRequest)
 		return
 	}
 	aad := decapsAADContext(kemUUID, req.Ciphertext.Algorithm)
@@ -364,70 +277,59 @@ func (s *Server) handleDecaps(w http.ResponseWriter, r *http.Request) {
 	// Look up the binding UUID for this KEM key.
 	bindingUUID, ok := s.LookupBindingUUID(kemUUID)
 	if !ok {
-		http.Error(w, fmt.Sprintf("KEM key handle not found: %s", kemUUID), http.StatusNotFound)
+		writeError(w, fmt.Sprintf("KEM key handle not found: %s", kemUUID), http.StatusNotFound)
 		return
 	}
 
 	// Decapsulate and reseal via KPS.
 	sealEnc, sealedCT, err := s.keyProtectionService.DecapAndSeal(kemUUID, encapsulatedKey, aad)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("failed to decap and seal: %v", err), http.StatusInternalServerError)
+		writeError(w, fmt.Sprintf("failed to decap and seal: %v", err), http.StatusInternalServerError)
 		return
 	}
 
 	// Open the sealed secret using the binding key via WSD KCC.
 	plaintext, err := s.workloadService.Open(bindingUUID, sealEnc, sealedCT, aad)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("failed to open sealed secret: %v", err), http.StatusInternalServerError)
+		writeError(w, fmt.Sprintf("failed to open sealed secret: %v", err), http.StatusInternalServerError)
 		return
 	}
 
 	// Return the shared secret.
-	resp := DecapsResponse{
-		SharedSecret: KemSharedSecret{
+	resp := api.DecapsResponse{
+		SharedSecret: &keymanager.KemSharedSecret{
 			Algorithm: req.Ciphertext.Algorithm,
-			Secret:    base64.StdEncoding.EncodeToString(plaintext),
+			Secret:    plaintext,
 		},
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(resp)
+	writeJSON(w, &resp, http.StatusOK)
 }
 
 func (s *Server) handleGenerateKey(w http.ResponseWriter, r *http.Request) {
-	var req GenerateKeyRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, fmt.Sprintf("invalid request body: %v", err), http.StatusBadRequest)
-		return
-	}
-
-	// Validate lifespan is positive and does not cause int64 overflow.
-	if req.Lifespan == 0 {
-		writeError(w, "lifespan must be greater than 0s", http.StatusBadRequest)
-		return
-	}
-	if req.Lifespan > math.MaxInt64 {
-		writeError(w, "lifespan exceeds maximum allowed value", http.StatusBadRequest)
+	var req api.GenerateKeyRequest
+	if err := readRequest(r, &req); err != nil {
+		writeError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	switch req.Algorithm.Type {
 	case "kem":
-		s.generateKEMKey(w, req)
+		s.generateKEMKey(w, &req)
 	default:
 		writeError(w, fmt.Sprintf("unsupported algorithm type: %q. Only 'kem' is supported.", req.Algorithm.Type), http.StatusBadRequest)
 	}
 }
 
-func (s *Server) generateKEMKey(w http.ResponseWriter, req GenerateKeyRequest) {
+func (s *Server) generateKEMKey(w http.ResponseWriter, req *api.GenerateKeyRequest) {
 	// Validate algorithm.
-	if !req.Algorithm.Params.KemID.IsSupported() {
-		writeError(w, fmt.Sprintf("unsupported algorithm: %s. Supported algorithms: %s", req.Algorithm.Params.KemID, SupportedKemAlgorithmsString()), http.StatusBadRequest)
+	if !IsSupportedKemAlgorithm(req.Algorithm.GetParams().GetKemId()) {
+		writeError(w, fmt.Sprintf("unsupported algorithm: %s. Supported algorithms: %s", req.Algorithm.GetParams().GetKemId(), SupportedKemAlgorithmsString()), http.StatusBadRequest)
 		return
 	}
 
 	// Construct the full HPKE algorithm suite based on the requested KEM.
 	// We currently only support one suite.
-	algo, err := req.Algorithm.Params.KemID.ToHpkeAlgorithm()
+	algo, err := KemToHpkeAlgorithm(req.Algorithm.GetParams().GetKemId())
 	if err != nil {
 		writeError(w, err.Error(), http.StatusBadRequest)
 		return
@@ -453,42 +355,46 @@ func (s *Server) generateKEMKey(w http.ResponseWriter, req GenerateKeyRequest) {
 	s.mu.Unlock()
 
 	// Return KEM UUID to workload.
-	resp := GenerateKeyResponse{
-		KeyHandle: KeyHandle{Handle: kemUUID.String()},
-		PubKey: PubKeyInfo{
-			Algorithm: AlgorithmDetails{
-				Type: "kem",
-				Params: AlgorithmParams{
-					KemID: req.Algorithm.Params.KemID,
+	resp := api.GenerateKeyResponse{
+		KeyHandle: &keymanager.KeyHandle{Handle: kemUUID.String()},
+		PubKey: &keymanager.PubKeyInfo{
+			Algorithm: &keymanager.AlgorithmDetails{
+				Type: req.Algorithm.Type,
+				Params: &keymanager.AlgorithmParams{
+					Params: &keymanager.AlgorithmParams_KemId{
+						KemId: req.Algorithm.GetParams().GetKemId(),
+					},
 				},
 			},
-			PublicKey: base64.StdEncoding.EncodeToString(kemPubKey),
+			PublicKey: kemPubKey,
 		},
 		KeyProtectionMechanism: keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED.String(),
-		ExpirationTime:         time.Now().Unix() + int64(req.Lifespan),
+		ExpirationTime:         float64(time.Now().Unix()) + float64(req.Lifespan),
 	}
-	writeJSON(w, resp, http.StatusOK)
+	writeJSON(w, &resp, http.StatusOK)
 }
 
 func (s *Server) handleGetCapabilities(w http.ResponseWriter, _ *http.Request) {
 
-	var supportedAlgos []SupportedAlgorithm
+	var supportedAlgos []*keymanager.SupportedAlgorithm
 	for _, algo := range SupportedKemAlgorithms {
-		supportedAlgos = append(supportedAlgos, SupportedAlgorithm{
-			Algorithm: AlgorithmDetails{
+		supportedAlgos = append(supportedAlgos, &keymanager.SupportedAlgorithm{
+			Algorithm: &keymanager.AlgorithmDetails{
 				Type: "kem",
-				Params: AlgorithmParams{
-					KemID: algo,
+				Params: &keymanager.AlgorithmParams{
+					Params: &keymanager.AlgorithmParams_KemId{
+						KemId: algo,
+					},
 				},
 			},
 		})
 	}
 
-	resp := GetCapabilitiesResponse{
+	resp := api.GetCapabilitiesResponse{
 		SupportedAlgorithms: supportedAlgos,
 	}
 
-	writeJSON(w, resp, http.StatusOK)
+	writeJSON(w, &resp, http.StatusOK)
 }
 
 func (s *Server) handleEnumerateKeys(w http.ResponseWriter, _ *http.Request) {
@@ -498,58 +404,94 @@ func (s *Server) handleEnumerateKeys(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 
-	keyInfos := make([]KeyInfo, 0, len(keys))
+	keyInfos := make([]*api.KeyInfo, 0, len(keys))
 	for _, key := range keys {
-		kemAlgo := KemAlgorithmUnspecified
+		var kemAlgo keymanager.KemAlgorithm
 		if key.Algorithm != nil {
-			switch key.Algorithm.Kem {
-			case keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256:
-				kemAlgo = KemAlgorithmDHKEMX25519HKDFSHA256
-			}
+			kemAlgo = key.Algorithm.Kem
 		}
 
-		keyInfos = append(keyInfos, KeyInfo{
-			KeyHandle: KeyHandle{Handle: key.ID.String()},
-			PubKey: PubKeyInfo{
-				Algorithm: AlgorithmDetails{
+		keyInfos = append(keyInfos, &api.KeyInfo{
+			KeyHandle: &keymanager.KeyHandle{Handle: key.ID.String()},
+			PubKey: &keymanager.PubKeyInfo{
+				Algorithm: &keymanager.AlgorithmDetails{
 					Type: "kem",
-					Params: AlgorithmParams{
-						KemID: kemAlgo,
+					Params: &keymanager.AlgorithmParams{
+						Params: &keymanager.AlgorithmParams_KemId{
+							KemId: kemAlgo,
+						},
 					},
 				},
-				PublicKey: base64.StdEncoding.EncodeToString(key.KEMPubKey),
+				PublicKey: key.KEMPubKey,
 			},
 			KeyProtectionMechanism: keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED.String(),
-			ExpirationTime:         time.Now().Unix() + int64(key.RemainingLifespanSecs),
+			ExpirationTime:         float64(time.Now().Unix()) + float64(key.RemainingLifespanSecs),
 		})
 	}
 
-	resp := EnumerateKeysResponse{
+	resp := api.EnumerateKeysResponse{
 		KeyInfos: keyInfos,
 	}
 
-	writeJSON(w, resp, http.StatusOK)
+	writeJSON(w, &resp, http.StatusOK)
 }
 
 // writeJSON writes a JSON response with the given status code.
-func writeJSON(w http.ResponseWriter, v any, code int) {
+func writeJSON(w http.ResponseWriter, v proto.Message, code int) {
+	if err := protovalidate.Validate(v); err != nil {
+		writeError(w, fmt.Sprintf("validation failed for response: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	b, err := protojson.MarshalOptions{EmitUnpopulated: true, UseProtoNames: true}.Marshal(v)
+	if err != nil {
+		writeError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(code)
-	if err := json.NewEncoder(w).Encode(v); err != nil {
+	if _, err := w.Write(b); err != nil {
 		log.Printf("failed to write JSON response: %v", err)
 	}
 }
 
 // writeError writes a JSON error response.
 func writeError(w http.ResponseWriter, message string, code int) {
-	writeJSON(w, map[string]string{"error": message}, code)
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.WriteHeader(code)
+	b, err := json.Marshal(map[string]string{"error": message})
+	if err != nil {
+		log.Printf("failed to marshal error response: %v", err)
+		b = []byte(`{"error":"internal error serializing response"}`)
+	}
+	if _, err := w.Write(b); err != nil {
+		log.Printf("failed to write error response: %v", err)
+	}
+}
+
+// readRequest reads the HTTP request body, unmarshals it into a proto.Message,
+// and validates it.
+func readRequest(r *http.Request, req proto.Message) error {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read request body: %w", err)
+	}
+	if err := protojson.Unmarshal(body, req); err != nil {
+		return fmt.Errorf("invalid request body: %w", err)
+	}
+	if err := protovalidate.Validate(req); err != nil {
+		return fmt.Errorf("invalid request: %w", err)
+	}
+	return nil
 }
 
 func (s *Server) handleDestroy(w http.ResponseWriter, r *http.Request) {
-	var req DestroyRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, fmt.Sprintf("invalid request body: %v", err), http.StatusBadRequest)
+	var req api.DestroyRequest
+	if err := readRequest(r, &req); err != nil {
+		writeError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
