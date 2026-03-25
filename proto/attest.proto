@@ -5,7 +5,7 @@ package attest;
 import "proto/sevsnp.proto";
 import "proto/tdx.proto";
 import "tpm.proto";
-import "proto/attestation.proto";
+import "attestation.proto";
 
 option go_package = "github.com/google/go-tpm-tools/proto/attest";
 
