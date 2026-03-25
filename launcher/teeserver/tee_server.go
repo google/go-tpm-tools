@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"strings"
@@ -16,6 +17,7 @@ import (
 	"github.com/google/go-tpm-tools/launcher/agent"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/spec"
+	tspb "github.com/google/go-tpm-tools/launcher/teeserver/proto/gen/teeserver"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/google/go-tpm-tools/verifier/models"
 	"google.golang.org/grpc/codes"
@@ -162,11 +164,13 @@ func (a *attestHandler) getAttestationEvidence(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	var req struct {
-		Challenge []byte `json:"challenge"`
+	var req tspb.GetAttestationEvidenceRequest
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		a.logAndWriteHTTPError(w, http.StatusBadRequest, fmt.Errorf("failed to read request body: %v", err))
+		return
 	}
-
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := protojson.Unmarshal(body, &req); err != nil {
 		a.logAndWriteHTTPError(w, http.StatusBadRequest, fmt.Errorf("failed to decode request: %v", err))
 		return
 	}
@@ -245,14 +249,14 @@ func (a *attestHandler) getKeyEndorsement(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	var req struct {
-		Challenge []byte `json:"challenge"`
-		KeyHandle struct {
-			Handle string `json:"handle"`
-		} `json:"key_handle"`
+	var req tspb.GetKeyEndorsementRequest
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		a.logAndWriteHTTPError(w, http.StatusBadRequest, fmt.Errorf("failed to read request body: %v", err))
+		return
 	}
 
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := protojson.Unmarshal(body, &req); err != nil {
 		a.logAndWriteHTTPError(w, http.StatusBadRequest, fmt.Errorf("failed to decode request: %v", err))
 		return
 	}
