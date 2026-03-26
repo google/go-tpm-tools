@@ -31,11 +31,10 @@ func TestExperiments(t *testing.T) {
 			},
 		},
 		{
-			input: "{\"EnableTestFeatureForImage\":true,\"EnableSignedContainerImage\":true,\"EnableItaVerifier\":true,\"FloatFeature\":-5.6,\"OtherTestFeatureForImage\":false,\"EnableVerifyCS\":true}",
+			input: "{\"EnableTestFeatureForImage\":true,\"EnableSignedContainerImage\":true,\"EnableItaVerifier\":true,\"FloatFeature\":-5.6,\"OtherTestFeatureForImage\":false}",
 			expectedExps: Experiments{
 				EnableTestFeatureForImage: true,
 				EnableItaVerifier:         true,
-				EnableVerifyCS:            true,
 				EnableGpuGcaSupport:       false,
 			},
 		},
@@ -56,6 +55,13 @@ func TestExperiments(t *testing.T) {
 				EnableH100DriverInstallation: true,
 				EnableKeyManager:             false,
 				EnableGpuGcaSupport:          true,
+			},
+		},
+		{
+			input: "{\"EnableTestFeatureForImage\":true,\"EnableItaVerifier\":false,\"NonExistantExperiment\":true,\"EnableVerifyCS\":true}",
+			expectedExps: Experiments{
+				EnableTestFeatureForImage:    true,
+				EnableItaVerifier:            false,
 			},
 		},
 	}

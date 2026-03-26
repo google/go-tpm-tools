@@ -994,7 +994,6 @@ func TestAttestationEvidence_TPM_Success(t *testing.T) {
 
 type testClient struct {
 	verifyCSResp  *verifier.VerifyAttestationResponse
-	verifyAttResp *verifier.VerifyAttestationResponse
 }
 
 func (t *testClient) CreateChallenge(_ context.Context) (*verifier.Challenge, error) {
@@ -1002,7 +1001,7 @@ func (t *testClient) CreateChallenge(_ context.Context) (*verifier.Challenge, er
 }
 
 func (t *testClient) VerifyAttestation(_ context.Context, _ verifier.VerifyAttestationRequest) (*verifier.VerifyAttestationResponse, error) {
-	return t.verifyAttResp, nil
+	return nil, errors.New("Should not be called - use VerifyConfidentialSpace")
 }
 
 func (t *testClient) VerifyConfidentialSpace(_ context.Context, _ verifier.VerifyAttestationRequest) (*verifier.VerifyAttestationResponse, error) {
@@ -1013,34 +1012,19 @@ func TestVerify(t *testing.T) {
 	expectedCSResp := &verifier.VerifyAttestationResponse{
 		ClaimsToken: []byte("verify-cs-token"),
 	}
-	expectedAttResp := &verifier.VerifyAttestationResponse{
-		ClaimsToken: []byte("verify-att-token"),
-	}
 
 	vClient := &testClient{
 		verifyCSResp:  expectedCSResp,
-		verifyAttResp: expectedAttResp,
 	}
 
 	testcases := []struct {
 		name         string
 		opts         AttestAgentOpts
-		exps         experiments.Experiments
 		expectedResp *verifier.VerifyAttestationResponse
 	}{
 		{
-			name: "VerifyCS in experiment",
-			exps: experiments.Experiments{
-				EnableVerifyCS: true,
-			},
+			name:         "Verify calls VerifyConfidentialSpace",
 			expectedResp: expectedCSResp,
-		},
-		{
-			name: "VerifyAtt in experiment",
-			exps: experiments.Experiments{
-				EnableVerifyCS: false,
-			},
-			expectedResp: expectedAttResp,
 		},
 	}
 
@@ -1050,7 +1034,6 @@ func TestVerify(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			attAgent := agent{
 				launchSpec: spec.LaunchSpec{
-					Experiments: tc.exps,
 				},
 			}
 
