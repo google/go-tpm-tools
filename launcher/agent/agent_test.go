@@ -993,7 +993,7 @@ func TestAttestationEvidence_TPM_Success(t *testing.T) {
 }
 
 type testClient struct {
-	verifyCSResp  *verifier.VerifyAttestationResponse
+	verifyCSResp *verifier.VerifyAttestationResponse
 }
 
 func (t *testClient) CreateChallenge(_ context.Context) (*verifier.Challenge, error) {
@@ -1014,7 +1014,7 @@ func TestVerify(t *testing.T) {
 	}
 
 	vClient := &testClient{
-		verifyCSResp:  expectedCSResp,
+		verifyCSResp: expectedCSResp,
 	}
 
 	testcases := []struct {
@@ -1033,8 +1033,7 @@ func TestVerify(t *testing.T) {
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
 			attAgent := agent{
-				launchSpec: spec.LaunchSpec{
-				},
+				launchSpec: spec.LaunchSpec{},
 			}
 
 			resp, err := attAgent.verify(ctx, verifier.VerifyAttestationRequest{}, vClient)

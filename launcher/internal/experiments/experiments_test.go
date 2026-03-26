@@ -60,8 +60,8 @@ func TestExperiments(t *testing.T) {
 		{
 			input: "{\"EnableTestFeatureForImage\":true,\"EnableItaVerifier\":false,\"NonExistantExperiment\":true,\"EnableVerifyCS\":true}",
 			expectedExps: Experiments{
-				EnableTestFeatureForImage:    true,
-				EnableItaVerifier:            false,
+				EnableTestFeatureForImage: true,
+				EnableItaVerifier:         false,
 			},
 		},
 	}
