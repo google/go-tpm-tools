@@ -11,6 +11,7 @@ import (
 	"github.com/confidentsecurity/go-nvtrust/pkg/gonvtrust/gpu"
 
 	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
+	"github.com/google/go-tpm-tools/launcher/device"
 	"github.com/google/go-tpm-tools/proto/attest"
 )
 
@@ -30,7 +31,7 @@ var getGpuTypeInfo = deviceinfo.GetGPUTypeInfo
 
 // Attester defines the interface for GPU attestation.
 type Attester interface {
-	Attest(nonce []byte) (any, error)
+	device.ROT
 	EnableReadyState() error
 }
 
@@ -55,6 +56,11 @@ func (a *NvidiaAttester) Attest(nonce []byte) (any, error) {
 		return nil, err
 	}
 	return gpuAttestation, nil
+}
+
+// Vendor returns the device ROT vendor type.
+func (a *NvidiaAttester) Vendor() device.Vendor {
+	return device.NvidiaGPU
 }
 
 // EnableReadyState checks the Confidential Computing mode and transitions the GPU to a READY state if CC is enabled.

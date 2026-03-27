@@ -34,6 +34,7 @@ import (
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal"
+	"github.com/google/go-tpm-tools/launcher/device"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/internal/signaturediscovery"
 	"github.com/google/go-tpm-tools/launcher/spec"
@@ -72,28 +73,13 @@ type attestRoot interface {
 	Attest(nonce []byte) (any, error)
 	// ComputeNonce hashes the challenge and extraData using the algorithm preferred by the attestation root.
 	ComputeNonce(challenge []byte, extraData []byte) []byte
-	// AddDeviceROTs adds detected device RoTs(root of trust).
-	AddDeviceROTs([]DeviceROT)
-	// AttestDeviceROTs fetches a list of runtime device attestation report.
-	AttestDeviceROTs(nonce []byte) ([]any, error)
-}
-
-// DeviceROT defines an interface for all attached devices to collect attestation.
-type DeviceROT interface {
-	// Attest fetches an attestation from the attached device detected by launcher.
-	Attest(nonce []byte) (any, error)
 }
 
 // AttestAgentOpts contains user generated options when calling the
 // VerifyAttestation API
 type AttestAgentOpts struct {
-	TokenOptions *models.TokenOptions
-	*DeviceReportOpts
-}
-
-// DeviceReportOpts contains options for runtime device attestations.
-type DeviceReportOpts struct {
-	EnableRuntimeGPUAttestation bool
+	TokenOptions     *models.TokenOptions
+	DeviceReportOpts device.ReportOpts
 }
 
 type agent struct {
@@ -106,6 +92,7 @@ type agent struct {
 	launchSpec       spec.LaunchSpec
 	logger           logging.Logger
 	sigsCache        *sigsCache
+	deviceROTManager *device.ROTManager
 }
 
 // CreateAttestationAgent returns an agent capable of performing remote
@@ -115,7 +102,7 @@ type agent struct {
 // - principalFetcher is a func to fetch GCE principal tokens for a given audience.
 // - signaturesFetcher is a func to fetch container image signatures associated with the running workload.
 // - logger will log any partial errors returned by VerifyAttestation.
-func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher util.TpmKeyFetcher, verifierClient verifier.Client, principalFetcher principalIDTokenFetcher, sigsFetcher signaturediscovery.Fetcher, launchSpec spec.LaunchSpec, logger logging.Logger, deviceROTs []DeviceROT) (AttestationAgent, error) {
+func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher util.TpmKeyFetcher, verifierClient verifier.Client, principalFetcher principalIDTokenFetcher, sigsFetcher signaturediscovery.Fetcher, launchSpec spec.LaunchSpec, logger logging.Logger, deviceROTs []device.ROT) (AttestationAgent, error) {
 	// Fetched the AK and save it, so the agent doesn't need to create a new key everytime
 	ak, err := akFetcher(tpm)
 	if err != nil {
@@ -178,8 +165,8 @@ func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher util.TpmKeyFetcher
 		attestAgent.avRot = tpmAR
 	}
 
-	// Add deviceRoTs to the CPU attestation root.
-	attestAgent.avRot.AddDeviceROTs(deviceROTs)
+	// Register device ROT manager to the attestAgent.
+	attestAgent.deviceROTManager = device.NewROTManager(deviceROTs)
 	return attestAgent, nil
 }
 
@@ -373,10 +360,7 @@ func (a *agent) AttestationEvidence(_ context.Context, challenge []byte, extraDa
 }
 
 func (a *agent) attestDeviceROTs(nonce []byte, opts AttestAgentOpts) ([]*attestationpb.DeviceAttestationReport, error) {
-	if opts.DeviceReportOpts == nil {
-		return nil, nil
-	}
-	deviceROTs, err := a.avRot.AttestDeviceROTs(nonce)
+	deviceROTs, err := a.deviceROTManager.AttestDeviceROTs(nonce, opts.DeviceReportOpts)
 	if err != nil {
 		return nil, err
 	}
@@ -421,12 +405,11 @@ func convertOCIToContainerSignature(ociSig oci.Signature) (*verifier.ContainerSi
 }
 
 type tpmAttestRoot struct {
-	tpmMu      sync.Mutex
-	fetchedAK  *client.Key
-	tpm        io.ReadWriteCloser
-	cosCel     gecel.CEL
-	hashAlgos  []crypto.Hash
-	deviceROTs []DeviceROT
+	tpmMu     sync.Mutex
+	fetchedAK *client.Key
+	tpm       io.ReadWriteCloser
+	cosCel    gecel.CEL
+	hashAlgos []crypto.Hash
 }
 
 func (t *tpmAttestRoot) GetCEL() gecel.CEL {
@@ -467,22 +450,10 @@ func (t *tpmAttestRoot) ComputeNonce(challenge []byte, extraData []byte) []byte 
 	return finalNonce[:]
 }
 
-func (t *tpmAttestRoot) AddDeviceROTs(deviceROTs []DeviceROT) {
-	t.deviceROTs = append(t.deviceROTs, deviceROTs...)
-}
-
-func (t *tpmAttestRoot) AttestDeviceROTs(nonce []byte) ([]any, error) {
-	t.tpmMu.Lock()
-	defer t.tpmMu.Unlock()
-
-	return doAttestDeviceROTs(t.deviceROTs, nonce)
-}
-
 type tdxAttestRoot struct {
-	tdxMu      sync.Mutex
-	qp         *tg.LinuxConfigFsQuoteProvider
-	cosCel     gecel.CEL
-	deviceROTs []DeviceROT
+	tdxMu  sync.Mutex
+	qp     *tg.LinuxConfigFsQuoteProvider
+	cosCel gecel.CEL
 }
 
 func (t *tdxAttestRoot) GetCEL() gecel.CEL {
@@ -533,13 +504,6 @@ func (t *tdxAttestRoot) Attest(nonce []byte) (any, error) {
 	}, nil
 }
 
-func (t *tdxAttestRoot) AttestDeviceROTs(nonce []byte) ([]any, error) {
-	t.tdxMu.Lock()
-	defer t.tdxMu.Unlock()
-
-	return doAttestDeviceROTs(t.deviceROTs, nonce)
-}
-
 func (t *tdxAttestRoot) ComputeNonce(challenge []byte, extraData []byte) []byte {
 	challengeData := challenge
 	if extraData != nil {
@@ -549,10 +513,6 @@ func (t *tdxAttestRoot) ComputeNonce(challenge []byte, extraData []byte) []byte 
 	challengeDigest := sha512.Sum512(challengeData)
 	finalNonce := sha512.Sum512(append([]byte(labels.WorkloadAttestation), challengeDigest[:]...))
 	return finalNonce[:]
-}
-
-func (t *tdxAttestRoot) AddDeviceROTs(deviceROTs []DeviceROT) {
-	t.deviceROTs = append(t.deviceROTs, deviceROTs...)
 }
 
 // Refresh refreshes the internal state of the attestation agent.
@@ -652,16 +612,4 @@ func convertToTPMQuote(v *pb.Attestation) *attestationpb.TpmQuote {
 			},
 		},
 	}
-}
-
-func doAttestDeviceROTs(deviceROTs []DeviceROT, nonce []byte) ([]any, error) {
-	var deviceReports []any
-	for _, deviceROT := range deviceROTs {
-		deviceReport, err := deviceROT.Attest(nonce)
-		if err != nil {
-			return nil, err
-		}
-		deviceReports = append(deviceReports, deviceReport)
-	}
-	return deviceReports, nil
 }

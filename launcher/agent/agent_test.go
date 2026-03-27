@@ -29,6 +29,7 @@ import (
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal/test"
+	"github.com/google/go-tpm-tools/launcher/device"
 	"github.com/google/go-tpm-tools/launcher/internal/experiments"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/internal/signaturediscovery"
@@ -659,7 +660,6 @@ type fakeTdxAttestRoot struct {
 	cel           gecel.CEL
 	receivedNonce []byte
 	tdxQuote      []byte
-	deviceROTs    []DeviceROT
 }
 
 func (f *fakeTdxAttestRoot) Extend(c gecel.Content) error {
@@ -690,29 +690,8 @@ func (f *fakeTdxAttestRoot) ComputeNonce(challenge []byte, extraData []byte) []b
 	return finalNonce[:]
 }
 
-func (f *fakeTdxAttestRoot) AttestDeviceROTs(nonce []byte) ([]any, error) {
-	var deviceReports []any
-	for _, deviceRoT := range f.deviceROTs {
-		att, err := deviceRoT.Attest(nonce)
-		if err != nil {
-			return nil, err
-		}
-		switch v := att.(type) {
-		case *attestationpb.NvidiaAttestationReport:
-			deviceReports = append(deviceReports, v)
-		default:
-			return nil, fmt.Errorf("unknown device attestation type: %T", v)
-		}
-	}
-	return deviceReports, nil
-}
-
 //go:embed testdata/cel.b64
 var celB64 string
-
-func (f *fakeTdxAttestRoot) AddDeviceROTs(deviceRoTS []DeviceROT) {
-	f.deviceROTs = append(f.deviceROTs, deviceRoTS...)
-}
 
 type fakeGPURoT struct{}
 
@@ -728,56 +707,9 @@ func (f *fakeGPURoT) Attest(nonce []byte) (any, error) {
 		},
 	}, nil
 }
-func TestTDXAttestDeviceROTs(t *testing.T) {
-	testCases := []struct {
-		name          string
-		tdxAttestRoot *fakeTdxAttestRoot
-		nonce         []byte
-		wantGPU       bool
-		wantPass      bool
-	}{
-		{
-			name:          "success tdxAttestRoot w/o GPU device",
-			tdxAttestRoot: &fakeTdxAttestRoot{},
-			nonce:         []byte("test-nonce"),
-			wantPass:      true,
-		},
-		{
-			name: "success tdxAttestRoot w/ GPU device",
-			tdxAttestRoot: &fakeTdxAttestRoot{
-				deviceROTs: []DeviceROT{&fakeGPURoT{}},
-			},
-			nonce:    []byte("test-nonce"),
-			wantGPU:  true,
-			wantPass: true,
-		},
-		{
-			name: "failed tdxAttestRoot w/ GPU device",
-			tdxAttestRoot: &fakeTdxAttestRoot{
-				deviceROTs: []DeviceROT{&fakeGPURoT{}},
-			},
-			nonce:    []byte(""),
-			wantPass: false,
-		},
-	}
 
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			deviceReports, err := tc.tdxAttestRoot.AttestDeviceROTs(tc.nonce)
-			if gotPass := err == nil; gotPass != tc.wantPass {
-				t.Errorf("tdxAttestRoot.AttestDeviceROTs() did not return expected attestation result, got %v, want %v", gotPass, tc.wantPass)
-			}
-			if tc.wantGPU {
-				if len(deviceReports) == 0 {
-					t.Fatalf("tdxAttestRoot.AttestDeviceROTs() didn't return any device reports")
-				}
-				if att := deviceReports[0].(*attestationpb.NvidiaAttestationReport); att == nil {
-					t.Errorf("tdxAttestRoot.AttestDeviceROTs() didn't return expected device report type, want %v, but got nil", &attestationpb.NvidiaAttestationReport{})
-				}
-			}
-		})
-	}
-
+func (f *fakeGPURoT) Vendor() device.Vendor {
+	return device.NvidiaGPU
 }
 
 func TestAttestationEvidence_TDX_Success(t *testing.T) {
@@ -816,8 +748,8 @@ func TestAttestationEvidence_TDX_Success(t *testing.T) {
 				EnableAttestationEvidence: true,
 			},
 		},
+		deviceROTManager: device.NewROTManager([]device.ROT{&fakeGPURoT{}}),
 	}
-	attestAgent.avRot.AddDeviceROTs([]DeviceROT{&fakeGPURoT{}})
 
 	if err := measureFakeEvents(attestAgent); err != nil {
 		t.Fatalf("failed to measure events: %v", err)
@@ -838,7 +770,7 @@ func TestAttestationEvidence_TDX_Success(t *testing.T) {
 		{
 			name: "TDX attestation + runtime GPU attestation",
 			opts: AttestAgentOpts{
-				DeviceReportOpts: &DeviceReportOpts{
+				DeviceReportOpts: device.ReportOpts{
 					EnableRuntimeGPUAttestation: true,
 				},
 			},
@@ -1128,6 +1060,7 @@ func TestAttestationEvidence_TDX_NilExtraData(t *testing.T) {
 				EnableAttestationEvidence: true,
 			},
 		},
+		deviceROTManager: device.NewROTManager(nil),
 	}
 
 	challenge := []byte("test-challenge")
