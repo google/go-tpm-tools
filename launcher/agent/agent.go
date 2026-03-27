@@ -398,10 +398,7 @@ func (a *agent) attestDeviceROTs(nonce []byte, opts AttestAgentOpts) ([]*attesta
 }
 
 func (a *agent) verify(ctx context.Context, req verifier.VerifyAttestationRequest, client verifier.Client) (*verifier.VerifyAttestationResponse, error) {
-	if a.launchSpec.Experiments.EnableVerifyCS {
-		return client.VerifyConfidentialSpace(ctx, req)
-	}
-	return client.VerifyAttestation(ctx, req)
+	return client.VerifyConfidentialSpace(ctx, req)
 }
 
 func convertOCIToContainerSignature(ociSig oci.Signature) (*verifier.ContainerSignature, error) {

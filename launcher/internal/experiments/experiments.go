@@ -14,7 +14,6 @@ type Experiments struct {
 	EnableTestFeatureForImage    bool
 	EnableHealthMonitoring       bool
 	EnableItaVerifier            bool
-	EnableVerifyCS               bool
 	EnableAttestationEvidence    bool
 	EnableB200DriverInstallation bool
 	EnableH100DriverInstallation bool
