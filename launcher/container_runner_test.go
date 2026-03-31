@@ -25,7 +25,6 @@ import (
 	gecel "github.com/google/go-eventlog/cel"
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/launcher/agent"
-	"github.com/google/go-tpm-tools/launcher/internal/gpu"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/spec"
@@ -49,6 +48,10 @@ type fakeAttestationAgent struct {
 	sigsCache        []string
 	sigsFetcherFunc  func(context.Context) []string
 
+	hasGPU        bool
+	gpuAttestFunc func(nonce []byte) (any, error)
+	gpuReadyFunc  func() error
+
 	// attMu sits on top of attempts field and protects attempts.
 	attMu    sync.Mutex
 	attempts int
@@ -70,6 +73,25 @@ func (f *fakeAttestationAgent) Attest(ctx context.Context, _ agent.AttestAgentOp
 	return nil, fmt.Errorf("unimplemented")
 }
 
+func (f *fakeAttestationAgent) HasGPU() bool {
+	return f.hasGPU
+}
+
+func (f *fakeAttestationAgent) GetGPUAttestation(nonce []byte) (any, error) {
+	if f.gpuAttestFunc != nil {
+		return f.gpuAttestFunc(nonce)
+	}
+	// Default mock return
+	return &attestationpb.NvidiaAttestationReport{}, nil
+}
+
+func (f *fakeAttestationAgent) EnableGPUReadyState() error {
+	if f.gpuReadyFunc != nil {
+		return f.gpuReadyFunc()
+	}
+	return nil
+}
+
 func (f *fakeAttestationAgent) AttestWithClient(_ context.Context, _ agent.AttestAgentOpts, _ verifier.Client) ([]byte, error) {
 	return nil, fmt.Errorf("unimplemented")
 }
@@ -87,21 +109,6 @@ func (f *fakeAttestationAgent) Refresh(ctx context.Context) error {
 }
 
 func (f *fakeAttestationAgent) Close() error {
-	return nil
-}
-
-type fakeGPUAttester struct {
-	attestFunc func(nonce []byte) (any, error)
-}
-
-func (f *fakeGPUAttester) Attest(nonce []byte) (any, error) {
-	if f.attestFunc != nil {
-		return f.attestFunc(nonce)
-	}
-	return &attestationpb.NvidiaAttestationReport{}, nil
-}
-
-func (f *fakeGPUAttester) EnableReadyState() error {
 	return nil
 }
 
@@ -313,51 +320,57 @@ func TestRefreshTokenError(t *testing.T) {
 func TestMeasureGPUAttestationEvidence(t *testing.T) {
 	testCases := []struct {
 		name        string
-		gpuAttester gpu.Attester
 		attestAgent *fakeAttestationAgent
 		wantErr     bool
 		wantErrStr  string
 	}{
 		{
-			name:        "Success",
-			gpuAttester: &fakeGPUAttester{},
+			name: "Success",
 			attestAgent: &fakeAttestationAgent{
+				hasGPU:           true,
 				measureEventFunc: func(gecel.Content) error { return nil },
+				gpuAttestFunc: func(_ []byte) (any, error) {
+					return &attestationpb.NvidiaAttestationReport{}, nil
+				},
 			},
 			wantErr: false,
 		},
 		{
-			name:        "NilGpuAttester",
-			gpuAttester: nil,
-			attestAgent: &fakeAttestationAgent{},
-			wantErr:     false,
+			name: "NoGpuDetected",
+			attestAgent: &fakeAttestationAgent{
+				hasGPU: false,
+			},
+			wantErr: false,
 		},
 		{
 			name: "AttestError",
-			gpuAttester: &fakeGPUAttester{
-				attestFunc: func(_ []byte) (any, error) {
+			attestAgent: &fakeAttestationAgent{
+				hasGPU: true,
+				gpuAttestFunc: func(_ []byte) (any, error) {
 					return nil, errors.New("attest failed")
 				},
 			},
-			attestAgent: &fakeAttestationAgent{},
-			wantErr:     true,
-			wantErrStr:  "failed to collect GPU evidence",
+			wantErr:    true,
+			wantErrStr: "failed to collect GPU evidence",
 		},
 		{
 			name: "WrongEvidenceType",
-			gpuAttester: &fakeGPUAttester{
-				attestFunc: func(_ []byte) (any, error) {
+			attestAgent: &fakeAttestationAgent{
+				hasGPU: true,
+				gpuAttestFunc: func(_ []byte) (any, error) {
 					return "wrong type", nil
 				},
 			},
-			attestAgent: &fakeAttestationAgent{},
-			wantErr:     true,
-			wantErrStr:  "unexpected evidence type",
+			wantErr:    true,
+			wantErrStr: "unexpected evidence type",
 		},
 		{
-			name:        "MeasureEventError",
-			gpuAttester: &fakeGPUAttester{},
+			name: "MeasureEventError",
 			attestAgent: &fakeAttestationAgent{
+				hasGPU: true,
+				gpuAttestFunc: func(_ []byte) (any, error) {
+					return &attestationpb.NvidiaAttestationReport{}, nil
+				},
 				measureEventFunc: func(gecel.Content) error {
 					return errors.New("measure event failed")
 				},
@@ -370,8 +383,6 @@ func TestMeasureGPUAttestationEvidence(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			r := &ContainerRunner{
-				// The fakeGPUAttester doesn't have EnableReadyState, so we wrap it.
-				gpuAttester: tc.gpuAttester,
 				attestAgent: tc.attestAgent,
 				logger:      logging.SimpleLogger(),
 			}
@@ -723,6 +734,7 @@ func TestMeasureCELEvents(t *testing.T) {
 			gotEvents := []cel.CosType{}
 
 			fakeAgent := &fakeAttestationAgent{
+				hasGPU: tc.launchSpec.InstallGpuDriver,
 				measureEventFunc: func(content gecel.Content) error {
 					got, _ := content.TLV()
 					tlv := &gecel.TLV{}
@@ -730,20 +742,13 @@ func TestMeasureCELEvents(t *testing.T) {
 					gotEvents = append(gotEvents, cel.CosType(tlv.Type))
 					return nil
 				},
-			}
-
-			var fakeGpu gpu.Attester
-			if tc.launchSpec.InstallGpuDriver {
-				fakeGpu = &fakeGPUAttester{
-					attestFunc: func(_ []byte) (any, error) {
-						return &attestationpb.NvidiaAttestationReport{}, nil
-					},
-				}
+				gpuAttestFunc: func(_ []byte) (any, error) {
+					return &attestationpb.NvidiaAttestationReport{}, nil
+				},
 			}
 
 			r := ContainerRunner{
 				attestAgent: fakeAgent,
-				gpuAttester: fakeGpu,
 				container:   fakeContainer,
 				launchSpec:  tc.launchSpec,
 				logger:      logging.SimpleLogger(),
