@@ -4,16 +4,12 @@ import (
 	"errors"
 	"fmt"
 
-	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
-
-	gecel "github.com/google/go-eventlog/cel"
 	"github.com/google/go-eventlog/extract"
 	gepb "github.com/google/go-eventlog/proto/state"
 	"github.com/google/go-eventlog/register"
 	"github.com/google/go-eventlog/tpmeventlog"
 	pb "github.com/google/go-tpm-tools/proto/attest"
 	tpmpb "github.com/google/go-tpm-tools/proto/tpm"
-	"google.golang.org/protobuf/proto"
 )
 
 // parsePCClientEventLog parses a raw event log and replays the parsed event
