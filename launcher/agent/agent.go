@@ -687,6 +687,8 @@ func (a *agent) GetGPUAttestation(nonce []byte) (any, error) {
 		return nil, fmt.Errorf("GPU attester not initialized")
 	}
 	return a.nvidiaAttester.Attest(nonce)
+}
+
 func doAttestDeviceROTs(deviceROTs []DeviceROT, nonce []byte) ([]any, error) {
 	var deviceReports []any
 	for _, deviceROT := range deviceROTs {
