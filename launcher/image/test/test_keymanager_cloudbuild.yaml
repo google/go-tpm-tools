@@ -1,0 +1,48 @@
+# Test that the Keymanager service works for standard KMS-like flows.
+# This runs the test workload which calls generate, enumerate, decap,
+# and verifies a local encap.
+substitutions:
+  '_IMAGE_NAME': ''
+  '_IMAGE_PROJECT': ''
+  '_CLEANUP': 'true'
+  '_VM_NAME_PREFIX': 'cs-keymanager-test'
+  '_ZONE': 'asia-east1-a'
+  # Important notes: the actual real URL shouldn't be hardcoded since it requires building
+  # The run_cloudbuild.sh script or user's invocation will override _WORKLOAD_IMAGE
+  # This workload image is built from launcher/image/testworkloads/keymanager
+  # Registry reference: us-west1-docker.pkg.dev/confidential-space-images-dev/cs-integ-test-images/keymanager_workload:latest
+  '_WORKLOAD_IMAGE': 'us-west1-docker.pkg.dev/confidential-space-images-dev/cs-integ-test-images/keymanager_workload:latest'
+steps:
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CreateVM
+  entrypoint: 'bash'
+  env:
+  - 'BUILD_ID=$BUILD_ID'
+  args: ['create_vm.sh','-i', '${_IMAGE_NAME}',
+          '-p', '${_IMAGE_PROJECT}',
+          '-m', 'tee-image-reference=${_WORKLOAD_IMAGE},tee-container-log-redirect=true',
+          '-n', '${_VM_NAME_PREFIX}-${BUILD_ID}',
+          '-z', '${_ZONE}',
+        ]
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: TestKeymanager
+  entrypoint: 'bash'
+  args: ['scripts/test_keymanager.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}', '${_ZONE}']
+  waitFor: ['CreateVM']
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CleanUp
+  entrypoint: 'bash'
+  env:
+  - 'CLEANUP=$_CLEANUP'
+  args: ['cleanup.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}', '${_ZONE}']
+# Must come after cleanup.
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CheckFailure
+  entrypoint: 'bash'
+  env:
+  - 'BUILD_ID=$BUILD_ID'
+  args: ['check_failure.sh']
+
+options:
+  pool:
+    name: 'projects/confidential-space-images-dev/locations/us-west1/workerPools/cs-image-build-vpc'

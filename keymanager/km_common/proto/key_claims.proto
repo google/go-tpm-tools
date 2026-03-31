@@ -4,13 +4,9 @@ package keymanager;
 
 import "google/protobuf/duration.proto";
 import "keymanager/km_common/proto/algorithms.proto";
+import "keymanager/km_common/proto/crypto_types.proto";
 
 option go_package = "github.com/google/go-tpm-tools/keymanager/km_common/proto;keymanager";
-
-// Used to refer to key instances held by various daemons.
-message KeyHandle {
-  string handle = 1;
-}
 
 enum KeyType {
   KEY_TYPE_UNSPECIFIED = 0;

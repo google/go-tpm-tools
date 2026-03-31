@@ -1,8 +1,8 @@
-use crate::algorithms::{AeadAlgorithm, HpkeAlgorithm, KdfAlgorithm, KemAlgorithm};
+use crate::crypto::secret_box::SecretBox;
 #[cfg(any(test, feature = "test-utils"))]
 use crate::crypto::PrivateKey;
-use crate::crypto::secret_box::SecretBox;
-use crate::crypto::{Error, PrivateKeyOps, PublicKeyOps};
+use crate::crypto::{Status, PrivateKeyOps, PublicKeyOps};
+use crate::proto::{AeadAlgorithm, HpkeAlgorithm, KdfAlgorithm, KemAlgorithm};
 use bssl_crypto::{hkdf, hpke, x25519};
 
 /// X25519-based public key implementation.
@@ -21,7 +21,7 @@ impl PublicKeyOps for X25519PublicKey {
         plaintext: &SecretBox,
         aad: &[u8],
         algo: &HpkeAlgorithm,
-    ) -> Result<(Vec<u8>, Vec<u8>), Error> {
+    ) -> Result<(Vec<u8>, Vec<u8>), Status> {
         let (
             Ok(KemAlgorithm::DhkemX25519HkdfSha256),
             Ok(KdfAlgorithm::HkdfSha256),
@@ -32,7 +32,7 @@ impl PublicKeyOps for X25519PublicKey {
             AeadAlgorithm::try_from(algo.aead),
         )
         else {
-            return Err(Error::UnsupportedAlgorithm);
+            return Err(Status::UnsupportedAlgorithm);
         };
 
         let params = hpke::Params::new(
@@ -43,7 +43,7 @@ impl PublicKeyOps for X25519PublicKey {
 
         let (mut sender_ctx, encapsulated_key) =
             hpke::SenderContext::new(&params, self.as_ref(), b"")
-                .ok_or(Error::HpkeEncryptionError)?;
+                .ok_or(Status::EncryptionFailure)?;
 
         let ciphertext = sender_ctx.seal(plaintext.as_slice(), aad);
         Ok((encapsulated_key, ciphertext))
@@ -53,27 +53,27 @@ impl PublicKeyOps for X25519PublicKey {
     fn encap_internal(
         &self,
         ephemeral_sk: Option<&PrivateKey>,
-    ) -> Result<(SecretBox, Vec<u8>), Error> {
+    ) -> Result<(SecretBox, Vec<u8>), Status> {
         let (pk_e_bytes, sk_e_bytes) = match ephemeral_sk {
             Some(PrivateKey::X25519(sk)) => {
                 let sk_e = x25519::PrivateKey(
                     sk.0.as_slice()
                         .try_into()
-                        .map_err(|_| Error::KeyLenMismatch)?,
+                        .map_err(|_| Status::InvalidArgument)?,
                 );
                 (sk_e.to_public().to_vec(), sk.0.as_slice().to_vec())
             }
             None => hpke::Kem::X25519HkdfSha256.generate_keypair(),
         };
 
-        let sk_e = x25519::PrivateKey(sk_e_bytes.try_into().map_err(|_| Error::CryptoError)?);
+        let sk_e = x25519::PrivateKey(sk_e_bytes.try_into().map_err(|_| Status::CryptoError)?);
         let pk_r = self.0;
 
         // 1. Compute Diffie-Hellman shared secret
         // dh = dhExchange(skE, pkR)
         let shared_key = SecretBox::new(
             sk_e.compute_shared_key(&pk_r)
-                .ok_or(Error::CryptoError)?
+                .ok_or(Status::CryptoError)?
                 .to_vec(),
         );
 
@@ -112,20 +112,20 @@ impl From<X25519PrivateKey> for SecretBox {
 impl PrivateKeyOps for X25519PrivateKey {
     /// Decapsulates the shared secret from an encapsulated key.
     /// Follows RFC 9180 Section 4.1. DHKEM(Group, Hash).
-    fn decaps_internal(&self, enc: &[u8]) -> Result<SecretBox, Error> {
+    fn decaps_internal(&self, enc: &[u8]) -> Result<SecretBox, Status> {
         let priv_key = x25519::PrivateKey(
             self.0
                 .as_slice()
                 .try_into()
-                .map_err(|_| Error::KeyLenMismatch)?,
+                .map_err(|_| Status::InvalidArgument)?,
         );
 
         // 1. Compute Diffie-Hellman shared secret
         // dh = dhExchange(skR, pkE)
         let shared_key = SecretBox::new(
             priv_key
-                .compute_shared_key(enc.try_into().map_err(|_| Error::KeyLenMismatch)?)
-                .ok_or(Error::DecapsError)?
+                .compute_shared_key(enc.try_into().map_err(|_| Status::DecapsulationFailure)?)
+                .ok_or(Status::DecapsulationFailure)?
                 .to_vec(),
         );
 
@@ -153,7 +153,7 @@ impl PrivateKeyOps for X25519PrivateKey {
         ciphertext: &[u8],
         aad: &[u8],
         algo: &HpkeAlgorithm,
-    ) -> Result<SecretBox, Error> {
+    ) -> Result<SecretBox, Status> {
         let (
             Ok(KemAlgorithm::DhkemX25519HkdfSha256),
             Ok(KdfAlgorithm::HkdfSha256),
@@ -164,7 +164,7 @@ impl PrivateKeyOps for X25519PrivateKey {
             AeadAlgorithm::try_from(algo.aead),
         )
         else {
-            return Err(Error::UnsupportedAlgorithm);
+            return Err(Status::UnsupportedAlgorithm);
         };
 
         let params = hpke::Params::new(
@@ -174,25 +174,19 @@ impl PrivateKeyOps for X25519PrivateKey {
         );
 
         let mut recipient_ctx = hpke::RecipientContext::new(&params, self.0.as_slice(), enc, b"")
-            .ok_or(Error::HpkeDecryptionError)?;
+            .ok_or(Status::DecryptionFailure)?;
 
         recipient_ctx
             .open(ciphertext, aad)
             .map(SecretBox::new)
-            .ok_or(Error::HpkeDecryptionError)
+            .ok_or(Status::DecryptionFailure)
     }
 }
 
 /// LabeledExtract(salt, label, ikm) = HKDF-Extract(salt, "HPKE-v1" || suite_id || label || ikm)
 fn labeled_extract(salt: &[u8], label: &[u8], ikm: &[u8], suite_id: &[u8]) -> hkdf::Prk {
-    // print the params received
-    println!(
-        "labeled_extract: salt={:?}, label={:?}, ikm={:?}, suite_id={:?}",
-        salt, label, ikm, suite_id
-    );
-
     let labeled_ikm = SecretBox::new([b"HPKE-v1".as_slice(), suite_id, label, ikm].concat());
-    hkdf::HkdfSha256::extract(labeled_ikm.as_slice(), hkdf::Salt::None)
+    hkdf::HkdfSha256::extract(labeled_ikm.as_slice(), hkdf::Salt::NonEmpty(salt))
 }
 
 /// LabeledExpand(prk, label, info, L) = HKDF-Expand(prk, "HPKE-v1" || suite_id || label || info, L)
@@ -202,13 +196,13 @@ fn labeled_expand(
     info: &[u8],
     suite_id: &[u8],
     len: u16,
-) -> Result<SecretBox, Error> {
+) -> Result<SecretBox, Status> {
     let labeled_info =
         SecretBox::new([&len.to_be_bytes()[..], b"HPKE-v1", suite_id, label, info].concat());
 
     let mut result = vec![0u8; len as usize];
     prk.expand_into(labeled_info.as_slice(), &mut result)
-        .map_err(|_| Error::DecapsError)?;
+        .map_err(|_| Status::DecapsulationFailure)?;
 
     Ok(SecretBox::new(result))
 }
@@ -257,23 +251,57 @@ mod tests {
         let ikm = b"test_ikm";
         let info = b"test_info";
 
-        // Test labeled_extract
+        // 1. Test labeled_extract against manual HKDF
         let prk = labeled_extract(salt, label, ikm, &suite_id);
 
-        // Test labeled_expand with length 32
+        let expected_labeled_ikm = [b"HPKE-v1".as_slice(), &suite_id, label, ikm].concat();
+        let expected_prk =
+            hkdf::HkdfSha256::extract(&expected_labeled_ikm, hkdf::Salt::NonEmpty(salt));
+
+        // We can't directly compare Prk objects, so we expand them and compare the results
+        let mut prk_output = vec![0u8; 32];
+        prk.expand_into(b"test", &mut prk_output).unwrap();
+        let mut expected_prk_output = vec![0u8; 32];
+        expected_prk
+            .expand_into(b"test", &mut expected_prk_output)
+            .unwrap();
+        assert_eq!(prk_output, expected_prk_output);
+
+        // 2. Test labeled_expand against manual HKDF
         let len = 32;
         let result = labeled_expand(&prk, label, info, &suite_id, len).expect("expand failed");
-        assert_eq!(result.as_slice().len(), len as usize);
 
-        // Test labeled_expand with different info produces different result
-        let result2 =
-            labeled_expand(&prk, label, b"other_info", &suite_id, len).expect("expand failed");
-        assert_ne!(result.as_slice(), result2.as_slice());
+        let expected_labeled_info =
+            [&len.to_be_bytes()[..], b"HPKE-v1", &suite_id, label, info].concat();
+        let mut expected_result = vec![0u8; len as usize];
+        expected_prk
+            .expand_into(&expected_labeled_info, &mut expected_result)
+            .unwrap();
 
-        // Test labeled_expand with different label produces different result
+        assert_eq!(result.as_slice(), expected_result.as_slice());
+
+        // 3. Test labeled_expand with different length
+        let len2 = 16;
+        let result2 = labeled_expand(&prk, label, info, &suite_id, len2).expect("expand failed");
+        assert_eq!(result2.as_slice().len(), len2 as usize);
+
+        let expected_labeled_info2 =
+            [&len2.to_be_bytes()[..], b"HPKE-v1", &suite_id, label, info].concat();
+        let mut expected_result2 = vec![0u8; len2 as usize];
+        expected_prk
+            .expand_into(&expected_labeled_info2, &mut expected_result2)
+            .unwrap();
+        assert_eq!(result2.as_slice(), expected_result2.as_slice());
+
+        // 4. Test labeled_expand with different info produces different result
         let result3 =
-            labeled_expand(&prk, b"other_label", info, &suite_id, len).expect("expand failed");
+            labeled_expand(&prk, label, b"other_info", &suite_id, len).expect("expand failed");
         assert_ne!(result.as_slice(), result3.as_slice());
+
+        // 5. Test labeled_expand with different label produces different result
+        let result4 =
+            labeled_expand(&prk, b"other_label", info, &suite_id, len).expect("expand failed");
+        assert_ne!(result.as_slice(), result4.as_slice());
     }
 
     #[test]

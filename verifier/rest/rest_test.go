@@ -11,9 +11,11 @@ import (
 	"github.com/google/uuid"
 	"google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/protobuf/encoding/prototext"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 
 	ccpb "cloud.google.com/go/confidentialcomputing/apiv1/confidentialcomputingpb"
+	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
 	sabi "github.com/google/go-sev-guest/abi"
 	spb "github.com/google/go-sev-guest/proto/sevsnp"
 	tabi "github.com/google/go-tdx-guest/abi"
@@ -382,6 +384,115 @@ func TestConvertTokenOptionsToREST(t *testing.T) {
 	}
 }
 
+func TestConvertNvidiaAttestationToREST(t *testing.T) {
+	testcases := []struct {
+		name  string
+		nvAtt *attestationpb.NvidiaAttestationReport
+		want  *ccpb.NvidiaAttestation
+	}{
+		{
+			name:  "nil attestation",
+			nvAtt: nil,
+			want:  nil,
+		},
+		{
+			name:  "empty attestation",
+			nvAtt: &attestationpb.NvidiaAttestationReport{},
+			want:  nil,
+		},
+		{
+			name: "SPT attestation",
+			nvAtt: &attestationpb.NvidiaAttestationReport{
+				CcFeature: &attestationpb.NvidiaAttestationReport_Spt{
+					Spt: &attestationpb.NvidiaAttestationReport_SinglePassthroughAttestation{
+						GpuQuote: &attestationpb.GpuInfo{
+							Uuid:                        "test-uuid",
+							DriverVersion:               "test-driver",
+							VbiosVersion:                "test-vbios",
+							GpuArchitectureType:         attestationpb.GpuArchitectureType_GPU_ARCHITECTURE_TYPE_HOPPER,
+							AttestationCertificateChain: []byte("test-cert-chain"),
+							AttestationReport:           []byte("test-report"),
+						},
+					},
+				},
+			},
+			want: &ccpb.NvidiaAttestation{
+				CcFeature: &ccpb.NvidiaAttestation_Spt{
+					Spt: &ccpb.NvidiaAttestation_SinglePassthroughAttestation{
+						GpuQuote: &ccpb.NvidiaAttestation_GpuInfo{
+							Uuid:                        "test-uuid",
+							DriverVersion:               "test-driver",
+							VbiosVersion:                "test-vbios",
+							GpuArchitectureType:         ccpb.NvidiaAttestation_GPU_ARCHITECTURE_TYPE_HOPPER,
+							AttestationCertificateChain: []byte("test-cert-chain"),
+							AttestationReport:           []byte("test-report"),
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "MPT attestation",
+			nvAtt: &attestationpb.NvidiaAttestationReport{
+				CcFeature: &attestationpb.NvidiaAttestationReport_Mpt{
+					Mpt: &attestationpb.NvidiaAttestationReport_MultiGpuSecurePassthroughAttestation{
+						GpuQuotes: []*attestationpb.GpuInfo{
+							{
+								Uuid:                        "test-uuid",
+								DriverVersion:               "test-driver",
+								VbiosVersion:                "test-vbios",
+								GpuArchitectureType:         attestationpb.GpuArchitectureType_GPU_ARCHITECTURE_TYPE_HOPPER,
+								AttestationCertificateChain: []byte("test-cert-chain"),
+								AttestationReport:           []byte("test-report"),
+							},
+						},
+					},
+				},
+			},
+			want: nil,
+		},
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := convertNvidiaAttestationToREST(tc.nvAtt)
+			if !proto.Equal(got, tc.want) {
+				t.Errorf("convertNvidiaAttestationToREST(%v) = %v, want %v", tc.nvAtt, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestConvertGPUArchToREST(t *testing.T) {
+	testcases := []struct {
+		name string
+		arch attestationpb.GpuArchitectureType
+		want ccpb.NvidiaAttestation_GpuArchitectureType
+	}{
+		{
+			name: "Hopper",
+			arch: attestationpb.GpuArchitectureType_GPU_ARCHITECTURE_TYPE_HOPPER,
+			want: ccpb.NvidiaAttestation_GPU_ARCHITECTURE_TYPE_HOPPER,
+		},
+		{
+			name: "Blackwell",
+			arch: attestationpb.GpuArchitectureType_GPU_ARCHITECTURE_TYPE_BLACKWELL,
+			want: ccpb.NvidiaAttestation_GPU_ARCHITECTURE_TYPE_BLACKWELL,
+		},
+		{
+			name: "Unspecified",
+			arch: attestationpb.GpuArchitectureType_GPU_ARCHITECTURE_TYPE_UNSPECIFIED,
+			want: ccpb.NvidiaAttestation_GPU_ARCHITECTURE_TYPE_UNSPECIFIED,
+		},
+	}
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := convertGPUArchToREST(tc.arch); got != tc.want {
+				t.Errorf("convertGPUArchToREST() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
 func TestConvertTokenOptionsToCSOptions(t *testing.T) {
 	testcases := []struct {
 		name         string
@@ -571,6 +682,66 @@ func TestConvertCSRequestToREST(t *testing.T) {
 				SignedEntities: []*ccpb.SignedEntity{{ContainerImageSignatures: []*ccpb.ContainerImageSignature{}}},
 			},
 		},
+		{
+			name: "TDCCEL Attestation + Nvidia Attestation",
+			verifierReq: verifier.VerifyAttestationRequest{
+				TDCCELAttestation: &verifier.TDCCELAttestation{
+					TdQuote:           []byte("test td quote"),
+					CcelAcpiTable:     []byte("test CCEL table"),
+					CcelData:          []byte("test CCEL data"),
+					CanonicalEventLog: []byte("test CEL"),
+					AkCert:            []byte("test-ak-cert"),
+					IntermediateCerts: [][]byte{[]byte("chain-1"), []byte("chain-2")},
+				},
+				NvidiaAttestation: &attestationpb.NvidiaAttestationReport{
+					CcFeature: &attestationpb.NvidiaAttestationReport_Spt{
+						Spt: &attestationpb.NvidiaAttestationReport_SinglePassthroughAttestation{
+							GpuQuote: &attestationpb.GpuInfo{
+								Uuid:                        "test-uuid",
+								DriverVersion:               "test-driver",
+								VbiosVersion:                "test-vbios",
+								GpuArchitectureType:         attestationpb.GpuArchitectureType_GPU_ARCHITECTURE_TYPE_HOPPER,
+								AttestationCertificateChain: []byte("test-cert-chain"),
+								AttestationReport:           []byte("test-report"),
+							},
+						},
+					},
+				},
+			},
+			expectedReq: &ccpb.VerifyConfidentialSpaceRequest{
+				TeeAttestation: &ccpb.VerifyConfidentialSpaceRequest_TdCcel{
+					TdCcel: &ccpb.TdxCcelAttestation{
+						TdQuote:           []byte("test td quote"),
+						CcelAcpiTable:     []byte("test CCEL table"),
+						CcelData:          []byte("test CCEL data"),
+						CanonicalEventLog: []byte("test CEL"),
+					},
+				},
+				NvidiaAttestation: &ccpb.NvidiaAttestation{
+					CcFeature: &ccpb.NvidiaAttestation_Spt{
+						Spt: &ccpb.NvidiaAttestation_SinglePassthroughAttestation{
+							GpuQuote: &ccpb.NvidiaAttestation_GpuInfo{
+								Uuid:                        "test-uuid",
+								DriverVersion:               "test-driver",
+								VbiosVersion:                "test-vbios",
+								GpuArchitectureType:         ccpb.NvidiaAttestation_GPU_ARCHITECTURE_TYPE_HOPPER,
+								AttestationCertificateChain: []byte("test-cert-chain"),
+								AttestationReport:           []byte("test-report"),
+							},
+						},
+					},
+				},
+				GceShieldedIdentity: &ccpb.GceShieldedIdentity{
+					AkCert:      []byte("test-ak-cert"),
+					AkCertChain: [][]byte{[]byte("chain-1"), []byte("chain-2")},
+				},
+				Options: &ccpb.VerifyConfidentialSpaceRequest_ConfidentialSpaceOptions{
+					TokenProfile: ccpb.TokenProfile_TOKEN_PROFILE_DEFAULT_EAT,
+				},
+				GcpCredentials: &ccpb.GcpCredentials{ServiceAccountIdTokens: []string{}},
+				SignedEntities: []*ccpb.SignedEntity{{ContainerImageSignatures: []*ccpb.ContainerImageSignature{}}},
+			},
+		},
 	}
 
 	cmpOpts := append(
@@ -584,6 +755,9 @@ func TestConvertCSRequestToREST(t *testing.T) {
 		cmpopts.IgnoreUnexported(ccpb.VerifyConfidentialSpaceRequest_ConfidentialSpaceOptions{}),
 		cmpopts.IgnoreUnexported(ccpb.ContainerImageSignature{}),
 		cmpopts.IgnoreUnexported(ccpb.SignedEntity{}),
+		cmpopts.IgnoreUnexported(ccpb.NvidiaAttestation{}),
+		cmpopts.IgnoreUnexported(ccpb.NvidiaAttestation_SinglePassthroughAttestation{}),
+		cmpopts.IgnoreUnexported(ccpb.NvidiaAttestation_GpuInfo{}),
 	)
 
 	for _, tc := range testcases {

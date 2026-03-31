@@ -6,21 +6,24 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
+	"strings"
 
 	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
-	"github.com/containerd/containerd/protobuf/proto"
 	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
 	wsd "github.com/google/go-tpm-tools/keymanager/workload_service"
 	"github.com/google/go-tpm-tools/launcher/agent"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/spec"
+	tspb "github.com/google/go-tpm-tools/launcher/teeserver/proto/gen/teeserver"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/google/go-tpm-tools/verifier/models"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 )
 
 const (
@@ -150,17 +153,24 @@ func (a *attestHandler) getITAToken(w http.ResponseWriter, r *http.Request) {
 }
 
 // getAttestationEvidence retrieves the attestation evidence.
+// It returns partial response with query parameter support.
+// It currently supports "label", "challenge", "quote", "extraData", and "deviceReports" params.
+// The default response with no query parameter will return all fields except device reports.
+// If the fields param is "*", it will return all fields including device reports.
 func (a *attestHandler) getAttestationEvidence(w http.ResponseWriter, r *http.Request) {
+
 	if r.Method != http.MethodPost {
 		a.logAndWriteHTTPError(w, http.StatusMethodNotAllowed, fmt.Errorf("method not allowed"))
 		return
 	}
 
-	var req struct {
-		Challenge []byte `json:"challenge"`
+	var req tspb.GetAttestationEvidenceRequest
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		a.logAndWriteHTTPError(w, http.StatusBadRequest, fmt.Errorf("failed to read request body: %v", err))
+		return
 	}
-
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := protojson.Unmarshal(body, &req); err != nil {
 		a.logAndWriteHTTPError(w, http.StatusBadRequest, fmt.Errorf("failed to decode request: %v", err))
 		return
 	}
@@ -169,13 +179,25 @@ func (a *attestHandler) getAttestationEvidence(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	evidence, err := a.attestAgent.AttestationEvidence(a.ctx, req.Challenge, nil)
+	fields := r.URL.Query().Get("fields")
+	attestOpts := agent.AttestAgentOpts{
+		DeviceReportOpts: &agent.DeviceReportOpts{
+			EnableRuntimeGPUAttestation: fields == "*" || strings.Contains(fields, "deviceReports"),
+		},
+	}
+	evidence, err := a.attestAgent.AttestationEvidence(a.ctx, req.Challenge, nil, attestOpts)
 	if err != nil {
 		a.logAndWriteHTTPError(w, http.StatusInternalServerError, err)
 		return
 	}
 
-	evidenceBytes, err := protojson.Marshal(evidence)
+	partialEvidence, err := filterVMAttestationFields(evidence, fields)
+	if err != nil {
+		a.logAndWriteHTTPError(w, http.StatusBadRequest, fmt.Errorf("invalid fields parameter: %v", err))
+		return
+	}
+
+	evidenceBytes, err := protojson.Marshal(partialEvidence)
 	if err != nil {
 		a.logAndWriteHTTPError(w, http.StatusInternalServerError, fmt.Errorf("failed to marshal evidence: %v", err))
 		return
@@ -183,6 +205,36 @@ func (a *attestHandler) getAttestationEvidence(w http.ResponseWriter, r *http.Re
 
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(evidenceBytes)
+}
+
+// filterVMAttestationFields return a partial VM Attestation based on the query parameters.
+func filterVMAttestationFields(att *attestationpb.VmAttestation, fields string) (*attestationpb.VmAttestation, error) {
+	if fields == "" || fields == "*" {
+		return att, nil
+	}
+	fieldSlice := strings.Split(fields, ",")
+	fieldMap := make(map[string]bool)
+	for _, f := range fieldSlice {
+		fieldMap[strings.TrimSpace(f)] = true
+	}
+
+	out := &attestationpb.VmAttestation{}
+	if fieldMap["label"] {
+		out.Label = att.GetLabel()
+	}
+	if fieldMap["challenge"] {
+		out.Challenge = att.GetChallenge()
+	}
+	if fieldMap["extraData"] {
+		out.ExtraData = att.GetExtraData()
+	}
+	if fieldMap["quote"] {
+		out.Quote = att.GetQuote()
+	}
+	if fieldMap["deviceReports"] {
+		out.DeviceReports = att.GetDeviceReports()
+	}
+	return out, nil
 }
 
 // getKeyEndorsement retrieves the attestation evidence with KEM and binding key claims.
@@ -197,14 +249,14 @@ func (a *attestHandler) getKeyEndorsement(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	var req struct {
-		Challenge []byte `json:"challenge"`
-		KeyHandle struct {
-			Handle string `json:"handle"`
-		} `json:"key_handle"`
+	var req tspb.GetKeyEndorsementRequest
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		a.logAndWriteHTTPError(w, http.StatusBadRequest, fmt.Errorf("failed to read request body: %v", err))
+		return
 	}
 
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := protojson.Unmarshal(body, &req); err != nil {
 		a.logAndWriteHTTPError(w, http.StatusBadRequest, fmt.Errorf("failed to decode request: %v", err))
 		return
 	}
@@ -243,13 +295,13 @@ func (a *attestHandler) getKeyEndorsement(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	kemEvidence, err := a.attestAgent.AttestationEvidence(a.ctx, req.Challenge, kemBytes)
+	kemEvidence, err := a.attestAgent.AttestationEvidence(a.ctx, req.Challenge, kemBytes, agent.AttestAgentOpts{})
 	if err != nil {
 		a.logAndWriteHTTPError(w, http.StatusInternalServerError, fmt.Errorf("failed to collect attestation evidence with kem key claims"))
 		return
 	}
 
-	bindingEvidence, err := a.attestAgent.AttestationEvidence(a.ctx, req.Challenge, bindingBytes)
+	bindingEvidence, err := a.attestAgent.AttestationEvidence(a.ctx, req.Challenge, bindingBytes, agent.AttestAgentOpts{})
 	if err != nil {
 		a.logAndWriteHTTPError(w, http.StatusInternalServerError, fmt.Errorf("failed to collect attestation evidence with binding key claims"))
 		return
@@ -286,7 +338,9 @@ func (a *attestHandler) attest(w http.ResponseWriter, r *http.Request, client ve
 			return
 		}
 
-		token, err := a.attestAgent.AttestWithClient(a.ctx, agent.AttestAgentOpts{}, client)
+		token, err := a.attestAgent.AttestWithClient(a.ctx, agent.AttestAgentOpts{
+			DeviceReportOpts: &agent.DeviceReportOpts{EnableRuntimeGPUAttestation: true},
+		}, client)
 		if err != nil {
 			a.handleAttestError(w, err, "failed to retrieve attestation service token")
 			return
@@ -322,7 +376,8 @@ func (a *attestHandler) attest(w http.ResponseWriter, r *http.Request, client ve
 
 		// Do not check that TokenTypeOptions matches TokenType in the launcher.
 		opts := agent.AttestAgentOpts{
-			TokenOptions: &tokenOptions,
+			TokenOptions:     &tokenOptions,
+			DeviceReportOpts: &agent.DeviceReportOpts{EnableRuntimeGPUAttestation: true},
 		}
 		tok, err := a.attestAgent.AttestWithClient(a.ctx, opts, client)
 		if err != nil {

@@ -6,10 +6,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-
-#define MAX_ALGORITHM_LEN 128
-
-#define MAX_PUBLIC_KEY_LEN 2048
+#include "km_common_ffi.h"
 
 typedef struct {
   uint8_t uuid[16];
@@ -24,35 +21,35 @@ typedef struct {
 extern "C" {
 #endif // __cplusplus
 
-int32_t key_manager_generate_binding_keypair(const uint8_t *algo_ptr,
-                                             size_t algo_len,
-                                             uint64_t expiry_secs,
-                                             uint8_t *out_uuid,
-                                             uint8_t *out_pubkey,
-                                             size_t out_pubkey_len);
+Status key_manager_generate_binding_keypair(const uint8_t *algo_ptr,
+                                            size_t algo_len,
+                                            uint64_t expiry_secs,
+                                            uint8_t *out_uuid,
+                                            uint8_t *out_pubkey,
+                                            size_t out_pubkey_len);
 
-int32_t key_manager_destroy_binding_key(const uint8_t *uuid_bytes);
+Status key_manager_destroy_binding_key(const uint8_t *uuid_bytes);
 
-int32_t key_manager_open(const uint8_t *uuid_bytes,
-                         const uint8_t *enc,
-                         size_t enc_len,
-                         const uint8_t *ciphertext,
-                         size_t ciphertext_len,
-                         const uint8_t *aad,
-                         size_t aad_len,
-                         uint8_t *out_plaintext,
-                         size_t out_plaintext_len);
+Status key_manager_open(const uint8_t *uuid_bytes,
+                        const uint8_t *enc,
+                        size_t enc_len,
+                        const uint8_t *ciphertext,
+                        size_t ciphertext_len,
+                        const uint8_t *aad,
+                        size_t aad_len,
+                        uint8_t *out_plaintext,
+                        size_t out_plaintext_len);
 
 int32_t key_manager_enumerate_binding_keys(WsKeyInfo *out_entries,
                                            size_t max_entries,
                                            size_t offset,
                                            bool *out_has_more);
 
-int32_t key_manager_get_binding_key(const uint8_t *uuid_bytes,
-                                    uint8_t *out_pubkey,
-                                    size_t out_pubkey_len,
-                                    uint8_t *out_algo,
-                                    size_t *out_algo_len);
+Status key_manager_get_binding_key(const uint8_t *uuid_bytes,
+                                   uint8_t *out_pubkey,
+                                   size_t out_pubkey_len,
+                                   uint8_t *out_algo,
+                                   size_t *out_algo_len);
 
 #ifdef __cplusplus
 }  // extern "C"

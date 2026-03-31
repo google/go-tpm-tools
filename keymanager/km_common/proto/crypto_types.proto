@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package keymanager;
+
+option go_package = "github.com/google/go-tpm-tools/keymanager/km_common/proto;keymanager";
+
+import "keymanager/km_common/proto/algorithms.proto";
+
+// Used to refer to key instances held by the service.
+message KeyHandle {
+  // A unique identifier (UUID) used to reference this key in subsequent operations.
+  string handle = 1;
+}
+
+// Information about a public key.
+message PubKeyInfo {
+  // The algorithm associated with this public key.
+  AlgorithmDetails algorithm = 1;
+  // The base64-encoded bytes of the public key.
+  bytes public_key = 2;
+}

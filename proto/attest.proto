@@ -5,6 +5,7 @@ package attest;
 import "proto/sevsnp.proto";
 import "proto/tdx.proto";
 import "tpm.proto";
+import "attestation.proto";
 
 option go_package = "github.com/google/go-tpm-tools/proto/attest";
 
@@ -228,6 +229,7 @@ enum GPUDeviceCCMode {
 message GpuDeviceState {
   // Whether Confidential Computing mode is enabled for GPU.
   GPUDeviceCCMode cc_mode = 1;
+  confidential_space.NvidiaAttestationReport nvidia_attestation_report = 2;
 }
 
 

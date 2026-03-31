@@ -57,7 +57,7 @@ type AttestationAgent interface {
 	MeasureEvent(gecel.Content) error
 	Attest(context.Context, AttestAgentOpts) ([]byte, error)
 	AttestWithClient(ctx context.Context, opts AttestAgentOpts, client verifier.Client) ([]byte, error)
-	AttestationEvidence(ctx context.Context, challenge []byte, extraData []byte) (*attestationpb.VmAttestation, error)
+	AttestationEvidence(ctx context.Context, challenge []byte, extraData []byte, opts AttestAgentOpts) (*attestationpb.VmAttestation, error)
 	Refresh(context.Context) error
 	HasGPU() bool
 	EnableGPUReadyState() error
@@ -77,6 +77,8 @@ type attestRoot interface {
 	ComputeNonce(challenge []byte, extraData []byte) []byte
 	// AddDeviceROTs adds detected device RoTs(root of trust).
 	AddDeviceROTs([]DeviceROT)
+	// AttestDeviceROTs fetches a list of runtime device attestation report.
+	AttestDeviceROTs(nonce []byte) ([]any, error)
 }
 
 // DeviceROT defines an interface for all attached devices to collect attestation.
@@ -95,6 +97,12 @@ type GPUAttester interface {
 // VerifyAttestation API
 type AttestAgentOpts struct {
 	TokenOptions *models.TokenOptions
+	*DeviceReportOpts
+}
+
+// DeviceReportOpts contains options for runtime device attestations.
+type DeviceReportOpts struct {
+	EnableRuntimeGPUAttestation bool
 }
 
 type agent struct {
@@ -289,6 +297,19 @@ func (a *agent) AttestWithClient(ctx context.Context, opts AttestAgentOpts, clie
 		return nil, fmt.Errorf("received an unsupported attestation type! %v", v)
 	}
 
+	if a.launchSpec.Experiments.EnableGpuGcaSupport {
+		deviceReports, err := a.attestDeviceROTs(challenge.Nonce, opts)
+		if err != nil {
+			return nil, fmt.Errorf("failed to attest device RoTs: %v", err)
+		}
+		for _, dr := range deviceReports {
+			if dr.GetNvidiaReport() != nil {
+				a.logger.Info("Adding GPU device reports to attestation request.")
+				req.NvidiaAttestation = dr.GetNvidiaReport()
+			}
+		}
+	}
+
 	signatures := a.sigsCache.get()
 	if len(signatures) > 0 {
 		for _, sig := range signatures {
@@ -314,7 +335,7 @@ func (a *agent) AttestWithClient(ctx context.Context, opts AttestAgentOpts, clie
 }
 
 // AttestationEvidence returns the attestation evidence (TPM or TDX).
-func (a *agent) AttestationEvidence(_ context.Context, challenge []byte, extraData []byte) (*attestationpb.VmAttestation, error) {
+func (a *agent) AttestationEvidence(_ context.Context, challenge []byte, extraData []byte, opts AttestAgentOpts) (*attestationpb.VmAttestation, error) {
 	if !a.launchSpec.Experiments.EnableAttestationEvidence {
 		return nil, fmt.Errorf("attestation evidence is disabled")
 	}
@@ -330,12 +351,10 @@ func (a *agent) AttestationEvidence(_ context.Context, challenge []byte, extraDa
 	if err != nil {
 		return nil, fmt.Errorf("failed to attest: %v", err)
 	}
-
 	var cosCel bytes.Buffer
 	if err := a.avRot.GetCEL().EncodeCEL(&cosCel); err != nil {
 		return nil, err
 	}
-
 	attestation := &attestationpb.VmAttestation{
 		Label:     []byte(labels.WorkloadAttestation),
 		Challenge: challenge,
@@ -360,14 +379,43 @@ func (a *agent) AttestationEvidence(_ context.Context, challenge []byte, extraDa
 	default:
 		return nil, fmt.Errorf("unknown attestation type: %T", v)
 	}
+
+	deviceReports, err := a.attestDeviceROTs(finalNonce, opts)
+	if err != nil {
+		return nil, err
+	}
+	attestation.DeviceReports = deviceReports
+
 	return attestation, nil
 }
 
-func (a *agent) verify(ctx context.Context, req verifier.VerifyAttestationRequest, client verifier.Client) (*verifier.VerifyAttestationResponse, error) {
-	if a.launchSpec.Experiments.EnableVerifyCS {
-		return client.VerifyConfidentialSpace(ctx, req)
+func (a *agent) attestDeviceROTs(nonce []byte, opts AttestAgentOpts) ([]*attestationpb.DeviceAttestationReport, error) {
+	if opts.DeviceReportOpts == nil {
+		return nil, nil
 	}
-	return client.VerifyAttestation(ctx, req)
+	deviceROTs, err := a.avRot.AttestDeviceROTs(nonce)
+	if err != nil {
+		return nil, err
+	}
+
+	var deviceReports []*attestationpb.DeviceAttestationReport
+	for _, dr := range deviceROTs {
+		switch v := dr.(type) {
+		case *attestationpb.NvidiaAttestationReport:
+			if opts.DeviceReportOpts.EnableRuntimeGPUAttestation {
+				deviceReports = append(deviceReports, &attestationpb.DeviceAttestationReport{
+					Report: &attestationpb.DeviceAttestationReport_NvidiaReport{
+						NvidiaReport: v,
+					},
+				})
+			}
+		}
+	}
+	return deviceReports, nil
+}
+
+func (a *agent) verify(ctx context.Context, req verifier.VerifyAttestationRequest, client verifier.Client) (*verifier.VerifyAttestationResponse, error) {
+	return client.VerifyConfidentialSpace(ctx, req)
 }
 
 func convertOCIToContainerSignature(ociSig oci.Signature) (*verifier.ContainerSignature, error) {
@@ -440,6 +488,13 @@ func (t *tpmAttestRoot) AddDeviceROTs(deviceROTs []DeviceROT) {
 	t.deviceROTs = append(t.deviceROTs, deviceROTs...)
 }
 
+func (t *tpmAttestRoot) AttestDeviceROTs(nonce []byte) ([]any, error) {
+	t.tpmMu.Lock()
+	defer t.tpmMu.Unlock()
+
+	return doAttestDeviceROTs(t.deviceROTs, nonce)
+}
+
 type tdxAttestRoot struct {
 	tdxMu      sync.Mutex
 	qp         *tg.LinuxConfigFsQuoteProvider
@@ -473,31 +528,33 @@ func (t *tdxAttestRoot) Attest(nonce []byte) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// CCEL may contain a lot of trailing 0xFF padding bytes, trimming
+	// them can save bandwidth.
+	// Normally, the eventlog is ended with "Exit Boot Services Returned
+	// with Success", So it's safe to just trim all trailing "\xff".
+	//
+	// In some rare cases, where the last few bytes are actually "\xff",
+	// This naive trimming logic may cause the replay to fail.
+	ccelData = bytes.TrimRight(ccelData, "\xff")
+
 	ccelTable, err := os.ReadFile("/sys/firmware/acpi/tables/CCEL")
 	if err != nil {
 		return nil, err
 	}
 
-	var nvAtt *attestationpb.NvidiaAttestationReport
-	for _, deviceRoT := range t.deviceROTs {
-		att, err := deviceRoT.Attest(nonce)
-		if err != nil {
-			return nil, err
-		}
-		switch v := att.(type) {
-		case *attestationpb.NvidiaAttestationReport:
-			nvAtt = v
-		default:
-			return nil, fmt.Errorf("unknown device attestation type: %T", v)
-		}
-	}
-
 	return &verifier.TDCCELAttestation{
-		CcelAcpiTable:     ccelTable,
-		CcelData:          ccelData,
-		TdQuote:           rawQuote,
-		NvidiaAttestation: nvAtt,
+		CcelAcpiTable: ccelTable,
+		CcelData:      ccelData,
+		TdQuote:       rawQuote,
 	}, nil
+}
+
+func (t *tdxAttestRoot) AttestDeviceROTs(nonce []byte) ([]any, error) {
+	t.tdxMu.Lock()
+	defer t.tdxMu.Unlock()
+
+	return doAttestDeviceROTs(t.deviceROTs, nonce)
 }
 
 func (t *tdxAttestRoot) ComputeNonce(challenge []byte, extraData []byte) []byte {
@@ -630,4 +687,14 @@ func (a *agent) GetGPUAttestation(nonce []byte) (any, error) {
 		return nil, fmt.Errorf("GPU attester not initialized")
 	}
 	return a.nvidiaAttester.Attest(nonce)
+func doAttestDeviceROTs(deviceROTs []DeviceROT, nonce []byte) ([]any, error) {
+	var deviceReports []any
+	for _, deviceROT := range deviceROTs {
+		deviceReport, err := deviceROT.Attest(nonce)
+		if err != nil {
+			return nil, err
+		}
+		deviceReports = append(deviceReports, deviceReport)
+	}
+	return deviceReports, nil
 }

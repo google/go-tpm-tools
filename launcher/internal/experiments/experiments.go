@@ -14,11 +14,11 @@ type Experiments struct {
 	EnableTestFeatureForImage    bool
 	EnableHealthMonitoring       bool
 	EnableItaVerifier            bool
-	EnableVerifyCS               bool
 	EnableAttestationEvidence    bool
 	EnableB200DriverInstallation bool
 	EnableH100DriverInstallation bool
 	EnableKeyManager             bool
+	EnableGpuGcaSupport          bool
 }
 
 // New takes a filepath, opens the file, and calls ReadJsonInput with the contents
