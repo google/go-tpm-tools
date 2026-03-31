@@ -27,10 +27,10 @@ import (
 	"github.com/containerd/containerd/oci"
 	"github.com/containerd/containerd/remotes"
 	"github.com/golang-jwt/jwt/v4"
+	"github.com/google/go-tpm-tools/agent"
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
 	workloadservice "github.com/google/go-tpm-tools/keymanager/workload_service"
-	"github.com/google/go-tpm-tools/launcher/agent"
 	"github.com/google/go-tpm-tools/launcher/internal/gpu"
 	"github.com/google/go-tpm-tools/launcher/internal/healthmonitoring/nodeproblemdetector"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
@@ -301,7 +301,11 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	// Create a new signaturediscovery client to fetch signatures.
 	sdClient := getSignatureDiscoveryClient(cdClient, mdsClient, image.Target())
 
-	attestAgent, err := agent.CreateAttestationAgent(tpm, client.GceAttestationKeyECC, verifierClient, principalFetcherWithImpersonate, sdClient, launchSpec, logger, deviceROTs)
+	exps := agent.Experiments{
+		EnableAttestationEvidence: launchSpec.Experiments.EnableAttestationEvidence,
+		EnableGpuGcaSupport:       launchSpec.Experiments.EnableGpuGcaSupport,
+	}
+	attestAgent, err := agent.CreateAttestationAgent(tpm, client.GceAttestationKeyECC, verifierClient, principalFetcherWithImpersonate, sdClient, exps, logger, deviceROTs, launchSpec.SignedImageRepos)
 	if err != nil {
 		return nil, err
 	}

@@ -29,10 +29,6 @@ import (
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal/test"
-	"github.com/google/go-tpm-tools/launcher/internal/experiments"
-	"github.com/google/go-tpm-tools/launcher/internal/logging"
-	"github.com/google/go-tpm-tools/launcher/internal/signaturediscovery"
-	"github.com/google/go-tpm-tools/launcher/spec"
 	attestpb "github.com/google/go-tpm-tools/proto/attest"
 	tpmpb "github.com/google/go-tpm-tools/proto/tpm"
 	"github.com/google/go-tpm-tools/server"
@@ -48,13 +44,52 @@ import (
 const (
 	imageRef      = "gcr.io/fakeRepo/fakeTestImage:latest"
 	imageDigest   = "sha256:adb591795f9e9047f9117163b83c2ebcd5edc4503644d59a98cf911aef0367f8"
-	restartPolicy = spec.Always
+	restartPolicy = "Always"
 	imageID       = "sha256:d5496fd75dd8262f0495ab5706fc464659eb7f481e384700e6174b6c44144cae"
 	arg           = "-h"
 	envK          = "foo"
 	envV          = "foo"
 	env           = envK + "=" + envV
+
+	FakeRepoWithSignatures             = "repo with signatures"
+	FakeRepoWithNoSignatures           = "repo with no signatures"
+	FakeNonExistRepo                   = "nonexist repo"
+	FakeRepoWithAllInvalidSignatures   = "repo with all invalid signatures"
+	FakeRepoWithPartialValidSignatures = "repo with partial valid signatures"
 )
+
+type fakeLogger struct{}
+
+func (l *fakeLogger) Info(string, ...any)  {}
+func (l *fakeLogger) Error(string, ...any) {}
+func SimpleLogger() Logger                 { return &fakeLogger{} }
+
+type fakeClient struct{}
+
+func NewFakeClient() SignatureFetcher { return &fakeClient{} }
+func (f *fakeClient) FetchImageSignatures(_ context.Context, targetRepository string) ([]oci.Signature, error) {
+	switch targetRepository {
+	case FakeRepoWithSignatures:
+		return []oci.Signature{
+			cosign.NewFakeSignature("test data", oci.ECDSAP256SHA256),
+			cosign.NewFakeSignature("hello world", oci.RSASSAPKCS1V152048SHA256),
+		}, nil
+	case FakeRepoWithNoSignatures, FakeNonExistRepo:
+		return nil, fmt.Errorf("cannot fetch the signature object from target repository [%s]", targetRepository)
+	case FakeRepoWithAllInvalidSignatures:
+		return []oci.Signature{
+			cosign.NewFakeSignature("invalid signature", "unsupported"),
+			cosign.NewFakeSignature("invalid signature", "unsupported"),
+		}, nil
+	case FakeRepoWithPartialValidSignatures:
+		return []oci.Signature{
+			cosign.NewFakeSignature("test data", oci.ECDSAP256SHA256),
+			cosign.NewFakeSignature("invalid signature", "unsupported"),
+		}, nil
+	default:
+		return []oci.Signature{}, nil
+	}
+}
 
 func TestAttestRacing(t *testing.T) {
 	ctx := context.Background()
@@ -67,7 +102,7 @@ func TestAttestRacing(t *testing.T) {
 	}
 
 	verifierClient := fake.NewClient(fakeSigner)
-	agent, err := CreateAttestationAgent(tpm, client.AttestationKeyECC, verifierClient, placeholderPrincipalFetcher, signaturediscovery.NewFakeClient(), spec.LaunchSpec{}, logging.SimpleLogger(), nil)
+	agent, err := CreateAttestationAgent(tpm, client.AttestationKeyECC, verifierClient, placeholderPrincipalFetcher, NewFakeClient(), Experiments{}, SimpleLogger(), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,17 +125,15 @@ func TestAttest(t *testing.T) {
 	ctx := context.Background()
 	testCases := []struct {
 		name                       string
-		launchSpec                 spec.LaunchSpec
+		signedImageRepos           []string
 		principalIDTokenFetcher    func(string) ([][]byte, error)
-		containerSignaturesFetcher signaturediscovery.Fetcher
+		containerSignaturesFetcher SignatureFetcher
 	}{
 		{
-			name: "Happy path with container signatures",
-			launchSpec: spec.LaunchSpec{
-				SignedImageRepos: []string{signaturediscovery.FakeRepoWithSignatures},
-			},
+			name:                       "Happy path with container signatures",
+			signedImageRepos:           []string{FakeRepoWithSignatures},
 			principalIDTokenFetcher:    placeholderPrincipalFetcher,
-			containerSignaturesFetcher: signaturediscovery.NewFakeClient(),
+			containerSignaturesFetcher: NewFakeClient(),
 		},
 	}
 
@@ -119,7 +152,7 @@ func TestAttest(t *testing.T) {
 
 			verifierClient := fake.NewClient(fakeSigner)
 
-			agent, err := CreateAttestationAgent(tpm, client.AttestationKeyECC, verifierClient, tc.principalIDTokenFetcher, tc.containerSignaturesFetcher, tc.launchSpec, logging.SimpleLogger(), nil)
+			agent, err := CreateAttestationAgent(tpm, client.AttestationKeyECC, verifierClient, tc.principalIDTokenFetcher, tc.containerSignaturesFetcher, Experiments{}, SimpleLogger(), nil, tc.signedImageRepos)
 			if err != nil {
 				t.Fatalf("failed to create an attestation agent %v", err)
 			}
@@ -205,7 +238,7 @@ func TestFetchContainerImageSignatures(t *testing.T) {
 	}{
 		{
 			name:        "fetchContainerImageSignatures with repos that have signatures",
-			targetRepos: []string{signaturediscovery.FakeRepoWithSignatures},
+			targetRepos: []string{FakeRepoWithSignatures},
 			wantBase64Sigs: []string{
 				"dGVzdCBkYXRh",     // base64 encoded "test data".
 				"aGVsbG8gd29ybGQ=", // base64 encoded "hello world".
@@ -242,21 +275,21 @@ func TestFetchContainerImageSignatures(t *testing.T) {
 		},
 		{
 			name:                "fetchContainerImageSignatures with non exist repos",
-			targetRepos:         []string{signaturediscovery.FakeNonExistRepo},
+			targetRepos:         []string{FakeNonExistRepo},
 			wantBase64Sigs:      nil,
 			wantSignatureClaims: nil,
 			wantPartialErrLen:   0,
 		},
 		{
 			name:                "fetchContainerImageSignatures with repos that don't have signatures",
-			targetRepos:         []string{signaturediscovery.FakeRepoWithNoSignatures},
+			targetRepos:         []string{FakeRepoWithNoSignatures},
 			wantBase64Sigs:      nil,
 			wantSignatureClaims: nil,
 			wantPartialErrLen:   0,
 		},
 		{
 			name:        "fetchContainerImageSignatures with repos that have all invalid signatures",
-			targetRepos: []string{signaturediscovery.FakeRepoWithAllInvalidSignatures},
+			targetRepos: []string{FakeRepoWithAllInvalidSignatures},
 			wantBase64Sigs: []string{
 				"aW52YWxpZCBzaWduYXR1cmU=", // base64 encoded "invalid signature".
 				"aW52YWxpZCBzaWduYXR1cmU=", // base64 encoded "invalid signature".
@@ -266,7 +299,7 @@ func TestFetchContainerImageSignatures(t *testing.T) {
 		},
 		{
 			name:        "fetchContainerImageSignatures with repos that have partial valid signatures",
-			targetRepos: []string{signaturediscovery.FakeRepoWithPartialValidSignatures},
+			targetRepos: []string{FakeRepoWithPartialValidSignatures},
 			wantBase64Sigs: []string{
 				"dGVzdCBkYXRh",             // base64 encoded "test data".
 				"aW52YWxpZCBzaWduYXR1cmU=", // base64 encoded "invalid signature".
@@ -298,8 +331,8 @@ func TestFetchContainerImageSignatures(t *testing.T) {
 				return b
 			}
 
-			sdClient := signaturediscovery.NewFakeClient()
-			gotSigs := fetchContainerImageSignatures(ctx, sdClient, tc.targetRepos, testRetryPolicy, logging.SimpleLogger())
+			sdClient := NewFakeClient()
+			gotSigs := fetchContainerImageSignatures(ctx, sdClient, tc.targetRepos, testRetryPolicy, SimpleLogger())
 			if len(gotSigs) != len(tc.wantBase64Sigs) {
 				t.Errorf("fetchContainerImageSignatures did not return expected signatures for test case %s, got signatures length %d, but want %d", tc.name, len(gotSigs), len(tc.wantBase64Sigs))
 			}
@@ -363,14 +396,14 @@ type returnVal struct {
 	err    error
 }
 
-// Implments signaturediscovery.Fetcher methods
+// Implments SignatureFetcher methods
 type failingClient struct {
 	mu       sync.Mutex
 	results  map[string][]returnVal
 	numTimes map[string]int
 }
 
-func NewFailingClient(mymap map[string][]returnVal) signaturediscovery.Fetcher {
+func NewFailingClient(mymap map[string][]returnVal) SignatureFetcher {
 	numTimes := map[string]int{}
 	for k := range mymap {
 		numTimes[k] = 0
@@ -516,7 +549,7 @@ func TestFetchContainerImageSignatures_RetriesOnFailure(t *testing.T) {
 				}
 			}
 
-			gotSigs := fetchContainerImageSignatures(ctx, sdClient, repos, retryPolicy, logging.SimpleLogger())
+			gotSigs := fetchContainerImageSignatures(ctx, sdClient, repos, retryPolicy, SimpleLogger())
 
 			if len(gotSigs) != len(wantSigs) {
 				t.Errorf("fetchContainerImageSignatures did not return expected signatures for test case %s, got signatures length %d, but want %d", tc.name, len(gotSigs), len(wantSigs))
@@ -811,12 +844,8 @@ func TestAttestationEvidence_TDX_Success(t *testing.T) {
 	attestAgent := &agent{
 		avRot:     fakeRoot,
 		fetchedAK: ak,
-		launchSpec: spec.LaunchSpec{
-			Experiments: experiments.Experiments{
-				EnableAttestationEvidence: true,
-			},
-		},
 	}
+	attestAgent.experiments.EnableAttestationEvidence = true
 	attestAgent.avRot.AddDeviceROTs([]DeviceROT{&fakeGPURoT{}})
 
 	if err := measureFakeEvents(attestAgent); err != nil {
@@ -915,11 +944,8 @@ func TestAttestationEvidence_TPM_Success(t *testing.T) {
 	}
 	defer ak.Close()
 
-	agent, err := CreateAttestationAgent(tpm, client.AttestationKeyECC, verifierClient, placeholderPrincipalFetcher, signaturediscovery.NewFakeClient(), spec.LaunchSpec{
-		Experiments: experiments.Experiments{
-			EnableAttestationEvidence: true,
-		},
-	}, logging.SimpleLogger(), nil)
+	ls := Experiments{EnableAttestationEvidence: true}
+	agent, err := CreateAttestationAgent(tpm, client.AttestationKeyECC, verifierClient, placeholderPrincipalFetcher, NewFakeClient(), ls, SimpleLogger(), nil, nil)
 	if err != nil {
 		t.Fatalf("failed to create agent: %v", err)
 	}
@@ -968,7 +994,7 @@ func TestAttestationEvidence_TPM_Success(t *testing.T) {
 		t.Fatalf("gecel.DecodeToCEL failed: %v", err)
 	}
 
-	cosState, err := extract.VerifiedCOSState(decodedCEL, uint8(gecel.PCRType))
+	cosState, err := extract.VerifiedCOSState(decodedCEL, uint8(gecel.PCRType), extract.Options{})
 	if err != nil {
 		t.Errorf("extract.VerifiedCOSState failed: %v", err)
 	} else {
@@ -1033,7 +1059,7 @@ func TestVerify(t *testing.T) {
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
 			attAgent := agent{
-				launchSpec: spec.LaunchSpec{},
+				experiments: Experiments{},
 			}
 
 			resp, err := attAgent.verify(ctx, verifier.VerifyAttestationRequest{}, vClient)
@@ -1089,9 +1115,9 @@ func TestAttestationEvidence_ExperimentDisabled(t *testing.T) {
 		t.Fatalf("failed to generate signing key: %v", err)
 	}
 	agent, err := CreateAttestationAgent(tpm, client.AttestationKeyECC, fake.NewClient(fakeSigner),
-		placeholderPrincipalFetcher, signaturediscovery.NewFakeClient(),
-		spec.LaunchSpec{ /* EnableAttestationEvidence defaults to false */ },
-		logging.SimpleLogger(), nil)
+		placeholderPrincipalFetcher, NewFakeClient(),
+		Experiments{ /* EnableAttestationEvidence defaults to false */ },
+		SimpleLogger(), nil, nil)
 	if err != nil {
 		t.Fatalf("failed to create agent: %v", err)
 	}
@@ -1123,12 +1149,8 @@ func TestAttestationEvidence_TDX_NilExtraData(t *testing.T) {
 	attestatAgent := &agent{
 		avRot:     fakeRoot,
 		fetchedAK: ak,
-		launchSpec: spec.LaunchSpec{
-			Experiments: experiments.Experiments{
-				EnableAttestationEvidence: true,
-			},
-		},
 	}
+	attestatAgent.experiments.EnableAttestationEvidence = true
 
 	challenge := []byte("test-challenge")
 	att, err := attestatAgent.AttestationEvidence(ctx, challenge, nil, AttestAgentOpts{})
