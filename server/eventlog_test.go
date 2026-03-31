@@ -8,9 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
-	"google.golang.org/protobuf/proto"
-
 	"github.com/google/go-cmp/cmp"
 	gepb "github.com/google/go-eventlog/proto/state"
 	"github.com/google/go-tpm-tools/client"
