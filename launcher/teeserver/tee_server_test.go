@@ -108,7 +108,7 @@ func (f *fakeAttestationAgent) EnableGPUReadyState() error {
 		return f.gpuReadyFunc()
 	}
 	return nil
-
+}
 
 // Mock for KeyClaimsProvider interface
 type mockClaimsProvider struct {
@@ -744,7 +744,7 @@ func TestAttestationEvidence(t *testing.T) {
 			}
 			ah := attestHandler{
 				logger: logging.SimpleLogger(),
-				attestAgent: fakeAttestationAgent{
+				attestAgent: &fakeAttestationAgent{
 					attestationEvidenceFunc: attestationFunc,
 				},
 			}
