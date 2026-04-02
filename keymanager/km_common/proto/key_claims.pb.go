@@ -9,7 +9,6 @@ package keymanager
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
-	durationpb "google.golang.org/protobuf/types/known/durationpb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -423,11 +422,11 @@ type KeyClaims_VmProtectionKeyClaims struct {
 	// it will encrypt all resulting shared secrets to the binding key.
 	KemPubKey     *KemPublicKey  `protobuf:"bytes,1,opt,name=kem_pub_key,json=kemPubKey,proto3" json:"kem_pub_key,omitempty"`
 	BindingPubKey *HpkePublicKey `protobuf:"bytes,2,opt,name=binding_pub_key,json=bindingPubKey,proto3" json:"binding_pub_key,omitempty"`
-	// The remaining time until the Key Protection Service will autonomously delete its
+	// A Unix timestamp indicating when the Key Protection Service will autonomously delete its
 	// KEM keypair.
-	RemainingLifespan *durationpb.Duration `protobuf:"bytes,3,opt,name=remaining_lifespan,json=remainingLifespan,proto3" json:"remaining_lifespan,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	ExpirationTime float64 `protobuf:"fixed64,3,opt,name=expiration_time,json=expirationTime,proto3" json:"expiration_time,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *KeyClaims_VmProtectionKeyClaims) Reset() {
@@ -474,11 +473,11 @@ func (x *KeyClaims_VmProtectionKeyClaims) GetBindingPubKey() *HpkePublicKey {
 	return nil
 }
 
-func (x *KeyClaims_VmProtectionKeyClaims) GetRemainingLifespan() *durationpb.Duration {
+func (x *KeyClaims_VmProtectionKeyClaims) GetExpirationTime() float64 {
 	if x != nil {
-		return x.RemainingLifespan
+		return x.ExpirationTime
 	}
-	return nil
+	return 0
 }
 
 var File_keymanager_km_common_proto_key_claims_proto protoreflect.FileDescriptor
@@ -486,7 +485,7 @@ var File_keymanager_km_common_proto_key_claims_proto protoreflect.FileDescriptor
 const file_keymanager_km_common_proto_key_claims_proto_rawDesc = "" +
 	"\n" +
 	"+keymanager/km_common/proto/key_claims.proto\x12\n" +
-	"keymanager\x1a\x1egoogle/protobuf/duration.proto\x1a+keymanager/km_common/proto/algorithms.proto\x1a-keymanager/km_common/proto/crypto_types.proto\"{\n" +
+	"keymanager\x1a+keymanager/km_common/proto/algorithms.proto\x1a-keymanager/km_common/proto/crypto_types.proto\"{\n" +
 	"\x13GetKeyClaimsRequest\x124\n" +
 	"\n" +
 	"key_handle\x18\x01 \x01(\v2\x15.keymanager.KeyHandleR\tkeyHandle\x12.\n" +
@@ -498,16 +497,16 @@ const file_keymanager_km_common_proto_key_claims_proto_rawDesc = "" +
 	"\rHpkePublicKey\x127\n" +
 	"\talgorithm\x18\x01 \x01(\v2\x19.keymanager.HpkeAlgorithmR\talgorithm\x12\x1d\n" +
 	"\n" +
-	"public_key\x18\x02 \x01(\fR\tpublicKey\"\x88\x04\n" +
+	"public_key\x18\x02 \x01(\fR\tpublicKey\"\xe7\x03\n" +
 	"\tKeyClaims\x12]\n" +
 	"\x11vm_binding_claims\x18\x01 \x01(\v2/.keymanager.KeyClaims.VmProtectionBindingClaimsH\x00R\x0fvmBindingClaims\x12Q\n" +
 	"\rvm_key_claims\x18\x02 \x01(\v2+.keymanager.KeyClaims.VmProtectionKeyClaimsH\x00R\vvmKeyClaims\x1a^\n" +
 	"\x19VmProtectionBindingClaims\x12A\n" +
-	"\x0fbinding_pub_key\x18\x01 \x01(\v2\x19.keymanager.HpkePublicKeyR\rbindingPubKey\x1a\xde\x01\n" +
+	"\x0fbinding_pub_key\x18\x01 \x01(\v2\x19.keymanager.HpkePublicKeyR\rbindingPubKey\x1a\xbd\x01\n" +
 	"\x15VmProtectionKeyClaims\x128\n" +
 	"\vkem_pub_key\x18\x01 \x01(\v2\x18.keymanager.KemPublicKeyR\tkemPubKey\x12A\n" +
-	"\x0fbinding_pub_key\x18\x02 \x01(\v2\x19.keymanager.HpkePublicKeyR\rbindingPubKey\x12H\n" +
-	"\x12remaining_lifespan\x18\x03 \x01(\v2\x19.google.protobuf.DurationR\x11remainingLifespanB\b\n" +
+	"\x0fbinding_pub_key\x18\x02 \x01(\v2\x19.keymanager.HpkePublicKeyR\rbindingPubKey\x12'\n" +
+	"\x0fexpiration_time\x18\x03 \x01(\x01R\x0eexpirationTimeB\b\n" +
 	"\x06claims*g\n" +
 	"\aKeyType\x12\x18\n" +
 	"\x14KEY_TYPE_UNSPECIFIED\x10\x00\x12\"\n" +
@@ -545,7 +544,6 @@ var file_keymanager_km_common_proto_key_claims_proto_goTypes = []any{
 	(*KeyHandle)(nil),                           // 8: keymanager.KeyHandle
 	(KemAlgorithm)(0),                           // 9: keymanager.KemAlgorithm
 	(*HpkeAlgorithm)(nil),                       // 10: keymanager.HpkeAlgorithm
-	(*durationpb.Duration)(nil),                 // 11: google.protobuf.Duration
 }
 var file_keymanager_km_common_proto_key_claims_proto_depIdxs = []int32{
 	8,  // 0: keymanager.GetKeyClaimsRequest.key_handle:type_name -> keymanager.KeyHandle
@@ -557,12 +555,11 @@ var file_keymanager_km_common_proto_key_claims_proto_depIdxs = []int32{
 	4,  // 6: keymanager.KeyClaims.VmProtectionBindingClaims.binding_pub_key:type_name -> keymanager.HpkePublicKey
 	3,  // 7: keymanager.KeyClaims.VmProtectionKeyClaims.kem_pub_key:type_name -> keymanager.KemPublicKey
 	4,  // 8: keymanager.KeyClaims.VmProtectionKeyClaims.binding_pub_key:type_name -> keymanager.HpkePublicKey
-	11, // 9: keymanager.KeyClaims.VmProtectionKeyClaims.remaining_lifespan:type_name -> google.protobuf.Duration
-	10, // [10:10] is the sub-list for method output_type
-	10, // [10:10] is the sub-list for method input_type
-	10, // [10:10] is the sub-list for extension type_name
-	10, // [10:10] is the sub-list for extension extendee
-	0,  // [0:10] is the sub-list for field type_name
+	9,  // [9:9] is the sub-list for method output_type
+	9,  // [9:9] is the sub-list for method input_type
+	9,  // [9:9] is the sub-list for extension type_name
+	9,  // [9:9] is the sub-list for extension extendee
+	0,  // [0:9] is the sub-list for field type_name
 }
 
 func init() { file_keymanager_km_common_proto_key_claims_proto_init() }

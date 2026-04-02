@@ -285,7 +285,7 @@ type isAlgorithmParams_Params interface {
 }
 
 type AlgorithmParams_KemId struct {
-	// KEM algorithm identifier (e.g., DHKEM_X25519_HKDF_SHA256).
+	// KEM algorithm identifier (e.g., KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256).
 	KemId KemAlgorithm `protobuf:"varint,1,opt,name=kem_id,json=kemId,proto3,enum=keymanager.KemAlgorithm,oneof"`
 }
 

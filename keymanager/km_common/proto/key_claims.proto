@@ -2,7 +2,6 @@ syntax = "proto3";
 
 package keymanager;
 
-import "google/protobuf/duration.proto";
 import "keymanager/km_common/proto/algorithms.proto";
 import "keymanager/km_common/proto/crypto_types.proto";
 
@@ -67,9 +66,9 @@ message KeyClaims {
     KemPublicKey kem_pub_key = 1;
     HpkePublicKey binding_pub_key = 2;
 
-    // The remaining time until the Key Protection Service will autonomously delete its
+    // A Unix timestamp indicating when the Key Protection Service will autonomously delete its
     // KEM keypair.
-    google.protobuf.Duration remaining_lifespan = 3;
+    double expiration_time = 3;
   }
 
   oneof claims {

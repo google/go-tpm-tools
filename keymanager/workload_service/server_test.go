@@ -879,8 +879,8 @@ func TestProcessClaims(t *testing.T) {
 				claims.BindingPubKey.Algorithm.Aead != expectedAlgo.Aead {
 				t.Errorf("expected binding algorithm %v, got %v", expectedAlgo, claims.BindingPubKey.Algorithm)
 			}
-			if claims.RemainingLifespan.AsDuration() <= 0 {
-				t.Errorf("expected positive remaining lifespan, got %v", claims.RemainingLifespan.AsDuration())
+			if claims.ExpirationTime <= float64(time.Now().Unix()) {
+				t.Errorf("expected expiration time to be in the future, got %v", claims.ExpirationTime)
 			}
 		case <-time.After(2 * time.Second):
 			t.Fatal("timed out waiting for response")
