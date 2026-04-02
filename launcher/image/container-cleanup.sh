@@ -10,11 +10,34 @@ for ns in $(ctr ns ls -q); do
         # Send SIGTERM and move on. No waiting, no killing, no deleting.
         # A workload may decide to ignore or not handle SIGTERM.
         ctr -n "$ns" tasks kill --signal SIGTERM $tasks >/dev/null 2>&1
-        echo "SIGTERM sent to $tasks; allowing $SHUTDOWN_TIMEOUT_SEC seconds for graceful shutdown."
-        
-        # Allow $SHUTDOWN_TIMEOUT_SEC seconds for the workload to shutdown.
-        sleep $SHUTDOWN_TIMEOUT_SEC
-
-        echo "Container cleanup exits; unended tasks will be killed."
+        echo "SIGTERM sent to $tasks in namespace $ns."
     fi
+done
+
+echo "Waiting up to $SHUTDOWN_TIMEOUT_SEC seconds for workloads to shutdown..."
+
+start_time=$(date +%s)
+while true; do
+    all_empty=true
+    for ns in $(ctr ns ls -q); do
+        tasks=$(ctr -n "$ns" task ls -q)
+        if [ -n "$tasks" ]; then
+            all_empty=false
+            break
+        fi
+    done
+
+    if [ "$all_empty" = true ]; then
+        echo "All workloads have shutdown gracefully."
+        break
+    fi
+
+    current_time=$(date +%s)
+    elapsed=$((current_time - start_time))
+    if [ $elapsed -ge $SHUTDOWN_TIMEOUT_SEC ]; then
+        echo "Timeout reached; unended tasks will be killed."
+        break
+    fi
+
+    sleep 1
 done
