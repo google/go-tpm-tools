@@ -1,4 +1,3 @@
-# Container launcher service.
 [Unit]
 Description=Confidential Space Launcher
 Wants=network-online.target gcr-online.target containerd.service
