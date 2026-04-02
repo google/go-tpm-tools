@@ -296,6 +296,13 @@ func TestIntegrationKeyClaims(t *testing.T) {
 		if res.Reply.GetVmKeyClaims() == nil {
 			t.Fatal("expected VmKeyClaims")
 		}
+
+		expirationTime := res.Reply.GetVmKeyClaims().GetExpirationTime()
+		expectedExpiration := float64(time.Now().Unix() + 3600)
+		diff := expirationTime - expectedExpiration
+		if diff < -5 || diff > 5 {
+			t.Fatalf("expected expiration time close to %f, got %f", expectedExpiration, expirationTime)
+		}
 	})
 
 	// 3. Test GetKeyClaims for Binding key
