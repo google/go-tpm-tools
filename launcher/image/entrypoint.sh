@@ -3,6 +3,7 @@
 main() {
   # Copy service files.
   cp /usr/share/oem/confidential_space/container-runner.service /etc/systemd/system/container-runner.service
+  cp /usr/share/oem/confidential_space/container-cleanup.service /etc/systemd/system/container-cleanup.service
   # Override default fluent-bit config.
   cp /usr/share/oem/confidential_space/fluent-bit-cs.conf /etc/fluent-bit/fluent-bit.conf
 
@@ -15,8 +16,8 @@ main() {
   # Override default kernel-monitor.json for node-problem-detector.
   cp /usr/share/oem/confidential_space/kernel-monitor-cs.json /etc/node_problem_detector/kernel-monitor.json
   systemctl daemon-reload
-  systemctl enable container-runner.service
-  systemctl start container-runner.service
+  systemctl enable container-runner.service container-cleanup.service
+  systemctl start container-runner.service container-cleanup.service
   systemctl start fluent-bit.service
 }
 
