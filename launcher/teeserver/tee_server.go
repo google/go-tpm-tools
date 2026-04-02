@@ -138,39 +138,6 @@ func (a *attestHandler) getToken(w http.ResponseWriter, r *http.Request) {
 	a.attest(w, r, a.clients.GCA)
 }
 
-func (a *attestHandler) getHostAttestation(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		a.logAndWriteHTTPError(w, http.StatusMethodNotAllowed, fmt.Errorf("method not allowed"))
-		return
-	}
-
-	var req tspb.GetHostAttestationRequest
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		a.logAndWriteHTTPError(w, http.StatusBadRequest, fmt.Errorf("failed to read request body: %v", err))
-		return
-	}
-	if err := protojson.Unmarshal(body, &req); err != nil {
-		a.logAndWriteHTTPError(w, http.StatusBadRequest, fmt.Errorf("failed to decode request: %v", err))
-		return
-	}
-	if len(req.Challenge) == 0 {
-		a.logAndWriteHTTPError(w, http.StatusBadRequest, fmt.Errorf("challenge is required"))
-		return
-	}
-
-	evidence := dummyHostAttestation(req.Challenge)
-
-	evidenceBytes, err := protojson.Marshal(evidence)
-	if err != nil {
-		a.logAndWriteHTTPError(w, http.StatusInternalServerError, fmt.Errorf("failed to marshal evidence: %v", err))
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.Write(evidenceBytes)
-}
-
 // getITAToken retrieves a attestation token signed by ITA.
 func (a *attestHandler) getITAToken(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html")
@@ -193,7 +160,6 @@ func (a *attestHandler) getITAToken(w http.ResponseWriter, r *http.Request) {
 // The default response with no query parameter will return all fields except device reports.
 // If the fields param is "*", it will return all fields including device reports.
 func (a *attestHandler) getAttestationEvidence(w http.ResponseWriter, r *http.Request) {
-
 	if r.Method != http.MethodPost {
 		a.logAndWriteHTTPError(w, http.StatusMethodNotAllowed, fmt.Errorf("method not allowed"))
 		return
@@ -428,6 +394,41 @@ func (a *attestHandler) attest(w http.ResponseWriter, r *http.Request, client ve
 		err := fmt.Errorf("TEE server received an invalid HTTP method: %s", r.Method)
 		a.logAndWriteHTTPError(w, http.StatusBadRequest, err)
 	}
+}
+
+func (a *attestHandler) getHostAttestation(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		a.logAndWriteHTTPError(w, http.StatusMethodNotAllowed, fmt.Errorf("method not allowed"))
+		return
+	}
+
+	a.logger.Info(fmt.Sprintf("%s called", hostAttestationEndpoint))
+
+	var req tspb.GetHostAttestationRequest
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		a.logAndWriteHTTPError(w, http.StatusBadRequest, fmt.Errorf("failed to read request body: %v", err))
+		return
+	}
+	if err := protojson.Unmarshal(body, &req); err != nil {
+		a.logAndWriteHTTPError(w, http.StatusBadRequest, fmt.Errorf("failed to decode request: %v", err))
+		return
+	}
+	if len(req.Challenge) == 0 {
+		a.logAndWriteHTTPError(w, http.StatusBadRequest, fmt.Errorf("challenge is required"))
+		return
+	}
+
+	evidence := dummyHostAttestation(req.Challenge)
+
+	evidenceBytes, err := protojson.Marshal(evidence)
+	if err != nil {
+		a.logAndWriteHTTPError(w, http.StatusInternalServerError, fmt.Errorf("failed to marshal evidence: %v", err))
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(evidenceBytes)
 }
 
 func (a *attestHandler) logAndWriteHTTPError(w http.ResponseWriter, statusCode int, err error) {
