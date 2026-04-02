@@ -165,6 +165,8 @@ func (a *attestHandler) getAttestationEvidence(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	a.logger.Info(fmt.Sprintf("%s called", evidenceEndpoint))
+
 	var req tspb.GetAttestationEvidenceRequest
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -249,6 +251,8 @@ func (a *attestHandler) getKeyEndorsement(w http.ResponseWriter, r *http.Request
 		a.logAndWriteHTTPError(w, http.StatusMethodNotAllowed, fmt.Errorf("method not allowed"))
 		return
 	}
+
+	a.logger.Info(fmt.Sprintf("%s called", endorsementEndpoint))
 
 	var req tspb.GetKeyEndorsementRequest
 	body, err := io.ReadAll(r.Body)
