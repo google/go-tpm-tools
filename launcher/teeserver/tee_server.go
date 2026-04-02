@@ -27,10 +27,11 @@ import (
 )
 
 const (
-	gcaEndpoint         = "/v1/token"
-	itaEndpoint         = "/v1/intel/token"
-	evidenceEndpoint    = "/v1/evidence"
-	endorsementEndpoint = "/v1/keys:getEndorsement"
+	gcaEndpoint             = "/v1/token"
+	itaEndpoint             = "/v1/intel/token"
+	evidenceEndpoint        = "/v1/evidence"
+	endorsementEndpoint     = "/v1/keys:getEndorsement"
+	hostAttestationEndpoint = "/v1/hostAttestation"
 )
 
 var clientErrorCodes = map[codes.Code]struct{}{
@@ -111,6 +112,7 @@ func (a *attestHandler) Handler() http.Handler {
 	mux.HandleFunc(itaEndpoint, a.getITAToken)
 	mux.HandleFunc(evidenceEndpoint, a.getAttestationEvidence)
 	mux.HandleFunc(endorsementEndpoint, a.getKeyEndorsement)
+	mux.HandleFunc(hostAttestationEndpoint, a.getHostAttestation)
 	return mux
 }
 
@@ -134,6 +136,39 @@ func (a *attestHandler) getToken(w http.ResponseWriter, r *http.Request) {
 	}
 
 	a.attest(w, r, a.clients.GCA)
+}
+
+func (a *attestHandler) getHostAttestation(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		a.logAndWriteHTTPError(w, http.StatusMethodNotAllowed, fmt.Errorf("method not allowed"))
+		return
+	}
+
+	var req tspb.GetHostAttestationRequest
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		a.logAndWriteHTTPError(w, http.StatusBadRequest, fmt.Errorf("failed to read request body: %v", err))
+		return
+	}
+	if err := protojson.Unmarshal(body, &req); err != nil {
+		a.logAndWriteHTTPError(w, http.StatusBadRequest, fmt.Errorf("failed to decode request: %v", err))
+		return
+	}
+	if len(req.Challenge) == 0 {
+		a.logAndWriteHTTPError(w, http.StatusBadRequest, fmt.Errorf("challenge is required"))
+		return
+	}
+
+	evidence := dummyHostAttestation(req.Challenge)
+
+	evidenceBytes, err := protojson.Marshal(evidence)
+	if err != nil {
+		a.logAndWriteHTTPError(w, http.StatusInternalServerError, fmt.Errorf("failed to marshal evidence: %v", err))
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(evidenceBytes)
 }
 
 // getITAToken retrieves a attestation token signed by ITA.
