@@ -6,7 +6,7 @@ After=containerd.service container-runner.service
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/bin/sh -c "echo 'Container cleanup service started'"
+ExecStart=/bin/echo "Container cleanup service started"
 ExecStop=/usr/share/oem/confidential_space/container-cleanup.sh
 StandardOutput=journal
 StandardError=journal
