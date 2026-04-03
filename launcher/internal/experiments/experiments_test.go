@@ -28,14 +28,16 @@ func TestExperiments(t *testing.T) {
 				EnableB200DriverInstallation: true,
 				EnableKeyManager:             false,
 				EnableGpuGcaSupport:          false,
+				EnableHostAttestation:        false,
 			},
 		},
 		{
-			input: "{\"EnableTestFeatureForImage\":true,\"EnableSignedContainerImage\":true,\"EnableItaVerifier\":true,\"FloatFeature\":-5.6,\"OtherTestFeatureForImage\":false}",
+			input: "{\"EnableTestFeatureForImage\":true,\"EnableSignedContainerImage\":true,\"EnableItaVerifier\":true,\"FloatFeature\":-5.6,\"OtherTestFeatureForImage\":false,\"EnableHostAttestation\":true}",
 			expectedExps: Experiments{
 				EnableTestFeatureForImage: true,
 				EnableItaVerifier:         true,
 				EnableGpuGcaSupport:       false,
+				EnableHostAttestation:     true,
 			},
 		},
 		{

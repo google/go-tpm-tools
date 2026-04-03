@@ -401,6 +401,11 @@ func (a *attestHandler) attest(w http.ResponseWriter, r *http.Request, client ve
 }
 
 func (a *attestHandler) getHostAttestation(w http.ResponseWriter, r *http.Request) {
+	if !a.launchSpec.Experiments.EnableHostAttestation {
+		a.logAndWriteHTTPError(w, http.StatusForbidden, fmt.Errorf("host attestation not enabled"))
+		return
+	}
+
 	if r.Method != http.MethodPost {
 		a.logAndWriteHTTPError(w, http.StatusMethodNotAllowed, fmt.Errorf("method not allowed"))
 		return

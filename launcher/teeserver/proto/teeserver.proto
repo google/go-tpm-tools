@@ -3,8 +3,6 @@ syntax = "proto3";
 package teeserver;
 
 import "keymanager/km_common/proto/crypto_types.proto";
-import "attestation.proto";
-
 
 option go_package = "github.com/google/go-tpm-tools/launcher/teeserver/proto/gen/teeserver";
 
@@ -19,8 +17,4 @@ message GetAttestationEvidenceRequest {
 
 message GetHostAttestationRequest {
   bytes challenge = 1;
-}
-
-message GetHostAttestationResponse {
-  confidential_space.HostAttestation host_attestation = 1;
 }
