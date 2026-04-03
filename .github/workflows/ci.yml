@@ -71,7 +71,7 @@ jobs:
         if: runner.os == 'Linux' && matrix.architecture == 'x64'
       - name: Check Protobuf Generation
         run: |
-          go generate ./... ./cmd/... ./launcher/... ./verifier/...
+          go generate ./... ./agent/... ./cmd/... ./launcher/... ./verifier/...
           git diff -G'^[^/]' --exit-code
       - name: Install Linux 64-bit packages
         run: sudo apt-get -y install libssl-dev
@@ -86,8 +86,11 @@ jobs:
       - name: Install Windows packages
         run: choco install openssl
         if: runner.os == 'Windows'
-      - name: Build all modules except launcher and keymanager
+      - name: Build all modules except agent, launcher, and keymanager
         run: go build -v ./... ./cmd/... ./verifier/...
+      - name: Build agent module
+        run: go build -v ./agent/...
+        if: runner.os == 'Linux'
       - name: Build keymanager module
         run: go build -v ./keymanager/...
         if: runner.os == 'Linux' && matrix.architecture == 'x64'
@@ -102,8 +105,11 @@ jobs:
       - name: Run all tests in launcher to capture potential data race
         run: go test -v -ldflags="-extldflags=-Wl,-z,lazy" -race ./launcher/...
         if: (runner.os == 'Linux') && matrix.architecture == 'x64'
-      - name: Test all modules except launcher and keymanager
+      - name: Test all modules except agent, launcher, and keymanager
         run: go test -v ./... ./cmd/... ./verifier/... -skip='TestCacheConcurrentSetGet|TestHwAttestationPass|TestHardwareAttestationPass'
+      - name: Test agent module
+        run: go test -v ./agent/...
+        if: runner.os == 'Linux'
       - name: Test keymanager module
         run: go test -v ./keymanager/...
         if: runner.os == 'Linux' && matrix.architecture == 'x64'
@@ -113,7 +119,7 @@ jobs:
       matrix:
         go-version: [1.24.x]
         os: [ubuntu-latest]
-        dir: ["./", "./cmd", "./launcher", "./keymanager"]
+        dir: ["./", "./agent", "./cmd", "./launcher", "./keymanager"]
     name: Lint ${{ matrix.dir }} (${{ matrix.os }}, Go ${{ matrix.go-version }})
     runs-on: ${{ matrix.os }}
     steps:

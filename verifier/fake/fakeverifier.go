@@ -71,7 +71,7 @@ func verifyTDX(req verifier.VerifyAttestationRequest, nonce []byte) (*attest.Mac
 	if err != nil {
 		return nil, err
 	}
-	cosState, err := extract.ParseCOSCEL(req.TDCCELAttestation.CanonicalEventLog, *rtmrbank)
+	cosState, err := extract.ParseCOSCEL(req.TDCCELAttestation.CanonicalEventLog, *rtmrbank, extract.Options{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to validate the Canonical event log: %w", err)
 	}
@@ -107,7 +107,7 @@ func verifyTPM(req verifier.VerifyAttestationRequest, nonce []byte) (*attest.Mac
 		return nil, fmt.Errorf("failed to extract PCR bank: %w", err)
 	}
 
-	cosState, err := extract.ParseCOSCEL(req.Attestation.GetCanonicalEventLog(), *pcrBank)
+	cosState, err := extract.ParseCOSCEL(req.Attestation.GetCanonicalEventLog(), *pcrBank, extract.Options{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to validate the Canonical event log: %w", err)
 	}

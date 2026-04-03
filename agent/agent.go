@@ -34,15 +34,23 @@ import (
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal"
-	"github.com/google/go-tpm-tools/launcher/internal/logging"
-	"github.com/google/go-tpm-tools/launcher/internal/signaturediscovery"
-	"github.com/google/go-tpm-tools/launcher/spec"
 	pb "github.com/google/go-tpm-tools/proto/attest"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/google/go-tpm-tools/verifier/models"
 	"github.com/google/go-tpm-tools/verifier/oci"
 	"github.com/google/go-tpm-tools/verifier/util"
 )
+
+// Logger defines the interface for the agent logger.
+type Logger interface {
+	Info(msg string, args ...any)
+	Error(msg string, args ...any)
+}
+
+// SignatureFetcher defines the interface for fetching container image signatures.
+type SignatureFetcher interface {
+	FetchImageSignatures(ctx context.Context, targetRepository string) ([]oci.Signature, error)
+}
 
 const (
 	audienceSTS = "https://sts.googleapis.com"
@@ -96,16 +104,25 @@ type DeviceReportOpts struct {
 	EnableRuntimeGPUAttestation bool
 }
 
+// Experiments contains the experiment flags for the AttestationAgent.
+type Experiments struct {
+	// EnableGpuGcaSupport enables the GPU attestation.
+	EnableGpuGcaSupport bool
+	// EnableAttestationEvidence enables the attestation evidence endpoint.
+	EnableAttestationEvidence bool
+}
+
 type agent struct {
 	measuredRots     []attestRoot
 	avRot            attestRoot
 	fetchedAK        *client.Key
 	client           verifier.Client
 	principalFetcher principalIDTokenFetcher
-	sigsFetcher      signaturediscovery.Fetcher
-	launchSpec       spec.LaunchSpec
-	logger           logging.Logger
+	sigsFetcher      SignatureFetcher
+	experiments      Experiments
+	logger           Logger
 	sigsCache        *sigsCache
+	signedImageRepos []string
 }
 
 // CreateAttestationAgent returns an agent capable of performing remote
@@ -115,7 +132,7 @@ type agent struct {
 // - principalFetcher is a func to fetch GCE principal tokens for a given audience.
 // - signaturesFetcher is a func to fetch container image signatures associated with the running workload.
 // - logger will log any partial errors returned by VerifyAttestation.
-func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher util.TpmKeyFetcher, verifierClient verifier.Client, principalFetcher principalIDTokenFetcher, sigsFetcher signaturediscovery.Fetcher, launchSpec spec.LaunchSpec, logger logging.Logger, deviceROTs []DeviceROT) (AttestationAgent, error) {
+func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher util.TpmKeyFetcher, verifierClient verifier.Client, principalFetcher principalIDTokenFetcher, sigsFetcher SignatureFetcher, exps Experiments, logger Logger, deviceROTs []DeviceROT, signedImageRepos []string) (AttestationAgent, error) {
 	// Fetched the AK and save it, so the agent doesn't need to create a new key everytime
 	ak, err := akFetcher(tpm)
 	if err != nil {
@@ -127,9 +144,10 @@ func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher util.TpmKeyFetcher
 		fetchedAK:        ak,
 		principalFetcher: principalFetcher,
 		sigsFetcher:      sigsFetcher,
-		launchSpec:       launchSpec,
+		experiments:      exps,
 		logger:           logger,
 		sigsCache:        &sigsCache{},
+		signedImageRepos: signedImageRepos,
 	}
 
 	// Add TPM
@@ -280,7 +298,7 @@ func (a *agent) AttestWithClient(ctx context.Context, opts AttestAgentOpts, clie
 		return nil, fmt.Errorf("received an unsupported attestation type! %v", v)
 	}
 
-	if a.launchSpec.Experiments.EnableGpuGcaSupport {
+	if a.experiments.EnableGpuGcaSupport {
 		deviceReports, err := a.attestDeviceROTs(challenge.Nonce, opts)
 		if err != nil {
 			return nil, fmt.Errorf("failed to attest device RoTs: %v", err)
@@ -319,7 +337,7 @@ func (a *agent) AttestWithClient(ctx context.Context, opts AttestAgentOpts, clie
 
 // AttestationEvidence returns the attestation evidence (TPM or TDX).
 func (a *agent) AttestationEvidence(_ context.Context, challenge []byte, extraData []byte, opts AttestAgentOpts) (*attestationpb.VmAttestation, error) {
-	if !a.launchSpec.Experiments.EnableAttestationEvidence {
+	if !a.experiments.EnableAttestationEvidence {
 		return nil, fmt.Errorf("attestation evidence is disabled")
 	}
 
@@ -558,13 +576,13 @@ func (t *tdxAttestRoot) AddDeviceROTs(deviceROTs []DeviceROT) {
 // Refresh refreshes the internal state of the attestation agent.
 // It will reset the container image signatures for now.
 func (a *agent) Refresh(ctx context.Context) error {
-	signatures := fetchContainerImageSignatures(ctx, a.sigsFetcher, a.launchSpec.SignedImageRepos, defaultRetryPolicy, a.logger)
+	signatures := fetchContainerImageSignatures(ctx, a.sigsFetcher, a.signedImageRepos, defaultRetryPolicy, a.logger)
 	a.sigsCache.set(signatures)
 	a.logger.Info("Refreshed container image signature cache", "signatures", signatures)
 	return nil
 }
 
-func fetchContainerImageSignatures(ctx context.Context, fetcher signaturediscovery.Fetcher, targetRepos []string, retry func() backoff.BackOff, logger logging.Logger) []oci.Signature {
+func fetchContainerImageSignatures(ctx context.Context, fetcher SignatureFetcher, targetRepos []string, retry func() backoff.BackOff, logger Logger) []oci.Signature {
 	signatures := make([][]oci.Signature, len(targetRepos))
 
 	var wg sync.WaitGroup
