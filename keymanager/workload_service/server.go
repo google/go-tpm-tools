@@ -23,6 +23,7 @@ import (
 
 	api "github.com/google/go-tpm-tools/keymanager/workload_service/proto"
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	kpscc "github.com/google/go-tpm-tools/keymanager/key_protection_service/key_custody_core"
 	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
@@ -583,6 +584,9 @@ func (s *Server) handleGetKEMKeyClaims(id uuid.UUID) (*keymanager.KeyClaims, err
 		return nil, fmt.Errorf("failed to get KEM key: %w", err)
 	}
 
+	// Calculate remaining time.
+	remaining := time.Duration(remainingLifespanSecs) * time.Second
+
 	// Create KeyClaims
 	claims := &keymanager.KeyClaims{
 		Claims: &keymanager.KeyClaims_VmKeyClaims{
@@ -595,7 +599,8 @@ func (s *Server) handleGetKEMKeyClaims(id uuid.UUID) (*keymanager.KeyClaims, err
 					Algorithm: algo,
 					PublicKey: bindingPubKey,
 				},
-				ExpirationTime: float64(time.Now().Unix()) + float64(remainingLifespanSecs),
+				RemainingLifespan: durationpb.New(remaining),
+				ExpirationTime:    float64(time.Now().Unix()) + float64(remainingLifespanSecs),
 			},
 		},
 	}

@@ -882,6 +882,9 @@ func TestProcessClaims(t *testing.T) {
 			if claims.ExpirationTime <= float64(time.Now().Unix()) {
 				t.Errorf("expected expiration time to be in the future, got %v", claims.ExpirationTime)
 			}
+			if claims.RemainingLifespan.AsDuration() <= 0 {
+				t.Errorf("expected positive remaining lifespan, got %v", claims.RemainingLifespan.AsDuration())
+			}
 		case <-time.After(2 * time.Second):
 			t.Fatal("timed out waiting for response")
 		}
