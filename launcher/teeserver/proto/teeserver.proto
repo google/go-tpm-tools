@@ -14,3 +14,7 @@ message GetKeyEndorsementRequest {
 message GetAttestationEvidenceRequest {
   bytes challenge = 1;
 }
+
+message GetHostAttestationRequest {
+  bytes challenge = 1;
+}
