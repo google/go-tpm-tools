@@ -1,0 +1,79 @@
+# Test container cleanup behavior.
+# 1. Create Monitor VM (listening on UDP).
+# 2. Capture Monitor IP.
+# 3. Create Workload VM (sending heartbeats to Monitor).
+# 4. Verify heartbeat.
+# 5. Stop Workload VM.
+# 6. Verify graceful exit message in Monitor logs.
+substitutions:
+  '_IMAGE_NAME': ''
+  '_IMAGE_PROJECT': ''
+  '_CLEANUP': 'true'
+  '_IMAGE_REPO': 'us-west1-docker.pkg.dev/confidential-space-images-dev/cs-integ-test-images'
+  '_MONITOR_IMAGE': '${_IMAGE_REPO}/workloadcleanup/monitor:latest'
+  '_WORKLOAD_IMAGE': '${_IMAGE_REPO}/workloadcleanup/workload:latest'
+  '_ZONE': 'us-west1-a'
+
+steps:
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CreateMonitorVM
+  entrypoint: 'bash'
+  env:
+  - 'BUILD_ID=$BUILD_ID'
+  args: ['create_vm.sh','-i', '${_IMAGE_NAME}',
+          '-p', '${_IMAGE_PROJECT}',
+          '-m', 'tee-image-reference=${_MONITOR_IMAGE},tee-container-log-redirect=true',
+          '-n', 'cs-monitor-${BUILD_ID}',
+          '-z', '${_ZONE}',
+        ]
+
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CaptureIP
+  script: |
+    #!/usr/bin/env bash
+    gcloud compute instances describe cs-monitor-${BUILD_ID} \
+      --zone ${_ZONE} \
+      --format="get(networkInterfaces[0].networkIP)" > /workspace/monitor_ip.txt
+
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CreateWorkloadVM
+  env:
+  - 'BUILD_ID=$BUILD_ID'
+  script: |
+    #!/usr/bin/env bash
+    MONITOR_IP=$(cat /workspace/monitor_ip.txt)
+    bash create_vm.sh -i ${_IMAGE_NAME} \
+      -p ${_IMAGE_PROJECT} \
+      -m "tee-image-reference=${_WORKLOAD_IMAGE},tee-container-log-redirect=true,tee-cmd=--server-addr=${MONITOR_IP}:2020" \
+      -n cs-workload-${BUILD_ID} \
+      -z ${_ZONE}
+
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: TestSequence
+  entrypoint: 'bash'
+  args: ['scripts/test_workload_cleanup.sh',
+          'cs-monitor-${BUILD_ID}',
+          'cs-workload-${BUILD_ID}',
+          '${_ZONE}',
+        ]
+
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CleanUp
+  env:
+  - 'CLEANUP=$_CLEANUP'
+  script: |
+    #!/usr/bin/env bash
+    bash cleanup.sh cs-monitor-${BUILD_ID} ${_ZONE}
+    bash cleanup.sh cs-workload-${BUILD_ID} ${_ZONE}
+
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CheckFailure
+  entrypoint: 'bash'
+  env:
+  - 'BUILD_ID=$BUILD_ID'
+  args: ['check_failure.sh']
+
+options:
+  dynamic_substitutions: true
+  pool:
+    name: 'projects/confidential-space-images-dev/locations/us-west1/workerPools/cs-image-build-vpc'

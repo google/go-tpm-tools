@@ -454,6 +454,20 @@ steps:
     exit
 
 - name: 'gcr.io/cloud-builders/gcloud'
+  id: WorkloadCleanupTests
+  waitFor: ['HardenedImageBuild']
+  env:
+  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}'
+  - 'PROJECT_ID=$PROJECT_ID'
+  script: |
+    #!/usr/bin/env bash
+    cd launcher/image/test
+    echo "running workload cleanup tests on ${OUTPUT_IMAGE_NAME}"
+    gcloud builds submit --config=test_workloadcleanup_cloudbuild.yaml --region us-west1 \
+      --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
+    exit
+
+- name: 'gcr.io/cloud-builders/gcloud'
   id: ExportHardenedImage
   waitFor: ['HardenedImageTests']
   entrypoint: 'gcloud'
