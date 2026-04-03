@@ -20,6 +20,8 @@ import (
 	wskcc "github.com/google/go-tpm-tools/keymanager/workload_service/key_custody_core"
 )
 
+const expirationToleranceSecs = 5.0
+
 // realWorkloadService wraps the actual WSD KCC FFI.
 type realWorkloadService struct{}
 
@@ -300,7 +302,7 @@ func TestIntegrationKeyClaims(t *testing.T) {
 		expirationTime := res.Reply.GetVmKeyClaims().GetExpirationTime()
 		expectedExpiration := float64(time.Now().Unix() + 3600)
 		diff := expirationTime - expectedExpiration
-		if diff < -5 || diff > 5 {
+		if diff < -expirationToleranceSecs || diff > expirationToleranceSecs {
 			t.Fatalf("expected expiration time close to %f, got %f", expectedExpiration, expirationTime)
 		}
 	})
