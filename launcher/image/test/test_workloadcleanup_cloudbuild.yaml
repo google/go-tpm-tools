@@ -23,7 +23,7 @@ steps:
   args: ['create_vm.sh','-i', '${_IMAGE_NAME}',
           '-p', '${_IMAGE_PROJECT}',
           '-m', 'tee-image-reference=${_MONITOR_IMAGE},tee-container-log-redirect=true',
-          '-n', 'cs-monitor-${BUILD_ID}',
+          '-n', 'cleanup-monitor-${BUILD_ID}',
           '-z', '${_ZONE}',
         ]
 
@@ -34,7 +34,7 @@ steps:
   - 'ZONE=$_ZONE'
   script: |
     #!/usr/bin/env bash
-    gcloud compute instances describe cs-monitor-$BUILD_ID \
+    gcloud compute instances describe cleanup-monitor-$BUILD_ID \
       --zone $ZONE \
       --format="get(networkInterfaces[0].networkIP)" > /workspace/monitor_ip.txt
 
@@ -52,15 +52,15 @@ steps:
     bash create_vm.sh -i $IMAGE_NAME \
       -p $IMAGE_PROJECT \
       -m "tee-image-reference=$WORKLOAD_IMAGE,tee-container-log-redirect=true,tee-cmd=--server-addr=${MONITOR_IP}:2020" \
-      -n cs-workload-$BUILD_ID \
+      -n cleanup-test-$BUILD_ID \
       -z $ZONE
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: TestSequence
   entrypoint: 'bash'
   args: ['scripts/test_workload_cleanup.sh',
-          'cs-monitor-${BUILD_ID}',
-          'cs-workload-${BUILD_ID}',
+          'cleanup-monitor-${BUILD_ID}',
+          'cleanup-test-${BUILD_ID}',
           '${_ZONE}',
         ]
 
@@ -72,8 +72,8 @@ steps:
   - 'ZONE=$_ZONE'
   script: |
     #!/usr/bin/env bash
-    bash cleanup.sh cs-monitor-$BUILD_ID $ZONE
-    bash cleanup.sh cs-workload-$BUILD_ID $ZONE
+    bash cleanup.sh cleanup-monitor-$BUILD_ID $ZONE
+    bash cleanup.sh cleanup-test-$BUILD_ID $ZONE
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CheckFailure
