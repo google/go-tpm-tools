@@ -1,3 +1,4 @@
+// Package main provides a test workload for cleanup.
 package main
 
 import (
