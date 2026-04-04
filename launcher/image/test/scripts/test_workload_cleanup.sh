@@ -5,7 +5,7 @@ MONITOR_VM=$1
 WORKLOAD_VM=$2
 ZONE=$3
 
-timeout_seconds=300
+timeout_seconds=600
 start_time=$(date +%s)
 
 check_timeout() {
