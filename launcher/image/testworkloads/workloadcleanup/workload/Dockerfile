@@ -7,5 +7,6 @@ FROM alpine
 COPY main /
 
 LABEL "tee.launch_policy.log_redirect"="always"
+LABEL "tee.launch_policy.allow_cmd_override"="true"
 
 ENTRYPOINT ["/main"]
