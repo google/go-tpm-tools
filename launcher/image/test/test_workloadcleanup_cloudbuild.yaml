@@ -34,21 +34,9 @@ steps:
       echo "Found latest Debian family: $LATEST_DEBIAN"
     fi
 
-    MACHINE_TYPE=$(gcloud compute machine-types list \
-        --zones=$ZONE \
-        --filter="architecture=X86_64 AND guestCpus>=2 AND memoryMb>=1024" \
-        --format="value(name, memoryMb)" | sort -k2 -n | head -n 1 | awk '{print $1}')
-
-    if [ -z "$MACHINE_TYPE" ]; then
-      echo "Failed to find a matching machine type. Defaulting to e2-micro."
-      MACHINE_TYPE="e2-micro"
-    else
-      echo "Found smallest x86 machine type: $MACHINE_TYPE"
-    fi
-
     gcloud compute instances create cleanup-monitor-$BUILD_ID \
       --zone $ZONE \
-      --machine-type=$MACHINE_TYPE \
+      --machine-type=e2-micro \
       --image-family=$LATEST_DEBIAN \
       --image-project=debian-cloud \
       --metadata=startup-script="#!/bin/bash
