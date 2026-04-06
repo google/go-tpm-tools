@@ -68,7 +68,7 @@ steps:
     MONITOR_IP=$(cat /workspace/monitor_ip.txt)
     bash create_vm.sh -i $IMAGE_NAME \
       -p $IMAGE_PROJECT \
-      -m "tee-image-reference=$WORKLOAD_IMAGE,tee-container-log-redirect=true,tee-cmd=--server-addr=${MONITOR_IP}:2020" \
+      -m "tee-image-reference=$WORKLOAD_IMAGE,tee-container-log-redirect=true,tee-cmd=[\"--server-addr=${MONITOR_IP}:2020\"]" \
       -n cleanup-test-$BUILD_ID \
       -z $ZONE
 
