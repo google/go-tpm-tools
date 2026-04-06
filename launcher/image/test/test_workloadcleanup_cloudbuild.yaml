@@ -17,15 +17,45 @@ substitutions:
 steps:
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CreateMonitorVM
-  entrypoint: 'bash'
   env:
   - 'BUILD_ID=$BUILD_ID'
-  args: ['create_vm.sh','-i', '${_IMAGE_NAME}',
-          '-p', '${_IMAGE_PROJECT}',
-          '-m', 'tee-image-reference=${_MONITOR_IMAGE},tee-container-log-redirect=true',
-          '-n', 'cleanup-monitor-${BUILD_ID}',
-          '-z', '${_ZONE}',
-        ]
+  - 'ZONE=$_ZONE'
+  script: |
+    #!/usr/bin/env bash
+    LATEST_DEBIAN=$(gcloud compute images list \
+        --project=debian-cloud \
+        --no-standard-images \
+        --filter="architecture=X86_64" \
+        --format="value(family)" | sort -V | uniq | tail -n 1)
+
+    if [ -z "$LATEST_DEBIAN" ]; then
+      echo "Failed to find a Debian image family. Defaulting to debian-12."
+      LATEST_DEBIAN="debian-12"
+    else
+      echo "Found latest Debian family: $LATEST_DEBIAN"
+    fi
+
+    MACHINE_TYPE=$(gcloud compute machine-types list \
+        --zones=$ZONE \
+        --filter="architecture=X86_64 AND guestCpus>=2 AND memoryMb>=1024" \
+        --format="value(name, memoryMb)" | sort -k2 -n | head -n 1 | awk '{print $1}')
+
+    if [ -z "$MACHINE_TYPE" ]; then
+      echo "Failed to find a matching machine type. Defaulting to e2-micro."
+      MACHINE_TYPE="e2-micro"
+    else
+      echo "Found smallest x86 machine type: $MACHINE_TYPE"
+    fi
+
+    gcloud compute instances create cleanup-monitor-$BUILD_ID \
+      --zone $ZONE \
+      --machine-type=$MACHINE_TYPE \
+      --image-family=$LATEST_DEBIAN \
+      --image-project=debian-cloud \
+      --metadata=startup-script="#!/bin/bash
+        apt-get update
+        apt-get install -y netcat-openbsd
+        nc -l -u -p 2020 > /dev/ttyS0"
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CaptureIP
