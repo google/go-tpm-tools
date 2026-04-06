@@ -8,8 +8,9 @@ Type=oneshot
 RemainAfterExit=yes
 ExecStart=/bin/echo "Container cleanup service started"
 ExecStop=/usr/share/oem/confidential_space/container-cleanup.sh
-StandardOutput=journal
-StandardError=journal
+TTYPath=/dev/ttyS0
+StandardOutput=tty
+StandardError=tty
 
 [Install]
 WantedBy=multi-user.target
