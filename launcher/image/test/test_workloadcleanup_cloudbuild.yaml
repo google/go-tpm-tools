@@ -10,7 +10,6 @@ substitutions:
   '_IMAGE_PROJECT': ''
   '_CLEANUP': 'true'
   '_IMAGE_REPO': 'us-west1-docker.pkg.dev/confidential-space-images-dev/cs-integ-test-images'
-  '_MONITOR_IMAGE': '${_IMAGE_REPO}/workloadcleanup/monitor:latest'
   '_WORKLOAD_IMAGE': '${_IMAGE_REPO}/workloadcleanup/workload:latest'
   '_ZONE': 'us-west1-a'
 
