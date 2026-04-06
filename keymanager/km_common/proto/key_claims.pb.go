@@ -425,9 +425,14 @@ type KeyClaims_VmProtectionKeyClaims struct {
 	BindingPubKey *HpkePublicKey `protobuf:"bytes,2,opt,name=binding_pub_key,json=bindingPubKey,proto3" json:"binding_pub_key,omitempty"`
 	// The remaining time until the Key Protection Service will autonomously delete its
 	// KEM keypair.
+	//
+	// Deprecated: Marked as deprecated in keymanager/km_common/proto/key_claims.proto.
 	RemainingLifespan *durationpb.Duration `protobuf:"bytes,3,opt,name=remaining_lifespan,json=remainingLifespan,proto3" json:"remaining_lifespan,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// A Unix timestamp indicating when the Key Protection Service will autonomously delete its
+	// KEM keypair.
+	ExpirationTime float64 `protobuf:"fixed64,4,opt,name=expiration_time,json=expirationTime,proto3" json:"expiration_time,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *KeyClaims_VmProtectionKeyClaims) Reset() {
@@ -474,11 +479,19 @@ func (x *KeyClaims_VmProtectionKeyClaims) GetBindingPubKey() *HpkePublicKey {
 	return nil
 }
 
+// Deprecated: Marked as deprecated in keymanager/km_common/proto/key_claims.proto.
 func (x *KeyClaims_VmProtectionKeyClaims) GetRemainingLifespan() *durationpb.Duration {
 	if x != nil {
 		return x.RemainingLifespan
 	}
 	return nil
+}
+
+func (x *KeyClaims_VmProtectionKeyClaims) GetExpirationTime() float64 {
+	if x != nil {
+		return x.ExpirationTime
+	}
+	return 0
 }
 
 var File_keymanager_km_common_proto_key_claims_proto protoreflect.FileDescriptor
@@ -498,16 +511,17 @@ const file_keymanager_km_common_proto_key_claims_proto_rawDesc = "" +
 	"\rHpkePublicKey\x127\n" +
 	"\talgorithm\x18\x01 \x01(\v2\x19.keymanager.HpkeAlgorithmR\talgorithm\x12\x1d\n" +
 	"\n" +
-	"public_key\x18\x02 \x01(\fR\tpublicKey\"\x88\x04\n" +
+	"public_key\x18\x02 \x01(\fR\tpublicKey\"\xb5\x04\n" +
 	"\tKeyClaims\x12]\n" +
 	"\x11vm_binding_claims\x18\x01 \x01(\v2/.keymanager.KeyClaims.VmProtectionBindingClaimsH\x00R\x0fvmBindingClaims\x12Q\n" +
 	"\rvm_key_claims\x18\x02 \x01(\v2+.keymanager.KeyClaims.VmProtectionKeyClaimsH\x00R\vvmKeyClaims\x1a^\n" +
 	"\x19VmProtectionBindingClaims\x12A\n" +
-	"\x0fbinding_pub_key\x18\x01 \x01(\v2\x19.keymanager.HpkePublicKeyR\rbindingPubKey\x1a\xde\x01\n" +
+	"\x0fbinding_pub_key\x18\x01 \x01(\v2\x19.keymanager.HpkePublicKeyR\rbindingPubKey\x1a\x8b\x02\n" +
 	"\x15VmProtectionKeyClaims\x128\n" +
 	"\vkem_pub_key\x18\x01 \x01(\v2\x18.keymanager.KemPublicKeyR\tkemPubKey\x12A\n" +
-	"\x0fbinding_pub_key\x18\x02 \x01(\v2\x19.keymanager.HpkePublicKeyR\rbindingPubKey\x12H\n" +
-	"\x12remaining_lifespan\x18\x03 \x01(\v2\x19.google.protobuf.DurationR\x11remainingLifespanB\b\n" +
+	"\x0fbinding_pub_key\x18\x02 \x01(\v2\x19.keymanager.HpkePublicKeyR\rbindingPubKey\x12L\n" +
+	"\x12remaining_lifespan\x18\x03 \x01(\v2\x19.google.protobuf.DurationB\x02\x18\x01R\x11remainingLifespan\x12'\n" +
+	"\x0fexpiration_time\x18\x04 \x01(\x01R\x0eexpirationTimeB\b\n" +
 	"\x06claims*g\n" +
 	"\aKeyType\x12\x18\n" +
 	"\x14KEY_TYPE_UNSPECIFIED\x10\x00\x12\"\n" +

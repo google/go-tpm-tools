@@ -69,7 +69,11 @@ message KeyClaims {
 
     // The remaining time until the Key Protection Service will autonomously delete its
     // KEM keypair.
-    google.protobuf.Duration remaining_lifespan = 3;
+    google.protobuf.Duration remaining_lifespan = 3 [deprecated = true];
+
+    // A Unix timestamp indicating when the Key Protection Service will autonomously delete its
+    // KEM keypair.
+    double expiration_time = 4;
   }
 
   oneof claims {

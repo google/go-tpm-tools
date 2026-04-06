@@ -600,6 +600,7 @@ func (s *Server) handleGetKEMKeyClaims(id uuid.UUID) (*keymanager.KeyClaims, err
 					PublicKey: bindingPubKey,
 				},
 				RemainingLifespan: durationpb.New(remaining),
+				ExpirationTime:    float64(time.Now().Unix()) + float64(remainingLifespanSecs),
 			},
 		},
 	}
