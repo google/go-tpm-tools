@@ -169,8 +169,10 @@ type Server struct {
 
 	claimsChan chan *ClaimsCall
 
-	httpServer *http.Server
-	listener   net.Listener
+	httpServer      *http.Server
+	listener        net.Listener
+	stopCleanup     chan struct{}
+	stopCleanupOnce sync.Once
 	// todo: add logging mechanism here
 }
 
@@ -181,6 +183,11 @@ var (
 	// ClaimsRequestTimeout is the maximum time to wait for enqueuing the request to
 	// claims channel for getting the key claims.
 	ClaimsRequestTimeout = 5 * time.Second
+	// CleanupInterval is the interval between expired key cleanup runs.
+	// Defaults to 12 hours (twice a day).
+	CleanupInterval = 12 * time.Hour
+	// cleanupPageSize is the number of keys to fetch per page during cleanup enumeration.
+	cleanupPageSize = 100
 )
 
 // New creates a new WSD Server listening on the given unix socket path.
@@ -196,6 +203,7 @@ func NewServer(keyProtectionService KeyProtectionService, workloadService Worklo
 		kemToBindingMap:      make(map[uuid.UUID]uuid.UUID),
 		mu:                   sync.RWMutex{},
 		claimsChan:           make(chan *ClaimsCall, 4),
+		stopCleanup:          make(chan struct{}),
 	}
 
 	mux := http.NewServeMux()
@@ -214,6 +222,7 @@ func NewServer(keyProtectionService KeyProtectionService, workloadService Worklo
 	s.listener = ln
 
 	go s.processClaims()
+	go s.cleanupLoop()
 
 	return s, nil
 }
@@ -225,6 +234,7 @@ func (s *Server) Serve() error {
 
 // Shutdown gracefully shuts down the server.
 func (s *Server) Shutdown(ctx context.Context) error {
+	s.stopCleanupOnce.Do(func() { close(s.stopCleanup) })
 	return s.httpServer.Shutdown(ctx)
 }
 
@@ -675,4 +685,51 @@ func (s *Server) GetKeyClaims(ctx context.Context, keyHandle string, keyType key
 	case <-time.After(ClaimsResponseTimeout):
 		return nil, fmt.Errorf("timed out waiting for processClaims to respond for key: %s", keyHandle)
 	}
+}
+
+// cleanupLoop periodically removes expired keys from kemToBindingMap.
+func (s *Server) cleanupLoop() {
+	ticker := time.NewTicker(CleanupInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			if err := s.cleanupExpiredKeys(); err != nil {
+				log.Printf("cleanupExpiredKeys: %v", err)
+			}
+		case <-s.stopCleanup:
+			return
+		}
+	}
+}
+
+// cleanupExpiredKeys enumerates active KEM keys from the Rust layer and removes
+// any kemToBindingMap entries whose KEM key is no longer active (expired).
+func (s *Server) cleanupExpiredKeys() error {
+	activeKeys := make(map[uuid.UUID]struct{})
+
+	offset := 0
+	for {
+		keys, hasMore, err := s.keyProtectionService.EnumerateKEMKeys(cleanupPageSize, offset)
+		if err != nil {
+			return fmt.Errorf("failed to enumerate KEM keys at offset %d: %w", offset, err)
+		}
+		for _, k := range keys {
+			activeKeys[k.ID] = struct{}{}
+		}
+		if !hasMore {
+			break
+		}
+		offset += len(keys)
+	}
+
+	s.mu.Lock()
+	for kemUUID := range s.kemToBindingMap {
+		if _, ok := activeKeys[kemUUID]; !ok {
+			delete(s.kemToBindingMap, kemUUID)
+		}
+	}
+	s.mu.Unlock()
+
+	return nil
 }
