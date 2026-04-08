@@ -10,7 +10,7 @@ require (
 	cloud.google.com/go/compute/metadata v0.9.0
 	cloud.google.com/go/confidentialcomputing v1.11.0
 	github.com/GoogleCloudPlatform/confidential-space/server v0.0.0-20260313232128-53cb34b09004
-	github.com/golang-jwt/jwt/v4 v4.5.1
+	github.com/golang-jwt/jwt/v4 v4.5.2
 	github.com/google/go-cmp v0.7.0
 	github.com/google/go-eventlog v0.0.3-0.20260305053119-5cd85087f9f9
 	github.com/google/go-sev-guest v0.14.0
@@ -26,7 +26,7 @@ require (
 	google.golang.org/api v0.265.0
 	google.golang.org/genproto v0.0.0-20260128011058-8636f8732409
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260203192932-546029d2fa20
-	google.golang.org/grpc v1.78.0
+	google.golang.org/grpc v1.79.3
 	google.golang.org/protobuf v1.36.11
 )
 
