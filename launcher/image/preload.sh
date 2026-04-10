@@ -22,6 +22,7 @@ setup_launcher_systemd_unit() {
 setup_container_cleanup_service() {
   cp container-cleanup.service "${CS_PATH}/container-cleanup.service"
   cp container-cleanup.sh "${CS_PATH}/container-cleanup.sh"
+  cp container-cleanup-udp.sh "${CS_PATH}/container-cleanup-udp.sh"
 }
 
 append_cmdline() {
@@ -83,7 +84,7 @@ configure_systemd_units_for_debug() {
   configure_necessary_systemd_units # added for test
   configure_cloud_logging
   configure_node_problem_detector
-  set_default_boot_target "cloud-final.service" # added for test
+  # set_default_boot_target "cloud-final.service" # added for test
 
   disable_unit "konlet-startup.service"
 }

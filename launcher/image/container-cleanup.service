@@ -6,9 +6,8 @@ Conflicts=shutdown.target
 Before=shutdown.target
 
 [Service]
-Type=oneshot
-RemainAfterExit=yes
-ExecStart=/bin/echo "Container cleanup service started"
+Type=simple
+ExecStart=/usr/share/oem/confidential_space/container-cleanup-udp.sh
 ExecStop=/usr/share/oem/confidential_space/container-cleanup.sh
 ExecStopPost=/bin/echo "Container cleanup service stopped"
 TTYPath=/dev/ttyS0
