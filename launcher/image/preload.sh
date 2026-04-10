@@ -80,8 +80,10 @@ configure_node_problem_detector() {
 }
 
 configure_systemd_units_for_debug() {
+  configure_necessary_systemd_units # added for test
   configure_cloud_logging
   configure_node_problem_detector
+  set_default_boot_target "cloud-final.service" # added for test
 
   disable_unit "konlet-startup.service"
 }
@@ -94,7 +96,7 @@ configure_systemd_units_for_hardened() {
 
   disable_unit "var-lib-docker.mount"
   disable_unit "docker.service"
-  # disable_unit "google-guest-agent.service"
+  disable_unit "google-guest-agent.service"
   disable_unit "google-osconfig-init.service"
   disable_unit "google-osconfig-agent.service"
   disable_unit "google-startup-scripts.service"
@@ -103,8 +105,7 @@ configure_systemd_units_for_hardened() {
   disable_unit "crash-reporter.service"
   disable_unit "device_policy_manager.service"
   disable_unit "docker-events-collector-fluent-bit.service"
-  # disable_unit "sshd.service"
-  enable_unit "sshd.service"
+  disable_unit "sshd.service"
   disable_unit "var-lib-toolbox.mount"
 }
 
