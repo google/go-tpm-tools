@@ -94,7 +94,7 @@ configure_systemd_units_for_hardened() {
 
   disable_unit "var-lib-docker.mount"
   disable_unit "docker.service"
-  disable_unit "google-guest-agent.service"
+  # disable_unit "google-guest-agent.service"
   disable_unit "google-osconfig-init.service"
   disable_unit "google-osconfig-agent.service"
   disable_unit "google-startup-scripts.service"
