@@ -72,6 +72,10 @@ steps:
       export CGO_LDFLAGS="-L/workspace/keymanager/target/release"
       go build -o ../image/launcher -ldflags="-extldflags=-Wl,-z,lazy -X 'main.BuildCommit=${SHORT_SHA}'"
 
+      # Build the power button listener
+      cd /workspace/launcher/power-button-listener
+      go build -o /workspace/launcher/image/power-button-listener
+
 - name: 'gcr.io/cloud-builders/gcloud'
   id: DownloadExpBinary
   entrypoint: 'gcloud'

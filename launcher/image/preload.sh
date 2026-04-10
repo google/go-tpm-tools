@@ -19,8 +19,9 @@ setup_launcher_systemd_unit() {
   cp exit_script.sh "${CS_PATH}/exit_script.sh"
 }
 
-setup_container_cleanup_service() {
-  cp container-cleanup.service "${CS_PATH}/container-cleanup.service"
+copy_power_button_listener() {
+  cp power-button-listener "${CS_PATH}/power-button-listener"
+  cp power-button-listener.service "${CS_PATH}/power-button-listener.service"
   cp container-cleanup.sh "${CS_PATH}/container-cleanup.sh"
 }
 
@@ -118,8 +119,8 @@ main() {
   # Install container launcher.
   copy_launcher
   setup_launcher_systemd_unit
-  # Install container cleanup service.
-  setup_container_cleanup_service
+  # Install power button listener.
+  copy_power_button_listener
   # Minimum required COS version for 'e': cos-dev-105-17222-0-0.
   # Minimum required COS version for 'm': cos-dev-113-18203-0-0.
   append_cmdline "cos.protected_stateful_partition=m"
