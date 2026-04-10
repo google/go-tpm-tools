@@ -1,4 +1,5 @@
 #!/bin/bash
+echo "Container cleanup script started"
 
 SHUTDOWN_TIMEOUT_SEC=15
 

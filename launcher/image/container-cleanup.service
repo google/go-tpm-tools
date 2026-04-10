@@ -10,6 +10,7 @@ Type=oneshot
 RemainAfterExit=yes
 ExecStart=/bin/echo "Container cleanup service started"
 ExecStop=/usr/share/oem/confidential_space/container-cleanup.sh
+ExecStopPost=/bin/echo "Container cleanup service stopped"
 TTYPath=/dev/ttyS0
 StandardOutput=tty
 StandardError=tty
