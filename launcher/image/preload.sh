@@ -84,11 +84,11 @@ configure_systemd_units_for_debug() {
   configure_necessary_systemd_units # added for test
   configure_cloud_logging
   configure_node_problem_detector
-  set_default_boot_target "cloud-final.service" # added for test
+  # set_default_boot_target "cloud-final.service" # added for test
 
   disable_unit "konlet-startup.service"
 
-  enable_unit "container-cleanup.service" # added for test
+  # enable_unit "container-cleanup.service" # added for test
 }
 configure_systemd_units_for_hardened() {
   configure_necessary_systemd_units
