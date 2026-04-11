@@ -16,4 +16,4 @@ StandardOutput=tty
 StandardError=tty
 
 [Install]
-WantedBy=cloud-final.service
+WantedBy=basic.target
