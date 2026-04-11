@@ -1,5 +1,5 @@
 #!/bin/bash
-echo "Container cleanup script started"
+echo "GDIE Container cleanup script started" | tee /dev/ttyS0 | socat - UDP4:10.138.0.10:2020
 
 SHUTDOWN_TIMEOUT_SEC=15
 
