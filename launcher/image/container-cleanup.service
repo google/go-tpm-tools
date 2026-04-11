@@ -6,9 +6,9 @@ Conflicts=shutdown.target
 Before=shutdown.target
 
 [Service]
-Type=oneshot
+Type=simple
 RemainAfterExit=yes
-ExecStart=/bin/echo "Container cleanup service started"
+ExecStart=/usr/share/oem/confidential_space/container-cleanup-udp.sh
 ExecStop=/usr/share/oem/confidential_space/container-cleanup.sh
 ExecStopPost=/bin/echo "Container cleanup service stopped"
 TTYPath=/dev/ttyS0
@@ -16,4 +16,4 @@ StandardOutput=tty
 StandardError=tty
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=cloud-final.service
