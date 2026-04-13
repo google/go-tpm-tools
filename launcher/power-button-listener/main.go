@@ -179,8 +179,9 @@ func run() error {
 	fmt.Println("Power button pressed! Triggering systemd poweroff...")
 
 	// Trigger systemd poweroff
-	if err := exec.Command("systemctl", "poweroff").Run(); err != nil {
-		return fmt.Errorf("running systemctl poweroff failed: %w", err)
+	output, err := exec.Command("systemctl", "poweroff").CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("running systemctl poweroff failed: %w, output: %s", err, string(output))
 	}
 
 	return nil
