@@ -1,12 +1,12 @@
 #!/bin/bash
-echo "GDIE Container cleanup script started" | tee /dev/ttyS0 | socat - UDP4:10.138.0.10:2020
+echo "Container cleanup script started"
 
 SHUTDOWN_TIMEOUT_SEC=15
 
 # Send SIGTERM to all running workloads so that they can shutdown gracefully.
 for ns in $(ctr ns ls -q); do
     tasks=$(ctr -n "$ns" task ls -q)
-    
+
     if [ -n "$tasks" ]; then
         # Send SIGTERM and move on. No waiting, no killing, no deleting.
         # A workload may decide to ignore or not handle SIGTERM.

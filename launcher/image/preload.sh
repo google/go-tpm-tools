@@ -19,15 +19,10 @@ setup_launcher_systemd_unit() {
   cp exit_script.sh "${CS_PATH}/exit_script.sh"
 }
 
-setup_container_cleanup_service() {
-  cp container-cleanup.service "${CS_PATH}/container-cleanup.service"
-  cp container-cleanup.sh "${CS_PATH}/container-cleanup.sh"
-  cp container-cleanup-udp.sh "${CS_PATH}/container-cleanup-udp.sh"
-}
-
 copy_power_button_listener() {
   cp power-button-listener "${CS_PATH}/power-button-listener"
   cp power-button-listener.service "${CS_PATH}/power-button-listener.service"
+  cp container-cleanup.sh "${CS_PATH}/container-cleanup.sh"
 }
 
 append_cmdline() {
@@ -86,14 +81,10 @@ configure_node_problem_detector() {
 }
 
 configure_systemd_units_for_debug() {
-  configure_necessary_systemd_units # added for test
   configure_cloud_logging
   configure_node_problem_detector
-  set_default_boot_target "cloud-final.service" # added for test
 
   disable_unit "konlet-startup.service"
-
-  # enable_unit "container-cleanup.service" # added for test
 }
 configure_systemd_units_for_hardened() {
   configure_necessary_systemd_units
@@ -128,8 +119,6 @@ main() {
   # Install container launcher.
   copy_launcher
   setup_launcher_systemd_unit
-  # Install container cleanup service.
-  setup_container_cleanup_service
   # Install power button listener.
   copy_power_button_listener
   # Minimum required COS version for 'e': cos-dev-105-17222-0-0.

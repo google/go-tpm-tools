@@ -5,6 +5,7 @@ After=containerd.service container-runner.service
 [Service]
 Type=simple
 ExecStart=/usr/share/oem/confidential_space/power-button-listener
+ExecStop=/usr/share/oem/confidential_space/container-cleanup.sh
 Restart=on-failure
 RestartSec=5
 TTYPath=/dev/ttyS0
