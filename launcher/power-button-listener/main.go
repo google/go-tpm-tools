@@ -147,7 +147,7 @@ func searchProcDevices() (string, error) {
 		}
 	}
 
-	return "", fmt.Errorf("Power Button not found in %s", procDevicesPath)
+	return "", fmt.Errorf("power button not found in %s", procDevicesPath)
 }
 
 func run() error {
