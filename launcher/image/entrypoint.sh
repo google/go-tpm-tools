@@ -19,6 +19,7 @@ main() {
   systemctl enable container-runner.service container-cleanup.service
   systemctl start container-runner.service container-cleanup.service
   systemctl start fluent-bit.service
+  systemctl start google-guest-agent.service
 }
 
 main
