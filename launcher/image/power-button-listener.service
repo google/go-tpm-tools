@@ -1,0 +1,15 @@
+[Unit]
+Description=Power Button Listener
+After=containerd.service container-runner.service
+
+[Service]
+Type=simple
+ExecStart=/usr/share/oem/confidential_space/power-button-listener
+Restart=on-failure
+RestartSec=5
+TTYPath=/dev/ttyS0
+StandardOutput=tty
+StandardError=tty
+
+[Install]
+WantedBy=basic.target

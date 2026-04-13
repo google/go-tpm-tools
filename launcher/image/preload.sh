@@ -25,6 +25,11 @@ setup_container_cleanup_service() {
   cp container-cleanup-udp.sh "${CS_PATH}/container-cleanup-udp.sh"
 }
 
+copy_power_button_listener() {
+  cp power-button-listener "${CS_PATH}/power-button-listener"
+  cp power-button-listener.service "${CS_PATH}/power-button-listener.service"
+}
+
 append_cmdline() {
   local arg="$1"
   if [[ ! -d /mnt/disks/efi ]]; then
@@ -125,6 +130,8 @@ main() {
   setup_launcher_systemd_unit
   # Install container cleanup service.
   setup_container_cleanup_service
+  # Install power button listener.
+  copy_power_button_listener
   # Minimum required COS version for 'e': cos-dev-105-17222-0-0.
   # Minimum required COS version for 'm': cos-dev-113-18203-0-0.
   append_cmdline "cos.protected_stateful_partition=m"
