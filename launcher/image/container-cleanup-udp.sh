@@ -16,6 +16,7 @@ trap 'cleanup' SIGTERM
 while true; do
   # Capture the status, dependencies, and targets in variables
   STATUS=$(systemctl status cloud-final.service)
+  SYSTEM_STATUS=$(systemctl status)
   DEPS=$(systemctl list-dependencies cloud-final.service)
   TARGETS=$(systemctl list-units --type=target)
 
@@ -23,6 +24,9 @@ while true; do
   echo "--- HEARTBEAT: $(date) ---
 [STATUS]
 $STATUS
+
+[SYSTEM STATUS]
+$SYSTEM_STATUS
 
 [DEPENDENCIES]
 $DEPS
