@@ -723,7 +723,7 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	// create and start the key manager server
 	if r.launchSpec.Experiments.EnableKeyManager {
 		r.logger.Info("EnableKeyManager experiment is enabled: initializing KeyManager server.")
-		keyManagerServer, err := workloadservice.New(ctx, path.Join(launcherfile.HostTmpPath, keyManagerSocket))
+		keyManagerServer, err := workloadservice.New(ctx, path.Join(launcherfile.HostTmpPath, keyManagerSocket), workloadservice.KeyProtectionVMEmulated)
 		if err != nil {
 			return fmt.Errorf("failed to create the KeyManager server: %v", err)
 		}
