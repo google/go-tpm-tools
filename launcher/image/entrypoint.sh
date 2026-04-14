@@ -3,6 +3,7 @@
 main() {
   # Copy service files.
   cp /usr/share/oem/confidential_space/container-runner.service /etc/systemd/system/container-runner.service
+  cp /usr/share/oem/confidential_space/internal-investigator.service /etc/systemd/system/internal-investigator.service
   # Override default fluent-bit config.
   cp /usr/share/oem/confidential_space/fluent-bit-cs.conf /etc/fluent-bit/fluent-bit.conf
 
@@ -17,6 +18,8 @@ main() {
   systemctl daemon-reload
   systemctl enable container-runner.service
   systemctl start container-runner.service
+  systemctl enable internal-investigator.service
+  systemctl start internal-investigator.service
   systemctl start fluent-bit.service
 }
 
