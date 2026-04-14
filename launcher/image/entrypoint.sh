@@ -15,6 +15,8 @@ main() {
   cp /usr/share/oem/confidential_space/docker-monitor-cs.json /etc/node_problem_detector/docker-monitor.json
   # Override default kernel-monitor.json for node-problem-detector.
   cp /usr/share/oem/confidential_space/kernel-monitor-cs.json /etc/node_problem_detector/kernel-monitor.json
+  # Allow incoming traffic on port 2080 for internal-investigator.
+  iptables -A INPUT -p udp --dport 2080 -j ACCEPT
   systemctl daemon-reload
   systemctl enable container-runner.service
   systemctl start container-runner.service
