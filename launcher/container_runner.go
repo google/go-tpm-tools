@@ -197,6 +197,21 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 			[]specs.LinuxIDMapping{{ContainerID: 0, HostID: 10000, Size: 65536}},
 			[]specs.LinuxIDMapping{{ContainerID: 0, HostID: 10000, Size: 65536}},
 		),
+		func(_ context.Context, _ oci.Client, _ *containers.Container, s *oci.Spec) error {
+			logger.Info(fmt.Sprintf("Mount specs before change: %+v", s.Mounts))
+			for i, m := range s.Mounts {
+				if m.Destination == "/sys" {
+					s.Mounts[i] = specs.Mount{
+						Destination: "/sys",
+						Type:        "bind",
+						Source:      "/sys",
+						Options:     []string{"rbind", "ro", "nosuid", "noexec", "nodev"},
+					}
+				}
+			}
+			logger.Info(fmt.Sprintf("Mount specs after change: %+v", s.Mounts))
+			return nil
+		},
 	}
 	if launchSpec.DevShmSize != 0 {
 		specOpts = append(specOpts, oci.WithDevShmSize(launchSpec.DevShmSize))
