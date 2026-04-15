@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"net"
 	"net/http"
 	"strings"
@@ -75,6 +76,9 @@ func New(ctx context.Context, unixSock string, a agent.AttestationAgent, logger 
 	nl, err := net.Listen("unix", unixSock)
 	if err != nil {
 		return nil, fmt.Errorf("cannot listen to the socket [%s]: %v", unixSock, err)
+	}
+	if err := os.Chmod(unixSock, 0666); err != nil {
+		return nil, fmt.Errorf("cannot chmod socket [%s]: %v", unixSock, err)
 	}
 
 	if launchSpec.Experiments.EnableKeyManager && keyClaimsProvider == nil {
