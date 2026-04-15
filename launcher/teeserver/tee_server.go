@@ -7,9 +7,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 
 	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
