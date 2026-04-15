@@ -193,6 +193,10 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		oci.WithAddedCapabilities(launchSpec.AddedCapabilities),
 		withRlimits(rlimits),
 		withOOMScoreAdj(defaultOOMScore),
+		oci.WithUserNamespace(
+			[]specs.LinuxIDMapping{{ContainerID: 0, HostID: 10000, Size: 65536}},
+			[]specs.LinuxIDMapping{{ContainerID: 0, HostID: 10000, Size: 65536}},
+		),
 	}
 	if launchSpec.DevShmSize != 0 {
 		specOpts = append(specOpts, oci.WithDevShmSize(launchSpec.DevShmSize))
