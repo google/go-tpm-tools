@@ -260,7 +260,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		ctx,
 		containerID,
 		containerd.WithImage(image),
-		containerd.WithNewSnapshot(snapshotID, image),
+		containerd.WithRemappedSnapshot(snapshotID, image, 10000, 10000),
 		containerd.WithNewSpec(specOpts...),
 	)
 	if err != nil {
