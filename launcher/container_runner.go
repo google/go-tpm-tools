@@ -88,6 +88,13 @@ const (
 // Default OOM score for a CS container.
 const defaultOOMScore = 1000
 
+// User namespace constants for rootless mode.
+const (
+	hostUIDBegin = 10000 // Starting (outside container) uid for the root user inside the container
+	hostGIDBegin = 10000 // Starting (outside container) gid for the root group inside the container
+	userNSSize   = 65536 // 16-bit range of uid/gid inside the container
+)
+
 // NewRunner returns a runner.
 func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.Token, launchSpec spec.LaunchSpec, mdsClient *metadata.Client, tpm io.ReadWriteCloser, logger logging.Logger, serialConsole *os.File) (*ContainerRunner, error) {
 	image, err := initImage(ctx, cdClient, launchSpec, token)
@@ -193,24 +200,10 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		withRlimits(rlimits),
 		withOOMScoreAdj(defaultOOMScore),
 		oci.WithUserNamespace(
-			[]specs.LinuxIDMapping{{ContainerID: 0, HostID: 10000, Size: 65536}},
-			[]specs.LinuxIDMapping{{ContainerID: 0, HostID: 10000, Size: 65536}},
+			[]specs.LinuxIDMapping{{ContainerID: 0, HostID: hostUIDBegin, Size: userNSSize}},
+			[]specs.LinuxIDMapping{{ContainerID: 0, HostID: hostGIDBegin, Size: userNSSize}},
 		),
-		func(_ context.Context, _ oci.Client, _ *containers.Container, s *oci.Spec) error {
-			logger.Info(fmt.Sprintf("Mount specs before change: %+v", s.Mounts))
-			for i, m := range s.Mounts {
-				if m.Destination == "/sys" {
-					s.Mounts[i] = specs.Mount{
-						Destination: "/sys",
-						Type:        "bind",
-						Source:      "/sys",
-						Options:     []string{"rbind", "ro", "nosuid", "noexec", "nodev"},
-					}
-				}
-			}
-			logger.Info(fmt.Sprintf("Mount specs after change: %+v", s.Mounts))
-			return nil
-		},
+		withSysBindMount(), // mount /sys as "bind" instead of "sysfs" for a non-root container
 	}
 	if launchSpec.DevShmSize != 0 {
 		specOpts = append(specOpts, oci.WithDevShmSize(launchSpec.DevShmSize))
@@ -260,7 +253,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		ctx,
 		containerID,
 		containerd.WithImage(image),
-		containerd.WithRemappedSnapshot(snapshotID, image, 10000, 10000),
+		containerd.WithRemappedSnapshot(snapshotID, image, hostUIDBegin, hostGIDBegin),
 		containerd.WithNewSpec(specOpts...),
 	)
 	if err != nil {
@@ -941,6 +934,23 @@ func withRlimits(rlimits []specs.POSIXRlimit) oci.SpecOpts {
 func withOOMScoreAdj(oomScore int) oci.SpecOpts {
 	return func(_ context.Context, _ oci.Client, _ *containers.Container, s *oci.Spec) error {
 		s.Process.OOMScoreAdj = &oomScore
+		return nil
+	}
+}
+
+// withSysBindMount overrides the default /sys mount with a read-only bind mount.
+func withSysBindMount() oci.SpecOpts {
+	return func(_ context.Context, _ oci.Client, _ *containers.Container, s *oci.Spec) error {
+		for i, m := range s.Mounts {
+			if m.Destination == "/sys" {
+				s.Mounts[i] = specs.Mount{
+					Destination: "/sys",
+					Type:        "bind",
+					Source:      "/sys",
+					Options:     []string{"rbind", "ro", "nosuid", "noexec", "nodev"},
+				}
+			}
+		}
 		return nil
 	}
 }
