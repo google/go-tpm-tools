@@ -6,6 +6,7 @@ Because we use `protoc` instead of the `buf` CLI for protobuf generation, we mus
 
 ## How to update
 To update to a newer version of protovalidate, run:
+
 ```bash
 curl -sSL https://raw.githubusercontent.com/bufbuild/protovalidate/main/proto/protovalidate/buf/validate/validate.proto -o validate.proto
 ```
