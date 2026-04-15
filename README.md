@@ -44,21 +44,26 @@ tar xvf go-tpm-tools.tar.gz
 ./gotpm --help
 ```
 
+
 ### Building and Installing `gotpm`
 
 `gotpm` can be directly installed from this repo by running:
+
 ```bash
 go install github.com/google/go-tpm-tools/cmd/gotpm@latest
 # gotpm will be installed to $GOBIN
 gotpm --help
 ```
+
 Alternatively, to build `gotpm` from a cloned version of this repo, run:
+
 ```bash
 cd /my/path/to/cloned/go-tpm-tools/cmd/gotpm
 go build
 # gotpm will be in the cmd/gotpm subdirectory of the repo
 ./gotpm --help
 ```
+
 
 ## Minimum Required Go Version
 
@@ -67,12 +72,14 @@ This project currently requires Go 1.20 or newer. Any update to the minimum requ
 ## `openssl` errors when building `simulator`
 
 Similarly, when building the `simulator` library (or tests), you may get an error that looks like:
+
 ```
 fatal error: openssl/aes.h: No such file or directory
    47 | // #include <openssl/aes.h>
       |           ^~~~~~~~~~~~~~~~
 compilation terminated.
 ```
+
 This is because the `simulator` library depends on having the [OpenSSL](https://www.openssl.org/) headers installed. To fix this error, install the appropriate header package:
 
 ### Linux
@@ -86,19 +93,24 @@ sudo yum install openssl-devel
 sudo pacman -S openssl
 ```
 
+
 ### macOS
 
 First, install [Homebrew](https://brew.sh/). Then run:
+
 ```bash
 brew install openssl
 ```
 
+
 ### Windows
 
 First, install [Chocolatey](https://chocolatey.org/). Then run:
+
 ```bash
 choco install openssl
 ```
+
 
 ### Custom install location
 
@@ -110,6 +122,7 @@ point Go your installation. We will assume your installation is located at
 #### Add OpenSSL to the include and library path at the command line
 This solution does not require modifying go-tpm-tools code and is useful when
 working on other projects that depend on go-tpm-tools/simulator.
+
 ```
 C_INCLUDE_PATH="$OPENSSL_PATH/include" LIBRARY_PATH="$OPENSSL_PATH/lib" go test ...
 ```
@@ -121,10 +134,12 @@ and removes the need to provide the paths on the command line.
 Modify the `CFLAGS`/`LDFLAGS` options beginning with `#cgo darwin` or
 `#cgo windows` in `simulator/internal/internal.go` to point at your
 installation. This could look something like:
+
 ```diff
 // #cgo darwin CFLAGS: -I $OPENSSL_PATH/include
 // #cgo darwin LDFLAGS: -L $OPENSSL_PATH/lib
 ```
+
 Remember to revert your modifications to `simulator/internal/internal.go`
 before committing your changes.
 
