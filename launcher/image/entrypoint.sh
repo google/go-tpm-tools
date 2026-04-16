@@ -4,6 +4,9 @@ main() {
   # Copy service files.
   cp /usr/share/oem/confidential_space/container-runner.service /etc/systemd/system/container-runner.service
   cp /usr/share/oem/confidential_space/internal-investigator.service /etc/systemd/system/internal-investigator.service
+  # Setup CNI config
+  mkdir -p /etc/cni/net.d
+  cp /usr/share/oem/confidential_space/10-workload.conf /etc/cni/net.d/10-workload.conf
   # Override default fluent-bit config.
   cp /usr/share/oem/confidential_space/fluent-bit-cs.conf /etc/fluent-bit/fluent-bit.conf
 

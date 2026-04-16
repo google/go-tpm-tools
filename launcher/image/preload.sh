@@ -21,6 +21,10 @@ setup_launcher_systemd_unit() {
   cp internal-investigator.sh "${CS_PATH}/internal-investigator.sh"
 }
 
+copy_cni_config() {
+  cp 10-workload.conf "${CS_PATH}/10-workload.conf"
+}
+
 append_cmdline() {
   local arg="$1"
   if [[ ! -d /mnt/disks/efi ]]; then
@@ -115,6 +119,7 @@ main() {
   # Install container launcher.
   copy_launcher
   setup_launcher_systemd_unit
+  copy_cni_config
   # Minimum required COS version for 'e': cos-dev-105-17222-0-0.
   # Minimum required COS version for 'm': cos-dev-113-18203-0-0.
   append_cmdline "cos.protected_stateful_partition=m"
