@@ -5,7 +5,7 @@ substitutions:
   '_IMAGE_PROJECT': ''
   '_CLEANUP': 'true'
   '_ZONE': 'asia-east1-a'
-  '_WORKLOAD_IMAGE': 'docker.io/library/nginx:latest'
+  '_WORKLOAD_IMAGE': 'us-west1-docker.pkg.dev/confidential-space-images-dev/cs-integ-test-images/nginx-unprivileged:latest'
 
 steps:
   - name: 'gcr.io/cloud-builders/gcloud'
@@ -15,7 +15,7 @@ steps:
     - 'BUILD_ID=$BUILD_ID'
     args: ['create_vm.sh','-i', '${_IMAGE_NAME}',
             '-p', '${_IMAGE_PROJECT}',
-            '-m', 'tee-image-reference=${_WORKLOAD_IMAGE}',
+            '-m', 'tee-image-reference=${_WORKLOAD_IMAGE},tee-cmd=["nginx","-g","daemon off; error_log /tmp/error.log;"]',
             '-n', 'ingress-network-test-${BUILD_ID}',
             '-z', '${_ZONE}',
           ]
@@ -33,7 +33,7 @@ steps:
         echo "workload internal IP: "${internalIP}
 
         # try to connect to the nginx server
-        response=$(curl -v ${internalIP}:80)
+        response=$(curl -v ${internalIP}:8080)
         echo "got response [${response}]"
 
         # check nginx default response
