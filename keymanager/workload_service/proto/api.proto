@@ -24,30 +24,30 @@ message GenerateKeyRequest {
   uint64 lifespan = 2 [(buf.validate.field).uint64 = {gt: 0, lte: 9223372036854775807}];
 }
 
-// Response from generating a new key.
-message GenerateKeyResponse {
-  // A unique handle (UUID) used to reference the generated key.
-  keymanager.KeyHandle key_handle = 1 [(buf.validate.field).required = true];
-  // The public key information for the generated keypair.
-  keymanager.PubKeyInfo pub_key = 2;
-  // The isolation level/protection mechanism for the key 
-  // (e.g., "KEY_PROTECTION_VM_EMULATED", "KEY_PROTECTION_VM", or "DEFAULT").
-  string key_protection_mechanism = 3;
-  // A Unix timestamp indicating when the key is scheduled for automatic deletion.
-  // Note: relies on network clock time and is subject to hypervisor clock drift/skew.
-  double expiration_time = 4;
-}
-
-// Detailed information about an active key.
-message KeyInfo {
+// Shared key metadata fields for key responses.
+message KeyMetadata {
   // A unique handle (UUID) used to reference the keypair.
   keymanager.KeyHandle key_handle = 1 [(buf.validate.field).required = true];
   // The public key information for the keypair.
   keymanager.PubKeyInfo pub_key = 2;
   // The isolation level/protection mechanism for the key.
+  // (e.g., "KEY_PROTECTION_VM_EMULATED", "KEY_PROTECTION_VM", or "DEFAULT").
   string key_protection_mechanism = 3;
   // A Unix timestamp indicating when the key will be automatically deleted.
+  // Note: relies on network clock time and is subject to hypervisor clock drift/skew.
   double expiration_time = 4;
+}
+
+// Response from generating a new key.
+message GenerateKeyResponse {
+  // Key metadata including handle, public key, protection mechanism, and expiration.
+  KeyMetadata key = 1;
+}
+
+// Detailed information about an active key.
+message KeyInfo {
+  // Key metadata including handle, public key, protection mechanism, and expiration.
+  KeyMetadata key = 1;
 }
 
 // Response containing a list of all active keys managed by the daemon.
