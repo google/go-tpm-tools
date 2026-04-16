@@ -328,6 +328,9 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize CNI: %w", err)
 	}
+	if err := cni.Load(gocni.WithDefaultConf); err != nil {
+		return nil, fmt.Errorf("failed to load CNI configurations: %w", err)
+	}
 
 	return &ContainerRunner{
 		container:     container,
@@ -792,7 +795,7 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 
 	pid := task.Pid()
 	netnsPath := fmt.Sprintf("/proc/%d/ns/net", pid)
-	
+
 	cniResult, err := r.cni.Setup(ctx, containerID, netnsPath)
 	if err != nil {
 		return fmt.Errorf("failed to setup network via CNI: %w", err)
@@ -810,10 +813,11 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 
 	containerIP := ""
 	rawResults := cniResult.Raw()
+	// Currently, we have only single network interface defined with a single IP address by `10-workload.conf`.
 	if len(rawResults) > 0 && len(rawResults[0].IPs) > 0 {
 		containerIP = rawResults[0].IPs[0].Address.IP.String()
 	}
-	
+
 	if err := openPorts(imageConfig.ExposedPorts, containerIP); err != nil {
 		return fmt.Errorf("failed to open and forward ports: %w", err)
 	}
