@@ -15,7 +15,7 @@ steps:
     - 'BUILD_ID=$BUILD_ID'
     args: ['create_vm.sh','-i', '${_IMAGE_NAME}',
             '-p', '${_IMAGE_PROJECT}',
-            '-m', 'tee-image-reference=${_WORKLOAD_IMAGE},tee-cmd=["nginx","-g","daemon off; error_log /tmp/error.log;"]',
+            '-m', '^~^tee-image-reference=${_WORKLOAD_IMAGE}~tee-cmd=["nginx","-g","daemon off; error_log /tmp/error.log;"]',
             '-n', 'ingress-network-test-${BUILD_ID}',
             '-z', '${_ZONE}',
           ]
