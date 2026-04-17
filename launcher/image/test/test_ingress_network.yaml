@@ -5,7 +5,7 @@ substitutions:
   '_IMAGE_PROJECT': ''
   '_CLEANUP': 'true'
   '_ZONE': 'asia-east1-a'
-  '_WORKLOAD_IMAGE': 'us-west1-docker.pkg.dev/confidential-space-images-dev/cs-integ-test-images/nginx-custom:latest'
+  '_WORKLOAD_IMAGE': 'docker.io/library/nginx:latest'
 
 steps:
   - name: 'gcr.io/cloud-builders/gcloud'
@@ -33,7 +33,7 @@ steps:
         echo "workload internal IP: "${internalIP}
 
         # try to connect to the nginx server
-        response=$(curl -v ${internalIP}:8080)
+        response=$(curl -v ${internalIP}:80)
         echo "got response [${response}]"
 
         # check nginx default response

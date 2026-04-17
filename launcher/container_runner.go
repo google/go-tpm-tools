@@ -14,6 +14,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"cloud.google.com/go/compute/metadata"
@@ -769,24 +770,41 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		r.logger.Info("MemoryMonitoring is disabled by the VM operator")
 	}
 
-	var streamOpt cio.Opt
+	var logWriter io.Writer
 	switch r.launchSpec.LogRedirect {
 	case spec.Nowhere:
-		streamOpt = cio.WithStreams(nil, nil, nil)
+		logWriter = io.Discard
 		r.logger.Info("Container stdout/stderr will not be redirected.")
 	case spec.Everywhere:
-		w := io.MultiWriter(os.Stdout, r.serialConsole)
-		streamOpt = cio.WithStreams(nil, w, w)
+		logWriter = io.MultiWriter(os.Stdout, r.serialConsole)
 		r.logger.Info("Container stdout/stderr will be redirected to serial and Cloud Logging. This may result in performance issues due to slow serial console writes.")
 	case spec.CloudLogging:
-		streamOpt = cio.WithStreams(nil, os.Stdout, os.Stdout)
+		logWriter = os.Stdout
 		r.logger.Info("Container stdout/stderr will be redirected to Cloud Logging.")
 	case spec.Serial:
-		streamOpt = cio.WithStreams(nil, r.serialConsole, r.serialConsole)
+		logWriter = r.serialConsole
 		r.logger.Info("Container stdout/stderr will be redirected to serial logging. This may result in performance issues due to slow serial console writes.")
 	default:
 		return fmt.Errorf("unknown logging redirect location: %v", r.launchSpec.LogRedirect)
 	}
+
+	pipePath := "/tmp/workload.log"
+	os.Remove(pipePath)
+	if err := syscall.Mkfifo(pipePath, 0666); err != nil {
+		return fmt.Errorf("failed to create named pipe: %w", err)
+	}
+	f, err := os.OpenFile(pipePath, os.O_RDWR, 0)
+	if err != nil {
+		return fmt.Errorf("failed to open named pipe: %w", err)
+	}
+
+	var streamOpt cio.Opt
+	streamOpt = cio.WithStreams(nil, f, f)
+
+	go func() {
+		defer f.Close()
+		io.Copy(logWriter, f)
+	}()
 
 	task, err := r.container.NewTask(ctx, cio.NewCreator(streamOpt))
 	if err != nil {
