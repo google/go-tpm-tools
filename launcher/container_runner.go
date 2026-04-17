@@ -93,11 +93,13 @@ const (
 // Default OOM score for a CS container.
 const defaultOOMScore = 1000
 
-// User namespace constants for rootless mode.
+// Constants for a non-root container.
 const (
 	hostUIDBegin = 10000 // Starting (outside container) uid for the root user inside the container
 	hostGIDBegin = 10000 // Starting (outside container) gid for the root group inside the container
 	userNSSize   = 65536 // 16-bit range of uid/gid inside the container
+
+	stdoutStderrPipePath = "/tmp/workload.log"
 )
 
 // NewRunner returns a runner.
@@ -206,6 +208,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 			[]specs.LinuxIDMapping{{ContainerID: 0, HostID: hostGIDBegin, Size: userNSSize}},
 		),
 		withSysBindMount(), // mount /sys as "bind" instead of "sysfs" for a non-root container
+		withStdoutStderrPipeMounts(stdoutStderrPipePath),
 	}
 	if launchSpec.DevShmSize != 0 {
 		specOpts = append(specOpts, oci.WithDevShmSize(launchSpec.DevShmSize))
@@ -788,18 +791,16 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		return fmt.Errorf("unknown logging redirect location: %v", r.launchSpec.LogRedirect)
 	}
 
-	pipePath := "/tmp/workload.log"
-	os.Remove(pipePath)
-	if err := syscall.Mkfifo(pipePath, 0666); err != nil {
+	os.Remove(stdoutStderrPipePath)
+	if err := syscall.Mkfifo(stdoutStderrPipePath, 0666); err != nil {
 		return fmt.Errorf("failed to create named pipe: %w", err)
 	}
-	f, err := os.OpenFile(pipePath, os.O_RDWR, 0)
+	f, err := os.OpenFile(stdoutStderrPipePath, os.O_RDWR, 0)
 	if err != nil {
 		return fmt.Errorf("failed to open named pipe: %w", err)
 	}
 
-	var streamOpt cio.Opt
-	streamOpt = cio.WithStreams(nil, f, f)
+	streamOpt := cio.WithStreams(nil, logWriter, logWriter)
 
 	go func() {
 		defer f.Close()
@@ -1045,6 +1046,26 @@ func withSysBindMount() oci.SpecOpts {
 				}
 			}
 		}
+		return nil
+	}
+}
+
+func withStdoutStderrPipeMounts(pipePath string) oci.SpecOpts {
+	return func(_ context.Context, _ oci.Client, _ *containers.Container, s *oci.Spec) error {
+		s.Mounts = append(s.Mounts,
+			specs.Mount{
+				Destination: "/dev/stdout",
+				Type:        "bind",
+				Source:      pipePath,
+				Options:     []string{"rbind", "rw"},
+			},
+			specs.Mount{
+				Destination: "/dev/stderr",
+				Type:        "bind",
+				Source:      pipePath,
+				Options:     []string{"rbind", "rw"},
+			},
+		)
 		return nil
 	}
 }
