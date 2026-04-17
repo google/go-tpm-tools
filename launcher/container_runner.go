@@ -208,7 +208,26 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 			[]specs.LinuxIDMapping{{ContainerID: 0, HostID: hostGIDBegin, Size: userNSSize}},
 		),
 		withSysBindMount(), // mount /sys as "bind" instead of "sysfs" for a non-root container
-		withStdoutStderrPipeMounts(stdoutStderrPipePath),
+		// withStdoutStderrPipeMounts(stdoutStderrPipePath),
+		func(_ context.Context, _ oci.Client, _ *containers.Container, s *oci.Spec) error {
+			logger.Info(fmt.Sprintf("Mount specs before change: %+v", s.Mounts))
+			s.Mounts = append(s.Mounts,
+				specs.Mount{
+					Destination: "/dev/stdout",
+					Type:        "bind",
+					Source:      stdoutStderrPipePath,
+					Options:     []string{"rbind", "rw"},
+				},
+				specs.Mount{
+					Destination: "/dev/stderr",
+					Type:        "bind",
+					Source:      stdoutStderrPipePath,
+					Options:     []string{"rbind", "rw"},
+				},
+			)
+			logger.Info(fmt.Sprintf("Mount specs after change: %+v", s.Mounts))
+			return nil
+		},
 	}
 	if launchSpec.DevShmSize != 0 {
 		specOpts = append(specOpts, oci.WithDevShmSize(launchSpec.DevShmSize))
@@ -252,6 +271,11 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 			specOpts = append(specOpts, oci.WithDevices(deviceFile, deviceFile, "crw-rw-rw-"))
 		}
 		deviceROTs = append(deviceROTs, nvidiaAttester)
+	}
+
+	os.Remove(stdoutStderrPipePath)
+	if err := syscall.Mkfifo(stdoutStderrPipePath, 0666); err != nil {
+		return nil, fmt.Errorf("failed to create named pipe: %w", err)
 	}
 
 	container, err = cdClient.NewContainer(
@@ -791,10 +815,6 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		return fmt.Errorf("unknown logging redirect location: %v", r.launchSpec.LogRedirect)
 	}
 
-	os.Remove(stdoutStderrPipePath)
-	if err := syscall.Mkfifo(stdoutStderrPipePath, 0666); err != nil {
-		return fmt.Errorf("failed to create named pipe: %w", err)
-	}
 	f, err := os.OpenFile(stdoutStderrPipePath, os.O_RDWR, 0)
 	if err != nil {
 		return fmt.Errorf("failed to open named pipe: %w", err)
