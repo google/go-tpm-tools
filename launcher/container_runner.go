@@ -801,7 +801,7 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to setup network via CNI: %w", err)
 	}
-	r.logger.Info("CNI network setup completed: %v", cniResult)
+	r.logger.Info(fmt.Sprintf("CNI network setup completed: %v", cniResult))
 
 	image, err := r.container.Image(ctx)
 	if err != nil {
@@ -939,6 +939,18 @@ func openPorts(ports map[string]struct{}, containerIP string) error {
 			out, err = forwardCmd.CombinedOutput()
 			if err != nil {
 				return fmt.Errorf("failed to forward port %s to container %s: %v %s", port, containerIP, err, out)
+			}
+
+			// Allow traffic in FORWARD chain to the container IP on this port
+			forwardInCmd := exec.Command("iptables", "-A", "FORWARD", "-d", containerIP, "-p", protocol, "--dport", port, "-j", "ACCEPT")
+			if out, err := forwardInCmd.CombinedOutput(); err != nil {
+				return fmt.Errorf("failed to add FORWARD rule for container %s: %v %s", containerIP, err, out)
+			}
+
+			// Allow replies from the container to go out
+			forwardOutCmd := exec.Command("iptables", "-A", "FORWARD", "-s", containerIP, "-j", "ACCEPT")
+			if out, err := forwardOutCmd.CombinedOutput(); err != nil {
+				return fmt.Errorf("failed to add FORWARD reply rule for container %s: %v %s", containerIP, err, out)
 			}
 		}
 	}
