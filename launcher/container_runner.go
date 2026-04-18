@@ -208,7 +208,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 			[]specs.LinuxIDMapping{{ContainerID: 0, HostID: hostGIDBegin, Size: userNSSize}},
 		),
 		withSysBindMount(), // mount /sys as "bind" instead of "sysfs" for a non-root container
-		withStdoutStderrPipeMounts(stdoutStderrPipePath),
+		// withStdoutStderrPipeMounts(stdoutStderrPipePath),
 	}
 	if launchSpec.DevShmSize != 0 {
 		specOpts = append(specOpts, oci.WithDevShmSize(launchSpec.DevShmSize))
@@ -801,7 +801,7 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		return fmt.Errorf("failed to open named pipe: %w", err)
 	}
 
-	streamOpt := cio.WithStreams(nil, logWriter, logWriter)
+	streamOpt := cio.WithStreams(nil, f, f)
 
 	go func() {
 		defer f.Close()
