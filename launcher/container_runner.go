@@ -254,9 +254,15 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		deviceROTs = append(deviceROTs, nvidiaAttester)
 	}
 
+	if fi, err := os.Stat(stdoutStderrPipePath); err == nil {
+		logger.Info("Pipe file before removal", "path", stdoutStderrPipePath, "perms", fi.Mode().Perm())
+	}
 	os.Remove(stdoutStderrPipePath)
 	if err := syscall.Mkfifo(stdoutStderrPipePath, 0666); err != nil {
 		return nil, fmt.Errorf("failed to create named pipe: %w", err)
+	}
+	if fi, err := os.Stat(stdoutStderrPipePath); err == nil {
+		logger.Info("Pipe file after creation", "path", stdoutStderrPipePath, "perms", fi.Mode().Perm())
 	}
 
 	container, err = cdClient.NewContainer(
@@ -817,9 +823,19 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	// Change permissions of FIFOs to allow non-root workload to open them (e.g. via /dev/stderr)
 	for _, fifoPath := range []string{task.IO().Config().Stdout, task.IO().Config().Stderr} {
 		if fifoPath != "" {
+			if fi, err := os.Stat(fifoPath); err == nil {
+				r.logger.Info("FIFO permissions before chmod", "path", fifoPath, "perms", fi.Mode().Perm())
+			} else {
+				r.logger.Error("Failed to stat FIFO before chmod", "error", err, "path", fifoPath)
+			}
+
 			r.logger.Info("Changing permissions of FIFO", "path", fifoPath)
 			if err := os.Chmod(fifoPath, 0666); err != nil {
 				r.logger.Error("Failed to chmod FIFO", "error", err, "path", fifoPath)
+			}
+
+			if fi, err := os.Stat(fifoPath); err == nil {
+				r.logger.Info("FIFO permissions after chmod", "path", fifoPath, "perms", fi.Mode().Perm())
 			}
 		}
 	}
