@@ -817,13 +817,15 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	pid := task.Pid()
 	netnsPath := fmt.Sprintf("/proc/%d/ns/net", pid)
 
-	// Debug: Check where FD 2 points to on the host
-	fd2Path := fmt.Sprintf("/proc/%d/fd/2", pid)
-	linkTarget, err := os.Readlink(fd2Path)
-	if err != nil {
-		r.logger.Error("Failed to read container FD 2 link", "error", err)
-	} else {
-		r.logger.Info("Container FD 2 points to", "target", linkTarget)
+	// Debug: Check where FDs 0, 1, 2 point to on the host
+	for i := 0; i <= 2; i++ {
+		fdPath := fmt.Sprintf("/proc/%d/fd/%d", pid, i)
+		linkTarget, err := os.Readlink(fdPath)
+		if err != nil {
+			r.logger.Error(fmt.Sprintf("Failed to read container FD %d link", i), "error", err)
+		} else {
+			r.logger.Info(fmt.Sprintf("Container FD %d points to", i), "target", linkTarget)
+		}
 	}
 
 	cniResult, err := r.cni.Setup(ctx, containerID, netnsPath)
