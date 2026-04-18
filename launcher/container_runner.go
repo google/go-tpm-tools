@@ -14,7 +14,6 @@ import (
 	"path"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"cloud.google.com/go/compute/metadata"
@@ -255,9 +254,11 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	}
 
 	os.Remove(stdoutStderrPipePath)
-	if err := syscall.Mkfifo(stdoutStderrPipePath, 0666); err != nil {
-		return nil, fmt.Errorf("failed to create named pipe: %w", err)
+	f, err := os.OpenFile(stdoutStderrPipePath, os.O_CREATE|os.O_RDWR, 0666)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create log file: %w", err)
 	}
+	f.Close()
 
 	container, err = cdClient.NewContainer(
 		ctx,
