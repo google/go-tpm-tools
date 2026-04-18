@@ -14,6 +14,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"cloud.google.com/go/compute/metadata"
@@ -254,11 +255,9 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	}
 
 	os.Remove(stdoutStderrPipePath)
-	f, err := os.OpenFile(stdoutStderrPipePath, os.O_CREATE|os.O_RDWR, 0666)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create log file: %w", err)
+	if err := syscall.Mkfifo(stdoutStderrPipePath, 0666); err != nil {
+		return nil, fmt.Errorf("failed to create named pipe: %w", err)
 	}
-	f.Close()
 
 	container, err = cdClient.NewContainer(
 		ctx,
@@ -814,6 +813,16 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		return &RetryableError{err}
 	}
 	defer task.Delete(ctx)
+
+	// Change permissions of FIFOs to allow non-root workload to open them (e.g. via /dev/stderr)
+	for _, fifoPath := range []string{task.IO().Config().Stdout, task.IO().Config().Stderr} {
+		if fifoPath != "" {
+			r.logger.Info("Changing permissions of FIFO", "path", fifoPath)
+			if err := os.Chmod(fifoPath, 0666); err != nil {
+				r.logger.Error("Failed to chmod FIFO", "error", err, "path", fifoPath)
+			}
+		}
+	}
 
 	pid := task.Pid()
 	netnsPath := fmt.Sprintf("/proc/%d/ns/net", pid)
