@@ -208,26 +208,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 			[]specs.LinuxIDMapping{{ContainerID: 0, HostID: hostGIDBegin, Size: userNSSize}},
 		),
 		withSysBindMount(), // mount /sys as "bind" instead of "sysfs" for a non-root container
-		// withStdoutStderrPipeMounts(stdoutStderrPipePath),
-		func(_ context.Context, _ oci.Client, _ *containers.Container, s *oci.Spec) error {
-			logger.Info(fmt.Sprintf("Mount specs before change: %+v", s.Mounts))
-			s.Mounts = append(s.Mounts,
-				specs.Mount{
-					Destination: "/dev/stdout",
-					Type:        "bind",
-					Source:      stdoutStderrPipePath,
-					Options:     []string{"rbind", "rw"},
-				},
-				specs.Mount{
-					Destination: "/dev/stderr",
-					Type:        "bind",
-					Source:      stdoutStderrPipePath,
-					Options:     []string{"rbind", "rw"},
-				},
-			)
-			logger.Info(fmt.Sprintf("Mount specs after change: %+v", s.Mounts))
-			return nil
-		},
+		withStdoutStderrPipeMounts(stdoutStderrPipePath),
 	}
 	if launchSpec.DevShmSize != 0 {
 		specOpts = append(specOpts, oci.WithDevShmSize(launchSpec.DevShmSize))
@@ -1086,13 +1067,13 @@ func withStdoutStderrPipeMounts(pipePath string) oci.SpecOpts {
 				Destination: "/dev/stdout",
 				Type:        "bind",
 				Source:      pipePath,
-				Options:     []string{"rbind", "rw"},
+				Options:     []string{"bind", "rw"},
 			},
 			specs.Mount{
 				Destination: "/dev/stderr",
 				Type:        "bind",
 				Source:      pipePath,
-				Options:     []string{"rbind", "rw"},
+				Options:     []string{"bind", "rw"},
 			},
 		)
 		return nil
