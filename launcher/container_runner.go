@@ -211,21 +211,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		// withStdoutStderrPipeMounts(stdoutStderrPipePath),
 		func(_ context.Context, _ oci.Client, _ *containers.Container, s *oci.Spec) error {
 			logger.Info(fmt.Sprintf("Mount specs before change: %+v", s.Mounts))
-			// s.Mounts = append(s.Mounts,
-			// 	specs.Mount{
-			// 		Destination: "/dev/stdout",
-			// 		Type:        "bind",
-			// 		Source:      stdoutStderrPipePath,
-			// 		Options:     []string{"rbind", "rw"},
-			// 	},
-			// 	specs.Mount{
-			// 		Destination: "/dev/stderr",
-			// 		Type:        "bind",
-			// 		Source:      stdoutStderrPipePath,
-			// 		Options:     []string{"rbind", "rw"},
-			// 	},
-			// )
-			s.Mounts = append([]specs.Mount{
+			s.Mounts = append(s.Mounts,
 				specs.Mount{
 					Destination: "/dev/stdout",
 					Type:        "bind",
@@ -237,7 +223,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 					Type:        "bind",
 					Source:      stdoutStderrPipePath,
 					Options:     []string{"rbind", "rw"},
-				}}, s.Mounts...
+				},
 			)
 			logger.Info(fmt.Sprintf("Mount specs after change: %+v", s.Mounts))
 			return nil
@@ -849,6 +835,15 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 
 	pid := task.Pid()
 	netnsPath := fmt.Sprintf("/proc/%d/ns/net", pid)
+
+	// Debug: Check where FD 2 points to on the host
+	fd2Path := fmt.Sprintf("/proc/%d/fd/2", pid)
+	linkTarget, err := os.Readlink(fd2Path)
+	if err != nil {
+		r.logger.Error("Failed to read container FD 2 link", "error", err)
+	} else {
+		r.logger.Info("Container FD 2 points to", "target", linkTarget)
+	}
 
 	cniResult, err := r.cni.Setup(ctx, containerID, netnsPath)
 	if err != nil {
