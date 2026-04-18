@@ -211,7 +211,21 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		// withStdoutStderrPipeMounts(stdoutStderrPipePath),
 		func(_ context.Context, _ oci.Client, _ *containers.Container, s *oci.Spec) error {
 			logger.Info(fmt.Sprintf("Mount specs before change: %+v", s.Mounts))
-			s.Mounts = append(s.Mounts,
+			// s.Mounts = append(s.Mounts,
+			// 	specs.Mount{
+			// 		Destination: "/dev/stdout",
+			// 		Type:        "bind",
+			// 		Source:      stdoutStderrPipePath,
+			// 		Options:     []string{"rbind", "rw"},
+			// 	},
+			// 	specs.Mount{
+			// 		Destination: "/dev/stderr",
+			// 		Type:        "bind",
+			// 		Source:      stdoutStderrPipePath,
+			// 		Options:     []string{"rbind", "rw"},
+			// 	},
+			// )
+			s.Mounts = append([]specs.Mount{
 				specs.Mount{
 					Destination: "/dev/stdout",
 					Type:        "bind",
@@ -223,7 +237,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 					Type:        "bind",
 					Source:      stdoutStderrPipePath,
 					Options:     []string{"rbind", "rw"},
-				},
+				}}, s.Mounts...
 			)
 			logger.Info(fmt.Sprintf("Mount specs after change: %+v", s.Mounts))
 			return nil
