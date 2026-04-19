@@ -813,7 +813,7 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		return fmt.Errorf("failed to open named pipe: %w", err)
 	}
 
-	streamOpt := cio.WithStreams(nil, f, f)
+	streamOpt := cio.WithStreams(nil, logWriter, logWriter)
 
 	go func() {
 		defer f.Close()
