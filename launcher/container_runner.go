@@ -208,7 +208,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 			[]specs.LinuxIDMapping{{ContainerID: 0, HostID: hostGIDBegin, Size: userNSSize}},
 		),
 		withSysBindMount(), // mount /sys as "bind" instead of "sysfs" for a non-root container
-		// withStdoutStderrPipeMounts(stdoutStderrPipePath),
+		withStdoutStderrPipeMounts(stdoutStderrPipePath),
 	}
 	if launchSpec.DevShmSize != 0 {
 		specOpts = append(specOpts, oci.WithDevShmSize(launchSpec.DevShmSize))
@@ -254,15 +254,18 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		deviceROTs = append(deviceROTs, nvidiaAttester)
 	}
 
-	if fi, err := os.Stat(stdoutStderrPipePath); err == nil {
-		logger.Info("Pipe file before removal", "path", stdoutStderrPipePath, "perms", fi.Mode().Perm())
-	}
 	os.Remove(stdoutStderrPipePath)
 	if err := syscall.Mkfifo(stdoutStderrPipePath, 0666); err != nil {
 		return nil, fmt.Errorf("failed to create named pipe: %w", err)
 	}
 	if fi, err := os.Stat(stdoutStderrPipePath); err == nil {
 		logger.Info("Pipe file after creation", "path", stdoutStderrPipePath, "perms", fi.Mode().Perm())
+	}
+	if err := os.Chmod(stdoutStderrPipePath, 0666); err != nil {
+		logger.Error("Failed to chmod pipe file", "error", err)
+	}
+	if fi, err := os.Stat(stdoutStderrPipePath); err == nil {
+		logger.Info("Pipe file after chmod", "path", stdoutStderrPipePath, "perms", fi.Mode().Perm())
 	}
 
 	container, err = cdClient.NewContainer(
