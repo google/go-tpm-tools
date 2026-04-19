@@ -254,15 +254,19 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		deviceROTs = append(deviceROTs, nvidiaAttester)
 	}
 
-	os.Remove(stdoutStderrPipePath)
+	_ = os.Remove(stdoutStderrPipePath) // Error can be ignored.
 	if err := syscall.Mkfifo(stdoutStderrPipePath, 0666); err != nil {
 		return nil, fmt.Errorf("failed to create named pipe: %w", err)
 	}
-	if fi, err := os.Stat(stdoutStderrPipePath); err == nil {
-		logger.Info("Pipe file after creation", "path", stdoutStderrPipePath, "perms", fi.Mode().Perm())
-	}
+	// if fi, err := os.Stat(stdoutStderrPipePath); err == nil {
+	// 	logger.Info("Pipe file after creation", "path", stdoutStderrPipePath, "perms", fi.Mode().Perm())
+	// }
+
+	// Change permissions of the named pipe to allow non-root workloads to open it
+	// (e.g. via /dev/stderr) without permission errors.
+	// We call Chmod explicitly because Mkfifo is affected by the process's umask.
 	if err := os.Chmod(stdoutStderrPipePath, 0666); err != nil {
-		logger.Error("Failed to chmod pipe file", "error", err)
+		return nil, fmt.Errorf("failed to chmod stdout/stderr pipe file: %w", err)
 	}
 	// if err := os.Chown(stdoutStderrPipePath, hostUIDBegin, hostGIDBegin); err != nil {
 	// 	logger.Error("Failed to chown pipe file", "error", err)
@@ -852,16 +856,16 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	pid := task.Pid()
 	netnsPath := fmt.Sprintf("/proc/%d/ns/net", pid)
 
-	// Debug: Check where FDs 0, 1, 2 point to on the host
-	for i := 0; i <= 2; i++ {
-		fdPath := fmt.Sprintf("/proc/%d/fd/%d", pid, i)
-		linkTarget, err := os.Readlink(fdPath)
-		if err != nil {
-			r.logger.Error(fmt.Sprintf("Failed to read container FD %d link", i), "error", err)
-		} else {
-			r.logger.Info(fmt.Sprintf("Container FD %d points to", i), "target", linkTarget)
-		}
-	}
+	// // Debug: Check where FDs 0, 1, 2 point to on the host
+	// for i := 0; i <= 2; i++ {
+	// 	fdPath := fmt.Sprintf("/proc/%d/fd/%d", pid, i)
+	// 	linkTarget, err := os.Readlink(fdPath)
+	// 	if err != nil {
+	// 		r.logger.Error(fmt.Sprintf("Failed to read container FD %d link", i), "error", err)
+	// 	} else {
+	// 		r.logger.Info(fmt.Sprintf("Container FD %d points to", i), "target", linkTarget)
+	// 	}
+	// }
 
 	cniResult, err := r.cni.Setup(ctx, containerID, netnsPath)
 	if err != nil {
