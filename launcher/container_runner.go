@@ -264,9 +264,9 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	if err := os.Chmod(stdoutStderrPipePath, 0666); err != nil {
 		logger.Error("Failed to chmod pipe file", "error", err)
 	}
-	if err := os.Chown(stdoutStderrPipePath, hostUIDBegin, hostGIDBegin); err != nil {
-		logger.Error("Failed to chown pipe file", "error", err)
-	}
+	// if err := os.Chown(stdoutStderrPipePath, hostUIDBegin, hostGIDBegin); err != nil {
+	// 	logger.Error("Failed to chown pipe file", "error", err)
+	// }
 	if fi, err := os.Stat(stdoutStderrPipePath); err == nil {
 		logger.Info("Pipe file after chmod", "path", stdoutStderrPipePath, "perms", fi.Mode().Perm())
 	}
@@ -839,9 +839,9 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 			if err := os.Chmod(fifoPath, 0666); err != nil {
 				r.logger.Error("Failed to chmod FIFO", "error", err, "path", fifoPath)
 			}
-			if err := os.Chown(fifoPath, hostUIDBegin, hostGIDBegin); err != nil {
-				r.logger.Error("Failed to chown FIFO", "error", err, "path", fifoPath)
-			}
+			// if err := os.Chown(fifoPath, hostUIDBegin, hostGIDBegin); err != nil {
+			// 	r.logger.Error("Failed to chown FIFO", "error", err, "path", fifoPath)
+			// }
 
 			if fi, err := os.Stat(fifoPath); err == nil {
 				r.logger.Info("FIFO permissions after chmod", "path", fifoPath, "perms", fi.Mode().Perm())
