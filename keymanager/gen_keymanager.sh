@@ -3,4 +3,4 @@
 
 cd "$(dirname "$0")" || exit 1
 
-go run github.com/bufbuild/buf/cmd/buf@latest generate . --template buf.gen.yaml
+go run github.com/bufbuild/buf/cmd/buf@v1.68.2 generate . --template buf.gen.yaml
