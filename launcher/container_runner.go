@@ -827,27 +827,27 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	defer task.Delete(ctx)
 
 	// Change permissions of FIFOs to allow non-root workload to open them (e.g. via /dev/stderr)
-	for _, fifoPath := range []string{task.IO().Config().Stdout, task.IO().Config().Stderr} {
-		if fifoPath != "" {
-			if fi, err := os.Stat(fifoPath); err == nil {
-				r.logger.Info("FIFO permissions before chmod", "path", fifoPath, "perms", fi.Mode().Perm())
-			} else {
-				r.logger.Error("Failed to stat FIFO before chmod", "error", err, "path", fifoPath)
-			}
+	// for _, fifoPath := range []string{task.IO().Config().Stdout, task.IO().Config().Stderr} {
+	// 	if fifoPath != "" {
+	// 		if fi, err := os.Stat(fifoPath); err == nil {
+	// 			r.logger.Info("FIFO permissions before chmod", "path", fifoPath, "perms", fi.Mode().Perm())
+	// 		} else {
+	// 			r.logger.Error("Failed to stat FIFO before chmod", "error", err, "path", fifoPath)
+	// 		}
 
-			r.logger.Info("Changing permissions and owner of FIFO", "path", fifoPath)
-			if err := os.Chmod(fifoPath, 0666); err != nil {
-				r.logger.Error("Failed to chmod FIFO", "error", err, "path", fifoPath)
-			}
-			// if err := os.Chown(fifoPath, hostUIDBegin, hostGIDBegin); err != nil {
-			// 	r.logger.Error("Failed to chown FIFO", "error", err, "path", fifoPath)
-			// }
+	// 		r.logger.Info("Changing permissions and owner of FIFO", "path", fifoPath)
+	// 		if err := os.Chmod(fifoPath, 0666); err != nil {
+	// 			r.logger.Error("Failed to chmod FIFO", "error", err, "path", fifoPath)
+	// 		}
+	// 		// if err := os.Chown(fifoPath, hostUIDBegin, hostGIDBegin); err != nil {
+	// 		// 	r.logger.Error("Failed to chown FIFO", "error", err, "path", fifoPath)
+	// 		// }
 
-			if fi, err := os.Stat(fifoPath); err == nil {
-				r.logger.Info("FIFO permissions after chmod", "path", fifoPath, "perms", fi.Mode().Perm())
-			}
-		}
-	}
+	// 		if fi, err := os.Stat(fifoPath); err == nil {
+	// 			r.logger.Info("FIFO permissions after chmod", "path", fifoPath, "perms", fi.Mode().Perm())
+	// 		}
+	// 	}
+	// }
 
 	pid := task.Pid()
 	netnsPath := fmt.Sprintf("/proc/%d/ns/net", pid)
