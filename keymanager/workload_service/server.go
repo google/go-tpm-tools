@@ -33,13 +33,6 @@ import (
 // KeyProtectionMode defines the mode for the Key Protection Service implementation.
 type KeyProtectionMode string
 
-const (
-	// KeyProtectionVMEmulated uses the default local Key Protection Service implementation.
-	KeyProtectionVMEmulated KeyProtectionMode = "KEY_PROTECTION_VM_EMULATED"
-	// KeyProtectionVM uses the remote Key Protection Service implementation.
-	KeyProtectionVM KeyProtectionMode = "KEY_PROTECTION_VM"
-)
-
 // WorkloadService defines the interface for generating and managing binding keypairs.
 // These keypairs are used by workloads to securely bind shared secrets to their identity.
 type WorkloadService interface {
@@ -216,12 +209,17 @@ var (
 )
 
 // New creates a new WSD Server listening on the given unix socket path.
-func New(_ context.Context, socketPath string, mode KeyProtectionMode) (*Server, error) {
+func New(_ context.Context, socketPath string, mode keymanager.KeyProtectionMechanism) (*Server, error) {
 	var kps KeyProtectionService
-	if mode == KeyProtectionVMEmulated {
+	switch mode {
+	case keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED:
 		kps = &keyProtectionService{}
-	} else {
+	case keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM:
 		kps = &remoteKeyProtectionService{}
+	case keymanager.KeyProtectionMechanism_KEY_PROTECTION_MECHANISM_UNSPECIFIED:
+		return nil, fmt.Errorf("key protection mechanism is unspecified")
+	default:
+		return nil, fmt.Errorf("unknown key protection mechanism provided: %v", mode)
 	}
 	return NewServer(kps, &workloadService{}, socketPath)
 }

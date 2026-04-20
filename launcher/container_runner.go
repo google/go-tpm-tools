@@ -30,6 +30,7 @@ import (
 	"github.com/google/go-tpm-tools/agent"
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
+	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
 	workloadservice "github.com/google/go-tpm-tools/keymanager/workload_service"
 	"github.com/google/go-tpm-tools/launcher/internal/gpu"
 	"github.com/google/go-tpm-tools/launcher/internal/healthmonitoring/nodeproblemdetector"
@@ -723,7 +724,7 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	// create and start the key manager server
 	if r.launchSpec.Experiments.EnableKeyManager {
 		r.logger.Info("EnableKeyManager experiment is enabled: initializing KeyManager server.")
-		keyManagerServer, err := workloadservice.New(ctx, path.Join(launcherfile.HostTmpPath, keyManagerSocket), workloadservice.KeyProtectionVMEmulated)
+		keyManagerServer, err := workloadservice.New(ctx, path.Join(launcherfile.HostTmpPath, keyManagerSocket), keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED)
 		if err != nil {
 			return fmt.Errorf("failed to create the KeyManager server: %v", err)
 		}
