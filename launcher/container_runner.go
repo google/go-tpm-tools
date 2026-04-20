@@ -808,12 +808,19 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 			for {
 				if fi, err := os.Stat(current); err == nil {
 					if stat, ok := fi.Sys().(*syscall.Stat_t); ok {
-						r.logger.Info("FIFO tree path stat",
+						r.logger.Info("FIFO tree path stat before modification",
 							"path", current,
 							"perms", fi.Mode().Perm(),
 							"uid", stat.Uid,
 							"gid", stat.Gid,
 						)
+					}
+					if fi.Mode().Perm() != 0666 {
+						if err := os.Chmod(current, 0666); err != nil {
+							r.logger.Error("Failed to chmod FIFO tree path", "path", current, "error", err)
+						} else {
+							r.logger.Info("Successfully changed permissions to 0666", "path", current)
+						}
 					}
 				}
 				parent := path.Dir(current)
