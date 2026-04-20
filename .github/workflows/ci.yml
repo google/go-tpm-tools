@@ -114,6 +114,29 @@ jobs:
         run: go test -v ./keymanager/...
         if: runner.os == 'Linux' && matrix.architecture == 'x64'
 
+  test-keymanager:
+    name: Test KeyManager
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: recursive
+      - name: Build and Test KMA Container
+        run: |
+          docker build -t kma-agent -f keymanager/cmd/agent/Dockerfile .
+          mkdir -p /tmp/socket
+          docker run -d --name kma-test -v /tmp/socket:/run/container_launcher kma-agent
+          
+          # Wait for socket
+          timeout 30s bash -c 'until [ -S /tmp/socket/wsd.sock ]; do sleep 1; done'
+          
+          # Verify APIs
+          sudo chmod 666 /tmp/socket/wsd.sock
+          curl -s --unix-socket /tmp/socket/wsd.sock http://localhost/v1/capabilities | grep "KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256"
+          curl -s --unix-socket /tmp/socket/wsd.sock http://localhost/v1/keys | grep "key_infos"
+          
+          docker rm -f kma-test
+
   lint:
     strategy:
       matrix:
