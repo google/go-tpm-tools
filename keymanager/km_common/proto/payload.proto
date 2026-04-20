@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package keymanager;
 
-import "keymanager/km_common/proto/algorithms.proto";
+import "km_common/proto/algorithms.proto";
 
 option go_package = "github.com/google/go-tpm-tools/keymanager/km_common/proto;keymanager";
 

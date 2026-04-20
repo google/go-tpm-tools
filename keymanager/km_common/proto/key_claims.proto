@@ -3,8 +3,8 @@ syntax = "proto3";
 package keymanager;
 
 import "google/protobuf/duration.proto";
-import "keymanager/km_common/proto/algorithms.proto";
-import "keymanager/km_common/proto/crypto_types.proto";
+import "km_common/proto/algorithms.proto";
+import "km_common/proto/crypto_types.proto";
 
 option go_package = "github.com/google/go-tpm-tools/keymanager/km_common/proto;keymanager";
 

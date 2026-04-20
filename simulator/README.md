@@ -24,10 +24,13 @@ To do this:
 1. Compile a test as a standalone binary. For example, if you were using a
   `go-tpm-tools/client` test (which all run against the simulator), compile
   the test binary named `client.test` by running:
+
     ```bash
     go test -c github.com/google/go-tpm-tools/client
     ```
+
 1. Now you can debug the binary using GDB:
+
     ```bash
     # Load the binary into GDB (fixing any errors/warnings you get)
     gdb ./client.test
@@ -65,6 +68,7 @@ is knowing where the headers are and what `#define` statements to use.
 For example, when using [VS Code](https://code.visualstudio.com/) with the
 [C/C++ extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode.cpptools),
 add the following file to your workplace root at `.vscode/c_cpp_properties.json`:
+
 ```json
 {
     "configurations": [
