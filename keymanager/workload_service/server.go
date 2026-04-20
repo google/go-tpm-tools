@@ -30,9 +30,6 @@ import (
 	wskcc "github.com/google/go-tpm-tools/keymanager/workload_service/key_custody_core"
 )
 
-// KeyProtectionMode defines the mode for the Key Protection Service implementation.
-type KeyProtectionMode string
-
 // WorkloadService defines the interface for generating and managing binding keypairs.
 // These keypairs are used by workloads to securely bind shared secrets to their identity.
 type WorkloadService interface {
