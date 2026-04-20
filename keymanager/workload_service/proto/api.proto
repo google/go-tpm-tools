@@ -5,9 +5,9 @@ package keymanager.workload_service;
 
 option go_package = "github.com/google/go-tpm-tools/keymanager/workload_service/proto;api";
 
-import "keymanager/km_common/proto/algorithms.proto";
-import "keymanager/km_common/proto/crypto_types.proto";
-import "keymanager/km_common/proto/payload.proto";
+import "km_common/proto/algorithms.proto";
+import "km_common/proto/crypto_types.proto";
+import "km_common/proto/payload.proto";
 import "buf/validate/validate.proto";
 
 // Response containing the list of supported cryptographic algorithms for operations like HPKE/KEM.
