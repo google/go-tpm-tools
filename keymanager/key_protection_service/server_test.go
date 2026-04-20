@@ -22,7 +22,7 @@ func TestServerRunAndShutdown(t *testing.T) {
 
 	errChan := make(chan error, 1)
 	go func() {
-		// Serve() returns nil upon GracefulStop() 
+		// Serve() returns nil upon GracefulStop()
 		errChan <- srv.Serve()
 	}()
 

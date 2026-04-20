@@ -128,12 +128,12 @@ jobs:
           docker run -d --name kma-test -v /tmp/socket:/run/container_launcher kma-agent
           
           # Wait for socket
-          timeout 30s bash -c 'until [ -S /tmp/socket/wsd.sock ]; do sleep 1; done'
+          timeout 30s bash -c 'until [ -S /tmp/socket/kmaserver.sock ]; do sleep 1; done'
           
           # Verify APIs
-          sudo chmod 666 /tmp/socket/wsd.sock
-          curl -s --unix-socket /tmp/socket/wsd.sock http://localhost/v1/capabilities | grep "KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256"
-          curl -s --unix-socket /tmp/socket/wsd.sock http://localhost/v1/keys | grep "key_infos"
+          sudo chmod 666 /tmp/socket/kmaserver.sock
+          curl -s --unix-socket /tmp/socket/kmaserver.sock http://localhost/v1/capabilities | grep "KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256"
+          curl -s --unix-socket /tmp/socket/kmaserver.sock http://localhost/v1/keys | grep "key_infos"
           
           docker rm -f kma-test
 
