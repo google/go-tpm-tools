@@ -815,11 +815,24 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 							"gid", stat.Gid,
 						)
 					}
-					if fi.Mode().Perm() != 0666 {
-						if err := os.Chmod(current, 0666); err != nil {
-							r.logger.Error("Failed to chmod FIFO tree path", "path", current, "error", err)
-						} else {
-							r.logger.Info("Successfully changed permissions to 0666", "path", current)
+					if fi.IsDir() {
+						// We only need the excutable bit set for parent directories.
+						if fi.Mode().Perm()&0111 != 0111 {
+							newPerm := fi.Mode().Perm() | 0111
+							if err := os.Chmod(current, newPerm); err != nil {
+								r.logger.Error("Failed to add execute permission to directory", "path", current, "error", err)
+							} else {
+								r.logger.Info("Successfully added execute permissions to directory", "path", current, "newPerm", newPerm)
+							}
+						}
+					} else {
+						// For the file, we need the read/write bit set.
+						if fi.Mode().Perm() != 0666 {
+							if err := os.Chmod(current, 0666); err != nil {
+								r.logger.Error("Failed to chmod FIFO file", "path", current, "error", err)
+							} else {
+								r.logger.Info("Successfully changed permissions to 0666", "path", current)
+							}
 						}
 					}
 				}
