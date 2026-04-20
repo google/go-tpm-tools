@@ -803,15 +803,24 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 			if err := os.Chown(fifoPath, 10000, 10000); err != nil {
 				r.logger.Error("Failed to chown FIFO", "error", err, "path", fifoPath)
 			}
-			if fi, err := os.Stat(fifoPath); err == nil {
-				if stat, ok := fi.Sys().(*syscall.Stat_t); ok {
-					r.logger.Info("FIFO permissions after modification",
-						"path", fifoPath,
-						"perms", fi.Mode().Perm(),
-						"uid", stat.Uid,
-						"gid", stat.Gid,
-					)
+
+			current := fifoPath
+			for {
+				if fi, err := os.Stat(current); err == nil {
+					if stat, ok := fi.Sys().(*syscall.Stat_t); ok {
+						r.logger.Info("FIFO tree path stat",
+							"path", current,
+							"perms", fi.Mode().Perm(),
+							"uid", stat.Uid,
+							"gid", stat.Gid,
+						)
+					}
 				}
+				parent := path.Dir(current)
+				if parent == current || parent == "." {
+					break
+				}
+				current = parent
 			}
 		}
 	}
