@@ -14,6 +14,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"cloud.google.com/go/compute/metadata"
@@ -792,6 +793,28 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		return &RetryableError{err}
 	}
 	defer task.Delete(ctx)
+
+	for _, fifoPath := range []string{task.IO().Config().Stdout, task.IO().Config().Stderr} {
+		if fifoPath != "" {
+			r.logger.Info("Changing permissions and owner of FIFO", "path", fifoPath)
+			if err := os.Chmod(fifoPath, 0666); err != nil {
+				r.logger.Error("Failed to chmod FIFO", "error", err, "path", fifoPath)
+			}
+			if err := os.Chown(fifoPath, 10000, 10000); err != nil {
+				r.logger.Error("Failed to chown FIFO", "error", err, "path", fifoPath)
+			}
+			if fi, err := os.Stat(fifoPath); err == nil {
+				if stat, ok := fi.Sys().(*syscall.Stat_t); ok {
+					r.logger.Info("FIFO permissions after modification",
+						"path", fifoPath,
+						"perms", fi.Mode().Perm(),
+						"uid", stat.Uid,
+						"gid", stat.Gid,
+					)
+				}
+			}
+		}
+	}
 
 	pid := task.Pid()
 	netnsPath := fmt.Sprintf("/proc/%d/ns/net", pid)
