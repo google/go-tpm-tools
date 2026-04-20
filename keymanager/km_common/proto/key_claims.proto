@@ -25,24 +25,6 @@ message GetKeyClaimsRequest {
   KeyType key_type = 2;
 }
 
-enum KeyProtectionMechanism {
-  KEY_PROTECTION_MECHANISM_UNSPECIFIED = 0;
-
-  // The key is held by the Workload Services Daemon, and is endorsed by a
-  // single CVM attestation.
-  DEFAULT = 1 [deprecated = true];
-
-  // The key is held by the Key Protection Services VM, and is endorsed by a
-  // pair of CVM attestations, from the Workload Services Daemon and Key
-  // Protection VM.
-  KEY_PROTECTION_VM = 2;
-
-  // An interim solution where the key is held by the Workload Services Daemon
-  // emulating the Key Protection Service. It is endorsed by a single CVM
-  // attestation.
-  KEY_PROTECTION_VM_EMULATED = 3;
-}
-
 message KemPublicKey {
   KemAlgorithm algorithm = 1;
   bytes public_key = 2;  // `Npk` bytes long; see the KemAlgorithm definition.
