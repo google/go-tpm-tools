@@ -16,12 +16,14 @@ import (
 
 	kpskcc "github.com/google/go-tpm-tools/keymanager/key_protection_service/key_custody_core"
 	api "github.com/google/go-tpm-tools/keymanager/workload_service/proto"
+	kpsapi "github.com/google/go-tpm-tools/keymanager/key_protection_service/proto"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
 	kps "github.com/google/go-tpm-tools/keymanager/key_protection_service"
 	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
+	"google.golang.org/grpc"
 )
 
 func newTestServer(t *testing.T, kemGen kps.KeyProtectionService, bindingGen WorkloadService) *Server {
@@ -38,17 +40,19 @@ func newTestServer(t *testing.T, kemGen kps.KeyProtectionService, bindingGen Wor
 
 // mockWorkloadService implements WorkloadService for testing.
 type mockWorkloadService struct {
-	uuid          uuid.UUID
-	pubKey        []byte
-	algo          *keymanager.HpkeAlgorithm
-	err           error
-	destroyErr    error
-	destroyedUUID uuid.UUID
-	plaintext     []byte
-	receivedUUID  uuid.UUID
-	receivedEnc   []byte
-	receivedCT    []byte
-	receivedAAD   []byte
+	uuid                 uuid.UUID
+	pubKey               []byte
+	algo                 *keymanager.HpkeAlgorithm
+	err                  error
+	destroyErr           error
+	destroyedUUID        uuid.UUID
+	destroyAllKeysErr    error
+	destroyAllKeysCalled bool
+	plaintext            []byte
+	receivedUUID         uuid.UUID
+	receivedEnc          []byte
+	receivedCT           []byte
+	receivedAAD          []byte
 }
 
 func (m *mockWorkloadService) GenerateBindingKeypair(_ *keymanager.HpkeAlgorithm, _ uint64) (uuid.UUID, []byte, error) {
@@ -70,6 +74,11 @@ func (m *mockWorkloadService) Open(bindingUUID uuid.UUID, enc, ciphertext, aad [
 
 func (m *mockWorkloadService) GetBindingKey(_ uuid.UUID) ([]byte, *keymanager.HpkeAlgorithm, error) {
 	return m.pubKey, m.algo, m.err
+}
+
+func (m *mockWorkloadService) DestroyAllKeys() error {
+	m.destroyAllKeysCalled = true
+	return m.destroyAllKeysErr
 }
 
 // mockKeyProtectionService implements KeyProtectionService for testing.
@@ -1456,3 +1465,55 @@ func TestGetClaimsFromChannel(t *testing.T) {
 		})
 	}
 }
+
+func TestPerformHeartbeatSuccess(t *testing.T) {
+	mockToken := "test-token"
+	client := &mockKPSClient{token: mockToken}
+	
+	srv := &Server{
+		kemToBindingMap: make(map[uuid.UUID]uuid.UUID),
+	}
+
+	var cachedToken string
+	srv.performHeartbeat(context.Background(), client, &cachedToken)
+
+	if cachedToken != mockToken {
+		t.Errorf("expected cached token %q, got %q", mockToken, cachedToken)
+	}
+}
+
+func TestPerformHeartbeatTokenMismatch(t *testing.T) {
+	mockToken1 := "token-1"
+	mockToken2 := "token-2"
+	client := &mockKPSClient{token: mockToken2}
+	
+	bindingGen := &mockWorkloadService{}
+	srv := &Server{
+		kemToBindingMap: make(map[uuid.UUID]uuid.UUID),
+		workloadService: bindingGen,
+	}
+	
+	kemUUID := uuid.New()
+	bindingUUID := uuid.New()
+	srv.kemToBindingMap[kemUUID] = bindingUUID
+
+	cachedToken := mockToken1
+	srv.performHeartbeat(context.Background(), client, &cachedToken)
+
+	if len(srv.kemToBindingMap) != 0 {
+		t.Errorf("expected kemToBindingMap to be purged, got size %d", len(srv.kemToBindingMap))
+	}
+	if !bindingGen.destroyAllKeysCalled {
+		t.Error("expected DestroyAllKeys to be called")
+	}
+}
+
+type mockKPSClient struct {
+	token string
+	err   error
+}
+
+func (m *mockKPSClient) Heartbeat(_ context.Context, _ *kpsapi.HeartbeatRequest, _ ...grpc.CallOption) (*kpsapi.HeartbeatResponse, error) {
+	return &kpsapi.HeartbeatResponse{KpsBootToken: m.token}, m.err
+}
+

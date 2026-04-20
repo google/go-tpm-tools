@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package keymanager.key_protection_service;
+
+option go_package = "github.com/google/go-tpm-tools/keymanager/key_protection_service/proto;api";
+
+message HeartbeatRequest {}
+
+message HeartbeatResponse {
+  string kps_boot_token = 1;
+}
+
+service KeyProtectionService {
+  rpc Heartbeat (HeartbeatRequest) returns (HeartbeatResponse);
+}

@@ -69,6 +69,11 @@ impl KeyRegistry {
         keys.remove(id)
     }
 
+    pub fn remove_all_keys(&self) {
+        let mut keys = self.keys.write().unwrap();
+        keys.clear();
+    }
+
     pub fn get_key(&self, id: &KeyHandle) -> Option<Arc<KeyRecord>> {
         let keys = self.keys.read().unwrap();
         keys.get(id).and_then(|record| {

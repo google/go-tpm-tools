@@ -30,6 +30,8 @@ Status key_manager_generate_binding_keypair(const uint8_t *algo_ptr,
 
 Status key_manager_destroy_binding_key(const uint8_t *uuid_bytes);
 
+Status key_manager_destroy_all_binding_keys(void);
+
 Status key_manager_open(const uint8_t *uuid_bytes,
                         const uint8_t *enc,
                         size_t enc_len,

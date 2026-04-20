@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -22,12 +23,14 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	api "github.com/google/go-tpm-tools/keymanager/workload_service/proto"
+	kpsapi "github.com/google/go-tpm-tools/keymanager/key_protection_service/proto"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	kpscc "github.com/google/go-tpm-tools/keymanager/key_protection_service/key_custody_core"
 	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
 	wskcc "github.com/google/go-tpm-tools/keymanager/workload_service/key_custody_core"
+	"google.golang.org/grpc"
 )
 
 // WorkloadService defines the interface for generating and managing binding keypairs.
@@ -82,6 +85,8 @@ type WorkloadService interface {
 	//   - []byte: The original plaintext (the shared secret).
 	//   - error: An error if the binding key is not found, expired, or decryption fails.
 	Open(bindingUUID uuid.UUID, enc, ciphertext, aad []byte) ([]byte, error)
+	// DestroyAllKeys destroys all binding keys managed by the service.
+	DestroyAllKeys() error
 }
 type keyProtectionService struct{}
 
@@ -119,6 +124,11 @@ func (r *workloadService) Open(bindingUUID uuid.UUID, enc, ciphertext, aad []byt
 // binding keypair by delegating to the underlying WorkloadService backend (WSD KCC FFI).
 func (r *workloadService) GetBindingKey(id uuid.UUID) ([]byte, *keymanager.HpkeAlgorithm, error) {
 	return wskcc.GetBindingKey(id)
+}
+
+// DestroyAllKeys destroys all binding keys managed by the service by calling wskcc.
+func (r *workloadService) DestroyAllKeys() error {
+	return wskcc.DestroyAllKeys()
 }
 
 func (r *keyProtectionService) GenerateKEMKeypair(algo *keymanager.HpkeAlgorithm, bindingPubKey []byte, lifespanSecs uint64) (uuid.UUID, []byte, error) {
@@ -171,6 +181,8 @@ type Server struct {
 
 	httpServer *http.Server
 	listener   net.Listener
+	
+	heartbeatCancel context.CancelFunc
 	// todo: add logging mechanism here
 }
 
@@ -215,6 +227,10 @@ func NewServer(keyProtectionService KeyProtectionService, workloadService Worklo
 
 	go s.processClaims()
 
+	ctx, cancel := context.WithCancel(context.Background())
+	s.heartbeatCancel = cancel
+	go s.startHeartbeat(ctx)
+
 	return s, nil
 }
 
@@ -225,6 +241,9 @@ func (s *Server) Serve() error {
 
 // Shutdown gracefully shuts down the server.
 func (s *Server) Shutdown(ctx context.Context) error {
+	if s.heartbeatCancel != nil {
+		s.heartbeatCancel()
+	}
 	return s.httpServer.Shutdown(ctx)
 }
 
@@ -676,3 +695,103 @@ func (s *Server) GetKeyClaims(ctx context.Context, keyHandle string, keyType key
 		return nil, fmt.Errorf("timed out waiting for processClaims to respond for key: %s", keyHandle)
 	}
 }
+
+func (s *Server) startHeartbeat(ctx context.Context) {
+	kpsIP := os.Getenv("KPS_IP")
+	if kpsIP == "" {
+		log.Println("KPS_IP environment variable not set, skipping heartbeat")
+		return
+	}
+	kpsAddr := kpsIP
+	if !strings.Contains(kpsAddr, ":") {
+		kpsAddr = fmt.Sprintf("%s:50050", kpsIP)
+	}
+
+	conn, err := grpc.Dial(kpsAddr, grpc.WithInsecure())
+	if err != nil {
+		log.Printf("Failed to connect to KPS at %s: %v", kpsAddr, err)
+		return
+	}
+	defer conn.Close()
+
+	client := kpsapi.NewKeyProtectionServiceClient(conn)
+
+	var cachedToken string
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.performHeartbeat(ctx, client, &cachedToken)
+		}
+	}
+}
+
+func (s *Server) performHeartbeat(ctx context.Context, client kpsapi.KeyProtectionServiceClient, cachedToken *string) {
+	backoff := 1 * time.Second
+	maxBackoff := 128 * time.Second
+	
+	var timer *time.Timer
+
+	for {
+		resp, err := client.Heartbeat(ctx, &kpsapi.HeartbeatRequest{})
+		if err == nil {
+			// Success: reset and return
+			if timer != nil {
+				timer.Stop()
+			}
+			token := resp.GetKpsBootToken()
+			if *cachedToken == "" {
+				*cachedToken = token
+				log.Printf("Heartbeat handshake successful, cached token: %s", token)
+			} else if *cachedToken != token {
+				log.Printf("Token mismatch! Cached: %s, Received: %s. Triggering cleanup.", *cachedToken, token)
+				s.cleanupState()
+				*cachedToken = token
+			}
+			return
+		}
+
+		log.Printf("Heartbeat failed: %v. Backing off %v...", err, backoff)
+
+		// Initialize or reset the timer
+		if timer == nil {
+			timer = time.NewTimer(backoff)
+		} else {
+			timer.Reset(backoff)
+		}
+
+		select {
+		case <-ctx.Done():
+			if timer != nil {
+				timer.Stop()
+			}
+			return
+		case <-timer.C:
+			if backoff >= maxBackoff {
+				log.Println("Persistent heartbeat failure after max backoff. Triggering cleanup.")
+				s.cleanupState()
+				return
+			}
+			backoff *= 2
+			if backoff > maxBackoff {
+				backoff = maxBackoff
+			}
+		}
+	}
+}
+
+func (s *Server) cleanupState() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	log.Println("Purging kemToBindingMap and Binding keys due to heartbeat failure/token mismatch.")
+	
+	if err := s.workloadService.DestroyAllKeys(); err != nil {
+		log.Printf("Failed to destroy all binding keys: %v", err)
+	}
+	s.kemToBindingMap = make(map[uuid.UUID]uuid.UUID)
+}
+

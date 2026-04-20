@@ -118,6 +118,18 @@ pub unsafe extern "C" fn key_manager_destroy_binding_key(uuid_bytes: *const u8) 
     })
 }
 
+/// Destroys all binding keys.
+///
+/// ## Returns
+/// * `Status::Success` on success.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn key_manager_destroy_all_binding_keys() -> Status {
+    km_common::ffi_call(|| {
+        KEY_REGISTRY.remove_all_keys();
+        Ok(())
+    })
+}
+
 /// Internal function to decrypt a ciphertext using a stored binding key.
 fn open_internal(
     uuid: Uuid,

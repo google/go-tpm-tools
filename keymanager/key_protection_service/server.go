@@ -5,14 +5,18 @@ import (
 	"fmt"
 	"net"
 
+	api "github.com/google/go-tpm-tools/keymanager/key_protection_service/proto"
+	"github.com/google/uuid"
 	"google.golang.org/grpc"
 )
 
 // Server is the Key Protection Service gRPC server.
 type Server struct {
+	api.UnimplementedKeyProtectionServiceServer
 	grpcServer *grpc.Server
 	listener   net.Listener
 	kps        KeyProtectionService
+	bootToken  string
 }
 
 // NewServer creates a new KPS gRPC server listening on the given TCP port.
@@ -30,14 +34,25 @@ func newServerWithKPS(port int, kps KeyProtectionService) (*Server, error) {
 
 	grpcServer := grpc.NewServer()
 
-	// TODO: Add the KPS gRPC API endpoints here.
+	bootToken := uuid.New().String()
 
-	return &Server{
+	s := &Server{
 		grpcServer: grpcServer,
 		listener:   ln,
 		kps:        kps,
-	}, nil
+		bootToken:  bootToken,
+	}
+
+	api.RegisterKeyProtectionServiceServer(grpcServer, s)
+
+	return s, nil
 }
+
+// Heartbeat implements the Heartbeat RPC.
+func (s *Server) Heartbeat(ctx context.Context, req *api.HeartbeatRequest) (*api.HeartbeatResponse, error) {
+	return &api.HeartbeatResponse{KpsBootToken: s.bootToken}, nil
+}
+
 
 // Serve starts the gRPC server listening on the given port.
 func (s *Server) Serve() error {

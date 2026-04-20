@@ -72,6 +72,12 @@ func DestroyBindingKey(bindingUUID uuid.UUID) error {
 	return keymanager.Status(rc).ToStatus()
 }
 
+// DestroyAllKeys destroys all binding keys via Rust FFI.
+func DestroyAllKeys() error {
+	rc := C.key_manager_destroy_all_binding_keys()
+	return keymanager.Status(rc).ToStatus()
+}
+
 // Open decrypts a sealed ciphertext using the binding key identified by
 // bindingUUID via Rust FFI (HPKE Open).
 // Returns the decrypted plaintext (shared secret).
