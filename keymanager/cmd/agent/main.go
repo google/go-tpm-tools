@@ -13,7 +13,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/google/go-tpm-tools/keymanager/key_protection_service"
+	keyprotectionservice "github.com/google/go-tpm-tools/keymanager/key_protection_service"
 	workloadservice "github.com/google/go-tpm-tools/keymanager/workload_service"
 )
 
