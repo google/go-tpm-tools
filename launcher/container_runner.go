@@ -800,9 +800,9 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 			if err := os.Chmod(fifoPath, 0666); err != nil {
 				r.logger.Error("Failed to chmod FIFO", "error", err, "path", fifoPath)
 			}
-			if err := os.Chown(fifoPath, 10000, 10000); err != nil {
-				r.logger.Error("Failed to chown FIFO", "error", err, "path", fifoPath)
-			}
+			// if err := os.Chown(fifoPath, 10000, 10000); err != nil {
+			// 	r.logger.Error("Failed to chown FIFO", "error", err, "path", fifoPath)
+			// }
 
 			current := fifoPath
 			for {
