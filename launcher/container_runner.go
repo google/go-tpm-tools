@@ -769,6 +769,18 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	}
 	defer task.Delete(ctx)
 
+	for _, fifoPath := range []string{task.IO().Config().Stdout, task.IO().Config().Stderr} {
+		if fifoPath != "" {
+			r.logger.Info("Changing permissions and owner of FIFO", "path", fifoPath)
+			if err := os.Chmod(fifoPath, 0666); err != nil {
+				r.logger.Error("Failed to chmod FIFO", "error", err, "path", fifoPath)
+			}
+			if err := os.Chown(fifoPath, 10000, 10000); err != nil {
+				r.logger.Error("Failed to chown FIFO", "error", err, "path", fifoPath)
+			}
+		}
+	}
+
 	setupDuration := time.Since(start)
 	r.logger.Info("Workload setup completed",
 		"setup_sec", setupDuration.Seconds(),
