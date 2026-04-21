@@ -1104,12 +1104,12 @@ func withSysBindMount() oci.SpecOpts {
 func withStdoutStderrPipeMounts(pipePath string) oci.SpecOpts {
 	return func(_ context.Context, _ oci.Client, _ *containers.Container, s *oci.Spec) error {
 		s.Mounts = append(s.Mounts,
-			// specs.Mount{
-			// 	Destination: "/dev/stdout",
-			// 	Type:        "bind",
-			// 	Source:      pipePath,
-			// 	Options:     []string{"bind", "rw"},
-			// },
+			specs.Mount{
+				Destination: "/dev/stdout",
+				Type:        "bind",
+				Source:      pipePath,
+				Options:     []string{"bind", "rw"},
+			},
 			specs.Mount{
 				Destination: "/dev/stderr",
 				Type:        "bind",
