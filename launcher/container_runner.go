@@ -812,16 +812,16 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		return fmt.Errorf("unknown logging redirect location: %v", r.launchSpec.LogRedirect)
 	}
 
-	f, err := os.OpenFile(stdoutStderrPipePath, os.O_RDWR, 0)
+	logRedirect, err := os.OpenFile(stdoutStderrPipePath, os.O_RDWR, 0)
 	if err != nil {
 		return fmt.Errorf("failed to open named pipe: %w", err)
 	}
 
-	streamOpt := cio.WithStreams(nil, logWriter, logWriter)
+	streamOpt := cio.WithStreams(nil, logRedirect, logRedirect)
 
 	go func() {
-		defer f.Close()
-		io.Copy(logWriter, f)
+		defer logRedirect.Close()
+		io.Copy(logWriter, logRedirect)
 	}()
 
 	task, err := r.container.NewTask(ctx, cio.NewCreator(streamOpt))
