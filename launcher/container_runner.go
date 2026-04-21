@@ -99,7 +99,7 @@ const (
 	hostGIDBegin = 10000 // Starting (outside container) gid for the root group inside the container
 	userNSSize   = 65536 // 16-bit range of uid/gid inside the container
 
-	stdoutStderrPipePath = "/tmp/workload.log"
+	stdoutStderrPipePath = "/tmp/workload.fifo"
 )
 
 // NewRunner returns a runner.
