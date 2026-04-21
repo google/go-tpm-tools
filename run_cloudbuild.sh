@@ -6,6 +6,8 @@ set -euxo pipefail
 # the image already exists.
 IMAGE_SUFFIX="$USER-test-image-`date +%s`"
 
+REGION="${CLOUD_BUILD_REGION:-us-west1}"
+BUILD_PROJECT="${CLOUD_BUILD_PROJECT:-$(gcloud config get-value project 2>/dev/null)}"
 DIR=$(dirname -- "${BASH_SOURCE[0]}")
 echo "Running Cloud Build on directory $DIR"
 
@@ -14,7 +16,9 @@ echo "Running Cloud Build on directory $DIR"
 #
 # Ensure you grant Cloud Build access to Compute Images:
 # https://pantheon.corp.google.com/compute/images?referrer=search&tab=exports&project=$PROJECT_ID
-gcloud beta builds submit --config=${DIR}/cloudbuild.yaml \
+gcloud beta builds submit --config=launcher/cloudbuild.yaml \
+  --region=${REGION} \
+  --project=${BUILD_PROJECT} \
   --substitutions=_OUTPUT_IMAGE_SUFFIX="${IMAGE_SUFFIX}"
 
 echo "Image creation successful."
