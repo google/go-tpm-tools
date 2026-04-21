@@ -4,7 +4,7 @@ source util/read_serial.sh
 source util/read_cloud_logging.sh
 
 # Allow VM some time to boot and start the workload.
-sleep 150
+sleep 180
 
 output=""
 if [[ "$1" == "serial" ]]; then

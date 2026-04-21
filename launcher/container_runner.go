@@ -271,9 +271,9 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	// if err := os.Chown(stdoutStderrPipePath, hostUIDBegin, hostGIDBegin); err != nil {
 	// 	logger.Error("Failed to chown pipe file", "error", err)
 	// }
-	if fi, err := os.Stat(stdoutStderrPipePath); err == nil {
-		logger.Info("Pipe file after chmod", "path", stdoutStderrPipePath, "perms", fi.Mode().Perm())
-	}
+	// if fi, err := os.Stat(stdoutStderrPipePath); err == nil {
+	// 	logger.Info("Pipe file after chmod", "path", stdoutStderrPipePath, "perms", fi.Mode().Perm())
+	// }
 
 	container, err = cdClient.NewContainer(
 		ctx,
@@ -817,7 +817,7 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		return fmt.Errorf("failed to open named pipe: %w", err)
 	}
 
-	streamOpt := cio.WithStreams(nil, logRedirect, logRedirect)
+	streamOpt := cio.WithStreams(nil, logWriter, logWriter)
 
 	go func() {
 		defer logRedirect.Close()
