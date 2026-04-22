@@ -100,6 +100,9 @@ const (
 	userNSSize   = 65536 // 16-bit range of uid/gid inside the container
 
 	stdoutStderrPipePath = "/tmp/workload.fifo"
+
+	cniConfigDir = "/etc/cni/net.d"
+	cniBinDir = "/opt/cni/bin"
 )
 
 // NewRunner returns a runner.
@@ -198,7 +201,6 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		// the host network (same effect as --net-host in ctr command)
 		oci.WithHostHostsFile,
 		oci.WithHostResolvconf,
-
 		oci.WithEnv([]string{fmt.Sprintf("HOSTNAME=%s", hostname)}),
 		oci.WithAddedCapabilities(launchSpec.AddedCapabilities),
 		withRlimits(rlimits),
@@ -208,7 +210,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 			[]specs.LinuxIDMapping{{ContainerID: 0, HostID: hostGIDBegin, Size: userNSSize}},
 		),
 		withSysBindMount(), // mount /sys as "bind" instead of "sysfs" for a non-root container
-		withStdoutStderrPipeMounts(stdoutStderrPipePath),
+		withStdoutStderrPipeMounts(stdoutStderrPipePath),	// To redirect /dev/std{out,err} for a non-root container
 	}
 	if launchSpec.DevShmSize != 0 {
 		specOpts = append(specOpts, oci.WithDevShmSize(launchSpec.DevShmSize))
@@ -258,22 +260,12 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	if err := syscall.Mkfifo(stdoutStderrPipePath, 0666); err != nil {
 		return nil, fmt.Errorf("failed to create named pipe: %w", err)
 	}
-	// if fi, err := os.Stat(stdoutStderrPipePath); err == nil {
-	// 	logger.Info("Pipe file after creation", "path", stdoutStderrPipePath, "perms", fi.Mode().Perm())
-	// }
-
 	// Change permissions of the named pipe to allow non-root workloads to open it
 	// (e.g. via /dev/stderr) without permission errors.
 	// We call Chmod explicitly because Mkfifo is affected by the process's umask.
 	if err := os.Chmod(stdoutStderrPipePath, 0666); err != nil {
 		return nil, fmt.Errorf("failed to chmod stdout/stderr pipe file: %w", err)
 	}
-	// if err := os.Chown(stdoutStderrPipePath, hostUIDBegin, hostGIDBegin); err != nil {
-	// 	logger.Error("Failed to chown pipe file", "error", err)
-	// }
-	// if fi, err := os.Stat(stdoutStderrPipePath); err == nil {
-	// 	logger.Info("Pipe file after chmod", "path", stdoutStderrPipePath, "perms", fi.Mode().Perm())
-	// }
 
 	container, err = cdClient.NewContainer(
 		ctx,
@@ -348,8 +340,8 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		return nil, err
 	}
 	cni, err := gocni.New(
-		gocni.WithPluginConfDir("/etc/cni/net.d"),
-		gocni.WithPluginDir([]string{"/opt/cni/bin"}),
+		gocni.WithPluginConfDir(cniConfigDir),
+		gocni.WithPluginDir([]string{cniBinDir}),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize CNI: %w", err)
@@ -812,7 +804,7 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		return fmt.Errorf("unknown logging redirect location: %v", r.launchSpec.LogRedirect)
 	}
 
-	logRedirect, err := os.OpenFile(stdoutStderrPipePath, os.O_RDWR, 0)
+	stdPipe, err := os.OpenFile(stdoutStderrPipePath, os.O_RDWR, 0)
 	if err != nil {
 		return fmt.Errorf("failed to open named pipe: %w", err)
 	}
@@ -820,8 +812,8 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	streamOpt := cio.WithStreams(nil, logWriter, logWriter)
 
 	go func() {
-		defer logRedirect.Close()
-		io.Copy(logWriter, logRedirect)
+		defer stdPipe.Close()
+		io.Copy(logWriter, stdPipe)
 	}()
 
 	task, err := r.container.NewTask(ctx, cio.NewCreator(streamOpt))
@@ -830,43 +822,7 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	}
 	defer task.Delete(ctx)
 
-	// Change permissions of FIFOs to allow non-root workload to open them (e.g. via /dev/stderr)
-	// for _, fifoPath := range []string{task.IO().Config().Stdout, task.IO().Config().Stderr} {
-	// 	if fifoPath != "" {
-	// 		if fi, err := os.Stat(fifoPath); err == nil {
-	// 			r.logger.Info("FIFO permissions before chmod", "path", fifoPath, "perms", fi.Mode().Perm())
-	// 		} else {
-	// 			r.logger.Error("Failed to stat FIFO before chmod", "error", err, "path", fifoPath)
-	// 		}
-
-	// 		r.logger.Info("Changing permissions and owner of FIFO", "path", fifoPath)
-	// 		if err := os.Chmod(fifoPath, 0666); err != nil {
-	// 			r.logger.Error("Failed to chmod FIFO", "error", err, "path", fifoPath)
-	// 		}
-	// 		// if err := os.Chown(fifoPath, hostUIDBegin, hostGIDBegin); err != nil {
-	// 		// 	r.logger.Error("Failed to chown FIFO", "error", err, "path", fifoPath)
-	// 		// }
-
-	// 		if fi, err := os.Stat(fifoPath); err == nil {
-	// 			r.logger.Info("FIFO permissions after chmod", "path", fifoPath, "perms", fi.Mode().Perm())
-	// 		}
-	// 	}
-	// }
-
-	pid := task.Pid()
-	netnsPath := fmt.Sprintf("/proc/%d/ns/net", pid)
-
-	// // Debug: Check where FDs 0, 1, 2 point to on the host
-	// for i := 0; i <= 2; i++ {
-	// 	fdPath := fmt.Sprintf("/proc/%d/fd/%d", pid, i)
-	// 	linkTarget, err := os.Readlink(fdPath)
-	// 	if err != nil {
-	// 		r.logger.Error(fmt.Sprintf("Failed to read container FD %d link", i), "error", err)
-	// 	} else {
-	// 		r.logger.Info(fmt.Sprintf("Container FD %d points to", i), "target", linkTarget)
-	// 	}
-	// }
-
+	netnsPath := fmt.Sprintf("/proc/%d/ns/net", task.Pid())
 	cniResult, err := r.cni.Setup(ctx, containerID, netnsPath)
 	if err != nil {
 		return fmt.Errorf("failed to setup network via CNI: %w", err)
@@ -882,13 +838,12 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		return fmt.Errorf("failed to get image config: %w", err)
 	}
 
-	containerIP := ""
+	var containerIP string
 	rawResults := cniResult.Raw()
 	// Currently, we have only single network interface defined with a single IP address by `10-workload.conf`.
 	if len(rawResults) > 0 && len(rawResults[0].IPs) > 0 {
 		containerIP = rawResults[0].IPs[0].Address.IP.String()
 	}
-
 	if err := openPorts(imageConfig.ExposedPorts, containerIP); err != nil {
 		return fmt.Errorf("failed to open and forward ports: %w", err)
 	}
@@ -1000,7 +955,7 @@ func openPorts(ports map[string]struct{}, containerIP string) error {
 			return fmt.Errorf("failed to open port on IPv6 %s %s: %v %s", port, protocol, err, out)
 		}
 
-		// Forward traffic from host port to container port with the same number!
+		// Forward traffic from host port to container port with the same number.
 		if containerIP != "" {
 			forwardCmd := exec.Command("iptables", "-t", "nat", "-A", "PREROUTING",
 				"-p", protocol, "--dport", port,
@@ -1056,8 +1011,7 @@ func (r *ContainerRunner) Close(ctx context.Context) {
 	// Cleanup network using go-cni
 	task, err := r.container.Task(ctx, nil)
 	if err == nil {
-		pid := task.Pid()
-		netnsPath := fmt.Sprintf("/proc/%d/ns/net", pid)
+		netnsPath := fmt.Sprintf("/proc/%d/ns/net", task.Pid())
 		if err := r.cni.Remove(ctx, containerID, netnsPath); err != nil {
 			r.logger.Error("failed to cleanup network via CNI", "error", err)
 		}
