@@ -19,14 +19,14 @@ steps:
         gcloud compute images export \
           --image="${_BASE_IMAGE}" \
           --project="${_BASE_IMAGE_PROJECT}" \
-          --destination-uri="${EXPORT_URI}" \
+          --destination-uri="$${EXPORT_URI}" \
           --export-format=raw
-        echo "${EXPORT_URI}" > /workspace/export_uri.txt
+        echo "$${EXPORT_URI}" > /workspace/export_uri.txt
 
   - name: 'gcr.io/cloud-builders/gcloud'
     id: 'DownloadExportedImage'
     entrypoint: 'gcloud'
-    args: ['storage', 'cp', "$$(cat /workspace/export_uri.txt)", '/workspace/src_image.tar.gz']
+    args: ['storage', 'cp', 'gs://${_BUCKET_NAME}/offline-customizer-${BUILD_ID}/src_image.tar.gz', '/workspace/src_image.tar.gz']
 
   - name: 'ubuntu'
     id: 'ExtractRawImage'
@@ -47,7 +47,7 @@ steps:
         apt-get update && apt-get install -y util-linux mount
         chmod +x /workspace/launcher/image/bc_customize_offline.sh
         chmod +x /workspace/launcher/image/bcpreload.sh
-        chmod +x /workspace/launcher/image/bcfixup_oem.sh
+        chmod +x /workspace/launcher/image/fixup_oem.sh
         IMAGE_ENV="${_IMAGE_ENV}" \
         RAW_IMAGE_PATH="/workspace/disk.raw" \
         WORK_DIR="/workspace/launcher/image" \
