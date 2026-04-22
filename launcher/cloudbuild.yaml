@@ -10,6 +10,9 @@ substitutions:
   '_BC_BASE_IMAGE_DBG': 'cos-bcdbg-guest-125-19216-220-130'
   '_BC_BASE_IMAGE': 'cos-bc-guest-125-19216-220-130'
   '_BC_BASE_IMAGE_PROJECT': 'confidential-space-images-dev'
+  # Diagnostic default: preload only. Change to launcher/image/cloudbuild_preload_seal.yaml
+  # or launcher/image/cloudbuild.yaml to advance debugging stages.
+  '_BC_IMAGE_BUILD_CONFIG': 'launcher/image/cloudbuild_preload_only.yaml'
 
 steps:
 # determine the base image
@@ -147,12 +150,13 @@ steps:
   - 'BUCKET_NAME=$_BUCKET_NAME'
   - 'BC_BASE_IMAGE_PROJECT=$_BC_BASE_IMAGE_PROJECT'
   - 'BC_BASE_IMAGE_DBG=$_BC_BASE_IMAGE_DBG'
+  - 'BC_IMAGE_BUILD_CONFIG=$_BC_IMAGE_BUILD_CONFIG'
   script: |
     #!/usr/bin/env bash
     set -exuo pipefail
 
     echo "building the debug image: ${OUTPUT_IMAGE_NAME} with the base image: ${BC_BASE_IMAGE_DBG}"
-    gcloud builds submit --config=launcher/image/cloudbuild.yaml \
+    gcloud builds submit --config=${BC_IMAGE_BUILD_CONFIG} \
     --region us-west1 \
     --substitutions \
     _BASE_IMAGE=${BC_BASE_IMAGE_DBG},\
@@ -162,12 +166,12 @@ steps:
     _IMAGE_ENV=debug,\
     _CS_LICENSE=projects/confidential-space-images/global/licenses/confidential-space-debug,\
     _BUCKET_NAME=${BUCKET_NAME},\
-    _PRELOAD_SCRIPT=vgpreload.sh
+    _PRELOAD_SCRIPT=bcpreload.sh
     exit
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: HardenedBcImageBuild
-  waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary']
+  waitFor: ['DebugBcImageBuild']
   env:
   - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-bc-hardened-${_OUTPUT_IMAGE_SUFFIX}'
   - 'OUTPUT_IMAGE_FAMILY=${_OUTPUT_IMAGE_FAMILY}-bc'
@@ -175,12 +179,13 @@ steps:
   - 'SHORT_SHA=${SHORT_SHA}'
   - 'BC_BASE_IMAGE_PROJECT=$_BC_BASE_IMAGE_PROJECT'
   - 'BC_BASE_IMAGE=$_BC_BASE_IMAGE'
+  - 'BC_IMAGE_BUILD_CONFIG=$_BC_IMAGE_BUILD_CONFIG'
   script: |
     #!/usr/bin/env bash
     set -exuo pipefail
 
     echo "building the hardened image: ${OUTPUT_IMAGE_NAME} with the base image: ${BC_BASE_IMAGE}"
-    gcloud builds submit --config=launcher/image/cloudbuild.yaml \
+    gcloud builds submit --config=${BC_IMAGE_BUILD_CONFIG} \
     --region us-west1 \
     --substitutions \
     _BASE_IMAGE=${BC_BASE_IMAGE},\
@@ -190,7 +195,7 @@ steps:
     _IMAGE_ENV=hardened,\
     _CS_LICENSE=projects/confidential-space-images/global/licenses/confidential-space,\
     _BUCKET_NAME=${BUCKET_NAME},\
-    _PRELOAD_SCRIPT=vgpreload.sh
+    _PRELOAD_SCRIPT=bcpreload.sh
     exit
 
 # - name: 'gcr.io/cloud-builders/gcloud'

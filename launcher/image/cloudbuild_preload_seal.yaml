@@ -1,0 +1,40 @@
+substitutions:
+  '_BASE_IMAGE': ''
+  '_OUTPUT_IMAGE_NAME': ''
+  '_OUTPUT_IMAGE_FAMILY': ''
+  '_BASE_IMAGE_PROJECT': ''
+  '_IMAGE_ENV': ''
+  '_BUCKET_NAME': ''
+  '_CS_LICENSE': ''
+  '_PRELOAD_SCRIPT': ''
+
+steps:
+  - name: 'gcr.io/cos-cloud/cos-customizer'
+    args: ['start-image-build',
+           '-build-context=launcher/image',
+           '-gcs-bucket=${_BUCKET_NAME}',
+           '-gcs-workdir=customizer-${BUILD_ID}',
+           '-image-name=${_BASE_IMAGE}',
+           '-image-project=${_BASE_IMAGE_PROJECT}']
+  - name: 'gcr.io/cos-cloud/cos-customizer'
+    args: ['run-script',
+           '-script=${_PRELOAD_SCRIPT}',
+           '-env=IMAGE_ENV=${_IMAGE_ENV}']
+  - name: 'gcr.io/cos-cloud/cos-customizer'
+    args: ['seal-oem']
+  - name: 'gcr.io/cos-cloud/cos-customizer'
+    args: ['finish-image-build',
+           '-oem-size=500M',
+           '-disk-size-gb=11',
+           '-image-name=${_OUTPUT_IMAGE_NAME}',
+           '-image-family=${_OUTPUT_IMAGE_FAMILY}',
+           '-image-project=${PROJECT_ID}',
+           '-licenses=${_CS_LICENSE}',
+           '-licenses=projects/confidential-space-images/global/licenses/ek-certificate-license',
+           '-zone=us-central1-a',
+           '-project=${PROJECT_ID}']
+
+timeout: '3000s'
+
+options:
+  dynamic_substitutions: true
