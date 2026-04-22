@@ -10,9 +10,8 @@ substitutions:
   '_BC_BASE_IMAGE_DBG': 'cos-bcdbg-guest-125-19216-220-130'
   '_BC_BASE_IMAGE': 'cos-bc-guest-125-19216-220-130'
   '_BC_BASE_IMAGE_PROJECT': 'confidential-space-images-dev'
-  # Diagnostic default: preload only. Change to launcher/image/cloudbuild_preload_seal.yaml
-  # or launcher/image/cloudbuild.yaml to advance debugging stages.
-  '_BC_IMAGE_BUILD_CONFIG': 'launcher/image/cloudbuild_preload_only.yaml'
+  # BC default uses offline disk customization to avoid VM-side customizer bootstrap.
+  '_BC_IMAGE_BUILD_CONFIG': 'launcher/image/cloudbuild_bc_offline.yaml'
 
 steps:
 # determine the base image

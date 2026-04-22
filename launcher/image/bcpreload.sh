@@ -1,7 +1,8 @@
 #!/bin/bash
 set -exuo pipefail
 
-readonly OEM_PATH='/usr/share/oem'
+readonly OEM_PATH="${OEM_PATH:-/usr/share/oem}"
+readonly RUNTIME_OEM_PATH="${RUNTIME_OEM_PATH:-/usr/share/oem}"
 readonly CS_PATH="${OEM_PATH}/confidential_space"
 
 copy_launcher() {
@@ -19,13 +20,14 @@ setup_launcher_systemd_unit() {
 
 append_cmdline() {
   local arg="$1"
-  local efi_partition="/dev/disk/by-partlabel/EFI-SYSTEM"
+  local efi_partition="${EFI_PARTITION:-/dev/disk/by-partlabel/EFI-SYSTEM}"
   if [[ ! -d /mnt/disks/efi ]]; then
     mkdir /mnt/disks/efi
   fi
 
   # Prefer the EFI partition label discovered from the BC base image.
-  if [[ ! -e "${efi_partition}" ]]; then
+  # If no explicit EFI_PARTITION is provided, fall back to /dev/sda12.
+  if [[ -z "${EFI_PARTITION:-}" && ! -e "${efi_partition}" ]]; then
     efi_partition="/dev/sda12"
   fi
 
@@ -49,7 +51,7 @@ enable_unit() {
 configure_entrypoint() {
   cp "$1" ${OEM_PATH}/user-data
   touch ${OEM_PATH}/meta-data
-  append_cmdline "'ds=nocloud;s=${OEM_PATH}/'"
+  append_cmdline "'ds=nocloud;s=${RUNTIME_OEM_PATH}/'"
 }
 
 configure_necessary_systemd_units() {
@@ -112,7 +114,7 @@ main() {
   echo "[BC_PRELOAD] IMAGE_ENV=${IMAGE_ENV}"
   mount -o remount,rw ${OEM_PATH}
   echo "[BC_PRELOAD] remounted OEM rw"
-  mkdir ${CS_PATH}
+  mkdir -p ${CS_PATH}
   echo "[BC_PRELOAD] ensured ${CS_PATH} exists"
 
   # Install container launcher entrypoint.

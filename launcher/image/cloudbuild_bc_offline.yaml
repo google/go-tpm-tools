@@ -1,0 +1,88 @@
+substitutions:
+  '_BASE_IMAGE': ''
+  '_OUTPUT_IMAGE_NAME': ''
+  '_OUTPUT_IMAGE_FAMILY': ''
+  '_BASE_IMAGE_PROJECT': ''
+  '_IMAGE_ENV': ''
+  '_BUCKET_NAME': ''
+  '_CS_LICENSE': ''
+
+steps:
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: 'ExportBaseImage'
+    entrypoint: 'bash'
+    args:
+      - -c
+      - |
+        set -exuo pipefail
+        EXPORT_URI="gs://${_BUCKET_NAME}/offline-customizer-${BUILD_ID}/src_image.tar.gz"
+        gcloud compute images export \
+          --image="${_BASE_IMAGE}" \
+          --project="${_BASE_IMAGE_PROJECT}" \
+          --destination-uri="${EXPORT_URI}" \
+          --export-format=raw
+        echo "${EXPORT_URI}" > /workspace/export_uri.txt
+
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: 'DownloadExportedImage'
+    entrypoint: 'gcloud'
+    args: ['storage', 'cp', "$$(cat /workspace/export_uri.txt)", '/workspace/src_image.tar.gz']
+
+  - name: 'ubuntu'
+    id: 'ExtractRawImage'
+    entrypoint: 'bash'
+    args:
+      - -c
+      - |
+        set -exuo pipefail
+        tar -xzf /workspace/src_image.tar.gz -C /workspace
+
+  - name: 'ubuntu'
+    id: 'OfflineCustomizeBCImage'
+    entrypoint: 'bash'
+    args:
+      - -c
+      - |
+        set -exuo pipefail
+        apt-get update && apt-get install -y util-linux mount
+        chmod +x /workspace/launcher/image/bc_customize_offline.sh
+        chmod +x /workspace/launcher/image/bcpreload.sh
+        chmod +x /workspace/launcher/image/bcfixup_oem.sh
+        IMAGE_ENV="${_IMAGE_ENV}" \
+        RAW_IMAGE_PATH="/workspace/disk.raw" \
+        WORK_DIR="/workspace/launcher/image" \
+        /workspace/launcher/image/bc_customize_offline.sh
+
+  - name: 'alpine'
+    id: 'PackCustomizedImage'
+    args: ['tar', '-zcf', '/workspace/out_image.tar.gz', '-C', '/workspace', 'disk.raw']
+
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: 'UploadCustomizedImage'
+    entrypoint: 'gcloud'
+    args: ['storage', 'cp', '/workspace/out_image.tar.gz', 'gs://${_BUCKET_NAME}/offline-customizer-${BUILD_ID}/${_OUTPUT_IMAGE_NAME}.tar.gz']
+
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: 'CreateGCEImage'
+    entrypoint: 'gcloud'
+    args:
+      - 'compute'
+      - 'images'
+      - 'create'
+      - '${_OUTPUT_IMAGE_NAME}'
+      - '--source-uri'
+      - 'gs://${_BUCKET_NAME}/offline-customizer-${BUILD_ID}/${_OUTPUT_IMAGE_NAME}.tar.gz'
+      - '--project'
+      - '${PROJECT_ID}'
+      - '--family'
+      - '${_OUTPUT_IMAGE_FAMILY}'
+      - '--licenses'
+      - '${_CS_LICENSE}'
+      - '--licenses'
+      - 'projects/confidential-space-images/global/licenses/ek-certificate-license'
+
+timeout: '7200s'
+
+options:
+  dynamic_substitutions: true
+  machineType: 'E2_HIGHCPU_8'
