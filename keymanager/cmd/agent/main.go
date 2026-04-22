@@ -15,14 +15,7 @@ import (
 
 	keyprotectionservice "github.com/google/go-tpm-tools/keymanager/key_protection_service"
 	workloadservice "github.com/google/go-tpm-tools/keymanager/workload_service"
-)
-
-// TODO: temporary, will move to proto once https://github.com/google/go-tpm-tools/pull/743 is submitted.
-const (
-	ServiceRoleWSD              = "WSD"
-	ServiceRoleKPS              = "KPS"
-	ProtectionMechanismEmulated = "KEY_PROTECTION_VM_EMULATED"
-	ProtectionMechanismVM       = "KEY_PROTECTION_VM"
+	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
 )
 
 func main() {
@@ -33,23 +26,29 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	mode := os.Getenv("KEY_PROTECTION_MECHANISM")
-	if mode == "" {
-		mode = ProtectionMechanismEmulated
+	modeStr := os.Getenv("KEY_PROTECTION_MECHANISM")
+	mode := keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED
+	if modeStr != "" {
+		if v, ok := keymanager.KeyProtectionMechanism_value[modeStr]; ok {
+			mode = keymanager.KeyProtectionMechanism(v)
+		}
 	}
 
-	role := os.Getenv("SERVICE_ROLE")
-	if role == "" {
-		role = ServiceRoleWSD
+	roleStr := os.Getenv("SERVICE_ROLE")
+	role := keymanager.ServiceRole_WSD
+	if roleStr != "" {
+		if v, ok := keymanager.ServiceRole_value[roleStr]; ok {
+			role = keymanager.ServiceRole(v)
+		}
 	}
 
 	log.Printf("Starting KeyManager launcher. Mode: %s, Role: %s\n", mode, role)
 
 	var err error
-	if mode == ProtectionMechanismVM && role == ServiceRoleKPS {
+	if mode == keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM && role == keymanager.ServiceRole_KPS {
 		err = runKPS(ctx, *kpsPort)
 	} else {
-		err = runWSD(ctx, *socketPath)
+		err = runWSD(ctx, *socketPath, mode)
 	}
 
 	if err != nil {
@@ -57,14 +56,14 @@ func main() {
 	}
 }
 
-func runWSD(ctx context.Context, socketPath string) error {
+func runWSD(ctx context.Context, socketPath string, mode keymanager.KeyProtectionMechanism) error {
 	socketDir := filepath.Dir(socketPath)
 	if err := os.MkdirAll(socketDir, 0755); err != nil {
 		return fmt.Errorf("failed to create directory for socket %s: %w", socketDir, err)
 	}
 
 	log.Printf("Initializing KeyManager WSD server on unix socket %s", socketPath)
-	srv, err := workloadservice.New(ctx, socketPath)
+	srv, err := workloadservice.New(ctx, socketPath, mode)
 	if err != nil {
 		return fmt.Errorf("failed to create WSD server: %w", err)
 	}
