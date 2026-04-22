@@ -783,7 +783,7 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 					r.logger.Error(err.Error())
 					return
 				}
-				if err = task.Kill(ctx, syscall.SIGTERM, containerd.WithKillAll); err != nil {
+				if err = task.Kill(ctx, syscall.SIGTERM); err != nil {
 					r.logger.Error(err.Error())
 				}
 			}()
