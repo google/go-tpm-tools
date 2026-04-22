@@ -72,6 +72,10 @@ steps:
       export CGO_LDFLAGS="-L/workspace/keymanager/target/release"
       go build -o ../image/launcher -ldflags="-extldflags=-Wl,-z,lazy -X 'main.BuildCommit=${SHORT_SHA}'"
 
+      # Build the power button listener
+      cd /workspace/launcher/power-button-listener
+      go build -o /workspace/launcher/image/power-button-listener
+
 - name: 'gcr.io/cloud-builders/gcloud'
   id: DownloadExpBinary
   entrypoint: 'gcloud'
@@ -450,6 +454,20 @@ steps:
     cd launcher/image/test
     echo "running privileged tests on ${OUTPUT_IMAGE_NAME}"
     gcloud builds submit --config=test_privileged.yaml --region us-west1 \
+      --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
+    exit
+
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: WorkloadCleanupTests
+  waitFor: ['HardenedImageBuild']
+  env:
+  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}'
+  - 'PROJECT_ID=$PROJECT_ID'
+  script: |
+    #!/usr/bin/env bash
+    cd launcher/image/test
+    echo "running workload cleanup tests on ${OUTPUT_IMAGE_NAME}"
+    gcloud builds submit --config=test_workloadcleanup_cloudbuild.yaml --region us-west1 \
       --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
     exit
 
