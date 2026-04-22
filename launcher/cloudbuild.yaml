@@ -141,37 +141,37 @@ steps:
 #     _PRELOAD_SCRIPT=vgpreload.sh
 #     exit
 
-- name: 'gcr.io/cloud-builders/gcloud'
-  id: DebugBcImageBuild
-  waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-bc-debug-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'OUTPUT_IMAGE_FAMILY=${_OUTPUT_IMAGE_FAMILY}-bc'
-  - 'BUCKET_NAME=$_BUCKET_NAME'
-  - 'BC_BASE_IMAGE_PROJECT=$_BC_BASE_IMAGE_PROJECT'
-  - 'BC_BASE_IMAGE_DBG=$_BC_BASE_IMAGE_DBG'
-  - 'BC_IMAGE_BUILD_CONFIG=$_BC_IMAGE_BUILD_CONFIG'
-  script: |
-    #!/usr/bin/env bash
-    set -exuo pipefail
+# - name: 'gcr.io/cloud-builders/gcloud'
+#   id: DebugBcImageBuild
+#   waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary']
+#   env:
+#   - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-bc-debug-${_OUTPUT_IMAGE_SUFFIX}'
+#   - 'OUTPUT_IMAGE_FAMILY=${_OUTPUT_IMAGE_FAMILY}-bc'
+#   - 'BUCKET_NAME=$_BUCKET_NAME'
+#   - 'BC_BASE_IMAGE_PROJECT=$_BC_BASE_IMAGE_PROJECT'
+#   - 'BC_BASE_IMAGE_DBG=$_BC_BASE_IMAGE_DBG'
+#   - 'BC_IMAGE_BUILD_CONFIG=$_BC_IMAGE_BUILD_CONFIG'
+#   script: |
+#     #!/usr/bin/env bash
+#     set -exuo pipefail
 
-    echo "building the debug image: ${OUTPUT_IMAGE_NAME} with the base image: ${BC_BASE_IMAGE_DBG}"
-    gcloud builds submit --config=${BC_IMAGE_BUILD_CONFIG} \
-    --region us-west1 \
-    --substitutions \
-    _BASE_IMAGE=${BC_BASE_IMAGE_DBG},\
-    _BASE_IMAGE_PROJECT=${BC_BASE_IMAGE_PROJECT},\
-    _OUTPUT_IMAGE_FAMILY=${OUTPUT_IMAGE_FAMILY}-debug,\
-    _OUTPUT_IMAGE_NAME=${OUTPUT_IMAGE_NAME},\
-    _IMAGE_ENV=debug,\
-    _CS_LICENSE=projects/confidential-space-images/global/licenses/confidential-space-debug,\
-    _BUCKET_NAME=${BUCKET_NAME},\
-    _PRELOAD_SCRIPT=bcpreload.sh
-    exit
+#     echo "building the debug image: ${OUTPUT_IMAGE_NAME} with the base image: ${BC_BASE_IMAGE_DBG}"
+#     gcloud builds submit --config=${BC_IMAGE_BUILD_CONFIG} \
+#     --region us-west1 \
+#     --substitutions \
+#     _BASE_IMAGE=${BC_BASE_IMAGE_DBG},\
+#     _BASE_IMAGE_PROJECT=${BC_BASE_IMAGE_PROJECT},\
+#     _OUTPUT_IMAGE_FAMILY=${OUTPUT_IMAGE_FAMILY}-debug,\
+#     _OUTPUT_IMAGE_NAME=${OUTPUT_IMAGE_NAME},\
+#     _IMAGE_ENV=debug,\
+#     _CS_LICENSE=projects/confidential-space-images/global/licenses/confidential-space-debug,\
+#     _BUCKET_NAME=${BUCKET_NAME},\
+#     _PRELOAD_SCRIPT=bcpreload.sh
+#     exit
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: HardenedBcImageBuild
-  waitFor: ['DebugBcImageBuild']
+  # waitFor: ['DebugBcImageBuild']
   env:
   - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-bc-hardened-${_OUTPUT_IMAGE_SUFFIX}'
   - 'OUTPUT_IMAGE_FAMILY=${_OUTPUT_IMAGE_FAMILY}-bc'
@@ -595,14 +595,14 @@ steps:
          '--image=${_OUTPUT_IMAGE_PREFIX}-guest-bc-hardened-${_OUTPUT_IMAGE_SUFFIX}',
          '--project=${PROJECT_ID}']
 
-- name: 'gcr.io/cloud-builders/gcloud'
-  id: ExportBcDebugImage
-  waitFor: ['DebugBcImageBuild']
-  entrypoint: 'gcloud'
-  args: ['compute', 'images', 'export',
-          '--destination-uri=gs://${PROJECT_ID}_raw-images/${_OUTPUT_IMAGE_PREFIX}-guest-bc-debug-${_OUTPUT_IMAGE_SUFFIX}.tar.gz',
-          '--image=${_OUTPUT_IMAGE_PREFIX}-guest-bc-debug-${_OUTPUT_IMAGE_SUFFIX}',
-          '--project=${PROJECT_ID}']
+# - name: 'gcr.io/cloud-builders/gcloud'
+#   id: ExportBcDebugImage
+#   waitFor: ['DebugBcImageBuild']
+#   entrypoint: 'gcloud'
+#   args: ['compute', 'images', 'export',
+#           '--destination-uri=gs://${PROJECT_ID}_raw-images/${_OUTPUT_IMAGE_PREFIX}-guest-bc-debug-${_OUTPUT_IMAGE_SUFFIX}.tar.gz',
+#           '--image=${_OUTPUT_IMAGE_PREFIX}-guest-bc-debug-${_OUTPUT_IMAGE_SUFFIX}',
+#           '--project=${PROJECT_ID}']
 
 # - name: 'us-docker.pkg.dev/confidential-space-images-dev/cs-tools/measure@sha256:b82c8ca459b863cfdf9faf8e4c06d506a50f3fe86ca1f3756ca6fee42a5cd7f4'
 #   id: MeasureVgHardenedImage
