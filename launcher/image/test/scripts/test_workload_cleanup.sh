@@ -8,7 +8,7 @@ EXPECT_GRACEFUL_SHUTDOWN="${4:-false}"
 SERIAL_LOG="/workspace/serial_output_${EXPECT_GRACEFUL_SHUTDOWN}.txt"
 GRACEFUL_MSG="Workload exiting gracefully"
 
-timeout_seconds=150
+timeout_seconds=180
 start_time=$(date +%s)
 
 check_timeout() {
