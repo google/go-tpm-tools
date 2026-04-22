@@ -102,7 +102,7 @@ const (
 	stdoutStderrPipePath = "/tmp/workload.fifo"
 
 	cniConfigDir = "/etc/cni/net.d"
-	cniBinDir = "/opt/cni/bin"
+	cniBinDir    = "/opt/cni/bin"
 )
 
 // NewRunner returns a runner.
@@ -210,7 +210,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 			[]specs.LinuxIDMapping{{ContainerID: 0, HostID: hostGIDBegin, Size: userNSSize}},
 		),
 		withSysBindMount(), // mount /sys as "bind" instead of "sysfs" for a non-root container
-		withStdoutStderrPipeMounts(stdoutStderrPipePath),	// To redirect /dev/std{out,err} for a non-root container
+		withStdoutStderrPipeMounts(stdoutStderrPipePath), // To redirect /dev/std{out,err} for a non-root container
 	}
 	if launchSpec.DevShmSize != 0 {
 		specOpts = append(specOpts, oci.WithDevShmSize(launchSpec.DevShmSize))
