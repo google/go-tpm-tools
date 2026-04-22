@@ -1,5 +1,5 @@
 #!/bin/bash
-set -euo pipefail
+set -euxo pipefail
 
 MONITOR_VM=$1
 WORKLOAD_VM=$2
@@ -38,7 +38,7 @@ timeout $remaining bash -c "until grep -q 'Workload heartbeat' \"$SERIAL_LOG\"; 
 }
 
 echo "Stopping workload VM..."
-gcloud compute instances stop $WORKLOAD_VM --zone $ZONE
+gcloud compute instances stop $WORKLOAD_VM --zone $ZONE &
 
 if [ "$EXPECT_GRACEFUL_SHUTDOWN" = "true" ]; then
   echo "Polling for graceful exit..."
