@@ -141,6 +141,28 @@ func (r *keyProtectionService) GetKEMKey(id uuid.UUID) ([]byte, []byte, *keymana
 	return kpscc.GetKEMKey(id)
 }
 
+type remoteKeyProtectionService struct{}
+
+func (r *remoteKeyProtectionService) GenerateKEMKeypair(_ *keymanager.HpkeAlgorithm, _ []byte, _ uint64) (uuid.UUID, []byte, error) {
+	return uuid.Nil, nil, nil
+}
+
+func (r *remoteKeyProtectionService) EnumerateKEMKeys(_, _ int) ([]kpscc.KEMKeyInfo, bool, error) {
+	return nil, false, nil
+}
+
+func (r *remoteKeyProtectionService) DestroyKEMKey(_ uuid.UUID) error {
+	return nil
+}
+
+func (r *remoteKeyProtectionService) DecapAndSeal(_ uuid.UUID, _, _ []byte) ([]byte, []byte, error) {
+	return nil, nil, nil
+}
+
+func (r *remoteKeyProtectionService) GetKEMKey(_ uuid.UUID) ([]byte, []byte, *keymanager.HpkeAlgorithm, uint64, error) {
+	return nil, nil, nil, 0, nil
+}
+
 // KeyClaimsProvider defines the interface for retrieving key claims.
 // This abstraction allows the underlying implementation to be a local channel
 // or a remote RPC call in future.
@@ -184,8 +206,19 @@ var (
 )
 
 // New creates a new WSD Server listening on the given unix socket path.
-func New(_ context.Context, socketPath string) (*Server, error) {
-	return NewServer(&keyProtectionService{}, &workloadService{}, socketPath)
+func New(_ context.Context, socketPath string, mode keymanager.KeyProtectionMechanism) (*Server, error) {
+	var kps KeyProtectionService
+	switch mode {
+	case keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED:
+		kps = &keyProtectionService{}
+	case keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM:
+		kps = &remoteKeyProtectionService{}
+	case keymanager.KeyProtectionMechanism_KEY_PROTECTION_MECHANISM_UNSPECIFIED:
+		return nil, fmt.Errorf("key protection mechanism is unspecified")
+	default:
+		return nil, fmt.Errorf("unknown key protection mechanism provided: %v", mode)
+	}
+	return NewServer(kps, &workloadService{}, socketPath)
 }
 
 // NewServer creates a new WSD server with the given dependencies.
