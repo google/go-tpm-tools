@@ -9,11 +9,14 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
+	"net"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"cloud.google.com/go/compute/metadata"
@@ -672,6 +675,24 @@ func pullImageBackoffPolicy() backoff.BackOff {
 // Run the container
 // Container output will always be redirected to logger writer for now
 func (r *ContainerRunner) Run(ctx context.Context) error {
+	// Start a new Go routine which listen to SIGTERM.
+	go func() {
+		c := make(chan os.Signal, 1)
+		signal.Notify(c, syscall.SIGTERM)
+		<-c
+		// Upon receiving the signal, it sends "Launcher received SIGTERM" to UDP4:10.138.0.10:2020
+		conn, err := net.Dial("udp4", "10.138.0.10:2020")
+		if err != nil {
+			r.logger.Error(fmt.Sprintf("failed to dial UDP: %v", err))
+			return
+		}
+		defer conn.Close()
+		_, err = conn.Write([]byte("Launcher received SIGTERM"))
+		if err != nil {
+			r.logger.Error(fmt.Sprintf("failed to write to UDP: %v", err))
+		}
+	}()
+
 	// Note start time for workload setup.
 	start := time.Now()
 
