@@ -9,25 +9,6 @@ substitutions:
   '_EXPERIMENT_PROFILE': ''
 
 steps:
-  - name: 'alpine'
-    id: 'ValidateInputs'
-    entrypoint: 'sh'
-    args:
-      - -c
-      - |
-        set -eu
-        if [ -z "${_BUCKET_NAME}" ]; then
-          echo "_BUCKET_NAME is empty. Outer build must pass a concrete bucket name."
-          exit 1
-        fi
-        case "${_BUCKET_NAME}" in
-          *'${'*|*'$PROJECT_ID'*)
-            echo "_BUCKET_NAME appears unresolved: ${_BUCKET_NAME}"
-            echo "Set _BUCKET_NAME to a concrete bucket (for example: ${PROJECT_ID}_cloudbuild) in the outer build substitutions."
-            exit 1
-            ;;
-        esac
-
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     id: 'ExportBaseImage'
     args:
