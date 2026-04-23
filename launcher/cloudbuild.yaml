@@ -105,7 +105,8 @@ steps:
     _OUTPUT_IMAGE_NAME=${OUTPUT_IMAGE_NAME},\
     _IMAGE_ENV=debug,\
     _CS_LICENSE=projects/confidential-space-images/global/licenses/confidential-space-debug,\
-    _BUCKET_NAME=${BUCKET_NAME}
+    _BUCKET_NAME=${BUCKET_NAME},\
+    _EXPERIMENT_PROFILE=vgbc
     exit
 
 - name: 'gcr.io/cloud-builders/gcloud'
@@ -131,7 +132,8 @@ steps:
     _OUTPUT_IMAGE_NAME=${OUTPUT_IMAGE_NAME},\
     _IMAGE_ENV=hardened,\
     _CS_LICENSE=projects/confidential-space-images/global/licenses/confidential-space,\
-    _BUCKET_NAME=${BUCKET_NAME}
+    _BUCKET_NAME=${BUCKET_NAME},\
+    _EXPERIMENT_PROFILE=vgbc
     exit
 
 # - name: 'gcr.io/cloud-builders/gcloud'
@@ -214,7 +216,8 @@ steps:
     _OUTPUT_IMAGE_NAME=${OUTPUT_IMAGE_NAME},\
     _IMAGE_ENV=debug,\
     _CS_LICENSE=projects/confidential-space-images/global/licenses/confidential-space-debug,\
-    _BUCKET_NAME=${BUCKET_NAME}
+    _BUCKET_NAME=${BUCKET_NAME},\
+    _EXPERIMENT_PROFILE=vgbc
     exit
 
 - name: 'gcr.io/cloud-builders/gcloud'
@@ -242,7 +245,8 @@ steps:
     _OUTPUT_IMAGE_NAME=${OUTPUT_IMAGE_NAME},\
     _IMAGE_ENV=hardened,\
     _CS_LICENSE=projects/confidential-space-images/global/licenses/confidential-space,\
-    _BUCKET_NAME=${BUCKET_NAME}
+    _BUCKET_NAME=${BUCKET_NAME},\
+    _EXPERIMENT_PROFILE=vgbc
     exit
 
 # - name: 'gcr.io/cloud-builders/gcloud'
