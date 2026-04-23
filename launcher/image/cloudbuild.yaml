@@ -6,6 +6,7 @@ substitutions:
   '_OUTPUT_IMAGE_NAME': ''
   '_OUTPUT_IMAGE_FAMILY': ''
   '_CS_LICENSE': ''
+  '_EXPERIMENT_PROFILE': 'vgbc'
 
 steps:
   - name: 'gcr.io/cloud-builders/gcloud'
@@ -36,6 +37,34 @@ steps:
   - name: 'alpine'
     id: 'ExtractRawImage'
     args: ['tar', '-xf', './src_image.tar.gz']
+
+  - name: 'alpine'
+    id: 'PrepareOEMInstallDir'
+    entrypoint: 'sh'
+    args:
+      - -c
+      - |
+        set -eu
+        rm -rf /workspace/oem-install
+        mkdir -p /workspace/oem-install
+        cp -a ./launcher/image/. /workspace/oem-install/
+
+        case "${_EXPERIMENT_PROFILE}" in
+          vgbc)
+            cp /workspace/oem-install/user-data.vgbc /workspace/oem-install/user-data
+            rm -f /workspace/oem-install/confidential_space_experiments
+            ;;
+          normal)
+            cp /workspace/oem-install/user-data.normal /workspace/oem-install/user-data
+            rm -f /workspace/oem-install/vgexperiment.json
+            chmod +x /workspace/oem-install/confidential_space_experiments || true
+            ;;
+          *)
+            echo "Unknown _EXPERIMENT_PROFILE: ${_EXPERIMENT_PROFILE}. Expected 'vgbc' or 'normal'."
+            exit 1
+            ;;
+        esac
+
   - name: 'gcr.io/cos-cloud/oem-preloader:latest'
     id: 'RunOEMPreloader'
     env:
@@ -45,8 +74,11 @@ steps:
       - '--out-image=output.bin'
       - '--oem-fs-size=500M'
       - '--disk-size-gb=11'
-      - '--install-dir=./launcher/image/'
-      - '--cmdline-script=./launcher/image/cmdline.sh'
+# why this change?? 
+      # - '--install-dir=./launcher/image/'
+      # - '--cmdline-script=./launcher/image/cmdline.sh'
+      - '--install-dir=/workspace/oem-install/'
+      - '--cmdline-script=/workspace/oem-install/cmdline.sh'
   - name: 'alpine'
     id: 'RenameOutputImage'
     args: ['mv', 'output.bin', 'disk.raw']
