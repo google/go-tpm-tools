@@ -160,7 +160,7 @@ steps:
     _IMAGE_ENV=debug,\
     _CS_LICENSE=projects/confidential-space-images/global/licenses/confidential-space-debug,\
     _BUCKET_NAME=${BUCKET_NAME},\
-    _PRELOAD_SCRIPT=preload.sh
+    _EXPERIMENT_PROFILE=normal
     exit
 
 - name: 'gcr.io/cloud-builders/gcloud'
@@ -188,7 +188,7 @@ steps:
     _IMAGE_ENV=hardened,\
     _CS_LICENSE=projects/confidential-space-images/global/licenses/confidential-space,\
     _BUCKET_NAME=${BUCKET_NAME},\
-    _PRELOAD_SCRIPT=preload.sh
+    _EXPERIMENT_PROFILE=normal
     exit
 
 - name: 'gcr.io/cloud-builders/gcloud'
@@ -207,7 +207,7 @@ steps:
     set -exuo pipefail
 
     echo "building the debug image with BC customizer with the base image: ${BC_BASE_IMAGE}"
-    gcloud builds submit --config=launcher/image/cloudbuild.yaml   
+    gcloud builds submit --config=launcher/image/cloudbuild.yaml \
     --region us-west1 \
     --substitutions \
     _BASE_IMAGE=${BC_BASE_IMAGE},\
@@ -236,7 +236,7 @@ steps:
     set -exuo pipefail
 
     echo "building the hardened image with BC customizer with the base image: ${BC_BASE_IMAGE}"
-    gcloud builds submit --config=launcher/image/cloudbuild.yaml   
+    gcloud builds submit --config=launcher/image/cloudbuild.yaml \
     --region us-west1 \
     --substitutions \
     _BASE_IMAGE=${BC_BASE_IMAGE},\
