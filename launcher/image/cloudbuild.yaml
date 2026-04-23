@@ -1,41 +1,84 @@
 substitutions:
   '_BASE_IMAGE': ''
+  '_BASE_IMAGE_PROJECT': ''
+  '_BUCKET_NAME': ''
+  '_IMAGE_ENV': ''
   '_OUTPUT_IMAGE_NAME': ''
   '_OUTPUT_IMAGE_FAMILY': ''
-  '_BASE_IMAGE_PROJECT': ''
-  '_IMAGE_ENV': ''
-  '_BUCKET_NAME': ''
   '_CS_LICENSE': ''
-  '_PRELOAD_SCRIPT': ''
 
 steps:
-  - name: 'gcr.io/cos-cloud/cos-customizer'
-    args: ['start-image-build',
-           '-build-context=launcher/image',
-           '-gcs-bucket=${_BUCKET_NAME}',
-           '-gcs-workdir=customizer-${BUILD_ID}',
-           '-image-name=${_BASE_IMAGE}',
-           '-image-project=${_BASE_IMAGE_PROJECT}']
-  - name: 'gcr.io/cos-cloud/cos-customizer'
-    args: ['run-script',
-           '-script=${_PRELOAD_SCRIPT}',
-           '-env=IMAGE_ENV=${_IMAGE_ENV}']
-  - name: 'gcr.io/cos-cloud/cos-customizer'
-    args: ['seal-oem']
-  - name: 'gcr.io/cos-cloud/cos-customizer'
-    args: ['run-script',
-           '-script=fixup_oem.sh']
-  - name: 'gcr.io/cos-cloud/cos-customizer'
-    args: ['finish-image-build',
-           '-oem-size=500M',
-           '-disk-size-gb=11',
-           '-image-name=${_OUTPUT_IMAGE_NAME}',
-           '-image-family=${_OUTPUT_IMAGE_FAMILY}',
-           '-image-project=${PROJECT_ID}',
-           '-licenses=${_CS_LICENSE}',
-           '-licenses=projects/confidential-space-images/global/licenses/ek-certificate-license',
-           '-zone=us-central1-a',
-           '-project=${PROJECT_ID}']
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: DownloadExpBinary
+    entrypoint: 'gcloud'
+    args: ['storage',
+            'cp',
+            'gs://confidential-space-images_third-party/confidential_space_experiments',
+            './launcher/image/confidential_space_experiments'] # changed
+
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'ExportBaseImage'
+    args:
+      - 'gcloud'
+      - 'compute'
+      - 'images'
+      - 'export'
+      - '--image=${_BASE_IMAGE}'
+      - '--image-project=${_BASE_IMAGE_PROJECT}'
+      - '--destination-uri=gs://${_BUCKET_NAME}/oem-preloader-${BUILD_ID}/${_BASE_IMAGE}.tar.gz'
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: 'DownloadImageFromGCS'
+    entrypoint: 'gcloud'
+    args: ['storage',
+           'cp',
+           'gs://${_BUCKET_NAME}/oem-preloader-${BUILD_ID}/${_BASE_IMAGE}.tar.gz',
+           './src_image.tar.gz']
+  - name: 'alpine'
+    id: 'ExtractRawImage'
+    args: ['tar', '-xf', './src_image.tar.gz']
+  - name: 'gcr.io/cos-cloud/oem-preloader:latest'
+    id: 'RunOEMPreloader'
+    env:
+      - 'IMAGE_ENV=${_IMAGE_ENV}'
+    args:
+      - '--src-image=./disk.raw'
+      - '--out-image=output.bin'
+      - '--oem-fs-size=500M'
+      - '--disk-size-gb=11'
+      - '--install-dir=./launcher/image/'
+      - '--cmdline-script=./launcher/image/cmdline.sh'
+  - name: 'alpine'
+    id: 'RenameOutputImage'
+    args: ['mv', 'output.bin', 'disk.raw']
+  - name: 'alpine'
+    id: 'TarOutputImage'
+    args: ['tar', '-zcf', './out_image.tar.gz', 'disk.raw']
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: 'UploadToGCS'
+    entrypoint: 'gcloud'
+    args: ['storage',
+           'cp',
+           './out_image.tar.gz',
+           'gs://${_BUCKET_NAME}/oem-preloader-${BUILD_ID}/${_OUTPUT_IMAGE_NAME}.tar.gz']
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'CreateGCEImage'
+    args:
+      - 'gcloud'
+      - 'compute'
+      - 'images'
+      - 'create'
+      - '--family=${_OUTPUT_IMAGE_FAMILY}'
+      - '--source-uri=gs://${_BUCKET_NAME}/oem-preloader-${BUILD_ID}/${_OUTPUT_IMAGE_NAME}.tar.gz'
+      - '--guest-os-features=UEFI_COMPATIBLE'
+      - '--licenses=${_CS_LICENSE},projects/confidential-space-images/global/licenses/ek-certificate-license'
+      - '${_OUTPUT_IMAGE_NAME}'
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: 'RemoveGCSFiles'
+    entrypoint: 'gcloud'
+    args: ['storage',
+           'rm',
+           'gs://${_BUCKET_NAME}/oem-preloader-${BUILD_ID}/${_BASE_IMAGE}.tar.gz',
+           'gs://${_BUCKET_NAME}/oem-preloader-${BUILD_ID}/${_OUTPUT_IMAGE_NAME}.tar.gz']
 
 timeout: '3000s'
 
