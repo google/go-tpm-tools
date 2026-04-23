@@ -82,17 +82,27 @@ steps:
            './out_image.tar.gz',
            'gs://${_BUCKET_NAME}/oem-preloader-${BUILD_ID}/${_OUTPUT_IMAGE_NAME}.tar.gz']
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-    id: 'CreateGCEImage'
+    id: 'FetchBaseImageFeatures'
+    entrypoint: 'sh'
     args:
-      - 'gcloud'
-      - 'compute'
-      - 'images'
-      - 'create'
-      - '--family=${_OUTPUT_IMAGE_FAMILY}'
-      - '--source-uri=gs://${_BUCKET_NAME}/oem-preloader-${BUILD_ID}/${_OUTPUT_IMAGE_NAME}.tar.gz'
-      - '--guest-os-features=UEFI_COMPATIBLE'
-      - '--licenses=${_CS_LICENSE},projects/confidential-space-images/global/licenses/ek-certificate-license'
-      - '${_OUTPUT_IMAGE_NAME}'
+      - '-c'
+      - |
+        gcloud compute images describe ${_BASE_IMAGE} --project=${_BASE_IMAGE_PROJECT} --format="value(guestOsFeatures.type)" | paste -sd, - | tr ';' ',' | tr -d '\n' > /workspace/features.txt
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'CreateGCEImage'
+    entrypoint: 'sh'
+    args:
+      - '-c'
+      - |
+        FEATURES=$$(cat /workspace/features.txt)
+        if [ -z "$$FEATURES" ]; then
+          FEATURES="UEFI_COMPATIBLE"
+        fi
+        gcloud compute images create ${_OUTPUT_IMAGE_NAME} \
+          --family=${_OUTPUT_IMAGE_FAMILY} \
+          --source-uri=gs://${_BUCKET_NAME}/oem-preloader-${BUILD_ID}/${_OUTPUT_IMAGE_NAME}.tar.gz \
+          --guest-os-features="$$FEATURES" \
+          --licenses=${_CS_LICENSE},projects/confidential-space-images/global/licenses/ek-certificate-license
   - name: 'gcr.io/cloud-builders/gcloud'
     id: 'RemoveGCSFiles'
     entrypoint: 'gcloud'
