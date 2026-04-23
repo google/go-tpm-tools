@@ -40,14 +40,15 @@ steps:
         rm -rf /workspace/oem-install
         mkdir -p /workspace/oem-install/confidential_space
         cp -a ./launcher/image/. /workspace/oem-install/confidential_space/
+        cp /workspace/oem-install/confidential_space/meta-data /workspace/oem-install/meta-data
 
         case "${_EXPERIMENT_PROFILE}" in
           vgbc)
-            cp /workspace/oem-install/confidential_space/user-data.vgbc /workspace/oem-install/confidential_space/user-data
+            cp /workspace/oem-install/confidential_space/user-data.vgbc /workspace/oem-install/user-data
             rm -f /workspace/oem-install/confidential_space/confidential_space_experiments
             ;;
           normal)
-            cp /workspace/oem-install/confidential_space/user-data.normal /workspace/oem-install/confidential_space/user-data
+            cp /workspace/oem-install/confidential_space/user-data.normal /workspace/oem-install/user-data
             rm -f /workspace/oem-install/confidential_space/vgexperiment.json
             chmod +x /workspace/oem-install/confidential_space/confidential_space_experiments || true
             ;;
@@ -67,7 +68,7 @@ steps:
       - '--oem-fs-size=500M'
       - '--disk-size-gb=11'
       - '--install-dir=/workspace/oem-install/'
-      - '--cmdline-script=/workspace/oem-install/cmdline.sh'
+      - '--cmdline-script=/workspace/oem-install/confidential_space/cmdline.sh'
   - name: 'alpine'
     id: 'RenameOutputImage'
     args: ['mv', 'output.bin', 'disk.raw']
