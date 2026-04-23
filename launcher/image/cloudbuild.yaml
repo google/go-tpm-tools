@@ -6,17 +6,9 @@ substitutions:
   '_OUTPUT_IMAGE_NAME': ''
   '_OUTPUT_IMAGE_FAMILY': ''
   '_CS_LICENSE': ''
-  '_EXPERIMENT_PROFILE': 'vgbc'
+  '_EXPERIMENT_PROFILE': ''
 
 steps:
-  - name: 'gcr.io/cloud-builders/gcloud'
-    id: DownloadExpBinary
-    entrypoint: 'gcloud'
-    args: ['storage',
-            'cp',
-            'gs://confidential-space-images_third-party/confidential_space_experiments',
-            './launcher/image/confidential_space_experiments'] # changed
-
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     id: 'ExportBaseImage'
     args:
@@ -74,9 +66,6 @@ steps:
       - '--out-image=output.bin'
       - '--oem-fs-size=500M'
       - '--disk-size-gb=11'
-# why this change?? 
-      # - '--install-dir=./launcher/image/'
-      # - '--cmdline-script=./launcher/image/cmdline.sh'
       - '--install-dir=/workspace/oem-install/'
       - '--cmdline-script=/workspace/oem-install/cmdline.sh'
   - name: 'alpine'
