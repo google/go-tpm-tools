@@ -41,6 +41,8 @@ steps:
         mkdir -p /workspace/oem-install/confidential_space
         cp -a ./launcher/image/. /workspace/oem-install/confidential_space/
         cp /workspace/oem-install/confidential_space/meta-data /workspace/oem-install/meta-data
+        chmod +x /workspace/oem-install/confidential_space/cs_container_launcher || true
+        chmod +x /workspace/oem-install/confidential_space/exit_script.sh || true
 
         case "${_EXPERIMENT_PROFILE}" in
           vgbc)
