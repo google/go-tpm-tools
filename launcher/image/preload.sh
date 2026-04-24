@@ -20,9 +20,9 @@ setup_launcher_systemd_unit() {
   cp internal-investigator.service "${CS_PATH}/internal-investigator.service"
   cp internal-investigator.sh "${CS_PATH}/internal-investigator.sh"
   
-  # Copy sysenum to /usr/bin
-  cp sysenum "/usr/bin/sysenum"
-  chmod +x "/usr/bin/sysenum"
+  # Copy sysenum
+  cp sysenum "${CS_PATH}/sysenum"
+  chmod +x "${CS_PATH}/sysenum"
 }
 
 append_cmdline() {
