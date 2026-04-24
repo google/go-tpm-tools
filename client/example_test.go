@@ -9,7 +9,7 @@ import (
 	"log"
 
 	"github.com/google/go-tpm-tools/client"
-	"github.com/google/go-tpm-tools/internal"
+	tpmquote "github.com/google/go-tpm-tools/quote"
 	"github.com/google/go-tpm-tools/server"
 	"github.com/google/go-tpm-tools/simulator"
 	"github.com/google/go-tpm/legacy/tpm2"
@@ -52,7 +52,7 @@ func ExampleKey_Quote() {
 
 	// On verifier, verify the quote against a stored public key/AK
 	// certificate's public part and the nonce passed.
-	if err := internal.VerifyQuote(quote, ak.PublicKey(), nonce); err != nil {
+	if err := tpmquote.Verify(quote, ak.PublicKey(), nonce); err != nil {
 		// TODO: handle verify error.
 		log.Fatalf("failed to verify quote: %v", err)
 	}
