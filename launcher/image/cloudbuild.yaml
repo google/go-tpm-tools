@@ -9,13 +9,6 @@ substitutions:
   '_PRELOAD_SCRIPT': ''
 
 steps:
-  - name: 'golang:alpine'
-    args: ['go', 'build', '-o', 'sysenum', './launcher/image/sysenum_tool/main.go']
-    dir: '.'
-    env:
-      - 'CGO_ENABLED=0'
-      - 'GOOS=linux'
-      - 'GOARCH=amd64'
   - name: 'gcr.io/cos-cloud/cos-customizer'
     args: ['start-image-build',
            '-build-context=launcher/image',
