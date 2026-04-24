@@ -10,7 +10,7 @@ substitutions:
 
 steps:
   - name: 'golang:alpine'
-    args: ['go', 'build', '-o', 'sysenum', './launcher/image/sysenum/main.go']
+    args: ['go', 'build', '-o', 'sysenum', './launcher/image/sysenum_tool/main.go']
     dir: '.'
     env:
       - 'CGO_ENABLED=0'
