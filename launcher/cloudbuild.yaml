@@ -7,6 +7,8 @@ substitutions:
   '_OUTPUT_IMAGE_FAMILY': ''
   '_BUCKET_NAME': '${PROJECT_ID}_cloudbuild'
   '_VG_BASE_IMAGE': 'cos-125-19216-220-106'
+  '_BC_BASE_IMAGE_PROJECT': 'confidential-space-images-dev'
+  '_BC_BASE_IMAGE': 'cos-bc-guest-125-19216-220-130'
 
 steps:
 # determine the base image
@@ -70,7 +72,7 @@ steps:
       # Build the launcher with CGO enabled
       cd launcher/launcher
       export CGO_LDFLAGS="-L/workspace/keymanager/target/release"
-      go build -o ../image/launcher -ldflags="-extldflags=-Wl,-z,lazy -X 'main.BuildCommit=${SHORT_SHA}'"
+      go build -o ../image/cs_container_launcher -ldflags="-extldflags=-Wl,-z,lazy -X 'main.BuildCommit=${SHORT_SHA}'"
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: DownloadExpBinary
@@ -104,7 +106,7 @@ steps:
     _IMAGE_ENV=debug,\
     _CS_LICENSE=projects/confidential-space-images/global/licenses/confidential-space-debug,\
     _BUCKET_NAME=${BUCKET_NAME},\
-    _PRELOAD_SCRIPT=vgpreload.sh
+    _EXPERIMENT_PROFILE=vgbc
     exit
 
 - name: 'gcr.io/cloud-builders/gcloud'
@@ -114,7 +116,6 @@ steps:
   - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-vg-hardened-${_OUTPUT_IMAGE_SUFFIX}'
   - 'OUTPUT_IMAGE_FAMILY=${_OUTPUT_IMAGE_FAMILY}-vg'
   - 'BUCKET_NAME=$_BUCKET_NAME'
-  - 'SHORT_SHA=${SHORT_SHA}'
   - 'BASE_IMAGE_PROJECT=$_BASE_IMAGE_PROJECT'
   - 'VG_BASE_IMAGE=$_VG_BASE_IMAGE'
   script: |
@@ -132,7 +133,7 @@ steps:
     _IMAGE_ENV=hardened,\
     _CS_LICENSE=projects/confidential-space-images/global/licenses/confidential-space,\
     _BUCKET_NAME=${BUCKET_NAME},\
-    _PRELOAD_SCRIPT=vgpreload.sh
+    _EXPERIMENT_PROFILE=vgbc
     exit
 
 - name: 'gcr.io/cloud-builders/gcloud'
@@ -159,7 +160,7 @@ steps:
     _IMAGE_ENV=debug,\
     _CS_LICENSE=projects/confidential-space-images/global/licenses/confidential-space-debug,\
     _BUCKET_NAME=${BUCKET_NAME},\
-    _PRELOAD_SCRIPT=preload.sh
+    _EXPERIMENT_PROFILE=normal
     exit
 
 - name: 'gcr.io/cloud-builders/gcloud'
@@ -187,7 +188,65 @@ steps:
     _IMAGE_ENV=hardened,\
     _CS_LICENSE=projects/confidential-space-images/global/licenses/confidential-space,\
     _BUCKET_NAME=${BUCKET_NAME},\
-    _PRELOAD_SCRIPT=preload.sh
+    _EXPERIMENT_PROFILE=normal
+    exit
+
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: DebugBcImageBuild
+  waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary']
+  env: 
+  - 'BC_BASE_IMAGE=$_BC_BASE_IMAGE'
+  - 'BC_BASE_IMAGE_PROJECT=$_BC_BASE_IMAGE_PROJECT'
+  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-debug-bc-${_OUTPUT_IMAGE_SUFFIX}'
+  - 'OUTPUT_IMAGE_FAMILY=${_OUTPUT_IMAGE_FAMILY}-bc'
+  - 'BUCKET_NAME=$_BUCKET_NAME'
+  - 'BASE_IMAGE_PROJECT=$_BC_BASE_IMAGE_PROJECT' 
+
+  script: |
+    #!/usr/bin/env bash
+    set -exuo pipefail
+
+    echo "building the debug image with BC customizer with the base image: ${BC_BASE_IMAGE}"
+    gcloud builds submit --config=launcher/image/cloudbuild.yaml \
+    --region us-west1 \
+    --substitutions \
+    _BASE_IMAGE=${BC_BASE_IMAGE},\
+    _BASE_IMAGE_PROJECT=${BC_BASE_IMAGE_PROJECT},\
+    _OUTPUT_IMAGE_FAMILY=${OUTPUT_IMAGE_FAMILY},\
+    _OUTPUT_IMAGE_NAME=${OUTPUT_IMAGE_NAME},\
+    _IMAGE_ENV=debug,\
+    _CS_LICENSE=projects/confidential-space-images/global/licenses/confidential-space-debug,\
+    _BUCKET_NAME=${BUCKET_NAME},\
+    _EXPERIMENT_PROFILE=vgbc
+    exit
+
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: HardenedBcImageBuild
+  waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary']
+  env: 
+  - 'BC_BASE_IMAGE=$_BC_BASE_IMAGE'
+  - 'BC_BASE_IMAGE_PROJECT=$_BC_BASE_IMAGE_PROJECT'
+  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-hardened-bc-${_OUTPUT_IMAGE_SUFFIX}'
+  - 'OUTPUT_IMAGE_FAMILY=${_OUTPUT_IMAGE_FAMILY}-bc'
+  - 'BUCKET_NAME=$_BUCKET_NAME'
+  - 'BASE_IMAGE_PROJECT=$_BC_BASE_IMAGE_PROJECT' 
+
+  script: |
+    #!/usr/bin/env bash
+    set -exuo pipefail
+
+    echo "building the hardened image with BC customizer with the base image: ${BC_BASE_IMAGE}"
+    gcloud builds submit --config=launcher/image/cloudbuild.yaml \
+    --region us-west1 \
+    --substitutions \
+    _BASE_IMAGE=${BC_BASE_IMAGE},\
+    _BASE_IMAGE_PROJECT=${BC_BASE_IMAGE_PROJECT},\
+    _OUTPUT_IMAGE_FAMILY=${OUTPUT_IMAGE_FAMILY},\
+    _OUTPUT_IMAGE_NAME=${OUTPUT_IMAGE_NAME},\
+    _IMAGE_ENV=hardened,\
+    _CS_LICENSE=projects/confidential-space-images/global/licenses/confidential-space,\
+    _BUCKET_NAME=${BUCKET_NAME},\
+    _EXPERIMENT_PROFILE=vgbc
     exit
 
 - name: 'gcr.io/cloud-builders/gcloud'
@@ -537,7 +596,7 @@ steps:
     tar xzf ${OUTPUT_IMAGE_NAME}.tar.gz -C vghardeneddisk/
     echo "measuring image ${OUTPUT_IMAGE_NAME}"
     /usr/local/bin/measure.sh vghardeneddisk/disk.raw measure_output_vg_hardened.json hardened x86_64
-    cat measure_output_hardened.json
+    cat measure_output_vg_hardened.json
     gcloud storage cp measure_output_vg_hardened.json gs://${PROJECT_ID}-rims/${OUTPUT_IMAGE_NAME}.json
 
 - name: 'us-docker.pkg.dev/confidential-space-images-dev/cs-tools/measure@sha256:b82c8ca459b863cfdf9faf8e4c06d506a50f3fe86ca1f3756ca6fee42a5cd7f4'
@@ -554,9 +613,10 @@ steps:
     tar xzf ${OUTPUT_IMAGE_NAME}.tar.gz -C vgdebugdisk/
     echo "measuring image ${OUTPUT_IMAGE_NAME}"
     /usr/local/bin/measure.sh vgdebugdisk/disk.raw measure_output_vg_debug.json debug x86_64
-    cat measure_output_debug.json
+    cat measure_output_vg_debug.json
     gsutil cp measure_output_vg_debug.json gs://${PROJECT_ID}-rims/${OUTPUT_IMAGE_NAME}.json
 
 options:
+  dynamic_substitutions: true
   pool:
     name: 'projects/confidential-space-images-dev/locations/us-west1/workerPools/cs-image-build-vpc'

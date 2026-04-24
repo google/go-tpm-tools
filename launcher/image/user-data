@@ -1,14 +1,14 @@
 #!/bin/bash
 
 main() {
-  # Configure sysctls.
+    #  Configure sysctls.
   sysctl -w kernel.kexec_load_disabled=1
 
   # Copy service files.
   cp /usr/share/oem/confidential_space/container-runner.service /etc/systemd/system/container-runner.service
   # Override default fluent-bit config.
   cp /usr/share/oem/confidential_space/fluent-bit-cs.conf /etc/fluent-bit/fluent-bit.conf
-
+  
   mkdir /tmp/container_launcher
   chmod +rw /tmp/container_launcher
   cp /usr/share/oem/confidential_space/vgexperiment.json /tmp/container_launcher/experiment_data
@@ -25,6 +25,7 @@ main() {
   systemctl enable container-runner.service
   systemctl start container-runner.service
   systemctl start fluent-bit.service
+
 }
 
 main

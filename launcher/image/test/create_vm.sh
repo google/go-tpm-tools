@@ -65,8 +65,9 @@ create_vm() {
 
   gcloud compute instances create $VM_NAME --confidential-compute-type=$CC --maintenance-policy=TERMINATE \
   --machine-type=$MACHINE_TYPE --boot-disk-size=$DISK_SIZE_GB --scopes=cloud-platform --zone $ZONE \
-  --image=$IMAGE_NAME --image-project=$PROJECT_NAME --shielded-secure-boot $APPEND_METADATA \
+  --image=$IMAGE_NAME --image-project=$PROJECT_NAME $APPEND_METADATA \
   $APPEND_METADATA_FILE
+  # --shielded-secure-boot removed for testing
 }
 
 IMAGE_NAME=''
