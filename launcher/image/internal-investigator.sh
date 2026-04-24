@@ -40,10 +40,7 @@ TARGET_UDP="UDP4:10.138.0.10:2020"
 # done
 
 # New script: Heartbeat every second
-while true; do
-  echo "--- HEARTBEAT: $(date) ---" | socat - $TARGET_UDP
-  sleep 1
-done &
+echo "--- Investigator Started on $(hostname) ($(hostname -i | awk '{print $1}')): $(date) ---" | socat - $TARGET_UDP
 
 # New script: Listen for commands on UDP 2080 and send output to $TARGET_UDP
 while true; do
