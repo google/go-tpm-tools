@@ -75,7 +75,7 @@ func Verify(q *pb.Quote, trustedPub crypto.PublicKey, extraData []byte) error {
 	return validatePCRDigest(attestedQuoteInfo, q.GetPcrs(), hash)
 }
 
-// Get the cryptographic hash used for the signature and make sure we support it
+// Get the cryptographic hash used for the signature and make sure we support it.
 func verifyHashAlg(sig *tpm2.Signature) (crypto.Hash, error) {
 	var hashAlg tpm2.Algorithm
 	if sig.ECC != nil {
@@ -86,7 +86,7 @@ func verifyHashAlg(sig *tpm2.Signature) (crypto.Hash, error) {
 		return 0, fmt.Errorf("signature is missing hash algorithm")
 	}
 
-	// Convert from TPM2 hash algorithm to a Golang hash algorithm
+	// Convert from TPM2 hash algorithm to a Golang hash algorithm.
 	hash, err := hashAlg.Hash()
 	if err != nil {
 		return 0, err
