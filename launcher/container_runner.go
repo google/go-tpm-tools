@@ -209,7 +209,6 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 			[]specs.LinuxIDMapping{{ContainerID: 0, HostID: hostUIDBegin, Size: userNSSize}},
 			[]specs.LinuxIDMapping{{ContainerID: 0, HostID: hostGIDBegin, Size: userNSSize}},
 		),
-		// withSysBindMount(), // mount /sys as "bind" instead of "sysfs" for a non-root container
 		withStdoutStderrPipeMounts(stdoutStderrPipePath), // To redirect /dev/std{out,err} for a non-root container
 	}
 	if launchSpec.DevShmSize != 0 {
@@ -1034,23 +1033,6 @@ func withRlimits(rlimits []specs.POSIXRlimit) oci.SpecOpts {
 func withOOMScoreAdj(oomScore int) oci.SpecOpts {
 	return func(_ context.Context, _ oci.Client, _ *containers.Container, s *oci.Spec) error {
 		s.Process.OOMScoreAdj = &oomScore
-		return nil
-	}
-}
-
-// withSysBindMount overrides the default /sys mount with a read-only bind mount.
-func withSysBindMount() oci.SpecOpts {
-	return func(_ context.Context, _ oci.Client, _ *containers.Container, s *oci.Spec) error {
-		for i, m := range s.Mounts {
-			if m.Destination == "/sys" {
-				s.Mounts[i] = specs.Mount{
-					Destination: "/sys",
-					Type:        "bind",
-					Source:      "/sys",
-					Options:     []string{"rbind", "ro", "nosuid", "noexec", "nodev"},
-				}
-			}
-		}
 		return nil
 	}
 }
