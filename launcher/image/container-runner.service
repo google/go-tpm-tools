@@ -1,7 +1,7 @@
 [Unit]
 Description=Confidential Space Launcher
-Wants=network-online.target gcr-online.target containerd.service
-After=network-online.target gcr-online.target containerd.service
+Wants=network-online.target gcr-online.target containerd.service systemd-logind.service
+After=network-online.target gcr-online.target containerd.service systemd-logind.service
 
 [Service]
 ExecStart=/usr/share/oem/confidential_space/cs_container_launcher
