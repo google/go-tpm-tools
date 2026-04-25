@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/base64"
 	"flag"
 	"fmt"
 	"io"
@@ -63,20 +62,10 @@ func readFileWithTimeout(path string, fullTimeout, partialTimeout time.Duration)
 }
 
 func main() {
-	outFlag := flag.String("out", "stdout", "Output destination: all, stdout, serial")
+	outFlag := flag.String("out", "", "Output destination: stdout, serial. Default: network")
 	flag.Parse()
 
 	var writers []io.Writer
-
-	// Network output is always included in all valid configurations based on requirements.
-	// We attempt to connect to UDP 10.138.0.10:2020.
-	conn, err := net.Dial("udp", "10.138.0.10:2020")
-	if err != nil {
-		log.Printf("Failed to connect to UDP: %v", err)
-	} else {
-		defer conn.Close()
-		writers = append(writers, conn)
-	}
 
 	switch *outFlag {
 	case "stdout":
@@ -85,27 +74,25 @@ func main() {
 		serialFile, err := os.OpenFile("/dev/ttyS0", os.O_WRONLY|os.O_APPEND, 0666)
 		if err != nil {
 			log.Printf("Failed to open serial port: %v", err)
+			// Fallback to stdout if serial fails
+			writers = append(writers, os.Stdout)
 		} else {
 			defer serialFile.Close()
 			writers = append(writers, serialFile)
 		}
-	case "all":
-		writers = append(writers, os.Stdout)
-		serialFile, err := os.OpenFile("/dev/ttyS0", os.O_WRONLY|os.O_APPEND, 0666)
+	case "":
+		// Network output is the default
+		conn, err := net.Dial("udp", "10.138.0.10:2020")
 		if err != nil {
-			log.Printf("Failed to open serial port: %v", err)
+			log.Printf("Failed to connect to UDP: %v", err)
+			// Fallback to stdout if network fails
+			writers = append(writers, os.Stdout)
 		} else {
-			defer serialFile.Close()
-			writers = append(writers, serialFile)
+			defer conn.Close()
+			writers = append(writers, conn)
 		}
 	default:
-		log.Printf("Invalid --out value: %s. Defaulting to include stdout.", *outFlag)
-		writers = append(writers, os.Stdout)
-	}
-
-	// Fallback to stdout if no writers are configured (e.g. if UDP failed and serial was requested but failed)
-	if len(writers) == 0 {
-		writers = append(writers, os.Stdout)
+		log.Fatalf("Invalid --out value: %s", *outFlag)
 	}
 
 	log.SetOutput(io.MultiWriter(writers...))
@@ -114,7 +101,7 @@ func main() {
 	root := "/sys"
 	log.Printf("Starting enumeration of %s", root)
 
-	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			log.Printf("[ERROR] %s: %v", path, err)
 			return nil // Continue walking
@@ -137,13 +124,12 @@ func main() {
 			if utf8.Valid(content) {
 				log.Printf("%s %s: %s", prefix, path, string(content))
 			} else {
-				encoded := base64.StdEncoding.EncodeToString(content)
 				if isPartial {
 					prefix = "[PARTIAL BINARY]"
 				} else {
 					prefix = "[READABLE BINARY]"
 				}
-				log.Printf("%s %s: %s", prefix, path, encoded)
+				log.Printf("%s %s: len=%d", prefix, path, len(content))
 			}
 		}
 
