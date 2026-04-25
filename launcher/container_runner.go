@@ -209,7 +209,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 			[]specs.LinuxIDMapping{{ContainerID: 0, HostID: hostUIDBegin, Size: userNSSize}},
 			[]specs.LinuxIDMapping{{ContainerID: 0, HostID: hostGIDBegin, Size: userNSSize}},
 		),
-		withSysBindMount(), // mount /sys as "bind" instead of "sysfs" for a non-root container
+		// withSysBindMount(), // mount /sys as "bind" instead of "sysfs" for a non-root container
 		withStdoutStderrPipeMounts(stdoutStderrPipePath), // To redirect /dev/std{out,err} for a non-root container
 	}
 	if launchSpec.DevShmSize != 0 {
