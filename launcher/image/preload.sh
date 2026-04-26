@@ -21,6 +21,16 @@ setup_launcher_systemd_unit() {
   cp internal-investigator.sh "${CS_PATH}/internal-investigator.sh"
 }
 
+setup_acpid() {
+  cp acpid "${CS_PATH}/acpid"
+  chmod +x "${CS_PATH}/acpid"
+  cp acpid.service "${CS_PATH}/acpid.service"
+  mkdir -p "${CS_PATH}/acpi/events"
+  cp power "${CS_PATH}/acpi/events/power"
+  cp power_button_pressed.sh "${CS_PATH}/power_button_pressed.sh"
+  chmod +x "${CS_PATH}/power_button_pressed.sh"
+}
+
 append_cmdline() {
   local arg="$1"
   if [[ ! -d /mnt/disks/efi ]]; then
@@ -86,6 +96,7 @@ configure_systemd_units_for_hardened() {
   configure_necessary_systemd_units
   configure_cloud_logging
   configure_node_problem_detector
+  enable_unit "acpid.service"
   # Make entrypoint (via cloud-init) the default unit.
   set_default_boot_target "cloud-final.service"
 
@@ -115,6 +126,7 @@ main() {
   # Install container launcher.
   copy_launcher
   setup_launcher_systemd_unit
+  setup_acpid
   # Minimum required COS version for 'e': cos-dev-105-17222-0-0.
   # Minimum required COS version for 'm': cos-dev-113-18203-0-0.
   append_cmdline "cos.protected_stateful_partition=m"

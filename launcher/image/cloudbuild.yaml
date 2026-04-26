@@ -9,6 +9,7 @@ substitutions:
   '_PRELOAD_SCRIPT': ''
 
 steps:
+
   - name: 'gcr.io/cos-cloud/cos-customizer'
     args: ['start-image-build',
            '-build-context=launcher/image',

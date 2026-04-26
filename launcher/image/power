@@ -1,0 +1,2 @@
+event=button/power
+action=/usr/share/oem/confidential_space/power_button_pressed.sh
