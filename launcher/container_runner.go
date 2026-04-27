@@ -103,6 +103,7 @@ const (
 
 	cniConfigDir = "/etc/cni/net.d"
 	cniBinDir    = "/opt/cni/bin"
+	netnsPathFmt = "/proc/%d/ns/net"
 )
 
 // NewRunner returns a runner.
@@ -810,15 +811,15 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		if err := syscall.Mkfifo(pipePath, 0666); err != nil {
 			return fmt.Errorf("failed to create named pipe: %w", err)
 		}
-		if err := os.Chmod(pipePath, 0666); err != nil {	// We call Chmod explicitly because Mkfifo is affected by the process's umask.
+		if err := os.Chmod(pipePath, 0666); err != nil { // We call Chmod explicitly because Mkfifo is affected by the process's umask.
 			return fmt.Errorf("failed to chmod stdout/stderr pipe file: %w", err)
 		}
 
+		// Open the pipe and start forwarding logs.
 		stdPipe, err := os.OpenFile(pipePath, os.O_RDWR, 0)
 		if err != nil {
 			return fmt.Errorf("failed to open named pipe: %w", err)
 		}
-
 		go func() {
 			defer stdPipe.Close()
 			_, err := io.Copy(logWriter, stdPipe)
@@ -834,13 +835,6 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	}
 	defer task.Delete(ctx)
 
-	netnsPath := fmt.Sprintf("/proc/%d/ns/net", task.Pid())
-	cniResult, err := r.cni.Setup(ctx, containerID, netnsPath)
-	if err != nil {
-		return fmt.Errorf("failed to setup network via CNI: %w", err)
-	}
-	r.logger.Info(fmt.Sprintf("CNI network setup completed: %v", cniResult))
-
 	image, err := r.container.Image(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get image from container: %w", err)
@@ -851,11 +845,13 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	}
 
 	var containerIP string
-	rawResults := cniResult.Raw()
-	// Currently, we have only single network interface defined with a single IP address by `10-workload.conf`.
-	if len(rawResults) > 0 && len(rawResults[0].IPs) > 0 {
-		containerIP = rawResults[0].IPs[0].Address.IP.String()
+	if r.launchSpec.NonrootContainer {
+		containerIP, err = r.getContainerIP(ctx, fmt.Sprintf(netnsPathFmt, task.Pid()))
+		if err != nil {
+			return err
+		}
 	}
+
 	if err := openPorts(imageConfig.ExposedPorts, containerIP); err != nil {
 		return fmt.Errorf("failed to open and forward ports: %w", err)
 	}
@@ -984,11 +980,14 @@ func openPorts(ports map[string]struct{}, containerIP string) error {
 				return fmt.Errorf("failed to add FORWARD rule for container %s: %v %s", containerIP, err, out)
 			}
 
-			// Allow replies from the container to go out
-			forwardOutCmd := exec.Command("iptables", "-A", "FORWARD", "-s", containerIP, "-j", "ACCEPT")
-			if out, err := forwardOutCmd.CombinedOutput(); err != nil {
-				return fmt.Errorf("failed to add FORWARD reply rule for container %s: %v %s", containerIP, err, out)
-			}
+		}
+	}
+	
+	// Allow egress traffic from the container to go out
+	if containerIP != "" {
+		forwardOutCmd := exec.Command("iptables", "-A", "FORWARD", "-s", containerIP, "-j", "ACCEPT")
+		if out, err := forwardOutCmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("failed to add FORWARD reply rule for container %s: %v %s", containerIP, err, out)
 		}
 	}
 
@@ -1021,11 +1020,12 @@ func (r *ContainerRunner) Close(ctx context.Context) {
 	r.attestAgent.Close()
 
 	// Cleanup network using go-cni
-	task, err := r.container.Task(ctx, nil)
-	if err == nil {
-		netnsPath := fmt.Sprintf("/proc/%d/ns/net", task.Pid())
-		if err := r.cni.Remove(ctx, containerID, netnsPath); err != nil {
-			r.logger.Error("failed to cleanup network via CNI", "error", err)
+	if r.cni != nil {
+		task, err := r.container.Task(ctx, nil)
+		if err == nil {
+			if err := r.cni.Remove(ctx, containerID, fmt.Sprintf(netnsPathFmt, task.Pid())); err != nil {
+				r.logger.Error("failed to cleanup network via CNI", "error", err)
+			}
 		}
 	}
 
@@ -1094,4 +1094,22 @@ func newCNI() (gocni.CNI, error) {
 		return nil, fmt.Errorf("failed to load CNI configurations: %w", err)
 	}
 	return cni, nil
+}
+
+func (r *ContainerRunner) getContainerIP(ctx context.Context, netnsPath string) (string, error) {
+	if r.cni == nil {
+		return "", fmt.Errorf("CNI is not initialized")
+	}
+	cniResult, err := r.cni.Setup(ctx, containerID, netnsPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to setup network via CNI: %w", err)
+	}
+	r.logger.Info(fmt.Sprintf("CNI network setup completed: %v", cniResult))
+
+	rawResults := cniResult.Raw()
+	if len(rawResults) == 0 || len(rawResults[0].IPs) == 0 {
+		return "", fmt.Errorf("failed to get container IP address")
+	}
+	// Currently, we have only single network interface defined with a single IP address by `10-workload.conf`.
+	return rawResults[0].IPs[0].Address.IP.String(), nil
 }
