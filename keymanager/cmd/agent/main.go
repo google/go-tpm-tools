@@ -26,21 +26,8 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	modeStr := os.Getenv("KEY_PROTECTION_MECHANISM")
-	mode := keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED
-	if modeStr != "" {
-		if v, ok := keymanager.KeyProtectionMechanism_value[modeStr]; ok {
-			mode = keymanager.KeyProtectionMechanism(v)
-		}
-	}
-
-	roleStr := os.Getenv("SERVICE_ROLE")
-	role := keymanager.ServiceRole_WSD
-	if roleStr != "" {
-		if v, ok := keymanager.ServiceRole_value[roleStr]; ok {
-			role = keymanager.ServiceRole(v)
-		}
-	}
+	mode := parseEnvEnum("KEY_PROTECTION_MECHANISM", keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED, keymanager.KeyProtectionMechanism_value)
+	role := parseEnvEnum("SERVICE_ROLE", keymanager.ServiceRole_WSD, keymanager.ServiceRole_value)
 
 	log.Printf("Starting KeyManager launcher. Mode: %s, Role: %s\n", mode, role)
 
@@ -115,4 +102,16 @@ func runKPS(ctx context.Context, port int) error {
 		}
 		return nil
 	}
+}
+
+func parseEnvEnum[T ~int32](key string, defaultValue T, enumMap map[string]int32) T {
+	val := os.Getenv(key)
+	if val == "" {
+		return defaultValue
+	}
+	v, ok := enumMap[val]
+	if !ok {
+		log.Fatalf("Unrecognized %s: %s", key, val)
+	}
+	return T(v)
 }

@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
 )
 
 func TestRunWSD(t *testing.T) {
@@ -21,7 +23,7 @@ func TestRunWSD(t *testing.T) {
 
 	errChan := make(chan error, 1)
 	go func() {
-		errChan <- runWSD(ctx, socketPath)
+		errChan <- runWSD(ctx, socketPath, keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED)
 	}()
 
 	// Wait for the socket file to be created to ensure the server has started
@@ -58,7 +60,7 @@ func TestRunWSD_InvalidSocketPath(t *testing.T) {
 	// Use an impossible path to trigger an error
 	socketPath := "/nonexistent/path/wsd.sock"
 
-	err := runWSD(ctx, socketPath)
+	err := runWSD(ctx, socketPath, keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED)
 	if err == nil {
 		t.Fatal("Expected runWSD() to return an error for invalid socket path")
 	}
@@ -96,5 +98,28 @@ func TestRunKPS_InvalidPort(t *testing.T) {
 	err := runKPS(ctx, -1)
 	if err == nil {
 		t.Fatal("Expected runKPS() to return an error for invalid port")
+	}
+}
+
+func TestParseEnvEnum(t *testing.T) {
+	key := "TEST_ENV_ENUM"
+	enumMap := map[string]int32{
+		"VALUE1": 1,
+		"VALUE2": 2,
+	}
+	defaultValue := keymanager.ServiceRole_WSD
+
+	// Test default value
+	os.Unsetenv(key)
+	if val := parseEnvEnum(key, defaultValue, enumMap); val != defaultValue {
+		t.Errorf("parseEnvEnum() = %v, want %v", val, defaultValue)
+	}
+
+	// Test valid value
+	os.Setenv(key, "VALUE2")
+	defer os.Unsetenv(key)
+	expected := keymanager.ServiceRole(2)
+	if val := parseEnvEnum(key, defaultValue, enumMap); val != expected {
+		t.Errorf("parseEnvEnum() = %v, want %v", val, expected)
 	}
 }
