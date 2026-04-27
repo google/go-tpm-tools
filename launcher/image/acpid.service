@@ -3,7 +3,8 @@ Description=ACPI Daemon
 After=network.target
 
 [Service]
-ExecStart=/usr/share/oem/confidential_space/acpid -c /usr/share/oem/confidential_space/acpi/events -d
+Type=forking
+ExecStart=/usr/share/oem/confidential_space/acpid -c /usr/share/oem/confidential_space/acpi/events -d -l
 Restart=always
 
 [Install]
