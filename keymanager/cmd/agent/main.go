@@ -14,8 +14,8 @@ import (
 	"time"
 
 	keyprotectionservice "github.com/google/go-tpm-tools/keymanager/key_protection_service"
-	workloadservice "github.com/google/go-tpm-tools/keymanager/workload_service"
 	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
+	workloadservice "github.com/google/go-tpm-tools/keymanager/workload_service"
 )
 
 func main() {
