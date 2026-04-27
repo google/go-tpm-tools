@@ -1,0 +1,46 @@
+steps:
+  # 1. Build the Key Management Agent image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'kma-agent', '-f', 'keymanager/cmd/agent/Dockerfile', '.']
+
+  # 2. Start the container in the background
+  # We use a shared volume to access the UDS from the host/next step
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'start-kma'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        mkdir -p /workspace/socket
+        docker run -d --name kma-test \
+          -v /workspace/socket:/run/container_launcher \
+          kma-agent
+        
+        # Wait for the socket to be created
+        timeout 30s bash -c 'until [ -S /workspace/socket/kmaserver.sock ]; do sleep 1; done'
+
+  # 3. Test the Capabilities API
+  - name: 'gcr.io/cloud-builders/curl'
+    id: 'test-capabilities'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        curl -s --unix-socket /workspace/socket/kmaserver.sock http://localhost/v1/capabilities | grep "KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256"
+
+  # 4. Test the Enumerate Keys API
+  - name: 'gcr.io/cloud-builders/curl'
+    id: 'test-enumerate'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        curl -s --unix-socket /workspace/socket/kmaserver.sock http://localhost/v1/keys | grep "key_infos"
+
+  # 5. Cleanup
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['rm', '-f', 'kma-test']
+    waitFor: ['test-capabilities', 'test-enumerate']
+
+options:
+  logging: CLOUD_LOGGING_ONLY

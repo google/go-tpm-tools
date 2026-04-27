@@ -13,6 +13,7 @@ files/go-tpm-tools
 main
 go.work
 go.work.sum
+context.md
 keymanager/target/
 keymanager/workload_service/key_custody_core/target/
 keymanager/key_protection_service/key_custody_core/target/
