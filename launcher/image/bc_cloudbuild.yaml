@@ -39,10 +39,13 @@ steps:
         rm -rf /workspace/oem-install
         mkdir -p /workspace/oem-install/confidential_space
         cp -a ./launcher/image/. /workspace/oem-install/confidential_space/
+        cp ./launcher/image/vgentrypoint.sh /workspace/oem-install/entrypoint.sh 
+        
         cp /workspace/oem-install/confidential_space/launcher /workspace/oem-install/confidential_space/cs_container_launcher
         cp /workspace/oem-install/confidential_space/meta-data /workspace/oem-install/meta-data
         chmod +x /workspace/oem-install/confidential_space/cs_container_launcher || true
         chmod +x /workspace/oem-install/confidential_space/exit_script.sh || true
+        chmod +x /workspace/oem-install/entrypoint.sh || true
 
         cp /workspace/oem-install/confidential_space/user-data /workspace/oem-install/user-data
 

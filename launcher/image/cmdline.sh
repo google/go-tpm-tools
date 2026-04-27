@@ -42,8 +42,8 @@ configure_necessary_systemd_units() {
 
 configure_systemd_units_for_hardened() {
   configure_necessary_systemd_units
-  # # Make entrypoint (via cloud-init) the default unit.
-  # set_default_boot_target "cloud-final.service"
+
+  set_default_boot_target "cloud-final.service"
 
   disable_unit "var-lib-docker.mount"
   disable_unit "docker.service"
@@ -62,6 +62,8 @@ configure_systemd_units_for_hardened() {
 }
 
 configure_systemd_units_for_debug() {
+  set_default_boot_target "cloud-final.service"
+
   disable_unit "konlet-startup.service"
   disable_unit "update-engine.service"
 }

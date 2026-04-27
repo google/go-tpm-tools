@@ -9,6 +9,7 @@ substitutions:
   '_VG_BASE_IMAGE': 'cos-125-19216-220-106'
   '_BC_BASE_IMAGE_PROJECT': 'confidential-space-images-dev'
   '_BC_BASE_IMAGE': 'cos-bc-guest-125-19216-220-130'
+  '_BC_DEBUG_IMAGE': 'cos-bcdbg-guest-125-19216-220-130'
 
 steps:
 # determine the base image
@@ -196,7 +197,7 @@ steps:
   id: DebugBcImageBuild
   waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary']
   env: 
-  - 'BC_BASE_IMAGE=$_BC_BASE_IMAGE'
+  - 'BC_BASE_IMAGE=$_BC_DEBUG_IMAGE'
   - 'BC_BASE_IMAGE_PROJECT=$_BC_BASE_IMAGE_PROJECT'
   - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-debug-bc-${_OUTPUT_IMAGE_SUFFIX}'
   - 'OUTPUT_IMAGE_FAMILY=${_OUTPUT_IMAGE_FAMILY}-bc'
