@@ -4,20 +4,17 @@ package workloadservice
 
 import (
 	"bytes"
-	"encoding/json"
+	kps "github.com/google/go-tpm-tools/keymanager/key_protection_service"
+	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
+	wskcc "github.com/google/go-tpm-tools/keymanager/workload_service/key_custody_core"
+	api "github.com/google/go-tpm-tools/keymanager/workload_service/proto"
+	"github.com/google/uuid"
+	"google.golang.org/protobuf/encoding/protojson"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
 	"time"
-
-	api "github.com/google/go-tpm-tools/keymanager/workload_service/proto"
-	"github.com/google/uuid"
-	"google.golang.org/protobuf/encoding/protojson"
-
-	kps "github.com/google/go-tpm-tools/keymanager/key_protection_service"
-	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
-	wskcc "github.com/google/go-tpm-tools/keymanager/workload_service/key_custody_core"
 )
 
 const expirationToleranceSecs = 5.0
@@ -165,10 +162,10 @@ func TestIntegrationDestroyKey(t *testing.T) {
 	}
 
 	var respGen api.GenerateKeyResponse
-	if err := json.NewDecoder(wGen.Body).Decode(&respGen); err != nil {
+	if err := protojson.Unmarshal(wGen.Body.Bytes(), &respGen); err != nil {
 		t.Fatalf("setup: failed to decode generate response: %v", err)
 	}
-	kemHandle := respGen.KeyHandle.Handle
+	kemHandle := respGen.KeyHandle.GetHandle()
 	kemUUID, err := uuid.Parse(kemHandle)
 	if err != nil {
 		t.Fatalf("setup: invalid KEM UUID: %v", err)
@@ -233,8 +230,8 @@ func TestIntegrationAutoDestroy(t *testing.T) {
 	}
 
 	var respGen api.GenerateKeyResponse
-	json.NewDecoder(wGen.Body).Decode(&respGen)
-	kemHandle := respGen.KeyHandle.Handle
+	protojson.Unmarshal(wGen.Body.Bytes(), &respGen)
+	kemHandle := respGen.KeyHandle.GetHandle()
 
 	// Wait for auto-destroy
 	time.Sleep(2 * time.Second)

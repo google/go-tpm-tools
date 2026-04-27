@@ -7,21 +7,19 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	kps "github.com/google/go-tpm-tools/keymanager/key_protection_service"
+	kpskcc "github.com/google/go-tpm-tools/keymanager/key_protection_service/key_custody_core"
+	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
+	api "github.com/google/go-tpm-tools/keymanager/workload_service/proto"
+	"github.com/google/uuid"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
-
-	kpskcc "github.com/google/go-tpm-tools/keymanager/key_protection_service/key_custody_core"
-	api "github.com/google/go-tpm-tools/keymanager/workload_service/proto"
-	"github.com/google/uuid"
-	"google.golang.org/protobuf/encoding/protojson"
-	"google.golang.org/protobuf/proto"
-
-	kps "github.com/google/go-tpm-tools/keymanager/key_protection_service"
-	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
 )
 
 func newTestServer(t *testing.T, kemGen kps.KeyProtectionService, bindingGen WorkloadService) *Server {
@@ -345,8 +343,8 @@ func TestHandleGenerateKeyInvalidMethod(t *testing.T) {
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 
-	if w.Code != http.StatusMethodNotAllowed {
-		t.Fatalf("expected status 405, got %d", w.Code)
+	if w.Code != http.StatusNotImplemented {
+		t.Fatalf("expected status 501, got %d", w.Code)
 	}
 }
 
@@ -391,12 +389,13 @@ func TestHandleGenerateKeyBadRequest(t *testing.T) {
 			}
 
 			if tc.name == "unsupported algorithm" {
-				var resp map[string]string
+				var resp map[string]interface{}
 				if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 					t.Fatalf("failed to decode response: %v", err)
 				}
 				expectedSubstr := "Supported algorithms: KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256"
-				if errMsg, ok := resp["error"]; !ok || !strings.Contains(errMsg, expectedSubstr) {
+				errMsg, _ := resp["message"].(string)
+				if !strings.Contains(errMsg, expectedSubstr) {
 					t.Errorf("expected error message to contain %q, got %q", expectedSubstr, errMsg)
 				}
 			}
@@ -687,8 +686,8 @@ func TestHandleEnumerateKeysMethodNotAllowed(t *testing.T) {
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 
-	if w.Code != http.StatusMethodNotAllowed {
-		t.Fatalf("expected status 405, got %d", w.Code)
+	if w.Code != http.StatusNotImplemented {
+		t.Fatalf("expected status 501, got %d", w.Code)
 	}
 }
 
@@ -997,8 +996,8 @@ func TestHandleGetCapabilitiesInvalidMethod(t *testing.T) {
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 
-	if w.Code != http.StatusMethodNotAllowed {
-		t.Fatalf("expected status 405, got %d", w.Code)
+	if w.Code != http.StatusNotImplemented {
+		t.Fatalf("expected status 501, got %d", w.Code)
 	}
 }
 
@@ -1039,7 +1038,7 @@ func TestHandleDestroy(t *testing.T) {
 			name:           "invalid method",
 			method:         http.MethodGet,
 			body:           nil,
-			expectedStatus: http.StatusMethodNotAllowed,
+			expectedStatus: http.StatusNotImplemented,
 		},
 		{
 			name:           "bad json",
@@ -1218,8 +1217,8 @@ func TestHandleDecapsMethodNotAllowed(t *testing.T) {
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 
-	if w.Code != http.StatusMethodNotAllowed {
-		t.Fatalf("expected status 405, got %d", w.Code)
+	if w.Code != http.StatusNotImplemented {
+		t.Fatalf("expected status 501, got %d", w.Code)
 	}
 }
 

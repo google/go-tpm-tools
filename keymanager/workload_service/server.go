@@ -4,30 +4,33 @@
 package workloadservice
 
 import (
+	"buf.build/go/protovalidate"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	kpscc "github.com/google/go-tpm-tools/keymanager/key_protection_service/key_custody_core"
+	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
+	wskcc "github.com/google/go-tpm-tools/keymanager/workload_service/key_custody_core"
+	api "github.com/google/go-tpm-tools/keymanager/workload_service/proto"
+	"github.com/google/uuid"
+	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/durationpb"
 	"io"
 	"log"
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
-
-	"buf.build/go/protovalidate"
-
-	"google.golang.org/protobuf/encoding/protojson"
-	"google.golang.org/protobuf/proto"
-
-	api "github.com/google/go-tpm-tools/keymanager/workload_service/proto"
-	"github.com/google/uuid"
-	"google.golang.org/protobuf/types/known/durationpb"
-
-	kpscc "github.com/google/go-tpm-tools/keymanager/key_protection_service/key_custody_core"
-	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
-	wskcc "github.com/google/go-tpm-tools/keymanager/workload_service/key_custody_core"
 )
 
 // WorkloadService defines the interface for generating and managing binding keypairs.
@@ -184,6 +187,8 @@ type ClaimsResult struct {
 
 // Server is the WSD HTTP server.
 type Server struct {
+	api.UnimplementedWorkloadServiceServer
+
 	keyProtectionService KeyProtectionService
 	workloadService      WorkloadService
 	mu                   sync.RWMutex
@@ -193,6 +198,7 @@ type Server struct {
 
 	httpServer *http.Server
 	listener   net.Listener
+	grpcServer *grpc.Server
 	// todo: add logging mechanism here
 }
 
@@ -221,6 +227,14 @@ func New(_ context.Context, socketPath string, mode keymanager.KeyProtectionMech
 	return NewServer(kps, &workloadService{}, socketPath)
 }
 
+func customResponseModifier(ctx context.Context, w http.ResponseWriter, resp proto.Message) error {
+	// If the endpoint returned a DestroyResponse, rewrite the status code to 204 No Content
+	if _, ok := resp.(*api.DestroyResponse); ok {
+		w.WriteHeader(http.StatusNoContent)
+	}
+	return nil
+}
+
 // NewServer creates a new WSD server with the given dependencies.
 func NewServer(keyProtectionService KeyProtectionService, workloadService WorkloadService, socketPath string) (*Server, error) {
 	s := &Server{
@@ -230,21 +244,58 @@ func NewServer(keyProtectionService KeyProtectionService, workloadService Worklo
 		mu:                   sync.RWMutex{},
 		claimsChan:           make(chan *ClaimsCall, 4),
 	}
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("POST /v1/keys:generate_key", s.handleGenerateKey)
-	mux.HandleFunc("POST /v1/keys:decap", s.handleDecaps)
-	mux.HandleFunc("GET /v1/capabilities", s.handleGetCapabilities)
-	mux.HandleFunc("GET /v1/keys", s.handleEnumerateKeys)
-	mux.HandleFunc("POST /v1/keys:destroy", s.handleDestroy)
-	s.httpServer = &http.Server{Handler: mux}
-
-	_ = os.Remove(socketPath)
-	ln, err := net.Listen("unix", socketPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to listen on unix socket %s: %w", socketPath, err)
+	if socketPath == "" || !filepath.IsAbs(socketPath) {
+		socketPath = filepath.Join("/tmp", "wsd_keys_"+uuid.NewString()+".sock")
 	}
-	s.listener = ln
+	restSocketPath := socketPath
+	grpcSocketPath := strings.TrimSuffix(socketPath, filepath.Ext(socketPath)) + "-grpc.sock"
+
+	// 1. Initialize Native gRPC Server
+	_ = os.Remove(grpcSocketPath)
+	grpcListener, err := net.Listen("unix", grpcSocketPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to listen on gRPC socket %s: %w", grpcSocketPath, err)
+	}
+
+	grpcServer := grpc.NewServer()
+	api.RegisterWorkloadServiceServer(grpcServer, s)
+
+	go func() {
+		if err := grpcServer.Serve(grpcListener); err != nil {
+			log.Printf("native gRPC server stopped: %v", err)
+		}
+	}()
+
+	// 2. Initialize gRPC-Gateway REST proxy client
+	conn, err := grpc.Dial(
+		"unix:"+grpcSocketPath,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to dial internal native gRPC server: %w", err)
+	}
+
+	mux := runtime.NewServeMux(
+		runtime.WithForwardResponseOption(customResponseModifier),
+		runtime.WithMarshalerOption(runtime.MIMEWildcard, &runtime.JSONPb{
+			MarshalOptions: protojson.MarshalOptions{
+				UseProtoNames:   true,
+				EmitUnpopulated: true,
+			},
+		}),
+	)
+	if err := api.RegisterWorkloadServiceHandler(context.Background(), mux, conn); err != nil {
+		return nil, fmt.Errorf("failed to register proxy handler: %w", err)
+	}
+
+	_ = os.Remove(restSocketPath)
+	restListener, err := net.Listen("unix", restSocketPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to listen on REST unix socket %s: %w", restSocketPath, err)
+	}
+
+	s.httpServer = &http.Server{Handler: mux}
+	s.listener = restListener
 
 	go s.processClaims()
 
@@ -305,104 +356,88 @@ func decapsAADContext(kemUUID uuid.UUID, algorithm keymanager.KemAlgorithm) []by
 	return []byte(fmt.Sprintf("wsd:keys:decaps:v1:%d:%s", algorithm, kemUUID))
 }
 
-func (s *Server) handleDecaps(w http.ResponseWriter, r *http.Request) {
-	var req api.DecapsRequest
-	if err := readRequest(r, &req); err != nil {
-		writeError(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
+func (s *Server) Decaps(_ context.Context, req *api.DecapsRequest) (*api.DecapsResponse, error) {
 	if !IsSupportedKemAlgorithm(req.Ciphertext.Algorithm) {
-		writeError(w, fmt.Sprintf("unsupported ciphertext algorithm: %d. Supported algorithms: %s", req.Ciphertext.Algorithm, SupportedKemAlgorithmsString()), http.StatusBadRequest)
-		return
+		return nil, status.Errorf(codes.InvalidArgument, "unsupported ciphertext algorithm: %d. Supported algorithms: %s", req.Ciphertext.Algorithm, SupportedKemAlgorithmsString())
 	}
 
 	kemUUID, err := uuid.Parse(req.KeyHandle.Handle)
 	if err != nil {
-		writeError(w, fmt.Sprintf("invalid key_handle.handle: %v", err), http.StatusBadRequest)
-		return
+		return nil, status.Errorf(codes.InvalidArgument, "invalid key_handle.handle: %v", err)
 	}
 
 	encapsulatedKey := req.Ciphertext.Ciphertext
 	if len(encapsulatedKey) == 0 {
-		writeError(w, "ciphertext.ciphertext must not be empty", http.StatusBadRequest)
-		return
+		return nil, status.Errorf(codes.InvalidArgument, "ciphertext.ciphertext must not be empty")
 	}
 	aad := decapsAADContext(kemUUID, req.Ciphertext.Algorithm)
 
 	// Look up the binding UUID for this KEM key.
 	bindingUUID, ok := s.LookupBindingUUID(kemUUID)
 	if !ok {
-		writeError(w, fmt.Sprintf("KEM key handle not found: %s", kemUUID), http.StatusNotFound)
-		return
+		return nil, status.Errorf(codes.NotFound, "KEM key handle not found: %s", kemUUID)
 	}
 
 	// Decapsulate and reseal via KPS.
 	sealEnc, sealedCT, err := s.keyProtectionService.DecapAndSeal(kemUUID, encapsulatedKey, aad)
 	if err != nil {
-		writeError(w, fmt.Sprintf("failed to decap and seal: %v", err), httpStatusFromError(err))
-		return
+		return nil, status.Errorf(codes.Internal, "failed to decap and seal: %v", err)
 	}
 
 	// Open the sealed secret using the binding key via WSD KCC.
 	plaintext, err := s.workloadService.Open(bindingUUID, sealEnc, sealedCT, aad)
 	if err != nil {
-		writeError(w, fmt.Sprintf("failed to open sealed secret: %v", err), httpStatusFromError(err))
-		return
+		return nil, status.Errorf(codes.Internal, "failed to open sealed secret: %v", err)
 	}
 
 	// Return the shared secret.
-	resp := api.DecapsResponse{
+	return &api.DecapsResponse{
 		SharedSecret: &keymanager.KemSharedSecret{
 			Algorithm: req.Ciphertext.Algorithm,
 			Secret:    plaintext,
 		},
-	}
-	writeJSON(w, &resp, http.StatusOK)
+	}, nil
 }
 
-func (s *Server) handleGenerateKey(w http.ResponseWriter, r *http.Request) {
-	var req api.GenerateKeyRequest
-	if err := readRequest(r, &req); err != nil {
-		writeError(w, err.Error(), http.StatusBadRequest)
-		return
+func (s *Server) GenerateKey(_ context.Context, req *api.GenerateKeyRequest) (*api.GenerateKeyResponse, error) {
+	if req == nil || req.Algorithm == nil || req.Algorithm.Params == nil {
+		return nil, status.Errorf(codes.InvalidArgument, "algorithm details cannot be empty")
+	}
+	if err := protovalidate.Validate(req); err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid request structure: %v", err)
 	}
 
 	switch req.Algorithm.Type {
 	case "kem":
-		s.generateKEMKey(w, &req)
+		return s.generateKEMKey(req)
 	default:
-		writeError(w, fmt.Sprintf("unsupported algorithm type: %q. Only 'kem' is supported.", req.Algorithm.Type), http.StatusBadRequest)
+		return nil, status.Errorf(codes.InvalidArgument, "unsupported algorithm type: %q. Only 'kem' is supported", req.Algorithm.Type)
 	}
 }
 
-func (s *Server) generateKEMKey(w http.ResponseWriter, req *api.GenerateKeyRequest) {
+func (s *Server) generateKEMKey(req *api.GenerateKeyRequest) (*api.GenerateKeyResponse, error) {
 	// Validate algorithm.
-	if !IsSupportedKemAlgorithm(req.Algorithm.GetParams().GetKemId()) {
-		writeError(w, fmt.Sprintf("unsupported algorithm: %s. Supported algorithms: %s", req.Algorithm.GetParams().GetKemId(), SupportedKemAlgorithmsString()), http.StatusBadRequest)
-		return
+	if req.Algorithm.GetParams() == nil || !IsSupportedKemAlgorithm(req.Algorithm.GetParams().GetKemId()) {
+		return nil, status.Errorf(codes.InvalidArgument, "unsupported ciphertext algorithm. Supported algorithms: %s", SupportedKemAlgorithmsString())
 	}
 
 	// Construct the full HPKE algorithm suite based on the requested KEM.
 	// We currently only support one suite.
 	algo, err := KemToHpkeAlgorithm(req.Algorithm.GetParams().GetKemId())
 	if err != nil {
-		writeError(w, err.Error(), http.StatusBadRequest)
-		return
+		return nil, status.Errorf(codes.InvalidArgument, "failed to convert KEM algorithm to HPKE algorithm: %v", err)
 	}
 
 	// Generate binding keypair via WSD KCC FFI.
 	bindingUUID, bindingPubKey, err := s.workloadService.GenerateBindingKeypair(algo, req.Lifespan)
 	if err != nil {
-		writeError(w, fmt.Sprintf("failed to generate binding keypair: %v", err), httpStatusFromError(err))
-		return
+		return nil, status.Errorf(codes.Internal, "failed to generate binding keypair: %v", err)
 	}
 
 	// Generate KEM keypair via KPS KOL, passing the binding public key.
 	kemUUID, kemPubKey, err := s.keyProtectionService.GenerateKEMKeypair(algo, bindingPubKey, req.Lifespan)
 	if err != nil {
-		writeError(w, fmt.Sprintf("failed to generate KEM keypair: %v", err), httpStatusFromError(err))
-		return
+		return nil, status.Errorf(codes.Internal, "failed to generate KEM keypair: %v", err)
 	}
 
 	// Store the KEM UUID → Binding UUID mapping.
@@ -411,7 +446,7 @@ func (s *Server) generateKEMKey(w http.ResponseWriter, req *api.GenerateKeyReque
 	s.mu.Unlock()
 
 	// Return KEM UUID to workload.
-	resp := api.GenerateKeyResponse{
+	return &api.GenerateKeyResponse{
 		KeyHandle: &keymanager.KeyHandle{Handle: kemUUID.String()},
 		PubKey: &keymanager.PubKeyInfo{
 			Algorithm: &keymanager.AlgorithmDetails{
@@ -426,11 +461,10 @@ func (s *Server) generateKEMKey(w http.ResponseWriter, req *api.GenerateKeyReque
 		},
 		KeyProtectionMechanism: keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED.String(),
 		ExpirationTime:         float64(time.Now().Unix()) + float64(req.Lifespan),
-	}
-	writeJSON(w, &resp, http.StatusOK)
+	}, nil
 }
 
-func (s *Server) handleGetCapabilities(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) GetCapabilities(_ context.Context, _ *api.GetCapabilitiesRequest) (*api.GetCapabilitiesResponse, error) {
 
 	var supportedAlgos []*keymanager.SupportedAlgorithm
 	for _, algo := range SupportedKemAlgorithms {
@@ -446,18 +480,15 @@ func (s *Server) handleGetCapabilities(w http.ResponseWriter, _ *http.Request) {
 		})
 	}
 
-	resp := api.GetCapabilitiesResponse{
+	return &api.GetCapabilitiesResponse{
 		SupportedAlgorithms: supportedAlgos,
-	}
-
-	writeJSON(w, &resp, http.StatusOK)
+	}, nil
 }
 
-func (s *Server) handleEnumerateKeys(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) EnumerateKeys(_ context.Context, _ *api.EnumerateKeysRequest) (*api.EnumerateKeysResponse, error) {
 	keys, _, err := s.keyProtectionService.EnumerateKEMKeys(100, 0)
 	if err != nil {
-		writeError(w, fmt.Sprintf("failed to enumerate keys: %v", err), httpStatusFromError(err))
-		return
+		return nil, status.Errorf(codes.Internal, "failed to enumerate keys: %v", err)
 	}
 
 	keyInfos := make([]*api.KeyInfo, 0, len(keys))
@@ -485,11 +516,9 @@ func (s *Server) handleEnumerateKeys(w http.ResponseWriter, _ *http.Request) {
 		})
 	}
 
-	resp := api.EnumerateKeysResponse{
+	return &api.EnumerateKeysResponse{
 		KeyInfos: keyInfos,
-	}
-
-	writeJSON(w, &resp, http.StatusOK)
+	}, nil
 }
 
 // writeJSON writes a JSON response with the given status code.
@@ -544,24 +573,16 @@ func readRequest(r *http.Request, req proto.Message) error {
 	return nil
 }
 
-func (s *Server) handleDestroy(w http.ResponseWriter, r *http.Request) {
-	var req api.DestroyRequest
-	if err := readRequest(r, &req); err != nil {
-		writeError(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
+func (s *Server) Destroy(_ context.Context, req *api.DestroyRequest) (*api.DestroyResponse, error) {
 	kemUUID, err := uuid.Parse(req.KeyHandle.Handle)
 	if err != nil {
-		writeError(w, fmt.Sprintf("invalid key handle: %v", err), http.StatusBadRequest)
-		return
+		return nil, status.Errorf(codes.InvalidArgument, "invalid key handle: %v", err)
 	}
 
 	// Look up the binding UUID for this KEM key.
 	bindingUUID, ok := s.LookupBindingUUID(kemUUID)
 	if !ok {
-		writeError(w, fmt.Sprintf("KEM key handle not found: %s", kemUUID), http.StatusNotFound)
-		return
+		return nil, status.Errorf(codes.NotFound, "KEM key handle not found: %s", kemUUID)
 	}
 
 	errKps := s.keyProtectionService.DestroyKEMKey(kemUUID)
@@ -573,11 +594,10 @@ func (s *Server) handleDestroy(w http.ResponseWriter, r *http.Request) {
 	s.mu.Unlock()
 
 	if err := errors.Join(errKps, errWs); err != nil {
-		writeError(w, fmt.Sprintf("failed to destroy keys: %v", err), httpStatusFromError(err))
-		return
+		return nil, status.Errorf(codes.Internal, "failed to destroy keys: %v", err)
 	}
 
-	w.WriteHeader(http.StatusNoContent)
+	return &api.DestroyResponse{}, nil
 }
 
 // handleGetBindingKeyClaims returns the claims for a binding key identified by its KEM UUID.
