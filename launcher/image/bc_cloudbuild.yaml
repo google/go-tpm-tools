@@ -1,0 +1,109 @@
+substitutions:
+  '_BASE_IMAGE': ''
+  '_BASE_IMAGE_PROJECT': ''
+  '_BUCKET_NAME': ''
+  '_IMAGE_ENV': ''
+  '_OUTPUT_IMAGE_NAME': ''
+  '_OUTPUT_IMAGE_FAMILY': ''
+  '_CS_LICENSE': ''
+
+steps:
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'ExportBaseImage'
+    args:
+      - 'gcloud'
+      - 'compute'
+      - 'images'
+      - 'export'
+      - '--image=${_BASE_IMAGE}'
+      - '--image-project=${_BASE_IMAGE_PROJECT}'
+      - '--destination-uri=gs://${_BUCKET_NAME}/oem-preloader-${BUILD_ID}/${_BASE_IMAGE}.tar.gz'
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: 'DownloadImageFromGCS'
+    entrypoint: 'gcloud'
+    args: ['storage',
+           'cp',
+           'gs://${_BUCKET_NAME}/oem-preloader-${BUILD_ID}/${_BASE_IMAGE}.tar.gz',
+           './src_image.tar.gz']
+  - name: 'alpine'
+    id: 'ExtractRawImage'
+    args: ['tar', '-xf', './src_image.tar.gz']
+
+  - name: 'alpine'
+    id: 'PrepareOEMInstallDir'
+    entrypoint: 'sh'
+    args:
+      - -c
+      - |
+        set -eu
+        rm -rf /workspace/oem-install
+        mkdir -p /workspace/oem-install/confidential_space
+        cp -a ./launcher/image/. /workspace/oem-install/confidential_space/
+        cp ./launcher/image/vgentrypoint.sh /workspace/oem-install/entrypoint.sh 
+        
+        cp /workspace/oem-install/confidential_space/launcher /workspace/oem-install/confidential_space/cs_container_launcher
+        cp /workspace/oem-install/confidential_space/meta-data /workspace/oem-install/meta-data
+        chmod +x /workspace/oem-install/confidential_space/cs_container_launcher || true
+        chmod +x /workspace/oem-install/confidential_space/exit_script.sh || true
+        chmod +x /workspace/oem-install/entrypoint.sh || true
+
+        cp /workspace/oem-install/confidential_space/user-data /workspace/oem-install/user-data
+
+  - name: 'gcr.io/cos-cloud/oem-preloader:latest'
+    id: 'RunOEMPreloader'
+    env:
+      - 'IMAGE_ENV=${_IMAGE_ENV}'
+    args:
+      - '--src-image=./disk.raw'
+      - '--out-image=output.bin'
+      - '--oem-fs-size=500M'
+      - '--disk-size-gb=11'
+      - '--install-dir=/workspace/oem-install/'
+      - '--cmdline-script=/workspace/oem-install/confidential_space/cmdline.sh'
+  - name: 'alpine'
+    id: 'RenameOutputImage'
+    args: ['mv', 'output.bin', 'disk.raw']
+  - name: 'alpine'
+    id: 'TarOutputImage'
+    args: ['tar', '-zcf', './out_image.tar.gz', 'disk.raw']
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: 'UploadToGCS'
+    entrypoint: 'gcloud'
+    args: ['storage',
+           'cp',
+           './out_image.tar.gz',
+           'gs://${_BUCKET_NAME}/oem-preloader-${BUILD_ID}/${_OUTPUT_IMAGE_NAME}.tar.gz']
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'FetchBaseImageFeatures'
+    entrypoint: 'sh'
+    args:
+      - '-c'
+      - |
+        gcloud compute images describe ${_BASE_IMAGE} --project=${_BASE_IMAGE_PROJECT} --format="value(guestOsFeatures.type)" | paste -sd, - | tr ';' ',' | tr -d '\n' > /workspace/features.txt
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'CreateGCEImage'
+    entrypoint: 'sh'
+    args:
+      - '-c'
+      - |
+        FEATURES=$$(cat /workspace/features.txt)
+        if [ -z "$$FEATURES" ]; then
+          FEATURES="UEFI_COMPATIBLE"
+        fi
+        gcloud compute images create ${_OUTPUT_IMAGE_NAME} \
+          --family=${_OUTPUT_IMAGE_FAMILY} \
+          --source-uri=gs://${_BUCKET_NAME}/oem-preloader-${BUILD_ID}/${_OUTPUT_IMAGE_NAME}.tar.gz \
+          --guest-os-features="$$FEATURES" \
+          --licenses=${_CS_LICENSE},projects/confidential-space-images/global/licenses/ek-certificate-license
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: 'RemoveGCSFiles'
+    entrypoint: 'gcloud'
+    args: ['storage',
+           'rm',
+           'gs://${_BUCKET_NAME}/oem-preloader-${BUILD_ID}/${_BASE_IMAGE}.tar.gz',
+           'gs://${_BUCKET_NAME}/oem-preloader-${BUILD_ID}/${_OUTPUT_IMAGE_NAME}.tar.gz']
+
+timeout: '3000s'
+
+options:
+  dynamic_substitutions: true
