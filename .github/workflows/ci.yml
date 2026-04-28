@@ -152,6 +152,7 @@ jobs:
             -E revive
             -E gofmt
             -E goimports
+            --out-format=colored-line-number
             --exclude-use-default=false
             --max-same-issues=0
             --max-issues-per-linter=0
