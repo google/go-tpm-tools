@@ -238,6 +238,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		deviceROTs = append(deviceROTs, nvidiaAttester)
 	}
 
+	startContainer := time.Now()
 	container, err = cdClient.NewContainer(
 		ctx,
 		containerID,
@@ -245,6 +246,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		containerd.WithNewSnapshot(snapshotID, image),
 		containerd.WithNewSpec(specOpts...),
 	)
+	logger.Info("Created container", "duration", time.Since(startContainer))
 	if err != nil {
 		if container != nil {
 			container.Delete(ctx, containerd.WithSnapshotCleanup)
