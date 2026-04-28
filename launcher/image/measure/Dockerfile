@@ -24,7 +24,11 @@ RUN apt-get update && apt-get install -y \
     coreutils \
     gawk \
     grep \
+    python3-pip \
     && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir lief
+
 
 # Copy the measure.sh script into the container
 # Ensure you have the script file in the same directory as this Dockerfile
@@ -36,3 +40,5 @@ WORKDIR /data
 
 # Set the script as the entrypoint
 ENTRYPOINT ["/usr/local/bin/measure.sh"]
+
+
