@@ -277,7 +277,9 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		conOpts = append(conOpts, containerd.WithNewSnapshot(snapshotID, image))
 	}
 	conOpts = append(conOpts, containerd.WithNewSpec(specOpts...))
+	startContainer := time.Now()
 	container, err = cdClient.NewContainer(ctx, containerID, conOpts...)
+	logger.Info("Created container", "duration", time.Since(startContainer))
 	if err != nil {
 		if container != nil {
 			container.Delete(ctx, containerd.WithSnapshotCleanup)
