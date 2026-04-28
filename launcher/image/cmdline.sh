@@ -62,8 +62,6 @@ configure_systemd_units_for_hardened() {
 }
 
 configure_systemd_units_for_debug() {
-  set_default_boot_target "cloud-final.service"
-
   disable_unit "konlet-startup.service"
   disable_unit "update-engine.service"
 }
