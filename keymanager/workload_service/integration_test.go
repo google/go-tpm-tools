@@ -4,6 +4,7 @@ package workloadservice
 
 import (
 	"bytes"
+	"encoding/json"
 	kps "github.com/google/go-tpm-tools/keymanager/key_protection_service"
 	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
 	wskcc "github.com/google/go-tpm-tools/keymanager/workload_service/key_custody_core"
@@ -162,7 +163,7 @@ func TestIntegrationDestroyKey(t *testing.T) {
 	}
 
 	var respGen api.GenerateKeyResponse
-	if err := protojson.Unmarshal(wGen.Body.Bytes(), &respGen); err != nil {
+	if err := json.NewDecoder(wGen.Body).Decode(&respGen); err != nil {
 		t.Fatalf("setup: failed to decode generate response: %v", err)
 	}
 	kemHandle := respGen.KeyHandle.GetHandle()
@@ -230,7 +231,7 @@ func TestIntegrationAutoDestroy(t *testing.T) {
 	}
 
 	var respGen api.GenerateKeyResponse
-	protojson.Unmarshal(wGen.Body.Bytes(), &respGen)
+	json.NewDecoder(wGen.Body).Decode(&respGen)
 	kemHandle := respGen.KeyHandle.GetHandle()
 
 	// Wait for auto-destroy
