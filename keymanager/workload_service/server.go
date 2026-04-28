@@ -22,7 +22,6 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
-	"io"
 	"log"
 	"net"
 	"net/http"
@@ -227,6 +226,28 @@ func New(_ context.Context, socketPath string, mode keymanager.KeyProtectionMech
 	return NewServer(kps, &workloadService{}, socketPath)
 }
 
+func handleRoutingError(ctx context.Context, mux *runtime.ServeMux, marshaler runtime.Marshaler, w http.ResponseWriter, r *http.Request, httpStatus int) {
+	if httpStatus != http.StatusMethodNotAllowed {
+		runtime.DefaultRoutingErrorHandler(ctx, mux, marshaler, w, r, httpStatus)
+		return
+	}
+
+	// Use HTTPStatusError to customize the DefaultHTTPErrorHandler status code
+	err := &runtime.HTTPStatusError{
+		HTTPStatus: httpStatus,
+		Err:        status.Error(codes.Unimplemented, http.StatusText(httpStatus)),
+	}
+
+	runtime.DefaultHTTPErrorHandler(ctx, mux, marshaler, w, r, err)
+}
+
+func customHTTPErrorHandler(ctx context.Context, mux *runtime.ServeMux, marshaler runtime.Marshaler, w http.ResponseWriter, r *http.Request, err error) {
+	st := status.Convert(err)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(runtime.HTTPStatusFromCode(st.Code()))
+	json.NewEncoder(w).Encode(map[string]string{"error": st.Message()})
+}
+
 func customResponseModifier(ctx context.Context, w http.ResponseWriter, resp proto.Message) error {
 	// If the endpoint returned a DestroyResponse, rewrite the status code to 204 No Content
 	if _, ok := resp.(*api.DestroyResponse); ok {
@@ -245,12 +266,32 @@ func NewServer(keyProtectionService KeyProtectionService, workloadService Worklo
 		claimsChan:           make(chan *ClaimsCall, 4),
 	}
 	if socketPath == "" || !filepath.IsAbs(socketPath) {
-		socketPath = filepath.Join("/tmp", "wsd_keys_"+uuid.NewString()+".sock")
+		return nil, fmt.Errorf("socket path must not be empty")
 	}
 	restSocketPath := socketPath
 	grpcSocketPath := strings.TrimSuffix(socketPath, filepath.Ext(socketPath)) + "-grpc.sock"
 
-	// 1. Initialize Native gRPC Server
+	grpcServer, err := initGRPCServer(s, grpcSocketPath)
+	if err != nil {
+		return nil, err
+	}
+
+	httpServer, listener, err := initRESTGatewayProxy(restSocketPath, grpcSocketPath)
+	if err != nil {
+		grpcServer.GracefulStop()
+		return nil, err
+	}
+
+	s.grpcServer = grpcServer
+	s.httpServer = httpServer
+	s.listener = listener
+
+	go s.processClaims()
+
+	return s, nil
+}
+
+func initGRPCServer(s *Server, grpcSocketPath string) (*grpc.Server, error) {
 	_ = os.Remove(grpcSocketPath)
 	grpcListener, err := net.Listen("unix", grpcSocketPath)
 	if err != nil {
@@ -266,40 +307,53 @@ func NewServer(keyProtectionService KeyProtectionService, workloadService Worklo
 		}
 	}()
 
-	// 2. Initialize gRPC-Gateway REST proxy client
-	conn, err := grpc.Dial(
+	return grpcServer, nil
+}
+
+func initRESTGatewayProxy(restSocketPath, grpcSocketPath string) (*http.Server, net.Listener, error) {
+	conn, err := grpc.NewClient(
 		"unix:"+grpcSocketPath,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to dial internal native gRPC server: %w", err)
+		return nil, nil, fmt.Errorf("failed to dial internal native gRPC server: %w", err)
 	}
 
 	mux := runtime.NewServeMux(
+		// Override successful empty metadata responses (e.g. DestroyResponse) to return HTTP 204 No Content
 		runtime.WithForwardResponseOption(customResponseModifier),
+		// Intercept gRPC status errors and serialize them back into the legacy {"error": "<message>"} JSON layout
+		runtime.WithErrorHandler(customHTTPErrorHandler),
+		// Preserve original snake_case protobuf field casing and enforce inclusion of empty structures unconditionally
 		runtime.WithMarshalerOption(runtime.MIMEWildcard, &runtime.JSONPb{
 			MarshalOptions: protojson.MarshalOptions{
 				UseProtoNames:   true,
 				EmitUnpopulated: true,
 			},
 		}),
+		// Handle unmapped HTTP/REST routing path and method mismatches securely
+		runtime.WithRoutingErrorHandler(handleRoutingError),
 	)
+
 	if err := api.RegisterWorkloadServiceHandler(context.Background(), mux, conn); err != nil {
-		return nil, fmt.Errorf("failed to register proxy handler: %w", err)
+		return nil, nil, fmt.Errorf("failed to register proxy handler: %w", err)
 	}
 
 	_ = os.Remove(restSocketPath)
 	restListener, err := net.Listen("unix", restSocketPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to listen on REST unix socket %s: %w", restSocketPath, err)
+		return nil, nil, fmt.Errorf("failed to listen on REST unix socket %s: %w", restSocketPath, err)
 	}
 
-	s.httpServer = &http.Server{Handler: mux}
-	s.listener = restListener
+	httpServer := &http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("X-Content-Type-Options", "nosniff")
+			w.Header().Set("Content-Type", "application/json")
+			mux.ServeHTTP(w, r)
+		}),
+	}
 
-	go s.processClaims()
-
-	return s, nil
+	return httpServer, restListener, nil
 }
 
 // Serve starts the HTTP server listening on the given unix socket path.
@@ -309,6 +363,12 @@ func (s *Server) Serve() error {
 
 // Shutdown gracefully shuts down the server.
 func (s *Server) Shutdown(ctx context.Context) error {
+	if s.grpcServer != nil {
+		s.grpcServer.GracefulStop()
+	}
+	if s.claimsChan != nil {
+		close(s.claimsChan)
+	}
 	return s.httpServer.Shutdown(ctx)
 }
 
@@ -325,29 +385,6 @@ func (s *Server) LookupBindingUUID(kemUUID uuid.UUID) (uuid.UUID, bool) {
 	return id, ok
 }
 
-func httpStatusFromError(err error) int {
-	if err == nil {
-		return http.StatusOK
-	}
-
-	switch {
-	case errors.Is(err, keymanager.Status_STATUS_NOT_FOUND):
-		return http.StatusNotFound
-	case errors.Is(err, keymanager.Status_STATUS_INVALID_ARGUMENT),
-		errors.Is(err, keymanager.Status_STATUS_UNSUPPORTED_ALGORITHM),
-		errors.Is(err, keymanager.Status_STATUS_INVALID_KEY):
-		return http.StatusBadRequest
-	case errors.Is(err, keymanager.Status_STATUS_PERMISSION_DENIED):
-		return http.StatusForbidden
-	case errors.Is(err, keymanager.Status_STATUS_UNAUTHENTICATED):
-		return http.StatusUnauthorized
-	case errors.Is(err, keymanager.Status_STATUS_ALREADY_EXISTS):
-		return http.StatusConflict
-	default:
-		return http.StatusInternalServerError
-	}
-}
-
 func decapsAADContext(kemUUID uuid.UUID, algorithm keymanager.KemAlgorithm) []byte {
 	// Bind the KPS->WSD transport ciphertext to this decapsulation context.
 	// Note: The AAD context string retains `decaps` as it is part of the internal binding protocol
@@ -357,6 +394,9 @@ func decapsAADContext(kemUUID uuid.UUID, algorithm keymanager.KemAlgorithm) []by
 }
 
 func (s *Server) Decaps(_ context.Context, req *api.DecapsRequest) (*api.DecapsResponse, error) {
+	if err := protovalidate.Validate(req); err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
+	}
 	if !IsSupportedKemAlgorithm(req.Ciphertext.Algorithm) {
 		return nil, status.Errorf(codes.InvalidArgument, "unsupported ciphertext algorithm: %d. Supported algorithms: %s", req.Ciphertext.Algorithm, SupportedKemAlgorithmsString())
 	}
@@ -404,7 +444,7 @@ func (s *Server) GenerateKey(_ context.Context, req *api.GenerateKeyRequest) (*a
 		return nil, status.Errorf(codes.InvalidArgument, "algorithm details cannot be empty")
 	}
 	if err := protovalidate.Validate(req); err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "invalid request structure: %v", err)
+		return nil, status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
 	}
 
 	switch req.Algorithm.Type {
@@ -464,7 +504,10 @@ func (s *Server) generateKEMKey(req *api.GenerateKeyRequest) (*api.GenerateKeyRe
 	}, nil
 }
 
-func (s *Server) GetCapabilities(_ context.Context, _ *api.GetCapabilitiesRequest) (*api.GetCapabilitiesResponse, error) {
+func (s *Server) GetCapabilities(_ context.Context, req *api.GetCapabilitiesRequest) (*api.GetCapabilitiesResponse, error) {
+	if err := protovalidate.Validate(req); err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
+	}
 
 	var supportedAlgos []*keymanager.SupportedAlgorithm
 	for _, algo := range SupportedKemAlgorithms {
@@ -485,7 +528,10 @@ func (s *Server) GetCapabilities(_ context.Context, _ *api.GetCapabilitiesReques
 	}, nil
 }
 
-func (s *Server) EnumerateKeys(_ context.Context, _ *api.EnumerateKeysRequest) (*api.EnumerateKeysResponse, error) {
+func (s *Server) EnumerateKeys(_ context.Context, req *api.EnumerateKeysRequest) (*api.EnumerateKeysResponse, error) {
+	if err := protovalidate.Validate(req); err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
+	}
 	keys, _, err := s.keyProtectionService.EnumerateKEMKeys(100, 0)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to enumerate keys: %v", err)
@@ -521,59 +567,10 @@ func (s *Server) EnumerateKeys(_ context.Context, _ *api.EnumerateKeysRequest) (
 	}, nil
 }
 
-// writeJSON writes a JSON response with the given status code.
-func writeJSON(w http.ResponseWriter, v proto.Message, code int) {
-	if err := protovalidate.Validate(v); err != nil {
-		writeError(w, fmt.Sprintf("validation failed for response: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	b, err := protojson.MarshalOptions{EmitUnpopulated: true, UseProtoNames: true}.Marshal(v)
-	if err != nil {
-		writeError(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.WriteHeader(code)
-	if _, err := w.Write(b); err != nil {
-		log.Printf("failed to write JSON response: %v", err)
-	}
-}
-
-// writeError writes a JSON error response.
-func writeError(w http.ResponseWriter, message string, code int) {
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.WriteHeader(code)
-	b, err := json.Marshal(map[string]string{"error": message})
-	if err != nil {
-		log.Printf("failed to marshal error response: %v", err)
-		b = []byte(`{"error":"internal error serializing response"}`)
-	}
-	if _, err := w.Write(b); err != nil {
-		log.Printf("failed to write error response: %v", err)
-	}
-}
-
-// readRequest reads the HTTP request body, unmarshals it into a proto.Message,
-// and validates it.
-func readRequest(r *http.Request, req proto.Message) error {
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read request body: %w", err)
-	}
-	if err := protojson.Unmarshal(body, req); err != nil {
-		return fmt.Errorf("invalid request body: %w", err)
-	}
-	if err := protovalidate.Validate(req); err != nil {
-		return fmt.Errorf("invalid request: %w", err)
-	}
-	return nil
-}
-
 func (s *Server) Destroy(_ context.Context, req *api.DestroyRequest) (*api.DestroyResponse, error) {
+	if err := protovalidate.Validate(req); err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
+	}
 	kemUUID, err := uuid.Parse(req.KeyHandle.Handle)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid key handle: %v", err)
