@@ -4,3 +4,12 @@ plugins:
     out: .
     opt: paths=source_relative
 
+  - local: protoc-gen-go-grpc
+    out: .
+    opt: paths=source_relative
+
+  - local: protoc-gen-grpc-gateway
+    out: .
+    opt:
+      - paths=source_relative
+      - generate_unbound_methods=true

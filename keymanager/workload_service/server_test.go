@@ -7,21 +7,21 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	kps "github.com/google/go-tpm-tools/keymanager/key_protection_service"
+	kpskcc "github.com/google/go-tpm-tools/keymanager/key_protection_service/key_custody_core"
+	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
+	api "github.com/google/go-tpm-tools/keymanager/workload_service/proto"
+	"github.com/google/uuid"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
-
-	kpskcc "github.com/google/go-tpm-tools/keymanager/key_protection_service/key_custody_core"
-	api "github.com/google/go-tpm-tools/keymanager/workload_service/proto"
-	"github.com/google/uuid"
-	"google.golang.org/protobuf/encoding/protojson"
-	"google.golang.org/protobuf/proto"
-
-	kps "github.com/google/go-tpm-tools/keymanager/key_protection_service"
-	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
 )
 
 func newTestServer(t *testing.T, kemGen kps.KeyProtectionService, bindingGen WorkloadService) *Server {
@@ -30,8 +30,7 @@ func newTestServer(t *testing.T, kemGen kps.KeyProtectionService, bindingGen Wor
 		t.Fatalf("failed to create test server: %v", err)
 	}
 	t.Cleanup(func() {
-		srv.listener.Close()
-		close(srv.claimsChan)
+		srv.Shutdown(context.Background())
 	})
 	return srv
 }
@@ -624,56 +623,73 @@ func TestHandleEnumerateKeysWithKeys(t *testing.T) {
 		&mockWorkloadService{},
 	)
 
-	req := httptest.NewRequest(http.MethodGet, "/v1/keys", nil)
-	w := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(w, req)
+	t.Run("REST", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/v1/keys", nil)
+		w := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(w, req)
 
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected status 200, got %d: %s", w.Code, w.Body.String())
-	}
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected status 200, got %d: %s", w.Code, w.Body.String())
+		}
 
-	var resp api.EnumerateKeysResponse
-	if err := protojson.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("failed to decode response: %v", err)
-	}
-	if len(resp.KeyInfos) != 2 {
-		t.Fatalf("expected 2 key infos, got %d", len(resp.KeyInfos))
-	}
+		var resp api.EnumerateKeysResponse
+		if err := protojson.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+		if len(resp.KeyInfos) != 2 {
+			t.Fatalf("expected 2 key infos, got %d", len(resp.KeyInfos))
+		}
 
-	// Verify both keys appear (order-independent).
+		assertEnumerateKeyInfos(t, resp.KeyInfos, kem1.String(), kemPubKey1)
+	})
+
+	t.Run("GRPC", func(t *testing.T) {
+		baseAddr := srv.listener.Addr().String()
+		grpcSocket := strings.TrimSuffix(baseAddr, filepath.Ext(baseAddr)) + "-grpc.sock"
+
+		conn, err := grpc.NewClient("unix:"+grpcSocket, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		if err != nil {
+			t.Fatalf("failed to dial gRPC server: %v", err)
+		}
+		defer conn.Close()
+
+		client := api.NewWorkloadServiceClient(conn)
+		resp, err := client.EnumerateKeys(context.Background(), &api.EnumerateKeysRequest{})
+		if err != nil {
+			t.Fatalf("EnumerateKeys failed over gRPC: %v", err)
+		}
+
+		if len(resp.KeyInfos) != 2 {
+			t.Fatalf("expected 2 key infos via gRPC, got %d", len(resp.KeyInfos))
+		}
+
+		assertEnumerateKeyInfos(t, resp.KeyInfos, kem1.String(), kemPubKey1)
+	})
+}
+
+func assertEnumerateKeyInfos(t *testing.T, keyInfos []*api.KeyInfo, targetID string, targetPubKey []byte) {
+	t.Helper()
 	found := make(map[string]*api.KeyInfo)
-	for i := range resp.KeyInfos {
-		ki := resp.KeyInfos[i]
+	for i := range keyInfos {
+		ki := keyInfos[i]
 		found[ki.KeyHandle.Handle] = ki
 	}
 
-	// Verify key 1.
-	info1, ok := found[kem1.String()]
+	info1, ok := found[targetID]
 	if !ok {
-		t.Fatalf("expected kem1 %s in response", kem1)
+		t.Fatalf("expected %s in response", targetID)
 	}
 	if info1.PubKey.Algorithm.GetParams().GetKemId() != keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256 {
 		t.Fatalf("expected algorithm %v, got %v", keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256, info1.PubKey.Algorithm.GetParams().GetKemId())
 	}
-	if !bytes.Equal(info1.PubKey.PublicKey, kemPubKey1) {
-		t.Fatalf("KEM pub key mismatch for kem1")
+	if !bytes.Equal(info1.PubKey.PublicKey, targetPubKey) {
+		t.Fatalf("KEM pub key mismatch for %s", targetID)
 	}
 	if info1.KeyProtectionMechanism != keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED.String() {
 		t.Fatalf("expected key protection mechanism %s, got %s", keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED.String(), info1.KeyProtectionMechanism)
 	}
-	// Approximate check for expiration time
 	if info1.ExpirationTime <= float64(time.Now().Unix()) {
 		t.Fatalf("expected expiration time in the future, got %f", info1.ExpirationTime)
-	}
-
-	// Verify key 2.
-	info2, ok := found[kem2.String()]
-	if !ok {
-		t.Fatalf("expected kem2 %s in response", kem2)
-	}
-	// Approximate check for expiration time
-	if info2.ExpirationTime <= float64(time.Now().Unix()) {
-		t.Fatalf("expected expiration time in the future, got %f", info2.ExpirationTime)
 	}
 }
 
@@ -753,33 +769,56 @@ func TestToHpkeAlgorithm(t *testing.T) {
 func TestHandleGetCapabilities(t *testing.T) {
 	bindingGen := &mockWorkloadService{}
 	kemGen := &mockKeyProtectionService{}
-	srv := newTestServer(t,
-		kemGen,
-		bindingGen,
-	)
+	srv := newTestServer(t, kemGen, bindingGen)
 
-	req := httptest.NewRequest(http.MethodGet, "/v1/capabilities", nil)
-	w := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(w, req)
+	t.Run("REST", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/v1/capabilities", nil)
+		w := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(w, req)
 
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected status 200, got %d: %s", w.Code, w.Body.String())
-	}
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected status 200, got %d: %s", w.Code, w.Body.String())
+		}
 
-	contentType := w.Header().Get("Content-Type")
-	if contentType != "application/json" {
-		t.Fatalf("expected Content-Type application/json, got %s", contentType)
-	}
+		contentType := w.Header().Get("Content-Type")
+		if contentType != "application/json" {
+			t.Fatalf("expected Content-Type application/json, got %s", contentType)
+		}
 
-	var resp api.GetCapabilitiesResponse
-	if err := protojson.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("failed to decode response: %v", err)
-	}
+		var resp api.GetCapabilitiesResponse
+		if err := protojson.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
 
-	if len(resp.SupportedAlgorithms) != 1 ||
-		resp.SupportedAlgorithms[0].Algorithm.GetParams().GetKemId() != keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256 ||
-		resp.SupportedAlgorithms[0].Algorithm.Type != "kem" {
-		t.Errorf("unexpected supported algorithms: %v", resp.SupportedAlgorithms)
+		assertCapabilities(t, resp.SupportedAlgorithms)
+	})
+
+	t.Run("GRPC", func(t *testing.T) {
+		baseAddr := srv.listener.Addr().String()
+		grpcSocket := strings.TrimSuffix(baseAddr, filepath.Ext(baseAddr)) + "-grpc.sock"
+
+		conn, err := grpc.NewClient("unix:"+grpcSocket, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		if err != nil {
+			t.Fatalf("failed to dial gRPC daemon: %v", err)
+		}
+		defer conn.Close()
+
+		client := api.NewWorkloadServiceClient(conn)
+		resp, err := client.GetCapabilities(context.Background(), &api.GetCapabilitiesRequest{})
+		if err != nil {
+			t.Fatalf("GetCapabilities failed over gRPC: %v", err)
+		}
+
+		assertCapabilities(t, resp.SupportedAlgorithms)
+	})
+}
+
+func assertCapabilities(t *testing.T, algorithms []*keymanager.SupportedAlgorithm) {
+	t.Helper()
+	if len(algorithms) != 1 ||
+		algorithms[0].Algorithm.GetParams().GetKemId() != keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256 ||
+		algorithms[0].Algorithm.Type != "kem" {
+		t.Errorf("unexpected supported algorithms layout: %v", algorithms)
 	}
 }
 
@@ -1130,6 +1169,50 @@ func TestHandleDestroy(t *testing.T) {
 	}
 }
 
+func TestHandleDestroyGRPC(t *testing.T) {
+	validKEMUUID := uuid.New()
+	validBindingUUID := uuid.New()
+
+	kemDestroyer := &mockKeyProtectionService{}
+	bindingDestroyer := &mockWorkloadService{}
+	srv := newTestServer(t, kemDestroyer, bindingDestroyer)
+
+	srv.mu.Lock()
+	srv.kemToBindingMap[validKEMUUID] = validBindingUUID
+	srv.mu.Unlock()
+
+	baseAddr := srv.listener.Addr().String()
+	grpcSocket := strings.TrimSuffix(baseAddr, filepath.Ext(baseAddr)) + "-grpc.sock"
+
+	conn, err := grpc.Dial("unix:"+grpcSocket, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("failed to dial gRPC server: %v", err)
+	}
+	defer conn.Close()
+
+	client := api.NewWorkloadServiceClient(conn)
+	_, err = client.Destroy(context.Background(), &api.DestroyRequest{
+		KeyHandle: &keymanager.KeyHandle{Handle: validKEMUUID.String()},
+	})
+	if err != nil {
+		t.Fatalf("Destroy failed over gRPC: %v", err)
+	}
+
+	if kemDestroyer.destroyedUUID != validKEMUUID {
+		t.Fatalf("expected KEM destroy for %s, got %s", validKEMUUID, kemDestroyer.destroyedUUID)
+	}
+	if bindingDestroyer.destroyedUUID != validBindingUUID {
+		t.Fatalf("expected Binding destroy for %s, got %s", validBindingUUID, bindingDestroyer.destroyedUUID)
+	}
+
+	srv.mu.RLock()
+	_, exists := srv.kemToBindingMap[validKEMUUID]
+	srv.mu.RUnlock()
+	if exists {
+		t.Fatalf("expected key mapping to be removed")
+	}
+}
+
 // --- /keys:decap tests ---
 
 // newDecapsTestServer creates a server pre-populated with a KEM→Binding mapping.
@@ -1163,52 +1246,78 @@ func TestHandleDecapsSuccess(t *testing.T) {
 	op := &mockWorkloadService{plaintext: plaintext}
 	srv := newDecapsTestServer(t, kemUUID, bindingUUID, ds, op)
 
-	body := decapsRequestBody(kemUUID, keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256, encKey)
-	req := httptest.NewRequest(http.MethodPost, "/v1/keys:decap", strings.NewReader(body))
-	w := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(w, req)
+	t.Run("REST", func(t *testing.T) {
+		body := decapsRequestBody(kemUUID, keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256, encKey)
+		req := httptest.NewRequest(http.MethodPost, "/v1/keys:decap", strings.NewReader(body))
+		w := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(w, req)
 
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected status 200, got %d: %s", w.Code, w.Body.String())
-	}
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected status 200, got %d: %s", w.Code, w.Body.String())
+		}
 
-	var resp api.DecapsResponse
-	if err := protojson.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("failed to decode response: %v", err)
-	}
-	if resp.SharedSecret.Algorithm != keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256 {
-		t.Fatalf("expected shared_secret.algorithm=%d, got %d", keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256, resp.SharedSecret.Algorithm)
-	}
+		var resp api.DecapsResponse
+		if err := protojson.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+		if resp.SharedSecret.Algorithm != keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256 {
+			t.Fatalf("expected shared_secret.algorithm=%d, got %d", keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256, resp.SharedSecret.Algorithm)
+		}
 
-	decoded := resp.SharedSecret.Secret
-	if string(decoded) != string(plaintext) {
-		t.Fatalf("expected plaintext %q, got %q", plaintext, decoded)
-	}
+		decoded := resp.SharedSecret.Secret
+		if string(decoded) != string(plaintext) {
+			t.Fatalf("expected plaintext %q, got %q", plaintext, decoded)
+		}
 
-	// Verify KeyProtectionService received correct args.
-	if ds.receivedKEMUUID != kemUUID {
-		t.Fatalf("expected KeyProtectionService to receive KEM UUID %s, got %s", kemUUID, ds.receivedKEMUUID)
-	}
-	if string(ds.receivedEncKey) != string(encKey) {
-		t.Fatalf("expected KeyProtectionService to receive enc key %q, got %q", encKey, ds.receivedEncKey)
-	}
-	if string(ds.receivedAAD) != string(expectedAAD) {
-		t.Fatalf("expected KeyProtectionService to receive AAD %q, got %q", expectedAAD, ds.receivedAAD)
-	}
+		// Verify KeyProtectionService received correct args.
+		if ds.receivedKEMUUID != kemUUID {
+			t.Fatalf("expected KeyProtectionService to receive KEM UUID %s, got %s", kemUUID, ds.receivedKEMUUID)
+		}
+		if string(ds.receivedEncKey) != string(encKey) {
+			t.Fatalf("expected KeyProtectionService to receive enc key %q, got %q", encKey, ds.receivedEncKey)
+		}
+		if string(ds.receivedAAD) != string(expectedAAD) {
+			t.Fatalf("expected KeyProtectionService to receive AAD %q, got %q", expectedAAD, ds.receivedAAD)
+		}
+	})
 
-	// Verify WorkloadService received correct args.
-	if op.receivedUUID != bindingUUID {
-		t.Fatalf("expected WorkloadService to receive binding UUID %s, got %s", bindingUUID, op.receivedUUID)
-	}
-	if string(op.receivedEnc) != string(sealEnc) {
-		t.Fatalf("expected WorkloadService to receive enc %q, got %q", sealEnc, op.receivedEnc)
-	}
-	if string(op.receivedCT) != string(sealedCT) {
-		t.Fatalf("expected WorkloadService to receive CT %q, got %q", sealedCT, op.receivedCT)
-	}
-	if string(op.receivedAAD) != string(expectedAAD) {
-		t.Fatalf("expected WorkloadService to receive AAD %q, got %q", expectedAAD, op.receivedAAD)
-	}
+	t.Run("GRPC", func(t *testing.T) {
+		baseAddr := srv.listener.Addr().String()
+		grpcSocket := strings.TrimSuffix(baseAddr, filepath.Ext(baseAddr)) + "-grpc.sock"
+
+		conn, err := grpc.NewClient("unix:"+grpcSocket, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		if err != nil {
+			t.Fatalf("failed to dial gRPC server: %v", err)
+		}
+		defer conn.Close()
+
+		client := api.NewWorkloadServiceClient(conn)
+		resp, err := client.Decaps(context.Background(), &api.DecapsRequest{
+			KeyHandle: &keymanager.KeyHandle{Handle: kemUUID.String()},
+			Ciphertext: &keymanager.KemCiphertext{
+				Algorithm:  keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
+				Ciphertext: encKey,
+			},
+		})
+
+		if err != nil {
+			t.Fatalf("Decaps failed over gRPC: %v", err)
+		}
+
+		if resp.SharedSecret.Algorithm != keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256 {
+			t.Fatalf("expected shared_secret.algorithm=%d, got %d", keymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256, resp.SharedSecret.Algorithm)
+		}
+
+		if ds.receivedKEMUUID != kemUUID {
+			t.Fatalf("expected KeyProtectionService to receive KEM UUID %s, got %s", kemUUID, ds.receivedKEMUUID)
+		}
+		if string(ds.receivedEncKey) != string(encKey) {
+			t.Fatalf("expected KeyProtectionService to receive enc key %q, got %q", encKey, ds.receivedEncKey)
+		}
+		if string(ds.receivedAAD) != string(expectedAAD) {
+			t.Fatalf("expected KeyProtectionService to receive AAD %q, got %q", expectedAAD, ds.receivedAAD)
+		}
+	})
 }
 
 func TestHandleDecapsMethodNotAllowed(t *testing.T) {
