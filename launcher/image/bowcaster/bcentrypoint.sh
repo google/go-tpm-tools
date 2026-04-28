@@ -1,7 +1,7 @@
 #!/bin/bash
 
 main() {
-    #  Configure sysctls.
+  # Configure sysctls.
   sysctl -w kernel.kexec_load_disabled=1
 
   # Copy service files.
@@ -9,10 +9,10 @@ main() {
   # Override default fluent-bit config.
   mkdir -p /etc/fluent-bit
   cp /usr/share/oem/confidential_space/fluent-bit-cs.conf /etc/fluent-bit/fluent-bit.conf
-  
+
   mkdir /tmp/container_launcher
   chmod +rw /tmp/container_launcher
-  cp /usr/share/oem/confidential_space/vgexperiment.json /tmp/container_launcher/experiment_data
+  cp /usr/share/oem/confidential_space/bcexperiment.json /tmp/container_launcher/experiment_data
 
   # Override default system-stats-monitor.json for node-problem-detector.
   cp /usr/share/oem/confidential_space/nodeproblemdetector/system-stats-monitor-cs.json /etc/node_problem_detector/system-stats-monitor.json
@@ -26,7 +26,6 @@ main() {
   systemctl enable container-runner.service
   systemctl start container-runner.service
   systemctl start fluent-bit.service
-
 }
 
 main

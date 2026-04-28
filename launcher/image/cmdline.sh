@@ -92,6 +92,7 @@ main() {
   configure_entrypoint
   append_cmdline "cos.protected_stateful_partition=m"
   append_cmdline "systemd.default_timeout_start_sec=900s"
+  append_cmdline "swiotlb=4194304,force,any"
   if [[ "${IMAGE_ENV}" == "debug" ]]; then
     configure_systemd_units_for_debug
     append_cmdline "confidential-space.hardened=false"

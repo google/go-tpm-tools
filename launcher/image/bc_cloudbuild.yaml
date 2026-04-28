@@ -38,16 +38,22 @@ steps:
         set -eu
         rm -rf /workspace/oem-install
         mkdir -p /workspace/oem-install/confidential_space
-        cp -a ./launcher/image/. /workspace/oem-install/confidential_space/
-        cp ./launcher/image/bcentrypoint.sh /workspace/oem-install/entrypoint.sh 
-        
+        mkdir -p /workspace/oem-install/confidential_space/nodeproblemdetector
+        cp ./launcher/image/bowcaster/bcentrypoint.sh /workspace/oem-install/user-data
+        cp ./launcher/image/bowcaster/bcexperiment.json \
+           ./launcher/image/launcher \
+           ./launcher/image/container-runner.service \
+           ./launcher/image/fluent-bit-cs.conf \
+           ./launcher/image/cmdline.sh \
+           ./launcher/image/exit_script.sh \
+           /workspace/oem-install/confidential_space/
+        cp ./launcher/image/nodeproblemdetector/* /workspace/oem-install/confidential_space/nodeproblemdetector/
+
         cp /workspace/oem-install/confidential_space/launcher /workspace/oem-install/confidential_space/cs_container_launcher
-        cp /workspace/oem-install/confidential_space/meta-data /workspace/oem-install/meta-data
+        cp ./launcher/image/meta-data /workspace/oem-install/meta-data
         chmod +x /workspace/oem-install/confidential_space/cs_container_launcher || true
         chmod +x /workspace/oem-install/confidential_space/exit_script.sh || true
-        chmod +x /workspace/oem-install/entrypoint.sh || true
-
-        cp /workspace/oem-install/confidential_space/bc_user-data /workspace/oem-install/user-data
+        chmod +x /workspace/oem-install/user-data || true
 
   - name: 'gcr.io/cos-cloud/oem-preloader:latest'
     id: 'RunOEMPreloader'
