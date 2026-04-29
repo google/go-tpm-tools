@@ -44,13 +44,13 @@ steps:
            ./launcher/image/launcher \
            ./launcher/image/container-runner.service \
            ./launcher/image/fluent-bit-cs.conf \
-           ./launcher/image/cmdline.sh \
            ./launcher/image/exit_script.sh \
            /workspace/oem-install/confidential_space/
         cp ./launcher/image/nodeproblemdetector/* /workspace/oem-install/confidential_space/nodeproblemdetector/
 
         cp /workspace/oem-install/confidential_space/launcher /workspace/oem-install/confidential_space/cs_container_launcher
-        cp ./launcher/image/bc-guest/meta-data /workspace/oem-install/meta-data
+        # Disabled because cloud-init is not used.
+        # cp ./launcher/image/bc-guest/meta-data /workspace/oem-install/meta-data
         chmod +x /workspace/oem-install/confidential_space/cs_container_launcher || true
         chmod +x /workspace/oem-install/confidential_space/exit_script.sh || true
         chmod +x /workspace/oem-install/entrypoint.sh || true
@@ -59,13 +59,74 @@ steps:
     id: 'RunOEMPreloader'
     env:
       - 'IMAGE_ENV=${_IMAGE_ENV}'
+    entrypoint: 'bash'
     args:
-      - '--src-image=./disk.raw'
-      - '--out-image=output.bin'
-      - '--oem-fs-size=500M'
-      - '--disk-size-gb=11'
-      - '--install-dir=/workspace/oem-install/'
-      - '--cmdline-script=/workspace/oem-install/confidential_space/cmdline.sh'
+      - '-c'
+      - |
+        set -ex
+        COMMON_COMMANDS=(
+          # Disabled for cchost base image: Entrypoint is handled directly by systemd, not Cloud-Init.
+          # "s|cros_efi|cros_efi ds=nocloud;s=/usr/share/oem/|g"
+          "s|cros_efi|cros_efi cos.protected_stateful_partition=m|g"
+          "s|cros_efi|cros_efi systemd.default_timeout_start_sec=900s|g"
+          "s|cros_efi|cros_efi swiotlb=4194304,force,any|g"
+          "s|systemd.mask=usr-share-oem.mount||g"
+          "s|dm-m2d|dm-mod|g"
+          "s|,oemroot|;oemroot|g"
+        )
+
+        DEBUG_COMMANDS=(
+          "s|cros_efi|cros_efi systemd.mask=konlet-startup.service|g"
+          "s|cros_efi|cros_efi systemd.mask=update-engine.service|g"
+          "s|cros_efi|cros_efi confidential-space.hardened=false|g"
+        )
+
+        HARDENED_COMMANDS=(
+          "s|cros_efi|cros_efi systemd.wants=basic.target|g"
+          "s|cros_efi|cros_efi systemd.wants=systemd-resolved.service|g"
+          "s|cros_efi|cros_efi systemd.wants=network-online.target|g"
+          "s|cros_efi|cros_efi systemd.wants=gcr-online.target|g"
+          # Disabled because no cloud-init
+          # "s|cros_efi|cros_efi systemd.unit=cloud-final.service|g"
+          "s|cros_efi|cros_efi systemd.mask=var-lib-docker.mount|g"
+          "s|cros_efi|cros_efi systemd.mask=docker.service|g"
+          "s|cros_efi|cros_efi systemd.mask=google-guest-agent.service|g"
+          "s|cros_efi|cros_efi systemd.mask=google-osconfig-init.service|g"
+          "s|cros_efi|cros_efi systemd.mask=google-osconfig-agent.service|g"
+          "s|cros_efi|cros_efi systemd.mask=google-startup-scripts.service|g"
+          "s|cros_efi|cros_efi systemd.mask=google-shutdown-scripts.service|g"
+          "s|cros_efi|cros_efi systemd.mask=konlet-startup.service|g"
+          "s|cros_efi|cros_efi systemd.mask=crash-reporter.service|g"
+          "s|cros_efi|cros_efi systemd.mask=device_policy_manager.service|g"
+          "s|cros_efi|cros_efi systemd.mask=docker-events-collector-fluent-bit.service|g"
+          "s|cros_efi|cros_efi systemd.mask=sshd.service|g"
+          "s|cros_efi|cros_efi systemd.mask=var-lib-toolbox.mount|g"
+          "s|cros_efi|cros_efi systemd.mask=update-engine.service|g"
+          "s|cros_efi|cros_efi confidential-space.hardened=true|g"
+        )
+
+        CMD=(
+          "/oem-preloader"
+          "--src-image=./disk.raw"
+          "--out-image=output.bin"
+          "--oem-fs-size=500M"
+          "--disk-size-gb=11"
+          "--install-dir=/workspace/oem-install/"
+        )
+        for cmd in "$${COMMON_COMMANDS[@]}"; do
+          CMD+=(--cmdline-sed-command="$${cmd}")
+        done
+        if [[ "$${IMAGE_ENV}" == "debug" ]]; then
+          for cmd in "$${DEBUG_COMMANDS[@]}"; do
+            CMD+=(--cmdline-sed-command="$${cmd}")
+          done
+        elif [[ "$${IMAGE_ENV}" == "hardened" ]]; then
+          for cmd in "$${HARDENED_COMMANDS[@]}"; do
+            CMD+=(--cmdline-sed-command="$${cmd}")
+          done
+        fi
+
+        "$${CMD[@]}"
   - name: 'alpine'
     id: 'RenameOutputImage'
     args: ['mv', 'output.bin', 'disk.raw']
