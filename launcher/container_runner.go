@@ -91,6 +91,7 @@ const defaultOOMScore = 1000
 
 // NewRunner returns a runner.
 func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.Token, launchSpec spec.LaunchSpec, mdsClient *metadata.Client, tpm io.ReadWriteCloser, logger logging.Logger, serialConsole *os.File) (*ContainerRunner, error) {
+	startNewRunner := time.Now()
 	image, err := initImage(ctx, cdClient, launchSpec, token)
 	if err != nil {
 		return nil, err
@@ -134,9 +135,11 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	}
 
 	logger.Info(fmt.Sprintf("Exposed Ports:             : %v\n", imageConfig.ExposedPorts))
+	startOpenPorts := time.Now()
 	if err := openPorts(imageConfig.ExposedPorts); err != nil {
 		return nil, err
 	}
+	logger.Info("OpenPorts Time", "duration", time.Since(startOpenPorts))
 
 	logger.Info(fmt.Sprintf("Image Labels               : %v\n", imageConfig.Labels))
 	launchPolicy, err := spec.GetLaunchPolicy(imageConfig.Labels, logger)
@@ -312,6 +315,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	if err != nil {
 		return nil, err
 	}
+	logger.Info("NewRunner Time", "duration", time.Since(startNewRunner))
 	return &ContainerRunner{
 		container,
 		launchSpec,
