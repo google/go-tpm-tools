@@ -39,7 +39,7 @@ steps:
         rm -rf /workspace/oem-install
         mkdir -p /workspace/oem-install/confidential_space
         mkdir -p /workspace/oem-install/confidential_space/nodeproblemdetector
-        cp ./launcher/image/bc-guest/bcentrypoint.sh /workspace/oem-install/user-data
+        cp ./launcher/image/bc-guest/bcentrypoint.sh /workspace/oem-install/entrypoint.sh
         cp ./launcher/image/bc-guest/bcexperiment.json \
            ./launcher/image/launcher \
            ./launcher/image/container-runner.service \
@@ -53,7 +53,7 @@ steps:
         cp ./launcher/image/bc-guest/meta-data /workspace/oem-install/meta-data
         chmod +x /workspace/oem-install/confidential_space/cs_container_launcher || true
         chmod +x /workspace/oem-install/confidential_space/exit_script.sh || true
-        chmod +x /workspace/oem-install/user-data || true
+        chmod +x /workspace/oem-install/entrypoint.sh || true
 
   - name: 'gcr.io/cos-cloud/oem-preloader:latest'
     id: 'RunOEMPreloader'
