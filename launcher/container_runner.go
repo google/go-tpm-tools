@@ -108,6 +108,7 @@ const (
 
 // NewRunner returns a runner.
 func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.Token, launchSpec spec.LaunchSpec, mdsClient *metadata.Client, tpm io.ReadWriteCloser, logger logging.Logger, serialConsole *os.File) (*ContainerRunner, error) {
+	startNewRunner := time.Now()
 	image, err := initImage(ctx, cdClient, launchSpec, token)
 	if err != nil {
 		return nil, err
@@ -346,11 +347,14 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 
 	var cni gocni.CNI
 	if launchSpec.NonrootContainer {
+		startCNI := time.Now()
 		if cni, err = newCNI(); err != nil {
 			return nil, err
 		}
+		logger.Info("CNI Setup Time", "duration", time.Since(startCNI))
 	}
 
+	logger.Info("NewRunner Time", "duration", time.Since(startNewRunner))
 	return &ContainerRunner{
 		container:     container,
 		launchSpec:    launchSpec,
@@ -854,9 +858,11 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		}
 	}
 
+	startOpenPorts := time.Now()
 	if err := openPorts(imageConfig.ExposedPorts, containerIP); err != nil {
 		return fmt.Errorf("failed to open and forward ports: %w", err)
 	}
+	r.logger.Info("OpenPorts Time", "duration", time.Since(startOpenPorts), "containerIP_empty", containerIP == "")
 
 	setupDuration := time.Since(start)
 	r.logger.Info("Workload setup completed",
