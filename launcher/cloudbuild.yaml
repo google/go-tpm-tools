@@ -72,6 +72,22 @@ steps:
       export CGO_LDFLAGS="-L/workspace/keymanager/target/release"
       go build -o ../image/launcher -ldflags="-extldflags=-Wl,-z,lazy -X 'main.BuildCommit=${SHORT_SHA}'"
 
+- name: debian:latest
+  id: AcpidCompile
+  entrypoint: /bin/bash
+  args:
+    - -c
+    - |
+      set -exuo pipefail
+      apt-get update && apt-get install -y build-essential git autoconf automake
+      git clone https://github.com/tedfelix/acpid2.git
+      cd acpid2
+      git checkout 2.0.34
+      autoreconf -i
+      ./configure LDFLAGS='-static'
+      make
+      cp acpid /workspace/launcher/image/acpid
+
 - name: 'gcr.io/cloud-builders/gcloud'
   id: DownloadExpBinary
   entrypoint: 'gcloud'
