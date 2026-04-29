@@ -21,7 +21,7 @@ require (
 	github.com/google/go-tpm v0.9.8
 	github.com/google/go-tpm-tools v0.4.9-0.20260325175049-22911efba9e5
 	github.com/google/go-tpm-tools/agent v0.0.0-20260407214151-8b46d3d5fd29
-	github.com/google/go-tpm-tools/keymanager v0.4.4
+	github.com/GoogleCloudPlatform/key-protection-module v0.0.0-20260428164721-4a523ff8cf9c
 	github.com/google/go-tpm-tools/verifier v0.4.4
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.0
@@ -109,6 +109,6 @@ require (
 
 replace (
 	github.com/google/go-tpm-tools v0.4.6 => ../
-	github.com/google/go-tpm-tools/keymanager v0.4.4 => ../keymanager
+
 	github.com/google/go-tpm-tools/verifier v0.4.4 => ../verifier
 )
