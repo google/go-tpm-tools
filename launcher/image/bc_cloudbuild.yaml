@@ -39,8 +39,8 @@ steps:
         rm -rf /workspace/oem-install
         mkdir -p /workspace/oem-install/confidential_space
         mkdir -p /workspace/oem-install/confidential_space/nodeproblemdetector
-        cp ./launcher/image/bowcaster/bcentrypoint.sh /workspace/oem-install/user-data
-        cp ./launcher/image/bowcaster/bcexperiment.json \
+        cp ./launcher/image/bc-guest/bcentrypoint.sh /workspace/oem-install/user-data
+        cp ./launcher/image/bc-guest/bcexperiment.json \
            ./launcher/image/launcher \
            ./launcher/image/container-runner.service \
            ./launcher/image/fluent-bit-cs.conf \
