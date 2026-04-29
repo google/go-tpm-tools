@@ -1,0 +1,185 @@
+# Test container cleanup behavior.
+# 1. Create Monitor VM (listening on UDP).
+# 2. Capture Monitor IP.
+# 3. Create Workload VM (sending heartbeats to Monitor).
+# 4. Verify heartbeat.
+# 5. Stop Workload VM.
+# 6. Verify graceful exit message in Monitor logs.
+substitutions:
+  '_IMAGE_NAME': ''
+  '_IMAGE_PROJECT': ''
+  '_CLEANUP': 'true'
+  '_IMAGE_REPO': 'us-west1-docker.pkg.dev/confidential-space-images-dev/cs-integ-test-images'
+  '_WORKLOAD_IMAGE': '${_IMAGE_REPO}/workloadcleanup:latest'
+  '_ZONE': 'us-west1-a'
+
+steps:
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CreateMonitorVMGracefulShutdown
+  env:
+  - 'BUILD_ID=$BUILD_ID'
+  - 'ZONE=$_ZONE'
+  script: |
+    #!/usr/bin/env bash
+    LATEST_DEBIAN=$(gcloud compute images list \
+        --project=debian-cloud \
+        --no-standard-images \
+        --filter="architecture=X86_64" \
+        --format="value(family)" | sort -V | uniq | tail -n 1)
+
+    if [ -z "$LATEST_DEBIAN" ]; then
+      echo "Failed to find a Debian image family. Defaulting to debian-12."
+      LATEST_DEBIAN="debian-12"
+    else
+      echo "Found latest Debian family: $LATEST_DEBIAN"
+    fi
+
+    gcloud compute instances create cleanup-monitor-$BUILD_ID \
+      --zone $ZONE \
+      --machine-type=e2-micro \
+      --image-family=$LATEST_DEBIAN \
+      --image-project=debian-cloud \
+      --metadata=startup-script="#!/bin/bash
+        apt-get update
+        apt-get install -y netcat-openbsd
+        nc -l -u -p 2020 > /dev/ttyS0"
+
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CaptureIP
+  env:
+  - 'BUILD_ID=$BUILD_ID'
+  - 'ZONE=$_ZONE'
+  script: |
+    #!/usr/bin/env bash
+    gcloud compute instances describe cleanup-monitor-$BUILD_ID \
+      --zone $ZONE \
+      --format="get(networkInterfaces[0].networkIP)" > /workspace/monitor_ip.txt
+
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CreateWorkloadVMGracefulShutdown
+  env:
+  - 'BUILD_ID=$BUILD_ID'
+  - 'IMAGE_NAME=$_IMAGE_NAME'
+  - 'IMAGE_PROJECT=$_IMAGE_PROJECT'
+  - 'WORKLOAD_IMAGE=$_WORKLOAD_IMAGE'
+  - 'ZONE=$_ZONE'
+  script: |
+    #!/usr/bin/env bash
+    MONITOR_IP=$(cat /workspace/monitor_ip.txt)
+    bash create_vm.sh -i $IMAGE_NAME \
+      -p $IMAGE_PROJECT \
+      -m "tee-image-reference=$WORKLOAD_IMAGE,tee-graceful-shutdown=true,tee-cmd=[\"--server-addr=${MONITOR_IP}:2020\"]" \
+      -n cleanup-test-$BUILD_ID \
+      -z $ZONE
+
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: TestGracefulShutdown
+  entrypoint: 'bash'
+  args: ['scripts/test_workload_cleanup.sh',
+          'cleanup-monitor-${BUILD_ID}',
+          'cleanup-test-${BUILD_ID}',
+          '${_ZONE}',
+          'true',
+        ]
+
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CleanUpGracefulShutdown
+  env:
+  - 'CLEANUP=$_CLEANUP'
+  - 'BUILD_ID=$BUILD_ID'
+  - 'ZONE=$_ZONE'
+  script: |
+    #!/usr/bin/env bash
+    bash cleanup.sh cleanup-monitor-$BUILD_ID $ZONE
+    bash cleanup.sh cleanup-test-$BUILD_ID $ZONE
+
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CreateMonitorVMNoGracefulShutdown
+  env:
+  - 'BUILD_ID=$BUILD_ID'
+  - 'ZONE=$_ZONE'
+  script: |
+    #!/usr/bin/env bash
+    LATEST_DEBIAN=$(gcloud compute images list \
+        --project=debian-cloud \
+        --no-standard-images \
+        --filter="architecture=X86_64" \
+        --format="value(family)" | sort -V | uniq | tail -n 1)
+
+    if [ -z "$LATEST_DEBIAN" ]; then
+      echo "Failed to find a Debian image family. Defaulting to debian-12."
+      LATEST_DEBIAN="debian-12"
+    else
+      echo "Found latest Debian family: $LATEST_DEBIAN"
+    fi
+
+    gcloud compute instances create cleanup-monitor-$BUILD_ID \
+      --zone $ZONE \
+      --machine-type=e2-micro \
+      --image-family=$LATEST_DEBIAN \
+      --image-project=debian-cloud \
+      --metadata=startup-script="#!/bin/bash
+        apt-get update
+        apt-get install -y netcat-openbsd
+        nc -l -u -p 2020 > /dev/ttyS0"
+
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CaptureIPNoGracefulShutdown
+  env:
+  - 'BUILD_ID=$BUILD_ID'
+  - 'ZONE=$_ZONE'
+  script: |
+    #!/usr/bin/env bash
+    gcloud compute instances describe cleanup-monitor-$BUILD_ID \
+      --zone $ZONE \
+      --format="get(networkInterfaces[0].networkIP)" > /workspace/monitor_ip.txt
+
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CreateWorkloadVMNoGracefulShutdown
+  env:
+  - 'BUILD_ID=$BUILD_ID'
+  - 'IMAGE_NAME=$_IMAGE_NAME'
+  - 'IMAGE_PROJECT=$_IMAGE_PROJECT'
+  - 'WORKLOAD_IMAGE=$_WORKLOAD_IMAGE'
+  - 'ZONE=$_ZONE'
+  script: |
+    #!/usr/bin/env bash
+    MONITOR_IP=$(cat /workspace/monitor_ip.txt)
+    bash create_vm.sh -i $IMAGE_NAME \
+      -p $IMAGE_PROJECT \
+      -m "tee-image-reference=$WORKLOAD_IMAGE,tee-cmd=[\"--server-addr=${MONITOR_IP}:2020\"]" \
+      -n cleanup-test-$BUILD_ID \
+      -z $ZONE
+
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: TestNoGracefulShutdown
+  entrypoint: 'bash'
+  args: ['scripts/test_workload_cleanup.sh',
+          'cleanup-monitor-${BUILD_ID}',
+          'cleanup-test-${BUILD_ID}',
+          '${_ZONE}',
+          'false',
+        ]
+
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CleanUpNoGracefulShutdown
+  env:
+  - 'CLEANUP=$_CLEANUP'
+  - 'BUILD_ID=$BUILD_ID'
+  - 'ZONE=$_ZONE'
+  script: |
+    #!/usr/bin/env bash
+    bash cleanup.sh cleanup-monitor-$BUILD_ID $ZONE
+    bash cleanup.sh cleanup-test-$BUILD_ID $ZONE
+
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CheckFailure
+  entrypoint: 'bash'
+  env:
+  - 'BUILD_ID=$BUILD_ID'
+  args: ['check_failure.sh']
+
+options:
+  dynamic_substitutions: true
+  pool:
+    name: 'projects/confidential-space-images-dev/locations/us-west1/workerPools/cs-image-build-vpc'
