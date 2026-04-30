@@ -66,11 +66,7 @@ jobs:
         if: runner.os == 'Linux' && matrix.architecture == 'x64'
       - name: Build KeyManager Rust library
         run: |
-          cd keymanager
-          cargo build --release
-      - name: Build New KeyManager Rust library
-        run: |
-          MODULE_PATH=$(go list -f '{{.Dir}}' github.com/google/cloud/platform/key-protection-module)
+          MODULE_PATH=$(go list -f '{{.Dir}}' github.com/GoogleCloudPlatform/key-protection-module)
           # Build the key_custody_core crate
           pushd $MODULE_PATH
           cargo build --release
