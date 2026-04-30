@@ -12,10 +12,10 @@ import (
 	"strings"
 	"testing"
 
+	keymanager "github.com/GoogleCloudPlatform/key-protection-module/km_common/proto"
 	"github.com/google/go-cmp/cmp"
 	gecel "github.com/google/go-eventlog/cel"
 	"github.com/google/go-tpm-tools/agent"
-	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
 	"github.com/google/go-tpm-tools/launcher/internal/experiments"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/spec"
