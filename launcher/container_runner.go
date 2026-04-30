@@ -873,9 +873,6 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	if err != nil {
 		r.logger.Error(err.Error())
 	}
-	// Start timer for workload execution.
-	start = time.Now()
-	r.logger.Info("workload task started")
 	if uptimeData, err := os.ReadFile("/proc/uptime"); err != nil {
 		r.logger.Error("failed to read uptime", "error", err)
 	} else {
@@ -884,6 +881,9 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 			r.logger.Info("System uptime", "uptime_sec", parts[0])
 		}
 	}
+	// Start timer for workload execution.
+	start = time.Now()
+	r.logger.Info("workload task started")
 
 	if err := task.Start(ctx); err != nil {
 		return &RetryableError{err}
