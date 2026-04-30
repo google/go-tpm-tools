@@ -50,6 +50,13 @@ message KeyInfo {
   double expiration_time = 4;
 }
 
+message EnumerateKeysRequest {
+  // The maximum number of key infos to return.
+  uint64 limit = 1 [(buf.validate.field).uint64 = {gt: 0}];
+  // The offset to start from.
+  uint64 offset = 2 [(buf.validate.field).uint64 = {gt: 0}];
+}
+
 // Response containing a list of all active keys managed by the daemon.
 message EnumerateKeysResponse {
   // A list of active keys along with their metadata.

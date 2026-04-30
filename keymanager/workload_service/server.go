@@ -17,17 +17,14 @@ import (
 	"time"
 
 	"buf.build/go/protovalidate"
-
-	"google.golang.org/protobuf/encoding/protojson"
-	"google.golang.org/protobuf/proto"
-
-	api "github.com/google/go-tpm-tools/keymanager/workload_service/proto"
-	"github.com/google/uuid"
-	"google.golang.org/protobuf/types/known/durationpb"
-
 	kpscc "github.com/google/go-tpm-tools/keymanager/key_protection_service/key_custody_core"
 	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
 	wskcc "github.com/google/go-tpm-tools/keymanager/workload_service/key_custody_core"
+	api "github.com/google/go-tpm-tools/keymanager/workload_service/proto"
+	"github.com/google/uuid"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/durationpb"
 )
 
 // WorkloadService defines the interface for generating and managing binding keypairs.
@@ -453,8 +450,17 @@ func (s *Server) handleGetCapabilities(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, &resp, http.StatusOK)
 }
 
-func (s *Server) handleEnumerateKeys(w http.ResponseWriter, _ *http.Request) {
-	keys, _, err := s.keyProtectionService.EnumerateKEMKeys(100, 0)
+func (s *Server) handleEnumerateKeys(w http.ResponseWriter, r *http.Request) {
+	var req api.EnumerateKeysRequest
+	if err := readRequest(r, &req); err != nil {
+		writeError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	limit := req.GetLimit()
+	if limit == 0 {
+		limit = 100 // Default pagination limit
+	}
+	keys, _, err := s.keyProtectionService.EnumerateKEMKeys(int(limit), int(req.GetOffset()))
 	if err != nil {
 		writeError(w, fmt.Sprintf("failed to enumerate keys: %v", err), httpStatusFromError(err))
 		return
@@ -534,6 +540,9 @@ func readRequest(r *http.Request, req proto.Message) error {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		return fmt.Errorf("failed to read request body: %w", err)
+	}
+	if len(body) == 0 {
+		return nil
 	}
 	if err := protojson.Unmarshal(body, req); err != nil {
 		return fmt.Errorf("invalid request body: %w", err)
