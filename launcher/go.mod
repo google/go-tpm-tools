@@ -109,6 +109,5 @@ require (
 
 replace (
 	github.com/google/go-tpm-tools v0.4.6 => ../
-
 	github.com/google/go-tpm-tools/verifier v0.4.4 => ../verifier
 )

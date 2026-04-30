@@ -102,6 +102,8 @@ github.com/BurntSushi/xgb v0.0.0-20160522181843-27f122750802/go.mod h1:IVnqGOEym
 github.com/GoogleCloudPlatform/cloudsql-proxy v0.0.0-20191009163259-e802c2cb94ae/go.mod h1:mjwGPas4yKduTyubHvD1Atl9r1rUq8DfVy+gkVvZ+oo=
 github.com/GoogleCloudPlatform/confidential-space/server v0.0.0-20260410183711-07bdbfebb244 h1:tAHylZKez3KlUUwKDivU3fImfzSeJU3CQYNq7RuAUKQ=
 github.com/GoogleCloudPlatform/confidential-space/server v0.0.0-20260410183711-07bdbfebb244/go.mod h1:STnMvdbs5Iknm+bo0vx8FNwak7oqiHcN54w36pCHEb4=
+github.com/GoogleCloudPlatform/key-protection-module v0.0.0-20260428164721-4a523ff8cf9c h1:LLm97nWuUztssw+xxHv3qdcEbqA2Czw31y8ag8P33bs=
+github.com/GoogleCloudPlatform/key-protection-module v0.0.0-20260428164721-4a523ff8cf9c/go.mod h1:lL1e6DwHCKIQLhD+Wq9ClZPHypLrgY0RHHeA1DXUwUk=
 github.com/Knetic/govaluate v3.0.1-0.20171022003610-9aa49832a739+incompatible/go.mod h1:r7JcOSlj0wfOMncg0iLm8Leh48TZaKVeNIfJntJ2wa0=
 github.com/Masterminds/goutils v1.1.0/go.mod h1:8cTjp+g8YejhMuvIA5y2vz3BpJxksy863GQaJW2MFNU=
 github.com/Masterminds/semver v1.4.2/go.mod h1:MB6lktGJrhw8PrUyiEoblNEGEQ+RzHPF078ddwwvV3Y=
