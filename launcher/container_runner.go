@@ -351,7 +351,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 			return nil, err
 		}
 	}
-cs-logredirect-test-none-e4a2df9f-fd8e-4003-b68f-a1cec9429f41
+
 	logger.Info("NewRunner Time", "duration", time.Since(startNewRunner))
 	return &ContainerRunner{
 		container:     container,
