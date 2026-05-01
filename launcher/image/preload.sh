@@ -17,8 +17,6 @@ copy_experiment_client() {
 setup_launcher_systemd_unit() {
   cp container-runner.service "${CS_PATH}/container-runner.service"
   cp exit_script.sh "${CS_PATH}/exit_script.sh"
-  cp internal-investigator.service "${CS_PATH}/internal-investigator.service"
-  cp internal-investigator.sh "${CS_PATH}/internal-investigator.sh"
 }
 
 copy_cni_config() {

@@ -108,7 +108,6 @@ const (
 
 // NewRunner returns a runner.
 func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.Token, launchSpec spec.LaunchSpec, mdsClient *metadata.Client, tpm io.ReadWriteCloser, logger logging.Logger, serialConsole *os.File) (*ContainerRunner, error) {
-	startNewRunner := time.Now()
 	image, err := initImage(ctx, cdClient, launchSpec, token)
 	if err != nil {
 		return nil, err
@@ -209,7 +208,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	}
 
 	// If we use non-root container, we enable both the user and network namespaces and prepare stdout/err pipe mounts.
-	// Otherwise, we use host network.
+	// Otherwise, we use host network without enabling the namespaces.
 	if launchSpec.NonrootContainer {
 		pipePath := path.Join(launcherfile.HostTmpPath, stdoutStderrPipe)
 		specOpts = append(specOpts,
@@ -270,7 +269,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	}
 
 	conOpts := []containerd.NewContainerOpts{containerd.WithImage(image)}
-	if launchSpec.NonrootContainer {
+	if launchSpec.NonrootContainer {	// When a non-root container is used, we remap the snapshop with the non-root user.
 		conOpts = append(conOpts, containerd.WithRemappedSnapshot(snapshotID, image, hostUIDBegin, hostGIDBegin))
 	} else {
 		conOpts = append(conOpts, containerd.WithNewSnapshot(snapshotID, image))
@@ -347,14 +346,11 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 
 	var cni gocni.CNI
 	if launchSpec.NonrootContainer {
-		startCNI := time.Now()
 		if cni, err = newCNI(); err != nil {
 			return nil, err
 		}
-		logger.Info("CNI Setup Time", "duration", time.Since(startCNI))
 	}
 
-	logger.Info("NewRunner Time", "duration", time.Since(startNewRunner))
 	return &ContainerRunner{
 		container:     container,
 		launchSpec:    launchSpec,
@@ -811,7 +807,7 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	streamOpt := cio.WithStreams(nil, logWriter, logWriter)
 
 	if r.launchSpec.NonrootContainer {
-		// Create the named pipe to allow non-root workloads to open it (e.g. via /dev/stderr) without permission errors.
+		// Create the named pipe to allow non-root workloads to open it via /dev/{stdout,stderr} without permission errors.
 		pipePath := path.Join(launcherfile.HostTmpPath, stdoutStderrPipe)
 		_ = os.Remove(pipePath) // Error can be ignored.
 		if err := syscall.Mkfifo(pipePath, 0666); err != nil {
@@ -873,21 +869,13 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	if err != nil {
 		r.logger.Error(err.Error())
 	}
+	// Start timer for workload execution.
+	start = time.Now()
+	r.logger.Info("workload task started")
 
 	if err := task.Start(ctx); err != nil {
 		return &RetryableError{err}
 	}
-	if uptimeData, err := os.ReadFile("/proc/uptime"); err != nil {
-		r.logger.Error("failed to read uptime", "error", err)
-	} else {
-		parts := strings.Fields(string(uptimeData))
-		if len(parts) > 0 {
-			r.logger.Info("System uptime", "uptime_sec", parts[0])
-		}
-	}
-	// Start timer for workload execution.
-	start = time.Now()
-	r.logger.Info("workload task started")
 	status := <-exitStatusC
 	workloadDuration := time.Since(start)
 
@@ -948,6 +936,8 @@ func initImage(ctx context.Context, cdClient *containerd.Client, launchSpec spec
 }
 
 // openPorts writes firewall rules to accept all traffic into that port and protocol using iptables.
+// When `containerIP` is not empty, it implies that the namespace and CNI are used for the container.
+// In that case, it also forwards traffic to the container via DNAT and allows container egress traffic.
 func openPorts(ports map[string]struct{}, containerIP string) error {
 	for k := range ports {
 		portAndProtocol := strings.Split(k, "/")
