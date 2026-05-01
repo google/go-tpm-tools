@@ -269,7 +269,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	}
 
 	conOpts := []containerd.NewContainerOpts{containerd.WithImage(image)}
-	if launchSpec.NonrootContainer {	// When a non-root container is used, we remap the snapshop with the non-root user.
+	if launchSpec.NonrootContainer { // When a non-root container is used, we remap the snapshop with the non-root user.
 		conOpts = append(conOpts, containerd.WithRemappedSnapshot(snapshotID, image, hostUIDBegin, hostGIDBegin))
 	} else {
 		conOpts = append(conOpts, containerd.WithNewSnapshot(snapshotID, image))
