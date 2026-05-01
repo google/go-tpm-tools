@@ -51,6 +51,39 @@ steps:
   waitFor: ['LogOverrideTest', 'LogOverrideTestCloudLogging']
 
 - name: 'gcr.io/cloud-builders/gcloud'
+  id: CreateVMNonRootLogOverride
+  entrypoint: 'bash'
+  env:
+  - 'BUILD_ID=$BUILD_ID'
+  args: ['create_vm.sh','-i', '${_HARDENED_IMAGE_NAME}',
+          '-p', '${_IMAGE_PROJECT}',
+          '-f', '${_METADATA_FILE}',
+          '-m', 'tee-image-reference=${_WORKLOAD_IMAGE_LOG_NEVER},tee-container-log-redirect=true,tee-nonroot-container=true',
+          '-n', '${_VM_NAME_PREFIX}-log-nr-${BUILD_ID}',
+          '-z', '${_ZONE}',
+        ]
+  waitFor: ['CleanUpLogOverride']
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: NonRootLogOverrideTest
+  entrypoint: 'bash'
+  args: ['scripts/test_launchpolicy_log_never.sh', '${_VM_NAME_PREFIX}-log-nr-${BUILD_ID}', '${_ZONE}']
+  waitFor: ['CreateVMNonRootLogOverride']
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: NonRootLogOverrideTestCloudLogging
+  entrypoint: 'bash'
+  env:
+  - 'PROJECT_ID=$PROJECT_ID'
+  args: ['scripts/test_launchpolicy_log_never_cloudlogging.sh', '${_VM_NAME_PREFIX}-log-nr-${BUILD_ID}']
+  waitFor: ['CreateVMNonRootLogOverride']
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CleanUpNonRootLogOverride
+  entrypoint: 'bash'
+  env:
+  - 'CLEANUP=$_CLEANUP'
+  args: ['cleanup.sh', '${_VM_NAME_PREFIX}-log-nr-${BUILD_ID}', '${_ZONE}']
+  waitFor: ['NonRootLogOverrideTest', 'NonRootLogOverrideTestCloudLogging']
+
+- name: 'gcr.io/cloud-builders/gcloud'
   id: CreateVMLogOverrideDebug
   entrypoint: 'bash'
   env:
