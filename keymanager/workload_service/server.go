@@ -244,6 +244,10 @@ func NewServer(keyProtectionService KeyProtectionService, workloadService Worklo
 	if err != nil {
 		return nil, fmt.Errorf("failed to listen on unix socket %s: %w", socketPath, err)
 	}
+	// Change the permission so that non-root containers can access the socket
+	if err := os.Chmod(socketPath, 0666); err != nil {
+		return nil, fmt.Errorf("failed to chmod unix socket %s: %w", socketPath, err)
+	}
 	s.listener = ln
 
 	go s.processClaims()
