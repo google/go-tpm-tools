@@ -110,6 +110,7 @@ const (
 
 // NewRunner returns a runner.
 func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.Token, launchSpec spec.LaunchSpec, mdsClient *metadata.Client, tpm io.ReadWriteCloser, logger logging.Logger, serialConsole *os.File) (*ContainerRunner, error) {
+	startNewRunner := time.Now()
 	image, err := initImage(ctx, cdClient, launchSpec, token)
 	if err != nil {
 		return nil, err
@@ -277,7 +278,9 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		conOpts = append(conOpts, containerd.WithNewSnapshot(snapshotID, image))
 	}
 	conOpts = append(conOpts, containerd.WithNewSpec(specOpts...))
+	startContainer := time.Now()
 	container, err = cdClient.NewContainer(ctx, containerID, conOpts...)
+	logger.Info("Created container", "duration", time.Since(startContainer))
 	if err != nil {
 		if container != nil {
 			container.Delete(ctx, containerd.WithSnapshotCleanup)
@@ -357,7 +360,8 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 			return nil, err
 		}
 	}
-
+cs-logredirect-test-none-e4a2df9f-fd8e-4003-b68f-a1cec9429f41
+	logger.Info("NewRunner Time", "duration", time.Since(startNewRunner))
 	return &ContainerRunner{
 		container,
 		launchSpec,
@@ -863,6 +867,7 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		return fmt.Errorf("failed to get image config: %w", err)
 	}
 
+	startOpenPorts := time.Now()
 	var containerIP string
 	if r.launchSpec.NonrootContainer {
 		containerIP, err = r.getContainerIP(ctx, fmt.Sprintf(netnsPathFmt, task.Pid()))
@@ -874,6 +879,7 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	if err := openPorts(imageConfig.ExposedPorts, containerIP); err != nil {
 		return fmt.Errorf("failed to open and forward ports: %w", err)
 	}
+	r.logger.Info("OpenPorts Time", "duration", time.Since(startOpenPorts), "containerIP_empty", containerIP == "")
 
 	setupDuration := time.Since(start)
 	r.logger.Info("Workload setup completed",
@@ -883,6 +889,14 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	exitStatusC, err := task.Wait(ctx)
 	if err != nil {
 		r.logger.Error(err.Error())
+	}
+	if uptimeData, err := os.ReadFile("/proc/uptime"); err != nil {
+		r.logger.Error("failed to read uptime", "error", err)
+	} else {
+		parts := strings.Fields(string(uptimeData))
+		if len(parts) > 0 {
+			r.logger.Info("System uptime", "uptime_sec", parts[0])
+		}
 	}
 	// Start timer for workload execution.
 	start = time.Now()
