@@ -134,6 +134,70 @@ steps:
   args: ['cleanup.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}-none', '${_ZONE}']
   waitFor: ['LogNoneCheckSerialTest', 'LogNoneCheckCloudLoggingTest']
 
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CreateVMRedirectAllNonRoot
+  entrypoint: 'bash'
+  env:
+  - 'BUILD_ID=$BUILD_ID'
+  args: ['create_vm.sh','-i', '${_HARDENED_IMAGE_NAME}',
+          '-p', '${_IMAGE_PROJECT}',
+          '-m', 'tee-image-reference=${_WORKLOAD_IMAGE},tee-container-log-redirect=true,tee-nonroot-container=true',
+          '-n', '${_VM_NAME_PREFIX}-nr-all-${BUILD_ID}',
+          '-z', '${_ZONE}',
+        ]
+  waitFor: ['CleanUpLogNoneTest']
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: LogAllNonRootCheckSerialTest
+  entrypoint: 'bash'
+  args: ['scripts/test_log_redirect.sh', 'serial', 'true', '${_VM_NAME_PREFIX}-nr-all-${BUILD_ID}', '${_ZONE}']
+  waitFor: ['CreateVMRedirectAllNonRoot']
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: LogAllNonRootCheckCloudLoggingTest
+  entrypoint: 'bash'
+  env:
+  - 'PROJECT_ID=$PROJECT_ID'
+  args: ['scripts/test_log_redirect.sh', 'cloud_logging', 'true', '${_VM_NAME_PREFIX}-nr-all-${BUILD_ID}', '${_ZONE}']
+  waitFor: ['CreateVMRedirectAllNonRoot']
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CleanUpLogAllNonRootTest
+  entrypoint: 'bash'
+  env:
+  - 'CLEANUP=$_CLEANUP'
+  args: ['cleanup.sh', '${_VM_NAME_PREFIX}-nr-all-${BUILD_ID}', '${_ZONE}']
+  waitFor: ['LogAllNonRootCheckSerialTest', 'LogAllNonRootCheckCloudLoggingTest']
+
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CreateVMRedirectNoneNonRoot
+  entrypoint: 'bash'
+  env:
+  - 'BUILD_ID=$BUILD_ID'
+  args: ['create_vm.sh','-i', '${_HARDENED_IMAGE_NAME}',
+          '-p', '${_IMAGE_PROJECT}',
+          '-m', 'tee-image-reference=${_WORKLOAD_IMAGE},tee-container-log-redirect=false,tee-nonroot-container=true',
+          '-n', '${_VM_NAME_PREFIX}-nr-none-${BUILD_ID}',
+          '-z', '${_ZONE}',
+        ]
+  waitFor: ['CleanUpLogAllNonRootTest']
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: LogNoneNonRootCheckSerialTest
+  entrypoint: 'bash'
+  args: ['scripts/test_log_redirect.sh', 'serial', 'false', '${_VM_NAME_PREFIX}-nr-none-${BUILD_ID}', '${_ZONE}']
+  waitFor: ['CreateVMRedirectNoneNonRoot']
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: LogNoneNonRootCheckCloudLoggingTest
+  entrypoint: 'bash'
+  env:
+  - 'PROJECT_ID=$PROJECT_ID'
+  args: ['scripts/test_log_redirect.sh', 'cloud_logging', 'false', '${_VM_NAME_PREFIX}-nr-none-${BUILD_ID}', '${_ZONE}']
+  waitFor: ['CreateVMRedirectNoneNonRoot']
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CleanUpLogNoneNonRootTest
+  entrypoint: 'bash'
+  env:
+  - 'CLEANUP=$_CLEANUP'
+  args: ['cleanup.sh', '${_VM_NAME_PREFIX}-nr-none-${BUILD_ID}', '${_ZONE}']
+  waitFor: ['LogNoneNonRootCheckSerialTest', 'LogNoneNonRootCheckCloudLoggingTest']
+
 # Must come after cleanup.
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CheckFailure
