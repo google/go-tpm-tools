@@ -137,6 +137,56 @@ steps:
   args: ['cleanup.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}-capsdenied', '${_ZONE}']
   waitFor: ['CheckCapsDenied']
 
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CreateVMWithPrivilegesNonRoot
+  entrypoint: 'bash'
+  env:
+  - 'BUILD_ID=$BUILD_ID'
+  args: ['create_vm.sh','-i', '${_IMAGE_NAME}',
+          '-p', '${_IMAGE_PROJECT}',
+          '-m', '^~^tee-image-reference=${_WORKLOAD_IMAGE}~tee-container-log-redirect=true~tee-cgroup-ns=true~tee-added-capabilities=["CAP_CHOWN","CAP_DAC_OVERRIDE","CAP_DAC_READ_SEARCH","CAP_FOWNER","CAP_FSETID","CAP_KILL","CAP_SETGID","CAP_SETUID","CAP_SETPCAP","CAP_LINUX_IMMUTABLE","CAP_NET_BIND_SERVICE","CAP_NET_BROADCAST","CAP_NET_ADMIN","CAP_NET_RAW","CAP_IPC_LOCK","CAP_IPC_OWNER","CAP_SYS_MODULE","CAP_SYS_RAWIO","CAP_SYS_CHROOT","CAP_SYS_PTRACE","CAP_SYS_PACCT","CAP_SYS_ADMIN","CAP_SYS_BOOT","CAP_SYS_NICE","CAP_SYS_RESOURCE","CAP_SYS_TIME","CAP_SYS_TTY_CONFIG","CAP_MKNOD","CAP_LEASE","CAP_AUDIT_WRITE","CAP_AUDIT_CONTROL","CAP_SETFCAP","CAP_MAC_OVERRIDE","CAP_MAC_ADMIN","CAP_SYSLOG","CAP_WAKE_ALARM","CAP_BLOCK_SUSPEND","CAP_AUDIT_READ","CAP_PERFMON","CAP_BPF","CAP_CHECKPOINT_RESTORE"]~tee-nonroot-container=true',
+          '-n', '${_VM_NAME_PREFIX}-nr-priv-${BUILD_ID}',
+          '-z', '${_ZONE}',
+        ]
+  waitFor: ['-']
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CheckPrivilegesExistNonRoot
+  env:
+  - '_VM_NAME_PREFIX=$_VM_NAME_PREFIX'
+  - 'BUILD_ID=$BUILD_ID'
+  - '_ZONE=$_ZONE'
+  script: |
+    #!/bin/bash
+    set -euo pipefail
+    source util/read_serial.sh
+
+    sleep 45
+    SERIAL_OUTPUT=$(read_serial ${_VM_NAME_PREFIX}-nr-priv-${BUILD_ID} ${_ZONE})
+    if echo $SERIAL_OUTPUT | grep -q "=ep"
+    then
+        echo "- Verified added all caps"
+    else
+        echo "FAILED: caps not added"
+        echo 'TEST FAILED' > /workspace/status.txt
+        echo $SERIAL_OUTPUT
+    fi
+    if echo $SERIAL_OUTPUT | grep -q "testgroup"
+    then
+        echo "- Verified added cgroup"
+    else
+        echo "FAILED: cgroup not added"
+        echo 'TEST FAILED' > /workspace/status.txt
+        echo $SERIAL_OUTPUT
+    fi
+  waitFor: ['CreateVMWithPrivilegesNonRoot']
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CleanupPrivilegedNonRoot
+  entrypoint: 'bash'
+  env:
+  - 'CLEANUP=$_CLEANUP'
+  args: ['cleanup.sh', '${_VM_NAME_PREFIX}-nr-priv-${BUILD_ID}', '${_ZONE}']
+  waitFor: ['CheckPrivilegesExistNonRoot']
+
 # Must come after cleanup.
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CheckFailure

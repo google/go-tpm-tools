@@ -95,6 +95,7 @@ const (
 	gcaServiceEnv              = "gca-service-env"
 	installGpuDriver           = "tee-install-gpu-driver"
 	disableGcaRefreshKey       = "tee-disable-gca-refresh"
+	nonrootContainerKey        = "tee-nonroot-container"
 )
 
 const (
@@ -141,6 +142,7 @@ type LaunchSpec struct {
 	CgroupNamespace            bool
 	InstallGpuDriver           bool
 	DisableGcaRefresh          bool
+	NonrootContainer           bool
 }
 
 // UnmarshalJSON unmarshals an instance attributes list in JSON format from the metadata
@@ -311,6 +313,13 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 		var err error
 		if s.DisableGcaRefresh, err = strconv.ParseBool(val); err != nil {
 			return fmt.Errorf("invalid value for %v (not a boolean): %w", disableGcaRefreshKey, err)
+		}
+	}
+
+	if val, ok := unmarshaledMap[nonrootContainerKey]; ok && val != "" {
+		var err error
+		if s.NonrootContainer, err = strconv.ParseBool(val); err != nil {
+			return fmt.Errorf("invalid value for %v (not a boolean): %w", nonrootContainerKey, err)
 		}
 	}
 
