@@ -838,7 +838,8 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		return &RetryableError{err}
 	}
 	defer task.Delete(ctx)
-
+	
+	startGetImage := time.Now()
 	image, err := r.container.Image(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get image from container: %w", err)
@@ -860,7 +861,10 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	if err := openPorts(imageConfig.ExposedPorts, containerIP); err != nil {
 		return fmt.Errorf("failed to open and forward ports: %w", err)
 	}
-	r.logger.Info("OpenPorts Time", "duration", time.Since(startOpenPorts), "containerIP_empty", containerIP == "")
+	d1 := time.Since(startGetImage)
+	d2 := time.Since(startOpenPorts)
+	r.logger.Info("OpenPorts Time", "duration", d2, "containerIP_empty", containerIP == "")
+	r.logger.Info("OpenPortsLong Time", "duration", d1)
 
 	setupDuration := time.Since(start)
 	r.logger.Info("Workload setup completed",
