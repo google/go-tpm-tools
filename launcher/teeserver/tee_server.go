@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 
 	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
@@ -75,6 +76,10 @@ func New(ctx context.Context, unixSock string, a agent.AttestationAgent, logger 
 	nl, err := net.Listen("unix", unixSock)
 	if err != nil {
 		return nil, fmt.Errorf("cannot listen to the socket [%s]: %v", unixSock, err)
+	}
+	// Change the permission so that non-root containers can access the socket
+	if err := os.Chmod(unixSock, 0666); err != nil {
+		return nil, fmt.Errorf("cannot chmod socket [%s]: %v", unixSock, err)
 	}
 
 	if launchSpec.Experiments.EnableKeyManager && keyClaimsProvider == nil {
