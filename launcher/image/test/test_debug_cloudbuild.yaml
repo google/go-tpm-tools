@@ -68,6 +68,48 @@ steps:
   env:
   - 'CLEANUP=$_CLEANUP'
   args: ['cleanup.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}', '${_ZONE}']
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CreateVMNonRoot
+  entrypoint: 'bash'
+  env:
+  - 'BUILD_ID=$BUILD_ID'
+  args: ['create_vm.sh','-i', '${_IMAGE_NAME}',
+          '-p', '${_IMAGE_PROJECT}',
+          '-m', 'tee-image-reference=${_WORKLOAD_IMAGE},tee-container-log-redirect=true,tee-nonroot-container=true',
+          '-n', '${_VM_NAME_PREFIX}-nr-${BUILD_ID}',
+          '-z', '${_ZONE}',
+          '-c', '${_CC}',
+        ]
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: NonRootWorkloadTest
+  entrypoint: 'bash'
+  args: ['scripts/test_launcher_workload.sh', '${_VM_NAME_PREFIX}-nr-${BUILD_ID}', '${_ZONE}']
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: NonRootWorkloadTestCloudLogging
+  entrypoint: 'bash'
+  env:
+  - 'PROJECT_ID=$PROJECT_ID'
+  args: ['scripts/test_launcher_workload_cloudlogging.sh', '${_VM_NAME_PREFIX}-nr-${BUILD_ID}']
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CheckDebugVMAliveAfterLauncherExitsNonRoot
+  script: |
+    #!/usr/bin/env bash
+    set -euo pipefail
+    sleep 150
+    result=$(gcloud compute instances list --filter="name=(${_VM_NAME_PREFIX}-nr-${BUILD_ID})" --zones=${_ZONE} --format="value(STATUS)")
+    if [[ "${result}" == "RUNNING" ]]; then
+        echo "verified debug VM is still running after 2.5 mins"
+    else
+        echo "FAILED: expect debug VM to be still running"
+        echo "TEST FAILED. Expect debug VM to be still running" > /workspace/status.txt
+    fi
+  automapSubstitutions: true
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CleanUpNonRoot
+  entrypoint: 'bash'
+  env:
+  - 'CLEANUP=$_CLEANUP'
+  args: ['cleanup.sh', '${_VM_NAME_PREFIX}-nr-${BUILD_ID}', '${_ZONE}']
 # Must come after cleanup.
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CheckFailure
