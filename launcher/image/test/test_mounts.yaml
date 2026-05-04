@@ -141,6 +141,60 @@ steps:
   args: ['cleanup.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}-denied', '${_ZONE}']
   waitFor: ['CheckMountsDenied']
 
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CreateVMWithMountsAllowedNonRoot
+  entrypoint: 'bash'
+  env:
+  - 'BUILD_ID=$BUILD_ID'
+  - '_DEV_SHM_SIZE_KB=$_DEV_SHM_SIZE_KB'
+  - '_TMPFS_SIZE_KB=$_TMPFS_SIZE_KB'
+  args: ['create_vm.sh','-i', '${_IMAGE_NAME}',
+          '-p', '${_IMAGE_PROJECT}',
+          '-m', '^~^tee-image-reference=${_WORKLOAD_IMAGE}~tee-container-log-redirect=true~tee-mount=type=tmpfs,source=tmpfs,destination=/tmp/sized,size=${_TMPFS_SIZE_KB}000~tee-dev-shm-size-kb=${_DEV_SHM_SIZE_KB}~tee-nonroot-container=true',
+          '-n', '${_VM_NAME_PREFIX}-nr-${BUILD_ID}',
+          '-z', '${_ZONE}',
+        ]
+  waitFor: ['-']
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CheckMountsAllowedNonRoot
+  env:
+  - '_VM_NAME_PREFIX=$_VM_NAME_PREFIX'
+  - 'BUILD_ID=$BUILD_ID'
+  - '_ZONE=$_ZONE'
+  - '_DEV_SHM_SIZE_KB=$_DEV_SHM_SIZE_KB'
+  - '_TMPFS_SIZE_KB=$_TMPFS_SIZE_KB'
+  script: |
+    #!/bin/bash
+    set -euo pipefail
+    source util/read_serial.sh
+
+    sleep 45
+    SERIAL_OUTPUT=$(read_serial ${_VM_NAME_PREFIX}-nr-${BUILD_ID} ${_ZONE})
+    if echo $SERIAL_OUTPUT | grep -q "tmpfs.*220.*/tmp/sized"
+    then
+        echo "- Mount verified for sized tmpfs"
+    else
+        echo "FAILED: Mount verification for sized tmpfs"
+        echo 'TEST FAILED' > /workspace/status.txt
+        echo $SERIAL_OUTPUT
+    fi
+    if echo $SERIAL_OUTPUT | grep -q "shm.*${_DEV_SHM_SIZE_KB}.*/dev/shm"
+    then
+        echo "- Mount verified for /dev/shm size"
+    else
+        echo "FAILED: Mount verification for /dev/shm size"
+        echo 'TEST FAILED' > /workspace/status.txt
+        echo $SERIAL_OUTPUT
+    fi
+  waitFor: ['CreateVMWithMountsAllowedNonRoot']
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CleanUpVMWithMountsAllowedNonRoot
+  entrypoint: 'bash'
+  env:
+  - 'CLEANUP=$_CLEANUP'
+  args: ['cleanup.sh', '${_VM_NAME_PREFIX}-nr-${BUILD_ID}', '${_ZONE}']
+  waitFor: ['CheckMountsAllowedNonRoot']
+
 # Must come after cleanup.
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CheckFailure
