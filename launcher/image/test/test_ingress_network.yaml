@@ -53,6 +53,52 @@ steps:
     - 'CLEANUP=$_CLEANUP'
     args: ['cleanup.sh', 'ingress-network-test-${BUILD_ID}', '${_ZONE}']
 
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: CreateNonRootServerWorkload
+    waitFor: ['CleanUp']
+    entrypoint: 'bash'
+    env:
+    - 'BUILD_ID=$BUILD_ID'
+    args: ['create_vm.sh','-i', '${_IMAGE_NAME}',
+            '-p', '${_IMAGE_PROJECT}',
+            '-m', 'tee-image-reference=${_WORKLOAD_IMAGE},tee-nonroot-container=true',
+            '-n', 'ingress-network-nr-${BUILD_ID}',
+            '-z', '${_ZONE}',
+          ]
+
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: CheckNonRootReachability
+    waitFor: ['CreateNonRootServerWorkload']
+    entrypoint: 'bash'
+    args:
+      - -c
+      - |
+        echo "sleeping 200s, waiting for workload server to setup..."
+        sleep 200
+        internalIP=$(gcloud -q compute instances describe ingress-network-nr-${BUILD_ID} --zone=${_ZONE} --format='get(networkInterfaces[0].networkIP)')
+        echo "workload internal IP: "${internalIP}
+
+        # try to connect to the nginx server
+        response=$(curl -v ${internalIP}:80)
+        echo "got response [${response}]"
+
+        # check nginx default response
+        if [[ "${response}" == *"Welcome to nginx!"* ]];
+        then
+          echo "workload reachable through the internal network"
+        else
+          echo "FAILED: workload not reachable through the internal network"
+          echo 'TEST FAILED' > /workspace/status.txt
+        fi
+
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: CleanUpNonRoot
+    waitFor: ['CheckNonRootReachability']
+    entrypoint: 'bash'
+    env:
+    - 'CLEANUP=$_CLEANUP'
+    args: ['cleanup.sh', 'ingress-network-nr-${BUILD_ID}', '${_ZONE}']
+
   # Must come after cleanup.
   - name: 'gcr.io/cloud-builders/gcloud'
     id: CheckFailure

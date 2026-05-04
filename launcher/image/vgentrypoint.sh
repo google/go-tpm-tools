@@ -18,6 +18,9 @@ main() {
   # Override default fluent-bit config.
   cp /usr/share/oem/confidential_space/fluent-bit-cs.conf /etc/fluent-bit/fluent-bit.conf
   cp /usr/share/oem/confidential_space/parsers-cs.conf /etc/fluent-bit/parsers-cs.conf
+  # Setup CNI config
+  mkdir -p /etc/cni/net.d
+  cp /usr/share/oem/confidential_space/10-workload.conf /etc/cni/net.d/10-workload.conf
 
   mkdir /tmp/container_launcher
   chmod +rw /tmp/container_launcher
