@@ -217,7 +217,6 @@ steps:
     _OUTPUT_IMAGE_FAMILY=${OUTPUT_IMAGE_FAMILY},\
     _OUTPUT_IMAGE_NAME=${OUTPUT_IMAGE_NAME},\
     _IMAGE_ENV=debug,\
-    _CS_LICENSE=projects/confidential-space-images/global/licenses/confidential-space-debug,\
     _BUCKET_NAME=${BUCKET_NAME}
     exit
 
@@ -245,7 +244,6 @@ steps:
     _OUTPUT_IMAGE_FAMILY=${OUTPUT_IMAGE_FAMILY},\
     _OUTPUT_IMAGE_NAME=${OUTPUT_IMAGE_NAME},\
     _IMAGE_ENV=hardened,\
-    _CS_LICENSE=projects/confidential-space-images/global/licenses/confidential-space,\
     _BUCKET_NAME=${BUCKET_NAME}
     exit
 
