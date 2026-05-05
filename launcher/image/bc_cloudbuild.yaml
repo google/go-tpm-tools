@@ -54,6 +54,10 @@ steps:
         chmod +x /workspace/oem-install/confidential_space/exit_script.sh || true
         chmod +x /workspace/oem-install/entrypoint.sh || true
 
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: 'DownloadVmlinux'
+    entrypoint: 'gcloud'
+    args: ['storage', 'cp', 'gs://cos-tools/19216.220.185/cchostdebug-amd64-gcp/vmlinux', './vmlinux']
   - name: 'gcr.io/cos-cloud/oem-preloader:latest'
     id: 'RunOEMPreloader'
     env:
@@ -106,6 +110,7 @@ steps:
 
         CMD=(
           "/oem-preloader"
+          "--vmlinux=./vmlinux"
           "--src-image=./disk.raw"
           "--out-image=output.bin"
           "--oem-fs-size=500M"
@@ -146,6 +151,9 @@ steps:
       - '-c'
       - |
         gcloud compute images describe ${_BASE_IMAGE} --project=${_BASE_IMAGE_PROJECT} --format="value(guestOsFeatures.type)" | paste -sd, - | tr ';' ',' | tr -d '\n' > /workspace/features.txt
+        sed -i 's/SECURE_BOOT//g' /workspace/features.txt
+        sed -i 's/,,/,/g' /workspace/features.txt
+        sed -i 's/^,//; s/,$//' /workspace/features.txt
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     id: 'CreateGCEImage'
     entrypoint: 'sh'
@@ -171,5 +179,5 @@ steps:
 timeout: '3000s'
 
 options:
-  machineType: 'E2_HIGHMEM_8'
+  machine_type: 'E2_HIGHCPU_32'
   dynamic_substitutions: true
