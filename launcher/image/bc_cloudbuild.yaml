@@ -171,4 +171,5 @@ steps:
 timeout: '3000s'
 
 options:
+  machineType: 'E2_HIGHMEM_8'
   dynamic_substitutions: true
