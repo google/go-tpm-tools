@@ -72,7 +72,7 @@ steps:
           # "s|cros_efi|cros_efi ds=nocloud;s=/usr/share/oem/|g"
           "s|cros_efi|cros_efi cos.protected_stateful_partition=m|g"
           "s|cros_efi|cros_efi systemd.default_timeout_start_sec=900s|g"
-          "s|cros_efi|cros_efi swiotlb=4194304,force,any|g"
+          "s|cros_efi|cros_efi swiotlb=16777216,force,any|g"
           "s|systemd.mask=usr-share-oem.mount||g"
           "s|dm-m2d|dm-mod|g"
           "s|,oemroot|;oemroot|g"
