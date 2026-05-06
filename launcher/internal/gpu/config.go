@@ -11,6 +11,8 @@ const (
 	InstallerDigest = "sha256:31f36d9ba262d7181c624fdeaab4b2148d6e0f8101671e583efe153792116b8d"
 	// NvDriverVer590_48_01 is the version string for the driver
 	NvDriverVer590_48_01 = "590.48.01"
+	// NvDriverVer595_58_03 is the version string for the driver
+	NvDriverVer595_58_03 = "595.58.03"
 	// NvDriverVer590_48_01Digest is driver run file digest downloaded from
 	// cos-nvidia-gpu-drivers/sha256/NVIDIA-Linux-x86_64-590.48.01.run.sha256
 	NvDriverVer590_48_01Digest = "b9e2f80693781431cc87f4cd29109e133dcecb50a50d6b68d4b3bf2d696bd689"

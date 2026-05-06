@@ -1,12 +1,12 @@
 substitutions:
-  '_BASE_IMAGE': '' # If left empty, will use the latest image in _BASE_IMAGE_FAMILY of _BASE_IMAGE_PROJECT
+  '_BASE_IMAGE': 'cos-125-19216-220-180' # If left empty, will use the latest image in _BASE_IMAGE_FAMILY of _BASE_IMAGE_PROJECT
   '_BASE_IMAGE_FAMILY': 'cos-125-lts'
   '_BASE_IMAGE_PROJECT': 'cos-cloud'
   '_OUTPUT_IMAGE_PREFIX': 'confidential-space'
   '_OUTPUT_IMAGE_SUFFIX': ''
   '_OUTPUT_IMAGE_FAMILY': ''
   '_BUCKET_NAME': '${PROJECT_ID}_cloudbuild'
-  '_VG_BASE_IMAGE': 'cos-125-19216-220-106'
+  '_VG_BASE_IMAGE': 'cos-125-19216-220-180'
 
 steps:
 # determine the base image
@@ -81,8 +81,27 @@ steps:
           './launcher/image/confidential_space_experiments']
 
 - name: 'gcr.io/cloud-builders/gcloud'
+  id: DownloadGpuDriversTest
+  entrypoint: 'gcloud'
+  allowFailure: true
+  args: ['storage', 'cp',
+          'gs://cos-nvidia-gpu-drivers/NVIDIA-Linux-x86_64-595.58.03.run',
+          'gs://cos-infra-prod-artifacts-official/lakitu-release/R125-19216.220.180/gpu_driver_versions.bin',
+          'gs://cos-infra-prod-artifacts-official/lakitu-release/R125-19216.220.180/nvidia-drivers-595.58.03.tgz',
+          './launcher/image/']
+
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: DownloadGpuDrivers
+  entrypoint: 'gcloud'
+  args: ['storage', 'cp',
+          'gs://cached-gpu-drivers/R125-19216.220.180/595.58.03/NVIDIA-Linux-x86_64-595.58.03.run',
+          'gs://cached-gpu-drivers/R125-19216.220.180/595.58.03/gpu_driver_versions.bin',
+          'gs://cached-gpu-drivers/R125-19216.220.180/595.58.03/nvidia-drivers-595.58.03.tgz',
+          './launcher/image/']
+
+- name: 'gcr.io/cloud-builders/gcloud'
   id: DebugVgImageBuild
-  waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary']
+  waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary', 'DownloadGpuDrivers']
   env:
   - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-vg-debug-${_OUTPUT_IMAGE_SUFFIX}'
   - 'OUTPUT_IMAGE_FAMILY=${_OUTPUT_IMAGE_FAMILY}-vg'
@@ -109,7 +128,7 @@ steps:
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: HardenedVgImageBuild
-  waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary']
+  waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary', 'DownloadGpuDrivers']
   env:
   - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-vg-hardened-${_OUTPUT_IMAGE_SUFFIX}'
   - 'OUTPUT_IMAGE_FAMILY=${_OUTPUT_IMAGE_FAMILY}-vg'
@@ -137,7 +156,7 @@ steps:
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: DebugImageBuild
-  waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary']
+  waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary', 'DownloadGpuDrivers']
   env:
   - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-debug-${_OUTPUT_IMAGE_SUFFIX}'
   - 'OUTPUT_IMAGE_FAMILY=${_OUTPUT_IMAGE_FAMILY}'
@@ -164,7 +183,7 @@ steps:
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: HardenedImageBuild
-  waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary']
+  waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary', 'DownloadGpuDrivers']
   env:
   - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}'
   - 'OUTPUT_IMAGE_FAMILY=${_OUTPUT_IMAGE_FAMILY}'
