@@ -7,6 +7,9 @@ substitutions:
   '_OUTPUT_IMAGE_FAMILY': ''
   '_BUCKET_NAME': '${PROJECT_ID}_cloudbuild'
   '_VG_BASE_IMAGE': 'cos-125-19216-220-106'
+  '_BC_BASE_IMAGE_PROJECT': 'confidential-space-images-dev'
+  '_BC_BASE_IMAGE': 'cos-bc-guest-125-19216-220-185' 
+  '_BC_DEBUG_IMAGE': 'cos-bcdbg-guest-125-19216-220-185'
 
 steps:
 # determine the base image
@@ -188,6 +191,60 @@ steps:
     _CS_LICENSE=projects/confidential-space-images/global/licenses/confidential-space,\
     _BUCKET_NAME=${BUCKET_NAME},\
     _PRELOAD_SCRIPT=preload.sh
+    exit
+
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: DebugBcImageBuildAndExport
+  waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary']
+  env: 
+  - 'BC_BASE_IMAGE=$_BC_DEBUG_IMAGE'
+  - 'BC_BASE_IMAGE_PROJECT=$_BC_BASE_IMAGE_PROJECT'
+  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-debug-bc-${_OUTPUT_IMAGE_SUFFIX}'
+  - 'OUTPUT_IMAGE_FAMILY=${_OUTPUT_IMAGE_FAMILY}-bc'
+  - 'BUCKET_NAME=$_BUCKET_NAME'
+  - 'BASE_IMAGE_PROJECT=$_BC_BASE_IMAGE_PROJECT' 
+
+  script: |
+    #!/usr/bin/env bash
+    set -exuo pipefail
+
+    echo "building the debug image with BC customizer with the base image: ${BC_BASE_IMAGE}"
+    gcloud builds submit --config=launcher/image/bc_cloudbuild.yaml \
+    --region us-west1 \
+    --substitutions \
+    _BASE_IMAGE=${BC_BASE_IMAGE},\
+    _BASE_IMAGE_PROJECT=${BC_BASE_IMAGE_PROJECT},\
+    _OUTPUT_IMAGE_FAMILY=${OUTPUT_IMAGE_FAMILY},\
+    _OUTPUT_IMAGE_NAME=${OUTPUT_IMAGE_NAME},\
+    _IMAGE_ENV=debug,\
+    _BUCKET_NAME=${BUCKET_NAME}
+    exit
+
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: HardenedBcImageBuildAndExport
+  waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary']
+  env: 
+  - 'BC_BASE_IMAGE=$_BC_BASE_IMAGE'
+  - 'BC_BASE_IMAGE_PROJECT=$_BC_BASE_IMAGE_PROJECT'
+  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-hardened-bc-${_OUTPUT_IMAGE_SUFFIX}'
+  - 'OUTPUT_IMAGE_FAMILY=${_OUTPUT_IMAGE_FAMILY}-bc'
+  - 'BUCKET_NAME=$_BUCKET_NAME'
+  - 'BASE_IMAGE_PROJECT=$_BC_BASE_IMAGE_PROJECT' 
+
+  script: |
+    #!/usr/bin/env bash
+    set -exuo pipefail
+
+    echo "building the hardened image with BC customizer with the base image: ${BC_BASE_IMAGE}"
+    gcloud builds submit --config=launcher/image/bc_cloudbuild.yaml \
+    --region us-west1 \
+    --substitutions \
+    _BASE_IMAGE=${BC_BASE_IMAGE},\
+    _BASE_IMAGE_PROJECT=${BC_BASE_IMAGE_PROJECT},\
+    _OUTPUT_IMAGE_FAMILY=${OUTPUT_IMAGE_FAMILY},\
+    _OUTPUT_IMAGE_NAME=${OUTPUT_IMAGE_NAME},\
+    _IMAGE_ENV=hardened,\
+    _BUCKET_NAME=${BUCKET_NAME}
     exit
 
 - name: 'gcr.io/cloud-builders/gcloud'
@@ -455,7 +512,7 @@ steps:
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: ExportHardenedImage
-  waitFor: ['HardenedImageTests']
+  waitFor: ['HardenedImageTests', 'HardenedBcImageBuildAndExport', 'DebugBcImageBuildAndExport']
   entrypoint: 'gcloud'
   args: ['compute', 'images', 'export',
          '--destination-uri=gs://${PROJECT_ID}_raw-images/${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}.tar.gz',
@@ -464,7 +521,7 @@ steps:
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: ExportDebugImage
-  waitFor: ['DebugImageTests']
+  waitFor: ['DebugImageTests', 'ExportHardenedImage']
   entrypoint: 'gcloud'
   args: ['compute', 'images', 'export',
           '--destination-uri=gs://${PROJECT_ID}_raw-images/${_OUTPUT_IMAGE_PREFIX}-debug-${_OUTPUT_IMAGE_SUFFIX}.tar.gz',
@@ -507,7 +564,7 @@ steps:
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: ExportVgHardenedImage
-  waitFor: ['HardenedVgImageBuild']
+  waitFor: ['HardenedVgImageBuild', 'ExportDebugImage']
   entrypoint: 'gcloud'
   args: ['compute', 'images', 'export',
          '--destination-uri=gs://${PROJECT_ID}_raw-images/${_OUTPUT_IMAGE_PREFIX}-vg-hardened-${_OUTPUT_IMAGE_SUFFIX}.tar.gz',
@@ -516,7 +573,7 @@ steps:
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: ExportVgDebugImage
-  waitFor: ['DebugVgImageBuild']
+  waitFor: ['DebugVgImageBuild', 'ExportVgHardenedImage']
   entrypoint: 'gcloud'
   args: ['compute', 'images', 'export',
           '--destination-uri=gs://${PROJECT_ID}_raw-images/${_OUTPUT_IMAGE_PREFIX}-vg-debug-${_OUTPUT_IMAGE_SUFFIX}.tar.gz',
