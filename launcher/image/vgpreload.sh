@@ -7,6 +7,13 @@ copy_launcher() {
   cp launcher "${CS_PATH}/cs_container_launcher"
 }
 
+copy_gpu_driver() {
+  mkdir ${OEM_PATH}/gpu_driver
+  cp NVIDIA-Linux-x86_64-595.58.03.run ${OEM_PATH}/gpu_driver
+  cp gpu_driver_versions.bin ${OEM_PATH}/gpu_driver
+  cp nvidia-drivers-595.58.03.tgz ${OEM_PATH}/gpu_driver
+}
+
 copy_experiment_file() {
   cp vgexperiment.json ${CS_PATH}/vgexperiment.json
 }
@@ -106,6 +113,7 @@ main() {
   mount -o remount,rw ${OEM_PATH}
   mkdir ${CS_PATH}
 
+  copy_gpu_driver
   # Install container launcher entrypoint.
   configure_entrypoint "vgentrypoint.sh"
   # Copy experiment file.
