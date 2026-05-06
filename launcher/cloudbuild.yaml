@@ -194,7 +194,7 @@ steps:
     exit
 
 - name: 'gcr.io/cloud-builders/gcloud'
-  id: DebugBcImageBuild
+  id: DebugBcImageBuildAndExport
   waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary']
   env: 
   - 'BC_BASE_IMAGE=$_BC_DEBUG_IMAGE'
@@ -221,7 +221,7 @@ steps:
     exit
 
 - name: 'gcr.io/cloud-builders/gcloud'
-  id: HardenedBcImageBuild
+  id: HardenedBcImageBuildAndExport
   waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary']
   env: 
   - 'BC_BASE_IMAGE=$_BC_BASE_IMAGE'
@@ -512,7 +512,7 @@ steps:
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: ExportHardenedImage
-  waitFor: ['HardenedImageTests']
+  waitFor: ['HardenedImageTests', 'HardenedBcImageBuildAndExport', 'DebugBcImageBuildAndExport']
   entrypoint: 'gcloud'
   args: ['compute', 'images', 'export',
          '--destination-uri=gs://${PROJECT_ID}_raw-images/${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}.tar.gz',
@@ -521,7 +521,7 @@ steps:
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: ExportDebugImage
-  waitFor: ['DebugImageTests']
+  waitFor: ['DebugImageTests', 'ExportHardenedImage']
   entrypoint: 'gcloud'
   args: ['compute', 'images', 'export',
           '--destination-uri=gs://${PROJECT_ID}_raw-images/${_OUTPUT_IMAGE_PREFIX}-debug-${_OUTPUT_IMAGE_SUFFIX}.tar.gz',
@@ -564,7 +564,7 @@ steps:
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: ExportVgHardenedImage
-  waitFor: ['HardenedVgImageBuild']
+  waitFor: ['HardenedVgImageBuild', 'ExportDebugImage']
   entrypoint: 'gcloud'
   args: ['compute', 'images', 'export',
          '--destination-uri=gs://${PROJECT_ID}_raw-images/${_OUTPUT_IMAGE_PREFIX}-vg-hardened-${_OUTPUT_IMAGE_SUFFIX}.tar.gz',
@@ -573,7 +573,7 @@ steps:
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: ExportVgDebugImage
-  waitFor: ['DebugVgImageBuild']
+  waitFor: ['DebugVgImageBuild', 'ExportVgHardenedImage']
   entrypoint: 'gcloud'
   args: ['compute', 'images', 'export',
           '--destination-uri=gs://${PROJECT_ID}_raw-images/${_OUTPUT_IMAGE_PREFIX}-vg-debug-${_OUTPUT_IMAGE_SUFFIX}.tar.gz',
