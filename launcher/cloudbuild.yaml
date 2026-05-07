@@ -6,10 +6,11 @@ substitutions:
   '_OUTPUT_IMAGE_SUFFIX': ''
   '_OUTPUT_IMAGE_FAMILY': ''
   '_BUCKET_NAME': '${PROJECT_ID}_cloudbuild'
-  '_VG_BASE_IMAGE': 'cos-125-19216-220-106'
+  '_VG_BASE_IMAGE': 'cos-125-19216-220-180'
   '_BC_BASE_IMAGE_PROJECT': 'confidential-space-images-dev'
   '_BC_BASE_IMAGE': 'cos-bc-guest-125-19216-220-185' 
   '_BC_DEBUG_IMAGE': 'cos-bcdbg-guest-125-19216-220-185'
+  '_VG_BASE_IMAGE': 'cos-125-19216-220-180'
 
 steps:
 # determine the base image
