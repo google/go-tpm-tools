@@ -389,3 +389,25 @@ func TestURLFromRegionError(t *testing.T) {
 		})
 	}
 }
+
+// TestConvertRequestToTokenRequestAllPaddedCCELData verifies that CCEL data
+// consisting entirely of 0xFF bytes (e.g. an uninitialized ACPI table) does
+// not cause an index-out-of-range panic. Previously the trim loop used
+// trimIndex >= 0 as its condition, causing data[-1] when trimIndex reached 0.
+func TestConvertRequestToTokenRequestAllPaddedCCELData(t *testing.T) {
+	allFF := bytes.Repeat([]byte{0xFF}, 64)
+	request := verifier.VerifyAttestationRequest{
+		TDCCELAttestation: &verifier.TDCCELAttestation{
+			CcelData:          allFF,
+			CanonicalEventLog: []byte("test-cel"),
+			TdQuote:           []byte("test-quote"),
+			AkCert:            []byte("test-akcert"),
+		},
+		Challenge: testVerifierRequest.Challenge,
+	}
+	// Must not panic; all padding trimmed → empty EventLog.
+	converted := convertRequestToTokenRequest(request)
+	if len(converted.TDX.EventLog) != 0 {
+		t.Errorf("expected empty EventLog after trimming all-0xFF CCEL data, got %d bytes", len(converted.TDX.EventLog))
+	}
+}
