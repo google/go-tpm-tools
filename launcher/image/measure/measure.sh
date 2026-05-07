@@ -36,7 +36,7 @@ trap cleanup EXIT
 check_dependencies() {
     echo "Checking for required command-line utilities..."
     local missing_cmds=0
-    for cmd in cgpt dd mcopy sha256sum sbattach openssl jq awk grep printf dirname mkdir; do
+    for cmd in cgpt dd mcopy mdir sha256sum sbattach openssl jq awk grep printf dirname mkdir; do
         if ! command -v "$cmd" &>/dev/null; then
             echo "Error: Required command '$cmd' is not installed." >&2
             missing_cmds=1
@@ -90,36 +90,68 @@ extract_partition_12() {
 }
 
 ##
+# Detects the image mode by inspecting the boot EFI binary itself.
+# `default` images boot via shim, whose PE binary carries a `.sbat` section
+# referencing https://github.com/rhboot/shim. `uki` images ship a UKI PE with
+# no such section. Falls back to `uki` whenever the binary is not a shim
+# (parse failure, missing `.sbat`, or `.sbat` without the rhboot URL).
+#
+# As a side effect, extracts the boot EFI to $BOOT_EFI_FILE so
+# extract_boot_components does not need to copy it again.
+#
+# @param $1: build architecture ('x86_64' or 'aarch64').
+# @return The detected mode ('default' or 'uki') to stdout.
+#
+detect_image_mode() {
+    local arch="$1"
+    local shim_src
+    case "$arch" in
+        x86_64)   shim_src="::/efi/boot/bootx64.efi" ;;
+        aarch64)  shim_src="::/efi/boot/bootaa64.efi" ;;
+        *) echo "Error: Unknown arch '$arch'." >&2; return 1 ;;
+    esac
+
+    if ! mcopy -i "$P12_FILE" "$shim_src" "$BOOT_EFI_FILE" &>/dev/null; then
+        echo "Error: Failed to extract '$shim_src' from '$P12_FILE'." >&2
+        return 1
+    fi
+
+    python3 - "$BOOT_EFI_FILE" <<'PY'
+import sys, lief
+b = lief.parse(sys.argv[1])
+if b is None:
+    print("uki"); sys.exit(0)
+sec = b.get_section(".sbat")
+if sec is None:
+    print("uki"); sys.exit(0)
+content = bytes(sec.content)
+print("default" if b"https://github.com/rhboot/shim" in content else "uki")
+PY
+}
+
+##
 # Copies boot-related files from the extracted partition image using mcopy.
 #
 extract_boot_components() {
     local arch="$1"
     local image_mode="$2"
-    local shim_path=""
 
-    if [ "$arch" == "x86_64" ]; then
-        shim_path="::/efi/boot/bootx64.efi"
-    elif [ "$arch" == "aarch64" ]; then
-        shim_path="::/efi/boot/bootaa64.efi"
-    else
-        echo "Error: Unknown arch '$arch'."
-        return 1
+    # The boot EFI (bootx64.efi/bootaa64.efi) is already extracted by
+    # detect_image_mode; only the default-mode extras remain to copy.
+    if [ "$image_mode" != "default" ]; then
+        return 0
     fi
 
     echo "Copying files from partition image '$P12_FILE'..."
 
     declare -A files_to_copy=(
-        ["$shim_path"]="$BOOT_EFI_FILE"
+        ["::/syslinux/vmlinuz.A"]="$VMLINUZ_A_FILE"
+        ["::/efi/boot/grub.cfg"]="$GRUB_CFG_FILE"
+        ["::/efi/boot/grub-lakitu.efi"]="$GRUB_EFI_FILE"
     )
-
-    if [ "$image_mode" == "default" ]; then
-        files_to_copy["::/syslinux/vmlinuz.A"]="$VMLINUZ_A_FILE"
-        files_to_copy["::/efi/boot/grub.cfg"]="$GRUB_CFG_FILE"
-        files_to_copy["::/efi/boot/grub-lakitu.efi"]="$GRUB_EFI_FILE"
-        # vmlinuz.B file exists on amd64 but not on arm64
-        if [ "$arch" == "x86_64" ]; then
-            files_to_copy["::/syslinux/vmlinuz.B"]="$VMLINUZ_B_FILE"
-        fi
+    # vmlinuz.B file exists on amd64 but not on arm64
+    if [ "$arch" == "x86_64" ]; then
+        files_to_copy["::/syslinux/vmlinuz.B"]="$VMLINUZ_B_FILE"
     fi
 
     for src in "${!files_to_copy[@]}"; do
@@ -393,10 +425,9 @@ write_json_output() {
 
 main() {
     # 1. Parameter Handling & Initial Checks
-    if [[ "$#" -lt 5 || "$#" -gt 6 ]]; then
-        echo "Usage: $0 <os_image_path> <output_json_file> <channel> <build_architecture> <hash_algo:sha256|sha384> [image_mode:default|uki]"
+    if [[ "$#" -ne 5 ]]; then
+        echo "Usage: $0 <os_image_path> <output_json_file> <channel> <build_architecture> <hash_algo:sha256|sha384>"
         echo "Example: $0 /path/to/image.bin /path/to/output.json stable x86_64 sha384"
-        echo "Example: $0 /path/to/image.bin /path/to/output.json hardened x86_64 sha384 uki"
         return 1
     fi
     local os_image_path="$1"
@@ -404,7 +435,6 @@ main() {
     local channel="$3"
     local arch="$4"
     HASH_ALG="$5"
-    local image_mode="${6:-default}"
 
     if [[ ! -f "$os_image_path" ]]; then
         echo "Error: OS image path '$os_image_path' not found."
@@ -417,16 +447,14 @@ main() {
         *) echo "Error: Unsupported hash algorithm '$HASH_ALG'. Use sha256 or sha384."; return 1 ;;
     esac
 
-    case "$image_mode" in
-        default|uki) ;;
-        *) echo "Error: Unsupported image mode '$image_mode'. Use 'default' or 'uki'."; return 1 ;;
-    esac
-
     check_dependencies || return 1
 
     # 2. Setup and Extraction
     setup_temp_dir
     extract_partition_12 "$os_image_path" || return 1
+    local image_mode
+    image_mode=$(detect_image_mode "$arch") || return 1
+    echo "Auto-detected image_mode=$image_mode"
     extract_boot_components "$arch" "$image_mode" || return 1
 
     # 3. Compute All Hashes
