@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"io"
 	"os"
 	"os/exec"
 	"regexp"
@@ -87,11 +88,20 @@ func main() {
 	logger.Info("Boot completed", "duration_sec", uptime)
 	logger.Info(welcomeMessage, "build_commit", BuildCommit)
 
-	if err := verifyFsAndMount(); err != nil {
-		logger.Error(fmt.Sprintf("failed to verify filesystem and mounts: %v\n", err))
-		exitCode = rebootRC
-		logger.Error(exitMessage, "exit_code", exitCode, "exit_msg", rcMessage[exitCode])
-		return
+	// Check for BC Mode via environment variable because experiments are not loaded yet.
+	// In BC mode, we bypass verifyFsAndMount because the filesystem structure (Virtio devices,
+	// host-emulated state) differs from standard CS/VG and does not use a vTPM for stateful encryption.
+	bcMode := os.Getenv("BC_MODE") == "true"
+
+	if !bcMode {
+		if err := verifyFsAndMount(); err != nil {
+			logger.Error(fmt.Sprintf("failed to verify filesystem and mounts: %v\n", err))
+			exitCode = rebootRC
+			logger.Error(exitMessage, "exit_code", exitCode, "exit_msg", rcMessage[exitCode])
+			return
+		}
+	} else {
+		logger.Info("Skipping verifyFsAndMount in BC Mode")
 	}
 
 	if err := os.MkdirAll(launcherfile.HostTmpPath, 0755); err != nil {
@@ -190,42 +200,47 @@ func startLauncher(launchSpec spec.LaunchSpec, serialConsole *os.File) error {
 	}
 	defer containerdClient.Close()
 
-	tpm, err := tpm2.OpenTPM("/dev/tpmrm0")
-	if err != nil {
-		return &launcher.RetryableError{Err: err}
-	}
-	defer tpm.Close()
-
-	// check DA info, don't crash if failed
-	daInfo, err := launcher.GetTPMDAInfo(tpm)
-	if err != nil {
-		logger.Error(fmt.Sprintf("Failed to get DA Info: %v", err))
-	} else {
-		if !daInfo.StartupClearOrderly {
-			logger.Warn(fmt.Sprintf("Failed orderly startup. Avoid using instance reset. Instead, use instance stop/start. DA lockout counter incremented: LockoutCounter: %d / MaxAuthFail: %d", daInfo.LockoutCounter, daInfo.MaxTries))
+	var tpm io.ReadWriteCloser
+	if !launchSpec.Experiments.BcMode {
+		tpm, err = tpm2.OpenTPM("/dev/tpmrm0")
+		if err != nil {
+			return &launcher.RetryableError{Err: err}
 		}
+		defer tpm.Close()
 
-		if err := launcher.SetTPMDAParams(tpm, expectedTPMDAParams); err != nil {
-			logger.Error(fmt.Sprintf("Failed to set DA params: %v", err))
-		}
-
+		// check DA info, don't crash if failed
 		daInfo, err := launcher.GetTPMDAInfo(tpm)
 		if err != nil {
 			logger.Error(fmt.Sprintf("Failed to get DA Info: %v", err))
 		} else {
-			logger.Info(fmt.Sprintf("Updated TPM DA params: %+v", daInfo))
-		}
-	}
+			if !daInfo.StartupClearOrderly {
+				logger.Warn(fmt.Sprintf("Failed orderly startup. Avoid using instance reset. Instead, use instance stop/start. DA lockout counter incremented: LockoutCounter: %d / MaxAuthFail: %d", daInfo.LockoutCounter, daInfo.MaxTries))
+			}
 
-	// check AK (EK signing) cert
-	gceAk, err := client.GceAttestationKeyECC(tpm)
-	if err != nil {
-		return err
+			if err := launcher.SetTPMDAParams(tpm, expectedTPMDAParams); err != nil {
+				logger.Error(fmt.Sprintf("Failed to set DA params: %v", err))
+			}
+
+			daInfo, err := launcher.GetTPMDAInfo(tpm)
+			if err != nil {
+				logger.Error(fmt.Sprintf("Failed to get DA Info: %v", err))
+			} else {
+				logger.Info(fmt.Sprintf("Updated TPM DA params: %+v", daInfo))
+			}
+		}
+
+		// check AK (EK signing) cert
+		gceAk, err := client.GceAttestationKeyECC(tpm)
+		if err != nil {
+			return err
+		}
+		if gceAk.Cert() == nil {
+			return errors.New("failed to find AKCert on this VM: try creating a new VM or contacting support")
+		}
+		gceAk.Close()
+	} else {
+		logger.Info("Running in Bowcaster mode, bypassing TPM initialization and checks.")
 	}
-	if gceAk.Cert() == nil {
-		return errors.New("failed to find AKCert on this VM: try creating a new VM or contacting support")
-	}
-	gceAk.Close()
 
 	token, err := registryauth.RetrieveAuthToken(context.Background(), mdsClient)
 	if err != nil {
@@ -249,6 +264,7 @@ func startLauncher(launchSpec spec.LaunchSpec, serialConsole *os.File) error {
 
 	logger.Info("Launch started", "duration_sec", time.Since(start).Seconds())
 
+	// tpm is nil when running in BC mode.
 	r, err := launcher.NewRunner(ctx, containerdClient, token, launchSpec, mdsClient, tpm, logger, serialConsole)
 	if err != nil {
 		return err

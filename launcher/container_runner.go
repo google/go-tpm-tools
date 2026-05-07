@@ -28,6 +28,7 @@ import (
 	"github.com/containerd/containerd/remotes"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-tpm-tools/agent"
+	"github.com/mdlayher/vsock"
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
 	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
@@ -305,6 +306,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	exps := agent.Experiments{
 		EnableAttestationEvidence: launchSpec.Experiments.EnableAttestationEvidence,
 		EnableGpuGcaSupport:       launchSpec.Experiments.EnableGpuGcaSupport,
+		BcMode:                    launchSpec.Experiments.BcMode,
 	}
 	attestAgent, err := agent.CreateAttestationAgent(tpm, client.GceAttestationKeyECC, verifierClient, principalFetcherWithImpersonate, sdClient, exps, logger, deviceROTs, launchSpec.SignedImageRepos)
 	if err != nil {
@@ -683,6 +685,18 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		return fmt.Errorf("failed to measure CEL events: %v", err)
 	}
 
+	// Fetch the host attestation
+	if r.launchSpec.Experiments.BcMode {
+		r.logger.Info("Running in Bowcaster mode: fetching host attestation.")
+		const hostServicePort = 600613
+		hostAttestation, err := r.fetchHostAttestation(ctx, 2, hostServicePort)
+		if err != nil {
+			return fmt.Errorf("failed to fetch host attestation: %v", err)
+		}
+		r.logger.Info("Successfully fetched host attestation.")
+		_ = hostAttestation // TODO: what do we do with it? 
+	}
+
 	// Only refresh token if agent has a default GCA client (not ITA use case)
 	// AND GcaRefresh is not disabled
 	if r.launchSpec.ITAConfig.ITARegion == "" && !r.launchSpec.DisableGcaRefresh {
@@ -721,8 +735,20 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	}
 
 	var workloadService *workloadservice.Server
-	// create and start the key manager server
-	if r.launchSpec.Experiments.EnableKeyManager {
+	if r.launchSpec.Experiments.BcMode {
+		r.logger.Info("Running in Bowcaster mode: connecting to Key Protection VM.")
+		const kpVmCid = 4 //TODO: check this is correct CID?
+		const kpVmPort = 1025 // TODO: replace with actual port
+		conn, err := vsock.Dial(kpVmCid, kpVmPort, nil)
+		if err != nil {
+			return fmt.Errorf("failed to connect to Key Protection VM: %v", err)
+		}
+		r.logger.Info("Successfully connected to Key Protection VM.")
+		defer conn.Close()
+		// TODO: Use the connection or wrap it in a workload service client.
+		// i.e. what do we do with this connection? 
+	} else if r.launchSpec.Experiments.EnableKeyManager {
+		// create and start the key manager server
 		r.logger.Info("EnableKeyManager experiment is enabled: initializing KeyManager server.")
 		keyManagerServer, err := workloadservice.New(ctx, path.Join(launcherfile.HostTmpPath, keyManagerSocket), keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED)
 		if err != nil {
@@ -899,6 +925,18 @@ func getImageConfig(ctx context.Context, image containerd.Image) (v1.ImageConfig
 		return ociimage.Config, nil
 	}
 	return v1.ImageConfig{}, fmt.Errorf("unknown image config media type %s", ic.MediaType)
+}
+
+// Could I repurpose this for both host attestation and key protection vm connection?
+// It just dials a vsock
+func (r *ContainerRunner) fetchHostAttestation(ctx context.Context, cid uint32, port uint32) ([]byte, error) {
+	conn, err := vsock.Dial(cid, port, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+
+	return io.ReadAll(conn)
 }
 
 // Close the container runner
