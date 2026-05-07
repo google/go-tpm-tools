@@ -91,6 +91,7 @@ const defaultOOMScore = 1000
 
 // NewRunner returns a runner.
 func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.Token, launchSpec spec.LaunchSpec, mdsClient *metadata.Client, tpm io.ReadWriteCloser, logger logging.Logger, serialConsole *os.File) (*ContainerRunner, error) {
+	startNewRunner := time.Now()
 	image, err := initImage(ctx, cdClient, launchSpec, token)
 	if err != nil {
 		return nil, err
@@ -134,9 +135,11 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	}
 
 	logger.Info(fmt.Sprintf("Exposed Ports:             : %v\n", imageConfig.ExposedPorts))
+	startOpenPorts := time.Now()
 	if err := openPorts(imageConfig.ExposedPorts); err != nil {
 		return nil, err
 	}
+	logger.Info("OpenPorts Time", "duration", time.Since(startOpenPorts))
 
 	logger.Info(fmt.Sprintf("Image Labels               : %v\n", imageConfig.Labels))
 	launchPolicy, err := spec.GetLaunchPolicy(imageConfig.Labels, logger)
@@ -238,6 +241,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		deviceROTs = append(deviceROTs, nvidiaAttester)
 	}
 
+	startContainer := time.Now()
 	container, err = cdClient.NewContainer(
 		ctx,
 		containerID,
@@ -245,6 +249,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		containerd.WithNewSnapshot(snapshotID, image),
 		containerd.WithNewSpec(specOpts...),
 	)
+	logger.Info("Created container", "duration", time.Since(startContainer))
 	if err != nil {
 		if container != nil {
 			container.Delete(ctx, containerd.WithSnapshotCleanup)
@@ -310,6 +315,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	if err != nil {
 		return nil, err
 	}
+	logger.Info("NewRunner Time", "duration", time.Since(startNewRunner))
 	return &ContainerRunner{
 		container,
 		launchSpec,
@@ -779,13 +785,21 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	if err != nil {
 		r.logger.Error(err.Error())
 	}
-	// Start timer for workload execution.
-	start = time.Now()
-	r.logger.Info("workload task started")
-
+	
 	if err := task.Start(ctx); err != nil {
 		return &RetryableError{err}
 	}
+	if uptimeData, err := os.ReadFile("/proc/uptime"); err != nil {
+		r.logger.Error("failed to read uptime", "error", err)
+	} else {
+		parts := strings.Fields(string(uptimeData))
+		if len(parts) > 0 {
+			r.logger.Info("System uptime", "uptime_sec", parts[0])
+		}
+	}
+	// Start timer for workload execution.
+	start = time.Now()
+	r.logger.Info("workload task started")
 	status := <-exitStatusC
 	workloadDuration := time.Since(start)
 
