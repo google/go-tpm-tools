@@ -95,8 +95,8 @@ const defaultOOMScore = 1000
 
 // Constants for a non-root container.
 const (
-	hostUIDBegin = 10000 // Starting (outside container) uid for the root user inside the container
-	hostGIDBegin = 10000 // Starting (outside container) gid for the root group inside the container
+	hostUIDBegin = 100000 // Starting (outside container) uid for the root user inside the container
+	hostGIDBegin = 100000 // Starting (outside container) gid for the root group inside the container
 	userNSSize   = 65536 // 16-bit range of uid/gid inside the container
 
 	stdoutStderrPipe = "workload_stdouterr.fifo"
