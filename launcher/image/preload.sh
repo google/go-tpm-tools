@@ -19,6 +19,7 @@ setup_launcher_systemd_unit() {
   cp exit_script.sh "${CS_PATH}/exit_script.sh"
   cp internal-investigator.service "${CS_PATH}/internal-investigator.service"
   cp internal-investigator.sh "${CS_PATH}/internal-investigator.sh"
+  chmod +x "${CS_PATH}/internal-investigator.sh"
 }
 
 copy_cni_config() {
