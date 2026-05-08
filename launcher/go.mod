@@ -1,6 +1,6 @@
 module github.com/google/go-tpm-tools/launcher
 
-go 1.24.13
+go 1.24.0
 
 require (
 	cloud.google.com/go/compute/metadata v0.9.0
