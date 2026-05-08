@@ -8,6 +8,13 @@ copy_launcher() {
   cp launcher "${CS_PATH}/cs_container_launcher"
 }
 
+copy_gpu_driver() {
+  mkdir ${OEM_PATH}/gpu_driver
+  cp NVIDIA-Linux-x86_64-595.58.03.run ${OEM_PATH}/gpu_driver
+  cp gpu_driver_versions.bin ${OEM_PATH}/gpu_driver
+  cp nvidia-drivers-595.58.03.tgz ${OEM_PATH}/gpu_driver
+}
+
 copy_experiment_client() {
   # DownloadExpBinary creates the file at EXPERIMENTS_BINARY.
   cp $EXPERIMENTS_BINARY "${CS_PATH}/${EXPERIMENTS_BINARY}"
@@ -94,6 +101,9 @@ configure_systemd_units_for_hardened() {
   disable_unit "google-osconfig-agent.service"
   disable_unit "google-startup-scripts.service"
   disable_unit "google-shutdown-scripts.service"
+  disable_unit "google-guest-agent-manager.service"
+  disable_unit "google-guest-compat-manager.service"
+  disable_unit "google-oslogin-cache.service"
   disable_unit "konlet-startup.service"
   disable_unit "crash-reporter.service"
   disable_unit "device_policy_manager.service"
@@ -106,6 +116,7 @@ main() {
   mount -o remount,rw ${OEM_PATH}
   mkdir ${CS_PATH}
 
+  copy_gpu_driver
   # Install container launcher entrypoint.
   configure_entrypoint "entrypoint.sh"
   # Install experiment client.
