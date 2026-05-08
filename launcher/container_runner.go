@@ -209,7 +209,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 			[]specs.LinuxIDMapping{{ContainerID: 0, HostID: hostUIDBegin, Size: userNSSize}},
 			[]specs.LinuxIDMapping{{ContainerID: 0, HostID: hostGIDBegin, Size: userNSSize}},
 		),
-		withStdoutStderrPipeMounts(stdoutStderrPipePath), // To redirect /dev/std{out,err} for a non-root container
+		// withStdoutStderrPipeMounts(stdoutStderrPipePath), // To redirect /dev/std{out,err} for a non-root container
 	}
 	if launchSpec.DevShmSize != 0 {
 		specOpts = append(specOpts, oci.WithDevShmSize(launchSpec.DevShmSize))
@@ -815,7 +815,9 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		io.Copy(logWriter, stdPipe)
 	}()
 
-	task, err := r.container.NewTask(ctx, cio.NewCreator(streamOpt))
+	task, err := r.container.NewTask(ctx, cio.NewCreator(streamOpt),
+		containerd.WithUIDOwner(hostGIDBegin),
+		containerd.WithGIDOwner(hostGIDBegin))
 	if err != nil {
 		return &RetryableError{err}
 	}
