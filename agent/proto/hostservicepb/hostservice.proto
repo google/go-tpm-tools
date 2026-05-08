@@ -1,0 +1,29 @@
+syntax = "proto3";
+
+package hostservice;
+
+option go_package = "github.com/google/go-tpm-tools/agent/proto/hostservicepb";
+
+import "attestation.proto";
+
+message GetHostAttestationRequest {
+  bytes challenge = 1;
+}
+
+message GetHostAttestationResponse {
+ confidential_space.HostAttestation host_attestation = 1;
+}
+
+service HostService {
+  // Performs a simple self-test.
+  rpc SelfTest (SelfTestRequest) returns (SelfTestResponse);
+
+  // Obtains an attestation from the TPM.
+  rpc GetHostAttestation (GetHostAttestationRequest) returns (GetHostAttestationResponse);
+}
+
+message SelfTestRequest {}
+
+message SelfTestResponse {
+  string response = 1;
+}

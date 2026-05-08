@@ -14,6 +14,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"sync"
@@ -40,6 +41,9 @@ import (
 	"github.com/google/go-tpm-tools/verifier/models"
 	"github.com/google/go-tpm-tools/verifier/oci"
 	"github.com/google/go-tpm-tools/verifier/util"
+	"google.golang.org/grpc"
+	"github.com/google/go-tpm-tools/agent/proto/hostservicepb"
+	"google.golang.org/protobuf/proto"
 )
 
 // Logger defines the interface for the agent logger.
@@ -361,13 +365,24 @@ func (a *agent) HostAttestation(ctx context.Context) ([]byte, error) {
 		return nil, fmt.Errorf("host attestation is only supported in Bowcaster mode")
 	}
 	const hostServicePort = 600613
-	conn, err := vsock.Dial(2, hostServicePort, nil)
+	// Connect to host service using gRPC over VSOCK
+	grpcConn, err := grpc.DialContext(ctx, "passthrough", grpc.WithInsecure(), grpc.WithContextDialer(func(ctx context.Context, addr string) (net.Conn, error) {
+		return vsock.Dial(2, hostServicePort, nil)
+	}))
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to host service: %w", err)
+		return nil, fmt.Errorf("failed to dial host service: %w", err)
 	}
-	defer conn.Close()
+	defer grpcConn.Close()
 
-	return io.ReadAll(conn)
+	client := hostservicepb.NewHostServiceClient(grpcConn)
+	resp, err := client.GetHostAttestation(ctx, &hostservicepb.GetHostAttestationRequest{
+		Challenge: []byte("test"), // Dummy challenge for now
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get host attestation: %w", err)
+	}
+
+	return proto.Marshal(resp.GetHostAttestation())
 }
 
 // AttestationEvidence returns the attestation evidence (TPM or TDX).

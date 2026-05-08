@@ -1,8 +1,6 @@
 module github.com/google/go-tpm-tools/launcher
 
-go 1.24.0
-
-toolchain go1.24.8
+go 1.24.13
 
 require (
 	cloud.google.com/go/compute/metadata v0.9.0
@@ -107,6 +105,7 @@ require (
 	golang.org/x/time v0.14.0 // indirect
 	google.golang.org/genproto v0.0.0-20260128011058-8636f8732409 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260203192932-546029d2fa20 // indirect
+
 )
 
 replace (
