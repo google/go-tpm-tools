@@ -685,18 +685,6 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		return fmt.Errorf("failed to measure CEL events: %v", err)
 	}
 
-	// Fetch the host attestation
-	if r.launchSpec.Experiments.BcMode {
-		r.logger.Info("Running in Bowcaster mode: fetching host attestation.")
-		const hostServicePort = 600613
-		hostAttestation, err := r.fetchHostAttestation(ctx, 2, hostServicePort)
-		if err != nil {
-			return fmt.Errorf("failed to fetch host attestation: %v", err)
-		}
-		r.logger.Info("Successfully fetched host attestation.")
-		_ = hostAttestation // TODO: what do we do with it? 
-	}
-
 	// Only refresh token if agent has a default GCA client (not ITA use case)
 	// AND GcaRefresh is not disabled
 	if r.launchSpec.ITAConfig.ITARegion == "" && !r.launchSpec.DisableGcaRefresh {
@@ -737,14 +725,16 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	var workloadService *workloadservice.Server
 	if r.launchSpec.Experiments.BcMode {
 		r.logger.Info("Running in Bowcaster mode: connecting to Key Protection VM.")
-		const kpVmCid = 4 //TODO: check this is correct CID?
-		const kpVmPort = 1025 // TODO: replace with actual port
-		conn, err := vsock.Dial(kpVmCid, kpVmPort, nil)
-		if err != nil {
-			return fmt.Errorf("failed to connect to Key Protection VM: %v", err)
-		}
-		r.logger.Info("Successfully connected to Key Protection VM.")
-		defer conn.Close()
+		r.logger.Info("Skipping this step (not set up yet)")
+		// TODO: This is not set up yet and we don't even know what the right port/cid/binary to run is
+		// const kpVmCid = 4
+		// const kpVmPort = 1025
+		// conn, err := vsock.Dial(kpVmCid, kpVmPort, nil)
+		// if err != nil {
+		// 	return fmt.Errorf("failed to connect to Key Protection VM: %v", err)
+		// }
+		// r.logger.Info("Successfully connected to Key Protection VM.")
+		// defer conn.Close()
 		// TODO: Use the connection or wrap it in a workload service client.
 		// i.e. what do we do with this connection? 
 	} else if r.launchSpec.Experiments.EnableKeyManager {
