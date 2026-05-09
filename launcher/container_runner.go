@@ -26,7 +26,6 @@ import (
 	gocni "github.com/containerd/go-cni"
 
 	"github.com/containerd/containerd/cio"
-	"github.com/containerd/containerd/containers"
 	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/images"
 	"github.com/containerd/containerd/oci"
@@ -95,11 +94,9 @@ const defaultOOMScore = 1000
 
 // Constants for a non-root container.
 const (
-	hostUIDBegin = 10000 // Starting (outside container) uid for the root user inside the container
-	hostGIDBegin = 10000 // Starting (outside container) gid for the root group inside the container
-	userNSSize   = 65536 // 16-bit range of uid/gid inside the container
-
-	stdoutStderrPipe = "workload_stdouterr.fifo"
+	hostUIDBegin = 100000 // Starting (outside container) uid for the root user inside the container
+	hostGIDBegin = 100000 // Starting (outside container) gid for the root group inside the container
+	userNSSize   = 65536  // 16-bit range of uid/gid inside the container
 
 	cniConfigDir = "/etc/cni/net.d"
 	cniBinDir    = "/opt/cni/bin"
@@ -202,18 +199,40 @@ func NewRunner(ctx context.Context, cfg *RunnerConfig) (*ContainerRunner, error)
 			"image_annotations", imageConfigDescriptor.Annotations,
 		)
 	}
-	// If we use non-root container, we enable both the user and network namespaces and prepare stdout/err pipe mounts.
+
+	hostname, err := os.Hostname()
+	if err != nil {
+		return nil, &RetryableError{fmt.Errorf("cannot get hostname: [%w]", err)}
+	}
+
+	rlimits := []specs.POSIXRlimit{{
+		Type: "RLIMIT_NOFILE",
+		Hard: nofile,
+		Soft: nofile,
+	}}
+
+	specOpts := []oci.SpecOpts{
+		oci.WithImageConfigArgs(image, launchSpec.Cmd),
+		oci.WithEnv(envs),
+		oci.WithMounts(mounts),
+		// following 4 options are here to allow the container to have
+		// the host network (same effect as --net-host in ctr command)
+		oci.WithHostHostsFile,
+		oci.WithHostResolvconf,
+		oci.WithEnv([]string{fmt.Sprintf("HOSTNAME=%s", hostname)}),
+		oci.WithAddedCapabilities(launchSpec.AddedCapabilities),
+		withRlimits(rlimits),
+		withOOMScoreAdj(defaultOOMScore),
+	}
+
+	// If we use non-root container, we enable both the user and network namespaces.
 	// Otherwise, we use host network without enabling the namespaces.
 	if launchSpec.NonrootContainer {
-		pipePath := path.Join(launcherfile.HostTmpPath, stdoutStderrPipe)
 		specOpts = append(specOpts,
 			oci.WithUserNamespace(
 				[]specs.LinuxIDMapping{{ContainerID: 0, HostID: hostUIDBegin, Size: userNSSize}},
 				[]specs.LinuxIDMapping{{ContainerID: 0, HostID: hostGIDBegin, Size: userNSSize}},
 			),
-			// To redirect /dev/std{out,err} for a non-root container.
-			// The pipe will be created before a new task is created.
-			withStdoutStderrPipeMounts(pipePath),
 		)
 	} else {
 		specOpts = append(specOpts, oci.WithHostNamespace(specs.NetworkNamespace))
@@ -664,13 +683,14 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		r.logger.Info("MemoryMonitoring is disabled by the VM operator")
 	}
 
-	var logWriter io.Writer
+	var streamOpt cio.Opt
 	switch r.launchSpec.LogRedirect {
 	case spec.Nowhere:
-		logWriter = io.Discard
+		streamOpt = cio.WithStreams(nil, nil, nil)
 		r.logger.Info("Container stdout/stderr will not be redirected.")
 	case spec.Everywhere:
-		logWriter = io.MultiWriter(os.Stdout, r.serialConsole)
+		w := io.MultiWriter(os.Stdout, r.serialConsole)
+		streamOpt = cio.WithStreams(nil, w, w)
 		r.logger.Info("Container stdout/stderr will be redirected to serial and Cloud Logging. This may result in performance issues due to slow serial console writes.")
 	case spec.CloudLogging:
 		stdoutWriter := logging.NewInfoWriter(r.workloadLogger)
@@ -678,39 +698,18 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		streamOpt = cio.WithStreams(nil, stdoutWriter, stderrWriter)
 		r.logger.Info("Container stdout/stderr will be redirected to Cloud Logging with INFO and ERROR severities respectively.")
 	case spec.Serial:
-		logWriter = r.serialConsole
+		streamOpt = cio.WithStreams(nil, r.serialConsole, r.serialConsole)
 		r.logger.Info("Container stdout/stderr will be redirected to serial logging. This may result in performance issues due to slow serial console writes.")
 	default:
 		return fmt.Errorf("unknown logging redirect location: %v", r.launchSpec.LogRedirect)
 	}
-	streamOpt := cio.WithStreams(nil, logWriter, logWriter)
 
+	var taskOpts []containerd.NewTaskOpts
 	if r.launchSpec.NonrootContainer {
-		// Create the named pipe to allow non-root workloads to open it via /dev/{stdout,stderr} without permission errors.
-		pipePath := path.Join(launcherfile.HostTmpPath, stdoutStderrPipe)
-		_ = os.Remove(pipePath) // Error can be ignored.
-		if err := syscall.Mkfifo(pipePath, 0666); err != nil {
-			return fmt.Errorf("failed to create named pipe: %w", err)
-		}
-		if err := os.Chmod(pipePath, 0666); err != nil { // We call Chmod explicitly because Mkfifo is affected by the process's umask.
-			return fmt.Errorf("failed to chmod stdout/stderr pipe file: %w", err)
-		}
-
-		// Open the pipe and start forwarding logs.
-		stdPipe, err := os.OpenFile(pipePath, os.O_RDWR, 0)
-		if err != nil {
-			return fmt.Errorf("failed to open named pipe: %w", err)
-		}
-		go func() {
-			defer stdPipe.Close()
-			_, err := io.Copy(logWriter, stdPipe)
-			if err != nil {
-				r.logger.Error("failed to copy logs from named pipe: %v", err)
-			}
-		}()
+		taskOpts = append(taskOpts, containerd.WithUIDOwner(hostUIDBegin), containerd.WithGIDOwner(hostGIDBegin))
 	}
 
-	task, err := r.container.NewTask(ctx, cio.NewCreator(streamOpt))
+	task, err := r.container.NewTask(ctx, cio.NewCreator(streamOpt), taskOpts...)
 	if err != nil {
 		return &RetryableError{err}
 	}
@@ -953,49 +952,6 @@ func (r *ContainerRunner) Close(ctx context.Context) {
 	// Delete container and close connection to attestation service.
 	// TODO: consider handling or logging cleanup error.
 	_ = r.container.Delete(ctx, containerd.WithSnapshotCleanup)
-}
-
-func verifySocketPermissions(socketPath string) error {
-	info, err := os.Stat(socketPath)
-	if err != nil {
-		return fmt.Errorf("failed to stat socket: %w", err)
-	}
-	if perm := info.Mode().Perm(); perm != 0777 {
-		return fmt.Errorf("socket %s has permissions %04o, want 0777", socketPath, perm)
-	}
-	return nil
-}
-
-func withStdoutStderrPipeMounts(pipePath string) oci.SpecOpts {
-	return func(_ context.Context, _ oci.Client, _ *containers.Container, s *oci.Spec) error {
-		s.Mounts = append(s.Mounts,
-			specs.Mount{
-				Destination: "/dev/stdout",
-				Type:        "bind",
-				Source:      pipePath,
-				Options:     []string{"bind", "rw"},
-			},
-			specs.Mount{
-				Destination: "/dev/stderr",
-				Type:        "bind",
-				Source:      pipePath,
-				Options:     []string{"bind", "rw"},
-			},
-		)
-		return nil
-	}
-}
-
-// appendCgroupRw mount maps a cgroup as read-write.
-func appendCgroupRw(mounts []specs.Mount) []specs.Mount {
-	m := specs.Mount{
-		Destination: "/sys/fs/cgroup",
-		Type:        "cgroup",
-		Source:      "cgroup",
-		Options:     []string{"rw", "nosuid", "noexec", "nodev"},
-	}
-
-	return append(mounts, m)
 }
 
 func newCNI() (gocni.CNI, error) {
