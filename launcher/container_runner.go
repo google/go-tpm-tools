@@ -15,7 +15,6 @@ import (
 	"path"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"cloud.google.com/go/compute/metadata"
@@ -100,8 +99,6 @@ const (
 	hostUIDBegin = 100000 // Starting (outside container) uid for the root user inside the container
 	hostGIDBegin = 100000 // Starting (outside container) gid for the root group inside the container
 	userNSSize   = 65536  // 16-bit range of uid/gid inside the container
-
-	stdoutStderrPipe = "workload_stdouterr.fifo"
 
 	cniConfigDir = "/etc/cni/net.d"
 	cniBinDir    = "/opt/cni/bin"
@@ -210,18 +207,14 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		withOOMScoreAdj(defaultOOMScore),
 	}
 
-	// If we use non-root container, we enable both the user and network namespaces and prepare stdout/err pipe mounts.
+	// If we use non-root container, we enable both the user and network namespaces.
 	// Otherwise, we use host network without enabling the namespaces.
 	if launchSpec.NonrootContainer {
-		pipePath := path.Join(launcherfile.HostTmpPath, stdoutStderrPipe)
 		specOpts = append(specOpts,
 			oci.WithUserNamespace(
 				[]specs.LinuxIDMapping{{ContainerID: 0, HostID: hostUIDBegin, Size: userNSSize}},
 				[]specs.LinuxIDMapping{{ContainerID: 0, HostID: hostGIDBegin, Size: userNSSize}},
 			),
-			// To redirect /dev/std{out,err} for a non-root container.
-			// The pipe will be created before a new task is created.
-			withStdoutStderrPipeMounts(pipePath),
 		)
 	} else {
 		specOpts = append(specOpts, oci.WithHostNamespace(specs.NetworkNamespace))
@@ -799,51 +792,31 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		r.logger.Info("MemoryMonitoring is disabled by the VM operator")
 	}
 
-	var logWriter io.Writer
+	var streamOpt cio.Opt
 	switch r.launchSpec.LogRedirect {
 	case spec.Nowhere:
-		logWriter = io.Discard
+		streamOpt = cio.WithStreams(nil, nil, nil)
 		r.logger.Info("Container stdout/stderr will not be redirected.")
 	case spec.Everywhere:
-		logWriter = io.MultiWriter(os.Stdout, r.serialConsole)
+		w := io.MultiWriter(os.Stdout, r.serialConsole)
+		streamOpt = cio.WithStreams(nil, w, w)
 		r.logger.Info("Container stdout/stderr will be redirected to serial and Cloud Logging. This may result in performance issues due to slow serial console writes.")
 	case spec.CloudLogging:
-		logWriter = os.Stdout
+		streamOpt = cio.WithStreams(nil, os.Stdout, os.Stdout)
 		r.logger.Info("Container stdout/stderr will be redirected to Cloud Logging.")
 	case spec.Serial:
-		logWriter = r.serialConsole
+		streamOpt = cio.WithStreams(nil, r.serialConsole, r.serialConsole)
 		r.logger.Info("Container stdout/stderr will be redirected to serial logging. This may result in performance issues due to slow serial console writes.")
 	default:
 		return fmt.Errorf("unknown logging redirect location: %v", r.launchSpec.LogRedirect)
 	}
-	streamOpt := cio.WithStreams(nil, logWriter, logWriter)
 
+	var taskOpts []containerd.NewTaskOpts
 	if r.launchSpec.NonrootContainer {
-		// Create the named pipe to allow non-root workloads to open it via /dev/{stdout,stderr} without permission errors.
-		pipePath := path.Join(launcherfile.HostTmpPath, stdoutStderrPipe)
-		_ = os.Remove(pipePath) // Error can be ignored.
-		if err := syscall.Mkfifo(pipePath, 0666); err != nil {
-			return fmt.Errorf("failed to create named pipe: %w", err)
-		}
-		if err := os.Chmod(pipePath, 0666); err != nil { // We call Chmod explicitly because Mkfifo is affected by the process's umask.
-			return fmt.Errorf("failed to chmod stdout/stderr pipe file: %w", err)
-		}
-
-		// Open the pipe and start forwarding logs.
-		stdPipe, err := os.OpenFile(pipePath, os.O_RDWR, 0)
-		if err != nil {
-			return fmt.Errorf("failed to open named pipe: %w", err)
-		}
-		go func() {
-			defer stdPipe.Close()
-			_, err := io.Copy(logWriter, stdPipe)
-			if err != nil {
-				r.logger.Error("failed to copy logs from named pipe: %v", err)
-			}
-		}()
+		taskOpts = append(taskOpts, containerd.WithUIDOwner(hostGIDBegin), containerd.WithGIDOwner(hostGIDBegin))
 	}
 
-	task, err := r.container.NewTask(ctx, cio.NewCreator(streamOpt))
+	task, err := r.container.NewTask(ctx, cio.NewCreator(streamOpt), taskOpts...)
 	if err != nil {
 		return &RetryableError{err}
 	}
@@ -1131,26 +1104,6 @@ func withRlimits(rlimits []specs.POSIXRlimit) oci.SpecOpts {
 func withOOMScoreAdj(oomScore int) oci.SpecOpts {
 	return func(_ context.Context, _ oci.Client, _ *containers.Container, s *oci.Spec) error {
 		s.Process.OOMScoreAdj = &oomScore
-		return nil
-	}
-}
-
-func withStdoutStderrPipeMounts(pipePath string) oci.SpecOpts {
-	return func(_ context.Context, _ oci.Client, _ *containers.Container, s *oci.Spec) error {
-		s.Mounts = append(s.Mounts,
-			specs.Mount{
-				Destination: "/dev/stdout",
-				Type:        "bind",
-				Source:      pipePath,
-				Options:     []string{"bind", "rw"},
-			},
-			specs.Mount{
-				Destination: "/dev/stderr",
-				Type:        "bind",
-				Source:      pipePath,
-				Options:     []string{"bind", "rw"},
-			},
-		)
 		return nil
 	}
 }
