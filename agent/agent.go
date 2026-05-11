@@ -43,6 +43,7 @@ import (
 	"github.com/google/go-tpm-tools/verifier/oci"
 	"github.com/google/go-tpm-tools/verifier/util"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -366,7 +367,7 @@ func (a *agent) HostAttestation(ctx context.Context) ([]byte, error) {
 	}
 	const hostServicePort = 600613
 	// Connect to host service using gRPC over VSOCK
-	grpcConn, err := grpc.DialContext(ctx, "passthrough", grpc.WithInsecure(), grpc.WithContextDialer(func(_ context.Context, _ string) (net.Conn, error) {
+	grpcConn, err := grpc.NewClient("passthrough", grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithContextDialer(func(_ context.Context, _ string) (net.Conn, error) {
 		return vsock.Dial(2, hostServicePort, nil)
 	}))
 	if err != nil {
