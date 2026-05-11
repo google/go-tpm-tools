@@ -103,7 +103,8 @@ mcopy_from_p12() {
 }
 
 ##
-# Detects the image mode by inspecting the boot EFI binary.
+# Detects the image mode by inspecting the boot EFI binary already extracted
+# to $BOOT_EFI_FILE by extract_boot_components.
 # Uses conservative auto-detection: positive evidence is required on both
 # sides, with a hard error on anything unrecognized.
 #   .sbat present AND content contains 'https://github.com/rhboot/shim'
@@ -112,23 +113,10 @@ mcopy_from_p12() {
 #       => 'uki' (single-blob: bootx64.efi w/ EFI stub)
 #   otherwise => hard error, listing sections found.
 # `.setup` is specific to the x86/x86_64 cos EFI-stub layout.
-# As a side effect, extracts the boot EFI to $BOOT_EFI_FILE so
-# extract_boot_components does not need to copy it again.
 #
-# @param $1: build architecture ('x86_64' or 'aarch64').
 # @return The detected mode ('default' or 'uki') to stdout.
 #
 detect_image_mode() {
-    local arch="$1"
-    local boot_src
-    case "$arch" in
-        x86_64)   boot_src="::/efi/boot/bootx64.efi" ;;
-        aarch64)  boot_src="::/efi/boot/bootaa64.efi" ;;
-        *) echo "Error: Unknown arch '$arch'." >&2; return 1 ;;
-    esac
-
-    mcopy_from_p12 "$boot_src" "$BOOT_EFI_FILE" || return 1
-
     python3 - "$BOOT_EFI_FILE" <<'PY'
 import struct, sys
 path = sys.argv[1]
@@ -183,35 +171,47 @@ PY
 
 ##
 # Copies boot-related files from the extracted partition image using mcopy.
+# The boot EFI (bootx64.efi/bootaa64.efi) is required and is a hard error if
+# missing. The default-mode extras (vmlinuz.A/B, grub.cfg, grub-lakitu.efi)
+# are best-effort: uki images don't have them, and absence is silently
+# skipped here. If a default-mode image is missing one, the downstream
+# hashing step will fail when it tries to read the file.
+#
+# @param $1: build architecture ('x86_64' or 'aarch64').
 #
 extract_boot_components() {
     local arch="$1"
-    local image_mode="$2"
-
-    # The boot EFI (bootx64.efi/bootaa64.efi) is already extracted by
-    # detect_image_mode; only the default-mode extras remain to copy.
-    if [ "$image_mode" != "default" ]; then
-        return 0
-    fi
+    local boot_src
+    case "$arch" in
+        x86_64)   boot_src="::/efi/boot/bootx64.efi" ;;
+        aarch64)  boot_src="::/efi/boot/bootaa64.efi" ;;
+        *) echo "Error: Unknown arch '$arch'." >&2; return 1 ;;
+    esac
 
     echo "Copying files from partition image '$P12_FILE'..."
 
-    declare -A files_to_copy=(
+    # Required: boot EFI binary.
+    mcopy_from_p12 "$boot_src" "$BOOT_EFI_FILE" || return 1
+
+    # Best-effort: default-mode extras. Skip silently when absent (uki).
+    declare -A optional_files=(
         ["::/syslinux/vmlinuz.A"]="$VMLINUZ_A_FILE"
         ["::/efi/boot/grub.cfg"]="$GRUB_CFG_FILE"
         ["::/efi/boot/grub-lakitu.efi"]="$GRUB_EFI_FILE"
     )
     # vmlinuz.B file exists on amd64 but not on arm64
     if [ "$arch" == "x86_64" ]; then
-        files_to_copy["::/syslinux/vmlinuz.B"]="$VMLINUZ_B_FILE"
+        optional_files["::/syslinux/vmlinuz.B"]="$VMLINUZ_B_FILE"
     fi
 
-    for src in "${!files_to_copy[@]}"; do
-        local dest="${files_to_copy[$src]}"
-        echo "Copying '$src' to '$dest'..."
-        mcopy_from_p12 "$src" "$dest" || return 1
+    for src in "${!optional_files[@]}"; do
+        local dest="${optional_files[$src]}"
+        if mcopy -i "$P12_FILE" "$src" "$dest" 2>/dev/null; then
+            echo "Copied '$src' to '$dest'."
+        else
+            echo "Skipped '$src' (not present in this image)."
+        fi
     done
-    echo "All boot components copied successfully."
 }
 
 # --- Hash Calculation Functions ---
@@ -501,10 +501,10 @@ main() {
     # 2. Setup and Extraction
     setup_temp_dir
     extract_partition_12 "$os_image_path" || return 1
+    extract_boot_components "$arch" || return 1
     local image_mode
-    image_mode=$(detect_image_mode "$arch") || return 1
+    image_mode=$(detect_image_mode) || return 1
     echo "Auto-detected image_mode=$image_mode"
-    extract_boot_components "$arch" "$image_mode" || return 1
 
     # 3. Compute All Hashes
     echo "Computing all required hashes using $HASH_ALG (image_mode=$image_mode)..."
@@ -529,17 +529,6 @@ main() {
         kernel_cmdline_b_hash=$(compute_cmdline_hash "$GRUB_CFG_FILE" "B")
         shim_hash=$(compute_efi_hash "$BOOT_EFI_FILE") || return 1
         grub_hash=$(compute_efi_hash "$GRUB_EFI_FILE") || return 1
-
-        echo "Kernel (vmlinuz.A) hash: $vmlinuz_a_hash"
-        echo "Kernel (vmlinuz.B) hash: $vmlinuz_b_hash"
-        echo "Kernel (vmlinuz.A) PE hash: $vmlinuz_a_pe_hash"
-        echo "Kernel (vmlinuz.B) PE hash: $vmlinuz_b_pe_hash"
-        echo "Kernel cmdline (image A): $kernel_cmdline_a"
-        echo "Kernel cmdline (image B): $kernel_cmdline_b"
-        echo "Kernel cmdline (image A) hash: $kernel_cmdline_a_hash"
-        echo "Kernel cmdline (image B) hash: $kernel_cmdline_b_hash"
-        echo "bootx64.efi/bootaa64.efi (shim) hash: $shim_hash"
-        echo "grub-lakitu.efi (grub) hash: $grub_hash"
     fi
 
     # 4. Final Output with escaped kernel command line strings
