@@ -28,7 +28,6 @@ import (
 	"github.com/containerd/containerd/remotes"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-tpm-tools/agent"
-	"github.com/mdlayher/vsock"
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
 	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
@@ -725,18 +724,7 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	var workloadService *workloadservice.Server
 	if r.launchSpec.Experiments.BcMode {
 		r.logger.Info("Running in Bowcaster mode: connecting to Key Protection VM.")
-		r.logger.Info("Skipping this step (not set up yet)")
-		// TODO: This is not set up yet and we don't even know what the right port/cid/binary to run is
-		// const kpVmCid = 4
-		// const kpVmPort = 1025
-		// conn, err := vsock.Dial(kpVmCid, kpVmPort, nil)
-		// if err != nil {
-		// 	return fmt.Errorf("failed to connect to Key Protection VM: %v", err)
-		// }
-		// r.logger.Info("Successfully connected to Key Protection VM.")
-		// defer conn.Close()
-		// TODO: Use the connection or wrap it in a workload service client.
-		// i.e. what do we do with this connection? 
+		r.logger.Info("Key Protection VM connection is not set up yet.  Skipping.")
 	} else if r.launchSpec.Experiments.EnableKeyManager {
 		// create and start the key manager server
 		r.logger.Info("EnableKeyManager experiment is enabled: initializing KeyManager server.")
@@ -915,18 +903,6 @@ func getImageConfig(ctx context.Context, image containerd.Image) (v1.ImageConfig
 		return ociimage.Config, nil
 	}
 	return v1.ImageConfig{}, fmt.Errorf("unknown image config media type %s", ic.MediaType)
-}
-
-// Could I repurpose this for both host attestation and key protection vm connection?
-// It just dials a vsock
-func (r *ContainerRunner) fetchHostAttestation(ctx context.Context, cid uint32, port uint32) ([]byte, error) {
-	conn, err := vsock.Dial(cid, port, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer conn.Close()
-
-	return io.ReadAll(conn)
 }
 
 // Close the container runner
