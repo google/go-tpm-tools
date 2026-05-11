@@ -183,10 +183,14 @@ steps:
         if [ -z "$$FEATURES" ]; then
           FEATURES="UEFI_COMPATIBLE"
         fi
+        if gcloud compute images describe ${_OUTPUT_IMAGE_NAME} > /dev/null 2>&1; then
+          echo "Result image ${_OUTPUT_IMAGE_NAME} already exists in project. Exiting."
+          exit 0
+        fi
         gcloud compute images create ${_OUTPUT_IMAGE_NAME} \
           --family=${_OUTPUT_IMAGE_FAMILY} \
           --source-uri=gs://${_BUCKET_NAME}/oem-preloader-${BUILD_ID}/${_OUTPUT_IMAGE_NAME}.tar.gz \
-          --guest-os-features="$$FEATURES" \
+          --guest-os-features="$$FEATURES"
   - name: 'gcr.io/cloud-builders/gcloud'
     id: 'RemoveGCSFiles'
     entrypoint: 'gcloud'
