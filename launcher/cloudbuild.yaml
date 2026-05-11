@@ -205,7 +205,7 @@ steps:
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: DebugBcImageBuildAndExport
-  waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary']
+  waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary', 'DownloadGpuDrivers']
   env: 
   - 'BC_BASE_IMAGE=$_BC_DEBUG_IMAGE'
   - 'BC_BASE_IMAGE_PROJECT=$_BC_BASE_IMAGE_PROJECT'
@@ -232,7 +232,7 @@ steps:
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: HardenedBcImageBuildAndExport
-  waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary']
+  waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary', 'DownloadGpuDrivers']
   env: 
   - 'BC_BASE_IMAGE=$_BC_BASE_IMAGE'
   - 'BC_BASE_IMAGE_PROJECT=$_BC_BASE_IMAGE_PROJECT'
