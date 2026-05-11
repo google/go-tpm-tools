@@ -36,7 +36,7 @@ trap cleanup EXIT
 check_dependencies() {
     echo "Checking for required command-line utilities..."
     local missing_cmds=0
-    for cmd in cgpt dd mcopy mdir sha256sum sbattach openssl jq awk grep printf dirname mkdir; do
+    for cmd in cgpt dd mcopy sha256sum sha384sum sbattach openssl jq awk grep printf dirname mkdir; do
         if ! command -v "$cmd" &>/dev/null; then
             echo "Error: Required command '$cmd' is not installed." >&2
             missing_cmds=1
@@ -90,12 +90,28 @@ extract_partition_12() {
 }
 
 ##
-# Detects the image mode by inspecting the boot EFI binary itself.
-# `default` images boot via shim, whose PE binary carries a `.sbat` section
-# referencing https://github.com/rhboot/shim. `uki` images ship a UKI PE with
-# no such section. Falls back to `uki` whenever the binary is not a shim
-# (parse failure, missing `.sbat`, or `.sbat` without the rhboot URL).
+# Extracts a file from $P12_FILE using mcopy with a consistent error message.
+# @param $1: source path inside the FAT (e.g. '::/efi/boot/bootx64.efi').
+# @param $2: destination path on local disk.
 #
+mcopy_from_p12() {
+    local src="$1" dst="$2"
+    if ! mcopy -i "$P12_FILE" "$src" "$dst"; then
+        echo "Error: Failed to mcopy '$src' from '$P12_FILE'." >&2
+        return 1
+    fi
+}
+
+##
+# Detects the image mode by inspecting the boot EFI binary.
+# Uses conservative auto-detection: positive evidence is required on both
+# sides, with a hard error on anything unrecognized.
+#   .sbat present AND content contains 'https://github.com/rhboot/shim'
+#       => 'default' (shim + grub + kernel layout)
+#   .setup present (x86/x86_64 cos EFI-stub image)
+#       => 'uki' (single-blob: bootx64.efi w/ EFI stub)
+#   otherwise => hard error, listing sections found.
+# `.setup` is specific to the x86/x86_64 cos EFI-stub layout.
 # As a side effect, extracts the boot EFI to $BOOT_EFI_FILE so
 # extract_boot_components does not need to copy it again.
 #
@@ -104,28 +120,64 @@ extract_partition_12() {
 #
 detect_image_mode() {
     local arch="$1"
-    local shim_src
+    local boot_src
     case "$arch" in
-        x86_64)   shim_src="::/efi/boot/bootx64.efi" ;;
-        aarch64)  shim_src="::/efi/boot/bootaa64.efi" ;;
+        x86_64)   boot_src="::/efi/boot/bootx64.efi" ;;
+        aarch64)  boot_src="::/efi/boot/bootaa64.efi" ;;
         *) echo "Error: Unknown arch '$arch'." >&2; return 1 ;;
     esac
 
-    if ! mcopy -i "$P12_FILE" "$shim_src" "$BOOT_EFI_FILE" &>/dev/null; then
-        echo "Error: Failed to extract '$shim_src' from '$P12_FILE'." >&2
-        return 1
-    fi
+    mcopy_from_p12 "$boot_src" "$BOOT_EFI_FILE" || return 1
 
     python3 - "$BOOT_EFI_FILE" <<'PY'
-import sys, lief
-b = lief.parse(sys.argv[1])
-if b is None:
-    print("uki"); sys.exit(0)
-sec = b.get_section(".sbat")
-if sec is None:
-    print("uki"); sys.exit(0)
-content = bytes(sec.content)
-print("default" if b"https://github.com/rhboot/shim" in content else "uki")
+import struct, sys
+path = sys.argv[1]
+with open(path, "rb") as f:
+    d = f.read()
+
+# Walk the PE headers directly with stdlib struct, read the section table from raw bytes.
+if len(d) < 0x40 or d[:2] != b"MZ":
+    sys.stderr.write("Error: '%s' is not a PE binary (bad DOS header)\n" % path)
+    sys.exit(1)
+e_lfanew = struct.unpack_from("<I", d, 0x3C)[0]
+if e_lfanew + 24 > len(d) or d[e_lfanew:e_lfanew+4] != b"PE\0\0":
+    sys.stderr.write("Error: '%s' has invalid PE signature\n" % path)
+    sys.exit(1)
+coff = e_lfanew + 4
+nsec = struct.unpack_from("<H", d, coff + 2)[0]
+size_opt = struct.unpack_from("<H", d, coff + 16)[0]
+sec_tbl = coff + 20 + size_opt
+if sec_tbl + nsec * 40 > len(d):
+    sys.stderr.write("Error: '%s' has malformed PE section table\n" % path)
+    sys.exit(1)
+
+sections = {}  # name -> (ptr, size)
+for i in range(nsec):
+    sh = sec_tbl + i * 40
+    name = bytes(d[sh:sh+8]).rstrip(b"\0").decode("ascii", errors="replace")
+    sz  = struct.unpack_from("<I", d, sh + 16)[0]
+    ptr = struct.unpack_from("<I", d, sh + 20)[0]
+    sections[name] = (ptr, sz)
+
+SHIM_URL = b"https://github.com/rhboot/shim"
+if ".sbat" in sections:
+    ptr, sz = sections[".sbat"]
+    if ptr + sz > len(d):
+        sys.stderr.write(
+            "Error: '%s' .sbat section extends past EOF\n" % path)
+        sys.exit(1)
+    if SHIM_URL in bytes(d[ptr:ptr+sz]):
+        print("default")
+        sys.exit(0)
+if ".setup" in sections:
+    print("uki")
+    sys.exit(0)
+sys.stderr.write(
+    "Error: '%s' did not match any known boot-EFI layout. "
+    "Recognized markers: '.sbat' containing %r (shim), or '.setup' "
+    "(x86 cos EFI-stub). Sections found: %s\n"
+    % (path, SHIM_URL.decode(), sorted(sections)))
+sys.exit(1)
 PY
 }
 
@@ -157,10 +209,7 @@ extract_boot_components() {
     for src in "${!files_to_copy[@]}"; do
         local dest="${files_to_copy[$src]}"
         echo "Copying '$src' to '$dest'..."
-        if ! mcopy -i "$P12_FILE" "$src" "$dest"; then
-            echo "Error: Failed to mcopy '$src' from '$P12_FILE'."
-            return 1
-        fi
+        mcopy_from_p12 "$src" "$dest" || return 1
     done
     echo "All boot components copied successfully."
 }
