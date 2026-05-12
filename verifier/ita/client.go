@@ -207,7 +207,7 @@ func convertRequestToTokenRequest(request verifier.VerifyAttestationRequest) tok
 	data := request.TDCCELAttestation.CcelData
 	trimIndex := len(data)
 
-	for ; trimIndex >= 0; trimIndex-- {
+	for ; trimIndex > 0; trimIndex-- {
 		c := data[trimIndex-1]
 		// Proceed until 0xFF padding ends.
 		if c != byte(255) {

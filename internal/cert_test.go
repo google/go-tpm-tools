@@ -74,3 +74,28 @@ func TestGetCertificateChainSucceeds(t *testing.T) {
 		t.Fatalf("GetCertificateChain did not return the expected number of certificates: got %v, want 2", len(certChain))
 	}
 }
+
+// TestFetchIssuingCertificateLargeBodyTruncated verifies that a server
+// returning a very large body does not cause OOM; the response is limited
+// to maxCertBodyBytes and the truncated body fails certificate parsing,
+// returning an error rather than exhausting memory.
+func TestFetchIssuingCertificateLargeBodyTruncated(t *testing.T) {
+	// Serve a body that exceeds maxCertBodyBytes.
+	bigServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/pkix-cert")
+		// Write maxCertBodyBytes + 1 MiB of data.
+		payload := make([]byte, maxCertBodyBytes+1024*1024)
+		w.Write(payload)
+	}))
+	defer bigServer.Close()
+
+	testCA, caKey := test.GetTestCert(t, nil, nil, nil)
+	leafCert, _ := test.GetTestCert(t, []string{bigServer.URL}, testCA, caKey)
+
+	// GetCertificateChain will fetch the URL and attempt to parse the truncated
+	// response as a DER certificate; it must fail with a parse error, not panic.
+	_, err := GetCertificateChain(leafCert, localClient)
+	if err == nil {
+		t.Fatal("expected error parsing oversized body, got nil")
+	}
+}
