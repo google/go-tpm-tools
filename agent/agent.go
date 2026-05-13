@@ -33,7 +33,7 @@ import (
 
 	"github.com/GoogleCloudPlatform/confidential-space/server/labels"
 	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
-	"github.com/google/go-tpm-tools/agent/proto/hostservicepb"
+	hostservicepb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/hostservice"
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal"

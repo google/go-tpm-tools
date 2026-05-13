@@ -62,8 +62,16 @@ steps:
 
   - name: 'gcr.io/cloud-builders/gcloud'
     id: 'DownloadVmlinux'
-    entrypoint: 'gcloud'
-    args: ['storage', 'cp', 'gs://cos-tools/19216.220.185/cchostdebug-amd64-gcp/vmlinux', './vmlinux']
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        if [[ "${_IMAGE_ENV}" == "debug" ]]; then
+          KERNEL_DIR="cchostdebug-amd64-gcp"
+        else
+          KERNEL_DIR="cchost-amd64-gcp"
+        fi
+        gcloud storage cp "gs://cos-tools/19216.220.185/$${KERNEL_DIR}/vmlinux" ./vmlinux
   - name: 'gcr.io/cos-cloud/oem-preloader:latest'
     id: 'RunOEMPreloader'
     env:
