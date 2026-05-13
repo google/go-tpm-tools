@@ -367,7 +367,7 @@ func (a *agent) HostAttestation(ctx context.Context) ([]byte, error) {
 	}
 	const hostServicePort = 600613
 	// Connect to host service using gRPC over VSOCK
-	grpcConn, err := grpc.NewClient("passthrough", grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithContextDialer(func(_ context.Context, _ string) (net.Conn, error) {
+	grpcConn, err := grpc.NewClient("passthrough:///", grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithContextDialer(func(_ context.Context, _ string) (net.Conn, error) {
 		return vsock.Dial(2, hostServicePort, nil)
 	}))
 	if err != nil {
