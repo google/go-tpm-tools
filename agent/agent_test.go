@@ -1191,4 +1191,3 @@ func TestHostAttestation_NotBcMode(t *testing.T) {
 		t.Error("expected error when BcMode is disabled, got nil")
 	}
 }
-
