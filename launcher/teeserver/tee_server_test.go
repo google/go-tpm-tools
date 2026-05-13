@@ -87,6 +87,10 @@ func (f fakeAttestationAgent) Close() error {
 	return nil
 }
 
+func (f fakeAttestationAgent) HostAttestation(_ context.Context, _ []byte) ([]byte, error) {
+	return nil, fmt.Errorf("HostAttestation unimplemented")
+}
+
 // Mock for KeyClaimsProvider interface
 type mockClaimsProvider struct {
 	claims map[keymanager.KeyType]*keymanager.KeyClaims

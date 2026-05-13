@@ -1167,3 +1167,27 @@ func TestAttestationEvidence_TDX_NilExtraData(t *testing.T) {
 		t.Errorf("expected nil ExtraData in attestation, got %x", att.ExtraData)
 	}
 }
+
+func TestHostAttestation_NotBcMode(t *testing.T) {
+	ctx := context.Background()
+	tpm := test.GetTPM(t)
+	defer client.CheckedClose(t, tpm)
+
+	fakeSigner, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("failed to generate signing key: %v", err)
+	}
+	agent, err := CreateAttestationAgent(tpm, client.AttestationKeyECC, fake.NewClient(fakeSigner),
+		placeholderPrincipalFetcher, NewFakeClient(),
+		Experiments{BcMode: false},
+		SimpleLogger(), nil, nil)
+	if err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+	defer agent.Close()
+
+	_, err = agent.HostAttestation(ctx, []byte("challenge"))
+	if err == nil {
+		t.Error("expected error when BcMode is disabled, got nil")
+	}
+}

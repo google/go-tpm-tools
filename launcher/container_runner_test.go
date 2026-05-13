@@ -90,6 +90,10 @@ func (f *fakeAttestationAgent) Close() error {
 	return nil
 }
 
+func (f *fakeAttestationAgent) HostAttestation(_ context.Context, _ []byte) ([]byte, error) {
+	return nil, fmt.Errorf("HostAttestation unimplemented")
+}
+
 type fakeGPUAttester struct {
 	attestFunc func(nonce []byte) (any, error)
 }
