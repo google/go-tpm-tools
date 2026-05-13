@@ -88,8 +88,8 @@ steps:
   entrypoint: 'gcloud'
   args: ['storage', 'cp',
           'gs://cos-nvidia-gpu-drivers/NVIDIA-Linux-x86_64-595.58.03.run',
-          'gs://cos-tools/19216.220.180/lakitu/gpu_driver_versions.bin',
-          'gs://cos-tools/19216.220.180/lakitu/nvidia-drivers-595.58.03.tgz',
+          'gs://cos-tools/19216.220.185/lakitu/gpu_driver_versions.bin',
+          'gs://cos-tools/19216.220.185/lakitu/nvidia-drivers-595.58.03.tgz',
           './launcher/image/']
 
 - name: 'gcr.io/cloud-builders/gcloud'
