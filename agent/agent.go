@@ -74,7 +74,7 @@ type AttestationAgent interface {
 	AttestationEvidence(ctx context.Context, challenge []byte, extraData []byte, opts AttestAgentOpts) (*attestationpb.VmAttestation, error)
 	Refresh(context.Context) error
 	Close() error
-	HostAttestation(ctx context.Context) ([]byte, error)
+	HostAttestation(ctx context.Context, challenge []byte) ([]byte, error)
 }
 
 type attestRoot interface {
@@ -361,7 +361,7 @@ func (a *agent) AttestWithClient(ctx context.Context, opts AttestAgentOpts, clie
 }
 
 // HostAttestation fetches the host attestation from the host service via VSOCK.
-func (a *agent) HostAttestation(ctx context.Context) ([]byte, error) {
+func (a *agent) HostAttestation(ctx context.Context, challenge []byte) ([]byte, error) {
 	if !a.experiments.BcMode {
 		return nil, fmt.Errorf("host attestation is only supported in Bowcaster mode")
 	}
@@ -377,7 +377,7 @@ func (a *agent) HostAttestation(ctx context.Context) ([]byte, error) {
 
 	client := hostservicepb.NewHostServiceClient(grpcConn)
 	resp, err := client.GetHostAttestation(ctx, &hostservicepb.GetHostAttestationRequest{
-		Challenge: []byte("test"), // Dummy challenge for now
+		Challenge: challenge,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get host attestation: %w", err)
