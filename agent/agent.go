@@ -142,6 +142,9 @@ type agent struct {
 // - signaturesFetcher is a func to fetch container image signatures associated with the running workload.
 // - logger will log any partial errors returned by VerifyAttestation.
 func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher util.TpmKeyFetcher, verifierClient verifier.Client, principalFetcher principalIDTokenFetcher, sigsFetcher SignatureFetcher, exps Experiments, logger Logger, deviceROTs []DeviceROT, signedImageRepos []string) (AttestationAgent, error) {
+	if exps.BcMode && tpm != nil {
+		return nil, fmt.Errorf("TPM should not be passed in BC mode")
+	}
 	// Fetched the AK and save it, so the agent doesn't need to create a new key everytime
 	var ak *client.Key
 	if !exps.BcMode {

@@ -723,6 +723,7 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 
 	var workloadService *workloadservice.Server
 	if r.launchSpec.Experiments.BcMode {
+		// TODO: Implement connection to Key VM once available
 		r.logger.Info("Running in Bowcaster mode: connecting to Key Protection VM.")
 		r.logger.Info("Key Protection VM connection is not set up yet.  Skipping.")
 	} else if r.launchSpec.Experiments.EnableKeyManager {
