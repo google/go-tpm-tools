@@ -86,12 +86,24 @@ steps:
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: DownloadGpuDrivers
-  entrypoint: 'gcloud'
-  args: ['storage', 'cp',
-          'gs://cos-nvidia-gpu-drivers/NVIDIA-Linux-x86_64-595.58.03.run',
-          'gs://cos-tools/19216.220.180/lakitu/gpu_driver_versions.bin',
-          'gs://cos-tools/19216.220.180/lakitu/nvidia-drivers-595.58.03.tgz',
-          './launcher/image/']
+  waitFor: ['BaseImageIdent']
+  entrypoint: 'bash'
+  args:
+    - '-c'
+    - |
+      set -ex
+      BASE_IMAGE=$$(cat /workspace/base_image.txt)
+      VERSION=$$(echo "$${BASE_IMAGE}" | grep -oE '[0-9]+-[0-9]+-[0-9]+$$' | tr '-' '.')
+      if [[ -z "$${VERSION}" ]]; then
+        echo "Failed to extract version from $${BASE_IMAGE}"
+        exit 1
+      fi
+
+      gcloud storage cp \
+        gs://cos-nvidia-gpu-drivers/NVIDIA-Linux-x86_64-595.58.03.run \
+        "gs://cos-tools/$${VERSION}/lakitu/gpu_driver_versions.bin" \
+        "gs://cos-tools/$${VERSION}/lakitu/nvidia-drivers-595.58.03.tgz" \
+        ./launcher/image/
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: DebugVgImageBuild

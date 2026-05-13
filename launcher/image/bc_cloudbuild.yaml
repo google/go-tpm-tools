@@ -56,8 +56,27 @@ steps:
 
   - name: 'gcr.io/cloud-builders/gcloud'
     id: 'DownloadVmlinux'
-    entrypoint: 'gcloud'
-    args: ['storage', 'cp', 'gs://cos-tools/19216.220.185/cchostdebug-amd64-gcp/vmlinux', './vmlinux']
+    entrypoint: 'bash'
+    env:
+      - 'BASE_IMAGE=${_BASE_IMAGE}'
+      - 'IMAGE_ENV=${_IMAGE_ENV}'
+    args:
+      - '-c'
+      - |
+        set -ex
+        VERSION=$$(echo "$${BASE_IMAGE}" | grep -oE '[0-9]+-[0-9]+-[0-9]+$$' | tr '-' '.')
+        if [[ -z "$${VERSION}" ]]; then
+          echo "Failed to extract version from $${BASE_IMAGE}"
+          exit 1
+        fi
+
+        if [[ "$${IMAGE_ENV}" == "debug" ]]; then
+          TARGET="cchostdebug-amd64-gcp"
+        else
+          TARGET="cchost-amd64-gcp"
+        fi
+
+        gcloud storage cp "gs://cos-tools/$${VERSION}/$${TARGET}/vmlinux" ./vmlinux
   - name: 'gcr.io/cos-cloud/oem-preloader:latest'
     id: 'RunOEMPreloader'
     env:
