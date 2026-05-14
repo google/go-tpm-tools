@@ -22,8 +22,4 @@ Driver=virtio_net
 
 [Network]
 Address=192.168.100.2/24
-
-[Route]
-Gateway=192.168.100.1
-Metric=1024
 EOF
