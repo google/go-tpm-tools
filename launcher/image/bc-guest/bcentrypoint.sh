@@ -22,6 +22,13 @@ main() {
   cp /usr/share/oem/confidential_space/nodeproblemdetector/docker-monitor-cs.json /etc/node_problem_detector/docker-monitor.json
   # Override default kernel-monitor.json for node-problem-detector.
   cp /usr/share/oem/confidential_space/nodeproblemdetector/kernel-monitor-cs.json /etc/node_problem_detector/kernel-monitor.json
+
+  # Configure network priority for IDPF using systemd-networkd.
+  if [[ -f /usr/share/oem/confidential_space/bc_network_setup.sh ]]; then
+    /usr/share/oem/confidential_space/bc_network_setup.sh
+    systemctl restart systemd-networkd
+  fi
+
   systemctl daemon-reload
   systemctl enable container-runner.service
   systemctl start container-runner.service

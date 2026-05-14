@@ -44,6 +44,7 @@ steps:
            ./launcher/image/container-runner.service \
            ./launcher/image/fluent-bit-cs.conf \
            ./launcher/image/exit_script.sh \
+           ./launcher/image/bc-guest/bc_network_setup.sh \
            /workspace/oem-install/confidential_space/
         cp ./launcher/image/nodeproblemdetector/* /workspace/oem-install/confidential_space/nodeproblemdetector/
 
@@ -52,6 +53,7 @@ steps:
         # cp ./launcher/image/bc-guest/meta-data /workspace/oem-install/meta-data
         chmod +x /workspace/oem-install/confidential_space/cs_container_launcher || true
         chmod +x /workspace/oem-install/confidential_space/exit_script.sh || true
+        chmod +x /workspace/oem-install/confidential_space/bc_network_setup.sh || true
         chmod +x /workspace/oem-install/entrypoint.sh || true
 
   - name: 'gcr.io/cloud-builders/gcloud'
