@@ -27,8 +27,8 @@ steps:
            '-script=fixup_oem.sh']
   - name: 'gcr.io/cos-cloud/cos-customizer'
     args: ['finish-image-build',
-           '-oem-size=500M',
-           '-disk-size-gb=11',
+           '-oem-size=900M',
+           '-disk-size-gb=12',
            '-image-name=${_OUTPUT_IMAGE_NAME}',
            '-image-family=${_OUTPUT_IMAGE_FAMILY}',
            '-image-project=${PROJECT_ID}',
