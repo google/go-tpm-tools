@@ -214,7 +214,7 @@ func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher util.TpmKeyFetcher
 		attestAgent.avRot = tdxAR
 	} else {
 		if exps.BcMode {
-			return nil, fmt.Errorf("TDX not supported, but running in BC mode.")
+			return nil, fmt.Errorf("running in BC mode but TDX not supported")
 		}
 		logger.Info("Using TPM PCR as attestation root.")
 		// attestAgent.avRot was already set to tpmAR if tpm != nil
