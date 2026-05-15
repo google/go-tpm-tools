@@ -1,0 +1,13 @@
+[Unit]
+Description=Internal Resource Investigator
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+ExecStart=/usr/share/oem/confidential_space/internal-investigator.sh
+Restart=always
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
