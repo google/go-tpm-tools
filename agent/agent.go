@@ -117,7 +117,7 @@ type Experiments struct {
 	EnableGpuGcaSupport bool
 	// EnableAttestationEvidence enables the attestation evidence endpoint.
 	EnableAttestationEvidence bool
-	// BcMode enables Bowcaster execution mode.
+	// BcMode enables baremetal execution mode.
 	BcMode bool
 }
 
@@ -214,7 +214,7 @@ func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher util.TpmKeyFetcher
 		attestAgent.avRot = tdxAR
 	} else {
 		if exps.BcMode {
-			return nil, fmt.Errorf("TDX not supported in Bowcaster mode")
+			return nil, fmt.Errorf("TDX not supported, but running in BC mode.")
 		}
 		logger.Info("Using TPM PCR as attestation root.")
 		// attestAgent.avRot was already set to tpmAR if tpm != nil
@@ -366,7 +366,7 @@ func (a *agent) AttestWithClient(ctx context.Context, opts AttestAgentOpts, clie
 // HostAttestation fetches the host attestation from the host service via VSOCK.
 func (a *agent) HostAttestation(ctx context.Context, challenge []byte) ([]byte, error) {
 	if !a.experiments.BcMode {
-		return nil, fmt.Errorf("host attestation is only supported in Bowcaster mode")
+		return nil, fmt.Errorf("host attestation is only supported in BC mode")
 	}
 	const hostServicePort = 600613
 	// Connect to host service using gRPC over VSOCK

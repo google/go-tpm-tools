@@ -239,7 +239,7 @@ func startLauncher(launchSpec spec.LaunchSpec, serialConsole *os.File) error {
 		}
 		gceAk.Close()
 	} else {
-		logger.Info("Running in Bowcaster mode, bypassing TPM initialization and checks.")
+		logger.Info("Running in BC mode, bypassing TPM initialization and checks.")
 	}
 
 	token, err := registryauth.RetrieveAuthToken(context.Background(), mdsClient)
