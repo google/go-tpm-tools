@@ -14,6 +14,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"sync"
@@ -26,11 +27,13 @@ import (
 	tg "github.com/google/go-tdx-guest/client"
 	tlabi "github.com/google/go-tdx-guest/client/linuxabi"
 	"github.com/google/go-tdx-guest/rtmr"
+	"github.com/mdlayher/vsock"
 
 	gecel "github.com/google/go-eventlog/cel"
 
 	"github.com/GoogleCloudPlatform/confidential-space/server/labels"
 	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
+	hostservicepb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/hostservice"
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal"
@@ -39,6 +42,9 @@ import (
 	"github.com/google/go-tpm-tools/verifier/models"
 	"github.com/google/go-tpm-tools/verifier/oci"
 	"github.com/google/go-tpm-tools/verifier/util"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/protobuf/proto"
 )
 
 // Logger defines the interface for the agent logger.
@@ -68,6 +74,7 @@ type AttestationAgent interface {
 	AttestationEvidence(ctx context.Context, challenge []byte, extraData []byte, opts AttestAgentOpts) (*attestationpb.VmAttestation, error)
 	Refresh(context.Context) error
 	Close() error
+	HostAttestation(ctx context.Context, challenge []byte) ([]byte, error)
 }
 
 type attestRoot interface {
@@ -110,6 +117,8 @@ type Experiments struct {
 	EnableGpuGcaSupport bool
 	// EnableAttestationEvidence enables the attestation evidence endpoint.
 	EnableAttestationEvidence bool
+	// BcMode enables Bowcaster execution mode.
+	BcMode bool
 }
 
 type agent struct {
@@ -134,9 +143,15 @@ type agent struct {
 // - logger will log any partial errors returned by VerifyAttestation.
 func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher util.TpmKeyFetcher, verifierClient verifier.Client, principalFetcher principalIDTokenFetcher, sigsFetcher SignatureFetcher, exps Experiments, logger Logger, deviceROTs []DeviceROT, signedImageRepos []string) (AttestationAgent, error) {
 	// Fetched the AK and save it, so the agent doesn't need to create a new key everytime
-	ak, err := akFetcher(tpm)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create an Attestation Agent: %w", err)
+	var ak *client.Key
+	if !exps.BcMode {
+		var err error
+		ak, err = akFetcher(tpm)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create an Attestation Agent: %w", err)
+		}
+	} else {
+		logger.Info("Running in BC mode, skipping Attestation Key fetching.")
 	}
 
 	attestAgent := &agent{
@@ -150,30 +165,33 @@ func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher util.TpmKeyFetcher
 		signedImageRepos: signedImageRepos,
 	}
 
-	// Add TPM
-	logger.Info("Adding TPM PCRs for measurement.")
+	if !exps.BcMode {
+		// Add TPM
+		logger.Info("Adding TPM PCRs for measurement.")
 
-	pcrSels, err := client.AllocatedPCRs(tpm)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get PCR selections: %v", err)
-	}
-
-	var hashAlgos []crypto.Hash
-	for _, sel := range pcrSels {
-		hashAlgo, err := sel.Hash.Hash()
+		pcrSels, err := client.AllocatedPCRs(tpm)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get TPM hash algorithm: %v", err)
+			return nil, fmt.Errorf("failed to get PCR selections: %v", err)
 		}
-		hashAlgos = append(hashAlgos, hashAlgo)
-	}
 
-	var tpmAR = &tpmAttestRoot{
-		fetchedAK: ak,
-		tpm:       tpm,
-		hashAlgos: hashAlgos,
-		cosCel:    gecel.NewPCR(),
+		var hashAlgos []crypto.Hash
+		for _, sel := range pcrSels {
+			hashAlgo, err := sel.Hash.Hash()
+			if err != nil {
+				return nil, fmt.Errorf("failed to get TPM hash algorithm: %v", err)
+			}
+			hashAlgos = append(hashAlgos, hashAlgo)
+		}
+
+		var tpmAR = &tpmAttestRoot{
+			fetchedAK: ak,
+			tpm:       tpm,
+			hashAlgos: hashAlgos,
+			cosCel:    gecel.NewPCR(),
+		}
+		attestAgent.measuredRots = append(attestAgent.measuredRots, tpmAR)
+		attestAgent.avRot = tpmAR // Set as default fallback
 	}
-	attestAgent.measuredRots = append(attestAgent.measuredRots, tpmAR)
 
 	// check if is a TDX machine
 	qp, err := tg.GetQuoteProvider()
@@ -192,8 +210,11 @@ func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher util.TpmKeyFetcher
 		logger.Info("Using TDX RTMR as attestation root.")
 		attestAgent.avRot = tdxAR
 	} else {
+		if exps.BcMode {
+			return nil, fmt.Errorf("TDX not supported in Bowcaster mode")
+		}
 		logger.Info("Using TPM PCR as attestation root.")
-		attestAgent.avRot = tpmAR
+		// attestAgent.avRot was already set to tpmAR if tpm != nil
 	}
 
 	// Add deviceRoTs to the CPU attestation root.
@@ -203,7 +224,9 @@ func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher util.TpmKeyFetcher
 
 // Close cleans up the agent
 func (a *agent) Close() error {
-	a.fetchedAK.Close()
+	if a.fetchedAK != nil {
+		a.fetchedAK.Close()
+	}
 	return nil
 }
 
@@ -284,14 +307,16 @@ func (a *agent) AttestWithClient(ctx context.Context, opts AttestAgentOpts, clie
 	case *verifier.TDCCELAttestation:
 		a.logger.Info("attestation through TDX quote")
 
-		certChain, err := internal.GetCertificateChain(a.fetchedAK.Cert(), http.DefaultClient)
-		if err != nil {
-			return nil, fmt.Errorf("failed when fetching certificate chain: %w", err)
-		}
-
 		v.CanonicalEventLog = cosCel.Bytes()
-		v.IntermediateCerts = certChain
-		v.AkCert = a.fetchedAK.CertDERBytes()
+
+		if !a.experiments.BcMode {
+			certChain, err := internal.GetCertificateChain(a.fetchedAK.Cert(), http.DefaultClient)
+			if err != nil {
+				return nil, fmt.Errorf("failed when fetching certificate chain: %w", err)
+			}
+			v.IntermediateCerts = certChain
+			v.AkCert = a.fetchedAK.CertDERBytes()
+		}
 
 		req.TDCCELAttestation = v
 	default:
@@ -333,6 +358,32 @@ func (a *agent) AttestWithClient(ctx context.Context, opts AttestAgentOpts, clie
 		a.logger.Error(fmt.Sprintf("Partial errors from VerifyAttestation: %v", resp.PartialErrs))
 	}
 	return resp.ClaimsToken, nil
+}
+
+// HostAttestation fetches the host attestation from the host service via VSOCK.
+func (a *agent) HostAttestation(ctx context.Context, challenge []byte) ([]byte, error) {
+	if !a.experiments.BcMode {
+		return nil, fmt.Errorf("host attestation is only supported in Bowcaster mode")
+	}
+	const hostServicePort = 600613
+	// Connect to host service using gRPC over VSOCK
+	grpcConn, err := grpc.NewClient("passthrough:///", grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithContextDialer(func(_ context.Context, _ string) (net.Conn, error) {
+		return vsock.Dial(2, hostServicePort, nil)
+	}))
+	if err != nil {
+		return nil, fmt.Errorf("failed to dial host service: %w", err)
+	}
+	defer grpcConn.Close()
+
+	client := hostservicepb.NewHostServiceClient(grpcConn)
+	resp, err := client.GetHostAttestation(ctx, &hostservicepb.GetHostAttestationRequest{
+		Challenge: challenge,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get host attestation: %w", err)
+	}
+
+	return proto.Marshal(resp.GetHostAttestation())
 }
 
 // AttestationEvidence returns the attestation evidence (TPM or TDX).

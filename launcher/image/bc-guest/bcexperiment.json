@@ -1,1 +1,7 @@
-{"EnableB200DriverInstallation": true,"EnableKeyManager": true,"EnableAttestationEvidence": true, "EnableHostAttestation": true}
+{
+  "EnableB200DriverInstallation": true,
+  "EnableKeyManager": false,
+  "EnableAttestationEvidence": true,
+  "EnableHostAttestation": true,
+  "BcMode": true
+}
