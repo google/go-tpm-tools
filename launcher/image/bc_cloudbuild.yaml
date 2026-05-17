@@ -134,6 +134,23 @@ steps:
   - name: 'alpine'
     id: 'RenameOutputImage'
     args: ['mv', 'output.bin', 'disk.raw']
+  - name: 'us-docker.pkg.dev/confidential-space-images-dev/cs-tools/measure@sha256:5c2eaaa70438126877de51b44914d3751ba242aed7f4d99d485833629f3958bc'
+    id: 'MeasureImage'
+    env:
+      - 'IMAGE_ENV=${_IMAGE_ENV}'
+      - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_NAME}'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        set -exuo pipefail
+        echo "measuring BC image $${OUTPUT_IMAGE_NAME} (env=$${IMAGE_ENV})"
+        /usr/local/bin/measure.sh ./disk.raw measure_output_bc_$${IMAGE_ENV}.json        "$${IMAGE_ENV}" x86_64 sha256
+        /usr/local/bin/measure.sh ./disk.raw measure_output_bc_$${IMAGE_ENV}_sha384.json "$${IMAGE_ENV}" x86_64 sha384
+
+        RIM_NAME="$${OUTPUT_IMAGE_NAME//-bc-/-}"
+        gcloud storage cp measure_output_bc_$${IMAGE_ENV}.json        gs://${PROJECT_ID}-rims/bc/$${RIM_NAME}.json
+        gcloud storage cp measure_output_bc_$${IMAGE_ENV}_sha384.json gs://${PROJECT_ID}-rims/bc/$${RIM_NAME}_sha384.json
   - name: 'alpine'
     id: 'TarOutputImage'
     args: ['tar', '-zcf', './out_image.tar.gz', 'disk.raw']
