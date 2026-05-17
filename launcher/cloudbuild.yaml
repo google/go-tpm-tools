@@ -204,7 +204,7 @@ steps:
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: DebugBcImageBuildAndExport
-  waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary']
+  waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary', 'DownloadGpuDrivers']
   env: 
   - 'BC_BASE_IMAGE=$_BC_DEBUG_IMAGE'
   - 'BC_BASE_IMAGE_PROJECT=$_BC_BASE_IMAGE_PROJECT'
@@ -231,7 +231,7 @@ steps:
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: HardenedBcImageBuildAndExport
-  waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary']
+  waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary', 'DownloadGpuDrivers']
   env: 
   - 'BC_BASE_IMAGE=$_BC_BASE_IMAGE'
   - 'BC_BASE_IMAGE_PROJECT=$_BC_BASE_IMAGE_PROJECT'
@@ -537,7 +537,7 @@ steps:
           '--image=${_OUTPUT_IMAGE_PREFIX}-debug-${_OUTPUT_IMAGE_SUFFIX}',
           '--project=${PROJECT_ID}']
 
-- name: 'us-docker.pkg.dev/confidential-space-images-dev/cs-tools/measure@sha256:b82c8ca459b863cfdf9faf8e4c06d506a50f3fe86ca1f3756ca6fee42a5cd7f4'
+- name: 'us-docker.pkg.dev/confidential-space-images-dev/cs-tools/measure@sha256:5c2eaaa70438126877de51b44914d3751ba242aed7f4d99d485833629f3958bc'
   id: MeasureHardenedImage
   waitFor: ['ExportHardenedImage']
   env:
@@ -550,11 +550,10 @@ steps:
     mkdir hardeneddisk
     tar xzf ${OUTPUT_IMAGE_NAME}.tar.gz -C hardeneddisk/
     echo "measuring image ${OUTPUT_IMAGE_NAME}"
-    /usr/local/bin/measure.sh hardeneddisk/disk.raw measure_output_hardened.json hardened x86_64
-    cat measure_output_hardened.json
+    /usr/local/bin/measure.sh hardeneddisk/disk.raw measure_output_hardened.json hardened x86_64 sha256
     gcloud storage cp measure_output_hardened.json gs://${PROJECT_ID}-rims/${OUTPUT_IMAGE_NAME}.json
 
-- name: 'us-docker.pkg.dev/confidential-space-images-dev/cs-tools/measure@sha256:b82c8ca459b863cfdf9faf8e4c06d506a50f3fe86ca1f3756ca6fee42a5cd7f4'
+- name: 'us-docker.pkg.dev/confidential-space-images-dev/cs-tools/measure@sha256:5c2eaaa70438126877de51b44914d3751ba242aed7f4d99d485833629f3958bc'
   id: MeasureDebugImage
   waitFor: ['ExportDebugImage']
   env:
@@ -567,8 +566,7 @@ steps:
     mkdir debugdisk
     tar xzf ${OUTPUT_IMAGE_NAME}.tar.gz -C debugdisk/
     echo "measuring image ${OUTPUT_IMAGE_NAME}"
-    /usr/local/bin/measure.sh debugdisk/disk.raw measure_output_debug.json debug x86_64
-    cat measure_output_debug.json
+    /usr/local/bin/measure.sh debugdisk/disk.raw measure_output_debug.json debug x86_64 sha256
     gsutil cp measure_output_debug.json gs://${PROJECT_ID}-rims/${OUTPUT_IMAGE_NAME}.json
 
 - name: 'gcr.io/cloud-builders/gcloud'
@@ -589,7 +587,7 @@ steps:
           '--image=${_OUTPUT_IMAGE_PREFIX}-vg-debug-${_OUTPUT_IMAGE_SUFFIX}',
           '--project=${PROJECT_ID}']
 
-- name: 'us-docker.pkg.dev/confidential-space-images-dev/cs-tools/measure@sha256:5dec9806530d3aaad4d6a03bed7f1ccd6433188e158cc5c60367c31efd4feaf7'
+- name: 'us-docker.pkg.dev/confidential-space-images-dev/cs-tools/measure@sha256:5c2eaaa70438126877de51b44914d3751ba242aed7f4d99d485833629f3958bc'
   id: MeasureVgHardenedImage
   waitFor: ['ExportVgHardenedImage']
   env:
@@ -609,7 +607,7 @@ steps:
     gcloud storage cp measure_output_vg_hardened_sha384.json gs://${PROJECT_ID}-rims/${OUTPUT_IMAGE_NAME}_sha384.json
 
 
-- name: 'us-docker.pkg.dev/confidential-space-images-dev/cs-tools/measure@sha256:5dec9806530d3aaad4d6a03bed7f1ccd6433188e158cc5c60367c31efd4feaf7'
+- name: 'us-docker.pkg.dev/confidential-space-images-dev/cs-tools/measure@sha256:5c2eaaa70438126877de51b44914d3751ba242aed7f4d99d485833629f3958bc'
   id: MeasureVgDebugImage
   waitFor: ['ExportVgDebugImage']
   env:
@@ -627,7 +625,6 @@ steps:
 
     gsutil cp measure_output_vg_debug.json gs://${PROJECT_ID}-rims/${OUTPUT_IMAGE_NAME}.json
     gsutil cp measure_output_vg_debug_sha384.json gs://${PROJECT_ID}-rims/${OUTPUT_IMAGE_NAME}_sha384.json
-
 
 options:
   pool:
