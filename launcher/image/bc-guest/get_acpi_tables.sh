@@ -10,8 +10,8 @@ set -euo pipefail
 
 echo "=== ACPI TABLE SERIAL EXPORT START ===" > /dev/console
 
-# Loop over DSDT and SSDT tables
-for table_path in /sys/firmware/acpi/tables/DSDT /sys/firmware/acpi/tables/SSDT*; do
+# Loop over all top-level binary ACPI tables needed for complete RTMR0 verification
+for table_path in /sys/firmware/acpi/tables/*; do
   if [ -f "${table_path}" ]; then
     table_name=$(basename "${table_path}")
     echo "--- BEGIN TABLE: ${table_name} ---" > /dev/console
