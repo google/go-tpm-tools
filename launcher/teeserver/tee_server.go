@@ -433,7 +433,7 @@ func (a *attestHandler) getHostAttestation(w http.ResponseWriter, r *http.Reques
 		// vg has host attestation enabled and should use dummy implementation
 		evidence = dummyHostAttestation(req.Challenge)
 	} else {
-		hostAttBytes, err := a.attestAgent.HostAttestation(a.ctx, req.Challenge)
+		hostAttBytes, err := a.attestAgent.AttestHost(a.ctx, req.Challenge)
 		if err != nil {
 			a.logAndWriteHTTPError(w, http.StatusInternalServerError, fmt.Errorf("failed to fetch host attestation: %v", err))
 			return

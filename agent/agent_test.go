@@ -1186,7 +1186,7 @@ func TestHostAttestation_NotBcMode(t *testing.T) {
 	}
 	defer agent.Close()
 
-	_, err = agent.HostAttestation(ctx, []byte("challenge"))
+	_, err = agent.AttestHost(ctx, []byte("challenge"))
 	if err == nil {
 		t.Error("expected error when BcMode is disabled, got nil")
 	}

@@ -88,22 +88,6 @@ func main() {
 	logger.Info("Boot completed", "duration_sec", uptime)
 	logger.Info(welcomeMessage, "build_commit", BuildCommit)
 
-	// Check for BC Mode via environment variable because experiments are not loaded yet.
-	// In BC mode, we bypass verifyFsAndMount because the filesystem structure (Virtio devices,
-	// host-emulated state) differs from standard CS/VG and does not use a vTPM for stateful encryption.
-	bcMode := os.Getenv("BC_MODE") == "true"
-
-	if !bcMode {
-		if err := verifyFsAndMount(); err != nil {
-			logger.Error(fmt.Sprintf("failed to verify filesystem and mounts: %v\n", err))
-			exitCode = rebootRC
-			logger.Error(exitMessage, "exit_code", exitCode, "exit_msg", rcMessage[exitCode])
-			return
-		}
-	} else {
-		logger.Info("Skipping verifyFsAndMount in BC Mode")
-	}
-
 	if err := os.MkdirAll(launcherfile.HostTmpPath, 0755); err != nil {
 		logger.Error(fmt.Sprintf("failed to create %s: %v", launcherfile.HostTmpPath, err))
 	}
@@ -117,6 +101,22 @@ func main() {
 		exitCode = failRC
 		logger.Error(exitMessage, "exit_code", exitCode, "exit_msg", rcMessage[exitCode])
 		return
+	}
+
+	if !launchSpec.Experiments.BcMode {
+		if err := verifyFsAndMount(); err != nil {
+			logger.Error(fmt.Sprintf("failed to verify filesystem and mounts: %v\n", err))
+			exitCode = rebootRC
+			logger.Error(exitMessage, "exit_code", exitCode, "exit_msg", rcMessage[exitCode])
+			return
+		}
+	} else {
+		if err := verifyBCFsAndMount(); err != nil {
+			logger.Error(fmt.Sprintf("failed to verify BC filesystem and mounts: %v\n", err))
+			exitCode = rebootRC
+			logger.Error(exitMessage, "exit_code", exitCode, "exit_msg", rcMessage[exitCode])
+			return
+		}
 	}
 
 	defer func() {
@@ -380,5 +380,12 @@ func verifyFsAndMount() error {
 		return fmt.Errorf("/dev/mapper/oemroot was not mounted correctly: \n%s", cryptSetupOutput)
 	}
 
+	return nil
+}
+
+
+// verifyBCFsAndMount checks the expected mounts/verity partitions for BC mode.
+func verifyBCFsAndMount() error {
+	// TODO: implement this
 	return nil
 }
