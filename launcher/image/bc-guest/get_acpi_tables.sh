@@ -1,12 +1,12 @@
 #!/bin/bash
 set -euo pipefail
 
-# Check if the user optionally enabled this feature via the kernel command line
-if ! grep -q "enable-acpi-export" /proc/cmdline; then
-# TODO: remove this print line.  we don't need it 
-  echo "=== ACPI Table Serial Export Disabled (enable-acpi-export not present in /proc/cmdline) ===" > /dev/console
-  exit 0
-fi
+# # Check if the user optionally enabled this feature via the kernel command line
+# if ! grep -q "enable-acpi-export" /proc/cmdline; then
+# # TODO: remove this print line.  we don't need it 
+#   echo "=== ACPI Table Serial Export Disabled (enable-acpi-export not present in /proc/cmdline) ===" > /dev/console
+#   exit 0
+# fi
 
 echo "=== ACPI TABLE SERIAL EXPORT START ===" > /dev/console
 
