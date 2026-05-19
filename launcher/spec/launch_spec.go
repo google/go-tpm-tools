@@ -12,8 +12,10 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"time"
 
 	"cloud.google.com/go/compute/metadata"
+	"github.com/cenkalti/backoff/v4"
 
 	"github.com/containerd/containerd/v2/pkg/cap"
 	"github.com/google/go-tpm-tools/cel"
@@ -407,7 +409,9 @@ func fetchExperiments(logger logging.Logger) experiments.Experiments {
 	experimentsFile := path.Join(launcherfile.HostTmpPath, experimentDataFile)
 
 	args := fmt.Sprintf("-output=%s", experimentsFile)
-	err := exec.Command(binaryPath, args).Run()
+	err := backoff.Retry(func() error {
+		return exec.Command(binaryPath, args).Run()
+	}, experimentSyncBackoffPolicy())
 	if err != nil {
 		logger.Error(fmt.Sprintf("failure during experiment sync: %v\n", err))
 	}
@@ -417,6 +421,11 @@ func fetchExperiments(logger logging.Logger) experiments.Experiments {
 		// do not fail if experiment retrieval fails
 	}
 	return e
+}
+
+func experimentSyncBackoffPolicy() backoff.BackOff {
+	b := backoff.NewConstantBackOff(time.Second)
+	return backoff.WithMaxRetries(b, 3)
 }
 
 func processMount(singleMount string) (launchermount.Mount, error) {
