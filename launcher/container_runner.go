@@ -305,7 +305,6 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	exps := agent.Experiments{
 		EnableAttestationEvidence: launchSpec.Experiments.EnableAttestationEvidence,
 		EnableGpuGcaSupport:       launchSpec.Experiments.EnableGpuGcaSupport,
-		BcMode:                    launchSpec.Experiments.BcMode,
 	}
 	attestAgent, err := agent.CreateAttestationAgent(tpm, client.GceAttestationKeyECC, verifierClient, principalFetcherWithImpersonate, sdClient, exps, logger, deviceROTs, launchSpec.SignedImageRepos)
 	if err != nil {
@@ -722,12 +721,8 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	}
 
 	var workloadService *workloadservice.Server
-	if r.launchSpec.Experiments.BcMode {
-		// TODO: Implement connection to Key VM once available
-		r.logger.Info("Running in BC mode: connecting to Key Protection VM.")
-		r.logger.Info("Key Protection VM connection is not set up yet.  Skipping.")
-	} else if r.launchSpec.Experiments.EnableKeyManager {
-		// create and start the key manager server
+	// create and start the key manager server
+	if r.launchSpec.Experiments.EnableKeyManager {
 		r.logger.Info("EnableKeyManager experiment is enabled: initializing KeyManager server.")
 		keyManagerServer, err := workloadservice.New(ctx, path.Join(launcherfile.HostTmpPath, keyManagerSocket), keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED)
 		if err != nil {

@@ -6,8 +6,6 @@ main() {
 
   # Copy service files.
   cp /usr/share/oem/confidential_space/container-runner.service /etc/systemd/system/container-runner.service
-  # Inject BC_MODE=true into the systemd service file for BC mode.
-  sed -i '/\[Service\]/a Environment="BC_MODE=true"' /etc/systemd/system/container-runner.service
   # Override default fluent-bit config.
   mkdir -p /etc/fluent-bit
   cp /usr/share/oem/confidential_space/fluent-bit-cs.conf /etc/fluent-bit/fluent-bit.conf
