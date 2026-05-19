@@ -232,3 +232,15 @@ func createAttestationWithFakeTdx(tpmNonce []byte, teeNonce []byte, tb *testing.
 	}
 	return attestation, nil
 }
+
+func TestVerifyPcrCmd(t *testing.T) {
+	rwc := test.GetTPM(t)
+	defer client.CheckedClose(t, rwc)
+	ExternalTPM = rwc
+
+	RootCmd.SetArgs([]string{"verify", "pcr"})
+	if err := RootCmd.Execute(); err != nil {
+		t.Error(err)
+	}
+}
+

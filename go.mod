@@ -23,7 +23,7 @@ require (
 
 require (
 	github.com/google/certificate-transparency-go v1.1.2 // indirect
-	github.com/google/go-eventlog v0.0.3-0.20260305053119-5cd85087f9f9
+	github.com/google/go-eventlog v0.0.3-0.20260508184650-b0628052fd1b
 	github.com/google/go-tspi v0.3.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/stretchr/testify v1.11.1 // indirect
