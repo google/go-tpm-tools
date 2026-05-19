@@ -103,20 +103,11 @@ func main() {
 		return
 	}
 
-	if !launchSpec.Experiments.BcMode {
-		if err := verifyFsAndMount(); err != nil {
-			logger.Error(fmt.Sprintf("failed to verify filesystem and mounts: %v\n", err))
-			exitCode = rebootRC
-			logger.Error(exitMessage, "exit_code", exitCode, "exit_msg", rcMessage[exitCode])
-			return
-		}
-	} else {
-		if err := verifyBCFsAndMount(); err != nil {
-			logger.Error(fmt.Sprintf("failed to verify BC filesystem and mounts: %v\n", err))
-			exitCode = rebootRC
-			logger.Error(exitMessage, "exit_code", exitCode, "exit_msg", rcMessage[exitCode])
-			return
-		}
+	if err := verifyFsAndMount(); err != nil {
+		logger.Error(fmt.Sprintf("failed to verify filesystem and mounts: %v\n", err))
+		exitCode = rebootRC
+		logger.Error(exitMessage, "exit_code", exitCode, "exit_msg", rcMessage[exitCode])
+		return
 	}
 
 	defer func() {
@@ -380,12 +371,5 @@ func verifyFsAndMount() error {
 		return fmt.Errorf("/dev/mapper/oemroot was not mounted correctly: \n%s", cryptSetupOutput)
 	}
 
-	return nil
-}
-
-
-// verifyBCFsAndMount checks the expected mounts/verity partitions for BC mode.
-func verifyBCFsAndMount() error {
-	// TODO: implement this
 	return nil
 }

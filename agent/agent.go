@@ -396,7 +396,7 @@ func (a *agent) AttestWithClient(ctx context.Context, opts AttestAgentOpts, clie
 }
 
 // AttestHost fetches the host attestation from the host service via VSOCK.
-func (a *agent) AttestHost(ctx context.Context, challenge []byte) ([]byte, error) {
+func (a *agent) AttestHost(_ context.Context, _ []byte) ([]byte, error) {
 	return nil, fmt.Errorf("host attestation is only supported in BC mode")
 }
 
