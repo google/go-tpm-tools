@@ -6,6 +6,7 @@ main() {
 
   # Copy service files.
   cp /usr/share/oem/confidential_space/container-runner.service /etc/systemd/system/container-runner.service
+  cp /usr/share/oem/wsd/wsd.service /etc/systemd/system/wsd.service
   # Override default fluent-bit config.
   mkdir -p /etc/fluent-bit
   cp /usr/share/oem/confidential_space/fluent-bit-cs.conf /etc/fluent-bit/fluent-bit.conf
@@ -31,7 +32,9 @@ main() {
 
   systemctl daemon-reload
   systemctl enable container-runner.service
+  systemctl enable wsd.service
   systemctl start container-runner.service
+  systemctl start wsd.service
   systemctl start fluent-bit.service
 }
 

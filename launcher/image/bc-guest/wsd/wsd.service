@@ -1,0 +1,14 @@
+[Unit]
+Description=Workload Service Daemon Container
+After=network.target containerd.service
+Requires=containerd.service
+
+[Service]
+Type=simple
+Restart=always
+
+ExecStart=/usr/share/oem/wsd/wsd_runner.sh
+ExecStop=/usr/share/oem/wsd/exit_script.sh
+
+[Install]
+WantedBy=multi-user.target

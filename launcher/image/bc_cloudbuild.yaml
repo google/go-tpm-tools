@@ -5,6 +5,7 @@ substitutions:
   "_IMAGE_ENV": ""
   "_OUTPUT_IMAGE_NAME": ""
   "_OUTPUT_IMAGE_FAMILY": ""
+  "_WSD_CONTAINER_IMAGE_REF": ""
 
 steps:
   - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
@@ -27,6 +28,16 @@ steps:
         "gs://${_BUCKET_NAME}/oem-preloader-${BUILD_ID}/${_BASE_IMAGE}.tar.gz",
         "./src_image.tar.gz",
       ]
+  - name: "gcr.io/cloud-builders/docker"
+    id: "SaveWSDContainerImage"
+    entrypoint: "bash"
+    args:
+      - "-c"
+      - |
+        set -e
+        docker pull ${_WSD_CONTAINER_IMAGE_REF}
+        mkdir -p /workspace/wsd_image
+        docker save ${_WSD_CONTAINER_IMAGE_REF} -o /workspace/wsd_image/image.tar
   - name: "alpine"
     id: "ExtractRawImage"
     args: ["tar", "-xf", "./src_image.tar.gz"]
@@ -41,14 +52,8 @@ steps:
         rm -rf /workspace/oem-install
         mkdir -p /workspace/oem-install/confidential_space
         mkdir -p /workspace/oem-install/confidential_space/nodeproblemdetector
+        mkdir -p /workspace/oem-install/confidential_space/wsd
 
-        cat <<EOF > /workspace/oem-install/confidential_space/keymanager.json
-        {
-          "key_protection_mechanism": "KEY_PROTECTION_VM",
-          "service_role": "SERVICE_ROLE_WSD",
-          "key_protection_vm_ip": "192.168.100.3"
-        }
-        EOF
         cp ./launcher/image/bc-guest/bcentrypoint.sh /workspace/oem-install/entrypoint.sh
         cp ./launcher/image/bc-guest/bcexperiment.json \
            ./launcher/image/launcher \
@@ -58,6 +63,16 @@ steps:
            ./launcher/image/bc-guest/bc_network_setup.sh \
            /workspace/oem-install/confidential_space/
         cp ./launcher/image/nodeproblemdetector/* /workspace/oem-install/confidential_space/nodeproblemdetector/
+        cp ./launcher/image/wsd/* /workspace/oem-install/wsd/
+        if [ -f /workspace/wsd_image/image.tar ]; then
+            cp /workspace/wsd_image/image.tar /workspace/oem-install/wsd/image.tar
+        fi
+
+        cat << EOF > /workspace/oem-install/wsd/image.env
+        IMAGE_PATH="/usr/share/oem/wsd/image.tar"
+        IMAGE_REF="${_WSD_CONTAINER_IMAGE_REF}"
+        CONTAINER_NAME="workload-service-daemon"
+        EOF
 
         cp /workspace/oem-install/confidential_space/launcher /workspace/oem-install/confidential_space/cs_container_launcher
         # Disabled because cloud-init is not used.
@@ -66,6 +81,8 @@ steps:
         chmod +x /workspace/oem-install/confidential_space/exit_script.sh || true
         chmod +x /workspace/oem-install/confidential_space/bc_network_setup.sh || true
         chmod +x /workspace/oem-install/entrypoint.sh || true
+        chmod +x /workspace/oem-install/confidential_space/wsd/wsd_runner.sh || true
+        chmod +x /workspace/oem-install/confidential_space/wsd/exit_script.sh || true
 
   - name: "gcr.io/cloud-builders/gcloud"
     id: "DownloadVmlinux"
