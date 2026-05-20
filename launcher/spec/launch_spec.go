@@ -409,17 +409,21 @@ func fetchExperiments(logger logging.Logger) experiments.Experiments {
 	experimentsFile := path.Join(launcherfile.HostTmpPath, experimentDataFile)
 
 	args := fmt.Sprintf("-output=%s", experimentsFile)
+	var e experiments.Experiments
 	err := backoff.Retry(func() error {
-		return exec.Command(binaryPath, args).Run()
+		if err := exec.Command(binaryPath, args).Run(); err != nil {
+			logger.Error(fmt.Sprintf("failure during experiment sync: %v\n", err))
+		}
+		e, err = experiments.New(experimentsFile)
+		if err != nil {
+			logger.Error(fmt.Sprintf("failed to read experiment file: %v\n", err))
+			// do not fail if experiment retrieval fails
+		}
+		if !e.EnableTestFeatureForImage {
+			return fmt.Errorf("experiments synced but EnableTestFeatureForImage is false")
+		}
+		return nil
 	}, experimentSyncBackoffPolicy())
-	if err != nil {
-		logger.Error(fmt.Sprintf("failure during experiment sync: %v\n", err))
-	}
-	e, err := experiments.New(experimentsFile)
-	if err != nil {
-		logger.Error(fmt.Sprintf("failed to read experiment file: %v\n", err))
-		// do not fail if experiment retrieval fails
-	}
 	return e
 }
 
