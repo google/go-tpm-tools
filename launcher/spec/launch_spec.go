@@ -410,10 +410,11 @@ func fetchExperiments(logger logging.Logger) experiments.Experiments {
 
 	args := fmt.Sprintf("-output=%s", experimentsFile)
 	var e experiments.Experiments
-	err := backoff.Retry(func() error {
+	_ = backoff.Retry(func() error {
 		if err := exec.Command(binaryPath, args).Run(); err != nil {
 			logger.Error(fmt.Sprintf("failure during experiment sync: %v\n", err))
 		}
+		var err error
 		e, err = experiments.New(experimentsFile)
 		if err != nil {
 			logger.Error(fmt.Sprintf("failed to read experiment file: %v\n", err))
