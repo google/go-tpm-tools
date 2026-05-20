@@ -771,23 +771,21 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	}
 	defer task.Delete(ctx)
 
-	// When the option is enabled, a go-routine will monitor the power button and send a SIGTERM to the container uppon a button press.
-	if r.launchSpec.GracefulShutdown {
-		if pwr, err := newPowerButtonListener(r.logger); err != nil {
-			r.logger.Error(err.Error())
-		} else {
-			go func() {
-				err := pwr.waitForShutdown()
-				// Upon an error, we do not send SIGTERM to the task.
-				if err != nil {
-					r.logger.Error(err.Error())
-					return
-				}
-				if err = task.Kill(ctx, syscall.SIGTERM); err != nil {
-					r.logger.Error(err.Error())
-				}
-			}()
-		}
+	// A go-routine will monitor the power button and send a SIGTERM to the container uppon a button press.
+	if pwr, err := newPowerButtonListener(r.logger); err != nil {
+		r.logger.Error(err.Error())
+	} else {
+		go func() {
+			err := pwr.waitForShutdown()
+			// Upon an error, we do not send SIGTERM to the task.
+			if err != nil {
+				r.logger.Error(err.Error())
+				return
+			}
+			if err = task.Kill(ctx, syscall.SIGTERM); err != nil {
+				r.logger.Error(err.Error())
+			}
+		}()
 	}
 
 	setupDuration := time.Since(start)
