@@ -150,9 +150,8 @@ steps:
         /usr/local/bin/measure.sh ./disk.raw measure_output_bc_$${IMAGE_ENV}.json        "$${IMAGE_ENV}" x86_64 sha256
         /usr/local/bin/measure.sh ./disk.raw measure_output_bc_$${IMAGE_ENV}_sha384.json "$${IMAGE_ENV}" x86_64 sha384
 
-        RIM_NAME="$${OUTPUT_IMAGE_NAME//-bc-/-}"
-        gcloud storage cp measure_output_bc_$${IMAGE_ENV}.json        gs://${PROJECT_ID}-rims/bc/$${RIM_NAME}.json
-        gcloud storage cp measure_output_bc_$${IMAGE_ENV}_sha384.json gs://${PROJECT_ID}-rims/bc/$${RIM_NAME}_sha384.json
+        gcloud storage cp measure_output_bc_$${IMAGE_ENV}.json        gs://${PROJECT_ID}-rims/bc/$${OUTPUT_IMAGE_NAME}.json
+        gcloud storage cp measure_output_bc_$${IMAGE_ENV}_sha384.json gs://${PROJECT_ID}-rims/bc/$${OUTPUT_IMAGE_NAME}_sha384.json
   - name: 'alpine'
     id: 'TarOutputImage'
     args: ['tar', '-zcf', './out_image.tar.gz', 'disk.raw']
