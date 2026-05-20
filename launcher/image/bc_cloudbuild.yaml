@@ -1,36 +1,50 @@
 substitutions:
-  '_BASE_IMAGE': ''
-  '_BASE_IMAGE_PROJECT': ''
-  '_BUCKET_NAME': ''
-  '_IMAGE_ENV': ''
-  '_OUTPUT_IMAGE_NAME': ''
-  '_OUTPUT_IMAGE_FAMILY': ''
+  "_BASE_IMAGE": ""
+  "_BASE_IMAGE_PROJECT": ""
+  "_BUCKET_NAME": ""
+  "_IMAGE_ENV": ""
+  "_OUTPUT_IMAGE_NAME": ""
+  "_OUTPUT_IMAGE_FAMILY": ""
+  "_WSD_CONTAINER_IMAGE_REF": ""
 
 steps:
-  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-    id: 'ExportBaseImage'
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+    id: "ExportBaseImage"
     args:
-      - 'gcloud'
-      - 'compute'
-      - 'images'
-      - 'export'
-      - '--image=${_BASE_IMAGE}'
-      - '--image-project=${_BASE_IMAGE_PROJECT}'
-      - '--destination-uri=gs://${_BUCKET_NAME}/oem-preloader-${BUILD_ID}/${_BASE_IMAGE}.tar.gz'
-  - name: 'gcr.io/cloud-builders/gcloud'
-    id: 'DownloadImageFromGCS'
-    entrypoint: 'gcloud'
-    args: ['storage',
-           'cp',
-           'gs://${_BUCKET_NAME}/oem-preloader-${BUILD_ID}/${_BASE_IMAGE}.tar.gz',
-           './src_image.tar.gz']
-  - name: 'alpine'
-    id: 'ExtractRawImage'
-    args: ['tar', '-xf', './src_image.tar.gz']
+      - "gcloud"
+      - "compute"
+      - "images"
+      - "export"
+      - "--image=${_BASE_IMAGE}"
+      - "--image-project=${_BASE_IMAGE_PROJECT}"
+      - "--destination-uri=gs://${_BUCKET_NAME}/oem-preloader-${BUILD_ID}/${_BASE_IMAGE}.tar.gz"
+  - name: "gcr.io/cloud-builders/gcloud"
+    id: "DownloadImageFromGCS"
+    entrypoint: "gcloud"
+    args:
+      [
+        "storage",
+        "cp",
+        "gs://${_BUCKET_NAME}/oem-preloader-${BUILD_ID}/${_BASE_IMAGE}.tar.gz",
+        "./src_image.tar.gz",
+      ]
+  - name: "gcr.io/cloud-builders/docker"
+    id: "SaveWSDContainerImage"
+    entrypoint: "bash"
+    args:
+      - "-c"
+      - |
+        set -e
+        docker pull ${_WSD_CONTAINER_IMAGE_REF}
+        mkdir -p /workspace/wsd_image
+        docker save ${_WSD_CONTAINER_IMAGE_REF} -o /workspace/wsd_image/image.tar
+  - name: "alpine"
+    id: "ExtractRawImage"
+    args: ["tar", "-xf", "./src_image.tar.gz"]
 
-  - name: 'alpine'
-    id: 'PrepareOEMInstallDir'
-    entrypoint: 'sh'
+  - name: "alpine"
+    id: "PrepareOEMInstallDir"
+    entrypoint: "sh"
     args:
       - -c
       - |
@@ -38,6 +52,8 @@ steps:
         rm -rf /workspace/oem-install
         mkdir -p /workspace/oem-install/confidential_space
         mkdir -p /workspace/oem-install/confidential_space/nodeproblemdetector
+        mkdir -p /workspace/oem-install/confidential_space/wsd
+
         cp ./launcher/image/bc-guest/bcentrypoint.sh /workspace/oem-install/entrypoint.sh
         cp ./launcher/image/bc-guest/bcexperiment.json \
            ./launcher/image/launcher \
@@ -47,6 +63,16 @@ steps:
            ./launcher/image/bc-guest/bc_network_setup.sh \
            /workspace/oem-install/confidential_space/
         cp ./launcher/image/nodeproblemdetector/* /workspace/oem-install/confidential_space/nodeproblemdetector/
+        cp ./launcher/image/wsd/* /workspace/oem-install/wsd/
+        if [ -f /workspace/wsd_image/image.tar ]; then
+            cp /workspace/wsd_image/image.tar /workspace/oem-install/wsd/image.tar
+        fi
+
+        cat << EOF > /workspace/oem-install/wsd/image.env
+        IMAGE_PATH="/usr/share/oem/wsd/image.tar"
+        IMAGE_REF="${_WSD_CONTAINER_IMAGE_REF}"
+        CONTAINER_NAME="workload-service-daemon"
+        EOF
 
         cp /workspace/oem-install/confidential_space/launcher /workspace/oem-install/confidential_space/cs_container_launcher
         # Disabled because cloud-init is not used.
@@ -55,18 +81,26 @@ steps:
         chmod +x /workspace/oem-install/confidential_space/exit_script.sh || true
         chmod +x /workspace/oem-install/confidential_space/bc_network_setup.sh || true
         chmod +x /workspace/oem-install/entrypoint.sh || true
+        chmod +x /workspace/oem-install/confidential_space/wsd/wsd_runner.sh || true
+        chmod +x /workspace/oem-install/confidential_space/wsd/exit_script.sh || true
 
-  - name: 'gcr.io/cloud-builders/gcloud'
-    id: 'DownloadVmlinux'
-    entrypoint: 'gcloud'
-    args: ['storage', 'cp', 'gs://cos-tools/19216.220.185/cchostdebug-amd64-gcp/vmlinux', './vmlinux']
-  - name: 'gcr.io/cos-cloud/oem-preloader:latest'
-    id: 'RunOEMPreloader'
-    env:
-      - 'IMAGE_ENV=${_IMAGE_ENV}'
-    entrypoint: 'bash'
+  - name: "gcr.io/cloud-builders/gcloud"
+    id: "DownloadVmlinux"
+    entrypoint: "gcloud"
     args:
-      - '-c'
+      [
+        "storage",
+        "cp",
+        "gs://cos-tools/19216.220.185/cchostdebug-amd64-gcp/vmlinux",
+        "./vmlinux",
+      ]
+  - name: "gcr.io/cos-cloud/oem-preloader:latest"
+    id: "RunOEMPreloader"
+    env:
+      - "IMAGE_ENV=${_IMAGE_ENV}"
+    entrypoint: "bash"
+    args:
+      - "-c"
       - |
         set -ex
         COMMON_COMMANDS=(
@@ -133,34 +167,37 @@ steps:
         fi
 
         "$${CMD[@]}"
-  - name: 'alpine'
-    id: 'RenameOutputImage'
-    args: ['mv', 'output.bin', 'disk.raw']
-  - name: 'alpine'
-    id: 'TarOutputImage'
-    args: ['tar', '-zcf', './out_image.tar.gz', 'disk.raw']
-  - name: 'gcr.io/cloud-builders/gcloud'
-    id: 'UploadToGCS'
-    entrypoint: 'gcloud'
-    args: ['storage',
-           'cp',
-           './out_image.tar.gz',
-           'gs://${_BUCKET_NAME}/oem-preloader-${BUILD_ID}/${_OUTPUT_IMAGE_NAME}.tar.gz']
-  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-    id: 'FetchBaseImageFeatures'
-    entrypoint: 'sh'
+  - name: "alpine"
+    id: "RenameOutputImage"
+    args: ["mv", "output.bin", "disk.raw"]
+  - name: "alpine"
+    id: "TarOutputImage"
+    args: ["tar", "-zcf", "./out_image.tar.gz", "disk.raw"]
+  - name: "gcr.io/cloud-builders/gcloud"
+    id: "UploadToGCS"
+    entrypoint: "gcloud"
     args:
-      - '-c'
+      [
+        "storage",
+        "cp",
+        "./out_image.tar.gz",
+        "gs://${_BUCKET_NAME}/oem-preloader-${BUILD_ID}/${_OUTPUT_IMAGE_NAME}.tar.gz",
+      ]
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+    id: "FetchBaseImageFeatures"
+    entrypoint: "sh"
+    args:
+      - "-c"
       - |
         gcloud compute images describe ${_BASE_IMAGE} --project=${_BASE_IMAGE_PROJECT} --format="value(guestOsFeatures.type)" | paste -sd, - | tr ';' ',' | tr -d '\n' > /workspace/features.txt
         sed -i 's/SECURE_BOOT//g' /workspace/features.txt
         sed -i 's/,,/,/g' /workspace/features.txt
         sed -i 's/^,//; s/,$//' /workspace/features.txt
-  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-    id: 'CreateGCEImage'
-    entrypoint: 'sh'
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+    id: "CreateGCEImage"
+    entrypoint: "sh"
     args:
-      - '-c'
+      - "-c"
       - |
         FEATURES=$$(cat /workspace/features.txt)
         if [ -z "$$FEATURES" ]; then
@@ -174,16 +211,19 @@ steps:
           --family=${_OUTPUT_IMAGE_FAMILY} \
           --source-uri=gs://${_BUCKET_NAME}/oem-preloader-${BUILD_ID}/${_OUTPUT_IMAGE_NAME}.tar.gz \
           --guest-os-features="$$FEATURES"
-  - name: 'gcr.io/cloud-builders/gcloud'
-    id: 'RemoveGCSFiles'
-    entrypoint: 'gcloud'
-    args: ['storage',
-           'rm',
-           'gs://${_BUCKET_NAME}/oem-preloader-${BUILD_ID}/${_BASE_IMAGE}.tar.gz',
-           'gs://${_BUCKET_NAME}/oem-preloader-${BUILD_ID}/${_OUTPUT_IMAGE_NAME}.tar.gz']
+  - name: "gcr.io/cloud-builders/gcloud"
+    id: "RemoveGCSFiles"
+    entrypoint: "gcloud"
+    args:
+      [
+        "storage",
+        "rm",
+        "gs://${_BUCKET_NAME}/oem-preloader-${BUILD_ID}/${_BASE_IMAGE}.tar.gz",
+        "gs://${_BUCKET_NAME}/oem-preloader-${BUILD_ID}/${_OUTPUT_IMAGE_NAME}.tar.gz",
+      ]
 
-timeout: '3000s'
+timeout: "3000s"
 
 options:
-  machine_type: 'E2_HIGHCPU_32'
+  machine_type: "E2_HIGHCPU_32"
   dynamic_substitutions: true
