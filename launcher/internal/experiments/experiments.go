@@ -18,6 +18,7 @@ type Experiments struct {
 	EnableB200DriverInstallation bool
 	EnableH100DriverInstallation bool
 	EnableKeyManager             bool
+	EnableKeyManagerV2           bool
 	EnableGpuGcaSupport          bool
 	EnableHostAttestation        bool
 }

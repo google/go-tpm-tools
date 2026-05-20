@@ -18,6 +18,7 @@ import (
 
 	"cloud.google.com/go/compute/metadata"
 	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
+	ws "github.com/GoogleCloudPlatform/key-protection-module/workload_service"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/cio"
@@ -88,6 +89,15 @@ const (
 
 // Default OOM score for a CS container.
 const defaultOOMScore = 1000
+
+const keymanagerV2ConfigPath = "/usr/share/oem/confidential_space/keymanager.json"
+
+// KeyManagerV2Config holds the configuration parameters for the key manager server.
+type KeyManagerV2Config struct {
+	KeyProtectionMechanism string `json:"key_protection_mechanism"`
+	ServiceRole            string `json:"service_role"`
+	KeyProtectionVMIP      string `json:"key_protection_vm_ip"`
+}
 
 // NewRunner returns a runner.
 func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.Token, launchSpec spec.LaunchSpec, mdsClient *metadata.Client, tpm io.ReadWriteCloser, logger logging.Logger, serialConsole *os.File) (*ContainerRunner, error) {
@@ -721,8 +731,36 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	}
 
 	var workloadService *workloadservice.Server
-	// create and start the key manager server
-	if r.launchSpec.Experiments.EnableKeyManager {
+
+	if r.launchSpec.Experiments.EnableKeyManagerV2 {
+		r.logger.Info("EnableKeyManagerV2 flag is active. Initiating V2 WSD Server instance...")
+
+		configData, err := os.ReadFile(keymanagerV2ConfigPath)
+		if err != nil {
+			return fmt.Errorf("failed to read keymanager config file from : %v", err)
+		}
+
+		var kmConfig KeyManagerV2Config
+		if err := json.Unmarshal(configData, &kmConfig); err != nil {
+			return fmt.Errorf("failed to unmarshal keymanager config data: %v", err)
+		}
+
+		if kmConfig.KeyProtectionMechanism != "KEY_PROTECTION_VM" || kmConfig.ServiceRole != "SERVICE_ROLE_WSD" {
+			return fmt.Errorf("invalid keymanager configuration structure: %+v", kmConfig)
+		}
+
+		modeEnum, err := ParseKeyProtectionMechanism(kmConfig.KeyProtectionMechanism)
+		if err != nil {
+			return fmt.Errorf("unknown key protection mechanism configuration value: %q", kmConfig.KeyProtectionMechanism)
+		}
+
+		wsdServer, err := ws.New(context.Background(), path.Join(launcherfile.HostTmpPath, keyManagerSocket), modeEnum, kmConfig.KeyProtectionVMIP)
+		if err != nil {
+			return fmt.Errorf("failed to create the key manager server with SERVICE_ROLE_WSD role: %v", err)
+		}
+		go wsdServer.Serve()
+		defer wsdServer.Shutdown(ctx)
+	} else if r.launchSpec.Experiments.EnableKeyManager {
 		r.logger.Info("EnableKeyManager experiment is enabled: initializing KeyManager server.")
 		keyManagerServer, err := workloadservice.New(ctx, path.Join(launcherfile.HostTmpPath, keyManagerSocket), keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED)
 		if err != nil {

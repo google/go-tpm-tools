@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	kpmcommon "github.com/GoogleCloudPlatform/key-protection-module/km_common/proto"
 	"github.com/google/go-tpm/legacy/tpm2"
 	"google.golang.org/api/impersonate"
 	"google.golang.org/api/option"
@@ -125,4 +126,14 @@ func listFilesWithPrefix(targetDir string, prefix string) ([]string, error) {
 		}
 	}
 	return targetFiles, nil
+}
+
+// ParseKeyProtectionMechanism converts a string representation of a key protection
+// mechanism into its corresponding enum value. It returns an error if the string is unrecognized.
+func ParseKeyProtectionMechanism(mechanismStr string) (kpmcommon.KeyProtectionMechanism, error) {
+	val, ok := kpmcommon.KeyProtectionMechanism_value[mechanismStr]
+	if !ok {
+		return 0, fmt.Errorf("unknown key protection mechanism configuration value: %q", mechanismStr)
+	}
+	return kpmcommon.KeyProtectionMechanism(val), nil
 }
