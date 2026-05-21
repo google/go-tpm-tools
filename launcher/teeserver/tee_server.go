@@ -12,9 +12,9 @@ import (
 	"strings"
 
 	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
+	keymanager "github.com/GoogleCloudPlatform/key-protection-module/km_common/proto"
+	wsd "github.com/GoogleCloudPlatform/key-protection-module/workload_service"
 	"github.com/google/go-tpm-tools/agent"
-	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
-	wsd "github.com/google/go-tpm-tools/keymanager/workload_service"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/spec"
 	tspb "github.com/google/go-tpm-tools/launcher/teeserver/proto/gen/teeserver"

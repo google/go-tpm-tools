@@ -18,6 +18,8 @@ import (
 
 	"cloud.google.com/go/compute/metadata"
 	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
+	keymanager "github.com/GoogleCloudPlatform/key-protection-module/km_common/proto"
+	workloadservice "github.com/GoogleCloudPlatform/key-protection-module/workload_service"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/cio"
@@ -30,8 +32,6 @@ import (
 	"github.com/google/go-tpm-tools/agent"
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
-	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
-	workloadservice "github.com/google/go-tpm-tools/keymanager/workload_service"
 	"github.com/google/go-tpm-tools/launcher/internal/gpu"
 	"github.com/google/go-tpm-tools/launcher/internal/healthmonitoring/nodeproblemdetector"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
