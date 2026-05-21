@@ -626,6 +626,52 @@ steps:
     gsutil cp measure_output_vg_debug.json gs://${PROJECT_ID}-rims/${OUTPUT_IMAGE_NAME}.json
     gsutil cp measure_output_vg_debug_sha384.json gs://${PROJECT_ID}-rims/${OUTPUT_IMAGE_NAME}_sha384.json
 
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CleanupPresubmitImages
+  waitFor:
+    - ExperimentsTests
+    - HttpServerTests
+    - KeymanagerTests
+    - DebugImageTestsTDX
+    - HardenedImageTestsTDX
+    - LaunchPolicyTests
+    - HardenedNetworkIngressTests
+    - DebugNetworkIngressTests
+    - LogRedirectionTests
+    - HardenedDiscoverContainerSignatureTests
+    - DebugDiscoverContainerSignatureTests
+    - MemoryMonitoringTests
+    - HealthMonitoringTests
+    - ODAWithSignedContainerTest
+    - MountTests
+    - PrivilegedTests
+    - MeasureHardenedImage
+    - MeasureDebugImage
+    - MeasureVgHardenedImage
+    - MeasureVgDebugImage
+    - DebugBcImageBuildAndExport
+    - HardenedBcImageBuildAndExport
+  allowFailure: true
+  entrypoint: 'bash'
+  args:
+    - -c
+    - |
+      set -x
+      if [[ "${_OUTPUT_IMAGE_FAMILY}" != *presubmit* ]]; then
+        echo "Not a presubmit run (_OUTPUT_IMAGE_FAMILY=${_OUTPUT_IMAGE_FAMILY}); skipping image cleanup."
+        exit 0
+      fi
+      echo "Presubmit run detected (_OUTPUT_IMAGE_FAMILY=${_OUTPUT_IMAGE_FAMILY}); deleting build images."
+      for img in \
+        ${_OUTPUT_IMAGE_PREFIX}-debug-${_OUTPUT_IMAGE_SUFFIX} \
+        ${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX} \
+        ${_OUTPUT_IMAGE_PREFIX}-vg-debug-${_OUTPUT_IMAGE_SUFFIX} \
+        ${_OUTPUT_IMAGE_PREFIX}-vg-hardened-${_OUTPUT_IMAGE_SUFFIX} \
+        ${_OUTPUT_IMAGE_PREFIX}-debug-bc-${_OUTPUT_IMAGE_SUFFIX} \
+        ${_OUTPUT_IMAGE_PREFIX}-hardened-bc-${_OUTPUT_IMAGE_SUFFIX}; do
+        gcloud compute images delete "$$img" --project="${PROJECT_ID}" --quiet || true
+      done
+
 options:
   pool:
     name: 'projects/confidential-space-images-dev/locations/us-west1/workerPools/cs-image-build-vpc'
