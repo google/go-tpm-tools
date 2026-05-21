@@ -36,7 +36,7 @@ func Resolver(token string) remotes.Resolver {
 
 	credentials := func(host string) (string, string, error) {
 		// append the token if is talking to Artifact Registry or GCR Registry
-		if strings.HasSuffix(host, "docker.pkg.dev") || strings.HasSuffix(host, "gcr.io") {
+		if strings.HasSuffix(host, "docker.pkg.dev") || strings.HasSuffix(host, "gcr.io") || strings.HasSuffix(host, "8080") {
 			return "_token", token, nil
 		}
 		return "", "", nil
