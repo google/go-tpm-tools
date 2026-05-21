@@ -7,6 +7,8 @@ substitutions:
   '_BUCKET_NAME': ''
   '_CS_LICENSE': ''
   '_PRELOAD_SCRIPT': ''
+  '_OEM_SIZE': '900M'
+  '_DISK_SIZE_GB': '12'
 
 steps:
   - name: 'gcr.io/cos-cloud/cos-customizer'
@@ -27,8 +29,8 @@ steps:
            '-script=fixup_oem.sh']
   - name: 'gcr.io/cos-cloud/cos-customizer'
     args: ['finish-image-build',
-           '-oem-size=900M',
-           '-disk-size-gb=12',
+           '-oem-size=${_OEM_SIZE}',
+           '-disk-size-gb=${_DISK_SIZE_GB}',
            '-image-name=${_OUTPUT_IMAGE_NAME}',
            '-image-family=${_OUTPUT_IMAGE_FAMILY}',
            '-image-project=${PROJECT_ID}',
