@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 
 	"cloud.google.com/go/compute/metadata"
@@ -33,8 +34,11 @@ func RetrieveAuthToken(ctx context.Context, client *metadata.Client) (oauth2.Tok
 // the repo.
 func Resolver(token string) remotes.Resolver {
 	options := docker.ResolverOptions{
-		//nolint:staticcheck
-		PlainHTTP: true,
+		Client: &http.Client{
+			Transport: &port8080PlainHTTPTransport{
+				base: http.DefaultTransport,
+			},
+		},
 	}
 
 	credentials := func(host string) (string, string, error) {
@@ -65,4 +69,15 @@ func RefreshResolver(ctx context.Context, client *metadata.Client) (remotes.Reso
 	}
 
 	return nil, fmt.Errorf("invalid token from metadata server: %v", token)
+}
+
+type port8080PlainHTTPTransport struct {
+	base http.RoundTripper
+}
+
+func (t *port8080PlainHTTPTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if strings.HasSuffix(req.URL.Host, ":8080") {
+		req.URL.Scheme = "http"
+	}
+	return t.base.RoundTrip(req)
 }
