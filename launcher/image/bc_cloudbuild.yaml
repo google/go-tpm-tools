@@ -48,12 +48,6 @@ steps:
            /workspace/oem-install/confidential_space/
         cp ./launcher/image/nodeproblemdetector/* /workspace/oem-install/confidential_space/nodeproblemdetector/
 
-        mkdir -p /workspace/oem-install/gpu_driver
-        cp ./launcher/image/NVIDIA-Linux-x86_64-595.58.03.run \
-           ./launcher/image/gpu_driver_versions.bin \
-           ./launcher/image/nvidia-drivers-595.58.03.tgz \
-           /workspace/oem-install/gpu_driver/
-
         cp /workspace/oem-install/confidential_space/launcher /workspace/oem-install/confidential_space/cs_container_launcher
         # Disabled because cloud-init is not used.
         # cp ./launcher/image/bc-guest/meta-data /workspace/oem-install/meta-data
@@ -140,7 +134,7 @@ steps:
           "--vmlinux=./vmlinux"
           "--src-image=./disk.raw"
           "--out-image=output.bin"
-          "--oem-fs-size=1500M"
+          "--oem-fs-size=500M"
           "--disk-size-gb=15"
           "--install-dir=/workspace/oem-install/"
         )
