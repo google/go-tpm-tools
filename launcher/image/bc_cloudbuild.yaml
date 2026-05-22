@@ -78,7 +78,9 @@ steps:
           TARGET="cchost-amd64-gcp"
         fi
 
-        gcloud storage cp "gs://cos-tools/$${VERSION}/$${TARGET}/vmlinux" ./vmlinux
+        # gcloud storage cp "gs://cos-tools/$${VERSION}/$${TARGET}/vmlinux" ./vmlinux
+        gcloud storage cp "gs://cos-infra-prod-artifacts-official/cchostdebug-amd64-gcp-release/R125-19216.395.44/vmlinux" ./vmlinux
+
   - name: 'gcr.io/cos-cloud/oem-preloader:latest'
     id: 'RunOEMPreloader'
     env:
