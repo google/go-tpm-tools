@@ -8,8 +8,8 @@ substitutions:
   '_BUCKET_NAME': '${PROJECT_ID}_cloudbuild'
   '_VG_BASE_IMAGE': 'cos-125-19216-220-185'
   '_BC_BASE_IMAGE_PROJECT': 'confidential-space-images-dev'
-  '_BC_BASE_IMAGE': 'cos-bc-guest-125-19216-220-185'
-  '_BC_DEBUG_IMAGE': 'cos-bcdbg-guest-125-19216-220-185'
+  '_BC_BASE_IMAGE': 'cos-bc-guest-125-19216-395-4'
+  '_BC_DEBUG_IMAGE': 'cos-bcdbg-guest-125-19216-395-4'
 
 steps:
 # determine the base image
@@ -73,6 +73,7 @@ steps:
       # Build the launcher with CGO enabled
       cd launcher/launcher
       export CGO_LDFLAGS="-L/workspace/keymanager/target/release"
+      export GOTOOLCHAIN=auto
       go build -o ../image/launcher -ldflags="-extldflags=-Wl,-z,lazy -X 'main.BuildCommit=${SHORT_SHA}'"
 
 - name: 'gcr.io/cloud-builders/gcloud'

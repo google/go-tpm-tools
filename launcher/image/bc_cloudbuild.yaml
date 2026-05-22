@@ -135,7 +135,7 @@ steps:
           "--src-image=./disk.raw"
           "--out-image=output.bin"
           "--oem-fs-size=500M"
-          "--disk-size-gb=16"
+          "--disk-size-gb=15"
           "--install-dir=/workspace/oem-install/"
         )
         for cmd in "$${COMMON_COMMANDS[@]}"; do
