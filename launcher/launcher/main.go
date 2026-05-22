@@ -88,6 +88,13 @@ func main() {
 	logger.Info("Boot completed", "duration_sec", uptime)
 	logger.Info(welcomeMessage, "build_commit", BuildCommit)
 
+	if err := verifyFsAndMount(); err != nil {
+		logger.Error(fmt.Sprintf("failed to verify filesystem and mounts: %v\n", err))
+		exitCode = rebootRC
+		logger.Error(exitMessage, "exit_code", exitCode, "exit_msg", rcMessage[exitCode])
+		return
+	}
+
 	if err := os.MkdirAll(launcherfile.HostTmpPath, 0755); err != nil {
 		logger.Error(fmt.Sprintf("failed to create %s: %v", launcherfile.HostTmpPath, err))
 	}
@@ -99,13 +106,6 @@ func main() {
 		logger.Error(fmt.Sprintf("failed to get launchspec, make sure you're running inside a GCE VM: %v", err))
 		// if cannot get launchSpec, exit directly
 		exitCode = failRC
-		logger.Error(exitMessage, "exit_code", exitCode, "exit_msg", rcMessage[exitCode])
-		return
-	}
-
-	if err := verifyFsAndMount(); err != nil {
-		logger.Error(fmt.Sprintf("failed to verify filesystem and mounts: %v\n", err))
-		exitCode = rebootRC
 		logger.Error(exitMessage, "exit_code", exitCode, "exit_msg", rcMessage[exitCode])
 		return
 	}
@@ -191,46 +191,12 @@ func startLauncher(launchSpec spec.LaunchSpec, serialConsole *os.File) error {
 	}
 	defer containerdClient.Close()
 
-	var tpm io.ReadWriteCloser
-	if !launchSpec.Experiments.BcMode {
-		tpm, err = tpm2.OpenTPM("/dev/tpmrm0")
-		if err != nil {
-			return &launcher.RetryableError{Err: err}
-		}
+	tpm, err := initTPM(launchSpec)
+	if err != nil {
+		return err
+	}
+	if tpm != nil {
 		defer tpm.Close()
-
-		// check DA info, don't crash if failed
-		daInfo, err := launcher.GetTPMDAInfo(tpm)
-		if err != nil {
-			logger.Error(fmt.Sprintf("Failed to get DA Info: %v", err))
-		} else {
-			if !daInfo.StartupClearOrderly {
-				logger.Warn(fmt.Sprintf("Failed orderly startup. Avoid using instance reset. Instead, use instance stop/start. DA lockout counter incremented: LockoutCounter: %d / MaxAuthFail: %d", daInfo.LockoutCounter, daInfo.MaxTries))
-			}
-
-			if err := launcher.SetTPMDAParams(tpm, expectedTPMDAParams); err != nil {
-				logger.Error(fmt.Sprintf("Failed to set DA params: %v", err))
-			}
-
-			daInfo, err := launcher.GetTPMDAInfo(tpm)
-			if err != nil {
-				logger.Error(fmt.Sprintf("Failed to get DA Info: %v", err))
-			} else {
-				logger.Info(fmt.Sprintf("Updated TPM DA params: %+v", daInfo))
-			}
-		}
-
-		// check AK (EK signing) cert
-		gceAk, err := client.GceAttestationKeyECC(tpm)
-		if err != nil {
-			return err
-		}
-		if gceAk.Cert() == nil {
-			return errors.New("failed to find AKCert on this VM: try creating a new VM or contacting support")
-		}
-		gceAk.Close()
-	} else {
-		logger.Info("Running in BC mode, bypassing TPM initialization and checks.")
 	}
 
 	token, err := registryauth.RetrieveAuthToken(context.Background(), mdsClient)
@@ -263,6 +229,54 @@ func startLauncher(launchSpec spec.LaunchSpec, serialConsole *os.File) error {
 	defer r.Close(ctx)
 
 	return r.Run(ctx)
+}
+
+func initTPM(launchSpec spec.LaunchSpec) (io.ReadWriteCloser, error) {
+	if launchSpec.Experiments.BcMode {
+		logger.Info("Running in BC mode, bypassing TPM initialization and checks.")
+		return nil, nil
+	}
+
+	tpm, err := tpm2.OpenTPM("/dev/tpmrm0")
+	if err != nil {
+		return nil, &launcher.RetryableError{Err: err}
+	}
+
+	// check DA info, don't crash if failed
+	daInfo, err := launcher.GetTPMDAInfo(tpm)
+	if err != nil {
+		logger.Error(fmt.Sprintf("Failed to get DA Info: %v", err))
+	} else {
+		if !daInfo.StartupClearOrderly {
+			logger.Warn(fmt.Sprintf("Failed orderly startup. Avoid using instance reset. Instead, use instance stop/start. DA lockout counter incremented: LockoutCounter: %d / MaxAuthFail: %d", daInfo.LockoutCounter, daInfo.MaxTries))
+		}
+
+		if err := launcher.SetTPMDAParams(tpm, expectedTPMDAParams); err != nil {
+			logger.Error(fmt.Sprintf("Failed to set DA params: %v", err))
+		}
+
+		daInfo, err := launcher.GetTPMDAInfo(tpm)
+		if err != nil {
+			logger.Error(fmt.Sprintf("Failed to get DA Info: %v", err))
+		} else {
+			logger.Info(fmt.Sprintf("Updated TPM DA params: %+v", daInfo))
+		}
+	}
+
+	// check AK (EK signing) cert
+	gceAk, err := client.GceAttestationKeyECC(tpm)
+	if err != nil {
+		tpm.Close()
+		return nil, err
+	}
+	defer gceAk.Close()
+
+	if gceAk.Cert() == nil {
+		tpm.Close()
+		return nil, errors.New("failed to find AKCert on this VM: try creating a new VM or contacting support")
+	}
+
+	return tpm, nil
 }
 
 // verifyFsAndMount checks the partitions/mounts are as expected, based on the command output reported by OS.

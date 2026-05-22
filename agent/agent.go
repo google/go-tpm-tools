@@ -147,7 +147,7 @@ type bcAgent struct {
 // - logger will log any partial errors returned by VerifyAttestation.
 func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher util.TpmKeyFetcher, verifierClient verifier.Client, principalFetcher principalIDTokenFetcher, sigsFetcher SignatureFetcher, exps Experiments, logger Logger, deviceROTs []DeviceROT, signedImageRepos []string) (AttestationAgent, error) {
 	if exps.BcMode {
-		return createBCAgent(tpm, verifierClient, principalFetcher, sigsFetcher, exps, logger, deviceROTs, signedImageRepos)
+		return createBCAgent(principalFetcher, sigsFetcher, exps, logger, deviceROTs, signedImageRepos)
 	}
 
 	// Fetched the AK and save it, so the agent doesn't need to create a new key everytime
@@ -194,39 +194,21 @@ func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher util.TpmKeyFetcher
 	attestAgent.avRot = tpmAR // Set as default fallback
 
 	// check if is a TDX machine
-	qp, err := tg.GetQuoteProvider()
+	hasTDX, err := attestAgent.addTDXAttestRoot()
 	if err != nil {
 		return nil, err
 	}
-	// Use qp.IsSupported to check the TDX RTMR interface is enabled
-	if qp.IsSupported() == nil {
-		logger.Info("Adding TDX RTMRs for measurement.")
-		var tdxAR = &tdxAttestRoot{
-			qp:     qp,
-			cosCel: gecel.NewConfComputeMR(),
-		}
-		attestAgent.measuredRots = append(attestAgent.measuredRots, tdxAR)
-
-		logger.Info("Using TDX RTMR as attestation root.")
-		attestAgent.avRot = tdxAR
-	} else {
+	if !hasTDX {
 		logger.Info("Using TPM PCR as attestation root.")
 	}
 
-	// Add deviceRoTs to the CPU attestation root.
-	attestAgent.avRot.AddDeviceROTs(deviceROTs)
 	return attestAgent, nil
 }
 
-func createBCAgent(tpm io.ReadWriteCloser, verifierClient verifier.Client, principalFetcher principalIDTokenFetcher, sigsFetcher SignatureFetcher, exps Experiments, logger Logger, deviceROTs []DeviceROT, signedImageRepos []string) (AttestationAgent, error) {
-	if tpm != nil {
-		return nil, fmt.Errorf("TPM should not be passed in BC mode")
-	}
-
+func createBCAgent(principalFetcher principalIDTokenFetcher, sigsFetcher SignatureFetcher, exps Experiments, logger Logger, deviceROTs []DeviceROT, signedImageRepos []string) (AttestationAgent, error) {
 	logger.Info("Running in BC mode, skipping Attestation Key fetching.")
 
 	baseAgent := &agent{
-		client:           verifierClient,
 		principalFetcher: principalFetcher,
 		sigsFetcher:      sigsFetcher,
 		experiments:      exps,
@@ -235,26 +217,39 @@ func createBCAgent(tpm io.ReadWriteCloser, verifierClient verifier.Client, princ
 		signedImageRepos: signedImageRepos,
 	}
 
-	qp, err := tg.GetQuoteProvider()
+	hasTDX, err := baseAgent.addTDXAttestRoot()
 	if err != nil {
 		return nil, err
 	}
-	if qp.IsSupported() == nil {
-		logger.Info("Adding TDX RTMRs for measurement.")
-		var tdxAR = &tdxAttestRoot{
-			qp:     qp,
-			cosCel: gecel.NewConfComputeMR(),
-		}
-		baseAgent.measuredRots = append(baseAgent.measuredRots, tdxAR)
-
-		logger.Info("Using TDX RTMR as attestation root.")
-		baseAgent.avRot = tdxAR
-	} else {
+	if !hasTDX {
 		return nil, fmt.Errorf("running in BC mode but TDX not supported")
 	}
 
 	baseAgent.avRot.AddDeviceROTs(deviceROTs)
 	return &bcAgent{agent: baseAgent}, nil
+}
+
+func (a *agent) addTDXAttestRoot() (bool, error) {
+	qp, err := tg.GetQuoteProvider()
+	if err != nil {
+		return false, err
+	}
+	if qp.IsSupported() == nil {
+		a.logger.Info("Adding TDX RTMRs for measurement.")
+		var tdxAR = &tdxAttestRoot{
+			qp:     qp,
+			cosCel: gecel.NewConfComputeMR(),
+		}
+		a.measuredRots = append(a.measuredRots, tdxAR)
+
+		a.logger.Info("Using TDX RTMR as attestation root.")
+		a.avRot = tdxAR
+
+		// Add deviceRoTs to the CPU attestation root.
+		tdxAR.AddDeviceROTs(a.deviceROTs)
+		return true, nil
+	}
+	return false, nil
 }
 
 // Close cleans up the agent
@@ -421,6 +416,16 @@ func (a *bcAgent) AttestHost(ctx context.Context, challenge []byte) ([]byte, err
 	}
 
 	return proto.Marshal(resp.GetHostAttestation())
+}
+
+// Attest is not supported in BC mode.
+func (a *bcAgent) Attest(_ context.Context, _ AttestAgentOpts) ([]byte, error) {
+	return nil, fmt.Errorf("attestation token is not supported in BC mode")
+}
+
+// AttestWithClient is not supported in BC mode.
+func (a *bcAgent) AttestWithClient(_ context.Context, _ AttestAgentOpts, _ verifier.Client) ([]byte, error) {
+	return nil, fmt.Errorf("attestation token is not supported in BC mode")
 }
 
 // AttestationEvidence returns the attestation evidence (TPM or TDX).
