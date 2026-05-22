@@ -267,6 +267,7 @@ steps:
       - "OUTPUT_IMAGE_FAMILY=${_OUTPUT_IMAGE_FAMILY}-bc-debug"
       - "BUCKET_NAME=$_BUCKET_NAME"
       - "BASE_IMAGE_PROJECT=$_BC_BASE_IMAGE_PROJECT"
+      - "WSD_CONTAINER_IMAGE_REF=$_WSD_CONTAINER_IMAGE_REF"
 
     script: |
       #!/usr/bin/env bash
@@ -281,7 +282,8 @@ steps:
       _OUTPUT_IMAGE_FAMILY=${OUTPUT_IMAGE_FAMILY},\
       _OUTPUT_IMAGE_NAME=${OUTPUT_IMAGE_NAME},\
       _IMAGE_ENV=debug,\
-      _BUCKET_NAME=${BUCKET_NAME}
+      _BUCKET_NAME=${BUCKET_NAME},\
+      _WSD_CONTAINER_IMAGE_REF=${WSD_CONTAINER_IMAGE_REF}
       exit
 
   - name: "gcr.io/cloud-builders/gcloud"
@@ -300,6 +302,7 @@ steps:
       - "OUTPUT_IMAGE_FAMILY=${_OUTPUT_IMAGE_FAMILY}-bc"
       - "BUCKET_NAME=$_BUCKET_NAME"
       - "BASE_IMAGE_PROJECT=$_BC_BASE_IMAGE_PROJECT"
+      - "WSD_CONTAINER_IMAGE_REF=$_WSD_CONTAINER_IMAGE_REF"
 
     script: |
       #!/usr/bin/env bash
@@ -314,7 +317,8 @@ steps:
       _OUTPUT_IMAGE_FAMILY=${OUTPUT_IMAGE_FAMILY},\
       _OUTPUT_IMAGE_NAME=${OUTPUT_IMAGE_NAME},\
       _IMAGE_ENV=hardened,\
-      _BUCKET_NAME=${BUCKET_NAME}
+      _BUCKET_NAME=${BUCKET_NAME},\
+      _WSD_CONTAINER_IMAGE_REF=${WSD_CONTAINER_IMAGE_REF}
       exit
 
   - name: "gcr.io/cloud-builders/gcloud"
