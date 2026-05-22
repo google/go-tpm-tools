@@ -508,7 +508,8 @@ func writeJSON(w http.ResponseWriter, v proto.Message, code int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(code)
-	if _, err := w.Write(b); err != nil {
+	var jsonWriter io.Writer = w
+	if _, err := jsonWriter.Write(b); err != nil {
 		log.Printf("failed to write JSON response: %v", err)
 	}
 }
@@ -518,19 +519,18 @@ func writeError(w http.ResponseWriter, message string, code int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(code)
-	b, err := json.Marshal(map[string]string{"error": message})
-	if err != nil {
-		log.Printf("failed to marshal error response: %v", err)
-		b = []byte(`{"error":"internal error serializing response"}`)
-	}
-	if _, err := w.Write(b); err != nil {
+	if err := json.NewEncoder(w).Encode(map[string]string{"error": message}); err != nil {
 		log.Printf("failed to write error response: %v", err)
 	}
 }
 
+// maxRequestBodySize is the maximum allowed size for HTTP request bodies.
+const maxRequestBodySize = 1 << 20 // 1MB
+
 // readRequest reads the HTTP request body, unmarshals it into a proto.Message,
 // and validates it.
 func readRequest(r *http.Request, req proto.Message) error {
+	r.Body = http.MaxBytesReader(nil, r.Body, maxRequestBodySize)
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		return fmt.Errorf("failed to read request body: %w", err)
