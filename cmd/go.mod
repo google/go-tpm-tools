@@ -7,7 +7,7 @@ toolchain go1.24.13
 require (
 	cloud.google.com/go/compute/metadata v0.9.0
 	cloud.google.com/go/logging v1.13.1
-	github.com/golang-jwt/jwt/v4 v4.5.1
+	github.com/golang-jwt/jwt/v4 v4.5.2
 	github.com/golang/protobuf v1.5.4
 	github.com/google/gce-tcb-verifier v0.3.1
 	github.com/google/gce-tcb-verifier/gcetcbendorsement v0.0.0-20250301004354-d18ce1139be2
@@ -20,7 +20,7 @@ require (
 	github.com/spf13/cobra v1.8.1
 	golang.org/x/oauth2 v0.34.0
 	google.golang.org/api v0.265.0
-	google.golang.org/grpc v1.78.0
+	google.golang.org/grpc v1.79.3
 	google.golang.org/protobuf v1.36.11
 )
 
@@ -30,7 +30,7 @@ require (
 	cloud.google.com/go/auth/oauth2adapt v0.2.8 // indirect
 	cloud.google.com/go/confidentialcomputing v1.11.0 // indirect
 	cloud.google.com/go/longrunning v0.8.0 // indirect
-	github.com/GoogleCloudPlatform/confidential-space/server v0.0.0-20260307011055-895ec9019dd7 // indirect
+	github.com/GoogleCloudPlatform/confidential-space/server v0.0.0-20260313232128-53cb34b09004 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cyphar/filepath-securejoin v0.2.5 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
