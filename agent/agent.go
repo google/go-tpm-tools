@@ -202,6 +202,8 @@ func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher util.TpmKeyFetcher
 		logger.Info("Using TPM PCR as attestation root.")
 	}
 
+	// Add deviceRoTs to the CPU attestation root.
+	attestAgent.avRot.AddDeviceROTs(deviceROTs)
 	return attestAgent, nil
 }
 
@@ -244,9 +246,6 @@ func (a *agent) addTDXAttestRoot() (bool, error) {
 
 		a.logger.Info("Using TDX RTMR as attestation root.")
 		a.avRot = tdxAR
-
-		// Add deviceRoTs to the CPU attestation root.
-		tdxAR.AddDeviceROTs(a.deviceROTs)
 		return true, nil
 	}
 	return false, nil
