@@ -32,7 +32,10 @@ func RetrieveAuthToken(ctx context.Context, client *metadata.Client) (oauth2.Tok
 // Resolver returns a custom resolver that can use the token to authenticate with
 // the repo.
 func Resolver(token string) remotes.Resolver {
-	options := docker.ResolverOptions{}
+	options := docker.ResolverOptions{
+		//nolint:staticcheck
+		PlainHTTP: true,
+	}
 
 	credentials := func(host string) (string, string, error) {
 		// append the token if is talking to Artifact Registry or GCR Registry
