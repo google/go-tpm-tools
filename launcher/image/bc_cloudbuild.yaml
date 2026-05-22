@@ -140,7 +140,7 @@ steps:
           "--vmlinux=./vmlinux"
           "--src-image=./disk.raw"
           "--out-image=output.bin"
-          "--oem-fs-size=500M"
+          "--oem-fs-size=1500M"
           "--disk-size-gb=15"
           "--install-dir=/workspace/oem-install/"
         )
