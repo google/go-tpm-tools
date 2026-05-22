@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path"
 	"strings"
 
 	"cos.googlesource.com/cos/tools.git/src/cmd/cos_gpu_installer/deviceinfo"
@@ -97,6 +98,17 @@ func (di *DriverInstaller) InstallGPUDrivers(ctx context.Context) error {
 		di.logger.Error(fmt.Sprintf("cannot get hostname: %v", err))
 	}
 
+	processArgs := []string{
+		"/cos-gpu-installer",
+		"install",
+		fmt.Sprintf("-version=%s", NvDriverVer595_58_03),
+		fmt.Sprintf("-host-dir=%s", InstallationHostDir),
+		"--no-verify",
+	}
+	if _, err := os.Stat("/usr/share/oem/gpu_driver"); err == nil {
+		processArgs = append(processArgs, fmt.Sprintf("-local-artifacts-dir=%s", "/root/usr/share/oem/gpu_driver/"))
+	}
+
 	container, err := di.cdClient.NewContainer(
 		ctx,
 		installerContainerID,
@@ -107,11 +119,7 @@ func (di *DriverInstaller) InstallGPUDrivers(ctx context.Context) error {
 			// To support confidential GPUs, the nvidia-persistenced process should be started before the GPU driver verification step.
 			// It would not be possible to start the nvidia-persistenced process amidst GPU driver installation flow via cos_gpu_installer.
 			// For this reason, the GPU driver installation need to be triggered with --skip-nvidia-smi flag to skip the GPU driver verification step.
-			oci.WithProcessArgs("/cos-gpu-installer", "install",
-				fmt.Sprintf("-version=%s", NvDriverVer595_58_03),
-				fmt.Sprintf("-local-artifacts-dir=%s", "/root/usr/share/oem/gpu_driver/"),
-				fmt.Sprintf("-host-dir=%s", InstallationHostDir),
-				"--no-verify"),
+			oci.WithProcessArgs(processArgs...),
 			oci.WithAllDevicesAllowed,
 			oci.WithHostDevices,
 			oci.WithMounts(mounts),
@@ -146,6 +154,10 @@ func (di *DriverInstaller) InstallGPUDrivers(ctx context.Context) error {
 	if code != 0 {
 		di.logger.Error(fmt.Sprintf("GPU driver installation task ended and returned non-zero status code %d", code))
 		return fmt.Errorf("GPU driver installation task ended with non-zero status code %d", code)
+	}
+
+	if err = verifyDriverDigest(path.Join(InstallationHostDir, NvDriverVer595_58_03Runfile), NvDriverVer595_58_03Digest); err != nil {
+		return fmt.Errorf("failed to verify GPU driver digest: %v", err)
 	}
 
 	cmds := [][]string{

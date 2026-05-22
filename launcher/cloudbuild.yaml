@@ -8,7 +8,7 @@ substitutions:
   '_BUCKET_NAME': '${PROJECT_ID}_cloudbuild'
   '_VG_BASE_IMAGE': 'cos-125-19216-220-185'
   '_BC_BASE_IMAGE_PROJECT': 'confidential-space-images-dev'
-  '_BC_BASE_IMAGE': 'cos-bc-guest-125-19216-220-185' 
+  '_BC_BASE_IMAGE': 'cos-bc-guest-125-19216-220-185'
   '_BC_DEBUG_IMAGE': 'cos-bcdbg-guest-125-19216-220-185'
 
 steps:
@@ -30,7 +30,7 @@ steps:
       base_image=$(gcloud compute images describe-from-family ${BASE_IMAGE_FAMILY} --project ${BASE_IMAGE_PROJECT} | grep name | cut -d ' ' -f 2)
     fi
 
-    echo "base image:" ${base_image} "project:" ${BASE_IMAGE_PROJECT} 
+    echo "base image:" ${base_image} "project:" ${BASE_IMAGE_PROJECT}
     echo ${base_image} > /workspace/base_image.txt
 
 - name: rust:1.85-bullseye
@@ -42,7 +42,7 @@ steps:
       set -exuo pipefail
       # Install build dependencies for Rust
       apt-get update && apt-get install -y clang build-essential curl tar
-      
+
       # Install CMake 3.28.3 from pre-compiled binaries for flexibility across environments
       curl -sSL https://github.com/Kitware/CMake/releases/download/v3.28.3/cmake-3.28.3-linux-x86_64.tar.gz -o cmake.tar.gz
       tar -zxvf cmake.tar.gz -C /opt/
@@ -57,7 +57,7 @@ steps:
       cd keymanager
       cargo build --release
 
-# `golang:1.24-bullseye` is needed to maintain `glibc` compatibility. 
+# `golang:1.24-bullseye` is needed to maintain `glibc` compatibility.
 # Revert back to golang:1.24 COS 129 onwards.
 - name: golang:1.24-bullseye
   id: LauncherCompile
@@ -84,14 +84,27 @@ steps:
           'gs://confidential-space-images_third-party/confidential_space_experiments',
           './launcher/image/confidential_space_experiments']
 
+# make sure the directory matches the base image
 - name: 'gcr.io/cloud-builders/gcloud'
   id: DownloadGpuDrivers
-  entrypoint: 'gcloud'
-  args: ['storage', 'cp',
-          'gs://cos-nvidia-gpu-drivers/NVIDIA-Linux-x86_64-595.58.03.run',
-          'gs://cos-tools/19216.220.185/lakitu/gpu_driver_versions.bin',
-          'gs://cos-tools/19216.220.185/lakitu/nvidia-drivers-595.58.03.tgz',
-          './launcher/image/']
+  waitFor: ['BaseImageIdent']
+  entrypoint: 'bash'
+  args:
+    - '-c'
+    - |
+      set -ex
+      BASE_IMAGE=$$(cat /workspace/base_image.txt)
+      VERSION=$$(echo "$${BASE_IMAGE}" | grep -oE '[0-9]+-[0-9]+-[0-9]+$$' | tr '-' '.')
+      if [[ -z "$${VERSION}" ]]; then
+        echo "Failed to extract version from $${BASE_IMAGE}"
+        exit 1
+      fi
+
+      gcloud storage cp \
+        gs://cos-nvidia-gpu-drivers/NVIDIA-Linux-x86_64-595.58.03.run \
+        "gs://cos-tools/$${VERSION}/lakitu/gpu_driver_versions.bin" \
+        "gs://cos-tools/$${VERSION}/lakitu/nvidia-drivers-595.58.03.tgz" \
+        ./launcher/image/
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: DebugVgImageBuild
@@ -117,7 +130,9 @@ steps:
     _IMAGE_ENV=debug,\
     _CS_LICENSE=projects/confidential-space-images/global/licenses/confidential-space-debug,\
     _BUCKET_NAME=${BUCKET_NAME},\
-    _PRELOAD_SCRIPT=vgpreload.sh
+    _PRELOAD_SCRIPT=vgpreload.sh,\
+    _OEM_SIZE=900M,\
+    _DISK_SIZE_GB=12
     exit
 
 - name: 'gcr.io/cloud-builders/gcloud'
@@ -145,7 +160,9 @@ steps:
     _IMAGE_ENV=hardened,\
     _CS_LICENSE=projects/confidential-space-images/global/licenses/confidential-space,\
     _BUCKET_NAME=${BUCKET_NAME},\
-    _PRELOAD_SCRIPT=vgpreload.sh
+    _PRELOAD_SCRIPT=vgpreload.sh,\
+    _OEM_SIZE=900M,\
+    _DISK_SIZE_GB=12
     exit
 
 - name: 'gcr.io/cloud-builders/gcloud'
@@ -172,7 +189,9 @@ steps:
     _IMAGE_ENV=debug,\
     _CS_LICENSE=projects/confidential-space-images/global/licenses/confidential-space-debug,\
     _BUCKET_NAME=${BUCKET_NAME},\
-    _PRELOAD_SCRIPT=preload.sh
+    _PRELOAD_SCRIPT=preload.sh,\
+    _OEM_SIZE=500M,\
+    _DISK_SIZE_GB=11
     exit
 
 - name: 'gcr.io/cloud-builders/gcloud'
@@ -200,19 +219,21 @@ steps:
     _IMAGE_ENV=hardened,\
     _CS_LICENSE=projects/confidential-space-images/global/licenses/confidential-space,\
     _BUCKET_NAME=${BUCKET_NAME},\
-    _PRELOAD_SCRIPT=preload.sh
+    _PRELOAD_SCRIPT=preload.sh,\
+    _OEM_SIZE=500M,\
+    _DISK_SIZE_GB=11
     exit
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: DebugBcImageBuildAndExport
   waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary', 'DownloadGpuDrivers']
-  env: 
+  env:
   - 'BC_BASE_IMAGE=$_BC_DEBUG_IMAGE'
   - 'BC_BASE_IMAGE_PROJECT=$_BC_BASE_IMAGE_PROJECT'
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-debug-bc-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'OUTPUT_IMAGE_FAMILY=${_OUTPUT_IMAGE_FAMILY}-bc'
+  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-bc-debug-${_OUTPUT_IMAGE_SUFFIX}'
+  - 'OUTPUT_IMAGE_FAMILY=${_OUTPUT_IMAGE_FAMILY}-bc-debug'
   - 'BUCKET_NAME=$_BUCKET_NAME'
-  - 'BASE_IMAGE_PROJECT=$_BC_BASE_IMAGE_PROJECT' 
+  - 'BASE_IMAGE_PROJECT=$_BC_BASE_IMAGE_PROJECT'
 
   script: |
     #!/usr/bin/env bash
@@ -233,13 +254,13 @@ steps:
 - name: 'gcr.io/cloud-builders/gcloud'
   id: HardenedBcImageBuildAndExport
   waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary', 'DownloadGpuDrivers']
-  env: 
+  env:
   - 'BC_BASE_IMAGE=$_BC_BASE_IMAGE'
   - 'BC_BASE_IMAGE_PROJECT=$_BC_BASE_IMAGE_PROJECT'
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-hardened-bc-${_OUTPUT_IMAGE_SUFFIX}'
+  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-bc-hardened-${_OUTPUT_IMAGE_SUFFIX}'
   - 'OUTPUT_IMAGE_FAMILY=${_OUTPUT_IMAGE_FAMILY}-bc'
   - 'BUCKET_NAME=$_BUCKET_NAME'
-  - 'BASE_IMAGE_PROJECT=$_BC_BASE_IMAGE_PROJECT' 
+  - 'BASE_IMAGE_PROJECT=$_BC_BASE_IMAGE_PROJECT'
 
   script: |
     #!/usr/bin/env bash
@@ -538,7 +559,7 @@ steps:
           '--image=${_OUTPUT_IMAGE_PREFIX}-debug-${_OUTPUT_IMAGE_SUFFIX}',
           '--project=${PROJECT_ID}']
 
-- name: 'us-docker.pkg.dev/confidential-space-images-dev/cs-tools/measure@sha256:b82c8ca459b863cfdf9faf8e4c06d506a50f3fe86ca1f3756ca6fee42a5cd7f4'
+- name: 'us-docker.pkg.dev/confidential-space-images-dev/cs-tools/measure@sha256:5c2eaaa70438126877de51b44914d3751ba242aed7f4d99d485833629f3958bc'
   id: MeasureHardenedImage
   waitFor: ['ExportHardenedImage']
   env:
@@ -551,11 +572,10 @@ steps:
     mkdir hardeneddisk
     tar xzf ${OUTPUT_IMAGE_NAME}.tar.gz -C hardeneddisk/
     echo "measuring image ${OUTPUT_IMAGE_NAME}"
-    /usr/local/bin/measure.sh hardeneddisk/disk.raw measure_output_hardened.json hardened x86_64
-    cat measure_output_hardened.json
+    /usr/local/bin/measure.sh hardeneddisk/disk.raw measure_output_hardened.json hardened x86_64 sha256
     gcloud storage cp measure_output_hardened.json gs://${PROJECT_ID}-rims/${OUTPUT_IMAGE_NAME}.json
 
-- name: 'us-docker.pkg.dev/confidential-space-images-dev/cs-tools/measure@sha256:b82c8ca459b863cfdf9faf8e4c06d506a50f3fe86ca1f3756ca6fee42a5cd7f4'
+- name: 'us-docker.pkg.dev/confidential-space-images-dev/cs-tools/measure@sha256:5c2eaaa70438126877de51b44914d3751ba242aed7f4d99d485833629f3958bc'
   id: MeasureDebugImage
   waitFor: ['ExportDebugImage']
   env:
@@ -568,8 +588,7 @@ steps:
     mkdir debugdisk
     tar xzf ${OUTPUT_IMAGE_NAME}.tar.gz -C debugdisk/
     echo "measuring image ${OUTPUT_IMAGE_NAME}"
-    /usr/local/bin/measure.sh debugdisk/disk.raw measure_output_debug.json debug x86_64
-    cat measure_output_debug.json
+    /usr/local/bin/measure.sh debugdisk/disk.raw measure_output_debug.json debug x86_64 sha256
     gsutil cp measure_output_debug.json gs://${PROJECT_ID}-rims/${OUTPUT_IMAGE_NAME}.json
 
 - name: 'gcr.io/cloud-builders/gcloud'
@@ -590,7 +609,7 @@ steps:
           '--image=${_OUTPUT_IMAGE_PREFIX}-vg-debug-${_OUTPUT_IMAGE_SUFFIX}',
           '--project=${PROJECT_ID}']
 
-- name: 'us-docker.pkg.dev/confidential-space-images-dev/cs-tools/measure@sha256:5dec9806530d3aaad4d6a03bed7f1ccd6433188e158cc5c60367c31efd4feaf7'
+- name: 'us-docker.pkg.dev/confidential-space-images-dev/cs-tools/measure@sha256:5c2eaaa70438126877de51b44914d3751ba242aed7f4d99d485833629f3958bc'
   id: MeasureVgHardenedImage
   waitFor: ['ExportVgHardenedImage']
   env:
@@ -610,7 +629,7 @@ steps:
     gcloud storage cp measure_output_vg_hardened_sha384.json gs://${PROJECT_ID}-rims/${OUTPUT_IMAGE_NAME}_sha384.json
 
 
-- name: 'us-docker.pkg.dev/confidential-space-images-dev/cs-tools/measure@sha256:5dec9806530d3aaad4d6a03bed7f1ccd6433188e158cc5c60367c31efd4feaf7'
+- name: 'us-docker.pkg.dev/confidential-space-images-dev/cs-tools/measure@sha256:5c2eaaa70438126877de51b44914d3751ba242aed7f4d99d485833629f3958bc'
   id: MeasureVgDebugImage
   waitFor: ['ExportVgDebugImage']
   env:
@@ -628,7 +647,6 @@ steps:
 
     gsutil cp measure_output_vg_debug.json gs://${PROJECT_ID}-rims/${OUTPUT_IMAGE_NAME}.json
     gsutil cp measure_output_vg_debug_sha384.json gs://${PROJECT_ID}-rims/${OUTPUT_IMAGE_NAME}_sha384.json
-
 
 options:
   pool:
