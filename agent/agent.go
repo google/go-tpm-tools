@@ -338,14 +338,12 @@ func (a *agent) AttestWithClient(ctx context.Context, opts AttestAgentOpts, clie
 
 		v.CanonicalEventLog = cosCel.Bytes()
 
-		if !a.experiments.BcMode {
-			certChain, err := internal.GetCertificateChain(a.fetchedAK.Cert(), http.DefaultClient)
-			if err != nil {
-				return nil, fmt.Errorf("failed when fetching certificate chain: %w", err)
-			}
-			v.IntermediateCerts = certChain
-			v.AkCert = a.fetchedAK.CertDERBytes()
+		certChain, err := internal.GetCertificateChain(a.fetchedAK.Cert(), http.DefaultClient)
+		if err != nil {
+			return nil, fmt.Errorf("failed when fetching certificate chain: %w", err)
 		}
+		v.IntermediateCerts = certChain
+		v.AkCert = a.fetchedAK.CertDERBytes()
 
 		req.TDCCELAttestation = v
 	default:
