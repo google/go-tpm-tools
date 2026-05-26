@@ -45,6 +45,7 @@ steps:
            ./launcher/image/fluent-bit-cs.conf \
            ./launcher/image/exit_script.sh \
            ./launcher/image/bc-guest/bc_network_setup.sh \
+           ./launcher/image/logind_override.conf \
            /workspace/oem-install/confidential_space/
         cp ./launcher/image/nodeproblemdetector/* /workspace/oem-install/confidential_space/nodeproblemdetector/
 
