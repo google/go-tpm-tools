@@ -34,6 +34,7 @@ steps:
         set -e
         docker pull ${_WSD_CONTAINER_IMAGE_REF}
         mkdir -p /workspace/wsd_image
+        docker save ${_WSD_CONTAINER_IMAGE_REF} -o /workspace/wsd_image/image.tar
   - name: 'alpine'
     id: 'ExtractRawImage'
     args: ['tar', '-xf', './src_image.tar.gz']
