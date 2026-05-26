@@ -59,6 +59,7 @@ type ContainerRunner struct {
 	logger        logging.Logger
 	gpuAttester   gpu.Attester
 	serialConsole *os.File
+	powerButton   *powerButtonListener
 }
 
 const tokenFileTmp = ".token.tmp"
@@ -311,6 +312,12 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	if err != nil {
 		return nil, err
 	}
+
+	powerButton, err := newPowerButtonListener(logger)
+	if err != nil {
+		logger.Error(err.Error())
+	}
+
 	return &ContainerRunner{
 		container,
 		launchSpec,
@@ -318,6 +325,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		logger,
 		nvidiaAttester,
 		serialConsole,
+		powerButton,
 	}, nil
 }
 
@@ -771,15 +779,15 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	}
 	defer task.Delete(ctx)
 
-	// A go-routine will monitor the power button and send a SIGTERM to the container uppon a button press.
-	if pwr, err := newPowerButtonListener(r.logger); err != nil {
-		r.logger.Error(err.Error())
-	} else {
+	// A go-routine will monitor the power button and send a SIGTERM to the container upon a button press.
+	if r.powerButton != nil {
 		go func() {
-			err := pwr.waitForShutdown()
+			err := r.powerButton.waitForShutdown()
 			// Upon an error, we do not send SIGTERM to the task.
 			if err != nil {
-				r.logger.Error(err.Error())
+				if !errors.Is(err, os.ErrClosed) {
+					r.logger.Error(err.Error())
+				}
 				return
 			}
 			if err = task.Kill(ctx, syscall.SIGTERM); err != nil {
@@ -921,6 +929,12 @@ func getImageConfig(ctx context.Context, image containerd.Image) (v1.ImageConfig
 
 // Close the container runner
 func (r *ContainerRunner) Close(ctx context.Context) {
+	if r.powerButton != nil {
+		if err := r.powerButton.Close(); err != nil {
+			r.logger.Error("failed to close power button listener", "err", err.Error())
+		}
+	}
+
 	// close the agent
 	r.attestAgent.Close()
 

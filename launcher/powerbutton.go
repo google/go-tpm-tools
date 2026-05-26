@@ -158,6 +158,7 @@ func (p *powerButtonListener) searchProcDevices() (string, error) {
 type powerButtonListener struct {
 	devPath string
 	logger  logging.Logger
+	file    *os.File
 }
 
 func newPowerButtonListener(logger logging.Logger) (*powerButtonListener, error) {
@@ -167,23 +168,26 @@ func newPowerButtonListener(logger logging.Logger) (*powerButtonListener, error)
 		return nil, fmt.Errorf("finding power button failed: %w", err)
 	}
 	p.devPath = path
-	return p, nil
-}
-
-func (p *powerButtonListener) waitForShutdown() error {
-	if p.devPath == "" {
-		return fmt.Errorf("power button device is not found")
-	}
 
 	file, err := os.Open(p.devPath)
 	if err != nil {
-		return fmt.Errorf("opening event file failed: %w", err)
+		return nil, fmt.Errorf("opening event file failed: %w", err)
 	}
-	defer func() {
-		if err := file.Close(); err != nil {
-			p.logger.Error("failed to close file", "file", p.devPath, "err", err.Error())
-		}
-	}()
+	p.file = file
+	return p, nil
+}
+
+func (p *powerButtonListener) Close() error {
+	if p.file != nil {
+		return p.file.Close()
+	}
+	return nil
+}
+
+func (p *powerButtonListener) waitForShutdown() error {
+	if p.file == nil {
+		return fmt.Errorf("power button device is not open")
+	}
 
 	buf := make([]byte, 24)
 	var nrRead int
@@ -196,9 +200,9 @@ func (p *powerButtonListener) waitForShutdown() error {
 
 	for {
 		retries.Reset()
-		err = backoff.Retry(func() error {
+		err := backoff.Retry(func() error {
 			var readErr error
-			nrRead, readErr = file.Read(buf)
+			nrRead, readErr = p.file.Read(buf)
 			return readErr
 		}, retries)
 		if err != nil {
