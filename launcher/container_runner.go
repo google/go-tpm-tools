@@ -305,6 +305,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	exps := agent.Experiments{
 		EnableAttestationEvidence: launchSpec.Experiments.EnableAttestationEvidence,
 		EnableGpuGcaSupport:       launchSpec.Experiments.EnableGpuGcaSupport,
+		BcMode:                    launchSpec.Experiments.BcMode,
 	}
 	attestAgent, err := agent.CreateAttestationAgent(tpm, client.GceAttestationKeyECC, verifierClient, principalFetcherWithImpersonate, sdClient, exps, logger, deviceROTs, launchSpec.SignedImageRepos)
 	if err != nil {

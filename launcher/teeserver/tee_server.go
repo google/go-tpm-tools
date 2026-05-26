@@ -428,7 +428,21 @@ func (a *attestHandler) getHostAttestation(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	evidence := dummyHostAttestation(req.Challenge)
+	evidence := &attestationpb.HostAttestation{}
+	if !a.launchSpec.Experiments.BcMode {
+		// vg has host attestation enabled and should use dummy implementation
+		evidence = dummyHostAttestation(req.Challenge)
+	} else {
+		hostAttBytes, err := a.attestAgent.AttestHost(a.ctx, req.Challenge)
+		if err != nil {
+			a.logAndWriteHTTPError(w, http.StatusInternalServerError, fmt.Errorf("failed to fetch host attestation: %v", err))
+			return
+		}
+		if err := proto.Unmarshal(hostAttBytes, evidence); err != nil {
+			a.logAndWriteHTTPError(w, http.StatusInternalServerError, fmt.Errorf("failed to unmarshal host attestation: %v", err))
+			return
+		}
+	}
 
 	evidenceBytes, err := protojson.Marshal(evidence)
 	if err != nil {
