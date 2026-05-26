@@ -104,11 +104,17 @@ type DeviceROT interface {
 type AttestAgentOpts struct {
 	TokenOptions *models.TokenOptions
 	*DeviceReportOpts
+	*AcpiOpts
 }
 
 // DeviceReportOpts contains options for runtime device attestations.
 type DeviceReportOpts struct {
 	EnableRuntimeGPUAttestation bool
+}
+
+// AcpiOpts contains options for platform ACPI data.
+type AcpiOpts struct {
+	RetrieveAcpiData bool
 }
 
 // Experiments contains the experiment flags for the AttestationAgent.
@@ -476,6 +482,12 @@ func (a *agent) AttestationEvidence(_ context.Context, challenge []byte, extraDa
 		return nil, err
 	}
 	attestation.DeviceReports = deviceReports
+
+	// ACPI data is currently only available in BcMode
+	if a.experiments.BcMode && opts.AcpiOpts != nil && opts.AcpiOpts.RetrieveAcpiData {
+		// TODO: implement this
+		attestation.AcpiData = &attestationpb.AcpiData{}
+	}
 
 	return attestation, nil
 }
