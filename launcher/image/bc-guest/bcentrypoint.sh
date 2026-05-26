@@ -27,6 +27,9 @@ main() {
   if [[ -f /usr/share/oem/confidential_space/bc_network_setup.sh ]]; then
     /usr/share/oem/confidential_space/bc_network_setup.sh
     systemctl restart systemd-networkd
+    if [[ -f /usr/share/oem/confidential_space/bc_network_optimization.sh ]]; then
+      /usr/share/oem/confidential_space/bc_network_optimization.sh
+    fi
   fi
 
   systemctl daemon-reload

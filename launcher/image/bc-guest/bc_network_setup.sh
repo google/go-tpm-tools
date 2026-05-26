@@ -35,12 +35,21 @@ RouteMetric=200
 RouteMetric=200
 EOF
 
-cat << 'EOF' > /etc/systemd/network/10-virtio.network
+cat << 'EOF' > /etc/systemd/network/10-virtio.link
 [Match]
 Driver=virtio_net
+
+[Link]
+Name=tap0
+EOF
+
+cat << 'EOF' > /etc/systemd/network/10-virtio.network
+[Match]
+Name=tap0
 
 [Network]
 Address=192.168.100.2/24
 DHCP=no
 LinkLocalAddressing=no
 EOF
+
