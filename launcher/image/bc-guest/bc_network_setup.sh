@@ -52,4 +52,3 @@ Address=192.168.100.2/24
 DHCP=no
 LinkLocalAddressing=no
 EOF
-

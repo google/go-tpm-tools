@@ -8,7 +8,7 @@ for i in {0..15}; do
     BIT=$((CPU_ID % 32))
     MASK=$(printf "%x" $((1 << BIT)))
     for ((j=0; j<BLOCK; j++)); do MASK+=",00000000"; done
-    echo $MASK > /sys/class/net/eth0/queues/tx-$i/xps_cpus
+    echo $MASK | tee /sys/class/net/eth0/queues/tx-$i/xps_cpus
 done
 
 # XPS mapping for NIC 2 (Maps to Application cores 96-111)
@@ -19,7 +19,7 @@ for i in {0..15}; do
     BIT=$((CPU_ID % 32))
     MASK=$(printf "%x" $((1 << BIT)))
     for ((j=0; j<BLOCK; j++)); do MASK+=",00000000"; done
-    echo $MASK > /sys/class/net/eth1/queues/tx-$i/xps_cpus
+    echo $MASK | tee /sys/class/net/eth1/queues/tx-$i/xps_cpus
 done
 
 # NUMA Node optimizations
