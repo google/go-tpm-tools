@@ -1,28 +1,10 @@
 #!/bin/bash
 
-# XPS mapping for NIC 1 (Maps to Application cores 40-55)
-CPU_START=40
-for i in {0..15}; do
-    CPU_ID=$((CPU_START + i))
-    BLOCK=$((CPU_ID / 32))
-    BIT=$((CPU_ID % 32))
-    MASK=$(printf "%x" $((1 << BIT)))
-    for ((j=0; j<BLOCK; j++)); do MASK+=",00000000"; done
-    echo $MASK | tee /sys/class/net/eth0/queues/tx-$i/xps_cpus
-done
+# Disable XPS
+echo 0 | tee /sys/class/net/eth0/queues/tx*/xps_cpus
+echo 0 | tee /sys/class/net/eth1/queues/tx*/xps_cpus
 
-# XPS mapping for NIC 2 (Maps to Application cores 96-111)
-CPU_START=96
-for i in {0..15}; do
-    CPU_ID=$((CPU_START + i))
-    BLOCK=$((CPU_ID / 32))
-    BIT=$((CPU_ID % 32))
-    MASK=$(printf "%x" $((1 << BIT)))
-    for ((j=0; j<BLOCK; j++)); do MASK+=",00000000"; done
-    echo $MASK | tee /sys/class/net/eth1/queues/tx-$i/xps_cpus
-done
-
-# NUMA Node optimizations
+# NUMA Node enlightment
 echo 0 > /sys/class/net/eth0/device/numa_node
 echo 1 > /sys/class/net/eth1/device/numa_node
 
@@ -39,5 +21,5 @@ sysctl -w net.core.netdev_budget=600
 sysctl -w net.core.netdev_budget_usecs=4000
 
 # IRQ smp affinity optimizations
-echo 24-39 | tee /proc/irq/*/idpf-eth0*/../smp_affinity_list > /dev/null
-echo 80-95 | tee /proc/irq/*/idpf-eth1*/../smp_affinity_list > /dev/null
+echo 40-55 | tee /proc/irq/*/idpf-eth0*/../smp_affinity_list > /dev/null
+echo 96-111 | tee /proc/irq/*/idpf-eth1*/../smp_affinity_list > /dev/null
