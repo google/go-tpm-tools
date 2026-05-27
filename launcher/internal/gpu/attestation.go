@@ -170,6 +170,10 @@ func determineAttestationType(gpuInfos []*attestationpb.GpuInfo) attestationType
 	if gpuType != deviceinfo.H100 && gpuType != deviceinfo.B200 {
 		return UNSUPPORTED
 	}
+	// H100 can only support single GPU attestation in CS at the moment.
+	if gpuType == deviceinfo.H100 && len(gpuInfos) != 1 {
+		return UNSUPPORTED
+	}
 	if gpuType == deviceinfo.B200 && len(gpuInfos) > 1 {
 		return MPT
 	}
