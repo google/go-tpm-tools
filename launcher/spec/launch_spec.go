@@ -408,9 +408,21 @@ func isHardened(kernelCmd string) bool {
 func fetchExperiments(logger logging.Logger) experiments.Experiments {
 	experimentsFile := path.Join(launcherfile.HostTmpPath, experimentDataFile)
 
-	args := fmt.Sprintf("-output=%s", experimentsFile)
 	var e experiments.Experiments
-	_ = backoff.Retry(func() error {
+	// If a pre-loaded experiments file already exists (e.g. for VG/BC modes),
+	// skip the sync phase and load it directly.
+	if _, err := os.Stat(experimentsFile); err == nil {
+		logger.Info("Pre-loaded experiments file found; skipping sync.")
+		var err error
+		e, err = experiments.New(experimentsFile)
+		if err != nil {
+			logger.Error(fmt.Sprintf("failed to read pre-loaded experiment file: %v\n", err))
+		}
+		return e
+	}
+
+	args := fmt.Sprintf("-output=%s", experimentsFile)
+	if err := backoff.Retry(func() error {
 		if err := exec.Command(binaryPath, args).Run(); err != nil {
 			logger.Error(fmt.Sprintf("failure during experiment sync: %v\n", err))
 		}
@@ -418,13 +430,16 @@ func fetchExperiments(logger logging.Logger) experiments.Experiments {
 		e, err = experiments.New(experimentsFile)
 		if err != nil {
 			logger.Error(fmt.Sprintf("failed to read experiment file: %v\n", err))
-			// do not fail if experiment retrieval fails
 		}
+		// This is expected to be true if experiment sync is successful. 
 		if !e.EnableTestFeatureForImage {
 			return fmt.Errorf("experiments synced but EnableTestFeatureForImage is false")
 		}
 		return nil
-	}, experimentSyncBackoffPolicy())
+	}, experimentSyncBackoffPolicy()); err != nil {
+		logger.Error(fmt.Sprintf("experiment retrieval failed after retries: %v\n", err))
+		// Do not fail if experiment retrieval fails.
+	}
 	return e
 }
 
