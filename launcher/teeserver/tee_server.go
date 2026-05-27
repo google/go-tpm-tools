@@ -5,6 +5,7 @@ package teeserver
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -20,18 +21,21 @@ import (
 	tspb "github.com/google/go-tpm-tools/launcher/teeserver/proto/gen/teeserver"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/google/go-tpm-tools/verifier/models"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
 
 const (
-	gcaEndpoint             = "/v1/token"
-	itaEndpoint             = "/v1/intel/token"
-	evidenceEndpoint        = "/v1/evidence"
-	endorsementEndpoint     = "/v1/keys:getEndorsement"
-	hostAttestationEndpoint = "/v1/hostAttestation"
+	gcaEndpoint               = "/v1/token"
+	itaEndpoint               = "/v1/intel/token"
+	evidenceEndpoint          = "/v1/evidence"
+	endorsementEndpoint       = "/v1/keys:getEndorsement"
+	hostAttestationEndpoint   = "/v1/hostAttestation"
+	kpsAttestationServiceAddr = "192.168.100.3:5051"
 )
 
 var clientErrorCodes = map[codes.Code]struct{}{
@@ -60,6 +64,7 @@ type attestHandler struct {
 	launchSpec        spec.LaunchSpec
 	clients           AttestClients
 	keyClaimsProvider wsd.KeyClaimsProvider
+	kemAttester       KEMAttester
 }
 
 // TeeServer is a server that can be called from a container through a unix
@@ -67,6 +72,7 @@ type attestHandler struct {
 type TeeServer struct {
 	server      *http.Server
 	netListener net.Listener
+	kpsConn     *grpc.ClientConn
 }
 
 // New takes in a socket and start to listen to it, and create a server
@@ -81,8 +87,14 @@ func New(ctx context.Context, unixSock string, a agent.AttestationAgent, logger 
 		return nil, fmt.Errorf("key claims provider cannot be nil when key manager is enabled")
 	}
 
+	kemAttester, conn, err := initKEMAttester(launchSpec.Experiments.BcMode, keyClaimsProvider, a)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize KEM attester: %v", err)
+	}
+
 	teeServer := TeeServer{
 		netListener: nl,
+		kpsConn:     conn,
 		server: &http.Server{
 			Handler: (&attestHandler{
 				ctx:               ctx,
@@ -91,10 +103,22 @@ func New(ctx context.Context, unixSock string, a agent.AttestationAgent, logger 
 				launchSpec:        launchSpec,
 				clients:           clients,
 				keyClaimsProvider: keyClaimsProvider,
+				kemAttester:       kemAttester,
 			}).Handler(),
 		},
 	}
 	return &teeServer, nil
+}
+
+func initKEMAttester(bcMode bool, keyClaimsProvider wsd.KeyClaimsProvider, a agent.AttestationAgent) (KEMAttester, *grpc.ClientConn, error) {
+	if !bcMode {
+		return newLocalKEMAttester(keyClaimsProvider, a), nil, nil
+	}
+	conn, err := grpc.NewClient(kpsAttestationServiceAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to initialize remote KEM attester: %v", err)
+	}
+	return newRemoteKEMAttester(conn), conn, nil
 }
 
 // Handler creates a multiplexer for the server.
@@ -242,7 +266,7 @@ func filterVMAttestationFields(att *attestationpb.VmAttestation, fields string) 
 
 // getKeyEndorsement retrieves the attestation evidence with KEM and binding key claims.
 func (a *attestHandler) getKeyEndorsement(w http.ResponseWriter, r *http.Request) {
-	if !a.launchSpec.Experiments.EnableKeyManager {
+	if !a.launchSpec.Experiments.EnableKeyManager && !a.launchSpec.Experiments.BcMode {
 		a.logAndWriteHTTPError(w, http.StatusForbidden, fmt.Errorf("keymanager not enabled"))
 		return
 	}
@@ -276,12 +300,6 @@ func (a *attestHandler) getKeyEndorsement(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	kemKeyClaims, err := a.keyClaimsProvider.GetKeyClaims(a.ctx, req.KeyHandle.Handle, keymanager.KeyType_KEY_TYPE_VM_PROTECTION_KEY)
-	if err != nil {
-		a.logAndWriteHTTPError(w, http.StatusInternalServerError, fmt.Errorf("failed to get KEM key claims"))
-		return
-	}
-
 	bindingKeyClaims, err := a.keyClaimsProvider.GetKeyClaims(a.ctx, req.KeyHandle.Handle, keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING)
 	if err != nil {
 		a.logAndWriteHTTPError(w, http.StatusInternalServerError, fmt.Errorf("failed to get binding key claims"))
@@ -294,26 +312,21 @@ func (a *attestHandler) getKeyEndorsement(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	kemBytes, err := proto.Marshal(kemKeyClaims)
-	if err != nil {
-		a.logAndWriteHTTPError(w, http.StatusInternalServerError, fmt.Errorf("failed to marshal KEM key claims: %v", err))
-		return
-	}
-
 	attestOpts := agent.AttestAgentOpts{
 		AcpiOpts: &agent.AcpiOpts{
 			RetrieveAcpiData: req.GetRequestAcpiData(),
 		},
 	}
-	kemEvidence, err := a.attestAgent.AttestationEvidence(a.ctx, req.Challenge, kemBytes, attestOpts)
-	if err != nil {
-		a.logAndWriteHTTPError(w, http.StatusInternalServerError, fmt.Errorf("failed to collect attestation evidence with kem key claims"))
-		return
-	}
 
 	bindingEvidence, err := a.attestAgent.AttestationEvidence(a.ctx, req.Challenge, bindingBytes, attestOpts)
 	if err != nil {
 		a.logAndWriteHTTPError(w, http.StatusInternalServerError, fmt.Errorf("failed to collect attestation evidence with binding key claims"))
+		return
+	}
+
+	kemEvidence, err := a.kemAttester.GetKeyEndorsement(a.ctx, &req)
+	if err != nil {
+		a.logAndWriteHTTPError(w, http.StatusInternalServerError, fmt.Errorf("failed to collect KEM evidence: %v", err))
 		return
 	}
 
@@ -472,16 +485,19 @@ func (s *TeeServer) Serve() error {
 
 // Shutdown will terminate the server and the underlying listener.
 func (s *TeeServer) Shutdown(ctx context.Context) error {
-	err := s.server.Shutdown(ctx)
-	err2 := s.netListener.Close()
-
-	if err != nil {
-		return err
+	var errs []error
+	if err := s.server.Shutdown(ctx); err != nil {
+		errs = append(errs, err)
 	}
-	if err2 != nil {
-		return err2
+	if err := s.netListener.Close(); err != nil {
+		errs = append(errs, err)
 	}
-	return nil
+	if s.kpsConn != nil {
+		if err := s.kpsConn.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
 }
 
 func (a *attestHandler) handleAttestError(w http.ResponseWriter, err error, message string) {

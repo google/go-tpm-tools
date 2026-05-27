@@ -1,12 +1,14 @@
 module github.com/google/go-tpm-tools/launcher
 
-go 1.24.0
+go 1.24.13
 
 require (
 	cloud.google.com/go/compute/metadata v0.9.0
 	cloud.google.com/go/logging v1.13.1
 	cos.googlesource.com/cos/tools.git v0.0.0-20250414225215-0cf736c0714c
-	github.com/GoogleCloudPlatform/confidential-space/server v0.0.0-20260522213940-e5c6d01a3007
+	github.com/GoogleCloudPlatform/confidential-space/server v0.0.0-20260528170158-db25840c8cf6
+	github.com/GoogleCloudPlatform/key-protection-module v0.0.0-20260513054212-f2adec2162e7
+	github.com/GoogleCloudPlatform/key-protection-module/keymanager/attestation_service v0.0.0-20260521155745-e940f7957554
 	github.com/NVIDIA/go-nvml v0.13.0-1
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/confidentsecurity/go-nvtrust v0.2.2
@@ -15,20 +17,19 @@ require (
 	github.com/coreos/go-systemd/v22 v22.5.0
 	github.com/golang-jwt/jwt/v4 v4.5.2
 	github.com/google/go-cmp v0.7.0
-	github.com/google/go-eventlog v0.0.3-0.20260416001248-6807b85eecf0
+	github.com/google/go-eventlog v0.0.3-0.20260520195024-af9e78c4d692
 	github.com/google/go-tpm v0.9.8
-	github.com/google/go-tpm-tools v0.4.9-0.20260325175049-22911efba9e5
-	github.com/google/go-tpm-tools/agent v0.0.0-20260407214151-8b46d3d5fd29
+	github.com/google/go-tpm-tools v0.4.9-0.20260522205405-ed0161beaf76
+	github.com/google/go-tpm-tools/agent v0.0.0-20260424173438-cf6db90d8918
 	github.com/google/go-tpm-tools/keymanager v0.4.4
 	github.com/google/go-tpm-tools/verifier v0.4.4
-	github.com/mdlayher/vsock v1.2.1
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.0
 	github.com/opencontainers/runtime-spec v1.2.0
 	golang.org/x/oauth2 v0.34.0
 	google.golang.org/api v0.265.0
 	google.golang.org/genproto/googleapis/api v0.0.0-20260203192932-546029d2fa20
-	google.golang.org/grpc v1.78.0
+	google.golang.org/grpc v1.80.0
 	google.golang.org/protobuf v1.36.11
 )
 
@@ -78,7 +79,8 @@ require (
 	github.com/googleapis/enterprise-certificate-proxy v0.3.11 // indirect
 	github.com/googleapis/gax-go/v2 v2.17.0 // indirect
 	github.com/klauspost/compress v1.17.11 // indirect
-	github.com/mdlayher/socket v0.4.1 // indirect
+	github.com/mdlayher/socket v0.5.1 // indirect
+	github.com/mdlayher/vsock v1.2.1 // indirect
 	github.com/moby/locker v1.0.1 // indirect
 	github.com/moby/sys/mountinfo v0.7.2 // indirect
 	github.com/moby/sys/sequential v0.6.0 // indirect
