@@ -491,9 +491,10 @@ func TestFetchExperiments(t *testing.T) {
 		elapsed := time.Since(start)
 
 		// Verify that the function actually retried.
-		// Constant backoff is 1s, with 3 retries, so it should take at least 3s.
-		if elapsed < 3*time.Second {
-			t.Errorf("expected fetchExperiments to retry and take >= 3s, took: %v", elapsed)
+		// Exponential backoff starting at 2s up to 8s (with 3 retries),
+		// total elapsed time should be at least 6s (approx 14s without randomization).
+		if elapsed < 6*time.Second {
+			t.Errorf("expected fetchExperiments to retry and take >= 6s, took: %v", elapsed)
 		}
 
 		// Verify it returned the default experiments struct on failure

@@ -444,7 +444,11 @@ func fetchExperiments(logger logging.Logger) experiments.Experiments {
 }
 
 func experimentSyncBackoffPolicy() backoff.BackOff {
-	b := backoff.NewConstantBackOff(time.Second)
+	b := backoff.NewExponentialBackOff()
+	b.InitialInterval = 2 * time.Second
+	b.MaxInterval = 8 * time.Second
+	b.Multiplier = 2.0
+	b.RandomizationFactor = 0.1
 	return backoff.WithMaxRetries(b, 3)
 }
 
