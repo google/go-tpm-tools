@@ -431,7 +431,7 @@ func fetchExperiments(logger logging.Logger) experiments.Experiments {
 		if err != nil {
 			logger.Error(fmt.Sprintf("failed to read experiment file: %v\n", err))
 		}
-		// This is expected to be true if experiment sync is successful. 
+		// This is expected to be true if experiment sync is successful.
 		if !e.EnableTestFeatureForImage {
 			return fmt.Errorf("experiments synced but EnableTestFeatureForImage is false")
 		}
