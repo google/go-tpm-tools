@@ -212,10 +212,13 @@ func startLauncher(launchSpec spec.LaunchSpec, serialConsole *os.File) error {
 			return fmt.Errorf("failed to install gpu drivers: %v", err)
 		}
 	} else {
-		deviceInfo, _ := deviceinfo.GetGPUTypeInfo()
-		if deviceInfo != deviceinfo.NO_GPU {
-			logger.Error("GPU is attached, tee-install-gpu-driver is not set")
-			return fmt.Errorf("failed to install GPU drivers: tee-install-gpu-driver must be set to true")
+		// TODO: Remove this when BC GPU installation is supported
+		if !launchSpec.Experiments.BcMode {
+			deviceInfo, _ := deviceinfo.GetGPUTypeInfo()
+			if deviceInfo != deviceinfo.NO_GPU {
+				logger.Error("GPU is attached, tee-install-gpu-driver is not set")
+				return fmt.Errorf("failed to install GPU drivers: tee-install-gpu-driver must be set to true")
+			}
 		}
 	}
 
