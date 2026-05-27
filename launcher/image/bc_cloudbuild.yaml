@@ -69,6 +69,7 @@ steps:
         IMAGE_PATH="/usr/share/oem/wsd/image.tar"
         IMAGE_REF="${_WSD_CONTAINER_IMAGE_REF}"
         CONTAINER_NAME="workload-service-daemon"
+        KPS_VM_IP="192.168.100.3"
         EOF
 
         cp /workspace/oem-install/confidential_space/launcher /workspace/oem-install/confidential_space/cs_container_launcher

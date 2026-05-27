@@ -1,7 +1,5 @@
 set -e
 
-DEFAULT_KPS_VM_IP="192.168.100.3"
-
 if [ -f /usr/share/oem/wsd/image.env ]; then
     source /usr/share/oem/wsd/image.env
 else
@@ -9,10 +7,7 @@ else
     exit 1
 fi
 
-KPS_VM_IP="${KPS_VM_IP:-$DEFAULT_KPS_VM_IP}"
-
 echo "=== Launching Workload Service Daemon Container ==="
-
 
 echo "Importing image from ${IMAGE_PATH}..."
 if [ -f "$IMAGE_PATH" ]; then

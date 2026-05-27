@@ -1,5 +1,6 @@
 [Unit]
 Description=Workload Service Daemon Container
+Before=container-runner.service
 After=network.target containerd.service
 Requires=containerd.service
 
