@@ -14,6 +14,7 @@ if [[ -n "$VIRTIO_INTERFACE" && "$VIRTIO_INTERFACE" != "tap0" ]]; then
     ip link set tap0 up
 fi
 
+# Save systemd network files
 mkdir -p /etc/systemd/network/
 
 # Primary GCE interface (eth0) - Higher Priority (Metric 100)
@@ -60,7 +61,7 @@ EOF
 
 cat << 'EOF' > /etc/systemd/network/10-virtio.network
 [Match]
-Name=tap0
+Driver=virtio_net
 
 [Network]
 Address=192.168.100.2/24
