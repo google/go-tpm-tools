@@ -20,6 +20,7 @@ type Experiments struct {
 	EnableKeyManager             bool
 	EnableGpuGcaSupport          bool
 	EnableHostAttestation        bool
+	BcMode                       bool
 }
 
 // New takes a filepath, opens the file, and calls ReadJsonInput with the contents
