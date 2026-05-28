@@ -65,5 +65,30 @@ if [[ -n "$VIRTIO_INTERFACE" && "$VIRTIO_INTERFACE" != "tap0" ]]; then
     udevadm trigger --subsystem-match=net --action=add
 fi
 
+# Save post-boot network optimization service to apply settings after
+# all network setup and guest agents have finished starting.
+cat << 'EOF' > /etc/systemd/system/bc-network-optimization.service
+[Unit]
+Description=Confidential Space BC Network Optimization
+After=systemd-networkd.service google-guest-agent.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/share/oem/confidential_space/bc_network_optimization.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
 # Restart systemd-networkd to apply the configuration
 systemctl restart systemd-networkd
+
+# Wait for udev events to settle and network to be fully online
+udevadm settle
+systemctl start systemd-networkd-wait-online.service || true
+
+# Enable the post-boot optimization service
+systemctl enable bc-network-optimization.service
+
