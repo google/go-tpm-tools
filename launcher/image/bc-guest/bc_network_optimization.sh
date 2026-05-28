@@ -4,8 +4,8 @@
 # Perform these first - setting ring length will reset other settings
 ethtool -G eth0 rx 2048 tx 2048
 ethtool -G eth1 rx 2048 tx 2048
-ethtool -C eth0 adaptive-rx off adaptive-tx off rx-usecs 20 tx-usecs 65
-ethtool -C eth1 adaptive-rx off adaptive-tx off rx-usecs 20 tx-usecs 65
+ethtool -C eth0 adaptive-rx off adaptive-tx off rx-usecs 20 tx-usecs 64
+ethtool -C eth1 adaptive-rx off adaptive-tx off rx-usecs 20 tx-usecs 64
 ethtool -G eth0 tcp-data-split off
 ethtool -G eth1 tcp-data-split off
 
