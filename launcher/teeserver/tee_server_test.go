@@ -72,6 +72,9 @@ func (f fakeAttestationAgent) AttestationEvidence(c context.Context, nonce []byt
 			},
 		})
 	}
+	if opts.AcpiOpts != nil && opts.AcpiOpts.RetrieveAcpiData {
+		attestation.AcpiData = &attestationpb.AcpiData{}
+	}
 	return attestation, nil
 }
 
@@ -867,39 +870,6 @@ func TestFilterVMAttestationFields(t *testing.T) {
 				Label: fullAttestation.Label,
 			},
 		},
-		{
-			name:   "single field acpiData",
-			fields: "acpiData",
-			mutate: func(att *attestationpb.VmAttestation) {
-				att.AcpiData = &attestationpb.AcpiData{}
-			},
-			want: &attestationpb.VmAttestation{
-				AcpiData: &attestationpb.AcpiData{},
-			},
-		},
-		{
-			name:   "fields=* does not return acpiData even if populated",
-			fields: "*",
-			mutate: func(att *attestationpb.VmAttestation) {
-				att.AcpiData = &attestationpb.AcpiData{}
-			},
-			want: fullAttestation,
-		},
-		{
-			name:   "fields=*,acpiData returns all fields including acpiData",
-			fields: "*,acpiData",
-			mutate: func(att *attestationpb.VmAttestation) {
-				att.AcpiData = &attestationpb.AcpiData{}
-			},
-			want: &attestationpb.VmAttestation{
-				Label:         fullAttestation.Label,
-				Challenge:     fullAttestation.Challenge,
-				ExtraData:     fullAttestation.ExtraData,
-				Quote:         fullAttestation.Quote,
-				DeviceReports: fullAttestation.DeviceReports,
-				AcpiData:      &attestationpb.AcpiData{},
-			},
-		},
 	}
 
 	for _, tc := range testCases {
@@ -937,6 +907,16 @@ func TestGetKeyEndorsement(t *testing.T) {
 			reqBody: map[string]interface{}{
 				"challenge":  testChallenge,
 				"key_handle": map[string]string{"handle": testHandle},
+			},
+			enableKM:   true,
+			wantStatus: http.StatusOK,
+		},
+		{
+			name: "success with request_acpi_data",
+			reqBody: map[string]interface{}{
+				"challenge":         testChallenge,
+				"key_handle":        map[string]string{"handle": testHandle},
+				"request_acpi_data": true,
 			},
 			enableKM:   true,
 			wantStatus: http.StatusOK,

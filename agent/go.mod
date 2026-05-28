@@ -1,6 +1,6 @@
 module github.com/google/go-tpm-tools/agent
 
-go 1.24.0
+go 1.25.0
 
 replace (
 	github.com/google/go-tpm-tools v0.4.6 => ../
@@ -8,17 +8,17 @@ replace (
 )
 
 require (
-	github.com/GoogleCloudPlatform/confidential-space/server v0.0.0-20260522213940-e5c6d01a3007
+	github.com/GoogleCloudPlatform/confidential-space/server v0.0.0-20260528170158-db25840c8cf6
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/golang-jwt/jwt/v4 v4.5.2
 	github.com/google/go-cmp v0.7.0
-	github.com/google/go-eventlog v0.0.3-0.20260416001248-6807b85eecf0
+	github.com/google/go-eventlog v0.0.3-0.20260520195024-af9e78c4d692
 	github.com/google/go-tdx-guest v0.3.2-0.20250814004405-ffb0869e6f4d
 	github.com/google/go-tpm v0.9.8
-	github.com/google/go-tpm-tools v0.4.9-0.20260325175049-22911efba9e5
+	github.com/google/go-tpm-tools v0.4.9-0.20260522205405-ed0161beaf76
 	github.com/google/go-tpm-tools/verifier v0.4.4
 	github.com/mdlayher/vsock v1.3.0
-	google.golang.org/grpc v1.78.0
+	google.golang.org/grpc v1.79.3
 	google.golang.org/protobuf v1.36.11
 )
 
