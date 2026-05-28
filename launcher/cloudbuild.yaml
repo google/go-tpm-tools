@@ -75,6 +75,16 @@ steps:
       export CGO_LDFLAGS="-L/workspace/keymanager/target/release"
       go build -o ../image/launcher -ldflags="-extldflags=-Wl,-z,lazy -X 'main.BuildCommit=${SHORT_SHA}'"
 
+- name: golang:1.24-bullseye
+  id: InvestigatorCompile
+  waitFor: ['BaseImageIdent']
+  entrypoint: /bin/bash
+  args:
+    - -c
+    - |
+      set -exuo pipefail
+      CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o ./launcher/image/investigator ./launcher/image/investigator.go
+
 - name: 'gcr.io/cloud-builders/gcloud'
   id: DownloadExpBinary
   entrypoint: 'gcloud'
@@ -94,7 +104,7 @@ steps:
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: DebugVgImageBuild
-  waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary', 'DownloadGpuDrivers']
+  waitFor: ['BaseImageIdent', 'LauncherCompile', 'InvestigatorCompile', 'DownloadExpBinary', 'DownloadGpuDrivers']
   env:
   - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-vg-debug-${_OUTPUT_IMAGE_SUFFIX}'
   - 'OUTPUT_IMAGE_FAMILY=${_OUTPUT_IMAGE_FAMILY}-vg'
@@ -121,7 +131,7 @@ steps:
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: HardenedVgImageBuild
-  waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary', 'DownloadGpuDrivers']
+  waitFor: ['BaseImageIdent', 'LauncherCompile', 'InvestigatorCompile', 'DownloadExpBinary', 'DownloadGpuDrivers']
   env:
   - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-vg-hardened-${_OUTPUT_IMAGE_SUFFIX}'
   - 'OUTPUT_IMAGE_FAMILY=${_OUTPUT_IMAGE_FAMILY}-vg'
@@ -149,7 +159,7 @@ steps:
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: DebugImageBuild
-  waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary', 'DownloadGpuDrivers']
+  waitFor: ['BaseImageIdent', 'LauncherCompile', 'InvestigatorCompile', 'DownloadExpBinary', 'DownloadGpuDrivers']
   env:
   - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-debug-${_OUTPUT_IMAGE_SUFFIX}'
   - 'OUTPUT_IMAGE_FAMILY=${_OUTPUT_IMAGE_FAMILY}'
@@ -176,7 +186,7 @@ steps:
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: HardenedImageBuild
-  waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary', 'DownloadGpuDrivers']
+  waitFor: ['BaseImageIdent', 'LauncherCompile', 'InvestigatorCompile', 'DownloadExpBinary', 'DownloadGpuDrivers']
   env:
   - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}'
   - 'OUTPUT_IMAGE_FAMILY=${_OUTPUT_IMAGE_FAMILY}'
@@ -204,7 +214,7 @@ steps:
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: DebugBcImageBuildAndExport
-  waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary']
+  waitFor: ['BaseImageIdent', 'LauncherCompile', 'InvestigatorCompile', 'DownloadExpBinary']
   env: 
   - 'BC_BASE_IMAGE=$_BC_DEBUG_IMAGE'
   - 'BC_BASE_IMAGE_PROJECT=$_BC_BASE_IMAGE_PROJECT'
@@ -231,7 +241,7 @@ steps:
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: HardenedBcImageBuildAndExport
-  waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary']
+  waitFor: ['BaseImageIdent', 'LauncherCompile', 'InvestigatorCompile', 'DownloadExpBinary']
   env: 
   - 'BC_BASE_IMAGE=$_BC_BASE_IMAGE'
   - 'BC_BASE_IMAGE_PROJECT=$_BC_BASE_IMAGE_PROJECT'

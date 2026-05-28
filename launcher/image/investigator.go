@@ -1,3 +1,4 @@
+// investigator is the investigator service.
 package main
 
 import (

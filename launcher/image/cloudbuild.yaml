@@ -9,9 +9,6 @@ substitutions:
   '_PRELOAD_SCRIPT': ''
 
 steps:
-  - name: 'gcr.io/cloud-builders/go'
-    args: ['build', '-o', 'launcher/image/investigator', 'launcher/image/investigator.go']
-    env: ['CGO_ENABLED=0', 'GOOS=linux', 'GOARCH=amd64']
   - name: 'gcr.io/cos-cloud/cos-customizer'
     args: ['start-image-build',
            '-build-context=launcher/image',
