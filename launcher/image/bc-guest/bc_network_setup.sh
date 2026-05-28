@@ -1,4 +1,5 @@
 #!/bin/bash
+# Blah
 mkdir -p /etc/systemd/network/
 
 cat << 'EOF' > /etc/systemd/network/10-idpf.network
