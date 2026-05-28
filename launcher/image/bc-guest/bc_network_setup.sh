@@ -85,10 +85,9 @@ EOF
 # Restart systemd-networkd to apply the configuration
 systemctl restart systemd-networkd
 
-# Wait for udev events to settle and network to be fully online
-udevadm settle
-systemctl start systemd-networkd-wait-online.service || true
-
-# Enable the post-boot optimization service
+# Enable and start the post-boot optimization service.
+# systemd will automatically resolve dependencies and run the script
+# after the network is fully online and the guest agent has finished starting.
 systemctl enable bc-network-optimization.service
+systemctl start bc-network-optimization.service
 
