@@ -85,9 +85,19 @@ EOF
 # Restart systemd-networkd to apply the configuration
 systemctl restart systemd-networkd
 
-# Enable and start the post-boot optimization service.
-# systemd will automatically resolve dependencies and run the script
-# after the network is fully online and the guest agent has finished starting.
+# Save a custom udev rule to apply runtime network optimizations (XPS, NUMA, IRQ affinity)
+# on interface add/change events. This ensures optimizations are persistently applied
+# whenever the interface state changes or is reset by standard GCE network agents.
+# We name it lexically high (99-zz-...) to run after standard GCE udev rules.
+mkdir -p /etc/udev/rules.d/
+cat << 'EOF' > /etc/udev/rules.d/99-zz-bc-network-optimization.rules
+ACTION=="add|change", SUBSYSTEM=="net", KERNEL=="eth[01]", RUN+="/usr/share/oem/confidential_space/bc_network_runtime_optimization.sh"
+EOF
+
+# Reload udev rules
+udevadm control --reload-rules
+
+# Enable and start the post-boot optimization service to perform one-time settings (ring size, etc.)
 systemctl enable bc-network-optimization.service
 systemctl start bc-network-optimization.service
 

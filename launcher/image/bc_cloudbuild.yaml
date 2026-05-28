@@ -46,6 +46,7 @@ steps:
            ./launcher/image/exit_script.sh \
            ./launcher/image/bc-guest/bc_network_setup.sh \
            ./launcher/image/bc-guest/bc_network_optimization.sh \
+           ./launcher/image/bc-guest/bc_network_runtime_optimization.sh \
            /workspace/oem-install/confidential_space/
         cp ./launcher/image/nodeproblemdetector/* /workspace/oem-install/confidential_space/nodeproblemdetector/
 
@@ -55,7 +56,8 @@ steps:
         chmod +x /workspace/oem-install/confidential_space/cs_container_launcher || true
         chmod +x /workspace/oem-install/confidential_space/exit_script.sh || true
         chmod +x /workspace/oem-install/confidential_space/bc_network_setup.sh || true
-         chmod +x /workspace/oem-install/confidential_space/bc_network_optimization.sh || true
+        chmod +x /workspace/oem-install/confidential_space/bc_network_optimization.sh || true
+        chmod +x /workspace/oem-install/confidential_space/bc_network_runtime_optimization.sh || true
         chmod +x /workspace/oem-install/entrypoint.sh || true
 
   - name: 'gcr.io/cloud-builders/gcloud'
