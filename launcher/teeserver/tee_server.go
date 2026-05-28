@@ -187,9 +187,6 @@ func (a *attestHandler) getAttestationEvidence(w http.ResponseWriter, r *http.Re
 		DeviceReportOpts: &agent.DeviceReportOpts{
 			EnableRuntimeGPUAttestation: fields == "*" || strings.Contains(fields, "deviceReports"),
 		},
-		AcpiOpts: &agent.AcpiOpts{
-			RetrieveAcpiData: strings.Contains(fields, "acpiData"),
-		},
 	}
 	evidence, err := a.attestAgent.AttestationEvidence(a.ctx, req.Challenge, nil, attestOpts)
 	if err != nil {
@@ -215,28 +212,13 @@ func (a *attestHandler) getAttestationEvidence(w http.ResponseWriter, r *http.Re
 
 // filterVMAttestationFields return a partial VM Attestation based on the query parameters.
 func filterVMAttestationFields(att *attestationpb.VmAttestation, fields string) (*attestationpb.VmAttestation, error) {
-	if fields == "" {
-		return &attestationpb.VmAttestation{
-			Label:     att.GetLabel(),
-			Challenge: att.GetChallenge(),
-			ExtraData: att.GetExtraData(),
-			Quote:     att.GetQuote(),
-		}, nil
+	if fields == "" || fields == "*" {
+		return att, nil
 	}
-
 	fieldSlice := strings.Split(fields, ",")
 	fieldMap := make(map[string]bool)
 	for _, f := range fieldSlice {
 		fieldMap[strings.TrimSpace(f)] = true
-	}
-
-	if fieldMap["*"] {
-		if fieldMap["acpiData"] {
-			return att, nil
-		}
-		out := proto.Clone(att).(*attestationpb.VmAttestation)
-		out.AcpiData = nil
-		return out, nil
 	}
 
 	out := &attestationpb.VmAttestation{}
@@ -254,9 +236,6 @@ func filterVMAttestationFields(att *attestationpb.VmAttestation, fields string) 
 	}
 	if fieldMap["deviceReports"] {
 		out.DeviceReports = att.GetDeviceReports()
-	}
-	if fieldMap["acpiData"] {
-		out.AcpiData = att.GetAcpiData()
 	}
 	return out, nil
 }
