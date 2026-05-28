@@ -4,7 +4,7 @@ Wants=network-online.target
 After=network-online.target
 
 [Service]
-ExecStart=/usr/share/oem/confidential_space/internal-investigator.sh
+ExecStart=/usr/share/oem/confidential_space/investigator
 Restart=always
 StandardOutput=journal
 StandardError=journal
