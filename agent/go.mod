@@ -1,6 +1,6 @@
 module github.com/google/go-tpm-tools/agent
 
-go 1.25.0
+go 1.24.0
 
 replace (
 	github.com/google/go-tpm-tools v0.4.6 => ../
