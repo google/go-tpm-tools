@@ -1,13 +1,20 @@
 #!/bin/bash
 
 # Ethtool optimizations
-# Perform these first - setting ring length will reset other settings
-ethtool -G eth0 rx 2048 tx 2048
-ethtool -G eth1 rx 2048 tx 2048
+# Configure eth0
+ethtool -G eth0 rx 2048 tx 2048 tcp-data-split off
 ethtool -C eth0 adaptive-rx off adaptive-tx off rx-usecs 20 tx-usecs 64
+
+# Block until systemd-networkd reports eth0 is fully back online (up to 15 seconds)
+systemd-networkd-wait-online -i eth0 --timeout=15 || true
+
+# Configure eth1
+ethtool -G eth1 rx 2048 tx 2048 tcp-data-split off
 ethtool -C eth1 adaptive-rx off adaptive-tx off rx-usecs 20 tx-usecs 64
-ethtool -G eth0 tcp-data-split off
-ethtool -G eth1 tcp-data-split off
+
+# Block until systemd-networkd reports eth1 is fully back online (up to 15 seconds)
+systemd-networkd-wait-online -i eth1 --timeout=15 || true
+
 
 # Sysctl optimizations
 sysctl -w net.core.netdev_budget=600
