@@ -1,5 +1,5 @@
 substitutions:
-  '_BASE_IMAGE': '' # If left empty, will use the latest image in _BASE_IMAGE_FAMILY of _BASE_IMAGE_PROJECT
+  '_BASE_IMAGE': 'cos-tdx-113-18244-521-55' # latest as of Dec 16 2025
   '_BASE_IMAGE_FAMILY': 'cos-tdx-113-lts'
   '_BASE_IMAGE_PROJECT': 'confidential-vm-images'
   '_OUTPUT_IMAGE_PREFIX': 'confidential-space'
