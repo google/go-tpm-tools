@@ -15,7 +15,7 @@ substitutions:
 
 steps:
 - name: 'gcr.io/cloud-builders/gcloud'
-  id: CreateMonitorVMGracefulShutdown
+  id: CreateMonitorVM
   env:
   - 'BUILD_ID=$BUILD_ID'
   - 'ZONE=$_ZONE'
@@ -56,7 +56,7 @@ steps:
       --format="get(networkInterfaces[0].networkIP)" > /workspace/monitor_ip.txt
 
 - name: 'gcr.io/cloud-builders/gcloud'
-  id: CreateWorkloadVMGracefulShutdown
+  id: CreateWorkloadVM
   env:
   - 'BUILD_ID=$BUILD_ID'
   - 'IMAGE_NAME=$_IMAGE_NAME'
@@ -82,7 +82,7 @@ steps:
         ]
 
 - name: 'gcr.io/cloud-builders/gcloud'
-  id: CleanUpGracefulShutdown
+  id: CleanUp
   env:
   - 'CLEANUP=$_CLEANUP'
   - 'BUILD_ID=$BUILD_ID'
