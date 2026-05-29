@@ -8,12 +8,6 @@ main() {
   cp /usr/share/oem/confidential_space/container-runner.service /etc/systemd/system/container-runner.service
   # Override default fluent-bit config.
   cp /usr/share/oem/confidential_space/fluent-bit-cs.conf /etc/fluent-bit/fluent-bit.conf
-  # Deprive logind of its power button handling capability for debug images.
-  if [[ "$(systemctl show -p LoadState systemd-logind.service 2>/dev/null)" == "LoadState=loaded" ]]; then
-    mkdir -p /etc/systemd/logind.conf.d
-    cp /usr/share/oem/confidential_space/logind_override.conf /etc/systemd/logind.conf.d/logind_override.conf
-    systemctl restart systemd-logind.service
-  fi
 
   mkdir /tmp/container_launcher
   chmod +rw /tmp/container_launcher

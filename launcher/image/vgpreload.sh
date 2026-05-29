@@ -21,7 +21,6 @@ copy_experiment_file() {
 setup_launcher_systemd_unit() {
   cp container-runner.service "${CS_PATH}/container-runner.service"
   cp exit_script.sh "${CS_PATH}/exit_script.sh"
-  cp logind_override.conf "${CS_PATH}/logind_override.conf"
 }
 
 append_cmdline() {
