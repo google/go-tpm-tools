@@ -3,40 +3,36 @@
 # Set flag to block concurrent udev-triggered executions of the runtime optimization script
 touch /tmp/bc_network_optimizing
 
+wait_stable() {
+  local intf="$1"
+  local timeout_secs="$2"
+
+  # Wait for physical link/carrier to be restored in sysfs
+  local timeout=$((timeout_secs * 2)) # Since we sleep 0.5s
+  while [[ "$(cat "/sys/class/net/${intf}/carrier" 2>/dev/null)" != "1" ]]; do
+    sleep 0.5
+    ((timeout--))
+    if ((timeout <= 0)); then
+      echo "Timeout waiting for ${intf} carrier" >&2
+      break
+    fi
+  done
+
+  systemd-networkd-wait-online -i "$intf" --timeout="$timeout_secs" || true
+}
+
 # --- Configure eth0 ---
-# 1. Trigger ring size and tcp-data-split reconfiguration (resets the interface)
+wait_stable eth0 30
+# Note: changing ring size resets the interface
 ethtool -G eth0 rx 2048 tx 2048 tcp-data-split off
-# 2. Wait for the physical link/carrier to be restored in sysfs
-TIMEOUT=30
-while [[ "$(cat /sys/class/net/eth0/carrier 2>/dev/null)" != "1" ]]; do
-  sleep 0.5
-  ((TIMEOUT--))
-  if ((TIMEOUT <= 0)); then
-    echo "Timeout waiting for eth0 carrier" >&2
-    break
-  fi
-done
-# 3. Block until eth0 is fully back online and stable in systemd-networkd
-systemd-networkd-wait-online -i eth0 --timeout=15 || true
-# 4. Apply coalescing parameters to the stable, active interface
+wait_stable eth0 30
 ethtool -C eth0 adaptive-rx off adaptive-tx off rx-usecs 20 tx-usecs 64
 
 # --- Configure eth1 ---
-# 1. Trigger ring size and tcp-data-split reconfiguration (resets the interface)
+wait_stable eth1 30
+# Note: changing ring size resets the interface
 ethtool -G eth1 rx 2048 tx 2048 tcp-data-split off
-# 2. Wait for the physical link/carrier to be restored in sysfs
-TIMEOUT=30
-while [[ "$(cat /sys/class/net/eth1/carrier 2>/dev/null)" != "1" ]]; do
-  sleep 0.5
-  ((TIMEOUT--))
-  if ((TIMEOUT <= 0)); then
-    echo "Timeout waiting for eth1 carrier" >&2
-    break
-  fi
-done
-# 3. Block until eth1 is fully back online and stable in systemd-networkd
-systemd-networkd-wait-online -i eth1 --timeout=15 || true
-# 4. Apply coalescing parameters to the stable, active interface
+wait_stable eth1 30
 ethtool -C eth1 adaptive-rx off adaptive-tx off rx-usecs 20 tx-usecs 64
 
 # Remove the optimization flag
