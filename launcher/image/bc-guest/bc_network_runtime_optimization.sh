@@ -4,6 +4,9 @@ wait_stable() {
   local intf="$1"
   local timeout_secs="$2"
 
+  # Wait for interface to go down if it was just reset
+  sleep 1
+
   # Wait for physical link/carrier to be restored in sysfs
   local timeout=$((timeout_secs * 2)) # Since we sleep 0.5s
   while [[ "$(cat "/sys/class/net/${intf}/carrier" 2>/dev/null)" != "1" ]]; do
