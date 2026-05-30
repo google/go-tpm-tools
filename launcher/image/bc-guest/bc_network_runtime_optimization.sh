@@ -21,16 +21,19 @@ wait_stable() {
   # Force systemd to wait until it is fully routable (has DHCP)
   systemd-networkd-wait-online -i "${intf}:routable" --timeout="$timeout_secs" || true
 
-  # Wait for interface IRQ entries to be fully populated in procfs
-  local irq_timeout=20
+  # Wait for interface IRQ entries to begin appearing in procfs
+  local timeout=$((timeout_secs * 2)) 
   while ! ls /proc/irq/*/idpf-${intf}* >/dev/null 2>&1; do
     sleep 0.5
-    ((irq_timeout--))
-    if ((irq_timeout <= 0)); then
+    ((timeout--))
+    if ((timeout <= 0)); then
       echo "Timeout waiting for ${intf} IRQ entries to appear" >&2
       break
     fi
   done
+  
+  # Let the driver finish allocating the remaining queues and applying its internal affinity hints
+  sleep 2
 }
 
 wait_stable eth0 30

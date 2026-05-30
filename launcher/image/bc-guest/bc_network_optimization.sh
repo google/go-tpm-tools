@@ -50,10 +50,14 @@ fi
 # on interface add/change events. This ensures optimizations are persistently applied
 # whenever the interface state changes or is reset by standard GCE network agents.
 # We name it lexically high (99-zz-...) to run after standard GCE udev rules.
-mkdir -p /etc/udev/rules.d/
 cat << 'EOF' > /etc/udev/rules.d/99-zz-bc-network-optimization.rules
-ACTION=="add|change", SUBSYSTEM=="net", KERNEL=="eth[01]", RUN+="/usr/share/oem/confidential_space/bc_network_runtime_optimization.sh"
+ACTION=="add|change", \
+SUBSYSTEM=="net", \
+KERNEL=="eth[01]", \
+RUN+="/usr/bin/systemd-run --no-block --unit=bc-net-opt-%k /usr/share/oem/confidential_space/bc_network_runtime_optimization.sh"
 EOF
+
+
 
 # Reload udev rules
 udevadm control --reload-rules
