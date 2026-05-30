@@ -15,8 +15,8 @@ wait_stable() {
     fi
   done
 
-  # Wait for interface to be fully online and stable in systemd-networkd
-  systemd-networkd-wait-online -i "$intf" --timeout="$timeout_secs" || true
+  # Force systemd to wait until it is fully routable (has DHCP)
+  systemd-networkd-wait-online -i "${intf}:routable" --timeout="$timeout_secs" || true
 
   # Wait for interface IRQ entries to be fully populated in procfs
   local irq_timeout=20
