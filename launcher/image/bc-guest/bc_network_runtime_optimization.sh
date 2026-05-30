@@ -1,49 +1,37 @@
 #!/bin/bash
 
-# Wait for the early-boot optimization service to complete (timeout up to 30s)
-TIMEOUT=30
-while [[ -f /tmp/bc_network_optimizing ]]; do
-  sleep 1
-  ((TIMEOUT--))
-  if ((TIMEOUT <= 0)); then
-    echo "Timeout waiting for bc_network_optimizing to complete. Exiting." >&2
-    exit 1
-  fi
-done
+wait_stable() {
+  local intf="$1"
+  local timeout_secs="$2"
 
-# Wait for interfaces to be online and their IRQ entries to be fully populated in procfs
-if [[ -d /sys/class/net/eth0 ]]; then
-  systemd-networkd-wait-online -i eth0 --timeout=15 || true
-  
-  # Wait for eth0 IRQs to appear
-  IRQ_TIMEOUT=20
-  while ! ls /proc/irq/*/idpf-eth0* >/dev/null 2>&1; do
+  # Wait for physical link/carrier to be restored in sysfs
+  local timeout=$((timeout_secs * 2)) # Since we sleep 0.5s
+  while [[ "$(cat "/sys/class/net/${intf}/carrier" 2>/dev/null)" != "1" ]]; do
     sleep 0.5
-    ((IRQ_TIMEOUT--))
-    if ((IRQ_TIMEOUT <= 0)); then
-      echo "Timeout waiting for eth0 IRQ entries to appear" >&2
+    ((timeout--))
+    if ((timeout <= 0)); then
+      echo "Timeout waiting for ${intf} carrier" >&2
       break
     fi
   done
-fi
 
-if [[ -d /sys/class/net/eth1 ]]; then
-  systemd-networkd-wait-online -i eth1 --timeout=15 || true
-  
-  # Wait for eth1 IRQs to appear
-  IRQ_TIMEOUT=20
-  while ! ls /proc/irq/*/idpf-eth1* >/dev/null 2>&1; do
+  # Wait for interface to be fully online and stable in systemd-networkd
+  systemd-networkd-wait-online -i "$intf" --timeout="$timeout_secs" || true
+
+  # Wait for interface IRQ entries to be fully populated in procfs
+  local irq_timeout=20
+  while ! ls /proc/irq/*/idpf-${intf}* >/dev/null 2>&1; do
     sleep 0.5
-    ((IRQ_TIMEOUT--))
-    if ((IRQ_TIMEOUT <= 0)); then
-      echo "Timeout waiting for eth1 IRQ entries to appear" >&2
+    ((irq_timeout--))
+    if ((irq_timeout <= 0)); then
+      echo "Timeout waiting for ${intf} IRQ entries to appear" >&2
       break
     fi
   done
-fi
+}
 
-# Sleep briefly to ensure the driver/kernel default affinity assignments have completed
-sleep 1
+wait_stable eth0 30
+wait_stable eth1 30
 
 # Disable XPS
 echo 0 | tee /sys/class/net/eth0/queues/tx*/xps_cpus 2>/dev/null || true
