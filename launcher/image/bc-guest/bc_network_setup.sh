@@ -82,10 +82,31 @@ RemainAfterExit=yes
 WantedBy=multi-user.target
 EOF
 
+# Save background network monitor service to dynamically re-apply optimizations on carrier up events.
+cat << 'EOF' > /etc/systemd/system/bc-network-monitor.service
+[Unit]
+Description=Confidential Space BC Network Monitor
+After=bc-network-optimization.service
+Wants=bc-network-optimization.service
+
+[Service]
+Type=simple
+ExecStart=/usr/share/oem/confidential_space/bc_network_monitor.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
 # Restart systemd-networkd to apply the configuration
 systemctl restart systemd-networkd
 
 # Enable and start the post-boot optimization service to perform one-time settings (ring size, etc.)
 systemctl enable bc-network-optimization.service
 systemctl start bc-network-optimization.service
+
+# Enable and start the background network monitor service
+systemctl enable bc-network-monitor.service
+systemctl start bc-network-monitor.service
 

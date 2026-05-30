@@ -36,31 +36,58 @@ wait_stable() {
   sleep 2
 }
 
+run_optimize() {
+  local intf="$1"
+  local node irq_affinity
+
+  if [[ "$intf" == "eth0" ]]; then
+    node=0
+    irq_affinity="40-55"
+  elif [[ "$intf" == "eth1" ]]; then
+    node=1
+    irq_affinity="96-111"
+  else
+    echo "Unknown interface: ${intf}" >&2
+    return 1
+  fi
+
+  echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] wait for ${intf} to stabilize - i" > /dev/console
+  wait_stable "${intf}" 30
+
+  # Disable XPS
+  echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] disable XPS on ${intf} - j" > /dev/console
+  echo 0 | tee "/sys/class/net/${intf}/queues/tx*/xps_cpus" 2>/dev/null || true
+
+  # NUMA Node enlightment
+  echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] numa node enlightment on ${intf} - k" > /dev/console
+  echo "${node}" | tee "/sys/class/net/${intf}/device/numa_node" 2>/dev/null || true
+
+  # IRQ smp affinity optimizations
+  echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] IRQ smp affinity optimizations on ${intf} - l" > /dev/console
+  echo "${irq_affinity}" | tee /proc/irq/*/idpf-${intf}*/../smp_affinity_list 2>/dev/null || true
+}
+
+optimize_interface() {
+  local intf="$1"
+  # Only start the optimization if the optimization isn't already running for the given interface
+  if command -v flock >/dev/null 2>&1; then
+    (
+      flock -n 9 || { echo "Optimization for ${intf} already in progress, skipping." > /dev/console; exit 0; }
+      run_optimize "${intf}"
+    ) 9>"/run/bc-network-opt-${intf}.lock"
+  else
+    run_optimize "${intf}"
+  fi
+}
+
 echo "Network runtime optimizations starting" > /dev/console
-
-echo "wait for eth0 to stabilize - i" > /dev/console
-wait_stable eth0 30
-
-echo "wait for eth1 to stabilize - j" > /dev/console
-wait_stable eth1 30
-
-# Disable XPS
-echo "disable XPS on eth0 - k" > /dev/console
-echo 0 | tee /sys/class/net/eth0/queues/tx*/xps_cpus 2>/dev/null || true
-echo "disable XPS on eth1 - l" > /dev/console
-echo 0 | tee /sys/class/net/eth1/queues/tx*/xps_cpus 2>/dev/null || true
-
-# NUMA Node enlightment
-echo "numa node enlightment on eth0 - m" > /dev/console
-echo 0 | tee /sys/class/net/eth0/device/numa_node 2>/dev/null || true
-echo "numa node enlightment on eth1 - n" > /dev/console
-echo 1 | tee /sys/class/net/eth1/device/numa_node 2>/dev/null || true
-
-# IRQ smp affinity optimizations
-echo "IRQ smp affinity optimizations on eth0 - o" > /dev/console
-echo 40-55 | tee /proc/irq/*/idpf-eth0*/../smp_affinity_list 2>/dev/null || true
-echo "IRQ smp affinity optimizations on eth1 - p" > /dev/console
-echo 96-111 | tee /proc/irq/*/idpf-eth1*/../smp_affinity_list 2>/dev/null || true
+target_intf="$1"
+if [[ -z "$target_intf" ]]; then
+  optimize_interface eth0
+  optimize_interface eth1
+elif [[ "$target_intf" == "eth0" || "$target_intf" == "eth1" ]]; then
+  optimize_interface "$target_intf"
+fi
 
 # Sysctl optimizations
 echo "Sysctl optimizations" > /dev/console
