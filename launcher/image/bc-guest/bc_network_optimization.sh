@@ -26,19 +26,28 @@ wait_stable() {
         if ((ip_timeout <= 0)); then break; fi
     done
 }
+echo "Starting network optimization" > /dev/console
 
 # --- Configure eth0 ---
+echo "wait for eth0 to be ready - a" > /dev/console
 wait_stable eth0 30
 # Note: changing ring size resets the interface
+echo "change eth0 queue size - b" > /dev/console
 ethtool -G eth0 rx 2048 tx 2048 tcp-data-split off
+echo "wait for eth0 to stabilize - c" > /dev/console
 wait_stable eth0 30
+echo "change eth0 interrupt coalescing - d" > /dev/console
 ethtool -C eth0 adaptive-rx off adaptive-tx off rx-usecs 20 tx-usecs 64
 
 # --- Configure eth1 ---
+echo "wait for eth1 to be ready - e" > /dev/console
 wait_stable eth1 30
 # Note: changing ring size resets the interface
+echo "change eth1 queue size - f" > /dev/console
 ethtool -G eth1 rx 2048 tx 2048 tcp-data-split off
+echo "wait for eth1 to stabilize - g" > /dev/console 
 wait_stable eth1 30
+echo "change eth1 interrupt coalescing - h" > /dev/console
 ethtool -C eth1 adaptive-rx off adaptive-tx off rx-usecs 20 tx-usecs 64
 
 # Run runtime optimizations
@@ -57,7 +66,7 @@ KERNEL=="eth[01]", \
 RUN+="/usr/bin/systemd-run --no-block --unit=bc-net-opt-%k /usr/share/oem/confidential_space/bc_network_runtime_optimization.sh"
 EOF
 
-
-
 # Reload udev rules
 udevadm control --reload-rules
+
+echo "Network optimization complete" > /dev/console
