@@ -1,18 +1,4 @@
 #!/bin/bash
-find_interface_by_driver() {
-  local target_driver="$1"
-  for intf in /sys/class/net/*; do
-    [[ -e "$intf/device/driver" ]] || continue
-    local driver
-    driver=$(basename "$(readlink "$intf/device/driver")")
-    if [[ "$driver" == "$target_driver" ]]; then
-      basename "$intf"
-      return 0
-    fi
-  done
-  return 1
-}
-
 find_interfaces_by_driver() {
   local target_driver="$1"
   local found=()
@@ -37,8 +23,8 @@ get_pci_path() {
   basename "$(readlink "/sys/class/net/${intf}/device" 2>/dev/null)"
 }
 
-# Find Virtio net interface
-VIRTIO_INTF=$(find_interface_by_driver "virtio_net")
+VIRTIO_INTFS=($(find_interfaces_by_driver "virtio_net"))
+VIRTIO_INTF="${VIRTIO_INTFS[0]}"
 VIRTIO_MAC=""
 if [[ -n "$VIRTIO_INTF" ]]; then
   VIRTIO_MAC=$(get_mac "$VIRTIO_INTF")
