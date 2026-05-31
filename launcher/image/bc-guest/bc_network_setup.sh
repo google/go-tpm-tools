@@ -108,11 +108,7 @@ EOF
 # Restart systemd-networkd to apply the configuration
 systemctl restart systemd-networkd
 
-# Enable both services first to prevent enablement races
+# Start the network optimization service
 systemctl enable bc-network-optimization.service
-systemctl enable bc-network-monitor.service
-
-# Start the monitor service first, then the optimization service
-systemctl start bc-network-monitor.service
 systemctl start bc-network-optimization.service
 

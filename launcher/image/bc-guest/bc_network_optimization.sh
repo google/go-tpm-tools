@@ -56,3 +56,8 @@ ethtool -C eth1 adaptive-rx off adaptive-tx off rx-usecs 20 tx-usecs 64
 if [[ -f /usr/share/oem/confidential_space/bc_network_runtime_optimization.sh ]]; then
   /usr/share/oem/confidential_space/bc_network_runtime_optimization.sh
 fi
+
+# Enable and start the background network monitor service to dynamically 
+# re-apply optimizations on carrier up events
+systemctl enable bc-network-monitor.service
+systemctl start bc-network-monitor.service
