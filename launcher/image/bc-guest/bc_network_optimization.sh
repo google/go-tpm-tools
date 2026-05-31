@@ -31,6 +31,11 @@ echo "Starting network optimization" > /dev/console
 # --- Configure eth0 ---
 echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] wait for eth0 to be ready - a" > /dev/console
 wait_stable eth0 30
+# Note: changing combined queue count resets the interface
+echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] maximize eth0 combined queues - a1" > /dev/console
+ethtool -L eth0 combined 16
+echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] wait for eth0 to be ready - a2" > /dev/console
+wait_stable eth0 30
 # Note: changing ring size resets the interface
 echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] change eth0 queue size - b" > /dev/console
 ethtool -G eth0 rx 2048 tx 2048 tcp-data-split off
@@ -41,6 +46,11 @@ ethtool -C eth0 adaptive-rx off adaptive-tx off rx-usecs 20 tx-usecs 64
 
 # --- Configure eth1 ---
 echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] wait for eth1 to be ready - e" > /dev/console
+wait_stable eth1 30
+# Note: changing combined queue count resets the interface
+echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] maximize eth1 combined queues - e1" > /dev/console
+ethtool -L eth1 combined 16
+echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] wait for eth1 to be ready - e2" > /dev/console
 wait_stable eth1 30
 # Note: changing ring size resets the interface
 echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] change eth1 queue size - f" > /dev/console

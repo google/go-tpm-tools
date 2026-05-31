@@ -1,5 +1,11 @@
 #!/bin/bash
 
+# Bind-mount /bin/true over the google_set_multiqueue to disable it and prevent random resets to XPS
+if [[ -f /usr/bin/google_set_multiqueue ]]; then
+  echo "Disabling /usr/bin/google_set_multiqueue via bind mount" > /dev/console
+  mount --bind /bin/true /usr/bin/google_set_multiqueue || true
+fi
+
 # Save systemd network files
 mkdir -p /etc/systemd/network/
 
@@ -102,11 +108,11 @@ EOF
 # Restart systemd-networkd to apply the configuration
 systemctl restart systemd-networkd
 
-# Enable and start the post-boot optimization service to perform one-time settings (ring size, etc.)
+# Enable both services first to prevent enablement races
 systemctl enable bc-network-optimization.service
-systemctl start bc-network-optimization.service
-
-# Enable and start the background network monitor service
 systemctl enable bc-network-monitor.service
+
+# Start the monitor service first, then the optimization service
 systemctl start bc-network-monitor.service
+systemctl start bc-network-optimization.service
 
