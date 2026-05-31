@@ -51,19 +51,15 @@ run_optimize() {
     return 1
   fi
 
-  echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] wait for ${intf} to stabilize - i" > /dev/console
   wait_stable "${intf}" 30
 
   # Disable XPS
-  echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] disable XPS on ${intf} - j" > /dev/console
   echo 0 | tee "/sys/class/net/${intf}/queues/tx*/xps_cpus" 2>/dev/null || true
 
   # NUMA Node enlightment
-  echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] numa node enlightment on ${intf} - k" > /dev/console
   echo "${node}" | tee "/sys/class/net/${intf}/device/numa_node" 2>/dev/null || true
 
   # IRQ smp affinity optimizations
-  echo "[$(date -u +'%Y-%m-%dT%H:%M:%SZ')] IRQ smp affinity optimizations on ${intf} - l" > /dev/console
   echo "${irq_affinity}" | tee /proc/irq/*/idpf-${intf}*/../smp_affinity_list 2>/dev/null || true
 }
 
@@ -80,7 +76,6 @@ optimize_interface() {
   fi
 }
 
-echo "Network runtime optimizations starting" > /dev/console
 target_intf="$1"
 if [[ -z "$target_intf" ]]; then
   optimize_interface eth0
@@ -90,8 +85,5 @@ elif [[ "$target_intf" == "eth0" || "$target_intf" == "eth1" ]]; then
 fi
 
 # Sysctl optimizations
-echo "Sysctl optimizations" > /dev/console
 sysctl -w net.core.netdev_budget=600 2>/dev/null || true
 sysctl -w net.core.netdev_budget_usecs=4000 2>/dev/null || true
-
-echo "Network runtime optimizations complete" > /dev/console

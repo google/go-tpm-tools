@@ -1,10 +1,8 @@
 #!/bin/bash
 
 # Monitor network interface operational state changes.
-# When an interface transitions to UP state, dynamically trigger its runtime optimization
-# via a transient systemd service unit. This is robust, leverages systemd logging,
-# and handles concurrent execution safely.
-
+# When an interface transitions to UP state, dynamically trigger its
+# runtime optimization via a transient systemd service unit.
 ip monitor link | grep --line-buffered -E 'eth[01]:.*state UP' | while read -r event; do
   if [[ "$event" =~ eth0 ]]; then
     intf="eth0"
