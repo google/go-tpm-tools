@@ -108,7 +108,10 @@ EOF
 # Restart systemd-networkd to apply the configuration
 systemctl restart systemd-networkd
 
-# Start the network optimization service
+# Reload systemd to recognize the newly created .service files
+systemctl daemon-reload
+
+# Start the network optimization service asynchronously in the background
 systemctl enable bc-network-optimization.service
-systemctl start bc-network-optimization.service
+systemctl start --no-block bc-network-optimization.service
 

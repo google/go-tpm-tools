@@ -1,10 +1,21 @@
 #!/bin/bash
 
+log_echo() {
+  local btime
+  btime=$(awk '/btime/{print $2}' /proc/stat 2>/dev/null || echo 0)
+  local current
+  current=$(date +%s.%N 2>/dev/null || echo 0)
+  local ts
+  ts=$(awk -v btime="$btime" -v current="$current" 'BEGIN {printf "[%12.6f]", current - btime}' 2>/dev/null || echo "[   0.000000]")
+  echo "$ts $*"
+}
+
 wait_stable() {
   local intf="$1"
   local timeout_secs="$2"
 
   # Wait for interface to go down in case it was just reset
+    
     local down_checks=10
     while [[ "$(cat "/sys/class/net/${intf}/carrier" 2>/dev/null)" == "1" ]]; do
         sleep 0.5
@@ -13,26 +24,29 @@ wait_stable() {
     done
 
   # Wait for physical link/carrier to be restored in sysfs
+  log_echo "Waiting for ${intf} carrier to come up..." > /dev/console
   local timeout=$((timeout_secs * 2)) # Since we sleep 0.5s
   while [[ "$(cat "/sys/class/net/${intf}/carrier" 2>/dev/null)" != "1" ]]; do
     sleep 0.5
     ((timeout--))
     if ((timeout <= 0)); then
-      echo "Timeout waiting for ${intf} carrier" >&2
+      log_echo "Timeout waiting for ${intf} carrier" >&2
       break
     fi
   done
 
   # Force systemd to wait until it is fully routable (has DHCP)
-  systemd-networkd-wait-online -i "${intf}:routable" --timeout="$timeout_secs" || true
+  log_echo "Waiting for ${intf} to be routable..." > /dev/console
+  /usr/lib/systemd/systemd-networkd-wait-online -i "${intf}:routable" --timeout="$timeout_secs" || true
 
   # Wait for interface IRQ entries to begin appearing in procfs
   local timeout=$((timeout_secs * 2)) 
+  log_echo "Waiting for ${intf} to have an IPv4 address..." > /dev/console
   while ! ls /proc/irq/*/idpf-${intf}* >/dev/null 2>&1; do
     sleep 0.5
     ((timeout--))
     if ((timeout <= 0)); then
-      echo "Timeout waiting for ${intf} IRQ entries to appear" >&2
+      log_echo "Timeout waiting for ${intf} IRQ entries to appear" >&2
       break
     fi
   done
@@ -52,20 +66,25 @@ run_optimize() {
     node=1
     irq_affinity="96-111"
   else
-    echo "Unknown interface: ${intf}" >&2
+    log_echo "Unknown interface: ${intf}" >&2
     return 1
   fi
 
+  log_echo "Waiting for ${intf} to be stable..." > /dev/console
   wait_stable "${intf}" 30
 
   # Disable XPS
+  log_echo "Disabling XPS for ${intf}..." > /dev/console
   echo 0 | tee "/sys/class/net/${intf}/queues/tx*/xps_cpus" 2>/dev/null || true
 
   # NUMA Node enlightment
+  log_echo "Setting NUMA node for ${intf}..." > /dev/console
   echo "${node}" | tee "/sys/class/net/${intf}/device/numa_node" 2>/dev/null || true
 
   # IRQ smp affinity optimizations
+  log_echo "Setting IRQ affinity for ${intf}..." > /dev/console
   echo "${irq_affinity}" | tee /proc/irq/*/idpf-${intf}*/../smp_affinity_list 2>/dev/null || true
+  log_echo "Finished optimizing ${intf}." > /dev/console
 }
 
 optimize_interface() {
@@ -73,7 +92,7 @@ optimize_interface() {
   # Only start the optimization if the optimization isn't already running for the given interface
   if command -v flock >/dev/null 2>&1; then
     (
-      flock -n 9 || { echo "Optimization for ${intf} already in progress, skipping." > /dev/console; exit 0; }
+      flock -n 9 || { log_echo "Optimization for ${intf} already in progress, skipping." > /dev/console; exit 0; }
       run_optimize "${intf}"
     ) 9>"/run/bc-network-opt-${intf}.lock"
   else
@@ -90,5 +109,7 @@ elif [[ "$target_intf" == "eth0" || "$target_intf" == "eth1" ]]; then
 fi
 
 # Sysctl optimizations
+log_echo "Applying sysctl optimizations..." > /dev/console
 sysctl -w net.core.netdev_budget=600 2>/dev/null || true
 sysctl -w net.core.netdev_budget_usecs=4000 2>/dev/null || true
+log_echo "Finished sysctl optimizations." > /dev/console
