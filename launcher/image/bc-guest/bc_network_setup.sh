@@ -103,9 +103,9 @@ systemctl stop systemd-networkd
 # Find the virtio interface and bring it down so systemd-udevd can rename it
 VIRTIO_INTERFACE=$(basename "$(ls -l /sys/class/net/*/device/driver 2>/dev/null | grep 'virtio_net' | awk '{print $9}' | cut -d/ -f5)")
 if [[ -n "$VIRTIO_INTERFACE" && "$VIRTIO_INTERFACE" != "tap0" ]]; then
-    ip link set "$VIRTIO_INTERFACE" down
-udevadm control --reload-rules
-    udevadm trigger --subsystem-match=net --action=add
+  ip link set "$VIRTIO_INTERFACE" down
+  udevadm control --reload-rules
+  udevadm trigger --subsystem-match=net --action=add
 fi
 
 # Wait for udev network renaming events to fully stabilize
