@@ -1,21 +1,10 @@
 #!/bin/bash
 
-log_echo() {
-  local btime
-  btime=$(awk '/btime/{print $2}' /proc/stat 2>/dev/null || echo 0)
-  local current
-  current=$(date +%s.%N 2>/dev/null || echo 0)
-  local ts
-  ts=$(awk -v btime="$btime" -v current="$current" 'BEGIN {printf "[%12.6f]", current - btime}' 2>/dev/null || echo "[   0.000000]")
-  echo "$ts $*"
-}
-
 wait_stable() {
     local intf="$1"
     local timeout_secs="$2"
 
     # Wait for interface to go down in case it was just reset
-    log_echo "Waiting for ${intf} to go down..." > /dev/console
     local timeout=$((timeout_secs * 2))
     while [[ "$(cat "/sys/class/net/${intf}/carrier" 2>/dev/null)" == "1" ]]; do
         sleep 0.5
@@ -24,7 +13,6 @@ wait_stable() {
     done
 
    # Wait for interface to come up
-    log_echo "Waiting for ${intf} to come up..." > /dev/console
     local timeout=$((timeout_secs * 2))
     while [[ "$(cat "/sys/class/net/${intf}/carrier" 2>/dev/null)" != "1" ]]; do
         sleep 0.5
@@ -33,11 +21,9 @@ wait_stable() {
     done
 
     # Force systemd to wait until it is fully routable (has DHCP)
-    log_echo "Waiting for ${intf} to be routable..." > /dev/console
     /usr/lib/systemd/systemd-networkd-wait-online -i "${intf}:routable" --timeout="$timeout_secs" || true
     
     # Wait for an IPv4 address
-    log_echo "Waiting for ${intf} to have an IPv4 address..." > /dev/console
     local ip_timeout=$((timeout_secs * 2))
     while ! ip -4 addr show dev "$intf" | grep -q "inet "; do
         sleep 0.5
@@ -46,34 +32,28 @@ wait_stable() {
     done
 }
 
-echo "Starting network optimizations..." > /dev/console
-
 # --- Configure eth0 ---
-wait_stable eth0 10
+wait_stable eth0 5
 # Changing combined queue count resets the interface
-log_echo "Configuring combined queue count to 16 on eth0..." > /dev/console
 ethtool -L eth0 combined 16
 # Changing ring size resets the interface
-log_echo "Configuring ring size to 2048 on eth0..." > /dev/console
 ethtool -G eth0 rx 2048 tx 2048 tcp-data-split off
-wait_stable eth0 10
+wait_stable eth0 5
 
-log_echo "Configuring coalescing parameters on eth0..." > /dev/console
+# Configure queue coalescing
 ethtool -C eth0 adaptive-rx off adaptive-tx off rx-usecs 20 tx-usecs 64
 
 # --- Configure eth1 ---
-wait_stable eth1 10
+wait_stable eth1 5
 # Changing combined queue count resets the interface
-log_echo "Configuring combined queue count to 16 on eth1..." > /dev/console
 ethtool -L eth1 combined 16
-wait_stable eth1 10
+wait_stable eth1 5
 
 # Changing ring size resets the interface
-log_echo "Configuring ring size to 2048 on eth1..." > /dev/console
 ethtool -G eth1 rx 2048 tx 2048 tcp-data-split off
-wait_stable eth1 10
+wait_stable eth1 5
 
-log_echo "Configuring coalescing parameters on eth1..." > /dev/console
+# Configure queue coalescing
 ethtool -C eth1 adaptive-rx off adaptive-tx off rx-usecs 20 tx-usecs 64
 
 # Run runtime optimizations
@@ -85,5 +65,3 @@ fi
 # re-apply optimizations on carrier up events
 systemctl enable bc-network-monitor.service
 systemctl start --no-block bc-network-monitor.service
-
-log_echo "Network optimizations completed." > /dev/console
