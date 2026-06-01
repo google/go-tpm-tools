@@ -76,10 +76,7 @@ fi
 cat << 'EOF' > /etc/systemd/system/bc-network-optimization.service
 [Unit]
 Description=Confidential Space BC Network Optimization
-After=systemd-networkd.service google-guest-agent.service network-online.target
-Wants=network-online.target
-
-After=network-online.target cloud-final.service google-guest-agent.service
+After=systemd-networkd.service cloud-final.service google-guest-agent.service network-online.target
 Wants=network-online.target
 
 [Service]
