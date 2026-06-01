@@ -14,9 +14,17 @@ wait_stable() {
     local intf="$1"
     local timeout_secs="$2"
 
-    log_echo "Waiting for ${intf} to become stable..." > /dev/console
+    # Wait for interface to go down in case it was just reset
+    log_echo "Waiting for ${intf} to go down..." > /dev/console
+    local timeout=$((timeout_secs * 2))
+    while [[ "$(cat "/sys/class/net/${intf}/carrier" 2>/dev/null)" == "1" ]]; do
+        sleep 0.5
+        ((timeout--))
+        if ((timeout <= 0)); then break; fi
+    done
 
-    # Wait for sysfs carrier
+   # Wait for interface to come up
+    log_echo "Waiting for ${intf} to come up..." > /dev/console
     local timeout=$((timeout_secs * 2))
     while [[ "$(cat "/sys/class/net/${intf}/carrier" 2>/dev/null)" != "1" ]]; do
         sleep 0.5
@@ -25,9 +33,11 @@ wait_stable() {
     done
 
     # Force systemd to wait until it is fully routable (has DHCP)
+    log_echo "Waiting for ${intf} to be routable..." > /dev/console
     /usr/lib/systemd/systemd-networkd-wait-online -i "${intf}:routable" --timeout="$timeout_secs" || true
     
     # Wait for an IPv4 address
+    log_echo "Waiting for ${intf} to have an IPv4 address..." > /dev/console
     local ip_timeout=$((timeout_secs * 2))
     while ! ip -4 addr show dev "$intf" | grep -q "inet "; do
         sleep 0.5
@@ -36,46 +46,17 @@ wait_stable() {
     done
 }
 
-wait_reset() {
-    local intf="$1"
-    local timeout_secs="$2"
-
-    log_echo "Waiting for ${intf} to reset..." > /dev/console
-    # 1. Sleep to let the driver actually begin its asynchronous reset and drop carrier/link
-    sleep 1.5
-
-    # 2. Wait for carrier to come back UP to 1
-    local timeout=$((timeout_secs * 2))
-    while [[ "$(cat "/sys/class/net/${intf}/carrier" 2>/dev/null)" != "1" ]]; do
-        sleep 0.5
-        ((timeout--))
-        if ((timeout <= 0)); then 
-            log_echo "Warning: timed out waiting for ${intf} carrier to come up" > /dev/console
-            break
-        fi
-    done
-
-    # 3. Wait for systemd-networkd to mark it online/routable (fully configured with DHCP)
-    /usr/lib/systemd/systemd-networkd-wait-online -i "${intf}:routable" --timeout="$timeout_secs" || true
-
-    # 4. Extra safety sleep to let idpf driver completely settle all internal queues/mailbox/vport
-    sleep 2.5
-    log_echo "${intf} reset completed and driver settled." > /dev/console
-}
-
-log_echo "Starting network optimizations..." > /dev/console
+echo "Starting network optimizations..." > /dev/console
 
 # --- Configure eth0 ---
 wait_stable eth0 10
 # Changing combined queue count resets the interface
 log_echo "Configuring combined queue count to 16 on eth0..." > /dev/console
 ethtool -L eth0 combined 16
-wait_reset eth0 10
-
 # Changing ring size resets the interface
 log_echo "Configuring ring size to 2048 on eth0..." > /dev/console
 ethtool -G eth0 rx 2048 tx 2048 tcp-data-split off
-wait_reset eth0 10
+wait_stable eth0 10
 
 log_echo "Configuring coalescing parameters on eth0..." > /dev/console
 ethtool -C eth0 adaptive-rx off adaptive-tx off rx-usecs 20 tx-usecs 64
@@ -85,12 +66,12 @@ wait_stable eth1 10
 # Changing combined queue count resets the interface
 log_echo "Configuring combined queue count to 16 on eth1..." > /dev/console
 ethtool -L eth1 combined 16
-wait_reset eth1 10
+wait_stable eth1 10
 
 # Changing ring size resets the interface
 log_echo "Configuring ring size to 2048 on eth1..." > /dev/console
 ethtool -G eth1 rx 2048 tx 2048 tcp-data-split off
-wait_reset eth1 10
+wait_stable eth1 10
 
 log_echo "Configuring coalescing parameters on eth1..." > /dev/console
 ethtool -C eth1 adaptive-rx off adaptive-tx off rx-usecs 20 tx-usecs 64

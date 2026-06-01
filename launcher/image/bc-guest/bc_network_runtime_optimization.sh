@@ -14,10 +14,18 @@ wait_stable() {
   local intf="$1"
   local timeout_secs="$2"
 
-  log_echo "Waiting for ${intf} to become stable for runtime optimizations..." > /dev/console
-
-  # Wait for physical link/carrier to be active
+  # Wait for interface to go down in case it was just reset
+  log_echo "Waiting for ${intf} to go down..." > /dev/console
   local timeout=$((timeout_secs * 2))
+  while [[ "$(cat "/sys/class/net/${intf}/carrier" 2>/dev/null)" == "1" ]]; do
+    sleep 0.5
+    ((timeout--))
+    if ((timeout <= 0)); then break; fi
+  done
+
+  # Wait for physical link/carrier to be restored in sysfs
+  log_echo "Waiting for ${intf} to come up..." > /dev/console
+  local timeout=$((timeout_secs * 2)) # Since we sleep 0.5s
   while [[ "$(cat "/sys/class/net/${intf}/carrier" 2>/dev/null)" != "1" ]]; do
     sleep 0.5
     ((timeout--))
@@ -25,9 +33,11 @@ wait_stable() {
   done
 
   # Force systemd to wait until it is fully routable (has DHCP)
+  log_echo "Waiting for ${intf} to be routable..." > /dev/console
   /usr/lib/systemd/systemd-networkd-wait-online -i "${intf}:routable" --timeout="$timeout_secs" || true
 
   # Wait for interface IRQ entries to begin appearing in procfs
+  log_echo "Waiting for ${intf} IRQ entries to appear..." > /dev/console
   local timeout=$((timeout_secs * 2)) 
   while ! ls /proc/irq/*/idpf-${intf}* >/dev/null 2>&1; do
     sleep 0.5
@@ -35,7 +45,8 @@ wait_stable() {
     if ((timeout <= 0)); then break; fi
   done
   
-  sleep 1.5
+  # Let the driver finish allocating the remaining queues and applying its internal affinity hints
+  sleep 2
 }
 
 run_optimize() {
