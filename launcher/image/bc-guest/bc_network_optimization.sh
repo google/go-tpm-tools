@@ -36,6 +36,8 @@ wait_stable() {
 wait_stable eth0 5
 # Changing combined queue count resets the interface
 ethtool -L eth0 combined 16
+wait_stable eth0 5
+
 # Changing ring size resets the interface
 ethtool -G eth0 rx 2048 tx 2048 tcp-data-split off
 wait_stable eth0 5
