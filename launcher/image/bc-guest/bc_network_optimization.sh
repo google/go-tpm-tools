@@ -8,8 +8,8 @@ wait_stable() {
     local timeout=$((timeout_secs * 2))
     while [[ "$(cat "/sys/class/net/${intf}/carrier" 2>/dev/null)" == "1" ]]; do
         sleep 0.5
-        ((down_checks--))
-        if ((down_checks <= 0)); then break; fi
+        ((timeout--))
+        if ((timeout <= 0)); then break; fi
     done
 
     # Wait for sysfs carrier
