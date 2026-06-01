@@ -49,7 +49,7 @@ run_optimize() {
     return 1
   fi
 
-  wait_stable "${intf}" 5
+  wait_stable "${intf}" 10
 
   # Disable XPS
   echo 0 | tee "/sys/class/net/${intf}/queues/tx*/xps_cpus" 2>/dev/null || true
