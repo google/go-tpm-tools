@@ -1,35 +1,35 @@
 #!/bin/bash
 
 wait_stable() {
-    local intf="$1"
-    local timeout_secs="$2"
+  local intf="$1"
+  local timeout_secs="$2"
 
-    # Wait for interface to go down in case it was just reset
-    local timeout=$((timeout_secs * 2))
-    while [[ "$(cat "/sys/class/net/${intf}/carrier" 2>/dev/null)" == "1" ]]; do
-        sleep 0.5
-        ((timeout--))
-        if ((timeout <= 0)); then break; fi
-    done
+  # Wait for interface to go down in case it was just reset
+  local timeout=$((timeout_secs * 2))
+  while [[ "$(cat "/sys/class/net/${intf}/carrier" 2>/dev/null)" == "1" ]]; do
+    sleep 0.5
+    ((timeout--))
+    if ((timeout <= 0)); then break; fi
+  done
 
-   # Wait for interface to come up
-    local timeout=$((timeout_secs * 2))
-    while [[ "$(cat "/sys/class/net/${intf}/carrier" 2>/dev/null)" != "1" ]]; do
-        sleep 0.5
-        ((timeout--))
-        if ((timeout <= 0)); then break; fi
-    done
+  # Wait for interface to come up
+  local timeout=$((timeout_secs * 2))
+  while [[ "$(cat "/sys/class/net/${intf}/carrier" 2>/dev/null)" != "1" ]]; do
+    sleep 0.5
+    ((timeout--))
+    if ((timeout <= 0)); then break; fi
+  done
 
-    # Force systemd to wait until it is fully routable (has DHCP)
-    /usr/lib/systemd/systemd-networkd-wait-online -i "${intf}:routable" --timeout="$timeout_secs" || true
-    
-    # Wait for an IPv4 address
-    local ip_timeout=$((timeout_secs * 2))
-    while ! ip -4 addr show dev "$intf" | grep -q "inet "; do
-        sleep 0.5
-        ((ip_timeout--))
-        if ((ip_timeout <= 0)); then break; fi
-    done
+  # Force systemd to wait until it is fully routable (has DHCP)
+  /usr/lib/systemd/systemd-networkd-wait-online -i "${intf}:routable" --timeout="$timeout_secs" || true
+  
+  # Wait for an IPv4 address
+  local ip_timeout=$((timeout_secs * 2))
+  while ! ip -4 addr show dev "$intf" | grep -q "inet "; do
+    sleep 0.5
+    ((ip_timeout--))
+    if ((ip_timeout <= 0)); then break; fi
+  done
 }
 
 # --- Configure eth0 ---
