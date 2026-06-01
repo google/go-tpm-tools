@@ -5,7 +5,7 @@ wait_stable() {
     local timeout_secs="$2"
 
     # Wait for interface to go down in case it was just reset
-    local down_checks=10
+    local timeout=$((timeout_secs * 2))
     while [[ "$(cat "/sys/class/net/${intf}/carrier" 2>/dev/null)" == "1" ]]; do
         sleep 0.5
         ((down_checks--))

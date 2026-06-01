@@ -79,6 +79,9 @@ Description=Confidential Space BC Network Optimization
 After=systemd-networkd.service google-guest-agent.service network-online.target
 Wants=network-online.target
 
+After=network-online.target cloud-final.service google-guest-agent.service
+Wants=network-online.target
+
 [Service]
 Type=oneshot
 ExecStart=/usr/share/oem/confidential_space/bc_network_optimization.sh
