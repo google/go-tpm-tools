@@ -1,19 +1,23 @@
 #!/bin/bash
 
+log_echo() {
+  local btime
+  btime=$(awk '/btime/{print $2}' /proc/stat 2>/dev/null || echo 0)
+  local current
+  current=$(date +%s.%N 2>/dev/null || echo 0)
+  local ts
+  ts=$(awk -v btime="$btime" -v current="$current" 'BEGIN {printf "[%12.6f]", current - btime}' 2>/dev/null || echo "[   0.000000]")
+  echo "$ts $*"
+}
+
 wait_stable() {
   local intf="$1"
   local timeout_secs="$2"
 
-  # Wait for interface to go down in case it was just reset
-  local timeout=$((timeout_secs * 2))
-  while [[ "$(cat "/sys/class/net/${intf}/carrier" 2>/dev/null)" == "1" ]]; do
-    sleep 0.5
-    ((timeout--))
-    if ((timeout <= 0)); then break; fi
-  done
+  log_echo "Waiting for ${intf} to become stable for runtime optimizations..." > /dev/console
 
-  # Wait for physical link/carrier to be restored in sysfs
-  local timeout=$((timeout_secs * 2)) # Since we sleep 0.5s
+  # Wait for physical link/carrier to be active
+  local timeout=$((timeout_secs * 2))
   while [[ "$(cat "/sys/class/net/${intf}/carrier" 2>/dev/null)" != "1" ]]; do
     sleep 0.5
     ((timeout--))
@@ -31,8 +35,7 @@ wait_stable() {
     if ((timeout <= 0)); then break; fi
   done
   
-  # Let the driver finish allocating the remaining queues and applying its internal affinity hints
-  sleep 2
+  sleep 1.5
 }
 
 run_optimize() {
@@ -51,13 +54,18 @@ run_optimize() {
 
   wait_stable "${intf}" 10
 
+  log_echo "Applying runtime optimizations to ${intf}..." > /dev/console
+
   # Disable XPS
+  log_echo "Disabling XPS on ${intf}..." > /dev/console
   echo 0 | tee "/sys/class/net/${intf}/queues/tx*/xps_cpus" 2>/dev/null || true
 
   # NUMA Node enlightment
+  log_echo "Setting NUMA node of ${intf} to ${node}..." > /dev/console
   echo "${node}" | tee "/sys/class/net/${intf}/device/numa_node" 2>/dev/null || true
 
   # IRQ smp affinity optimizations
+  log_echo "Configuring smp affinity for ${intf} to IRQs ${irq_affinity}..." > /dev/console
   echo "${irq_affinity}" | tee /proc/irq/*/idpf-${intf}*/../smp_affinity_list 2>/dev/null || true
 }
 
@@ -83,5 +91,6 @@ elif [[ "$target_intf" == "eth0" || "$target_intf" == "eth1" ]]; then
 fi
 
 # Sysctl optimizations
+log_echo "Applying core netdev budget sysctls..." > /dev/console
 sysctl -w net.core.netdev_budget=600 2>/dev/null || true
 sysctl -w net.core.netdev_budget_usecs=4000 2>/dev/null || true
