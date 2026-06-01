@@ -63,14 +63,6 @@ RouteMetric=200
 RouteMetric=200
 EOF
 
-# Find the virtio interface and bring it down so systemd-udevd can rename it
-VIRTIO_INTERFACE=$(basename "$(ls -l /sys/class/net/*/device/driver 2>/dev/null | grep 'virtio_net' | awk '{print $9}' | cut -d/ -f5)")
-if [[ -n "$VIRTIO_INTERFACE" && "$VIRTIO_INTERFACE" != "tap0" ]]; then
-    ip link set "$VIRTIO_INTERFACE" down
-    udevadm control --reload-rules
-    udevadm trigger --subsystem-match=net --action=add
-fi
-
 # Save post-boot network optimization service to apply settings after
 # all network setup and guest agents have finished starting.
 cat << 'EOF' > /etc/systemd/system/bc-network-optimization.service
@@ -105,8 +97,22 @@ RestartSec=5
 WantedBy=multi-user.target
 EOF
 
-# Restart systemd-networkd to apply the configuration
-systemctl restart systemd-networkd
+# Stop systemd-networkd to prevent thrashing during renaming
+systemctl stop systemd-networkd
+
+# Find the virtio interface and bring it down so systemd-udevd can rename it
+VIRTIO_INTERFACE=$(basename "$(ls -l /sys/class/net/*/device/driver 2>/dev/null | grep 'virtio_net' | awk '{print $9}' | cut -d/ -f5)")
+if [[ -n "$VIRTIO_INTERFACE" && "$VIRTIO_INTERFACE" != "tap0" ]]; then
+    ip link set "$VIRTIO_INTERFACE" down
+    udevadm control --reload-rules
+    udevadm trigger --subsystem-match=net --action=add
+fi
+
+# Wait for udev network renaming events to fully stabilize
+echo "Waiting for udev network interface renaming to settle..." > /dev/console
+udevadm settle --timeout=10
+
+systemctl start systemd-networkd
 
 # Reload systemd to recognize the newly created .service files
 systemctl daemon-reload
