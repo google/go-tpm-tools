@@ -9,15 +9,6 @@ fi
 # Save systemd network files
 mkdir -p /etc/systemd/network/
 
-# Virtio link file to dynamically rename the virtio device to tap0
-cat << 'EOF' > /etc/systemd/network/10-virtio.link
-[Match]
-Driver=virtio_net
-
-[Link]
-Name=tap0
-EOF
-
 # Virtio network file (lexically ordered before idpf files)
 cat << 'EOF' > /etc/systemd/network/10-virtio.network
 [Match]
@@ -97,19 +88,8 @@ RestartSec=5
 WantedBy=multi-user.target
 EOF
 
-# Stop systemd-networkd to prevent link state updates while we rename
-systemctl stop systemd-networkd
-
-# Find the virtio interface and rename it manually to tap0 to avoid triggering a broad udev renaming shuffle
-VIRTIO_INTERFACE=$(basename "$(ls -l /sys/class/net/*/device/driver 2>/dev/null | grep 'virtio_net' | awk '{print $9}' | cut -d/ -f5)")
-if [[ -n "$VIRTIO_INTERFACE" && "$VIRTIO_INTERFACE" != "tap0" ]]; then
-  echo "Manually renaming virtio interface ${VIRTIO_INTERFACE} to tap0..." > /dev/console
-  ip link set "$VIRTIO_INTERFACE" down
-  ip link set "$VIRTIO_INTERFACE" name tap0
-  ip link set tap0 up
-fi
-
-systemctl start systemd-networkd
+# Restart systemd-networkd to apply configurations and clear any early-boot failed states
+systemctl restart systemd-networkd
 
 # Reload systemd to recognize the newly created .service files
 systemctl daemon-reload
