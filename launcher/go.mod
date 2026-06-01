@@ -1,34 +1,33 @@
 module github.com/google/go-tpm-tools/launcher
 
-go 1.24.0
+go 1.24.8
 
 require (
 	cloud.google.com/go/compute/metadata v0.9.0
 	cloud.google.com/go/logging v1.13.1
 	cos.googlesource.com/cos/tools.git v0.0.0-20250414225215-0cf736c0714c
-	github.com/GoogleCloudPlatform/confidential-space/server v0.0.0-20260522213940-e5c6d01a3007
+	github.com/GoogleCloudPlatform/confidential-space/server v0.0.0-20260528170158-db25840c8cf6
 	github.com/NVIDIA/go-nvml v0.13.0-1
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/confidentsecurity/go-nvtrust v0.2.2
 	github.com/containerd/containerd v1.7.23
-	github.com/containerd/containerd/v2 v2.0.1
+	github.com/containerd/containerd/v2 v2.0.5
 	github.com/coreos/go-systemd/v22 v22.5.0
 	github.com/golang-jwt/jwt/v4 v4.5.2
 	github.com/google/go-cmp v0.7.0
-	github.com/google/go-eventlog v0.0.3-0.20260416001248-6807b85eecf0
+	github.com/google/go-eventlog v0.0.3-0.20260520195024-af9e78c4d692
 	github.com/google/go-tpm v0.9.8
-	github.com/google/go-tpm-tools v0.4.9-0.20260325175049-22911efba9e5
+	github.com/google/go-tpm-tools v0.4.9-0.20260522205405-ed0161beaf76
 	github.com/google/go-tpm-tools/agent v0.0.0-20260407214151-8b46d3d5fd29
 	github.com/google/go-tpm-tools/keymanager v0.4.4
 	github.com/google/go-tpm-tools/verifier v0.4.4
-	github.com/mdlayher/vsock v1.2.1
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.0
 	github.com/opencontainers/runtime-spec v1.2.0
 	golang.org/x/oauth2 v0.34.0
 	google.golang.org/api v0.265.0
 	google.golang.org/genproto/googleapis/api v0.0.0-20260203192932-546029d2fa20
-	google.golang.org/grpc v1.78.0
+	google.golang.org/grpc v1.79.3
 	google.golang.org/protobuf v1.36.11
 )
 
@@ -41,6 +40,7 @@ require (
 	cloud.google.com/go/auth/oauth2adapt v0.2.8 // indirect
 	cloud.google.com/go/confidentialcomputing v1.11.0 // indirect
 	cloud.google.com/go/longrunning v0.8.0 // indirect
+	cyphar.com/go-pathrs v0.2.1 // indirect
 	github.com/AdaLogics/go-fuzz-headers v0.0.0-20240806141605-e8a1dd7889d6 // indirect
 	github.com/AdamKorcz/go-118-fuzz-build v0.0.0-20231105174938-2b5cbb29f3e2 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
@@ -54,9 +54,10 @@ require (
 	github.com/containerd/errdefs/pkg v0.3.0 // indirect
 	github.com/containerd/fifo v1.1.0 // indirect
 	github.com/containerd/log v0.1.0 // indirect
-	github.com/containerd/platforms v1.0.0-rc.0 // indirect
-	github.com/containerd/ttrpc v1.2.6 // indirect
+	github.com/containerd/platforms v1.0.0-rc.1 // indirect
+	github.com/containerd/ttrpc v1.2.7 // indirect
 	github.com/containerd/typeurl/v2 v2.2.3 // indirect
+	github.com/cyphar/filepath-securejoin v0.6.0 // indirect
 	github.com/distribution/reference v0.6.0 // indirect
 	github.com/docker/go-events v0.0.0-20190806004212-e31b211e4f1c // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
@@ -78,23 +79,24 @@ require (
 	github.com/googleapis/enterprise-certificate-proxy v0.3.11 // indirect
 	github.com/googleapis/gax-go/v2 v2.17.0 // indirect
 	github.com/klauspost/compress v1.17.11 // indirect
-	github.com/mdlayher/socket v0.4.1 // indirect
+	github.com/mdlayher/socket v0.5.1 // indirect
+	github.com/mdlayher/vsock v1.2.1 // indirect
 	github.com/moby/locker v1.0.1 // indirect
 	github.com/moby/sys/mountinfo v0.7.2 // indirect
 	github.com/moby/sys/sequential v0.6.0 // indirect
 	github.com/moby/sys/signal v0.7.1 // indirect
 	github.com/moby/sys/user v0.3.0 // indirect
 	github.com/moby/sys/userns v0.1.0 // indirect
-	github.com/opencontainers/selinux v1.11.1 // indirect
+	github.com/opencontainers/selinux v1.13.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	go.opencensus.io v0.24.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.61.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.61.0 // indirect
-	go.opentelemetry.io/otel v1.39.0 // indirect
-	go.opentelemetry.io/otel/metric v1.39.0 // indirect
-	go.opentelemetry.io/otel/trace v1.39.0 // indirect
+	go.opentelemetry.io/otel v1.41.0 // indirect
+	go.opentelemetry.io/otel/metric v1.41.0 // indirect
+	go.opentelemetry.io/otel/trace v1.41.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/crypto v0.47.0 // indirect
 	golang.org/x/exp v0.0.0-20250813145105-42675adae3e6 // indirect
