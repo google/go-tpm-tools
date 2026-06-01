@@ -72,6 +72,9 @@ func (f fakeAttestationAgent) AttestationEvidence(c context.Context, nonce []byt
 			},
 		})
 	}
+	if opts.AcpiOpts != nil && opts.AcpiOpts.RetrieveAcpiData {
+		attestation.AcpiData = &attestationpb.AcpiData{}
+	}
 	return attestation, nil
 }
 
@@ -904,6 +907,16 @@ func TestGetKeyEndorsement(t *testing.T) {
 			reqBody: map[string]interface{}{
 				"challenge":  testChallenge,
 				"key_handle": map[string]string{"handle": testHandle},
+			},
+			enableKM:   true,
+			wantStatus: http.StatusOK,
+		},
+		{
+			name: "success with request_acpi_data",
+			reqBody: map[string]interface{}{
+				"challenge":         testChallenge,
+				"key_handle":        map[string]string{"handle": testHandle},
+				"request_acpi_data": true,
 			},
 			enableKM:   true,
 			wantStatus: http.StatusOK,
