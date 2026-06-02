@@ -22,6 +22,7 @@ SUBSYSTEM=$(basename "${SUBSYSTEM_PATH}")
 
 BIND_PATH="/sys/bus/${SUBSYSTEM}/drivers/${DRIVER_NAME}"
 
+# unbind the device
 echo "${DEV_ID}" | tee "${BIND_PATH}/unbind" > /dev/null
 
 # Wait for the device to unbind
