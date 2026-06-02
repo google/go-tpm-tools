@@ -45,6 +45,9 @@ steps:
            ./launcher/image/fluent-bit-cs.conf \
            ./launcher/image/exit_script.sh \
            ./launcher/image/bc-guest/bc_network_setup.sh \
+           ./launcher/image/bc-guest/bc_network_optimization.sh \
+           ./launcher/image/bc-guest/bc_network_runtime_optimization.sh \
+           ./launcher/image/bc-guest/bc_network_monitor.sh \
            /workspace/oem-install/confidential_space/
         cp ./launcher/image/nodeproblemdetector/* /workspace/oem-install/confidential_space/nodeproblemdetector/
 
@@ -54,6 +57,9 @@ steps:
         chmod +x /workspace/oem-install/confidential_space/cs_container_launcher || true
         chmod +x /workspace/oem-install/confidential_space/exit_script.sh || true
         chmod +x /workspace/oem-install/confidential_space/bc_network_setup.sh || true
+        chmod +x /workspace/oem-install/confidential_space/bc_network_optimization.sh || true
+        chmod +x /workspace/oem-install/confidential_space/bc_network_runtime_optimization.sh || true
+        chmod +x /workspace/oem-install/confidential_space/bc_network_monitor.sh || true
         chmod +x /workspace/oem-install/entrypoint.sh || true
 
   - name: 'gcr.io/cloud-builders/gcloud'
@@ -93,7 +99,7 @@ steps:
           # "s|cros_efi|cros_efi ds=nocloud;s=/usr/share/oem/|g"
           "s|cros_efi|cros_efi cos.protected_stateful_partition=m|g"
           "s|cros_efi|cros_efi systemd.default_timeout_start_sec=900s|g"
-          "s|cros_efi|cros_efi swiotlb=4194304,force,any|g"
+          "s|cros_efi|cros_efi swiotlb=16777216,force,any|g"
           "s|systemd.mask=usr-share-oem.mount||g"
           "s|dm-m2d|dm-mod|g"
           "s|,oemroot|;oemroot|g"

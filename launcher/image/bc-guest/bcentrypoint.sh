@@ -26,7 +26,6 @@ main() {
   # Configure network priority for IDPF using systemd-networkd.
   if [[ -f /usr/share/oem/confidential_space/bc_network_setup.sh ]]; then
     /usr/share/oem/confidential_space/bc_network_setup.sh
-    systemctl restart systemd-networkd
   fi
 
   systemctl daemon-reload
