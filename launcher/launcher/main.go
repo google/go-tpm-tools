@@ -62,6 +62,10 @@ var exitMessage = "TEE container launcher exiting"
 var start time.Time
 
 func main() {
+	if _, err := os.Stat("/usr/share/oem/confidential_space/google_roots.pem"); err == nil {
+		os.Setenv("SSL_CERT_FILE", "/usr/share/oem/confidential_space/google_roots.pem")
+	}
+
 	uptime, err := getUptime()
 	if err != nil {
 		logger.Error(fmt.Sprintf("error reading VM uptime: %v", err))

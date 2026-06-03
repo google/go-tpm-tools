@@ -7,6 +7,12 @@ copy_launcher() {
   cp launcher "${CS_PATH}/cs_container_launcher"
 }
 
+copy_google_roots() {
+  if [[ -f "google_roots.pem" ]]; then
+    cp google_roots.pem "${CS_PATH}/google_roots.pem"
+  fi
+}
+
 copy_gpu_driver() {
   mkdir ${OEM_PATH}/gpu_driver
   cp NVIDIA-Linux-x86_64-595.58.03.run ${OEM_PATH}/gpu_driver
@@ -116,6 +122,8 @@ main() {
   copy_gpu_driver
   # Install container launcher entrypoint.
   configure_entrypoint "vgentrypoint.sh"
+  # Copy Google roots if present.
+  copy_google_roots
   # Copy experiment file.
   copy_experiment_file
   # Install container launcher.

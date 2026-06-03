@@ -8,6 +8,12 @@ copy_launcher() {
   cp launcher "${CS_PATH}/cs_container_launcher"
 }
 
+copy_google_roots() {
+  if [[ -f "google_roots.pem" ]]; then
+    cp google_roots.pem "${CS_PATH}/google_roots.pem"
+  fi
+}
+
 copy_experiment_client() {
   # DownloadExpBinary creates the file at EXPERIMENTS_BINARY.
   cp $EXPERIMENTS_BINARY "${CS_PATH}/${EXPERIMENTS_BINARY}"
@@ -111,6 +117,8 @@ main() {
 
   # Install container launcher entrypoint.
   configure_entrypoint "entrypoint.sh"
+  # Copy Google roots if present.
+  copy_google_roots
   # Install experiment client.
   copy_experiment_client
   # Install container launcher.
