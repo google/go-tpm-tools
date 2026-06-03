@@ -13,7 +13,6 @@ if [[ -f "/usr/share/oem/confidential_space/bc_network_rebind.sh" ]]; then
   "/usr/share/oem/confidential_space/bc_network_rebind.sh" eth1 || true
 fi
 
-
 # Save systemd network files
 mkdir -p /etc/systemd/network/
 
