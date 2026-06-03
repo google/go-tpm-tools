@@ -25,6 +25,8 @@ RUN apt-get update && apt-get install -y \
     gawk \
     grep \
     python3-pip \
+    qemu-utils \
+    e2fsprogs \
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip install --no-cache-dir lief
@@ -32,6 +34,9 @@ RUN pip install --no-cache-dir lief
 
 # Copy the measure.sh script into the container
 # Ensure you have the script file in the same directory as this Dockerfile
+COPY measure_composite.sh /usr/local/bin/measure_composite.sh
+RUN chmod +x /usr/local/bin/measure_composite.sh
+
 COPY measure.sh /usr/local/bin/measure.sh
 RUN chmod +x /usr/local/bin/measure.sh
 
@@ -40,5 +45,3 @@ WORKDIR /data
 
 # Set the script as the entrypoint
 ENTRYPOINT ["/usr/local/bin/measure.sh"]
-
-
