@@ -36,7 +36,7 @@ check_dependencies() {
 run_dual_measurements() {
     local target_image="$1"
     local output_base="$2"
-    /usr/local/bin/measure.sh "$target_image" "${output_base}.json" "$CHANNEL" "$ARCH" sha256
+    /usr/local/bin/measure.sh "$target_image" "${output_base}_sha256.json" "$CHANNEL" "$ARCH" sha256
     /usr/local/bin/measure.sh "$target_image" "${output_base}_sha384.json" "$CHANNEL" "$ARCH" sha384
 }
 
