@@ -64,6 +64,8 @@ var start time.Time
 func main() {
 	if _, err := os.Stat("/usr/share/oem/confidential_space/google_roots.pem"); err == nil {
 		os.Setenv("SSL_CERT_FILE", "/usr/share/oem/confidential_space/google_roots.pem")
+	} else {
+		panic(fmt.Errorf("failed to find google_roots.pem: %v", err))
 	}
 
 	uptime, err := getUptime()

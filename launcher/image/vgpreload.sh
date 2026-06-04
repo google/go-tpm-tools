@@ -8,9 +8,7 @@ copy_launcher() {
 }
 
 copy_google_roots() {
-  if [[ -f "google_roots.pem" ]]; then
-    cp google_roots.pem "${CS_PATH}/google_roots.pem"
-  fi
+  cp google_roots.pem "${CS_PATH}/google_roots.pem"
 }
 
 copy_gpu_driver() {
