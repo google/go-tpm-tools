@@ -39,7 +39,7 @@ ethtool -L eth0 combined 16
 wait_stable eth0 5
 
 # Changing ring size resets the interface
-ethtool -G eth0 rx 2048 tx 2048 tcp-data-split off
+ethtool -G eth0 rx 2048 tx 2048
 wait_stable eth0 5
 
 # Configure queue coalescing
@@ -52,7 +52,7 @@ ethtool -L eth1 combined 16
 wait_stable eth1 5
 
 # Changing ring size resets the interface
-ethtool -G eth1 rx 2048 tx 2048 tcp-data-split off
+ethtool -G eth1 rx 2048 tx 2048
 wait_stable eth1 5
 
 # Configure queue coalescing
