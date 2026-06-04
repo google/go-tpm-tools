@@ -35,24 +35,24 @@ wait_stable() {
 # --- Configure eth0 ---
 wait_stable eth0 5
 # Changing combined queue count resets the interface
-ethtool -L eth0 combined 16
+# ethtool -L eth0 combined 16
 wait_stable eth0 5
 
 # Changing ring size resets the interface
-ethtool -G eth0 rx 2048 tx 2048 tcp-data-split off
+# ethtool -G eth0 rx 2048 tx 2048 tcp-data-split off
 wait_stable eth0 5
 
 # Configure queue coalescing
-ethtool -C eth0 adaptive-rx off adaptive-tx off rx-usecs 20 tx-usecs 64
+# ethtool -C eth0 adaptive-rx off adaptive-tx off rx-usecs 20 tx-usecs 64
 
 # --- Configure eth1 ---
 wait_stable eth1 5
 # Changing combined queue count resets the interface
-ethtool -L eth1 combined 16
+# ethtool -L eth1 combined 16
 wait_stable eth1 5
 
 # Changing ring size resets the interface
-ethtool -G eth1 rx 2048 tx 2048 tcp-data-split off
+# ethtool -G eth1 rx 2048 tx 2048 tcp-data-split off
 wait_stable eth1 5
 
 # Configure queue coalescing
