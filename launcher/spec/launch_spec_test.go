@@ -1,12 +1,17 @@
 package spec
 
 import (
+	"os"
+	"path"
 	"regexp"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-tpm-tools/launcher/internal/experiments"
 	"github.com/google/go-tpm-tools/launcher/internal/launchermount"
+	"github.com/google/go-tpm-tools/launcher/internal/logging"
+	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/verifier"
 )
 
@@ -433,4 +438,69 @@ func TestLaunchSpecUnmarshalJSONWithBadMounts(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestFetchExperiments(t *testing.T) {
+	if err := os.MkdirAll(launcherfile.HostTmpPath, 0755); err != nil {
+		t.Fatalf("failed to create HostTmpPath: %v", err)
+	}
+
+	experimentsFile := path.Join(launcherfile.HostTmpPath, experimentDataFile)
+
+	// Backup the existing file if it exists
+	var backedUp []byte
+	backupExists := false
+	if data, err := os.ReadFile(experimentsFile); err == nil {
+		backedUp = data
+		backupExists = true
+	}
+
+	defer func() {
+		// Restore or clean up
+		if backupExists {
+			_ = os.WriteFile(experimentsFile, backedUp, 0644)
+		} else {
+			_ = os.Remove(experimentsFile)
+		}
+	}()
+
+	t.Run("Preloaded", func(t *testing.T) {
+		// Write mock pre-packaged experiment data
+		mockData := []byte(`{"EnableTestFeatureForImage":true,"EnableHealthMonitoring":true}`)
+		if err := os.WriteFile(experimentsFile, mockData, 0644); err != nil {
+			t.Fatalf("failed to write mock experiments: %v", err)
+		}
+
+		got := fetchExperiments(logging.SimpleLogger())
+		want := experiments.Experiments{
+			EnableTestFeatureForImage: true,
+			EnableHealthMonitoring:    true,
+		}
+
+		if !cmp.Equal(got, want) {
+			t.Errorf("fetchExperiments() got %+v, want %+v", got, want)
+		}
+	})
+
+	t.Run("RetryFailure", func(t *testing.T) {
+		// Ensure the experiments file does not exist for this subtest
+		_ = os.Remove(experimentsFile)
+
+		start := time.Now()
+		got := fetchExperiments(logging.SimpleLogger())
+		elapsed := time.Since(start)
+
+		// Verify that the function actually retried.
+		// Exponential backoff starting at 2s up to 8s (with 3 retries),
+		// total elapsed time should be at least 6s (approx 14s without randomization).
+		if elapsed < 6*time.Second {
+			t.Errorf("expected fetchExperiments to retry and take >= 6s, took: %v", elapsed)
+		}
+
+		// Verify it returned the default experiments struct on failure
+		want := experiments.Experiments{}
+		if got != want {
+			t.Errorf("fetchExperiments() got %+v, want %+v", got, want)
+		}
+	})
 }

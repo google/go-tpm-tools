@@ -12,8 +12,10 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"time"
 
 	"cloud.google.com/go/compute/metadata"
+	"github.com/cenkalti/backoff/v4"
 
 	"github.com/containerd/containerd/v2/pkg/cap"
 	"github.com/google/go-tpm-tools/cel"
@@ -406,17 +408,48 @@ func isHardened(kernelCmd string) bool {
 func fetchExperiments(logger logging.Logger) experiments.Experiments {
 	experimentsFile := path.Join(launcherfile.HostTmpPath, experimentDataFile)
 
-	args := fmt.Sprintf("-output=%s", experimentsFile)
-	err := exec.Command(binaryPath, args).Run()
-	if err != nil {
-		logger.Error(fmt.Sprintf("failure during experiment sync: %v\n", err))
+	var e experiments.Experiments
+	// If a pre-loaded experiments file already exists (e.g. for VG/BC modes),
+	// skip the sync phase and load it directly.
+	if _, err := os.Stat(experimentsFile); err == nil {
+		logger.Info("Pre-loaded experiments file found; skipping sync.")
+		var err error
+		e, err = experiments.New(experimentsFile)
+		if err != nil {
+			logger.Error(fmt.Sprintf("failed to read pre-loaded experiment file: %v\n", err))
+		}
+		return e
 	}
-	e, err := experiments.New(experimentsFile)
-	if err != nil {
-		logger.Error(fmt.Sprintf("failed to read experiment file: %v\n", err))
-		// do not fail if experiment retrieval fails
+
+	args := fmt.Sprintf("-output=%s", experimentsFile)
+	if err := backoff.Retry(func() error {
+		if err := exec.Command(binaryPath, args).Run(); err != nil {
+			logger.Error(fmt.Sprintf("failure during experiment sync: %v\n", err))
+		}
+		var err error
+		e, err = experiments.New(experimentsFile)
+		if err != nil {
+			logger.Error(fmt.Sprintf("failed to read experiment file: %v\n", err))
+		}
+		// This is expected to be true if experiment sync is successful.
+		if !e.EnableTestFeatureForImage {
+			return fmt.Errorf("experiments synced but EnableTestFeatureForImage is false")
+		}
+		return nil
+	}, experimentSyncBackoffPolicy()); err != nil {
+		logger.Error(fmt.Sprintf("experiment retrieval failed after retries: %v\n", err))
+		// Do not fail if experiment retrieval fails.
 	}
 	return e
+}
+
+func experimentSyncBackoffPolicy() backoff.BackOff {
+	b := backoff.NewExponentialBackOff()
+	b.InitialInterval = 2 * time.Second
+	b.MaxInterval = 8 * time.Second
+	b.Multiplier = 2.0
+	b.RandomizationFactor = 0.1
+	return backoff.WithMaxRetries(b, 3)
 }
 
 func processMount(singleMount string) (launchermount.Mount, error) {

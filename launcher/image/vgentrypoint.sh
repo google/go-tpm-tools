@@ -4,6 +4,15 @@ main() {
   # Configure sysctls.
   sysctl -w kernel.kexec_load_disabled=1
 
+  modprobe tcp_bbr
+
+  # Disable XPS if interfaces present.
+  for intf in eth0 eth1; do
+    if [[ -d "/sys/class/net/${intf}" ]]; then
+      echo 0 | sudo tee /sys/class/net/${intf}/queues/tx*/xps_cpus > /dev/null
+    fi
+  done
+
   # Copy service files.
   cp /usr/share/oem/confidential_space/container-runner.service /etc/systemd/system/container-runner.service
   # Override default fluent-bit config.

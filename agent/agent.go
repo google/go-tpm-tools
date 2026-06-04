@@ -104,11 +104,17 @@ type DeviceROT interface {
 type AttestAgentOpts struct {
 	TokenOptions *models.TokenOptions
 	*DeviceReportOpts
+	*AcpiOpts
 }
 
 // DeviceReportOpts contains options for runtime device attestations.
 type DeviceReportOpts struct {
 	EnableRuntimeGPUAttestation bool
+}
+
+// AcpiOpts contains options for platform ACPI data.
+type AcpiOpts struct {
+	RetrieveAcpiData bool
 }
 
 // Experiments contains the experiment flags for the AttestationAgent.
@@ -477,7 +483,36 @@ func (a *agent) AttestationEvidence(_ context.Context, challenge []byte, extraDa
 	}
 	attestation.DeviceReports = deviceReports
 
+	// ACPI data is currently only available in BcMode and only if requested.
+	if a.experiments.BcMode && opts.AcpiOpts != nil && opts.AcpiOpts.RetrieveAcpiData {
+		acpi, err := getAcpiData()
+		if err != nil {
+			return nil, err
+		}
+		attestation.AcpiData = acpi
+	}
 	return attestation, nil
+}
+
+func getAcpiData() (*attestationpb.AcpiData, error) {
+	tables, err := os.ReadFile("/sys/firmware/qemu_fw_cfg/by_name/etc/acpi/tables/raw")
+	if err != nil {
+		return nil, fmt.Errorf("failed to read ACPI tables: %v", err)
+	}
+	rsdp, err := os.ReadFile("/sys/firmware/qemu_fw_cfg/by_name/etc/acpi/rsdp/raw")
+	if err != nil {
+		return nil, fmt.Errorf("failed to read RSDP: %v", err)
+	}
+	tableLoader, err := os.ReadFile("/sys/firmware/qemu_fw_cfg/by_name/etc/table-loader/raw")
+	if err != nil {
+		return nil, fmt.Errorf("failed to read table loader: %v", err)
+	}
+
+	return &attestationpb.AcpiData{
+		Tables:      tables,
+		Rsdp:        rsdp,
+		TableLoader: tableLoader,
+	}, nil
 }
 
 func (a *agent) attestDeviceROTs(nonce []byte, opts AttestAgentOpts) ([]*attestationpb.DeviceAttestationReport, error) {
