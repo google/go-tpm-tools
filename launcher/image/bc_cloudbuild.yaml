@@ -50,6 +50,7 @@ steps:
         mkdir -p /workspace/oem-install/confidential_space
         mkdir -p /workspace/oem-install/confidential_space/nodeproblemdetector
         mkdir -p /workspace/oem-install/wsd
+        mkdir -p /workspace/oem-install/gpu_daemons
 
         cp ./launcher/image/bc-guest/bcentrypoint.sh /workspace/oem-install/entrypoint.sh
         cp ./launcher/image/bc-guest/bcexperiment.json \
@@ -64,6 +65,9 @@ steps:
            ./launcher/image/bc-guest/bc_network_rebind.sh \
            /workspace/oem-install/confidential_space/
         cp ./launcher/image/nodeproblemdetector/* /workspace/oem-install/confidential_space/nodeproblemdetector/
+        cp ./launcher/internal/gpu/daemons/Dockerfile \
+           ./launcher/internal/gpu/daemons/entrypoint.sh \
+           /workspace/oem-install/gpu_daemons/
         cp ./launcher/image/bc-guest/wsd/* /workspace/oem-install/wsd/
         if [ -f /workspace/wsd_image/image.tar ]; then
             cp /workspace/wsd_image/image.tar /workspace/oem-install/wsd/image.tar

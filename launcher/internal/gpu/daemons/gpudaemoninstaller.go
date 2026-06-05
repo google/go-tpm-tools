@@ -268,6 +268,7 @@ func findNvidiaHostBinary(name string) string {
 
 func findDaemonsDir() string {
 	paths := []string{
+		"/usr/share/oem/gpu_daemons",
 		"launcher/internal/gpu/daemons",
 		"internal/gpu/daemons",
 		"daemons",
