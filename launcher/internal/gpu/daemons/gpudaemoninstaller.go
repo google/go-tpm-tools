@@ -42,7 +42,10 @@ func RunGPUSidecar(ctx context.Context, cdClient *containerd.Client, logger logg
 	}
 
 	// Dynamic detection and load of GPU drivers
-	nvidiaModules := []string{"nvidia", "nvidia-uvm", "nvidia-modeset", "nvidia-peermem"}
+	nvidiaModules := []string{"nvidia", "nvidia-uvm", "nvidia-modeset"}
+	if hasRDMA() {
+		nvidiaModules = append(nvidiaModules, "nvidia-peermem")
+	}
 	for _, mod := range nvidiaModules {
 		logger.Info(fmt.Sprintf("Loading %s module...", mod))
 		cmd := exec.Command("sudo", "/sbin/modprobe", mod)
@@ -280,4 +283,12 @@ func findDaemonsDir() string {
 		}
 	}
 	return ""
+}
+
+func hasRDMA() bool {
+	files, err := os.ReadDir("/sys/class/infiniband")
+	if err != nil {
+		return false
+	}
+	return len(files) > 0
 }

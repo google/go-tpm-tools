@@ -10,7 +10,6 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     grep \
     wget \
     ca-certificates \
-    build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 # Download and install nvlsm
