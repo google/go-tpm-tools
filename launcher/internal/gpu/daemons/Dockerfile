@@ -23,7 +23,7 @@ RUN wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86
 
 # Install nvidia-driver and fabricmanager
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
-    nvidia-driver-590 \
+    nvidia-driver-590-server \
     nvidia-fabricmanager-590 \
     && rm -rf /var/lib/apt/lists/*
 
