@@ -48,7 +48,7 @@ func RunGPUSidecar(ctx context.Context, cdClient *containerd.Client, logger logg
 	}
 	for _, mod := range nvidiaModules {
 		logger.Info(fmt.Sprintf("Loading %s module...", mod))
-		
+
 		// Build modprobe arguments. Inject GSP firmware flag for the main nvidia module.
 		modprobeArgs := []string{"/sbin/modprobe", mod}
 		if mod == "nvidia" {
@@ -69,7 +69,7 @@ func RunGPUSidecar(ctx context.Context, cdClient *containerd.Client, logger logg
 			continue
 		}
 		logger.Info(fmt.Sprintf("Loading kernel module %s from %s", mod, modPath))
-		
+
 		// Build insmod arguments. Inject GSP firmware flag for the main nvidia module.
 		insmodArgs := []string{"/sbin/insmod", modPath}
 		if mod == "nvidia" {
