@@ -24,7 +24,7 @@ export port_guid="$(ibstat | grep -oE '(GUID:\ )(0x[a-z0-9]+)' | grep -oE -m 1 '
 echo "Using Port GUID: ${port_guid}" | tee /dev/console
 
 # Start nvlsm
-nvlsm -F /usr/share/nvidia/nvlsm/nvlsm.conf 2>&1 | tee /dev/console &
+/opt/nvidia/nvlsm/sbin/nvlsm -F /usr/share/nvidia/nvlsm/nvlsm.conf 2>&1 | tee /dev/console &
 
 # Start fabricmanager
 /usr/bin/nv-fabricmanager -c /usr/share/nvidia/nvswitch/fabricmanager.cfg -g ${port_guid} 2>&1 | tee /dev/console &

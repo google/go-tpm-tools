@@ -52,9 +52,11 @@ func RunGPUSidecar(ctx context.Context, cdClient *containerd.Client, logger logg
 		// Build modprobe arguments. Inject GSP firmware flag for the main nvidia module.
 		modprobeArgs := []string{"/sbin/modprobe", mod}
 		if mod == "nvidia" {
+			logger.Info("Enabling GSP GPU firmware offload for nvidia module")
 			modprobeArgs = append(modprobeArgs, "NVreg_EnableGpuFirmware=1")
 		}
 
+		
 		cmd := exec.Command("sudo", modprobeArgs...)
 		out, err := cmd.CombinedOutput()
 		if err == nil {
@@ -73,6 +75,7 @@ func RunGPUSidecar(ctx context.Context, cdClient *containerd.Client, logger logg
 		// Build insmod arguments. Inject GSP firmware flag for the main nvidia module.
 		insmodArgs := []string{"/sbin/insmod", modPath}
 		if mod == "nvidia" {
+			logger.Info("Enabling GSP GPU firmware offload for nvidia module")
 			insmodArgs = append(insmodArgs, "NVreg_EnableGpuFirmware=1")
 		}
 

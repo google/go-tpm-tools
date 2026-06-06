@@ -14,10 +14,11 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
 
 # Add NVIDIA CUDA repository
 RUN wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb \
-    && dpkg -i cuda-keyring_1.1-1_all.deb
+    && dpkg -i cuda-keyring_1.1-1_all.deb \
+    && apt-get update
 
-# Install nvidia-driver and fabricmanager
-RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
+# Install nvidia-driver, fabricmanager, and nvlsm
+RUN DEBIAN_FRONTEND=noninteractive apt-get install -y \
     nvidia-driver-590-server \
     nvidia-fabricmanager-590 \
     nvlsm \
