@@ -205,6 +205,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	var deviceROTs []agent.DeviceROT
 	nvidiaAttester := gpu.NewNvidiaAttester(launchSpec.InstallGpuDriver)
 	if launchSpec.InstallGpuDriver {
+
 		gpuMounts := []specs.Mount{
 			{
 				Type:        "volume",
@@ -218,6 +219,24 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 				Options:     []string{"rbind", "rw"},
 			},
 		}
+
+		if launchSpec.Experiments.BcMode {
+			gpuMounts = []specs.Mount{
+				{
+					Type:        "volume",
+					Source:      fmt.Sprintf("%s/lib64", gpu.BuiltInInstallation590_48_01HostDir),
+					Destination: fmt.Sprintf("%s/lib64", gpu.InstallationContainerDir),
+					Options:     []string{"rbind", "rw"},
+				}, {
+					Type:        "volume",
+					Source:      fmt.Sprintf("%s/bin", gpu.BuiltInInstallation590_48_01HostDir),
+					Destination: fmt.Sprintf("%s/bin", gpu.InstallationContainerDir),
+					Options:     []string{"rbind", "rw"},
+				},
+			}
+
+		}
+
 		specOpts = append(specOpts, oci.WithMounts(gpuMounts))
 
 		// /dev/nvidia-caps/* will not be listed here and will not be passed to
@@ -522,6 +541,7 @@ func (r *ContainerRunner) measureGPUAttestationEvidence() error {
 		return fmt.Errorf("failed to set GPU ready state: %w", err)
 	}
 	r.logger.Info("Successfully measured GPU device attestation binding event and set GPU state to ready")
+
 	return nil
 }
 

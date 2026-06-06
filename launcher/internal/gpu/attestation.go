@@ -50,6 +50,7 @@ func (a *NvidiaAttester) Attest(nonce []byte) (any, error) {
 	if a == nil {
 		return nil, fmt.Errorf("nil Nvidia attester")
 	}
+
 	gpuAttestation, err := a.collectAttestationEvidence(&gpu.DefaultNVMLHandler{}, nonce)
 	if err != nil {
 		return nil, err
