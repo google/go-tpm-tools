@@ -160,6 +160,12 @@ func RunGPUSidecar(ctx context.Context, cdClient *containerd.Client, logger logg
 		}
 	}
 
+	// Ensure the image is unpacked in containerd's snapshotter
+	logger.Info("Unpacking guest GPU tools image...")
+	if err := image.Unpack(ctx, containerd.DefaultSnapshotter); err != nil {
+		return fmt.Errorf("failed to unpack guest GPU tools image: %v", err)
+	}
+
 	// Resolve the correct host driver directory
 	hostDriverDir := "/var/lib/nvidia"
 	if _, err := os.Stat("/opt/nvidia"); err == nil {
