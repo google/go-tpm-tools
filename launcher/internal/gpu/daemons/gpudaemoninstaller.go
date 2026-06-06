@@ -43,44 +43,44 @@ func RunGPUSidecar(ctx context.Context, cdClient *containerd.Client, logger logg
 
 	// Dynamic detection and load of GPU drivers
 	nvidiaModules := []string{"nvidia", "nvidia-uvm", "nvidia-modeset"}
-		if hasRDMA() {
-			nvidiaModules = append(nvidiaModules, "nvidia-peermem")
+	if hasRDMA() {
+		nvidiaModules = append(nvidiaModules, "nvidia-peermem")
+	}
+	for _, mod := range nvidiaModules {
+		logger.Info(fmt.Sprintf("Loading %s module...", mod))
+		
+		// Build modprobe arguments. Inject GSP firmware flag for the main nvidia module.
+		modprobeArgs := []string{"/sbin/modprobe", mod}
+		if mod == "nvidia" {
+			modprobeArgs = append(modprobeArgs, "NVreg_EnableGpuFirmware=1")
 		}
-		for _, mod := range nvidiaModules {
-			logger.Info(fmt.Sprintf("Loading %s module...", mod))
-			
-			// Build modprobe arguments. Inject GSP firmware flag for the main nvidia module.
-			modprobeArgs := []string{"/sbin/modprobe", mod}
-			if mod == "nvidia" {
-				modprobeArgs = append(modprobeArgs, "NVreg_EnableGpuFirmware=1")
-			}
 
-			cmd := exec.Command("sudo", modprobeArgs...)
-			out, err := cmd.CombinedOutput()
-			if err == nil {
-				logger.Info(fmt.Sprintf("Successfully loaded %s via modprobe", mod))
-				continue
-			}
-
-			logger.Info(fmt.Sprintf("modprobe %s failed: %v, output: %s. Trying insmod...", mod, err, string(out)))
-			modPath := findKernelModulePath(kernelVer, mod)
-			if modPath == "" {
-				logger.Info(fmt.Sprintf("Kernel module %s.ko not found in expected paths, skipping", mod))
-				continue
-			}
-			logger.Info(fmt.Sprintf("Loading kernel module %s from %s", mod, modPath))
-			
-			// Build insmod arguments. Inject GSP firmware flag for the main nvidia module.
-			insmodArgs := []string{"/sbin/insmod", modPath}
-			if mod == "nvidia" {
-				insmodArgs = append(insmodArgs, "NVreg_EnableGpuFirmware=1")
-			}
-
-			cmd = exec.Command("sudo", insmodArgs...)
-			if out, err := cmd.CombinedOutput(); err != nil {
-				logger.Info(fmt.Sprintf("failed to run insmod %s: %v, output: %s", modPath, err, string(out)))
-			}
+		cmd := exec.Command("sudo", modprobeArgs...)
+		out, err := cmd.CombinedOutput()
+		if err == nil {
+			logger.Info(fmt.Sprintf("Successfully loaded %s via modprobe", mod))
+			continue
 		}
+
+		logger.Info(fmt.Sprintf("modprobe %s failed: %v, output: %s. Trying insmod...", mod, err, string(out)))
+		modPath := findKernelModulePath(kernelVer, mod)
+		if modPath == "" {
+			logger.Info(fmt.Sprintf("Kernel module %s.ko not found in expected paths, skipping", mod))
+			continue
+		}
+		logger.Info(fmt.Sprintf("Loading kernel module %s from %s", mod, modPath))
+		
+		// Build insmod arguments. Inject GSP firmware flag for the main nvidia module.
+		insmodArgs := []string{"/sbin/insmod", modPath}
+		if mod == "nvidia" {
+			insmodArgs = append(insmodArgs, "NVreg_EnableGpuFirmware=1")
+		}
+
+		cmd = exec.Command("sudo", insmodArgs...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			logger.Info(fmt.Sprintf("failed to run insmod %s: %v, output: %s", modPath, err, string(out)))
+		}
+	}
 
 	// Start nvidia-persistenced daemon on the host if found
 	persistencedCmd := findNvidiaHostBinary("nvidia-persistenced")
