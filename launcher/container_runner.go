@@ -218,6 +218,22 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 				Options:     []string{"rbind", "rw"},
 			},
 		}
+		if launchSpec.Experiments.BcMode {
+			gpuMounts = []specs.Mount{
+				{
+					Type:        "volume",
+					Source:      fmt.Sprintf("%s/lib64", gpu.BuiltInInstallation590_48_01HostDir),
+					Destination: fmt.Sprintf("%s/lib64", gpu.InstallationContainerDir),
+					Options:     []string{"rbind", "rw"},
+				}, {
+					Type:        "volume",
+					Source:      fmt.Sprintf("%s/bin", gpu.BuiltInInstallation590_48_01HostDir),
+					Destination: fmt.Sprintf("%s/bin", gpu.InstallationContainerDir),
+					Options:     []string{"rbind", "rw"},
+				},
+			}
+		}
+
 		specOpts = append(specOpts, oci.WithMounts(gpuMounts))
 
 		// /dev/nvidia-caps/* will not be listed here and will not be passed to
