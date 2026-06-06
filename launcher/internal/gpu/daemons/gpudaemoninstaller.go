@@ -20,7 +20,7 @@ import (
 
 const (
 	// GuestGPUToolsImageRef is the image reference for guest GPU tools sidecar
-	GuestGPUToolsImageRef = "guest-gpu-tools:latest"
+	GuestGPUToolsImageRef = "docker.io/library/guest-gpu-tools:latest"
 	gpuToolsContainerID   = "guest-gpu-tools-container"
 	gpuToolsSnapshotID    = "guest-gpu-tools-snapshot"
 )
