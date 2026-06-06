@@ -12,11 +12,6 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Download and install nvlsm
-RUN wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/nvlsm_2025.06.10-1_amd64.deb \
-    && dpkg -i nvlsm_2025.06.10-1_amd64.deb || DEBIAN_FRONTEND=noninteractive apt-get install -f -y \
-    && rm nvlsm_2025.06.10-1_amd64.deb
-
 # Add NVIDIA CUDA repository
 RUN wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb \
     && dpkg -i cuda-keyring_1.1-1_all.deb
@@ -25,6 +20,7 @@ RUN wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     nvidia-driver-590-server \
     nvidia-fabricmanager-590 \
+    nvlsm \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy the entrypoint script
