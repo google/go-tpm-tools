@@ -61,7 +61,6 @@ func RunGPUSidecar(ctx context.Context, cdClient *containerd.Client, logger logg
 			modprobeArgs = append(modprobeArgs, "NVreg_EnableGpuFirmware=1")
 		}
 
-		
 		cmd := exec.Command("sudo", modprobeArgs...)
 		out, err := cmd.CombinedOutput()
 		if err == nil {

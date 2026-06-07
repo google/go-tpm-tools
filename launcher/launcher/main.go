@@ -213,22 +213,10 @@ func startLauncher(launchSpec spec.LaunchSpec, serialConsole *os.File) error {
 		if err != nil {
 			return fmt.Errorf("failed to install gpu drivers: %v", err)
 		}
-
-	} else {
-
-		// TODO: Add this correct location when GC GPU installation is supported
+	} else if launchSpec.GpuBcMode {
 		err = daemons.RunGPUSidecar(ctx, containerdClient, logger)
 		if err != nil {
 			return fmt.Errorf("failed to run gpu sidecar: %v", err)
-		}
-
-		// TODO: Remove this when BC GPU installation is supported
-		if !launchSpec.Experiments.BcMode {
-			deviceInfo, _ := deviceinfo.GetGPUTypeInfo()
-			if deviceInfo != deviceinfo.NO_GPU {
-				logger.Error("GPU is attached, tee-install-gpu-driver is not set")
-				return fmt.Errorf("failed to install GPU drivers: tee-install-gpu-driver must be set to true")
-			}
 		}
 
 		logger.Info("Waiting for GPU services to report ready...")
@@ -238,6 +226,15 @@ func startLauncher(launchSpec spec.LaunchSpec, serialConsole *os.File) error {
 			return fmt.Errorf("failed to initialize GPU daemons: %w", err)
 		}
 		logger.Info("GPU services are ready. Proceeding to launch workload container.")
+	} else {
+		// TODO: Remove this check when BC GPU installation is supported
+		if !launchSpec.Experiments.BcMode {
+			deviceInfo, _ := deviceinfo.GetGPUTypeInfo()
+			if deviceInfo != deviceinfo.NO_GPU {
+				logger.Error("GPU is attached, tee-install-gpu-driver is not set")
+				return fmt.Errorf("failed to install GPU drivers: tee-install-gpu-driver must be set to true")
+			}
+		}
 	}
 
 	logger.Info("Launch started", "duration_sec", time.Since(start).Seconds())

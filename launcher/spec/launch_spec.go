@@ -96,6 +96,7 @@ const (
 	cgroupNS                   = "tee-cgroup-ns"
 	gcaServiceEnv              = "gca-service-env"
 	installGpuDriver           = "tee-install-gpu-driver"
+	gpuBcMode                  = "tee-gpu-bc-mode"
 	disableGcaRefreshKey       = "tee-disable-gca-refresh"
 )
 
@@ -142,6 +143,7 @@ type LaunchSpec struct {
 	AddedCapabilities          []string
 	CgroupNamespace            bool
 	InstallGpuDriver           bool
+	GpuBcMode                  bool
 	DisableGcaRefresh          bool
 }
 
@@ -164,6 +166,12 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 	if val, ok := unmarshaledMap[installGpuDriver]; ok && val != "" {
 		if boolValue, err := strconv.ParseBool(val); err == nil {
 			s.InstallGpuDriver = boolValue
+		}
+	}
+
+	if val, ok := unmarshaledMap[gpuBcMode]; ok && val != "" {
+		if boolValue, err := strconv.ParseBool(val); err == nil {
+			s.GpuBcMode = boolValue
 		}
 	}
 

@@ -204,41 +204,48 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 
 	var deviceROTs []agent.DeviceROT
 	nvidiaAttester := gpu.NewNvidiaAttester(launchSpec.InstallGpuDriver)
-	if launchSpec.InstallGpuDriver {
-		gpuMounts := []specs.Mount{
-			{
-				Type:        "volume",
-				Source:      fmt.Sprintf("%s/lib64", gpu.InstallationHostDir),
-				Destination: fmt.Sprintf("%s/lib64", gpu.InstallationContainerDir),
-				Options:     []string{"rbind", "rw"},
-			}, {
-				Type:        "volume",
-				Source:      fmt.Sprintf("%s/bin", gpu.InstallationHostDir),
-				Destination: fmt.Sprintf("%s/bin", gpu.InstallationContainerDir),
-				Options:     []string{"rbind", "rw"},
-			},
-		}
-		specOpts = append(specOpts, oci.WithMounts(gpuMounts))
 
-		// /dev/nvidia-caps/* will not be listed here and will not be passed to
-		// the container workload
-		//
-		// following devices should be listed:
-		// /dev/nvidiactl
-		// /dev/nvidia-uvm
-		// /dev/nvidia-uvm-tools
-		// /dev/nvidia{0,1,2,...}
-		// /dev/nvidia-modeset
+	if launchSpec.InstallGpuDriver || launchSpec.GpuBcMode {
 		gpuDeviceFiles, err := listFilesWithPrefix("/dev", "nvidia")
-		if err != nil {
-			return nil, fmt.Errorf("failed to list nvidia devices: [%w]", err)
-		}
+		// If nvidia devices are detected on the host:
+		if err == nil && len(gpuDeviceFiles) > 0 {
+			hostDriverDir := gpu.InstallationHostDir
+			if _, err := os.Stat("/opt/nvidia"); err == nil {
+				hostDriverDir = "/opt/nvidia"
+			}
 
-		for _, deviceFile := range gpuDeviceFiles {
-			logger.Info(fmt.Sprintf("Detected nvidia device : %s", deviceFile))
-			specOpts = append(specOpts, oci.WithDevices(deviceFile, deviceFile, "crw-rw-rw-"))
+			gpuMounts := []specs.Mount{
+				{
+					Type:        "volume",
+					Source:      fmt.Sprintf("%s/lib64", hostDriverDir),
+					Destination: fmt.Sprintf("%s/lib64", gpu.InstallationContainerDir),
+					Options:     []string{"rbind", "rw"},
+				}, {
+					Type:        "volume",
+					Source:      fmt.Sprintf("%s/bin", hostDriverDir),
+					Destination: fmt.Sprintf("%s/bin", gpu.InstallationContainerDir),
+					Options:     []string{"rbind", "rw"},
+				},
+			}
+			specOpts = append(specOpts, oci.WithMounts(gpuMounts))
+
+			// /dev/nvidia-caps/* will not be listed here and will not be passed to
+			// the container workload
+			//
+			// following devices should be listed:
+			// /dev/nvidiactl
+			// /dev/nvidia-uvm
+			// /dev/nvidia-uvm-tools
+			// /dev/nvidia{0,1,2,...}
+			// /dev/nvidia-modeset
+			for _, deviceFile := range gpuDeviceFiles {
+				logger.Info(fmt.Sprintf("Detected nvidia device : %s", deviceFile))
+				specOpts = append(specOpts, oci.WithDevices(deviceFile, deviceFile, "crw-rw-rw-"))
+			}
+			if nvidiaAttester != nil {
+				deviceROTs = append(deviceROTs, nvidiaAttester)
+			}
 		}
-		deviceROTs = append(deviceROTs, nvidiaAttester)
 	}
 
 	container, err = cdClient.NewContainer(
