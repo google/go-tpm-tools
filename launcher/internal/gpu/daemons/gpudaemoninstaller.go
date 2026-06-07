@@ -22,8 +22,10 @@ import (
 const (
 	// GuestGPUToolsImageRef is the image reference for guest GPU tools sidecar
 	GuestGPUToolsImageRef = "docker.io/library/guest-gpu-tools:latest"
-	gpuToolsContainerID   = "guest-gpu-tools-container"
-	gpuToolsSnapshotID    = "guest-gpu-tools-snapshot"
+	// TODO(future): DistrolessGPUToolsImageRef is the future image reference for a distroless guest GPU tools sidecar
+	// DistrolessGPUToolsImageRef = "docker.io/library/distroless-gpu-tools:latest"
+	gpuToolsContainerID = "guest-gpu-tools-container"
+	gpuToolsSnapshotID  = "guest-gpu-tools-snapshot"
 )
 
 // RunGPUSidecar runs the GPU tools sidecar container in the background.
@@ -343,3 +345,25 @@ func WaitForGPUServices(ctx context.Context) error {
 		}
 	}
 }
+
+// RunGPUSidecarDistroless runs the future optimized distroless GPU tools sidecar image.
+//
+// TODO(future): Implement this method to launch a container task based on gcr.io/distroless/cc-debian12.
+// Building and running a distroless container allows us to:
+//  1. Decouple dependencies (like glibc and dynamic linkers) to prevent conflicts with the host OS.
+//  2. Drastically reduce the sidecar image footprint (from ~200MB+ down to ~30MB).
+//  3. Eliminate VM-bootup build/export delays (reducing bootup GPU setup duration from ~71s to <1s)
+//     by pre-building and caching the container image in the guest image local containerd repository.
+// func RunGPUSidecarDistroless(ctx context.Context, cdClient *containerd.Client, logger logging.Logger) error {
+// 	return fmt.Errorf("unimplemented: RunGPUSidecarDistroless is a future optimization placeholder")
+// }
+
+// RunGPUSidecarChroot runs GPU daemons natively inside an isolated chroot jail filesystem.
+//
+// TODO(future): Implement this method to run GPU daemons natively inside a chroot jail at
+// /opt/nvidia/sidecar_root/ or in a dedicated mount namespace (unshare -m).
+// This serves as an alternative to containerd tasks, bypassing OCI/containerd runtime overhead
+// (cgroups, networking, containerd database tasks) while still ensuring dynamic library decoupling.
+// func RunGPUSidecarChroot(ctx context.Context, logger logging.Logger) error {
+// 	return fmt.Errorf("unimplemented: RunGPUSidecarChroot is a future optimization placeholder")
+// }

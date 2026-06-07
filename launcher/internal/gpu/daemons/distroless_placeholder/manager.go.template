@@ -1,0 +1,86 @@
+package main
+
+import (
+	"fmt"
+	"log"
+	"os"
+	"os/exec"
+	"time"
+
+	"github.com/NVIDIA/go-nvml/pkg/nvml"
+)
+
+// TODO(future): Compile this binary and use it as the entrypoint for the distroless sidecar.
+func main() {
+	log.Println("Starting Distroless GPU Sidecar Manager...")
+
+	// 1. Load the NVIDIA kernel modules
+	log.Println("Loading nvidia-peermem...")
+	if err := exec.Command("/bin/modprobe", "nvidia-peermem").Run(); err != nil {
+		log.Printf("Warning: failed to load nvidia-peermem: %v", err)
+	}
+
+	// 2. Start the Fabric Manager in the background
+	log.Println("Starting nvidia-fabricmanager...")
+	fmCmd := exec.Command("/bin/nvidia-fabricmanager", "-g")
+	fmCmd.Stdout = os.Stdout
+	fmCmd.Stderr = os.Stderr
+	if err := fmCmd.Start(); err != nil {
+		log.Fatalf("Failed to start Fabric Manager: %v", err)
+	}
+
+	// 3. Start NVSLM in the background
+	log.Println("Starting nvslm...")
+	nvslmCmd := exec.Command("/bin/nvslm")
+	nvslmCmd.Stdout = os.Stdout
+	nvslmCmd.Stderr = os.Stderr
+	if err := nvslmCmd.Start(); err != nil {
+		log.Fatalf("Failed to start NVSLM: %v", err)
+	}
+
+	// Wait for Fabric Manager linkages to stabilize
+	log.Println("Waiting for fabric manager linkages to stabilize...")
+	time.Sleep(10 * time.Second)
+
+	// 4. Initialize NVML and check/promote GPU CC states
+	log.Println("Initializing NVML API...")
+	if ret := nvml.Init(); ret != nvml.SUCCESS {
+		log.Fatalf("Failed to initialize NVML: %v", nvml.ErrorString(ret))
+	}
+	defer nvml.Shutdown()
+
+	gpuCount, ret := nvml.DeviceGetCount()
+	if ret != nvml.SUCCESS {
+		log.Fatalf("Failed to get GPU device count: %v", nvml.ErrorString(ret))
+	}
+	log.Printf("Detected %d GPUs on the host. Commencing ready checks...", gpuCount)
+
+	for i := 0; i < gpuCount; i++ {
+		device, ret := nvml.DeviceGetHandleByIndex(i)
+		if ret != nvml.SUCCESS {
+			log.Fatalf("Failed to get GPU handle for index %d: %v", i, nvml.ErrorString(ret))
+		}
+
+		uuid, _ := device.GetUUID()
+		log.Printf("Checking GPU %d [%s]...", i, uuid)
+
+		// Set the GPU CC state to ready (equivalent to nvidia-smi conf-compute -srs 1)
+		// Note: We use nvidia-smi command here as NVML's raw API for setting ready state
+		// is typically managed via driver IOCTLs or private symbols.
+		srsCmd := exec.Command("/bin/nvidia-smi", "conf-compute", "-srs", "1", "-i", fmt.Sprintf("%d", i))
+		if out, err := srsCmd.CombinedOutput(); err != nil {
+			log.Printf("Warning: failed to set ready state for GPU %d: %v, output: %s", i, err, string(out))
+		} else {
+			log.Printf("Successfully set CC ready state to 1 for GPU %d", i)
+		}
+	}
+
+	// 5. Signal that GPU services are Ready
+	log.Println("GPU Services fully ready. Writing readiness marker...")
+	if err := os.WriteFile("/run/nvidia/gpu-ready", []byte("1"), 0644); err != nil {
+		log.Printf("Warning: failed to write readiness marker: %v", err)
+	}
+
+	// 6. Block indefinitely to keep the background daemons running
+	select {}
+}
