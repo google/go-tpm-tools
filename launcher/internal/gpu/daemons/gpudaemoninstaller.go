@@ -329,18 +329,14 @@ func hasRDMA() bool {
 const gpuReadyPath = "/run/nvidia/gpu-ready"
 
 // WaitForGPUServices blocks until the sidecar daemon writes the readiness file.
-func WaitForGPUServices(ctx context.Context, timeout time.Duration) error {
+func WaitForGPUServices(ctx context.Context) error {
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
-
-	timeoutChan := time.After(timeout)
 
 	for {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
-		case <-timeoutChan:
-			return fmt.Errorf("timeout waiting for GPU initialization file at %s", gpuReadyPath)
+			return fmt.Errorf("timed out waiting for GPU driver initialization: %w", ctx.Err())
 		case <-ticker.C:
 			if _, err := os.Stat(gpuReadyPath); err == nil {
 				return nil

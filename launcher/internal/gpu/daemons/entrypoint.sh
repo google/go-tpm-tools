@@ -84,7 +84,8 @@ for gpu in $gpus; do
     fi
 done
 
-# Write readiness marker file
-echo "GPU initialization complete." > /run/nvidia/gpu-ready
+# Write the readiness marker to the shared volume
+echo "GPU initialization completed successfully. Writing ready marker." | tee /dev/console
+touch /run/nvidia/gpu-ready
 echo "Services started. Waiting indefinitely..." | tee /dev/console
 sleep infinity

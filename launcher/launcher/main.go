@@ -234,7 +234,7 @@ func startLauncher(launchSpec spec.LaunchSpec, serialConsole *os.File) error {
 		logger.Info("Waiting for GPU services to report ready...")
 		waitCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 		defer cancel()
-		if err := daemons.WaitForGPUServices(waitCtx, 2*time.Minute); err != nil {
+		if err := daemons.WaitForGPUServices(waitCtx); err != nil {
 			return fmt.Errorf("failed to initialize GPU daemons: %w", err)
 		}
 		logger.Info("GPU services are ready. Proceeding to launch workload container.")
