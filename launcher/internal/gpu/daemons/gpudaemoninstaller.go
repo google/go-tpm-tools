@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/cio"
@@ -28,6 +29,10 @@ const (
 // RunGPUSidecar runs the GPU tools sidecar container in the background.
 func RunGPUSidecar(ctx context.Context, cdClient *containerd.Client, logger logging.Logger) error {
 	ctx = namespaces.WithNamespace(ctx, namespaces.Default)
+
+	if err := os.MkdirAll("/run/nvidia", 0755); err != nil {
+		logger.Warn(fmt.Sprintf("failed to create /run/nvidia directory: %v", err))
+	}
 
 	// Load required ib_umad module
 	logger.Info("Loading ib_umad module...")
@@ -201,6 +206,11 @@ func RunGPUSidecar(ctx context.Context, cdClient *containerd.Client, logger logg
 			Source:      hostDriverDir,
 			Destination: "/opt/nvidia-host",
 			Options:     []string{"rbind", "rw"},
+		}, {
+			Type:        "volume",
+			Source:      "/run/nvidia",
+			Destination: "/run/nvidia",
+			Options:     []string{"rbind", "rw"},
 		},
 	}
 
@@ -314,4 +324,27 @@ func hasRDMA() bool {
 		return false
 	}
 	return len(files) > 0
+}
+
+const gpuReadyPath = "/run/nvidia/gpu-ready"
+
+// WaitForGPUServices blocks until the sidecar daemon writes the readiness file.
+func WaitForGPUServices(ctx context.Context, timeout time.Duration) error {
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+
+	timeoutChan := time.After(timeout)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-timeoutChan:
+			return fmt.Errorf("timeout waiting for GPU initialization file at %s", gpuReadyPath)
+		case <-ticker.C:
+			if _, err := os.Stat(gpuReadyPath); err == nil {
+				return nil
+			}
+		}
+	}
 }

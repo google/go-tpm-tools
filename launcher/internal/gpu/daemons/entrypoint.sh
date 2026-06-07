@@ -84,6 +84,7 @@ for gpu in $gpus; do
     fi
 done
 
-# Keep container running by sleeping infinity, since background tasks might fork and exit
+# Write readiness marker file
+echo "GPU initialization complete." > /run/nvidia/gpu-ready
 echo "Services started. Waiting indefinitely..." | tee /dev/console
 sleep infinity
