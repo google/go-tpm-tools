@@ -13,12 +13,18 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	// Bootstrap environment flags to prevent duplicate proto registration panics.
+	_ "github.com/google/go-tpm-tools/launcher/teeserver/envinit"
+
 	gecel "github.com/google/go-eventlog/cel"
 	"github.com/google/go-tpm-tools/agent"
+
 	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
 	"github.com/google/go-tpm-tools/launcher/internal/experiments"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/spec"
+
+	tspb "github.com/google/go-tpm-tools/launcher/teeserver/proto/gen/teeserver"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/google/go-tpm-tools/verifier/models"
 	"google.golang.org/grpc/codes"
@@ -105,6 +111,21 @@ func (m *mockClaimsProvider) GetKeyClaims(_ context.Context, _ string, kt keyman
 		return nil, m.err
 	}
 	return m.claims[kt], nil
+}
+
+type fakeKEMAttester struct {
+	getKeyEndorsementFunc func(context.Context, *tspb.GetKeyEndorsementRequest) (*attestationpb.VmAttestation, error)
+}
+
+func (f fakeKEMAttester) GetKeyEndorsement(ctx context.Context, req *tspb.GetKeyEndorsementRequest) (*attestationpb.VmAttestation, error) {
+	if f.getKeyEndorsementFunc != nil {
+		return f.getKeyEndorsementFunc(ctx, req)
+	}
+	return nil, fmt.Errorf("GetKeyEndorsement unimplemented")
+}
+
+func (f fakeKEMAttester) Close() error {
+	return nil
 }
 
 func TestGetDefaultToken(t *testing.T) {
@@ -978,6 +999,14 @@ func TestGetKeyEndorsement(t *testing.T) {
 					return &attestationpb.VmAttestation{ExtraData: b2}, nil
 				},
 			}
+			mKEM := fakeKEMAttester{
+				getKeyEndorsementFunc: func(_ context.Context, _ *tspb.GetKeyEndorsementRequest) (*attestationpb.VmAttestation, error) {
+					if tt.attestErr != nil {
+						return nil, tt.attestErr
+					}
+					return &attestationpb.VmAttestation{}, nil
+				},
+			}
 			handler := &attestHandler{
 				ctx:               context.Background(),
 				attestAgent:       mAgent,
@@ -986,6 +1015,7 @@ func TestGetKeyEndorsement(t *testing.T) {
 				launchSpec: spec.LaunchSpec{
 					Experiments: experiments.Experiments{EnableKeyManager: tt.enableKM},
 				},
+				kemAttester: mKEM,
 			}
 			body, _ := json.Marshal(tt.reqBody)
 			req := httptest.NewRequest(http.MethodPost, endorsementEndpoint, bytes.NewBuffer(body))
@@ -1009,6 +1039,50 @@ func TestGetKeyEndorsement(t *testing.T) {
 					t.Error("one or both attestations are nil")
 				}
 			}
+		})
+	}
+}
+
+func TestInitKEMAttester(t *testing.T) {
+	mClaims := &mockClaimsProvider{}
+	mAgent := &fakeAttestationAgent{}
+
+	tests := []struct {
+		name       string
+		bcMode     bool
+		verifyType func(t *testing.T, attester KEMAttester)
+	}{
+		{
+			name:   "local KEM attester",
+			bcMode: false,
+			verifyType: func(t *testing.T, attester KEMAttester) {
+				if _, ok := attester.(*localKEMAttester); !ok {
+					t.Errorf("returned %T, want *localKEMAttester", attester)
+				}
+			},
+		},
+		{
+			name:   "remote KEM attester",
+			bcMode: true,
+			verifyType: func(t *testing.T, attester KEMAttester) {
+				if _, ok := attester.(*remoteKEMAttester); !ok {
+					t.Errorf("returned %T, want *remoteKEMAttester", attester)
+				}
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			attester, err := initKEMAttester(tc.bcMode, mClaims, mAgent)
+			if err != nil {
+				t.Fatalf("initKEMAttester(%t) failed: %v", tc.bcMode, err)
+			}
+			if attester == nil {
+				t.Fatal("returned nil attester")
+			}
+			defer attester.Close()
+			tc.verifyType(t, attester)
 		})
 	}
 }
