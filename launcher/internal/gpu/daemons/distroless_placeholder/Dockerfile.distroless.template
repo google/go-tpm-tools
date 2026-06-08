@@ -1,0 +1,37 @@
+# TODO(future): Build this Dockerfile to generate the distroless GPU sidecar container image.
+#
+# --- Stage 1: Build the Go Manager ---
+FROM golang:1.26-bookworm AS go-builder
+WORKDIR /src
+COPY manager.go .
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o sidecar-manager manager.go
+
+# --- Stage 2: Distroless GPU Runtime ---
+FROM gcr.io/distroless/cc-debian12:latest
+
+# Copy kernel modprobe utility and system dependency libraries
+COPY /sbin/modprobe /sbin/
+COPY /lib/modules /lib/modules
+
+# Copy NVIDIA Fabric Manager and NVSLM binaries
+COPY /opt/nvidia/bin/nvidia-fabricmanager /bin/
+COPY /opt/nvidia/bin/nvslm /bin/
+COPY /opt/nvidia/bin/nvidia-smi /bin/
+
+# Copy configuration folders
+COPY /usr/share/nvidia/nvlsm /usr/share/nvidia/nvlsm
+COPY /etc/nvidia /etc/nvidia
+
+# Copy exact dynamic library dependencies needed by Fabric Manager & NVSLM
+COPY /usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1 /lib/
+COPY /usr/lib/x86_64-linux-gnu/libnvidia-cfg.so.1 /lib/
+COPY /usr/lib/x86_64-linux-gnu/libxml2.so.2 /lib/
+
+# Copy the compiled Go entrypoint manager
+COPY --from=go-builder /src/sidecar-manager /bin/sidecar-manager
+
+# Shared mount sockets for Fabric Manager communication
+VOLUME /var/run/nvidia-fabricmanager
+VOLUME /run/nvidia
+
+ENTRYPOINT ["/bin/sidecar-manager"]

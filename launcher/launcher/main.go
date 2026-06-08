@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+	"syscall"
 	"time"
 
 	"cloud.google.com/go/compute/metadata"
@@ -22,6 +23,8 @@ import (
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/launcher"
 	"github.com/google/go-tpm-tools/launcher/internal/gpu"
+	"github.com/google/go-tpm-tools/launcher/internal/gpu/daemons"
+	"github.com/google/go-tpm-tools/launcher/internal/launchermount"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/registryauth"
@@ -205,14 +208,40 @@ func startLauncher(launchSpec spec.LaunchSpec, serialConsole *os.File) error {
 	}
 	ctx := namespaces.WithNamespace(context.Background(), namespaces.Default)
 
+	var gpuTmpfs launchermount.Mount
 	if launchSpec.InstallGpuDriver {
 		installer := gpu.NewDriverInstaller(containerdClient, launchSpec, logger)
 		err = installer.InstallGPUDrivers(ctx)
+		gpuTmpfs = installer.Tmpfs()
 		if err != nil {
+			if gpuTmpfs != nil {
+				gpuTmpfs.CleanUp()
+			}
 			return fmt.Errorf("failed to install gpu drivers: %v", err)
 		}
+		if gpuTmpfs != nil {
+			defer func() {
+				if err := gpuTmpfs.CleanUp(); err != nil {
+					logger.Error(fmt.Sprintf("failed to clean up GPU tmpfs mount: %v", err))
+				}
+			}()
+		}
+	}
+	if launchSpec.GpuBcMode {
+		err = daemons.RunGPUSidecar(ctx, containerdClient, logger)
+		if err != nil {
+			return fmt.Errorf("failed to run gpu sidecar: %v", err)
+		}
+
+		logger.Info("Waiting for GPU services to report ready...")
+		waitCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+		defer cancel()
+		if err := daemons.WaitForGPUServices(waitCtx); err != nil {
+			return fmt.Errorf("failed to initialize GPU daemons: %w", err)
+		}
+		logger.Info("GPU services are ready. Proceeding to launch workload container.")
 	} else {
-		// TODO: Remove this when BC GPU installation is supported
+		// TODO: Remove this check when BC GPU installation is supported
 		if !launchSpec.Experiments.BcMode {
 			deviceInfo, _ := deviceinfo.GetGPUTypeInfo()
 			if deviceInfo != deviceinfo.NO_GPU {
@@ -348,18 +377,41 @@ func verifyFsAndMount() error {
 		return fmt.Errorf("stateful partition is not using the aes-gcm-random cipher: \n%s", dmTableCryptOutput)
 	}
 
-	// Make sure /var/lib/containerd is on protected_stateful_partition.
+	// Make sure protected_stateful_partition mounts are correct.
 	findmountOutput, err := exec.Command("findmnt", "/dev/mapper/protected_stateful_partition").Output()
 	if err != nil {
 		return fmt.Errorf("failed to findmnt /dev/mapper/protected_stateful_partition: %v %s", err, string(findmountOutput))
 	}
-	matched = regexp.MustCompile(`/var/lib/containerd\s+/dev/mapper/protected_stateful_partition\[/var/lib/containerd\]\s+ext4\s+rw,nosuid,nodev,relatime,commit=30`).FindString(string(findmountOutput))
-	if len(matched) == 0 {
-		return fmt.Errorf("/var/lib/containerd was not mounted on the protected_stateful_partition: \n%s", findmountOutput)
-	}
 	matched = regexp.MustCompile(`/var/lib/google\s+/dev/mapper/protected_stateful_partition\[/var/lib/google\]\s+ext4\s+rw,nosuid,nodev,relatime,commit=30`).FindString(string(findmountOutput))
 	if len(matched) == 0 {
 		return fmt.Errorf("/var/lib/google was not mounted on the protected_stateful_partition: \n%s", findmountOutput)
+	}
+
+	// Verify /var/lib/containerd is on either stateful partition or a >= 10GB tmpfs RAM disk
+	findmntContainerd, err := exec.Command("findmnt", "/var/lib/containerd").Output()
+	if err != nil {
+		return fmt.Errorf("failed to findmnt /var/lib/containerd: %v %s", err, string(findmntContainerd))
+	}
+
+	isStateful := strings.Contains(string(findmntContainerd), "/dev/mapper/protected_stateful_partition")
+	isTmpfs := strings.Contains(string(findmntContainerd), "tmpfs")
+
+	if isStateful {
+		matched = regexp.MustCompile(`/var/lib/containerd\s+/dev/mapper/protected_stateful_partition\[/var/lib/containerd\]\s+ext4\s+rw,nosuid,nodev,relatime,commit=30`).FindString(string(findmntContainerd))
+		if len(matched) == 0 {
+			return fmt.Errorf("/var/lib/containerd was not mounted on the protected_stateful_partition with correct options: \n%s", findmntContainerd)
+		}
+	} else if isTmpfs {
+		var stat syscall.Statfs_t
+		if err := syscall.Statfs("/var/lib/containerd", &stat); err != nil {
+			return fmt.Errorf("failed to check filesystem stats of /var/lib/containerd: %v", err)
+		}
+		totalSize := stat.Blocks * uint64(stat.Bsize)
+		if totalSize < 10*1024*1024*1024 {
+			return fmt.Errorf("/var/lib/containerd tmpfs size is too small (%d bytes), must be at least 10GB", totalSize)
+		}
+	} else {
+		return fmt.Errorf("/var/lib/containerd must be mounted on either protected_stateful_partition or tmpfs: \n%s", findmntContainerd)
 	}
 
 	// Check /tmp is on tmpfs.

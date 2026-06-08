@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -204,41 +205,53 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 
 	var deviceROTs []agent.DeviceROT
 	nvidiaAttester := gpu.NewNvidiaAttester(launchSpec.InstallGpuDriver)
-	if launchSpec.InstallGpuDriver {
-		gpuMounts := []specs.Mount{
-			{
-				Type:        "volume",
-				Source:      fmt.Sprintf("%s/lib64", gpu.InstallationHostDir),
-				Destination: fmt.Sprintf("%s/lib64", gpu.InstallationContainerDir),
-				Options:     []string{"rbind", "rw"},
-			}, {
-				Type:        "volume",
-				Source:      fmt.Sprintf("%s/bin", gpu.InstallationHostDir),
-				Destination: fmt.Sprintf("%s/bin", gpu.InstallationContainerDir),
-				Options:     []string{"rbind", "rw"},
-			},
-		}
-		specOpts = append(specOpts, oci.WithMounts(gpuMounts))
 
-		// /dev/nvidia-caps/* will not be listed here and will not be passed to
-		// the container workload
-		//
-		// following devices should be listed:
-		// /dev/nvidiactl
-		// /dev/nvidia-uvm
-		// /dev/nvidia-uvm-tools
-		// /dev/nvidia{0,1,2,...}
-		// /dev/nvidia-modeset
+	if launchSpec.InstallGpuDriver || launchSpec.GpuBcMode {
 		gpuDeviceFiles, err := listFilesWithPrefix("/dev", "nvidia")
-		if err != nil {
-			return nil, fmt.Errorf("failed to list nvidia devices: [%w]", err)
-		}
+		// If nvidia devices are detected on the host:
+		if err == nil && len(gpuDeviceFiles) > 0 {
+			hostDriverDir := getHostDriverDir()
 
-		for _, deviceFile := range gpuDeviceFiles {
-			logger.Info(fmt.Sprintf("Detected nvidia device : %s", deviceFile))
-			specOpts = append(specOpts, oci.WithDevices(deviceFile, deviceFile, "crw-rw-rw-"))
+			gpuMounts := []specs.Mount{
+				{
+					Type:        "volume",
+					Source:      fmt.Sprintf("%s/lib64", hostDriverDir),
+					Destination: fmt.Sprintf("%s/lib64", gpu.InstallationContainerDir),
+					Options:     []string{"rbind", "rw"},
+				}, {
+					Type:        "volume",
+					Source:      fmt.Sprintf("%s/bin", hostDriverDir),
+					Destination: fmt.Sprintf("%s/bin", gpu.InstallationContainerDir),
+					Options:     []string{"rbind", "rw"},
+				},
+			}
+			if launchSpec.GpuBcMode {
+				gpuMounts = append(gpuMounts, specs.Mount{
+					Type:        "volume",
+					Source:      "/var/run/nvidia-fabricmanager",
+					Destination: "/var/run/nvidia-fabricmanager",
+					Options:     []string{"rbind", "rw"},
+				})
+			}
+			specOpts = append(specOpts, oci.WithMounts(gpuMounts))
+
+			// /dev/nvidia-caps/* will not be listed here and will not be passed to
+			// the container workload
+			//
+			// following devices should be listed:
+			// /dev/nvidiactl
+			// /dev/nvidia-uvm
+			// /dev/nvidia-uvm-tools
+			// /dev/nvidia{0,1,2,...}
+			// /dev/nvidia-modeset
+			for _, deviceFile := range gpuDeviceFiles {
+				logger.Info(fmt.Sprintf("Detected nvidia device : %s", deviceFile))
+				specOpts = append(specOpts, oci.WithDevices(deviceFile, deviceFile, "crw-rw-rw-"))
+			}
+			if nvidiaAttester != nil {
+				deviceROTs = append(deviceROTs, nvidiaAttester)
+			}
 		}
-		deviceROTs = append(deviceROTs, nvidiaAttester)
 	}
 
 	container, err = cdClient.NewContainer(
@@ -999,4 +1012,38 @@ func appendCgroupRw(mounts []specs.Mount) []specs.Mount {
 	}
 
 	return append(mounts, m)
+}
+
+// getHostDriverDir queries the active GPU driver version from the kernel
+// to resolve the corresponding versioned directory under /opt/nvidia,
+// falling back to directory scanning or the default installer folder.
+func getHostDriverDir() string {
+	hostDriverDir := gpu.InstallationHostDir
+	if _, err := os.Stat("/opt/nvidia"); err != nil {
+		return hostDriverDir
+	}
+
+	// 1. Query active driver version from the kernel proc filesystem
+	if data, err := os.ReadFile("/proc/driver/nvidia/version"); err == nil {
+		fields := strings.Fields(string(data))
+		for _, field := range fields {
+			if strings.Count(field, ".") == 2 && len(field) >= 7 {
+				targetDir := filepath.Join("/opt/nvidia", field)
+				if _, err := os.Stat(targetDir); err == nil {
+					return targetDir
+				}
+			}
+		}
+	}
+
+	// 2. Fallback: Query first available subdirectory under /opt/nvidia
+	if subdirs, err := os.ReadDir("/opt/nvidia"); err == nil {
+		for _, subdir := range subdirs {
+			if subdir.IsDir() {
+				return filepath.Join("/opt/nvidia", subdir.Name())
+			}
+		}
+	}
+
+	return hostDriverDir
 }

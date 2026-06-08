@@ -3,6 +3,7 @@ package launchermount
 import (
 	"errors"
 	"fmt"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 
@@ -77,4 +78,12 @@ func (tm TmpfsMount) SpecsMount() specs.Mount {
 // Mountpoint gives the place in the container where the tmpfs is mounted.
 func (tm TmpfsMount) Mountpoint() string {
 	return tm.Destination
+}
+
+// CleanUp unmounts the tmpfs.
+func (tm TmpfsMount) CleanUp() error {
+	if err := exec.Command("sudo", "umount", tm.Destination).Run(); err != nil {
+		return fmt.Errorf("failed to unmount %v: %v", tm.Destination, err)
+	}
+	return nil
 }
