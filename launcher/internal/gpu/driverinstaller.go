@@ -173,11 +173,16 @@ func (di *DriverInstaller) InstallGPUDrivers(ctx context.Context) error {
 			break
 		}
 		if attempt == 0 && di.launchSpec.GpuBcMode {
+			// The Guest OS boot disk has strict storage limits. Extracting and compiling the massive
+			// NVIDIA driver packages can exhaust local storage. If the first install attempt fails,
+			// we fallback to mounting a temporary, volatile RAM-disk (tmpfs) to complete the driver
+			// compilation in memory.
 			di.logger.Info(fmt.Sprintf("Failed to install GPU driver: %v. Retrying with tmpfs mount...", installErr))
 			var tmpfsErr error
 			di.tmpfs, tmpfsErr = launchermount.CreateTmpfsMount(map[string]string{
 				launchermount.DestinationKey: InstallationHostDir,
-				// driver installer container requires ~4G space. But we allocate bare minimum 2GB.
+				// The driver installer container requires ~4G of unpack space. We allocate a bare
+				// minimum 2GB RAM-disk to complete compilation and clear out immediately after.
 				launchermount.SizeKey: "2G",
 			})
 			if tmpfsErr != nil {
