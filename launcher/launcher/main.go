@@ -12,7 +12,6 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
-	"syscall"
 	"time"
 
 	"cloud.google.com/go/compute/metadata"
@@ -377,41 +376,18 @@ func verifyFsAndMount() error {
 		return fmt.Errorf("stateful partition is not using the aes-gcm-random cipher: \n%s", dmTableCryptOutput)
 	}
 
-	// Make sure protected_stateful_partition mounts are correct.
+	// Make sure /var/lib/containerd is on protected_stateful_partition.
 	findmountOutput, err := exec.Command("findmnt", "/dev/mapper/protected_stateful_partition").Output()
 	if err != nil {
 		return fmt.Errorf("failed to findmnt /dev/mapper/protected_stateful_partition: %v %s", err, string(findmountOutput))
 	}
+	matched = regexp.MustCompile(`/var/lib/containerd\s+/dev/mapper/protected_stateful_partition\[/var/lib/containerd\]\s+ext4\s+rw,nosuid,nodev,relatime,commit=30`).FindString(string(findmountOutput))
+	if len(matched) == 0 {
+		return fmt.Errorf("/var/lib/containerd was not mounted on the protected_stateful_partition: \n%s", findmountOutput)
+	}
 	matched = regexp.MustCompile(`/var/lib/google\s+/dev/mapper/protected_stateful_partition\[/var/lib/google\]\s+ext4\s+rw,nosuid,nodev,relatime,commit=30`).FindString(string(findmountOutput))
 	if len(matched) == 0 {
 		return fmt.Errorf("/var/lib/google was not mounted on the protected_stateful_partition: \n%s", findmountOutput)
-	}
-
-	// Verify /var/lib/containerd is on either stateful partition or a >= 10GB tmpfs RAM disk
-	findmntContainerd, err := exec.Command("findmnt", "/var/lib/containerd").Output()
-	if err != nil {
-		return fmt.Errorf("failed to findmnt /var/lib/containerd: %v %s", err, string(findmntContainerd))
-	}
-
-	isStateful := strings.Contains(string(findmntContainerd), "/dev/mapper/protected_stateful_partition")
-	isTmpfs := strings.Contains(string(findmntContainerd), "tmpfs")
-
-	if isStateful {
-		matched = regexp.MustCompile(`/var/lib/containerd\s+/dev/mapper/protected_stateful_partition\[/var/lib/containerd\]\s+ext4\s+rw,nosuid,nodev,relatime,commit=30`).FindString(string(findmntContainerd))
-		if len(matched) == 0 {
-			return fmt.Errorf("/var/lib/containerd was not mounted on the protected_stateful_partition with correct options: \n%s", findmntContainerd)
-		}
-	} else if isTmpfs {
-		var stat syscall.Statfs_t
-		if err := syscall.Statfs("/var/lib/containerd", &stat); err != nil {
-			return fmt.Errorf("failed to check filesystem stats of /var/lib/containerd: %v", err)
-		}
-		totalSize := stat.Blocks * uint64(stat.Bsize)
-		if totalSize < 10*1024*1024*1024 {
-			return fmt.Errorf("/var/lib/containerd tmpfs size is too small (%d bytes), must be at least 10GB", totalSize)
-		}
-	} else {
-		return fmt.Errorf("/var/lib/containerd must be mounted on either protected_stateful_partition or tmpfs: \n%s", findmntContainerd)
 	}
 
 	// Check /tmp is on tmpfs.
