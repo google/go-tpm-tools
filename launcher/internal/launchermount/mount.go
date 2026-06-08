@@ -27,4 +27,5 @@ type Mount interface {
 	// The absolute path mount point for this mount in the container.
 	// Stored as Destination in specs.Mount.
 	Mountpoint() string
+	CleanUp() error
 }

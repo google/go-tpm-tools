@@ -16,6 +16,7 @@ import (
 	"github.com/containerd/containerd/cio"
 	"github.com/containerd/containerd/namespaces"
 	"github.com/containerd/containerd/oci"
+	"github.com/google/go-tpm-tools/launcher/internal/launchermount"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/spec"
 	"github.com/google/go-tpm-tools/proto/attest"
@@ -36,6 +37,7 @@ type DriverInstaller struct {
 	cdClient   *containerd.Client
 	launchSpec spec.LaunchSpec
 	logger     logging.Logger
+	tmpfs      launchermount.Mount
 }
 
 // NewDriverInstaller instantiates an object of driver installer
@@ -45,6 +47,61 @@ func NewDriverInstaller(cdClient *containerd.Client, launchSpec spec.LaunchSpec,
 		launchSpec: launchSpec,
 		logger:     logger,
 	}
+}
+
+// Tmpfs returns the mounted tmpfs for the GPU driver installation.
+func (di *DriverInstaller) Tmpfs() launchermount.Mount {
+	return di.tmpfs
+}
+
+func (di *DriverInstaller) runInstallerContainer(ctx context.Context, image containerd.Image, mounts []specs.Mount, processArgs []string, hostname string) error {
+	container, err := di.cdClient.NewContainer(
+		ctx,
+		installerContainerID,
+		containerd.WithImage(image),
+		containerd.WithNewSnapshot(installerSnapshotID, image),
+		containerd.WithNewSpec(oci.WithImageConfig(image),
+			oci.WithPrivileged,
+			// To support confidential GPUs, the nvidia-persistenced process should be started before the GPU driver verification step.
+			// It would not be possible to start the nvidia-persistenced process amidst GPU driver installation flow via cos_gpu_installer.
+			// For this reason, the GPU driver installation need to be triggered with --skip-nvidia-smi flag to skip the GPU driver verification step.
+			oci.WithProcessArgs(processArgs...),
+			oci.WithAllDevicesAllowed,
+			oci.WithHostDevices,
+			oci.WithMounts(mounts),
+			oci.WithHostNamespace(specs.NetworkNamespace),
+			oci.WithHostNamespace(specs.PIDNamespace),
+			oci.WithHostHostsFile,
+			oci.WithHostResolvconf,
+			oci.WithEnv([]string{fmt.Sprintf("HOSTNAME=%s", hostname)})))
+	if err != nil {
+		return fmt.Errorf("failed to create GPU driver installer container: %v", err)
+	}
+	defer container.Delete(ctx, containerd.WithSnapshotCleanup)
+
+	task, err := container.NewTask(ctx, cio.NewCreator(cio.WithStdio))
+	if err != nil {
+		return fmt.Errorf("failed to create GPU driver installation task: %v", err)
+	}
+	defer task.Delete(ctx)
+
+	statusC, err := task.Wait(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to wait for GPU driver installation task: %v", err)
+	}
+
+	if err := task.Start(ctx); err != nil {
+		return fmt.Errorf("failed to start GPU driver installation task: %v", err)
+	}
+
+	status := <-statusC
+	code, _, _ := status.Result()
+
+	if code != 0 {
+		di.logger.Error(fmt.Sprintf("GPU driver installation task ended and returned non-zero status code %d", code))
+		return fmt.Errorf("GPU driver installation task ended with non-zero status code %d", code)
+	}
+	return nil
 }
 
 // InstallGPUDrivers installs the GPU driver on host machine using the cos-gpu-installer container.
@@ -109,51 +166,26 @@ func (di *DriverInstaller) InstallGPUDrivers(ctx context.Context) error {
 		processArgs = append(processArgs, fmt.Sprintf("-local-artifacts-dir=%s", "/root/usr/share/oem/gpu_driver/"))
 	}
 
-	container, err := di.cdClient.NewContainer(
-		ctx,
-		installerContainerID,
-		containerd.WithImage(image),
-		containerd.WithNewSnapshot(installerSnapshotID, image),
-		containerd.WithNewSpec(oci.WithImageConfig(image),
-			oci.WithPrivileged,
-			// To support confidential GPUs, the nvidia-persistenced process should be started before the GPU driver verification step.
-			// It would not be possible to start the nvidia-persistenced process amidst GPU driver installation flow via cos_gpu_installer.
-			// For this reason, the GPU driver installation need to be triggered with --skip-nvidia-smi flag to skip the GPU driver verification step.
-			oci.WithProcessArgs(processArgs...),
-			oci.WithAllDevicesAllowed,
-			oci.WithHostDevices,
-			oci.WithMounts(mounts),
-			oci.WithHostNamespace(specs.NetworkNamespace),
-			oci.WithHostNamespace(specs.PIDNamespace),
-			oci.WithHostHostsFile,
-			oci.WithHostResolvconf,
-			oci.WithEnv([]string{fmt.Sprintf("HOSTNAME=%s", hostname)})))
-	if err != nil {
-		return fmt.Errorf("failed to create GPU driver installer container: %v", err)
-	}
-	defer container.Delete(ctx, containerd.WithSnapshotCleanup)
-
-	task, err := container.NewTask(ctx, cio.NewCreator(cio.WithStdio))
-	if err != nil {
-		return fmt.Errorf("failed to create GPU driver installation task: %v", err)
-	}
-	defer task.Delete(ctx)
-
-	statusC, err := task.Wait(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to wait for GPU driver installation task: %v", err)
-	}
-
-	if err := task.Start(ctx); err != nil {
-		return fmt.Errorf("failed to start GPU driver installation task: %v", err)
-	}
-
-	status := <-statusC
-	code, _, _ := status.Result()
-
-	if code != 0 {
-		di.logger.Error(fmt.Sprintf("GPU driver installation task ended and returned non-zero status code %d", code))
-		return fmt.Errorf("GPU driver installation task ended with non-zero status code %d", code)
+	var installErr error
+	for attempt := 0; attempt < 2; attempt++ {
+		installErr = di.runInstallerContainer(ctx, image, mounts, processArgs, hostname)
+		if installErr == nil {
+			break
+		}
+		if attempt == 0 && di.launchSpec.GpuBcMode {
+			di.logger.Info(fmt.Sprintf("Failed to install GPU driver: %v. Retrying with tmpfs mount...", installErr))
+			var tmpfsErr error
+			di.tmpfs, tmpfsErr = launchermount.CreateTmpfsMount(map[string]string{
+				launchermount.DestinationKey: InstallationHostDir,
+				// driver installer container requires ~4G space. But we allocate bare minimum 2GB.
+				launchermount.SizeKey: "2G",
+			})
+			if tmpfsErr != nil {
+				return fmt.Errorf("failed to create GPU tmpfs mount: %w", tmpfsErr)
+			}
+		} else {
+			return installErr
+		}
 	}
 
 	if err = verifyDriverDigest(path.Join(InstallationHostDir, NvDriverVer595_58_03Runfile), NvDriverVer595_58_03Digest); err != nil {

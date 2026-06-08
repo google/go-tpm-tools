@@ -210,6 +210,9 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		gpuDeviceFiles, err := listFilesWithPrefix("/dev", "nvidia")
 		// If nvidia devices are detected on the host:
 		if err == nil && len(gpuDeviceFiles) > 0 {
+			if err := os.MkdirAll("/var/run/nvidia-fabricmanager", 0755); err != nil {
+				logger.Info(fmt.Sprintf("failed to create /var/run/nvidia-fabricmanager directory: %v", err))
+			}
 			hostDriverDir := getHostDriverDir()
 
 			gpuMounts := []specs.Mount{
