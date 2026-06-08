@@ -21,13 +21,14 @@ import (
 
 	tspb "github.com/google/go-tpm-tools/launcher/teeserver/proto/gen/teeserver"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/proto"
 )
 
 const defaultTimeout = 30 * time.Second
 
-// KEMAttester defines the interface for obtaining key endorsements.
-type KEMAttester interface {
+// KeyAttester defines the interface for obtaining key endorsements.
+type KeyAttester interface {
 	GetKeyEndorsement(ctx context.Context, req *tspb.GetKeyEndorsementRequest) (*attestationpb.VmAttestation, error)
 }
 
@@ -85,6 +86,79 @@ func (a *remoteKEMAttester) GetKeyEndorsement(ctx context.Context, req *tspb.Get
 	resp, err := client.GetKeyEndorsement(ctx, kemReq)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get remote key endorsement: %v", err)
+	}
+
+	return resp.GetKeyAttestation().GetAttestation(), nil
+}
+
+// localBindingKeyAttester handles attestation requests inside the TEE locally.
+type localBindingKeyAttester struct {
+	keyClaimsProvider wsd.KeyClaimsProvider
+	attestAgent       agent.AttestationAgent
+}
+
+func newLocalBindingKeyAttester(keyClaimsProvider wsd.KeyClaimsProvider, attestAgent agent.AttestationAgent) *localBindingKeyAttester {
+	return &localBindingKeyAttester{
+		keyClaimsProvider: keyClaimsProvider,
+		attestAgent:       attestAgent,
+	}
+}
+
+func (a *localBindingKeyAttester) GetKeyEndorsement(ctx context.Context, req *tspb.GetKeyEndorsementRequest) (*attestationpb.VmAttestation, error) {
+	// Querying specifically for the Binding Key type claims
+	bindingKeyClaims, err := a.keyClaimsProvider.GetKeyClaims(ctx, req.KeyHandle.Handle, keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get binding key claims: %v", err)
+	}
+
+	bindingBytes, err := proto.Marshal(bindingKeyClaims)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal binding key claims: %v", err)
+	}
+
+	bindingEvidence, err := a.attestAgent.AttestationEvidence(ctx, req.Challenge, bindingBytes, agent.AttestAgentOpts{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to collect attestation evidence with binding key claims: %v", err)
+	}
+	return bindingEvidence, nil
+}
+
+// remoteBindingKeyAttester connects to a remote server over a Unix domain socket.
+type remoteBindingKeyAttester struct {
+	conn *grpc.ClientConn
+}
+
+// newRemoteBindingKeyAttester establishes a gRPC client connection using a Unix Domain Socket (UDS).
+func newRemoteBindingKeyAttester(socketPath string) (*remoteBindingKeyAttester, error) {
+	// gRPC natively supports the unix:// scheme for resolving UDS paths
+	conn, err := grpc.Dial(
+		"unix://"+socketPath,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to dial remote server via unix socket %s: %v", socketPath, err)
+	}
+
+	return &remoteBindingKeyAttester{
+		conn: conn,
+	}, nil
+}
+
+func (a *remoteBindingKeyAttester) GetKeyEndorsement(ctx context.Context, req *tspb.GetKeyEndorsementRequest) (*attestationpb.VmAttestation, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+
+	bindingReq := &kpmkeymanager.GetKeyClaimsRequest{
+		KeyHandle: &kpmkeymanager.KeyHandle{
+			Handle: req.KeyHandle.Handle,
+		},
+		KeyType: kpmkeymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING,
+	}
+
+	client := kpmkeymanager.NewKeyClaims
+	resp, err := client.GetKeyClaims(ctx, bindingReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get remote binding key endorsement: %v", err)
 	}
 
 	return resp.GetKeyAttestation().GetAttestation(), nil

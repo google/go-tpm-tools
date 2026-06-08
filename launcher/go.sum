@@ -102,8 +102,8 @@ github.com/BurntSushi/xgb v0.0.0-20160522181843-27f122750802/go.mod h1:IVnqGOEym
 github.com/GoogleCloudPlatform/cloudsql-proxy v0.0.0-20191009163259-e802c2cb94ae/go.mod h1:mjwGPas4yKduTyubHvD1Atl9r1rUq8DfVy+gkVvZ+oo=
 github.com/GoogleCloudPlatform/confidential-space/server v0.0.0-20260528170158-db25840c8cf6 h1:ADE7Auii68Ms2LNNVXj742dRpAMlObQJ6Qy5IrvOJ2Y=
 github.com/GoogleCloudPlatform/confidential-space/server v0.0.0-20260528170158-db25840c8cf6/go.mod h1:yKXtlqIj7IL5snfNlXr91iw2BNRhV5fhVHZixd87Fzg=
-github.com/GoogleCloudPlatform/key-protection-module v0.0.0-20260513054212-f2adec2162e7 h1:tnoPTSQNFZZn3Xbvjj6olz+vqacVf1VAuX7zwgpWeLE=
-github.com/GoogleCloudPlatform/key-protection-module v0.0.0-20260513054212-f2adec2162e7/go.mod h1:vCM+xOSPWjtPSbjYdocgOnG4ZaVmb2zvhsGMeFXG0z4=
+github.com/GoogleCloudPlatform/key-protection-module v0.0.0-20260604222613-9d1fbac80fd7 h1:rAM8UCs9fZJZETC0Rx6sHlvwhZmjHluBnjTHUYKwwvs=
+github.com/GoogleCloudPlatform/key-protection-module v0.0.0-20260604222613-9d1fbac80fd7/go.mod h1:dp2gXtLTezVC0wNEZKJ0och5/xEUZvljnkniTo2IR1M=
 github.com/GoogleCloudPlatform/key-protection-module/keymanager/attestation_service v0.0.0-20260521155745-e940f7957554 h1:6kH4XSvi1c9HIrz5NVY8YvcKYVFBTWJCsTemyJeIOCQ=
 github.com/GoogleCloudPlatform/key-protection-module/keymanager/attestation_service v0.0.0-20260521155745-e940f7957554/go.mod h1:bC1wmmLrv2E6xyp0EhKyONOLraFU2AWbwan15vY/l+s=
 github.com/Knetic/govaluate v3.0.1-0.20171022003610-9aa49832a739+incompatible/go.mod h1:r7JcOSlj0wfOMncg0iLm8Leh48TZaKVeNIfJntJ2wa0=

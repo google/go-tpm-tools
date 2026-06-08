@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	// Bootstrap environment flags to prevent duplicate proto registration panics.
+
 	_ "github.com/google/go-tpm-tools/launcher/teeserver/envinit"
 
 	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"

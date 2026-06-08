@@ -64,7 +64,7 @@ type attestHandler struct {
 	launchSpec        spec.LaunchSpec
 	clients           AttestClients
 	keyClaimsProvider wsd.KeyClaimsProvider
-	kemAttester       KEMAttester
+	kemAttester       KeyAttester
 }
 
 // TeeServer is a server that can be called from a container through a unix
@@ -110,7 +110,7 @@ func New(ctx context.Context, unixSock string, a agent.AttestationAgent, logger 
 	return &teeServer, nil
 }
 
-func initKEMAttester(bcMode bool, keyClaimsProvider wsd.KeyClaimsProvider, a agent.AttestationAgent) (KEMAttester, *grpc.ClientConn, error) {
+func initKEMAttester(bcMode bool, keyClaimsProvider wsd.KeyClaimsProvider, a agent.AttestationAgent) (KeyAttester, *grpc.ClientConn, error) {
 	if !bcMode {
 		return newLocalKEMAttester(keyClaimsProvider, a), nil, nil
 	}
