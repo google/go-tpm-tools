@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"cloud.google.com/go/compute/metadata"
-	"github.com/google/go-tpm-tools/launcher/internal/launchermount"
 	"cos.googlesource.com/cos/tools.git/src/cmd/cos_gpu_installer/deviceinfo"
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/defaults"
@@ -25,6 +24,7 @@ import (
 	"github.com/google/go-tpm-tools/launcher"
 	"github.com/google/go-tpm-tools/launcher/internal/gpu"
 	"github.com/google/go-tpm-tools/launcher/internal/gpu/daemons"
+	"github.com/google/go-tpm-tools/launcher/internal/launchermount"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/registryauth"
