@@ -226,6 +226,9 @@ func startLauncher(launchSpec spec.LaunchSpec, serialConsole *os.File) error {
 			}()
 		}
 	}
+	// GpuBcMode is a temporary flag for testing GPU Bowcaster mode without attestation.
+	// This flag should be removed once full production Bowcaster mode (bcMode) is supported
+	// with complete GPU attestation integrated.
 	if launchSpec.GpuBcMode {
 		err = daemons.RunGPUSidecar(ctx, containerdClient, logger)
 		if err != nil {
