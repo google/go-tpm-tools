@@ -210,9 +210,6 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		gpuDeviceFiles, err := listFilesWithPrefix("/dev", "nvidia")
 		// If nvidia devices are detected on the host:
 		if err == nil && len(gpuDeviceFiles) > 0 {
-			if err := os.MkdirAll("/var/run/nvidia-fabricmanager", 0755); err != nil {
-				logger.Info(fmt.Sprintf("failed to create /var/run/nvidia-fabricmanager directory: %v", err))
-			}
 			hostDriverDir := getHostDriverDir()
 
 			gpuMounts := []specs.Mount{
@@ -226,12 +223,15 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 					Source:      fmt.Sprintf("%s/bin", hostDriverDir),
 					Destination: fmt.Sprintf("%s/bin", gpu.InstallationContainerDir),
 					Options:     []string{"rbind", "rw"},
-				}, {
+				},
+			}
+			if launchSpec.GpuBcMode {
+				gpuMounts = append(gpuMounts, specs.Mount{
 					Type:        "volume",
 					Source:      "/var/run/nvidia-fabricmanager",
 					Destination: "/var/run/nvidia-fabricmanager",
 					Options:     []string{"rbind", "rw"},
-				},
+				})
 			}
 			specOpts = append(specOpts, oci.WithMounts(gpuMounts))
 

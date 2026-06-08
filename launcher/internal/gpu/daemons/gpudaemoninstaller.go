@@ -35,6 +35,9 @@ func RunGPUSidecar(ctx context.Context, cdClient *containerd.Client, logger logg
 	if err := os.MkdirAll("/run/nvidia", 0755); err != nil {
 		logger.Warn(fmt.Sprintf("failed to create /run/nvidia directory: %v", err))
 	}
+	if err := os.MkdirAll("/var/run/nvidia-fabricmanager", 0755); err != nil {
+		logger.Warn(fmt.Sprintf("failed to create /var/run/nvidia-fabricmanager directory: %v", err))
+	}
 
 	// Load required ib_umad module
 	logger.Info("Loading ib_umad module...")
@@ -211,6 +214,11 @@ func RunGPUSidecar(ctx context.Context, cdClient *containerd.Client, logger logg
 			Type:        "volume",
 			Source:      "/run/nvidia",
 			Destination: "/run/nvidia",
+			Options:     []string{"rbind", "rw"},
+		}, {
+			Type:        "volume",
+			Source:      "/var/run/nvidia-fabricmanager",
+			Destination: "/var/run/nvidia-fabricmanager",
 			Options:     []string{"rbind", "rw"},
 		},
 	}
