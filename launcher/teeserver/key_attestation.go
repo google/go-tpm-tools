@@ -21,7 +21,6 @@ import (
 
 	tspb "github.com/google/go-tpm-tools/launcher/teeserver/proto/gen/teeserver"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -29,7 +28,8 @@ const defaultTimeout = 30 * time.Second
 
 // KeyAttester defines the interface for obtaining key endorsements.
 type KeyAttester interface {
-	GetKeyEndorsement(ctx context.Context, req *tspb.GetKeyEndorsementRequest) (*attestationpb.VmAttestation, error)
+	GetKeyEndorsement(ctx context.Context, req *tspb.GetKeyEndorsementRequest, attestOpts agent.AttestAgentOpts) (*attestationpb.VmAttestation, error)
+	Close() error
 }
 
 type localKEMAttester struct {
@@ -44,7 +44,11 @@ func newLocalKEMAttester(keyClaimsProvider wsd.KeyClaimsProvider, attestAgent ag
 	}
 }
 
-func (a *localKEMAttester) GetKeyEndorsement(ctx context.Context, req *tspb.GetKeyEndorsementRequest) (*attestationpb.VmAttestation, error) {
+func (a *localKEMAttester) Close() error {
+	return nil
+}
+
+func (a *localKEMAttester) GetKeyEndorsement(ctx context.Context, req *tspb.GetKeyEndorsementRequest, attestOpts agent.AttestAgentOpts) (*attestationpb.VmAttestation, error) {
 	kemKeyClaims, err := a.keyClaimsProvider.GetKeyClaims(ctx, req.KeyHandle.Handle, keymanager.KeyType_KEY_TYPE_VM_PROTECTION_KEY)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get KEM key claims")
@@ -55,7 +59,7 @@ func (a *localKEMAttester) GetKeyEndorsement(ctx context.Context, req *tspb.GetK
 		return nil, fmt.Errorf("failed to marshal KEM key claims: %v", err)
 	}
 
-	kemEvidence, err := a.attestAgent.AttestationEvidence(ctx, req.Challenge, kemBytes, agent.AttestAgentOpts{})
+	kemEvidence, err := a.attestAgent.AttestationEvidence(ctx, req.Challenge, kemBytes, attestOpts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to collect attestation evidence with kem key claims")
 	}
@@ -63,16 +67,22 @@ func (a *localKEMAttester) GetKeyEndorsement(ctx context.Context, req *tspb.GetK
 }
 
 type remoteKEMAttester struct {
-	conn *grpc.ClientConn
+	client pb.AttestationServiceClient
+	conn   *grpc.ClientConn
 }
 
 func newRemoteKEMAttester(conn *grpc.ClientConn) *remoteKEMAttester {
 	return &remoteKEMAttester{
-		conn: conn,
+		client: pb.NewAttestationServiceClient(conn),
+		conn:   conn,
 	}
 }
 
-func (a *remoteKEMAttester) GetKeyEndorsement(ctx context.Context, req *tspb.GetKeyEndorsementRequest) (*attestationpb.VmAttestation, error) {
+func (a *remoteKEMAttester) Close() error {
+	return a.conn.Close()
+}
+
+func (a *remoteKEMAttester) GetKeyEndorsement(ctx context.Context, req *tspb.GetKeyEndorsementRequest, _ agent.AttestAgentOpts) (*attestationpb.VmAttestation, error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
@@ -82,12 +92,14 @@ func (a *remoteKEMAttester) GetKeyEndorsement(ctx context.Context, req *tspb.Get
 			Handle: req.KeyHandle.Handle,
 		},
 	}
-	client := pb.NewAttestationServiceClient(a.conn)
-	resp, err := client.GetKeyEndorsement(ctx, kemReq)
+	resp, err := a.client.GetKeyEndorsement(ctx, kemReq)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get remote key endorsement: %v", err)
 	}
 
+	if resp == nil || resp.GetKeyAttestation() == nil {
+		return nil, fmt.Errorf("remote key endorsement response is malformed")
+	}
 	return resp.GetKeyAttestation().GetAttestation(), nil
 }
 
@@ -104,7 +116,7 @@ func newLocalBindingKeyAttester(keyClaimsProvider wsd.KeyClaimsProvider, attestA
 	}
 }
 
-func (a *localBindingKeyAttester) GetKeyEndorsement(ctx context.Context, req *tspb.GetKeyEndorsementRequest) (*attestationpb.VmAttestation, error) {
+func (a *localBindingKeyAttester) GetKeyEndorsement(ctx context.Context, req *tspb.GetKeyEndorsementRequest, attestOpts agent.AttestAgentOpts) (*attestationpb.VmAttestation, error) {
 	// Querying specifically for the Binding Key type claims
 	bindingKeyClaims, err := a.keyClaimsProvider.GetKeyClaims(ctx, req.KeyHandle.Handle, keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING)
 	if err != nil {
@@ -116,35 +128,33 @@ func (a *localBindingKeyAttester) GetKeyEndorsement(ctx context.Context, req *ts
 		return nil, fmt.Errorf("failed to marshal binding key claims: %v", err)
 	}
 
-	bindingEvidence, err := a.attestAgent.AttestationEvidence(ctx, req.Challenge, bindingBytes, agent.AttestAgentOpts{})
+	bindingEvidence, err := a.attestAgent.AttestationEvidence(ctx, req.Challenge, bindingBytes, attestOpts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to collect attestation evidence with binding key claims: %v", err)
 	}
 	return bindingEvidence, nil
 }
 
+func (a *localBindingKeyAttester) Close() error {
+	return nil
+}
+
 // remoteBindingKeyAttester connects to a remote server over a Unix domain socket.
 type remoteBindingKeyAttester struct {
-	conn *grpc.ClientConn
+	conn        *grpc.ClientConn
+	client      kpmkeymanager.KeyClaimsServiceClient
+	attestAgent agent.AttestationAgent
 }
 
 // newRemoteBindingKeyAttester establishes a gRPC client connection using a Unix Domain Socket (UDS).
-func newRemoteBindingKeyAttester(socketPath string) (*remoteBindingKeyAttester, error) {
-	// gRPC natively supports the unix:// scheme for resolving UDS paths
-	conn, err := grpc.Dial(
-		"unix://"+socketPath,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to dial remote server via unix socket %s: %v", socketPath, err)
-	}
-
+func newRemoteBindingKeyAttester(conn *grpc.ClientConn) *remoteBindingKeyAttester {
 	return &remoteBindingKeyAttester{
-		conn: conn,
-	}, nil
+		client: kpmkeymanager.NewKeyClaimsServiceClient(conn),
+		conn:   conn,
+	}
 }
 
-func (a *remoteBindingKeyAttester) GetKeyEndorsement(ctx context.Context, req *tspb.GetKeyEndorsementRequest) (*attestationpb.VmAttestation, error) {
+func (a *remoteBindingKeyAttester) GetKeyEndorsement(ctx context.Context, req *tspb.GetKeyEndorsementRequest, attestOpts agent.AttestAgentOpts) (*attestationpb.VmAttestation, error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
@@ -155,11 +165,29 @@ func (a *remoteBindingKeyAttester) GetKeyEndorsement(ctx context.Context, req *t
 		KeyType: kpmkeymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING,
 	}
 
-	client := kpmkeymanager.NewKeyClaims
+	client := kpmkeymanager.NewKeyClaimsServiceClient(a.conn)
 	resp, err := client.GetKeyClaims(ctx, bindingReq)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get remote binding key endorsement: %v", err)
 	}
 
-	return resp.GetKeyAttestation().GetAttestation(), nil
+	if resp == nil || resp.GetClaims() == nil {
+		return nil, fmt.Errorf("remote key endorsement response is malformed")
+	}
+
+	bindingBytes, err := proto.Marshal(resp.GetVmBindingClaims())
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal binding key claims: %v", err)
+	}
+
+	// Forwarding the provided attestOpts here
+	bindingEvidence, err := a.attestAgent.AttestationEvidence(ctx, req.Challenge, bindingBytes, attestOpts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to collect attestation evidence with binding key claims: %v", err)
+	}
+	return bindingEvidence, nil
+}
+
+func (a *remoteBindingKeyAttester) Close() error {
+	return a.conn.Close()
 }
