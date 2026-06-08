@@ -11,9 +11,11 @@ import (
 	"math/rand"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"cloud.google.com/go/compute/metadata"
@@ -58,6 +60,7 @@ type ContainerRunner struct {
 	logger        logging.Logger
 	gpuAttester   gpu.Attester
 	serialConsole *os.File
+	powerButton   *powerButtonListener // Populated only for a hardened image
 }
 
 const tokenFileTmp = ".token.tmp"
@@ -311,6 +314,15 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	if err != nil {
 		return nil, err
 	}
+
+	var powerButton *powerButtonListener
+	if launchSpec.Hardened {
+		powerButton, err = newPowerButtonListener(logger)
+		if err != nil {
+			logger.Error(err.Error())
+		}
+	}
+
 	return &ContainerRunner{
 		container,
 		launchSpec,
@@ -318,6 +330,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		logger,
 		nvidiaAttester,
 		serialConsole,
+		powerButton,
 	}, nil
 }
 
@@ -771,6 +784,8 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	}
 	defer task.Delete(ctx)
 
+	r.enableGracefulShutdown(ctx, task)
+
 	setupDuration := time.Since(start)
 	r.logger.Info("Workload setup completed",
 		"setup_sec", setupDuration.Seconds(),
@@ -805,6 +820,46 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		"workload_execution_sec", workloadDuration.Seconds(),
 	)
 	return nil
+}
+
+func (r *ContainerRunner) enableGracefulShutdown(ctx context.Context, task containerd.Task) {
+	// In a hardened image, the launcher monitors the power button to signal a shutdown.
+	if r.launchSpec.Hardened {
+		// May be nil if listener initialization failed, which is not critical and is logged at that time.
+		if r.powerButton != nil {
+			go func() {
+				err := r.powerButton.waitForShutdown()
+				// Upon an error, we do not send SIGTERM to the task.
+				if err != nil {
+					if !errors.Is(err, os.ErrClosed) {
+						r.logger.Error(err.Error())
+					}
+					return
+				}
+				if err = task.Kill(ctx, syscall.SIGTERM); err != nil {
+					r.logger.Error(err.Error())
+				}
+			}()
+		}
+		return
+	}
+
+	// In a debug image, the launcher relays SIGTERM from logind to the container.
+	go func() {
+		sig := make(chan os.Signal, 1)
+		signal.Notify(sig, syscall.SIGTERM)
+		defer signal.Stop(sig)
+
+		select {
+		case <-ctx.Done():
+			return
+		case s := <-sig:
+			r.logger.Info("received a signal", "sig", s)
+			if err := task.Kill(ctx, syscall.SIGTERM); err != nil {
+				r.logger.Error(err.Error())
+			}
+		}
+	}()
 }
 
 func pullImageWithRetries(f func() (containerd.Image, error), retry func() backoff.BackOff) (containerd.Image, error) {
@@ -904,6 +959,12 @@ func getImageConfig(ctx context.Context, image containerd.Image) (v1.ImageConfig
 
 // Close the container runner
 func (r *ContainerRunner) Close(ctx context.Context) {
+	if r.powerButton != nil {
+		if err := r.powerButton.Close(); err != nil {
+			r.logger.Error("failed to close power button listener", "err", err.Error())
+		}
+	}
+
 	// close the agent
 	r.attestAgent.Close()
 

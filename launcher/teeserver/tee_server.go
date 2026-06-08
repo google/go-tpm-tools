@@ -72,7 +72,7 @@ type attestHandler struct {
 type TeeServer struct {
 	server      *http.Server
 	netListener net.Listener
-	kpsConn     *grpc.ClientConn
+	kemAttester KEMAttester
 }
 
 // New takes in a socket and start to listen to it, and create a server
@@ -87,14 +87,14 @@ func New(ctx context.Context, unixSock string, a agent.AttestationAgent, logger 
 		return nil, fmt.Errorf("key claims provider cannot be nil when key manager is enabled")
 	}
 
-	kemAttester, conn, err := initKEMAttester(launchSpec.Experiments.BcMode, keyClaimsProvider, a)
+	kemAttester, err := initKEMAttester(launchSpec.Experiments.BcMode, keyClaimsProvider, a)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize KEM attester: %v", err)
 	}
 
 	teeServer := TeeServer{
 		netListener: nl,
-		kpsConn:     conn,
+		kemAttester: kemAttester,
 		server: &http.Server{
 			Handler: (&attestHandler{
 				ctx:               ctx,
@@ -110,15 +110,20 @@ func New(ctx context.Context, unixSock string, a agent.AttestationAgent, logger 
 	return &teeServer, nil
 }
 
-func initKEMAttester(bcMode bool, keyClaimsProvider wsd.KeyClaimsProvider, a agent.AttestationAgent) (KeyAttester, *grpc.ClientConn, error) {
+func initKEMAttester(bcMode bool, keyClaimsProvider wsd.KeyClaimsProvider, a agent.AttestationAgent) (KEMAttester, error) {
 	if !bcMode {
-		return newLocalKEMAttester(keyClaimsProvider, a), nil, nil
+		return newLocalKEMAttester(keyClaimsProvider, a), nil
 	}
 	conn, err := grpc.NewClient(kpsAttestationServiceAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to initialize remote KEM attester: %v", err)
+		return nil, fmt.Errorf("failed to initialize remote KEM attester: %v", err)
 	}
-	return newRemoteKEMAttester(conn), conn, nil
+	// Early initiate the connection in the background. By default, grpc.NewClient
+	// creates a client in the IDLE state and only connects on the first RPC call.
+	// This can cause the first HTTP request to getEndorsement to hang and time out
+	// during the initial TCP/HTTP2 handshake.
+	conn.Connect()
+	return newRemoteKEMAttester(conn), nil
 }
 
 // Handler creates a multiplexer for the server.
@@ -492,8 +497,8 @@ func (s *TeeServer) Shutdown(ctx context.Context) error {
 	if err := s.netListener.Close(); err != nil {
 		errs = append(errs, err)
 	}
-	if s.kpsConn != nil {
-		if err := s.kpsConn.Close(); err != nil {
+	if s.kemAttester != nil {
+		if err := s.kemAttester.Close(); err != nil {
 			errs = append(errs, err)
 		}
 	}

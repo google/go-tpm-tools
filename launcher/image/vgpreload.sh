@@ -126,6 +126,8 @@ main() {
   append_cmdline "cos.protected_stateful_partition=m"
   # Increase wait timeout of the protected stateful partition.
   append_cmdline "systemd.default_timeout_start_sec=900s"
+  # Hardcode SWIOTLB to 16GB
+  append_cmdline "swiotlb=8388608,force,any"
 
   if [[ "${IMAGE_ENV}" == "debug" ]]; then
     configure_systemd_units_for_debug

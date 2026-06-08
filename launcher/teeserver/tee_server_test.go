@@ -124,6 +124,10 @@ func (f fakeKEMAttester) GetKeyEndorsement(ctx context.Context, req *tspb.GetKey
 	return nil, fmt.Errorf("GetKeyEndorsement unimplemented")
 }
 
+func (f fakeKEMAttester) Close() error {
+	return nil
+}
+
 func TestGetDefaultToken(t *testing.T) {
 	testTokenContent := "test token"
 
@@ -1044,15 +1048,13 @@ func TestInitKEMAttester(t *testing.T) {
 	mAgent := &fakeAttestationAgent{}
 
 	tests := []struct {
-		name        string
-		bcMode      bool
-		wantConnNil bool
-		verifyType  func(t *testing.T, attester KEMAttester)
+		name       string
+		bcMode     bool
+		verifyType func(t *testing.T, attester KEMAttester)
 	}{
 		{
-			name:        "local KEM attester",
-			bcMode:      false,
-			wantConnNil: true,
+			name:   "local KEM attester",
+			bcMode: false,
 			verifyType: func(t *testing.T, attester KEMAttester) {
 				if _, ok := attester.(*localKEMAttester); !ok {
 					t.Errorf("returned %T, want *localKEMAttester", attester)
@@ -1060,9 +1062,8 @@ func TestInitKEMAttester(t *testing.T) {
 			},
 		},
 		{
-			name:        "remote KEM attester",
-			bcMode:      true,
-			wantConnNil: false,
+			name:   "remote KEM attester",
+			bcMode: true,
 			verifyType: func(t *testing.T, attester KEMAttester) {
 				if _, ok := attester.(*remoteKEMAttester); !ok {
 					t.Errorf("returned %T, want *remoteKEMAttester", attester)
@@ -1073,22 +1074,14 @@ func TestInitKEMAttester(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			attester, conn, err := initKEMAttester(tc.bcMode, mClaims, mAgent)
+			attester, err := initKEMAttester(tc.bcMode, mClaims, mAgent)
 			if err != nil {
 				t.Fatalf("initKEMAttester(%t) failed: %v", tc.bcMode, err)
-			}
-			if tc.wantConnNil && conn != nil {
-				t.Errorf("conn = %v, want nil", conn)
-			}
-			if !tc.wantConnNil {
-				if conn == nil {
-					t.Fatal("conn = nil, want non-nil")
-				}
-				defer conn.Close()
 			}
 			if attester == nil {
 				t.Fatal("returned nil attester")
 			}
+			defer attester.Close()
 			tc.verifyType(t, attester)
 		})
 	}
