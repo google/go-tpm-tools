@@ -55,6 +55,7 @@ var BuildCommit = "dev"
 
 var logger logging.Logger
 var mdsClient *metadata.Client
+var launchSpec spec.LaunchSpec
 
 var welcomeMessage = "TEE container launcher initiating"
 var exitMessage = "TEE container launcher exiting"
@@ -88,24 +89,24 @@ func main() {
 	logger.Info("Boot completed", "duration_sec", uptime)
 	logger.Info(welcomeMessage, "build_commit", BuildCommit)
 
-	if err := verifyFsAndMount(); err != nil {
-		logger.Error(fmt.Sprintf("failed to verify filesystem and mounts: %v\n", err))
-		exitCode = rebootRC
-		logger.Error(exitMessage, "exit_code", exitCode, "exit_msg", rcMessage[exitCode])
-		return
-	}
-
 	if err := os.MkdirAll(launcherfile.HostTmpPath, 0755); err != nil {
 		logger.Error(fmt.Sprintf("failed to create %s: %v", launcherfile.HostTmpPath, err))
 	}
 
 	// Get RestartPolicy and IsHardened from spec
 	mdsClient = metadata.NewClient(nil)
-	launchSpec, err := spec.GetLaunchSpec(ctx, logger, mdsClient)
+	launchSpec, err = spec.GetLaunchSpec(ctx, logger, mdsClient)
 	if err != nil {
 		logger.Error(fmt.Sprintf("failed to get launchspec, make sure you're running inside a GCE VM: %v", err))
 		// if cannot get launchSpec, exit directly
 		exitCode = failRC
+		logger.Error(exitMessage, "exit_code", exitCode, "exit_msg", rcMessage[exitCode])
+		return
+	}
+
+	if err := verifyFsAndMount(); err != nil {
+		logger.Error(fmt.Sprintf("failed to verify filesystem and mounts: %v\n", err))
+		exitCode = rebootRC
 		logger.Error(exitMessage, "exit_code", exitCode, "exit_msg", rcMessage[exitCode])
 		return
 	}
@@ -357,9 +358,11 @@ func verifyFsAndMount() error {
 	if len(matched) == 0 {
 		return fmt.Errorf("/var/lib/containerd was not mounted on the protected_stateful_partition: \n%s", findmountOutput)
 	}
-	matched = regexp.MustCompile(`/var/lib/google\s+/dev/mapper/protected_stateful_partition\[/var/lib/google\]\s+ext4\s+rw,nosuid,nodev,relatime,commit=30`).FindString(string(findmountOutput))
-	if len(matched) == 0 {
-		return fmt.Errorf("/var/lib/google was not mounted on the protected_stateful_partition: \n%s", findmountOutput)
+	if !launchSpec.Experiments.BcMode {
+		matched = regexp.MustCompile(`/var/lib/google\s+/dev/mapper/protected_stateful_partition\[/var/lib/google\]\s+ext4\s+rw,nosuid,nodev,relatime,commit=30`).FindString(string(findmountOutput))
+		if len(matched) == 0 {
+			return fmt.Errorf("/var/lib/google was not mounted on the protected_stateful_partition: \n%s", findmountOutput)
+		}
 	}
 
 	// Check /tmp is on tmpfs.
