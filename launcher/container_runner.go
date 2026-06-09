@@ -296,7 +296,12 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	} else if launchSpec.ITAConfig.ITARegion == "" {
 		gcaClient, err := util.NewRESTClient(ctx, asAddr, launchSpec.ProjectID, launchSpec.Region)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create REST verifier client: %v", err)
+			if !launchSpec.DisableGcaRefresh {
+				return nil, fmt.Errorf("failed to create REST verifier client: %v", err)
+			}
+			// If GCA refresh is disabled, swallow the error and continue.
+			logger.Info("Failed to create the GCA client for attestation agent, this is not necessarily blocking because GCA refresh is disabled so the launch will continue: %v", err)
+			gcaClient = nil
 		}
 
 		verifierClient = gcaClient
