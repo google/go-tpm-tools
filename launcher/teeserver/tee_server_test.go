@@ -1087,12 +1087,12 @@ func TestInitKEMAttester(t *testing.T) {
 	tests := []struct {
 		name       string
 		bcMode     bool
-		verifyType func(t *testing.T, attester KeyAttester)
+		verifyType func(t *testing.T, attester KeyEndorsementAttester)
 	}{
 		{
 			name:   "local KEM attester",
 			bcMode: false,
-			verifyType: func(t *testing.T, attester KeyAttester) {
+			verifyType: func(t *testing.T, attester KeyEndorsementAttester) {
 				if _, ok := attester.(*localKEMAttester); !ok {
 					t.Errorf("returned %T, want *localKEMAttester", attester)
 				}
@@ -1101,7 +1101,7 @@ func TestInitKEMAttester(t *testing.T) {
 		{
 			name:   "remote KEM attester",
 			bcMode: true,
-			verifyType: func(t *testing.T, attester KeyAttester) {
+			verifyType: func(t *testing.T, attester KeyEndorsementAttester) {
 				if _, ok := attester.(*remoteKEMAttester); !ok {
 					t.Errorf("returned %T, want *remoteKEMAttester", attester)
 				}
@@ -1131,12 +1131,12 @@ func TestInitBindingKeyAttester(t *testing.T) {
 	tests := []struct {
 		name       string
 		bcMode     bool
-		verifyType func(t *testing.T, attester KeyAttester)
+		verifyType func(t *testing.T, attester KeyEndorsementAttester)
 	}{
 		{
 			name:   "local binding key attester",
 			bcMode: false,
-			verifyType: func(t *testing.T, attester KeyAttester) {
+			verifyType: func(t *testing.T, attester KeyEndorsementAttester) {
 				if _, ok := attester.(*localBindingKeyAttester); !ok {
 					t.Errorf("returned %T, want *localBindingKeyAttester", attester)
 				}
@@ -1145,9 +1145,9 @@ func TestInitBindingKeyAttester(t *testing.T) {
 		{
 			name:   "remote binding key attester",
 			bcMode: true,
-			verifyType: func(t *testing.T, attester KeyAttester) {
-				if _, ok := attester.(*remoteBindingKeyAttester); !ok {
-					t.Errorf("returned %T, want *remoteBindingKeyAttester", attester)
+			verifyType: func(t *testing.T, attester KeyEndorsementAttester) {
+				if _, ok := attester.(*bcBindingKeyAttester); !ok {
+					t.Errorf("returned %T, want *bcBindingKeyAttester", attester)
 				}
 			},
 		},

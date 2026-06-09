@@ -8,7 +8,7 @@ require (
 	cos.googlesource.com/cos/tools.git v0.0.0-20250414225215-0cf736c0714c
 	github.com/GoogleCloudPlatform/confidential-space/server v0.0.0-20260528170158-db25840c8cf6
 	github.com/GoogleCloudPlatform/key-protection-module v0.0.0-20260604222613-9d1fbac80fd7
-	github.com/GoogleCloudPlatform/key-protection-module/keymanager/attestation_service v0.0.0-20260521155745-e940f7957554
+	github.com/GoogleCloudPlatform/key-protection-module/keymanager/attestation_service v0.0.0-20260604222613-9d1fbac80fd7
 	github.com/NVIDIA/go-nvml v0.13.0-1
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/confidentsecurity/go-nvtrust v0.2.2
@@ -19,8 +19,8 @@ require (
 	github.com/google/go-cmp v0.7.0
 	github.com/google/go-eventlog v0.0.3-0.20260520195024-af9e78c4d692
 	github.com/google/go-tpm v0.9.8
-	github.com/google/go-tpm-tools v0.4.9-0.20260522205405-ed0161beaf76
-	github.com/google/go-tpm-tools/agent v0.0.0-20260424173438-cf6db90d8918
+	github.com/google/go-tpm-tools v0.4.9-0.20260601203525-bc0d334a930f
+	github.com/google/go-tpm-tools/agent v0.0.0-20260601203525-bc0d334a930f
 	github.com/google/go-tpm-tools/keymanager v0.4.4
 	github.com/google/go-tpm-tools/verifier v0.4.4
 	github.com/opencontainers/go-digest v1.0.0

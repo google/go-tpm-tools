@@ -64,8 +64,8 @@ type attestHandler struct {
 	launchSpec         spec.LaunchSpec
 	clients            AttestClients
 	keyClaimsProvider  wsd.KeyClaimsProvider
-	kemAttester        KeyAttester
-	bindingKeyAttester KeyAttester
+	kemAttester        KeyEndorsementAttester
+	bindingKeyAttester KeyEndorsementAttester
 }
 
 // TeeServer is a server that can be called from a container through a unix
@@ -73,8 +73,8 @@ type attestHandler struct {
 type TeeServer struct {
 	server             *http.Server
 	netListener        net.Listener
-	kemAttester        KeyAttester
-	bindingKeyAttester KeyAttester
+	kemAttester        KeyEndorsementAttester
+	bindingKeyAttester KeyEndorsementAttester
 }
 
 // New takes in a socket and start to listen to it, and create a server
@@ -119,7 +119,7 @@ func New(ctx context.Context, unixSock string, a agent.AttestationAgent, logger 
 	return &teeServer, nil
 }
 
-func initKEMAttester(bcMode bool, keyClaimsProvider wsd.KeyClaimsProvider, a agent.AttestationAgent) (KeyAttester, error) {
+func initKEMAttester(bcMode bool, keyClaimsProvider wsd.KeyClaimsProvider, a agent.AttestationAgent) (KeyEndorsementAttester, error) {
 	if !bcMode {
 		return newLocalKEMAttester(keyClaimsProvider, a), nil
 	}
@@ -135,7 +135,7 @@ func initKEMAttester(bcMode bool, keyClaimsProvider wsd.KeyClaimsProvider, a age
 	return newRemoteKEMAttester(conn), nil
 }
 
-func initBindingKeyAttester(bcMode bool, keyClaimsProvider wsd.KeyClaimsProvider, a agent.AttestationAgent) (KeyAttester, error) {
+func initBindingKeyAttester(bcMode bool, keyClaimsProvider wsd.KeyClaimsProvider, a agent.AttestationAgent) (KeyEndorsementAttester, error) {
 	if !bcMode {
 		return newLocalBindingKeyAttester(keyClaimsProvider, a), nil
 	}

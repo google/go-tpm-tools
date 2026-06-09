@@ -26,8 +26,8 @@ import (
 
 const defaultTimeout = 30 * time.Second
 
-// KeyAttester defines the interface for obtaining key endorsements.
-type KeyAttester interface {
+// KeyEndorsementAttester defines the interface for obtaining key endorsements.
+type KeyEndorsementAttester interface {
 	GetKeyEndorsement(ctx context.Context, req *tspb.GetKeyEndorsementRequest, attestOpts agent.AttestAgentOpts) (*attestationpb.VmAttestation, error)
 	Close() error
 }
@@ -91,6 +91,7 @@ func (a *remoteKEMAttester) GetKeyEndorsement(ctx context.Context, req *tspb.Get
 		KeyHandle: &kpmkeymanager.KeyHandle{
 			Handle: req.KeyHandle.Handle,
 		},
+		RequestAcpiData: req.RequestAcpiData,
 	}
 	resp, err := a.client.GetKeyEndorsement(ctx, kemReq)
 	if err != nil {
@@ -139,22 +140,22 @@ func (a *localBindingKeyAttester) Close() error {
 	return nil
 }
 
-// remoteBindingKeyAttester connects to a remote server over a Unix domain socket.
-type remoteBindingKeyAttester struct {
+// bcBindingKeyAttester connects to a remote server over a Unix domain socket.
+type bcBindingKeyAttester struct {
 	conn        *grpc.ClientConn
 	client      kpmkeymanager.KeyClaimsServiceClient
 	attestAgent agent.AttestationAgent
 }
 
 // newRemoteBindingKeyAttester establishes a gRPC client connection using a Unix Domain Socket (UDS).
-func newRemoteBindingKeyAttester(conn *grpc.ClientConn) *remoteBindingKeyAttester {
-	return &remoteBindingKeyAttester{
+func newRemoteBindingKeyAttester(conn *grpc.ClientConn) *bcBindingKeyAttester {
+	return &bcBindingKeyAttester{
 		client: kpmkeymanager.NewKeyClaimsServiceClient(conn),
 		conn:   conn,
 	}
 }
 
-func (a *remoteBindingKeyAttester) GetKeyEndorsement(ctx context.Context, req *tspb.GetKeyEndorsementRequest, attestOpts agent.AttestAgentOpts) (*attestationpb.VmAttestation, error) {
+func (a *bcBindingKeyAttester) GetKeyEndorsement(ctx context.Context, req *tspb.GetKeyEndorsementRequest, attestOpts agent.AttestAgentOpts) (*attestationpb.VmAttestation, error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
@@ -165,8 +166,7 @@ func (a *remoteBindingKeyAttester) GetKeyEndorsement(ctx context.Context, req *t
 		KeyType: kpmkeymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING,
 	}
 
-	client := kpmkeymanager.NewKeyClaimsServiceClient(a.conn)
-	resp, err := client.GetKeyClaims(ctx, bindingReq)
+	resp, err := a.client.GetKeyClaims(ctx, bindingReq)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get remote binding key endorsement: %v", err)
 	}
@@ -188,6 +188,6 @@ func (a *remoteBindingKeyAttester) GetKeyEndorsement(ctx context.Context, req *t
 	return bindingEvidence, nil
 }
 
-func (a *remoteBindingKeyAttester) Close() error {
+func (a *bcBindingKeyAttester) Close() error {
 	return a.conn.Close()
 }
