@@ -814,7 +814,7 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 
 	var taskOpts []containerd.NewTaskOpts
 	if r.launchSpec.NonrootContainer {
-		taskOpts = append(taskOpts, containerd.WithUIDOwner(hostGIDBegin), containerd.WithGIDOwner(hostGIDBegin))
+		taskOpts = append(taskOpts, containerd.WithUIDOwner(hostUIDBegin), containerd.WithGIDOwner(hostGIDBegin))
 	}
 
 	task, err := r.container.NewTask(ctx, cio.NewCreator(streamOpt), taskOpts...)
@@ -824,13 +824,6 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	defer task.Delete(ctx)
 
 	r.enableGracefulShutdown(ctx, task)
-
-	netnsPath := fmt.Sprintf("/proc/%d/ns/net", task.Pid())
-	cniResult, err := r.cni.Setup(ctx, containerID, netnsPath)
-	if err != nil {
-		return fmt.Errorf("failed to setup network via CNI: %w", err)
-	}
-	r.logger.Info(fmt.Sprintf("CNI network setup completed: %v", cniResult))
 
 	startGetImage := time.Now()
 	image, err := r.container.Image(ctx)
