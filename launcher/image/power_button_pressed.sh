@@ -1,5 +1,4 @@
 #!/bin/bash
-
 SHUTDOWN_TIMEOUT_SEC=15
 
 # Send SIGTERM to all running workloads so that they can shutdown gracefully.
@@ -41,15 +40,3 @@ while true; do
 
     sleep 1
 done
-
-if [[ $EXIT_STATUS -eq 3 ]]
-then
-	# reboot after 2 min
-	shutdown --reboot +2
-fi
-
-if [[ $EXIT_STATUS -eq 0 ]] || [[ $EXIT_STATUS -eq 1 ]] || [[ $EXIT_STATUS -eq 2 ]]
-then
-	# poweroff after 2 min
-	shutdown --poweroff +2
-fi
