@@ -11,6 +11,7 @@ substitutions:
   '_BC_BASE_IMAGE': 'cos-bc-guest-125-19216-395-47'
   '_BC_DEBUG_IMAGE': 'cos-bcdbg-guest-125-19216-395-47'
   '_WSD_CONTAINER_IMAGE_REF': 'us-docker.pkg.dev/confidential-space-images-dev/key-protection-module-images/key-protection-module:705ebd2'
+  '_ZONE': 'us-west1-b'
 
 
 steps:
@@ -234,6 +235,7 @@ steps:
   - 'BUCKET_NAME=$_BUCKET_NAME'
   - 'BASE_IMAGE_PROJECT=$_BC_BASE_IMAGE_PROJECT' 
   - 'WSD_CONTAINER_IMAGE_REF=$_WSD_CONTAINER_IMAGE_REF'
+  - 'ZONE=$_ZONE'
 
   script: |
     #!/usr/bin/env bash
@@ -249,7 +251,8 @@ steps:
     _OUTPUT_IMAGE_NAME=${OUTPUT_IMAGE_NAME},\
     _IMAGE_ENV=debug,\
     _BUCKET_NAME=${BUCKET_NAME},\
-    _WSD_CONTAINER_IMAGE_REF=${WSD_CONTAINER_IMAGE_REF}
+    _WSD_CONTAINER_IMAGE_REF=${WSD_CONTAINER_IMAGE_REF},\
+    _ZONE=${ZONE}
     exit
 
 #- name: 'gcr.io/cloud-builders/gcloud'
@@ -263,6 +266,7 @@ steps:
 #  - 'BUCKET_NAME=$_BUCKET_NAME'
 #  - 'BASE_IMAGE_PROJECT=$_BC_BASE_IMAGE_PROJECT'
 #  - 'WSD_CONTAINER_IMAGE_REF=$_WSD_CONTAINER_IMAGE_REF'
+#  - 'ZONE=$_ZONE'
 
 #  script: |
 #    #!/usr/bin/env bash
@@ -278,7 +282,8 @@ steps:
 #    _OUTPUT_IMAGE_NAME=${OUTPUT_IMAGE_NAME},\
 #    _IMAGE_ENV=hardened,\
 #    _BUCKET_NAME=${BUCKET_NAME},\
-#    _WSD_CONTAINER_IMAGE_REF=${WSD_CONTAINER_IMAGE_REF}
+#    _WSD_CONTAINER_IMAGE_REF=${WSD_CONTAINER_IMAGE_REF},\
+#    _ZONE=${ZONE}
 #    exit
 #- name: 'gcr.io/cloud-builders/gcloud'
 #  id: ExperimentsTests
@@ -558,7 +563,8 @@ steps:
 #  args: ['compute', 'images', 'export',
 #         '--destination-uri=gs://${PROJECT_ID}_raw-images/${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}.tar.gz',
 #         '--image=${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}',
-#         '--project=${PROJECT_ID}']
+#         '--project=${PROJECT_ID}',
+#         '--zone=${_ZONE}']
 - name: 'gcr.io/cloud-builders/gcloud'
   id: ExportDebugImage
   waitFor: ['DebugImageBuild']
@@ -566,7 +572,8 @@ steps:
   args: ['compute', 'images', 'export',
           '--destination-uri=gs://${PROJECT_ID}_raw-images/${_OUTPUT_IMAGE_PREFIX}-debug-${_OUTPUT_IMAGE_SUFFIX}.tar.gz',
           '--image=${_OUTPUT_IMAGE_PREFIX}-debug-${_OUTPUT_IMAGE_SUFFIX}',
-          '--project=${PROJECT_ID}']
+          '--project=${PROJECT_ID}',
+          '--zone=${_ZONE}']
 
 #- name: 'us-docker.pkg.dev/confidential-space-images-dev/cs-tools/measure@sha256:5c2eaaa70438126877de51b44914d3751ba242aed7f4d99d485833629f3958bc'
 #  id: MeasureHardenedImage
@@ -606,7 +613,8 @@ steps:
 #  args: ['compute', 'images', 'export',
 #         '--destination-uri=gs://${PROJECT_ID}_raw-images/${_OUTPUT_IMAGE_PREFIX}-vg-hardened-${_OUTPUT_IMAGE_SUFFIX}.tar.gz',
 #         '--image=${_OUTPUT_IMAGE_PREFIX}-vg-hardened-${_OUTPUT_IMAGE_SUFFIX}',
-#         '--project=${PROJECT_ID}']
+#         '--project=${PROJECT_ID}',
+#         '--zone=${_ZONE}']
 - name: 'gcr.io/cloud-builders/gcloud'
   id: ExportVgDebugImage
   waitFor: ['DebugVgImageBuild']
@@ -614,7 +622,8 @@ steps:
   args: ['compute', 'images', 'export',
           '--destination-uri=gs://${PROJECT_ID}_raw-images/${_OUTPUT_IMAGE_PREFIX}-vg-debug-${_OUTPUT_IMAGE_SUFFIX}.tar.gz',
           '--image=${_OUTPUT_IMAGE_PREFIX}-vg-debug-${_OUTPUT_IMAGE_SUFFIX}',
-          '--project=${PROJECT_ID}']
+          '--project=${PROJECT_ID}',
+          '--zone=${_ZONE}']
 
 #- name: 'us-docker.pkg.dev/confidential-space-images-dev/cs-tools/measure@sha256:5c2eaaa70438126877de51b44914d3751ba242aed7f4d99d485833629f3958bc'
 #  id: MeasureVgHardenedImage
