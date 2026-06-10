@@ -29,16 +29,36 @@ const (
 )
 
 // RunGPUSidecar runs the GPU tools sidecar container in the background.
+// RunGPUSidecar runs the GPU tools sidecar container in the background.
 func RunGPUSidecar(ctx context.Context, cdClient *containerd.Client, logger logging.Logger) error {
 	ctx = namespaces.WithNamespace(ctx, namespaces.Default)
 
+	setupHostDirectories(logger)
+
+	if err := loadKernelModules(logger); err != nil {
+		logger.Warn(fmt.Sprintf("kernel module loading encountered errors: %v", err))
+	}
+
+	startHostDaemons(logger)
+
+	image, err := getOrCreateSidecarImage(ctx, cdClient, logger)
+	if err != nil {
+		return err
+	}
+
+	return launchSidecarContainer(ctx, cdClient, image, logger)
+}
+
+func setupHostDirectories(logger logging.Logger) {
 	if err := os.MkdirAll("/run/nvidia", 0755); err != nil {
 		logger.Warn(fmt.Sprintf("failed to create /run/nvidia directory: %v", err))
 	}
 	if err := os.MkdirAll("/var/run/nvidia-fabricmanager", 0755); err != nil {
 		logger.Warn(fmt.Sprintf("failed to create /var/run/nvidia-fabricmanager directory: %v", err))
 	}
+}
 
+func loadKernelModules(logger logging.Logger) error {
 	// Load required ib_umad module
 	logger.Info("Loading ib_umad module...")
 	ibUmadCmd := exec.Command("sudo", "/sbin/modprobe", "ib_umad")
@@ -48,7 +68,7 @@ func RunGPUSidecar(ctx context.Context, cdClient *containerd.Client, logger logg
 
 	kernelVer, err := getKernelVersion()
 	if err != nil {
-		logger.Warn(fmt.Sprintf("failed to get kernel version: %v", err))
+		return fmt.Errorf("failed to get kernel version: %w", err)
 	}
 
 	// Dynamic detection and load of GPU drivers
@@ -93,7 +113,10 @@ func RunGPUSidecar(ctx context.Context, cdClient *containerd.Client, logger logg
 			logger.Info(fmt.Sprintf("failed to run insmod %s: %v, output: %s", modPath, err, string(out)))
 		}
 	}
+	return nil
+}
 
+func startHostDaemons(logger logging.Logger) {
 	// Start nvidia-persistenced daemon on the host if found
 	persistencedCmd := findNvidiaHostBinary("nvidia-persistenced")
 	if persistencedCmd != "" {
@@ -131,7 +154,45 @@ func RunGPUSidecar(ctx context.Context, cdClient *containerd.Client, logger logg
 	} else {
 		logger.Warn("nvidia-smi binary not found on host")
 	}
+}
 
+func getOrCreateSidecarImage(ctx context.Context, cdClient *containerd.Client, logger logging.Logger) (containerd.Image, error) {
+	logger.Info(fmt.Sprintf("Locating guest GPU tools image: %s", GuestGPUToolsImageRef))
+	image, err := cdClient.GetImage(ctx, GuestGPUToolsImageRef)
+	if err == nil {
+		return image, nil
+	}
+
+	imageTarPath := findDaemonsTar()
+	if imageTarPath == "" {
+		return nil, fmt.Errorf("failed to find guest GPU tools image tar file")
+	}
+
+	logger.Info(fmt.Sprintf("Importing guest GPU tools image from %s...", imageTarPath))
+	file, err := os.Open(imageTarPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open guest GPU tools image tar: %v", err)
+	}
+	defer file.Close()
+
+	importedImages, err := cdClient.Import(ctx, file)
+	if err != nil {
+		return nil, fmt.Errorf("failed to import guest GPU tools image from tar: %v", err)
+	}
+	if len(importedImages) == 0 {
+		return nil, fmt.Errorf("imported zero images from guest GPU tools image tar")
+	}
+
+	// Use the imported image name returned from containerd import
+	image, err = cdClient.GetImage(ctx, importedImages[0].Name)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get imported image from containerd: %v", err)
+	}
+
+	return image, nil
+}
+
+func launchSidecarContainer(ctx context.Context, cdClient *containerd.Client, image containerd.Image, logger logging.Logger) error {
 	// Clean up any existing guest GPU tools container
 	if c, err := cdClient.LoadContainer(ctx, gpuToolsContainerID); err == nil {
 		logger.Info("Deleting existing guest GPU tools container")
@@ -140,74 +201,6 @@ func RunGPUSidecar(ctx context.Context, cdClient *containerd.Client, logger logg
 			t.Delete(ctx)
 		}
 		c.Delete(ctx, containerd.WithSnapshotCleanup)
-	}
-
-	logger.Info(fmt.Sprintf("Locating guest GPU tools image: %s", GuestGPUToolsImageRef))
-	image, err := cdClient.GetImage(ctx, GuestGPUToolsImageRef)
-	if err != nil {
-		imageTarPath := findDaemonsTar()
-		if imageTarPath != "" {
-			logger.Info(fmt.Sprintf("Importing guest GPU tools image from %s...", imageTarPath))
-			file, err := os.Open(imageTarPath)
-			if err != nil {
-				return fmt.Errorf("failed to open guest GPU tools image tar: %v", err)
-			}
-			defer file.Close()
-
-			importedImages, err := cdClient.Import(ctx, file)
-			if err != nil {
-				return fmt.Errorf("failed to import guest GPU tools image from tar: %v", err)
-			}
-			if len(importedImages) == 0 {
-				return fmt.Errorf("imported zero images from guest GPU tools image tar")
-			}
-
-			// Use the imported image name returned from containerd import
-			image, err = cdClient.GetImage(ctx, importedImages[0].Name)
-			if err != nil {
-				return fmt.Errorf("failed to get imported image from containerd: %v", err)
-			}
-		} else {
-			logger.Info("Guest GPU tools image tar not found locally, building from Dockerfile...")
-			daemonsDir := findDaemonsDir()
-			if daemonsDir == "" {
-				return fmt.Errorf("failed to find daemons directory containing Dockerfile")
-			}
-
-			logger.Info(fmt.Sprintf("Building guest GPU tools image from %s...", daemonsDir))
-			buildCmd := exec.Command("sudo", "docker", "build", "-t", GuestGPUToolsImageRef, daemonsDir)
-			if out, err := buildCmd.CombinedOutput(); err != nil {
-				return fmt.Errorf("failed to build guest GPU tools image: %v, output: %s", err, string(out))
-			}
-
-			logger.Info("Exporting guest GPU tools image from docker and importing to containerd...")
-			saveCmd := exec.Command("sudo", "docker", "save", GuestGPUToolsImageRef)
-			stdout, err := saveCmd.StdoutPipe()
-			if err != nil {
-				return fmt.Errorf("failed to get stdout pipe for docker save: %v", err)
-			}
-			if err := saveCmd.Start(); err != nil {
-				return fmt.Errorf("failed to start docker save: %v", err)
-			}
-
-			importedImages, err := cdClient.Import(ctx, stdout)
-			if err != nil {
-				saveCmd.Wait()
-				return fmt.Errorf("failed to import guest GPU tools image: %v", err)
-			}
-			if err := saveCmd.Wait(); err != nil {
-				return fmt.Errorf("docker save command failed: %v", err)
-			}
-
-			if len(importedImages) == 0 {
-				return fmt.Errorf("imported zero images from docker save")
-			}
-
-			image, err = cdClient.GetImage(ctx, importedImages[0].Name)
-			if err != nil {
-				return fmt.Errorf("failed to get imported image from containerd: %v", err)
-			}
-		}
 	}
 
 	// Ensure the image is unpacked in containerd's snapshotter
@@ -335,21 +328,7 @@ func findNvidiaHostBinary(name string) string {
 	return ""
 }
 
-func findDaemonsDir() string {
-	paths := []string{
-		"/usr/share/oem/gpu_daemons",
-		"launcher/internal/gpu/daemons",
-		"internal/gpu/daemons",
-		"daemons",
-		".",
-	}
-	for _, p := range paths {
-		if _, err := os.Stat(filepath.Join(p, "Dockerfile")); err == nil {
-			return p
-		}
-	}
-	return ""
-}
+
 
 func findDaemonsTar() string {
 	paths := []string{
