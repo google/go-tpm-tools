@@ -12,6 +12,7 @@ substitutions:
   '_BC_DEBUG_IMAGE': 'cos-bcdbg-guest-125-19216-395-47'
   '_WSD_CONTAINER_IMAGE_REF': 'us-docker.pkg.dev/confidential-space-images-dev/key-protection-module-images/key-protection-module:705ebd2'
   '_ZONE': 'us-west1-b'
+  '_OEM_FS_SIZE': '4G'
 
 
 steps:
@@ -236,6 +237,7 @@ steps:
   - 'BASE_IMAGE_PROJECT=$_BC_BASE_IMAGE_PROJECT' 
   - 'WSD_CONTAINER_IMAGE_REF=$_WSD_CONTAINER_IMAGE_REF'
   - 'ZONE=$_ZONE'
+  - 'OEM_FS_SIZE=$_OEM_FS_SIZE'
 
   script: |
     #!/usr/bin/env bash
@@ -252,7 +254,8 @@ steps:
     _IMAGE_ENV=debug,\
     _BUCKET_NAME=${BUCKET_NAME},\
     _WSD_CONTAINER_IMAGE_REF=${WSD_CONTAINER_IMAGE_REF},\
-    _ZONE=${ZONE}
+    _ZONE=${ZONE},\
+    _OEM_FS_SIZE=${OEM_FS_SIZE}
     exit
 
 #- name: 'gcr.io/cloud-builders/gcloud'
@@ -267,6 +270,7 @@ steps:
 #  - 'BASE_IMAGE_PROJECT=$_BC_BASE_IMAGE_PROJECT'
 #  - 'WSD_CONTAINER_IMAGE_REF=$_WSD_CONTAINER_IMAGE_REF'
 #  - 'ZONE=$_ZONE'
+#  - 'OEM_FS_SIZE=$_OEM_FS_SIZE'
 
 #  script: |
 #    #!/usr/bin/env bash
@@ -283,7 +287,8 @@ steps:
 #    _IMAGE_ENV=hardened,\
 #    _BUCKET_NAME=${BUCKET_NAME},\
 #    _WSD_CONTAINER_IMAGE_REF=${WSD_CONTAINER_IMAGE_REF},\
-#    _ZONE=${ZONE}
+#    _ZONE=${ZONE},\
+#    _OEM_FS_SIZE=${OEM_FS_SIZE}
 #    exit
 #- name: 'gcr.io/cloud-builders/gcloud'
 #  id: ExperimentsTests

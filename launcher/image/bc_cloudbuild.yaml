@@ -7,6 +7,7 @@ substitutions:
   '_OUTPUT_IMAGE_FAMILY': ''
   '_WSD_CONTAINER_IMAGE_REF': ''
   '_ZONE': 'us-west1-b'
+  '_OEM_FS_SIZE': '4G'
 
 steps:
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
@@ -184,7 +185,7 @@ steps:
           "--vmlinux=./vmlinux"
           "--src-image=./disk.raw"
           "--out-image=output.bin"
-          "--oem-fs-size=500M"
+          "--oem-fs-size=${_OEM_FS_SIZE}"
           "--disk-size-gb=30"
           "--install-dir=/workspace/oem-install/"
         )
