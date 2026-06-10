@@ -10,7 +10,7 @@ substitutions:
   '_BC_BASE_IMAGE_PROJECT': 'confidential-space-images-dev'
   '_BC_BASE_IMAGE': 'cos-bc-guest-125-19216-395-47'
   '_BC_DEBUG_IMAGE': 'cos-bcdbg-guest-125-19216-395-47'
-  '_WSD_CONTAINER_IMAGE_REF': 'us-docker.pkg.dev/confidential-space-images-dev/key-protection-module-images/key-protection-module:705ebd2'
+  '_WSD_CONTAINER_IMAGE_REF': 'us-docker.pkg.dev/confidential-space-images-dev/key-protection-module-images/key-protection-module:9d1fbac'
 
 
 steps:
