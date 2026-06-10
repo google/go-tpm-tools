@@ -76,6 +76,7 @@ steps:
            ./launcher/image/bc-guest/bc_network_runtime_optimization.sh \
            ./launcher/image/bc-guest/bc_network_monitor.sh \
            ./launcher/image/bc-guest/bc_network_rebind.sh \
+           ./launcher/image/bc-guest/bc_gpu_setup.sh \
            /workspace/oem-install/confidential_space/
         cp ./launcher/image/nodeproblemdetector/* /workspace/oem-install/confidential_space/nodeproblemdetector/
         if [ -f /workspace/gpu_daemons_image/image.tar ]; then
@@ -98,6 +99,7 @@ steps:
         # cp ./launcher/image/bc-guest/meta-data /workspace/oem-install/meta-data
         chmod +x /workspace/oem-install/confidential_space/cs_container_launcher || true
         chmod +x /workspace/oem-install/confidential_space/exit_script.sh || true
+        chmod +x /workspace/oem-install/confidential_space/bc_gpu_setup.sh || true
         chmod +x /workspace/oem-install/confidential_space/bc_network_setup.sh || true
         chmod +x /workspace/oem-install/confidential_space/bc_network_optimization.sh || true
         chmod +x /workspace/oem-install/confidential_space/bc_network_runtime_optimization.sh || true
