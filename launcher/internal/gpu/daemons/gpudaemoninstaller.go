@@ -145,44 +145,68 @@ func RunGPUSidecar(ctx context.Context, cdClient *containerd.Client, logger logg
 	logger.Info(fmt.Sprintf("Locating guest GPU tools image: %s", GuestGPUToolsImageRef))
 	image, err := cdClient.GetImage(ctx, GuestGPUToolsImageRef)
 	if err != nil {
-		logger.Info("Guest GPU tools image not found locally, building from Dockerfile...")
-		daemonsDir := findDaemonsDir()
-		if daemonsDir == "" {
-			return fmt.Errorf("failed to find daemons directory containing Dockerfile")
-		}
+		imageTarPath := findDaemonsTar()
+		if imageTarPath != "" {
+			logger.Info(fmt.Sprintf("Importing guest GPU tools image from %s...", imageTarPath))
+			file, err := os.Open(imageTarPath)
+			if err != nil {
+				return fmt.Errorf("failed to open guest GPU tools image tar: %v", err)
+			}
+			defer file.Close()
 
-		logger.Info(fmt.Sprintf("Building guest GPU tools image from %s...", daemonsDir))
-		buildCmd := exec.Command("sudo", "docker", "build", "-t", GuestGPUToolsImageRef, daemonsDir)
-		if out, err := buildCmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("failed to build guest GPU tools image: %v, output: %s", err, string(out))
-		}
+			importedImages, err := cdClient.Import(ctx, file)
+			if err != nil {
+				return fmt.Errorf("failed to import guest GPU tools image from tar: %v", err)
+			}
+			if len(importedImages) == 0 {
+				return fmt.Errorf("imported zero images from guest GPU tools image tar")
+			}
 
-		logger.Info("Exporting guest GPU tools image from docker and importing to containerd...")
-		saveCmd := exec.Command("sudo", "docker", "save", GuestGPUToolsImageRef)
-		stdout, err := saveCmd.StdoutPipe()
-		if err != nil {
-			return fmt.Errorf("failed to get stdout pipe for docker save: %v", err)
-		}
-		if err := saveCmd.Start(); err != nil {
-			return fmt.Errorf("failed to start docker save: %v", err)
-		}
+			// Use the imported image name returned from containerd import
+			image, err = cdClient.GetImage(ctx, importedImages[0].Name)
+			if err != nil {
+				return fmt.Errorf("failed to get imported image from containerd: %v", err)
+			}
+		} else {
+			logger.Info("Guest GPU tools image tar not found locally, building from Dockerfile...")
+			daemonsDir := findDaemonsDir()
+			if daemonsDir == "" {
+				return fmt.Errorf("failed to find daemons directory containing Dockerfile")
+			}
 
-		importedImages, err := cdClient.Import(ctx, stdout)
-		if err != nil {
-			saveCmd.Wait()
-			return fmt.Errorf("failed to import guest GPU tools image: %v", err)
-		}
-		if err := saveCmd.Wait(); err != nil {
-			return fmt.Errorf("docker save command failed: %v", err)
-		}
+			logger.Info(fmt.Sprintf("Building guest GPU tools image from %s...", daemonsDir))
+			buildCmd := exec.Command("sudo", "docker", "build", "-t", GuestGPUToolsImageRef, daemonsDir)
+			if out, err := buildCmd.CombinedOutput(); err != nil {
+				return fmt.Errorf("failed to build guest GPU tools image: %v, output: %s", err, string(out))
+			}
 
-		if len(importedImages) == 0 {
-			return fmt.Errorf("imported zero images from docker save")
-		}
+			logger.Info("Exporting guest GPU tools image from docker and importing to containerd...")
+			saveCmd := exec.Command("sudo", "docker", "save", GuestGPUToolsImageRef)
+			stdout, err := saveCmd.StdoutPipe()
+			if err != nil {
+				return fmt.Errorf("failed to get stdout pipe for docker save: %v", err)
+			}
+			if err := saveCmd.Start(); err != nil {
+				return fmt.Errorf("failed to start docker save: %v", err)
+			}
 
-		image, err = cdClient.GetImage(ctx, GuestGPUToolsImageRef)
-		if err != nil {
-			return fmt.Errorf("failed to get imported image from containerd: %v", err)
+			importedImages, err := cdClient.Import(ctx, stdout)
+			if err != nil {
+				saveCmd.Wait()
+				return fmt.Errorf("failed to import guest GPU tools image: %v", err)
+			}
+			if err := saveCmd.Wait(); err != nil {
+				return fmt.Errorf("docker save command failed: %v", err)
+			}
+
+			if len(importedImages) == 0 {
+				return fmt.Errorf("imported zero images from docker save")
+			}
+
+			image, err = cdClient.GetImage(ctx, importedImages[0].Name)
+			if err != nil {
+				return fmt.Errorf("failed to get imported image from containerd: %v", err)
+			}
 		}
 	}
 
@@ -322,6 +346,23 @@ func findDaemonsDir() string {
 	for _, p := range paths {
 		if _, err := os.Stat(filepath.Join(p, "Dockerfile")); err == nil {
 			return p
+		}
+	}
+	return ""
+}
+
+func findDaemonsTar() string {
+	paths := []string{
+		"/usr/share/oem/gpu_daemons",
+		"launcher/internal/gpu/daemons",
+		"internal/gpu/daemons",
+		"daemons",
+		".",
+	}
+	for _, p := range paths {
+		tarPath := filepath.Join(p, "image.tar")
+		if _, err := os.Stat(tarPath); err == nil {
+			return tarPath
 		}
 	}
 	return ""

@@ -35,6 +35,16 @@ steps:
         docker pull ${_WSD_CONTAINER_IMAGE_REF}
         mkdir -p /workspace/wsd_image
         docker save ${_WSD_CONTAINER_IMAGE_REF} -o /workspace/wsd_image/image.tar
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'BuildGPUDaemonsImage'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        set -e
+        docker build -t guest-gpu-tools:latest ./launcher/internal/gpu/daemons
+        mkdir -p /workspace/gpu_daemons_image
+        docker save guest-gpu-tools:latest -o /workspace/gpu_daemons_image/image.tar
   - name: 'alpine'
     id: 'ExtractRawImage'
     args: ['tar', '-xf', './src_image.tar.gz']
@@ -65,9 +75,9 @@ steps:
            ./launcher/image/bc-guest/bc_network_rebind.sh \
            /workspace/oem-install/confidential_space/
         cp ./launcher/image/nodeproblemdetector/* /workspace/oem-install/confidential_space/nodeproblemdetector/
-        cp ./launcher/internal/gpu/daemons/Dockerfile \
-           ./launcher/internal/gpu/daemons/entrypoint.sh \
-           /workspace/oem-install/gpu_daemons/
+        if [ -f /workspace/gpu_daemons_image/image.tar ]; then
+            cp /workspace/gpu_daemons_image/image.tar /workspace/oem-install/gpu_daemons/image.tar
+        fi
         cp ./launcher/image/bc-guest/wsd/* /workspace/oem-install/wsd/
         if [ -f /workspace/wsd_image/image.tar ]; then
             cp /workspace/wsd_image/image.tar /workspace/oem-install/wsd/image.tar
