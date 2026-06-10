@@ -4,7 +4,8 @@
 setup_gpu() {
   echo "Setting up GPU host requirements..."
   
-  # 1. Create host directories for communication
+  # 1. Create host directories for communication.
+  # /run/nvidia is a shared host path where the sidecar container will write the gpu-ready status file once switches are configured.
   mkdir -p /run/nvidia
   mkdir -p /var/run/nvidia-fabricmanager
 
@@ -19,6 +20,8 @@ setup_gpu() {
   # NOTE: Without NVreg_EnableGpuFirmware=1, the NVIDIA kernel module crashes during memory mapping
   # (RmInitAdapter fails with 'assertion failed: pVGpu != NULL @ objvgpu.c:148' and 'Disabling GSP offload'),
   # dropping all GPUs and causing nvidia-smi to report "No devices were found".
+  # Note: modprobe automatically resolves and loads core dependencies like i2c_core and drm
+  # (unlike insmod, which would require loading them manually).
   echo "Loading nvidia modules..."
   modprobe nvidia NVreg_EnableGpuFirmware=1 || {
     echo "Error: Failed to load nvidia kernel module"
@@ -136,10 +139,27 @@ setup_gpu() {
   local host_driver_dir="/var/lib/nvidia"
   if [[ -d "/opt/nvidia" ]]; then
     host_driver_dir="/opt/nvidia"
+    # Create a symbolic link from /var/lib/nvidia to the versioned driver directory (e.g., /opt/nvidia/590.48.01).
+    # This is required because the Go launcher's EnableReadyState() function has a hardcoded path that expects
+    # nvidia-smi at '/var/lib/nvidia/bin/nvidia-smi' to promote the GPU enclaves to READY state (-srs 1)
+    # after attestation measurements are taken.
+    for d in /opt/nvidia/*; do
+      if [[ -d "$d" ]]; then
+        mkdir -p /var/lib
+        ln -sfn "$d" /var/lib/nvidia
+        echo "Created host symlink: /var/lib/nvidia -> $d"
+        break
+      fi
+    done
   fi
   echo "Using host GPU driver directory for mounts: $host_driver_dir"
 
-  # 6. Run sidecar container using ctr
+  # 6. Run sidecar container using ctr.
+  # Note: The fully-qualified reference 'docker.io/library/guest-gpu-tools:latest' is required
+  # because ctr does not support registry/library implicit defaults like Docker does. This is a
+  # local execution; containerd does not make a network request since we imported it in step 5.
+  # Note: The sidecar's internal entrypoint.sh automatically configures the symmetric rail policy
+  # and launches the Fabric Manager / NVSwitches daemons.
   echo "Starting guest GPU tools sidecar container..."
   ctr -n default run \
     --privileged \

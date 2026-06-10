@@ -204,8 +204,31 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 
 	var deviceROTs []agent.DeviceROT
 	nvidiaAttester := gpu.NewNvidiaAttester(launchSpec.InstallGpuDriver)
-
 	if launchSpec.InstallGpuDriver {
+		gpuMounts := []specs.Mount{
+			{
+				Type:        "volume",
+				Source:      fmt.Sprintf("%s/lib64", gpu.InstallationHostDir),
+				Destination: fmt.Sprintf("%s/lib64", gpu.InstallationContainerDir),
+				Options:     []string{"rbind", "rw"},
+			}, {
+				Type:        "volume",
+				Source:      fmt.Sprintf("%s/bin", gpu.InstallationHostDir),
+				Destination: fmt.Sprintf("%s/bin", gpu.InstallationContainerDir),
+				Options:     []string{"rbind", "rw"},
+			},
+		}
+		specOpts = append(specOpts, oci.WithMounts(gpuMounts))
+
+		// /dev/nvidia-caps/* will not be listed here and will not be passed to
+		// the container workload
+		//
+		// following devices should be listed:
+		// /dev/nvidiactl
+		// /dev/nvidia-uvm
+		// /dev/nvidia-uvm-tools
+		// /dev/nvidia{0,1,2,...}
+		// /dev/nvidia-modeset
 		gpuDeviceFiles, err := listFilesWithPrefix("/dev", "nvidia")
 		if err != nil {
 			return nil, fmt.Errorf("failed to list nvidia devices: [%w]", err)

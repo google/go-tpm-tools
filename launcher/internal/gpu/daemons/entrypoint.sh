@@ -51,39 +51,6 @@ for i in {1..15}; do
     sleep 2
 done
 
-# Loop across all GPUs and check CC mode readiness
-echo "Checking CC mode and readiness for GPUs..." | tee /dev/console
-gpus=$(nvidia-smi --query-gpu=index --format=csv,noheader)
-for gpu in $gpus; do
-    echo "Checking GPU $gpu..." | tee /dev/console
-    cc_output=$(nvidia-smi conf-compute -q -i $gpu)
-    
-    cc_state=$(echo "$cc_output" | grep "CC State" | awk -F: '{print $2}' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-    ready_state=$(echo "$cc_output" | grep "CC GPUs Ready State" | awk -F: '{print $2}' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-    
-    echo "GPU $gpu: CC State=$cc_state, Ready State=$ready_state" | tee /dev/console
-    
-    if [[ "$cc_state" == "ON" ]]; then
-        if [[ "$ready_state" != "Ready" ]]; then
-            echo "GPU $gpu is not ready. Calling set ready..." | tee /dev/console
-            nvidia-smi conf-compute -srs 1 -i $gpu
-            
-            # Re-check
-            cc_output=$(nvidia-smi conf-compute -q -i $gpu)
-            ready_state=$(echo "$cc_output" | grep "CC GPUs Ready State" | awk -F: '{print $2}' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-            if [[ "$ready_state" != "Ready" ]]; then
-                echo "ERROR: GPU $gpu failed to become ready." | tee /dev/console
-            else
-                echo "GPU $gpu is now ready." | tee /dev/console
-            fi
-        else
-            echo "GPU $gpu is already ready." | tee /dev/console
-        fi
-    else
-        echo "GPU $gpu: CC mode is not ON. Skipping ready set." | tee /dev/console
-    fi
-done
-
 # Write the readiness marker to the shared volume
 echo "GPU initialization completed successfully. Writing ready marker." | tee /dev/console
 touch /run/nvidia/gpu-ready
