@@ -16,7 +16,6 @@ import (
 	"github.com/containerd/containerd/cio"
 	"github.com/containerd/containerd/namespaces"
 	"github.com/containerd/containerd/oci"
-	"github.com/google/go-tpm-tools/launcher/internal/launchermount"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/spec"
 	"github.com/google/go-tpm-tools/proto/attest"
@@ -37,7 +36,6 @@ type DriverInstaller struct {
 	cdClient   *containerd.Client
 	launchSpec spec.LaunchSpec
 	logger     logging.Logger
-	tmpfs      launchermount.Mount
 }
 
 // NewDriverInstaller instantiates an object of driver installer
@@ -47,11 +45,6 @@ func NewDriverInstaller(cdClient *containerd.Client, launchSpec spec.LaunchSpec,
 		launchSpec: launchSpec,
 		logger:     logger,
 	}
-}
-
-// Tmpfs returns the mounted tmpfs for the GPU driver installation.
-func (di *DriverInstaller) Tmpfs() launchermount.Mount {
-	return di.tmpfs
 }
 
 func (di *DriverInstaller) runInstallerContainer(ctx context.Context, image containerd.Image, mounts []specs.Mount, processArgs []string, hostname string) error {
@@ -166,31 +159,8 @@ func (di *DriverInstaller) InstallGPUDrivers(ctx context.Context) error {
 		processArgs = append(processArgs, fmt.Sprintf("-local-artifacts-dir=%s", "/root/usr/share/oem/gpu_driver/"))
 	}
 
-	var installErr error
-	for attempt := 0; attempt < 2; attempt++ {
-		installErr = di.runInstallerContainer(ctx, image, mounts, processArgs, hostname)
-		if installErr == nil {
-			break
-		}
-		if attempt == 0 && di.launchSpec.GpuBcMode {
-			// The Guest OS boot disk has strict storage limits. Extracting and compiling the massive
-			// NVIDIA driver packages can exhaust local storage. If the first install attempt fails,
-			// we fallback to mounting a temporary, volatile RAM-disk (tmpfs) to complete the driver
-			// compilation in memory.
-			di.logger.Info(fmt.Sprintf("Failed to install GPU driver: %v. Retrying with tmpfs mount...", installErr))
-			var tmpfsErr error
-			di.tmpfs, tmpfsErr = launchermount.CreateTmpfsMount(map[string]string{
-				launchermount.DestinationKey: InstallationHostDir,
-				// The driver installer container requires ~4G of unpack space. We allocate a bare
-				// minimum 2GB RAM-disk to complete compilation and clear out immediately after.
-				launchermount.SizeKey: "2G",
-			})
-			if tmpfsErr != nil {
-				return fmt.Errorf("failed to create GPU tmpfs mount: %w", tmpfsErr)
-			}
-		} else {
-			return installErr
-		}
+	if err := di.runInstallerContainer(ctx, image, mounts, processArgs, hostname); err != nil {
+		return err
 	}
 
 	if err = verifyDriverDigest(path.Join(InstallationHostDir, NvDriverVer595_58_03Runfile), NvDriverVer595_58_03Digest); err != nil {

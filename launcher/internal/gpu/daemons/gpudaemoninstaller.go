@@ -328,8 +328,6 @@ func findNvidiaHostBinary(name string) string {
 	return ""
 }
 
-
-
 func findDaemonsTar() string {
 	paths := []string{
 		"/usr/share/oem/gpu_daemons",

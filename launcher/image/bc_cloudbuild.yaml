@@ -183,7 +183,7 @@ steps:
           "--src-image=./disk.raw"
           "--out-image=output.bin"
           "--oem-fs-size=500M"
-          "--disk-size-gb=15"
+          "--disk-size-gb=30"
           "--install-dir=/workspace/oem-install/"
         )
         for cmd in "$${COMMON_COMMANDS[@]}"; do
@@ -257,6 +257,15 @@ steps:
           --family=${_OUTPUT_IMAGE_FAMILY} \
           --source-uri=gs://${_BUCKET_NAME}/oem-preloader-${BUILD_ID}/${_OUTPUT_IMAGE_NAME}.tar.gz \
           --guest-os-features="$$FEATURES"
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'ExportOutputImage'
+    args:
+      - 'gcloud'
+      - 'compute'
+      - 'images'
+      - 'export'
+      - '--image=${_OUTPUT_IMAGE_NAME}'
+      - '--destination-uri=gs://chewbacca-guest-acos/${_OUTPUT_IMAGE_NAME}.tar.gz'
   - name: 'gcr.io/cloud-builders/gcloud'
     id: 'RemoveGCSFiles'
     entrypoint: 'gcloud'

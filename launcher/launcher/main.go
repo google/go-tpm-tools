@@ -23,7 +23,6 @@ import (
 	"github.com/google/go-tpm-tools/launcher"
 	"github.com/google/go-tpm-tools/launcher/internal/gpu"
 	"github.com/google/go-tpm-tools/launcher/internal/gpu/daemons"
-	"github.com/google/go-tpm-tools/launcher/internal/launchermount"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/registryauth"
@@ -207,23 +206,10 @@ func startLauncher(launchSpec spec.LaunchSpec, serialConsole *os.File) error {
 	}
 	ctx := namespaces.WithNamespace(context.Background(), namespaces.Default)
 
-	var gpuTmpfs launchermount.Mount
 	if launchSpec.InstallGpuDriver {
 		installer := gpu.NewDriverInstaller(containerdClient, launchSpec, logger)
-		err = installer.InstallGPUDrivers(ctx)
-		gpuTmpfs = installer.Tmpfs()
-		if err != nil {
-			if gpuTmpfs != nil {
-				gpuTmpfs.CleanUp()
-			}
+		if err := installer.InstallGPUDrivers(ctx); err != nil {
 			return fmt.Errorf("failed to install gpu drivers: %v", err)
-		}
-		if gpuTmpfs != nil {
-			defer func() {
-				if err := gpuTmpfs.CleanUp(); err != nil {
-					logger.Error(fmt.Sprintf("failed to clean up GPU tmpfs mount: %v", err))
-				}
-			}()
 		}
 	}
 	// GpuBcMode is a temporary flag for testing GPU Bowcaster mode without attestation.
