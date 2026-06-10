@@ -206,7 +206,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	var deviceROTs []agent.DeviceROT
 	nvidiaAttester := gpu.NewNvidiaAttester(launchSpec.InstallGpuDriver)
 
-	if launchSpec.InstallGpuDriver || launchSpec.GpuBcMode {
+	if launchSpec.InstallGpuDriver {
 		gpuDeviceFiles, err := listFilesWithPrefix("/dev", "nvidia")
 		// If nvidia devices are detected on the host:
 		if err == nil && len(gpuDeviceFiles) > 0 {
@@ -224,14 +224,6 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 					Destination: fmt.Sprintf("%s/bin", gpu.InstallationContainerDir),
 					Options:     []string{"rbind", "rw"},
 				},
-			}
-			if launchSpec.GpuBcMode {
-				gpuMounts = append(gpuMounts, specs.Mount{
-					Type:        "volume",
-					Source:      "/var/run/nvidia-fabricmanager",
-					Destination: "/var/run/nvidia-fabricmanager",
-					Options:     []string{"rbind", "rw"},
-				})
 			}
 			specOpts = append(specOpts, oci.WithMounts(gpuMounts))
 
