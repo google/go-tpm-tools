@@ -296,6 +296,9 @@ func (a *agent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error
 // When possible, Attest uses the technology-specific attestation root-of-trust
 // (TDX RTMR), otherwise falls back to the vTPM.
 func (a *agent) AttestWithClient(ctx context.Context, opts AttestAgentOpts, client verifier.Client) ([]byte, error) {
+	if client == nil {
+		return nil, fmt.Errorf("attest agent does not have initialized verifier client")
+	}
 	challenge, err := client.CreateChallenge(ctx)
 	if err != nil {
 		return nil, err
@@ -541,6 +544,9 @@ func (a *agent) attestDeviceROTs(nonce []byte, opts AttestAgentOpts) ([]*attesta
 }
 
 func (a *agent) verify(ctx context.Context, req verifier.VerifyAttestationRequest, client verifier.Client) (*verifier.VerifyAttestationResponse, error) {
+	if client == nil {
+		return nil, fmt.Errorf("verifier client is nil")
+	}
 	return client.VerifyConfidentialSpace(ctx, req)
 }
 
