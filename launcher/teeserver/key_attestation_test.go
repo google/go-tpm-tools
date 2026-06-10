@@ -370,14 +370,17 @@ func TestLocalBindingKeyAttester_GetKeyEndorsement(t *testing.T) {
 }
 
 func TestRemoteBindingKeyAttester_GetKeyEndorsement(t *testing.T) {
-	testClaims := &kpmkeymanager.KeyClaims_VmProtectionBindingClaims{
-		BindingPubKey: &kpmkeymanager.HpkePublicKey{
-			Algorithm: &kpmkeymanager.HpkeAlgorithm{
-				Kem: kpmkeymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
+	testClaims := &kpmkeymanager.KeyClaims{
+		Claims: &kpmkeymanager.KeyClaims_VmBindingClaims{
+			VmBindingClaims: &kpmkeymanager.KeyClaims_VmProtectionBindingClaims{
+				BindingPubKey: &kpmkeymanager.HpkePublicKey{
+					Algorithm: &kpmkeymanager.HpkeAlgorithm{
+						Kem: kpmkeymanager.KemAlgorithm_KEM_ALGORITHM_DHKEM_X25519_HKDF_SHA256,
+					},
+					PublicKey: []byte("test-public-key"),
+				},
 			},
-			PublicKey: []byte("test-public-key"),
-		},
-	}
+		}}
 	testEvidence := &attestationpb.VmAttestation{
 		Label: []byte("remote-binding-evidence"),
 	}
@@ -394,9 +397,7 @@ func TestRemoteBindingKeyAttester_GetKeyEndorsement(t *testing.T) {
 		{
 			name: "success",
 			grpcResp: &kpmkeymanager.KeyClaims{
-				Claims: &kpmkeymanager.KeyClaims_VmBindingClaims{
-					VmBindingClaims: testClaims,
-				},
+				Claims: testClaims.Claims,
 			},
 		},
 		{
@@ -461,7 +462,7 @@ func TestRemoteBindingKeyAttester_GetKeyEndorsement(t *testing.T) {
 				},
 			}
 
-			attester := newRemoteBindingKeyAttester(conn)
+			attester := newBCBindingKeyAttester(conn, mockAgent)
 			attester.attestAgent = mockAgent // Injected mockAgent field to avoid nil pointer exception
 
 			req := &tspb.GetKeyEndorsementRequest{

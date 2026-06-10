@@ -152,7 +152,7 @@ func initBindingKeyAttester(bcMode bool, keyClaimsProvider wsd.KeyClaimsProvider
 	// This can cause the first HTTP request to getEndorsement to hang and time out
 	// during the initial TCP/HTTP2 handshake.
 	conn.Connect()
-	return newRemoteBindingKeyAttester(conn), nil
+	return newBCBindingKeyAttester(conn, a), nil
 }
 
 // Handler creates a multiplexer for the server.

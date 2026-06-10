@@ -147,11 +147,12 @@ type bcBindingKeyAttester struct {
 	attestAgent agent.AttestationAgent
 }
 
-// newRemoteBindingKeyAttester establishes a gRPC client connection using a Unix Domain Socket (UDS).
-func newRemoteBindingKeyAttester(conn *grpc.ClientConn) *bcBindingKeyAttester {
+// newBCBindingKeyAttester establishes a gRPC client connection using a Unix Domain Socket (UDS).
+func newBCBindingKeyAttester(conn *grpc.ClientConn, attestAgent agent.AttestationAgent) *bcBindingKeyAttester {
 	return &bcBindingKeyAttester{
-		client: kpmkeymanager.NewKeyClaimsServiceClient(conn),
-		conn:   conn,
+		client:      kpmkeymanager.NewKeyClaimsServiceClient(conn),
+		conn:        conn,
+		attestAgent: attestAgent,
 	}
 }
 
@@ -171,16 +172,15 @@ func (a *bcBindingKeyAttester) GetKeyEndorsement(ctx context.Context, req *tspb.
 		return nil, fmt.Errorf("failed to get remote binding key endorsement: %v", err)
 	}
 
-	if resp == nil || resp.GetClaims() == nil {
+	if resp == nil || resp.GetClaims() == nil || resp.GetVmBindingClaims() == nil {
 		return nil, fmt.Errorf("remote key endorsement response is malformed")
 	}
 
-	bindingBytes, err := proto.Marshal(resp.GetVmBindingClaims())
+	bindingBytes, err := proto.Marshal(resp)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal binding key claims: %v", err)
 	}
 
-	// Forwarding the provided attestOpts here
 	bindingEvidence, err := a.attestAgent.AttestationEvidence(ctx, req.Challenge, bindingBytes, attestOpts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to collect attestation evidence with binding key claims: %v", err)
