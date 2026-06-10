@@ -47,6 +47,56 @@ func NewDriverInstaller(cdClient *containerd.Client, launchSpec spec.LaunchSpec,
 	}
 }
 
+func (di *DriverInstaller) runInstallerContainer(ctx context.Context, image containerd.Image, mounts []specs.Mount, processArgs []string, hostname string) error {
+	container, err := di.cdClient.NewContainer(
+		ctx,
+		installerContainerID,
+		containerd.WithImage(image),
+		containerd.WithNewSnapshot(installerSnapshotID, image),
+		containerd.WithNewSpec(oci.WithImageConfig(image),
+			oci.WithPrivileged,
+			// To support confidential GPUs, the nvidia-persistenced process should be started before the GPU driver verification step.
+			// It would not be possible to start the nvidia-persistenced process amidst GPU driver installation flow via cos_gpu_installer.
+			// For this reason, the GPU driver installation need to be triggered with --skip-nvidia-smi flag to skip the GPU driver verification step.
+			oci.WithProcessArgs(processArgs...),
+			oci.WithAllDevicesAllowed,
+			oci.WithHostDevices,
+			oci.WithMounts(mounts),
+			oci.WithHostNamespace(specs.NetworkNamespace),
+			oci.WithHostNamespace(specs.PIDNamespace),
+			oci.WithHostHostsFile,
+			oci.WithHostResolvconf,
+			oci.WithEnv([]string{fmt.Sprintf("HOSTNAME=%s", hostname)})))
+	if err != nil {
+		return fmt.Errorf("failed to create GPU driver installer container: %v", err)
+	}
+	defer container.Delete(ctx, containerd.WithSnapshotCleanup)
+
+	task, err := container.NewTask(ctx, cio.NewCreator(cio.WithStdio))
+	if err != nil {
+		return fmt.Errorf("failed to create GPU driver installation task: %v", err)
+	}
+	defer task.Delete(ctx)
+
+	statusC, err := task.Wait(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to wait for GPU driver installation task: %v", err)
+	}
+
+	if err := task.Start(ctx); err != nil {
+		return fmt.Errorf("failed to start GPU driver installation task: %v", err)
+	}
+
+	status := <-statusC
+	code, _, _ := status.Result()
+
+	if code != 0 {
+		di.logger.Error(fmt.Sprintf("GPU driver installation task ended and returned non-zero status code %d", code))
+		return fmt.Errorf("GPU driver installation task ended with non-zero status code %d", code)
+	}
+	return nil
+}
+
 // InstallGPUDrivers installs the GPU driver on host machine using the cos-gpu-installer container.
 // This function performs the same steps specified in this README file:
 // https://pkg.go.dev/cos.googlesource.com/cos/tools.git@v0.0.0-20241008015903-8431fe581b1f/src/cmd/cos_gpu_installer#section-readme
@@ -109,51 +159,8 @@ func (di *DriverInstaller) InstallGPUDrivers(ctx context.Context) error {
 		processArgs = append(processArgs, fmt.Sprintf("-local-artifacts-dir=%s", "/root/usr/share/oem/gpu_driver/"))
 	}
 
-	container, err := di.cdClient.NewContainer(
-		ctx,
-		installerContainerID,
-		containerd.WithImage(image),
-		containerd.WithNewSnapshot(installerSnapshotID, image),
-		containerd.WithNewSpec(oci.WithImageConfig(image),
-			oci.WithPrivileged,
-			// To support confidential GPUs, the nvidia-persistenced process should be started before the GPU driver verification step.
-			// It would not be possible to start the nvidia-persistenced process amidst GPU driver installation flow via cos_gpu_installer.
-			// For this reason, the GPU driver installation need to be triggered with --skip-nvidia-smi flag to skip the GPU driver verification step.
-			oci.WithProcessArgs(processArgs...),
-			oci.WithAllDevicesAllowed,
-			oci.WithHostDevices,
-			oci.WithMounts(mounts),
-			oci.WithHostNamespace(specs.NetworkNamespace),
-			oci.WithHostNamespace(specs.PIDNamespace),
-			oci.WithHostHostsFile,
-			oci.WithHostResolvconf,
-			oci.WithEnv([]string{fmt.Sprintf("HOSTNAME=%s", hostname)})))
-	if err != nil {
-		return fmt.Errorf("failed to create GPU driver installer container: %v", err)
-	}
-	defer container.Delete(ctx, containerd.WithSnapshotCleanup)
-
-	task, err := container.NewTask(ctx, cio.NewCreator(cio.WithStdio))
-	if err != nil {
-		return fmt.Errorf("failed to create GPU driver installation task: %v", err)
-	}
-	defer task.Delete(ctx)
-
-	statusC, err := task.Wait(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to wait for GPU driver installation task: %v", err)
-	}
-
-	if err := task.Start(ctx); err != nil {
-		return fmt.Errorf("failed to start GPU driver installation task: %v", err)
-	}
-
-	status := <-statusC
-	code, _, _ := status.Result()
-
-	if code != 0 {
-		di.logger.Error(fmt.Sprintf("GPU driver installation task ended and returned non-zero status code %d", code))
-		return fmt.Errorf("GPU driver installation task ended with non-zero status code %d", code)
+	if err := di.runInstallerContainer(ctx, image, mounts, processArgs, hostname); err != nil {
+		return err
 	}
 
 	if err = verifyDriverDigest(path.Join(InstallationHostDir, NvDriverVer595_58_03Runfile), NvDriverVer595_58_03Digest); err != nil {

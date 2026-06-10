@@ -22,6 +22,7 @@ import (
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/launcher"
 	"github.com/google/go-tpm-tools/launcher/internal/gpu"
+	"github.com/google/go-tpm-tools/launcher/internal/gpu/daemons"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/registryauth"
@@ -208,12 +209,28 @@ func startLauncher(launchSpec spec.LaunchSpec, serialConsole *os.File) error {
 
 	if launchSpec.InstallGpuDriver {
 		installer := gpu.NewDriverInstaller(containerdClient, launchSpec, logger)
-		err = installer.InstallGPUDrivers(ctx)
-		if err != nil {
+		if err := installer.InstallGPUDrivers(ctx); err != nil {
 			return fmt.Errorf("failed to install gpu drivers: %v", err)
 		}
+	}
+	// GpuBcMode is a temporary flag for testing GPU Bowcaster mode without attestation.
+	// This flag should be removed once full production Bowcaster mode (bcMode) is supported
+	// with complete GPU attestation integrated.
+	if launchSpec.GpuBcMode {
+		err = daemons.RunGPUSidecar(ctx, containerdClient, logger)
+		if err != nil {
+			return fmt.Errorf("failed to run gpu sidecar: %v", err)
+		}
+
+		logger.Info("Waiting for GPU services to report ready...")
+		waitCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+		defer cancel()
+		if err := daemons.WaitForGPUServices(waitCtx); err != nil {
+			return fmt.Errorf("failed to initialize GPU daemons: %w", err)
+		}
+		logger.Info("GPU services are ready. Proceeding to launch workload container.")
 	} else {
-		// TODO: Remove this when BC GPU installation is supported
+		// TODO: Remove this check when BC GPU installation is supported
 		if !launchSpec.Experiments.BcMode {
 			deviceInfo, _ := deviceinfo.GetGPUTypeInfo()
 			if deviceInfo != deviceinfo.NO_GPU {
