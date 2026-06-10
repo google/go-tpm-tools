@@ -34,7 +34,7 @@ const (
 	evidenceEndpoint          = "/v1/evidence"
 	endorsementEndpoint       = "/v1/keys:getEndorsement"
 	hostAttestationEndpoint   = "/v1/hostAttestation"
-	kpsAttestationServiceAddr = "192.168.100.3:5051"
+	kpsAttestationServiceAddr = "192.168.100.3:50051"
 	wsdSocket                 = "/tmp/container_launcher/kmaserver-grpc.sock"
 )
 
