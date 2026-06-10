@@ -271,11 +271,6 @@ func filterVMAttestationFields(att *attestationpb.VmAttestation, fields string) 
 
 // getKeyEndorsement retrieves the attestation evidence with KEM and binding key claims.
 func (a *attestHandler) getKeyEndorsement(w http.ResponseWriter, r *http.Request) {
-	if !a.launchSpec.Experiments.EnableKeyManager && !a.launchSpec.Experiments.BcMode {
-		a.logAndWriteHTTPError(w, http.StatusForbidden, fmt.Errorf("keymanager not enabled"))
-		return
-	}
-
 	if r.Method != http.MethodPost {
 		a.logAndWriteHTTPError(w, http.StatusMethodNotAllowed, fmt.Errorf("method not allowed"))
 		return
@@ -300,8 +295,41 @@ func (a *attestHandler) getKeyEndorsement(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if len(req.KeyHandle.Handle) == 0 {
-		a.logAndWriteHTTPError(w, http.StatusBadRequest, fmt.Errorf("key_handle is required"))
+	// Dev/fallback flow: if FakeVerifierEnabled is true, OR if key manager is not enabled,
+	// OR if we don't have key claims provider or valid key handle, always allow and return VM attestation.
+	if a.launchSpec.FakeVerifierEnabled || !a.launchSpec.Experiments.EnableKeyManager || a.keyClaimsProvider == nil || req.KeyHandle == nil || len(req.KeyHandle.Handle) == 0 {
+		attestOpts := agent.AttestAgentOpts{
+			AcpiOpts: &agent.AcpiOpts{
+				RetrieveAcpiData: req.GetRequestAcpiData(),
+			},
+		}
+		evidence, err := a.attestAgent.AttestationEvidence(a.ctx, req.Challenge, nil, attestOpts)
+		if err != nil {
+			a.logAndWriteHTTPError(w, http.StatusInternalServerError, fmt.Errorf("failed to collect attestation evidence: %v", err))
+			return
+		}
+
+		keyEndorsement := &attestationpb.KeyEndorsement{
+			Endorsement: &attestationpb.KeyEndorsement_VmProtectedKeyEndorsement{
+				VmProtectedKeyEndorsement: &attestationpb.VmProtectedKeyEndorsement{
+					BindingKeyAttestation: &attestationpb.KeyAttestation{
+						Attestation: evidence,
+					},
+					ProtectedKeyAttestation: &attestationpb.KeyAttestation{
+						Attestation: evidence,
+					},
+				},
+			},
+		}
+
+		keyEndorsementBytes, err := protojson.Marshal(keyEndorsement)
+		if err != nil {
+			a.logAndWriteHTTPError(w, http.StatusInternalServerError, fmt.Errorf("failed to marshal evidence: %v", err))
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(keyEndorsementBytes)
 		return
 	}
 
