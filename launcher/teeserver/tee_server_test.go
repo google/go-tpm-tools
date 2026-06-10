@@ -195,6 +195,7 @@ func TestCustomToken(t *testing.T) {
 		body                 string
 		attestWithClientFunc func(context.Context, agent.AttestAgentOpts, verifier.Client) ([]byte, error)
 		want                 int
+		wantBodyContains     string
 	}{
 		{
 			testName: "TestNoAudiencePostRequest",
@@ -265,6 +266,51 @@ func TestCustomToken(t *testing.T) {
 			},
 			want: http.StatusOK,
 		},
+		{
+			testName: "TestAwsPrincipalTagsMissingOptions",
+			body: `{
+				"audience": "https://x",
+				"token_type": "AWS_PRINCIPALTAGS"
+			}`,
+			attestWithClientFunc: func(context.Context, agent.AttestAgentOpts, verifier.Client) ([]byte, error) {
+				t.Errorf("This method should not be called")
+				return nil, nil
+			},
+			want:             http.StatusBadRequest,
+			wantBodyContains: "aws_principal_tag_options is required when token_type=AWS_PRINCIPALTAGS",
+		},
+		{
+			testName: "TestAwsPrincipalTagsMissingOptionsWithNonces",
+			body: `{
+				"audience": "https://x",
+				"token_type": "AWS_PRINCIPALTAGS",
+				"nonces": ["AAAA1111AAAA1111AAAA1111AAAA1111AAAA1111A"]
+			}`,
+			attestWithClientFunc: func(context.Context, agent.AttestAgentOpts, verifier.Client) ([]byte, error) {
+				t.Errorf("This method should not be called")
+				return nil, nil
+			},
+			want:             http.StatusBadRequest,
+			wantBodyContains: "aws_principal_tag_options is required when token_type=AWS_PRINCIPALTAGS",
+		},
+		{
+			testName: "TestAwsPrincipalTagsWithOptionsSucceeds",
+			body: `{
+				"audience": "https://x",
+				"token_type": "AWS_PRINCIPALTAGS",
+				"aws_principal_tag_options": {
+					"allowed_principal_tags": {
+						"container_image_signatures": {
+							"key_ids": ["test1"]
+						}
+					}
+				}
+			}`,
+			attestWithClientFunc: func(context.Context, agent.AttestAgentOpts, verifier.Client) ([]byte, error) {
+				return []byte{}, nil
+			},
+			want: http.StatusOK,
+		},
 	}
 
 	verifiers := []struct {
@@ -304,13 +350,17 @@ func TestCustomToken(t *testing.T) {
 
 				vf.tokenMethod(&ah, w, req)
 
-				_, err := io.ReadAll(w.Result().Body)
+				bodyBytes, err := io.ReadAll(w.Result().Body)
 				if err != nil {
 					t.Error(err)
 				}
 
 				if w.Code != test.want {
 					t.Errorf("testcase '%v': got return code: %d, want: %d", test.testName, w.Code, test.want)
+				}
+
+				if test.wantBodyContains != "" && !strings.Contains(string(bodyBytes), test.wantBodyContains) {
+					t.Errorf("testcase '%v': response body %q does not contain %q", test.testName, string(bodyBytes), test.wantBodyContains)
 				}
 			}
 		})
