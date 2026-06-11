@@ -65,14 +65,14 @@ steps:
     #!/usr/bin/env bash
     set -euo pipefail
     if [[ "$IMAGE_NAME" == *"debug"* ]]; then
-      mkdir -p ~/.ssh
-      if [ ! -f ~/.ssh/google_compute_engine.pub ]; then
-        ssh-keygen -t ed25519 -f ~/.ssh/google_compute_engine -N "" -q
+      mkdir -p /root/.ssh
+      if [ ! -f /root/.ssh/google_compute_engine.pub ]; then
+        ssh-keygen -t ed25519 -f /root/.ssh/google_compute_engine -N "" -q
       fi
-      gcloud compute os-login ssh-keys add --key-file=~/.ssh/google_compute_engine.pub || true
+      gcloud compute os-login ssh-keys add --key-file=/root/.ssh/google_compute_engine.pub || true
       sleep 20
-      echo "Inspecting process tree over SSH..."
-      gcloud compute ssh --zone="$ZONE" "nonroot-workload-$BUILD_ID" --command="ps -e -o comm,uid | grep fork-" > /workspace/ssh_ps.txt
+      echo "Inspecting process tree over SSH using internal IP..."
+      gcloud compute ssh --zone="$ZONE" "nonroot-workload-$BUILD_ID" --internal-ip --command="ps -e -o comm,uid | grep fork-" > /workspace/ssh_ps.txt
       cat /workspace/ssh_ps.txt
       for expected in "fork-parent" "fork-child1.*101" "fork-child2.*909"; do
         grep -E "$expected" /workspace/ssh_ps.txt || echo "failed: $expected not found via SSH" > /workspace/status.txt
