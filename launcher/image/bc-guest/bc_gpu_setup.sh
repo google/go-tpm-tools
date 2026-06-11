@@ -1,5 +1,5 @@
 #!/bin/bash
-# Description: Host-level GPU driver and sidecar container setup for Bowcaster VMs.
+# Host-level GPU driver and sidecar container setup for BC VMs.
 
 setup_gpu() {
   echo "Setting up GPU host requirements..."
@@ -13,21 +13,11 @@ setup_gpu() {
   echo "Loading ib_umad module..."
   modprobe ib_umad || echo "Failed to load ib_umad"
 
-  # 3. Load nvidia kernel modules with GSP firmware offload.
-  # GSP (GPU System Processor) offloading is mandatory for Hopper (H100) and Blackwell (B200)
-  # GPUs in Confidential Computing. It establishes secure CPU-GPU channels and attestation,
-  # while minimizing guest-host MMIO context switch overhead.
-  # NOTE: Without NVreg_EnableGpuFirmware=1, the NVIDIA kernel module crashes during memory mapping
-  # (RmInitAdapter fails with 'assertion failed: pVGpu != NULL @ objvgpu.c:148' and 'Disabling GSP offload'),
-  # dropping all GPUs and causing nvidia-smi to report "No devices were found".
-  # Note: modprobe automatically resolves and loads core dependencies like i2c_core and drm
-  # (unlike insmod, which would require loading them manually).
-  
-  # Configure modprobe options to ensure GSP firmware offload is enabled system-wide.
-  # This is critical because the kernel/udev may auto-load the 'nvidia' module during early boot
-  # before this setup script is executed. If it auto-loads, it loads with default settings (GSP disabled),
-  # which causes physical memory mapping to fail. Writing to modprobe.d ensures any subsequent loading
-  # (automatic or manual) inherits this option.
+  # 3. Load nvidia kernel modules with GSP firmware offload enabled.
+  # GSP offloading is mandatory for Hopper (H100) and Blackwell (B200) GPUs in Confidential VMs.
+  # Without it, the kernel module fails to map secure memory enclaves and drops the GPUs.
+  # We write GSP options system-wide to /etc/modprobe.d/ so that the early-boot auto-loaded modules 
+  # (loaded by udev during PCI discovery) and any manual reload attempts inherit GSP enablement.
   mkdir -p /etc/modprobe.d
   echo "options nvidia NVreg_EnableGpuFirmware=1" > /etc/modprobe.d/nvidia.conf
 
