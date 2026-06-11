@@ -2,6 +2,8 @@ substitutions:
   '_BASE_IMAGE': ''
   '_BASE_IMAGE_PROJECT': ''
   '_BUCKET_NAME': ''
+  '_ACOS_PROJECT': ''
+  '_ACOS_BUCKET_NAME': ''
   '_IMAGE_ENV': ''
   '_OUTPUT_IMAGE_NAME': ''
   '_OUTPUT_IMAGE_FAMILY': ''
@@ -250,7 +252,21 @@ steps:
            'rm',
            'gs://${_BUCKET_NAME}/oem-preloader-${BUILD_ID}/${_BASE_IMAGE}.tar.gz',
            'gs://${_BUCKET_NAME}/oem-preloader-${BUILD_ID}/${_OUTPUT_IMAGE_NAME}.tar.gz']
-
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'CopyImageToACOSBucket'
+    entrypoint: 'sh'
+    args:
+      - '-c'
+      - |
+        if gcloud storage ls gs://${_ACOS_BUCKET_NAME}/${_OUTPUT_IMAGE_NAME}.tar.gz > /dev/null 2>&1; then
+          echo "Result image ${_OUTPUT_IMAGE_NAME}.tar.gz already exists in the ACOS bucket. Exiting."
+          exit 0
+        fi
+        gcloud compute images export \
+          --image=${_OUTPUT_IMAGE_NAME} \
+          --image-project=${_BASE_IMAGE_PROJECT} \
+          --destination-uri=gs://${_ACOS_BUCKET_NAME}/${_OUTPUT_IMAGE_NAME}.tar.gz \
+          --project=${_BASE_IMAGE_PROJECT}
 timeout: '3000s'
 
 options:
