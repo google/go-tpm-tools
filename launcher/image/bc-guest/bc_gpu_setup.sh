@@ -112,9 +112,13 @@ setup_gpu() {
 
   if [[ -n "$modprobe_cmd" ]]; then
     echo "Triggering character devices creation with: $modprobe_cmd"
-    "$modprobe_cmd" -c 0 -u || echo "Failed to run nvidia-modprobe"
+    "$modprobe_cmd" -c 0 -u || {
+      echo "Error: Failed to run nvidia-modprobe"
+      return 1
+    }
   else
-    echo "nvidia-modprobe not found on host"
+    echo "Error: nvidia-modprobe not found on host"
+    return 1
   fi
 
   # Verify GPU state
@@ -243,10 +247,16 @@ setup_gpu() {
 }
 
 main() {
-  # Wait for containerd socket to be ready
+  # Wait for containerd socket to be ready (timeout 60 seconds)
   echo "Waiting for containerd socket..."
+  local count=0
   while [[ ! -S "/run/containerd/containerd.sock" ]]; do
+    if (( count >= 60 )); then
+      echo "Error: timed out waiting for containerd socket to become ready"
+      exit 1
+    fi
     sleep 1
+    (( count++ ))
   done
 
   # Detect if NVIDIA GPU is present on the host PCI bus
