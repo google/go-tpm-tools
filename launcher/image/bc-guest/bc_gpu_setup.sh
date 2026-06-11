@@ -22,8 +22,26 @@ setup_gpu() {
   # dropping all GPUs and causing nvidia-smi to report "No devices were found".
   # Note: modprobe automatically resolves and loads core dependencies like i2c_core and drm
   # (unlike insmod, which would require loading them manually).
+  
+  # Configure modprobe options to ensure GSP firmware offload is enabled system-wide.
+  # This is critical because the kernel/udev may auto-load the 'nvidia' module during early boot
+  # before this setup script is executed. If it auto-loads, it loads with default settings (GSP disabled),
+  # which causes physical memory mapping to fail. Writing to modprobe.d ensures any subsequent loading
+  # (automatic or manual) inherits this option.
+  mkdir -p /etc/modprobe.d
+  echo "options nvidia NVreg_EnableGpuFirmware=1" > /etc/modprobe.d/nvidia.conf
+
+  # If the nvidia module was already loaded by the kernel/udev during boot (without GSP settings),
+  # we must unload it (and its dependent modules) and reload it cleanly so the modprobe.d rule takes effect.
+  if lsmod | grep -q "^nvidia "; then
+    echo "Nvidia module already loaded. Unloading to apply correct GSP settings..."
+    modprobe -r nvidia-modeset || true
+    modprobe -r nvidia-uvm || true
+    modprobe -r nvidia || rmmod -f nvidia || echo "Failed to unload nvidia module"
+  fi
+
   echo "Loading nvidia modules..."
-  modprobe nvidia NVreg_EnableGpuFirmware=1 || {
+  modprobe nvidia || {
     echo "Error: Failed to load nvidia kernel module"
     return 1
   }
