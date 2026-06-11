@@ -67,7 +67,10 @@ setup_gpu() {
   # detected; otherwise, loading it will fail with "Invalid argument" due to missing kernel symbol links.
   if ls /sys/class/infiniband &>/dev/null && [ "$(ls -A /sys/class/infiniband)" ]; then
     echo "RDMA detected, loading nvidia-peermem..."
-    modprobe nvidia-peermem || echo "Failed to load nvidia-peermem"
+    modprobe nvidia-peermem || {
+      echo "Error: Failed to load nvidia-peermem module on RDMA-enabled hardware"
+      return 1
+    }
   fi
 
   # 4. Start host daemons (persistenced, modprobe device node creation)
@@ -85,9 +88,13 @@ setup_gpu() {
 
   if [[ -n "$persistenced_cmd" ]]; then
     echo "Starting nvidia-persistenced: $persistenced_cmd"
-    "$persistenced_cmd" || echo "Failed to start nvidia-persistenced"
+    "$persistenced_cmd" || {
+      echo "Error: Failed to start nvidia-persistenced daemon"
+      return 1
+    }
   else
-    echo "nvidia-persistenced not found on host"
+    echo "Error: nvidia-persistenced not found on host"
+    return 1
   fi
 
   # Trigger character devices creation
@@ -165,6 +172,7 @@ setup_gpu() {
 
   # Determine host driver directory to mount
   local host_driver_dir="/var/lib/nvidia"
+  local symlink_created=false
   if [[ -d "/opt/nvidia" ]]; then
     host_driver_dir="/opt/nvidia"
     # Create a symbolic link from /var/lib/nvidia to the versioned driver directory (e.g., /opt/nvidia/590.48.01).
@@ -176,9 +184,14 @@ setup_gpu() {
         mkdir -p /var/lib
         ln -sfn "$d" /var/lib/nvidia
         echo "Created host symlink: /var/lib/nvidia -> $d"
+        symlink_created=true
         break
       fi
     done
+    if [[ "$symlink_created" != "true" ]]; then
+      echo "Error: /opt/nvidia is empty or does not contain driver directories"
+      return 1
+    fi
   fi
   echo "Using host GPU driver directory for mounts: $host_driver_dir"
 
@@ -214,6 +227,11 @@ setup_gpu() {
   while [[ ! -f "/run/nvidia/gpu-ready" ]]; do
     if (( count >= timeout )); then
       echo "Error: timed out waiting for GPU driver initialization"
+      return 1
+    fi
+    # Verify the sidecar container task is still running; fail early if the daemon crashed
+    if ! ctr -n default tasks list -q | grep -q "^guest-gpu-tools-container$"; then
+      echo "Error: guest-gpu-tools-container task exited prematurely"
       return 1
     fi
     sleep 1
