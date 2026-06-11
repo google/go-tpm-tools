@@ -110,123 +110,123 @@ steps:
         "gs://cos-tools/$${VERSION}/lakitu/nvidia-drivers-595.58.03.tgz" \
         ./launcher/image/
 
-- name: 'gcr.io/cloud-builders/gcloud'
-  id: DebugVgImageBuild
-  waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary', 'DownloadGpuDrivers']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-vg-debug-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'OUTPUT_IMAGE_FAMILY=${_OUTPUT_IMAGE_FAMILY}-vg'
-  - 'BUCKET_NAME=$_BUCKET_NAME'
-  - 'BASE_IMAGE_PROJECT=$_BASE_IMAGE_PROJECT'
-  - 'VG_BASE_IMAGE=$_VG_BASE_IMAGE'
-  script: |
-    #!/usr/bin/env bash
-    set -exuo pipefail
+# - name: 'gcr.io/cloud-builders/gcloud'
+#   id: DebugVgImageBuild
+#   waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary', 'DownloadGpuDrivers']
+#   env:
+#   - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-vg-debug-${_OUTPUT_IMAGE_SUFFIX}'
+#   - 'OUTPUT_IMAGE_FAMILY=${_OUTPUT_IMAGE_FAMILY}-vg'
+#   - 'BUCKET_NAME=$_BUCKET_NAME'
+#   - 'BASE_IMAGE_PROJECT=$_BASE_IMAGE_PROJECT'
+#   - 'VG_BASE_IMAGE=$_VG_BASE_IMAGE'
+#   script: |
+#     #!/usr/bin/env bash
+#     set -exuo pipefail
 
-    echo "building the debug image: ${OUTPUT_IMAGE_NAME} with the base image: ${VG_BASE_IMAGE}"
-    gcloud builds submit --config=launcher/image/cloudbuild.yaml \
-    --region us-west1 \
-    --substitutions \
-    _BASE_IMAGE=${VG_BASE_IMAGE},\
-    _BASE_IMAGE_PROJECT=${BASE_IMAGE_PROJECT},\
-    _OUTPUT_IMAGE_FAMILY=${OUTPUT_IMAGE_FAMILY}-debug,\
-    _OUTPUT_IMAGE_NAME=${OUTPUT_IMAGE_NAME},\
-    _IMAGE_ENV=debug,\
-    _CS_LICENSE=projects/confidential-space-images/global/licenses/confidential-space-debug,\
-    _BUCKET_NAME=${BUCKET_NAME},\
-    _PRELOAD_SCRIPT=vgpreload.sh,\
-    _OEM_SIZE=900M,\
-    _DISK_SIZE_GB=12
-    exit
+#     echo "building the debug image: ${OUTPUT_IMAGE_NAME} with the base image: ${VG_BASE_IMAGE}"
+#     gcloud builds submit --config=launcher/image/cloudbuild.yaml \
+#     --region us-west1 \
+#     --substitutions \
+#     _BASE_IMAGE=${VG_BASE_IMAGE},\
+#     _BASE_IMAGE_PROJECT=${BASE_IMAGE_PROJECT},\
+#     _OUTPUT_IMAGE_FAMILY=${OUTPUT_IMAGE_FAMILY}-debug,\
+#     _OUTPUT_IMAGE_NAME=${OUTPUT_IMAGE_NAME},\
+#     _IMAGE_ENV=debug,\
+#     _CS_LICENSE=projects/confidential-space-images/global/licenses/confidential-space-debug,\
+#     _BUCKET_NAME=${BUCKET_NAME},\
+#     _PRELOAD_SCRIPT=vgpreload.sh,\
+#     _OEM_SIZE=900M,\
+#     _DISK_SIZE_GB=12
+#     exit
 
-- name: 'gcr.io/cloud-builders/gcloud'
-  id: HardenedVgImageBuild
-  waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary', 'DownloadGpuDrivers']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-vg-hardened-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'OUTPUT_IMAGE_FAMILY=${_OUTPUT_IMAGE_FAMILY}-vg'
-  - 'BUCKET_NAME=$_BUCKET_NAME'
-  - 'SHORT_SHA=${SHORT_SHA}'
-  - 'BASE_IMAGE_PROJECT=$_BASE_IMAGE_PROJECT'
-  - 'VG_BASE_IMAGE=$_VG_BASE_IMAGE'
-  script: |
-    #!/usr/bin/env bash
-    set -exuo pipefail
+# - name: 'gcr.io/cloud-builders/gcloud'
+#   id: HardenedVgImageBuild
+#   waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary', 'DownloadGpuDrivers']
+#   env:
+#   - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-vg-hardened-${_OUTPUT_IMAGE_SUFFIX}'
+#   - 'OUTPUT_IMAGE_FAMILY=${_OUTPUT_IMAGE_FAMILY}-vg'
+#   - 'BUCKET_NAME=$_BUCKET_NAME'
+#   - 'SHORT_SHA=${SHORT_SHA}'
+#   - 'BASE_IMAGE_PROJECT=$_BASE_IMAGE_PROJECT'
+#   - 'VG_BASE_IMAGE=$_VG_BASE_IMAGE'
+#   script: |
+#     #!/usr/bin/env bash
+#     set -exuo pipefail
 
-    echo "building the hardened image: ${OUTPUT_IMAGE_NAME} with the base image: ${VG_BASE_IMAGE}"
-    gcloud builds submit --config=launcher/image/cloudbuild.yaml \
-    --region us-west1 \
-    --substitutions \
-    _BASE_IMAGE=${VG_BASE_IMAGE},\
-    _BASE_IMAGE_PROJECT=${BASE_IMAGE_PROJECT},\
-    _OUTPUT_IMAGE_FAMILY=${OUTPUT_IMAGE_FAMILY},\
-    _OUTPUT_IMAGE_NAME=${OUTPUT_IMAGE_NAME},\
-    _IMAGE_ENV=hardened,\
-    _CS_LICENSE=projects/confidential-space-images/global/licenses/confidential-space,\
-    _BUCKET_NAME=${BUCKET_NAME},\
-    _PRELOAD_SCRIPT=vgpreload.sh,\
-    _OEM_SIZE=900M,\
-    _DISK_SIZE_GB=12
-    exit
+#     echo "building the hardened image: ${OUTPUT_IMAGE_NAME} with the base image: ${VG_BASE_IMAGE}"
+#     gcloud builds submit --config=launcher/image/cloudbuild.yaml \
+#     --region us-west1 \
+#     --substitutions \
+#     _BASE_IMAGE=${VG_BASE_IMAGE},\
+#     _BASE_IMAGE_PROJECT=${BASE_IMAGE_PROJECT},\
+#     _OUTPUT_IMAGE_FAMILY=${OUTPUT_IMAGE_FAMILY},\
+#     _OUTPUT_IMAGE_NAME=${OUTPUT_IMAGE_NAME},\
+#     _IMAGE_ENV=hardened,\
+#     _CS_LICENSE=projects/confidential-space-images/global/licenses/confidential-space,\
+#     _BUCKET_NAME=${BUCKET_NAME},\
+#     _PRELOAD_SCRIPT=vgpreload.sh,\
+#     _OEM_SIZE=900M,\
+#     _DISK_SIZE_GB=12
+#     exit
 
-- name: 'gcr.io/cloud-builders/gcloud'
-  id: DebugImageBuild
-  waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary', 'DownloadGpuDrivers']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-debug-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'OUTPUT_IMAGE_FAMILY=${_OUTPUT_IMAGE_FAMILY}'
-  - 'BUCKET_NAME=$_BUCKET_NAME'
-  - 'BASE_IMAGE_PROJECT=$_BASE_IMAGE_PROJECT'
-  script: |
-    #!/usr/bin/env bash
-    set -exuo pipefail
+# - name: 'gcr.io/cloud-builders/gcloud'
+#   id: DebugImageBuild
+#   waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary', 'DownloadGpuDrivers']
+#   env:
+#   - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-debug-${_OUTPUT_IMAGE_SUFFIX}'
+#   - 'OUTPUT_IMAGE_FAMILY=${_OUTPUT_IMAGE_FAMILY}'
+#   - 'BUCKET_NAME=$_BUCKET_NAME'
+#   - 'BASE_IMAGE_PROJECT=$_BASE_IMAGE_PROJECT'
+#   script: |
+#     #!/usr/bin/env bash
+#     set -exuo pipefail
 
-    base_image=$(cat /workspace/base_image.txt)
-    echo "building the debug image: ${OUTPUT_IMAGE_NAME} with the base image: ${base_image}"
-    gcloud builds submit --config=launcher/image/cloudbuild.yaml \
-    --region us-west1 \
-    --substitutions \
-    _BASE_IMAGE=${base_image},\
-    _BASE_IMAGE_PROJECT=${BASE_IMAGE_PROJECT},\
-    _OUTPUT_IMAGE_FAMILY=${OUTPUT_IMAGE_FAMILY}-debug,\
-    _OUTPUT_IMAGE_NAME=${OUTPUT_IMAGE_NAME},\
-    _IMAGE_ENV=debug,\
-    _CS_LICENSE=projects/confidential-space-images/global/licenses/confidential-space-debug,\
-    _BUCKET_NAME=${BUCKET_NAME},\
-    _PRELOAD_SCRIPT=preload.sh,\
-    _OEM_SIZE=500M,\
-    _DISK_SIZE_GB=11
-    exit
+#     base_image=$(cat /workspace/base_image.txt)
+#     echo "building the debug image: ${OUTPUT_IMAGE_NAME} with the base image: ${base_image}"
+#     gcloud builds submit --config=launcher/image/cloudbuild.yaml \
+#     --region us-west1 \
+#     --substitutions \
+#     _BASE_IMAGE=${base_image},\
+#     _BASE_IMAGE_PROJECT=${BASE_IMAGE_PROJECT},\
+#     _OUTPUT_IMAGE_FAMILY=${OUTPUT_IMAGE_FAMILY}-debug,\
+#     _OUTPUT_IMAGE_NAME=${OUTPUT_IMAGE_NAME},\
+#     _IMAGE_ENV=debug,\
+#     _CS_LICENSE=projects/confidential-space-images/global/licenses/confidential-space-debug,\
+#     _BUCKET_NAME=${BUCKET_NAME},\
+#     _PRELOAD_SCRIPT=preload.sh,\
+#     _OEM_SIZE=500M,\
+#     _DISK_SIZE_GB=11
+#     exit
 
-- name: 'gcr.io/cloud-builders/gcloud'
-  id: HardenedImageBuild
-  waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary', 'DownloadGpuDrivers']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'OUTPUT_IMAGE_FAMILY=${_OUTPUT_IMAGE_FAMILY}'
-  - 'BUCKET_NAME=$_BUCKET_NAME'
-  - 'SHORT_SHA=${SHORT_SHA}'
-  - 'BASE_IMAGE_PROJECT=$_BASE_IMAGE_PROJECT'
-  script: |
-    #!/usr/bin/env bash
-    set -exuo pipefail
+# - name: 'gcr.io/cloud-builders/gcloud'
+#   id: HardenedImageBuild
+#   waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary', 'DownloadGpuDrivers']
+#   env:
+#   - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}'
+#   - 'OUTPUT_IMAGE_FAMILY=${_OUTPUT_IMAGE_FAMILY}'
+#   - 'BUCKET_NAME=$_BUCKET_NAME'
+#   - 'SHORT_SHA=${SHORT_SHA}'
+#   - 'BASE_IMAGE_PROJECT=$_BASE_IMAGE_PROJECT'
+#   script: |
+#     #!/usr/bin/env bash
+#     set -exuo pipefail
 
-    base_image=$(cat /workspace/base_image.txt)
-    echo "building the hardened image: ${OUTPUT_IMAGE_NAME} with the base image: ${base_image}"
-    gcloud builds submit --config=launcher/image/cloudbuild.yaml \
-    --region us-west1 \
-    --substitutions \
-    _BASE_IMAGE=${base_image},\
-    _BASE_IMAGE_PROJECT=${BASE_IMAGE_PROJECT},\
-    _OUTPUT_IMAGE_FAMILY=${OUTPUT_IMAGE_FAMILY},\
-    _OUTPUT_IMAGE_NAME=${OUTPUT_IMAGE_NAME},\
-    _IMAGE_ENV=hardened,\
-    _CS_LICENSE=projects/confidential-space-images/global/licenses/confidential-space,\
-    _BUCKET_NAME=${BUCKET_NAME},\
-    _PRELOAD_SCRIPT=preload.sh,\
-    _OEM_SIZE=500M,\
-    _DISK_SIZE_GB=11
-    exit
+#     base_image=$(cat /workspace/base_image.txt)
+#     echo "building the hardened image: ${OUTPUT_IMAGE_NAME} with the base image: ${base_image}"
+#     gcloud builds submit --config=launcher/image/cloudbuild.yaml \
+#     --region us-west1 \
+#     --substitutions \
+#     _BASE_IMAGE=${base_image},\
+#     _BASE_IMAGE_PROJECT=${BASE_IMAGE_PROJECT},\
+#     _OUTPUT_IMAGE_FAMILY=${OUTPUT_IMAGE_FAMILY},\
+#     _OUTPUT_IMAGE_NAME=${OUTPUT_IMAGE_NAME},\
+#     _IMAGE_ENV=hardened,\
+#     _CS_LICENSE=projects/confidential-space-images/global/licenses/confidential-space,\
+#     _BUCKET_NAME=${BUCKET_NAME},\
+#     _PRELOAD_SCRIPT=preload.sh,\
+#     _OEM_SIZE=500M,\
+#     _DISK_SIZE_GB=11
+#     exit
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: DebugBcImageBuildAndExport
@@ -235,6 +235,7 @@ steps:
   - 'BC_BASE_IMAGE=$_BC_DEBUG_IMAGE'
   - 'BC_BASE_IMAGE_PROJECT=$_BC_BASE_IMAGE_PROJECT'
   - 'BC_ACOS_BUCKET=$_BC_ACOS_BUCKET'
+  - 'BC_ACOS_PROJECT=$_BC_ACOS_PROJECT'
   - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-bc-debug-${_OUTPUT_IMAGE_SUFFIX}'
   - 'OUTPUT_IMAGE_FAMILY=${_OUTPUT_IMAGE_FAMILY}-bc-debug'
   - 'BUCKET_NAME=$_BUCKET_NAME'
@@ -251,6 +252,7 @@ steps:
     --substitutions \
     _BASE_IMAGE=${BC_BASE_IMAGE},\
     _BASE_IMAGE_PROJECT=${BC_BASE_IMAGE_PROJECT},\
+    _ACOS_PROJECT=${BC_ACOS_PROJECT},\
     _OUTPUT_IMAGE_FAMILY=${OUTPUT_IMAGE_FAMILY},\
     _OUTPUT_IMAGE_NAME=${OUTPUT_IMAGE_NAME},\
     _IMAGE_ENV=debug,\
@@ -686,6 +688,6 @@ steps:
 #     gsutil cp measure_output_vg_debug.json gs://${PROJECT_ID}-rims/${OUTPUT_IMAGE_NAME}.json
 #     gsutil cp measure_output_vg_debug_sha384.json gs://${PROJECT_ID}-rims/${OUTPUT_IMAGE_NAME}_sha384.json
 
-# options:
-#   pool:
-#     name: 'projects/confidential-space-images-dev/locations/us-west1/workerPools/cs-image-build-vpc'
+options:
+  pool:
+    name: 'projects/confidential-space-images-dev/locations/us-west1/workerPools/cs-image-build-vpc'
