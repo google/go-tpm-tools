@@ -46,17 +46,12 @@ setup_gpu() {
     return 1
   }
 
-  # Verify GSP firmware parameter is active in the loaded kernel module
-  local gsp_param=""
-  if [[ -f "/sys/module/nvidia/parameters/NVreg_EnableGpuFirmware" ]]; then
-    gsp_param=$(cat /sys/module/nvidia/parameters/NVreg_EnableGpuFirmware)
-  fi
-  if [[ "$gsp_param" != "1" ]]; then
-    echo "Error: NVIDIA module loaded, but NVreg_EnableGpuFirmware is NOT enabled (active value: '$gsp_param')."
+  # Verify GSP firmware is active in the loaded driver before loading dependent modules
+  if ! grep -q "EnableGpuFirmware: 1" /proc/driver/nvidia/params; then
+    echo "Error: NVIDIA module loaded, but EnableGpuFirmware is NOT enabled."
     return 1
   fi
   echo "Verified GSP firmware offload parameter is active."
-
   modprobe nvidia-uvm || {
     echo "Error: Failed to load nvidia-uvm kernel module"
     return 1
