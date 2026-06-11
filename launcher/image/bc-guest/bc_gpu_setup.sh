@@ -193,7 +193,11 @@ setup_gpu() {
       return 1
     }
 
-  # 7. Wait for ready state (max 2 minutes)
+  # 7. Wait for ready state (max 2 minutes).
+  # The '/run/nvidia/gpu-ready' marker file is written by the Fabric Manager sidecar container
+  # (guest-gpu-tools) once it completes NVSwitch link configuration and driver setup.
+  # This loop prevents the host script from exiting (and systemd from starting the Go launcher)
+  # until the GPU hardware fabrics are fully initialized and ready to accept compute workloads.
   echo "Waiting for GPU services to report ready..."
   local timeout=120
   local count=0
