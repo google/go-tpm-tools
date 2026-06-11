@@ -2,7 +2,6 @@ substitutions:
   '_BASE_IMAGE': ''
   '_BASE_IMAGE_PROJECT': ''
   '_BUCKET_NAME': ''
-  '_ACOS_PROJECT': ''
   '_ACOS_BUCKET_NAME': ''
   '_IMAGE_ENV': ''
   '_OUTPUT_IMAGE_NAME': ''
