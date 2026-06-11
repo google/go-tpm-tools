@@ -45,6 +45,18 @@ setup_gpu() {
     echo "Error: Failed to load nvidia kernel module"
     return 1
   }
+
+  # Verify GSP firmware parameter is active in the loaded kernel module
+  local gsp_param=""
+  if [[ -f "/sys/module/nvidia/parameters/NVreg_EnableGpuFirmware" ]]; then
+    gsp_param=$(cat /sys/module/nvidia/parameters/NVreg_EnableGpuFirmware)
+  fi
+  if [[ "$gsp_param" != "1" ]]; then
+    echo "Error: NVIDIA module loaded, but NVreg_EnableGpuFirmware is NOT enabled (active value: '$gsp_param')."
+    return 1
+  fi
+  echo "Verified GSP firmware offload parameter is active."
+
   modprobe nvidia-uvm || {
     echo "Error: Failed to load nvidia-uvm kernel module"
     return 1
@@ -118,7 +130,10 @@ setup_gpu() {
 
   if [[ -n "$smi_cmd" ]]; then
     echo "Verifying hardware state with: $smi_cmd"
-    "$smi_cmd" || echo "Failed to run nvidia-smi"
+    if ! "$smi_cmd"; then
+      echo "Error: GPU hardware verification failed! nvidia-smi could not communicate with the driver."
+      return 1
+    fi
   fi
 
   # 5. Import the sidecar image into containerd
@@ -194,7 +209,7 @@ setup_gpu() {
     }
 
   # 7. Wait for ready state (max 2 minutes).
-  # The '/run/nvidia/gpu-ready' marker file is written by the Fabric Manager sidecar container
+  # The '/run/nvidia/gpu-ready' marker file is written by the GPU daemon sidecar container
   # (guest-gpu-tools) once it completes NVSwitch link configuration and driver setup.
   # This loop prevents the host script from exiting (and systemd from starting the Go launcher)
   # until the GPU hardware fabrics are fully initialized and ready to accept compute workloads.
