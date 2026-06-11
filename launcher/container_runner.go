@@ -183,6 +183,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		Soft: nofile,
 	}}
 
+
 	specOpts := []oci.SpecOpts{
 		oci.WithImageConfigArgs(image, launchSpec.Cmd),
 		oci.WithEnv(envs),
@@ -203,8 +204,8 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	specOpts = append(specOpts, cgroupOpts...)
 
 	var deviceROTs []agent.DeviceROT
-	nvidiaAttester := gpu.NewNvidiaAttester(launchSpec.InstallGpuDriver)
-	if launchSpec.InstallGpuDriver {
+	nvidiaAttester := gpu.NewNvidiaAttester(launchSpec.InstallGpuDriver || launchSpec.Experiments.BcMode)
+	if launchSpec.InstallGpuDriver || launchSpec.Experiments.BcMode {
 		gpuMounts := []specs.Mount{
 			{
 				Type:        "volume",
