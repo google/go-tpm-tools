@@ -1,9 +1,11 @@
 substitutions:
+  '_ACOS_BUCKET_NAME': ''
   '_BASE_IMAGE': ''
   '_BASE_IMAGE_PROJECT': ''
   '_BUCKET_NAME': ''
-  '_ACOS_BUCKET_NAME': ''
   '_IMAGE_ENV': ''
+  '_LOUHI_FLOW_ID': ''
+  '_LOUHI_TRIGGER_TOPIC': ''
   '_OUTPUT_IMAGE_NAME': ''
   '_OUTPUT_IMAGE_FAMILY': ''
   '_WSD_CONTAINER_IMAGE_REF': ''
@@ -261,13 +263,46 @@ steps:
           echo "ACOS bucket is not specified. Skipping copy."
           exit 0
         fi
-        if gcloud storage ls gs://${_ACOS_BUCKET_NAME}/${_OUTPUT_IMAGE_NAME}.tar.gz > /dev/null 2>&1; then
+        ACOS_TARGET_URL="gs://${_ACOS_BUCKET_NAME}/${_OUTPUT_IMAGE_NAME}.tar.gz"
+        if gcloud storage ls "${ACOS_TARGET_URL}" > /dev/null 2>&1; then
           echo "Result image ${_OUTPUT_IMAGE_NAME}.tar.gz already exists in the ACOS bucket. Exiting."
           exit 0
         fi
 
-        echo "Copying local archive directly to ACOS bucket gs://${_ACOS_BUCKET_NAME}/${_OUTPUT_IMAGE_NAME}.tar.gz"
-        gcloud storage cp ./out_image.tar.gz gs://${_ACOS_BUCKET_NAME}/${_OUTPUT_IMAGE_NAME}.tar.gz
+        echo "Copying local archive directly to ACOS bucket ${ACOS_TARGET_URL}"
+        gcloud storage cp ./out_image.tar.gz "${ACOS_TARGET_URL}"
+
+        echo "Preparing Pub/Sub notification payload..."
+        cat << MSG_EOF > /workspace/pubsub_msg.json
+        {
+          "flow": "${_LOUHI_FLOW_ID}",
+          "userParameters": {
+            "GUEST_WORKLOAD_ACOS_GS_URL": "${ACOS_TARGET_URL}"
+          },
+          "gitParameters": {
+            "commitSha": "${COMMIT_SHA}"
+          }
+        }
+        MSG_EOF
+
+        echo "Previewing payload Content:"
+        cat /workspace/pubsub_msg.json
+
+        echo "dry run: gcloud pubsub topics publish ${_LOUHI_TRIGGER_TOPIC}..."
+
+        # Alternative inline command (commented out):
+        # gcloud pubsub topics publish "${_LOUHI_TRIGGER_TOPIC}" \
+        #   --message='{
+        #     "flow": "${_LOUHI_FLOW_ID}",
+        #     "userParameters": {
+        #       "_OVERWRITE_REF_SHA": "${SHORT_SHA}",
+        #       "_ASDF": "QWERTY",
+        #       "_SLEEP": "2"
+        #     },
+        #     "gitParameters": {
+        #       "commitSha": "${COMMIT_SHA}"
+        #     }
+        #   }'
 timeout: '3000s'
 
 options:
