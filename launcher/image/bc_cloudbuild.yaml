@@ -257,15 +257,17 @@ steps:
     args:
       - '-c'
       - |
+        if [ -z "${_ACOS_BUCKET_NAME}" ]; then
+          echo "ACOS bucket is not specified. Skipping copy."
+          exit 0
+        fi
         if gcloud storage ls gs://${_ACOS_BUCKET_NAME}/${_OUTPUT_IMAGE_NAME}.tar.gz > /dev/null 2>&1; then
           echo "Result image ${_OUTPUT_IMAGE_NAME}.tar.gz already exists in the ACOS bucket. Exiting."
           exit 0
         fi
-        gcloud compute images export \
-          --image=${_OUTPUT_IMAGE_NAME} \
-          --image-project=${_BASE_IMAGE_PROJECT} \
-          --destination-uri=gs://${_ACOS_BUCKET_NAME}/${_OUTPUT_IMAGE_NAME}.tar.gz \
-          --project=${_BASE_IMAGE_PROJECT}
+
+        echo "Copying local archive directly to ACOS bucket gs://${_ACOS_BUCKET_NAME}/${_OUTPUT_IMAGE_NAME}.tar.gz"
+        gcloud storage cp ./out_image.tar.gz gs://${_ACOS_BUCKET_NAME}/${_OUTPUT_IMAGE_NAME}.tar.gz
 timeout: '3000s'
 
 options:
