@@ -4,13 +4,18 @@ package logging
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"log/slog"
 	"os"
 
 	"cloud.google.com/go/compute/metadata"
 	clogging "cloud.google.com/go/logging"
+	"google.golang.org/api/option"
 	mrpb "google.golang.org/genproto/googleapis/api/monitoredres"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 )
 
 const (
@@ -51,7 +56,7 @@ type logger struct {
 type payload map[string]any
 
 // NewLogger returns a Logger with Cloud and Serial Console logging configured.
-func NewLogger(ctx context.Context) (Logger, error) {
+func NewLogger(ctx context.Context, pool *x509.CertPool) (Logger, error) {
 	// Retrieve monitored resource information.
 	mdsClient := metadata.NewClient(nil)
 
@@ -76,7 +81,15 @@ func NewLogger(ctx context.Context) (Logger, error) {
 	}
 
 	// Configure Cloud Logging client/logger.
-	cloggingClient, err := clogging.NewClient(ctx, projectID)
+	var opts []option.ClientOption
+	if pool != nil {
+		creds := credentials.NewTLS(&tls.Config{
+			RootCAs: pool,
+		})
+		opts = append(opts, option.WithGRPCDialOption(grpc.WithTransportCredentials(creds)))
+	}
+
+	cloggingClient, err := clogging.NewClient(ctx, projectID, opts...)
 	if err != nil {
 		return nil, err
 	}

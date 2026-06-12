@@ -8,6 +8,9 @@ copy_launcher() {
   cp launcher "${CS_PATH}/cs_container_launcher"
 }
 
+copy_google_roots() {
+  cp google_roots.pem "${OEM_PATH}/google_roots.pem"
+}
 copy_experiment_client() {
   # DownloadExpBinary creates the file at EXPERIMENTS_BINARY.
   cp $EXPERIMENTS_BINARY "${CS_PATH}/${EXPERIMENTS_BINARY}"
@@ -115,6 +118,8 @@ main() {
   copy_experiment_client
   # Install container launcher.
   copy_launcher
+  # Copy Google Root bundle.
+  copy_google_roots
   setup_launcher_systemd_unit
   # Minimum required COS version for 'e': cos-dev-105-17222-0-0.
   # Minimum required COS version for 'm': cos-dev-113-18203-0-0.

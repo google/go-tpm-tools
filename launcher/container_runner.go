@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -49,6 +50,7 @@ import (
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/oauth2"
+	"google.golang.org/api/option"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -61,6 +63,7 @@ type ContainerRunner struct {
 	gpuAttester   gpu.Attester
 	serialConsole *os.File
 	powerButton   *powerButtonListener // Populated only for a hardened image
+	clientOpts    []option.ClientOption
 }
 
 const tokenFileTmp = ".token.tmp"
@@ -93,8 +96,8 @@ const (
 const defaultOOMScore = 1000
 
 // NewRunner returns a runner.
-func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.Token, launchSpec spec.LaunchSpec, mdsClient *metadata.Client, tpm io.ReadWriteCloser, logger logging.Logger, serialConsole *os.File) (*ContainerRunner, error) {
-	image, err := initImage(ctx, cdClient, launchSpec, token)
+func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.Token, launchSpec spec.LaunchSpec, mdsClient *metadata.Client, tpm io.ReadWriteCloser, logger logging.Logger, serialConsole *os.File, googleClient *http.Client, opts ...option.ClientOption) (*ContainerRunner, error) {
+	image, err := initImage(ctx, cdClient, launchSpec, token, googleClient)
 	if err != nil {
 		return nil, err
 	}
@@ -304,7 +307,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 
 		// Fetch impersonated ID tokens.
 		for _, sa := range launchSpec.ImpersonateServiceAccounts {
-			idToken, err := FetchImpersonatedToken(ctx, sa, audience)
+			idToken, err := FetchImpersonatedToken(ctx, sa, audience, opts...)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get impersonated token for %v: %w", sa, err)
 			}
@@ -320,7 +323,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	if launchSpec.FakeVerifierEnabled {
 		verifierClient = fake.NewClient(nil)
 	} else if launchSpec.ITAConfig.ITARegion == "" {
-		gcaClient, err := util.NewRESTClient(ctx, asAddr, launchSpec.ProjectID, launchSpec.Region)
+		gcaClient, err := util.NewRESTClient(ctx, asAddr, launchSpec.ProjectID, launchSpec.Region, opts...)
 		if err != nil {
 			if !launchSpec.DisableGcaRefresh {
 				return nil, fmt.Errorf("failed to create REST verifier client: %v", err)
@@ -334,7 +337,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	}
 
 	// Create a new signaturediscovery client to fetch signatures.
-	sdClient := getSignatureDiscoveryClient(cdClient, mdsClient, image.Target())
+	sdClient := getSignatureDiscoveryClient(cdClient, mdsClient, image.Target(), googleClient)
 
 	exps := agent.Experiments{
 		EnableAttestationEvidence: launchSpec.Experiments.EnableAttestationEvidence,
@@ -362,6 +365,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		nvidiaAttester,
 		serialConsole,
 		powerButton,
+		opts,
 	}, nil
 }
 
@@ -390,9 +394,9 @@ func enableMonitoring(enabled spec.MonitoringType, logger logging.Logger) error 
 	return nil
 }
 
-func getSignatureDiscoveryClient(cdClient *containerd.Client, mdsClient *metadata.Client, imageDesc v1.Descriptor) signaturediscovery.Fetcher {
+func getSignatureDiscoveryClient(cdClient *containerd.Client, mdsClient *metadata.Client, imageDesc v1.Descriptor, googleHTTPClient *http.Client) signaturediscovery.Fetcher {
 	resolverFetcher := func(ctx context.Context) (remotes.Resolver, error) {
-		return registryauth.RefreshResolver(ctx, mdsClient)
+		return registryauth.RefreshResolver(ctx, mdsClient, googleHTTPClient)
 	}
 	imageFetcher := func(ctx context.Context, imageRef string, opts ...containerd.RemoteOpt) (containerd.Image, error) {
 		image, err := pullImageWithRetries(
@@ -753,7 +757,7 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 
 		attestClients.ITA = itaClient
 	} else {
-		gcaClient, err := util.NewRESTClient(ctx, r.launchSpec.GcaAddress, r.launchSpec.ProjectID, r.launchSpec.Region)
+		gcaClient, err := util.NewRESTClient(ctx, r.launchSpec.GcaAddress, r.launchSpec.ProjectID, r.launchSpec.Region, r.clientOpts...)
 		if err != nil {
 			if !r.launchSpec.DisableGcaRefresh {
 				return fmt.Errorf("failed to create REST verifier client: %v", err)
@@ -906,27 +910,23 @@ func pullImageWithRetries(f func() (containerd.Image, error), retry func() backo
 	return image, nil
 }
 
-func initImage(ctx context.Context, cdClient *containerd.Client, launchSpec spec.LaunchSpec, token oauth2.Token) (containerd.Image, error) {
+func initImage(ctx context.Context, cdClient *containerd.Client, launchSpec spec.LaunchSpec, token oauth2.Token, googleClient *http.Client) (containerd.Image, error) {
+	var accessToken string
 	if token.Valid() {
-		remoteOpt := containerd.WithResolver(registryauth.Resolver(token.AccessToken))
-		image, err := pullImageWithRetries(
-			func() (containerd.Image, error) {
-				return cdClient.Pull(ctx, launchSpec.ImageRef, containerd.WithPullUnpack, remoteOpt)
-			},
-			pullImageBackoffPolicy,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("cannot pull the image: %w", err)
-		}
-		return image, nil
+		accessToken = token.AccessToken
 	}
+
+	remoteOpt := containerd.WithResolver(registryauth.Resolver(accessToken, googleClient))
 	image, err := pullImageWithRetries(
 		func() (containerd.Image, error) {
-			return cdClient.Pull(ctx, launchSpec.ImageRef, containerd.WithPullUnpack)
+			return cdClient.Pull(ctx, launchSpec.ImageRef, containerd.WithPullUnpack, remoteOpt)
 		},
 		pullImageBackoffPolicy,
 	)
 	if err != nil {
+		if accessToken != "" {
+			return nil, fmt.Errorf("cannot pull the image: %w", err)
+		}
 		return nil, fmt.Errorf("cannot pull the image (no token, only works for a public image): %w", err)
 	}
 	return image, nil
