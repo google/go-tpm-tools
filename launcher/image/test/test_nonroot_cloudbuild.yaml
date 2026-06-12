@@ -1,0 +1,104 @@
+# Test non-root container
+# 1. Launch a test workload
+# 2. For both debug and hardened image, we expect the workload send process tree with desired UIDs
+# 3. For the debug image, we ssh to the VM and verify the process tree
+substitutions:
+  '_IMAGE_NAME': ''
+  '_IMAGE_PROJECT': ''
+  '_CLEANUP': 'true'
+  '_IMAGE_REPO': 'us-west1-docker.pkg.dev/confidential-space-images-dev/cs-integ-test-images'
+  '_FORK_IMAGE': '${_IMAGE_REPO}/fork-workload:latest'
+  '_ZONE': 'us-west1-a'
+
+steps:
+# Create Monitor VM and capture its IP cleanly
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CreateMonitorVM
+  env:
+  - 'BUILD_ID=$BUILD_ID'
+  - 'ZONE=$_ZONE'
+  script: |
+    #!/usr/bin/env bash
+    set -euo pipefail
+    bash create_monitor_vm.sh -n nonroot-monitor-$BUILD_ID -z $ZONE
+    gcloud compute instances describe nonroot-monitor-$BUILD_ID \
+      --zone $ZONE \
+      --format="get(networkInterfaces[0].networkIP)" > /workspace/monitor_ip.txt
+
+# Launch Workload VM
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CreateWorkloadVM
+  env:
+  - 'BUILD_ID=$BUILD_ID'
+  - 'IMAGE_NAME=$_IMAGE_NAME'
+  - 'IMAGE_PROJECT=$_IMAGE_PROJECT'
+  - 'FORK_IMAGE=$_FORK_IMAGE'
+  - 'ZONE=$_ZONE'
+  script: |
+    #!/usr/bin/env bash
+    set -euo pipefail
+    MONITOR_IP=$(cat /workspace/monitor_ip.txt)
+    bash create_vm.sh -i $IMAGE_NAME \
+      -p $IMAGE_PROJECT \
+      -m "tee-image-reference=$FORK_IMAGE,tee-cmd=[\"--ip=${MONITOR_IP}\"],tee-container-log-redirect=true,tee-nonroot-container=true" \
+      -n nonroot-workload-$BUILD_ID \
+      -z $ZONE
+
+# Verify UDP Process Tree on Monitor VM via test_nonroot_container.sh
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: TestNonRootContainer
+  entrypoint: 'bash'
+  args: ['scripts/test_nonroot_container.sh',
+          'nonroot-monitor-${BUILD_ID}',
+          'nonroot-workload-${BUILD_ID}',
+          '${_ZONE}',
+        ]
+
+# For the debug image, ssh to the VM and verify the process tree
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: VerifyProcessTreeViaSSH
+  env:
+  - 'BUILD_ID=$BUILD_ID'
+  - 'ZONE=$_ZONE'
+  - 'IMAGE_NAME=$_IMAGE_NAME'
+  script: |
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [[ "$IMAGE_NAME" == *"debug"* ]]; then
+      KEY_FILE="/tmp/id_ed25519_nonroot_${BUILD_ID}"
+      ssh-keygen -t ed25519 -f "${KEY_FILE}" -N "" -q
+      gcloud compute os-login ssh-keys add --key-file="${KEY_FILE}.pub" || true
+      sleep 20
+      SSH_USER=$(gcloud compute os-login describe-profile | grep -o "username: .*" | cut -d' ' -f2 | head -n 1)
+      echo "Inspecting process tree over SSH as ${SSH_USER} using internal IP..."
+      gcloud compute ssh --zone="$ZONE" "${SSH_USER}@nonroot-workload-$BUILD_ID" --internal-ip --ssh-key-file="${KEY_FILE}" --quiet --command="ps -e -o comm,uid | grep fork-" > /workspace/ssh_ps.txt
+      cat /workspace/ssh_ps.txt
+      for expected in "fork-parent" "fork-child1.*101" "fork-child2.*909"; do
+        grep -E "$expected" /workspace/ssh_ps.txt || echo "failed: $expected not found via SSH" > /workspace/status.txt
+      done
+    fi
+
+# Clean up resources
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CleanUp
+  env:
+  - 'CLEANUP=$_CLEANUP'
+  - 'BUILD_ID=$BUILD_ID'
+  - 'ZONE=$_ZONE'
+  script: |
+    #!/usr/bin/env bash
+    bash cleanup.sh nonroot-monitor-$BUILD_ID $ZONE || true
+    bash cleanup.sh nonroot-workload-$BUILD_ID $ZONE || true
+
+# Check for failure message
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CheckFailure
+  env:
+  - 'BUILD_ID=$BUILD_ID'
+  entrypoint: 'bash'
+  args: ['check_failure.sh']
+
+options:
+  dynamic_substitutions: true
+  pool:
+    name: 'projects/confidential-space-images-dev/locations/us-west1/workerPools/cs-image-build-vpc'
