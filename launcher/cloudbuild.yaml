@@ -259,7 +259,8 @@ steps:
     _IMAGE_ENV=debug,\
     _BUCKET_NAME=${BUCKET_NAME},\
     _ACOS_BUCKET_NAME=${BC_ACOS_BUCKET},\
-    _WSD_CONTAINER_IMAGE_REF=${WSD_CONTAINER_IMAGE_REF}
+    _WSD_CONTAINER_IMAGE_REF=${WSD_CONTAINER_IMAGE_REF},\
+    COMMIT_SHA=${COMMIT_SHA}
     exit
 
 # - name: 'gcr.io/cloud-builders/gcloud'
