@@ -6,6 +6,8 @@ substitutions:
   '_OUTPUT_IMAGE_NAME': ''
   '_OUTPUT_IMAGE_FAMILY': ''
   '_WSD_CONTAINER_IMAGE_REF': ''
+  '_ZONE': 'us-west1-b'
+  '_OEM_FS_SIZE': '4G'
 
 steps:
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
@@ -18,6 +20,7 @@ steps:
       - '--image=${_BASE_IMAGE}'
       - '--image-project=${_BASE_IMAGE_PROJECT}'
       - '--destination-uri=gs://${_BUCKET_NAME}/oem-preloader-${BUILD_ID}/${_BASE_IMAGE}.tar.gz'
+      - '--zone=${_ZONE}'
   - name: 'gcr.io/cloud-builders/gcloud'
     id: 'DownloadImageFromGCS'
     entrypoint: 'gcloud'
@@ -35,6 +38,16 @@ steps:
         docker pull ${_WSD_CONTAINER_IMAGE_REF}
         mkdir -p /workspace/wsd_image
         docker save ${_WSD_CONTAINER_IMAGE_REF} -o /workspace/wsd_image/image.tar
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'BuildGPUDaemonsImage'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        set -e
+        docker build -t guest-gpu-tools:latest ./launcher/internal/gpu/daemons
+        mkdir -p /workspace/gpu_daemons_image
+        docker save guest-gpu-tools:latest -o /workspace/gpu_daemons_image/image.tar
   - name: 'alpine'
     id: 'ExtractRawImage'
     args: ['tar', '-xf', './src_image.tar.gz']
@@ -50,6 +63,7 @@ steps:
         mkdir -p /workspace/oem-install/confidential_space
         mkdir -p /workspace/oem-install/confidential_space/nodeproblemdetector
         mkdir -p /workspace/oem-install/wsd
+        mkdir -p /workspace/oem-install/gpu_daemons
 
         cp ./launcher/image/bc-guest/bcentrypoint.sh /workspace/oem-install/entrypoint.sh
         cp ./launcher/image/bc-guest/bcexperiment.json \
@@ -62,8 +76,12 @@ steps:
            ./launcher/image/bc-guest/bc_network_runtime_optimization.sh \
            ./launcher/image/bc-guest/bc_network_monitor.sh \
            ./launcher/image/bc-guest/bc_network_rebind.sh \
+           ./launcher/image/bc-guest/bc_gpu_setup.sh \
            /workspace/oem-install/confidential_space/
         cp ./launcher/image/nodeproblemdetector/* /workspace/oem-install/confidential_space/nodeproblemdetector/
+        if [ -f /workspace/gpu_daemons_image/image.tar ]; then
+            cp /workspace/gpu_daemons_image/image.tar /workspace/oem-install/gpu_daemons/image.tar
+        fi
         cp ./launcher/image/bc-guest/wsd/* /workspace/oem-install/wsd/
         if [ -f /workspace/wsd_image/image.tar ]; then
             cp /workspace/wsd_image/image.tar /workspace/oem-install/wsd/image.tar
@@ -81,6 +99,7 @@ steps:
         # cp ./launcher/image/bc-guest/meta-data /workspace/oem-install/meta-data
         chmod +x /workspace/oem-install/confidential_space/cs_container_launcher || true
         chmod +x /workspace/oem-install/confidential_space/exit_script.sh || true
+        chmod +x /workspace/oem-install/confidential_space/bc_gpu_setup.sh || true
         chmod +x /workspace/oem-install/confidential_space/bc_network_setup.sh || true
         chmod +x /workspace/oem-install/confidential_space/bc_network_optimization.sh || true
         chmod +x /workspace/oem-install/confidential_space/bc_network_runtime_optimization.sh || true
@@ -168,8 +187,8 @@ steps:
           "--vmlinux=./vmlinux"
           "--src-image=./disk.raw"
           "--out-image=output.bin"
-          "--oem-fs-size=500M"
-          "--disk-size-gb=15"
+          "--oem-fs-size=${_OEM_FS_SIZE}"
+          "--disk-size-gb=30"
           "--install-dir=/workspace/oem-install/"
         )
         for cmd in "$${COMMON_COMMANDS[@]}"; do
@@ -243,6 +262,16 @@ steps:
           --family=${_OUTPUT_IMAGE_FAMILY} \
           --source-uri=gs://${_BUCKET_NAME}/oem-preloader-${BUILD_ID}/${_OUTPUT_IMAGE_NAME}.tar.gz \
           --guest-os-features="$$FEATURES"
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'ExportOutputImage'
+    args:
+      - 'gcloud'
+      - 'compute'
+      - 'images'
+      - 'export'
+      - '--image=${_OUTPUT_IMAGE_NAME}'
+      - '--destination-uri=gs://chewbacca-guest-acos/${_OUTPUT_IMAGE_NAME}.tar.gz'
+      - '--zone=${_ZONE}'
   - name: 'gcr.io/cloud-builders/gcloud'
     id: 'RemoveGCSFiles'
     entrypoint: 'gcloud'

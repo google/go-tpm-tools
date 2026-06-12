@@ -29,6 +29,11 @@ main() {
     /usr/share/oem/confidential_space/bc_network_setup.sh
   fi
 
+  # Configure GPU host requirements.
+  if [[ -f /usr/share/oem/confidential_space/bc_gpu_setup.sh ]]; then
+    /usr/share/oem/confidential_space/bc_gpu_setup.sh
+  fi
+
   systemctl daemon-reload
   systemctl enable container-runner.service
   systemctl enable wsd.service

@@ -96,7 +96,8 @@ const (
 	cgroupNS                   = "tee-cgroup-ns"
 	gcaServiceEnv              = "gca-service-env"
 	installGpuDriver           = "tee-install-gpu-driver"
-	disableGcaRefreshKey       = "tee-disable-gca-refresh"
+
+	disableGcaRefreshKey = "tee-disable-gca-refresh"
 )
 
 const (
@@ -142,7 +143,8 @@ type LaunchSpec struct {
 	AddedCapabilities          []string
 	CgroupNamespace            bool
 	InstallGpuDriver           bool
-	DisableGcaRefresh          bool
+
+	DisableGcaRefresh bool
 }
 
 // UnmarshalJSON unmarshals an instance attributes list in JSON format from the metadata
