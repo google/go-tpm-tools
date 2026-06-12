@@ -264,20 +264,20 @@ steps:
           exit 0
         fi
         ACOS_TARGET_URL="gs://${_ACOS_BUCKET_NAME}/${_OUTPUT_IMAGE_NAME}.tar.gz"
-        if gcloud storage ls "${ACOS_TARGET_URL}" > /dev/null 2>&1; then
+        if gcloud storage ls "$${ACOS_TARGET_URL}" > /dev/null 2>&1; then
           echo "Result image ${_OUTPUT_IMAGE_NAME}.tar.gz already exists in the ACOS bucket. Exiting."
           exit 0
         fi
 
-        echo "Copying local archive directly to ACOS bucket ${ACOS_TARGET_URL}"
-        gcloud storage cp ./out_image.tar.gz "${ACOS_TARGET_URL}"
+        echo "Copying local archive directly to ACOS bucket $${ACOS_TARGET_URL}"
+        gcloud storage cp ./out_image.tar.gz "$${ACOS_TARGET_URL}"
 
         echo "Preparing Pub/Sub notification payload..."
         cat << MSG_EOF > /workspace/pubsub_msg.json
         {
           "flow": "${_LOUHI_FLOW_ID}",
           "userParameters": {
-            "GUEST_WORKLOAD_ACOS_GS_URL": "${ACOS_TARGET_URL}"
+            "GUEST_WORKLOAD_ACOS_GS_URL": "$${ACOS_TARGET_URL}"
           },
           "gitParameters": {
             "commitSha": "${COMMIT_SHA}"
