@@ -93,6 +93,8 @@ steps:
 # Check for failure message
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CheckFailure
+  env:
+  - 'BUILD_ID=$BUILD_ID'
   entrypoint: 'bash'
   args: ['check_failure.sh']
 
