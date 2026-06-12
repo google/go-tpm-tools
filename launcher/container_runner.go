@@ -58,6 +58,7 @@ type ContainerRunner struct {
 	launchSpec    spec.LaunchSpec
 	attestAgent   agent.AttestationAgent
 	logger        logging.Logger
+	logFilter     logging.LogFilter
 	gpuAttester   gpu.Attester
 	serialConsole *os.File
 	powerButton   *powerButtonListener // Populated only for a hardened image
@@ -127,7 +128,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	logger.Info("Preparing Container Runner",
 		"operator_input_image_ref", image.Name(),
 		"image_digest", image.Target().Digest,
-		"operator_override_env_vars", envs,
+		"operator_override_env_vars", logFilter.FilterEnvs(envs),
 		"operator_override_cmd", launchSpec.Cmd,
 	)
 

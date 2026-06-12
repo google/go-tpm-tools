@@ -335,7 +335,7 @@ func (s *LaunchSpec) setAttestationServiceVars(unmarshaledMap map[string]string)
 func (s *LaunchSpec) LogFriendly() LaunchSpec {
 	safeSpec := *s
 	safeSpec.ITAConfig.ITAKey = strings.Repeat("*", len(s.ITAConfig.ITAKey))
-
+	safeSpec.Envs = log_filter.FilterEnvs(s.Envs)
 	return safeSpec
 }
 
