@@ -65,6 +65,7 @@ steps:
            /workspace/oem-install/confidential_space/
         cp ./launcher/image/nodeproblemdetector/* /workspace/oem-install/confidential_space/nodeproblemdetector/
         cp ./launcher/image/bc-guest/wsd/* /workspace/oem-install/wsd/
+        cp ./launcher/image/google_roots.pem /workspace/oem-install/google_roots.pem
         if [ -f /workspace/wsd_image/image.tar ]; then
             cp /workspace/wsd_image/image.tar /workspace/oem-install/wsd/image.tar
         fi
