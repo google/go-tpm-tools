@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"os"
 	"os/exec"
 	"regexp"
@@ -26,7 +27,9 @@ import (
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/registryauth"
 	"github.com/google/go-tpm-tools/launcher/spec"
+	"github.com/google/go-tpm-tools/tlsutil"
 	"github.com/google/go-tpm/legacy/tpm2"
+	"google.golang.org/api/option"
 )
 
 const (
@@ -77,7 +80,16 @@ func main() {
 		os.Exit(exitCode)
 	}()
 
-	logger, err = logging.NewLogger(ctx)
+	googleClient, err := tlsutil.GoogleHTTPClient()
+	if err != nil {
+		log.Default().Printf("Failed to initialize Google root HTTP client: %v", err)
+		exitCode = failRC
+		log.Default().Printf("%s, exit code: %d (%s)\n", exitMessage, exitCode, rcMessage[exitCode])
+		return
+	}
+	clientOpts := []option.ClientOption{option.WithHTTPClient(googleClient)}
+
+	logger, err = logging.NewLogger(ctx, clientOpts...)
 	if err != nil {
 		log.Default().Printf("failed to initialize logging: %v", err)
 		exitCode = failRC
@@ -124,7 +136,7 @@ func main() {
 			logger.Info(exitMessage, "exit_code", exitCode)
 		}
 	}()
-	if err = startLauncher(launchSpec, logger.SerialConsoleFile()); err != nil {
+	if err = startLauncher(launchSpec, logger.SerialConsoleFile(), googleClient, clientOpts...); err != nil {
 		logger.Error(err.Error())
 	}
 
@@ -184,7 +196,7 @@ func getUptime() (string, error) {
 	return string(split[0]), nil
 }
 
-func startLauncher(launchSpec spec.LaunchSpec, serialConsole *os.File) error {
+func startLauncher(launchSpec spec.LaunchSpec, serialConsole *os.File, googleClient *http.Client, clientOpts ...option.ClientOption) error {
 	logger.Info(fmt.Sprintf("Launch Spec: %+v", launchSpec.LogFriendly()))
 	containerdClient, err := containerd.New(defaults.DefaultAddress)
 	if err != nil {
@@ -226,7 +238,7 @@ func startLauncher(launchSpec spec.LaunchSpec, serialConsole *os.File) error {
 	logger.Info("Launch started", "duration_sec", time.Since(start).Seconds())
 
 	// tpm is nil when running in BC mode.
-	r, err := launcher.NewRunner(ctx, containerdClient, token, launchSpec, mdsClient, tpm, logger, serialConsole)
+	r, err := launcher.NewRunner(ctx, containerdClient, token, launchSpec, mdsClient, tpm, logger, serialConsole, googleClient, clientOpts...)
 	if err != nil {
 		return err
 	}

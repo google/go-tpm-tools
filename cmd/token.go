@@ -18,6 +18,7 @@ import (
 	"github.com/google/go-tpm-tools/verifier/util"
 	"github.com/google/go-tpm/legacy/tpm2"
 	"github.com/spf13/cobra"
+	"golang.org/x/oauth2/google"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -60,7 +61,12 @@ The OIDC token includes claims regarding the GCE VM, which is verified by Attest
 			return fmt.Errorf("failed to retrieve ProjectID from MDS: %v", err)
 		}
 
-		verifierClient, err := util.NewRESTClient(ctx, asAddress, projectID, region)
+		httpClient, err := google.DefaultClient(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to create HTTP client: %v", err)
+		}
+
+		verifierClient, err := util.NewRESTClient(ctx, asAddress, projectID, region, option.WithHTTPClient(httpClient))
 		if err != nil {
 			return fmt.Errorf("failed to create REST verifier client: %v", err)
 		}
