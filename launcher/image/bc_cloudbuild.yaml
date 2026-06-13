@@ -39,6 +39,17 @@ steps:
     id: 'ExtractRawImage'
     args: ['tar', '-xf', './src_image.tar.gz']
 
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'BuildAndSaveGPUHelper'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        set -e
+        docker build -t  guest-gpu-tools:latest ./launcher/internal/gpu/daemons/
+        docker save guest-gpu-tools:latest -o /workspace/gpu_helper.tar
+        ls -lathr /workspace/gpu_helper.tar
+
   - name: 'alpine'
     id: 'PrepareOEMInstallDir'
     entrypoint: 'sh'
@@ -62,6 +73,7 @@ steps:
            ./launcher/image/bc-guest/bc_network_runtime_optimization.sh \
            ./launcher/image/bc-guest/bc_network_monitor.sh \
            ./launcher/image/bc-guest/bc_network_rebind.sh \
+           /workspace/gpu_helper.tar \
            /workspace/oem-install/confidential_space/
         cp ./launcher/image/nodeproblemdetector/* /workspace/oem-install/confidential_space/nodeproblemdetector/
         cp ./launcher/image/bc-guest/wsd/* /workspace/oem-install/wsd/
@@ -168,8 +180,8 @@ steps:
           "--vmlinux=./vmlinux"
           "--src-image=./disk.raw"
           "--out-image=output.bin"
-          "--oem-fs-size=500M"
-          "--disk-size-gb=15"
+          "--oem-fs-size=5000M"
+          "--disk-size-gb=25"
           "--install-dir=/workspace/oem-install/"
         )
         for cmd in "$${COMMON_COMMANDS[@]}"; do
@@ -243,13 +255,13 @@ steps:
           --family=${_OUTPUT_IMAGE_FAMILY} \
           --source-uri=gs://${_BUCKET_NAME}/oem-preloader-${BUILD_ID}/${_OUTPUT_IMAGE_NAME}.tar.gz \
           --guest-os-features="$$FEATURES"
-  - name: 'gcr.io/cloud-builders/gcloud'
-    id: 'RemoveGCSFiles'
-    entrypoint: 'gcloud'
-    args: ['storage',
-           'rm',
-           'gs://${_BUCKET_NAME}/oem-preloader-${BUILD_ID}/${_BASE_IMAGE}.tar.gz',
-           'gs://${_BUCKET_NAME}/oem-preloader-${BUILD_ID}/${_OUTPUT_IMAGE_NAME}.tar.gz']
+  # - name: 'gcr.io/cloud-builders/gcloud'
+  #   id: 'RemoveGCSFiles'
+  #   entrypoint: 'gcloud'
+  #   args: ['storage',
+  #          'rm',
+  #          'gs://${_BUCKET_NAME}/oem-preloader-${BUILD_ID}/${_BASE_IMAGE}.tar.gz',
+  #          'gs://${_BUCKET_NAME}/oem-preloader-${BUILD_ID}/${_OUTPUT_IMAGE_NAME}.tar.gz']
 
 timeout: '3000s'
 

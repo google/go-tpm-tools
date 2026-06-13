@@ -30,6 +30,48 @@ main() {
   fi
 
   systemctl daemon-reload
+
+  modprobe ib_umad
+  modprobe nvidia
+  modprobe nvidia-uvm
+  modprobe nvidia-modeset
+
+  echo "modprobe finish" | tee /dev/console
+
+
+  # systemd-run --unit=nvidia-persistenced-transient /opt/nvidia/590.48.01/bin/nvidia-persistenced
+
+  echo "Running nvidia-persistenced as a unit" | tee /dev/console
+
+  systemd-run  -p Type=forking --unit=nvidia-persistenced-transient /opt/nvidia/590.48.01/bin/nvidia-persistenced
+
+  echo "sleep 1 min to wait for nv persistenced ready" | tee /dev/console
+
+  sleep 60s
+
+  # Run the GPU tools container using containerd (ctr)
+
+  if [ -f  /usr/share/oem/confidential_space/gpu_helper.tar ]; then
+      echo "importing gpu helper image..." | tee /dev/console
+      sudo ctr images import /usr/share/oem/confidential_space/gpu_helper.tar
+  fi
+
+  echo "Running guest GPU tools container..." | tee /dev/console
+
+  sudo ctr containers create --privileged --net-host \
+      --mount type=bind,src=/dev,dst=/dev,options=rbind:rw \
+      --mount type=bind,src=/opt/nvidia,dst=/opt/nvidia-host,options=rbind:rw \
+      docker.io/library/guest-gpu-tools:latest \
+      guest-gpu-tools-task
+
+  sudo ctr tasks start -d guest-gpu-tools-task
+
+  echo "sleep 5 min to wait fabric manager ready" | tee /dev/console
+
+  sleep 5m
+
+  echo "continue" | tee /dev/console
+
   systemctl enable container-runner.service
   systemctl enable wsd.service
   systemctl start container-runner.service

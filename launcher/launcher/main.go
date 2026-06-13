@@ -207,10 +207,14 @@ func startLauncher(launchSpec spec.LaunchSpec, serialConsole *os.File) error {
 	ctx := namespaces.WithNamespace(context.Background(), namespaces.Default)
 
 	if launchSpec.InstallGpuDriver {
-		installer := gpu.NewDriverInstaller(containerdClient, launchSpec, logger)
-		err = installer.InstallGPUDrivers(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to install gpu drivers: %v", err)
+		if launchSpec.Experiments.BcMode {
+			logger.Info("BC Mode has gpu driver preinstalled")
+		} else {
+			installer := gpu.NewDriverInstaller(containerdClient, launchSpec, logger)
+			err = installer.InstallGPUDrivers(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to install gpu drivers: %v", err)
+			}
 		}
 	} else {
 		// TODO: Remove this when BC GPU installation is supported
