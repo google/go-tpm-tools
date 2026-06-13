@@ -243,6 +243,7 @@ steps:
   - 'BUCKET_NAME=$_BUCKET_NAME'
   - 'BASE_IMAGE_PROJECT=$_BC_BASE_IMAGE_PROJECT' 
   - 'WSD_CONTAINER_IMAGE_REF=$_WSD_CONTAINER_IMAGE_REF'
+  - 'COMMIT_SHA=${COMMIT_SHA}'
 
   script: |
     #!/usr/bin/env bash

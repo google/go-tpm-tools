@@ -295,9 +295,7 @@ steps:
         #   --message='{
         #     "flow": "${_LOUHI_FLOW_ID}",
         #     "userParameters": {
-        #       "_OVERWRITE_REF_SHA": "${SHORT_SHA}",
-        #       "_ASDF": "QWERTY",
-        #       "_SLEEP": "2"
+        #       "GUEST_WORKLOAD_ACOS_GS_URL": "$${ACOS_TARGET_URL}"
         #     },
         #     "gitParameters": {
         #       "commitSha": "${COMMIT_SHA}"
