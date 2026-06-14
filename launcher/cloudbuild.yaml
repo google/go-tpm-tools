@@ -249,6 +249,10 @@ steps:
     #!/usr/bin/env bash
     set -exuo pipefail
 
+    PR_EMAIL=$(git log -1 --format='%ae' 2>/dev/null || true)
+    if [[ "${PR_EMAIL}" != *@google.com ]]; then
+      PR_EMAIL="noreply@google.com"
+    fi
     echo "building the debug image with BC customizer with the base image: ${BC_BASE_IMAGE}"
     gcloud builds submit --config=launcher/image/bc_cloudbuild.yaml \
     --region us-west1 \
@@ -261,7 +265,8 @@ steps:
     _BUCKET_NAME=${BUCKET_NAME},\
     _ACOS_BUCKET_NAME=${BC_ACOS_BUCKET},\
     _WSD_CONTAINER_IMAGE_REF=${WSD_CONTAINER_IMAGE_REF},\
-    COMMIT_SHA=${COMMIT_SHA}
+    COMMIT_SHA=${COMMIT_SHA},\
+    _PR_EMAIL=${PR_EMAIL}
     exit
 
 # - name: 'gcr.io/cloud-builders/gcloud'

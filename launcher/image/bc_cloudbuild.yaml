@@ -9,6 +9,7 @@ substitutions:
   '_OUTPUT_IMAGE_NAME': ''
   '_OUTPUT_IMAGE_FAMILY': ''
   '_WSD_CONTAINER_IMAGE_REF': ''
+  '_PR_EMAIL': ''
 
 steps:
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
@@ -277,7 +278,8 @@ steps:
         {
           "flow": "${_LOUHI_FLOW_ID}",
           "userParameters": {
-            "GUEST_WORKLOAD_ACOS_GS_URL": "$${ACOS_TARGET_URL}"
+            "GUEST_WORKLOAD_ACOS_GS_URL": "$${ACOS_TARGET_URL}",
+            "_PR_EMAIL": "${_PR_EMAIL}"
           },
           "gitParameters": {
             "commitSha": "${COMMIT_SHA}"
@@ -295,7 +297,8 @@ steps:
         #   --message='{
         #     "flow": "${_LOUHI_FLOW_ID}",
         #     "userParameters": {
-        #       "GUEST_WORKLOAD_ACOS_GS_URL": "$${ACOS_TARGET_URL}"
+        #       "GUEST_WORKLOAD_ACOS_GS_URL": "$${ACOS_TARGET_URL}",
+        #       "_PR_EMAIL": "${_PR_EMAIL}"
         #     },
         #     "gitParameters": {
         #       "commitSha": "${COMMIT_SHA}"
