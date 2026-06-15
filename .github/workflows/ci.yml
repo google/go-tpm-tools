@@ -32,17 +32,17 @@ jobs:
     timeout-minutes: 12
     strategy:
       matrix:
-        go-version: [1.24.x]
+        go-version: [1.25.x]
         # TODO: Get this working on windows-latest
         os: [ubuntu-latest]
         architecture: [x32, x64]
         include:
           - os: macos-latest
             architecture: arm64
-            go-version: 1.24.x
+            go-version: 1.25.x
           - os: macos-14-large
             architecture: x64
-            go-version: 1.24.x
+            go-version: 1.25.x
     name: Generate/Build/Test (${{ matrix.os }}, ${{ matrix.architecture }}, Go ${{ matrix.go-version }})
     runs-on: ${{ matrix.os }}
     steps:
@@ -127,7 +127,7 @@ jobs:
     timeout-minutes: 10
     strategy:
       matrix:
-        go-version: [1.24.x]
+        go-version: [1.25.x]
         os: [ubuntu-latest]
         dir: ["./", "./agent", "./cmd", "./launcher", "./keymanager"]
     name: Lint ${{ matrix.dir }} (${{ matrix.os }}, Go ${{ matrix.go-version }})
@@ -155,19 +155,15 @@ jobs:
           cargo build --release
       # Pinned to commit SHA to satisfy blanket security policy (zizmor)
       - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@537aa1903e5d359d0b27dbc19ddd22c5087f3fbc # v3.2.0
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
-          version: latest
+          version: v2.12.2
           working-directory: ${{ matrix.dir }}
           args: >
             -D errcheck
-            -E stylecheck
-            -E goimports
+            -E staticcheck
             -E misspell
             -E revive
-            -E gofmt
-            -E goimports
-            --exclude-use-default=false
             --max-same-issues=0
             --max-issues-per-linter=0
             --timeout 2m
@@ -176,7 +172,7 @@ jobs:
     timeout-minutes: 8
     strategy:
       matrix:
-        go-version: [1.24.x]
+        go-version: [1.25.x]
         os: [ubuntu-latest]
     name: Lint CGO (${{ matrix.os }}, Go ${{ matrix.go-version }})
     runs-on: ${{ matrix.os }}
@@ -218,7 +214,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.24.x'
+          go-version: '1.25.x'
           cache: false
       - name: Install keep-sorted
         run: go install github.com/google/keep-sorted@v0.9.1
