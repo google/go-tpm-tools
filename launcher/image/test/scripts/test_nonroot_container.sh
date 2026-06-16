@@ -42,6 +42,7 @@ sleep 5
 echo "Polling for complete process tree (Workload: $WORKLOAD_VM, Monitor: $MONITOR_VM)..."
 date
 confirm_log "fork-parent: 0"
+date
 confirm_log "fork-child1: 101"
 confirm_log "fork-child2: 909"
 
