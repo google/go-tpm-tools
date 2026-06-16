@@ -70,7 +70,7 @@ steps:
       gcloud compute os-login ssh-keys add --key-file="${KEY_FILE}.pub" || true
       sleep 20
       SSH_USER=$(gcloud compute os-login describe-profile | grep -o "username: .*" | cut -d' ' -f2 | head -n 1)
-      echo "Inspecting process tree over SSH as ${SSH_USER} using internal IP..."
+      echo "Inspecting process tree over SSH as ${SSH_USER} using internal IP ..."
       gcloud compute ssh --zone="$ZONE" "${SSH_USER}@nonroot-workload-$BUILD_ID" --internal-ip --ssh-key-file="${KEY_FILE}" --quiet --command="ps -e -o comm,uid | grep fork-" > /workspace/ssh_ps.txt
       cat /workspace/ssh_ps.txt
       for expected in "fork-parent" "fork-child1.*101" "fork-child2.*909"; do
