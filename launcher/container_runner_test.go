@@ -7,6 +7,7 @@ import (
 	"crypto/rsa"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"path"
 	"strconv"
@@ -647,7 +648,7 @@ func TestInitImageDockerPublic(t *testing.T) {
 	ctx := namespaces.WithNamespace(context.Background(), "test")
 	// This is a "valid" token (formatwise)
 	validToken := oauth2.Token{AccessToken: "000000", Expiry: time.Now().Add(time.Hour)}
-	if _, err := initImage(ctx, containerdClient, spec.LaunchSpec{ImageRef: "docker.io/library/hello-world:latest"}, validToken); err != nil {
+	if _, err := initImage(ctx, containerdClient, spec.LaunchSpec{ImageRef: "docker.io/library/hello-world:latest"}, validToken, http.DefaultClient); err != nil {
 		t.Error(err)
 	} else {
 		if err := containerdClient.ImageService().Delete(ctx, "docker.io/library/hello-world:latest"); err != nil {
@@ -656,7 +657,7 @@ func TestInitImageDockerPublic(t *testing.T) {
 	}
 
 	invalidToken := oauth2.Token{}
-	if _, err := initImage(ctx, containerdClient, spec.LaunchSpec{ImageRef: "docker.io/library/hello-world:latest"}, invalidToken); err != nil {
+	if _, err := initImage(ctx, containerdClient, spec.LaunchSpec{ImageRef: "docker.io/library/hello-world:latest"}, invalidToken, http.DefaultClient); err != nil {
 		t.Error(err)
 	} else {
 		if err := containerdClient.ImageService().Delete(ctx, "docker.io/library/hello-world:latest"); err != nil {
