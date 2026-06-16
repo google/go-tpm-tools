@@ -58,6 +58,7 @@ type ContainerRunner struct {
 	launchSpec    spec.LaunchSpec
 	attestAgent   agent.AttestationAgent
 	logger        logging.Logger
+	logFilter     logging.LogFilter
 	gpuAttester   gpu.Attester
 	serialConsole *os.File
 	powerButton   *powerButtonListener // Populated only for a hardened image
