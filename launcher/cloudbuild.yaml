@@ -226,63 +226,63 @@ steps:
     _DISK_SIZE_GB=11
     exit
 
-- name: 'gcr.io/cloud-builders/gcloud'
-  id: DebugBcImageBuildAndExport
-  waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary', 'DownloadGpuDrivers']
-  env:
-  - 'BC_BASE_IMAGE=$_BC_DEBUG_IMAGE'
-  - 'BC_BASE_IMAGE_PROJECT=$_BC_BASE_IMAGE_PROJECT'
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-bc-debug-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'OUTPUT_IMAGE_FAMILY=${_OUTPUT_IMAGE_FAMILY}-bc-debug'
-  - 'BUCKET_NAME=$_BUCKET_NAME'
-  - 'BASE_IMAGE_PROJECT=$_BC_BASE_IMAGE_PROJECT' 
-  - 'WSD_CONTAINER_IMAGE_REF=$_WSD_CONTAINER_IMAGE_REF'
+# - name: 'gcr.io/cloud-builders/gcloud'
+#   id: DebugBcImageBuildAndExport
+#   waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary', 'DownloadGpuDrivers']
+#   env:
+#   - 'BC_BASE_IMAGE=$_BC_DEBUG_IMAGE'
+#   - 'BC_BASE_IMAGE_PROJECT=$_BC_BASE_IMAGE_PROJECT'
+#   - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-bc-debug-${_OUTPUT_IMAGE_SUFFIX}'
+#   - 'OUTPUT_IMAGE_FAMILY=${_OUTPUT_IMAGE_FAMILY}-bc-debug'
+#   - 'BUCKET_NAME=$_BUCKET_NAME'
+#   - 'BASE_IMAGE_PROJECT=$_BC_BASE_IMAGE_PROJECT' 
+#   - 'WSD_CONTAINER_IMAGE_REF=$_WSD_CONTAINER_IMAGE_REF'
 
-  script: |
-    #!/usr/bin/env bash
-    set -exuo pipefail
+#   script: |
+#     #!/usr/bin/env bash
+#     set -exuo pipefail
 
-    echo "building the debug image with BC customizer with the base image: ${BC_BASE_IMAGE}"
-    gcloud builds submit --config=launcher/image/bc_cloudbuild.yaml \
-    --region us-west1 \
-    --substitutions \
-    _BASE_IMAGE=${BC_BASE_IMAGE},\
-    _BASE_IMAGE_PROJECT=${BC_BASE_IMAGE_PROJECT},\
-    _OUTPUT_IMAGE_FAMILY=${OUTPUT_IMAGE_FAMILY},\
-    _OUTPUT_IMAGE_NAME=${OUTPUT_IMAGE_NAME},\
-    _IMAGE_ENV=debug,\
-    _BUCKET_NAME=${BUCKET_NAME},\
-    _WSD_CONTAINER_IMAGE_REF=${WSD_CONTAINER_IMAGE_REF}
-    exit
+#     echo "building the debug image with BC customizer with the base image: ${BC_BASE_IMAGE}"
+#     gcloud builds submit --config=launcher/image/bc_cloudbuild.yaml \
+#     --region us-west1 \
+#     --substitutions \
+#     _BASE_IMAGE=${BC_BASE_IMAGE},\
+#     _BASE_IMAGE_PROJECT=${BC_BASE_IMAGE_PROJECT},\
+#     _OUTPUT_IMAGE_FAMILY=${OUTPUT_IMAGE_FAMILY},\
+#     _OUTPUT_IMAGE_NAME=${OUTPUT_IMAGE_NAME},\
+#     _IMAGE_ENV=debug,\
+#     _BUCKET_NAME=${BUCKET_NAME},\
+#     _WSD_CONTAINER_IMAGE_REF=${WSD_CONTAINER_IMAGE_REF}
+#     exit
 
-- name: 'gcr.io/cloud-builders/gcloud'
-  id: HardenedBcImageBuildAndExport
-  waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary', 'DownloadGpuDrivers']
-  env:
-  - 'BC_BASE_IMAGE=$_BC_BASE_IMAGE'
-  - 'BC_BASE_IMAGE_PROJECT=$_BC_BASE_IMAGE_PROJECT'
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-bc-hardened-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'OUTPUT_IMAGE_FAMILY=${_OUTPUT_IMAGE_FAMILY}-bc'
-  - 'BUCKET_NAME=$_BUCKET_NAME'
-  - 'BASE_IMAGE_PROJECT=$_BC_BASE_IMAGE_PROJECT'
-  - 'WSD_CONTAINER_IMAGE_REF=$_WSD_CONTAINER_IMAGE_REF'
+# - name: 'gcr.io/cloud-builders/gcloud'
+#   id: HardenedBcImageBuildAndExport
+#   waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary', 'DownloadGpuDrivers']
+#   env:
+#   - 'BC_BASE_IMAGE=$_BC_BASE_IMAGE'
+#   - 'BC_BASE_IMAGE_PROJECT=$_BC_BASE_IMAGE_PROJECT'
+#   - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-bc-hardened-${_OUTPUT_IMAGE_SUFFIX}'
+#   - 'OUTPUT_IMAGE_FAMILY=${_OUTPUT_IMAGE_FAMILY}-bc'
+#   - 'BUCKET_NAME=$_BUCKET_NAME'
+#   - 'BASE_IMAGE_PROJECT=$_BC_BASE_IMAGE_PROJECT'
+#   - 'WSD_CONTAINER_IMAGE_REF=$_WSD_CONTAINER_IMAGE_REF'
 
-  script: |
-    #!/usr/bin/env bash
-    set -exuo pipefail
+#   script: |
+#     #!/usr/bin/env bash
+#     set -exuo pipefail
 
-    echo "building the hardened image with BC customizer with the base image: ${BC_BASE_IMAGE}"
-    gcloud builds submit --config=launcher/image/bc_cloudbuild.yaml \
-    --region us-west1 \
-    --substitutions \
-    _BASE_IMAGE=${BC_BASE_IMAGE},\
-    _BASE_IMAGE_PROJECT=${BC_BASE_IMAGE_PROJECT},\
-    _OUTPUT_IMAGE_FAMILY=${OUTPUT_IMAGE_FAMILY},\
-    _OUTPUT_IMAGE_NAME=${OUTPUT_IMAGE_NAME},\
-    _IMAGE_ENV=hardened,\
-    _BUCKET_NAME=${BUCKET_NAME},\
-    _WSD_CONTAINER_IMAGE_REF=${WSD_CONTAINER_IMAGE_REF}
-    exit
+#     echo "building the hardened image with BC customizer with the base image: ${BC_BASE_IMAGE}"
+#     gcloud builds submit --config=launcher/image/bc_cloudbuild.yaml \
+#     --region us-west1 \
+#     --substitutions \
+#     _BASE_IMAGE=${BC_BASE_IMAGE},\
+#     _BASE_IMAGE_PROJECT=${BC_BASE_IMAGE_PROJECT},\
+#     _OUTPUT_IMAGE_FAMILY=${OUTPUT_IMAGE_FAMILY},\
+#     _OUTPUT_IMAGE_NAME=${OUTPUT_IMAGE_NAME},\
+#     _IMAGE_ENV=hardened,\
+#     _BUCKET_NAME=${BUCKET_NAME},\
+#     _WSD_CONTAINER_IMAGE_REF=${WSD_CONTAINER_IMAGE_REF}
+#     exit
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: ExperimentsTests
