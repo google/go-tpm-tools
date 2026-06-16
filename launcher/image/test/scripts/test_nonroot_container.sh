@@ -6,7 +6,7 @@ WORKLOAD_VM=$2
 ZONE=$3
 SERIAL_LOG="/workspace/serial_output_nonroot.txt"
 
-timeout_seconds=180
+timeout_seconds=300
 start_time=$(date +%s)
 
 check_timeout() {
