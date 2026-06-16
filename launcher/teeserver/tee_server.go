@@ -35,7 +35,7 @@ const (
 	endorsementEndpoint       = "/v1/keys:getEndorsement"
 	hostAttestationEndpoint   = "/v1/hostAttestation"
 	kpsAttestationServiceAddr = "192.168.100.3:50051"
-	wsdSocket                 = "/tmp/container_launcher/kmaserver-grpc.sock"
+	wsdSocket                 = "/tmp/container_launcher/kmaserver.sock"
 )
 
 var clientErrorCodes = map[codes.Code]struct{}{
@@ -342,7 +342,7 @@ func (a *attestHandler) getKeyEndorsement(w http.ResponseWriter, r *http.Request
 
 	bindingKeyEvidence, err := a.bindingKeyAttester.GetKeyEndorsement(a.ctx, &req, attestOpts)
 	if err != nil {
-		a.logAndWriteHTTPError(w, http.StatusInternalServerError, fmt.Errorf("failed to collect attestation evidence with binding key claims"))
+		a.logAndWriteHTTPError(w, http.StatusInternalServerError, fmt.Errorf("failed to collect attestation evidence with binding key claims: %v", err))
 		return
 	}
 
