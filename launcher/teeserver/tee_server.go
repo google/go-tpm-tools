@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"time"
 
 	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
 	"github.com/google/go-tpm-tools/agent"
@@ -22,6 +23,7 @@ import (
 	"github.com/google/go-tpm-tools/verifier/models"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -127,11 +129,9 @@ func initKEMAttester(bcMode bool, keyClaimsProvider wsd.KeyClaimsProvider, a age
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize remote KEM attester: %v", err)
 	}
-	// Early initiate the connection in the background. By default, grpc.NewClient
-	// creates a client in the IDLE state and only connects on the first RPC call.
-	// This can cause the first HTTP request to getEndorsement to hang and time out
-	// during the initial TCP/HTTP2 handshake.
-	conn.Connect()
+	if err := waitForConnectionReady(context.Background(), conn); err != nil {
+		return nil, fmt.Errorf("failed to pre-connect remote KEM attester: %v", err)
+	}
 	return newRemoteKEMAttester(conn), nil
 }
 
@@ -147,11 +147,9 @@ func initBindingKeyAttester(bcMode bool, keyClaimsProvider wsd.KeyClaimsProvider
 	if err != nil {
 		return nil, fmt.Errorf("failed to create remote server client via unix socket %s: %v", wsdSocket, err)
 	}
-	// Early initiate the connection in the background. By default, grpc.NewClient
-	// creates a client in the IDLE state and only connects on the first RPC call.
-	// This can cause the first HTTP request to getEndorsement to hang and time out
-	// during the initial TCP/HTTP2 handshake.
-	conn.Connect()
+	if err := waitForConnectionReady(context.Background(), conn); err != nil {
+		return nil, fmt.Errorf("failed to pre-connect remote server client via unix socket %s: %v", wsdSocket, err)
+	}
 	return newBCBindingKeyAttester(conn, a), nil
 }
 
@@ -542,4 +540,29 @@ func (a *attestHandler) handleAttestError(w http.ResponseWriter, err error, mess
 	// If it's not a gRPC error, it's likely an internal error within the launcher.
 	// Map user errors 500 Internal Server Error
 	a.logAndWriteHTTPError(w, http.StatusInternalServerError, fmt.Errorf("%s: %w", message, err))
+}
+
+// waitForConnectionReady synchronously waits for the gRPC ClientConn to transition to Ready.
+// The initial handshake can take several seconds, waiting synchronously during launcher startup
+// avoids first-call RPC DeadlineExceeded errors from workload containers.
+func waitForConnectionReady(ctx context.Context, conn *grpc.ClientConn) error {
+	// Request connection initiation in the background.
+	conn.Connect()
+
+	// Timeout limit for initial handshake (30s for virtual network setup).
+	waitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	state := conn.GetState()
+	for state != connectivity.Ready {
+		if state == connectivity.Shutdown {
+			return fmt.Errorf("gRPC connection shut down")
+		}
+		// Block until the connectivity state changes.
+		if !conn.WaitForStateChange(waitCtx, state) {
+			return fmt.Errorf("timeout waiting for connection to become ready: %w", waitCtx.Err())
+		}
+		state = conn.GetState()
+	}
+	return nil
 }
