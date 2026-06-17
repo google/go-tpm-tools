@@ -13,7 +13,7 @@ run_ssh_test() {
     HOME_DIR=$(echo ~)
     VM_NAME="cs-ssh-test-$BUILD_ID"
     WORKLOAD_IMAGE='us-west1-docker.pkg.dev/confidential-space-images-dev/cs-integ-test-images/basic-test:latest'
-    ZONE="us-central1-a"
+    ZONE="us-west1-a"
 
     ACCOUNT_NAME=$(gcloud config list account --format "value(core.account)" | tr @. _)
     PROJECT_NAME=$(gcloud config get-value project)
