@@ -192,6 +192,7 @@ steps:
           "s|cros_efi|cros_efi systemd.mask=var-lib-toolbox.mount|g"
           "s|cros_efi|cros_efi systemd.mask=update-engine.service|g"
           "s|cros_efi|cros_efi confidential-space.hardened=true|g"
+          "s|console=ttyS0,115200||g"
         )
 
         CMD=(
