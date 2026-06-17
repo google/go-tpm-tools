@@ -15,6 +15,11 @@ check_timeout() {
   local remaining=$((timeout_seconds - elapsed))
   if [ $remaining -le 0 ]; then
     echo "failed: $1" > /workspace/status.txt
+    if [ -f "$SERIAL_LOG" ]; then
+      echo "=== SERIAL LOG ON FAILURE START ==="
+      cat "$SERIAL_LOG"
+      echo "=== SERIAL LOG ON FAILURE END ==="
+    fi
     exit 0
   fi
   echo $remaining
@@ -26,6 +31,9 @@ confirm_log() {
   timeout $remaining bash -c "until grep -q '$expected' \"$SERIAL_LOG\"; do sleep 1; done" || {
     echo "failed: '$expected' not found within timeout" > /workspace/status.txt
     date
+    echo "=== SERIAL LOG START ==="
+    cat "$SERIAL_LOG"
+    echo "=== SERIAL LOG END ==="
     kill $TAIL_PID || true
     exit 0
   }
