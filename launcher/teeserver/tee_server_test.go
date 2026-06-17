@@ -32,7 +32,14 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
+	"net"
+	"os"
+	"path/filepath"
+
 	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
+	pb "github.com/GoogleCloudPlatform/key-protection-module/keymanager/attestation_service/proto/gen"
+	kpmkeymanager "github.com/GoogleCloudPlatform/key-protection-module/km_common/proto"
+	"google.golang.org/grpc"
 	"google.golang.org/protobuf/testing/protocmp"
 )
 
@@ -1111,6 +1118,23 @@ func TestInitKEMAttester(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			if tc.bcMode {
+				lis, err := net.Listen("tcp", "localhost:0")
+				if err != nil {
+					t.Fatalf("failed to listen: %v", err)
+				}
+				s := grpc.NewServer()
+				fakeServer := &fakeAttestationServiceServer{}
+				pb.RegisterAttestationServiceServer(s, fakeServer)
+				go func() {
+					s.Serve(lis)
+				}()
+				defer s.Stop()
+
+				oldAddr := kpsAttestationServiceAddr
+				kpsAttestationServiceAddr = lis.Addr().String()
+				defer func() { kpsAttestationServiceAddr = oldAddr }()
+			}
 			attester, err := initKEMAttester(tc.bcMode, mClaims, mAgent)
 			if err != nil {
 				t.Fatalf("initKEMAttester(%t) failed: %v", tc.bcMode, err)
@@ -1155,6 +1179,30 @@ func TestInitBindingKeyAttester(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			if tc.bcMode {
+				tmpDir, err := os.MkdirTemp("", "teeserver-test")
+				if err != nil {
+					t.Fatalf("failed to create temp dir: %v", err)
+				}
+				defer os.RemoveAll(tmpDir)
+				socketPath := filepath.Join(tmpDir, "wsd.sock")
+
+				lis, err := net.Listen("unix", socketPath)
+				if err != nil {
+					t.Fatalf("failed to listen on socket %s: %v", socketPath, err)
+				}
+				s := grpc.NewServer()
+				fakeServer := &fakeKeyClaimsServiceServer{}
+				kpmkeymanager.RegisterKeyClaimsServiceServer(s, fakeServer)
+				go func() {
+					s.Serve(lis)
+				}()
+				defer s.Stop()
+
+				oldWsdSocket := wsdSocket
+				wsdSocket = socketPath
+				defer func() { wsdSocket = oldWsdSocket }()
+			}
 			attester, err := initBindingKeyAttester(tc.bcMode, mClaims, mAgent)
 			if err != nil {
 				t.Fatalf("initBindingKeyAttester(%t) failed: %v", tc.bcMode, err)

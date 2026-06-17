@@ -31,11 +31,14 @@ import (
 )
 
 const (
-	gcaEndpoint               = "/v1/token"
-	itaEndpoint               = "/v1/intel/token"
-	evidenceEndpoint          = "/v1/evidence"
-	endorsementEndpoint       = "/v1/keys:getEndorsement"
-	hostAttestationEndpoint   = "/v1/hostAttestation"
+	gcaEndpoint             = "/v1/token"
+	itaEndpoint             = "/v1/intel/token"
+	evidenceEndpoint        = "/v1/evidence"
+	endorsementEndpoint     = "/v1/keys:getEndorsement"
+	hostAttestationEndpoint = "/v1/hostAttestation"
+)
+
+var (
 	kpsAttestationServiceAddr = "192.168.100.3:50051"
 	wsdSocket                 = "/tmp/container_launcher/kmaserver-grpc.sock"
 )
