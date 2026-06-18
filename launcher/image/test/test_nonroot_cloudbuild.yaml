@@ -64,6 +64,8 @@ steps:
   script: |
     #!/usr/bin/env bash
     set -euo pipefail
+
+    # We can only ssh to a debug image.
     if [[ "$IMAGE_NAME" == *"debug"* ]]; then
       KEY_FILE="/tmp/id_ed25519_nonroot_${BUILD_ID}"
       ssh-keygen -t ed25519 -f "${KEY_FILE}" -N "" -q
@@ -71,7 +73,17 @@ steps:
       sleep 20
       SSH_USER=$(gcloud compute os-login describe-profile | grep -o "username: .*" | cut -d' ' -f2 | head -n 1)
       echo "Inspecting process tree over SSH as ${SSH_USER} using internal IP..."
-      gcloud compute ssh --zone="$ZONE" "${SSH_USER}@nonroot-workload-$BUILD_ID" --internal-ip --ssh-key-file="${KEY_FILE}" --quiet --command="ps -e -o comm,uid | grep fork-" > /workspace/ssh_ps.txt
+      mkdir -p ~/.ssh
+      gcloud compute ssh \
+        --zone="$ZONE" \
+        "${SSH_USER}@nonroot-workload-$BUILD_ID" \
+        --internal-ip \
+        --ssh-key-file="${KEY_FILE}" \
+        --ssh-flag="-o UserKnownHostsFile=/dev/null" \
+        --ssh-flag="-o StrictHostKeyChecking=no" \
+        --quiet \
+        --command="ps -e -o comm,uid | grep fork- || true" \
+        > /workspace/ssh_ps.txt || true
       cat /workspace/ssh_ps.txt
       for expected in "fork-parent" "fork-child1.*101" "fork-child2.*909"; do
         grep -E "$expected" /workspace/ssh_ps.txt || echo "failed: $expected not found via SSH" > /workspace/status.txt
