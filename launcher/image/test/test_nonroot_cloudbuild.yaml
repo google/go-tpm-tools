@@ -44,7 +44,7 @@ steps:
       -n nonroot-workload-$BUILD_ID \
       -z $ZONE
 
-# Verify UDP Process Tree on Monitor VM via test_nonroot_container.sh
+# Verify Process Tree on Monitor VM via test_nonroot_container.sh
 - name: 'gcr.io/cloud-builders/gcloud'
   id: TestNonRootContainer
   entrypoint: 'bash'
@@ -69,11 +69,14 @@ steps:
     if [[ "$IMAGE_NAME" == *"debug"* ]]; then
       KEY_FILE="/tmp/id_ed25519_nonroot_${BUILD_ID}"
       ssh-keygen -t ed25519 -f "${KEY_FILE}" -N "" -q
+
       gcloud compute os-login ssh-keys add --key-file="${KEY_FILE}.pub" || true
-      sleep 20
+      sleep 20  # Wait for the key to be propagated.
+
       SSH_USER=$(gcloud compute os-login describe-profile | grep -o "username: .*" | cut -d' ' -f2 | head -n 1)
       echo "Inspecting process tree over SSH as ${SSH_USER} using internal IP..."
-      mkdir -p ~/.ssh
+
+      # `|| true` ensures the cleanup step excutes even if this command fails.
       gcloud compute ssh \
         --zone="$ZONE" \
         "${SSH_USER}@nonroot-workload-$BUILD_ID" \
@@ -84,6 +87,7 @@ steps:
         --quiet \
         --command="ps -e -o comm,uid | grep fork- || true" \
         > /workspace/ssh_ps.txt || true
+
       cat /workspace/ssh_ps.txt
       for expected in "fork-parent" "fork-child1.*101" "fork-child2.*909"; do
         grep -E "$expected" /workspace/ssh_ps.txt || echo "failed: $expected not found via SSH" > /workspace/status.txt

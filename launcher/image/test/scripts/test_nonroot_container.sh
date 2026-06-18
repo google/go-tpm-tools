@@ -30,7 +30,6 @@ confirm_log() {
   local remaining=$(check_timeout "Timeout before poll for '$expected'")
   timeout $remaining bash -c "until grep -q '$expected' \"$SERIAL_LOG\"; do sleep 1; done" || {
     echo "failed: '$expected' not found within timeout" > /workspace/status.txt
-    date
     echo "=== SERIAL LOG START ==="
     cat "$SERIAL_LOG"
     echo "=== SERIAL LOG END ==="
@@ -48,9 +47,7 @@ TAIL_PID=$!
 sleep 5
 
 echo "Polling for complete process tree (Workload: $WORKLOAD_VM, Monitor: $MONITOR_VM)..."
-date
 confirm_log "fork-parent: 0"
-date
 confirm_log "fork-child1: 101"
 confirm_log "fork-child2: 909"
 
