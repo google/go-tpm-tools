@@ -66,8 +66,12 @@ configure_devices() {
           local network_mtu
           network_mtu=$(curl -s -f -H "Metadata-Flavor: Google" "http://metadata.google.internal/computeMetadata/v1/instance/network-interfaces/${i}/mtu" || echo "")
           if [[ -n "${network_mtu}" ]]; then
-            echo "Setting MTU for NIC ${interface_name} to ${network_mtu}..." > /dev/console
-            ip link set "${interface_name}" mtu "${network_mtu}" || true
+            if [[ "${network_mtu}" =~ ^[0-9]+$ ]] && (( network_mtu >= 0 && network_mtu <= 9999 )); then
+              echo "Setting MTU for NIC ${interface_name} to ${network_mtu}..." > /dev/console
+              ip link set "${interface_name}" mtu "${network_mtu}" || true
+            else
+              echo "Warning: Invalid MTU value '${network_mtu}' received for NIC ${interface_name}. Must be a number between 0 and 9999." > /dev/console
+            fi
           fi
         else
           echo "Warning: Could not find network interface name for PCI address ${pci_addr}" > /dev/console
