@@ -34,6 +34,7 @@ import (
 
 	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
 	"google.golang.org/protobuf/testing/protocmp"
+	"google.golang.org/protobuf/types/known/fieldmaskpb"
 )
 
 // Implements verifier.Client interface so it can be used to initialize test attestHandlers
@@ -680,6 +681,7 @@ func TestAttestationEvidence(t *testing.T) {
 		method                  string
 		url                     string
 		body                    string
+		headers                 map[string]string
 		attestationEvidenceFunc func(context.Context, []byte, []byte) (*attestationpb.VmAttestation, error)
 		wantStatusCode          int
 		wantBodyContains        string
@@ -696,9 +698,9 @@ func TestAttestationEvidence(t *testing.T) {
 			wantBodyContains: `{"label":"dGVzdC1sYWJlbA==","challenge":"dGVzdC1jaGFsbGVuZ2U=","extraData":"dGVzdC1leHRyYS1kYXRh","quote":{"tdxCcelQuote":{}}}`,
 		},
 		{
-			name:           "success with * fields",
+			name:           "success with * read_mask query param",
 			method:         http.MethodPost,
-			url:            "/v1/evidence?fields=*",
+			url:            "/v1/evidence?read_mask=*",
 			body:           `{"challenge": "dGVzdA=="}`,
 			wantStatusCode: http.StatusOK,
 			attestationEvidenceFunc: func(_ context.Context, _ []byte, _ []byte) (*attestationpb.VmAttestation, error) {
@@ -707,10 +709,44 @@ func TestAttestationEvidence(t *testing.T) {
 			wantBodyContains: `{"label":"dGVzdC1sYWJlbA==","challenge":"dGVzdC1jaGFsbGVuZ2U=","extraData":"dGVzdC1leHRyYS1kYXRh","quote":{"tdxCcelQuote":{}},"deviceReports":[{"nvidiaReport":{}}]}`,
 		},
 		{
-			name:           "success with fields",
+			name:           "success with read_mask query param",
 			method:         http.MethodPost,
-			url:            "/v1/evidence?fields=label,quote",
+			url:            "/v1/evidence?read_mask=label,quote",
 			body:           `{"challenge": "dGVzdA=="}`,
+			wantStatusCode: http.StatusOK,
+			attestationEvidenceFunc: func(_ context.Context, _ []byte, _ []byte) (*attestationpb.VmAttestation, error) {
+				return testAttestation, nil
+			},
+			wantBodyContains: `{"label":"dGVzdC1sYWJlbA==","quote":{"tdxCcelQuote":{}}}`,
+		},
+		{
+			name:           "success with $fields query param",
+			method:         http.MethodPost,
+			url:            "/v1/evidence?$fields=label,quote",
+			body:           `{"challenge": "dGVzdA=="}`,
+			wantStatusCode: http.StatusOK,
+			attestationEvidenceFunc: func(_ context.Context, _ []byte, _ []byte) (*attestationpb.VmAttestation, error) {
+				return testAttestation, nil
+			},
+			wantBodyContains: `{"label":"dGVzdC1sYWJlbA==","quote":{"tdxCcelQuote":{}}}`,
+		},
+		{
+			name:           "success with X-Goog-FieldMask header",
+			method:         http.MethodPost,
+			url:            "/v1/evidence",
+			body:           `{"challenge": "dGVzdA=="}`,
+			headers:        map[string]string{"X-Goog-FieldMask": "label,quote"},
+			wantStatusCode: http.StatusOK,
+			attestationEvidenceFunc: func(_ context.Context, _ []byte, _ []byte) (*attestationpb.VmAttestation, error) {
+				return testAttestation, nil
+			},
+			wantBodyContains: `{"label":"dGVzdC1sYWJlbA==","quote":{"tdxCcelQuote":{}}}`,
+		},
+		{
+			name:           "success with read_mask in json body",
+			method:         http.MethodPost,
+			url:            "/v1/evidence",
+			body:           `{"challenge": "dGVzdA==", "read_mask": "label,quote"}`,
 			wantStatusCode: http.StatusOK,
 			attestationEvidenceFunc: func(_ context.Context, _ []byte, _ []byte) (*attestationpb.VmAttestation, error) {
 				return testAttestation, nil
@@ -770,6 +806,9 @@ func TestAttestationEvidence(t *testing.T) {
 			}
 
 			req := httptest.NewRequest(tc.method, tc.url, strings.NewReader(tc.body))
+			for k, v := range tc.headers {
+				req.Header.Set(k, v)
+			}
 			w := httptest.NewRecorder()
 
 			ah.getAttestationEvidence(w, req)
@@ -821,13 +860,13 @@ func TestFilterVMAttestationFields(t *testing.T) {
 
 	testCases := []struct {
 		name   string
-		fields string
+		mask   *fieldmaskpb.FieldMask
 		mutate func(att *attestationpb.VmAttestation)
 		want   *attestationpb.VmAttestation
 	}{
 		{
-			name:   "no fields",
-			fields: "",
+			name: "no fields",
+			mask: nil,
 			mutate: func(att *attestationpb.VmAttestation) {
 				att.DeviceReports = nil
 			},
@@ -839,71 +878,98 @@ func TestFilterVMAttestationFields(t *testing.T) {
 			},
 		},
 		{
-			name:   "single field label",
-			fields: "label",
+			name: "single field label",
+			mask: &fieldmaskpb.FieldMask{Paths: []string{"label"}},
 			want: &attestationpb.VmAttestation{
 				Label: fullAttestation.Label,
 			},
 		},
 		{
-			name:   "single field challenge",
-			fields: "challenge",
+			name: "single field challenge",
+			mask: &fieldmaskpb.FieldMask{Paths: []string{"challenge"}},
 			want: &attestationpb.VmAttestation{
 				Challenge: fullAttestation.Challenge,
 			},
 		},
 		{
-			name:   "single field extraData",
-			fields: "extraData",
+			name: "single field extraData camelCase",
+			mask: &fieldmaskpb.FieldMask{Paths: []string{"extraData"}},
 			want: &attestationpb.VmAttestation{
 				ExtraData: fullAttestation.ExtraData,
 			},
 		},
 		{
-			name:   "single field quote",
-			fields: "quote",
+			name: "single field extra_data snake_case",
+			mask: &fieldmaskpb.FieldMask{Paths: []string{"extra_data"}},
+			want: &attestationpb.VmAttestation{
+				ExtraData: fullAttestation.ExtraData,
+			},
+		},
+		{
+			name: "single field quote",
+			mask: &fieldmaskpb.FieldMask{Paths: []string{"quote"}},
 			want: &attestationpb.VmAttestation{
 				Quote: fullAttestation.Quote,
 			},
 		},
 		{
-			name:   "single field deviceReports",
-			fields: "deviceReports",
+			name: "single field deviceReports camelCase",
+			mask: &fieldmaskpb.FieldMask{Paths: []string{"deviceReports"}},
 			want: &attestationpb.VmAttestation{
 				DeviceReports: fullAttestation.DeviceReports,
 			},
 		},
 		{
-			name:   "multiple fields",
-			fields: "label,quote",
+			name: "single field device_reports snake_case",
+			mask: &fieldmaskpb.FieldMask{Paths: []string{"device_reports"}},
+			want: &attestationpb.VmAttestation{
+				DeviceReports: fullAttestation.DeviceReports,
+			},
+		},
+		{
+			name: "multiple fields",
+			mask: &fieldmaskpb.FieldMask{Paths: []string{"label", "quote"}},
 			want: &attestationpb.VmAttestation{
 				Label: fullAttestation.Label,
 				Quote: fullAttestation.Quote,
 			},
 		},
 		{
-			name:   "all fields",
-			fields: "label,challenge,extraData,quote,deviceReports",
-			want:   fullAttestation,
+			name: "all fields",
+			mask: &fieldmaskpb.FieldMask{Paths: []string{"label", "challenge", "extraData", "quote", "deviceReports"}},
+			want: fullAttestation,
 		},
 		{
-			name:   "fields with whitespace",
-			fields: " label , deviceReports ",
+			name: "fields with whitespace",
+			mask: &fieldmaskpb.FieldMask{Paths: []string{" label ", " deviceReports "}},
 			want: &attestationpb.VmAttestation{
 				Label:         fullAttestation.Label,
 				DeviceReports: fullAttestation.DeviceReports,
 			},
 		},
 		{
-			name:   "all fields with *",
-			fields: "*",
-			want:   fullAttestation,
+			name: "all fields with *",
+			mask: &fieldmaskpb.FieldMask{Paths: []string{"*"}},
+			want: fullAttestation,
 		},
 		{
-			name:   "unknown fields are ignored",
-			fields: "label,foo,bar",
+			name: "unknown fields are ignored",
+			mask: &fieldmaskpb.FieldMask{Paths: []string{"label", "foo", "bar"}},
 			want: &attestationpb.VmAttestation{
 				Label: fullAttestation.Label,
+			},
+		},
+		{
+			name: "empty mask",
+			mask: &fieldmaskpb.FieldMask{},
+			mutate: func(att *attestationpb.VmAttestation) {
+				att.DeviceReports = nil
+			},
+			want: &attestationpb.VmAttestation{
+				Label:     fullAttestation.Label,
+				Challenge: fullAttestation.Challenge,
+				ExtraData: fullAttestation.ExtraData,
+				Quote:     fullAttestation.Quote,
 			},
 		},
 	}
@@ -914,7 +980,7 @@ func TestFilterVMAttestationFields(t *testing.T) {
 			if tc.mutate != nil {
 				tc.mutate(attestation)
 			}
-			got, err := filterVMAttestationFields(attestation, tc.fields)
+			got, err := filterVMAttestationFields(attestation, tc.mask)
 			if err != nil {
 				t.Fatalf("filterVMAttestationFields() returned an unexpected error: %v", err)
 			}

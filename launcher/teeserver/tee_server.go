@@ -26,6 +26,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/fieldmaskpb"
 )
 
 const (
@@ -240,10 +241,35 @@ func (a *attestHandler) getAttestationEvidence(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	fields := r.URL.Query().Get("fields")
+	var mask *fieldmaskpb.FieldMask
+	if qMask := r.URL.Query().Get("read_mask"); qMask != "" {
+		mask = &fieldmaskpb.FieldMask{Paths: strings.Split(qMask, ",")}
+	} else if qMask := r.URL.Query().Get("readMask"); qMask != "" {
+		mask = &fieldmaskpb.FieldMask{Paths: strings.Split(qMask, ",")}
+	} else if qMask := r.URL.Query().Get("fields"); qMask != "" {
+		mask = &fieldmaskpb.FieldMask{Paths: strings.Split(qMask, ",")}
+	} else if qMask := r.URL.Query().Get("$fields"); qMask != "" {
+		mask = &fieldmaskpb.FieldMask{Paths: strings.Split(qMask, ",")}
+	} else if hMask := r.Header.Get("X-Goog-FieldMask"); hMask != "" {
+		mask = &fieldmaskpb.FieldMask{Paths: strings.Split(hMask, ",")}
+	} else if req.ReadMask != nil {
+		mask = req.ReadMask
+	}
+
+	enableGPU := false
+	if mask != nil {
+		for _, path := range mask.GetPaths() {
+			if path == "*" || path == "deviceReports" || path == "device_reports" ||
+				strings.HasPrefix(path, "deviceReports.") || strings.HasPrefix(path, "device_reports.") {
+				enableGPU = true
+				break
+			}
+		}
+	}
+
 	attestOpts := agent.AttestAgentOpts{
 		DeviceReportOpts: &agent.DeviceReportOpts{
-			EnableRuntimeGPUAttestation: fields == "*" || strings.Contains(fields, "deviceReports"),
+			EnableRuntimeGPUAttestation: enableGPU,
 		},
 	}
 	evidence, err := a.attestAgent.AttestationEvidence(a.ctx, req.Challenge, nil, attestOpts)
@@ -252,9 +278,9 @@ func (a *attestHandler) getAttestationEvidence(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	partialEvidence, err := filterVMAttestationFields(evidence, fields)
+	partialEvidence, err := filterVMAttestationFields(evidence, mask)
 	if err != nil {
-		a.logAndWriteHTTPError(w, http.StatusBadRequest, fmt.Errorf("invalid fields parameter: %v", err))
+		a.logAndWriteHTTPError(w, http.StatusBadRequest, fmt.Errorf("invalid read_mask: %v", err))
 		return
 	}
 
@@ -268,15 +294,23 @@ func (a *attestHandler) getAttestationEvidence(w http.ResponseWriter, r *http.Re
 	w.Write(evidenceBytes)
 }
 
-// filterVMAttestationFields return a partial VM Attestation based on the query parameters.
-func filterVMAttestationFields(att *attestationpb.VmAttestation, fields string) (*attestationpb.VmAttestation, error) {
-	if fields == "" || fields == "*" {
-		return att, nil
+// filterVMAttestationFields return a partial VM Attestation based on the field mask.
+func filterVMAttestationFields(att *attestationpb.VmAttestation, mask *fieldmaskpb.FieldMask) (*attestationpb.VmAttestation, error) {
+	if mask == nil || len(mask.GetPaths()) == 0 {
+		out := proto.Clone(att).(*attestationpb.VmAttestation)
+		out.DeviceReports = nil
+		return out, nil
 	}
-	fieldSlice := strings.Split(fields, ",")
+
+	for _, path := range mask.GetPaths() {
+		if path == "*" {
+			return att, nil
+		}
+	}
+
 	fieldMap := make(map[string]bool)
-	for _, f := range fieldSlice {
-		fieldMap[strings.TrimSpace(f)] = true
+	for _, path := range mask.GetPaths() {
+		fieldMap[strings.TrimSpace(path)] = true
 	}
 
 	out := &attestationpb.VmAttestation{}
@@ -286,13 +320,13 @@ func filterVMAttestationFields(att *attestationpb.VmAttestation, fields string) 
 	if fieldMap["challenge"] {
 		out.Challenge = att.GetChallenge()
 	}
-	if fieldMap["extraData"] {
+	if fieldMap["extraData"] || fieldMap["extra_data"] {
 		out.ExtraData = att.GetExtraData()
 	}
 	if fieldMap["quote"] {
 		out.Quote = att.GetQuote()
 	}
-	if fieldMap["deviceReports"] {
+	if fieldMap["deviceReports"] || fieldMap["device_reports"] {
 		out.DeviceReports = att.GetDeviceReports()
 	}
 	return out, nil
