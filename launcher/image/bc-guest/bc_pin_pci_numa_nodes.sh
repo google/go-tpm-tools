@@ -55,16 +55,23 @@ configure_devices() {
       echo "${pci_addr}" | tee "/sys/bus/pci/drivers/${driver_name}/bind" > /dev/null || true
       sleep 1
 
-      # For NICs, query the GCE metadata server for the MTU and configure it.
+      # For NICs, configure the MTU.
       if [[ "${device_type}" == "NIC" ]]; then
         local interface_name
         interface_name=$(ls "/sys/bus/pci/devices/${pci_addr}/net" 2>/dev/null | head -n 1)
 
         if [[ -n "${interface_name}" ]]; then
           # The sorted index 'i' corresponds to the GCE network interface index (0, 1, etc.)
-          echo "Querying GCE metadata for MTU of NIC ${interface_name} (index ${i})..." > /dev/console
           local network_mtu
-          network_mtu=$(curl -s -f -H "Metadata-Flavor: Google" "http://metadata.google.internal/computeMetadata/v1/instance/network-interfaces/${i}/mtu" || echo "")
+          # Only query the GCE metadata server for the MTU if it's a debug image,
+          # otherwise hard code to 8896.
+          if grep -q "confidential-space.hardened=false" /proc/cmdline; then
+            echo "Querying GCE metadata for MTU of NIC ${interface_name} (index ${i})..." > /dev/console
+            network_mtu=$(curl -s -f -H "Metadata-Flavor: Google" "http://metadata.google.internal/computeMetadata/v1/instance/network-interfaces/${i}/mtu" || echo "")
+          else
+            network_mtu="8896"
+          fi
+
           if [[ -n "${network_mtu}" ]]; then
             if [[ "${network_mtu}" =~ ^[0-9]+$ ]] && (( network_mtu >= 0 && network_mtu <= 9999 )); then
               echo "Setting MTU for NIC ${interface_name} to ${network_mtu}..." > /dev/console
