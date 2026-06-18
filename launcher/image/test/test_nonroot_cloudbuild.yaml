@@ -77,7 +77,7 @@ steps:
       echo "Inspecting process tree over SSH as ${SSH_USER} using internal IP..."
 
       # `|| true` ensures the cleanup step excutes even if this command fails.
-      gcloud compute ssh \
+      HOME=/tmp gcloud compute ssh \
         --zone="$ZONE" \
         "${SSH_USER}@nonroot-workload-$BUILD_ID" \
         --internal-ip \
