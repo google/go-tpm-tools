@@ -29,6 +29,17 @@ main() {
   # Override default kernel-monitor.json for node-problem-detector.
   cp /usr/share/oem/confidential_space/nodeproblemdetector/kernel-monitor-cs.json /etc/node_problem_detector/kernel-monitor.json
 
+  # Bind-mount /bin/true over the google_set_multiqueue to disable it and prevent random resets to the network configuration.
+  if [[ -f /usr/bin/google_set_multiqueue ]]; then
+    echo "Disabling /usr/bin/google_set_multiqueue via bind mount" > /dev/console
+    mount --bind /bin/true /usr/bin/google_set_multiqueue || true
+  fi
+
+  # Configure GPU, NIC, and Bridge NUMA nodes and rebind drivers.
+  if [[ -f /usr/share/oem/confidential_space/bc_pin_pci_numa_nodes.sh ]]; then
+    /usr/share/oem/confidential_space/bc_pin_pci_numa_nodes.sh
+  fi
+
   # Configure network priority for IDPF using systemd-networkd.
   if [[ -f /usr/share/oem/confidential_space/bc_network_setup.sh ]]; then
     /usr/share/oem/confidential_space/bc_network_setup.sh
