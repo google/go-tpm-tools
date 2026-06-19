@@ -28,8 +28,8 @@ const (
 )
 
 var regionalURLs map[string]string = map[string]string{
-	"US": "https://api.trustauthority.intel.com",
-	"EU": "https://api.eu.trustauthority.intel.com",
+	"US": "https://api-dev02-user10.ita-dev.adsdcsp.com",
+	"EU": "https://api-dev02-user10.ita-dev.adsdcsp.com",
 }
 
 type client struct {
