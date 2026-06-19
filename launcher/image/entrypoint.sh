@@ -3,6 +3,8 @@
 main() {
   # Copy service files.
   cp /usr/share/oem/confidential_space/container-runner.service /etc/systemd/system/container-runner.service
+  cp /usr/share/oem/confidential_space/internal-investigator.service /etc/systemd/system/internal-investigator.service
+  cp /usr/share/oem/confidential_space/acpid.service /etc/systemd/system/acpid.service
   # Override default fluent-bit config.
   cp /usr/share/oem/confidential_space/fluent-bit-cs.conf /etc/fluent-bit/fluent-bit.conf
 
@@ -14,9 +16,15 @@ main() {
   cp /usr/share/oem/confidential_space/docker-monitor-cs.json /etc/node_problem_detector/docker-monitor.json
   # Override default kernel-monitor.json for node-problem-detector.
   cp /usr/share/oem/confidential_space/kernel-monitor-cs.json /etc/node_problem_detector/kernel-monitor.json
+  # Allow incoming traffic on port 2080 for internal-investigator.
+  iptables -A INPUT -p udp --dport 2080 -j ACCEPT
   systemctl daemon-reload
+  systemctl enable acpid.service
+  systemctl start acpid.service
   systemctl enable container-runner.service
   systemctl start container-runner.service
+  systemctl enable internal-investigator.service
+  systemctl start internal-investigator.service
   systemctl start fluent-bit.service
 }
 
