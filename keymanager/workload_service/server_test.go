@@ -30,6 +30,7 @@ func newTestServer(t *testing.T, kemGen kps.KeyProtectionService, bindingGen Wor
 		t.Fatalf("failed to create test server: %v", err)
 	}
 	t.Cleanup(func() {
+		srv.stopCleanupOnce.Do(func() { close(srv.stopCleanup) })
 		srv.listener.Close()
 		close(srv.claimsChan)
 	})
@@ -1455,4 +1456,121 @@ func TestGetClaimsFromChannel(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCleanupExpiredKeys(t *testing.T) {
+	activeKEM := uuid.New()
+	expiredKEM := uuid.New()
+	activeBinding := uuid.New()
+	expiredBinding := uuid.New()
+
+	mockKPS := &mockKeyProtectionService{
+		enumeratedKeys: []kpskcc.KEMKeyInfo{
+			{ID: activeKEM},
+		},
+	}
+
+	srv := newTestServer(t, mockKPS, &mockWorkloadService{})
+
+	// Populate the map with both active and expired entries.
+	srv.mu.Lock()
+	srv.kemToBindingMap[activeKEM] = activeBinding
+	srv.kemToBindingMap[expiredKEM] = expiredBinding
+	srv.mu.Unlock()
+
+	if err := srv.cleanupExpiredKeys(); err != nil {
+		t.Fatalf("cleanupExpiredKeys() returned error: %v", err)
+	}
+
+	srv.mu.RLock()
+	defer srv.mu.RUnlock()
+
+	if _, ok := srv.kemToBindingMap[activeKEM]; !ok {
+		t.Error("active KEM key was incorrectly removed from kemToBindingMap")
+	}
+	if _, ok := srv.kemToBindingMap[expiredKEM]; ok {
+		t.Error("expired KEM key was not removed from kemToBindingMap")
+	}
+	if len(srv.kemToBindingMap) != 1 {
+		t.Errorf("expected 1 entry in kemToBindingMap, got %d", len(srv.kemToBindingMap))
+	}
+}
+
+func TestCleanupExpiredKeysEnumerateError(t *testing.T) {
+	mockKPS := &mockKeyProtectionService{
+		enumerateErr: fmt.Errorf("enumerate failed"),
+	}
+
+	srv := newTestServer(t, mockKPS, &mockWorkloadService{})
+
+	srv.mu.Lock()
+	srv.kemToBindingMap[uuid.New()] = uuid.New()
+	srv.mu.Unlock()
+
+	err := srv.cleanupExpiredKeys()
+	if err == nil {
+		t.Fatal("expected error from cleanupExpiredKeys, got nil")
+	}
+	if !strings.Contains(err.Error(), "enumerate failed") {
+		t.Errorf("unexpected error: %v", err)
+	}
+
+	// Map should be untouched on error.
+	srv.mu.RLock()
+	defer srv.mu.RUnlock()
+	if len(srv.kemToBindingMap) != 1 {
+		t.Errorf("expected map to be untouched on error, got %d entries", len(srv.kemToBindingMap))
+	}
+}
+
+func TestCleanupExpiredKeysEmptyMap(t *testing.T) {
+	mockKPS := &mockKeyProtectionService{}
+	srv := newTestServer(t, mockKPS, &mockWorkloadService{})
+
+	if err := srv.cleanupExpiredKeys(); err != nil {
+		t.Fatalf("cleanupExpiredKeys() on empty map returned error: %v", err)
+	}
+
+	srv.mu.RLock()
+	defer srv.mu.RUnlock()
+	if len(srv.kemToBindingMap) != 0 {
+		t.Errorf("expected empty map, got %d entries", len(srv.kemToBindingMap))
+	}
+}
+
+func TestCleanupExpiredKeysAllExpired(t *testing.T) {
+	// Enumerate returns no active keys.
+	mockKPS := &mockKeyProtectionService{
+		enumeratedKeys: []kpskcc.KEMKeyInfo{},
+	}
+
+	srv := newTestServer(t, mockKPS, &mockWorkloadService{})
+
+	srv.mu.Lock()
+	srv.kemToBindingMap[uuid.New()] = uuid.New()
+	srv.kemToBindingMap[uuid.New()] = uuid.New()
+	srv.kemToBindingMap[uuid.New()] = uuid.New()
+	srv.mu.Unlock()
+
+	if err := srv.cleanupExpiredKeys(); err != nil {
+		t.Fatalf("cleanupExpiredKeys() returned error: %v", err)
+	}
+
+	srv.mu.RLock()
+	defer srv.mu.RUnlock()
+	if len(srv.kemToBindingMap) != 0 {
+		t.Errorf("expected all entries removed, got %d", len(srv.kemToBindingMap))
+	}
+}
+
+func TestCleanupLoopStopsOnShutdown(t *testing.T) {
+	mockKPS := &mockKeyProtectionService{}
+	srv := newTestServer(t, mockKPS, &mockWorkloadService{})
+
+	// Signal the cleanup goroutine to exit via stopCleanupOnce.
+	srv.stopCleanupOnce.Do(func() { close(srv.stopCleanup) })
+
+	// Give the goroutine time to exit. If it doesn't stop, the test will
+	// hang (and eventually time out), which is the failure mode we're testing.
+	time.Sleep(50 * time.Millisecond)
 }
