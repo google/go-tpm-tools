@@ -43,7 +43,7 @@ main() {
   modprobe nvidia-modeset
 
   echo "Running nvidia-persistenced" | tee /dev/console
-  systemd-run  -p Type=forking --unit=nvidia-persistenced-transient /opt/nvidia/590.48.01/bin/nvidia-persistenced
+  systemd-run -p Type=forking --unit=nvidia-persistenced-transient /opt/nvidia/595.58.03/bin/nvidia-persistenced
 
   echo "Waiting 1 minute for nvidia-persistenced to initialize..." | tee /dev/console
   sleep 60s

@@ -3,8 +3,8 @@ package gpu
 const (
 	// InstallationHostDir is the directory where gpu drivers will be installed on the host machine.
 	InstallationHostDir = "/var/lib/nvidia"
-	// BuiltInInstallation590_48_01HostDir is the pre-installed directory.
-	BuiltInInstallation590_48_01HostDir = "/opt/nvidia/590.48.01"
+	// BuiltInInstallation595_58_03HostDir is the pre-installed directory.
+	BuiltInInstallation595_58_03HostDir = "/opt/nvidia/595.58.03"
 	// InstallationContainerDir is the directory where gpu drivers will be available on the workload container.
 	InstallationContainerDir = "/usr/local/nvidia"
 	// InstallerImageRef is the hardcoded image reference for cos_gpu_installer
