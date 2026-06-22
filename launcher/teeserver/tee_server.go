@@ -258,8 +258,8 @@ func (a *attestHandler) getAttestationEvidence(w http.ResponseWriter, r *http.Re
 	enableGPU := false
 	if mask != nil {
 		for _, path := range mask.GetPaths() {
-			if path == "*" || path == "deviceReports" || path == "device_reports" ||
-				strings.HasPrefix(path, "deviceReports.") || strings.HasPrefix(path, "device_reports.") {
+			trimmedPath := strings.TrimSpace(path)
+			if trimmedPath == "*" || trimmedPath == "deviceReports" || trimmedPath == "device_reports" {
 				enableGPU = true
 				break
 			}
@@ -279,7 +279,7 @@ func (a *attestHandler) getAttestationEvidence(w http.ResponseWriter, r *http.Re
 
 	partialEvidence, err := filterVMAttestationFields(evidence, mask)
 	if err != nil {
-		a.logAndWriteHTTPError(w, http.StatusBadRequest, fmt.Errorf("invalid read_mask: %v", err))
+		a.logAndWriteHTTPError(w, http.StatusBadRequest, fmt.Errorf("invalid field mask: %v", err))
 		return
 	}
 
