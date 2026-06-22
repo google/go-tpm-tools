@@ -213,6 +213,18 @@ func (a *attestHandler) getITAToken(w http.ResponseWriter, r *http.Request) {
 	a.attest(w, r, a.clients.ITA)
 }
 
+// parseFieldMask parses the field mask from the request.
+func parseFieldMask(r *http.Request) *fieldmaskpb.FieldMask {
+	if qMask := r.URL.Query().Get("fields"); qMask != "" {
+		return &fieldmaskpb.FieldMask{Paths: strings.Split(qMask, ",")}
+	} else if qMask := r.URL.Query().Get("$fields"); qMask != "" {
+		return &fieldmaskpb.FieldMask{Paths: strings.Split(qMask, ",")}
+	} else if hMask := r.Header.Get("X-Goog-FieldMask"); hMask != "" {
+		return &fieldmaskpb.FieldMask{Paths: strings.Split(hMask, ",")}
+	}
+	return nil
+}
+
 // getAttestationEvidence retrieves the attestation evidence.
 // It returns partial response with query parameter support.
 // It currently supports "label", "challenge", "quote", "extraData", and "deviceReports" params.
@@ -241,20 +253,7 @@ func (a *attestHandler) getAttestationEvidence(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	var mask *fieldmaskpb.FieldMask
-	if qMask := r.URL.Query().Get("read_mask"); qMask != "" {
-		mask = &fieldmaskpb.FieldMask{Paths: strings.Split(qMask, ",")}
-	} else if qMask := r.URL.Query().Get("readMask"); qMask != "" {
-		mask = &fieldmaskpb.FieldMask{Paths: strings.Split(qMask, ",")}
-	} else if qMask := r.URL.Query().Get("fields"); qMask != "" {
-		mask = &fieldmaskpb.FieldMask{Paths: strings.Split(qMask, ",")}
-	} else if qMask := r.URL.Query().Get("$fields"); qMask != "" {
-		mask = &fieldmaskpb.FieldMask{Paths: strings.Split(qMask, ",")}
-	} else if hMask := r.Header.Get("X-Goog-FieldMask"); hMask != "" {
-		mask = &fieldmaskpb.FieldMask{Paths: strings.Split(hMask, ",")}
-	} else if req.ReadMask != nil {
-		mask = req.ReadMask
-	}
+	mask := parseFieldMask(r)
 
 	enableGPU := false
 	if mask != nil {

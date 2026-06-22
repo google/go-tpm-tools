@@ -3,7 +3,6 @@ syntax = "proto3";
 package teeserver;
 
 import "keymanager/km_common/proto/crypto_types.proto";
-import "google/protobuf/field_mask.proto";
 
 option go_package = "github.com/google/go-tpm-tools/launcher/teeserver/proto/gen/teeserver";
 
@@ -15,7 +14,6 @@ message GetKeyEndorsementRequest {
 
 message GetAttestationEvidenceRequest {
   bytes challenge = 1;
-  google.protobuf.FieldMask read_mask = 2;
 }
 
 message GetHostAttestationRequest {

@@ -698,9 +698,9 @@ func TestAttestationEvidence(t *testing.T) {
 			wantBodyContains: `{"label":"dGVzdC1sYWJlbA==","challenge":"dGVzdC1jaGFsbGVuZ2U=","extraData":"dGVzdC1leHRyYS1kYXRh","quote":{"tdxCcelQuote":{}}}`,
 		},
 		{
-			name:           "success with * read_mask query param",
+			name:           "success with * fields",
 			method:         http.MethodPost,
-			url:            "/v1/evidence?read_mask=*",
+			url:            "/v1/evidence?fields=*",
 			body:           `{"challenge": "dGVzdA=="}`,
 			wantStatusCode: http.StatusOK,
 			attestationEvidenceFunc: func(_ context.Context, _ []byte, _ []byte) (*attestationpb.VmAttestation, error) {
@@ -709,9 +709,9 @@ func TestAttestationEvidence(t *testing.T) {
 			wantBodyContains: `{"label":"dGVzdC1sYWJlbA==","challenge":"dGVzdC1jaGFsbGVuZ2U=","extraData":"dGVzdC1leHRyYS1kYXRh","quote":{"tdxCcelQuote":{}},"deviceReports":[{"nvidiaReport":{}}]}`,
 		},
 		{
-			name:           "success with read_mask query param",
+			name:           "success with fields query param",
 			method:         http.MethodPost,
-			url:            "/v1/evidence?read_mask=label,quote",
+			url:            "/v1/evidence?fields=label,quote",
 			body:           `{"challenge": "dGVzdA=="}`,
 			wantStatusCode: http.StatusOK,
 			attestationEvidenceFunc: func(_ context.Context, _ []byte, _ []byte) (*attestationpb.VmAttestation, error) {
@@ -742,17 +742,7 @@ func TestAttestationEvidence(t *testing.T) {
 			},
 			wantBodyContains: `{"label":"dGVzdC1sYWJlbA==","quote":{"tdxCcelQuote":{}}}`,
 		},
-		{
-			name:           "success with read_mask in json body",
-			method:         http.MethodPost,
-			url:            "/v1/evidence",
-			body:           `{"challenge": "dGVzdA==", "read_mask": "label,quote"}`,
-			wantStatusCode: http.StatusOK,
-			attestationEvidenceFunc: func(_ context.Context, _ []byte, _ []byte) (*attestationpb.VmAttestation, error) {
-				return testAttestation, nil
-			},
-			wantBodyContains: `{"label":"dGVzdC1sYWJlbA==","quote":{"tdxCcelQuote":{}}}`,
-		},
+
 		{
 			name:             "wrong method",
 			method:           http.MethodGet,
@@ -986,6 +976,61 @@ func TestFilterVMAttestationFields(t *testing.T) {
 			}
 			if diff := cmp.Diff(tc.want, got, protocmp.Transform()); diff != "" {
 				t.Errorf("filterVMAttestationFields() returned diff (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestParseFieldMask(t *testing.T) {
+	tests := []struct {
+		name    string
+		url     string
+		headers map[string]string
+		want    *fieldmaskpb.FieldMask
+	}{
+		{
+			name: "no field mask parameters",
+			url:  "http://localhost/v1/evidence",
+			want: nil,
+		},
+		{
+			name: "fields query param",
+			url:  "http://localhost/v1/evidence?fields=label,quote",
+			want: &fieldmaskpb.FieldMask{Paths: []string{"label", "quote"}},
+		},
+		{
+			name: "$fields query param",
+			url:  "http://localhost/v1/evidence?$fields=challenge,extra_data",
+			want: &fieldmaskpb.FieldMask{Paths: []string{"challenge", "extra_data"}},
+		},
+		{
+			name:    "X-Goog-FieldMask header",
+			url:     "http://localhost/v1/evidence",
+			headers: map[string]string{"X-Goog-FieldMask": "deviceReports"},
+			want:    &fieldmaskpb.FieldMask{Paths: []string{"deviceReports"}},
+		},
+		{
+			name: "fields query param precedence over $fields",
+			url:  "http://localhost/v1/evidence?fields=label&$fields=quote",
+			want: &fieldmaskpb.FieldMask{Paths: []string{"label"}},
+		},
+		{
+			name:    "$fields query param precedence over X-Goog-FieldMask header",
+			url:     "http://localhost/v1/evidence?$fields=label",
+			headers: map[string]string{"X-Goog-FieldMask": "quote"},
+			want:    &fieldmaskpb.FieldMask{Paths: []string{"label"}},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, tc.url, nil)
+			for k, v := range tc.headers {
+				req.Header.Set(k, v)
+			}
+			got := parseFieldMask(req)
+			if diff := cmp.Diff(tc.want, got, protocmp.Transform()); diff != "" {
+				t.Errorf("parseFieldMask() returned diff (-want +got):\n%s", diff)
 			}
 		})
 	}

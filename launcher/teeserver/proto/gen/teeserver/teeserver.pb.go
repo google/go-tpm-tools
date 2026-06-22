@@ -10,7 +10,6 @@ import (
 	proto "github.com/google/go-tpm-tools/keymanager/km_common/proto"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
-	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -86,7 +85,6 @@ func (x *GetKeyEndorsementRequest) GetRequestAcpiData() bool {
 type GetAttestationEvidenceRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Challenge     []byte                 `protobuf:"bytes,1,opt,name=challenge,proto3" json:"challenge,omitempty"`
-	ReadMask      *fieldmaskpb.FieldMask `protobuf:"bytes,2,opt,name=read_mask,json=readMask,proto3" json:"read_mask,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -124,13 +122,6 @@ func (*GetAttestationEvidenceRequest) Descriptor() ([]byte, []int) {
 func (x *GetAttestationEvidenceRequest) GetChallenge() []byte {
 	if x != nil {
 		return x.Challenge
-	}
-	return nil
-}
-
-func (x *GetAttestationEvidenceRequest) GetReadMask() *fieldmaskpb.FieldMask {
-	if x != nil {
-		return x.ReadMask
 	}
 	return nil
 }
@@ -183,15 +174,14 @@ var File_teeserver_proto protoreflect.FileDescriptor
 
 const file_teeserver_proto_rawDesc = "" +
 	"\n" +
-	"\x0fteeserver.proto\x12\tteeserver\x1a-keymanager/km_common/proto/crypto_types.proto\x1a google/protobuf/field_mask.proto\"\x9a\x01\n" +
+	"\x0fteeserver.proto\x12\tteeserver\x1a-keymanager/km_common/proto/crypto_types.proto\"\x9a\x01\n" +
 	"\x18GetKeyEndorsementRequest\x12\x1c\n" +
 	"\tchallenge\x18\x01 \x01(\fR\tchallenge\x124\n" +
 	"\n" +
 	"key_handle\x18\x02 \x01(\v2\x15.keymanager.KeyHandleR\tkeyHandle\x12*\n" +
-	"\x11request_acpi_data\x18\x03 \x01(\bR\x0frequestAcpiData\"v\n" +
+	"\x11request_acpi_data\x18\x03 \x01(\bR\x0frequestAcpiData\"=\n" +
 	"\x1dGetAttestationEvidenceRequest\x12\x1c\n" +
-	"\tchallenge\x18\x01 \x01(\fR\tchallenge\x127\n" +
-	"\tread_mask\x18\x02 \x01(\v2\x1a.google.protobuf.FieldMaskR\breadMask\"9\n" +
+	"\tchallenge\x18\x01 \x01(\fR\tchallenge\"9\n" +
 	"\x19GetHostAttestationRequest\x12\x1c\n" +
 	"\tchallenge\x18\x01 \x01(\fR\tchallengeBGZEgithub.com/google/go-tpm-tools/launcher/teeserver/proto/gen/teeserverb\x06proto3"
 
@@ -213,16 +203,14 @@ var file_teeserver_proto_goTypes = []any{
 	(*GetAttestationEvidenceRequest)(nil), // 1: teeserver.GetAttestationEvidenceRequest
 	(*GetHostAttestationRequest)(nil),     // 2: teeserver.GetHostAttestationRequest
 	(*proto.KeyHandle)(nil),               // 3: keymanager.KeyHandle
-	(*fieldmaskpb.FieldMask)(nil),         // 4: google.protobuf.FieldMask
 }
 var file_teeserver_proto_depIdxs = []int32{
 	3, // 0: teeserver.GetKeyEndorsementRequest.key_handle:type_name -> keymanager.KeyHandle
-	4, // 1: teeserver.GetAttestationEvidenceRequest.read_mask:type_name -> google.protobuf.FieldMask
-	2, // [2:2] is the sub-list for method output_type
-	2, // [2:2] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	1, // [1:1] is the sub-list for method output_type
+	1, // [1:1] is the sub-list for method input_type
+	1, // [1:1] is the sub-list for extension type_name
+	1, // [1:1] is the sub-list for extension extendee
+	0, // [0:1] is the sub-list for field type_name
 }
 
 func init() { file_teeserver_proto_init() }
