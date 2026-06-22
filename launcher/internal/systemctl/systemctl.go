@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/coreos/go-systemd/v22/dbus"
 )
@@ -60,6 +61,9 @@ func (s *Systemctl) IsActive(ctx context.Context, unit string) (string, error) {
 func (s *Systemctl) Close() { s.dbus.Close() }
 
 func runSystemdCmd(cmdFunc func(context.Context, string, string, chan<- string) (int, error), cmd string, unit string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
 	progress := make(chan string, 1)
 
 	// Run systemd command in "replace" mode to start the unit and its dependencies,
@@ -68,10 +72,14 @@ func runSystemdCmd(cmdFunc func(context.Context, string, string, chan<- string) 
 		return fmt.Errorf("failed to run systemctl [%s] for unit [%s]: %v", cmd, unit, err)
 	}
 
-	if result := <-progress; result != "done" {
+select {
+case result := <-progress:
+	if result != "done" {
 		return fmt.Errorf("systemctl [%s] result was [%s], want done", cmd, result)
 	}
-
 	log.Printf("Finished up systemctl [%s] for unit [%s]", cmd, unit)
 	return nil
+case <-ctx.Done():
+	return fmt.Errorf("DBus operation timed out or cancelled: %w", ctx.Err())
+}
 }
