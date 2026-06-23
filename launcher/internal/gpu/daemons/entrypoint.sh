@@ -3,8 +3,8 @@
 # Exit on error
 set -e
 
-echo "Starting guest GPU daemon service [590.48.01]..." | tee /dev/console
-export LD_LIBRARY_PATH=/opt/nvidia-host/590.48.01/lib64:$LD_LIBRARY_PATH
+echo "Starting guest GPU daemon service [595.58.03]..." | tee /dev/console
+export LD_LIBRARY_PATH=/opt/nvidia-host/595.58.03/lib64:$LD_LIBRARY_PATH
 
 # Modify config
 sed -i 's/PARTITION_RAIL_POLICY=greedy/PARTITION_RAIL_POLICY=symmetric/' /usr/share/nvidia/nvswitch/fabricmanager.cfg

@@ -285,7 +285,7 @@ func launchNvidiaPersistencedProcess(logger logging.Logger) error {
 func NvidiaSmiOutputFunc(args ...string) NvidiaSmiCmdOutput {
 	var cmdPath string
 
-	builtInPath := fmt.Sprintf("%s/bin/nvidia-smi", BuiltInInstallation590_48_01HostDir)
+	builtInPath := fmt.Sprintf("%s/bin/nvidia-smi", BuiltInInstallation595_58_03HostDir)
 	if _, err := os.Stat(builtInPath); err == nil {
 		cmdPath = builtInPath
 	} else {

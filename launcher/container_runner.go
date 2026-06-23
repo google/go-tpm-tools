@@ -222,12 +222,12 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 			gpuMounts = []specs.Mount{
 				{
 					Type:        "volume",
-					Source:      fmt.Sprintf("%s/lib64", gpu.BuiltInInstallation590_48_01HostDir),
+					Source:      fmt.Sprintf("%s/lib64", gpu.BuiltInInstallation595_58_03HostDir),
 					Destination: fmt.Sprintf("%s/lib64", gpu.InstallationContainerDir),
 					Options:     []string{"rbind", "rw"},
 				}, {
 					Type:        "volume",
-					Source:      fmt.Sprintf("%s/bin", gpu.BuiltInInstallation590_48_01HostDir),
+					Source:      fmt.Sprintf("%s/bin", gpu.BuiltInInstallation595_58_03HostDir),
 					Destination: fmt.Sprintf("%s/bin", gpu.InstallationContainerDir),
 					Options:     []string{"rbind", "rw"},
 				},

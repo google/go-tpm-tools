@@ -22,10 +22,25 @@ RUN wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86
 RUN wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb \
     && dpkg -i cuda-keyring_1.1-1_all.deb
 
-# Install nvidia-driver and fabricmanager
-RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
-    nvidia-driver-590-server \
-    nvidia-fabricmanager-590 \
+# Install nvidia-driver and fabricmanager from the NVIDIA repository
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y \
+        nvidia-driver=595.58.03-1ubuntu1 \
+        nvidia-dkms=595.58.03-1ubuntu1 \
+        xserver-xorg-video-nvidia=595.58.03-1ubuntu1 \
+        libnvidia-gl=595.58.03-1ubuntu1 \
+        nvidia-kernel-common=595.58.03-1ubuntu1 \
+        nvidia-kernel-source=595.58.03-1ubuntu1 \
+        libnvidia-compute=595.58.03-1ubuntu1 \
+        libnvidia-decode=595.58.03-1ubuntu1 \
+        libnvidia-encode=595.58.03-1ubuntu1 \
+        libnvidia-fbc1=595.58.03-1ubuntu1 \
+        nvidia-fabricmanager=595.58.03-1ubuntu1 \
+        libnvidia-cfg1=595.58.03-1ubuntu1 \
+        libnvidia-gpucomp=595.58.03-1ubuntu1 \
+        nvidia-persistenced=595.58.03-1ubuntu1 \
+        nvidia-firmware=595.58.03-1ubuntu1 \
+        nvidia-modprobe=595.58.03-1ubuntu1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy the entrypoint script
