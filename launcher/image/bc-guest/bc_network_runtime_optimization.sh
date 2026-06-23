@@ -39,12 +39,16 @@ run_optimize() {
   local intf="$1"
   local node irq_affinity
 
+  # We selected these specific CPU ranges (80, 82, ... for eth0 and 192, 194, ... for eth1)
+  # because we want 16 CPUs at the end of the NUMA node (CPUs 0-111 are NUMA node 0 and
+  # CPUs 112-223 are NUMA node 1) and we are avoiding the siblings which are adjacent
+  # to each other (e.g., 80 is siblings with 81, and 192 is siblings with 193).
   if [[ "$intf" == "eth0" ]]; then
     node=0
-    irq_affinity="40-55"
+    irq_affinity="80,82,84,86,88,90,92,94,96,98,100,102,104,106,108,110"
   elif [[ "$intf" == "eth1" ]]; then
     node=1
-    irq_affinity="96-111"
+    irq_affinity="192,194,196,198,200,202,204,206,208,210,212,214,216,218,220,222"
   else
     return 1
   fi
