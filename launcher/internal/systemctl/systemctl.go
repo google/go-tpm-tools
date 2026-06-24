@@ -72,14 +72,14 @@ func runSystemdCmd(cmdFunc func(context.Context, string, string, chan<- string) 
 		return fmt.Errorf("failed to run systemctl [%s] for unit [%s]: %v", cmd, unit, err)
 	}
 
-  select {
-  case result := <-progress:
-	  if result != "done" {
-		  return fmt.Errorf("systemctl [%s] result was [%s], want done", cmd, result)
-	  }
-	  log.Printf("Finished up systemctl [%s] for unit [%s]", cmd, unit)
-	  return nil
-  case <-ctx.Done():
-	  return fmt.Errorf("DBus operation timed out or cancelled: %w", ctx.Err())
-  }
+	select {
+	case result := <-progress:
+		if result != "done" {
+			return fmt.Errorf("systemctl [%s] result was [%s], want done", cmd, result)
+		}
+		log.Printf("Finished up systemctl [%s] for unit [%s]", cmd, unit)
+		return nil
+	case <-ctx.Done():
+		return fmt.Errorf("DBus operation timed out or cancelled: %w", ctx.Err())
+	}
 }
