@@ -61,5 +61,5 @@ func RefreshResolver(ctx context.Context, client *metadata.Client) (remotes.Reso
 		return Resolver(token.AccessToken), nil
 	}
 
-	return nil, fmt.Errorf("invalid token from metadata server: %v", token)
+	return nil, fmt.Errorf("invalid token from metadata server")
 }
