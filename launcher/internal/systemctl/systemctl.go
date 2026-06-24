@@ -68,18 +68,18 @@ func runSystemdCmd(cmdFunc func(context.Context, string, string, chan<- string) 
 
 	// Run systemd command in "replace" mode to start the unit and its dependencies,
 	// possibly replacing already queued jobs that conflict with this.
-	if _, err := cmdFunc(context.Background(), unit, "replace", progress); err != nil {
+	if _, err := cmdFunc(ctx, unit, "replace", progress); err != nil {
 		return fmt.Errorf("failed to run systemctl [%s] for unit [%s]: %v", cmd, unit, err)
 	}
 
-  select {
-  case result := <-progress:
-	  if result != "done" {
-		  return fmt.Errorf("systemctl [%s] result was [%s], want done", cmd, result)
-	  }
-	  log.Printf("Finished up systemctl [%s] for unit [%s]", cmd, unit)
-	  return nil
-  case <-ctx.Done():
-	  return fmt.Errorf("DBus operation timed out or cancelled: %w", ctx.Err())
-  }
+	select {
+	case result := <-progress:
+		if result != "done" {
+			return fmt.Errorf("systemctl [%s] result was [%s], want done", cmd, result)
+		}
+		log.Printf("Finished up systemctl [%s] for unit [%s]", cmd, unit)
+		return nil
+	case <-ctx.Done():
+		return fmt.Errorf("DBus operation timed out or cancelled: %w", ctx.Err())
+	}
 }
