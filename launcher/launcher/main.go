@@ -207,19 +207,20 @@ func startLauncher(launchSpec spec.LaunchSpec, serialConsole *os.File) error {
 	ctx := namespaces.WithNamespace(context.Background(), namespaces.Default)
 
 	if launchSpec.InstallGpuDriver {
-		installer := gpu.NewDriverInstaller(containerdClient, launchSpec, logger)
-		err = installer.InstallGPUDrivers(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to install gpu drivers: %v", err)
+		if launchSpec.Experiments.BcMode {
+			logger.Info("gpu driver is pre-installed in BC mode")
+		} else {
+			installer := gpu.NewDriverInstaller(containerdClient, launchSpec, logger)
+			err = installer.InstallGPUDrivers(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to install gpu drivers: %v", err)
+			}
 		}
 	} else {
-		// TODO: Remove this when BC GPU installation is supported
-		if !launchSpec.Experiments.BcMode {
-			deviceInfo, _ := deviceinfo.GetGPUTypeInfo()
-			if deviceInfo != deviceinfo.NO_GPU {
-				logger.Error("GPU is attached, tee-install-gpu-driver is not set")
-				return fmt.Errorf("failed to install GPU drivers: tee-install-gpu-driver must be set to true")
-			}
+		deviceInfo, _ := deviceinfo.GetGPUTypeInfo()
+		if deviceInfo != deviceinfo.NO_GPU {
+			logger.Error("GPU is attached, tee-install-gpu-driver is not set")
+			return fmt.Errorf("failed to install GPU drivers: tee-install-gpu-driver must be set to true")
 		}
 	}
 

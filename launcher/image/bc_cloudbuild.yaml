@@ -33,11 +33,22 @@ steps:
       - |
         set -e
         docker pull ${_WSD_CONTAINER_IMAGE_REF}
-        mkdir -p /workspace/wsd_image
-        docker save ${_WSD_CONTAINER_IMAGE_REF} -o /workspace/wsd_image/image.tar
+        container_id=$$(docker create ${_WSD_CONTAINER_IMAGE_REF})
+        docker export "$${container_id}" -o /workspace/wsd_rootfs.tar
+        docker rm "$${container_id}"
   - name: 'alpine'
     id: 'ExtractRawImage'
     args: ['tar', '-xf', './src_image.tar.gz']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'BuildAndSaveGPUHelper'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        set -e
+        docker build -t guest-gpu-tools:latest ./launcher/internal/gpu/daemons/
+        docker save guest-gpu-tools:latest -o /workspace/gpu_helper.tar
 
   - name: 'alpine'
     id: 'PrepareOEMInstallDir'
@@ -61,16 +72,35 @@ steps:
            ./launcher/image/bc-guest/bc_network_optimization.sh \
            ./launcher/image/bc-guest/bc_network_runtime_optimization.sh \
            ./launcher/image/bc-guest/bc_network_monitor.sh \
-           ./launcher/image/bc-guest/bc_network_rebind.sh \
+           /workspace/gpu_helper.tar \
+           ./launcher/image/bc-guest/bc_pin_pci_numa_nodes.sh \
            /workspace/oem-install/confidential_space/
         cp ./launcher/image/nodeproblemdetector/* /workspace/oem-install/confidential_space/nodeproblemdetector/
         cp ./launcher/image/bc-guest/wsd/* /workspace/oem-install/wsd/
-        if [ -f /workspace/wsd_image/image.tar ]; then
-            cp /workspace/wsd_image/image.tar /workspace/oem-install/wsd/image.tar
+
+        # Extract WSD rootfs
+        if [ -f /workspace/wsd_rootfs.tar ]; then
+          mkdir -p /workspace/oem-install/wsd/rootfs
+          tar -C /workspace/oem-install/wsd/rootfs -xf /workspace/wsd_rootfs.tar
+          mkdir -p /workspace/oem-install/wsd/rootfs/run/container_launcher
+          # Mountpoint needed by containerd
+          mkdir -p /workspace/oem-install/wsd/rootfs/dev/mqueue
         fi
 
+        # Create IMA policy
+        # 0bcd161c-b7c7-40fd-aa70-41f629c63d86 is a static UUID for the stateful
+        # partition
+        cat << 'EOF' > /workspace/oem-install/ima-policy
+        dont_appraise fsname=overlay
+        dont_appraise fsuuid=0bcd161c-b7c7-40fd-aa70-41f629c63d86
+        appraise func=BPRM_CHECK
+        appraise func=FILE_MMAP mask=MAY_EXEC
+        audit func=BPRM_CHECK
+        audit func=FILE_MMAP mask=MAY_EXEC
+        EOF
+
         cat << EOF > /workspace/oem-install/wsd/image.env
-        IMAGE_PATH="/usr/share/oem/wsd/image.tar"
+        IMAGE_PATH="/usr/share/oem/wsd/rootfs"
         IMAGE_REF="${_WSD_CONTAINER_IMAGE_REF}"
         CONTAINER_NAME="workload-service-daemon"
         KPS_VM_IP="192.168.100.3"
@@ -85,7 +115,7 @@ steps:
         chmod +x /workspace/oem-install/confidential_space/bc_network_optimization.sh || true
         chmod +x /workspace/oem-install/confidential_space/bc_network_runtime_optimization.sh || true
         chmod +x /workspace/oem-install/confidential_space/bc_network_monitor.sh || true
-        chmod +x /workspace/oem-install/confidential_space/bc_network_rebind.sh || true
+        chmod +x /workspace/oem-install/confidential_space/bc_pin_pci_numa_nodes.sh || true
         chmod +x /workspace/oem-install/entrypoint.sh || true
         chmod +x /workspace/oem-install/wsd/wsd_runner.sh || true
         chmod +x /workspace/oem-install/wsd/exit_script.sh || true
@@ -128,6 +158,7 @@ steps:
           "s|cros_efi|cros_efi cos.protected_stateful_partition=m|g"
           "s|cros_efi|cros_efi systemd.default_timeout_start_sec=900s|g"
           "s|cros_efi|cros_efi swiotlb=16777216,force,any|g"
+          "s|cros_efi|cros_efi systemd.mask=cloud-audit-setup.service|g"
           "s|systemd.mask=usr-share-oem.mount||g"
           "s|dm-m2d|dm-mod|g"
           "s|,oemroot|;oemroot|g"
@@ -161,15 +192,17 @@ steps:
           "s|cros_efi|cros_efi systemd.mask=var-lib-toolbox.mount|g"
           "s|cros_efi|cros_efi systemd.mask=update-engine.service|g"
           "s|cros_efi|cros_efi confidential-space.hardened=true|g"
+          "s|console=ttyS0,115200||g"
         )
 
         CMD=(
           "/oem-preloader"
+          "--ima-mode=hash"
           "--vmlinux=./vmlinux"
           "--src-image=./disk.raw"
           "--out-image=output.bin"
-          "--oem-fs-size=500M"
-          "--disk-size-gb=15"
+          "--oem-fs-size=3000M"
+          "--disk-size-gb=20"
           "--install-dir=/workspace/oem-install/"
         )
         for cmd in "$${COMMON_COMMANDS[@]}"; do
@@ -243,13 +276,6 @@ steps:
           --family=${_OUTPUT_IMAGE_FAMILY} \
           --source-uri=gs://${_BUCKET_NAME}/oem-preloader-${BUILD_ID}/${_OUTPUT_IMAGE_NAME}.tar.gz \
           --guest-os-features="$$FEATURES"
-  - name: 'gcr.io/cloud-builders/gcloud'
-    id: 'RemoveGCSFiles'
-    entrypoint: 'gcloud'
-    args: ['storage',
-           'rm',
-           'gs://${_BUCKET_NAME}/oem-preloader-${BUILD_ID}/${_BASE_IMAGE}.tar.gz',
-           'gs://${_BUCKET_NAME}/oem-preloader-${BUILD_ID}/${_OUTPUT_IMAGE_NAME}.tar.gz']
 
 timeout: '3000s'
 

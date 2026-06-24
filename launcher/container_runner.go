@@ -124,10 +124,20 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		container.Delete(ctx, containerd.WithSnapshotCleanup)
 	}
 
+	var loggedEnvs []string
+	for _, env := range envs {
+		parts := strings.SplitN(env, "=", 2)
+		if len(parts) == 2 {
+			loggedEnvs = append(loggedEnvs, parts[0]+"=[REDACTED]")
+		} else {
+			loggedEnvs = append(loggedEnvs, env)
+		}
+	}
+
 	logger.Info("Preparing Container Runner",
 		"operator_input_image_ref", image.Name(),
 		"image_digest", image.Target().Digest,
-		"operator_override_env_vars", envs,
+		"operator_override_env_vars", loggedEnvs,
 		"operator_override_cmd", launchSpec.Cmd,
 	)
 
@@ -218,6 +228,22 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 				Options:     []string{"rbind", "rw"},
 			},
 		}
+		if launchSpec.Experiments.BcMode {
+			gpuMounts = []specs.Mount{
+				{
+					Type:        "volume",
+					Source:      fmt.Sprintf("%s/lib64", gpu.BuiltInInstallation595_58_03HostDir),
+					Destination: fmt.Sprintf("%s/lib64", gpu.InstallationContainerDir),
+					Options:     []string{"rbind", "rw"},
+				}, {
+					Type:        "volume",
+					Source:      fmt.Sprintf("%s/bin", gpu.BuiltInInstallation595_58_03HostDir),
+					Destination: fmt.Sprintf("%s/bin", gpu.InstallationContainerDir),
+					Options:     []string{"rbind", "rw"},
+				},
+			}
+		}
+
 		specOpts = append(specOpts, oci.WithMounts(gpuMounts))
 
 		// /dev/nvidia-caps/* will not be listed here and will not be passed to
