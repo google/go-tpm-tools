@@ -7,7 +7,7 @@ substitutions:
   '_IMAGE_PROJECT': ''
   '_CLEANUP': 'true'
   '_IMAGE_REPO': 'us-west1-docker.pkg.dev/confidential-space-images-dev/cs-integ-test-images'
-  '_FORK_IMAGE': '${_IMAGE_REPO}/fork-workload:latest'
+  '_WORKLOAD_IMAGE': '${_IMAGE_REPO}/nonroot-container:latest'
   '_ZONE': 'us-west1-a'
 
 steps:
@@ -32,7 +32,7 @@ steps:
   - 'BUILD_ID=$BUILD_ID'
   - 'IMAGE_NAME=$_IMAGE_NAME'
   - 'IMAGE_PROJECT=$_IMAGE_PROJECT'
-  - 'FORK_IMAGE=$_FORK_IMAGE'
+  - 'WORKLOAD_IMAGE=$_WORKLOAD_IMAGE'
   - 'ZONE=$_ZONE'
   script: |
     #!/usr/bin/env bash
@@ -40,7 +40,7 @@ steps:
     MONITOR_IP=$(cat /workspace/monitor_ip.txt)
     bash create_vm.sh -i $IMAGE_NAME \
       -p $IMAGE_PROJECT \
-      -m "tee-image-reference=$FORK_IMAGE,tee-cmd=[\"--ip=${MONITOR_IP}\"],tee-container-log-redirect=true,tee-nonroot-container=true" \
+      -m "tee-image-reference=$WORKLOAD_IMAGE,tee-cmd=[\"--ip=${MONITOR_IP}\"],tee-container-log-redirect=true" \
       -n nonroot-workload-$BUILD_ID \
       -z $ZONE
 

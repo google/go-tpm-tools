@@ -58,6 +58,7 @@ import (
 type ContainerRunner struct {
 	container     containerd.Container
 	launchSpec    spec.LaunchSpec
+	launchPolicy  spec.LaunchPolicy
 	attestAgent   agent.AttestationAgent
 	logger        logging.Logger
 	gpuAttester   gpu.Attester
@@ -210,7 +211,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 
 	// If we use non-root container, we enable both the user and network namespaces.
 	// Otherwise, we use host network without enabling the namespaces.
-	if launchSpec.NonrootContainer {
+	if launchPolicy.NonrootContainer {
 		specOpts = append(specOpts,
 			oci.WithUserNamespace(
 				[]specs.LinuxIDMapping{{ContainerID: 0, HostID: hostUIDBegin, Size: userNSSize}},
@@ -266,7 +267,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	}
 
 	conOpts := []containerd.NewContainerOpts{containerd.WithImage(image)}
-	if launchSpec.NonrootContainer { // When a non-root container is used, we remap the snapshop with the non-root user.
+	if launchPolicy.NonrootContainer { // When a non-root container is used, we remap the snapshop with the non-root user.
 		conOpts = append(conOpts, containerd.WithRemappedSnapshot(snapshotID, image, hostUIDBegin, hostGIDBegin))
 	} else {
 		conOpts = append(conOpts, containerd.WithNewSnapshot(snapshotID, image))
@@ -349,7 +350,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		}
 	}
 	var cni gocni.CNI
-	if launchSpec.NonrootContainer {
+	if launchPolicy.NonrootContainer {
 		if cni, err = newCNI(); err != nil {
 			return nil, err
 		}
@@ -359,6 +360,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	return &ContainerRunner{
 		container,
 		launchSpec,
+		launchPolicy,
 		attestAgent,
 		logger,
 		nvidiaAttester,
@@ -813,7 +815,7 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	}
 
 	var taskOpts []containerd.NewTaskOpts
-	if r.launchSpec.NonrootContainer {
+	if r.launchPolicy.NonrootContainer {
 		taskOpts = append(taskOpts, containerd.WithUIDOwner(hostUIDBegin), containerd.WithGIDOwner(hostGIDBegin))
 	}
 
@@ -837,7 +839,7 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 
 	startOpenPorts := time.Now()
 	var containerIP string
-	if r.launchSpec.NonrootContainer {
+	if r.launchPolicy.NonrootContainer {
 		containerIP, err = r.getContainerIP(ctx, fmt.Sprintf(netnsPathFmt, task.Pid()))
 		if err != nil {
 			return err

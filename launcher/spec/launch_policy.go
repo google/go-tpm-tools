@@ -21,6 +21,7 @@ type LaunchPolicy struct {
 	DebugImageMonitoring     MonitoringType
 	PrivilegedCaps           bool
 	AllowCgroups             bool
+	NonrootContainer         bool
 }
 
 type policy int
@@ -113,6 +114,7 @@ const (
 	mountDestinations = "tee.launch_policy.allow_mount_destinations"
 	privilegedCaps    = "tee.launch_policy.allow_capabilities"
 	allowCgroups      = "tee.launch_policy.allow_cgroups"
+	nonrootContainer  = "tee.launch_policy.nonroot_container"
 )
 
 func configureMonitoringPolicy(imageLabels map[string]string, launchPolicy *LaunchPolicy, logger logging.Logger) error {
@@ -230,6 +232,12 @@ func GetLaunchPolicy(imageLabels map[string]string, logger logging.Logger) (Laun
 	if v, ok := imageLabels[allowCgroups]; ok {
 		if launchPolicy.AllowCgroups, err = strconv.ParseBool(v); err != nil {
 			return LaunchPolicy{}, fmt.Errorf("invalid image LABEL '%s' (not a boolean)", allowCgroups)
+		}
+	}
+
+	if v, ok := imageLabels[nonrootContainer]; ok {
+		if launchPolicy.NonrootContainer, err = strconv.ParseBool(v); err != nil {
+			return LaunchPolicy{}, fmt.Errorf("invalid image LABEL '%s' (not a boolean)", nonrootContainer)
 		}
 	}
 
