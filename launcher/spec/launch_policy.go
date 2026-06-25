@@ -20,6 +20,7 @@ type LaunchPolicy struct {
 	AllowedLogRedirect       policy
 	AllowedMountDestinations []string
 	DebugImageMonitoring     MonitoringType
+	NonrootContainer         bool
 	HardenedImageMonitoring  MonitoringType
 	PrivilegedCaps           bool
 	// keep-sorted end
@@ -116,6 +117,7 @@ const (
 	hardenedMonitoring = "tee.launch_policy.hardened_monitoring"
 	logRedirect        = "tee.launch_policy.log_redirect"
 	memoryMonitoring   = "tee.launch_policy.monitoring_memory_allow"
+	nonrootContainer   = "tee.launch_policy.nonroot_container"
 	// keep-sorted end
 )
 
@@ -237,6 +239,11 @@ func GetLaunchPolicy(imageLabels map[string]string, logger logging.Logger) (Laun
 		}
 	}
 
+	if v, ok := imageLabels[nonrootContainer]; ok {
+		if launchPolicy.NonrootContainer, err = strconv.ParseBool(v); err != nil {
+			return LaunchPolicy{}, fmt.Errorf("invalid image LABEL '%s' (not a boolean)", nonrootContainer)
+		}
+	}
 	return launchPolicy, nil
 }
 

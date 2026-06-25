@@ -64,6 +64,7 @@ type ContainerRunner struct {
 =======
 	container      containerd.Container
 	launchSpec     spec.LaunchSpec
+	launchPolicy   spec.LaunchPolicy
 	attestAgent    agent.AttestationAgent
 	logger         logging.Logger
 	workloadLogger logging.Logger
@@ -240,7 +241,7 @@ func NewRunner(ctx context.Context, cfg *RunnerConfig) (*ContainerRunner, error)
 
 	// If we use non-root container, we enable both the user and network namespaces.
 	// Otherwise, we use host network without enabling the namespaces.
-	if launchSpec.NonrootContainer {
+	if launchPolicy.NonrootContainer {
 		specOpts = append(specOpts,
 			oci.WithUserNamespace(
 				[]specs.LinuxIDMapping{{ContainerID: 0, HostID: hostUIDBegin, Size: userNSSize}},
@@ -257,7 +258,7 @@ func NewRunner(ctx context.Context, cfg *RunnerConfig) (*ContainerRunner, error)
 	}
 
 	conOpts := []containerd.NewContainerOpts{containerd.WithImage(image)}
-	if launchSpec.NonrootContainer { // When a nonroot container is used, we remap the snapshop with the non-root user.
+	if launchPolicy.NonrootContainer { // When a non-root container is used, we remap the snapshop with the non-root user.
 		conOpts = append(conOpts, containerd.WithRemappedSnapshot(snapshotID, image, hostUIDBegin, hostGIDBegin))
 	} else {
 		conOpts = append(conOpts, containerd.WithNewSnapshot(snapshotID, image))
@@ -296,7 +297,7 @@ func NewRunner(ctx context.Context, cfg *RunnerConfig) (*ContainerRunner, error)
 	}
 
 	var cni gocni.CNI
-	if launchSpec.NonrootContainer {
+	if launchPolicy.NonrootContainer {
 		if cni, err = newCNI(); err != nil {
 			return nil, err
 		}
@@ -305,6 +306,7 @@ func NewRunner(ctx context.Context, cfg *RunnerConfig) (*ContainerRunner, error)
 	return &ContainerRunner{
 		container,
 		launchSpec,
+		launchPolicy,
 		attestAgent,
 		logger,
 		workloadLogger,
@@ -736,7 +738,7 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	}
 
 	var taskOpts []containerd.NewTaskOpts
-	if r.launchSpec.NonrootContainer {
+	if r.launchPolicy.NonrootContainer {
 		taskOpts = append(taskOpts, containerd.WithUIDOwner(hostUIDBegin), containerd.WithGIDOwner(hostGIDBegin))
 	}
 
@@ -764,7 +766,7 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		return fmt.Errorf("failed to get image config: %w", err)
 	}
 	var containerIP string
-	if r.launchSpec.NonrootContainer {
+	if r.launchPolicy.NonrootContainer {
 		containerIP, err = r.getContainerIP(ctx, fmt.Sprintf(netnsPathFmt, task.Pid()))
 		if err != nil {
 			return err
