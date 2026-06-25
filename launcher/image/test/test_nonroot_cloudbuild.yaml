@@ -89,7 +89,7 @@ steps:
         > /workspace/ssh_ps.txt 2>/dev/null || true
 
       cat /workspace/ssh_ps.txt
-      for expected in "fork-parent" "fork-child1.*101" "fork-child2.*909"; do
+      for expected in "fork-parent.*100000" "fork-child1.*100101" "fork-child2.*100909"; do
         grep -E "$expected" /workspace/ssh_ps.txt || echo "failed: $expected not found via SSH" > /workspace/status.txt
       done
     fi
