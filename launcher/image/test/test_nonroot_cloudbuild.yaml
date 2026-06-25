@@ -86,7 +86,7 @@ steps:
         --ssh-flag="-o StrictHostKeyChecking=no" \
         --quiet \
         --command="ps -e -o comm,uid | grep fork- || true" \
-        > /workspace/ssh_ps.txt || true
+        > /workspace/ssh_ps.txt 2>/dev/null || true
 
       cat /workspace/ssh_ps.txt
       for expected in "fork-parent" "fork-child1.*101" "fork-child2.*909"; do
