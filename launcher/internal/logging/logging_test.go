@@ -282,3 +282,63 @@ func TestLogFunctions(t *testing.T) {
 		})
 	}
 }
+
+func TestSeverityWriter(t *testing.T) {
+	// Redirect loggers to buffers.
+	cloudLogs := &testCLogger{}
+	serialLogs := &testSLogWriter{}
+
+	testLogger := &logger{
+		cloudLogger:  cloudLogs,
+		serialLogger: slog.New(slog.NewTextHandler(serialLogs, nil)),
+		instanceName: "test-instance",
+	}
+
+	// Test StdoutWriter (should log to cloud with Info severity, not to serial)
+	stdoutWriter := NewStdoutWriter(testLogger)
+	stdoutMsg := "this is stdout log"
+	n, err := stdoutWriter.Write([]byte(stdoutMsg))
+	if err != nil || n != len(stdoutMsg) {
+		t.Fatalf("stdoutWriter.Write failed: got n=%v, err=%v", n, err)
+	}
+
+	expectedStdoutPayload := payload{
+		payloadMessageKey:      stdoutMsg,
+		payloadInstanceNameKey: testLogger.instanceName,
+	}
+	if cloudLogs.log.Severity != clogging.Info {
+		t.Errorf("stdoutWriter: Cloud logs did not contain expected severity: got %v, want %v", cloudLogs.log.Severity, clogging.Info)
+	}
+	if !cmp.Equal(cloudLogs.log.Payload, expectedStdoutPayload) {
+		t.Errorf("stdoutWriter: Cloud logs did not contain expected payload: got %v, want %v", cloudLogs.log.Payload, expectedStdoutPayload)
+	}
+	if len(serialLogs.log) > 0 {
+		t.Errorf("stdoutWriter: expected no serial logs, but got: %s", string(serialLogs.log))
+	}
+
+	// Reset buffers
+	cloudLogs.log = clogging.Entry{}
+	serialLogs.log = nil
+
+	// Test StderrWriter (should log to cloud with Error severity, not to serial)
+	stderrWriter := NewStderrWriter(testLogger)
+	stderrMsg := "this is stderr log"
+	n, err = stderrWriter.Write([]byte(stderrMsg))
+	if err != nil || n != len(stderrMsg) {
+		t.Fatalf("stderrWriter.Write failed: got n=%v, err=%v", n, err)
+	}
+
+	expectedStderrPayload := payload{
+		payloadMessageKey:      stderrMsg,
+		payloadInstanceNameKey: testLogger.instanceName,
+	}
+	if cloudLogs.log.Severity != clogging.Error {
+		t.Errorf("stderrWriter: Cloud logs did not contain expected severity: got %v, want %v", cloudLogs.log.Severity, clogging.Error)
+	}
+	if !cmp.Equal(cloudLogs.log.Payload, expectedStderrPayload) {
+		t.Errorf("stderrWriter: Cloud logs did not contain expected payload: got %v, want %v", cloudLogs.log.Payload, expectedStderrPayload)
+	}
+	if len(serialLogs.log) > 0 {
+		t.Errorf("stderrWriter: expected no serial logs, but got: %s", string(serialLogs.log))
+	}
+}

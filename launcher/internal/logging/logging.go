@@ -5,6 +5,7 @@ package logging
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 
@@ -31,6 +32,8 @@ type Logger interface {
 
 	SerialConsoleFile() *os.File
 	Close()
+
+	CloudOnlyWriter() io.Writer
 }
 
 type cLogger interface {
@@ -46,6 +49,11 @@ type logger struct {
 	instanceName      string
 	cloudClient       *clogging.Client
 	serialConsoleFile *os.File
+}
+
+// cloudOnlyWriter implements the io.Writer interface, but only writes to Cloud Logging.
+type cloudOnlyWriter struct {
+	l *logger
 }
 
 type payload map[string]any
@@ -152,7 +160,10 @@ func addArgs(pl payload, args []any) {
 	addArgs(pl, args[2:])
 }
 
-func (l *logger) writeLog(severity clogging.Severity, msg string, args ...any) {
+func (l *logger) writeCloudLog(severity clogging.Severity, msg string, args ...any) {
+	if l.cloudLogger == nil {
+		return
+	}
 	// Write cloud log.
 	logEntry := clogging.Entry{
 		Severity: severity,
@@ -177,6 +188,10 @@ func (l *logger) writeLog(severity clogging.Severity, msg string, args ...any) {
 	if err := l.cloudLogger.Flush(); err != nil {
 		l.serialLogger.Error(fmt.Sprintf("cloud.Logger.Flush returned error: %v", err))
 	}
+}
+
+func (l *logger) writeLog(severity clogging.Severity, msg string, args ...any) {
+	l.writeCloudLog(severity, msg, args...)
 
 	// Write to serial console.
 	switch severity {
@@ -211,6 +226,11 @@ func (l *logger) Error(msg string, args ...any) {
 	l.writeLog(clogging.Error, msg, args...)
 }
 
+// CloudOnlyWriter returns an io.Writer that only logs to Cloud Logging.
+func (l *logger) CloudOnlyWriter() io.Writer {
+	return &cloudOnlyWriter{l: l}
+}
+
 // SimpleLogger returns a lightweight implementation that wraps a slog.Default() logger.
 // Suitable for testing.
 func SimpleLogger() Logger {
@@ -219,6 +239,11 @@ func SimpleLogger() Logger {
 
 type slogger struct {
 	slg *slog.Logger
+}
+
+// CloudOnlyWriter returns nil for slogger, as it does not support Cloud-only logging.
+func (l *slogger) CloudOnlyWriter() io.Writer {
+	return nil
 }
 
 // Log logs msg and args with the provided severity.
@@ -255,3 +280,57 @@ func (l *slogger) SerialConsoleFile() *os.File {
 }
 
 func (l *slogger) Close() {}
+
+// Write implements the io.Writer interface for the cloudOnlyWriter struct.
+func (w *cloudOnlyWriter) Write(p []byte) (n int, err error) {
+	// Trim any trailing newline.
+	end := len(p)
+	for end > 0 && p[end-1] == '\n' {
+		end--
+	}
+	msg := string(p[:end])
+
+	// Log the message to Cloud Logging.
+	w.l.writeLog(clogging.Info, msg)
+
+	return len(p), nil
+}
+
+// SeverityWriter wraps a Logger and implements io.Writer to write directly to Cloud Logging at a specific severity level.
+type SeverityWriter struct {
+	l        Logger
+	severity clogging.Severity
+}
+
+// NewSeverityWriter returns an io.Writer that writes to the provided Logger with a specific severity.
+func NewSeverityWriter(l Logger, severity clogging.Severity) io.Writer {
+	return &SeverityWriter{l: l, severity: severity}
+}
+
+// NewStdoutWriter returns an io.Writer that writes stdout logs to Cloud Logging.
+func NewStdoutWriter(l Logger) io.Writer {
+	return NewSeverityWriter(l, clogging.Info)
+}
+
+// NewStderrWriter returns an io.Writer that writes stderr logs to Cloud Logging.
+func NewStderrWriter(l Logger) io.Writer {
+	return NewSeverityWriter(l, clogging.Error)
+}
+
+// Write implements the io.Writer interface, redirecting logs to Cloud Logging with the configured severity.
+func (w *SeverityWriter) Write(p []byte) (n int, err error) {
+	// Trim any trailing newline.
+	end := len(p)
+	for end > 0 && p[end-1] == '\n' {
+		end--
+	}
+	msg := string(p[:end])
+
+	if realLogger, ok := w.l.(*logger); ok {
+		realLogger.writeCloudLog(w.severity, msg)
+	} else {
+		w.l.Log(w.severity, msg)
+	}
+
+	return len(p), nil
+}
