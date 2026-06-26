@@ -2,17 +2,21 @@ package cmd
 
 import (
 	"context"
+	_ "crypto/sha512" // Ensure SHA384 is available
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"time"
 
 	"cloud.google.com/go/compute/metadata"
 	"cloud.google.com/go/logging"
 	"github.com/golang-jwt/jwt/v4"
+	tabi "github.com/google/go-tdx-guest/abi"
 	"github.com/google/go-tpm-tools/client"
+	"github.com/google/go-tpm-tools/internal"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/google/go-tpm-tools/verifier/models"
 	"github.com/google/go-tpm-tools/verifier/util"
@@ -55,9 +59,24 @@ The OIDC token includes claims regarding the GCE VM, which is verified by Attest
 			return fmt.Errorf("failed to fetch Region from MDS, the tool is probably not running in a GCE VM: %v", err)
 		}
 
+		zone, err := mdsClient.ZoneWithContext(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to fetch Zone from MDS: %v", err)
+		}
+
 		projectID, err := mdsClient.ProjectIDWithContext(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to retrieve ProjectID from MDS: %v", err)
+		}
+
+		projectNumber, err := mdsClient.NumericProjectIDWithContext(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to retrieve ProjectNumber from MDS: %v", err)
+		}
+
+		instanceID, err := mdsClient.InstanceIDWithContext(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to retrieve InstanceID from MDS: %v", err)
 		}
 
 		verifierClient, err := util.NewRESTClient(ctx, asAddress, projectID, region)
@@ -128,7 +147,19 @@ The OIDC token includes claims regarding the GCE VM, which is verified by Attest
 		if err != nil {
 			return fmt.Errorf("failed to get an AK: %w", err)
 		}
-		attestation, err := ak.Attest(client.AttestOpts{Nonce: challenge.Nonce, CertChainFetcher: http.DefaultClient})
+
+		attestOpts := client.AttestOpts{Nonce: challenge.Nonce, CertChainFetcher: http.DefaultClient}
+
+		// Add logic to open other hardware devices when required.
+		attestOpts.TEEDevice, err = getTEEDevice()
+		if err != nil {
+			return err
+		}
+		if attestOpts.TEEDevice != nil {
+			attestOpts.TEENonce = challenge.Nonce
+		}
+
+		attestation, err := ak.Attest(attestOpts)
 		if err != nil {
 			return fmt.Errorf("failed to attest: %v", err)
 		}
@@ -139,6 +170,33 @@ The OIDC token includes claims regarding the GCE VM, which is verified by Attest
 			GcpCredentials: principalTokens,
 			Attestation:    attestation,
 			TokenOptions:   &models.TokenOptions{Audience: audience, Nonces: customNonce, TokenType: "OIDC"},
+			GceInstance:    fmt.Sprintf("projects/%s/zones/%s/instances/%s", projectNumber, zone, instanceID),
+		}
+
+		if teeTechnology == Tdx {
+			// If TDX, check if we should populate TDCCELAttestation
+			if attestation.GetTdxAttestation() != nil {
+				fmt.Fprintln(debugOutput(), "Using Explicit TDCCELAttestation Path (ACPI tables)")
+
+				rawQuote, err := tabi.QuoteToAbiBytes(attestation.GetTdxAttestation())
+				if err != nil {
+					return fmt.Errorf("failed to convert TDX quote to bytes: %v", err)
+				}
+
+				// Try to read CCEL Table and Data
+				ccelTable, _ := os.ReadFile(internal.AcpiTableFile)
+				ccelData, _ := os.ReadFile(internal.CcelEventLogFile)
+
+				req.TDCCELAttestation = &verifier.TDCCELAttestation{
+					TdQuote:           rawQuote,
+					CcelAcpiTable:     ccelTable,
+					CcelData:          ccelData,
+					AkCert:            attestation.AkCert,
+					IntermediateCerts: attestation.IntermediateCerts,
+				}
+				// Force using TDCCELAttestation path in verifier client
+				req.Attestation = nil
+			}
 		}
 
 		resp, err := verifierClient.VerifyAttestation(ctx, req)
@@ -211,5 +269,5 @@ func init() {
 	addCustomNonceFlag(tokenCmd)
 	// TODO: Add TEE hardware OIDC token generation
 	// addTeeNonceflag(tokenCmd)
-	// addTeeTechnology(tokenCmd)
+	addTeeTechnology(tokenCmd)
 }
