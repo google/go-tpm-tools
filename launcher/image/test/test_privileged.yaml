@@ -137,6 +137,8 @@ steps:
   args: ['cleanup.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}-capsdenied', '${_ZONE}']
   waitFor: ['CheckCapsDenied']
 
+
+
 # Must come after cleanup.
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CheckFailure

@@ -141,6 +141,8 @@ steps:
   args: ['cleanup.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}-denied', '${_ZONE}']
   waitFor: ['CheckMountsDenied']
 
+
+
 # Must come after cleanup.
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CheckFailure
