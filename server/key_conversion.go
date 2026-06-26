@@ -5,6 +5,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/rand"
 	"crypto/rsa"
+	"errors"
 	"fmt"
 	"io"
 
@@ -76,10 +77,9 @@ func createPrivate(sensitive []byte) tpm2.Private {
 	return private
 }
 
-func createPublicPrivateSign(signingKey crypto.PrivateKey) (tpm2.Public, tpm2.Private, error) {
-	rsaPriv, ok := signingKey.(*rsa.PrivateKey)
-	if !ok {
-		return tpm2.Public{}, tpm2.Private{}, fmt.Errorf("unsupported signing key type: %T", signingKey)
+func createPublicPrivateSignRSA(rsaPriv *rsa.PrivateKey) (tpm2.Public, tpm2.Private, error) {
+	if rsaPriv == nil {
+		return tpm2.Public{}, tpm2.Private{}, errors.New("nil RSA private key")
 	}
 
 	rsaPub := rsaPriv.PublicKey
@@ -105,4 +105,52 @@ func createPublicPrivateSign(signingKey crypto.PrivateKey) (tpm2.Public, tpm2.Pr
 	}
 
 	return public, private, nil
+}
+
+func createPublicPrivateSignECC(eccPriv *ecdsa.PrivateKey) (tpm2.Public, tpm2.Private, error) {
+	if eccPriv == nil {
+		return tpm2.Public{}, tpm2.Private{}, errors.New("nil ECC private key")
+	}
+
+	eccCurveID, err := goCurveToCurveID(eccPriv.Curve)
+	if err != nil {
+		return tpm2.Public{}, tpm2.Private{}, fmt.Errorf("unsupported ECC curve: %s", eccPriv.Curve.Params().Name)
+	}
+
+	eccPub := eccPriv.PublicKey
+	public := tpm2.Public{
+		Type:       tpm2.AlgECC,
+		NameAlg:    defaultNameAlg,
+		Attributes: tpm2.FlagSign,
+		ECCParameters: &tpm2.ECCParams{
+			CurveID: eccCurveID,
+			Point: tpm2.ECPoint{
+				XRaw: eccIntToBytes(eccPub.Curve, eccPub.X),
+				YRaw: eccIntToBytes(eccPub.Curve, eccPub.Y),
+			},
+			Sign: &tpm2.SigScheme{
+				Alg:  tpm2.AlgECDSA,
+				Hash: tpm2.AlgSHA256,
+			},
+		},
+	}
+	private := tpm2.Private{
+		Type:      tpm2.AlgECC,
+		AuthValue: nil,
+		SeedValue: nil, // Only Storage Keys need a seed value. See part 3 TPM2_CREATE b.3.
+		Sensitive: eccPriv.D.Bytes(),
+	}
+
+	return public, private, nil
+}
+
+func createPublicPrivateSign(signingKey crypto.PrivateKey) (tpm2.Public, tpm2.Private, error) {
+	switch key := signingKey.(type) {
+	case *rsa.PrivateKey:
+		return createPublicPrivateSignRSA(key)
+	case *ecdsa.PrivateKey:
+		return createPublicPrivateSignECC(key)
+	default:
+		return tpm2.Public{}, tpm2.Private{}, fmt.Errorf("unsupported signing key type: %T", key)
+	}
 }
