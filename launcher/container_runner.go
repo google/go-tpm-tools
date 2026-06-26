@@ -22,6 +22,8 @@ import (
 	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/containerd/containerd"
+	gocni "github.com/containerd/go-cni"
+
 	"github.com/containerd/containerd/cio"
 	"github.com/containerd/containerd/containers"
 	"github.com/containerd/containerd/content"
@@ -56,11 +58,13 @@ import (
 type ContainerRunner struct {
 	container     containerd.Container
 	launchSpec    spec.LaunchSpec
+	launchPolicy  spec.LaunchPolicy
 	attestAgent   agent.AttestationAgent
 	logger        logging.Logger
 	gpuAttester   gpu.Attester
 	serialConsole *os.File
 	powerButton   *powerButtonListener // Populated only for a hardened image
+	cni           gocni.CNI
 }
 
 const tokenFileTmp = ".token.tmp"
@@ -91,6 +95,17 @@ const (
 
 // Default OOM score for a CS container.
 const defaultOOMScore = 1000
+
+// Constants for a non-root container.
+const (
+	hostUIDBegin = 100000 // Starting (outside container) uid for the root user inside the container
+	hostGIDBegin = 100000 // Starting (outside container) gid for the root group inside the container
+	userNSSize   = 65536  // 16-bit range of uid/gid inside the container
+
+	cniConfigDir = "/etc/cni/net.d"
+	cniBinDir    = "/opt/cni/bin"
+	netnsPathFmt = "/proc/%d/ns/net"
+)
 
 // NewRunner returns a runner.
 func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.Token, launchSpec spec.LaunchSpec, mdsClient *metadata.Client, tpm io.ReadWriteCloser, logger logging.Logger, serialConsole *os.File) (*ContainerRunner, error) {
@@ -147,10 +162,6 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	}
 
 	logger.Info(fmt.Sprintf("Exposed Ports:             : %v\n", imageConfig.ExposedPorts))
-	if err := openPorts(imageConfig.ExposedPorts); err != nil {
-		return nil, err
-	}
-
 	logger.Info(fmt.Sprintf("Image Labels               : %v\n", imageConfig.Labels))
 	launchPolicy, err := spec.GetLaunchPolicy(imageConfig.Labels, logger)
 	if err != nil {
@@ -201,12 +212,25 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		// the host network (same effect as --net-host in ctr command)
 		oci.WithHostHostsFile,
 		oci.WithHostResolvconf,
-		oci.WithHostNamespace(specs.NetworkNamespace),
 		oci.WithEnv([]string{fmt.Sprintf("HOSTNAME=%s", hostname)}),
 		oci.WithAddedCapabilities(launchSpec.AddedCapabilities),
 		withRlimits(rlimits),
 		withOOMScoreAdj(defaultOOMScore),
 	}
+
+	// If we use non-root container, we enable both the user and network namespaces.
+	// Otherwise, we use host network without enabling the namespaces.
+	if launchPolicy.NonrootContainer {
+		specOpts = append(specOpts,
+			oci.WithUserNamespace(
+				[]specs.LinuxIDMapping{{ContainerID: 0, HostID: hostUIDBegin, Size: userNSSize}},
+				[]specs.LinuxIDMapping{{ContainerID: 0, HostID: hostGIDBegin, Size: userNSSize}},
+			),
+		)
+	} else {
+		specOpts = append(specOpts, oci.WithHostNamespace(specs.NetworkNamespace))
+	}
+
 	if launchSpec.DevShmSize != 0 {
 		specOpts = append(specOpts, oci.WithDevShmSize(launchSpec.DevShmSize))
 	}
@@ -267,13 +291,14 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		deviceROTs = append(deviceROTs, nvidiaAttester)
 	}
 
-	container, err = cdClient.NewContainer(
-		ctx,
-		containerID,
-		containerd.WithImage(image),
-		containerd.WithNewSnapshot(snapshotID, image),
-		containerd.WithNewSpec(specOpts...),
-	)
+	conOpts := []containerd.NewContainerOpts{containerd.WithImage(image)}
+	if launchPolicy.NonrootContainer { // When a non-root container is used, we remap the snapshop with the non-root user.
+		conOpts = append(conOpts, containerd.WithRemappedSnapshot(snapshotID, image, hostUIDBegin, hostGIDBegin))
+	} else {
+		conOpts = append(conOpts, containerd.WithNewSnapshot(snapshotID, image))
+	}
+	conOpts = append(conOpts, containerd.WithNewSpec(specOpts...))
+	container, err = cdClient.NewContainer(ctx, containerID, conOpts...)
 	if err != nil {
 		if container != nil {
 			container.Delete(ctx, containerd.WithSnapshotCleanup)
@@ -354,14 +379,23 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		}
 	}
 
+	var cni gocni.CNI
+	if launchPolicy.NonrootContainer {
+		if cni, err = newCNI(); err != nil {
+			return nil, err
+		}
+	}
+
 	return &ContainerRunner{
 		container,
 		launchSpec,
+		launchPolicy,
 		attestAgent,
 		logger,
 		nvidiaAttester,
 		serialConsole,
 		powerButton,
+		cni,
 	}, nil
 }
 
@@ -809,13 +843,39 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		return fmt.Errorf("unknown logging redirect location: %v", r.launchSpec.LogRedirect)
 	}
 
-	task, err := r.container.NewTask(ctx, cio.NewCreator(streamOpt))
+	var taskOpts []containerd.NewTaskOpts
+	if r.launchPolicy.NonrootContainer {
+		taskOpts = append(taskOpts, containerd.WithUIDOwner(hostUIDBegin), containerd.WithGIDOwner(hostGIDBegin))
+	}
+
+	task, err := r.container.NewTask(ctx, cio.NewCreator(streamOpt), taskOpts...)
 	if err != nil {
 		return &RetryableError{err}
 	}
 	defer task.Delete(ctx)
 
 	r.enableGracefulShutdown(ctx, task)
+
+	// Opening ports.
+	// Workload-requested ports are in the image config, and the container IP address can be obtained after the CNI setup.
+	image, err := r.container.Image(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get image from container: %w", err)
+	}
+	imageConfig, err := getImageConfig(ctx, image)
+	if err != nil {
+		return fmt.Errorf("failed to get image config: %w", err)
+	}
+	var containerIP string
+	if r.launchPolicy.NonrootContainer {
+		containerIP, err = r.getContainerIP(ctx, fmt.Sprintf(netnsPathFmt, task.Pid()))
+		if err != nil {
+			return err
+		}
+	}
+	if err := openPorts(imageConfig.ExposedPorts, containerIP); err != nil {
+		return fmt.Errorf("failed to open and forward ports: %w", err)
+	}
 
 	setupDuration := time.Since(start)
 	r.logger.Info("Workload setup completed",
@@ -933,7 +993,9 @@ func initImage(ctx context.Context, cdClient *containerd.Client, launchSpec spec
 }
 
 // openPorts writes firewall rules to accept all traffic into that port and protocol using iptables.
-func openPorts(ports map[string]struct{}) error {
+// When `containerIP` is not empty, it implies that the namespace and CNI are used for the container.
+// In that case, it also forwards traffic to the container via DNAT and allows container egress traffic.
+func openPorts(ports map[string]struct{}, containerIP string) error {
 	for k := range ports {
 		portAndProtocol := strings.Split(k, "/")
 		if len(portAndProtocol) != 2 {
@@ -962,6 +1024,33 @@ func openPorts(ports map[string]struct{}) error {
 		out, err = v6cmd.CombinedOutput()
 		if err != nil {
 			return fmt.Errorf("failed to open port on IPv6 %s %s: %v %s", port, protocol, err, out)
+		}
+
+		// Forward traffic from host port to container port with the same number.
+		if containerIP != "" {
+			forwardCmd := exec.Command("iptables", "-t", "nat", "-A", "PREROUTING",
+				"-p", protocol, "--dport", port,
+				"-j", "DNAT", "--to-destination", fmt.Sprintf("%s:%s", containerIP, port))
+
+			out, err = forwardCmd.CombinedOutput()
+			if err != nil {
+				return fmt.Errorf("failed to forward port %s to container %s: %v %s", port, containerIP, err, out)
+			}
+
+			// Allow traffic in FORWARD chain to the container IP on this port
+			forwardInCmd := exec.Command("iptables", "-A", "FORWARD", "-d", containerIP, "-p", protocol, "--dport", port, "-j", "ACCEPT")
+			if out, err := forwardInCmd.CombinedOutput(); err != nil {
+				return fmt.Errorf("failed to add FORWARD rule for container %s: %v %s", containerIP, err, out)
+			}
+
+		}
+	}
+
+	// Allow egress traffic from the container to go out
+	if containerIP != "" {
+		forwardOutCmd := exec.Command("iptables", "-A", "FORWARD", "-s", containerIP, "-j", "ACCEPT")
+		if out, err := forwardOutCmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("failed to add FORWARD reply rule for container %s: %v %s", containerIP, err, out)
 		}
 	}
 
@@ -999,6 +1088,16 @@ func (r *ContainerRunner) Close(ctx context.Context) {
 	// close the agent
 	r.attestAgent.Close()
 
+	// Cleanup network using go-cni
+	if r.cni != nil {
+		task, err := r.container.Task(ctx, nil)
+		if err == nil {
+			if err := r.cni.Remove(ctx, containerID, fmt.Sprintf(netnsPathFmt, task.Pid())); err != nil {
+				r.logger.Error("failed to cleanup network via CNI", "error", err)
+			}
+		}
+	}
+
 	// Exit gracefully:
 	// Delete container and close connection to attestation service.
 	r.container.Delete(ctx, containerd.WithSnapshotCleanup)
@@ -1030,4 +1129,36 @@ func appendCgroupRw(mounts []specs.Mount) []specs.Mount {
 	}
 
 	return append(mounts, m)
+}
+
+func newCNI() (gocni.CNI, error) {
+	cni, err := gocni.New(
+		gocni.WithPluginConfDir(cniConfigDir),
+		gocni.WithPluginDir([]string{cniBinDir}),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize CNI: %w", err)
+	}
+	if err := cni.Load(gocni.WithDefaultConf); err != nil {
+		return nil, fmt.Errorf("failed to load CNI configurations: %w", err)
+	}
+	return cni, nil
+}
+
+func (r *ContainerRunner) getContainerIP(ctx context.Context, netnsPath string) (string, error) {
+	if r.cni == nil {
+		return "", fmt.Errorf("CNI is not initialized")
+	}
+	cniResult, err := r.cni.Setup(ctx, containerID, netnsPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to setup network via CNI: %w", err)
+	}
+	r.logger.Info(fmt.Sprintf("CNI network setup completed: %v", cniResult))
+
+	rawResults := cniResult.Raw()
+	if len(rawResults) == 0 || len(rawResults[0].IPs) == 0 {
+		return "", fmt.Errorf("failed to get container IP address")
+	}
+	// Currently, we have only single network interface defined with a single IP address by `10-workload.conf`.
+	return rawResults[0].IPs[0].Address.IP.String(), nil
 }
