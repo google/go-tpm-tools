@@ -58,6 +58,9 @@ run_optimize() {
   # Disable XPS
   echo 0 | tee "/sys/class/net/${intf}/queues/tx*/xps_cpus" 2>/dev/null || true
 
+  # Configure RFS
+  echo 65536 | tee /proc/sys/net/core/rps_sock_flow_entries /sys/class/net/${intf}/queues/rx-*/rps_flow_cnt 2>/dev/null || true
+  
   # NUMA Node enlightment
   echo "${node}" | tee "/sys/class/net/${intf}/device/numa_node" 2>/dev/null || true
 
