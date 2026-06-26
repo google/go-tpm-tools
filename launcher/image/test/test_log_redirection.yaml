@@ -68,7 +68,7 @@ steps:
   env:
   - 'CLEANUP=$_CLEANUP'
   args: ['cleanup.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}-serial', '${_ZONE}']
-  waitFor: ['LogSerialCheckCloudLoggingTest', 'LogSerialCheckCloudLoggingTest']
+  waitFor: ['LogSerialCheckSerialTest', 'LogSerialCheckCloudLoggingTest']
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CreateVMRedirectCloudLogging
