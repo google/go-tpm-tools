@@ -10,6 +10,9 @@ import (
 const (
 	maxIssuingCertificateURLs = 3
 	maxCertChainLength        = 4
+	// maxCertBodyBytes limits HTTP response reads when fetching issuing
+	// certificates to prevent OOM on malicious or misbehaving CA servers.
+	maxCertBodyBytes = 1 * 1024 * 1024 // 1 MiB
 )
 
 // GetCertificateChain constructs the certificate chain for the key's certificate.
@@ -60,7 +63,7 @@ func fetchIssuingCertificate(client *http.Client, cert *x509.Certificate) (*x509
 			lastErr = fmt.Errorf("certificate retrieval from %s returned non-OK status: %v", url, resp.StatusCode)
 			continue
 		}
-		certBytes, err := io.ReadAll(resp.Body)
+		certBytes, err := io.ReadAll(io.LimitReader(resp.Body, maxCertBodyBytes))
 		resp.Body.Close()
 		if err != nil {
 			lastErr = fmt.Errorf("failed to read response body from %s: %w", url, err)
