@@ -73,6 +73,9 @@ type AttestationAgent interface {
 	AttestWithClient(ctx context.Context, opts AttestAgentOpts, client verifier.Client) ([]byte, error)
 	AttestationEvidence(ctx context.Context, challenge []byte, extraData []byte, opts AttestAgentOpts) (*attestationpb.VmAttestation, error)
 	Refresh(context.Context) error
+	HasGPU() bool
+	EnableGPUReadyState() error
+	GetGPUAttestation(nonce []byte) (any, error)
 	Close() error
 	AttestHost(ctx context.Context, challenge []byte) ([]byte, error)
 }
@@ -97,6 +100,12 @@ type attestRoot interface {
 type DeviceROT interface {
 	// Attest fetches an attestation from the attached device detected by launcher.
 	Attest(nonce []byte) (any, error)
+}
+
+// GPUAttester defines the interface for GPU attestation.
+type GPUAttester interface {
+	DeviceROT
+	EnableReadyState() error
 }
 
 // AttestAgentOpts contains user generated options when calling the
@@ -138,6 +147,7 @@ type agent struct {
 	logger           Logger
 	sigsCache        *sigsCache
 	signedImageRepos []string
+	nvidiaAttester   GPUAttester
 }
 
 type bcAgent struct {
@@ -210,6 +220,14 @@ func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher util.TpmKeyFetcher
 
 	// Add deviceRoTs to the CPU attestation root.
 	attestAgent.avRot.AddDeviceROTs(deviceROTs)
+
+	for _, dr := range deviceROTs {
+		if nv, ok := dr.(GPUAttester); ok {
+			attestAgent.nvidiaAttester = nv
+			break
+		}
+	}
+
 	return attestAgent, nil
 }
 
@@ -801,6 +819,24 @@ func convertToTPMQuote(v *pb.Attestation) *attestationpb.TpmQuote {
 			},
 		},
 	}
+}
+
+func (a *agent) HasGPU() bool {
+	return a.nvidiaAttester != nil
+}
+
+func (a *agent) EnableGPUReadyState() error {
+	if a.nvidiaAttester == nil {
+		return fmt.Errorf("GPU attester not initialized")
+	}
+	return a.nvidiaAttester.EnableReadyState()
+}
+
+func (a *agent) GetGPUAttestation(nonce []byte) (any, error) {
+	if a.nvidiaAttester == nil {
+		return nil, fmt.Errorf("GPU attester not initialized")
+	}
+	return a.nvidiaAttester.Attest(nonce)
 }
 
 func doAttestDeviceROTs(deviceROTs []DeviceROT, nonce []byte) ([]any, error) {
