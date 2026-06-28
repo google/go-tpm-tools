@@ -25,6 +25,8 @@ import (
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/google/go-tpm-tools/verifier/util"
+
+	"gopkg.in/yaml.v3"
 )
 
 // MaxInt64 is the maximum value of a signed int64.
@@ -32,6 +34,30 @@ const MaxInt64 = 9223372036854775807
 
 // RestartPolicy is the enum for the container restart policy.
 type RestartPolicy string
+
+//ContainerType specifies the role of the container
+type ContainerType string
+
+const (
+	MainContainer ContainerType = "main"
+	SidecarContainer ContainerType = "sidecar"
+)
+
+// VolumeMount defines a mount point for a container as specified in the YAML.
+type VolumeMount struct {
+	Type        string `yaml:"type"`
+	Source      string `yaml:"source"`
+	Destination string `yaml:"destination"`
+	Size        string `yaml:"size,omitempty"` // Enabled size support
+}
+
+// ContainerPort defines a port mapping for a container.
+type ContainerPort struct {
+	ContainerPort int    `yaml:"containerPort"`
+	Protocol      string `yaml:"protocol"` // e.g., "tcp", "udp"
+	HostPort      int    `yaml:"hostPort,omitempty"`
+}
+
 
 func (p RestartPolicy) isValid() error {
 	switch p {
@@ -79,7 +105,8 @@ const (
 // Metadata variable names.
 const (
 	fakeVerifierKey            = "test-fake-verifier"
-	imageRefKey                = "tee-image-reference"
+	singleImageKey             = "tee-image-reference"
+	multiContainerKey          = "tee-container-spec"
 	signedImageRepos           = "tee-signed-image-repos"
 	restartPolicyKey           = "tee-restart-policy"
 	cmdKey                     = "tee-cmd"
@@ -109,12 +136,27 @@ var gcaInstances = map[string]string{
 	"staging":  "https://staging-confidentialcomputing.sandbox.googleapis.com",
 }
 
-var errImageRefNotSpecified = fmt.Errorf("%s is not specified in the custom metadata", imageRefKey)
+var errImageRefNotSpecified = fmt.Errorf("%s is not specified in the custom metadata", singleImageKey)
 
 // EnvVar represent a single environment variable key/value pair.
 type EnvVar struct {
-	Name  string
-	Value string
+	Name  string `yaml:"name" json:"name"`
+	Value string `yaml:"value" json:"value"`
+}
+
+// ContainerSpec contains the specification for a single container within the pod.
+type ContainerSpec struct {
+	Name              string          `yaml:"name"`
+	ImageRef          string          `yaml:"image"`
+	ContainerType     ContainerType   `yaml:"containerType"` // main vs sidecar
+	RestartPolicy     RestartPolicy   `yaml:"restartPolicy"` // Container-level rule
+	Cmd               []string        `yaml:"cmd,omitempty"`
+	Envs              []EnvVar        `yaml:"envs,omitempty"`
+	VolumeMounts      []VolumeMount   `yaml:"volumeMounts,omitempty"`
+	Ports             []ContainerPort `yaml:"ports,omitempty"`
+	AddedCapabilities []string        `yaml:"addedCapabilities,omitempty"`
+	// Internal representation, not directly from YAML:
+	Mounts []launchermount.Mount `yaml:"-"` // Parsed from VolumeMounts
 }
 
 // LaunchSpec contains specification set by the operator who wants to
@@ -123,12 +165,7 @@ type LaunchSpec struct {
 	Experiments         experiments.Experiments
 	FakeVerifierEnabled bool
 
-	// MDS-based values.
-	ImageRef                   string
-	SignedImageRepos           []string
-	RestartPolicy              RestartPolicy
-	Cmd                        []string
-	Envs                       []EnvVar
+	// VM-level configuration
 	GcaAddress                 string
 	ImpersonateServiceAccounts []string
 	ProjectID                  string
@@ -136,13 +173,79 @@ type LaunchSpec struct {
 	Hardened                   bool
 	MonitoringEnabled          MonitoringType
 	LogRedirect                LogRedirectLocation
-	Mounts                     []launchermount.Mount
 	ITAConfig                  verifier.ITAConfig
 	DevShmSize                 int64 // DevShmSize is specified in kiB.
-	AddedCapabilities          []string
 	CgroupNamespace            bool
 	InstallGpuDriver           bool
 	DisableGcaRefresh          bool
+	SignedImageRepos           []string
+
+	//New: Multi-container support
+	Containers                 []ContainerSpec
+	VMRestartPolicy            RestartPolicy
+
+	//DEPRECATED: Legacy single-container fields(keep for backward compatability during refactoring)
+	ImageRef                   string
+	RestartPolicy              RestartPolicy
+	Cmd                        []string
+	Envs                       []EnvVar
+	Mounts                     []launchermount.Mount
+	AddedCapabilities          []string
+}
+
+func parseVolumeMount(vm VolumeMount) (launchermount.Mount, error) {
+	mountMap := map[string]string{
+		launchermount.TypeKey:        vm.Type,
+		launchermount.SourceKey:      vm.Source,
+		launchermount.DestinationKey: vm.Destination,
+	}
+	if vm.Size != "" {
+		mountMap[launchermount.SizeKey] = vm.Size
+	}
+
+	switch vm.Type {
+	case launchermount.TypeTmpfs:
+		return launchermount.CreateTmpfsMount(mountMap)
+	default:
+		return nil, fmt.Errorf("unknown mount type %q, only %q is supported", vm.Type, launchermount.TypeTmpfs)
+	}
+}
+
+
+//parseMultiContainerSpec parses the YAML representation of the multi-container spec
+// and performs basic validation and volume mount conversion.
+func parseMultiContainerSpec(specYaml string) ([]ContainerSpec, RestartPolicy, error) {
+	var mcSpec struct {
+		VMRestartPolicy RestartPolicy `yaml:"vmRestartPolicy"`
+		Containers      []ContainerSpec `yaml:"containers"`
+	}
+
+	if err := yaml.Unmarshal([]byte(specYaml), &mcSpec); err != nil {
+		return nil, "", fmt.Errorf("failed to parse YAML: %w", err)
+	}
+
+	//validate and map fields for each container 
+	for i := range mcSpec.Containers {
+		c := &mcSpec.Containers[i]
+		if c.Name == "" {
+			return nil, "", fmt.Errorf("container at index %d is missing a name", i)
+		}
+		if c.ImageRef == "" {
+			return nil, "", fmt.Errorf("container %q is missing an image reference", c.Name)
+		}
+
+		// Convert VolumeMounts to internal Mounts
+		for _, vm := range c.VolumeMounts {
+			mnt, err := parseVolumeMount(vm)
+			if err != nil {
+				return nil, "", fmt.Errorf("failed to volume mount for container %q: %w", c.Name, err)
+			}
+
+			c.Mounts = append(c.Mounts, mnt)
+		}
+	}
+
+	return mcSpec.Containers, mcSpec.VMRestartPolicy, nil
 }
 
 // UnmarshalJSON unmarshals an instance attributes list in JSON format from the metadata
@@ -154,6 +257,9 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 		return err
 	}
 
+	// -------------------------------------------------------------
+	// 1. VM-level Initial Flag Parsing (Top-level)
+	// -------------------------------------------------------------
 	if val, ok := unmarshaledMap[fakeVerifierKey]; ok && val != "" {
 		var err error
 		if s.FakeVerifierEnabled, err = strconv.ParseBool(val); err != nil {
@@ -167,20 +273,116 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 		}
 	}
 
-	s.ImageRef = unmarshaledMap[imageRefKey]
-	if s.ImageRef == "" {
-		return errImageRefNotSpecified
+	// -------------------------------------------------------------
+	// 2. Container-Specific Parsing (Branching)
+	// -------------------------------------------------------------
+	if specYAML, ok := unmarshaledMap[multiContainerKey]; ok && specYAML != "" {
+		// Multi-container parsing path 
+		containers, vmRestartPolicy, err := parseMultiContainerSpec(specYAML)
+		if err != nil {
+			return err
+		}
+
+		s.Containers = containers
+		s.VMRestartPolicy = vmRestartPolicy
+		if s.VMRestartPolicy == "" {
+			s.VMRestartPolicy = Never
+		}
+		if err := s.VMRestartPolicy.isValid(); err != nil{
+			return err
+		}
+
+		//Normalize: Populate legacy fields from the main container for compatibility
+		if len(s.Containers) > 0 {
+			var mainContainer *ContainerSpec
+			for i := range s.Containers {
+				if s.Containers[i].ContainerType == MainContainer {
+					mainContainer = &s.Containers[i]
+					break
+				}
+			}
+
+			if mainContainer == nil {
+				mainContainer = &s.Containers[0]
+			}
+
+			s.ImageRef = mainContainer.ImageRef
+			s.Cmd = mainContainer.Cmd
+			s.Envs = mainContainer.Envs
+			s.RestartPolicy = s.VMRestartPolicy
+			s.Mounts = mainContainer.Mounts
+			s.AddedCapabilities = mainContainer.AddedCapabilities
+		}
+	} else {
+		// Single-container parsing path (Legacy Fallback)
+		s.ImageRef = unmarshaledMap[singleImageKey]
+		if s.ImageRef == "" {
+			return errImageRefNotSpecified
+		}
+	
+		s.RestartPolicy = RestartPolicy(unmarshaledMap[restartPolicyKey])
+		// Set the default restart policy to "Never" for now.
+		if s.RestartPolicy == "" {
+			s.RestartPolicy = Never
+		}
+		if err := s.RestartPolicy.isValid(); err != nil {
+			return err
+		}
+		s.VMRestartPolicy = s.RestartPolicy
+
+		// Populate cmd override.
+		if val, ok := unmarshaledMap[cmdKey]; ok && val != "" {
+			if err := json.Unmarshal([]byte(val), &s.Cmd); err != nil {
+				return err
+			}
+		}
+
+		// Populate all env vars(tee-env-*).
+		for k, v := range unmarshaledMap {
+			if strings.HasPrefix(k, envKeyPrefix) {
+				s.Envs = append(s.Envs, EnvVar{strings.TrimPrefix(k, envKeyPrefix), v})
+			}
+		}
+		
+		// Populate mount override(tee-mount).
+		// https://cloud.google.com/compute/docs/disks/set-persistent-device-name-in-linux-vm
+		// https://cloud.google.com/compute/docs/disks/add-local-ssd
+		if val, ok := unmarshaledMap[mountKey]; ok && val != "" {
+			mounts := strings.Split(val, ";")
+			for _, mount := range mounts {
+				specMnt, err := processMount(mount)
+				if err != nil {
+					return err
+				}
+				s.Mounts = append(s.Mounts, specMnt)
+			}
+		}
+
+		// Populate capabilities override(tee-added-capabilities).
+		if val, ok := unmarshaledMap[addedCaps]; ok && val != "" {
+			if err := json.Unmarshal([]byte(val), &s.AddedCapabilities); err != nil {
+				return err
+			}
+		}
+
+		//Normalize: Populate s.Containers with the legacy container spec
+		s.Containers = []ContainerSpec{
+			{
+				Name: 				"main",
+				ImageRef: 				s.ImageRef,
+				ContainerType: 		MainContainer,
+				RestartPolicy: 		s.RestartPolicy,
+				Cmd: 					s.Cmd,
+				Envs: 					s.Envs,
+				Mounts: 				s.Mounts,
+				AddedCapabilities: 	s.AddedCapabilities,
+			},
+		}
 	}
 
-	s.RestartPolicy = RestartPolicy(unmarshaledMap[restartPolicyKey])
-	// Set the default restart policy to "Never" for now.
-	if s.RestartPolicy == "" {
-		s.RestartPolicy = Never
-	}
-	if err := s.RestartPolicy.isValid(); err != nil {
-		return err
-	}
-
+	// -------------------------------------------------------------
+	// 3. VM-level Shared Configuration Parsing
+	// -------------------------------------------------------------
 	if val, ok := unmarshaledMap[impersonateServiceAccounts]; ok && val != "" {
 		impersonateAccounts := strings.Split(val, ",")
 		s.ImpersonateServiceAccounts = append(s.ImpersonateServiceAccounts, impersonateAccounts...)
@@ -225,20 +427,6 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 		}
 	}
 
-	// Populate cmd override.
-	if val, ok := unmarshaledMap[cmdKey]; ok && val != "" {
-		if err := json.Unmarshal([]byte(val), &s.Cmd); err != nil {
-			return err
-		}
-	}
-
-	// Populate all env vars.
-	for k, v := range unmarshaledMap {
-		if strings.HasPrefix(k, envKeyPrefix) {
-			s.Envs = append(s.Envs, EnvVar{strings.TrimPrefix(k, envKeyPrefix), v})
-		}
-	}
-
 	s.LogRedirect = LogRedirectLocation(unmarshaledMap[logRedirectKey])
 	// Default log redirect location is Nowhere ("false").
 	if s.LogRedirect == "" {
@@ -261,20 +449,6 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 		s.DevShmSize = int64(size)
 	}
 
-	// Populate mount override.
-	// https://cloud.google.com/compute/docs/disks/set-persistent-device-name-in-linux-vm
-	// https://cloud.google.com/compute/docs/disks/add-local-ssd
-	if val, ok := unmarshaledMap[mountKey]; ok && val != "" {
-		mounts := strings.Split(val, ";")
-		for _, mount := range mounts {
-			specMnt, err := processMount(mount)
-			if err != nil {
-				return err
-			}
-			s.Mounts = append(s.Mounts, specMnt)
-		}
-	}
-
 	if s.Experiments.EnableItaVerifier {
 		itaRegionVal, itaRegionOK := unmarshaledMap[itaRegion]
 		itaKeyVal, itaKeyOK := unmarshaledMap[itaKey]
@@ -287,13 +461,6 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 		s.ITAConfig = verifier.ITAConfig{
 			ITARegion: itaRegionVal,
 			ITAKey:    itaKeyVal,
-		}
-	}
-
-	// Populate capabilities override.
-	if val, ok := unmarshaledMap[addedCaps]; ok && val != "" {
-		if err := json.Unmarshal([]byte(val), &s.AddedCapabilities); err != nil {
-			return err
 		}
 	}
 

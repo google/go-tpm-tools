@@ -38,6 +38,23 @@ func TestLaunchSpecUnmarshalJSONHappyCases(t *testing.T) {
 		GcaAddress:        "https://confidentialcomputing.googleapis.com",
 		InstallGpuDriver:  true,
 		DisableGcaRefresh: false,
+
+		//Adding these updates to handle multi-container lauch_spec
+		VMRestartPolicy: Always,
+		Containers: []ContainerSpec{
+			{
+				Name:              "main",
+				ImageRef:          "docker.io/library/hello-world:latest",
+				ContainerType:     MainContainer,
+				RestartPolicy:     Always,
+				Cmd:               []string{"--foo", "--bar", "--baz"},
+				Envs:              []EnvVar{{"foo", "bar"}},
+				Mounts: []launchermount.Mount{
+					launchermount.TmpfsMount{Destination: "/tmpmount", Size: 0},
+					launchermount.TmpfsMount{Destination: "/sized", Size: 222},
+				},
+			},
+		},
 	}
 
 	var testCases = []struct {
@@ -309,6 +326,17 @@ func TestLaunchSpecUnmarshalJSONWithDefaultValue(t *testing.T) {
 		GcaAddress:        "",
 		InstallGpuDriver:  false,
 		DisableGcaRefresh: false,
+
+		//Adding these updates to handle multi-container lauch_spec
+		VMRestartPolicy: Never,
+		Containers: []ContainerSpec{
+			{
+				Name:          "main",
+				ImageRef:      "docker.io/library/hello-world:latest",
+				ContainerType: MainContainer,
+				RestartPolicy: Never,
+			},
+		},
 	}
 
 	if !cmp.Equal(spec, want) {
@@ -503,4 +531,112 @@ func TestFetchExperiments(t *testing.T) {
 			t.Errorf("fetchExperiments() got %+v, want %+v", got, want)
 		}
 	})
+}
+
+//Test cases for multi-container 
+func TestLaunchSpecUnmarshalJSONMultiContainer(t *testing.T) {
+	var testCases = []struct {
+		testName string
+		mdsJSON  string
+		want     LaunchSpec
+		wantErr  bool
+	}{
+		{
+			testName: "HappyPath2Containers",
+			mdsJSON: `{
+				"tee-container-spec": "vmRestartPolicy: Always\ncontainers:\n  - name: main-app\n    image: gcr.io/my-project/main:latest\n    containerType: main\n    cmd: [\"--foo\", \"--bar\"]\n    envs:\n      - name: ENV1\n        value: VAL1\n    addedCapabilities: [\"CAP_NET_ADMIN\"]\n  - name: logging-sidecar\n    image: gcr.io/my-project/logger:v1\n    containerType: sidecar\n    volumeMounts:\n      - type: tmpfs\n        source: tmpfs\n        destination: /logdir\n        size: \"500000\"\n"
+			}`,
+			want: LaunchSpec{
+				VMRestartPolicy: Always,
+				LogRedirect:     Nowhere,
+				Containers: []ContainerSpec{
+					{
+						Name:              "main-app",
+						ImageRef:          "gcr.io/my-project/main:latest",
+						ContainerType:     MainContainer,
+						Cmd:               []string{"--foo", "--bar"},
+						Envs:              []EnvVar{{"ENV1", "VAL1"}},
+						AddedCapabilities: []string{"CAP_NET_ADMIN"},
+					},
+					{
+						Name:          "logging-sidecar",
+						ImageRef:      "gcr.io/my-project/logger:v1",
+						ContainerType: SidecarContainer,
+						VolumeMounts: []VolumeMount{
+							{
+								Type:        "tmpfs",
+								Source:      "tmpfs",
+								Destination: "/logdir",
+								Size:        "500000",
+							},
+						},
+						Mounts: []launchermount.Mount{
+							launchermount.TmpfsMount{Destination: "/logdir", Size: 500000},
+						},
+					},
+				},
+				// Legacy fields populated for compatibility:
+				ImageRef:          "gcr.io/my-project/main:latest",
+				Cmd:               []string{"--foo", "--bar"},
+				Envs:              []EnvVar{{"ENV1", "VAL1"}},
+				RestartPolicy:     Always,
+				AddedCapabilities: []string{"CAP_NET_ADMIN"},
+				// Mounts are mapped from main container only for compatibility
+				Mounts: nil, 
+			},
+			wantErr: false,
+		},
+		{
+			testName: "InvalidYAML",
+			mdsJSON: `{
+				"tee-container-spec": "invalid-yaml-content"
+			}`,
+			wantErr: true,
+		},
+		{
+			testName: "MissingContainerName",
+			mdsJSON: `{
+				"tee-container-spec": "containers:\n  - image: gcr.io/my-project/main:latest"
+			}`,
+			wantErr: true,
+		},
+		{
+			testName: "MissingContainerImage",
+			mdsJSON: `{
+				"tee-container-spec": "containers:\n  - name: main"
+			}`,
+			wantErr: true,
+		},
+		{
+			testName: "InvalidVolumeMountType",
+			mdsJSON: `{
+				"tee-container-spec": "containers:\n  - name: main\n    image: gcr.io/my-project/main:latest\n    volumeMounts:\n      - type: bind\n        source: /host/path\n        destination: /container/path"
+			}`,
+			wantErr: true,
+		},
+		{
+			testName: "InvalidVolumeMountSourceForTmpfs",
+			mdsJSON: `{
+				"tee-container-spec": "containers:\n  - name: main\n    image: gcr.io/my-project/main:latest\n    volumeMounts:\n      - type: tmpfs\n        source: not-tmpfs\n        destination: /container/path"
+			}`,
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.testName, func(t *testing.T) {
+			spec := &LaunchSpec{}
+			// Ensure it has some default experiments setup if needed by the code
+			err := spec.UnmarshalJSON([]byte(tc.mdsJSON))
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("UnmarshalJSON() error = %v, wantErr %v", err, tc.wantErr)
+			}
+			if tc.wantErr {
+				return
+			}
+			if diff := cmp.Diff(*spec, tc.want); diff != "" {
+				t.Errorf("UnmarshalJSON() mismatch (-got +want):\n%s", diff)
+			}
+		})
+	}
 }
