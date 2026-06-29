@@ -295,7 +295,7 @@ func TestSeverityWriter(t *testing.T) {
 	}
 
 	// Test StdoutWriter (should log to cloud with Info severity, not to serial)
-	stdoutWriter := NewStdoutWriter(testLogger)
+	stdoutWriter := NewInfoWriter(testLogger)
 	stdoutMsg := "this is stdout log"
 	n, err := stdoutWriter.Write([]byte(stdoutMsg))
 	if err != nil || n != len(stdoutMsg) {
@@ -321,7 +321,7 @@ func TestSeverityWriter(t *testing.T) {
 	serialLogs.log = nil
 
 	// Test StderrWriter (should log to cloud with Error severity, not to serial)
-	stderrWriter := NewStderrWriter(testLogger)
+	stderrWriter := NewErrorWriter(testLogger)
 	stderrMsg := "this is stderr log"
 	n, err = stderrWriter.Write([]byte(stderrMsg))
 	if err != nil || n != len(stderrMsg) {

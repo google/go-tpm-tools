@@ -307,13 +307,13 @@ func NewSeverityWriter(l Logger, severity clogging.Severity) io.Writer {
 	return &SeverityWriter{l: l, severity: severity}
 }
 
-// NewStdoutWriter returns an io.Writer that writes stdout logs to Cloud Logging.
-func NewStdoutWriter(l Logger) io.Writer {
+// NewInfoWriter returns an io.Writer that writes logs to the provided Logger with Info severity.
+func NewInfoWriter(l Logger) io.Writer {
 	return NewSeverityWriter(l, clogging.Info)
 }
 
-// NewStderrWriter returns an io.Writer that writes stderr logs to Cloud Logging.
-func NewStderrWriter(l Logger) io.Writer {
+// NewErrorWriter returns an io.Writer that writes logs to the provided Logger with Error severity.
+func NewErrorWriter(l Logger) io.Writer {
 	return NewSeverityWriter(l, clogging.Error)
 }
 
