@@ -35,12 +35,13 @@ const MaxInt64 = 9223372036854775807
 // RestartPolicy is the enum for the container restart policy.
 type RestartPolicy string
 
-//ContainerType specifies the role of the container
+// ContainerType specifies the role of the container
 type ContainerType string
 
+// Container type constants
 const (
-	MainContainer ContainerType = "main"
-	SidecarContainer ContainerType = "sidecar"
+	MainContainer			ContainerType = "main"
+	SidecarContainer 	ContainerType = "sidecar"
 )
 
 // VolumeMount defines a mount point for a container as specified in the YAML.
@@ -503,6 +504,34 @@ func (s *LaunchSpec) LogFriendly() LaunchSpec {
 	safeSpec := *s
 	safeSpec.ITAConfig.ITAKey = strings.Repeat("*", len(s.ITAConfig.ITAKey))
 
+	var safeEnvs []EnvVar
+	for _, envVar := range s.Envs {
+		if envVar.Value != "" {
+			safeEnvs = append(safeEnvs, EnvVar{envVar.Name, "[REDACTED]"})
+		} else {
+			safeEnvs = append(safeEnvs, envVar)
+		}
+	}
+	safeSpec.Envs = safeEnvs
+
+	if len(s.Containers) > 0 {
+		safeContainers := make([]ContainerSpec, len(s.Containers))
+		for i, c := range s.Containers {
+			safeContainer := c
+			var safeContainerEnvs []EnvVar
+			for _, envVar := range c.Envs {
+				if envVar.Value != "" {
+					safeContainerEnvs = append(safeContainerEnvs, EnvVar{envVar.Name, "[REDACTED]"})
+				} else {
+					safeContainerEnvs = append(safeContainerEnvs, envVar)
+				}
+			}
+			safeContainer.Envs = safeContainerEnvs
+			safeContainers[i] = safeContainer
+		}
+		safeSpec.Containers = safeContainers
+	}
+
 	return safeSpec
 }
 
@@ -523,9 +552,18 @@ func GetLaunchSpec(ctx context.Context, logger logging.Logger, client *metadata.
 	}
 
 	var errs []error
+	// Validate legacy mounts
 	for _, mnt := range spec.Mounts {
 		if err := validateMount(mnt); err != nil {
 			errs = append(errs, err)
+		}
+	}
+	// Validate container mounts
+	for _, c := range spec.Containers {
+		for _, mnt := range c.Mounts {
+			if err := validateMount(mnt); err != nil {
+				errs = append(errs, err)
+			}
 		}
 	}
 	if len(errs) != 0 {
@@ -540,8 +578,15 @@ func GetLaunchSpec(ctx context.Context, logger logging.Logger, client *metadata.
 		return LaunchSpec{}, fmt.Errorf("failed to validate /dev/shm size: %v", err)
 	}
 
+	// Validate legacy capabilities
 	if err := validateAddedCapsAllowed(spec.AddedCapabilities); err != nil {
 		return LaunchSpec{}, fmt.Errorf("failed to validate added capabilities: %v", err)
+	}
+	// Validate container capabilities
+	for _, c := range spec.Containers {
+		if err := validateAddedCapsAllowed(c.AddedCapabilities); err != nil {
+			return LaunchSpec{}, fmt.Errorf("failed to validate added capabilities for container %q: %v", c.Name, err)
+		}
 	}
 
 	spec.ProjectID, err = client.ProjectIDWithContext(ctx)

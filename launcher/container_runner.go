@@ -43,6 +43,7 @@ import (
 	"github.com/google/go-tpm-tools/launcher/spec"
 	"github.com/google/go-tpm-tools/launcher/teeserver"
 	"github.com/google/go-tpm-tools/verifier"
+	ociverifier "github.com/google/go-tpm-tools/verifier/oci"
 	"github.com/google/go-tpm-tools/verifier/fake"
 	"github.com/google/go-tpm-tools/verifier/ita"
 	"github.com/google/go-tpm-tools/verifier/util"
@@ -50,11 +51,12 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/oauth2"
 	"google.golang.org/protobuf/proto"
+	"golang.org/x/sync/errgroup"
 )
 
 // ContainerRunner contains information about the container settings
 type ContainerRunner struct {
-	container     containerd.Container
+	container     []containerd.Container
 	launchSpec    spec.LaunchSpec
 	attestAgent   agent.AttestationAgent
 	logger        logging.Logger
@@ -94,61 +96,201 @@ const defaultOOMScore = 1000
 
 // NewRunner returns a runner.
 func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.Token, launchSpec spec.LaunchSpec, mdsClient *metadata.Client, tpm io.ReadWriteCloser, logger logging.Logger, serialConsole *os.File) (*ContainerRunner, error) {
-	image, err := initImage(ctx, cdClient, launchSpec, token)
+	images, err := pullImages(ctx, cdClient, launchSpec, token)
 	if err != nil {
 		return nil, err
 	}
 
-	var mounts []specs.Mount
-	for _, lsMnt := range launchSpec.Mounts {
-		mounts = append(mounts, lsMnt.SpecsMount())
-	}
-	mounts = appendTokenMounts(mounts)
-	var cgroupOpts []oci.SpecOpts
-	if launchSpec.CgroupNamespace {
-		mounts = appendCgroupRw(mounts)
-		cgroupOpts = []oci.SpecOpts{
-			oci.WithNamespacedCgroup(),
-			oci.WithLinuxNamespace(specs.LinuxNamespace{Type: specs.CgroupNamespace}),
+	var createdContainers []containerd.Container
+	var nvidiaAttester gpu.Attester
+	var deviceROTs []agent.DeviceROT
+
+	for i, cSpec := range launchSpec.Containers {
+		img := images[i]
+		var c containerd.Container
+
+		cID := containerID // "tee-container"
+		sID := snapshotID  // "tee-snapshot"
+		if i > 0 {
+			cID = fmt.Sprintf("%s-%d", containerID, i)
+			sID = fmt.Sprintf("%s-%d", snapshotID, i)
 		}
+		
+		//Delete existing container if it exists( using the dynamic cID)
+		if existingContainer, err := cdClient.LoadContainer(ctx, cID); err == nil {
+			existingContainer.Delete(ctx, containerd.WithSnapshotCleanup)
+		}
+
+		var mounts []specs.Mount
+		for _,lsMnt := range cSpec.Mounts {
+			mounts = append(mounts, lsMnt.SpecsMount())
+		}
+		mounts = appendTokenMounts(mounts)
+
+		var cgroupOpts []oci.SpecOpts
+		if launchSpec.CgroupNamespace {
+			mounts = appendCgroupRw(mounts)
+			cgroupOpts = []oci.SpecOpts{
+				oci.WithNamespacedCgroup(),
+				oci.WithLinuxNamespace(specs.LinuxNamespace{Type: specs.CgroupNamespace}),
+			}
+		}
+
+		envs, err := formatEnvVars(cSpec.Envs)
+		if err != nil {
+			return nil, err
+		}
+
+		logger.Info("Preparing Container Runner",
+			"container_name", cSpec.Name,
+			"operator_input_image_ref", img.Name(),
+			"image_digest", img.Target().Digest,
+			"operator_override_env_vars", envs,
+			"operator_override_cmd", cSpec.Cmd,
+		)
+		
+		imageConfig, err := getImageConfig(ctx, img)
+		if err != nil {
+			return nil, err
+		}
+		
+		logger.Info(fmt.Sprintf("Exposed Ports for container %q (cID: %s):             : %v\n",cSpec.Name, cID, imageConfig.ExposedPorts))
+		if err := setupFirewall(cSpec, imageConfig); err != nil {
+			return nil, err
+		}
+
+		logger.Info(fmt.Sprintf("Image Labels for container %q (cID: %s):             : %v\n",cSpec.Name, cID, imageConfig.Labels))
+		launchPolicy, err := spec.GetLaunchPolicy(imageConfig.Labels, logger)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse image Launch Policy for container %q (cID: %s): %v: contact the image author", cSpec.Name, cID, err)
+		}
+
+		if err := launchPolicy.Verify(launchSpec); err != nil {
+			return nil, err
+		}
+
+		logger.Info(fmt.Sprintf("Launch Policy              : %+v\n", launchPolicy))
+		
+		if imageConfigDescriptor, err := img.Config(ctx); err != nil {
+			logger.Error(err.Error())
+		} else {
+			logger.Info("Retrieved image config",
+				"image_id", imageConfigDescriptor.Digest,
+				"image_annotations", imageConfigDescriptor.Annotations,
+			)
+		}
+
+		hostname, err := os.Hostname()
+		if err != nil {
+			return nil, &RetryableError{fmt.Errorf("cannot get hostname for container %q (cID: %s): [%w]",cSpec.Name, cID, err)}
+		}
+	
+		rlimits := []specs.POSIXRlimit{{
+			Type: "RLIMIT_NOFILE",
+			Hard: nofile,
+			Soft: nofile,
+		}}
+		
+		specOpts := []oci.SpecOpts{
+			oci.WithImageConfigArgs(img, cSpec.Cmd),
+			oci.WithEnv(envs),
+			oci.WithMounts(mounts),
+			// following 4 options are here to allow the container to have
+			// the host network (same effect as --net-host in ctr command)
+			oci.WithHostHostsFile,
+			oci.WithHostResolvconf,
+			oci.WithHostNamespace(specs.NetworkNamespace),
+			oci.WithEnv([]string{fmt.Sprintf("HOSTNAME=%s", hostname)}),
+			oci.WithAddedCapabilities(cSpec.AddedCapabilities),
+			withRlimits(rlimits),
+			withOOMScoreAdj(defaultOOMScore),
+		}
+
+		if launchSpec.DevShmSize != 0 {
+			specOpts = append(specOpts, oci.WithDevShmSize(launchSpec.DevShmSize))
+		}
+		specOpts = append(specOpts, cgroupOpts...)
+
+		//GPU Attester (only need to initialize it once
+		//but we apply mounts to all containers if driver is installed)
+		if launchSpec.InstallGpuDriver {
+			if nvidiaAttester == nil {
+				nvidiaAttester = gpu.NewNvidiaAttester(launchSpec.InstallGpuDriver)
+			}
+			gpuMounts := []specs.Mount{
+				{
+					Type:        "volume",
+					Source:      fmt.Sprintf("%s/lib64", gpu.InstallationHostDir),
+					Destination: fmt.Sprintf("%s/lib64", gpu.InstallationContainerDir),
+					Options:     []string{"rbind", "rw"},
+				}, {
+					Type:        "volume",
+					Source:      fmt.Sprintf("%s/bin", gpu.InstallationHostDir),
+					Destination: fmt.Sprintf("%s/bin", gpu.InstallationContainerDir),
+					Options:     []string{"rbind", "rw"},
+				},
+			}
+			specOpts = append(specOpts, oci.WithMounts(gpuMounts))
+	
+			// /dev/nvidia-caps/* will not be listed here and will not be passed to
+			// the container workload
+			//
+			// following devices should be listed:
+			// /dev/nvidiactl
+			// /dev/nvidia-uvm
+			// /dev/nvidia-uvm-tools
+			// /dev/nvidia{0,1,2,...}
+			// /dev/nvidia-modeset
+			gpuDeviceFiles, err := listFilesWithPrefix("/dev", "nvidia")
+			if err != nil {
+				return nil, fmt.Errorf("failed to list nvidia devices: [%w]", err)
+			}
+	
+			for _, deviceFile := range gpuDeviceFiles {
+				logger.Info(fmt.Sprintf("Detected nvidia device : %s", deviceFile))
+				specOpts = append(specOpts, oci.WithDevices(deviceFile, deviceFile, "crw-rw-rw-"))
+			}
+			if len(deviceROTs) == 0 {
+				deviceROTs = append(deviceROTs, nvidiaAttester)
+			}
+		}
+	
+		c, err = cdClient.NewContainer(
+			ctx,
+			cID,
+			containerd.WithImage(img),
+			containerd.WithNewSnapshot(sID, img),
+			containerd.WithNewSpec(specOpts...),
+		)
+		if err != nil {
+			if c != nil {
+				c.Delete(ctx, containerd.WithSnapshotCleanup)
+			}
+			return nil, &RetryableError{fmt.Errorf("failed to create a container %s: [%w]", cID, err)}
+		}
+
+		containerSpec, err := c.Spec(ctx)
+		if err != nil {
+			// Clean up container since we can't get its spec
+			c.Delete(ctx, containerd.WithSnapshotCleanup)
+			return nil, &RetryableError{err}
+		}
+	
+		// Container process Args length should be strictly longer than the Cmd
+		// override length set by the operator, as we want the Entrypoint filed
+		// to be mandatory for the image.
+		// Roughly speaking, Args = Entrypoint + Cmd
+		if len(containerSpec.Process.Args) <= len(cSpec.Cmd) {
+			// Clean up container since we can't get its spec
+			c.Delete(ctx, containerd.WithSnapshotCleanup)
+			return nil,
+				fmt.Errorf("length of Args [%d] is shorter or equal to the length of the given Cmd [%d] for container %q, maybe the Entrypoint is set to empty in the image?",
+					len(containerSpec.Process.Args), len(cSpec.Cmd), cSpec.Name)
+		}
+		
+		createdContainers = append(createdContainers, c)
 	}
 
-	envs, err := formatEnvVars(launchSpec.Envs)
-	if err != nil {
-		return nil, err
-	}
-	// Check if there is already a container
-	container, err := cdClient.LoadContainer(ctx, containerID)
-	if err == nil {
-		// container exists, delete it first
-		container.Delete(ctx, containerd.WithSnapshotCleanup)
-	}
-
-	logger.Info("Preparing Container Runner",
-		"operator_input_image_ref", image.Name(),
-		"image_digest", image.Target().Digest,
-		"operator_override_env_vars", envs,
-		"operator_override_cmd", launchSpec.Cmd,
-	)
-
-	imageConfig, err := getImageConfig(ctx, image)
-	if err != nil {
-		return nil, err
-	}
-
-	logger.Info(fmt.Sprintf("Exposed Ports:             : %v\n", imageConfig.ExposedPorts))
-	if err := openPorts(imageConfig.ExposedPorts); err != nil {
-		return nil, err
-	}
-
-	logger.Info(fmt.Sprintf("Image Labels               : %v\n", imageConfig.Labels))
-	launchPolicy, err := spec.GetLaunchPolicy(imageConfig.Labels, logger)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse image Launch Policy: %v: contact the image author", err)
-	}
-	if err := launchPolicy.Verify(launchSpec); err != nil {
-		return nil, err
-	}
 
 	if launchSpec.MonitoringEnabled == spec.All && !launchSpec.Experiments.EnableHealthMonitoring {
 		logger.Info("Health Monitoring experiment is not enabled - falling back to memory-only.")
@@ -161,114 +303,8 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		}
 	}
 
-	logger.Info(fmt.Sprintf("Launch Policy              : %+v\n", launchPolicy))
 
-	if imageConfigDescriptor, err := image.Config(ctx); err != nil {
-		logger.Error(err.Error())
-	} else {
-		logger.Info("Retrieved image config",
-			"image_id", imageConfigDescriptor.Digest,
-			"image_annotations", imageConfigDescriptor.Annotations,
-		)
-	}
 
-	hostname, err := os.Hostname()
-	if err != nil {
-		return nil, &RetryableError{fmt.Errorf("cannot get hostname: [%w]", err)}
-	}
-
-	rlimits := []specs.POSIXRlimit{{
-		Type: "RLIMIT_NOFILE",
-		Hard: nofile,
-		Soft: nofile,
-	}}
-
-	specOpts := []oci.SpecOpts{
-		oci.WithImageConfigArgs(image, launchSpec.Cmd),
-		oci.WithEnv(envs),
-		oci.WithMounts(mounts),
-		// following 4 options are here to allow the container to have
-		// the host network (same effect as --net-host in ctr command)
-		oci.WithHostHostsFile,
-		oci.WithHostResolvconf,
-		oci.WithHostNamespace(specs.NetworkNamespace),
-		oci.WithEnv([]string{fmt.Sprintf("HOSTNAME=%s", hostname)}),
-		oci.WithAddedCapabilities(launchSpec.AddedCapabilities),
-		withRlimits(rlimits),
-		withOOMScoreAdj(defaultOOMScore),
-	}
-	if launchSpec.DevShmSize != 0 {
-		specOpts = append(specOpts, oci.WithDevShmSize(launchSpec.DevShmSize))
-	}
-	specOpts = append(specOpts, cgroupOpts...)
-
-	var deviceROTs []agent.DeviceROT
-	nvidiaAttester := gpu.NewNvidiaAttester(launchSpec.InstallGpuDriver)
-	if launchSpec.InstallGpuDriver {
-		gpuMounts := []specs.Mount{
-			{
-				Type:        "volume",
-				Source:      fmt.Sprintf("%s/lib64", gpu.InstallationHostDir),
-				Destination: fmt.Sprintf("%s/lib64", gpu.InstallationContainerDir),
-				Options:     []string{"rbind", "rw"},
-			}, {
-				Type:        "volume",
-				Source:      fmt.Sprintf("%s/bin", gpu.InstallationHostDir),
-				Destination: fmt.Sprintf("%s/bin", gpu.InstallationContainerDir),
-				Options:     []string{"rbind", "rw"},
-			},
-		}
-		specOpts = append(specOpts, oci.WithMounts(gpuMounts))
-
-		// /dev/nvidia-caps/* will not be listed here and will not be passed to
-		// the container workload
-		//
-		// following devices should be listed:
-		// /dev/nvidiactl
-		// /dev/nvidia-uvm
-		// /dev/nvidia-uvm-tools
-		// /dev/nvidia{0,1,2,...}
-		// /dev/nvidia-modeset
-		gpuDeviceFiles, err := listFilesWithPrefix("/dev", "nvidia")
-		if err != nil {
-			return nil, fmt.Errorf("failed to list nvidia devices: [%w]", err)
-		}
-
-		for _, deviceFile := range gpuDeviceFiles {
-			logger.Info(fmt.Sprintf("Detected nvidia device : %s", deviceFile))
-			specOpts = append(specOpts, oci.WithDevices(deviceFile, deviceFile, "crw-rw-rw-"))
-		}
-		deviceROTs = append(deviceROTs, nvidiaAttester)
-	}
-
-	container, err = cdClient.NewContainer(
-		ctx,
-		containerID,
-		containerd.WithImage(image),
-		containerd.WithNewSnapshot(snapshotID, image),
-		containerd.WithNewSpec(specOpts...),
-	)
-	if err != nil {
-		if container != nil {
-			container.Delete(ctx, containerd.WithSnapshotCleanup)
-		}
-		return nil, &RetryableError{fmt.Errorf("failed to create a container: [%w]", err)}
-	}
-
-	containerSpec, err := container.Spec(ctx)
-	if err != nil {
-		return nil, &RetryableError{err}
-	}
-
-	// Container process Args length should be strictly longer than the Cmd
-	// override length set by the operator, as we want the Entrypoint filed
-	// to be mandatory for the image.
-	// Roughly speaking, Args = Entrypoint + Cmd
-	if len(containerSpec.Process.Args) <= len(launchSpec.Cmd) {
-		return nil,
-			fmt.Errorf("length of Args [%d] is shorter or equal to the length of the given Cmd [%d], maybe the Entrypoint is set to empty in the image?",
-				len(containerSpec.Process.Args), len(launchSpec.Cmd))
-	}
 
 	principalFetcherWithImpersonate := func(audience string) ([][]byte, error) {
 		tokens, err := util.PrincipalFetcher(audience, mdsClient)
@@ -307,8 +343,11 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 		verifierClient = gcaClient
 	}
 
-	// Create a new signaturediscovery client to fetch signatures.
-	sdClient := getSignatureDiscoveryClient(cdClient, mdsClient, image.Target())
+	sdClient := &multiImageSignatureFetcher{
+		images: 		images,
+		cdClient:		cdClient,
+		mdsClient:	mdsClient,
+	}
 
 	exps := agent.Experiments{
 		EnableAttestationEvidence: launchSpec.Experiments.EnableAttestationEvidence,
@@ -329,7 +368,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 	}
 
 	return &ContainerRunner{
-		container,
+		createdContainers,
 		launchSpec,
 		attestAgent,
 		logger,
@@ -430,56 +469,62 @@ func (r *ContainerRunner) measureCELEvents(ctx context.Context) error {
 // measureContainerClaims will measure various container claims into the COS
 // eventlog in the AttestationAgent.
 func (r *ContainerRunner) measureContainerClaims(ctx context.Context) error {
-	image, err := r.container.Image(ctx)
-	if err != nil {
-		return err
-	}
-	if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.ImageRefType, EventContent: []byte(image.Name())}); err != nil {
-		return err
-	}
-	if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.ImageDigestType, EventContent: []byte(image.Target().Digest)}); err != nil {
-		return err
-	}
-	if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.RestartPolicyType, EventContent: []byte(r.launchSpec.RestartPolicy)}); err != nil {
-		return err
-	}
-	if imageConfigDescriptor, err := image.Config(ctx); err == nil { // if NO error
-		if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.ImageIDType, EventContent: []byte(imageConfigDescriptor.Digest)}); err != nil {
-			return err
-		}
-	}
+	for i,c := range r.container {
+		cSpec := r.launchSpec.Containers[i]
 
-	containerSpec, err := r.container.Spec(ctx)
-	if err != nil {
-		return err
-	}
-	for _, arg := range containerSpec.Process.Args {
-		if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.ArgType, EventContent: []byte(arg)}); err != nil {
+		image, err := c.Image(ctx)
+		if err != nil {
 			return err
 		}
-	}
-	for _, env := range containerSpec.Process.Env {
-		if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.EnvVarType, EventContent: []byte(env)}); err != nil {
-			return err
-		}
-	}
 
-	// Measure the input overridden Env Vars and Args separately, these should be subsets of the Env Vars and Args above.
-	envs, err := formatEnvVars(r.launchSpec.Envs)
-	if err != nil {
-		return err
-	}
-	for _, env := range envs {
-		if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.OverrideEnvType, EventContent: []byte(env)}); err != nil {
+		if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.ImageRefType, EventContent: []byte(image.Name())}); err != nil {
 			return err
 		}
-	}
-	for _, arg := range r.launchSpec.Cmd {
-		if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.OverrideArgType, EventContent: []byte(arg)}); err != nil {
+		
+		if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.ImageDigestType, EventContent: []byte(image.Target().Digest)}); err != nil {
 			return err
 		}
-	}
+		if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.RestartPolicyType, EventContent: []byte(cSpec.RestartPolicy)}); err != nil {
+			return err
+		}
+		if imageConfigDescriptor, err := image.Config(ctx); err == nil { // if NO error
+			if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.ImageIDType, EventContent: []byte(imageConfigDescriptor.Digest)}); err != nil {
+				return err
+			}
+		}
 
+		containerSpec, err := c.Spec(ctx)
+		if err != nil {
+			return err
+		}
+		
+		for _, arg := range containerSpec.Process.Args {
+			if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.ArgType, EventContent: []byte(arg)}); err != nil {
+				return err
+			}
+		}
+		for _, env := range containerSpec.Process.Env {
+			if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.EnvVarType, EventContent: []byte(env)}); err != nil {
+				return err
+			}
+		}
+
+		// Measure the input overridden Env Vars and Args separately, these should be subsets of the Env Vars and Args above.
+		envs, err := formatEnvVars(cSpec.Envs)
+		if err != nil {
+			return err
+		}
+		for _, env := range envs {
+			if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.OverrideEnvType, EventContent: []byte(env)}); err != nil {
+				return err
+			}
+		}
+		for _, arg := range cSpec.Cmd {
+			if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.OverrideArgType, EventContent: []byte(arg)}); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
 }
 
@@ -783,51 +828,77 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		return fmt.Errorf("unknown logging redirect location: %v", r.launchSpec.LogRedirect)
 	}
 
-	task, err := r.container.NewTask(ctx, cio.NewCreator(streamOpt))
-	if err != nil {
-		return &RetryableError{err}
-	}
-	defer task.Delete(ctx)
+	tasks := make([]containerd.Task, len(r.container))
+	var mainTask containerd.Task
+	var mainExitStatusC <- chan containerd.ExitStatus
 
-	r.enableGracefulShutdown(ctx, task)
+	for i, c := range r.container {
+		task, err := c.NewTask(ctx, cio.NewCreator(streamOpt))
+		if err != nil {
+			return &RetryableError{err}
+		}
+
+		//Only the main task is deferred here, Sidecar tasks handle their own deletion. 
+		if r.launchSpec.Containers[i].ContainerType == spec.MainContainer {
+			defer task.Delete(ctx)
+			mainTask = task
+		}
+		tasks[i] = task
+	}
+
+	r.enableGracefulShutdown(ctx, tasks)
 
 	setupDuration := time.Since(start)
 	r.logger.Info("Workload setup completed",
 		"setup_sec", setupDuration.Seconds(),
 	)
 
-	exitStatusC, err := task.Wait(ctx)
-	if err != nil {
-		r.logger.Error(err.Error())
-	}
-	// Start timer for workload execution.
+	//Wait and Start all tasks
 	start = time.Now()
 	r.logger.Info("workload task started")
+	for i, task := range tasks {
+		exitStatusC, err := task.Wait(ctx)
+		if err != nil {
+			r.logger.Error(err.Error())
+		}
 
-	if err := task.Start(ctx); err != nil {
-		return &RetryableError{err}
+		if task == mainTask {
+			mainExitStatusC = exitStatusC
+		} else {
+			// For sidecars, spawn a monitor to handle restarts in the background
+			go r.monitorSidecar(ctx, r.container[i], r.launchSpec.Containers[i], streamOpt, task, exitStatusC)
+		}
+
+		if err := task.Start(ctx); err != nil {
+			return &RetryableError{err}
+		}
 	}
-	status := <-exitStatusC
-	workloadDuration := time.Since(start)
 
-	code, _, err := status.Result()
-	if err != nil {
-		return err
-	}
+	r.logger.Info("All workload tasks started")
 
-	if code != 0 {
-		r.logger.Error("workload task ended and returned non-zero",
+	if mainTask != nil {
+		status := <-mainExitStatusC
+		workloadDuration := time.Since(start)
+	
+		code, _, err := status.Result()
+		if err != nil {
+			return err
+		}
+	
+		if code != 0 {
+			r.logger.Error("workload task ended and returned non-zero",
+				"workload_execution_sec", workloadDuration.Seconds(),
+			)
+			return &WorkloadError{code}
+		}
+		r.logger.Info("workload task ended and returned 0",
 			"workload_execution_sec", workloadDuration.Seconds(),
 		)
-		return &WorkloadError{code}
 	}
-	r.logger.Info("workload task ended and returned 0",
-		"workload_execution_sec", workloadDuration.Seconds(),
-	)
 	return nil
 }
 
-func (r *ContainerRunner) enableGracefulShutdown(ctx context.Context, task containerd.Task) {
+func (r *ContainerRunner) enableGracefulShutdown(ctx context.Context, tasks []containerd.Task) {
 	// In a hardened image, the launcher monitors the power button to signal a shutdown.
 	if r.launchSpec.Hardened {
 		// May be nil if listener initialization failed, which is not critical and is logged at that time.
@@ -841,8 +912,10 @@ func (r *ContainerRunner) enableGracefulShutdown(ctx context.Context, task conta
 					}
 					return
 				}
-				if err = task.Kill(ctx, syscall.SIGTERM); err != nil {
-					r.logger.Error(err.Error())
+				for _, task := range tasks {
+					if err = task.Kill(ctx, syscall.SIGTERM); err != nil {
+						r.logger.Error(err.Error())
+					}
 				}
 			}()
 		}
@@ -860,8 +933,10 @@ func (r *ContainerRunner) enableGracefulShutdown(ctx context.Context, task conta
 			return
 		case s := <-sig:
 			r.logger.Info("received a signal", "sig", s)
-			if err := task.Kill(ctx, syscall.SIGTERM); err != nil {
-				r.logger.Error(err.Error())
+			for _,task := range tasks {
+				if err := task.Kill(ctx, syscall.SIGTERM); err != nil {
+					r.logger.Error(err.Error())
+				}
 			}
 		}
 	}()
@@ -880,30 +955,73 @@ func pullImageWithRetries(f func() (containerd.Image, error), retry func() backo
 	return image, nil
 }
 
-func initImage(ctx context.Context, cdClient *containerd.Client, launchSpec spec.LaunchSpec, token oauth2.Token) (containerd.Image, error) {
-	if token.Valid() {
-		remoteOpt := containerd.WithResolver(registryauth.Resolver(token.AccessToken))
-		image, err := pullImageWithRetries(
-			func() (containerd.Image, error) {
-				return cdClient.Pull(ctx, launchSpec.ImageRef, containerd.WithPullUnpack, remoteOpt)
-			},
-			pullImageBackoffPolicy,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("cannot pull the image: %w", err)
-		}
-		return image, nil
+func pullImages(ctx context.Context, cdClient *containerd.Client, launchSpec spec.LaunchSpec, token oauth2.Token) ([]containerd.Image, error) {
+	images := make([]containerd.Image, len(launchSpec.Containers))
+	g, ctx := errgroup.WithContext(ctx)
+
+	for i, cSpec := range launchSpec.Containers {
+		i, cSpec := i, cSpec
+
+		g.Go(func() error{
+			var img containerd.Image
+			var err error
+
+			if token.Valid() {
+				remoteOpt := containerd.WithResolver(registryauth.Resolver(token.AccessToken))
+				img, err = pullImageWithRetries(
+					func() (containerd.Image, error) {
+						return cdClient.Pull(ctx, cSpec.ImageRef, containerd.WithPullUnpack, remoteOpt)
+					},
+					pullImageBackoffPolicy,
+				)
+				if err != nil {
+					return fmt.Errorf("cannot pull the image for container %q: %w", cSpec.Name, err)
+				}
+			} else {
+				img, err = pullImageWithRetries(
+					func() (containerd.Image, error) {
+						return cdClient.Pull(ctx, cSpec.ImageRef, containerd.WithPullUnpack)
+					},
+					pullImageBackoffPolicy,
+				)
+				if err != nil {
+					return fmt.Errorf("cannot pull the image for container %q (no token, only works for a public image): %w", cSpec.Name, err)
+				}
+			}
+
+			images[i] = img
+			return nil
+		})
 	}
-	image, err := pullImageWithRetries(
-		func() (containerd.Image, error) {
-			return cdClient.Pull(ctx, launchSpec.ImageRef, containerd.WithPullUnpack)
-		},
-		pullImageBackoffPolicy,
-	)
+	
+	err := g.Wait()
 	if err != nil {
-		return nil, fmt.Errorf("cannot pull the image (no token, only works for a public image): %w", err)
+		return nil, err
 	}
-	return image, nil
+	return images, nil
+}
+
+// setupFirewall inspects explicit YAML ports first, falling back to OCI annotations only if explicit ports are absent and len == 1.
+func setupFirewall(cSpec spec.ContainerSpec, imageConfig v1.ImageConfig) error {
+	portsToOpen := make(map[string]struct{})
+
+	if len(cSpec.Ports) > 0 {
+		for _, p := range cSpec.Ports {
+			protocol := p.Protocol
+			if protocol == "" {
+				protocol = "tcp"
+			}
+			key := fmt.Sprintf("%d/%s", p.ContainerPort, strings.ToLower(protocol))
+			portsToOpen[key] = struct{}{}
+		}
+	} else if len(imageConfig.ExposedPorts) == 1 {
+		portsToOpen = imageConfig.ExposedPorts
+	}
+
+	if len(portsToOpen) > 0 {
+		return openPorts(portsToOpen)
+	}
+	return nil
 }
 
 // openPorts writes firewall rules to accept all traffic into that port and protocol using iptables.
@@ -962,20 +1080,29 @@ func getImageConfig(ctx context.Context, image containerd.Image) (v1.ImageConfig
 	return v1.ImageConfig{}, fmt.Errorf("unknown image config media type %s", ic.MediaType)
 }
 
-// Close the container runner
+// Close cleans up the container and closes the connection to the contanerd daemon.
 func (r *ContainerRunner) Close(ctx context.Context) {
+
 	if r.powerButton != nil {
 		if err := r.powerButton.Close(); err != nil {
 			r.logger.Error("failed to close power button listener", "err", err.Error())
 		}
 	}
-
-	// close the agent
-	r.attestAgent.Close()
+	
+	//close the agent
+	if r.attestAgent != nil {
+		r.attestAgent.Close()
+	}
 
 	// Exit gracefully:
 	// Delete container and close connection to attestation service.
-	r.container.Delete(ctx, containerd.WithSnapshotCleanup)
+	for _,c := range r.container {
+		if c != nil {
+			if err := c.Delete(ctx, containerd.WithSnapshotCleanup); err != nil {
+				r.logger.Error("failed to delete container", "err", err.Error())
+			}
+		}
+	}	
 }
 
 // withRlimits sets the rlimit (like the max file descriptor) for the container process
@@ -1004,4 +1131,73 @@ func appendCgroupRw(mounts []specs.Mount) []specs.Mount {
 	}
 
 	return append(mounts, m)
+}
+
+type multiImageSignatureFetcher struct {
+	images 		[]containerd.Image
+	cdClient 	*containerd.Client
+	mdsClient *metadata.Client
+}
+
+func (m *multiImageSignatureFetcher) FetchImageSignatures(ctx context.Context, targetRepository string) ([]ociverifier.Signature, error) {
+	for _, img := range m.images {
+		if img.Name() == targetRepository || strings.HasPrefix(img.Name(), targetRepository+":") || strings.HasPrefix(img.Name(), targetRepository+"@") {
+			sdClient := getSignatureDiscoveryClient(m.cdClient, m.mdsClient, img.Target())
+			return sdClient.FetchImageSignatures(ctx, targetRepository)
+		}
+	}
+	return nil, fmt.Errorf("no matching image found for repository %q", targetRepository)
+}
+
+// monitorSidecar handles the restart policy loop for sidecar containers
+func (r *ContainerRunner) monitorSidecar(ctx context.Context, c containerd.Container, cSpec spec.ContainerSpec, streamOpt cio.Opt, initialTask containerd.Task, initialExitStatusC <-chan containerd.ExitStatus) {
+	task := initialTask
+	exitStatusC := initialExitStatusC
+
+	//Ensure the last task instance is cleaned up when the monitor exits
+	defer func() {
+		if task != nil {
+			task.Delete(ctx)
+		}
+	}()
+
+	for {
+		status := <-exitStatusC
+		code, _, _ := status.Result()
+
+		//Clean up the exited task before recreating
+		task.Delete(ctx)
+		
+		shouldRestart := false
+		if cSpec.RestartPolicy == spec.Always {
+			shouldRestart = true
+		} else if cSpec.RestartPolicy == spec.OnFailure && code != 0 {
+			shouldRestart = true
+		}
+
+		if shouldRestart {
+			r.logger.Info("restarting sidecar container", "container", cSpec.Name)
+			newTask, err := c.NewTask(ctx, cio.NewCreator(streamOpt))
+			if err != nil {
+				// If ctx is cancelled (main exited), this will safely fail and the monitor
+				r.logger.Error("Failed to create new task for sidecar", "container", cSpec.Name, "err", err.Error())
+				return
+			}
+			task = newTask
+	
+			exitStatusC, err = task.Wait(ctx)
+			if err != nil {
+				r.logger.Error("Failed to wait on new task for sidecar", "container", cSpec.Name, "err", err.Error())
+				return
+			}
+	
+			if err := task.Start(ctx); err != nil {
+				r.logger.Error("Failed to start new task for sidecar", "container", cSpec.Name, "err", err.Error())
+				return
+			}
+		} else {
+			r.logger.Info("Sidecar container exited, not restarting", "container", cSpec.Name, "code", code)
+			break
+		}
+	}
 }
