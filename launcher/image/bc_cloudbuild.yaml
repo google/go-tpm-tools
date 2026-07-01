@@ -75,9 +75,7 @@ steps:
            /workspace/gpu_helper.tar \
            ./launcher/image/bc-guest/bc_pin_pci_numa_nodes.sh \
            /workspace/oem-install/confidential_space/
-        cp ./launcher/image/nodeproblemdetector/* /workspace/oem-install/confidential_space/nodeproblemdetector/
-        cp ./launcher/image/bc-guest/wsd/* /workspace/oem-install/wsd/
-
+        cp ./launcher/image/wsd/* /workspace/oem-install/wsd/
         # Extract WSD rootfs
         if [ -f /workspace/wsd_rootfs.tar ]; then
           mkdir -p /workspace/oem-install/wsd/rootfs

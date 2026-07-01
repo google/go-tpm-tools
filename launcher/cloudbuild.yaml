@@ -117,6 +117,7 @@ steps:
   - 'BUCKET_NAME=$_BUCKET_NAME'
   - 'BASE_IMAGE_PROJECT=$_BASE_IMAGE_PROJECT'
   - 'VG_BASE_IMAGE=$_VG_BASE_IMAGE'
+  - 'WSD_CONTAINER_IMAGE_REF=$_WSD_CONTAINER_IMAGE_REF'
   script: |
     #!/usr/bin/env bash
     set -exuo pipefail
@@ -134,7 +135,8 @@ steps:
     _BUCKET_NAME=${BUCKET_NAME},\
     _PRELOAD_SCRIPT=vgpreload.sh,\
     _OEM_SIZE=900M,\
-    _DISK_SIZE_GB=12
+    _DISK_SIZE_GB=12,\
+    _WSD_CONTAINER_IMAGE_REF=${WSD_CONTAINER_IMAGE_REF}
     exit
 
 - name: 'gcr.io/cloud-builders/gcloud'
@@ -147,6 +149,7 @@ steps:
   - 'SHORT_SHA=${SHORT_SHA}'
   - 'BASE_IMAGE_PROJECT=$_BASE_IMAGE_PROJECT'
   - 'VG_BASE_IMAGE=$_VG_BASE_IMAGE'
+  - 'WSD_CONTAINER_IMAGE_REF=$_WSD_CONTAINER_IMAGE_REF'
   script: |
     #!/usr/bin/env bash
     set -exuo pipefail
@@ -164,7 +167,8 @@ steps:
     _BUCKET_NAME=${BUCKET_NAME},\
     _PRELOAD_SCRIPT=vgpreload.sh,\
     _OEM_SIZE=900M,\
-    _DISK_SIZE_GB=12
+    _DISK_SIZE_GB=12,\
+    _WSD_CONTAINER_IMAGE_REF=${WSD_CONTAINER_IMAGE_REF}
     exit
 
 - name: 'gcr.io/cloud-builders/gcloud'
