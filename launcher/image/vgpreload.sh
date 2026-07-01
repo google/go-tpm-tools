@@ -23,6 +23,25 @@ setup_launcher_systemd_unit() {
   cp exit_script.sh "${CS_PATH}/exit_script.sh"
 }
 
+copy_wsd() {
+  mkdir -p "${OEM_PATH}/wsd"
+  cp vgwsd/* "${OEM_PATH}/wsd/"
+  chmod +x "${OEM_PATH}/wsd/wsd_runner.sh" || true
+  chmod +x "${OEM_PATH}/wsd/exit_script.sh" || true
+
+  if [[ -n "${WSD_CONTAINER_IMAGE_REF}" ]]; then
+    echo "Preloading WSD container image: ${WSD_CONTAINER_IMAGE_REF}"
+    docker pull "${WSD_CONTAINER_IMAGE_REF}"
+    docker save "${WSD_CONTAINER_IMAGE_REF}" -o "${OEM_PATH}/wsd/image.tar"
+  fi
+
+  cat << EOF > "${OEM_PATH}/wsd/image.env"
+IMAGE_PATH="/usr/share/oem/wsd/image.tar"
+IMAGE_REF="${WSD_CONTAINER_IMAGE_REF}"
+CONTAINER_NAME="workload-service-daemon"
+EOF
+}
+
 append_cmdline() {
   local arg="$1"
   if [[ ! -d /mnt/disks/efi ]]; then
@@ -121,6 +140,7 @@ main() {
   # Install container launcher.
   copy_launcher
   setup_launcher_systemd_unit
+  copy_wsd
   # Minimum required COS version for 'e': cos-dev-105-17222-0-0.
   # Minimum required COS version for 'm': cos-dev-113-18203-0-0.
   append_cmdline "cos.protected_stateful_partition=m"
