@@ -1,12 +1,12 @@
 substitutions:
-  '_BASE_IMAGE': 'cos-125-19216-395-47' # If left empty, will use the latest image in _BASE_IMAGE_FAMILY of _BASE_IMAGE_PROJECT
+  '_BASE_IMAGE': 'cos-125-19216-395-138' # If left empty, will use the latest image in _BASE_IMAGE_FAMILY of _BASE_IMAGE_PROJECT
   '_BASE_IMAGE_FAMILY': 'cos-125-lts'
   '_BASE_IMAGE_PROJECT': 'cos-cloud'
   '_OUTPUT_IMAGE_PREFIX': 'confidential-space'
   '_OUTPUT_IMAGE_SUFFIX': ''
   '_OUTPUT_IMAGE_FAMILY': ''
   '_BUCKET_NAME': '${PROJECT_ID}_cloudbuild'
-  '_VG_BASE_IMAGE': 'cos-125-19216-395-47'
+  '_VG_BASE_IMAGE': 'cos-125-19216-395-138'
   '_BC_BASE_IMAGE_PROJECT': 'confidential-space-images-dev'
   '_BC_BASE_IMAGE': 'cos-bc-guest-125-19216-395-112'
   '_BC_DEBUG_IMAGE': 'cos-bcdbg-guest-125-19216-395-112'
