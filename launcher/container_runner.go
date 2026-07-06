@@ -840,7 +840,8 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	startOpenPorts := time.Now()
 	var containerIP string
 	if r.launchPolicy.NonrootContainer {
-		containerIP, err = r.getContainerIP(ctx, fmt.Sprintf(netnsPathFmt, task.Pid()))
+		containerIP, err = r.setupCNI(ctx, fmt.Sprintf(netnsPathFmt, task.Pid()))
+		r.logger.Info("container ip", "containerIP", containerIP)
 		if err != nil {
 			return err
 		}
@@ -1130,7 +1131,7 @@ func newCNI() (gocni.CNI, error) {
 	return cni, nil
 }
 
-func (r *ContainerRunner) getContainerIP(ctx context.Context, netnsPath string) (string, error) {
+func (r *ContainerRunner) setupCNI(ctx context.Context, netnsPath string) (string, error) {
 	if r.cni == nil {
 		return "", fmt.Errorf("CNI is not initialized")
 	}
