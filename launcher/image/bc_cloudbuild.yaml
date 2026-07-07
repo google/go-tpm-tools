@@ -275,41 +275,40 @@ steps:
         echo "Copying local archive directly to ACOS bucket $${ACOS_TARGET_URL}"
         gcloud storage cp ./out_image.tar.gz "$${ACOS_TARGET_URL}"
 
-        echo "Preparing Pub/Sub notification payload..."
-        cat << MSG_EOF > /workspace/pubsub_msg.json
-        {
-          "flow": "${_LOUHI_FLOW_ID}",
-          "userParameters": {
-            "GUEST_WORKLOAD_ACOS_GS_URL": "$${ACOS_TARGET_URL}",
-            "_PR_EMAIL": "${_PR_EMAIL}",
-            "_PR_NUMBER": "${_PR_NUMBER}",
-            "_HEAD_REPO_URL": "${_HEAD_REPO_URL}"
-          },
-          "gitParameters": {
-            "commitSha": "${COMMIT_SHA}"
-          }
-        }
-        MSG_EOF
+        # echo "Preparing Pub/Sub notification payload..."
+        # cat << MSG_EOF > /workspace/pubsub_msg.json
+        # {
+        #   "flow": "${_LOUHI_FLOW_ID}",
+        #   "userParameters": {
+        #     "GUEST_WORKLOAD_ACOS_GS_URL": "$${ACOS_TARGET_URL}",
+        #     "_PR_EMAIL": "${_PR_EMAIL}",
+        #     "_PR_NUMBER": "${_PR_NUMBER}",
+        #     "_HEAD_REPO_URL": "${_HEAD_REPO_URL}"
+        #   },
+        #   "gitParameters": {
+        #     "commitSha": "${COMMIT_SHA}"
+        #   }
+        # }
+        # MSG_EOF
 
-        echo "Previewing payload Content:"
-        cat /workspace/pubsub_msg.json
+        # echo "Previewing payload Content:"
+        # echo "dry run: gcloud pubsub topics publish ${_LOUHI_TRIGGER_TOPIC}..."
+        # cat /workspace/pubsub_msg.json
 
-        echo "dry run: gcloud pubsub topics publish ${_LOUHI_TRIGGER_TOPIC}..."
 
-        # Alternative inline command (commented out):
-        # gcloud pubsub topics publish "${_LOUHI_TRIGGER_TOPIC}" \
-        #   --message='{
-        #     "flow": "${_LOUHI_FLOW_ID}",
-        #     "userParameters": {
-        #       "GUEST_WORKLOAD_ACOS_GS_URL": "$${ACOS_TARGET_URL}",
-        #       "_PR_EMAIL": "${_PR_EMAIL}",
-        #       "_PR_NUMBER": "${_PR_NUMBER}",
-        #       "_HEAD_REPO_URL": "${_HEAD_REPO_URL}"
-        #     },
-        #     "gitParameters": {
-        #       "commitSha": "${COMMIT_SHA}"
-        #     }
-        #   }'
+        gcloud pubsub topics publish "${_LOUHI_TRIGGER_TOPIC}" \
+          --message='{
+            "flow": "${_LOUHI_FLOW_ID}",
+            "userParameters": {
+              "_GUEST_WORKLOAD_ACOS_GS_URL": "'"$${ACOS_TARGET_URL}"'",
+              "_PR_EMAIL": "${_PR_EMAIL}",
+              "_PR_NUMBER": "${_PR_NUMBER}",
+              "_HEAD_REPO_URL": "${_HEAD_REPO_URL}"
+            },
+            "gitParameters": {
+              "commitSha": "${COMMIT_SHA}"
+            }
+          }'
 timeout: '3000s'
 
 options:
