@@ -263,6 +263,7 @@ steps:
     args:
       - '-c'
       - |
+        set -exuo pipefail
         if [ -z "${_ACOS_BUCKET_NAME}" ]; then
           echo "ACOS bucket is not specified. Skipping copy."
           exit 0
