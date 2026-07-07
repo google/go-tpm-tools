@@ -841,7 +841,6 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	var containerIP string
 	if r.launchPolicy.NonrootContainer {
 		containerIP, err = r.setupCNI(ctx, fmt.Sprintf(netnsPathFmt, task.Pid()))
-		r.logger.Info("container ip", "containerIP", containerIP)
 		if err != nil {
 			return err
 		}
