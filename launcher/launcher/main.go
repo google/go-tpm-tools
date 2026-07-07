@@ -246,7 +246,17 @@ func startLauncher(launchSpec spec.LaunchSpec, serialConsole *os.File, googleCli
 	logger.Info("Launch started", "duration_sec", time.Since(start).Seconds())
 
 	// tpm is nil when running in BC mode.
-	r, err := launcher.NewRunner(ctx, containerdClient, token, launchSpec, mdsClient, tpm, logger, serialConsole, googleClient, clientOpts...)
+	r, err := launcher.NewRunner(ctx, &launcher.RunnerConfig{
+		ContainerdClient: containerdClient,
+		Token:            token,
+		LaunchSpec:       launchSpec,
+		MetadataClient:   mdsClient,
+		TPM:              tpm,
+		Logger:           logger,
+		SerialConsole:    serialConsole,
+		GoogleClient:     googleClient,
+		ClientOpts:       clientOpts,
+	})
 	if err != nil {
 		return err
 	}
