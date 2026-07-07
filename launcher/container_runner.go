@@ -95,8 +95,31 @@ const (
 // Default OOM score for a CS container.
 const defaultOOMScore = 1000
 
+// RunnerConfig contains the configuration for creating a ContainerRunner.
+type RunnerConfig struct {
+	ContainerdClient *containerd.Client
+	Token            oauth2.Token
+	LaunchSpec       spec.LaunchSpec
+	MetadataClient   *metadata.Client
+	TPM              io.ReadWriteCloser
+	Logger           logging.Logger
+	SerialConsole    *os.File
+	GoogleClient     *http.Client
+	ClientOpts       []option.ClientOption
+}
+
 // NewRunner returns a runner.
-func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.Token, launchSpec spec.LaunchSpec, mdsClient *metadata.Client, tpm io.ReadWriteCloser, logger logging.Logger, serialConsole *os.File, googleClient *http.Client, opts ...option.ClientOption) (*ContainerRunner, error) {
+func NewRunner(ctx context.Context, cfg *RunnerConfig) (*ContainerRunner, error) {
+	cdClient := cfg.ContainerdClient
+	token := cfg.Token
+	launchSpec := cfg.LaunchSpec
+	mdsClient := cfg.MetadataClient
+	tpm := cfg.TPM
+	logger := cfg.Logger
+	serialConsole := cfg.SerialConsole
+	googleClient := cfg.GoogleClient
+	opts := cfg.ClientOpts
+
 	image, err := initImage(ctx, cdClient, launchSpec, token, googleClient)
 	if err != nil {
 		return nil, err
