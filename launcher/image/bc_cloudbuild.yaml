@@ -3,6 +3,7 @@ substitutions:
   '_BASE_IMAGE': ''
   '_BASE_IMAGE_PROJECT': ''
   '_BUCKET_NAME': ''
+  '_COMMIT_SHA': ''
   '_IMAGE_ENV': ''
   '_LOUHI_FLOW_ID': ''
   '_LOUHI_TRIGGER_TOPIC': ''
@@ -286,7 +287,7 @@ steps:
         #     "_HEAD_REPO_URL": "${_HEAD_REPO_URL}"
         #   },
         #   "gitParameters": {
-        #     "commitSha": "${COMMIT_SHA}"
+        #     "commitSha": "${_COMMIT_SHA}"
         #   }
         # }
         # MSG_EOF
@@ -306,7 +307,7 @@ steps:
               "_HEAD_REPO_URL": "${_HEAD_REPO_URL}"
             },
             "gitParameters": {
-              "commitSha": "${COMMIT_SHA}"
+              "commitSha": "${_COMMIT_SHA}"
             }
           }'
 timeout: '3000s'
