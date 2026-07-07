@@ -13,7 +13,7 @@ substitutions:
   '_BC_DEBUG_IMAGE': 'cos-bcdbg-guest-125-19216-395-47'
   '_BC_ACOS_BUCKET': ''
   '_LOUHI_TRIGGER_TOPIC': ''
-  '_LOUHI_FLOW_ID': 'a1fe16b4-97e5-406b-964a-9d5eb2e06fd2'  # Fake ID will be fixed when Louhi setup is complete.
+  '_LOUHI_FLOW_ID': '41685197-997a-4b7b-82ac-c031bdeaddd3'
   '_WSD_CONTAINER_IMAGE_REF': 'us-docker.pkg.dev/confidential-space-images-dev/key-protection-module-images/key-protection-module:705ebd2'
 
 
