@@ -55,7 +55,10 @@ var rcMessage = map[int]string{
 // BuildCommit shows the commit when building the binary, set by -ldflags when building
 var BuildCommit = "dev"
 
+const serialConsoleFile = "/dev/console"
+
 var logger logging.Logger
+var workloadLogger logging.Logger
 var mdsClient *metadata.Client
 var launchSpec spec.LaunchSpec
 
@@ -67,7 +70,8 @@ var start time.Time
 func main() {
 	uptime, err := getUptime()
 	if err != nil {
-		logger.Error(fmt.Sprintf("error reading VM uptime: %v", err))
+		// logger is not initialized yet.
+		log.Default().Printf("error reading VM uptime: %v", err)
 	}
 	// Note the current time to later calculate launch time.
 	start = time.Now()
@@ -96,14 +100,25 @@ func main() {
 		return
 	}
 
-	logger, err = logging.NewLogger(ctx, pool)
+	serialConsole, err := os.OpenFile(serialConsoleFile, os.O_WRONLY, 0)
 	if err != nil {
-		log.Default().Printf("failed to initialize logging: %v", err)
+		log.Default().Printf("Failed to open serial console: %v", err)
 		exitCode = failRC
 		log.Default().Printf("%s, exit code: %d (%s)\n", exitMessage, exitCode, rcMessage[exitCode])
 		return
 	}
-	defer logger.Close()
+	defer serialConsole.Close()
+
+	workloadLogger, err = logging.NewCloudLogger(ctx, pool)
+	if err != nil {
+		log.Default().Printf("failed to initialize cloud logging: %v", err)
+		exitCode = failRC
+		log.Default().Printf("%s, exit code: %d (%s)\n", exitMessage, exitCode, rcMessage[exitCode])
+		return
+	}
+	defer workloadLogger.Close()
+
+	logger = logging.DualLogger(workloadLogger, logging.NewSerialLogger(serialConsole))
 
 	logger.Info("Boot completed", "duration_sec", uptime)
 	logger.Info(welcomeMessage, "build_commit", BuildCommit)
@@ -143,7 +158,7 @@ func main() {
 			logger.Info(exitMessage, "exit_code", exitCode)
 		}
 	}()
-	if err = startLauncher(launchSpec, logger.SerialConsoleFile(), googleClient, clientOpts...); err != nil {
+	if err = startLauncher(launchSpec, serialConsole, googleClient, clientOpts...); err != nil {
 		logger.Error(err.Error())
 	}
 
@@ -253,6 +268,7 @@ func startLauncher(launchSpec spec.LaunchSpec, serialConsole *os.File, googleCli
 		MetadataClient:   mdsClient,
 		TPM:              tpm,
 		Logger:           logger,
+		WorkloadLogger:   workloadLogger,
 		SerialConsole:    serialConsole,
 		GoogleClient:     googleClient,
 		ClientOpts:       clientOpts,

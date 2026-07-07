@@ -56,14 +56,15 @@ import (
 
 // ContainerRunner contains information about the container settings
 type ContainerRunner struct {
-	container     containerd.Container
-	launchSpec    spec.LaunchSpec
-	attestAgent   agent.AttestationAgent
-	logger        logging.Logger
-	gpuAttester   gpu.Attester
-	serialConsole *os.File
-	powerButton   *powerButtonListener // Populated only for a hardened image
-	clientOpts    []option.ClientOption
+	container      containerd.Container
+	launchSpec     spec.LaunchSpec
+	attestAgent    agent.AttestationAgent
+	logger         logging.Logger
+	workloadLogger logging.Logger
+	gpuAttester    gpu.Attester
+	serialConsole  *os.File
+	powerButton    *powerButtonListener // Populated only for a hardened image
+	clientOpts     []option.ClientOption
 }
 
 const tokenFileTmp = ".token.tmp"
@@ -103,6 +104,7 @@ type RunnerConfig struct {
 	MetadataClient   *metadata.Client
 	TPM              io.ReadWriteCloser
 	Logger           logging.Logger
+	WorkloadLogger   logging.Logger
 	SerialConsole    *os.File
 	GoogleClient     *http.Client
 	ClientOpts       []option.ClientOption
@@ -116,10 +118,10 @@ func NewRunner(ctx context.Context, cfg *RunnerConfig) (*ContainerRunner, error)
 	mdsClient := cfg.MetadataClient
 	tpm := cfg.TPM
 	logger := cfg.Logger
+	workloadLogger := cfg.WorkloadLogger
 	serialConsole := cfg.SerialConsole
 	googleClient := cfg.GoogleClient
 	opts := cfg.ClientOpts
-
 	image, err := initImage(ctx, cdClient, launchSpec, token, googleClient)
 	if err != nil {
 		return nil, err
@@ -385,6 +387,7 @@ func NewRunner(ctx context.Context, cfg *RunnerConfig) (*ContainerRunner, error)
 		launchSpec,
 		attestAgent,
 		logger,
+		workloadLogger,
 		nvidiaAttester,
 		serialConsole,
 		powerButton,
@@ -827,8 +830,8 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		streamOpt = cio.WithStreams(nil, w, w)
 		r.logger.Info("Container stdout/stderr will be redirected to serial and Cloud Logging. This may result in performance issues due to slow serial console writes.")
 	case spec.CloudLogging:
-		stdoutWriter := logging.NewInfoWriter(r.logger)
-		stderrWriter := logging.NewErrorWriter(r.logger)
+		stdoutWriter := logging.NewInfoWriter(r.workloadLogger)
+		stderrWriter := logging.NewErrorWriter(r.workloadLogger)
 		streamOpt = cio.WithStreams(nil, stdoutWriter, stderrWriter)
 		r.logger.Info("Container stdout/stderr will be redirected to Cloud Logging with INFO and ERROR severities respectively.")
 	case spec.Serial:
