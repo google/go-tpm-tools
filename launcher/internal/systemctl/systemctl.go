@@ -68,7 +68,7 @@ func runSystemdCmd(cmdFunc func(context.Context, string, string, chan<- string) 
 
 	// Run systemd command in "replace" mode to start the unit and its dependencies,
 	// possibly replacing already queued jobs that conflict with this.
-	if _, err := cmdFunc(context.Background(), unit, "replace", progress); err != nil {
+	if _, err := cmdFunc(ctx, unit, "replace", progress); err != nil {
 		return fmt.Errorf("failed to run systemctl [%s] for unit [%s]: %v", cmd, unit, err)
 	}
 
