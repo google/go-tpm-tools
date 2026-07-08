@@ -223,7 +223,7 @@ steps:
   - name: 'alpine'
     id: 'RenameOutputImage'
     args: ['mv', 'output.bin', 'disk.raw']
-  - name: 'us-docker.pkg.dev/confidential-space-images-dev/cs-tools/measure@sha256:5c2eaaa70438126877de51b44914d3751ba242aed7f4d99d485833629f3958bc'
+  - name: 'us-docker.pkg.dev/confidential-space-images-dev/cs-tools/measure@sha256:dae4766caef4a93c52736feb829bf2c505b7d48ce44d0ecb33e77d61bb4be888'
     id: 'MeasureImage'
     env:
       - 'IMAGE_ENV=${_IMAGE_ENV}'
