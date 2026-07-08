@@ -1,6 +1,11 @@
 #!/bin/bash
 
 main() {
+  # Set IMA policy
+  if [[ -f /usr/share/oem/ima-policy ]]; then
+    cp /usr/share/oem/ima-policy /sys/kernel/security/ima/policy
+  fi
+
   # Configure sysctls.
   sysctl -w kernel.kexec_load_disabled=1
 
@@ -24,12 +29,55 @@ main() {
   # Override default kernel-monitor.json for node-problem-detector.
   cp /usr/share/oem/confidential_space/nodeproblemdetector/kernel-monitor-cs.json /etc/node_problem_detector/kernel-monitor.json
 
+  # Bind-mount /bin/true over the google_set_multiqueue to disable it and prevent random resets to the network configuration.
+  if [[ -f /usr/bin/google_set_multiqueue ]]; then
+    echo "Disabling /usr/bin/google_set_multiqueue via bind mount" > /dev/console
+    mount --bind /bin/true /usr/bin/google_set_multiqueue || true
+  fi
+
+  # Configure GPU, NIC, and Bridge NUMA nodes and rebind drivers.
+  if [[ -f /usr/share/oem/confidential_space/bc_pin_pci_numa_nodes.sh ]]; then
+    /usr/share/oem/confidential_space/bc_pin_pci_numa_nodes.sh
+  fi
+
   # Configure network priority for IDPF using systemd-networkd.
   if [[ -f /usr/share/oem/confidential_space/bc_network_setup.sh ]]; then
     /usr/share/oem/confidential_space/bc_network_setup.sh
   fi
 
   systemctl daemon-reload
+
+  # Install gpu drivers
+  modprobe ib_umad
+  modprobe nvidia
+  modprobe nvidia-uvm
+  modprobe nvidia-modeset
+
+  echo "Running nvidia-persistenced" | tee /dev/console
+  systemd-run -p Type=forking --unit=nvidia-persistenced-transient /opt/nvidia/595.58.03/bin/nvidia-persistenced
+
+  echo "Waiting 1 minute for nvidia-persistenced to initialize..." | tee /dev/console
+  sleep 60s
+
+  if [ -f  /usr/share/oem/confidential_space/gpu_helper.tar ]; then
+      echo "Importing GPU helper image..." | tee /dev/console
+      sudo ctr images import /usr/share/oem/confidential_space/gpu_helper.tar
+  fi
+
+  echo "Running NVLSM and Fabric Manager..." | tee /dev/console
+
+  sudo ctr containers create --privileged --net-host \
+      --mount type=bind,src=/dev,dst=/dev,options=rbind:rw \
+      --mount type=bind,src=/opt/nvidia,dst=/opt/nvidia-host,options=rbind:rw \
+      docker.io/library/guest-gpu-tools:latest \
+      guest-gpu-tools-task
+
+  sudo ctr tasks start -d guest-gpu-tools-task
+  echo "Waiting 2 min for NVLSM and Fabric Manager to initialize..." | tee /dev/console
+  sleep 2m
+
+  echo "GPU daemon ready" | tee /dev/console
+
   systemctl enable container-runner.service
   systemctl enable wsd.service
   systemctl start container-runner.service

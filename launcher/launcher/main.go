@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"os"
 	"os/exec"
 	"regexp"
@@ -27,6 +28,7 @@ import (
 	"github.com/google/go-tpm-tools/launcher/registryauth"
 	"github.com/google/go-tpm-tools/launcher/spec"
 	"github.com/google/go-tpm/legacy/tpm2"
+	"google.golang.org/api/option"
 )
 
 const (
@@ -77,7 +79,24 @@ func main() {
 		os.Exit(exitCode)
 	}()
 
-	logger, err = logging.NewLogger(ctx)
+	googleClient, err := launcher.GoogleHTTPClient()
+	if err != nil {
+		log.Default().Printf("Failed to initialize Google root HTTP client: %v", err)
+		exitCode = failRC
+		log.Default().Printf("%s, exit code: %d (%s)\n", exitMessage, exitCode, rcMessage[exitCode])
+		return
+	}
+	clientOpts := []option.ClientOption{option.WithHTTPClient(googleClient)}
+
+	pool, err := launcher.GoogleCertPool()
+	if err != nil {
+		log.Default().Printf("Failed to load Google root certificates: %v", err)
+		exitCode = failRC
+		log.Default().Printf("%s, exit code: %d (%s)\n", exitMessage, exitCode, rcMessage[exitCode])
+		return
+	}
+
+	logger, err = logging.NewLogger(ctx, pool)
 	if err != nil {
 		log.Default().Printf("failed to initialize logging: %v", err)
 		exitCode = failRC
@@ -124,7 +143,7 @@ func main() {
 			logger.Info(exitMessage, "exit_code", exitCode)
 		}
 	}()
-	if err = startLauncher(launchSpec, logger.SerialConsoleFile()); err != nil {
+	if err = startLauncher(launchSpec, logger.SerialConsoleFile(), googleClient, clientOpts...); err != nil {
 		logger.Error(err.Error())
 	}
 
@@ -184,7 +203,7 @@ func getUptime() (string, error) {
 	return string(split[0]), nil
 }
 
-func startLauncher(launchSpec spec.LaunchSpec, serialConsole *os.File) error {
+func startLauncher(launchSpec spec.LaunchSpec, serialConsole *os.File, googleClient *http.Client, clientOpts ...option.ClientOption) error {
 	logger.Info(fmt.Sprintf("Launch Spec: %+v", launchSpec.LogFriendly()))
 	containerdClient, err := containerd.New(defaults.DefaultAddress)
 	if err != nil {
@@ -207,26 +226,37 @@ func startLauncher(launchSpec spec.LaunchSpec, serialConsole *os.File) error {
 	ctx := namespaces.WithNamespace(context.Background(), namespaces.Default)
 
 	if launchSpec.InstallGpuDriver {
-		installer := gpu.NewDriverInstaller(containerdClient, launchSpec, logger)
-		err = installer.InstallGPUDrivers(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to install gpu drivers: %v", err)
+		if launchSpec.Experiments.BcMode {
+			logger.Info("gpu driver is pre-installed in BC mode")
+		} else {
+			installer := gpu.NewDriverInstaller(containerdClient, launchSpec, logger)
+			err = installer.InstallGPUDrivers(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to install gpu drivers: %v", err)
+			}
 		}
 	} else {
-		// TODO: Remove this when BC GPU installation is supported
-		if !launchSpec.Experiments.BcMode {
-			deviceInfo, _ := deviceinfo.GetGPUTypeInfo()
-			if deviceInfo != deviceinfo.NO_GPU {
-				logger.Error("GPU is attached, tee-install-gpu-driver is not set")
-				return fmt.Errorf("failed to install GPU drivers: tee-install-gpu-driver must be set to true")
-			}
+		deviceInfo, _ := deviceinfo.GetGPUTypeInfo()
+		if deviceInfo != deviceinfo.NO_GPU {
+			logger.Error("GPU is attached, tee-install-gpu-driver is not set")
+			return fmt.Errorf("failed to install GPU drivers: tee-install-gpu-driver must be set to true")
 		}
 	}
 
 	logger.Info("Launch started", "duration_sec", time.Since(start).Seconds())
 
 	// tpm is nil when running in BC mode.
-	r, err := launcher.NewRunner(ctx, containerdClient, token, launchSpec, mdsClient, tpm, logger, serialConsole)
+	r, err := launcher.NewRunner(ctx, &launcher.RunnerConfig{
+		ContainerdClient: containerdClient,
+		Token:            token,
+		LaunchSpec:       launchSpec,
+		MetadataClient:   mdsClient,
+		TPM:              tpm,
+		Logger:           logger,
+		SerialConsole:    serialConsole,
+		GoogleClient:     googleClient,
+		ClientOpts:       clientOpts,
+	})
 	if err != nil {
 		return err
 	}
