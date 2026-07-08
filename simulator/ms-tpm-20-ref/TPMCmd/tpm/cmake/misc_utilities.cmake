@@ -1,0 +1,18 @@
+function(print_generator_info)
+    message(STATUS "GENERATOR: ${CMAKE_GENERATOR}")
+    message(STATUS "Compiler ID is: [${CMAKE_C_COMPILER_ID}].")
+    if (CMAKE_GENERATOR STREQUAL "MSVC")
+        message(STATUS "- VS: ${CMAKE_VS_PLATFORM_NAME}; VS_TOOLSET: ${CMAKE_VS_PLATFORM_TOOLSET}")
+    endif()
+endfunction()
+
+function(print_project_info)
+    message("${PROJECT_NAME} start")
+    message("GENERATOR: ${CMAKE_GENERATOR}")
+    message("- VS: ${CMAKE_VS_PLATFORM_NAME}; VS_TOOLSET: ${CMAKE_VS_PLATFORM_TOOLSET}")
+endfunction()
+
+function(print_architecture_size)
+    math(EXPR PlatformArchitecture "8 * ${CMAKE_SIZEOF_VOID_P}")
+    message("- PlatformArchitecture: ${PlatformArchitecture}bit")
+endfunction()

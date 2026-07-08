@@ -1,0 +1,10 @@
+
+###
+@PACKAGE_INIT@
+###
+set_and_check(@PROJECT_NAME@_INCLUDE_DIR "@PACKAGE_CMAKE_INSTALL_INCLUDEDIR@")
+set_and_check(@PROJECT_NAME@_LIB_DIR "@PACKAGE_CMAKE_INSTALL_LIBDIR@")
+
+include("${CMAKE_CURRENT_LIST_DIR}/@PACKAGE_PROJECT_NAME@InstalledTargets.cmake")
+
+check_required_components(@PACKAGE_PROJECT_NAME@)

@@ -1,37 +1,3 @@
-/* Microsoft Reference Implementation for TPM 2.0
- *
- *  The copyright in this software is being made available under the BSD License,
- *  included below. This software may be subject to other third party and
- *  contributor rights, including patent rights, and no such rights are granted
- *  under this license.
- *
- *  Copyright (c) Microsoft Corporation
- *
- *  All rights reserved.
- *
- *  BSD License
- *
- *  Redistribution and use in source and binary forms, with or without modification,
- *  are permitted provided that the following conditions are met:
- *
- *  Redistributions of source code must retain the above copyright notice, this list
- *  of conditions and the following disclaimer.
- *
- *  Redistributions in binary form must reproduce the above copyright notice, this
- *  list of conditions and the following disclaimer in the documentation and/or
- *  other materials provided with the distribution.
- *
- *  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS ""AS IS""
- *  AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- *  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
- *  DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
- *  ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
- *  (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- *  LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
- *  ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- *  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
- *  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- */
 //** Introduction
 // The functions in this file are designed to support self-test of cryptographic
 // functions in the TPM. The TPM allows the user to decide whether to run self-test
@@ -52,12 +18,11 @@
 
 //*** RunSelfTest()
 // Local function to run self-test
-static TPM_RC
-CryptRunSelfTests(
-    ALGORITHM_VECTOR    *toTest         // IN: the vector of the algorithms to test
-    )
+static TPM_RC CryptRunSelfTests(
+    ALGORITHM_VECTOR* toTest  // IN: the vector of the algorithms to test
+)
 {
-    TPM_ALG_ID           alg;
+    TPM_ALG_ID alg;
 
     // For each of the algorithms that are in the toTestVecor, need to run a
     // test
@@ -65,7 +30,7 @@ CryptRunSelfTests(
     {
         if(TEST_BIT(alg, *toTest))
         {
-            TPM_RC          result = CryptTestAlgorithm(alg, toTest);
+            TPM_RC result = CryptTestAlgorithm(alg, toTest);
             if(result != TPM_RC_SUCCESS)
                 return result;
         }
@@ -88,24 +53,32 @@ CryptRunSelfTests(
 //      TPM_RC_CANCELED        if the command is canceled
 LIB_EXPORT
 TPM_RC
-CryptSelfTest(
-    TPMI_YES_NO      fullTest       // IN: if full test is required
-    )
+CryptSelfTest(TPMI_YES_NO fullTest  // IN: if full test is required
+)
 {
-#if SIMULATION
-    if(g_forceFailureMode)
-        FAIL(FATAL_ERROR_FORCED);
-#endif
+    ALGORITHM_VECTOR toTestVector = {0};
 
     // If the caller requested a full test, then reset the to test vector so that
     // all the tests will be run
     if(fullTest == YES)
     {
-        MemoryCopy(g_toTest,
-                   g_implementedAlgorithms,
-                   sizeof(g_toTest));
+        MemoryCopy(g_toTest, g_implementedAlgorithms, sizeof(g_toTest));
     }
-    return CryptRunSelfTests(&g_toTest);
+
+    // Some platforms may have alternative crypto libraries and self-test capabilities,
+    // so allow the platform to return the list of tests it wants the TPM code to run
+    // directly. We assume the platform will make alternative arrangements for any
+    // tests it does not return here, consistent with that platform's compliance goals.
+    //
+    // A platform may provide different lists at different times and we leave the
+    // g_toTest flags set for any tests that are not requested by the platform.
+    //
+    // Note that a crypto library may also perform additional self-tests through other
+    // means and/or in response to g_toTest at other points in the code.
+    MemoryCopy(toTestVector, g_toTest, sizeof(toTestVector));
+    _plat_GetEnabledSelfTest(fullTest, toTestVector, sizeof(toTestVector));
+
+    return CryptRunSelfTests(&toTestVector);
 }
 
 //*** CryptIncrementalSelfTest()
@@ -121,16 +94,15 @@ CryptSelfTest(
 //      TPM_RC_TESTING          if toTest list is not empty
 //      TPM_RC_VALUE            an algorithm in the toTest list is not implemented
 TPM_RC
-CryptIncrementalSelfTest(
-    TPML_ALG            *toTest,        // IN: list of algorithms to be tested
-    TPML_ALG            *toDoList       // OUT: list of algorithms needing test
-    )
+CryptIncrementalSelfTest(TPML_ALG* toTest,   // IN: list of algorithms to be tested
+                         TPML_ALG* toDoList  // OUT: list of algorithms needing test
+)
 {
-    ALGORITHM_VECTOR     toTestVector = {0};
-    TPM_ALG_ID           alg;
-    UINT32               i;
+    ALGORITHM_VECTOR toTestVector = {0};
+    TPM_ALG_ID       alg;
+    UINT32           i;
 
-    pAssert(toTest != NULL && toDoList != NULL);
+    pAssert_RC(toTest != NULL && toDoList != NULL);
     if(toTest->count > 0)
     {
         // Transcribe the toTest list into the toTestVector
@@ -151,7 +123,7 @@ CryptIncrementalSelfTest(
     toDoList->count = 0;
 
     for(alg = TPM_ALG_FIRST;
-    toDoList->count < MAX_ALG_LIST_SIZE && alg <= TPM_ALG_LAST;
+        toDoList->count < MAX_ALG_LIST_SIZE && alg <= TPM_ALG_LAST;
         alg++)
     {
         if(TEST_BIT(alg, g_toTest))
@@ -164,10 +136,7 @@ CryptIncrementalSelfTest(
 // This function will initialize the data structures for testing all the
 // algorithms. This should not be called unless CryptAlgsSetImplemented() has
 // been called
-void
-CryptInitializeToTest(
-    void
-    )
+void CryptInitializeToTest(void)
 {
     // Indicate that nothing has been tested
     memset(&g_cryptoSelfTestState, 0, sizeof(g_cryptoSelfTestState));
@@ -178,7 +147,7 @@ CryptInitializeToTest(
     // Setting the algorithm to null causes the test function to just clear
     // out any algorithms for which there is no test.
     CryptTestAlgorithm(TPM_ALG_ERROR, &g_toTest);
-    
+
     return;
 }
 
@@ -196,13 +165,10 @@ CryptInitializeToTest(
 //      TPM_RC_CANCELED     test was canceled
 LIB_EXPORT
 TPM_RC
-CryptTestAlgorithm(
-    TPM_ALG_ID           alg,
-    ALGORITHM_VECTOR    *toTest
-    )
+CryptTestAlgorithm(TPM_ALG_ID alg, ALGORITHM_VECTOR* toTest)
 {
-    TPM_RC                   result;
-#if SELF_TEST
+    TPM_RC result;
+#if ENABLE_SELF_TESTS
     result = TestAlgorithm(alg, toTest);
 #else
     // If this is an attempt to determine the algorithms for which there is a

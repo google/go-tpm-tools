@@ -51,6 +51,7 @@
 
 #include "PlatformData.h"
 #include "Platform_fp.h"
+#include <platform_interface/tpm_to_platform_interface.h>
 
 unsigned int s_adjustRate;
 bool s_timerReset;
@@ -132,43 +133,42 @@ uint64_t _plat__TimerRead() {
   return s_tpmTime;
 }
 
-bool _plat__TimerWasReset() {
-  bool retVal = s_timerReset;
+int _plat__TimerWasReset(void) {
+  int retVal = s_timerReset;
   s_timerReset = false;
   return retVal;
 }
 
-void _plat__ClockAdjustRate(int adjust) {
-  // We expect the caller should only use a fixed set of constant values to
-  // adjust the rate
-  switch (adjust) {
-    case CLOCK_ADJUST_COARSE:
-      s_adjustRate += CLOCK_ADJUST_COARSE;
+void _plat__ClockRateAdjust(_plat__ClockAdjustStep adjustment) {
+  int adjust = 0;
+  switch (adjustment) {
+    case PLAT_TPM_CLOCK_ADJUST_COARSE_SLOWER:
+      adjust = -CLOCK_ADJUST_COARSE;
       break;
-    case -CLOCK_ADJUST_COARSE:
-      s_adjustRate -= CLOCK_ADJUST_COARSE;
+    case PLAT_TPM_CLOCK_ADJUST_MEDIUM_SLOWER:
+      adjust = -CLOCK_ADJUST_MEDIUM;
       break;
-    case CLOCK_ADJUST_MEDIUM:
-      s_adjustRate += CLOCK_ADJUST_MEDIUM;
+    case PLAT_TPM_CLOCK_ADJUST_FINE_SLOWER:
+      adjust = -CLOCK_ADJUST_FINE;
       break;
-    case -CLOCK_ADJUST_MEDIUM:
-      s_adjustRate -= CLOCK_ADJUST_MEDIUM;
+    case PLAT_TPM_CLOCK_ADJUST_FINE_FASTER:
+      adjust = CLOCK_ADJUST_FINE;
       break;
-    case CLOCK_ADJUST_FINE:
-      s_adjustRate += CLOCK_ADJUST_FINE;
+    case PLAT_TPM_CLOCK_ADJUST_MEDIUM_FASTER:
+      adjust = CLOCK_ADJUST_MEDIUM;
       break;
-    case -CLOCK_ADJUST_FINE:
-      s_adjustRate -= CLOCK_ADJUST_FINE;
+    case PLAT_TPM_CLOCK_ADJUST_COARSE_FASTER:
+      adjust = CLOCK_ADJUST_COARSE;
       break;
     default:
-      // ignore any other values;
       break;
   }
+  s_adjustRate += adjust;
 
   if (s_adjustRate > (CLOCK_NOMINAL + CLOCK_ADJUST_LIMIT))
     s_adjustRate = CLOCK_NOMINAL + CLOCK_ADJUST_LIMIT;
   if (s_adjustRate < (CLOCK_NOMINAL - CLOCK_ADJUST_LIMIT))
     s_adjustRate = CLOCK_NOMINAL - CLOCK_ADJUST_LIMIT;
-
-  return;
 }
+
+int _plat__TimerWasStopped(void) { return _plat__TimerWasReset(); }

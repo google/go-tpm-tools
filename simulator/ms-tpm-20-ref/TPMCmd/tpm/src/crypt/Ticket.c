@@ -1,37 +1,3 @@
-/* Microsoft Reference Implementation for TPM 2.0
- *
- *  The copyright in this software is being made available under the BSD License,
- *  included below. This software may be subject to other third party and
- *  contributor rights, including patent rights, and no such rights are granted
- *  under this license.
- *
- *  Copyright (c) Microsoft Corporation
- *
- *  All rights reserved.
- *
- *  BSD License
- *
- *  Redistribution and use in source and binary forms, with or without modification,
- *  are permitted provided that the following conditions are met:
- *
- *  Redistributions of source code must retain the above copyright notice, this list
- *  of conditions and the following disclaimer.
- *
- *  Redistributions in binary form must reproduce the above copyright notice, this
- *  list of conditions and the following disclaimer in the documentation and/or
- *  other materials provided with the distribution.
- *
- *  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS ""AS IS""
- *  AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- *  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
- *  DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
- *  ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
- *  (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- *  LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
- *  ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- *  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
- *  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- */
 //** Introduction
 /*
     This clause contains the functions used for ticket computations.
@@ -39,6 +5,7 @@
 
 //** Includes
 #include "Tpm.h"
+#include "Marshal.h"
 
 //** Functions
 
@@ -50,21 +17,18 @@
 //  Return Type: BOOL
 //      TRUE(1)         safe to produce ticket
 //      FALSE(0)        not safe to produce ticket
-BOOL
-TicketIsSafe(
-    TPM2B           *buffer
-    )
+BOOL TicketIsSafe(TPM2B* buffer)
 {
-    TPM_GENERATED   valueToCompare = TPM_GENERATED_VALUE;
+    TPM_CONSTANTS32 valueToCompare = TPM_GENERATED_VALUE;
     BYTE            bufferToCompare[sizeof(valueToCompare)];
-    BYTE            *marshalBuffer;
-//
+    BYTE*           marshalBuffer;
+    //
     // If the buffer size is less than the size of TPM_GENERATED_VALUE, assume
     // it is not safe to generate a ticket
     if(buffer->size < sizeof(valueToCompare))
         return FALSE;
     marshalBuffer = bufferToCompare;
-    TPM_GENERATED_Marshal(&valueToCompare, &marshalBuffer, NULL);
+    TPM_CONSTANTS32_Marshal(&valueToCompare, &marshalBuffer, NULL);
     if(MemoryEqual(buffer->buffer, bufferToCompare, sizeof(valueToCompare)))
         return FALSE;
     else
@@ -84,42 +48,46 @@ TicketIsSafe(
 //      digest              the signed digest
 //      keyName             the Name of the key that signed digest
 */
-void
-TicketComputeVerified(
-    TPMI_RH_HIERARCHY    hierarchy,     // IN: hierarchy constant for ticket
-    TPM2B_DIGEST        *digest,        // IN: digest
-    TPM2B_NAME          *keyName,       // IN: name of key that signed the values
-    TPMT_TK_VERIFIED    *ticket         // OUT: verified ticket
-    )
+TPM_RC TicketComputeVerified(
+    TPMI_RH_HIERARCHY hierarchy,  // IN: hierarchy constant for ticket
+    TPM2B_DIGEST*     digest,     // IN: digest
+    TPM2B_NAME*       keyName,    // IN: name of key that signed the values
+    TPMT_TK_VERIFIED* ticket      // OUT: verified ticket
+)
 {
-    TPM2B_PROOF         *proof;
-    HMAC_STATE           hmacState;
-//
+    TPM_RC      result = TPM_RC_SUCCESS;
+    TPM2B_PROOF proof;
+    HMAC_STATE  hmacState;
+    //
     // Fill in ticket fields
-    ticket->tag = TPM_ST_VERIFIED;
+    ticket->tag       = TPM_ST_VERIFIED;
     ticket->hierarchy = hierarchy;
-    proof = HierarchyGetProof(hierarchy);
+    result            = HierarchyGetProof(hierarchy, &proof);
+    if(result != TPM_RC_SUCCESS)
+        return result;
 
     // Start HMAC using the proof value of the hierarchy as the HMAC key
-    ticket->digest.t.size = CryptHmacStart2B(&hmacState, CONTEXT_INTEGRITY_HASH_ALG,
-                                             &proof->b);
-        //  TPM_ST_VERIFIED
+    ticket->digest.t.size =
+        CryptHmacStart2B(&hmacState, CONTEXT_INTEGRITY_HASH_ALG, &proof.b);
+    MemorySet(proof.b.buffer, 0, proof.b.size);
+
+    //  TPM_ST_VERIFIED
     CryptDigestUpdateInt(&hmacState, sizeof(TPM_ST), ticket->tag);
-        //  digest
+    //  digest
     CryptDigestUpdate2B(&hmacState.hashState, &digest->b);
-        // key name
+    // key name
     CryptDigestUpdate2B(&hmacState.hashState, &keyName->b);
-        // done
+    // done
     CryptHmacEnd2B(&hmacState, &ticket->digest.b);
 
-    return;
+    return TPM_RC_SUCCESS;
 }
 
 //*** TicketComputeAuth()
 // This function creates a TPMT_TK_AUTH ticket.
 /*(See part 2 specification)
 //  The ticket is computed as:
-//      HMAC(proof, (type || timeout || timeEpoch || cpHash 
+//      HMAC(proof, (type || timeout || timeEpoch || cpHash
 //                        || policyRef || keyName))
 //  where:
 //      HMAC()      an HMAC using the hash of proof
@@ -133,56 +101,59 @@ TicketComputeVerified(
 //      policyRef   optional reference to a policy value
 //      keyName name of the key that signed the authorization
 */
-void
-TicketComputeAuth(
-    TPM_ST               type,          // IN: the type of ticket.
-    TPMI_RH_HIERARCHY    hierarchy,     // IN: hierarchy constant for ticket
-    UINT64               timeout,       // IN: timeout
-    BOOL                 expiresOnReset,// IN: flag to indicate if ticket expires on
-                                        //      TPM Reset
-    TPM2B_DIGEST        *cpHashA,       // IN: input cpHashA
-    TPM2B_NONCE         *policyRef,     // IN: input policyRef
-    TPM2B_NAME          *entityName,    // IN: name of entity
-    TPMT_TK_AUTH        *ticket         // OUT: Created ticket
-    )
+TPM_RC TicketComputeAuth(
+    TPM_ST            type,            // IN: the type of ticket.
+    TPMI_RH_HIERARCHY hierarchy,       // IN: hierarchy constant for ticket
+    UINT64            timeout,         // IN: timeout
+    BOOL              expiresOnReset,  // IN: flag to indicate if ticket expires on
+                                       //      TPM Reset
+    TPM2B_DIGEST* cpHashA,             // IN: input cpHashA
+    TPM2B_NONCE*  policyRef,           // IN: input policyRef
+    TPM2B_NAME*   entityName,          // IN: name of entity
+    TPMT_TK_AUTH* ticket               // OUT: Created ticket
+)
 {
-    TPM2B_PROOF         *proof;
-    HMAC_STATE           hmacState;
-//
+    TPM_RC      result = TPM_RC_SUCCESS;
+    TPM2B_PROOF proof;
+    HMAC_STATE  hmacState;
+    //
     // Get proper proof
-    proof = HierarchyGetProof(hierarchy);
+    result = HierarchyGetProof(hierarchy, &proof);
+    if(result != TPM_RC_SUCCESS)
+        return result;
 
     // Fill in ticket fields
-    ticket->tag = type;
+    ticket->tag       = type;
     ticket->hierarchy = hierarchy;
 
     // Start HMAC with hierarchy proof as the HMAC key
-    ticket->digest.t.size = CryptHmacStart2B(&hmacState, CONTEXT_INTEGRITY_HASH_ALG,
-                                             &proof->b);
-        //  TPM_ST_AUTH_SECRET or TPM_ST_AUTH_SIGNED,
+    ticket->digest.t.size =
+        CryptHmacStart2B(&hmacState, CONTEXT_INTEGRITY_HASH_ALG, &proof.b);
+    MemorySet(proof.b.buffer, 0, proof.b.size);
+
+    //  TPM_ST_AUTH_SECRET or TPM_ST_AUTH_SIGNED,
     CryptDigestUpdateInt(&hmacState, sizeof(UINT16), ticket->tag);
     // cpHash
     CryptDigestUpdate2B(&hmacState.hashState, &cpHashA->b);
-        //  policyRef
+    //  policyRef
     CryptDigestUpdate2B(&hmacState.hashState, &policyRef->b);
-        //  keyName
+    //  keyName
     CryptDigestUpdate2B(&hmacState.hashState, &entityName->b);
-        //  timeout
+    //  timeout
     CryptDigestUpdateInt(&hmacState, sizeof(timeout), timeout);
     if(timeout != 0)
     {
-            //  epoch
-        CryptDigestUpdateInt(&hmacState.hashState, sizeof(CLOCK_NONCE), 
-                             g_timeEpoch);
-            // reset count
+        //  epoch
+        CryptDigestUpdateInt(&hmacState.hashState, sizeof(CLOCK_NONCE), g_timeEpoch);
+        // reset count
         if(expiresOnReset)
-            CryptDigestUpdateInt(&hmacState.hashState, sizeof(gp.totalResetCount),
-                                 gp.totalResetCount);
+            CryptDigestUpdateInt(
+                &hmacState.hashState, sizeof(gp.totalResetCount), gp.totalResetCount);
     }
-        // done
+    // done
     CryptHmacEnd2B(&hmacState, &ticket->digest.b);
 
-    return;
+    return TPM_RC_SUCCESS;
 }
 
 //*** TicketComputeHashCheck()
@@ -197,37 +168,41 @@ TicketComputeAuth(
 //              a value to differentiate the tickets
 //      digest  the digest of the data
 */
-void
-TicketComputeHashCheck(
-    TPMI_RH_HIERARCHY    hierarchy,     // IN: hierarchy constant for ticket
-    TPM_ALG_ID           hashAlg,       // IN: the hash algorithm for 'digest'
-    TPM2B_DIGEST        *digest,        // IN: input digest
-    TPMT_TK_HASHCHECK   *ticket         // OUT: Created ticket
-    )
+TPM_RC TicketComputeHashCheck(
+    TPMI_RH_HIERARCHY  hierarchy,  // IN: hierarchy constant for ticket
+    TPM_ALG_ID         hashAlg,    // IN: the hash algorithm for 'digest'
+    TPM2B_DIGEST*      digest,     // IN: input digest
+    TPMT_TK_HASHCHECK* ticket      // OUT: Created ticket
+)
 {
-    TPM2B_PROOF         *proof;
-    HMAC_STATE           hmacState;
-//
+    TPM_RC      result = TPM_RC_SUCCESS;
+    TPM2B_PROOF proof;
+    HMAC_STATE  hmacState;
+    //
     // Get proper proof
-    proof = HierarchyGetProof(hierarchy);
+    result = HierarchyGetProof(hierarchy, &proof);
+    if(result != TPM_RC_SUCCESS)
+        return result;
 
     // Fill in ticket fields
-    ticket->tag = TPM_ST_HASHCHECK;
+    ticket->tag       = TPM_ST_HASHCHECK;
     ticket->hierarchy = hierarchy;
 
     // Start HMAC using hierarchy proof as HMAC key
-    ticket->digest.t.size = CryptHmacStart2B(&hmacState, CONTEXT_INTEGRITY_HASH_ALG,
-                                             &proof->b);
-        //  TPM_ST_HASHCHECK
+    ticket->digest.t.size =
+        CryptHmacStart2B(&hmacState, CONTEXT_INTEGRITY_HASH_ALG, &proof.b);
+    MemorySet(proof.b.buffer, 0, proof.b.size);
+
+    //  TPM_ST_HASHCHECK
     CryptDigestUpdateInt(&hmacState, sizeof(TPM_ST), ticket->tag);
-        //  hash algorithm
+    //  hash algorithm
     CryptDigestUpdateInt(&hmacState, sizeof(hashAlg), hashAlg);
-        //  digest
+    //  digest
     CryptDigestUpdate2B(&hmacState.hashState, &digest->b);
-        // done
+    // done
     CryptHmacEnd2B(&hmacState, &ticket->digest.b);
 
-    return;
+    return TPM_RC_SUCCESS;
 }
 
 //*** TicketComputeCreation()
@@ -242,36 +217,39 @@ TicketComputeHashCheck(
 //  Name    the Name of the object to which the creation data is to be associated
 //  TPMS_CREATION_DATA  the creation data structure associated with Name
 */
-void
-TicketComputeCreation(
-    TPMI_RH_HIERARCHY    hierarchy,     // IN: hierarchy for ticket
-    TPM2B_NAME          *name,          // IN: object name
-    TPM2B_DIGEST        *creation,      // IN: creation hash
-    TPMT_TK_CREATION    *ticket         // OUT: created ticket
-    )
+TPM_RC TicketComputeCreation(TPMI_RH_HIERARCHY hierarchy,  // IN: hierarchy for ticket
+                             TPM2B_NAME*       name,       // IN: object name
+                             TPM2B_DIGEST*     creation,   // IN: creation hash
+                             TPMT_TK_CREATION* ticket      // OUT: created ticket
+)
 {
-    TPM2B_PROOF         *proof;
-    HMAC_STATE           hmacState;
+    TPM_RC      result = TPM_RC_SUCCESS;
+    TPM2B_PROOF proof;
+    HMAC_STATE  hmacState;
 
     // Get proper proof
-    proof = HierarchyGetProof(hierarchy);
+    result = HierarchyGetProof(hierarchy, &proof);
+    if(result != TPM_RC_SUCCESS)
+        return result;
 
     // Fill in ticket fields
-    ticket->tag = TPM_ST_CREATION;
+    ticket->tag       = TPM_ST_CREATION;
     ticket->hierarchy = hierarchy;
 
     // Start HMAC using hierarchy proof as HMAC key
-    ticket->digest.t.size = CryptHmacStart2B(&hmacState, CONTEXT_INTEGRITY_HASH_ALG,
-                                             &proof->b);
-        //  TPM_ST_CREATION
+    ticket->digest.t.size =
+        CryptHmacStart2B(&hmacState, CONTEXT_INTEGRITY_HASH_ALG, &proof.b);
+    MemorySet(proof.b.buffer, 0, proof.b.size);
+
+    //  TPM_ST_CREATION
     CryptDigestUpdateInt(&hmacState, sizeof(TPM_ST), ticket->tag);
-        //  name if provided
+    //  name if provided
     if(name != NULL)
         CryptDigestUpdate2B(&hmacState.hashState, &name->b);
-        //  creation hash
+    //  creation hash
     CryptDigestUpdate2B(&hmacState.hashState, &creation->b);
-        // Done
+    // Done
     CryptHmacEnd2B(&hmacState, &ticket->digest.b);
 
-    return;
+    return TPM_RC_SUCCESS;
 }

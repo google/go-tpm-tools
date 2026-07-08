@@ -1,10 +1,9 @@
-# Go bindings to the Microsoft TPM2 Simulator
+# Go bindings to the TPM2 Simulator
 
-Microsoft maintains the reference implementation of the TPM2 spec at:
-https://github.com/Microsoft/ms-tpm-20-ref/.
+The reference implementation of the TPM2 spec is maintained by the Trusted Computing Group (TCG) at:
+https://github.com/TrustedComputingGroup/TPM.
 
-The Microsoft code used here is actually
-[a fork of the upstream source](https://github.com/josephlr/ms-tpm-20-ref/tree/google).
+The code used here is actually [a fork of the upstream source](https://github.com/google/TPM).
 It is vendored at `simulator/ms-tpm-20-ref` to maintain compatiblity with
 `go get`. Building the simulator requires the OpenSSL headers to be installed.
 This can be done with:

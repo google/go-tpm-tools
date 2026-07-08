@@ -1,40 +1,6 @@
-/* Microsoft Reference Implementation for TPM 2.0
- *
- *  The copyright in this software is being made available under the BSD License,
- *  included below. This software may be subject to other third party and
- *  contributor rights, including patent rights, and no such rights are granted
- *  under this license.
- *
- *  Copyright (c) Microsoft Corporation
- *
- *  All rights reserved.
- *
- *  BSD License
- *
- *  Redistribution and use in source and binary forms, with or without modification,
- *  are permitted provided that the following conditions are met:
- *
- *  Redistributions of source code must retain the above copyright notice, this list
- *  of conditions and the following disclaimer.
- *
- *  Redistributions in binary form must reproduce the above copyright notice, this
- *  list of conditions and the following disclaimer in the documentation and/or
- *  other materials provided with the distribution.
- *
- *  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS ""AS IS""
- *  AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- *  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
- *  DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
- *  ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
- *  (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- *  LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
- *  ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- *  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
- *  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- */
 //** Introduction
 
-// The NV memory is divided into two area: dynamic space for user defined NV
+// The NV memory is divided into two areas: dynamic space for user defined NV
 // indexes and evict objects, and reserved space for TPM persistent and state save
 // data.
 //
@@ -63,19 +29,19 @@
 // matches the layout of RAM. In normal operation. The RAM data is also copied on
 // any orderly shutdown. In normal operation, the only other reason for writing
 // to the backing store for RAM is when a counter is first written (TPMA_NV_WRITTEN
-// changes from CLEAR to SET) or when a counter "rolls over."
+// changes from CLEAR to SET) or when a counter ""rolls over"".
 //
 // Static space contains items that are individually modifiable. The values are in
-// the 'gp' PERSISTEND_DATA structure in RAM and mapped to locations in NV.
+// the 'gp' PERSISTENT_DATA structure in RAM and mapped to locations in NV.
 //
 
 //** Includes, Defines and Data Definitions
 #define NV_C
 #include "Tpm.h"
-#include "PlatformData.h"
+#include "Marshal.h"
+#include <platform_interface/prototypes/platform_virtual_nv_fp.h>
 
 //** Local Functions
-
 
 //*** NvNext()
 //  This function provides a method to traverse every data entry in NV dynamic
@@ -86,18 +52,16 @@
 //  value in 'iter' would be adjusted pointing to the next element in
 //  traversal.  If there is no next element, 'iter' value would be 0.
 //  This function returns the address of the 'data entry' pointed by the
-//  'iter'.  If there is no more element in the set, a 0 value is returned
+//  'iter'.  If there are no more elements in the set, a 0 value is returned
 //  indicating the end of traversal.
 //
-static NV_REF
-NvNext(
-    NV_REF          *iter,          // IN/OUT: the list iterator
-    TPM_HANDLE      *handle         // OUT: the handle of the next item.
-    )
+static NV_REF NvNext(NV_REF*     iter,   // IN/OUT: the list iterator
+                     TPM_HANDLE* handle  // OUT: the handle of the next item.
+)
 {
-    NV_REF               currentAddr;
-    NV_ENTRY_HEADER      header;
-//
+    NV_REF          currentAddr;
+    NV_ENTRY_HEADER header;
+    //
     // If iterator is at the beginning of list
     if(*iter == NV_REF_INIT)
     {
@@ -122,22 +86,20 @@ NvNext(
     return currentAddr;
 }
 
-
 //*** NvNextByType()
 // This function returns a reference to the next NV entry of the desired type
 //  Return Type: NV_REF
 //      0               end of list
 //      != 0            the next entry of the indicated type
-static NV_REF
-NvNextByType(
-    TPM_HANDLE      *handle,        // OUT: the handle of the found type
-    NV_REF          *iter,          // IN: the iterator
-    TPM_HT           type           // IN: the handle type to look for
-    )
+static NV_REF NvNextByType(
+    TPM_HANDLE* handle,  // OUT: the handle of the found type or 0
+    NV_REF*     iter,    // IN: the iterator
+    TPM_HT      type     // IN: the handle type to look for
+)
 {
-    NV_REF           addr;
-    TPM_HANDLE       nvHandle;
-//
+    NV_REF     addr;
+    TPM_HANDLE nvHandle = 0;
+    //
     while((addr = NvNext(iter, &nvHandle)) != 0)
     {
         // addr: the address of the location containing the handle of the value
@@ -156,36 +118,29 @@ NvNextByType(
 //  Return Type: NV_REF
 //      0               end of list
 //      != 0            the next reference
-#define NvNextIndex(handle, iter)                   \
-    NvNextByType(handle, iter, TPM_HT_NV_INDEX)
+#define NvNextIndex(handle, iter) NvNextByType(handle, iter, TPM_HT_NV_INDEX)
 
 //*** NvNextEvict()
 // This function returns the offset in NV of the next evict object entry.  A value
 // of 0 indicates the end of the list.
-#define NvNextEvict(handle, iter)                   \
-    NvNextByType(handle, iter, TPM_HT_PERSISTENT)
+#define NvNextEvict(handle, iter) NvNextByType(handle, iter, TPM_HT_PERSISTENT)
 
 //*** NvGetEnd()
 // Function to find the end of the NV dynamic data list
-static NV_REF
-NvGetEnd(
-    void
-    )
+static NV_REF NvGetEnd(void)
 {
-    NV_REF          iter = NV_REF_INIT;
-    NV_REF          currentAddr;
-//
+    NV_REF iter = NV_REF_INIT;
+    NV_REF currentAddr;
+    //
     // Scan until the next address is 0
-    while((currentAddr = NvNext(&iter, NULL)) != 0);
+    while((currentAddr = NvNext(&iter, NULL)) != 0)
+        ;
     return iter;
 }
 
 //*** NvGetFreeBytes
 // This function returns the number of free octets in NV space.
-static UINT32
-NvGetFreeBytes(
-    void
-    )
+static UINT32 NvGetFreeBytes(void)
 {
     // This does not have an overflow issue because NvGetEnd() cannot return a value
     // that is larger than s_evictNvEnd. This is because there is always a 'stop'
@@ -199,20 +154,18 @@ NvGetFreeBytes(
 //  Return Type: BOOL
 //      TRUE(1)         space available
 //      FALSE(0)        no enough space
-static BOOL
-NvTestSpace(
-    UINT32           size,          // IN: size of the entity to be added
-    BOOL             isIndex,       // IN: TRUE if the entity is an index
-    BOOL             isCounter      // IN: TRUE if the index is a counter
-    )
+static BOOL NvTestSpace(UINT32 size,      // IN: size of the entity to be added
+                        BOOL   isIndex,   // IN: TRUE if the entity is an index
+                        BOOL   isCounter  // IN: TRUE if the index is a counter
+)
 {
-    UINT32      remainBytes = NvGetFreeBytes();
-    UINT32      reserved = sizeof(UINT32)       // size of the forward pointer
-        + sizeof(NV_LIST_TERMINATOR);
+    UINT32 remainBytes = NvGetFreeBytes();
+    UINT32 reserved    = sizeof(UINT32)  // size of the forward pointer
+                      + sizeof(NV_LIST_TERMINATOR);
 //
-    // Do a compile time sanity check on the setting for NV_MEMORY_SIZE
+// Do a compile time sanity check on the setting for NV_MEMORY_SIZE
 #if NV_MEMORY_SIZE < 1024
-#error "NV_MEMORY_SIZE probably isn't large enough"
+#  error "NV_MEMORY_SIZE probably isn't large enough"
 #endif
 
     // For NV Index, need to make sure that we do not allocate an Index if this
@@ -221,7 +174,7 @@ NvTestSpace(
     if(isIndex)
     {
         // Get the number of persistent objects allocated
-        UINT32      persistentNum = NvCapGetPersistentNumber();
+        UINT32 persistentNum = NvCapGetPersistentNumber();
 
         // If we have not allocated the requisite number of evict objects, then we
         // need to reserve space for them.
@@ -236,7 +189,7 @@ NvTestSpace(
     if(!isIndex || !isCounter)
     {
         // Get the number of counters
-        UINT32      counterNum = NvCapGetCounterNumber();
+        UINT32 counterNum = NvCapGetCounterNumber();
 
         // If the required number of counters have not been allocated, reserved
         // space for the extra needed counters
@@ -245,34 +198,40 @@ NvTestSpace(
     }
     // Check that the requested allocation will fit after making sure that there
     // will be no chance of overflow
-    return ((reserved < remainBytes)
-            && (size <= remainBytes)
+    return ((reserved < remainBytes) && (size <= remainBytes)
             && (size + reserved <= remainBytes));
 }
 
 //*** NvWriteNvListEnd()
 // Function to write the list terminator.
 NV_REF
-NvWriteNvListEnd(
-    NV_REF           end
-    )
+NvWriteNvListEnd(NV_REF end)
 {
     // Marker is initialized with zeros
-    BYTE        listEndMarker[sizeof(NV_LIST_TERMINATOR)] = {0};
-    UINT64      maxCount = NvReadMaxCount();
-//
+    BYTE   listEndMarker[sizeof(NV_LIST_TERMINATOR)] = {0};
+    UINT64 maxCount                                  = NvReadMaxCount();
+    //
     // This is a constant check that can be resolved at compile time.
-    cAssert(sizeof(UINT64) <= sizeof(NV_LIST_TERMINATOR) - sizeof(UINT32));
+    MUST_BE(sizeof(UINT64) <= sizeof(NV_LIST_TERMINATOR) - sizeof(UINT32));
 
     // Copy the maxCount value to the marker buffer
     MemoryCopy(&listEndMarker[sizeof(UINT32)], &maxCount, sizeof(UINT64));
-    pAssert(end + sizeof(NV_LIST_TERMINATOR) <= s_evictNvEnd);
+
+    // was a pAssert that (end + sizeof(NV_LIST_TERMINATOR) <= s_evictNvEnd);
+    if(end + sizeof(NV_LIST_TERMINATOR) > s_evictNvEnd)
+    {
+        // enter failure mode, but don't return yet.
+        FAIL_NORET(FATAL_ERROR_ASSERT);
+        // write NV_REF at last valid space.
+        // This will truncate the last entry, but
+        // better than writing past buffer or leaving buffer unterminated.
+        end = s_evictNvEnd - sizeof(NV_LIST_TERMINATOR);
+    }
 
     // Write it to memory
     NvWrite(end, sizeof(NV_LIST_TERMINATOR), &listEndMarker);
     return end + sizeof(NV_LIST_TERMINATOR);
 }
-
 
 //*** NvAdd()
 // This function adds a new entity to NV.
@@ -283,20 +242,18 @@ NvWriteNvListEnd(
 //
 // The 'totalSize' will be the size of 'entity'. If a handle is added, this
 // function will increase the size accordingly.
-static TPM_RC
-NvAdd(
-    UINT32           totalSize,     // IN: total size needed for this entity For
-                                    //     evict object, totalSize is the same as
-                                    //     bufferSize.  For NV Index, totalSize is
-                                    //     bufferSize plus index data size
-    UINT32           bufferSize,    // IN: size of initial buffer
-    TPM_HANDLE       handle,        // IN: optional handle
-    BYTE            *entity         // IN: initial buffer
-    )
+static TPM_RC NvAdd(UINT32 totalSize,  // IN: total size needed for this entity For
+                                       //     evict object, totalSize is the same as
+                                       //     bufferSize.  For NV Index, totalSize is
+                                       //     bufferSize plus index data size
+                    UINT32     bufferSize,  // IN: size of initial buffer
+                    TPM_HANDLE handle,      // IN: optional handle
+                    BYTE*      entity       // IN: initial buffer
+)
 {
-    NV_REF          newAddr;        // IN: where the new entity will start
-    NV_REF          nextAddr;
-//
+    NV_REF newAddr;  // IN: where the new entity will start
+    NV_REF nextAddr;
+    //
     RETURN_IF_NV_IS_NOT_AVAILABLE;
 
     // Get the end of data list
@@ -334,17 +291,15 @@ NvAdd(
 
 //*** NvDelete()
 // This function is used to delete an NV Index or persistent object from NV memory.
-static TPM_RC
-NvDelete(
-    NV_REF           entityRef      // IN: reference to entity to be deleted
-    )
+static TPM_RC NvDelete(NV_REF entityRef  // IN: reference to entity to be deleted
+)
 {
-    UINT32          entrySize;
+    UINT32 entrySize;
     // adjust entityAddr to back up and point to the forward pointer
-    NV_REF          entryRef = entityRef - sizeof(UINT32);
-    NV_REF          endRef = NvGetEnd();
-    NV_REF          nextAddr; // address of the next entry
-//
+    NV_REF entryRef = entityRef - sizeof(UINT32);
+    NV_REF endRef   = NvGetEnd();
+    NV_REF nextAddr;  // address of the next entry
+                      //
     RETURN_IF_NV_IS_NOT_AVAILABLE;
 
     // Get the offset of the next entry. That is, back up and point to the size
@@ -358,10 +313,8 @@ NvDelete(
     // If this is not the last entry, move everything up
     if(nextAddr < endRef)
     {
-        pAssert(nextAddr > entryRef);
-        _plat__NvMemoryMove(nextAddr,
-                            entryRef,
-                            (endRef - nextAddr));
+        pAssert_RC(nextAddr > entryRef);
+        _plat__NvMemoryMove(nextAddr, entryRef, (endRef - nextAddr));
     }
     // The end of the used space is now moved up by the amount of space we just
     // reclaimed
@@ -370,7 +323,7 @@ NvDelete(
     // Write the end marker, and make the new end equal to the first byte after
     // the just added end value. This will automatically update the NV value for
     // maxCounter.
-    // NOTE: This is the call that sets flag to cause NV to be updated 
+    // NOTE: This is the call that sets flag to cause NV to be updated
     endRef = NvWriteNvListEnd(endRef);
 
     // Clear the reclaimed memory
@@ -389,20 +342,20 @@ NvDelete(
 //
 // NV storage associated with orderly data is updated when a NV Index is added
 // but NOT when the data or attributes are changed. Orderly data is only updated
-// to NV on an orderly shutdown (TPM2_Shutdown()) 
+// to NV on an orderly shutdown (TPM2_Shutdown())
 
 //*** NvRamNext()
 // This function is used to iterate trough the list of Ram Index values. *iter needs
-// to be initialized by calling 
-static NV_RAM_REF
-NvRamNext(
-    NV_RAM_REF      *iter,          // IN/OUT: the list iterator
-    TPM_HANDLE      *handle         // OUT: the handle of the next item.
-    )
+// to be initialized to NV_RAM_REF_INIT before starting iteration.
+// returns the handle and REF of the current item and advances iterator.
+// return 0 when at the end of the list.
+static NV_RAM_REF NvRamNext(NV_RAM_REF* iter,   // IN/OUT: the list iterator
+                            TPM_HANDLE* handle  // OUT: the handle of the next item.
+)
 {
-    NV_RAM_REF           currentAddr;
-    NV_RAM_HEADER        header;
-//
+    NV_RAM_REF    currentAddr;
+    NV_RAM_HEADER header;
+    //
     // If iterator is at the beginning of list
     if(*iter == NV_RAM_REF_INIT)
     {
@@ -416,35 +369,47 @@ NvRamNext(
     // that we are at the end of the list. The end of the list occurs when
     // we don't have space for a size and a handle
     if(currentAddr + sizeof(NV_RAM_HEADER) > RAM_ORDERLY_END)
+    {
         return NULL;
+    }
+
     // read the header of the next entry
     MemoryCopy(&header, currentAddr, sizeof(NV_RAM_HEADER));
 
     // if the size field is zero, then we have hit the end of the list
     if(header.size == 0)
+    {
         // leave the *iter pointing at the end of the list
         return NULL;
-    // advance the header by the size of the entry
-    *iter = currentAddr + header.size;
+    }
 
-//    pAssert(*iter <= RAM_ORDERLY_END);
+    if(*iter + header.size > RAM_ORDERLY_END)
+    {
+        // enter failure mode and stop iteration.
+        FAIL_IMMEDIATE(FATAL_ERROR_INTERNAL, 0);
+    }
+
+    // advance the header by the size of the entry
+    *iter += header.size;
+
     if(handle != NULL)
+    {
         *handle = header.handle;
+    }
+
     return currentAddr;
 }
 
 //*** NvRamGetEnd()
 // This routine performs the same function as NvGetEnd() but for the RAM data.
-static NV_RAM_REF
-NvRamGetEnd(
-    void
-    )
+static NV_RAM_REF NvRamGetEnd(void)
 {
-    NV_RAM_REF           iter = NV_RAM_REF_INIT;
-    NV_RAM_REF           currentAddr;
-//
+    NV_RAM_REF iter = NV_RAM_REF_INIT;
+    NV_RAM_REF currentAddr;
+    //
     // Scan until the next address is 0
-    while((currentAddr = NvRamNext(&iter, NULL)) != 0);
+    while((currentAddr = NvRamNext(&iter, NULL)) != 0)
+        ;
     return iter;
 }
 
@@ -454,15 +419,14 @@ NvRamGetEnd(
 //  Return Type: BOOL
 //      TRUE(1)         space available
 //      FALSE(0)        no enough space
-static BOOL
-NvRamTestSpaceIndex(
-    UINT32           size           // IN: size of the data to be added to RAM
-    )
+static BOOL NvRamTestSpaceIndex(
+    UINT32 size  // IN: size of the data to be added to RAM
+)
 {
-    UINT32          remaining = (UINT32)(RAM_ORDERLY_END - NvRamGetEnd());
-    UINT32          needed = sizeof(NV_RAM_HEADER) + size;
-//
-    // NvRamGetEnd points to the next available byte. 
+    UINT32 remaining = (UINT32)(RAM_ORDERLY_END - NvRamGetEnd());
+    UINT32 needed    = sizeof(NV_RAM_HEADER) + size;
+    //
+    // NvRamGetEnd points to the next available byte.
     return remaining >= needed;
 }
 
@@ -471,15 +435,13 @@ NvRamTestSpaceIndex(
 //
 // This function requires that NV Index is in RAM. That is, the
 // index must be known to exist.
-static NV_RAM_REF
-NvRamGetIndex(
-    TPMI_RH_NV_INDEX     handle         // IN: NV handle
-    )
+static NV_RAM_REF NvRamGetIndex(TPMI_RH_NV_INDEX handle  // IN: NV handle
+)
 {
-    NV_RAM_REF          iter = NV_RAM_REF_INIT;
-    NV_RAM_REF          currentAddr;
-    TPM_HANDLE          foundHandle;
-//
+    NV_RAM_REF iter = NV_RAM_REF_INIT;
+    NV_RAM_REF currentAddr;
+    TPM_HANDLE foundHandle;
+    //
     while((currentAddr = NvRamNext(&iter, &foundHandle)) != 0)
     {
         if(handle == foundHandle)
@@ -491,10 +453,7 @@ NvRamGetIndex(
 //*** NvUpdateIndexOrderlyData()
 // This function is used to cause an update of the orderly data to the NV backing
 // store.
-void
-NvUpdateIndexOrderlyData(
-    void
-    )
+void NvUpdateIndexOrderlyData(void)
 {
     // Write reserved RAM space to NV
     NvWrite(NV_INDEX_RAM_DATA, sizeof(s_indexOrderlyRam), s_indexOrderlyRam);
@@ -509,19 +468,17 @@ NvUpdateIndexOrderlyData(
 // This function should be called after the NV Index space has been updated
 // and the index removed. This insures that NV is available so that checking
 // for NV availability is not required during this function.
-static void
-NvAddRAM(
-    TPMS_NV_PUBLIC  *index          // IN: the index descriptor
-    )
+static TPM_RC NvAddRAM(TPMS_NV_PUBLIC* index  // IN: the index descriptor
+)
 {
-    NV_RAM_HEADER       header;
-    NV_RAM_REF          end = NvRamGetEnd();
-//
-    header.size = sizeof(NV_RAM_HEADER) + index->dataSize;
+    NV_RAM_HEADER header;
+    NV_RAM_REF    end = NvRamGetEnd();
+    //
+    header.size   = sizeof(NV_RAM_HEADER) + index->dataSize;
     header.handle = index->nvIndex;
     MemoryCopy(&header.attributes, &index->attributes, sizeof(TPMA_NV));
 
-    pAssert(ORDERLY_RAM_ADDRESS_OK(end, header.size));
+    pAssert_RC(ORDERLY_RAM_ADDRESS_OK(end, header.size));
 
     // Copy the header to the memory
     MemoryCopy(end, &header, sizeof(NV_RAM_HEADER));
@@ -538,7 +495,7 @@ NvAddRAM(
     // Write reserved RAM space to NV to reflect the newly added NV Index
     SET_NV_UPDATE(UT_ORDERLY);
 
-    return;
+    return TPM_RC_SUCCESS;
 }
 
 //*** NvDeleteRAM()
@@ -551,19 +508,17 @@ NvAddRAM(
 // This function should be called after the NV Index space has been updated
 // and the index removed. This insures that NV is available so that checking
 // for NV availability is not required during this function.
-static void
-NvDeleteRAM(
-    TPMI_RH_NV_INDEX     handle         // IN: NV handle
-    )
+static TPM_RC NvDeleteRAM(TPMI_RH_NV_INDEX handle  // IN: NV handle
+)
 {
-    NV_RAM_REF           nodeAddress;
-    NV_RAM_REF           nextNode;
-    UINT32               size;
-    NV_RAM_REF           lastUsed = NvRamGetEnd();
-//
+    NV_RAM_REF nodeAddress;
+    NV_RAM_REF nextNode;
+    UINT32     size;
+    NV_RAM_REF lastUsed = NvRamGetEnd();
+    //
     nodeAddress = NvRamGetIndex(handle);
 
-    pAssert(nodeAddress != 0);
+    pAssert_RC(nodeAddress != 0);
 
     // Get node size
     MemoryCopy(&size, nodeAddress, sizeof(size));
@@ -580,7 +535,7 @@ NvDeleteRAM(
     // Write reserved RAM space to NV to reflect the newly delete NV Index
     SET_NV_UPDATE(UT_ORDERLY);
 
-    return;
+    return TPM_RC_SUCCESS;
 }
 
 //*** NvReadIndex()
@@ -588,13 +543,14 @@ NvDeleteRAM(
 // index information can be compressed and only this function would be needed
 // to decompress it. Mostly, compression would only be able to save the space
 // needed by the policy.
-void
-NvReadNvIndexInfo(
-    NV_REF           ref,           // IN: points to NV where index is located
-    NV_INDEX        *nvIndex        // OUT: place to receive index data
-    )
+void NvReadNvIndexInfo(NV_REF    ref,     // IN: points to NV where index is located
+                       NV_INDEX* nvIndex  // OUT: place to receive index data
+)
 {
-    pAssert(nvIndex != NULL);
+    // internal function that should have validated parameters. enter failure
+    // mode and return without reading. currently existing callers pass private
+    // buffers so are all guaranteed non-null
+    pAssert_VOID_OK(nvIndex != NULL);
     NvRead(nvIndex, ref, sizeof(NV_INDEX));
     return;
 }
@@ -603,11 +559,9 @@ NvReadNvIndexInfo(
 // This function is used to read a persistent object. This is used so that the
 // object information can be compressed and only this function would be needed
 // to uncompress it.
-void
-NvReadObject(
-    NV_REF           ref,           // IN: points to NV where index is located
-    OBJECT          *object         // OUT: place to receive the object data
-    )
+void NvReadObject(NV_REF  ref,    // IN: points to NV where index is located
+                  OBJECT* object  // OUT: place to receive the object data
+)
 {
     NvRead(object, (ref + sizeof(TPM_HANDLE)), sizeof(OBJECT));
     return;
@@ -618,14 +572,10 @@ NvReadObject(
 //  Return Type: UINT32
 //      0               evict object not found
 //      != 0            offset of evict object
-static NV_REF
-NvFindEvict(
-    TPM_HANDLE       nvHandle,
-    OBJECT          *object
-    )
+static NV_REF NvFindEvict(TPM_HANDLE nvHandle, OBJECT* object)
 {
-    NV_REF          found = NvFindHandle(nvHandle);
-//
+    NV_REF found = NvFindHandle(nvHandle);
+    //
     // If we found the handle and the request included an object pointer, fill it in
     if(found != 0 && object != NULL)
         NvReadObject(found, object);
@@ -634,10 +584,8 @@ NvFindEvict(
 
 //*** NvIndexIsDefined()
 // See if an index is already defined
-BOOL
-NvIndexIsDefined(
-    TPM_HANDLE       nvHandle       // IN: Index to look for
-    )
+BOOL NvIndexIsDefined(TPM_HANDLE nvHandle  // IN: Index to look for
+)
 {
     return (NvFindHandle(nvHandle) != 0);
 }
@@ -648,15 +596,19 @@ NvIndexIsDefined(
 //  Return Type: TPM_RC
 //      TPM_RC_NV_RATE           NV is unavailable because of rate limit
 //      TPM_RC_NV_UNAVAILABLE    NV is inaccessible
-static TPM_RC
-NvConditionallyWrite(
-    NV_REF           entryAddr,     // IN: stating address
-    UINT32           size,          // IN: size of the data to write
-    void            *data           // IN: the data to write
-    )
+static TPM_RC NvConditionallyWrite(NV_REF entryAddr,  // IN: stating address
+                                   UINT32 size,       // IN: size of the data to write
+                                   void*  data        // IN: the data to write
+)
 {
     // If the index data is actually changed, then a write to NV is required
-    if(_plat__NvIsDifferent(entryAddr, size, data))
+    int isDifferent = _plat__NvGetChangedStatus(entryAddr, size, data);
+    if(isDifferent == NV_INVALID_LOCATION)
+    {
+        // invalid request, we should be in failure mode by now.
+        return TPM_RC_FAILURE;
+    }
+    else if(isDifferent == NV_HAS_CHANGED)
     {
         // Write the data if NV is available
         if(g_NvStatus == TPM_RC_SUCCESS)
@@ -665,18 +617,21 @@ NvConditionallyWrite(
         }
         return g_NvStatus;
     }
-    return TPM_RC_SUCCESS;
+    else if(isDifferent == NV_IS_SAME)
+    {
+        return TPM_RC_SUCCESS;
+    }
+    // the platform gave us an invalid response.
+    FAIL_RC(FATAL_ERROR_PLATFORM);
 }
 
 //*** NvReadNvIndexAttributes()
 // This function returns the attributes of an NV Index.
-static TPMA_NV
-NvReadNvIndexAttributes(
-    NV_REF           locator        // IN: reference to an NV index
-    )
+static TPMA_NV NvReadNvIndexAttributes(NV_REF locator  // IN: reference to an NV index
+)
 {
-    TPMA_NV                 attributes;
-//
+    TPMA_NV attributes;
+    //
     NvRead(&attributes,
            locator + offsetof(NV_INDEX, publicArea.attributes),
            sizeof(TPMA_NV));
@@ -686,15 +641,14 @@ NvReadNvIndexAttributes(
 //*** NvReadRamIndexAttributes()
 // This function returns the attributes from the RAM header structure. This function
 // is used to deal with the fact that the header structure is only byte aligned.
-static TPMA_NV
-NvReadRamIndexAttributes(
-    NV_RAM_REF       ref            // IN: pointer to a NV_RAM_HEADER
-    )
+static TPMA_NV NvReadRamIndexAttributes(
+    NV_RAM_REF ref  // IN: pointer to a NV_RAM_HEADER
+)
 {
-    TPMA_NV         attributes;
-//
-    MemoryCopy(&attributes, ref + offsetof(NV_RAM_HEADER, attributes), 
-               sizeof(TPMA_NV));
+    TPMA_NV attributes;
+    //
+    MemoryCopy(
+        &attributes, ref + offsetof(NV_RAM_HEADER, attributes), sizeof(TPMA_NV));
     return attributes;
 }
 
@@ -703,28 +657,24 @@ NvReadRamIndexAttributes(
 //  Return type: TPM_RC
 //      TPM_RC_NV_RATE          NV is rate limiting so retry
 //      TPM_RC_NV_UNAVAILABLE   NV is not available
-static TPM_RC
-NvWriteNvIndexAttributes(
-    NV_REF           locator,       // IN: location of the index
-    TPMA_NV          attributes     // IN: attributes to write
-    )
+static TPM_RC NvWriteNvIndexAttributes(NV_REF  locator,  // IN: location of the index
+                                       TPMA_NV attributes  // IN: attributes to write
+)
 {
-    return NvConditionallyWrite(
-        locator + offsetof(NV_INDEX, publicArea.attributes),
-        sizeof(TPMA_NV),
-        &attributes);
+    return NvConditionallyWrite(locator + offsetof(NV_INDEX, publicArea.attributes),
+                                sizeof(TPMA_NV),
+                                &attributes);
 }
 
 //*** NvWriteRamIndexAttributes()
 // This function is used to write the index attributes into an unaligned structure
-static void
-NvWriteRamIndexAttributes(
-    NV_RAM_REF       ref,           // IN: address of the header
-    TPMA_NV          attributes     // IN: the attributes to write
-    )
+static void NvWriteRamIndexAttributes(
+    NV_RAM_REF ref,        // IN: address of the header
+    TPMA_NV    attributes  // IN: the attributes to write
+)
 {
-    MemoryCopy(ref + offsetof(NV_RAM_HEADER, attributes), &attributes,
-               sizeof(TPMA_NV));
+    MemoryCopy(
+        ref + offsetof(NV_RAM_HEADER, attributes), &attributes, sizeof(TPMA_NV));
     return;
 }
 
@@ -737,12 +687,9 @@ NvWriteRamIndexAttributes(
 // range belonging to the platform.
 //  Return Type: BOOL
 //      TRUE(1)         handle references a platform persistent object
-//                      and may reference an owner persistent object either
 //      FALSE(0)        handle does not reference platform persistent object
-BOOL
-NvIsPlatformPersistentHandle(
-    TPM_HANDLE       handle         // IN: handle
-    )
+BOOL NvIsPlatformPersistentHandle(TPM_HANDLE handle  // IN: handle
+)
 {
     return (handle >= PLATFORM_PERSISTENT && handle <= PERSISTENT_LAST);
 }
@@ -754,10 +701,8 @@ NvIsPlatformPersistentHandle(
 //      TRUE(1)         handle is owner persistent handle
 //      FALSE(0)        handle is not owner persistent handle and may not be
 //                      a persistent handle at all
-BOOL
-NvIsOwnerPersistentHandle(
-    TPM_HANDLE       handle         // IN: handle
-    )
+BOOL NvIsOwnerPersistentHandle(TPM_HANDLE handle  // IN: handle
+)
 {
     return (handle >= PERSISTENT_FIRST && handle < PLATFORM_PERSISTENT);
 }
@@ -777,20 +722,27 @@ NvIsOwnerPersistentHandle(
 //      TPM_RC_NV_WRITELOCKED   Index is present but locked for writing and command
 //                              writes to the index
 TPM_RC
-NvIndexIsAccessible(
-    TPMI_RH_NV_INDEX     handle        // IN: handle
-    )
+NvIndexIsAccessible(TPMI_RH_NV_INDEX handle,  // IN: handle
+                    BOOL             commandAcceptsVirtualHandles)
 {
-    NV_INDEX            *nvIndex = NvGetIndexInfo(handle, NULL);
-//
+    // For virtual indexes nothing is actually stored in the NV
+    // so if it exists, it's considered "accessible", though the relevant
+    // virtual API may return a locked result later.
+    if(_plat__IsNvVirtualIndex(handle))
+    {
+        return commandAcceptsVirtualHandles ? TPM_RC_SUCCESS : TPM_RC_NV_LOCKED;
+    }
+
+    NV_INDEX* nvIndex = NvGetIndexInfo(handle, NULL);
+    //
     if(nvIndex == NULL)
-    // If index is not found, return TPM_RC_HANDLE
+        // If index is not found, return TPM_RC_HANDLE
         return TPM_RC_HANDLE;
     if(gc.shEnable == FALSE || gc.phEnableNV == FALSE)
     {
         // if shEnable is CLEAR, an ownerCreate NV Index should not be
         // indicated as present
-        if(!IS_ATTRIBUTE(nvIndex->publicArea.attributes, TPMA_NV, PLATFORMCREATE))   
+        if(!IS_ATTRIBUTE(nvIndex->publicArea.attributes, TPMA_NV, PLATFORMCREATE))
         {
             if(gc.shEnable == FALSE)
                 return TPM_RC_HANDLE;
@@ -800,9 +752,9 @@ NvIndexIsAccessible(
         else if(gc.phEnableNV == FALSE)
             return TPM_RC_HANDLE;
     }
-#if 0 // Writelock test for debug
+#if 0  // Writelock test for debug
     // If the Index is write locked and this is an NV Write operation...
-    if(IS_ATTRIBUTE(nvIndex->publicArea.attributes, TPMA_NV, WRITELOCKED)   
+    if(IS_ATTRIBUTE(nvIndex->publicArea.attributes, TPMA_NV, WRITELOCKED)
        &&  IsWriteOperation(commandIndex))
     {
         // then return a locked indication unless the command is TPM2_NV_WriteLock
@@ -811,9 +763,9 @@ NvIndexIsAccessible(
         return TPM_RC_SUCCESS;
     }
 #endif
-#if 0   // Readlock Test for debug
+#if 0  // Readlock Test for debug
     // If the Index is read locked and this is an NV Read operation...
-    if(IS_ATTRIBUTE(nvIndex->publicArea.attributes, TPMA_NV, READLOCKED)   
+    if(IS_ATTRIBUTE(nvIndex->publicArea.attributes, TPMA_NV, READLOCKED)
        && IsReadOperation(commandIndex))
     {
         // then return a locked indication unless the command is TPM2_NV_ReadLock
@@ -832,13 +784,12 @@ NvIndexIsAccessible(
 //      TPM_RC_HANDLE           the handle does not point to an existing
 //                              persistent object
 TPM_RC
-NvGetEvictObject(
-    TPM_HANDLE       handle,        // IN: handle
-    OBJECT          *object         // OUT: object data
-    )
+NvGetEvictObject(TPM_HANDLE handle,  // IN: handle
+                 OBJECT*    object   // OUT: object data
+)
 {
-    NV_REF          entityAddr;         // offset points to the entity
-//
+    NV_REF entityAddr;  // offset points to the entity
+                        //
     // Find the address of evict object and copy to object
     entityAddr = NvFindEvict(handle, object);
 
@@ -855,17 +806,13 @@ NvGetEvictObject(
 
 //*** NvIndexCacheInit()
 // Function to initialize the Index cache
-void
-NvIndexCacheInit(
-    void
-    )
+void NvIndexCacheInit(void)
 {
-    s_cachedNvRef = NV_REF_INIT;
-    s_cachedNvRamRef = NV_RAM_REF_INIT;
+    s_cachedNvRef                      = NV_REF_INIT;
+    s_cachedNvRamRef                   = NV_RAM_REF_INIT;
     s_cachedNvIndex.publicArea.nvIndex = TPM_RH_UNASSIGNED;
     return;
 }
-
 
 //*** NvGetIndexData()
 // This function is used to access the data in an NV Index. The data is returned
@@ -874,36 +821,43 @@ NvIndexCacheInit(
 // This function requires that the NV Index be defined, and that the
 // required data is within the data range.  It also requires that TPMA_NV_WRITTEN
 // of the Index is SET.
-void
-NvGetIndexData(
-    NV_INDEX            *nvIndex,       // IN: the in RAM index descriptor
-    NV_REF               locator,       // IN: where the data is located
-    UINT32               offset,        // IN: offset of NV data
-    UINT16               size,          // IN: number of octets of NV data to read
-    void                *data           // OUT: data buffer
-    )
+void NvGetIndexData(NV_INDEX* nvIndex,  // IN: the in RAM index descriptor
+                    NV_REF    locator,  // IN: where the data is located
+                    UINT32    offset,   // IN: offset of NV data
+                    UINT16    size,     // IN: number of octets of NV data to read
+                    void*     data      // OUT: data buffer
+)
 {
-    TPMA_NV             nvAttributes;
-//
-    pAssert(nvIndex != NULL);
+    TPMA_NV nvAttributes;
+
+    // early exit/fail to read is an appropriate response if input data is invalid.
+    // these should have been checked by NvReadAccessChecks before getting here, so
+    // failure mode is appropriate
+    pAssert_VOID_OK(nvIndex != NULL);
 
     nvAttributes = nvIndex->publicArea.attributes;
 
-    pAssert(IS_ATTRIBUTE(nvAttributes, TPMA_NV, WRITTEN));
+    pAssert_VOID_OK(IS_ATTRIBUTE(nvAttributes, TPMA_NV, WRITTEN));
 
     if(IS_ATTRIBUTE(nvAttributes, TPMA_NV, ORDERLY))
     {
         // Get data from RAM buffer
-        NV_RAM_REF           ramAddr = NvRamGetIndex(nvIndex->publicArea.nvIndex);
-        pAssert(ramAddr != 0 && (size <=
-                ((NV_RAM_HEADER *)ramAddr)->size - sizeof(NV_RAM_HEADER) - offset));
+        NV_RAM_REF ramAddr = NvRamGetIndex(nvIndex->publicArea.nvIndex);
+
+        // Copy the contents of ramAddr into a local NV_RAM_HEADER variable before
+        // performing the boundary check to avoid potential alignment issues
+        NV_RAM_HEADER nvRamHeader;
+        MemoryCopy(&nvRamHeader, ramAddr, sizeof(NV_RAM_HEADER));
+        pAssert_VOID_OK(
+            ramAddr != 0
+            && (size <= (nvRamHeader.size - sizeof(NV_RAM_HEADER) - offset)));
         MemoryCopy(data, ramAddr + sizeof(NV_RAM_HEADER) + offset, size);
     }
     else
     {
         // Validate that read falls within range of the index
-        pAssert(offset <= nvIndex->publicArea.dataSize
-                &&  size <= (nvIndex->publicArea.dataSize - offset));
+        pAssert_VOID_OK(offset <= nvIndex->publicArea.dataSize
+                        && size <= (nvIndex->publicArea.dataSize - offset));
         NvRead(data, locator + sizeof(NV_INDEX) + offset, size);
     }
     return;
@@ -912,41 +866,38 @@ NvGetIndexData(
 //*** NvHashIndexData()
 // This function adds Index data to a hash. It does this in parts to avoid large stack
 // buffers.
-void
-NvHashIndexData(
-    HASH_STATE          *hashState,     // IN: Initialized hash state
-    NV_INDEX            *nvIndex,       // IN: Index 
-    NV_REF               locator,       // IN: where the data is located
-    UINT32               offset,        // IN: starting offset
-    UINT16               size           // IN: amount to hash
+void NvHashIndexData(HASH_STATE* hashState,  // IN: Initialized hash state
+                     NV_INDEX*   nvIndex,    // IN: Index
+                     NV_REF      locator,    // IN: where the data is located
+                     UINT32      offset,     // IN: starting offset
+                     UINT16      size        // IN: amount to hash
 )
 {
-#define BUFFER_SIZE     64
-    BYTE                 buffer[BUFFER_SIZE];
-    if (offset > nvIndex->publicArea.dataSize)
+#define BUFFER_SIZE 64
+    BYTE buffer[BUFFER_SIZE];
+    if(offset > nvIndex->publicArea.dataSize)
         return;
     // Make sure that we don't try to read off the end.
-    if ((offset + size) > nvIndex->publicArea.dataSize)
+    if((offset + size) > nvIndex->publicArea.dataSize)
         size = nvIndex->publicArea.dataSize - (UINT16)offset;
 #if BUFFER_SIZE >= MAX_NV_INDEX_SIZE
     NvGetIndexData(nvIndex, locator, offset, size, buffer);
     CryptDigestUpdate(hashState, size, buffer);
 #else
     {
-        INT16                i;
-        UINT16               readSize;
+        INT16  i;
+        UINT16 readSize;
         //
-        for (i = size; i > 0; offset += readSize, i -= readSize)
+        for(i = size; i > 0; offset += readSize, i -= readSize)
         {
             readSize = (i < BUFFER_SIZE) ? i : BUFFER_SIZE;
             NvGetIndexData(nvIndex, locator, offset, readSize, buffer);
             CryptDigestUpdate(hashState, readSize, buffer);
         }
     }
-#endif // BUFFER_SIZE >= MAX_NV_INDEX_SIZE
-#undef  BUFFER_SIZE
+#endif  // BUFFER_SIZE >= MAX_NV_INDEX_SIZE
+#undef BUFFER_SIZE
 }
-
 
 //*** NvGetUINT64Data()
 // Get data in integer format of a bit or counter NV Index.
@@ -954,16 +905,15 @@ NvHashIndexData(
 // This function requires that the NV Index is defined and that the NV Index
 // previously has been written.
 UINT64
-NvGetUINT64Data(
-    NV_INDEX            *nvIndex,       // IN: the in RAM index descriptor
-    NV_REF               locator        // IN: where index exists in NV
-    )
+NvGetUINT64Data(NV_INDEX* nvIndex,  // IN: the in RAM index descriptor
+                NV_REF    locator   // IN: where index exists in NV
+)
 {
-    UINT64                intVal;
-//
+    UINT64 intVal;
+    //
     // Read the value and convert it to internal format
     NvGetIndexData(nvIndex, locator, 0, 8, &intVal);
-    return BYTE_ARRAY_TO_UINT64(((BYTE *)&intVal));
+    return BYTE_ARRAY_TO_UINT64(((BYTE*)&intVal));
 }
 
 //*** NvWriteIndexAttributes()
@@ -972,17 +922,16 @@ NvGetUINT64Data(
 //      TPM_RC_NV_RATE          NV is rate limiting so retry
 //      TPM_RC_NV_UNAVAILABLE   NV is not available
 TPM_RC
-NvWriteIndexAttributes(
-    TPM_HANDLE       handle,
-    NV_REF           locator,       // IN: location of the index
-    TPMA_NV          attributes     // IN: attributes to write
-    )
+NvWriteIndexAttributes(TPM_HANDLE handle,
+                       NV_REF     locator,    // IN: location of the index
+                       TPMA_NV    attributes  // IN: attributes to write
+)
 {
-    TPM_RC              result;
-//
-    if(IS_ATTRIBUTE(attributes, TPMA_NV, ORDERLY))   
+    TPM_RC result;
+    //
+    if(IS_ATTRIBUTE(attributes, TPMA_NV, ORDERLY))
     {
-        NV_RAM_REF      ram = NvRamGetIndex(handle);
+        NV_RAM_REF ram = NvRamGetIndex(handle);
         NvWriteRamIndexAttributes(ram, attributes);
         result = TPM_RC_SUCCESS;
     }
@@ -1000,25 +949,24 @@ NvWriteIndexAttributes(
 //      TPM_RC_NV_RATE          NV is rate limiting so retry
 //      TPM_RC_NV_UNAVAILABLE   NV is not available
 TPM_RC
-NvWriteIndexAuth(
-    NV_REF           locator,       // IN: location of the index
-    TPM2B_AUTH      *authValue      // IN: the authValue to write
-    )
+NvWriteIndexAuth(NV_REF      locator,   // IN: location of the index
+                 TPM2B_AUTH* authValue  // IN: the authValue to write
+)
 {
-    TPM_RC              result;
-//
+    TPM_RC result;
+    //
     // If the locator is pointing to the cached index value...
     if(locator == s_cachedNvRef)
     {
         // copy the authValue to the cached index so it will be there if we
         // look for it. This is a safety thing.
-        MemoryCopy2B(&s_cachedNvIndex.authValue.b, &authValue->b,
+        MemoryCopy2B(&s_cachedNvIndex.authValue.b,
+                     &authValue->b,
                      sizeof(s_cachedNvIndex.authValue.t.buffer));
     }
-    result = NvConditionallyWrite(
-        locator + offsetof(NV_INDEX, authValue),
-        sizeof(UINT16) + authValue->t.size,
-        authValue);
+    result = NvConditionallyWrite(locator + offsetof(NV_INDEX, authValue),
+                                  sizeof(UINT16) + authValue->t.size,
+                                  authValue);
     return result;
 }
 
@@ -1030,17 +978,15 @@ NvWriteIndexAuth(
 //
 // This function will set the index cache. If the index is orderly, the attributes
 // from RAM are substituted for the attributes in the cached index
-NV_INDEX *
-NvGetIndexInfo(
-    TPM_HANDLE       nvHandle,      // IN: the index handle
-    NV_REF          *locator        // OUT: location of the index
-    )
+NV_INDEX* NvGetIndexInfo(TPM_HANDLE nvHandle,  // IN: the index handle
+                         NV_REF*    locator    // OUT: location of the index
+)
 {
     if(s_cachedNvIndex.publicArea.nvIndex != nvHandle)
     {
         s_cachedNvIndex.publicArea.nvIndex = TPM_RH_UNASSIGNED;
-        s_cachedNvRamRef = 0;
-        s_cachedNvRef = NvFindHandle(nvHandle);
+        s_cachedNvRamRef                   = 0;
+        s_cachedNvRef                      = NvFindHandle(nvHandle);
         if(s_cachedNvRef == 0)
             return NULL;
         NvReadNvIndexInfo(s_cachedNvRef, &s_cachedNvIndex);
@@ -1072,24 +1018,23 @@ NvGetIndexInfo(
 //      TPM_RC_NV_RATE          NV is rate limiting so retry
 //      TPM_RC_NV_UNAVAILABLE   NV is not available
 TPM_RC
-NvWriteIndexData(
-    NV_INDEX        *nvIndex,       // IN: the description of the index
-    UINT32           offset,        // IN: offset of NV data
-    UINT32           size,          // IN: size of NV data
-    void            *data           // IN: data buffer
-    )
+NvWriteIndexData(NV_INDEX* nvIndex,  // IN: the description of the index
+                 UINT32    offset,   // IN: offset of NV data
+                 UINT32    size,     // IN: size of NV data
+                 void*     data      // IN: data buffer
+)
 {
-    TPM_RC               result = TPM_RC_SUCCESS;
-//
-    pAssert(nvIndex != NULL);
+    TPM_RC result = TPM_RC_SUCCESS;
+    //
+    pAssert_RC(nvIndex != NULL);
     // Make sure that this is dealing with the 'default' index.
     // Note: it is tempting to change the calling sequence so that the 'default' is
     // presumed.
-    pAssert(nvIndex->publicArea.nvIndex == s_cachedNvIndex.publicArea.nvIndex);
+    pAssert_RC(nvIndex->publicArea.nvIndex == s_cachedNvIndex.publicArea.nvIndex);
 
     // Validate that write falls within range of the index
-    pAssert(offset <= nvIndex->publicArea.dataSize
-            &&  size <= (nvIndex->publicArea.dataSize - offset));
+    pAssert_RC(offset <= nvIndex->publicArea.dataSize
+               && size <= (nvIndex->publicArea.dataSize - offset));
 
     // Update TPMA_NV_WRITTEN bit if necessary
     if(!IS_ATTRIBUTE(nvIndex->publicArea.attributes, TPMA_NV, WRITTEN))
@@ -1101,7 +1046,7 @@ NvWriteIndexData(
         // the attributes
         if(!IS_ATTRIBUTE(nvIndex->publicArea.attributes, TPMA_NV, ORDERLY))
         {
-            result = NvWriteNvIndexAttributes(s_cachedNvRef, 
+            result = NvWriteNvIndexAttributes(s_cachedNvRef,
                                               nvIndex->publicArea.attributes);
             if(result != TPM_RC_SUCCESS)
                 return result;
@@ -1116,7 +1061,8 @@ NvWriteIndexData(
         {
             // This is orderly so update the RAM version
             MemoryCopy(s_cachedNvRamRef + offsetof(NV_RAM_HEADER, attributes),
-                       &nvIndex->publicArea.attributes, sizeof(TPMA_NV));
+                       &nvIndex->publicArea.attributes,
+                       sizeof(TPMA_NV));
             // If setting WRITTEN for an orderly counter, make sure that the
             // state saved version of the counter is saved
             if(IsNvCounterIndex(nvIndex->publicArea.attributes))
@@ -1127,14 +1073,15 @@ NvWriteIndexData(
             // are always written in total.
             else if(IsNvOrdinaryIndex(nvIndex->publicArea.attributes))
                 MemorySet(s_cachedNvRamRef + sizeof(NV_RAM_HEADER),
-                          0, nvIndex->publicArea.dataSize);
+                          0,
+                          nvIndex->publicArea.dataSize);
         }
     }
     // If this is orderly data, write it to RAM
     if(IS_ATTRIBUTE(nvIndex->publicArea.attributes, TPMA_NV, ORDERLY))
     {
         // Note: if this is the first write to a counter, the code above will queue
-        // the write to NV of the RAM data in order to update TPMA_NV_WRITTEN. In 
+        // the write to NV of the RAM data in order to update TPMA_NV_WRITTEN. In
         // process of doing that write, it will also write the initial counter value
 
         // Update RAM
@@ -1146,8 +1093,8 @@ NvWriteIndexData(
     else
     {
         // Offset into the index to the first byte of the data to be written to NV
-        result = NvConditionallyWrite(s_cachedNvRef + sizeof(NV_INDEX) + offset,
-                                      size, data);
+        result = NvConditionallyWrite(
+            s_cachedNvRef + sizeof(NV_INDEX) + offset, size, data);
     }
     return result;
 }
@@ -1162,50 +1109,14 @@ NvWriteIndexData(
 // index (orderly or not)
 //
 TPM_RC
-NvWriteUINT64Data(
-    NV_INDEX        *nvIndex,       // IN: the description of the index
-    UINT64           intValue       // IN: the value to write
-    )
+NvWriteUINT64Data(NV_INDEX* nvIndex,  // IN: the description of the index
+                  UINT64    intValue  // IN: the value to write
+)
 {
-    BYTE            bytes[8];
+    BYTE bytes[8];
     UINT64_TO_BYTE_ARRAY(intValue, bytes);
-//
+    //
     return NvWriteIndexData(nvIndex, 0, 8, &bytes);
-}
-
-//*** NvGetIndexName()
-// This function computes the Name of an index
-// The 'name' buffer receives the bytes of the Name and the return value
-// is the number of octets in the Name.
-//
-// This function requires that the NV Index is defined.
-TPM2B_NAME *
-NvGetIndexName(
-    NV_INDEX        *nvIndex,       // IN: the index over which the name is to be
-                                    //     computed
-    TPM2B_NAME      *name           // OUT: name of the index
-    )
-{
-    UINT16               dataSize, digestSize;
-    BYTE                 marshalBuffer[sizeof(TPMS_NV_PUBLIC)];
-    BYTE                *buffer;
-    HASH_STATE           hashState;
-//
-    // Marshal public area
-    buffer = marshalBuffer;
-    dataSize = TPMS_NV_PUBLIC_Marshal(&nvIndex->publicArea, &buffer, NULL);
-
-    // hash public area
-    digestSize = CryptHashStart(&hashState, nvIndex->publicArea.nameAlg);
-    CryptDigestUpdate(&hashState, dataSize, marshalBuffer);
-
-    // Complete digest leaving room for the nameAlg
-    CryptHashEnd(&hashState, digestSize, &name->b.buffer[2]);
-
-    // Include the nameAlg
-    UINT16_TO_BYTE_ARRAY(nvIndex->publicArea.nameAlg, name->b.buffer);
-    name->t.size = digestSize + 2;
-    return name;
 }
 
 //*** NvGetNameByIndexHandle()
@@ -1215,14 +1126,30 @@ NvGetIndexName(
 // is the number of octets in the Name.
 //
 // This function requires that the NV Index is defined.
-TPM2B_NAME *
-NvGetNameByIndexHandle(
-    TPMI_RH_NV_INDEX     handle,        // IN: handle of the index
-    TPM2B_NAME          *name           // OUT: name of the index
-    )
+TPM2B_NAME* NvGetNameByIndexHandle(
+    TPMI_RH_NV_INDEX handle,  // IN: handle of the index
+    TPM2B_NAME*      name     // OUT: name of the index
+)
 {
-    NV_INDEX             *nvIndex = NvGetIndexInfo(handle, NULL);
-//
+    NV_INDEX* nvIndex   = NULL;
+    NV_INDEX  tempIndex = {0};
+
+    if(_plat__IsNvVirtualIndex(handle))
+    {
+        _plat__NvVirtual_PopulateNvIndexInfo(
+            handle, &tempIndex.publicArea, &tempIndex.authValue);
+        nvIndex = &tempIndex;
+    }
+    else
+    {
+        nvIndex = NvGetIndexInfo(handle, NULL);
+        if(nvIndex == NULL)
+        {
+            name->b.size = 0;  // set to empty reply.
+            return name;
+        }
+    }
+
     return NvGetIndexName(nvIndex, name);
 }
 
@@ -1232,16 +1159,15 @@ NvGetNameByIndexHandle(
 //  Return Type: TPM_RC
 //      TPM_RC_NV_SPACE         insufficient NV space
 TPM_RC
-NvDefineIndex(
-    TPMS_NV_PUBLIC  *publicArea,    // IN: A template for an area to create.
-    TPM2B_AUTH      *authValue      // IN: The initial authorization value
-    )
+NvDefineIndex(TPMS_NV_PUBLIC* publicArea,  // IN: A template for an area to create.
+              TPM2B_AUTH*     authValue    // IN: The initial authorization value
+)
 {
     // The buffer to be written to NV memory
-    NV_INDEX        nvIndex;            // the index data
-    UINT16          entrySize;          // size of entry
-    TPM_RC          result;
-//
+    NV_INDEX nvIndex;    // the index data
+    UINT16   entrySize;  // size of entry
+    TPM_RC   result;
+    //
     entrySize = sizeof(NV_INDEX);
 
     // only allocate data space for indexes that are going to be written to NV.
@@ -1257,8 +1183,8 @@ NvDefineIndex(
 
     // if the index to be defined is RAM backed, check RAM space availability
     // as well
-    if(IS_ATTRIBUTE(publicArea->attributes, TPMA_NV, ORDERLY)   
-       &&  !NvRamTestSpaceIndex(publicArea->dataSize))
+    if(IS_ATTRIBUTE(publicArea->attributes, TPMA_NV, ORDERLY)
+       && !NvRamTestSpaceIndex(publicArea->dataSize))
         return TPM_RC_NV_SPACE;
     // Copy input value to nvBuffer
     nvIndex.publicArea = *publicArea;
@@ -1267,13 +1193,14 @@ NvDefineIndex(
     nvIndex.authValue = *authValue;
 
     // Add index to NV memory
-    result = NvAdd(entrySize, sizeof(NV_INDEX), TPM_RH_UNASSIGNED,
-                   (BYTE *)&nvIndex);
+    result = NvAdd(entrySize, sizeof(NV_INDEX), TPM_RH_UNASSIGNED, (BYTE*)&nvIndex);
     if(result == TPM_RC_SUCCESS)
     {
-    // If the data of NV Index is RAM backed, add the data area in RAM as well
+        // If the data of NV Index is RAM backed, add the data area in RAM as well
         if(IS_ATTRIBUTE(publicArea->attributes, TPMA_NV, ORDERLY))
-            NvAddRAM(publicArea);
+        {
+            result = NvAddRAM(publicArea);
+        }
     }
     return result;
 }
@@ -1284,14 +1211,13 @@ NvDefineIndex(
 //      TPM_RC_NV_HANDLE        the requested handle is already in use
 //      TPM_RC_NV_SPACE         insufficient NV space
 TPM_RC
-NvAddEvictObject(
-    TPMI_DH_OBJECT   evictHandle,   // IN: new evict handle
-    OBJECT          *object         // IN: object to be added
-    )
+NvAddEvictObject(TPMI_DH_OBJECT evictHandle,  // IN: new evict handle
+                 OBJECT*        object        // IN: object to be added
+)
 {
-    TPM_HANDLE       temp = object->evictHandle;
-    TPM_RC           result;
-//
+    TPM_HANDLE temp = object->evictHandle;
+    TPM_RC     result;
+    //
     // Check if we have enough space to add the evict object
     // An evict object needs 8 bytes in index table + sizeof OBJECT
     // In this implementation, the only resource limitation is the available NV
@@ -1302,14 +1228,14 @@ NvAddEvictObject(
 
     // Set evict attribute and handle
     object->attributes.evict = SET;
-    object->evictHandle = evictHandle;
+    object->evictHandle      = evictHandle;
 
     // Now put this in NV
-    result = NvAdd(sizeof(OBJECT), sizeof(OBJECT), evictHandle, (BYTE *)object);
+    result = NvAdd(sizeof(OBJECT), sizeof(OBJECT), evictHandle, (BYTE*)object);
 
     // Put things back the way they were
     object->attributes.evict = CLEAR;
-    object->evictHandle = temp;
+    object->evictHandle      = temp;
 
     return result;
 }
@@ -1320,18 +1246,17 @@ NvAddEvictObject(
 //      TPM_RC_NV_UNAVAILABLE   NV is not accessible
 //      TPM_RC_NV_RATE          NV is rate limiting
 TPM_RC
-NvDeleteIndex(
-    NV_INDEX        *nvIndex,       // IN: an in RAM index descriptor
-    NV_REF           entityAddr     // IN: location in NV
-    )
+NvDeleteIndex(NV_INDEX* nvIndex,    // IN: an in RAM index descriptor
+              NV_REF    entityAddr  // IN: location in NV
+)
 {
-    TPM_RC           result;
-//
+    TPM_RC result;
+    //
     if(nvIndex != NULL)
     {
         // Whenever a counter is deleted, make sure that the MaxCounter value is
         // updated to reflect the value
-        if(IsNvCounterIndex(nvIndex->publicArea.attributes) 
+        if(IsNvCounterIndex(nvIndex->publicArea.attributes)
            && IS_ATTRIBUTE(nvIndex->publicArea.attributes, TPMA_NV, WRITTEN))
             NvUpdateMaxCount(NvGetUINT64Data(nvIndex, entityAddr));
         result = NvDelete(entityAddr);
@@ -1339,7 +1264,13 @@ NvDeleteIndex(
             return result;
         // If the NV Index is RAM backed, delete the RAM data as well
         if(IS_ATTRIBUTE(nvIndex->publicArea.attributes, TPMA_NV, ORDERLY))
-            NvDeleteRAM(nvIndex->publicArea.nvIndex);
+        {
+            result = NvDeleteRAM(nvIndex->publicArea.nvIndex);
+        }
+
+        if(result != TPM_RC_SUCCESS)
+            return result;
+
         NvIndexCacheInit();
     }
     return TPM_RC_SUCCESS;
@@ -1350,13 +1281,12 @@ NvDeleteIndex(
 // Will return success if object deleted or if it does not exist
 
 TPM_RC
-NvDeleteEvict(
-    TPM_HANDLE       handle         // IN: handle of entity to be deleted
-    )
+NvDeleteEvict(TPM_HANDLE handle  // IN: handle of entity to be deleted
+)
 {
-    NV_REF      entityAddr = NvFindEvict(handle, NULL);     // pointer to entity
-    TPM_RC      result = TPM_RC_SUCCESS;
-//
+    NV_REF entityAddr = NvFindEvict(handle, NULL);  // pointer to entity
+    TPM_RC result     = TPM_RC_SUCCESS;
+    //
     if(entityAddr != 0)
         result = NvDelete(entityAddr);
     return result;
@@ -1370,21 +1300,20 @@ NvDeleteEvict(
 //      TPM_RC_NV_RATE           NV is unavailable because of rate limit
 //      TPM_RC_NV_UNAVAILABLE    NV is inaccessible
 TPM_RC
-NvFlushHierarchy(
-    TPMI_RH_HIERARCHY    hierarchy      // IN: hierarchy to be flushed.
-    )
+NvFlushHierarchy(TPMI_RH_HIERARCHY hierarchy  // IN: hierarchy to be flushed.
+)
 {
-    NV_REF           iter = NV_REF_INIT;
-    NV_REF           currentAddr;
-    TPM_HANDLE       entityHandle;
-    TPM_RC           result = TPM_RC_SUCCESS;
-//
+    NV_REF     iter = NV_REF_INIT;
+    NV_REF     currentAddr;
+    TPM_HANDLE entityHandle;
+    TPM_RC     result = TPM_RC_SUCCESS;
+    //
     while((currentAddr = NvNext(&iter, &entityHandle)) != 0)
     {
         if(HandleGetType(entityHandle) == TPM_HT_NV_INDEX)
         {
-            NV_INDEX        nvIndex;
-//
+            NV_INDEX nvIndex;
+            //
             // If flush endorsement or platform hierarchy, no NV Index would be
             // flushed
             if(hierarchy == TPM_RH_ENDORSEMENT || hierarchy == TPM_RH_PLATFORM)
@@ -1393,8 +1322,7 @@ NvFlushHierarchy(
             NvReadNvIndexInfo(currentAddr, &nvIndex);
 
             // For storage hierarchy, flush OwnerCreated index
-            if(!IS_ATTRIBUTE(nvIndex.publicArea.attributes, TPMA_NV, 
-                             PLATFORMCREATE))
+            if(!IS_ATTRIBUTE(nvIndex.publicArea.attributes, TPMA_NV, PLATFORMCREATE))
             {
                 // Delete the index (including RAM for orderly)
                 result = NvDeleteIndex(&nvIndex, currentAddr);
@@ -1406,18 +1334,16 @@ NvFlushHierarchy(
         }
         else if(HandleGetType(entityHandle) == TPM_HT_PERSISTENT)
         {
-            OBJECT_ATTRIBUTES           attributes;
-//
+            OBJECT_ATTRIBUTES attributes;
+            //
             NvRead(&attributes,
-                   (UINT32)(currentAddr
-                            + sizeof(TPM_HANDLE)
+                   (UINT32)(currentAddr + sizeof(TPM_HANDLE)
                             + offsetof(OBJECT, attributes)),
                    sizeof(OBJECT_ATTRIBUTES));
             // If the evict object belongs to the hierarchy to be flushed...
             if((hierarchy == TPM_RH_PLATFORM && attributes.ppsHierarchy == SET)
                || (hierarchy == TPM_RH_OWNER && attributes.spsHierarchy == SET)
-               || (hierarchy == TPM_RH_ENDORSEMENT
-                   &&  attributes.epsHierarchy == SET))
+               || (hierarchy == TPM_RH_ENDORSEMENT && attributes.epsHierarchy == SET))
             {
                 // ...then delete the evict object
                 result = NvDelete(currentAddr);
@@ -1443,24 +1369,22 @@ NvFlushHierarchy(
 //      TPM_RC_NV_RATE           NV is unavailable because of rate limit
 //      TPM_RC_NV_UNAVAILABLE    NV is inaccessible
 TPM_RC
-NvSetGlobalLock(
-    void
-    )
+NvSetGlobalLock(void)
 {
-    NV_REF           iter = NV_REF_INIT;
-    NV_RAM_REF       ramIter = NV_RAM_REF_INIT;
-    NV_REF           currentAddr;
-    NV_RAM_REF       currentRamAddr;
-    TPM_RC           result = TPM_RC_SUCCESS;
-//
+    NV_REF     iter    = NV_REF_INIT;
+    NV_RAM_REF ramIter = NV_RAM_REF_INIT;
+    NV_REF     currentAddr;
+    NV_RAM_REF currentRamAddr;
+    TPM_RC     result = TPM_RC_SUCCESS;
+    //
     // Check all normal indexes
     while((currentAddr = NvNextIndex(NULL, &iter)) != 0)
     {
-        TPMA_NV         attributes = NvReadNvIndexAttributes(currentAddr);
-//
+        TPMA_NV attributes = NvReadNvIndexAttributes(currentAddr);
+        //
         // See if it should be locked
-        if(!IS_ATTRIBUTE(attributes, TPMA_NV, ORDERLY)   
-           &&  IS_ATTRIBUTE(attributes, TPMA_NV, GLOBALLOCK))
+        if(!IS_ATTRIBUTE(attributes, TPMA_NV, ORDERLY)
+           && IS_ATTRIBUTE(attributes, TPMA_NV, GLOBALLOCK))
         {
             SET_ATTRIBUTE(attributes, TPMA_NV, WRITELOCKED);
             result = NvWriteNvIndexAttributes(currentAddr, attributes);
@@ -1472,7 +1396,7 @@ NvSetGlobalLock(
     while((currentRamAddr = NvRamNext(&ramIter, NULL)) != 0)
     {
         // See if it should be locked
-        TPMA_NV         attributes = NvReadRamIndexAttributes(currentRamAddr);
+        TPMA_NV attributes = NvReadRamIndexAttributes(currentRamAddr);
         if(IS_ATTRIBUTE(attributes, TPMA_NV, GLOBALLOCK))
         {
             SET_ATTRIBUTE(attributes, TPMA_NV, WRITELOCKED);
@@ -1485,16 +1409,14 @@ NvSetGlobalLock(
 //***InsertSort()
 // Sort a handle into handle list in ascending order.  The total handle number in
 // the list should not exceed MAX_CAP_HANDLES
-static void
-InsertSort(
-    TPML_HANDLE     *handleList,    // IN/OUT: sorted handle list
-    UINT32           count,         // IN: maximum count in the handle list
-    TPM_HANDLE       entityHandle   // IN: handle to be inserted
-    )
+static void InsertSort(TPML_HANDLE* handleList,  // IN/OUT: sorted handle list
+                       UINT32       count,  // IN: maximum count in the handle list
+                       TPM_HANDLE   entityHandle  // IN: handle to be inserted
+)
 {
-    UINT32          i, j;
-    UINT32          originalCount;
-//
+    UINT32 i, j;
+    UINT32 originalCount;
+    //
     // For a corner case that the maximum count is 0, do nothing
     if(count == 0)
         return;
@@ -1537,24 +1459,24 @@ InsertSort(
 //      YES         if there are more handles available
 //      NO          all the available handles has been returned
 TPMI_YES_NO
-NvCapGetPersistent(
-    TPMI_DH_OBJECT   handle,        // IN: start handle
-    UINT32           count,         // IN: maximum number of returned handles
-    TPML_HANDLE     *handleList     // OUT: list of handle
-    )
+NvCapGetPersistent(TPMI_DH_OBJECT handle,  // IN: start handle
+                   UINT32         count,   // IN: maximum number of returned handles
+                   TPML_HANDLE*   handleList  // OUT: list of handle
+)
 {
-    TPMI_YES_NO              more = NO;
-    NV_REF                   iter = NV_REF_INIT;
-    NV_REF                   currentAddr;
-    TPM_HANDLE               entityHandle;
-//
-    pAssert(HandleGetType(handle) == TPM_HT_PERSISTENT);
+    TPMI_YES_NO more = NO;
+    NV_REF      iter = NV_REF_INIT;
+    NV_REF      currentAddr;
+    TPM_HANDLE  entityHandle;
+    //
+    VERIFY(HandleGetType(handle) == TPM_HT_PERSISTENT, FATAL_ERROR_INTERNAL, NO);
 
     // Initialize output handle list
     handleList->count = 0;
 
     // The maximum count of handles we may return is MAX_CAP_HANDLES
-    if(count > MAX_CAP_HANDLES) count = MAX_CAP_HANDLES;
+    if(count > MAX_CAP_HANDLES)
+        count = MAX_CAP_HANDLES;
 
     while((currentAddr = NvNextEvict(&entityHandle, &iter)) != 0)
     {
@@ -1576,6 +1498,28 @@ NvCapGetPersistent(
     return more;
 }
 
+//*** NvCapGetOnePersistent()
+// This function returns whether a given persistent handle exists.
+//
+// 'Handle' must be in valid persistent object handle range.
+BOOL NvCapGetOnePersistent(TPMI_DH_OBJECT handle)  // IN: handle
+{
+    NV_REF     iter = NV_REF_INIT;
+    NV_REF     currentAddr;
+    TPM_HANDLE entityHandle;
+
+    pAssert_BOOL(HandleGetType(handle) == TPM_HT_PERSISTENT);
+
+    while((currentAddr = NvNextEvict(&entityHandle, &iter)) != 0)
+    {
+        if(entityHandle == handle)
+        {
+            return TRUE;
+        }
+    }
+    return FALSE;
+}
+
 //*** NvCapGetIndex()
 // This function returns a list of handles of NV indexes, starting from 'handle'.
 // 'Handle' must be in the range of NV indexes, but does not have to reference
@@ -1584,24 +1528,24 @@ NvCapGetPersistent(
 //      YES         if there are more handles to report
 //      NO          all the available handles has been reported
 TPMI_YES_NO
-NvCapGetIndex(
-    TPMI_DH_OBJECT   handle,        // IN: start handle
-    UINT32           count,         // IN: max number of returned handles
-    TPML_HANDLE     *handleList     // OUT: list of handle
-    )
+NvCapGetIndex(TPMI_DH_OBJECT handle,     // IN: start handle
+              UINT32         count,      // IN: max number of returned handles
+              TPML_HANDLE*   handleList  // OUT: list of handle
+)
 {
-    TPMI_YES_NO              more = NO;
-    NV_REF                   iter = NV_REF_INIT;
-    NV_REF                   currentAddr;
-    TPM_HANDLE               nvHandle;
-//
-    pAssert(HandleGetType(handle) == TPM_HT_NV_INDEX);
+    TPMI_YES_NO more = NO;
+    NV_REF      iter = NV_REF_INIT;
+    NV_REF      currentAddr;
+    TPM_HANDLE  nvHandle;
+    //
+    VERIFY(HandleGetType(handle) == TPM_HT_NV_INDEX, FATAL_ERROR_INTERNAL, NO);
 
     // Initialize output handle list
     handleList->count = 0;
 
     // The maximum count of handles we may return is MAX_CAP_HANDLES
-    if(count > MAX_CAP_HANDLES) count = MAX_CAP_HANDLES;
+    if(count > MAX_CAP_HANDLES)
+        count = MAX_CAP_HANDLES;
 
     while((currentAddr = NvNextIndex(&nvHandle, &iter)) != 0)
     {
@@ -1620,19 +1564,41 @@ NvCapGetIndex(
         // used here.
         InsertSort(handleList, count, nvHandle);
     }
+
+    // Check virtual indices as well.
+    more |= _plat__NvVirtual_CapGetIndex(handle, count, handleList);
+
     return more;
+}
+
+//*** NvCapGetOneIndex()
+// This function whether an NV index exists.
+BOOL NvCapGetOneIndex(TPMI_DH_OBJECT handle)  // IN: handle
+{
+    NV_REF     iter = NV_REF_INIT;
+    NV_REF     currentAddr;
+    TPM_HANDLE nvHandle;
+
+    pAssert_BOOL(HandleGetType(handle) == TPM_HT_NV_INDEX);
+
+    while((currentAddr = NvNextIndex(&nvHandle, &iter)) != 0)
+    {
+        if(nvHandle == handle)
+        {
+            return TRUE;
+        }
+    }
+    return FALSE;
 }
 
 //*** NvCapGetIndexNumber()
 // This function returns the count of NV Indexes currently defined.
 UINT32
-NvCapGetIndexNumber(
-    void
-    )
+NvCapGetIndexNumber(void)
 {
-    UINT32           num = 0;
-    NV_REF           iter = NV_REF_INIT;
-//
+    UINT32 num  = 0;
+    NV_REF iter = NV_REF_INIT;
+    //
     while(NvNextIndex(NULL, &iter) != 0)
         num++;
     return num;
@@ -1641,14 +1607,12 @@ NvCapGetIndexNumber(
 //*** NvCapGetPersistentNumber()
 // Function returns the count of persistent objects currently in NV memory.
 UINT32
-NvCapGetPersistentNumber(
-    void
-    )
+NvCapGetPersistentNumber(void)
 {
-    UINT32          num = 0;
-    NV_REF         iter = NV_REF_INIT;
-    TPM_HANDLE      handle;
-//
+    UINT32     num  = 0;
+    NV_REF     iter = NV_REF_INIT;
+    TPM_HANDLE handle;
+    //
     while(NvNextEvict(&handle, &iter) != 0)
         num++;
     return num;
@@ -1658,14 +1622,12 @@ NvCapGetPersistentNumber(
 // This function returns an estimate of the number of additional persistent
 // objects that could be loaded into NV memory.
 UINT32
-NvCapGetPersistentAvail(
-    void
-    )
+NvCapGetPersistentAvail(void)
 {
-    UINT32          availNVSpace;
-    UINT32          counterNum = NvCapGetCounterNumber();
-    UINT32          reserved = sizeof(NV_LIST_TERMINATOR);
-//
+    UINT32 availNVSpace;
+    UINT32 counterNum = NvCapGetCounterNumber();
+    UINT32 reserved   = sizeof(NV_LIST_TERMINATOR);
+    //
     // Get the available space in NV storage
     availNVSpace = NvGetFreeBytes();
 
@@ -1684,17 +1646,15 @@ NvCapGetPersistentAvail(
 //*** NvCapGetCounterNumber()
 // Get the number of defined NV Indexes that are counter indexes.
 UINT32
-NvCapGetCounterNumber(
-    void
-    )
+NvCapGetCounterNumber(void)
 {
-    NV_REF           iter = NV_REF_INIT;
-    NV_REF           currentAddr;
-    UINT32           num = 0;
-//
+    NV_REF iter = NV_REF_INIT;
+    NV_REF currentAddr;
+    UINT32 num = 0;
+    //
     while((currentAddr = NvNextIndex(NULL, &iter)) != 0)
     {
-        TPMA_NV             attributes = NvReadNvIndexAttributes(currentAddr);
+        TPMA_NV attributes = NvReadNvIndexAttributes(currentAddr);
         if(IsNvCounterIndex(attributes))
             num++;
     }
@@ -1703,11 +1663,9 @@ NvCapGetCounterNumber(
 
 //*** NvSetStartupAttributes()
 // Local function to set the attributes of an Index at TPM Reset and TPM Restart.
-static TPMA_NV
-NvSetStartupAttributes(
-    TPMA_NV         attributes,         // IN: attributes to change
-    STARTUP_TYPE     type               // IN: start up type
-    )
+static TPMA_NV NvSetStartupAttributes(TPMA_NV attributes,  // IN: attributes to change
+                                      STARTUP_TYPE type    // IN: start up type
+)
 {
     // Clear read lock
     CLEAR_ATTRIBUTE(attributes, TPMA_NV, READLOCKED);
@@ -1717,14 +1675,13 @@ NvSetStartupAttributes(
     // b) orderly and TPM Reset
     if(!IsNvCounterIndex(attributes))
     {
-        if(IS_ATTRIBUTE(attributes, TPMA_NV, CLEAR_STCLEAR)   
-           || (IS_ATTRIBUTE(attributes, TPMA_NV, ORDERLY)    
-               && (type == SU_RESET)))
+        if(IS_ATTRIBUTE(attributes, TPMA_NV, CLEAR_STCLEAR)
+           || (IS_ATTRIBUTE(attributes, TPMA_NV, ORDERLY) && (type == SU_RESET)))
             CLEAR_ATTRIBUTE(attributes, TPMA_NV, WRITTEN);
     }
-    // Unlock any index that is not written or that does not have 
+    // Unlock any index that is not written or that does not have
     // TPMA_NV_WRITEDEFINE SET.
-    if(!IS_ATTRIBUTE(attributes, TPMA_NV, WRITTEN)    
+    if(!IS_ATTRIBUTE(attributes, TPMA_NV, WRITTEN)
        || !IS_ATTRIBUTE(attributes, TPMA_NV, WRITEDEFINE))
         CLEAR_ATTRIBUTE(attributes, TPMA_NV, WRITELOCKED);
     return attributes;
@@ -1734,24 +1691,22 @@ NvSetStartupAttributes(
 //  This function is called at TPM_Startup(). If the startup completes
 //  a TPM Resume cycle, no action is taken. If the startup is a TPM Reset
 //  or a TPM Restart, then this function will:
-//  1. clear read/write lock;
-//  2. reset NV Index data that has TPMA_NV_CLEAR_STCLEAR SET; and
-//  3. set the lower bits in orderly counters to 1 for a non-orderly startup
+//  a) clear read/write lock;
+//  b) reset NV Index data that has TPMA_NV_CLEAR_STCLEAR SET; and
+//  c) set the lower bits in orderly counters to 1 for a non-orderly startup
 //
 //  It is a prerequisite that NV be available for writing before this
 //  function is called.
-BOOL
-NvEntityStartup(
-    STARTUP_TYPE     type           // IN: start up type
-    )
+BOOL NvEntityStartup(STARTUP_TYPE type  // IN: start up type
+)
 {
-    NV_REF               iter = NV_REF_INIT;
-    NV_RAM_REF           ramIter = NV_RAM_REF_INIT;
-    NV_REF               currentAddr;        // offset points to the current entity
-    NV_RAM_REF           currentRamAddr;
-    TPM_HANDLE           nvHandle;
-    TPMA_NV              attributes;
-//
+    NV_REF     iter    = NV_REF_INIT;
+    NV_RAM_REF ramIter = NV_RAM_REF_INIT;
+    NV_REF     currentAddr;  // offset points to the current entity
+    NV_RAM_REF currentRamAddr;
+    TPM_HANDLE nvHandle;
+    TPMA_NV    attributes;
+    //
     // Restore RAM index data
     NvRead(s_indexOrderlyRam, NV_INDEX_RAM_DATA, sizeof(s_indexOrderlyRam));
 
@@ -1784,11 +1739,10 @@ NvEntityStartup(
         NvWriteRamIndexAttributes(currentRamAddr, attributes);
 
         // Set the lower bits in an orderly counter to 1 for a non-orderly startup
-        if(IsNvCounterIndex(attributes) 
-           && (g_prevOrderlyState == SU_NONE_VALUE))
+        if(IsNvCounterIndex(attributes) && (g_prevOrderlyState == SU_NONE_VALUE))
         {
-            UINT64      counter;
-//
+            UINT64 counter;
+            //
             // Read the counter value last saved to NV.
             counter = BYTE_ARRAY_TO_UINT64(currentRamAddr + sizeof(NV_RAM_HEADER));
 
@@ -1808,15 +1762,13 @@ NvEntityStartup(
 // This function returns an estimate of the number of additional counter type
 // NV indexes that can be defined.
 UINT32
-NvCapGetCounterAvail(
-    void
-    )
+NvCapGetCounterAvail(void)
 {
-    UINT32          availNVSpace;
-    UINT32          availRAMSpace;
-    UINT32          persistentNum = NvCapGetPersistentNumber();
-    UINT32          reserved = sizeof(NV_LIST_TERMINATOR);
-//
+    UINT32 availNVSpace;
+    UINT32 availRAMSpace;
+    UINT32 persistentNum = NvCapGetPersistentNumber();
+    UINT32 reserved      = sizeof(NV_LIST_TERMINATOR);
+    //
     // Get the available space in NV storage
     availNVSpace = NvGetFreeBytes();
 
@@ -1834,7 +1786,7 @@ NvCapGetCounterAvail(
 
     // Return the min of counter number in NV and in RAM
     if(availNVSpace / NV_INDEX_COUNTER_SIZE
-        > availRAMSpace / NV_RAM_INDEX_COUNTER_SIZE)
+       > availRAMSpace / NV_RAM_INDEX_COUNTER_SIZE)
         return availRAMSpace / NV_RAM_INDEX_COUNTER_SIZE;
     else
         return availNVSpace / NV_INDEX_COUNTER_SIZE;
@@ -1845,14 +1797,12 @@ NvCapGetCounterAvail(
 // with the input handle.  A value of zero indicates that handle does not
 //  exist reference an existing persistent object or defined NV Index.
 NV_REF
-NvFindHandle(
-    TPM_HANDLE       handle
-    )
+NvFindHandle(TPM_HANDLE handle)
 {
-    NV_REF           addr;
-    NV_REF           iter = NV_REF_INIT;
-    TPM_HANDLE       nextHandle;
-//
+    NV_REF     addr;
+    NV_REF     iter = NV_REF_INIT;
+    TPM_HANDLE nextHandle;
+    //
     while((addr = NvNext(&iter, &nextHandle)) != 0)
     {
         if(nextHandle == handle)
@@ -1870,19 +1820,17 @@ NvFindHandle(
 // previously deleted index. This insures that it is not possible to roll back an
 // index.
 //
-// The highest counter value is keep in NV in a special end-of-list marker. This
+// The highest counter value is kept in NV in a special end-of-list marker. This
 // marker is only updated when an index is deleted. Otherwise it just moves.
 //
 // When the TPM starts up, it searches NV for the end of list marker and initializes
-// an in memory value (s_maxCounter). 
+// an in memory value (s_maxCounter).
 
 //*** NvReadMaxCount()
 // This function returns the max NV counter value.
 //
 UINT64
-NvReadMaxCount(
-    void
-    )
+NvReadMaxCount(void)
 {
     return s_maxCounter;
 }
@@ -1891,10 +1839,7 @@ NvReadMaxCount(
 // This function updates the max counter value to NV memory. This is just staging
 // for the actual write that will occur when the NV index memory is modified.
 //
-void
-NvUpdateMaxCount(
-    UINT64           count
-    )
+void NvUpdateMaxCount(UINT64 count)
 {
     if(count > s_maxCounter)
         s_maxCounter = count;
@@ -1903,10 +1848,7 @@ NvUpdateMaxCount(
 //*** NvSetMaxCount()
 // This function is used at NV initialization time to set the initial value of
 // the maximum counter.
-void
-NvSetMaxCount(
-    UINT64          value
-    )
+void NvSetMaxCount(UINT64 value)
 {
     s_maxCounter = value;
 }
@@ -1914,16 +1856,15 @@ NvSetMaxCount(
 //*** NvGetMaxCount()
 // Function to get the NV max counter value from the end-of-list marker
 UINT64
-NvGetMaxCount(
-    void
-    )
+NvGetMaxCount(void)
 {
-    NV_REF               iter = NV_REF_INIT;
-    NV_REF               currentAddr;
-    UINT64               maxCount;
-//
+    NV_REF iter = NV_REF_INIT;
+    NV_REF currentAddr;
+    UINT64 maxCount;
+    //
     // Find the end of list marker and initialize the NV Max Counter value.
-    while((currentAddr = NvNext(&iter, NULL )) != 0);
+    while((currentAddr = NvNext(&iter, NULL)) != 0)
+        ;
     // 'iter' should be pointing at the end of list marker so read in the current
     // value of the s_maxCounter.
     NvRead(&maxCount, iter + sizeof(UINT32), sizeof(maxCount));
