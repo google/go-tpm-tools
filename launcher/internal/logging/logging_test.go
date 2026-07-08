@@ -282,3 +282,34 @@ func TestLogFunctions(t *testing.T) {
 		})
 	}
 }
+
+func TestSeverityWriter(t *testing.T) {
+	cloudLogger := &testCLogger{}
+	serialLogs := &testSLogWriter{}
+
+	testLogger := &logger{
+		cloudLogger:  cloudLogger,
+		serialLogger: slog.New(slog.NewTextHandler(serialLogs, nil)),
+	}
+
+	infoWriter := NewInfoWriter(testLogger)
+	errorWriter := NewErrorWriter(testLogger)
+
+	_, err := infoWriter.Write([]byte("info message\n"))
+	if err != nil {
+		t.Fatalf("infoWriter.Write failed: %v", err)
+	}
+
+	if cloudLogger.log.Severity != clogging.Info {
+		t.Errorf("expected Info severity, got %v", cloudLogger.log.Severity)
+	}
+
+	_, err = errorWriter.Write([]byte("error message\n"))
+	if err != nil {
+		t.Fatalf("errorWriter.Write failed: %v", err)
+	}
+
+	if cloudLogger.log.Severity != clogging.Error {
+		t.Errorf("expected Error severity, got %v", cloudLogger.log.Severity)
+	}
+}
