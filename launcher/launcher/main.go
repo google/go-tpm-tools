@@ -131,11 +131,37 @@ func main() {
 		return
 	}
 
-	if err := verifyFsAndMount(launchSpec); err != nil {
-		logger.Error(fmt.Sprintf("failed to verify filesystem and mounts: %v\n", err))
+	verifier := osMountVerifier{}
+	if err := verifyDiskIntegrity(verifier); err != nil {
+		logger.Error(fmt.Sprintf("failed to verify disk integrity: %v\n", err))
 		exitCode = rebootRC
 		logger.Error(exitMessage, "exit_code", exitCode, "exit_msg", rcMessage[exitCode])
 		return
+	}
+	if err := verifyMounts(launchSpec, verifier); err != nil {
+		logger.Error(fmt.Sprintf("failed to verify mounts: %v\n", err))
+		exitCode = rebootRC
+		logger.Error(exitMessage, "exit_code", exitCode, "exit_msg", rcMessage[exitCode])
+		return
+	}
+
+	var tpm io.ReadWriteCloser
+	if !launchSpec.Experiments.BcMode {
+		tpm, err = tpm2.OpenTPM("/dev/tpmrm0")
+		if err != nil {
+			logger.Error(fmt.Sprintf("failed to open TPM device: %v", err))
+			exitCode = rebootRC
+			logger.Error(exitMessage, "exit_code", exitCode, "exit_msg", rcMessage[exitCode])
+			return
+		}
+		defer tpm.Close()
+
+		if err := initTPM(tpm, logger); err != nil {
+			logger.Error(fmt.Sprintf("failed to initialize TPM: %v", err))
+			exitCode = getExitCode(launchSpec.Hardened, launchSpec.RestartPolicy, err)
+			logger.Error(exitMessage, "exit_code", exitCode, "exit_msg", rcMessage[exitCode])
+			return
+		}
 	}
 
 	defer func() {
@@ -151,7 +177,7 @@ func main() {
 			logger.Info(exitMessage, "exit_code", exitCode)
 		}
 	}()
-	if err = startLauncher(launchSpec, logger, workloadLogger, mdsClient, start, serialConsole, googleClient, clientOpts...); err != nil {
+	if err = startLauncher(launchSpec, tpm, logger, workloadLogger, mdsClient, start, serialConsole, googleClient, clientOpts...); err != nil {
 		logger.Error(err.Error())
 	}
 
@@ -213,6 +239,7 @@ func getUptime() (string, error) {
 
 func startLauncher(
 	launchSpec spec.LaunchSpec,
+	tpm io.ReadWriteCloser,
 	logger logging.Logger,
 	workloadLogger logging.Logger,
 	mdsClient *metadata.Client,
@@ -227,14 +254,6 @@ func startLauncher(
 		return &launcher.RetryableError{Err: err}
 	}
 	defer containerdClient.Close()
-
-	tpm, err := initTPM(launchSpec, logger)
-	if err != nil {
-		return err
-	}
-	if tpm != nil {
-		defer tpm.Close()
-	}
 
 	token, err := registryauth.RetrieveAuthToken(context.Background(), mdsClient)
 	if err != nil {
@@ -283,17 +302,7 @@ func startLauncher(
 	return r.Run(ctx)
 }
 
-func initTPM(launchSpec spec.LaunchSpec, logger logging.Logger) (io.ReadWriteCloser, error) {
-	if launchSpec.Experiments.BcMode {
-		logger.Info("Running in BC mode, bypassing TPM initialization and checks.")
-		return nil, nil
-	}
-
-	tpm, err := tpm2.OpenTPM("/dev/tpmrm0")
-	if err != nil {
-		return nil, &launcher.RetryableError{Err: err}
-	}
-
+func initTPM(tpm io.ReadWriteCloser, logger logging.Logger) error {
 	// check DA info, don't crash if failed
 	daInfo, err := launcher.GetTPMDAInfo(tpm)
 	if err != nil {
@@ -318,28 +327,26 @@ func initTPM(launchSpec spec.LaunchSpec, logger logging.Logger) (io.ReadWriteClo
 	// check AK (EK signing) cert
 	gceAk, err := client.GceAttestationKeyECC(tpm)
 	if err != nil {
-		tpm.Close()
-		return nil, err
+		return err
 	}
 	defer gceAk.Close()
 
 	if gceAk.Cert() == nil {
-		tpm.Close()
-		return nil, errors.New("failed to find AKCert on this VM: try creating a new VM or contacting support")
+		return errors.New("failed to find AKCert on this VM: try creating a new VM or contacting support")
 	}
 
-	return tpm, nil
+	return nil
 }
 
 // verifyFsAndMount checks the partitions/mounts are as expected, based on the command output reported by OS.
 // These checks are not a security guarantee.
-func verifyFsAndMount(launchSpec spec.LaunchSpec) error {
-	dmLsOutput, err := exec.Command("dmsetup", "ls").Output()
+func verifyDiskIntegrity(verifier integrityVerifier) error {
+	dmLsOutput, err := verifier.DmsetupLs()
 	if err != nil {
-		return fmt.Errorf("failed to call `dmsetup ls`: %v %s", err, string(dmLsOutput))
+		return fmt.Errorf("failed to call `dmsetup ls`: %v %s", err, dmLsOutput)
 	}
 
-	dmDevs := strings.Split(string(dmLsOutput), "\n")
+	dmDevs := strings.Split(dmLsOutput, "\n")
 	devNameToDevNo := make(map[string]string)
 	for _, dmDev := range dmDevs {
 		if dmDev == "" {
@@ -355,89 +362,125 @@ func verifyFsAndMount(launchSpec spec.LaunchSpec) error {
 	var cryptNo, zeroNo string
 	var ok bool
 	if _, ok = devNameToDevNo["protected_stateful_partition"]; !ok {
-		return fmt.Errorf("failed to find /dev/mapper/protected_stateful_partition: %s", string(dmLsOutput))
+		return fmt.Errorf("failed to find /dev/mapper/protected_stateful_partition: %s", dmLsOutput)
 	}
 	if cryptNo, ok = devNameToDevNo["protected_stateful_partition_crypt"]; !ok {
-		return fmt.Errorf("failed to find /dev/mapper/protected_stateful_partition_crypt: %s", string(dmLsOutput))
+		return fmt.Errorf("failed to find /dev/mapper/protected_stateful_partition_crypt: %s", dmLsOutput)
 	}
 	if zeroNo, ok = devNameToDevNo["protected_stateful_partition_zero"]; !ok {
-		return fmt.Errorf("failed to find /dev/mapper/protected_stateful_partition_zero: %s", string(dmLsOutput))
+		return fmt.Errorf("failed to find /dev/mapper/protected_stateful_partition_zero: %s", dmLsOutput)
 	}
 
-	dmTableCloneOutput, err := exec.Command("dmsetup", "table", "/dev/mapper/protected_stateful_partition").Output()
+	dmTableCloneOutput, err := verifier.DmsetupTable("/dev/mapper/protected_stateful_partition")
 	if err != nil {
-		return fmt.Errorf("failed to check /dev/mapper/protected_stateful_partition status: %v %s", err, string(dmTableCloneOutput))
+		return fmt.Errorf("failed to check /dev/mapper/protected_stateful_partition status: %v %s", err, dmTableCloneOutput)
 	}
-	cloneTable := strings.Fields(string(dmTableCloneOutput))
+	cloneTable := strings.Fields(dmTableCloneOutput)
 	// https://docs.kernel.org/admin-guide/device-mapper/dm-clone.html
 	if len(cloneTable) < 7 {
-		return fmt.Errorf("clone table does not match expected format: %s", string(dmTableCloneOutput))
+		return fmt.Errorf("clone table does not match expected format: %s", dmTableCloneOutput)
 	}
 	if cloneTable[2] != "clone" {
-		return fmt.Errorf("protected_stateful_partition is not a dm-clone device: %s", string(dmTableCloneOutput))
+		return fmt.Errorf("protected_stateful_partition is not a dm-clone device: %s", dmTableCloneOutput)
 	}
 	if cloneTable[4] != cryptNo {
-		return fmt.Errorf("protected_stateful_partition does not have protected_stateful_partition_crypt as a destination device: %s", string(dmTableCloneOutput))
+		return fmt.Errorf("protected_stateful_partition does not have protected_stateful_partition_crypt as a destination device: %s", dmTableCloneOutput)
 	}
 	if cloneTable[5] != zeroNo {
-		return fmt.Errorf("protected_stateful_partition protected_stateful_partition_zero as a source device: %s", string(dmTableCloneOutput))
+		return fmt.Errorf("protected_stateful_partition protected_stateful_partition_zero as a source device: %s", dmTableCloneOutput)
 	}
 
 	// Check protected_stateful_partition_crypt is encrypted and is on integrity protection.
-	dmTableCryptOutput, err := exec.Command("dmsetup", "table", "/dev/mapper/protected_stateful_partition_crypt").Output()
+	dmTableCryptOutput, err := verifier.DmsetupTable("/dev/mapper/protected_stateful_partition_crypt")
 	if err != nil {
-		return fmt.Errorf("failed to check /dev/mapper/protected_stateful_partition_crypt status: %v %s", err, string(dmTableCryptOutput))
+		return fmt.Errorf("failed to check /dev/mapper/protected_stateful_partition_crypt status: %v %s", err, dmTableCryptOutput)
 	}
-	matched := regexp.MustCompile(`integrity:28:aead`).FindString(string(dmTableCryptOutput))
+	matched := regexp.MustCompile(`integrity:28:aead`).FindString(dmTableCryptOutput)
 	if len(matched) == 0 {
 		return fmt.Errorf("stateful partition is not integrity protected: \n%s", dmTableCryptOutput)
 	}
-	matched = regexp.MustCompile(`capi:gcm\(aes\)-random`).FindString(string(dmTableCryptOutput))
+	matched = regexp.MustCompile(`capi:gcm\(aes\)-random`).FindString(dmTableCryptOutput)
 	if len(matched) == 0 {
 		return fmt.Errorf("stateful partition is not using the aes-gcm-random cipher: \n%s", dmTableCryptOutput)
 	}
 
-	// Make sure /var/lib/containerd is on protected_stateful_partition.
-	findmountOutput, err := exec.Command("findmnt", "/dev/mapper/protected_stateful_partition").Output()
+	// Check verity status on vroot and oemroot.
+	cryptSetupOutput, err := verifier.CryptsetupStatus("vroot")
 	if err != nil {
-		return fmt.Errorf("failed to findmnt /dev/mapper/protected_stateful_partition: %v %s", err, string(findmountOutput))
+		return fmt.Errorf("failed to check vroot status: %v %s", err, cryptSetupOutput)
 	}
-	matched = regexp.MustCompile(`/var/lib/containerd\s+/dev/mapper/protected_stateful_partition\[/var/lib/containerd\]\s+ext4\s+rw,nosuid,nodev,relatime,commit=30`).FindString(string(findmountOutput))
+	if !strings.Contains(cryptSetupOutput, "/dev/mapper/vroot is active and is in use.") {
+		return fmt.Errorf("/dev/mapper/vroot was not mounted correctly: \n%s", cryptSetupOutput)
+	}
+	cryptSetupOutput, err = verifier.CryptsetupStatus("oemroot")
+	if err != nil {
+		return fmt.Errorf("failed to check oemroot status: %v %s", err, cryptSetupOutput)
+	}
+	if !strings.Contains(cryptSetupOutput, "/dev/mapper/oemroot is active and is in use.") {
+		return fmt.Errorf("/dev/mapper/oemroot was not mounted correctly: \n%s", cryptSetupOutput)
+	}
+
+	return nil
+}
+
+func verifyMounts(launchSpec spec.LaunchSpec, verifier mountVerifier) error {
+	// Make sure /var/lib/containerd is on protected_stateful_partition.
+	findmountOutput, err := verifier.Findmnt("/dev/mapper/protected_stateful_partition")
+	if err != nil {
+		return fmt.Errorf("failed to findmnt /dev/mapper/protected_stateful_partition: %v %s", err, findmountOutput)
+	}
+	matched := regexp.MustCompile(`/var/lib/containerd\s+/dev/mapper/protected_stateful_partition\[/var/lib/containerd\]\s+ext4\s+rw,nosuid,nodev,relatime,commit=30`).FindString(findmountOutput)
 	if len(matched) == 0 {
 		return fmt.Errorf("/var/lib/containerd was not mounted on the protected_stateful_partition: \n%s", findmountOutput)
 	}
 	if !launchSpec.Experiments.BcMode {
-		matched = regexp.MustCompile(`/var/lib/google\s+/dev/mapper/protected_stateful_partition\[/var/lib/google\]\s+ext4\s+rw,nosuid,nodev,relatime,commit=30`).FindString(string(findmountOutput))
+		matched = regexp.MustCompile(`/var/lib/google\s+/dev/mapper/protected_stateful_partition\[/var/lib/google\]\s+ext4\s+rw,nosuid,nodev,relatime,commit=30`).FindString(findmountOutput)
 		if len(matched) == 0 {
 			return fmt.Errorf("/var/lib/google was not mounted on the protected_stateful_partition: \n%s", findmountOutput)
 		}
 	}
 
 	// Check /tmp is on tmpfs.
-	findmntOutput, err := exec.Command("findmnt", "tmpfs").Output()
+	findmntOutput, err := verifier.Findmnt("tmpfs")
 	if err != nil {
-		return fmt.Errorf("failed to findmnt tmpfs: %v %s", err, string(findmntOutput))
+		return fmt.Errorf("failed to findmnt tmpfs: %v %s", err, findmntOutput)
 	}
-	matched = regexp.MustCompile(`/tmp\s+tmpfs\s+tmpfs`).FindString(string(findmntOutput))
+	matched = regexp.MustCompile(`/tmp\s+tmpfs\s+tmpfs`).FindString(findmntOutput)
 	if len(matched) == 0 {
 		return fmt.Errorf("/tmp was not mounted on the tmpfs: \n%s", findmntOutput)
 	}
 
-	// Check verity status on vroot and oemroot.
-	cryptSetupOutput, err := exec.Command("cryptsetup", "status", "vroot").Output()
-	if err != nil {
-		return fmt.Errorf("failed to check vroot status: %v %s", err, string(cryptSetupOutput))
-	}
-	if !strings.Contains(string(cryptSetupOutput), "/dev/mapper/vroot is active and is in use.") {
-		return fmt.Errorf("/dev/mapper/vroot was not mounted correctly: \n%s", cryptSetupOutput)
-	}
-	cryptSetupOutput, err = exec.Command("cryptsetup", "status", "oemroot").Output()
-	if err != nil {
-		return fmt.Errorf("failed to check oemroot status: %v %s", err, string(cryptSetupOutput))
-	}
-	if !strings.Contains(string(cryptSetupOutput), "/dev/mapper/oemroot is active and is in use.") {
-		return fmt.Errorf("/dev/mapper/oemroot was not mounted correctly: \n%s", cryptSetupOutput)
-	}
-
 	return nil
+}
+
+type integrityVerifier interface {
+	DmsetupLs() (string, error)
+	DmsetupTable(name string) (string, error)
+	CryptsetupStatus(name string) (string, error)
+}
+
+type mountVerifier interface {
+	Findmnt(target string) (string, error)
+}
+
+type osMountVerifier struct{}
+
+func (osMountVerifier) DmsetupLs() (string, error) {
+	out, err := exec.Command("dmsetup", "ls").Output()
+	return string(out), err
+}
+
+func (osMountVerifier) DmsetupTable(name string) (string, error) {
+	out, err := exec.Command("dmsetup", "table", name).Output()
+	return string(out), err
+}
+
+func (osMountVerifier) Findmnt(target string) (string, error) {
+	out, err := exec.Command("findmnt", target).Output()
+	return string(out), err
+}
+
+func (osMountVerifier) CryptsetupStatus(name string) (string, error) {
+	out, err := exec.Command("cryptsetup", "status", name).Output()
+	return string(out), err
 }
