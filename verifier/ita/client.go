@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"strings"
 
+	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
 	"github.com/google/go-tpm-tools/verifier"
 )
 
@@ -258,7 +259,50 @@ func convertRequestToTokenRequest(request verifier.VerifyAttestationRequest) tok
 		tokenReq.GCP.CSInfo.SignedEntities = append(tokenReq.GCP.CSInfo.SignedEntities, itaSig)
 	}
 
+	if request.NvidiaAttestation != nil {
+		tokenReq.Nvgpu = convertNvidiaAttestationToITANvgpu(request.NvidiaAttestation)
+	}
+
 	return tokenReq
+}
+
+func convertNvidiaAttestationToITANvgpu(nvAtt *attestationpb.NvidiaAttestationReport) *nvgpuEvidence {
+	var gpuInfos []*attestationpb.GpuInfo
+	if nvAtt.GetSpt() != nil {
+		gpuInfos = []*attestationpb.GpuInfo{nvAtt.GetSpt().GetGpuQuote()}
+	} else if nvAtt.GetMpt() != nil {
+		gpuInfos = nvAtt.GetMpt().GetGpuQuotes()
+	}
+
+	if len(gpuInfos) == 0 {
+		return nil
+	}
+
+	evidenceList := make([]gpuDeviceEvidence, 0, len(gpuInfos))
+	for _, info := range gpuInfos {
+		evidenceList = append(evidenceList, gpuDeviceEvidence{
+			Evidence:    info.GetAttestationReport(),
+			Certificate: info.GetAttestationCertificateChain(),
+		})
+	}
+
+	return &nvgpuEvidence{
+		GpuNonce:     fmt.Sprintf("%x", nvAtt.GetNonce()),
+		Arch:         convertGPUArchToString(gpuInfos[0].GetGpuArchitectureType()),
+		EvidenceList: evidenceList,
+	}
+}
+
+
+func convertGPUArchToString(arch attestationpb.GpuArchitectureType) string {
+	switch arch {
+	case attestationpb.GpuArchitectureType_GPU_ARCHITECTURE_TYPE_HOPPER:
+		return "HOPPER"
+	case attestationpb.GpuArchitectureType_GPU_ARCHITECTURE_TYPE_BLACKWELL:
+		return "BLACKWELL"
+	default:
+		return "UNSPECIFIED"
+	}
 }
 
 func (c *client) VerifyConfidentialSpace(ctx context.Context, request verifier.VerifyAttestationRequest) (*verifier.VerifyAttestationResponse, error) {

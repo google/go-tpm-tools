@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/google/go-tpm-tools/verifier/models"
 )
@@ -389,3 +390,64 @@ func TestURLFromRegionError(t *testing.T) {
 		})
 	}
 }
+
+func TestConvertRequestToTokenRequestWithNvidia(t *testing.T) {
+	gpuInfo := &attestationpb.GpuInfo{
+		Uuid:                        "gpu-uuid-123",
+		DriverVersion:               "535.100",
+		VbiosVersion:                "vbios-456",
+		GpuArchitectureType:         attestationpb.GpuArchitectureType_GPU_ARCHITECTURE_TYPE_HOPPER,
+		AttestationCertificateChain: []byte("cert-chain-data"),
+		AttestationReport:           []byte("attestation-report-data"),
+	}
+	nvReport := &attestationpb.NvidiaAttestationReport{
+		CcFeature: &attestationpb.NvidiaAttestationReport_Spt{
+			Spt: &attestationpb.NvidiaAttestationReport_SinglePassthroughAttestation{
+				GpuQuote: gpuInfo,
+			},
+		},
+		Nonce: []byte("nonce-bytes-32-long-dummy-value!"),
+	}
+
+	request := verifier.VerifyAttestationRequest{
+		Challenge:         testVerifierRequest.Challenge,
+		TDCCELAttestation: testVerifierRequest.TDCCELAttestation,
+		NvidiaAttestation: nvReport,
+	}
+
+	expectedRequest := tokenRequest{
+		PolicyMatch: true,
+		TDX: tdxEvidence{
+			EventLog:          testVerifierRequest.TDCCELAttestation.CcelData,
+			CanonicalEventLog: testVerifierRequest.TDCCELAttestation.CanonicalEventLog,
+			Quote:             testVerifierRequest.TDCCELAttestation.TdQuote,
+			VerifierNonce: nonce{
+				Val:       request.Challenge.Val,
+				Iat:       request.Challenge.Iat,
+				Signature: request.Challenge.Signature,
+			},
+		},
+		SigAlg: "RS256",
+		GCP: gcpData{
+			AKCert:            testVerifierRequest.TDCCELAttestation.AkCert,
+			IntermediateCerts: testVerifierRequest.TDCCELAttestation.IntermediateCerts,
+		},
+		Nvgpu: &nvgpuEvidence{
+			GpuNonce: "6e6f6e63652d62797465732d33322d6c6f6e672d64756d6d792d76616c756521",
+			Arch:     "HOPPER",
+			EvidenceList: []gpuDeviceEvidence{
+				{
+					Evidence:    []byte("attestation-report-data"),
+					Certificate: []byte("cert-chain-data"),
+				},
+			},
+		},
+	}
+
+	convertedReq := convertRequestToTokenRequest(request)
+
+	if diff := cmp.Diff(convertedReq, expectedRequest); diff != "" {
+		t.Errorf("convertRequestToTokenRequest with Nvidia did not return expected tokenRequest: %v", diff)
+	}
+}
+
