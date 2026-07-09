@@ -57,15 +57,8 @@ var BuildCommit = "dev"
 
 const serialConsoleFile = "/dev/console"
 
-var logger logging.Logger
-var workloadLogger logging.Logger
-var mdsClient *metadata.Client
-var launchSpec spec.LaunchSpec
-
-var welcomeMessage = "TEE container launcher initiating"
-var exitMessage = "TEE container launcher exiting"
-
-var start time.Time
+const welcomeMessage = "TEE container launcher initiating"
+const exitMessage = "TEE container launcher exiting"
 
 func main() {
 	uptime, err := getUptime()
@@ -74,7 +67,7 @@ func main() {
 		log.Default().Printf("error reading VM uptime: %v", err)
 	}
 	// Note the current time to later calculate launch time.
-	start = time.Now()
+	start := time.Now()
 
 	var exitCode int // by default exit code is 0
 	ctx := context.Background()
@@ -109,7 +102,7 @@ func main() {
 	}
 	defer serialConsole.Close()
 
-	workloadLogger, err = logging.NewCloudLogger(ctx, pool)
+	workloadLogger, err := logging.NewCloudLogger(ctx, pool)
 	if err != nil {
 		log.Default().Printf("failed to initialize cloud logging: %v", err)
 		exitCode = failRC
@@ -118,7 +111,7 @@ func main() {
 	}
 	defer workloadLogger.Close()
 
-	logger = logging.DualLogger(workloadLogger, logging.NewSerialLogger(serialConsole))
+	logger := logging.DualLogger(workloadLogger, logging.NewSerialLogger(serialConsole))
 
 	logger.Info("Boot completed", "duration_sec", uptime)
 	logger.Info(welcomeMessage, "build_commit", BuildCommit)
@@ -128,8 +121,8 @@ func main() {
 	}
 
 	// Get RestartPolicy and IsHardened from spec
-	mdsClient = metadata.NewClient(nil)
-	launchSpec, err = spec.GetLaunchSpec(ctx, logger, mdsClient)
+	mdsClient := metadata.NewClient(nil)
+	launchSpec, err := spec.GetLaunchSpec(ctx, logger, mdsClient)
 	if err != nil {
 		logger.Error(fmt.Sprintf("failed to get launchspec, make sure you're running inside a GCE VM: %v", err))
 		// if cannot get launchSpec, exit directly
@@ -138,7 +131,7 @@ func main() {
 		return
 	}
 
-	if err := verifyFsAndMount(); err != nil {
+	if err := verifyFsAndMount(launchSpec); err != nil {
 		logger.Error(fmt.Sprintf("failed to verify filesystem and mounts: %v\n", err))
 		exitCode = rebootRC
 		logger.Error(exitMessage, "exit_code", exitCode, "exit_msg", rcMessage[exitCode])
@@ -158,7 +151,7 @@ func main() {
 			logger.Info(exitMessage, "exit_code", exitCode)
 		}
 	}()
-	if err = startLauncher(launchSpec, serialConsole, googleClient, clientOpts...); err != nil {
+	if err = startLauncher(launchSpec, logger, workloadLogger, mdsClient, start, serialConsole, googleClient, clientOpts...); err != nil {
 		logger.Error(err.Error())
 	}
 
@@ -218,7 +211,16 @@ func getUptime() (string, error) {
 	return string(split[0]), nil
 }
 
-func startLauncher(launchSpec spec.LaunchSpec, serialConsole *os.File, googleClient *http.Client, clientOpts ...option.ClientOption) error {
+func startLauncher(
+	launchSpec spec.LaunchSpec,
+	logger logging.Logger,
+	workloadLogger logging.Logger,
+	mdsClient *metadata.Client,
+	start time.Time,
+	serialConsole *os.File,
+	googleClient *http.Client,
+	clientOpts ...option.ClientOption,
+) error {
 	logger.Info(fmt.Sprintf("Launch Spec: %+v", launchSpec.LogFriendly()))
 	containerdClient, err := containerd.New(defaults.DefaultAddress)
 	if err != nil {
@@ -226,7 +228,7 @@ func startLauncher(launchSpec spec.LaunchSpec, serialConsole *os.File, googleCli
 	}
 	defer containerdClient.Close()
 
-	tpm, err := initTPM(launchSpec)
+	tpm, err := initTPM(launchSpec, logger)
 	if err != nil {
 		return err
 	}
@@ -281,7 +283,7 @@ func startLauncher(launchSpec spec.LaunchSpec, serialConsole *os.File, googleCli
 	return r.Run(ctx)
 }
 
-func initTPM(launchSpec spec.LaunchSpec) (io.ReadWriteCloser, error) {
+func initTPM(launchSpec spec.LaunchSpec, logger logging.Logger) (io.ReadWriteCloser, error) {
 	if launchSpec.Experiments.BcMode {
 		logger.Info("Running in BC mode, bypassing TPM initialization and checks.")
 		return nil, nil
@@ -331,7 +333,7 @@ func initTPM(launchSpec spec.LaunchSpec) (io.ReadWriteCloser, error) {
 
 // verifyFsAndMount checks the partitions/mounts are as expected, based on the command output reported by OS.
 // These checks are not a security guarantee.
-func verifyFsAndMount() error {
+func verifyFsAndMount(launchSpec spec.LaunchSpec) error {
 	dmLsOutput, err := exec.Command("dmsetup", "ls").Output()
 	if err != nil {
 		return fmt.Errorf("failed to call `dmsetup ls`: %v %s", err, string(dmLsOutput))
