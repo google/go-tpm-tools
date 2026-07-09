@@ -827,8 +827,10 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		streamOpt = cio.WithStreams(nil, w, w)
 		r.logger.Info("Container stdout/stderr will be redirected to serial and Cloud Logging. This may result in performance issues due to slow serial console writes.")
 	case spec.CloudLogging:
-		streamOpt = cio.WithStreams(nil, os.Stdout, os.Stdout)
-		r.logger.Info("Container stdout/stderr will be redirected to Cloud Logging.")
+		stdoutWriter := logging.NewInfoWriter(r.logger)
+		stderrWriter := logging.NewErrorWriter(r.logger)
+		streamOpt = cio.WithStreams(nil, stdoutWriter, stderrWriter)
+		r.logger.Info("Container stdout/stderr will be redirected to Cloud Logging with INFO and ERROR severities respectively.")
 	case spec.Serial:
 		streamOpt = cio.WithStreams(nil, r.serialConsole, r.serialConsole)
 		r.logger.Info("Container stdout/stderr will be redirected to serial logging. This may result in performance issues due to slow serial console writes.")

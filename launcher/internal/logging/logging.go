@@ -7,6 +7,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 
@@ -27,6 +28,7 @@ const (
 )
 
 // Logger defines the interface for the CS image logger.
+// Callers should run `defer logger.Close()` after initialization to ensure logs are flushed and handles are closed.
 type Logger interface {
 	Log(severity clogging.Severity, msg string, args ...any)
 
@@ -35,6 +37,7 @@ type Logger interface {
 	Error(msg string, args ...any)
 
 	SerialConsoleFile() *os.File
+	// Close flushes buffered logs and closes underlying resources. Callers should defer Close().
 	Close()
 }
 
@@ -51,6 +54,13 @@ type logger struct {
 	instanceName      string
 	cloudClient       *clogging.Client
 	serialConsoleFile *os.File
+}
+
+type cloudLogger struct {
+	cloudLogger  cLogger
+	resource     *mrpb.MonitoredResource
+	instanceName string
+	cloudClient  *clogging.Client
 }
 
 type payload map[string]any
@@ -123,6 +133,55 @@ func NewLogger(ctx context.Context, pool *x509.CertPool) (Logger, error) {
 	}, err
 }
 
+// NewCloudLogger returns a Logger that logs exclusively to Cloud Logging.
+func NewCloudLogger(ctx context.Context, pool *x509.CertPool) (Logger, error) {
+	mdsClient := metadata.NewClient(nil)
+
+	projectID, err := mdsClient.ProjectIDWithContext(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to retrieve Project ID from metadata server: %v", err)
+	}
+	instanceID, err := mdsClient.InstanceIDWithContext(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to retrieve Instance ID from metadata server: %v", err)
+	}
+	zone, err := mdsClient.ZoneWithContext(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to retrieve Zone from metadata server: %v", err)
+	}
+	instanceName, err := mdsClient.InstanceNameWithContext(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to retrieve Instance Name from metadata server: %v", err)
+	}
+
+	var opts []option.ClientOption
+	if pool != nil {
+		creds := credentials.NewTLS(&tls.Config{
+			RootCAs: pool,
+		})
+		opts = append(opts, option.WithGRPCDialOption(grpc.WithTransportCredentials(creds)))
+	}
+
+	cloggingClient, err := clogging.NewClient(ctx, projectID, opts...)
+	if err != nil {
+		return nil, err
+	}
+
+	return &cloudLogger{
+		cloudLogger: cloggingClient.Logger(logName),
+		resource: &mrpb.MonitoredResource{
+			Type: "gce_instance",
+			Labels: map[string]string{
+				"project_id":  projectID,
+				"instance_id": instanceID,
+				"zone":        zone,
+			},
+		},
+		instanceName: instanceName,
+		cloudClient:  cloggingClient,
+	}, nil
+}
+
 func (l *logger) SerialConsoleFile() *os.File {
 	return l.serialConsoleFile
 }
@@ -134,6 +193,46 @@ func (l *logger) Close() {
 
 	if l.serialConsoleFile != nil {
 		l.serialConsoleFile.Close()
+	}
+}
+
+func (l *cloudLogger) Log(severity clogging.Severity, msg string, args ...any) {
+	if l.cloudLogger == nil {
+		return
+	}
+	logEntry := clogging.Entry{
+		Severity: severity,
+		Resource: l.resource,
+	}
+
+	pl := payload{}
+	addArgs(pl, args)
+
+	if len(msg) > 0 {
+		pl[payloadMessageKey] = msg
+	}
+
+	if len(l.instanceName) > 0 {
+		pl[payloadInstanceNameKey] = l.instanceName
+	}
+
+	logEntry.Payload = pl
+
+	l.cloudLogger.Log(logEntry)
+	if err := l.cloudLogger.Flush(); err != nil {
+		slog.Error(fmt.Sprintf("cloud.Logger.Flush returned error: %v", err))
+	}
+}
+
+func (l *cloudLogger) Info(msg string, args ...any)  { l.Log(clogging.Info, msg, args...) }
+func (l *cloudLogger) Warn(msg string, args ...any)  { l.Log(clogging.Warning, msg, args...) }
+func (l *cloudLogger) Error(msg string, args ...any) { l.Log(clogging.Error, msg, args...) }
+
+func (l *cloudLogger) SerialConsoleFile() *os.File { return nil }
+
+func (l *cloudLogger) Close() {
+	if l.cloudClient != nil {
+		l.cloudClient.Close()
 	}
 }
 
@@ -165,7 +264,10 @@ func addArgs(pl payload, args []any) {
 	addArgs(pl, args[2:])
 }
 
-func (l *logger) writeLog(severity clogging.Severity, msg string, args ...any) {
+func (l *logger) writeCloudLog(severity clogging.Severity, msg string, args ...any) {
+	if l.cloudLogger == nil {
+		return
+	}
 	// Write cloud log.
 	logEntry := clogging.Entry{
 		Severity: severity,
@@ -190,6 +292,10 @@ func (l *logger) writeLog(severity clogging.Severity, msg string, args ...any) {
 	if err := l.cloudLogger.Flush(); err != nil {
 		l.serialLogger.Error(fmt.Sprintf("cloud.Logger.Flush returned error: %v", err))
 	}
+}
+
+func (l *logger) writeLog(severity clogging.Severity, msg string, args ...any) {
+	l.writeCloudLog(severity, msg, args...)
 
 	// Write to serial console.
 	switch severity {
@@ -268,3 +374,42 @@ func (l *slogger) SerialConsoleFile() *os.File {
 }
 
 func (l *slogger) Close() {}
+
+// SeverityWriter wraps a Logger and implements io.Writer to write directly to Cloud Logging at a specific severity level.
+type SeverityWriter struct {
+	l        Logger
+	severity clogging.Severity
+}
+
+// NewSeverityWriter returns an io.Writer that writes to the provided Logger with a specific severity.
+func NewSeverityWriter(l Logger, severity clogging.Severity) io.Writer {
+	return &SeverityWriter{l: l, severity: severity}
+}
+
+// NewInfoWriter returns an io.Writer that writes logs to the provided Logger with Info severity.
+func NewInfoWriter(l Logger) io.Writer {
+	return NewSeverityWriter(l, clogging.Info)
+}
+
+// NewErrorWriter returns an io.Writer that writes logs to the provided Logger with Error severity.
+func NewErrorWriter(l Logger) io.Writer {
+	return NewSeverityWriter(l, clogging.Error)
+}
+
+// Write implements the io.Writer interface, redirecting logs to Cloud Logging with the configured severity.
+func (w *SeverityWriter) Write(p []byte) (n int, err error) {
+	// Trim any trailing newline.
+	end := len(p)
+	for end > 0 && p[end-1] == '\n' {
+		end--
+	}
+	msg := string(p[:end])
+
+	if realLogger, ok := w.l.(*logger); ok {
+		realLogger.writeCloudLog(w.severity, msg)
+	} else {
+		w.l.Log(w.severity, msg)
+	}
+
+	return len(p), nil
+}
