@@ -96,9 +96,17 @@ const (
 // Default OOM score for a CS container.
 const defaultOOMScore = 1000
 
+// ContainerdClient abstracts the subset of containerd.Client methods used by the
+// runner. This enables unit testing by allowing a mock client to be injected.
+type ContainerdClient interface {
+	LoadContainer(ctx context.Context, id string) (containerd.Container, error)
+	NewContainer(ctx context.Context, id string, opts ...containerd.NewContainerOpts) (containerd.Container, error)
+	Pull(ctx context.Context, ref string, opts ...containerd.RemoteOpt) (containerd.Image, error)
+}
+
 // RunnerConfig contains the configuration for creating a ContainerRunner.
 type RunnerConfig struct {
-	ContainerdClient *containerd.Client
+	ContainerdClient ContainerdClient
 	Token            oauth2.Token
 	LaunchSpec       spec.LaunchSpec
 	MetadataClient   *metadata.Client
@@ -108,6 +116,7 @@ type RunnerConfig struct {
 	SerialConsole    *os.File
 	GoogleClient     *http.Client
 	ClientOpts       []option.ClientOption
+	AKFetcher        util.TpmKeyFetcher
 }
 
 // NewRunner returns a runner.
@@ -369,7 +378,11 @@ func NewRunner(ctx context.Context, cfg *RunnerConfig) (*ContainerRunner, error)
 		EnableGpuGcaSupport:       launchSpec.Experiments.EnableGpuGcaSupport,
 		BcMode:                    launchSpec.Experiments.BcMode,
 	}
-	attestAgent, err := agent.CreateAttestationAgent(tpm, client.GceAttestationKeyECC, verifierClient, principalFetcherWithImpersonate, sdClient, exps, logger, deviceROTs, launchSpec.SignedImageRepos)
+	akFetcher := cfg.AKFetcher
+	if akFetcher == nil {
+		akFetcher = client.GceAttestationKeyECC
+	}
+	attestAgent, err := agent.CreateAttestationAgent(tpm, akFetcher, verifierClient, principalFetcherWithImpersonate, sdClient, exps, logger, deviceROTs, launchSpec.SignedImageRepos)
 	if err != nil {
 		return nil, err
 	}
@@ -420,7 +433,7 @@ func enableMonitoring(enabled spec.MonitoringType, logger logging.Logger) error 
 	return nil
 }
 
-func getSignatureDiscoveryClient(cdClient *containerd.Client, mdsClient *metadata.Client, imageDesc v1.Descriptor, googleHTTPClient *http.Client) signaturediscovery.Fetcher {
+func getSignatureDiscoveryClient(cdClient ContainerdClient, mdsClient *metadata.Client, imageDesc v1.Descriptor, googleHTTPClient *http.Client) signaturediscovery.Fetcher {
 	resolverFetcher := func(ctx context.Context) (remotes.Resolver, error) {
 		return registryauth.RefreshResolver(ctx, mdsClient, googleHTTPClient)
 	}
@@ -938,7 +951,7 @@ func pullImageWithRetries(f func() (containerd.Image, error), retry func() backo
 	return image, nil
 }
 
-func initImage(ctx context.Context, cdClient *containerd.Client, launchSpec spec.LaunchSpec, token oauth2.Token, googleClient *http.Client) (containerd.Image, error) {
+func initImage(ctx context.Context, cdClient ContainerdClient, launchSpec spec.LaunchSpec, token oauth2.Token, googleClient *http.Client) (containerd.Image, error) {
 	var accessToken string
 	if token.Valid() {
 		accessToken = token.AccessToken
