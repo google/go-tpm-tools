@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -15,12 +14,10 @@ import (
 	"time"
 
 	"cloud.google.com/go/compute/metadata"
-	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/launcher"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/spec"
-	"github.com/google/go-tpm/legacy/tpm2"
 	"google.golang.org/api/option"
 )
 
@@ -31,12 +28,6 @@ const (
 	rebootRC = 3 // reboot
 	holdRC   = 4 // hold
 )
-
-var expectedTPMDAParams = launcher.TPMDAParams{
-	MaxTries:        0x20,    // 32 tries
-	RecoveryTime:    0x1C20,  // 120 mins
-	LockoutRecovery: 0x15180, // 24 hrs
-}
 
 var rcMessage = map[int]string{
 	successRC: "workload finished successfully, shutting down the VM",
@@ -138,25 +129,6 @@ func main() {
 		return
 	}
 
-	var tpm io.ReadWriteCloser
-	if !launchSpec.Experiments.BcMode {
-		tpm, err = tpm2.OpenTPM("/dev/tpmrm0")
-		if err != nil {
-			logger.Error(fmt.Sprintf("failed to open TPM device: %v", err))
-			exitCode = rebootRC
-			logger.Error(exitMessage, "exit_code", exitCode, "exit_msg", rcMessage[exitCode])
-			return
-		}
-		defer tpm.Close()
-
-		if err := initTPM(tpm, logger); err != nil {
-			logger.Error(fmt.Sprintf("failed to initialize TPM: %v", err))
-			exitCode = getExitCode(launchSpec.Hardened, launchSpec.RestartPolicy, err)
-			logger.Error(exitMessage, "exit_code", exitCode, "exit_msg", rcMessage[exitCode])
-			return
-		}
-	}
-
 	defer func() {
 		// Catch panic to attempt to output to Cloud Logging.
 		if r := recover(); r != nil {
@@ -170,8 +142,18 @@ func main() {
 			logger.Info(exitMessage, "exit_code", exitCode)
 		}
 	}()
-	if err = launcher.StartLauncher(ctx, launchSpec, tpm, logger, workloadLogger, mdsClient, start, serialConsole, googleClient, clientOpts...); err != nil {
+	if err = launcher.StartLauncher(ctx, launchSpec, logger, workloadLogger, serialConsole, clientOpts...); err != nil {
 		logger.Error(err.Error())
+		var tpmOpenErr *launcher.TPMOpenError
+		if errors.As(err, &tpmOpenErr) {
+			exitCode = rebootRC
+			return
+		}
+		var tpmInitErr *launcher.TPMInitError
+		if errors.As(err, &tpmInitErr) {
+			exitCode = getExitCode(launchSpec.Hardened, launchSpec.RestartPolicy, err)
+			return
+		}
 	}
 
 	workloadDuration := time.Since(start)
@@ -228,42 +210,6 @@ func getUptime() (string, error) {
 	}
 
 	return string(split[0]), nil
-}
-
-func initTPM(tpm io.ReadWriteCloser, logger logging.Logger) error {
-	// check DA info, don't crash if failed
-	daInfo, err := launcher.GetTPMDAInfo(tpm)
-	if err != nil {
-		logger.Error(fmt.Sprintf("Failed to get DA Info: %v", err))
-	} else {
-		if !daInfo.StartupClearOrderly {
-			logger.Warn(fmt.Sprintf("Failed orderly startup. Avoid using instance reset. Instead, use instance stop/start. DA lockout counter incremented: LockoutCounter: %d / MaxAuthFail: %d", daInfo.LockoutCounter, daInfo.MaxTries))
-		}
-
-		if err := launcher.SetTPMDAParams(tpm, expectedTPMDAParams); err != nil {
-			logger.Error(fmt.Sprintf("Failed to set DA params: %v", err))
-		}
-
-		daInfo, err := launcher.GetTPMDAInfo(tpm)
-		if err != nil {
-			logger.Error(fmt.Sprintf("Failed to get DA Info: %v", err))
-		} else {
-			logger.Info(fmt.Sprintf("Updated TPM DA params: %+v", daInfo))
-		}
-	}
-
-	// check AK (EK signing) cert
-	gceAk, err := client.GceAttestationKeyECC(tpm)
-	if err != nil {
-		return err
-	}
-	defer gceAk.Close()
-
-	if gceAk.Cert() == nil {
-		return errors.New("failed to find AKCert on this VM: try creating a new VM or contacting support")
-	}
-
-	return nil
 }
 
 // verifyFsAndMount checks the partitions/mounts are as expected, based on the command output reported by OS.

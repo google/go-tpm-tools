@@ -32,7 +32,6 @@ import (
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-tpm-tools/agent"
 	"github.com/google/go-tpm-tools/cel"
-	"github.com/google/go-tpm-tools/client"
 	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
 	workloadservice "github.com/google/go-tpm-tools/keymanager/workload_service"
 	"github.com/google/go-tpm-tools/launcher/internal/gpu"
@@ -43,13 +42,8 @@ import (
 	"github.com/google/go-tpm-tools/launcher/registryauth"
 	"github.com/google/go-tpm-tools/launcher/spec"
 	"github.com/google/go-tpm-tools/launcher/teeserver"
-	"github.com/google/go-tpm-tools/verifier"
-	"github.com/google/go-tpm-tools/verifier/fake"
-	"github.com/google/go-tpm-tools/verifier/ita"
-	"github.com/google/go-tpm-tools/verifier/util"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
-	"google.golang.org/api/option"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -63,7 +57,7 @@ type ContainerRunner struct {
 	gpuAttester    gpu.Attester
 	serialConsole  *os.File
 	powerButton    *powerButtonListener // Populated only for a hardened image
-	clientOpts     []option.ClientOption
+	attestClients  teeserver.AttestClients
 }
 
 const tokenFileTmp = ".token.tmp"
@@ -107,30 +101,25 @@ type ContainerdClient interface {
 // RunnerConfig contains the configuration for creating a ContainerRunner.
 type RunnerConfig struct {
 	ContainerdClient ContainerdClient
+	Image            containerd.Image
+	AttestAgent      agent.AttestationAgent
+	GpuAttester      gpu.Attester
+	AttestClients    teeserver.AttestClients
 	LaunchSpec       spec.LaunchSpec
-	MetadataClient   *metadata.Client
-	TPM              io.ReadWriteCloser
 	Logger           logging.Logger
 	WorkloadLogger   logging.Logger
 	SerialConsole    *os.File
-	GoogleClient     *http.Client
-	ClientOpts       []option.ClientOption
-	AKFetcher        util.TpmKeyFetcher
-	Image            containerd.Image
 }
 
 // NewRunner returns a runner.
 func NewRunner(ctx context.Context, cfg *RunnerConfig) (*ContainerRunner, error) {
 	cdClient := cfg.ContainerdClient
 	launchSpec := cfg.LaunchSpec
-	mdsClient := cfg.MetadataClient
-	tpm := cfg.TPM
 	logger := cfg.Logger
 	workloadLogger := cfg.WorkloadLogger
 	serialConsole := cfg.SerialConsole
-	googleClient := cfg.GoogleClient
-	opts := cfg.ClientOpts
 	image := cfg.Image
+	attestAgent := cfg.AttestAgent
 
 	var mounts []specs.Mount
 	for _, lsMnt := range launchSpec.Mounts {
@@ -154,7 +143,8 @@ func NewRunner(ctx context.Context, cfg *RunnerConfig) (*ContainerRunner, error)
 	container, err := cdClient.LoadContainer(ctx, containerID)
 	if err == nil {
 		// container exists, delete it first
-		container.Delete(ctx, containerd.WithSnapshotCleanup)
+		// TODO: consider handling or logging cleanup error.
+		_ = container.Delete(ctx, containerd.WithSnapshotCleanup)
 	}
 
 	var loggedEnvs []string
@@ -245,8 +235,6 @@ func NewRunner(ctx context.Context, cfg *RunnerConfig) (*ContainerRunner, error)
 	}
 	specOpts = append(specOpts, cgroupOpts...)
 
-	var deviceROTs []agent.DeviceROT
-	nvidiaAttester := gpu.NewNvidiaAttester(launchSpec.InstallGpuDriver)
 	if launchSpec.InstallGpuDriver {
 		gpuMounts := []specs.Mount{
 			{
@@ -297,7 +285,6 @@ func NewRunner(ctx context.Context, cfg *RunnerConfig) (*ContainerRunner, error)
 			logger.Info(fmt.Sprintf("Detected nvidia device : %s", deviceFile))
 			specOpts = append(specOpts, oci.WithDevices(deviceFile, deviceFile, "crw-rw-rw-"))
 		}
-		deviceROTs = append(deviceROTs, nvidiaAttester)
 	}
 
 	container, err = cdClient.NewContainer(
@@ -309,7 +296,8 @@ func NewRunner(ctx context.Context, cfg *RunnerConfig) (*ContainerRunner, error)
 	)
 	if err != nil {
 		if container != nil {
-			container.Delete(ctx, containerd.WithSnapshotCleanup)
+			// TODO: consider handling or logging cleanup error.
+			_ = container.Delete(ctx, containerd.WithSnapshotCleanup)
 		}
 		return nil, &RetryableError{fmt.Errorf("failed to create a container: [%w]", err)}
 	}
@@ -329,60 +317,6 @@ func NewRunner(ctx context.Context, cfg *RunnerConfig) (*ContainerRunner, error)
 				len(containerSpec.Process.Args), len(launchSpec.Cmd))
 	}
 
-	principalFetcherWithImpersonate := func(audience string) ([][]byte, error) {
-		tokens, err := util.PrincipalFetcher(audience, mdsClient)
-		if err != nil {
-			return nil, err
-		}
-
-		// Fetch impersonated ID tokens.
-		for _, sa := range launchSpec.ImpersonateServiceAccounts {
-			idToken, err := FetchImpersonatedToken(ctx, sa, audience, opts...)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get impersonated token for %v: %w", sa, err)
-			}
-
-			tokens = append(tokens, idToken)
-		}
-		return tokens, nil
-	}
-
-	asAddr := launchSpec.GcaAddress
-
-	var verifierClient verifier.Client
-	if launchSpec.FakeVerifierEnabled {
-		verifierClient = fake.NewClient(nil)
-	} else if launchSpec.ITAConfig.ITARegion == "" {
-		gcaClient, err := util.NewRESTClient(ctx, asAddr, launchSpec.ProjectID, launchSpec.Region, opts...)
-		if err != nil {
-			if !launchSpec.DisableGcaRefresh {
-				return nil, fmt.Errorf("failed to create REST verifier client: %v", err)
-			}
-			// If GCA refresh is disabled, swallow the error and continue.
-			logger.Info("Failed to create the GCA client for attestation agent, this is not necessarily blocking because GCA refresh is disabled so the launch will continue: %v", err)
-			gcaClient = nil
-		}
-
-		verifierClient = gcaClient
-	}
-
-	// Create a new signaturediscovery client to fetch signatures.
-	sdClient := getSignatureDiscoveryClient(cdClient, mdsClient, image.Target(), googleClient)
-
-	exps := agent.Experiments{
-		EnableAttestationEvidence: launchSpec.Experiments.EnableAttestationEvidence,
-		EnableGpuGcaSupport:       launchSpec.Experiments.EnableGpuGcaSupport,
-		BcMode:                    launchSpec.Experiments.BcMode,
-	}
-	akFetcher := cfg.AKFetcher
-	if akFetcher == nil {
-		akFetcher = client.GceAttestationKeyECC
-	}
-	attestAgent, err := agent.CreateAttestationAgent(tpm, akFetcher, verifierClient, principalFetcherWithImpersonate, sdClient, exps, logger, deviceROTs, launchSpec.SignedImageRepos)
-	if err != nil {
-		return nil, err
-	}
-
 	var powerButton *powerButtonListener
 	if launchSpec.Hardened {
 		powerButton, err = newPowerButtonListener(logger)
@@ -397,10 +331,10 @@ func NewRunner(ctx context.Context, cfg *RunnerConfig) (*ContainerRunner, error)
 		attestAgent,
 		logger,
 		workloadLogger,
-		nvidiaAttester,
+		cfg.GpuAttester,
 		serialConsole,
 		powerButton,
-		opts,
+		cfg.AttestClients,
 	}, nil
 }
 
@@ -773,32 +707,6 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	// create and start the TEE server
 	r.logger.Info("EnableOnDemandAttestation is enabled: initializing TEE server.")
 
-	attestClients := teeserver.AttestClients{}
-
-	if r.launchSpec.FakeVerifierEnabled {
-		fakeClient := fake.NewClient(nil)
-		attestClients.GCA = fakeClient
-		attestClients.ITA = fakeClient
-	} else if r.launchSpec.ITAConfig.ITARegion != "" {
-		itaClient, err := ita.NewClient(r.launchSpec.ITAConfig)
-		if err != nil {
-			return fmt.Errorf("failed to create ITA client: %v", err)
-		}
-
-		attestClients.ITA = itaClient
-	} else {
-		gcaClient, err := util.NewRESTClient(ctx, r.launchSpec.GcaAddress, r.launchSpec.ProjectID, r.launchSpec.Region, r.clientOpts...)
-		if err != nil {
-			if !r.launchSpec.DisableGcaRefresh {
-				return fmt.Errorf("failed to create REST verifier client: %v", err)
-			}
-			// If GCA refresh is disabled, swallow the error and continue.
-			r.logger.Info("Failed to create the GCA client, but GCA refresh is disabled so the launch will continue: %v", err)
-			gcaClient = nil
-		}
-		attestClients.GCA = gcaClient
-	}
-
 	var workloadService *workloadservice.Server
 	// create and start the key manager server
 	if r.launchSpec.Experiments.EnableKeyManager {
@@ -813,12 +721,12 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 			return fmt.Errorf("failed to verify KeyManager socket permissions: %w", err)
 		}
 		workloadService = keyManagerServer
-		go keyManagerServer.Serve()
-		defer keyManagerServer.Shutdown(ctx)
+		go func() { _ = keyManagerServer.Serve() }()
+		defer func() { _ = keyManagerServer.Shutdown(ctx) }()
 	}
 
 	teeServerSocketPath := path.Join(launcherfile.HostTmpPath, teeServerSocket)
-	teeServer, err := teeserver.New(ctx, teeServerSocketPath, r.attestAgent, r.logger, r.launchSpec, attestClients, workloadService)
+	teeServer, err := teeserver.New(ctx, teeServerSocketPath, r.attestAgent, r.logger, r.launchSpec, r.attestClients, workloadService)
 	if err != nil {
 		return fmt.Errorf("failed to create the TEE server: %v", err)
 	}
@@ -826,8 +734,8 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		return fmt.Errorf("failed to verify TEE server socket permissions: %w", err)
 	}
 
-	go teeServer.Serve()
-	defer teeServer.Shutdown(ctx)
+	go func() { _ = teeServer.Serve() }()
+	defer func() { _ = teeServer.Shutdown(ctx) }()
 
 	// Avoids breaking existing memory monitoring tests that depend on this log.
 	if r.launchSpec.MonitoringEnabled == spec.None {
@@ -1036,7 +944,8 @@ func (r *ContainerRunner) Close(ctx context.Context) {
 
 	// Exit gracefully:
 	// Delete container and close connection to attestation service.
-	r.container.Delete(ctx, containerd.WithSnapshotCleanup)
+	// TODO: consider handling or logging cleanup error.
+	_ = r.container.Delete(ctx, containerd.WithSnapshotCleanup)
 }
 
 // withRlimits sets the rlimit (like the max file descriptor) for the container process
