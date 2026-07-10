@@ -345,19 +345,26 @@ func TestConvertRequestToTokenRequestWithCCELDataPadding(t *testing.T) {
 }
 
 func TestURLFromRegion(t *testing.T) {
-	for region, expectedURL := range regionalURLs {
+	testCases := map[string]string{
+		"US":                           "https://api.trustauthority.intel.com",
+		"EU":                           "https://api.eu.trustauthority.intel.com",
+		"https://custom-url.intel.com": "https://custom-url.intel.com",
+		"http://custom-http.intel.com": "http://custom-http.intel.com",
+	}
+	for region, expectedURL := range testCases {
 		t.Run(region+" region", func(t *testing.T) {
 			url, err := urlFromRegion(region)
 			if err != nil {
-				t.Fatalf("urlAndKey returned error: %v", err)
+				t.Fatalf("urlFromRegion returned error: %v", err)
 			}
 
 			if url != expectedURL {
-				t.Errorf("urlAndKey did not return expected URL: got %v, want %v", url, expectedURL)
+				t.Errorf("urlFromRegion did not return expected URL: got %v, want %v", url, expectedURL)
 			}
 		})
 	}
 }
+
 
 func TestURLFromRegionError(t *testing.T) {
 	testcases := []struct {
