@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"net/http"
 	"os"
 	"os/exec"
 	"regexp"
@@ -16,16 +15,10 @@ import (
 	"time"
 
 	"cloud.google.com/go/compute/metadata"
-	"cos.googlesource.com/cos/tools.git/src/cmd/cos_gpu_installer/deviceinfo"
-	"github.com/containerd/containerd"
-	"github.com/containerd/containerd/defaults"
-	"github.com/containerd/containerd/namespaces"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/launcher"
-	"github.com/google/go-tpm-tools/launcher/internal/gpu"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
-	"github.com/google/go-tpm-tools/launcher/registryauth"
 	"github.com/google/go-tpm-tools/launcher/spec"
 	"github.com/google/go-tpm/legacy/tpm2"
 	"google.golang.org/api/option"
@@ -177,7 +170,7 @@ func main() {
 			logger.Info(exitMessage, "exit_code", exitCode)
 		}
 	}()
-	if err = startLauncher(launchSpec, tpm, logger, workloadLogger, mdsClient, start, serialConsole, googleClient, clientOpts...); err != nil {
+	if err = launcher.StartLauncher(ctx, launchSpec, tpm, logger, workloadLogger, mdsClient, start, serialConsole, googleClient, clientOpts...); err != nil {
 		logger.Error(err.Error())
 	}
 
@@ -235,71 +228,6 @@ func getUptime() (string, error) {
 	}
 
 	return string(split[0]), nil
-}
-
-func startLauncher(
-	launchSpec spec.LaunchSpec,
-	tpm io.ReadWriteCloser,
-	logger logging.Logger,
-	workloadLogger logging.Logger,
-	mdsClient *metadata.Client,
-	start time.Time,
-	serialConsole *os.File,
-	googleClient *http.Client,
-	clientOpts ...option.ClientOption,
-) error {
-	logger.Info(fmt.Sprintf("Launch Spec: %+v", launchSpec.LogFriendly()))
-	containerdClient, err := containerd.New(defaults.DefaultAddress)
-	if err != nil {
-		return &launcher.RetryableError{Err: err}
-	}
-	defer containerdClient.Close()
-
-	token, err := registryauth.RetrieveAuthToken(context.Background(), mdsClient)
-	if err != nil {
-		logger.Info(fmt.Sprintf("failed to retrieve auth token: %v, using empty auth for image pulling\n", err))
-	}
-	ctx := namespaces.WithNamespace(context.Background(), namespaces.Default)
-
-	if launchSpec.InstallGpuDriver {
-		if launchSpec.Experiments.BcMode {
-			logger.Info("gpu driver is pre-installed in BC mode")
-		} else {
-			installer := gpu.NewDriverInstaller(containerdClient, launchSpec, logger)
-			err = installer.InstallGPUDrivers(ctx)
-			if err != nil {
-				return fmt.Errorf("failed to install gpu drivers: %v", err)
-			}
-		}
-	} else {
-		deviceInfo, _ := deviceinfo.GetGPUTypeInfo()
-		if deviceInfo != deviceinfo.NO_GPU {
-			logger.Error("GPU is attached, tee-install-gpu-driver is not set")
-			return fmt.Errorf("failed to install GPU drivers: tee-install-gpu-driver must be set to true")
-		}
-	}
-
-	logger.Info("Launch started", "duration_sec", time.Since(start).Seconds())
-
-	// tpm is nil when running in BC mode.
-	r, err := launcher.NewRunner(ctx, &launcher.RunnerConfig{
-		ContainerdClient: containerdClient,
-		Token:            token,
-		LaunchSpec:       launchSpec,
-		MetadataClient:   mdsClient,
-		TPM:              tpm,
-		Logger:           logger,
-		WorkloadLogger:   workloadLogger,
-		SerialConsole:    serialConsole,
-		GoogleClient:     googleClient,
-		ClientOpts:       clientOpts,
-	})
-	if err != nil {
-		return err
-	}
-	defer r.Close(ctx)
-
-	return r.Run(ctx)
 }
 
 func initTPM(tpm io.ReadWriteCloser, logger logging.Logger) error {
