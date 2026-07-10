@@ -20,7 +20,6 @@ import (
 	"time"
 
 	"cloud.google.com/go/compute/metadata"
-	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/cio"
@@ -31,6 +30,7 @@ import (
 	"github.com/containerd/containerd/remotes"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-tpm-tools/agent"
+	"github.com/google/go-tpm-tools/agent/device"
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
 	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
@@ -51,20 +51,19 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/oauth2"
 	"google.golang.org/api/option"
-	"google.golang.org/protobuf/proto"
 )
 
 // ContainerRunner contains information about the container settings
 type ContainerRunner struct {
-	container      containerd.Container
-	launchSpec     spec.LaunchSpec
-	attestAgent    agent.AttestationAgent
-	logger         logging.Logger
-	workloadLogger logging.Logger
-	gpuAttester    gpu.Attester
-	serialConsole  *os.File
-	powerButton    *powerButtonListener // Populated only for a hardened image
-	clientOpts     []option.ClientOption
+	container        containerd.Container
+	launchSpec       spec.LaunchSpec
+	attestAgent      agent.AttestationAgent
+	logger           logging.Logger
+	workloadLogger   logging.Logger
+	deviceROTManager *device.ROTManager
+	serialConsole    *os.File
+	powerButton      *powerButtonListener // Populated only for a hardened image
+	clientOpts       []option.ClientOption
 }
 
 const tokenFileTmp = ".token.tmp"
@@ -249,7 +248,7 @@ func NewRunner(ctx context.Context, cfg *RunnerConfig) (*ContainerRunner, error)
 	}
 	specOpts = append(specOpts, cgroupOpts...)
 
-	var deviceROTs []agent.DeviceROT
+	var deviceROTs []device.ROT
 	nvidiaAttester := gpu.NewNvidiaAttester(launchSpec.InstallGpuDriver)
 	if launchSpec.InstallGpuDriver {
 		gpuMounts := []specs.Mount{
@@ -401,7 +400,7 @@ func NewRunner(ctx context.Context, cfg *RunnerConfig) (*ContainerRunner, error)
 		attestAgent,
 		logger,
 		workloadLogger,
-		nvidiaAttester,
+		device.NewROTManager(deviceROTs),
 		serialConsole,
 		powerButton,
 		opts,
@@ -481,8 +480,8 @@ func (r *ContainerRunner) measureCELEvents(ctx context.Context) error {
 		return fmt.Errorf("failed to measure container claims: %v", err)
 	}
 
-	if err := r.measureGPUAttestationEvidence(); err != nil {
-		return fmt.Errorf("failed to measure GPU claims: %v", err)
+	if err := r.measureDeviceAttestationEvidence(); err != nil {
+		return fmt.Errorf("failed to measure device attestation claims: %v", err)
 	}
 
 	if err := r.measureMemoryMonitor(); err != nil {
@@ -552,10 +551,10 @@ func (r *ContainerRunner) measureContainerClaims(ctx context.Context) error {
 	return nil
 }
 
-// measureGPUAttestationEvidence will measure GPU attestation claims into the COS
+// measureDeviceAttestationEvidence will measure device attestation claims into the COS
 // eventlog in the AttestationAgent.
-func (r *ContainerRunner) measureGPUAttestationEvidence() error {
-	if r.gpuAttester == nil {
+func (r *ContainerRunner) measureDeviceAttestationEvidence() error {
+	if r.deviceROTManager == nil {
 		return nil
 	}
 
@@ -564,33 +563,11 @@ func (r *ContainerRunner) measureGPUAttestationEvidence() error {
 		return fmt.Errorf("failed to generate random nonce: %v", err)
 	}
 
-	evidence, err := r.gpuAttester.Attest(nonce)
-	if err != nil {
-		return fmt.Errorf("failed to collect GPU evidence: %w", err)
+	if err := r.deviceROTManager.MeasureDeviceEvidence(nonce, r.attestAgent); err != nil {
+		return fmt.Errorf("failed to measure device attestation evidence: %w", err)
 	}
 
-	gpuEvidence, ok := evidence.(*attestationpb.NvidiaAttestationReport)
-	if !ok {
-		return fmt.Errorf("unexpected evidence type: %T", evidence)
-	}
-
-	evidenceBytes, err := proto.Marshal(gpuEvidence)
-	if err != nil {
-		return fmt.Errorf("failed to marshal GPU evidence: %w", err)
-	}
-
-	event := cel.CosTlv{
-		EventType:    cel.GPUDeviceAttestationBindingType,
-		EventContent: evidenceBytes,
-	}
-	if err := r.attestAgent.MeasureEvent(event); err != nil {
-		return fmt.Errorf("failed to measure GPU attestation: %w", err)
-	}
-
-	if err := r.gpuAttester.EnableReadyState(); err != nil {
-		return fmt.Errorf("failed to set GPU ready state: %w", err)
-	}
-	r.logger.Info("Successfully measured GPU device attestation binding event and set GPU state to ready")
+	r.logger.Info("Successfully measured device attestation binding events and enabled ready states")
 	return nil
 }
 
