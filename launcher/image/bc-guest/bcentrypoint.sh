@@ -52,8 +52,10 @@ main() {
     /usr/share/oem/confidential_space/bc_gpu_setup.sh
   fi
 
-  # Allow incoming connections to fluent bit from KPS VM
-  iptables -A INPUT -p tcp -s 192.168.100.0/24 --dport 24224 -j ACCEPT
+  # Allow incoming Fluent Bit logs from host
+  iptables -A INPUT -p tcp -s 192.168.100.1 --dport 24224 -j ACCEPT
+  # Allow incoming Fluent Bit logs from KPS VM
+  iptables -A INPUT -p tcp -s 192.168.100.3 --dport 24224 -j ACCEPT
 
   systemctl enable container-runner.service
   systemctl enable wsd.service
