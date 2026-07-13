@@ -704,7 +704,7 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	}
 	var containerIP string
 	if r.launchPolicy.NonrootContainer {
-		containerIP, err = r.getContainerIP(ctx, fmt.Sprintf(netnsPathFmt, task.Pid()))
+		containerIP, err = r.setupCNI(ctx, fmt.Sprintf(netnsPathFmt, task.Pid()))
 		if err != nil {
 			return err
 		}
@@ -840,7 +840,6 @@ func openPorts(ports map[string]struct{}, containerIP string) error {
 			if out, err := forwardInCmd.CombinedOutput(); err != nil {
 				return fmt.Errorf("failed to add FORWARD rule for container %s: %v %s", containerIP, err, out)
 			}
-
 		}
 	}
 
@@ -916,7 +915,7 @@ func newCNI() (gocni.CNI, error) {
 	return cni, nil
 }
 
-func (r *ContainerRunner) getContainerIP(ctx context.Context, netnsPath string) (string, error) {
+func (r *ContainerRunner) setupCNI(ctx context.Context, netnsPath string) (string, error) {
 	if r.cni == nil {
 		return "", fmt.Errorf("CNI is not initialized")
 	}
