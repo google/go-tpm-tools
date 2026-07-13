@@ -278,27 +278,6 @@ steps:
         echo "Copying local archive directly to ACOS bucket $${ACOS_TARGET_URL}"
         gcloud storage cp ./out_image.tar.gz "$${ACOS_TARGET_URL}"
 
-        # echo "Preparing Pub/Sub notification payload..."
-        # cat << MSG_EOF > /workspace/pubsub_msg.json
-        # {
-        #   "flow": "${_LOUHI_FLOW_ID}",
-        #   "userParameters": {
-        #     "GUEST_WORKLOAD_ACOS_GS_URL": "$${ACOS_TARGET_URL}",
-        #     "_PR_EMAIL": "${_PR_EMAIL}",
-        #     "_PR_NUMBER": "${_PR_NUMBER}",
-        #     "_HEAD_REPO_URL": "${_HEAD_REPO_URL}",
-        #     "_COMMIT_SHA": "${_COMMIT_SHA}",
-        #     "_SHORT_SHA": "${_SHORT_SHA}"
-        #   },
-        #   "gitParameters": {
-        #     "commitSha": "${_COMMIT_SHA}"
-        #   }
-        # }
-        # MSG_EOF
-
-        # cat /workspace/pubsub_msg.json
-
-
         gcloud pubsub topics publish "${_LOUHI_TRIGGER_TOPIC}" \
           --message='{
             "flow": "${_LOUHI_FLOW_ID}",
