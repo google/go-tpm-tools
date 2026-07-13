@@ -4,6 +4,7 @@ substitutions:
   '_BASE_IMAGE_PROJECT': ''
   '_BUCKET_NAME': ''
   '_COMMIT_SHA': ''
+  '_SHORT_SHA': ''
   '_IMAGE_ENV': ''
   '_LOUHI_FLOW_ID': ''
   '_LOUHI_TRIGGER_TOPIC': ''
@@ -285,7 +286,9 @@ steps:
         #     "GUEST_WORKLOAD_ACOS_GS_URL": "$${ACOS_TARGET_URL}",
         #     "_PR_EMAIL": "${_PR_EMAIL}",
         #     "_PR_NUMBER": "${_PR_NUMBER}",
-        #     "_HEAD_REPO_URL": "${_HEAD_REPO_URL}"
+        #     "_HEAD_REPO_URL": "${_HEAD_REPO_URL}",
+        #     "_COMMIT_SHA": "${_COMMIT_SHA}",
+        #     "_SHORT_SHA": "${_SHORT_SHA}"
         #   },
         #   "gitParameters": {
         #     "commitSha": "${_COMMIT_SHA}"
@@ -293,8 +296,6 @@ steps:
         # }
         # MSG_EOF
 
-        # echo "Previewing payload Content:"
-        # echo "dry run: gcloud pubsub topics publish ${_LOUHI_TRIGGER_TOPIC}..."
         # cat /workspace/pubsub_msg.json
 
 
@@ -305,7 +306,9 @@ steps:
               "_GUEST_WORKLOAD_ACOS_GS_URL": "'"$${ACOS_TARGET_URL}"'",
               "_PR_EMAIL": "${_PR_EMAIL}",
               "_PR_NUMBER": "${_PR_NUMBER}",
-              "_HEAD_REPO_URL": "${_HEAD_REPO_URL}"
+              "_HEAD_REPO_URL": "${_HEAD_REPO_URL}",
+              "_COMMIT_SHA": "${_COMMIT_SHA}",
+              "_SHORT_SHA": "${_SHORT_SHA}"
             },
             "gitParameters": {
               "commitSha": "${_COMMIT_SHA}"
