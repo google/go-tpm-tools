@@ -29,10 +29,9 @@ copy_wsd() {
   chmod +x "${OEM_PATH}/wsd/wsd_runner.sh" || true
   chmod +x "${OEM_PATH}/wsd/exit_script.sh" || true
 
-  if [[ -n "${WSD_CONTAINER_IMAGE_REF}" ]]; then
-    echo "Preloading WSD container image: ${WSD_CONTAINER_IMAGE_REF}"
-    docker pull "${WSD_CONTAINER_IMAGE_REF}"
-    docker save "${WSD_CONTAINER_IMAGE_REF}" -o "${OEM_PATH}/wsd/image.tar"
+  if [[ -f wsd_image.tar ]]; then
+    echo "Copying preloaded WSD container image tarball..."
+    cp wsd_image.tar "${OEM_PATH}/wsd/image.tar"
   fi
 
   cat << EOF > "${OEM_PATH}/wsd/image.env"

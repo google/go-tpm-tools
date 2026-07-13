@@ -28,6 +28,6 @@ ctr run --rm --net-host \
   --env KEY_PROTECTION_MECHANISM="KEY_PROTECTION_VM_EMULATED" \
   "$IMAGE_REF" \
   "$CONTAINER_NAME" \
-  /usr/local/bin/agent --socket="/run/container_launcher/kmaserver.sock"
+  /usr/local/bin/agent --socket="/run/container_launcher/kmaserver-new.sock"
 
 

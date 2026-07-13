@@ -108,9 +108,21 @@ steps:
         "gs://cos-tools/$${VERSION}/lakitu/nvidia-drivers-595.58.03.tgz" \
         ./launcher/image/
 
+- name: 'gcr.io/cloud-builders/docker'
+  id: SaveWsdImage
+  entrypoint: 'bash'
+  args:
+    - '-c'
+    - |
+      set -ex
+      if [[ -n "$_WSD_CONTAINER_IMAGE_REF" ]]; then
+        docker pull "$_WSD_CONTAINER_IMAGE_REF"
+        docker save "$_WSD_CONTAINER_IMAGE_REF" -o ./launcher/image/wsd_image.tar
+      fi
+
 - name: 'gcr.io/cloud-builders/gcloud'
   id: DebugVgImageBuild
-  waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary', 'DownloadGpuDrivers']
+  waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary', 'DownloadGpuDrivers', 'SaveWsdImage']
   env:
   - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-vg-debug-${_OUTPUT_IMAGE_SUFFIX}'
   - 'OUTPUT_IMAGE_FAMILY=${_OUTPUT_IMAGE_FAMILY}-vg'
@@ -141,7 +153,7 @@ steps:
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: HardenedVgImageBuild
-  waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary', 'DownloadGpuDrivers']
+  waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary', 'DownloadGpuDrivers', 'SaveWsdImage']
   env:
   - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-vg-hardened-${_OUTPUT_IMAGE_SUFFIX}'
   - 'OUTPUT_IMAGE_FAMILY=${_OUTPUT_IMAGE_FAMILY}-vg'
