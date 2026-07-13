@@ -7,6 +7,10 @@ copy_launcher() {
   cp launcher "${CS_PATH}/cs_container_launcher"
 }
 
+copy_google_roots() {
+  cp google_roots.pem "${OEM_PATH}/google_roots.pem"
+}
+
 copy_gpu_driver() {
   mkdir ${OEM_PATH}/gpu_driver
   cp NVIDIA-Linux-x86_64-595.58.03.run ${OEM_PATH}/gpu_driver
@@ -138,6 +142,8 @@ main() {
   copy_experiment_file
   # Install container launcher.
   copy_launcher
+  # Copy Google Root bundle.
+  copy_google_roots
   setup_launcher_systemd_unit
   copy_wsd
   # Minimum required COS version for 'e': cos-dev-105-17222-0-0.

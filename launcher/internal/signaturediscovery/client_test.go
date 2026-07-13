@@ -3,6 +3,7 @@ package signaturediscovery
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"testing"
 
 	"github.com/containerd/containerd"
@@ -110,7 +111,7 @@ func TestPullSignatureImage(t *testing.T) {
 		{
 			name: "valid resolver",
 			resolverFetcher: func(_ context.Context) (remotes.Resolver, error) {
-				return registryauth.Resolver("valid access"), nil
+				return registryauth.Resolver("valid access", http.DefaultClient), nil
 			},
 			wantErr: false,
 		},
@@ -155,7 +156,7 @@ func createTestClient(t *testing.T, originalImageDesc v1.Descriptor) *Client {
 	t.Cleanup(func() { containerdClient.Close() })
 
 	resolverFetcher := func(_ context.Context) (remotes.Resolver, error) {
-		return registryauth.Resolver("valid token"), nil
+		return registryauth.Resolver("valid token", http.DefaultClient), nil
 	}
 	imageFetcher := func(ctx context.Context, imageRef string, opts ...containerd.RemoteOpt) (containerd.Image, error) {
 		return containerdClient.Pull(ctx, imageRef, opts...)

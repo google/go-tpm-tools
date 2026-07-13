@@ -5,8 +5,11 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path"
 	"strconv"
@@ -15,8 +18,10 @@ import (
 	"testing"
 	"time"
 
+	clogging "cloud.google.com/go/logging"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/containerd/containerd"
+	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/defaults"
 	"github.com/containerd/containerd/namespaces"
 	"github.com/containerd/containerd/oci"
@@ -25,10 +30,12 @@ import (
 	gecel "github.com/google/go-eventlog/cel"
 	"github.com/google/go-tpm-tools/agent"
 	"github.com/google/go-tpm-tools/cel"
+	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/launcher/internal/gpu"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/spec"
+	"github.com/google/go-tpm-tools/simulator"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/opencontainers/go-digest"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
@@ -647,7 +654,7 @@ func TestInitImageDockerPublic(t *testing.T) {
 	ctx := namespaces.WithNamespace(context.Background(), "test")
 	// This is a "valid" token (formatwise)
 	validToken := oauth2.Token{AccessToken: "000000", Expiry: time.Now().Add(time.Hour)}
-	if _, err := initImage(ctx, containerdClient, spec.LaunchSpec{ImageRef: "docker.io/library/hello-world:latest"}, validToken); err != nil {
+	if _, err := initImage(ctx, containerdClient, spec.LaunchSpec{ImageRef: "docker.io/library/hello-world:latest"}, validToken, http.DefaultClient); err != nil {
 		t.Error(err)
 	} else {
 		if err := containerdClient.ImageService().Delete(ctx, "docker.io/library/hello-world:latest"); err != nil {
@@ -656,7 +663,7 @@ func TestInitImageDockerPublic(t *testing.T) {
 	}
 
 	invalidToken := oauth2.Token{}
-	if _, err := initImage(ctx, containerdClient, spec.LaunchSpec{ImageRef: "docker.io/library/hello-world:latest"}, invalidToken); err != nil {
+	if _, err := initImage(ctx, containerdClient, spec.LaunchSpec{ImageRef: "docker.io/library/hello-world:latest"}, invalidToken, http.DefaultClient); err != nil {
 		t.Error(err)
 	} else {
 		if err := containerdClient.ImageService().Delete(ctx, "docker.io/library/hello-world:latest"); err != nil {
@@ -836,11 +843,20 @@ func (c *fakeContainer) Spec(context.Context) (*oci.Spec, error) {
 	return &oci.Spec{Process: &specs.Process{Args: c.args, Env: c.env}}, nil
 }
 
+func (c *fakeContainer) ID() string {
+	return "tee-container"
+}
+
+func (c *fakeContainer) Delete(context.Context, ...containerd.DeleteOpts) error {
+	return nil
+}
+
 type fakeImage struct {
 	containerd.Image
-	name   string
-	digest digest.Digest
-	id     digest.Digest
+	name         string
+	digest       digest.Digest
+	id           digest.Digest
+	contentStore content.Store
 }
 
 func (i *fakeImage) Name() string {
@@ -852,5 +868,202 @@ func (i *fakeImage) Target() v1.Descriptor {
 }
 
 func (i *fakeImage) Config(_ context.Context) (v1.Descriptor, error) {
-	return v1.Descriptor{Digest: i.id}, nil
+	return v1.Descriptor{
+		Digest:    i.id,
+		MediaType: v1.MediaTypeImageConfig,
+	}, nil
+}
+
+func (i *fakeImage) ContentStore() content.Store {
+	return i.contentStore
+}
+
+type fakeContainerdClient struct {
+	pullResult containerd.Image
+	loadResult containerd.Container
+	newResult  containerd.Container
+	pullErr    error
+	loadErr    error
+	newErr     error
+}
+
+func (f *fakeContainerdClient) Pull(context.Context, string, ...containerd.RemoteOpt) (containerd.Image, error) {
+	return f.pullResult, f.pullErr
+}
+func (f *fakeContainerdClient) LoadContainer(context.Context, string) (containerd.Container, error) {
+	return f.loadResult, f.loadErr
+}
+func (f *fakeContainerdClient) NewContainer(context.Context, string, ...containerd.NewContainerOpts) (containerd.Container, error) {
+	return f.newResult, f.newErr
+}
+
+type fakeContentStore struct {
+	content.Store
+	blob []byte
+}
+
+func (f *fakeContentStore) ReaderAt(context.Context, v1.Descriptor) (content.ReaderAt, error) {
+	return &fakeReaderAt{blob: f.blob}, nil
+}
+
+type fakeReaderAt struct {
+	blob []byte
+}
+
+func (f *fakeReaderAt) ReadAt(p []byte, off int64) (int, error) {
+	if off >= int64(len(f.blob)) {
+		return 0, io.EOF
+	}
+	n := copy(p, f.blob[off:])
+	return n, nil
+}
+func (f *fakeReaderAt) Close() error { return nil }
+func (f *fakeReaderAt) Size() int64  { return int64(len(f.blob)) }
+
+type fakeLogger struct {
+	logs []string
+}
+
+func (f *fakeLogger) Log(clogging.Severity, string, ...any) {}
+func (f *fakeLogger) Info(msg string, args ...any) {
+	f.logs = append(f.logs, formatLog(msg, args...))
+}
+func (f *fakeLogger) Warn(string, ...any)  {}
+func (f *fakeLogger) Error(string, ...any) {}
+func (f *fakeLogger) Close()               {}
+
+func formatLog(msg string, args ...any) string {
+	if len(args) == 0 {
+		return msg
+	}
+	return msg + " " + strings.Trim(strings.Join(strings.Fields(strings.Trim(strings.Join(strings.Fields(strings.Trim(jsonMarshal(args), "[]")), " "), " ")), " "), " ")
+}
+
+func jsonMarshal(v any) string {
+	b, _ := json.Marshal(v)
+	return string(b)
+}
+
+func TestNewRunner(t *testing.T) {
+	// Helper to generate image configuration JSON.
+	imageConfigJSON := func(labels map[string]string) []byte {
+		ic := v1.Image{
+			Config: v1.ImageConfig{
+				ExposedPorts: map[string]struct{}{},
+				Labels:       labels,
+			},
+		}
+		b, _ := json.Marshal(ic)
+		return b
+	}
+
+	testCases := []struct {
+		name          string
+		imageLabels   map[string]string
+		envs          []spec.EnvVar
+		cmd           []string
+		wantErr       bool
+		wantErrSubstr string
+		verifyLogs    func(t *testing.T, logs []string)
+	}{
+		{
+			name: "Success_RedactEnvs",
+			imageLabels: map[string]string{
+				"tee.launch_policy.allow_env_override": "SECRET_VAR,PUBLIC_VAR",
+			},
+			envs: []spec.EnvVar{
+				{Name: "SECRET_VAR", Value: "mysecret"},
+				{Name: "PUBLIC_VAR", Value: "public"},
+			},
+			wantErr: false,
+			verifyLogs: func(t *testing.T, logs []string) {
+				foundSecret := false
+				foundPublic := false
+				for _, l := range logs {
+					if strings.Contains(l, "SECRET_VAR=[REDACTED]") {
+						foundSecret = true
+					}
+					if strings.Contains(l, "PUBLIC_VAR=[REDACTED]") {
+						foundPublic = true
+					}
+					if strings.Contains(l, "mysecret") || strings.Contains(l, "=public") {
+						t.Errorf("found unredacted variable value in logs: %s", l)
+					}
+				}
+				if !foundSecret || !foundPublic {
+					t.Errorf("expected redacted env variables not found in logs: %v", logs)
+				}
+			},
+		},
+		{
+			name:        "Failure_LaunchPolicyEnvViolation",
+			imageLabels: map[string]string{}, // Empty labels = no overrides allowed
+			envs: []spec.EnvVar{
+				{Name: "SECRET_VAR", Value: "mysecret"},
+			},
+			wantErr:       true,
+			wantErrSubstr: "is not allowed to be overridden",
+		},
+		{
+			name: "Failure_LaunchPolicyCmdViolation",
+			imageLabels: map[string]string{
+				"tee.launch_policy.allow_cmd_override": "false",
+			},
+			cmd:           []string{"/override-cmd"},
+			wantErr:       true,
+			wantErrSubstr: "CMD is not allowed to be overridden",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			fakeImg := &fakeImage{
+				name:         "test-image",
+				digest:       "sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+				id:           "sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+				contentStore: &fakeContentStore{blob: imageConfigJSON(tc.imageLabels)},
+			}
+			fakeCont := &fakeContainer{
+				args: []string{"/entrypoint.sh", "arg1"},
+			}
+			fakeCli := &fakeContainerdClient{
+				pullResult: fakeImg,
+				loadResult: nil,
+				loadErr:    errors.New("container not found"),
+				newResult:  fakeCont,
+			}
+
+			logger := &fakeLogger{}
+			tpm, err := simulator.Get()
+			if err != nil {
+				t.Skipf("TPM simulator not available: %v", err)
+			}
+			defer tpm.Close()
+
+			cfg := &RunnerConfig{
+				ContainerdClient: fakeCli,
+				TPM:              tpm,
+				AKFetcher:        client.AttestationKeyECC,
+				LaunchSpec: spec.LaunchSpec{
+					ImageRef:            "test-image",
+					Envs:                tc.envs,
+					Cmd:                 tc.cmd,
+					FakeVerifierEnabled: true,
+				},
+				Logger:         logger,
+				WorkloadLogger: logger,
+			}
+
+			_, err = NewRunner(context.Background(), cfg)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("NewRunner() error = %v, wantErr = %v", err, tc.wantErr)
+			}
+			if tc.wantErr && err != nil && !strings.Contains(err.Error(), tc.wantErrSubstr) {
+				t.Fatalf("NewRunner() error = %q, want error containing %q", err, tc.wantErrSubstr)
+			}
+			if tc.verifyLogs != nil {
+				tc.verifyLogs(t, logger.logs)
+			}
+		})
+	}
 }
