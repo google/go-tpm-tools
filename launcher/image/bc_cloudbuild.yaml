@@ -278,6 +278,7 @@ steps:
         echo "Copying local archive directly to ACOS bucket $${ACOS_TARGET_URL}"
         gcloud storage cp ./out_image.tar.gz "$${ACOS_TARGET_URL}"
 
+        echo "Triggering Louhi flow ${_LOUHI_FLOW_ID}"
         gcloud pubsub topics publish "${_LOUHI_TRIGGER_TOPIC}" \
           --message='{
             "flow": "${_LOUHI_FLOW_ID}",
