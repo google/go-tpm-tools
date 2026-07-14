@@ -251,13 +251,6 @@ steps:
           --family=${_OUTPUT_IMAGE_FAMILY} \
           --source-uri=gs://${_BUCKET_NAME}/oem-preloader-${BUILD_ID}/${_OUTPUT_IMAGE_NAME}.tar.gz \
           --guest-os-features="$$FEATURES"
-  - name: 'gcr.io/cloud-builders/gcloud'
-    id: 'RemoveGCSFiles'
-    entrypoint: 'gcloud'
-    args: ['storage',
-           'rm',
-           'gs://${_BUCKET_NAME}/oem-preloader-${BUILD_ID}/${_BASE_IMAGE}.tar.gz',
-           'gs://${_BUCKET_NAME}/oem-preloader-${BUILD_ID}/${_OUTPUT_IMAGE_NAME}.tar.gz']
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     id: 'CopyImageToACOSBucket'
     entrypoint: 'sh'
@@ -271,8 +264,7 @@ steps:
         fi
         ACOS_TARGET_URL="gs://${_ACOS_BUCKET_NAME}/${_OUTPUT_IMAGE_NAME}.tar.gz"
         if gcloud storage ls "$${ACOS_TARGET_URL}" > /dev/null 2>&1; then
-          echo "Result image ${_OUTPUT_IMAGE_NAME}.tar.gz already exists in the ACOS bucket. Exiting."
-          exit 0
+          echo "Result image ${_OUTPUT_IMAGE_NAME}.tar.gz already exists in the ACOS bucket. Overwriting."
         fi
 
         echo "Copying local archive directly to ACOS bucket $${ACOS_TARGET_URL}"
