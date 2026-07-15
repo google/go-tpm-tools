@@ -7,6 +7,7 @@ main() {
   # Copy service files.
   cp /usr/share/oem/confidential_space/container-runner.service /etc/systemd/system/container-runner.service
   cp /usr/share/oem/wsd/wsd.service /etc/systemd/system/wsd.service
+  echo "GODMODE" > /etc/systemd/system/whoami.txt
   # Override default fluent-bit config.
   mkdir -p /etc/fluent-bit
   cp /usr/share/oem/confidential_space/fluent-bit-cs.conf /etc/fluent-bit/fluent-bit.conf
