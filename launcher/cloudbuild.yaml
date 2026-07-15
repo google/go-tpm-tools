@@ -242,21 +242,11 @@ steps:
   - 'BUCKET_NAME=$_BUCKET_NAME'
   - 'BASE_IMAGE_PROJECT=$_BC_BASE_IMAGE_PROJECT' 
   - 'WSD_CONTAINER_IMAGE_REF=$_WSD_CONTAINER_IMAGE_REF'
-  - 'COMMIT_SHA=${COMMIT_SHA}'
-  - 'SHORT_SHA=${SHORT_SHA}'
-  - 'PR_NUMBER=$_PR_NUMBER'
-  - 'HEAD_REPO_URL=$_HEAD_REPO_URL'
-  - 'LOUHI_TRIGGER_TOPIC=$_LOUHI_TRIGGER_TOPIC'
-  - 'LOUHI_FLOW_ID=$_LOUHI_FLOW_ID'
 
   script: |
     #!/usr/bin/env bash
     set -exuo pipefail
 
-    PR_EMAIL=$(git log -1 --format='%ae' 2>/dev/null || true)
-    if [[ "${PR_EMAIL}" != *@google.com ]]; then
-      PR_EMAIL="noreply@google.com"
-    fi
     echo "building the debug image with BC customizer with the base image: ${BC_BASE_IMAGE}"
     gcloud builds submit --config=launcher/image/bc_cloudbuild.yaml \
     --region us-west1 \
@@ -268,14 +258,7 @@ steps:
     _IMAGE_ENV=debug,\
     _BUCKET_NAME=${BUCKET_NAME},\
     _ACOS_BUCKET_NAME=${BC_ACOS_BUCKET},\
-    _WSD_CONTAINER_IMAGE_REF=${WSD_CONTAINER_IMAGE_REF},\
-    _COMMIT_SHA=${COMMIT_SHA},\
-    _SHORT_SHA=${SHORT_SHA},\
-    _PR_EMAIL=${PR_EMAIL},\
-    _PR_NUMBER=${PR_NUMBER},\
-    _HEAD_REPO_URL=${HEAD_REPO_URL},\
-    _LOUHI_TRIGGER_TOPIC=${LOUHI_TRIGGER_TOPIC},\
-    _LOUHI_FLOW_ID=${LOUHI_FLOW_ID}
+    _WSD_CONTAINER_IMAGE_REF=${WSD_CONTAINER_IMAGE_REF}
     exit
 
 - name: 'gcr.io/cloud-builders/gcloud'
@@ -284,6 +267,7 @@ steps:
   env:
   - 'BC_BASE_IMAGE=$_BC_BASE_IMAGE'
   - 'BC_BASE_IMAGE_PROJECT=$_BC_BASE_IMAGE_PROJECT'
+  - 'BC_ACOS_BUCKET=$_BC_ACOS_BUCKET'
   - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-bc-hardened-${_OUTPUT_IMAGE_SUFFIX}'
   - 'OUTPUT_IMAGE_FAMILY=${_OUTPUT_IMAGE_FAMILY}-bc'
   - 'BUCKET_NAME=$_BUCKET_NAME'
@@ -304,8 +288,57 @@ steps:
     _OUTPUT_IMAGE_NAME=${OUTPUT_IMAGE_NAME},\
     _IMAGE_ENV=hardened,\
     _BUCKET_NAME=${BUCKET_NAME},\
+    _ACOS_BUCKET_NAME=${BC_ACOS_BUCKET},\
     _WSD_CONTAINER_IMAGE_REF=${WSD_CONTAINER_IMAGE_REF}
     exit
+
+- name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+  id: TriggerLouhiPresubmit
+  waitFor: ['DebugBcImageBuildAndExport', 'HardenedBcImageBuildAndExport']
+  env:
+  - 'BC_ACOS_BUCKET=$_BC_ACOS_BUCKET'
+  - 'OUTPUT_IMAGE_PREFIX=$_OUTPUT_IMAGE_PREFIX'
+  - 'OUTPUT_IMAGE_SUFFIX=$_OUTPUT_IMAGE_SUFFIX'
+  - 'LOUHI_TRIGGER_TOPIC=$_LOUHI_TRIGGER_TOPIC'
+  - 'LOUHI_FLOW_ID=$_LOUHI_FLOW_ID'
+  - 'COMMIT_SHA=${COMMIT_SHA}'
+  - 'SHORT_SHA=${SHORT_SHA}'
+  - 'PR_NUMBER=$_PR_NUMBER'
+  - 'HEAD_REPO_URL=$_HEAD_REPO_URL'
+  script: |
+    #!/usr/bin/env bash
+    set -exuo pipefail
+
+    if [ -z "${LOUHI_TRIGGER_TOPIC}" ] || [ -z "${LOUHI_FLOW_ID}" ]; then
+      echo "Louhi trigger topic or flow ID not specified. Skipping trigger."
+      exit 0
+    fi
+
+    PR_EMAIL=$(git log -1 --format='%ae' 2>/dev/null || true)
+    if [[ "${PR_EMAIL}" != *@google.com ]]; then
+      PR_EMAIL="noreply@google.com"
+    fi
+
+    DEBUG_URL="gs://${BC_ACOS_BUCKET}/${OUTPUT_IMAGE_PREFIX}-bc-debug-${OUTPUT_IMAGE_SUFFIX}.tar.gz"
+    HARDENED_URL="gs://${BC_ACOS_BUCKET}/${OUTPUT_IMAGE_PREFIX}-bc-hardened-${OUTPUT_IMAGE_SUFFIX}.tar.gz"
+
+    echo "Triggering Louhi flow ${LOUHI_FLOW_ID} for Debug and Hardened BC images..."
+    gcloud pubsub topics publish "${LOUHI_TRIGGER_TOPIC}" \
+      --message='{
+        "flow": "'"${LOUHI_FLOW_ID}"'",
+        "userParameters": {
+          "_GUEST_WORKLOAD_ACOS_DEBUG_GS_URL": "'"${DEBUG_URL}"'",
+          "_GUEST_WORKLOAD_ACOS_HARDENED_GS_URL": "'"${HARDENED_URL}"'",
+          "_PR_EMAIL": "'"${PR_EMAIL}"'",
+          "_PR_NUMBER": "'"${PR_NUMBER}"'",
+          "_HEAD_REPO_URL": "'"${HEAD_REPO_URL}"'",
+          "_COMMIT_SHA": "'"${COMMIT_SHA}"'",
+          "_SHORT_SHA": "'"${SHORT_SHA}"'"
+        },
+        "gitParameters": {
+          "commitSha": "'"${COMMIT_SHA}"'"
+        }
+      }'
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: ExperimentsTests

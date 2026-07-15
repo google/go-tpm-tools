@@ -3,17 +3,10 @@ substitutions:
   '_BASE_IMAGE': ''
   '_BASE_IMAGE_PROJECT': ''
   '_BUCKET_NAME': ''
-  '_COMMIT_SHA': ''
-  '_SHORT_SHA': ''
   '_IMAGE_ENV': ''
-  '_LOUHI_FLOW_ID': ''
-  '_LOUHI_TRIGGER_TOPIC': ''
   '_OUTPUT_IMAGE_NAME': ''
   '_OUTPUT_IMAGE_FAMILY': ''
   '_WSD_CONTAINER_IMAGE_REF': ''
-  '_PR_EMAIL': ''
-  '_PR_NUMBER': ''
-  '_HEAD_REPO_URL': ''
 
 steps:
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
@@ -270,23 +263,6 @@ steps:
 
         echo "Copying local archive directly to ACOS bucket $${ACOS_TARGET_URL}"
         gcloud storage cp ./out_image.tar.gz "$${ACOS_TARGET_URL}"
-
-        echo "Triggering Louhi flow ${_LOUHI_FLOW_ID}"
-        gcloud pubsub topics publish "${_LOUHI_TRIGGER_TOPIC}" \
-          --message='{
-            "flow": "${_LOUHI_FLOW_ID}",
-            "userParameters": {
-              "_GUEST_WORKLOAD_ACOS_GS_URL": "'"$${ACOS_TARGET_URL}"'",
-              "_PR_EMAIL": "${_PR_EMAIL}",
-              "_PR_NUMBER": "${_PR_NUMBER}",
-              "_HEAD_REPO_URL": "${_HEAD_REPO_URL}",
-              "_COMMIT_SHA": "${_COMMIT_SHA}",
-              "_SHORT_SHA": "${_SHORT_SHA}"
-            },
-            "gitParameters": {
-              "commitSha": "${_COMMIT_SHA}"
-            }
-          }'
 timeout: '3000s'
 
 options:
