@@ -279,7 +279,42 @@ steps:
           --family=${_OUTPUT_IMAGE_FAMILY} \
           --source-uri=gs://${_BUCKET_NAME}/oem-preloader-${BUILD_ID}/${_OUTPUT_IMAGE_NAME}.tar.gz \
           --guest-os-features="$$FEATURES"
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'CopyImageToACOSBucket'
+    entrypoint: 'sh'
+    args:
+      - '-c'
+      - |
+        set -exuo pipefail
+        if [ -z "${_ACOS_BUCKET_NAME}" ]; then
+          echo "ACOS bucket is not specified. Skipping copy."
+          exit 0
+        fi
 
+        ACOS_TARGET_URL="gs://${_ACOS_BUCKET_NAME}/${_OUTPUT_IMAGE_NAME}.tar.gz"
+        if gcloud storage ls "$${ACOS_TARGET_URL}" > /dev/null 2>&1; then
+          echo "Result image ${_OUTPUT_IMAGE_NAME}.tar.gz already exists in the ACOS bucket. Overwriting."
+        fi
+
+        echo "Copying local archive directly to ACOS bucket $${ACOS_TARGET_URL}"
+        gcloud storage cp ./out_image.tar.gz "$${ACOS_TARGET_URL}"
+
+        echo "Triggering Louhi flow ${_LOUHI_FLOW_ID}"
+        gcloud pubsub topics publish "${_LOUHI_TRIGGER_TOPIC}" \
+          --message='{
+            "flow": "${_LOUHI_FLOW_ID}",
+            "userParameters": {
+              "_GUEST_WORKLOAD_ACOS_GS_URL": "'"$${ACOS_TARGET_URL}"'",
+              "_PR_EMAIL": "${_PR_EMAIL}",
+              "_PR_NUMBER": "${_PR_NUMBER}",
+              "_HEAD_REPO_URL": "${_HEAD_REPO_URL}",
+              "_COMMIT_SHA": "${_COMMIT_SHA}",
+              "_SHORT_SHA": "${_SHORT_SHA}"
+            },
+            "gitParameters": {
+              "commitSha": "${_COMMIT_SHA}"
+            }
+          }'
 timeout: '3000s'
 
 options:
