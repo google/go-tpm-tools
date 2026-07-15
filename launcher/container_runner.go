@@ -559,9 +559,7 @@ func (r *ContainerRunner) measureDeviceAttestationEvidence() error {
 	}
 
 	nonce := make([]byte, 32)
-	if _, err := cryt.Read(nonce); err != nil {
-		return fmt.Errorf("failed to generate random nonce: %v", err)
-	}
+	cryt.Read(nonce)
 
 	if err := r.deviceROTManager.MeasureDeviceEvidence(nonce, r.attestAgent); err != nil {
 		return fmt.Errorf("failed to measure device attestation evidence: %w", err)

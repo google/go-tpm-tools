@@ -49,6 +49,8 @@ type ROTManager struct {
 }
 
 // ReportOpts defines the options for device attestation report generation.
+// This struct is used instead of individual parameters to allow clean extensibility
+// when supporting different accelerator types (e.g., TPUs, GPUs) in the future without breaking APIs.
 type ReportOpts struct {
 	// EnableRuntimeGPUAttestation indicates whether to include runtime GPU attestation in the device reports.
 	EnableRuntimeGPUAttestation bool
@@ -61,15 +63,36 @@ func NewROTManager(rots []ROT) *ROTManager {
 	}
 }
 
+func (m *ROTManager) validateROTs() error {
+	if len(m.rots) <= 1 {
+		return nil
+	}
+	firstVendor := m.rots[0].Vendor()
+	for _, rot := range m.rots[1:] {
+		if rot.Vendor() != firstVendor {
+			return fmt.Errorf("multiple different device ROT vendors detected (%v and %v): only one accelerator type per boot sequence is supported", firstVendor, rot.Vendor())
+		}
+	}
+	return nil
+}
+
 // AttestDeviceROTs fetches attestation reports from all detected device ROTs based on the provided options.
 func (m *ROTManager) AttestDeviceROTs(nonce []byte, opts ReportOpts) ([]any, error) {
 	m.deviceMu.Lock()
 	defer m.deviceMu.Unlock()
 
+	if err := m.validateROTs(); err != nil {
+		return nil, err
+	}
+
+	if !opts.EnableRuntimeGPUAttestation {
+		return nil, nil
+	}
+
 	var deviceReports []any
 	var err error
 	for _, deviceROT := range m.rots {
-		if opts.EnableRuntimeGPUAttestation && deviceROT.Vendor() == NvidiaGPU {
+		if deviceROT.Vendor() == NvidiaGPU {
 			deviceReport, e := deviceROT.Attest(nonce)
 			if e != nil {
 				err = errors.Join(err, e)
@@ -86,6 +109,10 @@ func (m *ROTManager) AttestDeviceROTs(nonce []byte, opts ReportOpts) ([]any, err
 func (m *ROTManager) MeasureDeviceEvidence(nonce []byte, measurer EventMeasurer) error {
 	m.deviceMu.Lock()
 	defer m.deviceMu.Unlock()
+
+	if err := m.validateROTs(); err != nil {
+		return err
+	}
 
 	for _, rot := range m.rots {
 		evidence, err := rot.Attest(nonce)

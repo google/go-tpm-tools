@@ -41,7 +41,7 @@ type NvidiaAttester struct {
 }
 
 // NewNvidiaAttester returns a new NvidiaAttester if installGpuDriver is true, otherwise nil.
-func NewNvidiaAttester(installGpuDriver bool) device.ROT {
+func NewNvidiaAttester(installGpuDriver bool) *NvidiaAttester {
 	if !installGpuDriver {
 		return nil
 	}

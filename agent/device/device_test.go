@@ -79,6 +79,21 @@ func TestAttestDeviceROTs(t *testing.T) {
 			wantReports: []any{sampleReport},
 		},
 		{
+			name: "Multiple same ROT vendors with runtime GPU attestation enabled",
+			rots: []ROT{
+				&fakeROT{
+					vendor:     NvidiaGPU,
+					attestResp: sampleReport,
+				},
+				&fakeROT{
+					vendor:     NvidiaGPU,
+					attestResp: sampleReport,
+				},
+			},
+			opts:        ReportOpts{EnableRuntimeGPUAttestation: true},
+			wantReports: []any{sampleReport, sampleReport},
+		},
+		{
 			name: "Nvidia GPU with runtime attestation disabled",
 			rots: []ROT{
 				&fakeROT{
@@ -98,6 +113,36 @@ func TestAttestDeviceROTs(t *testing.T) {
 				},
 			},
 			opts:    ReportOpts{EnableRuntimeGPUAttestation: true},
+			wantErr: true,
+		},
+		{
+			name: "Multiple different ROT vendors with runtime GPU attestation enabled",
+			rots: []ROT{
+				&fakeROT{
+					vendor:     NvidiaGPU,
+					attestResp: sampleReport,
+				},
+				&fakeROT{
+					vendor:     Vendor(99),
+					attestResp: sampleReport,
+				},
+			},
+			opts:    ReportOpts{EnableRuntimeGPUAttestation: true},
+			wantErr: true,
+		},
+		{
+			name: "Multiple different ROT vendors with runtime GPU attestation disabled",
+			rots: []ROT{
+				&fakeROT{
+					vendor:     NvidiaGPU,
+					attestResp: sampleReport,
+				},
+				&fakeROT{
+					vendor:     Vendor(99),
+					attestResp: sampleReport,
+				},
+			},
+			opts:    ReportOpts{EnableRuntimeGPUAttestation: false},
 			wantErr: true,
 		},
 	}
@@ -184,6 +229,21 @@ func TestMeasureDeviceEvidence(t *testing.T) {
 					vendor:        NvidiaGPU,
 					attestResp:    sampleReport,
 					readyStateErr: errors.New("enable failed"),
+				},
+			},
+			measurer: &fakeMeasurer{},
+			wantErr:  true,
+		},
+		{
+			name: "Multiple different ROT vendors error",
+			rots: []ROT{
+				&fakeROT{
+					vendor:     NvidiaGPU,
+					attestResp: sampleReport,
+				},
+				&fakeROT{
+					vendor:     Vendor(99),
+					attestResp: sampleReport,
 				},
 			},
 			measurer: &fakeMeasurer{},
