@@ -49,7 +49,6 @@ import (
 	"github.com/google/go-tpm-tools/verifier/util"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
-	"golang.org/x/oauth2"
 	"google.golang.org/api/option"
 	"google.golang.org/protobuf/proto"
 )
@@ -108,7 +107,6 @@ type ContainerdClient interface {
 // RunnerConfig contains the configuration for creating a ContainerRunner.
 type RunnerConfig struct {
 	ContainerdClient ContainerdClient
-	Token            oauth2.Token
 	LaunchSpec       spec.LaunchSpec
 	MetadataClient   *metadata.Client
 	TPM              io.ReadWriteCloser
@@ -118,12 +116,12 @@ type RunnerConfig struct {
 	GoogleClient     *http.Client
 	ClientOpts       []option.ClientOption
 	AKFetcher        util.TpmKeyFetcher
+	Image            containerd.Image
 }
 
 // NewRunner returns a runner.
 func NewRunner(ctx context.Context, cfg *RunnerConfig) (*ContainerRunner, error) {
 	cdClient := cfg.ContainerdClient
-	token := cfg.Token
 	launchSpec := cfg.LaunchSpec
 	mdsClient := cfg.MetadataClient
 	tpm := cfg.TPM
@@ -132,10 +130,7 @@ func NewRunner(ctx context.Context, cfg *RunnerConfig) (*ContainerRunner, error)
 	serialConsole := cfg.SerialConsole
 	googleClient := cfg.GoogleClient
 	opts := cfg.ClientOpts
-	image, err := initImage(ctx, cdClient, launchSpec, token, googleClient)
-	if err != nil {
-		return nil, err
-	}
+	image := cfg.Image
 
 	var mounts []specs.Mount
 	for _, lsMnt := range launchSpec.Mounts {
@@ -754,11 +749,6 @@ func defaultRetryPolicy() *backoff.ExponentialBackOff {
 	return expBack
 }
 
-func pullImageBackoffPolicy() backoff.BackOff {
-	b := backoff.NewConstantBackOff(time.Millisecond * 500)
-	return backoff.WithMaxRetries(b, 3)
-}
-
 // Run the container
 // Container output will always be redirected to logger writer for now
 func (r *ContainerRunner) Run(ctx context.Context) error {
@@ -970,41 +960,6 @@ func (r *ContainerRunner) enableGracefulShutdown(ctx context.Context, task conta
 			}
 		}
 	}()
-}
-
-func pullImageWithRetries(f func() (containerd.Image, error), retry func() backoff.BackOff) (containerd.Image, error) {
-	var err error
-	var image containerd.Image
-	err = backoff.Retry(func() error {
-		image, err = f()
-		return err
-	}, retry())
-	if err != nil {
-		return nil, fmt.Errorf("failed to pull image with retries, the last error is: %w", err)
-	}
-	return image, nil
-}
-
-func initImage(ctx context.Context, cdClient ContainerdClient, launchSpec spec.LaunchSpec, token oauth2.Token, googleClient *http.Client) (containerd.Image, error) {
-	var accessToken string
-	if token.Valid() {
-		accessToken = token.AccessToken
-	}
-
-	remoteOpt := containerd.WithResolver(registryauth.Resolver(accessToken, googleClient))
-	image, err := pullImageWithRetries(
-		func() (containerd.Image, error) {
-			return cdClient.Pull(ctx, launchSpec.ImageRef, containerd.WithPullUnpack, remoteOpt)
-		},
-		pullImageBackoffPolicy,
-	)
-	if err != nil {
-		if accessToken != "" {
-			return nil, fmt.Errorf("cannot pull the image: %w", err)
-		}
-		return nil, fmt.Errorf("cannot pull the image (no token, only works for a public image): %w", err)
-	}
-	return image, nil
 }
 
 // openPorts writes firewall rules to accept all traffic into that port and protocol using iptables.

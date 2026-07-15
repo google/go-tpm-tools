@@ -66,9 +66,13 @@ func StartLauncher(
 
 	logger.Info("Launch started", "duration_sec", time.Since(start).Seconds())
 
+	image, err := initImage(ctx, containerdClient, launchSpec, token, googleClient)
+	if err != nil {
+		return err
+	}
+
 	r, err := NewRunner(ctx, &RunnerConfig{
 		ContainerdClient: containerdClient,
-		Token:            token,
 		LaunchSpec:       launchSpec,
 		MetadataClient:   mdsClient,
 		TPM:              tpm,
@@ -77,6 +81,7 @@ func StartLauncher(
 		SerialConsole:    serialConsole,
 		GoogleClient:     googleClient,
 		ClientOpts:       clientOpts,
+		Image:            image,
 	})
 	if err != nil {
 		return err
