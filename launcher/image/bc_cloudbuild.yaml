@@ -262,6 +262,7 @@ steps:
           echo "ACOS bucket is not specified. Skipping copy."
           exit 0
         fi
+
         ACOS_TARGET_URL="gs://${_ACOS_BUCKET_NAME}/${_OUTPUT_IMAGE_NAME}.tar.gz"
         if gcloud storage ls "$${ACOS_TARGET_URL}" > /dev/null 2>&1; then
           echo "Result image ${_OUTPUT_IMAGE_NAME}.tar.gz already exists in the ACOS bucket. Overwriting."
