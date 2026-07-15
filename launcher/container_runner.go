@@ -24,10 +24,8 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/cio"
-	"github.com/containerd/containerd/containers"
 	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/images"
-	"github.com/containerd/containerd/oci"
 	"github.com/containerd/containerd/remotes"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-tpm-tools/agent"
@@ -43,7 +41,6 @@ import (
 	"github.com/google/go-tpm-tools/launcher/spec"
 	"github.com/google/go-tpm-tools/launcher/teeserver"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
-	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -121,20 +118,6 @@ func NewRunner(ctx context.Context, cfg *RunnerConfig) (*ContainerRunner, error)
 	image := cfg.Image
 	attestAgent := cfg.AttestAgent
 
-	var mounts []specs.Mount
-	for _, lsMnt := range launchSpec.Mounts {
-		mounts = append(mounts, lsMnt.SpecsMount())
-	}
-	mounts = appendTokenMounts(mounts)
-	var cgroupOpts []oci.SpecOpts
-	if launchSpec.CgroupNamespace {
-		mounts = appendCgroupRw(mounts)
-		cgroupOpts = []oci.SpecOpts{
-			oci.WithNamespacedCgroup(),
-			oci.WithLinuxNamespace(specs.LinuxNamespace{Type: specs.CgroupNamespace}),
-		}
-	}
-
 	envs, err := formatEnvVars(launchSpec.Envs)
 	if err != nil {
 		return nil, err
@@ -205,86 +188,15 @@ func NewRunner(ctx context.Context, cfg *RunnerConfig) (*ContainerRunner, error)
 		)
 	}
 
-	hostname, err := os.Hostname()
-	if err != nil {
-		return nil, &RetryableError{fmt.Errorf("cannot get hostname: [%w]", err)}
-	}
-
-	rlimits := []specs.POSIXRlimit{{
-		Type: "RLIMIT_NOFILE",
-		Hard: nofile,
-		Soft: nofile,
-	}}
-
-	specOpts := []oci.SpecOpts{
-		oci.WithImageConfigArgs(image, launchSpec.Cmd),
-		oci.WithEnv(envs),
-		oci.WithMounts(mounts),
-		// following 4 options are here to allow the container to have
-		// the host network (same effect as --net-host in ctr command)
-		oci.WithHostHostsFile,
-		oci.WithHostResolvconf,
-		oci.WithHostNamespace(specs.NetworkNamespace),
-		oci.WithEnv([]string{fmt.Sprintf("HOSTNAME=%s", hostname)}),
-		oci.WithAddedCapabilities(launchSpec.AddedCapabilities),
-		withRlimits(rlimits),
-		withOOMScoreAdj(defaultOOMScore),
-	}
-	if launchSpec.DevShmSize != 0 {
-		specOpts = append(specOpts, oci.WithDevShmSize(launchSpec.DevShmSize))
-	}
-	specOpts = append(specOpts, cgroupOpts...)
-
+	var deviceROTs []agent.DeviceROT
+	nvidiaAttester := gpu.NewNvidiaAttester(launchSpec.InstallGpuDriver)
 	if launchSpec.InstallGpuDriver {
-		gpuMounts := []specs.Mount{
-			{
-				Type:        "volume",
-				Source:      fmt.Sprintf("%s/lib64", gpu.InstallationHostDir),
-				Destination: fmt.Sprintf("%s/lib64", gpu.InstallationContainerDir),
-				Options:     []string{"rbind", "rw"},
-			}, {
-				Type:        "volume",
-				Source:      fmt.Sprintf("%s/bin", gpu.InstallationHostDir),
-				Destination: fmt.Sprintf("%s/bin", gpu.InstallationContainerDir),
-				Options:     []string{"rbind", "rw"},
-			},
-		}
-		if launchSpec.Experiments.BcMode {
-			gpuMounts = []specs.Mount{
-				{
-					Type:        "volume",
-					Source:      fmt.Sprintf("%s/lib64", gpu.BuiltInInstallation595_58_03HostDir),
-					Destination: fmt.Sprintf("%s/lib64", gpu.InstallationContainerDir),
-					Options:     []string{"rbind", "rw"},
-				}, {
-					Type:        "volume",
-					Source:      fmt.Sprintf("%s/bin", gpu.BuiltInInstallation595_58_03HostDir),
-					Destination: fmt.Sprintf("%s/bin", gpu.InstallationContainerDir),
-					Options:     []string{"rbind", "rw"},
-				},
-			}
-		}
+		deviceROTs = append(deviceROTs, nvidiaAttester)
+	}
 
-		specOpts = append(specOpts, oci.WithMounts(gpuMounts))
-
-		// /dev/nvidia-caps/* will not be listed here and will not be passed to
-		// the container workload
-		//
-		// following devices should be listed:
-		// /dev/nvidiactl
-		// /dev/nvidia-uvm
-		// /dev/nvidia-uvm-tools
-		// /dev/nvidia{0,1,2,...}
-		// /dev/nvidia-modeset
-		gpuDeviceFiles, err := listFilesWithPrefix("/dev", "nvidia")
-		if err != nil {
-			return nil, fmt.Errorf("failed to list nvidia devices: [%w]", err)
-		}
-
-		for _, deviceFile := range gpuDeviceFiles {
-			logger.Info(fmt.Sprintf("Detected nvidia device : %s", deviceFile))
-			specOpts = append(specOpts, oci.WithDevices(deviceFile, deviceFile, "crw-rw-rw-"))
-		}
+	specOpts, err := createOCISpecOpts(image, launchSpec, envs, listFilesWithPrefix, logger)
+	if err != nil {
+		return nil, err
 	}
 
 	container, err = cdClient.NewContainer(
@@ -380,30 +292,6 @@ func getSignatureDiscoveryClient(cdClient ContainerdClient, mdsClient *metadata.
 		return image, nil
 	}
 	return signaturediscovery.New(imageDesc, resolverFetcher, imageFetcher)
-}
-
-// formatEnvVars formats the environment variables to the oci format
-func formatEnvVars(envVars []spec.EnvVar) ([]string, error) {
-	var result []string
-	for _, envVar := range envVars {
-		ociFormat, err := cel.FormatEnvVar(envVar.Name, envVar.Value)
-		if err != nil {
-			return nil, fmt.Errorf("failed to format env var: %v", err)
-		}
-		result = append(result, ociFormat)
-	}
-	return result, nil
-}
-
-// appendTokenMounts appends the default mount specs for the OIDC token
-func appendTokenMounts(mounts []specs.Mount) []specs.Mount {
-	m := specs.Mount{}
-	m.Destination = launcherfile.ContainerRuntimeMountPath
-	m.Type = "bind"
-	m.Source = launcherfile.HostTmpPath
-	m.Options = []string{"rbind", "ro"}
-
-	return append(mounts, m)
 }
 
 func (r *ContainerRunner) measureCELEvents(ctx context.Context) error {
@@ -946,34 +834,6 @@ func (r *ContainerRunner) Close(ctx context.Context) {
 	// Delete container and close connection to attestation service.
 	// TODO: consider handling or logging cleanup error.
 	_ = r.container.Delete(ctx, containerd.WithSnapshotCleanup)
-}
-
-// withRlimits sets the rlimit (like the max file descriptor) for the container process
-func withRlimits(rlimits []specs.POSIXRlimit) oci.SpecOpts {
-	return func(_ context.Context, _ oci.Client, _ *containers.Container, s *oci.Spec) error {
-		s.Process.Rlimits = rlimits
-		return nil
-	}
-}
-
-// Set the container process's OOM score.
-func withOOMScoreAdj(oomScore int) oci.SpecOpts {
-	return func(_ context.Context, _ oci.Client, _ *containers.Container, s *oci.Spec) error {
-		s.Process.OOMScoreAdj = &oomScore
-		return nil
-	}
-}
-
-// appendCgroupRw mount maps a cgroup as read-write.
-func appendCgroupRw(mounts []specs.Mount) []specs.Mount {
-	m := specs.Mount{
-		Destination: "/sys/fs/cgroup",
-		Type:        "cgroup",
-		Source:      "cgroup",
-		Options:     []string{"rw", "nosuid", "noexec", "nodev"},
-	}
-
-	return append(mounts, m)
 }
 
 func verifySocketPermissions(socketPath string) error {
