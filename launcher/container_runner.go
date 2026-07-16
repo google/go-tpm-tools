@@ -812,19 +812,29 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	// create and start the key manager server
 	if r.launchSpec.Experiments.EnableKeyManager {
 		r.logger.Info("EnableKeyManager experiment is enabled: initializing KeyManager server.")
-		keyManagerServer, err := workloadservice.New(ctx, path.Join(launcherfile.HostTmpPath, keyManagerSocket), keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED)
+		keyManagerSocketPath := path.Join(launcherfile.HostTmpPath, keyManagerSocket)
+		keyManagerServer, err := workloadservice.New(ctx, keyManagerSocketPath, keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED)
+
 		if err != nil {
 			return fmt.Errorf("failed to create the KeyManager server: %v", err)
+		}
+		if err := verifySocketPermissions(keyManagerSocketPath); err != nil {
+			return fmt.Errorf("failed to verify KeyManager socket permissions: %w", err)
 		}
 		workloadService = keyManagerServer
 		go keyManagerServer.Serve()
 		defer keyManagerServer.Shutdown(ctx)
 	}
 
-	teeServer, err := teeserver.New(ctx, path.Join(launcherfile.HostTmpPath, teeServerSocket), r.attestAgent, r.logger, r.launchSpec, attestClients, workloadService)
+	teeServerSocketPath := path.Join(launcherfile.HostTmpPath, teeServerSocket)
+	teeServer, err := teeserver.New(ctx, teeServerSocketPath, r.attestAgent, r.logger, r.launchSpec, attestClients, workloadService)
 	if err != nil {
 		return fmt.Errorf("failed to create the TEE server: %v", err)
 	}
+	if err := verifySocketPermissions(teeServerSocketPath); err != nil {
+		return fmt.Errorf("failed to verify TEE server socket permissions: %w", err)
+	}
+
 	go teeServer.Serve()
 	defer teeServer.Shutdown(ctx)
 
@@ -1071,4 +1081,15 @@ func appendCgroupRw(mounts []specs.Mount) []specs.Mount {
 	}
 
 	return append(mounts, m)
+}
+
+func verifySocketPermissions(socketPath string) error {
+	info, err := os.Stat(socketPath)
+	if err != nil {
+		return fmt.Errorf("failed to stat socket: %w", err)
+	}
+	if perm := info.Mode().Perm(); perm != 0777 {
+		return fmt.Errorf("socket %s has permissions %04o, want 0777", socketPath, perm)
+	}
+	return nil
 }

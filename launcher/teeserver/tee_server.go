@@ -10,6 +10,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 
 	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
@@ -84,6 +85,10 @@ func New(ctx context.Context, unixSock string, a agent.AttestationAgent, logger 
 	nl, err := net.Listen("unix", unixSock)
 	if err != nil {
 		return nil, fmt.Errorf("cannot listen to the socket [%s]: %v", unixSock, err)
+	}
+	if err := os.Chmod(unixSock, 0777); err != nil {
+		nl.Close()
+		return nil, fmt.Errorf("failed to chmod unix socket %s: %v", unixSock, err)
 	}
 
 	if launchSpec.Experiments.EnableKeyManager && keyClaimsProvider == nil {
