@@ -293,7 +293,7 @@ steps:
     exit
 
 - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-  id: TriggerLouhiPresubmit
+  id: TriggerLouhiFlow
   waitFor: ['DebugBcImageBuildAndExport', 'HardenedBcImageBuildAndExport']
   env:
   - 'BC_ACOS_BUCKET=$_BC_ACOS_BUCKET'
