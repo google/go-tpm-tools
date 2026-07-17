@@ -590,7 +590,7 @@ steps:
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: ExportDebugImage
-  waitFor: ['ExportHardenedImage', 'DebugImageTests']
+  waitFor: ['DebugImageTests']
   entrypoint: 'gcloud'
   args: ['compute', 'images', 'export',
           '--destination-uri=gs://${PROJECT_ID}_raw-images/${_OUTPUT_IMAGE_PREFIX}-debug-${_OUTPUT_IMAGE_SUFFIX}.tar.gz',
@@ -631,7 +631,7 @@ steps:
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: ExportVgHardenedImage
-  waitFor: ['ExportDebugImage', 'HardenedVgImageBuild']
+  waitFor: ['HardenedVgImageBuild', 'KeymanagerTests']
   entrypoint: 'gcloud'
   args: ['compute', 'images', 'export',
          '--destination-uri=gs://${PROJECT_ID}_raw-images/${_OUTPUT_IMAGE_PREFIX}-vg-hardened-${_OUTPUT_IMAGE_SUFFIX}.tar.gz',
@@ -640,7 +640,7 @@ steps:
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: ExportVgDebugImage
-  waitFor: ['ExportVgHardenedImage', 'DebugVgImageBuild']
+  waitFor: ['DebugVgImageBuild', 'KeymanagerTests']
   entrypoint: 'gcloud'
   args: ['compute', 'images', 'export',
           '--destination-uri=gs://${PROJECT_ID}_raw-images/${_OUTPUT_IMAGE_PREFIX}-vg-debug-${_OUTPUT_IMAGE_SUFFIX}.tar.gz',
