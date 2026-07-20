@@ -43,9 +43,6 @@ func urlFromRegion(region string) (string, error) {
 	if region == "" {
 		return "", errors.New("API region required to initialize ITA client")
 	}
-	if strings.HasPrefix(region, "http://") || strings.HasPrefix(region, "https://") {
-		return region, nil
-	}
 	url, ok := regionalURLs[strings.ToUpper(region)]
 	if !ok {
 		// Create list of allowed regions.
@@ -295,6 +292,7 @@ func convertNvidiaAttestationToITANvgpu(nvAtt *attestationpb.NvidiaAttestationRe
 		EvidenceList: evidenceList,
 	}
 }
+
 
 func convertGPUArchToString(arch attestationpb.GpuArchitectureType) string {
 	switch arch {
