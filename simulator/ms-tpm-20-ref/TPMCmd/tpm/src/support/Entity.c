@@ -326,6 +326,7 @@ EntityGetAuthPolicy(TPMI_DH_ENTITY handle,     // IN: handle of entity
         break;
                     // Get the policy for each implemented ACT
                     FOR_EACH_ACT(ACT_GET_POLICY)
+#undef ACT_GET_POLICY
                 default:
                     hashAlg = TPM_ALG_ERROR;
                     break;

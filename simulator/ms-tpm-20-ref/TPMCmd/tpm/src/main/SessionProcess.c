@@ -446,6 +446,7 @@ static BOOL IsAuthPolicyAvailable(TPM_HANDLE    handle,        // IN: handle of 
           break;
 
                     FOR_EACH_ACT(ACT_GET_POLICY)
+#  undef ACT_GET_POLICY
 #endif  // ACT_SUPPORT
 
                 case TPM_RH_LOCKOUT:

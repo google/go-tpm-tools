@@ -94,10 +94,14 @@
 #define     ALG_EDDSA_PH                    (NO  * ALG_ECC)
 
 #define     ECC_NIST_P192                   (YES * ALG_ECC)
+#ifndef ECC_NIST_P224
 #define     ECC_NIST_P224                   (YES * ALG_ECC)
+#endif
 #define     ECC_NIST_P256                   (YES * ALG_ECC)
 #define     ECC_NIST_P384                   (YES * ALG_ECC)
+#ifndef ECC_NIST_P521
 #define     ECC_NIST_P521                   (YES * ALG_ECC)
+#endif
 #define     ECC_BN_P256                     (YES * ALG_ECC)
 #define     ECC_BN_P638                     (YES * ALG_ECC)
 #define     ECC_SM2_P256                    (YES * ALG_ECC)
@@ -116,7 +120,9 @@
 #define ALG_SHA256                          ALG_YES
 #define ALG_SHA256_192                      ALG_NO
 #define ALG_SHA384                          ALG_YES
+#ifndef ALG_SHA512
 #define ALG_SHA512                          ALG_NO
+#endif
 
 #define ALG_SHA3_256                        ALG_NO
 #define ALG_SHA3_384                        ALG_NO

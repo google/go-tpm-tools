@@ -49,7 +49,9 @@
 // macros will make sure that it is set correctly. A simulated TPM would include a
 // Virtual TPM. The interfaces for a Virtual TPM should be modified from the standard
 // ones in the Simulator project.
+#ifndef SIMULATION
 #define SIMULATION                  YES
+#endif
 
 // ENABLE_TPM_DEBUG_PRINT enables arbitrary string printing.
 // enables the TPM_DEBUG_PRINT macro to route debugging strings
@@ -72,7 +74,9 @@
 #define DRBG_DEBUG_PRINT            (NO  * DEBUG)
 
 // This define is used to control the debug for the CertifyX509 command.
+#ifndef CERTIFYX509_DEBUG
 #define CERTIFYX509_DEBUG           (NO * DEBUG)
+#endif
 
 // This provides fixed seeding of the RNG when doing debug on a simulator. This
 // should allow consistent results on test runs as long as the input parameters
@@ -127,13 +131,17 @@
 // the current compiler doesn't support it.  COMPILER_CHECKS should be enabled if the
 // compiler supports some form of static_assert.
 // See the CompilerDependencies_*.h files for specific implementations per compiler.
+#ifndef COMPILER_CHECKS
 #define COMPILER_CHECKS             YES
+#endif
 
 // Some of the values (such as sizes) are the result of different options set in
 // TpmProfile.h. The combination might not be consistent. A function is defined
 // (TpmSizeChecks()) that is used to verify the sizes at run time. To enable the
 // function, define this parameter.
+#ifndef RUNTIME_SIZE_CHECKS
 #define RUNTIME_SIZE_CHECKS         YES
+#endif
 
 ////////////////////////////////////////////////////////////////
 // Compliance options
@@ -172,7 +180,9 @@
 
 // Definition to allow alternate behavior for non-orderly startup. If there is a
 // chance that the TPM could not update 'failedTries'
+#ifndef USE_DA_USED
 #define USE_DA_USED                 YES
+#endif
 
 // This switch is used to enable the self-test capability in AlgorithmTests.c
 #define ENABLE_SELF_TESTS           YES
