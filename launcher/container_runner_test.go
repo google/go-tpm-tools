@@ -930,6 +930,7 @@ func (f *fakeLogger) Info(msg string, args ...any) {
 }
 func (f *fakeLogger) Warn(string, ...any)  {}
 func (f *fakeLogger) Error(string, ...any) {}
+func (f *fakeLogger) Flush()               {}
 func (f *fakeLogger) Close()               {}
 
 func formatLog(msg string, args ...any) string {
