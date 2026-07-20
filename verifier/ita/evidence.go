@@ -71,5 +71,3 @@ type tokenRequest struct {
 type tokenResponse struct {
 	Token string `json:"token"`
 }
-
-

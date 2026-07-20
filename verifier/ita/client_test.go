@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
 	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
+	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/google/go-tpm-tools/verifier/models"
 )
@@ -365,7 +365,6 @@ func TestURLFromRegion(t *testing.T) {
 	}
 }
 
-
 func TestURLFromRegionError(t *testing.T) {
 	testcases := []struct {
 		name           string
@@ -457,4 +456,3 @@ func TestConvertRequestToTokenRequestWithNvidia(t *testing.T) {
 		t.Errorf("convertRequestToTokenRequest with Nvidia did not return expected tokenRequest: %v", diff)
 	}
 }
-
