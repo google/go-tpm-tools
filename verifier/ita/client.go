@@ -260,18 +260,18 @@ func convertRequestToTokenRequest(request verifier.VerifyAttestationRequest) tok
 	}
 
 	if request.NvidiaAttestation != nil {
-		tokenReq.Nvgpu = convertNvidiaAttestationToITANvgpu(request.NvidiaAttestation)
+		tokenReq.Nvgpu = convertReportToNvgpuEvidence(request.NvidiaAttestation)
 	}
 
 	return tokenReq
 }
 
-func convertNvidiaAttestationToITANvgpu(nvAtt *attestationpb.NvidiaAttestationReport) *nvgpuEvidence {
+func convertReportToNvgpuEvidence(report *attestationpb.NvidiaAttestationReport) *nvgpuEvidence {
 	var gpuInfos []*attestationpb.GpuInfo
-	if nvAtt.GetSpt() != nil {
-		gpuInfos = []*attestationpb.GpuInfo{nvAtt.GetSpt().GetGpuQuote()}
-	} else if nvAtt.GetMpt() != nil {
-		gpuInfos = nvAtt.GetMpt().GetGpuQuotes()
+	if report.GetSpt() != nil {
+		gpuInfos = []*attestationpb.GpuInfo{report.GetSpt().GetGpuQuote()}
+	} else if report.GetMpt() != nil {
+		gpuInfos = report.GetMpt().GetGpuQuotes()
 	}
 
 	if len(gpuInfos) == 0 {
@@ -287,12 +287,11 @@ func convertNvidiaAttestationToITANvgpu(nvAtt *attestationpb.NvidiaAttestationRe
 	}
 
 	return &nvgpuEvidence{
-		GpuNonce:     fmt.Sprintf("%x", nvAtt.GetNonce()),
+		GpuNonce:     fmt.Sprintf("%x", report.GetNonce()),
 		Arch:         convertGPUArchToString(gpuInfos[0].GetGpuArchitectureType()),
 		EvidenceList: evidenceList,
 	}
 }
-
 
 func convertGPUArchToString(arch attestationpb.GpuArchitectureType) string {
 	switch arch {
