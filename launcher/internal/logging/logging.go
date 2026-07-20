@@ -7,7 +7,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 
@@ -36,6 +35,9 @@ type Logger interface {
 	Warn(msg string, args ...any)
 	Error(msg string, args ...any)
 
+	// Flush flushes buffered logs to downstream destinations.
+	Flush()
+
 	// Close flushes buffered logs and closes underlying resources. Callers should defer Close().
 	Close()
 }
@@ -45,7 +47,8 @@ type cLogger interface {
 	Flush() error
 }
 
-type cloudLogger struct {
+// CloudLogger wraps a Google Cloud Logging client to export logs.
+type CloudLogger struct {
 	cloudLogger cLogger
 	resource    *mrpb.MonitoredResource
 
@@ -64,9 +67,9 @@ type dualLogger struct {
 
 type payload map[string]any
 
-// NewCloudLogger returns a Logger that logs exclusively to Cloud Logging.
+// NewCloudLogger returns a CloudLogger that logs exclusively to Cloud Logging.
 // Callers should run `defer logger.Close()` after initialization to ensure logs are flushed and handles are closed.
-func NewCloudLogger(ctx context.Context, pool *x509.CertPool) (Logger, error) {
+func NewCloudLogger(ctx context.Context, pool *x509.CertPool) (*CloudLogger, error) {
 	// Retrieve monitored resource information.
 	mdsClient := metadata.NewClient(nil)
 
@@ -104,7 +107,7 @@ func NewCloudLogger(ctx context.Context, pool *x509.CertPool) (Logger, error) {
 		return nil, err
 	}
 
-	return &cloudLogger{
+	return &CloudLogger{
 		cloudLogger: cloggingClient.Logger(logName),
 		resource: &mrpb.MonitoredResource{
 			Type: "gce_instance",
@@ -142,7 +145,8 @@ func DualLogger(cloud Logger, serial Logger) Logger {
 	return &dualLogger{cloud: cloud, serial: serial}
 }
 
-func (l *cloudLogger) Log(severity clogging.Severity, msg string, args ...any) {
+// Log writes a log entry with the given severity and arguments to Cloud Logging.
+func (l *CloudLogger) Log(severity clogging.Severity, msg string, args ...any) {
 	if l.cloudLogger == nil {
 		return
 	}
@@ -166,16 +170,28 @@ func (l *cloudLogger) Log(severity clogging.Severity, msg string, args ...any) {
 	logEntry.Payload = pl
 
 	l.cloudLogger.Log(logEntry)
-	if err := l.cloudLogger.Flush(); err != nil {
-		slog.Error(fmt.Sprintf("cloud.Logger.Flush returned error: %v", err))
+}
+
+// Info logs a message with Info severity.
+func (l *CloudLogger) Info(msg string, args ...any) { l.Log(clogging.Info, msg, args...) }
+
+// Warn logs a message with Warning severity.
+func (l *CloudLogger) Warn(msg string, args ...any) { l.Log(clogging.Warning, msg, args...) }
+
+// Error logs a message with Error severity.
+func (l *CloudLogger) Error(msg string, args ...any) { l.Log(clogging.Error, msg, args...) }
+
+// Flush flushes buffered logs to Cloud Logging.
+func (l *CloudLogger) Flush() {
+	if l.cloudLogger != nil {
+		if err := l.cloudLogger.Flush(); err != nil {
+			slog.Error(fmt.Sprintf("cloud.Logger.Flush returned error: %v", err))
+		}
 	}
 }
 
-func (l *cloudLogger) Info(msg string, args ...any)  { l.Log(clogging.Info, msg, args...) }
-func (l *cloudLogger) Warn(msg string, args ...any)  { l.Log(clogging.Warning, msg, args...) }
-func (l *cloudLogger) Error(msg string, args ...any) { l.Log(clogging.Error, msg, args...) }
-
-func (l *cloudLogger) Close() {
+// Close flushes buffered logs and closes the underlying Cloud Logging client.
+func (l *CloudLogger) Close() {
 	if l.cloudClient != nil {
 		l.cloudClient.Close()
 	}
@@ -225,8 +241,8 @@ func (l *serialLogger) Log(severity clogging.Severity, msg string, args ...any) 
 func (l *serialLogger) Info(msg string, args ...any)  { l.Log(clogging.Info, msg, args...) }
 func (l *serialLogger) Warn(msg string, args ...any)  { l.Log(clogging.Warning, msg, args...) }
 func (l *serialLogger) Error(msg string, args ...any) { l.Log(clogging.Error, msg, args...) }
-
-func (l *serialLogger) Close() {}
+func (l *serialLogger) Flush()                        {}
+func (l *serialLogger) Close()                        {}
 
 func (d *dualLogger) Log(severity clogging.Severity, msg string, args ...any) {
 	d.cloud.Log(severity, msg, args...)
@@ -246,6 +262,11 @@ func (d *dualLogger) Warn(msg string, args ...any) {
 func (d *dualLogger) Error(msg string, args ...any) {
 	d.cloud.Error(msg, args...)
 	d.serial.Error(msg, args...)
+}
+
+func (d *dualLogger) Flush() {
+	d.cloud.Flush()
+	d.serial.Flush()
 }
 
 func (d *dualLogger) Close() {
@@ -292,6 +313,7 @@ func (l *slogger) Error(msg string, args ...any) {
 	l.slg.Error(msg, args...)
 }
 
+func (l *slogger) Flush() {}
 func (l *slogger) Close() {}
 
 type nullLogger struct{}
@@ -300,6 +322,7 @@ func (n *nullLogger) Log(_ clogging.Severity, _ string, _ ...any) {}
 func (n *nullLogger) Info(_ string, _ ...any)                     {}
 func (n *nullLogger) Warn(_ string, _ ...any)                     {}
 func (n *nullLogger) Error(_ string, _ ...any)                    {}
+func (n *nullLogger) Flush()                                      {}
 func (n *nullLogger) Close()                                      {}
 
 // SeverityWriter wraps a Logger and implements io.Writer to write to the Logger at a specific severity level.
@@ -308,18 +331,18 @@ type SeverityWriter struct {
 	severity clogging.Severity
 }
 
-// NewSeverityWriter returns an io.Writer that writes to the provided Logger with a specific severity.
-func NewSeverityWriter(l Logger, severity clogging.Severity) io.Writer {
+// NewSeverityWriter returns a *SeverityWriter that writes to the provided Logger with a specific severity.
+func NewSeverityWriter(l Logger, severity clogging.Severity) *SeverityWriter {
 	return &SeverityWriter{l: l, severity: severity}
 }
 
-// NewInfoWriter returns an io.Writer that writes logs to the provided Logger with Info severity.
-func NewInfoWriter(l Logger) io.Writer {
+// NewInfoWriter returns a *SeverityWriter that writes logs to the provided Logger with Info severity.
+func NewInfoWriter(l Logger) *SeverityWriter {
 	return NewSeverityWriter(l, clogging.Info)
 }
 
-// NewErrorWriter returns an io.Writer that writes logs to the provided Logger with Error severity.
-func NewErrorWriter(l Logger) io.Writer {
+// NewErrorWriter returns a *SeverityWriter that writes logs to the provided Logger with Error severity.
+func NewErrorWriter(l Logger) *SeverityWriter {
 	return NewSeverityWriter(l, clogging.Error)
 }
 

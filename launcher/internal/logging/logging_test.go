@@ -161,7 +161,7 @@ func TestCloudLogger(t *testing.T) {
 	}
 
 	cloudC := &testCLogger{}
-	cl := &cloudLogger{
+	cl := &CloudLogger{
 		cloudLogger:  cloudC,
 		resource:     testResource,
 		instanceName: "test-instance",
@@ -224,7 +224,7 @@ func TestSerialLogger(t *testing.T) {
 
 func TestDualLogger(t *testing.T) {
 	cloudC := &testCLogger{}
-	cl := &cloudLogger{
+	cl := &CloudLogger{
 		cloudLogger:  cloudC,
 		resource:     &mrpb.MonitoredResource{},
 		instanceName: "test-instance",
@@ -285,7 +285,7 @@ func TestLogFunctions(t *testing.T) {
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
 			cloudLogs := &testCLogger{}
-			cl := &cloudLogger{
+			cl := &CloudLogger{
 				cloudLogger:  cloudLogs,
 				resource:     &mrpb.MonitoredResource{},
 				instanceName: "test-instance",
@@ -334,42 +334,42 @@ func TestSeverityWriter(t *testing.T) {
 	}{
 		{
 			name:         "InfoWriter without newline",
-			writerFunc:   NewInfoWriter,
+			writerFunc:   func(l Logger) io.Writer { return NewInfoWriter(l) },
 			input:        "test info log",
 			wantMsg:      "test info log",
 			wantSeverity: clogging.Info,
 		},
 		{
 			name:         "InfoWriter strips trailing newlines",
-			writerFunc:   NewInfoWriter,
+			writerFunc:   func(l Logger) io.Writer { return NewInfoWriter(l) },
 			input:        "test info log\n\n",
 			wantMsg:      "test info log",
 			wantSeverity: clogging.Info,
 		},
 		{
 			name:         "ErrorWriter with trailing newline",
-			writerFunc:   NewErrorWriter,
+			writerFunc:   func(l Logger) io.Writer { return NewErrorWriter(l) },
 			input:        "test error log\n",
 			wantMsg:      "test error log",
 			wantSeverity: clogging.Error,
 		},
 		{
 			name:         "Preserves internal newlines",
-			writerFunc:   NewInfoWriter,
+			writerFunc:   func(l Logger) io.Writer { return NewInfoWriter(l) },
 			input:        "line 1\nline 2\n\n",
 			wantMsg:      "line 1\nline 2",
 			wantSeverity: clogging.Info,
 		},
 		{
 			name:         "Empty input",
-			writerFunc:   NewInfoWriter,
+			writerFunc:   func(l Logger) io.Writer { return NewInfoWriter(l) },
 			input:        "",
 			wantMsg:      "",
 			wantSeverity: clogging.Info,
 		},
 		{
 			name:         "Only newlines",
-			writerFunc:   NewInfoWriter,
+			writerFunc:   func(l Logger) io.Writer { return NewInfoWriter(l) },
 			input:        "\n\n\n",
 			wantMsg:      "",
 			wantSeverity: clogging.Info,
@@ -406,4 +406,5 @@ func (m *mockLogger) Log(severity clogging.Severity, msg string, _ ...any) {
 func (m *mockLogger) Info(_ string, _ ...any)  {}
 func (m *mockLogger) Warn(_ string, _ ...any)  {}
 func (m *mockLogger) Error(_ string, _ ...any) {}
+func (m *mockLogger) Flush()                   {}
 func (m *mockLogger) Close()                   {}

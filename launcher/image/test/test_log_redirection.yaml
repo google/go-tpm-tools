@@ -31,12 +31,17 @@ steps:
   args: ['scripts/test_log_redirect.sh', 'cloud_logging', 'true', '${_VM_NAME_PREFIX}-${BUILD_ID}-all', '${_ZONE}']
   waitFor: ['CreateVMRedirectAll']
 - name: 'gcr.io/cloud-builders/gcloud'
+  id: LogAllLoadTest
+  entrypoint: 'bash'
+  args: ['scripts/test_log_load.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}-all', '${_ZONE}']
+  waitFor: ['CreateVMRedirectAll']
+- name: 'gcr.io/cloud-builders/gcloud'
   id: CleanUpLogAllTest
   entrypoint: 'bash'
   env:
   - 'CLEANUP=$_CLEANUP'
   args: ['cleanup.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}-all', '${_ZONE}']
-  waitFor: ['LogAllCheckSerialTest', 'LogAllCheckCloudLoggingTest']
+  waitFor: ['LogAllCheckSerialTest', 'LogAllCheckCloudLoggingTest', 'LogAllLoadTest']
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CreateVMRedirectSerial
