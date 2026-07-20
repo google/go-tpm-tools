@@ -43,7 +43,7 @@ package internal
 // #cgo CFLAGS: -DECC_NIST_P224=YES
 // #cgo CFLAGS: -DECC_NIST_P521=YES
 // #cgo CFLAGS: -DALG_SHA512=ALG_YES
-// #cgo CFLAGS: -DMAX_CONTEXT_SIZE=1360
+// #cgo CFLAGS: -DMAX_CONTEXT_SIZE=2264
 // // Flags to find OpenSSL installation on macOS (default Homebrew location)
 // #cgo darwin,amd64 CFLAGS: -I/usr/local/opt/openssl/include
 // #cgo darwin,amd64 LDFLAGS: -L/usr/local/opt/openssl/lib
