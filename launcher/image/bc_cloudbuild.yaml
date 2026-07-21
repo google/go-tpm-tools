@@ -295,5 +295,7 @@ steps:
 timeout: '3000s'
 
 options:
-  machine_type: 'E2_HIGHCPU_32'
   dynamic_substitutions: true
+  pool:
+    name: 'projects/confidential-space-images-dev/locations/us-west1/workerPools/cs-image-build-vpc'
+
