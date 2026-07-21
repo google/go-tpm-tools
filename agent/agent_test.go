@@ -26,6 +26,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	gecel "github.com/google/go-eventlog/cel"
 	"github.com/google/go-tdx-guest/testing/testdata"
+	"github.com/google/go-tpm-tools/agent/device"
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal/test"
@@ -692,7 +693,6 @@ type fakeTdxAttestRoot struct {
 	cel           gecel.CEL
 	receivedNonce []byte
 	tdxQuote      []byte
-	deviceROTs    []DeviceROT
 }
 
 func (f *fakeTdxAttestRoot) Extend(c gecel.Content) error {
@@ -723,31 +723,18 @@ func (f *fakeTdxAttestRoot) ComputeNonce(challenge []byte, extraData []byte) []b
 	return finalNonce[:]
 }
 
-func (f *fakeTdxAttestRoot) AttestDeviceROTs(nonce []byte) ([]any, error) {
-	var deviceReports []any
-	for _, deviceRoT := range f.deviceROTs {
-		att, err := deviceRoT.Attest(nonce)
-		if err != nil {
-			return nil, err
-		}
-		switch v := att.(type) {
-		case *attestationpb.NvidiaAttestationReport:
-			deviceReports = append(deviceReports, v)
-		default:
-			return nil, fmt.Errorf("unknown device attestation type: %T", v)
-		}
-	}
-	return deviceReports, nil
-}
-
 //go:embed testdata/cel.b64
 var celB64 string
 
-func (f *fakeTdxAttestRoot) AddDeviceROTs(deviceRoTS []DeviceROT) {
-	f.deviceROTs = append(f.deviceROTs, deviceRoTS...)
+type fakeGPURoT struct{}
+
+func (f *fakeGPURoT) Vendor() device.Vendor {
+	return device.NvidiaGPU
 }
 
-type fakeGPURoT struct{}
+func (f *fakeGPURoT) EnableReadyState() error {
+	return nil
+}
 
 func (f *fakeGPURoT) Attest(nonce []byte) (any, error) {
 	if len(nonce) == 0 {
@@ -763,54 +750,50 @@ func (f *fakeGPURoT) Attest(nonce []byte) (any, error) {
 }
 func TestTDXAttestDeviceROTs(t *testing.T) {
 	testCases := []struct {
-		name          string
-		tdxAttestRoot *fakeTdxAttestRoot
-		nonce         []byte
-		wantGPU       bool
-		wantPass      bool
+		name     string
+		manager  *device.ROTManager
+		nonce    []byte
+		wantGPU  bool
+		wantPass bool
 	}{
 		{
-			name:          "success tdxAttestRoot w/o GPU device",
-			tdxAttestRoot: &fakeTdxAttestRoot{},
-			nonce:         []byte("test-nonce"),
-			wantPass:      true,
+			name:     "success w/o GPU device",
+			manager:  device.NewROTManager(nil),
+			nonce:    []byte("test-nonce"),
+			wantPass: true,
 		},
 		{
-			name: "success tdxAttestRoot w/ GPU device",
-			tdxAttestRoot: &fakeTdxAttestRoot{
-				deviceROTs: []DeviceROT{&fakeGPURoT{}},
-			},
+			name:     "success w/ GPU device",
+			manager:  device.NewROTManager([]device.ROT{&fakeGPURoT{}}),
 			nonce:    []byte("test-nonce"),
 			wantGPU:  true,
 			wantPass: true,
 		},
 		{
-			name: "failed tdxAttestRoot w/ GPU device",
-			tdxAttestRoot: &fakeTdxAttestRoot{
-				deviceROTs: []DeviceROT{&fakeGPURoT{}},
-			},
+			name:     "failed w/ GPU device",
+			manager:  device.NewROTManager([]device.ROT{&fakeGPURoT{}}),
 			nonce:    []byte(""),
+			wantGPU:  true,
 			wantPass: false,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			deviceReports, err := tc.tdxAttestRoot.AttestDeviceROTs(tc.nonce)
+			deviceReports, err := tc.manager.AttestDeviceROTs(tc.nonce, device.ReportOpts{EnableRuntimeGPUAttestation: tc.wantGPU})
 			if gotPass := err == nil; gotPass != tc.wantPass {
-				t.Errorf("tdxAttestRoot.AttestDeviceROTs() did not return expected attestation result, got %v, want %v", gotPass, tc.wantPass)
+				t.Errorf("AttestDeviceROTs() did not return expected attestation result, got %v, want %v", gotPass, tc.wantPass)
 			}
-			if tc.wantGPU {
+			if tc.wantGPU && tc.wantPass {
 				if len(deviceReports) == 0 {
-					t.Fatalf("tdxAttestRoot.AttestDeviceROTs() didn't return any device reports")
+					t.Fatalf("AttestDeviceROTs() didn't return any device reports")
 				}
 				if att := deviceReports[0].(*attestationpb.NvidiaAttestationReport); att == nil {
-					t.Errorf("tdxAttestRoot.AttestDeviceROTs() didn't return expected device report type, want %v, but got nil", &attestationpb.NvidiaAttestationReport{})
+					t.Errorf("AttestDeviceROTs() didn't return expected device report type, want %v, but got nil", &attestationpb.NvidiaAttestationReport{})
 				}
 			}
 		})
 	}
-
 }
 
 func TestAttestationEvidence_TDX_Success(t *testing.T) {
@@ -846,7 +829,7 @@ func TestAttestationEvidence_TDX_Success(t *testing.T) {
 		fetchedAK: ak,
 	}
 	attestAgent.experiments.EnableAttestationEvidence = true
-	attestAgent.avRot.AddDeviceROTs([]DeviceROT{&fakeGPURoT{}})
+	attestAgent.deviceROTManager = device.NewROTManager([]device.ROT{&fakeGPURoT{}})
 
 	if err := measureFakeEvents(attestAgent); err != nil {
 		t.Fatalf("failed to measure events: %v", err)
