@@ -860,6 +860,11 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		return &RetryableError{err}
 	}
 	defer task.Delete(ctx)
+	defer func() {
+		if task.IO() != nil {
+			task.IO().Wait()
+		}
+	}()
 
 	r.enableGracefulShutdown(ctx, task)
 
