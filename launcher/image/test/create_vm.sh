@@ -25,9 +25,9 @@ create_vm() {
 
   MACHINE_TYPE=''
   if [[ "${CC}" == "SEV" ]]; then
-    MACHINE_TYPE='n2d-standard-2'
+    MACHINE_TYPE='n2d-standard-48'
   elif [[ "${CC}" == "TDX" ]]; then
-    MACHINE_TYPE='c3-standard-4'
+    MACHINE_TYPE='c3-standard-44'
   else
     echo "unsupported confidential computing type: ${CC}"
     exit 1
