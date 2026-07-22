@@ -23,13 +23,11 @@ import (
 	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/containerd/containerd"
-	gocni "github.com/containerd/go-cni"
-
 	"github.com/containerd/containerd/cio"
 	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/images"
-	"github.com/containerd/containerd/oci"
 	"github.com/containerd/containerd/remotes"
+	gocni "github.com/containerd/go-cni"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-tpm-tools/agent"
 	"github.com/google/go-tpm-tools/cel"
@@ -44,7 +42,6 @@ import (
 	"github.com/google/go-tpm-tools/launcher/spec"
 	"github.com/google/go-tpm-tools/launcher/teeserver"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
-	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -201,45 +198,7 @@ func NewRunner(ctx context.Context, cfg *RunnerConfig) (*ContainerRunner, error)
 		)
 	}
 
-	hostname, err := os.Hostname()
-	if err != nil {
-		return nil, &RetryableError{fmt.Errorf("cannot get hostname: [%w]", err)}
-	}
-
-	rlimits := []specs.POSIXRlimit{{
-		Type: "RLIMIT_NOFILE",
-		Hard: nofile,
-		Soft: nofile,
-	}}
-
-	specOpts := []oci.SpecOpts{
-		oci.WithImageConfigArgs(image, launchSpec.Cmd),
-		oci.WithEnv(envs),
-		oci.WithMounts(mounts),
-		// following 4 options are here to allow the container to have
-		// the host network (same effect as --net-host in ctr command)
-		oci.WithHostHostsFile,
-		oci.WithHostResolvconf,
-		oci.WithEnv([]string{fmt.Sprintf("HOSTNAME=%s", hostname)}),
-		oci.WithAddedCapabilities(launchSpec.AddedCapabilities),
-		withRlimits(rlimits),
-		withOOMScoreAdj(defaultOOMScore),
-	}
-
-	// If we use non-root container, we enable both the user and network namespaces.
-	// Otherwise, we use host network without enabling the namespaces.
-	if launchPolicy.NonrootContainer {
-		specOpts = append(specOpts,
-			oci.WithUserNamespace(
-				[]specs.LinuxIDMapping{{ContainerID: 0, HostID: hostUIDBegin, Size: userNSSize}},
-				[]specs.LinuxIDMapping{{ContainerID: 0, HostID: hostGIDBegin, Size: userNSSize}},
-			),
-		)
-	} else {
-		specOpts = append(specOpts, oci.WithHostNamespace(specs.NetworkNamespace))
-	}
-
-	specOpts, err := createOCISpecOpts(image, launchSpec, envs, listFilesWithPrefix, logger)
+	specOpts, err := createOCISpecOpts(image, launchSpec, launchPolicy, envs, listFilesWithPrefix, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -251,6 +210,7 @@ func NewRunner(ctx context.Context, cfg *RunnerConfig) (*ContainerRunner, error)
 		conOpts = append(conOpts, containerd.WithNewSnapshot(snapshotID, image))
 	}
 	conOpts = append(conOpts, containerd.WithNewSpec(specOpts...))
+
 	container, err = cdClient.NewContainer(ctx, containerID, conOpts...)
 	if err != nil {
 		if container != nil {
@@ -985,4 +945,15 @@ func (r *ContainerRunner) setupCNI(ctx context.Context, netnsPath string) (strin
 	}
 	// Currently, we have only single network interface defined with a single IP address by `10-workload.conf`.
 	return rawResults[0].IPs[0].Address.IP.String(), nil
+}
+
+func verifySocketPermissions(socketPath string) error {
+	info, err := os.Stat(socketPath)
+	if err != nil {
+		return fmt.Errorf("failed to stat socket: %w", err)
+	}
+	if perm := info.Mode().Perm(); perm != 0777 {
+		return fmt.Errorf("socket %s has permissions %04o, want 0777", socketPath, perm)
+	}
+	return nil
 }
