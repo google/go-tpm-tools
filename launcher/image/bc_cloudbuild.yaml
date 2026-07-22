@@ -47,8 +47,8 @@ steps:
       - '-c'
       - |
         set -e
-        gcloud builds submit ./launcher/internal/gpu/daemons/ --tag guest-gpu-tools:latest --region us-west1
-        container_id=$$(docker create guest-gpu-tools:latest)
+        gcloud builds submit ./launcher/internal/gpu/daemons/ --tag us-west1-docker.pkg.dev/$${PROJECT_ID}/cs-integ-test-images/guest-gpu-tools:$${BUILD_ID} --region us-west1
+        container_id=$$(docker create us-west1-docker.pkg.dev/$${PROJECT_ID}/cs-integ-test-images/guest-gpu-tools:$${BUILD_ID})
         docker export "$${container_id}" -o /workspace/gpu_helper_rootfs.tar
         docker rm "$${container_id}"
 
