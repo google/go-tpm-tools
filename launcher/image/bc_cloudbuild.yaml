@@ -40,14 +40,14 @@ steps:
     id: 'ExtractRawImage'
     args: ['tar', '-xf', './src_image.tar.gz']
 
-  - name: 'gcr.io/cloud-builders/docker'
+  - name: 'gcr.io/cloud-builders/gcloud'
     id: 'BuildAndSaveGPUHelper'
     entrypoint: 'bash'
     args:
       - '-c'
       - |
         set -e
-        docker build -t guest-gpu-tools:latest ./launcher/internal/gpu/daemons/
+        gcloud builds submit ./launcher/internal/gpu/daemons/ --tag guest-gpu-tools:latest --region us-west1
         container_id=$$(docker create guest-gpu-tools:latest)
         docker export "$${container_id}" -o /workspace/gpu_helper_rootfs.tar
         docker rm "$${container_id}"
