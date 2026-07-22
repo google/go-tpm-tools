@@ -92,7 +92,7 @@ func TestCreateOCISpecOpts_ProcessEnv(t *testing.T) {
 	img := createFakeImage(map[string]string{"foo": "bar"}, []string{"/bin/entrypoint"}, []string{"default", "args"})
 	envs := []string{"ENV_VAR_1=value1", "ENV_VAR_2=value2"}
 
-	specOpts, err := createOCISpecOpts(img, spec.LaunchSpec{}, envs, dummyListFiles, logger)
+	specOpts, err := createOCISpecOpts(img, spec.LaunchSpec{}, spec.LaunchPolicy{}, envs, dummyListFiles, logger)
 	if err != nil {
 		t.Fatalf("createOCISpecOpts failed: %v", err)
 	}
@@ -136,7 +136,7 @@ func TestCreateOCISpecOpts_Mounts(t *testing.T) {
 		},
 	}
 
-	specOpts, err := createOCISpecOpts(img, ls, nil, dummyListFiles, logger)
+	specOpts, err := createOCISpecOpts(img, ls, spec.LaunchPolicy{}, nil, dummyListFiles, logger)
 	if err != nil {
 		t.Fatalf("createOCISpecOpts failed: %v", err)
 	}
@@ -172,7 +172,7 @@ func TestCreateOCISpecOpts_Rlimits(t *testing.T) {
 	logger := &fakeLogger{}
 	img := createFakeImage(nil, nil, nil)
 
-	specOpts, err := createOCISpecOpts(img, spec.LaunchSpec{}, nil, dummyListFiles, logger)
+	specOpts, err := createOCISpecOpts(img, spec.LaunchSpec{}, spec.LaunchPolicy{}, nil, dummyListFiles, logger)
 	if err != nil {
 		t.Fatalf("createOCISpecOpts failed: %v", err)
 	}
@@ -198,7 +198,7 @@ func TestCreateOCISpecOpts_Namespaces(t *testing.T) {
 	logger := &fakeLogger{}
 	img := createFakeImage(nil, nil, nil)
 
-	specOpts, err := createOCISpecOpts(img, spec.LaunchSpec{}, nil, dummyListFiles, logger)
+	specOpts, err := createOCISpecOpts(img, spec.LaunchSpec{}, spec.LaunchPolicy{}, nil, dummyListFiles, logger)
 	if err != nil {
 		t.Fatalf("createOCISpecOpts failed: %v", err)
 	}
@@ -258,7 +258,7 @@ func TestCreateOCISpecOpts_Cgroups(t *testing.T) {
 			ls := spec.LaunchSpec{
 				CgroupNamespace: tc.cgroupNamespace,
 			}
-			specOpts, err := createOCISpecOpts(img, ls, nil, dummyListFiles, logger)
+			specOpts, err := createOCISpecOpts(img, ls, spec.LaunchPolicy{}, nil, dummyListFiles, logger)
 			if err != nil {
 				t.Fatalf("createOCISpecOpts failed: %v", err)
 			}
@@ -317,7 +317,7 @@ func TestCreateOCISpecOpts_GPU(t *testing.T) {
 		InstallGpuDriver: true,
 	}
 
-	specOpts, err := createOCISpecOpts(img, ls, nil, mockListFiles, logger)
+	specOpts, err := createOCISpecOpts(img, ls, spec.LaunchPolicy{}, nil, mockListFiles, logger)
 	if err != nil {
 		t.Fatalf("createOCISpecOpts failed: %v", err)
 	}
@@ -388,7 +388,7 @@ func TestCreateOCISpecOpts_GPU_BCMode(t *testing.T) {
 		},
 	}
 
-	specOpts, err := createOCISpecOpts(img, ls, nil, mockListFiles, logger)
+	specOpts, err := createOCISpecOpts(img, ls, spec.LaunchPolicy{}, nil, mockListFiles, logger)
 	if err != nil {
 		t.Fatalf("createOCISpecOpts failed: %v", err)
 	}
@@ -436,7 +436,7 @@ func TestCreateOCISpecOpts_GPU_Error(t *testing.T) {
 		InstallGpuDriver: true,
 	}
 
-	_, err := createOCISpecOpts(img, ls, nil, mockListFilesError, logger)
+	_, err := createOCISpecOpts(img, ls, spec.LaunchPolicy{}, nil, mockListFilesError, logger)
 	if err == nil {
 		t.Fatalf("expected createOCISpecOpts to fail when listFiles fails, but got no error")
 	}
@@ -454,7 +454,7 @@ func TestCreateOCISpecOpts_DevShmSize(t *testing.T) {
 		DevShmSize: 1048576, // 1MB
 	}
 
-	specOpts, err := createOCISpecOpts(img, ls, nil, dummyListFiles, logger)
+	specOpts, err := createOCISpecOpts(img, ls, spec.LaunchPolicy{}, nil, dummyListFiles, logger)
 	if err != nil {
 		t.Fatalf("createOCISpecOpts failed: %v", err)
 	}
