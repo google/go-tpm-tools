@@ -188,12 +188,6 @@ func NewRunner(ctx context.Context, cfg *RunnerConfig) (*ContainerRunner, error)
 		)
 	}
 
-	var deviceROTs []agent.DeviceROT
-	nvidiaAttester := gpu.NewNvidiaAttester(launchSpec.InstallGpuDriver)
-	if launchSpec.InstallGpuDriver {
-		deviceROTs = append(deviceROTs, nvidiaAttester)
-	}
-
 	specOpts, err := createOCISpecOpts(image, launchSpec, envs, listFilesWithPrefix, logger)
 	if err != nil {
 		return nil, err
