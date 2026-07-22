@@ -30,12 +30,10 @@ import (
 	gecel "github.com/google/go-eventlog/cel"
 	"github.com/google/go-tpm-tools/agent"
 	"github.com/google/go-tpm-tools/cel"
-	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/launcher/internal/gpu"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/spec"
-	"github.com/google/go-tpm-tools/simulator"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/opencontainers/go-digest"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
@@ -983,17 +981,10 @@ func TestNewRunner(t *testing.T) {
 			}
 
 			logger := &fakeLogger{}
-			tpm, err := simulator.Get()
-			if err != nil {
-				t.Skipf("TPM simulator not available: %v", err)
-			}
-			defer tpm.Close()
-
 			cfg := &RunnerConfig{
 				ContainerdClient: fakeCli,
 				Image:            fakeImg,
-				TPM:              tpm,
-				AKFetcher:        client.AttestationKeyECC,
+				AttestAgent:      &fakeAttestationAgent{},
 				LaunchSpec: spec.LaunchSpec{
 					ImageRef:            "test-image",
 					Envs:                tc.envs,
@@ -1004,7 +995,7 @@ func TestNewRunner(t *testing.T) {
 				WorkloadLogger: logger,
 			}
 
-			_, err = NewRunner(context.Background(), cfg)
+			_, err := NewRunner(context.Background(), cfg)
 			if (err != nil) != tc.wantErr {
 				t.Fatalf("NewRunner() error = %v, wantErr = %v", err, tc.wantErr)
 			}
