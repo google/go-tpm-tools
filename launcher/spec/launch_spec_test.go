@@ -554,6 +554,7 @@ func TestLaunchSpecUnmarshalJSONMultiContainer(t *testing.T) {
 						Name:              "main-app",
 						ImageRef:          "gcr.io/my-project/main:latest",
 						ContainerType:     MainContainer,
+						RestartPolicy:     Never,
 						Cmd:               []string{"--foo", "--bar"},
 						Envs:              []EnvVar{{"ENV1", "VAL1"}},
 						AddedCapabilities: []string{"CAP_NET_ADMIN"},
@@ -562,6 +563,7 @@ func TestLaunchSpecUnmarshalJSONMultiContainer(t *testing.T) {
 						Name:          "logging-sidecar",
 						ImageRef:      "gcr.io/my-project/logger:v1",
 						ContainerType: SidecarContainer,
+						RestartPolicy: Never,
 						VolumeMounts: []VolumeMount{
 							{
 								Type:        "tmpfs",

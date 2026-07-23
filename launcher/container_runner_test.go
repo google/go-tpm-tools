@@ -647,7 +647,7 @@ func TestInitImageDockerPublic(t *testing.T) {
 	ctx := namespaces.WithNamespace(context.Background(), "test")
 	// This is a "valid" token (formatwise)
 	validToken := oauth2.Token{AccessToken: "000000", Expiry: time.Now().Add(time.Hour)}
-	if _, err := initImage(ctx, containerdClient, spec.LaunchSpec{ImageRef: "docker.io/library/hello-world:latest"}, validToken); err != nil {
+	if _, err := pullImages(ctx, containerdClient, spec.LaunchSpec{Containers: []spec.ContainerSpec{{ImageRef: "docker.io/library/hello-world:latest"}}}, validToken); err != nil {
 		t.Error(err)
 	} else {
 		if err := containerdClient.ImageService().Delete(ctx, "docker.io/library/hello-world:latest"); err != nil {
@@ -656,7 +656,7 @@ func TestInitImageDockerPublic(t *testing.T) {
 	}
 
 	invalidToken := oauth2.Token{}
-	if _, err := initImage(ctx, containerdClient, spec.LaunchSpec{ImageRef: "docker.io/library/hello-world:latest"}, invalidToken); err != nil {
+	if _, err := pullImages(ctx, containerdClient, spec.LaunchSpec{Containers: []spec.ContainerSpec{{ImageRef: "docker.io/library/hello-world:latest"}}}, invalidToken); err != nil {
 		t.Error(err)
 	} else {
 		if err := containerdClient.ImageService().Delete(ctx, "docker.io/library/hello-world:latest"); err != nil {
@@ -685,6 +685,7 @@ func TestMeasureCELEvents(t *testing.T) {
 		{
 			name: "measure full container events and launch separator event",
 			wantCELEvents: []cel.CosType{
+				cel.ContainerSeparatorType,
 				cel.ImageRefType,
 				cel.ImageDigestType,
 				cel.RestartPolicyType,
@@ -698,14 +699,19 @@ func TestMeasureCELEvents(t *testing.T) {
 				cel.LaunchSeparatorType,
 			},
 			launchSpec: spec.LaunchSpec{
-				Envs:             []spec.EnvVar{{Name: "hello", Value: "world"}},
-				Cmd:              []string{"hello world"},
+				Containers: []spec.ContainerSpec{
+					{
+						Envs: []spec.EnvVar{{Name: "hello", Value: "world"}},
+						Cmd:  []string{"hello world"},
+					},
+				},
 				InstallGpuDriver: true,
 			},
 		},
 		{
 			name: "measure partial container events, memory monitoring event, and launch separator event",
 			wantCELEvents: []cel.CosType{
+				cel.ContainerSeparatorType,
 				cel.ImageRefType,
 				cel.ImageDigestType,
 				cel.RestartPolicyType,
@@ -717,6 +723,9 @@ func TestMeasureCELEvents(t *testing.T) {
 				// GPUDeviceAttestationBindingType is NOT here because InstallGpuDriver is false
 			},
 			launchSpec: spec.LaunchSpec{
+				Containers: []spec.ContainerSpec{
+					{},
+				},
 				InstallGpuDriver: false,
 			},
 		},
@@ -748,7 +757,7 @@ func TestMeasureCELEvents(t *testing.T) {
 			r := ContainerRunner{
 				attestAgent: fakeAgent,
 				gpuAttester: fakeGpu,
-				container:   fakeContainer,
+				container:   []containerd.Container{fakeContainer},
 				launchSpec:  tc.launchSpec,
 				logger:      logging.SimpleLogger(),
 			}

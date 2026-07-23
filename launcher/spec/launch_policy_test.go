@@ -567,7 +567,13 @@ func TestVerify(t *testing.T) {
 	}
 	for _, testCase := range testCases {
 		t.Run(testCase.testName, func(t *testing.T) {
-			err := testCase.policy.Verify(testCase.spec)
+			cSpec := ContainerSpec{
+				Envs:              testCase.spec.Envs,
+				Cmd:               testCase.spec.Cmd,
+				Mounts:            testCase.spec.Mounts,
+				AddedCapabilities: testCase.spec.AddedCapabilities,
+			}
+			err := testCase.policy.Verify(cSpec, testCase.spec)
 			if testCase.expectErr {
 				if err == nil {
 					t.Errorf("expected error, but got nil")
@@ -643,7 +649,8 @@ func TestVerifyMonitoringSettings(t *testing.T) {
 			policy := LaunchPolicy{
 				DebugImageMonitoring: testCase.monitoring,
 			}
-			if err := policy.Verify(testCase.spec); err != nil {
+			cSpec := ContainerSpec{Envs: testCase.spec.Envs, Cmd: testCase.spec.Cmd, Mounts: testCase.spec.Mounts, AddedCapabilities: testCase.spec.AddedCapabilities}
+			if err := policy.Verify(cSpec, testCase.spec); err != nil {
 				t.Errorf("expected no error, but got %v", err)
 			}
 		})
@@ -657,7 +664,8 @@ func TestVerifyMonitoringSettings(t *testing.T) {
 			// Copy the spec and set Hardened=true.
 			spec := testCase.spec
 			spec.Hardened = true
-			if err := policy.Verify(spec); err != nil {
+			cSpec := ContainerSpec{Envs: spec.Envs, Cmd: spec.Cmd, Mounts: spec.Mounts, AddedCapabilities: spec.AddedCapabilities}
+			if err := policy.Verify(cSpec, spec); err != nil {
 				t.Errorf("expected no error, but got %v", err)
 			}
 		})
@@ -706,7 +714,8 @@ func TestVerifyMonitoringSettingsErrors(t *testing.T) {
 				policy := LaunchPolicy{
 					DebugImageMonitoring: testCase.monitoring,
 				}
-				if err := policy.Verify(testCase.spec); err == nil {
+				cSpec := ContainerSpec{Envs: testCase.spec.Envs, Cmd: testCase.spec.Cmd, Mounts: testCase.spec.Mounts, AddedCapabilities: testCase.spec.AddedCapabilities}
+				if err := policy.Verify(cSpec, testCase.spec); err == nil {
 					t.Errorf("expected error, but got nil")
 				}
 			})
@@ -720,7 +729,8 @@ func TestVerifyMonitoringSettingsErrors(t *testing.T) {
 				// Copy the spec and set Hardened=true.
 				spec := testCase.spec
 				spec.Hardened = true
-				if err := policy.Verify(spec); err == nil {
+				cSpec := ContainerSpec{Envs: spec.Envs, Cmd: spec.Cmd, Mounts: spec.Mounts, AddedCapabilities: spec.AddedCapabilities}
+				if err := policy.Verify(cSpec, spec); err == nil {
 					t.Errorf("expected error, but got nil")
 				}
 			})

@@ -42,6 +42,11 @@ func TestCosEventlog(t *testing.T) {
 		{ArgType, test.DebugPCR, []byte("--override-arg-2")},
 		{OverrideArgType, test.DebugPCR, []byte("--override-arg1")},
 		{OverrideArgType, test.DebugPCR, []byte("--override-arg2")},
+		{LaunchSeparatorType, test.DebugPCR, []byte("")},
+		{MemoryMonitorType, test.DebugPCR, []byte("")},
+		{GpuCCModeType, test.DebugPCR, []byte("")},
+		{GPUDeviceAttestationBindingType, test.DebugPCR, []byte("")},
+		{ContainerSeparatorType, test.DebugPCR, []byte("")},
 	}
 
 	for _, testEvent := range testEvents {
