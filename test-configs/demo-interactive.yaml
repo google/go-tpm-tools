@@ -1,0 +1,12 @@
+vmRestartPolicy: Never
+containers:
+  - name: main-workload
+    image: gcr.io/somashekarkb-cs-codelab/main-app:latest
+    containerType: main
+    restartPolicy: Never
+  - name: sidecar-proxy
+    image: gcr.io/somashekarkb-cs-codelab/sidecar-app:latest
+    containerType: sidecar
+    restartPolicy: Never
+    ports:
+      - containerPort: 443

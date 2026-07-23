@@ -17,7 +17,7 @@ require (
 	github.com/coreos/go-systemd/v22 v22.5.0
 	github.com/golang-jwt/jwt/v4 v4.5.2
 	github.com/google/go-cmp v0.7.0
-	github.com/google/go-eventlog v0.0.3-0.20260520195024-af9e78c4d692
+	github.com/google/go-eventlog v0.0.3-0.20260617163629-883cc5652c69
 	github.com/google/go-tpm v0.9.8
 	github.com/google/go-tpm-tools v0.4.9-0.20260601203525-bc0d334a930f
 	github.com/google/go-tpm-tools/agent v0.0.0-20260601203525-bc0d334a930f
@@ -27,6 +27,7 @@ require (
 	github.com/opencontainers/image-spec v1.1.0
 	github.com/opencontainers/runtime-spec v1.2.0
 	golang.org/x/oauth2 v0.34.0
+	golang.org/x/sync v0.19.0
 	google.golang.org/api v0.265.0
 	google.golang.org/genproto/googleapis/api v0.0.0-20260203192932-546029d2fa20
 	google.golang.org/grpc v1.80.0
@@ -102,7 +103,6 @@ require (
 	golang.org/x/crypto v0.47.0 // indirect
 	golang.org/x/exp v0.0.0-20250813145105-42675adae3e6 // indirect
 	golang.org/x/net v0.49.0 // indirect
-	golang.org/x/sync v0.19.0 // indirect
 	golang.org/x/sys v0.40.0 // indirect
 	golang.org/x/text v0.33.0 // indirect
 	golang.org/x/time v0.14.0 // indirect
@@ -111,8 +111,10 @@ require (
 )
 
 replace (
-	github.com/google/go-tpm-tools v0.4.6 => ../
+	github.com/google/go-tpm-tools => ../
 	github.com/google/go-tpm-tools/agent => ../agent
-	github.com/google/go-tpm-tools/keymanager v0.4.4 => ../keymanager
-	github.com/google/go-tpm-tools/verifier v0.4.4 => ../verifier
+	github.com/google/go-tpm-tools/keymanager => ../keymanager
+	github.com/google/go-tpm-tools/verifier => ../verifier
 )
+
+replace github.com/GoogleCloudPlatform/confidential-space/server => ../confidential-space/server

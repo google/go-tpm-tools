@@ -1,0 +1,8 @@
+vmRestartPolicy: Never
+containers:
+  - name: my-nginx
+    image: nginx:latest
+    containerType: main
+    restartPolicy: Never
+    ports:
+      - containerPort: 80

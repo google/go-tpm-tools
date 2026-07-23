@@ -234,11 +234,12 @@ message GpuDeviceState {
 
 
 message AttestedCosState {
-  ContainerState container = 1;
+  ContainerState container = 1; // Keep for backward compatibility
   SemanticVersion cos_version = 2;
   SemanticVersion launcher_version = 3;
   HealthMonitoringState health_monitoring = 4;
   GpuDeviceState gpu_device_state = 5;
+  repeated ContainerState containers = 6; // New field
 }
 
 message EfiApp {

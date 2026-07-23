@@ -1,0 +1,22 @@
+vmRestartPolicy: Never
+containers:
+  - name: main-workload
+    image: docker.io/hashicorp/http-echo:latest
+    cmd:
+      - "-text=Hello from the Main Container!"
+      - "-listen=:8080"
+    containerType: main
+    restartPolicy: Never
+  - name: sidecar-proxy
+    image: docker.io/library/caddy:2
+    cmd:
+      - "caddy"
+      - "reverse-proxy"
+      - "--from"
+      - ":80"
+      - "--to"
+      - "localhost:8080"
+    containerType: sidecar
+    restartPolicy: Never
+    ports:
+      - containerPort: 80

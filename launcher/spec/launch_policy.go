@@ -258,22 +258,23 @@ func verifyMonitoringConfig(policy MonitoringType, spec MonitoringType) error {
 
 // Verify will use the LaunchPolicy to verify the given LaunchSpec. If the verification passed, will return nil.
 // If there are multiple violations, the function will return the first error.
-func (p LaunchPolicy) Verify(ls LaunchSpec) error {
-	for _, e := range ls.Envs {
+func (p LaunchPolicy) Verify(cSpec ContainerSpec, ls LaunchSpec) error {
+	for _, e := range cSpec.Envs {
 		if !contains(p.AllowedEnvOverride, e.Name) {
-			return fmt.Errorf("env var %s is not allowed to be overridden on this image; allowed envs to be overridden: %v", e, p.AllowedEnvOverride)
+			return fmt.Errorf("container %q: env var %s is not allowed to be overridden on this image; allowed envs to be overridden: %v", cSpec.Name, e.Name, p.AllowedEnvOverride)
 		}
 	}
-	if !p.AllowedCmdOverride && len(ls.Cmd) > 0 {
-		return fmt.Errorf("CMD is not allowed to be overridden on this image")
+
+	if !p.AllowedCmdOverride && len(cSpec.Cmd) > 0 {
+		return fmt.Errorf("container %q: CMD is not allowed to be overridden on this image", cSpec.Name)
 	}
 
 	if p.AllowedLogRedirect == never && ls.LogRedirect.enabled() {
-		return fmt.Errorf("logging redirection not allowed by image")
+		return fmt.Errorf("container %q: logging redirection not allowed by image", cSpec.Name)
 	}
 
 	if p.AllowedLogRedirect == debugOnly && ls.LogRedirect.enabled() && ls.Hardened {
-		return fmt.Errorf("logging redirection only allowed on debug environment by image")
+		return fmt.Errorf("container %q: logging redirection only allowed on debug environment by image", cSpec.Name)
 	}
 
 	monitoringPolicy := p.DebugImageMonitoring
@@ -282,23 +283,23 @@ func (p LaunchPolicy) Verify(ls LaunchSpec) error {
 	}
 
 	if err := verifyMonitoringConfig(monitoringPolicy, ls.MonitoringEnabled); err != nil {
-		return fmt.Errorf("error verifying monitoring config: %v", err)
+		return fmt.Errorf("container %q: error verifying monitoring config: %v", cSpec.Name, err)
 	}
 
 	var err error
-	for _, mnt := range ls.Mounts {
+	for _, mnt := range cSpec.Mounts {
 		err = errors.Join(err, p.verifyMountDestination(mnt.Mountpoint()))
 	}
 	if err != nil {
-		return fmt.Errorf("destination mount points are not allowed: %v", err)
+		return fmt.Errorf("container %q: destination mount points are not allowed: %v", cSpec.Name, err)
 	}
 
-	if len(ls.AddedCapabilities) != 0 && !p.PrivilegedCaps {
-		return errors.New("additional capabilities are not allowed")
+	if len(cSpec.AddedCapabilities) != 0 && !p.PrivilegedCaps {
+		return fmt.Errorf("container %q: additional capabilities are not allowed", cSpec.Name)
 	}
 
 	if ls.CgroupNamespace && !p.AllowCgroups {
-		return errors.New("cgroups usage is not allowed")
+		return fmt.Errorf("container %q: cgroups usage is not allowed", cSpec.Name)
 	}
 
 	return nil

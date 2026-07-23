@@ -1,0 +1,111 @@
+substitutions:
+  '_BASE_IMAGE': 'cos-125-19216-395-47'
+  '_BASE_IMAGE_FAMILY': 'cos-125-lts'
+  '_BASE_IMAGE_PROJECT': 'cos-cloud'
+  '_OUTPUT_IMAGE_PREFIX': 'confidential-space'
+  '_OUTPUT_IMAGE_SUFFIX': ''
+  '_OUTPUT_IMAGE_FAMILY': ''
+  '_BUCKET_NAME': '${PROJECT_ID}_cloudbuild'
+
+
+steps:
+# determine the base image
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: BaseImageIdent
+  env:
+  - 'BASE_IMAGE=$_BASE_IMAGE'
+  - 'BASE_IMAGE_FAMILY=$_BASE_IMAGE_FAMILY'
+  - 'BASE_IMAGE_PROJECT=$_BASE_IMAGE_PROJECT'
+  script: |
+    #!/usr/bin/env bash
+    base_image=${BASE_IMAGE}
+    if [ -z ${base_image} ]
+    then
+      echo "getting the latest image from project:" ${BASE_IMAGE_PROJECT} "family: "${BASE_IMAGE_FAMILY}
+      base_image=$(gcloud compute images describe-from-family ${BASE_IMAGE_FAMILY} --project ${BASE_IMAGE_PROJECT} | grep name | cut -d ' ' -f 2)
+    fi
+    echo ${base_image} > /workspace/base_image.txt
+
+- name: rust:1.85-bullseye
+  id: KeyManagerCompile
+  entrypoint: /bin/bash
+  args:
+    - -c
+    - |
+      set -exuo pipefail
+      apt-get update && apt-get install -y clang build-essential curl tar
+      curl -sSL https://github.com/Kitware/CMake/releases/download/v3.28.3/cmake-3.28.3-linux-x86_64.tar.gz -o cmake.tar.gz
+      tar -zxvf cmake.tar.gz -C /opt/
+      export PATH="/opt/cmake-3.28.3-linux-x86_64/bin:$$PATH"
+      rm cmake.tar.gz
+      cargo install bindgen-cli
+      export PATH="$$HOME/.cargo/bin:$$PATH"
+      cd keymanager
+      cargo build --release
+
+- name: golang:1.24-bullseye
+  id: LauncherCompile
+  waitFor: ['KeyManagerCompile']
+  entrypoint: /bin/bash
+  args:
+    - -c
+    - |
+      set -exuo pipefail
+      apt-get update && apt-get install -y clang pkg-config libssl-dev build-essential
+      cd launcher/launcher
+      export CGO_LDFLAGS="-L/workspace/keymanager/target/release"
+      export GOTOOLCHAIN=auto
+      go build -o ../image/launcher -ldflags="-extldflags=-Wl,-z,lazy -X 'main.BuildCommit=${SHORT_SHA}'"
+
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: DownloadGpuDrivers
+  waitFor: ['BaseImageIdent']
+  entrypoint: 'bash'
+  args:
+    - '-c'
+    - |
+      set -ex
+      BASE_IMAGE=$$(cat /workspace/base_image.txt)
+      VERSION=$$(echo "$${BASE_IMAGE}" | grep -oE '[0-9]+-[0-9]+-[0-9]+$$' | tr '-' '.')
+      if [[ -z "$${VERSION}" ]]; then
+        echo "Failed to extract version from $${BASE_IMAGE}"
+        exit 1
+      fi
+      gcloud storage cp \
+        gs://cos-nvidia-gpu-drivers/NVIDIA-Linux-x86_64-595.58.03.run \
+        "gs://cos-tools/$${VERSION}/lakitu/gpu_driver_versions.bin" \
+        "gs://cos-tools/$${VERSION}/lakitu/nvidia-drivers-595.58.03.tgz" \
+        ./launcher/image/
+
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: DebugImageBuild
+  waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadGpuDrivers']
+  env:
+  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-debug-${_OUTPUT_IMAGE_SUFFIX}'
+  - 'OUTPUT_IMAGE_FAMILY=${_OUTPUT_IMAGE_FAMILY}'
+  - 'BUCKET_NAME=$_BUCKET_NAME'
+  - 'BASE_IMAGE_PROJECT=$_BASE_IMAGE_PROJECT'
+  script: |
+    #!/usr/bin/env bash
+    set -exuo pipefail
+    base_image=$(cat /workspace/base_image.txt)
+    echo "building the debug image: ${OUTPUT_IMAGE_NAME} with the base image: ${base_image}"
+    family=${OUTPUT_IMAGE_FAMILY:-confidential-space}
+    gcloud builds submit --config=launcher/image/cloudbuild.yaml \
+    --region us-west1 \
+    --substitutions \
+    _BASE_IMAGE=${base_image},\
+    _BASE_IMAGE_PROJECT=${BASE_IMAGE_PROJECT},\
+    _OUTPUT_IMAGE_FAMILY=${family}-debug,\
+    _OUTPUT_IMAGE_NAME=${OUTPUT_IMAGE_NAME},\
+    _IMAGE_ENV=debug,\
+    _CS_LICENSE=projects/confidential-space-images/global/licenses/confidential-space-debug,\
+    _BUCKET_NAME=${BUCKET_NAME},\
+    _PRELOAD_SCRIPT=preload.sh,\
+    _OEM_SIZE=500M,\
+    _DISK_SIZE_GB=11
+    exit
+
+logsBucket: 'gs://somashekarkb-cs-codelab-logs-patilatul'
+options:
+  logging: GCS_ONLY

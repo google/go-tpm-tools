@@ -185,7 +185,7 @@ type LaunchSpec struct {
 	Containers                 []ContainerSpec
 	VMRestartPolicy            RestartPolicy
 
-	//DEPRECATED: Legacy single-container fields(keep for backward compatability during refactoring)
+	//Legacy single-container fields(keep for backward compatability during refactoring)
 	ImageRef                   string
 	RestartPolicy              RestartPolicy
 	Cmd                        []string
@@ -235,6 +235,14 @@ func parseMultiContainerSpec(specYaml string) ([]ContainerSpec, RestartPolicy, e
 			return nil, "", fmt.Errorf("container %q is missing an image reference", c.Name)
 		}
 
+		if c.RestartPolicy == "" {
+			c.RestartPolicy = Never
+		}
+		
+		if err := c.RestartPolicy.isValid(); err != nil {
+			return nil, "", fmt.Errorf("invalid restart policy for container %q: %w", c.Name, err)
+		}
+
 		// Convert VolumeMounts to internal Mounts
 		for _, vm := range c.VolumeMounts {
 			mnt, err := parseVolumeMount(vm)
@@ -277,7 +285,14 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 	// -------------------------------------------------------------
 	// 2. Container-Specific Parsing (Branching)
 	// -------------------------------------------------------------
-	if specYAML, ok := unmarshaledMap[multiContainerKey]; ok && specYAML != "" {
+	specYAML, hasMulti := unmarshaledMap[multiContainerKey]
+	imageRef, hasSingle := unmarshaledMap[singleImageKey]
+
+	if hasMulti && specYAML != "" && hasSingle && imageRef != "" {
+		return fmt.Errorf("both %s and %s are present in metadata, expected only 1", multiContainerKey, singleImageKey)
+	}
+
+	if hasMulti && specYAML != "" {
 		// Multi-container parsing path 
 		containers, vmRestartPolicy, err := parseMultiContainerSpec(specYAML)
 		if err != nil {

@@ -1,26 +1,33 @@
-substitutions:
-  '_BASE_IMAGE': 'cos-125-19216-395-47' # If left empty, will use the latest image in _BASE_IMAGE_FAMILY of _BASE_IMAGE_PROJECT
-  '_BASE_IMAGE_FAMILY': 'cos-125-lts'
-  '_BASE_IMAGE_PROJECT': 'cos-cloud'
-  '_OUTPUT_IMAGE_PREFIX': 'confidential-space'
-  '_OUTPUT_IMAGE_SUFFIX': ''
-  '_OUTPUT_IMAGE_FAMILY': ''
-  '_BUCKET_NAME': '${PROJECT_ID}_cloudbuild'
-  '_VG_BASE_IMAGE': 'cos-125-19216-395-47'
-  '_BC_BASE_IMAGE_PROJECT': 'confidential-space-images-dev'
-  '_BC_BASE_IMAGE': 'cos-bc-guest-125-19216-395-47'
-  '_BC_DEBUG_IMAGE': 'cos-bcdbg-guest-125-19216-395-47'
-  '_WSD_CONTAINER_IMAGE_REF': 'us-docker.pkg.dev/confidential-space-images-dev/key-protection-module-images/key-protection-module:9d1fbac'
-
-
+createTime: '2026-06-23T07:41:11.996833517Z'
+id: 5557003d-5b75-4546-b0ce-03337f7964e3
+logUrl: https://console.cloud.google.com/cloud-build/builds/5557003d-5b75-4546-b0ce-03337f7964e3?project=1092615916786
+logsBucket: gs://1092615916786.cloudbuild-logs.googleusercontent.com
+name: projects/1092615916786/locations/global/builds/5557003d-5b75-4546-b0ce-03337f7964e3
+options:
+  logging: LEGACY
+  pool: {}
+projectId: somashekarkb-cs-codelab
+queueTtl: 3600s
+serviceAccount: projects/somashekarkb-cs-codelab/serviceAccounts/1092615916786-compute@developer.gserviceaccount.com
+source:
+  storageSource:
+    bucket: somashekarkb-cs-codelab_cloudbuild
+    generation: '1782200471526153'
+    object: source/1782200440.733133-45d1b4b0f2fa4f3aa05c9a0c4f679cf5.tgz
+sourceProvenance:
+  resolvedStorageSource:
+    bucket: somashekarkb-cs-codelab_cloudbuild
+    generation: '1782200471526153'
+    object: source/1782200440.733133-45d1b4b0f2fa4f3aa05c9a0c4f679cf5.tgz
+startTime: '2026-06-23T07:41:13.218470823Z'
+status: WORKING
 steps:
-# determine the base image
-- name: 'gcr.io/cloud-builders/gcloud'
+- env:
+  - BASE_IMAGE=cos-125-19216-395-47
+  - BASE_IMAGE_FAMILY=cos-125-lts
+  - BASE_IMAGE_PROJECT=cos-cloud
   id: BaseImageIdent
-  env:
-  - 'BASE_IMAGE=$_BASE_IMAGE'
-  - 'BASE_IMAGE_FAMILY=$_BASE_IMAGE_FAMILY'
-  - 'BASE_IMAGE_PROJECT=$_BASE_IMAGE_PROJECT'
+  name: gcr.io/cloud-builders/gcloud
   script: |
     #!/usr/bin/env bash
 
@@ -34,83 +41,75 @@ steps:
 
     echo "base image:" ${base_image} "project:" ${BASE_IMAGE_PROJECT}
     echo ${base_image} > /workspace/base_image.txt
+- args:
+  - -c
+  - |
+    set -exuo pipefail
+    # Install build dependencies for Rust
+    apt-get update && apt-get install -y clang build-essential curl tar
 
-- name: rust:1.85-bullseye
+    # Install CMake 3.28.3 from pre-compiled binaries for flexibility across environments
+    curl -sSL https://github.com/Kitware/CMake/releases/download/v3.28.3/cmake-3.28.3-linux-x86_64.tar.gz -o cmake.tar.gz
+    tar -zxvf cmake.tar.gz -C /opt/
+    export PATH="/opt/cmake-3.28.3-linux-x86_64/bin:$PATH"
+    rm cmake.tar.gz
+
+    # Install bindgen-cli (needed by BoringSSL's CMake build)
+    cargo install bindgen-cli
+    export PATH="$HOME/.cargo/bin:$PATH"
+
+    # Build the Rust keymanager libraries
+    cd keymanager
+    cargo build --release
+  entrypoint: /bin/bash
   id: KeyManagerCompile
+  name: rust:1.85-bullseye
+- args:
+  - -c
+  - |
+    set -exuo pipefail
+    # Install Go build tools (clang is needed for CGO)
+    apt-get update && apt-get install -y clang pkg-config libssl-dev build-essential
+
+    # Build the launcher with CGO enabled
+    cd launcher/launcher
+    export CGO_LDFLAGS="-L/workspace/keymanager/target/release"
+    export GOTOOLCHAIN=auto
+    go build -o ../image/launcher -ldflags="-extldflags=-Wl,-z,lazy -X 'main.BuildCommit='"
   entrypoint: /bin/bash
-  args:
-    - -c
-    - |
-      set -exuo pipefail
-      # Install build dependencies for Rust
-      apt-get update && apt-get install -y clang build-essential curl tar
-
-      # Install CMake 3.28.3 from pre-compiled binaries for flexibility across environments
-      curl -sSL https://github.com/Kitware/CMake/releases/download/v3.28.3/cmake-3.28.3-linux-x86_64.tar.gz -o cmake.tar.gz
-      tar -zxvf cmake.tar.gz -C /opt/
-      export PATH="/opt/cmake-3.28.3-linux-x86_64/bin:$$PATH"
-      rm cmake.tar.gz
-
-      # Install bindgen-cli (needed by BoringSSL's CMake build)
-      cargo install bindgen-cli
-      export PATH="$$HOME/.cargo/bin:$$PATH"
-
-      # Build the Rust keymanager libraries
-      cd keymanager
-      cargo build --release
-
-# `golang:1.24-bullseye` is needed to maintain `glibc` compatibility.
-# Revert back to golang:1.24 COS 129 onwards.
-- name: golang:1.24-bullseye
   id: LauncherCompile
-  waitFor: ['KeyManagerCompile']
-  entrypoint: /bin/bash
-  args:
-    - -c
-    - |
-      set -exuo pipefail
-      # Install Go build tools (clang is needed for CGO)
-      apt-get update && apt-get install -y clang pkg-config libssl-dev build-essential
+  name: golang:1.24-bullseye
+  waitFor:
+  - KeyManagerCompile
+- args:
+  - -c
+  - |
+    set -ex
+    BASE_IMAGE=$(cat /workspace/base_image.txt)
+    VERSION=$(echo "${BASE_IMAGE}" | grep -oE '[0-9]+-[0-9]+-[0-9]+$' | tr '-' '.')
+    if [[ -z "${VERSION}" ]]; then
+      echo "Failed to extract version from ${BASE_IMAGE}"
+      exit 1
+    fi
 
-      # Build the launcher with CGO enabled
-      cd launcher/launcher
-      export CGO_LDFLAGS="-L/workspace/keymanager/target/release"
-      export GOTOOLCHAIN=auto
-      go build -o ../image/launcher -ldflags="-extldflags=-Wl,-z,lazy -X 'main.BuildCommit=${SHORT_SHA}'"
-
-
-
-# make sure the directory matches the base image
-- name: 'gcr.io/cloud-builders/gcloud'
+    gcloud storage cp \
+      gs://cos-nvidia-gpu-drivers/NVIDIA-Linux-x86_64-595.58.03.run \
+      "gs://cos-tools/${VERSION}/lakitu/gpu_driver_versions.bin" \
+      "gs://cos-tools/${VERSION}/lakitu/nvidia-drivers-595.58.03.tgz" \
+      ./launcher/image/
+  entrypoint: bash
   id: DownloadGpuDrivers
-  waitFor: ['BaseImageIdent']
-  entrypoint: 'bash'
-  args:
-    - '-c'
-    - |
-      set -ex
-      BASE_IMAGE=$$(cat /workspace/base_image.txt)
-      VERSION=$$(echo "$${BASE_IMAGE}" | grep -oE '[0-9]+-[0-9]+-[0-9]+$$' | tr '-' '.')
-      if [[ -z "$${VERSION}" ]]; then
-        echo "Failed to extract version from $${BASE_IMAGE}"
-        exit 1
-      fi
-
-      gcloud storage cp \
-        gs://cos-nvidia-gpu-drivers/NVIDIA-Linux-x86_64-595.58.03.run \
-        "gs://cos-tools/$${VERSION}/lakitu/gpu_driver_versions.bin" \
-        "gs://cos-tools/$${VERSION}/lakitu/nvidia-drivers-595.58.03.tgz" \
-        ./launcher/image/
-
-- name: 'gcr.io/cloud-builders/gcloud'
+  name: gcr.io/cloud-builders/gcloud
+  waitFor:
+  - BaseImageIdent
+- env:
+  - OUTPUT_IMAGE_NAME=confidential-space-vg-debug-patilatul-test-image-1782200439
+  - OUTPUT_IMAGE_FAMILY=-vg
+  - BUCKET_NAME=${PROJECT_ID}_cloudbuild
+  - BASE_IMAGE_PROJECT=cos-cloud
+  - VG_BASE_IMAGE=cos-125-19216-395-47
   id: DebugVgImageBuild
-  waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadGpuDrivers']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-vg-debug-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'OUTPUT_IMAGE_FAMILY=${_OUTPUT_IMAGE_FAMILY}-vg'
-  - 'BUCKET_NAME=$_BUCKET_NAME'
-  - 'BASE_IMAGE_PROJECT=$_BASE_IMAGE_PROJECT'
-  - 'VG_BASE_IMAGE=$_VG_BASE_IMAGE'
+  name: gcr.io/cloud-builders/gcloud
   script: |
     #!/usr/bin/env bash
     set -exuo pipefail
@@ -130,17 +129,19 @@ steps:
     _OEM_SIZE=900M,\
     _DISK_SIZE_GB=12
     exit
-
-- name: 'gcr.io/cloud-builders/gcloud'
+  waitFor:
+  - BaseImageIdent
+  - LauncherCompile
+  - DownloadGpuDrivers
+- env:
+  - OUTPUT_IMAGE_NAME=confidential-space-vg-hardened-patilatul-test-image-1782200439
+  - OUTPUT_IMAGE_FAMILY=-vg
+  - BUCKET_NAME=${PROJECT_ID}_cloudbuild
+  - SHORT_SHA=
+  - BASE_IMAGE_PROJECT=cos-cloud
+  - VG_BASE_IMAGE=cos-125-19216-395-47
   id: HardenedVgImageBuild
-  waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadGpuDrivers']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-vg-hardened-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'OUTPUT_IMAGE_FAMILY=${_OUTPUT_IMAGE_FAMILY}-vg'
-  - 'BUCKET_NAME=$_BUCKET_NAME'
-  - 'SHORT_SHA=${SHORT_SHA}'
-  - 'BASE_IMAGE_PROJECT=$_BASE_IMAGE_PROJECT'
-  - 'VG_BASE_IMAGE=$_VG_BASE_IMAGE'
+  name: gcr.io/cloud-builders/gcloud
   script: |
     #!/usr/bin/env bash
     set -exuo pipefail
@@ -160,15 +161,17 @@ steps:
     _OEM_SIZE=900M,\
     _DISK_SIZE_GB=12
     exit
-
-- name: 'gcr.io/cloud-builders/gcloud'
+  waitFor:
+  - BaseImageIdent
+  - LauncherCompile
+  - DownloadGpuDrivers
+- env:
+  - OUTPUT_IMAGE_NAME=confidential-space-debug-patilatul-test-image-1782200439
+  - OUTPUT_IMAGE_FAMILY=
+  - BUCKET_NAME=${PROJECT_ID}_cloudbuild
+  - BASE_IMAGE_PROJECT=cos-cloud
   id: DebugImageBuild
-  waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadGpuDrivers']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-debug-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'OUTPUT_IMAGE_FAMILY=${_OUTPUT_IMAGE_FAMILY}'
-  - 'BUCKET_NAME=$_BUCKET_NAME'
-  - 'BASE_IMAGE_PROJECT=$_BASE_IMAGE_PROJECT'
+  name: gcr.io/cloud-builders/gcloud
   script: |
     #!/usr/bin/env bash
     set -exuo pipefail
@@ -189,16 +192,18 @@ steps:
     _OEM_SIZE=500M,\
     _DISK_SIZE_GB=11
     exit
-
-- name: 'gcr.io/cloud-builders/gcloud'
+  waitFor:
+  - BaseImageIdent
+  - LauncherCompile
+  - DownloadGpuDrivers
+- env:
+  - OUTPUT_IMAGE_NAME=confidential-space-hardened-patilatul-test-image-1782200439
+  - OUTPUT_IMAGE_FAMILY=
+  - BUCKET_NAME=${PROJECT_ID}_cloudbuild
+  - SHORT_SHA=
+  - BASE_IMAGE_PROJECT=cos-cloud
   id: HardenedImageBuild
-  waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadGpuDrivers']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'OUTPUT_IMAGE_FAMILY=${_OUTPUT_IMAGE_FAMILY}'
-  - 'BUCKET_NAME=$_BUCKET_NAME'
-  - 'SHORT_SHA=${SHORT_SHA}'
-  - 'BASE_IMAGE_PROJECT=$_BASE_IMAGE_PROJECT'
+  name: gcr.io/cloud-builders/gcloud
   script: |
     #!/usr/bin/env bash
     set -exuo pipefail
@@ -219,19 +224,20 @@ steps:
     _OEM_SIZE=500M,\
     _DISK_SIZE_GB=11
     exit
-
-- name: 'gcr.io/cloud-builders/gcloud'
+  waitFor:
+  - BaseImageIdent
+  - LauncherCompile
+  - DownloadGpuDrivers
+- env:
+  - BC_BASE_IMAGE=cos-bcdbg-guest-125-19216-395-47
+  - BC_BASE_IMAGE_PROJECT=confidential-space-images-dev
+  - OUTPUT_IMAGE_NAME=confidential-space-bc-debug-patilatul-test-image-1782200439
+  - OUTPUT_IMAGE_FAMILY=-bc-debug
+  - BUCKET_NAME=${PROJECT_ID}_cloudbuild
+  - BASE_IMAGE_PROJECT=confidential-space-images-dev
+  - WSD_CONTAINER_IMAGE_REF=us-docker.pkg.dev/confidential-space-images-dev/key-protection-module-images/key-protection-module:9d1fbac
   id: DebugBcImageBuildAndExport
-  waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadGpuDrivers']
-  env:
-  - 'BC_BASE_IMAGE=$_BC_DEBUG_IMAGE'
-  - 'BC_BASE_IMAGE_PROJECT=$_BC_BASE_IMAGE_PROJECT'
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-bc-debug-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'OUTPUT_IMAGE_FAMILY=${_OUTPUT_IMAGE_FAMILY}-bc-debug'
-  - 'BUCKET_NAME=$_BUCKET_NAME'
-  - 'BASE_IMAGE_PROJECT=$_BC_BASE_IMAGE_PROJECT' 
-  - 'WSD_CONTAINER_IMAGE_REF=$_WSD_CONTAINER_IMAGE_REF'
-
+  name: gcr.io/cloud-builders/gcloud
   script: |
     #!/usr/bin/env bash
     set -exuo pipefail
@@ -248,19 +254,20 @@ steps:
     _BUCKET_NAME=${BUCKET_NAME},\
     _WSD_CONTAINER_IMAGE_REF=${WSD_CONTAINER_IMAGE_REF}
     exit
-
-- name: 'gcr.io/cloud-builders/gcloud'
+  waitFor:
+  - BaseImageIdent
+  - LauncherCompile
+  - DownloadGpuDrivers
+- env:
+  - BC_BASE_IMAGE=cos-bc-guest-125-19216-395-47
+  - BC_BASE_IMAGE_PROJECT=confidential-space-images-dev
+  - OUTPUT_IMAGE_NAME=confidential-space-bc-hardened-patilatul-test-image-1782200439
+  - OUTPUT_IMAGE_FAMILY=-bc
+  - BUCKET_NAME=${PROJECT_ID}_cloudbuild
+  - BASE_IMAGE_PROJECT=confidential-space-images-dev
+  - WSD_CONTAINER_IMAGE_REF=us-docker.pkg.dev/confidential-space-images-dev/key-protection-module-images/key-protection-module:9d1fbac
   id: HardenedBcImageBuildAndExport
-  waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadGpuDrivers']
-  env:
-  - 'BC_BASE_IMAGE=$_BC_BASE_IMAGE'
-  - 'BC_BASE_IMAGE_PROJECT=$_BC_BASE_IMAGE_PROJECT'
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-bc-hardened-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'OUTPUT_IMAGE_FAMILY=${_OUTPUT_IMAGE_FAMILY}-bc'
-  - 'BUCKET_NAME=$_BUCKET_NAME'
-  - 'BASE_IMAGE_PROJECT=$_BC_BASE_IMAGE_PROJECT'
-  - 'WSD_CONTAINER_IMAGE_REF=$_WSD_CONTAINER_IMAGE_REF'
-
+  name: gcr.io/cloud-builders/gcloud
   script: |
     #!/usr/bin/env bash
     set -exuo pipefail
@@ -277,13 +284,15 @@ steps:
     _BUCKET_NAME=${BUCKET_NAME},\
     _WSD_CONTAINER_IMAGE_REF=${WSD_CONTAINER_IMAGE_REF}
     exit
-
-- name: 'gcr.io/cloud-builders/gcloud'
+  waitFor:
+  - BaseImageIdent
+  - LauncherCompile
+  - DownloadGpuDrivers
+- env:
+  - OUTPUT_IMAGE_NAME=confidential-space-debug-patilatul-test-image-1782200439
+  - PROJECT_ID=somashekarkb-cs-codelab
   id: ExperimentsTests
-  waitFor: ['DebugImageBuild']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-debug-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'PROJECT_ID=$PROJECT_ID'
+  name: gcr.io/cloud-builders/gcloud
   script: |
     #!/usr/bin/env bash
 
@@ -292,13 +301,13 @@ steps:
     gcloud builds submit --config=test_experiments_client.yaml --region us-west1 \
       --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
     exit
-
-- name: 'gcr.io/cloud-builders/gcloud'
+  waitFor:
+  - DebugImageBuild
+- env:
+  - OUTPUT_IMAGE_NAME=confidential-space-debug-patilatul-test-image-1782200439
+  - PROJECT_ID=somashekarkb-cs-codelab
   id: HttpServerTests
-  waitFor: ['DebugImageBuild']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-debug-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'PROJECT_ID=$PROJECT_ID'
+  name: gcr.io/cloud-builders/gcloud
   script: |
     #!/usr/bin/env bash
 
@@ -307,13 +316,13 @@ steps:
     gcloud builds submit --config=test_http_server.yaml --region us-west1 \
       --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
     exit
-
-- name: 'gcr.io/cloud-builders/gcloud'
+  waitFor:
+  - DebugImageBuild
+- env:
+  - OUTPUT_IMAGE_NAME=confidential-space-vg-debug-patilatul-test-image-1782200439
+  - PROJECT_ID=somashekarkb-cs-codelab
   id: KeymanagerTests
-  waitFor: ['DebugVgImageBuild']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-vg-debug-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'PROJECT_ID=$PROJECT_ID'
+  name: gcr.io/cloud-builders/gcloud
   script: |
     #!/usr/bin/env bash
 
@@ -322,13 +331,13 @@ steps:
     gcloud builds submit --config=test_keymanager_cloudbuild.yaml --region us-west1 \
       --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
     exit
-
-- name: 'gcr.io/cloud-builders/gcloud'
+  waitFor:
+  - DebugVgImageBuild
+- env:
+  - OUTPUT_IMAGE_NAME=confidential-space-debug-patilatul-test-image-1782200439
+  - PROJECT_ID=somashekarkb-cs-codelab
   id: DebugImageTests
-  waitFor: ['DebugImageBuild']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-debug-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'PROJECT_ID=$PROJECT_ID'
+  name: gcr.io/cloud-builders/gcloud
   script: |
     #!/usr/bin/env bash
 
@@ -337,13 +346,13 @@ steps:
     gcloud builds submit --config=test_debug_cloudbuild.yaml --region us-west1 \
       --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
     exit
-
-- name: 'gcr.io/cloud-builders/gcloud'
+  waitFor:
+  - DebugImageBuild
+- env:
+  - OUTPUT_IMAGE_NAME=confidential-space-debug-patilatul-test-image-1782200439
+  - PROJECT_ID=somashekarkb-cs-codelab
   id: DebugImageTestsTDX
-  waitFor: ['DebugImageBuild']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-debug-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'PROJECT_ID=$PROJECT_ID'
+  name: gcr.io/cloud-builders/gcloud
   script: |
     #!/usr/bin/env bash
 
@@ -352,13 +361,13 @@ steps:
     gcloud builds submit --config=test_debug_cloudbuild.yaml --region us-west1 \
       --substitutions _CC=TDX,_IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
     exit
-
-- name: 'gcr.io/cloud-builders/gcloud'
+  waitFor:
+  - DebugImageBuild
+- env:
+  - OUTPUT_IMAGE_NAME=confidential-space-hardened-patilatul-test-image-1782200439
+  - PROJECT_ID=somashekarkb-cs-codelab
   id: HardenedImageTests
-  waitFor: ['HardenedImageBuild']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'PROJECT_ID=$PROJECT_ID'
+  name: gcr.io/cloud-builders/gcloud
   script: |
     #!/usr/bin/env bash
 
@@ -367,13 +376,13 @@ steps:
     gcloud builds submit --config=test_hardened_cloudbuild.yaml --region us-west1 \
       --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
     exit
-
-- name: 'gcr.io/cloud-builders/gcloud'
+  waitFor:
+  - HardenedImageBuild
+- env:
+  - OUTPUT_IMAGE_NAME=confidential-space-hardened-patilatul-test-image-1782200439
+  - PROJECT_ID=somashekarkb-cs-codelab
   id: HardenedImageTestsTDX
-  waitFor: ['HardenedImageBuild']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'PROJECT_ID=$PROJECT_ID'
+  name: gcr.io/cloud-builders/gcloud
   script: |
     #!/usr/bin/env bash
 
@@ -382,13 +391,13 @@ steps:
     gcloud builds submit --config=test_hardened_cloudbuild.yaml --region us-west1 \
       --substitutions _CC=TDX,_IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
     exit
-
-- name: 'gcr.io/cloud-builders/gcloud'
+  waitFor:
+  - HardenedImageBuild
+- env:
+  - OUTPUT_IMAGE_NAME=confidential-space-hardened-patilatul-test-image-1782200439
+  - PROJECT_ID=somashekarkb-cs-codelab
   id: LaunchPolicyTests
-  waitFor: ['HardenedImageBuild']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'PROJECT_ID=$PROJECT_ID'
+  name: gcr.io/cloud-builders/gcloud
   script: |
     #!/usr/bin/env bash
 
@@ -397,13 +406,13 @@ steps:
     gcloud builds submit --config=test_launchpolicy_cloudbuild.yaml --region us-west1 \
       --substitutions _HARDENED_IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
     exit
-
-- name: 'gcr.io/cloud-builders/gcloud'
+  waitFor:
+  - HardenedImageBuild
+- env:
+  - OUTPUT_IMAGE_NAME=confidential-space-hardened-patilatul-test-image-1782200439
+  - PROJECT_ID=somashekarkb-cs-codelab
   id: HardenedNetworkIngressTests
-  waitFor: ['HardenedImageBuild']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'PROJECT_ID=$PROJECT_ID'
+  name: gcr.io/cloud-builders/gcloud
   script: |
     #!/usr/bin/env bash
     cd launcher/image/test
@@ -411,13 +420,13 @@ steps:
     gcloud builds submit --config=test_ingress_network.yaml --region us-west1 \
       --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
     exit
-
-- name: 'gcr.io/cloud-builders/gcloud'
+  waitFor:
+  - HardenedImageBuild
+- env:
+  - OUTPUT_IMAGE_NAME=confidential-space-debug-patilatul-test-image-1782200439
+  - PROJECT_ID=somashekarkb-cs-codelab
   id: DebugNetworkIngressTests
-  waitFor: ['DebugImageBuild']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-debug-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'PROJECT_ID=$PROJECT_ID'
+  name: gcr.io/cloud-builders/gcloud
   script: |
     #!/usr/bin/env bash
     cd launcher/image/test
@@ -425,13 +434,13 @@ steps:
     gcloud builds submit --config=test_ingress_network.yaml --region us-west1 \
       --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
     exit
-
-- name: 'gcr.io/cloud-builders/gcloud'
+  waitFor:
+  - DebugImageBuild
+- env:
+  - OUTPUT_IMAGE_NAME=confidential-space-hardened-patilatul-test-image-1782200439
+  - PROJECT_ID=somashekarkb-cs-codelab
   id: LogRedirectionTests
-  waitFor: ['HardenedImageBuild']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'PROJECT_ID=$PROJECT_ID'
+  name: gcr.io/cloud-builders/gcloud
   script: |
     #!/usr/bin/env bash
 
@@ -440,13 +449,13 @@ steps:
     gcloud builds submit --config=test_log_redirection.yaml --region us-west1 \
       --substitutions _HARDENED_IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
     exit
-
-- name: 'gcr.io/cloud-builders/gcloud'
+  waitFor:
+  - HardenedImageBuild
+- env:
+  - OUTPUT_IMAGE_NAME=confidential-space-hardened-patilatul-test-image-1782200439
+  - PROJECT_ID=somashekarkb-cs-codelab
   id: HardenedDiscoverContainerSignatureTests
-  waitFor: ['HardenedImageBuild']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'PROJECT_ID=$PROJECT_ID'
+  name: gcr.io/cloud-builders/gcloud
   script: |
     #!/usr/bin/env bash
     cd launcher/image/test
@@ -454,13 +463,13 @@ steps:
     gcloud builds submit --config=test_discover_signatures.yaml --region us-west1 \
       --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID},_SIGNATURE_REPO=us-docker.pkg.dev/confidential-space-images-dev/cs-cosign-tests/hardened
     exit
-
-- name: 'gcr.io/cloud-builders/gcloud'
+  waitFor:
+  - HardenedImageBuild
+- env:
+  - OUTPUT_IMAGE_NAME=confidential-space-debug-patilatul-test-image-1782200439
+  - PROJECT_ID=somashekarkb-cs-codelab
   id: DebugDiscoverContainerSignatureTests
-  waitFor: ['DebugImageBuild']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-debug-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'PROJECT_ID=$PROJECT_ID'
+  name: gcr.io/cloud-builders/gcloud
   script: |
     #!/usr/bin/env bash
     cd launcher/image/test
@@ -468,13 +477,13 @@ steps:
     gcloud builds submit --config=test_discover_signatures.yaml --region us-west1 \
       --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID},_SIGNATURE_REPO=us-docker.pkg.dev/confidential-space-images-dev/cs-cosign-tests/debug
     exit
-
-- name: 'gcr.io/cloud-builders/gcloud'
+  waitFor:
+  - DebugImageBuild
+- env:
+  - OUTPUT_IMAGE_NAME=confidential-space-hardened-patilatul-test-image-1782200439
+  - PROJECT_ID=somashekarkb-cs-codelab
   id: MemoryMonitoringTests
-  waitFor: ['HardenedImageBuild']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'PROJECT_ID=$PROJECT_ID'
+  name: gcr.io/cloud-builders/gcloud
   script: |
     #!/usr/bin/env bash
     cd launcher/image/test
@@ -482,13 +491,13 @@ steps:
     gcloud builds submit --config=test_memory_monitoring.yaml --region us-west1 \
       --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
     exit
-
-- name: 'gcr.io/cloud-builders/gcloud'
+  waitFor:
+  - HardenedImageBuild
+- env:
+  - OUTPUT_IMAGE_NAME=confidential-space-hardened-patilatul-test-image-1782200439
+  - PROJECT_ID=somashekarkb-cs-codelab
   id: HealthMonitoringTests
-  waitFor: ['HardenedImageBuild']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'PROJECT_ID=$PROJECT_ID'
+  name: gcr.io/cloud-builders/gcloud
   script: |
     #!/usr/bin/env bash
     cd launcher/image/test
@@ -496,13 +505,13 @@ steps:
     gcloud builds submit --config=test_health_monitoring.yaml --region us-west1 \
       --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
     exit
-
-- name: 'gcr.io/cloud-builders/gcloud'
+  waitFor:
+  - HardenedImageBuild
+- env:
+  - OUTPUT_IMAGE_NAME=confidential-space-hardened-patilatul-test-image-1782200439
+  - PROJECT_ID=somashekarkb-cs-codelab
   id: ODAWithSignedContainerTest
-  waitFor: ['HardenedImageBuild']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'PROJECT_ID=$PROJECT_ID'
+  name: gcr.io/cloud-builders/gcloud
   script: |
     #!/usr/bin/env bash
     cd launcher/image/test
@@ -510,13 +519,13 @@ steps:
     gcloud builds submit --config=test_oda_with_signed_container.yaml --region us-west1 \
       --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
     exit
-
-- name: 'gcr.io/cloud-builders/gcloud'
+  waitFor:
+  - HardenedImageBuild
+- env:
+  - OUTPUT_IMAGE_NAME=confidential-space-hardened-patilatul-test-image-1782200439
+  - PROJECT_ID=somashekarkb-cs-codelab
   id: MountTests
-  waitFor: ['HardenedImageBuild']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'PROJECT_ID=$PROJECT_ID'
+  name: gcr.io/cloud-builders/gcloud
   script: |
     #!/usr/bin/env bash
     cd launcher/image/test
@@ -526,13 +535,13 @@ steps:
     gcloud builds submit --config=test_mounts.yaml --region us-west1 \
       --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
     exit
-
-- name: 'gcr.io/cloud-builders/gcloud'
+  waitFor:
+  - HardenedImageBuild
+- env:
+  - OUTPUT_IMAGE_NAME=confidential-space-hardened-patilatul-test-image-1782200439
+  - PROJECT_ID=somashekarkb-cs-codelab
   id: PrivilegedTests
-  waitFor: ['HardenedImageBuild']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'PROJECT_ID=$PROJECT_ID'
+  name: gcr.io/cloud-builders/gcloud
   script: |
     #!/usr/bin/env bash
     cd launcher/image/test
@@ -540,13 +549,13 @@ steps:
     gcloud builds submit --config=test_privileged.yaml --region us-west1 \
       --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
     exit
-
-- name: 'gcr.io/cloud-builders/gcloud'
+  waitFor:
+  - HardenedImageBuild
+- env:
+  - OUTPUT_IMAGE_NAME=confidential-space-debug-patilatul-test-image-1782200439
+  - PROJECT_ID=somashekarkb-cs-codelab
   id: DebugWorkloadCleanupTests
-  waitFor: ['DebugImageBuild']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-debug-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'PROJECT_ID=$PROJECT_ID'
+  name: gcr.io/cloud-builders/gcloud
   script: |
     #!/usr/bin/env bash
     cd launcher/image/test
@@ -554,13 +563,13 @@ steps:
     gcloud builds submit --config=test_workloadcleanup_cloudbuild.yaml --region us-west1 \
       --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
     exit
-
-- name: 'gcr.io/cloud-builders/gcloud'
+  waitFor:
+  - DebugImageBuild
+- env:
+  - OUTPUT_IMAGE_NAME=confidential-space-hardened-patilatul-test-image-1782200439
+  - PROJECT_ID=somashekarkb-cs-codelab
   id: HardenedWorkloadCleanupTests
-  waitFor: ['HardenedImageBuild']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'PROJECT_ID=$PROJECT_ID'
+  name: gcr.io/cloud-builders/gcloud
   script: |
     #!/usr/bin/env bash
     cd launcher/image/test
@@ -568,31 +577,38 @@ steps:
     gcloud builds submit --config=test_workloadcleanup_cloudbuild.yaml --region us-west1 \
       --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
     exit
-
-- name: 'gcr.io/cloud-builders/gcloud'
+  waitFor:
+  - HardenedImageBuild
+- args:
+  - compute
+  - images
+  - export
+  - --destination-uri=gs://somashekarkb-cs-codelab_raw-images/confidential-space-hardened-patilatul-test-image-1782200439.tar.gz
+  - --image=confidential-space-hardened-patilatul-test-image-1782200439
+  - --project=somashekarkb-cs-codelab
+  entrypoint: gcloud
   id: ExportHardenedImage
-  waitFor: ['HardenedImageTests']
-  entrypoint: 'gcloud'
-  args: ['compute', 'images', 'export',
-         '--destination-uri=gs://${PROJECT_ID}_raw-images/${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}.tar.gz',
-         '--image=${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}',
-         '--project=${PROJECT_ID}']
-
-- name: 'gcr.io/cloud-builders/gcloud'
+  name: gcr.io/cloud-builders/gcloud
+  waitFor:
+  - HardenedImageTests
+- args:
+  - compute
+  - images
+  - export
+  - --destination-uri=gs://somashekarkb-cs-codelab_raw-images/confidential-space-debug-patilatul-test-image-1782200439.tar.gz
+  - --image=confidential-space-debug-patilatul-test-image-1782200439
+  - --project=somashekarkb-cs-codelab
+  entrypoint: gcloud
   id: ExportDebugImage
-  waitFor: ['ExportHardenedImage', 'DebugImageTests']
-  entrypoint: 'gcloud'
-  args: ['compute', 'images', 'export',
-          '--destination-uri=gs://${PROJECT_ID}_raw-images/${_OUTPUT_IMAGE_PREFIX}-debug-${_OUTPUT_IMAGE_SUFFIX}.tar.gz',
-          '--image=${_OUTPUT_IMAGE_PREFIX}-debug-${_OUTPUT_IMAGE_SUFFIX}',
-          '--project=${PROJECT_ID}']
-
-- name: 'us-docker.pkg.dev/confidential-space-images-dev/cs-tools/measure@sha256:5c2eaaa70438126877de51b44914d3751ba242aed7f4d99d485833629f3958bc'
+  name: gcr.io/cloud-builders/gcloud
+  waitFor:
+  - ExportHardenedImage
+  - DebugImageTests
+- env:
+  - OUTPUT_IMAGE_NAME=confidential-space-hardened-patilatul-test-image-1782200439
+  - PROJECT_ID=somashekarkb-cs-codelab
   id: MeasureHardenedImage
-  waitFor: ['ExportHardenedImage']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'PROJECT_ID=$PROJECT_ID'
+  name: us-docker.pkg.dev/confidential-space-images-dev/cs-tools/measure@sha256:5c2eaaa70438126877de51b44914d3751ba242aed7f4d99d485833629f3958bc
   script: |
     #!/usr/bin/env bash
     echo "downloading hardened image ${OUTPUT_IMAGE_NAME}"
@@ -602,13 +618,13 @@ steps:
     echo "measuring image ${OUTPUT_IMAGE_NAME}"
     /usr/local/bin/measure.sh hardeneddisk/disk.raw measure_output_hardened.json hardened x86_64 sha256
     gcloud storage cp measure_output_hardened.json gs://${PROJECT_ID}-rims/${OUTPUT_IMAGE_NAME}.json
-
-- name: 'us-docker.pkg.dev/confidential-space-images-dev/cs-tools/measure@sha256:5c2eaaa70438126877de51b44914d3751ba242aed7f4d99d485833629f3958bc'
+  waitFor:
+  - ExportHardenedImage
+- env:
+  - OUTPUT_IMAGE_NAME=confidential-space-debug-patilatul-test-image-1782200439
+  - PROJECT_ID=somashekarkb-cs-codelab
   id: MeasureDebugImage
-  waitFor: ['ExportDebugImage']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-debug-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'PROJECT_ID=$PROJECT_ID'
+  name: us-docker.pkg.dev/confidential-space-images-dev/cs-tools/measure@sha256:5c2eaaa70438126877de51b44914d3751ba242aed7f4d99d485833629f3958bc
   script: |
     #!/usr/bin/env bash
     echo "downloading debug image ${OUTPUT_IMAGE_NAME}"
@@ -618,31 +634,39 @@ steps:
     echo "measuring image ${OUTPUT_IMAGE_NAME}"
     /usr/local/bin/measure.sh debugdisk/disk.raw measure_output_debug.json debug x86_64 sha256
     gsutil cp measure_output_debug.json gs://${PROJECT_ID}-rims/${OUTPUT_IMAGE_NAME}.json
-
-- name: 'gcr.io/cloud-builders/gcloud'
+  waitFor:
+  - ExportDebugImage
+- args:
+  - compute
+  - images
+  - export
+  - --destination-uri=gs://somashekarkb-cs-codelab_raw-images/confidential-space-vg-hardened-patilatul-test-image-1782200439.tar.gz
+  - --image=confidential-space-vg-hardened-patilatul-test-image-1782200439
+  - --project=somashekarkb-cs-codelab
+  entrypoint: gcloud
   id: ExportVgHardenedImage
-  waitFor: ['ExportDebugImage', 'HardenedVgImageBuild']
-  entrypoint: 'gcloud'
-  args: ['compute', 'images', 'export',
-         '--destination-uri=gs://${PROJECT_ID}_raw-images/${_OUTPUT_IMAGE_PREFIX}-vg-hardened-${_OUTPUT_IMAGE_SUFFIX}.tar.gz',
-         '--image=${_OUTPUT_IMAGE_PREFIX}-vg-hardened-${_OUTPUT_IMAGE_SUFFIX}',
-         '--project=${PROJECT_ID}']
-
-- name: 'gcr.io/cloud-builders/gcloud'
+  name: gcr.io/cloud-builders/gcloud
+  waitFor:
+  - ExportDebugImage
+  - HardenedVgImageBuild
+- args:
+  - compute
+  - images
+  - export
+  - --destination-uri=gs://somashekarkb-cs-codelab_raw-images/confidential-space-vg-debug-patilatul-test-image-1782200439.tar.gz
+  - --image=confidential-space-vg-debug-patilatul-test-image-1782200439
+  - --project=somashekarkb-cs-codelab
+  entrypoint: gcloud
   id: ExportVgDebugImage
-  waitFor: ['ExportVgHardenedImage', 'DebugVgImageBuild']
-  entrypoint: 'gcloud'
-  args: ['compute', 'images', 'export',
-          '--destination-uri=gs://${PROJECT_ID}_raw-images/${_OUTPUT_IMAGE_PREFIX}-vg-debug-${_OUTPUT_IMAGE_SUFFIX}.tar.gz',
-          '--image=${_OUTPUT_IMAGE_PREFIX}-vg-debug-${_OUTPUT_IMAGE_SUFFIX}',
-          '--project=${PROJECT_ID}']
-
-- name: 'us-docker.pkg.dev/confidential-space-images-dev/cs-tools/measure@sha256:5c2eaaa70438126877de51b44914d3751ba242aed7f4d99d485833629f3958bc'
+  name: gcr.io/cloud-builders/gcloud
+  waitFor:
+  - ExportVgHardenedImage
+  - DebugVgImageBuild
+- env:
+  - OUTPUT_IMAGE_NAME=confidential-space-vg-hardened-patilatul-test-image-1782200439
+  - PROJECT_ID=somashekarkb-cs-codelab
   id: MeasureVgHardenedImage
-  waitFor: ['ExportVgHardenedImage']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-vg-hardened-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'PROJECT_ID=$PROJECT_ID'
+  name: us-docker.pkg.dev/confidential-space-images-dev/cs-tools/measure@sha256:5c2eaaa70438126877de51b44914d3751ba242aed7f4d99d485833629f3958bc
   script: |
     #!/usr/bin/env bash
     echo "downloading hardened image ${OUTPUT_IMAGE_NAME}"
@@ -655,14 +679,13 @@ steps:
 
     gcloud storage cp measure_output_vg_hardened.json gs://${PROJECT_ID}-rims/${OUTPUT_IMAGE_NAME}.json
     gcloud storage cp measure_output_vg_hardened_sha384.json gs://${PROJECT_ID}-rims/${OUTPUT_IMAGE_NAME}_sha384.json
-
-
-- name: 'us-docker.pkg.dev/confidential-space-images-dev/cs-tools/measure@sha256:5c2eaaa70438126877de51b44914d3751ba242aed7f4d99d485833629f3958bc'
+  waitFor:
+  - ExportVgHardenedImage
+- env:
+  - OUTPUT_IMAGE_NAME=confidential-space-vg-debug-patilatul-test-image-1782200439
+  - PROJECT_ID=somashekarkb-cs-codelab
   id: MeasureVgDebugImage
-  waitFor: ['ExportVgDebugImage']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-vg-debug-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'PROJECT_ID=$PROJECT_ID'
+  name: us-docker.pkg.dev/confidential-space-images-dev/cs-tools/measure@sha256:5c2eaaa70438126877de51b44914d3751ba242aed7f4d99d485833629f3958bc
   script: |
     #!/usr/bin/env bash
     echo "downloading debug image ${OUTPUT_IMAGE_NAME}"
@@ -675,3 +698,19 @@ steps:
 
     gsutil cp measure_output_vg_debug.json gs://${PROJECT_ID}-rims/${OUTPUT_IMAGE_NAME}.json
     gsutil cp measure_output_vg_debug_sha384.json gs://${PROJECT_ID}-rims/${OUTPUT_IMAGE_NAME}_sha384.json
+  waitFor:
+  - ExportVgDebugImage
+substitutions:
+  _BASE_IMAGE: cos-125-19216-395-47
+  _BASE_IMAGE_FAMILY: cos-125-lts
+  _BASE_IMAGE_PROJECT: cos-cloud
+  _BC_BASE_IMAGE: cos-bc-guest-125-19216-395-47
+  _BC_BASE_IMAGE_PROJECT: confidential-space-images-dev
+  _BC_DEBUG_IMAGE: cos-bcdbg-guest-125-19216-395-47
+  _BUCKET_NAME: ${PROJECT_ID}_cloudbuild
+  _OUTPUT_IMAGE_FAMILY: ''
+  _OUTPUT_IMAGE_PREFIX: confidential-space
+  _OUTPUT_IMAGE_SUFFIX: patilatul-test-image-1782200439
+  _VG_BASE_IMAGE: cos-125-19216-395-47
+  _WSD_CONTAINER_IMAGE_REF: us-docker.pkg.dev/confidential-space-images-dev/key-protection-module-images/key-protection-module:9d1fbac
+timeout: 3600s

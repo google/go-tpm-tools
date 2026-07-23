@@ -1,0 +1,15 @@
+vmRestartPolicy: Never
+containers:
+  - name: workload
+    image: docker.io/curlimages/curl:latest
+    cmd:
+      - "--retry"
+      - "5"
+      - "--retry-connrefused"
+      - "http://localhost:80"
+    containerType: main
+    restartPolicy: Never
+  - name: dummy-logger
+    image: docker.io/library/nginx:latest
+    containerType: sidecar
+    restartPolicy: Never

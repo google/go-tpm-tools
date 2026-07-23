@@ -49,6 +49,7 @@ const (
 	MemoryMonitorType
 	GpuCCModeType
 	GPUDeviceAttestationBindingType
+	ContainerSeparatorType
 )
 
 // CosTlv is a specific event type created for the COS (Google Container-Optimized OS),

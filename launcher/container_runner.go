@@ -165,7 +165,7 @@ func NewRunner(ctx context.Context, cdClient *containerd.Client, token oauth2.To
 			return nil, fmt.Errorf("failed to parse image Launch Policy for container %q (cID: %s): %v: contact the image author", cSpec.Name, cID, err)
 		}
 
-		if err := launchPolicy.Verify(launchSpec); err != nil {
+		if err := launchPolicy.Verify(cSpec, launchSpec); err != nil {
 			return nil, err
 		}
 
@@ -475,6 +475,10 @@ func (r *ContainerRunner) measureContainerClaims(ctx context.Context) error {
 		image, err := c.Image(ctx)
 		if err != nil {
 			return err
+		}
+
+		if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.ContainerSeparatorType, EventContent: []byte(c.ID())}); err != nil {
+			return fmt.Errorf("failed to measure container separator for %q: %w", cSpec.Name, err)
 		}
 
 		if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.ImageRefType, EventContent: []byte(image.Name())}); err != nil {
@@ -855,7 +859,7 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 
 	//Wait and Start all tasks
 	start = time.Now()
-	r.logger.Info("workload task started")
+	r.logger.Info("Starting all workload tasks...")
 	for i, task := range tasks {
 		exitStatusC, err := task.Wait(ctx)
 		if err != nil {
@@ -1045,12 +1049,12 @@ func openPorts(ports map[string]struct{}) error {
 
 		// These 2 commands will write firewall rules to accept all INPUT packets for the given port/protocol
 		// for IPv4 and IPv6 traffic.
-		cmd := exec.Command("iptables", "-A", "INPUT", "-p", protocol, "--dport", port, "-j", "ACCEPT")
+		cmd := exec.Command("iptables", "-I", "INPUT", "-p", protocol, "--dport", port, "-j", "ACCEPT")
 		out, err := cmd.CombinedOutput()
 		if err != nil {
 			return fmt.Errorf("failed to open port on IPv4 %s %s: %v %s", port, protocol, err, out)
 		}
-		v6cmd := exec.Command("ip6tables", "-A", "INPUT", "-p", protocol, "--dport", port, "-j", "ACCEPT")
+		v6cmd := exec.Command("ip6tables", "-I", "INPUT", "-p", protocol, "--dport", port, "-j", "ACCEPT")
 		out, err = v6cmd.CombinedOutput()
 		if err != nil {
 			return fmt.Errorf("failed to open port on IPv6 %s %s: %v %s", port, protocol, err, out)
