@@ -7,6 +7,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 
@@ -27,6 +28,7 @@ const (
 )
 
 // Logger defines the interface for the CS image logger.
+// Callers should run `defer logger.Close()` after initialization to ensure logs are flushed and handles are closed.
 type Logger interface {
 	Log(severity clogging.Severity, msg string, args ...any)
 
@@ -34,7 +36,7 @@ type Logger interface {
 	Warn(msg string, args ...any)
 	Error(msg string, args ...any)
 
-	SerialConsoleFile() *os.File
+	// Close flushes buffered logs and closes underlying resources. Callers should defer Close().
 	Close()
 }
 
@@ -43,20 +45,28 @@ type cLogger interface {
 	Flush() error
 }
 
-type logger struct {
-	cloudLogger  cLogger
-	serialLogger *slog.Logger
-	resource     *mrpb.MonitoredResource
+type cloudLogger struct {
+	cloudLogger cLogger
+	resource    *mrpb.MonitoredResource
 
-	instanceName      string
-	cloudClient       *clogging.Client
-	serialConsoleFile *os.File
+	instanceName string
+	cloudClient  *clogging.Client
+}
+
+type serialLogger struct {
+	slg *slog.Logger
+}
+
+type dualLogger struct {
+	cloud  Logger
+	serial Logger
 }
 
 type payload map[string]any
 
-// NewLogger returns a Logger with Cloud and Serial Console logging configured.
-func NewLogger(ctx context.Context, pool *x509.CertPool) (Logger, error) {
+// NewCloudLogger returns a Logger that logs exclusively to Cloud Logging.
+// Callers should run `defer logger.Close()` after initialization to ensure logs are flushed and handles are closed.
+func NewCloudLogger(ctx context.Context, pool *x509.CertPool) (Logger, error) {
 	// Retrieve monitored resource information.
 	mdsClient := metadata.NewClient(nil)
 
@@ -94,21 +104,8 @@ func NewLogger(ctx context.Context, pool *x509.CertPool) (Logger, error) {
 		return nil, err
 	}
 
-	// Configure Serial Console logger.
-	serialConsole, err := os.OpenFile(serialConsoleFile, os.O_WRONLY, 0)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open serial console for writing: %v", err)
-	}
-
-	slg := slog.New(slog.NewTextHandler(serialConsole, nil))
-	slg.Info("Serial Console logger initialized")
-
-	// This is necessary for DEBUG logs to propagate properly.
-	slog.SetDefault(slg)
-
-	return &logger{
-		cloudLogger:  cloggingClient.Logger(logName),
-		serialLogger: slg,
+	return &cloudLogger{
+		cloudLogger: cloggingClient.Logger(logName),
 		resource: &mrpb.MonitoredResource{
 			Type: "gce_instance",
 			Labels: map[string]string{
@@ -117,23 +114,70 @@ func NewLogger(ctx context.Context, pool *x509.CertPool) (Logger, error) {
 				"zone":        zone,
 			},
 		},
-		instanceName:      instanceName,
-		cloudClient:       cloggingClient,
-		serialConsoleFile: serialConsole,
-	}, err
+		instanceName: instanceName,
+		cloudClient:  cloggingClient,
+	}, nil
 }
 
-func (l *logger) SerialConsoleFile() *os.File {
-	return l.serialConsoleFile
+// NewSerialLogger returns a Logger that logs exclusively to the provided serial console.
+// It assumes serialConsole is a valid, writable file. The caller retains ownership of
+// serialConsole and is responsible for closing it.
+func NewSerialLogger(serialConsole *os.File) Logger {
+	slg := slog.New(slog.NewTextHandler(serialConsole, nil))
+	slg.Info("Serial Console logger initialized")
+
+	// This is necessary for DEBUG logs to propagate properly.
+	slog.SetDefault(slg)
+
+	return &serialLogger{slg: slg}
 }
 
-func (l *logger) Close() {
-	if l.cloudClient != nil {
-		l.cloudClient.Close()
+// NullLogger returns a Logger that discards all logs.
+func NullLogger() Logger {
+	return &nullLogger{}
+}
+
+// DualLogger returns a Logger that duplicates its logs to both the cloud and serial loggers.
+func DualLogger(cloud Logger, serial Logger) Logger {
+	return &dualLogger{cloud: cloud, serial: serial}
+}
+
+func (l *cloudLogger) Log(severity clogging.Severity, msg string, args ...any) {
+	if l.cloudLogger == nil {
+		return
+	}
+	logEntry := clogging.Entry{
+		Severity: severity,
+		Resource: l.resource,
 	}
 
-	if l.serialConsoleFile != nil {
-		l.serialConsoleFile.Close()
+	pl := payload{}
+	addArgs(pl, args)
+
+	if len(msg) > 0 {
+		pl[payloadMessageKey] = msg
+	}
+
+	if len(l.instanceName) > 0 {
+		// Needed for backwards compatibility with Cloudbuild tests.
+		pl[payloadInstanceNameKey] = l.instanceName
+	}
+
+	logEntry.Payload = pl
+
+	l.cloudLogger.Log(logEntry)
+	if err := l.cloudLogger.Flush(); err != nil {
+		slog.Error(fmt.Sprintf("cloud.Logger.Flush returned error: %v", err))
+	}
+}
+
+func (l *cloudLogger) Info(msg string, args ...any)  { l.Log(clogging.Info, msg, args...) }
+func (l *cloudLogger) Warn(msg string, args ...any)  { l.Log(clogging.Warning, msg, args...) }
+func (l *cloudLogger) Error(msg string, args ...any) { l.Log(clogging.Error, msg, args...) }
+
+func (l *cloudLogger) Close() {
+	if l.cloudClient != nil {
+		l.cloudClient.Close()
 	}
 }
 
@@ -165,63 +209,48 @@ func addArgs(pl payload, args []any) {
 	addArgs(pl, args[2:])
 }
 
-func (l *logger) writeLog(severity clogging.Severity, msg string, args ...any) {
-	// Write cloud log.
-	logEntry := clogging.Entry{
-		Severity: severity,
-		Resource: l.resource,
-	}
-
-	pl := payload{}
-	addArgs(pl, args)
-
-	if len(msg) > 0 {
-		pl[payloadMessageKey] = msg
-	}
-
-	if len(l.instanceName) > 0 {
-		// Needed for backwards compatibility with Cloudbuild tests.
-		pl[payloadInstanceNameKey] = l.instanceName
-	}
-
-	logEntry.Payload = pl
-
-	l.cloudLogger.Log(logEntry)
-	if err := l.cloudLogger.Flush(); err != nil {
-		l.serialLogger.Error(fmt.Sprintf("cloud.Logger.Flush returned error: %v", err))
-	}
-
-	// Write to serial console.
+func (l *serialLogger) Log(severity clogging.Severity, msg string, args ...any) {
 	switch severity {
 	case clogging.Info, clogging.Notice, clogging.Debug:
-		l.serialLogger.Info(msg, args...)
+		l.slg.Info(msg, args...)
 	case clogging.Warning:
-		l.serialLogger.Warn(msg, args...)
+		l.slg.Warn(msg, args...)
 	case clogging.Error, clogging.Critical, clogging.Alert, clogging.Emergency:
-		l.serialLogger.Error(msg, args...)
+		l.slg.Error(msg, args...)
 	default:
 		slog.Debug(msg, args...)
 	}
 }
 
-// Log logs msg and args with the provided severity.
-func (l *logger) Log(severity clogging.Severity, msg string, args ...any) {
-	l.writeLog(severity, msg, args...)
+func (l *serialLogger) Info(msg string, args ...any)  { l.Log(clogging.Info, msg, args...) }
+func (l *serialLogger) Warn(msg string, args ...any)  { l.Log(clogging.Warning, msg, args...) }
+func (l *serialLogger) Error(msg string, args ...any) { l.Log(clogging.Error, msg, args...) }
+
+func (l *serialLogger) Close() {}
+
+func (d *dualLogger) Log(severity clogging.Severity, msg string, args ...any) {
+	d.cloud.Log(severity, msg, args...)
+	d.serial.Log(severity, msg, args...)
 }
 
-// Info logs msg and args at 'Info' severity.
-func (l *logger) Info(msg string, args ...any) {
-	l.writeLog(clogging.Info, msg, args...)
+func (d *dualLogger) Info(msg string, args ...any) {
+	d.cloud.Info(msg, args...)
+	d.serial.Info(msg, args...)
 }
 
-// Warn logs msg and args at 'Warn' severity.
-func (l *logger) Warn(msg string, args ...any) {
-	l.writeLog(clogging.Warning, msg, args...)
+func (d *dualLogger) Warn(msg string, args ...any) {
+	d.cloud.Warn(msg, args...)
+	d.serial.Warn(msg, args...)
 }
 
-// Error logs msg and args at 'Error' severity.
-func (l *logger) Error(msg string, args ...any) {
-	l.writeLog(clogging.Error, msg, args...)
+func (d *dualLogger) Error(msg string, args ...any) {
+	d.cloud.Error(msg, args...)
+	d.serial.Error(msg, args...)
+}
+
+func (d *dualLogger) Close() {
+	d.cloud.Close()
+	d.serial.Close()
 }
 
 // SimpleLogger returns a lightweight implementation that wraps a slog.Default() logger.
@@ -263,8 +292,47 @@ func (l *slogger) Error(msg string, args ...any) {
 	l.slg.Error(msg, args...)
 }
 
-func (l *slogger) SerialConsoleFile() *os.File {
-	return nil
+func (l *slogger) Close() {}
+
+type nullLogger struct{}
+
+func (n *nullLogger) Log(_ clogging.Severity, _ string, _ ...any) {}
+func (n *nullLogger) Info(_ string, _ ...any)                     {}
+func (n *nullLogger) Warn(_ string, _ ...any)                     {}
+func (n *nullLogger) Error(_ string, _ ...any)                    {}
+func (n *nullLogger) Close()                                      {}
+
+// SeverityWriter wraps a Logger and implements io.Writer to write to the Logger at a specific severity level.
+type SeverityWriter struct {
+	l        Logger
+	severity clogging.Severity
 }
 
-func (l *slogger) Close() {}
+// NewSeverityWriter returns an io.Writer that writes to the provided Logger with a specific severity.
+func NewSeverityWriter(l Logger, severity clogging.Severity) io.Writer {
+	return &SeverityWriter{l: l, severity: severity}
+}
+
+// NewInfoWriter returns an io.Writer that writes logs to the provided Logger with Info severity.
+func NewInfoWriter(l Logger) io.Writer {
+	return NewSeverityWriter(l, clogging.Info)
+}
+
+// NewErrorWriter returns an io.Writer that writes logs to the provided Logger with Error severity.
+func NewErrorWriter(l Logger) io.Writer {
+	return NewSeverityWriter(l, clogging.Error)
+}
+
+// Write implements the io.Writer interface, redirecting logs to the Logger with the configured severity.
+func (w *SeverityWriter) Write(p []byte) (n int, err error) {
+	// Trim any trailing newline.
+	end := len(p)
+	for end > 0 && p[end-1] == '\n' {
+		end--
+	}
+	msg := string(p[:end])
+
+	w.l.Log(w.severity, msg)
+
+	return len(p), nil
+}

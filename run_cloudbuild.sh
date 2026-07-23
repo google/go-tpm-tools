@@ -14,7 +14,7 @@ echo "Running Cloud Build on directory $DIR"
 #
 # Ensure you grant Cloud Build access to Compute Images:
 # https://pantheon.corp.google.com/compute/images?referrer=search&tab=exports&project=$PROJECT_ID
-gcloud beta builds submit --config=${DIR}/cloudbuild.yaml \
+gcloud beta builds submit --polling-interval=10 --config=${DIR}/cloudbuild.yaml \
   --substitutions=_OUTPUT_IMAGE_SUFFIX="${IMAGE_SUFFIX}"
 
 echo "Image creation successful."

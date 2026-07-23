@@ -10,6 +10,7 @@ print_usage() {
     echo "  -n <instanceName>: instance name"
     echo "  -z <instanceZone>: instance zone"
     echo "  -c <confidentialComputing>: TDX or SEV"
+    echo "  -t <machineType>: machine type"
     exit 1
 }
 
@@ -23,14 +24,15 @@ create_vm() {
     CC='SEV'
   fi
 
-  MACHINE_TYPE=''
-  if [[ "${CC}" == "SEV" ]]; then
-    MACHINE_TYPE='n2d-standard-2'
-  elif [[ "${CC}" == "TDX" ]]; then
-    MACHINE_TYPE='c3-standard-4'
-  else
-    echo "unsupported confidential computing type: ${CC}"
-    exit 1
+  if [ -z "$MACHINE_TYPE" ]; then
+    if [[ "${CC}" == "SEV" ]]; then
+      MACHINE_TYPE='n2d-standard-2'
+    elif [[ "${CC}" == "TDX" ]]; then
+      MACHINE_TYPE='c3-standard-4'
+    else
+      echo "unsupported confidential computing type: ${CC}"
+      exit 1
+    fi
   fi
 
   # use the fake verifier for all tests
@@ -72,6 +74,7 @@ create_vm() {
 IMAGE_NAME=''
 METADATA_FILE=''
 METADATA=''
+MACHINE_TYPE=''
 PROJECT_NAME=''
 VM_NAME=''
 ZONE=''
@@ -79,7 +82,7 @@ CC='SEV' # default using sev
 
 # In getopts, a ':' following a letter means that that flag takes an argument.
 # For example, i: means -i takes an additional argument.
-while getopts 'i:f:m:p:n:z:c:' flag; do
+while getopts 'i:f:m:p:n:z:c:t:' flag; do
   case "${flag}" in
     i) IMAGE_NAME=${OPTARG} ;;
     f) METADATA_FILE=${OPTARG} ;;
@@ -88,6 +91,7 @@ while getopts 'i:f:m:p:n:z:c:' flag; do
     n) VM_NAME=${OPTARG} ;;
     z) ZONE=${OPTARG} ;;
     c) CC=${OPTARG} ;;
+    t) MACHINE_TYPE=${OPTARG} ;;
     *) print_usage ;;
   esac
 done

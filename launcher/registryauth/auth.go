@@ -81,5 +81,5 @@ func RefreshResolver(ctx context.Context, client *metadata.Client, googleClient 
 		return Resolver(token.AccessToken, googleClient), nil
 	}
 
-	return nil, fmt.Errorf("invalid token from metadata server: %v", token)
+	return nil, fmt.Errorf("invalid token from metadata server")
 }

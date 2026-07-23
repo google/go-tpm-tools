@@ -1,16 +1,17 @@
 substitutions:
-  '_BASE_IMAGE': 'cos-125-19216-395-138' # If left empty, will use the latest image in _BASE_IMAGE_FAMILY of _BASE_IMAGE_PROJECT
+  '_BASE_IMAGE': 'cos-125-19216-395-112' # If left empty, will use the latest image in _BASE_IMAGE_FAMILY of _BASE_IMAGE_PROJECT
   '_BASE_IMAGE_FAMILY': 'cos-125-lts'
   '_BASE_IMAGE_PROJECT': 'cos-cloud'
   '_OUTPUT_IMAGE_PREFIX': 'confidential-space'
   '_OUTPUT_IMAGE_SUFFIX': ''
   '_OUTPUT_IMAGE_FAMILY': ''
   '_BUCKET_NAME': '${PROJECT_ID}_cloudbuild'
-  '_VG_BASE_IMAGE': 'cos-125-19216-395-138'
+  '_VG_BASE_IMAGE': 'cos-125-19216-395-112'
   '_BC_BASE_IMAGE_PROJECT': 'confidential-space-images-dev'
   '_BC_BASE_IMAGE': 'cos-bc-guest-125-19216-395-112'
   '_BC_DEBUG_IMAGE': 'cos-bcdbg-guest-125-19216-395-112'
-  '_WSD_CONTAINER_IMAGE_REF': 'us-docker.pkg.dev/confidential-space-images-dev/key-protection-module-images/key-protection-module:9d1fbac'
+  '_WSD_CONTAINER_IMAGE_REF': 'us-docker.pkg.dev/confidential-space-images-dev/key-protection-module-images/key-protection-module:acdec5c'
+  '_POLLING_INTERVAL': '10'
 
 
 steps:
@@ -126,7 +127,7 @@ steps:
     set -exuo pipefail
 
     echo "building the debug image: ${OUTPUT_IMAGE_NAME} with the base image: ${VG_BASE_IMAGE}"
-    gcloud builds submit --config=launcher/image/cloudbuild.yaml \
+    gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=launcher/image/cloudbuild.yaml \
     --region us-west1 \
     --substitutions \
     _BASE_IMAGE=${VG_BASE_IMAGE},\
@@ -156,7 +157,7 @@ steps:
     set -exuo pipefail
 
     echo "building the hardened image: ${OUTPUT_IMAGE_NAME} with the base image: ${VG_BASE_IMAGE}"
-    gcloud builds submit --config=launcher/image/cloudbuild.yaml \
+    gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=launcher/image/cloudbuild.yaml \
     --region us-west1 \
     --substitutions \
     _BASE_IMAGE=${VG_BASE_IMAGE},\
@@ -185,7 +186,7 @@ steps:
 
     base_image=$(cat /workspace/base_image.txt)
     echo "building the debug image: ${OUTPUT_IMAGE_NAME} with the base image: ${base_image}"
-    gcloud builds submit --config=launcher/image/cloudbuild.yaml \
+    gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=launcher/image/cloudbuild.yaml \
     --region us-west1 \
     --substitutions \
     _BASE_IMAGE=${base_image},\
@@ -215,7 +216,7 @@ steps:
 
     base_image=$(cat /workspace/base_image.txt)
     echo "building the hardened image: ${OUTPUT_IMAGE_NAME} with the base image: ${base_image}"
-    gcloud builds submit --config=launcher/image/cloudbuild.yaml \
+    gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=launcher/image/cloudbuild.yaml \
     --region us-west1 \
     --substitutions \
     _BASE_IMAGE=${base_image},\
@@ -247,7 +248,7 @@ steps:
     set -exuo pipefail
 
     echo "building the debug image with BC customizer with the base image: ${BC_BASE_IMAGE}"
-    gcloud builds submit --config=launcher/image/bc_cloudbuild.yaml \
+    gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=launcher/image/bc_cloudbuild.yaml \
     --region us-west1 \
     --substitutions \
     _BASE_IMAGE=${BC_BASE_IMAGE},\
@@ -276,7 +277,7 @@ steps:
     set -exuo pipefail
 
     echo "building the hardened image with BC customizer with the base image: ${BC_BASE_IMAGE}"
-    gcloud builds submit --config=launcher/image/bc_cloudbuild.yaml \
+    gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=launcher/image/bc_cloudbuild.yaml \
     --region us-west1 \
     --substitutions \
     _BASE_IMAGE=${BC_BASE_IMAGE},\
@@ -299,7 +300,7 @@ steps:
 
     cd launcher/image/test
     echo "running experiments client tests on ${OUTPUT_IMAGE_NAME}"
-    gcloud builds submit --config=test_experiments_client.yaml --region us-west1 \
+    gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_experiments_client.yaml --region us-west1 \
       --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
     exit
 
@@ -314,7 +315,7 @@ steps:
 
     cd launcher/image/test
     echo "running http server tests on ${OUTPUT_IMAGE_NAME}"
-    gcloud builds submit --config=test_http_server.yaml --region us-west1 \
+    gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_http_server.yaml --region us-west1 \
       --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
     exit
 
@@ -329,7 +330,7 @@ steps:
 
     cd launcher/image/test
     echo "running keymanager tests on ${OUTPUT_IMAGE_NAME}"
-    gcloud builds submit --config=test_keymanager_cloudbuild.yaml --region us-west1 \
+    gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_keymanager_cloudbuild.yaml --region us-west1 \
       --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
     exit
 
@@ -344,7 +345,7 @@ steps:
 
     cd launcher/image/test
     echo "running debug image tests on ${OUTPUT_IMAGE_NAME}"
-    gcloud builds submit --config=test_debug_cloudbuild.yaml --region us-west1 \
+    gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_debug_cloudbuild.yaml --region us-west1 \
       --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
     exit
 
@@ -359,7 +360,7 @@ steps:
 
     cd launcher/image/test
     echo "running debug image tests on ${OUTPUT_IMAGE_NAME}"
-    gcloud builds submit --config=test_debug_cloudbuild.yaml --region us-west1 \
+    gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_debug_cloudbuild.yaml --region us-west1 \
       --substitutions _CC=TDX,_IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
     exit
 
@@ -374,7 +375,7 @@ steps:
 
     cd launcher/image/test
     echo "running hardened image tests on ${OUTPUT_IMAGE_NAME}"
-    gcloud builds submit --config=test_hardened_cloudbuild.yaml --region us-west1 \
+    gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_hardened_cloudbuild.yaml --region us-west1 \
       --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
     exit
 
@@ -389,7 +390,7 @@ steps:
 
     cd launcher/image/test
     echo "running hardened image tests on ${OUTPUT_IMAGE_NAME}"
-    gcloud builds submit --config=test_hardened_cloudbuild.yaml --region us-west1 \
+    gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_hardened_cloudbuild.yaml --region us-west1 \
       --substitutions _CC=TDX,_IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
     exit
 
@@ -404,7 +405,7 @@ steps:
 
     cd launcher/image/test
     echo "running launch policy tests on ${OUTPUT_IMAGE_NAME}"
-    gcloud builds submit --config=test_launchpolicy_cloudbuild.yaml --region us-west1 \
+    gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_launchpolicy_cloudbuild.yaml --region us-west1 \
       --substitutions _HARDENED_IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
     exit
 
@@ -418,7 +419,7 @@ steps:
     #!/usr/bin/env bash
     cd launcher/image/test
     echo "running hardened image ingress network tests on ${OUTPUT_IMAGE_NAME}"
-    gcloud builds submit --config=test_ingress_network.yaml --region us-west1 \
+    gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_ingress_network.yaml --region us-west1 \
       --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
     exit
 
@@ -432,7 +433,7 @@ steps:
     #!/usr/bin/env bash
     cd launcher/image/test
     echo "running debug image ingress network tests on ${OUTPUT_IMAGE_NAME}"
-    gcloud builds submit --config=test_ingress_network.yaml --region us-west1 \
+    gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_ingress_network.yaml --region us-west1 \
       --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
     exit
 
@@ -447,7 +448,7 @@ steps:
 
     cd launcher/image/test
     echo "running log redirection tests on ${OUTPUT_IMAGE_NAME}"
-    gcloud builds submit --config=test_log_redirection.yaml --region us-west1 \
+    gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_log_redirection.yaml --region us-west1 \
       --substitutions _HARDENED_IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
     exit
 
@@ -461,7 +462,7 @@ steps:
     #!/usr/bin/env bash
     cd launcher/image/test
     echo "running hardened image container signature tests on ${OUTPUT_IMAGE_NAME}"
-    gcloud builds submit --config=test_discover_signatures.yaml --region us-west1 \
+    gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_discover_signatures.yaml --region us-west1 \
       --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID},_SIGNATURE_REPO=us-docker.pkg.dev/confidential-space-images-dev/cs-cosign-tests/hardened
     exit
 
@@ -475,7 +476,7 @@ steps:
     #!/usr/bin/env bash
     cd launcher/image/test
     echo "running debug image container signature tests on ${OUTPUT_IMAGE_NAME}"
-    gcloud builds submit --config=test_discover_signatures.yaml --region us-west1 \
+    gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_discover_signatures.yaml --region us-west1 \
       --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID},_SIGNATURE_REPO=us-docker.pkg.dev/confidential-space-images-dev/cs-cosign-tests/debug
     exit
 
@@ -489,7 +490,7 @@ steps:
     #!/usr/bin/env bash
     cd launcher/image/test
     echo "running memory monitoring tests on ${OUTPUT_IMAGE_NAME}"
-    gcloud builds submit --config=test_memory_monitoring.yaml --region us-west1 \
+    gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_memory_monitoring.yaml --region us-west1 \
       --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
     exit
 
@@ -503,7 +504,7 @@ steps:
     #!/usr/bin/env bash
     cd launcher/image/test
     echo "running health monitoring tests on ${OUTPUT_IMAGE_NAME}"
-    gcloud builds submit --config=test_health_monitoring.yaml --region us-west1 \
+    gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_health_monitoring.yaml --region us-west1 \
       --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
     exit
 
@@ -517,7 +518,7 @@ steps:
     #!/usr/bin/env bash
     cd launcher/image/test
     echo "running ODA and signed container tests on ${OUTPUT_IMAGE_NAME}"
-    gcloud builds submit --config=test_oda_with_signed_container.yaml --region us-west1 \
+    gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_oda_with_signed_container.yaml --region us-west1 \
       --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
     exit
 
@@ -533,7 +534,7 @@ steps:
     dev_shm_size_kb=$(shuf -i 70000-256000 -n 1)
     tmpfs_size_kb=$(shuf -i 256-256000 -n 1)
     echo "running mount tests on ${OUTPUT_IMAGE_NAME}"
-    gcloud builds submit --config=test_mounts.yaml --region us-west1 \
+    gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_mounts.yaml --region us-west1 \
       --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
     exit
 
@@ -547,7 +548,7 @@ steps:
     #!/usr/bin/env bash
     cd launcher/image/test
     echo "running privileged tests on ${OUTPUT_IMAGE_NAME}"
-    gcloud builds submit --config=test_privileged.yaml --region us-west1 \
+    gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_privileged.yaml --region us-west1 \
       --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
     exit
 
@@ -561,7 +562,7 @@ steps:
     #!/usr/bin/env bash
     cd launcher/image/test
     echo "running debug workload cleanup tests on ${OUTPUT_IMAGE_NAME}"
-    gcloud builds submit --config=test_workloadcleanup_cloudbuild.yaml --region us-west1 \
+    gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_workloadcleanup_cloudbuild.yaml --region us-west1 \
       --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
     exit
 
@@ -575,7 +576,7 @@ steps:
     #!/usr/bin/env bash
     cd launcher/image/test
     echo "running hardened workload cleanup tests on ${OUTPUT_IMAGE_NAME}"
-    gcloud builds submit --config=test_workloadcleanup_cloudbuild.yaml --region us-west1 \
+    gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_workloadcleanup_cloudbuild.yaml --region us-west1 \
       --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
     exit
 
@@ -590,14 +591,14 @@ steps:
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: ExportDebugImage
-  waitFor: ['ExportHardenedImage', 'DebugImageTests']
+  waitFor: ['DebugImageTests']
   entrypoint: 'gcloud'
   args: ['compute', 'images', 'export',
           '--destination-uri=gs://${PROJECT_ID}_raw-images/${_OUTPUT_IMAGE_PREFIX}-debug-${_OUTPUT_IMAGE_SUFFIX}.tar.gz',
           '--image=${_OUTPUT_IMAGE_PREFIX}-debug-${_OUTPUT_IMAGE_SUFFIX}',
           '--project=${PROJECT_ID}']
 
-- name: 'us-docker.pkg.dev/confidential-space-images-dev/cs-tools/measure@sha256:5c2eaaa70438126877de51b44914d3751ba242aed7f4d99d485833629f3958bc'
+- name: 'us-docker.pkg.dev/confidential-space-images-dev/cs-tools/measure@sha256:dae4766caef4a93c52736feb829bf2c505b7d48ce44d0ecb33e77d61bb4be888'
   id: MeasureHardenedImage
   waitFor: ['ExportHardenedImage']
   env:
@@ -613,7 +614,7 @@ steps:
     /usr/local/bin/measure.sh hardeneddisk/disk.raw measure_output_hardened.json hardened x86_64 sha256
     gcloud storage cp measure_output_hardened.json gs://${PROJECT_ID}-rims/${OUTPUT_IMAGE_NAME}.json
 
-- name: 'us-docker.pkg.dev/confidential-space-images-dev/cs-tools/measure@sha256:5c2eaaa70438126877de51b44914d3751ba242aed7f4d99d485833629f3958bc'
+- name: 'us-docker.pkg.dev/confidential-space-images-dev/cs-tools/measure@sha256:dae4766caef4a93c52736feb829bf2c505b7d48ce44d0ecb33e77d61bb4be888'
   id: MeasureDebugImage
   waitFor: ['ExportDebugImage']
   env:
@@ -631,7 +632,7 @@ steps:
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: ExportVgHardenedImage
-  waitFor: ['ExportDebugImage', 'HardenedVgImageBuild']
+  waitFor: ['HardenedVgImageBuild', 'KeymanagerTests']
   entrypoint: 'gcloud'
   args: ['compute', 'images', 'export',
          '--destination-uri=gs://${PROJECT_ID}_raw-images/${_OUTPUT_IMAGE_PREFIX}-vg-hardened-${_OUTPUT_IMAGE_SUFFIX}.tar.gz',
@@ -640,14 +641,14 @@ steps:
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: ExportVgDebugImage
-  waitFor: ['ExportVgHardenedImage', 'DebugVgImageBuild']
+  waitFor: ['DebugVgImageBuild', 'KeymanagerTests']
   entrypoint: 'gcloud'
   args: ['compute', 'images', 'export',
           '--destination-uri=gs://${PROJECT_ID}_raw-images/${_OUTPUT_IMAGE_PREFIX}-vg-debug-${_OUTPUT_IMAGE_SUFFIX}.tar.gz',
           '--image=${_OUTPUT_IMAGE_PREFIX}-vg-debug-${_OUTPUT_IMAGE_SUFFIX}',
           '--project=${PROJECT_ID}']
 
-- name: 'us-docker.pkg.dev/confidential-space-images-dev/cs-tools/measure@sha256:5c2eaaa70438126877de51b44914d3751ba242aed7f4d99d485833629f3958bc'
+- name: 'us-docker.pkg.dev/confidential-space-images-dev/cs-tools/measure@sha256:dae4766caef4a93c52736feb829bf2c505b7d48ce44d0ecb33e77d61bb4be888'
   id: MeasureVgHardenedImage
   waitFor: ['ExportVgHardenedImage']
   env:
@@ -667,7 +668,7 @@ steps:
     gcloud storage cp measure_output_vg_hardened_sha384.json gs://${PROJECT_ID}-rims/${OUTPUT_IMAGE_NAME}_sha384.json
 
 
-- name: 'us-docker.pkg.dev/confidential-space-images-dev/cs-tools/measure@sha256:5c2eaaa70438126877de51b44914d3751ba242aed7f4d99d485833629f3958bc'
+- name: 'us-docker.pkg.dev/confidential-space-images-dev/cs-tools/measure@sha256:dae4766caef4a93c52736feb829bf2c505b7d48ce44d0ecb33e77d61bb4be888'
   id: MeasureVgDebugImage
   waitFor: ['ExportVgDebugImage']
   env:
@@ -687,5 +688,6 @@ steps:
     gsutil cp measure_output_vg_debug_sha384.json gs://${PROJECT_ID}-rims/${OUTPUT_IMAGE_NAME}_sha384.json
 
 options:
+  automapSubstitutions: true
   pool:
     name: 'projects/confidential-space-images-dev/locations/us-west1/workerPools/cs-image-build-vpc'
