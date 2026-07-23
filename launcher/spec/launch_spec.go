@@ -447,6 +447,7 @@ func fetchExperiments(logger logging.Logger) experiments.Experiments {
 	}, experimentSyncBackoffPolicy()); err != nil {
 		logger.Error(fmt.Sprintf("experiment retrieval failed after retries: %v\n", err))
 		// Do not fail if experiment retrieval fails.
+		
 	}
 	return e
 }
