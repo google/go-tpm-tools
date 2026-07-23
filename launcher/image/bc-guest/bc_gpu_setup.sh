@@ -18,17 +18,19 @@ if [ ! -d /usr/share/oem/gpu_helper/rootfs ]; then
     exit 1
 fi
 
-echo "Running NVLSM and Fabric Manager..." | tee /dev/console
+# echo "Running NVLSM and Fabric Manager..." | tee /dev/console
 
-sudo ctr containers create --rootfs --privileged --net-host \
-    --mount type=bind,src=/dev,dst=/dev,options=rbind:rw \
-    --mount type=bind,src=/opt/nvidia,dst=/opt/nvidia-host,options=rbind:rw \
-    /usr/share/oem/gpu_helper/rootfs \
-    guest-gpu-tools-task \
-    /entrypoint.sh
+# sudo ctr containers create --rootfs --privileged --net-host \
+#     --mount type=bind,src=/dev,dst=/dev,options=rbind:rw \
+#     --mount type=bind,src=/opt/nvidia,dst=/opt/nvidia-host,options=rbind:rw \
+#     /usr/share/oem/gpu_helper/rootfs \
+#     guest-gpu-tools-task \
+#     /entrypoint.sh
 
-sudo ctr tasks start -d guest-gpu-tools-task
-echo "Waiting 2 min for NVLSM and Fabric Manager to initialize..." | tee /dev/console
-sleep 2m
+# sudo ctr tasks start -d guest-gpu-tools-task
+# echo "Waiting 2 min for NVLSM and Fabric Manager to initialize..." | tee /dev/console
+# sleep 2m
+
+echo "Skipping NVLSM and Fabric Manager" | tee /dev/console
 
 echo "GPU daemon ready" | tee /dev/console
