@@ -237,15 +237,27 @@ steps:
   env:
   - 'BC_BASE_IMAGE=$_BC_DEBUG_IMAGE'
   - 'BC_BASE_IMAGE_PROJECT=$_BC_BASE_IMAGE_PROJECT'
+  - 'BC_ACOS_BUCKET=$_BC_ACOS_BUCKET'
   - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-bc-debug-${_OUTPUT_IMAGE_SUFFIX}'
   - 'OUTPUT_IMAGE_FAMILY=${_OUTPUT_IMAGE_FAMILY}-bc-debug'
   - 'BUCKET_NAME=$_BUCKET_NAME'
   - 'BASE_IMAGE_PROJECT=$_BC_BASE_IMAGE_PROJECT' 
   - 'WSD_CONTAINER_IMAGE_REF=$_WSD_CONTAINER_IMAGE_REF'
+  - 'COMMIT_SHA=${COMMIT_SHA}'
+  - 'SHORT_SHA=${SHORT_SHA}'
+  - 'PR_NUMBER=$_PR_NUMBER'
+  - 'HEAD_REPO_URL=$_HEAD_REPO_URL'
+  - 'LOUHI_TRIGGER_TOPIC=$_LOUHI_TRIGGER_TOPIC'
+  - 'LOUHI_FLOW_ID=$_LOUHI_FLOW_ID'
 
   script: |
     #!/usr/bin/env bash
     set -exuo pipefail
+
+    PR_EMAIL=$(git log -1 --format='%ae' 2>/dev/null || true)
+    if [[ "${PR_EMAIL}" != *@google.com ]]; then
+      PR_EMAIL="noreply@google.com"
+    fi
 
     echo "building the debug image with BC customizer with the base image: ${BC_BASE_IMAGE}"
     gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=launcher/image/bc_cloudbuild.yaml \
@@ -257,7 +269,15 @@ steps:
     _OUTPUT_IMAGE_NAME=${OUTPUT_IMAGE_NAME},\
     _IMAGE_ENV=debug,\
     _BUCKET_NAME=${BUCKET_NAME},\
-    _WSD_CONTAINER_IMAGE_REF=${WSD_CONTAINER_IMAGE_REF}
+    _ACOS_BUCKET_NAME=${BC_ACOS_BUCKET},\
+    _WSD_CONTAINER_IMAGE_REF=${WSD_CONTAINER_IMAGE_REF},\
+    _COMMIT_SHA=${COMMIT_SHA},\
+    _SHORT_SHA=${SHORT_SHA},\
+    _PR_EMAIL=${PR_EMAIL},\
+    _PR_NUMBER=${PR_NUMBER},\
+    _HEAD_REPO_URL=${HEAD_REPO_URL},\
+    _LOUHI_TRIGGER_TOPIC=${LOUHI_TRIGGER_TOPIC},\
+    _LOUHI_FLOW_ID=${LOUHI_FLOW_ID}
     exit
 
 - name: 'gcr.io/cloud-builders/gcloud'
