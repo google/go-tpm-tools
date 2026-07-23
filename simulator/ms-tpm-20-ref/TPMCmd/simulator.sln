@@ -1,0 +1,109 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 15
+VisualStudioVersion = 15.0.28307.1062
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Simulator", "simulator\simulator.vcxproj", "{AAB9FA21-8671-4792-B000-B40A526058AD}"
+	ProjectSection(ProjectDependencies) = postProject
+		{A9249F05-0DF5-4D06-9873-FBBE61B6768B} = {A9249F05-0DF5-4D06-9873-FBBE61B6768B}
+		{B7456491-A2ED-4B1C-B59E-41C7B32B7E3B} = {B7456491-A2ED-4B1C-B59E-41C7B32B7E3B}
+	EndProjectSection
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Platform", "Platform\platform.vcxproj", "{A9249F05-0DF5-4D06-9873-FBBE61B6768B}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "tpm", "tpm\TPM.vcxproj", "{B7456491-A2ED-4B1C-B59E-41C7B32B7E3B}"
+	ProjectSection(ProjectDependencies) = postProject
+		{A9249F05-0DF5-4D06-9873-FBBE61B6768B} = {A9249F05-0DF5-4D06-9873-FBBE61B6768B}
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Crypt", "Crypt", "{26AD7978-27E2-46E7-9F8C-36CDB1B5AB01}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{3587DA28-BEC1-44AE-8F4F-D24ECB719905}"
+	ProjectSection(SolutionItems) = preProject
+		..\README.md = ..\README.md
+	EndProjectSection
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Win32 = Debug|Win32
+		Debug|x64 = Debug|x64
+		Release|Win32 = Release|Win32
+		Release|x64 = Release|x64
+		Static|Win32 = Static|Win32
+		Static|x64 = Static|x64
+		WolfDebug|Win32 = WolfDebug|Win32
+		WolfDebug|x64 = WolfDebug|x64
+		WolfRelease|Win32 = WolfRelease|Win32
+		WolfRelease|x64 = WolfRelease|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{AAB9FA21-8671-4792-B000-B40A526058AD}.Debug|Win32.ActiveCfg = Debug|Win32
+		{AAB9FA21-8671-4792-B000-B40A526058AD}.Debug|Win32.Build.0 = Debug|Win32
+		{AAB9FA21-8671-4792-B000-B40A526058AD}.Debug|x64.ActiveCfg = Debug|x64
+		{AAB9FA21-8671-4792-B000-B40A526058AD}.Debug|x64.Build.0 = Debug|x64
+		{AAB9FA21-8671-4792-B000-B40A526058AD}.Release|Win32.ActiveCfg = Release|Win32
+		{AAB9FA21-8671-4792-B000-B40A526058AD}.Release|Win32.Build.0 = Release|Win32
+		{AAB9FA21-8671-4792-B000-B40A526058AD}.Release|x64.ActiveCfg = Release|x64
+		{AAB9FA21-8671-4792-B000-B40A526058AD}.Release|x64.Build.0 = Release|x64
+		{AAB9FA21-8671-4792-B000-B40A526058AD}.Static|Win32.ActiveCfg = Static|Win32
+		{AAB9FA21-8671-4792-B000-B40A526058AD}.Static|Win32.Build.0 = Static|Win32
+		{AAB9FA21-8671-4792-B000-B40A526058AD}.Static|x64.ActiveCfg = Static|x64
+		{AAB9FA21-8671-4792-B000-B40A526058AD}.Static|x64.Build.0 = Static|x64
+		{AAB9FA21-8671-4792-B000-B40A526058AD}.WolfDebug|Win32.ActiveCfg = WolfDebug|Win32
+		{AAB9FA21-8671-4792-B000-B40A526058AD}.WolfDebug|Win32.Build.0 = WolfDebug|Win32
+		{AAB9FA21-8671-4792-B000-B40A526058AD}.WolfDebug|x64.ActiveCfg = WolfDebug|x64
+		{AAB9FA21-8671-4792-B000-B40A526058AD}.WolfDebug|x64.Build.0 = WolfDebug|x64
+		{AAB9FA21-8671-4792-B000-B40A526058AD}.WolfRelease|Win32.ActiveCfg = WolfRelease|Win32
+		{AAB9FA21-8671-4792-B000-B40A526058AD}.WolfRelease|Win32.Build.0 = WolfRelease|Win32
+		{AAB9FA21-8671-4792-B000-B40A526058AD}.WolfRelease|x64.ActiveCfg = WolfRelease|x64
+		{AAB9FA21-8671-4792-B000-B40A526058AD}.WolfRelease|x64.Build.0 = WolfRelease|x64
+		{A9249F05-0DF5-4D06-9873-FBBE61B6768B}.Debug|Win32.ActiveCfg = Debug|Win32
+		{A9249F05-0DF5-4D06-9873-FBBE61B6768B}.Debug|Win32.Build.0 = Debug|Win32
+		{A9249F05-0DF5-4D06-9873-FBBE61B6768B}.Debug|x64.ActiveCfg = Debug|x64
+		{A9249F05-0DF5-4D06-9873-FBBE61B6768B}.Debug|x64.Build.0 = Debug|x64
+		{A9249F05-0DF5-4D06-9873-FBBE61B6768B}.Release|Win32.ActiveCfg = Release|Win32
+		{A9249F05-0DF5-4D06-9873-FBBE61B6768B}.Release|Win32.Build.0 = Release|Win32
+		{A9249F05-0DF5-4D06-9873-FBBE61B6768B}.Release|x64.ActiveCfg = Release|x64
+		{A9249F05-0DF5-4D06-9873-FBBE61B6768B}.Release|x64.Build.0 = Release|x64
+		{A9249F05-0DF5-4D06-9873-FBBE61B6768B}.Static|Win32.ActiveCfg = Static|Win32
+		{A9249F05-0DF5-4D06-9873-FBBE61B6768B}.Static|Win32.Build.0 = Static|Win32
+		{A9249F05-0DF5-4D06-9873-FBBE61B6768B}.Static|x64.ActiveCfg = Static|x64
+		{A9249F05-0DF5-4D06-9873-FBBE61B6768B}.Static|x64.Build.0 = Static|x64
+		{A9249F05-0DF5-4D06-9873-FBBE61B6768B}.WolfDebug|Win32.ActiveCfg = WolfDebug|Win32
+		{A9249F05-0DF5-4D06-9873-FBBE61B6768B}.WolfDebug|Win32.Build.0 = WolfDebug|Win32
+		{A9249F05-0DF5-4D06-9873-FBBE61B6768B}.WolfDebug|x64.ActiveCfg = WolfDebug|x64
+		{A9249F05-0DF5-4D06-9873-FBBE61B6768B}.WolfDebug|x64.Build.0 = WolfDebug|x64
+		{A9249F05-0DF5-4D06-9873-FBBE61B6768B}.WolfDebug|x64.Deploy.0 = WolfDebug|x64
+		{A9249F05-0DF5-4D06-9873-FBBE61B6768B}.WolfRelease|Win32.ActiveCfg = WolfRelease|Win32
+		{A9249F05-0DF5-4D06-9873-FBBE61B6768B}.WolfRelease|Win32.Build.0 = WolfRelease|Win32
+		{A9249F05-0DF5-4D06-9873-FBBE61B6768B}.WolfRelease|x64.ActiveCfg = WolfRelease|x64
+		{A9249F05-0DF5-4D06-9873-FBBE61B6768B}.WolfRelease|x64.Build.0 = WolfRelease|x64
+		{A9249F05-0DF5-4D06-9873-FBBE61B6768B}.WolfRelease|x64.Deploy.0 = WolfRelease|x64
+		{B7456491-A2ED-4B1C-B59E-41C7B32B7E3B}.Debug|Win32.ActiveCfg = Debug|Win32
+		{B7456491-A2ED-4B1C-B59E-41C7B32B7E3B}.Debug|Win32.Build.0 = Debug|Win32
+		{B7456491-A2ED-4B1C-B59E-41C7B32B7E3B}.Debug|x64.ActiveCfg = Debug|x64
+		{B7456491-A2ED-4B1C-B59E-41C7B32B7E3B}.Debug|x64.Build.0 = Debug|x64
+		{B7456491-A2ED-4B1C-B59E-41C7B32B7E3B}.Release|Win32.ActiveCfg = Release|Win32
+		{B7456491-A2ED-4B1C-B59E-41C7B32B7E3B}.Release|Win32.Build.0 = Release|Win32
+		{B7456491-A2ED-4B1C-B59E-41C7B32B7E3B}.Release|x64.ActiveCfg = Release|x64
+		{B7456491-A2ED-4B1C-B59E-41C7B32B7E3B}.Release|x64.Build.0 = Release|x64
+		{B7456491-A2ED-4B1C-B59E-41C7B32B7E3B}.Static|Win32.ActiveCfg = Static|Win32
+		{B7456491-A2ED-4B1C-B59E-41C7B32B7E3B}.Static|Win32.Build.0 = Static|Win32
+		{B7456491-A2ED-4B1C-B59E-41C7B32B7E3B}.Static|x64.ActiveCfg = Static|x64
+		{B7456491-A2ED-4B1C-B59E-41C7B32B7E3B}.Static|x64.Build.0 = Static|x64
+		{B7456491-A2ED-4B1C-B59E-41C7B32B7E3B}.WolfDebug|Win32.ActiveCfg = WolfDebug|Win32
+		{B7456491-A2ED-4B1C-B59E-41C7B32B7E3B}.WolfDebug|Win32.Build.0 = WolfDebug|Win32
+		{B7456491-A2ED-4B1C-B59E-41C7B32B7E3B}.WolfDebug|x64.ActiveCfg = WolfDebug|x64
+		{B7456491-A2ED-4B1C-B59E-41C7B32B7E3B}.WolfDebug|x64.Build.0 = WolfDebug|x64
+		{B7456491-A2ED-4B1C-B59E-41C7B32B7E3B}.WolfRelease|Win32.ActiveCfg = WolfRelease|Win32
+		{B7456491-A2ED-4B1C-B59E-41C7B32B7E3B}.WolfRelease|Win32.Build.0 = WolfRelease|Win32
+		{B7456491-A2ED-4B1C-B59E-41C7B32B7E3B}.WolfRelease|x64.ActiveCfg = WolfRelease|x64
+		{B7456491-A2ED-4B1C-B59E-41C7B32B7E3B}.WolfRelease|x64.Build.0 = WolfRelease|x64
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {C15EF5ED-F2C1-4785-A9C2-A2D213A367F7}
+	EndGlobalSection
+EndGlobal

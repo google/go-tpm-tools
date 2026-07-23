@@ -6,7 +6,20 @@ package internal
 // // Directories containing .h files in the simulator source
 // #cgo CFLAGS: -I ../ms-tpm-20-ref/Samples/Google
 // #cgo CFLAGS: -I ../ms-tpm-20-ref/TPMCmd/tpm/include
-// #cgo CFLAGS: -I ../ms-tpm-20-ref/TPMCmd/tpm/include/prototypes
+// #cgo CFLAGS: -I ../ms-tpm-20-ref/TPMCmd/tpm/include/private
+// #cgo CFLAGS: -I ../ms-tpm-20-ref/TPMCmd/tpm/include/private/prototypes
+// #cgo CFLAGS: -I ../ms-tpm-20-ref/TPMCmd/tpm/include/tpm_public
+// #cgo CFLAGS: -I ../ms-tpm-20-ref/TPMCmd/tpm/include/tpm_public/prototypes
+// #cgo CFLAGS: -I ../ms-tpm-20-ref/TPMCmd/tpm/include/platform_interface
+// #cgo CFLAGS: -I ../ms-tpm-20-ref/TPMCmd/tpm/include/platform_interface/prototypes
+// #cgo CFLAGS: -I ../ms-tpm-20-ref/TPMCmd/TpmConfiguration
+// #cgo CFLAGS: -I ../ms-tpm-20-ref/TPMCmd
+// #cgo CFLAGS: -I ../ms-tpm-20-ref/TPMCmd/TpmConfiguration/TpmConfiguration
+// #cgo CFLAGS: -I ../ms-tpm-20-ref/TPMCmd/tpm/cryptolibs/Ossl/include
+// #cgo CFLAGS: -I ../ms-tpm-20-ref/TPMCmd/tpm/cryptolibs/TpmBigNum/include
+// #cgo CFLAGS: -I ../ms-tpm-20-ref/TPMCmd/tpm/cryptolibs/common/include
+// #cgo CFLAGS: -I ../ms-tpm-20-ref/TPMCmd/tpm
+// #cgo CFLAGS: -DSYM_LIB=Ossl -DHASH_LIB=Ossl -DMATH_LIB=TpmBigNum -DBN_MATH_LIB=Ossl
 // // Allows simulator.c to import files without repeating the source repo path.
 // #cgo CFLAGS: -I ../ms-tpm-20-ref/Samples/Google
 // #cgo CFLAGS: -I ../ms-tpm-20-ref/TPMCmd/tpm/src
@@ -30,7 +43,7 @@ package internal
 // #cgo CFLAGS: -DECC_NIST_P224=YES
 // #cgo CFLAGS: -DECC_NIST_P521=YES
 // #cgo CFLAGS: -DALG_SHA512=ALG_YES
-// #cgo CFLAGS: -DMAX_CONTEXT_SIZE=1360
+// #cgo CFLAGS: -DMAX_CONTEXT_SIZE=2264
 // // Flags to find OpenSSL installation on macOS (default Homebrew location)
 // #cgo darwin,amd64 CFLAGS: -I/usr/local/opt/openssl/include
 // #cgo darwin,amd64 LDFLAGS: -L/usr/local/opt/openssl/lib
@@ -88,7 +101,7 @@ func RunCommand(cmd []byte) ([]byte, error) {
 		&responseSize, &responsePtr)
 	// As long as NO_FAIL_TRACE is not defined, debug error information is
 	// written to certain global variables on internal failure.
-	if C.g_inFailureMode == C.TRUE {
+	if C._plat__InFailureMode() != 0 {
 		return nil, errors.New("unknown internal failure")
 	}
 	if response != unsafe.Pointer(responsePtr) {

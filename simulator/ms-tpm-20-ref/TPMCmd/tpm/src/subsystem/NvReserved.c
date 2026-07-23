@@ -1,37 +1,3 @@
-/* Microsoft Reference Implementation for TPM 2.0
- *
- *  The copyright in this software is being made available under the BSD License,
- *  included below. This software may be subject to other third party and
- *  contributor rights, including patent rights, and no such rights are granted
- *  under this license.
- *
- *  Copyright (c) Microsoft Corporation
- *
- *  All rights reserved.
- *
- *  BSD License
- *
- *  Redistribution and use in source and binary forms, with or without modification,
- *  are permitted provided that the following conditions are met:
- *
- *  Redistributions of source code must retain the above copyright notice, this list
- *  of conditions and the following disclaimer.
- *
- *  Redistributions in binary form must reproduce the above copyright notice, this
- *  list of conditions and the following disclaimer in the documentation and/or
- *  other materials provided with the distribution.
- *
- *  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS ""AS IS""
- *  AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- *  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
- *  DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
- *  ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
- *  (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- *  LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
- *  ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- *  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
- *  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- */
 //** Introduction
 
 // The NV memory is divided into two areas: dynamic space for user defined NV
@@ -73,24 +39,20 @@
 // changes from CLEAR to SET) or when a counter "rolls over."
 //
 // Static space contains items that are individually modifiable. The values are in
-// the 'gp' PERSISTEND_DATA structure in RAM and mapped to locations in NV.
+// the 'gp' PERSISTENT_DATA structure in RAM and mapped to locations in NV.
 //
 
 //** Includes, Defines
 #define NV_C
-#include    "Tpm.h"
+#include "Tpm.h"
 
 //************************************************
 //** Functions
 //************************************************
 
-
 //*** NvInitStatic()
 // This function initializes the static variables used in the NV subsystem.
-static void
-NvInitStatic(
-    void
-    )
+static void NvInitStatic(void)
 {
     // In some implementations, the end of NV is variable and is set at boot time.
     // This value will be the same for each boot, but is not necessarily known
@@ -106,29 +68,32 @@ NvInitStatic(
 //
 // This function is called at the beginning of ExecuteCommand before any potential
 // check of g_NvStatus.
-void
-NvCheckState(
-    void
-    )
+void NvCheckState(void)
 {
-    int     func_return;
-//
-    func_return = _plat__IsNvAvailable();
-    if(func_return == 0)
+    int func_return;
+    //
+    func_return = _plat__GetNvReadyState();
+    if(func_return == NV_READY)
+    {
         g_NvStatus = TPM_RC_SUCCESS;
-    else if(func_return == 1)
+    }
+    else if(func_return == NV_WRITEFAILURE)
+    {
         g_NvStatus = TPM_RC_NV_UNAVAILABLE;
+    }
     else
+    {
+        // if(func_return == NV_RATE_LIMIT) or anything else
+        // assume retry later might work
         g_NvStatus = TPM_RC_NV_RATE;
+    }
+
     return;
 }
 
 //*** NvCommit
 // This is a wrapper for the platform function to commit pending NV writes.
-BOOL
-NvCommit(
-    void
-    )
+BOOL NvCommit(void)
 {
     return (_plat__NvCommit() == 0);
 }
@@ -137,19 +102,16 @@ NvCommit(
 //  This function is called at _TPM_Init to initialize the NV environment.
 //  Return Type: BOOL
 //      TRUE(1)         all NV was initialized
-//      FALSE(0)        the NV containing saved state had an error and 
+//      FALSE(0)        the NV containing saved state had an error and
 //                      TPM2_Startup(CLEAR) is required
-BOOL
-NvPowerOn(
-    void
-    )
+BOOL NvPowerOn(void)
 {
-    int          nvError = 0;
+    int nvError = 0;
     // If power was lost, need to re-establish the RAM data that is loaded from
     // NV and initialize the static variables
     if(g_powerWasLost)
     {
-        if((nvError = _plat__NVEnable(0)) < 0)
+        if((nvError = _plat__NVEnable(NULL, 0)) < 0)
             FAIL(FATAL_ERROR_NV_UNRECOVERABLE);
         NvInitStatic();
     }
@@ -163,10 +125,7 @@ NvPowerOn(
 // simulation.
 //
 // The layout of NV memory space is an implementation choice.
-void
-NvManufacture(
-    void
-    )
+void NvManufacture(void)
 {
 #if SIMULATION
     // Simulate the NV memory being in the erased state.
@@ -189,15 +148,15 @@ NvManufacture(
 
 //*** NvRead()
 // This function is used to move reserved data from NV memory to RAM.
-void
-NvRead(
-    void            *outBuffer,     // OUT: buffer to receive data
-    UINT32           nvOffset,      // IN: offset in NV of value
-    UINT32           size           // IN: size of the value to read
-    )
+void NvRead(void*  outBuffer,  // OUT: buffer to receive data
+            UINT32 nvOffset,   // IN: offset in NV of value
+            UINT32 size        // IN: size of the value to read
+)
 {
-    // Input type should be valid
-    pAssert(nvOffset + size < NV_MEMORY_SIZE);
+    // Input addresses must be inside the memory buffer.
+    // void is OK because we simply skip the read, which is the only reasonable
+    // response.
+    pAssert_VOID_OK(nvOffset + size < NV_MEMORY_SIZE);
     _plat__NvMemoryRead(nvOffset, size, outBuffer);
     return;
 }
@@ -205,58 +164,57 @@ NvRead(
 //*** NvWrite()
 // This function is used to post reserved data for writing to NV memory. Before
 // the TPM completes the operation, the value will be written.
-BOOL
-NvWrite(
-    UINT32           nvOffset,      // IN: location in NV to receive data
-    UINT32           size,          // IN: size of the data to move
-    void            *inBuffer       // IN: location containing data to write
-    )
+BOOL NvWrite(UINT32 nvOffset,  // IN: location in NV to receive data
+             UINT32 size,      // IN: size of the data to move
+             void*  inBuffer   // IN: location containing data to write
+)
 {
     // Input type should be valid
-    if(nvOffset + size <= NV_MEMORY_SIZE)
-    {
+    pAssert_BOOL(nvOffset + size <= NV_MEMORY_SIZE);
     // Set the flag that a NV write happened
     SET_NV_UPDATE(UT_NV);
-        return _plat__NvMemoryWrite(nvOffset, size, inBuffer);
-    }
-    return FALSE;
+    return _plat__NvMemoryWrite(nvOffset, size, inBuffer);
 }
 
 //*** NvUpdatePersistent()
 // This function is used to update a value in the PERSISTENT_DATA structure and
 // commits the value to NV.
-void
-NvUpdatePersistent(
-    UINT32           offset,        // IN: location in PERMANENT_DATA to be updated
-    UINT32           size,          // IN: size of the value
-    void            *buffer         // IN: the new data
-    )
+void NvUpdatePersistent(
+    UINT32 offset,  // IN: location in PERMANENT_DATA to be updated
+    UINT32 size,    // IN: size of the value
+    void*  buffer   // IN: the new data
+)
 {
-    pAssert(offset + size <= sizeof(gp));
+    // Input addresses must be inside the memory buffer. Any callers using the
+    // expected CLEAR_PERSISTENT macro should encounter a build error before
+    // tripping this assert so void is reasonable as a defense in depth against
+    // a manual caller of this function. Skipping the write is the only
+    // reasonable response.
+    pAssert_VOID_OK(offset + size <= sizeof(gp));
     MemoryCopy(&gp + offset, buffer, size);
     NvWrite(offset, size, buffer);
 }
 
 //*** NvClearPersistent()
 // This function is used to clear a persistent data entry and commit it to NV
-void
-NvClearPersistent(
-    UINT32           offset,        // IN: the offset in the PERMANENT_DATA
-                                    //     structure to be cleared (zeroed)
-    UINT32           size           // IN: number of bytes to clear
-    )
+void NvClearPersistent(UINT32 offset,  // IN: the offset in the PERMANENT_DATA
+                                       //     structure to be cleared (zeroed)
+                       UINT32 size     // IN: number of bytes to clear
+)
 {
-    pAssert(offset + size <= sizeof(gp));
+    // Input addresses must be inside the memory buffer. Any callers using the
+    // expected CLEAR_PERSISTENT macro should encounter a build error before
+    // tripping this assert so void is reasonable as a defense in depth against
+    // a manual caller of this function. Skipping the write is the only
+    // reasonable response.
+    pAssert_VOID_OK(offset + size <= sizeof(gp));
     MemorySet((&gp) + offset, 0, size);
     NvWrite(offset, size, (&gp) + offset);
 }
 
 //*** NvReadPersistent()
 // This function reads persistent data to the RAM copy of the 'gp' structure.
-void
-NvReadPersistent(
-    void
-    )
+void NvReadPersistent(void)
 {
     NvRead(&gp, NV_PERSISTENT_DATA, sizeof(gp));
     return;

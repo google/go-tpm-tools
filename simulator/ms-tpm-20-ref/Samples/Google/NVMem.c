@@ -48,34 +48,43 @@
 
 unsigned char s_NV[NV_MEMORY_SIZE];
 
-void _plat__NvMemoryRead(unsigned int start, unsigned int size, void *data) {
+int _plat__NvMemoryRead(unsigned int start, unsigned int size, void *data) {
   assert(start + size <= NV_MEMORY_SIZE);
   memcpy(data, &s_NV[start], size);
-  return;
+  return 1;
 }
 
-int _plat__NvIsDifferent(unsigned int start, unsigned int size, void *data) {
+int _plat__NvGetChangedStatus(unsigned int start, unsigned int size, void *data) {
   return (memcmp(&s_NV[start], data, size) != 0);
 }
 
-bool _plat__NvMemoryWrite(unsigned int start, unsigned int size, void *data) {
+int _plat__NvMemoryWrite(unsigned int start, unsigned int size, void *data) {
   if (start + size <= NV_MEMORY_SIZE) {
     memcpy(&s_NV[start], data, size);
-    return true;
+    return 1;
   }
-  return false;
+  return 0;
 }
 
-void _plat__NvMemoryClear(unsigned int start, unsigned int size) {
+int _plat__NvMemoryClear(unsigned int start, unsigned int size) {
   assert(start + size <= NV_MEMORY_SIZE);
   // In this implementation, assume that the erase value for NV is all 1s
   memset(&s_NV[start], 0xff, size);
+  return 1;
 }
 
-void _plat__NvMemoryMove(unsigned int sourceOffset, unsigned int destOffset,
+int _plat__NvMemoryMove(unsigned int sourceOffset, unsigned int destOffset,
                          unsigned int size) {
   assert(sourceOffset + size <= NV_MEMORY_SIZE);
   assert(destOffset + size <= NV_MEMORY_SIZE);
   memmove(&s_NV[destOffset], &s_NV[sourceOffset], size);
-  return;
+  return 1;
 }
+
+int _plat__NVEnable(void *platParameter, size_t size) {
+  (void)platParameter;
+  (void)size;
+  return 0;
+}
+
+int _plat__NvCommit(void) { return 0; }

@@ -1,40 +1,22 @@
-dnl The copyright in this software is being made available under the BSD License,
-dnl included below. This software may be subject to other third party and
-dnl contributor rights, including patent rights, and no such rights are granted
-dnl under this license.
-dnl
-dnl Copyright (c) Intel Corporation
-dnl
-dnl All rights reserved.
-dnl
-dnl BSD License
-dnl
-dnl Redistribution and use in source and binary forms, with or without modification,
-dnl are permitted provided that the following conditions are met:
-dnl
-dnl Redistributions of source code must retain the above copyright notice, this list
-dnl of conditions and the following disclaimer.
-dnl
-dnl Redistributions in binary form must reproduce the above copyright notice, this
-dnl list of conditions and the following disclaimer in the documentation and/or
-dnl other materials provided with the distribution.
-dnl
-dnl THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS ""AS IS""
-dnl AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-dnl IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-dnl DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
-dnl ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
-dnl (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
-dnl LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
-dnl ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-dnl (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-dnl SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+dnl WARNING: don't forget you need to install sudo apt-get install autoconf-archive
+dnl it doesn't come with build-essential or automake
+dnl If you don't you will see this:
+dnl Setting up build
+dnl configure.ac:44: error: possibly undefined macro: AC_SUBST
+dnl If this token and others are legitimate, please use m4_pattern_allow.
+dnl See the Autoconf documentation.
+dnl configure.ac:55: error: possibly undefined macro: AS_IF
+dnl configure.ac:59: error: possibly undefined macro: AC_MSG_ERROR
+dnl configure:4617: error: possibly undefined macro: AC_MSG_WARN
+
+# Autotools is not officially supported. This file is included in order to ease
+# the transition to CMake for users, and will go away in the future.
 
 AC_INIT([ms-tpm-20-ref],
         [0.1],
-        [https://github.com/microsoft/ms-tpm-20-ref/issues],
+        [https://github.com/trustedcomputinggroup/tpm/issues],
         [],
-        [https://github.com/microsoft/ms-tpm-20-ref])
+        [https://github.com/trustedcomputinggroup/tpm])
 AC_CONFIG_MACRO_DIR([.])
 AC_PROG_CC
 AC_PROG_LN_S
@@ -56,11 +38,19 @@ AS_IF([test "x$enable_usedeviceid" = "xyes"], [
     PKG_CHECK_MODULES([LIBUDEV], [libudev])
     [ADDITIONAL_LIBS="-ludev"]
 ])
-AX_PTHREAD([], [AC_MSG_ERROR([requires pthread])])
+
+AC_ARG_ENABLE([pthread],
+    [AS_HELP_STRING([--disable-pthread], [Disable pthread support (tpm simulator will not be built, but only the libraries)])],
+    [use_pthread=$enableval], [use_pthread=yes])
+AS_IF([test "x$use_pthread" = "xyes"],
+    [AX_PTHREAD([], [AC_MSG_ERROR([requires pthread])])],
+    [AC_MSG_NOTICE([pthread support disabled])])
+AM_CONDITIONAL([HAVE_PTHREAD], [test "x$use_pthread" = "xyes"])
 
 AC_DEFINE([HASH_LIB], [Ossl], [Crypto lib for hash algorithms])
 AC_DEFINE([SYM_LIB], [Ossl], [Crypto lib for symmetric encryption algorithms])
-AC_DEFINE([MATH_LIB], [Ossl], [Crypto lib for bignum operations])
+AC_DEFINE([MATH_LIB], [TpmBigNum], [Crypto lib for asymmetric operations])
+AC_DEFINE([BN_MATH_LIB], [Ossl], [Math lib for tpmbignum operations])
 
 ADD_COMPILER_FLAG([-std=gnu11])
 ADD_COMPILER_FLAG([-Werror])
@@ -68,12 +58,12 @@ ADD_COMPILER_FLAG([-Wall])
 ADD_COMPILER_FLAG([-Wformat-security])
 ADD_COMPILER_FLAG([-fstack-protector-all])
 ADD_COMPILER_FLAG([-fPIC])
-ADD_COMPILER_FLAG([-Wno-error=empty-body])
-ADD_COMPILER_FLAG([-Wno-error=expansion-to-defined])
-ADD_COMPILER_FLAG([-Wno-error=parentheses])
-ADD_COMPILER_FLAG([-Wno-error=pointer-to-int-cast])
-ADD_COMPILER_FLAG([-Wno-error=missing-braces])
-ADD_COMPILER_FLAG([-Wno-error=unused-result])
+
+# This is needed when compiling against OpenSSL 3.0, as the Ossl bindings use:
+#  - EC_POINT_set_affine_coordinates_GFp / EC_POINTs_mul
+#  - AES_set_encrypt_key / AES_encrypt
+#  - Camellia_set_key / Camellia_encrypt
+ADD_COMPILER_FLAG([-Wno-error=deprecated-declarations])
 
 AS_IF([test "x$enable_usedeviceid" = "xyes"], [
     ADD_COMPILER_FLAG([-DNDEBUG])

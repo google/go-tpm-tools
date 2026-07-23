@@ -46,7 +46,7 @@
 // Return values:
 //  true(1)         if cancel flag is set
 //  false(0)        if cancel flag is not set
-static inline int _plat__IsCanceled() { return false; }
+int _plat__IsCanceled(void);
 
 //***_plat__TimerReset()
 // This function sets current system clock time as t0 for counting TPM time.
@@ -75,16 +75,13 @@ uint64_t _plat__TimerRead();
 //
 // If the resetFlag parameter is SET, then the flag will be CLEAR before the
 // function returns.
-bool _plat__TimerWasReset();
+int _plat__TimerWasReset(void);
 
 //*** _plat__TimerWasStopped()
 // As we have CLOCK_STOPS=NO, we will only stop our timer on resets.
-static inline bool _plat__TimerWasStopped() { return _plat__TimerWasReset(); }
+int _plat__TimerWasStopped(void);
 
-//***_plat__ClockAdjustRate()
-// Adjust the clock rate
-// IN: the adjust number. It could be positive or negative
-void _plat__ClockAdjustRate(int adjust);
+// Note: _plat__ClockRateAdjust is declared in tpm_to_platform_interface.h
 
 //*** _plat__GetEntropy()
 // This function is used to get available hardware entropy. In a hardware
@@ -99,7 +96,7 @@ int32_t _plat__GetEntropy(uint8_t *entropy,  // output buffer
 
 //***_plat__LocalityGet()
 // We do not support non-zero localities, so just always return 0.
-static inline uint8_t _plat__LocalityGet() { return 0; }
+unsigned char _plat__LocalityGet(void);
 
 //***_plat__NVEnable()
 // As we just hold the NV data in memory, always return success.
@@ -107,10 +104,7 @@ static inline uint8_t _plat__LocalityGet() { return 0; }
 //    0        if success
 //  > 0        if receive recoverable error
 //  < 0        if unrecoverable error
-static inline int _plat__NVEnable(void *platParameter) {
-  (void)(platParameter);
-  return 0;
-};
+int _plat__NVEnable(void *platParameter, size_t size);
 
 //***_plat__IsNvAvailable()
 // Our NV Data is always available and has no write limits.
@@ -121,49 +115,37 @@ static inline int _plat__NVEnable(void *platParameter) {
 static inline int _plat__IsNvAvailable() { return 0; }
 
 //***_plat__NvMemoryRead()
-// Function: Read a chunk of NV memory
-void _plat__NvMemoryRead(unsigned int startOffset,  // IN: read start
-                         unsigned int size,         // IN: size of bytes to read
-                         void *data                 // OUT: data buffer
+int _plat__NvMemoryRead(unsigned int startOffset,  // IN: read start
+                        unsigned int size,         // IN: size of bytes to read
+                        void *data                 // OUT: data buffer
 );
 
-//*** _plat__NvIsDifferent()
-// This function checks to see if the NV is different from the test value. This
-// is so that NV will not be written if it has not changed.
-//  Return Type: int
-//      TRUE(1)         the NV location is different from the test value
-//      FALSE(0)        the NV location is the same as the test value
-int _plat__NvIsDifferent(unsigned int startOffset,  // IN: read start
-                         unsigned int size,         // IN: size of bytes to read
-                         void *data                 // IN: data buffer
+int _plat__NvGetChangedStatus(unsigned int startOffset,  // IN: read start
+                              unsigned int size,         // IN: size of bytes to read
+                              void *data                 // IN: data buffer
 );
-
-//***_plat__NvMemoryWrite()
-// This function is used to update NV memory. The "write" is to a memory copy of
-// NV. At the end of the current command, any changes are written to
-// the actual NV memory.
 // NOTE: A useful optimization would be for this code to compare the current
 // contents of NV with the local copy and note the blocks that have changed.
 // Then only write those blocks when _plat__NvCommit() is called.
-bool _plat__NvMemoryWrite(unsigned int startOffset,  // IN: write start
-                          unsigned int size,  // IN: size of bytes to write
-                          void *data          // OUT: data buffer
+int _plat__NvMemoryWrite(unsigned int startOffset,  // IN: write start
+                         unsigned int size,  // IN: size of bytes to write
+                         void *data          // OUT: data buffer
 );
 
 //***_plat__NvMemoryClear()
 // Function is used to set a range of NV memory bytes to an implementation-
 // dependent value. The value represents the erase state of the memory.
-void _plat__NvMemoryClear(unsigned int start,  // IN: clear start
-                          unsigned int size    // IN: number of bytes to clear
+int _plat__NvMemoryClear(unsigned int start,  // IN: clear start
+                         unsigned int size    // IN: number of bytes to clear
 );
 
 //***_plat__NvMemoryMove()
 // Function: Move a chunk of NV memory from source to destination
 //      This function should ensure that if there overlap, the original data is
 //      copied before it is written
-void _plat__NvMemoryMove(unsigned int sourceOffset,  // IN: source offset
-                         unsigned int destOffset,    // IN: destination offset
-                         unsigned int size  // IN: size of data being moved
+int _plat__NvMemoryMove(unsigned int sourceOffset,  // IN: source offset
+                        unsigned int destOffset,    // IN: destination offset
+                        unsigned int size  // IN: size of data being moved
 );
 
 //***_plat__NvCommit()
@@ -171,7 +153,7 @@ void _plat__NvMemoryMove(unsigned int sourceOffset,  // IN: source offset
 // Return values:
 //    0        NV write success
 // != 0        NV write fail
-static inline int _plat__NvCommit() { return 0; }
+int _plat__NvCommit(void);
 
 //*** _plat__WasPowerLost()
 // Test whether power was lost before a _TPM_Init. As we use in-memory NV Data,
@@ -179,7 +161,7 @@ static inline int _plat__NvCommit() { return 0; }
 // Return values:
 //  true(1)         power was lost
 //  false(0)        power was not lost
-static inline int _plat__WasPowerLost() { return true; }
+int _plat__WasPowerLost(void);
 
 //** From PPPlat.c
 
@@ -188,10 +170,10 @@ static inline int _plat__WasPowerLost() { return true; }
 // Return values:
 //  true(1)         if physical presence is signaled
 //  false(0)        if physical presence is not signaled
-static inline int _plat__PhysicalPresenceAsserted() { return true; }
+int _plat__PhysicalPresenceAsserted(void);
 
 //***_plat__Fail()
 // This is the platform depended failure exit for the TPM.
-_Noreturn void _plat__Fail();
+_Noreturn void _plat__Fail(const char *functionName, int lineNumber, uint64_t code, int type);
 
 #endif  // _PLATFORM_FP_H_

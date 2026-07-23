@@ -1,37 +1,3 @@
-/* Microsoft Reference Implementation for TPM 2.0
- *
- *  The copyright in this software is being made available under the BSD License,
- *  included below. This software may be subject to other third party and
- *  contributor rights, including patent rights, and no such rights are granted
- *  under this license.
- *
- *  Copyright (c) Microsoft Corporation
- *
- *  All rights reserved.
- *
- *  BSD License
- *
- *  Redistribution and use in source and binary forms, with or without modification,
- *  are permitted provided that the following conditions are met:
- *
- *  Redistributions of source code must retain the above copyright notice, this list
- *  of conditions and the following disclaimer.
- *
- *  Redistributions in binary form must reproduce the above copyright notice, this
- *  list of conditions and the following disclaimer in the documentation and/or
- *  other materials provided with the distribution.
- *
- *  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS ""AS IS""
- *  AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- *  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
- *  DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
- *  ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
- *  (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- *  LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
- *  ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- *  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
- *  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- */
 //** Introduction
 // This file contains the functions and data definitions relating to the
 // dictionary attack logic.
@@ -50,16 +16,13 @@
 // environment.
 //
 // The DA parameters will be restored to these initial values by TPM2_Clear().
-void
-DAPreInstall_Init(
-    void
-    )
+void DAPreInstall_Init(void)
 {
-    gp.failedTries = 0;
-    gp.maxTries = 3;
-    gp.recoveryTime = 1000;         // in seconds (~16.67 minutes)
-    gp.lockoutRecovery = 1000;      // in seconds
-    gp.lockOutAuthEnabled = TRUE;   // Use of lockoutAuth is enabled
+    gp.failedTries        = 0;
+    gp.maxTries           = 3;
+    gp.recoveryTime       = 1000;  // in seconds (~16.67 minutes)
+    gp.lockoutRecovery    = 1000;  // in seconds
+    gp.lockOutAuthEnabled = TRUE;  // Use of lockoutAuth is enabled
 
     // Record persistent DA parameter changes to NV
     NV_SYNC_PERSISTENT(failedTries);
@@ -71,7 +34,6 @@ DAPreInstall_Init(
     return;
 }
 
-
 //*** DAStartup()
 // This function is called  by TPM2_Startup() to initialize the DA parameters.
 // In the case of Startup(CLEAR), use of lockoutAuth will be enabled if the
@@ -79,16 +41,14 @@ DAPreInstall_Init(
 // the TPM has been continuously powered for the lockoutRecovery time.
 //
 // This function requires that NV be available and not rate limiting.
-BOOL
-DAStartup(
-    STARTUP_TYPE     type           // IN: startup type
-    )
+BOOL DAStartup(STARTUP_TYPE type  // IN: startup type
+)
 {
     NOT_REFERENCED(type);
 #if !ACCUMULATE_SELF_HEAL_TIMER
     _plat__TimerWasReset();
     s_selfHealTimer = 0;
-    s_lockoutTimer = 0;
+    s_lockoutTimer  = 0;
 #else
     if(_plat__TimerWasReset())
     {
@@ -98,12 +58,12 @@ DAStartup(
             // any useful value so reset the timer to 0. This is what the tick
             // was reset to
             s_selfHealTimer = 0;
-            s_lockoutTimer = 0;
+            s_lockoutTimer  = 0;
         }
         else
         {
             // If we know how much time was accumulated at the last orderly shutdown
-            // subtract that from the saved timer values so that they effectively 
+            // subtract that from the saved timer values so that they effectively
             // have the accumulated values
             s_selfHealTimer -= go.time;
             s_lockoutTimer -= go.time;
@@ -121,8 +81,7 @@ DAStartup(
 
     // If DA has not been disabled and the previous shutdown is not orderly
     // failedTries is not already at its maximum then increment 'failedTries'
-    if(gp.recoveryTime != 0
-       && gp.failedTries < gp.maxTries
+    if(gp.recoveryTime != 0 && gp.failedTries < gp.maxTries
        && !IS_ORDERLY(g_prevOrderlyState))
     {
 #if USE_DA_USED
@@ -142,14 +101,12 @@ DAStartup(
 }
 
 //*** DARegisterFailure()
-// This function is called when a authorization failure occurs on an entity
+// This function is called when an authorization failure occurs on an entity
 // that is subject to dictionary-attack protection. When a DA failure is
 // triggered, register the failure by resetting the relevant self-healing
 // timer to the current time.
-void
-DARegisterFailure(
-    TPM_HANDLE       handle         // IN: handle for failure
-    )
+void DARegisterFailure(TPM_HANDLE handle  // IN: handle for failure
+)
 {
     // Reset the timer associated with lockout if the handle is the lockoutAuth.
     if(handle == TPM_RH_LOCKOUT)
@@ -164,10 +121,7 @@ DARegisterFailure(
 // decrement of failedTries or to re-enable use of lockoutAuth.
 //
 // This function should be called when the time interval is updated.
-void
-DASelfHeal(
-    void
-    )
+void DASelfHeal(void)
 {
     // Regular authorization self healing logic
     // If no failed authorization tries, do nothing.  Otherwise, try to
@@ -184,8 +138,9 @@ DASelfHeal(
         }
         else
         {
-            UINT64          decreaseCount;
-#if 0 // Errata eliminates this code
+            UINT64 decreaseCount;
+#if 0
+            // Errata eliminates this code
             // In the unlikely event that failedTries should become larger than
             // maxTries
             if(gp.failedTries > gp.maxTries)
@@ -195,8 +150,8 @@ DASelfHeal(
 
             // Cast s_selfHealTimer to an int in case it became negative at
             // startup
-            decreaseCount = ((g_time - (INT64)s_selfHealTimer) / 1000) 
-                / gp.recoveryTime;
+            decreaseCount =
+                ((g_time - (INT64)s_selfHealTimer) / 1000) / gp.recoveryTime;
 
             if(gp.failedTries <= (UINT32)decreaseCount)
                 // should not set failedTries below zero

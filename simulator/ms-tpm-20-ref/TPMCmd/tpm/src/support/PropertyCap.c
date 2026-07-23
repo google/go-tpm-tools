@@ -1,37 +1,3 @@
-/* Microsoft Reference Implementation for TPM 2.0
- *
- *  The copyright in this software is being made available under the BSD License,
- *  included below. This software may be subject to other third party and
- *  contributor rights, including patent rights, and no such rights are granted
- *  under this license.
- *
- *  Copyright (c) Microsoft Corporation
- *
- *  All rights reserved.
- *
- *  BSD License
- *
- *  Redistribution and use in source and binary forms, with or without modification,
- *  are permitted provided that the following conditions are met:
- *
- *  Redistributions of source code must retain the above copyright notice, this list
- *  of conditions and the following disclaimer.
- *
- *  Redistributions in binary form must reproduce the above copyright notice, this
- *  list of conditions and the following disclaimer in the documentation and/or
- *  other materials provided with the distribution.
- *
- *  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS ""AS IS""
- *  AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- *  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
- *  DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
- *  ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
- *  (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- *  LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
- *  ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- *  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
- *  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- */
 //** Description
 // This file contains the functions that are used for accessing the
 // TPM_CAP_TPM_PROPERTY values.
@@ -41,6 +7,9 @@
 #include "Tpm.h"
 
 //** Functions
+
+const char TPM_PT_FAMILY_INDICATOR_VALUE[] = "2.0";
+TPM_STATIC_ASSERT(sizeof(TPM_PT_FAMILY_INDICATOR_VALUE) == sizeof(UINT32));
 
 //*** TPMPropertyIsDefined()
 // This function accepts a property selection and, if so, sets 'value'
@@ -52,77 +21,77 @@
 //  Return Type: BOOL
 //      TRUE(1)         referenced property exists and 'value' set
 //      FALSE(0)        referenced property does not exist
-static BOOL
-TPMPropertyIsDefined(
-    TPM_PT           property,      // IN: property
-    UINT32          *value          // OUT: property value
-    )
+static BOOL TPMPropertyIsDefined(TPM_PT  property,  // IN: property
+                                 UINT32* value      // OUT: property value
+)
 {
+    SPEC_CAPABILITY_VALUE spec_capability_value = {0};
+    _plat_GetSpecCapabilityValue(&spec_capability_value);
     switch(property)
     {
         case TPM_PT_FAMILY_INDICATOR:
             // from the title page of the specification
             // For this specification, the value is "2.0".
-            *value = TPM_SPEC_FAMILY;
+            *value = BYTE_ARRAY_TO_UINT32(TPM_PT_FAMILY_INDICATOR_VALUE);
             break;
         case TPM_PT_LEVEL:
             // from the title page of the specification
-            *value = TPM_SPEC_LEVEL;
+            *value = spec_capability_value.tpmSpecLevel;
             break;
         case TPM_PT_REVISION:
             // from the title page of the specification
-            *value = TPM_SPEC_VERSION;
+            *value = spec_capability_value.tpmSpecVersion;
             break;
         case TPM_PT_DAY_OF_YEAR:
             // computed from the date value on the title page of the specification
-            *value = TPM_SPEC_DAY_OF_YEAR;
+            *value = spec_capability_value.tpmSpecDayOfYear;
             break;
         case TPM_PT_YEAR:
             // from the title page of the specification
-            *value = TPM_SPEC_YEAR;
+            *value = spec_capability_value.tpmSpecYear;
             break;
+
         case TPM_PT_MANUFACTURER:
-            // vendor ID unique to each TPM manufacturer
-            *value = BYTE_ARRAY_TO_UINT32(MANUFACTURER);
+            // the vendor ID unique to each TPM manufacturer
+            *value = _plat__GetManufacturerCapabilityCode();
             break;
+
         case TPM_PT_VENDOR_STRING_1:
-            // first four characters of the vendor ID string
-            *value = BYTE_ARRAY_TO_UINT32(VENDOR_STRING_1);
+            // the first four characters of the vendor ID string
+            *value = _plat__GetVendorCapabilityCode(1);
             break;
+
         case TPM_PT_VENDOR_STRING_2:
-            // second four characters of the vendor ID string
-#ifdef VENDOR_STRING_2
-            *value = BYTE_ARRAY_TO_UINT32(VENDOR_STRING_2);
-#else
-            *value = 0;
-#endif
+            // the second four characters of the vendor ID string
+            *value = _plat__GetVendorCapabilityCode(2);
             break;
+
         case TPM_PT_VENDOR_STRING_3:
-            // third four characters of the vendor ID string
-#ifdef VENDOR_STRING_3
-            *value = BYTE_ARRAY_TO_UINT32(VENDOR_STRING_3);
-#else
-            *value = 0;
-#endif
+            // the third four characters of the vendor ID string
+            *value = _plat__GetVendorCapabilityCode(3);
             break;
+
         case TPM_PT_VENDOR_STRING_4:
-            // fourth four characters of the vendor ID string
-#ifdef VENDOR_STRING_4
-            *value = BYTE_ARRAY_TO_UINT32(VENDOR_STRING_4);
-#else
-            *value = 0;
-#endif
+            // the fourth four characters of the vendor ID string
+            *value = _plat__GetVendorCapabilityCode(4);
             break;
+
         case TPM_PT_VENDOR_TPM_TYPE:
             // vendor-defined value indicating the TPM model
-            *value = 1;
+            // We just make up a number here
+            *value = _plat__GetVendorTpmType();
             break;
+
         case TPM_PT_FIRMWARE_VERSION_1:
             // more significant 32-bits of a vendor-specific value
+            // note this value originates in the platform, and is set into gp
+            // during TPM_Manufacture.
             *value = gp.firmwareV1;
             break;
         case TPM_PT_FIRMWARE_VERSION_2:
             // less significant 32-bits of a vendor-specific value
+            // note this value originates in the platform, and is set into gp
+            // during TPM_Manufacture.
             *value = gp.firmwareV2;
             break;
         case TPM_PT_INPUT_BUFFER:
@@ -176,22 +145,20 @@ TPMPropertyIsDefined(
             break;
         case TPM_PT_MEMORY:
             // a TPMA_MEMORY indicating the memory management method for the TPM
-        {
-            union
             {
-                TPMA_MEMORY     att;
-                UINT32          u32;
-            } attributes = { TPMA_ZERO_INITIALIZER() };
-            SET_ATTRIBUTE(attributes.att, TPMA_MEMORY, sharedNV);
-            SET_ATTRIBUTE(attributes.att, TPMA_MEMORY, objectCopiedToRam);
+                union
+                {
+                    TPMA_MEMORY att;
+                    UINT32      u32;
+                } attributes = {TPMA_ZERO_INITIALIZER()};
+                SET_ATTRIBUTE(attributes.att, TPMA_MEMORY, sharedNV);
+                SET_ATTRIBUTE(attributes.att, TPMA_MEMORY, objectCopiedToRam);
 
-            // Note: For a LSb0 machine, the bits in a bit field are in the correct 
-            // order even if the machine is MSB0. For a MSb0 machine, a TPMA will
-            // be an integer manipulated by masking (USE_BIT_FIELD_STRUCTURES will
-            // be NO) so the bits are manipulate correctly.
-            *value = attributes.u32;
-            break;
-        }
+                // A TPMA will be an integer manipulated by masking so the bits
+                // are manipulated correctly regardless of machine endianness.
+                *value = attributes.u32;
+                break;
+            }
         case TPM_PT_CLOCK_UPDATE:
             // interval, in seconds, between updates to the copy of
             // TPMS_TIME_INFO .clock in NV
@@ -229,14 +196,14 @@ TPMPropertyIsDefined(
             break;
         case TPM_PT_MAX_OBJECT_CONTEXT:
 // Header has 'sequence', 'handle' and 'hierarchy'
-#define SIZE_OF_CONTEXT_HEADER                  \
+#define SIZE_OF_CONTEXT_HEADER \
     sizeof(UINT64) + sizeof(TPMI_DH_CONTEXT) + sizeof(TPMI_RH_HIERARCHY)
 #define SIZE_OF_CONTEXT_INTEGRITY (sizeof(UINT16) + CONTEXT_INTEGRITY_HASH_SIZE)
-#define SIZE_OF_FINGERPRINT     sizeof(UINT64)
-#define SIZE_OF_CONTEXT_BLOB_OVERHEAD                \
-        (sizeof(UINT16)  + SIZE_OF_CONTEXT_INTEGRITY + SIZE_OF_FINGERPRINT)
-#define SIZE_OF_CONTEXT_OVERHEAD                    \
-        (SIZE_OF_CONTEXT_HEADER + SIZE_OF_CONTEXT_BLOB_OVERHEAD)
+#define SIZE_OF_FINGERPRINT       sizeof(UINT64)
+#define SIZE_OF_CONTEXT_BLOB_OVERHEAD \
+    (sizeof(UINT16) + SIZE_OF_CONTEXT_INTEGRITY + SIZE_OF_FINGERPRINT)
+#define SIZE_OF_CONTEXT_OVERHEAD \
+    (SIZE_OF_CONTEXT_HEADER + SIZE_OF_CONTEXT_BLOB_OVERHEAD)
 #if 0
             // maximum size of a TPMS_CONTEXT that will be returned by
             // TPM2_ContextSave for object context
@@ -253,14 +220,14 @@ TPMPropertyIsDefined(
             *value += sizeof(UINT64);
             // Add OBJECT structure size
             *value += sizeof(OBJECT);
-#else            
+#else
             // the maximum size of a TPMS_CONTEXT that will be returned by
             // TPM2_ContextSave for object context
             *value = SIZE_OF_CONTEXT_OVERHEAD + sizeof(OBJECT);
 #endif
             break;
         case TPM_PT_MAX_SESSION_CONTEXT:
-#if 0        
+#if 0
 
             // the maximum size of a TPMS_CONTEXT that will be returned by
             // TPM2_ContextSave for object context
@@ -278,7 +245,7 @@ TPMPropertyIsDefined(
             // Add SESSION structure size
             *value += sizeof(SESSION);
 #else
-             // the maximum size of a TPMS_CONTEXT that will be returned by
+            // the maximum size of a TPMS_CONTEXT that will be returned by
             // TPM2_ContextSave for object context
             *value = SIZE_OF_CONTEXT_OVERHEAD + sizeof(SESSION);
 #endif
@@ -287,24 +254,26 @@ TPMPropertyIsDefined(
             // platform specific values for the TPM_PT_PS parameters from
             // the relevant platform-specific specification
             // In this reference implementation, all of these values are 0.
-            *value = PLATFORM_FAMILY;
+            *value = spec_capability_value.platformFamily;
             break;
         case TPM_PT_PS_LEVEL:
             // level of the platform-specific specification
-            *value = PLATFORM_LEVEL;
+            *value = spec_capability_value.platfromLevel;
             break;
         case TPM_PT_PS_REVISION:
-            // specification Revision times 100 for the platform-specific
-            // specification
-            *value = PLATFORM_VERSION;
+            // The platform spec version is recorded such that 0x00000101 means version 1.01
+            // Note this differs from some TPM/TCG specifications, but matches the behavior of Windows.
+            // more recent TCG specs have discontinued using this field, but Windows displays it, so we
+            // retain it using the historical encoding.
+            *value = spec_capability_value.platformRevision;
             break;
         case TPM_PT_PS_DAY_OF_YEAR:
             // platform-specific specification day of year using TCG calendar
-            *value = PLATFORM_DAY_OF_YEAR;
+            *value = spec_capability_value.platformDayOfYear;
             break;
         case TPM_PT_PS_YEAR:
             // platform-specific specification year using the CE
-            *value = PLATFORM_YEAR;
+            *value = spec_capability_value.platformYear;
             break;
         case TPM_PT_SPLIT_MAX:
             // number of split signing operations supported by the TPM
@@ -315,118 +284,103 @@ TPMPropertyIsDefined(
             break;
         case TPM_PT_TOTAL_COMMANDS:
             // total number of commands implemented in the TPM
-            // Since the reference implementation does not have any
-            // vendor-defined commands, this will be the same as the
-            // number of library commands.
-        {
-#if COMPRESSED_LISTS
-            (*value) = COMMAND_COUNT;
-#else
-            COMMAND_INDEX       commandIndex;
-            *value = 0;
-
-            // scan all implemented commands
-            for(commandIndex = GetClosestCommandIndex(0);
-            commandIndex != UNIMPLEMENTED_COMMAND_INDEX;
-                commandIndex = GetNextCommandIndex(commandIndex))
             {
-                (*value)++;     // count of all implemented
+                *value = COMMAND_COUNT;
+                break;
             }
-#endif
-            break;
-        }
         case TPM_PT_LIBRARY_COMMANDS:
             // number of commands from the TPM library that are implemented
-        {
-#if COMPRESSED_LISTS
-            *value = LIBRARY_COMMAND_ARRAY_SIZE;
-#else
-            COMMAND_INDEX       commandIndex;
-            *value = 0;
-
-            // scan all implemented commands
-            for(commandIndex = GetClosestCommandIndex(0);
-            commandIndex < LIBRARY_COMMAND_ARRAY_SIZE;
-                commandIndex = GetNextCommandIndex(commandIndex))
             {
-                (*value)++;
+                *value = LIBRARY_COMMAND_ARRAY_SIZE;
+                break;
             }
-#endif
-            break;
-        }
         case TPM_PT_VENDOR_COMMANDS:
             // number of vendor commands that are implemented
-            *value = VENDOR_COMMAND_ARRAY_SIZE;
+            *value = VENDOR_COMMAND_ARRAY_COUNT;
             break;
         case TPM_PT_NV_BUFFER_MAX:
             // Maximum data size in an NV write command
             *value = MAX_NV_BUFFER_SIZE;
             break;
         case TPM_PT_MODES:
+        {
+            union
+            {
+                TPMA_MODES attr;
+                UINT32     u32;
+            } flags = {TPMA_ZERO_INITIALIZER()};
 #if FIPS_COMPLIANT
-            *value = 1;
-#else
-            *value = 0;
+            SET_ATTRIBUTE(flags.attr, TPMA_MODES, FIPS_140_2);
 #endif
+            *value = flags.u32;
             break;
+        }
         case TPM_PT_MAX_CAP_BUFFER:
             *value = MAX_CAP_BUFFER;
+            break;
+        case TPM_PT_FIRMWARE_SVN:
+            *value = _plat__GetTpmFirmwareSvn();
+            break;
+        case TPM_PT_FIRMWARE_MAX_SVN:
+            *value = _plat__GetTpmFirmwareMaxSvn();
             break;
 
         // Start of variable commands
         case TPM_PT_PERMANENT:
             // TPMA_PERMANENT
-        {
-            union {
-                TPMA_PERMANENT      attr;
-                UINT32              u32;
-            } flags = { TPMA_ZERO_INITIALIZER() };
-            if(gp.ownerAuth.t.size != 0)
-                SET_ATTRIBUTE(flags.attr, TPMA_PERMANENT, ownerAuthSet);
-            if(gp.endorsementAuth.t.size != 0)
-                SET_ATTRIBUTE(flags.attr, TPMA_PERMANENT, endorsementAuthSet);
-            if(gp.lockoutAuth.t.size != 0)
-                SET_ATTRIBUTE(flags.attr, TPMA_PERMANENT, lockoutAuthSet);
-            if(gp.disableClear)
-                SET_ATTRIBUTE(flags.attr, TPMA_PERMANENT, disableClear);
-            if(gp.failedTries >= gp.maxTries)
-                SET_ATTRIBUTE(flags.attr, TPMA_PERMANENT, inLockout);
-            // In this implementation, EPS is always generated by TPM
-            SET_ATTRIBUTE(flags.attr, TPMA_PERMANENT, tpmGeneratedEPS);
+            {
+                union
+                {
+                    TPMA_PERMANENT attr;
+                    UINT32         u32;
+                } flags = {TPMA_ZERO_INITIALIZER()};
+                if(gp.ownerAuth.t.size != 0)
+                    SET_ATTRIBUTE(flags.attr, TPMA_PERMANENT, ownerAuthSet);
+                if(gp.endorsementAuth.t.size != 0)
+                    SET_ATTRIBUTE(flags.attr, TPMA_PERMANENT, endorsementAuthSet);
+                if(gp.lockoutAuth.t.size != 0)
+                    SET_ATTRIBUTE(flags.attr, TPMA_PERMANENT, lockoutAuthSet);
+                if(gp.disableClear)
+                    SET_ATTRIBUTE(flags.attr, TPMA_PERMANENT, disableClear);
+                if(gp.failedTries >= gp.maxTries)
+                    SET_ATTRIBUTE(flags.attr, TPMA_PERMANENT, inLockout);
+                // In this implementation, EPS is always generated by TPM
+                SET_ATTRIBUTE(flags.attr, TPMA_PERMANENT, tpmGeneratedEPS);
 
-            // Note: For a LSb0 machine, the bits in a bit field are in the correct 
-            // order even if the machine is MSB0. For a MSb0 machine, a TPMA will
-            // be an integer manipulated by masking (USE_BIT_FIELD_STRUCTURES will
-            // be NO) so the bits are manipulate correctly.
-            *value = flags.u32;
-            break;
-        }
+                // A TPMA will be an integer manipulated by masking so the bits
+                // are manipulated correctly regardless of machine endianness.
+                *value = flags.u32;
+                break;
+            }
         case TPM_PT_STARTUP_CLEAR:
             // TPMA_STARTUP_CLEAR
-        {
-            union {
-                TPMA_STARTUP_CLEAR  attr;
-                UINT32              u32;
-            } flags = { TPMA_ZERO_INITIALIZER() };
-//
-            if(g_phEnable)
-                SET_ATTRIBUTE(flags.attr, TPMA_STARTUP_CLEAR, phEnable);
-            if(gc.shEnable)
-                SET_ATTRIBUTE(flags.attr, TPMA_STARTUP_CLEAR, shEnable);
-            if(gc.ehEnable)
-                SET_ATTRIBUTE(flags.attr, TPMA_STARTUP_CLEAR, ehEnable);
-            if(gc.phEnableNV)
-                SET_ATTRIBUTE(flags.attr, TPMA_STARTUP_CLEAR, phEnableNV);
-            if(g_prevOrderlyState != SU_NONE_VALUE)
-                SET_ATTRIBUTE(flags.attr, TPMA_STARTUP_CLEAR, orderly);
+            {
+                union
+                {
+                    TPMA_STARTUP_CLEAR attr;
+                    UINT32             u32;
+                } flags = {TPMA_ZERO_INITIALIZER()};
+                //
+                if(g_phEnable)
+                    SET_ATTRIBUTE(flags.attr, TPMA_STARTUP_CLEAR, phEnable);
+                if(gc.shEnable)
+                    SET_ATTRIBUTE(flags.attr, TPMA_STARTUP_CLEAR, shEnable);
+                if(gc.ehEnable)
+                    SET_ATTRIBUTE(flags.attr, TPMA_STARTUP_CLEAR, ehEnable);
+                if(gc.phEnableNV)
+                    SET_ATTRIBUTE(flags.attr, TPMA_STARTUP_CLEAR, phEnableNV);
+#if CC_ReadOnlyControl
+                if(gc.readOnly)
+                    SET_ATTRIBUTE(flags.attr, TPMA_STARTUP_CLEAR, readOnly);
+#endif
+                if(g_prevOrderlyState != SU_NONE_VALUE)
+                    SET_ATTRIBUTE(flags.attr, TPMA_STARTUP_CLEAR, orderly);
 
-            // Note: For a LSb0 machine, the bits in a bit field are in the correct 
-            // order even if the machine is MSB0. For a MSb0 machine, a TPMA will
-            // be an integer manipulated by masking (USE_BIT_FIELD_STRUCTURES will
-            // be NO) so the bits are manipulate correctly.
-            *value = flags.u32;
-            break;
-        }
+                // A TPMA will be an integer manipulated by masking so the bits
+                // are manipulated correctly regardless of machine endianness.
+                *value = flags.u32;
+                break;
+            }
         case TPM_PT_HR_NV_INDEX:
             // number of NV indexes currently defined
             *value = NvCapGetIndexNumber();
@@ -482,11 +436,11 @@ TPMPropertyIsDefined(
             break;
         case TPM_PT_LOADED_CURVES:
 #if ALG_ECC
-        // number of loaded ECC curves
+            // number of loaded ECC curves
             *value = ECC_CURVE_COUNT;
-#else // ALG_ECC
+#else   // ALG_ECC
             *value = 0;
-#endif // ALG_ECC
+#endif  // ALG_ECC
             break;
         case TPM_PT_LOCKOUT_COUNTER:
             // current value of the lockout counter
@@ -539,25 +493,25 @@ TPMPropertyIsDefined(
 //  YES        more properties are available
 //  NO         no more properties to be reported
 TPMI_YES_NO
-TPMCapGetProperties(
-    TPM_PT                       property,      // IN: the starting TPM property
-    UINT32                       count,         // IN: maximum number of returned
-                                                //     properties
-    TPML_TAGGED_TPM_PROPERTY    *propertyList   // OUT: property list
-    )
+TPMCapGetProperties(TPM_PT property,  // IN: the starting TPM property
+                    UINT32 count,     // IN: maximum number of returned
+                                      //     properties
+                    TPML_TAGGED_TPM_PROPERTY* propertyList  // OUT: property list
+)
 {
-    TPMI_YES_NO     more = NO;
-    UINT32          i;
-    UINT32          nextGroup;
+    TPMI_YES_NO more = NO;
+    UINT32      i;
+    UINT32      nextGroup;
 
     // initialize output property list
     propertyList->count = 0;
 
     // maximum count of properties we may return is MAX_PCR_PROPERTIES
-    if(count > MAX_TPM_PROPERTIES) count = MAX_TPM_PROPERTIES;
+    if(count > MAX_TPM_PROPERTIES)
+        count = MAX_TPM_PROPERTIES;
 
     // if property is less than PT_FIXED, start from PT_FIXED
-    if(property < PT_FIXED) 
+    if(property < PT_FIXED)
         property = PT_FIXED;
     // There is only the fixed and variable groups with the variable group coming
     // last
@@ -566,11 +520,11 @@ TPMCapGetProperties(
 
     // Don't read past the end of the selected group
     nextGroup = ((property / PT_GROUP) * PT_GROUP) + PT_GROUP;
-    
+
     // Scan through the TPM properties of the requested group.
     for(i = property; i < nextGroup; i++)
     {
-        UINT32          value;
+        UINT32 value;
         // if we have hit the end of the group, quit
         if(i != property && ((i % PT_GROUP) == 0))
             break;
@@ -579,9 +533,8 @@ TPMCapGetProperties(
             if(propertyList->count < count)
             {
                 // If the list is not full, add this property
-                propertyList->tpmProperty[propertyList->count].property =
-                    (TPM_PT)i;
-                propertyList->tpmProperty[propertyList->count].value = value;
+                propertyList->tpmProperty[propertyList->count].property = (TPM_PT)i;
+                propertyList->tpmProperty[propertyList->count].value    = value;
                 propertyList->count++;
             }
             else
@@ -594,4 +547,22 @@ TPMCapGetProperties(
         }
     }
     return more;
+}
+
+//*** TPMCapGetOneProperty()
+// This function returns a single TPM property, if present.
+BOOL TPMCapGetOneProperty(TPM_PT                pt,       // IN: the TPM property
+                          TPMS_TAGGED_PROPERTY* property  // OUT: tagged property
+)
+{
+    UINT32 value;
+
+    if(TPMPropertyIsDefined((TPM_PT)pt, &value))
+    {
+        property->property = (TPM_PT)pt;
+        property->value    = value;
+        return TRUE;
+    }
+
+    return FALSE;
 }

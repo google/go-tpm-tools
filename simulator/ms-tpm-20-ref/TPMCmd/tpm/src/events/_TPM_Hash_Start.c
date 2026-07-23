@@ -1,53 +1,21 @@
-/* Microsoft Reference Implementation for TPM 2.0
- *
- *  The copyright in this software is being made available under the BSD License,
- *  included below. This software may be subject to other third party and
- *  contributor rights, including patent rights, and no such rights are granted
- *  under this license.
- *
- *  Copyright (c) Microsoft Corporation
- *
- *  All rights reserved.
- *
- *  BSD License
- *
- *  Redistribution and use in source and binary forms, with or without modification,
- *  are permitted provided that the following conditions are met:
- *
- *  Redistributions of source code must retain the above copyright notice, this list
- *  of conditions and the following disclaimer.
- *
- *  Redistributions in binary form must reproduce the above copyright notice, this
- *  list of conditions and the following disclaimer in the documentation and/or
- *  other materials provided with the distribution.
- *
- *  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS ""AS IS""
- *  AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- *  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
- *  DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
- *  ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
- *  (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- *  LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
- *  ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- *  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
- *  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- */
 #include "Tpm.h"
 
 // This function is called to process a _TPM_Hash_Start indication.
-LIB_EXPORT void
-_TPM_Hash_Start(
-    void
-    )
+// It returns FALSE if the indication cannot be handled, and the TPM
+// will be in FailureMode.
+LIB_EXPORT BOOL _TPM_Hash_Start(void)
 {
-    TPM_RC              result;
-    TPMI_DH_OBJECT      handle;
+    TPM_RC         result;
+    TPMI_DH_OBJECT handle;
 
     // If a DRTM sequence object exists, free it up
     if(g_DRTMHandle != TPM_RH_UNASSIGNED)
     {
-        FlushObject(g_DRTMHandle);
-        g_DRTMHandle = TPM_RH_UNASSIGNED;
+        // ensure g_DRTMHandle is cleared
+        // and Flush sequence object
+        TPMI_DH_OBJECT oldHandle = g_DRTMHandle;
+        g_DRTMHandle             = TPM_RH_UNASSIGNED;
+        VERIFY(FlushObject(oldHandle), FATAL_ERROR_INTERNAL, FALSE);
     }
 
     // Create an event sequence object and store the handle in global
@@ -76,17 +44,17 @@ _TPM_Hash_Start(
         }
         // If the first call to find a slot fails but none of the slots is occupied
         // then there's a big problem
-        pAssert(handle < TRANSIENT_LAST);
+        pAssert_BOOL(handle < TRANSIENT_LAST);
 
         // Free the slot
-        FlushObject(handle);
+        VERIFY(FlushObject(handle), FATAL_ERROR_INTERNAL, FALSE);
 
         // Try to create an event sequence object again.  This time, we must
         // succeed.
         result = ObjectCreateEventSequence(NULL, &g_DRTMHandle);
         if(result != TPM_RC_SUCCESS)
-            FAIL(FATAL_ERROR_INTERNAL);
+            FAIL_BOOL(FATAL_ERROR_INTERNAL);
     }
 
-    return;
+    return TRUE;
 }

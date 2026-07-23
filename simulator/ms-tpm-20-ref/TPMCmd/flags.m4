@@ -1,35 +1,3 @@
-dnl The copyright in this software is being made available under the BSD License,
-dnl included below. This software may be subject to other third party and
-dnl contributor rights, including patent rights, and no such rights are granted
-dnl under this license.
-dnl
-dnl Copyright (c) Intel Corporation
-dnl
-dnl All rights reserved.
-dnl
-dnl BSD License
-dnl
-dnl Redistribution and use in source and binary forms, with or without modification,
-dnl are permitted provided that the following conditions are met:
-dnl
-dnl Redistributions of source code must retain the above copyright notice, this list
-dnl of conditions and the following disclaimer.
-dnl
-dnl Redistributions in binary form must reproduce the above copyright notice, this
-dnl list of conditions and the following disclaimer in the documentation and/or
-dnl other materials provided with the distribution.
-dnl
-dnl THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS ""AS IS""
-dnl AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-dnl IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-dnl DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
-dnl ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
-dnl (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
-dnl LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
-dnl ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-dnl (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-dnl SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
 dnl ADD_COMPILER_FLAG:
 dnl   A macro to add a CFLAG to the EXTRA_CFLAGS variable. This macro will
 dnl   check to be sure the compiler supprts the flag. Flags can be made

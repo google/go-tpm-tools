@@ -1,39 +1,6 @@
-/* Microsoft Reference Implementation for TPM 2.0
- *
- *  The copyright in this software is being made available under the BSD License,
- *  included below. This software may be subject to other third party and
- *  contributor rights, including patent rights, and no such rights are granted
- *  under this license.
- *
- *  Copyright (c) Microsoft Corporation
- *
- *  All rights reserved.
- *
- *  BSD License
- *
- *  Redistribution and use in source and binary forms, with or without modification,
- *  are permitted provided that the following conditions are met:
- *
- *  Redistributions of source code must retain the above copyright notice, this list
- *  of conditions and the following disclaimer.
- *
- *  Redistributions in binary form must reproduce the above copyright notice, this
- *  list of conditions and the following disclaimer in the documentation and/or
- *  other materials provided with the distribution.
- *
- *  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS ""AS IS""
- *  AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- *  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
- *  DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
- *  ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
- *  (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- *  LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
- *  ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- *  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
- *  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- */
 #include "Tpm.h"
 #include "Commit_fp.h"
+#include "TpmMath_Util_fp.h"
 
 #if CC_Commit  // Conditional expansion of this file
 
@@ -54,23 +21,23 @@
 //      TPM_RC_SIZE             's2' is empty but 'y2' is not or 's2' provided but
 //                              'y2' is not
 TPM_RC
-TPM2_Commit(
-    Commit_In       *in,            // IN: input parameter list
-    Commit_Out      *out            // OUT: output parameter list
-    )
+TPM2_Commit(Commit_In*  in,  // IN: input parameter list
+            Commit_Out* out  // OUT: output parameter list
+)
 {
-    OBJECT                  *eccKey;
-    TPMS_ECC_POINT           P2;
-    TPMS_ECC_POINT          *pP2 = NULL;
-    TPMS_ECC_POINT          *pP1 = NULL;
-    TPM2B_ECC_PARAMETER      r;
-    TPM2B_ECC_PARAMETER      p;
-    TPM_RC                   result;
-    TPMS_ECC_PARMS          *parms;
+    OBJECT*             eccKey;
+    TPMS_ECC_POINT      P2;
+    TPMS_ECC_POINT*     pP2 = NULL;
+    TPMS_ECC_POINT*     pP1 = NULL;
+    TPM2B_ECC_PARAMETER r;
+    TPM2B_ECC_PARAMETER p;
+    TPM_RC              result;
+    TPMS_ECC_PARMS*     parms;
 
-// Input Validation
+    // Input Validation
 
     eccKey = HandleToObject(in->signHandle);
+    pAssert_RC(eccKey != NULL);
     parms = &eccKey->publicArea.parameters.eccDetail;
 
     // Input key must be an ECC key
@@ -85,13 +52,13 @@ TPM2_Commit(
     if(!CryptIsSchemeAnonymous(parms->scheme.scheme))
         return TPM_RCS_SCHEME + RC_Commit_signHandle;
 
-// Make sure that both parts of P2 are present if either is present
+    // Make sure that both parts of P2 are present if either is present
     if((in->s2.t.size == 0) != (in->y2.t.size == 0))
         return TPM_RCS_SIZE + RC_Commit_y2;
 
     // Get prime modulus for the curve. This is needed later but getting this now
     // allows confirmation that the curve exists.
-    if(!CryptEccGetParameter(&p, 'p', parms->curveID))
+    if(!TpmMath_IntTo2B(ExtEcc_CurveGetPrime(parms->curveID), &p.b, 0))
         return TPM_RCS_KEY + RC_Commit_signHandle;
 
     // Get the random value that will be used in the point multiplications
@@ -102,7 +69,7 @@ TPM2_Commit(
     // Set up P2 if s2 and Y2 are provided
     if(in->s2.t.size != 0)
     {
-        TPM2B_DIGEST             x2;
+        TPM2B_DIGEST x2;
 
         pP2 = &P2;
 
@@ -112,10 +79,10 @@ TPM2_Commit(
         // Compute x2  HnameAlg(s2) mod p
         //      do the hash operation on s2 with the size of curve 'p'
         x2.t.size = CryptHashBlock(eccKey->publicArea.nameAlg,
-                                     in->s2.t.size,
-                                     in->s2.t.buffer,
-                                     sizeof(x2.t.buffer),
-                                     x2.t.buffer);
+                                   in->s2.t.size,
+                                   in->s2.t.buffer,
+                                   sizeof(x2.t.buffer),
+                                   x2.t.buffer);
 
         // If there were error returns in the hash routine, indicate a problem
         // with the hash algorithm selection
@@ -166,4 +133,4 @@ TPM2_Commit(
     return TPM_RC_SUCCESS;
 }
 
-#endif // CC_Commit
+#endif  // CC_Commit
