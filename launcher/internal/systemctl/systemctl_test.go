@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 )
 
 func TestRunSystmedCmd(t *testing.T) {
@@ -16,6 +17,10 @@ func TestRunSystmedCmd(t *testing.T) {
 	}
 	failedUnitFunc := func(_ context.Context, _, _ string, progress chan<- string) (int, error) {
 		progress <- "failed"
+		return 1, nil
+	}
+	timeoutUnitFunc := func(_ context.Context, _, _ string, _ chan<- string) (int, error) {
+		time.Sleep(35 * time.Second)
 		return 1, nil
 	}
 
@@ -37,6 +42,11 @@ func TestRunSystmedCmd(t *testing.T) {
 		{
 			name:          "failed unit run",
 			sytemdCmdFunc: failedUnitFunc,
+			wantErr:       true,
+		},
+		{
+			name:          "timeout",
+			sytemdCmdFunc: timeoutUnitFunc,
 			wantErr:       true,
 		},
 	}

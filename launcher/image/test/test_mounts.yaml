@@ -19,6 +19,7 @@ steps:
           '-n', '${_VM_NAME_PREFIX}-${BUILD_ID}-default',
           '-z', '${_ZONE}',
         ]
+  waitFor: ['-']
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CreateVMWithMountsAllowed
   entrypoint: 'bash'
@@ -32,6 +33,7 @@ steps:
           '-n', '${_VM_NAME_PREFIX}-${BUILD_ID}-allowed',
           '-z', '${_ZONE}',
         ]
+  waitFor: ['-']
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CreateVMWithMountsDenied
   entrypoint: 'bash'
@@ -43,6 +45,7 @@ steps:
           '-n', '${_VM_NAME_PREFIX}-${BUILD_ID}-denied',
           '-z', '${_ZONE}',
         ]
+  waitFor: ['-']
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CheckDevShmExists
   env:
@@ -64,6 +67,7 @@ steps:
         echo 'TEST FAILED' > /workspace/status.txt
         echo $SERIAL_OUTPUT
     fi
+  waitFor: ['CreateVMWithDefaultDevShmSize']
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CheckMountsAllowed
   env:
@@ -95,6 +99,7 @@ steps:
         echo 'TEST FAILED' > /workspace/status.txt
         echo $SERIAL_OUTPUT
     fi
+  waitFor: ['CreateVMWithMountsAllowed']
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CheckMountsDenied
@@ -148,3 +153,4 @@ steps:
   env:
   - 'BUILD_ID=$BUILD_ID'
   args: ['check_failure.sh']
+  waitFor: ['CleanUpVMWithDefault', 'CleanUpVMWithMountsAllowed', 'CleanUpVMWithMountsDenied']

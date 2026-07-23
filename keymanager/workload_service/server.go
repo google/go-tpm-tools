@@ -244,6 +244,10 @@ func NewServer(keyProtectionService KeyProtectionService, workloadService Worklo
 	if err != nil {
 		return nil, fmt.Errorf("failed to listen on unix socket %s: %w", socketPath, err)
 	}
+	if err := os.Chmod(socketPath, 0777); err != nil {
+		ln.Close()
+		return nil, fmt.Errorf("failed to chmod unix socket %s: %w", socketPath, err)
+	}
 	s.listener = ln
 
 	go s.processClaims()

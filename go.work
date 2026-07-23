@@ -6,6 +6,7 @@ use (
 	./cmd
 	./keymanager
 	./launcher
+	./launcher/image/measure
 	./verifier
 )
 

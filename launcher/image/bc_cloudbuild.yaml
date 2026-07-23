@@ -48,7 +48,9 @@ steps:
       - |
         set -e
         docker build -t guest-gpu-tools:latest ./launcher/internal/gpu/daemons/
-        docker save guest-gpu-tools:latest -o /workspace/gpu_helper.tar
+        container_id=$$(docker create guest-gpu-tools:latest)
+        docker export "$${container_id}" -o /workspace/gpu_helper_rootfs.tar
+        docker rm "$${container_id}"
 
   - name: 'alpine'
     id: 'PrepareOEMInstallDir'
@@ -61,6 +63,7 @@ steps:
         mkdir -p /workspace/oem-install/confidential_space
         mkdir -p /workspace/oem-install/confidential_space/nodeproblemdetector
         mkdir -p /workspace/oem-install/wsd
+        mkdir -p /workspace/oem-install/gpu_helper
 
         cp ./launcher/image/bc-guest/bcentrypoint.sh /workspace/oem-install/entrypoint.sh
         cp ./launcher/image/bc-guest/bcexperiment.json \
@@ -72,8 +75,8 @@ steps:
            ./launcher/image/bc-guest/bc_network_optimization.sh \
            ./launcher/image/bc-guest/bc_network_runtime_optimization.sh \
            ./launcher/image/bc-guest/bc_network_monitor.sh \
-           /workspace/gpu_helper.tar \
            ./launcher/image/bc-guest/bc_pin_pci_numa_nodes.sh \
+           ./launcher/image/bc-guest/bc_gpu_setup.sh \
            /workspace/oem-install/confidential_space/
         cp ./launcher/image/nodeproblemdetector/* /workspace/oem-install/confidential_space/nodeproblemdetector/
         cp ./launcher/image/bc-guest/wsd/* /workspace/oem-install/wsd/
@@ -86,6 +89,15 @@ steps:
           mkdir -p /workspace/oem-install/wsd/rootfs/run/container_launcher
           # Mountpoint needed by containerd
           mkdir -p /workspace/oem-install/wsd/rootfs/dev/mqueue
+        fi
+
+        # Extract GPU rootfs
+        if [ -f /workspace/gpu_helper_rootfs.tar ]; then
+          mkdir -p /workspace/oem-install/gpu_helper/rootfs
+          tar -C /workspace/oem-install/gpu_helper/rootfs -xf /workspace/gpu_helper_rootfs.tar
+          mkdir -p /workspace/oem-install/gpu_helper/rootfs/opt/nvidia-host
+          # Mountpoint needed by containerd
+          mkdir -p /workspace/oem-install/gpu_helper/rootfs/dev/mqueue
         fi
 
         # Create IMA policy
@@ -117,6 +129,7 @@ steps:
         chmod +x /workspace/oem-install/confidential_space/bc_network_runtime_optimization.sh || true
         chmod +x /workspace/oem-install/confidential_space/bc_network_monitor.sh || true
         chmod +x /workspace/oem-install/confidential_space/bc_pin_pci_numa_nodes.sh || true
+        chmod +x /workspace/oem-install/confidential_space/bc_gpu_setup.sh || true
         chmod +x /workspace/oem-install/entrypoint.sh || true
         chmod +x /workspace/oem-install/wsd/wsd_runner.sh || true
         chmod +x /workspace/oem-install/wsd/exit_script.sh || true
@@ -159,6 +172,7 @@ steps:
           "s|cros_efi|cros_efi cos.protected_stateful_partition=m|g"
           "s|cros_efi|cros_efi systemd.default_timeout_start_sec=900s|g"
           "s|cros_efi|cros_efi swiotlb=16777216,force,any|g"
+          "s|cros_efi|cros_efi hugepages=65536|g"
           "s|cros_efi|cros_efi systemd.mask=cloud-audit-setup.service|g"
           "s|systemd.mask=usr-share-oem.mount||g"
           "s|dm-m2d|dm-mod|g"
@@ -223,7 +237,7 @@ steps:
   - name: 'alpine'
     id: 'RenameOutputImage'
     args: ['mv', 'output.bin', 'disk.raw']
-  - name: 'us-docker.pkg.dev/confidential-space-images-dev/cs-tools/measure@sha256:5c2eaaa70438126877de51b44914d3751ba242aed7f4d99d485833629f3958bc'
+  - name: 'us-docker.pkg.dev/confidential-space-images-dev/cs-tools/measure@sha256:dae4766caef4a93c52736feb829bf2c505b7d48ce44d0ecb33e77d61bb4be888'
     id: 'MeasureImage'
     env:
       - 'IMAGE_ENV=${_IMAGE_ENV}'
