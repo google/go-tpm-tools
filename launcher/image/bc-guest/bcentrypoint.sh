@@ -59,7 +59,7 @@ main() {
   systemctl enable wsd.service
   systemctl start container-runner.service
   systemctl start wsd.service
-  systemctl start fluent-bit.service
+  systemctl restart fluent-bit.service
 }
 
 main
