@@ -457,6 +457,16 @@ func (a *attestHandler) attest(w http.ResponseWriter, r *http.Request, client ve
 			return
 		}
 
+		// The AWS_PRINCIPALTAGS token type cannot be served without its companion
+		// aws_principal_tag_options. Reject the request here with a 400 instead of
+		// forwarding it downstream, where the missing field surfaces as a closed
+		// connection with no HTTP response (empty reply) rather than a clean error.
+		if tokenOptions.TokenType == "AWS_PRINCIPALTAGS" && tokenOptions.PrincipalTagOptions == nil {
+			err := fmt.Errorf("aws_principal_tag_options is required when token_type=AWS_PRINCIPALTAGS")
+			a.logAndWriteHTTPError(w, http.StatusBadRequest, err)
+			return
+		}
+
 		// Do not check that TokenTypeOptions matches TokenType in the launcher.
 		opts := agent.AttestAgentOpts{
 			TokenOptions:     &tokenOptions,
