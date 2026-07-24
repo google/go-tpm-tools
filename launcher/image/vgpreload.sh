@@ -27,6 +27,24 @@ setup_launcher_systemd_unit() {
   cp exit_script.sh "${CS_PATH}/exit_script.sh"
 }
 
+copy_wsd() {
+  mkdir -p "${OEM_PATH}/wsd"
+  cp vgwsd/* "${OEM_PATH}/wsd/"
+  chmod +x "${OEM_PATH}/wsd/wsd_runner.sh" || true
+  chmod +x "${OEM_PATH}/wsd/exit_script.sh" || true
+
+  if [[ -f wsd_image.tar ]]; then
+    echo "Copying preloaded WSD container image tarball..."
+    cp wsd_image.tar "${OEM_PATH}/wsd/image.tar"
+  fi
+
+  cat << EOF > "${OEM_PATH}/wsd/image.env"
+IMAGE_PATH="/usr/share/oem/wsd/image.tar"
+IMAGE_REF="${WSD_CONTAINER_IMAGE_REF}"
+CONTAINER_NAME="workload-service-daemon"
+EOF
+}
+
 append_cmdline() {
   local arg="$1"
   if [[ ! -d /mnt/disks/efi ]]; then
@@ -127,6 +145,7 @@ main() {
   # Copy Google Root bundle.
   copy_google_roots
   setup_launcher_systemd_unit
+  copy_wsd
   # Minimum required COS version for 'e': cos-dev-105-17222-0-0.
   # Minimum required COS version for 'm': cos-dev-113-18203-0-0.
   append_cmdline "cos.protected_stateful_partition=m"
