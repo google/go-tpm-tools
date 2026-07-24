@@ -624,25 +624,44 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		r.logger.Info("MemoryMonitoring is disabled by the VM operator")
 	}
 
-	var streamOpt cio.Opt
+	var stdoutTarget, stderrTarget io.Writer
 	switch r.launchSpec.LogRedirect {
 	case spec.Nowhere:
-		streamOpt = cio.WithStreams(nil, nil, nil)
 		r.logger.Info("Container stdout/stderr will not be redirected.")
 	case spec.Everywhere:
-		w := io.MultiWriter(os.Stdout, r.serialConsole)
-		streamOpt = cio.WithStreams(nil, w, w)
-		r.logger.Info("Container stdout/stderr will be redirected to serial and Cloud Logging. This may result in performance issues due to slow serial console writes.")
+		cloudStdout := logging.NewInfoWriter(r.workloadLogger)
+		cloudStderr := logging.NewErrorWriter(r.workloadLogger)
+		stdoutTarget = io.MultiWriter(cloudStdout, r.serialConsole)
+		stderrTarget = io.MultiWriter(cloudStderr, r.serialConsole)
+		r.logger.Info("Container stdout/stderr redirected asynchronously to Cloud Logging and serial console.")
 	case spec.CloudLogging:
-		stdoutWriter := logging.NewInfoWriter(r.workloadLogger)
-		stderrWriter := logging.NewErrorWriter(r.workloadLogger)
-		streamOpt = cio.WithStreams(nil, stdoutWriter, stderrWriter)
-		r.logger.Info("Container stdout/stderr will be redirected to Cloud Logging with INFO and ERROR severities respectively.")
+		stdoutTarget = logging.NewInfoWriter(r.workloadLogger)
+		stderrTarget = logging.NewErrorWriter(r.workloadLogger)
+		r.logger.Info("Container stdout/stderr redirected asynchronously to Cloud Logging.")
 	case spec.Serial:
-		streamOpt = cio.WithStreams(nil, r.serialConsole, r.serialConsole)
-		r.logger.Info("Container stdout/stderr will be redirected to serial logging. This may result in performance issues due to slow serial console writes.")
+		stdoutTarget = r.serialConsole
+		stderrTarget = r.serialConsole
+		r.logger.Info("Container stdout/stderr redirected asynchronously to serial console.")
 	default:
 		return fmt.Errorf("unknown logging redirect location: %v", r.launchSpec.LogRedirect)
+	}
+
+	var streamOpt cio.Opt
+	if stdoutTarget != nil && stderrTarget != nil {
+		stdoutWriter := logging.NewAsyncWriter(stdoutTarget, 8192)
+		stderrWriter := logging.NewAsyncWriter(stderrTarget, 8192)
+		defer func() {
+			closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = stdoutWriter.Close(closeCtx)
+			_ = stderrWriter.Close(closeCtx)
+			if r.workloadLogger != nil {
+				r.workloadLogger.Flush()
+			}
+		}()
+		streamOpt = cio.WithStreams(nil, stdoutWriter, stderrWriter)
+	} else {
+		streamOpt = cio.WithStreams(nil, nil, nil)
 	}
 
 	task, err := r.container.NewTask(ctx, cio.NewCreator(streamOpt))
