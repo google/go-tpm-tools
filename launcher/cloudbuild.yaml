@@ -8,8 +8,8 @@ substitutions:
   '_BUCKET_NAME': '${PROJECT_ID}_cloudbuild'
   '_VG_BASE_IMAGE': 'cos-125-19216-395-112'
   '_BC_BASE_IMAGE_PROJECT': 'confidential-space-images-dev'
-  '_BC_BASE_IMAGE': 'cos-bc-guest-125-19216-395-112'
-  '_BC_DEBUG_IMAGE': 'cos-bcdbg-guest-125-19216-395-112'
+  '_BC_BASE_IMAGE': 'cos-bc-guest-125-19216-532-28'
+  '_BC_DEBUG_IMAGE': 'cos-bcdbg-guest-125-19216-532-28'
   '_WSD_CONTAINER_IMAGE_REF': 'us-docker.pkg.dev/confidential-space-images-dev/key-protection-module-images/key-protection-module:acdec5c'
   '_POLLING_INTERVAL': '10'
 
@@ -536,6 +536,22 @@ steps:
     echo "running mount tests on ${OUTPUT_IMAGE_NAME}"
     gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_mounts.yaml --region us-west1 \
       --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
+    exit
+
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: GpuDriverInstallationHardenedImageTests
+  waitFor: ['HardenedImageBuild']
+  env:
+  - 'OUTPUT_IMAGE_PREFIX=$_OUTPUT_IMAGE_PREFIX'
+  - 'OUTPUT_IMAGE_SUFFIX=$_OUTPUT_IMAGE_SUFFIX'
+  - 'PROJECT_ID=$PROJECT_ID'
+  script: |
+    #!/usr/bin/env bash
+
+    cd launcher/image/test
+    echo "running gpu driver installation image tests on ${OUTPUT_IMAGE_PREFIX}-hardened-${OUTPUT_IMAGE_SUFFIX}"
+    gcloud builds submit --config=test_gpu_driver_installation_cloudbuild.yaml --region us-west1 \
+      --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_PREFIX}-hardened-${OUTPUT_IMAGE_SUFFIX},_IMAGE_PROJECT=${PROJECT_ID}
     exit
 
 - name: 'gcr.io/cloud-builders/gcloud'

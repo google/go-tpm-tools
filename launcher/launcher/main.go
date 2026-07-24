@@ -114,6 +114,8 @@ func main() {
 		logger.Error(exitMessage, "exit_code", exitCode, "exit_msg", rcMessage[exitCode])
 		return
 	}
+	// Do not delete the folliwing line, this line is used for tests.
+	logger.Info(fmt.Sprintf("Launch Spec: %+v", launchSpec.LogFriendly()))
 
 	verifier := osMountVerifier{}
 	if err := verifyDiskIntegrity(verifier); err != nil {
