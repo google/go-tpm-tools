@@ -7,35 +7,15 @@ import (
 	"testing"
 )
 
-func TestGoogleHTTPClientWithRoots(t *testing.T) {
-	t.Run("empty path", func(t *testing.T) {
-		_, err := googleHTTPClientWithRoots("")
+func TestPinnedHTTPClient(t *testing.T) {
+	t.Run("nil pool", func(t *testing.T) {
+		_, err := PinnedHTTPClient(nil)
 		if err == nil {
-			t.Errorf("googleHTTPClientWithRoots() expected error for empty path, got nil")
+			t.Errorf("PinnedHTTPClient(nil) expected error, got nil")
 		}
 	})
 
-	t.Run("missing file", func(t *testing.T) {
-		path := filepath.Join(t.TempDir(), "missing.pem")
-		_, err := googleHTTPClientWithRoots(path)
-		if err == nil {
-			t.Errorf("googleHTTPClientWithRoots() expected error for missing file, got nil")
-		}
-	})
-
-	t.Run("malformed pem", func(t *testing.T) {
-		path := filepath.Join(t.TempDir(), "malformed.pem")
-		if err := os.WriteFile(path, []byte("-----BEGIN CERTIFICATE-----\nBAD\n-----END CERTIFICATE-----"), 0644); err != nil {
-			t.Fatalf("failed to create malformed file: %v", err)
-		}
-
-		_, err := googleHTTPClientWithRoots(path)
-		if err == nil {
-			t.Errorf("googleHTTPClientWithRoots() expected error for malformed pem, got nil")
-		}
-	})
-
-	t.Run("valid pem", func(t *testing.T) {
+	t.Run("valid pool", func(t *testing.T) {
 		validPEM := `-----BEGIN CERTIFICATE-----
 MIIDczCCAlugAwIBAgIUC1mdNsdB4jmUzAB7WdcMybyxXI8wDQYJKoZIhvcNAQEL
 BQAwSTELMAkGA1UEBhMCVVMxCzAJBgNVBAgMAkNBMQswCQYDVQQHDAJTRjENMAsG
@@ -63,9 +43,14 @@ OAMM+8xw+XONUalCCur/u3GfKPMBqvk=
 			t.Fatalf("failed to create valid pem file: %v", err)
 		}
 
-		client, err := googleHTTPClientWithRoots(path)
+		pool, err := loadCertPool(path)
 		if err != nil {
-			t.Fatalf("googleHTTPClientWithRoots() failed for valid pem: %v", err)
+			t.Fatalf("loadCertPool() failed: %v", err)
+		}
+
+		client, err := PinnedHTTPClient(pool)
+		if err != nil {
+			t.Fatalf("PinnedHTTPClient() failed for valid pool: %v", err)
 		}
 
 		// Verify the underlying transport has TLS config set

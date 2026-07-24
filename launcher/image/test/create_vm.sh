@@ -13,6 +13,7 @@ print_usage() {
     echo "  -t <machineType>: type of machine for VM (optional)"
     echo "  -g <gpuType>: type of GPU to use for the VM (optional)"
     echo "  -a <gpuCount>: number of GPU(s) to use for the VM (optional)"
+    echo "  -v <fakeVerifier>: true or false (default: true)"
     exit 1
 }
 
@@ -44,8 +45,7 @@ create_vm() {
     fi
   fi
 
-  # use the fake verifier for all tests
-  FAKE_VERIFIER='test-fake-verifier=true'
+  FAKE_VERIFIER="test-fake-verifier=${USE_FAKE_VERIFIER}"
 
   APPEND_METADATA=''
   if ! [ -z "$METADATA" ]; then
@@ -106,13 +106,13 @@ PROJECT_NAME=''
 VM_NAME=''
 ZONE=''
 CC='SEV' # default using sev
-MACHINE_TYPE=''
 GPU_TYPE=''
 GPU_COUNT=''
+USE_FAKE_VERIFIER='true'
 
 # In getopts, a ':' following a letter means that that flag takes an argument.
 # For example, i: means -i takes an additional argument.
-while getopts 'i:f:m:p:n:z:c:t:g:a:' flag; do
+while getopts 'i:f:m:p:n:z:c:t:g:a:v:' flag; do
   case "${flag}" in
     i) IMAGE_NAME=${OPTARG} ;;
     f) METADATA_FILE=${OPTARG} ;;
@@ -124,6 +124,7 @@ while getopts 'i:f:m:p:n:z:c:t:g:a:' flag; do
     t) MACHINE_TYPE=${OPTARG} ;;
     g) GPU_TYPE=${OPTARG} ;;
     a) GPU_COUNT=${OPTARG} ;;
+    v) USE_FAKE_VERIFIER=${OPTARG} ;;
     *) print_usage ;;
   esac
 done

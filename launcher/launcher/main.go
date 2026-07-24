@@ -18,7 +18,6 @@ import (
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/spec"
-	"google.golang.org/api/option"
 )
 
 const (
@@ -60,23 +59,6 @@ func main() {
 		os.Exit(exitCode)
 	}()
 
-	googleClient, err := launcher.GoogleHTTPClient()
-	if err != nil {
-		log.Default().Printf("Failed to initialize Google root HTTP client: %v", err)
-		exitCode = failRC
-		log.Default().Printf("%s, exit code: %d (%s)\n", exitMessage, exitCode, rcMessage[exitCode])
-		return
-	}
-	clientOpts := []option.ClientOption{option.WithHTTPClient(googleClient)}
-
-	pool, err := launcher.GoogleCertPool()
-	if err != nil {
-		log.Default().Printf("Failed to load Google root certificates: %v", err)
-		exitCode = failRC
-		log.Default().Printf("%s, exit code: %d (%s)\n", exitMessage, exitCode, rcMessage[exitCode])
-		return
-	}
-
 	serialConsole, err := os.OpenFile(serialConsoleFile, os.O_WRONLY, 0)
 	if err != nil {
 		log.Default().Printf("Failed to open serial console: %v", err)
@@ -86,16 +68,42 @@ func main() {
 	}
 	defer serialConsole.Close()
 
+	serialLogger := logging.NewSerialLogger(serialConsole)
+
+	pool, err := launcher.GoogleCertPool()
+	if err != nil {
+		serialLogger.Error(fmt.Sprintf("failed to load Google root certificates: %v", err))
+		exitCode = failRC
+		serialLogger.Error(exitMessage, "exit_code", exitCode, "exit_msg", rcMessage[exitCode])
+		return
+	}
+
 	workloadLogger, err := logging.NewCloudLogger(ctx, pool)
 	if err != nil {
-		log.Default().Printf("failed to initialize cloud logging: %v", err)
+		serialLogger.Error(fmt.Sprintf("failed to initialize cloud logging: %v", err))
 		exitCode = failRC
-		log.Default().Printf("%s, exit code: %d (%s)\n", exitMessage, exitCode, rcMessage[exitCode])
+		serialLogger.Error(exitMessage, "exit_code", exitCode, "exit_msg", rcMessage[exitCode])
 		return
 	}
 	defer workloadLogger.Close()
 
-	logger := logging.DualLogger(workloadLogger, logging.NewSerialLogger(serialConsole))
+	logger := logging.DualLogger(workloadLogger, serialLogger)
+
+	pinnedClient, err := launcher.PinnedHTTPClient(pool)
+	if err != nil {
+		logger.Error(fmt.Sprintf("failed to initialize Google root HTTP client: %v", err))
+		exitCode = failRC
+		logger.Error(exitMessage, "exit_code", exitCode, "exit_msg", rcMessage[exitCode])
+		return
+	}
+
+	googleClient, err := launcher.AuthenticatedGoogleHTTPClient(ctx, pinnedClient)
+	if err != nil {
+		logger.Error(fmt.Sprintf("failed to initialize authenticated Google HTTP client: %v", err))
+		exitCode = failRC
+		logger.Error(exitMessage, "exit_code", exitCode, "exit_msg", rcMessage[exitCode])
+		return
+	}
 
 	logger.Info("Boot completed", "duration_sec", uptime)
 	logger.Info(welcomeMessage, "build_commit", BuildCommit)
@@ -144,7 +152,7 @@ func main() {
 			logger.Info(exitMessage, "exit_code", exitCode)
 		}
 	}()
-	if err = launcher.StartLauncher(ctx, launchSpec, logger, workloadLogger, serialConsole, clientOpts...); err != nil {
+	if err = launcher.StartLauncher(ctx, launchSpec, logger, workloadLogger, serialConsole, pinnedClient, googleClient); err != nil {
 		logger.Error(err.Error())
 		var tpmOpenErr *launcher.TPMOpenError
 		if errors.As(err, &tpmOpenErr) {
