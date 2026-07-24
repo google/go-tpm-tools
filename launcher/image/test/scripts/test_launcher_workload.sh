@@ -16,7 +16,7 @@ else
     print_serial=true
 fi
 
-if echo $SERIAL_OUTPUT | grep -q 'Workload args: \[/main newCmd\]'
+if echo $SERIAL_OUTPUT | grep -q 'Workload args:.*\[/main newCmd\]'
 then
     echo "- arguments verified"
 else

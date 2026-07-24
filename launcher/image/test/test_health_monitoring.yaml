@@ -84,6 +84,7 @@ steps:
   - 'CLEANUP=$_CLEANUP'
   args: ['cleanup.sh', '${_VM_NAME_PREFIX}-disable-${BUILD_ID}', '${_ZONE}']
   waitFor: ['CheckMonitoringDisabled']
+
 # Must come after cleanup.
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CheckFailure
