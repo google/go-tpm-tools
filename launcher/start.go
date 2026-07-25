@@ -13,6 +13,7 @@ import (
 	"github.com/containerd/containerd/defaults"
 	"github.com/containerd/containerd/namespaces"
 	"github.com/google/go-tpm-tools/agent"
+	"github.com/google/go-tpm-tools/agent/device"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/launcher/internal/gpu"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
@@ -115,12 +116,13 @@ func StartLauncher(ctx context.Context, launchSpec spec.LaunchSpec, logger loggi
 	// Create signature discovery client.
 	sdClient := getSignatureDiscoveryClient(containerdClient, mdsClient, image.Target(), googleClient)
 
-	// Create device ROTs and GpuAttester.
-	var deviceROTs []agent.DeviceROT
-	gpuAttester := gpu.NewNvidiaAttester(launchSpec.InstallGpuDriver)
-	if launchSpec.InstallGpuDriver {
-		deviceROTs = append(deviceROTs, gpuAttester)
+	// Create device ROTs and ROTManager.
+	var deviceROTs []device.ROT
+	nvidiaAttester := gpu.NewNvidiaAttester(launchSpec.InstallGpuDriver)
+	if nvidiaAttester != nil {
+		deviceROTs = append(deviceROTs, nvidiaAttester)
 	}
+	deviceROTManager := device.NewROTManager(deviceROTs)
 
 	// Create AttestationAgent.
 	exps := agent.Experiments{
@@ -128,7 +130,7 @@ func StartLauncher(ctx context.Context, launchSpec spec.LaunchSpec, logger loggi
 		EnableGpuGcaSupport:       launchSpec.Experiments.EnableGpuGcaSupport,
 		BcMode:                    launchSpec.Experiments.BcMode,
 	}
-	attestAgent, err := agent.CreateAttestationAgent(tpm, client.GceAttestationKeyECC, verifierClient, principalFetcherWithImpersonate, sdClient, exps, logger, deviceROTs, launchSpec.SignedImageRepos)
+	attestAgent, err := agent.CreateAttestationAgent(tpm, client.GceAttestationKeyECC, verifierClient, principalFetcherWithImpersonate, sdClient, exps, logger, deviceROTManager, launchSpec.SignedImageRepos)
 	if err != nil {
 		return err
 	}
@@ -137,7 +139,7 @@ func StartLauncher(ctx context.Context, launchSpec spec.LaunchSpec, logger loggi
 		ContainerdClient: containerdClient,
 		Image:            image,
 		AttestAgent:      attestAgent,
-		GpuAttester:      gpuAttester,
+		DeviceROTManager: deviceROTManager,
 		AttestClients:    attestClients,
 		LaunchSpec:       launchSpec,
 		Logger:           logger,
