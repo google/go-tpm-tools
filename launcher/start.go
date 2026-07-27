@@ -126,6 +126,7 @@ func StartLauncher(ctx context.Context, launchSpec spec.LaunchSpec, logger loggi
 	exps := agent.Experiments{
 		EnableAttestationEvidence: launchSpec.Experiments.EnableAttestationEvidence,
 		EnableGpuGcaSupport:       launchSpec.Experiments.EnableGpuGcaSupport,
+		EnableGpuItaSupport:       launchSpec.Experiments.EnableGpuItaSupport,
 		BcMode:                    launchSpec.Experiments.BcMode,
 	}
 	attestAgent, err := agent.CreateAttestationAgent(tpm, client.GceAttestationKeyECC, verifierClient, principalFetcherWithImpersonate, sdClient, exps, logger, deviceROTs, launchSpec.SignedImageRepos)
