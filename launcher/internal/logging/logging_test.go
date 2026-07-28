@@ -407,3 +407,19 @@ func (m *mockLogger) Info(_ string, _ ...any)  {}
 func (m *mockLogger) Warn(_ string, _ ...any)  {}
 func (m *mockLogger) Error(_ string, _ ...any) {}
 func (m *mockLogger) Close()                   {}
+
+func TestJSONSeverityWriter(t *testing.T) {
+	var buf bytes.Buffer
+	writer := &JSONSeverityWriter{Target: &buf, Severity: "ERROR"}
+
+	input := "workload error line\n"
+	n, err := writer.Write([]byte(input))
+	if err != nil || n != len(input) {
+		t.Fatalf("Write failed: n=%d, err=%v", n, err)
+	}
+
+	want := `{"message":"workload error line","severity":"ERROR"}` + "\n"
+	if buf.String() != want {
+		t.Errorf("JSONSeverityWriter output = %q, want %q", buf.String(), want)
+	}
+}
