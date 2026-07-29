@@ -69,7 +69,7 @@ steps:
         cp ./launcher/image/bc-guest/bcexperiment.json \
            ./launcher/image/launcher \
            ./launcher/image/container-runner.service \
-           ./launcher/image/fluent-bit-cs.conf \
+           ./launcher/image/bc-guest/bc-fluent-bit-cs.conf \
            ./launcher/image/exit_script.sh \
            ./launcher/image/bc-guest/bc_network_setup.sh \
            ./launcher/image/bc-guest/bc_network_optimization.sh \
