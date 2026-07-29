@@ -5,7 +5,7 @@ substitutions:
   '_VM_NAME_PREFIX': 'cs-real-ita-test'
   '_ZONE': 'us-west1-a'
   '_CC': 'TDX'
-  '_WORKLOAD_IMAGE': 'us-west1-docker.pkg.dev/confidential-space-images-dev/cs-integ-test-images/basic-test:latest'
+  '_WORKLOAD_IMAGE': 'us-west1-docker.pkg.dev/confidential-space-images-dev/cs-integ-test-images/ipc/happypath:latest'
 steps:
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CreateVM
