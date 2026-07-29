@@ -720,7 +720,7 @@ steps:
 #     gsutil cp measure_output_vg_debug.json gs://${PROJECT_ID}-rims/${OUTPUT_IMAGE_NAME}.json
 #     gsutil cp measure_output_vg_debug_sha384.json gs://${PROJECT_ID}-rims/${OUTPUT_IMAGE_NAME}_sha384.json
 
-# options:
-#   automapSubstitutions: true
-#   pool:
-#     name: 'projects/confidential-space-images-dev/locations/us-west1/workerPools/cs-image-build-vpc'
+options:
+  automapSubstitutions: true
+  pool:
+    name: 'projects/confidential-space-images-dev/locations/us-west1/workerPools/cs-image-build-vpc'
