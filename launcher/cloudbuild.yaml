@@ -242,13 +242,14 @@ steps:
   - 'BUCKET_NAME=$_BUCKET_NAME'
   - 'BASE_IMAGE_PROJECT=$_BC_BASE_IMAGE_PROJECT' 
   - 'WSD_CONTAINER_IMAGE_REF=$_WSD_CONTAINER_IMAGE_REF'
+  - 'POLLING_INTERVAL=$_POLLING_INTERVAL'
 
   script: |
     #!/usr/bin/env bash
     set -exuo pipefail
 
     echo "building the debug image with BC customizer with the base image: ${BC_BASE_IMAGE}"
-    gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=launcher/image/bc_cloudbuild.yaml \
+    gcloud builds submit --polling-interval=${POLLING_INTERVAL} --config=launcher/image/bc_cloudbuild.yaml \
     --region us-west1 \
     --substitutions \
     _BASE_IMAGE=${BC_BASE_IMAGE},\
@@ -271,13 +272,14 @@ steps:
   - 'BUCKET_NAME=$_BUCKET_NAME'
   - 'BASE_IMAGE_PROJECT=$_BC_BASE_IMAGE_PROJECT'
   - 'WSD_CONTAINER_IMAGE_REF=$_WSD_CONTAINER_IMAGE_REF'
+  - 'POLLING_INTERVAL=$_POLLING_INTERVAL'
 
   script: |
     #!/usr/bin/env bash
     set -exuo pipefail
 
     echo "building the hardened image with BC customizer with the base image: ${BC_BASE_IMAGE}"
-    gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=launcher/image/bc_cloudbuild.yaml \
+    gcloud builds submit --polling-interval=${POLLING_INTERVAL} --config=launcher/image/bc_cloudbuild.yaml \
     --region us-west1 \
     --substitutions \
     _BASE_IMAGE=${BC_BASE_IMAGE},\
@@ -718,7 +720,7 @@ steps:
 #     gsutil cp measure_output_vg_debug.json gs://${PROJECT_ID}-rims/${OUTPUT_IMAGE_NAME}.json
 #     gsutil cp measure_output_vg_debug_sha384.json gs://${PROJECT_ID}-rims/${OUTPUT_IMAGE_NAME}_sha384.json
 
-# options:
-#   automapSubstitutions: true
-#   pool:
-#     name: 'projects/confidential-space-images-dev/locations/us-west1/workerPools/cs-image-build-vpc'
+options:
+  automapSubstitutions: true
+  pool:
+    name: 'projects/confidential-space-images-dev/locations/us-west1/workerPools/cs-image-build-vpc'
