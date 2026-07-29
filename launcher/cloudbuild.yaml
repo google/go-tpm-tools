@@ -350,6 +350,21 @@ steps:
     exit
 
 - name: 'gcr.io/cloud-builders/gcloud'
+  id: RealGCAConnectionTest
+  waitFor: ['DebugImageBuild']
+  env:
+  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-debug-${_OUTPUT_IMAGE_SUFFIX}'
+  - 'PROJECT_ID=$PROJECT_ID'
+  script: |
+    #!/usr/bin/env bash
+
+    cd launcher/image/test
+    echo "running real GCA connection test on ${OUTPUT_IMAGE_NAME}"
+    gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_real_gca_cloudbuild.yaml --region us-west1 \
+      --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
+    exit
+
+- name: 'gcr.io/cloud-builders/gcloud'
   id: DebugImageTestsTDX
   waitFor: ['DebugImageBuild']
   env:

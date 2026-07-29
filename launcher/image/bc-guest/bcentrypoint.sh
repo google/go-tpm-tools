@@ -14,7 +14,7 @@ main() {
   cp /usr/share/oem/wsd/wsd.service /etc/systemd/system/wsd.service
   # Override default fluent-bit config.
   mkdir -p /etc/fluent-bit
-  cp /usr/share/oem/confidential_space/fluent-bit-cs.conf /etc/fluent-bit/fluent-bit.conf
+  cp /usr/share/oem/confidential_space/bc-fluent-bit-cs.conf /etc/fluent-bit/fluent-bit.conf
 
   mkdir /tmp/container_launcher
   chmod +rw /tmp/container_launcher
@@ -52,11 +52,14 @@ main() {
     /usr/share/oem/confidential_space/bc_gpu_setup.sh
   fi
 
+  # Allow incoming Fluent Bit logs from KPS VM
+  iptables -A INPUT -p tcp -s 192.168.100.3 --dport 24224 -j ACCEPT
+
   systemctl enable container-runner.service
   systemctl enable wsd.service
   systemctl start container-runner.service
   systemctl start wsd.service
-  systemctl start fluent-bit.service
+  systemctl restart fluent-bit.service
 }
 
 main
