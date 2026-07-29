@@ -303,6 +303,7 @@ func (a *agent) AttestWithClient(ctx context.Context, opts AttestAgentOpts, clie
 	if err != nil {
 		return nil, err
 	}
+	a.logger.Info("Successfully created challenge", "challenge_name", challenge.Name)
 
 	tokenOpts := opts.TokenOptions
 	if tokenOpts == nil {
