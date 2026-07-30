@@ -18,6 +18,7 @@ steps:
       - '--image=${_BASE_IMAGE}'
       - '--image-project=${_BASE_IMAGE_PROJECT}'
       - '--destination-uri=gs://${_BUCKET_NAME}/oem-preloader-${BUILD_ID}/${_BASE_IMAGE}.tar.gz'
+      - '--zone=us-west1-a'
   - name: 'gcr.io/cloud-builders/gcloud'
     id: 'DownloadImageFromGCS'
     entrypoint: 'gcloud'
@@ -134,7 +135,7 @@ steps:
         fi
 
         gcloud storage cp "gs://cos-tools/$${VERSION}/$${TARGET}/vmlinux" ./vmlinux
-  - name: 'gcr.io/cos-cloud/oem-preloader:latest'
+  - name: 'gcr.io/cos-cloud/oem-preloader:v20260529'
     id: 'RunOEMPreloader'
     env:
       - 'IMAGE_ENV=${_IMAGE_ENV}'
@@ -240,6 +241,24 @@ steps:
            'cp',
            './out_image.tar.gz',
            'gs://${_BUCKET_NAME}/oem-preloader-${BUILD_ID}/${_OUTPUT_IMAGE_NAME}.tar.gz']
+  - name: 'golang:1.24-bullseye'
+    id: 'ExtractWorkloadLicenses'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        set -ex
+        chmod +x ./launcher/image/extract_all_licenses.sh
+        mkdir -p /workspace/license_out/go-tpm-tools
+        ./launcher/image/extract_all_licenses.sh / /workspace/license_out/go-tpm-tools "go-tpm-tools"
+        tar -czf /workspace/workload-licenses.tar.gz -C /workspace/license_out go-tpm-tools
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: 'UploadWorkloadLicensesToGCS'
+    entrypoint: 'gcloud'
+    args: ['storage',
+           'cp',
+           '/workspace/workload-licenses.tar.gz',
+           'gs://${_BUCKET_NAME}/oem-preloader-${BUILD_ID}/${_OUTPUT_IMAGE_NAME}_licenses.tar.gz']
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     id: 'FetchBaseImageFeatures'
     entrypoint: 'sh'
