@@ -12,6 +12,7 @@ substitutions:
   '_BC_DEBUG_IMAGE': 'cos-bcdbg-guest-125-19216-532-28'
   '_WSD_CONTAINER_IMAGE_REF': 'us-docker.pkg.dev/confidential-space-images-dev/key-protection-module-images/key-protection-module:acdec5c'
   '_POLLING_INTERVAL': '10'
+  '_ITA_API_KEY': 'fake-key'
 
 
 steps:
@@ -376,7 +377,7 @@ steps:
     cd launcher/image/test
     echo "running real ITA connection test on ${OUTPUT_IMAGE_NAME}"
     gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_real_ita_cloudbuild.yaml --region us-west1 \
-      --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
+      --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID},_ITA_API_KEY=${_ITA_API_KEY}
     exit
 
 
