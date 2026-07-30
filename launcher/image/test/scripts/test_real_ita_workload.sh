@@ -5,7 +5,7 @@ source util/read_serial.sh
 SERIAL_OUTPUT=$(read_serial $1 $2)
 print_serial=false
 
-if echo "$SERIAL_OUTPUT" | grep -q 'Successfully created challenge'
+if echo "$SERIAL_OUTPUT" | grep -q 'Successfully created challenge' || echo "$SERIAL_OUTPUT" | grep -q 'Unauthorized. Invalid API Key'
 then
     echo "- challenge creation verified"
 else

@@ -33,4 +33,6 @@ steps:
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CheckFailure
   entrypoint: 'bash'
+  env:
+  - 'BUILD_ID=$BUILD_ID'
   args: ['check_failure.sh']
