@@ -203,3 +203,31 @@ jobs:
         run: CGO_CFLAGS=-Werror CC=gcc go build ./...
       - name: Check for CGO Warnings (clang)
         run: CGO_CFLAGS=-Werror CC=clang go build ./...
+
+  keep-sorted:
+    name: Keep Sorted Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.24.x'
+          cache: false
+      - name: Install keep-sorted
+        run: go install github.com/google/keep-sorted@v0.9.1
+      - name: Check keep-sorted
+        run: |
+          if [ -n "${GITHUB_BASE_REF}" ]; then
+            git fetch origin ${GITHUB_BASE_REF} --depth=1
+            BASE_REF="origin/${GITHUB_BASE_REF}"
+          else
+            BASE_REF="HEAD~1"
+          fi
+          git diff --name-only -z --diff-filter=d "$BASE_REF" HEAD | while IFS= read -r -d '' file; do
+            if [ -f "$file" ]; then
+              keep-sorted "$file"
+            fi
+          done
+          git diff --exit-code
