@@ -78,25 +78,27 @@ const (
 
 // Metadata variable names.
 const (
-	fakeVerifierKey            = "test-fake-verifier"
-	imageRefKey                = "tee-image-reference"
-	signedImageRepos           = "tee-signed-image-repos"
-	restartPolicyKey           = "tee-restart-policy"
-	cmdKey                     = "tee-cmd"
-	envKeyPrefix               = "tee-env-"
-	impersonateServiceAccounts = "tee-impersonate-service-accounts"
-	logRedirectKey             = "tee-container-log-redirect"
-	memoryMonitoringEnable     = "tee-monitoring-memory-enable"
-	monitoringEnable           = "tee-monitoring-enable"
-	devShmSizeKey              = "tee-dev-shm-size-kb"
-	mountKey                   = "tee-mount"
-	itaRegion                  = "ita-region"
+	// keep-sorted start by_regex="([^"]+)"
+	gcaServiceEnv              = "gca-service-env"
 	itaKey                     = "ita-api-key"
+	itaRegion                  = "ita-region"
 	addedCaps                  = "tee-added-capabilities"
 	cgroupNS                   = "tee-cgroup-ns"
-	gcaServiceEnv              = "gca-service-env"
-	installGpuDriver           = "tee-install-gpu-driver"
+	cmdKey                     = "tee-cmd"
+	logRedirectKey             = "tee-container-log-redirect"
+	devShmSizeKey              = "tee-dev-shm-size-kb"
 	disableGcaRefreshKey       = "tee-disable-gca-refresh"
+	envKeyPrefix               = "tee-env-"
+	imageRefKey                = "tee-image-reference"
+	impersonateServiceAccounts = "tee-impersonate-service-accounts"
+	installGpuDriver           = "tee-install-gpu-driver"
+	monitoringEnable           = "tee-monitoring-enable"
+	memoryMonitoringEnable     = "tee-monitoring-memory-enable"
+	mountKey                   = "tee-mount"
+	restartPolicyKey           = "tee-restart-policy"
+	signedImageRepos           = "tee-signed-image-repos"
+	fakeVerifierKey            = "test-fake-verifier"
+	// keep-sorted end
 )
 
 const (

@@ -100,19 +100,21 @@ func toPolicy(policy, s string) (policy, error) {
 }
 
 const (
-	envOverride        = "tee.launch_policy.allow_env_override"
-	cmdOverride        = "tee.launch_policy.allow_cmd_override"
-	logRedirect        = "tee.launch_policy.log_redirect"
-	memoryMonitoring   = "tee.launch_policy.monitoring_memory_allow"
-	hardenedMonitoring = "tee.launch_policy.hardened_monitoring"
-	debugMonitoring    = "tee.launch_policy.debug_monitoring"
+	// keep-sorted start by_regex="([^"]+)"
+	privilegedCaps = "tee.launch_policy.allow_capabilities"
+	allowCgroups   = "tee.launch_policy.allow_cgroups"
+	cmdOverride    = "tee.launch_policy.allow_cmd_override"
+	envOverride    = "tee.launch_policy.allow_env_override"
 	// Values look like a PATH list, with ':' as a separator.
 	// Empty paths will be ignored and relative paths will be interpreted as
 	// relative to "/".
 	// Paths will be cleaned using filepath.Clean.
-	mountDestinations = "tee.launch_policy.allow_mount_destinations"
-	privilegedCaps    = "tee.launch_policy.allow_capabilities"
-	allowCgroups      = "tee.launch_policy.allow_cgroups"
+	mountDestinations  = "tee.launch_policy.allow_mount_destinations"
+	debugMonitoring    = "tee.launch_policy.debug_monitoring"
+	hardenedMonitoring = "tee.launch_policy.hardened_monitoring"
+	logRedirect        = "tee.launch_policy.log_redirect"
+	memoryMonitoring   = "tee.launch_policy.monitoring_memory_allow"
+	// keep-sorted end
 )
 
 func configureMonitoringPolicy(imageLabels map[string]string, launchPolicy *LaunchPolicy, logger logging.Logger) error {
