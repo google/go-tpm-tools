@@ -66,6 +66,12 @@ func TestExperiments(t *testing.T) {
 				EnableItaVerifier:         false,
 			},
 		},
+		{
+			input: "{\"EnableAttestationEvidence\":false,\"EnableConfidentialGPUSupport\":true,\"EnableGPUDriverInstallation\":false,\"EnableGpuGcaSupport\":false,\"EnableGpuItaSupport\":true,\"EnableH100DriverInstallation\":false,\"EnableHealthMonitoring\":false,\"EnableItaVerifier\":false,\"EnablePrivilegedCS\":false,\"EnableTempFSMount\":true,\"EnableTestFeatureForImage\":false,\"EnableVerifyCS\":true}",
+			expectedExps: Experiments{
+				EnableGpuItaSupport: true,
+			},
+		},
 	}
 
 	for i, test := range tests {
