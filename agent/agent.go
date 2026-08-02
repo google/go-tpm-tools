@@ -17,6 +17,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -121,6 +122,8 @@ type AcpiOpts struct {
 type Experiments struct {
 	// EnableGpuGcaSupport enables the GPU attestation.
 	EnableGpuGcaSupport bool
+	// EnableGpuItaSupport enables the GPU attestation with ITA.
+	EnableGpuItaSupport bool
 	// EnableAttestationEvidence enables the attestation evidence endpoint.
 	EnableAttestationEvidence bool
 	// BcMode enables baremetal execution mode.
@@ -360,7 +363,8 @@ func (a *agent) AttestWithClient(ctx context.Context, opts AttestAgentOpts, clie
 		return nil, fmt.Errorf("received an unsupported attestation type! %v", v)
 	}
 
-	if a.experiments.EnableGpuGcaSupport {
+	isIta := strings.HasPrefix(challenge.Name, "ita://")
+	if (!isIta && a.experiments.EnableGpuGcaSupport) || (isIta && a.experiments.EnableGpuItaSupport) {
 		deviceReports, err := a.attestDeviceROTs(challenge.Nonce, opts)
 		if err != nil {
 			return nil, fmt.Errorf("failed to attest device RoTs: %v", err)

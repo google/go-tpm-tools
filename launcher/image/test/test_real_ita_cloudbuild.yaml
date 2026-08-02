@@ -2,10 +2,11 @@ substitutions:
   '_IMAGE_NAME': ''
   '_IMAGE_PROJECT': ''
   '_CLEANUP': 'true'
-  '_VM_NAME_PREFIX': 'cs-real-gca-test'
+  '_VM_NAME_PREFIX': 'cs-real-ita-test'
   '_ZONE': 'us-west1-a'
-  '_CC': ''
-  '_WORKLOAD_IMAGE': 'us-west1-docker.pkg.dev/confidential-space-images-dev/cs-integ-test-images/basic-test:latest'
+  '_CC': 'TDX'
+  '_WORKLOAD_IMAGE': 'us-west1-docker.pkg.dev/confidential-space-images-dev/cs-integ-test-images/ita-test:latest'
+  '_ITA_API_KEY': 'test-api-key'
 steps:
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CreateVM
@@ -14,16 +15,16 @@ steps:
   - 'BUILD_ID=$BUILD_ID'
   args: ['create_vm.sh','-i', '${_IMAGE_NAME}',
           '-p', '${_IMAGE_PROJECT}',
-          '-m', 'tee-image-reference=${_WORKLOAD_IMAGE},tee-container-log-redirect=true',
+          '-m', 'tee-image-reference=${_WORKLOAD_IMAGE},tee-container-log-redirect=true,ita-region=US,ita-api-key=${_ITA_API_KEY}',
           '-n', '${_VM_NAME_PREFIX}-${BUILD_ID}',
           '-z', '${_ZONE}',
           '-c', '${_CC}',
           '-v', 'false',
         ]
 - name: 'gcr.io/cloud-builders/gcloud'
-  id: RealGCAWorkloadTest
+  id: RealITAWorkloadTest
   entrypoint: 'bash'
-  args: ['scripts/test_real_gca_workload.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}', '${_ZONE}']
+  args: ['scripts/test_real_ita_workload.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}', '${_ZONE}']
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CleanUp
   entrypoint: 'bash'
