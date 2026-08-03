@@ -39,19 +39,6 @@ steps:
   - name: 'alpine'
     id: 'ExtractRawImage'
     args: ['tar', '-xf', './src_image.tar.gz']
-
-  - name: 'gcr.io/cloud-builders/docker'
-    id: 'BuildAndSaveGPUHelper'
-    entrypoint: 'bash'
-    args:
-      - '-c'
-      - |
-        set -e
-        docker build -t guest-gpu-tools:latest ./launcher/internal/gpu/daemons/
-        container_id=$$(docker create guest-gpu-tools:latest)
-        docker export "$${container_id}" -o /workspace/gpu_helper_rootfs.tar
-        docker rm "$${container_id}"
-
   - name: 'alpine'
     id: 'PrepareOEMInstallDir'
     entrypoint: 'sh'
@@ -63,7 +50,6 @@ steps:
         mkdir -p /workspace/oem-install/confidential_space
         mkdir -p /workspace/oem-install/confidential_space/nodeproblemdetector
         mkdir -p /workspace/oem-install/wsd
-        mkdir -p /workspace/oem-install/gpu_helper
 
         cp ./launcher/image/bc-guest/bcentrypoint.sh /workspace/oem-install/entrypoint.sh
         cp ./launcher/image/bc-guest/bcexperiment.json \
@@ -89,15 +75,6 @@ steps:
           mkdir -p /workspace/oem-install/wsd/rootfs/run/container_launcher
           # Mountpoint needed by containerd
           mkdir -p /workspace/oem-install/wsd/rootfs/dev/mqueue
-        fi
-
-        # Extract GPU rootfs
-        if [ -f /workspace/gpu_helper_rootfs.tar ]; then
-          mkdir -p /workspace/oem-install/gpu_helper/rootfs
-          tar -C /workspace/oem-install/gpu_helper/rootfs -xf /workspace/gpu_helper_rootfs.tar
-          mkdir -p /workspace/oem-install/gpu_helper/rootfs/opt/nvidia-host
-          # Mountpoint needed by containerd
-          mkdir -p /workspace/oem-install/gpu_helper/rootfs/dev/mqueue
         fi
 
         # Create IMA policy
