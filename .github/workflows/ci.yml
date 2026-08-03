@@ -45,7 +45,8 @@ jobs:
     name: Generate/Build/Test (${{ matrix.os }}, ${{ matrix.architecture }}, Go ${{ matrix.go-version }})
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Pinned to commit SHA to satisfy blanket security policy (zizmor)
+      - uses: actions/checkout@a37ce9120846195fa4ece8f58b268e6043cb2f26 # v3
         with:
           submodules: recursive
           persist-credentials: false
@@ -146,6 +147,7 @@ jobs:
         run: |
           cd keymanager
           cargo build --release
+      # Pinned to commit SHA to satisfy blanket security policy (zizmor)
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@537aa1903e5d359d0b27dbc19ddd22c5087f3fbc # v3.2.0
         with:
@@ -172,7 +174,8 @@ jobs:
     name: Lint CGO (${{ matrix.os }}, Go ${{ matrix.go-version }})
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Pinned to commit SHA to satisfy blanket security policy (zizmor)
+      - uses: actions/checkout@a37ce9120846195fa4ece8f58b268e6043cb2f26 # v3
         with:
           submodules: recursive
           persist-credentials: false
