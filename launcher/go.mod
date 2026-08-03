@@ -1,6 +1,6 @@
 module github.com/google/go-tpm-tools/launcher
 
-go 1.24.13
+go 1.25.0
 
 require (
 	cloud.google.com/go/compute/metadata v0.9.0
@@ -13,7 +13,7 @@ require (
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/confidentsecurity/go-nvtrust v0.2.2
 	github.com/containerd/containerd v1.7.23
-	github.com/containerd/containerd/v2 v2.0.1
+	github.com/containerd/containerd/v2 v2.0.9
 	github.com/coreos/go-systemd/v22 v22.5.0
 	github.com/golang-jwt/jwt/v4 v4.5.2
 	github.com/google/go-cmp v0.7.0
@@ -26,10 +26,10 @@ require (
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.0
 	github.com/opencontainers/runtime-spec v1.2.0
-	golang.org/x/oauth2 v0.34.0
+	golang.org/x/oauth2 v0.36.0
 	google.golang.org/api v0.265.0
-	google.golang.org/genproto/googleapis/api v0.0.0-20260203192932-546029d2fa20
-	google.golang.org/grpc v1.80.0
+	google.golang.org/genproto/googleapis/api v0.0.0-20260226221140-a57be14db171
+	google.golang.org/grpc v1.81.1
 	google.golang.org/protobuf v1.36.11
 )
 
@@ -55,9 +55,10 @@ require (
 	github.com/containerd/errdefs/pkg v0.3.0 // indirect
 	github.com/containerd/fifo v1.1.0 // indirect
 	github.com/containerd/log v0.1.0 // indirect
-	github.com/containerd/platforms v1.0.0-rc.0 // indirect
-	github.com/containerd/ttrpc v1.2.6 // indirect
+	github.com/containerd/platforms v1.0.0-rc.1 // indirect
+	github.com/containerd/ttrpc v1.2.7 // indirect
 	github.com/containerd/typeurl/v2 v2.2.3 // indirect
+	github.com/cyphar/filepath-securejoin v0.5.1 // indirect
 	github.com/distribution/reference v0.6.0 // indirect
 	github.com/docker/go-events v0.0.0-20190806004212-e31b211e4f1c // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
@@ -87,26 +88,26 @@ require (
 	github.com/moby/sys/signal v0.7.1 // indirect
 	github.com/moby/sys/user v0.3.0 // indirect
 	github.com/moby/sys/userns v0.1.0 // indirect
-	github.com/opencontainers/selinux v1.11.1 // indirect
+	github.com/opencontainers/selinux v1.13.1 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	go.opencensus.io v0.24.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.61.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.61.0 // indirect
-	go.opentelemetry.io/otel v1.39.0 // indirect
-	go.opentelemetry.io/otel/metric v1.39.0 // indirect
-	go.opentelemetry.io/otel/trace v1.39.0 // indirect
+	go.opentelemetry.io/otel v1.43.0 // indirect
+	go.opentelemetry.io/otel/metric v1.43.0 // indirect
+	go.opentelemetry.io/otel/trace v1.43.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.org/x/crypto v0.47.0 // indirect
+	golang.org/x/crypto v0.48.0 // indirect
 	golang.org/x/exp v0.0.0-20250813145105-42675adae3e6 // indirect
-	golang.org/x/net v0.49.0 // indirect
-	golang.org/x/sync v0.19.0 // indirect
-	golang.org/x/sys v0.40.0 // indirect
-	golang.org/x/text v0.33.0 // indirect
+	golang.org/x/net v0.51.0 // indirect
+	golang.org/x/sync v0.20.0 // indirect
+	golang.org/x/sys v0.42.0 // indirect
+	golang.org/x/text v0.34.0 // indirect
 	golang.org/x/time v0.14.0 // indirect
 	google.golang.org/genproto v0.0.0-20260128011058-8636f8732409 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260203192932-546029d2fa20 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260226221140-a57be14db171 // indirect
 )
 
 replace (
