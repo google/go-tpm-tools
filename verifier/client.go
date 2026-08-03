@@ -82,7 +82,7 @@ type AttestClients struct {
 	ITA Client
 }
 
-// HasThirdPartyClient returns true if AttestClients contains an initialzied
+// HasThirdPartyClient returns true if AttestClients contains an initialized
 // third-party verifier client.
 func (ac *AttestClients) HasThirdPartyClient() bool {
 	return ac.ITA != nil

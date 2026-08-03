@@ -77,7 +77,7 @@ func createHashedNonce(nonce *itaNonce) ([]byte, error) {
 	return hash.Sum(nil), err
 }
 
-func NewClient(itaConfig verifier.ITAConfig) (verifier.Client, error) { //region string, key string) (verifier.Client, error) {
+func NewClient(itaConfig verifier.ITAConfig) (verifier.Client, error) { // region string, key string) (verifier.Client, error) {
 	url, err := urlFromRegion(itaConfig.ITARegion)
 	if err != nil {
 		return nil, err
