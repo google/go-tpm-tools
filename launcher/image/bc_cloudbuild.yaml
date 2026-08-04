@@ -39,17 +39,6 @@ steps:
   - name: 'alpine'
     id: 'ExtractRawImage'
     args: ['tar', '-xf', './src_image.tar.gz']
-
-  - name: 'gcr.io/cloud-builders/docker'
-    id: 'BuildAndSaveGPUHelper'
-    entrypoint: 'bash'
-    args:
-      - '-c'
-      - |
-        set -e
-        docker build -t guest-gpu-tools:latest ./launcher/internal/gpu/daemons/
-        docker save guest-gpu-tools:latest -o /workspace/gpu_helper.tar
-
   - name: 'alpine'
     id: 'PrepareOEMInstallDir'
     entrypoint: 'sh'
@@ -66,13 +55,12 @@ steps:
         cp ./launcher/image/bc-guest/bcexperiment.json \
            ./launcher/image/launcher \
            ./launcher/image/container-runner.service \
-           ./launcher/image/fluent-bit-cs.conf \
+           ./launcher/image/bc-guest/bc-fluent-bit-cs.conf \
            ./launcher/image/exit_script.sh \
            ./launcher/image/bc-guest/bc_network_setup.sh \
            ./launcher/image/bc-guest/bc_network_optimization.sh \
            ./launcher/image/bc-guest/bc_network_runtime_optimization.sh \
            ./launcher/image/bc-guest/bc_network_monitor.sh \
-           /workspace/gpu_helper.tar \
            ./launcher/image/bc-guest/bc_pin_pci_numa_nodes.sh \
            ./launcher/image/bc-guest/bc_gpu_setup.sh \
            /workspace/oem-install/confidential_space/
@@ -161,6 +149,7 @@ steps:
           "s|cros_efi|cros_efi cos.protected_stateful_partition=m|g"
           "s|cros_efi|cros_efi systemd.default_timeout_start_sec=900s|g"
           "s|cros_efi|cros_efi swiotlb=16777216,force,any|g"
+          "s|cros_efi|cros_efi hugepages=65536|g"
           "s|cros_efi|cros_efi systemd.mask=cloud-audit-setup.service|g"
           "s|systemd.mask=usr-share-oem.mount||g"
           "s|dm-m2d|dm-mod|g"

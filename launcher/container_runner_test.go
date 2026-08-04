@@ -29,13 +29,11 @@ import (
 	"github.com/google/go-cmp/cmp"
 	gecel "github.com/google/go-eventlog/cel"
 	"github.com/google/go-tpm-tools/agent"
+	"github.com/google/go-tpm-tools/agent/device"
 	"github.com/google/go-tpm-tools/cel"
-	"github.com/google/go-tpm-tools/client"
-	"github.com/google/go-tpm-tools/launcher/internal/gpu"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/spec"
-	"github.com/google/go-tpm-tools/simulator"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/opencontainers/go-digest"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
@@ -102,7 +100,8 @@ func (f *fakeAttestationAgent) AttestHost(_ context.Context, _ []byte) ([]byte, 
 }
 
 type fakeGPUAttester struct {
-	attestFunc func(nonce []byte) (any, error)
+	attestFunc    func(nonce []byte) (any, error)
+	readyStateErr error
 }
 
 func (f *fakeGPUAttester) Attest(nonce []byte) (any, error) {
@@ -113,7 +112,11 @@ func (f *fakeGPUAttester) Attest(nonce []byte) (any, error) {
 }
 
 func (f *fakeGPUAttester) EnableReadyState() error {
-	return nil
+	return f.readyStateErr
+}
+
+func (f *fakeGPUAttester) Vendor() device.Vendor {
+	return device.NvidiaGPU
 }
 
 type fakeClaims struct {
@@ -323,68 +326,123 @@ func TestRefreshTokenError(t *testing.T) {
 
 func TestMeasureGPUAttestationEvidence(t *testing.T) {
 	testCases := []struct {
-		name        string
-		gpuAttester gpu.Attester
-		attestAgent *fakeAttestationAgent
-		wantErr     bool
-		wantErrStr  string
+		name             string
+		rots             []device.ROT
+		attestAgent      *fakeAttestationAgent
+		wantErr          bool
+		wantErrStr       string
+		wantMeasureCount int
 	}{
 		{
-			name:        "Success",
-			gpuAttester: &fakeGPUAttester{},
+			name: "Success",
+			rots: []device.ROT{&fakeGPUAttester{}},
 			attestAgent: &fakeAttestationAgent{
 				measureEventFunc: func(gecel.Content) error { return nil },
 			},
-			wantErr: false,
+			wantErr:          false,
+			wantMeasureCount: 1,
 		},
 		{
-			name:        "NilGpuAttester",
-			gpuAttester: nil,
+			name: "MultipleDevicesSuccess",
+			rots: []device.ROT{&fakeGPUAttester{}, &fakeGPUAttester{}, &fakeGPUAttester{}},
+			attestAgent: &fakeAttestationAgent{
+				measureEventFunc: func(gecel.Content) error { return nil },
+			},
+			wantErr:          false,
+			wantMeasureCount: 3,
+		},
+		{
+			name:        "NilDeviceManager",
+			rots:        nil,
 			attestAgent: &fakeAttestationAgent{},
 			wantErr:     false,
 		},
 		{
 			name: "AttestError",
-			gpuAttester: &fakeGPUAttester{
+			rots: []device.ROT{&fakeGPUAttester{
 				attestFunc: func(_ []byte) (any, error) {
 					return nil, errors.New("attest failed")
 				},
-			},
+			}},
 			attestAgent: &fakeAttestationAgent{},
 			wantErr:     true,
-			wantErrStr:  "failed to collect GPU evidence",
+			wantErrStr:  "failed to collect evidence",
 		},
 		{
 			name: "WrongEvidenceType",
-			gpuAttester: &fakeGPUAttester{
+			rots: []device.ROT{&fakeGPUAttester{
 				attestFunc: func(_ []byte) (any, error) {
 					return "wrong type", nil
 				},
-			},
+			}},
 			attestAgent: &fakeAttestationAgent{},
 			wantErr:     true,
 			wantErrStr:  "unexpected evidence type",
 		},
 		{
-			name:        "MeasureEventError",
-			gpuAttester: &fakeGPUAttester{},
+			name: "MeasureEventError",
+			rots: []device.ROT{&fakeGPUAttester{}},
 			attestAgent: &fakeAttestationAgent{
 				measureEventFunc: func(gecel.Content) error {
 					return errors.New("measure event failed")
 				},
 			},
 			wantErr:    true,
-			wantErrStr: "failed to measure GPU attestation",
+			wantErrStr: "failed to measure attestation event",
+		},
+		{
+			name:             "NoAttachedDevices",
+			rots:             []device.ROT{},
+			attestAgent:      &fakeAttestationAgent{},
+			wantErr:          false,
+			wantMeasureCount: 0,
+		},
+		{
+			name: "MultipleDevicesPartialAttestFailure",
+			rots: []device.ROT{
+				&fakeGPUAttester{},
+				&fakeGPUAttester{
+					attestFunc: func(_ []byte) (any, error) {
+						return nil, errors.New("gpu1 attest failed")
+					},
+				},
+			},
+			attestAgent: &fakeAttestationAgent{
+				measureEventFunc: func(gecel.Content) error { return nil },
+			},
+			wantErr:    true,
+			wantErrStr: "failed to collect evidence",
+		},
+		{
+			name: "EnableReadyStateError",
+			rots: []device.ROT{
+				&fakeGPUAttester{
+					readyStateErr: errors.New("enable failed"),
+				},
+			},
+			attestAgent: &fakeAttestationAgent{
+				measureEventFunc: func(gecel.Content) error { return nil },
+			},
+			wantErr:    true,
+			wantErrStr: "failed to enable ready state",
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			var measureCount int
+			if tc.attestAgent != nil && tc.attestAgent.measureEventFunc != nil {
+				origFunc := tc.attestAgent.measureEventFunc
+				tc.attestAgent.measureEventFunc = func(event gecel.Content) error {
+					measureCount++
+					return origFunc(event)
+				}
+			}
+
 			r := &ContainerRunner{
-				// The fakeGPUAttester doesn't have EnableReadyState, so we wrap it.
-				gpuAttester: tc.gpuAttester,
-				attestAgent: tc.attestAgent,
-				logger:      logging.SimpleLogger(),
+				deviceROTManager: device.NewROTManager(tc.rots),
+				attestAgent:      tc.attestAgent,
+				logger:           logging.SimpleLogger(),
 			}
 
 			err := r.measureGPUAttestationEvidence()
@@ -393,6 +451,9 @@ func TestMeasureGPUAttestationEvidence(t *testing.T) {
 			}
 			if tc.wantErr && err != nil && !strings.Contains(err.Error(), tc.wantErrStr) {
 				t.Errorf("measureGPUAttestationEvidence() error = %q, want err containing %q", err, tc.wantErrStr)
+			}
+			if tc.wantMeasureCount > 0 && measureCount != tc.wantMeasureCount {
+				t.Errorf("measured %d events, want %d", measureCount, tc.wantMeasureCount)
 			}
 		})
 	}
@@ -743,21 +804,21 @@ func TestMeasureCELEvents(t *testing.T) {
 				},
 			}
 
-			var fakeGpu gpu.Attester
+			var rots []device.ROT
 			if tc.launchSpec.InstallGpuDriver {
-				fakeGpu = &fakeGPUAttester{
+				rots = []device.ROT{&fakeGPUAttester{
 					attestFunc: func(_ []byte) (any, error) {
 						return &attestationpb.NvidiaAttestationReport{}, nil
 					},
-				}
+				}}
 			}
 
 			r := ContainerRunner{
-				attestAgent: fakeAgent,
-				gpuAttester: fakeGpu,
-				container:   fakeContainer,
-				launchSpec:  tc.launchSpec,
-				logger:      logging.SimpleLogger(),
+				attestAgent:      fakeAgent,
+				deviceROTManager: device.NewROTManager(rots),
+				container:        fakeContainer,
+				launchSpec:       tc.launchSpec,
+				logger:           logging.SimpleLogger(),
 			}
 
 			if err := r.measureCELEvents(ctx); err != nil {
@@ -766,57 +827,6 @@ func TestMeasureCELEvents(t *testing.T) {
 
 			if !cmp.Equal(gotEvents, tc.wantCELEvents) {
 				t.Errorf("failed to measure CEL events, got %v, but want %v", gotEvents, tc.wantCELEvents)
-			}
-		})
-	}
-}
-
-func TestPullImageWithRetries(t *testing.T) {
-	testCases := []struct {
-		name        string
-		imagePuller func(int) (containerd.Image, error)
-		wantPass    bool
-	}{
-		{
-			name:        "success with single attempt",
-			imagePuller: func(int) (containerd.Image, error) { return &fakeImage{}, nil },
-			wantPass:    true,
-		},
-		{
-			name: "failure then success",
-			imagePuller: func(attempts int) (containerd.Image, error) {
-				if attempts%2 == 1 {
-					return nil, errors.New("fake error")
-				}
-				return &fakeImage{}, nil
-			},
-			wantPass: true,
-		},
-		{
-			name: "failure with attempts exceeded",
-			imagePuller: func(int) (containerd.Image, error) {
-				return nil, errors.New("fake error")
-			},
-			wantPass: false,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			retryPolicy := func() backoff.BackOff {
-				b := backoff.NewExponentialBackOff()
-				return backoff.WithMaxRetries(b, 2)
-			}
-
-			attempts := 0
-			_, err := pullImageWithRetries(
-				func() (containerd.Image, error) {
-					attempts++
-					return tc.imagePuller(attempts)
-				},
-				retryPolicy)
-			if gotPass := (err == nil); gotPass != tc.wantPass {
-				t.Errorf("pullImageWithRetries failed, got %v, but want %v", gotPass, tc.wantPass)
 			}
 		})
 	}
@@ -1035,16 +1045,10 @@ func TestNewRunner(t *testing.T) {
 			}
 
 			logger := &fakeLogger{}
-			tpm, err := simulator.Get()
-			if err != nil {
-				t.Skipf("TPM simulator not available: %v", err)
-			}
-			defer tpm.Close()
-
 			cfg := &RunnerConfig{
 				ContainerdClient: fakeCli,
-				TPM:              tpm,
-				AKFetcher:        client.AttestationKeyECC,
+				Image:            fakeImg,
+				AttestAgent:      &fakeAttestationAgent{},
 				LaunchSpec: spec.LaunchSpec{
 					ImageRef:            "test-image",
 					Envs:                tc.envs,
@@ -1055,7 +1059,7 @@ func TestNewRunner(t *testing.T) {
 				WorkloadLogger: logger,
 			}
 
-			_, err = NewRunner(context.Background(), cfg)
+			_, err := NewRunner(context.Background(), cfg)
 			if (err != nil) != tc.wantErr {
 				t.Fatalf("NewRunner() error = %v, wantErr = %v", err, tc.wantErr)
 			}

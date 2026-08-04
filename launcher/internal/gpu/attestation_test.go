@@ -155,3 +155,17 @@ func TestConvertGPUArchToPB(t *testing.T) {
 	}
 
 }
+
+func TestNewNvidiaAttester(t *testing.T) {
+	if got := NewNvidiaAttester(false); got != nil {
+		t.Errorf("NewNvidiaAttester(false) = %v, want nil", got)
+	}
+
+	got := NewNvidiaAttester(true)
+	if got == nil {
+		t.Fatalf("NewNvidiaAttester(true) = nil, want non-nil *NvidiaAttester")
+	}
+
+	// Verify *NvidiaAttester satisfies Attester interface
+	var _ Attester = got
+}

@@ -27,27 +27,27 @@ steps:
           '-p', '${_IMAGE_PROJECT}',
           '-f', '${_METADATA_FILE}',
           '-m', 'tee-image-reference=${_WORKLOAD_IMAGE_LOG_NEVER},tee-container-log-redirect=true',
-          '-n', '${_VM_NAME_PREFIX}-log-${BUILD_ID}',
+          '-n', '${_VM_NAME_PREFIX}-logn-${BUILD_ID}',
           '-z', '${_ZONE}',
         ]
 - name: 'gcr.io/cloud-builders/gcloud'
   id: LogOverrideTest
   entrypoint: 'bash'
-  args: ['scripts/test_launchpolicy_log_never.sh', '${_VM_NAME_PREFIX}-log-${BUILD_ID}', '${_ZONE}']
+  args: ['scripts/test_launchpolicy_log_never.sh', '${_VM_NAME_PREFIX}-logn-${BUILD_ID}', '${_ZONE}']
   waitFor: ['CreateVMLogOverride']
 - name: 'gcr.io/cloud-builders/gcloud'
   id: LogOverrideTestCloudLogging
   entrypoint: 'bash'
   env:
   - 'PROJECT_ID=$PROJECT_ID'
-  args: ['scripts/test_launchpolicy_log_never_cloudlogging.sh', '${_VM_NAME_PREFIX}-log-${BUILD_ID}']
+  args: ['scripts/test_launchpolicy_log_never_cloudlogging.sh', '${_VM_NAME_PREFIX}-logn-${BUILD_ID}']
   waitFor: ['CreateVMLogOverride']
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CleanUpLogOverride
   entrypoint: 'bash'
   env:
   - 'CLEANUP=$_CLEANUP'
-  args: ['cleanup.sh', '${_VM_NAME_PREFIX}-log-${BUILD_ID}', '${_ZONE}']
+  args: ['cleanup.sh', '${_VM_NAME_PREFIX}-logn-${BUILD_ID}', '${_ZONE}']
   waitFor: ['LogOverrideTest', 'LogOverrideTestCloudLogging']
 
 - name: 'gcr.io/cloud-builders/gcloud'
@@ -59,27 +59,28 @@ steps:
           '-p', '${_IMAGE_PROJECT}',
           '-f', '${_METADATA_FILE}',
           '-m', 'tee-image-reference=${_WORKLOAD_IMAGE_LOG_DEBUG},tee-container-log-redirect=true',
-          '-n', '${_VM_NAME_PREFIX}-log-${BUILD_ID}',
+          '-n', '${_VM_NAME_PREFIX}-logd-${BUILD_ID}',
           '-z', '${_ZONE}',
         ]
+  waitFor: ['-']
 - name: 'gcr.io/cloud-builders/gcloud'
   id: LogOverrideDebugTest
   entrypoint: 'bash'
-  args: ['scripts/test_launchpolicy_log_debug.sh', '${_VM_NAME_PREFIX}-log-${BUILD_ID}', '${_ZONE}']
+  args: ['scripts/test_launchpolicy_log_debug.sh', '${_VM_NAME_PREFIX}-logd-${BUILD_ID}', '${_ZONE}']
   waitFor: ['CreateVMLogOverrideDebug']
 - name: 'gcr.io/cloud-builders/gcloud'
   id: LogOverrideDebugTestCloudLogging
   entrypoint: 'bash'
   env:
   - 'PROJECT_ID=$PROJECT_ID'
-  args: ['scripts/test_launchpolicy_log_debug_cloudlogging.sh', '${_VM_NAME_PREFIX}-log-${BUILD_ID}']
+  args: ['scripts/test_launchpolicy_log_debug_cloudlogging.sh', '${_VM_NAME_PREFIX}-logd-${BUILD_ID}']
   waitFor: ['CreateVMLogOverrideDebug']
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CleanUpLogOverrideDebug
   entrypoint: 'bash'
   env:
   - 'CLEANUP=$_CLEANUP'
-  args: ['cleanup.sh', '${_VM_NAME_PREFIX}-log-${BUILD_ID}', '${_ZONE}']
+  args: ['cleanup.sh', '${_VM_NAME_PREFIX}-logd-${BUILD_ID}', '${_ZONE}']
   waitFor: ['LogOverrideDebugTest', 'LogOverrideDebugTestCloudLogging']
 
 - name: 'gcr.io/cloud-builders/gcloud'

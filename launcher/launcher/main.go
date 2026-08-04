@@ -6,22 +6,20 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log"
+	"net/http"
 	"os"
 	"os/exec"
 	"regexp"
 	"strings"
 	"time"
 
+	"cloud.google.com/go/auth/httptransport"
 	"cloud.google.com/go/compute/metadata"
-	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/launcher"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/spec"
-	"github.com/google/go-tpm/legacy/tpm2"
-	"google.golang.org/api/option"
 )
 
 const (
@@ -31,12 +29,6 @@ const (
 	rebootRC = 3 // reboot
 	holdRC   = 4 // hold
 )
-
-var expectedTPMDAParams = launcher.TPMDAParams{
-	MaxTries:        0x20,    // 32 tries
-	RecoveryTime:    0x1C20,  // 120 mins
-	LockoutRecovery: 0x15180, // 24 hrs
-}
 
 var rcMessage = map[int]string{
 	successRC: "workload finished successfully, shutting down the VM",
@@ -69,23 +61,6 @@ func main() {
 		os.Exit(exitCode)
 	}()
 
-	googleClient, err := launcher.GoogleHTTPClient()
-	if err != nil {
-		log.Default().Printf("Failed to initialize Google root HTTP client: %v", err)
-		exitCode = failRC
-		log.Default().Printf("%s, exit code: %d (%s)\n", exitMessage, exitCode, rcMessage[exitCode])
-		return
-	}
-	clientOpts := []option.ClientOption{option.WithHTTPClient(googleClient)}
-
-	pool, err := launcher.GoogleCertPool()
-	if err != nil {
-		log.Default().Printf("Failed to load Google root certificates: %v", err)
-		exitCode = failRC
-		log.Default().Printf("%s, exit code: %d (%s)\n", exitMessage, exitCode, rcMessage[exitCode])
-		return
-	}
-
 	serialConsole, err := os.OpenFile(serialConsoleFile, os.O_WRONLY, 0)
 	if err != nil {
 		log.Default().Printf("Failed to open serial console: %v", err)
@@ -95,16 +70,46 @@ func main() {
 	}
 	defer serialConsole.Close()
 
+	serialLogger := logging.NewSerialLogger(serialConsole)
+
+	pool, err := launcher.GoogleCertPool()
+	if err != nil {
+		serialLogger.Error(fmt.Sprintf("failed to load Google root certificates: %v", err))
+		exitCode = failRC
+		serialLogger.Error(exitMessage, "exit_code", exitCode, "exit_msg", rcMessage[exitCode])
+		return
+	}
+
 	workloadLogger, err := logging.NewCloudLogger(ctx, pool)
 	if err != nil {
-		log.Default().Printf("failed to initialize cloud logging: %v", err)
+		serialLogger.Error(fmt.Sprintf("failed to initialize cloud logging: %v", err))
 		exitCode = failRC
-		log.Default().Printf("%s, exit code: %d (%s)\n", exitMessage, exitCode, rcMessage[exitCode])
+		serialLogger.Error(exitMessage, "exit_code", exitCode, "exit_msg", rcMessage[exitCode])
 		return
 	}
 	defer workloadLogger.Close()
 
-	logger := logging.DualLogger(workloadLogger, logging.NewSerialLogger(serialConsole))
+	logger := logging.DualLogger(workloadLogger, serialLogger)
+
+	pinnedTransport, err := launcher.PinnedHTTPTransport(pool)
+	if err != nil {
+		logger.Error(fmt.Sprintf("failed to initialize Google root HTTP transport: %v", err))
+		exitCode = failRC
+		logger.Error(exitMessage, "exit_code", exitCode, "exit_msg", rcMessage[exitCode])
+		return
+	}
+
+	pinnedClient := &http.Client{Transport: pinnedTransport}
+
+	googleClient, err := httptransport.NewClient(&httptransport.Options{
+		BaseRoundTripper: pinnedTransport,
+	})
+	if err != nil {
+		logger.Error(fmt.Sprintf("failed to initialize authenticated Google HTTP client: %v", err))
+		exitCode = failRC
+		logger.Error(exitMessage, "exit_code", exitCode, "exit_msg", rcMessage[exitCode])
+		return
+	}
 
 	logger.Info("Boot completed", "duration_sec", uptime)
 	logger.Info(welcomeMessage, "build_commit", BuildCommit)
@@ -123,6 +128,8 @@ func main() {
 		logger.Error(exitMessage, "exit_code", exitCode, "exit_msg", rcMessage[exitCode])
 		return
 	}
+	// Do not delete the folliwing line, this line is used for tests.
+	logger.Info(fmt.Sprintf("Launch Spec: %+v", launchSpec.LogFriendly()))
 
 	verifier := osMountVerifier{}
 	if err := verifyDiskIntegrity(verifier); err != nil {
@@ -138,25 +145,6 @@ func main() {
 		return
 	}
 
-	var tpm io.ReadWriteCloser
-	if !launchSpec.Experiments.BcMode {
-		tpm, err = tpm2.OpenTPM("/dev/tpmrm0")
-		if err != nil {
-			logger.Error(fmt.Sprintf("failed to open TPM device: %v", err))
-			exitCode = rebootRC
-			logger.Error(exitMessage, "exit_code", exitCode, "exit_msg", rcMessage[exitCode])
-			return
-		}
-		defer tpm.Close()
-
-		if err := initTPM(tpm, logger); err != nil {
-			logger.Error(fmt.Sprintf("failed to initialize TPM: %v", err))
-			exitCode = getExitCode(launchSpec.Hardened, launchSpec.RestartPolicy, err)
-			logger.Error(exitMessage, "exit_code", exitCode, "exit_msg", rcMessage[exitCode])
-			return
-		}
-	}
-
 	defer func() {
 		// Catch panic to attempt to output to Cloud Logging.
 		if r := recover(); r != nil {
@@ -170,8 +158,18 @@ func main() {
 			logger.Info(exitMessage, "exit_code", exitCode)
 		}
 	}()
-	if err = launcher.StartLauncher(ctx, launchSpec, tpm, logger, workloadLogger, mdsClient, start, serialConsole, googleClient, clientOpts...); err != nil {
+	if err = launcher.StartLauncher(ctx, launchSpec, logger, workloadLogger, serialConsole, pinnedClient, googleClient); err != nil {
 		logger.Error(err.Error())
+		var tpmOpenErr *launcher.TPMOpenError
+		if errors.As(err, &tpmOpenErr) {
+			exitCode = rebootRC
+			return
+		}
+		var tpmInitErr *launcher.TPMInitError
+		if errors.As(err, &tpmInitErr) {
+			exitCode = getExitCode(launchSpec.Hardened, launchSpec.RestartPolicy, err)
+			return
+		}
 	}
 
 	workloadDuration := time.Since(start)
@@ -228,42 +226,6 @@ func getUptime() (string, error) {
 	}
 
 	return string(split[0]), nil
-}
-
-func initTPM(tpm io.ReadWriteCloser, logger logging.Logger) error {
-	// check DA info, don't crash if failed
-	daInfo, err := launcher.GetTPMDAInfo(tpm)
-	if err != nil {
-		logger.Error(fmt.Sprintf("Failed to get DA Info: %v", err))
-	} else {
-		if !daInfo.StartupClearOrderly {
-			logger.Warn(fmt.Sprintf("Failed orderly startup. Avoid using instance reset. Instead, use instance stop/start. DA lockout counter incremented: LockoutCounter: %d / MaxAuthFail: %d", daInfo.LockoutCounter, daInfo.MaxTries))
-		}
-
-		if err := launcher.SetTPMDAParams(tpm, expectedTPMDAParams); err != nil {
-			logger.Error(fmt.Sprintf("Failed to set DA params: %v", err))
-		}
-
-		daInfo, err := launcher.GetTPMDAInfo(tpm)
-		if err != nil {
-			logger.Error(fmt.Sprintf("Failed to get DA Info: %v", err))
-		} else {
-			logger.Info(fmt.Sprintf("Updated TPM DA params: %+v", daInfo))
-		}
-	}
-
-	// check AK (EK signing) cert
-	gceAk, err := client.GceAttestationKeyECC(tpm)
-	if err != nil {
-		return err
-	}
-	defer gceAk.Close()
-
-	if gceAk.Cert() == nil {
-		return errors.New("failed to find AKCert on this VM: try creating a new VM or contacting support")
-	}
-
-	return nil
 }
 
 // verifyFsAndMount checks the partitions/mounts are as expected, based on the command output reported by OS.

@@ -134,6 +134,8 @@ main() {
   append_cmdline "systemd.default_timeout_start_sec=900s"
   # Hardcode SWIOTLB to 16GB
   append_cmdline "swiotlb=8388608,force,any"
+  # Configure hugepages
+  append_cmdline "hugepages=65536"
 
   if [[ "${IMAGE_ENV}" == "debug" ]]; then
     configure_systemd_units_for_debug
