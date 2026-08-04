@@ -36,7 +36,8 @@ steps:
            '-image-project=${PROJECT_ID}',
            '-licenses=${_CS_LICENSE}',
            '-licenses=projects/confidential-space-images/global/licenses/ek-certificate-license',
-           '-zone=us-central1-a',
+           '-zone=us-west1-a',
+           '-machine-type=n2d-standard-2',
            '-project=${PROJECT_ID}']
 
 timeout: '3000s'

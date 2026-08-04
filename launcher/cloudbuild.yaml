@@ -635,7 +635,8 @@ steps:
   args: ['compute', 'images', 'export',
          '--destination-uri=gs://${PROJECT_ID}_raw-images/${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}.tar.gz',
          '--image=${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}',
-         '--project=${PROJECT_ID}']
+         '--project=${PROJECT_ID}',
+         '--zone=us-west1-a']
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: ExportDebugImage
@@ -644,7 +645,8 @@ steps:
   args: ['compute', 'images', 'export',
           '--destination-uri=gs://${PROJECT_ID}_raw-images/${_OUTPUT_IMAGE_PREFIX}-debug-${_OUTPUT_IMAGE_SUFFIX}.tar.gz',
           '--image=${_OUTPUT_IMAGE_PREFIX}-debug-${_OUTPUT_IMAGE_SUFFIX}',
-          '--project=${PROJECT_ID}']
+          '--project=${PROJECT_ID}',
+          '--zone=us-west1-a']
 
 - name: 'us-docker.pkg.dev/confidential-space-images-dev/cs-tools/measure@sha256:dae4766caef4a93c52736feb829bf2c505b7d48ce44d0ecb33e77d61bb4be888'
   id: MeasureHardenedImage
@@ -685,7 +687,8 @@ steps:
   args: ['compute', 'images', 'export',
          '--destination-uri=gs://${PROJECT_ID}_raw-images/${_OUTPUT_IMAGE_PREFIX}-vg-hardened-${_OUTPUT_IMAGE_SUFFIX}.tar.gz',
          '--image=${_OUTPUT_IMAGE_PREFIX}-vg-hardened-${_OUTPUT_IMAGE_SUFFIX}',
-         '--project=${PROJECT_ID}']
+         '--project=${PROJECT_ID}',
+         '--zone=us-west1-a']
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: ExportVgDebugImage
@@ -694,7 +697,8 @@ steps:
   args: ['compute', 'images', 'export',
           '--destination-uri=gs://${PROJECT_ID}_raw-images/${_OUTPUT_IMAGE_PREFIX}-vg-debug-${_OUTPUT_IMAGE_SUFFIX}.tar.gz',
           '--image=${_OUTPUT_IMAGE_PREFIX}-vg-debug-${_OUTPUT_IMAGE_SUFFIX}',
-          '--project=${PROJECT_ID}']
+          '--project=${PROJECT_ID}',
+          '--zone=us-west1-a']
 
 - name: 'us-docker.pkg.dev/confidential-space-images-dev/cs-tools/measure@sha256:dae4766caef4a93c52736feb829bf2c505b7d48ce44d0ecb33e77d61bb4be888'
   id: MeasureVgHardenedImage

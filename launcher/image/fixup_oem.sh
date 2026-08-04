@@ -4,7 +4,9 @@ main() {
   if [[ ! -d /mnt/disks/efi ]]; then
     mkdir /mnt/disks/efi
   fi
-  mount /dev/sda12 /mnt/disks/efi
+  # ChromiumOS / COS GPT disk layout uses partition 12 for the EFI System
+  # Partition (https://chromium.googlesource.com/chromiumos/docs/+/HEAD/disk_format.md).
+  mount "$(rootdev -s -d)12" /mnt/disks/efi
   sed -i -e 's|systemd.mask=usr-share-oem.mount||g' /mnt/disks/efi/efi/boot/grub.cfg
 
   # TODO: Remove this fix once the upstream customizer fixed the bug.
@@ -56,8 +58,9 @@ main() {
   fi
 
   # Since it's sealed, we mount it read-only to prevent changes
-  mount -o ro /dev/sda8 /mnt/disks/oem
-
+  # ChromiumOS / COS GPT disk layout uses partition 8 for the OEM partition
+  # (https://chromium.googlesource.com/chromiumos/docs/+/HEAD/disk_format.md).
+  mount -o ro "$(rootdev -s -d)8" /mnt/disks/oem
   ls -l /mnt/disks/oem/
   ls -l /mnt/disks/oem/confidential_space
 

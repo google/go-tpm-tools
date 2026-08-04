@@ -18,6 +18,7 @@ steps:
       - '--image=${_BASE_IMAGE}'
       - '--image-project=${_BASE_IMAGE_PROJECT}'
       - '--destination-uri=gs://${_BUCKET_NAME}/oem-preloader-${BUILD_ID}/${_BASE_IMAGE}.tar.gz'
+      - '--zone=us-west1-a'
   - name: 'gcr.io/cloud-builders/gcloud'
     id: 'DownloadImageFromGCS'
     entrypoint: 'gcloud'
