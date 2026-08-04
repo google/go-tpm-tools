@@ -19,11 +19,34 @@ main() {
     sed -e 's|.*|[BEGIN_CS_GRUB_CMDLINE]&[END_CS_GRUB_CMDLINE]|g'
 
   # Convert grub.cfg's kernel command line into what GRUB passes to the kernel.
-  grep -i '^\s*linux' /mnt/disks/efi/efi/boot/grub.cfg | \
+  local converted_cmdlines
+  converted_cmdlines=$(grep -i '^\s*linux' /mnt/disks/efi/efi/boot/grub.cfg | \
     sed -e "s|'ds=nocloud;s=/usr/share/oem/'|ds=nocloud;s=/usr/share/oem/|g" | \
     sed -e 's|\\"|"|g' | \
     sed -e 's|dm-mod.create="|"dm-mod.create=|g' | \
-    sed -e 's|.*|[BEGIN_CS_CMDLINE]&[END_CS_CMDLINE]|g'
+    sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+
+  local exit_code=0
+  while IFS= read -r line; do
+    if [[ -z "${line}" ]]; then
+      continue
+    fi
+    echo "[BEGIN_CS_CMDLINE]${line}[END_CS_CMDLINE]"
+    local args
+    args=$(echo "${line}" | cut -d' ' -f2-)
+    local len=${#args}
+    echo "Cmdline length: ${len}"
+    if (( len > 2047 )); then
+      echo "ERROR: Kernel cmdline length (${len}) exceeds 2047 characters limit! Additional arguments may get ignored" >&2
+      echo "cmdline: ${args}" >&2
+      exit_code=1
+    fi
+  done <<< "${converted_cmdlines}"
+
+  if (( exit_code != 0 )); then
+    umount /mnt/disks/efi
+    exit ${exit_code}
+  fi
 
   umount /mnt/disks/efi
 
