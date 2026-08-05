@@ -324,6 +324,14 @@ steps:
       PR_EMAIL="noreply@google.com"
     fi
 
+    # Cloud Build populates _PR_NUMBER for initial PR webhooks, but omits it during re-triggered
+    # check runs or manual builds. Fall back to querying the GitHub API for COMMIT_SHA.
+    PR_NUMBER="${PR_NUMBER:-}"
+    if [ -z "${PR_NUMBER}" ]; then
+      echo "PR_NUMBER is empty. Attempting to fetch PR number from GitHub API for commit ${COMMIT_SHA}..."
+      PR_NUMBER=$(python3 launcher/fetch_pr_number.py "${COMMIT_SHA}" 2>/dev/null || true)
+    fi
+
     DEBUG_URL="gs://${BC_ACOS_BUCKET}/${OUTPUT_IMAGE_PREFIX}-bc-debug-${OUTPUT_IMAGE_SUFFIX}.tar.gz"
     HARDENED_URL="gs://${BC_ACOS_BUCKET}/${OUTPUT_IMAGE_PREFIX}-bc-hardened-${OUTPUT_IMAGE_SUFFIX}.tar.gz"
 
