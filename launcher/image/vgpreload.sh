@@ -32,7 +32,9 @@ append_cmdline() {
   if [[ ! -d /mnt/disks/efi ]]; then
     mkdir /mnt/disks/efi
   fi
-  mount /dev/sda12 /mnt/disks/efi
+  # ChromiumOS / COS GPT disk layout uses partition 12 for the EFI System
+  # Partition (https://chromium.googlesource.com/chromiumos/docs/+/HEAD/disk_format.md).
+  mount "$(rootdev -s -d)12" /mnt/disks/efi
   sed -i -e "s|cros_efi|cros_efi ${arg}|g" /mnt/disks/efi/efi/boot/grub.cfg
   umount /mnt/disks/efi
 }
