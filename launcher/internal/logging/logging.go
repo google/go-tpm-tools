@@ -6,10 +6,12 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
+	"strings"
 
 	"cloud.google.com/go/compute/metadata"
 	clogging "cloud.google.com/go/logging"
@@ -335,4 +337,26 @@ func (w *SeverityWriter) Write(p []byte) (n int, err error) {
 	w.l.Log(w.severity, msg)
 
 	return len(p), nil
+}
+
+// JSONSeverityWriter wraps an io.Writer (such as os.Stdout or os.Stderr) and formats log lines as structured JSON.
+type JSONSeverityWriter struct {
+	Target   io.Writer
+	Severity string // "INFO" or "ERROR"
+}
+
+// Write formats p as JSON {"severity": "...", "message": "..."} and writes it to the underlying Target.
+func (w *JSONSeverityWriter) Write(p []byte) (n int, err error) {
+	msg := strings.TrimRight(string(p), "\r\n")
+	if msg == "" {
+		return len(p), nil
+	}
+
+	record, _ := json.Marshal(map[string]string{
+		"severity": w.Severity,
+		"message":  msg,
+	})
+	record = append(record, '\n')
+	_, err = w.Target.Write(record)
+	return len(p), err
 }
