@@ -495,7 +495,7 @@ steps:
     cd launcher/image/test
     echo "running hardened image container signature tests on ${OUTPUT_IMAGE_NAME}"
     gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_discover_signatures.yaml --region us-west1 \
-      --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID},_SIGNATURE_REPO=us-docker.pkg.dev/confidential-space-images-dev/cs-cosign-tests/hardened
+      --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID},_SIGNATURE_REPO=us-docker.pkg.dev/confidential-space-images-dev/cs-cosign-tests/hardened-$BUILD_ID
     exit
 
 - name: 'gcr.io/cloud-builders/gcloud'
@@ -509,7 +509,7 @@ steps:
     cd launcher/image/test
     echo "running debug image container signature tests on ${OUTPUT_IMAGE_NAME}"
     gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_discover_signatures.yaml --region us-west1 \
-      --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID},_SIGNATURE_REPO=us-docker.pkg.dev/confidential-space-images-dev/cs-cosign-tests/debug
+      --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID},_SIGNATURE_REPO=us-docker.pkg.dev/confidential-space-images-dev/cs-cosign-tests/debug-$BUILD_ID
     exit
 
 - name: 'gcr.io/cloud-builders/gcloud'
@@ -630,7 +630,7 @@ steps:
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: ExportHardenedImage
-  waitFor: ['HardenedImageTests']
+  waitFor: ['HardenedImageBuild']
   entrypoint: 'gcloud'
   args: ['compute', 'images', 'export',
          '--destination-uri=gs://${PROJECT_ID}_raw-images/${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}.tar.gz',
@@ -640,7 +640,7 @@ steps:
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: ExportDebugImage
-  waitFor: ['DebugImageTests']
+  waitFor: ['DebugImageBuild']
   entrypoint: 'gcloud'
   args: ['compute', 'images', 'export',
           '--destination-uri=gs://${PROJECT_ID}_raw-images/${_OUTPUT_IMAGE_PREFIX}-debug-${_OUTPUT_IMAGE_SUFFIX}.tar.gz',
@@ -682,7 +682,7 @@ steps:
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: ExportVgHardenedImage
-  waitFor: ['HardenedVgImageBuild', 'KeymanagerTests']
+  waitFor: ['HardenedVgImageBuild']
   entrypoint: 'gcloud'
   args: ['compute', 'images', 'export',
          '--destination-uri=gs://${PROJECT_ID}_raw-images/${_OUTPUT_IMAGE_PREFIX}-vg-hardened-${_OUTPUT_IMAGE_SUFFIX}.tar.gz',
@@ -692,7 +692,7 @@ steps:
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: ExportVgDebugImage
-  waitFor: ['DebugVgImageBuild', 'KeymanagerTests']
+  waitFor: ['DebugVgImageBuild']
   entrypoint: 'gcloud'
   args: ['compute', 'images', 'export',
           '--destination-uri=gs://${PROJECT_ID}_raw-images/${_OUTPUT_IMAGE_PREFIX}-vg-debug-${_OUTPUT_IMAGE_SUFFIX}.tar.gz',
