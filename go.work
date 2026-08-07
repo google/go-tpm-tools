@@ -8,6 +8,7 @@ use (
 	./launcher
 	./launcher/image/measure
 	./verifier
+	./TPM
 )
 
 replace github.com/google/go-tpm-tools v0.4.4 => ./

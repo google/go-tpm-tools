@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Google Inc.
+ * Copyright 2026 Google Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not
  * use this file except in compliance with the License. You may obtain a copy of
@@ -14,17 +14,20 @@
  * the License.
  */
 
-// Package simulator provides a go interface to the Microsoft TPM2 simulator.
+// Package simulator provides a go interface to the TPM2 simulator.
 package simulator
 
 import (
 	"bytes"
+	cryptorand "crypto/rand"
 	"errors"
 	"fmt"
-	"math/rand"
+	mathrand "math/rand"
 	"sync"
+	"time"
 
-	"github.com/google/go-tpm-tools/simulator/internal"
+	"github.com/google/TPM/bindings/go/entrypoints"
+	"github.com/google/TPM/bindings/go/platform"
 	"github.com/google/go-tpm/legacy/tpm2"
 )
 
@@ -35,6 +38,7 @@ import (
 type Simulator struct {
 	buf    bytes.Buffer
 	closed bool
+	timer  *simTimer
 }
 
 // ErrUsingClosedSimulator is returned if any operation on a Simulator is
@@ -43,7 +47,48 @@ var ErrUsingClosedSimulator = errors.New("attempting to use a closed simulator")
 
 // The simulator is a global resource, so we use the variables below to make
 // sure we only ever have one open reference to the Simulator at a time.
-var lock sync.Mutex
+var (
+	lock      sync.Mutex
+	nvStorage platform.Storage
+)
+
+type simTimer struct {
+	mu      sync.Mutex
+	start   time.Time
+	stopped bool
+	reset   bool
+}
+
+func newSimTimer() *simTimer {
+	return &simTimer{
+		start: time.Now(),
+		reset: true,
+	}
+}
+
+func (t *simTimer) Ticks() time.Duration {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return time.Since(t.start)
+}
+
+func (t *simTimer) WasReset() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	r := t.reset
+	t.reset = false
+	return r
+}
+
+func (t *simTimer) WasStopped() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	s := t.stopped
+	t.stopped = false
+	return s
+}
+
+func (t *simTimer) Adjust(a platform.Adjustment) {}
 
 // Get the pointer to an initialized, powered on, and started simulator. As only
 // one simulator may be running at a time, a second call to Get() block until
@@ -51,26 +96,68 @@ var lock sync.Mutex
 func Get() (*Simulator, error) {
 	lock.Lock()
 
-	simulator := &Simulator{}
-	internal.Reset(true)
-	if err := simulator.on(true); err != nil {
+	timer := newSimTimer()
+	platform.Current = &platform.Platform{
+		Entropy:   cryptorand.Reader,
+		Timer:     timer,
+		Storage:   nvStorage,
+		PCRConfig: simPCRConfig{},
+	}
+
+	if err := entrypoints.Manufacture(); err != nil && err != entrypoints.ErrManufactureAlreadyDone {
+		lock.Unlock()
+		return nil, fmt.Errorf("manufacture: %w", err)
+	}
+
+	entrypoints.Init()
+
+	s := &Simulator{
+		timer: timer,
+	}
+	if err := s.on(); err != nil {
 		lock.Unlock()
 		return nil, err
 	}
-	simulator.closed = false
-	return simulator, nil
+	s.closed = false
+	return s, nil
 }
 
 // GetWithFixedSeedInsecure behaves like Get() expect that all of the internal
 // hierarchy seeds are derived from the input seed. Note that this function
 // compromises the security of the keys/seeds and should only be used for tests.
 func GetWithFixedSeedInsecure(seed int64) (*Simulator, error) {
-	s, err := Get()
-	if err != nil {
-		return nil, err
+	lock.Lock()
+
+	// Wipe NVRAM to force remanufacture with the new seed/entropy
+	for i := range nvStorage.Data {
+		nvStorage.Data[i] = 0
 	}
 
-	internal.SetSeeds(rand.New(rand.NewSource(seed)))
+	timer := newSimTimer()
+	entropy := mathrand.New(mathrand.NewSource(seed))
+
+	platform.Current = &platform.Platform{
+		Entropy:   entropy,
+		Timer:     timer,
+		Storage:   nvStorage,
+		PCRConfig: simPCRConfig{},
+	}
+
+	if err := entrypoints.Manufacture(); err != nil && err != entrypoints.ErrManufactureAlreadyDone {
+		lock.Unlock()
+		return nil, fmt.Errorf("manufacture: %w", err)
+	}
+
+	entrypoints.Init()
+
+	s := &Simulator{
+		timer: timer,
+	}
+	if err := s.on(); err != nil {
+		lock.Unlock()
+		return nil, err
+	}
+	s.closed = false
 	return s, nil
 }
 
@@ -82,8 +169,12 @@ func (s *Simulator) Reset() error {
 	if err := s.off(); err != nil {
 		return err
 	}
-	internal.Reset(false)
-	return s.on(false)
+
+	s.timer = newSimTimer()
+	platform.Current.Timer = s.timer
+
+	entrypoints.Init()
+	return s.on()
 }
 
 // ManufactureReset behaves like Reset() except that the TPM is complete wiped.
@@ -95,8 +186,21 @@ func (s *Simulator) ManufactureReset() error {
 	if err := s.off(); err != nil {
 		return err
 	}
-	internal.Reset(true)
-	return s.on(true)
+
+	// Wipe NVRAM
+	for i := range nvStorage.Data {
+		nvStorage.Data[i] = 0
+	}
+
+	s.timer = newSimTimer()
+	platform.Current.Timer = s.timer
+
+	if err := entrypoints.Manufacture(); err != nil && err != entrypoints.ErrManufactureAlreadyDone {
+		return fmt.Errorf("manufacture: %w", err)
+	}
+
+	entrypoints.Init()
+	return s.on()
 }
 
 // Write executes the command specified by commandBuffer. The command response
@@ -105,10 +209,7 @@ func (s *Simulator) Write(commandBuffer []byte) (int, error) {
 	if s.IsClosed() {
 		return 0, ErrUsingClosedSimulator
 	}
-	resp, err := internal.RunCommand(commandBuffer)
-	if err != nil {
-		return 0, err
-	}
+	resp := entrypoints.ExecuteCommand(commandBuffer)
 	// write response to the internal response buffer.
 	_, _ = s.buf.Write(resp)
 	return len(commandBuffer), nil
@@ -139,7 +240,7 @@ func (s *Simulator) IsClosed() bool {
 	return s.closed
 }
 
-func (s *Simulator) on(_ bool) error {
+func (s *Simulator) on() error {
 	// TPM2_Startup must be the first command the TPM receives.
 	if err := tpm2.Startup(s, tpm2.StartupClear); err != nil {
 		return fmt.Errorf("startup: %w", err)
@@ -154,4 +255,19 @@ func (s *Simulator) off() error {
 		return fmt.Errorf("shutdown: %w", err)
 	}
 	return nil
+}
+
+type simPCRConfig struct{}
+
+func (simPCRConfig) Attributes(pcrNumber uint32) platform.PCRAttributes {
+	return platform.PCClientDefaultConfig.Attributes(pcrNumber)
+}
+
+func (simPCRConfig) DefaultActive(alg uint16) bool {
+	// Active for SHA-1 (0x0004), SHA-256 (0x000B), and SHA-384 (0x000C)
+	return alg == 0x0004 || alg == 0x000B || alg == 0x000C
+}
+
+func (simPCRConfig) InitialValue(pcrNumber uint32, alg uint16, locality uint8, value []byte) {
+	platform.PCClientDefaultConfig.InitialValue(pcrNumber, alg, locality, value)
 }
