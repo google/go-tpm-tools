@@ -155,10 +155,10 @@ steps:
           "s|systemd.mask=usr-share-oem.mount||g"
           "s|dm-m2d|dm-mod|g"
           "s|,oemroot|;oemroot|g"
+          "s|cros_efi|cros_efi module_blacklist=mlx5_core|g"
         )
 
         DEBUG_COMMANDS=(
-          "s|cros_efi|cros_efi systemd.mask=konlet-startup.service|g"
           "s|cros_efi|cros_efi systemd.mask=update-engine.service|g"
           "s|cros_efi|cros_efi confidential-space.hardened=false|g"
         )
@@ -177,7 +177,6 @@ steps:
           "s|cros_efi|cros_efi systemd.mask=google-osconfig-agent.service|g"
           "s|cros_efi|cros_efi systemd.mask=google-startup-scripts.service|g"
           "s|cros_efi|cros_efi systemd.mask=google-shutdown-scripts.service|g"
-          "s|cros_efi|cros_efi systemd.mask=konlet-startup.service|g"
           "s|cros_efi|cros_efi systemd.mask=crash-reporter.service|g"
           "s|cros_efi|cros_efi systemd.mask=device_policy_manager.service|g"
           "s|cros_efi|cros_efi systemd.mask=docker-events-collector-fluent-bit.service|g"
@@ -291,5 +290,7 @@ steps:
 timeout: '3000s'
 
 options:
-  machine_type: 'E2_HIGHCPU_32'
   dynamic_substitutions: true
+  pool:
+    name: 'projects/confidential-space-images-dev/locations/us-west1/workerPools/cs-image-build-vpc'
+
