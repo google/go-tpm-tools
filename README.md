@@ -26,7 +26,7 @@ It contains the following public packages:
   - [`proto`](https://pkg.go.dev/github.com/google/go-tpm-tools/proto):
     Common [Protocol Buffer](https://developers.google.com/protocol-buffers) messages that are exchanged between the `client` and `server` libraries. This package also contains helper methods for validating these messages.
   - [`simulator`](https://pkg.go.dev/github.com/google/go-tpm-tools/simulator):
-    Go bindings to the Microsoft's [TPM 2.0 simulator](https://github.com/Microsoft/ms-tpm-20-ref/).
+    Go bindings to the [TPM 2.0 simulator](https://github.com/google/TPM/) (which follows the [Trusted Computing Group's TPM reference implementation](https://github.com/TrustedComputingGroup/TPM)).
 
 This repository also contains `gotpm`, a command line tool for using the TPM.
 Run `gotpm --help` and `gotpm <command> --help` for more documentation.
@@ -167,7 +167,7 @@ sudo modprobe tdx_guest
 ## Legal
 
 Copyright 2018 Google Inc. under the
-[Apache 2.0 License](https://www.apache.org/licenses/LICENSE-2.0). Microsoft's TPM simulator
+[Apache 2.0 License](https://www.apache.org/licenses/LICENSE-2.0). The TPM simulator
 code is licensed under a [3-clause BSD license](https://opensource.org/licenses/BSD-3-Clause) and the [TCG software license](https://trustedcomputinggroup.org/wp-content/uploads/TPM-Rev-2.0-Part-1-Architecture-01.38.pdf). See the [`LICENSE`](LICENSE) file for more information.
 
 This is not an official Google product.

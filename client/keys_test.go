@@ -105,9 +105,29 @@ func TestCachedRSAKeys(t *testing.T) {
 	}
 }
 
+func evictAllHandles(t *testing.T, rw io.ReadWriter) {
+	t.Helper()
+	handles := []tpmutil.Handle{
+		client.SRKReservedHandle,
+		client.EKReservedHandle,
+		client.EKECCReservedHandle,
+		client.SRKECCReservedHandle,
+		client.DefaultAKRSAHandle,
+		client.DefaultAKECCHandle,
+	}
+	for _, handle := range handles {
+		tpm2.EvictControl(rw, "", tpm2.HandleOwner, handle, handle)
+	}
+}
+
 func TestKeyCreation(t *testing.T) {
 	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
+
+	evictAllHandles(t, rwc)
+	t.Cleanup(func() {
+		evictAllHandles(t, rwc)
+	})
 
 	keys := []struct {
 		name   string
@@ -128,6 +148,7 @@ func TestKeyCreation(t *testing.T) {
 				t.Fatal(err)
 			}
 			key.Close()
+			evictAllHandles(t, rwc)
 		})
 	}
 }
