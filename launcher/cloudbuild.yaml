@@ -41,27 +41,14 @@ steps:
     echo "base image:" ${base_image} "project:" ${BASE_IMAGE_PROJECT}
     echo ${base_image} > /workspace/base_image.txt
 
-- name: rust:1.85-bullseye
+- name: 'us-docker.pkg.dev/confidential-space-images-dev/cs-tools/keymanager-builder@sha256:0283448a48bcc515f15d708d5dcf9e368ea2553c8f5a3bb0908019372a47dbfe'
   id: KeyManagerCompile
   entrypoint: /bin/bash
   args:
     - -c
     - |
       set -exuo pipefail
-      # Install build dependencies for Rust
-      apt-get update && apt-get install -y clang build-essential curl tar
-
-      # Install CMake 3.28.3 from pre-compiled binaries for flexibility across environments
-      curl -sSL https://github.com/Kitware/CMake/releases/download/v3.28.3/cmake-3.28.3-linux-x86_64.tar.gz -o cmake.tar.gz
-      tar -zxvf cmake.tar.gz -C /opt/
-      export PATH="/opt/cmake-3.28.3-linux-x86_64/bin:$$PATH"
-      rm cmake.tar.gz
-
-      # Install bindgen-cli (needed by BoringSSL's CMake build)
-      cargo install bindgen-cli
-      export PATH="$$HOME/.cargo/bin:$$PATH"
-
-      # Build the Rust keymanager libraries
+      # Build the Rust keymanager libraries using prebuilt toolchain
       cd keymanager
       cargo build --release
 
