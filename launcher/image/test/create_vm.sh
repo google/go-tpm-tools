@@ -82,20 +82,41 @@ create_vm() {
     PREEMPTIBLE_FLAG=""
   fi
 
-  gcloud compute instances create $VM_NAME \
-    $CONFIDENTIAL_COMPUTE_FLAGS \
-    --maintenance-policy=TERMINATE \
-    --machine-type=$MACHINE_TYPE \
-    --boot-disk-size=$DISK_SIZE_GB \
-    --scopes=cloud-platform \
-    --zone=$ZONE \
-    --image=$IMAGE_NAME \
-    --image-project=$PROJECT_NAME \
-    --shielded-secure-boot \
-    $ACCELERATOR_FLAGS \
-    $PREEMPTIBLE_FLAG \
-    $APPEND_METADATA \
-    $APPEND_METADATA_FILE
+  MAX_RETRIES=1
+  if [ -n "$GPU_TYPE" ]; then
+    MAX_RETRIES=5
+  fi
+
+  RETRY_COUNT=0
+  DELAY=30
+
+  while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+    if gcloud compute instances create $VM_NAME \
+      $CONFIDENTIAL_COMPUTE_FLAGS \
+      --maintenance-policy=TERMINATE \
+      --machine-type=$MACHINE_TYPE \
+      --boot-disk-size=$DISK_SIZE_GB \
+      --scopes=cloud-platform \
+      --zone=$ZONE \
+      --image=$IMAGE_NAME \
+      --image-project=$PROJECT_NAME \
+      --shielded-secure-boot \
+      $ACCELERATOR_FLAGS \
+      $PREEMPTIBLE_FLAG \
+      $APPEND_METADATA \
+      $APPEND_METADATA_FILE; then
+      return 0
+    fi
+
+    RETRY_COUNT=$((RETRY_COUNT + 1))
+    if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+      echo "VM creation failed for ${VM_NAME} (attempt ${RETRY_COUNT}/${MAX_RETRIES}). Retrying in ${DELAY}s..."
+      sleep $DELAY
+    fi
+  done
+
+  echo "Failed to create VM ${VM_NAME} after ${MAX_RETRIES} attempts."
+  exit 1
 }
 
 IMAGE_NAME=''
