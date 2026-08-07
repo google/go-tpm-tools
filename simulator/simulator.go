@@ -88,7 +88,7 @@ func (t *simTimer) WasStopped() bool {
 	return s
 }
 
-func (t *simTimer) Adjust(a platform.Adjustment) {}
+func (t *simTimer) Adjust(_ platform.Adjustment) {}
 
 // Get the pointer to an initialized, powered on, and started simulator. As only
 // one simulator may be running at a time, a second call to Get() block until
