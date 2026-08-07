@@ -32,7 +32,9 @@ append_cmdline() {
   if [[ ! -d /mnt/disks/efi ]]; then
     mkdir /mnt/disks/efi
   fi
-  mount /dev/sda12 /mnt/disks/efi
+  # ChromiumOS / COS GPT disk layout uses partition 12 for the EFI System
+  # Partition (https://chromium.googlesource.com/chromiumos/docs/+/HEAD/disk_format.md).
+  mount "$(rootdev -s -d)12" /mnt/disks/efi
   sed -i -e "s|cros_efi|cros_efi ${arg}|g" /mnt/disks/efi/efi/boot/grub.cfg
   umount /mnt/disks/efi
 }
@@ -108,7 +110,6 @@ configure_systemd_units_for_hardened() {
   disable_unit "konlet-startup.service"
   disable_unit "crash-reporter.service"
   disable_unit "device_policy_manager.service"
-  disable_unit "docker-events-collector-fluent-bit.service"
   disable_unit "sshd.service"
   disable_unit "var-lib-toolbox.mount"
 }

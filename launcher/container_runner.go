@@ -20,7 +20,6 @@ import (
 	"time"
 
 	"cloud.google.com/go/compute/metadata"
-	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/cio"
@@ -29,10 +28,10 @@ import (
 	"github.com/containerd/containerd/remotes"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-tpm-tools/agent"
+	"github.com/google/go-tpm-tools/agent/device"
 	"github.com/google/go-tpm-tools/cel"
 	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
 	workloadservice "github.com/google/go-tpm-tools/keymanager/workload_service"
-	"github.com/google/go-tpm-tools/launcher/internal/gpu"
 	"github.com/google/go-tpm-tools/launcher/internal/healthmonitoring/nodeproblemdetector"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/internal/signaturediscovery"
@@ -42,19 +41,21 @@ import (
 	"github.com/google/go-tpm-tools/launcher/teeserver"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 	"google.golang.org/protobuf/proto"
+
+	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
 )
 
 // ContainerRunner contains information about the container settings
 type ContainerRunner struct {
-	container      containerd.Container
-	launchSpec     spec.LaunchSpec
-	attestAgent    agent.AttestationAgent
-	logger         logging.Logger
-	workloadLogger logging.Logger
-	gpuAttester    gpu.Attester
-	serialConsole  *os.File
-	powerButton    *powerButtonListener // Populated only for a hardened image
-	attestClients  teeserver.AttestClients
+	container        containerd.Container
+	launchSpec       spec.LaunchSpec
+	attestAgent      agent.AttestationAgent
+	logger           logging.Logger
+	workloadLogger   logging.Logger
+	deviceROTManager *device.ROTManager
+	serialConsole    *os.File
+	powerButton      *powerButtonListener // Populated only for a hardened image
+	attestClients    teeserver.AttestClients
 }
 
 const tokenFileTmp = ".token.tmp"
@@ -100,7 +101,7 @@ type RunnerConfig struct {
 	ContainerdClient ContainerdClient
 	Image            containerd.Image
 	AttestAgent      agent.AttestationAgent
-	GpuAttester      gpu.Attester
+	DeviceROTManager *device.ROTManager
 	AttestClients    teeserver.AttestClients
 	LaunchSpec       spec.LaunchSpec
 	Logger           logging.Logger
@@ -237,7 +238,7 @@ func NewRunner(ctx context.Context, cfg *RunnerConfig) (*ContainerRunner, error)
 		attestAgent,
 		logger,
 		workloadLogger,
-		cfg.GpuAttester,
+		cfg.DeviceROTManager,
 		serialConsole,
 		powerButton,
 		cfg.AttestClients,
@@ -294,7 +295,7 @@ func (r *ContainerRunner) measureCELEvents(ctx context.Context) error {
 	}
 
 	if err := r.measureGPUAttestationEvidence(); err != nil {
-		return fmt.Errorf("failed to measure GPU claims: %v", err)
+		return fmt.Errorf("failed to measure device attestation claims: %v", err)
 	}
 
 	if err := r.measureMemoryMonitor(); err != nil {
@@ -367,42 +368,60 @@ func (r *ContainerRunner) measureContainerClaims(ctx context.Context) error {
 // measureGPUAttestationEvidence will measure GPU attestation claims into the COS
 // eventlog in the AttestationAgent.
 func (r *ContainerRunner) measureGPUAttestationEvidence() error {
-	if r.gpuAttester == nil {
+	if r.deviceROTManager == nil {
 		return nil
 	}
 
+	if err := r.deviceROTManager.ValidateROTs(); err != nil {
+		return err
+	}
+
 	nonce := make([]byte, 32)
-	if _, err := cryt.Read(nonce); err != nil {
-		return fmt.Errorf("failed to generate random nonce: %v", err)
+	cryt.Read(nonce)
+
+	for _, rot := range r.deviceROTManager.Lookup(device.NvidiaGPU) {
+		evidence, err := rot.Attest(nonce)
+		if err != nil {
+			return fmt.Errorf("failed to collect evidence for device %v: %w", rot.Vendor(), err)
+		}
+
+		pbEvidence, ok := evidence.(proto.Message)
+		if !ok {
+			return fmt.Errorf("unexpected evidence type %T from device %v", evidence, rot.Vendor())
+		}
+
+		evidenceBytes, err := proto.Marshal(pbEvidence)
+		if err != nil {
+			return fmt.Errorf("failed to marshal evidence from device %v: %w", rot.Vendor(), err)
+		}
+
+		var eventType cel.CosType
+		switch rot.Vendor() {
+		case device.NvidiaGPU:
+			if _, ok := evidence.(*attestationpb.NvidiaAttestationReport); !ok {
+				return fmt.Errorf("unexpected evidence type %T for Nvidia GPU", evidence)
+			}
+			eventType = cel.GPUDeviceAttestationBindingType
+		default:
+			return fmt.Errorf("unsupported vendor %v for event log measurement", rot.Vendor())
+		}
+
+		event := cel.CosTlv{
+			EventType:    eventType,
+			EventContent: evidenceBytes,
+		}
+		if err := r.attestAgent.MeasureEvent(event); err != nil {
+			return fmt.Errorf("failed to measure attestation event for device %v: %w", rot.Vendor(), err)
+		}
+
+		if enabler, ok := rot.(device.ReadyStateEnabler); ok {
+			if err := enabler.EnableReadyState(); err != nil {
+				return fmt.Errorf("failed to enable ready state for device %v: %w", rot.Vendor(), err)
+			}
+		}
 	}
 
-	evidence, err := r.gpuAttester.Attest(nonce)
-	if err != nil {
-		return fmt.Errorf("failed to collect GPU evidence: %w", err)
-	}
-
-	gpuEvidence, ok := evidence.(*attestationpb.NvidiaAttestationReport)
-	if !ok {
-		return fmt.Errorf("unexpected evidence type: %T", evidence)
-	}
-
-	evidenceBytes, err := proto.Marshal(gpuEvidence)
-	if err != nil {
-		return fmt.Errorf("failed to marshal GPU evidence: %w", err)
-	}
-
-	event := cel.CosTlv{
-		EventType:    cel.GPUDeviceAttestationBindingType,
-		EventContent: evidenceBytes,
-	}
-	if err := r.attestAgent.MeasureEvent(event); err != nil {
-		return fmt.Errorf("failed to measure GPU attestation: %w", err)
-	}
-
-	if err := r.gpuAttester.EnableReadyState(); err != nil {
-		return fmt.Errorf("failed to set GPU ready state: %w", err)
-	}
-	r.logger.Info("Successfully measured GPU device attestation binding event and set GPU state to ready")
+	r.logger.Info("Successfully measured device attestation binding events and enabled ready states")
 	return nil
 }
 
