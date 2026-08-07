@@ -177,6 +177,7 @@ steps:
           "s|systemd.mask=usr-share-oem.mount||g"
           "s|dm-m2d|dm-mod|g"
           "s|,oemroot|;oemroot|g"
+          "s|cros_efi|cros_efi module_blacklist=mlx5_core|g"
         )
 
         DEBUG_COMMANDS=(
