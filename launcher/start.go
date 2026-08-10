@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"path"
@@ -17,6 +18,7 @@ import (
 	"github.com/google/go-tpm-tools/agent"
 	"github.com/google/go-tpm-tools/agent/device"
 	"github.com/google/go-tpm-tools/client"
+	kmcommonpb "github.com/google/go-tpm-tools/keymanager/km_common/proto"
 	workloadservice "github.com/google/go-tpm-tools/keymanager/workload_service"
 	"github.com/google/go-tpm-tools/launcher/internal/gpu"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
@@ -30,11 +32,12 @@ import (
 	"github.com/google/go-tpm-tools/verifier/util"
 	"github.com/google/go-tpm/legacy/tpm2"
 	"google.golang.org/api/option"
-
-	kmcommonpb "github.com/google/go-tpm-tools/keymanager/km_common/proto"
 )
 
-const keyManagerSocket = "kmaserver.sock"
+const (
+	teeServerSocket  = "teeserver.sock"
+	keyManagerSocket = "kmaserver.sock"
+)
 
 var expectedTPMDAParams = TPMDAParams{
 	MaxTries:        0x20,    // 32 tries
@@ -145,29 +148,49 @@ func StartLauncher(ctx context.Context, launchSpec spec.LaunchSpec, logger loggi
 		return err
 	}
 
-	var workloadService *workloadservice.Server
+	var keyClaimsProvider workloadservice.KeyClaimsProvider
 	if launchSpec.Experiments.EnableKeyManager {
 		logger.Info("EnableKeyManager experiment is enabled: initializing KeyManager server.")
-		keyManagerSocketPath := path.Join(launcherfile.HostTmpPath, keyManagerSocket)
-		keyManagerServer, err := workloadservice.New(ctx, keyManagerSocketPath, kmcommonpb.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED)
+		kmServer, err := workloadservice.New(
+			ctx,
+			path.Join(launcherfile.HostTmpPath, keyManagerSocket),
+			kmcommonpb.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED,
+		)
 		if err != nil {
-			return fmt.Errorf("failed to create the KeyManager server: %v", err)
+			return fmt.Errorf("failed to create KeyManager server: %w", err)
 		}
-		if err := verifySocketPermissions(keyManagerSocketPath); err != nil {
-			return fmt.Errorf("failed to verify KeyManager socket permissions: %w", err)
-		}
-		workloadService = keyManagerServer
-		go func() { _ = keyManagerServer.Serve() }()
-		defer func() { _ = keyManagerServer.Shutdown(ctx) }()
+		go func() { _ = kmServer.Serve() }()
+		defer kmServer.Shutdown(ctx)
+		keyClaimsProvider = kmServer
 	}
+
+	logger.Info("Initializing TEE server.")
+	teeSocket, err := listenUnixSocket(path.Join(launcherfile.HostTmpPath, teeServerSocket))
+	if err != nil {
+		return err
+	}
+	teeServer, err := teeserver.New(
+		ctx,
+		teeSocket,
+		attestAgent,
+		logger,
+		launchSpec.Experiments.BcMode,
+		launchSpec.Experiments.EnableHostAttestation,
+		attestClients,
+		keyClaimsProvider,
+	)
+	if err != nil {
+		teeSocket.Close()
+		return fmt.Errorf("failed to create TEE server: %w", err)
+	}
+	go func() { _ = teeServer.Serve() }()
+	defer teeServer.Shutdown(ctx)
 
 	r, err := NewRunner(ctx, &RunnerConfig{
 		ContainerdClient: containerdClient,
 		Image:            image,
 		AttestAgent:      attestAgent,
 		DeviceROTManager: deviceROTManager,
-		AttestClients:    attestClients,
-		WorkloadService:  workloadService,
 		LaunchSpec:       launchSpec,
 		Logger:           logger,
 		SerialConsole:    serialConsole,
@@ -265,6 +288,18 @@ func createAttestClients(ctx context.Context, launchSpec spec.LaunchSpec, logger
 	}
 	attestClients.GCA = gcaClient
 	return attestClients, nil
+}
+
+func listenUnixSocket(socketPath string) (net.Listener, error) {
+	nl, err := net.Listen("unix", socketPath)
+	if err != nil {
+		return nil, fmt.Errorf("cannot listen to socket [%s]: %w", socketPath, err)
+	}
+	if err := os.Chmod(socketPath, 0777); err != nil {
+		nl.Close()
+		return nil, fmt.Errorf("failed to chmod unix socket %s: %w", socketPath, err)
+	}
+	return nl, nil
 }
 
 func verifySocketPermissions(socketPath string) error {

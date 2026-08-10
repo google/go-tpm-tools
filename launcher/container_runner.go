@@ -30,15 +30,13 @@ import (
 	"github.com/google/go-tpm-tools/agent"
 	"github.com/google/go-tpm-tools/agent/device"
 	"github.com/google/go-tpm-tools/cel"
-	workloadservice "github.com/google/go-tpm-tools/keymanager/workload_service"
 	"github.com/google/go-tpm-tools/launcher/internal/healthmonitoring/nodeproblemdetector"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/internal/signaturediscovery"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/registryauth"
 	"github.com/google/go-tpm-tools/launcher/spec"
-	"github.com/google/go-tpm-tools/launcher/teeserver"
-	v1 "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/opencontainers/image-spec/specs-go/v1"
 	"google.golang.org/protobuf/proto"
 
 	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
@@ -53,13 +51,10 @@ type ContainerRunner struct {
 	deviceROTManager *device.ROTManager
 	serialConsole    *os.File
 	powerButton      *powerButtonListener // Populated only for a hardened image
-	attestClients    teeserver.AttestClients
-	workloadService  *workloadservice.Server
 }
 
 const tokenFileTmp = ".token.tmp"
 
-const teeServerSocket = "teeserver.sock"
 const keyManagerGrpcSocket = "kmaserver-grpc.sock"
 
 // Since we only allow one container on a VM, using a deterministic id is probably fine
@@ -100,8 +95,6 @@ type RunnerConfig struct {
 	Image            containerd.Image
 	AttestAgent      agent.AttestationAgent
 	DeviceROTManager *device.ROTManager
-	AttestClients    teeserver.AttestClients
-	WorkloadService  *workloadservice.Server
 	LaunchSpec       spec.LaunchSpec
 	Logger           logging.Logger
 	SerialConsole    *os.File
@@ -237,8 +230,6 @@ func NewRunner(ctx context.Context, cfg *RunnerConfig) (*ContainerRunner, error)
 		deviceROTManager: cfg.DeviceROTManager,
 		serialConsole:    serialConsole,
 		powerButton:      powerButton,
-		attestClients:    cfg.AttestClients,
-		workloadService:  cfg.WorkloadService,
 	}, nil
 }
 
@@ -602,21 +593,6 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 			return fmt.Errorf("failed to fetch and write OIDC token: %v", err)
 		}
 	}
-
-	// create and start the TEE server
-	r.logger.Info("EnableOnDemandAttestation is enabled: initializing TEE server.")
-
-	teeServerSocketPath := path.Join(launcherfile.HostTmpPath, teeServerSocket)
-	teeServer, err := teeserver.New(ctx, teeServerSocketPath, r.attestAgent, r.logger, r.launchSpec, r.attestClients, r.workloadService)
-	if err != nil {
-		return fmt.Errorf("failed to create the TEE server: %v", err)
-	}
-	if err := verifySocketPermissions(teeServerSocketPath); err != nil {
-		return fmt.Errorf("failed to verify TEE server socket permissions: %w", err)
-	}
-
-	go func() { _ = teeServer.Serve() }()
-	defer func() { _ = teeServer.Shutdown(ctx) }()
 
 	// Avoids breaking existing memory monitoring tests that depend on this log.
 	if r.launchSpec.MonitoringEnabled == spec.None {

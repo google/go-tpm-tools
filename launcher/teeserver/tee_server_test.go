@@ -7,8 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"path"
 	"strings"
 	"testing"
 
@@ -20,9 +22,7 @@ import (
 	"github.com/google/go-tpm-tools/agent"
 
 	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
-	"github.com/google/go-tpm-tools/launcher/internal/experiments"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
-	"github.com/google/go-tpm-tools/launcher/spec"
 
 	tspb "github.com/google/go-tpm-tools/launcher/teeserver/proto/gen/teeserver"
 	"github.com/google/go-tpm-tools/verifier"
@@ -1044,6 +1044,7 @@ func TestGetKeyEndorsement(t *testing.T) {
 		name             string
 		reqBody          interface{}
 		enableKM         bool
+		bcMode           bool
 		claimsErr        error
 		kemAttestErr     error
 		bindingAttestErr error
@@ -1079,6 +1080,16 @@ func TestGetKeyEndorsement(t *testing.T) {
 			wantStatus: http.StatusForbidden,
 		},
 		{
+			name: "bc mode without key manager",
+			reqBody: map[string]interface{}{
+				"challenge":  testChallenge,
+				"key_handle": map[string]string{"handle": testHandle},
+			},
+			enableKM:   false,
+			bcMode:     true,
+			wantStatus: http.StatusOK,
+		},
+		{
 			name: "missing key handle",
 			reqBody: map[string]interface{}{
 				"challenge":  testChallenge,
@@ -1111,12 +1122,15 @@ func TestGetKeyEndorsement(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mClaims := &mockClaimsProvider{
-				err: tt.claimsErr,
-				claims: map[keymanager.KeyType]*keymanager.KeyClaims{
-					keymanager.KeyType_KEY_TYPE_VM_PROTECTION_KEY:     {Claims: &keymanager.KeyClaims_VmKeyClaims{}},
-					keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING: {Claims: &keymanager.KeyClaims_VmBindingClaims{}},
-				},
+			var mClaims *mockClaimsProvider
+			if tt.enableKM {
+				mClaims = &mockClaimsProvider{
+					err: tt.claimsErr,
+					claims: map[keymanager.KeyType]*keymanager.KeyClaims{
+						keymanager.KeyType_KEY_TYPE_VM_PROTECTION_KEY:     {Claims: &keymanager.KeyClaims_VmKeyClaims{}},
+						keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING: {Claims: &keymanager.KeyClaims_VmBindingClaims{}},
+					},
+				}
 			}
 			mAgent := &fakeAttestationAgent{
 				attestationEvidenceFunc: func(_ context.Context, _, b2 []byte) (*attestationpb.VmAttestation, error) {
@@ -1155,15 +1169,15 @@ func TestGetKeyEndorsement(t *testing.T) {
 			}
 
 			handler := &attestHandler{
-				ctx:               context.Background(),
-				attestAgent:       mAgent,
-				keyClaimsProvider: mClaims,
-				logger:            logging.SimpleLogger(),
-				launchSpec: spec.LaunchSpec{
-					Experiments: experiments.Experiments{EnableKeyManager: tt.enableKM},
-				},
+				ctx:                context.Background(),
+				attestAgent:        mAgent,
+				logger:             logging.SimpleLogger(),
+				bcMode:             tt.bcMode,
 				kemAttester:        mKEM,
 				bindingKeyAttester: mBinding,
+			}
+			if tt.enableKM {
+				handler.keyClaimsProvider = mClaims
 			}
 			body, _ := json.Marshal(tt.reqBody)
 			req := httptest.NewRequest(http.MethodPost, endorsementEndpoint, bytes.NewBuffer(body))
@@ -1278,3 +1292,33 @@ func TestInitBindingKeyAttester(t *testing.T) {
 		})
 	}
 }
+
+func TestTeeServer_Shutdown(t *testing.T) {
+	sockDir := t.TempDir()
+	sockPath := path.Join(sockDir, "test_shutdown.sock")
+	nl, err := net.Listen("unix", sockPath)
+	if err != nil {
+		t.Fatalf("net.Listen() err = %v, want nil", err)
+	}
+
+	server, err := New(
+		t.Context(),
+		nl,
+		&fakeAttestationAgent{},
+		logging.SimpleLogger(),
+		false,
+		false,
+		AttestClients{},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("New() err = %v, want nil", err)
+	}
+
+	go func() { _ = server.Serve() }()
+
+	if err := server.Shutdown(t.Context()); err != nil {
+		t.Errorf("server.Shutdown() err = %v, want nil", err)
+	}
+}
+
