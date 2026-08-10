@@ -55,8 +55,6 @@ type ContainerRunner struct {
 
 const tokenFileTmp = ".token.tmp"
 
-const keyManagerGrpcSocket = "kmaserver-grpc.sock"
-
 // Since we only allow one container on a VM, using a deterministic id is probably fine
 const (
 	containerID = "tee-container"
@@ -638,28 +636,6 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	exitStatusC, err := task.Wait(ctx)
 	if err != nil {
 		r.logger.Error(err.Error())
-	}
-
-	// Update and verify socket permissions if in bc mode.
-	if r.launchSpec.Experiments.BcMode {
-		kmaServerSocketPath := path.Join(launcherfile.HostTmpPath, keyManagerSocket)
-		kmaServerGrpcSocketPath := path.Join(launcherfile.HostTmpPath, keyManagerGrpcSocket)
-
-		err := os.Chmod(kmaServerSocketPath, 0777)
-		if err != nil {
-			r.logger.Error("failed to chmod file %s: %v\n", kmaServerSocketPath, err)
-		}
-		err = os.Chmod(kmaServerGrpcSocketPath, 0777)
-		if err != nil {
-			r.logger.Error("failed to chmod file %s: %v\n", kmaServerGrpcSocketPath, err)
-		}
-
-		if err := verifySocketPermissions(kmaServerSocketPath); err != nil {
-			r.logger.Error("failed to verify kmaserver socket permissions: %v", err)
-		}
-		if err := verifySocketPermissions(kmaServerGrpcSocketPath); err != nil {
-			r.logger.Error("failed to verify kmaserver-grpc socket permissions: %v", err)
-		}
 	}
 
 	// Start timer for workload execution.
