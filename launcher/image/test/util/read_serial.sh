@@ -3,43 +3,31 @@
 # read_serial attempts to read the serial output until the workload is finished
 # Use var=$(read_serial <VM_NAME> <ZONE>) to capture the output of this command into a variable.
 read_serial() {
-  local base_cmd='gcloud compute instances get-serial-port-output $1 --zone $2 2>/workspace/next_start_$1.txt'
-  local serial_out=$(eval ${base_cmd})
-  local last=''
+  local vm="$1"
+  local zone="$2"
+  local start_offset=0
+  local serial_out=""
+  local timeout="10 minute"
+  local endtime=$(date -ud "$timeout" +%s)
 
-  # timeout after 10 min
-  timeout="10 minute"
-  endtime=$(date -ud "$timeout" +%s)
+  while [[ $(date -u +%s) -lt $endtime ]]; do
+    local resp=$(gcloud compute instances get-serial-port-output "$vm" --zone="$zone" --start="${start_offset}" --format=json 2>/dev/null)
 
-  echo "Reading serial console..."
-  while [ -s /workspace/next_start_$1.txt ]; do
-    if [[ $(date -u +%s) -ge $endtime ]]; then
-      echo "timed out reading serial console, or the workload is running more than ${timeout}"
+    if [ -n "$resp" ]; then
+      local chunk
+      chunk=$(printf '%s' "$resp" | python3 -c "import sys, json; print(json.load(sys.stdin).get('contents', ''), end='')")
+      start_offset=$(printf '%s' "$resp" | python3 -c "import sys, json; print(json.load(sys.stdin).get('next', '0'))")
+      serial_out="${serial_out}${chunk}"
+    else
+      >&2 echo "Empty response from get-serial-port-output for ${vm} (instance not ready or stopped)."
+    fi
+
+    if [[ "$serial_out" == *"TEE container launcher exiting"* ]]; then
       break
     fi
 
-    # VM may already exit
-    if grep -qi 'Could not fetch serial port output' /workspace/next_start_$1.txt; then
-      serial_out="$serial_out $1 VM stopped"
-      break
-    fi
-
-    next=$(cat /workspace/next_start_$1.txt | sed -n 2p | cut -d ' ' -f2)
-    local next_cmd="${base_cmd} ${next}"
-    
-    # sleeping 5s for the next serial console read
     sleep 5
-
-    local tmp=$(eval ${next_cmd})
-    serial_out="$serial_out $tmp"
-
-    # break the loop if the workload is finished
-    if echo ${serial_out} | grep -qi "TEE container launcher exiting"; then
-      break
-    fi
-
-    last=$next
   done
 
-  echo $serial_out
+  printf '%s\n' "$serial_out"
 }
