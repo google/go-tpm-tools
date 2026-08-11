@@ -157,10 +157,10 @@ steps:
           "s|dm-m2d|dm-mod|g"
           "s|,oemroot|;oemroot|g"
           "s|cros_efi|cros_efi module_blacklist=mlx5_core|g"
+          "s|cros_efi|cros_efi systemd.mask=get-cloud-api-domains.service|g"
         )
 
         DEBUG_COMMANDS=(
-          "s|cros_efi|cros_efi systemd.mask=update-engine.service|g"
           "s|cros_efi|cros_efi confidential-space.hardened=false|g"
         )
 
@@ -183,7 +183,6 @@ steps:
           "s|cros_efi|cros_efi systemd.mask=docker-events-collector-fluent-bit.service|g"
           "s|cros_efi|cros_efi systemd.mask=sshd.service|g"
           "s|cros_efi|cros_efi systemd.mask=var-lib-toolbox.mount|g"
-          "s|cros_efi|cros_efi systemd.mask=update-engine.service|g"
           "s|cros_efi|cros_efi confidential-space.hardened=true|g"
           "s|console=ttyS0,115200||g"
         )
