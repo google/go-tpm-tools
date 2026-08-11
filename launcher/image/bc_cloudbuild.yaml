@@ -248,6 +248,7 @@ steps:
       - '-c'
       - |
         gcloud compute images describe ${_BASE_IMAGE} --project=${_BASE_IMAGE_PROJECT} --format="value(guestOsFeatures.type)" | paste -sd, - | tr ';' ',' | tr -d '\n' > /workspace/features.txt
+        sed -i 's/FEATURE_TYPE_UNSPECIFIED//g' /workspace/features.txt
         sed -i 's/SECURE_BOOT//g' /workspace/features.txt
         sed -i 's/,,/,/g' /workspace/features.txt
         sed -i 's/^,//; s/,$//' /workspace/features.txt
