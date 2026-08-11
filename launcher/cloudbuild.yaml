@@ -297,510 +297,510 @@ steps:
     _WSD_CONTAINER_IMAGE_REF=${WSD_CONTAINER_IMAGE_REF}
     exit
 
-- name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-  id: TriggerLouhiFlow
-  waitFor: ['DebugBcImageBuildAndExport', 'HardenedBcImageBuildAndExport']
-  env:
-  - 'BC_ACOS_BUCKET=$_BC_ACOS_BUCKET'
-  - 'OUTPUT_IMAGE_PREFIX=$_OUTPUT_IMAGE_PREFIX'
-  - 'OUTPUT_IMAGE_SUFFIX=$_OUTPUT_IMAGE_SUFFIX'
-  - 'LOUHI_TRIGGER_TOPIC=$_LOUHI_TRIGGER_TOPIC'
-  - 'LOUHI_FLOW_ID=$_LOUHI_FLOW_ID'
-  - 'COMMIT_SHA=${COMMIT_SHA}'
-  - 'SHORT_SHA=${SHORT_SHA}'
-  - 'PR_NUMBER=$_PR_NUMBER'
-  - 'HEAD_REPO_URL=$_HEAD_REPO_URL'
-  script: |
-    #!/usr/bin/env bash
-    set -exuo pipefail
+# - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+#   id: TriggerLouhiFlow
+#   waitFor: ['DebugBcImageBuildAndExport', 'HardenedBcImageBuildAndExport']
+#   env:
+#   - 'BC_ACOS_BUCKET=$_BC_ACOS_BUCKET'
+#   - 'OUTPUT_IMAGE_PREFIX=$_OUTPUT_IMAGE_PREFIX'
+#   - 'OUTPUT_IMAGE_SUFFIX=$_OUTPUT_IMAGE_SUFFIX'
+#   - 'LOUHI_TRIGGER_TOPIC=$_LOUHI_TRIGGER_TOPIC'
+#   - 'LOUHI_FLOW_ID=$_LOUHI_FLOW_ID'
+#   - 'COMMIT_SHA=${COMMIT_SHA}'
+#   - 'SHORT_SHA=${SHORT_SHA}'
+#   - 'PR_NUMBER=$_PR_NUMBER'
+#   - 'HEAD_REPO_URL=$_HEAD_REPO_URL'
+#   script: |
+#     #!/usr/bin/env bash
+#     set -exuo pipefail
 
-    if [ -z "${LOUHI_TRIGGER_TOPIC}" ] || [ -z "${LOUHI_FLOW_ID}" ]; then
-      echo "Louhi trigger topic or flow ID not specified. Skipping trigger."
-      exit 0
-    fi
+#     if [ -z "${LOUHI_TRIGGER_TOPIC}" ] || [ -z "${LOUHI_FLOW_ID}" ]; then
+#       echo "Louhi trigger topic or flow ID not specified. Skipping trigger."
+#       exit 0
+#     fi
 
-    PR_EMAIL=$(git log -1 --format='%ae' 2>/dev/null || true)
-    if [[ "${PR_EMAIL}" != *@google.com ]]; then
-      PR_EMAIL="noreply@google.com"
-    fi
+#     PR_EMAIL=$(git log -1 --format='%ae' 2>/dev/null || true)
+#     if [[ "${PR_EMAIL}" != *@google.com ]]; then
+#       PR_EMAIL="noreply@google.com"
+#     fi
 
-    # Cloud Build populates _PR_NUMBER for initial PR webhooks, but omits it during re-triggered
-    # check runs or manual builds. Fall back to querying the GitHub API for COMMIT_SHA.
-    PR_NUMBER="${PR_NUMBER:-}"
-    if [ -z "${PR_NUMBER}" ]; then
-      echo "PR_NUMBER is empty. Attempting to fetch PR number from GitHub API for commit ${COMMIT_SHA}..."
-      PR_NUMBER=$(python3 launcher/fetch_pr_number.py "${COMMIT_SHA}" 2>/dev/null || true)
-    fi
+#     # Cloud Build populates _PR_NUMBER for initial PR webhooks, but omits it during re-triggered
+#     # check runs or manual builds. Fall back to querying the GitHub API for COMMIT_SHA.
+#     PR_NUMBER="${PR_NUMBER:-}"
+#     if [ -z "${PR_NUMBER}" ]; then
+#       echo "PR_NUMBER is empty. Attempting to fetch PR number from GitHub API for commit ${COMMIT_SHA}..."
+#       PR_NUMBER=$(python3 launcher/fetch_pr_number.py "${COMMIT_SHA}" 2>/dev/null || true)
+#     fi
 
-    DEBUG_URL="gs://${BC_ACOS_BUCKET}/${OUTPUT_IMAGE_PREFIX}-bc-debug-${OUTPUT_IMAGE_SUFFIX}.tar.gz"
-    HARDENED_URL="gs://${BC_ACOS_BUCKET}/${OUTPUT_IMAGE_PREFIX}-bc-hardened-${OUTPUT_IMAGE_SUFFIX}.tar.gz"
+#     DEBUG_URL="gs://${BC_ACOS_BUCKET}/${OUTPUT_IMAGE_PREFIX}-bc-debug-${OUTPUT_IMAGE_SUFFIX}.tar.gz"
+#     HARDENED_URL="gs://${BC_ACOS_BUCKET}/${OUTPUT_IMAGE_PREFIX}-bc-hardened-${OUTPUT_IMAGE_SUFFIX}.tar.gz"
 
-    echo "Triggering Louhi flow ${LOUHI_FLOW_ID}"
-    gcloud pubsub topics publish "${LOUHI_TRIGGER_TOPIC}" \
-      --message='{
-        "flow": "'"${LOUHI_FLOW_ID}"'",
-        "userParameters": {
-          "_GUEST_WORKLOAD_ACOS_DEBUG_GS_URL": "'"${DEBUG_URL}"'",
-          "_GUEST_WORKLOAD_ACOS_HARDENED_GS_URL": "'"${HARDENED_URL}"'",
-          "_PR_EMAIL": "'"${PR_EMAIL}"'",
-          "_PR_NUMBER": "'"${PR_NUMBER}"'",
-          "_HEAD_REPO_URL": "'"${HEAD_REPO_URL}"'",
-          "_COMMIT_SHA": "'"${COMMIT_SHA}"'",
-          "_SHORT_SHA": "'"${SHORT_SHA}"'"
-        },
-        "gitParameters": {
-          "commitSha": "'"${COMMIT_SHA}"'"
-        }
-      }'
+#     echo "Triggering Louhi flow ${LOUHI_FLOW_ID}"
+#     gcloud pubsub topics publish "${LOUHI_TRIGGER_TOPIC}" \
+#       --message='{
+#         "flow": "'"${LOUHI_FLOW_ID}"'",
+#         "userParameters": {
+#           "_GUEST_WORKLOAD_ACOS_DEBUG_GS_URL": "'"${DEBUG_URL}"'",
+#           "_GUEST_WORKLOAD_ACOS_HARDENED_GS_URL": "'"${HARDENED_URL}"'",
+#           "_PR_EMAIL": "'"${PR_EMAIL}"'",
+#           "_PR_NUMBER": "'"${PR_NUMBER}"'",
+#           "_HEAD_REPO_URL": "'"${HEAD_REPO_URL}"'",
+#           "_COMMIT_SHA": "'"${COMMIT_SHA}"'",
+#           "_SHORT_SHA": "'"${SHORT_SHA}"'"
+#         },
+#         "gitParameters": {
+#           "commitSha": "'"${COMMIT_SHA}"'"
+#         }
+#       }'
 
-- name: 'gcr.io/cloud-builders/gcloud'
-  id: ExperimentsTests
-  waitFor: ['DebugImageBuild']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-debug-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'PROJECT_ID=$PROJECT_ID'
-  script: |
-    #!/usr/bin/env bash
+# - name: 'gcr.io/cloud-builders/gcloud'
+#   id: ExperimentsTests
+#   waitFor: ['DebugImageBuild']
+#   env:
+#   - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-debug-${_OUTPUT_IMAGE_SUFFIX}'
+#   - 'PROJECT_ID=$PROJECT_ID'
+#   script: |
+#     #!/usr/bin/env bash
 
-    cd launcher/image/test
-    echo "running experiments client tests on ${OUTPUT_IMAGE_NAME}"
-    gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_experiments_client.yaml --region us-west1 \
-      --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
-    exit
+#     cd launcher/image/test
+#     echo "running experiments client tests on ${OUTPUT_IMAGE_NAME}"
+#     gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_experiments_client.yaml --region us-west1 \
+#       --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
+#     exit
 
-- name: 'gcr.io/cloud-builders/gcloud'
-  id: HttpServerTests
-  waitFor: ['DebugImageBuild']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-debug-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'PROJECT_ID=$PROJECT_ID'
-  script: |
-    #!/usr/bin/env bash
+# - name: 'gcr.io/cloud-builders/gcloud'
+#   id: HttpServerTests
+#   waitFor: ['DebugImageBuild']
+#   env:
+#   - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-debug-${_OUTPUT_IMAGE_SUFFIX}'
+#   - 'PROJECT_ID=$PROJECT_ID'
+#   script: |
+#     #!/usr/bin/env bash
 
-    cd launcher/image/test
-    echo "running http server tests on ${OUTPUT_IMAGE_NAME}"
-    gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_http_server.yaml --region us-west1 \
-      --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
-    exit
+#     cd launcher/image/test
+#     echo "running http server tests on ${OUTPUT_IMAGE_NAME}"
+#     gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_http_server.yaml --region us-west1 \
+#       --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
+#     exit
 
-- name: 'gcr.io/cloud-builders/gcloud'
-  id: KeymanagerTests
-  waitFor: ['DebugVgImageBuild']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-vg-debug-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'PROJECT_ID=$PROJECT_ID'
-  script: |
-    #!/usr/bin/env bash
+# - name: 'gcr.io/cloud-builders/gcloud'
+#   id: KeymanagerTests
+#   waitFor: ['DebugVgImageBuild']
+#   env:
+#   - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-vg-debug-${_OUTPUT_IMAGE_SUFFIX}'
+#   - 'PROJECT_ID=$PROJECT_ID'
+#   script: |
+#     #!/usr/bin/env bash
 
-    cd launcher/image/test
-    echo "running keymanager tests on ${OUTPUT_IMAGE_NAME}"
-    gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_keymanager_cloudbuild.yaml --region us-west1 \
-      --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
-    exit
+#     cd launcher/image/test
+#     echo "running keymanager tests on ${OUTPUT_IMAGE_NAME}"
+#     gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_keymanager_cloudbuild.yaml --region us-west1 \
+#       --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
+#     exit
 
-- name: 'gcr.io/cloud-builders/gcloud'
-  id: DebugImageTests
-  waitFor: ['DebugImageBuild']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-debug-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'PROJECT_ID=$PROJECT_ID'
-  script: |
-    #!/usr/bin/env bash
+# - name: 'gcr.io/cloud-builders/gcloud'
+#   id: DebugImageTests
+#   waitFor: ['DebugImageBuild']
+#   env:
+#   - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-debug-${_OUTPUT_IMAGE_SUFFIX}'
+#   - 'PROJECT_ID=$PROJECT_ID'
+#   script: |
+#     #!/usr/bin/env bash
 
-    cd launcher/image/test
-    echo "running debug image tests on ${OUTPUT_IMAGE_NAME}"
-    gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_debug_cloudbuild.yaml --region us-west1 \
-      --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
-    exit
+#     cd launcher/image/test
+#     echo "running debug image tests on ${OUTPUT_IMAGE_NAME}"
+#     gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_debug_cloudbuild.yaml --region us-west1 \
+#       --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
+#     exit
 
-- name: 'gcr.io/cloud-builders/gcloud'
-  id: RealGCAConnectionTest
-  waitFor: ['DebugImageBuild']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-debug-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'PROJECT_ID=$PROJECT_ID'
-  script: |
-    #!/usr/bin/env bash
+# - name: 'gcr.io/cloud-builders/gcloud'
+#   id: RealGCAConnectionTest
+#   waitFor: ['DebugImageBuild']
+#   env:
+#   - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-debug-${_OUTPUT_IMAGE_SUFFIX}'
+#   - 'PROJECT_ID=$PROJECT_ID'
+#   script: |
+#     #!/usr/bin/env bash
 
-    cd launcher/image/test
-    echo "running real GCA connection test on ${OUTPUT_IMAGE_NAME}"
-    gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_real_gca_cloudbuild.yaml --region us-west1 \
-      --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
-    exit
+#     cd launcher/image/test
+#     echo "running real GCA connection test on ${OUTPUT_IMAGE_NAME}"
+#     gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_real_gca_cloudbuild.yaml --region us-west1 \
+#       --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
+#     exit
 
-- name: 'gcr.io/cloud-builders/gcloud'
-  id: RealITAConnectionTest
-  waitFor: ['DebugImageBuild']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-debug-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'PROJECT_ID=$PROJECT_ID'
-  script: |
-    #!/usr/bin/env bash
+# - name: 'gcr.io/cloud-builders/gcloud'
+#   id: RealITAConnectionTest
+#   waitFor: ['DebugImageBuild']
+#   env:
+#   - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-debug-${_OUTPUT_IMAGE_SUFFIX}'
+#   - 'PROJECT_ID=$PROJECT_ID'
+#   script: |
+#     #!/usr/bin/env bash
 
-    cd launcher/image/test
-    echo "running real ITA connection test on ${OUTPUT_IMAGE_NAME}"
-    gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_real_ita_cloudbuild.yaml --region us-west1 \
-      --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID},_ITA_API_KEY=${_ITA_API_KEY}
-    exit
-
-
-- name: 'gcr.io/cloud-builders/gcloud'
-  id: DebugImageTestsTDX
-  waitFor: ['DebugImageBuild']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-debug-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'PROJECT_ID=$PROJECT_ID'
-  script: |
-    #!/usr/bin/env bash
-
-    cd launcher/image/test
-    echo "running debug image tests on ${OUTPUT_IMAGE_NAME}"
-    gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_debug_cloudbuild.yaml --region us-west1 \
-      --substitutions _CC=TDX,_IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
-    exit
-
-- name: 'gcr.io/cloud-builders/gcloud'
-  id: HardenedImageTests
-  waitFor: ['HardenedImageBuild']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'PROJECT_ID=$PROJECT_ID'
-  script: |
-    #!/usr/bin/env bash
-
-    cd launcher/image/test
-    echo "running hardened image tests on ${OUTPUT_IMAGE_NAME}"
-    gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_hardened_cloudbuild.yaml --region us-west1 \
-      --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
-    exit
-
-- name: 'gcr.io/cloud-builders/gcloud'
-  id: HardenedImageTestsTDX
-  waitFor: ['HardenedImageBuild']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'PROJECT_ID=$PROJECT_ID'
-  script: |
-    #!/usr/bin/env bash
-
-    cd launcher/image/test
-    echo "running hardened image tests on ${OUTPUT_IMAGE_NAME}"
-    gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_hardened_cloudbuild.yaml --region us-west1 \
-      --substitutions _CC=TDX,_IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
-    exit
-
-- name: 'gcr.io/cloud-builders/gcloud'
-  id: LaunchPolicyTests
-  waitFor: ['HardenedImageBuild']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'PROJECT_ID=$PROJECT_ID'
-  script: |
-    #!/usr/bin/env bash
-
-    cd launcher/image/test
-    echo "running launch policy tests on ${OUTPUT_IMAGE_NAME}"
-    gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_launchpolicy_cloudbuild.yaml --region us-west1 \
-      --substitutions _HARDENED_IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
-    exit
-
-- name: 'gcr.io/cloud-builders/gcloud'
-  id: HardenedNetworkIngressTests
-  waitFor: ['HardenedImageBuild']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'PROJECT_ID=$PROJECT_ID'
-  script: |
-    #!/usr/bin/env bash
-    cd launcher/image/test
-    echo "running hardened image ingress network tests on ${OUTPUT_IMAGE_NAME}"
-    gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_ingress_network.yaml --region us-west1 \
-      --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
-    exit
-
-- name: 'gcr.io/cloud-builders/gcloud'
-  id: DebugNetworkIngressTests
-  waitFor: ['DebugImageBuild']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-debug-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'PROJECT_ID=$PROJECT_ID'
-  script: |
-    #!/usr/bin/env bash
-    cd launcher/image/test
-    echo "running debug image ingress network tests on ${OUTPUT_IMAGE_NAME}"
-    gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_ingress_network.yaml --region us-west1 \
-      --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
-    exit
-
-- name: 'gcr.io/cloud-builders/gcloud'
-  id: LogRedirectionTests
-  waitFor: ['HardenedImageBuild']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'PROJECT_ID=$PROJECT_ID'
-  script: |
-    #!/usr/bin/env bash
-
-    cd launcher/image/test
-    echo "running log redirection tests on ${OUTPUT_IMAGE_NAME}"
-    gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_log_redirection.yaml --region us-west1 \
-      --substitutions _HARDENED_IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
-    exit
-
-- name: 'gcr.io/cloud-builders/gcloud'
-  id: HardenedDiscoverContainerSignatureTests
-  waitFor: ['HardenedImageBuild']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'PROJECT_ID=$PROJECT_ID'
-  script: |
-    #!/usr/bin/env bash
-    cd launcher/image/test
-    echo "running hardened image container signature tests on ${OUTPUT_IMAGE_NAME}"
-    gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_discover_signatures.yaml --region us-west1 \
-      --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID},_SIGNATURE_REPO=us-docker.pkg.dev/confidential-space-images-dev/cs-cosign-tests/hardened-$BUILD_ID
-    exit
-
-- name: 'gcr.io/cloud-builders/gcloud'
-  id: DebugDiscoverContainerSignatureTests
-  waitFor: ['DebugImageBuild']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-debug-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'PROJECT_ID=$PROJECT_ID'
-  script: |
-    #!/usr/bin/env bash
-    cd launcher/image/test
-    echo "running debug image container signature tests on ${OUTPUT_IMAGE_NAME}"
-    gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_discover_signatures.yaml --region us-west1 \
-      --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID},_SIGNATURE_REPO=us-docker.pkg.dev/confidential-space-images-dev/cs-cosign-tests/debug-$BUILD_ID
-    exit
-
-- name: 'gcr.io/cloud-builders/gcloud'
-  id: MemoryMonitoringTests
-  waitFor: ['HardenedImageBuild']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'PROJECT_ID=$PROJECT_ID'
-  script: |
-    #!/usr/bin/env bash
-    cd launcher/image/test
-    echo "running memory monitoring tests on ${OUTPUT_IMAGE_NAME}"
-    gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_memory_monitoring.yaml --region us-west1 \
-      --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
-    exit
-
-- name: 'gcr.io/cloud-builders/gcloud'
-  id: HealthMonitoringTests
-  waitFor: ['HardenedImageBuild']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'PROJECT_ID=$PROJECT_ID'
-  script: |
-    #!/usr/bin/env bash
-    cd launcher/image/test
-    echo "running health monitoring tests on ${OUTPUT_IMAGE_NAME}"
-    gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_health_monitoring.yaml --region us-west1 \
-      --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
-    exit
-
-- name: 'gcr.io/cloud-builders/gcloud'
-  id: ODAWithSignedContainerTest
-  waitFor: ['HardenedImageBuild']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'PROJECT_ID=$PROJECT_ID'
-  script: |
-    #!/usr/bin/env bash
-    cd launcher/image/test
-    echo "running ODA and signed container tests on ${OUTPUT_IMAGE_NAME}"
-    gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_oda_with_signed_container.yaml --region us-west1 \
-      --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
-    exit
-
-- name: 'gcr.io/cloud-builders/gcloud'
-  id: MountTests
-  waitFor: ['HardenedImageBuild']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'PROJECT_ID=$PROJECT_ID'
-  script: |
-    #!/usr/bin/env bash
-    cd launcher/image/test
-    dev_shm_size_kb=$(shuf -i 70000-256000 -n 1)
-    tmpfs_size_kb=$(shuf -i 256-256000 -n 1)
-    echo "running mount tests on ${OUTPUT_IMAGE_NAME}"
-    gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_mounts.yaml --region us-west1 \
-      --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
-    exit
-
-- name: 'gcr.io/cloud-builders/gcloud'
-  id: GpuDriverInstallationHardenedImageTests
-  waitFor: ['HardenedImageBuild']
-  env:
-  - 'OUTPUT_IMAGE_PREFIX=$_OUTPUT_IMAGE_PREFIX'
-  - 'OUTPUT_IMAGE_SUFFIX=$_OUTPUT_IMAGE_SUFFIX'
-  - 'PROJECT_ID=$PROJECT_ID'
-  script: |
-    #!/usr/bin/env bash
-
-    cd launcher/image/test
-    echo "running gpu driver installation image tests on ${OUTPUT_IMAGE_PREFIX}-hardened-${OUTPUT_IMAGE_SUFFIX}"
-    gcloud builds submit --config=test_gpu_driver_installation_cloudbuild.yaml --region us-west1 \
-      --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_PREFIX}-hardened-${OUTPUT_IMAGE_SUFFIX},_IMAGE_PROJECT=${PROJECT_ID}
-    exit
-
-- name: 'gcr.io/cloud-builders/gcloud'
-  id: PrivilegedTests
-  waitFor: ['HardenedImageBuild']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'PROJECT_ID=$PROJECT_ID'
-  script: |
-    #!/usr/bin/env bash
-    cd launcher/image/test
-    echo "running privileged tests on ${OUTPUT_IMAGE_NAME}"
-    gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_privileged.yaml --region us-west1 \
-      --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
-    exit
-
-- name: 'gcr.io/cloud-builders/gcloud'
-  id: DebugWorkloadCleanupTests
-  waitFor: ['DebugImageBuild']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-debug-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'PROJECT_ID=$PROJECT_ID'
-  script: |
-    #!/usr/bin/env bash
-    cd launcher/image/test
-    echo "running debug workload cleanup tests on ${OUTPUT_IMAGE_NAME}"
-    gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_workloadcleanup_cloudbuild.yaml --region us-west1 \
-      --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
-    exit
-
-- name: 'gcr.io/cloud-builders/gcloud'
-  id: HardenedWorkloadCleanupTests
-  waitFor: ['HardenedImageBuild']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'PROJECT_ID=$PROJECT_ID'
-  script: |
-    #!/usr/bin/env bash
-    cd launcher/image/test
-    echo "running hardened workload cleanup tests on ${OUTPUT_IMAGE_NAME}"
-    gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_workloadcleanup_cloudbuild.yaml --region us-west1 \
-      --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
-    exit
-
-- name: 'gcr.io/cloud-builders/gcloud'
-  id: ExportHardenedImage
-  waitFor: ['HardenedImageBuild']
-  entrypoint: 'gcloud'
-  args: ['compute', 'images', 'export',
-         '--destination-uri=gs://${PROJECT_ID}_raw-images/${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}.tar.gz',
-         '--image=${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}',
-         '--project=${PROJECT_ID}',
-         '--zone=us-west1-a']
-
-- name: 'gcr.io/cloud-builders/gcloud'
-  id: ExportDebugImage
-  waitFor: ['DebugImageBuild']
-  entrypoint: 'gcloud'
-  args: ['compute', 'images', 'export',
-          '--destination-uri=gs://${PROJECT_ID}_raw-images/${_OUTPUT_IMAGE_PREFIX}-debug-${_OUTPUT_IMAGE_SUFFIX}.tar.gz',
-          '--image=${_OUTPUT_IMAGE_PREFIX}-debug-${_OUTPUT_IMAGE_SUFFIX}',
-          '--project=${PROJECT_ID}',
-          '--zone=us-west1-a']
-
-- name: 'us-docker.pkg.dev/confidential-space-images-dev/cs-tools/measure@sha256:dae4766caef4a93c52736feb829bf2c505b7d48ce44d0ecb33e77d61bb4be888'
-  id: MeasureHardenedImage
-  waitFor: ['ExportHardenedImage']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'PROJECT_ID=$PROJECT_ID'
-  script: |
-    #!/usr/bin/env bash
-    echo "downloading hardened image ${OUTPUT_IMAGE_NAME}"
-    gcloud storage cp gs://confidential-space-images-dev_raw-images/${OUTPUT_IMAGE_NAME}.tar.gz .
-    mkdir hardeneddisk
-    tar xzf ${OUTPUT_IMAGE_NAME}.tar.gz -C hardeneddisk/
-    echo "measuring image ${OUTPUT_IMAGE_NAME}"
-    /usr/local/bin/measure.sh hardeneddisk/disk.raw measure_output_hardened.json hardened x86_64 sha256
-    gcloud storage cp measure_output_hardened.json gs://${PROJECT_ID}-rims/${OUTPUT_IMAGE_NAME}.json
-
-- name: 'us-docker.pkg.dev/confidential-space-images-dev/cs-tools/measure@sha256:dae4766caef4a93c52736feb829bf2c505b7d48ce44d0ecb33e77d61bb4be888'
-  id: MeasureDebugImage
-  waitFor: ['ExportDebugImage']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-debug-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'PROJECT_ID=$PROJECT_ID'
-  script: |
-    #!/usr/bin/env bash
-    echo "downloading debug image ${OUTPUT_IMAGE_NAME}"
-    gsutil cp gs://confidential-space-images-dev_raw-images/${OUTPUT_IMAGE_NAME}.tar.gz .
-    mkdir debugdisk
-    tar xzf ${OUTPUT_IMAGE_NAME}.tar.gz -C debugdisk/
-    echo "measuring image ${OUTPUT_IMAGE_NAME}"
-    /usr/local/bin/measure.sh debugdisk/disk.raw measure_output_debug.json debug x86_64 sha256
-    gsutil cp measure_output_debug.json gs://${PROJECT_ID}-rims/${OUTPUT_IMAGE_NAME}.json
-
-- name: 'gcr.io/cloud-builders/gcloud'
-  id: ExportVgHardenedImage
-  waitFor: ['HardenedVgImageBuild']
-  entrypoint: 'gcloud'
-  args: ['compute', 'images', 'export',
-         '--destination-uri=gs://${PROJECT_ID}_raw-images/${_OUTPUT_IMAGE_PREFIX}-vg-hardened-${_OUTPUT_IMAGE_SUFFIX}.tar.gz',
-         '--image=${_OUTPUT_IMAGE_PREFIX}-vg-hardened-${_OUTPUT_IMAGE_SUFFIX}',
-         '--project=${PROJECT_ID}',
-         '--zone=us-west1-a']
-
-- name: 'gcr.io/cloud-builders/gcloud'
-  id: ExportVgDebugImage
-  waitFor: ['DebugVgImageBuild']
-  entrypoint: 'gcloud'
-  args: ['compute', 'images', 'export',
-          '--destination-uri=gs://${PROJECT_ID}_raw-images/${_OUTPUT_IMAGE_PREFIX}-vg-debug-${_OUTPUT_IMAGE_SUFFIX}.tar.gz',
-          '--image=${_OUTPUT_IMAGE_PREFIX}-vg-debug-${_OUTPUT_IMAGE_SUFFIX}',
-          '--project=${PROJECT_ID}',
-          '--zone=us-west1-a']
-
-- name: 'us-docker.pkg.dev/confidential-space-images-dev/cs-tools/measure@sha256:dae4766caef4a93c52736feb829bf2c505b7d48ce44d0ecb33e77d61bb4be888'
-  id: MeasureVgHardenedImage
-  waitFor: ['ExportVgHardenedImage']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-vg-hardened-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'PROJECT_ID=$PROJECT_ID'
-  script: |
-    #!/usr/bin/env bash
-    echo "downloading hardened image ${OUTPUT_IMAGE_NAME}"
-    gcloud storage cp gs://confidential-space-images-dev_raw-images/${OUTPUT_IMAGE_NAME}.tar.gz .
-    mkdir vghardeneddisk
-    tar xzf ${OUTPUT_IMAGE_NAME}.tar.gz -C vghardeneddisk/
-    echo "measuring image ${OUTPUT_IMAGE_NAME}"
-    /usr/local/bin/measure.sh vghardeneddisk/disk.raw measure_output_vg_hardened.json hardened x86_64 sha256
-    /usr/local/bin/measure.sh vghardeneddisk/disk.raw measure_output_vg_hardened_sha384.json hardened x86_64 sha384
-
-    gcloud storage cp measure_output_vg_hardened.json gs://${PROJECT_ID}-rims/${OUTPUT_IMAGE_NAME}.json
-    gcloud storage cp measure_output_vg_hardened_sha384.json gs://${PROJECT_ID}-rims/${OUTPUT_IMAGE_NAME}_sha384.json
+#     cd launcher/image/test
+#     echo "running real ITA connection test on ${OUTPUT_IMAGE_NAME}"
+#     gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_real_ita_cloudbuild.yaml --region us-west1 \
+#       --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID},_ITA_API_KEY=${_ITA_API_KEY}
+#     exit
 
 
-- name: 'us-docker.pkg.dev/confidential-space-images-dev/cs-tools/measure@sha256:dae4766caef4a93c52736feb829bf2c505b7d48ce44d0ecb33e77d61bb4be888'
-  id: MeasureVgDebugImage
-  waitFor: ['ExportVgDebugImage']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-vg-debug-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'PROJECT_ID=$PROJECT_ID'
-  script: |
-    #!/usr/bin/env bash
-    echo "downloading debug image ${OUTPUT_IMAGE_NAME}"
-    gsutil cp gs://confidential-space-images-dev_raw-images/${OUTPUT_IMAGE_NAME}.tar.gz .
-    mkdir vgdebugdisk
-    tar xzf ${OUTPUT_IMAGE_NAME}.tar.gz -C vgdebugdisk/
-    echo "measuring image ${OUTPUT_IMAGE_NAME}"
-    /usr/local/bin/measure.sh vgdebugdisk/disk.raw measure_output_vg_debug.json debug x86_64 sha256
-    /usr/local/bin/measure.sh vgdebugdisk/disk.raw measure_output_vg_debug_sha384.json debug x86_64 sha384
+# - name: 'gcr.io/cloud-builders/gcloud'
+#   id: DebugImageTestsTDX
+#   waitFor: ['DebugImageBuild']
+#   env:
+#   - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-debug-${_OUTPUT_IMAGE_SUFFIX}'
+#   - 'PROJECT_ID=$PROJECT_ID'
+#   script: |
+#     #!/usr/bin/env bash
 
-    gsutil cp measure_output_vg_debug.json gs://${PROJECT_ID}-rims/${OUTPUT_IMAGE_NAME}.json
-    gsutil cp measure_output_vg_debug_sha384.json gs://${PROJECT_ID}-rims/${OUTPUT_IMAGE_NAME}_sha384.json
+#     cd launcher/image/test
+#     echo "running debug image tests on ${OUTPUT_IMAGE_NAME}"
+#     gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_debug_cloudbuild.yaml --region us-west1 \
+#       --substitutions _CC=TDX,_IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
+#     exit
+
+# - name: 'gcr.io/cloud-builders/gcloud'
+#   id: HardenedImageTests
+#   waitFor: ['HardenedImageBuild']
+#   env:
+#   - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}'
+#   - 'PROJECT_ID=$PROJECT_ID'
+#   script: |
+#     #!/usr/bin/env bash
+
+#     cd launcher/image/test
+#     echo "running hardened image tests on ${OUTPUT_IMAGE_NAME}"
+#     gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_hardened_cloudbuild.yaml --region us-west1 \
+#       --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
+#     exit
+
+# - name: 'gcr.io/cloud-builders/gcloud'
+#   id: HardenedImageTestsTDX
+#   waitFor: ['HardenedImageBuild']
+#   env:
+#   - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}'
+#   - 'PROJECT_ID=$PROJECT_ID'
+#   script: |
+#     #!/usr/bin/env bash
+
+#     cd launcher/image/test
+#     echo "running hardened image tests on ${OUTPUT_IMAGE_NAME}"
+#     gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_hardened_cloudbuild.yaml --region us-west1 \
+#       --substitutions _CC=TDX,_IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
+#     exit
+
+# - name: 'gcr.io/cloud-builders/gcloud'
+#   id: LaunchPolicyTests
+#   waitFor: ['HardenedImageBuild']
+#   env:
+#   - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}'
+#   - 'PROJECT_ID=$PROJECT_ID'
+#   script: |
+#     #!/usr/bin/env bash
+
+#     cd launcher/image/test
+#     echo "running launch policy tests on ${OUTPUT_IMAGE_NAME}"
+#     gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_launchpolicy_cloudbuild.yaml --region us-west1 \
+#       --substitutions _HARDENED_IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
+#     exit
+
+# - name: 'gcr.io/cloud-builders/gcloud'
+#   id: HardenedNetworkIngressTests
+#   waitFor: ['HardenedImageBuild']
+#   env:
+#   - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}'
+#   - 'PROJECT_ID=$PROJECT_ID'
+#   script: |
+#     #!/usr/bin/env bash
+#     cd launcher/image/test
+#     echo "running hardened image ingress network tests on ${OUTPUT_IMAGE_NAME}"
+#     gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_ingress_network.yaml --region us-west1 \
+#       --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
+#     exit
+
+# - name: 'gcr.io/cloud-builders/gcloud'
+#   id: DebugNetworkIngressTests
+#   waitFor: ['DebugImageBuild']
+#   env:
+#   - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-debug-${_OUTPUT_IMAGE_SUFFIX}'
+#   - 'PROJECT_ID=$PROJECT_ID'
+#   script: |
+#     #!/usr/bin/env bash
+#     cd launcher/image/test
+#     echo "running debug image ingress network tests on ${OUTPUT_IMAGE_NAME}"
+#     gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_ingress_network.yaml --region us-west1 \
+#       --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
+#     exit
+
+# - name: 'gcr.io/cloud-builders/gcloud'
+#   id: LogRedirectionTests
+#   waitFor: ['HardenedImageBuild']
+#   env:
+#   - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}'
+#   - 'PROJECT_ID=$PROJECT_ID'
+#   script: |
+#     #!/usr/bin/env bash
+
+#     cd launcher/image/test
+#     echo "running log redirection tests on ${OUTPUT_IMAGE_NAME}"
+#     gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_log_redirection.yaml --region us-west1 \
+#       --substitutions _HARDENED_IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
+#     exit
+
+# - name: 'gcr.io/cloud-builders/gcloud'
+#   id: HardenedDiscoverContainerSignatureTests
+#   waitFor: ['HardenedImageBuild']
+#   env:
+#   - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}'
+#   - 'PROJECT_ID=$PROJECT_ID'
+#   script: |
+#     #!/usr/bin/env bash
+#     cd launcher/image/test
+#     echo "running hardened image container signature tests on ${OUTPUT_IMAGE_NAME}"
+#     gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_discover_signatures.yaml --region us-west1 \
+#       --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID},_SIGNATURE_REPO=us-docker.pkg.dev/confidential-space-images-dev/cs-cosign-tests/hardened-$BUILD_ID
+#     exit
+
+# - name: 'gcr.io/cloud-builders/gcloud'
+#   id: DebugDiscoverContainerSignatureTests
+#   waitFor: ['DebugImageBuild']
+#   env:
+#   - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-debug-${_OUTPUT_IMAGE_SUFFIX}'
+#   - 'PROJECT_ID=$PROJECT_ID'
+#   script: |
+#     #!/usr/bin/env bash
+#     cd launcher/image/test
+#     echo "running debug image container signature tests on ${OUTPUT_IMAGE_NAME}"
+#     gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_discover_signatures.yaml --region us-west1 \
+#       --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID},_SIGNATURE_REPO=us-docker.pkg.dev/confidential-space-images-dev/cs-cosign-tests/debug-$BUILD_ID
+#     exit
+
+# - name: 'gcr.io/cloud-builders/gcloud'
+#   id: MemoryMonitoringTests
+#   waitFor: ['HardenedImageBuild']
+#   env:
+#   - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}'
+#   - 'PROJECT_ID=$PROJECT_ID'
+#   script: |
+#     #!/usr/bin/env bash
+#     cd launcher/image/test
+#     echo "running memory monitoring tests on ${OUTPUT_IMAGE_NAME}"
+#     gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_memory_monitoring.yaml --region us-west1 \
+#       --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
+#     exit
+
+# - name: 'gcr.io/cloud-builders/gcloud'
+#   id: HealthMonitoringTests
+#   waitFor: ['HardenedImageBuild']
+#   env:
+#   - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}'
+#   - 'PROJECT_ID=$PROJECT_ID'
+#   script: |
+#     #!/usr/bin/env bash
+#     cd launcher/image/test
+#     echo "running health monitoring tests on ${OUTPUT_IMAGE_NAME}"
+#     gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_health_monitoring.yaml --region us-west1 \
+#       --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
+#     exit
+
+# - name: 'gcr.io/cloud-builders/gcloud'
+#   id: ODAWithSignedContainerTest
+#   waitFor: ['HardenedImageBuild']
+#   env:
+#   - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}'
+#   - 'PROJECT_ID=$PROJECT_ID'
+#   script: |
+#     #!/usr/bin/env bash
+#     cd launcher/image/test
+#     echo "running ODA and signed container tests on ${OUTPUT_IMAGE_NAME}"
+#     gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_oda_with_signed_container.yaml --region us-west1 \
+#       --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
+#     exit
+
+# - name: 'gcr.io/cloud-builders/gcloud'
+#   id: MountTests
+#   waitFor: ['HardenedImageBuild']
+#   env:
+#   - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}'
+#   - 'PROJECT_ID=$PROJECT_ID'
+#   script: |
+#     #!/usr/bin/env bash
+#     cd launcher/image/test
+#     dev_shm_size_kb=$(shuf -i 70000-256000 -n 1)
+#     tmpfs_size_kb=$(shuf -i 256-256000 -n 1)
+#     echo "running mount tests on ${OUTPUT_IMAGE_NAME}"
+#     gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_mounts.yaml --region us-west1 \
+#       --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
+#     exit
+
+# - name: 'gcr.io/cloud-builders/gcloud'
+#   id: GpuDriverInstallationHardenedImageTests
+#   waitFor: ['HardenedImageBuild']
+#   env:
+#   - 'OUTPUT_IMAGE_PREFIX=$_OUTPUT_IMAGE_PREFIX'
+#   - 'OUTPUT_IMAGE_SUFFIX=$_OUTPUT_IMAGE_SUFFIX'
+#   - 'PROJECT_ID=$PROJECT_ID'
+#   script: |
+#     #!/usr/bin/env bash
+
+#     cd launcher/image/test
+#     echo "running gpu driver installation image tests on ${OUTPUT_IMAGE_PREFIX}-hardened-${OUTPUT_IMAGE_SUFFIX}"
+#     gcloud builds submit --config=test_gpu_driver_installation_cloudbuild.yaml --region us-west1 \
+#       --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_PREFIX}-hardened-${OUTPUT_IMAGE_SUFFIX},_IMAGE_PROJECT=${PROJECT_ID}
+#     exit
+
+# - name: 'gcr.io/cloud-builders/gcloud'
+#   id: PrivilegedTests
+#   waitFor: ['HardenedImageBuild']
+#   env:
+#   - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}'
+#   - 'PROJECT_ID=$PROJECT_ID'
+#   script: |
+#     #!/usr/bin/env bash
+#     cd launcher/image/test
+#     echo "running privileged tests on ${OUTPUT_IMAGE_NAME}"
+#     gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_privileged.yaml --region us-west1 \
+#       --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
+#     exit
+
+# - name: 'gcr.io/cloud-builders/gcloud'
+#   id: DebugWorkloadCleanupTests
+#   waitFor: ['DebugImageBuild']
+#   env:
+#   - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-debug-${_OUTPUT_IMAGE_SUFFIX}'
+#   - 'PROJECT_ID=$PROJECT_ID'
+#   script: |
+#     #!/usr/bin/env bash
+#     cd launcher/image/test
+#     echo "running debug workload cleanup tests on ${OUTPUT_IMAGE_NAME}"
+#     gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_workloadcleanup_cloudbuild.yaml --region us-west1 \
+#       --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
+#     exit
+
+# - name: 'gcr.io/cloud-builders/gcloud'
+#   id: HardenedWorkloadCleanupTests
+#   waitFor: ['HardenedImageBuild']
+#   env:
+#   - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}'
+#   - 'PROJECT_ID=$PROJECT_ID'
+#   script: |
+#     #!/usr/bin/env bash
+#     cd launcher/image/test
+#     echo "running hardened workload cleanup tests on ${OUTPUT_IMAGE_NAME}"
+#     gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_workloadcleanup_cloudbuild.yaml --region us-west1 \
+#       --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
+#     exit
+
+# - name: 'gcr.io/cloud-builders/gcloud'
+#   id: ExportHardenedImage
+#   waitFor: ['HardenedImageBuild']
+#   entrypoint: 'gcloud'
+#   args: ['compute', 'images', 'export',
+#          '--destination-uri=gs://${PROJECT_ID}_raw-images/${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}.tar.gz',
+#          '--image=${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}',
+#          '--project=${PROJECT_ID}',
+#          '--zone=us-west1-a']
+
+# - name: 'gcr.io/cloud-builders/gcloud'
+#   id: ExportDebugImage
+#   waitFor: ['DebugImageBuild']
+#   entrypoint: 'gcloud'
+#   args: ['compute', 'images', 'export',
+#           '--destination-uri=gs://${PROJECT_ID}_raw-images/${_OUTPUT_IMAGE_PREFIX}-debug-${_OUTPUT_IMAGE_SUFFIX}.tar.gz',
+#           '--image=${_OUTPUT_IMAGE_PREFIX}-debug-${_OUTPUT_IMAGE_SUFFIX}',
+#           '--project=${PROJECT_ID}',
+#           '--zone=us-west1-a']
+
+# - name: 'us-docker.pkg.dev/confidential-space-images-dev/cs-tools/measure@sha256:dae4766caef4a93c52736feb829bf2c505b7d48ce44d0ecb33e77d61bb4be888'
+#   id: MeasureHardenedImage
+#   waitFor: ['ExportHardenedImage']
+#   env:
+#   - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}'
+#   - 'PROJECT_ID=$PROJECT_ID'
+#   script: |
+#     #!/usr/bin/env bash
+#     echo "downloading hardened image ${OUTPUT_IMAGE_NAME}"
+#     gcloud storage cp gs://confidential-space-images-dev_raw-images/${OUTPUT_IMAGE_NAME}.tar.gz .
+#     mkdir hardeneddisk
+#     tar xzf ${OUTPUT_IMAGE_NAME}.tar.gz -C hardeneddisk/
+#     echo "measuring image ${OUTPUT_IMAGE_NAME}"
+#     /usr/local/bin/measure.sh hardeneddisk/disk.raw measure_output_hardened.json hardened x86_64 sha256
+#     gcloud storage cp measure_output_hardened.json gs://${PROJECT_ID}-rims/${OUTPUT_IMAGE_NAME}.json
+
+# - name: 'us-docker.pkg.dev/confidential-space-images-dev/cs-tools/measure@sha256:dae4766caef4a93c52736feb829bf2c505b7d48ce44d0ecb33e77d61bb4be888'
+#   id: MeasureDebugImage
+#   waitFor: ['ExportDebugImage']
+#   env:
+#   - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-debug-${_OUTPUT_IMAGE_SUFFIX}'
+#   - 'PROJECT_ID=$PROJECT_ID'
+#   script: |
+#     #!/usr/bin/env bash
+#     echo "downloading debug image ${OUTPUT_IMAGE_NAME}"
+#     gsutil cp gs://confidential-space-images-dev_raw-images/${OUTPUT_IMAGE_NAME}.tar.gz .
+#     mkdir debugdisk
+#     tar xzf ${OUTPUT_IMAGE_NAME}.tar.gz -C debugdisk/
+#     echo "measuring image ${OUTPUT_IMAGE_NAME}"
+#     /usr/local/bin/measure.sh debugdisk/disk.raw measure_output_debug.json debug x86_64 sha256
+#     gsutil cp measure_output_debug.json gs://${PROJECT_ID}-rims/${OUTPUT_IMAGE_NAME}.json
+
+# - name: 'gcr.io/cloud-builders/gcloud'
+#   id: ExportVgHardenedImage
+#   waitFor: ['HardenedVgImageBuild']
+#   entrypoint: 'gcloud'
+#   args: ['compute', 'images', 'export',
+#          '--destination-uri=gs://${PROJECT_ID}_raw-images/${_OUTPUT_IMAGE_PREFIX}-vg-hardened-${_OUTPUT_IMAGE_SUFFIX}.tar.gz',
+#          '--image=${_OUTPUT_IMAGE_PREFIX}-vg-hardened-${_OUTPUT_IMAGE_SUFFIX}',
+#          '--project=${PROJECT_ID}',
+#          '--zone=us-west1-a']
+
+# - name: 'gcr.io/cloud-builders/gcloud'
+#   id: ExportVgDebugImage
+#   waitFor: ['DebugVgImageBuild']
+#   entrypoint: 'gcloud'
+#   args: ['compute', 'images', 'export',
+#           '--destination-uri=gs://${PROJECT_ID}_raw-images/${_OUTPUT_IMAGE_PREFIX}-vg-debug-${_OUTPUT_IMAGE_SUFFIX}.tar.gz',
+#           '--image=${_OUTPUT_IMAGE_PREFIX}-vg-debug-${_OUTPUT_IMAGE_SUFFIX}',
+#           '--project=${PROJECT_ID}',
+#           '--zone=us-west1-a']
+
+# - name: 'us-docker.pkg.dev/confidential-space-images-dev/cs-tools/measure@sha256:dae4766caef4a93c52736feb829bf2c505b7d48ce44d0ecb33e77d61bb4be888'
+#   id: MeasureVgHardenedImage
+#   waitFor: ['ExportVgHardenedImage']
+#   env:
+#   - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-vg-hardened-${_OUTPUT_IMAGE_SUFFIX}'
+#   - 'PROJECT_ID=$PROJECT_ID'
+#   script: |
+#     #!/usr/bin/env bash
+#     echo "downloading hardened image ${OUTPUT_IMAGE_NAME}"
+#     gcloud storage cp gs://confidential-space-images-dev_raw-images/${OUTPUT_IMAGE_NAME}.tar.gz .
+#     mkdir vghardeneddisk
+#     tar xzf ${OUTPUT_IMAGE_NAME}.tar.gz -C vghardeneddisk/
+#     echo "measuring image ${OUTPUT_IMAGE_NAME}"
+#     /usr/local/bin/measure.sh vghardeneddisk/disk.raw measure_output_vg_hardened.json hardened x86_64 sha256
+#     /usr/local/bin/measure.sh vghardeneddisk/disk.raw measure_output_vg_hardened_sha384.json hardened x86_64 sha384
+
+#     gcloud storage cp measure_output_vg_hardened.json gs://${PROJECT_ID}-rims/${OUTPUT_IMAGE_NAME}.json
+#     gcloud storage cp measure_output_vg_hardened_sha384.json gs://${PROJECT_ID}-rims/${OUTPUT_IMAGE_NAME}_sha384.json
+
+
+# - name: 'us-docker.pkg.dev/confidential-space-images-dev/cs-tools/measure@sha256:dae4766caef4a93c52736feb829bf2c505b7d48ce44d0ecb33e77d61bb4be888'
+#   id: MeasureVgDebugImage
+#   waitFor: ['ExportVgDebugImage']
+#   env:
+#   - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-vg-debug-${_OUTPUT_IMAGE_SUFFIX}'
+#   - 'PROJECT_ID=$PROJECT_ID'
+#   script: |
+#     #!/usr/bin/env bash
+#     echo "downloading debug image ${OUTPUT_IMAGE_NAME}"
+#     gsutil cp gs://confidential-space-images-dev_raw-images/${OUTPUT_IMAGE_NAME}.tar.gz .
+#     mkdir vgdebugdisk
+#     tar xzf ${OUTPUT_IMAGE_NAME}.tar.gz -C vgdebugdisk/
+#     echo "measuring image ${OUTPUT_IMAGE_NAME}"
+#     /usr/local/bin/measure.sh vgdebugdisk/disk.raw measure_output_vg_debug.json debug x86_64 sha256
+#     /usr/local/bin/measure.sh vgdebugdisk/disk.raw measure_output_vg_debug_sha384.json debug x86_64 sha384
+
+#     gsutil cp measure_output_vg_debug.json gs://${PROJECT_ID}-rims/${OUTPUT_IMAGE_NAME}.json
+#     gsutil cp measure_output_vg_debug_sha384.json gs://${PROJECT_ID}-rims/${OUTPUT_IMAGE_NAME}_sha384.json
 
 options:
   automapSubstitutions: true

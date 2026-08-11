@@ -22,6 +22,7 @@ func createOCISpecOpts(image containerd.Image, launchSpec spec.LaunchSpec, envs 
 		mounts = append(mounts, lsMnt.SpecsMount())
 	}
 	mounts = appendTokenMounts(mounts)
+	mounts = appendTPMMounts(mounts)
 	if launchSpec.CgroupNamespace {
 		mounts = appendCgroupRw(mounts)
 	}
@@ -138,6 +139,17 @@ func appendTokenMounts(mounts []specs.Mount) []specs.Mount {
 	m.Type = "bind"
 	m.Source = launcherfile.HostTmpPath
 	m.Options = []string{"rbind", "ro"}
+
+	return append(mounts, m)
+}
+
+// appendTPMMounts appends the mount spec for /dev/tpmrm0
+func appendTPMMounts(mounts []specs.Mount) []specs.Mount {
+	m := specs.Mount{}
+	m.Destination = "/dev/tpmrm0"
+	m.Type = "bind"
+	m.Source = "/dev/tpmrm0"
+	m.Options = []string{"bind", "rw"}
 
 	return append(mounts, m)
 }
