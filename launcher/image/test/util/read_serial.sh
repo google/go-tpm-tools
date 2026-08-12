@@ -19,7 +19,13 @@ read_serial() {
       start_offset=$(printf '%s' "$resp" | python3 -c "import sys, json; print(json.load(sys.stdin).get('next', '0'))")
       serial_out="${serial_out}${chunk}"
     else
-      >&2 echo "Empty response from get-serial-port-output for ${vm} (instance not ready or stopped)."
+      local status
+      status=$(gcloud compute instances describe "$vm" --zone="$zone" --format="value(status)")
+      if [[ "$status" == "TERMINATED" || "$status" == "STOPPING" ]]; then
+        >&2 echo "Instance ${vm} is ${status,,}."
+        break
+      fi
+      >&2 echo "Empty response from get-serial-port-output for ${vm} (instance status: ${status})."
     fi
 
     if [[ "$serial_out" == *"TEE container launcher exiting"* ]]; then
