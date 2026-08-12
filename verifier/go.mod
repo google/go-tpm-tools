@@ -13,7 +13,7 @@ require (
 	github.com/google/go-eventlog v0.0.3-0.20260520195024-af9e78c4d692
 	github.com/google/go-sev-guest v0.14.0
 	github.com/google/go-tdx-guest v0.3.2-0.20250814004405-ffb0869e6f4d
-	github.com/google/go-tpm v0.9.6
+	github.com/google/go-tpm v0.9.8
 	github.com/google/go-tpm-tools v0.4.9-0.20260522205405-ed0161beaf76
 	github.com/google/uuid v1.6.0
 	github.com/googleapis/gax-go/v2 v2.17.0

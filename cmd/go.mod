@@ -12,7 +12,7 @@ require (
 	github.com/google/go-configfs-tsm v0.3.3
 	github.com/google/go-sev-guest v0.14.0
 	github.com/google/go-tdx-guest v0.3.2-0.20250814004405-ffb0869e6f4d
-	github.com/google/go-tpm v0.9.6
+	github.com/google/go-tpm v0.9.8
 	github.com/google/go-tpm-tools v0.4.9-0.20260522205405-ed0161beaf76
 	github.com/google/go-tpm-tools/verifier v0.4.4
 	github.com/spf13/cobra v1.8.1
