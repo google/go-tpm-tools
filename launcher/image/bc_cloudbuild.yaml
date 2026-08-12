@@ -158,6 +158,7 @@ steps:
           "s|,oemroot|;oemroot|g"
           "s|cros_efi|cros_efi module_blacklist=mlx5_core|g"
           "s|cros_efi|cros_efi systemd.mask=get-cloud-api-domains.service|g"
+          "s|cros_efi|cros_efi initcall_blacklist=nvme_init,nvme_core_init|g"
         )
 
         DEBUG_COMMANDS=(
