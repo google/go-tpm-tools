@@ -2,6 +2,8 @@ module github.com/google/go-tpm-tools
 
 go 1.26
 
+toolchain go1.26.5
+
 require (
 	github.com/GoogleCloudPlatform/confidential-space/server v0.0.0-20260522213940-e5c6d01a3007
 	github.com/google/go-attestation v0.5.1

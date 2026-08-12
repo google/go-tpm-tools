@@ -2,6 +2,8 @@ module github.com/google/go-tpm-tools/cmd
 
 go 1.26
 
+toolchain go1.26.5
+
 require (
 	cloud.google.com/go/compute/metadata v0.9.0
 	cloud.google.com/go/logging v1.13.1
