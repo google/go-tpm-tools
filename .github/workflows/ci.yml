@@ -153,7 +153,7 @@ jobs:
           cargo build --release
       # Pinned to commit SHA to satisfy blanket security policy (zizmor)
       - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@537aa1903e5d359d0b27dbc19ddd22c5087f3fbc # v3.2.0
+        uses: golangci/golangci-lint-action@d583c34f0599d37dbac4a198b9c83201be380893 # v9.3.0
         with:
           version: latest
           working-directory: ${{ matrix.dir }}
