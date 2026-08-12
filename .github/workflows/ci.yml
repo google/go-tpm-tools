@@ -31,17 +31,17 @@ jobs:
   build:
     strategy:
       matrix:
-        go-version: [1.24.x]
+        go-version: [1.26.x]
         # TODO: Get this working on windows-latest
         os: [ubuntu-latest]
         architecture: [x32, x64]
         include:
           - os: macos-latest
             architecture: arm64
-            go-version: 1.24.x
+            go-version: 1.26.x
           - os: macos-14-large
             architecture: x64
-            go-version: 1.24.x
+            go-version: 1.26.x
     name: Generate/Build/Test (${{ matrix.os }}, ${{ matrix.architecture }}, Go ${{ matrix.go-version }})
     runs-on: ${{ matrix.os }}
     steps:
@@ -125,7 +125,7 @@ jobs:
   lint:
     strategy:
       matrix:
-        go-version: [1.24.x]
+        go-version: [1.26.x]
         os: [ubuntu-latest]
         dir: ["./", "./agent", "./cmd", "./launcher", "./keymanager"]
     name: Lint ${{ matrix.dir }} (${{ matrix.os }}, Go ${{ matrix.go-version }})
@@ -173,7 +173,7 @@ jobs:
   lintc:
     strategy:
       matrix:
-        go-version: [1.24.x]
+        go-version: [1.26.x]
         os: [ubuntu-latest]
     name: Lint CGO (${{ matrix.os }}, Go ${{ matrix.go-version }})
     runs-on: ${{ matrix.os }}
@@ -214,7 +214,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.24.x'
+          go-version: '1.26.x'
           cache: false
       - name: Install keep-sorted
         run: go install github.com/google/keep-sorted@v0.9.1

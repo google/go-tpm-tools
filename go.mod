@@ -1,8 +1,6 @@
 module github.com/google/go-tpm-tools
 
-go 1.24.0
-
-toolchain go1.24.13
+go 1.26
 
 require (
 	github.com/GoogleCloudPlatform/confidential-space/server v0.0.0-20260522213940-e5c6d01a3007
