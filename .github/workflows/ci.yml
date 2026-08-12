@@ -139,6 +139,13 @@ jobs:
         with:
           go-version: ${{ matrix.go-version }}
           cache: false
+      - name: Check formatting
+        run: |
+          gofmt -d ${{ matrix.dir }}
+          if [ -n "$(gofmt -l ${{ matrix.dir }})" ]; then
+            echo "Formatting errors found. Please run 'gofmt -w .' on your changes."
+            exit 1
+          fi
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # stable
         with:
@@ -155,16 +162,13 @@ jobs:
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
-          version: latest
+          version: v2.12.2
           working-directory: ${{ matrix.dir }}
           args: >
             -D errcheck
             -E stylecheck
-            -E goimports
             -E misspell
             -E revive
-            -E gofmt
-            -E goimports
             --max-same-issues=0
             --max-issues-per-linter=0
             --timeout 2m
