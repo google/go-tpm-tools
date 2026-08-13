@@ -9,7 +9,7 @@ package wskcc
 #cgo CFLAGS: -I${SRCDIR}/../../km_common/include
 #cgo LDFLAGS: -L${SRCDIR}/../../target/release -L${SRCDIR}/../../target/debug -lws_key_custody_core
 #cgo LDFLAGS: -lcrypto -lssl
-#cgo LDFLAGS: -lpthread -ldl -lm -lstdc++
+#cgo LDFLAGS: -lpthread -ldl -lm -Wl,-Bstatic -lstdc++ -Wl,-Bdynamic
 #include "include/ws_key_custody_core.h"
 */
 import "C"
