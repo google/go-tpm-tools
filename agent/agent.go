@@ -485,7 +485,7 @@ func (a *agent) AttestationEvidence(_ context.Context, challenge []byte, extraDa
 	attestation.DeviceReports = deviceReports
 
 	// ACPI data is currently only available in BcMode and only if requested.
-	if a.experiments.BcMode && opts.AcpiOpts != nil && opts.AcpiOpts.RetrieveAcpiData {
+	if a.experiments.BcMode && opts.AcpiOpts != nil && opts.RetrieveAcpiData {
 		acpi, err := getAcpiData()
 		if err != nil {
 			return nil, err
