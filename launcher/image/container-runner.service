@@ -7,8 +7,8 @@ After=network-online.target gcr-online.target containerd.service
 ExecStart=/usr/share/oem/confidential_space/cs_container_launcher
 ExecStopPost=/usr/share/oem/confidential_space/exit_script.sh
 Restart=no
-StandardOutput=journal+console
-StandardError=journal+console
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target

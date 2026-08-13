@@ -32,10 +32,6 @@ echo "Polling for heartbeat (Workload: $WORKLOAD_VM, Monitor: $MONITOR_VM)..."
 remaining=$(check_timeout "Timeout before heartbeat poll")
 timeout $remaining bash -c "until grep -q 'Workload heartbeat' \"$SERIAL_LOG\"; do sleep 1; done" || {
   echo "failed: Heartbeat not found within timeout" > /workspace/status.txt
-  echo "=== DUMPING WORKLOAD VM SERIAL LOGS ==="
-  gcloud compute instances get-serial-port-output $WORKLOAD_VM --zone $ZONE || true
-  echo "=== DUMPING MONITOR VM SERIAL LOGS ==="
-  cat "$SERIAL_LOG" || true
   kill $TAIL_PID
   exit 0
 }
