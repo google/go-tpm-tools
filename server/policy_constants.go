@@ -16,6 +16,7 @@ import (
 // Taken from TCG PC Client Platform Firmware Profile Specification,
 // Table 14 Events.
 const (
+	// keep-sorted start by_regex=0x.*
 	NoAction                   uint32 = 0x00000003
 	Separator                  uint32 = 0x00000004
 	EventTag                   uint32 = 0x00000006
@@ -24,6 +25,7 @@ const (
 	NonhostInfo                uint32 = 0x00000011
 	EFIBootServicesApplication uint32 = 0x80000003
 	EFIAction                  uint32 = 0x80000007
+	// keep-sorted end
 )
 
 // EventTagLoadedImageHex used with type "EV_EVENT_TAG".

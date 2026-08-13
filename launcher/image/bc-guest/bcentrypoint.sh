@@ -6,6 +6,13 @@ main() {
     cp /usr/share/oem/ima-policy /sys/kernel/security/ima/policy
   fi
 
+  # Set /etc/cloud-api-domains, required for fluent-bit
+  cat <<EOF > /etc/cloud-api-domains
+API_DOMAIN=googleapis.com
+ARTIFACT_REGISTRY_DOMAIN=pkg.dev
+PROJECT_PREFIX=
+EOF
+
   # Configure sysctls.
   sysctl -w kernel.kexec_load_disabled=1
 
@@ -59,6 +66,7 @@ main() {
   systemctl enable wsd.service
   systemctl start container-runner.service
   systemctl start wsd.service
+  # If fluent-bit is already stopped, restart will start it
   systemctl restart fluent-bit.service
 }
 

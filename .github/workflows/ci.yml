@@ -63,7 +63,9 @@ jobs:
       - name: Install protoc-gen-go
         run: go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.28.0
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # stable
+        with:
+          toolchain: stable
       - name: Install Build Dependencies (Linux)
         run: sudo apt-get update && sudo apt-get install -y cmake clang pkg-config libssl-dev
         if: runner.os == 'Linux' && matrix.architecture == 'x64'
@@ -138,7 +140,9 @@ jobs:
           go-version: ${{ matrix.go-version }}
           cache: false
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # stable
+        with:
+          toolchain: stable
       - name: Install Build Dependencies (Linux)
         run: sudo apt-get update && sudo apt-get install -y cmake clang pkg-config libssl-dev
       - name: Install bindgen-cli
@@ -184,7 +188,9 @@ jobs:
           go-version: ${{ matrix.go-version }}
           cache: false
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # stable
+        with:
+          toolchain: stable
       - name: Install Build Dependencies (Linux)
         run: sudo apt-get update && sudo apt-get install -y cmake clang pkg-config libssl-dev
       - name: Install bindgen-cli
@@ -197,3 +203,32 @@ jobs:
         run: CGO_CFLAGS="-Werror -Wno-unused-parameter" CC=gcc go build ./...
       - name: Check for CGO Warnings (clang)
         run: CGO_CFLAGS="-Werror -Wno-unused-parameter" CC=clang go build ./...
+
+  keep-sorted:
+    name: Keep Sorted Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.24.x'
+          cache: false
+      - name: Install keep-sorted
+        run: go install github.com/google/keep-sorted@v0.9.1
+      - name: Check keep-sorted
+        run: |
+          if [ -n "${GITHUB_BASE_REF}" ]; then
+            git fetch origin ${GITHUB_BASE_REF} --depth=1
+            BASE_REF="origin/${GITHUB_BASE_REF}"
+          else
+            BASE_REF="HEAD~1"
+          fi
+          git diff --name-only -z --diff-filter=d "$BASE_REF" HEAD | while IFS= read -r -d '' file; do
+            if [ -f "$file" ]; then
+              keep-sorted "$file"
+            fi
+          done
+          git diff --exit-code
