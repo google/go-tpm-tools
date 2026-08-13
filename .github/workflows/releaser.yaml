@@ -23,7 +23,7 @@ jobs:
       matrix:
         # We can cross-compile from Linux to macOS and Windows. See .goreleaser.yaml
         # So running just on ubuntu is sufficient.
-        go-version: [1.21.x]
+        go-version: [1.26.x]
         os: [ubuntu-latest]
 
     name: Release (${{ matrix.os}}, Go ${{ matrix.go-version }})

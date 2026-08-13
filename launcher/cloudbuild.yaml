@@ -57,9 +57,9 @@ steps:
       cd keymanager
       cargo build --release
 
-# `golang:1.26-bullseye` is needed to maintain `glibc` compatibility.
+# `golang:1.26-bookworm` is needed to maintain `glibc` compatibility.
 # Revert back to golang:1.26 COS 129 onwards.
-- name: golang:1.26-bullseye
+- name: golang:1.26-bookworm
   id: LauncherCompile
   waitFor: ['KeyManagerCompile']
   entrypoint: /bin/bash
