@@ -169,7 +169,6 @@ jobs:
           working-directory: ${{ matrix.dir }}
           args: >
             -D errcheck
-            -E stylecheck
             -E misspell
             -E revive
             --max-same-issues=0

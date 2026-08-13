@@ -41,6 +41,7 @@ func createEKPublicRSA(rsaKey *rsa.PublicKey) (tpm2.Public, error) {
 
 func createEKPublicECC(eccKey *ecdsa.PublicKey) (public tpm2.Public, err error) {
 	public = client.DefaultEKTemplateECC()
+	//nolint:staticcheck // eccKey.X and Y are deprecated in Go 1.26, but we need raw coordinates for the TPM public key template
 	public.ECCParameters.Point = tpm2.ECPoint{
 		XRaw: eccIntToBytes(eccKey.Curve, eccKey.X),
 		YRaw: eccIntToBytes(eccKey.Curve, eccKey.Y),
