@@ -57,8 +57,8 @@ steps:
       cd keymanager
       cargo build --release
 
-# `golang:1.26-bookworm` is used since `bullseye` is not supported for Go 1.26.
-# Revert back to golang:1.26 COS 129 onwards.
+# `golang:1.26-bookworm` is used for compiling the launcher.
+# We statically link libstdc++ and libgcc to support running on COS 125.
 - name: golang:1.26-bookworm
   id: LauncherCompile
   waitFor: ['KeyManagerCompile']
@@ -74,7 +74,7 @@ steps:
       cd launcher/launcher
       export CGO_LDFLAGS="-L/workspace/keymanager/target/release"
       export GOTOOLCHAIN=auto
-      go build -o ../image/launcher -ldflags="-extldflags=-Wl,-z,lazy -X 'main.BuildCommit=${SHORT_SHA}'"
+      go build -o ../image/launcher -ldflags="-extldflags '-Wl,-z,lazy -static-libstdc++ -static-libgcc' -X 'main.BuildCommit=${SHORT_SHA}'"
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: DownloadExpBinary
