@@ -141,9 +141,12 @@ jobs:
           cache: false
       - name: Check formatting
         run: |
-          gofmt -d ${{ matrix.dir }}
-          if [ -n "$(gofmt -l ${{ matrix.dir }})" ]; then
-            echo "Formatting errors found. Please run 'gofmt -w .' on your changes."
+          unformatted=$(find ${{ matrix.dir }} -name "*.go" -not -path "*/boringssl/*" -exec gofmt -l {} +)
+          if [ -n "$unformatted" ]; then
+            echo "Formatting errors found in the following files:"
+            echo "$unformatted"
+            echo "Please run 'gofmt -w .' on these files to format them."
+            echo "$unformatted" | xargs gofmt -d
             exit 1
           fi
       - name: Setup Rust
