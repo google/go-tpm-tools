@@ -149,10 +149,9 @@ func KeyFromNvIndex(rw io.ReadWriter, parent tpmutil.Handle, idx uint32) (*Key, 
 // is persisted to the cachedHandle, overwriting any existing key there.
 func NewCachedKey(rw io.ReadWriter, parent tpmutil.Handle, template tpm2.Public, cachedHandle tpmutil.Handle) (k *Key, err error) {
 	owner := tpm2.HandleOwner
-	switch parent {
-	case tpm2.HandlePlatform:
+	if parent == tpm2.HandlePlatform {
 		owner = tpm2.HandlePlatform
-	case tpm2.HandleNull:
+	} else if parent == tpm2.HandleNull {
 		return nil, fmt.Errorf("cannot cache objects in the null hierarchy")
 	}
 

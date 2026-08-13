@@ -57,7 +57,7 @@ func decodeAndValidateToken(tokenBytes []byte, keyFunc func(t *jwt.Token) (any, 
 	}
 	now := time.Now()
 	// Add one second for buffer.
-	nbf := unverifiedClaims.NotBefore.Add(time.Second)
+	nbf := unverifiedClaims.NotBefore.Time.Add(time.Second)
 	diff := nbf.Sub(now)
 	ten := 10 * time.Second
 	// Sleep until nbf is valid or max 10 seconds.

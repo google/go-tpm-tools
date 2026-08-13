@@ -62,7 +62,7 @@ hardware and guarantees a fresh quote.
 		}
 		defer rwc.Close()
 
-		if format != "binarypb" && format != "textproto" {
+		if !(format == "binarypb" || format == "textproto") {
 			return fmt.Errorf("format should be either binarypb or textproto")
 		}
 

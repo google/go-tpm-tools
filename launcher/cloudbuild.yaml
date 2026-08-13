@@ -51,8 +51,6 @@ steps:
     - -c
     - |
       set -exuo pipefail
-      # Fetch submodules since Cargo.toml now references bssl-macros path directly
-      git submodule update --init --recursive
       # Build the Rust keymanager libraries using prebuilt toolchain
       cd keymanager
       cargo build --release

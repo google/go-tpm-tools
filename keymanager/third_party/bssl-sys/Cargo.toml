@@ -18,6 +18,3 @@ path = "../../boringssl/rust/bssl-sys/src/lib.rs"
 [build-dependencies]
 cmake = "0.1"
 
-[dependencies]
-bssl-macros = { path = "../../boringssl/rust/bssl-macros" }
-

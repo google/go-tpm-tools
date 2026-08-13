@@ -72,14 +72,14 @@ func (f fakeAttestationAgent) AttestationEvidence(c context.Context, nonce []byt
 	if err != nil {
 		return nil, err
 	}
-	if opts.DeviceReportOpts != nil && opts.EnableRuntimeGPUAttestation {
+	if opts.DeviceReportOpts != nil && opts.DeviceReportOpts.EnableRuntimeGPUAttestation {
 		attestation.DeviceReports = append(attestation.DeviceReports, &attestationpb.DeviceAttestationReport{
 			Report: &attestationpb.DeviceAttestationReport_NvidiaReport{
 				NvidiaReport: &attestationpb.NvidiaAttestationReport{},
 			},
 		})
 	}
-	if opts.AcpiOpts != nil && opts.RetrieveAcpiData {
+	if opts.AcpiOpts != nil && opts.AcpiOpts.RetrieveAcpiData {
 		attestation.AcpiData = &attestationpb.AcpiData{}
 	}
 	return attestation, nil
@@ -1132,7 +1132,7 @@ func TestGetKeyEndorsement(t *testing.T) {
 					}
 					// Assert option mapping parameters
 					expectedAcpi := req.GetRequestAcpiData()
-					if opts.AcpiOpts == nil || opts.RetrieveAcpiData != expectedAcpi {
+					if opts.AcpiOpts == nil || opts.AcpiOpts.RetrieveAcpiData != expectedAcpi {
 						t.Errorf("KEM Attester: expected Acpi option propagation to be %t", expectedAcpi)
 					}
 					return &attestationpb.VmAttestation{}, nil
@@ -1147,7 +1147,7 @@ func TestGetKeyEndorsement(t *testing.T) {
 					}
 					// Assert option mapping parameters
 					expectedAcpi := req.GetRequestAcpiData()
-					if opts.AcpiOpts == nil || opts.RetrieveAcpiData != expectedAcpi {
+					if opts.AcpiOpts == nil || opts.AcpiOpts.RetrieveAcpiData != expectedAcpi {
 						t.Errorf("Binding Attester: expected Acpi option propagation to be %t", expectedAcpi)
 					}
 					return &attestationpb.VmAttestation{}, nil

@@ -139,38 +139,21 @@ jobs:
         with:
           go-version: ${{ matrix.go-version }}
           cache: false
-      - name: Check formatting
-        run: |
-          unformatted=$(find ${{ matrix.dir }} -name "*.go" -not -path "*/boringssl/*" -exec gofmt -l {} +)
-          if [ -n "$unformatted" ]; then
-            echo "Formatting errors found in the following files:"
-            echo "$unformatted"
-            echo "Please run 'gofmt -w .' on these files to format them."
-            echo "$unformatted" | xargs gofmt -d
-            exit 1
-          fi
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
-        with:
-          toolchain: stable
-      - name: Install Build Dependencies (Linux)
-        run: sudo apt-get update && sudo apt-get install -y cmake clang pkg-config libssl-dev
-      - name: Install bindgen-cli
-        run: cargo install bindgen-cli
-      - name: Build KeyManager Rust library
-        run: |
-          cd keymanager
-          cargo build --release
       # Pinned to commit SHA to satisfy blanket security policy (zizmor)
       - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        uses: golangci/golangci-lint-action@537aa1903e5d359d0b27dbc19ddd22c5087f3fbc # v3.2.0
         with:
-          version: v2.12.2
+          version: latest
           working-directory: ${{ matrix.dir }}
           args: >
             -D errcheck
+            -E stylecheck
+            -E goimports
             -E misspell
             -E revive
+            -E gofmt
+            -E goimports
+            --exclude-use-default=false
             --max-same-issues=0
             --max-issues-per-linter=0
             --timeout 2m

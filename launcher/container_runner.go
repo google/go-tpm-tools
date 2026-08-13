@@ -249,14 +249,13 @@ func enableMonitoring(enabled spec.MonitoringType, logger logging.Logger) error 
 	if enabled != spec.None {
 		logger.Info("Health Monitoring is enabled by the VM operator")
 
-		switch enabled {
-		case spec.All:
+		if enabled == spec.All {
 			logger.Info("All health monitoring metrics enabled")
 			if err := nodeproblemdetector.EnableAllConfig(); err != nil {
 				logger.Error("Failed to enable full monitoring config: %v", err)
 				return err
 			}
-		case spec.MemoryOnly:
+		} else if enabled == spec.MemoryOnly {
 			logger.Info("memory/bytes_used enabled")
 		}
 
