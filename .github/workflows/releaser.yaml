@@ -51,7 +51,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get -y install libssl-dev cmake clang pkg-config
         if: runner.os == 'Linux'
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
       - name: Install bindgen-cli
         run: cargo install bindgen-cli
         if: runner.os == 'Linux'
