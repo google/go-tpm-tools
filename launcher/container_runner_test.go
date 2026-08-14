@@ -968,13 +968,16 @@ func TestNewRunner(t *testing.T) {
 	}
 
 	testCases := []struct {
-		name          string
-		imageLabels   map[string]string
-		envs          []spec.EnvVar
-		cmd           []string
-		wantErr       bool
-		wantErrSubstr string
-		verifyLogs    func(t *testing.T, logs []string)
+		name            string
+		imageLabels     map[string]string
+		envs            []spec.EnvVar
+		cmd             []string
+		emptyEntrypoint bool
+		logRedirect     spec.LogRedirectLocation
+		hardened        bool
+		wantErr         bool
+		wantErrSubstr   string
+		verifyLogs      func(t *testing.T, logs []string)
 	}{
 		{
 			name: "Success_RedactEnvs",
@@ -1023,6 +1026,62 @@ func TestNewRunner(t *testing.T) {
 			wantErr:       true,
 			wantErrSubstr: "CMD is not allowed to be overridden",
 		},
+		{
+			name: "Success_LaunchPolicyCmdAllowed",
+			imageLabels: map[string]string{
+				"tee.launch_policy.allow_cmd_override": "true",
+			},
+			cmd:     []string{"/override-cmd"},
+			wantErr: false,
+		},
+		{
+			name: "Success_LogRedirectAlways",
+			imageLabels: map[string]string{
+				"tee.launch_policy.log_redirect": "always",
+			},
+			logRedirect: spec.Everywhere,
+			hardened:    true,
+			wantErr:     false,
+		},
+		{
+			name: "Failure_LogRedirectNever",
+			imageLabels: map[string]string{
+				"tee.launch_policy.log_redirect": "never",
+			},
+			logRedirect:   spec.Everywhere,
+			hardened:      true,
+			wantErr:       true,
+			wantErrSubstr: "logging redirection not allowed by image",
+		},
+		{
+			name: "Success_LogRedirectDebugOnly_DebugImage",
+			imageLabels: map[string]string{
+				"tee.launch_policy.log_redirect": "debugonly",
+			},
+			logRedirect: spec.Everywhere,
+			hardened:    false,
+			wantErr:     false,
+		},
+		{
+			name: "Failure_LogRedirectDebugOnly_HardenedImage",
+			imageLabels: map[string]string{
+				"tee.launch_policy.log_redirect": "debugonly",
+			},
+			logRedirect:   spec.Everywhere,
+			hardened:      true,
+			wantErr:       true,
+			wantErrSubstr: "logging redirection only allowed on debug environment by image",
+		},
+		{
+			name: "Failure_EmptyEntrypoint",
+			imageLabels: map[string]string{
+				"tee.launch_policy.allow_cmd_override": "true",
+			},
+			cmd:             []string{"arg1"},
+			emptyEntrypoint: true,
+			wantErr:         true,
+			wantErrSubstr:   "is shorter or equal to the length of the given Cmd",
+		},
 	}
 
 	for _, tc := range testCases {
@@ -1033,8 +1092,12 @@ func TestNewRunner(t *testing.T) {
 				id:           "sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
 				contentStore: &fakeContentStore{blob: imageConfigJSON(tc.imageLabels)},
 			}
+			containerArgs := append([]string{"/entrypoint.sh"}, tc.cmd...)
+			if tc.emptyEntrypoint {
+				containerArgs = tc.cmd
+			}
 			fakeCont := &fakeContainer{
-				args: []string{"/entrypoint.sh", "arg1"},
+				args: containerArgs,
 			}
 			fakeCli := &fakeContainerdClient{
 				pullResult: fakeImg,
@@ -1052,6 +1115,8 @@ func TestNewRunner(t *testing.T) {
 					ImageRef:            "test-image",
 					Envs:                tc.envs,
 					Cmd:                 tc.cmd,
+					LogRedirect:         tc.logRedirect,
+					Hardened:            tc.hardened,
 					FakeVerifierEnabled: true,
 				},
 				Logger:         logger,
