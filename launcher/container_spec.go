@@ -115,6 +115,8 @@ func createOCISpecOpts(image containerd.Image, launchSpec spec.LaunchSpec, envs 
 		}
 	}
 
+	specOpts = appendTPMDevice(specOpts)
+
 	return specOpts, nil
 }
 
@@ -140,6 +142,15 @@ func appendTokenMounts(mounts []specs.Mount) []specs.Mount {
 	m.Options = []string{"rbind", "ro"}
 
 	return append(mounts, m)
+}
+
+// appendTPMDevice appends the device spec for /dev/tpmrm0 if present on host
+func appendTPMDevice(specOpts []oci.SpecOpts) []oci.SpecOpts {
+	const tpmDevicePath = "/dev/tpmrm0"
+	if _, err := os.Stat(tpmDevicePath); err == nil {
+		return append(specOpts, oci.WithDevices(tpmDevicePath, tpmDevicePath, "rw"))
+	}
+	return specOpts
 }
 
 // withRlimits sets the rlimit (like the max file descriptor) for the container process
