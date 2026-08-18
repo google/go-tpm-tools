@@ -601,13 +601,14 @@ func (t *tpmAttestRoot) Attest(nonce []byte) (any, error) {
 }
 
 func (t *tpmAttestRoot) ComputeNonce(challenge []byte, extraData []byte) []byte {
-	challengeData := challenge
+	challengeDigest := sha256.Sum256(challenge)
+	challengeData := challengeDigest[:]
 	if extraData != nil {
 		extraDataDigest := sha256.Sum256(extraData)
-		challengeData = append(challenge, extraDataDigest[:]...)
+		challengeData = append(challengeData, extraDataDigest[:]...)
 	}
-	challengeDigest := sha256.Sum256(challengeData)
-	finalNonce := sha256.Sum256(append([]byte(labels.WorkloadAttestation), challengeDigest[:]...))
+	challengeDataDigest := sha256.Sum256(challengeData)
+	finalNonce := sha256.Sum256(append([]byte(labels.WorkloadAttestation), challengeDataDigest[:]...))
 	return finalNonce[:]
 }
 
@@ -666,13 +667,14 @@ func (t *tdxAttestRoot) Attest(nonce []byte) (any, error) {
 }
 
 func (t *tdxAttestRoot) ComputeNonce(challenge []byte, extraData []byte) []byte {
-	challengeData := challenge
+	challengeDigest := sha512.Sum512(challenge)
+	challengeData := challengeDigest[:]
 	if extraData != nil {
 		extraDataDigest := sha512.Sum512(extraData)
-		challengeData = append(challenge, extraDataDigest[:]...)
+		challengeData = append(challengeData, extraDataDigest[:]...)
 	}
-	challengeDigest := sha512.Sum512(challengeData)
-	finalNonce := sha512.Sum512(append([]byte(labels.WorkloadAttestation), challengeDigest[:]...))
+	challengeDataDigest := sha512.Sum512(challengeData)
+	finalNonce := sha512.Sum512(append([]byte(labels.WorkloadAttestation), challengeDataDigest[:]...))
 	return finalNonce[:]
 }
 
