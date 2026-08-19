@@ -20,8 +20,8 @@ type LaunchPolicy struct {
 	AllowedLogRedirect       policy
 	AllowedMountDestinations []string
 	DebugImageMonitoring     MonitoringType
-	NonrootContainer         bool
 	HardenedImageMonitoring  MonitoringType
+	NonrootContainer         bool
 	PrivilegedCaps           bool
 	// keep-sorted end
 }
