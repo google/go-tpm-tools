@@ -50,6 +50,7 @@ import (
 type ContainerRunner struct {
 	container        containerd.Container
 	launchSpec       spec.LaunchSpec
+	launchPolicy     spec.LaunchPolicy
 	attestAgent      agent.AttestationAgent
 	logger           logging.Logger
 	workloadLogger   logging.Logger
