@@ -10,11 +10,11 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 
 	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
 	"github.com/google/go-tpm-tools/agent"
-	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
 	wsd "github.com/google/go-tpm-tools/keymanager/workload_service"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/spec"
@@ -27,6 +27,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/fieldmaskpb"
 )
 
 const (
@@ -35,7 +36,8 @@ const (
 	evidenceEndpoint          = "/v1/evidence"
 	endorsementEndpoint       = "/v1/keys:getEndorsement"
 	hostAttestationEndpoint   = "/v1/hostAttestation"
-	kpsAttestationServiceAddr = "192.168.100.3:5051"
+	kpsAttestationServiceAddr = "192.168.100.3:50051"
+	wsdSocket                 = "/tmp/container_launcher/kmaserver-grpc.sock"
 )
 
 var clientErrorCodes = map[codes.Code]struct{}{
@@ -60,19 +62,21 @@ type attestHandler struct {
 	ctx         context.Context
 	attestAgent agent.AttestationAgent
 	// defaultTokenFile string
-	logger            logging.Logger
-	launchSpec        spec.LaunchSpec
-	clients           AttestClients
-	keyClaimsProvider wsd.KeyClaimsProvider
-	kemAttester       KEMAttester
+	logger             logging.Logger
+	launchSpec         spec.LaunchSpec
+	clients            AttestClients
+	keyClaimsProvider  wsd.KeyClaimsProvider
+	kemAttester        KeyEndorsementAttester
+	bindingKeyAttester KeyEndorsementAttester
 }
 
 // TeeServer is a server that can be called from a container through a unix
 // socket file.
 type TeeServer struct {
-	server      *http.Server
-	netListener net.Listener
-	kemAttester KEMAttester
+	server             *http.Server
+	netListener        net.Listener
+	kemAttester        KeyEndorsementAttester
+	bindingKeyAttester KeyEndorsementAttester
 }
 
 // New takes in a socket and start to listen to it, and create a server
@@ -81,6 +85,10 @@ func New(ctx context.Context, unixSock string, a agent.AttestationAgent, logger 
 	nl, err := net.Listen("unix", unixSock)
 	if err != nil {
 		return nil, fmt.Errorf("cannot listen to the socket [%s]: %v", unixSock, err)
+	}
+	if err := os.Chmod(unixSock, 0777); err != nil {
+		nl.Close()
+		return nil, fmt.Errorf("failed to chmod unix socket %s: %v", unixSock, err)
 	}
 
 	if launchSpec.Experiments.EnableKeyManager && keyClaimsProvider == nil {
@@ -92,25 +100,32 @@ func New(ctx context.Context, unixSock string, a agent.AttestationAgent, logger 
 		return nil, fmt.Errorf("failed to initialize KEM attester: %v", err)
 	}
 
+	bindingKeyAttester, err := initBindingKeyAttester(launchSpec.Experiments.BcMode, keyClaimsProvider, a)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize binding key attester: %v", err)
+	}
+
 	teeServer := TeeServer{
-		netListener: nl,
-		kemAttester: kemAttester,
+		netListener:        nl,
+		kemAttester:        kemAttester,
+		bindingKeyAttester: bindingKeyAttester,
 		server: &http.Server{
 			Handler: (&attestHandler{
-				ctx:               ctx,
-				attestAgent:       a,
-				logger:            logger,
-				launchSpec:        launchSpec,
-				clients:           clients,
-				keyClaimsProvider: keyClaimsProvider,
-				kemAttester:       kemAttester,
+				ctx:                ctx,
+				attestAgent:        a,
+				logger:             logger,
+				launchSpec:         launchSpec,
+				clients:            clients,
+				keyClaimsProvider:  keyClaimsProvider,
+				kemAttester:        kemAttester,
+				bindingKeyAttester: bindingKeyAttester,
 			}).Handler(),
 		},
 	}
 	return &teeServer, nil
 }
 
-func initKEMAttester(bcMode bool, keyClaimsProvider wsd.KeyClaimsProvider, a agent.AttestationAgent) (KEMAttester, error) {
+func initKEMAttester(bcMode bool, keyClaimsProvider wsd.KeyClaimsProvider, a agent.AttestationAgent) (KeyEndorsementAttester, error) {
 	if !bcMode {
 		return newLocalKEMAttester(keyClaimsProvider, a), nil
 	}
@@ -124,6 +139,26 @@ func initKEMAttester(bcMode bool, keyClaimsProvider wsd.KeyClaimsProvider, a age
 	// during the initial TCP/HTTP2 handshake.
 	conn.Connect()
 	return newRemoteKEMAttester(conn), nil
+}
+
+func initBindingKeyAttester(bcMode bool, keyClaimsProvider wsd.KeyClaimsProvider, a agent.AttestationAgent) (KeyEndorsementAttester, error) {
+	if !bcMode {
+		return newLocalBindingKeyAttester(keyClaimsProvider, a), nil
+	}
+
+	conn, err := grpc.NewClient(
+		"unix://"+wsdSocket,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create remote server client via unix socket %s: %v", wsdSocket, err)
+	}
+	// Early initiate the connection in the background. By default, grpc.NewClient
+	// creates a client in the IDLE state and only connects on the first RPC call.
+	// This can cause the first HTTP request to getEndorsement to hang and time out
+	// during the initial TCP/HTTP2 handshake.
+	conn.Connect()
+	return newBCBindingKeyAttester(conn, a), nil
 }
 
 // Handler creates a multiplexer for the server.
@@ -183,6 +218,18 @@ func (a *attestHandler) getITAToken(w http.ResponseWriter, r *http.Request) {
 	a.attest(w, r, a.clients.ITA)
 }
 
+// parseFieldMask parses the field mask from the request.
+func parseFieldMask(r *http.Request) *fieldmaskpb.FieldMask {
+	if qMask := r.URL.Query().Get("fields"); qMask != "" {
+		return &fieldmaskpb.FieldMask{Paths: strings.Split(qMask, ",")}
+	} else if qMask := r.URL.Query().Get("$fields"); qMask != "" {
+		return &fieldmaskpb.FieldMask{Paths: strings.Split(qMask, ",")}
+	} else if hMask := r.Header.Get("X-Goog-FieldMask"); hMask != "" {
+		return &fieldmaskpb.FieldMask{Paths: strings.Split(hMask, ",")}
+	}
+	return nil
+}
+
 // getAttestationEvidence retrieves the attestation evidence.
 // It returns partial response with query parameter support.
 // It currently supports "label", "challenge", "quote", "extraData", and "deviceReports" params.
@@ -211,10 +258,22 @@ func (a *attestHandler) getAttestationEvidence(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	fields := r.URL.Query().Get("fields")
+	mask := parseFieldMask(r)
+
+	enableGPU := false
+	if mask != nil {
+		for _, path := range mask.GetPaths() {
+			trimmedPath := strings.TrimSpace(path)
+			if trimmedPath == "*" || trimmedPath == "deviceReports" || trimmedPath == "device_reports" {
+				enableGPU = true
+				break
+			}
+		}
+	}
+
 	attestOpts := agent.AttestAgentOpts{
 		DeviceReportOpts: &agent.DeviceReportOpts{
-			EnableRuntimeGPUAttestation: fields == "*" || strings.Contains(fields, "deviceReports"),
+			EnableRuntimeGPUAttestation: enableGPU,
 		},
 	}
 	evidence, err := a.attestAgent.AttestationEvidence(a.ctx, req.Challenge, nil, attestOpts)
@@ -223,9 +282,9 @@ func (a *attestHandler) getAttestationEvidence(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	partialEvidence, err := filterVMAttestationFields(evidence, fields)
+	partialEvidence, err := filterVMAttestationFields(evidence, mask)
 	if err != nil {
-		a.logAndWriteHTTPError(w, http.StatusBadRequest, fmt.Errorf("invalid fields parameter: %v", err))
+		a.logAndWriteHTTPError(w, http.StatusBadRequest, fmt.Errorf("invalid field mask: %v", err))
 		return
 	}
 
@@ -239,15 +298,23 @@ func (a *attestHandler) getAttestationEvidence(w http.ResponseWriter, r *http.Re
 	w.Write(evidenceBytes)
 }
 
-// filterVMAttestationFields return a partial VM Attestation based on the query parameters.
-func filterVMAttestationFields(att *attestationpb.VmAttestation, fields string) (*attestationpb.VmAttestation, error) {
-	if fields == "" || fields == "*" {
-		return att, nil
+// filterVMAttestationFields return a partial VM Attestation based on the field mask.
+func filterVMAttestationFields(att *attestationpb.VmAttestation, mask *fieldmaskpb.FieldMask) (*attestationpb.VmAttestation, error) {
+	if mask == nil || len(mask.GetPaths()) == 0 {
+		out := proto.Clone(att).(*attestationpb.VmAttestation)
+		out.DeviceReports = nil
+		return out, nil
 	}
-	fieldSlice := strings.Split(fields, ",")
+
+	for _, path := range mask.GetPaths() {
+		if path == "*" {
+			return att, nil
+		}
+	}
+
 	fieldMap := make(map[string]bool)
-	for _, f := range fieldSlice {
-		fieldMap[strings.TrimSpace(f)] = true
+	for _, path := range mask.GetPaths() {
+		fieldMap[strings.TrimSpace(path)] = true
 	}
 
 	out := &attestationpb.VmAttestation{}
@@ -257,13 +324,13 @@ func filterVMAttestationFields(att *attestationpb.VmAttestation, fields string) 
 	if fieldMap["challenge"] {
 		out.Challenge = att.GetChallenge()
 	}
-	if fieldMap["extraData"] {
+	if fieldMap["extraData"] || fieldMap["extra_data"] {
 		out.ExtraData = att.GetExtraData()
 	}
 	if fieldMap["quote"] {
 		out.Quote = att.GetQuote()
 	}
-	if fieldMap["deviceReports"] {
+	if fieldMap["deviceReports"] || fieldMap["device_reports"] {
 		out.DeviceReports = att.GetDeviceReports()
 	}
 	return out, nil
@@ -305,31 +372,19 @@ func (a *attestHandler) getKeyEndorsement(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	bindingKeyClaims, err := a.keyClaimsProvider.GetKeyClaims(a.ctx, req.KeyHandle.Handle, keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING)
-	if err != nil {
-		a.logAndWriteHTTPError(w, http.StatusInternalServerError, fmt.Errorf("failed to get binding key claims"))
-		return
-	}
-
-	bindingBytes, err := proto.Marshal(bindingKeyClaims)
-	if err != nil {
-		a.logAndWriteHTTPError(w, http.StatusInternalServerError, fmt.Errorf("failed to marshal binding key claims: %v", err))
-		return
-	}
-
 	attestOpts := agent.AttestAgentOpts{
 		AcpiOpts: &agent.AcpiOpts{
 			RetrieveAcpiData: req.GetRequestAcpiData(),
 		},
 	}
 
-	bindingEvidence, err := a.attestAgent.AttestationEvidence(a.ctx, req.Challenge, bindingBytes, attestOpts)
+	bindingKeyEvidence, err := a.bindingKeyAttester.GetKeyEndorsement(a.ctx, &req, attestOpts)
 	if err != nil {
 		a.logAndWriteHTTPError(w, http.StatusInternalServerError, fmt.Errorf("failed to collect attestation evidence with binding key claims"))
 		return
 	}
 
-	kemEvidence, err := a.kemAttester.GetKeyEndorsement(a.ctx, &req)
+	kemEvidence, err := a.kemAttester.GetKeyEndorsement(a.ctx, &req, attestOpts)
 	if err != nil {
 		a.logAndWriteHTTPError(w, http.StatusInternalServerError, fmt.Errorf("failed to collect KEM evidence: %v", err))
 		return
@@ -339,7 +394,7 @@ func (a *attestHandler) getKeyEndorsement(w http.ResponseWriter, r *http.Request
 		Endorsement: &attestationpb.KeyEndorsement_VmProtectedKeyEndorsement{
 			VmProtectedKeyEndorsement: &attestationpb.VmProtectedKeyEndorsement{
 				BindingKeyAttestation: &attestationpb.KeyAttestation{
-					Attestation: bindingEvidence,
+					Attestation: bindingKeyEvidence,
 				},
 				ProtectedKeyAttestation: &attestationpb.KeyAttestation{
 					Attestation: kemEvidence,
@@ -499,6 +554,11 @@ func (s *TeeServer) Shutdown(ctx context.Context) error {
 	}
 	if s.kemAttester != nil {
 		if err := s.kemAttester.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if s.bindingKeyAttester != nil {
+		if err := s.bindingKeyAttester.Close(); err != nil {
 			errs = append(errs, err)
 		}
 	}

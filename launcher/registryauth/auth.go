@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 
 	"cloud.google.com/go/compute/metadata"
@@ -30,8 +31,9 @@ func RetrieveAuthToken(ctx context.Context, client *metadata.Client) (oauth2.Tok
 }
 
 // Resolver returns a custom resolver that can use the token to authenticate with
-// the repo.
-func Resolver(token string) remotes.Resolver {
+// the repo, and forces Google Artifact/Container registry to use the custom Google
+// HTTP client with pinned roots.
+func Resolver(token string, googleClient *http.Client) remotes.Resolver {
 	options := docker.ResolverOptions{}
 
 	credentials := func(host string) (string, string, error) {
@@ -43,7 +45,25 @@ func Resolver(token string) remotes.Resolver {
 	}
 	authOpts := []docker.AuthorizerOpt{docker.WithAuthCreds(credentials)}
 	//nolint:staticcheck
-	options.Authorizer = docker.NewDockerAuthorizer(authOpts...)
+	authorizer := docker.NewDockerAuthorizer(authOpts...)
+
+	// Construct the handlers once upfront
+	defaultHosts := docker.ConfigureDefaultRegistries(
+		docker.WithAuthorizer(authorizer),
+	)
+	googleHosts := docker.ConfigureDefaultRegistries(
+		docker.WithAuthorizer(authorizer),
+		docker.WithClient(googleClient),
+	)
+
+	options.Hosts = func(host string) ([]docker.RegistryHost, error) {
+		// Delegate to the pinned Google client handler for Google artifact registries
+		if strings.HasSuffix(host, "docker.pkg.dev") || host == "pkg.dev" || host == "gcr.io" || strings.HasSuffix(host, ".gcr.io") {
+			return googleHosts(host)
+		}
+		// Fallback to the default OS trust store handler for all other registries
+		return defaultHosts(host)
+	}
 
 	return docker.NewResolver(options)
 }
@@ -51,15 +71,15 @@ func Resolver(token string) remotes.Resolver {
 // RefreshResolver takes in a metadata server client, uses it to refresh the default service
 // account token, and returns a custom resolver that can use the token to authenticate with
 // the repo.
-func RefreshResolver(ctx context.Context, client *metadata.Client) (remotes.Resolver, error) {
+func RefreshResolver(ctx context.Context, client *metadata.Client, googleClient *http.Client) (remotes.Resolver, error) {
 	token, err := RetrieveAuthToken(ctx, client)
 	if err != nil {
 		return nil, fmt.Errorf("failed to retrieve auth token from metadata server: %v", err)
 	}
 
 	if token.Valid() {
-		return Resolver(token.AccessToken), nil
+		return Resolver(token.AccessToken, googleClient), nil
 	}
 
-	return nil, fmt.Errorf("invalid token from metadata server: %v", token)
+	return nil, fmt.Errorf("invalid token from metadata server")
 }

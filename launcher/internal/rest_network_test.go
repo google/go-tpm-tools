@@ -13,6 +13,7 @@ import (
 	"github.com/google/go-tpm-tools/verifier/util"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
+	"google.golang.org/api/option"
 )
 
 func TestNewRESTClient(t *testing.T) {
@@ -37,7 +38,12 @@ func TestNewRESTClient(t *testing.T) {
 	}
 	defer mockAttestationServer.Stop()
 
-	restClient, err := util.NewRESTClient(ctx, mockAttestationServer.Server.URL, "test-project", "us-central")
+	httpClient, err := google.DefaultClient(ctx)
+	if err != nil {
+		t.Errorf("Failed to create HTTP client %s", err)
+	}
+
+	restClient, err := util.NewRESTClient(ctx, mockAttestationServer.Server.URL, "test-project", "us-central", option.WithHTTPClient(httpClient))
 	if err != nil {
 		t.Errorf("Failed to create rest client %s", err)
 	}

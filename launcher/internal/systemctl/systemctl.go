@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/coreos/go-systemd/v22/dbus"
 )
@@ -35,12 +36,16 @@ func New() (*Systemctl, error) {
 
 // Start is the equivalent of `systemctl start $unit`.
 func (s *Systemctl) Start(unit string) error {
-	return runSystemdCmd(s.dbus.StartUnitContext, "start", unit)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	return runSystemdCmd(ctx, s.dbus.StartUnitContext, "start", unit)
 }
 
 // Stop is the equivalent of `systemctl stop $unit`.
 func (s *Systemctl) Stop(unit string) error {
-	return runSystemdCmd(s.dbus.StopUnitContext, "stop", unit)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	return runSystemdCmd(ctx, s.dbus.StopUnitContext, "stop", unit)
 }
 
 // IsActive is the equivalent of `systemctl is-active $unit`.
@@ -59,19 +64,24 @@ func (s *Systemctl) IsActive(ctx context.Context, unit string) (string, error) {
 // Close disconnects from dbus.
 func (s *Systemctl) Close() { s.dbus.Close() }
 
-func runSystemdCmd(cmdFunc func(context.Context, string, string, chan<- string) (int, error), cmd string, unit string) error {
+func runSystemdCmd(ctx context.Context, cmdFunc func(context.Context, string, string, chan<- string) (int, error), cmd string, unit string) error {
+
 	progress := make(chan string, 1)
 
 	// Run systemd command in "replace" mode to start the unit and its dependencies,
 	// possibly replacing already queued jobs that conflict with this.
-	if _, err := cmdFunc(context.Background(), unit, "replace", progress); err != nil {
+	if _, err := cmdFunc(ctx, unit, "replace", progress); err != nil {
 		return fmt.Errorf("failed to run systemctl [%s] for unit [%s]: %v", cmd, unit, err)
 	}
 
-	if result := <-progress; result != "done" {
-		return fmt.Errorf("systemctl [%s] result was [%s], want done", cmd, result)
+	select {
+	case result := <-progress:
+		if result != "done" {
+			return fmt.Errorf("systemctl [%s] result was [%s], want done", cmd, result)
+		}
+		log.Printf("Finished up systemctl [%s] for unit [%s]", cmd, unit)
+		return nil
+	case <-ctx.Done():
+		return fmt.Errorf("DBus operation timed out or cancelled: %w", ctx.Err())
 	}
-
-	log.Printf("Finished up systemctl [%s] for unit [%s]", cmd, unit)
-	return nil
 }

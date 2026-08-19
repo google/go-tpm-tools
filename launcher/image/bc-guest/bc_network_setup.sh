@@ -1,18 +1,5 @@
 #!/bin/bash
 
-# Bind-mount /bin/true over the google_set_multiqueue to disable it and prevent random resets to XPS
-if [[ -f /usr/bin/google_set_multiqueue ]]; then
-  echo "Disabling /usr/bin/google_set_multiqueue via bind mount" > /dev/console
-  mount --bind /bin/true /usr/bin/google_set_multiqueue || true
-fi
-
-# Rebind eth0 and eth1
-if [[ -f "/usr/share/oem/confidential_space/bc_network_rebind.sh" ]]; then
-  echo "Rebinding eth0 and eth1..." > /dev/console
-  "/usr/share/oem/confidential_space/bc_network_rebind.sh" eth0 || true
-  "/usr/share/oem/confidential_space/bc_network_rebind.sh" eth1 || true
-fi
-
 # Save systemd network files
 mkdir -p /etc/systemd/network/
 

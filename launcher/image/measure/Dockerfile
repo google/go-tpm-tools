@@ -1,5 +1,13 @@
 # From current directory:
 # gcloud builds submit --tag us-docker.pkg.dev/confidential-space-images-dev/cs-tools/measure:latest --project confidential-space-images-dev
+
+FROM golang:1.24 AS builder
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY extract_image_ovmf.go ./
+RUN go build -o /usr/local/bin/extract_image_ovmf extract_image_ovmf.go
+
 FROM gcr.io/cloud-builders/gcloud
 
 # Prevent interactive prompts during package installation
@@ -31,6 +39,9 @@ RUN apt-get update && apt-get install -y \
 
 RUN pip install --no-cache-dir lief
 
+
+# Copy the compiled extract_image_ovmf binary from builder stage
+COPY --from=builder /usr/local/bin/extract_image_ovmf /usr/local/bin/extract_image_ovmf
 
 # Copy the measure.sh script into the container
 # Ensure you have the script file in the same directory as this Dockerfile

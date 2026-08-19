@@ -9,7 +9,11 @@ print_usage() {
     echo "  -f <metadataFromFile>: read a metadata value from a file; specified in format key=filePath"
     echo "  -n <instanceName>: instance name"
     echo "  -z <instanceZone>: instance zone"
-    echo "  -c <confidentialComputing>: TDX or SEV"
+    echo "  -c <confidentialComputing>: NONE, TDX, or SEV. Default is SEV"
+    echo "  -t <machineType>: type of machine for VM (optional)"
+    echo "  -g <gpuType>: type of GPU to use for the VM (optional)"
+    echo "  -a <gpuCount>: number of GPU(s) to use for the VM (optional)"
+    echo "  -v <fakeVerifier>: true or false (default: true)"
     exit 1
 }
 
@@ -23,18 +27,25 @@ create_vm() {
     CC='SEV'
   fi
 
-  MACHINE_TYPE=''
-  if [[ "${CC}" == "SEV" ]]; then
-    MACHINE_TYPE='n2d-standard-2'
-  elif [[ "${CC}" == "TDX" ]]; then
-    MACHINE_TYPE='c3-standard-4'
-  else
-    echo "unsupported confidential computing type: ${CC}"
-    exit 1
+  CONFIDENTIAL_COMPUTE_FLAGS=""
+  if [ "$CC" != "NONE" ]; then
+    CONFIDENTIAL_COMPUTE_FLAGS="--confidential-compute-type=${CC}"
   fi
 
-  # use the fake verifier for all tests
-  FAKE_VERIFIER='test-fake-verifier=true'
+  if [ -z "$MACHINE_TYPE" ]; then
+    if [[ "${CC}" == "SEV" ]]; then
+      MACHINE_TYPE='n2d-standard-2'
+    elif [[ "${CC}" == "TDX" ]]; then
+      MACHINE_TYPE='c3-standard-4'
+    elif [[ "${CC}" == "NONE" ]]; then
+      MACHINE_TYPE='n1-standard-4' # Default for non-CC if not specified
+    else
+      echo "unsupported confidential computing type: ${CC}"
+      exit 1
+    fi
+  fi
+
+  FAKE_VERIFIER="test-fake-verifier=${USE_FAKE_VERIFIER}"
 
   APPEND_METADATA=''
   if ! [ -z "$METADATA" ]; then
@@ -57,29 +68,51 @@ create_vm() {
   # check the active account
   gcloud auth list
 
-  # Max disk for n2d-standard-2 (8GB memory) at 1% memory overhead.
-  MIN_DISK_SIZE=12
-  MAX_DISK_SIZE_GB=80
-  ADDTL_DISK_RANGE=$(($MAX_DISK_SIZE_GB - $MIN_DISK_SIZE + 1))
-  DISK_SIZE_GB=$(($MIN_DISK_SIZE + ($RANDOM % $ADDTL_DISK_RANGE)))
+  ACCELERATOR_FLAGS=""
+  if [ -n "$GPU_TYPE" ] && [ -n "$GPU_COUNT" ]; then
+    ACCELERATOR_FLAGS="--accelerator=count=$GPU_COUNT,type=$GPU_TYPE"
+    DISK_SIZE_GB=100
+    PREEMPTIBLE_FLAG="--preemptible"
+  else
+    # Max disk for n2d-standard-2 (8GB memory) at 1% memory overhead.
+    MIN_DISK_SIZE=12
+    MAX_DISK_SIZE_GB=80
+    ADDTL_DISK_RANGE=$(($MAX_DISK_SIZE_GB - $MIN_DISK_SIZE + 1))
+    DISK_SIZE_GB=$(($MIN_DISK_SIZE + ($RANDOM % $ADDTL_DISK_RANGE)))
+    PREEMPTIBLE_FLAG=""
+  fi
 
-  gcloud compute instances create $VM_NAME --confidential-compute-type=$CC --maintenance-policy=TERMINATE \
-  --machine-type=$MACHINE_TYPE --boot-disk-size=$DISK_SIZE_GB --scopes=cloud-platform --zone $ZONE \
-  --image=$IMAGE_NAME --image-project=$PROJECT_NAME --shielded-secure-boot $APPEND_METADATA \
-  $APPEND_METADATA_FILE
+  gcloud compute instances create $VM_NAME \
+    $CONFIDENTIAL_COMPUTE_FLAGS \
+    --maintenance-policy=TERMINATE \
+    --machine-type=$MACHINE_TYPE \
+    --boot-disk-size=$DISK_SIZE_GB \
+    --scopes=cloud-platform \
+    --zone=$ZONE \
+    --image=$IMAGE_NAME \
+    --image-project=$PROJECT_NAME \
+    --shielded-secure-boot \
+    $ACCELERATOR_FLAGS \
+    $PREEMPTIBLE_FLAG \
+    $APPEND_METADATA \
+    $APPEND_METADATA_FILE
 }
 
 IMAGE_NAME=''
 METADATA_FILE=''
 METADATA=''
+MACHINE_TYPE=''
 PROJECT_NAME=''
 VM_NAME=''
 ZONE=''
 CC='SEV' # default using sev
+GPU_TYPE=''
+GPU_COUNT=''
+USE_FAKE_VERIFIER='true'
 
 # In getopts, a ':' following a letter means that that flag takes an argument.
 # For example, i: means -i takes an additional argument.
-while getopts 'i:f:m:p:n:z:c:' flag; do
+while getopts 'i:f:m:p:n:z:c:t:g:a:v:' flag; do
   case "${flag}" in
     i) IMAGE_NAME=${OPTARG} ;;
     f) METADATA_FILE=${OPTARG} ;;
@@ -88,6 +121,10 @@ while getopts 'i:f:m:p:n:z:c:' flag; do
     n) VM_NAME=${OPTARG} ;;
     z) ZONE=${OPTARG} ;;
     c) CC=${OPTARG} ;;
+    t) MACHINE_TYPE=${OPTARG} ;;
+    g) GPU_TYPE=${OPTARG} ;;
+    a) GPU_COUNT=${OPTARG} ;;
+    v) USE_FAKE_VERIFIER=${OPTARG} ;;
     *) print_usage ;;
   esac
 done

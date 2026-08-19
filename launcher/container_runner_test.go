@@ -5,8 +5,11 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path"
 	"strconv"
@@ -15,8 +18,10 @@ import (
 	"testing"
 	"time"
 
+	clogging "cloud.google.com/go/logging"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/containerd/containerd"
+	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/defaults"
 	"github.com/containerd/containerd/namespaces"
 	"github.com/containerd/containerd/oci"
@@ -24,8 +29,8 @@ import (
 	"github.com/google/go-cmp/cmp"
 	gecel "github.com/google/go-eventlog/cel"
 	"github.com/google/go-tpm-tools/agent"
+	"github.com/google/go-tpm-tools/agent/device"
 	"github.com/google/go-tpm-tools/cel"
-	"github.com/google/go-tpm-tools/launcher/internal/gpu"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/spec"
@@ -95,7 +100,8 @@ func (f *fakeAttestationAgent) AttestHost(_ context.Context, _ []byte) ([]byte, 
 }
 
 type fakeGPUAttester struct {
-	attestFunc func(nonce []byte) (any, error)
+	attestFunc    func(nonce []byte) (any, error)
+	readyStateErr error
 }
 
 func (f *fakeGPUAttester) Attest(nonce []byte) (any, error) {
@@ -106,7 +112,11 @@ func (f *fakeGPUAttester) Attest(nonce []byte) (any, error) {
 }
 
 func (f *fakeGPUAttester) EnableReadyState() error {
-	return nil
+	return f.readyStateErr
+}
+
+func (f *fakeGPUAttester) Vendor() device.Vendor {
+	return device.NvidiaGPU
 }
 
 type fakeClaims struct {
@@ -316,68 +326,123 @@ func TestRefreshTokenError(t *testing.T) {
 
 func TestMeasureGPUAttestationEvidence(t *testing.T) {
 	testCases := []struct {
-		name        string
-		gpuAttester gpu.Attester
-		attestAgent *fakeAttestationAgent
-		wantErr     bool
-		wantErrStr  string
+		name             string
+		rots             []device.ROT
+		attestAgent      *fakeAttestationAgent
+		wantErr          bool
+		wantErrStr       string
+		wantMeasureCount int
 	}{
 		{
-			name:        "Success",
-			gpuAttester: &fakeGPUAttester{},
+			name: "Success",
+			rots: []device.ROT{&fakeGPUAttester{}},
 			attestAgent: &fakeAttestationAgent{
 				measureEventFunc: func(gecel.Content) error { return nil },
 			},
-			wantErr: false,
+			wantErr:          false,
+			wantMeasureCount: 1,
 		},
 		{
-			name:        "NilGpuAttester",
-			gpuAttester: nil,
+			name: "MultipleDevicesSuccess",
+			rots: []device.ROT{&fakeGPUAttester{}, &fakeGPUAttester{}, &fakeGPUAttester{}},
+			attestAgent: &fakeAttestationAgent{
+				measureEventFunc: func(gecel.Content) error { return nil },
+			},
+			wantErr:          false,
+			wantMeasureCount: 3,
+		},
+		{
+			name:        "NilDeviceManager",
+			rots:        nil,
 			attestAgent: &fakeAttestationAgent{},
 			wantErr:     false,
 		},
 		{
 			name: "AttestError",
-			gpuAttester: &fakeGPUAttester{
+			rots: []device.ROT{&fakeGPUAttester{
 				attestFunc: func(_ []byte) (any, error) {
 					return nil, errors.New("attest failed")
 				},
-			},
+			}},
 			attestAgent: &fakeAttestationAgent{},
 			wantErr:     true,
-			wantErrStr:  "failed to collect GPU evidence",
+			wantErrStr:  "failed to collect evidence",
 		},
 		{
 			name: "WrongEvidenceType",
-			gpuAttester: &fakeGPUAttester{
+			rots: []device.ROT{&fakeGPUAttester{
 				attestFunc: func(_ []byte) (any, error) {
 					return "wrong type", nil
 				},
-			},
+			}},
 			attestAgent: &fakeAttestationAgent{},
 			wantErr:     true,
 			wantErrStr:  "unexpected evidence type",
 		},
 		{
-			name:        "MeasureEventError",
-			gpuAttester: &fakeGPUAttester{},
+			name: "MeasureEventError",
+			rots: []device.ROT{&fakeGPUAttester{}},
 			attestAgent: &fakeAttestationAgent{
 				measureEventFunc: func(gecel.Content) error {
 					return errors.New("measure event failed")
 				},
 			},
 			wantErr:    true,
-			wantErrStr: "failed to measure GPU attestation",
+			wantErrStr: "failed to measure attestation event",
+		},
+		{
+			name:             "NoAttachedDevices",
+			rots:             []device.ROT{},
+			attestAgent:      &fakeAttestationAgent{},
+			wantErr:          false,
+			wantMeasureCount: 0,
+		},
+		{
+			name: "MultipleDevicesPartialAttestFailure",
+			rots: []device.ROT{
+				&fakeGPUAttester{},
+				&fakeGPUAttester{
+					attestFunc: func(_ []byte) (any, error) {
+						return nil, errors.New("gpu1 attest failed")
+					},
+				},
+			},
+			attestAgent: &fakeAttestationAgent{
+				measureEventFunc: func(gecel.Content) error { return nil },
+			},
+			wantErr:    true,
+			wantErrStr: "failed to collect evidence",
+		},
+		{
+			name: "EnableReadyStateError",
+			rots: []device.ROT{
+				&fakeGPUAttester{
+					readyStateErr: errors.New("enable failed"),
+				},
+			},
+			attestAgent: &fakeAttestationAgent{
+				measureEventFunc: func(gecel.Content) error { return nil },
+			},
+			wantErr:    true,
+			wantErrStr: "failed to enable ready state",
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			var measureCount int
+			if tc.attestAgent != nil && tc.attestAgent.measureEventFunc != nil {
+				origFunc := tc.attestAgent.measureEventFunc
+				tc.attestAgent.measureEventFunc = func(event gecel.Content) error {
+					measureCount++
+					return origFunc(event)
+				}
+			}
+
 			r := &ContainerRunner{
-				// The fakeGPUAttester doesn't have EnableReadyState, so we wrap it.
-				gpuAttester: tc.gpuAttester,
-				attestAgent: tc.attestAgent,
-				logger:      logging.SimpleLogger(),
+				deviceROTManager: device.NewROTManager(tc.rots),
+				attestAgent:      tc.attestAgent,
+				logger:           logging.SimpleLogger(),
 			}
 
 			err := r.measureGPUAttestationEvidence()
@@ -386,6 +451,9 @@ func TestMeasureGPUAttestationEvidence(t *testing.T) {
 			}
 			if tc.wantErr && err != nil && !strings.Contains(err.Error(), tc.wantErrStr) {
 				t.Errorf("measureGPUAttestationEvidence() error = %q, want err containing %q", err, tc.wantErrStr)
+			}
+			if tc.wantMeasureCount > 0 && measureCount != tc.wantMeasureCount {
+				t.Errorf("measured %d events, want %d", measureCount, tc.wantMeasureCount)
 			}
 		})
 	}
@@ -647,7 +715,7 @@ func TestInitImageDockerPublic(t *testing.T) {
 	ctx := namespaces.WithNamespace(context.Background(), "test")
 	// This is a "valid" token (formatwise)
 	validToken := oauth2.Token{AccessToken: "000000", Expiry: time.Now().Add(time.Hour)}
-	if _, err := initImage(ctx, containerdClient, spec.LaunchSpec{ImageRef: "docker.io/library/hello-world:latest"}, validToken); err != nil {
+	if _, err := initImage(ctx, containerdClient, spec.LaunchSpec{ImageRef: "docker.io/library/hello-world:latest"}, validToken, http.DefaultClient); err != nil {
 		t.Error(err)
 	} else {
 		if err := containerdClient.ImageService().Delete(ctx, "docker.io/library/hello-world:latest"); err != nil {
@@ -656,7 +724,7 @@ func TestInitImageDockerPublic(t *testing.T) {
 	}
 
 	invalidToken := oauth2.Token{}
-	if _, err := initImage(ctx, containerdClient, spec.LaunchSpec{ImageRef: "docker.io/library/hello-world:latest"}, invalidToken); err != nil {
+	if _, err := initImage(ctx, containerdClient, spec.LaunchSpec{ImageRef: "docker.io/library/hello-world:latest"}, invalidToken, http.DefaultClient); err != nil {
 		t.Error(err)
 	} else {
 		if err := containerdClient.ImageService().Delete(ctx, "docker.io/library/hello-world:latest"); err != nil {
@@ -736,21 +804,21 @@ func TestMeasureCELEvents(t *testing.T) {
 				},
 			}
 
-			var fakeGpu gpu.Attester
+			var rots []device.ROT
 			if tc.launchSpec.InstallGpuDriver {
-				fakeGpu = &fakeGPUAttester{
+				rots = []device.ROT{&fakeGPUAttester{
 					attestFunc: func(_ []byte) (any, error) {
 						return &attestationpb.NvidiaAttestationReport{}, nil
 					},
-				}
+				}}
 			}
 
 			r := ContainerRunner{
-				attestAgent: fakeAgent,
-				gpuAttester: fakeGpu,
-				container:   fakeContainer,
-				launchSpec:  tc.launchSpec,
-				logger:      logging.SimpleLogger(),
+				attestAgent:      fakeAgent,
+				deviceROTManager: device.NewROTManager(rots),
+				container:        fakeContainer,
+				launchSpec:       tc.launchSpec,
+				logger:           logging.SimpleLogger(),
 			}
 
 			if err := r.measureCELEvents(ctx); err != nil {
@@ -759,57 +827,6 @@ func TestMeasureCELEvents(t *testing.T) {
 
 			if !cmp.Equal(gotEvents, tc.wantCELEvents) {
 				t.Errorf("failed to measure CEL events, got %v, but want %v", gotEvents, tc.wantCELEvents)
-			}
-		})
-	}
-}
-
-func TestPullImageWithRetries(t *testing.T) {
-	testCases := []struct {
-		name        string
-		imagePuller func(int) (containerd.Image, error)
-		wantPass    bool
-	}{
-		{
-			name:        "success with single attempt",
-			imagePuller: func(int) (containerd.Image, error) { return &fakeImage{}, nil },
-			wantPass:    true,
-		},
-		{
-			name: "failure then success",
-			imagePuller: func(attempts int) (containerd.Image, error) {
-				if attempts%2 == 1 {
-					return nil, errors.New("fake error")
-				}
-				return &fakeImage{}, nil
-			},
-			wantPass: true,
-		},
-		{
-			name: "failure with attempts exceeded",
-			imagePuller: func(int) (containerd.Image, error) {
-				return nil, errors.New("fake error")
-			},
-			wantPass: false,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			retryPolicy := func() backoff.BackOff {
-				b := backoff.NewExponentialBackOff()
-				return backoff.WithMaxRetries(b, 2)
-			}
-
-			attempts := 0
-			_, err := pullImageWithRetries(
-				func() (containerd.Image, error) {
-					attempts++
-					return tc.imagePuller(attempts)
-				},
-				retryPolicy)
-			if gotPass := (err == nil); gotPass != tc.wantPass {
-				t.Errorf("pullImageWithRetries failed, got %v, but want %v", gotPass, tc.wantPass)
 			}
 		})
 	}
@@ -836,11 +853,20 @@ func (c *fakeContainer) Spec(context.Context) (*oci.Spec, error) {
 	return &oci.Spec{Process: &specs.Process{Args: c.args, Env: c.env}}, nil
 }
 
+func (c *fakeContainer) ID() string {
+	return "tee-container"
+}
+
+func (c *fakeContainer) Delete(context.Context, ...containerd.DeleteOpts) error {
+	return nil
+}
+
 type fakeImage struct {
 	containerd.Image
-	name   string
-	digest digest.Digest
-	id     digest.Digest
+	name         string
+	digest       digest.Digest
+	id           digest.Digest
+	contentStore content.Store
 }
 
 func (i *fakeImage) Name() string {
@@ -852,5 +878,261 @@ func (i *fakeImage) Target() v1.Descriptor {
 }
 
 func (i *fakeImage) Config(_ context.Context) (v1.Descriptor, error) {
-	return v1.Descriptor{Digest: i.id}, nil
+	return v1.Descriptor{
+		Digest:    i.id,
+		MediaType: v1.MediaTypeImageConfig,
+	}, nil
+}
+
+func (i *fakeImage) ContentStore() content.Store {
+	return i.contentStore
+}
+
+type fakeContainerdClient struct {
+	pullResult containerd.Image
+	loadResult containerd.Container
+	newResult  containerd.Container
+	pullErr    error
+	loadErr    error
+	newErr     error
+}
+
+func (f *fakeContainerdClient) Pull(context.Context, string, ...containerd.RemoteOpt) (containerd.Image, error) {
+	return f.pullResult, f.pullErr
+}
+func (f *fakeContainerdClient) LoadContainer(context.Context, string) (containerd.Container, error) {
+	return f.loadResult, f.loadErr
+}
+func (f *fakeContainerdClient) NewContainer(context.Context, string, ...containerd.NewContainerOpts) (containerd.Container, error) {
+	return f.newResult, f.newErr
+}
+
+type fakeContentStore struct {
+	content.Store
+	blob []byte
+}
+
+func (f *fakeContentStore) ReaderAt(context.Context, v1.Descriptor) (content.ReaderAt, error) {
+	return &fakeReaderAt{blob: f.blob}, nil
+}
+
+type fakeReaderAt struct {
+	blob []byte
+}
+
+func (f *fakeReaderAt) ReadAt(p []byte, off int64) (int, error) {
+	if off >= int64(len(f.blob)) {
+		return 0, io.EOF
+	}
+	n := copy(p, f.blob[off:])
+	return n, nil
+}
+func (f *fakeReaderAt) Close() error { return nil }
+func (f *fakeReaderAt) Size() int64  { return int64(len(f.blob)) }
+
+type fakeLogger struct {
+	logs []string
+}
+
+func (f *fakeLogger) Log(clogging.Severity, string, ...any) {}
+func (f *fakeLogger) Info(msg string, args ...any) {
+	f.logs = append(f.logs, formatLog(msg, args...))
+}
+func (f *fakeLogger) Warn(string, ...any)  {}
+func (f *fakeLogger) Error(string, ...any) {}
+func (f *fakeLogger) Close()               {}
+
+func formatLog(msg string, args ...any) string {
+	if len(args) == 0 {
+		return msg
+	}
+	return msg + " " + strings.Trim(strings.Join(strings.Fields(strings.Trim(strings.Join(strings.Fields(strings.Trim(jsonMarshal(args), "[]")), " "), " ")), " "), " ")
+}
+
+func jsonMarshal(v any) string {
+	b, _ := json.Marshal(v)
+	return string(b)
+}
+
+func TestNewRunner(t *testing.T) {
+	// Helper to generate image configuration JSON.
+	imageConfigJSON := func(labels map[string]string) []byte {
+		ic := v1.Image{
+			Config: v1.ImageConfig{
+				ExposedPorts: map[string]struct{}{},
+				Labels:       labels,
+			},
+		}
+		b, _ := json.Marshal(ic)
+		return b
+	}
+
+	testCases := []struct {
+		name            string
+		imageLabels     map[string]string
+		envs            []spec.EnvVar
+		cmd             []string
+		emptyEntrypoint bool
+		logRedirect     spec.LogRedirectLocation
+		hardened        bool
+		wantErr         bool
+		wantErrSubstr   string
+		verifyLogs      func(t *testing.T, logs []string)
+	}{
+		{
+			name: "Success_RedactEnvs",
+			imageLabels: map[string]string{
+				"tee.launch_policy.allow_env_override": "SECRET_VAR,PUBLIC_VAR",
+			},
+			envs: []spec.EnvVar{
+				{Name: "SECRET_VAR", Value: "mysecret"},
+				{Name: "PUBLIC_VAR", Value: "public"},
+			},
+			wantErr: false,
+			verifyLogs: func(t *testing.T, logs []string) {
+				foundSecret := false
+				foundPublic := false
+				for _, l := range logs {
+					if strings.Contains(l, "SECRET_VAR=[REDACTED]") {
+						foundSecret = true
+					}
+					if strings.Contains(l, "PUBLIC_VAR=[REDACTED]") {
+						foundPublic = true
+					}
+					if strings.Contains(l, "mysecret") || strings.Contains(l, "=public") {
+						t.Errorf("found unredacted variable value in logs: %s", l)
+					}
+				}
+				if !foundSecret || !foundPublic {
+					t.Errorf("expected redacted env variables not found in logs: %v", logs)
+				}
+			},
+		},
+		{
+			name:        "Failure_LaunchPolicyEnvViolation",
+			imageLabels: map[string]string{}, // Empty labels = no overrides allowed
+			envs: []spec.EnvVar{
+				{Name: "SECRET_VAR", Value: "mysecret"},
+			},
+			wantErr:       true,
+			wantErrSubstr: "is not allowed to be overridden",
+		},
+		{
+			name: "Failure_LaunchPolicyCmdViolation",
+			imageLabels: map[string]string{
+				"tee.launch_policy.allow_cmd_override": "false",
+			},
+			cmd:           []string{"/override-cmd"},
+			wantErr:       true,
+			wantErrSubstr: "CMD is not allowed to be overridden",
+		},
+		{
+			name: "Success_LaunchPolicyCmdAllowed",
+			imageLabels: map[string]string{
+				"tee.launch_policy.allow_cmd_override": "true",
+			},
+			cmd:     []string{"/override-cmd"},
+			wantErr: false,
+		},
+		{
+			name: "Success_LogRedirectAlways",
+			imageLabels: map[string]string{
+				"tee.launch_policy.log_redirect": "always",
+			},
+			logRedirect: spec.Everywhere,
+			hardened:    true,
+			wantErr:     false,
+		},
+		{
+			name: "Failure_LogRedirectNever",
+			imageLabels: map[string]string{
+				"tee.launch_policy.log_redirect": "never",
+			},
+			logRedirect:   spec.Everywhere,
+			hardened:      true,
+			wantErr:       true,
+			wantErrSubstr: "logging redirection not allowed by image",
+		},
+		{
+			name: "Success_LogRedirectDebugOnly_DebugImage",
+			imageLabels: map[string]string{
+				"tee.launch_policy.log_redirect": "debugonly",
+			},
+			logRedirect: spec.Everywhere,
+			hardened:    false,
+			wantErr:     false,
+		},
+		{
+			name: "Failure_LogRedirectDebugOnly_HardenedImage",
+			imageLabels: map[string]string{
+				"tee.launch_policy.log_redirect": "debugonly",
+			},
+			logRedirect:   spec.Everywhere,
+			hardened:      true,
+			wantErr:       true,
+			wantErrSubstr: "logging redirection only allowed on debug environment by image",
+		},
+		{
+			name: "Failure_EmptyEntrypoint",
+			imageLabels: map[string]string{
+				"tee.launch_policy.allow_cmd_override": "true",
+			},
+			cmd:             []string{"arg1"},
+			emptyEntrypoint: true,
+			wantErr:         true,
+			wantErrSubstr:   "is shorter or equal to the length of the given Cmd",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			fakeImg := &fakeImage{
+				name:         "test-image",
+				digest:       "sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+				id:           "sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+				contentStore: &fakeContentStore{blob: imageConfigJSON(tc.imageLabels)},
+			}
+			containerArgs := append([]string{"/entrypoint.sh"}, tc.cmd...)
+			if tc.emptyEntrypoint {
+				containerArgs = tc.cmd
+			}
+			fakeCont := &fakeContainer{
+				args: containerArgs,
+			}
+			fakeCli := &fakeContainerdClient{
+				pullResult: fakeImg,
+				loadResult: nil,
+				loadErr:    errors.New("container not found"),
+				newResult:  fakeCont,
+			}
+
+			logger := &fakeLogger{}
+			cfg := &RunnerConfig{
+				ContainerdClient: fakeCli,
+				Image:            fakeImg,
+				AttestAgent:      &fakeAttestationAgent{},
+				LaunchSpec: spec.LaunchSpec{
+					ImageRef:            "test-image",
+					Envs:                tc.envs,
+					Cmd:                 tc.cmd,
+					LogRedirect:         tc.logRedirect,
+					Hardened:            tc.hardened,
+					FakeVerifierEnabled: true,
+				},
+				Logger:         logger,
+				WorkloadLogger: logger,
+			}
+
+			_, err := NewRunner(context.Background(), cfg)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("NewRunner() error = %v, wantErr = %v", err, tc.wantErr)
+			}
+			if tc.wantErr && err != nil && !strings.Contains(err.Error(), tc.wantErrSubstr) {
+				t.Fatalf("NewRunner() error = %q, want error containing %q", err, tc.wantErrSubstr)
+			}
+			if tc.verifyLogs != nil {
+				tc.verifyLogs(t, logger.logs)
+			}
+		})
+	}
 }

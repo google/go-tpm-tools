@@ -283,6 +283,19 @@ func launchNvidiaPersistencedProcess(logger logging.Logger) error {
 // NvidiaSmiOutputFunc returns a function which executes the nvidia-smi command with the given arguments
 // and returns the raw byte output and any error.
 func NvidiaSmiOutputFunc(args ...string) NvidiaSmiCmdOutput {
-	cmd := fmt.Sprintf("%s/bin/nvidia-smi", InstallationHostDir)
-	return func() ([]byte, error) { return exec.Command(cmd, args...).Output() }
+	var cmdPath string
+
+	builtInPath := fmt.Sprintf("%s/bin/nvidia-smi", BuiltInInstallation595_58_03HostDir)
+	if _, err := os.Stat(builtInPath); err == nil {
+		cmdPath = builtInPath
+	} else {
+		cmdPath = fmt.Sprintf("%s/bin/nvidia-smi", InstallationHostDir)
+	}
+
+	return func() ([]byte, error) {
+		if _, err := os.Stat(cmdPath); os.IsNotExist(err) {
+			return nil, fmt.Errorf("nvidia-smi not found in any expected directory")
+		}
+		return exec.Command(cmdPath, args...).Output()
+	}
 }

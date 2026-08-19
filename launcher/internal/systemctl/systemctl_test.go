@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 )
 
 func TestRunSystmedCmd(t *testing.T) {
@@ -16,6 +17,9 @@ func TestRunSystmedCmd(t *testing.T) {
 	}
 	failedUnitFunc := func(_ context.Context, _, _ string, progress chan<- string) (int, error) {
 		progress <- "failed"
+		return 1, nil
+	}
+	timeoutUnitFunc := func(_ context.Context, _, _ string, _ chan<- string) (int, error) {
 		return 1, nil
 	}
 
@@ -39,11 +43,22 @@ func TestRunSystmedCmd(t *testing.T) {
 			sytemdCmdFunc: failedUnitFunc,
 			wantErr:       true,
 		},
+		{
+			name:          "timeout",
+			sytemdCmdFunc: timeoutUnitFunc,
+			wantErr:       true,
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			if err := runSystemdCmd(tc.sytemdCmdFunc, "test", "test_unit"); (err != nil) != tc.wantErr {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			if tc.name == "timeout" {
+				cancel()
+			} else {
+				defer cancel()
+			}
+			if err := runSystemdCmd(ctx, tc.sytemdCmdFunc, "test", "test_unit"); (err != nil) != tc.wantErr {
 				t.Errorf("runSystemdCmd() did not return expected error, got error: %v, but wantErr %v", err, tc.wantErr)
 			}
 		})

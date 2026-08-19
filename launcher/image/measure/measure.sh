@@ -238,10 +238,20 @@ compute_cmdline() {
     local cmdline_string result=()
     cmdline_string=$(grep "verified image $image_id" -A 1 "$grub_cfg" | tail -n 1)
 
-    # This logic correctly re-assembles the command line, handling quoted arguments.
-    eval set -- $cmdline_string
-    shift # Remove 'linux' command
-    for arg in "$@"; do
+    local args=()
+
+    while IFS= read -r line; do
+        args+=("$line")
+    done < <(xargs -n1 <<< "$cmdline_string")
+
+    # Remove the first argument ('linux')
+    args=("${args[@]:1}")
+
+    if [ ${#args[@]} -eq 0 ]; then
+        return 1
+    fi
+
+    for arg in "${args[@]}"; do
         if [[ "$arg" = *[[:space:]]* ]]; then
             result+=('"'"$arg"'"')
         else
@@ -249,7 +259,7 @@ compute_cmdline() {
         fi
     done
 
-    printf '%s' "$(echo "${result[@]}")"
+    printf '%s' "${result[*]}"
 }
 
 ##

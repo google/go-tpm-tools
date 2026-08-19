@@ -24,6 +24,9 @@ on:
       - main
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   build:
     strategy:
@@ -42,22 +45,27 @@ jobs:
     name: Generate/Build/Test (${{ matrix.os }}, ${{ matrix.architecture }}, Go ${{ matrix.go-version }})
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v3
+      # Pinned to commit SHA to satisfy blanket security policy (zizmor)
+      - uses: actions/checkout@a37ce9120846195fa4ece8f58b268e6043cb2f26 # v3
         with:
           submodules: recursive
-      - uses: actions/setup-go@v6
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version: ${{ matrix.go-version }}
           architecture: ${{ matrix.architecture }}
+          cache: false
       - name: Install Protoc
-        uses: arduino/setup-protoc@v1
+        uses: arduino/setup-protoc@149f6c87b92550901b26acd1632e11c3662e381f # v1.3.0
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
           version: "3.20.1"
       - name: Install protoc-gen-go
         run: go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.28.0
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # stable
+        with:
+          toolchain: stable
       - name: Install Build Dependencies (Linux)
         run: sudo apt-get update && sudo apt-get install -y cmake clang pkg-config libssl-dev
         if: runner.os == 'Linux' && matrix.architecture == 'x64'
@@ -123,14 +131,18 @@ jobs:
     name: Lint ${{ matrix.dir }} (${{ matrix.os }}, Go ${{ matrix.go-version }})
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: recursive
-      - uses: actions/setup-go@v2
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version: ${{ matrix.go-version }}
+          cache: false
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # stable
+        with:
+          toolchain: stable
       - name: Install Build Dependencies (Linux)
         run: sudo apt-get update && sudo apt-get install -y cmake clang pkg-config libssl-dev
       - name: Install bindgen-cli
@@ -139,8 +151,9 @@ jobs:
         run: |
           cd keymanager
           cargo build --release
+      # Pinned to commit SHA to satisfy blanket security policy (zizmor)
       - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v3.2.0
+        uses: golangci/golangci-lint-action@537aa1903e5d359d0b27dbc19ddd22c5087f3fbc # v3.2.0
         with:
           version: latest
           working-directory: ${{ matrix.dir }}
@@ -165,14 +178,19 @@ jobs:
     name: Lint CGO (${{ matrix.os }}, Go ${{ matrix.go-version }})
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v3
+      # Pinned to commit SHA to satisfy blanket security policy (zizmor)
+      - uses: actions/checkout@a37ce9120846195fa4ece8f58b268e6043cb2f26 # v3
         with:
           submodules: recursive
-      - uses: actions/setup-go@v2
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version: ${{ matrix.go-version }}
+          cache: false
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # stable
+        with:
+          toolchain: stable
       - name: Install Build Dependencies (Linux)
         run: sudo apt-get update && sudo apt-get install -y cmake clang pkg-config libssl-dev
       - name: Install bindgen-cli
@@ -185,3 +203,32 @@ jobs:
         run: CGO_CFLAGS=-Werror CC=gcc go build ./...
       - name: Check for CGO Warnings (clang)
         run: CGO_CFLAGS=-Werror CC=clang go build ./...
+
+  keep-sorted:
+    name: Keep Sorted Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.24.x'
+          cache: false
+      - name: Install keep-sorted
+        run: go install github.com/google/keep-sorted@v0.9.1
+      - name: Check keep-sorted
+        run: |
+          if [ -n "${GITHUB_BASE_REF}" ]; then
+            git fetch origin ${GITHUB_BASE_REF} --depth=1
+            BASE_REF="origin/${GITHUB_BASE_REF}"
+          else
+            BASE_REF="HEAD~1"
+          fi
+          git diff --name-only -z --diff-filter=d "$BASE_REF" HEAD | while IFS= read -r -d '' file; do
+            if [ -f "$file" ]; then
+              keep-sorted "$file"
+            fi
+          done
+          git diff --exit-code
