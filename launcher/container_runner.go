@@ -48,7 +48,6 @@ import (
 
 // ContainerRunner contains information about the container settings
 type ContainerRunner struct {
-<<<<<<< HEAD
 	container        containerd.Container
 	launchSpec       spec.LaunchSpec
 	attestAgent      agent.AttestationAgent
@@ -58,19 +57,7 @@ type ContainerRunner struct {
 	serialConsole    *os.File
 	powerButton      *powerButtonListener // Populated only for a hardened image
 	attestClients    teeserver.AttestClients
-=======
-	container      containerd.Container
-	launchSpec     spec.LaunchSpec
-	launchPolicy   spec.LaunchPolicy
-	attestAgent    agent.AttestationAgent
-	logger         logging.Logger
-	workloadLogger logging.Logger
-	gpuAttester    gpu.Attester
-	serialConsole  *os.File
-	powerButton    *powerButtonListener // Populated only for a hardened image
-	attestClients  teeserver.AttestClients
-	cni            gocni.CNI
->>>>>>> 1eed71a (Support running unprivileged workload container.)
+	cni              gocni.CNI
 }
 
 const tokenFileTmp = ".token.tmp"
