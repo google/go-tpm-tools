@@ -44,6 +44,7 @@ jobs:
             go-version: 1.26.x
     name: Generate/Build/Test (${{ matrix.os }}, ${{ matrix.architecture }}, Go ${{ matrix.go-version }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     steps:
       # Pinned to commit SHA to satisfy blanket security policy (zizmor)
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -130,6 +131,7 @@ jobs:
         dir: ["./", "./agent", "./cmd", "./launcher", "./keymanager"]
     name: Lint ${{ matrix.dir }} (${{ matrix.os }}, Go ${{ matrix.go-version }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     steps:
       # Pinned to commit SHA to satisfy blanket security policy (zizmor)
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -173,6 +175,7 @@ jobs:
         os: [ubuntu-latest]
     name: Lint CGO (${{ matrix.os }}, Go ${{ matrix.go-version }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     steps:
       # Pinned to commit SHA to satisfy blanket security policy (zizmor)
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
