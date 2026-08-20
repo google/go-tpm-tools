@@ -49,18 +49,13 @@ jobs:
           key: ${{ matrix.go }}-${{ env.sha_short }}
           lookup-only: true
       - name: Install Linux packages
-        run: sudo DEBIAN_FRONTEND=noninteractive apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout="30" && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -o Acquire::Retries=3 -o Acquire::http::Timeout="30" libssl-dev cmake clang pkg-config
-        if: runner.os == 'Linux'
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # stable
-      - name: Install bindgen-cli
-        run: cargo install bindgen-cli
+        run: sudo DEBIAN_FRONTEND=noninteractive apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout="30" && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -o Acquire::Retries=3 -o Acquire::http::Timeout="30" libssl-dev
         if: runner.os == 'Linux'
       - name: Build KeyManager Rust library
-        run: |
-          cd keymanager
-          cargo build --release
+        uses: docker://us-docker.pkg.dev/confidential-space-images-dev/cs-tools/keymanager-builder@sha256:0283448a48bcc515f15d708d5dcf9e368ea2553c8f5a3bb0908019372a47dbfe
         if: runner.os == 'Linux'
+        with:
+          args: cargo build --release --manifest-path keymanager/Cargo.toml
       - name: Build all modules
         run: go build -v ./... ./agent/... ./cmd/... ./launcher/... ./verifier/...
       - name: Run GoReleaser

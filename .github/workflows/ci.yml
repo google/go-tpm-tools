@@ -63,21 +63,11 @@ jobs:
           version: "3.20.1"
       - name: Install protoc-gen-go
         run: go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.28.0
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # stable
-        with:
-          toolchain: stable
-      - name: Install Build Dependencies (Linux)
-        run: sudo DEBIAN_FRONTEND=noninteractive apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout="30" && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -o Acquire::Retries=3 -o Acquire::http::Timeout="30" cmake clang pkg-config libssl-dev
-        if: runner.os == 'Linux' && matrix.architecture == 'x64'
-      - name: Install bindgen-cli
-        run: cargo install bindgen-cli
-        if: runner.os == 'Linux' && matrix.architecture == 'x64'
       - name: Build KeyManager Rust library
-        run: |
-          cd keymanager
-          cargo build --release
+        uses: docker://us-docker.pkg.dev/confidential-space-images-dev/cs-tools/keymanager-builder@sha256:0283448a48bcc515f15d708d5dcf9e368ea2553c8f5a3bb0908019372a47dbfe
         if: runner.os == 'Linux' && matrix.architecture == 'x64'
+        with:
+          args: cargo build --release --manifest-path keymanager/Cargo.toml
       - name: Check Protobuf Generation
         run: |
           go generate ./... ./agent/... ./cmd/... ./launcher/... ./verifier/...
@@ -141,18 +131,10 @@ jobs:
         with:
           go-version: ${{ matrix.go-version }}
           cache: false
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # stable
-        with:
-          toolchain: stable
-      - name: Install Build Dependencies (Linux)
-        run: sudo DEBIAN_FRONTEND=noninteractive apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout="30" && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -o Acquire::Retries=3 -o Acquire::http::Timeout="30" cmake clang pkg-config libssl-dev
-      - name: Install bindgen-cli
-        run: cargo install bindgen-cli
       - name: Build KeyManager Rust library
-        run: |
-          cd keymanager
-          cargo build --release
+        uses: docker://us-docker.pkg.dev/confidential-space-images-dev/cs-tools/keymanager-builder@sha256:0283448a48bcc515f15d708d5dcf9e368ea2553c8f5a3bb0908019372a47dbfe
+        with:
+          args: cargo build --release --manifest-path keymanager/Cargo.toml
       # Pinned to commit SHA to satisfy blanket security policy (zizmor)
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@537aa1903e5d359d0b27dbc19ddd22c5087f3fbc # v3.2.0
@@ -190,18 +172,10 @@ jobs:
         with:
           go-version: ${{ matrix.go-version }}
           cache: false
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # stable
-        with:
-          toolchain: stable
-      - name: Install Build Dependencies (Linux)
-        run: sudo DEBIAN_FRONTEND=noninteractive apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout="30" && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -o Acquire::Retries=3 -o Acquire::http::Timeout="30" cmake clang pkg-config libssl-dev
-      - name: Install bindgen-cli
-        run: cargo install bindgen-cli
       - name: Build KeyManager Rust library
-        run: |
-          cd keymanager
-          cargo build --release
+        uses: docker://us-docker.pkg.dev/confidential-space-images-dev/cs-tools/keymanager-builder@sha256:0283448a48bcc515f15d708d5dcf9e368ea2553c8f5a3bb0908019372a47dbfe
+        with:
+          args: cargo build --release --manifest-path keymanager/Cargo.toml
       - name: Check for CGO Warnings (gcc)
         run: CGO_CFLAGS=-Werror CC=gcc go build ./...
       - name: Check for CGO Warnings (clang)
