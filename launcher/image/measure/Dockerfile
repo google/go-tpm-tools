@@ -5,8 +5,10 @@ FROM golang:1.24 AS builder
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
-COPY extract_image_ovmf.go ./
-RUN go build -o /usr/local/bin/extract_image_ovmf extract_image_ovmf.go
+COPY extract_image_ovmf/ ./extract_image_ovmf/
+COPY extract_sigstruct/ ./extract_sigstruct/
+RUN go build -o /usr/local/bin/extract_image_ovmf ./extract_image_ovmf
+RUN go build -o /usr/local/bin/extract_sigstruct ./extract_sigstruct
 
 FROM gcr.io/cloud-builders/gcloud
 
@@ -40,8 +42,9 @@ RUN apt-get update && apt-get install -y \
 RUN pip install --no-cache-dir lief
 
 
-# Copy the compiled extract_image_ovmf binary from builder stage
+# Copy the compiled binaries from builder stage
 COPY --from=builder /usr/local/bin/extract_image_ovmf /usr/local/bin/extract_image_ovmf
+COPY --from=builder /usr/local/bin/extract_sigstruct /usr/local/bin/extract_sigstruct
 
 # Copy the measure.sh script into the container
 # Ensure you have the script file in the same directory as this Dockerfile
