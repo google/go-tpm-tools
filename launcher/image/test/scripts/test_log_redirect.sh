@@ -15,7 +15,7 @@ elif [[ "$1" == "cloud_logging" ]]; then
     ELAPSED=0
     while [ $ELAPSED -lt $MAX_WAIT_SECONDS ]; do
         output=$(read_cloud_logging $3 || true)
-        
+
         # If logs are expected and found, return early
         if [[ $output == *"Token looks okay"* ]] && [[ "$2" == "true" ]]; then
             break
