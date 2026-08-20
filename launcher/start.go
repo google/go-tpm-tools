@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path"
 
 	"cloud.google.com/go/compute/metadata"
 	"cos.googlesource.com/cos/tools.git/src/cmd/cos_gpu_installer/deviceinfo"
@@ -16,8 +17,10 @@ import (
 	"github.com/google/go-tpm-tools/agent"
 	"github.com/google/go-tpm-tools/agent/device"
 	"github.com/google/go-tpm-tools/client"
+	workloadservice "github.com/google/go-tpm-tools/keymanager/workload_service"
 	"github.com/google/go-tpm-tools/launcher/internal/gpu"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
+	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/registryauth"
 	"github.com/google/go-tpm-tools/launcher/spec"
 	"github.com/google/go-tpm-tools/launcher/teeserver"
@@ -27,7 +30,11 @@ import (
 	"github.com/google/go-tpm-tools/verifier/util"
 	"github.com/google/go-tpm/legacy/tpm2"
 	"google.golang.org/api/option"
+
+	kmcommonpb "github.com/google/go-tpm-tools/keymanager/km_common/proto"
 )
+
+const keyManagerSocket = "kmaserver.sock"
 
 var expectedTPMDAParams = TPMDAParams{
 	MaxTries:        0x20,    // 32 tries
@@ -138,12 +145,29 @@ func StartLauncher(ctx context.Context, launchSpec spec.LaunchSpec, logger loggi
 		return err
 	}
 
+	var workloadService *workloadservice.Server
+	if launchSpec.Experiments.EnableKeyManager {
+		logger.Info("EnableKeyManager experiment is enabled: initializing KeyManager server.")
+		keyManagerSocketPath := path.Join(launcherfile.HostTmpPath, keyManagerSocket)
+		keyManagerServer, err := workloadservice.New(ctx, keyManagerSocketPath, kmcommonpb.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED)
+		if err != nil {
+			return fmt.Errorf("failed to create the KeyManager server: %v", err)
+		}
+		if err := verifySocketPermissions(keyManagerSocketPath); err != nil {
+			return fmt.Errorf("failed to verify KeyManager socket permissions: %w", err)
+		}
+		workloadService = keyManagerServer
+		go func() { _ = keyManagerServer.Serve() }()
+		defer func() { _ = keyManagerServer.Shutdown(ctx) }()
+	}
+
 	r, err := NewRunner(ctx, &RunnerConfig{
 		ContainerdClient: containerdClient,
 		Image:            image,
 		AttestAgent:      attestAgent,
 		DeviceROTManager: deviceROTManager,
 		AttestClients:    attestClients,
+		WorkloadService:  workloadService,
 		LaunchSpec:       launchSpec,
 		Logger:           logger,
 		WorkloadLogger:   workloadLogger,
@@ -242,4 +266,15 @@ func createAttestClients(ctx context.Context, launchSpec spec.LaunchSpec, logger
 	}
 	attestClients.GCA = gcaClient
 	return attestClients, nil
+}
+
+func verifySocketPermissions(socketPath string) error {
+	info, err := os.Stat(socketPath)
+	if err != nil {
+		return fmt.Errorf("failed to stat socket: %w", err)
+	}
+	if perm := info.Mode().Perm(); perm != 0777 {
+		return fmt.Errorf("socket %s has permissions %04o, want 0777", socketPath, perm)
+	}
+	return nil
 }
