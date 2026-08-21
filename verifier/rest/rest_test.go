@@ -614,6 +614,7 @@ func TestConvertCSRequestToREST(t *testing.T) {
 					Nonces:    []string{"test-nonce"},
 					TokenType: "PKI",
 				},
+				GceInstance: "projects/123/zones/us-central1-a/instances/456",
 			},
 			expectedReq: &ccpb.VerifyConfidentialSpaceRequest{
 				TeeAttestation: &ccpb.VerifyConfidentialSpaceRequest_TpmAttestation{
@@ -661,6 +662,7 @@ func TestConvertCSRequestToREST(t *testing.T) {
 					AkCert:            []byte("test-ak-cert"),
 					IntermediateCerts: [][]byte{[]byte("chain-1"), []byte("chain-2")},
 				},
+				GceInstance: "projects/123/zones/us-central1-a/instances/456",
 			},
 			expectedReq: &ccpb.VerifyConfidentialSpaceRequest{
 				TeeAttestation: &ccpb.VerifyConfidentialSpaceRequest_TdCcel{
@@ -707,6 +709,7 @@ func TestConvertCSRequestToREST(t *testing.T) {
 						},
 					},
 				},
+				GceInstance: "projects/123/zones/us-central1-a/instances/456",
 			},
 			expectedReq: &ccpb.VerifyConfidentialSpaceRequest{
 				TeeAttestation: &ccpb.VerifyConfidentialSpaceRequest_TdCcel{

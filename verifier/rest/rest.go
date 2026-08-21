@@ -225,6 +225,7 @@ func convertRequestToREST(request verifier.VerifyAttestationRequest) *ccpb.Verif
 			SignedEntities: []*ccpb.SignedEntity{{ContainerImageSignatures: signatures}},
 		},
 		TokenOptions: convertTokenOptionsToREST(request.TokenOptions),
+		Instance:     request.GceInstance,
 	}
 
 	if request.Attestation != nil {
