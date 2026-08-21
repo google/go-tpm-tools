@@ -1,6 +1,6 @@
 module github.com/google/go-tpm-tools/verifier
 
-go 1.24.8
+go 1.26
 
 replace github.com/google/go-tpm-tools v0.4.4 => ../
 
