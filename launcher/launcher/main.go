@@ -80,16 +80,16 @@ func main() {
 		return
 	}
 
-	workloadLogger, err := logging.NewCloudLogger(ctx, pool)
+	cloudLogger, err := logging.NewCloudLogger(ctx, pool)
 	if err != nil {
 		serialLogger.Error(fmt.Sprintf("failed to initialize cloud logging: %v", err))
 		exitCode = failRC
 		serialLogger.Error(exitMessage, "exit_code", exitCode, "exit_msg", rcMessage[exitCode])
 		return
 	}
-	defer workloadLogger.Close()
+	defer cloudLogger.Close()
 
-	logger := logging.DualLogger(workloadLogger, serialLogger)
+	logger := logging.DualLogger(cloudLogger, serialLogger)
 
 	pinnedTransport, err := launcher.PinnedHTTPTransport(pool)
 	if err != nil {
@@ -158,7 +158,7 @@ func main() {
 			logger.Info(exitMessage, "exit_code", exitCode)
 		}
 	}()
-	if err = launcher.StartLauncher(ctx, launchSpec, logger, workloadLogger, serialConsole, pinnedClient, googleClient); err != nil {
+	if err = launcher.StartLauncher(ctx, launchSpec, logger, serialConsole, pinnedClient, googleClient); err != nil {
 		logger.Error(err.Error())
 		var tpmOpenErr *launcher.TPMOpenError
 		if errors.As(err, &tpmOpenErr) {

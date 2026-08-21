@@ -18,13 +18,21 @@ elif [[ "$1" == "cloud_logging" ]]; then
         
         # If logs are expected and found, return early
         if [[ $output == *"Token looks okay"* ]] && [[ "$2" == "true" ]]; then
-            break
+            if [[ "$1" != "cloud_logging" ]] || echo "$output" | grep -q 'INFO.*Token looks okay'; then
+                break
+            fi
         fi
 
         # Check if VM is done running
         vm_status=$(gcloud compute instances describe "$3" --zone "$4" --format="value(status)" || echo "TERMINATED")
         if [[ "$vm_status" == "TERMINATED" ]]; then
-            break
+            if [[ "$2" == "false" ]]; then
+                # VM is terminated and logs are not expected; wait briefly to ensure nothing is in-flight, then break.
+                sleep 15
+                output=$(read_cloud_logging $3 || true)
+                break
+            fi
+            # If logs ARE expected, continue polling until MAX_WAIT_SECONDS or until logs arrive in Cloud Logging.
         fi
 
         sleep $INTERVAL_SECONDS
@@ -35,13 +43,19 @@ else
     exit 1
 fi
 
-if [[ $output != *"Token looks okay"* ]] && [[ "$2" == "true" ]]; then
-    echo "FAILED: did not find workload logs in $1, but expected to:"
-    echo $output
-    echo 'TEST FAILED.' > /workspace/status.txt
-elif [[ $output == *"Token looks okay"* ]] && [[ "$2" == "false" ]]; then
+if [[ "$2" == "true" ]]; then
+    if [[ "$1" == "cloud_logging" ]] && ! echo "$output" | grep -q 'INFO.*Token looks okay'; then
+        echo "FAILED: did not find workload logs with INFO severity in cloud_logging, but expected to:"
+        echo "$output"
+        echo 'TEST FAILED.' > /workspace/status.txt
+    elif [[ "$1" != "cloud_logging" ]] && [[ $output != *"Token looks okay"* ]]; then
+        echo "FAILED: did not find workload logs in $1, but expected to:"
+        echo "$output"
+        echo 'TEST FAILED.' > /workspace/status.txt
+    fi
+elif [[ "$2" == "false" ]] && [[ $output == *"Token looks okay"* ]]; then
     echo "FAILED: found workload logs in $1, but did not expect to:"
-    echo $output
+    echo "$output"
     echo 'TEST FAILED.' > /workspace/status.txt
 fi
 
