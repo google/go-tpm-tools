@@ -1119,8 +1119,7 @@ func TestNewRunner(t *testing.T) {
 					Hardened:            tc.hardened,
 					FakeVerifierEnabled: true,
 				},
-				Logger:         logger,
-				WorkloadLogger: logger,
+				Logger: logger,
 			}
 
 			_, err := NewRunner(context.Background(), cfg)

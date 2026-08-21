@@ -4,11 +4,12 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	clogging "cloud.google.com/go/logging"
 	"github.com/google/go-cmp/cmp"
@@ -324,86 +325,126 @@ func TestLogFunctions(t *testing.T) {
 	}
 }
 
-func TestSeverityWriter(t *testing.T) {
-	tests := []struct {
-		name         string
-		writerFunc   func(Logger) io.Writer
-		input        string
-		wantMsg      string
-		wantSeverity clogging.Severity
-	}{
-		{
-			name:         "InfoWriter without newline",
-			writerFunc:   NewInfoWriter,
-			input:        "test info log",
-			wantMsg:      "test info log",
-			wantSeverity: clogging.Info,
-		},
-		{
-			name:         "InfoWriter strips trailing newlines",
-			writerFunc:   NewInfoWriter,
-			input:        "test info log\n\n",
-			wantMsg:      "test info log",
-			wantSeverity: clogging.Info,
-		},
-		{
-			name:         "ErrorWriter with trailing newline",
-			writerFunc:   NewErrorWriter,
-			input:        "test error log\n",
-			wantMsg:      "test error log",
-			wantSeverity: clogging.Error,
-		},
-		{
-			name:         "Preserves internal newlines",
-			writerFunc:   NewInfoWriter,
-			input:        "line 1\nline 2\n\n",
-			wantMsg:      "line 1\nline 2",
-			wantSeverity: clogging.Info,
-		},
-		{
-			name:         "Empty input",
-			writerFunc:   NewInfoWriter,
-			input:        "",
-			wantMsg:      "",
-			wantSeverity: clogging.Info,
-		},
-		{
-			name:         "Only newlines",
-			writerFunc:   NewInfoWriter,
-			input:        "\n\n\n",
-			wantMsg:      "",
-			wantSeverity: clogging.Info,
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			mock := &mockLogger{}
-			writer := tc.writerFunc(mock)
-			n, err := writer.Write([]byte(tc.input))
-			if err != nil || n != len(tc.input) {
-				t.Fatalf("Write failed: got n=%v, err=%v", n, err)
-			}
-			if mock.severity != tc.wantSeverity {
-				t.Errorf("Severity: got %v, want %v", mock.severity, tc.wantSeverity)
-			}
-			if mock.msg != tc.wantMsg {
-				t.Errorf("Message: got %q, want %q", mock.msg, tc.wantMsg)
-			}
-		})
-	}
+type errorWriter struct {
+	err error
 }
 
-type mockLogger struct {
-	severity clogging.Severity
-	msg      string
+func (e *errorWriter) Write(_ []byte) (int, error) {
+	return 0, e.err
 }
 
-func (m *mockLogger) Log(severity clogging.Severity, msg string, _ ...any) {
-	m.severity = severity
-	m.msg = msg
+func TestJSONSeverityWriter(t *testing.T) {
+	t.Run("single line", func(t *testing.T) {
+		var buf bytes.Buffer
+		writer := &JSONSeverityWriter{Target: &buf, Severity: "ERROR"}
+
+		input := "workload error line\n"
+		n, err := writer.Write([]byte(input))
+		if err != nil || n != len(input) {
+			t.Fatalf("Write failed: n=%d, err=%v", n, err)
+		}
+
+		want := `{"message":"workload error line","severity":"ERROR"}` + "\n"
+		if buf.String() != want {
+			t.Errorf("JSONSeverityWriter output = %q, want %q", buf.String(), want)
+		}
+	})
+
+	t.Run("multi line", func(t *testing.T) {
+		var buf bytes.Buffer
+		writer := &JSONSeverityWriter{Target: &buf, Severity: "INFO"}
+
+		input := "first line\r\nsecond line\nthird line\n"
+		n, err := writer.Write([]byte(input))
+		if err != nil || n != len(input) {
+			t.Fatalf("Write failed: n=%d, err=%v", n, err)
+		}
+
+		want := `{"message":"first line","severity":"INFO"}` + "\n" +
+			`{"message":"second line","severity":"INFO"}` + "\n" +
+			`{"message":"third line","severity":"INFO"}` + "\n"
+		if buf.String() != want {
+			t.Errorf("JSONSeverityWriter output = %q, want %q", buf.String(), want)
+		}
+	})
+
+	t.Run("empty or whitespace only", func(t *testing.T) {
+		var buf bytes.Buffer
+		writer := &JSONSeverityWriter{Target: &buf, Severity: "INFO"}
+
+		input := "\r\n\n"
+		n, err := writer.Write([]byte(input))
+		if err != nil || n != len(input) {
+			t.Fatalf("Write failed: n=%d, err=%v", n, err)
+		}
+
+		if buf.Len() != 0 {
+			t.Errorf("JSONSeverityWriter output = %q, want empty", buf.String())
+		}
+	})
+
+	t.Run("constructor helpers", func(t *testing.T) {
+		infoW := NewJSONInfoWriter()
+		jsonInfo, ok := infoW.(*JSONSeverityWriter)
+		if !ok || jsonInfo.Target != os.Stdout || jsonInfo.Severity != "INFO" {
+			t.Errorf("NewJSONInfoWriter() = %+v, want Target:os.Stdout, Severity:INFO", infoW)
+		}
+
+		errW := NewJSONErrorWriter()
+		jsonErr, ok := errW.(*JSONSeverityWriter)
+		if !ok || jsonErr.Target != os.Stderr || jsonErr.Severity != "ERROR" {
+			t.Errorf("NewJSONErrorWriter() = %+v, want Target:os.Stderr, Severity:ERROR", errW)
+		}
+	})
+
+	t.Run("target write error", func(t *testing.T) {
+		errWriter := &errorWriter{err: errors.New("underlying write error")}
+		writer := &JSONSeverityWriter{Target: errWriter, Severity: "ERROR"}
+
+		input := "error triggering payload\n"
+		n, err := writer.Write([]byte(input))
+		if err == nil {
+			t.Fatal("Expected error from writer.Write, got nil")
+		}
+		if n >= len(input) {
+			t.Errorf("Expected n < len(input) on error per io.Writer standard, got n=%d, len=%d", n, len(input))
+		}
+	})
+
+	t.Run("high throughput burst", func(t *testing.T) {
+		var buf bytes.Buffer
+		writer := &JSONSeverityWriter{Target: &buf, Severity: "INFO"}
+
+		const lineCount = 50000
+		start := time.Now()
+
+		for i := 1; i <= lineCount; i++ {
+			msg := fmt.Sprintf("high rate log message sequence=%d\n", i)
+			n, err := writer.Write([]byte(msg))
+			if err != nil || n != len(msg) {
+				t.Fatalf("Write %d failed: n=%d, err=%v", i, n, err)
+			}
+		}
+
+		elapsed := time.Since(start)
+		t.Logf("Wrote and verified %d structured JSON log lines in %v", lineCount, elapsed)
+
+		// Verify line count in output buffer
+		output := buf.String()
+		lines := strings.Split(strings.TrimRight(output, "\n"), "\n")
+		if len(lines) != lineCount {
+			t.Fatalf("Expected %d formatted JSON lines, got %d", lineCount, len(lines))
+		}
+
+		// Verify first and last line formatting
+		firstWant := `{"message":"high rate log message sequence=1","severity":"INFO"}`
+		if lines[0] != firstWant {
+			t.Errorf("First line = %q, want %q", lines[0], firstWant)
+		}
+
+		lastWant := fmt.Sprintf(`{"message":"high rate log message sequence=%d","severity":"INFO"}`, lineCount)
+		if lines[lineCount-1] != lastWant {
+			t.Errorf("Last line = %q, want %q", lines[lineCount-1], lastWant)
+		}
+	})
 }
-func (m *mockLogger) Info(_ string, _ ...any)  {}
-func (m *mockLogger) Warn(_ string, _ ...any)  {}
-func (m *mockLogger) Error(_ string, _ ...any) {}
-func (m *mockLogger) Close()                   {}

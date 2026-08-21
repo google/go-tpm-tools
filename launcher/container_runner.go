@@ -50,7 +50,6 @@ type ContainerRunner struct {
 	launchSpec       spec.LaunchSpec
 	attestAgent      agent.AttestationAgent
 	logger           logging.Logger
-	workloadLogger   logging.Logger
 	deviceROTManager *device.ROTManager
 	serialConsole    *os.File
 	powerButton      *powerButtonListener // Populated only for a hardened image
@@ -105,7 +104,6 @@ type RunnerConfig struct {
 	WorkloadService  *workloadservice.Server
 	LaunchSpec       spec.LaunchSpec
 	Logger           logging.Logger
-	WorkloadLogger   logging.Logger
 	SerialConsole    *os.File
 }
 
@@ -114,7 +112,6 @@ func NewRunner(ctx context.Context, cfg *RunnerConfig) (*ContainerRunner, error)
 	cdClient := cfg.ContainerdClient
 	launchSpec := cfg.LaunchSpec
 	logger := cfg.Logger
-	workloadLogger := cfg.WorkloadLogger
 	serialConsole := cfg.SerialConsole
 	image := cfg.Image
 	attestAgent := cfg.AttestAgent
@@ -237,7 +234,6 @@ func NewRunner(ctx context.Context, cfg *RunnerConfig) (*ContainerRunner, error)
 		launchSpec:       launchSpec,
 		attestAgent:      attestAgent,
 		logger:           logger,
-		workloadLogger:   workloadLogger,
 		deviceROTManager: cfg.DeviceROTManager,
 		serialConsole:    serialConsole,
 		powerButton:      powerButton,
@@ -633,14 +629,11 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		streamOpt = cio.WithStreams(nil, nil, nil)
 		r.logger.Info("Container stdout/stderr will not be redirected.")
 	case spec.Everywhere:
-		w := io.MultiWriter(os.Stdout, r.serialConsole)
-		streamOpt = cio.WithStreams(nil, w, w)
+		streamOpt = cio.WithStreams(nil, io.MultiWriter(logging.NewJSONInfoWriter(), r.serialConsole), io.MultiWriter(logging.NewJSONErrorWriter(), r.serialConsole))
 		r.logger.Info("Container stdout/stderr will be redirected to serial and Cloud Logging. This may result in performance issues due to slow serial console writes.")
 	case spec.CloudLogging:
-		stdoutWriter := logging.NewInfoWriter(r.workloadLogger)
-		stderrWriter := logging.NewErrorWriter(r.workloadLogger)
-		streamOpt = cio.WithStreams(nil, stdoutWriter, stderrWriter)
-		r.logger.Info("Container stdout/stderr will be redirected to Cloud Logging with INFO and ERROR severities respectively.")
+		streamOpt = cio.WithStreams(nil, logging.NewJSONInfoWriter(), logging.NewJSONErrorWriter())
+		r.logger.Info("Container stdout/stderr will be redirected to journald (JSON) for FluentBit scraping.")
 	case spec.Serial:
 		streamOpt = cio.WithStreams(nil, r.serialConsole, r.serialConsole)
 		r.logger.Info("Container stdout/stderr will be redirected to serial logging. This may result in performance issues due to slow serial console writes.")

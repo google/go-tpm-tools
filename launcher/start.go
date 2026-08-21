@@ -44,7 +44,7 @@ var expectedTPMDAParams = TPMDAParams{
 
 // StartLauncher orchestrates the client creation, image pulling, attestation agent setup,
 // and runs the ContainerRunner.
-func StartLauncher(ctx context.Context, launchSpec spec.LaunchSpec, logger logging.Logger, workloadLogger logging.Logger, serialConsole *os.File, pinnedClient *http.Client, googleClient *http.Client) error {
+func StartLauncher(ctx context.Context, launchSpec spec.LaunchSpec, logger logging.Logger, serialConsole *os.File, pinnedClient *http.Client, googleClient *http.Client) error {
 	if pinnedClient == nil {
 		return errors.New("pinnedClient must be non-nil")
 	}
@@ -170,7 +170,6 @@ func StartLauncher(ctx context.Context, launchSpec spec.LaunchSpec, logger loggi
 		WorkloadService:  workloadService,
 		LaunchSpec:       launchSpec,
 		Logger:           logger,
-		WorkloadLogger:   workloadLogger,
 		SerialConsole:    serialConsole,
 	})
 	if err != nil {
