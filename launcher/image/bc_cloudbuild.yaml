@@ -160,6 +160,7 @@ steps:
           "s|cros_efi|cros_efi module_blacklist=mlx5_core|g"
           "s|cros_efi|cros_efi systemd.mask=get-cloud-api-domains.service|g"
           "s|cros_efi|cros_efi initcall_blacklist=nvme_init,nvme_core_init|g"
+          "s|cros_efi|cros_efi systemd.mask=bpf-lsm-policy-loader.service|g"
         )
 
         DEBUG_COMMANDS=(
@@ -175,7 +176,6 @@ steps:
           # "s|cros_efi|cros_efi systemd.unit=cloud-final.service|g"
           "s|cros_efi|cros_efi systemd.mask=var-lib-docker.mount|g"
           "s|cros_efi|cros_efi systemd.mask=docker.service|g"
-          "s|cros_efi|cros_efi systemd.mask=google-guest-agent.service|g"
           "s|cros_efi|cros_efi systemd.mask=google-osconfig-init.service|g"
           "s|cros_efi|cros_efi systemd.mask=google-osconfig-agent.service|g"
           "s|cros_efi|cros_efi systemd.mask=google-startup-scripts.service|g"
