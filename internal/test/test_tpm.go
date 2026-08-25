@@ -145,7 +145,7 @@ func simulateEventLogEvents(tb testing.TB, rw io.ReadWriter, eventLog []byte) {
 			if len(event.Digest) == 0 {
 				continue
 			}
-			
+
 			extendOnePcr(tb, rw, event.Index, tpm2Alg, event.Digest)
 		}
 	}
