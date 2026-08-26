@@ -9,7 +9,7 @@ package kpskcc
 #cgo CFLAGS: -I${SRCDIR}/../../km_common/include
 #cgo LDFLAGS: -L${SRCDIR}/../../target/release -L${SRCDIR}/../../target/debug -lkps_key_custody_core
 #cgo LDFLAGS: -lcrypto -lssl
-#cgo LDFLAGS: -lpthread -ldl -lm -lstdc++
+#cgo LDFLAGS: -lpthread -ldl -lm -Wl,-Bstatic -lstdc++ -Wl,-Bdynamic
 #include <stdbool.h>
 #include "include/kps_key_custody_core.h"
 */

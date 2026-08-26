@@ -31,11 +31,12 @@ var debugCmd = &cobra.Command{
 		}
 		attestation := &pb.Attestation{}
 
-		if format == "binarypb" {
+		switch format {
+		case "binarypb":
 			err = proto.Unmarshal(attestationBytes, attestation)
-		} else if format == "textproto" {
+		case "textproto":
 			err = unmarshalOptions.Unmarshal(attestationBytes, attestation)
-		} else {
+		default:
 			return fmt.Errorf("format should be either binarypb or textproto")
 		}
 		if err != nil {
