@@ -3,6 +3,7 @@ module github.com/google/go-tpm-tools/launcher
 go 1.26
 
 require (
+	cloud.google.com/go/auth v0.18.1
 	cloud.google.com/go/compute/metadata v0.9.0
 	cloud.google.com/go/logging v1.13.1
 	cos.googlesource.com/cos/tools.git v0.0.0-20250414225215-0cf736c0714c
@@ -38,7 +39,6 @@ require (
 	buf.build/go/protovalidate v1.1.3 // indirect
 	cel.dev/expr v0.25.1 // indirect
 	cloud.google.com/go v0.123.0 // indirect
-	cloud.google.com/go/auth v0.18.1 // indirect
 	cloud.google.com/go/auth/oauth2adapt v0.2.8 // indirect
 	cloud.google.com/go/confidentialcomputing v1.11.0 // indirect
 	cloud.google.com/go/longrunning v0.8.0 // indirect
