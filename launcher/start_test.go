@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path"
 	"strings"
 	"testing"
 
@@ -149,6 +151,43 @@ func TestCreateAttestClients_Behaviors(t *testing.T) {
 			}
 			if tc.wantITANotNil && clients.ITA == nil {
 				t.Error("expected ITA client to be non-nil")
+			}
+		})
+	}
+}
+
+func TestVerifySocketPermissions(t *testing.T) {
+	tests := []struct {
+		name    string
+		mode    os.FileMode
+		wantErr bool
+	}{
+		{
+			name:    "valid 0777 permissions",
+			mode:    0777,
+			wantErr: false,
+		},
+		{
+			name:    "invalid 0644 permissions",
+			mode:    0644,
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			sockPath := path.Join(tmpDir, "test.sock")
+			if err := os.WriteFile(sockPath, []byte(""), tc.mode); err != nil {
+				t.Fatalf("failed to create test file: %v", err)
+			}
+			if err := os.Chmod(sockPath, tc.mode); err != nil {
+				t.Fatalf("failed to chmod test file: %v", err)
+			}
+
+			err := verifySocketPermissions(sockPath)
+			if (err != nil) != tc.wantErr {
+				t.Errorf("verifySocketPermissions(%q) error = %v, wantErr = %v", sockPath, err, tc.wantErr)
 			}
 		})
 	}

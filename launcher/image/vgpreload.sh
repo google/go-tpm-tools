@@ -74,6 +74,7 @@ configure_necessary_systemd_units() {
 configure_cloud_logging() {
   # Copy CS-specific fluent-bit config to OEM partition.
   cp fluent-bit-cs.conf "${CS_PATH}"
+  cp parsers-cs.conf "${CS_PATH}"
 }
 
 configure_node_problem_detector() {

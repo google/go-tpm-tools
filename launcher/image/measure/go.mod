@@ -1,6 +1,6 @@
 module github.com/google/go-tpm-tools/launcher/image/measure
 
-go 1.24.0
+go 1.26
 
 require github.com/google/gce-tcb-verifier v0.3.1
 

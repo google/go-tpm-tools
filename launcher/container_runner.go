@@ -30,7 +30,6 @@ import (
 	"github.com/google/go-tpm-tools/agent"
 	"github.com/google/go-tpm-tools/agent/device"
 	"github.com/google/go-tpm-tools/cel"
-	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
 	workloadservice "github.com/google/go-tpm-tools/keymanager/workload_service"
 	"github.com/google/go-tpm-tools/launcher/internal/healthmonitoring/nodeproblemdetector"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
@@ -51,17 +50,16 @@ type ContainerRunner struct {
 	launchSpec       spec.LaunchSpec
 	attestAgent      agent.AttestationAgent
 	logger           logging.Logger
-	workloadLogger   logging.Logger
 	deviceROTManager *device.ROTManager
 	serialConsole    *os.File
 	powerButton      *powerButtonListener // Populated only for a hardened image
 	attestClients    teeserver.AttestClients
+	workloadService  *workloadservice.Server
 }
 
 const tokenFileTmp = ".token.tmp"
 
 const teeServerSocket = "teeserver.sock"
-const keyManagerSocket = "kmaserver.sock"
 const keyManagerGrpcSocket = "kmaserver-grpc.sock"
 
 // Since we only allow one container on a VM, using a deterministic id is probably fine
@@ -103,9 +101,9 @@ type RunnerConfig struct {
 	AttestAgent      agent.AttestationAgent
 	DeviceROTManager *device.ROTManager
 	AttestClients    teeserver.AttestClients
+	WorkloadService  *workloadservice.Server
 	LaunchSpec       spec.LaunchSpec
 	Logger           logging.Logger
-	WorkloadLogger   logging.Logger
 	SerialConsole    *os.File
 }
 
@@ -114,7 +112,6 @@ func NewRunner(ctx context.Context, cfg *RunnerConfig) (*ContainerRunner, error)
 	cdClient := cfg.ContainerdClient
 	launchSpec := cfg.LaunchSpec
 	logger := cfg.Logger
-	workloadLogger := cfg.WorkloadLogger
 	serialConsole := cfg.SerialConsole
 	image := cfg.Image
 	attestAgent := cfg.AttestAgent
@@ -233,15 +230,15 @@ func NewRunner(ctx context.Context, cfg *RunnerConfig) (*ContainerRunner, error)
 	}
 
 	return &ContainerRunner{
-		container,
-		launchSpec,
-		attestAgent,
-		logger,
-		workloadLogger,
-		cfg.DeviceROTManager,
-		serialConsole,
-		powerButton,
-		cfg.AttestClients,
+		container:        container,
+		launchSpec:       launchSpec,
+		attestAgent:      attestAgent,
+		logger:           logger,
+		deviceROTManager: cfg.DeviceROTManager,
+		serialConsole:    serialConsole,
+		powerButton:      powerButton,
+		attestClients:    cfg.AttestClients,
+		workloadService:  cfg.WorkloadService,
 	}, nil
 }
 
@@ -249,13 +246,14 @@ func enableMonitoring(enabled spec.MonitoringType, logger logging.Logger) error 
 	if enabled != spec.None {
 		logger.Info("Health Monitoring is enabled by the VM operator")
 
-		if enabled == spec.All {
+		switch enabled {
+		case spec.All:
 			logger.Info("All health monitoring metrics enabled")
 			if err := nodeproblemdetector.EnableAllConfig(); err != nil {
 				logger.Error("Failed to enable full monitoring config: %v", err)
 				return err
 			}
-		} else if enabled == spec.MemoryOnly {
+		case spec.MemoryOnly:
 			logger.Info("memory/bytes_used enabled")
 		}
 
@@ -608,26 +606,8 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	// create and start the TEE server
 	r.logger.Info("EnableOnDemandAttestation is enabled: initializing TEE server.")
 
-	var workloadService *workloadservice.Server
-	// create and start the key manager server
-	if r.launchSpec.Experiments.EnableKeyManager {
-		r.logger.Info("EnableKeyManager experiment is enabled: initializing KeyManager server.")
-		keyManagerSocketPath := path.Join(launcherfile.HostTmpPath, keyManagerSocket)
-		keyManagerServer, err := workloadservice.New(ctx, keyManagerSocketPath, keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED)
-
-		if err != nil {
-			return fmt.Errorf("failed to create the KeyManager server: %v", err)
-		}
-		if err := verifySocketPermissions(keyManagerSocketPath); err != nil {
-			return fmt.Errorf("failed to verify KeyManager socket permissions: %w", err)
-		}
-		workloadService = keyManagerServer
-		go func() { _ = keyManagerServer.Serve() }()
-		defer func() { _ = keyManagerServer.Shutdown(ctx) }()
-	}
-
 	teeServerSocketPath := path.Join(launcherfile.HostTmpPath, teeServerSocket)
-	teeServer, err := teeserver.New(ctx, teeServerSocketPath, r.attestAgent, r.logger, r.launchSpec, r.attestClients, workloadService)
+	teeServer, err := teeserver.New(ctx, teeServerSocketPath, r.attestAgent, r.logger, r.launchSpec, r.attestClients, r.workloadService)
 	if err != nil {
 		return fmt.Errorf("failed to create the TEE server: %v", err)
 	}
@@ -649,14 +629,11 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		streamOpt = cio.WithStreams(nil, nil, nil)
 		r.logger.Info("Container stdout/stderr will not be redirected.")
 	case spec.Everywhere:
-		w := io.MultiWriter(os.Stdout, r.serialConsole)
-		streamOpt = cio.WithStreams(nil, w, w)
+		streamOpt = cio.WithStreams(nil, io.MultiWriter(logging.NewJSONInfoWriter(), r.serialConsole), io.MultiWriter(logging.NewJSONErrorWriter(), r.serialConsole))
 		r.logger.Info("Container stdout/stderr will be redirected to serial and Cloud Logging. This may result in performance issues due to slow serial console writes.")
 	case spec.CloudLogging:
-		stdoutWriter := logging.NewInfoWriter(r.workloadLogger)
-		stderrWriter := logging.NewErrorWriter(r.workloadLogger)
-		streamOpt = cio.WithStreams(nil, stdoutWriter, stderrWriter)
-		r.logger.Info("Container stdout/stderr will be redirected to Cloud Logging with INFO and ERROR severities respectively.")
+		streamOpt = cio.WithStreams(nil, logging.NewJSONInfoWriter(), logging.NewJSONErrorWriter())
+		r.logger.Info("Container stdout/stderr will be redirected to journald (JSON) for FluentBit scraping.")
 	case spec.Serial:
 		streamOpt = cio.WithStreams(nil, r.serialConsole, r.serialConsole)
 		r.logger.Info("Container stdout/stderr will be redirected to serial logging. This may result in performance issues due to slow serial console writes.")
@@ -847,15 +824,4 @@ func (r *ContainerRunner) Close(ctx context.Context) {
 	// Delete container and close connection to attestation service.
 	// TODO: consider handling or logging cleanup error.
 	_ = r.container.Delete(ctx, containerd.WithSnapshotCleanup)
-}
-
-func verifySocketPermissions(socketPath string) error {
-	info, err := os.Stat(socketPath)
-	if err != nil {
-		return fmt.Errorf("failed to stat socket: %w", err)
-	}
-	if perm := info.Mode().Perm(); perm != 0777 {
-		return fmt.Errorf("socket %s has permissions %04o, want 0777", socketPath, perm)
-	}
-	return nil
 }

@@ -377,7 +377,7 @@ func GetLaunchSpec(ctx context.Context, logger logging.Logger, client *metadata.
 		return LaunchSpec{}, fmt.Errorf("failed to validate mounts: %v", errors.Join(errs...))
 	}
 
-	if !(spec.Experiments.EnableB200DriverInstallation || spec.Experiments.EnableH100DriverInstallation) && spec.InstallGpuDriver {
+	if !spec.Experiments.EnableB200DriverInstallation && !spec.Experiments.EnableH100DriverInstallation && spec.InstallGpuDriver {
 		return LaunchSpec{}, fmt.Errorf("GPU Driver installation is not supported")
 	}
 

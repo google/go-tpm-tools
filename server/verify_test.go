@@ -34,9 +34,10 @@ func getDigestHash(input string) []byte {
 
 func extendPCRsRandomly(rwc io.ReadWriteCloser, selpcr tpm2.PCRSelection) error {
 	var pcrExtendValue []byte
-	if selpcr.Hash == tpm2.AlgSHA256 {
+	switch selpcr.Hash {
+	case tpm2.AlgSHA256:
 		pcrExtendValue = make([]byte, 32)
-	} else if selpcr.Hash == tpm2.AlgSHA1 {
+	case tpm2.AlgSHA1:
 		pcrExtendValue = make([]byte, 20)
 	}
 
