@@ -15,7 +15,10 @@ require (
 	google.golang.org/protobuf v1.36.11
 )
 
-require github.com/google/go-configfs-tsm v0.3.3-0.20240919001351-b4b5b84fdcbc // indirect
+require (
+	github.com/google/TPM v0.0.5 // indirect
+	github.com/google/go-configfs-tsm v0.3.3-0.20240919001351-b4b5b84fdcbc // indirect
+)
 
 require (
 	github.com/google/certificate-transparency-go v1.1.2 // indirect

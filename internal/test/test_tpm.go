@@ -102,6 +102,9 @@ func GetSimulatorWithLog(tb testing.TB, eventLog []byte) io.ReadWriteCloser {
 	if err != nil {
 		tb.Fatalf("Simulator initialization failed: %v", err)
 	}
+	if err := simulator.ManufactureReset(); err != nil {
+		tb.Fatalf("Simulator manufacture reset failed: %v", err)
+	}
 	// Make sure that whatever happens, we close the simulator
 	tb.Cleanup(func() {
 		if !simulator.IsClosed() {
