@@ -139,7 +139,7 @@ type bcAgent struct {
 	*agent
 }
 
-type gb300ccaAgent struct {
+type gb300ccAgent struct {
 	*agent
 }
 
@@ -243,7 +243,7 @@ func createBCAgent(principalFetcher principalIDTokenFetcher, sigsFetcher Signatu
 }
 
 func createGB300CCAgent(principalFetcher principalIDTokenFetcher, sigsFetcher SignatureFetcher, exps Experiments, logger Logger, deviceROTManager *device.ROTManager, signedImageRepos []string) (AttestationAgent, error) {
-	logger.Info("Initializing GB300 CC agent placeholder. Hardware attestation (ARM CCA) is not yet implemented.")
+	logger.Info("Initializing GB300 CC agent placeholder. Not yet implemented.")
 
 	baseAgent := &agent{
 		principalFetcher: principalFetcher,
@@ -257,7 +257,7 @@ func createGB300CCAgent(principalFetcher principalIDTokenFetcher, sigsFetcher Si
 
 	// TODO: Add details and implementations
 
-	return &gb300ccaAgent{agent: baseAgent}, nil
+	return &gb300ccAgent{agent: baseAgent}, nil
 }
 
 func (a *agent) addTDXAttestRoot() (bool, error) {
@@ -801,22 +801,22 @@ func convertToTPMQuote(v *pb.Attestation) *attestationpb.TpmQuote {
 		},
 	}
 }
-func (a *gb300ccaAgent) Attest(_ context.Context, _ AttestAgentOpts) ([]byte, error) {
+func (a *gb300ccAgent) Attest(_ context.Context, _ AttestAgentOpts) ([]byte, error) {
 	a.logger.Info("GB300 CC mode: Skipping Attest (Hardware attestation not implemented)")
 	return []byte("eyJhbGciOiJub25lIn0.eyJleHAiOjMyNTAzNjgwMDAwfQ."), nil
 }
 
-func (a *gb300ccaAgent) Refresh(_ context.Context) error {
+func (a *gb300ccAgent) Refresh(_ context.Context) error {
 	a.logger.Info("GB300 CC mode: Skipping Refresh")
 	return nil
 }
 
-func (a *gb300ccaAgent) MeasureEvent(_ gecel.Content) error {
+func (a *gb300ccAgent) MeasureEvent(_ gecel.Content) error {
 	a.logger.Info("GB300 CC mode: Skipping MeasureEvent")
 	return nil
 }
 
-func (a *gb300ccaAgent) AttestWithClient(_ context.Context, _ AttestAgentOpts, _ verifier.Client) ([]byte, error) {
+func (a *gb300ccAgent) AttestWithClient(_ context.Context, _ AttestAgentOpts, _ verifier.Client) ([]byte, error) {
 	a.logger.Info("GB300 CC mode: Skipping AttestWithClient (Hardware attestation not implemented)")
 	return []byte("eyJhbGciOiJub25lIn0.eyJleHAiOjMyNTAzNjgwMDAwfQ."), nil
 }
