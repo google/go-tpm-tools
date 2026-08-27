@@ -25,7 +25,7 @@ func TestNetworkFetchIssuingCertificate(t *testing.T) {
 		t.Fatalf("Error parsing AK Cert: %v", err)
 	}
 
-	certChain, err := internal.GetCertificateChain(akCert, externalClient)
+	certChain, err := internal.GetAKIntermediateCerts(akCert, externalClient)
 	if err != nil {
 		t.Error(err)
 	}
