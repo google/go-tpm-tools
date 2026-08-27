@@ -35,20 +35,10 @@ env:
   KEEP_SORTED_VERSION: 'v0.9.1'
 
 jobs:
-  build:
+  test-linux-amd64:
     timeout-minutes: 12
-    strategy:
-      matrix:
-        # TODO: Get this working on windows-latest
-        os: [ubuntu-latest]
-        architecture: [x32, x64]
-        include:
-          - os: macos-latest
-            architecture: arm64
-          - os: macos-14-large
-            architecture: x64
-    name: Generate/Build/Test (${{ matrix.os }}, ${{ matrix.architecture }})
-    runs-on: ${{ matrix.os }}
+    name: Test Linux (amd64)
+    runs-on: ubuntu-latest
     steps:
       # Pinned to commit SHA to satisfy blanket security policy (zizmor)
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -58,7 +48,6 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ env.GO_VERSION }}
-          architecture: ${{ matrix.architecture }}
           cache: false
       - name: Install Protoc
         uses: arduino/setup-protoc@149f6c87b92550901b26acd1632e11c3662e381f # v1.3.0
@@ -73,59 +62,80 @@ jobs:
           toolchain: stable
       - name: Install Build Dependencies (Linux)
         run: sudo DEBIAN_FRONTEND=noninteractive apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout="30" && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -o Acquire::Retries=3 -o Acquire::http::Timeout="30" cmake clang pkg-config libssl-dev
-        if: runner.os == 'Linux' && matrix.architecture == 'x64'
       - name: Install bindgen-cli
         run: cargo install bindgen-cli
-        if: runner.os == 'Linux' && matrix.architecture == 'x64'
       - name: Build KeyManager Rust library
         run: |
           cd keymanager
           cargo build --release
-        if: runner.os == 'Linux' && matrix.architecture == 'x64'
       - name: Check Protobuf Generation
         run: |
           go generate ./... ./agent/... ./cmd/... ./launcher/... ./verifier/...
           git diff -G'^[^/]' --exit-code
-      - name: Install Linux 64-bit packages
-        run: sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -o Acquire::Retries=3 -o Acquire::http::Timeout="30" libssl-dev
-        if: runner.os == 'Linux' && matrix.architecture == 'x64'
-      - name: Install Linux 32-bit packages
-        run: sudo dpkg --add-architecture i386; sudo DEBIAN_FRONTEND=noninteractive apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout="30"; sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -o Acquire::Retries=3 -o Acquire::http::Timeout="30" libssl-dev:i386 libgcc-s1:i386 gcc-multilib
-        if: runner.os == 'Linux' && matrix.architecture == 'x32'
-      - name: Install Mac packages
-        run: |
-          brew install openssl
-        if: runner.os == 'macOS'
-      - name: Install Windows packages
-        run: choco install openssl
-        if: runner.os == 'Windows'
-      - name: Build all modules except agent, launcher, and keymanager
-        run: go build -v ./... ./cmd/... ./verifier/...
-      - name: Build agent module
-        run: go build -v ./agent/...
-        if: runner.os == 'Linux'
-      - name: Build keymanager module
-        run: go build -v ./keymanager/...
-        if: runner.os == 'Linux' && matrix.architecture == 'x64'
+      - name: Build all modules
+        run: go build -v ./... ./agent/... ./cmd/... ./keymanager/... ./verifier/...
       - name: Build launcher module
         run: go build -v -ldflags="-extldflags=-Wl,-z,lazy" ./launcher/...
-        if: runner.os == 'Linux'
       - name: Run specific tests under root permission
         run: |
           GO_EXECUTABLE_PATH=$(which go)
           sudo $GO_EXECUTABLE_PATH test -v -ldflags="-extldflags=-Wl,-z,lazy" -run "TestFetchImageSignaturesDockerPublic" ./launcher
-        if: runner.os == 'Linux'
       - name: Run all tests in launcher to capture potential data race
         run: go test -v -ldflags="-extldflags=-Wl,-z,lazy" -race ./launcher/...
-        if: (runner.os == 'Linux') && matrix.architecture == 'x64'
-      - name: Test all modules except agent, launcher, and keymanager
+      - name: Test all modules
+        run: go test -v ./... ./agent/... ./cmd/... ./keymanager/... ./verifier/... -skip='TestCacheConcurrentSetGet|TestHwAttestationPass|TestHardwareAttestationPass'
+
+  test-linux-386:
+    timeout-minutes: 12
+    name: Test Linux (386)
+    runs-on: ubuntu-latest
+    steps:
+      # Pinned to commit SHA to satisfy blanket security policy (zizmor)
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          architecture: x32
+          cache: false
+      - name: Install Linux 32-bit packages
+        run: sudo dpkg --add-architecture i386; sudo DEBIAN_FRONTEND=noninteractive apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout="30"; sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -o Acquire::Retries=3 -o Acquire::http::Timeout="30" libssl-dev:i386 libgcc-s1:i386 gcc-multilib
+      - name: Build modules
+        run: go build -v ./... ./agent/... ./cmd/... ./verifier/...
+      - name: Build launcher module
+        run: go build -v -ldflags="-extldflags=-Wl,-z,lazy" ./launcher/...
+      - name: Run specific tests under root permission
+        run: |
+          GO_EXECUTABLE_PATH=$(which go)
+          sudo $GO_EXECUTABLE_PATH test -v -ldflags="-extldflags=-Wl,-z,lazy" -run "TestFetchImageSignaturesDockerPublic" ./launcher
+      - name: Test modules
+        run: go test -v ./... ./agent/... ./cmd/... ./verifier/... -skip='TestCacheConcurrentSetGet|TestHwAttestationPass|TestHardwareAttestationPass'
+
+  test-macos:
+    timeout-minutes: 12
+    strategy:
+      matrix:
+        os: [macos-latest, macos-14-large]
+    name: Test macOS (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    steps:
+      # Pinned to commit SHA to satisfy blanket security policy (zizmor)
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+      - name: Install Mac packages
+        run: brew install openssl
+      - name: Build modules
+        run: go build -v ./... ./cmd/... ./verifier/...
+      - name: Test modules
         run: go test -v ./... ./cmd/... ./verifier/... -skip='TestCacheConcurrentSetGet|TestHwAttestationPass|TestHardwareAttestationPass'
-      - name: Test agent module
-        run: go test -v ./agent/...
-        if: runner.os == 'Linux'
-      - name: Test keymanager module
-        run: go test -v ./keymanager/...
-        if: runner.os == 'Linux' && matrix.architecture == 'x64'
 
   lint:
     timeout-minutes: 5
@@ -259,12 +269,14 @@ jobs:
   ci-status:
     name: CI Status
     runs-on: ubuntu-latest
-    needs: [build, lint, lint-keymanager, lintc, keep-sorted]
+    needs: [test-linux-amd64, test-linux-386, test-macos, lint, lint-keymanager, lintc, keep-sorted]
     if: always()
     steps:
       - name: Check Status
         run: |
-          if [[ "${{ needs.build.result }}" != "success" || \
+          if [[ "${{ needs.test-linux-amd64.result }}" != "success" || \
+                "${{ needs.test-linux-386.result }}" != "success" || \
+                "${{ needs.test-macos.result }}" != "success" || \
                 "${{ needs.lint.result }}" != "success" || \
                 "${{ needs.lint-keymanager.result }}" != "success" || \
                 "${{ needs.lintc.result }}" != "success" || \
