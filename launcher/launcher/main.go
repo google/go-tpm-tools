@@ -132,7 +132,7 @@ func main() {
 	logger.Info(fmt.Sprintf("Launch Spec: %+v", launchSpec.LogFriendly()))
 
 	verifier := osMountVerifier{}
-	if launchSpec.GB300CCMode {
+	if launchSpec.Experiments.GB300CCMode {
 		// TODO: we need to implement integrity and mount verifications for GB300 CC mode.
 		logger.Info("Running in GB300 CC mode. Skipping disk integrity and mount verifications. [Temporary while WIP]")
 	} else {
