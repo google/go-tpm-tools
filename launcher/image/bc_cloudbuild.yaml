@@ -11,6 +11,7 @@ substitutions:
 steps:
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     id: 'ExportBaseImage'
+    waitFor: ['-']
     args:
       - 'gcloud'
       - 'compute'
@@ -22,6 +23,7 @@ steps:
       - '--zone=us-west1-a'
   - name: 'gcr.io/cloud-builders/gcloud'
     id: 'DownloadImageFromGCS'
+    waitFor: ['ExportBaseImage']
     entrypoint: 'gcloud'
     args: ['storage',
            'cp',
@@ -29,6 +31,7 @@ steps:
            './src_image.tar.gz']
   - name: 'gcr.io/cloud-builders/docker'
     id: 'SaveWSDContainerImage'
+    waitFor: ['-']
     entrypoint: 'bash'
     args:
       - '-c'
@@ -40,9 +43,11 @@ steps:
         docker rm "$${container_id}"
   - name: 'alpine'
     id: 'ExtractRawImage'
+    waitFor: ['DownloadImageFromGCS']
     args: ['tar', '-xf', './src_image.tar.gz']
   - name: 'alpine'
     id: 'PrepareOEMInstallDir'
+    waitFor: ['SaveWSDContainerImage']
     entrypoint: 'sh'
     args:
       - -c
@@ -116,6 +121,7 @@ steps:
 
   - name: 'gcr.io/cloud-builders/gcloud'
     id: 'DownloadVmlinux'
+    waitFor: ['-']
     entrypoint: 'bash'
     env:
       - 'BASE_IMAGE=${_BASE_IMAGE}'
@@ -139,6 +145,7 @@ steps:
         gcloud storage cp "gs://cos-tools/$${VERSION}/$${TARGET}/vmlinux" ./vmlinux
   - name: 'gcr.io/cos-cloud/oem-preloader:v20260529'
     id: 'RunOEMPreloader'
+    waitFor: ['ExtractRawImage', 'PrepareOEMInstallDir', 'DownloadVmlinux']
     env:
       - 'IMAGE_ENV=${_IMAGE_ENV}'
     entrypoint: 'bash'
@@ -215,9 +222,11 @@ steps:
         "$${CMD[@]}"
   - name: 'alpine'
     id: 'RenameOutputImage'
+    waitFor: ['RunOEMPreloader']
     args: ['mv', 'output.bin', 'disk.raw']
   - name: 'us-docker.pkg.dev/confidential-space-images-dev/cs-tools/measure@sha256:dae4766caef4a93c52736feb829bf2c505b7d48ce44d0ecb33e77d61bb4be888'
     id: 'MeasureImage'
+    waitFor: ['RenameOutputImage']
     env:
       - 'IMAGE_ENV=${_IMAGE_ENV}'
       - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_NAME}'
@@ -234,9 +243,11 @@ steps:
         gcloud storage cp measure_output_bc_$${IMAGE_ENV}_sha384.json gs://${PROJECT_ID}-rims/bc/$${OUTPUT_IMAGE_NAME}_sha384.json
   - name: 'alpine'
     id: 'TarOutputImage'
+    waitFor: ['RenameOutputImage']
     args: ['tar', '-zcf', './out_image.tar.gz', 'disk.raw']
   - name: 'gcr.io/cloud-builders/gcloud'
     id: 'UploadToGCS'
+    waitFor: ['TarOutputImage']
     entrypoint: 'gcloud'
     args: ['storage',
            'cp',
@@ -244,6 +255,7 @@ steps:
            'gs://${_BUCKET_NAME}/oem-preloader-${BUILD_ID}/${_OUTPUT_IMAGE_NAME}.tar.gz']
   - name: 'golang:1.26-bookworm'
     id: 'ExtractWorkloadLicenses'
+    waitFor: ['-']
     entrypoint: 'bash'
     args:
       - '-c'
@@ -255,6 +267,7 @@ steps:
         tar -czf /workspace/workload-licenses.tar.gz -C /workspace/license_out go-tpm-tools
   - name: 'gcr.io/cloud-builders/gcloud'
     id: 'UploadWorkloadLicensesToGCS'
+    waitFor: ['ExtractWorkloadLicenses']
     entrypoint: 'gcloud'
     args: ['storage',
            'cp',
@@ -262,6 +275,7 @@ steps:
            'gs://${_BUCKET_NAME}/oem-preloader-${BUILD_ID}/${_OUTPUT_IMAGE_NAME}_licenses.tar.gz']
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     id: 'FetchBaseImageFeatures'
+    waitFor: ['-']
     entrypoint: 'sh'
     args:
       - '-c'
@@ -273,6 +287,7 @@ steps:
         sed -i 's/^,//; s/,$//' /workspace/features.txt
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     id: 'CreateGCEImage'
+    waitFor: ['UploadToGCS', 'FetchBaseImageFeatures']
     entrypoint: 'sh'
     args:
       - '-c'
@@ -291,6 +306,7 @@ steps:
           --guest-os-features="$$FEATURES"
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     id: 'CopyImageToACOSBucket'
+    waitFor: ['TarOutputImage']
     entrypoint: 'sh'
     args:
       - '-c'
