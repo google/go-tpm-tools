@@ -43,7 +43,7 @@ func TestFetchIssuingCertificateReturnsErrorIfMalformedCertificateFound(t *testi
 	}
 }
 
-func TestGetCertificateChainSucceeds(t *testing.T) {
+func TestGetAKIntermediateCertsSucceeds(t *testing.T) {
 	// Create CA and corresponding server.
 	testCA, caKey := test.GetTestCert(t, nil, nil, nil)
 
@@ -66,11 +66,11 @@ func TestGetCertificateChainSucceeds(t *testing.T) {
 	// Create leaf cert.
 	leafCert, _ := test.GetTestCert(t, []string{intermediateServer.URL}, intermediateCert, intermediateKey)
 
-	certChain, err := GetCertificateChain(leafCert, localClient)
+	certChain, err := GetAKIntermediateCerts(leafCert, localClient)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(certChain) != 2 {
-		t.Fatalf("GetCertificateChain did not return the expected number of certificates: got %v, want 2", len(certChain))
+		t.Fatalf("GetAKIntermediateCerts did not return the expected number of certificates: got %v, want 2", len(certChain))
 	}
 }
