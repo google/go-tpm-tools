@@ -143,11 +143,6 @@ type bcAgent struct {
 
 type gb300ccAgent struct {
 	*agent
-	hostRoT *hostServiceRoT
-}
-
-type gb300ccAgent struct {
-	*agent
 }
 
 // CreateAttestationAgent returns an agent capable of performing remote
@@ -256,7 +251,7 @@ func createBCAgent(principalFetcher principalIDTokenFetcher, sigsFetcher Signatu
 }
 
 func createGB300CCAgent(principalFetcher principalIDTokenFetcher, sigsFetcher SignatureFetcher, exps Experiments, logger Logger, deviceROTManager *device.ROTManager, signedImageRepos []string) (AttestationAgent, error) {
-	logger.Info("Initializing GB300 CC agent placeholder. Not yet implemented.")
+	logger.Info("Initializing GB300 CC agent placeholder. Hardware attestation (ARM CCA) is not yet implemented.")
 
 	baseAgent := &agent{
 		principalFetcher: principalFetcher,
