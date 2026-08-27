@@ -132,17 +132,22 @@ func main() {
 	logger.Info(fmt.Sprintf("Launch Spec: %+v", launchSpec.LogFriendly()))
 
 	verifier := osMountVerifier{}
-	if err := verifyDiskIntegrity(verifier); err != nil {
-		logger.Error(fmt.Sprintf("failed to verify disk integrity: %v\n", err))
-		exitCode = rebootRC
-		logger.Error(exitMessage, "exit_code", exitCode, "exit_msg", rcMessage[exitCode])
-		return
-	}
-	if err := verifyMounts(launchSpec, verifier); err != nil {
-		logger.Error(fmt.Sprintf("failed to verify mounts: %v\n", err))
-		exitCode = rebootRC
-		logger.Error(exitMessage, "exit_code", exitCode, "exit_msg", rcMessage[exitCode])
-		return
+	if launchSpec.GB300CCMode {
+		// TODO: we need to implement integrity and mount verifications for GB300 CC mode.
+		logger.Info("Running in GB300 CC mode. Skipping disk integrity and mount verifications. [Temporary while WIP]")
+	} else {
+		if err := verifyDiskIntegrity(verifier); err != nil {
+			logger.Error(fmt.Sprintf("failed to verify disk integrity: %v\n", err))
+			exitCode = rebootRC
+			logger.Error(exitMessage, "exit_code", exitCode, "exit_msg", rcMessage[exitCode])
+			return
+		}
+		if err := verifyMounts(launchSpec, verifier); err != nil {
+			logger.Error(fmt.Sprintf("failed to verify mounts: %v\n", err))
+			exitCode = rebootRC
+			logger.Error(exitMessage, "exit_code", exitCode, "exit_msg", rcMessage[exitCode])
+			return
+		}
 	}
 
 	defer func() {
