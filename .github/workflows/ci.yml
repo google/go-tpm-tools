@@ -166,7 +166,7 @@ jobs:
             -E revive
             --max-same-issues=0
             --max-issues-per-linter=0
-            --timeout 2m
+            --timeout 5m
 
   lintc:
     timeout-minutes: 8
