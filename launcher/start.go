@@ -139,6 +139,7 @@ func StartLauncher(ctx context.Context, launchSpec spec.LaunchSpec, logger loggi
 		EnableGpuGcaSupport:       launchSpec.Experiments.EnableGpuGcaSupport,
 		EnableGpuItaSupport:       launchSpec.Experiments.EnableGpuItaSupport,
 		BcMode:                    launchSpec.Experiments.BcMode,
+		GB300CCMode:               launchSpec.Experiments.GB300CCMode,
 	}
 	attestAgent, err := agent.CreateAttestationAgent(tpm, client.GceAttestationKeyECC, verifierClient, principalFetcherWithImpersonate, sdClient, exps, logger, deviceROTManager, launchSpec.SignedImageRepos)
 	if err != nil {

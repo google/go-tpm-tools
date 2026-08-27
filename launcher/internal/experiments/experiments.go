@@ -22,6 +22,7 @@ type Experiments struct {
 	EnableGpuItaSupport          bool
 	EnableHostAttestation        bool
 	BcMode                       bool
+	GB300CCMode                  bool
 }
 
 // New takes a filepath, opens the file, and calls ReadJsonInput with the contents
