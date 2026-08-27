@@ -19,7 +19,7 @@ require (
 	github.com/google/go-tpm-tools/verifier v0.4.4
 	github.com/mdlayher/vsock v1.2.1
 	google.golang.org/grpc v1.79.3
-	google.golang.org/protobuf v1.36.11
+	google.golang.org/protobuf v1.36.12
 )
 
 require (
