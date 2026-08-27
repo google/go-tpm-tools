@@ -801,22 +801,22 @@ func convertToTPMQuote(v *pb.Attestation) *attestationpb.TpmQuote {
 		},
 	}
 }
-func (a *gb300ccaAgent) Attest(ctx context.Context, opts AttestAgentOpts) ([]byte, error) {
+func (a *gb300ccaAgent) Attest(_ context.Context, _ AttestAgentOpts) ([]byte, error) {
 	a.logger.Info("GB300 CC mode: Skipping Attest (Hardware attestation not implemented)")
 	return []byte("dummy-token"), nil
 }
 
-func (a *gb300ccaAgent) Refresh(ctx context.Context) error {
+func (a *gb300ccaAgent) Refresh(_ context.Context) error {
 	a.logger.Info("GB300 CC mode: Skipping Refresh")
 	return nil
 }
 
-func (a *gb300ccaAgent) MeasureEvent(event gecel.Content) error {
+func (a *gb300ccaAgent) MeasureEvent(_ gecel.Content) error {
 	a.logger.Info("GB300 CC mode: Skipping MeasureEvent")
 	return nil
 }
 
-func (a *gb300ccaAgent) AttestWithClient(ctx context.Context, opts AttestAgentOpts, client verifier.Client) ([]byte, error) {
+func (a *gb300ccaAgent) AttestWithClient(_ context.Context, _ AttestAgentOpts, _ verifier.Client) ([]byte, error) {
 	a.logger.Info("GB300 CC mode: Skipping AttestWithClient (Hardware attestation not implemented)")
 	return []byte("dummy-token"), nil
 }
