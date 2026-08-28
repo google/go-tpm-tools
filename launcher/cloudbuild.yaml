@@ -51,6 +51,8 @@ steps:
     - -c
     - |
       set -exuo pipefail
+      git config --global --add safe.directory /workspace
+      git submodule update --init --recursive
       # Build the Rust keymanager libraries using prebuilt toolchain
       cd keymanager
       cargo build --release
