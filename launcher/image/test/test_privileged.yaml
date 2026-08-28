@@ -11,6 +11,7 @@ substitutions:
 steps:
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CreateVMWithPrivileges
+  waitFor: ['-']
   entrypoint: 'bash'
   env:
   - 'BUILD_ID=$BUILD_ID'
@@ -23,6 +24,7 @@ steps:
         ]
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CreateVMWithCgroupsDenied
+  waitFor: ['-']
   entrypoint: 'bash'
   env:
   - 'BUILD_ID=$BUILD_ID'
@@ -34,6 +36,7 @@ steps:
         ]
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CreateVMWithCapsDenied
+  waitFor: ['-']
   entrypoint: 'bash'
   env:
   - 'BUILD_ID=$BUILD_ID'
@@ -45,6 +48,7 @@ steps:
         ]
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CheckPrivilegesExist
+  waitFor: ['CreateVMWithPrivileges']
   env:
   - '_VM_NAME_PREFIX=$_VM_NAME_PREFIX'
   - 'BUILD_ID=$BUILD_ID'
@@ -74,6 +78,7 @@ steps:
     fi
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CheckCgroupDenied
+  waitFor: ['CreateVMWithCgroupsDenied']
   env:
   - '_VM_NAME_PREFIX=$_VM_NAME_PREFIX'
   - 'BUILD_ID=$BUILD_ID'
@@ -95,6 +100,7 @@ steps:
     fi
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CheckCapsDenied
+  waitFor: ['CreateVMWithCapsDenied']
   env:
   - '_VM_NAME_PREFIX=$_VM_NAME_PREFIX'
   - 'BUILD_ID=$BUILD_ID'

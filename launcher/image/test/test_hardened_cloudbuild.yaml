@@ -26,16 +26,29 @@ steps:
         ]
 - name: 'gcr.io/cloud-builders/gcloud'
   id: BasicWorkloadTest
+  waitFor: ['CreateVM']
   entrypoint: 'bash'
   args: ['scripts/test_launcher_workload.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}', '${_ZONE}']
 - name: 'gcr.io/cloud-builders/gcloud'
   id: BasicWorkloadTestCloudLogging
+  waitFor: ['CreateVM']
   entrypoint: 'bash'
   env:
   - 'PROJECT_ID=$PROJECT_ID'
   args: ['scripts/test_launcher_workload_cloudlogging.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}']
 - name: 'gcr.io/cloud-builders/gcloud'
+  id: StartupScriptDisabledTest
+  waitFor: ['CreateVM']
+  entrypoint: 'bash'
+  args: ['scripts/test_startupscript_disabled.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}', '${_ZONE}']
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CloudInitUserDataDisabledTest
+  waitFor: ['CreateVM']
+  entrypoint: 'bash'
+  args: ['scripts/test_cloud_init_userdata_disabled.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}', '${_ZONE}']
+- name: 'gcr.io/cloud-builders/gcloud'
   id: ChangeMDSVariables
+  waitFor: ['BasicWorkloadTest', 'BasicWorkloadTestCloudLogging', 'StartupScriptDisabledTest', 'CloudInitUserDataDisabledTest']
   entrypoint: 'bash'
   args: ['util/change_metadata_vars.sh',
           '-n', '${_VM_NAME_PREFIX}-${BUILD_ID}',
@@ -44,24 +57,19 @@ steps:
         ]
 - name: 'gcr.io/cloud-builders/gcloud'
   id: ChangeMDSVariablesTest
+  waitFor: ['ChangeMDSVariables']
   entrypoint: 'bash'
   args: ['scripts/test_mds_var_change.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}', '${_ZONE}']
 - name: 'gcr.io/cloud-builders/gcloud'
   id: MultiWriterPDTest
+  waitFor: ['-']
   entrypoint: 'bash'
   env:
   - 'BUILD_ID=$BUILD_ID'
   args: ['scripts/test_multiwriterpd_disabled.sh']
 - name: 'gcr.io/cloud-builders/gcloud'
-  id: StartupScriptDisabledTest
-  entrypoint: 'bash'
-  args: ['scripts/test_startupscript_disabled.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}', '${_ZONE}']
-- name: 'gcr.io/cloud-builders/gcloud'
-  id: CloudInitUserDataDisabledTest
-  entrypoint: 'bash'
-  args: ['scripts/test_cloud_init_userdata_disabled.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}', '${_ZONE}']
-- name: 'gcr.io/cloud-builders/gcloud'
   id: CleanUp
+  waitFor: ['ChangeMDSVariablesTest']
   entrypoint: 'bash'
   env:
   - 'CLEANUP=$_CLEANUP'

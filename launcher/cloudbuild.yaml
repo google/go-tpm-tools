@@ -26,6 +26,7 @@ steps:
 # determine the base image
 - name: 'gcr.io/cloud-builders/gcloud'
   id: BaseImageIdent
+  waitFor: ['-']
   env:
   - 'BASE_IMAGE=$_BASE_IMAGE'
   - 'BASE_IMAGE_FAMILY=$_BASE_IMAGE_FAMILY'
@@ -46,6 +47,7 @@ steps:
 
 - name: 'us-docker.pkg.dev/confidential-space-images-dev/cs-tools/keymanager-builder@sha256:0283448a48bcc515f15d708d5dcf9e368ea2553c8f5a3bb0908019372a47dbfe'
   id: KeyManagerCompile
+  waitFor: ['-']
   entrypoint: /bin/bash
   args:
     - -c
@@ -78,6 +80,7 @@ steps:
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: DownloadExpBinary
+  waitFor: ['-']
   entrypoint: 'gcloud'
   args: ['storage',
           'cp',
