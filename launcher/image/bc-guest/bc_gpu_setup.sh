@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-NVIDIA_BIN_DIR="/opt/nvidia/595.58.03/bin"
+NVIDIA_BIN_DIR="/opt/nvidia/610.57.04/bin"
 
 echo "modprobe nvidia modules" | tee /dev/console
 
@@ -11,7 +11,7 @@ modprobe nvidia-uvm
 modprobe nvidia-modeset
 
 echo "Running nvidia-persistenced" | tee /dev/console
-systemd-run -p Type=forking --unit=nvidia-persistenced-transient /opt/nvidia/595.58.03/bin/nvidia-persistenced
+systemd-run -p Type=forking --unit=nvidia-persistenced-transient /opt/nvidia/610.57.04/bin/nvidia-persistenced
 
 echo "Waiting 1 minute for nvidia-persistenced to initialize..." | tee /dev/console
 sleep 60s
