@@ -22,12 +22,17 @@ var (
 	errSvsmOnlySupportedWithSevSnp = errors.New("--svsm is only supported with --tee-technology=sev-snp")
 )
 
+var manifestVersion string
+
 var attestSVSMCmd = &cobra.Command{
 	Use:   "svsm",
 	Short: `Produce a SevSnpSvsmAttestation that wraps the PCR attestation message.`,
 	RunE: func(*cobra.Command, []string) error {
 		if teeTechnology != SevSnp {
 			return errSvsmOnlySupportedWithSevSnp
+		}
+		if manifestVersion != "" && manifestVersion != "0" && manifestVersion != "1" {
+			return fmt.Errorf("invalid manifest version %q, must be one of \"\", \"0\", \"1\"", manifestVersion)
 		}
 		rwc, err := openTpm()
 		if err != nil {
@@ -36,12 +41,15 @@ var attestSVSMCmd = &cobra.Command{
 		defer rwc.Close()
 
 		var attestationKey *client.Key
-		if key != "AK" {
-			return errSVSMOnlySupportsAK
+		if (manifestVersion == "" || manifestVersion == "0") && key != "AK" {
+			return fmt.Errorf("manifest version 0 requires --key=AK")
+		}
+		if manifestVersion == "1" && key != "gceAK" {
+			return fmt.Errorf("manifest version 1 requires --key=gceAK")
 		}
 		algoToCreateAK, ok := attestationKeys[key]
 		if !ok {
-			return fmt.Errorf("%v is an invalid value for --key, only AK is supported", key)
+			return fmt.Errorf("%v is an invalid value for --key, only AK and gceAK are supported", key)
 		}
 		createFunc := algoToCreateAK[keyAlgo]
 		attestationKey, err = createFunc(rwc)
@@ -76,7 +84,7 @@ var attestSVSMCmd = &cobra.Command{
 		svsmAttestation, err := makeSEVSNPSVSMAttestation(attestation, &sevSNPSVSMAttestationOpts{
 			TEENonce:                   teeNonce,
 			CongfigfsClient:            configfsClient,
-			VTPMServiceManifestVersion: "0",
+			VTPMServiceManifestVersion: manifestVersion,
 			ExtractOptions:             extract.DefaultOptions(),
 		})
 		if err != nil {
@@ -142,10 +150,10 @@ func makeSEVSNPSVSMAttestation(attestation *apb.Attestation, opts *sevSNPSVSMAtt
 		CertificateChain: certs,
 	}
 	svsm.VtpmServiceManifest = tsmBlobs.ManifestBlob
-	if opts.VTPMServiceManifestVersion == "" {
+	svsm.VtpmServiceManifestVersion = opts.VTPMServiceManifestVersion
+	if svsm.VtpmServiceManifestVersion == "" {
 		svsm.VtpmServiceManifestVersion = defaultConfigfsTsmReportServiceManifestVersion
 	}
-	svsm.VtpmServiceManifestVersion = opts.VTPMServiceManifestVersion
 
 	if opts.ExtractOptions != nil {
 		svsm.LaunchEndorsement, err = getEndorsement(svsm.SevSnpAttestation, opts.ExtractOptions)
@@ -218,4 +226,8 @@ func getSVSMBlobs(configfs configfsi.Client, reportData [sabi.ReportDataSize]byt
 		return nil, fmt.Errorf("could not get SVSM attestation report: %w", err)
 	}
 	return resp, nil
+}
+
+func init() {
+	attestSVSMCmd.Flags().StringVar(&manifestVersion, "manifest-version", "0", "manifest version, only '', '0', '1' are valid")
 }
