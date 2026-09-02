@@ -117,6 +117,8 @@ type Experiments struct {
 	EnableAttestationEvidence bool
 	// BcMode enables baremetal execution mode.
 	BcMode bool
+	// GB300CCMode enables the GB300 Confidential Computing mode.
+	GB300CCMode bool
 }
 
 type agent struct {
@@ -137,6 +139,10 @@ type bcAgent struct {
 	*agent
 }
 
+type gb300ccAgent struct {
+	*agent
+}
+
 // CreateAttestationAgent returns an agent capable of performing remote
 // attestation using the machine's (v)TPM to GCE's Attestation Service.
 // - tpm is a handle to the TPM on the instance
@@ -147,6 +153,9 @@ type bcAgent struct {
 func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher util.TpmKeyFetcher, verifierClient verifier.Client, principalFetcher principalIDTokenFetcher, sigsFetcher SignatureFetcher, exps Experiments, logger Logger, deviceROTManager *device.ROTManager, signedImageRepos []string) (AttestationAgent, error) {
 	if exps.BcMode {
 		return createBCAgent(principalFetcher, sigsFetcher, exps, logger, deviceROTManager, signedImageRepos)
+	}
+	if exps.GB300CCMode {
+		return createGB300CCAgent(principalFetcher, sigsFetcher, exps, logger, deviceROTManager, signedImageRepos)
 	}
 
 	// Fetched the AK and save it, so the agent doesn't need to create a new key everytime
@@ -231,6 +240,24 @@ func createBCAgent(principalFetcher principalIDTokenFetcher, sigsFetcher Signatu
 
 	baseAgent.deviceROTManager = deviceROTManager
 	return &bcAgent{agent: baseAgent}, nil
+}
+
+func createGB300CCAgent(principalFetcher principalIDTokenFetcher, sigsFetcher SignatureFetcher, exps Experiments, logger Logger, deviceROTManager *device.ROTManager, signedImageRepos []string) (AttestationAgent, error) {
+	logger.Info("Initializing GB300 CC agent placeholder. Not yet implemented.")
+
+	baseAgent := &agent{
+		principalFetcher: principalFetcher,
+		sigsFetcher:      sigsFetcher,
+		experiments:      exps,
+		logger:           logger,
+		sigsCache:        &sigsCache{},
+		signedImageRepos: signedImageRepos,
+		deviceROTManager: deviceROTManager,
+	}
+
+	// TODO: Add details and implementations
+
+	return &gb300ccAgent{agent: baseAgent}, nil
 }
 
 func (a *agent) addTDXAttestRoot() (bool, error) {
@@ -773,4 +800,23 @@ func convertToTPMQuote(v *pb.Attestation) *attestationpb.TpmQuote {
 			},
 		},
 	}
+}
+func (a *gb300ccAgent) Attest(_ context.Context, _ AttestAgentOpts) ([]byte, error) {
+	a.logger.Info("GB300 CC mode: Skipping Attest (Hardware attestation not implemented)")
+	return []byte("eyJhbGciOiJub25lIn0.eyJleHAiOjMyNTAzNjgwMDAwfQ."), nil
+}
+
+func (a *gb300ccAgent) Refresh(_ context.Context) error {
+	a.logger.Info("GB300 CC mode: Skipping Refresh")
+	return nil
+}
+
+func (a *gb300ccAgent) MeasureEvent(_ gecel.Content) error {
+	a.logger.Info("GB300 CC mode: Skipping MeasureEvent")
+	return nil
+}
+
+func (a *gb300ccAgent) AttestWithClient(_ context.Context, _ AttestAgentOpts, _ verifier.Client) ([]byte, error) {
+	a.logger.Info("GB300 CC mode: Skipping AttestWithClient (Hardware attestation not implemented)")
+	return []byte("eyJhbGciOiJub25lIn0.eyJleHAiOjMyNTAzNjgwMDAwfQ."), nil
 }

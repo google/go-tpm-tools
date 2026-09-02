@@ -142,6 +142,7 @@ func StartLauncher(ctx context.Context, launchSpec spec.LaunchSpec, logger loggi
 		EnableGpuGcaSupport:       launchSpec.Experiments.EnableGpuGcaSupport,
 		EnableGpuItaSupport:       launchSpec.Experiments.EnableGpuItaSupport,
 		BcMode:                    launchSpec.Experiments.BcMode,
+		GB300CCMode:               launchSpec.Experiments.GB300CCMode,
 	}
 	attestAgent, err := agent.CreateAttestationAgent(tpm, client.GceAttestationKeyECC, verifierClient, principalFetcherWithImpersonate, sdClient, exps, logger, deviceROTManager, launchSpec.SignedImageRepos)
 	if err != nil {
@@ -204,8 +205,8 @@ func StartLauncher(ctx context.Context, launchSpec spec.LaunchSpec, logger loggi
 }
 
 func initTPM(launchSpec spec.LaunchSpec, logger logging.Logger) (io.ReadWriteCloser, error) {
-	if launchSpec.Experiments.BcMode {
-		logger.Info("Running in BC mode, bypassing TPM initialization and checks.")
+	if launchSpec.Experiments.BcMode || launchSpec.Experiments.GB300CCMode {
+		logger.Info("Running in BC or GB300 CC mode, bypassing TPM initialization and checks.")
 		return nil, nil
 	}
 
