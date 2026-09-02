@@ -10,6 +10,7 @@ substitutions:
 steps:
 - name: 'gcr.io/projectsigstore/cosign:v2.2.0'
   id: SignContainer
+  waitFor: ['-']
   entrypoint: 'sh'
   env:
   - 'BUILD_ID=$BUILD_ID'
@@ -24,6 +25,7 @@ steps:
     cosign sign --key gcpkms://projects/confidential-space-images-dev/locations/global/keyRings/cosign-test/cryptoKeys/ecdsa/cryptoKeyVersions/1 ${_WORKLOAD_IMAGE} -a dev.cosignproject.cosign/sigalg=ECDSA_P256_SHA256 -a dev.cosignproject.cosign/pub=$pub
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CreateVM
+  waitFor: ['-']
   entrypoint: 'bash'
   env:
   - 'BUILD_ID=$BUILD_ID'
@@ -35,16 +37,19 @@ steps:
         ]
 - name: 'gcr.io/cloud-builders/gcloud'
   id: BasicDiscoverSignaturesTest
+  waitFor: ['SignContainer', 'CreateVM']
   entrypoint: 'bash'
   args: ['scripts/test_launcher_workload_discover_signatures.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}', '${_ZONE}', 'Found container image signatures', '1']
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CleanUp
+  waitFor: ['BasicDiscoverSignaturesTest']
   entrypoint: 'bash'
   env:
   - 'CLEANUP=$_CLEANUP'
   args: ['cleanup.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}', '${_ZONE}']
 - name: 'gcr.io/cloud-builders/gcloud'
   id: DeleteContainerSignatures
+  waitFor: ['BasicDiscoverSignaturesTest']
   env:
   - 'BUILD_ID=$BUILD_ID'
   entrypoint: 'bash'
@@ -59,6 +64,7 @@ steps:
 # Must come after cleanup.
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CheckFailure
+  waitFor: ['CleanUp', 'DeleteContainerSignatures']
   entrypoint: 'bash'
   env:
   - 'BUILD_ID=$BUILD_ID'
