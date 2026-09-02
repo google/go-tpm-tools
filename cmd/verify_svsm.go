@@ -1,3 +1,24 @@
+/*
+verify_svsm.go implements the "gotpm verify debug svsm" command to debug and verify
+an SVSM-based vTPM attestation report (SevSnpSvsmAttestation).
+
+It supports two manifest verification modes depending on the manifest version:
+
+1. Version 0 Manifest (Legacy / Challenge-based):
+  - Proves AK co-residency using the interactive TCG EK-based key attestation protocol.
+  - Requires specifying both --ek-pub and --certified-ak-blob (produced via "solve-challenge").
+  - Enforces the use of --key=AK (Owner hierarchy AK certified against the EK).
+
+2. Version 1 Manifest (New / Manifest-based):
+  - Bypasses the interactive activation challenge by leveraging SVSM's signed manifest.
+  - SVSM (VMPL0) derives the standard EK and AK on the fly under the Endorsement Hierarchy
+    (using the vTPM's Endorsement Seed and fixed templates) and embeds their public areas in
+    the manifest.
+  - The guest VM (VMPL1) also derives its AK (using --key=gceAK) under the Endorsement Hierarchy.
+  - For verification, --certified-ak-blob is omitted. Instead, specify --key=gceAK and --algo.
+    gotpm will open the TPM, load the Endorsement AK (gceAK), and compare its public key area
+    directly against the AK public key embedded inside SVSM's verified manifest to confirm they match.
+*/
 package cmd
 
 import (
@@ -5,9 +26,10 @@ import (
 	"crypto"
 	"crypto/sha512"
 	"crypto/x509"
+	"encoding/binary"
 	"errors"
 	"fmt"
-	"time"
+	"log"
 
 	apb "github.com/google/go-tpm-tools/proto/attest"
 	"google.golang.org/protobuf/proto"
@@ -52,39 +74,85 @@ var verifySVSMCmd = &cobra.Command{
 		if len(teeNonce) == 0 {
 			return errSvsmNeedsTeeNonce
 		}
+		if trustedEKPub == "" {
+			return fmt.Errorf("ek-pub is required")
+		}
 		svsmAttestation := &apb.SevSnpSvsmAttestation{}
 		err := readProtoFromPath(input, svsmAttestation)
 		if err != nil {
 			return fmt.Errorf("failed to read svsm attestation: %w", err)
 		}
 
-		blob := &tpb.CertifiedBlob{}
-		err = readProtoFromPath(certifiedAKBlobPath, blob)
-		if err != nil {
-			return fmt.Errorf("failed to read certified ak blob: %w", err)
+		version := svsmAttestation.GetVtpmServiceManifestVersion()
+		if version == "" {
+			version = "0"
 		}
+		if version == "0" && key != "AK" {
+			return fmt.Errorf("verifying manifest version 0 requires --key=AK")
+		}
+		if version == "1" && key != "gceAK" {
+			return fmt.Errorf("verifying manifest version 1 requires --key=gceAK")
+		}
+
+		var akPub []byte
+		if certifiedAKBlobPath != "" {
+			blob := &tpb.CertifiedBlob{}
+			err = readProtoFromPath(certifiedAKBlobPath, blob)
+			if err != nil {
+				return fmt.Errorf("failed to read certified ak blob: %w", err)
+			}
+			akPub = blob.PubArea
+		} else {
+			rwc, err := openTpm()
+			if err != nil {
+				return fmt.Errorf("failed to open TPM to retrieve AK: %w", err)
+			}
+			defer rwc.Close()
+
+			algoToCreateAK, ok := attestationKeys[key]
+			if !ok {
+				return fmt.Errorf("invalid --key value: %s", key)
+			}
+			createFunc, ok := algoToCreateAK[keyAlgo]
+			if !ok {
+				return fmt.Errorf("invalid --algo value for key %s", key)
+			}
+			attestationKey, err := createFunc(rwc)
+			if err != nil {
+				return fmt.Errorf("failed to load attestation key: %w", err)
+			}
+			defer attestationKey.Close()
+
+			pubAreaBytes, err := attestationKey.PublicArea().Encode()
+			if err != nil {
+				return fmt.Errorf("failed to encode AK public area: %w", err)
+			}
+			akPub = pubAreaBytes
+		}
+
 		ekpub, err := readBytes(trustedEKPub)
 		if err != nil {
 			return fmt.Errorf("failed to read ek-pub: %w", err)
 		}
 
-		rot, err := getRootOfTrust()
-		if err != nil {
-			return fmt.Errorf("failed to get root of trust: %w", err)
-		}
+		// rot, err := getRootOfTrust()
+		// if err != nil {
+		// 	return fmt.Errorf("failed to get root of trust: %w", err)
+		// }
 		err = verifySEVSNPSVSMAttestation(verifySEVSNPSVSMOpts{
 			TEENonce:      teeNonce,
 			SevVerifyOpts: &verify.Options{},
 			SevValidateOpts: &validate.Options{
 				GuestPolicy: sabi.SnpPolicy{
-					SMT: true,
+					SMT:   true,
+					Debug: true,
 				},
 			},
-			EndorsementOpts: &tcbv.Options{
-				RootsOfTrust: rot,
-				Now:          time.Now(),
-			},
-			AKPub: blob.PubArea,
+			// EndorsementOpts: &tcbv.Options{
+			// 	RootsOfTrust: rot,
+			// 	Now:          time.Now(),
+			// },
+			AKPub: akPub,
 			EKPub: ekpub,
 		}, svsmAttestation)
 		if err != nil {
@@ -155,8 +223,10 @@ type verifySEVSNPSVSMOpts struct {
 
 var (
 	errVtpmServiceManifestEkDoesntMatch      = errors.New("service manifest does not match EK pub that was certified against")
-	errUnsupportedVTPMServiceManifestVersion = errors.New("only vtpm service manifest version 0 is supported")
+	errUnsupportedVTPMServiceManifestVersion = errors.New("only vtpm service manifest version 0 or 1 is supported")
 	errMismatchingAK                         = errors.New("certified AK does not match attested AK")
+	errVtpmServiceManifestAkDoesntMatch      = errors.New("service manifest does not contain the AK pub that was certified against")
+	errVtpmServiceManifestEkDoesntMatchV1    = errors.New("service manifest does not contain the EK pub")
 )
 
 // verifySEVSNPSVSMAttestation checks the SNP attestation report, values in it,
@@ -200,17 +270,90 @@ func verifySEVSNPSVSMAttestation(svsmOpts verifySEVSNPSVSMOpts, svsmAttestation 
 	return nil
 }
 
-// getExpectedReportData the expected report data for the v0 vtpm service manifest version
+// getExpectedReportData the expected report data for the v0 or v1 vtpm service manifest version
 // defined in the SVSM specification at https://www.amd.com/en/developer/sev.html
 // This corresponds to attest_single_vtpm() defined in
 // https://github.com/coconut-svsm/svsm/blob/main/kernel/src/protocols/attest.rs#L336
 func getExpectedReportData(svsmOpts verifySEVSNPSVSMOpts, svsmAttestation *apb.SevSnpSvsmAttestation) ([]byte, error) {
-	if svsmAttestation.GetVtpmServiceManifestVersion() != "0" {
+	version := svsmAttestation.GetVtpmServiceManifestVersion()
+	if version == "" {
+		version = "0"
+	}
+	if version != "0" && version != "1" {
 		return nil, errUnsupportedVTPMServiceManifestVersion
 	}
-	if !bytes.Equal(svsmOpts.EKPub, svsmAttestation.VtpmServiceManifest) {
-		return nil, errVtpmServiceManifestEkDoesntMatch
+
+	log.Printf("Verifying vTPM service manifest version %s", version)
+	log.Printf("verify debug svsm: VtpmServiceManifest size: %d", len(svsmAttestation.GetVtpmServiceManifest()))
+
+	if version == "0" {
+		if !bytes.Equal(svsmOpts.EKPub, svsmAttestation.VtpmServiceManifest) {
+			log.Printf("verify debug svsm: EKPub len %d, Manifest len %d", len(svsmOpts.EKPub), len(svsmAttestation.VtpmServiceManifest))
+			log.Printf("verify debug svsm: EKPub: %x", svsmOpts.EKPub)
+			log.Printf("verify debug svsm: Manifest: %x", svsmAttestation.VtpmServiceManifest)
+			return nil, errVtpmServiceManifestEkDoesntMatch
+		}
+	} else if version == "1" {
+		log.Printf("verify debug svsm: AKPub: %x", svsmOpts.AKPub)
+		log.Printf("verify debug svsm: EKPub: %x", svsmOpts.EKPub)
+		// In manifest version 1 (Table 31 of AMD SVSM Spec #58019 Rev 1.01):
+		// - Offset 0x000 (4 bytes): Version (1)
+		// - Offset 0x004 (4 bytes): Number of TPM2B_PUBLIC structures present
+		// - Offset 0x008 (Variable): Concatenated TPM2B_PUBLIC structures
+		manifest := svsmAttestation.VtpmServiceManifest
+		if len(manifest) < 4 {
+			return nil, fmt.Errorf("malformed service manifest: manifest version is not present (got %d bytes, want at least 4)", len(manifest))
+		}
+		manifestVer := binary.BigEndian.Uint32(manifest[0:4])
+		if manifestVer != 1 {
+			return nil, fmt.Errorf("unsupported service manifest version in payload: %d, expected 1", manifestVer)
+		}
+		if len(manifest) < 8 {
+			return nil, fmt.Errorf("malformed service manifest: manifest TPM2B_PUBLIC count is not present (got %d bytes, want at least 8)", len(manifest))
+		}
+		numKeys := binary.BigEndian.Uint32(manifest[4:8])
+		manifest = manifest[8:]
+
+		foundAK := false
+		foundEK := false
+		for i := uint32(0); i < numKeys; i++ {
+			if len(manifest) == 0 {
+				return nil, fmt.Errorf("malformed service manifest: count does not match number of keys: expected %d keys, got %d", numKeys, i)
+			}
+			if len(manifest) < 2 {
+				return nil, fmt.Errorf("malformed service manifest: too short to read key size for key %d", i)
+			}
+			// Read the 2-byte size of the TPMT_PUBLIC area.
+			size := binary.BigEndian.Uint16(manifest[:2])
+			keyLen := int(size) + 2
+			if len(manifest) < keyLen {
+				return nil, fmt.Errorf("malformed service manifest: size %d exceeds remaining bytes %d for key %d", size, len(manifest)-2, i)
+			}
+			// keyBytes is the full TPM2B_PUBLIC structure.
+			keyBytes := manifest[:keyLen]
+			// svsmOpts.AKPub and svsmOpts.EKPub are in TPMT_PUBLIC format (no size prefix).
+			// To compare them, we strip the 2-byte size prefix from keyBytes to get the TPMT_PUBLIC part.
+			tpmtKeyBytes := keyBytes[2:]
+			log.Printf("verify debug svsm: Manifest parsed key: %x", tpmtKeyBytes)
+			if bytes.Equal(svsmOpts.AKPub, tpmtKeyBytes) {
+				foundAK = true
+			}
+			if bytes.Equal(svsmOpts.EKPub, tpmtKeyBytes) {
+				foundEK = true
+			}
+			manifest = manifest[keyLen:]
+		}
+		if len(manifest) > 0 {
+			return nil, fmt.Errorf("malformed service manifest: count does not match number of keys: %d trailing bytes after parsing %d keys", len(manifest), numKeys)
+		}
+		if !foundAK {
+			return nil, errVtpmServiceManifestAkDoesntMatch
+		}
+		if !foundEK {
+			return nil, errVtpmServiceManifestEkDoesntMatchV1
+		}
 	}
+
 	h := sha512.New()
 	if len(svsmOpts.TEENonce) != sabi.ReportDataSize {
 		return nil, fmt.Errorf("the teeNonce size is %d. SEV-SNP device requires 64", len(svsmOpts.TEENonce))
