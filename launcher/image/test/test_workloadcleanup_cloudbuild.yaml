@@ -16,6 +16,7 @@ substitutions:
 steps:
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CreateMonitorVM
+  waitFor: ['-']
   env:
   - 'BUILD_ID=$BUILD_ID'
   - 'ZONE=$_ZONE'
@@ -46,6 +47,7 @@ steps:
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CaptureIP
+  waitFor: ['CreateMonitorVM']
   env:
   - 'BUILD_ID=$BUILD_ID'
   - 'ZONE=$_ZONE'
@@ -57,6 +59,7 @@ steps:
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CreateWorkloadVM
+  waitFor: ['CaptureIP']
   env:
   - 'BUILD_ID=$BUILD_ID'
   - 'IMAGE_NAME=$_IMAGE_NAME'
@@ -74,6 +77,7 @@ steps:
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: TestGracefulShutdown
+  waitFor: ['CreateWorkloadVM']
   entrypoint: 'bash'
   args: ['scripts/test_workload_cleanup.sh',
           'cleanup-monitor-${BUILD_ID}',
@@ -83,17 +87,20 @@ steps:
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CleanUp
+  waitFor: ['TestGracefulShutdown']
   env:
   - 'CLEANUP=$_CLEANUP'
   - 'BUILD_ID=$BUILD_ID'
   - 'ZONE=$_ZONE'
   script: |
     #!/usr/bin/env bash
-    bash cleanup.sh cleanup-monitor-$BUILD_ID $ZONE
-    bash cleanup.sh cleanup-test-$BUILD_ID $ZONE
+    bash cleanup.sh cleanup-monitor-$BUILD_ID $ZONE &
+    bash cleanup.sh cleanup-test-$BUILD_ID $ZONE &
+    wait
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CheckFailure
+  waitFor: ['CleanUp']
   entrypoint: 'bash'
   env:
   - 'BUILD_ID=$BUILD_ID'
