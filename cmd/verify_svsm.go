@@ -145,7 +145,6 @@ var verifySVSMCmd = &cobra.Command{
 			SevValidateOpts: &validate.Options{
 				GuestPolicy: sabi.SnpPolicy{
 					SMT:   true,
-					Debug: true,
 				},
 			},
 			// EndorsementOpts: &tcbv.Options{
