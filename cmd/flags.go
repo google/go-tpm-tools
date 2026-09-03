@@ -339,13 +339,13 @@ func getTEEDevice() (client.TEEDevice, error) {
 	case SevSnp:
 		device, err := client.CreateSevSnpQuoteProvider()
 		if err != nil {
-			return nil, fmt.Errorf("failed to open %s device: %v", SevSnp, err)
+			return nil, fmt.Errorf("failed to create %s quote provider: %w", SevSnp, err)
 		}
 		return device, nil
 	case Tdx:
 		device, err := client.CreateTdxQuoteProvider()
 		if err != nil {
-			return nil, fmt.Errorf("failed to create %s quote provider: %v", Tdx, err)
+			return nil, fmt.Errorf("failed to create %s quote provider: %w", Tdx, err)
 		}
 		return device, nil
 	case "":

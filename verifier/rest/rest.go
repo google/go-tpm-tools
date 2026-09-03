@@ -274,13 +274,6 @@ func convertRequestToREST(request verifier.VerifyAttestationRequest) *ccpb.Verif
 			verifyReq.TeeAttestation = tdx
 		}
 	} else if request.TDCCELAttestation != nil {
-		// TDX attestation route
-		// still need AK for GCE info!
-		verifyReq.TpmAttestation = &ccpb.TpmAttestation{
-			AkCert:    request.TDCCELAttestation.AkCert,
-			CertChain: request.TDCCELAttestation.IntermediateCerts,
-		}
-
 		verifyReq.TeeAttestation = &ccpb.VerifyAttestationRequest_TdCcel{
 			TdCcel: &ccpb.TdxCcelAttestation{
 				TdQuote:           request.TDCCELAttestation.TdQuote,
@@ -369,8 +362,8 @@ func convertCSRequestToREST(request verifier.VerifyAttestationRequest) *ccpb.Ver
 
 		// Set AK cert info.
 		csReq.GceShieldedIdentity = &ccpb.GceShieldedIdentity{
-			AkCert:      verifyAttRequest.TpmAttestation.AkCert,
-			AkCertChain: verifyAttRequest.TpmAttestation.CertChain,
+			AkCert:      request.TDCCELAttestation.AkCert,
+			AkCertChain: request.TDCCELAttestation.IntermediateCerts,
 		}
 
 		csReq.NvidiaAttestation = convertNvidiaAttestationToREST(request.NvidiaAttestation)

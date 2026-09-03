@@ -15,9 +15,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-var (
-	key string
-)
+var key string
 
 var attestationKeys = map[string]map[tpm2.Algorithm]func(rw io.ReadWriter) (*client.Key, error){
 	"AK": {
@@ -72,7 +70,7 @@ hardware and guarantees a fresh quote.
 		attestOpts := client.AttestOpts{}
 		attestOpts.Nonce = nonce
 
-		// Add logic to open other hardware devices when required.
+		// Open the explicitly requested TEE device.
 		attestOpts.TEEDevice, err = getTEEDevice()
 		if err != nil {
 			return err

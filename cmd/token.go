@@ -60,24 +60,9 @@ The OIDC token includes claims regarding the GCE VM, which is verified by Attest
 			return fmt.Errorf("failed to fetch Region from MDS, the tool is probably not running in a GCE VM: %v", err)
 		}
 
-		zone, err := mdsClient.ZoneWithContext(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to fetch Zone from MDS: %v", err)
-		}
-
 		projectID, err := mdsClient.ProjectIDWithContext(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to retrieve ProjectID from MDS: %v", err)
-		}
-
-		projectNumber, err := mdsClient.NumericProjectIDWithContext(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to retrieve ProjectNumber from MDS: %v", err)
-		}
-
-		instanceID, err := mdsClient.InstanceIDWithContext(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to retrieve InstanceID from MDS: %v", err)
 		}
 
 		httpClient, err := google.DefaultClient(ctx)
@@ -154,9 +139,13 @@ The OIDC token includes claims regarding the GCE VM, which is verified by Attest
 			return fmt.Errorf("failed to get an AK: %w", err)
 		}
 
-		attestOpts := client.AttestOpts{Nonce: challenge.Nonce, CertChainFetcher: http.DefaultClient}
+		attestOpts := client.AttestOpts{
+			Nonce:            challenge.Nonce,
+			CertChainFetcher: http.DefaultClient,
+		}
+		// Leave TEENonce unset so the TEE quote uses the verifier challenge.
 
-		// Add logic to open other hardware devices when required.
+		// Open the explicitly requested TEE device.
 		attestOpts.TEEDevice, err = getTEEDevice()
 		if err != nil {
 			return err
@@ -173,7 +162,6 @@ The OIDC token includes claims regarding the GCE VM, which is verified by Attest
 			GcpCredentials: principalTokens,
 			Attestation:    attestation,
 			TokenOptions:   &models.TokenOptions{Audience: audience, Nonces: customNonce, TokenType: "OIDC"},
-			GceInstance:    fmt.Sprintf("projects/%s/zones/%s/instances/%s", projectNumber, zone, instanceID),
 		}
 
 		if teeTechnology == Tdx {
@@ -181,21 +169,52 @@ The OIDC token includes claims regarding the GCE VM, which is verified by Attest
 			if attestation.GetTdxAttestation() != nil {
 				fmt.Fprintln(debugOutput(), "Using Explicit TDCCELAttestation Path (ACPI tables)")
 
+				// The instance resource is required only for TDX CVM verification.
+				zone, err := mdsClient.ZoneWithContext(ctx)
+				if err != nil {
+					return fmt.Errorf("failed to fetch zone from MDS: %w", err)
+				}
+
+				projectNumber, err := mdsClient.NumericProjectIDWithContext(ctx)
+				if err != nil {
+					return fmt.Errorf("failed to retrieve project number from MDS: %w", err)
+				}
+
+				instanceID, err := mdsClient.InstanceIDWithContext(ctx)
+				if err != nil {
+					return fmt.Errorf("failed to retrieve instance ID from MDS: %w", err)
+				}
+
+				req.GceInstance = fmt.Sprintf("projects/%s/zones/%s/instances/%s", projectNumber, zone, instanceID)
+
 				rawQuote, err := tabi.QuoteToAbiBytes(attestation.GetTdxAttestation())
 				if err != nil {
-					return fmt.Errorf("failed to convert TDX quote to bytes: %v", err)
+					return fmt.Errorf("failed to convert TDX quote to bytes: %w", err)
 				}
 
 				// Try to read CCEL Table and Data
-				ccelTable, _ := os.ReadFile(internal.AcpiTableFile)
-				ccelData, _ := os.ReadFile(internal.CcelEventLogFile)
+				ccelTable, err := os.ReadFile(internal.ACPITableFile)
+				if err != nil {
+					fmt.Fprintf(
+						debugOutput(),
+						"Could not read CCEL ACPI table: %v\n",
+						err,
+					)
+				}
+
+				ccelData, err := os.ReadFile(internal.CCELEventLogFile)
+				if err != nil {
+					fmt.Fprintf(
+						debugOutput(),
+						"Could not read CCEL event log: %v\n",
+						err,
+					)
+				}
 
 				req.TDCCELAttestation = &verifier.TDCCELAttestation{
-					TdQuote:           rawQuote,
-					CcelAcpiTable:     ccelTable,
-					CcelData:          ccelData,
-					AkCert:            attestation.AkCert,
-					IntermediateCerts: attestation.IntermediateCerts,
+					TdQuote:       rawQuote,
+					CcelAcpiTable: ccelTable,
+					CcelData:      ccelData,
 				}
 				// Force using TDCCELAttestation path in verifier client
 				req.Attestation = nil

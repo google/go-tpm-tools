@@ -639,7 +639,7 @@ func (t *tdxAttestRoot) Attest(nonce []byte) (any, error) {
 		return nil, err
 	}
 
-	ccelData, err := os.ReadFile(internal.CcelEventLogFile)
+	ccelData, err := os.ReadFile(internal.CCELEventLogFile)
 	if err != nil {
 		return nil, err
 	}
@@ -652,7 +652,7 @@ func (t *tdxAttestRoot) Attest(nonce []byte) (any, error) {
 	// This naive trimming logic may cause the replay to fail.
 	ccelData = bytes.TrimRight(ccelData, "\xff")
 
-	ccelTable, err := os.ReadFile(internal.AcpiTableFile)
+	ccelTable, err := os.ReadFile(internal.ACPITableFile)
 	if err != nil {
 		return nil, err
 	}
