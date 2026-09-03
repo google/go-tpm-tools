@@ -815,13 +815,20 @@ func openPorts(ports map[string]struct{}, containerIP string) error {
 }
 
 func getImageConfig(ctx context.Context, image containerd.Image) (v1.ImageConfig, error) {
+	if image == nil {
+		return v1.ImageConfig{}, errors.New("image cannot be nil")
+	}
+	cs := image.ContentStore()
+	if cs == nil {
+		return v1.ImageConfig{}, errors.New("image content store cannot be nil")
+	}
 	ic, err := image.Config(ctx)
 	if err != nil {
 		return v1.ImageConfig{}, err
 	}
 	switch ic.MediaType {
 	case v1.MediaTypeImageConfig, images.MediaTypeDockerSchema2Config:
-		p, err := content.ReadBlob(ctx, image.ContentStore(), ic)
+		p, err := content.ReadBlob(ctx, cs, ic)
 		if err != nil {
 			return v1.ImageConfig{}, err
 		}
