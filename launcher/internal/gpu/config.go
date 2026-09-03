@@ -20,11 +20,4 @@ const (
 	NvDriverVer595_58_03Digest = "8c0d4f967b7932c4ab5714272aee8103392b0a702c92afa555176d36205829f9"
 	// NvDriverVer595_58_03Runfile is the driver run file name
 	NvDriverVer595_58_03Runfile = "NVIDIA-Linux-x86_64-595.58.03.run"
-	// NvDriverVer610_57_04 is the version string for the driver
-	NvDriverVer610_57_04 = "610.57.04"
-	// NvDriverVer610_57_04Digest is driver run file digest downloaded from
-	// cos-nvidia-gpu-drivers/sha256/NVIDIA-Linux-x86_64-610.57.04.run.sha256
-	NvDriverVer610_57_04Digest = "b2e935c66b83bb00c0c857bc8e0ee0fd52de9286b40c9cc1eec29a7ce7eb116d"
-	// NvDriverVer610_57_04Runfile is the driver run file name
-	NvDriverVer610_57_04Runfile = "NVIDIA-Linux-x86_64-610.57.04.run"
 )
