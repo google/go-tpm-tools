@@ -15,12 +15,14 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
 	clogging "cloud.google.com/go/logging"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/containerd/containerd"
+	"github.com/containerd/containerd/cio"
 	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/defaults"
 	"github.com/containerd/containerd/namespaces"
@@ -54,6 +56,8 @@ type fakeAttestationAgent struct {
 	sigsCache        []string
 	sigsFetcherFunc  func(context.Context) []string
 
+	closeCalled bool
+
 	// attMu sits on top of attempts field and protects attempts.
 	attMu    sync.Mutex
 	attempts int
@@ -64,7 +68,7 @@ func (f *fakeAttestationAgent) MeasureEvent(event gecel.Content) error {
 		return f.measureEventFunc(event)
 	}
 
-	return fmt.Errorf("unimplemented")
+	return nil
 }
 
 func (f *fakeAttestationAgent) Attest(ctx context.Context, _ agent.AttestAgentOpts) ([]byte, error) {
@@ -92,6 +96,7 @@ func (f *fakeAttestationAgent) Refresh(ctx context.Context) error {
 }
 
 func (f *fakeAttestationAgent) Close() error {
+	f.closeCalled = true
 	return nil
 }
 
@@ -832,21 +837,24 @@ func TestMeasureCELEvents(t *testing.T) {
 	}
 }
 
-// This ensures fakeContainer implements containerd.Container interface.
-var _ containerd.Container = &fakeContainer{}
-
-// This ensures fakeImage implements containerd.Image interface.
-var _ containerd.Image = &fakeImage{}
-
 type fakeContainer struct {
 	containerd.Container
-	image containerd.Image
-	args  []string
-	env   []string
+	image        containerd.Image
+	args         []string
+	env          []string
+	newTaskFunc  func(context.Context, cio.Creator, ...containerd.NewTaskOpts) (containerd.Task, error)
+	deleteCalled bool
 }
 
 func (c *fakeContainer) Image(context.Context) (containerd.Image, error) {
-	return c.image, nil
+	if c.image != nil {
+		return c.image, nil
+	}
+	return &fakeImage{
+		name:   "test-image",
+		digest: "sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+		id:     "sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+	}, nil
 }
 
 func (c *fakeContainer) Spec(context.Context) (*oci.Spec, error) {
@@ -857,7 +865,76 @@ func (c *fakeContainer) ID() string {
 	return "tee-container"
 }
 
-func (c *fakeContainer) Delete(context.Context, ...containerd.DeleteOpts) error {
+func (c *fakeContainer) Delete(_ context.Context, _ ...containerd.DeleteOpts) error {
+	c.deleteCalled = true
+	return nil
+}
+
+func (c *fakeContainer) NewTask(ctx context.Context, creator cio.Creator, opts ...containerd.NewTaskOpts) (containerd.Task, error) {
+	if c.newTaskFunc != nil {
+		return c.newTaskFunc(ctx, creator, opts...)
+	}
+	return &fakeTask{}, nil
+}
+
+type fakeTask struct {
+	containerd.Task
+	startFunc    func(ctx context.Context) error
+	waitFunc     func(ctx context.Context) (<-chan containerd.ExitStatus, error)
+	ioFunc       func() cio.IO
+	startCalled  bool
+	deleteCalled bool
+	callLog      []string
+}
+
+func (f *fakeTask) Start(ctx context.Context) error {
+	f.startCalled = true
+	if f.startFunc != nil {
+		return f.startFunc(ctx)
+	}
+	return nil
+}
+
+func (f *fakeTask) Wait(ctx context.Context) (<-chan containerd.ExitStatus, error) {
+	if f.waitFunc != nil {
+		return f.waitFunc(ctx)
+	}
+	ch := make(chan containerd.ExitStatus, 1)
+	ch <- *containerd.NewExitStatus(0, time.Now(), nil)
+	return ch, nil
+}
+
+func (f *fakeTask) Delete(_ context.Context, _ ...containerd.ProcessDeleteOpts) (*containerd.ExitStatus, error) {
+	f.deleteCalled = true
+	f.callLog = append(f.callLog, "delete")
+	return containerd.NewExitStatus(0, time.Now(), nil), nil
+}
+
+func (f *fakeTask) Kill(_ context.Context, _ syscall.Signal, _ ...containerd.KillOpts) error {
+	return nil
+}
+
+func (f *fakeTask) IO() cio.IO {
+	if f.ioFunc != nil {
+		return f.ioFunc()
+	}
+	return nil
+}
+
+type fakeIO struct {
+	cio.IO
+	waitCalled bool
+	onWait     func()
+}
+
+func (f *fakeIO) Wait() {
+	f.waitCalled = true
+	if f.onWait != nil {
+		f.onWait()
+	}
+}
+
+func (f *fakeIO) Close() error {
 	return nil
 }
 
@@ -1133,5 +1210,399 @@ func TestNewRunner(t *testing.T) {
 				tc.verifyLogs(t, logger.logs)
 			}
 		})
+	}
+}
+
+func TestRun_WorkloadSuccessCleansUpTask(t *testing.T) {
+	task := &fakeTask{}
+	cont := &fakeContainer{
+		newTaskFunc: func(context.Context, cio.Creator, ...containerd.NewTaskOpts) (containerd.Task, error) {
+			return task, nil
+		},
+	}
+	runner := &ContainerRunner{
+		container:   cont,
+		attestAgent: &fakeAttestationAgent{},
+		launchSpec: spec.LaunchSpec{
+			DisableGcaRefresh: true,
+			LogRedirect:       spec.Nowhere,
+		},
+		logger: logging.SimpleLogger(),
+	}
+
+	if err := runner.Run(context.Background()); err != nil {
+		t.Fatalf("runner.Run() = %v, want nil", err)
+	}
+	if !task.startCalled {
+		t.Errorf("task.Start() was not called")
+	}
+	if !task.deleteCalled {
+		t.Errorf("task.Delete() was not called")
+	}
+	if cont.deleteCalled {
+		t.Errorf("container.Delete() called unexpectedly during Run()")
+	}
+}
+
+func TestRun_NonZeroExitCodeReturnsWorkloadError(t *testing.T) {
+	task := &fakeTask{
+		waitFunc: func(_ context.Context) (<-chan containerd.ExitStatus, error) {
+			ch := make(chan containerd.ExitStatus, 1)
+			ch <- *containerd.NewExitStatus(42, time.Now(), nil)
+			return ch, nil
+		},
+	}
+	runner := &ContainerRunner{
+		container: &fakeContainer{
+			newTaskFunc: func(context.Context, cio.Creator, ...containerd.NewTaskOpts) (containerd.Task, error) {
+				return task, nil
+			},
+		},
+		attestAgent: &fakeAttestationAgent{},
+		launchSpec: spec.LaunchSpec{
+			DisableGcaRefresh: true,
+			LogRedirect:       spec.Nowhere,
+		},
+		logger: logging.SimpleLogger(),
+	}
+
+	err := runner.Run(context.Background())
+	var workloadErr *WorkloadError
+	if !errors.As(err, &workloadErr) {
+		t.Fatalf("runner.Run() error = %v (%T), want *WorkloadError", err, err)
+	}
+	if workloadErr.ReturnCode != 42 {
+		t.Errorf("workloadErr.ReturnCode = %d, want 42", workloadErr.ReturnCode)
+	}
+	if !task.deleteCalled {
+		t.Errorf("task.Delete() was not called on error")
+	}
+}
+
+func TestRun_TaskCreationFailureReturnsRetryableError(t *testing.T) {
+	runner := &ContainerRunner{
+		container: &fakeContainer{
+			newTaskFunc: func(context.Context, cio.Creator, ...containerd.NewTaskOpts) (containerd.Task, error) {
+				return nil, errors.New("containerd runtime down")
+			},
+		},
+		attestAgent: &fakeAttestationAgent{},
+		launchSpec: spec.LaunchSpec{
+			DisableGcaRefresh: true,
+			LogRedirect:       spec.Nowhere,
+		},
+		logger: logging.SimpleLogger(),
+	}
+
+	err := runner.Run(context.Background())
+	var retryErr *RetryableError
+	if !errors.As(err, &retryErr) {
+		t.Fatalf("runner.Run() error = %v (%T), want *RetryableError", err, err)
+	}
+	if !strings.Contains(err.Error(), "containerd runtime down") {
+		t.Errorf("runner.Run() error = %v, want containing %q", err, "containerd runtime down")
+	}
+}
+
+func TestRun_TaskStartFailureDeletesTaskAndReturnsRetryableError(t *testing.T) {
+	task := &fakeTask{
+		startFunc: func(context.Context) error {
+			return errors.New("cannot exec binary")
+		},
+	}
+	runner := &ContainerRunner{
+		container: &fakeContainer{
+			newTaskFunc: func(context.Context, cio.Creator, ...containerd.NewTaskOpts) (containerd.Task, error) {
+				return task, nil
+			},
+		},
+		attestAgent: &fakeAttestationAgent{},
+		launchSpec: spec.LaunchSpec{
+			DisableGcaRefresh: true,
+			LogRedirect:       spec.Nowhere,
+		},
+		logger: logging.SimpleLogger(),
+	}
+
+	err := runner.Run(context.Background())
+	var retryErr *RetryableError
+	if !errors.As(err, &retryErr) {
+		t.Fatalf("runner.Run() error = %v (%T), want *RetryableError", err, err)
+	}
+	if !strings.Contains(err.Error(), "cannot exec binary") {
+		t.Errorf("runner.Run() error = %v, want containing %q", err, "cannot exec binary")
+	}
+	if !task.deleteCalled {
+		t.Errorf("task.Delete() was not called when Start failed")
+	}
+}
+
+func TestRun_ExitStatusErrorPropagates(t *testing.T) {
+	task := &fakeTask{
+		waitFunc: func(_ context.Context) (<-chan containerd.ExitStatus, error) {
+			ch := make(chan containerd.ExitStatus, 1)
+			ch <- *containerd.NewExitStatus(0, time.Now(), errors.New("container killed by OOM killer"))
+			return ch, nil
+		},
+	}
+	runner := &ContainerRunner{
+		container: &fakeContainer{
+			newTaskFunc: func(context.Context, cio.Creator, ...containerd.NewTaskOpts) (containerd.Task, error) {
+				return task, nil
+			},
+		},
+		attestAgent: &fakeAttestationAgent{},
+		launchSpec: spec.LaunchSpec{
+			DisableGcaRefresh: true,
+			LogRedirect:       spec.Nowhere,
+		},
+		logger: logging.SimpleLogger(),
+	}
+
+	err := runner.Run(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "container killed by OOM killer") {
+		t.Errorf("runner.Run() error = %v, want containing %q", err, "container killed by OOM killer")
+	}
+}
+
+func TestRun_LogRedirectEverywhere(t *testing.T) {
+	f, err := os.CreateTemp(t.TempDir(), "serial")
+	if err != nil {
+		t.Fatalf("failed to create temp serial file: %v", err)
+	}
+	t.Cleanup(func() { _ = f.Close() })
+
+	runner := &ContainerRunner{
+		container:     &fakeContainer{},
+		attestAgent:   &fakeAttestationAgent{},
+		serialConsole: f,
+		launchSpec: spec.LaunchSpec{
+			DisableGcaRefresh: true,
+			LogRedirect:       spec.Everywhere,
+		},
+		logger: logging.SimpleLogger(),
+	}
+
+	if err := runner.Run(context.Background()); err != nil {
+		t.Errorf("runner.Run() error = %v, want nil", err)
+	}
+}
+
+func TestRun_LogRedirectSerial(t *testing.T) {
+	f, err := os.CreateTemp(t.TempDir(), "serial")
+	if err != nil {
+		t.Fatalf("failed to create temp serial file: %v", err)
+	}
+	t.Cleanup(func() { _ = f.Close() })
+
+	runner := &ContainerRunner{
+		container:     &fakeContainer{},
+		attestAgent:   &fakeAttestationAgent{},
+		serialConsole: f,
+		launchSpec: spec.LaunchSpec{
+			DisableGcaRefresh: true,
+			LogRedirect:       spec.Serial,
+		},
+		logger: logging.SimpleLogger(),
+	}
+
+	if err := runner.Run(context.Background()); err != nil {
+		t.Errorf("runner.Run() error = %v, want nil", err)
+	}
+}
+
+func TestRun_LogRedirectCloudLogging(t *testing.T) {
+	runner := &ContainerRunner{
+		container:   &fakeContainer{},
+		attestAgent: &fakeAttestationAgent{},
+		launchSpec: spec.LaunchSpec{
+			DisableGcaRefresh: true,
+			LogRedirect:       spec.CloudLogging,
+		},
+		logger: logging.SimpleLogger(),
+	}
+
+	if err := runner.Run(context.Background()); err != nil {
+		t.Errorf("runner.Run() error = %v, want nil", err)
+	}
+}
+
+func TestRun_LogRedirectNowhere(t *testing.T) {
+	runner := &ContainerRunner{
+		container:   &fakeContainer{},
+		attestAgent: &fakeAttestationAgent{},
+		launchSpec: spec.LaunchSpec{
+			DisableGcaRefresh: true,
+			LogRedirect:       spec.Nowhere,
+		},
+		logger: logging.SimpleLogger(),
+	}
+
+	if err := runner.Run(context.Background()); err != nil {
+		t.Errorf("runner.Run() error = %v, want nil", err)
+	}
+}
+
+func TestRun_LogRedirectUnknownLocationReturnsError(t *testing.T) {
+	runner := &ContainerRunner{
+		container:   &fakeContainer{},
+		attestAgent: &fakeAttestationAgent{},
+		launchSpec: spec.LaunchSpec{
+			DisableGcaRefresh: true,
+			LogRedirect:       spec.LogRedirectLocation("invalid"),
+		},
+		logger: logging.SimpleLogger(),
+	}
+
+	err := runner.Run(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "unknown logging redirect location") {
+		t.Errorf("runner.Run() error = %v, want error containing %q", err, "unknown logging redirect location")
+	}
+}
+
+func TestRun_EventLogMeasurementErrorPropagates(t *testing.T) {
+	runner := &ContainerRunner{
+		container: &fakeContainer{},
+		attestAgent: &fakeAttestationAgent{
+			measureEventFunc: func(_ gecel.Content) error {
+				return errors.New("TPM eventlog measurement failed")
+			},
+		},
+		launchSpec: spec.LaunchSpec{
+			DisableGcaRefresh: true,
+			LogRedirect:       spec.Nowhere,
+		},
+		logger: logging.SimpleLogger(),
+	}
+
+	err := runner.Run(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "TPM eventlog measurement failed") {
+		t.Errorf("runner.Run() error = %v, want error containing %q", err, "TPM eventlog measurement failed")
+	}
+}
+
+func TestRun_TokenFetchErrorPropagates(t *testing.T) {
+	runner := &ContainerRunner{
+		container: &fakeContainer{},
+		attestAgent: &fakeAttestationAgent{
+			attestFunc: func(context.Context, agent.AttestAgentOpts) ([]byte, error) {
+				return nil, errors.New("network unreachable")
+			},
+		},
+		launchSpec: spec.LaunchSpec{
+			DisableGcaRefresh: false,
+			LogRedirect:       spec.Nowhere,
+		},
+		logger: logging.SimpleLogger(),
+	}
+
+	err := runner.Run(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "failed to fetch and write OIDC token") {
+		t.Errorf("runner.Run() error = %v, want error containing %q", err, "failed to fetch and write OIDC token")
+	}
+}
+
+func TestRun_TeardownOrder(t *testing.T) {
+	task := &fakeTask{}
+	fakeIOInst := &fakeIO{
+		onWait: func() {
+			task.callLog = append(task.callLog, "io_wait")
+		},
+	}
+	task.ioFunc = func() cio.IO {
+		return fakeIOInst
+	}
+	runner := &ContainerRunner{
+		container: &fakeContainer{
+			newTaskFunc: func(context.Context, cio.Creator, ...containerd.NewTaskOpts) (containerd.Task, error) {
+				return task, nil
+			},
+		},
+		attestAgent: &fakeAttestationAgent{},
+		launchSpec: spec.LaunchSpec{
+			DisableGcaRefresh: true,
+			LogRedirect:       spec.Nowhere,
+		},
+		logger: logging.SimpleLogger(),
+	}
+
+	if err := runner.Run(context.Background()); err != nil {
+		t.Fatalf("runner.Run() unexpected error = %v", err)
+	}
+
+	if !fakeIOInst.waitCalled {
+		t.Errorf("expected task.IO().Wait() to be called")
+	}
+	wantCalls := []string{"io_wait", "delete"}
+	if diff := cmp.Diff(wantCalls, task.callLog); diff != "" {
+		t.Errorf("task call ordering mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestRun_HardenedModeNilPowerButton(t *testing.T) {
+	runner := &ContainerRunner{
+		container:   &fakeContainer{},
+		attestAgent: &fakeAttestationAgent{},
+		launchSpec: spec.LaunchSpec{
+			DisableGcaRefresh: true,
+			LogRedirect:       spec.Nowhere,
+			Hardened:          true,
+		},
+		logger: logging.SimpleLogger(),
+	}
+
+	if err := runner.Run(context.Background()); err != nil {
+		t.Fatalf("runner.Run() unexpected error = %v", err)
+	}
+}
+
+func TestClose_WithoutPowerButton(t *testing.T) {
+	cont := &fakeContainer{}
+	agent := &fakeAttestationAgent{}
+	runner := &ContainerRunner{
+		container:   cont,
+		attestAgent: agent,
+		logger:      logging.SimpleLogger(),
+	}
+
+	runner.Close(context.Background())
+
+	if !agent.closeCalled {
+		t.Errorf("expected attestAgent.Close() to be called")
+	}
+	if !cont.deleteCalled {
+		t.Errorf("expected container.Delete() to be called")
+	}
+}
+
+func TestClose_WithPowerButton(t *testing.T) {
+	f, err := os.CreateTemp(t.TempDir(), "pb")
+	if err != nil {
+		t.Fatalf("failed to create temp file: %v", err)
+	}
+	pb := &powerButtonListener{
+		file:   f,
+		logger: logging.SimpleLogger(),
+	}
+
+	cont := &fakeContainer{}
+	agent := &fakeAttestationAgent{}
+	runner := &ContainerRunner{
+		container:   cont,
+		attestAgent: agent,
+		powerButton: pb,
+		logger:      logging.SimpleLogger(),
+	}
+
+	runner.Close(context.Background())
+
+	if !agent.closeCalled {
+		t.Errorf("expected attestAgent.Close() to be called")
+	}
+	if !cont.deleteCalled {
+		t.Errorf("expected container.Delete() to be called")
+	}
+	if err := f.Close(); !errors.Is(err, os.ErrClosed) {
+		t.Errorf("expected powerButton file to be closed, got error: %v", err)
 	}
 }
