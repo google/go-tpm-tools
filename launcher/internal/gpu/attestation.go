@@ -77,7 +77,7 @@ func (a *NvidiaAttester) EnableReadyState() error {
 	}
 
 	// Explicitly need to set the GPU state to READY for GPUs with confidential compute mode ON.
-	if ccEnabled == attest.GPUDeviceCCMode_ON {
+	if ccEnabled == attest.GPUDeviceCCMode_ON || ccEnabled == attest.GPUDeviceCCMode_DEVTOOLS {
 		setGPUStateCmd := NvidiaSmiOutputFunc("conf-compute", "-srs", "1")
 		if err := setGPUStateToReady(setGPUStateCmd); err != nil {
 			return fmt.Errorf("failed to set the GPU state to ready: %v", err)

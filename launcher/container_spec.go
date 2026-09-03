@@ -81,12 +81,12 @@ func createOCISpecOpts(image containerd.Image, launchSpec spec.LaunchSpec, envs 
 			gpuMounts = []specs.Mount{
 				{
 					Type:        "volume",
-					Source:      fmt.Sprintf("%s/lib64", gpu.BuiltInInstallation595_58_03HostDir),
+					Source:      fmt.Sprintf("%s/lib64", gpu.BuiltInInstallation610_57_04HostDir),
 					Destination: fmt.Sprintf("%s/lib64", gpu.InstallationContainerDir),
 					Options:     []string{"rbind", "rw"},
 				}, {
 					Type:        "volume",
-					Source:      fmt.Sprintf("%s/bin", gpu.BuiltInInstallation595_58_03HostDir),
+					Source:      fmt.Sprintf("%s/bin", gpu.BuiltInInstallation610_57_04HostDir),
 					Destination: fmt.Sprintf("%s/bin", gpu.InstallationContainerDir),
 					Options:     []string{"rbind", "rw"},
 				},
