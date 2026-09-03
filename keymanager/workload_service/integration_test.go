@@ -44,7 +44,7 @@ func (r *realWorkloadService) GetBindingKey(id uuid.UUID) ([]byte, *keymanager.H
 func TestIntegrationGenerateKeysEndToEnd(t *testing.T) {
 	// Wire up real FFI calls: WSD KCC for binding, KPS KCC (via KPS KOL) for KEM.
 	kpsSvc := kps.NewService()
-	srv, err := NewServer(kpsSvc, &realWorkloadService{}, "test.sock")
+	srv, err := NewServer(kpsSvc, &realWorkloadService{}, filepath.Join(t.TempDir(), "test.sock"))
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -92,7 +92,7 @@ func TestIntegrationGenerateKeysEndToEnd(t *testing.T) {
 
 func TestIntegrationGenerateKeysUniqueMappings(t *testing.T) {
 	kpsSvc := kps.NewService()
-	srv, err := NewServer(kpsSvc, &realWorkloadService{}, "test.sock")
+	srv, err := NewServer(kpsSvc, &realWorkloadService{}, filepath.Join(t.TempDir(), "test.sock"))
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}
@@ -213,7 +213,7 @@ func TestIntegrationDestroyKey(t *testing.T) {
 
 func TestIntegrationAutoDestroy(t *testing.T) {
 	kpsSvc := kps.NewService()
-	srv, err := NewServer(kpsSvc, &realWorkloadService{}, "test.sock")
+	srv, err := NewServer(kpsSvc, &realWorkloadService{}, filepath.Join(t.TempDir(), "test.sock"))
 	if err != nil {
 		t.Fatalf("failed to create server: %v", err)
 	}

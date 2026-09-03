@@ -15,7 +15,6 @@
 
 use std::env;
 use std::path::Path;
-use std::process::Command;
 
 // Keep in sync with the list in include/openssl/opensslconf.h
 const OSSL_CONF_DEFINES: &[&str] = &[
@@ -93,14 +92,6 @@ fn main() {
     // Locate the BoringSSL source relative to this cargo manifest
     // keymanager/third_party/bssl-sys -> keymanager/boringssl
     let bssl_source_dir = Path::new(&manifest_dir).join("../../boringssl");
-
-    // Auto-init git submodule if BoringSSL source is missing.
-    if !bssl_source_dir.join("CMakeLists.txt").exists() {
-        let _ = Command::new("git")
-            .args(["submodule", "update", "--init", "--recursive", "boringssl"])
-            .current_dir(Path::new(&manifest_dir).join("../.."))
-            .status();
-    }
 
     if !bssl_source_dir.join("CMakeLists.txt").exists() {
         panic!(
