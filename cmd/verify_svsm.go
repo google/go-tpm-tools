@@ -135,23 +135,22 @@ var verifySVSMCmd = &cobra.Command{
 			return fmt.Errorf("failed to read ek-pub: %w", err)
 		}
 
-		// rot, err := getRootOfTrust()
-		// if err != nil {
-		// 	return fmt.Errorf("failed to get root of trust: %w", err)
-		// }
+		rot, err := getRootOfTrust()
+		if err != nil {
+			return fmt.Errorf("failed to get root of trust: %w", err)
+		}
 		err = verifySEVSNPSVSMAttestation(verifySEVSNPSVSMOpts{
 			TEENonce:      teeNonce,
 			SevVerifyOpts: &verify.Options{},
 			SevValidateOpts: &validate.Options{
 				GuestPolicy: sabi.SnpPolicy{
 					SMT:   true,
-					Debug: true,
 				},
 			},
-			// EndorsementOpts: &tcbv.Options{
-			// 	RootsOfTrust: rot,
-			// 	Now:          time.Now(),
-			// },
+			EndorsementOpts: &tcbv.Options{
+				RootsOfTrust: rot,
+				Now:          time.Now(),
+			},
 			AKPub: akPub,
 			EKPub: ekpub,
 		}, svsmAttestation)
