@@ -561,26 +561,15 @@ func TestSVSMAttestationsV1Errors(t *testing.T) {
 			wantErrString: errVtpmServiceManifestEkDoesntMatchV1.Error(),
 		},
 		{
-			name: "Manifest version is not present",
+			name: "Malformed manifest (too short for v1 header)",
 			getConfigfs: func(_ *testing.T) configfsi.Client {
-				malformedManifest := []byte{0x01, 0x00} // Only 2 bytes, too short for 4-byte manifest version
+				malformedManifest := []byte{0x00, 0x00, 0x00, 0x01, 0x00, 0x00} // 6 bytes, too short for 8-byte header
 				h := sha512.New()
 				h.Write(snpNonce[:])
 				h.Write(malformedManifest)
 				return makeFakeConfigfs(h.Sum(nil), malformedManifest, 0, goodMeasurement[:])
 			},
-			wantErrString: "malformed service manifest: manifest version is not present",
-		},
-		{
-			name: "Manifest TPM2B_PUBLIC count is not present",
-			getConfigfs: func(_ *testing.T) configfsi.Client {
-				malformedManifest := []byte{0x00, 0x00, 0x00, 0x01, 0x00, 0x00} // 6 bytes, version present but < 8 bytes
-				h := sha512.New()
-				h.Write(snpNonce[:])
-				h.Write(malformedManifest)
-				return makeFakeConfigfs(h.Sum(nil), malformedManifest, 0, goodMeasurement[:])
-			},
-			wantErrString: "malformed service manifest: manifest TPM2B_PUBLIC count is not present",
+			wantErrString: "malformed service manifest: too short for v1 header",
 		},
 		{
 			name: "Malformed manifest (unsupported version in payload)",

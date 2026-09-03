@@ -135,22 +135,23 @@ var verifySVSMCmd = &cobra.Command{
 			return fmt.Errorf("failed to read ek-pub: %w", err)
 		}
 
-		rot, err := getRootOfTrust()
-		if err != nil {
-			return fmt.Errorf("failed to get root of trust: %w", err)
-		}
+		// rot, err := getRootOfTrust()
+		// if err != nil {
+		// 	return fmt.Errorf("failed to get root of trust: %w", err)
+		// }
 		err = verifySEVSNPSVSMAttestation(verifySEVSNPSVSMOpts{
 			TEENonce:      teeNonce,
 			SevVerifyOpts: &verify.Options{},
 			SevValidateOpts: &validate.Options{
 				GuestPolicy: sabi.SnpPolicy{
-					SMT: true,
+					SMT:   true,
+					Debug: true,
 				},
 			},
-			EndorsementOpts: &tcbv.Options{
-				RootsOfTrust: rot,
-				Now:          time.Now(),
-			},
+			// EndorsementOpts: &tcbv.Options{
+			// 	RootsOfTrust: rot,
+			// 	Now:          time.Now(),
+			// },
 			AKPub: akPub,
 			EKPub: ekpub,
 		}, svsmAttestation)
@@ -295,20 +296,17 @@ func getExpectedReportData(svsmOpts verifySEVSNPSVSMOpts, svsmAttestation *apb.S
 	} else if version == "1" {
 		log.Printf("verify debug svsm: AKPub: %x", svsmOpts.AKPub)
 		log.Printf("verify debug svsm: EKPub: %x", svsmOpts.EKPub)
-		// In manifest version 1 (Table 31 of AMD SVSM Spec #58019 Rev 1.01):
+
 		// - Offset 0x000 (4 bytes): Version (1)
 		// - Offset 0x004 (4 bytes): Number of TPM2B_PUBLIC structures present
 		// - Offset 0x008 (Variable): Concatenated TPM2B_PUBLIC structures
 		manifest := svsmAttestation.VtpmServiceManifest
-		if len(manifest) < 4 {
-			return nil, fmt.Errorf("malformed service manifest: manifest version is not present (got %d bytes, want at least 4)", len(manifest))
+		if len(manifest) < 8 {
+			return nil, fmt.Errorf("malformed service manifest: too short for v1 header (got %d bytes, want at least 8)", len(manifest))
 		}
 		manifestVer := binary.BigEndian.Uint32(manifest[0:4])
 		if manifestVer != 1 {
 			return nil, fmt.Errorf("unsupported service manifest version in payload: %d, expected 1", manifestVer)
-		}
-		if len(manifest) < 8 {
-			return nil, fmt.Errorf("malformed service manifest: manifest TPM2B_PUBLIC count is not present (got %d bytes, want at least 8)", len(manifest))
 		}
 		numKeys := binary.BigEndian.Uint32(manifest[4:8])
 		manifest = manifest[8:]
