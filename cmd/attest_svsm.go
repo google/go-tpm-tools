@@ -217,5 +217,8 @@ func getSVSMBlobs(configfs configfsi.Client, reportData [sabi.ReportDataSize]byt
 }
 
 func init() {
-	attestSVSMCmd.Flags().StringVar(&manifestVersion, "manifest-version", "0", "manifest version, only '', '0', '1' are valid")
+	attestSVSMCmd.Flags().StringVar(&manifestVersion, "manifest-version", "0",
+		"manifest version (valid values: '', '0', '1'). "+
+			"Version 0 (challenge-based) embeds only the EK pub and requires --key=AK. "+
+			"Version 1 (manifest-based) embeds both EK and AK pubs derived under the Endorsement Hierarchy and requires --key=gceAK.")
 }
