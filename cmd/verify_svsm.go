@@ -305,6 +305,9 @@ func getExpectedReportData(svsmOpts verifySEVSNPSVSMOpts, svsmAttestation *apb.S
 			return nil, fmt.Errorf("unsupported service manifest version in payload: %d, expected 1", manifestVer)
 		}
 		numKeys := binary.BigEndian.Uint32(manifest[4:8])
+		if numKeys < 2 {
+			return nil, fmt.Errorf("malformed service manifest: expected at least 2 keys, got %d", numKeys)
+		}
 		manifest = manifest[8:]
 
 		foundAK := false
