@@ -1,17 +1,23 @@
 package signaturediscovery
 
 import (
+	"bytes"
 	"context"
-	"fmt"
+	"encoding/json"
+	"errors"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/containerd/containerd"
-	"github.com/containerd/containerd/defaults"
-	"github.com/containerd/containerd/namespaces"
+	"github.com/containerd/containerd/content"
+	"github.com/containerd/containerd/content/local"
 	"github.com/containerd/containerd/remotes"
+	"github.com/containerd/platforms"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-tpm-tools/launcher/registryauth"
+	"github.com/google/go-tpm-tools/verifier/oci/cosign"
+	"github.com/opencontainers/go-digest"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
@@ -20,150 +26,369 @@ func TestFormatSigTag(t *testing.T) {
 		name       string
 		imageDesc  v1.Descriptor
 		wantSigTag string
-		wantPass   bool
 	}{
 		{
-			name:       "formatSigTag success",
-			imageDesc:  v1.Descriptor{Digest: "sha256:9ecc53c269509f63c69a266168e4a687c7eb8c0cfd753bd8bfcaa4f58a90876f"},
+			name: "sha256 digest formatted with sig suffix",
+			imageDesc: v1.Descriptor{
+				Digest: "sha256:9ecc53c269509f63c69a266168e4a687c7eb8c0cfd753bd8bfcaa4f58a90876f",
+			},
 			wantSigTag: "sha256-9ecc53c269509f63c69a266168e4a687c7eb8c0cfd753bd8bfcaa4f58a90876f.sig",
-			wantPass:   true,
 		},
 		{
-			name:       "formatSigTag failed with wrong image digest",
-			imageDesc:  v1.Descriptor{Digest: "sha256:9ecc53c269509f63c69a266168e4a687c7eb8c0cfd753bd8bfcaa4f58a90876f"},
+			name: "alternate sha256 digest formatted with sig suffix",
+			imageDesc: v1.Descriptor{
+				Digest: "sha256:18740b995b4eac1b5706392a96ff8c4f30cefac18772058a71449692f1581f0f",
+			},
 			wantSigTag: "sha256-18740b995b4eac1b5706392a96ff8c4f30cefac18772058a71449692f1581f0f.sig",
-			wantPass:   false,
-		},
-		{
-			name:       "formatSigTag failed with wrong tag format",
-			imageDesc:  v1.Descriptor{Digest: "sha256:9ecc53c269509f63c69a266168e4a687c7eb8c0cfd753bd8bfcaa4f58a90876f"},
-			wantSigTag: "sha256@9ecc53c269509f63c69a266168e4a687c7eb8c0cfd753bd8bfcaa4f58a90876f.sig",
-			wantPass:   false,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := formatSigTag(tc.imageDesc) == tc.wantSigTag; got != tc.wantPass {
-				t.Errorf("formatSigTag() failed for test case %v: got %v, wantPass %v", tc.name, got, tc.wantPass)
+			if got := formatSigTag(tc.imageDesc); got != tc.wantSigTag {
+				t.Errorf("formatSigTag(%v) = %q, want %q", tc.imageDesc.Digest, got, tc.wantSigTag)
 			}
 		})
 	}
 }
 
-func TestFetchSignedImageManifestDockerPublic(t *testing.T) {
-	ctx := namespaces.WithNamespace(context.Background(), "test")
-
-	targetRepository := "gcr.io/distroless/static"
-	originalImageDesc := v1.Descriptor{Digest: "sha256:9ecc53c269509f63c69a266168e4a687c7eb8c0cfd753bd8bfcaa4f58a90876f"}
-	client := createTestClient(t, originalImageDesc)
-	// testing image manifest fetching using a public docker repo url
-	if _, err := client.FetchSignedImageManifest(ctx, targetRepository); err != nil {
-		t.Errorf("failed to fetch signed image manifest from targetRepository [%s]: %v", targetRepository, err)
+func TestFetchSignedImageManifest_Success(t *testing.T) {
+	ctx := t.Context()
+	testImage, wantManifest := createTestImage(ctx, t, [][]byte{[]byte("layer-content")})
+	client := &Client{
+		OriginalImageDesc: v1.Descriptor{
+			Digest: "sha256:9ecc53c269509f63c69a266168e4a687c7eb8c0cfd753bd8bfcaa4f58a90876f",
+		},
+		imageFetcher: func(context.Context, string, ...containerd.RemoteOpt) (containerd.Image, error) {
+			return testImage, nil
+		},
 	}
-}
 
-func TestFetchImageSignaturesDockerPublic(t *testing.T) {
-	ctx := namespaces.WithNamespace(context.Background(), "test")
-	originalImageDesc := v1.Descriptor{Digest: "sha256:905a0f3b3d6d0fb37bfa448b9e78f833b73f0b19fc97fed821a09cf49e255df1"}
-	targetRepository := "us-docker.pkg.dev/vegas-codelab-5/cosign-test/base"
-
-	client := createTestClient(t, originalImageDesc)
-	signatures, err := client.FetchImageSignatures(ctx, targetRepository)
+	gotManifest, err := client.FetchSignedImageManifest(ctx, "gcr.io/test/repo")
 	if err != nil {
-		t.Errorf("failed to fetch image signatures from targetRepository [%s]: %v", targetRepository, err)
+		t.Fatalf("FetchSignedImageManifest failed: %v", err)
 	}
-	if len(signatures) == 0 {
-		t.Errorf("no image signatures found for the original image %v", originalImageDesc)
-	}
-	var gotBase64Sigs []string
-	for _, sig := range signatures {
-		if _, err := sig.Payload(); err != nil {
-			t.Errorf("Payload() failed: %v", err)
-		}
-		base64Sig, err := sig.Base64Encoded()
-		if err != nil {
-			t.Errorf("Base64Encoded() failed: %v", err)
-		}
-		gotBase64Sigs = append(gotBase64Sigs, base64Sig)
-	}
-
-	// Check signatures from the OCI image manifest at https://pantheon.corp.google.com/artifacts/docker/vegas-codelab-5/us/cosign-test/base/sha256:1febaa6ac3a5c095435d5276755fb8efcb7f029fefe85cd9bf3ec7de91685b9f;tab=manifest?project=vegas-codelab-5.
-	wantBase64Sigs := []string{"MEUCIQDgoiwMiVl1SAI1iePhH6Oeqztms3IwNtN+w0P92HTqQgIgKjJNcHEy0Ep4g4MH1Vd0gAHvbwH9ahD+jlnMP/rXSGE="}
-	if !cmp.Equal(gotBase64Sigs, wantBase64Sigs) {
-		t.Errorf("signatures did not return expected base64 signatures, got %v, want %v", gotBase64Sigs, wantBase64Sigs)
+	if diff := cmp.Diff(wantManifest, gotManifest); diff != "" {
+		t.Errorf("FetchSignedImageManifest mismatch (-want +got):\n%s", diff)
 	}
 }
 
-func TestPullSignatureImage(t *testing.T) {
-	imageFetcher := func(_ context.Context, _ string, opts ...containerd.RemoteOpt) (containerd.Image, error) {
-		if len(opts) >= 0 {
+func TestFetchSignedImageManifest_PullError(t *testing.T) {
+	ctx := t.Context()
+	wantErr := errors.New("pull failure")
+	client := &Client{
+		OriginalImageDesc: v1.Descriptor{
+			Digest: "sha256:9ecc53c269509f63c69a266168e4a687c7eb8c0cfd753bd8bfcaa4f58a90876f",
+		},
+		imageFetcher: func(context.Context, string, ...containerd.RemoteOpt) (containerd.Image, error) {
+			return nil, wantErr
+		},
+	}
+
+	if _, err := client.FetchSignedImageManifest(ctx, "gcr.io/test/repo"); !errors.Is(err, wantErr) {
+		t.Errorf("FetchSignedImageManifest got err %v, want %v", err, wantErr)
+	}
+}
+
+func TestFetchSignedImageManifest_CorruptManifest(t *testing.T) {
+	ctx := t.Context()
+	cs, err := local.NewStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("local.NewStore failed: %v", err)
+	}
+	corruptDesc := writeBlob(ctx, t, cs, []byte("not-json"), v1.MediaTypeImageManifest)
+	testImage := &fakeImage{
+		target: corruptDesc,
+		store:  cs,
+	}
+	client := &Client{
+		OriginalImageDesc: v1.Descriptor{
+			Digest: "sha256:9ecc53c269509f63c69a266168e4a687c7eb8c0cfd753bd8bfcaa4f58a90876f",
+		},
+		imageFetcher: func(context.Context, string, ...containerd.RemoteOpt) (containerd.Image, error) {
+			return testImage, nil
+		},
+	}
+
+	if _, err := client.FetchSignedImageManifest(ctx, "gcr.io/test/repo"); err == nil {
+		t.Error("FetchSignedImageManifest succeeded for corrupt manifest, want error")
+	}
+}
+
+func TestFetchImageSignatures_Success(t *testing.T) {
+	ctx := t.Context()
+	layerPayload := []byte("cosign-signing-payload")
+	testImage, _ := createTestImage(ctx, t, [][]byte{layerPayload})
+	client := &Client{
+		OriginalImageDesc: v1.Descriptor{
+			Digest: "sha256:9ecc53c269509f63c69a266168e4a687c7eb8c0cfd753bd8bfcaa4f58a90876f",
+		},
+		imageFetcher: func(context.Context, string, ...containerd.RemoteOpt) (containerd.Image, error) {
+			return testImage, nil
+		},
+	}
+
+	targetRepo := "gcr.io/test/repo"
+	signatures, err := client.FetchImageSignatures(ctx, targetRepo)
+	if err != nil {
+		t.Fatalf("FetchImageSignatures failed: %v", err)
+	}
+	if len(signatures) != 1 {
+		t.Fatalf("FetchImageSignatures returned %d signatures, want 1", len(signatures))
+	}
+
+	sig := signatures[0]
+	gotPayload, err := sig.Payload()
+	if err != nil {
+		t.Fatalf("sig.Payload() failed: %v", err)
+	}
+	if diff := cmp.Diff(layerPayload, gotPayload); diff != "" {
+		t.Errorf("sig.Payload() mismatch (-want +got):\n%s", diff)
+	}
+
+	gotBase64, err := sig.Base64Encoded()
+	if err != nil {
+		t.Fatalf("sig.Base64Encoded() failed: %v", err)
+	}
+	if gotBase64 != fakeBase64Sig {
+		t.Errorf("sig.Base64Encoded() = %q, want %q", gotBase64, fakeBase64Sig)
+	}
+}
+
+func TestFetchImageSignatures_PullError(t *testing.T) {
+	ctx := t.Context()
+	wantErr := errors.New("pull failure")
+	client := &Client{
+		OriginalImageDesc: v1.Descriptor{
+			Digest: "sha256:9ecc53c269509f63c69a266168e4a687c7eb8c0cfd753bd8bfcaa4f58a90876f",
+		},
+		imageFetcher: func(context.Context, string, ...containerd.RemoteOpt) (containerd.Image, error) {
+			return nil, wantErr
+		},
+	}
+
+	if _, err := client.FetchImageSignatures(ctx, "gcr.io/test/repo"); !errors.Is(err, wantErr) {
+		t.Errorf("FetchImageSignatures got err %v, want %v", err, wantErr)
+	}
+}
+
+func TestFetchImageSignatures_ManifestReadError(t *testing.T) {
+	ctx := t.Context()
+	cs, err := local.NewStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("local.NewStore failed: %v", err)
+	}
+	corruptDesc := writeBlob(ctx, t, cs, []byte("invalid-manifest"), v1.MediaTypeImageManifest)
+	testImage := &fakeImage{
+		target: corruptDesc,
+		store:  cs,
+	}
+	client := &Client{
+		OriginalImageDesc: v1.Descriptor{
+			Digest: "sha256:9ecc53c269509f63c69a266168e4a687c7eb8c0cfd753bd8bfcaa4f58a90876f",
+		},
+		imageFetcher: func(context.Context, string, ...containerd.RemoteOpt) (containerd.Image, error) {
+			return testImage, nil
+		},
+	}
+
+	if _, err := client.FetchImageSignatures(ctx, "gcr.io/test/repo"); err == nil {
+		t.Error("FetchImageSignatures succeeded for corrupt manifest, want error")
+	}
+}
+
+func TestFetchImageSignatures_LayerBlobMissing(t *testing.T) {
+	ctx := t.Context()
+	cs, err := local.NewStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("local.NewStore failed: %v", err)
+	}
+
+	missingLayerDesc := v1.Descriptor{
+		MediaType: v1.MediaTypeImageLayer,
+		Digest:    digest.FromString("missing-layer"),
+		Size:      100,
+	}
+	configDesc := writeBlob(ctx, t, cs, []byte("{}"), v1.MediaTypeImageConfig)
+	manifest := v1.Manifest{
+		MediaType: v1.MediaTypeImageManifest,
+		Config:    configDesc,
+		Layers: []v1.Descriptor{
+			missingLayerDesc,
+		},
+	}
+	manifest.SchemaVersion = 2
+	manifestBytes, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatalf("json.Marshal failed: %v", err)
+	}
+	manifestDesc := writeBlob(ctx, t, cs, manifestBytes, v1.MediaTypeImageManifest)
+
+	testImage := &fakeImage{
+		target: manifestDesc,
+		store:  cs,
+	}
+	client := &Client{
+		OriginalImageDesc: v1.Descriptor{
+			Digest: "sha256:9ecc53c269509f63c69a266168e4a687c7eb8c0cfd753bd8bfcaa4f58a90876f",
+		},
+		imageFetcher: func(context.Context, string, ...containerd.RemoteOpt) (containerd.Image, error) {
+			return testImage, nil
+		},
+	}
+
+	if _, err := client.FetchImageSignatures(ctx, "gcr.io/test/repo"); err == nil {
+		t.Error("FetchImageSignatures succeeded when layer blob is missing, want error")
+	}
+}
+
+func TestPullSignatureImage_WithResolver_Succeeds(t *testing.T) {
+	ctx := t.Context()
+	var passedOpts []containerd.RemoteOpt
+	client := &Client{
+		OriginalImageDesc: v1.Descriptor{
+			Digest: "sha256:905a0f3b3d6d0fb37bfa448b9e78f833b73f0b19fc97fed821a09cf49e255df1",
+		},
+		refreshResolver: func(context.Context) (remotes.Resolver, error) {
+			return registryauth.Resolver("valid access", http.DefaultClient), nil
+		},
+		imageFetcher: func(_ context.Context, _ string, opts ...containerd.RemoteOpt) (containerd.Image, error) {
+			passedOpts = opts
 			return &fakeImage{}, nil
-		}
-		return nil, fmt.Errorf("unable to fetch image")
-	}
-
-	testCases := []struct {
-		name            string
-		resolverFetcher remoteResolverFetcher
-		wantErr         bool
-	}{
-		{
-			name: "valid resolver",
-			resolverFetcher: func(_ context.Context) (remotes.Resolver, error) {
-				return registryauth.Resolver("valid access", http.DefaultClient), nil
-			},
-			wantErr: false,
-		},
-		{
-			name: "invalid resolver",
-			resolverFetcher: func(_ context.Context) (remotes.Resolver, error) {
-				return nil, fmt.Errorf("invalid resolver")
-			},
-			wantErr: true,
-		},
-		{
-			name:            "nil resolver",
-			resolverFetcher: nil,
-			wantErr:         false,
 		},
 	}
 
-	for _, tc := range testCases {
-		c := &Client{
-			OriginalImageDesc: v1.Descriptor{Digest: "sha256:905a0f3b3d6d0fb37bfa448b9e78f833b73f0b19fc97fed821a09cf49e255df1"},
-			refreshResolver:   tc.resolverFetcher,
-			imageFetcher:      imageFetcher,
-		}
-		_, err := c.pullSignatureImage(context.Background(), "fake image repo")
-		if gotErr := err != nil; gotErr != tc.wantErr {
-			t.Errorf("failed to refresh resolver when pulling container image, gotErr: %v, but wantErr: %v", gotErr, tc.wantErr)
-		}
+	img, err := client.pullSignatureImage(ctx, "fake image repo")
+	if err != nil {
+		t.Fatalf("pullSignatureImage failed: %v", err)
+	}
+	if img == nil {
+		t.Error("pullSignatureImage returned nil image, want non-nil")
+	}
+	if len(passedOpts) == 0 {
+		t.Error("pullSignatureImage did not pass remote options to image fetcher")
 	}
 }
+
+func TestPullSignatureImage_NilResolver_Succeeds(t *testing.T) {
+	ctx := t.Context()
+	var passedOpts []containerd.RemoteOpt
+	client := &Client{
+		OriginalImageDesc: v1.Descriptor{
+			Digest: "sha256:905a0f3b3d6d0fb37bfa448b9e78f833b73f0b19fc97fed821a09cf49e255df1",
+		},
+		refreshResolver: nil,
+		imageFetcher: func(_ context.Context, _ string, opts ...containerd.RemoteOpt) (containerd.Image, error) {
+			passedOpts = opts
+			return &fakeImage{}, nil
+		},
+	}
+
+	img, err := client.pullSignatureImage(ctx, "fake image repo")
+	if err != nil {
+		t.Fatalf("pullSignatureImage failed: %v", err)
+	}
+	if img == nil {
+		t.Error("pullSignatureImage returned nil image, want non-nil")
+	}
+	if len(passedOpts) != 0 {
+		t.Errorf("pullSignatureImage passed %d opts for nil resolver, want 0", len(passedOpts))
+	}
+}
+
+func TestPullSignatureImage_ResolverError_Fails(t *testing.T) {
+	ctx := t.Context()
+	wantErr := errors.New("invalid resolver")
+	client := &Client{
+		OriginalImageDesc: v1.Descriptor{
+			Digest: "sha256:905a0f3b3d6d0fb37bfa448b9e78f833b73f0b19fc97fed821a09cf49e255df1",
+		},
+		refreshResolver: func(context.Context) (remotes.Resolver, error) {
+			return nil, wantErr
+		},
+		imageFetcher: func(context.Context, string, ...containerd.RemoteOpt) (containerd.Image, error) {
+			return &fakeImage{}, nil
+		},
+	}
+
+	_, err := client.pullSignatureImage(ctx, "fake image repo")
+	if err == nil {
+		t.Fatal("pullSignatureImage succeeded with failing resolver, want error")
+	}
+	wantErrSubstr := "failed to refresh remote resolver before pulling container image: invalid resolver"
+	if !strings.Contains(err.Error(), wantErrSubstr) {
+		t.Errorf("pullSignatureImage error = %q, want substring %q", err.Error(), wantErrSubstr)
+	}
+}
+
+const fakeBase64Sig = "MEUCIQDgoiwMiVl1SAI1iePhH6Oeqztms3IwNtN+w0P92HTqQgIgKjJNcHEy0Ep4g4MH1Vd0gAHvbwH9ahD+jlnMP/rXSGE="
 
 type fakeImage struct {
 	containerd.Image
+	target v1.Descriptor
+	store  content.Store
 }
 
-func createTestClient(t *testing.T, originalImageDesc v1.Descriptor) *Client {
+func (f *fakeImage) Target() v1.Descriptor {
+	return f.target
+}
+
+func (f *fakeImage) ContentStore() content.Store {
+	return f.store
+}
+
+func (f *fakeImage) Platform() platforms.MatchComparer {
+	return platforms.All
+}
+
+func writeBlob(ctx context.Context, t *testing.T, cs content.Store, data []byte, mediaType string) v1.Descriptor {
 	t.Helper()
+	d := digest.FromBytes(data)
+	desc := v1.Descriptor{
+		MediaType: mediaType,
+		Digest:    d,
+		Size:      int64(len(data)),
+	}
+	if err := content.WriteBlob(ctx, cs, string(d), bytes.NewReader(data), desc); err != nil {
+		t.Fatalf("failed to write blob: %v", err)
+	}
+	return desc
+}
 
-	containerdClient, err := containerd.New(defaults.DefaultAddress)
+func createTestImage(ctx context.Context, t *testing.T, layers [][]byte) (containerd.Image, v1.Manifest) {
+	t.Helper()
+	cs, err := local.NewStore(t.TempDir())
 	if err != nil {
-		t.Skipf("test needs containerd daemon: %v", err)
+		t.Fatalf("failed to create local store: %v", err)
 	}
-	t.Cleanup(func() { containerdClient.Close() })
 
-	resolverFetcher := func(_ context.Context) (remotes.Resolver, error) {
-		return registryauth.Resolver("valid token", http.DefaultClient), nil
+	var layerDescs []v1.Descriptor
+	for _, layerData := range layers {
+		desc := writeBlob(ctx, t, cs, layerData, v1.MediaTypeImageLayer)
+		desc.Annotations = map[string]string{
+			cosign.CosignSigKey: fakeBase64Sig,
+		}
+		layerDescs = append(layerDescs, desc)
 	}
-	imageFetcher := func(ctx context.Context, imageRef string, opts ...containerd.RemoteOpt) (containerd.Image, error) {
-		return containerdClient.Pull(ctx, imageRef, opts...)
+
+	configDesc := writeBlob(ctx, t, cs, []byte("{}"), v1.MediaTypeImageConfig)
+
+	manifest := v1.Manifest{
+		MediaType: v1.MediaTypeImageManifest,
+		Config:    configDesc,
+		Layers:    layerDescs,
 	}
-	return &Client{
-		OriginalImageDesc: originalImageDesc,
-		refreshResolver:   resolverFetcher,
-		imageFetcher:      imageFetcher,
+	manifest.SchemaVersion = 2
+
+	manifestBytes, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatalf("failed to marshal manifest: %v", err)
 	}
+
+	manifestDesc := writeBlob(ctx, t, cs, manifestBytes, v1.MediaTypeImageManifest)
+
+	return &fakeImage{
+		target: manifestDesc,
+		store:  cs,
+	}, manifest
 }
