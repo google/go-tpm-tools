@@ -510,7 +510,7 @@ func (r *ContainerRunner) fetchAndWriteTokenWithRetry(ctx context.Context,
 						duration, err = r.refreshToken(ctx)
 						return err
 					},
-					retry(),
+					backoff.WithContext(retry(), ctx),
 					func(err error, t time.Duration) {
 						r.logger.Error(fmt.Sprintf("failed to refresh attestation service token at time %v: %v", t, err))
 					})
