@@ -5,6 +5,7 @@ import (
 	"path"
 	"regexp"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
@@ -483,24 +484,26 @@ func TestFetchExperiments(t *testing.T) {
 	})
 
 	t.Run("RetryFailure", func(t *testing.T) {
-		// Ensure the experiments file does not exist for this subtest
-		_ = os.Remove(experimentsFile)
+		synctest.Test(t, func(t *testing.T) {
+			// Ensure the experiments file does not exist for this subtest
+			_ = os.Remove(experimentsFile)
 
-		start := time.Now()
-		got := fetchExperiments(logging.SimpleLogger())
-		elapsed := time.Since(start)
+			start := time.Now()
+			got := fetchExperiments(logging.SimpleLogger())
+			elapsed := time.Since(start)
 
-		// Verify that the function actually retried.
-		// Exponential backoff starting at 2s up to 8s (with 3 retries),
-		// total elapsed time should be at least 6s (approx 14s without randomization).
-		if elapsed < 6*time.Second {
-			t.Errorf("expected fetchExperiments to retry and take >= 6s, took: %v", elapsed)
-		}
+			// Verify that the function actually retried.
+			// Exponential backoff starting at 2s up to 8s (with 3 retries),
+			// total elapsed time should be at least 6s (approx 14s without randomization).
+			if elapsed < 6*time.Second {
+				t.Errorf("expected fetchExperiments to retry and take >= 6s, took: %v", elapsed)
+			}
 
-		// Verify it returned the default experiments struct on failure
-		want := experiments.Experiments{}
-		if got != want {
-			t.Errorf("fetchExperiments() got %+v, want %+v", got, want)
-		}
+			// Verify it returned the default experiments struct on failure
+			want := experiments.Experiments{}
+			if got != want {
+				t.Errorf("fetchExperiments() got %+v, want %+v", got, want)
+			}
+		})
 	})
 }
