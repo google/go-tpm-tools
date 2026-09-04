@@ -559,16 +559,40 @@ func TestSVSMAttestationsV1Errors(t *testing.T) {
 	goodMeasurement := [48]byte{0}
 	copy(goodMeasurement[:], "good")
 
+	dummyKey := []byte{0x00, 0x01, 0x02, 0x03}
+
 	testcases := []struct {
 		name          string
 		getConfigfs   func(t *testing.T) configfsi.Client
 		wantErrString string
 	}{
 		{
+			name: "Fewer than 2 keys in manifest (0 keys)",
+			getConfigfs: func(_ *testing.T) configfsi.Client {
+				manifest := makeV1Manifest()
+				h := sha512.New()
+				h.Write(snpNonce[:])
+				h.Write(manifest)
+				return makeFakeConfigfs(h.Sum(nil), manifest, 0, goodMeasurement[:])
+			},
+			wantErrString: "malformed service manifest: expected at least 2 keys, got 0",
+		},
+		{
+			name: "Fewer than 2 keys in manifest (1 key)",
+			getConfigfs: func(_ *testing.T) configfsi.Client {
+				manifest := makeV1Manifest(akPubBytes)
+				h := sha512.New()
+				h.Write(snpNonce[:])
+				h.Write(manifest)
+				return makeFakeConfigfs(h.Sum(nil), manifest, 0, goodMeasurement[:])
+			},
+			wantErrString: "malformed service manifest: expected at least 2 keys, got 1",
+		},
+		{
 			name: "AK not in manifest",
 			getConfigfs: func(_ *testing.T) configfsi.Client {
-				// Manifest only contains EK, not AK
-				manifest := makeV1Manifest(ekBytes)
+				// Manifest only contains EK and dummyKey, not AK
+				manifest := makeV1Manifest(ekBytes, dummyKey)
 				h := sha512.New()
 				h.Write(snpNonce[:])
 				h.Write(manifest)
@@ -579,8 +603,8 @@ func TestSVSMAttestationsV1Errors(t *testing.T) {
 		{
 			name: "EK not in manifest",
 			getConfigfs: func(_ *testing.T) configfsi.Client {
-				// Manifest only contains AK, not EK
-				manifest := makeV1Manifest(akPubBytes)
+				// Manifest only contains AK and dummyKey, not EK
+				manifest := makeV1Manifest(akPubBytes, dummyKey)
 				h := sha512.New()
 				h.Write(snpNonce[:])
 				h.Write(manifest)
@@ -604,7 +628,7 @@ func TestSVSMAttestationsV1Errors(t *testing.T) {
 			getConfigfs: func(_ *testing.T) configfsi.Client {
 				var malformedManifest [8]byte
 				binary.BigEndian.PutUint32(malformedManifest[0:4], 2) // Version 2
-				binary.BigEndian.PutUint32(malformedManifest[4:8], 1)
+				binary.BigEndian.PutUint32(malformedManifest[4:8], 2)
 				h := sha512.New()
 				h.Write(snpNonce[:])
 				h.Write(malformedManifest[:])
@@ -633,14 +657,15 @@ func TestSVSMAttestationsV1Errors(t *testing.T) {
 		{
 			name: "Count does not match number of keys (more keys than count)",
 			getConfigfs: func(_ *testing.T) configfsi.Client {
-				// Header says count=1, but we provide 2 keys
+				// Header says count=2, but we provide 3 keys
 				var buf bytes.Buffer
 				var header [8]byte
 				binary.BigEndian.PutUint32(header[0:4], 1)
-				binary.BigEndian.PutUint32(header[4:8], 1)
+				binary.BigEndian.PutUint32(header[4:8], 2)
 				buf.Write(header[:])
 				buf.Write(wrap2B(akPubBytes))
 				buf.Write(wrap2B(ekBytes))
+				buf.Write(wrap2B(dummyKey))
 				manifest := buf.Bytes()
 				h := sha512.New()
 				h.Write(snpNonce[:])
@@ -654,7 +679,7 @@ func TestSVSMAttestationsV1Errors(t *testing.T) {
 			getConfigfs: func(_ *testing.T) configfsi.Client {
 				var malformedManifest [9]byte // 8-byte header + 1 byte (too short for 2-byte key size)
 				binary.BigEndian.PutUint32(malformedManifest[0:4], 1)
-				binary.BigEndian.PutUint32(malformedManifest[4:8], 1)
+				binary.BigEndian.PutUint32(malformedManifest[4:8], 2)
 				h := sha512.New()
 				h.Write(snpNonce[:])
 				h.Write(malformedManifest[:])
@@ -668,7 +693,7 @@ func TestSVSMAttestationsV1Errors(t *testing.T) {
 				// 8-byte header + 2-byte size (98) + 8 bytes data (keyLen = 100 > 10)
 				malformedManifest := make([]byte, 18)
 				binary.BigEndian.PutUint32(malformedManifest[0:4], 1)
-				binary.BigEndian.PutUint32(malformedManifest[4:8], 1)
+				binary.BigEndian.PutUint32(malformedManifest[4:8], 2)
 				binary.BigEndian.PutUint16(malformedManifest[8:10], 98)
 				h := sha512.New()
 				h.Write(snpNonce[:])
@@ -680,14 +705,14 @@ func TestSVSMAttestationsV1Errors(t *testing.T) {
 		{
 			name: "Malformed manifest (trailing bytes after count)",
 			getConfigfs: func(_ *testing.T) configfsi.Client {
-				// Header says count=1, but we provide 1 key + 5 trailing bytes
-				manifest := append(makeV1Manifest(akPubBytes), []byte{1, 2, 3, 4, 5}...)
+				// Header says count=2, but we provide 2 keys + 5 trailing bytes
+				manifest := append(makeV1Manifest(akPubBytes, ekBytes), []byte{1, 2, 3, 4, 5}...)
 				h := sha512.New()
 				h.Write(snpNonce[:])
 				h.Write(manifest)
 				return makeFakeConfigfs(h.Sum(nil), manifest, 0, goodMeasurement[:])
 			},
-			wantErrString: "malformed service manifest: count does not match number of keys: 5 trailing bytes after parsing 1 keys",
+			wantErrString: "malformed service manifest: count does not match number of keys: 5 trailing bytes after parsing 2 keys",
 		},
 	}
 	for _, tc := range testcases {
