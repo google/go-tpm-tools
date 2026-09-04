@@ -30,6 +30,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"time"
 
 	apb "github.com/google/go-tpm-tools/proto/attest"
 	"google.golang.org/protobuf/proto"
@@ -46,8 +47,6 @@ import (
 	"github.com/google/go-tpm/legacy/tpm2"
 	"github.com/spf13/cobra"
 )
-
-var errSvsmNeedsTeeNonce = errors.New("tee-nonce should be specified when using verify debug svsm")
 
 var (
 	certifiedAKBlobPath string
@@ -69,10 +68,10 @@ var verifySVSMCmd = &cobra.Command{
 	Short: `Debug the contents of an SevSnpSvsmAttestation. Currently only supported with sev-snp. For debugging purposes only.`,
 	RunE: func(*cobra.Command, []string) error {
 		if teeTechnology != SevSnp {
-			return errSvsmOnlySupportedWithSevSnp
+			return errors.New("--svsm is only supported with --tee-technology=sev-snp")
 		}
 		if len(teeNonce) == 0 {
-			return errSvsmNeedsTeeNonce
+			return errors.New("tee-nonce should be specified when using verify debug svsm")
 		}
 		if trustedEKPub == "" {
 			return fmt.Errorf("ek-pub is required")
@@ -220,14 +219,6 @@ type verifySEVSNPSVSMOpts struct {
 	EKPub []byte
 }
 
-var (
-	errVtpmServiceManifestEkDoesntMatch      = errors.New("service manifest does not match EK pub that was certified against")
-	errUnsupportedVTPMServiceManifestVersion = errors.New("only vtpm service manifest version 0 or 1 is supported")
-	errMismatchingAK                         = errors.New("certified AK does not match attested AK")
-	errVtpmServiceManifestAkDoesntMatch      = errors.New("service manifest does not contain the AK pub that was certified against")
-	errVtpmServiceManifestEkDoesntMatchV1    = errors.New("service manifest does not contain the EK pub")
-)
-
 // verifySEVSNPSVSMAttestation checks the SNP attestation report, values in it,
 // and bindings between the SVSM vTPM, SNP attestation report, and vTPM service
 // manifest. To verify the launch measurement in the attestation report, we
@@ -264,7 +255,7 @@ func verifySEVSNPSVSMAttestation(svsmOpts verifySEVSNPSVSMOpts, svsmAttestation 
 	}
 
 	if !bytes.Equal(svsmOpts.AKPub, svsmAttestation.Attestation.GetAkPub()) {
-		return errMismatchingAK
+		return errors.New("certified AK does not match attested AK")
 	}
 	return nil
 }
@@ -279,7 +270,7 @@ func getExpectedReportData(svsmOpts verifySEVSNPSVSMOpts, svsmAttestation *apb.S
 		version = "0"
 	}
 	if version != "0" && version != "1" {
-		return nil, errUnsupportedVTPMServiceManifestVersion
+		return nil, errors.New("only vtpm service manifest version 0 or 1 is supported")
 	}
 
 	log.Printf("Verifying vTPM service manifest version %s", version)
@@ -290,7 +281,7 @@ func getExpectedReportData(svsmOpts verifySEVSNPSVSMOpts, svsmAttestation *apb.S
 			log.Printf("verify debug svsm: EKPub len %d, Manifest len %d", len(svsmOpts.EKPub), len(svsmAttestation.VtpmServiceManifest))
 			log.Printf("verify debug svsm: EKPub: %x", svsmOpts.EKPub)
 			log.Printf("verify debug svsm: Manifest: %x", svsmAttestation.VtpmServiceManifest)
-			return nil, errVtpmServiceManifestEkDoesntMatch
+			return nil, errors.New("service manifest does not match EK pub that was certified against")
 		}
 	} else if version == "1" {
 		log.Printf("verify debug svsm: AKPub: %x", svsmOpts.AKPub)
@@ -343,10 +334,10 @@ func getExpectedReportData(svsmOpts verifySEVSNPSVSMOpts, svsmAttestation *apb.S
 			return nil, fmt.Errorf("malformed service manifest: count does not match number of keys: %d trailing bytes after parsing %d keys", len(manifest), numKeys)
 		}
 		if !foundAK {
-			return nil, errVtpmServiceManifestAkDoesntMatch
+			return nil, errors.New("service manifest does not contain the AK pub that was certified against")
 		}
 		if !foundEK {
-			return nil, errVtpmServiceManifestEkDoesntMatchV1
+			return nil, errors.New("service manifest does not contain the EK pub")
 		}
 	}
 

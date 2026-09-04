@@ -17,11 +17,6 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-var (
-	errSVSMOnlySupportsAK          = errors.New("SVSM currently only support --key=AK")
-	errSvsmOnlySupportedWithSevSnp = errors.New("--svsm is only supported with --tee-technology=sev-snp")
-)
-
 var manifestVersion string
 
 var attestSVSMCmd = &cobra.Command{
@@ -29,7 +24,7 @@ var attestSVSMCmd = &cobra.Command{
 	Short: `Produce a SevSnpSvsmAttestation that wraps the PCR attestation message.`,
 	RunE: func(*cobra.Command, []string) error {
 		if teeTechnology != SevSnp {
-			return errSvsmOnlySupportedWithSevSnp
+			return errors.New("--svsm is only supported with --tee-technology=sev-snp")
 		}
 		if manifestVersion != "" && manifestVersion != "0" && manifestVersion != "1" {
 			return fmt.Errorf("invalid manifest version %q, must be one of \"\", \"0\", \"1\"", manifestVersion)
@@ -41,15 +36,15 @@ var attestSVSMCmd = &cobra.Command{
 		defer rwc.Close()
 
 		var attestationKey *client.Key
+		algoToCreateAK, ok := attestationKeys[key]
+		if !ok {
+			return fmt.Errorf("%v is an invalid value for --key, only AK and gceAK are supported", key)
+		}
 		if (manifestVersion == "" || manifestVersion == "0") && key != "AK" {
 			return fmt.Errorf("manifest version 0 requires --key=AK")
 		}
 		if manifestVersion == "1" && key != "gceAK" {
 			return fmt.Errorf("manifest version 1 requires --key=gceAK")
-		}
-		algoToCreateAK, ok := attestationKeys[key]
-		if !ok {
-			return fmt.Errorf("%v is an invalid value for --key, only AK and gceAK are supported", key)
 		}
 		createFunc := algoToCreateAK[keyAlgo]
 		attestationKey, err = createFunc(rwc)
@@ -74,9 +69,6 @@ var attestSVSMCmd = &cobra.Command{
 			return fmt.Errorf("failed to collect attestation report : %v", err)
 		}
 
-		if teeTechnology != SevSnp {
-			return errSvsmOnlySupportedWithSevSnp
-		}
 		configfsClient, err := linuxtsm.MakeClient()
 		if err != nil {
 			return fmt.Errorf("failed to create linuxtsm configfs client: %w", err)
@@ -187,10 +179,6 @@ const (
 	defaultConfigfsTsmReportServiceManifestVersion = "0"
 )
 
-var (
-	errFailedToRetrieveCertificates = errors.New("failed to retrieve certificates")
-)
-
 // SVSM currently doesn't support certificates in its attestation report, so here we collect
 // the certificate chain by requesting a report without SVSM to get the cached certificates.
 func getCertificates(configfs configfsi.Client, reportData [sabi.ReportDataSize]byte) (*sevpb.CertificateChain, error) {
@@ -202,7 +190,7 @@ func getCertificates(configfs configfsi.Client, reportData [sabi.ReportDataSize]
 		},
 	})
 	if err != nil {
-		return nil, errFailedToRetrieveCertificates
+		return nil, errors.New("failed to retrieve certificates")
 	}
 	extended, err := sabi.ExtendedPlatformCertTable(resp.AuxBlob)
 	if err != nil {

@@ -294,13 +294,41 @@ func TestAttestSVSMFlags(t *testing.T) {
 			name:            "InvalidTeeTech",
 			teeTech:         "bad",
 			manifestVersion: "0",
-			wantErrorMsg:    errSvsmOnlySupportedWithSevSnp.Error(),
+			wantErrorMsg:    "--svsm is only supported with --tee-technology=sev-snp",
 		},
 		{
 			name:            "InvalidManifestVersion",
 			teeTech:         "sev-snp",
 			manifestVersion: "2",
 			wantErrorMsg:    "invalid manifest version",
+		},
+		{
+			name:            "InvalidKey",
+			teeTech:         "sev-snp",
+			manifestVersion: "0",
+			key:             "invalid",
+			wantErrorMsg:    "invalid is an invalid value for --key, only AK and gceAK are supported",
+		},
+		{
+			name:            "MismatchedKeyManifestVersion0",
+			teeTech:         "sev-snp",
+			manifestVersion: "0",
+			key:             "gceAK",
+			wantErrorMsg:    "manifest version 0 requires --key=AK",
+		},
+		{
+			name:            "MismatchedKeyManifestVersionEmpty",
+			teeTech:         "sev-snp",
+			manifestVersion: "",
+			key:             "gceAK",
+			wantErrorMsg:    "manifest version 0 requires --key=AK",
+		},
+		{
+			name:            "MismatchedKeyManifestVersion1",
+			teeTech:         "sev-snp",
+			manifestVersion: "1",
+			key:             "AK",
+			wantErrorMsg:    "manifest version 1 requires --key=gceAK",
 		},
 		{
 			name:            "ValidManifestVersionEmpty",
@@ -325,7 +353,7 @@ func TestAttestSVSMFlags(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			args := []string{"attest", "svsm", "--tee-technology", tc.teeTech, "--manifest-version", tc.manifestVersion}
+			args := []string{"attest", "svsm", "--tee-technology", tc.teeTech, "--manifest-version", tc.manifestVersion, "--nonce", "1234"}
 			if tc.key != "" {
 				args = append(args, "--key", tc.key)
 			}
@@ -546,7 +574,7 @@ func TestSVSMAttestationsV1Errors(t *testing.T) {
 				h.Write(manifest)
 				return makeFakeConfigfs(h.Sum(nil), manifest, 0, goodMeasurement[:])
 			},
-			wantErrString: errVtpmServiceManifestAkDoesntMatch.Error(),
+			wantErrString: "service manifest does not contain the AK pub that was certified against",
 		},
 		{
 			name: "EK not in manifest",
@@ -558,7 +586,7 @@ func TestSVSMAttestationsV1Errors(t *testing.T) {
 				h.Write(manifest)
 				return makeFakeConfigfs(h.Sum(nil), manifest, 0, goodMeasurement[:])
 			},
-			wantErrString: errVtpmServiceManifestEkDoesntMatchV1.Error(),
+			wantErrString: "service manifest does not contain the EK pub",
 		},
 		{
 			name: "Malformed manifest (too short for v1 header)",

@@ -265,11 +265,9 @@ func dataInput() io.Reader {
 	return file
 }
 
-var errMustSpecifyPath = errors.New("must specify path to read file")
-
 func readBytes(path string) ([]byte, error) {
 	if path == "" {
-		return nil, errMustSpecifyPath
+		return nil, errors.New("must specify path to read file")
 	}
 	file, err := os.Open(path)
 	if err != nil {
