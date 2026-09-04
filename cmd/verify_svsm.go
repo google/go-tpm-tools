@@ -14,10 +14,8 @@ It supports two manifest verification modes depending on the manifest version:
   - SVSM (VMPL0) derives the standard EK and AK on the fly under the Endorsement Hierarchy
     (using the vTPM's Endorsement Seed and fixed templates) and embeds their public areas in
     the manifest.
-  - The guest VM (VMPL1) also derives its AK (using --key=gceAK) under the Endorsement Hierarchy.
-  - For verification, --certified-ak-blob is omitted. Instead, specify --key=gceAK and --algo.
-    gotpm will open the TPM, load the Endorsement AK (gceAK), and compare its public key area
-    directly against the AK public key embedded inside SVSM's verified manifest to confirm they match.
+  - The guest VM (VMPL2) also derives its AK (using --key=gceAK) by querying the same template
+    SVSM saved to the Google NV index under the Endorsement Hierarchy.
 */
 package cmd
 
@@ -93,40 +91,9 @@ var verifySVSMCmd = &cobra.Command{
 			return fmt.Errorf("verifying manifest version 1 requires --key=gceAK")
 		}
 
-		var akPub []byte
-		if certifiedAKBlobPath != "" {
-			blob := &tpb.CertifiedBlob{}
-			err = readProtoFromPath(certifiedAKBlobPath, blob)
-			if err != nil {
-				return fmt.Errorf("failed to read certified ak blob: %w", err)
-			}
-			akPub = blob.PubArea
-		} else {
-			rwc, err := openTpm()
-			if err != nil {
-				return fmt.Errorf("failed to open TPM to retrieve AK: %w", err)
-			}
-			defer rwc.Close()
-
-			algoToCreateAK, ok := attestationKeys[key]
-			if !ok {
-				return fmt.Errorf("invalid --key value: %s", key)
-			}
-			createFunc, ok := algoToCreateAK[keyAlgo]
-			if !ok {
-				return fmt.Errorf("invalid --algo value for key %s", key)
-			}
-			attestationKey, err := createFunc(rwc)
-			if err != nil {
-				return fmt.Errorf("failed to load attestation key: %w", err)
-			}
-			defer attestationKey.Close()
-
-			pubAreaBytes, err := attestationKey.PublicArea().Encode()
-			if err != nil {
-				return fmt.Errorf("failed to encode AK public area: %w", err)
-			}
-			akPub = pubAreaBytes
+		akPub, err := loadTrustedAKPub()
+		if err != nil {
+			return err
 		}
 
 		ekpub, err := readBytes(trustedEKPub)
@@ -143,7 +110,7 @@ var verifySVSMCmd = &cobra.Command{
 			SevVerifyOpts: &verify.Options{},
 			SevValidateOpts: &validate.Options{
 				GuestPolicy: sabi.SnpPolicy{
-					SMT:   true,
+					SMT: true,
 				},
 			},
 			EndorsementOpts: &tcbv.Options{
@@ -181,6 +148,45 @@ var verifySVSMCmd = &cobra.Command{
 		}
 		return nil
 	},
+}
+
+// loadTrustedAKPub retrieves the trusted Attestation Key (AK) public area either by
+// reading it from a certified AK blob file (if --certified-ak-blob is provided) or by
+// opening the local TPM and loading the key based on --key and --algo.
+func loadTrustedAKPub() ([]byte, error) {
+	if certifiedAKBlobPath != "" {
+		blob := &tpb.CertifiedBlob{}
+		if err := readProtoFromPath(certifiedAKBlobPath, blob); err != nil {
+			return nil, fmt.Errorf("failed to read certified ak blob: %w", err)
+		}
+		return blob.PubArea, nil
+	}
+
+	rwc, err := openTpm()
+	if err != nil {
+		return nil, fmt.Errorf("failed to open TPM to retrieve AK: %w", err)
+	}
+	defer rwc.Close()
+
+	algoToCreateAK, ok := attestationKeys[key]
+	if !ok {
+		return nil, fmt.Errorf("invalid --key value: %s", key)
+	}
+	createFunc, ok := algoToCreateAK[keyAlgo]
+	if !ok {
+		return nil, fmt.Errorf("invalid --algo value for key %s", key)
+	}
+	attestationKey, err := createFunc(rwc)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load attestation key: %w", err)
+	}
+	defer attestationKey.Close()
+
+	pubAreaBytes, err := attestationKey.PublicArea().Encode()
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode AK public area: %w", err)
+	}
+	return pubAreaBytes, nil
 }
 
 func getRootOfTrust() (*x509.CertPool, error) {
