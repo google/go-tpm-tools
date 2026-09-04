@@ -8,6 +8,7 @@ substitutions:
 steps:
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CreateShieldedVMWithUnsupportedGPU
+  waitFor: ['-']
   entrypoint: 'bash'
   env:
   - 'BUILD_ID=$BUILD_ID'
@@ -22,6 +23,7 @@ steps:
         ]
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CreateSEVCVMWithNoGPU
+  waitFor: ['-']
   entrypoint: 'bash'
   env:
   - 'BUILD_ID=$BUILD_ID'
@@ -33,6 +35,7 @@ steps:
         ]
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CreateTDXCVMWithCGPUNoDriverInstallationFlag
+  waitFor: ['-']
   entrypoint: 'bash'
   env:
   - 'BUILD_ID=$BUILD_ID'
@@ -48,6 +51,7 @@ steps:
         ]
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CreateTDXCVMWithConfidentialGPU
+  waitFor: ['-']
   entrypoint: 'bash'
   env:
   - 'BUILD_ID=$BUILD_ID'
@@ -63,48 +67,61 @@ steps:
         ]
 - name: 'gcr.io/cloud-builders/gcloud'
   id: UnsupportedGpuWorkloadTest
+  waitFor: ['CreateShieldedVMWithUnsupportedGPU']
   entrypoint: 'bash'
   args: ['scripts/gpu/test_gpu_unsupported_gputype.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}-unsup', '${_ZONE}']
 - name: 'gcr.io/cloud-builders/gcloud'
   id: NoGpuWorkloadTest
+  waitFor: ['CreateSEVCVMWithNoGPU']
   entrypoint: 'bash'
   args: ['scripts/gpu/test_gpu_nogpu.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}-nogpu', '${_ZONE}']
 - name: 'gcr.io/cloud-builders/gcloud'
   id: NoGpuDriverInstallationTest
+  waitFor: ['CreateTDXCVMWithCGPUNoDriverInstallationFlag']
   entrypoint: 'bash'
   args: ['scripts/gpu/test_gpu_nodriver.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}-nodriver', 'us-east5-a']
 - name: 'gcr.io/cloud-builders/gcloud'
   id: ConfidentialGpuWorkloadTest
+  waitFor: ['CreateTDXCVMWithConfidentialGPU']
   entrypoint: 'bash'
   args: ['scripts/gpu/test_gpu_workload.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}-tdxcvm-cgpu', 'us-east5-a']
 - name: 'gcr.io/cloud-builders/gcloud'
   id: NoGpuDriverInstallationCleanUp
+  waitFor: ['NoGpuDriverInstallationTest']
   entrypoint: 'bash'
   env:
   - 'CLEANUP=$_CLEANUP'
   args: ['cleanup.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}-nodriver', 'us-east5-a']
 - name: 'gcr.io/cloud-builders/gcloud'
   id: UnsupportedGpuVmCleanUp
+  waitFor: ['UnsupportedGpuWorkloadTest']
   entrypoint: 'bash'
   env:
   - 'CLEANUP=$_CLEANUP'
   args: ['cleanup.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}-unsup', '${_ZONE}']
 - name: 'gcr.io/cloud-builders/gcloud'
   id: NoGpuVmCleanUp
+  waitFor: ['NoGpuWorkloadTest']
   entrypoint: 'bash'
   env:
   - 'CLEANUP=$_CLEANUP'
   args: ['cleanup.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}-nogpu', '${_ZONE}']
 - name: 'gcr.io/cloud-builders/gcloud'
   id: ConfidentialGpuVmCleanUp
+  waitFor: ['ConfidentialGpuWorkloadTest']
   entrypoint: 'bash'
   env:
   - 'CLEANUP=$_CLEANUP'
   args: ['cleanup.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}-tdxcvm-cgpu', 'us-east5-a']
 # Must come after cleanup.
 - name: 'gcr.io/cloud-builders/gcloud'
-  id: NoGpuVmCheckFailure
+  id: CheckFailure
   entrypoint: 'bash'
   env:
   - 'BUILD_ID=$BUILD_ID'
   args: ['check_failure.sh']
+  waitFor:
+  - UnsupportedGpuVmCleanUp
+  - NoGpuVmCleanUp
+  - NoGpuDriverInstallationCleanUp
+  - ConfidentialGpuVmCleanUp
