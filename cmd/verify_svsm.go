@@ -27,7 +27,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"log"
 	"time"
 
 	apb "github.com/google/go-tpm-tools/proto/attest"
@@ -278,21 +277,11 @@ func getExpectedReportData(svsmOpts verifySEVSNPSVSMOpts, svsmAttestation *apb.S
 	if version != "0" && version != "1" {
 		return nil, errors.New("only vtpm service manifest version 0 or 1 is supported")
 	}
-
-	log.Printf("Verifying vTPM service manifest version %s", version)
-	log.Printf("verify debug svsm: VtpmServiceManifest size: %d", len(svsmAttestation.GetVtpmServiceManifest()))
-
 	if version == "0" {
 		if !bytes.Equal(svsmOpts.EKPub, svsmAttestation.VtpmServiceManifest) {
-			log.Printf("verify debug svsm: EKPub len %d, Manifest len %d", len(svsmOpts.EKPub), len(svsmAttestation.VtpmServiceManifest))
-			log.Printf("verify debug svsm: EKPub: %x", svsmOpts.EKPub)
-			log.Printf("verify debug svsm: Manifest: %x", svsmAttestation.VtpmServiceManifest)
 			return nil, errors.New("service manifest does not match EK pub that was certified against")
 		}
 	} else if version == "1" {
-		log.Printf("verify debug svsm: AKPub: %x", svsmOpts.AKPub)
-		log.Printf("verify debug svsm: EKPub: %x", svsmOpts.EKPub)
-
 		// - Offset 0x000 (4 bytes): Version (1)
 		// - Offset 0x004 (4 bytes): Number of TPM2B_PUBLIC structures present
 		// - Offset 0x008 (Variable): Concatenated TPM2B_PUBLIC structures
@@ -330,7 +319,6 @@ func getExpectedReportData(svsmOpts verifySEVSNPSVSMOpts, svsmAttestation *apb.S
 			// svsmOpts.AKPub and svsmOpts.EKPub are in TPMT_PUBLIC format (no size prefix).
 			// To compare them, we strip the 2-byte size prefix from keyBytes to get the TPMT_PUBLIC part.
 			tpmtKeyBytes := keyBytes[2:]
-			log.Printf("verify debug svsm: Manifest parsed key: %x", tpmtKeyBytes)
 			if bytes.Equal(svsmOpts.AKPub, tpmtKeyBytes) {
 				foundAK = true
 			}
