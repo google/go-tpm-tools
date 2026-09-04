@@ -211,3 +211,10 @@ func TestVerifySocketPermissions(t *testing.T) {
 		})
 	}
 }
+
+func TestSetupBCSocketPermissions(_ *testing.T) {
+	logger := &fakeLogger{}
+	// Verify that setupBCSocketPermissions executes without panicking even when host sockets do not exist.
+	setupBCSocketPermissions(logger)
+}
+
