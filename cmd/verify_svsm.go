@@ -274,14 +274,12 @@ func getExpectedReportData(svsmOpts verifySEVSNPSVSMOpts, svsmAttestation *apb.S
 	if version == "" {
 		version = "0"
 	}
-	if version != "0" && version != "1" {
-		return nil, errors.New("only vtpm service manifest version 0 or 1 is supported")
-	}
-	if version == "0" {
+	switch version {
+	case "0":
 		if !bytes.Equal(svsmOpts.EKPub, svsmAttestation.VtpmServiceManifest) {
 			return nil, errors.New("service manifest does not match EK pub that was certified against")
 		}
-	} else if version == "1" {
+	case "1":
 		// - Offset 0x000 (4 bytes): Version (1)
 		// - Offset 0x004 (4 bytes): Number of TPM2B_PUBLIC structures present
 		// - Offset 0x008 (Variable): Concatenated TPM2B_PUBLIC structures
@@ -336,6 +334,8 @@ func getExpectedReportData(svsmOpts verifySEVSNPSVSMOpts, svsmAttestation *apb.S
 		if !foundEK {
 			return nil, errors.New("service manifest does not contain the EK pub")
 		}
+	default:
+		return nil, errors.New("only vtpm service manifest version 0 or 1 is supported")
 	}
 
 	h := sha512.New()
