@@ -17,17 +17,17 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-var (
-	errSVSMOnlySupportsAK          = errors.New("SVSM currently only support --key=AK")
-	errSvsmOnlySupportedWithSevSnp = errors.New("--svsm is only supported with --tee-technology=sev-snp")
-)
+var manifestVersion string
 
 var attestSVSMCmd = &cobra.Command{
 	Use:   "svsm",
 	Short: `Produce a SevSnpSvsmAttestation that wraps the PCR attestation message.`,
 	RunE: func(*cobra.Command, []string) error {
 		if teeTechnology != SevSnp {
-			return errSvsmOnlySupportedWithSevSnp
+			return errors.New("--svsm is only supported with --tee-technology=sev-snp")
+		}
+		if manifestVersion != "" && manifestVersion != "0" && manifestVersion != "1" {
+			return fmt.Errorf("invalid manifest version %q, must be one of \"\", \"0\", \"1\"", manifestVersion)
 		}
 		rwc, err := openTpm()
 		if err != nil {
@@ -36,12 +36,15 @@ var attestSVSMCmd = &cobra.Command{
 		defer rwc.Close()
 
 		var attestationKey *client.Key
-		if key != "AK" {
-			return errSVSMOnlySupportsAK
-		}
 		algoToCreateAK, ok := attestationKeys[key]
 		if !ok {
-			return fmt.Errorf("%v is an invalid value for --key, only AK is supported", key)
+			return fmt.Errorf("%v is an invalid value for --key, only AK and gceAK are supported", key)
+		}
+		if (manifestVersion == "" || manifestVersion == "0") && key != "AK" {
+			return fmt.Errorf("manifest version 0 requires --key=AK")
+		}
+		if manifestVersion == "1" && key != "gceAK" {
+			return fmt.Errorf("manifest version 1 requires --key=gceAK")
 		}
 		createFunc := algoToCreateAK[keyAlgo]
 		attestationKey, err = createFunc(rwc)
@@ -66,9 +69,6 @@ var attestSVSMCmd = &cobra.Command{
 			return fmt.Errorf("failed to collect attestation report : %v", err)
 		}
 
-		if teeTechnology != SevSnp {
-			return errSvsmOnlySupportedWithSevSnp
-		}
 		configfsClient, err := linuxtsm.MakeClient()
 		if err != nil {
 			return fmt.Errorf("failed to create linuxtsm configfs client: %w", err)
@@ -76,7 +76,7 @@ var attestSVSMCmd = &cobra.Command{
 		svsmAttestation, err := makeSEVSNPSVSMAttestation(attestation, &sevSNPSVSMAttestationOpts{
 			TEENonce:                   teeNonce,
 			CongfigfsClient:            configfsClient,
-			VTPMServiceManifestVersion: "0",
+			VTPMServiceManifestVersion: manifestVersion,
 			ExtractOptions:             extract.DefaultOptions(),
 		})
 		if err != nil {
@@ -142,10 +142,10 @@ func makeSEVSNPSVSMAttestation(attestation *apb.Attestation, opts *sevSNPSVSMAtt
 		CertificateChain: certs,
 	}
 	svsm.VtpmServiceManifest = tsmBlobs.ManifestBlob
-	if opts.VTPMServiceManifestVersion == "" {
+	svsm.VtpmServiceManifestVersion = opts.VTPMServiceManifestVersion
+	if svsm.VtpmServiceManifestVersion == "" {
 		svsm.VtpmServiceManifestVersion = defaultConfigfsTsmReportServiceManifestVersion
 	}
-	svsm.VtpmServiceManifestVersion = opts.VTPMServiceManifestVersion
 
 	if opts.ExtractOptions != nil {
 		svsm.LaunchEndorsement, err = getEndorsement(svsm.SevSnpAttestation, opts.ExtractOptions)
@@ -179,10 +179,6 @@ const (
 	defaultConfigfsTsmReportServiceManifestVersion = "0"
 )
 
-var (
-	errFailedToRetrieveCertificates = errors.New("failed to retrieve certificates")
-)
-
 // SVSM currently doesn't support certificates in its attestation report, so here we collect
 // the certificate chain by requesting a report without SVSM to get the cached certificates.
 func getCertificates(configfs configfsi.Client, reportData [sabi.ReportDataSize]byte) (*sevpb.CertificateChain, error) {
@@ -194,7 +190,7 @@ func getCertificates(configfs configfsi.Client, reportData [sabi.ReportDataSize]
 		},
 	})
 	if err != nil {
-		return nil, errFailedToRetrieveCertificates
+		return nil, errors.New("failed to retrieve certificates")
 	}
 	extended, err := sabi.ExtendedPlatformCertTable(resp.AuxBlob)
 	if err != nil {
@@ -218,4 +214,11 @@ func getSVSMBlobs(configfs configfsi.Client, reportData [sabi.ReportDataSize]byt
 		return nil, fmt.Errorf("could not get SVSM attestation report: %w", err)
 	}
 	return resp, nil
+}
+
+func init() {
+	attestSVSMCmd.Flags().StringVar(&manifestVersion, "manifest-version", "0",
+		"manifest version (valid values: '', '0', '1'). "+
+			"Version 0 (challenge-based) embeds only the EK pub and requires --key=AK. "+
+			"Version 1 (manifest-based) embeds both EK and AK pubs derived under the Endorsement Hierarchy and requires --key=gceAK.")
 }
