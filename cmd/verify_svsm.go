@@ -337,7 +337,6 @@ func getExpectedReportData(svsmOpts verifySEVSNPSVSMOpts, svsmAttestation *apb.S
 	default:
 		return nil, errors.New("only vtpm service manifest version 0 or 1 is supported")
 	}
-
 	h := sha512.New()
 	if len(svsmOpts.TEENonce) != sabi.ReportDataSize {
 		return nil, fmt.Errorf("the teeNonce size is %d. SEV-SNP device requires 64", len(svsmOpts.TEENonce))
