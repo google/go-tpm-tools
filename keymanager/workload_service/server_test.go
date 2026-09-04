@@ -17,9 +17,11 @@ import (
 
 	kpskcc "github.com/google/go-tpm-tools/keymanager/key_protection_service/key_custody_core"
 	api "github.com/google/go-tpm-tools/keymanager/workload_service/proto"
+	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/testing/protocmp"
 
 	kps "github.com/google/go-tpm-tools/keymanager/key_protection_service"
 	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
@@ -1315,153 +1317,147 @@ func TestHandleDecapsUnsupportedAlgorithm(t *testing.T) {
 }
 
 func TestProcessClaimsTimeout(t *testing.T) {
-	oldTimeout := ClaimsResponseTimeout
-	ClaimsResponseTimeout = 10 * time.Millisecond
-	defer func() { ClaimsResponseTimeout = oldTimeout }()
+	synctest.Test(t, func(t *testing.T) {
+		claimsChan := make(chan *ClaimsCall, 2)
+		srv := &Server{
+			keyProtectionService: &mockKeyProtectionService{},
+			workloadService:      &mockWorkloadService{},
+			kemToBindingMap:      make(map[uuid.UUID]uuid.UUID),
+			claimsChan:           claimsChan,
+		}
+		go srv.processClaims()
+		defer close(claimsChan)
 
-	srv := newTestServer(t, &mockKeyProtectionService{}, &mockWorkloadService{})
-	// processClaims is already started in newTestServer -> NewServer -> New
+		respChan1 := make(chan *ClaimsResult) // Unbuffered
+		req1 := &keymanager.GetKeyClaimsRequest{
+			KeyHandle: &keymanager.KeyHandle{
+				Handle: uuid.New().String(),
+			},
+			KeyType: keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING,
+		}
 
-	respChan1 := make(chan *ClaimsResult) // Unbuffered
-	req1 := &keymanager.GetKeyClaimsRequest{
-		KeyHandle: &keymanager.KeyHandle{Handle: uuid.New().String()},
-		KeyType:   keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING,
-	}
+		// 1. Send first request and DO NOT read from it.
+		// This should timeout based on ClaimsResponseTimeout.
+		srv.claimsChan <- &ClaimsCall{
+			Request:  req1,
+			RespChan: respChan1,
+		}
 
-	// 1. Send first request and DO NOT read from it.
-	// This should timeout in 10ms.
-	srv.claimsChan <- &ClaimsCall{Request: req1, RespChan: respChan1}
+		// 2. Send second request and read from it.
+		// We need a valid UUID in the map for this to succeed easily.
+		kemUUID := uuid.New()
+		bindingUUID := uuid.New()
+		srv.mu.Lock()
+		srv.kemToBindingMap[kemUUID] = bindingUUID
+		srv.mu.Unlock()
 
-	// 2. Send second request and read from it.
-	// We need a valid UUID in the map for this to succeed easily.
-	kemUUID := uuid.New()
-	bindingUUID := uuid.New()
-	srv.mu.Lock()
-	srv.kemToBindingMap[kemUUID] = bindingUUID
-	srv.mu.Unlock()
+		respChan2 := make(chan *ClaimsResult, 1)
+		req2 := &keymanager.GetKeyClaimsRequest{
+			KeyHandle: &keymanager.KeyHandle{
+				Handle: kemUUID.String(),
+			},
+			KeyType: keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING,
+		}
 
-	respChan2 := make(chan *ClaimsResult, 1)
-	req2 := &keymanager.GetKeyClaimsRequest{
-		KeyHandle: &keymanager.KeyHandle{Handle: kemUUID.String()},
-		KeyType:   keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING,
-	}
+		srv.claimsChan <- &ClaimsCall{
+			Request:  req2,
+			RespChan: respChan2,
+		}
 
-	// Give it a bit of time for the first one to timeout
-	time.Sleep(20 * time.Millisecond)
-
-	srv.claimsChan <- &ClaimsCall{Request: req2, RespChan: respChan2}
-
-	select {
-	case res := <-respChan2:
+		res := <-respChan2
 		if res.Err != nil {
 			t.Errorf("expected no error for second request, got: %v", res.Err)
 		}
-	case <-time.After(1 * time.Second):
-		t.Fatal("timed out waiting for second request response - background worker might be blocked!")
-	}
+	})
 }
 
-func TestGetClaimsFromChannel(t *testing.T) {
-	keyHandle := "test-uuid-123"
+func TestGetKeyClaims_Success(t *testing.T) {
+	claimsChan := make(chan *ClaimsCall, 1)
+	s := &Server{
+		claimsChan: claimsChan,
+	}
+
 	expectedReply := &keymanager.KeyClaims{
 		Claims: &keymanager.KeyClaims_VmBindingClaims{},
 	}
 
-	tests := []struct {
-		name           string
-		keyType        keymanager.KeyType
-		workerBehavior func(call *ClaimsCall)
-		ctxTimeout     time.Duration
-		wantErr        string
-	}{
-		{
-			name:    "success",
-			keyType: keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING,
-			workerBehavior: func(call *ClaimsCall) {
-				call.RespChan <- &ClaimsResult{
-					Reply: expectedReply,
-				}
-			},
-			ctxTimeout: 5 * time.Second,
-			wantErr:    "",
-		},
-		{
-			name:    "worker returns error",
-			keyType: keymanager.KeyType_KEY_TYPE_VM_PROTECTION_KEY,
-			workerBehavior: func(call *ClaimsCall) {
-				call.RespChan <- &ClaimsResult{
-					Err: errors.New("db connection failed"),
-				}
-			},
-			ctxTimeout: 5 * time.Second,
-			wantErr:    "worker error: db connection failed",
-		},
-		{
-			name:    "context already cancelled",
-			keyType: keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING,
-			workerBehavior: func(_ *ClaimsCall) {
-				// Worker won't even be reached if ctx is canceled early
-			},
-			ctxTimeout: -1, // Force immediate cancel
-			wantErr:    context.Canceled.Error(),
-		},
-		{
-			name:    "response timeout",
-			keyType: keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING,
-			workerBehavior: func(_ *ClaimsCall) {
-				// Simulate worker hanging by doing nothing
-			},
-			ctxTimeout: 10 * time.Second,
-			wantErr:    "timed out waiting for processClaims",
-		},
+	go func() {
+		call := <-claimsChan
+		call.RespChan <- &ClaimsResult{
+			Reply: expectedReply,
+		}
+	}()
+
+	result, err := s.GetKeyClaims(t.Context(), "test-uuid-123", keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING)
+	if err != nil {
+		t.Fatalf("GetKeyClaims() unexpected error: %v", err)
+	}
+	if diff := cmp.Diff(expectedReply, result, protocmp.Transform()); diff != "" {
+		t.Errorf("GetKeyClaims() mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestGetKeyClaims_WorkerError(t *testing.T) {
+	claimsChan := make(chan *ClaimsCall, 1)
+	s := &Server{
+		claimsChan: claimsChan,
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			synctest.Test(t, func(t *testing.T) {
-				claimsChan := make(chan *ClaimsCall, 1)
-				s := &Server{
-					claimsChan: claimsChan,
-				}
+	go func() {
+		call := <-claimsChan
+		call.RespChan <- &ClaimsResult{
+			Err: errors.New("db connection failed"),
+		}
+	}()
 
-				var ctx context.Context
-				var cancel context.CancelFunc
-				if tt.ctxTimeout < 0 {
-					ctx, cancel = context.WithCancel(t.Context())
-					cancel() // Pre-cancel
-				} else {
-					ctx, cancel = context.WithTimeout(t.Context(), tt.ctxTimeout)
-					defer cancel()
-				}
-
-				go func() {
-					select {
-					case call := <-claimsChan:
-						tt.workerBehavior(call)
-					case <-ctx.Done():
-						return
-					}
-				}()
-
-				result, err := s.GetKeyClaims(ctx, keyHandle, tt.keyType)
-
-				if tt.wantErr != "" {
-					if err == nil {
-						t.Fatalf("expected error containing %q, got nil", tt.wantErr)
-					}
-					if !strings.Contains(err.Error(), tt.wantErr) {
-						t.Errorf("expected error %q, got %q", tt.wantErr, err.Error())
-					}
-					return
-				}
-
-				if err != nil {
-					t.Fatalf("unexpected error: %v", err)
-				}
-				if result != expectedReply {
-					t.Errorf("result mismatch: expected %v, got %v", expectedReply, result)
-				}
-			})
-		})
+	_, err := s.GetKeyClaims(t.Context(), "test-uuid-123", keymanager.KeyType_KEY_TYPE_VM_PROTECTION_KEY)
+	if err == nil {
+		t.Fatal("GetKeyClaims() expected error, got nil")
 	}
+	if want := "worker error: db connection failed"; !strings.Contains(err.Error(), want) {
+		t.Errorf("GetKeyClaims() error = %q, want containing %q", err.Error(), want)
+	}
+}
+
+func TestGetKeyClaims_PreCanceledContext(t *testing.T) {
+	claimsChan := make(chan *ClaimsCall, 1)
+	s := &Server{
+		claimsChan: claimsChan,
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	_, err := s.GetKeyClaims(ctx, "test-uuid-123", keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING)
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("GetKeyClaims() error = %v, want %v", err, context.Canceled)
+	}
+}
+
+func TestGetKeyClaims_ResponseTimeout(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		claimsChan := make(chan *ClaimsCall, 1)
+		s := &Server{
+			claimsChan: claimsChan,
+		}
+
+		ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+		defer cancel()
+
+		go func() {
+			select {
+			case <-claimsChan:
+			case <-ctx.Done():
+				return
+			}
+		}()
+
+		_, err := s.GetKeyClaims(ctx, "test-uuid-123", keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING)
+		if err == nil {
+			t.Fatal("GetKeyClaims() expected error, got nil")
+		}
+		if want := "timed out waiting for processClaims"; !strings.Contains(err.Error(), want) {
+			t.Errorf("GetKeyClaims() error = %q, want containing %q", err.Error(), want)
+		}
+	})
 }
