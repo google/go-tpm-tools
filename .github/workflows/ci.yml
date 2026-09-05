@@ -76,10 +76,6 @@ jobs:
         run: go build -v ./... ./agent/... ./cmd/... ./keymanager/... ./verifier/...
       - name: Build launcher module
         run: go build -v -ldflags="-extldflags=-Wl,-z,lazy" ./launcher/...
-      - name: Run specific tests under root permission
-        run: |
-          GO_EXECUTABLE_PATH=$(which go)
-          sudo $GO_EXECUTABLE_PATH test -v -ldflags="-extldflags=-Wl,-z,lazy" -run "TestFetchImageSignaturesDockerPublic" ./launcher
       - name: Run all tests in launcher to capture potential data race
         run: go test -v -ldflags="-extldflags=-Wl,-z,lazy" -race ./launcher/...
       - name: Test all modules
@@ -106,10 +102,6 @@ jobs:
         run: go build -v ./... ./agent/... ./cmd/... ./verifier/...
       - name: Build launcher module
         run: go build -v -ldflags="-extldflags=-Wl,-z,lazy" ./launcher/...
-      - name: Run specific tests under root permission
-        run: |
-          GO_EXECUTABLE_PATH=$(which go)
-          sudo $GO_EXECUTABLE_PATH test -v -ldflags="-extldflags=-Wl,-z,lazy" -run "TestFetchImageSignaturesDockerPublic" ./launcher
       - name: Test modules
         run: go test -v ./... ./agent/... ./cmd/... ./verifier/... -skip='TestCacheConcurrentSetGet|TestHwAttestationPass|TestHardwareAttestationPass'
 
