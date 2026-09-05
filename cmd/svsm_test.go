@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"testing/synctest"
 
 	epb "github.com/google/gce-tcb-verifier/proto/endorsement"
 	"github.com/google/go-configfs-tsm/configfs/configfsi"
@@ -22,6 +23,10 @@ import (
 )
 
 func TestMakeSVSNPSVSMAttestation(t *testing.T) {
+	synctest.Test(t, testMakeSVSNPSVSMAttestation)
+}
+
+func testMakeSVSNPSVSMAttestation(t *testing.T) {
 	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
 	ak, err := client.AttestationKeyECC(rwc)
@@ -175,33 +180,35 @@ func TestSVSMAttestationsErrors(t *testing.T) {
 	}
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
-			svsmAttestation, err := makeSEVSNPSVSMAttestation(attestation, &sevSNPSVSMAttestationOpts{
-				TEENonce:                   snpNonce[:],
-				CongfigfsClient:            tc.getConfigfs(t),
-				VTPMServiceManifestVersion: "0",
+			synctest.Test(t, func(t *testing.T) {
+				svsmAttestation, err := makeSEVSNPSVSMAttestation(attestation, &sevSNPSVSMAttestationOpts{
+					TEENonce:                   snpNonce[:],
+					CongfigfsClient:            tc.getConfigfs(t),
+					VTPMServiceManifestVersion: "0",
+				})
+				if err != nil {
+					t.Fatalf("failed to make SVSM attestation: %v", err)
+				}
+
+				endorsement, err := makeEndorsement(goodMeasurement[:])
+				if err != nil {
+					t.Fatalf("failed to make endorsement: %v", err)
+				}
+				svsmAttestation.LaunchEndorsement = endorsement
+
+				err = verifySEVSNPSVSMAttestation(verifySEVSNPSVSMOpts{
+					TEENonce: snpNonce[:],
+					AKPub:    akPubBytes,
+					EKPub:    ekBytes,
+					SevValidateOpts: &validate.Options{GuestPolicy: sabi.SnpPolicy{
+						SMT:   true,
+						Debug: true,
+					}},
+				}, svsmAttestation)
+				if err == nil || !strings.Contains(err.Error(), tc.wantErrString) {
+					t.Errorf("got err: %v, want err containing: %q", err, tc.wantErrString)
+				}
 			})
-			if err != nil {
-				t.Fatalf("failed to make SVSM attestation: %v", err)
-			}
-
-			endorsement, err := makeEndorsement(goodMeasurement[:])
-			if err != nil {
-				t.Fatalf("failed to make endorsement: %v", err)
-			}
-			svsmAttestation.LaunchEndorsement = endorsement
-
-			err = verifySEVSNPSVSMAttestation(verifySEVSNPSVSMOpts{
-				TEENonce: snpNonce[:],
-				AKPub:    akPubBytes,
-				EKPub:    ekBytes,
-				SevValidateOpts: &validate.Options{GuestPolicy: sabi.SnpPolicy{
-					SMT:   true,
-					Debug: true,
-				}},
-			}, svsmAttestation)
-			if err == nil || !strings.Contains(err.Error(), tc.wantErrString) {
-				t.Errorf("got err: %v, want err containing: %q", err, tc.wantErrString)
-			}
 		})
 	}
 }
