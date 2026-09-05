@@ -16,6 +16,7 @@ import (
 	"runtime"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/GoogleCloudPlatform/confidential-space/server/extract"
@@ -431,8 +432,6 @@ func intMin(a, b int) int {
 }
 
 func TestFetchContainerImageSignatures_RetriesOnFailure(t *testing.T) {
-	ctx := context.Background()
-
 	testCases := []struct {
 		name      string
 		resultmap map[string][]returnVal
@@ -533,31 +532,34 @@ func TestFetchContainerImageSignatures_RetriesOnFailure(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			sdClient := NewFailingClient(tc.resultmap)
-			retryPolicy := func() backoff.BackOff {
-				b := backoff.NewExponentialBackOff()
-				return backoff.WithMaxRetries(b, 2)
-			}
+			synctest.Test(t, func(t *testing.T) {
+				ctx := t.Context()
+				sdClient := NewFailingClient(tc.resultmap)
+				retryPolicy := func() backoff.BackOff {
+					b := backoff.NewExponentialBackOff()
+					return backoff.WithMaxRetries(b, 2)
+				}
 
-			repos := []string{}
-			wantSigs := []oci.Signature{}
-			for k, v := range tc.resultmap {
-				repos = append(repos, k)
-				for _, result := range v {
-					if result.err == nil {
-						wantSigs = append(wantSigs, result.result...)
+				repos := []string{}
+				wantSigs := []oci.Signature{}
+				for k, v := range tc.resultmap {
+					repos = append(repos, k)
+					for _, result := range v {
+						if result.err == nil {
+							wantSigs = append(wantSigs, result.result...)
+						}
 					}
 				}
-			}
 
-			gotSigs := fetchContainerImageSignatures(ctx, sdClient, repos, retryPolicy, SimpleLogger())
+				gotSigs := fetchContainerImageSignatures(ctx, sdClient, repos, retryPolicy, SimpleLogger())
 
-			if len(gotSigs) != len(wantSigs) {
-				t.Errorf("fetchContainerImageSignatures did not return expected signatures for test case %s, got signatures length %d, but want %d", tc.name, len(gotSigs), len(wantSigs))
-			}
-			if !cmp.Equal(convertOCISignatureToBase64(t, gotSigs), convertOCISignatureToBase64(t, wantSigs)) {
-				t.Errorf("fetchContainerImageSignatures did not return expected signatures for test case %s, got signatures %v, but want %v", tc.name, gotSigs, wantSigs)
-			}
+				if len(gotSigs) != len(wantSigs) {
+					t.Errorf("fetchContainerImageSignatures did not return expected signatures for test case %s, got signatures length %d, but want %d", tc.name, len(gotSigs), len(wantSigs))
+				}
+				if !cmp.Equal(convertOCISignatureToBase64(t, gotSigs), convertOCISignatureToBase64(t, wantSigs)) {
+					t.Errorf("fetchContainerImageSignatures did not return expected signatures for test case %s, got signatures %v, but want %v", tc.name, gotSigs, wantSigs)
+				}
+			})
 		})
 	}
 }
