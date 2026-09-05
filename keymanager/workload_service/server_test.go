@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	kpskcc "github.com/google/go-tpm-tools/keymanager/key_protection_service/key_custody_core"
@@ -1377,7 +1378,9 @@ func TestGetClaimsFromChannel(t *testing.T) {
 			name:    "success",
 			keyType: keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING,
 			workerBehavior: func(call *ClaimsCall) {
-				call.RespChan <- &ClaimsResult{Reply: expectedReply}
+				call.RespChan <- &ClaimsResult{
+					Reply: expectedReply,
+				}
 			},
 			ctxTimeout: 5 * time.Second,
 			wantErr:    "",
@@ -1386,7 +1389,9 @@ func TestGetClaimsFromChannel(t *testing.T) {
 			name:    "worker returns error",
 			keyType: keymanager.KeyType_KEY_TYPE_VM_PROTECTION_KEY,
 			workerBehavior: func(call *ClaimsCall) {
-				call.RespChan <- &ClaimsResult{Err: errors.New("db connection failed")}
+				call.RespChan <- &ClaimsResult{
+					Err: errors.New("db connection failed"),
+				}
 			},
 			ctxTimeout: 5 * time.Second,
 			wantErr:    "worker error: db connection failed",
@@ -1406,53 +1411,57 @@ func TestGetClaimsFromChannel(t *testing.T) {
 			workerBehavior: func(_ *ClaimsCall) {
 				// Simulate worker hanging by doing nothing
 			},
-			ctxTimeout: 5 * time.Second,
+			ctxTimeout: 10 * time.Second,
 			wantErr:    "timed out waiting for processClaims",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			claimsChan := make(chan *ClaimsCall, 1)
-			s := &Server{claimsChan: claimsChan}
+			synctest.Test(t, func(t *testing.T) {
+				claimsChan := make(chan *ClaimsCall, 1)
+				s := &Server{
+					claimsChan: claimsChan,
+				}
 
-			var ctx context.Context
-			var cancel context.CancelFunc
-			if tt.ctxTimeout < 0 {
-				ctx, cancel = context.WithCancel(context.Background())
-				cancel() // Pre-cancel
-			} else {
-				ctx, cancel = context.WithTimeout(context.Background(), tt.ctxTimeout)
-				defer cancel()
-			}
+				var ctx context.Context
+				var cancel context.CancelFunc
+				if tt.ctxTimeout < 0 {
+					ctx, cancel = context.WithCancel(t.Context())
+					cancel() // Pre-cancel
+				} else {
+					ctx, cancel = context.WithTimeout(t.Context(), tt.ctxTimeout)
+					defer cancel()
+				}
 
-			go func() {
-				select {
-				case call := <-claimsChan:
-					tt.workerBehavior(call)
-				case <-ctx.Done():
+				go func() {
+					select {
+					case call := <-claimsChan:
+						tt.workerBehavior(call)
+					case <-ctx.Done():
+						return
+					}
+				}()
+
+				result, err := s.GetKeyClaims(ctx, keyHandle, tt.keyType)
+
+				if tt.wantErr != "" {
+					if err == nil {
+						t.Fatalf("expected error containing %q, got nil", tt.wantErr)
+					}
+					if !strings.Contains(err.Error(), tt.wantErr) {
+						t.Errorf("expected error %q, got %q", tt.wantErr, err.Error())
+					}
 					return
 				}
-			}()
 
-			result, err := s.GetKeyClaims(ctx, keyHandle, tt.keyType)
-
-			if tt.wantErr != "" {
-				if err == nil {
-					t.Fatalf("expected error containing %q, got nil", tt.wantErr)
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
 				}
-				if !strings.Contains(err.Error(), tt.wantErr) {
-					t.Errorf("expected error %q, got %q", tt.wantErr, err.Error())
+				if result != expectedReply {
+					t.Errorf("result mismatch: expected %v, got %v", expectedReply, result)
 				}
-				return
-			}
-
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if result != expectedReply {
-				t.Errorf("result mismatch: expected %v, got %v", expectedReply, result)
-			}
+			})
 		})
 	}
 }
