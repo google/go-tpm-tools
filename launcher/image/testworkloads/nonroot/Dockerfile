@@ -10,8 +10,8 @@ COPY workload.py /app/workload.py
 LABEL "tee.launch_policy.allow_env_override"="ALLOWED_OVERRIDE"
 LABEL "tee.launch_policy.allow_cmd_override"="true"
 LABEL "tee.launch_policy.log_redirect"="always"
-# This launch policy makes the continer run as non-root.
-LABEL "tee.launch_policy.nonroot_container"="true"
+# This launch policy restricts the container's running mode to only be nonroot.
+LABEL "tee.launch_policy.nonroot_container"="nonrootonly"
 
 # Run unbuffered Python to ensure instant logging
 ENTRYPOINT ["python3", "-u", "/app/workload.py"]

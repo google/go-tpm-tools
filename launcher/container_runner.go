@@ -47,7 +47,6 @@ import (
 type ContainerRunner struct {
 	container        containerd.Container
 	launchSpec       spec.LaunchSpec
-	launchPolicy     spec.LaunchPolicy
 	attestAgent      agent.AttestationAgent
 	logger           logging.Logger
 	deviceROTManager *device.ROTManager
@@ -187,13 +186,13 @@ func NewRunner(ctx context.Context, cfg *RunnerConfig) (*ContainerRunner, error)
 		)
 	}
 
-	specOpts, err := createOCISpecOpts(image, launchSpec, launchPolicy, envs, listFilesWithPrefix, logger)
+	specOpts, err := createOCISpecOpts(image, launchSpec, envs, listFilesWithPrefix, logger)
 	if err != nil {
 		return nil, err
 	}
 
 	conOpts := []containerd.NewContainerOpts{containerd.WithImage(image)}
-	if launchPolicy.NonrootContainer { // When a non-root container is used, we remap the snapshop with the non-root user.
+	if launchSpec.NonrootContainer { // When a non-root container is used, we remap the snapshop with the non-root user.
 		conOpts = append(conOpts, containerd.WithRemappedSnapshot(snapshotID, image, hostUIDBegin, hostGIDBegin))
 	} else {
 		conOpts = append(conOpts, containerd.WithNewSnapshot(snapshotID, image))
@@ -233,7 +232,7 @@ func NewRunner(ctx context.Context, cfg *RunnerConfig) (*ContainerRunner, error)
 	}
 
 	var cni gocni.CNI
-	if launchPolicy.NonrootContainer {
+	if launchSpec.NonrootContainer {
 		if cni, err = newCNI(); err != nil {
 			return nil, err
 		}
@@ -636,7 +635,7 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	}
 
 	var taskOpts []containerd.NewTaskOpts
-	if r.launchPolicy.NonrootContainer {
+	if r.launchSpec.NonrootContainer {
 		taskOpts = append(taskOpts, containerd.WithUIDOwner(hostUIDBegin), containerd.WithGIDOwner(hostGIDBegin))
 	}
 
@@ -664,7 +663,7 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		return fmt.Errorf("failed to get image config: %w", err)
 	}
 	var containerIP string
-	if r.launchPolicy.NonrootContainer {
+	if r.launchSpec.NonrootContainer {
 		containerIP, err = r.setupCNI(ctx, fmt.Sprintf(netnsPathFmt, task.Pid()))
 		if err != nil {
 			return err
@@ -892,15 +891,4 @@ func (r *ContainerRunner) setupCNI(ctx context.Context, netnsPath string) (strin
 	}
 	// Currently, we have only single network interface defined with a single IP address by `10-workload.conf`.
 	return rawResults[0].IPs[0].Address.IP.String(), nil
-}
-
-func verifySocketPermissions(socketPath string) error {
-	info, err := os.Stat(socketPath)
-	if err != nil {
-		return fmt.Errorf("failed to stat socket: %w", err)
-	}
-	if perm := info.Mode().Perm(); perm != 0777 {
-		return fmt.Errorf("socket %s has permissions %04o, want 0777", socketPath, perm)
-	}
-	return nil
 }

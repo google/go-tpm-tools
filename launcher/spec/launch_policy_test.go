@@ -564,6 +564,42 @@ func TestVerify(t *testing.T) {
 			},
 			true,
 		},
+		{
+			"non-root unrestriced with the root privilege",
+			LaunchPolicy{},
+			LaunchSpec{},
+			false,
+		},
+		{
+			"non-root unrestriced with the non-root privilege",
+			LaunchPolicy{
+				NonRootPolicy: Unrestricted,
+			},
+			LaunchSpec{
+				NonrootContainer: true,
+			},
+			false,
+		},
+		{
+			"non-root restricted with the non-root privilege",
+			LaunchPolicy{
+				NonRootPolicy: NonRootOnly,
+			},
+			LaunchSpec{
+				NonrootContainer: true,
+			},
+			false,
+		},
+		{
+			"non-root restricted with the root privilege",
+			LaunchPolicy{
+				NonRootPolicy: NonRootOnly,
+			},
+			LaunchSpec{
+				NonrootContainer: false,
+			},
+			true,
+		},
 	}
 	for _, testCase := range testCases {
 		t.Run(testCase.testName, func(t *testing.T) {

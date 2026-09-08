@@ -16,7 +16,7 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 )
 
-func createOCISpecOpts(image containerd.Image, launchSpec spec.LaunchSpec, launchPolicy spec.LaunchPolicy, envs []string, listFiles func(string, string) ([]string, error), logger logging.Logger) ([]oci.SpecOpts, error) {
+func createOCISpecOpts(image containerd.Image, launchSpec spec.LaunchSpec, envs []string, listFiles func(string, string) ([]string, error), logger logging.Logger) ([]oci.SpecOpts, error) {
 	var mounts []specs.Mount
 	for _, lsMnt := range launchSpec.Mounts {
 		mounts = append(mounts, lsMnt.SpecsMount())
@@ -52,7 +52,7 @@ func createOCISpecOpts(image containerd.Image, launchSpec spec.LaunchSpec, launc
 
 	// If we use non-root container, we enable both the user and network namespaces.
 	// Otherwise, we use host network without enabling the namespaces.
-	if launchPolicy.NonrootContainer {
+	if launchSpec.NonrootContainer {
 		specOpts = append(specOpts,
 			oci.WithUserNamespace(
 				[]specs.LinuxIDMapping{{ContainerID: 0, HostID: hostUIDBegin, Size: userNSSize}},

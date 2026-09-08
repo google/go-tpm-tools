@@ -21,7 +21,7 @@ type LaunchPolicy struct {
 	AllowedMountDestinations []string
 	DebugImageMonitoring     MonitoringType
 	HardenedImageMonitoring  MonitoringType
-	NonrootContainer         bool
+	NonRootPolicy            NonRootPolicy
 	PrivilegedCaps           bool
 	// keep-sorted end
 }
@@ -33,6 +33,27 @@ const (
 	always
 	never
 )
+
+// NonRootPolicy specifies the author's policy for running as non-root.
+type NonRootPolicy int
+
+const (
+	// Unrestricted specifies that a container may run as root or non-root.
+	Unrestricted NonRootPolicy = iota
+	// NonRootOnly specifies that a container must run as non-root (unprivileged user namespace).
+	NonRootOnly
+)
+
+func toNonRootPolicy(s string) (NonRootPolicy, error) {
+	switch strings.ToLower(s) {
+	case "unrestricted":
+		return Unrestricted, nil
+	case "nonrootonly":
+		return NonRootOnly, nil
+	default:
+		return 0, fmt.Errorf("invalid non-root policy %v", s)
+	}
+}
 
 // MonitoringType represents the possible health monitoring presets for the client.
 type MonitoringType int
@@ -117,7 +138,7 @@ const (
 	hardenedMonitoring = "tee.launch_policy.hardened_monitoring"
 	logRedirect        = "tee.launch_policy.log_redirect"
 	memoryMonitoring   = "tee.launch_policy.monitoring_memory_allow"
-	nonrootContainer   = "tee.launch_policy.nonroot_container"
+	nonRootPolicy      = "tee.launch_policy.nonroot_container"
 	// keep-sorted end
 )
 
@@ -239,9 +260,9 @@ func GetLaunchPolicy(imageLabels map[string]string, logger logging.Logger) (Laun
 		}
 	}
 
-	if v, ok := imageLabels[nonrootContainer]; ok {
-		if launchPolicy.NonrootContainer, err = strconv.ParseBool(v); err != nil {
-			return LaunchPolicy{}, fmt.Errorf("invalid image LABEL '%s' (not a boolean)", nonrootContainer)
+	if v, ok := imageLabels[nonRootPolicy]; ok {
+		if launchPolicy.NonRootPolicy, err = toNonRootPolicy(v); err != nil {
+			return LaunchPolicy{}, fmt.Errorf("invalid image LABEL '%s'", nonRootPolicy)
 		}
 	}
 	return launchPolicy, nil
@@ -310,6 +331,10 @@ func (p LaunchPolicy) Verify(ls LaunchSpec) error {
 
 	if ls.CgroupNamespace && !p.AllowCgroups {
 		return errors.New("cgroups usage is not allowed")
+	}
+
+	if p.NonRootPolicy == NonRootOnly && !ls.NonrootContainer {
+		return fmt.Errorf("non-root container mode must be enabled by setting launch spec %q to true", nonrootContainerKey)
 	}
 
 	return nil
