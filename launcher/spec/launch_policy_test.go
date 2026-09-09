@@ -565,13 +565,13 @@ func TestVerify(t *testing.T) {
 			true,
 		},
 		{
-			"non-root unrestriced with the root privilege",
+			"non-root unrestricted with the root privilege",
 			LaunchPolicy{},
 			LaunchSpec{},
 			false,
 		},
 		{
-			"non-root unrestriced with the non-root privilege",
+			"non-root unrestricted with the non-root privilege",
 			LaunchPolicy{
 				NonRootPolicy: Unrestricted,
 			},
