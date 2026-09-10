@@ -10,15 +10,14 @@ require (
 	github.com/GoogleCloudPlatform/confidential-space/server v0.0.0-20260706204617-c9f710ef3461
 	github.com/GoogleCloudPlatform/key-protection-module v0.0.0-20260604222613-9d1fbac80fd7
 	github.com/GoogleCloudPlatform/key-protection-module/keymanager/attestation_service v0.0.0-20260604222613-9d1fbac80fd7
-	github.com/NVIDIA/go-nvml v0.13.0-1
 	github.com/cenkalti/backoff/v4 v4.3.0
-	github.com/confidentsecurity/go-nvtrust v0.2.2
 	github.com/containerd/containerd v1.7.23
 	github.com/containerd/containerd/v2 v2.3.2
 	github.com/coreos/go-systemd/v22 v22.7.0
 	github.com/golang-jwt/jwt/v4 v4.5.2
 	github.com/google/go-cmp v0.7.0
 	github.com/google/go-eventlog v0.0.3-0.20260617163629-883cc5652c69
+	github.com/google/go-nvattest-tools v0.0.0-20260714083801-bf44c37ba22c
 	github.com/google/go-tpm v0.9.8
 	github.com/google/go-tpm-tools v0.4.9-0.20260601203525-bc0d334a930f
 	github.com/google/go-tpm-tools/agent v0.0.0-20260601203525-bc0d334a930f
@@ -47,6 +46,7 @@ require (
 	github.com/AdamKorcz/go-118-fuzz-build v0.0.0-20231105174938-2b5cbb29f3e2 // indirect
 	github.com/Microsoft/go-winio v0.6.3-0.20251027160822-ad3df93bed29 // indirect
 	github.com/Microsoft/hcsshim v0.15.0-rc.1 // indirect
+	github.com/NVIDIA/go-nvml v0.13.0-1 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/containerd/cgroups/v3 v3.1.3 // indirect
