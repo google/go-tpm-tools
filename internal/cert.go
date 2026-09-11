@@ -86,6 +86,7 @@ func fetchIssuingCertificate(client *http.Client, cert *x509.Certificate) (*x509
 
 		if resp.StatusCode != http.StatusOK {
 			lastErr = fmt.Errorf("certificate retrieval from %s returned non-OK status: %v", url, resp.StatusCode)
+			resp.Body.Close()
 			continue
 		}
 		certBytes, err := io.ReadAll(resp.Body)
