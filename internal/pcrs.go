@@ -7,24 +7,12 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
-	"sort"
+	"slices"
 
 	pb "github.com/google/go-tpm-tools/proto/tpm"
 	"github.com/google/go-tpm/legacy/tpm2"
 	"github.com/google/go-tpm/tpmutil"
 )
-
-const minPCRIndex = uint32(0)
-
-func maxPCRIndex(p *pb.PCRs) uint32 {
-	high := minPCRIndex
-	for idx := range p.GetPcrs() {
-		if idx > high {
-			high = idx
-		}
-	}
-	return high
-}
 
 // FormatPCRs writes a multiline representation of the PCR values to w.
 func FormatPCRs(w io.Writer, p *pb.PCRs) error {
@@ -35,7 +23,7 @@ func FormatPCRs(w io.Writer, p *pb.PCRs) error {
 	for idx := range p.GetPcrs() {
 		keys = append(keys, idx)
 	}
-	sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
+	slices.Sort(keys)
 	for _, idx := range keys {
 		val := p.GetPcrs()[idx]
 		if _, err := fmt.Fprintf(w, "  %2d: 0x%X\n", idx, val); err != nil {
@@ -128,6 +116,7 @@ func encodePCRSelection(sel tpm2.PCRSelection) []byte {
 	// Encode pcrSelect bitmask
 	pcrBits := make([]byte, 3)
 	for _, pcr := range sel.PCRs {
+		// PCR values are expected to be in the range 0-23, skip any out of range values.
 		if pcr < 0 || pcr >= 24 {
 			continue
 		}
