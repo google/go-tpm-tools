@@ -231,7 +231,7 @@ func createBCAgent(principalFetcher principalIDTokenFetcher, sigsFetcher Signatu
 		return nil, fmt.Errorf("running in BC mode but TDX not supported")
 	}
 
-	hostRoT, err := NewHostServiceRoT()
+	hostRoT, err := newHostServiceRoT()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create host service RoT: %w", err)
 	}
@@ -687,7 +687,7 @@ type hostServiceRoT struct {
 	conn   *grpc.ClientConn
 }
 
-func NewHostServiceRoT() (*hostServiceRoT, error) {
+func newHostServiceRoT() (*hostServiceRoT, error) {
 	conn, err := grpc.NewClient("passthrough:///",
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithContextDialer(func(_ context.Context, _ string) (net.Conn, error) {
@@ -729,8 +729,8 @@ func (h *hostServiceRoT) Extend(event gecel.Content) error {
 }
 
 func (h *hostServiceRoT) GetCEL() gecel.CEL                                 { return nil }
-func (h *hostServiceRoT) Attest(nonce []byte) (any, error)                { return nil, nil }
-func (h *hostServiceRoT) ComputeNonce(challenge, extraData []byte) []byte { return nil }
+func (h *hostServiceRoT) Attest(_ []byte) (any, error)                { return nil, nil }
+func (h *hostServiceRoT) ComputeNonce(_, _ []byte) []byte { return nil }
 func (h *hostServiceRoT) Close() error {
 	if h.conn == nil {
 		return nil
