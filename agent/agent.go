@@ -703,7 +703,7 @@ func NewHostServiceRoT() (*hostServiceRoT, error) {
 	}, nil
 }
 
-func (h *hostServiceRoT) Extend(event cel.Content) error {
+func (h *hostServiceRoT) Extend(event gecel.Content) error {
 	tlv, err := event.TLV()
 	if err != nil {
 		return fmt.Errorf("failed to format TLV: %w", err)
@@ -728,7 +728,7 @@ func (h *hostServiceRoT) Extend(event cel.Content) error {
 	return nil
 }
 
-func (h *hostServiceRoT) GetCEL() cel.CEL                                 { return nil }
+func (h *hostServiceRoT) GetCEL() gecel.CEL                                 { return nil }
 func (h *hostServiceRoT) Attest(nonce []byte) (any, error)                { return nil, nil }
 func (h *hostServiceRoT) ComputeNonce(challenge, extraData []byte) []byte { return nil }
 func (h *hostServiceRoT) Close() error {
