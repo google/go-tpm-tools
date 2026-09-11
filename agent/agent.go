@@ -61,7 +61,8 @@ type SignatureFetcher interface {
 }
 
 const (
-	audienceSTS = "https://sts.googleapis.com"
+	audienceSTS     = "https://sts.googleapis.com"
+	hostServicePort = 600613
 )
 
 type principalIDTokenFetcher func(audience string) ([][]byte, error)
@@ -135,6 +136,7 @@ type agent struct {
 
 type bcAgent struct {
 	*agent
+	hostRoT *hostServiceRoT
 }
 
 // CreateAttestationAgent returns an agent capable of performing remote
@@ -229,8 +231,14 @@ func createBCAgent(principalFetcher principalIDTokenFetcher, sigsFetcher Signatu
 		return nil, fmt.Errorf("running in BC mode but TDX not supported")
 	}
 
+	hostRoT, err := NewHostServiceRoT()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create host service RoT: %w", err)
+	}
+	baseAgent.measuredRots = append(baseAgent.measuredRots, hostRoT)
+
 	baseAgent.deviceROTManager = deviceROTManager
-	return &bcAgent{agent: baseAgent}, nil
+	return &bcAgent{agent: baseAgent, hostRoT: hostRoT}, nil
 }
 
 func (a *agent) addTDXAttestRoot() (bool, error) {
@@ -257,6 +265,11 @@ func (a *agent) addTDXAttestRoot() (bool, error) {
 func (a *agent) Close() error {
 	if a.fetchedAK != nil {
 		a.fetchedAK.Close()
+	}
+	for _, root := range a.measuredRots {
+		if closer, ok := root.(io.Closer); ok {
+			closer.Close()
+		}
 	}
 	return nil
 }
@@ -401,18 +414,11 @@ func (a *agent) AttestHost(_ context.Context, _ []byte) ([]byte, error) {
 
 // AttestHost fetches the host attestation from the host service via VSOCK.
 func (a *bcAgent) AttestHost(ctx context.Context, challenge []byte) ([]byte, error) {
-	const hostServicePort = 600613
-	// Connect to host service using gRPC over VSOCK
-	grpcConn, err := grpc.NewClient("passthrough:///", grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithContextDialer(func(_ context.Context, _ string) (net.Conn, error) {
-		return vsock.Dial(2, hostServicePort, nil)
-	}))
-	if err != nil {
-		return nil, fmt.Errorf("failed to dial host service: %w", err)
+	if a.hostRoT == nil {
+		return nil, fmt.Errorf("host service RoT not initialized")
 	}
-	defer grpcConn.Close()
 
-	client := hostservicepb.NewHostServiceClient(grpcConn)
-	resp, err := client.GetHostAttestation(ctx, &hostservicepb.GetHostAttestationRequest{
+	resp, err := a.hostRoT.client.GetHostAttestation(ctx, &hostservicepb.GetHostAttestationRequest{
 		Challenge: challenge,
 	})
 	if err != nil {
@@ -674,6 +680,62 @@ func (t *tdxAttestRoot) ComputeNonce(challenge []byte, extraData []byte) []byte 
 	challengeDigest := sha512.Sum512(challengeData)
 	finalNonce := sha512.Sum512(append([]byte(labels.WorkloadAttestation), challengeDigest[:]...))
 	return finalNonce[:]
+}
+
+type hostServiceRoT struct {
+	client hostservicepb.HostServiceClient
+	conn   *grpc.ClientConn
+}
+
+func NewHostServiceRoT() (*hostServiceRoT, error) {
+	conn, err := grpc.NewClient("passthrough:///",
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithContextDialer(func(_ context.Context, _ string) (net.Conn, error) {
+			return vsock.Dial(2, hostServicePort, nil)
+		}),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to dial hostservice over vsock: %w", err)
+	}
+	return &hostServiceRoT{
+		conn:   conn,
+		client: hostservicepb.NewHostServiceClient(conn),
+	}, nil
+}
+
+func (h *hostServiceRoT) Extend(event cel.Content) error {
+	tlv, err := event.TLV()
+	if err != nil {
+		return fmt.Errorf("failed to format TLV: %w", err)
+	}
+	tlvBytes, err := tlv.MarshalBinary()
+	if err != nil {
+		return fmt.Errorf("failed to marshal TLV binary: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	resp, err := h.client.RecordWorkloadEvent(ctx, &hostservicepb.RecordWorkloadEventRequest{
+		CosEvent: tlvBytes,
+	})
+	if err != nil {
+		return fmt.Errorf("hostservice RecordWorkloadEvent failed: %w", err)
+	}
+	if !resp.GetSuccess() {
+		return fmt.Errorf("hostservice reported failure extending event")
+	}
+	return nil
+}
+
+func (h *hostServiceRoT) GetCEL() cel.CEL                                 { return nil }
+func (h *hostServiceRoT) Attest(nonce []byte) (any, error)                { return nil, nil }
+func (h *hostServiceRoT) ComputeNonce(challenge, extraData []byte) []byte { return nil }
+func (h *hostServiceRoT) Close() error {
+	if h.conn == nil {
+		return nil
+	}
+	return h.conn.Close()
 }
 
 // Refresh refreshes the internal state of the attestation agent.
