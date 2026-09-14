@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -20,6 +21,7 @@ import (
 	"github.com/google/go-sev-guest/validate"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal/test"
+	apb "github.com/google/go-tpm-tools/proto/attest"
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
 )
@@ -608,18 +610,6 @@ func TestSVSMAttestationsV1Errors(t *testing.T) {
 			wantErrString: "service manifest does not contain the AK pub that was certified against",
 		},
 		{
-			name: "EK not in manifest",
-			getConfigfs: func(_ *testing.T) configfsi.Client {
-				// Manifest only contains AK and dummyKey, not EK
-				manifest := makeV1Manifest(akPubBytes, dummyKey)
-				h := sha512.New()
-				h.Write(snpNonce[:])
-				h.Write(manifest)
-				return makeFakeConfigfs(h.Sum(nil), manifest, 0, goodMeasurement[:])
-			},
-			wantErrString: "service manifest does not contain the EK pub",
-		},
-		{
 			name: "Malformed manifest (too short for v1 header)",
 			getConfigfs: func(_ *testing.T) configfsi.Client {
 				malformedManifest := []byte{0x00, 0x00, 0x00, 0x01, 0x00, 0x00} // 6 bytes, too short for 8-byte header
@@ -750,6 +740,220 @@ func TestSVSMAttestationsV1Errors(t *testing.T) {
 			}, svsmAttestation)
 			if err == nil || !strings.Contains(err.Error(), tc.wantErrString) {
 				t.Errorf("got err: %v, want err containing: %q", err, tc.wantErrString)
+			}
+		})
+	}
+}
+
+// TestVerifySVSMAttestationV1AKFromAttestation covers the v1 path, where the AK is
+// taken from the attestation itself and no EK is supplied. This is sound because the
+// manifest is hashed into the SNP report's REPORT_DATA, so manifest membership still
+// binds the AK to the vTPM.
+func TestVerifySVSMAttestationV1AKFromAttestation(t *testing.T) {
+	rwc := test.GetTPM(t)
+	defer client.CheckedClose(t, rwc)
+	ak, err := client.AttestationKeyECC(rwc)
+	if err != nil {
+		t.Fatalf("failed to create ak: %v", err)
+	}
+	defer ak.Close()
+	akPubBytes, err := ak.PublicArea().Encode()
+	if err != nil {
+		t.Fatalf("failed to encode ak pub: %v", err)
+	}
+
+	var nonce = [16]byte{0}
+	attestation, err := ak.Attest(client.AttestOpts{
+		SkipTeeAttestation: true,
+		Nonce:              nonce[:],
+	})
+	if err != nil {
+		t.Fatalf("failed to create attestation: %v", err)
+	}
+
+	ek, err := client.EndorsementKeyRSA(rwc)
+	if err != nil {
+		t.Fatalf("failed to get EK: %v", err)
+	}
+	defer ek.Close()
+	ekBytes, err := ek.PublicArea().Encode()
+	if err != nil {
+		t.Fatalf("failed to encode EK pub: %v", err)
+	}
+
+	dummyKey := []byte{0x00, 0x01, 0x02, 0x03}
+	measurement := [48]byte{0}
+
+	testcases := []struct {
+		name string
+		// keys placed in the v1 manifest that SVSM commits to via REPORT_DATA.
+		manifestKeys [][]byte
+		// wantErrString is empty when verification is expected to succeed.
+		wantErrString string
+	}{
+		{
+			name:         "AK and EK in manifest",
+			manifestKeys: [][]byte{akPubBytes, ekBytes},
+		},
+		{
+			// Omitting the EK must not weaken the AK binding.
+			name:          "AK not in manifest",
+			manifestKeys:  [][]byte{ekBytes, dummyKey},
+			wantErrString: "service manifest does not contain the AK pub",
+		},
+		{
+			// Manifest does not need to contain the EK.
+			name:         "EK not in manifest",
+			manifestKeys: [][]byte{akPubBytes, dummyKey},
+		},
+	}
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			manifestBytes := makeV1Manifest(tc.manifestKeys...)
+			var snpNonce [sabi.ReportDataSize]byte
+			h := sha512.New()
+			h.Write(snpNonce[:])
+			h.Write(manifestBytes)
+
+			configfs := makeFakeConfigfs(h.Sum(nil), manifestBytes, 0, measurement[:])
+			svsmAttestation, err := makeSEVSNPSVSMAttestation(attestation, &sevSNPSVSMAttestationOpts{
+				TEENonce:                   snpNonce[:],
+				CongfigfsClient:            configfs,
+				VTPMServiceManifestVersion: "1",
+			})
+			if err != nil {
+				t.Fatalf("failed to make SVSM attestation: %v", err)
+			}
+
+			endorsement, err := makeEndorsement(measurement[:])
+			if err != nil {
+				t.Fatalf("failed to make endorsement: %v", err)
+			}
+			svsmAttestation.LaunchEndorsement = endorsement
+
+			err = verifySEVSNPSVSMAttestation(verifySEVSNPSVSMOpts{
+				TEENonce: snpNonce[:],
+				// Source the AK from the attestation and supply no EK, mirroring what
+				// the CLI does for v1, where --certified-ak-blob and --ek-pub are
+				// rejected.
+				AKPub: svsmAttestation.GetAttestation().GetAkPub(),
+				EKPub: nil,
+				SevValidateOpts: &validate.Options{GuestPolicy: sabi.SnpPolicy{
+					SMT:   true,
+					Debug: true,
+				}},
+			}, svsmAttestation)
+
+			if tc.wantErrString == "" {
+				if err != nil {
+					t.Errorf("failed to verify svsm attestation: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.wantErrString) {
+				t.Errorf("got err: %v, want err containing: %q", err, tc.wantErrString)
+			}
+		})
+	}
+}
+
+func writeSVSMAttestation(t *testing.T, version string, akPub []byte) string {
+	t.Helper()
+	out, err := proto.Marshal(&apb.SevSnpSvsmAttestation{
+		VtpmServiceManifestVersion: version,
+		Attestation:                &apb.Attestation{AkPub: akPub},
+	})
+	if err != nil {
+		t.Fatalf("failed to marshal svsm attestation: %v", err)
+	}
+	path := filepath.Join(t.TempDir(), "attestation.binarypb")
+	if err := os.WriteFile(path, out, 0600); err != nil {
+		t.Fatalf("failed to write svsm attestation: %v", err)
+	}
+	return path
+}
+
+// TestVerifySVSMFlags covers the flag validation that happens before any TPM or
+// network access, in particular that the registration material required for v0 is
+// rejected for v1.
+func TestVerifySVSMFlags(t *testing.T) {
+	tests := []struct {
+		name            string
+		version         string
+		akPub           []byte
+		key             string
+		ekPub           string
+		certifiedAKBlob string
+		wantErrorMsg    string
+	}{
+		{
+			name:         "MismatchedKeyManifestVersion0",
+			version:      "0",
+			akPub:        []byte("ak"),
+			key:          "gceAK",
+			wantErrorMsg: "verifying manifest version 0 requires --key=AK",
+		},
+		{
+			name:         "MismatchedKeyManifestVersion1",
+			version:      "1",
+			akPub:        []byte("ak"),
+			key:          "AK",
+			wantErrorMsg: "verifying manifest version 1 requires --key=gceAK",
+		},
+		{
+			name:         "MissingEKPubManifestVersion0",
+			version:      "0",
+			akPub:        []byte("ak"),
+			key:          "AK",
+			wantErrorMsg: "ek-pub is required for manifest version 0",
+		},
+		{
+			name:            "CertifiedAKBlobRejectedManifestVersion1",
+			version:         "1",
+			akPub:           []byte("ak"),
+			key:             "gceAK",
+			certifiedAKBlob: "/dev/null",
+			wantErrorMsg:    "certified-ak-blob is not supported with manifest version 1",
+		},
+		{
+			name:         "EKPubRejectedManifestVersion1",
+			version:      "1",
+			akPub:        []byte("ak"),
+			key:          "gceAK",
+			ekPub:        "/dev/null",
+			wantErrorMsg: "ek-pub is not supported with manifest version 1",
+		},
+		{
+			name:         "MissingAKPubManifestVersion1",
+			version:      "1",
+			key:          "gceAK",
+			wantErrorMsg: "attestation does not contain an AK pub",
+		},
+		{
+			name:         "UnsupportedManifestVersion",
+			version:      "2",
+			akPub:        []byte("ak"),
+			key:          "AK",
+			wantErrorMsg: "only vtpm service manifest version 0 or 1 is supported",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			RootCmd.SetArgs([]string{
+				"verify", "debug", "svsm",
+				"--tee-technology", SevSnp,
+				"--tee-nonce", strings.Repeat("00", sabi.ReportDataSize),
+				"--input", writeSVSMAttestation(t, tc.version, tc.akPub),
+				"--key", tc.key,
+				// Set the v0-only flags explicitly: they are package-level globals that
+				// persist across command executions.
+				"--ek-pub", tc.ekPub,
+				"--certified-ak-blob", tc.certifiedAKBlob,
+			})
+			err := RootCmd.Execute()
+			if err == nil || !strings.Contains(err.Error(), tc.wantErrorMsg) {
+				t.Errorf("got err: %v, want err containing: %q", err, tc.wantErrorMsg)
 			}
 		})
 	}

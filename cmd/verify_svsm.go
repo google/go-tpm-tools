@@ -13,7 +13,11 @@ It supports two manifest verification modes depending on the manifest version:
   - Bypasses the interactive activation challenge by leveraging SVSM's signed manifest.
   - SVSM (VMPL0) derives the standard EK and AK on the fly under the Endorsement Hierarchy
     (using the vTPM's Endorsement Seed and fixed templates) and embeds their public areas in
-    the manifest.
+    the manifest. The manifest is hashed into the SNP report's REPORT_DATA, so the AK is
+    bound to the vTPM by the AMD-signed report alone.
+  - Takes no out-of-band registration material: the trusted AK is taken from the
+    attestation supplied via --input and checked for membership in the report-bound
+    manifest. --certified-ak-blob and --ek-pub are v0-only and are rejected here.
   - The guest VM (VMPL2) also derives its AK (using --key=gceAK) by querying the same template
     SVSM saved to the Google NV index under the Endorsement Hierarchy.
 */
@@ -52,12 +56,15 @@ var (
 
 func addCertifiedAKBlobFlag(cmd *cobra.Command) {
 	cmd.PersistentFlags().StringVar(&certifiedAKBlobPath, "certified-ak-blob", "",
-		"Specify path to certified AK blob produced from TPM registration.")
+		"Specify path to certified AK blob produced from TPM registration. "+
+			"Required for manifest version 0 and rejected for manifest version 1, where the "+
+			"AK is taken from --input.")
 }
 
 func addEKPubFlag(cmd *cobra.Command) {
 	cmd.PersistentFlags().StringVar(&trustedEKPub, "ek-pub", "",
-		"Specify path to EK pub used in TPM registration.")
+		"Specify path to EK pub used in TPM registration. "+
+			"Required for manifest version 0 and rejected for manifest version 1.")
 }
 
 var verifySVSMCmd = &cobra.Command{
@@ -70,9 +77,6 @@ var verifySVSMCmd = &cobra.Command{
 		if len(teeNonce) == 0 {
 			return errors.New("tee-nonce should be specified when using verify debug svsm")
 		}
-		if trustedEKPub == "" {
-			return fmt.Errorf("ek-pub is required")
-		}
 		svsmAttestation := &apb.SevSnpSvsmAttestation{}
 		err := readProtoFromPath(input, svsmAttestation)
 		if err != nil {
@@ -81,23 +85,53 @@ var verifySVSMCmd = &cobra.Command{
 
 		version := svsmAttestation.GetVtpmServiceManifestVersion()
 		if version == "" {
-			version = "0"
-		}
-		if version == "0" && key != "AK" {
-			return fmt.Errorf("verifying manifest version 0 requires --key=AK")
-		}
-		if version == "1" && key != "gceAK" {
-			return fmt.Errorf("verifying manifest version 1 requires --key=gceAK")
+			version = defaultConfigfsTsmReportServiceManifestVersion
 		}
 
-		akPub, err := loadTrustedAKPub()
-		if err != nil {
-			return err
-		}
-
-		ekpub, err := readBytes(trustedEKPub)
-		if err != nil {
-			return fmt.Errorf("failed to read ek-pub: %w", err)
+		var akPub, ekPub []byte
+		switch version {
+		case "0":
+			if key != "AK" {
+				return fmt.Errorf("verifying manifest version 0 requires --key=AK")
+			}
+			// The v0 manifest is just the EK pub, so the SNP report says nothing about
+			// the AK. Trust in the AK must come from out of band: the EK-based key
+			// attestation protocol run by "gotpm register". Reading the AK from --input
+			// here would be circular.
+			if trustedEKPub == "" {
+				return errors.New("ek-pub is required for manifest version 0")
+			}
+			akPub, err = loadTrustedAKPub()
+			if err != nil {
+				return err
+			}
+			ekPub, err = readBytes(trustedEKPub)
+			if err != nil {
+				return fmt.Errorf("failed to read ek-pub: %w", err)
+			}
+		case "1":
+			if key != "gceAK" {
+				return fmt.Errorf("verifying manifest version 1 requires --key=gceAK")
+			}
+			// The v1 manifest embeds both the EK and AK public areas, and SVSM at VMPL0
+			// hashes it into the SNP report's REPORT_DATA. The AK carried in --input is
+			// therefore already bound to the vTPM by the AMD-signed report, so sourcing
+			// it from --input is not circular: getExpectedReportData still requires it
+			// to appear in the report-bound manifest.
+			// The registration material that v0 depends on plays no part here, so reject
+			// it rather than silently ignoring it.
+			if certifiedAKBlobPath != "" {
+				return errors.New("certified-ak-blob is not supported with manifest version 1: the AK is taken from the attestation and checked against the manifest")
+			}
+			if trustedEKPub != "" {
+				return errors.New("ek-pub is not supported with manifest version 1")
+			}
+			akPub = svsmAttestation.GetAttestation().GetAkPub()
+			if len(akPub) == 0 {
+				return errors.New("attestation does not contain an AK pub")
+			}
+		default:
+			return fmt.Errorf("only vtpm service manifest version 0 or 1 is supported, got %q", version)
 		}
 
 		rot, err := getRootOfTrust()
@@ -117,7 +151,7 @@ var verifySVSMCmd = &cobra.Command{
 				Now:          time.Now(),
 			},
 			AKPub: akPub,
-			EKPub: ekpub,
+			EKPub: ekPub,
 		}, svsmAttestation)
 		if err != nil {
 			return fmt.Errorf("failed to verify snp svsm attestation: %w", err)
@@ -219,8 +253,13 @@ type verifySEVSNPSVSMOpts struct {
 	// An AKPub that is trusted.
 	// For vtpm service manifest version 0, this should be sourced from a TPM
 	// registration process such as seen in client/import_certify.go.
+	// For vtpm service manifest version 1, the AK is bound to the vTPM by the SNP
+	// report itself, so this may be sourced from the attestation being verified.
 	AKPub []byte
 	// EkPub that the AKPub is co-resident with.
+	// Required for vtpm service manifest version 0, where it is the entire manifest
+	// and is the only thing the SNP report commits to.
+	// Unused for vtpm service manifest version 1.
 	EKPub []byte
 }
 
@@ -259,8 +298,10 @@ func verifySEVSNPSVSMAttestation(svsmOpts verifySEVSNPSVSMOpts, svsmAttestation 
 		}
 	}
 
-	if !bytes.Equal(svsmOpts.AKPub, svsmAttestation.Attestation.GetAkPub()) {
-		return errors.New("certified AK does not match attested AK")
+	if version := svsmAttestation.GetVtpmServiceManifestVersion(); version == "" || version == "0" {
+		if !bytes.Equal(svsmOpts.AKPub, svsmAttestation.Attestation.GetAkPub()) {
+			return errors.New("certified AK does not match attested AK")
+		}
 	}
 	return nil
 }
@@ -298,7 +339,6 @@ func getExpectedReportData(svsmOpts verifySEVSNPSVSMOpts, svsmAttestation *apb.S
 		manifest = manifest[8:]
 
 		foundAK := false
-		foundEK := false
 		for i := uint32(0); i < numKeys; i++ {
 			if len(manifest) == 0 {
 				return nil, fmt.Errorf("malformed service manifest: count does not match number of keys: expected %d keys, got %d", numKeys, i)
@@ -314,14 +354,11 @@ func getExpectedReportData(svsmOpts verifySEVSNPSVSMOpts, svsmAttestation *apb.S
 			}
 			// keyBytes is the full TPM2B_PUBLIC structure.
 			keyBytes := manifest[:keyLen]
-			// svsmOpts.AKPub and svsmOpts.EKPub are in TPMT_PUBLIC format (no size prefix).
-			// To compare them, we strip the 2-byte size prefix from keyBytes to get the TPMT_PUBLIC part.
+			// svsmOpts.AKPub is in TPMT_PUBLIC format (no size prefix).
+			// To compare, we strip the 2-byte size prefix from keyBytes to get the TPMT_PUBLIC part.
 			tpmtKeyBytes := keyBytes[2:]
 			if bytes.Equal(svsmOpts.AKPub, tpmtKeyBytes) {
 				foundAK = true
-			}
-			if bytes.Equal(svsmOpts.EKPub, tpmtKeyBytes) {
-				foundEK = true
 			}
 			manifest = manifest[keyLen:]
 		}
@@ -330,9 +367,6 @@ func getExpectedReportData(svsmOpts verifySEVSNPSVSMOpts, svsmAttestation *apb.S
 		}
 		if !foundAK {
 			return nil, errors.New("service manifest does not contain the AK pub that was certified against")
-		}
-		if !foundEK {
-			return nil, errors.New("service manifest does not contain the EK pub")
 		}
 	default:
 		return nil, errors.New("only vtpm service manifest version 0 or 1 is supported")
