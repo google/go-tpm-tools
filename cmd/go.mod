@@ -17,6 +17,7 @@ require (
 	github.com/google/go-tpm v0.9.8
 	github.com/google/go-tpm-tools v0.4.9-0.20260522205405-ed0161beaf76
 	github.com/google/go-tpm-tools/verifier v0.4.4
+	github.com/google/go-tpm/tpm2/transport/googleipmi v0.0.0-20260602212016-9f0977c7f65a
 	github.com/spf13/cobra v1.8.1
 	golang.org/x/oauth2 v0.36.0
 	google.golang.org/api v0.283.0
@@ -33,7 +34,6 @@ require (
 	github.com/GoogleCloudPlatform/confidential-space/server v0.0.0-20260706204617-c9f710ef3461 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cyphar/filepath-securejoin v0.2.5 // indirect
-	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
@@ -47,8 +47,9 @@ require (
 	github.com/googleapis/gax-go/v2 v2.22.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
-	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
-	github.com/spf13/pflag v1.0.5 // indirect
+	github.com/spf13/pflag v1.0.7 // indirect
+	github.com/u-root/u-root v0.16.0 // indirect
+	github.com/vtolstov/go-ioctl v0.0.0-20151206205506-6be9cced4810 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.67.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.67.0 // indirect

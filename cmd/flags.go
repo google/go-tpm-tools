@@ -18,6 +18,7 @@ var (
 	output        string
 	input         string
 	nvIndex       uint32
+	nvAuthHandle  string
 	nonce         []byte
 	teeNonce      []byte
 	teeTechnology string
@@ -170,6 +171,13 @@ func addEventLogFlag(cmd *cobra.Command) {
 func addIndexFlag(cmd *cobra.Command) {
 	cmd.PersistentFlags().Uint32Var(&nvIndex, "index", 0,
 		"NVDATA index, cannot be 0")
+}
+
+// Lets this command specify which handle authorizes the NVDATA access.
+func addNVAuthHandleFlag(cmd *cobra.Command) {
+	cmd.PersistentFlags().StringVar(&nvAuthHandle, "auth-handle", "auto",
+		"handle authorizing the NVDATA access: <auto|owner|platform|index>. "+
+			"auto picks the handle based on the index's read attributes")
 }
 
 // Lets this command specify some number of PCR arguments, check if in range.
