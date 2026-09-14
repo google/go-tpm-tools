@@ -966,3 +966,126 @@ func TestVerifySVSMFlags(t *testing.T) {
 		})
 	}
 }
+
+// TestSVSMDowngradeAttack verifies that a malicious user cannot take a genuine
+// v1 attestation (where SVSM derived an AK and bound a v1 multikey manifest into the
+// hardware SNP report) and trick the verifier into accepting it as a v0 attestation.
+func TestSVSMDowngradeAttack(t *testing.T) {
+	rwc := test.GetTPM(t)
+	defer client.CheckedClose(t, rwc)
+	ak, err := client.AttestationKeyECC(rwc)
+	if err != nil {
+		t.Fatalf("failed to create ak: %v", err)
+	}
+	defer ak.Close()
+	akPubBytes, err := ak.PublicArea().Encode()
+	if err != nil {
+		t.Fatalf("failed to encode ak pub: %v", err)
+	}
+
+	var nonce = [16]byte{0}
+	attestation, err := ak.Attest(client.AttestOpts{
+		SkipTeeAttestation: true,
+		Nonce:              nonce[:],
+	})
+	if err != nil {
+		t.Fatalf("failed to create attestation: %v", err)
+	}
+
+	ek, err := client.EndorsementKeyRSA(rwc)
+	if err != nil {
+		t.Fatalf("failed to get EK: %v", err)
+	}
+	defer ek.Close()
+	ekBytes, err := ek.PublicArea().Encode()
+	if err != nil {
+		t.Fatalf("failed to encode EK pub: %v", err)
+	}
+
+	// SVSM v1 produces a multikey manifest and an SEV-SNP report bound to it.
+	manifestBytes := makeV1Manifest(akPubBytes, ekBytes)
+
+	var snpNonce [sabi.ReportDataSize]byte
+	h := sha512.New()
+	h.Write(snpNonce[:])
+	h.Write(manifestBytes)
+	measurement := [48]byte{0}
+
+	configfs := makeFakeConfigfs(h.Sum(nil), manifestBytes, 0, measurement[:])
+	v1Attestation, err := makeSEVSNPSVSMAttestation(attestation, &sevSNPSVSMAttestationOpts{
+		TEENonce:                   snpNonce[:],
+		CongfigfsClient:            configfs,
+		VTPMServiceManifestVersion: "1",
+	})
+	if err != nil {
+		t.Fatalf("failed to make SVSM attestation: %v", err)
+	}
+
+	endorsement, err := makeEndorsement(measurement[:])
+	if err != nil {
+		t.Fatalf("failed to make endorsement: %v", err)
+	}
+	v1Attestation.LaunchEndorsement = endorsement
+
+	testcases := []struct {
+		name          string
+		tamper        func(att *apb.SevSnpSvsmAttestation)
+		wantErrString string
+	}{
+		{
+			// The attacker tampers with the version field to claim "0", but the manifest
+			// payload is still the v1 multikey blob. The v0 verification checks that
+			// the manifest equals the trusted EKPub, which fails.
+			name: "Attacker changes manifest version to 0 but keeps v1 manifest",
+			tamper: func(att *apb.SevSnpSvsmAttestation) {
+				att.VtpmServiceManifestVersion = "0"
+			},
+			wantErrString: "service manifest does not match EK pub that was certified against",
+		},
+		{
+			// The attacker omits the version field entirely (empty string defaults to "0").
+			name: "Attacker changes manifest version to empty",
+			tamper: func(att *apb.SevSnpSvsmAttestation) {
+				att.VtpmServiceManifestVersion = ""
+			},
+			wantErrString: "service manifest does not match EK pub that was certified against",
+		},
+		{
+			// The attacker sets version to "0" and also replaces the manifest blob with
+			// the EKPub to pass the v0 manifest == EKPub check. However, the hardware
+			// SNP report was signed over the v1 manifest, so report validation catches
+			// the REPORT_DATA mismatch.
+			name: "Attacker changes version to 0 and replaces manifest with EKPub",
+			tamper: func(att *apb.SevSnpSvsmAttestation) {
+				att.VtpmServiceManifestVersion = "0"
+				att.VtpmServiceManifest = ekBytes
+			},
+			wantErrString: "report field REPORT_DATA",
+		},
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			att := proto.Clone(v1Attestation).(*apb.SevSnpSvsmAttestation)
+			tc.tamper(att)
+
+			// The verifier is tricked into running v0 verification parameters.
+			err := verifySEVSNPSVSMAttestation(verifySEVSNPSVSMOpts{
+				TEENonce: snpNonce[:],
+				AKPub:    akPubBytes,
+				EKPub:    ekBytes,
+				SevValidateOpts: &validate.Options{GuestPolicy: sabi.SnpPolicy{
+					SMT:   true,
+					Debug: true,
+				}},
+			}, att)
+
+			if err == nil {
+				t.Fatalf("expected downgrade attack to fail, but verification succeeded")
+			}
+			if !strings.Contains(err.Error(), tc.wantErrString) {
+				t.Errorf("got err: %v, want err containing: %q", err, tc.wantErrString)
+			}
+		})
+	}
+}
