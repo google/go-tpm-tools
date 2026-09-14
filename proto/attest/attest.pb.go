@@ -1991,7 +1991,7 @@ var File_attest_proto protoreflect.FileDescriptor
 
 const file_attest_proto_rawDesc = "" +
 	"\n" +
-	"\fattest.proto\x12\x06attest\x1a\x12proto/sevsnp.proto\x1a\x0fproto/tdx.proto\x1a\ttpm.proto\x1a\x11attestation.proto\"\xb1\x01\n" +
+	"\fattest.proto\x12\x06attest\x1a\x12proto/sevsnp.proto\x1a\x0fproto/tdx.proto\x1a\ttpm.proto\x1a\x15gpu_attestation.proto\"\xb1\x01\n" +
 	"\x0fGCEInstanceInfo\x12\x12\n" +
 	"\x04zone\x18\x01 \x01(\tR\x04zone\x12\x1d\n" +
 	"\n" +
