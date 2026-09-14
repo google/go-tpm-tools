@@ -908,6 +908,14 @@ func TestVerifySVSMFlags(t *testing.T) {
 			wantErrorMsg: "ek-pub is required for manifest version 0",
 		},
 		{
+			name:         "MissingCertifiedAKBlobManifestVersion0",
+			version:      "0",
+			akPub:        []byte("ak"),
+			key:          "AK",
+			ekPub:        "/dev/null",
+			wantErrorMsg: "certified-ak-blob is required for manifest version 0",
+		},
+		{
 			name:            "CertifiedAKBlobRejectedManifestVersion1",
 			version:         "1",
 			akPub:           []byte("ak"),

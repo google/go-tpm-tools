@@ -101,6 +101,9 @@ var verifySVSMCmd = &cobra.Command{
 			if trustedEKPub == "" {
 				return errors.New("ek-pub is required for manifest version 0")
 			}
+			if certifiedAKBlobPath == "" {
+				return errors.New("certified-ak-blob is required for manifest version 0")
+			}
 			akPub, err = loadTrustedAKPub()
 			if err != nil {
 				return err
@@ -183,43 +186,14 @@ var verifySVSMCmd = &cobra.Command{
 	},
 }
 
-// loadTrustedAKPub retrieves the trusted Attestation Key (AK) public area either by
-// reading it from a certified AK blob file (if --certified-ak-blob is provided) or by
-// opening the local TPM and loading the key based on --key and --algo.
+// loadTrustedAKPub retrieves the trusted Attestation Key (AK) public area from a
+// certified AK blob file produced by "gotpm register solve-challenge".
 func loadTrustedAKPub() ([]byte, error) {
-	if certifiedAKBlobPath != "" {
-		blob := &tpb.CertifiedBlob{}
-		if err := readProtoFromPath(certifiedAKBlobPath, blob); err != nil {
-			return nil, fmt.Errorf("failed to read certified ak blob: %w", err)
-		}
-		return blob.PubArea, nil
+	blob := &tpb.CertifiedBlob{}
+	if err := readProtoFromPath(certifiedAKBlobPath, blob); err != nil {
+		return nil, fmt.Errorf("failed to read certified ak blob: %w", err)
 	}
-
-	rwc, err := openTpm()
-	if err != nil {
-		return nil, fmt.Errorf("failed to open TPM to retrieve AK: %w", err)
-	}
-	defer rwc.Close()
-
-	algoToCreateAK, ok := attestationKeys[key]
-	if !ok {
-		return nil, fmt.Errorf("invalid --key value: %s", key)
-	}
-	createFunc, ok := algoToCreateAK[keyAlgo]
-	if !ok {
-		return nil, fmt.Errorf("invalid --algo value for key %s", key)
-	}
-	attestationKey, err := createFunc(rwc)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load attestation key: %w", err)
-	}
-	defer attestationKey.Close()
-
-	pubAreaBytes, err := attestationKey.PublicArea().Encode()
-	if err != nil {
-		return nil, fmt.Errorf("failed to encode AK public area: %w", err)
-	}
-	return pubAreaBytes, nil
+	return blob.PubArea, nil
 }
 
 func getRootOfTrust() (*x509.CertPool, error) {
