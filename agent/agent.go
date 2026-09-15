@@ -691,7 +691,7 @@ func newHostServiceRoT() (*hostServiceRoT, error) {
 	conn, err := grpc.NewClient("passthrough:///",
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithContextDialer(func(_ context.Context, _ string) (net.Conn, error) {
-			return vsock.Dial(2, hostServicePort, nil)
+			return vsock.Dial(vsock.Host, hostServicePort, nil)
 		}),
 	)
 	if err != nil {
@@ -729,7 +729,9 @@ func (h *hostServiceRoT) Extend(event gecel.Content) error {
 }
 
 func (h *hostServiceRoT) GetCEL() gecel.CEL                                 { return nil }
-func (h *hostServiceRoT) Attest(_ []byte) (any, error)                { return nil, nil }
+func (h *hostServiceRoT) Attest(_ []byte) (any, error) {
+	return nil, fmt.Errorf("hostServiceRoT does not support direct attestation")
+}
 func (h *hostServiceRoT) ComputeNonce(_, _ []byte) []byte { return nil }
 func (h *hostServiceRoT) Close() error {
 	if h.conn == nil {
