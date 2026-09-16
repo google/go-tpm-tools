@@ -5,7 +5,7 @@ go 1.26
 toolchain go1.26.5
 
 require (
-	github.com/GoogleCloudPlatform/confidential-space/server v0.0.0-20260914185823-fc2a3df97ef6
+	github.com/GoogleCloudPlatform/confidential-space/server v0.0.0-20260915221818-a6c0685fb9fc
 	github.com/google/go-attestation v0.6.4
 	github.com/google/go-cmp v0.7.0
 	github.com/google/go-sev-guest v0.14.0
