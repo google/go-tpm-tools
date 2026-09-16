@@ -219,7 +219,7 @@ func encryptSecret(secret, seed, nameEncoded []byte, ek tpm2.Public) ([]byte, er
 	}
 	encSecret := make([]byte, len(secret))
 	// The TPM spec requires an all-zero IV.
-	iv := make([]byte, len(symmetricKey))
+	iv := make([]byte, c.BlockSize())
 	//nolint:staticcheck
 	// crypto/cipher.NewCFBEncrypter is deprecated, but we need to use it to be compatible with the TPM spec.
 	cipher.NewCFBEncrypter(c, iv).XORKeyStream(encSecret, secret)
