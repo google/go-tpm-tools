@@ -143,6 +143,11 @@ type bcAgent struct {
 
 type gb300ccAgent struct {
 	*agent
+	hostRoT *hostServiceRoT
+}
+
+type gb300ccAgent struct {
+	*agent
 }
 
 // CreateAttestationAgent returns an agent capable of performing remote
