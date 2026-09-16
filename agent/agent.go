@@ -722,17 +722,14 @@ func (h *hostServiceRoT) Extend(event gecel.Content) error {
 	if err != nil {
 		return fmt.Errorf("hostservice RecordWorkloadEvent failed: %w", err)
 	}
-	if !resp.GetSuccess() {
-		return fmt.Errorf("hostservice reported failure extending event")
-	}
 	return nil
 }
 
-func (h *hostServiceRoT) GetCEL() gecel.CEL                                 { return nil }
+func (h *hostServiceRoT) GetCEL() gecel.CEL               { return nil }
+func (h *hostServiceRoT) ComputeNonce(_, _ []byte) []byte { return nil }
 func (h *hostServiceRoT) Attest(_ []byte) (any, error) {
 	return nil, fmt.Errorf("hostServiceRoT does not support direct attestation")
 }
-func (h *hostServiceRoT) ComputeNonce(_, _ []byte) []byte { return nil }
 func (h *hostServiceRoT) Close() error {
 	if h.conn == nil {
 		return nil
