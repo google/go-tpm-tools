@@ -1,9 +1,11 @@
 package spec
 
 import (
+	"fmt"
 	"os"
 	"path"
 	"regexp"
+	"strings"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -507,3 +509,31 @@ func TestFetchExperiments(t *testing.T) {
 		})
 	})
 }
+
+func TestEnvVarStringAndGoString(t *testing.T) {
+	e := EnvVar{Name: "FOO", Value: "secret_value"}
+
+	tests := []struct {
+		name   string
+		format string
+		want   string
+	}{
+		{"%s", "%s", "FOO"},
+		{"%v", "%v", "FOO"},
+		{"%+v", "%+v", "FOO"},
+		{"%#v", "%#v", `spec.EnvVar{Name: "FOO"}`},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := fmt.Sprintf(tc.format, e)
+			if got != tc.want {
+				t.Errorf("fmt.Sprintf(%q, e) = %q, want %q", tc.format, got, tc.want)
+			}
+			if strings.Contains(got, "secret_value") {
+				t.Errorf("fmt.Sprintf(%q, e) leaked secret value", tc.format)
+			}
+		})
+	}
+}
+
