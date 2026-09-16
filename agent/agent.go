@@ -584,6 +584,9 @@ func (t *tpmAttestRoot) GetCEL() gecel.CEL {
 }
 
 func (t *tpmAttestRoot) Extend(c gecel.Content) error {
+	t.tpmMu.Lock()
+	defer t.tpmMu.Unlock()
+
 	return t.cosCel.AppendEvent(c, t.hashAlgos, cel.CosEventPCR, func(hs crypto.Hash, pcr int, digest []byte) error {
 		tpm2Alg, err := tpm2.HashToAlgorithm(hs)
 		if err != nil {
