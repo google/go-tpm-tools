@@ -716,7 +716,7 @@ func (h *hostServiceRoT) Extend(event gecel.Content) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	resp, err := h.client.RecordWorkloadEvent(ctx, &hostservicepb.RecordWorkloadEventRequest{
+	_, err = h.client.RecordWorkloadEvent(ctx, &hostservicepb.RecordWorkloadEventRequest{
 		CosEvent: tlvBytes,
 	})
 	if err != nil {
