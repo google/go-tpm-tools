@@ -10,8 +10,19 @@ pub struct SecretBox(Box<[u8]>);
 
 impl SecretBox {
     /// Creates a new `SecretBox` from a `Vec<u8>`.
-    pub fn new(data: Vec<u8>) -> Self {
-        Self(data.into_boxed_slice())
+    pub fn new(mut data: Vec<u8>) -> Self {
+        // If data has excess capacity, into_boxed_slice() will reallocate and deallocate
+        // the original buffer without zeroizing it, leaving sensitive data in freed heap memory.
+        if data.capacity() > data.len() {
+            let mut boxed = vec![0u8; data.len()].into_boxed_slice();
+            boxed.copy_from_slice(&data);
+            let cap = data.capacity();
+            data.resize(cap, 0);
+            data.zeroize();
+            Self(boxed)
+        } else {
+            Self(data.into_boxed_slice())
+        }
     }
 
     /// Returns a reference to the inner slice.
@@ -69,5 +80,14 @@ mod tests {
         let secret = SecretBox::new(data.clone());
         let slice: &[u8] = secret.as_ref();
         assert_eq!(slice, &data[..]);
+    }
+
+    #[test]
+    fn test_secret_box_with_excess_capacity() {
+        let mut data = Vec::with_capacity(128);
+        data.extend_from_slice(&[1, 2, 3, 4, 5]);
+        assert!(data.capacity() > data.len());
+        let secret = SecretBox::new(data);
+        assert_eq!(secret.as_slice(), &[1, 2, 3, 4, 5]);
     }
 }
