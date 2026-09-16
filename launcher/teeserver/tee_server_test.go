@@ -1191,13 +1191,15 @@ func TestGetKeyEndorsement(t *testing.T) {
 				var endorsement attestationpb.KeyEndorsement
 				if err := protojson.Unmarshal(rr.Body.Bytes(), &endorsement); err != nil {
 					t.Fatalf("failed to unmarshal response: %v", err)
+					return
 				}
 				vmEndorsement := endorsement.GetVmProtectedKeyEndorsement()
 				if vmEndorsement == nil {
 					t.Fatal("response missing VmProtectedKeyEndorsement")
+					return
 				}
-				if vmEndorsement.BindingKeyAttestation.Attestation == nil ||
-					vmEndorsement.ProtectedKeyAttestation.Attestation == nil {
+				if vmEndorsement.GetBindingKeyAttestation().GetAttestation() == nil ||
+					vmEndorsement.GetProtectedKeyAttestation().GetAttestation() == nil {
 					t.Error("one or both attestations are nil")
 				}
 			}

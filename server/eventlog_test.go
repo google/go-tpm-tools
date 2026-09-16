@@ -941,9 +941,10 @@ func TestConvertToMachineState(t *testing.T) {
 					},
 				},
 				RawEvents: []*gepb.Event{{
-					PcrIndex: 0,
-					Data:     []byte("12345678"),
-					Digest:   []byte("aabbccdd"),
+					PcrIndex:      0,
+					UntrustedType: 2,
+					Data:          []byte("12345678"),
+					Digest:        []byte("aabbccdd"),
 				}},
 				Efi: &gepb.EfiState{
 					Apps: []*gepb.EfiApp{
@@ -954,7 +955,10 @@ func TestConvertToMachineState(t *testing.T) {
 				},
 				Hash: gepb.HashAlgo_SHA256,
 				Grub: &gepb.GrubState{
-					Files: []*gepb.GrubFile{{Digest: []byte("aabbcc")}},
+					Files: []*gepb.GrubFile{{
+						Digest:            []byte("aabbcc"),
+						UntrustedFilename: []byte("grub.cfg"),
+					}},
 				},
 				LinuxKernel: &gepb.LinuxKernelState{
 					CommandLine: "abcdefge",
@@ -980,9 +984,10 @@ func TestConvertToMachineState(t *testing.T) {
 					},
 				},
 				RawEvents: []*attestpb.Event{{
-					PcrIndex: 0,
-					Data:     []byte("12345678"),
-					Digest:   []byte("aabbccdd"),
+					PcrIndex:      0,
+					UntrustedType: 2,
+					Data:          []byte("12345678"),
+					Digest:        []byte("aabbccdd"),
 				}},
 				Efi: &attestpb.EfiState{
 					Apps: []*attestpb.EfiApp{
@@ -993,7 +998,10 @@ func TestConvertToMachineState(t *testing.T) {
 				},
 				Hash: pb.HashAlgo_SHA256,
 				Grub: &attestpb.GrubState{
-					Files: []*attestpb.GrubFile{{Digest: []byte("aabbcc")}},
+					Files: []*attestpb.GrubFile{{
+						Digest:            []byte("aabbcc"),
+						UntrustedFilename: []byte("grub.cfg"),
+					}},
 				},
 				LinuxKernel: &attestpb.LinuxKernelState{
 					CommandLine: "abcdefge",

@@ -247,3 +247,31 @@ func TestSigningKeyImport(t *testing.T) {
 		})
 	}
 }
+
+func getRSA256Template() tpm2.Public {
+	tmpl := client.DefaultEKTemplateRSA()
+	tmpl.RSAParameters.Symmetric.KeyBits = 256
+	return tmpl
+}
+
+func getECC256Template() tpm2.Public {
+	tmpl := client.DefaultEKTemplateECC()
+	tmpl.ECCParameters.Symmetric.KeyBits = 256
+	return tmpl
+}
+
+func TestEncryptSecretAES256(t *testing.T) {
+	secret := []byte("super secret code")
+	seed := make([]byte, 32)
+	nameEncoded := make([]byte, 32)
+
+	for _, ek := range []tpm2.Public{getRSA256Template(), getECC256Template()} {
+		encSecret, err := encryptSecret(secret, seed, nameEncoded, ek)
+		if err != nil {
+			t.Fatalf("encryptSecret failed for EK type %v: %v", ek.Type, err)
+		}
+		if len(encSecret) != len(secret) {
+			t.Errorf("got encrypted secret length %d, expected %d", len(encSecret), len(secret))
+		}
+	}
+}
