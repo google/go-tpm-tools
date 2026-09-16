@@ -119,6 +119,16 @@ type EnvVar struct {
 	Value string
 }
 
+// String implements fmt.Stringer to prevent accidental exposure of Value in logs and errors.
+func (e EnvVar) String() string {
+	return e.Name
+}
+
+// GoString implements fmt.GoStringer so that %#v also redacts the Value.
+func (e EnvVar) GoString() string {
+	return fmt.Sprintf("spec.EnvVar{Name: %q}", e.Name)
+}
+
 // LaunchSpec contains specification set by the operator who wants to
 // launch a container.
 type LaunchSpec struct {

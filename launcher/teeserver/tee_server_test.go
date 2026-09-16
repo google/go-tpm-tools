@@ -1099,6 +1099,14 @@ func TestGetKeyEndorsement(t *testing.T) {
 			wantStatus: http.StatusBadRequest,
 		},
 		{
+			name: "omitted key handle",
+			reqBody: map[string]interface{}{
+				"challenge": testChallenge,
+			},
+			enableKM:   true,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
 			name: "binding attestation error",
 			reqBody: map[string]interface{}{
 				"challenge":  testChallenge,
