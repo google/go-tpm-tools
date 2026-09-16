@@ -13,16 +13,10 @@ impl SecretBox {
     pub fn new(mut data: Vec<u8>) -> Self {
         // If data has excess capacity, into_boxed_slice() will reallocate and deallocate
         // the original buffer without zeroizing it, leaving sensitive data in freed heap memory.
-        if data.capacity() > data.len() {
-            let mut boxed = vec![0u8; data.len()].into_boxed_slice();
-            boxed.copy_from_slice(&data);
-            let cap = data.capacity();
-            data.resize(cap, 0);
-            data.zeroize();
-            Self(boxed)
-        } else {
-            Self(data.into_boxed_slice())
-        }
+        let boxed: Box<[u8]> = data.as_slice().into();
+        data.resize(data.capacity(), 0);
+        data.zeroize();
+        Self(boxed)
     }
 
     /// Returns a reference to the inner slice.
