@@ -104,7 +104,7 @@ var verifySVSMCmd = &cobra.Command{
 			if certifiedAKBlobPath == "" {
 				return errors.New("certified-ak-blob is required for manifest version 0")
 			}
-			akPub, err = loadTrustedAKPub()
+			akPub, err = readCertifiedAKPub()
 			if err != nil {
 				return err
 			}
@@ -186,9 +186,9 @@ var verifySVSMCmd = &cobra.Command{
 	},
 }
 
-// loadTrustedAKPub retrieves the trusted Attestation Key (AK) public area from a
+// readCertifiedAKPub retrieves the trusted Attestation Key (AK) public area from a
 // certified AK blob file produced by "gotpm register solve-challenge".
-func loadTrustedAKPub() ([]byte, error) {
+func readCertifiedAKPub() ([]byte, error) {
 	blob := &tpb.CertifiedBlob{}
 	if err := readProtoFromPath(certifiedAKBlobPath, blob); err != nil {
 		return nil, fmt.Errorf("failed to read certified ak blob: %w", err)

@@ -950,7 +950,7 @@ func TestVerifySVSMFlags(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			RootCmd.SetArgs([]string{
 				"verify", "debug", "svsm",
-				"--tee-technology", SevSnp,
+				"--tee-technology", "sev-snp",
 				"--tee-nonce", strings.Repeat("00", sabi.ReportDataSize),
 				"--input", writeSVSMAttestation(t, tc.version, tc.akPub),
 				"--key", tc.key,
