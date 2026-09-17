@@ -5,6 +5,7 @@ main() {
   cp /usr/share/oem/confidential_space/container-runner.service /etc/systemd/system/container-runner.service
   # Override default fluent-bit config.
   cp /usr/share/oem/confidential_space/fluent-bit-cs.conf /etc/fluent-bit/fluent-bit.conf
+  cp /usr/share/oem/confidential_space/parsers-cs.conf /etc/fluent-bit/parsers-cs.conf
 
   # Override default system-stats-monitor.json for node-problem-detector.
   cp /usr/share/oem/confidential_space/system-stats-monitor-cs.json /etc/node_problem_detector/system-stats-monitor.json
@@ -16,8 +17,8 @@ main() {
   cp /usr/share/oem/confidential_space/kernel-monitor-cs.json /etc/node_problem_detector/kernel-monitor.json
   systemctl daemon-reload
   systemctl enable container-runner.service
+  systemctl restart fluent-bit.service
   systemctl start container-runner.service
-  systemctl start fluent-bit.service
 }
 
 main

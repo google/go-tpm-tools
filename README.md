@@ -3,7 +3,6 @@
 [![Build Status](https://github.com/google/go-tpm-tools/workflows/CI/badge.svg)](https://github.com/google/go-tpm-tools/actions?query=workflow%3ACI)
 [![Go Reference](https://pkg.go.dev/badge/github.com/google/go-tpm-tools.svg)](https://pkg.go.dev/github.com/google/go-tpm-tools)
 ![GitHub go.mod Go version](https://img.shields.io/github/go-mod/go-version/google/go-tpm-tools)
-[![Go Report Card](https://goreportcard.com/badge/github.com/google/go-tpm-tools)](https://goreportcard.com/report/github.com/google/go-tpm-tools)
 [![License](https://img.shields.io/badge/LICENSE-Apache2.0-ff69b4.svg)](http://www.apache.org/licenses/LICENSE-2.0.html)
 
 The `go-tpm-tools` module is a [TPM 2.0](https://trustedcomputinggroup.org/resource/trusted-platform-module-2-0-a-brief-introduction/) support library designed to complement [Go-TPM](https://github.com/google/go-tpm).

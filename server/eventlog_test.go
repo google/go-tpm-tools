@@ -740,12 +740,12 @@ func TestParseSecureBootState(t *testing.T) {
 		for _, cert := range msState.GetSecureBoot().GetDb().GetCerts() {
 			switch c := cert.GetRepresentation().(type) {
 			case *attestpb.Certificate_WellKnown:
-				if c.WellKnown == attestpb.WellKnownCertificate_UNKNOWN {
-					t.Error(("found WellKnownCertificate_UNKNOWN in db"))
-				}
-				if c.WellKnown == attestpb.WellKnownCertificate_MS_THIRD_PARTY_UEFI_CA_2011 {
+				switch c.WellKnown {
+				case attestpb.WellKnownCertificate_UNKNOWN:
+					t.Error("found WellKnownCertificate_UNKNOWN in db")
+				case attestpb.WellKnownCertificate_MS_THIRD_PARTY_UEFI_CA_2011:
 					contains3PUEFI = true
-				} else if c.WellKnown == attestpb.WellKnownCertificate_MS_WINDOWS_PROD_PCA_2011 {
+				case attestpb.WellKnownCertificate_MS_WINDOWS_PROD_PCA_2011:
 					containsWinProdPCA = true
 				}
 			}
@@ -941,9 +941,10 @@ func TestConvertToMachineState(t *testing.T) {
 					},
 				},
 				RawEvents: []*gepb.Event{{
-					PcrIndex: 0,
-					Data:     []byte("12345678"),
-					Digest:   []byte("aabbccdd"),
+					PcrIndex:      0,
+					UntrustedType: 2,
+					Data:          []byte("12345678"),
+					Digest:        []byte("aabbccdd"),
 				}},
 				Efi: &gepb.EfiState{
 					Apps: []*gepb.EfiApp{
@@ -954,7 +955,10 @@ func TestConvertToMachineState(t *testing.T) {
 				},
 				Hash: gepb.HashAlgo_SHA256,
 				Grub: &gepb.GrubState{
-					Files: []*gepb.GrubFile{{Digest: []byte("aabbcc")}},
+					Files: []*gepb.GrubFile{{
+						Digest:            []byte("aabbcc"),
+						UntrustedFilename: []byte("grub.cfg"),
+					}},
 				},
 				LinuxKernel: &gepb.LinuxKernelState{
 					CommandLine: "abcdefge",
@@ -980,9 +984,10 @@ func TestConvertToMachineState(t *testing.T) {
 					},
 				},
 				RawEvents: []*attestpb.Event{{
-					PcrIndex: 0,
-					Data:     []byte("12345678"),
-					Digest:   []byte("aabbccdd"),
+					PcrIndex:      0,
+					UntrustedType: 2,
+					Data:          []byte("12345678"),
+					Digest:        []byte("aabbccdd"),
 				}},
 				Efi: &attestpb.EfiState{
 					Apps: []*attestpb.EfiApp{
@@ -993,7 +998,10 @@ func TestConvertToMachineState(t *testing.T) {
 				},
 				Hash: pb.HashAlgo_SHA256,
 				Grub: &attestpb.GrubState{
-					Files: []*attestpb.GrubFile{{Digest: []byte("aabbcc")}},
+					Files: []*attestpb.GrubFile{{
+						Digest:            []byte("aabbcc"),
+						UntrustedFilename: []byte("grub.cfg"),
+					}},
 				},
 				LinuxKernel: &attestpb.LinuxKernelState{
 					CommandLine: "abcdefge",

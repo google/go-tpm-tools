@@ -20,7 +20,6 @@ import (
 	"time"
 
 	"cloud.google.com/go/compute/metadata"
-	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/cio"
@@ -29,39 +28,32 @@ import (
 	"github.com/containerd/containerd/remotes"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-tpm-tools/agent"
+	"github.com/google/go-tpm-tools/agent/device"
 	"github.com/google/go-tpm-tools/cel"
-	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
-	workloadservice "github.com/google/go-tpm-tools/keymanager/workload_service"
-	"github.com/google/go-tpm-tools/launcher/internal/gpu"
 	"github.com/google/go-tpm-tools/launcher/internal/healthmonitoring/nodeproblemdetector"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/internal/signaturediscovery"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/registryauth"
 	"github.com/google/go-tpm-tools/launcher/spec"
-	"github.com/google/go-tpm-tools/launcher/teeserver"
-	v1 "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/opencontainers/image-spec/specs-go/v1"
 	"google.golang.org/protobuf/proto"
+
+	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
 )
 
 // ContainerRunner contains information about the container settings
 type ContainerRunner struct {
-	container      containerd.Container
-	launchSpec     spec.LaunchSpec
-	attestAgent    agent.AttestationAgent
-	logger         logging.Logger
-	workloadLogger logging.Logger
-	gpuAttester    gpu.Attester
-	serialConsole  *os.File
-	powerButton    *powerButtonListener // Populated only for a hardened image
-	attestClients  teeserver.AttestClients
+	container        containerd.Container
+	launchSpec       spec.LaunchSpec
+	attestAgent      agent.AttestationAgent
+	logger           logging.Logger
+	deviceROTManager *device.ROTManager
+	serialConsole    *os.File
+	powerButton      *powerButtonListener // Populated only for a hardened image
 }
 
 const tokenFileTmp = ".token.tmp"
-
-const teeServerSocket = "teeserver.sock"
-const keyManagerSocket = "kmaserver.sock"
-const keyManagerGrpcSocket = "kmaserver-grpc.sock"
 
 // Since we only allow one container on a VM, using a deterministic id is probably fine
 const (
@@ -100,11 +92,9 @@ type RunnerConfig struct {
 	ContainerdClient ContainerdClient
 	Image            containerd.Image
 	AttestAgent      agent.AttestationAgent
-	GpuAttester      gpu.Attester
-	AttestClients    teeserver.AttestClients
+	DeviceROTManager *device.ROTManager
 	LaunchSpec       spec.LaunchSpec
 	Logger           logging.Logger
-	WorkloadLogger   logging.Logger
 	SerialConsole    *os.File
 }
 
@@ -113,7 +103,6 @@ func NewRunner(ctx context.Context, cfg *RunnerConfig) (*ContainerRunner, error)
 	cdClient := cfg.ContainerdClient
 	launchSpec := cfg.LaunchSpec
 	logger := cfg.Logger
-	workloadLogger := cfg.WorkloadLogger
 	serialConsole := cfg.SerialConsole
 	image := cfg.Image
 	attestAgent := cfg.AttestAgent
@@ -232,15 +221,13 @@ func NewRunner(ctx context.Context, cfg *RunnerConfig) (*ContainerRunner, error)
 	}
 
 	return &ContainerRunner{
-		container,
-		launchSpec,
-		attestAgent,
-		logger,
-		workloadLogger,
-		cfg.GpuAttester,
-		serialConsole,
-		powerButton,
-		cfg.AttestClients,
+		container:        container,
+		launchSpec:       launchSpec,
+		attestAgent:      attestAgent,
+		logger:           logger,
+		deviceROTManager: cfg.DeviceROTManager,
+		serialConsole:    serialConsole,
+		powerButton:      powerButton,
 	}, nil
 }
 
@@ -248,13 +235,14 @@ func enableMonitoring(enabled spec.MonitoringType, logger logging.Logger) error 
 	if enabled != spec.None {
 		logger.Info("Health Monitoring is enabled by the VM operator")
 
-		if enabled == spec.All {
+		switch enabled {
+		case spec.All:
 			logger.Info("All health monitoring metrics enabled")
 			if err := nodeproblemdetector.EnableAllConfig(); err != nil {
 				logger.Error("Failed to enable full monitoring config: %v", err)
 				return err
 			}
-		} else if enabled == spec.MemoryOnly {
+		case spec.MemoryOnly:
 			logger.Info("memory/bytes_used enabled")
 		}
 
@@ -294,7 +282,7 @@ func (r *ContainerRunner) measureCELEvents(ctx context.Context) error {
 	}
 
 	if err := r.measureGPUAttestationEvidence(); err != nil {
-		return fmt.Errorf("failed to measure GPU claims: %v", err)
+		return fmt.Errorf("failed to measure device attestation claims: %v", err)
 	}
 
 	if err := r.measureMemoryMonitor(); err != nil {
@@ -367,42 +355,60 @@ func (r *ContainerRunner) measureContainerClaims(ctx context.Context) error {
 // measureGPUAttestationEvidence will measure GPU attestation claims into the COS
 // eventlog in the AttestationAgent.
 func (r *ContainerRunner) measureGPUAttestationEvidence() error {
-	if r.gpuAttester == nil {
+	if r.deviceROTManager == nil {
 		return nil
 	}
 
+	if err := r.deviceROTManager.ValidateROTs(); err != nil {
+		return err
+	}
+
 	nonce := make([]byte, 32)
-	if _, err := cryt.Read(nonce); err != nil {
-		return fmt.Errorf("failed to generate random nonce: %v", err)
+	cryt.Read(nonce)
+
+	for _, rot := range r.deviceROTManager.Lookup(device.NvidiaGPU) {
+		evidence, err := rot.Attest(nonce)
+		if err != nil {
+			return fmt.Errorf("failed to collect evidence for device %v: %w", rot.Vendor(), err)
+		}
+
+		pbEvidence, ok := evidence.(proto.Message)
+		if !ok {
+			return fmt.Errorf("unexpected evidence type %T from device %v", evidence, rot.Vendor())
+		}
+
+		evidenceBytes, err := proto.Marshal(pbEvidence)
+		if err != nil {
+			return fmt.Errorf("failed to marshal evidence from device %v: %w", rot.Vendor(), err)
+		}
+
+		var eventType cel.CosType
+		switch rot.Vendor() {
+		case device.NvidiaGPU:
+			if _, ok := evidence.(*attestationpb.NvidiaAttestationReport); !ok {
+				return fmt.Errorf("unexpected evidence type %T for Nvidia GPU", evidence)
+			}
+			eventType = cel.GPUDeviceAttestationBindingType
+		default:
+			return fmt.Errorf("unsupported vendor %v for event log measurement", rot.Vendor())
+		}
+
+		event := cel.CosTlv{
+			EventType:    eventType,
+			EventContent: evidenceBytes,
+		}
+		if err := r.attestAgent.MeasureEvent(event); err != nil {
+			return fmt.Errorf("failed to measure attestation event for device %v: %w", rot.Vendor(), err)
+		}
+
+		if enabler, ok := rot.(device.ReadyStateEnabler); ok {
+			if err := enabler.EnableReadyState(); err != nil {
+				return fmt.Errorf("failed to enable ready state for device %v: %w", rot.Vendor(), err)
+			}
+		}
 	}
 
-	evidence, err := r.gpuAttester.Attest(nonce)
-	if err != nil {
-		return fmt.Errorf("failed to collect GPU evidence: %w", err)
-	}
-
-	gpuEvidence, ok := evidence.(*attestationpb.NvidiaAttestationReport)
-	if !ok {
-		return fmt.Errorf("unexpected evidence type: %T", evidence)
-	}
-
-	evidenceBytes, err := proto.Marshal(gpuEvidence)
-	if err != nil {
-		return fmt.Errorf("failed to marshal GPU evidence: %w", err)
-	}
-
-	event := cel.CosTlv{
-		EventType:    cel.GPUDeviceAttestationBindingType,
-		EventContent: evidenceBytes,
-	}
-	if err := r.attestAgent.MeasureEvent(event); err != nil {
-		return fmt.Errorf("failed to measure GPU attestation: %w", err)
-	}
-
-	if err := r.gpuAttester.EnableReadyState(); err != nil {
-		return fmt.Errorf("failed to set GPU ready state: %w", err)
-	}
-	r.logger.Info("Successfully measured GPU device attestation binding event and set GPU state to ready")
+	r.logger.Info("Successfully measured device attestation binding events and enabled ready states")
 	return nil
 }
 
@@ -410,7 +416,7 @@ func (r *ContainerRunner) measureGPUAttestationEvidence() error {
 // eventlog in the AttestationAgent.
 func (r *ContainerRunner) measureMemoryMonitor() error {
 	var enabled uint8
-	if r.launchSpec.MonitoringEnabled == spec.MemoryOnly {
+	if r.launchSpec.MonitoringEnabled == spec.MemoryOnly || r.launchSpec.MonitoringEnabled == spec.All {
 		enabled = 1
 	}
 	if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.MemoryMonitorType, EventContent: []byte{enabled}}); err != nil {
@@ -586,39 +592,6 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		}
 	}
 
-	// create and start the TEE server
-	r.logger.Info("EnableOnDemandAttestation is enabled: initializing TEE server.")
-
-	var workloadService *workloadservice.Server
-	// create and start the key manager server
-	if r.launchSpec.Experiments.EnableKeyManager {
-		r.logger.Info("EnableKeyManager experiment is enabled: initializing KeyManager server.")
-		keyManagerSocketPath := path.Join(launcherfile.HostTmpPath, keyManagerSocket)
-		keyManagerServer, err := workloadservice.New(ctx, keyManagerSocketPath, keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED)
-
-		if err != nil {
-			return fmt.Errorf("failed to create the KeyManager server: %v", err)
-		}
-		if err := verifySocketPermissions(keyManagerSocketPath); err != nil {
-			return fmt.Errorf("failed to verify KeyManager socket permissions: %w", err)
-		}
-		workloadService = keyManagerServer
-		go func() { _ = keyManagerServer.Serve() }()
-		defer func() { _ = keyManagerServer.Shutdown(ctx) }()
-	}
-
-	teeServerSocketPath := path.Join(launcherfile.HostTmpPath, teeServerSocket)
-	teeServer, err := teeserver.New(ctx, teeServerSocketPath, r.attestAgent, r.logger, r.launchSpec, r.attestClients, workloadService)
-	if err != nil {
-		return fmt.Errorf("failed to create the TEE server: %v", err)
-	}
-	if err := verifySocketPermissions(teeServerSocketPath); err != nil {
-		return fmt.Errorf("failed to verify TEE server socket permissions: %w", err)
-	}
-
-	go func() { _ = teeServer.Serve() }()
-	defer func() { _ = teeServer.Shutdown(ctx) }()
-
 	// Avoids breaking existing memory monitoring tests that depend on this log.
 	if r.launchSpec.MonitoringEnabled == spec.None {
 		r.logger.Info("MemoryMonitoring is disabled by the VM operator")
@@ -630,14 +603,11 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		streamOpt = cio.WithStreams(nil, nil, nil)
 		r.logger.Info("Container stdout/stderr will not be redirected.")
 	case spec.Everywhere:
-		w := io.MultiWriter(os.Stdout, r.serialConsole)
-		streamOpt = cio.WithStreams(nil, w, w)
+		streamOpt = cio.WithStreams(nil, io.MultiWriter(logging.NewJSONInfoWriter(), r.serialConsole), io.MultiWriter(logging.NewJSONErrorWriter(), r.serialConsole))
 		r.logger.Info("Container stdout/stderr will be redirected to serial and Cloud Logging. This may result in performance issues due to slow serial console writes.")
 	case spec.CloudLogging:
-		stdoutWriter := logging.NewInfoWriter(r.workloadLogger)
-		stderrWriter := logging.NewErrorWriter(r.workloadLogger)
-		streamOpt = cio.WithStreams(nil, stdoutWriter, stderrWriter)
-		r.logger.Info("Container stdout/stderr will be redirected to Cloud Logging with INFO and ERROR severities respectively.")
+		streamOpt = cio.WithStreams(nil, logging.NewJSONInfoWriter(), logging.NewJSONErrorWriter())
+		r.logger.Info("Container stdout/stderr will be redirected to journald (JSON) for FluentBit scraping.")
 	case spec.Serial:
 		streamOpt = cio.WithStreams(nil, r.serialConsole, r.serialConsole)
 		r.logger.Info("Container stdout/stderr will be redirected to serial logging. This may result in performance issues due to slow serial console writes.")
@@ -666,28 +636,6 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	exitStatusC, err := task.Wait(ctx)
 	if err != nil {
 		r.logger.Error(err.Error())
-	}
-
-	// Update and verify socket permissions if in bc mode.
-	if r.launchSpec.Experiments.BcMode {
-		kmaServerSocketPath := path.Join(launcherfile.HostTmpPath, keyManagerSocket)
-		kmaServerGrpcSocketPath := path.Join(launcherfile.HostTmpPath, keyManagerGrpcSocket)
-
-		err := os.Chmod(kmaServerSocketPath, 0777)
-		if err != nil {
-			r.logger.Error("failed to chmod file %s: %v\n", kmaServerSocketPath, err)
-		}
-		err = os.Chmod(kmaServerGrpcSocketPath, 0777)
-		if err != nil {
-			r.logger.Error("failed to chmod file %s: %v\n", kmaServerGrpcSocketPath, err)
-		}
-
-		if err := verifySocketPermissions(kmaServerSocketPath); err != nil {
-			r.logger.Error("failed to verify kmaserver socket permissions: %v", err)
-		}
-		if err := verifySocketPermissions(kmaServerGrpcSocketPath); err != nil {
-			r.logger.Error("failed to verify kmaserver-grpc socket permissions: %v", err)
-		}
 	}
 
 	// Start timer for workload execution.
@@ -828,15 +776,4 @@ func (r *ContainerRunner) Close(ctx context.Context) {
 	// Delete container and close connection to attestation service.
 	// TODO: consider handling or logging cleanup error.
 	_ = r.container.Delete(ctx, containerd.WithSnapshotCleanup)
-}
-
-func verifySocketPermissions(socketPath string) error {
-	info, err := os.Stat(socketPath)
-	if err != nil {
-		return fmt.Errorf("failed to stat socket: %w", err)
-	}
-	if perm := info.Mode().Perm(); perm != 0777 {
-		return fmt.Errorf("socket %s has permissions %04o, want 0777", socketPath, perm)
-	}
-	return nil
 }

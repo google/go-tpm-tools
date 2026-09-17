@@ -244,6 +244,24 @@ func TestVerifyCertifiedAKBlobErrors(t *testing.T) {
 			secret:        secret,
 			wantErrString: "incorrect name",
 		},
+		{
+			name: "Missing FixedTPM Attribute",
+			getReq: func(t *testing.T) *tpb.CertifiedBlob {
+				akPub, err := tpm2.Unmarshal[tpm2.TPMTPublic](goodAkPub)
+				if err != nil {
+					t.Fatalf("unmarshaling good ak pub: %v", err)
+				}
+				akPub.ObjectAttributes.FixedTPM = false
+				badAkPub := tpm2.Marshal(akPub)
+				return &tpb.CertifiedBlob{
+					PubArea:     badAkPub,
+					CertifyInfo: goodCertifyInfo,
+					RawSig:      goodSignature,
+				}
+			},
+			secret:        secret,
+			wantErrString: "invalid AK attributes",
+		},
 	}
 
 	for _, tc := range testcases {

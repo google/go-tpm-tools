@@ -18,6 +18,9 @@ func EvaluatePolicy(state *pb.MachineState, policy *pb.Policy) error {
 	if err := evaluatePlatformPolicy(state.GetPlatform(), policy.GetPlatform()); err != nil {
 		return err
 	}
+	if policy.GetSevSnp() != nil {
+		return fmt.Errorf("SEV-SNP policy evaluation is not supported in EvaluatePolicy")
+	}
 	return nil
 }
 

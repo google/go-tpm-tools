@@ -240,8 +240,8 @@ func ConvertToFirmwareState(ms *pb.MachineState) (*gepb.FirmwareLogState, error)
 		rawEvents = make([]*gepb.Event, len(ms.GetRawEvents()))
 		for i, event := range ms.GetRawEvents() {
 			rawEvents[i] = &gepb.Event{
-				PcrIndex: uint32(event.GetPcrIndex()),
-				// UntrustedType is not present in pb.Event, so it will be 0
+				PcrIndex:       uint32(event.GetPcrIndex()),
+				UntrustedType:  uint32(event.GetUntrustedType()),
 				Data:           event.GetData(),
 				Digest:         event.GetDigest(),
 				DigestVerified: event.GetDigestVerified(),
@@ -255,8 +255,8 @@ func ConvertToFirmwareState(ms *pb.MachineState) (*gepb.FirmwareLogState, error)
 		files := make([]*gepb.GrubFile, len(ms.GetGrub().GetFiles()))
 		for i, file := range ms.GetGrub().GetFiles() {
 			files[i] = &gepb.GrubFile{
-				Digest: file.GetDigest(),
-				// UntrustedFilename is not present in pb.GrubFile, so it will be nil
+				Digest:            file.GetDigest(),
+				UntrustedFilename: file.GetUntrustedFilename(),
 			}
 		}
 		grubState.Files = files

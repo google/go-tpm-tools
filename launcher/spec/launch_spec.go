@@ -78,25 +78,27 @@ const (
 
 // Metadata variable names.
 const (
-	fakeVerifierKey            = "test-fake-verifier"
-	imageRefKey                = "tee-image-reference"
-	signedImageRepos           = "tee-signed-image-repos"
-	restartPolicyKey           = "tee-restart-policy"
-	cmdKey                     = "tee-cmd"
-	envKeyPrefix               = "tee-env-"
-	impersonateServiceAccounts = "tee-impersonate-service-accounts"
-	logRedirectKey             = "tee-container-log-redirect"
-	memoryMonitoringEnable     = "tee-monitoring-memory-enable"
-	monitoringEnable           = "tee-monitoring-enable"
-	devShmSizeKey              = "tee-dev-shm-size-kb"
-	mountKey                   = "tee-mount"
-	itaRegion                  = "ita-region"
+	// keep-sorted start by_regex="([^"]+)"
+	gcaServiceEnv              = "gca-service-env"
 	itaKey                     = "ita-api-key"
+	itaRegion                  = "ita-region"
 	addedCaps                  = "tee-added-capabilities"
 	cgroupNS                   = "tee-cgroup-ns"
-	gcaServiceEnv              = "gca-service-env"
-	installGpuDriver           = "tee-install-gpu-driver"
+	cmdKey                     = "tee-cmd"
+	logRedirectKey             = "tee-container-log-redirect"
+	devShmSizeKey              = "tee-dev-shm-size-kb"
 	disableGcaRefreshKey       = "tee-disable-gca-refresh"
+	envKeyPrefix               = "tee-env-"
+	imageRefKey                = "tee-image-reference"
+	impersonateServiceAccounts = "tee-impersonate-service-accounts"
+	installGpuDriver           = "tee-install-gpu-driver"
+	monitoringEnable           = "tee-monitoring-enable"
+	memoryMonitoringEnable     = "tee-monitoring-memory-enable"
+	mountKey                   = "tee-mount"
+	restartPolicyKey           = "tee-restart-policy"
+	signedImageRepos           = "tee-signed-image-repos"
+	fakeVerifierKey            = "test-fake-verifier"
+	// keep-sorted end
 )
 
 const (
@@ -117,6 +119,16 @@ type EnvVar struct {
 	Value string
 }
 
+// String implements fmt.Stringer to prevent accidental exposure of Value in logs and errors.
+func (e EnvVar) String() string {
+	return e.Name
+}
+
+// GoString implements fmt.GoStringer so that %#v also redacts the Value.
+func (e EnvVar) GoString() string {
+	return fmt.Sprintf("spec.EnvVar{Name: %q}", e.Name)
+}
+
 // LaunchSpec contains specification set by the operator who wants to
 // launch a container.
 type LaunchSpec struct {
@@ -124,25 +136,27 @@ type LaunchSpec struct {
 	FakeVerifierEnabled bool
 
 	// MDS-based values.
-	ImageRef                   string
-	SignedImageRepos           []string
-	RestartPolicy              RestartPolicy
-	Cmd                        []string
-	Envs                       []EnvVar
-	GcaAddress                 string
-	ImpersonateServiceAccounts []string
-	ProjectID                  string
-	Region                     string
-	Hardened                   bool
-	MonitoringEnabled          MonitoringType
-	LogRedirect                LogRedirectLocation
-	Mounts                     []launchermount.Mount
-	ITAConfig                  verifier.ITAConfig
-	DevShmSize                 int64 // DevShmSize is specified in kiB.
+	// keep-sorted start case=no
 	AddedCapabilities          []string
 	CgroupNamespace            bool
-	InstallGpuDriver           bool
+	Cmd                        []string
+	DevShmSize                 int64 // DevShmSize is specified in kiB.
 	DisableGcaRefresh          bool
+	Envs                       []EnvVar
+	GcaAddress                 string
+	Hardened                   bool
+	ImageRef                   string
+	ImpersonateServiceAccounts []string
+	InstallGpuDriver           bool
+	ITAConfig                  verifier.ITAConfig
+	LogRedirect                LogRedirectLocation
+	MonitoringEnabled          MonitoringType
+	Mounts                     []launchermount.Mount
+	ProjectID                  string
+	Region                     string
+	RestartPolicy              RestartPolicy
+	SignedImageRepos           []string
+	// keep-sorted end
 }
 
 // UnmarshalJSON unmarshals an instance attributes list in JSON format from the metadata
@@ -373,7 +387,7 @@ func GetLaunchSpec(ctx context.Context, logger logging.Logger, client *metadata.
 		return LaunchSpec{}, fmt.Errorf("failed to validate mounts: %v", errors.Join(errs...))
 	}
 
-	if !(spec.Experiments.EnableB200DriverInstallation || spec.Experiments.EnableH100DriverInstallation) && spec.InstallGpuDriver {
+	if !spec.Experiments.EnableB200DriverInstallation && !spec.Experiments.EnableH100DriverInstallation && spec.InstallGpuDriver {
 		return LaunchSpec{}, fmt.Errorf("GPU Driver installation is not supported")
 	}
 

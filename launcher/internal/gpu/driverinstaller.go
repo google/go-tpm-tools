@@ -257,13 +257,13 @@ func QueryCCMode(ccModeCmd, devToolsCmd NvidiaSmiCmdOutput) (attest.GPUDeviceCCM
 		return attest.GPUDeviceCCMode_UNSET, err
 	}
 
-	if strings.Contains(string(ccModeOutput), "CC status: ON") {
+	if strings.Contains(strings.ToLower(string(ccModeOutput)), "cc status: on") {
 		ccMode = attest.GPUDeviceCCMode_ON
-	} else if strings.Contains(string(ccModeOutput), "CC status: OFF") {
+	} else if strings.Contains(strings.ToLower(string(ccModeOutput)), "cc status: off") {
 		ccMode = attest.GPUDeviceCCMode_OFF
 	}
 
-	if ccMode == attest.GPUDeviceCCMode_ON && strings.Contains(string(devToolsOutput), "DevTools Mode: ON") {
+	if ccMode == attest.GPUDeviceCCMode_ON && strings.Contains(strings.ToLower(string(devToolsOutput)), "devtools mode: on") {
 		ccMode = attest.GPUDeviceCCMode_DEVTOOLS
 	}
 
@@ -285,7 +285,7 @@ func launchNvidiaPersistencedProcess(logger logging.Logger) error {
 func NvidiaSmiOutputFunc(args ...string) NvidiaSmiCmdOutput {
 	var cmdPath string
 
-	builtInPath := fmt.Sprintf("%s/bin/nvidia-smi", BuiltInInstallation595_58_03HostDir)
+	builtInPath := fmt.Sprintf("%s/bin/nvidia-smi", BuiltInInstallation610_57_04HostDir)
 	if _, err := os.Stat(builtInPath); err == nil {
 		cmdPath = builtInPath
 	} else {

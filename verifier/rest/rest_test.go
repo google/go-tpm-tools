@@ -40,9 +40,68 @@ func TestConvertEmpty(t *testing.T) {
 	if _, err := convertChallengeFromREST(&ccpb.Challenge{}); err != nil {
 		t.Errorf("Converting empty challenge: %v", err)
 	}
-	_ = convertRequestToREST(verifier.VerifyAttestationRequest{})
+	if _, err := convertRequestToREST(verifier.VerifyAttestationRequest{}); err != nil {
+		t.Errorf("Converting empty request: %v", err)
+	}
 	if _, err := convertResponseFromREST(&ccpb.VerifyAttestationResponse{}); err != nil {
 		t.Errorf("Converting empty challenge: %v", err)
+	}
+}
+
+func TestConvertRequestToREST(t *testing.T) {
+	tests := []struct {
+		name         string
+		req          verifier.VerifyAttestationRequest
+		wantInstance string
+		hasTdCcel    bool
+		hasTpm       bool
+	}{
+		{
+			name: "TDX CVM request",
+			req: verifier.VerifyAttestationRequest{
+				GCEInstance: "projects/123/zones/us-central1-a/instances/456",
+				TDCCELAttestation: &verifier.TDCCELAttestation{
+					TdQuote:       []byte("quote"),
+					CcelAcpiTable: []byte("table"),
+					CcelData:      []byte("log"),
+				},
+			},
+			wantInstance: "projects/123/zones/us-central1-a/instances/456",
+			hasTdCcel:    true,
+			hasTpm:       false,
+		},
+		{
+			name: "TPM request",
+			req: verifier.VerifyAttestationRequest{
+				Attestation: &attestpb.Attestation{
+					Quotes: []*tpm.Quote{{
+						Quote:  []byte("raw quote"),
+						RawSig: []byte("raw sig"),
+					}},
+				},
+			},
+			wantInstance: "",
+			hasTdCcel:    false,
+			hasTpm:       true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := convertRequestToREST(tc.req)
+			if err != nil {
+				t.Fatalf("failed to convert request to REST: %v", err)
+			}
+			if got.Instance != tc.wantInstance {
+				t.Errorf("Instance = %q, want %q", got.Instance, tc.wantInstance)
+			}
+			if (got.GetTdCcel() != nil) != tc.hasTdCcel {
+				t.Errorf("GetTdCcel() != nil is %v, want %v", got.GetTdCcel() != nil, tc.hasTdCcel)
+			}
+			if (got.TpmAttestation != nil) != tc.hasTpm {
+				t.Errorf("TpmAttestation != nil is %v, want %v", got.TpmAttestation != nil, tc.hasTpm)
+			}
+		})
 	}
 }
 
@@ -614,6 +673,7 @@ func TestConvertCSRequestToREST(t *testing.T) {
 					Nonces:    []string{"test-nonce"},
 					TokenType: "PKI",
 				},
+				GCEInstance: "projects/123/zones/us-central1-a/instances/456",
 			},
 			expectedReq: &ccpb.VerifyConfidentialSpaceRequest{
 				TeeAttestation: &ccpb.VerifyConfidentialSpaceRequest_TpmAttestation{
@@ -661,6 +721,7 @@ func TestConvertCSRequestToREST(t *testing.T) {
 					AkCert:            []byte("test-ak-cert"),
 					IntermediateCerts: [][]byte{[]byte("chain-1"), []byte("chain-2")},
 				},
+				GCEInstance: "projects/123/zones/us-central1-a/instances/456",
 			},
 			expectedReq: &ccpb.VerifyConfidentialSpaceRequest{
 				TeeAttestation: &ccpb.VerifyConfidentialSpaceRequest_TdCcel{
@@ -707,6 +768,7 @@ func TestConvertCSRequestToREST(t *testing.T) {
 						},
 					},
 				},
+				GCEInstance: "projects/123/zones/us-central1-a/instances/456",
 			},
 			expectedReq: &ccpb.VerifyConfidentialSpaceRequest{
 				TeeAttestation: &ccpb.VerifyConfidentialSpaceRequest_TdCcel{
@@ -762,7 +824,10 @@ func TestConvertCSRequestToREST(t *testing.T) {
 
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
-			gotReq := convertCSRequestToREST(tc.verifierReq)
+			gotReq, err := convertCSRequestToREST(tc.verifierReq)
+			if err != nil {
+				t.Fatalf("convertCSRequestToREST failed: %v", err)
+			}
 			if diff := cmp.Diff(gotReq, tc.expectedReq, cmpOpts...); diff != "" {
 				t.Errorf("convertCSRequestToREST returned unexpected output (-got, +want): %v", diff)
 			}
@@ -786,5 +851,35 @@ func TestConvertCSResponseFromREST(t *testing.T) {
 	gotResp := convertCSResponseFromREST(csResp)
 	if diff := cmp.Diff(gotResp, expectedResp, cmpopts.IgnoreUnexported(status.Status{})); diff != "" {
 		t.Errorf("convertCSResponseFromREST(%v) did not return expected output(-got, +want): %v", csResp, diff)
+	}
+}
+
+func TestConvertRequestToREST_MalformedAttestationReturnsError(t *testing.T) {
+	// Malformed TDX quote should return an error instead of crashing the process via log.Fatalf
+	reqTDX := verifier.VerifyAttestationRequest{
+		Attestation: &attestpb.Attestation{
+			TeeAttestation: &attestpb.Attestation_TdxAttestation{
+				TdxAttestation: &tpb.QuoteV4{},
+			},
+		},
+	}
+	_, err := convertRequestToREST(reqTDX)
+	if err == nil {
+		t.Error("expected error converting malformed TDX quote, got nil")
+	}
+
+	// Malformed SEV-SNP attestation should return an error instead of crashing the process via log.Fatalf
+	reqSNP := verifier.VerifyAttestationRequest{
+		Attestation: &attestpb.Attestation{
+			TeeAttestation: &attestpb.Attestation_SevSnpAttestation{
+				SevSnpAttestation: &spb.Attestation{
+					Report: &spb.Report{},
+				},
+			},
+		},
+	}
+	_, err = convertRequestToREST(reqSNP)
+	if err == nil {
+		t.Error("expected error converting malformed SEV-SNP report, got nil")
 	}
 }

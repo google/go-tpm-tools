@@ -50,6 +50,7 @@ type VerifyAttestationRequest struct {
 	// TDCCELAttestation is for TDX CCEL RTMR attestation
 	TDCCELAttestation *TDCCELAttestation
 	NvidiaAttestation *attestationpb.NvidiaAttestationReport
+	GCEInstance       string
 }
 
 type TDCCELAttestation struct {
@@ -82,7 +83,7 @@ type AttestClients struct {
 	ITA Client
 }
 
-// HasThirdPartyClient returns true if AttestClients contains an initialzied
+// HasThirdPartyClient returns true if AttestClients contains an initialized
 // third-party verifier client.
 func (ac *AttestClients) HasThirdPartyClient() bool {
 	return ac.ITA != nil

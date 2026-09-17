@@ -2,15 +2,15 @@ package gpu
 
 import (
 	"crypto/sha256"
-	"fmt"
-
 	"encoding/base64"
+	"fmt"
 
 	"cos.googlesource.com/cos/tools.git/src/cmd/cos_gpu_installer/deviceinfo"
 	"github.com/NVIDIA/go-nvml/pkg/nvml"
 	"github.com/confidentsecurity/go-nvtrust/pkg/gonvtrust/gpu"
 
 	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
+	"github.com/google/go-tpm-tools/agent/device"
 	"github.com/google/go-tpm-tools/proto/attest"
 )
 
@@ -30,19 +30,24 @@ var getGpuTypeInfo = deviceinfo.GetGPUTypeInfo
 
 // Attester defines the interface for GPU attestation.
 type Attester interface {
-	Attest(nonce []byte) (any, error)
-	EnableReadyState() error
+	device.ROT
+	device.ReadyStateEnabler
 }
 
 // NvidiaAttester is responsible for collecting GPU attestation.
 type NvidiaAttester struct{}
 
 // NewNvidiaAttester returns a new NvidiaAttester if installGpuDriver is true, otherwise nil.
-func NewNvidiaAttester(installGpuDriver bool) Attester {
+func NewNvidiaAttester(installGpuDriver bool) *NvidiaAttester {
 	if !installGpuDriver {
 		return nil
 	}
 	return &NvidiaAttester{}
+}
+
+// Vendor returns the device ROT vendor type for Nvidia GPU.
+func (a *NvidiaAttester) Vendor() device.Vendor {
+	return device.NvidiaGPU
 }
 
 // Attest returns a GPU attestation.
@@ -72,12 +77,13 @@ func (a *NvidiaAttester) EnableReadyState() error {
 	}
 
 	// Explicitly need to set the GPU state to READY for GPUs with confidential compute mode ON.
-	if ccEnabled == attest.GPUDeviceCCMode_ON {
+	if ccEnabled == attest.GPUDeviceCCMode_ON || ccEnabled == attest.GPUDeviceCCMode_DEVTOOLS {
 		setGPUStateCmd := NvidiaSmiOutputFunc("conf-compute", "-srs", "1")
 		if err := setGPUStateToReady(setGPUStateCmd); err != nil {
 			return fmt.Errorf("failed to set the GPU state to ready: %v", err)
 		}
 	}
+
 	return nil
 }
 
@@ -168,6 +174,10 @@ func (a *NvidiaAttester) collectAttestationEvidence(handler gpu.NvmlHandler, non
 func determineAttestationType(gpuInfos []*attestationpb.GpuInfo) attestationType {
 	gpuType, _ := getGpuTypeInfo()
 	if gpuType != deviceinfo.H100 && gpuType != deviceinfo.B200 {
+		return UNSUPPORTED
+	}
+	// H100 can only support single GPU attestation in CS at the moment.
+	if gpuType == deviceinfo.H100 && len(gpuInfos) != 1 {
 		return UNSUPPORTED
 	}
 	if gpuType == deviceinfo.B200 && len(gpuInfos) > 1 {

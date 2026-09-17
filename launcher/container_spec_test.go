@@ -411,15 +411,15 @@ func TestCreateOCISpecOpts_GPU_BCMode(t *testing.T) {
 		}
 	}
 
-	// Verify GPU library bind mounts use the pre-baked 595.58.03 BC mode path
+	// Verify GPU library bind mounts use the pre-baked 610.57.04 path
 	foundBcMount := false
 	for _, mnt := range gotSpec.Mounts {
-		if mnt.Source == "/opt/nvidia/595.58.03/lib64" && mnt.Destination == "/usr/local/nvidia/lib64" {
+		if mnt.Source == "/opt/nvidia/610.57.04/lib64" && mnt.Destination == "/usr/local/nvidia/lib64" {
 			foundBcMount = true
 		}
 	}
 	if !foundBcMount {
-		t.Errorf("Expected BC Mode GPU mount (/opt/nvidia/595.58.03/lib64 -> /usr/local/nvidia/lib64) not found in spec: %v", gotSpec.Mounts)
+		t.Errorf("Expected BC Mode GPU mount (/opt/nvidia/610.57.04/lib64 -> /usr/local/nvidia/lib64) not found in spec: %v", gotSpec.Mounts)
 	}
 }
 

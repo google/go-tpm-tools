@@ -5,7 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
+	"net/http"
 	"os"
+	"path"
 
 	"cloud.google.com/go/compute/metadata"
 	"cos.googlesource.com/cos/tools.git/src/cmd/cos_gpu_installer/deviceinfo"
@@ -13,9 +16,13 @@ import (
 	"github.com/containerd/containerd/defaults"
 	"github.com/containerd/containerd/namespaces"
 	"github.com/google/go-tpm-tools/agent"
+	"github.com/google/go-tpm-tools/agent/device"
 	"github.com/google/go-tpm-tools/client"
+	kmcommonpb "github.com/google/go-tpm-tools/keymanager/km_common/proto"
+	workloadservice "github.com/google/go-tpm-tools/keymanager/workload_service"
 	"github.com/google/go-tpm-tools/launcher/internal/gpu"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
+	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/registryauth"
 	"github.com/google/go-tpm-tools/launcher/spec"
 	"github.com/google/go-tpm-tools/launcher/teeserver"
@@ -27,6 +34,12 @@ import (
 	"google.golang.org/api/option"
 )
 
+const (
+	teeServerSocket      = "teeserver.sock"
+	keyManagerSocket     = "kmaserver.sock"
+	keyManagerGrpcSocket = "kmaserver-grpc.sock"
+)
+
 var expectedTPMDAParams = TPMDAParams{
 	MaxTries:        0x20,    // 32 tries
 	RecoveryTime:    0x1C20,  // 120 mins
@@ -35,7 +48,11 @@ var expectedTPMDAParams = TPMDAParams{
 
 // StartLauncher orchestrates the client creation, image pulling, attestation agent setup,
 // and runs the ContainerRunner.
-func StartLauncher(ctx context.Context, launchSpec spec.LaunchSpec, logger logging.Logger, workloadLogger logging.Logger, serialConsole *os.File, clientOpts ...option.ClientOption) error {
+func StartLauncher(ctx context.Context, launchSpec spec.LaunchSpec, logger logging.Logger, serialConsole *os.File, pinnedClient *http.Client, googleClient *http.Client) error {
+	if pinnedClient == nil {
+		return errors.New("pinnedClient must be non-nil")
+	}
+
 	containerdClient, err := containerd.New(defaults.DefaultAddress)
 	if err != nil {
 		return &RetryableError{Err: err}
@@ -75,17 +92,14 @@ func StartLauncher(ctx context.Context, launchSpec spec.LaunchSpec, logger loggi
 		}
 	}
 
-	googleClient, err := GoogleHTTPClient()
-	if err != nil {
-		return fmt.Errorf("failed to initialize Google root HTTP client: %v", err)
-	}
-
-	image, err := initImage(ctx, containerdClient, launchSpec, token, googleClient)
+	image, err := initImage(ctx, containerdClient, launchSpec, token, pinnedClient)
 	if err != nil {
 		return err
 	}
-	// Initialize verifier client and attest clients.
-	attestClients, err := createAttestClients(ctx, launchSpec, logger, clientOpts...)
+
+	// googleClient is an authenticated HTTP client (OAuth2 ADC credentials) built on top
+	// of the pinned transport. Used for GCA verifier client creation and SA impersonation.
+	attestClients, err := createAttestClients(ctx, launchSpec, logger, googleClient)
 	if err != nil {
 		return err
 	}
@@ -103,7 +117,7 @@ func StartLauncher(ctx context.Context, launchSpec spec.LaunchSpec, logger loggi
 			return nil, err
 		}
 		for _, sa := range launchSpec.ImpersonateServiceAccounts {
-			idToken, err := FetchImpersonatedToken(ctx, sa, audience, clientOpts...)
+			idToken, err := FetchImpersonatedToken(ctx, sa, audience, option.WithHTTPClient(googleClient))
 			if err != nil {
 				return nil, fmt.Errorf("failed to get impersonated token for %v: %w", sa, err)
 			}
@@ -113,35 +127,77 @@ func StartLauncher(ctx context.Context, launchSpec spec.LaunchSpec, logger loggi
 	}
 
 	// Create signature discovery client.
-	sdClient := getSignatureDiscoveryClient(containerdClient, mdsClient, image.Target(), googleClient)
+	sdClient := getSignatureDiscoveryClient(containerdClient, mdsClient, image.Target(), pinnedClient)
 
-	// Create device ROTs and GpuAttester.
-	var deviceROTs []agent.DeviceROT
-	gpuAttester := gpu.NewNvidiaAttester(launchSpec.InstallGpuDriver)
-	if launchSpec.InstallGpuDriver {
-		deviceROTs = append(deviceROTs, gpuAttester)
+	// Create device ROTs and ROTManager.
+	var deviceROTs []device.ROT
+	nvidiaAttester := gpu.NewNvidiaAttester(launchSpec.InstallGpuDriver)
+	if nvidiaAttester != nil {
+		deviceROTs = append(deviceROTs, nvidiaAttester)
 	}
+	deviceROTManager := device.NewROTManager(deviceROTs)
 
 	// Create AttestationAgent.
 	exps := agent.Experiments{
 		EnableAttestationEvidence: launchSpec.Experiments.EnableAttestationEvidence,
 		EnableGpuGcaSupport:       launchSpec.Experiments.EnableGpuGcaSupport,
+		EnableGpuItaSupport:       launchSpec.Experiments.EnableGpuItaSupport,
 		BcMode:                    launchSpec.Experiments.BcMode,
 	}
-	attestAgent, err := agent.CreateAttestationAgent(tpm, client.GceAttestationKeyECC, verifierClient, principalFetcherWithImpersonate, sdClient, exps, logger, deviceROTs, launchSpec.SignedImageRepos)
+	attestAgent, err := agent.CreateAttestationAgent(tpm, client.GceAttestationKeyECC, verifierClient, principalFetcherWithImpersonate, sdClient, exps, logger, deviceROTManager, launchSpec.SignedImageRepos)
 	if err != nil {
 		return err
 	}
+
+	var keyClaimsProvider workloadservice.KeyClaimsProvider
+	if launchSpec.Experiments.EnableKeyManager {
+		logger.Info("EnableKeyManager experiment is enabled: initializing KeyManager server.")
+		kmServer, err := workloadservice.New(
+			ctx,
+			path.Join(launcherfile.HostTmpPath, keyManagerSocket),
+			kmcommonpb.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to create KeyManager server: %w", err)
+		}
+		go func() { _ = kmServer.Serve() }()
+		defer kmServer.Shutdown(ctx)
+		keyClaimsProvider = kmServer
+	}
+
+	logger.Info("Initializing TEE server.")
+	teeSocket, err := listenUnixSocket(path.Join(launcherfile.HostTmpPath, teeServerSocket))
+	if err != nil {
+		return err
+	}
+	teeServer, err := teeserver.New(
+		ctx,
+		teeSocket,
+		attestAgent,
+		logger,
+		launchSpec.Experiments.BcMode,
+		launchSpec.Experiments.EnableHostAttestation,
+		attestClients,
+		keyClaimsProvider,
+	)
+	if err != nil {
+		teeSocket.Close()
+		return fmt.Errorf("failed to create TEE server: %w", err)
+	}
+	if launchSpec.Experiments.BcMode {
+		setupBCSocketPermissions(logger)
+	}
+
+	go func() { _ = teeServer.Serve() }()
+	defer teeServer.Shutdown(ctx)
 
 	r, err := NewRunner(ctx, &RunnerConfig{
 		ContainerdClient: containerdClient,
 		Image:            image,
 		AttestAgent:      attestAgent,
-		GpuAttester:      gpuAttester,
-		AttestClients:    attestClients,
+		DeviceROTManager: deviceROTManager,
 		LaunchSpec:       launchSpec,
 		Logger:           logger,
-		WorkloadLogger:   workloadLogger,
 		SerialConsole:    serialConsole,
 	})
 	if err != nil {
@@ -200,30 +256,84 @@ func initTPM(launchSpec spec.LaunchSpec, logger logging.Logger) (io.ReadWriteClo
 	return tpm, nil
 }
 
-func createAttestClients(ctx context.Context, launchSpec spec.LaunchSpec, logger logging.Logger, clientOpts ...option.ClientOption) (teeserver.AttestClients, error) {
+// createAttestClients initializes verifier clients (GCA/ITA).
+// When DisableGcaRefresh is false, googleClient must be configured with both OAuth2 token credentials
+// and Google Root CA certificate pinning.
+func createAttestClients(ctx context.Context, launchSpec spec.LaunchSpec, logger logging.Logger, googleClient *http.Client) (teeserver.AttestClients, error) {
 	attestClients := teeserver.AttestClients{}
+
+	if !launchSpec.DisableGcaRefresh {
+		if googleClient == nil || googleClient.Transport == nil {
+			return attestClients, fmt.Errorf("failed to create REST verifier client: googleClient must be non-nil with a valid transport")
+		}
+	}
 
 	if launchSpec.FakeVerifierEnabled {
 		fakeClient := fake.NewClient(nil)
 		attestClients.GCA = fakeClient
 		attestClients.ITA = fakeClient
-	} else if launchSpec.ITAConfig.ITARegion != "" {
+		return attestClients, nil
+	}
+	if launchSpec.ITAConfig.ITARegion != "" {
 		itaClient, err := ita.NewClient(launchSpec.ITAConfig)
 		if err != nil {
 			return attestClients, fmt.Errorf("failed to create ITA client: %v", err)
 		}
 		attestClients.ITA = itaClient
-	} else {
-		gcaClient, err := util.NewRESTClient(ctx, launchSpec.GcaAddress, launchSpec.ProjectID, launchSpec.Region, clientOpts...)
-		if err != nil {
-			if !launchSpec.DisableGcaRefresh {
-				return attestClients, fmt.Errorf("failed to create REST verifier client: %v", err)
-			}
-			logger.Info("Failed to create the GCA client, but GCA refresh is disabled so the launch will continue: %v", err)
-			gcaClient = nil
-		}
-		attestClients.GCA = gcaClient
+		return attestClients, nil
 	}
 
+	gcaClient, err := util.NewRESTClient(ctx, launchSpec.GcaAddress, launchSpec.ProjectID, launchSpec.Region, option.WithHTTPClient(googleClient))
+	if err != nil {
+		if !launchSpec.DisableGcaRefresh {
+			return attestClients, fmt.Errorf("failed to create REST verifier client: %v", err)
+		}
+		logger.Info("Failed to create the GCA client, but GCA refresh is disabled so the launch will continue: %v", err)
+		gcaClient = nil
+	}
+	attestClients.GCA = gcaClient
 	return attestClients, nil
 }
+
+func listenUnixSocket(socketPath string) (net.Listener, error) {
+	nl, err := net.Listen("unix", socketPath)
+	if err != nil {
+		return nil, fmt.Errorf("cannot listen to socket [%s]: %w", socketPath, err)
+	}
+	if err := os.Chmod(socketPath, 0777); err != nil {
+		nl.Close()
+		return nil, fmt.Errorf("failed to chmod unix socket %s: %w", socketPath, err)
+	}
+	return nl, nil
+}
+
+func verifySocketPermissions(socketPath string) error {
+	info, err := os.Stat(socketPath)
+	if err != nil {
+		return fmt.Errorf("failed to stat socket: %w", err)
+	}
+	if perm := info.Mode().Perm(); perm != 0777 {
+		return fmt.Errorf("socket %s has permissions %04o, want 0777", socketPath, perm)
+	}
+	return nil
+}
+
+func setupBCSocketPermissions(logger logging.Logger) {
+	kmaServerSocketPath := path.Join(launcherfile.HostTmpPath, keyManagerSocket)
+	kmaServerGrpcSocketPath := path.Join(launcherfile.HostTmpPath, keyManagerGrpcSocket)
+
+	if err := os.Chmod(kmaServerSocketPath, 0777); err != nil {
+		logger.Error("failed to chmod file %s: %v\n", kmaServerSocketPath, err)
+	}
+	if err := os.Chmod(kmaServerGrpcSocketPath, 0777); err != nil {
+		logger.Error("failed to chmod file %s: %v\n", kmaServerGrpcSocketPath, err)
+	}
+
+	if err := verifySocketPermissions(kmaServerSocketPath); err != nil {
+		logger.Error("failed to verify kmaserver socket permissions: %v", err)
+	}
+	if err := verifySocketPermissions(kmaServerGrpcSocketPath); err != nil {
+		logger.Error("failed to verify kmaserver-grpc socket permissions: %v", err)
+	}
+}
+

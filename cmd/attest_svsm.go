@@ -26,7 +26,7 @@ var attestSVSMCmd = &cobra.Command{
 	Use:   "svsm",
 	Short: `Produce a SevSnpSvsmAttestation that wraps the PCR attestation message.`,
 	RunE: func(*cobra.Command, []string) error {
-		if teeTechnology != SevSnp {
+		if teeTechnology != sevSNP {
 			return errSvsmOnlySupportedWithSevSnp
 		}
 		rwc, err := openTpm()
@@ -66,7 +66,7 @@ var attestSVSMCmd = &cobra.Command{
 			return fmt.Errorf("failed to collect attestation report : %v", err)
 		}
 
-		if teeTechnology != SevSnp {
+		if teeTechnology != sevSNP {
 			return errSvsmOnlySupportedWithSevSnp
 		}
 		configfsClient, err := linuxtsm.MakeClient()

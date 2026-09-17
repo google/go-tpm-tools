@@ -46,7 +46,7 @@ var verifySVSMCmd = &cobra.Command{
 	Use:   "svsm",
 	Short: `Debug the contents of an SevSnpSvsmAttestation. Currently only supported with sev-snp. For debugging purposes only.`,
 	RunE: func(*cobra.Command, []string) error {
-		if teeTechnology != SevSnp {
+		if teeTechnology != sevSNP {
 			return errSvsmOnlySupportedWithSevSnp
 		}
 		if len(teeNonce) == 0 {

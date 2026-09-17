@@ -23,6 +23,8 @@ import (
 )
 
 func TestTokenWithGCEAK(t *testing.T) {
+	teeNonce = nil
+	teeTechnology = ""
 	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
 

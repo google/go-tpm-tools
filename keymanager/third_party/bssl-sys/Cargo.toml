@@ -15,6 +15,9 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(bindgen_rs_file)'] }
 [lib]
 path = "../../boringssl/rust/bssl-sys/src/lib.rs"
 
+[dependencies.bssl-macros]
+path = "../../boringssl/rust/bssl-macros"
+
 [build-dependencies]
 cmake = "0.1"
 

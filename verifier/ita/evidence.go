@@ -49,11 +49,23 @@ type gcpData struct {
 	CSInfo            confidentialSpaceInfo `json:"confidential_space_info"`
 }
 
+type gpuDeviceEvidence struct {
+	Evidence    []byte `json:"evidence"`
+	Certificate []byte `json:"certificate"`
+}
+
+type nvgpuEvidence struct {
+	GpuNonce     string              `json:"gpu_nonce"`
+	Arch         string              `json:"arch"`
+	EvidenceList []gpuDeviceEvidence `json:"evidence_list"`
+}
+
 type tokenRequest struct {
-	PolicyMatch bool        `json:"policy_must_match"`
-	TDX         tdxEvidence `json:"tdx"`
-	SigAlg      string      `json:"token_signing_alg"`
-	GCP         gcpData     `json:"gcpcs"`
+	PolicyMatch bool           `json:"policy_must_match"`
+	TDX         tdxEvidence    `json:"tdx"`
+	Nvgpu       *nvgpuEvidence `json:"nvgpu,omitempty"`
+	SigAlg      string         `json:"token_signing_alg"`
+	GCP         gcpData        `json:"gcpcs"`
 }
 
 type tokenResponse struct {

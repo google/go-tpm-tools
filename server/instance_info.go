@@ -17,3 +17,14 @@ func GCEInstanceURL(i *pb.GCEInstanceInfo) string {
 		url.PathEscape(i.GetInstanceName()), // Can use either the name or id here
 	)
 }
+
+// GCEInstanceResourceName returns the Compute Engine full resource name for the
+// specified instance using its project number and instance id.
+func GCEInstanceResourceName(i *pb.GCEInstanceInfo) string {
+	return fmt.Sprintf(
+		"//compute.googleapis.com/projects/%d/zones/%s/instances/%d",
+		i.GetProjectNumber(),
+		url.PathEscape(i.GetZone()),
+		i.GetInstanceId(),
+	)
+}

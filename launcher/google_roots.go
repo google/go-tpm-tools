@@ -12,16 +12,10 @@ import (
 // GoogleRootsPath is the path to the Google roots PEM file on the OEM partition.
 const GoogleRootsPath = "/usr/share/oem/google_roots.pem"
 
-// GoogleHTTPClient creates an HTTP client that only trusts the roots required for connecting to Google.
-func GoogleHTTPClient() (*http.Client, error) {
-	return googleHTTPClientWithRoots(GoogleRootsPath)
-}
-
-// googleHTTPClientWithRoots allows internal tests to inject mock certificate paths.
-func googleHTTPClientWithRoots(rootsPath string) (*http.Client, error) {
-	pool, err := loadCertPool(rootsPath)
-	if err != nil {
-		return nil, err
+// PinnedHTTPTransport creates an HTTP transport configured with the provided root certificate pool.
+func PinnedHTTPTransport(pool *x509.CertPool) (http.RoundTripper, error) {
+	if pool == nil {
+		return nil, fmt.Errorf("cert pool must be non-nil")
 	}
 
 	// We copy the default transport so we get all the proxy, keep-alive,
@@ -37,9 +31,7 @@ func googleHTTPClientWithRoots(rootsPath string) (*http.Client, error) {
 	}
 	customTransport.TLSClientConfig.RootCAs = pool
 
-	return &http.Client{
-		Transport: customTransport,
-	}, nil
+	return customTransport, nil
 }
 
 // GoogleCertPool loads the Google root certificates into an x509.CertPool.

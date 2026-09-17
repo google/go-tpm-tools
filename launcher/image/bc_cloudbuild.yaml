@@ -1,4 +1,5 @@
 substitutions:
+  '_ACOS_BUCKET_NAME': ''
   '_BASE_IMAGE': ''
   '_BASE_IMAGE_PROJECT': ''
   '_BUCKET_NAME': ''
@@ -10,6 +11,7 @@ substitutions:
 steps:
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     id: 'ExportBaseImage'
+    waitFor: ['-']
     args:
       - 'gcloud'
       - 'compute'
@@ -18,8 +20,10 @@ steps:
       - '--image=${_BASE_IMAGE}'
       - '--image-project=${_BASE_IMAGE_PROJECT}'
       - '--destination-uri=gs://${_BUCKET_NAME}/oem-preloader-${BUILD_ID}/${_BASE_IMAGE}.tar.gz'
+      - '--zone=us-west1-a'
   - name: 'gcr.io/cloud-builders/gcloud'
     id: 'DownloadImageFromGCS'
+    waitFor: ['ExportBaseImage']
     entrypoint: 'gcloud'
     args: ['storage',
            'cp',
@@ -27,6 +31,7 @@ steps:
            './src_image.tar.gz']
   - name: 'gcr.io/cloud-builders/docker'
     id: 'SaveWSDContainerImage'
+    waitFor: ['-']
     entrypoint: 'bash'
     args:
       - '-c'
@@ -38,22 +43,11 @@ steps:
         docker rm "$${container_id}"
   - name: 'alpine'
     id: 'ExtractRawImage'
+    waitFor: ['DownloadImageFromGCS']
     args: ['tar', '-xf', './src_image.tar.gz']
-
-  - name: 'gcr.io/cloud-builders/docker'
-    id: 'BuildAndSaveGPUHelper'
-    entrypoint: 'bash'
-    args:
-      - '-c'
-      - |
-        set -e
-        docker build -t guest-gpu-tools:latest ./launcher/internal/gpu/daemons/
-        container_id=$$(docker create guest-gpu-tools:latest)
-        docker export "$${container_id}" -o /workspace/gpu_helper_rootfs.tar
-        docker rm "$${container_id}"
-
   - name: 'alpine'
     id: 'PrepareOEMInstallDir'
+    waitFor: ['SaveWSDContainerImage']
     entrypoint: 'sh'
     args:
       - -c
@@ -63,13 +57,13 @@ steps:
         mkdir -p /workspace/oem-install/confidential_space
         mkdir -p /workspace/oem-install/confidential_space/nodeproblemdetector
         mkdir -p /workspace/oem-install/wsd
-        mkdir -p /workspace/oem-install/gpu_helper
 
         cp ./launcher/image/bc-guest/bcentrypoint.sh /workspace/oem-install/entrypoint.sh
         cp ./launcher/image/bc-guest/bcexperiment.json \
            ./launcher/image/launcher \
            ./launcher/image/container-runner.service \
-           ./launcher/image/fluent-bit-cs.conf \
+           ./launcher/image/bc-guest/bc-fluent-bit-cs.conf \
+           ./launcher/image/parsers-cs.conf \
            ./launcher/image/exit_script.sh \
            ./launcher/image/bc-guest/bc_network_setup.sh \
            ./launcher/image/bc-guest/bc_network_optimization.sh \
@@ -89,15 +83,6 @@ steps:
           mkdir -p /workspace/oem-install/wsd/rootfs/run/container_launcher
           # Mountpoint needed by containerd
           mkdir -p /workspace/oem-install/wsd/rootfs/dev/mqueue
-        fi
-
-        # Extract GPU rootfs
-        if [ -f /workspace/gpu_helper_rootfs.tar ]; then
-          mkdir -p /workspace/oem-install/gpu_helper/rootfs
-          tar -C /workspace/oem-install/gpu_helper/rootfs -xf /workspace/gpu_helper_rootfs.tar
-          mkdir -p /workspace/oem-install/gpu_helper/rootfs/opt/nvidia-host
-          # Mountpoint needed by containerd
-          mkdir -p /workspace/oem-install/gpu_helper/rootfs/dev/mqueue
         fi
 
         # Create IMA policy
@@ -136,6 +121,7 @@ steps:
 
   - name: 'gcr.io/cloud-builders/gcloud'
     id: 'DownloadVmlinux'
+    waitFor: ['-']
     entrypoint: 'bash'
     env:
       - 'BASE_IMAGE=${_BASE_IMAGE}'
@@ -157,8 +143,9 @@ steps:
         fi
 
         gcloud storage cp "gs://cos-tools/$${VERSION}/$${TARGET}/vmlinux" ./vmlinux
-  - name: 'gcr.io/cos-cloud/oem-preloader:latest'
+  - name: 'gcr.io/cos-cloud/oem-preloader:v20260529'
     id: 'RunOEMPreloader'
+    waitFor: ['ExtractRawImage', 'PrepareOEMInstallDir', 'DownloadVmlinux']
     env:
       - 'IMAGE_ENV=${_IMAGE_ENV}'
     entrypoint: 'bash'
@@ -177,11 +164,13 @@ steps:
           "s|systemd.mask=usr-share-oem.mount||g"
           "s|dm-m2d|dm-mod|g"
           "s|,oemroot|;oemroot|g"
+          "s|cros_efi|cros_efi module_blacklist=mlx5_core|g"
+          "s|cros_efi|cros_efi systemd.mask=get-cloud-api-domains.service|g"
+          "s|cros_efi|cros_efi initcall_blacklist=nvme_init,nvme_core_init|g"
+          "s|cros_efi|cros_efi systemd.mask=bpf-lsm-policy-loader.service|g"
         )
 
         DEBUG_COMMANDS=(
-          "s|cros_efi|cros_efi systemd.mask=konlet-startup.service|g"
-          "s|cros_efi|cros_efi systemd.mask=update-engine.service|g"
           "s|cros_efi|cros_efi confidential-space.hardened=false|g"
         )
 
@@ -194,18 +183,15 @@ steps:
           # "s|cros_efi|cros_efi systemd.unit=cloud-final.service|g"
           "s|cros_efi|cros_efi systemd.mask=var-lib-docker.mount|g"
           "s|cros_efi|cros_efi systemd.mask=docker.service|g"
-          "s|cros_efi|cros_efi systemd.mask=google-guest-agent.service|g"
           "s|cros_efi|cros_efi systemd.mask=google-osconfig-init.service|g"
           "s|cros_efi|cros_efi systemd.mask=google-osconfig-agent.service|g"
           "s|cros_efi|cros_efi systemd.mask=google-startup-scripts.service|g"
           "s|cros_efi|cros_efi systemd.mask=google-shutdown-scripts.service|g"
-          "s|cros_efi|cros_efi systemd.mask=konlet-startup.service|g"
           "s|cros_efi|cros_efi systemd.mask=crash-reporter.service|g"
           "s|cros_efi|cros_efi systemd.mask=device_policy_manager.service|g"
           "s|cros_efi|cros_efi systemd.mask=docker-events-collector-fluent-bit.service|g"
           "s|cros_efi|cros_efi systemd.mask=sshd.service|g"
           "s|cros_efi|cros_efi systemd.mask=var-lib-toolbox.mount|g"
-          "s|cros_efi|cros_efi systemd.mask=update-engine.service|g"
           "s|cros_efi|cros_efi confidential-space.hardened=true|g"
           "s|console=ttyS0,115200||g"
         )
@@ -236,9 +222,11 @@ steps:
         "$${CMD[@]}"
   - name: 'alpine'
     id: 'RenameOutputImage'
+    waitFor: ['RunOEMPreloader']
     args: ['mv', 'output.bin', 'disk.raw']
   - name: 'us-docker.pkg.dev/confidential-space-images-dev/cs-tools/measure@sha256:dae4766caef4a93c52736feb829bf2c505b7d48ce44d0ecb33e77d61bb4be888'
     id: 'MeasureImage'
+    waitFor: ['RenameOutputImage']
     env:
       - 'IMAGE_ENV=${_IMAGE_ENV}'
       - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_NAME}'
@@ -255,26 +243,51 @@ steps:
         gcloud storage cp measure_output_bc_$${IMAGE_ENV}_sha384.json gs://${PROJECT_ID}-rims/bc/$${OUTPUT_IMAGE_NAME}_sha384.json
   - name: 'alpine'
     id: 'TarOutputImage'
+    waitFor: ['RenameOutputImage']
     args: ['tar', '-zcf', './out_image.tar.gz', 'disk.raw']
   - name: 'gcr.io/cloud-builders/gcloud'
     id: 'UploadToGCS'
+    waitFor: ['TarOutputImage']
     entrypoint: 'gcloud'
     args: ['storage',
            'cp',
            './out_image.tar.gz',
            'gs://${_BUCKET_NAME}/oem-preloader-${BUILD_ID}/${_OUTPUT_IMAGE_NAME}.tar.gz']
+  - name: 'golang:1.26-bookworm'
+    id: 'ExtractWorkloadLicenses'
+    waitFor: ['-']
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        set -ex
+        chmod +x ./launcher/image/extract_all_licenses.sh
+        mkdir -p /workspace/license_out/go-tpm-tools
+        ./launcher/image/extract_all_licenses.sh / /workspace/license_out/go-tpm-tools "go-tpm-tools"
+        tar -czf /workspace/workload-licenses.tar.gz -C /workspace/license_out go-tpm-tools
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: 'UploadWorkloadLicensesToGCS'
+    waitFor: ['ExtractWorkloadLicenses']
+    entrypoint: 'gcloud'
+    args: ['storage',
+           'cp',
+           '/workspace/workload-licenses.tar.gz',
+           'gs://${_BUCKET_NAME}/oem-preloader-${BUILD_ID}/${_OUTPUT_IMAGE_NAME}_licenses.tar.gz']
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     id: 'FetchBaseImageFeatures'
+    waitFor: ['-']
     entrypoint: 'sh'
     args:
       - '-c'
       - |
         gcloud compute images describe ${_BASE_IMAGE} --project=${_BASE_IMAGE_PROJECT} --format="value(guestOsFeatures.type)" | paste -sd, - | tr ';' ',' | tr -d '\n' > /workspace/features.txt
+        sed -i 's/FEATURE_TYPE_UNSPECIFIED//g' /workspace/features.txt
         sed -i 's/SECURE_BOOT//g' /workspace/features.txt
         sed -i 's/,,/,/g' /workspace/features.txt
         sed -i 's/^,//; s/,$//' /workspace/features.txt
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     id: 'CreateGCEImage'
+    waitFor: ['UploadToGCS', 'FetchBaseImageFeatures']
     entrypoint: 'sh'
     args:
       - '-c'
@@ -291,9 +304,30 @@ steps:
           --family=${_OUTPUT_IMAGE_FAMILY} \
           --source-uri=gs://${_BUCKET_NAME}/oem-preloader-${BUILD_ID}/${_OUTPUT_IMAGE_NAME}.tar.gz \
           --guest-os-features="$$FEATURES"
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'CopyImageToACOSBucket'
+    waitFor: ['TarOutputImage']
+    entrypoint: 'sh'
+    args:
+      - '-c'
+      - |
+        set -exuo pipefail
+        if [ -z "${_ACOS_BUCKET_NAME}" ]; then
+          echo "ACOS bucket is not specified. Skipping copy."
+          exit 0
+        fi
 
+        ACOS_TARGET_URL="gs://${_ACOS_BUCKET_NAME}/${_OUTPUT_IMAGE_NAME}.tar.gz"
+        if gcloud storage ls "$${ACOS_TARGET_URL}" > /dev/null 2>&1; then
+          echo "Result image ${_OUTPUT_IMAGE_NAME}.tar.gz already exists in the ACOS bucket. Overwriting."
+        fi
+
+        echo "Copying local archive directly to ACOS bucket $${ACOS_TARGET_URL}"
+        gcloud storage cp ./out_image.tar.gz "$${ACOS_TARGET_URL}"
 timeout: '3000s'
 
 options:
-  machine_type: 'E2_HIGHCPU_32'
   dynamic_substitutions: true
+  pool:
+    name: 'projects/confidential-space-images-dev/locations/us-west1/workerPools/cs-image-build-vpc'
+

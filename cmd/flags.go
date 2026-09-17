@@ -15,19 +15,28 @@ import (
 )
 
 var (
-	output      string
-	input       string
-	nvIndex     uint32
-	nonce       []byte
-	teeNonce    []byte
-	keyAlgo     = tpm2.AlgRSA
-	pcrs        []int
-	format      string
-	asAddress   string
-	audience    string
-	eventLog    string
-	cloudLog    bool
-	customNonce []string
+	output        string
+	input         string
+	nvIndex       uint32
+	nonce         []byte
+	teeNonce      []byte
+	teeTechnology string
+	keyAlgo       = tpm2.AlgRSA
+	pcrs          []int
+	format        string
+	asAddress     string
+	audience      string
+	eventLog      string
+	cloudLog      bool
+	customNonce   []string
+)
+
+// Add constants for other devices when required
+const (
+	// sevSNP is a constant denotes device name for teeTechnology
+	sevSNP = "sev-snp"
+	// tdx is a constant denotes device name for teeTechnology
+	tdx = "tdx"
 )
 
 type pcrsFlag struct {
@@ -192,6 +201,10 @@ func addTeeNonceflag(cmd *cobra.Command) {
 	cmd.PersistentFlags().BytesHexVar(&teeNonce, "tee-nonce", []byte{}, "hex encoded teenonce for hardware attestation, can be empty")
 }
 
+func addTeeTechnology(cmd *cobra.Command) {
+	cmd.PersistentFlags().StringVar(&teeTechnology, "tee-technology", "", "indicates the type of TEE hardware. Should be either empty or one of sev-snp or tdx")
+}
+
 // alwaysError implements io.ReadWriter by always returning an error
 type alwaysError struct {
 	error
@@ -317,5 +330,31 @@ func getEK(rwc io.ReadWriter) (*client.Key, error) {
 		return client.EndorsementKeyECC(rwc)
 	default:
 		panic("unexpected keyAlgo")
+	}
+}
+
+// getTEEDevice based on teeTechnology set in the global flag vars.
+func getTEEDevice() (client.TEEDevice, error) {
+	switch teeTechnology {
+	case sevSNP:
+		device, err := client.CreateSevSnpQuoteProvider()
+		if err != nil {
+			return nil, fmt.Errorf("failed to create %s quote provider: %w", sevSNP, err)
+		}
+		return device, nil
+	case tdx:
+		device, err := client.CreateTdxQuoteProvider()
+		if err != nil {
+			return nil, fmt.Errorf("failed to create %s quote provider: %w", tdx, err)
+		}
+		return device, nil
+	case "":
+		if len(teeNonce) != 0 {
+			return nil, fmt.Errorf("use of --tee-nonce requires specifying TEE hardware type with --tee-technology")
+		}
+		return nil, nil
+	default:
+		// Change the return statement when more devices are added
+		return nil, fmt.Errorf("tee-technology should be either empty or should have values %s or %s", sevSNP, tdx)
 	}
 }

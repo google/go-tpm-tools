@@ -7,35 +7,15 @@ import (
 	"testing"
 )
 
-func TestGoogleHTTPClientWithRoots(t *testing.T) {
-	t.Run("empty path", func(t *testing.T) {
-		_, err := googleHTTPClientWithRoots("")
+func TestPinnedHTTPTransport(t *testing.T) {
+	t.Run("nil pool", func(t *testing.T) {
+		_, err := PinnedHTTPTransport(nil)
 		if err == nil {
-			t.Errorf("googleHTTPClientWithRoots() expected error for empty path, got nil")
+			t.Errorf("PinnedHTTPTransport(nil) expected error, got nil")
 		}
 	})
 
-	t.Run("missing file", func(t *testing.T) {
-		path := filepath.Join(t.TempDir(), "missing.pem")
-		_, err := googleHTTPClientWithRoots(path)
-		if err == nil {
-			t.Errorf("googleHTTPClientWithRoots() expected error for missing file, got nil")
-		}
-	})
-
-	t.Run("malformed pem", func(t *testing.T) {
-		path := filepath.Join(t.TempDir(), "malformed.pem")
-		if err := os.WriteFile(path, []byte("-----BEGIN CERTIFICATE-----\nBAD\n-----END CERTIFICATE-----"), 0644); err != nil {
-			t.Fatalf("failed to create malformed file: %v", err)
-		}
-
-		_, err := googleHTTPClientWithRoots(path)
-		if err == nil {
-			t.Errorf("googleHTTPClientWithRoots() expected error for malformed pem, got nil")
-		}
-	})
-
-	t.Run("valid pem", func(t *testing.T) {
+	t.Run("valid pool", func(t *testing.T) {
 		validPEM := `-----BEGIN CERTIFICATE-----
 MIIDczCCAlugAwIBAgIUC1mdNsdB4jmUzAB7WdcMybyxXI8wDQYJKoZIhvcNAQEL
 BQAwSTELMAkGA1UEBhMCVVMxCzAJBgNVBAgMAkNBMQswCQYDVQQHDAJTRjENMAsG
@@ -63,15 +43,20 @@ OAMM+8xw+XONUalCCur/u3GfKPMBqvk=
 			t.Fatalf("failed to create valid pem file: %v", err)
 		}
 
-		client, err := googleHTTPClientWithRoots(path)
+		pool, err := loadCertPool(path)
 		if err != nil {
-			t.Fatalf("googleHTTPClientWithRoots() failed for valid pem: %v", err)
+			t.Fatalf("loadCertPool() failed: %v", err)
+		}
+
+		rt, err := PinnedHTTPTransport(pool)
+		if err != nil {
+			t.Fatalf("PinnedHTTPTransport() failed for valid pool: %v", err)
 		}
 
 		// Verify the underlying transport has TLS config set
-		transport, ok := client.Transport.(*http.Transport)
+		transport, ok := rt.(*http.Transport)
 		if !ok {
-			t.Fatalf("client.Transport is not *http.Transport")
+			t.Fatalf("PinnedHTTPTransport() did not return *http.Transport")
 		}
 		if transport.TLSClientConfig == nil {
 			t.Fatalf("transport.TLSClientConfig is nil")

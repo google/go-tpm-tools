@@ -93,6 +93,15 @@ func TestDetermineAttestationType(t *testing.T) {
 			want:    SPT,
 		},
 		{
+			name: "Unsupported attestation type (H100 with multiple GPUs)",
+			gpuInfos: []*attestationpb.GpuInfo{
+				{Uuid: "gpu-0"},
+				{Uuid: "gpu-1"},
+			},
+			gpuType: deviceinfo.H100,
+			want:    UNSUPPORTED,
+		},
+		{
 			name: "SPT attestation type (B200 with single GPU)",
 			gpuInfos: []*attestationpb.GpuInfo{
 				{Uuid: "gpu-0"},
@@ -154,4 +163,18 @@ func TestConvertGPUArchToPB(t *testing.T) {
 		})
 	}
 
+}
+
+func TestNewNvidiaAttester(t *testing.T) {
+	if got := NewNvidiaAttester(false); got != nil {
+		t.Errorf("NewNvidiaAttester(false) = %v, want nil", got)
+	}
+
+	got := NewNvidiaAttester(true)
+	if got == nil {
+		t.Fatalf("NewNvidiaAttester(true) = nil, want non-nil *NvidiaAttester")
+	}
+
+	// Verify *NvidiaAttester satisfies Attester interface
+	var _ Attester = got
 }
