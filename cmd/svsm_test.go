@@ -84,9 +84,9 @@ func testMakeSVSNPSVSMAttestation(t *testing.T) {
 	}
 	svsmAttestation.LaunchEndorsement = endorsement
 	err = verifySEVSNPSVSMAttestation(verifySEVSNPSVSMOpts{
-		TEENonce: snpNonce[:],
-		AKPub:    akPubBytes,
-		EKPub:    ekBytes,
+		TEENonce:       snpNonce[:],
+		CertifiedAKPub: akPubBytes,
+		EKPub:          ekBytes,
 		SevValidateOpts: &validate.Options{GuestPolicy: sabi.SnpPolicy{
 			SMT:   true,
 			Debug: true,
@@ -201,9 +201,9 @@ func TestSVSMAttestationsErrors(t *testing.T) {
 				svsmAttestation.LaunchEndorsement = endorsement
 
 				err = verifySEVSNPSVSMAttestation(verifySEVSNPSVSMOpts{
-					TEENonce: snpNonce[:],
-					AKPub:    akPubBytes,
-					EKPub:    ekBytes,
+					TEENonce:       snpNonce[:],
+					CertifiedAKPub: akPubBytes,
+					EKPub:          ekBytes,
 					SevValidateOpts: &validate.Options{GuestPolicy: sabi.SnpPolicy{
 						SMT:   true,
 						Debug: true,
@@ -522,7 +522,6 @@ func TestVerifySVSMAttestationV1(t *testing.T) {
 		svsmAttestation.LaunchEndorsement = endorsement
 		err = verifySEVSNPSVSMAttestation(verifySEVSNPSVSMOpts{
 			TEENonce: snpNonce[:],
-			AKPub:    akPubBytes,
 			EKPub:    ekBytes,
 			SevValidateOpts: &validate.Options{GuestPolicy: sabi.SnpPolicy{
 				SMT:   true,
@@ -611,7 +610,7 @@ func TestSVSMAttestationsV1Errors(t *testing.T) {
 				h.Write(manifest)
 				return makeFakeConfigfs(h.Sum(nil), manifest, 0, goodMeasurement[:])
 			},
-			wantErrString: "service manifest does not contain the AK pub that was certified against",
+			wantErrString: "service manifest does not contain the attested AK pub",
 		},
 		{
 			name: "Malformed manifest (too short for v1 header)",
@@ -736,7 +735,6 @@ func TestSVSMAttestationsV1Errors(t *testing.T) {
 
 				err = verifySEVSNPSVSMAttestation(verifySEVSNPSVSMOpts{
 					TEENonce: snpNonce[:],
-					AKPub:    akPubBytes,
 					EKPub:    ekBytes,
 					SevValidateOpts: &validate.Options{GuestPolicy: sabi.SnpPolicy{
 						SMT:   true,
@@ -794,8 +792,8 @@ func TestVerifySVSMAttestationV1AKFromAttestation(t *testing.T) {
 		name string
 		// keys placed in the v1 manifest that SVSM commits to via REPORT_DATA.
 		manifestKeys [][]byte
-		// optional override for svsmOpts.AKPub (defaults to attestation's AkPub if nil).
-		akPubOverride []byte
+		// optional CertifiedAKPub passed to verifySEVSNPSVSMOpts (must be rejected in v1).
+		certifiedAKPub []byte
 		// optional EKPub to verify against the manifest.
 		ekPub []byte
 		// wantErrString is empty when verification is expected to succeed.
@@ -813,7 +811,7 @@ func TestVerifySVSMAttestationV1AKFromAttestation(t *testing.T) {
 		{
 			name:          "AK not in manifest",
 			manifestKeys:  [][]byte{ekBytes, dummyKey},
-			wantErrString: "service manifest does not contain the AK pub",
+			wantErrString: "service manifest does not contain the attested AK pub",
 		},
 		{
 			// Manifest does not need to contain the EK when EKPub is omitted.
@@ -835,11 +833,11 @@ func TestVerifySVSMAttestationV1AKFromAttestation(t *testing.T) {
 			wantErrString: "service manifest does not contain the EK pub",
 		},
 		{
-			// When AKPub in options is in the manifest but does not match the attestation's AK, verification fails.
-			name:          "Mismatched AKPub in options vs attestation",
-			manifestKeys:  [][]byte{akPubBytes, ekBytes, dummyKey},
-			akPubOverride: dummyKey,
-			wantErrString: "certified AK does not match attested AK",
+			// Passing CertifiedAKPub in v1 options must be rejected.
+			name:           "CertifiedAKPub rejected in v1",
+			manifestKeys:   [][]byte{akPubBytes, ekBytes},
+			certifiedAKPub: dummyKey,
+			wantErrString:  "certified-ak-blob is not supported with manifest version 1",
 		},
 		{
 			// Identical AKPub and EKPub must be rejected so a single manifest key cannot satisfy both.
@@ -874,15 +872,10 @@ func TestVerifySVSMAttestationV1AKFromAttestation(t *testing.T) {
 				}
 				svsmAttestation.LaunchEndorsement = endorsement
 
-				akPubToVerify := svsmAttestation.GetAttestation().GetAkPub()
-				if tc.akPubOverride != nil {
-					akPubToVerify = tc.akPubOverride
-				}
-
 				err = verifySEVSNPSVSMAttestation(verifySEVSNPSVSMOpts{
-					TEENonce: snpNonce[:],
-					AKPub:    akPubToVerify,
-					EKPub:    tc.ekPub,
+					TEENonce:       snpNonce[:],
+					CertifiedAKPub: tc.certifiedAKPub,
+					EKPub:          tc.ekPub,
 					SevValidateOpts: &validate.Options{GuestPolicy: sabi.SnpPolicy{
 						SMT:   true,
 						Debug: true,
@@ -1121,9 +1114,9 @@ func TestSVSMDowngradeAttack(t *testing.T) {
 
 			// The verifier is tricked into running v0 verification parameters.
 			err := verifySEVSNPSVSMAttestation(verifySEVSNPSVSMOpts{
-				TEENonce: snpNonce[:],
-				AKPub:    akPubBytes,
-				EKPub:    ekBytes,
+				TEENonce:       snpNonce[:],
+				CertifiedAKPub: akPubBytes,
+				EKPub:          ekBytes,
 				SevValidateOpts: &validate.Options{GuestPolicy: sabi.SnpPolicy{
 					SMT:   true,
 					Debug: true,
