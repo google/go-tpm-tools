@@ -427,17 +427,19 @@ func TestMakeSVSNPSVSMAttestationManifestVersion(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			svsmAttestation, err := makeSEVSNPSVSMAttestation(attestation, &sevSNPSVSMAttestationOpts{
-				TEENonce:                   snpNonce[:],
-				CongfigfsClient:            configfs,
-				VTPMServiceManifestVersion: tc.inputVer,
+			synctest.Test(t, func(t *testing.T) {
+				svsmAttestation, err := makeSEVSNPSVSMAttestation(attestation, &sevSNPSVSMAttestationOpts{
+					TEENonce:                   snpNonce[:],
+					CongfigfsClient:            configfs,
+					VTPMServiceManifestVersion: tc.inputVer,
+				})
+				if err != nil {
+					t.Fatalf("failed to make SVSM attestation: %v", err)
+				}
+				if svsmAttestation.GetVtpmServiceManifestVersion() != tc.expectedVer {
+					t.Errorf("expected manifest version %q, got %q", tc.expectedVer, svsmAttestation.GetVtpmServiceManifestVersion())
+				}
 			})
-			if err != nil {
-				t.Fatalf("failed to make SVSM attestation: %v", err)
-			}
-			if svsmAttestation.GetVtpmServiceManifestVersion() != tc.expectedVer {
-				t.Errorf("expected manifest version %q, got %q", tc.expectedVer, svsmAttestation.GetVtpmServiceManifestVersion())
-			}
 		})
 	}
 }
@@ -462,73 +464,75 @@ func makeV1Manifest(keys ...[]byte) []byte {
 }
 
 func TestVerifySVSMAttestationV1(t *testing.T) {
-	rwc := test.GetTPM(t)
-	defer client.CheckedClose(t, rwc)
-	ak, err := client.AttestationKeyECC(rwc)
-	if err != nil {
-		t.Fatalf("failed to create ak: %v", err)
-	}
-	defer ak.Close()
-	akPubBytes, err := ak.PublicArea().Encode()
-	if err != nil {
-		t.Fatalf("failed to encode ak pub: %v", err)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		rwc := test.GetTPM(t)
+		defer client.CheckedClose(t, rwc)
+		ak, err := client.AttestationKeyECC(rwc)
+		if err != nil {
+			t.Fatalf("failed to create ak: %v", err)
+		}
+		defer ak.Close()
+		akPubBytes, err := ak.PublicArea().Encode()
+		if err != nil {
+			t.Fatalf("failed to encode ak pub: %v", err)
+		}
 
-	var nonce = [16]byte{0}
-	attestation, err := ak.Attest(client.AttestOpts{
-		SkipTeeAttestation: true,
-		Nonce:              nonce[:],
+		var nonce = [16]byte{0}
+		attestation, err := ak.Attest(client.AttestOpts{
+			SkipTeeAttestation: true,
+			Nonce:              nonce[:],
+		})
+		if err != nil {
+			t.Fatalf("failed to create attestation: %v", err)
+		}
+
+		ek, err := client.EndorsementKeyRSA(rwc)
+		if err != nil {
+			t.Fatalf("failed to get EK: %v", err)
+		}
+		defer ek.Close()
+		ekBytes, err := ek.PublicArea().Encode()
+		if err != nil {
+			t.Fatalf("failed to encode EK pub: %v", err)
+		}
+
+		// Construct v1 manifest: [Version (4B)][NumKeys (4B)][TPM2B_PUBLIC(AK)][TPM2B_PUBLIC(EK)]
+		manifestBytes := makeV1Manifest(akPubBytes, ekBytes)
+
+		var snpNonce [sabi.ReportDataSize]byte
+		h := sha512.New()
+		h.Write(snpNonce[:])
+		h.Write(manifestBytes)
+		measurement := [48]byte{0}
+
+		configfs := makeFakeConfigfs(h.Sum(nil), manifestBytes, 0, measurement[:])
+		svsmAttestation, err := makeSEVSNPSVSMAttestation(attestation, &sevSNPSVSMAttestationOpts{
+			TEENonce:                   snpNonce[:],
+			CongfigfsClient:            configfs,
+			VTPMServiceManifestVersion: "1",
+		})
+		if err != nil {
+			t.Fatalf("failed to make SVSM attestation: %v", err)
+		}
+
+		endorsement, err := makeEndorsement(measurement[:])
+		if err != nil {
+			t.Fatalf("failed to make endorsement: %v", err)
+		}
+		svsmAttestation.LaunchEndorsement = endorsement
+		err = verifySEVSNPSVSMAttestation(verifySEVSNPSVSMOpts{
+			TEENonce: snpNonce[:],
+			AKPub:    akPubBytes,
+			EKPub:    ekBytes,
+			SevValidateOpts: &validate.Options{GuestPolicy: sabi.SnpPolicy{
+				SMT:   true,
+				Debug: true,
+			}},
+		}, svsmAttestation)
+		if err != nil {
+			t.Fatalf("failed to verify svsm attestation: %v", err)
+		}
 	})
-	if err != nil {
-		t.Fatalf("failed to create attestation: %v", err)
-	}
-
-	ek, err := client.EndorsementKeyRSA(rwc)
-	if err != nil {
-		t.Fatalf("failed to get EK: %v", err)
-	}
-	defer ek.Close()
-	ekBytes, err := ek.PublicArea().Encode()
-	if err != nil {
-		t.Fatalf("failed to encode EK pub: %v", err)
-	}
-
-	// Construct v1 manifest: [Version (4B)][NumKeys (4B)][TPM2B_PUBLIC(AK)][TPM2B_PUBLIC(EK)]
-	manifestBytes := makeV1Manifest(akPubBytes, ekBytes)
-
-	var snpNonce [sabi.ReportDataSize]byte
-	h := sha512.New()
-	h.Write(snpNonce[:])
-	h.Write(manifestBytes)
-	measurement := [48]byte{0}
-
-	configfs := makeFakeConfigfs(h.Sum(nil), manifestBytes, 0, measurement[:])
-	svsmAttestation, err := makeSEVSNPSVSMAttestation(attestation, &sevSNPSVSMAttestationOpts{
-		TEENonce:                   snpNonce[:],
-		CongfigfsClient:            configfs,
-		VTPMServiceManifestVersion: "1",
-	})
-	if err != nil {
-		t.Fatalf("failed to make SVSM attestation: %v", err)
-	}
-
-	endorsement, err := makeEndorsement(measurement[:])
-	if err != nil {
-		t.Fatalf("failed to make endorsement: %v", err)
-	}
-	svsmAttestation.LaunchEndorsement = endorsement
-	err = verifySEVSNPSVSMAttestation(verifySEVSNPSVSMOpts{
-		TEENonce: snpNonce[:],
-		AKPub:    akPubBytes,
-		EKPub:    ekBytes,
-		SevValidateOpts: &validate.Options{GuestPolicy: sabi.SnpPolicy{
-			SMT:   true,
-			Debug: true,
-		}},
-	}, svsmAttestation)
-	if err != nil {
-		t.Fatalf("failed to verify svsm attestation: %v", err)
-	}
 }
 
 func TestSVSMAttestationsV1Errors(t *testing.T) {
@@ -714,33 +718,35 @@ func TestSVSMAttestationsV1Errors(t *testing.T) {
 	}
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
-			svsmAttestation, err := makeSEVSNPSVSMAttestation(attestation, &sevSNPSVSMAttestationOpts{
-				TEENonce:                   snpNonce[:],
-				CongfigfsClient:            tc.getConfigfs(t),
-				VTPMServiceManifestVersion: "1",
+			synctest.Test(t, func(t *testing.T) {
+				svsmAttestation, err := makeSEVSNPSVSMAttestation(attestation, &sevSNPSVSMAttestationOpts{
+					TEENonce:                   snpNonce[:],
+					CongfigfsClient:            tc.getConfigfs(t),
+					VTPMServiceManifestVersion: "1",
+				})
+				if err != nil {
+					t.Fatalf("failed to make SVSM attestation: %v", err)
+				}
+
+				endorsement, err := makeEndorsement(goodMeasurement[:])
+				if err != nil {
+					t.Fatalf("failed to make endorsement: %v", err)
+				}
+				svsmAttestation.LaunchEndorsement = endorsement
+
+				err = verifySEVSNPSVSMAttestation(verifySEVSNPSVSMOpts{
+					TEENonce: snpNonce[:],
+					AKPub:    akPubBytes,
+					EKPub:    ekBytes,
+					SevValidateOpts: &validate.Options{GuestPolicy: sabi.SnpPolicy{
+						SMT:   true,
+						Debug: true,
+					}},
+				}, svsmAttestation)
+				if err == nil || !strings.Contains(err.Error(), tc.wantErrString) {
+					t.Errorf("got err: %v, want err containing: %q", err, tc.wantErrString)
+				}
 			})
-			if err != nil {
-				t.Fatalf("failed to make SVSM attestation: %v", err)
-			}
-
-			endorsement, err := makeEndorsement(goodMeasurement[:])
-			if err != nil {
-				t.Fatalf("failed to make endorsement: %v", err)
-			}
-			svsmAttestation.LaunchEndorsement = endorsement
-
-			err = verifySEVSNPSVSMAttestation(verifySEVSNPSVSMOpts{
-				TEENonce: snpNonce[:],
-				AKPub:    akPubBytes,
-				EKPub:    ekBytes,
-				SevValidateOpts: &validate.Options{GuestPolicy: sabi.SnpPolicy{
-					SMT:   true,
-					Debug: true,
-				}},
-			}, svsmAttestation)
-			if err == nil || !strings.Contains(err.Error(), tc.wantErrString) {
-				t.Errorf("got err: %v, want err containing: %q", err, tc.wantErrString)
-			}
 		})
 	}
 }
@@ -829,47 +835,49 @@ func TestVerifySVSMAttestationV1AKFromAttestation(t *testing.T) {
 	}
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
-			manifestBytes := makeV1Manifest(tc.manifestKeys...)
-			var snpNonce [sabi.ReportDataSize]byte
-			h := sha512.New()
-			h.Write(snpNonce[:])
-			h.Write(manifestBytes)
+			synctest.Test(t, func(t *testing.T) {
+				manifestBytes := makeV1Manifest(tc.manifestKeys...)
+				var snpNonce [sabi.ReportDataSize]byte
+				h := sha512.New()
+				h.Write(snpNonce[:])
+				h.Write(manifestBytes)
 
-			configfs := makeFakeConfigfs(h.Sum(nil), manifestBytes, 0, measurement[:])
-			svsmAttestation, err := makeSEVSNPSVSMAttestation(attestation, &sevSNPSVSMAttestationOpts{
-				TEENonce:                   snpNonce[:],
-				CongfigfsClient:            configfs,
-				VTPMServiceManifestVersion: "1",
-			})
-			if err != nil {
-				t.Fatalf("failed to make SVSM attestation: %v", err)
-			}
-
-			endorsement, err := makeEndorsement(measurement[:])
-			if err != nil {
-				t.Fatalf("failed to make endorsement: %v", err)
-			}
-			svsmAttestation.LaunchEndorsement = endorsement
-
-			err = verifySEVSNPSVSMAttestation(verifySEVSNPSVSMOpts{
-				TEENonce: snpNonce[:],
-				AKPub:    svsmAttestation.GetAttestation().GetAkPub(),
-				EKPub:    tc.ekPub,
-				SevValidateOpts: &validate.Options{GuestPolicy: sabi.SnpPolicy{
-					SMT:   true,
-					Debug: true,
-				}},
-			}, svsmAttestation)
-
-			if tc.wantErrString == "" {
+				configfs := makeFakeConfigfs(h.Sum(nil), manifestBytes, 0, measurement[:])
+				svsmAttestation, err := makeSEVSNPSVSMAttestation(attestation, &sevSNPSVSMAttestationOpts{
+					TEENonce:                   snpNonce[:],
+					CongfigfsClient:            configfs,
+					VTPMServiceManifestVersion: "1",
+				})
 				if err != nil {
-					t.Errorf("failed to verify svsm attestation: %v", err)
+					t.Fatalf("failed to make SVSM attestation: %v", err)
 				}
-				return
-			}
-			if err == nil || !strings.Contains(err.Error(), tc.wantErrString) {
-				t.Errorf("got err: %v, want err containing: %q", err, tc.wantErrString)
-			}
+
+				endorsement, err := makeEndorsement(measurement[:])
+				if err != nil {
+					t.Fatalf("failed to make endorsement: %v", err)
+				}
+				svsmAttestation.LaunchEndorsement = endorsement
+
+				err = verifySEVSNPSVSMAttestation(verifySEVSNPSVSMOpts{
+					TEENonce: snpNonce[:],
+					AKPub:    svsmAttestation.GetAttestation().GetAkPub(),
+					EKPub:    tc.ekPub,
+					SevValidateOpts: &validate.Options{GuestPolicy: sabi.SnpPolicy{
+						SMT:   true,
+						Debug: true,
+					}},
+				}, svsmAttestation)
+
+				if tc.wantErrString == "" {
+					if err != nil {
+						t.Errorf("failed to verify svsm attestation: %v", err)
+					}
+					return
+				}
+				if err == nil || !strings.Contains(err.Error(), tc.wantErrString) {
+					t.Errorf("got err: %v, want err containing: %q", err, tc.wantErrString)
+				}
+			})
 		})
 	}
 }
@@ -1029,14 +1037,18 @@ func TestSVSMDowngradeAttack(t *testing.T) {
 	measurement := [48]byte{0}
 
 	configfs := makeFakeConfigfs(h.Sum(nil), manifestBytes, 0, measurement[:])
-	v1Attestation, err := makeSEVSNPSVSMAttestation(attestation, &sevSNPSVSMAttestationOpts{
-		TEENonce:                   snpNonce[:],
-		CongfigfsClient:            configfs,
-		VTPMServiceManifestVersion: "1",
+	var v1Attestation *apb.SevSnpSvsmAttestation
+	synctest.Test(t, func(t *testing.T) {
+		var err error
+		v1Attestation, err = makeSEVSNPSVSMAttestation(attestation, &sevSNPSVSMAttestationOpts{
+			TEENonce:                   snpNonce[:],
+			CongfigfsClient:            configfs,
+			VTPMServiceManifestVersion: "1",
+		})
+		if err != nil {
+			t.Fatalf("failed to make SVSM attestation: %v", err)
+		}
 	})
-	if err != nil {
-		t.Fatalf("failed to make SVSM attestation: %v", err)
-	}
 
 	endorsement, err := makeEndorsement(measurement[:])
 	if err != nil {
