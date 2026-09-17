@@ -788,23 +788,43 @@ func TestVerifySVSMAttestationV1AKFromAttestation(t *testing.T) {
 		name string
 		// keys placed in the v1 manifest that SVSM commits to via REPORT_DATA.
 		manifestKeys [][]byte
+		// optional EKPub to verify against the manifest.
+		ekPub []byte
 		// wantErrString is empty when verification is expected to succeed.
 		wantErrString string
 	}{
 		{
-			name:         "AK and EK in manifest",
+			name:         "AK and EK in manifest, EKPub omitted",
 			manifestKeys: [][]byte{akPubBytes, ekBytes},
 		},
 		{
-			// Omitting the EK must not weaken the AK binding.
+			name:         "AK and EK in manifest, matching EKPub provided",
+			manifestKeys: [][]byte{akPubBytes, ekBytes},
+			ekPub:        ekBytes,
+		},
+		{
 			name:          "AK not in manifest",
 			manifestKeys:  [][]byte{ekBytes, dummyKey},
 			wantErrString: "service manifest does not contain the AK pub",
 		},
 		{
-			// Manifest does not need to contain the EK.
-			name:         "EK not in manifest",
+			// Manifest does not need to contain the EK when EKPub is omitted.
+			name:         "EK not in manifest, EKPub omitted",
 			manifestKeys: [][]byte{akPubBytes, dummyKey},
+		},
+		{
+			// When EKPub is provided, the manifest must contain it.
+			name:          "EK not in manifest, EKPub provided",
+			manifestKeys:  [][]byte{akPubBytes, dummyKey},
+			ekPub:         ekBytes,
+			wantErrString: "service manifest does not contain the EK pub",
+		},
+		{
+			// When wrong EKPub is provided, verification fails.
+			name:          "Wrong EKPub provided",
+			manifestKeys:  [][]byte{akPubBytes, ekBytes},
+			ekPub:         dummyKey,
+			wantErrString: "service manifest does not contain the EK pub",
 		},
 	}
 	for _, tc := range testcases {
@@ -833,11 +853,8 @@ func TestVerifySVSMAttestationV1AKFromAttestation(t *testing.T) {
 
 			err = verifySEVSNPSVSMAttestation(verifySEVSNPSVSMOpts{
 				TEENonce: snpNonce[:],
-				// Source the AK from the attestation and supply no EK, mirroring what
-				// the CLI does for v1, where --certified-ak-blob and --ek-pub are
-				// rejected.
-				AKPub: svsmAttestation.GetAttestation().GetAkPub(),
-				EKPub: nil,
+				AKPub:    svsmAttestation.GetAttestation().GetAkPub(),
+				EKPub:    tc.ekPub,
 				SevValidateOpts: &validate.Options{GuestPolicy: sabi.SnpPolicy{
 					SMT:   true,
 					Debug: true,
@@ -924,12 +941,12 @@ func TestVerifySVSMFlags(t *testing.T) {
 			wantErrorMsg:    "certified-ak-blob is not supported with manifest version 1",
 		},
 		{
-			name:         "EKPubRejectedManifestVersion1",
+			name:         "EKPubReadErrorManifestVersion1",
 			version:      "1",
 			akPub:        []byte("ak"),
 			key:          "gceAK",
-			ekPub:        "/dev/null",
-			wantErrorMsg: "ek-pub is not supported with manifest version 1",
+			ekPub:        "/nonexistent/path/to/ek.pub",
+			wantErrorMsg: "failed to read ek-pub",
 		},
 		{
 			name:         "MissingAKPubManifestVersion1",
