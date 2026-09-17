@@ -794,6 +794,8 @@ func TestVerifySVSMAttestationV1AKFromAttestation(t *testing.T) {
 		name string
 		// keys placed in the v1 manifest that SVSM commits to via REPORT_DATA.
 		manifestKeys [][]byte
+		// optional override for svsmOpts.AKPub (defaults to attestation's AkPub if nil).
+		akPubOverride []byte
 		// optional EKPub to verify against the manifest.
 		ekPub []byte
 		// wantErrString is empty when verification is expected to succeed.
@@ -832,6 +834,20 @@ func TestVerifySVSMAttestationV1AKFromAttestation(t *testing.T) {
 			ekPub:         dummyKey,
 			wantErrString: "service manifest does not contain the EK pub",
 		},
+		{
+			// When AKPub in options is in the manifest but does not match the attestation's AK, verification fails.
+			name:          "Mismatched AKPub in options vs attestation",
+			manifestKeys:  [][]byte{akPubBytes, ekBytes, dummyKey},
+			akPubOverride: dummyKey,
+			wantErrString: "certified AK does not match attested AK",
+		},
+		{
+			// Identical AKPub and EKPub must be rejected so a single manifest key cannot satisfy both.
+			name:          "Identical AKPub and EKPub rejected",
+			manifestKeys:  [][]byte{akPubBytes, ekBytes},
+			ekPub:         akPubBytes,
+			wantErrString: "AK pub and EK pub cannot be identical",
+		},
 	}
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -858,9 +874,14 @@ func TestVerifySVSMAttestationV1AKFromAttestation(t *testing.T) {
 				}
 				svsmAttestation.LaunchEndorsement = endorsement
 
+				akPubToVerify := svsmAttestation.GetAttestation().GetAkPub()
+				if tc.akPubOverride != nil {
+					akPubToVerify = tc.akPubOverride
+				}
+
 				err = verifySEVSNPSVSMAttestation(verifySEVSNPSVSMOpts{
 					TEENonce: snpNonce[:],
-					AKPub:    svsmAttestation.GetAttestation().GetAkPub(),
+					AKPub:    akPubToVerify,
 					EKPub:    tc.ekPub,
 					SevValidateOpts: &validate.Options{GuestPolicy: sabi.SnpPolicy{
 						SMT:   true,

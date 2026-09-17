@@ -276,10 +276,8 @@ func verifySEVSNPSVSMAttestation(svsmOpts verifySEVSNPSVSMOpts, svsmAttestation 
 		}
 	}
 
-	if version := svsmAttestation.GetVtpmServiceManifestVersion(); version == "" || version == "0" {
-		if !bytes.Equal(svsmOpts.AKPub, svsmAttestation.Attestation.GetAkPub()) {
-			return errors.New("certified AK does not match attested AK")
-		}
+	if !bytes.Equal(svsmOpts.AKPub, svsmAttestation.GetAttestation().GetAkPub()) {
+		return errors.New("certified AK does not match attested AK")
 	}
 	return nil
 }
@@ -289,6 +287,9 @@ func verifySEVSNPSVSMAttestation(svsmOpts verifySEVSNPSVSMOpts, svsmAttestation 
 // This corresponds to attest_single_vtpm() defined in
 // https://github.com/coconut-svsm/svsm/blob/main/kernel/src/protocols/attest.rs#L336
 func getExpectedReportData(svsmOpts verifySEVSNPSVSMOpts, svsmAttestation *apb.SevSnpSvsmAttestation) ([]byte, error) {
+	if len(svsmOpts.EKPub) > 0 && bytes.Equal(svsmOpts.AKPub, svsmOpts.EKPub) {
+		return nil, errors.New("AK pub and EK pub cannot be identical")
+	}
 	version := svsmAttestation.GetVtpmServiceManifestVersion()
 	if version == "" {
 		version = "0"
@@ -338,8 +339,7 @@ func getExpectedReportData(svsmOpts verifySEVSNPSVSMOpts, svsmAttestation *apb.S
 			tpmtKeyBytes := keyBytes[2:]
 			if !foundAK && bytes.Equal(svsmOpts.AKPub, tpmtKeyBytes) {
 				foundAK = true
-			}
-			if !foundEK && len(svsmOpts.EKPub) > 0 && bytes.Equal(svsmOpts.EKPub, tpmtKeyBytes) {
+			} else if !foundEK && len(svsmOpts.EKPub) > 0 && bytes.Equal(svsmOpts.EKPub, tpmtKeyBytes) {
 				foundEK = true
 			}
 			manifest = manifest[keyLen:]
