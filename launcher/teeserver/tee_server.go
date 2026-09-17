@@ -361,7 +361,7 @@ func (a *attestHandler) getKeyEndorsement(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if len(req.KeyHandle.Handle) == 0 {
+	if req.KeyHandle == nil || len(req.KeyHandle.Handle) == 0 {
 		a.logAndWriteHTTPError(w, http.StatusBadRequest, fmt.Errorf("key_handle is required"))
 		return
 	}

@@ -7,7 +7,7 @@
 package attest
 
 import (
-	attestation "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
+	gpuattestation "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/gpuattestation"
 	sevsnp "github.com/google/go-sev-guest/proto/sevsnp"
 	tdx "github.com/google/go-tdx-guest/proto/tdx"
 	tpm "github.com/google/go-tpm-tools/proto/tpm"
@@ -1359,8 +1359,8 @@ func (x *HealthMonitoringState) GetMemoryEnabled() bool {
 type GpuDeviceState struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Whether Confidential Computing mode is enabled for GPU.
-	CcMode                  GPUDeviceCCMode                      `protobuf:"varint,1,opt,name=cc_mode,json=ccMode,proto3,enum=attest.GPUDeviceCCMode" json:"cc_mode,omitempty"`
-	NvidiaAttestationReport *attestation.NvidiaAttestationReport `protobuf:"bytes,2,opt,name=nvidia_attestation_report,json=nvidiaAttestationReport,proto3" json:"nvidia_attestation_report,omitempty"`
+	CcMode                  GPUDeviceCCMode                         `protobuf:"varint,1,opt,name=cc_mode,json=ccMode,proto3,enum=attest.GPUDeviceCCMode" json:"cc_mode,omitempty"`
+	NvidiaAttestationReport *gpuattestation.NvidiaAttestationReport `protobuf:"bytes,2,opt,name=nvidia_attestation_report,json=nvidiaAttestationReport,proto3" json:"nvidia_attestation_report,omitempty"`
 	unknownFields           protoimpl.UnknownFields
 	sizeCache               protoimpl.SizeCache
 }
@@ -1402,7 +1402,7 @@ func (x *GpuDeviceState) GetCcMode() GPUDeviceCCMode {
 	return GPUDeviceCCMode_UNSET
 }
 
-func (x *GpuDeviceState) GetNvidiaAttestationReport() *attestation.NvidiaAttestationReport {
+func (x *GpuDeviceState) GetNvidiaAttestationReport() *gpuattestation.NvidiaAttestationReport {
 	if x != nil {
 		return x.NvidiaAttestationReport
 	}
@@ -2162,40 +2162,40 @@ func file_attest_proto_rawDescGZIP() []byte {
 var file_attest_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
 var file_attest_proto_msgTypes = make([]protoimpl.MessageInfo, 25)
 var file_attest_proto_goTypes = []any{
-	(GCEConfidentialTechnology)(0),              // 0: attest.GCEConfidentialTechnology
-	(WellKnownCertificate)(0),                   // 1: attest.WellKnownCertificate
-	(RestartPolicy)(0),                          // 2: attest.RestartPolicy
-	(GPUDeviceCCMode)(0),                        // 3: attest.GPUDeviceCCMode
-	(*GCEInstanceInfo)(nil),                     // 4: attest.GCEInstanceInfo
-	(*Attestation)(nil),                         // 5: attest.Attestation
-	(*SevSnpSvsmAttestation)(nil),               // 6: attest.SevSnpSvsmAttestation
-	(*PlatformState)(nil),                       // 7: attest.PlatformState
-	(*GrubFile)(nil),                            // 8: attest.GrubFile
-	(*GrubState)(nil),                           // 9: attest.GrubState
-	(*LinuxKernelState)(nil),                    // 10: attest.LinuxKernelState
-	(*Event)(nil),                               // 11: attest.Event
-	(*Certificate)(nil),                         // 12: attest.Certificate
-	(*Database)(nil),                            // 13: attest.Database
-	(*SecureBootState)(nil),                     // 14: attest.SecureBootState
-	(*ContainerState)(nil),                      // 15: attest.ContainerState
-	(*SemanticVersion)(nil),                     // 16: attest.SemanticVersion
-	(*HealthMonitoringState)(nil),               // 17: attest.HealthMonitoringState
-	(*GpuDeviceState)(nil),                      // 18: attest.GpuDeviceState
-	(*AttestedCosState)(nil),                    // 19: attest.AttestedCosState
-	(*EfiApp)(nil),                              // 20: attest.EfiApp
-	(*EfiState)(nil),                            // 21: attest.EfiState
-	(*MachineState)(nil),                        // 22: attest.MachineState
-	(*PlatformPolicy)(nil),                      // 23: attest.PlatformPolicy
-	(*RIMPolicy)(nil),                           // 24: attest.RIMPolicy
-	(*SevSnpPolicy)(nil),                        // 25: attest.SevSnpPolicy
-	(*Policy)(nil),                              // 26: attest.Policy
-	nil,                                         // 27: attest.ContainerState.EnvVarsEntry
-	nil,                                         // 28: attest.ContainerState.OverriddenEnvVarsEntry
-	(*tpm.Quote)(nil),                           // 29: tpm.Quote
-	(*sevsnp.Attestation)(nil),                  // 30: sevsnp.Attestation
-	(*tdx.QuoteV4)(nil),                         // 31: tdx.QuoteV4
-	(*attestation.NvidiaAttestationReport)(nil), // 32: confidential_space.NvidiaAttestationReport
-	(tpm.HashAlgo)(0),                           // 33: tpm.HashAlgo
+	(GCEConfidentialTechnology)(0), // 0: attest.GCEConfidentialTechnology
+	(WellKnownCertificate)(0),      // 1: attest.WellKnownCertificate
+	(RestartPolicy)(0),             // 2: attest.RestartPolicy
+	(GPUDeviceCCMode)(0),           // 3: attest.GPUDeviceCCMode
+	(*GCEInstanceInfo)(nil),        // 4: attest.GCEInstanceInfo
+	(*Attestation)(nil),            // 5: attest.Attestation
+	(*SevSnpSvsmAttestation)(nil),  // 6: attest.SevSnpSvsmAttestation
+	(*PlatformState)(nil),          // 7: attest.PlatformState
+	(*GrubFile)(nil),               // 8: attest.GrubFile
+	(*GrubState)(nil),              // 9: attest.GrubState
+	(*LinuxKernelState)(nil),       // 10: attest.LinuxKernelState
+	(*Event)(nil),                  // 11: attest.Event
+	(*Certificate)(nil),            // 12: attest.Certificate
+	(*Database)(nil),               // 13: attest.Database
+	(*SecureBootState)(nil),        // 14: attest.SecureBootState
+	(*ContainerState)(nil),         // 15: attest.ContainerState
+	(*SemanticVersion)(nil),        // 16: attest.SemanticVersion
+	(*HealthMonitoringState)(nil),  // 17: attest.HealthMonitoringState
+	(*GpuDeviceState)(nil),         // 18: attest.GpuDeviceState
+	(*AttestedCosState)(nil),       // 19: attest.AttestedCosState
+	(*EfiApp)(nil),                 // 20: attest.EfiApp
+	(*EfiState)(nil),               // 21: attest.EfiState
+	(*MachineState)(nil),           // 22: attest.MachineState
+	(*PlatformPolicy)(nil),         // 23: attest.PlatformPolicy
+	(*RIMPolicy)(nil),              // 24: attest.RIMPolicy
+	(*SevSnpPolicy)(nil),           // 25: attest.SevSnpPolicy
+	(*Policy)(nil),                 // 26: attest.Policy
+	nil,                            // 27: attest.ContainerState.EnvVarsEntry
+	nil,                            // 28: attest.ContainerState.OverriddenEnvVarsEntry
+	(*tpm.Quote)(nil),              // 29: tpm.Quote
+	(*sevsnp.Attestation)(nil),     // 30: sevsnp.Attestation
+	(*tdx.QuoteV4)(nil),            // 31: tdx.QuoteV4
+	(*gpuattestation.NvidiaAttestationReport)(nil), // 32: confidential_space.NvidiaAttestationReport
+	(tpm.HashAlgo)(0), // 33: tpm.HashAlgo
 }
 var file_attest_proto_depIdxs = []int32{
 	29, // 0: attest.Attestation.quotes:type_name -> tpm.Quote

@@ -1176,3 +1176,38 @@ func TestHostAttestation_NotBcMode(t *testing.T) {
 		t.Error("expected error when BcMode is disabled, got nil")
 	}
 }
+
+func TestTPMAttestRoot_ExtendLocksMutex(t *testing.T) {
+	tpm := test.GetTPM(t)
+	t.Cleanup(func() { client.CheckedClose(t, tpm) })
+
+	tpmAR := &tpmAttestRoot{
+		tpm:       tpm,
+		hashAlgos: []crypto.Hash{crypto.SHA256},
+		cosCel:    gecel.NewPCR(),
+	}
+
+	// Verify that when tpmMu is held, Extend blocks waiting for the mutex.
+	tpmAR.tpmMu.Lock()
+	extendDone := make(chan error, 1)
+	go func() {
+		extendDone <- tpmAR.Extend(cel.CosTlv{EventType: cel.ImageRefType, EventContent: []byte("test")})
+	}()
+
+	select {
+	case <-extendDone:
+		t.Fatal("Extend returned while tpmMu was locked")
+	case <-time.After(50 * time.Millisecond):
+		// Expected: Extend is waiting for mutex
+	}
+
+	tpmAR.tpmMu.Unlock()
+	select {
+	case err := <-extendDone:
+		if err != nil {
+			t.Fatalf("Extend failed after mutex unlocked: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Extend timed out after mutex unlocked")
+	}
+}

@@ -17,6 +17,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal/test"
+	"github.com/google/go-tpm/legacy/tpm2"
 	"google.golang.org/api/option"
 )
 
@@ -77,6 +78,24 @@ func TestTPMDAOps(t *testing.T) {
 	expectedDaInfo = TPMDAParams{0 /*LockoutCounter*/, 123 /*MaxTries*/, 456 /*RecoveryTime*/, 789 /*LockoutRecovery*/, true}
 	if !cmp.Equal(*daInfo, expectedDaInfo) {
 		t.Errorf("expected default DA parameters, got %+v, want %+v", daInfo, expectedDaInfo)
+	}
+}
+
+func TestGetCapabilityProperty(t *testing.T) {
+	rwc := test.GetTPM(t)
+	defer client.CheckedClose(t, rwc)
+
+	prop, err := getCapabilityProperty(rwc, tpm2.TPMAStartupClear)
+	if err != nil {
+		t.Fatalf("getCapabilityProperty failed for TPMAStartupClear: %v", err)
+	}
+	if prop.Tag != tpm2.TPMAStartupClear {
+		t.Errorf("got Tag %v, want %v", prop.Tag, tpm2.TPMAStartupClear)
+	}
+
+	_, err = getCapabilityProperty(rwc, tpm2.TPMProp(0xFFFFFFFF))
+	if err == nil {
+		t.Errorf("getCapabilityProperty for 0xFFFFFFFF succeeded, expected error")
 	}
 }
 

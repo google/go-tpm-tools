@@ -265,7 +265,7 @@ func verifyMonitoringConfig(policy MonitoringType, spec MonitoringType) error {
 func (p LaunchPolicy) Verify(ls LaunchSpec) error {
 	for _, e := range ls.Envs {
 		if !contains(p.AllowedEnvOverride, e.Name) {
-			return fmt.Errorf("env var %s is not allowed to be overridden on this image; allowed envs to be overridden: %v", e, p.AllowedEnvOverride)
+			return fmt.Errorf("env var %s is not allowed to be overridden on this image; allowed envs to be overridden: %v", e.Name, p.AllowedEnvOverride)
 		}
 	}
 	if !p.AllowedCmdOverride && len(ls.Cmd) > 0 {

@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"log"
 	"time"
 
 	sabi "github.com/google/go-sev-guest/abi"
@@ -133,7 +132,10 @@ func (c *restClient) VerifyAttestation(ctx context.Context, request verifier.Ver
 		return nil, fmt.Errorf("neither TPM nor TDX attestation is present")
 	}
 
-	req := convertRequestToREST(request)
+	req, err := convertRequestToREST(request)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert request to REST: %w", err)
+	}
 	req.Challenge = request.Challenge.Name
 
 	response, err := c.v1Client.VerifyAttestation(ctx, req)
@@ -152,7 +154,10 @@ func (c *restClient) VerifyConfidentialSpace(ctx context.Context, request verifi
 		return nil, fmt.Errorf("neither TPM nor TDX attestation is present")
 	}
 
-	csReq := convertCSRequestToREST(request)
+	csReq, err := convertCSRequestToREST(request)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert CS request to REST: %w", err)
+	}
 	csReq.Challenge = request.Challenge.Name
 
 	response, err := c.v1Client.VerifyConfidentialSpace(ctx, csReq)
@@ -203,7 +208,7 @@ func convertTokenOptionsToREST(tokenOpts *models.TokenOptions) *ccpb.TokenOption
 	return optsPb
 }
 
-func convertRequestToREST(request verifier.VerifyAttestationRequest) *ccpb.VerifyAttestationRequest {
+func convertRequestToREST(request verifier.VerifyAttestationRequest) (*ccpb.VerifyAttestationRequest, error) {
 	idTokens := make([]string, len(request.GcpCredentials))
 	for i, token := range request.GcpCredentials {
 		idTokens[i] = string(token)
@@ -261,7 +266,7 @@ func convertRequestToREST(request verifier.VerifyAttestationRequest) *ccpb.Verif
 		if request.Attestation.GetSevSnpAttestation() != nil {
 			sevsnp, err := convertSEVSNPProtoToREST(request.Attestation.GetSevSnpAttestation())
 			if err != nil {
-				log.Fatalf("Failed to convert SEVSNP proto to API proto: %v", err)
+				return nil, fmt.Errorf("failed to convert SEVSNP proto to API proto: %w", err)
 			}
 			verifyReq.TeeAttestation = sevsnp
 		}
@@ -269,7 +274,7 @@ func convertRequestToREST(request verifier.VerifyAttestationRequest) *ccpb.Verif
 		if request.Attestation.GetTdxAttestation() != nil {
 			tdx, err := convertTDXProtoToREST(request.Attestation.GetTdxAttestation())
 			if err != nil {
-				log.Fatalf("Failed to convert TD quote proto to API proto: %v", err)
+				return nil, fmt.Errorf("failed to convert TD quote proto to API proto: %w", err)
 			}
 			verifyReq.TeeAttestation = tdx
 		}
@@ -284,7 +289,7 @@ func convertRequestToREST(request verifier.VerifyAttestationRequest) *ccpb.Verif
 		}
 	}
 
-	return verifyReq
+	return verifyReq, nil
 }
 
 func convertResponseFromREST(resp *ccpb.VerifyAttestationResponse) (*verifier.VerifyAttestationResponse, error) {
@@ -345,9 +350,12 @@ func setAwsPrincipalTagOptions(requestTokenOptions *models.TokenOptions) *ccpb.T
 	return options
 }
 
-func convertCSRequestToREST(request verifier.VerifyAttestationRequest) *ccpb.VerifyConfidentialSpaceRequest {
+func convertCSRequestToREST(request verifier.VerifyAttestationRequest) (*ccpb.VerifyConfidentialSpaceRequest, error) {
 	// Use convertRequestToREST to avoid duplicating conversion logic.
-	verifyAttRequest := convertRequestToREST(request)
+	verifyAttRequest, err := convertRequestToREST(request)
+	if err != nil {
+		return nil, err
+	}
 
 	csReq := &ccpb.VerifyConfidentialSpaceRequest{
 		Challenge:      verifyAttRequest.Challenge,
@@ -375,7 +383,7 @@ func convertCSRequestToREST(request verifier.VerifyAttestationRequest) *ccpb.Ver
 
 	csReq.Options = convertToCSOpts(verifyAttRequest.TokenOptions)
 
-	return csReq
+	return csReq, nil
 }
 
 func convertNvidiaAttestationToREST(nvAtt *attestationpb.NvidiaAttestationReport) *ccpb.NvidiaAttestation {
