@@ -16,6 +16,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	clogging "cloud.google.com/go/logging"
@@ -490,6 +491,10 @@ func TestFetchAndWriteTokenSucceeds(t *testing.T) {
 }
 
 func TestTokenIsNotChangedIfRefreshFails(t *testing.T) {
+	synctest.Test(t, testTokenIsNotChangedIfRefreshFails)
+}
+
+func testTokenIsNotChangedIfRefreshFails(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -529,6 +534,7 @@ func TestTokenIsNotChangedIfRefreshFails(t *testing.T) {
 	}
 
 	time.Sleep(ttl)
+	synctest.Wait()
 
 	data, err = os.ReadFile(filepath)
 	if err != nil {
@@ -553,14 +559,20 @@ func testRetryPolicyThreeTimes() *backoff.ExponentialBackOff {
 }
 
 func TestTokenRefreshRetryPolicyFail(t *testing.T) {
-	testRetryPolicyWithNTries(t, 4 /*numTries*/, false /*expectRefresh*/)
+	synctest.Test(t, func(t *testing.T) {
+		testRetryPolicyWithNTries(t, 4 /*numTries*/, false /*expectRefresh*/)
+	})
 }
 
 func TestTokenRefreshRetryPolicy(t *testing.T) {
 	// Test retry policy tries 3 times.
 	for numTries := 1; numTries <= 3; numTries++ {
 		t.Run("RetryPolicyWith"+strconv.Itoa(numTries)+"Tries",
-			func(t *testing.T) { testRetryPolicyWithNTries(t, numTries /*numTries*/, true /*expectRefresh*/) })
+			func(t *testing.T) {
+				synctest.Test(t, func(t *testing.T) {
+					testRetryPolicyWithNTries(t, numTries /*numTries*/, true /*expectRefresh*/)
+				})
+			})
 	}
 }
 
@@ -605,6 +617,7 @@ func testRetryPolicyWithNTries(t *testing.T, numTries int, expectRefresh bool) {
 		t.Errorf("initial token written to file does not match expected token: got ID %v, want ID %v", gotClaims.ID, wantClaims.ID)
 	}
 	time.Sleep(ttl)
+	synctest.Wait()
 
 	data, err = os.ReadFile(filepath)
 	if err != nil {
@@ -627,6 +640,10 @@ func testRetryPolicyWithNTries(t *testing.T, numTries int, expectRefresh bool) {
 }
 
 func TestFetchAndWriteTokenWithTokenRefresh(t *testing.T) {
+	synctest.Test(t, testFetchAndWriteTokenWithTokenRefresh)
+}
+
+func testFetchAndWriteTokenWithTokenRefresh(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -677,6 +694,7 @@ func TestFetchAndWriteTokenWithTokenRefresh(t *testing.T) {
 	}
 
 	time.Sleep(ttl)
+	synctest.Wait()
 
 	// Check that token has changed.
 	data, err = os.ReadFile(filepath)
