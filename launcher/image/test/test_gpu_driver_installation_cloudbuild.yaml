@@ -66,6 +66,22 @@ steps:
           '-c', 'TDX',
         ]
 - name: 'gcr.io/cloud-builders/gcloud'
+  id: CreateSEVCVMWithRTXPro6000
+  waitFor: ['-']
+  entrypoint: 'bash'
+  env:
+  - 'BUILD_ID=$BUILD_ID'
+  args: ['create_vm.sh','-i', '${_IMAGE_NAME}',
+          '-p', '${_IMAGE_PROJECT}',
+          '-m', 'tee-image-reference=${_WORKLOAD_IMAGE},tee-container-log-redirect=true,tee-install-gpu-driver=true',
+          '-n', '${_VM_NAME_PREFIX}-${BUILD_ID}-rtxpro6000',
+          '-z', '${_ZONE}',
+          '-t', 'g4-standard-48',
+          '-g', 'nvidia-rtx-pro-6000',
+          '-a', '1',
+          '-c', 'SEV',
+        ]
+- name: 'gcr.io/cloud-builders/gcloud'
   id: UnsupportedGpuWorkloadTest
   waitFor: ['CreateShieldedVMWithUnsupportedGPU']
   entrypoint: 'bash'
@@ -85,6 +101,11 @@ steps:
   waitFor: ['CreateTDXCVMWithConfidentialGPU']
   entrypoint: 'bash'
   args: ['scripts/gpu/test_gpu_workload.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}-tdxcvm-cgpu', 'us-east5-a']
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: RTXPro6000WorkloadTest
+  waitFor: ['CreateSEVCVMWithRTXPro6000']
+  entrypoint: 'bash'
+  args: ['scripts/gpu/test_gpu_workload.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}-rtxpro6000', '${_ZONE}']
 - name: 'gcr.io/cloud-builders/gcloud'
   id: NoGpuDriverInstallationCleanUp
   waitFor: ['NoGpuDriverInstallationTest']
@@ -113,6 +134,13 @@ steps:
   env:
   - 'CLEANUP=$_CLEANUP'
   args: ['cleanup.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}-tdxcvm-cgpu', 'us-east5-a']
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: RTXPro6000VmCleanUp
+  waitFor: ['RTXPro6000WorkloadTest']
+  entrypoint: 'bash'
+  env:
+  - 'CLEANUP=$_CLEANUP'
+  args: ['cleanup.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}-rtxpro6000', '${_ZONE}']
 # Must come after cleanup.
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CheckFailure
@@ -125,3 +153,4 @@ steps:
   - NoGpuVmCleanUp
   - NoGpuDriverInstallationCleanUp
   - ConfidentialGpuVmCleanUp
+  - RTXPro6000VmCleanUp

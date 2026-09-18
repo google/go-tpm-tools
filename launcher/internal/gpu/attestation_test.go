@@ -27,6 +27,13 @@ func TestCollectAttestationEvidence(t *testing.T) {
 			wantPass: true,
 			wantSPT:  true,
 		},
+		{
+			name:     "success w/ RTX PRO 6000 SPT",
+			nonce:    []byte("nonce"),
+			gpuType:  deviceinfo.RTX_PRO_6000,
+			wantPass: true,
+			wantSPT:  true,
+		},
 		// Comment out since the mock NVML handler will not return multiple GPU attestations
 		// {
 		// 	name: "success w/ B200",
@@ -47,7 +54,7 @@ func TestCollectAttestationEvidence(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			fn := &getGpuTypeInfo
-			getGpuTypeInfo = func() (deviceinfo.GPUType, error) {
+			getGpuTypeInfo = func(string) (deviceinfo.GPUType, error) {
 				return tc.gpuType, nil
 			}
 			// Restore to original func after testing
@@ -118,12 +125,29 @@ func TestDetermineAttestationType(t *testing.T) {
 			gpuType: deviceinfo.B200,
 			want:    MPT,
 		},
+		{
+			name: "SPT attestation type (RTX PRO 6000)",
+			gpuInfos: []*attestationpb.GpuInfo{
+				{Uuid: "gpu-0"},
+			},
+			gpuType: deviceinfo.RTX_PRO_6000,
+			want:    SPT,
+		},
+		{
+			name: "Unsupported attestation type (RTX PRO 6000 with multiple GPUs)",
+			gpuInfos: []*attestationpb.GpuInfo{
+				{Uuid: "gpu-0"},
+				{Uuid: "gpu-1"},
+			},
+			gpuType: deviceinfo.RTX_PRO_6000,
+			want:    UNSUPPORTED,
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			fn := &getGpuTypeInfo
-			getGpuTypeInfo = func() (deviceinfo.GPUType, error) {
+			getGpuTypeInfo = func(string) (deviceinfo.GPUType, error) {
 				return tc.gpuType, nil
 			}
 			// Restore to original func after testing

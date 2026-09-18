@@ -85,7 +85,7 @@ func StartLauncher(ctx context.Context, launchSpec spec.LaunchSpec, logger loggi
 			}
 		}
 	} else {
-		deviceInfo, _ := deviceinfo.GetGPUTypeInfo()
+		deviceInfo, _ := deviceinfo.GetGPUTypeInfo(gpu.PciDevicesDir)
 		if deviceInfo != deviceinfo.NO_GPU {
 			logger.Error("GPU is attached, tee-install-gpu-driver is not set")
 			return fmt.Errorf("failed to install GPU drivers: tee-install-gpu-driver must be set to true")
