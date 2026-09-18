@@ -2,12 +2,11 @@ package gpu
 
 import (
 	"crypto/sha256"
-	"encoding/base64"
 	"fmt"
 
 	"cos.googlesource.com/cos/tools.git/src/cmd/cos_gpu_installer/deviceinfo"
-	"github.com/NVIDIA/go-nvml/pkg/nvml"
-	"github.com/confidentsecurity/go-nvtrust/pkg/gonvtrust/gpu"
+	"github.com/google/go-nvattest-tools/client"
+	nvattestpb "github.com/google/go-nvattest-tools/proto/nvattest"
 
 	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
 	"github.com/google/go-tpm-tools/agent/device"
@@ -35,14 +34,18 @@ type Attester interface {
 }
 
 // NvidiaAttester is responsible for collecting GPU attestation.
-type NvidiaAttester struct{}
+type NvidiaAttester struct {
+	quoteProvider client.GpuQuoteProvider
+}
 
 // NewNvidiaAttester returns a new NvidiaAttester if installGpuDriver is true, otherwise nil.
 func NewNvidiaAttester(installGpuDriver bool) *NvidiaAttester {
 	if !installGpuDriver {
 		return nil
 	}
-	return &NvidiaAttester{}
+	return &NvidiaAttester{
+		quoteProvider: &client.LinuxGpuQuoteProvider{},
+	}
 }
 
 // Vendor returns the device ROT vendor type for Nvidia GPU.
@@ -55,7 +58,11 @@ func (a *NvidiaAttester) Attest(nonce []byte) (any, error) {
 	if a == nil {
 		return nil, fmt.Errorf("nil Nvidia attester")
 	}
-	gpuAttestation, err := a.collectAttestationEvidence(&gpu.DefaultNVMLHandler{}, nonce)
+	provider := a.quoteProvider
+	if provider == nil {
+		provider = &client.LinuxGpuQuoteProvider{}
+	}
+	gpuAttestation, err := a.collectAttestationEvidence(provider, nonce)
 	if err != nil {
 		return nil, err
 	}
@@ -89,57 +96,64 @@ func (a *NvidiaAttester) EnableReadyState() error {
 
 // collectAttestationEvidence assumes CC GPU devices are in place w/ driver support
 // and will try to collect raw attestation evidence and convert it to known data models.
-func (a *NvidiaAttester) collectAttestationEvidence(handler gpu.NvmlHandler, nonce []byte) (*attestationpb.NvidiaAttestationReport, error) {
-	gpuAdmin, err := gpu.NewNvmlGPUAdmin(handler)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create GPU admin: %v", err)
+func (a *NvidiaAttester) collectAttestationEvidence(provider client.GpuQuoteProvider, nonce []byte) (*attestationpb.NvidiaAttestationReport, error) {
+	if provider == nil {
+		return nil, fmt.Errorf("nil GPU quote provider")
 	}
-	defer gpuAdmin.Shutdown()
 
 	nvNonce := sha256.Sum256(nonce)
-	deviceInfos, err := gpuAdmin.CollectEvidence(nvNonce[:])
+	quote, err := provider.CollectGpuEvidence(nvNonce)
 	if err != nil {
-		return nil, fmt.Errorf("failed to collect GPU evidence: %v", err)
+		return nil, fmt.Errorf("failed to collect GPU evidence: %w", err)
+	}
+
+	if quote == nil || len(quote.GetGpuInfos()) == 0 {
+		return nil, fmt.Errorf("no GPU devices found in quote")
 	}
 
 	var gpuInfos []*attestationpb.GpuInfo
-	for i, deviceInfo := range deviceInfos {
-		device, ret := handler.DeviceGetHandleByIndex(i)
-		if ret != nvml.SUCCESS {
-			return nil, fmt.Errorf("failed to get GPU device: %v", nvml.ErrorString(ret))
-		}
-		uuid, ret := device.GetUUID()
-		if ret != nvml.SUCCESS {
-			return nil, fmt.Errorf("failed to get GPU device UUID: %v", nvml.ErrorString(ret))
+	for i, devInfo := range quote.GetGpuInfos() {
+		if devInfo == nil {
+			return nil, fmt.Errorf("nil GPU device info at index %d", i)
 		}
 
-		vbiosVersion, ret := device.GetVbiosVersion()
-		if ret != nvml.SUCCESS {
-			return nil, fmt.Errorf("failed to get GPU VBIOS version: %v", nvml.ErrorString(ret))
+		uuid := devInfo.GetUuid()
+		if uuid == "" {
+			return nil, fmt.Errorf("failed to get GPU device UUID: empty UUID at index %d", i)
 		}
 
-		driverVersion, ret := handler.SystemGetDriverVersion()
-		if ret != nvml.SUCCESS {
-			return nil, fmt.Errorf("failed to get GPU driver version: %v", nvml.ErrorString(ret))
+		driverVersion := devInfo.GetDriverVersion()
+		if driverVersion == "" {
+			return nil, fmt.Errorf("failed to get GPU driver version for GPU %s at index %d", uuid, i)
 		}
 
-		base64PEM, err := deviceInfo.Certificate().EncodeBase64()
-		if err != nil {
-			return nil, fmt.Errorf("failed to encode GPU certificate chain: %v", err)
+		vbiosVersion := devInfo.GetVbiosVersion()
+		if vbiosVersion == "" {
+			return nil, fmt.Errorf("failed to get GPU VBIOS version for GPU %s at index %d", uuid, i)
 		}
 
-		attestationCertChainData, err := base64.StdEncoding.DecodeString(base64PEM)
-		if err != nil {
-			return nil, fmt.Errorf("failed to decode GPU certificate chain: %v", err)
+		arch := convertGPUArchToPB(devInfo.GetGpuArchitecture())
+		if arch == attestationpb.GpuArchitectureType_GPU_ARCHITECTURE_TYPE_UNSPECIFIED {
+			return nil, fmt.Errorf("unsupported or unspecified GPU architecture %v for GPU %s at index %d", devInfo.GetGpuArchitecture(), uuid, i)
+		}
+
+		report := devInfo.GetAttestationReport()
+		if len(report) == 0 {
+			return nil, fmt.Errorf("failed to get GPU attestation report for GPU %s at index %d: empty report", uuid, i)
+		}
+
+		certChain := devInfo.GetAttestationCertificateChain()
+		if len(certChain) == 0 {
+			return nil, fmt.Errorf("failed to get GPU certificate chain for GPU %s at index %d: empty certificate chain", uuid, i)
 		}
 
 		gpuInfo := &attestationpb.GpuInfo{
 			Uuid:                        uuid,
 			DriverVersion:               driverVersion,
 			VbiosVersion:                vbiosVersion,
-			GpuArchitectureType:         convertGPUArchToPB(deviceInfo.Arch()),
-			AttestationReport:           deviceInfo.AttestationReport(),
-			AttestationCertificateChain: attestationCertChainData,
+			GpuArchitectureType:         arch,
+			AttestationReport:           report,
+			AttestationCertificateChain: certChain,
 		}
 		gpuInfos = append(gpuInfos, gpuInfo)
 	}
@@ -168,9 +182,9 @@ func (a *NvidiaAttester) collectAttestationEvidence(handler gpu.NvmlHandler, non
 	}
 }
 
-// determineAttesationType auto-detects the GPU attestation type.
+// determineAttestationType auto-detects the GPU attestation type.
 // The current implementations "guess" the attestation type.
-// Further improvement should be made to parse GPU attesation report to get the actual attestation type.
+// Further improvement should be made to parse GPU attestation report to get the actual attestation type.
 func determineAttestationType(gpuInfos []*attestationpb.GpuInfo) attestationType {
 	gpuType, _ := getGpuTypeInfo(PciDevicesDir)
 	if gpuType != deviceinfo.H100 && gpuType != deviceinfo.B200 && gpuType != deviceinfo.RTX_PRO_6000 {
@@ -186,11 +200,11 @@ func determineAttestationType(gpuInfos []*attestationpb.GpuInfo) attestationType
 	return SPT
 }
 
-func convertGPUArchToPB(arch string) attestationpb.GpuArchitectureType {
+func convertGPUArchToPB(arch nvattestpb.GpuArchitectureType) attestationpb.GpuArchitectureType {
 	switch arch {
-	case "HOPPER":
+	case nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_HOPPER:
 		return attestationpb.GpuArchitectureType_GPU_ARCHITECTURE_TYPE_HOPPER
-	case "BLACKWELL":
+	case nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_BLACKWELL:
 		return attestationpb.GpuArchitectureType_GPU_ARCHITECTURE_TYPE_BLACKWELL
 	default:
 		return attestationpb.GpuArchitectureType_GPU_ARCHITECTURE_TYPE_UNSPECIFIED
