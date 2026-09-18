@@ -172,12 +172,12 @@ func (a *NvidiaAttester) collectAttestationEvidence(handler gpu.NvmlHandler, non
 // The current implementations "guess" the attestation type.
 // Further improvement should be made to parse GPU attesation report to get the actual attestation type.
 func determineAttestationType(gpuInfos []*attestationpb.GpuInfo) attestationType {
-	gpuType, _ := getGpuTypeInfo()
-	if gpuType != deviceinfo.H100 && gpuType != deviceinfo.B200 {
+	gpuType, _ := getGpuTypeInfo(PciDevicesDir)
+	if gpuType != deviceinfo.H100 && gpuType != deviceinfo.B200 && gpuType != deviceinfo.RTX_PRO_6000 {
 		return UNSUPPORTED
 	}
-	// H100 can only support single GPU attestation in CS at the moment.
-	if gpuType == deviceinfo.H100 && len(gpuInfos) != 1 {
+	// H100 and RTX PRO 6000 can only support single GPU attestation in CS at the moment.
+	if (gpuType == deviceinfo.H100 || gpuType == deviceinfo.RTX_PRO_6000) && len(gpuInfos) != 1 {
 		return UNSUPPORTED
 	}
 	if gpuType == deviceinfo.B200 && len(gpuInfos) > 1 {

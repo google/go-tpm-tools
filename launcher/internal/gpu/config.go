@@ -20,4 +20,6 @@ const (
 	NvDriverVer595_58_03Digest = "8c0d4f967b7932c4ab5714272aee8103392b0a702c92afa555176d36205829f9"
 	// NvDriverVer595_58_03Runfile is the driver run file name
 	NvDriverVer595_58_03Runfile = "NVIDIA-Linux-x86_64-595.58.03.run"
+	// PciDevicesDir is the directory containing PCI devices.
+	PciDevicesDir = "/sys/bus/pci/devices"
 )
