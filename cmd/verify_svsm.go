@@ -54,8 +54,11 @@ sev-snp. For debugging purposes only.
 It supports two manifest verification modes depending on the manifest version:
 
 1. Version 0 Manifest (Legacy / Challenge-based):
-  - Proves AK co-residency using the interactive TCG EK-based key attestation protocol.
-  - Requires specifying both --ek-pub and --certified-ak-blob (produced via "solve-challenge").
+  - Proves AK co-residency using the interactive TCG EK-based key attestation protocol,
+    implemented in the "gotpm register" CLI (cmd/register.go).
+  - Using "gotpm verify debug svsm" with manifest v0 assumes this registration flow has
+    already been completed.
+  - Requires specifying both --ek-pub and --certified-ak-blob (produced via "gotpm register solve-challenge").
   - Enforces the use of --key=AK (Owner hierarchy AK certified against the EK).
 
 2. Version 1 Manifest (New / Manifest-based):
