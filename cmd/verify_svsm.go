@@ -1,27 +1,3 @@
-/*
-verify_svsm.go implements the "gotpm verify debug svsm" command to debug and verify
-an SVSM-based vTPM attestation report (SevSnpSvsmAttestation).
-
-It supports two manifest verification modes depending on the manifest version:
-
-1. Version 0 Manifest (Legacy / Challenge-based):
-  - Proves AK co-residency using the interactive TCG EK-based key attestation protocol.
-  - Requires specifying both --ek-pub and --certified-ak-blob (produced via "solve-challenge").
-  - Enforces the use of --key=AK (Owner hierarchy AK certified against the EK).
-
-2. Version 1 Manifest (New / Manifest-based):
-  - Bypasses the interactive activation challenge by leveraging SVSM's signed manifest.
-  - SVSM (VMPL0) derives the standard EK and AK on the fly under the Endorsement Hierarchy
-    (using the vTPM's Endorsement Seed and fixed templates) and embeds their public areas in
-    the manifest. The manifest is hashed into the SNP report's REPORT_DATA, so the AK is
-    bound to the vTPM by the AMD-signed report alone.
-  - Takes no out-of-band registration material: the trusted AK is taken from the
-    attestation supplied via --input and checked for membership in the report-bound
-    manifest. --certified-ak-blob is v0-only and is rejected here. --ek-pub is optional for
-    verifying against the manifest
-  - The guest VM (VMPL2) also derives its AK (using --key=gceAK) by querying the same template
-    SVSM saved to the Google NV index under the Endorsement Hierarchy.
-*/
 package cmd
 
 import (
@@ -71,6 +47,28 @@ func addEKPubFlag(cmd *cobra.Command) {
 var verifySVSMCmd = &cobra.Command{
 	Use:   "svsm",
 	Short: `Debug the contents of an SevSnpSvsmAttestation. Currently only supported with sev-snp. For debugging purposes only.`,
+	Long: `Debug and verify an SVSM-based vTPM attestation report (SevSnpSvsmAttestation).
+Currently only supported with sev-snp. For debugging purposes only.
+
+It supports two manifest verification modes depending on the manifest version:
+
+1. Version 0 Manifest (Legacy / Challenge-based):
+  - Proves AK co-residency using the interactive TCG EK-based key attestation protocol.
+  - Requires specifying both --ek-pub and --certified-ak-blob (produced via "solve-challenge").
+  - Enforces the use of --key=AK (Owner hierarchy AK certified against the EK).
+
+2. Version 1 Manifest (New / Manifest-based):
+  - Bypasses the interactive activation challenge by leveraging SVSM's signed manifest.
+  - SVSM (VMPL0) derives the standard EK and AK on the fly under the Endorsement Hierarchy
+    (using the vTPM's Endorsement Seed and fixed templates) and embeds their public areas in
+    the manifest. The manifest is hashed into the SNP report's REPORT_DATA, so the AK is
+    bound to the vTPM by the AMD-signed report alone.
+  - Takes no out-of-band registration material: the trusted AK is taken from the
+    attestation supplied via --input and checked for membership in the report-bound
+    manifest. --certified-ak-blob is v0-only and is rejected here. --ek-pub is optional for
+    verifying against the manifest.
+  - The guest VM (VMPL2) also derives its AK (using --key=gceAK) by querying the same template
+    SVSM saved to the Google NV index under the Endorsement Hierarchy.`,
 	RunE: func(*cobra.Command, []string) error {
 		if teeTechnology != sevSNP {
 			return errors.New("--svsm is only supported with --tee-technology=sev-snp")
