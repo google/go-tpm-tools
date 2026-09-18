@@ -47,8 +47,9 @@ func addEKPubFlag(cmd *cobra.Command) {
 var verifySVSMCmd = &cobra.Command{
 	Use:   "svsm",
 	Short: `Debug the contents of an SevSnpSvsmAttestation. Currently only supported with sev-snp. For debugging purposes only.`,
-	Long: `Debug and verify an SVSM-based vTPM attestation report (SevSnpSvsmAttestation).
-Currently only supported with sev-snp. For debugging purposes only.
+	Long: `Debug and verify an SVSM-based vTPM attestation report (SevSnpSvsmAttestation)
+produced by "gotpm attest svsm". Currently only supported with
+sev-snp. For debugging purposes only.
 
 It supports two manifest verification modes depending on the manifest version:
 
