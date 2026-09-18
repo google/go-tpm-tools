@@ -41,6 +41,9 @@ func GenerateBindingKeypair(algo *keymanager.HpkeAlgorithm, lifespanSecs uint64)
 	if err != nil {
 		return uuid.Nil, nil, fmt.Errorf("failed to marshal HpkeAlgorithm: %v", err)
 	}
+	if len(algoBytes) == 0 {
+		return uuid.Nil, nil, fmt.Errorf("no algorithm provided")
+	}
 
 	if rc := C.key_manager_generate_binding_keypair(
 		(*C.uint8_t)(unsafe.Pointer(&algoBytes[0])),
