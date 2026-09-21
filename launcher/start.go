@@ -75,8 +75,8 @@ func StartLauncher(ctx context.Context, launchSpec spec.LaunchSpec, logger loggi
 	ctx = namespaces.WithNamespace(ctx, namespaces.Default)
 
 	if launchSpec.InstallGpuDriver {
-		if launchSpec.Experiments.BcMode {
-			logger.Info("gpu driver is pre-installed in BC mode")
+		if launchSpec.Experiments.BcMode || launchSpec.Experiments.GB300CCMode {
+			logger.Info("GPU driver is pre-installed in BC and GB300 CC mode")
 		} else {
 			installer := gpu.NewDriverInstaller(containerdClient, launchSpec, logger)
 			err = installer.InstallGPUDrivers(ctx)
@@ -337,4 +337,3 @@ func setupBCSocketPermissions(logger logging.Logger) {
 		logger.Error("failed to verify kmaserver-grpc socket permissions: %v", err)
 	}
 }
-

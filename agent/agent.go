@@ -866,8 +866,7 @@ func convertToTPMQuote(v *pb.Attestation) *attestationpb.TpmQuote {
 	}
 }
 func (a *gb300ccAgent) Attest(_ context.Context, _ AttestAgentOpts) ([]byte, error) {
-	a.logger.Info("GB300 CC mode: Skipping Attest (Hardware attestation not implemented)")
-	return []byte("eyJhbGciOiJub25lIn0.eyJleHAiOjMyNTAzNjgwMDAwfQ."), nil
+	return nil, fmt.Errorf("attestation token is not supported in GB300 CC mode")
 }
 
 func (a *gb300ccAgent) Refresh(_ context.Context) error {
@@ -881,6 +880,13 @@ func (a *gb300ccAgent) MeasureEvent(_ gecel.Content) error {
 }
 
 func (a *gb300ccAgent) AttestWithClient(_ context.Context, _ AttestAgentOpts, _ verifier.Client) ([]byte, error) {
-	a.logger.Info("GB300 CC mode: Skipping AttestWithClient (Hardware attestation not implemented)")
-	return []byte("eyJhbGciOiJub25lIn0.eyJleHAiOjMyNTAzNjgwMDAwfQ."), nil
+	return nil, fmt.Errorf("attestation token is not supported in GB300 CC mode")
+}
+
+func (a *gb300ccAgent) AttestationEvidence(_ context.Context, _ []byte, _ []byte, _ AttestAgentOpts) (*attestationpb.VmAttestation, error) {
+	if !a.experiments.EnableAttestationEvidence {
+		return nil, fmt.Errorf("attestation evidence is disabled")
+	}
+
+	return nil, fmt.Errorf("AttestationEvidence is not yet implemented for GB300 CC mode")
 }
