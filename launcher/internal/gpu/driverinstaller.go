@@ -57,16 +57,13 @@ func (di *DriverInstaller) InstallGPUDrivers(ctx context.Context) error {
 		return fmt.Errorf("failed to remount the installation directory: %v", err)
 	}
 
-	gpuType, err := deviceinfo.GetGPUTypeInfo()
+	gpuType, err := getGpuTypeInfo(PciDevicesDir)
 	if err != nil {
 		return fmt.Errorf("failed to get the GPU type info: %v", err)
 	}
 
-	switch gpuType {
-	case deviceinfo.B200:
-	case deviceinfo.H100:
-	default:
-		return fmt.Errorf("unsupported GPU type %s for Confidential Computing (only supported for H100[a3-highgpu-1g] and B200[a4-highgpu-8g])", gpuType.String())
+	if err := checkGPUSupport(gpuType); err != nil {
+		return err
 	}
 
 	ctx = namespaces.WithNamespace(ctx, namespaces.Default)
@@ -298,4 +295,20 @@ func NvidiaSmiOutputFunc(args ...string) NvidiaSmiCmdOutput {
 		}
 		return exec.Command(cmdPath, args...).Output()
 	}
+}
+
+// checkGPUSupport checks if the detected GPU hardware is supported for Confidential Computing.
+func checkGPUSupport(gpuType deviceinfo.GPUType) error {
+	switch gpuType {
+	case deviceinfo.B200:
+	case deviceinfo.H100:
+	case deviceinfo.RTX_PRO_6000:
+	case deviceinfo.NO_GPU:
+		return fmt.Errorf("failed to get the GPU type info: no GPU detected")
+	case deviceinfo.Others:
+		return fmt.Errorf("failed to get the GPU type info: unrecognized GPU")
+	default:
+		return fmt.Errorf("unsupported GPU type %s for Confidential Computing (only supported for H100[a3-highgpu-1g], B200[a4-highgpu-8g], and RTX PRO 6000[g4-standard-48])", gpuType.String())
+	}
+	return nil
 }

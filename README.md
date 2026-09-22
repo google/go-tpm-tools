@@ -66,7 +66,7 @@ go build
 
 ## Minimum Required Go Version
 
-This project currently requires Go 1.20 or newer. Any update to the minimum required Go version will be released as a **minor** version update.
+This project currently requires Go 1.26.6 or newer. Any update to the minimum required Go version will be released as a **minor** version update.
 
 ## `openssl` errors when building `simulator`
 

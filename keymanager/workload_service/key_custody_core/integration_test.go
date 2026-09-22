@@ -84,3 +84,13 @@ func TestIntegrationGetBindingKeyNotFound(t *testing.T) {
 		t.Fatalf("expected error containing %q, got: %v", expectedErrMsg, err)
 	}
 }
+
+func TestIntegrationGenerateBindingKeypairEmptyAlgo(t *testing.T) {
+	_, _, err := GenerateBindingKeypair(&keymanager.HpkeAlgorithm{}, 3600)
+	if err == nil {
+		t.Fatal("expected error for empty HpkeAlgorithm")
+	}
+	if !strings.Contains(err.Error(), "no algorithm provided") {
+		t.Fatalf("expected 'no algorithm provided' error, got: %v", err)
+	}
+}

@@ -28,7 +28,7 @@ permissions:
   contents: read
 
 env:
-  GO_VERSION: '1.26.x'
+  GO_VERSION: '1.26.6'
   GOLANGCI_LINT_VERSION: 'v2.12.2'
   PROTOC_VERSION: '3.20.1'
   PROTOC_GEN_GO_VERSION: 'v1.36.12'
