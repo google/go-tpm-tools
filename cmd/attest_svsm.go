@@ -29,13 +29,6 @@ var attestSVSMCmd = &cobra.Command{
 		if manifestVersion != "" && manifestVersion != "0" && manifestVersion != "1" {
 			return fmt.Errorf("invalid manifest version %q, must be one of \"\", \"0\", \"1\"", manifestVersion)
 		}
-		rwc, err := openTpm()
-		if err != nil {
-			return err
-		}
-		defer rwc.Close()
-
-		var attestationKey *client.Key
 		algoToCreateAK, ok := attestationKeys[key]
 		if !ok {
 			return fmt.Errorf("%v is an invalid value for --key, only AK and gceAK are supported", key)
@@ -46,6 +39,17 @@ var attestSVSMCmd = &cobra.Command{
 		if manifestVersion == "1" && key != "gceAK" {
 			return fmt.Errorf("manifest version 1 requires --key=gceAK")
 		}
+		if len(teeNonce) != sabi.ReportDataSize {
+			return fmt.Errorf("the teeNonce size is %d. SEV-SNP device requires 64", len(teeNonce))
+		}
+
+		rwc, err := openTpm()
+		if err != nil {
+			return err
+		}
+		defer rwc.Close()
+
+		var attestationKey *client.Key
 		createFunc := algoToCreateAK[keyAlgo]
 		attestationKey, err = createFunc(rwc)
 		if err != nil {

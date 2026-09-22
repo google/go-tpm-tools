@@ -288,10 +288,6 @@ func readFS(reportData []byte, ekPub []byte, vmpl int, measurement []byte) func(
 }
 
 func TestAttestSVSMFlags(t *testing.T) {
-	rwc := test.GetTPM(t)
-	defer client.CheckedClose(t, rwc)
-	ExternalTPM = rwc
-
 	tests := []struct {
 		name            string
 		teeTech         string
@@ -343,28 +339,36 @@ func TestAttestSVSMFlags(t *testing.T) {
 			name:            "ValidManifestVersionEmpty",
 			teeTech:         "sev-snp",
 			manifestVersion: "",
-			wantErrorMsg:    "failed to create linuxtsm configfs client",
+			wantErrorMsg:    "the teeNonce size is 0. SEV-SNP device requires 64",
 		},
 		{
 			name:            "ValidManifestVersionZero",
 			teeTech:         "sev-snp",
 			manifestVersion: "0",
-			wantErrorMsg:    "failed to create linuxtsm configfs client",
+			wantErrorMsg:    "the teeNonce size is 0. SEV-SNP device requires 64",
 		},
 		{
 			name:            "ValidManifestVersionOne",
 			teeTech:         "sev-snp",
 			manifestVersion: "1",
 			key:             "gceAK",
-			wantErrorMsg:    "failed to create attestation key",
+			wantErrorMsg:    "the teeNonce size is 0. SEV-SNP device requires 64",
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			args := []string{"attest", "svsm", "--tee-technology", tc.teeTech, "--manifest-version", tc.manifestVersion, "--nonce", "1234"}
-			if tc.key != "" {
-				args = append(args, "--key", tc.key)
+			keyArg := tc.key
+			if keyArg == "" {
+				keyArg = "AK"
+			}
+			args := []string{
+				"attest", "svsm",
+				"--tee-technology", tc.teeTech,
+				"--manifest-version", tc.manifestVersion,
+				"--key", keyArg,
+				"--nonce", "1234",
+				"--tee-nonce", "",
 			}
 			RootCmd.SetArgs(args)
 			err := RootCmd.Execute()
