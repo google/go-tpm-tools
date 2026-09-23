@@ -1867,6 +1867,8 @@ github.com/google/go-eventlog v0.0.2-0.20241213203620-f921bdc3aeb0/go.mod h1:7hu
 github.com/google/go-eventlog v0.0.3-0.20250319220925-32d08db9b6f9/go.mod h1:7huE5P8w2NTObSwSJjboHmB7ioBNblkijdzoVa2skfQ=
 github.com/google/go-github/v28 v28.1.1 h1:kORf5ekX5qwXO2mGzXXOjMe/g6ap8ahVe0sBEulhSxo=
 github.com/google/go-licenses v0.0.0-20210329231322-ce1d9163b77d h1:JtmsUf+m+KdwCOgLG578T0Mvd0+l+dezPrJh5KYnXZg=
+github.com/google/go-nvattest-tools v0.0.0-20260714083801-bf44c37ba22c h1:nem69e7yXge0Dzh7LHYd9QSLgMCN1o7t2LVaZRFC38M=
+github.com/google/go-nvattest-tools v0.0.0-20260714083801-bf44c37ba22c/go.mod h1:XdFIUlVZbp1EzBMM7VgvIIXjrlhumYV8I129fPQExCM=
 github.com/google/go-pkcs11 v0.2.1-0.20230907215043-c6f79328ddf9/go.mod h1:6eQoGcuNJpa7jnd5pMGdkSaQpNDYvPlXWMcjXXThLlY=
 github.com/google/go-pkcs11 v0.3.0 h1:PVRnTgtArZ3QQqTGtbtjtnIkzl2iY2kt24yqbrf7td8=
 github.com/google/go-pkcs11 v0.3.0/go.mod h1:6eQoGcuNJpa7jnd5pMGdkSaQpNDYvPlXWMcjXXThLlY=
