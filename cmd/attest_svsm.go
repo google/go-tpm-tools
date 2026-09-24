@@ -3,7 +3,6 @@ package cmd
 import (
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/google/gce-tcb-verifier/extract"
 	"github.com/google/go-configfs-tsm/configfs/configfsi"
@@ -118,11 +117,6 @@ func makeSEVSNPSVSMAttestation(attestation *apb.Attestation, opts *sevSNPSVSMAtt
 	}
 	copy(snpNonce[:], opts.TEENonce)
 
-	// There is a host ratelimit of 2 requests per 2 seconds on guest message requests
-	// and SVSM will decide to crash if it runs into this ratelimit.
-	// Until we fix this in Coconut SVSM and increase the host ratelimit, ensure a 2
-	// second delay prior to issuing an attestation report request to SVSM.
-	time.Sleep(2 * time.Second)
 	tsmBlobs, err := getSVSMBlobs(opts.CongfigfsClient, snpNonce, opts.VTPMServiceManifestVersion)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get configfs-tsm blobs for SVSM attestation report: %w", err)
@@ -132,7 +126,7 @@ func makeSEVSNPSVSMAttestation(attestation *apb.Attestation, opts *sevSNPSVSMAtt
 		return nil, fmt.Errorf("failed to convert attestation report to proto: %w", err)
 	}
 
-	certs, err := getCertificates(opts.CongfigfsClient, snpNonce)
+	certs, err := getCertificates(tsmBlobs.AuxBlob)
 	if err != nil {
 		return nil, fmt.Errorf("failed to retrieve certificates from configfs-tsm: %w", err)
 	}
@@ -175,28 +169,11 @@ const (
 	// GUID for SVSM vTPM attestation defined by SVSM spec.
 	// See https://www.amd.com/en/developer/sev.html for SVSM spec
 	svsmVTPMServiceGUID                            = "c476f1eb-0123-45a5-9641-b4e7dde5bfe3"
-	leastPrivilegedVMPL                            = 3
 	defaultConfigfsTsmReportServiceManifestVersion = "0"
 )
 
-var (
-	errFailedToRetrieveCertificates = errors.New("failed to retrieve certificates")
-)
-
-// SVSM currently doesn't support certificates in its attestation report, so here we collect
-// the certificate chain by requesting a report without SVSM to get the cached certificates.
-func getCertificates(configfs configfsi.Client, reportData [sabi.ReportDataSize]byte) (*sevpb.CertificateChain, error) {
-	resp, err := report.Get(configfs, &report.Request{
-		InBlob:     reportData[:],
-		GetAuxBlob: true,
-		Privilege: &report.Privilege{
-			Level: uint(leastPrivilegedVMPL),
-		},
-	})
-	if err != nil {
-		return nil, errFailedToRetrieveCertificates
-	}
-	extended, err := sabi.ExtendedPlatformCertTable(resp.AuxBlob)
+func getCertificates(auxBlob []byte) (*sevpb.CertificateChain, error) {
+	extended, err := sabi.ExtendedPlatformCertTable(auxBlob)
 	if err != nil {
 		return nil, fmt.Errorf("invalid certificate table: %w", err)
 	}
@@ -213,6 +190,7 @@ func getSVSMBlobs(configfs configfsi.Client, reportData [sabi.ReportDataSize]byt
 		ServiceProvider:        svsmServiceProvider,
 		ServiceGuid:            svsmVTPMServiceGUID,
 		ServiceManifestVersion: vtpmServiceManifestVersion,
+		GetAuxBlob:             true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("could not get SVSM attestation report: %w", err)
