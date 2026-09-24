@@ -40,13 +40,19 @@ def get_proc_info(pid):
     return f"{comm}: {uid}"
 
 
+def read_uid_map():
+    """Reads /proc/self/uid_map."""
+    try:
+        with open("/proc/self/uid_map", "r") as f:
+            return " ".join(f.read().split())
+    except Exception as e:
+        return f"error: {e}"
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--ip", "-ip", default="")
     args, _ = parser.parse_known_args()
-
-    if not args.ip:
-        sys.exit("error: --ip flag is required")
 
     set_proc_name("fork-parent")
 
@@ -63,9 +69,8 @@ def main():
     # Parent process gives children a moment to apply setuid and rename
     time.sleep(0.5)
 
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-
     lines = [
+        f"uid_map: {read_uid_map()}",
         get_proc_info(os.getpid()),
         get_proc_info(pid1),
         get_proc_info(pid2),
@@ -73,10 +78,12 @@ def main():
     process_tree = "\n".join(lines) + "\n"
 
     print(f"Sending process tree:\n{process_tree.strip()}", file=sys.stderr)
-    try:
-        sock.sendto(process_tree.encode("utf-8"), (args.ip, _SERVER_PORT))
-    except Exception as e:
-        print(f"UDP send error: {e}", file=sys.stderr)
+    if args.ip:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            sock.sendto(process_tree.encode("utf-8"), (args.ip, _SERVER_PORT))
+        except Exception as e:
+            print(f"UDP send error: {e}", file=sys.stderr)
 
     time.sleep(300)  # Wait 5 minutes before die
 
