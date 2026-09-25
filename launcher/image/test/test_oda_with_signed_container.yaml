@@ -12,6 +12,7 @@ substitutions:
 steps:
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CreateVM
+  waitFor: ['-']
   entrypoint: 'bash'
   env:
   - 'BUILD_ID=$BUILD_ID'
@@ -23,10 +24,12 @@ steps:
         ]
 - name: 'gcr.io/cloud-builders/gcloud'
   id: TestCustomToken
+  waitFor: ['CreateVM']
   entrypoint: 'bash'
   args: ['scripts/test_custom_token.sh', "true", '${_VM_NAME_PREFIX}-${BUILD_ID}', '${_ZONE}']
 - name: 'gcr.io/cloud-builders/gcloud'
   id: BasicDiscoverSignaturesTest
+  waitFor: ['CreateVM']
   entrypoint: 'bash'
   # Check how many times container image signatures is being logged. 
   # Since signature logging will occur on refresh the default token, and on attest agent calling the `Attest` method, so the expected number should be 3.
@@ -34,6 +37,7 @@ steps:
   args: ['scripts/test_launcher_workload_discover_signatures.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}', '${_ZONE}', '${_EXPECTED_SIG}', '3']
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CleanUp
+  waitFor: ['TestCustomToken', 'BasicDiscoverSignaturesTest']
   entrypoint: 'bash'
   env:
   - 'CLEANUP=$_CLEANUP'
@@ -41,6 +45,7 @@ steps:
 # Must come after cleanup.
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CheckFailure
+  waitFor: ['CleanUp']
   entrypoint: 'bash'
   env:
   - 'BUILD_ID=$BUILD_ID'
