@@ -26,6 +26,15 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+func testEKPubBytes(tb testing.TB) []byte {
+	tb.Helper()
+	ekBytes, err := client.DefaultEKTemplateRSA().Encode()
+	if err != nil {
+		tb.Fatalf("failed to encode default EK template: %v", err)
+	}
+	return ekBytes
+}
+
 func TestMakeSVSNPSVSMAttestation(t *testing.T) {
 	synctest.Test(t, testMakeSVSNPSVSMAttestation)
 }
@@ -52,15 +61,7 @@ func testMakeSVSNPSVSMAttestation(t *testing.T) {
 		t.Fatalf("failed to create attestation: %v", err)
 	}
 
-	ek, err := client.EndorsementKeyRSA(rwc)
-	if err != nil {
-		t.Fatalf("failed to get EK: %v", err)
-	}
-	defer ek.Close()
-	ekBytes, err := ek.PublicArea().Encode()
-	if err != nil {
-		t.Fatalf("failed to encode EK pub: %v", err)
-	}
+	ekBytes := testEKPubBytes(t)
 
 	var snpNonce [sabi.ReportDataSize]byte
 	h := sha512.New()
@@ -134,15 +135,7 @@ func TestSVSMAttestationsErrors(t *testing.T) {
 		t.Fatalf("failed to create attestation: %v", err)
 	}
 
-	ek, err := client.EndorsementKeyRSA(rwc)
-	if err != nil {
-		t.Fatalf("failed to get EK: %v", err)
-	}
-	defer ek.Close()
-	ekBytes, err := ek.PublicArea().Encode()
-	if err != nil {
-		t.Fatalf("failed to encode EK pub: %v", err)
-	}
+	ekBytes := testEKPubBytes(t)
 
 	var snpNonce [sabi.ReportDataSize]byte
 	h := sha512.New()
@@ -401,15 +394,7 @@ func TestMakeSVSNPSVSMAttestationManifestVersion(t *testing.T) {
 		t.Fatalf("failed to create attestation: %v", err)
 	}
 
-	ek, err := client.EndorsementKeyRSA(rwc)
-	if err != nil {
-		t.Fatalf("failed to get EK: %v", err)
-	}
-	defer ek.Close()
-	ekBytes, err := ek.PublicArea().Encode()
-	if err != nil {
-		t.Fatalf("failed to encode EK pub: %v", err)
-	}
+	ekBytes := testEKPubBytes(t)
 
 	var snpNonce [sabi.ReportDataSize]byte
 	h := sha512.New()
@@ -490,15 +475,7 @@ func TestVerifySVSMAttestationV1(t *testing.T) {
 			t.Fatalf("failed to create attestation: %v", err)
 		}
 
-		ek, err := client.EndorsementKeyRSA(rwc)
-		if err != nil {
-			t.Fatalf("failed to get EK: %v", err)
-		}
-		defer ek.Close()
-		ekBytes, err := ek.PublicArea().Encode()
-		if err != nil {
-			t.Fatalf("failed to encode EK pub: %v", err)
-		}
+		ekBytes := testEKPubBytes(t)
 
 		// Construct v1 manifest: [Version (4B)][NumKeys (4B)][TPM2B_PUBLIC(AK)][TPM2B_PUBLIC(EK)]
 		manifestBytes := makeV1Manifest(akPubBytes, ekBytes)
@@ -561,15 +538,7 @@ func TestSVSMAttestationsV1Errors(t *testing.T) {
 		t.Fatalf("failed to create attestation: %v", err)
 	}
 
-	ek, err := client.EndorsementKeyRSA(rwc)
-	if err != nil {
-		t.Fatalf("failed to get EK: %v", err)
-	}
-	defer ek.Close()
-	ekBytes, err := ek.PublicArea().Encode()
-	if err != nil {
-		t.Fatalf("failed to encode EK pub: %v", err)
-	}
+	ekBytes := testEKPubBytes(t)
 
 	var snpNonce [sabi.ReportDataSize]byte
 	goodMeasurement := [48]byte{0}
@@ -779,15 +748,7 @@ func TestVerifySVSMAttestationV1AKFromAttestation(t *testing.T) {
 		t.Fatalf("failed to create attestation: %v", err)
 	}
 
-	ek, err := client.EndorsementKeyRSA(rwc)
-	if err != nil {
-		t.Fatalf("failed to get EK: %v", err)
-	}
-	defer ek.Close()
-	ekBytes, err := ek.PublicArea().Encode()
-	if err != nil {
-		t.Fatalf("failed to encode EK pub: %v", err)
-	}
+	ekBytes := testEKPubBytes(t)
 
 	dummyKey := []byte{0x00, 0x01, 0x02, 0x03}
 	measurement := [48]byte{0}
@@ -1013,15 +974,7 @@ func TestSVSMDowngradeAttack(t *testing.T) {
 		t.Fatalf("failed to create attestation: %v", err)
 	}
 
-	ek, err := client.EndorsementKeyRSA(rwc)
-	if err != nil {
-		t.Fatalf("failed to get EK: %v", err)
-	}
-	defer ek.Close()
-	ekBytes, err := ek.PublicArea().Encode()
-	if err != nil {
-		t.Fatalf("failed to encode EK pub: %v", err)
-	}
+	ekBytes := testEKPubBytes(t)
 
 	// SVSM v1 produces a multikey manifest and an SEV-SNP report bound to it.
 	manifestBytes := makeV1Manifest(akPubBytes, ekBytes)
