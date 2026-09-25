@@ -3,7 +3,9 @@ package launcher
 import (
 	"bufio"
 	"encoding/binary"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -33,35 +35,38 @@ const (
 // findPowerButton attempts to find the /dev/input/eventX file for the power button.
 // It prioritizes searching udev data files for the 'power-switch' tag, and falls back to /proc/bus/input/devices.
 func (p *powerButtonListener) findPowerButton() (string, error) {
+	return findPowerButtonIn(udevDir, procDevicesPath, p.logger)
+}
 
+func findPowerButtonIn(udevPath, procPath string, logger logging.Logger) (string, error) {
 	// 1. Search files named c13:* (c = char device, 13 = input subsystem major number) in /run/udev/data/
-	path, err := p.searchUdevFiles(udevDir, udevInputDevicePattern)
+	path, err := searchUdevFiles(udevPath, udevInputDevicePattern)
 	if err == nil {
-		p.logger.Info("Found the power button device file from /run/udev/data/c13:*")
+		logger.Info("Found the power button device file from /run/udev/data/c13:*")
 		return path, nil
 	}
 
 	// 2. If not found, search all files in /run/udev/data/
-	path, err = p.searchUdevFiles(udevDir, "*")
+	path, err = searchUdevFiles(udevPath, "*")
 	if err == nil {
-		p.logger.Info("Found the power button device file from /run/udev/data/*")
+		logger.Info("Found the power button device file from /run/udev/data/*")
 		return path, nil
 	}
 
 	// 3. If not found, look at /proc/bus/input/devices
-	p.logger.Info("Trying to find the power button device file from /proc/bus/input/devices")
-	return p.searchProcDevices()
+	logger.Info("Trying to find the power button device file from /proc/bus/input/devices")
+	return searchProcDevices(procPath)
 }
 
 // searchUdevFiles searches files in the udev directory matching the pattern for the power-switch tag.
-func (p *powerButtonListener) searchUdevFiles(dir, pattern string) (string, error) {
+func searchUdevFiles(dir, pattern string) (string, error) {
 	files, err := filepath.Glob(filepath.Join(dir, pattern))
 	if err != nil {
 		return "", fmt.Errorf("globing udev files with %s failed: %w", pattern, err)
 	}
 
 	for _, file := range files {
-		found, err := p.fileContainsTag(file, powerSwitchTag)
+		found, err := fileContainsTag(file, powerSwitchTag)
 		if err != nil {
 			continue
 		}
@@ -70,7 +75,7 @@ func (p *powerButtonListener) searchUdevFiles(dir, pattern string) (string, erro
 			parts := strings.Split(filepath.Base(file), ":")
 			if len(parts) == 2 {
 				minor, err := strconv.Atoi(parts[1])
-				if err == nil {
+				if err == nil && minor >= eventMinorOffset {
 					// Minor numbers for /dev/input/eventX start at 64 in Linux, so `minor - eventMinorOffset` gives us the event number.
 					return fmt.Sprintf("%s%d", eventFilePrefix, minor-eventMinorOffset), nil
 				}
@@ -80,17 +85,12 @@ func (p *powerButtonListener) searchUdevFiles(dir, pattern string) (string, erro
 	return "", fmt.Errorf("not found in udev with pattern %s", pattern)
 }
 
-// fileContainsTag checks if a udev data file contains the power-switch tag.
-func (p *powerButtonListener) fileContainsTag(filePath, tag string) (bool, error) {
+func fileContainsTag(filePath, tag string) (bool, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
 		return false, err
 	}
-	defer func() {
-		if err := file.Close(); err != nil {
-			p.logger.Error("failed to close file", "file", filePath, "err", err.Error())
-		}
-	}()
+	defer file.Close()
 
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
@@ -117,18 +117,8 @@ func (p *powerButtonListener) fileContainsTag(filePath, tag string) (bool, error
 // B: PROP=0
 // B: EV=3
 // B: KEY=10000000000000 0
-func (p *powerButtonListener) searchProcDevices() (string, error) {
-	file, err := os.Open(procDevicesPath)
-	if err != nil {
-		return "", fmt.Errorf("opening %s failed: %w", procDevicesPath, err)
-	}
-	defer func() {
-		if err := file.Close(); err != nil {
-			p.logger.Error("failed to close file", "file", procDevicesPath, "err", err.Error())
-		}
-	}()
-
-	scanner := bufio.NewScanner(file)
+func parseProcDevices(r io.Reader) (string, error) {
+	scanner := bufio.NewScanner(r)
 	isPBBlock := false
 
 	for scanner.Scan() {
@@ -152,13 +142,31 @@ func (p *powerButtonListener) searchProcDevices() (string, error) {
 		}
 	}
 
-	return "", fmt.Errorf("power button not found in %s", procDevicesPath)
+	if err := scanner.Err(); err != nil {
+		return "", err
+	}
+	return "", errors.New("entry not found")
+}
+
+// searchProcDevices falls back to parsing /proc/bus/input/devices.
+func searchProcDevices(devicesPath string) (string, error) {
+	file, err := os.Open(devicesPath)
+	if err != nil {
+		return "", fmt.Errorf("opening %s failed: %w", devicesPath, err)
+	}
+	defer file.Close()
+
+	eventPath, err := parseProcDevices(file)
+	if err != nil {
+		return "", fmt.Errorf("power button not found in %s: %w", devicesPath, err)
+	}
+	return eventPath, nil
 }
 
 type powerButtonListener struct {
 	devPath string
 	logger  logging.Logger
-	file    *os.File
+	file    io.ReadCloser
 }
 
 func newPowerButtonListener(logger logging.Logger) (*powerButtonListener, error) {
@@ -203,6 +211,9 @@ func (p *powerButtonListener) waitForShutdown() error {
 		err := backoff.Retry(func() error {
 			var readErr error
 			nrRead, readErr = p.file.Read(buf)
+			if errors.Is(readErr, os.ErrClosed) || errors.Is(readErr, io.EOF) || errors.Is(readErr, io.ErrClosedPipe) {
+				return backoff.Permanent(readErr)
+			}
 			return readErr
 		}, retries)
 		if err != nil {

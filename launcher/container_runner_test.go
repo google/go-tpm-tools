@@ -1648,3 +1648,91 @@ func TestGetImageConfig_NilContentStoreReturnsError(t *testing.T) {
 		t.Errorf("getImageConfig(ctx, img) error = %v, want error containing %q", err, "image content store cannot be nil")
 	}
 }
+
+type fakeSignaler struct {
+	sig chan syscall.Signal
+}
+
+func (f *fakeSignaler) Kill(_ context.Context, sig syscall.Signal, _ ...containerd.KillOpts) error {
+	f.sig <- sig
+	return nil
+}
+
+func TestEnableGracefulShutdown_DispatchesSigtermOnPowerEvent(t *testing.T) {
+	pr, pw := io.Pipe()
+	defer pr.Close()
+	defer pw.Close()
+
+	signaler := &fakeSignaler{
+		sig: make(chan syscall.Signal, 1),
+	}
+
+	runner := &ContainerRunner{
+		launchSpec: spec.LaunchSpec{Hardened: true},
+		powerButton: &powerButtonListener{
+			file:   pr,
+			logger: logging.SimpleLogger(),
+		},
+		logger: logging.SimpleLogger(),
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	runner.enableGracefulShutdown(ctx, signaler)
+
+	// Send power button press event (64-bit EV_KEY, KEY_POWER, value=1)
+	if _, err := pw.Write(encodeEvent64(evKey, keyPower, 1)); err != nil {
+		t.Fatalf("failed to write power event: %v", err)
+	}
+
+	select {
+	case sig := <-signaler.sig:
+		if sig != syscall.SIGTERM {
+			t.Errorf("signaler.Kill() received signal = %v, want %v", sig, syscall.SIGTERM)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for signaler.Kill(SIGTERM) to be called")
+	}
+}
+
+func TestEnableGracefulShutdown_DebugModeContextCancelExits(t *testing.T) {
+	signaler := &fakeSignaler{
+		sig: make(chan syscall.Signal, 1),
+	}
+
+	runner := &ContainerRunner{
+		launchSpec: spec.LaunchSpec{Hardened: false},
+		logger:     logging.SimpleLogger(),
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	runner.enableGracefulShutdown(ctx, signaler)
+
+	// Canceling context causes the debug mode signal relay goroutine to exit on <-ctx.Done().
+	cancel()
+
+	select {
+	case sig := <-signaler.sig:
+		t.Fatalf("signaler.Kill() called unexpectedly on cancel with signal = %v", sig)
+	default:
+	}
+}
+
+func TestEnableGracefulShutdown_NilPowerButtonDoesNotPanic(_ *testing.T) {
+	signaler := &fakeSignaler{
+		sig: make(chan syscall.Signal, 1),
+	}
+	runner := &ContainerRunner{
+		launchSpec:  spec.LaunchSpec{Hardened: true},
+		powerButton: nil,
+		logger:      logging.SimpleLogger(),
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Should safely no-op without panicking
+	runner.enableGracefulShutdown(ctx, signaler)
+}
+
