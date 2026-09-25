@@ -360,9 +360,9 @@ func verifyManifestAndKeys(svsmOpts verifySEVSNPSVSMOpts, svsmAttestation *apb.S
 			}
 			// Strip the 2-byte size prefix from TPM2B_PUBLIC to get the TPMT_PUBLIC part.
 			tpmtKeyBytes := manifest[2:keyLen]
-			if !foundAK && bytes.Equal(attestedAKPub, tpmtKeyBytes) {
+			if bytes.Equal(attestedAKPub, tpmtKeyBytes) {
 				foundAK = true
-			} else if !foundEK && len(svsmOpts.EKPub) > 0 && bytes.Equal(svsmOpts.EKPub, tpmtKeyBytes) {
+			} else if len(svsmOpts.EKPub) > 0 && bytes.Equal(svsmOpts.EKPub, tpmtKeyBytes) {
 				foundEK = true
 			}
 			manifest = manifest[keyLen:]
