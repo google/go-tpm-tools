@@ -710,7 +710,11 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	return nil
 }
 
-func (r *ContainerRunner) enableGracefulShutdown(ctx context.Context, task containerd.Task) {
+type taskSignaler interface {
+	Kill(ctx context.Context, sig syscall.Signal, opts ...containerd.KillOpts) error
+}
+
+func (r *ContainerRunner) enableGracefulShutdown(ctx context.Context, task taskSignaler) {
 	// In a hardened image, the launcher monitors the power button to signal a shutdown.
 	if r.launchSpec.Hardened {
 		// May be nil if listener initialization failed, which is not critical and is logged at that time.
