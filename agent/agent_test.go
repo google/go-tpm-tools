@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto"
 	"crypto/rand"
-	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/sha512"
 	_ "embed"
@@ -99,12 +98,7 @@ func TestAttestRacing(t *testing.T) {
 	tpm := test.GetTPM(t)
 	defer client.CheckedClose(t, tpm)
 
-	fakeSigner, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		t.Fatalf("failed to generate signing key %v", err)
-	}
-
-	verifierClient := fake.NewClient(fakeSigner)
+	verifierClient := fake.NewClient(nil)
 	agent, err := CreateAttestationAgent(tpm, client.AttestationKeyECC, verifierClient, placeholderPrincipalFetcher, NewFakeClient(), Experiments{}, SimpleLogger(), nil, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -148,12 +142,7 @@ func TestAttest(t *testing.T) {
 			tpm := test.GetTPM(t)
 			defer client.CheckedClose(t, tpm)
 
-			fakeSigner, err := rsa.GenerateKey(rand.Reader, 2048)
-			if err != nil {
-				t.Fatalf("failed to generate signing key %v", err)
-			}
-
-			verifierClient := fake.NewClient(fakeSigner)
+			verifierClient := fake.NewClient(nil)
 
 			agent, err := CreateAttestationAgent(tpm, client.AttestationKeyECC, verifierClient, tc.principalIDTokenFetcher, tc.containerSignaturesFetcher, Experiments{}, SimpleLogger(), nil, tc.signedImageRepos)
 			if err != nil {
@@ -173,7 +162,7 @@ func TestAttest(t *testing.T) {
 			agent.Close()
 
 			claims := &fake.Claims{}
-			keyFunc := func(_ *jwt.Token) (interface{}, error) { return fakeSigner.Public(), nil }
+			keyFunc := func(_ *jwt.Token) (interface{}, error) { return fake.TestPublicKey(), nil }
 			token, err := jwt.ParseWithClaims(string(tokenBytes), claims, keyFunc)
 			if err != nil {
 				t.Errorf("failed to parse token %s", err)
@@ -344,11 +333,7 @@ func TestFetchContainerImageSignatures(t *testing.T) {
 				t.Errorf("fetchContainerImageSignatures did not return expected signatures for test case %s, got signatures %v, but want %v", tc.name, gotBase64Sigs, tc.wantBase64Sigs)
 			}
 
-			fakeSigner, err := rsa.GenerateKey(rand.Reader, 2048)
-			if err != nil {
-				t.Errorf("failed to generate signing key %v", err)
-			}
-			verifierClient := fake.NewClient(fakeSigner)
+			verifierClient := fake.NewClient(nil)
 			chal, err := verifierClient.CreateChallenge(ctx)
 			if err != nil {
 				t.Fatalf("failed to create challenge %v", err)
@@ -376,7 +361,7 @@ func TestFetchContainerImageSignatures(t *testing.T) {
 				t.Fatalf("VerifyAttestation failed: %v", err)
 			}
 			claims := &fake.Claims{}
-			keyFunc := func(_ *jwt.Token) (interface{}, error) { return fakeSigner.Public(), nil }
+			keyFunc := func(_ *jwt.Token) (interface{}, error) { return fake.TestPublicKey(), nil }
 			_, err = jwt.ParseWithClaims(string(got.ClaimsToken), claims, keyFunc)
 			if err != nil {
 				t.Errorf("failed to parse token %s", err)
@@ -922,11 +907,7 @@ func TestAttestationEvidence_TPM_Success(t *testing.T) {
 	tpm := test.GetTPM(t)
 	defer client.CheckedClose(t, tpm)
 
-	fakeSigner, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		t.Fatalf("failed to generate signing key %v", err)
-	}
-	verifierClient := fake.NewClient(fakeSigner)
+	verifierClient := fake.NewClient(nil)
 
 	ak, err := client.AttestationKeyECC(tpm)
 	if err != nil {
@@ -1100,11 +1081,7 @@ func TestAttestationEvidence_ExperimentDisabled(t *testing.T) {
 	tpm := test.GetTPM(t)
 	defer client.CheckedClose(t, tpm)
 
-	fakeSigner, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		t.Fatalf("failed to generate signing key: %v", err)
-	}
-	agent, err := CreateAttestationAgent(tpm, client.AttestationKeyECC, fake.NewClient(fakeSigner),
+	agent, err := CreateAttestationAgent(tpm, client.AttestationKeyECC, fake.NewClient(nil),
 		placeholderPrincipalFetcher, NewFakeClient(),
 		Experiments{ /* EnableAttestationEvidence defaults to false */ },
 		SimpleLogger(), nil, nil)
@@ -1163,11 +1140,7 @@ func TestHostAttestation_NotBcMode(t *testing.T) {
 	tpm := test.GetTPM(t)
 	defer client.CheckedClose(t, tpm)
 
-	fakeSigner, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		t.Fatalf("failed to generate signing key: %v", err)
-	}
-	agent, err := CreateAttestationAgent(tpm, client.AttestationKeyECC, fake.NewClient(fakeSigner),
+	agent, err := CreateAttestationAgent(tpm, client.AttestationKeyECC, fake.NewClient(nil),
 		placeholderPrincipalFetcher, NewFakeClient(),
 		Experiments{BcMode: false},
 		SimpleLogger(), nil, nil)
