@@ -149,9 +149,10 @@ func TestSVSMAttestationsErrors(t *testing.T) {
 	goodMeasurement := [48]byte{0}
 	copy(goodMeasurement[:], "good")
 	testcases := []struct {
-		name          string
-		getConfigfs   func(t *testing.T) configfsi.Client
-		wantErrString string
+		name                   string
+		getConfigfs            func(t *testing.T) configfsi.Client
+		endorsementMeasurement []byte
+		wantErrString          string
 	}{
 		{
 			name: "Bad report data",
@@ -159,14 +160,16 @@ func TestSVSMAttestationsErrors(t *testing.T) {
 				var snpNonce [sabi.ReportDataSize]byte
 				return makeFakeConfigfs(snpNonce[:], ekBytes, goodVmpl, goodMeasurement[:])
 			},
-			wantErrString: "report field REPORT_DATA",
+			endorsementMeasurement: goodMeasurement[:],
+			wantErrString:          "report field REPORT_DATA",
 		},
 		{
 			name: "Bad VMPL",
 			getConfigfs: func(_ *testing.T) configfsi.Client {
 				return makeFakeConfigfs(goodReportData, ekBytes, 2, goodMeasurement[:])
 			},
-			wantErrString: "report VMPL",
+			endorsementMeasurement: goodMeasurement[:],
+			wantErrString:          "report VMPL",
 		},
 		{
 			name: "Bad measurement",
@@ -175,7 +178,16 @@ func TestSVSMAttestationsErrors(t *testing.T) {
 				copy(badMeasurement[:], "bad")
 				return makeFakeConfigfs(goodReportData, ekBytes, goodVmpl, badMeasurement[:])
 			},
-			wantErrString: "report field MEASUREMENT",
+			endorsementMeasurement: goodMeasurement[:],
+			wantErrString:          "report field MEASUREMENT",
+		},
+		{
+			name: "Missing SVSM measurement in endorsement",
+			getConfigfs: func(_ *testing.T) configfsi.Client {
+				return makeFakeConfigfs(goodReportData, ekBytes, goodVmpl, goodMeasurement[:])
+			},
+			endorsementMeasurement: nil,
+			wantErrString:          "launch endorsement does not contain a required SVSM measurement",
 		},
 	}
 	for _, tc := range testcases {
@@ -190,7 +202,7 @@ func TestSVSMAttestationsErrors(t *testing.T) {
 					t.Fatalf("failed to make SVSM attestation: %v", err)
 				}
 
-				endorsement, err := makeEndorsement(goodMeasurement[:])
+				endorsement, err := makeEndorsement(tc.endorsementMeasurement)
 				if err != nil {
 					t.Fatalf("failed to make endorsement: %v", err)
 				}

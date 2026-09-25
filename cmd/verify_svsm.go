@@ -231,5 +231,9 @@ func getExpectedMeasurement(endorsement []byte) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to unserialize golden uefi: %w", err)
 	}
-	return golden.GetSevSnp().GetSvsmMeasurement(), nil
+	measurement := golden.GetSevSnp().GetSvsmMeasurement()
+	if len(measurement) == 0 {
+		return nil, fmt.Errorf("invalid endorsement: launch endorsement does not contain a required SVSM measurement")
+	}
+	return measurement, nil
 }
