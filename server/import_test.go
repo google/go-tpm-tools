@@ -86,51 +86,46 @@ func TestBadImport(t *testing.T) {
 		Parameter: tpm2.RC4,
 	}
 
-	keys := []struct {
+	testCases := []struct {
 		name          string
 		template      tpm2.Public
+		wrongTemplate tpm2.Public
 		wrongKeyErrs  []error
 		corruptedErrs []error
 	}{
-		{"RSA", client.DefaultEKTemplateRSA(), rsaWrongKeyErrs, []error{valueErr}},
-		{"ECC", client.DefaultEKTemplateECC(), []error{integrityErr}, []error{pointErr}},
-		{"SRK-RSA", client.SRKTemplateRSA(), rsaWrongKeyErrs, []error{valueErr}},
-		{"SRK-ECC", client.SRKTemplateECC(), []error{integrityErr}, []error{pointErr}},
+		{"RSA", client.DefaultEKTemplateRSA(), client.SRKTemplateRSA(), rsaWrongKeyErrs, []error{valueErr}},
+		{"ECC", client.DefaultEKTemplateECC(), client.SRKTemplateECC(), []error{integrityErr}, []error{pointErr}},
 	}
 
-	for _, k := range keys {
-		t.Run(k.name, func(t *testing.T) {
-			ek, err := client.NewKey(rwc, tpm2.HandleEndorsement, k.template)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			ek, err := client.NewKey(rwc, tpm2.HandleEndorsement, tc.template)
 			if err != nil {
 				t.Fatal(err)
 			}
 			defer ek.Close()
-			pub := ek.PublicKey()
 
-			// Create a second, different key
-			template2 := k.template
-			template2.Attributes ^= tpm2.FlagNoDA
-			ek2, err := client.NewKey(rwc, tpm2.HandleEndorsement, template2)
+			wrongKey, err := client.NewKey(rwc, tpm2.HandleOwner, tc.wrongTemplate)
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer ek2.Close()
+			defer wrongKey.Close()
 
 			secret := []byte("super secret code")
-			blob, err := CreateImportBlob(pub, secret, nil)
+			blob, err := CreateImportBlob(ek.PublicKey(), secret, nil)
 			if err != nil {
 				t.Fatalf("creating import blob failed: %v", err)
 			}
 
 			// Try to import this blob under the wrong key
-			if _, err = ek2.Import(blob); !isExpectedError(err, k.wrongKeyErrs) {
-				t.Errorf("got error: %v, expected: %v", err, k.wrongKeyErrs)
+			if _, err = wrongKey.Import(blob); !isExpectedError(err, tc.wrongKeyErrs) {
+				t.Errorf("got error: %v, expected: %v", err, tc.wrongKeyErrs)
 			}
 
 			// Try to import a corrupted blob
 			blob.EncryptedSeed[10] ^= 0xFF
-			if _, err = ek.Import(blob); !isExpectedError(err, k.corruptedErrs) {
-				t.Errorf("got error: %v, expected: %v", err, k.corruptedErrs)
+			if _, err = ek.Import(blob); !isExpectedError(err, tc.corruptedErrs) {
+				t.Errorf("got error: %v, expected: %v", err, tc.corruptedErrs)
 			}
 		})
 	}
@@ -140,7 +135,7 @@ func TestImportPCRs(t *testing.T) {
 	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
 
-	ek, err := client.EndorsementKeyRSA(rwc)
+	ek, err := client.EndorsementKeyECC(rwc)
 	if err != nil {
 		t.Fatal(err)
 	}
