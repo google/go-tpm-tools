@@ -38,9 +38,13 @@ steps:
     #!/usr/bin/env bash
     set -euo pipefail
     MONITOR_IP=$(cat /workspace/monitor_ip.txt)
+    KEY_FILE="/workspace/id_ed25519_nonroot_${BUILD_ID}"
+    ssh-keygen -t ed25519 -f "${KEY_FILE}" -N "" -C "testuser" -q
+    echo "testuser:$(cat ${KEY_FILE}.pub)" > /workspace/ssh_keys.txt
     bash create_vm.sh -i $IMAGE_NAME \
       -p $IMAGE_PROJECT \
-      -m "tee-image-reference=$WORKLOAD_IMAGE,tee-nonroot-container=true,tee-cmd=[\"--ip=${MONITOR_IP}\"],tee-container-log-redirect=true" \
+      -m "tee-image-reference=$WORKLOAD_IMAGE,tee-nonroot-container=true,tee-cmd=[\"--ip=${MONITOR_IP}\"],tee-container-log-redirect=true,enable-oslogin=false" \
+      -f ssh-keys=/workspace/ssh_keys.txt \
       -n nonroot-workload-$BUILD_ID \
       -z $ZONE
 
@@ -67,19 +71,13 @@ steps:
 
     # We can only ssh to a debug image.
     if [[ "$IMAGE_NAME" == *"debug"* ]]; then
-      KEY_FILE="/tmp/id_ed25519_nonroot_${BUILD_ID}"
-      ssh-keygen -t ed25519 -f "${KEY_FILE}" -N "" -q
+      KEY_FILE="/workspace/id_ed25519_nonroot_${BUILD_ID}"
+      echo "Inspecting process tree over SSH as testuser using internal IP..."
 
-      gcloud compute os-login ssh-keys add --key-file="${KEY_FILE}.pub" || true
-      sleep 20  # Wait for the key to be propagated.
-
-      SSH_USER=$(gcloud compute os-login describe-profile | grep -o "username: .*" | cut -d' ' -f2 | head -n 1)
-      echo "Inspecting process tree over SSH as ${SSH_USER} using internal IP..."
-
-      # `|| true` ensures the cleanup step excutes even if this command fails.
+      # `|| true` ensures the cleanup step executes even if this command fails.
       HOME=/tmp gcloud compute ssh \
         --zone="$ZONE" \
-        "${SSH_USER}@nonroot-workload-$BUILD_ID" \
+        "testuser@nonroot-workload-$BUILD_ID" \
         --internal-ip \
         --ssh-key-file="${KEY_FILE}" \
         --ssh-flag="-o UserKnownHostsFile=/dev/null" \
@@ -105,6 +103,7 @@ steps:
     #!/usr/bin/env bash
     bash cleanup.sh nonroot-monitor-$BUILD_ID $ZONE || true
     bash cleanup.sh nonroot-workload-$BUILD_ID $ZONE || true
+    rm -f /workspace/id_ed25519_nonroot_${BUILD_ID}* /workspace/ssh_keys.txt || true
 
 # Check for failure message
 - name: 'gcr.io/cloud-builders/gcloud'

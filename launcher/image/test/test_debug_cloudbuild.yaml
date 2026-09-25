@@ -9,6 +9,7 @@ substitutions:
 steps:
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CreateVM
+  waitFor: ['-']
   entrypoint: 'bash'
   env:
   - 'BUILD_ID=$BUILD_ID'
@@ -21,16 +22,19 @@ steps:
         ]
 - name: 'gcr.io/cloud-builders/gcloud'
   id: BasicWorkloadTest
+  waitFor: ['CreateVM']
   entrypoint: 'bash'
   args: ['scripts/test_launcher_workload.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}', '${_ZONE}']
 - name: 'gcr.io/cloud-builders/gcloud'
   id: BasicWorkloadTestCloudLogging
+  waitFor: ['CreateVM']
   entrypoint: 'bash'
   env:
   - 'PROJECT_ID=$PROJECT_ID'
   args: ['scripts/test_launcher_workload_cloudlogging.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}']
 - name: 'gcr.io/cloud-builders/gcloud'
   id: ChangeMDSVariables
+  waitFor: ['BasicWorkloadTest']
   entrypoint: 'bash'
   args: ['util/change_metadata_vars.sh',
           '-n', '${_VM_NAME_PREFIX}-${BUILD_ID}',
@@ -39,10 +43,12 @@ steps:
         ]
 - name: 'gcr.io/cloud-builders/gcloud'
   id: ChangeMDSVariablesTest
+  waitFor: ['ChangeMDSVariables']
   entrypoint: 'bash'
   args: ['scripts/test_mds_var_change.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}', '${_ZONE}']
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CheckDebugVMAliveAfterLauncherExits
+  waitFor: ['BasicWorkloadTest']
   script: |
     #!/usr/bin/env bash
     set -euo pipefail
@@ -64,6 +70,7 @@ steps:
   automapSubstitutions: true
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CleanUp
+  waitFor: ['BasicWorkloadTestCloudLogging', 'ChangeMDSVariablesTest', 'CheckDebugVMAliveAfterLauncherExits']
   entrypoint: 'bash'
   env:
   - 'CLEANUP=$_CLEANUP'
@@ -71,6 +78,7 @@ steps:
 # Must come after cleanup.
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CheckFailure
+  waitFor: ['CleanUp']
   entrypoint: 'bash'
   env:
   - 'BUILD_ID=$BUILD_ID'
