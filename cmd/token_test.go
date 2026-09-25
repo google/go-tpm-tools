@@ -1,17 +1,11 @@
 package cmd
 
 import (
-	"crypto"
-	"crypto/rand"
-	"crypto/rsa"
-	"crypto/x509"
 	"io"
-	"math/big"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal/test"
@@ -37,6 +31,17 @@ func TestTokenWithGCEAK(t *testing.T) {
 		"rsa": GCEAKTemplateRSA(),
 		"ecc": GCEAKTemplateECC(),
 	}
+	for algo, pub := range template {
+		gceAkTemplate, err := pub.Encode()
+		if err != nil {
+			t.Fatalf("failed to encode GCE AK template for %s: %v", algo, err)
+		}
+		if err := setGCEAKCertTemplate(t, rwc, algo, gceAkTemplate); err != nil {
+			t.Fatalf("failed to set GCE AK cert template for %s: %v", algo, err)
+		}
+		defer tpm2.NVUndefineSpace(rwc, "", tpm2.HandlePlatform, tpmutil.Handle(getIndex[algo]))
+		defer tpm2.NVUndefineSpace(rwc, "", tpm2.HandlePlatform, tpmutil.Handle(getCertIndex[algo]))
+	}
 	tests := []struct {
 		name string
 		algo string
@@ -48,17 +53,6 @@ func TestTokenWithGCEAK(t *testing.T) {
 	}
 	for _, op := range tests {
 		t.Run(op.name, func(t *testing.T) {
-			gceAkTemplate, err := template[op.algo].Encode()
-			if err != nil {
-				t.Fatalf("failed to encode GCEAKTemplateRSA: %v", err)
-			}
-			err = setGCEAKCertTemplate(t, rwc, op.algo, gceAkTemplate)
-			if err != nil {
-				t.Error(err)
-			}
-			defer tpm2.NVUndefineSpace(rwc, "", tpm2.HandlePlatform, tpmutil.Handle(getIndex[op.algo]))
-			defer tpm2.NVUndefineSpace(rwc, "", tpm2.HandlePlatform, tpmutil.Handle(getCertIndex[op.algo]))
-
 			var dummyMetaInstance = util.Instance{ProjectID: "test-project", ProjectNumber: "1922337278274", Zone: "us-central-1a", InstanceID: "12345678", InstanceName: "default"}
 			mockMdsServer, err := util.NewMetadataServer(dummyMetaInstance)
 			if err != nil {
@@ -185,10 +179,7 @@ func setGCEAKCertTemplate(tb testing.TB, rwc io.ReadWriteCloser, algo string, ak
 		tb.Fatalf("Unable to create key: %v", err)
 	}
 	defer attestKey.Close()
-	// create self-signed Root CA
-	ca, caKey := getTestCert(tb, nil, nil, nil)
-	// sign the attestation key certificate
-	akCert, _ := getTestCert(tb, attestKey.PublicKey(), ca, caKey)
+	akCert := test.GetTestCertForKey(tb, attestKey.PublicKey())
 	if err = attestKey.SetCert(akCert); err != nil {
 		tb.Errorf("SetCert() returned error: %v", err)
 	}
@@ -219,38 +210,4 @@ var getCertIndex = map[string]uint32{
 var getAttestationKey = map[string]func(rw io.ReadWriter) (*client.Key, error){
 	"rsa": client.GceAttestationKeyRSA,
 	"ecc": client.GceAttestationKeyECC,
-}
-
-// Returns an x509 Certificate for the provided pubkey, signed with the provided parent certificate and key.
-// If the provided fields are nil, will create a self-signed certificate.
-func getTestCert(tb testing.TB, pubKey crypto.PublicKey, parentCert *x509.Certificate, parentKey *rsa.PrivateKey) (*x509.Certificate, *rsa.PrivateKey) {
-	certKey, _ := rsa.GenerateKey(rand.Reader, 2048)
-	template := &x509.Certificate{
-		SerialNumber:          big.NewInt(1),
-		NotBefore:             time.Now(),
-		NotAfter:              time.Now().AddDate(10, 0, 0),
-		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
-		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		BasicConstraintsValid: true,
-		IsCA:                  true,
-		MaxPathLenZero:        true,
-	}
-
-	if pubKey == nil && parentCert == nil && parentKey == nil {
-		pubKey = certKey.Public()
-		parentCert = template
-		parentKey = certKey
-	}
-
-	certBytes, err := x509.CreateCertificate(rand.Reader, template, parentCert, pubKey, parentKey)
-	if err != nil {
-		tb.Fatalf("Unable to create test certificate: %v", err)
-	}
-
-	cert, err := x509.ParseCertificate(certBytes)
-	if err != nil {
-		tb.Fatalf("Unable to parse test certificate: %v", err)
-	}
-
-	return cert, certKey
 }
