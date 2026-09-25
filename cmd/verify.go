@@ -163,6 +163,4 @@ func init() {
 	debugCmd.AddCommand(verifySVSMCmd)
 	addEKPubFlag(verifySVSMCmd)
 	addTeeTechnology(verifySVSMCmd)
-	addKeyFlag(verifySVSMCmd)
-	addPublicKeyAlgoFlag(verifySVSMCmd)
 }

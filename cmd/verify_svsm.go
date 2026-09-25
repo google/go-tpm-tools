@@ -59,7 +59,6 @@ It supports two manifest verification modes depending on the manifest version:
   - Using "gotpm verify debug svsm" with manifest v0 assumes this registration flow has
     already been completed.
   - Requires specifying both --ek-pub and --certified-ak-blob (produced via "gotpm register solve-challenge").
-  - Enforces the use of --key=AK (Owner hierarchy AK certified against the EK).
 
 2. Version 1 Manifest (New / Manifest-based):
   - Bypasses the interactive activation challenge by leveraging SVSM's signed manifest.
@@ -94,9 +93,6 @@ It supports two manifest verification modes depending on the manifest version:
 		var certifiedAKPub, ekPub []byte
 		switch version {
 		case "0":
-			if key != "AK" {
-				return fmt.Errorf("verifying manifest version 0 requires --key=AK")
-			}
 			// The v0 manifest is just the EK pub, so the SNP report says nothing about
 			// the AK. Trust in the AK must come from out of band: the EK-based key
 			// attestation protocol run by "gotpm register". Reading the AK from --input
@@ -116,9 +112,6 @@ It supports two manifest verification modes depending on the manifest version:
 				return fmt.Errorf("failed to read ek-pub: %w", err)
 			}
 		case "1":
-			if key != "gceAK" {
-				return fmt.Errorf("verifying manifest version 1 requires --key=gceAK")
-			}
 			// The v1 manifest embeds both the EK and AK public areas, and SVSM at VMPL0
 			// hashes it into the SNP report's REPORT_DATA. The AK carried in --input is
 			// therefore already bound to the vTPM by the AMD-signed report, so sourcing

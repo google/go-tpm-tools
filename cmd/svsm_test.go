@@ -924,37 +924,20 @@ func TestVerifySVSMFlags(t *testing.T) {
 		name            string
 		version         string
 		akPub           []byte
-		key             string
 		ekPub           string
 		certifiedAKBlob string
 		wantErrorMsg    string
 	}{
 		{
-			name:         "MismatchedKeyManifestVersion0",
-			version:      "0",
-			akPub:        []byte("ak"),
-			key:          "gceAK",
-			wantErrorMsg: "verifying manifest version 0 requires --key=AK",
-		},
-		{
-			name:         "MismatchedKeyManifestVersion1",
-			version:      "1",
-			akPub:        []byte("ak"),
-			key:          "AK",
-			wantErrorMsg: "verifying manifest version 1 requires --key=gceAK",
-		},
-		{
 			name:         "MissingEKPubManifestVersion0",
 			version:      "0",
 			akPub:        []byte("ak"),
-			key:          "AK",
 			wantErrorMsg: "ek-pub is required for manifest version 0",
 		},
 		{
 			name:         "MissingCertifiedAKBlobManifestVersion0",
 			version:      "0",
 			akPub:        []byte("ak"),
-			key:          "AK",
 			ekPub:        "/dev/null",
 			wantErrorMsg: "certified-ak-blob is required for manifest version 0",
 		},
@@ -962,7 +945,6 @@ func TestVerifySVSMFlags(t *testing.T) {
 			name:            "CertifiedAKBlobRejectedManifestVersion1",
 			version:         "1",
 			akPub:           []byte("ak"),
-			key:             "gceAK",
 			certifiedAKBlob: "/dev/null",
 			wantErrorMsg:    "certified-ak-blob is not supported with manifest version 1",
 		},
@@ -970,21 +952,18 @@ func TestVerifySVSMFlags(t *testing.T) {
 			name:         "EKPubReadErrorManifestVersion1",
 			version:      "1",
 			akPub:        []byte("ak"),
-			key:          "gceAK",
 			ekPub:        "/nonexistent/path/to/ek.pub",
 			wantErrorMsg: "failed to read ek-pub",
 		},
 		{
 			name:         "MissingAKPubManifestVersion1",
 			version:      "1",
-			key:          "gceAK",
 			wantErrorMsg: "attestation does not contain an AK pub",
 		},
 		{
 			name:         "UnsupportedManifestVersion",
 			version:      "2",
 			akPub:        []byte("ak"),
-			key:          "AK",
 			wantErrorMsg: "only vtpm service manifest version 0 or 1 is supported",
 		},
 	}
@@ -996,7 +975,6 @@ func TestVerifySVSMFlags(t *testing.T) {
 				"--tee-technology", "sev-snp",
 				"--tee-nonce", strings.Repeat("00", sabi.ReportDataSize),
 				"--input", writeSVSMAttestation(t, tc.version, tc.akPub),
-				"--key", tc.key,
 				// Set the v0-only flags explicitly: they are package-level globals that
 				// persist across command executions.
 				"--ek-pub", tc.ekPub,
