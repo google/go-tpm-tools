@@ -1,6 +1,6 @@
 # Test non-root container
 # 1. Launch a test workload
-# 2. For both debug and hardened image, verify user namespace UID mapping via serial console
+# 2. For both debug and hardened image, verify user namespace UID mapping via Cloud Logging
 substitutions:
   '_IMAGE_NAME': ''
   '_IMAGE_PROJECT': ''
@@ -28,10 +28,12 @@ steps:
       -n nonroot-workload-$BUILD_ID \
       -z $ZONE
 
-# Verify User Namespace UID Mapping via serial console
+# Verify User Namespace UID Mapping via Cloud Logging
 - name: 'gcr.io/cloud-builders/gcloud'
   id: TestNonRootContainer
   entrypoint: 'bash'
+  env:
+  - 'PROJECT_ID=$PROJECT_ID'
   args: ['scripts/test_nonroot_container.sh',
           'nonroot-workload-${BUILD_ID}',
           '${_ZONE}',
