@@ -29,7 +29,7 @@ func TestFlush(t *testing.T) {
 	// Loads then flushes 1, 2, 3 transient handles.
 	for numHandles := 1; numHandles <= 3; numHandles++ {
 		for i := 0; i < numHandles; i++ {
-			test.LoadRandomExternalKey(t, rwc)
+			test.LoadExternalKey(t, rwc)
 		}
 
 		if err := RootCmd.Execute(); err != nil {
