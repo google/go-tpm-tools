@@ -39,10 +39,16 @@ steps:
       --machine-type=e2-micro \
       --image-family=$LATEST_DEBIAN \
       --image-project=debian-cloud \
-      --metadata=startup-script="#!/bin/bash
-        apt-get update
-        apt-get install -y netcat-openbsd
-        nc -l -u -p 2020 > /dev/ttyS0"
+      --metadata=startup-script="#!/usr/bin/env python3
+        import socket, sys
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.bind(('', 2020))
+        with open('/dev/ttyS0', 'w', buffering=1) as out:
+            while True:
+                data, _ = s.recvfrom(4096)
+                out.write(data.decode('utf-8', errors='replace'))
+                out.flush()
+        "
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CaptureIP
