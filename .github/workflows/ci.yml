@@ -73,13 +73,13 @@ jobs:
           go generate ./... ./agent/... ./cmd/... ./launcher/... ./verifier/...
           git diff -G'^[^/]' --exit-code
       - name: Build all modules
-        run: go build -v ./... ./agent/... ./cmd/... ./keymanager/... ./verifier/...
+        run: go build -v ./... ./agent/... ./cmd/... ./keymanager/... ./launcher/image/measure/... ./verifier/...
       - name: Build launcher module
         run: go build -v -ldflags="-extldflags=-Wl,-z,lazy" ./launcher/...
-      - name: Run all tests in launcher to capture potential data race
-        run: go test -v -ldflags="-extldflags=-Wl,-z,lazy" -race ./launcher/...
+      - name: Run all tests in launcher and agent to capture potential data race
+        run: go test -v -ldflags="-extldflags=-Wl,-z,lazy" -race ./launcher/... ./agent/...
       - name: Test all modules
-        run: go test -v ./... ./agent/... ./cmd/... ./keymanager/... ./verifier/... -skip='TestCacheConcurrentSetGet|TestHwAttestationPass|TestHardwareAttestationPass'
+        run: go test -v ./... ./agent/... ./cmd/... ./keymanager/... ./launcher/image/measure/... ./verifier/... -skip='TestHwAttestationPass|TestHardwareAttestationPass'
 
   test-linux-386:
     timeout-minutes: 12
@@ -103,7 +103,7 @@ jobs:
       - name: Build launcher module
         run: go build -v -ldflags="-extldflags=-Wl,-z,lazy" ./launcher/...
       - name: Test modules
-        run: go test -v ./... ./agent/... ./cmd/... ./verifier/... -skip='TestCacheConcurrentSetGet|TestHwAttestationPass|TestHardwareAttestationPass'
+        run: go test -v ./... ./agent/... ./cmd/... ./verifier/... -skip='TestHwAttestationPass|TestHardwareAttestationPass'
 
   test-macos:
     timeout-minutes: 12
@@ -127,7 +127,7 @@ jobs:
       - name: Build modules
         run: go build -v ./... ./cmd/... ./verifier/...
       - name: Test modules
-        run: go test -v ./... ./cmd/... ./verifier/... -skip='TestCacheConcurrentSetGet|TestHwAttestationPass|TestHardwareAttestationPass'
+        run: go test -v ./... ./cmd/... ./verifier/... -skip='TestHwAttestationPass|TestHardwareAttestationPass'
 
   lint:
     timeout-minutes: 5
@@ -155,7 +155,7 @@ jobs:
             --max-same-issues=0
             --max-issues-per-linter=0
             --timeout 5m
-            ./... ./agent/... ./cmd/... ./launcher/...
+            ./... ./agent/... ./cmd/... ./launcher/... ./launcher/image/measure/...
 
   lint-keymanager:
     timeout-minutes: 8
