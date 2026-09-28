@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/google/go-tpm-tools/client"
 )
@@ -29,6 +30,9 @@ func (et extTPMWrapper) Close() error {
 // EventLog is a workaround so the caller can call the underlying EventLogGetter function
 // of the underlying TPM.
 func (et extTPMWrapper) EventLog() ([]byte, error) {
+	if eventLog != defaultEventLog {
+		return os.ReadFile(eventLog)
+	}
 	return client.GetEventLog(et.ReadWriter)
 }
 

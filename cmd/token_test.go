@@ -103,16 +103,43 @@ func TestTokenWithGCEAK(t *testing.T) {
 			}
 			// reset custom-nonce
 			customNonce = nil
+			keyAlgo = tpm2.AlgRSA
 		})
 	}
 }
 
 func TestCopiedCustomEventLogFile(t *testing.T) {
-	if os.Getenv("RUN_TestCopiedCustomEventLogFile") != "true" {
-		t.Skip("Skipping test: run this test manually with `go test -c -v ./cmd/...` and `sudo RUN_TestCopiedCustomEventLogFile=true ./cmd.test -test.run TestCopiedCustomEventLogFile`")
-	}
+	teeNonce = nil
+	teeTechnology = ""
+	rwc := test.GetTPM(t)
+	defer client.CheckedClose(t, rwc)
 
-	ExternalTPM = nil
+	test.SkipForRealTPM(t)
+
+	ExternalTPM = rwc
+	t.Cleanup(func() {
+		ExternalTPM = nil
+		eventLog = defaultEventLog
+		keyAlgo = tpm2.AlgRSA
+		customNonce = nil
+	})
+
+	algo := "rsa"
+	var template = map[string]tpm2.Public{
+		"rsa": GCEAKTemplateRSA(),
+		"ecc": GCEAKTemplateECC(),
+	}
+	gceAkTemplate, err := template[algo].Encode()
+	if err != nil {
+		t.Fatalf("failed to encode GCEAKTemplateRSA: %v", err)
+	}
+	err = setGCEAKCertTemplate(t, rwc, algo, gceAkTemplate)
+	if err != nil {
+		t.Error(err)
+	}
+	defer tpm2.NVUndefineSpace(rwc, "", tpm2.HandlePlatform, tpmutil.Handle(getIndex[algo]))
+	defer tpm2.NVUndefineSpace(rwc, "", tpm2.HandlePlatform, tpmutil.Handle(getCertIndex[algo]))
+
 	var dummyMetaInstance = util.Instance{ProjectID: "test-project", ProjectNumber: "1922337278274", Zone: "us-central-1a", InstanceID: "12345678", InstanceName: "default"}
 	mockMdsServer, err := util.NewMetadataServer(dummyMetaInstance)
 	if err != nil {
@@ -140,22 +167,15 @@ func TestCopiedCustomEventLogFile(t *testing.T) {
 	defer mockAttestationServer.Stop()
 
 	tmpDir := t.TempDir()
-	srcPath := "/sys/kernel/security/tpm0/binary_bios_measurements"
 	destPath := filepath.Join(tmpDir, "copied_binary_bios_measurements")
 
-	// Read the contents of the source file
-	data, err := os.ReadFile(srcPath)
-	if err != nil {
-		t.Fatal("Failed to read source file:", err)
-	}
-
-	// Write the contents to the destination file
-	err = os.WriteFile(destPath, data, 0644)
+	// Write the test event log to the destination file
+	err = os.WriteFile(destPath, test.Cos85AmdSevEventLog, 0644)
 	if err != nil {
 		t.Fatal("Failed to write destination file:", err)
 	}
 
-	RootCmd.SetArgs([]string{"token", "--verifier-endpoint", mockAttestationServer.Server.URL, "--event-log", destPath})
+	RootCmd.SetArgs([]string{"token", "--algo", algo, "--verifier-endpoint", mockAttestationServer.Server.URL, "--event-log", destPath})
 	if err := RootCmd.Execute(); err != nil {
 		t.Error(err)
 	}
