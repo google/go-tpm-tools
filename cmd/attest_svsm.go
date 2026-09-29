@@ -29,8 +29,7 @@ var attestSVSMCmd = &cobra.Command{
 		if manifestVersion != "" && manifestVersion != "0" && manifestVersion != "1" {
 			return fmt.Errorf("invalid manifest version %q, must be one of \"\", \"0\", \"1\"", manifestVersion)
 		}
-		algoToCreateAK, ok := attestationKeys[key]
-		if !ok {
+		if key != "AK" && key != "gceAK" {
 			return fmt.Errorf("%v is an invalid value for --key, only AK and gceAK are supported", key)
 		}
 		if (manifestVersion == "" || manifestVersion == "0") && key != "AK" {
@@ -49,11 +48,9 @@ var attestSVSMCmd = &cobra.Command{
 		}
 		defer rwc.Close()
 
-		var attestationKey *client.Key
-		createFunc := algoToCreateAK[keyAlgo]
-		attestationKey, err = createFunc(rwc)
+		attestationKey, err := createAttestationKey(rwc, key, keyAlgo)
 		if err != nil {
-			return fmt.Errorf("failed to create attestation key: %v", err)
+			return fmt.Errorf("failed to create attestation key: %w", err)
 		}
 		defer attestationKey.Close()
 

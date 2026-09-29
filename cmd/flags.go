@@ -24,6 +24,7 @@ var (
 	keyAlgo       = tpm2.AlgRSA
 	pcrs          []int
 	format        string
+	key           string
 	asAddress     string
 	audience      string
 	eventLog      string
@@ -177,6 +178,10 @@ func addPCRsFlag(cmd *cobra.Command) {
 	cmd.PersistentFlags().Var(&pcrsFlag{&pcrs}, "pcrs", "comma separated list of PCR numbers")
 }
 
+func addKeyFlag(cmd *cobra.Command) {
+	cmd.PersistentFlags().StringVar(&key, "key", "AK", "indicates type of attestation key to use <gceAK|AK>")
+}
+
 // Lets this command specify the public key algorithm.
 func addPublicKeyAlgoFlag(cmd *cobra.Command) {
 	f := algoFlag{&keyAlgo, []tpm2.Algorithm{tpm2.AlgRSA, tpm2.AlgECC}}
@@ -328,31 +333,5 @@ func getEK(rwc io.ReadWriter) (*client.Key, error) {
 		return client.EndorsementKeyECC(rwc)
 	default:
 		panic("unexpected keyAlgo")
-	}
-}
-
-// getTEEDevice based on teeTechnology set in the global flag vars.
-func getTEEDevice() (client.TEEDevice, error) {
-	switch teeTechnology {
-	case sevSNP:
-		device, err := client.CreateSevSnpQuoteProvider()
-		if err != nil {
-			return nil, fmt.Errorf("failed to create %s quote provider: %w", sevSNP, err)
-		}
-		return device, nil
-	case tdx:
-		device, err := client.CreateTdxQuoteProvider()
-		if err != nil {
-			return nil, fmt.Errorf("failed to create %s quote provider: %w", tdx, err)
-		}
-		return device, nil
-	case "":
-		if len(teeNonce) != 0 {
-			return nil, fmt.Errorf("use of --tee-nonce requires specifying TEE hardware type with --tee-technology")
-		}
-		return nil, nil
-	default:
-		// Change the return statement when more devices are added
-		return nil, fmt.Errorf("tee-technology should be either empty or should have values %s or %s", sevSNP, tdx)
 	}
 }
