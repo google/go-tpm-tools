@@ -1646,10 +1646,7 @@ func TestEnableGracefulShutdown_DispatchesSigtermOnPowerEvent(t *testing.T) {
 		logger: logging.SimpleLogger(),
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	runner.enableGracefulShutdown(ctx, signaler)
+	runner.enableGracefulShutdown(t.Context(), signaler)
 
 	// Send power button press event (64-bit EV_KEY, KEY_POWER, value=1)
 	if _, err := pw.Write(encodeEvent64(evKey, keyPower, 1)); err != nil {
@@ -1676,7 +1673,7 @@ func TestEnableGracefulShutdown_DebugModeContextCancelExits(t *testing.T) {
 		logger:     logging.SimpleLogger(),
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	runner.enableGracefulShutdown(ctx, signaler)
 
 	// Canceling context causes the debug mode signal relay goroutine to exit on <-ctx.Done().
@@ -1689,7 +1686,7 @@ func TestEnableGracefulShutdown_DebugModeContextCancelExits(t *testing.T) {
 	}
 }
 
-func TestEnableGracefulShutdown_NilPowerButtonDoesNotPanic(_ *testing.T) {
+func TestEnableGracefulShutdown_NilPowerButtonDoesNotPanic(t *testing.T) {
 	signaler := &fakeSignaler{
 		sig: make(chan syscall.Signal, 1),
 	}
@@ -1699,10 +1696,7 @@ func TestEnableGracefulShutdown_NilPowerButtonDoesNotPanic(_ *testing.T) {
 		logger:      logging.SimpleLogger(),
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
 	// Should safely no-op without panicking
-	runner.enableGracefulShutdown(ctx, signaler)
+	runner.enableGracefulShutdown(t.Context(), signaler)
 }
 
