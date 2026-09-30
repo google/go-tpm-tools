@@ -21,7 +21,7 @@ func TestHandles(t *testing.T) {
 
 	expected := make([]tpmutil.Handle, 0)
 	for i := 0; i < maxHandles; i++ {
-		expected = append(expected, test.LoadRandomExternalKey(t, rwc))
+		expected = append(expected, test.LoadExternalKey(t, rwc))
 
 		handles, err := client.Handles(rwc, tpm2.HandleTypeTransient)
 		if err != nil {

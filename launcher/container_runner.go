@@ -710,7 +710,11 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	return nil
 }
 
-func (r *ContainerRunner) enableGracefulShutdown(ctx context.Context, task containerd.Task) {
+type taskSignaler interface {
+	Kill(ctx context.Context, sig syscall.Signal, opts ...containerd.KillOpts) error
+}
+
+func (r *ContainerRunner) enableGracefulShutdown(ctx context.Context, task taskSignaler) {
 	// In a hardened image, the launcher monitors the power button to signal a shutdown.
 	if r.launchSpec.Hardened {
 		// May be nil if listener initialization failed, which is not critical and is logged at that time.
@@ -815,13 +819,20 @@ func openPorts(ports map[string]struct{}, containerIP string) error {
 }
 
 func getImageConfig(ctx context.Context, image containerd.Image) (v1.ImageConfig, error) {
+	if image == nil {
+		return v1.ImageConfig{}, errors.New("image cannot be nil")
+	}
+	cs := image.ContentStore()
+	if cs == nil {
+		return v1.ImageConfig{}, errors.New("image content store cannot be nil")
+	}
 	ic, err := image.Config(ctx)
 	if err != nil {
 		return v1.ImageConfig{}, err
 	}
 	switch ic.MediaType {
 	case v1.MediaTypeImageConfig, images.MediaTypeDockerSchema2Config:
-		p, err := content.ReadBlob(ctx, image.ContentStore(), ic)
+		p, err := content.ReadBlob(ctx, cs, ic)
 		if err != nil {
 			return v1.ImageConfig{}, err
 		}
