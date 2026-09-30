@@ -79,7 +79,7 @@ jobs:
       - name: Run all tests in launcher and agent to capture potential data race
         run: go test -v -ldflags="-extldflags=-Wl,-z,lazy" -race ./launcher/... ./agent/...
       - name: Test all modules
-        run: go test -v ./... ./agent/... ./cmd/... ./keymanager/... ./launcher/image/measure/... ./verifier/... -skip='TestHwAttestationPass|TestHardwareAttestationPass'
+        run: go test -v ./... ./agent/... ./cmd/... ./keymanager/... ./launcher/image/measure/... ./verifier/...
 
   test-linux-386:
     timeout-minutes: 12
@@ -103,7 +103,7 @@ jobs:
       - name: Build launcher module
         run: go build -v -ldflags="-extldflags=-Wl,-z,lazy" ./launcher/...
       - name: Test modules
-        run: go test -v ./... ./agent/... ./cmd/... ./verifier/... -skip='TestHwAttestationPass|TestHardwareAttestationPass'
+        run: go test -v ./... ./agent/... ./cmd/... ./verifier/...
 
   test-macos:
     timeout-minutes: 12
@@ -127,7 +127,7 @@ jobs:
       - name: Build modules
         run: go build -v ./... ./cmd/... ./verifier/...
       - name: Test modules
-        run: go test -v ./... ./cmd/... ./verifier/... -skip='TestHwAttestationPass|TestHardwareAttestationPass'
+        run: go test -v ./... ./cmd/... ./verifier/...
 
   lint:
     timeout-minutes: 5
