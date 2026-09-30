@@ -10,8 +10,8 @@ require (
 	cloud.google.com/go/logging v1.13.2
 	cos.googlesource.com/cos/tools.git v0.0.0-20260828164205-7c1f394ced14
 	github.com/GoogleCloudPlatform/confidential-space/server v0.0.0-20261015094924-dba3d44e282b
-	github.com/GoogleCloudPlatform/key-protection-module v0.0.0-20260604222613-9d1fbac80fd7
-	github.com/GoogleCloudPlatform/key-protection-module/keymanager/attestation_service v0.0.0-20260604222613-9d1fbac80fd7
+	github.com/GoogleCloudPlatform/key-protection-module v0.0.0-20260930181234-48d5ea8e3558
+	github.com/GoogleCloudPlatform/key-protection-module/keymanager/attestation_service v0.0.0-20260930181234-48d5ea8e3558
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/containerd/containerd v1.7.23
 	github.com/containerd/containerd/v2 v2.3.2
