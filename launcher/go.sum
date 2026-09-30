@@ -32,10 +32,10 @@ github.com/AdamKorcz/go-118-fuzz-build v0.0.0-20231105174938-2b5cbb29f3e2/go.mod
 github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=
 github.com/GoogleCloudPlatform/confidential-space/server v0.0.0-20260706204617-c9f710ef3461 h1:xmhNv0L7pGJZONS+B7jsq7atzfnDIBDDnPAq/khoQnE=
 github.com/GoogleCloudPlatform/confidential-space/server v0.0.0-20260706204617-c9f710ef3461/go.mod h1:07jta9kodtzgHx670Bj6y9zaXlv3zapamb7XxZEuDpg=
-github.com/GoogleCloudPlatform/key-protection-module v0.0.0-20260604222613-9d1fbac80fd7 h1:rAM8UCs9fZJZETC0Rx6sHlvwhZmjHluBnjTHUYKwwvs=
-github.com/GoogleCloudPlatform/key-protection-module v0.0.0-20260604222613-9d1fbac80fd7/go.mod h1:dp2gXtLTezVC0wNEZKJ0och5/xEUZvljnkniTo2IR1M=
-github.com/GoogleCloudPlatform/key-protection-module/keymanager/attestation_service v0.0.0-20260604222613-9d1fbac80fd7 h1:kc0rjekeIMZXuoPWSy//vls3jzPf8hX7Ceb5sIBFxrY=
-github.com/GoogleCloudPlatform/key-protection-module/keymanager/attestation_service v0.0.0-20260604222613-9d1fbac80fd7/go.mod h1:Bs/DVAvEtDshuG3rpQzYrlmAKwOdWHlrk2oe/06npvg=
+github.com/GoogleCloudPlatform/key-protection-module v0.0.0-20260930181234-48d5ea8e3558 h1:P978wnYCyKbUW62wABcCZRu5DptM2VQLJiJygzvr31U=
+github.com/GoogleCloudPlatform/key-protection-module v0.0.0-20260930181234-48d5ea8e3558/go.mod h1:dp2gXtLTezVC0wNEZKJ0och5/xEUZvljnkniTo2IR1M=
+github.com/GoogleCloudPlatform/key-protection-module/keymanager/attestation_service v0.0.0-20260930181234-48d5ea8e3558 h1:/OJ4JMpqzRL5bTcB9ZpVUkAiSDVhXeFW5Im6qBSKybA=
+github.com/GoogleCloudPlatform/key-protection-module/keymanager/attestation_service v0.0.0-20260930181234-48d5ea8e3558/go.mod h1:Bs/DVAvEtDshuG3rpQzYrlmAKwOdWHlrk2oe/06npvg=
 github.com/Microsoft/go-winio v0.6.3-0.20251027160822-ad3df93bed29 h1:0kQAzHq8vLs7Pptv+7TxjdETLf/nIqJpIB4oC6Ba4vY=
 github.com/Microsoft/go-winio v0.6.3-0.20251027160822-ad3df93bed29/go.mod h1:ZWa7ssZJT30CCDGJ7fk/2SBTq9BIQrrVjrcss0UW2s0=
 github.com/Microsoft/hcsshim v0.15.0-rc.1 h1:FbbwtQmiD+BVHynGkx5S65JkLyhkEiiTP8nrpmg2SZw=
