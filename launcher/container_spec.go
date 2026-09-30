@@ -44,12 +44,25 @@ func createOCISpecOpts(image containerd.Image, launchSpec spec.LaunchSpec, envs 
 		// the host network (same effect as --net-host in ctr command)
 		oci.WithHostHostsFile,
 		oci.WithHostResolvconf,
-		oci.WithHostNamespace(specs.NetworkNamespace),
 		oci.WithEnv([]string{fmt.Sprintf("HOSTNAME=%s", hostname)}),
 		oci.WithAddedCapabilities(launchSpec.AddedCapabilities),
 		withRlimits(rlimits),
 		withOOMScoreAdj(defaultOOMScore),
 	}
+
+	// If we use non-root container, we enable both the user and network namespaces.
+	// Otherwise, we use host network without enabling the namespaces.
+	if launchSpec.NonrootContainer {
+		specOpts = append(specOpts,
+			oci.WithUserNamespace(
+				[]specs.LinuxIDMapping{{ContainerID: 0, HostID: hostUIDBegin, Size: userNSSize}},
+				[]specs.LinuxIDMapping{{ContainerID: 0, HostID: hostGIDBegin, Size: userNSSize}},
+			),
+		)
+	} else {
+		specOpts = append(specOpts, oci.WithHostNamespace(specs.NetworkNamespace))
+	}
+
 	if launchSpec.DevShmSize != 0 {
 		specOpts = append(specOpts, oci.WithDevShmSize(launchSpec.DevShmSize))
 	}

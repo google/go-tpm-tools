@@ -25,6 +25,7 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	gecel "github.com/google/go-eventlog/cel"
 	"github.com/google/go-tdx-guest/testing/testdata"
 	"github.com/google/go-tpm-tools/agent/device"
@@ -432,34 +433,44 @@ func intMin(a, b int) int {
 }
 
 func TestFetchContainerImageSignatures_RetriesOnFailure(t *testing.T) {
+	sig1 := cosign.NewFakeSignature("test data", oci.ECDSAP256SHA256)
+	sig2 := cosign.NewFakeSignature("test data again", oci.ECDSAP256SHA256)
+
 	testCases := []struct {
 		name      string
+		repos     []string
 		resultmap map[string][]returnVal
+		wantSigs  []oci.Signature
 	}{
 		{
-			name: "one repo, no failures",
+			name:  "one repo, no failures",
+			repos: []string{"repo1"},
 			resultmap: map[string][]returnVal{
 				"repo1": {
 					returnVal{
-						result: []oci.Signature{cosign.NewFakeSignature("test data", oci.ECDSAP256SHA256)},
+						result: []oci.Signature{sig1},
 						err:    nil,
 					},
 				},
 			},
+			wantSigs: []oci.Signature{sig1},
 		},
 		{
-			name: "one repo fails",
+			name:  "one repo fails",
+			repos: []string{"repo1"},
 			resultmap: map[string][]returnVal{
 				"repo1": {
 					returnVal{
-						result: []oci.Signature{cosign.NewFakeSignature("test data", oci.ECDSAP256SHA256)},
+						result: []oci.Signature{sig1},
 						err:    fmt.Errorf("partial error"),
 					},
 				},
 			},
+			wantSigs: nil,
 		},
 		{
-			name: "one repo, failure then success",
+			name:  "one repo, failure then success",
+			repos: []string{"repo1"},
 			resultmap: map[string][]returnVal{
 				"repo1": {
 					returnVal{
@@ -467,31 +478,35 @@ func TestFetchContainerImageSignatures_RetriesOnFailure(t *testing.T) {
 						err:    fmt.Errorf("failure 1"),
 					},
 					returnVal{
-						result: []oci.Signature{cosign.NewFakeSignature("test data", oci.ECDSAP256SHA256)},
+						result: []oci.Signature{sig1},
 						err:    nil,
 					},
 				},
 			},
+			wantSigs: []oci.Signature{sig1},
 		},
 		{
-			name: "two repos, no failures",
+			name:  "two repos, no failures",
+			repos: []string{"repo1", "repo2"},
 			resultmap: map[string][]returnVal{
 				"repo1": {
 					returnVal{
-						result: []oci.Signature{cosign.NewFakeSignature("test data", oci.ECDSAP256SHA256)},
+						result: []oci.Signature{sig1},
 						err:    nil,
 					},
 				},
 				"repo2": {
 					returnVal{
-						result: []oci.Signature{cosign.NewFakeSignature("test data again", oci.ECDSAP256SHA256)},
+						result: []oci.Signature{sig2},
 						err:    nil,
 					},
 				},
 			},
+			wantSigs: []oci.Signature{sig1, sig2},
 		},
 		{
-			name: "two repos, failure then success",
+			name:  "two repos, failure then success",
+			repos: []string{"failrepo", "successRepo"},
 			resultmap: map[string][]returnVal{
 				"failrepo": {
 					returnVal{
@@ -499,20 +514,22 @@ func TestFetchContainerImageSignatures_RetriesOnFailure(t *testing.T) {
 						err:    fmt.Errorf("failure 1"),
 					},
 					returnVal{
-						result: []oci.Signature{cosign.NewFakeSignature("test data", oci.ECDSAP256SHA256)},
+						result: []oci.Signature{sig1},
 						err:    nil,
 					},
 				},
 				"successRepo": {
 					returnVal{
-						result: []oci.Signature{cosign.NewFakeSignature("test data again", oci.ECDSAP256SHA256)},
+						result: []oci.Signature{sig2},
 						err:    nil,
 					},
 				},
 			},
+			wantSigs: []oci.Signature{sig1, sig2},
 		},
 		{
-			name: "two repos, failures",
+			name:  "two repos, failures",
+			repos: []string{"repo1", "repo2"},
 			resultmap: map[string][]returnVal{
 				"repo1": {
 					returnVal{
@@ -527,6 +544,7 @@ func TestFetchContainerImageSignatures_RetriesOnFailure(t *testing.T) {
 					},
 				},
 			},
+			wantSigs: nil,
 		},
 	}
 
@@ -540,24 +558,11 @@ func TestFetchContainerImageSignatures_RetriesOnFailure(t *testing.T) {
 					return backoff.WithMaxRetries(b, 2)
 				}
 
-				repos := []string{}
-				wantSigs := []oci.Signature{}
-				for k, v := range tc.resultmap {
-					repos = append(repos, k)
-					for _, result := range v {
-						if result.err == nil {
-							wantSigs = append(wantSigs, result.result...)
-						}
-					}
-				}
-
-				gotSigs := fetchContainerImageSignatures(ctx, sdClient, repos, retryPolicy, SimpleLogger())
-
-				if len(gotSigs) != len(wantSigs) {
-					t.Errorf("fetchContainerImageSignatures did not return expected signatures for test case %s, got signatures length %d, but want %d", tc.name, len(gotSigs), len(wantSigs))
-				}
-				if !cmp.Equal(convertOCISignatureToBase64(t, gotSigs), convertOCISignatureToBase64(t, wantSigs)) {
-					t.Errorf("fetchContainerImageSignatures did not return expected signatures for test case %s, got signatures %v, but want %v", tc.name, gotSigs, wantSigs)
+				gotSigs := fetchContainerImageSignatures(ctx, sdClient, tc.repos, retryPolicy, SimpleLogger())
+				gotBase64Sigs := convertOCISignatureToBase64(t, gotSigs)
+				wantBase64Sigs := convertOCISignatureToBase64(t, tc.wantSigs)
+				if diff := cmp.Diff(wantBase64Sigs, gotBase64Sigs, cmpopts.EquateEmpty()); diff != "" {
+					t.Errorf("fetchContainerImageSignatures() mismatch (-want +got):\n%s", diff)
 				}
 			})
 		})

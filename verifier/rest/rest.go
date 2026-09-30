@@ -358,9 +358,10 @@ func convertCSRequestToREST(request verifier.VerifyAttestationRequest) (*ccpb.Ve
 	}
 
 	csReq := &ccpb.VerifyConfidentialSpaceRequest{
-		Challenge:      verifyAttRequest.Challenge,
-		GcpCredentials: verifyAttRequest.GcpCredentials,
-		SignedEntities: verifyAttRequest.ConfidentialSpaceInfo.SignedEntities,
+		Challenge:         verifyAttRequest.Challenge,
+		GcpCredentials:    verifyAttRequest.GcpCredentials,
+		SignedEntities:    verifyAttRequest.ConfidentialSpaceInfo.SignedEntities,
+		NvidiaAttestation: convertNvidiaAttestationToREST(request.NvidiaAttestation),
 	}
 
 	if request.TDCCELAttestation != nil { // TDX Attestation.
@@ -373,8 +374,6 @@ func convertCSRequestToREST(request verifier.VerifyAttestationRequest) (*ccpb.Ve
 			AkCert:      request.TDCCELAttestation.AkCert,
 			AkCertChain: request.TDCCELAttestation.IntermediateCerts,
 		}
-
-		csReq.NvidiaAttestation = convertNvidiaAttestationToREST(request.NvidiaAttestation)
 	} else { // TPM Attestation.
 		csReq.TeeAttestation = &ccpb.VerifyConfidentialSpaceRequest_TpmAttestation{
 			TpmAttestation: verifyAttRequest.TpmAttestation,

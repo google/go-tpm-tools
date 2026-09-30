@@ -804,6 +804,81 @@ func TestConvertCSRequestToREST(t *testing.T) {
 				SignedEntities: []*ccpb.SignedEntity{{ContainerImageSignatures: []*ccpb.ContainerImageSignature{}}},
 			},
 		},
+		{
+			name: "TPM Attestation + Nvidia Attestation",
+			verifierReq: verifier.VerifyAttestationRequest{
+				Attestation: &attestpb.Attestation{
+					Quotes: []*tpm.Quote{{
+						Quote:  []byte("raw quote 1"),
+						RawSig: []byte("raw sig 1"),
+						Pcrs: &tpm.PCRs{
+							Hash: tpm.HashAlgo_SHA1,
+							Pcrs: map[uint32][]byte{
+								1: []byte("PCR A"),
+							},
+						},
+					}},
+					EventLog:          []byte("test-tcg-event-log"),
+					CanonicalEventLog: []byte("test-canonical-event-log"),
+					AkCert:            []byte("test-ak-cert"),
+					IntermediateCerts: [][]byte{[]byte("chain-1")},
+				},
+				NvidiaAttestation: &attestationpb.NvidiaAttestationReport{
+					CcFeature: &attestationpb.NvidiaAttestationReport_Spt{
+						Spt: &attestationpb.NvidiaAttestationReport_SinglePassthroughAttestation{
+							GpuQuote: &attestationpb.GpuInfo{
+								Uuid:                        "test-rtx-uuid",
+								DriverVersion:               "test-driver",
+								VbiosVersion:                "test-vbios",
+								GpuArchitectureType:         attestationpb.GpuArchitectureType_GPU_ARCHITECTURE_TYPE_BLACKWELL,
+								AttestationCertificateChain: []byte("test-cert-chain"),
+								AttestationReport:           []byte("test-report"),
+							},
+						},
+					},
+				},
+				GCEInstance: "projects/123/zones/us-central1-a/instances/456",
+			},
+			expectedReq: &ccpb.VerifyConfidentialSpaceRequest{
+				TeeAttestation: &ccpb.VerifyConfidentialSpaceRequest_TpmAttestation{
+					TpmAttestation: &ccpb.TpmAttestation{
+						Quotes: []*ccpb.TpmAttestation_Quote{
+							{
+								RawQuote:     []byte("raw quote 1"),
+								RawSignature: []byte("raw sig 1"),
+								HashAlgo:     int32(tpm.HashAlgo_SHA1),
+								PcrValues: map[int32][]byte{
+									1: []byte("PCR A"),
+								},
+							},
+						},
+						TcgEventLog:       []byte("test-tcg-event-log"),
+						CanonicalEventLog: []byte("test-canonical-event-log"),
+						AkCert:            []byte("test-ak-cert"),
+						CertChain:         [][]byte{[]byte("chain-1")},
+					},
+				},
+				NvidiaAttestation: &ccpb.NvidiaAttestation{
+					CcFeature: &ccpb.NvidiaAttestation_Spt{
+						Spt: &ccpb.NvidiaAttestation_SinglePassthroughAttestation{
+							GpuQuote: &ccpb.NvidiaAttestation_GpuInfo{
+								Uuid:                        "test-rtx-uuid",
+								DriverVersion:               "test-driver",
+								VbiosVersion:                "test-vbios",
+								GpuArchitectureType:         ccpb.NvidiaAttestation_GPU_ARCHITECTURE_TYPE_BLACKWELL,
+								AttestationCertificateChain: []byte("test-cert-chain"),
+								AttestationReport:           []byte("test-report"),
+							},
+						},
+					},
+				},
+				Options: &ccpb.VerifyConfidentialSpaceRequest_ConfidentialSpaceOptions{
+					TokenProfile: ccpb.TokenProfile_TOKEN_PROFILE_DEFAULT_EAT,
+				},
+				GcpCredentials: &ccpb.GcpCredentials{ServiceAccountIdTokens: []string{}},
+				SignedEntities: []*ccpb.SignedEntity{{ContainerImageSignatures: []*ccpb.ContainerImageSignature{}}},
+			},
+		},
 	}
 
 	cmpOpts := append(

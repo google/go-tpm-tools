@@ -95,6 +95,7 @@ const (
 	monitoringEnable           = "tee-monitoring-enable"
 	memoryMonitoringEnable     = "tee-monitoring-memory-enable"
 	mountKey                   = "tee-mount"
+	nonrootContainerKey        = "tee-nonroot-container"
 	restartPolicyKey           = "tee-restart-policy"
 	signedImageRepos           = "tee-signed-image-repos"
 	fakeVerifierKey            = "test-fake-verifier"
@@ -152,6 +153,7 @@ type LaunchSpec struct {
 	LogRedirect                LogRedirectLocation
 	MonitoringEnabled          MonitoringType
 	Mounts                     []launchermount.Mount
+	NonrootContainer           bool
 	ProjectID                  string
 	Region                     string
 	RestartPolicy              RestartPolicy
@@ -330,6 +332,12 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 		}
 	}
 
+	if val, ok := unmarshaledMap[nonrootContainerKey]; ok && val != "" {
+		var err error
+		if s.NonrootContainer, err = strconv.ParseBool(val); err != nil {
+			return fmt.Errorf("invalid value for %v (not a boolean): %w", nonrootContainerKey, err)
+		}
+	}
 	return nil
 }
 
