@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/hex"
 	"fmt"
 	"os"
@@ -16,7 +17,6 @@ import (
 	"github.com/google/go-tpm-tools/verifier/util"
 	"github.com/google/go-tpm/legacy/tpm2"
 	"github.com/google/go-tpm/tpmutil"
-	"google.golang.org/protobuf/proto"
 )
 
 func TestVerifyNoncePass(t *testing.T) {
@@ -118,47 +118,49 @@ func TestVerifyWithGCEAK(t *testing.T) {
 func TestHwAttestationPass(t *testing.T) {
 	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
-	ExternalTPM = rwc
 
-	inputFile := makeOutputFile(t, "attest")
-	outputFile := makeOutputFile(t, "attestout")
-	defer os.RemoveAll(inputFile)
-	defer os.RemoveAll(outputFile)
-	teenonce := "12345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678"
+	teeNonceBytes, err := hex.DecodeString("12345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678")
+	if err != nil {
+		t.Fatal(err)
+	}
+	nonceBytes := []byte{0x12, 0x34}
 	tests := []struct {
 		name    string
-		nonce   string
-		teetech string
-		wanterr string
+		teeTech string
+		wantErr string
 	}{
-		{"TdxPass", "1234", "tdx", "failed to create tdx quote provider"},
-		{"SevSnpPass", "1234", "sev-snp", "failed to create sev-snp quote provider"},
+		{
+			name:    "TdxPass",
+			teeTech: "tdx",
+			wantErr: "failed to create tdx quote provider",
+		},
+		{
+			name:    "SevSnpPass",
+			teeTech: "sev-snp",
+			wantErr: "failed to create sev-snp quote provider",
+		},
 	}
 	for _, op := range tests {
 		t.Run(op.name, func(t *testing.T) {
-			attestArgs := []string{"attest", "--nonce", op.nonce, "--key", "AK", "--output", inputFile, "--format", "textproto", "--tee-nonce", teenonce, "--tee-technology", op.teetech}
-			RootCmd.SetArgs(attestArgs)
-			if err := RootCmd.Execute(); err != nil {
-				if !strings.Contains(err.Error(), op.wanterr) {
-					t.Error(err)
+			opts := AttestOptions{
+				Key:           "AK",
+				Nonce:         nonceBytes,
+				TEENonce:      teeNonceBytes,
+				TEETechnology: op.teeTech,
+			}
+			attestation, err := RunAttest(context.Background(), rwc, opts)
+			if err != nil {
+				if !strings.Contains(err.Error(), op.wantErr) {
+					t.Errorf("RunAttest() = %v, want error containing %q", err, op.wantErr)
 				}
-			} else {
-				RootCmd.SetArgs([]string{"verify", "debug", "--nonce", op.nonce, "--input", inputFile, "--output", outputFile, "--format", "textproto", "--tee-nonce", teenonce})
-				if err := RootCmd.Execute(); err != nil {
-					t.Error(err)
-				}
-				msBytes, err := os.ReadFile(outputFile)
-				if err != nil {
-					t.Fatalf("failed to read file: %v", err)
-				}
-				ms := &pb.MachineState{}
-				err = proto.Unmarshal(msBytes, ms)
-				if err != nil {
-					t.Fatalf("failed to unmarshal proto: %v", err)
-				}
-				if ms.TeeAttestation == nil {
-					t.Error("found nil TEE attestation, expected a set TEEattestation")
-				}
+				return
+			}
+			ms, err := verifyDebugAttestation(attestation, nonceBytes, teeNonceBytes)
+			if err != nil {
+				t.Fatalf("verifyDebugAttestation() failed: %v", err)
+			}
+			if ms.GetTeeAttestation() == nil {
+				t.Error("ms.GetTeeAttestation() = nil, want non-nil")
 			}
 		})
 	}
