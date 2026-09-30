@@ -26,6 +26,15 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+func testEKPubBytes(tb testing.TB) []byte {
+	tb.Helper()
+	ekBytes, err := client.DefaultEKTemplateRSA().Encode()
+	if err != nil {
+		tb.Fatalf("failed to encode default EK template: %v", err)
+	}
+	return ekBytes
+}
+
 func TestMakeSVSNPSVSMAttestation(t *testing.T) {
 	synctest.Test(t, testMakeSVSNPSVSMAttestation)
 }
@@ -52,23 +61,19 @@ func testMakeSVSNPSVSMAttestation(t *testing.T) {
 		t.Fatalf("failed to create attestation: %v", err)
 	}
 
-	ek, err := client.EndorsementKeyRSA(rwc)
-	if err != nil {
-		t.Fatalf("failed to get EK: %v", err)
-	}
-	defer ek.Close()
-	ekBytes, err := ek.PublicArea().Encode()
-	if err != nil {
-		t.Fatalf("failed to encode EK pub: %v", err)
-	}
+	ekBytes := testEKPubBytes(t)
 
 	var snpNonce [sabi.ReportDataSize]byte
 	h := sha512.New()
 	h.Write(snpNonce[:])
 	h.Write(ekBytes)
 	measurement := [48]byte{0}
+	certs, err := makeFakeCerts()
+	if err != nil {
+		t.Fatalf("failed to make test certs: %v", err)
+	}
 
-	configfs := makeFakeConfigfs(h.Sum(nil), ekBytes, 0, measurement[:])
+	configfs := makeFakeConfigfs(h.Sum(nil), ekBytes, 0, measurement[:], certs)
 	svsmAttestation, err := makeSEVSNPSVSMAttestation(attestation, &sevSNPSVSMAttestationOpts{
 		TEENonce:                   snpNonce[:],
 		CongfigfsClient:            configfs,
@@ -134,15 +139,7 @@ func TestSVSMAttestationsErrors(t *testing.T) {
 		t.Fatalf("failed to create attestation: %v", err)
 	}
 
-	ek, err := client.EndorsementKeyRSA(rwc)
-	if err != nil {
-		t.Fatalf("failed to get EK: %v", err)
-	}
-	defer ek.Close()
-	ekBytes, err := ek.PublicArea().Encode()
-	if err != nil {
-		t.Fatalf("failed to encode EK pub: %v", err)
-	}
+	ekBytes := testEKPubBytes(t)
 
 	var snpNonce [sabi.ReportDataSize]byte
 	h := sha512.New()
@@ -152,6 +149,11 @@ func TestSVSMAttestationsErrors(t *testing.T) {
 	goodVmpl := 0
 	goodMeasurement := [48]byte{0}
 	copy(goodMeasurement[:], "good")
+	certs, err := makeFakeCerts()
+	if err != nil {
+		t.Fatalf("failed to make test certs: %v", err)
+	}
+
 	testcases := []struct {
 		name                   string
 		getConfigfs            func(t *testing.T) configfsi.Client
@@ -162,7 +164,7 @@ func TestSVSMAttestationsErrors(t *testing.T) {
 			name: "Bad report data",
 			getConfigfs: func(_ *testing.T) configfsi.Client {
 				var snpNonce [sabi.ReportDataSize]byte
-				return makeFakeConfigfs(snpNonce[:], ekBytes, goodVmpl, goodMeasurement[:])
+				return makeFakeConfigfs(snpNonce[:], ekBytes, goodVmpl, goodMeasurement[:], certs)
 			},
 			endorsementMeasurement: goodMeasurement[:],
 			wantErrString:          "report field REPORT_DATA",
@@ -170,7 +172,7 @@ func TestSVSMAttestationsErrors(t *testing.T) {
 		{
 			name: "Bad VMPL",
 			getConfigfs: func(_ *testing.T) configfsi.Client {
-				return makeFakeConfigfs(goodReportData, ekBytes, 2, goodMeasurement[:])
+				return makeFakeConfigfs(goodReportData, ekBytes, 2, goodMeasurement[:], certs)
 			},
 			endorsementMeasurement: goodMeasurement[:],
 			wantErrString:          "report VMPL",
@@ -180,7 +182,7 @@ func TestSVSMAttestationsErrors(t *testing.T) {
 			getConfigfs: func(_ *testing.T) configfsi.Client {
 				badMeasurement := make([]byte, 48)
 				copy(badMeasurement[:], "bad")
-				return makeFakeConfigfs(goodReportData, ekBytes, goodVmpl, badMeasurement[:])
+				return makeFakeConfigfs(goodReportData, ekBytes, goodVmpl, badMeasurement[:], certs)
 			},
 			endorsementMeasurement: goodMeasurement[:],
 			wantErrString:          "report field MEASUREMENT",
@@ -256,9 +258,9 @@ func makeSnpAttestationReport(reportData []byte, vmpl int, measurement []byte) (
 	return sabi.ReportToAbiBytes(reportProto)
 }
 
-func makeFakeConfigfs(reportData []byte, ekPub []byte, vmpl int, measurement []byte) configfsi.Client {
+func makeFakeConfigfs(reportData []byte, ekPub []byte, vmpl int, measurement []byte, certs []byte) configfsi.Client {
 	report := faketsm.Report611(0)
-	report.ReadAttr = readFS(reportData, ekPub, vmpl, measurement)
+	report.ReadAttr = readFS(reportData, ekPub, vmpl, measurement, certs)
 	configfs := &faketsm.Client{Subsystems: map[string]configfsi.Client{
 		"report": report,
 	}}
@@ -281,13 +283,13 @@ func makeFakeCerts() ([]byte, error) {
 	return certBytes, nil
 }
 
-func readFS(reportData []byte, ekPub []byte, vmpl int, measurement []byte) func(*faketsm.ReportEntry, string) ([]byte, error) {
+func readFS(reportData []byte, ekPub []byte, vmpl int, measurement []byte, certs []byte) func(*faketsm.ReportEntry, string) ([]byte, error) {
 	return func(_ *faketsm.ReportEntry, attr string) ([]byte, error) {
 		switch attr {
 		case "provider":
 			return []byte("fake\n"), nil
 		case "auxblob":
-			return makeFakeCerts()
+			return certs, nil
 		case "outblob":
 			return makeSnpAttestationReport(reportData, vmpl, measurement)
 		case "privlevel_floor":
@@ -413,23 +415,19 @@ func TestMakeSVSNPSVSMAttestationManifestVersion(t *testing.T) {
 		t.Fatalf("failed to create attestation: %v", err)
 	}
 
-	ek, err := client.EndorsementKeyRSA(rwc)
-	if err != nil {
-		t.Fatalf("failed to get EK: %v", err)
-	}
-	defer ek.Close()
-	ekBytes, err := ek.PublicArea().Encode()
-	if err != nil {
-		t.Fatalf("failed to encode EK pub: %v", err)
-	}
+	ekBytes := testEKPubBytes(t)
 
 	var snpNonce [sabi.ReportDataSize]byte
 	h := sha512.New()
 	h.Write(snpNonce[:])
 	h.Write(ekBytes)
 	measurement := [48]byte{0}
+	certs, err := makeFakeCerts()
+	if err != nil {
+		t.Fatalf("failed to make test certs: %v", err)
+	}
 
-	configfs := makeFakeConfigfs(h.Sum(nil), ekBytes, 0, measurement[:])
+	configfs := makeFakeConfigfs(h.Sum(nil), ekBytes, 0, measurement[:], certs)
 
 	tests := []struct {
 		name        string
@@ -502,15 +500,7 @@ func TestVerifySVSMAttestationV1(t *testing.T) {
 			t.Fatalf("failed to create attestation: %v", err)
 		}
 
-		ek, err := client.EndorsementKeyRSA(rwc)
-		if err != nil {
-			t.Fatalf("failed to get EK: %v", err)
-		}
-		defer ek.Close()
-		ekBytes, err := ek.PublicArea().Encode()
-		if err != nil {
-			t.Fatalf("failed to encode EK pub: %v", err)
-		}
+		ekBytes := testEKPubBytes(t)
 
 		// Construct v1 manifest: [Version (4B)][NumKeys (4B)][TPM2B_PUBLIC(AK)][TPM2B_PUBLIC(EK)]
 		manifestBytes := makeV1Manifest(akPubBytes, ekBytes)
@@ -520,8 +510,12 @@ func TestVerifySVSMAttestationV1(t *testing.T) {
 		h.Write(snpNonce[:])
 		h.Write(manifestBytes)
 		measurement := [48]byte{0}
+		certs, err := makeFakeCerts()
+		if err != nil {
+			t.Fatalf("failed to make test certs: %v", err)
+		}
 
-		configfs := makeFakeConfigfs(h.Sum(nil), manifestBytes, 0, measurement[:])
+		configfs := makeFakeConfigfs(h.Sum(nil), manifestBytes, 0, measurement[:], certs)
 		svsmAttestation, err := makeSEVSNPSVSMAttestation(attestation, &sevSNPSVSMAttestationOpts{
 			TEENonce:                   snpNonce[:],
 			CongfigfsClient:            configfs,
@@ -573,21 +567,17 @@ func TestSVSMAttestationsV1Errors(t *testing.T) {
 		t.Fatalf("failed to create attestation: %v", err)
 	}
 
-	ek, err := client.EndorsementKeyRSA(rwc)
-	if err != nil {
-		t.Fatalf("failed to get EK: %v", err)
-	}
-	defer ek.Close()
-	ekBytes, err := ek.PublicArea().Encode()
-	if err != nil {
-		t.Fatalf("failed to encode EK pub: %v", err)
-	}
+	ekBytes := testEKPubBytes(t)
 
 	var snpNonce [sabi.ReportDataSize]byte
 	goodMeasurement := [48]byte{0}
 	copy(goodMeasurement[:], "good")
 
 	dummyKey := []byte{0x00, 0x01, 0x02, 0x03}
+	certs, err := makeFakeCerts()
+	if err != nil {
+		t.Fatalf("failed to make test certs: %v", err)
+	}
 
 	testcases := []struct {
 		name          string
@@ -601,7 +591,7 @@ func TestSVSMAttestationsV1Errors(t *testing.T) {
 				h := sha512.New()
 				h.Write(snpNonce[:])
 				h.Write(manifest)
-				return makeFakeConfigfs(h.Sum(nil), manifest, 0, goodMeasurement[:])
+				return makeFakeConfigfs(h.Sum(nil), manifest, 0, goodMeasurement[:], certs)
 			},
 			wantErrString: "malformed service manifest: expected at least 2 keys, got 0",
 		},
@@ -612,7 +602,7 @@ func TestSVSMAttestationsV1Errors(t *testing.T) {
 				h := sha512.New()
 				h.Write(snpNonce[:])
 				h.Write(manifest)
-				return makeFakeConfigfs(h.Sum(nil), manifest, 0, goodMeasurement[:])
+				return makeFakeConfigfs(h.Sum(nil), manifest, 0, goodMeasurement[:], certs)
 			},
 			wantErrString: "malformed service manifest: expected at least 2 keys, got 1",
 		},
@@ -624,7 +614,7 @@ func TestSVSMAttestationsV1Errors(t *testing.T) {
 				h := sha512.New()
 				h.Write(snpNonce[:])
 				h.Write(manifest)
-				return makeFakeConfigfs(h.Sum(nil), manifest, 0, goodMeasurement[:])
+				return makeFakeConfigfs(h.Sum(nil), manifest, 0, goodMeasurement[:], certs)
 			},
 			wantErrString: "service manifest does not contain the attested AK pub",
 		},
@@ -635,7 +625,7 @@ func TestSVSMAttestationsV1Errors(t *testing.T) {
 				h := sha512.New()
 				h.Write(snpNonce[:])
 				h.Write(malformedManifest)
-				return makeFakeConfigfs(h.Sum(nil), malformedManifest, 0, goodMeasurement[:])
+				return makeFakeConfigfs(h.Sum(nil), malformedManifest, 0, goodMeasurement[:], certs)
 			},
 			wantErrString: "malformed service manifest: too short for v1 header",
 		},
@@ -648,7 +638,7 @@ func TestSVSMAttestationsV1Errors(t *testing.T) {
 				h := sha512.New()
 				h.Write(snpNonce[:])
 				h.Write(malformedManifest[:])
-				return makeFakeConfigfs(h.Sum(nil), malformedManifest[:], 0, goodMeasurement[:])
+				return makeFakeConfigfs(h.Sum(nil), malformedManifest[:], 0, goodMeasurement[:], certs)
 			},
 			wantErrString: "unsupported service manifest version in payload: 2, expected 1",
 		},
@@ -666,7 +656,7 @@ func TestSVSMAttestationsV1Errors(t *testing.T) {
 				h := sha512.New()
 				h.Write(snpNonce[:])
 				h.Write(manifest)
-				return makeFakeConfigfs(h.Sum(nil), manifest, 0, goodMeasurement[:])
+				return makeFakeConfigfs(h.Sum(nil), manifest, 0, goodMeasurement[:], certs)
 			},
 			wantErrString: "malformed service manifest: count does not match number of keys: expected 2 keys, got 1",
 		},
@@ -686,7 +676,7 @@ func TestSVSMAttestationsV1Errors(t *testing.T) {
 				h := sha512.New()
 				h.Write(snpNonce[:])
 				h.Write(manifest)
-				return makeFakeConfigfs(h.Sum(nil), manifest, 0, goodMeasurement[:])
+				return makeFakeConfigfs(h.Sum(nil), manifest, 0, goodMeasurement[:], certs)
 			},
 			wantErrString: "malformed service manifest: count does not match number of keys:",
 		},
@@ -699,7 +689,7 @@ func TestSVSMAttestationsV1Errors(t *testing.T) {
 				h := sha512.New()
 				h.Write(snpNonce[:])
 				h.Write(malformedManifest[:])
-				return makeFakeConfigfs(h.Sum(nil), malformedManifest[:], 0, goodMeasurement[:])
+				return makeFakeConfigfs(h.Sum(nil), malformedManifest[:], 0, goodMeasurement[:], certs)
 			},
 			wantErrString: "malformed service manifest: too short to read key size for key 0",
 		},
@@ -714,7 +704,7 @@ func TestSVSMAttestationsV1Errors(t *testing.T) {
 				h := sha512.New()
 				h.Write(snpNonce[:])
 				h.Write(malformedManifest)
-				return makeFakeConfigfs(h.Sum(nil), malformedManifest, 0, goodMeasurement[:])
+				return makeFakeConfigfs(h.Sum(nil), malformedManifest, 0, goodMeasurement[:], certs)
 			},
 			wantErrString: "malformed service manifest: size 98 exceeds remaining bytes 8 for key 0",
 		},
@@ -726,7 +716,7 @@ func TestSVSMAttestationsV1Errors(t *testing.T) {
 				h := sha512.New()
 				h.Write(snpNonce[:])
 				h.Write(manifest)
-				return makeFakeConfigfs(h.Sum(nil), manifest, 0, goodMeasurement[:])
+				return makeFakeConfigfs(h.Sum(nil), manifest, 0, goodMeasurement[:], certs)
 			},
 			wantErrString: "malformed service manifest: count does not match number of keys: 5 trailing bytes after parsing 2 keys",
 		},
@@ -791,18 +781,14 @@ func TestVerifySVSMAttestationV1AKFromAttestation(t *testing.T) {
 		t.Fatalf("failed to create attestation: %v", err)
 	}
 
-	ek, err := client.EndorsementKeyRSA(rwc)
-	if err != nil {
-		t.Fatalf("failed to get EK: %v", err)
-	}
-	defer ek.Close()
-	ekBytes, err := ek.PublicArea().Encode()
-	if err != nil {
-		t.Fatalf("failed to encode EK pub: %v", err)
-	}
+	ekBytes := testEKPubBytes(t)
 
 	dummyKey := []byte{0x00, 0x01, 0x02, 0x03}
 	measurement := [48]byte{0}
+	certs, err := makeFakeCerts()
+	if err != nil {
+		t.Fatalf("failed to make test certs: %v", err)
+	}
 
 	testcases := []struct {
 		name string
@@ -872,7 +858,7 @@ func TestVerifySVSMAttestationV1AKFromAttestation(t *testing.T) {
 				h.Write(snpNonce[:])
 				h.Write(manifestBytes)
 
-				configfs := makeFakeConfigfs(h.Sum(nil), manifestBytes, 0, measurement[:])
+				configfs := makeFakeConfigfs(h.Sum(nil), manifestBytes, 0, measurement[:], certs)
 				svsmAttestation, err := makeSEVSNPSVSMAttestation(attestation, &sevSNPSVSMAttestationOpts{
 					TEENonce:                   snpNonce[:],
 					CongfigfsClient:            configfs,
@@ -1025,15 +1011,7 @@ func TestSVSMDowngradeAttack(t *testing.T) {
 		t.Fatalf("failed to create attestation: %v", err)
 	}
 
-	ek, err := client.EndorsementKeyRSA(rwc)
-	if err != nil {
-		t.Fatalf("failed to get EK: %v", err)
-	}
-	defer ek.Close()
-	ekBytes, err := ek.PublicArea().Encode()
-	if err != nil {
-		t.Fatalf("failed to encode EK pub: %v", err)
-	}
+	ekBytes := testEKPubBytes(t)
 
 	// SVSM v1 produces a multikey manifest and an SEV-SNP report bound to it.
 	manifestBytes := makeV1Manifest(akPubBytes, ekBytes)
@@ -1043,8 +1021,12 @@ func TestSVSMDowngradeAttack(t *testing.T) {
 	h.Write(snpNonce[:])
 	h.Write(manifestBytes)
 	measurement := [48]byte{0}
+	certs, err := makeFakeCerts()
+	if err != nil {
+		t.Fatalf("failed to make test certs: %v", err)
+	}
 
-	configfs := makeFakeConfigfs(h.Sum(nil), manifestBytes, 0, measurement[:])
+	configfs := makeFakeConfigfs(h.Sum(nil), manifestBytes, 0, measurement[:], certs)
 	var v1Attestation *apb.SevSnpSvsmAttestation
 	synctest.Test(t, func(t *testing.T) {
 		var err error
