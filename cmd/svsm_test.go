@@ -190,7 +190,7 @@ func TestSVSMAttestationsErrors(t *testing.T) {
 		{
 			name: "Missing SVSM measurement in endorsement",
 			getConfigfs: func(_ *testing.T) configfsi.Client {
-				return makeFakeConfigfs(goodReportData, ekBytes, goodVmpl, goodMeasurement[:])
+				return makeFakeConfigfs(goodReportData, ekBytes, goodVmpl, goodMeasurement[:], certs)
 			},
 			endorsementMeasurement: nil,
 			wantErrString:          "launch endorsement does not contain a required SVSM measurement",
