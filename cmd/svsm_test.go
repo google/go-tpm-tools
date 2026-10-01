@@ -151,9 +151,10 @@ func TestSVSMAttestationsErrors(t *testing.T) {
 	}
 
 	testcases := []struct {
-		name          string
-		getConfigfs   func(t *testing.T) configfsi.Client
-		wantErrString string
+		name                   string
+		getConfigfs            func(t *testing.T) configfsi.Client
+		endorsementMeasurement []byte
+		wantErrString          string
 	}{
 		{
 			name: "Bad report data",
@@ -161,14 +162,16 @@ func TestSVSMAttestationsErrors(t *testing.T) {
 				var snpNonce [sabi.ReportDataSize]byte
 				return makeFakeConfigfs(snpNonce[:], ekBytes, goodVmpl, goodMeasurement[:], certs)
 			},
-			wantErrString: "report field REPORT_DATA",
+			endorsementMeasurement: goodMeasurement[:],
+			wantErrString:          "report field REPORT_DATA",
 		},
 		{
 			name: "Bad VMPL",
 			getConfigfs: func(_ *testing.T) configfsi.Client {
 				return makeFakeConfigfs(goodReportData, ekBytes, 2, goodMeasurement[:], certs)
 			},
-			wantErrString: "report VMPL",
+			endorsementMeasurement: goodMeasurement[:],
+			wantErrString:          "report VMPL",
 		},
 		{
 			name: "Bad measurement",
@@ -177,7 +180,16 @@ func TestSVSMAttestationsErrors(t *testing.T) {
 				copy(badMeasurement[:], "bad")
 				return makeFakeConfigfs(goodReportData, ekBytes, goodVmpl, badMeasurement[:], certs)
 			},
-			wantErrString: "report field MEASUREMENT",
+			endorsementMeasurement: goodMeasurement[:],
+			wantErrString:          "report field MEASUREMENT",
+		},
+		{
+			name: "Missing SVSM measurement in endorsement",
+			getConfigfs: func(_ *testing.T) configfsi.Client {
+				return makeFakeConfigfs(goodReportData, ekBytes, goodVmpl, goodMeasurement[:], certs)
+			},
+			endorsementMeasurement: nil,
+			wantErrString:          "launch endorsement does not contain a required SVSM measurement",
 		},
 	}
 	for _, tc := range testcases {
@@ -199,7 +211,6 @@ func TestSVSMAttestationsErrors(t *testing.T) {
 
 			err = verifySEVSNPSVSMAttestation(verifySEVSNPSVSMOpts{
 				TEENonce: snpNonce[:],
-				AKPub:    akPubBytes,
 				EKPub:    ekBytes,
 				SevValidateOpts: &validate.Options{GuestPolicy: sabi.SnpPolicy{
 					SMT:   true,
