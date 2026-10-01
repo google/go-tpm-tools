@@ -203,15 +203,16 @@ func TestSVSMAttestationsErrors(t *testing.T) {
 				t.Fatalf("failed to make SVSM attestation: %v", err)
 			}
 
-			endorsement, err := makeEndorsement(goodMeasurement[:])
+			endorsement, err := makeEndorsement(tc.endorsementMeasurement)
 			if err != nil {
 				t.Fatalf("failed to make endorsement: %v", err)
 			}
 			svsmAttestation.LaunchEndorsement = endorsement
 
 			err = verifySEVSNPSVSMAttestation(verifySEVSNPSVSMOpts{
-				TEENonce: snpNonce[:],
-				EKPub:    ekBytes,
+				TEENonce:       snpNonce[:],
+				CertifiedAKPub: akPubBytes,
+				EKPub:          ekBytes,
 				SevValidateOpts: &validate.Options{GuestPolicy: sabi.SnpPolicy{
 					SMT:   true,
 					Debug: true,
