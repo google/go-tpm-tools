@@ -3,6 +3,8 @@ package server
 import (
 	"bytes"
 	"crypto"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
 	"errors"
@@ -193,7 +195,11 @@ func TestSigningKeyImport(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ek.Close()
-	signingKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	rsaSigningKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	eccSigningKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -215,13 +221,13 @@ func TestSigningKeyImport(t *testing.T) {
 		{"Bad-PCR", &pb.PCRs{Hash: pb.HashAlgo_SHA256, Pcrs: map[uint32][]byte{0: badPCR}}, false},
 	}
 	for _, subtest := range subtests {
-		t.Run(subtest.name, func(t *testing.T) {
-			blob, err := CreateSigningKeyImportBlob(ek.PublicKey(), signingKey, subtest.pcrs)
+		// RSA signing key
+		t.Run(subtest.name+"-RSA", func(t *testing.T) {
+			rsaBlob, err := CreateSigningKeyImportBlob(ek.PublicKey(), rsaSigningKey, subtest.pcrs)
 			if err != nil {
-				t.Fatalf("creating import blob failed: %v", err)
+				t.Fatalf("creating RSA import blob failed: %v", err)
 			}
-
-			importedKey, err := ek.ImportSigningKey(blob)
+			importedKey, err := ek.ImportSigningKey(rsaBlob)
 			if err != nil {
 				t.Fatalf("import failed: %v", err)
 			}
@@ -237,8 +243,38 @@ func TestSigningKeyImport(t *testing.T) {
 				if err != nil {
 					t.Fatalf("import failed: %v", err)
 				}
-				if err = rsa.VerifyPKCS1v15(&signingKey.PublicKey, crypto.SHA256, digest[:], sig); err != nil {
+				if err = rsa.VerifyPKCS1v15(&rsaSigningKey.PublicKey, crypto.SHA256, digest[:], sig); err != nil {
 					t.Error(err)
+				}
+				return
+			} else if err == nil {
+				t.Error("expected Import to fail but it did not")
+			}
+		})
+		// ECC signing key
+		t.Run(subtest.name+"-ECC", func(t *testing.T) {
+			eccBlob, err := CreateSigningKeyImportBlob(ek.PublicKey(), eccSigningKey, subtest.pcrs)
+			if err != nil {
+				t.Fatalf("creating ECC import blob failed: %v", err)
+			}
+			importedKey, err := ek.ImportSigningKey(eccBlob)
+			if err != nil {
+				t.Fatalf("import failed: %v", err)
+			}
+			defer importedKey.Close()
+			signer, err := importedKey.GetSigner()
+			if err != nil {
+				t.Fatalf("could not create signer: %v", err)
+			}
+			var digest [32]byte
+
+			sig, err := signer.Sign(nil, digest[:], crypto.SHA256)
+			if subtest.expectSuccess {
+				if err != nil {
+					t.Fatalf("import failed: %v", err)
+				}
+				if !ecdsa.VerifyASN1(&eccSigningKey.PublicKey, digest[:], sig) {
+					t.Error("ECDSA verification failed")
 				}
 				return
 			} else if err == nil {
