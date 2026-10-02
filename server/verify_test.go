@@ -2,6 +2,8 @@ package server
 
 import (
 	"crypto"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
@@ -13,12 +15,17 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
 	"strings"
 	"testing"
 
+	"github.com/google/go-eventlog/register"
+	"github.com/google/go-eventlog/tcg"
 	"github.com/google/go-tpm-tools/client"
+	"github.com/google/go-tpm-tools/internal"
 	"github.com/google/go-tpm-tools/internal/test"
 	attestpb "github.com/google/go-tpm-tools/proto/attest"
+	tpmpb "github.com/google/go-tpm-tools/proto/tpm"
 	tpmquote "github.com/google/go-tpm-tools/quote"
 	"github.com/google/go-tpm/legacy/tpm2"
 	"github.com/google/go-tpm/tpmutil"
@@ -881,4 +888,221 @@ func TestVerifyAttestationHashAlgo(t *testing.T) {
 			}
 		})
 	}
+}
+
+func FuzzVerifyAttestation(f *testing.F) {
+	ak, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		f.Fatal(err)
+	}
+	akPubArea, err := CreateEKPublicAreaFromKey(&ak.PublicKey)
+	if err != nil {
+		f.Fatal(err)
+	}
+	akPub, err := akPubArea.Encode()
+	if err != nil {
+		f.Fatal(err)
+	}
+
+	cos85 := &attestpb.Attestation{}
+	if err := proto.Unmarshal(test.COS85Nonce9009, cos85); err != nil {
+		f.Fatal(err)
+	}
+	f.Add(cos85.GetEventLog(), []byte{0x90, 0x09}, false, true, false, false)
+	for _, log := range [][]byte{
+		test.ArchLinuxWorkstationEventLog,
+		test.Debian10EventLog,
+		test.GlinuxAlexEventLog,
+		test.Rhel8EventLog,
+		test.Ubuntu1804AmdSevEventLog,
+		test.Ubuntu2104NoDbxEventLog,
+		test.Ubuntu2104NoSecureBootEventLog,
+		test.Ubuntu2404AmdSevSnpEventLog,
+		test.Cos85AmdSevEventLog,
+		test.Cos93AmdSevEventLog,
+		test.Cos101AmdSevEventLog,
+		test.GdcHost,
+		test.SP800155EventLog,
+		test.CGKE251000,
+	} {
+		f.Add(log, []byte(nil), false, true, false, false)
+		f.Add(log, []byte(nil), true, true, false, false)
+		f.Add(log, []byte(nil), false, false, true, true)
+	}
+
+	f.Fuzz(func(_ *testing.T, eventLog, nonce []byte, sha1, grub, allowEmptySB, allowEFIApp bool) {
+		hashAlg := tpm2.AlgSHA256
+		if sha1 {
+			hashAlg = tpm2.AlgSHA1
+		}
+		pcrs := replayEventLog(eventLog, hashAlg)
+
+		quote, err := encodeQuote(pcrs, nonce)
+		if err != nil {
+			return
+		}
+		rawSig, err := signQuote(ak, quote)
+		if err != nil {
+			return
+		}
+		att := &attestpb.Attestation{
+			AkPub: akPub,
+			Quotes: []*tpmpb.Quote{
+				{
+					Quote:  quote,
+					RawSig: rawSig,
+					Pcrs:   pcrs,
+				},
+			},
+			EventLog: eventLog,
+		}
+
+		loader := UnsupportedLoader
+		if grub {
+			loader = GRUB
+		}
+		_, _ = VerifyAttestation(att, VerifyOpts{
+			Nonce:                         nonce,
+			TrustedAKs:                    []crypto.PublicKey{&ak.PublicKey},
+			AllowSHA1:                     true,
+			Loader:                        loader,
+			AllowEmptySBVar:               allowEmptySB,
+			AllowEFIAppBeforeCallingEvent: allowEFIApp,
+		})
+	})
+}
+
+func FuzzVerifyQuote(f *testing.F) {
+	ak, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		f.Fatal(err)
+	}
+	akPubArea, err := CreateEKPublicAreaFromKey(&ak.PublicKey)
+	if err != nil {
+		f.Fatal(err)
+	}
+	akPub, err := akPubArea.Encode()
+	if err != nil {
+		f.Fatal(err)
+	}
+
+	cos85 := &attestpb.Attestation{}
+	if err := proto.Unmarshal(test.COS85Nonce9009, cos85); err != nil {
+		f.Fatal(err)
+	}
+	var seedPcrs *tpmpb.PCRs
+	if len(cos85.GetQuotes()) > 0 {
+		f.Add(cos85.GetQuotes()[0].GetQuote(), []byte{0x90, 0x09})
+		seedPcrs = cos85.GetQuotes()[0].GetPcrs()
+	}
+	f.Add([]byte(nil), []byte(nil))
+
+	f.Fuzz(func(_ *testing.T, rawQuote, nonce []byte) {
+		rawSig, err := signQuote(ak, rawQuote)
+		if err != nil {
+			return
+		}
+		att := &attestpb.Attestation{
+			AkPub: akPub,
+			Quotes: []*tpmpb.Quote{
+				{
+					Quote:  rawQuote,
+					RawSig: rawSig,
+					Pcrs:   seedPcrs,
+				},
+			},
+			EventLog: cos85.GetEventLog(),
+		}
+		_, _ = VerifyAttestation(att, VerifyOpts{
+			Nonce:      nonce,
+			TrustedAKs: []crypto.PublicKey{&ak.PublicKey},
+			AllowSHA1:  true,
+			Loader:     GRUB,
+		})
+	})
+}
+
+// replayEventLog computes the PCR bank a TPM would hold after extending every
+// event in rawLog, following the same rules as the verifier's replay: EV_NO_ACTION
+// events are not extended, a StartupLocality event seeds PCR 0 with the locality,
+// and an H-CRTM event resets its PCR to locality 4 before extending.
+// Unparseable logs yield an empty bank.
+func replayEventLog(rawLog []byte, hashAlg tpm2.Algorithm) *tpmpb.PCRs {
+	pcrs := &tpmpb.PCRs{
+		Hash: tpmpb.HashAlgo(hashAlg),
+		Pcrs: map[uint32][]byte{},
+	}
+	el, err := tcg.ParseEventLog(rawLog, tcg.ParseOpts{})
+	if err != nil {
+		return pcrs
+	}
+	h, err := hashAlg.Hash()
+	if err != nil {
+		return pcrs
+	}
+	var locality0 byte
+	for _, ev := range el.Events(register.HashAlg(hashAlg)) {
+		if ev.Index < 0 || ev.Index >= 24 {
+			continue
+		}
+		idx := uint32(ev.Index)
+		if ev.Type == tcg.NoAction {
+			if idx == 0 && len(ev.Data) == 17 && strings.HasPrefix(string(ev.Data), "StartupLocality") {
+				locality0 = ev.Data[16]
+			}
+			continue
+		}
+		cur, ok := pcrs.Pcrs[idx]
+		if !ok {
+			cur = make([]byte, h.Size())
+			if idx == 0 {
+				cur[h.Size()-1] = locality0
+			}
+		}
+		if ev.Type == tcg.EFIHCRTMEvent {
+			cur = make([]byte, h.Size())
+			cur[h.Size()-1] = 4
+		}
+		hasher := h.New()
+		hasher.Write(cur)
+		hasher.Write(ev.Digest)
+		pcrs.Pcrs[idx] = hasher.Sum(nil)
+	}
+	return pcrs
+}
+
+// encodeQuote builds a TPMS_ATTEST quote over pcrs with nonce as extraData.
+// The PCR digest uses SHA-256 to match the signature scheme in signQuote.
+func encodeQuote(pcrs *tpmpb.PCRs, nonce []byte) ([]byte, error) {
+	sel := tpm2.PCRSelection{Hash: tpm2.Algorithm(pcrs.GetHash())}
+	for idx := range pcrs.GetPcrs() {
+		sel.PCRs = append(sel.PCRs, int(idx))
+	}
+	sort.Ints(sel.PCRs)
+	return tpm2.AttestationData{
+		Magic:     0xff544347,
+		Type:      tpm2.TagAttestQuote,
+		ExtraData: nonce,
+		AttestedQuoteInfo: &tpm2.QuoteInfo{
+			PCRSelection: sel,
+			PCRDigest:    internal.PCRDigest(pcrs, crypto.SHA256),
+		},
+	}.Encode()
+}
+
+// signQuote produces a TPMT_SIGNATURE over quote using ak.
+func signQuote(ak *ecdsa.PrivateKey, quote []byte) ([]byte, error) {
+	digest := sha256.Sum256(quote)
+	r, s, err := ecdsa.Sign(rand.Reader, ak, digest[:])
+	if err != nil {
+		return nil, err
+	}
+	return tpm2.Signature{
+		Alg: tpm2.AlgECDSA,
+		ECC: &tpm2.SignatureECC{
+			HashAlg: tpm2.AlgSHA256,
+			R:       r,
+			S:       s,
+		},
+	}.Encode()
 }
