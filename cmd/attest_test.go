@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"context"
+	"encoding/hex"
 	"io"
 	"os"
 	"strconv"
@@ -87,49 +89,57 @@ func TestNonce(t *testing.T) {
 	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
 	ExternalTPM = rwc
+	t.Cleanup(func() { ExternalTPM = nil })
+
 	// Without nonce.
+	if _, err := RunAttest(context.Background(), rwc, AttestOptions{Key: "AK"}); err == nil {
+		t.Error("expected not-nil error")
+	}
+
+	// CLI: without nonce.
 	RootCmd.SetArgs([]string{"attest", "--key", "AK"})
 	if err := RootCmd.Execute(); err == nil {
 		t.Error("expected not-nil error")
 	}
-	// With odd length nonce.
-	RootCmd.SetArgs([]string{"attest", "--nonce", "12345", "--key", "AK"})
+
+	// CLI: invalid odd-length hex nonce.
+	RootCmd.SetArgs([]string{"attest", "--key", "AK", "--nonce", "12345"})
 	if err := RootCmd.Execute(); err == nil {
-		t.Error("expected not-nil error")
+		t.Error("expected not-nil error for odd-length hex nonce")
 	}
 }
 
 func TestAttestPass(t *testing.T) {
 	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
-	ExternalTPM = rwc
+
 	tests := []struct {
 		name  string
 		key   string
-		algo  string
+		algo  tpm2.Algorithm
 		nonce string
 	}{
-		{"defaultKey", "", "rsa", "1234"},
-		{"AKWithRSA", "AK", "rsa", "2222"},
-		{"AKWithECC", "AK", "ecc", "2222"},
+		{"defaultKey", "", tpm2.AlgRSA, "1234"},
+		{"AKWithRSA", "AK", tpm2.AlgRSA, "2222"},
+		{"AKWithECC", "AK", tpm2.AlgECC, "2222"},
 	}
 	for _, op := range tests {
 		t.Run(op.name, func(t *testing.T) {
-			secretFile1 := makeOutputFile(t, "attest")
-			defer os.RemoveAll(secretFile1)
-			attestArgs := []string{"attest", "--output", secretFile1}
-			if op.key != "" {
-				attestArgs = append(attestArgs, "--key", op.key)
+			nonceBytes, err := hex.DecodeString(op.nonce)
+			if err != nil {
+				t.Fatal(err)
 			}
-			if op.algo != "" {
-				attestArgs = append(attestArgs, "--algo", op.algo)
+			opts := AttestOptions{
+				Key:     op.key,
+				KeyAlgo: op.algo,
+				Nonce:   nonceBytes,
 			}
-			if op.nonce != "" {
-				attestArgs = append(attestArgs, "--nonce", op.nonce)
-			}
-			RootCmd.SetArgs(attestArgs)
-			if err := RootCmd.Execute(); err != nil {
+			attestation, err := RunAttest(context.Background(), rwc, opts)
+			if err != nil {
 				t.Error(err)
+			}
+			if attestation == nil {
+				t.Error("expected non-nil attestation")
 			}
 		})
 	}
@@ -138,7 +148,7 @@ func TestAttestPass(t *testing.T) {
 func TestFormatFlagPass(t *testing.T) {
 	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
-	ExternalTPM = rwc
+
 	inputFile := makeOutputFile(t, "attestXYZQ")
 	outputFile := makeOutputFile(t, "attestout")
 	defer os.RemoveAll(inputFile)
@@ -155,10 +165,24 @@ func TestFormatFlagPass(t *testing.T) {
 	}
 	for _, op := range tests {
 		t.Run(op.name, func(t *testing.T) {
-			attestArgs := []string{"attest", "--nonce", op.nonce, "--output", op.report, "--format", op.format}
-			RootCmd.SetArgs(attestArgs)
-			if err := RootCmd.Execute(); err != nil {
-				t.Error(err)
+			nonceBytes, err := hex.DecodeString(op.nonce)
+			if err != nil {
+				t.Fatal(err)
+			}
+			opts := AttestOptions{
+				Key:   "AK",
+				Nonce: nonceBytes,
+			}
+			attestation, err := RunAttest(context.Background(), rwc, opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			out, err := formatAttestation(attestation, op.format)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(op.report, out, 0644); err != nil {
+				t.Fatal(err)
 			}
 			debugArgs := []string{"verify", "debug", "--nonce", op.nonce, "--input", op.report, "--output", op.verifiedReport, "--format", op.format}
 			RootCmd.SetArgs(debugArgs)
@@ -172,11 +196,12 @@ func TestFormatFlagPass(t *testing.T) {
 func TestFormatFlagFail(t *testing.T) {
 	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
-	ExternalTPM = rwc
+
 	inputFile := makeOutputFile(t, "attest")
 	outputFile := makeOutputFile(t, "attestout")
 	defer os.RemoveAll(inputFile)
 	defer os.RemoveAll(outputFile)
+	t.Cleanup(func() { format = "binarypb" })
 	tests := []struct {
 		name           string
 		nonce          string
@@ -191,15 +216,30 @@ func TestFormatFlagFail(t *testing.T) {
 	}
 	for _, op := range tests {
 		t.Run(op.name, func(t *testing.T) {
-			attestArgs := []string{"attest", "--nonce", op.nonce, "--output", op.report, "--format", op.formatAttest}
-			RootCmd.SetArgs(attestArgs)
-			if err := RootCmd.Execute(); err != nil {
-				t.Error(err)
+
+			nonceBytes, err := hex.DecodeString(op.nonce)
+			if err != nil {
+				t.Fatal(err)
+			}
+			opts := AttestOptions{
+				Key:   "AK",
+				Nonce: nonceBytes,
+			}
+			attestation, err := RunAttest(context.Background(), rwc, opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			out, err := formatAttestation(attestation, op.formatAttest)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(op.report, out, 0644); err != nil {
+				t.Fatal(err)
 			}
 			debugArgs := []string{"verify", "debug", "--nonce", op.nonce, "--input", op.report, "--output", op.verifiedReport, "--format", op.formatDebug}
 			RootCmd.SetArgs(debugArgs)
 			if err := RootCmd.Execute(); err == nil {
-				t.Error(err)
+				t.Error("expected non-nil error")
 			}
 		})
 	}
@@ -212,7 +252,7 @@ func TestMetadataPass(t *testing.T) {
 		t.Error(err)
 	}
 	defer mock.Stop()
-	instanceInfo, err := getInstanceInfoFromMetadata()
+	instanceInfo, err := getInstanceInfoFromMetadata(context.Background())
 	if err != nil {
 		t.Error(err)
 	}
@@ -244,9 +284,7 @@ func TestMetadataPass(t *testing.T) {
 func TestAttestWithGCEAK(t *testing.T) {
 	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
-	ExternalTPM = rwc
-	secretFile1 := makeOutputFile(t, "attest")
-	defer os.RemoveAll(secretFile1)
+
 	var template = map[string]tpm2.Public{
 		"rsa": GCEAKTemplateRSA(),
 		"ecc": GCEAKTemplateECC(),
@@ -255,9 +293,10 @@ func TestAttestWithGCEAK(t *testing.T) {
 		name    string
 		nonce   string
 		keyAlgo string
+		algo    tpm2.Algorithm
 	}{
-		{"gceAK:RSA", "1234", "rsa"},
-		{"gceAK:ECC", "1234", "ecc"},
+		{"gceAK:RSA", "1234", "rsa", tpm2.AlgRSA},
+		{"gceAK:ECC", "1234", "ecc", tpm2.AlgECC},
 	}
 	for _, op := range tests {
 		t.Run(op.name, func(t *testing.T) {
@@ -278,9 +317,30 @@ func TestAttestWithGCEAK(t *testing.T) {
 			}
 			defer mock.Stop()
 
-			RootCmd.SetArgs([]string{"attest", "--nonce", op.nonce, "--key", "gceAK", "--algo", op.keyAlgo, "--output", secretFile1, "--format", "binarypb"})
-			if err := RootCmd.Execute(); err != nil {
+			nonceBytes, err := hex.DecodeString(op.nonce)
+			if err != nil {
+				t.Fatal(err)
+			}
+			opts := AttestOptions{
+				Key:     "gceAK",
+				KeyAlgo: op.algo,
+				Nonce:   nonceBytes,
+			}
+			attestation, err := RunAttest(context.Background(), rwc, opts)
+			if err != nil {
 				t.Error(err)
+			}
+			if attestation == nil || attestation.GetInstanceInfo() == nil {
+				t.Fatal("expected non-nil attestation and instance info")
+			}
+			if attestation.GetInstanceInfo().GetProjectId() != dummyInstance.ProjectID {
+				t.Errorf("got ProjectId %v, want %v", attestation.GetInstanceInfo().GetProjectId(), dummyInstance.ProjectID)
+			}
+			if attestation.GetInstanceInfo().GetZone() != dummyInstance.Zone {
+				t.Errorf("got Zone %v, want %v", attestation.GetInstanceInfo().GetZone(), dummyInstance.Zone)
+			}
+			if attestation.GetInstanceInfo().GetInstanceName() != dummyInstance.InstanceName {
+				t.Errorf("got InstanceName %v, want %v", attestation.GetInstanceInfo().GetInstanceName(), dummyInstance.InstanceName)
 			}
 		})
 	}
@@ -289,11 +349,14 @@ func TestAttestWithGCEAK(t *testing.T) {
 func TestTeeTechnologyFail(t *testing.T) {
 	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
-	ExternalTPM = rwc
 
-	// value of tee-technology flag should be sev-snp
-	RootCmd.SetArgs([]string{"attest", "--nonce", "1234", "--key", "AK", "--tee-nonce", "12345678", "--tee-technology", "sev"})
-	if err := RootCmd.Execute(); err == nil {
+	opts := AttestOptions{
+		Key:           "AK",
+		Nonce:         []byte{0x12, 0x34},
+		TEENonce:      []byte{0x12, 0x34, 0x56, 0x78},
+		TEETechnology: "sev",
+	}
+	if _, err := RunAttest(context.Background(), rwc, opts); err == nil {
 		t.Error("expected not-nil error")
 	}
 }
@@ -301,10 +364,15 @@ func TestTeeTechnologyFail(t *testing.T) {
 func TestSevAttestTeeNonceFail(t *testing.T) {
 	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
-	ExternalTPM = rwc
+
 	// non-nil TEENonce when TEEDevice is nil
-	RootCmd.SetArgs([]string{"attest", "--nonce", "1234", "--key", "AK", "--tee-nonce", "12345678", "--tee-technology", ""})
-	if err := RootCmd.Execute(); err == nil {
+	opts := AttestOptions{
+		Key:           "AK",
+		Nonce:         []byte{0x12, 0x34},
+		TEENonce:      []byte{0x12, 0x34, 0x56, 0x78},
+		TEETechnology: "",
+	}
+	if _, err := RunAttest(context.Background(), rwc, opts); err == nil {
 		t.Error("expected not-nil error")
 	}
 
@@ -329,16 +397,20 @@ func TestSevAttestTeeNonceFail(t *testing.T) {
 	if err == nil {
 		t.Error("expected non-nil error")
 	}
-
 }
 
 func TestTdxAttestTeeNonceFail(t *testing.T) {
 	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
-	ExternalTPM = rwc
+
 	// non-nil TEENonce when TEEDevice is nil
-	RootCmd.SetArgs([]string{"attest", "--nonce", "1234", "--key", "AK", "--tee-nonce", "12345678", "--tee-technology", ""})
-	if err := RootCmd.Execute(); err == nil {
+	opts := AttestOptions{
+		Key:           "AK",
+		Nonce:         []byte{0x12, 0x34},
+		TEENonce:      []byte{0x12, 0x34, 0x56, 0x78},
+		TEETechnology: "",
+	}
+	if _, err := RunAttest(context.Background(), rwc, opts); err == nil {
 		t.Error("expected not-nil error")
 	}
 
@@ -368,13 +440,11 @@ func TestTdxAttestTeeNonceFail(t *testing.T) {
 func TestHardwareAttestationPass(t *testing.T) {
 	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
-	ExternalTPM = rwc
 
-	inputFile := makeOutputFile(t, "attest")
-	outputFile := makeOutputFile(t, "attestout")
-	defer os.RemoveAll(inputFile)
-	defer os.RemoveAll(outputFile)
-	teenonce := "12345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678"
+	teenonce, err := hex.DecodeString("12345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678")
+	if err != nil {
+		t.Fatal(err)
+	}
 	tests := []struct {
 		name    string
 		nonce   string
@@ -386,13 +456,45 @@ func TestHardwareAttestationPass(t *testing.T) {
 	}
 	for _, op := range tests {
 		t.Run(op.name, func(t *testing.T) {
-			attestArgs := []string{"attest", "--nonce", op.nonce, "--output", inputFile, "--format", "textproto", "--tee-nonce", teenonce, "--tee-technology", op.teetech}
-			RootCmd.SetArgs(attestArgs)
-			if err := RootCmd.Execute(); err != nil {
-				if !strings.Contains(err.Error(), op.wanterr) {
-					t.Error(err)
-				}
+			nonceBytes, err := hex.DecodeString(op.nonce)
+			if err != nil {
+				t.Fatal(err)
+			}
+			opts := AttestOptions{
+				Key:           "AK",
+				Nonce:         nonceBytes,
+				TEENonce:      teenonce,
+				TEETechnology: op.teetech,
+			}
+			_, err = RunAttest(context.Background(), rwc, opts)
+			if err == nil {
+				t.Errorf("expected error containing %q, got nil", op.wanterr)
+			} else if !strings.Contains(err.Error(), op.wanterr) {
+				t.Errorf("got %v, want error containing %q", err, op.wanterr)
 			}
 		})
+	}
+}
+
+func TestAttestCLI(t *testing.T) {
+	rwc := test.GetTPM(t)
+	defer client.CheckedClose(t, rwc)
+	ExternalTPM = rwc
+	t.Cleanup(func() { ExternalTPM = nil })
+
+	outputFile := makeOutputFile(t, "attestcli")
+	defer os.RemoveAll(outputFile)
+
+	RootCmd.SetArgs([]string{"attest", "--nonce", "1234", "--key", "AK", "--output", outputFile, "--format", "binarypb"})
+	if err := RootCmd.Execute(); err != nil {
+		t.Fatalf("attest CLI failed: %v", err)
+	}
+
+	info, err := os.Stat(outputFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Size() == 0 {
+		t.Error("expected non-empty output file from attest CLI")
 	}
 }
