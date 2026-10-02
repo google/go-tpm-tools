@@ -52,7 +52,7 @@ jobs:
         run: sudo DEBIAN_FRONTEND=noninteractive apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout="30" && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -o Acquire::Retries=3 -o Acquire::http::Timeout="30" libssl-dev cmake clang pkg-config
         if: runner.os == 'Linux'
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
       - name: Install bindgen-cli
         run: cargo install bindgen-cli
         if: runner.os == 'Linux'
