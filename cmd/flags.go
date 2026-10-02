@@ -161,9 +161,11 @@ func addCustomNonceFlag(cmd *cobra.Command) {
 		"the custom nonce field in the claims token. use this flag multiple times to add multiple custom nonces.")
 }
 
+const defaultEventLog = "/sys/kernel/security/tpm0/binary_bios_measurements"
+
 // Lets this command specify event log path.
 func addEventLogFlag(cmd *cobra.Command) {
-	cmd.PersistentFlags().StringVar(&eventLog, "event-log", "/sys/kernel/security/tpm0/binary_bios_measurements", "specifies the event log file path.")
+	cmd.PersistentFlags().StringVar(&eventLog, "event-log", defaultEventLog, "specifies the event log file path.")
 }
 
 // Lets this command specify an NVDATA index, for use with nvIndex.
