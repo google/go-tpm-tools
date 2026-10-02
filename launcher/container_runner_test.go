@@ -9,8 +9,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"path"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -25,6 +27,7 @@ import (
 	"github.com/containerd/containerd/cio"
 	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/oci"
+	types100 "github.com/containernetworking/cni/pkg/types/100"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-cmp/cmp"
 	gecel "github.com/google/go-eventlog/cel"
@@ -723,8 +726,6 @@ func TestGetNextRefresh(t *testing.T) {
 		}
 	}
 }
-
-
 
 func TestMeasureCELEvents(t *testing.T) {
 	ctx := context.Background()
@@ -1700,3 +1701,147 @@ func TestEnableGracefulShutdown_NilPowerButtonDoesNotPanic(t *testing.T) {
 	runner.enableGracefulShutdown(t.Context(), signaler)
 }
 
+func TestBuildPortRules(t *testing.T) {
+	v4 := net.ParseIP("172.20.0.2")
+	v6 := net.ParseIP("fdb6:c4ca:384d:1::2")
+
+	// Rules present in both root and non-root containers.
+	inputRules := [][]string{
+		{"iptables", "-A", "INPUT", "-p", "tcp", "--dport", "80", "-j", "ACCEPT"},
+		{"ip6tables", "-A", "INPUT", "-p", "tcp", "--dport", "80", "-j", "ACCEPT"},
+	}
+
+	// Ingress rules for Non-root.
+	ingressV4 := [][]string{
+		{"iptables", "-t", "nat", "-A", "PREROUTING", "-p", "tcp", "--dport", "80", "-j", "DNAT", "--to-destination", "172.20.0.2:80"},
+		{"iptables", "-A", "FORWARD", "-d", "172.20.0.2", "-p", "tcp", "--dport", "80", "-j", "ACCEPT"},
+	}
+	ingressV6 := [][]string{
+		{"ip6tables", "-t", "nat", "-A", "PREROUTING", "-p", "tcp", "--dport", "80", "-j", "DNAT", "--to-destination", "[fdb6:c4ca:384d:1::2]:80"},
+		{"ip6tables", "-A", "FORWARD", "-d", "fdb6:c4ca:384d:1::2", "-p", "tcp", "--dport", "80", "-j", "ACCEPT"},
+	}
+
+	// Egress rules for Non-root.
+	egressV4 := [][]string{{"iptables", "-A", "FORWARD", "-s", "172.20.0.2", "-j", "ACCEPT"}}
+	egressV6 := [][]string{{"ip6tables", "-A", "FORWARD", "-s", "fdb6:c4ca:384d:1::2", "-j", "ACCEPT"}}
+
+	testCases := []struct {
+		name         string
+		ports        map[string]struct{}
+		containerIPs []net.IP
+		want         [][]string
+	}{
+		{
+			name:  "root container only opens INPUT",
+			ports: map[string]struct{}{"80/tcp": {}},
+			want:  inputRules,
+		},
+		{ // Containers will have dual-stack.
+			// However, this test case exists as `buildPortRules` is a general helper that also handles an IPv4-only container.
+			name:         "non-root container IPv4 only",
+			ports:        map[string]struct{}{"80/tcp": {}},
+			containerIPs: []net.IP{v4},
+			want:         slices.Concat(inputRules, ingressV4, egressV4),
+		},
+		{
+			name:         "non-root container dual-stack",
+			ports:        map[string]struct{}{"80/tcp": {}},
+			containerIPs: []net.IP{v4, v6},
+			want:         slices.Concat(inputRules, ingressV4, ingressV6, egressV4, egressV6),
+		},
+		{
+			name:         "no exposed ports still allows container egress",
+			containerIPs: []net.IP{v4, v6},
+			want:         slices.Concat(egressV4, egressV6),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := buildPortRules(tc.ports, tc.containerIPs)
+			if err != nil {
+				t.Fatalf("buildPortRules() error = %v", err)
+			}
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("buildPortRules() rules mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestBuildPortRulesErrors(t *testing.T) {
+	testCases := []struct {
+		name, exposed string
+	}{
+		{
+			name:    "no protocol",
+			exposed: "80",
+		},
+		{
+			name:    "extra protocol",
+			exposed: "80/tcp/extra",
+		},
+		{
+			name:    "invalid protocol",
+			exposed: "80/sctp",
+		},
+		{
+			name:    "out-of-range port",
+			exposed: "99999/tcp",
+		},
+		{
+			name:    "negative protocol",
+			exposed: "-1/tcp",
+		},
+		{
+			name:    "non-digit protocol",
+			exposed: "abc/udp",
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := buildPortRules(map[string]struct{}{tc.exposed: {}}, nil); err == nil {
+				t.Errorf("buildPortRules(%q) succeeded, want error", tc.exposed)
+			}
+		})
+	}
+}
+
+func buildIPNet(t *testing.T, addr string) net.IPNet {
+	ip, ipNet, err := net.ParseCIDR(addr)
+	if err != nil {
+		t.Fatalf("ParseCIDR(%q): %v", addr, err)
+	}
+	return net.IPNet{IP: ip, Mask: ipNet.Mask}
+}
+
+func TestIPsFromCNI(t *testing.T) {
+	cniRaw := []*types100.Result{{
+		IPs: []*types100.IPConfig{
+			{Address: buildIPNet(t, "172.20.0.2/24"), Gateway: net.ParseIP("172.20.0.1")},
+			{Address: buildIPNet(t, "fdb6:c4ca:384d:1::2/64"), Gateway: net.ParseIP("fdb6:c4ca:384d:1::1")},
+		},
+	}}
+	ips, err := ipsFromCNI(cniRaw)
+	if err != nil {
+		t.Fatalf("ipsFromCNIResult() error = %v", err)
+	}
+	var got []string
+	for _, ip := range ips {
+		got = append(got, ip.String())
+	}
+	if diff := cmp.Diff([]string{"172.20.0.2", "fdb6:c4ca:384d:1::2"}, got); diff != "" {
+		t.Errorf("ipsFromCNIResult() mismatch (-want +got):\n%s", diff)
+	}
+
+	for name, in := range map[string][]*types100.Result{
+		"no result": nil,
+		"no IPs":    {{}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := ipsFromCNI(in); err == nil {
+				t.Errorf("ipsFromCNIResult(%v) succeeded, want error", in)
+			}
+		})
+	}
+}
