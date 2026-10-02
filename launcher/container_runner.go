@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -27,6 +28,7 @@ import (
 	"github.com/containerd/containerd/images"
 	"github.com/containerd/containerd/remotes"
 	gocni "github.com/containerd/go-cni"
+	types100 "github.com/containernetworking/cni/pkg/types/100"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-tpm-tools/agent"
 	"github.com/google/go-tpm-tools/agent/device"
@@ -87,6 +89,7 @@ const (
 	hostGIDBegin = 100000 // Starting (outside container) gid for the root group inside the container
 	userNSSize   = 65536  // 16-bit range of uid/gid inside the container
 
+	// The container network is defined by image/10-workload.conf (bridge br0, host-local IPAM):
 	cniConfigDir = "/etc/cni/net.d"
 	cniBinDir    = "/opt/cni/bin"
 	netnsPathFmt = "/proc/%d/ns/net"
@@ -662,14 +665,14 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to get image config: %w", err)
 	}
-	var containerIP string
+	var containerIPs []net.IP // Stays nil for a root container, which shares the host network namespace.
 	if r.launchSpec.NonrootContainer {
-		containerIP, err = r.setupCNI(ctx, fmt.Sprintf(netnsPathFmt, task.Pid()))
+		containerIPs, err = r.setupCNI(ctx, fmt.Sprintf(netnsPathFmt, task.Pid()))
 		if err != nil {
 			return err
 		}
 	}
-	if err := openPorts(imageConfig.ExposedPorts, containerIP); err != nil {
+	if err := openPorts(imageConfig.ExposedPorts, containerIPs); err != nil {
 		return fmt.Errorf("failed to open and forward ports: %w", err)
 	}
 
@@ -754,67 +757,85 @@ func (r *ContainerRunner) enableGracefulShutdown(ctx context.Context, task taskS
 	}()
 }
 
-// openPorts writes firewall rules to accept all traffic into that port and protocol using iptables.
-// When `containerIP` is not empty, it implies that the namespace and CNI are used for the container.
-// In that case, it also forwards traffic to the container via DNAT and allows container egress traffic.
-func openPorts(ports map[string]struct{}, containerIP string) error {
+// portProtocol parses an exposed-port key from the image config, e.g. "80/tcp".
+func portProtocol(exposed string) (port, protocol string, err error) {
+	portAndProtocol := strings.Split(exposed, "/")
+	if len(portAndProtocol) != 2 {
+		return "", "", fmt.Errorf("failed to parse port and protocol: got %s, expected [port]/[protocol] 80/tcp", portAndProtocol)
+	}
+
+	port = portAndProtocol[0]
+	if _, err := strconv.ParseUint(port, 10, 16); err != nil {
+		return "", "", fmt.Errorf("received invalid port number: %v, %w", port, err)
+	}
+
+	protocol = portAndProtocol[1]
+	if protocol != "tcp" && protocol != "udp" {
+		return "", "", fmt.Errorf("received unknown protocol: got %s, expected tcp or udp", protocol)
+	}
+	return port, protocol, nil
+}
+
+// iptablesBin returns the netfilter command for the IP family of `ip`.
+func iptablesBin(ip net.IP) string {
+	if ip.To4() != nil {
+		return "iptables"
+	}
+	return "ip6tables"
+}
+
+// buildPortRules returns the iptables/ip6tables command lines (binary first) needed to open `ports`.
+// When `containerIPs` is not empty, it implies that the namespace and CNI are used for the container.
+// In that case, per IP family, it also adds rules to DNAT ingress traffic to the container and to
+// allow the forwarded traffic in both directions.
+func buildPortRules(ports map[string]struct{}, containerIPs []net.IP) ([][]string, error) {
+	var rules [][]string
 	for k := range ports {
-		portAndProtocol := strings.Split(k, "/")
-		if len(portAndProtocol) != 2 {
-			return fmt.Errorf("failed to parse port and protocol: got %s, expected [port]/[protocol] 80/tcp", portAndProtocol)
-		}
-
-		port := portAndProtocol[0]
-		_, err := strconv.ParseUint(port, 10, 16)
+		port, protocol, err := portProtocol(k)
 		if err != nil {
-			return fmt.Errorf("received invalid port number: %v, %w", port, err)
+			return nil, err
 		}
 
-		protocol := portAndProtocol[1]
-		if protocol != "tcp" && protocol != "udp" {
-			return fmt.Errorf("received unknown protocol: got %s, expected tcp or udp", protocol)
-		}
+		// Firewall rules to accept all INPUT packets for the given port/protocol for IPv4 and IPv6 traffic.
+		// Note that it is harmless to have IPv6 rules on the IPv4 only network, or vice versa.
+		rules = append(rules,
+			[]string{"iptables", "-A", "INPUT", "-p", protocol, "--dport", port, "-j", "ACCEPT"},
+			[]string{"ip6tables", "-A", "INPUT", "-p", protocol, "--dport", port, "-j", "ACCEPT"},
+		)
 
-		// These 2 commands will write firewall rules to accept all INPUT packets for the given port/protocol
-		// for IPv4 and IPv6 traffic.
-		cmd := exec.Command("iptables", "-A", "INPUT", "-p", protocol, "--dport", port, "-j", "ACCEPT")
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			return fmt.Errorf("failed to open port on IPv4 %s %s: %v %s", port, protocol, err, out)
-		}
-		v6cmd := exec.Command("ip6tables", "-A", "INPUT", "-p", protocol, "--dport", port, "-j", "ACCEPT")
-		out, err = v6cmd.CombinedOutput()
-		if err != nil {
-			return fmt.Errorf("failed to open port on IPv6 %s %s: %v %s", port, protocol, err, out)
-		}
-
-		// Forward traffic from host port to container port with the same number.
-		if containerIP != "" {
-			forwardCmd := exec.Command("iptables", "-t", "nat", "-A", "PREROUTING",
-				"-p", protocol, "--dport", port,
-				"-j", "DNAT", "--to-destination", fmt.Sprintf("%s:%s", containerIP, port))
-
-			out, err = forwardCmd.CombinedOutput()
-			if err != nil {
-				return fmt.Errorf("failed to forward port %s to container %s: %v %s", port, containerIP, err, out)
-			}
-
-			// Allow traffic in FORWARD chain to the container IP on this port
-			forwardInCmd := exec.Command("iptables", "-A", "FORWARD", "-d", containerIP, "-p", protocol, "--dport", port, "-j", "ACCEPT")
-			if out, err := forwardInCmd.CombinedOutput(); err != nil {
-				return fmt.Errorf("failed to add FORWARD rule for container %s: %v %s", containerIP, err, out)
-			}
+		for _, ip := range containerIPs {
+			bin := iptablesBin(ip)
+			rules = append(rules,
+				// Forward traffic from host port to container port with the same number.
+				[]string{bin, "-t", "nat", "-A", "PREROUTING", "-p", protocol, "--dport", port, "-j", "DNAT",
+					"--to-destination", net.JoinHostPort(ip.String(), port)},
+				// Allow traffic in FORWARD chain to the container IP on this port.
+				[]string{bin, "-A", "FORWARD", "-d", ip.String(), "-p", protocol, "--dport", port, "-j", "ACCEPT"},
+			)
 		}
 	}
 
-	// Allow egress traffic from the container to go out
-	if containerIP != "" {
-		forwardOutCmd := exec.Command("iptables", "-A", "FORWARD", "-s", containerIP, "-j", "ACCEPT")
-		if out, err := forwardOutCmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("failed to add FORWARD reply rule for container %s: %v %s", containerIP, err, out)
+	// Allow egress traffic from the container to go out.
+	for _, ip := range containerIPs {
+		rules = append(rules, []string{iptablesBin(ip), "-A", "FORWARD", "-s", ip.String(), "-j", "ACCEPT"})
+	}
+	return rules, nil
+}
+
+// openPorts writes firewall rules to accept all traffic into that port and protocol using iptables.
+// When `containerIPs` is not empty, it implies that the namespace and CNI are used for the container.
+// In that case, it also forwards traffic to the container via DNAT and allows container egress traffic,
+// for both IPv4 and IPv6.
+func openPorts(ports map[string]struct{}, containerIPs []net.IP) error {
+	rules, err := buildPortRules(ports, containerIPs)
+	if err != nil {
+		return err
+	}
+	for _, rule := range rules {
+		if out, err := exec.Command(rule[0], rule[1:]...).CombinedOutput(); err != nil {
+			return fmt.Errorf("failed to run %q: %v %s", strings.Join(rule, " "), err, out)
 		}
 	}
-
 	return nil
 }
 
@@ -886,20 +907,34 @@ func newCNI() (gocni.CNI, error) {
 	return cni, nil
 }
 
-func (r *ContainerRunner) setupCNI(ctx context.Context, netnsPath string) (string, error) {
+// ipsFromCNI extracts the addresses CNI assigned to the workload interface
+// (one IPv4 and one IPv6 with the dual-stack `10-workload.conf`).
+func ipsFromCNI(raw []*types100.Result) ([]net.IP, error) {
+	if len(raw) == 0 || len(raw[0].IPs) == 0 {
+		return nil, errors.New("failed to get container IP address")
+	}
+	ips := make([]net.IP, 0, len(raw[0].IPs))
+	for _, ipc := range raw[0].IPs {
+		ips = append(ips, ipc.Address.IP)
+	}
+	return ips, nil
+}
+
+func (r *ContainerRunner) setupCNI(ctx context.Context, netnsPath string) ([]net.IP, error) {
 	if r.cni == nil {
-		return "", fmt.Errorf("CNI is not initialized")
+		return nil, errors.New("CNI is not initialized")
 	}
 	cniResult, err := r.cni.Setup(ctx, containerID, netnsPath)
 	if err != nil {
-		return "", fmt.Errorf("failed to setup network via CNI: %w", err)
+		return nil, fmt.Errorf("failed to setup network via CNI: %w", err)
 	}
 	r.logger.Info(fmt.Sprintf("CNI network setup completed: %v", cniResult))
 
-	rawResults := cniResult.Raw()
-	if len(rawResults) == 0 || len(rawResults[0].IPs) == 0 {
-		return "", fmt.Errorf("failed to get container IP address")
+	// Currently, we have only a single network interface defined by `10-workload.conf`, carrying one address per IP family.
+	ips, err := ipsFromCNI(cniResult.Raw())
+	if err != nil {
+		return nil, err
 	}
-	// Currently, we have only single network interface defined with a single IP address by `10-workload.conf`.
-	return rawResults[0].IPs[0].Address.IP.String(), nil
+	r.logger.Info("container network configured", "container_ips", ips)
+	return ips, nil
 }
