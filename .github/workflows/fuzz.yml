@@ -1,0 +1,26 @@
+name: Fuzz
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+permissions:
+  contents: read
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - pkg: ./server
+            target: FuzzVerifyAttestation
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+          cache: false
+      - name: Run Go Fuzz (${{ matrix.target }})
+        run: go test ${{ matrix.pkg }} -run=^$ -fuzz=^${{ matrix.target }}$ -fuzztime=30s
