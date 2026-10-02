@@ -880,3 +880,19 @@ func TestVerifyAttestationHashAlgo(t *testing.T) {
 		})
 	}
 }
+
+func FuzzVerifyAttestation(f *testing.F) {
+	f.Add(test.COS85NoNonce, []byte(nil))
+	f.Add(test.COS85Nonce9009, []byte{0x90, 0x09})
+	f.Fuzz(func(_ *testing.T, protoBytes []byte, nonce []byte) {
+		att := &attestpb.Attestation{}
+		if err := proto.Unmarshal(protoBytes, att); err != nil {
+			return
+		}
+		_, _ = VerifyAttestation(att, VerifyOpts{
+			Nonce:             nonce,
+			TrustedRootCerts:  GceEKRoots,
+			IntermediateCerts: GceEKIntermediates,
+		})
+	})
+}
