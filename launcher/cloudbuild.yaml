@@ -58,7 +58,7 @@ steps:
       git submodule update --init --recursive
       # Build the Rust keymanager libraries using prebuilt toolchain
       cd keymanager
-      cargo build --release
+      cargo build --release --locked
 
 # `golang:1.26-bookworm` is used for compiling the launcher.
 # We statically link libstdc++ and libgcc to support running on COS 125.

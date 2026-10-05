@@ -67,7 +67,7 @@ jobs:
       - name: Build KeyManager Rust library
         run: |
           cd keymanager
-          cargo build --release
+          cargo build --release --locked
       - name: Check Protobuf Generation
         run: |
           go generate ./... ./agent/... ./cmd/... ./launcher/... ./verifier/...
@@ -182,7 +182,7 @@ jobs:
       - name: Build KeyManager Rust library
         run: |
           cd keymanager
-          cargo build --release
+          cargo build --release --locked
       # Pinned to commit SHA to satisfy blanket security policy (zizmor)
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
@@ -222,7 +222,7 @@ jobs:
       - name: Build KeyManager Rust library
         run: |
           cd keymanager
-          cargo build --release
+          cargo build --release --locked
       - name: Check for CGO Warnings (gcc)
         run: CGO_CFLAGS=-Werror CC=gcc go build ./...
       - name: Check for CGO Warnings (clang)
