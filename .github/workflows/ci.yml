@@ -57,7 +57,7 @@ jobs:
       - name: Install protoc-gen-go
         run: go install google.golang.org/protobuf/cmd/protoc-gen-go@${{ env.PROTOC_GEN_GO_VERSION }}
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # master
         with:
           toolchain: stable
       - name: Install Build Dependencies (Linux)
@@ -67,7 +67,7 @@ jobs:
       - name: Build KeyManager Rust library
         run: |
           cd keymanager
-          cargo build --release
+          cargo build --release --locked
       - name: Check Protobuf Generation
         run: |
           go generate ./... ./agent/... ./cmd/... ./launcher/... ./verifier/...
@@ -172,7 +172,7 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache: false
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # master
         with:
           toolchain: stable
       - name: Install Build Dependencies (Linux)
@@ -182,7 +182,7 @@ jobs:
       - name: Build KeyManager Rust library
         run: |
           cd keymanager
-          cargo build --release
+          cargo build --release --locked
       # Pinned to commit SHA to satisfy blanket security policy (zizmor)
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
@@ -212,7 +212,7 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache: false
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # master
         with:
           toolchain: stable
       - name: Install Build Dependencies (Linux)
@@ -222,7 +222,7 @@ jobs:
       - name: Build KeyManager Rust library
         run: |
           cd keymanager
-          cargo build --release
+          cargo build --release --locked
       - name: Check for CGO Warnings (gcc)
         run: CGO_CFLAGS=-Werror CC=gcc go build ./...
       - name: Check for CGO Warnings (clang)
