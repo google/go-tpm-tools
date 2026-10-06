@@ -22,6 +22,7 @@ EOF
   # Override default fluent-bit config.
   mkdir -p /etc/fluent-bit
   cp /usr/share/oem/confidential_space/bc-fluent-bit-cs.conf /etc/fluent-bit/fluent-bit.conf
+  cp /usr/share/oem/confidential_space/parsers-cs.conf /etc/fluent-bit/parsers-cs.conf
 
   mkdir /tmp/container_launcher
   chmod +rw /tmp/container_launcher

@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
+	"path"
 
 	"cloud.google.com/go/compute/metadata"
 	"cos.googlesource.com/cos/tools.git/src/cmd/cos_gpu_installer/deviceinfo"
@@ -16,8 +18,11 @@ import (
 	"github.com/google/go-tpm-tools/agent"
 	"github.com/google/go-tpm-tools/agent/device"
 	"github.com/google/go-tpm-tools/client"
+	kmcommonpb "github.com/google/go-tpm-tools/keymanager/km_common/proto"
+	workloadservice "github.com/google/go-tpm-tools/keymanager/workload_service"
 	"github.com/google/go-tpm-tools/launcher/internal/gpu"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
+	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/registryauth"
 	"github.com/google/go-tpm-tools/launcher/spec"
 	"github.com/google/go-tpm-tools/launcher/teeserver"
@@ -29,6 +34,12 @@ import (
 	"google.golang.org/api/option"
 )
 
+const (
+	teeServerSocket      = "teeserver.sock"
+	keyManagerSocket     = "kmaserver.sock"
+	keyManagerGrpcSocket = "kmaserver-grpc.sock"
+)
+
 var expectedTPMDAParams = TPMDAParams{
 	MaxTries:        0x20,    // 32 tries
 	RecoveryTime:    0x1C20,  // 120 mins
@@ -37,7 +48,7 @@ var expectedTPMDAParams = TPMDAParams{
 
 // StartLauncher orchestrates the client creation, image pulling, attestation agent setup,
 // and runs the ContainerRunner.
-func StartLauncher(ctx context.Context, launchSpec spec.LaunchSpec, logger logging.Logger, workloadLogger logging.Logger, serialConsole *os.File, pinnedClient *http.Client, googleClient *http.Client) error {
+func StartLauncher(ctx context.Context, launchSpec spec.LaunchSpec, logger logging.Logger, serialConsole *os.File, pinnedClient *http.Client, googleClient *http.Client) error {
 	if pinnedClient == nil {
 		return errors.New("pinnedClient must be non-nil")
 	}
@@ -64,8 +75,8 @@ func StartLauncher(ctx context.Context, launchSpec spec.LaunchSpec, logger loggi
 	ctx = namespaces.WithNamespace(ctx, namespaces.Default)
 
 	if launchSpec.InstallGpuDriver {
-		if launchSpec.Experiments.BcMode {
-			logger.Info("gpu driver is pre-installed in BC mode")
+		if launchSpec.Experiments.BcMode || launchSpec.Experiments.GB300CCMode {
+			logger.Info("GPU driver is pre-installed in BC and GB300 CC mode")
 		} else {
 			installer := gpu.NewDriverInstaller(containerdClient, launchSpec, logger)
 			err = installer.InstallGPUDrivers(ctx)
@@ -74,7 +85,7 @@ func StartLauncher(ctx context.Context, launchSpec spec.LaunchSpec, logger loggi
 			}
 		}
 	} else {
-		deviceInfo, _ := deviceinfo.GetGPUTypeInfo()
+		deviceInfo, _ := deviceinfo.GetGPUTypeInfo(gpu.PciDevicesDir)
 		if deviceInfo != deviceinfo.NO_GPU {
 			logger.Error("GPU is attached, tee-install-gpu-driver is not set")
 			return fmt.Errorf("failed to install GPU drivers: tee-install-gpu-driver must be set to true")
@@ -132,21 +143,62 @@ func StartLauncher(ctx context.Context, launchSpec spec.LaunchSpec, logger loggi
 		EnableGpuGcaSupport:       launchSpec.Experiments.EnableGpuGcaSupport,
 		EnableGpuItaSupport:       launchSpec.Experiments.EnableGpuItaSupport,
 		BcMode:                    launchSpec.Experiments.BcMode,
+		GB300CCMode:               launchSpec.Experiments.GB300CCMode,
 	}
 	attestAgent, err := agent.CreateAttestationAgent(tpm, client.GceAttestationKeyECC, verifierClient, principalFetcherWithImpersonate, sdClient, exps, logger, deviceROTManager, launchSpec.SignedImageRepos)
 	if err != nil {
 		return err
 	}
 
+	var keyClaimsProvider workloadservice.KeyClaimsProvider
+	if launchSpec.Experiments.EnableKeyManager {
+		logger.Info("EnableKeyManager experiment is enabled: initializing KeyManager server.")
+		kmServer, err := workloadservice.New(
+			ctx,
+			path.Join(launcherfile.HostTmpPath, keyManagerSocket),
+			kmcommonpb.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to create KeyManager server: %w", err)
+		}
+		go func() { _ = kmServer.Serve() }()
+		defer kmServer.Shutdown(ctx)
+		keyClaimsProvider = kmServer
+	}
+
+	logger.Info("Initializing TEE server.")
+	teeSocket, err := listenUnixSocket(path.Join(launcherfile.HostTmpPath, teeServerSocket))
+	if err != nil {
+		return err
+	}
+	teeServer, err := teeserver.New(
+		ctx,
+		teeSocket,
+		attestAgent,
+		logger,
+		launchSpec.Experiments.BcMode,
+		launchSpec.Experiments.EnableHostAttestation,
+		attestClients,
+		keyClaimsProvider,
+	)
+	if err != nil {
+		teeSocket.Close()
+		return fmt.Errorf("failed to create TEE server: %w", err)
+	}
+	if launchSpec.Experiments.BcMode {
+		setupBCSocketPermissions(logger)
+	}
+
+	go func() { _ = teeServer.Serve() }()
+	defer teeServer.Shutdown(ctx)
+
 	r, err := NewRunner(ctx, &RunnerConfig{
 		ContainerdClient: containerdClient,
 		Image:            image,
 		AttestAgent:      attestAgent,
 		DeviceROTManager: deviceROTManager,
-		AttestClients:    attestClients,
 		LaunchSpec:       launchSpec,
 		Logger:           logger,
-		WorkloadLogger:   workloadLogger,
 		SerialConsole:    serialConsole,
 	})
 	if err != nil {
@@ -158,8 +210,8 @@ func StartLauncher(ctx context.Context, launchSpec spec.LaunchSpec, logger loggi
 }
 
 func initTPM(launchSpec spec.LaunchSpec, logger logging.Logger) (io.ReadWriteCloser, error) {
-	if launchSpec.Experiments.BcMode {
-		logger.Info("Running in BC mode, bypassing TPM initialization and checks.")
+	if launchSpec.Experiments.BcMode || launchSpec.Experiments.GB300CCMode {
+		logger.Info("Running in BC or GB300 CC mode, bypassing TPM initialization and checks.")
 		return nil, nil
 	}
 
@@ -242,4 +294,46 @@ func createAttestClients(ctx context.Context, launchSpec spec.LaunchSpec, logger
 	}
 	attestClients.GCA = gcaClient
 	return attestClients, nil
+}
+
+func listenUnixSocket(socketPath string) (net.Listener, error) {
+	nl, err := net.Listen("unix", socketPath)
+	if err != nil {
+		return nil, fmt.Errorf("cannot listen to socket [%s]: %w", socketPath, err)
+	}
+	if err := os.Chmod(socketPath, 0777); err != nil {
+		nl.Close()
+		return nil, fmt.Errorf("failed to chmod unix socket %s: %w", socketPath, err)
+	}
+	return nl, nil
+}
+
+func verifySocketPermissions(socketPath string) error {
+	info, err := os.Stat(socketPath)
+	if err != nil {
+		return fmt.Errorf("failed to stat socket: %w", err)
+	}
+	if perm := info.Mode().Perm(); perm != 0777 {
+		return fmt.Errorf("socket %s has permissions %04o, want 0777", socketPath, perm)
+	}
+	return nil
+}
+
+func setupBCSocketPermissions(logger logging.Logger) {
+	kmaServerSocketPath := path.Join(launcherfile.HostTmpPath, keyManagerSocket)
+	kmaServerGrpcSocketPath := path.Join(launcherfile.HostTmpPath, keyManagerGrpcSocket)
+
+	if err := os.Chmod(kmaServerSocketPath, 0777); err != nil {
+		logger.Error("failed to chmod file %s: %v\n", kmaServerSocketPath, err)
+	}
+	if err := os.Chmod(kmaServerGrpcSocketPath, 0777); err != nil {
+		logger.Error("failed to chmod file %s: %v\n", kmaServerGrpcSocketPath, err)
+	}
+
+	if err := verifySocketPermissions(kmaServerSocketPath); err != nil {
+		logger.Error("failed to verify kmaserver socket permissions: %v", err)
+	}
+	if err := verifySocketPermissions(kmaServerGrpcSocketPath); err != nil {
+		logger.Error("failed to verify kmaserver-grpc socket permissions: %v", err)
+	}
 }

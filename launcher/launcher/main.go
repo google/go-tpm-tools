@@ -80,16 +80,16 @@ func main() {
 		return
 	}
 
-	workloadLogger, err := logging.NewCloudLogger(ctx, pool)
+	cloudLogger, err := logging.NewCloudLogger(ctx, pool)
 	if err != nil {
 		serialLogger.Error(fmt.Sprintf("failed to initialize cloud logging: %v", err))
 		exitCode = failRC
 		serialLogger.Error(exitMessage, "exit_code", exitCode, "exit_msg", rcMessage[exitCode])
 		return
 	}
-	defer workloadLogger.Close()
+	defer cloudLogger.Close()
 
-	logger := logging.DualLogger(workloadLogger, serialLogger)
+	logger := logging.DualLogger(cloudLogger, serialLogger)
 
 	pinnedTransport, err := launcher.PinnedHTTPTransport(pool)
 	if err != nil {
@@ -132,17 +132,22 @@ func main() {
 	logger.Info(fmt.Sprintf("Launch Spec: %+v", launchSpec.LogFriendly()))
 
 	verifier := osMountVerifier{}
-	if err := verifyDiskIntegrity(verifier); err != nil {
-		logger.Error(fmt.Sprintf("failed to verify disk integrity: %v\n", err))
-		exitCode = rebootRC
-		logger.Error(exitMessage, "exit_code", exitCode, "exit_msg", rcMessage[exitCode])
-		return
-	}
-	if err := verifyMounts(launchSpec, verifier); err != nil {
-		logger.Error(fmt.Sprintf("failed to verify mounts: %v\n", err))
-		exitCode = rebootRC
-		logger.Error(exitMessage, "exit_code", exitCode, "exit_msg", rcMessage[exitCode])
-		return
+	if launchSpec.Experiments.GB300CCMode {
+		// TODO: we need to implement integrity and mount verifications for GB300 CC mode.
+		logger.Info("Running in GB300 CC mode. Skipping disk integrity and mount verifications. [Temporary while WIP]")
+	} else {
+		if err := verifyDiskIntegrity(verifier); err != nil {
+			logger.Error(fmt.Sprintf("failed to verify disk integrity: %v\n", err))
+			exitCode = rebootRC
+			logger.Error(exitMessage, "exit_code", exitCode, "exit_msg", rcMessage[exitCode])
+			return
+		}
+		if err := verifyMounts(launchSpec, verifier); err != nil {
+			logger.Error(fmt.Sprintf("failed to verify mounts: %v\n", err))
+			exitCode = rebootRC
+			logger.Error(exitMessage, "exit_code", exitCode, "exit_msg", rcMessage[exitCode])
+			return
+		}
 	}
 
 	defer func() {
@@ -158,7 +163,7 @@ func main() {
 			logger.Info(exitMessage, "exit_code", exitCode)
 		}
 	}()
-	if err = launcher.StartLauncher(ctx, launchSpec, logger, workloadLogger, serialConsole, pinnedClient, googleClient); err != nil {
+	if err = launcher.StartLauncher(ctx, launchSpec, logger, serialConsole, pinnedClient, googleClient); err != nil {
 		logger.Error(err.Error())
 		var tpmOpenErr *launcher.TPMOpenError
 		if errors.As(err, &tpmOpenErr) {

@@ -1,6 +1,10 @@
 package internal
 
 import (
+	"bytes"
+	"crypto"
+	"math"
+	"strings"
 	"testing"
 
 	pb "github.com/google/go-tpm-tools/proto/tpm"
@@ -31,3 +35,33 @@ func TestHasSamePCRSelection(t *testing.T) {
 		}
 	}
 }
+
+func TestFormatPCRs_MaxUint32(t *testing.T) {
+	pcrs := &pb.PCRs{
+		Hash: pb.HashAlgo(tpm2.AlgSHA256),
+		Pcrs: map[uint32][]byte{
+			math.MaxUint32: []byte{0xaa, 0xbb},
+		},
+	}
+	var buf bytes.Buffer
+	if err := FormatPCRs(&buf, pcrs); err != nil {
+		t.Fatalf("FormatPCRs failed: %v", err)
+	}
+	if !strings.Contains(buf.String(), "4294967295: 0xAABB") {
+		t.Errorf("FormatPCRs output unexpected: %s", buf.String())
+	}
+}
+
+func TestPCRSessionAuth_LargePCRIndex(t *testing.T) {
+	pcrs := &pb.PCRs{
+		Hash: pb.HashAlgo(tpm2.AlgSHA256),
+		Pcrs: map[uint32][]byte{
+			25: []byte{0x01},
+		},
+	}
+	auth := PCRSessionAuth(pcrs, crypto.SHA256)
+	if len(auth) != crypto.SHA256.Size() {
+		t.Errorf("got auth length %d, want %d", len(auth), crypto.SHA256.Size())
+	}
+}
+

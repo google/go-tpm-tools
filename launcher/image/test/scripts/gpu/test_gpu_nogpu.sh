@@ -7,7 +7,7 @@ source util/read_serial.sh
 SERIAL_OUTPUT=$(read_serial $1 $2) 
 print_serial=false
 
-if echo $SERIAL_OUTPUT | grep -q 'failed to get the GPU type info'
+if echo $SERIAL_OUTPUT | grep -q 'failed to get the GPU type info: no GPU detected'
 then
     echo "- no GPU verified"
 else

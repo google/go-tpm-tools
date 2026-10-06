@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path"
 	"strings"
 	"testing"
 
@@ -153,3 +155,66 @@ func TestCreateAttestClients_Behaviors(t *testing.T) {
 		})
 	}
 }
+
+func TestListenUnixSocket(t *testing.T) {
+	sockDir := t.TempDir()
+	sockPath := path.Join(sockDir, "test.sock")
+
+	nl, err := listenUnixSocket(sockPath)
+	if err != nil {
+		t.Fatalf("listenUnixSocket(%q) error = %v, want nil", sockPath, err)
+	}
+	defer nl.Close()
+
+	info, err := os.Stat(sockPath)
+	if err != nil {
+		t.Fatalf("os.Stat(%q) error = %v, want nil", sockPath, err)
+	}
+	if perm := info.Mode().Perm(); perm != 0777 {
+		t.Errorf("socket %s has permissions %04o, want 0777", sockPath, perm)
+	}
+}
+
+func TestVerifySocketPermissions(t *testing.T) {
+	tests := []struct {
+		name    string
+		mode    os.FileMode
+		wantErr bool
+	}{
+		{
+			name:    "valid 0777 permissions",
+			mode:    0777,
+			wantErr: false,
+		},
+		{
+			name:    "invalid 0644 permissions",
+			mode:    0644,
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			sockPath := path.Join(tmpDir, "test.sock")
+			if err := os.WriteFile(sockPath, []byte(""), tc.mode); err != nil {
+				t.Fatalf("failed to create test file: %v", err)
+			}
+			if err := os.Chmod(sockPath, tc.mode); err != nil {
+				t.Fatalf("failed to chmod test file: %v", err)
+			}
+
+			err := verifySocketPermissions(sockPath)
+			if (err != nil) != tc.wantErr {
+				t.Errorf("verifySocketPermissions(%q) error = %v, wantErr = %v", sockPath, err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestSetupBCSocketPermissions(_ *testing.T) {
+	logger := &fakeLogger{}
+	// Verify that setupBCSocketPermissions executes without panicking even when host sockets do not exist.
+	setupBCSocketPermissions(logger)
+}
+

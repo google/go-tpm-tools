@@ -49,6 +49,9 @@ func (a *localKEMAttester) Close() error {
 }
 
 func (a *localKEMAttester) GetKeyEndorsement(ctx context.Context, req *tspb.GetKeyEndorsementRequest, attestOpts agent.AttestAgentOpts) (*attestationpb.VmAttestation, error) {
+	if req.KeyHandle == nil {
+		return nil, fmt.Errorf("key handle is nil")
+	}
 	kemKeyClaims, err := a.keyClaimsProvider.GetKeyClaims(ctx, req.KeyHandle.Handle, keymanager.KeyType_KEY_TYPE_VM_PROTECTION_KEY)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get KEM key claims")
@@ -83,6 +86,9 @@ func (a *remoteKEMAttester) Close() error {
 }
 
 func (a *remoteKEMAttester) GetKeyEndorsement(ctx context.Context, req *tspb.GetKeyEndorsementRequest, _ agent.AttestAgentOpts) (*attestationpb.VmAttestation, error) {
+	if req.KeyHandle == nil {
+		return nil, fmt.Errorf("key handle is nil")
+	}
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
@@ -118,6 +124,9 @@ func newLocalBindingKeyAttester(keyClaimsProvider wsd.KeyClaimsProvider, attestA
 }
 
 func (a *localBindingKeyAttester) GetKeyEndorsement(ctx context.Context, req *tspb.GetKeyEndorsementRequest, attestOpts agent.AttestAgentOpts) (*attestationpb.VmAttestation, error) {
+	if req.KeyHandle == nil {
+		return nil, fmt.Errorf("key handle is nil")
+	}
 	// Querying specifically for the Binding Key type claims
 	bindingKeyClaims, err := a.keyClaimsProvider.GetKeyClaims(ctx, req.KeyHandle.Handle, keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING)
 	if err != nil {
@@ -157,6 +166,9 @@ func newBCBindingKeyAttester(conn *grpc.ClientConn, attestAgent agent.Attestatio
 }
 
 func (a *bcBindingKeyAttester) GetKeyEndorsement(ctx context.Context, req *tspb.GetKeyEndorsementRequest, attestOpts agent.AttestAgentOpts) (*attestationpb.VmAttestation, error) {
+	if req.KeyHandle == nil {
+		return nil, fmt.Errorf("key handle is nil")
+	}
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 

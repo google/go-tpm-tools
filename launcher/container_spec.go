@@ -16,6 +16,30 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 )
 
+// findGB300DriverDir finds the pre-installed GPU driver on GB300 images.
+// Stub this func for testing purpose.
+var findGB300DriverDir = func() (string, error) {
+	return gpu.FindBuiltInInstallationDir(gpu.BuiltInInstallationRootDir)
+}
+
+// gpuDriverMounts bind-mounts the driver's lib64 and bin directories from
+// hostDir into the workload container.
+func gpuDriverMounts(hostDir string) []specs.Mount {
+	return []specs.Mount{
+		{
+			Type:        "volume",
+			Source:      fmt.Sprintf("%s/lib64", hostDir),
+			Destination: fmt.Sprintf("%s/lib64", gpu.InstallationContainerDir),
+			Options:     []string{"rbind", "rw"},
+		}, {
+			Type:        "volume",
+			Source:      fmt.Sprintf("%s/bin", hostDir),
+			Destination: fmt.Sprintf("%s/bin", gpu.InstallationContainerDir),
+			Options:     []string{"rbind", "rw"},
+		},
+	}
+}
+
 func createOCISpecOpts(image containerd.Image, launchSpec spec.LaunchSpec, envs []string, listFiles func(string, string) ([]string, error), logger logging.Logger) ([]oci.SpecOpts, error) {
 	var mounts []specs.Mount
 	for _, lsMnt := range launchSpec.Mounts {
@@ -44,12 +68,25 @@ func createOCISpecOpts(image containerd.Image, launchSpec spec.LaunchSpec, envs 
 		// the host network (same effect as --net-host in ctr command)
 		oci.WithHostHostsFile,
 		oci.WithHostResolvconf,
-		oci.WithHostNamespace(specs.NetworkNamespace),
 		oci.WithEnv([]string{fmt.Sprintf("HOSTNAME=%s", hostname)}),
 		oci.WithAddedCapabilities(launchSpec.AddedCapabilities),
 		withRlimits(rlimits),
 		withOOMScoreAdj(defaultOOMScore),
 	}
+
+	// If we use non-root container, we enable both the user and network namespaces.
+	// Otherwise, we use host network without enabling the namespaces.
+	if launchSpec.NonrootContainer {
+		specOpts = append(specOpts,
+			oci.WithUserNamespace(
+				[]specs.LinuxIDMapping{{ContainerID: 0, HostID: hostUIDBegin, Size: userNSSize}},
+				[]specs.LinuxIDMapping{{ContainerID: 0, HostID: hostGIDBegin, Size: userNSSize}},
+			),
+		)
+	} else {
+		specOpts = append(specOpts, oci.WithHostNamespace(specs.NetworkNamespace))
+	}
+
 	if launchSpec.DevShmSize != 0 {
 		specOpts = append(specOpts, oci.WithDevShmSize(launchSpec.DevShmSize))
 	}
@@ -64,34 +101,19 @@ func createOCISpecOpts(image containerd.Image, launchSpec spec.LaunchSpec, envs 
 	specOpts = append(specOpts, cgroupOpts...)
 
 	if launchSpec.InstallGpuDriver {
-		gpuMounts := []specs.Mount{
-			{
-				Type:        "volume",
-				Source:      fmt.Sprintf("%s/lib64", gpu.InstallationHostDir),
-				Destination: fmt.Sprintf("%s/lib64", gpu.InstallationContainerDir),
-				Options:     []string{"rbind", "rw"},
-			}, {
-				Type:        "volume",
-				Source:      fmt.Sprintf("%s/bin", gpu.InstallationHostDir),
-				Destination: fmt.Sprintf("%s/bin", gpu.InstallationContainerDir),
-				Options:     []string{"rbind", "rw"},
-			},
-		}
-		if launchSpec.Experiments.BcMode {
-			gpuMounts = []specs.Mount{
-				{
-					Type:        "volume",
-					Source:      fmt.Sprintf("%s/lib64", gpu.BuiltInInstallation595_58_03HostDir),
-					Destination: fmt.Sprintf("%s/lib64", gpu.InstallationContainerDir),
-					Options:     []string{"rbind", "rw"},
-				}, {
-					Type:        "volume",
-					Source:      fmt.Sprintf("%s/bin", gpu.BuiltInInstallation595_58_03HostDir),
-					Destination: fmt.Sprintf("%s/bin", gpu.InstallationContainerDir),
-					Options:     []string{"rbind", "rw"},
-				},
+		driverHostDir := gpu.InstallationHostDir
+		switch {
+		case launchSpec.Experiments.BcMode:
+			driverHostDir = gpu.BuiltInInstallation610_57_04HostDir
+		case launchSpec.Experiments.GB300CCMode:
+			dir, err := findGB300DriverDir()
+			if err != nil {
+				return nil, fmt.Errorf("failed to find the pre-installed GPU driver in GB300 CC mode: %w", err)
 			}
+			logger.Info(fmt.Sprintf("GB300 CC mode: using pre-installed GPU driver at %s", dir))
+			driverHostDir = dir
 		}
+		gpuMounts := gpuDriverMounts(driverHostDir)
 
 		specOpts = append(specOpts, oci.WithMounts(gpuMounts))
 

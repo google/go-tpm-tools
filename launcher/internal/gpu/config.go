@@ -5,6 +5,11 @@ const (
 	InstallationHostDir = "/var/lib/nvidia"
 	// BuiltInInstallation595_58_03HostDir is the pre-installed directory.
 	BuiltInInstallation595_58_03HostDir = "/opt/nvidia/595.58.03"
+	// BuiltInInstallation610_57_04HostDir is the pre-installed directory.
+	BuiltInInstallation610_57_04HostDir = "/opt/nvidia/610.57.04"
+	// BuiltInInstallationRootDir is the directory that holds pre-installed GPU
+	// drivers, one subdirectory per driver version (for example /opt/nvidia/620.06).
+	BuiltInInstallationRootDir = "/opt/nvidia"
 	// InstallationContainerDir is the directory where gpu drivers will be available on the workload container.
 	InstallationContainerDir = "/usr/local/nvidia"
 	// InstallerImageRef is the hardcoded image reference for cos_gpu_installer
@@ -18,4 +23,6 @@ const (
 	NvDriverVer595_58_03Digest = "8c0d4f967b7932c4ab5714272aee8103392b0a702c92afa555176d36205829f9"
 	// NvDriverVer595_58_03Runfile is the driver run file name
 	NvDriverVer595_58_03Runfile = "NVIDIA-Linux-x86_64-595.58.03.run"
+	// PciDevicesDir is the directory containing PCI devices.
+	PciDevicesDir = "/sys/bus/pci/devices"
 )

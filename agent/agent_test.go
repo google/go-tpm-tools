@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto"
 	"crypto/rand"
-	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/sha512"
 	_ "embed"
@@ -16,6 +15,7 @@ import (
 	"runtime"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/GoogleCloudPlatform/confidential-space/server/extract"
@@ -24,6 +24,7 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	gecel "github.com/google/go-eventlog/cel"
 	"github.com/google/go-tdx-guest/testing/testdata"
 	"github.com/google/go-tpm-tools/agent/device"
@@ -97,12 +98,7 @@ func TestAttestRacing(t *testing.T) {
 	tpm := test.GetTPM(t)
 	defer client.CheckedClose(t, tpm)
 
-	fakeSigner, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		t.Fatalf("failed to generate signing key %v", err)
-	}
-
-	verifierClient := fake.NewClient(fakeSigner)
+	verifierClient := fake.NewClient(nil)
 	agent, err := CreateAttestationAgent(tpm, client.AttestationKeyECC, verifierClient, placeholderPrincipalFetcher, NewFakeClient(), Experiments{}, SimpleLogger(), nil, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -146,12 +142,7 @@ func TestAttest(t *testing.T) {
 			tpm := test.GetTPM(t)
 			defer client.CheckedClose(t, tpm)
 
-			fakeSigner, err := rsa.GenerateKey(rand.Reader, 2048)
-			if err != nil {
-				t.Fatalf("failed to generate signing key %v", err)
-			}
-
-			verifierClient := fake.NewClient(fakeSigner)
+			verifierClient := fake.NewClient(nil)
 
 			agent, err := CreateAttestationAgent(tpm, client.AttestationKeyECC, verifierClient, tc.principalIDTokenFetcher, tc.containerSignaturesFetcher, Experiments{}, SimpleLogger(), nil, tc.signedImageRepos)
 			if err != nil {
@@ -171,7 +162,7 @@ func TestAttest(t *testing.T) {
 			agent.Close()
 
 			claims := &fake.Claims{}
-			keyFunc := func(_ *jwt.Token) (interface{}, error) { return fakeSigner.Public(), nil }
+			keyFunc := func(_ *jwt.Token) (interface{}, error) { return fake.TestPublicKey(), nil }
 			token, err := jwt.ParseWithClaims(string(tokenBytes), claims, keyFunc)
 			if err != nil {
 				t.Errorf("failed to parse token %s", err)
@@ -342,11 +333,7 @@ func TestFetchContainerImageSignatures(t *testing.T) {
 				t.Errorf("fetchContainerImageSignatures did not return expected signatures for test case %s, got signatures %v, but want %v", tc.name, gotBase64Sigs, tc.wantBase64Sigs)
 			}
 
-			fakeSigner, err := rsa.GenerateKey(rand.Reader, 2048)
-			if err != nil {
-				t.Errorf("failed to generate signing key %v", err)
-			}
-			verifierClient := fake.NewClient(fakeSigner)
+			verifierClient := fake.NewClient(nil)
 			chal, err := verifierClient.CreateChallenge(ctx)
 			if err != nil {
 				t.Fatalf("failed to create challenge %v", err)
@@ -374,7 +361,7 @@ func TestFetchContainerImageSignatures(t *testing.T) {
 				t.Fatalf("VerifyAttestation failed: %v", err)
 			}
 			claims := &fake.Claims{}
-			keyFunc := func(_ *jwt.Token) (interface{}, error) { return fakeSigner.Public(), nil }
+			keyFunc := func(_ *jwt.Token) (interface{}, error) { return fake.TestPublicKey(), nil }
 			_, err = jwt.ParseWithClaims(string(got.ClaimsToken), claims, keyFunc)
 			if err != nil {
 				t.Errorf("failed to parse token %s", err)
@@ -431,36 +418,44 @@ func intMin(a, b int) int {
 }
 
 func TestFetchContainerImageSignatures_RetriesOnFailure(t *testing.T) {
-	ctx := context.Background()
+	sig1 := cosign.NewFakeSignature("test data", oci.ECDSAP256SHA256)
+	sig2 := cosign.NewFakeSignature("test data again", oci.ECDSAP256SHA256)
 
 	testCases := []struct {
 		name      string
+		repos     []string
 		resultmap map[string][]returnVal
+		wantSigs  []oci.Signature
 	}{
 		{
-			name: "one repo, no failures",
+			name:  "one repo, no failures",
+			repos: []string{"repo1"},
 			resultmap: map[string][]returnVal{
 				"repo1": {
 					returnVal{
-						result: []oci.Signature{cosign.NewFakeSignature("test data", oci.ECDSAP256SHA256)},
+						result: []oci.Signature{sig1},
 						err:    nil,
 					},
 				},
 			},
+			wantSigs: []oci.Signature{sig1},
 		},
 		{
-			name: "one repo fails",
+			name:  "one repo fails",
+			repos: []string{"repo1"},
 			resultmap: map[string][]returnVal{
 				"repo1": {
 					returnVal{
-						result: []oci.Signature{cosign.NewFakeSignature("test data", oci.ECDSAP256SHA256)},
+						result: []oci.Signature{sig1},
 						err:    fmt.Errorf("partial error"),
 					},
 				},
 			},
+			wantSigs: nil,
 		},
 		{
-			name: "one repo, failure then success",
+			name:  "one repo, failure then success",
+			repos: []string{"repo1"},
 			resultmap: map[string][]returnVal{
 				"repo1": {
 					returnVal{
@@ -468,31 +463,35 @@ func TestFetchContainerImageSignatures_RetriesOnFailure(t *testing.T) {
 						err:    fmt.Errorf("failure 1"),
 					},
 					returnVal{
-						result: []oci.Signature{cosign.NewFakeSignature("test data", oci.ECDSAP256SHA256)},
+						result: []oci.Signature{sig1},
 						err:    nil,
 					},
 				},
 			},
+			wantSigs: []oci.Signature{sig1},
 		},
 		{
-			name: "two repos, no failures",
+			name:  "two repos, no failures",
+			repos: []string{"repo1", "repo2"},
 			resultmap: map[string][]returnVal{
 				"repo1": {
 					returnVal{
-						result: []oci.Signature{cosign.NewFakeSignature("test data", oci.ECDSAP256SHA256)},
+						result: []oci.Signature{sig1},
 						err:    nil,
 					},
 				},
 				"repo2": {
 					returnVal{
-						result: []oci.Signature{cosign.NewFakeSignature("test data again", oci.ECDSAP256SHA256)},
+						result: []oci.Signature{sig2},
 						err:    nil,
 					},
 				},
 			},
+			wantSigs: []oci.Signature{sig1, sig2},
 		},
 		{
-			name: "two repos, failure then success",
+			name:  "two repos, failure then success",
+			repos: []string{"failrepo", "successRepo"},
 			resultmap: map[string][]returnVal{
 				"failrepo": {
 					returnVal{
@@ -500,20 +499,22 @@ func TestFetchContainerImageSignatures_RetriesOnFailure(t *testing.T) {
 						err:    fmt.Errorf("failure 1"),
 					},
 					returnVal{
-						result: []oci.Signature{cosign.NewFakeSignature("test data", oci.ECDSAP256SHA256)},
+						result: []oci.Signature{sig1},
 						err:    nil,
 					},
 				},
 				"successRepo": {
 					returnVal{
-						result: []oci.Signature{cosign.NewFakeSignature("test data again", oci.ECDSAP256SHA256)},
+						result: []oci.Signature{sig2},
 						err:    nil,
 					},
 				},
 			},
+			wantSigs: []oci.Signature{sig1, sig2},
 		},
 		{
-			name: "two repos, failures",
+			name:  "two repos, failures",
+			repos: []string{"repo1", "repo2"},
 			resultmap: map[string][]returnVal{
 				"repo1": {
 					returnVal{
@@ -528,36 +529,27 @@ func TestFetchContainerImageSignatures_RetriesOnFailure(t *testing.T) {
 					},
 				},
 			},
+			wantSigs: nil,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			sdClient := NewFailingClient(tc.resultmap)
-			retryPolicy := func() backoff.BackOff {
-				b := backoff.NewExponentialBackOff()
-				return backoff.WithMaxRetries(b, 2)
-			}
-
-			repos := []string{}
-			wantSigs := []oci.Signature{}
-			for k, v := range tc.resultmap {
-				repos = append(repos, k)
-				for _, result := range v {
-					if result.err == nil {
-						wantSigs = append(wantSigs, result.result...)
-					}
+			synctest.Test(t, func(t *testing.T) {
+				ctx := t.Context()
+				sdClient := NewFailingClient(tc.resultmap)
+				retryPolicy := func() backoff.BackOff {
+					b := backoff.NewExponentialBackOff()
+					return backoff.WithMaxRetries(b, 2)
 				}
-			}
 
-			gotSigs := fetchContainerImageSignatures(ctx, sdClient, repos, retryPolicy, SimpleLogger())
-
-			if len(gotSigs) != len(wantSigs) {
-				t.Errorf("fetchContainerImageSignatures did not return expected signatures for test case %s, got signatures length %d, but want %d", tc.name, len(gotSigs), len(wantSigs))
-			}
-			if !cmp.Equal(convertOCISignatureToBase64(t, gotSigs), convertOCISignatureToBase64(t, wantSigs)) {
-				t.Errorf("fetchContainerImageSignatures did not return expected signatures for test case %s, got signatures %v, but want %v", tc.name, gotSigs, wantSigs)
-			}
+				gotSigs := fetchContainerImageSignatures(ctx, sdClient, tc.repos, retryPolicy, SimpleLogger())
+				gotBase64Sigs := convertOCISignatureToBase64(t, gotSigs)
+				wantBase64Sigs := convertOCISignatureToBase64(t, tc.wantSigs)
+				if diff := cmp.Diff(wantBase64Sigs, gotBase64Sigs, cmpopts.EquateEmpty()); diff != "" {
+					t.Errorf("fetchContainerImageSignatures() mismatch (-want +got):\n%s", diff)
+				}
+			})
 		})
 	}
 }
@@ -915,11 +907,7 @@ func TestAttestationEvidence_TPM_Success(t *testing.T) {
 	tpm := test.GetTPM(t)
 	defer client.CheckedClose(t, tpm)
 
-	fakeSigner, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		t.Fatalf("failed to generate signing key %v", err)
-	}
-	verifierClient := fake.NewClient(fakeSigner)
+	verifierClient := fake.NewClient(nil)
 
 	ak, err := client.AttestationKeyECC(tpm)
 	if err != nil {
@@ -1093,11 +1081,7 @@ func TestAttestationEvidence_ExperimentDisabled(t *testing.T) {
 	tpm := test.GetTPM(t)
 	defer client.CheckedClose(t, tpm)
 
-	fakeSigner, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		t.Fatalf("failed to generate signing key: %v", err)
-	}
-	agent, err := CreateAttestationAgent(tpm, client.AttestationKeyECC, fake.NewClient(fakeSigner),
+	agent, err := CreateAttestationAgent(tpm, client.AttestationKeyECC, fake.NewClient(nil),
 		placeholderPrincipalFetcher, NewFakeClient(),
 		Experiments{ /* EnableAttestationEvidence defaults to false */ },
 		SimpleLogger(), nil, nil)
@@ -1156,11 +1140,7 @@ func TestHostAttestation_NotBcMode(t *testing.T) {
 	tpm := test.GetTPM(t)
 	defer client.CheckedClose(t, tpm)
 
-	fakeSigner, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		t.Fatalf("failed to generate signing key: %v", err)
-	}
-	agent, err := CreateAttestationAgent(tpm, client.AttestationKeyECC, fake.NewClient(fakeSigner),
+	agent, err := CreateAttestationAgent(tpm, client.AttestationKeyECC, fake.NewClient(nil),
 		placeholderPrincipalFetcher, NewFakeClient(),
 		Experiments{BcMode: false},
 		SimpleLogger(), nil, nil)
@@ -1172,5 +1152,40 @@ func TestHostAttestation_NotBcMode(t *testing.T) {
 	_, err = agent.AttestHost(ctx, []byte("challenge"))
 	if err == nil {
 		t.Error("expected error when BcMode is disabled, got nil")
+	}
+}
+
+func TestTPMAttestRoot_ExtendLocksMutex(t *testing.T) {
+	tpm := test.GetTPM(t)
+	t.Cleanup(func() { client.CheckedClose(t, tpm) })
+
+	tpmAR := &tpmAttestRoot{
+		tpm:       tpm,
+		hashAlgos: []crypto.Hash{crypto.SHA256},
+		cosCel:    gecel.NewPCR(),
+	}
+
+	// Verify that when tpmMu is held, Extend blocks waiting for the mutex.
+	tpmAR.tpmMu.Lock()
+	extendDone := make(chan error, 1)
+	go func() {
+		extendDone <- tpmAR.Extend(cel.CosTlv{EventType: cel.ImageRefType, EventContent: []byte("test")})
+	}()
+
+	select {
+	case <-extendDone:
+		t.Fatal("Extend returned while tpmMu was locked")
+	case <-time.After(50 * time.Millisecond):
+		// Expected: Extend is waiting for mutex
+	}
+
+	tpmAR.tpmMu.Unlock()
+	select {
+	case err := <-extendDone:
+		if err != nil {
+			t.Fatalf("Extend failed after mutex unlocked: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Extend timed out after mutex unlocked")
 	}
 }

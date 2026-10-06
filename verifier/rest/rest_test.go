@@ -40,9 +40,68 @@ func TestConvertEmpty(t *testing.T) {
 	if _, err := convertChallengeFromREST(&ccpb.Challenge{}); err != nil {
 		t.Errorf("Converting empty challenge: %v", err)
 	}
-	_ = convertRequestToREST(verifier.VerifyAttestationRequest{})
+	if _, err := convertRequestToREST(verifier.VerifyAttestationRequest{}); err != nil {
+		t.Errorf("Converting empty request: %v", err)
+	}
 	if _, err := convertResponseFromREST(&ccpb.VerifyAttestationResponse{}); err != nil {
 		t.Errorf("Converting empty challenge: %v", err)
+	}
+}
+
+func TestConvertRequestToREST(t *testing.T) {
+	tests := []struct {
+		name         string
+		req          verifier.VerifyAttestationRequest
+		wantInstance string
+		hasTdCcel    bool
+		hasTpm       bool
+	}{
+		{
+			name: "TDX CVM request",
+			req: verifier.VerifyAttestationRequest{
+				GCEInstance: "projects/123/zones/us-central1-a/instances/456",
+				TDCCELAttestation: &verifier.TDCCELAttestation{
+					TdQuote:       []byte("quote"),
+					CcelAcpiTable: []byte("table"),
+					CcelData:      []byte("log"),
+				},
+			},
+			wantInstance: "projects/123/zones/us-central1-a/instances/456",
+			hasTdCcel:    true,
+			hasTpm:       false,
+		},
+		{
+			name: "TPM request",
+			req: verifier.VerifyAttestationRequest{
+				Attestation: &attestpb.Attestation{
+					Quotes: []*tpm.Quote{{
+						Quote:  []byte("raw quote"),
+						RawSig: []byte("raw sig"),
+					}},
+				},
+			},
+			wantInstance: "",
+			hasTdCcel:    false,
+			hasTpm:       true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := convertRequestToREST(tc.req)
+			if err != nil {
+				t.Fatalf("failed to convert request to REST: %v", err)
+			}
+			if got.Instance != tc.wantInstance {
+				t.Errorf("Instance = %q, want %q", got.Instance, tc.wantInstance)
+			}
+			if (got.GetTdCcel() != nil) != tc.hasTdCcel {
+				t.Errorf("GetTdCcel() != nil is %v, want %v", got.GetTdCcel() != nil, tc.hasTdCcel)
+			}
+			if (got.TpmAttestation != nil) != tc.hasTpm {
+				t.Errorf("TpmAttestation != nil is %v, want %v", got.TpmAttestation != nil, tc.hasTpm)
+			}
+		})
 	}
 }
 
@@ -614,6 +673,7 @@ func TestConvertCSRequestToREST(t *testing.T) {
 					Nonces:    []string{"test-nonce"},
 					TokenType: "PKI",
 				},
+				GCEInstance: "projects/123/zones/us-central1-a/instances/456",
 			},
 			expectedReq: &ccpb.VerifyConfidentialSpaceRequest{
 				TeeAttestation: &ccpb.VerifyConfidentialSpaceRequest_TpmAttestation{
@@ -661,6 +721,7 @@ func TestConvertCSRequestToREST(t *testing.T) {
 					AkCert:            []byte("test-ak-cert"),
 					IntermediateCerts: [][]byte{[]byte("chain-1"), []byte("chain-2")},
 				},
+				GCEInstance: "projects/123/zones/us-central1-a/instances/456",
 			},
 			expectedReq: &ccpb.VerifyConfidentialSpaceRequest{
 				TeeAttestation: &ccpb.VerifyConfidentialSpaceRequest_TdCcel{
@@ -707,6 +768,7 @@ func TestConvertCSRequestToREST(t *testing.T) {
 						},
 					},
 				},
+				GCEInstance: "projects/123/zones/us-central1-a/instances/456",
 			},
 			expectedReq: &ccpb.VerifyConfidentialSpaceRequest{
 				TeeAttestation: &ccpb.VerifyConfidentialSpaceRequest_TdCcel{
@@ -742,6 +804,81 @@ func TestConvertCSRequestToREST(t *testing.T) {
 				SignedEntities: []*ccpb.SignedEntity{{ContainerImageSignatures: []*ccpb.ContainerImageSignature{}}},
 			},
 		},
+		{
+			name: "TPM Attestation + Nvidia Attestation",
+			verifierReq: verifier.VerifyAttestationRequest{
+				Attestation: &attestpb.Attestation{
+					Quotes: []*tpm.Quote{{
+						Quote:  []byte("raw quote 1"),
+						RawSig: []byte("raw sig 1"),
+						Pcrs: &tpm.PCRs{
+							Hash: tpm.HashAlgo_SHA1,
+							Pcrs: map[uint32][]byte{
+								1: []byte("PCR A"),
+							},
+						},
+					}},
+					EventLog:          []byte("test-tcg-event-log"),
+					CanonicalEventLog: []byte("test-canonical-event-log"),
+					AkCert:            []byte("test-ak-cert"),
+					IntermediateCerts: [][]byte{[]byte("chain-1")},
+				},
+				NvidiaAttestation: &attestationpb.NvidiaAttestationReport{
+					CcFeature: &attestationpb.NvidiaAttestationReport_Spt{
+						Spt: &attestationpb.NvidiaAttestationReport_SinglePassthroughAttestation{
+							GpuQuote: &attestationpb.GpuInfo{
+								Uuid:                        "test-rtx-uuid",
+								DriverVersion:               "test-driver",
+								VbiosVersion:                "test-vbios",
+								GpuArchitectureType:         attestationpb.GpuArchitectureType_GPU_ARCHITECTURE_TYPE_BLACKWELL,
+								AttestationCertificateChain: []byte("test-cert-chain"),
+								AttestationReport:           []byte("test-report"),
+							},
+						},
+					},
+				},
+				GCEInstance: "projects/123/zones/us-central1-a/instances/456",
+			},
+			expectedReq: &ccpb.VerifyConfidentialSpaceRequest{
+				TeeAttestation: &ccpb.VerifyConfidentialSpaceRequest_TpmAttestation{
+					TpmAttestation: &ccpb.TpmAttestation{
+						Quotes: []*ccpb.TpmAttestation_Quote{
+							{
+								RawQuote:     []byte("raw quote 1"),
+								RawSignature: []byte("raw sig 1"),
+								HashAlgo:     int32(tpm.HashAlgo_SHA1),
+								PcrValues: map[int32][]byte{
+									1: []byte("PCR A"),
+								},
+							},
+						},
+						TcgEventLog:       []byte("test-tcg-event-log"),
+						CanonicalEventLog: []byte("test-canonical-event-log"),
+						AkCert:            []byte("test-ak-cert"),
+						CertChain:         [][]byte{[]byte("chain-1")},
+					},
+				},
+				NvidiaAttestation: &ccpb.NvidiaAttestation{
+					CcFeature: &ccpb.NvidiaAttestation_Spt{
+						Spt: &ccpb.NvidiaAttestation_SinglePassthroughAttestation{
+							GpuQuote: &ccpb.NvidiaAttestation_GpuInfo{
+								Uuid:                        "test-rtx-uuid",
+								DriverVersion:               "test-driver",
+								VbiosVersion:                "test-vbios",
+								GpuArchitectureType:         ccpb.NvidiaAttestation_GPU_ARCHITECTURE_TYPE_BLACKWELL,
+								AttestationCertificateChain: []byte("test-cert-chain"),
+								AttestationReport:           []byte("test-report"),
+							},
+						},
+					},
+				},
+				Options: &ccpb.VerifyConfidentialSpaceRequest_ConfidentialSpaceOptions{
+					TokenProfile: ccpb.TokenProfile_TOKEN_PROFILE_DEFAULT_EAT,
+				},
+				GcpCredentials: &ccpb.GcpCredentials{ServiceAccountIdTokens: []string{}},
+				SignedEntities: []*ccpb.SignedEntity{{ContainerImageSignatures: []*ccpb.ContainerImageSignature{}}},
+			},
+		},
 	}
 
 	cmpOpts := append(
@@ -762,7 +899,10 @@ func TestConvertCSRequestToREST(t *testing.T) {
 
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
-			gotReq := convertCSRequestToREST(tc.verifierReq)
+			gotReq, err := convertCSRequestToREST(tc.verifierReq)
+			if err != nil {
+				t.Fatalf("convertCSRequestToREST failed: %v", err)
+			}
 			if diff := cmp.Diff(gotReq, tc.expectedReq, cmpOpts...); diff != "" {
 				t.Errorf("convertCSRequestToREST returned unexpected output (-got, +want): %v", diff)
 			}
@@ -786,5 +926,35 @@ func TestConvertCSResponseFromREST(t *testing.T) {
 	gotResp := convertCSResponseFromREST(csResp)
 	if diff := cmp.Diff(gotResp, expectedResp, cmpopts.IgnoreUnexported(status.Status{})); diff != "" {
 		t.Errorf("convertCSResponseFromREST(%v) did not return expected output(-got, +want): %v", csResp, diff)
+	}
+}
+
+func TestConvertRequestToREST_MalformedAttestationReturnsError(t *testing.T) {
+	// Malformed TDX quote should return an error instead of crashing the process via log.Fatalf
+	reqTDX := verifier.VerifyAttestationRequest{
+		Attestation: &attestpb.Attestation{
+			TeeAttestation: &attestpb.Attestation_TdxAttestation{
+				TdxAttestation: &tpb.QuoteV4{},
+			},
+		},
+	}
+	_, err := convertRequestToREST(reqTDX)
+	if err == nil {
+		t.Error("expected error converting malformed TDX quote, got nil")
+	}
+
+	// Malformed SEV-SNP attestation should return an error instead of crashing the process via log.Fatalf
+	reqSNP := verifier.VerifyAttestationRequest{
+		Attestation: &attestpb.Attestation{
+			TeeAttestation: &attestpb.Attestation_SevSnpAttestation{
+				SevSnpAttestation: &spb.Attestation{
+					Report: &spb.Report{},
+				},
+			},
+		},
+	}
+	_, err = convertRequestToREST(reqSNP)
+	if err == nil {
+		t.Error("expected error converting malformed SEV-SNP report, got nil")
 	}
 }

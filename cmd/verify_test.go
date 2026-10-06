@@ -132,7 +132,7 @@ func TestHwAttestationPass(t *testing.T) {
 		wanterr string
 	}{
 		{"TdxPass", "1234", "tdx", "failed to create tdx quote provider"},
-		{"SevSnpPass", "1234", "sev-snp", "failed to open sev-snp device"},
+		{"SevSnpPass", "1234", "sev-snp", "failed to create sev-snp quote provider"},
 	}
 	for _, op := range tests {
 		t.Run(op.name, func(t *testing.T) {

@@ -8,6 +8,7 @@ import (
 	"crypto/subtle"
 	"errors"
 	"fmt"
+	"io"
 
 	tpb "github.com/google/go-tpm-tools/proto/tpm"
 	"github.com/google/go-tpm/tpm2"
@@ -21,6 +22,7 @@ var (
 	errWrongHashAlg       = errors.New("wrong hash algorithm")
 	errInvalidHMAC        = errors.New("invalid HMAC")
 	errInvalidAttestation = errors.New("attestation statement was invalid")
+	errInvalidAKAttributes = errors.New("invalid AK attributes")
 )
 
 // CreateRestrictedHMACBlob generates a new HMAC key and wraps it to the given EK.
@@ -31,7 +33,10 @@ func CreateRestrictedHMACBlob(tPublic *tpm2.TPMTPublic) (*tpb.ImportBlob, []byte
 	}
 
 	hmacKey := make([]byte, 32)
-	pub, sensitive := generateRestrictedHMACKey(hmacKey)
+	pub, sensitive, err := generateRestrictedHMACKey(hmacKey)
+	if err != nil {
+		return nil, nil, err
+	}
 	name, err := tpm2.ObjectName(pub)
 	if err != nil {
 		return nil, nil, err
@@ -54,6 +59,10 @@ func VerifyCertifiedAKBlob(req *tpb.CertifiedBlob, secret []byte) error {
 	akPub, err := tpm2.Unmarshal[tpm2.TPMTPublic](req.GetPubArea())
 	if err != nil {
 		return err
+	}
+
+	if !akPub.ObjectAttributes.FixedTPM || !akPub.ObjectAttributes.FixedParent || !akPub.ObjectAttributes.Restricted || !akPub.ObjectAttributes.SignEncrypt {
+		return fmt.Errorf("%w: AK must have FixedTPM, FixedParent, Restricted, and SignEncrypt attributes", errInvalidAKAttributes)
 	}
 
 	akName, err := tpm2.ObjectName(akPub)
@@ -97,11 +106,15 @@ func VerifyCertifiedAKBlob(req *tpb.CertifiedBlob, secret []byte) error {
 }
 
 // generateRestrictedHMACKey writes a new hmac to the input parameter and produces the pub/priv tpm2 structures
-func generateRestrictedHMACKey(hmacKey []byte) (*tpm2.TPMTPublic, *tpm2.TPMTSensitive) {
+func generateRestrictedHMACKey(hmacKey []byte) (*tpm2.TPMTPublic, *tpm2.TPMTSensitive, error) {
 	// Generate the random obfuscation value and key
 	obfuscate := make([]byte, 32)
-	rand.Read(obfuscate)
-	rand.Read(hmacKey[:])
+	if _, err := io.ReadFull(rand.Reader, obfuscate); err != nil {
+		return nil, nil, fmt.Errorf("failed to generate random obfuscation: %w", err)
+	}
+	if _, err := io.ReadFull(rand.Reader, hmacKey); err != nil {
+		return nil, nil, fmt.Errorf("failed to generate random HMAC key: %w", err)
+	}
 
 	// Unique for a KEYEDHASH object is H_nameAlg(obfuscate | key)
 	// See Part 1, "Public Area Creation"
@@ -141,7 +154,7 @@ func generateRestrictedHMACKey(hmacKey []byte) (*tpm2.TPMTPublic, *tpm2.TPMTSens
 		}),
 	}
 
-	return pub, priv
+	return pub, priv, nil
 }
 
 // verifyHMAC checks the MAC on the given message.
