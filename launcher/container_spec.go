@@ -16,9 +16,9 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 )
 
-// findGB300DriverDir finds the pre-installed GPU driver on GB300 images.
+// findBuiltInDriverDir finds the pre-installed GPU driver on the host.
 // Stub this func for testing purpose.
-var findGB300DriverDir = func() (string, error) {
+var findBuiltInDriverDir = func() (string, error) {
 	return gpu.FindBuiltInInstallationDir(gpu.BuiltInInstallationRootDir)
 }
 
@@ -102,15 +102,12 @@ func createOCISpecOpts(image containerd.Image, launchSpec spec.LaunchSpec, envs 
 
 	if launchSpec.InstallGpuDriver {
 		driverHostDir := gpu.InstallationHostDir
-		switch {
-		case launchSpec.Experiments.BcMode:
-			driverHostDir = gpu.BuiltInInstallation610_57_04HostDir
-		case launchSpec.Experiments.GB300CCMode:
-			dir, err := findGB300DriverDir()
+		if launchSpec.Experiments.BcMode || launchSpec.Experiments.GB300CCMode {
+			dir, err := findBuiltInDriverDir()
 			if err != nil {
-				return nil, fmt.Errorf("failed to find the pre-installed GPU driver in GB300 CC mode: %w", err)
+				return nil, fmt.Errorf("failed to find the pre-installed GPU driver: %w", err)
 			}
-			logger.Info(fmt.Sprintf("GB300 CC mode: using pre-installed GPU driver at %s", dir))
+			logger.Info(fmt.Sprintf("Using pre-installed GPU driver at %s", dir))
 			driverHostDir = dir
 		}
 		gpuMounts := gpuDriverMounts(driverHostDir)

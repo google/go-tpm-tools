@@ -3,10 +3,6 @@ package gpu
 const (
 	// InstallationHostDir is the directory where gpu drivers will be installed on the host machine.
 	InstallationHostDir = "/var/lib/nvidia"
-	// BuiltInInstallation595_58_03HostDir is the pre-installed directory.
-	BuiltInInstallation595_58_03HostDir = "/opt/nvidia/595.58.03"
-	// BuiltInInstallation610_57_04HostDir is the pre-installed directory.
-	BuiltInInstallation610_57_04HostDir = "/opt/nvidia/610.57.04"
 	// BuiltInInstallationRootDir is the directory that holds pre-installed GPU
 	// drivers, one subdirectory per driver version (for example /opt/nvidia/620.06).
 	BuiltInInstallationRootDir = "/opt/nvidia"
