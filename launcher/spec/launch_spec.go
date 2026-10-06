@@ -95,6 +95,7 @@ const (
 	monitoringEnable           = "tee-monitoring-enable"
 	memoryMonitoringEnable     = "tee-monitoring-memory-enable"
 	mountKey                   = "tee-mount"
+	nonrootContainerKey        = "tee-nonroot-container"
 	restartPolicyKey           = "tee-restart-policy"
 	signedImageRepos           = "tee-signed-image-repos"
 	fakeVerifierKey            = "test-fake-verifier"
@@ -117,6 +118,16 @@ var errImageRefNotSpecified = fmt.Errorf("%s is not specified in the custom meta
 type EnvVar struct {
 	Name  string
 	Value string
+}
+
+// String implements fmt.Stringer to prevent accidental exposure of Value in logs and errors.
+func (e EnvVar) String() string {
+	return e.Name
+}
+
+// GoString implements fmt.GoStringer so that %#v also redacts the Value.
+func (e EnvVar) GoString() string {
+	return fmt.Sprintf("spec.EnvVar{Name: %q}", e.Name)
 }
 
 // LaunchSpec contains specification set by the operator who wants to
@@ -142,6 +153,7 @@ type LaunchSpec struct {
 	LogRedirect                LogRedirectLocation
 	MonitoringEnabled          MonitoringType
 	Mounts                     []launchermount.Mount
+	NonrootContainer           bool
 	ProjectID                  string
 	Region                     string
 	RestartPolicy              RestartPolicy
@@ -320,6 +332,12 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 		}
 	}
 
+	if val, ok := unmarshaledMap[nonrootContainerKey]; ok && val != "" {
+		var err error
+		if s.NonrootContainer, err = strconv.ParseBool(val); err != nil {
+			return fmt.Errorf("invalid value for %v (not a boolean): %w", nonrootContainerKey, err)
+		}
+	}
 	return nil
 }
 
@@ -377,7 +395,7 @@ func GetLaunchSpec(ctx context.Context, logger logging.Logger, client *metadata.
 		return LaunchSpec{}, fmt.Errorf("failed to validate mounts: %v", errors.Join(errs...))
 	}
 
-	if !(spec.Experiments.EnableB200DriverInstallation || spec.Experiments.EnableH100DriverInstallation) && spec.InstallGpuDriver {
+	if !spec.Experiments.EnableB200DriverInstallation && !spec.Experiments.EnableH100DriverInstallation && spec.InstallGpuDriver {
 		return LaunchSpec{}, fmt.Errorf("GPU Driver installation is not supported")
 	}
 

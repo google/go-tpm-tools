@@ -450,3 +450,46 @@ func TestConvertRequestToTokenRequestWithNvidia(t *testing.T) {
 		t.Errorf("convertRequestToTokenRequest with Nvidia did not return expected tokenRequest: %v", diff)
 	}
 }
+
+func TestConvertRequestToTokenRequestCcelDataTrimming(t *testing.T) {
+	testCases := []struct {
+		name         string
+		ccelData     []byte
+		expectedData []byte
+	}{
+		{
+			name:         "empty CCEL data",
+			ccelData:     []byte{},
+			expectedData: []byte{},
+		},
+		{
+			name:         "all 0xFF CCEL data",
+			ccelData:     []byte{0xFF, 0xFF, 0xFF},
+			expectedData: []byte{},
+		},
+		{
+			name:         "trailing 0xFF CCEL data",
+			ccelData:     []byte{1, 2, 3, 0xFF, 0xFF},
+			expectedData: []byte{1, 2, 3},
+		},
+		{
+			name:         "no trailing 0xFF CCEL data",
+			ccelData:     []byte{1, 2, 3, 4},
+			expectedData: []byte{1, 2, 3, 4},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := testVerifierRequest
+			req.TDCCELAttestation = &verifier.TDCCELAttestation{
+				CcelData: tc.ccelData,
+			}
+			tokenReq := convertRequestToTokenRequest(req)
+			if !bytes.Equal(tokenReq.TDX.EventLog, tc.expectedData) {
+				t.Errorf("got EventLog %v, want %v", tokenReq.TDX.EventLog, tc.expectedData)
+			}
+		})
+	}
+}
+

@@ -493,3 +493,49 @@ func TestRemoteBindingKeyAttester_GetKeyEndorsement(t *testing.T) {
 		})
 	}
 }
+
+func TestGetKeyEndorsementNilKeyHandle(t *testing.T) {
+	req := &tspb.GetKeyEndorsementRequest{
+		Challenge: []byte("challenge"),
+		KeyHandle: nil,
+	}
+
+	tests := []struct {
+		name          string
+		attester      KeyEndorsementAttester
+		wantErrSubstr string
+	}{
+		{
+			name:          "localKEMAttester",
+			attester:      newLocalKEMAttester(&fakeClaimsProvider{}, mockAttestationAgent{}),
+			wantErrSubstr: "key handle is nil",
+		},
+		{
+			name:          "remoteKEMAttester",
+			attester:      &remoteKEMAttester{},
+			wantErrSubstr: "key handle is nil",
+		},
+		{
+			name:          "localBindingKeyAttester",
+			attester:      newLocalBindingKeyAttester(&fakeClaimsProvider{}, mockAttestationAgent{}),
+			wantErrSubstr: "key handle is nil",
+		},
+		{
+			name:          "bcBindingKeyAttester",
+			attester:      &bcBindingKeyAttester{},
+			wantErrSubstr: "key handle is nil",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := tc.attester.GetKeyEndorsement(t.Context(), req, agent.AttestAgentOpts{})
+			if err == nil {
+				t.Fatal("expected error for nil KeyHandle")
+			}
+			if !strings.Contains(err.Error(), tc.wantErrSubstr) {
+				t.Errorf("GetKeyEndorsement() error = %v, want error containing %q", err, tc.wantErrSubstr)
+			}
+		})
+	}
+}

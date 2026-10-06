@@ -11,7 +11,7 @@ import (
 var localClient = http.DefaultClient
 
 func TestFetchIssuingCertificateSucceeds(t *testing.T) {
-	testCA, caKey := test.GetTestCert(t, nil, nil, nil)
+	testCA := test.GetTestCert(t, test.RootCAKey, nil, nil, nil)
 
 	ts := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, _ *http.Request) {
 		rw.WriteHeader(http.StatusOK)
@@ -19,7 +19,7 @@ func TestFetchIssuingCertificateSucceeds(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	leafCert, _ := test.GetTestCert(t, []string{"invalid.URL", ts.URL}, testCA, caKey)
+	leafCert := test.GetTestCert(t, test.LeafKey, []string{"invalid.URL", ts.URL}, testCA, test.RootCAKey)
 
 	cert, err := fetchIssuingCertificate(localClient, leafCert)
 	if err != nil || cert == nil {
@@ -34,8 +34,8 @@ func TestFetchIssuingCertificateReturnsErrorIfMalformedCertificateFound(t *testi
 	}))
 	defer ts.Close()
 
-	testCA, caKey := test.GetTestCert(t, nil, nil, nil)
-	leafCert, _ := test.GetTestCert(t, []string{ts.URL}, testCA, caKey)
+	testCA := test.GetTestCert(t, test.RootCAKey, nil, nil, nil)
+	leafCert := test.GetTestCert(t, test.LeafKey, []string{ts.URL}, testCA, test.RootCAKey)
 
 	_, err := fetchIssuingCertificate(localClient, leafCert)
 	if err == nil {
@@ -43,9 +43,9 @@ func TestFetchIssuingCertificateReturnsErrorIfMalformedCertificateFound(t *testi
 	}
 }
 
-func TestGetCertificateChainSucceeds(t *testing.T) {
+func TestGetAKIntermediateCertsSucceeds(t *testing.T) {
 	// Create CA and corresponding server.
-	testCA, caKey := test.GetTestCert(t, nil, nil, nil)
+	testCA := test.GetTestCert(t, test.RootCAKey, nil, nil, nil)
 
 	caServer := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, _ *http.Request) {
 		rw.WriteHeader(http.StatusOK)
@@ -55,7 +55,7 @@ func TestGetCertificateChainSucceeds(t *testing.T) {
 	defer caServer.Close()
 
 	// Create intermediate cert and corresponding server.
-	intermediateCert, intermediateKey := test.GetTestCert(t, []string{caServer.URL}, testCA, caKey)
+	intermediateCert := test.GetTestCert(t, test.IntermediateCAKey, []string{caServer.URL}, testCA, test.RootCAKey)
 
 	intermediateServer := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, _ *http.Request) {
 		rw.WriteHeader(http.StatusOK)
@@ -64,13 +64,13 @@ func TestGetCertificateChainSucceeds(t *testing.T) {
 	defer intermediateServer.Close()
 
 	// Create leaf cert.
-	leafCert, _ := test.GetTestCert(t, []string{intermediateServer.URL}, intermediateCert, intermediateKey)
+	leafCert := test.GetTestCert(t, test.LeafKey, []string{intermediateServer.URL}, intermediateCert, test.IntermediateCAKey)
 
-	certChain, err := GetCertificateChain(leafCert, localClient)
+	certChain, err := GetAKIntermediateCerts(leafCert, localClient)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(certChain) != 2 {
-		t.Fatalf("GetCertificateChain did not return the expected number of certificates: got %v, want 2", len(certChain))
+		t.Fatalf("GetAKIntermediateCerts did not return the expected number of certificates: got %v, want 2", len(certChain))
 	}
 }

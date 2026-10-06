@@ -1,7 +1,7 @@
 # From current directory:
 # gcloud builds submit --tag us-docker.pkg.dev/confidential-space-images-dev/cs-tools/measure:latest --project confidential-space-images-dev
 
-FROM golang:1.24 AS builder
+FROM golang:1.26 AS builder
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download

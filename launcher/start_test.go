@@ -156,6 +156,25 @@ func TestCreateAttestClients_Behaviors(t *testing.T) {
 	}
 }
 
+func TestListenUnixSocket(t *testing.T) {
+	sockDir := t.TempDir()
+	sockPath := path.Join(sockDir, "test.sock")
+
+	nl, err := listenUnixSocket(sockPath)
+	if err != nil {
+		t.Fatalf("listenUnixSocket(%q) error = %v, want nil", sockPath, err)
+	}
+	defer nl.Close()
+
+	info, err := os.Stat(sockPath)
+	if err != nil {
+		t.Fatalf("os.Stat(%q) error = %v, want nil", sockPath, err)
+	}
+	if perm := info.Mode().Perm(); perm != 0777 {
+		t.Errorf("socket %s has permissions %04o, want 0777", sockPath, perm)
+	}
+}
+
 func TestVerifySocketPermissions(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -192,3 +211,10 @@ func TestVerifySocketPermissions(t *testing.T) {
 		})
 	}
 }
+
+func TestSetupBCSocketPermissions(_ *testing.T) {
+	logger := &fakeLogger{}
+	// Verify that setupBCSocketPermissions executes without panicking even when host sockets do not exist.
+	setupBCSocketPermissions(logger)
+}
+

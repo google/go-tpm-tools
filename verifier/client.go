@@ -50,6 +50,7 @@ type VerifyAttestationRequest struct {
 	// TDCCELAttestation is for TDX CCEL RTMR attestation
 	TDCCELAttestation *TDCCELAttestation
 	NvidiaAttestation *attestationpb.NvidiaAttestationReport
+	GCEInstance       string
 }
 
 type TDCCELAttestation struct {

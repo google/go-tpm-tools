@@ -26,6 +26,7 @@ IPv6AcceptRA=yes
 
 [DHCPv4]
 RouteMetric=100
+UseDomains=yes
 
 [DHCPv6]
 RouteMetric=100

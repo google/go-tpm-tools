@@ -11,8 +11,8 @@ substitutions:
   '_BC_ACOS_BUCKET': ''
   '_LOUHI_TRIGGER_TOPIC': ''
   '_LOUHI_FLOW_ID': '41685197-997a-4b7b-82ac-c031bdeaddd3'
-  '_BC_BASE_IMAGE': 'cos-bc-guest-125-19216-532-86'
-  '_BC_DEBUG_IMAGE': 'cos-bcdbg-guest-125-19216-532-86'
+  '_BC_BASE_IMAGE': 'cos-bc-guest-125-19216-655-6'
+  '_BC_DEBUG_IMAGE': 'cos-bcdbg-guest-125-19216-655-6'
   '_WSD_CONTAINER_IMAGE_REF': 'us-docker.pkg.dev/confidential-space-images-dev/key-protection-module-images/key-protection-module:acdec5c'
   '_POLLING_INTERVAL': '10'
   '_ITA_API_KEY': 'fake-key'
@@ -21,11 +21,13 @@ substitutions:
 steps:
 - name: 'gcr.io/cloud-builders/curl'
   id: DownloadGoogleRoots
+  waitFor: ['-']
   args: ['-sSL', 'https://pki.goog/roots.pem', '-o', 'launcher/image/google_roots.pem']
 
 # determine the base image
 - name: 'gcr.io/cloud-builders/gcloud'
   id: BaseImageIdent
+  waitFor: ['-']
   env:
   - 'BASE_IMAGE=$_BASE_IMAGE'
   - 'BASE_IMAGE_FAMILY=$_BASE_IMAGE_FAMILY'
@@ -46,18 +48,21 @@ steps:
 
 - name: 'us-docker.pkg.dev/confidential-space-images-dev/cs-tools/keymanager-builder@sha256:0283448a48bcc515f15d708d5dcf9e368ea2553c8f5a3bb0908019372a47dbfe'
   id: KeyManagerCompile
+  waitFor: ['-']
   entrypoint: /bin/bash
   args:
     - -c
     - |
       set -exuo pipefail
+      git config --global --add safe.directory /workspace
+      git submodule update --init --recursive
       # Build the Rust keymanager libraries using prebuilt toolchain
       cd keymanager
-      cargo build --release
+      cargo build --release --locked
 
-# `golang:1.24-bullseye` is needed to maintain `glibc` compatibility.
-# Revert back to golang:1.24 COS 129 onwards.
-- name: golang:1.24-bullseye
+# `golang:1.26-bookworm` is used for compiling the launcher.
+# We statically link libstdc++ and libgcc to support running on COS 125.
+- name: golang:1.26-bookworm
   id: LauncherCompile
   waitFor: ['KeyManagerCompile']
   entrypoint: /bin/bash
@@ -72,10 +77,11 @@ steps:
       cd launcher/launcher
       export CGO_LDFLAGS="-L/workspace/keymanager/target/release"
       export GOTOOLCHAIN=auto
-      go build -o ../image/launcher -ldflags="-extldflags=-Wl,-z,lazy -X 'main.BuildCommit=${SHORT_SHA}'"
+      go build -o ../image/launcher -ldflags="-extldflags '-Wl,-z,lazy -static-libstdc++ -static-libgcc' -X 'main.BuildCommit=${SHORT_SHA}'"
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: DownloadExpBinary
+  waitFor: ['-']
   entrypoint: 'gcloud'
   args: ['storage',
           'cp',
@@ -579,7 +585,7 @@ steps:
     exit
 
 - name: 'gcr.io/cloud-builders/gcloud'
-  id: DebugWorkloadCleanupTests
+  id: DebugNonRootTests
   waitFor: ['DebugImageBuild']
   env:
   - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-debug-${_OUTPUT_IMAGE_SUFFIX}'
@@ -587,13 +593,13 @@ steps:
   script: |
     #!/usr/bin/env bash
     cd launcher/image/test
-    echo "running debug workload cleanup tests on ${OUTPUT_IMAGE_NAME}"
-    gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_workloadcleanup_cloudbuild.yaml --region us-west1 \
+    echo "running debug non-root container tests on ${OUTPUT_IMAGE_NAME}"
+    gcloud builds submit --config=test_nonroot_cloudbuild.yaml --region us-west1 \
       --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
     exit
 
 - name: 'gcr.io/cloud-builders/gcloud'
-  id: HardenedWorkloadCleanupTests
+  id: HardenedNonRootTests
   waitFor: ['HardenedImageBuild']
   env:
   - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}'
@@ -601,8 +607,8 @@ steps:
   script: |
     #!/usr/bin/env bash
     cd launcher/image/test
-    echo "running hardened workload cleanup tests on ${OUTPUT_IMAGE_NAME}"
-    gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_workloadcleanup_cloudbuild.yaml --region us-west1 \
+    echo "running hardened non-root container tests on ${OUTPUT_IMAGE_NAME}"
+    gcloud builds submit --config=test_nonroot_cloudbuild.yaml --region us-west1 \
       --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
     exit
 

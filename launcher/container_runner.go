@@ -26,18 +26,17 @@ import (
 	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/images"
 	"github.com/containerd/containerd/remotes"
+	gocni "github.com/containerd/go-cni"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-tpm-tools/agent"
 	"github.com/google/go-tpm-tools/agent/device"
 	"github.com/google/go-tpm-tools/cel"
-	workloadservice "github.com/google/go-tpm-tools/keymanager/workload_service"
 	"github.com/google/go-tpm-tools/launcher/internal/healthmonitoring/nodeproblemdetector"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/internal/signaturediscovery"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/registryauth"
 	"github.com/google/go-tpm-tools/launcher/spec"
-	"github.com/google/go-tpm-tools/launcher/teeserver"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 	"google.golang.org/protobuf/proto"
 
@@ -50,18 +49,13 @@ type ContainerRunner struct {
 	launchSpec       spec.LaunchSpec
 	attestAgent      agent.AttestationAgent
 	logger           logging.Logger
-	workloadLogger   logging.Logger
 	deviceROTManager *device.ROTManager
 	serialConsole    *os.File
 	powerButton      *powerButtonListener // Populated only for a hardened image
-	attestClients    teeserver.AttestClients
-	workloadService  *workloadservice.Server
+	cni              gocni.CNI
 }
 
 const tokenFileTmp = ".token.tmp"
-
-const teeServerSocket = "teeserver.sock"
-const keyManagerGrpcSocket = "kmaserver-grpc.sock"
 
 // Since we only allow one container on a VM, using a deterministic id is probably fine
 const (
@@ -87,6 +81,17 @@ const (
 // Default OOM score for a CS container.
 const defaultOOMScore = 1000
 
+// Constants for a non-root container.
+const (
+	hostUIDBegin = 100000 // Starting (outside container) uid for the root user inside the container
+	hostGIDBegin = 100000 // Starting (outside container) gid for the root group inside the container
+	userNSSize   = 65536  // 16-bit range of uid/gid inside the container
+
+	cniConfigDir = "/etc/cni/net.d"
+	cniBinDir    = "/opt/cni/bin"
+	netnsPathFmt = "/proc/%d/ns/net"
+)
+
 // ContainerdClient abstracts the subset of containerd.Client methods used by the
 // runner. This enables unit testing by allowing a mock client to be injected.
 type ContainerdClient interface {
@@ -101,11 +106,8 @@ type RunnerConfig struct {
 	Image            containerd.Image
 	AttestAgent      agent.AttestationAgent
 	DeviceROTManager *device.ROTManager
-	AttestClients    teeserver.AttestClients
-	WorkloadService  *workloadservice.Server
 	LaunchSpec       spec.LaunchSpec
 	Logger           logging.Logger
-	WorkloadLogger   logging.Logger
 	SerialConsole    *os.File
 }
 
@@ -114,7 +116,6 @@ func NewRunner(ctx context.Context, cfg *RunnerConfig) (*ContainerRunner, error)
 	cdClient := cfg.ContainerdClient
 	launchSpec := cfg.LaunchSpec
 	logger := cfg.Logger
-	workloadLogger := cfg.WorkloadLogger
 	serialConsole := cfg.SerialConsole
 	image := cfg.Image
 	attestAgent := cfg.AttestAgent
@@ -154,10 +155,6 @@ func NewRunner(ctx context.Context, cfg *RunnerConfig) (*ContainerRunner, error)
 	}
 
 	logger.Info(fmt.Sprintf("Exposed Ports:             : %v\n", imageConfig.ExposedPorts))
-	if err := openPorts(imageConfig.ExposedPorts); err != nil {
-		return nil, err
-	}
-
 	logger.Info(fmt.Sprintf("Image Labels               : %v\n", imageConfig.Labels))
 	launchPolicy, err := spec.GetLaunchPolicy(imageConfig.Labels, logger)
 	if err != nil {
@@ -194,13 +191,15 @@ func NewRunner(ctx context.Context, cfg *RunnerConfig) (*ContainerRunner, error)
 		return nil, err
 	}
 
-	container, err = cdClient.NewContainer(
-		ctx,
-		containerID,
-		containerd.WithImage(image),
-		containerd.WithNewSnapshot(snapshotID, image),
-		containerd.WithNewSpec(specOpts...),
-	)
+	conOpts := []containerd.NewContainerOpts{containerd.WithImage(image)}
+	if launchSpec.NonrootContainer { // When a non-root container is used, we remap the snapshop with the non-root user.
+		conOpts = append(conOpts, containerd.WithRemappedSnapshot(snapshotID, image, hostUIDBegin, hostGIDBegin))
+	} else {
+		conOpts = append(conOpts, containerd.WithNewSnapshot(snapshotID, image))
+	}
+	conOpts = append(conOpts, containerd.WithNewSpec(specOpts...))
+
+	container, err = cdClient.NewContainer(ctx, containerID, conOpts...)
 	if err != nil {
 		if container != nil {
 			// TODO: consider handling or logging cleanup error.
@@ -232,17 +231,22 @@ func NewRunner(ctx context.Context, cfg *RunnerConfig) (*ContainerRunner, error)
 		}
 	}
 
+	var cni gocni.CNI
+	if launchSpec.NonrootContainer {
+		if cni, err = newCNI(); err != nil {
+			return nil, err
+		}
+	}
+
 	return &ContainerRunner{
 		container:        container,
 		launchSpec:       launchSpec,
 		attestAgent:      attestAgent,
 		logger:           logger,
-		workloadLogger:   workloadLogger,
 		deviceROTManager: cfg.DeviceROTManager,
 		serialConsole:    serialConsole,
 		powerButton:      powerButton,
-		attestClients:    cfg.AttestClients,
-		workloadService:  cfg.WorkloadService,
+		cni:              cni,
 	}, nil
 }
 
@@ -250,13 +254,14 @@ func enableMonitoring(enabled spec.MonitoringType, logger logging.Logger) error 
 	if enabled != spec.None {
 		logger.Info("Health Monitoring is enabled by the VM operator")
 
-		if enabled == spec.All {
+		switch enabled {
+		case spec.All:
 			logger.Info("All health monitoring metrics enabled")
 			if err := nodeproblemdetector.EnableAllConfig(); err != nil {
 				logger.Error("Failed to enable full monitoring config: %v", err)
 				return err
 			}
-		} else if enabled == spec.MemoryOnly {
+		case spec.MemoryOnly:
 			logger.Info("memory/bytes_used enabled")
 		}
 
@@ -373,6 +378,12 @@ func (r *ContainerRunner) measureGPUAttestationEvidence() error {
 		return nil
 	}
 
+	// TODO: collect GB300 GPU evidence once the GB300 CC attestation agent is implemented.
+	if r.launchSpec.Experiments.GB300CCMode {
+		r.logger.Info("GB300 CC mode: Skipping GPU attestation evidence")
+		return nil
+	}
+
 	if err := r.deviceROTManager.ValidateROTs(); err != nil {
 		return err
 	}
@@ -430,7 +441,7 @@ func (r *ContainerRunner) measureGPUAttestationEvidence() error {
 // eventlog in the AttestationAgent.
 func (r *ContainerRunner) measureMemoryMonitor() error {
 	var enabled uint8
-	if r.launchSpec.MonitoringEnabled == spec.MemoryOnly {
+	if r.launchSpec.MonitoringEnabled == spec.MemoryOnly || r.launchSpec.MonitoringEnabled == spec.All {
 		enabled = 1
 	}
 	if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.MemoryMonitorType, EventContent: []byte{enabled}}); err != nil {
@@ -524,7 +535,7 @@ func (r *ContainerRunner) fetchAndWriteTokenWithRetry(ctx context.Context,
 						duration, err = r.refreshToken(ctx)
 						return err
 					},
-					retry(),
+					backoff.WithContext(retry(), ctx),
 					func(err error, t time.Duration) {
 						r.logger.Error(fmt.Sprintf("failed to refresh attestation service token at time %v: %v", t, err))
 					})
@@ -606,21 +617,6 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		}
 	}
 
-	// create and start the TEE server
-	r.logger.Info("EnableOnDemandAttestation is enabled: initializing TEE server.")
-
-	teeServerSocketPath := path.Join(launcherfile.HostTmpPath, teeServerSocket)
-	teeServer, err := teeserver.New(ctx, teeServerSocketPath, r.attestAgent, r.logger, r.launchSpec, r.attestClients, r.workloadService)
-	if err != nil {
-		return fmt.Errorf("failed to create the TEE server: %v", err)
-	}
-	if err := verifySocketPermissions(teeServerSocketPath); err != nil {
-		return fmt.Errorf("failed to verify TEE server socket permissions: %w", err)
-	}
-
-	go func() { _ = teeServer.Serve() }()
-	defer func() { _ = teeServer.Shutdown(ctx) }()
-
 	// Avoids breaking existing memory monitoring tests that depend on this log.
 	if r.launchSpec.MonitoringEnabled == spec.None {
 		r.logger.Info("MemoryMonitoring is disabled by the VM operator")
@@ -632,14 +628,11 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		streamOpt = cio.WithStreams(nil, nil, nil)
 		r.logger.Info("Container stdout/stderr will not be redirected.")
 	case spec.Everywhere:
-		w := io.MultiWriter(os.Stdout, r.serialConsole)
-		streamOpt = cio.WithStreams(nil, w, w)
+		streamOpt = cio.WithStreams(nil, io.MultiWriter(logging.NewJSONInfoWriter(), r.serialConsole), io.MultiWriter(logging.NewJSONErrorWriter(), r.serialConsole))
 		r.logger.Info("Container stdout/stderr will be redirected to serial and Cloud Logging. This may result in performance issues due to slow serial console writes.")
 	case spec.CloudLogging:
-		stdoutWriter := logging.NewInfoWriter(r.workloadLogger)
-		stderrWriter := logging.NewErrorWriter(r.workloadLogger)
-		streamOpt = cio.WithStreams(nil, stdoutWriter, stderrWriter)
-		r.logger.Info("Container stdout/stderr will be redirected to Cloud Logging with INFO and ERROR severities respectively.")
+		streamOpt = cio.WithStreams(nil, logging.NewJSONInfoWriter(), logging.NewJSONErrorWriter())
+		r.logger.Info("Container stdout/stderr will be redirected to journald (JSON) for FluentBit scraping.")
 	case spec.Serial:
 		streamOpt = cio.WithStreams(nil, r.serialConsole, r.serialConsole)
 		r.logger.Info("Container stdout/stderr will be redirected to serial logging. This may result in performance issues due to slow serial console writes.")
@@ -647,7 +640,12 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		return fmt.Errorf("unknown logging redirect location: %v", r.launchSpec.LogRedirect)
 	}
 
-	task, err := r.container.NewTask(ctx, cio.NewCreator(streamOpt))
+	var taskOpts []containerd.NewTaskOpts
+	if r.launchSpec.NonrootContainer {
+		taskOpts = append(taskOpts, containerd.WithUIDOwner(hostUIDBegin), containerd.WithGIDOwner(hostGIDBegin))
+	}
+
+	task, err := r.container.NewTask(ctx, cio.NewCreator(streamOpt), taskOpts...)
 	if err != nil {
 		return &RetryableError{err}
 	}
@@ -660,6 +658,27 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 
 	r.enableGracefulShutdown(ctx, task)
 
+	// Opening ports.
+	// Workload-requested ports are in the image config, and the container IP address can be obtained after the CNI setup.
+	image, err := r.container.Image(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get image from container: %w", err)
+	}
+	imageConfig, err := getImageConfig(ctx, image)
+	if err != nil {
+		return fmt.Errorf("failed to get image config: %w", err)
+	}
+	var containerIP string
+	if r.launchSpec.NonrootContainer {
+		containerIP, err = r.setupCNI(ctx, fmt.Sprintf(netnsPathFmt, task.Pid()))
+		if err != nil {
+			return err
+		}
+	}
+	if err := openPorts(imageConfig.ExposedPorts, containerIP); err != nil {
+		return fmt.Errorf("failed to open and forward ports: %w", err)
+	}
+
 	setupDuration := time.Since(start)
 	r.logger.Info("Workload setup completed",
 		"setup_sec", setupDuration.Seconds(),
@@ -668,28 +687,6 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	exitStatusC, err := task.Wait(ctx)
 	if err != nil {
 		r.logger.Error(err.Error())
-	}
-
-	// Update and verify socket permissions if in bc mode.
-	if r.launchSpec.Experiments.BcMode {
-		kmaServerSocketPath := path.Join(launcherfile.HostTmpPath, keyManagerSocket)
-		kmaServerGrpcSocketPath := path.Join(launcherfile.HostTmpPath, keyManagerGrpcSocket)
-
-		err := os.Chmod(kmaServerSocketPath, 0777)
-		if err != nil {
-			r.logger.Error("failed to chmod file %s: %v\n", kmaServerSocketPath, err)
-		}
-		err = os.Chmod(kmaServerGrpcSocketPath, 0777)
-		if err != nil {
-			r.logger.Error("failed to chmod file %s: %v\n", kmaServerGrpcSocketPath, err)
-		}
-
-		if err := verifySocketPermissions(kmaServerSocketPath); err != nil {
-			r.logger.Error("failed to verify kmaserver socket permissions: %v", err)
-		}
-		if err := verifySocketPermissions(kmaServerGrpcSocketPath); err != nil {
-			r.logger.Error("failed to verify kmaserver-grpc socket permissions: %v", err)
-		}
 	}
 
 	// Start timer for workload execution.
@@ -719,7 +716,11 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	return nil
 }
 
-func (r *ContainerRunner) enableGracefulShutdown(ctx context.Context, task containerd.Task) {
+type taskSignaler interface {
+	Kill(ctx context.Context, sig syscall.Signal, opts ...containerd.KillOpts) error
+}
+
+func (r *ContainerRunner) enableGracefulShutdown(ctx context.Context, task taskSignaler) {
 	// In a hardened image, the launcher monitors the power button to signal a shutdown.
 	if r.launchSpec.Hardened {
 		// May be nil if listener initialization failed, which is not critical and is logged at that time.
@@ -760,7 +761,9 @@ func (r *ContainerRunner) enableGracefulShutdown(ctx context.Context, task conta
 }
 
 // openPorts writes firewall rules to accept all traffic into that port and protocol using iptables.
-func openPorts(ports map[string]struct{}) error {
+// When `containerIP` is not empty, it implies that the namespace and CNI are used for the container.
+// In that case, it also forwards traffic to the container via DNAT and allows container egress traffic.
+func openPorts(ports map[string]struct{}, containerIP string) error {
 	for k := range ports {
 		portAndProtocol := strings.Split(k, "/")
 		if len(portAndProtocol) != 2 {
@@ -790,19 +793,52 @@ func openPorts(ports map[string]struct{}) error {
 		if err != nil {
 			return fmt.Errorf("failed to open port on IPv6 %s %s: %v %s", port, protocol, err, out)
 		}
+
+		// Forward traffic from host port to container port with the same number.
+		if containerIP != "" {
+			forwardCmd := exec.Command("iptables", "-t", "nat", "-A", "PREROUTING",
+				"-p", protocol, "--dport", port,
+				"-j", "DNAT", "--to-destination", fmt.Sprintf("%s:%s", containerIP, port))
+
+			out, err = forwardCmd.CombinedOutput()
+			if err != nil {
+				return fmt.Errorf("failed to forward port %s to container %s: %v %s", port, containerIP, err, out)
+			}
+
+			// Allow traffic in FORWARD chain to the container IP on this port
+			forwardInCmd := exec.Command("iptables", "-A", "FORWARD", "-d", containerIP, "-p", protocol, "--dport", port, "-j", "ACCEPT")
+			if out, err := forwardInCmd.CombinedOutput(); err != nil {
+				return fmt.Errorf("failed to add FORWARD rule for container %s: %v %s", containerIP, err, out)
+			}
+		}
+	}
+
+	// Allow egress traffic from the container to go out
+	if containerIP != "" {
+		forwardOutCmd := exec.Command("iptables", "-A", "FORWARD", "-s", containerIP, "-j", "ACCEPT")
+		if out, err := forwardOutCmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("failed to add FORWARD reply rule for container %s: %v %s", containerIP, err, out)
+		}
 	}
 
 	return nil
 }
 
 func getImageConfig(ctx context.Context, image containerd.Image) (v1.ImageConfig, error) {
+	if image == nil {
+		return v1.ImageConfig{}, errors.New("image cannot be nil")
+	}
+	cs := image.ContentStore()
+	if cs == nil {
+		return v1.ImageConfig{}, errors.New("image content store cannot be nil")
+	}
 	ic, err := image.Config(ctx)
 	if err != nil {
 		return v1.ImageConfig{}, err
 	}
 	switch ic.MediaType {
 	case v1.MediaTypeImageConfig, images.MediaTypeDockerSchema2Config:
-		p, err := content.ReadBlob(ctx, image.ContentStore(), ic)
+		p, err := content.ReadBlob(ctx, cs, ic)
 		if err != nil {
 			return v1.ImageConfig{}, err
 		}
@@ -826,8 +862,50 @@ func (r *ContainerRunner) Close(ctx context.Context) {
 	// close the agent
 	r.attestAgent.Close()
 
+	// Cleanup network using go-cni
+	if r.cni != nil {
+		task, err := r.container.Task(ctx, nil)
+		if err == nil {
+			if err := r.cni.Remove(ctx, containerID, fmt.Sprintf(netnsPathFmt, task.Pid())); err != nil {
+				r.logger.Error("failed to cleanup network via CNI", "error", err)
+			}
+		}
+	}
+
 	// Exit gracefully:
 	// Delete container and close connection to attestation service.
 	// TODO: consider handling or logging cleanup error.
 	_ = r.container.Delete(ctx, containerd.WithSnapshotCleanup)
+}
+
+func newCNI() (gocni.CNI, error) {
+	cni, err := gocni.New(
+		gocni.WithPluginConfDir(cniConfigDir),
+		gocni.WithPluginDir([]string{cniBinDir}),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize CNI: %w", err)
+	}
+	if err := cni.Load(gocni.WithDefaultConf); err != nil {
+		return nil, fmt.Errorf("failed to load CNI configurations: %w", err)
+	}
+	return cni, nil
+}
+
+func (r *ContainerRunner) setupCNI(ctx context.Context, netnsPath string) (string, error) {
+	if r.cni == nil {
+		return "", fmt.Errorf("CNI is not initialized")
+	}
+	cniResult, err := r.cni.Setup(ctx, containerID, netnsPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to setup network via CNI: %w", err)
+	}
+	r.logger.Info(fmt.Sprintf("CNI network setup completed: %v", cniResult))
+
+	rawResults := cniResult.Raw()
+	if len(rawResults) == 0 || len(rawResults[0].IPs) == 0 {
+		return "", fmt.Errorf("failed to get container IP address")
+	}
+	// Currently, we have only single network interface defined with a single IP address by `10-workload.conf`.
+	return rawResults[0].IPs[0].Address.IP.String(), nil
 }

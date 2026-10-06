@@ -411,15 +411,95 @@ func TestCreateOCISpecOpts_GPU_BCMode(t *testing.T) {
 		}
 	}
 
-	// Verify GPU library bind mounts use the pre-baked 595.58.03 BC mode path
+	// Verify GPU library bind mounts use the pre-baked 610.57.04 path
 	foundBcMount := false
 	for _, mnt := range gotSpec.Mounts {
-		if mnt.Source == "/opt/nvidia/595.58.03/lib64" && mnt.Destination == "/usr/local/nvidia/lib64" {
+		if mnt.Source == "/opt/nvidia/610.57.04/lib64" && mnt.Destination == "/usr/local/nvidia/lib64" {
 			foundBcMount = true
 		}
 	}
 	if !foundBcMount {
-		t.Errorf("Expected BC Mode GPU mount (/opt/nvidia/595.58.03/lib64 -> /usr/local/nvidia/lib64) not found in spec: %v", gotSpec.Mounts)
+		t.Errorf("Expected BC Mode GPU mount (/opt/nvidia/610.57.04/lib64 -> /usr/local/nvidia/lib64) not found in spec: %v", gotSpec.Mounts)
+	}
+}
+
+func TestCreateOCISpecOpts_GPU_GB300CCMode(t *testing.T) {
+	ctx := namespaces.WithNamespace(context.Background(), "default")
+	logger := &fakeLogger{}
+	img := createFakeImage(nil, nil, nil)
+
+	origFind := findGB300DriverDir
+	t.Cleanup(func() { findGB300DriverDir = origFind })
+	findGB300DriverDir = func() (string, error) { return "/opt/nvidia/620.06", nil }
+
+	mockListFiles := func(dir, prefix string) ([]string, error) {
+		if dir == "/dev" && prefix == "nvidia" {
+			return []string{"/dev/nvidia0"}, nil
+		}
+		return nil, nil
+	}
+
+	ls := spec.LaunchSpec{
+		InstallGpuDriver: true,
+		Experiments: experiments.Experiments{
+			GB300CCMode: true,
+		},
+	}
+
+	specOpts, err := createOCISpecOpts(img, ls, nil, mockListFiles, logger)
+	if err != nil {
+		t.Fatalf("createOCISpecOpts failed: %v", err)
+	}
+
+	gotSpec := oci.Spec{
+		Linux: &specs.Linux{
+			Namespaces: createDefaultLinuxNamespaces(),
+		},
+		Process: &specs.Process{},
+	}
+
+	dummyContainer := containers.Container{ID: "dummy"}
+	for _, opt := range specOpts[1:] { // Skip WithImageConfigArgs
+		optName := getFuncName(opt)
+		if strings.Contains(optName, "WithDevices") {
+			continue // Skip executing the device stat option
+		}
+		if err := opt(ctx, nil, &dummyContainer, &gotSpec); err != nil {
+			t.Fatalf("failed to apply spec option: %v", err)
+		}
+	}
+
+	want := map[string]string{
+		"/usr/local/nvidia/lib64": "/opt/nvidia/620.06/lib64",
+		"/usr/local/nvidia/bin":   "/opt/nvidia/620.06/bin",
+	}
+	for _, mnt := range gotSpec.Mounts {
+		if src, ok := want[mnt.Destination]; ok && mnt.Source == src {
+			delete(want, mnt.Destination)
+		}
+	}
+	if len(want) != 0 {
+		t.Errorf("GB300 CC mode GPU mounts missing (destination -> source): %v; got mounts: %v", want, gotSpec.Mounts)
+	}
+}
+
+func TestCreateOCISpecOpts_GPU_GB300CCModeNoDriver(t *testing.T) {
+	logger := &fakeLogger{}
+	img := createFakeImage(nil, nil, nil)
+
+	origFind := findGB300DriverDir
+	t.Cleanup(func() { findGB300DriverDir = origFind })
+	findGB300DriverDir = func() (string, error) { return "", fmt.Errorf("no driver directory") }
+
+	ls := spec.LaunchSpec{
+		InstallGpuDriver: true,
+		Experiments: experiments.Experiments{
+			GB300CCMode: true,
+		},
+	}
+
+	if _, err := createOCISpecOpts(img, ls, nil, func(_, _ string) ([]string, error) { return nil, nil }, logger); err == nil {
+		t.Error("createOCISpecOpts() without a pre-installed driver in GB300 CC mode succeeded, want error")
 	}
 }
 
