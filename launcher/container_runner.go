@@ -927,6 +927,14 @@ func (r *ContainerRunner) setupCNI(ctx context.Context, netnsPath string) ([]net
 		return nil, fmt.Errorf("failed to setup network via CNI: %w", err)
 	}
 	r.logger.Info(fmt.Sprintf("CNI network setup completed: %v", cniResult))
+	for i, raw := range cniResult.Raw() {
+		rawJSON, err := json.Marshal(raw)
+		if err != nil {
+			r.logger.Warn(fmt.Sprintf("failed to marshal CNI raw result [%d]: %v", i, err))
+			continue
+		}
+		r.logger.Info(fmt.Sprintf("CNI raw result [%d]: %s", i, rawJSON))
+	}
 
 	// Currently, we have only a single network interface defined by `10-workload.conf`, carrying one address per IP family.
 	ips, err := ipsFromCNI(cniResult.Raw())
