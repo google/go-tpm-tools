@@ -373,11 +373,15 @@ func init() {
 	RootCmd.AddCommand(tokenCmd)
 	addOutputFlag(tokenCmd)
 	addPublicKeyAlgoFlag(tokenCmd)
-	addAsAddressFlag(tokenCmd)
-	addCloudLoggingFlag(tokenCmd)
-	addAudienceFlag(tokenCmd)
+	tokenCmd.Flags().String("verifier-endpoint", "https://confidentialcomputing.googleapis.com",
+		"the attestation verifier endpoint used to retrieve an attestation claims token")
+	tokenCmd.Flags().Bool("cloud-log", false,
+		"logs the attestation and token to Cloud Logging for auditing purposes. Requires the audience flag.")
+	tokenCmd.Flags().String("audience", "",
+		"the audience field in the claims token. Cannot be sts.googleapis.com.")
+	tokenCmd.Flags().StringArray("custom-nonce", nil,
+		"the custom nonce field in the claims token. use this flag multiple times to add multiple custom nonces.")
 	addEventLogFlag(tokenCmd)
-	addCustomNonceFlag(tokenCmd)
 	// TODO: Add TEE hardware OIDC token generation
 	// addTeeNonceflag(tokenCmd)
 	addTeeTechnology(tokenCmd)
