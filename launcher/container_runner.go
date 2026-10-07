@@ -759,17 +759,15 @@ func (r *ContainerRunner) enableGracefulShutdown(ctx context.Context, task taskS
 
 // portProtocol parses an exposed-port key from the image config, e.g. "80/tcp".
 func portProtocol(exposed string) (port, protocol string, err error) {
-	portAndProtocol := strings.Split(exposed, "/")
-	if len(portAndProtocol) != 2 {
-		return "", "", fmt.Errorf("failed to parse port and protocol: got %s, expected [port]/[protocol] 80/tcp", portAndProtocol)
+	port, protocol, ok := strings.Cut(exposed, "/")
+	if !ok {
+		return "", "", fmt.Errorf("failed to parse port and protocol: got %q, expected [port]/[protocol] e.g. 80/tcp", exposed)
 	}
 
-	port = portAndProtocol[0]
 	if _, err := strconv.ParseUint(port, 10, 16); err != nil {
 		return "", "", fmt.Errorf("received invalid port number: %v, %w", port, err)
 	}
 
-	protocol = portAndProtocol[1]
 	if protocol != "tcp" && protocol != "udp" {
 		return "", "", fmt.Errorf("received unknown protocol: got %s, expected tcp or udp", protocol)
 	}
