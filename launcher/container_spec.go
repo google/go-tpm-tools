@@ -16,6 +16,30 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 )
 
+// findGB300DriverDir finds the pre-installed GPU driver on GB300 images.
+// Stub this func for testing purpose.
+var findGB300DriverDir = func() (string, error) {
+	return gpu.FindBuiltInInstallationDir(gpu.BuiltInInstallationRootDir)
+}
+
+// gpuDriverMounts bind-mounts the driver's lib64 and bin directories from
+// hostDir into the workload container.
+func gpuDriverMounts(hostDir string) []specs.Mount {
+	return []specs.Mount{
+		{
+			Type:        "volume",
+			Source:      fmt.Sprintf("%s/lib64", hostDir),
+			Destination: fmt.Sprintf("%s/lib64", gpu.InstallationContainerDir),
+			Options:     []string{"rbind", "rw"},
+		}, {
+			Type:        "volume",
+			Source:      fmt.Sprintf("%s/bin", hostDir),
+			Destination: fmt.Sprintf("%s/bin", gpu.InstallationContainerDir),
+			Options:     []string{"rbind", "rw"},
+		},
+	}
+}
+
 func createOCISpecOpts(image containerd.Image, launchSpec spec.LaunchSpec, envs []string, listFiles func(string, string) ([]string, error), logger logging.Logger) ([]oci.SpecOpts, error) {
 	var mounts []specs.Mount
 	for _, lsMnt := range launchSpec.Mounts {
@@ -77,34 +101,19 @@ func createOCISpecOpts(image containerd.Image, launchSpec spec.LaunchSpec, envs 
 	specOpts = append(specOpts, cgroupOpts...)
 
 	if launchSpec.InstallGpuDriver {
-		gpuMounts := []specs.Mount{
-			{
-				Type:        "volume",
-				Source:      fmt.Sprintf("%s/lib64", gpu.InstallationHostDir),
-				Destination: fmt.Sprintf("%s/lib64", gpu.InstallationContainerDir),
-				Options:     []string{"rbind", "rw"},
-			}, {
-				Type:        "volume",
-				Source:      fmt.Sprintf("%s/bin", gpu.InstallationHostDir),
-				Destination: fmt.Sprintf("%s/bin", gpu.InstallationContainerDir),
-				Options:     []string{"rbind", "rw"},
-			},
-		}
-		if launchSpec.Experiments.BcMode {
-			gpuMounts = []specs.Mount{
-				{
-					Type:        "volume",
-					Source:      fmt.Sprintf("%s/lib64", gpu.BuiltInInstallation610_57_04HostDir),
-					Destination: fmt.Sprintf("%s/lib64", gpu.InstallationContainerDir),
-					Options:     []string{"rbind", "rw"},
-				}, {
-					Type:        "volume",
-					Source:      fmt.Sprintf("%s/bin", gpu.BuiltInInstallation610_57_04HostDir),
-					Destination: fmt.Sprintf("%s/bin", gpu.InstallationContainerDir),
-					Options:     []string{"rbind", "rw"},
-				},
+		driverHostDir := gpu.InstallationHostDir
+		switch {
+		case launchSpec.Experiments.BcMode:
+			driverHostDir = gpu.BuiltInInstallation610_57_04HostDir
+		case launchSpec.Experiments.GB300CCMode:
+			dir, err := findGB300DriverDir()
+			if err != nil {
+				return nil, fmt.Errorf("failed to find the pre-installed GPU driver in GB300 CC mode: %w", err)
 			}
+			logger.Info(fmt.Sprintf("GB300 CC mode: using pre-installed GPU driver at %s", dir))
+			driverHostDir = dir
 		}
+		gpuMounts := gpuDriverMounts(driverHostDir)
 
 		specOpts = append(specOpts, oci.WithMounts(gpuMounts))
 

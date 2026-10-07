@@ -378,6 +378,12 @@ func (r *ContainerRunner) measureGPUAttestationEvidence() error {
 		return nil
 	}
 
+	// TODO: collect GB300 GPU evidence once the GB300 CC attestation agent is implemented.
+	if r.launchSpec.Experiments.GB300CCMode {
+		r.logger.Info("GB300 CC mode: Skipping GPU attestation evidence")
+		return nil
+	}
+
 	if err := r.deviceROTManager.ValidateROTs(); err != nil {
 		return err
 	}

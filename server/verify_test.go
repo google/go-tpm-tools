@@ -67,48 +67,54 @@ func TestVerifyHappyCases(t *testing.T) {
 	twoPCR := append(onePCR, test.ApplicationPCR)
 	dupePCR := append(twoPCR, twoPCR...)
 
+	rsaAK, err := client.AttestationKeyRSA(rwc)
+	if err != nil {
+		t.Fatalf("failed to generate RSA AK: %v", err)
+	}
+	defer rsaAK.Close()
+
+	eccAK, err := client.AttestationKeyECC(rwc)
+	if err != nil {
+		t.Fatalf("failed to generate ECC AK: %v", err)
+	}
+	defer eccAK.Close()
+
 	subtests := []struct {
 		name         string
-		getKey       func(io.ReadWriter) (*client.Key, error)
+		ak           *client.Key
 		pcrHashAlgo  tpm2.Algorithm
 		quotePCRList []int
 		extraData    []byte
 	}{
-		{"AK-RSA_SHA1_2PCRs_nonce", client.AttestationKeyRSA, tpm2.AlgSHA1, twoPCR, getDigestHash("test")},
-		{"AK-RSA_SHA1_1PCR_nonce", client.AttestationKeyRSA, tpm2.AlgSHA1, onePCR, getDigestHash("t")},
-		{"AK-RSA_SHA1_1PCR_no-nonce", client.AttestationKeyRSA, tpm2.AlgSHA1, onePCR, nil},
-		{"AK-RSA_SHA256_2PCRs_nonce", client.AttestationKeyRSA, tpm2.AlgSHA256, twoPCR, getDigestHash("test")},
-		{"AK-RSA_SHA256_2PCR_empty-nonce", client.AttestationKeyRSA, tpm2.AlgSHA256, twoPCR, []byte{}},
-		{"AK-RSA_SHA256_dupePCrSel_nonce", client.AttestationKeyRSA, tpm2.AlgSHA256, dupePCR, getDigestHash("")},
+		{"AK-RSA_SHA1_2PCRs_nonce", rsaAK, tpm2.AlgSHA1, twoPCR, getDigestHash("test")},
+		{"AK-RSA_SHA1_1PCR_nonce", rsaAK, tpm2.AlgSHA1, onePCR, getDigestHash("t")},
+		{"AK-RSA_SHA1_1PCR_no-nonce", rsaAK, tpm2.AlgSHA1, onePCR, nil},
+		{"AK-RSA_SHA256_2PCRs_nonce", rsaAK, tpm2.AlgSHA256, twoPCR, getDigestHash("test")},
+		{"AK-RSA_SHA256_2PCR_empty-nonce", rsaAK, tpm2.AlgSHA256, twoPCR, []byte{}},
+		{"AK-RSA_SHA256_dupePCrSel_nonce", rsaAK, tpm2.AlgSHA256, dupePCR, getDigestHash("")},
 
-		{"AK-ECC_SHA1_2PCRs_nonce", client.AttestationKeyECC, tpm2.AlgSHA1, twoPCR, getDigestHash("test")},
-		{"AK-ECC_SHA1_1PCR_nonce", client.AttestationKeyECC, tpm2.AlgSHA1, onePCR, getDigestHash("t")},
-		{"AK-ECC_SHA1_1PCR_no-nonce", client.AttestationKeyECC, tpm2.AlgSHA1, onePCR, nil},
-		{"AK-ECC_SHA256_2PCRs_nonce", client.AttestationKeyECC, tpm2.AlgSHA256, twoPCR, getDigestHash("test")},
-		{"AK-ECC_SHA256_2PCR_empty-nonce", client.AttestationKeyECC, tpm2.AlgSHA256, twoPCR, []byte{}},
-		{"AK-ECC_SHA256_dupePCrSel_nonce", client.AttestationKeyECC, tpm2.AlgSHA256, dupePCR, getDigestHash("")},
+		{"AK-ECC_SHA1_2PCRs_nonce", eccAK, tpm2.AlgSHA1, twoPCR, getDigestHash("test")},
+		{"AK-ECC_SHA1_1PCR_nonce", eccAK, tpm2.AlgSHA1, onePCR, getDigestHash("t")},
+		{"AK-ECC_SHA1_1PCR_no-nonce", eccAK, tpm2.AlgSHA1, onePCR, nil},
+		{"AK-ECC_SHA256_2PCRs_nonce", eccAK, tpm2.AlgSHA256, twoPCR, getDigestHash("test")},
+		{"AK-ECC_SHA256_2PCR_empty-nonce", eccAK, tpm2.AlgSHA256, twoPCR, []byte{}},
+		{"AK-ECC_SHA256_dupePCrSel_nonce", eccAK, tpm2.AlgSHA256, dupePCR, getDigestHash("")},
 	}
 	for _, subtest := range subtests {
 		t.Run(subtest.name, func(t *testing.T) {
-			ak, err := subtest.getKey(rwc)
-			if err != nil {
-				t.Errorf("failed to generate AK: %v", err)
-			}
-			defer ak.Close()
-
 			selpcr := tpm2.PCRSelection{
 				Hash: subtest.pcrHashAlgo,
 				PCRs: subtest.quotePCRList,
 			}
-			err = extendPCRsRandomly(rwc, selpcr)
+			err := extendPCRsRandomly(rwc, selpcr)
 			if err != nil {
 				t.Fatalf("failed to extend test PCRs: %v", err)
 			}
-			quote, err := ak.Quote(selpcr, subtest.extraData)
+			quote, err := subtest.ak.Quote(selpcr, subtest.extraData)
 			if err != nil {
 				t.Fatalf("failed to quote: %v", err)
 			}
-			err = tpmquote.Verify(quote, ak.PublicKey(), subtest.extraData)
+			err = tpmquote.Verify(quote, subtest.ak.PublicKey(), subtest.extraData)
 			if err != nil {
 				t.Fatalf("failed to verify: %v", err)
 			}
@@ -348,15 +354,11 @@ func TestVerifySucceedsWithOverlappingIntermediatesInOptionsAndAttestation(t *te
 }
 
 func TestValidateOptsFailWithCertsAndPubkey(t *testing.T) {
-	priv, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		t.Fatal(err)
-	}
 	opts := VerifyOpts{
 		Nonce:             nil,
 		TrustedRootCerts:  GceEKRoots,
 		IntermediateCerts: GceEKIntermediates,
-		TrustedAKs:        []crypto.PublicKey{priv.Public()},
+		TrustedAKs:        []crypto.PublicKey{&rsa.PublicKey{}},
 	}
 	if err := validateOpts(opts); err == nil {
 		t.Error("Verified attestation even with multiple trust methods")
