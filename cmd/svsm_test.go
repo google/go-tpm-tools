@@ -320,7 +320,7 @@ func TestAttestSVSMFlags(t *testing.T) {
 			teeTech:         "sev-snp",
 			manifestVersion: "0",
 			key:             "invalid",
-			wantErrorMsg:    "invalid is an invalid value for --key, only AK and gceAK are supported",
+			wantErrorMsg:    "key should be either AK or gceAK",
 		},
 		{
 			name:            "MismatchedKeyManifestVersion0",

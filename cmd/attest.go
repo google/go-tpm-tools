@@ -16,17 +16,6 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-var attestationKeys = map[string]map[tpm2.Algorithm]func(rw io.ReadWriter) (*client.Key, error){
-	"AK": {
-		tpm2.AlgRSA: client.AttestationKeyRSA,
-		tpm2.AlgECC: client.AttestationKeyECC,
-	},
-	"gceAK": {
-		tpm2.AlgRSA: client.GceAttestationKeyRSA,
-		tpm2.AlgECC: client.GceAttestationKeyECC,
-	},
-}
-
 // If hardware technology needs a variable length teenonce then please modify the flags description
 var attestCmd = &cobra.Command{
 	Use:   "attest",
@@ -54,7 +43,7 @@ hardware and guarantees a fresh quote.
 		}
 		defer rwc.Close()
 
-		attestation, err := RunAttest(cmd.Context(), rwc, cfg.opts)
+		attestation, err := runAttest(cmd.Context(), rwc, cfg.opts)
 		if err != nil {
 			return err
 		}
@@ -63,7 +52,6 @@ hardware and guarantees a fresh quote.
 		if err != nil {
 			return err
 		}
-
 		if cfg.outputPath != "" {
 			return os.WriteFile(cfg.outputPath, out, 0644)
 		}
@@ -72,8 +60,8 @@ hardware and guarantees a fresh quote.
 	},
 }
 
-// AttestOptions configures the attestation report generation.
-type AttestOptions struct {
+// attestOptions configures the attestation report generation.
+type attestOptions struct {
 	Key           string
 	KeyAlgo       tpm2.Algorithm
 	Nonce         []byte
@@ -82,9 +70,27 @@ type AttestOptions struct {
 }
 
 type attestCmdConfig struct {
-	opts       AttestOptions
+	opts       attestOptions
 	format     string
 	outputPath string
+}
+
+// addAttestFlags registers persistent attestation flags on cmd.
+// Callers read the flag values with parseAttestFlags.
+func addAttestFlags(cmd *cobra.Command) {
+	flags := cmd.PersistentFlags()
+	flags.String("key", "AK", "indicates type of attestation key to use <gceAK|AK>")
+	keyAlgo := tpm2.AlgRSA
+	algo := algoFlag{
+		value:   &keyAlgo,
+		allowed: []tpm2.Algorithm{tpm2.AlgRSA, tpm2.AlgECC},
+	}
+	flags.Var(&algo, "algo", "public key algorithm: "+algo.Allowed())
+	flags.BytesHex("nonce", []byte{}, "hex encoded nonce for vTPM attestation, cannot be empty")
+	flags.BytesHex("tee-nonce", []byte{}, "hex encoded teenonce for hardware attestation, can be empty")
+	flags.String("tee-technology", "", "indicates the type of TEE hardware. Should be either empty or one of sev-snp or tdx")
+	flags.String("format", "binarypb", "type of output file where attestation report stored <binarypb|textproto>")
+	flags.String("output", "", "output file (defaults to stdout)")
 }
 
 func parseAttestFlags(cmd *cobra.Command) (attestCmdConfig, error) {
@@ -146,12 +152,12 @@ func parseAttestFlags(cmd *cobra.Command) (attestCmdConfig, error) {
 	return cfg, nil
 }
 
-// RunAttest generates an attestation report using the provided TPM.
-func RunAttest(ctx context.Context, rwc io.ReadWriter, opts AttestOptions) (*attest.Attestation, error) {
+// runAttest generates an attestation report using the provided TPM.
+func runAttest(ctx context.Context, rwc io.ReadWriter, opts attestOptions) (*attest.Attestation, error) {
 	if opts.Key == "" {
 		opts.Key = "AK"
 	}
-	if opts.KeyAlgo == 0 {
+	if opts.KeyAlgo == tpm2.AlgUnknown {
 		opts.KeyAlgo = tpm2.AlgRSA
 	}
 
@@ -278,12 +284,6 @@ func getInstanceInfoFromMetadata(ctx context.Context) (*attest.GCEInstanceInfo, 
 
 func init() {
 	RootCmd.AddCommand(attestCmd)
-	addKeyFlag(attestCmd)
-	addNonceFlag(attestCmd)
-	addTeeNonceflag(attestCmd)
-	addPublicKeyAlgoFlag(attestCmd)
-	addOutputFlag(attestCmd)
-	addFormatFlag(attestCmd)
-	addTeeTechnology(attestCmd)
+	addAttestFlags(attestCmd)
 	attestCmd.AddCommand(attestSVSMCmd)
 }
