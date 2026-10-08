@@ -673,7 +673,7 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 			return err
 		}
 	}
-	if err := openPorts(imageConfig.ExposedPorts, containerIPs); err != nil {
+	if err := openPorts(ctx, imageConfig.ExposedPorts, containerIPs); err != nil {
 		return fmt.Errorf("failed to open and forward ports: %w", err)
 	}
 
@@ -835,13 +835,13 @@ func buildPortRules(ports map[string]struct{}, containerIPs []netip.Addr) ([][]s
 // When `containerIPs` is not empty, it implies that the namespace and CNI are used for the container.
 // In that case, it also forwards traffic to the container via DNAT and allows container egress traffic,
 // for both IPv4 and IPv6.
-func openPorts(ports map[string]struct{}, containerIPs []netip.Addr) error {
+func openPorts(ctx context.Context, ports map[string]struct{}, containerIPs []netip.Addr) error {
 	rules, err := buildPortRules(ports, containerIPs)
 	if err != nil {
 		return err
 	}
 	for _, rule := range rules {
-		if out, err := exec.Command(rule[0], rule[1:]...).CombinedOutput(); err != nil {
+		if out, err := exec.CommandContext(ctx, rule[0], rule[1:]...).CombinedOutput(); err != nil {
 			return fmt.Errorf("failed to run %q: %v %s", strings.Join(rule, " "), err, out)
 		}
 	}
