@@ -179,7 +179,7 @@ func RunToken(ctx context.Context, rwc io.ReadWriter, opts TokenOptions) ([]byte
 	if opts.VerifierEndpoint == "" {
 		opts.VerifierEndpoint = "https://confidentialcomputing.googleapis.com"
 	}
-	if opts.KeyAlgo == 0 {
+	if opts.KeyAlgo == tpm2.AlgUnknown {
 		opts.KeyAlgo = tpm2.AlgRSA
 	}
 	if opts.MDSClient == nil {
@@ -210,11 +210,7 @@ func RunToken(ctx context.Context, rwc io.ReadWriter, opts TokenOptions) ([]byte
 		return nil, fmt.Errorf("failed to create REST verifier client: %w", err)
 	}
 
-	createAK, ok := attestationKeys["gceAK"][opts.KeyAlgo]
-	if !ok {
-		return nil, fmt.Errorf("unsupported key algorithm: %v", opts.KeyAlgo)
-	}
-	ak, err := createAK(rwc)
+	ak, err := createAttestationKey(rwc, "gceAK", opts.KeyAlgo)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get an AK: %w", err)
 	}

@@ -55,7 +55,7 @@ var createChallengeCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("could not create challenge: %s", err)
 		}
-		writeProtoToOutput(challenge)
+		writeProtoToOutput(challenge, format, output)
 		_, err = openForWrite(secretOut).Write(secret)
 		if err != nil {
 			return fmt.Errorf("could not write secret: %s", err)
@@ -86,7 +86,7 @@ var solveChallengeCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("could not solve challenge: %s", err)
 		}
-		writeProtoToOutput(solved)
+		writeProtoToOutput(solved, format, output)
 		return nil
 	},
 }

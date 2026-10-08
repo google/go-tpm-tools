@@ -24,7 +24,6 @@ var (
 	keyAlgo       = tpm2.AlgRSA
 	pcrs          []int
 	format        string
-	key           string
 	eventLog      string
 )
 
@@ -151,10 +150,6 @@ func addPCRsFlag(cmd *cobra.Command) {
 	cmd.PersistentFlags().Var(&pcrsFlag{&pcrs}, "pcrs", "comma separated list of PCR numbers")
 }
 
-func addKeyFlag(cmd *cobra.Command) {
-	cmd.PersistentFlags().StringVar(&key, "key", "AK", "indicates type of attestation key to use <gceAK|AK>")
-}
-
 // Lets this command specify the public key algorithm.
 func addPublicKeyAlgoFlag(cmd *cobra.Command) {
 	f := algoFlag{&keyAlgo, []tpm2.Algorithm{tpm2.AlgRSA, tpm2.AlgECC}}
@@ -222,7 +217,7 @@ func openForWrite(path string) io.Writer {
 	return file
 }
 
-func writeProtoToOutput(message proto.Message) error {
+func writeProtoToOutput(message proto.Message, format, outputPath string) error {
 	var out []byte
 	var err error
 	switch format {
@@ -236,7 +231,7 @@ func writeProtoToOutput(message proto.Message) error {
 	default:
 		return fmt.Errorf("format should be either binarypb or textproto")
 	}
-	if _, err := dataOutput().Write(out); err != nil {
+	if _, err := openForWrite(outputPath).Write(out); err != nil {
 		return fmt.Errorf("failed to write attestation report: %v", err)
 	}
 	return nil
