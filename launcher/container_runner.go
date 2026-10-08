@@ -920,10 +920,13 @@ func newCNI() (gocni.CNI, error) {
 // ipsFromCNI extracts the addresses CNI assigned to the workload interface
 // (one IPv4 and one IPv6 with the dual-stack `10-workload.conf`).
 func ipsFromCNI(raw []*types100.Result) ([]netip.Addr, error) {
-	if len(raw) == 0 || len(raw[0].IPs) == 0 {
+	if len(raw) == 0 || raw[0] == nil || len(raw[0].IPs) == 0 {
 		return nil, errors.New("failed to get container IP address")
 	}
 	ips := make([]netip.Addr, 0, len(raw[0].IPs))
+
+	// With the bridge plugin, `ipc.Address` holds only the container interface's address;
+	// the bridge's own (gateway) address is in `ipc.Gateway`, not as an `IPs` entry.
 	for _, ipc := range raw[0].IPs {
 		addr, ok := netip.AddrFromSlice(ipc.Address.IP)
 		if !ok {

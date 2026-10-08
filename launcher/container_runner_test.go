@@ -1862,6 +1862,10 @@ func TestIPsFromCNI(t *testing.T) {
 			name:      "invalid IP",
 			cniResult: []*types100.Result{{IPs: []*types100.IPConfig{{}}}},
 		},
+		{
+			name:      "nil result",
+			cniResult: []*types100.Result{nil},
+		},
 	}
 
 	for _, tc := range tests {
