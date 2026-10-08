@@ -1837,14 +1837,14 @@ func TestIPsFromCNI(t *testing.T) {
 	}}
 	ips, err := ipsFromCNI(cniRaw)
 	if err != nil {
-		t.Fatalf("ipsFromCNIResult() error = %v", err)
+		t.Fatalf("ipsFromCNI() error = %v", err)
 	}
 	var got []string
 	for _, ip := range ips {
 		got = append(got, ip.String())
 	}
 	if diff := cmp.Diff([]string{"172.20.0.2", "fdb6:c4ca:384d:1::2"}, got); diff != "" {
-		t.Errorf("ipsFromCNIResult() mismatch (-want +got):\n%s", diff)
+		t.Errorf("ipsFromCNI() mismatch (-want +got):\n%s", diff)
 	}
 
 	for name, in := range map[string][]*types100.Result{
@@ -1854,7 +1854,7 @@ func TestIPsFromCNI(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := ipsFromCNI(in); err == nil {
-				t.Errorf("ipsFromCNIResult(%v) succeeded, want error", in)
+				t.Errorf("ipsFromCNI(%v) succeeded, want error", in)
 			}
 		})
 	}
