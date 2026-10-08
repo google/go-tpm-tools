@@ -791,7 +791,8 @@ func iptablesBin(addr netip.Addr) (string, error) {
 // In that case, per IP family, it also adds rules to DNAT ingress traffic to the container and to
 // allow the forwarded traffic in both directions.
 func buildPortRules(ports map[string]struct{}, containerIPs []netip.Addr) ([][]string, error) {
-	var rules [][]string
+	// Per port: 2 INPUT rules plus 2 forwarding rules per container IP; then 1 egress rule per container IP.
+	rules := make([][]string, 0, len(ports)*(2+2*len(containerIPs))+len(containerIPs))
 	for k := range ports {
 		port, protocol, err := portProtocol(k)
 		if err != nil {
