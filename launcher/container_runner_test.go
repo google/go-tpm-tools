@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/netip"
 	"os"
 	"path"
 	"slices"
@@ -1702,8 +1703,8 @@ func TestEnableGracefulShutdown_NilPowerButtonDoesNotPanic(t *testing.T) {
 }
 
 func TestBuildPortRules(t *testing.T) {
-	v4 := net.ParseIP("172.20.0.2")
-	v6 := net.ParseIP("fdb6:c4ca:384d:1::2")
+	v4 := netip.MustParseAddr("172.20.0.2")
+	v6 := netip.MustParseAddr("fdb6:c4ca:384d:1::2")
 
 	// Rules present in both root and non-root containers.
 	inputRules := [][]string{
@@ -1728,7 +1729,7 @@ func TestBuildPortRules(t *testing.T) {
 	testCases := []struct {
 		name         string
 		ports        map[string]struct{}
-		containerIPs []net.IP
+		containerIPs []netip.Addr
 		want         [][]string
 	}{
 		{
@@ -1740,18 +1741,18 @@ func TestBuildPortRules(t *testing.T) {
 			// However, this test case exists as `buildPortRules` is a general helper that also handles an IPv4-only container.
 			name:         "non-root container IPv4 only",
 			ports:        map[string]struct{}{"80/tcp": {}},
-			containerIPs: []net.IP{v4},
+			containerIPs: []netip.Addr{v4},
 			want:         slices.Concat(inputRules, ingressV4, egressV4),
 		},
 		{
 			name:         "non-root container dual-stack",
 			ports:        map[string]struct{}{"80/tcp": {}},
-			containerIPs: []net.IP{v4, v6},
+			containerIPs: []netip.Addr{v4, v6},
 			want:         slices.Concat(inputRules, ingressV4, ingressV6, egressV4, egressV6),
 		},
 		{
 			name:         "no exposed ports still allows container egress",
-			containerIPs: []net.IP{v4, v6},
+			containerIPs: []netip.Addr{v4, v6},
 			want:         slices.Concat(egressV4, egressV6),
 		},
 	}
@@ -1772,6 +1773,7 @@ func TestBuildPortRules(t *testing.T) {
 func TestBuildPortRulesErrors(t *testing.T) {
 	testCases := []struct {
 		name, exposed string
+		containerIPs  []netip.Addr
 	}{
 		{
 			name:    "no protocol",
@@ -1797,11 +1799,16 @@ func TestBuildPortRulesErrors(t *testing.T) {
 			name:    "non-digit protocol",
 			exposed: "abc/udp",
 		},
+		{
+			name:         "invalid container IP",
+			exposed:      "80/tcp",
+			containerIPs: []netip.Addr{{}},
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			if _, err := buildPortRules(map[string]struct{}{tc.exposed: {}}, nil); err == nil {
-				t.Errorf("buildPortRules(%q) succeeded, want error", tc.exposed)
+			if _, err := buildPortRules(map[string]struct{}{tc.exposed: {}}, tc.containerIPs); err == nil {
+				t.Errorf("buildPortRules(%q, %v) succeeded, want error", tc.exposed, tc.containerIPs)
 			}
 		})
 	}
@@ -1816,10 +1823,16 @@ func buildIPNet(t *testing.T, addr string) net.IPNet {
 }
 
 func TestIPsFromCNI(t *testing.T) {
+	eth0 := types100.Int(2)
 	cniRaw := []*types100.Result{{
+		Interfaces: []*types100.Interface{
+			{Name: "br0", Mac: "02:42:ac:14:00:01"},
+			{Name: "veth1a2b3c4d", Mac: "02:42:ac:14:00:02"},
+			{Name: "eth0", Mac: "02:42:ac:14:00:03", Sandbox: "/proc/1234/ns/net"},
+		},
 		IPs: []*types100.IPConfig{
-			{Address: buildIPNet(t, "172.20.0.2/24"), Gateway: net.ParseIP("172.20.0.1")},
-			{Address: buildIPNet(t, "fdb6:c4ca:384d:1::2/64"), Gateway: net.ParseIP("fdb6:c4ca:384d:1::1")},
+			{Interface: eth0, Address: buildIPNet(t, "172.20.0.2/24"), Gateway: net.ParseIP("172.20.0.1")},
+			{Interface: eth0, Address: buildIPNet(t, "fdb6:c4ca:384d:1::2/64"), Gateway: net.ParseIP("fdb6:c4ca:384d:1::1")},
 		},
 	}}
 	ips, err := ipsFromCNI(cniRaw)
@@ -1835,8 +1848,9 @@ func TestIPsFromCNI(t *testing.T) {
 	}
 
 	for name, in := range map[string][]*types100.Result{
-		"no result": nil,
-		"no IPs":    {{}},
+		"no result":  nil,
+		"no IPs":     {{}},
+		"invalid IP": {{IPs: []*types100.IPConfig{{}}}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := ipsFromCNI(in); err == nil {

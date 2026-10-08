@@ -11,6 +11,7 @@ import (
 	"math/rand"
 	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -665,7 +666,7 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to get image config: %w", err)
 	}
-	var containerIPs []net.IP // Stays nil for a root container, which shares the host network namespace.
+	var containerIPs []netip.Addr // Stays nil for a root container, which shares the host network namespace.
 	if r.launchSpec.NonrootContainer {
 		containerIPs, err = r.setupCNI(ctx, fmt.Sprintf(netnsPathFmt, task.Pid()))
 		if err != nil {
@@ -774,19 +775,22 @@ func portProtocol(exposed string) (port, protocol string, err error) {
 	return port, protocol, nil
 }
 
-// iptablesBin returns the netfilter command for the IP family of `ip`.
-func iptablesBin(ip net.IP) string {
-	if ip.To4() != nil {
-		return "iptables"
+// iptablesBin returns the netfilter command for the IP family of `addr`.
+func iptablesBin(addr netip.Addr) (string, error) {
+	if addr.Is4() {
+		return "iptables", nil
 	}
-	return "ip6tables"
+	if addr.Is6() {
+		return "ip6tables", nil
+	}
+	return "", fmt.Errorf("invalid or uninitialized IP: %v", addr)
 }
 
 // buildPortRules returns the iptables/ip6tables command lines (binary first) needed to open `ports`.
 // When `containerIPs` is not empty, it implies that the namespace and CNI are used for the container.
 // In that case, per IP family, it also adds rules to DNAT ingress traffic to the container and to
 // allow the forwarded traffic in both directions.
-func buildPortRules(ports map[string]struct{}, containerIPs []net.IP) ([][]string, error) {
+func buildPortRules(ports map[string]struct{}, containerIPs []netip.Addr) ([][]string, error) {
 	var rules [][]string
 	for k := range ports {
 		port, protocol, err := portProtocol(k)
@@ -802,7 +806,10 @@ func buildPortRules(ports map[string]struct{}, containerIPs []net.IP) ([][]strin
 		)
 
 		for _, ip := range containerIPs {
-			bin := iptablesBin(ip)
+			bin, err := iptablesBin(ip)
+			if err != nil {
+				return nil, err
+			}
 			rules = append(rules,
 				// Forward traffic from host port to container port with the same number.
 				[]string{bin, "-t", "nat", "-A", "PREROUTING", "-p", protocol, "--dport", port, "-j", "DNAT",
@@ -815,7 +822,11 @@ func buildPortRules(ports map[string]struct{}, containerIPs []net.IP) ([][]strin
 
 	// Allow egress traffic from the container to go out.
 	for _, ip := range containerIPs {
-		rules = append(rules, []string{iptablesBin(ip), "-A", "FORWARD", "-s", ip.String(), "-j", "ACCEPT"})
+		bin, err := iptablesBin(ip)
+		if err != nil {
+			return nil, err
+		}
+		rules = append(rules, []string{bin, "-A", "FORWARD", "-s", ip.String(), "-j", "ACCEPT"})
 	}
 	return rules, nil
 }
@@ -824,7 +835,7 @@ func buildPortRules(ports map[string]struct{}, containerIPs []net.IP) ([][]strin
 // When `containerIPs` is not empty, it implies that the namespace and CNI are used for the container.
 // In that case, it also forwards traffic to the container via DNAT and allows container egress traffic,
 // for both IPv4 and IPv6.
-func openPorts(ports map[string]struct{}, containerIPs []net.IP) error {
+func openPorts(ports map[string]struct{}, containerIPs []netip.Addr) error {
 	rules, err := buildPortRules(ports, containerIPs)
 	if err != nil {
 		return err
@@ -907,18 +918,23 @@ func newCNI() (gocni.CNI, error) {
 
 // ipsFromCNI extracts the addresses CNI assigned to the workload interface
 // (one IPv4 and one IPv6 with the dual-stack `10-workload.conf`).
-func ipsFromCNI(raw []*types100.Result) ([]net.IP, error) {
+func ipsFromCNI(raw []*types100.Result) ([]netip.Addr, error) {
 	if len(raw) == 0 || len(raw[0].IPs) == 0 {
 		return nil, errors.New("failed to get container IP address")
 	}
-	ips := make([]net.IP, 0, len(raw[0].IPs))
+	ips := make([]netip.Addr, 0, len(raw[0].IPs))
 	for _, ipc := range raw[0].IPs {
-		ips = append(ips, ipc.Address.IP)
+		addr, ok := netip.AddrFromSlice(ipc.Address.IP)
+		if !ok {
+			return nil, fmt.Errorf("invalid container IP address: %v", ipc.Address.IP)
+		}
+		// `addr` may hold IPv4 in 16-byte form (::ffff:a.b.c.d); Unmap() so that Is4() reports it as IPv4.
+		ips = append(ips, addr.Unmap())
 	}
 	return ips, nil
 }
 
-func (r *ContainerRunner) setupCNI(ctx context.Context, netnsPath string) ([]net.IP, error) {
+func (r *ContainerRunner) setupCNI(ctx context.Context, netnsPath string) ([]netip.Addr, error) {
 	if r.cni == nil {
 		return nil, errors.New("CNI is not initialized")
 	}
