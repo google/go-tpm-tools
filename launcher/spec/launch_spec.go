@@ -291,6 +291,17 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 		}
 	}
 
+	if s.Experiments.GB300CCMode {
+		mounts, err := launchermount.CreateLSSDMounts(launchermount.DefaultLSSDHostPath, launchermount.DefaultLSSDContainerPath)
+		if err != nil {
+			return err
+		}
+		for _, m := range mounts {
+			fmt.Printf("############## %v\n", m)
+			s.Mounts = append(s.Mounts, m)
+		}
+	}
+
 	if s.Experiments.EnableItaVerifier {
 		itaRegionVal, itaRegionOK := unmarshaledMap[itaRegion]
 		itaKeyVal, itaKeyOK := unmarshaledMap[itaKey]
