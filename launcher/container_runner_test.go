@@ -1847,14 +1847,27 @@ func TestIPsFromCNI(t *testing.T) {
 		t.Errorf("ipsFromCNI() mismatch (-want +got):\n%s", diff)
 	}
 
-	for name, in := range map[string][]*types100.Result{
-		"no result":  nil,
-		"no IPs":     {{}},
-		"invalid IP": {{IPs: []*types100.IPConfig{{}}}},
-	} {
-		t.Run(name, func(t *testing.T) {
-			if _, err := ipsFromCNI(in); err == nil {
-				t.Errorf("ipsFromCNI(%v) succeeded, want error", in)
+	tests := []struct {
+		name      string
+		cniResult []*types100.Result
+	}{
+		{
+			name: "no result",
+		},
+		{
+			name:      "no IPs",
+			cniResult: []*types100.Result{{}},
+		},
+		{
+			name:      "invalid IP",
+			cniResult: []*types100.Result{{IPs: []*types100.IPConfig{{}}}},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := ipsFromCNI(tc.cniResult); err == nil {
+				t.Errorf("ipsFromCNI(%v) succeeded, want error", tc.cniResult)
 			}
 		})
 	}
