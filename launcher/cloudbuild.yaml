@@ -640,10 +640,10 @@ steps:
   - 'PROJECT_ID=$PROJECT_ID'
   script: |
     #!/usr/bin/env bash
+    set -euo pipefail
     echo "downloading hardened image ${OUTPUT_IMAGE_NAME}"
-    gcloud storage cp gs://confidential-space-images-dev_raw-images/${OUTPUT_IMAGE_NAME}.tar.gz .
     mkdir hardeneddisk
-    tar xzf ${OUTPUT_IMAGE_NAME}.tar.gz -C hardeneddisk/
+    gcloud storage cat gs://confidential-space-images-dev_raw-images/${OUTPUT_IMAGE_NAME}.tar.gz | tar xz -C hardeneddisk/
     echo "measuring image ${OUTPUT_IMAGE_NAME}"
     /usr/local/bin/measure.sh hardeneddisk/disk.raw measure_output_hardened.json hardened x86_64 sha256
     gcloud storage cp measure_output_hardened.json gs://${PROJECT_ID}-rims/${OUTPUT_IMAGE_NAME}.json
@@ -656,13 +656,13 @@ steps:
   - 'PROJECT_ID=$PROJECT_ID'
   script: |
     #!/usr/bin/env bash
+    set -euo pipefail
     echo "downloading debug image ${OUTPUT_IMAGE_NAME}"
-    gsutil cp gs://confidential-space-images-dev_raw-images/${OUTPUT_IMAGE_NAME}.tar.gz .
     mkdir debugdisk
-    tar xzf ${OUTPUT_IMAGE_NAME}.tar.gz -C debugdisk/
+    gcloud storage cat gs://confidential-space-images-dev_raw-images/${OUTPUT_IMAGE_NAME}.tar.gz | tar xz -C debugdisk/
     echo "measuring image ${OUTPUT_IMAGE_NAME}"
     /usr/local/bin/measure.sh debugdisk/disk.raw measure_output_debug.json debug x86_64 sha256
-    gsutil cp measure_output_debug.json gs://${PROJECT_ID}-rims/${OUTPUT_IMAGE_NAME}.json
+    gcloud storage cp measure_output_debug.json gs://${PROJECT_ID}-rims/${OUTPUT_IMAGE_NAME}.json
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: ExportVgHardenedImage
@@ -692,10 +692,10 @@ steps:
   - 'PROJECT_ID=$PROJECT_ID'
   script: |
     #!/usr/bin/env bash
+    set -euo pipefail
     echo "downloading hardened image ${OUTPUT_IMAGE_NAME}"
-    gcloud storage cp gs://confidential-space-images-dev_raw-images/${OUTPUT_IMAGE_NAME}.tar.gz .
     mkdir vghardeneddisk
-    tar xzf ${OUTPUT_IMAGE_NAME}.tar.gz -C vghardeneddisk/
+    gcloud storage cat gs://confidential-space-images-dev_raw-images/${OUTPUT_IMAGE_NAME}.tar.gz | tar xz -C vghardeneddisk/
     echo "measuring image ${OUTPUT_IMAGE_NAME}"
     /usr/local/bin/measure.sh vghardeneddisk/disk.raw measure_output_vg_hardened.json hardened x86_64 sha256
     /usr/local/bin/measure.sh vghardeneddisk/disk.raw measure_output_vg_hardened_sha384.json hardened x86_64 sha384
@@ -712,16 +712,16 @@ steps:
   - 'PROJECT_ID=$PROJECT_ID'
   script: |
     #!/usr/bin/env bash
+    set -euo pipefail
     echo "downloading debug image ${OUTPUT_IMAGE_NAME}"
-    gsutil cp gs://confidential-space-images-dev_raw-images/${OUTPUT_IMAGE_NAME}.tar.gz .
     mkdir vgdebugdisk
-    tar xzf ${OUTPUT_IMAGE_NAME}.tar.gz -C vgdebugdisk/
+    gcloud storage cat gs://confidential-space-images-dev_raw-images/${OUTPUT_IMAGE_NAME}.tar.gz | tar xz -C vgdebugdisk/
     echo "measuring image ${OUTPUT_IMAGE_NAME}"
     /usr/local/bin/measure.sh vgdebugdisk/disk.raw measure_output_vg_debug.json debug x86_64 sha256
     /usr/local/bin/measure.sh vgdebugdisk/disk.raw measure_output_vg_debug_sha384.json debug x86_64 sha384
 
-    gsutil cp measure_output_vg_debug.json gs://${PROJECT_ID}-rims/${OUTPUT_IMAGE_NAME}.json
-    gsutil cp measure_output_vg_debug_sha384.json gs://${PROJECT_ID}-rims/${OUTPUT_IMAGE_NAME}_sha384.json
+    gcloud storage cp measure_output_vg_debug.json gs://${PROJECT_ID}-rims/${OUTPUT_IMAGE_NAME}.json
+    gcloud storage cp measure_output_vg_debug_sha384.json gs://${PROJECT_ID}-rims/${OUTPUT_IMAGE_NAME}_sha384.json
 
 options:
   automapSubstitutions: true
