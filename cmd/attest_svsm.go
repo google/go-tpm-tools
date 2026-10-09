@@ -21,24 +21,26 @@ var manifestVersion string
 var attestSVSMCmd = &cobra.Command{
 	Use:   "svsm",
 	Short: `Produce a SevSnpSvsmAttestation that wraps the PCR attestation message.`,
-	RunE: func(*cobra.Command, []string) error {
-		if teeTechnology != sevSNP {
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		cfg, err := parseAttestFlags(cmd)
+		if err != nil {
+			return err
+		}
+		opts := cfg.opts
+		if opts.TEETechnology != sevSNP {
 			return errors.New("--svsm is only supported with --tee-technology=sev-snp")
 		}
 		if manifestVersion != "" && manifestVersion != "0" && manifestVersion != "1" {
 			return fmt.Errorf("invalid manifest version %q, must be one of \"\", \"0\", \"1\"", manifestVersion)
 		}
-		if key != "AK" && key != "gceAK" {
-			return fmt.Errorf("%v is an invalid value for --key, only AK and gceAK are supported", key)
-		}
-		if (manifestVersion == "" || manifestVersion == "0") && key != "AK" {
+		if (manifestVersion == "" || manifestVersion == "0") && opts.Key != "AK" {
 			return fmt.Errorf("manifest version 0 requires --key=AK")
 		}
-		if manifestVersion == "1" && key != "gceAK" {
+		if manifestVersion == "1" && opts.Key != "gceAK" {
 			return fmt.Errorf("manifest version 1 requires --key=gceAK")
 		}
-		if len(teeNonce) != sabi.ReportDataSize {
-			return fmt.Errorf("the teeNonce size is %d. SEV-SNP device requires 64", len(teeNonce))
+		if len(opts.TEENonce) != sabi.ReportDataSize {
+			return fmt.Errorf("the teeNonce size is %d. SEV-SNP device requires 64", len(opts.TEENonce))
 		}
 
 		rwc, err := openTpm()
@@ -47,14 +49,14 @@ var attestSVSMCmd = &cobra.Command{
 		}
 		defer rwc.Close()
 
-		attestationKey, err := createAttestationKey(rwc, key, keyAlgo)
+		attestationKey, err := createAttestationKey(rwc, opts.Key, opts.KeyAlgo)
 		if err != nil {
 			return fmt.Errorf("failed to create attestation key: %w", err)
 		}
 		defer attestationKey.Close()
 
 		attestOpts := client.AttestOpts{}
-		attestOpts.Nonce = nonce
+		attestOpts.Nonce = opts.Nonce
 		// Omit requesting TEE attestation for the Attestation message when attesting an SVSM based vTPM.
 		// We instead separately attach a TEE attestation inside the SevSnpSvsmAttestation message
 		attestOpts.SkipTeeAttestation = true
@@ -74,7 +76,7 @@ var attestSVSMCmd = &cobra.Command{
 			return fmt.Errorf("failed to create linuxtsm configfs client: %w", err)
 		}
 		svsmAttestation, err := makeSEVSNPSVSMAttestation(attestation, &sevSNPSVSMAttestationOpts{
-			TEENonce:                   teeNonce,
+			TEENonce:                   opts.TEENonce,
 			CongfigfsClient:            configfsClient,
 			VTPMServiceManifestVersion: manifestVersion,
 			ExtractOptions:             extract.DefaultOptions(),
@@ -82,7 +84,7 @@ var attestSVSMCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to create SEV SNP SVSM attestation: %w", err)
 		}
-		if err := writeProtoToOutput(svsmAttestation); err != nil {
+		if err := writeProtoToOutput(svsmAttestation, cfg.format, cfg.outputPath); err != nil {
 			return fmt.Errorf("failed to write SEV SNP SVSM attestation report: %w", err)
 		}
 
