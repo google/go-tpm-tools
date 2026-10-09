@@ -377,14 +377,12 @@ func (r *ContainerRunner) measureContainerClaims(ctx context.Context) error {
 
 // measureGPUAttestationEvidence will measure GPU attestation claims into the COS
 // eventlog in the AttestationAgent.
+//
+// In GB300 CC mode, the attestation agent forwards each event to the BMSAI
+// attestation agent, which extends it into Grace PSC TEM slot 1 and dTPM
+// PCR 19 and records it in the cel_launch_event_log returned by /v1/evidence.
 func (r *ContainerRunner) measureGPUAttestationEvidence() error {
 	if r.deviceROTManager == nil {
-		return nil
-	}
-
-	// TODO: collect GB300 GPU evidence once the GB300 CC attestation agent is implemented.
-	if r.launchSpec.Experiments.GB300CCMode {
-		r.logger.Info("GB300 CC mode: Skipping GPU attestation evidence")
 		return nil
 	}
 
@@ -430,6 +428,12 @@ func (r *ContainerRunner) measureGPUAttestationEvidence() error {
 			return fmt.Errorf("failed to measure attestation event for device %v: %w", rot.Vendor(), err)
 		}
 
+		// On GB300, gpu-manager sets the CC ready state itself, after
+		// nvidia-mnccd has set up NVLink encryption and before it reports
+		// HEALTH_STATE_READY, so the launcher must not set it again.
+		if r.launchSpec.Experiments.GB300CCMode {
+			continue
+		}
 		if enabler, ok := rot.(device.ReadyStateEnabler); ok {
 			if err := enabler.EnableReadyState(); err != nil {
 				return fmt.Errorf("failed to enable ready state for device %v: %w", rot.Vendor(), err)
@@ -437,7 +441,11 @@ func (r *ContainerRunner) measureGPUAttestationEvidence() error {
 		}
 	}
 
-	r.logger.Info("Successfully measured device attestation binding events and enabled ready states")
+	if r.launchSpec.Experiments.GB300CCMode {
+		r.logger.Info("GB300 CC mode: successfully measured device attestation binding events; gpu-manager sets the GPU CC ready state")
+	} else {
+		r.logger.Info("Successfully measured device attestation binding events and enabled ready states")
+	}
 	return nil
 }
 
