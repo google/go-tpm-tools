@@ -61,6 +61,7 @@ type attestHandler struct {
 	attestAgent           agent.AttestationAgent
 	logger                logging.Logger
 	bcMode                bool
+	gb300ccMode           bool
 	enableHostAttestation bool
 	clients               AttestClients
 	keyClaimsProvider     wsd.KeyClaimsProvider
@@ -84,6 +85,7 @@ func New(
 	a agent.AttestationAgent,
 	logger logging.Logger,
 	bcMode bool,
+	gb300ccMode bool,
 	enableHostAttestation bool,
 	clients AttestClients,
 	keyClaimsProvider wsd.KeyClaimsProvider,
@@ -109,6 +111,7 @@ func New(
 				attestAgent:           a,
 				logger:                logger,
 				bcMode:                bcMode,
+				gb300ccMode:           gb300ccMode,
 				enableHostAttestation: enableHostAttestation,
 				clients:               clients,
 				keyClaimsProvider:     keyClaimsProvider,
@@ -249,6 +252,22 @@ func (a *attestHandler) getAttestationEvidence(w http.ResponseWriter, r *http.Re
 	}
 	if len(req.Challenge) == 0 {
 		a.logAndWriteHTTPError(w, http.StatusBadRequest, fmt.Errorf("challenge is required"))
+		return
+	}
+
+	if a.gb300ccMode {
+		evidence, err := a.attestAgent.AttestGB300(a.ctx, req.Challenge)
+		if err != nil {
+			a.handleAttestError(w, err, "failed to fetch GB300 attestation evidence")
+			return
+		}
+		evidenceBytes, err := protojson.Marshal(evidence)
+		if err != nil {
+			a.logAndWriteHTTPError(w, http.StatusInternalServerError, fmt.Errorf("failed to marshal evidence: %v", err))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(evidenceBytes)
 		return
 	}
 
