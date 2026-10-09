@@ -43,29 +43,10 @@ var debugCmd = &cobra.Command{
 			return fmt.Errorf("fail to unmarshal attestation report: %v", err)
 		}
 
-		pub, err := tpm2.DecodePublic(attestation.GetAkPub())
+		ms, err := verifyDebugAttestation(attestation, nonce, teeNonce)
 		if err != nil {
 			return err
 		}
-		cryptoPub, err := pub.Key()
-		if err != nil {
-			return err
-		}
-
-		// TODO(#524): create separate, discrete subcommands that verifies SNP and TDX attestation.
-		ms, err := server.VerifyAttestation(attestation, server.VerifyOpts{Nonce: nonce, TrustedAKs: []crypto.PublicKey{cryptoPub}})
-		if err != nil {
-			return fmt.Errorf("verifying TPM attestation: %w", err)
-		}
-		err = verifyGceTechnology(attestation)
-		if err != nil {
-			return fmt.Errorf("verifying TEE attestation: %w", err)
-		}
-		teeMS, err := parseTEEAttestation(attestation, ms.GetPlatform().Technology)
-		if err != nil {
-			return fmt.Errorf("failed to parse machineState from TEE attestation: %w", err)
-		}
-		ms.TeeAttestation = teeMS.TeeAttestation
 		out, err := marshalOptions.Marshal(ms)
 		if err != nil {
 			return nil
@@ -75,6 +56,35 @@ var debugCmd = &cobra.Command{
 		}
 		return nil
 	},
+}
+
+func verifyDebugAttestation(attestation *pb.Attestation, tpmNonce, customTEENonce []byte) (*pb.MachineState, error) {
+	pub, err := tpm2.DecodePublic(attestation.GetAkPub())
+	if err != nil {
+		return nil, err
+	}
+	cryptoPub, err := pub.Key()
+	if err != nil {
+		return nil, err
+	}
+
+	// TODO(#524): create separate, discrete subcommands that verifies SNP and TDX attestation.
+	ms, err := server.VerifyAttestation(attestation, server.VerifyOpts{
+		Nonce:      tpmNonce,
+		TrustedAKs: []crypto.PublicKey{cryptoPub},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("verifying TPM attestation: %w", err)
+	}
+	if err := verifyGceTechnology(attestation, tpmNonce, customTEENonce); err != nil {
+		return nil, fmt.Errorf("verifying TEE attestation: %w", err)
+	}
+	teeMS, err := parseTEEAttestation(attestation, ms.GetPlatform().Technology)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse machineState from TEE attestation: %w", err)
+	}
+	ms.TeeAttestation = teeMS.TeeAttestation
+	return ms, nil
 }
 
 // parseTEEAttestation parses a machineState from TeeAttestation.
@@ -105,23 +115,19 @@ func parseTEEAttestation(attestation *pb.Attestation, tech pb.GCEConfidentialTec
 	}
 }
 
-func verifyGceTechnology(attestation *pb.Attestation) error {
+func verifyGceTechnology(attestation *pb.Attestation, tpmNonce, customTEENonce []byte) error {
 	if attestation.GetTeeAttestation() == nil {
 		return nil
 	}
+	effectiveNonce := tpmNonce
+	if len(customTEENonce) != 0 {
+		effectiveNonce = customTEENonce
+	}
 	switch attestation.GetTeeAttestation().(type) {
 	case *pb.Attestation_TdxAttestation:
-		var tdxOpts *verifyTdxOpts
-		if len(teeNonce) != 0 {
-			tdxOpts = &verifyTdxOpts{
-				Validation:   tdxDefaultValidateOpts(teeNonce),
-				Verification: tv.DefaultOptions(),
-			}
-		} else {
-			tdxOpts = &verifyTdxOpts{
-				Validation:   tdxDefaultValidateOpts(nonce),
-				Verification: tv.DefaultOptions(),
-			}
+		tdxOpts := &verifyTdxOpts{
+			Validation:   tdxDefaultValidateOpts(effectiveNonce),
+			Verification: tv.DefaultOptions(),
 		}
 		tee, ok := attestation.TeeAttestation.(*pb.Attestation_TdxAttestation)
 		if !ok {
@@ -129,17 +135,9 @@ func verifyGceTechnology(attestation *pb.Attestation) error {
 		}
 		return verifyTdxAttestation(tee.TdxAttestation, tdxOpts)
 	case *pb.Attestation_SevSnpAttestation:
-		var snpOpts *verifySnpOpts
-		if len(teeNonce) != 0 {
-			snpOpts = &verifySnpOpts{
-				Validation:   sevSnpDefaultValidateOpts(teeNonce),
-				Verification: &sv.Options{},
-			}
-		} else {
-			snpOpts = &verifySnpOpts{
-				Validation:   sevSnpDefaultValidateOpts(nonce),
-				Verification: &sv.Options{},
-			}
+		snpOpts := &verifySnpOpts{
+			Validation:   sevSnpDefaultValidateOpts(effectiveNonce),
+			Verification: &sv.Options{},
 		}
 		tee, ok := attestation.TeeAttestation.(*pb.Attestation_SevSnpAttestation)
 		if !ok {
