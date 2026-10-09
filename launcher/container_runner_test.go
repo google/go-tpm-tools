@@ -334,6 +334,7 @@ func TestRefreshTokenError(t *testing.T) {
 func TestMeasureGPUAttestationEvidence(t *testing.T) {
 	testCases := []struct {
 		name             string
+		gb300CCMode      bool
 		rots             []device.ROT
 		attestAgent      *fakeAttestationAgent
 		wantErr          bool
@@ -433,6 +434,18 @@ func TestMeasureGPUAttestationEvidence(t *testing.T) {
 			wantErr:    true,
 			wantErrStr: "failed to enable ready state",
 		},
+		{
+			// GB300 CC mode measures the GPU evidence but leaves the CC
+			// ready state alone, so a failing EnableReadyState is not called.
+			name:        "GB300CCModeMeasuresWithoutReadyState",
+			gb300CCMode: true,
+			rots:        []device.ROT{&fakeGPUAttester{readyStateErr: errors.New("must not be called")}},
+			attestAgent: &fakeAttestationAgent{
+				measureEventFunc: func(gecel.Content) error { return nil },
+			},
+			wantErr:          false,
+			wantMeasureCount: 1,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -451,6 +464,7 @@ func TestMeasureGPUAttestationEvidence(t *testing.T) {
 				attestAgent:      tc.attestAgent,
 				logger:           logging.SimpleLogger(),
 			}
+			r.launchSpec.Experiments.GB300CCMode = tc.gb300CCMode
 
 			err := r.measureGPUAttestationEvidence()
 			if (err != nil) != tc.wantErr {
@@ -728,8 +742,6 @@ func TestGetNextRefresh(t *testing.T) {
 		}
 	}
 }
-
-
 
 func TestMeasureCELEvents(t *testing.T) {
 	ctx := context.Background()
@@ -1704,4 +1716,3 @@ func TestEnableGracefulShutdown_NilPowerButtonDoesNotPanic(t *testing.T) {
 	// Should safely no-op without panicking
 	runner.enableGracefulShutdown(t.Context(), signaler)
 }
-

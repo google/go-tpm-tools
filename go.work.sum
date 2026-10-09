@@ -1913,7 +1913,6 @@ github.com/google/go-tpm v0.9.6/go.mod h1:h9jEsEECg7gtLis0upRBQU+GhYVH6jMjrFxI8u
 github.com/google/go-tpm-tools v0.3.13-0.20230620182252-4639ecce2aba/go.mod h1:EFYHy8/1y2KfgTAsx7Luu7NGhoxtuVHnNo8jE7FikKc=
 github.com/google/go-tpm-tools v0.4.2/go.mod h1:fGUDZu4tw3V4hUVuFHmiYgRd0c58/IXivn9v3Ea/ck4=
 github.com/google/go-tpm-tools v0.4.7/go.mod h1:gSyXTZHe3fgbzb6WEGd90QucmsnT1SRdlye82gH8QjQ=
-github.com/google/go-tpm-tools v0.4.10-0.20260914213056-da471084bae5/go.mod h1:NRzFfBqdmBgEWDPoFzQyfzhZdqFQjPJ+vWkbIlIIuOw=
 github.com/google/go-tspi v0.3.0/go.mod h1:xfMGI3G0PhxCdNVcYr1C4C+EizojDg/TXuX5by8CiHI=
 github.com/google/gofuzz v1.1.0/go.mod h1:dBl0BpW6vV/+mYPU4Po3pmUjxk6FQPldtuIdl/M65Eg=
 github.com/google/gofuzz v1.2.0 h1:xRy4A+RhZaiKjJ1bPfwQ8sedCA+YS2YcCHW6ec7JMi0=
@@ -1923,6 +1922,7 @@ github.com/google/martian v2.1.1-0.20190517191504-25dcb96d9e51+incompatible h1:x
 github.com/google/martian/v3 v3.3.2/go.mod h1:oBOf6HBosgwRXnUGWUB05QECsc6uvmMiJ3+6W4l/CUk=
 github.com/google/martian/v3 v3.3.3 h1:DIhPTQrbPkgs2yJYdXU/eNACCG5DVQjySNRNlflZ9Fc=
 github.com/google/martian/v3 v3.3.3/go.mod h1:iEPrYcgCF7jA9OtScMFQyAlZZ4YXTKEtJ1E6RWzmBA0=
+github.com/google/platform-attestation/titan v0.0.0-20260911182118-38bc3adaa8ec/go.mod h1:2nWU3fohEJb49iy4t9AXsIXjje0w52SHoWqxRtZuaW4=
 github.com/google/platform-attestation/titan/dice/titandice v0.0.0-20260527025448-83f6b9d400bc/go.mod h1:Xr8BUnO0VrBSJiqlIzQQZQIGChikmwesUaMnUIodLrw=
 github.com/google/platform-attestation/titan/measurements v0.0.0-20260523000255-d2d9527f93a5/go.mod h1:OSmFW9+NGxvQAOgOut2QqEnbC7C7a3hFZBHq8viqS/c=
 github.com/google/pprof v0.0.0-20210407192527-94a9f03dee38/go.mod h1:kpwsk12EmLew5upagYY7GY0pfYCcupk39gWOCRROcvE=

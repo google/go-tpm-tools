@@ -32,6 +32,8 @@ github.com/AdamKorcz/go-118-fuzz-build v0.0.0-20231105174938-2b5cbb29f3e2/go.mod
 github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=
 github.com/GoogleCloudPlatform/confidential-space/server v0.0.0-20260706204617-c9f710ef3461 h1:xmhNv0L7pGJZONS+B7jsq7atzfnDIBDDnPAq/khoQnE=
 github.com/GoogleCloudPlatform/confidential-space/server v0.0.0-20260706204617-c9f710ef3461/go.mod h1:07jta9kodtzgHx670Bj6y9zaXlv3zapamb7XxZEuDpg=
+github.com/GoogleCloudPlatform/confidential-space/server v0.0.0-20260928085700-77edef98dcdf h1:V0pYTYfTOSxPu6ywiMs9hqZkp2I0kGvM4ci5qO7WFmc=
+github.com/GoogleCloudPlatform/confidential-space/server v0.0.0-20260928085700-77edef98dcdf/go.mod h1:45sKqrMk9m8VhKMWW2nJpepcbFl+oYhwJeHSnZ9U2NE=
 github.com/GoogleCloudPlatform/key-protection-module v0.0.0-20260604222613-9d1fbac80fd7 h1:rAM8UCs9fZJZETC0Rx6sHlvwhZmjHluBnjTHUYKwwvs=
 github.com/GoogleCloudPlatform/key-protection-module v0.0.0-20260604222613-9d1fbac80fd7/go.mod h1:dp2gXtLTezVC0wNEZKJ0och5/xEUZvljnkniTo2IR1M=
 github.com/GoogleCloudPlatform/key-protection-module/keymanager/attestation_service v0.0.0-20260604222613-9d1fbac80fd7 h1:kc0rjekeIMZXuoPWSy//vls3jzPf8hX7Ceb5sIBFxrY=
@@ -163,6 +165,8 @@ github.com/google/go-tpm v0.9.8 h1:slArAR9Ft+1ybZu0lBwpSmpwhRXaa85hWtMinMyRAWo=
 github.com/google/go-tpm v0.9.8/go.mod h1:h9jEsEECg7gtLis0upRBQU+GhYVH6jMjrFxI8u6bVUY=
 github.com/google/go-tpm-tools v0.4.9-0.20260601203525-bc0d334a930f h1:pAOxsfxXJ30sBh4y4FsKtIuh995hXuPnf3MruEoIUFc=
 github.com/google/go-tpm-tools v0.4.9-0.20260601203525-bc0d334a930f/go.mod h1:Omb8zosA8qY9URn1gsrO2i4b6DFqGp29BqNx18V66c4=
+github.com/google/go-tpm-tools v0.4.10-0.20260914213056-da471084bae5 h1:dNBZ/ergR/aTCmpJNKDahN3j1k9sxVVSfL9rPFuMtF4=
+github.com/google/go-tpm-tools v0.4.10-0.20260914213056-da471084bae5/go.mod h1:NRzFfBqdmBgEWDPoFzQyfzhZdqFQjPJ+vWkbIlIIuOw=
 github.com/google/logger v1.1.1 h1:+6Z2geNxc9G+4D4oDO9njjjn2d0wN5d7uOo0vOIW1NQ=
 github.com/google/logger v1.1.1/go.mod h1:BkeJZ+1FhQ+/d087r4dzojEg1u2ZX+ZqG1jTUrLM+zQ=
 github.com/google/pprof v0.0.0-20240727154555-813a5fbdbec8 h1:FKHo8hFI3A+7w0aUQuYXQ+6EN5stWmeY/AZqtM8xk9k=

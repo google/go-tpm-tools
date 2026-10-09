@@ -21,6 +21,7 @@ import (
 	kmcommonpb "github.com/google/go-tpm-tools/keymanager/km_common/proto"
 	workloadservice "github.com/google/go-tpm-tools/keymanager/workload_service"
 	"github.com/google/go-tpm-tools/launcher/internal/gpu"
+	"github.com/google/go-tpm-tools/launcher/internal/gpumanager"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/registryauth"
@@ -131,8 +132,18 @@ func StartLauncher(ctx context.Context, launchSpec spec.LaunchSpec, logger loggi
 
 	// Create device ROTs and ROTManager.
 	var deviceROTs []device.ROT
-	nvidiaAttester := gpu.NewNvidiaAttester(launchSpec.InstallGpuDriver)
-	if nvidiaAttester != nil {
+	if launchSpec.Experiments.GB300CCMode && launchSpec.InstallGpuDriver {
+		// gpu-manager unloads the driver, switches the GPUs' BMSAI mode and
+		// resets them, so nothing may touch the GPUs (the attester or the
+		// container's /dev/nvidia* devices) until it reports
+		// HEALTH_STATE_READY. Fail closed on HEALTH_STATE_BMSAI_FAILED or a
+		// timeout.
+		logger.Info("GB300 CC mode: waiting for gpu-manager to prepare the GPUs")
+		if err := gpumanager.WaitForReady(ctx, gpumanager.DefaultSocketPath, gpumanager.DefaultTimeout, gpumanager.DefaultPollInterval, logger); err != nil {
+			return fmt.Errorf("GB300 CC mode: GPUs are not ready: %w", err)
+		}
+	}
+	if nvidiaAttester := gpu.NewNvidiaAttester(launchSpec.InstallGpuDriver); nvidiaAttester != nil {
 		deviceROTs = append(deviceROTs, nvidiaAttester)
 	}
 	deviceROTManager := device.NewROTManager(deviceROTs)

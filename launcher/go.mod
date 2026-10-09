@@ -7,7 +7,7 @@ require (
 	cloud.google.com/go/compute/metadata v0.9.0
 	cloud.google.com/go/logging v1.13.2
 	cos.googlesource.com/cos/tools.git v0.0.0-20260828164205-7c1f394ced14
-	github.com/GoogleCloudPlatform/confidential-space/server v0.0.0-20260706204617-c9f710ef3461
+	github.com/GoogleCloudPlatform/confidential-space/server v0.0.0-20260928085700-77edef98dcdf
 	github.com/GoogleCloudPlatform/key-protection-module v0.0.0-20260604222613-9d1fbac80fd7
 	github.com/GoogleCloudPlatform/key-protection-module/keymanager/attestation_service v0.0.0-20260604222613-9d1fbac80fd7
 	github.com/cenkalti/backoff/v4 v4.3.0
@@ -20,7 +20,7 @@ require (
 	github.com/google/go-eventlog v0.0.3-0.20260617163629-883cc5652c69
 	github.com/google/go-nvattest-tools v0.0.0-20260714083801-bf44c37ba22c
 	github.com/google/go-tpm v0.9.8
-	github.com/google/go-tpm-tools v0.4.9-0.20260601203525-bc0d334a930f
+	github.com/google/go-tpm-tools v0.4.10-0.20260914213056-da471084bae5
 	github.com/google/go-tpm-tools/agent v0.0.0-20260601203525-bc0d334a930f
 	github.com/google/go-tpm-tools/keymanager v0.4.4
 	github.com/google/go-tpm-tools/verifier v0.4.4

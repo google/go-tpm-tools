@@ -182,6 +182,24 @@ func TestCollectAttestationEvidence(t *testing.T) {
 			wantErrStr: "failed to collect GPU evidence: nvml hardware error",
 		},
 		{
+			name:    "success with GB300 MPT (4 GPUs)",
+			nonce:   []byte("nonce-gb300"),
+			gpuType: deviceinfo.GB300,
+			provider: &fakeGpuQuoteProvider{
+				quote: &nvattestpb.GpuAttestationQuote{
+					GpuInfos: []*nvattestpb.GpuInfo{
+						validDevInfo("gpu-gb300-0", "97.10.89.00.02", "620.06", nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_BLACKWELL),
+						validDevInfo("gpu-gb300-1", "97.10.89.00.02", "620.06", nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_BLACKWELL),
+						validDevInfo("gpu-gb300-2", "97.10.89.00.02", "620.06", nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_BLACKWELL),
+						validDevInfo("gpu-gb300-3", "97.10.89.00.02", "620.06", nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_BLACKWELL),
+					},
+				},
+			},
+			wantPass: true,
+			wantMPT:  true,
+			wantArch: attestationpb.GpuArchitectureType_GPU_ARCHITECTURE_TYPE_BLACKWELL,
+		},
+		{
 			name:    "failed due to empty quote",
 			nonce:   []byte("nonce"),
 			gpuType: deviceinfo.H100,
@@ -461,6 +479,34 @@ func TestDetermineAttestationType(t *testing.T) {
 				{Uuid: "gpu-1"},
 			},
 			gpuType: deviceinfo.RTX_PRO_6000,
+			want:    UNSUPPORTED,
+		},
+		{
+			name: "MPT attestation type (GB300 with 4 GPUs)",
+			gpuInfos: []*attestationpb.GpuInfo{
+				{Uuid: "gpu-0"},
+				{Uuid: "gpu-1"},
+				{Uuid: "gpu-2"},
+				{Uuid: "gpu-3"},
+			},
+			gpuType: deviceinfo.GB300,
+			want:    MPT,
+		},
+		{
+			name: "SPT attestation type (GB300 with single GPU)",
+			gpuInfos: []*attestationpb.GpuInfo{
+				{Uuid: "gpu-0"},
+			},
+			gpuType: deviceinfo.GB300,
+			want:    SPT,
+		},
+		{
+			name: "Unsupported attestation type (GB200)",
+			gpuInfos: []*attestationpb.GpuInfo{
+				{Uuid: "gpu-0"},
+				{Uuid: "gpu-1"},
+			},
+			gpuType: deviceinfo.GB200,
 			want:    UNSUPPORTED,
 		},
 	}
