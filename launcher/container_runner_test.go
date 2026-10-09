@@ -34,6 +34,7 @@ import (
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/spec"
+	bmsaipb "github.com/google/go-tpm-tools/proto/bmsai"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/opencontainers/go-digest"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
@@ -99,6 +100,10 @@ func (f *fakeAttestationAgent) Close() error {
 
 func (f *fakeAttestationAgent) AttestHost(_ context.Context, _ []byte) ([]byte, error) {
 	return nil, fmt.Errorf("AttestHost unimplemented")
+}
+
+func (f *fakeAttestationAgent) AttestGB300(_ context.Context, _ []byte) (*bmsaipb.Gb300Evidence, error) {
+	return nil, fmt.Errorf("AttestGB300 unimplemented")
 }
 
 type fakeGPUAttester struct {

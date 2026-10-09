@@ -177,6 +177,7 @@ func StartLauncher(ctx context.Context, launchSpec spec.LaunchSpec, logger loggi
 		attestAgent,
 		logger,
 		launchSpec.Experiments.BcMode,
+		launchSpec.Experiments.GB300CCMode,
 		launchSpec.Experiments.EnableHostAttestation,
 		attestClients,
 		keyClaimsProvider,

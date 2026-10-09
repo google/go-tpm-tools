@@ -1,0 +1,57 @@
+syntax = "proto3";
+
+package google.tpmtools.bmsai;
+
+import "attestation.proto";
+
+option go_package = "github.com/google/go-tpm-tools/proto/bmsai";
+
+// BmsaiAttestationService coordinates bare-metal attestation operations on GB300.
+service BmsaiAttestationService {
+  // MeasureEvent appends a canonical COS event (GPU SPDM report, container claim,
+  // or launch separator) to cel_launch_event_log and extends its SHA-384 digest into
+  // TEM 1 (go-bmsai slot 2) and its SHA-256 digest into Dauntless dTPM PCR 19.
+  rpc MeasureEvent(MeasureEventRequest) returns (MeasureEventResponse);
+
+  // GetEvidence returns BmsaiEvidence + confidential_space.TpmQuote bound to supplied challenge nonce.
+  rpc GetEvidence(GetEvidenceRequest) returns (Gb300Evidence);
+}
+
+message MeasureEventRequest {
+  // Binary CEL TLV of type 80 (COS event) whose value is a nested cel.CosTlv
+  // (Event Type + Content). Any other TLV type is rejected with INVALID_ARGUMENT.
+  // The extended digests are computed over exactly these bytes.
+  bytes cos_event = 1;
+}
+
+message MeasureEventResponse {
+  // Success indicator. Any extension failure returns a gRPC status error.
+  bool success = 1;
+}
+
+message GetEvidenceRequest {
+  // Verifier or workload challenge nonce (8..64 bytes).
+  bytes challenge = 1;
+}
+
+// Top-level evidence message returned to teeserver and workload container.
+message Gb300Evidence {
+  BmsaiEvidence bmsai_evidence = 1;
+  confidential_space.TpmQuote tpm_quote = 2;
+}
+
+message BmsaiEvidence {
+  // Raw CBOR-encoded Tag 907 Conceptual Measurement Wrapper (CMW) bundle
+  // containing Platform Lane (Claim 44234) and Tenant Lane (Claim 44241).
+  bytes bm_cmw_token = 1;
+
+  // DRTM / DLME Boot Event Log (/sys/kernel/security/slaunch/drtm_event_log)
+  // Binary TCG_PCR_EVENT2 records extended into TEM Slot 0 (Claim 44238).
+  bytes drtm_boot_event_log = 2;
+
+  // Canonical Event Log (/run/container_launcher/bmsai_event_log)
+  // Binary cel.CosTlv records whose SHA-384 digests are extended into TEM 1
+  // (go-bmsai slot 2); the same events' SHA-256 digests are extended
+  // into dTPM PCR 19 (TpmQuote.cel_launch_event_log).
+  bytes cel_launch_event_log = 3;
+}
