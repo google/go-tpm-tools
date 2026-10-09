@@ -34,6 +34,7 @@ import (
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/spec"
+	bmsaipb "github.com/google/go-tpm-tools/proto/bmsai"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/opencontainers/go-digest"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
@@ -99,6 +100,10 @@ func (f *fakeAttestationAgent) Close() error {
 
 func (f *fakeAttestationAgent) AttestHost(_ context.Context, _ []byte) ([]byte, error) {
 	return nil, fmt.Errorf("AttestHost unimplemented")
+}
+
+func (f *fakeAttestationAgent) AttestGB300(_ context.Context, _ []byte) (*bmsaipb.Gb300Evidence, error) {
+	return nil, fmt.Errorf("AttestGB300 unimplemented")
 }
 
 type fakeGPUAttester struct {
@@ -329,6 +334,7 @@ func TestRefreshTokenError(t *testing.T) {
 func TestMeasureGPUAttestationEvidence(t *testing.T) {
 	testCases := []struct {
 		name             string
+		gb300CCMode      bool
 		rots             []device.ROT
 		attestAgent      *fakeAttestationAgent
 		wantErr          bool
@@ -428,6 +434,18 @@ func TestMeasureGPUAttestationEvidence(t *testing.T) {
 			wantErr:    true,
 			wantErrStr: "failed to enable ready state",
 		},
+		{
+			// GB300 CC mode measures the GPU evidence but leaves the CC
+			// ready state alone, so a failing EnableReadyState is not called.
+			name:        "GB300CCModeMeasuresWithoutReadyState",
+			gb300CCMode: true,
+			rots:        []device.ROT{&fakeGPUAttester{readyStateErr: errors.New("must not be called")}},
+			attestAgent: &fakeAttestationAgent{
+				measureEventFunc: func(gecel.Content) error { return nil },
+			},
+			wantErr:          false,
+			wantMeasureCount: 1,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -446,6 +464,7 @@ func TestMeasureGPUAttestationEvidence(t *testing.T) {
 				attestAgent:      tc.attestAgent,
 				logger:           logging.SimpleLogger(),
 			}
+			r.launchSpec.Experiments.GB300CCMode = tc.gb300CCMode
 
 			err := r.measureGPUAttestationEvidence()
 			if (err != nil) != tc.wantErr {
@@ -723,8 +742,6 @@ func TestGetNextRefresh(t *testing.T) {
 		}
 	}
 }
-
-
 
 func TestMeasureCELEvents(t *testing.T) {
 	ctx := context.Background()
@@ -1699,4 +1716,3 @@ func TestEnableGracefulShutdown_NilPowerButtonDoesNotPanic(t *testing.T) {
 	// Should safely no-op without panicking
 	runner.enableGracefulShutdown(t.Context(), signaler)
 }
-
