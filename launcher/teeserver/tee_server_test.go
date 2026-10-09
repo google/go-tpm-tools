@@ -25,6 +25,7 @@ import (
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 
 	tspb "github.com/google/go-tpm-tools/launcher/teeserver/proto/gen/teeserver"
+	bmsaipb "github.com/google/go-tpm-tools/proto/bmsai"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/google/go-tpm-tools/verifier/models"
 	"google.golang.org/grpc/codes"
@@ -57,6 +58,7 @@ type fakeAttestationAgent struct {
 	attestFunc              func(context.Context, agent.AttestAgentOpts) ([]byte, error)
 	attestWithClientFunc    func(context.Context, agent.AttestAgentOpts, verifier.Client) ([]byte, error)
 	attestationEvidenceFunc func(context.Context, []byte, []byte) (*attestationpb.VmAttestation, error)
+	attestGB300Func         func(context.Context, []byte) (*bmsaipb.Gb300Evidence, error)
 }
 
 func (f fakeAttestationAgent) Attest(c context.Context, a agent.AttestAgentOpts) ([]byte, error) {
@@ -99,6 +101,13 @@ func (f fakeAttestationAgent) Close() error {
 
 func (f fakeAttestationAgent) AttestHost(_ context.Context, _ []byte) ([]byte, error) {
 	return nil, fmt.Errorf("AttestHost unimplemented")
+}
+
+func (f fakeAttestationAgent) AttestGB300(ctx context.Context, challenge []byte) (*bmsaipb.Gb300Evidence, error) {
+	if f.attestGB300Func != nil {
+		return f.attestGB300Func(ctx, challenge)
+	}
+	return nil, fmt.Errorf("AttestGB300 unimplemented")
 }
 
 // Mock for KeyClaimsProvider interface
@@ -1318,6 +1327,7 @@ func TestTeeServer_Shutdown(t *testing.T) {
 		logging.SimpleLogger(),
 		false,
 		false,
+		false,
 		AttestClients{},
 		nil,
 	)
@@ -1331,4 +1341,101 @@ func TestTeeServer_Shutdown(t *testing.T) {
 		t.Errorf("server.Shutdown() err = %v, want nil", err)
 	}
 }
+
+func TestGetAttestationEvidence_GB300CCMode(t *testing.T) {
+	testEvidence := &bmsaipb.Gb300Evidence{
+		BmsaiEvidence: &bmsaipb.BmsaiEvidence{
+			BmCmwToken:        []byte("test-cmw-token"),
+			DrtmBootEventLog:  []byte("test-drtm-log"),
+			CelLaunchEventLog: []byte("test-cel-log"),
+		},
+		TpmQuote: &attestationpb.TpmQuote{
+			Quotes: []*attestationpb.TpmQuote_SignedQuote{
+				{
+					HashAlgorithm: 11,
+					TpmsAttest:    []byte("test-tpms-attest"),
+					TpmtSignature: []byte("test-tpmt-sig"),
+					PcrValues:     map[uint32][]byte{19: []byte("test-pcr-19")},
+				},
+			},
+			PcclientBootEventLog: []byte("test-pcclient-log"),
+			CelLaunchEventLog:    []byte("test-tpm-cel-log"),
+		},
+	}
+
+	testCases := []struct {
+		name             string
+		body             string
+		attestGB300Func  func(context.Context, []byte) (*bmsaipb.Gb300Evidence, error)
+		wantStatusCode   int
+		wantEvidence     *bmsaipb.Gb300Evidence
+		wantBodyContains string
+	}{
+		{
+			name: "success returns Gb300Evidence JSON",
+			body: `{"challenge": "dGVzdGNoYWxsZW5nZTEyMw=="}`,
+			attestGB300Func: func(_ context.Context, challenge []byte) (*bmsaipb.Gb300Evidence, error) {
+				if string(challenge) != "testchallenge123" {
+					return nil, fmt.Errorf("unexpected challenge: %q", string(challenge))
+				}
+				return testEvidence, nil
+			},
+			wantStatusCode: http.StatusOK,
+			wantEvidence:   testEvidence,
+		},
+		{
+			name: "invalid argument from agent maps to 400 Bad Request",
+			body: `{"challenge": "c2hvcnQ="}`,
+			attestGB300Func: func(_ context.Context, _ []byte) (*bmsaipb.Gb300Evidence, error) {
+				return nil, status.Error(codes.InvalidArgument, "challenge length must be between 8 and 64 bytes")
+			},
+			wantStatusCode:   http.StatusBadRequest,
+			wantBodyContains: "failed to fetch GB300 attestation evidence",
+		},
+		{
+			name: "internal agent error maps to 500 Internal Server Error",
+			body: `{"challenge": "dGVzdGNoYWxsZW5nZTEyMw=="}`,
+			attestGB300Func: func(_ context.Context, _ []byte) (*bmsaipb.Gb300Evidence, error) {
+				return nil, status.Error(codes.Internal, "TPM quote failed")
+			},
+			wantStatusCode:   http.StatusInternalServerError,
+			wantBodyContains: "failed to fetch GB300 attestation evidence",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			ah := attestHandler{
+				ctx:         context.Background(),
+				logger:      logging.SimpleLogger(),
+				gb300ccMode: true,
+				attestAgent: fakeAttestationAgent{
+					attestGB300Func: tc.attestGB300Func,
+				},
+			}
+
+			req := httptest.NewRequest(http.MethodPost, "/v1/evidence", strings.NewReader(tc.body))
+			w := httptest.NewRecorder()
+
+			ah.getAttestationEvidence(w, req)
+
+			if w.Code != tc.wantStatusCode {
+				t.Fatalf("getAttestationEvidence() status = %d, want %d; body = %s", w.Code, tc.wantStatusCode, w.Body.String())
+			}
+
+			if tc.wantStatusCode == http.StatusOK {
+				var got bmsaipb.Gb300Evidence
+				if err := protojson.Unmarshal(w.Body.Bytes(), &got); err != nil {
+					t.Fatalf("failed to unmarshal Gb300Evidence response: %v", err)
+				}
+				if diff := cmp.Diff(tc.wantEvidence, &got, protocmp.Transform()); diff != "" {
+					t.Errorf("Gb300Evidence mismatch (-want +got):\n%s", diff)
+				}
+			} else if !strings.Contains(w.Body.String(), tc.wantBodyContains) {
+				t.Errorf("response body = %q, want substring %q", w.Body.String(), tc.wantBodyContains)
+			}
+		})
+	}
+}
+
 
