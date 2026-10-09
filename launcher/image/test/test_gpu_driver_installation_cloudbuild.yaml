@@ -4,6 +4,11 @@ substitutions:
   '_CLEANUP': 'true'
   '_VM_NAME_PREFIX': 'cs-gpu-test'
   '_ZONE': 'us-west1-a'
+  # RTX PRO 6000 capacity often runs out in a single zone.
+  # These zones offer g4-standard-48 with confidential VMs and have quota.
+  # The create step uses the capacity advisor to select one of these zones.
+  # Later steps look up the chosen zone by VM name.
+  '_RTX_PRO_6000_ZONES': 'us-west1-a,us-west1-b,us-west1-c,us-central1-b,us-central1-c,us-central1-f'
   '_WORKLOAD_IMAGE': 'us-west1-docker.pkg.dev/confidential-space-images-dev/cs-integ-test-images/gpu/cuda-vector-add:latest'
 steps:
 - name: 'gcr.io/cloud-builders/gcloud'
@@ -71,16 +76,20 @@ steps:
   entrypoint: 'bash'
   env:
   - 'BUILD_ID=$BUILD_ID'
-  args: ['create_vm.sh','-i', '${_IMAGE_NAME}',
-          '-p', '${_IMAGE_PROJECT}',
-          '-m', 'tee-image-reference=${_WORKLOAD_IMAGE},tee-container-log-redirect=true,tee-install-gpu-driver=true',
-          '-n', '${_VM_NAME_PREFIX}-${BUILD_ID}-rtxpro6000',
-          '-z', '${_ZONE}',
-          '-t', 'g4-standard-48',
-          '-g', 'nvidia-rtx-pro-6000',
-          '-a', '1',
-          '-c', 'SEV',
-        ]
+  args:
+  - '-c'
+  - |
+    set -euo pipefail
+    zone=$$(bash pick_zone.sh g4-standard-48 '${_RTX_PRO_6000_ZONES}')
+    bash create_vm.sh -i '${_IMAGE_NAME}' \
+      -p '${_IMAGE_PROJECT}' \
+      -m 'tee-image-reference=${_WORKLOAD_IMAGE},tee-container-log-redirect=true,tee-install-gpu-driver=true' \
+      -n '${_VM_NAME_PREFIX}-${BUILD_ID}-rtxpro6000' \
+      -z "$$zone" \
+      -t 'g4-standard-48' \
+      -g 'nvidia-rtx-pro-6000' \
+      -a '1' \
+      -c 'SEV'
 - name: 'gcr.io/cloud-builders/gcloud'
   id: UnsupportedGpuWorkloadTest
   waitFor: ['CreateShieldedVMWithUnsupportedGPU']
@@ -105,7 +114,12 @@ steps:
   id: RTXPro6000WorkloadTest
   waitFor: ['CreateSEVCVMWithRTXPro6000']
   entrypoint: 'bash'
-  args: ['scripts/gpu/test_gpu_workload.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}-rtxpro6000', '${_ZONE}']
+  args:
+  - '-c'
+  - |
+    set -euo pipefail
+    zone=$$(gcloud compute instances list --filter='name=${_VM_NAME_PREFIX}-${BUILD_ID}-rtxpro6000' --format='value(zone.basename())')
+    bash scripts/gpu/test_gpu_workload.sh '${_VM_NAME_PREFIX}-${BUILD_ID}-rtxpro6000' "$$zone"
 - name: 'gcr.io/cloud-builders/gcloud'
   id: NoGpuDriverInstallationCleanUp
   waitFor: ['NoGpuDriverInstallationTest']
@@ -140,7 +154,12 @@ steps:
   entrypoint: 'bash'
   env:
   - 'CLEANUP=$_CLEANUP'
-  args: ['cleanup.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}-rtxpro6000', '${_ZONE}']
+  args:
+  - '-c'
+  - |
+    set -euo pipefail
+    zone=$$(gcloud compute instances list --filter='name=${_VM_NAME_PREFIX}-${BUILD_ID}-rtxpro6000' --format='value(zone.basename())')
+    bash cleanup.sh '${_VM_NAME_PREFIX}-${BUILD_ID}-rtxpro6000' "$$zone"
 # Must come after cleanup.
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CheckFailure
