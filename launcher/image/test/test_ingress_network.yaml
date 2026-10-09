@@ -27,13 +27,19 @@ steps:
     args:
       - -c
       - |
-        echo "sleeping 200s, waiting for workload server to setup..."
-        sleep 200
         internalIP=$(gcloud -q compute instances describe ingress-network-test-${BUILD_ID} --zone=${_ZONE} --format='get(networkInterfaces[0].networkIP)')
         echo "workload internal IP: "${internalIP}
 
-        # try to connect to the nginx server
-        response=$(curl -v ${internalIP}:80)
+        # Poll instead of using a fixed sleep so the test proceeds as soon as the VM is ready.
+        deadline=$(( $(date +%s) + 300 ))
+        response=""
+        while [[ "$(date +%s)" -lt "${deadline}" ]]; do
+          response=$(curl -s --max-time 5 ${internalIP}:80 || true)
+          if [[ "${response}" == *"Welcome to nginx!"* ]]; then
+            break
+          fi
+          sleep 5
+        done
         echo "got response [${response}]"
 
         # check nginx default response
