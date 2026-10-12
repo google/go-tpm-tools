@@ -1,5 +1,5 @@
 #!/bin/bash
-# cleanup.sh <VM_NAME> <ZONE>
+# cleanup.sh <VM_NAME> [<ZONE>]
 set -euo pipefail
 
 if [ $CLEANUP != "true" ]; then
@@ -8,5 +8,12 @@ if [ $CLEANUP != "true" ]; then
 fi
 echo "Cleaning up."
 
-echo 'Deleting VM' $1 'in zone' $2 
-gcloud compute instances delete $1 --zone $2 -q
+VM_NAME=$1
+# If not provided, look up the zone by VM name.
+ZONE=${2:-}
+if [ -z "$ZONE" ]; then
+  ZONE=$(gcloud compute instances list --filter="name=$VM_NAME" --format='value(zone.basename())')
+fi
+
+echo 'Deleting VM' $VM_NAME 'in zone' $ZONE
+gcloud compute instances delete $VM_NAME --zone $ZONE -q
