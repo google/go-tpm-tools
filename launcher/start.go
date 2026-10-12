@@ -35,9 +35,8 @@ import (
 )
 
 const (
-	teeServerSocket      = "teeserver.sock"
-	keyManagerSocket     = "kmaserver.sock"
-	keyManagerGrpcSocket = "kmaserver-grpc.sock"
+	teeServerSocket  = "teeserver.sock"
+	keyManagerSocket = "kmaserver.sock"
 )
 
 var expectedTPMDAParams = TPMDAParams{
@@ -185,9 +184,6 @@ func StartLauncher(ctx context.Context, launchSpec spec.LaunchSpec, logger loggi
 		teeSocket.Close()
 		return fmt.Errorf("failed to create TEE server: %w", err)
 	}
-	if launchSpec.Experiments.BcMode {
-		setupBCSocketPermissions(logger)
-	}
 
 	go func() { _ = teeServer.Serve() }()
 	defer teeServer.Shutdown(ctx)
@@ -308,32 +304,3 @@ func listenUnixSocket(socketPath string) (net.Listener, error) {
 	return nl, nil
 }
 
-func verifySocketPermissions(socketPath string) error {
-	info, err := os.Stat(socketPath)
-	if err != nil {
-		return fmt.Errorf("failed to stat socket: %w", err)
-	}
-	if perm := info.Mode().Perm(); perm != 0777 {
-		return fmt.Errorf("socket %s has permissions %04o, want 0777", socketPath, perm)
-	}
-	return nil
-}
-
-func setupBCSocketPermissions(logger logging.Logger) {
-	kmaServerSocketPath := path.Join(launcherfile.HostTmpPath, keyManagerSocket)
-	kmaServerGrpcSocketPath := path.Join(launcherfile.HostTmpPath, keyManagerGrpcSocket)
-
-	if err := os.Chmod(kmaServerSocketPath, 0777); err != nil {
-		logger.Error("failed to chmod file %s: %v\n", kmaServerSocketPath, err)
-	}
-	if err := os.Chmod(kmaServerGrpcSocketPath, 0777); err != nil {
-		logger.Error("failed to chmod file %s: %v\n", kmaServerGrpcSocketPath, err)
-	}
-
-	if err := verifySocketPermissions(kmaServerSocketPath); err != nil {
-		logger.Error("failed to verify kmaserver socket permissions: %v", err)
-	}
-	if err := verifySocketPermissions(kmaServerGrpcSocketPath); err != nil {
-		logger.Error("failed to verify kmaserver-grpc socket permissions: %v", err)
-	}
-}
