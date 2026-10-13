@@ -442,19 +442,20 @@ PY
 #     The verifier derives PSC DRTM Slot 0 (token claim 44238) from D as
 #     SHA384(0^48 || D); that is a platform rule, so it is not output here.
 #   - The built-in command line (CONFIG_CMDLINE) is the NUL-terminated string
-#     between _stext and _edata that contains 'cros_efi'. Its SHA-384 is the
-#     DRTM PCR 19 CMDLINE event, one of the inputs to TEM0 (token claim
-#     44239[0]).
+#     between _stext and _edata that contains 'cros_efi'. Its hash uses the
+#     requested algorithm; with sha384 it is the DRTM PCR 19 CMDLINE event,
+#     one of the inputs to TEM0 (token claim 44239[0]).
 # @param $1: Path to the arm64 kernel PE binary.
+# @param $2: Hash algorithm for the command line hash ('sha256' or 'sha384').
 # @return Compact JSON object with stext_offset, edata_offset, dlme_sha384,
-#         embedded_cmdline and embedded_cmdline_sha384 to stdout.
+#         embedded_cmdline and embedded_cmdline_hash to stdout.
 #
 compute_arm64_drtm() {
-    local kernel_file="$1"
-    python3 - "$kernel_file" <<'PY'
+    local kernel_file="$1" alg="$2"
+    python3 - "$kernel_file" "$alg" <<'PY'
 import hashlib, json, re, struct, sys
 
-path = sys.argv[1]
+path, alg = sys.argv[1], sys.argv[2]
 with open(path, "rb") as f:
     b = f.read()
 
@@ -464,7 +465,7 @@ if len(b) < 0x40 or b[0x38:0x3C] != b"ARM\x64":
         "edata_offset": "",
         "dlme_sha384": "",
         "embedded_cmdline": "",
-        "embedded_cmdline_sha384": ""
+        "embedded_cmdline_hash": ""
     }))
     sys.exit(0)
 
@@ -633,7 +634,7 @@ for mm in re.finditer(b"cros_efi", b):
     e = b.find(b"\x00", mm.end())
     if e - s >= 64 and stext_ks <= s and e <= edata_ks:
         embedded_cmd = b[s:e].decode("latin1")
-        embedded_cmd_h = hashlib.sha384(b[s:e]).hexdigest()
+        embedded_cmd_h = hashlib.new(alg, b[s:e]).hexdigest()
         break
 
 print(json.dumps({
@@ -641,7 +642,7 @@ print(json.dumps({
     "edata_offset": hex(edata_ks),
     "dlme_sha384": dlme_digest.hex(),
     "embedded_cmdline": embedded_cmd,
-    "embedded_cmdline_sha384": embedded_cmd_h
+    "embedded_cmdline_hash": embedded_cmd_h
 }))
 PY
 }
@@ -680,8 +681,6 @@ write_json_output() {
 		--arg drtm_stext "${15}" \
 		--arg drtm_edata "${16}" \
 		--arg drtm_dlme_a "${17}" \
-		--arg tem0_cmd_a "${18}" \
-		--arg tem0_cmd_a_h "${19}" \
 		'{
 			channel: $chan,
 			alg: $alg,
@@ -699,9 +698,7 @@ write_json_output() {
 			uki_efi: $uki_efi,
 			drtm_stext_offset: $drtm_stext,
 			drtm_edata_offset: $drtm_edata,
-			drtm_dlme_a_sha384: $drtm_dlme_a,
-			tem0_cmdline_a: $tem0_cmd_a,
-			tem0_cmdline_a_sha384: $tem0_cmd_a_h
+			drtm_dlme_a_sha384: $drtm_dlme_a
 		}' > "$output_json_file"
 
 		if [[ $? -ne 0 || ! -s "$output_json_file" ]]; then
@@ -753,20 +750,25 @@ main() {
     local shim_hash="" grub_hash="" vmlinuz_a_pe_hash="" vmlinuz_b_pe_hash=""
     local uki_efi_hash=""
     local drtm_stext="" drtm_edata="" drtm_dlme_a=""
-    local tem0_cmd_a="" tem0_cmd_a_h=""
 
     if [ "$image_mode" == "uki" ]; then
         uki_efi_hash=$(compute_efi_authenticode_hash "$BOOT_EFI_FILE") || return 1
         echo "UKI bootx64.efi/bootaa64.efi hash: $uki_efi_hash"
         if [ "$arch" == "aarch64" ]; then
             local drtm_json
-            drtm_json=$(compute_arm64_drtm "$BOOT_EFI_FILE") || return 1
+            drtm_json=$(compute_arm64_drtm "$BOOT_EFI_FILE" "$HASH_ALG") || return 1
             drtm_stext=$(jq -r '.stext_offset' <<< "$drtm_json")
             drtm_edata=$(jq -r '.edata_offset' <<< "$drtm_json")
-            drtm_dlme_a=$(jq -r '.dlme_sha384' <<< "$drtm_json")
-            tem0_cmd_a=$(jq -r '.embedded_cmdline' <<< "$drtm_json")
-            tem0_cmd_a_h=$(jq -r '.embedded_cmdline_sha384' <<< "$drtm_json")
-            echo "arm64 DRTM DLME: $drtm_dlme_a (_stext=$drtm_stext, _edata=$drtm_edata)"
+            # The built-in command line is kernel A's command line. Its hash
+            # follows $HASH_ALG like the GRUB-mode kernel_cmdline_a_hash.
+            kernel_cmdline_a=$(jq -r '.embedded_cmdline' <<< "$drtm_json")
+            kernel_cmdline_a_hash=$(jq -r '.embedded_cmdline_hash' <<< "$drtm_json")
+            # Arm DRTM measures with SHA-384 only. Leave the DLME empty in the
+            # sha256 output so every hash in a file matches its 'alg' field.
+            if [ "$HASH_ALG" == "sha384" ]; then
+                drtm_dlme_a=$(jq -r '.dlme_sha384' <<< "$drtm_json")
+                echo "arm64 DRTM DLME: $drtm_dlme_a (_stext=$drtm_stext, _edata=$drtm_edata)"
+            fi
         fi
     else
         vmlinuz_a_hash=$(compute_file_hash "$VMLINUZ_A_FILE")
@@ -788,8 +790,7 @@ main() {
         "$vmlinuz_a_hash" "$vmlinuz_b_hash" "$kernel_cmdline_a_hash" "$kernel_cmdline_b_hash" \
         "$kernel_cmdline_a" "$kernel_cmdline_b" "$vmlinuz_a_pe_hash" "$vmlinuz_b_pe_hash" \
         "$image_mode" "$uki_efi_hash" \
-        "$drtm_stext" "$drtm_edata" "$drtm_dlme_a" \
-        "$tem0_cmd_a" "$tem0_cmd_a_h" || return 1
+        "$drtm_stext" "$drtm_edata" "$drtm_dlme_a" || return 1
 
     echo "Measured boot hashes successfully written to '$output_json_file'."
 }
