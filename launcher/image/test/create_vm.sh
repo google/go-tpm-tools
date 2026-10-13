@@ -8,7 +8,7 @@ print_usage() {
     echo "  -m <metadata>: metadata variables on VM creation; passed directly into gcloud"
     echo "  -f <metadataFromFile>: read a metadata value from a file; specified in format key=filePath"
     echo "  -n <instanceName>: instance name"
-    echo "  -z <instanceZone>: instance zone"
+    echo "  -z <instanceZone>: instance zone or comma-separated list of candidate zones"
     echo "  -c <confidentialComputing>: NONE, TDX, or SEV. Default is SEV"
     echo "  -t <machineType>: type of machine for VM (optional)"
     echo "  -g <gpuType>: type of GPU to use for the VM (optional)"
@@ -43,6 +43,11 @@ create_vm() {
       echo "unsupported confidential computing type: ${CC}"
       exit 1
     fi
+  fi
+
+  # If given a comma-separated list of candidate zones, pick one with available capacity.
+  if [[ "$ZONE" == *,* ]]; then
+    ZONE=$(bash pick_zone.sh "$MACHINE_TYPE" "$ZONE")
   fi
 
   FAKE_VERIFIER="test-fake-verifier=${USE_FAKE_VERIFIER}"
