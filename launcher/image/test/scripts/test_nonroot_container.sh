@@ -10,10 +10,16 @@ INTERVAL_SECONDS=10
 ELAPSED=0
 output=""
 
+verify_logs() {
+    echo "$1" | grep -qE '0[[:space:]]+100000[[:space:]]+65536' &&
+    echo "$1" | grep -q 'ipv4_status: 200' &&
+    echo "$1" | grep -q 'ipv6_status: 200'
+}
+
 while [ $ELAPSED -lt $MAX_WAIT_SECONDS ]; do
     output=$(read_cloud_logging "$VM_NAME" || true)
-    if echo "$output" | grep -qE '0[[:space:]]+100000[[:space:]]+65536'; then
-        echo "- verified uid_map: 0 100000 65536"
+    if verify_logs "$output"; then
+        echo "- verified uid_map, ipv4_status: 200, and ipv6_status: 200"
         exit 0
     fi
 
@@ -21,8 +27,8 @@ while [ $ELAPSED -lt $MAX_WAIT_SECONDS ]; do
     if [[ "$vm_status" == "TERMINATED" ]]; then
         sleep 5
         output=$(read_cloud_logging "$VM_NAME" || true)
-        if echo "$output" | grep -qE '0[[:space:]]+100000[[:space:]]+65536'; then
-            echo "- verified uid_map: 0 100000 65536"
+        if verify_logs "$output"; then
+            echo "- verified uid_map, ipv4_status: 200, and ipv6_status: 200"
             exit 0
         fi
         break
@@ -32,7 +38,7 @@ while [ $ELAPSED -lt $MAX_WAIT_SECONDS ]; do
     ELAPSED=$((ELAPSED + INTERVAL_SECONDS))
 done
 
-echo "FAILED: uid_map 0 100000 65536 not verified in Cloud Logging"
+echo "FAILED: uid_map, ipv4_status: 200, or ipv6_status: 200 not verified in Cloud Logging"
 echo 'TEST FAILED.' > /workspace/status.txt
 echo "$output"
 

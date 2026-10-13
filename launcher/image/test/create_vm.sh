@@ -14,6 +14,8 @@ print_usage() {
     echo "  -g <gpuType>: type of GPU to use for the VM (optional)"
     echo "  -a <gpuCount>: number of GPU(s) to use for the VM (optional)"
     echo "  -v <fakeVerifier>: true or false (default: true)"
+    echo "  -s <subnetName>: subnet name for the VM (optional)"
+    echo "  -6: enable IPv6 dual-stack on the VM (optional)"
     exit 1
 }
 
@@ -82,6 +84,11 @@ create_vm() {
     PREEMPTIBLE_FLAG=""
   fi
 
+  SUBNET_FLAG=""
+  if [ -n "$SUBNET_NAME" ]; then
+    SUBNET_FLAG="--subnet=${SUBNET_NAME}"
+  fi
+
   gcloud compute instances create $VM_NAME \
     $CONFIDENTIAL_COMPUTE_FLAGS \
     --maintenance-policy=TERMINATE \
@@ -94,6 +101,8 @@ create_vm() {
     --shielded-secure-boot \
     $ACCELERATOR_FLAGS \
     $PREEMPTIBLE_FLAG \
+    $SUBNET_FLAG \
+    $STACK_TYPE_FLAG \
     $APPEND_METADATA \
     $APPEND_METADATA_FILE
 }
@@ -109,10 +118,12 @@ CC='SEV' # default using sev
 GPU_TYPE=''
 GPU_COUNT=''
 USE_FAKE_VERIFIER='true'
+SUBNET_NAME=''
+STACK_TYPE_FLAG=''
 
 # In getopts, a ':' following a letter means that that flag takes an argument.
 # For example, i: means -i takes an additional argument.
-while getopts 'i:f:m:p:n:z:c:t:g:a:v:' flag; do
+while getopts 'i:f:m:p:n:z:c:t:g:a:v:s:6' flag; do
   case "${flag}" in
     i) IMAGE_NAME=${OPTARG} ;;
     f) METADATA_FILE=${OPTARG} ;;
@@ -125,6 +136,8 @@ while getopts 'i:f:m:p:n:z:c:t:g:a:v:' flag; do
     g) GPU_TYPE=${OPTARG} ;;
     a) GPU_COUNT=${OPTARG} ;;
     v) USE_FAKE_VERIFIER=${OPTARG} ;;
+    s) SUBNET_NAME=${OPTARG} ;;
+    6) STACK_TYPE_FLAG='--stack-type=IPV4_IPV6' ;;
     *) print_usage ;;
   esac
 done
