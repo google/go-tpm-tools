@@ -797,8 +797,8 @@ func iptablesBin(addr netip.Addr) (string, error) {
 // In that case, per IP family, it also adds rules to DNAT ingress traffic to the container and to
 // allow the forwarded traffic in both directions.
 func buildPortRules(ports map[string]struct{}, containerIPs []netip.Addr) ([][]string, error) {
-	// Per port: 2 INPUT rules plus 2 forwarding rules per container IP; then 1 egress rule per container IP.
-	rules := make([][]string, 0, len(ports)*(2+2*len(containerIPs))+len(containerIPs))
+	// Per port: 2 INPUT rules plus 2 forwarding rules per container IP; then 2 egress rules per container IP.
+	rules := make([][]string, 0, len(ports)*(2+2*len(containerIPs))+2*len(containerIPs))
 	for k := range ports {
 		port, protocol, err := portProtocol(k)
 		if err != nil {
@@ -818,22 +818,26 @@ func buildPortRules(ports map[string]struct{}, containerIPs []netip.Addr) ([][]s
 				return nil, err
 			}
 			rules = append(rules,
-				// Forward traffic from host port to container port with the same number.
-				[]string{bin, "-t", "nat", "-A", "PREROUTING", "-p", protocol, "--dport", port, "-j", "DNAT",
-					"--to-destination", net.JoinHostPort(ip.String(), port)},
+				// Forward traffic addressed to the host port to the container port with the same number.
+				// `--dst-type LOCAL` keeps the container's own outgoing traffic to this port (e.g., to a remote server) from being DNATed back to the container.
+				[]string{bin, "-t", "nat", "-A", "PREROUTING", "-m", "addrtype", "--dst-type", "LOCAL",
+					"-p", protocol, "--dport", port, "-j", "DNAT", "--to-destination", net.JoinHostPort(ip.String(), port)},
 				// Allow traffic in FORWARD chain to the container IP on this port.
 				[]string{bin, "-A", "FORWARD", "-d", ip.String(), "-p", protocol, "--dport", port, "-j", "ACCEPT"},
 			)
 		}
 	}
 
-	// Allow egress traffic from the container to go out.
+	// Allow the container's outgoing traffic, and the replies to it to come back (the host's FORWARD chain policy is DROP).
 	for _, ip := range containerIPs {
 		bin, err := iptablesBin(ip)
 		if err != nil {
 			return nil, err
 		}
-		rules = append(rules, []string{bin, "-A", "FORWARD", "-s", ip.String(), "-j", "ACCEPT"})
+		rules = append(rules,
+			[]string{bin, "-A", "FORWARD", "-s", ip.String(), "-j", "ACCEPT"},
+			[]string{bin, "-A", "FORWARD", "-d", ip.String(), "-m", "conntrack", "--ctstate", "RELATED,ESTABLISHED", "-j", "ACCEPT"},
+		)
 	}
 	return rules, nil
 }

@@ -1714,17 +1714,23 @@ func TestBuildPortRules(t *testing.T) {
 
 	// Ingress rules for Non-root.
 	ingressV4 := [][]string{
-		{"iptables", "-t", "nat", "-A", "PREROUTING", "-p", "tcp", "--dport", "80", "-j", "DNAT", "--to-destination", "172.20.0.2:80"},
+		{"iptables", "-t", "nat", "-A", "PREROUTING", "-m", "addrtype", "--dst-type", "LOCAL", "-p", "tcp", "--dport", "80", "-j", "DNAT", "--to-destination", "172.20.0.2:80"},
 		{"iptables", "-A", "FORWARD", "-d", "172.20.0.2", "-p", "tcp", "--dport", "80", "-j", "ACCEPT"},
 	}
 	ingressV6 := [][]string{
-		{"ip6tables", "-t", "nat", "-A", "PREROUTING", "-p", "tcp", "--dport", "80", "-j", "DNAT", "--to-destination", "[fdb6:c4ca:384d:1::2]:80"},
+		{"ip6tables", "-t", "nat", "-A", "PREROUTING", "-m", "addrtype", "--dst-type", "LOCAL", "-p", "tcp", "--dport", "80", "-j", "DNAT", "--to-destination", "[fdb6:c4ca:384d:1::2]:80"},
 		{"ip6tables", "-A", "FORWARD", "-d", "fdb6:c4ca:384d:1::2", "-p", "tcp", "--dport", "80", "-j", "ACCEPT"},
 	}
 
 	// Egress rules for Non-root.
-	egressV4 := [][]string{{"iptables", "-A", "FORWARD", "-s", "172.20.0.2", "-j", "ACCEPT"}}
-	egressV6 := [][]string{{"ip6tables", "-A", "FORWARD", "-s", "fdb6:c4ca:384d:1::2", "-j", "ACCEPT"}}
+	egressV4 := [][]string{
+		{"iptables", "-A", "FORWARD", "-s", "172.20.0.2", "-j", "ACCEPT"},
+		{"iptables", "-A", "FORWARD", "-d", "172.20.0.2", "-m", "conntrack", "--ctstate", "RELATED,ESTABLISHED", "-j", "ACCEPT"},
+	}
+	egressV6 := [][]string{
+		{"ip6tables", "-A", "FORWARD", "-s", "fdb6:c4ca:384d:1::2", "-j", "ACCEPT"},
+		{"ip6tables", "-A", "FORWARD", "-d", "fdb6:c4ca:384d:1::2", "-m", "conntrack", "--ctstate", "RELATED,ESTABLISHED", "-j", "ACCEPT"},
+	}
 
 	testCases := []struct {
 		name         string
