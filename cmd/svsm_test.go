@@ -307,7 +307,7 @@ func TestAttestSVSMFlags(t *testing.T) {
 			name:            "InvalidTeeTech",
 			teeTech:         "bad",
 			manifestVersion: "0",
-			wantErrorMsg:    "--svsm is only supported with --tee-technology=sev-snp",
+			wantErrorMsg:    "attest svsm is only supported with --tee-technology=sev-snp",
 		},
 		{
 			name:            "InvalidManifestVersion",

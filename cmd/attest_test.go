@@ -91,7 +91,7 @@ func TestNonce(t *testing.T) {
 	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
 
-	if _, err := runAttest(context.Background(), rwc, attestOptions{Key: "AK"}); err == nil {
+	if _, err := runAttest(context.Background(), rwc, attestOptions{key: "AK"}); err == nil {
 		t.Error("expected not-nil error")
 	}
 }
@@ -117,9 +117,9 @@ func TestAttestPass(t *testing.T) {
 				t.Fatal(err)
 			}
 			opts := attestOptions{
-				Key:     op.key,
-				KeyAlgo: op.algo,
-				Nonce:   nonceBytes,
+				key:     op.key,
+				keyAlgo: op.algo,
+				nonce:   nonceBytes,
 			}
 			attestation, err := runAttest(context.Background(), rwc, opts)
 			if err != nil {
@@ -157,8 +157,8 @@ func TestFormatFlagPass(t *testing.T) {
 				t.Fatal(err)
 			}
 			opts := attestOptions{
-				Key:   "AK",
-				Nonce: nonceBytes,
+				key:   "AK",
+				nonce: nonceBytes,
 			}
 			attestation, err := runAttest(context.Background(), rwc, opts)
 			if err != nil {
@@ -209,8 +209,8 @@ func TestFormatFlagFail(t *testing.T) {
 				t.Fatal(err)
 			}
 			opts := attestOptions{
-				Key:   "AK",
-				Nonce: nonceBytes,
+				key:   "AK",
+				nonce: nonceBytes,
 			}
 			attestation, err := runAttest(context.Background(), rwc, opts)
 			if err != nil {
@@ -309,9 +309,9 @@ func TestAttestWithGCEAK(t *testing.T) {
 				t.Fatal(err)
 			}
 			opts := attestOptions{
-				Key:     "gceAK",
-				KeyAlgo: op.algo,
-				Nonce:   nonceBytes,
+				key:     "gceAK",
+				keyAlgo: op.algo,
+				nonce:   nonceBytes,
 			}
 			attestation, err := runAttest(context.Background(), rwc, opts)
 			if err != nil {
@@ -338,10 +338,10 @@ func TestTeeTechnologyFail(t *testing.T) {
 	defer client.CheckedClose(t, rwc)
 
 	opts := attestOptions{
-		Key:           "AK",
-		Nonce:         []byte{0x12, 0x34},
-		TEENonce:      []byte{0x12, 0x34, 0x56, 0x78},
-		TEETechnology: "sev",
+		key:           "AK",
+		nonce:         []byte{0x12, 0x34},
+		teeNonce:      []byte{0x12, 0x34, 0x56, 0x78},
+		teeTechnology: "sev",
 	}
 	if _, err := runAttest(context.Background(), rwc, opts); err == nil {
 		t.Error("expected not-nil error")
@@ -354,10 +354,10 @@ func TestSevAttestTeeNonceFail(t *testing.T) {
 
 	// non-nil TEENonce when TEEDevice is nil
 	opts := attestOptions{
-		Key:           "AK",
-		Nonce:         []byte{0x12, 0x34},
-		TEENonce:      []byte{0x12, 0x34, 0x56, 0x78},
-		TEETechnology: "",
+		key:           "AK",
+		nonce:         []byte{0x12, 0x34},
+		teeNonce:      []byte{0x12, 0x34, 0x56, 0x78},
+		teeTechnology: "",
 	}
 	if _, err := runAttest(context.Background(), rwc, opts); err == nil {
 		t.Error("expected not-nil error")
@@ -392,10 +392,10 @@ func TestTdxAttestTeeNonceFail(t *testing.T) {
 
 	// non-nil TEENonce when TEEDevice is nil
 	opts := attestOptions{
-		Key:           "AK",
-		Nonce:         []byte{0x12, 0x34},
-		TEENonce:      []byte{0x12, 0x34, 0x56, 0x78},
-		TEETechnology: "",
+		key:           "AK",
+		nonce:         []byte{0x12, 0x34},
+		teeNonce:      []byte{0x12, 0x34, 0x56, 0x78},
+		teeTechnology: "",
 	}
 	if _, err := runAttest(context.Background(), rwc, opts); err == nil {
 		t.Error("expected not-nil error")
@@ -448,10 +448,10 @@ func TestHardwareAttestationPass(t *testing.T) {
 				t.Fatal(err)
 			}
 			opts := attestOptions{
-				Key:           "AK",
-				Nonce:         nonceBytes,
-				TEENonce:      teenonce,
-				TEETechnology: op.teetech,
+				key:           "AK",
+				nonce:         nonceBytes,
+				teeNonce:      teenonce,
+				teeTechnology: op.teetech,
 			}
 			_, err = runAttest(context.Background(), rwc, opts)
 			if err == nil {
@@ -505,14 +505,14 @@ func TestParseAttestFlagsDefaults(t *testing.T) {
 	}
 	want := attestCmdConfig{
 		opts: attestOptions{
-			Key:      "AK",
-			KeyAlgo:  tpm2.AlgRSA,
-			Nonce:    []byte{},
-			TEENonce: []byte{},
+			key:      "AK",
+			keyAlgo:  tpm2.AlgRSA,
+			nonce:    []byte{},
+			teeNonce: []byte{},
 		},
 		format: "binarypb",
 	}
-	if diff := cmp.Diff(want, got, cmp.AllowUnexported(attestCmdConfig{})); diff != "" {
+	if diff := cmp.Diff(want, got, cmp.AllowUnexported(attestCmdConfig{}, attestOptions{})); diff != "" {
 		t.Errorf("parseAttestArgs() returned unexpected diff (-want +got):\n%s", diff)
 	}
 }
@@ -533,16 +533,16 @@ func TestParseAttestFlagsAllFlags(t *testing.T) {
 	}
 	want := attestCmdConfig{
 		opts: attestOptions{
-			Key:           "gceAK",
-			KeyAlgo:       tpm2.AlgECC,
-			Nonce:         []byte{0x12, 0x34},
-			TEENonce:      []byte{0xab, 0xcd},
-			TEETechnology: "tdx",
+			key:           "gceAK",
+			keyAlgo:       tpm2.AlgECC,
+			nonce:         []byte{0x12, 0x34},
+			teeNonce:      []byte{0xab, 0xcd},
+			teeTechnology: "tdx",
 		},
 		format:     "textproto",
 		outputPath: "out.textproto",
 	}
-	if diff := cmp.Diff(want, got, cmp.AllowUnexported(attestCmdConfig{})); diff != "" {
+	if diff := cmp.Diff(want, got, cmp.AllowUnexported(attestCmdConfig{}, attestOptions{})); diff != "" {
 		t.Errorf("parseAttestArgs() returned unexpected diff (-want +got):\n%s", diff)
 	}
 }

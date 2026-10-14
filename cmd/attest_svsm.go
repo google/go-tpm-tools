@@ -16,8 +16,6 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-var manifestVersion string
-
 var attestSVSMCmd = &cobra.Command{
 	Use:   "svsm",
 	Short: `Produce a SevSnpSvsmAttestation that wraps the PCR attestation message.`,
@@ -26,21 +24,25 @@ var attestSVSMCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		manifestVersion, err := cmd.Flags().GetString("manifest-version")
+		if err != nil {
+			return err
+		}
 		opts := cfg.opts
-		if opts.TEETechnology != sevSNP {
-			return errors.New("--svsm is only supported with --tee-technology=sev-snp")
+		if opts.teeTechnology != sevSNP {
+			return errors.New("attest svsm is only supported with --tee-technology=sev-snp")
 		}
 		if manifestVersion != "" && manifestVersion != "0" && manifestVersion != "1" {
 			return fmt.Errorf("invalid manifest version %q, must be one of \"\", \"0\", \"1\"", manifestVersion)
 		}
-		if (manifestVersion == "" || manifestVersion == "0") && opts.Key != "AK" {
+		if (manifestVersion == "" || manifestVersion == "0") && opts.key != "AK" {
 			return fmt.Errorf("manifest version 0 requires --key=AK")
 		}
-		if manifestVersion == "1" && opts.Key != "gceAK" {
+		if manifestVersion == "1" && opts.key != "gceAK" {
 			return fmt.Errorf("manifest version 1 requires --key=gceAK")
 		}
-		if len(opts.TEENonce) != sabi.ReportDataSize {
-			return fmt.Errorf("the teeNonce size is %d. SEV-SNP device requires 64", len(opts.TEENonce))
+		if len(opts.teeNonce) != sabi.ReportDataSize {
+			return fmt.Errorf("the teeNonce size is %d. SEV-SNP device requires 64", len(opts.teeNonce))
 		}
 
 		rwc, err := openTpm()
@@ -49,14 +51,14 @@ var attestSVSMCmd = &cobra.Command{
 		}
 		defer rwc.Close()
 
-		attestationKey, err := createAttestationKey(rwc, opts.Key, opts.KeyAlgo)
+		attestationKey, err := createAttestationKey(rwc, opts.key, opts.keyAlgo)
 		if err != nil {
 			return fmt.Errorf("failed to create attestation key: %w", err)
 		}
 		defer attestationKey.Close()
 
 		attestOpts := client.AttestOpts{}
-		attestOpts.Nonce = opts.Nonce
+		attestOpts.Nonce = opts.nonce
 		// Omit requesting TEE attestation for the Attestation message when attesting an SVSM based vTPM.
 		// We instead separately attach a TEE attestation inside the SevSnpSvsmAttestation message
 		attestOpts.SkipTeeAttestation = true
@@ -76,7 +78,7 @@ var attestSVSMCmd = &cobra.Command{
 			return fmt.Errorf("failed to create linuxtsm configfs client: %w", err)
 		}
 		svsmAttestation, err := makeSEVSNPSVSMAttestation(attestation, &sevSNPSVSMAttestationOpts{
-			TEENonce:                   opts.TEENonce,
+			TEENonce:                   opts.teeNonce,
 			CongfigfsClient:            configfsClient,
 			VTPMServiceManifestVersion: manifestVersion,
 			ExtractOptions:             extract.DefaultOptions(),
@@ -202,7 +204,7 @@ func getSVSMBlobs(configfs configfsi.Client, reportData [sabi.ReportDataSize]byt
 }
 
 func init() {
-	attestSVSMCmd.Flags().StringVar(&manifestVersion, "manifest-version", "0",
+	attestSVSMCmd.Flags().String("manifest-version", "0",
 		"manifest version (valid values: '', '0', '1'). "+
 			"Version 0 (challenge-based) embeds only the EK pub and requires --key=AK. "+
 			"Version 1 (manifest-based) embeds both EK and AK pubs derived under the Endorsement Hierarchy and requires --key=gceAK.")

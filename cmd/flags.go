@@ -217,10 +217,10 @@ func openForWrite(path string) io.Writer {
 	return file
 }
 
-func writeProtoToOutput(message proto.Message, format, outputPath string) error {
+func writeProtoToOutput(message proto.Message, outFormat, outputPath string) error {
 	var out []byte
 	var err error
-	switch format {
+	switch outFormat {
 	case "binarypb":
 		out, err = proto.Marshal(message)
 		if err != nil {
