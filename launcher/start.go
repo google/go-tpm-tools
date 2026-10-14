@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"time"
 
 	"cloud.google.com/go/compute/metadata"
 	"cos.googlesource.com/cos/tools.git/src/cmd/cos_gpu_installer/deviceinfo"
@@ -38,7 +39,13 @@ const (
 	teeServerSocket      = "teeserver.sock"
 	keyManagerSocket     = "kmaserver.sock"
 	keyManagerGrpcSocket = "kmaserver-grpc.sock"
+
+	bcSocketPollInterval = 100 * time.Millisecond
 )
+
+// bcSocketWaitTimeout bounds how long the launcher waits for wsd.service to
+// create the key manager sockets.
+var bcSocketWaitTimeout = 60 * time.Second
 
 var expectedTPMDAParams = TPMDAParams{
 	MaxTries:        0x20,    // 32 tries
@@ -319,21 +326,47 @@ func verifySocketPermissions(socketPath string) error {
 	return nil
 }
 
+// waitForSocket polls until socketPath exists as a Unix domain socket or the
+// deadline passes.
+func waitForSocket(socketPath string, deadline time.Time) error {
+	for {
+		info, err := os.Stat(socketPath)
+		if err == nil && info.Mode().Type() == os.ModeSocket {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			if err == nil {
+				err = fmt.Errorf("%s is not a socket (mode %v)", socketPath, info.Mode())
+			}
+			return fmt.Errorf("timed out waiting for socket: %w", err)
+		}
+		time.Sleep(bcSocketPollInterval)
+	}
+}
+
+// setupBCSocketPermissions makes the WSD sockets accessible to the workload.
+// The sockets are created by wsd.service, which can still be starting when the
+// launcher gets here, so wait for them instead of failing on the first stat.
 func setupBCSocketPermissions(logger logging.Logger) {
-	kmaServerSocketPath := path.Join(launcherfile.HostTmpPath, keyManagerSocket)
-	kmaServerGrpcSocketPath := path.Join(launcherfile.HostTmpPath, keyManagerGrpcSocket)
+	setupSocketPermissions(logger, launcherfile.HostTmpPath, bcSocketWaitTimeout)
+}
 
-	if err := os.Chmod(kmaServerSocketPath, 0777); err != nil {
-		logger.Error("failed to chmod file %s: %v\n", kmaServerSocketPath, err)
-	}
-	if err := os.Chmod(kmaServerGrpcSocketPath, 0777); err != nil {
-		logger.Error("failed to chmod file %s: %v\n", kmaServerGrpcSocketPath, err)
-	}
-
-	if err := verifySocketPermissions(kmaServerSocketPath); err != nil {
-		logger.Error("failed to verify kmaserver socket permissions: %v", err)
-	}
-	if err := verifySocketPermissions(kmaServerGrpcSocketPath); err != nil {
-		logger.Error("failed to verify kmaserver-grpc socket permissions: %v", err)
+func setupSocketPermissions(logger logging.Logger, dir string, timeout time.Duration) {
+	deadline := time.Now().Add(timeout)
+	for _, name := range []string{keyManagerSocket, keyManagerGrpcSocket} {
+		socketPath := path.Join(dir, name)
+		if err := waitForSocket(socketPath, deadline); err != nil {
+			logger.Error("WSD socket is not available", "socket", socketPath, "timeout", timeout.String(), "error", err)
+			continue
+		}
+		if err := os.Chmod(socketPath, 0777); err != nil {
+			logger.Error("failed to chmod WSD socket", "socket", socketPath, "error", err)
+			continue
+		}
+		if err := verifySocketPermissions(socketPath); err != nil {
+			logger.Error("failed to verify WSD socket permissions", "socket", socketPath, "error", err)
+			continue
+		}
+		logger.Info("WSD socket is ready", "socket", socketPath)
 	}
 }

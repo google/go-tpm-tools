@@ -4,12 +4,15 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/google/go-tpm-tools/launcher/spec"
 	"github.com/google/go-tpm-tools/verifier"
@@ -214,7 +217,91 @@ func TestVerifySocketPermissions(t *testing.T) {
 
 func TestSetupBCSocketPermissions(_ *testing.T) {
 	logger := &fakeLogger{}
+	oldTimeout := bcSocketWaitTimeout
+	bcSocketWaitTimeout = 0
+	defer func() { bcSocketWaitTimeout = oldTimeout }()
 	// Verify that setupBCSocketPermissions executes without panicking even when host sockets do not exist.
 	setupBCSocketPermissions(logger)
+}
+
+// errorRecordingLogger records Error calls; fakeLogger drops them.
+type errorRecordingLogger struct {
+	fakeLogger
+	mu     sync.Mutex
+	errors []string
+}
+
+func (l *errorRecordingLogger) Error(msg string, args ...any) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.errors = append(l.errors, formatLog(msg, args...))
+}
+
+// listenUnixWithMode creates a Unix socket and sets its mode, like the WSD
+// agent does.
+func listenUnixWithMode(t *testing.T, socketPath string, mode os.FileMode) {
+	t.Helper()
+	l, err := net.Listen("unix", socketPath)
+	if err != nil {
+		t.Errorf("net.Listen(%q) error = %v", socketPath, err)
+		return
+	}
+	t.Cleanup(func() { l.Close() })
+	if err := os.Chmod(socketPath, mode); err != nil {
+		t.Errorf("os.Chmod(%q) error = %v", socketPath, err)
+	}
+}
+
+func TestSetupSocketPermissionsWaitsForLateSockets(t *testing.T) {
+	dir := t.TempDir()
+	created := make(chan struct{})
+	// Simulates wsd.service creating its sockets (0755, like WSD images older
+	// than key-protection-module 48d5ea8) after the launcher has started.
+	go func() {
+		defer close(created)
+		time.Sleep(300 * time.Millisecond)
+		listenUnixWithMode(t, path.Join(dir, keyManagerSocket), 0755)
+		listenUnixWithMode(t, path.Join(dir, keyManagerGrpcSocket), 0755)
+	}()
+
+	logger := &errorRecordingLogger{}
+	setupSocketPermissions(logger, dir, 10*time.Second)
+	<-created
+
+	if len(logger.errors) != 0 {
+		t.Errorf("setupSocketPermissions() logged errors: %v, want none", logger.errors)
+	}
+	for _, name := range []string{keyManagerSocket, keyManagerGrpcSocket} {
+		if err := verifySocketPermissions(path.Join(dir, name)); err != nil {
+			t.Errorf("verifySocketPermissions(%q) = %v, want nil", name, err)
+		}
+	}
+}
+
+func TestSetupSocketPermissionsTimesOut(t *testing.T) {
+	logger := &errorRecordingLogger{}
+	start := time.Now()
+	setupSocketPermissions(logger, t.TempDir(), 200*time.Millisecond)
+	if elapsed := time.Since(start); elapsed > 5*time.Second {
+		t.Errorf("setupSocketPermissions() took %v, want about 200ms", elapsed)
+	}
+	if len(logger.errors) != 2 {
+		t.Fatalf("setupSocketPermissions() logged %d errors (%v), want 2", len(logger.errors), logger.errors)
+	}
+	for _, e := range logger.errors {
+		if !strings.Contains(e, "WSD socket is not available") || strings.Contains(e, "BADKEY") {
+			t.Errorf("unexpected error log %q", e)
+		}
+	}
+}
+
+func TestWaitForSocketRejectsRegularFile(t *testing.T) {
+	p := path.Join(t.TempDir(), keyManagerSocket)
+	if err := os.WriteFile(p, nil, 0777); err != nil {
+		t.Fatal(err)
+	}
+	if err := waitForSocket(p, time.Now().Add(200*time.Millisecond)); err == nil {
+		t.Errorf("waitForSocket(%q) = nil for a regular file, want error", p)
+	}
 }
 
