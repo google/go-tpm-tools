@@ -822,7 +822,7 @@ func buildPortRules(ports map[string]struct{}, containerIPs []netip.Addr) ([][]s
 		}
 	}
 
-	// Allow the container's outgoing traffic, and the replies to it to come back (the host's FORWARD chain policy is DROP).
+	// Allow container egress traffic and return replies (the host's FORWARD chain policy is DROP).
 	for _, ip := range containerIPs {
 		bin, err := iptablesBin(ip)
 		if err != nil {
