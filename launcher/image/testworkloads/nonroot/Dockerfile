@@ -13,6 +13,8 @@ LABEL "tee.launch_policy.log_redirect"="always"
 LABEL "tee.launch_policy.nonroot_container"="nonrootonly"
 
 ENTRYPOINT ["/bin/sh", "-c"]
-CMD ["cat /proc/self/uid_map && \
-  echo \"ipv4_status: $(curl -4 -s -o /dev/null -m 10 -w '%{http_code}' https://ipv4.google.com)\" && \
-  echo \"ipv6_status: $(curl -6 -s -o /dev/null -m 10 -w '%{http_code}' https://ipv6.google.com)\""]
+CMD ["rc=0; \
+  cat /proc/self/uid_map || rc=1; \
+  curl -4 -fsS -o /dev/null -m 10 https://ipv4.google.com && echo 'ipv4_reachability: ok' || { echo 'ipv4_reachability: failed'; rc=1; }; \
+  curl -6 -fsS -o /dev/null -m 10 https://ipv6.google.com && echo 'ipv6_reachability: ok' || { echo 'ipv6_reachability: failed'; rc=1; }; \
+  exit $rc"]
