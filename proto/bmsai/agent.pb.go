@@ -70,9 +70,7 @@ func (x *MeasureEventRequest) GetCosEvent() []byte {
 }
 
 type MeasureEventResponse struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// Success indicator. Any extension failure returns a gRPC status error.
-	Success       bool `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -107,16 +105,10 @@ func (*MeasureEventResponse) Descriptor() ([]byte, []int) {
 	return file_agent_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *MeasureEventResponse) GetSuccess() bool {
-	if x != nil {
-		return x.Success
-	}
-	return false
-}
-
 type GetEvidenceRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Verifier or workload challenge nonce (8..64 bytes).
+	// Verifier or workload challenge (8..32 bytes).
+	// nonce = SHA-256(challenge). The AA uses this nonce for the CMW token and for the dTPM quote.
 	Challenge     []byte `protobuf:"bytes,1,opt,name=challenge,proto3" json:"challenge,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -221,9 +213,9 @@ type BmsaiEvidence struct {
 	// Binary TCG_PCR_EVENT2 records extended into TEM Slot 0 (Claim 44238).
 	DrtmBootEventLog []byte `protobuf:"bytes,2,opt,name=drtm_boot_event_log,json=drtmBootEventLog,proto3" json:"drtm_boot_event_log,omitempty"`
 	// Canonical Event Log (/run/container_launcher/bmsai_event_log)
-	// Binary cel.CosTlv records whose SHA-384 digests are extended into TEM 1
-	// (go-bmsai slot 2); the same events' SHA-256 digests are extended
-	// into dTPM PCR 19 (TpmQuote.cel_launch_event_log).
+	// Binary cel.CosTlv records whose SHA-384 digests are extended into TEM 1;
+	// the same events' SHA-256 digests are extended into dTPM PCR 19
+	// (TpmQuote.cel_launch_event_log).
 	CelLaunchEventLog []byte `protobuf:"bytes,3,opt,name=cel_launch_event_log,json=celLaunchEventLog,proto3" json:"cel_launch_event_log,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
@@ -286,9 +278,8 @@ const file_agent_proto_rawDesc = "" +
 	"\n" +
 	"\vagent.proto\x12\x15google.tpmtools.bmsai\x1a\x11attestation.proto\"2\n" +
 	"\x13MeasureEventRequest\x12\x1b\n" +
-	"\tcos_event\x18\x01 \x01(\fR\bcosEvent\"0\n" +
-	"\x14MeasureEventResponse\x12\x18\n" +
-	"\asuccess\x18\x01 \x01(\bR\asuccess\"2\n" +
+	"\tcos_event\x18\x01 \x01(\fR\bcosEvent\"\x16\n" +
+	"\x14MeasureEventResponse\"2\n" +
 	"\x12GetEvidenceRequest\x12\x1c\n" +
 	"\tchallenge\x18\x01 \x01(\fR\tchallenge\"\x97\x01\n" +
 	"\rGb300Evidence\x12K\n" +

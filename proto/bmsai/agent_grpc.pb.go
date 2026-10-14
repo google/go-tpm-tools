@@ -31,7 +31,7 @@ const (
 type BmsaiAttestationServiceClient interface {
 	// MeasureEvent appends a canonical COS event (GPU SPDM report, container claim,
 	// or launch separator) to cel_launch_event_log and extends its SHA-384 digest into
-	// TEM 1 (go-bmsai slot 2) and its SHA-256 digest into Dauntless dTPM PCR 19.
+	// TEM 1 and its SHA-256 digest into dTPM PCR 19.
 	MeasureEvent(ctx context.Context, in *MeasureEventRequest, opts ...grpc.CallOption) (*MeasureEventResponse, error)
 	// GetEvidence returns BmsaiEvidence + confidential_space.TpmQuote bound to supplied challenge nonce.
 	GetEvidence(ctx context.Context, in *GetEvidenceRequest, opts ...grpc.CallOption) (*Gb300Evidence, error)
@@ -73,7 +73,7 @@ func (c *bmsaiAttestationServiceClient) GetEvidence(ctx context.Context, in *Get
 type BmsaiAttestationServiceServer interface {
 	// MeasureEvent appends a canonical COS event (GPU SPDM report, container claim,
 	// or launch separator) to cel_launch_event_log and extends its SHA-384 digest into
-	// TEM 1 (go-bmsai slot 2) and its SHA-256 digest into Dauntless dTPM PCR 19.
+	// TEM 1 and its SHA-256 digest into dTPM PCR 19.
 	MeasureEvent(context.Context, *MeasureEventRequest) (*MeasureEventResponse, error)
 	// GetEvidence returns BmsaiEvidence + confidential_space.TpmQuote bound to supplied challenge nonce.
 	GetEvidence(context.Context, *GetEvidenceRequest) (*Gb300Evidence, error)

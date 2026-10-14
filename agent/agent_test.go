@@ -12,8 +12,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"net"
-	"path"
 	"runtime"
 	"sync"
 	"testing"
@@ -43,7 +41,6 @@ import (
 	"github.com/google/go-tpm-tools/verifier/oci/cosign"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
@@ -1197,8 +1194,7 @@ func TestTPMAttestRoot_ExtendLocksMutex(t *testing.T) {
 	}
 }
 
-type fakeBmsaiAttestationServer struct {
-	bmsaipb.UnimplementedBmsaiAttestationServiceServer
+type fakeBmsaiClient struct {
 	mu             sync.Mutex
 	measuredEvents [][]byte
 	measureErr     error
@@ -1207,71 +1203,36 @@ type fakeBmsaiAttestationServer struct {
 	evidenceErr    error
 }
 
-func (s *fakeBmsaiAttestationServer) MeasureEvent(_ context.Context, req *bmsaipb.MeasureEventRequest) (*bmsaipb.MeasureEventResponse, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.measureErr != nil {
-		return nil, s.measureErr
+func (c *fakeBmsaiClient) MeasureEvent(_ context.Context, req *bmsaipb.MeasureEventRequest, _ ...grpc.CallOption) (*bmsaipb.MeasureEventResponse, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.measureErr != nil {
+		return nil, c.measureErr
 	}
-	s.measuredEvents = append(s.measuredEvents, append([]byte(nil), req.GetCosEvent()...))
-	return &bmsaipb.MeasureEventResponse{Success: true}, nil
+	c.measuredEvents = append(c.measuredEvents, append([]byte(nil), req.GetCosEvent()...))
+	return &bmsaipb.MeasureEventResponse{}, nil
 }
 
-func (s *fakeBmsaiAttestationServer) GetEvidence(_ context.Context, req *bmsaipb.GetEvidenceRequest) (*bmsaipb.Gb300Evidence, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.lastChallenge = append([]byte(nil), req.GetChallenge()...)
-	if s.evidenceErr != nil {
-		return nil, s.evidenceErr
+func (c *fakeBmsaiClient) GetEvidence(_ context.Context, req *bmsaipb.GetEvidenceRequest, _ ...grpc.CallOption) (*bmsaipb.Gb300Evidence, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.lastChallenge = append([]byte(nil), req.GetChallenge()...)
+	if c.evidenceErr != nil {
+		return nil, c.evidenceErr
 	}
-	return s.evidence, nil
-}
-
-func startFakeBmsaiServer(t *testing.T, srv *fakeBmsaiAttestationServer) (*grpc.ClientConn, bmsaipb.BmsaiAttestationServiceClient) {
-	t.Helper()
-	sockPath := path.Join(t.TempDir(), "bmsai_agent.sock")
-	lis, err := net.Listen("unix", sockPath)
-	if err != nil {
-		t.Fatalf("net.Listen(%q) failed: %v", sockPath, err)
-	}
-	grpcSrv := grpc.NewServer()
-	bmsaipb.RegisterBmsaiAttestationServiceServer(grpcSrv, srv)
-	go func() {
-		_ = grpcSrv.Serve(lis)
-	}()
-	t.Cleanup(func() {
-		grpcSrv.Stop()
-		_ = lis.Close()
-	})
-
-	conn, err := grpc.NewClient(
-		"unix://"+sockPath,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
-	if err != nil {
-		t.Fatalf("grpc.NewClient(%q) failed: %v", sockPath, err)
-	}
-	t.Cleanup(func() {
-		_ = conn.Close()
-	})
-	return conn, bmsaipb.NewBmsaiAttestationServiceClient(conn)
+	return c.evidence, nil
 }
 
 func TestGB300CCAgent_MeasureEvent(t *testing.T) {
 	testCases := []struct {
-		name       string
-		event      gecel.Content
-		serverErr  error
-		wantErr    bool
-		wantEvent  cel.CosTlv
+		name      string
+		event     gecel.Content
+		serverErr error
+		wantErr   bool
 	}{
 		{
 			name:  "success sends binary type-80 COS TLV over UDS",
 			event: cel.CosTlv{EventType: cel.ImageRefType, EventContent: []byte(imageRef)},
-			wantEvent: cel.CosTlv{
-				EventType:    cel.ImageRefType,
-				EventContent: []byte(imageRef),
-			},
 		},
 		{
 			name:      "propagates gRPC error from attestation agent",
@@ -1283,16 +1244,15 @@ func TestGB300CCAgent_MeasureEvent(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			srv := &fakeBmsaiAttestationServer{measureErr: tc.serverErr}
-			conn, client := startFakeBmsaiServer(t, srv)
-
+			client := &fakeBmsaiClient{measureErr: tc.serverErr}
+			bmsaiRoT := &bmsaiAgentRoT{client: client}
 			ag := &gb300ccAgent{
 				agent: &agent{
-					experiments: Experiments{GB300CCMode: true, EnableAttestationEvidence: true},
-					logger:      SimpleLogger(),
+					measuredRots: []attestRoot{bmsaiRoT},
+					experiments:  Experiments{GB300CCMode: true, EnableAttestationEvidence: true},
+					logger:       SimpleLogger(),
 				},
-				bmsaiClient: client,
-				conn:        conn,
+				bmsaiRoT: bmsaiRoT,
 			}
 
 			err := ag.MeasureEvent(tc.event)
@@ -1303,22 +1263,22 @@ func TestGB300CCAgent_MeasureEvent(t *testing.T) {
 				return
 			}
 
-			srv.mu.Lock()
-			defer srv.mu.Unlock()
-			if len(srv.measuredEvents) != 1 {
-				t.Fatalf("got %d measured events, want 1", len(srv.measuredEvents))
+			client.mu.Lock()
+			defer client.mu.Unlock()
+			if len(client.measuredEvents) != 1 {
+				t.Fatalf("got %d measured events, want 1", len(client.measuredEvents))
 			}
 
 			var outerTLV gecel.TLV
-			if err := outerTLV.UnmarshalBinary(srv.measuredEvents[0]); err != nil {
-				t.Fatalf("failed to unmarshal outer TLV: %v", err)
+			if err := outerTLV.UnmarshalBinary(client.measuredEvents[0]); err != nil {
+				t.Fatalf("outerTLV.UnmarshalBinary() err = %v", err)
 			}
 			gotCosTlv, err := cel.ParseToCosTlv(outerTLV)
 			if err != nil {
-				t.Fatalf("failed to parse CosTlv: %v", err)
+				t.Fatalf("cel.ParseToCosTlv() err = %v", err)
 			}
-			if diff := cmp.Diff(tc.wantEvent, gotCosTlv); diff != "" {
-				t.Errorf("measured CosTlv mismatch (-want +got):\n%s", diff)
+			if diff := cmp.Diff(tc.event, gotCosTlv); diff != "" {
+				t.Errorf("MeasureEvent() CosTlv mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
@@ -1338,13 +1298,13 @@ func TestGB300CCAgent_AttestGB300(t *testing.T) {
 	}
 
 	testCases := []struct {
-		name            string
-		enableEvidence  bool
-		challenge       []byte
-		serverEvidence  *bmsaipb.Gb300Evidence
-		serverErr       error
-		wantErr         bool
-		wantEvidence    *bmsaipb.Gb300Evidence
+		name           string
+		enableEvidence bool
+		challenge      []byte
+		serverEvidence *bmsaipb.Gb300Evidence
+		serverErr      error
+		wantErr        bool
+		wantEvidence   *bmsaipb.Gb300Evidence
 	}{
 		{
 			name:           "success forwards raw challenge and returns Gb300Evidence",
@@ -1371,12 +1331,11 @@ func TestGB300CCAgent_AttestGB300(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			srv := &fakeBmsaiAttestationServer{
+			client := &fakeBmsaiClient{
 				evidence:    tc.serverEvidence,
 				evidenceErr: tc.serverErr,
 			}
-			conn, client := startFakeBmsaiServer(t, srv)
-
+			bmsaiRoT := &bmsaiAgentRoT{client: client}
 			ag := &gb300ccAgent{
 				agent: &agent{
 					experiments: Experiments{
@@ -1385,8 +1344,7 @@ func TestGB300CCAgent_AttestGB300(t *testing.T) {
 					},
 					logger: SimpleLogger(),
 				},
-				bmsaiClient: client,
-				conn:        conn,
+				bmsaiRoT: bmsaiRoT,
 			}
 
 			got, err := ag.AttestGB300(context.Background(), tc.challenge)
@@ -1397,9 +1355,9 @@ func TestGB300CCAgent_AttestGB300(t *testing.T) {
 				return
 			}
 
-			srv.mu.Lock()
-			gotChallenge := append([]byte(nil), srv.lastChallenge...)
-			srv.mu.Unlock()
+			client.mu.Lock()
+			gotChallenge := append([]byte(nil), client.lastChallenge...)
+			client.mu.Unlock()
 			if !bytes.Equal(gotChallenge, tc.challenge) {
 				t.Errorf("server received challenge %q, want %q", gotChallenge, tc.challenge)
 			}

@@ -10,7 +10,7 @@ option go_package = "github.com/google/go-tpm-tools/proto/bmsai";
 service BmsaiAttestationService {
   // MeasureEvent appends a canonical COS event (GPU SPDM report, container claim,
   // or launch separator) to cel_launch_event_log and extends its SHA-384 digest into
-  // TEM 1 (go-bmsai slot 2) and its SHA-256 digest into Dauntless dTPM PCR 19.
+  // TEM 1 and its SHA-256 digest into dTPM PCR 19.
   rpc MeasureEvent(MeasureEventRequest) returns (MeasureEventResponse);
 
   // GetEvidence returns BmsaiEvidence + confidential_space.TpmQuote bound to supplied challenge nonce.
@@ -24,13 +24,11 @@ message MeasureEventRequest {
   bytes cos_event = 1;
 }
 
-message MeasureEventResponse {
-  // Success indicator. Any extension failure returns a gRPC status error.
-  bool success = 1;
-}
+message MeasureEventResponse {}
 
 message GetEvidenceRequest {
-  // Verifier or workload challenge nonce (8..64 bytes).
+  // Verifier or workload challenge (8..32 bytes).
+  // nonce = SHA-256(challenge). The AA uses this nonce for the CMW token and for the dTPM quote.
   bytes challenge = 1;
 }
 
@@ -50,8 +48,8 @@ message BmsaiEvidence {
   bytes drtm_boot_event_log = 2;
 
   // Canonical Event Log (/run/container_launcher/bmsai_event_log)
-  // Binary cel.CosTlv records whose SHA-384 digests are extended into TEM 1
-  // (go-bmsai slot 2); the same events' SHA-256 digests are extended
-  // into dTPM PCR 19 (TpmQuote.cel_launch_event_log).
+  // Binary cel.CosTlv records whose SHA-384 digests are extended into TEM 1;
+  // the same events' SHA-256 digests are extended into dTPM PCR 19
+  // (TpmQuote.cel_launch_event_log).
   bytes cel_launch_event_log = 3;
 }

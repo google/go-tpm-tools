@@ -61,7 +61,6 @@ type attestHandler struct {
 	attestAgent           agent.AttestationAgent
 	logger                logging.Logger
 	bcMode                bool
-	gb300ccMode           bool
 	enableHostAttestation bool
 	clients               AttestClients
 	keyClaimsProvider     wsd.KeyClaimsProvider
@@ -85,7 +84,6 @@ func New(
 	a agent.AttestationAgent,
 	logger logging.Logger,
 	bcMode bool,
-	gb300ccMode bool,
 	enableHostAttestation bool,
 	clients AttestClients,
 	keyClaimsProvider wsd.KeyClaimsProvider,
@@ -111,7 +109,6 @@ func New(
 				attestAgent:           a,
 				logger:                logger,
 				bcMode:                bcMode,
-				gb300ccMode:           gb300ccMode,
 				enableHostAttestation: enableHostAttestation,
 				clients:               clients,
 				keyClaimsProvider:     keyClaimsProvider,
@@ -232,6 +229,7 @@ func parseFieldMask(r *http.Request) *fieldmaskpb.FieldMask {
 // It currently supports "label", "challenge", "quote", "extraData", and "deviceReports" params.
 // The default response with no query parameter will return all fields except device reports.
 // If the fields param is "*", it will return all fields including device reports.
+// In GB300 CC mode, this endpoint returns Gb300Evidence and ignores the fields parameter.
 func (a *attestHandler) getAttestationEvidence(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		a.logAndWriteHTTPError(w, http.StatusMethodNotAllowed, fmt.Errorf("method not allowed"))
@@ -255,8 +253,8 @@ func (a *attestHandler) getAttestationEvidence(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	if a.gb300ccMode {
-		evidence, err := a.attestAgent.AttestGB300(a.ctx, req.Challenge)
+	if gb300Provider, ok := a.attestAgent.(agent.GB300EvidenceProvider); ok {
+		evidence, err := gb300Provider.AttestGB300(a.ctx, req.Challenge)
 		if err != nil {
 			a.handleAttestError(w, err, "failed to fetch GB300 attestation evidence")
 			return

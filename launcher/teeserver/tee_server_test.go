@@ -28,6 +28,7 @@ import (
 	bmsaipb "github.com/google/go-tpm-tools/proto/bmsai"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/google/go-tpm-tools/verifier/models"
+	"github.com/google/go-tpm/legacy/tpm2"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -58,7 +59,15 @@ type fakeAttestationAgent struct {
 	attestFunc              func(context.Context, agent.AttestAgentOpts) ([]byte, error)
 	attestWithClientFunc    func(context.Context, agent.AttestAgentOpts, verifier.Client) ([]byte, error)
 	attestationEvidenceFunc func(context.Context, []byte, []byte) (*attestationpb.VmAttestation, error)
-	attestGB300Func         func(context.Context, []byte) (*bmsaipb.Gb300Evidence, error)
+}
+
+type fakeGB300AttestationAgent struct {
+	fakeAttestationAgent
+	attestGB300Func func(context.Context, []byte) (*bmsaipb.Gb300Evidence, error)
+}
+
+func (f fakeGB300AttestationAgent) AttestGB300(ctx context.Context, challenge []byte) (*bmsaipb.Gb300Evidence, error) {
+	return f.attestGB300Func(ctx, challenge)
 }
 
 func (f fakeAttestationAgent) Attest(c context.Context, a agent.AttestAgentOpts) ([]byte, error) {
@@ -101,13 +110,6 @@ func (f fakeAttestationAgent) Close() error {
 
 func (f fakeAttestationAgent) AttestHost(_ context.Context, _ []byte) ([]byte, error) {
 	return nil, fmt.Errorf("AttestHost unimplemented")
-}
-
-func (f fakeAttestationAgent) AttestGB300(ctx context.Context, challenge []byte) (*bmsaipb.Gb300Evidence, error) {
-	if f.attestGB300Func != nil {
-		return f.attestGB300Func(ctx, challenge)
-	}
-	return nil, fmt.Errorf("AttestGB300 unimplemented")
 }
 
 // Mock for KeyClaimsProvider interface
@@ -1327,7 +1329,6 @@ func TestTeeServer_Shutdown(t *testing.T) {
 		logging.SimpleLogger(),
 		false,
 		false,
-		false,
 		AttestClients{},
 		nil,
 	)
@@ -1352,7 +1353,7 @@ func TestGetAttestationEvidence_GB300CCMode(t *testing.T) {
 		TpmQuote: &attestationpb.TpmQuote{
 			Quotes: []*attestationpb.TpmQuote_SignedQuote{
 				{
-					HashAlgorithm: 11,
+					HashAlgorithm: uint32(tpm2.AlgSHA256),
 					TpmsAttest:    []byte("test-tpms-attest"),
 					TpmtSignature: []byte("test-tpmt-sig"),
 					PcrValues:     map[uint32][]byte{19: []byte("test-pcr-19")},
@@ -1406,10 +1407,9 @@ func TestGetAttestationEvidence_GB300CCMode(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			ah := attestHandler{
-				ctx:         context.Background(),
-				logger:      logging.SimpleLogger(),
-				gb300ccMode: true,
-				attestAgent: fakeAttestationAgent{
+				ctx:    context.Background(),
+				logger: logging.SimpleLogger(),
+				attestAgent: fakeGB300AttestationAgent{
 					attestGB300Func: tc.attestGB300Func,
 				},
 			}
@@ -1426,13 +1426,13 @@ func TestGetAttestationEvidence_GB300CCMode(t *testing.T) {
 			if tc.wantStatusCode == http.StatusOK {
 				var got bmsaipb.Gb300Evidence
 				if err := protojson.Unmarshal(w.Body.Bytes(), &got); err != nil {
-					t.Fatalf("failed to unmarshal Gb300Evidence response: %v", err)
+					t.Fatalf("protojson.Unmarshal() err = %v", err)
 				}
 				if diff := cmp.Diff(tc.wantEvidence, &got, protocmp.Transform()); diff != "" {
-					t.Errorf("Gb300Evidence mismatch (-want +got):\n%s", diff)
+					t.Errorf("getAttestationEvidence() mismatch (-want +got):\n%s", diff)
 				}
 			} else if !strings.Contains(w.Body.String(), tc.wantBodyContains) {
-				t.Errorf("response body = %q, want substring %q", w.Body.String(), tc.wantBodyContains)
+				t.Errorf("getAttestationEvidence() body = %q, want substring %q", w.Body.String(), tc.wantBodyContains)
 			}
 		})
 	}

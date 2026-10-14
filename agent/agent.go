@@ -62,8 +62,10 @@ type SignatureFetcher interface {
 }
 
 const (
-	audienceSTS      = "https://sts.googleapis.com"
-	hostServicePort  = 600613
+	audienceSTS     = "https://sts.googleapis.com"
+	hostServicePort = 600613
+	// bmsaiAgentSocket is a host path. In the workload container, /run/container_launcher/
+	// is the mount point for the host's /tmp/container_launcher (launcherfile.ContainerRuntimeMountPath).
 	bmsaiAgentSocket = "/run/container_launcher/bmsai_agent.sock"
 )
 
@@ -80,6 +82,11 @@ type AttestationAgent interface {
 	Refresh(context.Context) error
 	Close() error
 	AttestHost(ctx context.Context, challenge []byte) ([]byte, error)
+}
+
+// GB300EvidenceProvider is an optional interface implemented by agents that
+// provide GB300 platform attestation evidence.
+type GB300EvidenceProvider interface {
 	AttestGB300(ctx context.Context, challenge []byte) (*bmsaipb.Gb300Evidence, error)
 }
 
@@ -146,8 +153,7 @@ type bcAgent struct {
 
 type gb300ccAgent struct {
 	*agent
-	bmsaiClient bmsaipb.BmsaiAttestationServiceClient
-	conn        *grpc.ClientConn
+	bmsaiRoT *bmsaiAgentRoT
 }
 
 // CreateAttestationAgent returns an agent capable of performing remote
@@ -268,18 +274,15 @@ func createGB300CCAgent(principalFetcher principalIDTokenFetcher, sigsFetcher Si
 		deviceROTManager: deviceROTManager,
 	}
 
-	conn, err := grpc.NewClient(
-		"unix://"+bmsaiAgentSocket,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
+	bmsaiRoT, err := newBmsaiAgentRoT()
 	if err != nil {
-		return nil, fmt.Errorf("failed to create BMSAI attestation agent client: %w", err)
+		return nil, fmt.Errorf("failed to create BMSAI agent RoT: %w", err)
 	}
+	baseAgent.measuredRots = append(baseAgent.measuredRots, bmsaiRoT)
 
 	return &gb300ccAgent{
-		agent:       baseAgent,
-		bmsaiClient: bmsaipb.NewBmsaiAttestationServiceClient(conn),
-		conn:        conn,
+		agent:    baseAgent,
+		bmsaiRoT: bmsaiRoT,
 	}, nil
 }
 
@@ -782,6 +785,58 @@ func (h *hostServiceRoT) Close() error {
 	return h.conn.Close()
 }
 
+type bmsaiAgentRoT struct {
+	client bmsaipb.BmsaiAttestationServiceClient
+	conn   *grpc.ClientConn
+}
+
+func newBmsaiAgentRoT() (*bmsaiAgentRoT, error) {
+	conn, err := grpc.NewClient(
+		"unix://"+bmsaiAgentSocket,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create BMSAI attestation agent client: %w", err)
+	}
+	return &bmsaiAgentRoT{
+		conn:   conn,
+		client: bmsaipb.NewBmsaiAttestationServiceClient(conn),
+	}, nil
+}
+
+func (b *bmsaiAgentRoT) Extend(event gecel.Content) error {
+	tlv, err := event.TLV()
+	if err != nil {
+		return fmt.Errorf("failed to format TLV: %w", err)
+	}
+	tlvBytes, err := tlv.MarshalBinary()
+	if err != nil {
+		return fmt.Errorf("failed to marshal TLV binary: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if _, err := b.client.MeasureEvent(ctx, &bmsaipb.MeasureEventRequest{
+		CosEvent: tlvBytes,
+	}); err != nil {
+		return fmt.Errorf("BMSAI MeasureEvent failed: %w", err)
+	}
+	return nil
+}
+
+func (b *bmsaiAgentRoT) GetCEL() gecel.CEL               { return nil }
+func (b *bmsaiAgentRoT) ComputeNonce(_, _ []byte) []byte { return nil }
+func (b *bmsaiAgentRoT) Attest(_ []byte) (any, error) {
+	return nil, fmt.Errorf("bmsaiAgentRoT does not support direct attestation")
+}
+func (b *bmsaiAgentRoT) Close() error {
+	if b.conn == nil {
+		return nil
+	}
+	return b.conn.Close()
+}
+
 // Refresh refreshes the internal state of the attestation agent.
 // It will reset the container image signatures for now.
 func (a *agent) Refresh(ctx context.Context) error {
@@ -880,10 +935,6 @@ func convertToTPMQuote(v *pb.Attestation) *attestationpb.TpmQuote {
 		},
 	}
 }
-// AttestGB300 fetches GB300 attestation evidence from the host attestation agent.
-func (a *agent) AttestGB300(_ context.Context, _ []byte) (*bmsaipb.Gb300Evidence, error) {
-	return nil, fmt.Errorf("GB300 attestation is only supported in GB300 CC mode")
-}
 
 func (a *gb300ccAgent) Attest(_ context.Context, _ AttestAgentOpts) ([]byte, error) {
 	return nil, fmt.Errorf("attestation token is not supported in GB300 CC mode")
@@ -891,30 +942,6 @@ func (a *gb300ccAgent) Attest(_ context.Context, _ AttestAgentOpts) ([]byte, err
 
 func (a *gb300ccAgent) Refresh(_ context.Context) error {
 	a.logger.Info("GB300 CC mode: Skipping Refresh")
-	return nil
-}
-
-func (a *gb300ccAgent) MeasureEvent(event gecel.Content) error {
-	if a.bmsaiClient == nil {
-		return fmt.Errorf("BMSAI attestation client not initialized")
-	}
-	tlv, err := event.TLV()
-	if err != nil {
-		return fmt.Errorf("failed to format TLV: %w", err)
-	}
-	tlvBytes, err := tlv.MarshalBinary()
-	if err != nil {
-		return fmt.Errorf("failed to marshal TLV binary: %w", err)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	if _, err := a.bmsaiClient.MeasureEvent(ctx, &bmsaipb.MeasureEventRequest{
-		CosEvent: tlvBytes,
-	}); err != nil {
-		return fmt.Errorf("BMSAI MeasureEvent failed: %w", err)
-	}
 	return nil
 }
 
@@ -930,22 +957,20 @@ func (a *gb300ccAgent) AttestationEvidence(_ context.Context, _ []byte, _ []byte
 	return nil, fmt.Errorf("AttestationEvidence is not yet implemented for GB300 CC mode")
 }
 
+// AttestGB300 fetches GB300 attestation evidence from the BMSAI attestation agent.
 func (a *gb300ccAgent) AttestGB300(ctx context.Context, challenge []byte) (*bmsaipb.Gb300Evidence, error) {
 	if !a.experiments.EnableAttestationEvidence {
 		return nil, fmt.Errorf("attestation evidence is disabled")
 	}
-	if a.bmsaiClient == nil {
-		return nil, fmt.Errorf("BMSAI attestation client not initialized")
-	}
-	return a.bmsaiClient.GetEvidence(ctx, &bmsaipb.GetEvidenceRequest{
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	evidence, err := a.bmsaiRoT.client.GetEvidence(ctx, &bmsaipb.GetEvidenceRequest{
 		Challenge: challenge,
 	})
-}
-
-func (a *gb300ccAgent) Close() error {
-	if a.conn != nil {
-		return a.conn.Close()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get GB300 evidence: %w", err)
 	}
-	return nil
+	return evidence, nil
 }
 
