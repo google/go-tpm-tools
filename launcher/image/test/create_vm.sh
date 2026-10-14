@@ -8,7 +8,7 @@ print_usage() {
     echo "  -m <metadata>: metadata variables on VM creation; passed directly into gcloud"
     echo "  -f <metadataFromFile>: read a metadata value from a file; specified in format key=filePath"
     echo "  -n <instanceName>: instance name"
-    echo "  -z <instanceZone>: instance zone or comma-separated list of candidate zones"
+    echo "  -z <instanceZone>: instance zone, region, or comma-separated list of candidate zones"
     echo "  -c <confidentialComputing>: NONE, TDX, or SEV. Default is SEV"
     echo "  -t <machineType>: type of machine for VM (optional)"
     echo "  -g <gpuType>: type of GPU to use for the VM (optional)"
@@ -94,13 +94,18 @@ create_vm() {
     SUBNET_FLAG="--subnet=${SUBNET_NAME}"
   fi
 
-  gcloud compute instances create $VM_NAME \
+  # If given a region, use bulk create to pick a zone with available capacity.
+  CREATE_CMD="instances create $VM_NAME --zone=$ZONE"
+  if [[ "$ZONE" != *-*-* ]]; then
+    CREATE_CMD="instances bulk create --predefined-names=$VM_NAME --count=1 --region=$ZONE --target-distribution-shape=ANY_SINGLE_ZONE"
+  fi
+
+  gcloud compute $CREATE_CMD \
     $CONFIDENTIAL_COMPUTE_FLAGS \
     --maintenance-policy=TERMINATE \
     --machine-type=$MACHINE_TYPE \
     --boot-disk-size=$DISK_SIZE_GB \
     --scopes=cloud-platform \
-    --zone=$ZONE \
     --image=$IMAGE_NAME \
     --image-project=$PROJECT_NAME \
     --shielded-secure-boot \
