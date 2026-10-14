@@ -526,6 +526,8 @@ func validateMount(mnt launchermount.Mount) error {
 	switch v := mnt.(type) {
 	case launchermount.TmpfsMount:
 		return validateMemorySizeKb(v.Size / 1024)
+	case launchermount.LSSDMount:
+		return nil
 	default:
 		return fmt.Errorf("got unknown mount type: %T", v)
 	}
