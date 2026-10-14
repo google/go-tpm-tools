@@ -297,7 +297,6 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 			return err
 		}
 		for _, m := range mounts {
-			fmt.Printf("############## %v\n", m)
 			s.Mounts = append(s.Mounts, m)
 		}
 	}
@@ -398,6 +397,7 @@ func GetLaunchSpec(ctx context.Context, logger logging.Logger, client *metadata.
 
 	var errs []error
 	for _, mnt := range spec.Mounts {
+		logger.Info("#### Mount", fmt.Sprintf("%+v", mnt))
 		if err := validateMount(mnt); err != nil {
 			errs = append(errs, err)
 		}
