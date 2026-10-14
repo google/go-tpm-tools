@@ -9,10 +9,11 @@ fi
 echo "Cleaning up."
 
 VM_NAME=$1
-# If not provided, look up the zone by VM name.
-ZONE=${2:-}
+# Empty zone means the VM was already deleted.
+ZONE=$(gcloud compute instances list --filter="name=$VM_NAME" --format='value(zone.basename())')
 if [ -z "$ZONE" ]; then
-  ZONE=$(gcloud compute instances list --filter="name=$VM_NAME" --format='value(zone.basename())')
+  echo "VM $VM_NAME already deleted."
+  exit 0
 fi
 
 echo 'Deleting VM' $VM_NAME 'in zone' $ZONE

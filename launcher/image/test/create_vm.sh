@@ -79,14 +79,14 @@ create_vm() {
   if [ -n "$GPU_TYPE" ] && [ -n "$GPU_COUNT" ]; then
     ACCELERATOR_FLAGS="--accelerator=count=$GPU_COUNT,type=$GPU_TYPE"
     DISK_SIZE_GB=100
-    PREEMPTIBLE_FLAG="--preemptible"
+    SPOT_FLAG="--provisioning-model=SPOT"
   else
     # Max disk for n2d-standard-2 (8GB memory) at 1% memory overhead.
     MIN_DISK_SIZE=12
     MAX_DISK_SIZE_GB=80
     ADDTL_DISK_RANGE=$(($MAX_DISK_SIZE_GB - $MIN_DISK_SIZE + 1))
     DISK_SIZE_GB=$(($MIN_DISK_SIZE + ($RANDOM % $ADDTL_DISK_RANGE)))
-    PREEMPTIBLE_FLAG=""
+    SPOT_FLAG=""
   fi
 
   SUBNET_FLAG=""
@@ -105,7 +105,9 @@ create_vm() {
     --image-project=$PROJECT_NAME \
     --shielded-secure-boot \
     $ACCELERATOR_FLAGS \
-    $PREEMPTIBLE_FLAG \
+    $SPOT_FLAG \
+    --instance-termination-action=DELETE \
+    --max-run-duration=1h \
     $SUBNET_FLAG \
     $STACK_TYPE_FLAG \
     $APPEND_METADATA \
