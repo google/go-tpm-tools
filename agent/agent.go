@@ -34,6 +34,7 @@ import (
 
 	"github.com/GoogleCloudPlatform/confidential-space/server/labels"
 	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
+	bmsaiagentpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/bmsaiagent"
 	hostservicepb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/hostservice"
 	"github.com/google/go-tpm-tools/agent/device"
 	"github.com/google/go-tpm-tools/cel"
@@ -63,6 +64,9 @@ type SignatureFetcher interface {
 const (
 	audienceSTS     = "https://sts.googleapis.com"
 	hostServicePort = 600613
+	// bmsaiAgentSocket is a host path. In the workload container, /run/container_launcher/
+	// is the mount point for the host's /tmp/container_launcher (launcherfile.ContainerRuntimeMountPath).
+	bmsaiAgentSocket = "/run/container_launcher/bmsai_agent.sock"
 )
 
 type principalIDTokenFetcher func(audience string) ([][]byte, error)
@@ -78,6 +82,12 @@ type AttestationAgent interface {
 	Refresh(context.Context) error
 	Close() error
 	AttestHost(ctx context.Context, challenge []byte) ([]byte, error)
+}
+
+// GB300EvidenceProvider is an optional interface implemented by agents that
+// provide GB300 platform attestation evidence.
+type GB300EvidenceProvider interface {
+	AttestGB300(ctx context.Context, challenge []byte) (*bmsaiagentpb.Gb300Evidence, error)
 }
 
 type attestRoot interface {
@@ -143,6 +153,7 @@ type bcAgent struct {
 
 type gb300ccAgent struct {
 	*agent
+	bmsaiRoT *bmsaiAgentRoT
 }
 
 // CreateAttestationAgent returns an agent capable of performing remote
@@ -251,7 +262,7 @@ func createBCAgent(principalFetcher principalIDTokenFetcher, sigsFetcher Signatu
 }
 
 func createGB300CCAgent(principalFetcher principalIDTokenFetcher, sigsFetcher SignatureFetcher, exps Experiments, logger Logger, deviceROTManager *device.ROTManager, signedImageRepos []string) (AttestationAgent, error) {
-	logger.Info("Initializing GB300 CC agent placeholder. Not yet implemented.")
+	logger.Info("Initializing GB300 CC agent.")
 
 	baseAgent := &agent{
 		principalFetcher: principalFetcher,
@@ -263,9 +274,16 @@ func createGB300CCAgent(principalFetcher principalIDTokenFetcher, sigsFetcher Si
 		deviceROTManager: deviceROTManager,
 	}
 
-	// TODO: Add details and implementations
+	bmsaiRoT, err := newBmsaiAgentRoT()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create BMSAI agent RoT: %w", err)
+	}
+	baseAgent.measuredRots = append(baseAgent.measuredRots, bmsaiRoT)
 
-	return &gb300ccAgent{agent: baseAgent}, nil
+	return &gb300ccAgent{
+		agent:    baseAgent,
+		bmsaiRoT: bmsaiRoT,
+	}, nil
 }
 
 func (a *agent) addTDXAttestRoot() (bool, error) {
@@ -767,6 +785,58 @@ func (h *hostServiceRoT) Close() error {
 	return h.conn.Close()
 }
 
+type bmsaiAgentRoT struct {
+	client bmsaiagentpb.BmsaiAttestationServiceClient
+	conn   *grpc.ClientConn
+}
+
+func newBmsaiAgentRoT() (*bmsaiAgentRoT, error) {
+	conn, err := grpc.NewClient(
+		"unix://"+bmsaiAgentSocket,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create BMSAI attestation agent client: %w", err)
+	}
+	return &bmsaiAgentRoT{
+		conn:   conn,
+		client: bmsaiagentpb.NewBmsaiAttestationServiceClient(conn),
+	}, nil
+}
+
+func (b *bmsaiAgentRoT) Extend(event gecel.Content) error {
+	tlv, err := event.TLV()
+	if err != nil {
+		return fmt.Errorf("failed to format TLV: %w", err)
+	}
+	tlvBytes, err := tlv.MarshalBinary()
+	if err != nil {
+		return fmt.Errorf("failed to marshal TLV binary: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if _, err := b.client.MeasureEvent(ctx, &bmsaiagentpb.MeasureEventRequest{
+		CosEvent: tlvBytes,
+	}); err != nil {
+		return fmt.Errorf("BMSAI MeasureEvent failed: %w", err)
+	}
+	return nil
+}
+
+func (b *bmsaiAgentRoT) GetCEL() gecel.CEL               { return nil }
+func (b *bmsaiAgentRoT) ComputeNonce(_, _ []byte) []byte { return nil }
+func (b *bmsaiAgentRoT) Attest(_ []byte) (any, error) {
+	return nil, fmt.Errorf("bmsaiAgentRoT does not support direct attestation")
+}
+func (b *bmsaiAgentRoT) Close() error {
+	if b.conn == nil {
+		return nil
+	}
+	return b.conn.Close()
+}
+
 // Refresh refreshes the internal state of the attestation agent.
 // It will reset the container image signatures for now.
 func (a *agent) Refresh(ctx context.Context) error {
@@ -865,17 +935,13 @@ func convertToTPMQuote(v *pb.Attestation) *attestationpb.TpmQuote {
 		},
 	}
 }
+
 func (a *gb300ccAgent) Attest(_ context.Context, _ AttestAgentOpts) ([]byte, error) {
 	return nil, fmt.Errorf("attestation token is not supported in GB300 CC mode")
 }
 
 func (a *gb300ccAgent) Refresh(_ context.Context) error {
 	a.logger.Info("GB300 CC mode: Skipping Refresh")
-	return nil
-}
-
-func (a *gb300ccAgent) MeasureEvent(_ gecel.Content) error {
-	a.logger.Info("GB300 CC mode: Skipping MeasureEvent")
 	return nil
 }
 
@@ -889,4 +955,21 @@ func (a *gb300ccAgent) AttestationEvidence(_ context.Context, _ []byte, _ []byte
 	}
 
 	return nil, fmt.Errorf("AttestationEvidence is not yet implemented for GB300 CC mode")
+}
+
+// AttestGB300 fetches GB300 attestation evidence from the BMSAI attestation agent.
+func (a *gb300ccAgent) AttestGB300(ctx context.Context, challenge []byte) (*bmsaiagentpb.Gb300Evidence, error) {
+	if !a.experiments.EnableAttestationEvidence {
+		return nil, fmt.Errorf("attestation evidence is disabled")
+	}
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	evidence, err := a.bmsaiRoT.client.GetEvidence(ctx, &bmsaiagentpb.GetEvidenceRequest{
+		Challenge: challenge,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get GB300 evidence: %w", err)
+	}
+	return evidence, nil
 }

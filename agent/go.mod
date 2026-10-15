@@ -1,6 +1,6 @@
 module github.com/google/go-tpm-tools/agent
 
-go 1.26
+go 1.26.2
 
 replace (
 	github.com/google/go-tpm-tools v0.4.6 => ../
@@ -8,14 +8,14 @@ replace (
 )
 
 require (
-	github.com/GoogleCloudPlatform/confidential-space/server v0.0.0-20260706204617-c9f710ef3461
+	github.com/GoogleCloudPlatform/confidential-space/server v0.0.0-20261015094924-dba3d44e282b
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/golang-jwt/jwt/v4 v4.5.2
 	github.com/google/go-cmp v0.7.0
 	github.com/google/go-eventlog v0.0.3-0.20260617163629-883cc5652c69
 	github.com/google/go-tdx-guest v0.3.2-0.20250814004405-ffb0869e6f4d
 	github.com/google/go-tpm v0.9.8
-	github.com/google/go-tpm-tools v0.4.9-0.20260522205405-ed0161beaf76
+	github.com/google/go-tpm-tools v0.4.10-0.20260914213056-da471084bae5
 	github.com/google/go-tpm-tools/verifier v0.4.4
 	github.com/mdlayher/vsock v1.2.1
 	google.golang.org/grpc v1.81.1
@@ -28,7 +28,6 @@ require (
 	cloud.google.com/go/compute/metadata v0.9.0 // indirect
 	cloud.google.com/go/confidentialcomputing v1.17.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
@@ -43,7 +42,6 @@ require (
 	github.com/mdlayher/socket v0.5.1 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.0 // indirect
-	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.67.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.67.0 // indirect

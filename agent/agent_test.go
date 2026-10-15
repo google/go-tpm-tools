@@ -21,6 +21,7 @@ import (
 	"github.com/GoogleCloudPlatform/confidential-space/server/extract"
 	"github.com/GoogleCloudPlatform/confidential-space/server/labels"
 	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
+	bmsaiagentpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/bmsaiagent"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-cmp/cmp"
@@ -38,6 +39,9 @@ import (
 	"github.com/google/go-tpm-tools/verifier/fake"
 	"github.com/google/go-tpm-tools/verifier/oci"
 	"github.com/google/go-tpm-tools/verifier/oci/cosign"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
@@ -1187,5 +1191,179 @@ func TestTPMAttestRoot_ExtendLocksMutex(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("Extend timed out after mutex unlocked")
+	}
+}
+
+type fakeBmsaiClient struct {
+	mu             sync.Mutex
+	measuredEvents [][]byte
+	measureErr     error
+	lastChallenge  []byte
+	evidence       *bmsaiagentpb.Gb300Evidence
+	evidenceErr    error
+}
+
+func (c *fakeBmsaiClient) MeasureEvent(_ context.Context, req *bmsaiagentpb.MeasureEventRequest, _ ...grpc.CallOption) (*bmsaiagentpb.MeasureEventResponse, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.measureErr != nil {
+		return nil, c.measureErr
+	}
+	c.measuredEvents = append(c.measuredEvents, append([]byte(nil), req.GetCosEvent()...))
+	return &bmsaiagentpb.MeasureEventResponse{}, nil
+}
+
+func (c *fakeBmsaiClient) GetEvidence(_ context.Context, req *bmsaiagentpb.GetEvidenceRequest, _ ...grpc.CallOption) (*bmsaiagentpb.Gb300Evidence, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.lastChallenge = append([]byte(nil), req.GetChallenge()...)
+	if c.evidenceErr != nil {
+		return nil, c.evidenceErr
+	}
+	return c.evidence, nil
+}
+
+func TestGB300CCAgent_MeasureEvent(t *testing.T) {
+	testCases := []struct {
+		name      string
+		event     gecel.Content
+		serverErr error
+		wantErr   bool
+	}{
+		{
+			name:  "success sends binary type-80 COS TLV over UDS",
+			event: cel.CosTlv{EventType: cel.ImageRefType, EventContent: []byte(imageRef)},
+		},
+		{
+			name:      "propagates gRPC error from attestation agent",
+			event:     cel.CosTlv{EventType: cel.LaunchSeparatorType, EventContent: nil},
+			serverErr: status.Error(codes.Internal, "TEM extension failed"),
+			wantErr:   true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			client := &fakeBmsaiClient{measureErr: tc.serverErr}
+			bmsaiRoT := &bmsaiAgentRoT{client: client}
+			ag := &gb300ccAgent{
+				agent: &agent{
+					measuredRots: []attestRoot{bmsaiRoT},
+					experiments:  Experiments{GB300CCMode: true, EnableAttestationEvidence: true},
+					logger:       SimpleLogger(),
+				},
+				bmsaiRoT: bmsaiRoT,
+			}
+
+			err := ag.MeasureEvent(tc.event)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("MeasureEvent() err = %v, wantErr = %v", err, tc.wantErr)
+			}
+			if tc.wantErr {
+				return
+			}
+
+			client.mu.Lock()
+			defer client.mu.Unlock()
+			if len(client.measuredEvents) != 1 {
+				t.Fatalf("got %d measured events, want 1", len(client.measuredEvents))
+			}
+
+			var outerTLV gecel.TLV
+			if err := outerTLV.UnmarshalBinary(client.measuredEvents[0]); err != nil {
+				t.Fatalf("outerTLV.UnmarshalBinary() err = %v", err)
+			}
+			gotCosTlv, err := cel.ParseToCosTlv(outerTLV)
+			if err != nil {
+				t.Fatalf("cel.ParseToCosTlv() err = %v", err)
+			}
+			if diff := cmp.Diff(tc.event, gotCosTlv); diff != "" {
+				t.Errorf("MeasureEvent() CosTlv mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestGB300CCAgent_AttestGB300(t *testing.T) {
+	wantEvidence := &bmsaiagentpb.Gb300Evidence{
+		BmsaiEvidence: &bmsaiagentpb.BmsaiEvidence{
+			BmCmwToken:        []byte("cmw-token-bytes"),
+			DrtmBootEventLog:  []byte("drtm-log-bytes"),
+			CelLaunchEventLog: []byte("cel-log-bytes"),
+		},
+		TpmQuote: &attestationpb.TpmQuote{
+			PcclientBootEventLog: []byte("pcclient-log-bytes"),
+			CelLaunchEventLog:    []byte("tpm-cel-log-bytes"),
+		},
+	}
+
+	testCases := []struct {
+		name           string
+		enableEvidence bool
+		challenge      []byte
+		serverEvidence *bmsaiagentpb.Gb300Evidence
+		serverErr      error
+		wantErr        bool
+		wantEvidence   *bmsaiagentpb.Gb300Evidence
+	}{
+		{
+			name:           "success forwards raw challenge and returns Gb300Evidence",
+			enableEvidence: true,
+			challenge:      []byte("testchallenge123"),
+			serverEvidence: wantEvidence,
+			wantEvidence:   wantEvidence,
+		},
+		{
+			name:           "fails when EnableAttestationEvidence is disabled",
+			enableEvidence: false,
+			challenge:      []byte("testchallenge123"),
+			serverEvidence: wantEvidence,
+			wantErr:        true,
+		},
+		{
+			name:           "propagates server error",
+			enableEvidence: true,
+			challenge:      []byte("short"),
+			serverErr:      status.Error(codes.InvalidArgument, "challenge too short"),
+			wantErr:        true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			client := &fakeBmsaiClient{
+				evidence:    tc.serverEvidence,
+				evidenceErr: tc.serverErr,
+			}
+			bmsaiRoT := &bmsaiAgentRoT{client: client}
+			ag := &gb300ccAgent{
+				agent: &agent{
+					experiments: Experiments{
+						GB300CCMode:               true,
+						EnableAttestationEvidence: tc.enableEvidence,
+					},
+					logger: SimpleLogger(),
+				},
+				bmsaiRoT: bmsaiRoT,
+			}
+
+			got, err := ag.AttestGB300(context.Background(), tc.challenge)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("AttestGB300() err = %v, wantErr = %v", err, tc.wantErr)
+			}
+			if tc.wantErr {
+				return
+			}
+
+			client.mu.Lock()
+			gotChallenge := append([]byte(nil), client.lastChallenge...)
+			client.mu.Unlock()
+			if !bytes.Equal(gotChallenge, tc.challenge) {
+				t.Errorf("server received challenge %q, want %q", gotChallenge, tc.challenge)
+			}
+			if diff := cmp.Diff(tc.wantEvidence, got, protocmp.Transform()); diff != "" {
+				t.Errorf("AttestGB300() evidence mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
