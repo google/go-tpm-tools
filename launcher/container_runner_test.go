@@ -1798,11 +1798,11 @@ func TestBuildPortRulesErrors(t *testing.T) {
 			exposed: "99999/tcp",
 		},
 		{
-			name:    "negative protocol",
+			name:    "negative port",
 			exposed: "-1/tcp",
 		},
 		{
-			name:    "non-digit protocol",
+			name:    "non-digit port",
 			exposed: "abc/udp",
 		},
 		{
