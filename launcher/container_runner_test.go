@@ -1821,6 +1821,7 @@ func TestBuildPortRulesErrors(t *testing.T) {
 }
 
 func buildIPNet(t *testing.T, addr string) net.IPNet {
+	t.Helper()
 	ip, ipNet, err := net.ParseCIDR(addr)
 	if err != nil {
 		t.Fatalf("ParseCIDR(%q): %v", addr, err)
