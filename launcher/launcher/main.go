@@ -323,7 +323,10 @@ func verifyMounts(launchSpec spec.LaunchSpec, verifier mountVerifier) error {
 	if len(matched) == 0 {
 		return fmt.Errorf("/var/lib/containerd was not mounted on the protected_stateful_partition: \n%s", findmountOutput)
 	}
-	if !launchSpec.Experiments.BcMode {
+	// cchost-based images (BC and GB300 CC mode) have no var-lib-google.mount.
+	// There, /var/lib/google is a directory under /var, which is noexec and on
+	// protected_stateful_partition.
+	if !launchSpec.Experiments.BcMode && !launchSpec.Experiments.GB300CCMode {
 		matched = regexp.MustCompile(`/var/lib/google\s+/dev/mapper/protected_stateful_partition\[/var/lib/google\]\s+ext4\s+rw,nosuid,nodev,relatime,commit=30`).FindString(findmountOutput)
 		if len(matched) == 0 {
 			return fmt.Errorf("/var/lib/google was not mounted on the protected_stateful_partition: \n%s", findmountOutput)
