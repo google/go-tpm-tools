@@ -3,8 +3,6 @@ package launcher
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
-	"crypto/rsa"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -35,6 +33,7 @@ import (
 	"github.com/google/go-tpm-tools/agent"
 	"github.com/google/go-tpm-tools/agent/device"
 	"github.com/google/go-tpm-tools/cel"
+	"github.com/google/go-tpm-tools/internal/test"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/spec"
@@ -165,13 +164,8 @@ func createJWTWithSignatures(t *testing.T, signatures []string) []byte {
 func createSignedToken(t *testing.T, claims jwt.Claims) []byte {
 	t.Helper()
 
-	privkey, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		t.Fatalf("Error creating token key: %v", err)
-	}
-
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
-	signed, err := token.SignedString(privkey)
+	signed, err := token.SignedString(test.LeafKey)
 	if err != nil {
 		t.Fatalf("Error creating signed string: %v", err)
 	}

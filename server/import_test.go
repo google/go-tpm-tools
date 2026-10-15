@@ -3,7 +3,6 @@ package server
 import (
 	"bytes"
 	"crypto"
-	"crypto/rand"
 	"crypto/rsa"
 	"errors"
 	"testing"
@@ -188,10 +187,7 @@ func TestSigningKeyImport(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ek.Close()
-	signingKey, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		t.Fatal(err)
-	}
+	signingKey := test.LeafKey
 	pcr0, err := tpm2.ReadPCR(rwc, 0, tpm2.AlgSHA256)
 	if err != nil {
 		t.Fatal(err)
