@@ -19,6 +19,15 @@ EOF
   # Copy service files.
   cp /usr/share/oem/confidential_space/container-runner.service /etc/systemd/system/container-runner.service
   cp /usr/share/oem/wsd/wsd.service /etc/systemd/system/wsd.service
+  # The launcher uses the WSD sockets at startup. Make every start of
+  # container-runner.service (including ones not issued by this script) start
+  # wsd.service first and wait for it.
+  mkdir -p /etc/systemd/system/container-runner.service.d
+  cat <<EOF > /etc/systemd/system/container-runner.service.d/10-wsd.conf
+[Unit]
+Wants=wsd.service
+After=wsd.service
+EOF
   # Override default fluent-bit config.
   mkdir -p /etc/fluent-bit
   cp /usr/share/oem/confidential_space/bc-fluent-bit-cs.conf /etc/fluent-bit/fluent-bit.conf
@@ -63,10 +72,11 @@ EOF
   # Allow incoming Fluent Bit logs from KPS VM
   iptables -A INPUT -p tcp -s 192.168.100.3 --dport 24224 -j ACCEPT
 
-  systemctl enable container-runner.service
   systemctl enable wsd.service
-  systemctl start container-runner.service
+  systemctl enable container-runner.service
+  # Start wsd.service first; its start job returns once the sockets exist.
   systemctl start wsd.service
+  systemctl start container-runner.service
   # If fluent-bit is already stopped, restart will start it
   systemctl restart fluent-bit.service
 }
