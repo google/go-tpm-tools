@@ -1,6 +1,8 @@
 # Test non-root container
 # 1. Launch a test workload
-# 2. For both debug and hardened image, verify user namespace UID mapping via Cloud Logging
+# 2. For both debug and hardened image, verify the following via Cloud Logging:
+#    - user namespace UID mapping
+#    - IPv4/IPv6 egress reachability
 substitutions:
   '_IMAGE_NAME': ''
   '_IMAGE_PROJECT': ''
@@ -10,7 +12,13 @@ substitutions:
   '_ZONE': 'us-west1-a'
 
 steps:
-# Launch Workload VM
+# Launch Workload VM on the dual-stack `testipv6` subnet so the workload can test IPv6 egress.
+# This relies on the following setup in the CI project:
+# - `testipv6` subnet in us-west1 of `testipv6network`: dual-stack, Private Google Access enabled.
+# - `testipv6network`: an IPv6 default route (::/0) to the default internet gateway.
+# These let the VM's internal IPv6 address reach Google services through Private Google Access.
+# Despite its name, the default internet gateway keeps this traffic within Google's network.
+# See https://cloud.google.com/vpc/docs/configure-private-google-access.
 - name: 'gcr.io/cloud-builders/gcloud'
   id: CreateWorkloadVM
   env:
@@ -26,9 +34,11 @@ steps:
       -p $IMAGE_PROJECT \
       -m "tee-image-reference=$WORKLOAD_IMAGE,tee-nonroot-container=true,tee-container-log-redirect=true" \
       -n nonroot-workload-$BUILD_ID \
-      -z $ZONE
+      -z $ZONE \
+      -s testipv6 \
+      -6
 
-# Verify User Namespace UID Mapping via Cloud Logging
+# Verify user namespace UID mapping and IPv4/IPv6 egress reachability via Cloud Logging
 - name: 'gcr.io/cloud-builders/gcloud'
   id: TestNonRootContainer
   entrypoint: 'bash'
