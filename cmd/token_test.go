@@ -142,7 +142,6 @@ func TestCopiedCustomEventLogFile(t *testing.T) {
 	}
 	defer tpm2.NVUndefineSpace(rwc, "", tpm2.HandlePlatform, tpmutil.Handle(getIndex[algo]))
 	defer tpm2.NVUndefineSpace(rwc, "", tpm2.HandlePlatform, tpmutil.Handle(getCertIndex[algo]))
-
 	var dummyMetaInstance = util.Instance{ProjectID: "test-project", ProjectNumber: "1922337278274", Zone: "us-central-1a", InstanceID: "12345678", InstanceName: "default"}
 	mockMdsServer, err := util.NewMetadataServer(dummyMetaInstance)
 	if err != nil {
@@ -169,6 +168,12 @@ func TestCopiedCustomEventLogFile(t *testing.T) {
 	}
 	defer mockAttestationServer.Stop()
 
+	tmpDir := t.TempDir()
+	destPath := filepath.Join(tmpDir, "copied_binary_bios_measurements")
+	if err := os.WriteFile(destPath, test.Cos85AmdSevEventLog, 0644); err != nil {
+		t.Fatal("Failed to write destination file:", err)
+	}
+
 	opts := TokenOptions{
 		KeyAlgo:          tpm2.AlgRSA,
 		VerifierEndpoint: mockAttestationServer.Server.URL,
@@ -181,6 +186,20 @@ func TestCopiedCustomEventLogFile(t *testing.T) {
 	}
 	if len(token) == 0 {
 		t.Errorf("expected token output, got empty")
+	}
+
+	ExternalTPM = rwc
+	t.Cleanup(func() {
+		ExternalTPM = nil
+		eventLog = defaultEventLog
+		if f := tokenCmd.Flags().Lookup("event-log"); f != nil {
+			f.Changed = false
+			f.Value.Set(defaultEventLog)
+		}
+	})
+	RootCmd.SetArgs([]string{"token", "--algo", algo, "--verifier-endpoint", mockAttestationServer.Server.URL, "--event-log", destPath})
+	if err := RootCmd.Execute(); err != nil {
+		t.Error(err)
 	}
 }
 
