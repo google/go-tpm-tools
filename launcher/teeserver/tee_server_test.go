@@ -24,8 +24,8 @@ import (
 	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 
+	bmsaiagentpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/bmsaiagent"
 	tspb "github.com/google/go-tpm-tools/launcher/teeserver/proto/gen/teeserver"
-	bmsaipb "github.com/google/go-tpm-tools/proto/bmsai"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/google/go-tpm-tools/verifier/models"
 	"github.com/google/go-tpm/legacy/tpm2"
@@ -63,10 +63,10 @@ type fakeAttestationAgent struct {
 
 type fakeGB300AttestationAgent struct {
 	fakeAttestationAgent
-	attestGB300Func func(context.Context, []byte) (*bmsaipb.Gb300Evidence, error)
+	attestGB300Func func(context.Context, []byte) (*bmsaiagentpb.Gb300Evidence, error)
 }
 
-func (f fakeGB300AttestationAgent) AttestGB300(ctx context.Context, challenge []byte) (*bmsaipb.Gb300Evidence, error) {
+func (f fakeGB300AttestationAgent) AttestGB300(ctx context.Context, challenge []byte) (*bmsaiagentpb.Gb300Evidence, error) {
 	return f.attestGB300Func(ctx, challenge)
 }
 
@@ -1344,8 +1344,8 @@ func TestTeeServer_Shutdown(t *testing.T) {
 }
 
 func TestGetAttestationEvidence_GB300CCMode(t *testing.T) {
-	testEvidence := &bmsaipb.Gb300Evidence{
-		BmsaiEvidence: &bmsaipb.BmsaiEvidence{
+	testEvidence := &bmsaiagentpb.Gb300Evidence{
+		BmsaiEvidence: &bmsaiagentpb.BmsaiEvidence{
 			BmCmwToken:        []byte("test-cmw-token"),
 			DrtmBootEventLog:  []byte("test-drtm-log"),
 			CelLaunchEventLog: []byte("test-cel-log"),
@@ -1367,15 +1367,15 @@ func TestGetAttestationEvidence_GB300CCMode(t *testing.T) {
 	testCases := []struct {
 		name             string
 		body             string
-		attestGB300Func  func(context.Context, []byte) (*bmsaipb.Gb300Evidence, error)
+		attestGB300Func  func(context.Context, []byte) (*bmsaiagentpb.Gb300Evidence, error)
 		wantStatusCode   int
-		wantEvidence     *bmsaipb.Gb300Evidence
+		wantEvidence     *bmsaiagentpb.Gb300Evidence
 		wantBodyContains string
 	}{
 		{
 			name: "success returns Gb300Evidence JSON",
 			body: `{"challenge": "dGVzdGNoYWxsZW5nZTEyMw=="}`,
-			attestGB300Func: func(_ context.Context, challenge []byte) (*bmsaipb.Gb300Evidence, error) {
+			attestGB300Func: func(_ context.Context, challenge []byte) (*bmsaiagentpb.Gb300Evidence, error) {
 				if string(challenge) != "testchallenge123" {
 					return nil, fmt.Errorf("unexpected challenge: %q", string(challenge))
 				}
@@ -1387,7 +1387,7 @@ func TestGetAttestationEvidence_GB300CCMode(t *testing.T) {
 		{
 			name: "invalid argument from agent maps to 400 Bad Request",
 			body: `{"challenge": "c2hvcnQ="}`,
-			attestGB300Func: func(_ context.Context, _ []byte) (*bmsaipb.Gb300Evidence, error) {
+			attestGB300Func: func(_ context.Context, _ []byte) (*bmsaiagentpb.Gb300Evidence, error) {
 				return nil, status.Error(codes.InvalidArgument, "challenge length must be between 8 and 64 bytes")
 			},
 			wantStatusCode:   http.StatusBadRequest,
@@ -1396,7 +1396,7 @@ func TestGetAttestationEvidence_GB300CCMode(t *testing.T) {
 		{
 			name: "internal agent error maps to 500 Internal Server Error",
 			body: `{"challenge": "dGVzdGNoYWxsZW5nZTEyMw=="}`,
-			attestGB300Func: func(_ context.Context, _ []byte) (*bmsaipb.Gb300Evidence, error) {
+			attestGB300Func: func(_ context.Context, _ []byte) (*bmsaiagentpb.Gb300Evidence, error) {
 				return nil, status.Error(codes.Internal, "TPM quote failed")
 			},
 			wantStatusCode:   http.StatusInternalServerError,
@@ -1424,7 +1424,7 @@ func TestGetAttestationEvidence_GB300CCMode(t *testing.T) {
 			}
 
 			if tc.wantStatusCode == http.StatusOK {
-				var got bmsaipb.Gb300Evidence
+				var got bmsaiagentpb.Gb300Evidence
 				if err := protojson.Unmarshal(w.Body.Bytes(), &got); err != nil {
 					t.Fatalf("protojson.Unmarshal() err = %v", err)
 				}
@@ -1437,5 +1437,3 @@ func TestGetAttestationEvidence_GB300CCMode(t *testing.T) {
 		})
 	}
 }
-
-

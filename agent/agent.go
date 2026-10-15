@@ -34,13 +34,13 @@ import (
 
 	"github.com/GoogleCloudPlatform/confidential-space/server/labels"
 	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
+	bmsaiagentpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/bmsaiagent"
 	hostservicepb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/hostservice"
 	"github.com/google/go-tpm-tools/agent/device"
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal"
 	pb "github.com/google/go-tpm-tools/proto/attest"
-	bmsaipb "github.com/google/go-tpm-tools/proto/bmsai"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/google/go-tpm-tools/verifier/models"
 	"github.com/google/go-tpm-tools/verifier/oci"
@@ -87,7 +87,7 @@ type AttestationAgent interface {
 // GB300EvidenceProvider is an optional interface implemented by agents that
 // provide GB300 platform attestation evidence.
 type GB300EvidenceProvider interface {
-	AttestGB300(ctx context.Context, challenge []byte) (*bmsaipb.Gb300Evidence, error)
+	AttestGB300(ctx context.Context, challenge []byte) (*bmsaiagentpb.Gb300Evidence, error)
 }
 
 type attestRoot interface {
@@ -786,7 +786,7 @@ func (h *hostServiceRoT) Close() error {
 }
 
 type bmsaiAgentRoT struct {
-	client bmsaipb.BmsaiAttestationServiceClient
+	client bmsaiagentpb.BmsaiAttestationServiceClient
 	conn   *grpc.ClientConn
 }
 
@@ -800,7 +800,7 @@ func newBmsaiAgentRoT() (*bmsaiAgentRoT, error) {
 	}
 	return &bmsaiAgentRoT{
 		conn:   conn,
-		client: bmsaipb.NewBmsaiAttestationServiceClient(conn),
+		client: bmsaiagentpb.NewBmsaiAttestationServiceClient(conn),
 	}, nil
 }
 
@@ -817,7 +817,7 @@ func (b *bmsaiAgentRoT) Extend(event gecel.Content) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	if _, err := b.client.MeasureEvent(ctx, &bmsaipb.MeasureEventRequest{
+	if _, err := b.client.MeasureEvent(ctx, &bmsaiagentpb.MeasureEventRequest{
 		CosEvent: tlvBytes,
 	}); err != nil {
 		return fmt.Errorf("BMSAI MeasureEvent failed: %w", err)
@@ -958,14 +958,14 @@ func (a *gb300ccAgent) AttestationEvidence(_ context.Context, _ []byte, _ []byte
 }
 
 // AttestGB300 fetches GB300 attestation evidence from the BMSAI attestation agent.
-func (a *gb300ccAgent) AttestGB300(ctx context.Context, challenge []byte) (*bmsaipb.Gb300Evidence, error) {
+func (a *gb300ccAgent) AttestGB300(ctx context.Context, challenge []byte) (*bmsaiagentpb.Gb300Evidence, error) {
 	if !a.experiments.EnableAttestationEvidence {
 		return nil, fmt.Errorf("attestation evidence is disabled")
 	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	evidence, err := a.bmsaiRoT.client.GetEvidence(ctx, &bmsaipb.GetEvidenceRequest{
+	evidence, err := a.bmsaiRoT.client.GetEvidence(ctx, &bmsaiagentpb.GetEvidenceRequest{
 		Challenge: challenge,
 	})
 	if err != nil {
@@ -973,4 +973,3 @@ func (a *gb300ccAgent) AttestGB300(ctx context.Context, challenge []byte) (*bmsa
 	}
 	return evidence, nil
 }
-

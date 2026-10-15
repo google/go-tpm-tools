@@ -21,6 +21,7 @@ import (
 	"github.com/GoogleCloudPlatform/confidential-space/server/extract"
 	"github.com/GoogleCloudPlatform/confidential-space/server/labels"
 	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
+	bmsaiagentpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/bmsaiagent"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-cmp/cmp"
@@ -32,7 +33,6 @@ import (
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal/test"
 	attestpb "github.com/google/go-tpm-tools/proto/attest"
-	bmsaipb "github.com/google/go-tpm-tools/proto/bmsai"
 	tpmpb "github.com/google/go-tpm-tools/proto/tpm"
 	"github.com/google/go-tpm-tools/server"
 	"github.com/google/go-tpm-tools/verifier"
@@ -1199,21 +1199,21 @@ type fakeBmsaiClient struct {
 	measuredEvents [][]byte
 	measureErr     error
 	lastChallenge  []byte
-	evidence       *bmsaipb.Gb300Evidence
+	evidence       *bmsaiagentpb.Gb300Evidence
 	evidenceErr    error
 }
 
-func (c *fakeBmsaiClient) MeasureEvent(_ context.Context, req *bmsaipb.MeasureEventRequest, _ ...grpc.CallOption) (*bmsaipb.MeasureEventResponse, error) {
+func (c *fakeBmsaiClient) MeasureEvent(_ context.Context, req *bmsaiagentpb.MeasureEventRequest, _ ...grpc.CallOption) (*bmsaiagentpb.MeasureEventResponse, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.measureErr != nil {
 		return nil, c.measureErr
 	}
 	c.measuredEvents = append(c.measuredEvents, append([]byte(nil), req.GetCosEvent()...))
-	return &bmsaipb.MeasureEventResponse{}, nil
+	return &bmsaiagentpb.MeasureEventResponse{}, nil
 }
 
-func (c *fakeBmsaiClient) GetEvidence(_ context.Context, req *bmsaipb.GetEvidenceRequest, _ ...grpc.CallOption) (*bmsaipb.Gb300Evidence, error) {
+func (c *fakeBmsaiClient) GetEvidence(_ context.Context, req *bmsaiagentpb.GetEvidenceRequest, _ ...grpc.CallOption) (*bmsaiagentpb.Gb300Evidence, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.lastChallenge = append([]byte(nil), req.GetChallenge()...)
@@ -1285,8 +1285,8 @@ func TestGB300CCAgent_MeasureEvent(t *testing.T) {
 }
 
 func TestGB300CCAgent_AttestGB300(t *testing.T) {
-	wantEvidence := &bmsaipb.Gb300Evidence{
-		BmsaiEvidence: &bmsaipb.BmsaiEvidence{
+	wantEvidence := &bmsaiagentpb.Gb300Evidence{
+		BmsaiEvidence: &bmsaiagentpb.BmsaiEvidence{
 			BmCmwToken:        []byte("cmw-token-bytes"),
 			DrtmBootEventLog:  []byte("drtm-log-bytes"),
 			CelLaunchEventLog: []byte("cel-log-bytes"),
@@ -1301,10 +1301,10 @@ func TestGB300CCAgent_AttestGB300(t *testing.T) {
 		name           string
 		enableEvidence bool
 		challenge      []byte
-		serverEvidence *bmsaipb.Gb300Evidence
+		serverEvidence *bmsaiagentpb.Gb300Evidence
 		serverErr      error
 		wantErr        bool
-		wantEvidence   *bmsaipb.Gb300Evidence
+		wantEvidence   *bmsaiagentpb.Gb300Evidence
 	}{
 		{
 			name:           "success forwards raw challenge and returns Gb300Evidence",
@@ -1367,4 +1367,3 @@ func TestGB300CCAgent_AttestGB300(t *testing.T) {
 		})
 	}
 }
-
