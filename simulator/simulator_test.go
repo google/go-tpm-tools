@@ -117,3 +117,19 @@ func TestDifferentSeedDifferentModulus(t *testing.T) {
 		t.Fatalf("Moduli should not be equal when using different seeds")
 	}
 }
+
+func TestFixedSeedSurvivesReset(t *testing.T) {
+	s, err := GetWithFixedSeedInsecure(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.CheckedClose(t, s)
+
+	if err := s.Reset(); err != nil {
+		t.Fatal(err)
+	}
+	modulus := getEKModulus(t, s)
+	if modulus.Cmp(zeroSeedModulus()) != 0 {
+		t.Fatalf("getEKModulus() after Reset() = %v, want %v", modulus, zeroSeedModulus())
+	}
+}

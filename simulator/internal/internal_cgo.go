@@ -64,6 +64,8 @@ func SetSeeds(r io.Reader) {
 	r.Read(C.gp.EPSeed[2:])
 	r.Read(C.gp.SPSeed[2:])
 	r.Read(C.gp.PPSeed[2:])
+	// Persist the seeds to NV so they survive a Reset().
+	C.sync_seeds()
 }
 
 // Reset simulates toggling the power the TPM. If forceManufacture is true,
