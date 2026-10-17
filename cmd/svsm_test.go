@@ -918,6 +918,7 @@ func TestVerifySVSMFlags(t *testing.T) {
 		akPub           []byte
 		ekPub           string
 		certifiedAKBlob string
+		offline         bool
 		wantErrorMsg    string
 	}{
 		{
@@ -958,19 +959,30 @@ func TestVerifySVSMFlags(t *testing.T) {
 			akPub:        []byte("ak"),
 			wantErrorMsg: "only vtpm service manifest version 0 or 1 is supported",
 		},
+		{
+			name:         "OfflineSkipsRootOfTrustFetch",
+			version:      "1",
+			akPub:        []byte("ak"),
+			offline:      true,
+			wantErrorMsg: "SNP attestation verification failed: attestation cannot be nil",
+		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Cleanup(func() {
+				offline = false
+			})
 			RootCmd.SetArgs([]string{
 				"verify", "debug", "svsm",
 				"--tee-technology", "sev-snp",
 				"--tee-nonce", strings.Repeat("00", sabi.ReportDataSize),
 				"--input", writeSVSMAttestation(t, tc.version, tc.akPub),
-				// Set the v0-only flags explicitly: they are package-level globals that
-				// persist across command executions.
+				// Set the v0-only and offline flags explicitly: they are package-level
+				// globals that persist across command executions.
 				"--ek-pub", tc.ekPub,
 				"--certified-ak-blob", tc.certifiedAKBlob,
+				fmt.Sprintf("--offline=%t", tc.offline),
 			})
 			err := RootCmd.Execute()
 			if err == nil || !strings.Contains(err.Error(), tc.wantErrorMsg) {
