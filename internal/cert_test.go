@@ -111,6 +111,9 @@ func knownRootCert(t *testing.T, rootKeyID []byte) *x509.Certificate {
 }
 
 func TestGetAKIntermediateCertsStopsAtKnownRoot(t *testing.T) {
+	if len(knownRootKeyIDs) == 0 {
+		t.Fatal("knownRootKeyIDs is empty")
+	}
 	for _, rootKeyID := range knownRootKeyIDs {
 		t.Run(hex.EncodeToString(rootKeyID), func(t *testing.T) {
 			rootCert := knownRootCert(t, rootKeyID)
