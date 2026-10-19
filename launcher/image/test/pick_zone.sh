@@ -4,16 +4,9 @@
 # Query the GCE capacity advisor once per region to find which candidate zone
 # is most likely to have Spot capacity for the machine type.
 # Print the zone with the highest obtainability score.
-# Exit non-zero if no zone scores at least the minimum threshold.
 # Candidate zones must be passed in because the advisor does not know which
 # zones support confidential VMs.
 set -euo pipefail
-
-# For Spot VMs, the advisor returns scores of 0.9, 0.5, 0.1, or 0.0.
-# Scores from 0.4 to 0.6 mean moderately likely, while 0.1 means unlikely.
-# A threshold of 0.5 accepts 0.5 and rejects 0.1.
-# Requiring 0.9 is too strict and rejects zones that usually work.
-MIN_OBTAINABILITY=0.5
 
 if [ $# -ne 2 ]; then
   echo "Usage: $0 <machine-type> <comma-separated zones>" >&2
@@ -35,7 +28,7 @@ for zone in "${zones[@]}"; do
 done
 
 best_zone=''
-best_score=0
+best_score=-1
 for region in "${regions[@]}"; do
   score=''
   zone=''
@@ -55,8 +48,8 @@ for region in "${regions[@]}"; do
   fi
 done
 
-if [ -z "$best_zone" ] || awk -v a="$best_score" -v b="$MIN_OBTAINABILITY" 'BEGIN { exit !(a < b) }'; then
-  echo "No zone with obtainability >= ${MIN_OBTAINABILITY} for ${machine_type} in $2" >&2
+if [ -z "$best_zone" ]; then
+  echo "No zone found for ${machine_type} in $2" >&2
   exit 1
 fi
 echo "$best_zone"

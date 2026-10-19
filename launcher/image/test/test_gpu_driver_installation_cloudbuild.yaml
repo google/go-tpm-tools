@@ -8,7 +8,7 @@ substitutions:
   # These zones offer g4-standard-48 with confidential VMs and have quota.
   # The create step uses the capacity advisor to select one of these zones.
   # Later steps look up the chosen zone by VM name.
-  '_RTX_PRO_6000_ZONES': 'us-west1-a,us-west1-b,us-west1-c,us-central1-b,us-central1-c,us-central1-f'
+  '_RTX_PRO_6000_ZONES': 'us-central1-b,us-central1-c,us-central1-f,us-east1-b,us-east1-d,us-east4-c,us-east5-a,us-east5-b,us-east5-c,us-south1-a,us-south1-b,us-west1-a,us-west1-b,us-west1-c,us-west3-a,us-west4-a,us-west4-c'
   '_WORKLOAD_IMAGE': 'us-west1-docker.pkg.dev/confidential-space-images-dev/cs-integ-test-images/gpu/cuda-vector-add:latest'
 steps:
 - name: 'gcr.io/cloud-builders/gcloud'
