@@ -132,22 +132,17 @@ func main() {
 	logger.Info(fmt.Sprintf("Launch Spec: %+v", launchSpec.LogFriendly()))
 
 	verifier := osMountVerifier{}
-	if launchSpec.Experiments.GB300CCMode {
-		// TODO: we need to implement integrity and mount verifications for GB300 CC mode.
-		logger.Info("Running in GB300 CC mode. Skipping disk integrity and mount verifications. [Temporary while WIP]")
-	} else {
-		if err := verifyDiskIntegrity(verifier); err != nil {
-			logger.Error(fmt.Sprintf("failed to verify disk integrity: %v\n", err))
-			exitCode = rebootRC
-			logger.Error(exitMessage, "exit_code", exitCode, "exit_msg", rcMessage[exitCode])
-			return
-		}
-		if err := verifyMounts(launchSpec, verifier); err != nil {
-			logger.Error(fmt.Sprintf("failed to verify mounts: %v\n", err))
-			exitCode = rebootRC
-			logger.Error(exitMessage, "exit_code", exitCode, "exit_msg", rcMessage[exitCode])
-			return
-		}
+	if err := verifyDiskIntegrity(verifier); err != nil {
+		logger.Error(fmt.Sprintf("failed to verify disk integrity: %v\n", err))
+		exitCode = rebootRC
+		logger.Error(exitMessage, "exit_code", exitCode, "exit_msg", rcMessage[exitCode])
+		return
+	}
+	if err := verifyMounts(launchSpec, verifier); err != nil {
+		logger.Error(fmt.Sprintf("failed to verify mounts: %v\n", err))
+		exitCode = rebootRC
+		logger.Error(exitMessage, "exit_code", exitCode, "exit_msg", rcMessage[exitCode])
+		return
 	}
 
 	defer func() {
@@ -328,7 +323,10 @@ func verifyMounts(launchSpec spec.LaunchSpec, verifier mountVerifier) error {
 	if len(matched) == 0 {
 		return fmt.Errorf("/var/lib/containerd was not mounted on the protected_stateful_partition: \n%s", findmountOutput)
 	}
-	if !launchSpec.Experiments.BcMode {
+	// cchost-based images (BC and GB300 CC mode) have no var-lib-google.mount.
+	// There, /var/lib/google is a directory under /var, which is noexec and on
+	// protected_stateful_partition.
+	if !launchSpec.Experiments.BcMode && !launchSpec.Experiments.GB300CCMode {
 		matched = regexp.MustCompile(`/var/lib/google\s+/dev/mapper/protected_stateful_partition\[/var/lib/google\]\s+ext4\s+rw,nosuid,nodev,relatime,commit=30`).FindString(findmountOutput)
 		if len(matched) == 0 {
 			return fmt.Errorf("/var/lib/google was not mounted on the protected_stateful_partition: \n%s", findmountOutput)

@@ -22,7 +22,7 @@ require (
 )
 
 require (
-	github.com/google/go-eventlog v0.0.3-0.20260617163629-883cc5652c69
+	github.com/google/go-eventlog v0.0.3-0.20261001001437-1991f15bc4b0
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/stretchr/testify v1.11.1 // indirect
 	go.uber.org/multierr v1.11.0 // indirect

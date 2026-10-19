@@ -423,6 +423,36 @@ func TestVerifyMounts(t *testing.T) {
 			expectedError: "",
 		},
 		{
+			name: "success path GB300 CC mode",
+			launchSpec: spec.LaunchSpec{
+				Experiments: experiments.Experiments{
+					GB300CCMode: true,
+				},
+			},
+			verifier: fakeMountVerifier{
+				findmntOut: map[string]string{
+					"/dev/mapper/protected_stateful_partition": "/var/lib/containerd /dev/mapper/protected_stateful_partition[/var/lib/containerd] ext4 rw,nosuid,nodev,relatime,commit=30",
+					"tmpfs": "/tmp tmpfs tmpfs rw,nosuid,nodev",
+				},
+			},
+			expectedError: "",
+		},
+		{
+			name: "containerd missing GB300 CC mode",
+			launchSpec: spec.LaunchSpec{
+				Experiments: experiments.Experiments{
+					GB300CCMode: true,
+				},
+			},
+			verifier: fakeMountVerifier{
+				findmntOut: map[string]string{
+					"/dev/mapper/protected_stateful_partition": "",
+					"tmpfs": "/tmp tmpfs tmpfs rw,nosuid,nodev",
+				},
+			},
+			expectedError: "/var/lib/containerd was not mounted on the protected_stateful_partition",
+		},
+		{
 			name:       "findmnt stateful fails",
 			launchSpec: spec.LaunchSpec{},
 			verifier: fakeMountVerifier{

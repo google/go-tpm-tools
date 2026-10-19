@@ -109,10 +109,11 @@ mcopy_from_p12() {
 # sides, with a hard error on anything unrecognized.
 #   .sbat present AND content contains 'https://github.com/rhboot/shim'
 #       => 'default' (shim + grub + kernel layout)
-#   .setup present (x86/x86_64 cos EFI-stub image)
-#       => 'uki' (single-blob: bootx64.efi w/ EFI stub)
+#   .setup present (x86/x86_64 cos EFI-stub image), OR
+#   arm64 Linux Image magic 'ARM\x64' at offset 0x38 (arm64 cos EFI-stub
+#   image, which has only .text and .data sections)
+#       => 'uki' (single-blob: bootx64.efi / bootaa64.efi w/ EFI stub)
 #   otherwise => hard error, listing sections found.
-# `.setup` is specific to the x86/x86_64 cos EFI-stub layout.
 #
 # @return The detected mode ('default' or 'uki') to stdout.
 #
@@ -157,13 +158,15 @@ if ".sbat" in sections:
     if SHIM_URL in bytes(d[ptr:ptr+sz]):
         print("default")
         sys.exit(0)
-if ".setup" in sections:
+# arm64 Image header: https://docs.kernel.org/arch/arm64/booting.html
+if ".setup" in sections or d[0x38:0x3C] == b"ARM\x64":
     print("uki")
     sys.exit(0)
 sys.stderr.write(
     "Error: '%s' did not match any known boot-EFI layout. "
-    "Recognized markers: '.sbat' containing %r (shim), or '.setup' "
-    "(x86 cos EFI-stub). Sections found: %s\n"
+    "Recognized markers: '.sbat' containing %r (shim), '.setup' "
+    "(x86 cos EFI-stub), or 'ARM\\x64' at 0x38 (arm64 cos EFI-stub). "
+    "Sections found: %s\n"
     % (path, SHIM_URL.decode(), sorted(sections)))
 sys.exit(1)
 PY
@@ -427,6 +430,224 @@ PY
 }
 
 ##
+# Computes the Arm DRTM values for an arm64 Linux kernel EFI-stub image
+# (bootaa64.efi) without needing vmlinux. On GB300 BMSAI, the NVIDIA PSC
+# measures the kernel from _stext to _edata as the DLME, and the kernel
+# measures its command line into DRTM PCR 19.
+#   - _stext is read from the PE .text section VirtualAddress (and cross-checked
+#     against kallsyms).
+#   - _edata is extracted from the kernel's embedded kallsyms table. It is NOT
+#     the end of the PE .data section.
+#   - D = SHA384(image[_stext:_edata])  (DRTM PCR 18 event 0x9004, the DLME)
+#     The verifier derives PSC DRTM Slot 0 (token claim 44238) from D as
+#     SHA384(0^48 || D); that is a platform rule, so it is not output here.
+#   - The built-in command line (CONFIG_CMDLINE) is the NUL-terminated string
+#     between _stext and _edata that contains 'cros_efi'. Its hash uses the
+#     requested algorithm; with sha384 it is the DRTM PCR 19 CMDLINE event,
+#     one of the inputs to TEM0 (token claim 44239[0]).
+# @param $1: Path to the arm64 kernel PE binary.
+# @param $2: Hash algorithm for the command line hash ('sha256' or 'sha384').
+# @return Compact JSON object with stext_offset, edata_offset, dlme_sha384,
+#         embedded_cmdline and embedded_cmdline_hash to stdout.
+#
+compute_arm64_drtm() {
+    local kernel_file="$1" alg="$2"
+    python3 - "$kernel_file" "$alg" <<'PY'
+import hashlib, json, re, struct, sys
+
+path, alg = sys.argv[1], sys.argv[2]
+with open(path, "rb") as f:
+    b = f.read()
+
+if len(b) < 0x40 or b[0x38:0x3C] != b"ARM\x64":
+    print(json.dumps({
+        "stext_offset": "",
+        "edata_offset": "",
+        "dlme_sha384": "",
+        "embedded_cmdline": "",
+        "embedded_cmdline_hash": ""
+    }))
+    sys.exit(0)
+
+def fail(msg):
+    sys.stderr.write("Error: %s in '%s'\n" % (msg, path))
+    sys.exit(1)
+
+# 1. Parse the PE .text and .data section headers. .text VirtualAddress is
+#    _stext - _text. The arm64 kernel PE uses the same layout in the file and
+#    in memory, so kernel offsets can be used directly as file offsets.
+pe_off = struct.unpack_from("<I", b, 0x3C)[0]
+if pe_off + 24 > len(b) or b[pe_off:pe_off+4] != b"PE\0\0":
+    fail("invalid PE header")
+nsec = struct.unpack_from("<H", b, pe_off + 6)[0]
+opt_sz = struct.unpack_from("<H", b, pe_off + 20)[0]
+sec_off = pe_off + 24 + opt_sz
+if sec_off + 40 * nsec > len(b):
+    fail("malformed PE section table")
+secs = {}  # name -> (va, rawsz, rawptr)
+for i in range(nsec):
+    s = b[sec_off + 40 * i : sec_off + 40 * (i + 1)]
+    name = s[:8].rstrip(b"\x00").decode("ascii", errors="replace")
+    vsz, va, rawsz, rawptr = struct.unpack_from("<IIII", s, 8)
+    secs.setdefault(name, (va, rawsz, rawptr))
+
+if ".text" not in secs or ".data" not in secs:
+    fail(".text or .data section not found")
+stext_pe, _, text_rawptr = secs[".text"]
+data_va, data_rawsz, data_rawptr = secs[".data"]
+if text_rawptr != stext_pe or data_rawptr != data_va:
+    fail("PE file offsets do not match virtual addresses")
+data_raw_end = data_rawptr + data_rawsz
+if data_raw_end > len(b):
+    fail(".data section extends past EOF")
+
+# 2. Locate the embedded arm64 kallsyms table (Linux 6.x layout) to extract _edata.
+def extract_kallsyms_bounds(img):
+    tt_off = ti_off = None
+    tokens = None
+    for off in range(0, len(img) - 512, 8):
+        if img[off:off+2] != b"\x00\x00":
+            continue
+        ti = struct.unpack_from("<256H", img, off)
+        if not all(2 <= ti[i] - ti[i-1] <= 32 for i in range(1, 256)):
+            continue
+        for pad in range(1, 40):
+            cand = off - ((ti[255] + pad + 7) & ~7)
+            if cand < 0:
+                continue
+            if all(img[cand + ti[i] - 1] == 0 for i in range(1, 256)):
+                toks = []
+                ok = True
+                for i in range(256):
+                    end = img.find(b"\x00", cand + ti[i], off)
+                    if end < 0 or (i < 255 and end != cand + ti[i+1] - 1):
+                        ok = False
+                        break
+                    t = img[cand + ti[i]:end]
+                    if not t or not all(0x20 <= b <= 0x7e for b in t):
+                        ok = False
+                        break
+                    toks.append(t)
+                if ok:
+                    tt_off, ti_off, tokens = cand, off, toks
+                    break
+        if tt_off is not None:
+            break
+    if tt_off is None:
+        return None, None
+
+    m_end = tt_off
+    if struct.unpack_from("<I", img, m_end - 4)[0] == 0:
+        m_end -= 4
+    pos = m_end - 4
+    prev = struct.unpack_from("<I", img, pos)[0]
+    markers_off = None
+    while pos >= 4:
+        cur = struct.unpack_from("<I", img, pos - 4)[0]
+        if cur == 0 and (pos - 4) % 8 == 0 and 256 <= prev <= 65536:
+            markers_off = pos - 4
+            break
+        prev = cur
+        pos -= 4
+    if markers_off is None:
+        return None, None
+
+    num_markers = (m_end - markers_off) // 4
+    last_marker = struct.unpack_from("<I", img, m_end - 4)[0]
+    start_scan = ((markers_off - last_marker) & ~7)
+    num_syms = names_off = None
+    for cand_num_off in range(start_scan, start_scan - 65536, -8):
+        val, pad_zero = struct.unpack_from("<II", img, cand_num_off)
+        if pad_zero == 0 and (val + 255) // 256 == num_markers:
+            cand_names = cand_num_off + 8
+            p = cand_names + last_marker
+            rem = val - (num_markers - 1) * 256
+            for _ in range(rem):
+                if p >= markers_off:
+                    p = -1
+                    break
+                l = img[p]
+                p += 1
+                if l & 0x80:
+                    l = (l & 0x7f) | (img[p] << 7)
+                    p += 1
+                p += l
+            if p > 0 and ((p + 7) & ~7) == markers_off:
+                num_syms = val
+                names_off = cand_names
+                break
+    if num_syms is None:
+        return None, None
+
+    offsets_off = ti_off + 512
+    rel_base_off = (offsets_off + 4 * num_syms + 7) & ~7
+    if rel_base_off + 8 > len(img):
+        return None, None
+    rel_base = struct.unpack_from("<Q", img, rel_base_off)[0]
+    offs = struct.unpack_from(f"<{num_syms}i", img, offsets_off)
+    want = {"_text", "_stext", "_edata"}
+    found = {}
+    p = names_off
+    for i in range(num_syms):
+        l = img[p]
+        p += 1
+        if l & 0x80:
+            l = (l & 0x7f) | (img[p] << 7)
+            p += 1
+        s = b"".join(tokens[c] for c in img[p:p+l])
+        p += l
+        nm = s[1:].decode("latin1")
+        if nm in want and nm not in found:
+            found[nm] = rel_base + (offs[i] & 0xffffffff)
+            if len(found) == len(want):
+                break
+    if "_text" in found and "_stext" in found and "_edata" in found:
+        return found["_stext"] - found["_text"], found["_edata"] - found["_text"]
+    return None, None
+
+# The kallsyms decoder is heuristic. A malformed or unexpected image makes it
+# read out of range; treat that the same as "not found".
+try:
+    stext_ks, edata_ks = extract_kallsyms_bounds(b)
+except (IndexError, struct.error):
+    stext_ks = edata_ks = None
+if stext_ks is None or edata_ks is None:
+    fail("failed to locate embedded kallsyms _stext/_edata")
+if stext_ks != stext_pe:
+    fail("kallsyms _stext (0x%x) != PE .text VA (0x%x)" % (stext_ks, stext_pe))
+# Bounds check _edata before hashing: a Python slice past EOF is silently
+# truncated and would produce a wrong digest without an error.
+#   - _edata must be after _stext and inside the .data section.
+#   - The kernel linker script pads _edata to PECOFF_FILE_ALIGNMENT (0x200).
+if not (0 < stext_ks < edata_ks <= data_raw_end):
+    fail("kallsyms _edata (0x%x) is outside (_stext 0x%x, .data end 0x%x]"
+         % (edata_ks, stext_ks, data_raw_end))
+if edata_ks % 0x200 != 0:
+    fail("kallsyms _edata (0x%x) is not 0x200-aligned" % edata_ks)
+
+dlme_digest = hashlib.sha384(b[stext_ks:edata_ks]).digest()
+
+embedded_cmd = ""
+embedded_cmd_h = ""
+for mm in re.finditer(b"cros_efi", b):
+    s = b.rfind(b"\x00", 0, mm.start()) + 1
+    e = b.find(b"\x00", mm.end())
+    if e - s >= 64 and stext_ks <= s and e <= edata_ks:
+        embedded_cmd = b[s:e].decode("latin1")
+        embedded_cmd_h = hashlib.new(alg, b[s:e]).hexdigest()
+        break
+
+print(json.dumps({
+    "stext_offset": hex(stext_ks),
+    "edata_offset": hex(edata_ks),
+    "dlme_sha384": dlme_digest.hex(),
+    "embedded_cmdline": embedded_cmd,
+    "embedded_cmdline_hash": embedded_cmd_h
+}))
+PY
+}
+
+##
 # Writes the collected hashes to a final JSON file.
 # @param $1: Output JSON file path.
 # @param $2: Channel name.
@@ -457,6 +678,9 @@ write_json_output() {
 		--arg pe_b "${12}" \
 		--arg img_type "${13}" \
 		--arg uki_efi "${14}" \
+		--arg drtm_stext "${15}" \
+		--arg drtm_edata "${16}" \
+		--arg drtm_dlme_a "${17}" \
 		'{
 			channel: $chan,
 			alg: $alg,
@@ -471,7 +695,10 @@ write_json_output() {
 			kernel_cmdline_b: $cmd_b,
 			vmlinuz_a_pe: $pe_a,
 			vmlinuz_b_pe: $pe_b,
-			uki_efi: $uki_efi
+			uki_efi: $uki_efi,
+			drtm_stext_offset: $drtm_stext,
+			drtm_edata_offset: $drtm_edata,
+			drtm_dlme_a_sha384: $drtm_dlme_a
 		}' > "$output_json_file"
 
 		if [[ $? -ne 0 || ! -s "$output_json_file" ]]; then
@@ -522,10 +749,27 @@ main() {
     local kernel_cmdline_a_hash="" kernel_cmdline_b_hash=""
     local shim_hash="" grub_hash="" vmlinuz_a_pe_hash="" vmlinuz_b_pe_hash=""
     local uki_efi_hash=""
+    local drtm_stext="" drtm_edata="" drtm_dlme_a=""
 
     if [ "$image_mode" == "uki" ]; then
         uki_efi_hash=$(compute_efi_authenticode_hash "$BOOT_EFI_FILE") || return 1
         echo "UKI bootx64.efi/bootaa64.efi hash: $uki_efi_hash"
+        if [ "$arch" == "aarch64" ]; then
+            local drtm_json
+            drtm_json=$(compute_arm64_drtm "$BOOT_EFI_FILE" "$HASH_ALG") || return 1
+            drtm_stext=$(jq -r '.stext_offset' <<< "$drtm_json")
+            drtm_edata=$(jq -r '.edata_offset' <<< "$drtm_json")
+            # The built-in command line is kernel A's command line. Its hash
+            # follows $HASH_ALG like the GRUB-mode kernel_cmdline_a_hash.
+            kernel_cmdline_a=$(jq -r '.embedded_cmdline' <<< "$drtm_json")
+            kernel_cmdline_a_hash=$(jq -r '.embedded_cmdline_hash' <<< "$drtm_json")
+            # Arm DRTM measures with SHA-384 only. Leave the DLME empty in the
+            # sha256 output so every hash in a file matches its 'alg' field.
+            if [ "$HASH_ALG" == "sha384" ]; then
+                drtm_dlme_a=$(jq -r '.dlme_sha384' <<< "$drtm_json")
+                echo "arm64 DRTM DLME: $drtm_dlme_a (_stext=$drtm_stext, _edata=$drtm_edata)"
+            fi
+        fi
     else
         vmlinuz_a_hash=$(compute_file_hash "$VMLINUZ_A_FILE")
         vmlinuz_a_pe_hash=$(compute_efi_hash "$VMLINUZ_A_FILE")
@@ -545,7 +789,8 @@ main() {
     write_json_output "$output_json_file" "$channel" "$shim_hash" "$grub_hash" \
         "$vmlinuz_a_hash" "$vmlinuz_b_hash" "$kernel_cmdline_a_hash" "$kernel_cmdline_b_hash" \
         "$kernel_cmdline_a" "$kernel_cmdline_b" "$vmlinuz_a_pe_hash" "$vmlinuz_b_pe_hash" \
-        "$image_mode" "$uki_efi_hash" || return 1
+        "$image_mode" "$uki_efi_hash" \
+        "$drtm_stext" "$drtm_edata" "$drtm_dlme_a" || return 1
 
     echo "Measured boot hashes successfully written to '$output_json_file'."
 }

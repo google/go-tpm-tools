@@ -1,18 +1,18 @@
 substitutions:
-  '_BASE_IMAGE': 'cos-125-19216-532-62' # If left empty, will use the latest image in _BASE_IMAGE_FAMILY of _BASE_IMAGE_PROJECT
+  '_BASE_IMAGE': 'cos-125-19216-739-5' # If left empty, will use the latest image in _BASE_IMAGE_FAMILY of _BASE_IMAGE_PROJECT
   '_BASE_IMAGE_FAMILY': 'cos-125-lts'
   '_BASE_IMAGE_PROJECT': 'cos-cloud'
   '_OUTPUT_IMAGE_PREFIX': 'confidential-space'
   '_OUTPUT_IMAGE_SUFFIX': ''
   '_OUTPUT_IMAGE_FAMILY': ''
   '_BUCKET_NAME': '${PROJECT_ID}_cloudbuild'
-  '_VG_BASE_IMAGE': 'cos-125-19216-532-62'
+  '_VG_BASE_IMAGE': 'cos-125-19216-739-5'
   '_BC_BASE_IMAGE_PROJECT': 'confidential-space-images-dev'
   '_BC_ACOS_BUCKET': ''
   '_LOUHI_TRIGGER_TOPIC': ''
   '_LOUHI_FLOW_ID': '41685197-997a-4b7b-82ac-c031bdeaddd3'
-  '_BC_BASE_IMAGE': 'cos-bc-guest-125-19216-655-6'
-  '_BC_DEBUG_IMAGE': 'cos-bcdbg-guest-125-19216-655-6'
+  '_BC_BASE_IMAGE': 'cos-bc-guest-125-19216-700-23'
+  '_BC_DEBUG_IMAGE': 'cos-bcdbg-guest-125-19216-700-23'
   '_WSD_CONTAINER_IMAGE_REF': 'us-docker.pkg.dev/confidential-space-images-dev/key-protection-module-images/key-protection-module:acdec5c'
   '_POLLING_INTERVAL': '10'
   '_ITA_API_KEY': 'fake-key'
@@ -58,7 +58,7 @@ steps:
       git submodule update --init --recursive
       # Build the Rust keymanager libraries using prebuilt toolchain
       cd keymanager
-      cargo build --release
+      cargo build --release --locked
 
 # `golang:1.26-bookworm` is used for compiling the launcher.
 # We statically link libstdc++ and libgcc to support running on COS 125.
@@ -635,34 +635,24 @@ steps:
 - name: 'us-docker.pkg.dev/confidential-space-images-dev/cs-tools/measure@sha256:dae4766caef4a93c52736feb829bf2c505b7d48ce44d0ecb33e77d61bb4be888'
   id: MeasureHardenedImage
   waitFor: ['ExportHardenedImage']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'PROJECT_ID=$PROJECT_ID'
-  script: |
-    #!/usr/bin/env bash
-    echo "downloading hardened image ${OUTPUT_IMAGE_NAME}"
-    gcloud storage cp gs://confidential-space-images-dev_raw-images/${OUTPUT_IMAGE_NAME}.tar.gz .
-    mkdir hardeneddisk
-    tar xzf ${OUTPUT_IMAGE_NAME}.tar.gz -C hardeneddisk/
-    echo "measuring image ${OUTPUT_IMAGE_NAME}"
-    /usr/local/bin/measure.sh hardeneddisk/disk.raw measure_output_hardened.json hardened x86_64 sha256
-    gcloud storage cp measure_output_hardened.json gs://${PROJECT_ID}-rims/${OUTPUT_IMAGE_NAME}.json
+  entrypoint: 'bash'
+  args:
+  - 'launcher/image/measure/measure_and_upload.sh'
+  - 'gs://${PROJECT_ID}_raw-images/${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}.tar.gz'
+  - 'hardened'
+  - 'gs://${PROJECT_ID}-rims/${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}'
+  - 'sha256'
 
 - name: 'us-docker.pkg.dev/confidential-space-images-dev/cs-tools/measure@sha256:dae4766caef4a93c52736feb829bf2c505b7d48ce44d0ecb33e77d61bb4be888'
   id: MeasureDebugImage
   waitFor: ['ExportDebugImage']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-debug-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'PROJECT_ID=$PROJECT_ID'
-  script: |
-    #!/usr/bin/env bash
-    echo "downloading debug image ${OUTPUT_IMAGE_NAME}"
-    gsutil cp gs://confidential-space-images-dev_raw-images/${OUTPUT_IMAGE_NAME}.tar.gz .
-    mkdir debugdisk
-    tar xzf ${OUTPUT_IMAGE_NAME}.tar.gz -C debugdisk/
-    echo "measuring image ${OUTPUT_IMAGE_NAME}"
-    /usr/local/bin/measure.sh debugdisk/disk.raw measure_output_debug.json debug x86_64 sha256
-    gsutil cp measure_output_debug.json gs://${PROJECT_ID}-rims/${OUTPUT_IMAGE_NAME}.json
+  entrypoint: 'bash'
+  args:
+  - 'launcher/image/measure/measure_and_upload.sh'
+  - 'gs://${PROJECT_ID}_raw-images/${_OUTPUT_IMAGE_PREFIX}-debug-${_OUTPUT_IMAGE_SUFFIX}.tar.gz'
+  - 'debug'
+  - 'gs://${PROJECT_ID}-rims/${_OUTPUT_IMAGE_PREFIX}-debug-${_OUTPUT_IMAGE_SUFFIX}'
+  - 'sha256'
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: ExportVgHardenedImage
@@ -687,41 +677,27 @@ steps:
 - name: 'us-docker.pkg.dev/confidential-space-images-dev/cs-tools/measure@sha256:dae4766caef4a93c52736feb829bf2c505b7d48ce44d0ecb33e77d61bb4be888'
   id: MeasureVgHardenedImage
   waitFor: ['ExportVgHardenedImage']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-vg-hardened-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'PROJECT_ID=$PROJECT_ID'
-  script: |
-    #!/usr/bin/env bash
-    echo "downloading hardened image ${OUTPUT_IMAGE_NAME}"
-    gcloud storage cp gs://confidential-space-images-dev_raw-images/${OUTPUT_IMAGE_NAME}.tar.gz .
-    mkdir vghardeneddisk
-    tar xzf ${OUTPUT_IMAGE_NAME}.tar.gz -C vghardeneddisk/
-    echo "measuring image ${OUTPUT_IMAGE_NAME}"
-    /usr/local/bin/measure.sh vghardeneddisk/disk.raw measure_output_vg_hardened.json hardened x86_64 sha256
-    /usr/local/bin/measure.sh vghardeneddisk/disk.raw measure_output_vg_hardened_sha384.json hardened x86_64 sha384
-
-    gcloud storage cp measure_output_vg_hardened.json gs://${PROJECT_ID}-rims/${OUTPUT_IMAGE_NAME}.json
-    gcloud storage cp measure_output_vg_hardened_sha384.json gs://${PROJECT_ID}-rims/${OUTPUT_IMAGE_NAME}_sha384.json
+  entrypoint: 'bash'
+  args:
+  - 'launcher/image/measure/measure_and_upload.sh'
+  - 'gs://${PROJECT_ID}_raw-images/${_OUTPUT_IMAGE_PREFIX}-vg-hardened-${_OUTPUT_IMAGE_SUFFIX}.tar.gz'
+  - 'hardened'
+  - 'gs://${PROJECT_ID}-rims/${_OUTPUT_IMAGE_PREFIX}-vg-hardened-${_OUTPUT_IMAGE_SUFFIX}'
+  - 'sha256'
+  - 'sha384'
 
 
 - name: 'us-docker.pkg.dev/confidential-space-images-dev/cs-tools/measure@sha256:dae4766caef4a93c52736feb829bf2c505b7d48ce44d0ecb33e77d61bb4be888'
   id: MeasureVgDebugImage
   waitFor: ['ExportVgDebugImage']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-vg-debug-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'PROJECT_ID=$PROJECT_ID'
-  script: |
-    #!/usr/bin/env bash
-    echo "downloading debug image ${OUTPUT_IMAGE_NAME}"
-    gsutil cp gs://confidential-space-images-dev_raw-images/${OUTPUT_IMAGE_NAME}.tar.gz .
-    mkdir vgdebugdisk
-    tar xzf ${OUTPUT_IMAGE_NAME}.tar.gz -C vgdebugdisk/
-    echo "measuring image ${OUTPUT_IMAGE_NAME}"
-    /usr/local/bin/measure.sh vgdebugdisk/disk.raw measure_output_vg_debug.json debug x86_64 sha256
-    /usr/local/bin/measure.sh vgdebugdisk/disk.raw measure_output_vg_debug_sha384.json debug x86_64 sha384
-
-    gsutil cp measure_output_vg_debug.json gs://${PROJECT_ID}-rims/${OUTPUT_IMAGE_NAME}.json
-    gsutil cp measure_output_vg_debug_sha384.json gs://${PROJECT_ID}-rims/${OUTPUT_IMAGE_NAME}_sha384.json
+  entrypoint: 'bash'
+  args:
+  - 'launcher/image/measure/measure_and_upload.sh'
+  - 'gs://${PROJECT_ID}_raw-images/${_OUTPUT_IMAGE_PREFIX}-vg-debug-${_OUTPUT_IMAGE_SUFFIX}.tar.gz'
+  - 'debug'
+  - 'gs://${PROJECT_ID}-rims/${_OUTPUT_IMAGE_PREFIX}-vg-debug-${_OUTPUT_IMAGE_SUFFIX}'
+  - 'sha256'
+  - 'sha384'
 
 options:
   automapSubstitutions: true

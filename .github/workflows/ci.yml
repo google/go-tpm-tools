@@ -57,7 +57,7 @@ jobs:
       - name: Install protoc-gen-go
         run: go install google.golang.org/protobuf/cmd/protoc-gen-go@${{ env.PROTOC_GEN_GO_VERSION }}
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # master
         with:
           toolchain: stable
       - name: Install Build Dependencies (Linux)
@@ -67,19 +67,19 @@ jobs:
       - name: Build KeyManager Rust library
         run: |
           cd keymanager
-          cargo build --release
+          cargo build --release --locked
       - name: Check Protobuf Generation
         run: |
           go generate ./... ./agent/... ./cmd/... ./launcher/... ./verifier/...
           git diff -G'^[^/]' --exit-code
       - name: Build all modules
-        run: go build -v ./... ./agent/... ./cmd/... ./keymanager/... ./verifier/...
+        run: go build -v ./... ./agent/... ./cmd/... ./keymanager/... ./launcher/image/measure/... ./verifier/...
       - name: Build launcher module
         run: go build -v -ldflags="-extldflags=-Wl,-z,lazy" ./launcher/...
-      - name: Run all tests in launcher to capture potential data race
-        run: go test -v -ldflags="-extldflags=-Wl,-z,lazy" -race ./launcher/...
+      - name: Run all tests in launcher and agent to capture potential data race
+        run: go test -v -ldflags="-extldflags=-Wl,-z,lazy" -race ./launcher/... ./agent/...
       - name: Test all modules
-        run: go test -v ./... ./agent/... ./cmd/... ./keymanager/... ./verifier/... -skip='TestCacheConcurrentSetGet|TestHwAttestationPass|TestHardwareAttestationPass'
+        run: go test -v ./... ./agent/... ./cmd/... ./keymanager/... ./launcher/image/measure/... ./verifier/... -skip='TestHwAttestationPass|TestHardwareAttestationPass'
 
   test-linux-386:
     timeout-minutes: 12
@@ -89,7 +89,6 @@ jobs:
       # Pinned to commit SHA to satisfy blanket security policy (zizmor)
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          submodules: recursive
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -103,7 +102,7 @@ jobs:
       - name: Build launcher module
         run: go build -v -ldflags="-extldflags=-Wl,-z,lazy" ./launcher/...
       - name: Test modules
-        run: go test -v ./... ./agent/... ./cmd/... ./verifier/... -skip='TestCacheConcurrentSetGet|TestHwAttestationPass|TestHardwareAttestationPass'
+        run: go test -v ./... ./agent/... ./cmd/... ./verifier/... -skip='TestHwAttestationPass|TestHardwareAttestationPass'
 
   test-macos:
     timeout-minutes: 12
@@ -116,7 +115,6 @@ jobs:
       # Pinned to commit SHA to satisfy blanket security policy (zizmor)
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          submodules: recursive
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -127,7 +125,7 @@ jobs:
       - name: Build modules
         run: go build -v ./... ./cmd/... ./verifier/...
       - name: Test modules
-        run: go test -v ./... ./cmd/... ./verifier/... -skip='TestCacheConcurrentSetGet|TestHwAttestationPass|TestHardwareAttestationPass'
+        run: go test -v ./... ./cmd/... ./verifier/... -skip='TestHwAttestationPass|TestHardwareAttestationPass'
 
   lint:
     timeout-minutes: 5
@@ -137,7 +135,6 @@ jobs:
       # Pinned to commit SHA to satisfy blanket security policy (zizmor)
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          submodules: recursive
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -155,7 +152,7 @@ jobs:
             --max-same-issues=0
             --max-issues-per-linter=0
             --timeout 5m
-            ./... ./agent/... ./cmd/... ./launcher/...
+            ./... ./agent/... ./cmd/... ./launcher/... ./launcher/image/measure/...
 
   lint-keymanager:
     timeout-minutes: 8
@@ -172,7 +169,7 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache: false
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # master
         with:
           toolchain: stable
       - name: Install Build Dependencies (Linux)
@@ -182,7 +179,7 @@ jobs:
       - name: Build KeyManager Rust library
         run: |
           cd keymanager
-          cargo build --release
+          cargo build --release --locked
       # Pinned to commit SHA to satisfy blanket security policy (zizmor)
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
@@ -212,7 +209,7 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache: false
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # master
         with:
           toolchain: stable
       - name: Install Build Dependencies (Linux)
@@ -222,7 +219,7 @@ jobs:
       - name: Build KeyManager Rust library
         run: |
           cd keymanager
-          cargo build --release
+          cargo build --release --locked
       - name: Check for CGO Warnings (gcc)
         run: CGO_CFLAGS=-Werror CC=gcc go build ./...
       - name: Check for CGO Warnings (clang)

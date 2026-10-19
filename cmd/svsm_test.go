@@ -36,10 +36,6 @@ func testEKPubBytes(tb testing.TB) []byte {
 }
 
 func TestMakeSVSNPSVSMAttestation(t *testing.T) {
-	synctest.Test(t, testMakeSVSNPSVSMAttestation)
-}
-
-func testMakeSVSNPSVSMAttestation(t *testing.T) {
 	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
 	ak, err := client.AttestationKeyECC(rwc)
@@ -155,9 +151,10 @@ func TestSVSMAttestationsErrors(t *testing.T) {
 	}
 
 	testcases := []struct {
-		name          string
-		getConfigfs   func(t *testing.T) configfsi.Client
-		wantErrString string
+		name                   string
+		getConfigfs            func(t *testing.T) configfsi.Client
+		endorsementMeasurement []byte
+		wantErrString          string
 	}{
 		{
 			name: "Bad report data",
@@ -165,14 +162,16 @@ func TestSVSMAttestationsErrors(t *testing.T) {
 				var snpNonce [sabi.ReportDataSize]byte
 				return makeFakeConfigfs(snpNonce[:], ekBytes, goodVmpl, goodMeasurement[:], certs)
 			},
-			wantErrString: "report field REPORT_DATA",
+			endorsementMeasurement: goodMeasurement[:],
+			wantErrString:          "report field REPORT_DATA",
 		},
 		{
 			name: "Bad VMPL",
 			getConfigfs: func(_ *testing.T) configfsi.Client {
 				return makeFakeConfigfs(goodReportData, ekBytes, 2, goodMeasurement[:], certs)
 			},
-			wantErrString: "report VMPL",
+			endorsementMeasurement: goodMeasurement[:],
+			wantErrString:          "report VMPL",
 		},
 		{
 			name: "Bad measurement",
@@ -181,40 +180,47 @@ func TestSVSMAttestationsErrors(t *testing.T) {
 				copy(badMeasurement[:], "bad")
 				return makeFakeConfigfs(goodReportData, ekBytes, goodVmpl, badMeasurement[:], certs)
 			},
-			wantErrString: "report field MEASUREMENT",
+			endorsementMeasurement: goodMeasurement[:],
+			wantErrString:          "report field MEASUREMENT",
+		},
+		{
+			name: "Missing SVSM measurement in endorsement",
+			getConfigfs: func(_ *testing.T) configfsi.Client {
+				return makeFakeConfigfs(goodReportData, ekBytes, goodVmpl, goodMeasurement[:], certs)
+			},
+			endorsementMeasurement: nil,
+			wantErrString:          "launch endorsement does not contain a required SVSM measurement",
 		},
 	}
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
-			synctest.Test(t, func(t *testing.T) {
-				svsmAttestation, err := makeSEVSNPSVSMAttestation(attestation, &sevSNPSVSMAttestationOpts{
-					TEENonce:                   snpNonce[:],
-					CongfigfsClient:            tc.getConfigfs(t),
-					VTPMServiceManifestVersion: "0",
-				})
-				if err != nil {
-					t.Fatalf("failed to make SVSM attestation: %v", err)
-				}
-
-				endorsement, err := makeEndorsement(goodMeasurement[:])
-				if err != nil {
-					t.Fatalf("failed to make endorsement: %v", err)
-				}
-				svsmAttestation.LaunchEndorsement = endorsement
-
-				err = verifySEVSNPSVSMAttestation(verifySEVSNPSVSMOpts{
-					TEENonce:       snpNonce[:],
-					CertifiedAKPub: akPubBytes,
-					EKPub:          ekBytes,
-					SevValidateOpts: &validate.Options{GuestPolicy: sabi.SnpPolicy{
-						SMT:   true,
-						Debug: true,
-					}},
-				}, svsmAttestation)
-				if err == nil || !strings.Contains(err.Error(), tc.wantErrString) {
-					t.Errorf("got err: %v, want err containing: %q", err, tc.wantErrString)
-				}
+			svsmAttestation, err := makeSEVSNPSVSMAttestation(attestation, &sevSNPSVSMAttestationOpts{
+				TEENonce:                   snpNonce[:],
+				CongfigfsClient:            tc.getConfigfs(t),
+				VTPMServiceManifestVersion: "0",
 			})
+			if err != nil {
+				t.Fatalf("failed to make SVSM attestation: %v", err)
+			}
+
+			endorsement, err := makeEndorsement(tc.endorsementMeasurement)
+			if err != nil {
+				t.Fatalf("failed to make endorsement: %v", err)
+			}
+			svsmAttestation.LaunchEndorsement = endorsement
+
+			err = verifySEVSNPSVSMAttestation(verifySEVSNPSVSMOpts{
+				TEENonce:       snpNonce[:],
+				CertifiedAKPub: akPubBytes,
+				EKPub:          ekBytes,
+				SevValidateOpts: &validate.Options{GuestPolicy: sabi.SnpPolicy{
+					SMT:   true,
+					Debug: true,
+				}},
+			}, svsmAttestation)
+			if err == nil || !strings.Contains(err.Error(), tc.wantErrString) {
+				t.Errorf("got err: %v, want err containing: %q", err, tc.wantErrString)
+			}
 		})
 	}
 }
@@ -301,7 +307,7 @@ func TestAttestSVSMFlags(t *testing.T) {
 			name:            "InvalidTeeTech",
 			teeTech:         "bad",
 			manifestVersion: "0",
-			wantErrorMsg:    "--svsm is only supported with --tee-technology=sev-snp",
+			wantErrorMsg:    "attest svsm is only supported with --tee-technology=sev-snp",
 		},
 		{
 			name:            "InvalidManifestVersion",
@@ -314,7 +320,7 @@ func TestAttestSVSMFlags(t *testing.T) {
 			teeTech:         "sev-snp",
 			manifestVersion: "0",
 			key:             "invalid",
-			wantErrorMsg:    "invalid is an invalid value for --key, only AK and gceAK are supported",
+			wantErrorMsg:    "key should be either AK or gceAK",
 		},
 		{
 			name:            "MismatchedKeyManifestVersion0",
@@ -912,6 +918,7 @@ func TestVerifySVSMFlags(t *testing.T) {
 		akPub           []byte
 		ekPub           string
 		certifiedAKBlob string
+		offline         bool
 		wantErrorMsg    string
 	}{
 		{
@@ -952,19 +959,30 @@ func TestVerifySVSMFlags(t *testing.T) {
 			akPub:        []byte("ak"),
 			wantErrorMsg: "only vtpm service manifest version 0 or 1 is supported",
 		},
+		{
+			name:         "OfflineSkipsRootOfTrustFetch",
+			version:      "1",
+			akPub:        []byte("ak"),
+			offline:      true,
+			wantErrorMsg: "SNP attestation verification failed: attestation cannot be nil",
+		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Cleanup(func() {
+				offline = false
+			})
 			RootCmd.SetArgs([]string{
 				"verify", "debug", "svsm",
 				"--tee-technology", "sev-snp",
 				"--tee-nonce", strings.Repeat("00", sabi.ReportDataSize),
 				"--input", writeSVSMAttestation(t, tc.version, tc.akPub),
-				// Set the v0-only flags explicitly: they are package-level globals that
-				// persist across command executions.
+				// Set the v0-only and offline flags explicitly: they are package-level
+				// globals that persist across command executions.
 				"--ek-pub", tc.ekPub,
 				"--certified-ak-blob", tc.certifiedAKBlob,
+				fmt.Sprintf("--offline=%t", tc.offline),
 			})
 			err := RootCmd.Execute()
 			if err == nil || !strings.Contains(err.Error(), tc.wantErrorMsg) {

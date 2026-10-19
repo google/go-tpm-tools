@@ -24,11 +24,7 @@ var (
 	keyAlgo       = tpm2.AlgRSA
 	pcrs          []int
 	format        string
-	asAddress     string
-	audience      string
 	eventLog      string
-	cloudLog      bool
-	customNonce   []string
 )
 
 // Add constants for other devices when required
@@ -138,29 +134,6 @@ func addInputFlag(cmd *cobra.Command) {
 		"input file (defaults to stdin)")
 }
 
-// Lets this command specify an Attestation Server Address.
-func addAsAddressFlag(cmd *cobra.Command) {
-	cmd.PersistentFlags().StringVar(&asAddress, "verifier-endpoint", "https://confidentialcomputing.googleapis.com",
-		"the attestation verifier endpoint used to retrieve an attestation claims token")
-}
-
-// Lets this command enable Cloud logging.
-func addCloudLoggingFlag(cmd *cobra.Command) {
-	cmd.Flags().BoolVar(&cloudLog, "cloud-log", false, "logs the attestation and token to Cloud Logging for auditing purposes. Requires the audience flag.")
-}
-
-// Lets this command specify custom audience field of the attestation token.
-func addAudienceFlag(cmd *cobra.Command) {
-	cmd.PersistentFlags().StringVar(&audience, "audience", "",
-		"the audience field in the claims token. Cannot be sts.googleapis.com.")
-}
-
-// Lets this command specify custom nonce field of the attestation token.
-func addCustomNonceFlag(cmd *cobra.Command) {
-	cmd.PersistentFlags().StringArrayVar(&customNonce, "custom-nonce", nil,
-		"the custom nonce field in the claims token. use this flag multiple times to add multiple custom nonces.")
-}
-
 // Lets this command specify event log path.
 func addEventLogFlag(cmd *cobra.Command) {
 	cmd.PersistentFlags().StringVar(&eventLog, "event-log", "/sys/kernel/security/tpm0/binary_bios_measurements", "specifies the event log file path.")
@@ -244,10 +217,10 @@ func openForWrite(path string) io.Writer {
 	return file
 }
 
-func writeProtoToOutput(message proto.Message) error {
+func writeProtoToOutput(message proto.Message, outFormat, outputPath string) error {
 	var out []byte
 	var err error
-	switch format {
+	switch outFormat {
 	case "binarypb":
 		out, err = proto.Marshal(message)
 		if err != nil {
@@ -258,7 +231,7 @@ func writeProtoToOutput(message proto.Message) error {
 	default:
 		return fmt.Errorf("format should be either binarypb or textproto")
 	}
-	if _, err := dataOutput().Write(out); err != nil {
+	if _, err := openForWrite(outputPath).Write(out); err != nil {
 		return fmt.Errorf("failed to write attestation report: %v", err)
 	}
 	return nil
@@ -328,31 +301,5 @@ func getEK(rwc io.ReadWriter) (*client.Key, error) {
 		return client.EndorsementKeyECC(rwc)
 	default:
 		panic("unexpected keyAlgo")
-	}
-}
-
-// getTEEDevice based on teeTechnology set in the global flag vars.
-func getTEEDevice() (client.TEEDevice, error) {
-	switch teeTechnology {
-	case sevSNP:
-		device, err := client.CreateSevSnpQuoteProvider()
-		if err != nil {
-			return nil, fmt.Errorf("failed to create %s quote provider: %w", sevSNP, err)
-		}
-		return device, nil
-	case tdx:
-		device, err := client.CreateTdxQuoteProvider()
-		if err != nil {
-			return nil, fmt.Errorf("failed to create %s quote provider: %w", tdx, err)
-		}
-		return device, nil
-	case "":
-		if len(teeNonce) != 0 {
-			return nil, fmt.Errorf("use of --tee-nonce requires specifying TEE hardware type with --tee-technology")
-		}
-		return nil, nil
-	default:
-		// Change the return statement when more devices are added
-		return nil, fmt.Errorf("tee-technology should be either empty or should have values %s or %s", sevSNP, tdx)
 	}
 }

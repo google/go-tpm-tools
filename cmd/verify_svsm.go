@@ -29,6 +29,7 @@ import (
 var (
 	certifiedAKBlobPath string
 	trustedEKPub        string
+	offline             bool
 )
 
 func addCertifiedAKBlobFlag(cmd *cobra.Command) {
@@ -42,6 +43,11 @@ func addEKPubFlag(cmd *cobra.Command) {
 	cmd.PersistentFlags().StringVar(&trustedEKPub, "ek-pub", "",
 		"Specify path to EK pub used in TPM registration. "+
 			"Required for manifest version 0 and optional for manifest version 1.")
+}
+
+func addOfflineFlag(cmd *cobra.Command) {
+	cmd.PersistentFlags().BoolVar(&offline, "offline", false,
+		"Offline mode for verifying SVSM attestation. Skips fetching root of trust for launch endorsement verification and allows debug policy.")
 }
 
 var verifySVSMCmd = &cobra.Command{
@@ -134,24 +140,29 @@ It supports two manifest verification modes depending on the manifest version:
 			return fmt.Errorf("only vtpm service manifest version 0 or 1 is supported, got %q", version)
 		}
 
-		rot, err := getRootOfTrust()
-		if err != nil {
-			return fmt.Errorf("failed to get root of trust: %w", err)
+		var endorsementOpts *tcbv.Options
+		if !offline {
+			rot, err := getRootOfTrust()
+			if err != nil {
+				return fmt.Errorf("failed to get root of trust: %w", err)
+			}
+			endorsementOpts = &tcbv.Options{
+				RootsOfTrust: rot,
+				Now:          time.Now(),
+			}
 		}
 		err = verifySEVSNPSVSMAttestation(verifySEVSNPSVSMOpts{
 			TEENonce:      teeNonce,
 			SevVerifyOpts: &verify.Options{},
 			SevValidateOpts: &validate.Options{
 				GuestPolicy: sabi.SnpPolicy{
-					SMT: true,
+					SMT:   true,
+					Debug: offline,
 				},
 			},
-			EndorsementOpts: &tcbv.Options{
-				RootsOfTrust: rot,
-				Now:          time.Now(),
-			},
-			CertifiedAKPub: certifiedAKPub,
-			EKPub:          ekPub,
+			EndorsementOpts: endorsementOpts,
+			CertifiedAKPub:  certifiedAKPub,
+			EKPub:           ekPub,
 		}, svsmAttestation)
 		if err != nil {
 			return fmt.Errorf("failed to verify snp svsm attestation: %w", err)
@@ -394,5 +405,9 @@ func getExpectedMeasurement(endorsement []byte) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to unserialize golden uefi: %w", err)
 	}
-	return golden.GetSevSnp().GetSvsmMeasurement(), nil
+	measurement := golden.GetSevSnp().GetSvsmMeasurement()
+	if len(measurement) == 0 {
+		return nil, fmt.Errorf("invalid endorsement: launch endorsement does not contain a required SVSM measurement")
+	}
+	return measurement, nil
 }

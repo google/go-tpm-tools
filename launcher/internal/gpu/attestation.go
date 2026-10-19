@@ -180,14 +180,16 @@ func (a *NvidiaAttester) collectAttestationEvidence(provider client.GpuQuoteProv
 // Further improvement should be made to parse GPU attestation report to get the actual attestation type.
 func determineAttestationType(gpuInfos []*attestationpb.GpuInfo) attestationType {
 	gpuType, _ := getGpuTypeInfo(PciDevicesDir)
-	if gpuType != deviceinfo.H100 && gpuType != deviceinfo.B200 && gpuType != deviceinfo.RTX_PRO_6000 {
+	if gpuType != deviceinfo.H100 && gpuType != deviceinfo.B200 && gpuType != deviceinfo.RTX_PRO_6000 && gpuType != deviceinfo.GB300 {
 		return UNSUPPORTED
 	}
 	// H100 and RTX PRO 6000 can only support single GPU attestation in CS at the moment.
 	if (gpuType == deviceinfo.H100 || gpuType == deviceinfo.RTX_PRO_6000) && len(gpuInfos) != 1 {
 		return UNSUPPORTED
 	}
-	if gpuType == deviceinfo.B200 && len(gpuInfos) > 1 {
+	// B200 VMs and GB300 bare-metal BMSAI hosts (4 GPUs per host) report one
+	// SPDM attestation report per GPU.
+	if (gpuType == deviceinfo.B200 || gpuType == deviceinfo.GB300) && len(gpuInfos) > 1 {
 		return MPT
 	}
 	return SPT

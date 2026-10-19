@@ -229,6 +229,7 @@ func parseFieldMask(r *http.Request) *fieldmaskpb.FieldMask {
 // It currently supports "label", "challenge", "quote", "extraData", and "deviceReports" params.
 // The default response with no query parameter will return all fields except device reports.
 // If the fields param is "*", it will return all fields including device reports.
+// In GB300 CC mode, this endpoint returns Gb300Evidence and ignores the fields parameter.
 func (a *attestHandler) getAttestationEvidence(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		a.logAndWriteHTTPError(w, http.StatusMethodNotAllowed, fmt.Errorf("method not allowed"))
@@ -249,6 +250,22 @@ func (a *attestHandler) getAttestationEvidence(w http.ResponseWriter, r *http.Re
 	}
 	if len(req.Challenge) == 0 {
 		a.logAndWriteHTTPError(w, http.StatusBadRequest, fmt.Errorf("challenge is required"))
+		return
+	}
+
+	if gb300Provider, ok := a.attestAgent.(agent.GB300EvidenceProvider); ok {
+		evidence, err := gb300Provider.AttestGB300(a.ctx, req.Challenge)
+		if err != nil {
+			a.handleAttestError(w, err, "failed to fetch GB300 attestation evidence")
+			return
+		}
+		evidenceBytes, err := protojson.Marshal(evidence)
+		if err != nil {
+			a.logAndWriteHTTPError(w, http.StatusInternalServerError, fmt.Errorf("failed to marshal evidence: %v", err))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(evidenceBytes)
 		return
 	}
 

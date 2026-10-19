@@ -11,6 +11,7 @@ require (
 	github.com/golang/protobuf v1.5.4
 	github.com/google/gce-tcb-verifier v0.3.1
 	github.com/google/gce-tcb-verifier/gcetcbendorsement v0.0.0-20250301004354-d18ce1139be2
+	github.com/google/go-cmp v0.7.0
 	github.com/google/go-configfs-tsm v0.3.3
 	github.com/google/go-sev-guest v0.14.0
 	github.com/google/go-tdx-guest v0.3.2-0.20250814004405-ffb0869e6f4d

@@ -5,7 +5,6 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
-	"crypto/rsa"
 	"testing"
 
 	"github.com/google/go-tpm-tools/client"
@@ -28,8 +27,7 @@ func TestCreateEKPublicAreaFromKeyGeneratedKey(t *testing.T) {
 		generateKey func() (crypto.PublicKey, error)
 	}{
 		{"RSA", client.DefaultEKTemplateRSA(), func() (crypto.PublicKey, error) {
-			priv, err := rsa.GenerateKey(rand.Reader, 2048)
-			return priv.Public(), err
+			return test.LeafKey.Public(), nil
 		}},
 		{"ECC", client.DefaultEKTemplateECC(), func() (crypto.PublicKey, error) {
 			priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)

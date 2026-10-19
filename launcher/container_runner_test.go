@@ -3,14 +3,15 @@ package launcher
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
-	"crypto/rsa"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net"
+	"net/netip"
 	"os"
 	"path"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -25,12 +26,14 @@ import (
 	"github.com/containerd/containerd/cio"
 	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/oci"
+	types100 "github.com/containernetworking/cni/pkg/types/100"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-cmp/cmp"
 	gecel "github.com/google/go-eventlog/cel"
 	"github.com/google/go-tpm-tools/agent"
 	"github.com/google/go-tpm-tools/agent/device"
 	"github.com/google/go-tpm-tools/cel"
+	"github.com/google/go-tpm-tools/internal/test"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/spec"
@@ -161,13 +164,8 @@ func createJWTWithSignatures(t *testing.T, signatures []string) []byte {
 func createSignedToken(t *testing.T, claims jwt.Claims) []byte {
 	t.Helper()
 
-	privkey, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		t.Fatalf("Error creating token key: %v", err)
-	}
-
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
-	signed, err := token.SignedString(privkey)
+	signed, err := token.SignedString(test.LeafKey)
 	if err != nil {
 		t.Fatalf("Error creating signed string: %v", err)
 	}
@@ -329,6 +327,7 @@ func TestRefreshTokenError(t *testing.T) {
 func TestMeasureGPUAttestationEvidence(t *testing.T) {
 	testCases := []struct {
 		name             string
+		gb300CCMode      bool
 		rots             []device.ROT
 		attestAgent      *fakeAttestationAgent
 		wantErr          bool
@@ -428,6 +427,18 @@ func TestMeasureGPUAttestationEvidence(t *testing.T) {
 			wantErr:    true,
 			wantErrStr: "failed to enable ready state",
 		},
+		{
+			// GB300 CC mode measures the GPU evidence but leaves the CC
+			// ready state alone, so a failing EnableReadyState is not called.
+			name:        "GB300CCModeMeasuresWithoutReadyState",
+			gb300CCMode: true,
+			rots:        []device.ROT{&fakeGPUAttester{readyStateErr: errors.New("must not be called")}},
+			attestAgent: &fakeAttestationAgent{
+				measureEventFunc: func(gecel.Content) error { return nil },
+			},
+			wantErr:          false,
+			wantMeasureCount: 1,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -446,6 +457,7 @@ func TestMeasureGPUAttestationEvidence(t *testing.T) {
 				attestAgent:      tc.attestAgent,
 				logger:           logging.SimpleLogger(),
 			}
+			r.launchSpec.Experiments.GB300CCMode = tc.gb300CCMode
 
 			err := r.measureGPUAttestationEvidence()
 			if (err != nil) != tc.wantErr {
@@ -723,8 +735,6 @@ func TestGetNextRefresh(t *testing.T) {
 		}
 	}
 }
-
-
 
 func TestMeasureCELEvents(t *testing.T) {
 	ctx := context.Background()
@@ -1646,10 +1656,7 @@ func TestEnableGracefulShutdown_DispatchesSigtermOnPowerEvent(t *testing.T) {
 		logger: logging.SimpleLogger(),
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	runner.enableGracefulShutdown(ctx, signaler)
+	runner.enableGracefulShutdown(t.Context(), signaler)
 
 	// Send power button press event (64-bit EV_KEY, KEY_POWER, value=1)
 	if _, err := pw.Write(encodeEvent64(evKey, keyPower, 1)); err != nil {
@@ -1676,7 +1683,7 @@ func TestEnableGracefulShutdown_DebugModeContextCancelExits(t *testing.T) {
 		logger:     logging.SimpleLogger(),
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	runner.enableGracefulShutdown(ctx, signaler)
 
 	// Canceling context causes the debug mode signal relay goroutine to exit on <-ctx.Done().
@@ -1689,7 +1696,7 @@ func TestEnableGracefulShutdown_DebugModeContextCancelExits(t *testing.T) {
 	}
 }
 
-func TestEnableGracefulShutdown_NilPowerButtonDoesNotPanic(_ *testing.T) {
+func TestEnableGracefulShutdown_NilPowerButtonDoesNotPanic(t *testing.T) {
 	signaler := &fakeSignaler{
 		sig: make(chan syscall.Signal, 1),
 	}
@@ -1699,10 +1706,188 @@ func TestEnableGracefulShutdown_NilPowerButtonDoesNotPanic(_ *testing.T) {
 		logger:      logging.SimpleLogger(),
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
 	// Should safely no-op without panicking
-	runner.enableGracefulShutdown(ctx, signaler)
+	runner.enableGracefulShutdown(t.Context(), signaler)
 }
 
+func TestBuildPortRules(t *testing.T) {
+	v4 := netip.MustParseAddr("172.20.0.2")
+	v6 := netip.MustParseAddr("fdb6:c4ca:384d:1::2")
+
+	// Rules present in both root and non-root containers.
+	inputRules := [][]string{
+		{"iptables", "-A", "INPUT", "-p", "tcp", "--dport", "80", "-j", "ACCEPT"},
+		{"ip6tables", "-A", "INPUT", "-p", "tcp", "--dport", "80", "-j", "ACCEPT"},
+	}
+
+	// Ingress rules for Non-root.
+	ingressV4 := [][]string{
+		{"iptables", "-t", "nat", "-A", "PREROUTING", "-m", "addrtype", "--dst-type", "LOCAL", "-p", "tcp", "--dport", "80", "-j", "DNAT", "--to-destination", "172.20.0.2:80"},
+		{"iptables", "-A", "FORWARD", "-d", "172.20.0.2", "-p", "tcp", "--dport", "80", "-j", "ACCEPT"},
+	}
+	ingressV6 := [][]string{
+		{"ip6tables", "-t", "nat", "-A", "PREROUTING", "-m", "addrtype", "--dst-type", "LOCAL", "-p", "tcp", "--dport", "80", "-j", "DNAT", "--to-destination", "[fdb6:c4ca:384d:1::2]:80"},
+		{"ip6tables", "-A", "FORWARD", "-d", "fdb6:c4ca:384d:1::2", "-p", "tcp", "--dport", "80", "-j", "ACCEPT"},
+	}
+
+	// Egress rules for Non-root.
+	egressV4 := [][]string{
+		{"iptables", "-A", "FORWARD", "-s", "172.20.0.2", "-j", "ACCEPT"},
+		{"iptables", "-A", "FORWARD", "-d", "172.20.0.2", "-m", "conntrack", "--ctstate", "RELATED,ESTABLISHED", "-j", "ACCEPT"},
+	}
+	egressV6 := [][]string{
+		{"ip6tables", "-A", "FORWARD", "-s", "fdb6:c4ca:384d:1::2", "-j", "ACCEPT"},
+		{"ip6tables", "-A", "FORWARD", "-d", "fdb6:c4ca:384d:1::2", "-m", "conntrack", "--ctstate", "RELATED,ESTABLISHED", "-j", "ACCEPT"},
+	}
+
+	testCases := []struct {
+		name         string
+		ports        map[string]struct{}
+		containerIPs []netip.Addr
+		want         [][]string
+	}{
+		{
+			name:  "root container only opens INPUT",
+			ports: map[string]struct{}{"80/tcp": {}},
+			want:  inputRules,
+		},
+		{ // Containers will have dual-stack.
+			// However, this test case exists as `buildPortRules` is a general helper that also handles an IPv4-only container.
+			name:         "non-root container IPv4 only",
+			ports:        map[string]struct{}{"80/tcp": {}},
+			containerIPs: []netip.Addr{v4},
+			want:         slices.Concat(inputRules, ingressV4, egressV4),
+		},
+		{
+			name:         "non-root container dual-stack",
+			ports:        map[string]struct{}{"80/tcp": {}},
+			containerIPs: []netip.Addr{v4, v6},
+			want:         slices.Concat(inputRules, ingressV4, ingressV6, egressV4, egressV6),
+		},
+		{
+			name:         "no exposed ports still allows container egress",
+			containerIPs: []netip.Addr{v4, v6},
+			want:         slices.Concat(egressV4, egressV6),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := buildPortRules(tc.ports, tc.containerIPs)
+			if err != nil {
+				t.Fatalf("buildPortRules() error = %v", err)
+			}
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("buildPortRules() rules mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestBuildPortRulesErrors(t *testing.T) {
+	testCases := []struct {
+		name, exposed string
+		containerIPs  []netip.Addr
+	}{
+		{
+			name:    "no protocol",
+			exposed: "80",
+		},
+		{
+			name:    "extra protocol",
+			exposed: "80/tcp/extra",
+		},
+		{
+			name:    "invalid protocol",
+			exposed: "80/sctp",
+		},
+		{
+			name:    "out-of-range port",
+			exposed: "99999/tcp",
+		},
+		{
+			name:    "negative port",
+			exposed: "-1/tcp",
+		},
+		{
+			name:    "non-digit port",
+			exposed: "abc/udp",
+		},
+		{
+			name:         "invalid container IP",
+			exposed:      "80/tcp",
+			containerIPs: []netip.Addr{{}},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := buildPortRules(map[string]struct{}{tc.exposed: {}}, tc.containerIPs); err == nil {
+				t.Errorf("buildPortRules(%q, %v) succeeded, want error", tc.exposed, tc.containerIPs)
+			}
+		})
+	}
+}
+
+func buildIPNet(t *testing.T, addr string) net.IPNet {
+	t.Helper()
+	ip, ipNet, err := net.ParseCIDR(addr)
+	if err != nil {
+		t.Fatalf("ParseCIDR(%q): %v", addr, err)
+	}
+	return net.IPNet{IP: ip, Mask: ipNet.Mask}
+}
+
+func TestIPsFromCNI(t *testing.T) {
+	eth0 := types100.Int(2)
+	cniRaw := []*types100.Result{{
+		Interfaces: []*types100.Interface{
+			{Name: "br0", Mac: "02:42:ac:14:00:01"},
+			{Name: "veth1a2b3c4d", Mac: "02:42:ac:14:00:02"},
+			{Name: "eth0", Mac: "02:42:ac:14:00:03", Sandbox: "/proc/1234/ns/net"},
+		},
+		IPs: []*types100.IPConfig{
+			{Interface: eth0, Address: buildIPNet(t, "172.20.0.2/24"), Gateway: net.ParseIP("172.20.0.1")},
+			{Interface: eth0, Address: buildIPNet(t, "fdb6:c4ca:384d:1::2/64"), Gateway: net.ParseIP("fdb6:c4ca:384d:1::1")},
+		},
+	}}
+	ips, err := ipsFromCNI(cniRaw)
+	if err != nil {
+		t.Fatalf("ipsFromCNI() error = %v", err)
+	}
+	var got []string
+	for _, ip := range ips {
+		got = append(got, ip.String())
+	}
+	if diff := cmp.Diff([]string{"172.20.0.2", "fdb6:c4ca:384d:1::2"}, got); diff != "" {
+		t.Errorf("ipsFromCNI() mismatch (-want +got):\n%s", diff)
+	}
+
+	tests := []struct {
+		name      string
+		cniResult []*types100.Result
+	}{
+		{
+			name: "no result",
+		},
+		{
+			name:      "no IPs",
+			cniResult: []*types100.Result{{}},
+		},
+		{
+			name:      "invalid IP",
+			cniResult: []*types100.Result{{IPs: []*types100.IPConfig{{}}}},
+		},
+		{
+			name:      "nil result",
+			cniResult: []*types100.Result{nil},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := ipsFromCNI(tc.cniResult); err == nil {
+				t.Errorf("ipsFromCNI(%v) succeeded, want error", tc.cniResult)
+			}
+		})
+	}
+}

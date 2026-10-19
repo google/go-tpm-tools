@@ -91,7 +91,7 @@ func fileContainsTag(filePath, tag string, logger logging.Logger) (bool, error) 
 	}
 	defer func() {
 		if err := file.Close(); err != nil {
-			logger.Error("failed to close file", "file", filePath, "err", err.Error())
+			logger.Error("Failed to close file", "file", filePath, "err", err.Error())
 		}
 	}()
 
@@ -157,7 +157,7 @@ func searchProcDevices(devicesPath string, logger logging.Logger) (string, error
 	}
 	defer func() {
 		if err := file.Close(); err != nil {
-			logger.Error("failed to close file", "file", devicesPath, "err", err.Error())
+			logger.Error("Failed to close file", "file", devicesPath, "err", err.Error())
 		}
 	}()
 
