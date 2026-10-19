@@ -12,7 +12,9 @@ substitutions:
   '_LOUHI_TRIGGER_TOPIC': ''
   '_LOUHI_FLOW_ID': '41685197-997a-4b7b-82ac-c031bdeaddd3'
   '_BC_BASE_IMAGE': 'cos-bc-guest-125-19216-760-20'
+  '_BC_BASE_IMAGE_SHA256': '5c8ea98bbccadf6f28533ad7aa94fffffa65467da07c2a0945238ededd0c0d7f'
   '_BC_DEBUG_IMAGE': 'cos-bcdbg-guest-125-19216-760-20'
+  '_BC_DEBUG_IMAGE_SHA256': '04c5cb8e5328ec692b6e07b642e4badfb8b56bed2666af68366654dedb923e76'
   '_WSD_CONTAINER_IMAGE_REF': 'us-docker.pkg.dev/confidential-space-images-dev/key-protection-module-images/key-protection-module:48d5ea8'
   '_POLLING_INTERVAL': '10'
   '_ITA_API_KEY': 'fake-key'
@@ -243,8 +245,6 @@ steps:
   id: DebugBcImageBuildAndExport
   waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary', 'DownloadGpuDrivers', 'DownloadGoogleRoots']
   env:
-  - 'BC_BASE_IMAGE=$_BC_DEBUG_IMAGE'
-  - 'BC_BASE_IMAGE_PROJECT=$_BC_BASE_IMAGE_PROJECT'
   - 'BC_ACOS_BUCKET=$_BC_ACOS_BUCKET'
   - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-bc-debug-${_OUTPUT_IMAGE_SUFFIX}'
   - 'OUTPUT_IMAGE_FAMILY=${_OUTPUT_IMAGE_FAMILY}-bc-debug'
@@ -256,12 +256,13 @@ steps:
     #!/usr/bin/env bash
     set -exuo pipefail
 
-    echo "building the debug image with BC customizer with the base image: ${BC_BASE_IMAGE}"
+    echo "building the debug image with BC customizer with the base image: ${_BC_DEBUG_IMAGE}"
     gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=launcher/image/bc_cloudbuild.yaml \
     --region us-west1 \
     --substitutions \
-    _BASE_IMAGE=${BC_BASE_IMAGE},\
-    _BASE_IMAGE_PROJECT=${BC_BASE_IMAGE_PROJECT},\
+    _BASE_IMAGE=${_BC_DEBUG_IMAGE},\
+    _BASE_IMAGE_PROJECT=${BASE_IMAGE_PROJECT},\
+    _BASE_IMAGE_SHA256=${_BC_DEBUG_IMAGE_SHA256},\
     _OUTPUT_IMAGE_FAMILY=${OUTPUT_IMAGE_FAMILY},\
     _OUTPUT_IMAGE_NAME=${OUTPUT_IMAGE_NAME},\
     _IMAGE_ENV=debug,\
@@ -274,8 +275,6 @@ steps:
   id: HardenedBcImageBuildAndExport
   waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary', 'DownloadGpuDrivers', 'DownloadGoogleRoots']
   env:
-  - 'BC_BASE_IMAGE=$_BC_BASE_IMAGE'
-  - 'BC_BASE_IMAGE_PROJECT=$_BC_BASE_IMAGE_PROJECT'
   - 'BC_ACOS_BUCKET=$_BC_ACOS_BUCKET'
   - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-bc-hardened-${_OUTPUT_IMAGE_SUFFIX}'
   - 'OUTPUT_IMAGE_FAMILY=${_OUTPUT_IMAGE_FAMILY}-bc'
@@ -287,12 +286,13 @@ steps:
     #!/usr/bin/env bash
     set -exuo pipefail
 
-    echo "building the hardened image with BC customizer with the base image: ${BC_BASE_IMAGE}"
+    echo "building the hardened image with BC customizer with the base image: ${_BC_BASE_IMAGE}"
     gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=launcher/image/bc_cloudbuild.yaml \
     --region us-west1 \
     --substitutions \
-    _BASE_IMAGE=${BC_BASE_IMAGE},\
-    _BASE_IMAGE_PROJECT=${BC_BASE_IMAGE_PROJECT},\
+    _BASE_IMAGE=${_BC_BASE_IMAGE},\
+    _BASE_IMAGE_PROJECT=${BASE_IMAGE_PROJECT},\
+    _BASE_IMAGE_SHA256=${_BC_BASE_IMAGE_SHA256},\
     _OUTPUT_IMAGE_FAMILY=${OUTPUT_IMAGE_FAMILY},\
     _OUTPUT_IMAGE_NAME=${OUTPUT_IMAGE_NAME},\
     _IMAGE_ENV=hardened,\
