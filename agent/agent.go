@@ -144,6 +144,7 @@ type agent struct {
 	sigsCache        *sigsCache
 	signedImageRepos []string
 	deviceROTManager *device.ROTManager
+	certChainFetcher *http.Client
 }
 
 type bcAgent struct {
@@ -163,7 +164,7 @@ type gb300ccAgent struct {
 // - principalFetcher is a func to fetch GCE principal tokens for a given audience.
 // - signaturesFetcher is a func to fetch container image signatures associated with the running workload.
 // - logger will log any partial errors returned by VerifyAttestation.
-func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher util.TpmKeyFetcher, verifierClient verifier.Client, principalFetcher principalIDTokenFetcher, sigsFetcher SignatureFetcher, exps Experiments, logger Logger, deviceROTManager *device.ROTManager, signedImageRepos []string) (AttestationAgent, error) {
+func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher util.TpmKeyFetcher, verifierClient verifier.Client, principalFetcher principalIDTokenFetcher, sigsFetcher SignatureFetcher, exps Experiments, logger Logger, deviceROTManager *device.ROTManager, signedImageRepos []string, certChainFetcher *http.Client) (AttestationAgent, error) {
 	if exps.BcMode {
 		return createBCAgent(principalFetcher, sigsFetcher, exps, logger, deviceROTManager, signedImageRepos)
 	}
@@ -186,6 +187,7 @@ func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher util.TpmKeyFetcher
 		logger:           logger,
 		sigsCache:        &sigsCache{},
 		signedImageRepos: signedImageRepos,
+		certChainFetcher: certChainFetcher,
 	}
 
 	// Add TPM
@@ -206,10 +208,11 @@ func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher util.TpmKeyFetcher
 	}
 
 	var tpmAR = &tpmAttestRoot{
-		fetchedAK: ak,
-		tpm:       tpm,
-		hashAlgos: hashAlgos,
-		cosCel:    gecel.NewPCR(),
+		fetchedAK:        ak,
+		tpm:              tpm,
+		hashAlgos:        hashAlgos,
+		cosCel:           gecel.NewPCR(),
+		certChainFetcher: certChainFetcher,
 	}
 	attestAgent.measuredRots = append(attestAgent.measuredRots, tpmAR)
 	attestAgent.avRot = tpmAR // Set as default fallback
@@ -402,7 +405,7 @@ func (a *agent) AttestWithClient(ctx context.Context, opts AttestAgentOpts, clie
 
 		v.CanonicalEventLog = cosCel.Bytes()
 
-		certChain, err := internal.GetAKIntermediateCerts(a.fetchedAK.Cert(), http.DefaultClient)
+		certChain, err := internal.GetAKIntermediateCerts(a.fetchedAK.Cert(), a.certChainFetcher)
 		if err != nil {
 			return nil, fmt.Errorf("failed when fetching certificate chain: %w", err)
 		}
@@ -617,11 +620,12 @@ func convertOCIToContainerSignature(ociSig oci.Signature) (*verifier.ContainerSi
 }
 
 type tpmAttestRoot struct {
-	tpmMu     sync.Mutex
-	fetchedAK *client.Key
-	tpm       io.ReadWriteCloser
-	cosCel    gecel.CEL
-	hashAlgos []crypto.Hash
+	tpmMu            sync.Mutex
+	fetchedAK        *client.Key
+	tpm              io.ReadWriteCloser
+	cosCel           gecel.CEL
+	hashAlgos        []crypto.Hash
+	certChainFetcher *http.Client
 }
 
 func (t *tpmAttestRoot) GetCEL() gecel.CEL {
@@ -650,7 +654,7 @@ func (t *tpmAttestRoot) Attest(nonce []byte) (any, error) {
 
 	return t.fetchedAK.Attest(client.AttestOpts{
 		Nonce:            nonce,
-		CertChainFetcher: http.DefaultClient,
+		CertChainFetcher: t.certChainFetcher,
 	})
 }
 

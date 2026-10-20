@@ -7,12 +7,19 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/sha512"
+	"crypto/tls"
+	"crypto/x509"
 	_ "embed"
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io"
 	"math"
+	"math/big"
+	"net/http"
+	"net/http/httptest"
 	"runtime"
+	"strings"
 	"sync"
 	"testing"
 	"testing/synctest"
@@ -103,7 +110,7 @@ func TestAttestRacing(t *testing.T) {
 	defer client.CheckedClose(t, tpm)
 
 	verifierClient := fake.NewClient(nil)
-	agent, err := CreateAttestationAgent(tpm, client.AttestationKeyECC, verifierClient, placeholderPrincipalFetcher, NewFakeClient(), Experiments{}, SimpleLogger(), nil, nil)
+	agent, err := CreateAttestationAgent(tpm, client.AttestationKeyECC, verifierClient, placeholderPrincipalFetcher, NewFakeClient(), Experiments{}, SimpleLogger(), nil, nil, http.DefaultClient)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +155,7 @@ func TestAttest(t *testing.T) {
 
 			verifierClient := fake.NewClient(nil)
 
-			agent, err := CreateAttestationAgent(tpm, client.AttestationKeyECC, verifierClient, tc.principalIDTokenFetcher, tc.containerSignaturesFetcher, Experiments{}, SimpleLogger(), nil, tc.signedImageRepos)
+			agent, err := CreateAttestationAgent(tpm, client.AttestationKeyECC, verifierClient, tc.principalIDTokenFetcher, tc.containerSignaturesFetcher, Experiments{}, SimpleLogger(), nil, tc.signedImageRepos, http.DefaultClient)
 			if err != nil {
 				t.Fatalf("failed to create an attestation agent %v", err)
 			}
@@ -920,7 +927,7 @@ func TestAttestationEvidence_TPM_Success(t *testing.T) {
 	defer ak.Close()
 
 	ls := Experiments{EnableAttestationEvidence: true}
-	agent, err := CreateAttestationAgent(tpm, client.AttestationKeyECC, verifierClient, placeholderPrincipalFetcher, NewFakeClient(), ls, SimpleLogger(), nil, nil)
+	agent, err := CreateAttestationAgent(tpm, client.AttestationKeyECC, verifierClient, placeholderPrincipalFetcher, NewFakeClient(), ls, SimpleLogger(), nil, nil, http.DefaultClient)
 	if err != nil {
 		t.Fatalf("failed to create agent: %v", err)
 	}
@@ -1088,7 +1095,7 @@ func TestAttestationEvidence_ExperimentDisabled(t *testing.T) {
 	agent, err := CreateAttestationAgent(tpm, client.AttestationKeyECC, fake.NewClient(nil),
 		placeholderPrincipalFetcher, NewFakeClient(),
 		Experiments{ /* EnableAttestationEvidence defaults to false */ },
-		SimpleLogger(), nil, nil)
+		SimpleLogger(), nil, nil, http.DefaultClient)
 	if err != nil {
 		t.Fatalf("failed to create agent: %v", err)
 	}
@@ -1147,7 +1154,7 @@ func TestHostAttestation_NotBcMode(t *testing.T) {
 	agent, err := CreateAttestationAgent(tpm, client.AttestationKeyECC, fake.NewClient(nil),
 		placeholderPrincipalFetcher, NewFakeClient(),
 		Experiments{BcMode: false},
-		SimpleLogger(), nil, nil)
+		SimpleLogger(), nil, nil, http.DefaultClient)
 	if err != nil {
 		t.Fatalf("failed to create agent: %v", err)
 	}
@@ -1366,4 +1373,87 @@ func TestGB300CCAgent_AttestGB300(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestAttestRejectsUnpinnedIntermediateCertServer(t *testing.T) {
+	tpm := test.GetTPM(t)
+	defer client.CheckedClose(t, tpm)
+
+	testCA := test.GetTestCert(t, test.RootCAKey, nil, nil, nil)
+	caServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		t.Error("unpinned intermediate CA server received request")
+		w.WriteHeader(http.StatusOK)
+		w.Write(testCA.Raw)
+	}))
+	defer caServer.Close()
+
+	akFetcher := func(rw io.ReadWriter) (*client.Key, error) {
+		ak, err := client.AttestationKeyECC(rw)
+		if err != nil {
+			return nil, err
+		}
+		tmpl := &x509.Certificate{
+			SerialNumber:          big.NewInt(2),
+			NotBefore:             time.Now().Add(-time.Hour),
+			NotAfter:              time.Now().Add(time.Hour),
+			IssuingCertificateURL: []string{caServer.URL},
+		}
+		der, err := x509.CreateCertificate(rand.Reader, tmpl, testCA, ak.PublicKey(), test.RootCAKey)
+		if err != nil {
+			ak.Close()
+			return nil, err
+		}
+		cert, err := x509.ParseCertificate(der)
+		if err != nil {
+			ak.Close()
+			return nil, err
+		}
+		if err := ak.SetCert(cert); err != nil {
+			ak.Close()
+			return nil, err
+		}
+		return ak, nil
+	}
+
+	pinnedClient := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				RootCAs: x509.NewCertPool(),
+			},
+		},
+	}
+
+	t.Run("TPM attestation", func(t *testing.T) {
+		ag, err := CreateAttestationAgent(tpm, akFetcher, fake.NewClient(nil), placeholderPrincipalFetcher, NewFakeClient(), Experiments{}, SimpleLogger(), nil, nil, pinnedClient)
+		if err != nil {
+			t.Fatalf("CreateAttestationAgent() failed: %v", err)
+		}
+		defer ag.Close()
+
+		if _, err := ag.Attest(t.Context(), AttestAgentOpts{}); err == nil || !strings.Contains(err.Error(), "unknown authority") {
+			t.Fatalf("Attest() error = %v, want certificate signed by unknown authority", err)
+		}
+	})
+
+	t.Run("TDX attestation", func(t *testing.T) {
+		ak, err := akFetcher(tpm)
+		if err != nil {
+			t.Fatalf("akFetcher() failed: %v", err)
+		}
+		defer ak.Close()
+
+		ag := &agent{
+			avRot:            &fakeTdxAttestRoot{cel: gecel.NewConfComputeMR(), tdxQuote: testdata.RawQuote},
+			fetchedAK:        ak,
+			client:           fake.NewClient(nil),
+			principalFetcher: placeholderPrincipalFetcher,
+			sigsCache:        &sigsCache{},
+			logger:           SimpleLogger(),
+			certChainFetcher: pinnedClient,
+		}
+
+		if _, err := ag.Attest(t.Context(), AttestAgentOpts{}); err == nil || !strings.Contains(err.Error(), "unknown authority") {
+			t.Fatalf("Attest() error = %v, want certificate signed by unknown authority", err)
+		}
+	})
 }
