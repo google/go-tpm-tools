@@ -43,16 +43,18 @@ func Resolver(token string, googleClient *http.Client) remotes.Resolver {
 		}
 		return "", "", nil
 	}
-	authOpts := []docker.AuthorizerOpt{docker.WithAuthCreds(credentials)}
-	//nolint:staticcheck
-	authorizer := docker.NewDockerAuthorizer(authOpts...)
+	authorizer := docker.NewDockerAuthorizer(docker.WithAuthCreds(credentials))
+	googleAuthorizer := docker.NewDockerAuthorizer(
+		docker.WithAuthCreds(credentials),
+		docker.WithAuthClient(googleClient),
+	)
 
 	// Construct the handlers once upfront
 	defaultHosts := docker.ConfigureDefaultRegistries(
 		docker.WithAuthorizer(authorizer),
 	)
 	googleHosts := docker.ConfigureDefaultRegistries(
-		docker.WithAuthorizer(authorizer),
+		docker.WithAuthorizer(googleAuthorizer),
 		docker.WithClient(googleClient),
 	)
 
