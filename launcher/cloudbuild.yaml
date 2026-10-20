@@ -6,7 +6,6 @@ substitutions:
   '_OUTPUT_IMAGE_SUFFIX': ''
   '_OUTPUT_IMAGE_FAMILY': ''
   '_BUCKET_NAME': '${PROJECT_ID}_cloudbuild'
-  '_VG_BASE_IMAGE': 'cos-125-19216-739-5'
   '_BC_BASE_IMAGE_PROJECT': 'confidential-space-images-dev'
   '_BC_ACOS_BUCKET': ''
   '_LOUHI_TRIGGER_TOPIC': ''
@@ -46,20 +45,6 @@ steps:
     echo "base image:" ${base_image} "project:" ${BASE_IMAGE_PROJECT}
     echo ${base_image} > /workspace/base_image.txt
 
-- name: 'us-docker.pkg.dev/confidential-space-images-dev/cs-tools/keymanager-builder@sha256:0283448a48bcc515f15d708d5dcf9e368ea2553c8f5a3bb0908019372a47dbfe'
-  id: KeyManagerCompile
-  waitFor: ['-']
-  entrypoint: /bin/bash
-  args:
-    - -c
-    - |
-      set -exuo pipefail
-      git config --global --add safe.directory /workspace
-      git submodule update --init --recursive
-      # Build the Rust keymanager libraries using prebuilt toolchain
-      cd keymanager
-      cargo build --release --locked
-
 # `golang:1.26.10-bookworm` is used for compiling the launcher. Keep the patch
 # version pinned (and in sync with the `toolchain` line in go.work) so that the
 # Go version in an image is deterministic; go1.26.10 is the first 1.26 release
@@ -68,18 +53,13 @@ steps:
 # We statically link libstdc++ and libgcc to support running on COS 125.
 - name: golang:1.26.10-bookworm@sha256:632dff7351799a5a9954a48dc06670ade72ee44e8c351cdc0e5a57af2fea21af
   id: LauncherCompile
-  waitFor: ['KeyManagerCompile']
+  waitFor: ['-']
   entrypoint: /bin/bash
   args:
     - -c
     - |
       set -exuo pipefail
-      # Install Go build tools (clang is needed for CGO)
-      apt-get update && apt-get install -y clang pkg-config libssl-dev build-essential
-
-      # Build the launcher with CGO enabled
       cd launcher/launcher
-      export CGO_LDFLAGS="-L/workspace/keymanager/target/release"
       export GOTOOLCHAIN=auto
       # Record the toolchain actually used (after any GOTOOLCHAIN switch).
       go version
@@ -94,90 +74,9 @@ steps:
           'gs://confidential-space-images_third-party/confidential_space_experiments',
           './launcher/image/confidential_space_experiments']
 
-# make sure the directory matches the base image
-- name: 'gcr.io/cloud-builders/gcloud'
-  id: DownloadGpuDrivers
-  waitFor: ['BaseImageIdent']
-  entrypoint: 'bash'
-  args:
-    - '-c'
-    - |
-      set -ex
-      BASE_IMAGE=$$(cat /workspace/base_image.txt)
-      VERSION=$$(echo "$${BASE_IMAGE}" | grep -oE '[0-9]+-[0-9]+-[0-9]+$$' | tr '-' '.')
-      if [[ -z "$${VERSION}" ]]; then
-        echo "Failed to extract version from $${BASE_IMAGE}"
-        exit 1
-      fi
-
-      gcloud storage cp \
-        gs://cos-nvidia-gpu-drivers/NVIDIA-Linux-x86_64-595.58.03.run \
-        "gs://cos-tools/$${VERSION}/lakitu/gpu_driver_versions.bin" \
-        "gs://cos-tools/$${VERSION}/lakitu/nvidia-drivers-595.58.03.tgz" \
-        ./launcher/image/
-
-- name: 'gcr.io/cloud-builders/gcloud'
-  id: DebugVgImageBuild
-  waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary', 'DownloadGpuDrivers', 'DownloadGoogleRoots']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-vg-debug-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'OUTPUT_IMAGE_FAMILY=${_OUTPUT_IMAGE_FAMILY}-vg'
-  - 'BUCKET_NAME=$_BUCKET_NAME'
-  - 'BASE_IMAGE_PROJECT=$_BASE_IMAGE_PROJECT'
-  - 'VG_BASE_IMAGE=$_VG_BASE_IMAGE'
-  script: |
-    #!/usr/bin/env bash
-    set -exuo pipefail
-
-    echo "building the debug image: ${OUTPUT_IMAGE_NAME} with the base image: ${VG_BASE_IMAGE}"
-    gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=launcher/image/cloudbuild.yaml \
-    --region us-west1 \
-    --substitutions \
-    _BASE_IMAGE=${VG_BASE_IMAGE},\
-    _BASE_IMAGE_PROJECT=${BASE_IMAGE_PROJECT},\
-    _OUTPUT_IMAGE_FAMILY=${OUTPUT_IMAGE_FAMILY}-debug,\
-    _OUTPUT_IMAGE_NAME=${OUTPUT_IMAGE_NAME},\
-    _IMAGE_ENV=debug,\
-    _CS_LICENSE=projects/confidential-space-images/global/licenses/confidential-space-debug,\
-    _BUCKET_NAME=${BUCKET_NAME},\
-    _PRELOAD_SCRIPT=vgpreload.sh,\
-    _OEM_SIZE=900M,\
-    _DISK_SIZE_GB=12
-    exit
-
-- name: 'gcr.io/cloud-builders/gcloud'
-  id: HardenedVgImageBuild
-  waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary', 'DownloadGpuDrivers', 'DownloadGoogleRoots']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-vg-hardened-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'OUTPUT_IMAGE_FAMILY=${_OUTPUT_IMAGE_FAMILY}-vg'
-  - 'BUCKET_NAME=$_BUCKET_NAME'
-  - 'SHORT_SHA=${SHORT_SHA}'
-  - 'BASE_IMAGE_PROJECT=$_BASE_IMAGE_PROJECT'
-  - 'VG_BASE_IMAGE=$_VG_BASE_IMAGE'
-  script: |
-    #!/usr/bin/env bash
-    set -exuo pipefail
-
-    echo "building the hardened image: ${OUTPUT_IMAGE_NAME} with the base image: ${VG_BASE_IMAGE}"
-    gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=launcher/image/cloudbuild.yaml \
-    --region us-west1 \
-    --substitutions \
-    _BASE_IMAGE=${VG_BASE_IMAGE},\
-    _BASE_IMAGE_PROJECT=${BASE_IMAGE_PROJECT},\
-    _OUTPUT_IMAGE_FAMILY=${OUTPUT_IMAGE_FAMILY},\
-    _OUTPUT_IMAGE_NAME=${OUTPUT_IMAGE_NAME},\
-    _IMAGE_ENV=hardened,\
-    _CS_LICENSE=projects/confidential-space-images/global/licenses/confidential-space,\
-    _BUCKET_NAME=${BUCKET_NAME},\
-    _PRELOAD_SCRIPT=vgpreload.sh,\
-    _OEM_SIZE=900M,\
-    _DISK_SIZE_GB=12
-    exit
-
 - name: 'gcr.io/cloud-builders/gcloud'
   id: DebugImageBuild
-  waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary', 'DownloadGpuDrivers', 'DownloadGoogleRoots']
+  waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary', 'DownloadGoogleRoots']
   env:
   - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-debug-${_OUTPUT_IMAGE_SUFFIX}'
   - 'OUTPUT_IMAGE_FAMILY=${_OUTPUT_IMAGE_FAMILY}'
@@ -206,7 +105,7 @@ steps:
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: HardenedImageBuild
-  waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary', 'DownloadGpuDrivers', 'DownloadGoogleRoots']
+  waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary', 'DownloadGoogleRoots']
   env:
   - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}'
   - 'OUTPUT_IMAGE_FAMILY=${_OUTPUT_IMAGE_FAMILY}'
@@ -236,7 +135,7 @@ steps:
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: DebugBcImageBuildAndExport
-  waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary', 'DownloadGpuDrivers', 'DownloadGoogleRoots']
+  waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary', 'DownloadGoogleRoots']
   env:
   - 'BC_BASE_IMAGE=$_BC_DEBUG_IMAGE'
   - 'BC_BASE_IMAGE_PROJECT=$_BC_BASE_IMAGE_PROJECT'
@@ -267,7 +166,7 @@ steps:
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: HardenedBcImageBuildAndExport
-  waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary', 'DownloadGpuDrivers', 'DownloadGoogleRoots']
+  waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary', 'DownloadGoogleRoots']
   env:
   - 'BC_BASE_IMAGE=$_BC_BASE_IMAGE'
   - 'BC_BASE_IMAGE_PROJECT=$_BC_BASE_IMAGE_PROJECT'
@@ -352,21 +251,6 @@ steps:
         }
       }'
 
-
-- name: 'gcr.io/cloud-builders/gcloud'
-  id: KeymanagerTests
-  waitFor: ['DebugVgImageBuild']
-  env:
-  - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-vg-debug-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'PROJECT_ID=$PROJECT_ID'
-  script: |
-    #!/usr/bin/env bash
-
-    cd launcher/image/test
-    echo "running keymanager tests on ${OUTPUT_IMAGE_NAME}"
-    gcloud builds submit --polling-interval=$_POLLING_INTERVAL --config=test_keymanager_cloudbuild.yaml --region us-west1 \
-      --substitutions _IMAGE_NAME=${OUTPUT_IMAGE_NAME},_IMAGE_PROJECT=${PROJECT_ID}
-    exit
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: DebugImageTests
@@ -659,51 +543,6 @@ steps:
   - 'debug'
   - 'gs://${PROJECT_ID}-rims/${_OUTPUT_IMAGE_PREFIX}-debug-${_OUTPUT_IMAGE_SUFFIX}'
   - 'sha256'
-
-- name: 'gcr.io/cloud-builders/gcloud'
-  id: ExportVgHardenedImage
-  waitFor: ['HardenedVgImageBuild']
-  entrypoint: 'gcloud'
-  args: ['compute', 'images', 'export',
-         '--destination-uri=gs://${PROJECT_ID}_raw-images/${_OUTPUT_IMAGE_PREFIX}-vg-hardened-${_OUTPUT_IMAGE_SUFFIX}.tar.gz',
-         '--image=${_OUTPUT_IMAGE_PREFIX}-vg-hardened-${_OUTPUT_IMAGE_SUFFIX}',
-         '--project=${PROJECT_ID}',
-         '--zone=us-west1-a']
-
-- name: 'gcr.io/cloud-builders/gcloud'
-  id: ExportVgDebugImage
-  waitFor: ['DebugVgImageBuild']
-  entrypoint: 'gcloud'
-  args: ['compute', 'images', 'export',
-          '--destination-uri=gs://${PROJECT_ID}_raw-images/${_OUTPUT_IMAGE_PREFIX}-vg-debug-${_OUTPUT_IMAGE_SUFFIX}.tar.gz',
-          '--image=${_OUTPUT_IMAGE_PREFIX}-vg-debug-${_OUTPUT_IMAGE_SUFFIX}',
-          '--project=${PROJECT_ID}',
-          '--zone=us-west1-a']
-
-- name: 'us-docker.pkg.dev/confidential-space-images-dev/cs-tools/measure@sha256:dae4766caef4a93c52736feb829bf2c505b7d48ce44d0ecb33e77d61bb4be888'
-  id: MeasureVgHardenedImage
-  waitFor: ['ExportVgHardenedImage']
-  entrypoint: 'bash'
-  args:
-  - 'launcher/image/measure/measure_and_upload.sh'
-  - 'gs://${PROJECT_ID}_raw-images/${_OUTPUT_IMAGE_PREFIX}-vg-hardened-${_OUTPUT_IMAGE_SUFFIX}.tar.gz'
-  - 'hardened'
-  - 'gs://${PROJECT_ID}-rims/${_OUTPUT_IMAGE_PREFIX}-vg-hardened-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'sha256'
-  - 'sha384'
-
-
-- name: 'us-docker.pkg.dev/confidential-space-images-dev/cs-tools/measure@sha256:dae4766caef4a93c52736feb829bf2c505b7d48ce44d0ecb33e77d61bb4be888'
-  id: MeasureVgDebugImage
-  waitFor: ['ExportVgDebugImage']
-  entrypoint: 'bash'
-  args:
-  - 'launcher/image/measure/measure_and_upload.sh'
-  - 'gs://${PROJECT_ID}_raw-images/${_OUTPUT_IMAGE_PREFIX}-vg-debug-${_OUTPUT_IMAGE_SUFFIX}.tar.gz'
-  - 'debug'
-  - 'gs://${PROJECT_ID}-rims/${_OUTPUT_IMAGE_PREFIX}-vg-debug-${_OUTPUT_IMAGE_SUFFIX}'
-  - 'sha256'
-  - 'sha384'
 
 options:
   automapSubstitutions: true
