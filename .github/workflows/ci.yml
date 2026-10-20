@@ -43,7 +43,6 @@ jobs:
       # Pinned to commit SHA to satisfy blanket security policy (zizmor)
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          submodules: recursive
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -56,24 +55,14 @@ jobs:
           version: ${{ env.PROTOC_VERSION }}
       - name: Install protoc-gen-go
         run: go install google.golang.org/protobuf/cmd/protoc-gen-go@${{ env.PROTOC_GEN_GO_VERSION }}
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # master
-        with:
-          toolchain: stable
       - name: Install Build Dependencies (Linux)
-        run: sudo DEBIAN_FRONTEND=noninteractive apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout="30" && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -o Acquire::Retries=3 -o Acquire::http::Timeout="30" cmake clang pkg-config libssl-dev
-      - name: Install bindgen-cli
-        run: cargo install bindgen-cli
-      - name: Build KeyManager Rust library
-        run: |
-          cd keymanager
-          cargo build --release --locked
+        run: sudo DEBIAN_FRONTEND=noninteractive apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout="30" && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -o Acquire::Retries=3 -o Acquire::http::Timeout="30" libssl-dev
       - name: Check Protobuf Generation
         run: |
           go generate ./... ./agent/... ./cmd/... ./launcher/... ./verifier/...
           git diff -G'^[^/]' --exit-code
       - name: Build all modules
-        run: go build -v ./... ./agent/... ./cmd/... ./keymanager/... ./launcher/image/measure/... ./verifier/...
+        run: go build -v ./... ./agent/... ./cmd/... ./launcher/image/measure/... ./verifier/...
       - name: Build launcher module
         run: go build -v -ldflags="-extldflags=-Wl,-z,lazy" ./launcher/...
       - name: Run all tests in launcher and agent to capture potential data race
@@ -83,7 +72,7 @@ jobs:
           go test -c -ldflags="-extldflags=-Wl,-z,lazy" -o /tmp/launcher.test ./launcher/
           sudo CS_NETNS_TEST_REQUIRED=1 /tmp/launcher.test -test.run '^TestOpenPortsNetns$' -test.v -test.timeout 5m
       - name: Test all modules
-        run: go test -v ./... ./agent/... ./cmd/... ./keymanager/... ./launcher/image/measure/... ./verifier/...
+        run: go test -v ./... ./agent/... ./cmd/... ./launcher/image/measure/... ./verifier/...
 
   test-linux-386:
     timeout-minutes: 12
@@ -158,46 +147,6 @@ jobs:
             --timeout 5m
             ./... ./agent/... ./cmd/... ./launcher/... ./launcher/image/measure/...
 
-  lint-keymanager:
-    timeout-minutes: 8
-    name: Lint KeyManager
-    runs-on: ubuntu-latest
-    steps:
-      # Pinned to commit SHA to satisfy blanket security policy (zizmor)
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          submodules: recursive
-          persist-credentials: false
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version: ${{ env.GO_VERSION }}
-          cache: false
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # master
-        with:
-          toolchain: stable
-      - name: Install Build Dependencies (Linux)
-        run: sudo DEBIAN_FRONTEND=noninteractive apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout="30" && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -o Acquire::Retries=3 -o Acquire::http::Timeout="30" cmake clang pkg-config libssl-dev
-      - name: Install bindgen-cli
-        run: cargo install bindgen-cli
-      - name: Build KeyManager Rust library
-        run: |
-          cd keymanager
-          cargo build --release --locked
-      # Pinned to commit SHA to satisfy blanket security policy (zizmor)
-      - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
-        with:
-          version: ${{ env.GOLANGCI_LINT_VERSION }}
-          working-directory: ./keymanager
-          args: >
-            -D errcheck
-            -E misspell
-            -E revive
-            --max-same-issues=0
-            --max-issues-per-linter=0
-            --timeout 5m
-
   lintc:
     timeout-minutes: 8
     name: Lint CGO (ubuntu-latest)
@@ -206,24 +155,13 @@ jobs:
       # Pinned to commit SHA to satisfy blanket security policy (zizmor)
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          submodules: recursive
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: false
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # master
-        with:
-          toolchain: stable
       - name: Install Build Dependencies (Linux)
-        run: sudo DEBIAN_FRONTEND=noninteractive apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout="30" && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -o Acquire::Retries=3 -o Acquire::http::Timeout="30" cmake clang pkg-config libssl-dev
-      - name: Install bindgen-cli
-        run: cargo install bindgen-cli
-      - name: Build KeyManager Rust library
-        run: |
-          cd keymanager
-          cargo build --release --locked
+        run: sudo DEBIAN_FRONTEND=noninteractive apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout="30" && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -o Acquire::Retries=3 -o Acquire::http::Timeout="30" clang libssl-dev
       - name: Check for CGO Warnings (gcc)
         run: CGO_CFLAGS=-Werror CC=gcc go build ./...
       - name: Check for CGO Warnings (clang)
@@ -262,7 +200,7 @@ jobs:
   ci-status:
     name: CI Status
     runs-on: ubuntu-latest
-    needs: [test-linux-amd64, test-linux-386, test-macos, lint, lint-keymanager, lintc, keep-sorted]
+    needs: [test-linux-amd64, test-linux-386, test-macos, lint, lintc, keep-sorted]
     if: always()
     steps:
       - name: Check Status
@@ -271,7 +209,6 @@ jobs:
                 "${{ needs.test-linux-386.result }}" != "success" || \
                 "${{ needs.test-macos.result }}" != "success" || \
                 "${{ needs.lint.result }}" != "success" || \
-                "${{ needs.lint-keymanager.result }}" != "success" || \
                 "${{ needs.lintc.result }}" != "success" || \
                 "${{ needs.keep-sorted.result }}" != "success" ]]; then
             echo "CI checks failed"
