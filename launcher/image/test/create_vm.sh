@@ -49,7 +49,7 @@ create_vm() {
 
   # If given a comma-separated list of candidate zones, pick one with available capacity.
   if [[ "$ZONE" == *,* ]]; then
-    ZONE=$(bash pick_zone.sh "$MACHINE_TYPE" "$ZONE")
+    ZONE=$(bash pick_zone.sh "$MACHINE_TYPE" "$ZONE" "$GPU_TYPE" "$GPU_COUNT")
   fi
 
   FAKE_VERIFIER="test-fake-verifier=${USE_FAKE_VERIFIER}"

@@ -9,6 +9,11 @@ substitutions:
   # The create step uses the capacity advisor to select one of these zones.
   # Later steps look up the chosen zone by VM name.
   '_RTX_PRO_6000_ZONES': 'us-central1-b,us-central1-c,us-central1-f,us-east1-b,us-east1-d,us-east4-c,us-east5-a,us-east5-b,us-east5-c,us-south1-a,us-south1-b,us-west1-a,us-west1-b,us-west1-c,us-west3-a,us-west4-a,us-west4-c'
+  # T4 GPU capacity often runs out in a single zone or region.
+  # These zones offer n1-standard-4 with T4 GPUs and have quota.
+  # The create step uses the capacity advisor to select one of these zones.
+  # Later steps look up the chosen zone by VM name.
+  '_T4_ZONES': 'us-central1-a,us-central1-b,us-central1-f,us-east1-c,us-east1-d,us-east4-b,us-west1-a,us-west1-b,us-west4-a,us-west4-b'
   '_WORKLOAD_IMAGE': 'us-west1-docker.pkg.dev/confidential-space-images-dev/cs-integ-test-images/gpu/cuda-vector-add:latest'
 steps:
 - name: 'gcr.io/cloud-builders/gcloud'
@@ -21,7 +26,7 @@ steps:
           '-p', '${_IMAGE_PROJECT}',
           '-m', 'tee-image-reference=${_WORKLOAD_IMAGE},tee-container-log-redirect=true,tee-install-gpu-driver=true',
           '-n', '${_VM_NAME_PREFIX}-${BUILD_ID}-unsup',
-          '-z', 'us-central1',
+          '-z', '${_T4_ZONES}',
           '-g', 'nvidia-tesla-t4',
           '-a', '1',
           '-c', 'NONE'
