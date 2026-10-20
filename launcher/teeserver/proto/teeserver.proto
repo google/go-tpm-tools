@@ -2,13 +2,15 @@ syntax = "proto3";
 
 package teeserver;
 
-import "keymanager/km_common/proto/crypto_types.proto";
-
 option go_package = "github.com/google/go-tpm-tools/launcher/teeserver/proto/gen/teeserver";
+
+message KeyHandle {
+  string handle = 1;
+}
 
 message GetKeyEndorsementRequest {
   bytes challenge = 1;
-  keymanager.KeyHandle key_handle = 2;
+  KeyHandle key_handle = 2;
   bool request_acpi_data = 3;
 }
 

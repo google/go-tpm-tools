@@ -15,13 +15,10 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	// Bootstrap environment flags to prevent duplicate proto registration panics.
-	_ "github.com/google/go-tpm-tools/launcher/teeserver/envinit"
 
 	gecel "github.com/google/go-eventlog/cel"
 	"github.com/google/go-tpm-tools/agent"
 
-	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 
 	bmsaiagentpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/bmsaiagent"
@@ -110,19 +107,6 @@ func (f fakeAttestationAgent) Close() error {
 
 func (f fakeAttestationAgent) AttestHost(_ context.Context, _ []byte) ([]byte, error) {
 	return nil, fmt.Errorf("AttestHost unimplemented")
-}
-
-// Mock for KeyClaimsProvider interface
-type mockClaimsProvider struct {
-	claims map[keymanager.KeyType]*keymanager.KeyClaims
-	err    error
-}
-
-func (m *mockClaimsProvider) GetKeyClaims(_ context.Context, _ string, kt keymanager.KeyType) (*keymanager.KeyClaims, error) {
-	if m.err != nil {
-		return nil, m.err
-	}
-	return m.claims[kt], nil
 }
 
 type fakeKEMAttester struct {
@@ -1054,9 +1038,7 @@ func TestGetKeyEndorsement(t *testing.T) {
 	tests := []struct {
 		name             string
 		reqBody          interface{}
-		enableKM         bool
 		bcMode           bool
-		claimsErr        error
 		kemAttestErr     error
 		bindingAttestErr error
 		wantStatus       int
@@ -1068,7 +1050,7 @@ func TestGetKeyEndorsement(t *testing.T) {
 				"challenge":  testChallenge,
 				"key_handle": map[string]string{"handle": testHandle},
 			},
-			enableKM:   true,
+			bcMode:     true,
 			wantStatus: http.StatusOK,
 		},
 		{
@@ -1078,27 +1060,17 @@ func TestGetKeyEndorsement(t *testing.T) {
 				"key_handle":        map[string]string{"handle": testHandle},
 				"request_acpi_data": true,
 			},
-			enableKM:   true,
-			wantStatus: http.StatusOK,
-		},
-		{
-			name: "key manager disabled",
-			reqBody: map[string]interface{}{
-				"challenge":  testChallenge,
-				"key_handle": map[string]string{"handle": testHandle},
-			},
-			enableKM:   false,
-			wantStatus: http.StatusForbidden,
-		},
-		{
-			name: "bc mode without key manager",
-			reqBody: map[string]interface{}{
-				"challenge":  testChallenge,
-				"key_handle": map[string]string{"handle": testHandle},
-			},
-			enableKM:   false,
 			bcMode:     true,
 			wantStatus: http.StatusOK,
+		},
+		{
+			name: "not bc mode",
+			reqBody: map[string]interface{}{
+				"challenge":  testChallenge,
+				"key_handle": map[string]string{"handle": testHandle},
+			},
+			bcMode:     false,
+			wantStatus: http.StatusForbidden,
 		},
 		{
 			name: "missing key handle",
@@ -1106,7 +1078,7 @@ func TestGetKeyEndorsement(t *testing.T) {
 				"challenge":  testChallenge,
 				"key_handle": map[string]string{"handle": ""},
 			},
-			enableKM:   true,
+			bcMode:     true,
 			wantStatus: http.StatusBadRequest,
 		},
 		{
@@ -1114,7 +1086,7 @@ func TestGetKeyEndorsement(t *testing.T) {
 			reqBody: map[string]interface{}{
 				"challenge": testChallenge,
 			},
-			enableKM:   true,
+			bcMode:     true,
 			wantStatus: http.StatusBadRequest,
 		},
 		{
@@ -1123,7 +1095,7 @@ func TestGetKeyEndorsement(t *testing.T) {
 				"challenge":  testChallenge,
 				"key_handle": map[string]string{"handle": testHandle},
 			},
-			enableKM:         true,
+			bcMode:           true,
 			bindingAttestErr: fmt.Errorf("binding key tpm failure"),
 			wantStatus:       http.StatusInternalServerError,
 		},
@@ -1133,7 +1105,7 @@ func TestGetKeyEndorsement(t *testing.T) {
 				"challenge":  testChallenge,
 				"key_handle": map[string]string{"handle": testHandle},
 			},
-			enableKM:     true,
+			bcMode:       true,
 			kemAttestErr: fmt.Errorf("kem key tpm failure"),
 			wantStatus:   http.StatusInternalServerError,
 		},
@@ -1141,16 +1113,6 @@ func TestGetKeyEndorsement(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var mClaims *mockClaimsProvider
-			if tt.enableKM {
-				mClaims = &mockClaimsProvider{
-					err: tt.claimsErr,
-					claims: map[keymanager.KeyType]*keymanager.KeyClaims{
-						keymanager.KeyType_KEY_TYPE_VM_PROTECTION_KEY:     {Claims: &keymanager.KeyClaims_VmKeyClaims{}},
-						keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING: {Claims: &keymanager.KeyClaims_VmBindingClaims{}},
-					},
-				}
-			}
 			mAgent := &fakeAttestationAgent{
 				attestationEvidenceFunc: func(_ context.Context, _, b2 []byte) (*attestationpb.VmAttestation, error) {
 					return &attestationpb.VmAttestation{ExtraData: b2}, nil
@@ -1195,9 +1157,6 @@ func TestGetKeyEndorsement(t *testing.T) {
 				kemAttester:        mKEM,
 				bindingKeyAttester: mBinding,
 			}
-			if tt.enableKM {
-				handler.keyClaimsProvider = mClaims
-			}
 			body, _ := json.Marshal(tt.reqBody)
 			req := httptest.NewRequest(http.MethodPost, endorsementEndpoint, bytes.NewBuffer(body))
 			rr := httptest.NewRecorder()
@@ -1226,91 +1185,25 @@ func TestGetKeyEndorsement(t *testing.T) {
 	}
 }
 
-func TestInitKEMAttester(t *testing.T) {
-	mClaims := &mockClaimsProvider{}
-	mAgent := &fakeAttestationAgent{}
-
-	tests := []struct {
-		name       string
-		bcMode     bool
-		verifyType func(t *testing.T, attester KeyEndorsementAttester)
-	}{
-		{
-			name:   "local KEM attester",
-			bcMode: false,
-			verifyType: func(t *testing.T, attester KeyEndorsementAttester) {
-				if _, ok := attester.(*localKEMAttester); !ok {
-					t.Errorf("returned %T, want *localKEMAttester", attester)
-				}
-			},
-		},
-		{
-			name:   "remote KEM attester",
-			bcMode: true,
-			verifyType: func(t *testing.T, attester KeyEndorsementAttester) {
-				if _, ok := attester.(*remoteKEMAttester); !ok {
-					t.Errorf("returned %T, want *remoteKEMAttester", attester)
-				}
-			},
-		},
+func TestNewKPSKEMAttester(t *testing.T) {
+	attester, err := newKPSKEMAttester()
+	if err != nil {
+		t.Fatalf("newKPSKEMAttester() failed: %v", err)
 	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			attester, err := initKEMAttester(tc.bcMode, mClaims, mAgent)
-			if err != nil {
-				t.Fatalf("initKEMAttester(%t) failed: %v", tc.bcMode, err)
-			}
-			if attester == nil {
-				t.Fatal("returned nil attester")
-			}
-			defer attester.Close()
-			tc.verifyType(t, attester)
-		})
+	defer attester.Close()
+	if _, ok := attester.(*remoteKEMAttester); !ok {
+		t.Errorf("returned %T, want *remoteKEMAttester", attester)
 	}
 }
 
-func TestInitBindingKeyAttester(t *testing.T) {
-	mClaims := &mockClaimsProvider{}
-	mAgent := &fakeAttestationAgent{}
-
-	tests := []struct {
-		name       string
-		bcMode     bool
-		verifyType func(t *testing.T, attester KeyEndorsementAttester)
-	}{
-		{
-			name:   "local binding key attester",
-			bcMode: false,
-			verifyType: func(t *testing.T, attester KeyEndorsementAttester) {
-				if _, ok := attester.(*localBindingKeyAttester); !ok {
-					t.Errorf("returned %T, want *localBindingKeyAttester", attester)
-				}
-			},
-		},
-		{
-			name:   "remote binding key attester",
-			bcMode: true,
-			verifyType: func(t *testing.T, attester KeyEndorsementAttester) {
-				if _, ok := attester.(*bcBindingKeyAttester); !ok {
-					t.Errorf("returned %T, want *bcBindingKeyAttester", attester)
-				}
-			},
-		},
+func TestNewWSDBindingKeyAttester(t *testing.T) {
+	attester, err := newWSDBindingKeyAttester(&fakeAttestationAgent{})
+	if err != nil {
+		t.Fatalf("newWSDBindingKeyAttester() failed: %v", err)
 	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			attester, err := initBindingKeyAttester(tc.bcMode, mClaims, mAgent)
-			if err != nil {
-				t.Fatalf("initBindingKeyAttester(%t) failed: %v", tc.bcMode, err)
-			}
-			if attester == nil {
-				t.Fatal("returned nil attester")
-			}
-			defer attester.Close()
-			tc.verifyType(t, attester)
-		})
+	defer attester.Close()
+	if _, ok := attester.(*bcBindingKeyAttester); !ok {
+		t.Errorf("returned %T, want *bcBindingKeyAttester", attester)
 	}
 }
 
@@ -1330,7 +1223,6 @@ func TestTeeServer_Shutdown(t *testing.T) {
 		false,
 		false,
 		AttestClients{},
-		nil,
 	)
 	if err != nil {
 		t.Fatalf("New() err = %v, want nil", err)
