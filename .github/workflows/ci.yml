@@ -78,6 +78,10 @@ jobs:
         run: go build -v -ldflags="-extldflags=-Wl,-z,lazy" ./launcher/...
       - name: Run all tests in launcher and agent to capture potential data race
         run: go test -v -ldflags="-extldflags=-Wl,-z,lazy" -race ./launcher/... ./agent/...
+      - name: Run launcher network namespace test as root
+        run: |
+          go test -c -ldflags="-extldflags=-Wl,-z,lazy" -o /tmp/launcher.test ./launcher/
+          sudo CS_NETNS_TEST_REQUIRED=1 /tmp/launcher.test -test.run '^TestOpenPortsNetns$' -test.v -test.timeout 5m
       - name: Test all modules
         run: go test -v ./... ./agent/... ./cmd/... ./keymanager/... ./launcher/image/measure/... ./verifier/... -skip='TestHwAttestationPass|TestHardwareAttestationPass'
 
