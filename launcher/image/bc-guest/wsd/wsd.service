@@ -9,6 +9,12 @@ Type=simple
 Restart=always
 
 ExecStart=/usr/share/oem/wsd/wsd_runner.sh
+# Type=simple counts the unit as started as soon as wsd_runner.sh is forked.
+# Hold the start job until the agent has created its sockets, so units ordered
+# After=wsd.service (container-runner.service) can rely on them. Give up early
+# if the main process exits.
+ExecStartPost=/bin/bash -c 'for _ in $$(seq 1 600); do [[ -S /tmp/container_launcher/kmaserver.sock && -S /tmp/container_launcher/kmaserver-grpc.sock ]] && exit 0; kill -0 "$$MAINPID" 2>/dev/null || { echo "wsd exited before creating its sockets" >&2; exit 1; }; sleep 0.1; done; echo "wsd sockets not created after 60s" >&2; exit 1'
+TimeoutStartSec=90
 ExecStop=/usr/share/oem/wsd/exit_script.sh
 
 [Install]
