@@ -88,11 +88,16 @@ steps:
 - name: 'gcr.io/cloud-builders/gcloud'
   id: DownloadExpBinary
   waitFor: ['-']
-  entrypoint: 'gcloud'
-  args: ['storage',
-          'cp',
-          'gs://confidential-space-images_third-party/confidential_space_experiments',
-          './launcher/image/confidential_space_experiments']
+  env:
+  # To update: upload the binary as confidential_space_experiments_<sha256> and change this value.
+  - 'EXPERIMENTS_SHA256=2d36e5a85878e52a97140098e7be146f5703fbe1f1994dbfc5bf77746065a95e'
+  script: |
+    #!/usr/bin/env bash
+    set -euo pipefail
+    gcloud storage cp \
+      "gs://confidential-space-images_third-party/confidential_space_experiments_${EXPERIMENTS_SHA256}" \
+      launcher/image/confidential_space_experiments
+    echo "${EXPERIMENTS_SHA256}  launcher/image/confidential_space_experiments" | sha256sum -c -
 
 # make sure the directory matches the base image
 - name: 'gcr.io/cloud-builders/gcloud'
