@@ -60,9 +60,13 @@ steps:
       cd keymanager
       cargo build --release --locked
 
-# `golang:1.26-bookworm` is used for compiling the launcher.
+# `golang:1.26.10-bookworm` is used for compiling the launcher. Keep the patch
+# version pinned (and in sync with the `toolchain` line in go.work) so that the
+# Go version in an image is deterministic; go1.26.10 is the first 1.26 release
+# that distrusts the compromised emSign intermediates (GO-2026-6809).
+# The digest is the multi-arch index digest of the tag as of 2026-10-21.
 # We statically link libstdc++ and libgcc to support running on COS 125.
-- name: golang:1.26-bookworm
+- name: golang:1.26.10-bookworm@sha256:632dff7351799a5a9954a48dc06670ade72ee44e8c351cdc0e5a57af2fea21af
   id: LauncherCompile
   waitFor: ['KeyManagerCompile']
   entrypoint: /bin/bash
@@ -77,6 +81,8 @@ steps:
       cd launcher/launcher
       export CGO_LDFLAGS="-L/workspace/keymanager/target/release"
       export GOTOOLCHAIN=auto
+      # Record the toolchain actually used (after any GOTOOLCHAIN switch).
+      go version
       go build -o ../image/launcher -ldflags="-extldflags '-Wl,-z,lazy -static-libstdc++ -static-libgcc' -X 'main.BuildCommit=${SHORT_SHA}'"
 
 - name: 'gcr.io/cloud-builders/gcloud'

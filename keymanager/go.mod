@@ -2,7 +2,7 @@ module github.com/google/go-tpm-tools/keymanager
 
 go 1.26
 
-toolchain go1.26.5
+toolchain go1.26.10
 
 require (
 	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.11-20260209202127-80ab13bee0bf.1

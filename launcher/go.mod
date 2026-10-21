@@ -2,6 +2,8 @@ module github.com/google/go-tpm-tools/launcher
 
 go 1.26.6
 
+toolchain go1.26.10
+
 require (
 	cloud.google.com/go/auth v0.20.0
 	cloud.google.com/go/compute/metadata v0.9.0
