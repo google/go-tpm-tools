@@ -158,6 +158,9 @@ func TestHwAttestationPass(t *testing.T) {
 				}
 				return
 			}
+			if err == nil {
+				t.Fatalf("THIS LINE IS NOT REACHABLE!!!")
+			}
 			ms, err := runVerify(attestation, nonceBytes, teeNonceBytes)
 			if err != nil {
 				t.Fatalf("runVerify() failed: %v", err)
