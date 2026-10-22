@@ -321,4 +321,9 @@ options:
   dynamic_substitutions: true
   pool:
     name: 'projects/confidential-space-images-dev/locations/us-west1/workerPools/cs-image-build-vpc'
+  # Give each step its own gcloud config directory. Steps that run gcloud at
+  # the same time otherwise share one config database and can fail with
+  # "database is locked".
+  env:
+  - 'CLOUDSDK_CONFIG=/tmp/gcloud'
 
