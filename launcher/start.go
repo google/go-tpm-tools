@@ -18,8 +18,6 @@ import (
 	"github.com/google/go-tpm-tools/agent"
 	"github.com/google/go-tpm-tools/agent/device"
 	"github.com/google/go-tpm-tools/client"
-	kmcommonpb "github.com/google/go-tpm-tools/keymanager/km_common/proto"
-	workloadservice "github.com/google/go-tpm-tools/keymanager/workload_service"
 	"github.com/google/go-tpm-tools/launcher/internal/gpu"
 	"github.com/google/go-tpm-tools/launcher/internal/gpumanager"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
@@ -160,22 +158,6 @@ func StartLauncher(ctx context.Context, launchSpec spec.LaunchSpec, logger loggi
 		return err
 	}
 
-	var keyClaimsProvider workloadservice.KeyClaimsProvider
-	if launchSpec.Experiments.EnableKeyManager {
-		logger.Info("EnableKeyManager experiment is enabled: initializing KeyManager server.")
-		kmServer, err := workloadservice.New(
-			ctx,
-			path.Join(launcherfile.HostTmpPath, keyManagerSocket),
-			kmcommonpb.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED,
-		)
-		if err != nil {
-			return fmt.Errorf("failed to create KeyManager server: %w", err)
-		}
-		go func() { _ = kmServer.Serve() }()
-		defer kmServer.Shutdown(ctx)
-		keyClaimsProvider = kmServer
-	}
-
 	logger.Info("Initializing TEE server.")
 	teeSocket, err := listenUnixSocket(path.Join(launcherfile.HostTmpPath, teeServerSocket))
 	if err != nil {
@@ -189,7 +171,6 @@ func StartLauncher(ctx context.Context, launchSpec spec.LaunchSpec, logger loggi
 		launchSpec.Experiments.BcMode,
 		launchSpec.Experiments.EnableHostAttestation,
 		attestClients,
-		keyClaimsProvider,
 	)
 	if err != nil {
 		teeSocket.Close()

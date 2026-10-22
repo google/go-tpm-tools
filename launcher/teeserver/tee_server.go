@@ -14,7 +14,6 @@ import (
 
 	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
 	"github.com/google/go-tpm-tools/agent"
-	wsd "github.com/google/go-tpm-tools/keymanager/workload_service"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	tspb "github.com/google/go-tpm-tools/launcher/teeserver/proto/gen/teeserver"
 	"github.com/google/go-tpm-tools/verifier"
@@ -63,7 +62,6 @@ type attestHandler struct {
 	bcMode                bool
 	enableHostAttestation bool
 	clients               AttestClients
-	keyClaimsProvider     wsd.KeyClaimsProvider
 	kemAttester           KeyEndorsementAttester
 	bindingKeyAttester    KeyEndorsementAttester
 }
@@ -86,43 +84,41 @@ func New(
 	bcMode bool,
 	enableHostAttestation bool,
 	clients AttestClients,
-	keyClaimsProvider wsd.KeyClaimsProvider,
 ) (*TeeServer, error) {
-	kemAttester, err := initKEMAttester(bcMode, keyClaimsProvider, a)
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize KEM attester: %v", err)
+	server := &TeeServer{netListener: nl}
+	if bcMode {
+		kemAttester, err := newKPSKEMAttester()
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize KEM attester: %v", err)
+		}
+
+		bindingKeyAttester, err := newWSDBindingKeyAttester(a)
+		if err != nil {
+			_ = kemAttester.Close()
+			return nil, fmt.Errorf("failed to initialize binding key attester: %v", err)
+		}
+		server.kemAttester = kemAttester
+		server.bindingKeyAttester = bindingKeyAttester
 	}
 
-	bindingKeyAttester, err := initBindingKeyAttester(bcMode, keyClaimsProvider, a)
-	if err != nil {
-		_ = kemAttester.Close()
-		return nil, fmt.Errorf("failed to initialize binding key attester: %v", err)
+	server.server = &http.Server{
+		Handler: (&attestHandler{
+			ctx:                   ctx,
+			attestAgent:           a,
+			logger:                logger,
+			bcMode:                bcMode,
+			enableHostAttestation: enableHostAttestation,
+			clients:               clients,
+			kemAttester:           server.kemAttester,
+			bindingKeyAttester:    server.bindingKeyAttester,
+		}).Handler(),
 	}
-
-	return &TeeServer{
-		netListener:        nl,
-		kemAttester:        kemAttester,
-		bindingKeyAttester: bindingKeyAttester,
-		server: &http.Server{
-			Handler: (&attestHandler{
-				ctx:                   ctx,
-				attestAgent:           a,
-				logger:                logger,
-				bcMode:                bcMode,
-				enableHostAttestation: enableHostAttestation,
-				clients:               clients,
-				keyClaimsProvider:     keyClaimsProvider,
-				kemAttester:           kemAttester,
-				bindingKeyAttester:    bindingKeyAttester,
-			}).Handler(),
-		},
-	}, nil
+	return server, nil
 }
 
-func initKEMAttester(bcMode bool, keyClaimsProvider wsd.KeyClaimsProvider, a agent.AttestationAgent) (KeyEndorsementAttester, error) {
-	if !bcMode {
-		return newLocalKEMAttester(keyClaimsProvider, a), nil
-	}
+// newKPSKEMAttester connects to the attestation service of the Key Protection
+// Service VM.
+func newKPSKEMAttester() (KeyEndorsementAttester, error) {
 	conn, err := grpc.NewClient(kpsAttestationServiceAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize remote KEM attester: %v", err)
@@ -135,11 +131,9 @@ func initKEMAttester(bcMode bool, keyClaimsProvider wsd.KeyClaimsProvider, a age
 	return newRemoteKEMAttester(conn), nil
 }
 
-func initBindingKeyAttester(bcMode bool, keyClaimsProvider wsd.KeyClaimsProvider, a agent.AttestationAgent) (KeyEndorsementAttester, error) {
-	if !bcMode {
-		return newLocalBindingKeyAttester(keyClaimsProvider, a), nil
-	}
-
+// newWSDBindingKeyAttester connects to the workload service daemon over its
+// Unix domain socket.
+func newWSDBindingKeyAttester(a agent.AttestationAgent) (KeyEndorsementAttester, error) {
 	conn, err := grpc.NewClient(
 		"unix://"+wsdSocket,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
@@ -349,8 +343,8 @@ func filterVMAttestationFields(att *attestationpb.VmAttestation, mask *fieldmask
 
 // getKeyEndorsement retrieves the attestation evidence with KEM and binding key claims.
 func (a *attestHandler) getKeyEndorsement(w http.ResponseWriter, r *http.Request) {
-	if a.keyClaimsProvider == nil && !a.bcMode {
-		a.logAndWriteHTTPError(w, http.StatusForbidden, fmt.Errorf("keymanager not enabled"))
+	if !a.bcMode {
+		a.logAndWriteHTTPError(w, http.StatusForbidden, fmt.Errorf("key endorsement is only supported in BC mode"))
 		return
 	}
 
