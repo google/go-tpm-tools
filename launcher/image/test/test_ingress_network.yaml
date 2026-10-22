@@ -3,7 +3,7 @@
 substitutions:
   '_IMAGE_NAME': ''
   '_IMAGE_PROJECT': ''
-  '_CLEANUP': 'true'
+  '_CLEANUP': 'false'
   '_ZONE': 'asia-east1-a'
   '_WORKLOAD_IMAGE': 'docker.io/library/nginx:latest'
 
@@ -19,7 +19,7 @@ steps:
             '-n', 'ingress-network-test-${BUILD_ID}',
             '-z', '${_ZONE}',
           ]
-    
+
   - name: 'gcr.io/cloud-builders/gcloud'
     id: CheckReachability
     waitFor: ['CreateServerWorkload']

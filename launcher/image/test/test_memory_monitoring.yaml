@@ -1,7 +1,7 @@
 substitutions:
   '_IMAGE_NAME': ''
   '_IMAGE_PROJECT': ''
-  '_CLEANUP': 'true'
+  '_CLEANUP': 'false'
   '_VM_NAME_PREFIX': 'memory-monitoring'
   '_ZONE': 'us-west1-a'
   '_WORKLOAD_IMAGE': 'us-west1-docker.pkg.dev/confidential-space-images-dev/cs-integ-test-images/memorymonitoring:latest'
