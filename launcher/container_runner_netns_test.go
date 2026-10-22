@@ -4,6 +4,8 @@ package launcher
 
 import (
 	"context"
+	_ "embed"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -18,23 +20,10 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// Const for network setup
-const (
-	hostV4, hostV6 = "192.0.2.1", "2001:db8::1"
-	peerV4, peerV6 = "192.0.2.2", "2001:db8::2"
-	brV4, brV6     = "172.20.0.1", "fdb6:c4ca:384d:1::1"
-	ctrV4, ctrV6   = "172.20.0.2", "fdb6:c4ca:384d:1::2"
-
-	// The IPv4/IPv6 address ranges are the same as the CNI configuration in `/etc/cni/net.d/10-workload.conf`.
-	ctrNetV4 = "172.20.0.0/24"
-	ctrNetV6 = "fdb6:c4ca:384d:1::/64"
-)
-
-// Parsed at package initialization, so a malformed address fails the test binary at startup.
-var (
-	ctrAddrV4 = netip.MustParseAddr(ctrV4)
-	ctrAddrV6 = netip.MustParseAddr(ctrV6)
-)
+// workloadCNIConf is the CNI configuration that the launcher image installs as `/etc/cni/net.d/10-workload.conf`.
+//
+//go:embed image/10-workload.conf
+var workloadCNIConf []byte
 
 const (
 	cmdTimeout  = 5 * time.Second
@@ -44,19 +33,22 @@ const (
 // TestOpenPortsNetns runs the iptables/ip6tables rules from openPorts against a real kernel, using
 // three network namespaces that mirror a Confidential Space VM running a non-root container:
 //
-//	[peer] eth0 ── eth0 [host] br0 ── veth0 ── eth0 [container]
+//		[peer] eth0 ── eth0 [host] br0 ── veth0 ── eth0 [container]
 //
-// - peer: a remote host
-// - host: the host VM
-// - container: the workload inside the container - in this test, we expose TCP port 443.
-// - IP assignment: See the above `const` block.
+//	  - peer: a remote host
+//	  - host: the host VM
+//	  - container: the workload inside the container - in this test, we expose TCP port 443.
+//	  - IP assignment: The bridge and the container subnets come from the embedded CNI configuration (see loadCNINetwork).
+//	                   The host and peer addresses are constants in the test.
 //
 // The host namespace gets the same conditions as COS: IP forwarding on, FORWARD policy DROP,
 // and masquerading for the container subnets (`ipMasq` in the CNI configuration).
 //
-// The test needs root and the ip, iptables, ip6tables, and sysctl binaries. Otherwise, this test is
-// skipped otherwise (see skipf).
+// The test needs root and the ip, iptables, ip6tables, and sysctl binaries. Otherwise, this test is skipped (see skipf).
 func TestOpenPortsNetns(t *testing.T) {
+	// Parse before the skip checks below, so a broken CNI configuration also fails non-root runs.
+	cniNet := loadCNINetwork(t)
+
 	if os.Geteuid() != 0 {
 		skipf(t, "requires root to create network namespaces and iptables rules")
 	}
@@ -69,6 +61,12 @@ func TestOpenPortsNetns(t *testing.T) {
 		skipf(t, "IPv6 is not available")
 	}
 
+	// The peer and host addresses.
+	const (
+		hostV4, hostV6 = "192.0.2.1", "2001:db8::1"
+		peerV4, peerV6 = "192.0.2.2", "2001:db8::2"
+	)
+
 	// Namespace names are unique per process, so leftovers from an aborted run don't collide.
 	suffix := fmt.Sprintf("-%d", os.Getpid())
 	hostNS, ctrNS, peerNS := "cs-host"+suffix, "cs-ctr"+suffix, "cs-peer"+suffix
@@ -77,41 +75,51 @@ func TestOpenPortsNetns(t *testing.T) {
 		t.Cleanup(func() { _ = exec.Command("ip", "netns", "del", ns).Run() })
 	}
 
+	br := cniNet.bridge
 	setup := [][]string{
 		// host <-> peer link.
 		{"ip", "-n", hostNS, "link", "add", "eth0", "type", "veth", "peer", "name", "eth0", "netns", peerNS},
+
 		// host <-> ctr link, through the bridge.
-		{"ip", "-n", hostNS, "link", "add", "br0", "type", "bridge"},
+		{"ip", "-n", hostNS, "link", "add", br, "type", "bridge"},
 		{"ip", "-n", hostNS, "link", "add", "veth0", "type", "veth", "peer", "name", "eth0", "netns", ctrNS},
-		{"ip", "-n", hostNS, "link", "set", "veth0", "master", "br0"},
+		{"ip", "-n", hostNS, "link", "set", "veth0", "master", br},
+
 		// Addresses. nodad skips IPv6 duplicate address detection, so the addresses are usable at once.
 		{"ip", "-n", hostNS, "addr", "add", hostV4 + "/24", "dev", "eth0"},
 		{"ip", "-n", hostNS, "addr", "add", hostV6 + "/64", "dev", "eth0", "nodad"},
-		{"ip", "-n", hostNS, "addr", "add", brV4 + "/24", "dev", "br0"},
-		{"ip", "-n", hostNS, "addr", "add", brV6 + "/64", "dev", "br0", "nodad"},
+		{"ip", "-n", hostNS, "addr", "add", cniNet.v4.gateway.String(), "dev", br},
+		{"ip", "-n", hostNS, "addr", "add", cniNet.v6.gateway.String(), "dev", br, "nodad"},
 		{"ip", "-n", peerNS, "addr", "add", peerV4 + "/24", "dev", "eth0"},
 		{"ip", "-n", peerNS, "addr", "add", peerV6 + "/64", "dev", "eth0", "nodad"},
-		{"ip", "-n", ctrNS, "addr", "add", ctrV4 + "/24", "dev", "eth0"},
-		{"ip", "-n", ctrNS, "addr", "add", ctrV6 + "/64", "dev", "eth0", "nodad"},
+		{"ip", "-n", ctrNS, "addr", "add", cniNet.v4.ctr.String(), "dev", "eth0"},
+		{"ip", "-n", ctrNS, "addr", "add", cniNet.v6.ctr.String(), "dev", "eth0", "nodad"},
 		{"ip", "-n", hostNS, "link", "set", "lo", "up"},
 		{"ip", "-n", hostNS, "link", "set", "eth0", "up"},
-		{"ip", "-n", hostNS, "link", "set", "br0", "up"},
+		{"ip", "-n", hostNS, "link", "set", br, "up"},
 		{"ip", "-n", hostNS, "link", "set", "veth0", "up"},
 		{"ip", "-n", peerNS, "link", "set", "lo", "up"},
 		{"ip", "-n", peerNS, "link", "set", "eth0", "up"},
 		{"ip", "-n", ctrNS, "link", "set", "lo", "up"},
 		{"ip", "-n", ctrNS, "link", "set", "eth0", "up"},
+
 		// The container's default routes point at the bridge, as with the CNI config.
-		{"ip", "-n", ctrNS, "route", "add", "default", "via", brV4},
-		{"ip", "-n", ctrNS, "-6", "route", "add", "default", "via", brV6},
+		{"ip", "-n", ctrNS, "route", "add", "default", "via", cniNet.v4.gateway.Addr().String()},
+		{"ip", "-n", ctrNS, "-6", "route", "add", "default", "via", cniNet.v6.gateway.Addr().String()},
+
 		// Host conditions as on COS: forwarding on and FORWARD policy DROP.
 		{"ip", "netns", "exec", hostNS, "sysctl", "-q", "-w", "net.ipv4.ip_forward=1"},
 		{"ip", "netns", "exec", hostNS, "sysctl", "-q", "-w", "net.ipv6.conf.all.forwarding=1"},
 		{"ip", "netns", "exec", hostNS, "iptables", "-P", "FORWARD", "DROP"},
 		{"ip", "netns", "exec", hostNS, "ip6tables", "-P", "FORWARD", "DROP"},
+	}
+	if cniNet.ipMasq {
 		// Masquerade the container's outgoing traffic, as the CNI ipMasq option does.
-		{"ip", "netns", "exec", hostNS, "iptables", "-t", "nat", "-A", "POSTROUTING", "-s", ctrNetV4, "!", "-d", ctrNetV4, "-j", "MASQUERADE"},
-		{"ip", "netns", "exec", hostNS, "ip6tables", "-t", "nat", "-A", "POSTROUTING", "-s", ctrNetV6, "!", "-d", ctrNetV6, "-j", "MASQUERADE"},
+		v4Net, v6Net := cniNet.v4.subnet.String(), cniNet.v6.subnet.String()
+		setup = append(setup,
+			[]string{"ip", "netns", "exec", hostNS, "iptables", "-t", "nat", "-A", "POSTROUTING", "-s", v4Net, "!", "-d", v4Net, "-j", "MASQUERADE"},
+			[]string{"ip", "netns", "exec", hostNS, "ip6tables", "-t", "nat", "-A", "POSTROUTING", "-s", v6Net, "!", "-d", v6Net, "-j", "MASQUERADE"},
+		)
 	}
 	for _, cmd := range setup {
 		run(t, cmd[0], cmd[1:]...)
@@ -124,7 +132,7 @@ func TestOpenPortsNetns(t *testing.T) {
 	serve(t, netnsPath(peerNS), ":8080", "peer")
 
 	ports := map[string]struct{}{"443/tcp": {}}
-	ctrIPs := []netip.Addr{ctrAddrV4, ctrAddrV6}
+	ctrIPs := []netip.Addr{cniNet.v4.ctr.Addr(), cniNet.v6.ctr.Addr()}
 	ctx, cancel := context.WithTimeout(t.Context(), cmdTimeout)
 	defer cancel()
 
@@ -141,13 +149,13 @@ func TestOpenPortsNetns(t *testing.T) {
 	}{
 		// Ingress: (peer -> host) should be forwarded to the container.
 		{
-			name:  "ingress IPv4",
+			name:  "ingress_ipv4",
 			srcNS: peerNS,
 			dst:   net.JoinHostPort(hostV4, "443"),
 			want:  "ctr",
 		},
 		{
-			name:  "ingress IPv6",
+			name:  "ingress_ipv6",
 			srcNS: peerNS,
 			dst:   net.JoinHostPort(hostV6, "443"),
 			want:  "ctr",
@@ -155,13 +163,13 @@ func TestOpenPortsNetns(t *testing.T) {
 
 		// Egress (non-exposed): (container <--response-- peer) must get through the FORWARD chain.
 		{
-			name:  "egress IPv4 to non-exposed port",
+			name:  "egress_ipv4_non_exposed",
 			srcNS: ctrNS,
 			dst:   net.JoinHostPort(peerV4, "8080"),
 			want:  "peer",
 		},
 		{
-			name:  "egress IPv6 to non-exposed port",
+			name:  "egress_ipv6_non_exposed",
 			srcNS: ctrNS,
 			dst:   net.JoinHostPort(peerV6, "8080"),
 			want:  "peer",
@@ -171,13 +179,13 @@ func TestOpenPortsNetns(t *testing.T) {
 		// * (container -> peer) must reach the peer and not be DNATed back to the container.
 		// * (container <--response-- peer) must get through the FORWARD chain.
 		{
-			name:  "egress IPv4 to exposed port",
+			name:  "egress_ipv4_exposed",
 			srcNS: ctrNS,
 			dst:   net.JoinHostPort(peerV4, "443"),
 			want:  "peer",
 		},
 		{
-			name:  "egress IPv6 to exposed port",
+			name:  "egress_ipv6_exposed",
 			srcNS: ctrNS,
 			dst:   net.JoinHostPort(peerV6, "443"),
 			want:  "peer",
@@ -185,7 +193,9 @@ func TestOpenPortsNetns(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := dialFrom(netnsPath(tc.srcNS), tc.dst)
+			ctx, cancel := context.WithTimeout(t.Context(), cmdTimeout)
+			defer cancel()
+			got, err := dialFrom(ctx, netnsPath(tc.srcNS), tc.dst)
 			if err != nil {
 				t.Fatalf("dial %s from %s: %v", tc.dst, tc.srcNS, err)
 			}
@@ -194,6 +204,82 @@ func TestOpenPortsNetns(t *testing.T) {
 			}
 		})
 	}
+}
+
+// cniNetwork is the part of the embedded CNI configuration that TestOpenPortsNetns mirrors.
+type cniNetwork struct {
+	bridge string
+	ipMasq bool
+	v4, v6 cniSubnet
+}
+
+// cniSubnet is a host-local IPAM subnet with the addresses that host-local assigns by default: the
+// first address to the gateway (the bridge) and the second to the first container.
+// The addresses carry the subnet's prefix length, e.g. "172.20.0.1/24".
+type cniSubnet struct {
+	subnet, gateway, ctr netip.Prefix
+}
+
+// loadCNINetwork parses the embedded CNI configuration.
+func loadCNINetwork(t *testing.T) cniNetwork {
+	t.Helper()
+
+	// We only need the CNI fields that TestOpenPortsNetns cares about.
+	var conf struct {
+		Type      string `json:"type"`
+		Bridge    string `json:"bridge"`
+		IsGateway bool   `json:"isGateway"`
+		IPMasq    bool   `json:"ipMasq"`
+		IPAM      struct {
+			Type   string `json:"type"`
+			Ranges [][]struct {
+				Subnet netip.Prefix `json:"subnet"`
+			} `json:"ranges"`
+		} `json:"ipam"`
+	}
+	if err := json.Unmarshal(workloadCNIConf, &conf); err != nil {
+		t.Fatalf("CNI config unmarshal failed: %v", err)
+	}
+	if conf.Type != "bridge" || !conf.IsGateway || conf.IPAM.Type != "host-local" {
+		t.Fatalf("CNI config has type %q, isGateway %v, and IPAM type %q; want bridge, true, and host-local",
+			conf.Type, conf.IsGateway, conf.IPAM.Type)
+	}
+
+	n := cniNetwork{
+		bridge: conf.Bridge,
+		ipMasq: conf.IPMasq,
+		// Subnets are assigned below.
+	}
+	if n.bridge == "" {
+		n.bridge = "cni0" // Default value (https://www.cni.dev/plugins/current/main/bridge/#network-configuration-reference).
+	}
+
+	var v4, v6 []cniSubnet
+	for _, ranges := range conf.IPAM.Ranges {
+		if len(ranges) != 1 || !ranges[0].Subnet.IsValid() {
+			t.Fatalf("CNI config has the IPAM range set %+v, want exactly one subnet", ranges)
+		}
+		subnet := ranges[0].Subnet.Masked()
+		gateway := subnet.Addr().Next()
+		s := cniSubnet{
+			subnet:  subnet,
+			gateway: netip.PrefixFrom(gateway, subnet.Bits()),
+			ctr:     netip.PrefixFrom(gateway.Next(), subnet.Bits()),
+		}
+
+		if subnet.Addr().Is4() { // A valid subnet (checked above) is either IPv4 or IPv6.
+			v4 = append(v4, s)
+		} else {
+			v6 = append(v6, s)
+		}
+	}
+
+	if len(v4) != 1 || len(v6) != 1 {
+		t.Fatalf("CNI config has %d IPv4 and %d IPv6 subnets, want one of each", len(v4), len(v6))
+	}
+
+	n.v4, n.v6 = v4[0], v6[0]
+	return n
 }
 
 // skipf skips the test unless CS_NETNS_TEST_REQUIRED is set, in which case it fails, so CI notices
@@ -270,16 +356,19 @@ func serve(t *testing.T, nsPath, addr, name string) {
 }
 
 // dialFrom connects to addr from the namespace at nsPath and returns the listener's answer.
-func dialFrom(nsPath, addr string) (string, error) {
+func dialFrom(ctx context.Context, nsPath, addr string) (string, error) {
 	var answer string
 	err := inNetNS(nsPath, func() error {
-		c, err := net.DialTimeout("tcp", addr, cmdTimeout)
+		c, err := (&net.Dialer{}).DialContext(ctx, "tcp", addr)
 		if err != nil {
 			return err
 		}
 		defer c.Close()
-		if err := c.SetDeadline(time.Now().Add(cmdTimeout)); err != nil {
-			return err
+		// The deadline of ctx bounds both the connection and the read.
+		if deadline, ok := ctx.Deadline(); ok {
+			if err := c.SetDeadline(deadline); err != nil {
+				return err
+			}
 		}
 		b, err := io.ReadAll(c)
 		answer = string(b)
