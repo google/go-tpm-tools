@@ -53,7 +53,7 @@ var debugCmd = &cobra.Command{
 		}
 		out, err := marshalOptions.Marshal(ms)
 		if err != nil {
-			return nil
+			return fmt.Errorf("failed to marshal machine state: %w", err)
 		}
 		if err := writeVerifyOutput(cmd, cfg.outputPath, out); err != nil {
 			return fmt.Errorf("failed to write verified attestation report: %v", err)
@@ -124,6 +124,7 @@ func writeVerifyOutput(cmd *cobra.Command, path string, out []byte) error {
 	return os.WriteFile(path, out, 0644)
 }
 
+// Callers must pass the resolved teeNonce.
 func runVerify(attestation *pb.Attestation, tpmNonce, teeNonce []byte) (*pb.MachineState, error) {
 	pub, err := tpm2.DecodePublic(attestation.GetAkPub())
 	if err != nil {

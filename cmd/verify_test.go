@@ -128,19 +128,19 @@ func TestHwAttestationPass(t *testing.T) {
 	}
 	nonceBytes := []byte{0x12, 0x34}
 	tests := []struct {
-		name    string
-		teeTech string
-		wantErr string
+		name        string
+		teeTech     string
+		noDeviceErr string
 	}{
 		{
-			name:    "TdxPass",
-			teeTech: "tdx",
-			wantErr: "failed to create tdx quote provider",
+			name:        "TdxPass",
+			teeTech:     "tdx",
+			noDeviceErr: "failed to create tdx quote provider",
 		},
 		{
-			name:    "SevSnpPass",
-			teeTech: "sev-snp",
-			wantErr: "failed to create sev-snp quote provider",
+			name:        "SevSnpPass",
+			teeTech:     "sev-snp",
+			noDeviceErr: "failed to create sev-snp quote provider",
 		},
 	}
 	for _, op := range tests {
@@ -153,10 +153,10 @@ func TestHwAttestationPass(t *testing.T) {
 			}
 			attestation, err := runAttest(context.Background(), rwc, opts)
 			if err != nil {
-				if !strings.Contains(err.Error(), op.wantErr) {
-					t.Errorf("runAttest() = %v, want error containing %q", err, op.wantErr)
+				if strings.Contains(err.Error(), op.noDeviceErr) {
+					t.Skipf("no %s device available: %v", op.teeTech, err)
 				}
-				return
+				t.Fatalf("runAttest() failed: %v", err)
 			}
 			ms, err := runVerify(attestation, nonceBytes, teeNonceBytes)
 			if err != nil {
@@ -240,11 +240,12 @@ func createAttestationWithFakeTdx(tpmNonce []byte, teeNonce []byte, tb *testing.
 
 func parseVerifyDebugArgs(args ...string) (verifyDebugConfig, error) {
 	cmd := &cobra.Command{}
-	addNonceFlag(cmd)
-	addTeeNonceflag(cmd)
-	addFormatFlag(cmd)
-	addInputFlag(cmd)
-	addOutputFlag(cmd)
+	flags := cmd.PersistentFlags()
+	flags.BytesHex("nonce", []byte{}, "")
+	flags.BytesHex("tee-nonce", []byte{}, "")
+	flags.String("format", "binarypb", "")
+	flags.String("input", "", "")
+	flags.String("output", "", "")
 	if err := cmd.ParseFlags(args); err != nil {
 		return verifyDebugConfig{}, err
 	}
