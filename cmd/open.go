@@ -3,20 +3,36 @@ package cmd
 import (
 	"fmt"
 	"io"
+	"net/http"
 
 	"github.com/google/go-tpm-tools/client"
 	"github.com/spf13/cobra"
 )
 
-// ExternalTPM can be set to run tests against an TPM initialized by an
-// external package (like the simulator). Setting this value will make all
-// gotpm commands run against it, and will prevent the cmd package from
-// closing the TPM. Setting this value and closing the TPM must be managed
-// by the external package.
-// ExternalTPM can have a TPM simulator or a real TPM.
-var ExternalTPM io.ReadWriter
+// env holds the dependencies shared by a command tree.
+type env struct {
+	// tpm, if set, makes all commands run against it instead of a TPM
+	// device. The commands do not close it. It can be a TPM simulator or a
+	// real TPM.
+	tpm io.ReadWriter
+	// httpClient, if set, is used by commands that call remote services.
+	httpClient *http.Client
+}
 
-// extTPMWrapper is designed to wrap the ExternalTPM to provide some overriding
+// envOption configures the env of a command tree.
+type envOption func(*env)
+
+// withTPM makes all commands run against rw. The caller must close rw.
+func withTPM(rw io.ReadWriter) envOption {
+	return func(e *env) { e.tpm = rw }
+}
+
+// withHTTPClient makes commands use c for remote services.
+func withHTTPClient(c *http.Client) envOption {
+	return func(e *env) { e.httpClient = c }
+}
+
+// extTPMWrapper is designed to wrap an external TPM to provide some overriding
 // functions.
 type extTPMWrapper struct {
 	io.ReadWriter
@@ -33,9 +49,9 @@ func (et extTPMWrapper) EventLog() ([]byte, error) {
 	return client.GetEventLog(et.ReadWriter)
 }
 
-func openTpm(cmd *cobra.Command) (io.ReadWriteCloser, error) {
-	if ExternalTPM != nil {
-		return extTPMWrapper{ExternalTPM}, nil
+func (e *env) openTpm(cmd *cobra.Command) (io.ReadWriteCloser, error) {
+	if e.tpm != nil {
+		return extTPMWrapper{e.tpm}, nil
 	}
 	rwc, err := openImpl(cmd)
 	if err != nil {

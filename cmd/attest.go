@@ -17,10 +17,11 @@ import (
 )
 
 // If hardware technology needs a variable length teenonce then please modify the flags description
-var attestCmd = &cobra.Command{
-	Use:   "attest",
-	Short: "Create a remote attestation report",
-	Long: `Gather information for remote attestation.
+func newAttestCmd(e *env) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "attest",
+		Short: "Create a remote attestation report",
+		Long: `Gather information for remote attestation.
 The Attestation report contains a quote on all available PCR banks, a way to validate 
 the quote, and a TCG Event Log (Linux only).
 Use --key to specify the type of attestation key. It can be gceAK for GCE attestation
@@ -30,34 +31,38 @@ by default rsa is used.
 --tee-nonce attaches a 64 bytes extra data to the attestation report of TDX and SEV-SNP 
 hardware and guarantees a fresh quote.
 `,
-	Args: cobra.NoArgs,
-	RunE: func(cmd *cobra.Command, _ []string) error {
-		cfg, err := parseAttestFlags(cmd)
-		if err != nil {
-			return err
-		}
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfg, err := parseAttestFlags(cmd)
+			if err != nil {
+				return err
+			}
 
-		rwc, err := openTpm(cmd)
-		if err != nil {
-			return err
-		}
-		defer rwc.Close()
+			rwc, err := e.openTpm(cmd)
+			if err != nil {
+				return err
+			}
+			defer rwc.Close()
 
-		attestation, err := runAttest(cmd.Context(), rwc, cfg.opts)
-		if err != nil {
-			return err
-		}
+			attestation, err := runAttest(cmd.Context(), rwc, cfg.opts)
+			if err != nil {
+				return err
+			}
 
-		out, err := formatAttestation(attestation, cfg.format)
-		if err != nil {
+			out, err := formatAttestation(attestation, cfg.format)
+			if err != nil {
+				return err
+			}
+			if cfg.outputPath != "" {
+				return os.WriteFile(cfg.outputPath, out, 0644)
+			}
+			_, err = cmd.OutOrStdout().Write(out)
 			return err
-		}
-		if cfg.outputPath != "" {
-			return os.WriteFile(cfg.outputPath, out, 0644)
-		}
-		_, err = cmd.OutOrStdout().Write(out)
-		return err
-	},
+		},
+	}
+	addAttestFlags(cmd)
+	cmd.AddCommand(newAttestSVSMCmd(e))
+	return cmd
 }
 
 // attestOptions configures the attestation report generation.
@@ -264,10 +269,4 @@ func getInstanceInfoFromMetadata(ctx context.Context) (*attest.GCEInstanceInfo, 
 	}
 
 	return instanceInfo, err
-}
-
-func init() {
-	RootCmd.AddCommand(attestCmd)
-	addAttestFlags(attestCmd)
-	attestCmd.AddCommand(attestSVSMCmd)
 }

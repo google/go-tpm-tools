@@ -146,42 +146,49 @@ func parseTokenFlags(cmd *cobra.Command) (tokenOptions, error) {
 }
 
 // If hardware technology needs a variable length teenonce then please modify the flags description
-var tokenCmd = &cobra.Command{
-	Use:   "token",
-	Short: "Attest and fetch an OIDC token from Google Attestation Verification Service.",
-	Long: `Gather attestation report and send it to Google Attestation Verification Service for an OIDC token.
+func newTokenCmd(e *env) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "token",
+		Short: "Attest and fetch an OIDC token from Google Attestation Verification Service.",
+		Long: `Gather attestation report and send it to Google Attestation Verification Service for an OIDC token.
 The OIDC token includes claims regarding the GCE VM, which is verified by Attestation Verification Service. Note that Confidential Computing API needs to be enabled for your account to access Google Attestation Verification Service https://console.cloud.google.com/apis/api/confidentialcomputing.googleapis.com.
 --algo flag overrides the public key algorithm for the GCE TPM attestation key. If not provided then by default rsa is used.
 `,
-	Args: cobra.NoArgs,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		_ = args
-		opts, err := parseTokenFlags(cmd)
-		if err != nil {
-			return err
-		}
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			_ = args
+			opts, err := parseTokenFlags(cmd)
+			if err != nil {
+				return err
+			}
 
-		rwc, err := openTpm(cmd)
-		if err != nil {
-			return err
-		}
-		defer rwc.Close()
+			rwc, err := e.openTpm(cmd)
+			if err != nil {
+				return err
+			}
+			defer rwc.Close()
 
-		opts.Debug = debugOutput(cmd)
-		token, err := runToken(cmd.Context(), rwc, opts)
-		if err != nil {
-			return err
-		}
+			opts.Debug = debugOutput(cmd)
+			opts.HTTPClient = e.httpClient
+			token, err := runToken(cmd.Context(), rwc, opts)
+			if err != nil {
+				return err
+			}
 
-		if opts.OutputPath == "" {
-			fmt.Fprintf(messageOutput(cmd), "%s\n", token)
+			if opts.OutputPath == "" {
+				fmt.Fprintf(messageOutput(cmd), "%s\n", token)
+				return nil
+			}
+			if err := os.WriteFile(opts.OutputPath, token, 0644); err != nil {
+				return fmt.Errorf("failed to write token: %w", err)
+			}
 			return nil
-		}
-		if err := os.WriteFile(opts.OutputPath, token, 0644); err != nil {
-			return fmt.Errorf("failed to write token: %w", err)
-		}
-		return nil
-	},
+		},
+	}
+	addTokenFlags(cmd)
+	// TODO: Add TEE hardware OIDC token generation
+	// addTeeNonceflag(cmd)
+	return cmd
 }
 
 // runToken retrieves an OIDC claims token from the verification service using the provided TPM.
@@ -377,11 +384,4 @@ func runToken(ctx context.Context, rwc io.ReadWriter, opts tokenOptions) ([]byte
 
 	fmt.Fprintf(debug, "%s\nNote: these Claims are for debugging purpose and not verified\n", claimsString)
 	return token, nil
-}
-
-func init() {
-	RootCmd.AddCommand(tokenCmd)
-	addTokenFlags(tokenCmd)
-	// TODO: Add TEE hardware OIDC token generation
-	// addTeeNonceflag(tokenCmd)
 }

@@ -16,82 +16,89 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-var attestSVSMCmd = &cobra.Command{
-	Use:   "svsm",
-	Short: `Produce a SevSnpSvsmAttestation that wraps the PCR attestation message.`,
-	RunE: func(cmd *cobra.Command, _ []string) error {
-		cfg, err := parseAttestFlags(cmd)
-		if err != nil {
-			return err
-		}
-		manifestVersion, err := cmd.Flags().GetString("manifest-version")
-		if err != nil {
-			return err
-		}
-		opts := cfg.opts
-		if opts.teeTechnology != sevSNP {
-			return errors.New("attest svsm is only supported with --tee-technology=sev-snp")
-		}
-		if manifestVersion != "" && manifestVersion != "0" && manifestVersion != "1" {
-			return fmt.Errorf("invalid manifest version %q, must be one of \"\", \"0\", \"1\"", manifestVersion)
-		}
-		if (manifestVersion == "" || manifestVersion == "0") && opts.key != "AK" {
-			return fmt.Errorf("manifest version 0 requires --key=AK")
-		}
-		if manifestVersion == "1" && opts.key != "gceAK" {
-			return fmt.Errorf("manifest version 1 requires --key=gceAK")
-		}
-		if len(opts.teeNonce) != sabi.ReportDataSize {
-			return fmt.Errorf("the teeNonce size is %d. SEV-SNP device requires 64", len(opts.teeNonce))
-		}
+func newAttestSVSMCmd(e *env) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "svsm",
+		Short: `Produce a SevSnpSvsmAttestation that wraps the PCR attestation message.`,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfg, err := parseAttestFlags(cmd)
+			if err != nil {
+				return err
+			}
+			manifestVersion, err := cmd.Flags().GetString("manifest-version")
+			if err != nil {
+				return err
+			}
+			opts := cfg.opts
+			if opts.teeTechnology != sevSNP {
+				return errors.New("attest svsm is only supported with --tee-technology=sev-snp")
+			}
+			if manifestVersion != "" && manifestVersion != "0" && manifestVersion != "1" {
+				return fmt.Errorf("invalid manifest version %q, must be one of \"\", \"0\", \"1\"", manifestVersion)
+			}
+			if (manifestVersion == "" || manifestVersion == "0") && opts.key != "AK" {
+				return fmt.Errorf("manifest version 0 requires --key=AK")
+			}
+			if manifestVersion == "1" && opts.key != "gceAK" {
+				return fmt.Errorf("manifest version 1 requires --key=gceAK")
+			}
+			if len(opts.teeNonce) != sabi.ReportDataSize {
+				return fmt.Errorf("the teeNonce size is %d. SEV-SNP device requires 64", len(opts.teeNonce))
+			}
 
-		rwc, err := openTpm(cmd)
-		if err != nil {
-			return err
-		}
-		defer rwc.Close()
+			rwc, err := e.openTpm(cmd)
+			if err != nil {
+				return err
+			}
+			defer rwc.Close()
 
-		attestationKey, err := createAttestationKey(rwc, opts.key, opts.keyAlgo)
-		if err != nil {
-			return fmt.Errorf("failed to create attestation key: %w", err)
-		}
-		defer attestationKey.Close()
+			attestationKey, err := createAttestationKey(rwc, opts.key, opts.keyAlgo)
+			if err != nil {
+				return fmt.Errorf("failed to create attestation key: %w", err)
+			}
+			defer attestationKey.Close()
 
-		attestOpts := client.AttestOpts{}
-		attestOpts.Nonce = opts.nonce
-		// Omit requesting TEE attestation for the Attestation message when attesting an SVSM based vTPM.
-		// We instead separately attach a TEE attestation inside the SevSnpSvsmAttestation message
-		attestOpts.SkipTeeAttestation = true
+			attestOpts := client.AttestOpts{}
+			attestOpts.Nonce = opts.nonce
+			// Omit requesting TEE attestation for the Attestation message when attesting an SVSM based vTPM.
+			// We instead separately attach a TEE attestation inside the SevSnpSvsmAttestation message
+			attestOpts.SkipTeeAttestation = true
 
-		attestOpts.TCGEventLog, err = client.GetEventLog(rwc)
-		if err != nil {
-			return fmt.Errorf("failed to retrieve TCG Event Log: %w", err)
-		}
+			attestOpts.TCGEventLog, err = client.GetEventLog(rwc)
+			if err != nil {
+				return fmt.Errorf("failed to retrieve TCG Event Log: %w", err)
+			}
 
-		attestation, err := attestationKey.Attest(attestOpts)
-		if err != nil {
-			return fmt.Errorf("failed to collect attestation report : %v", err)
-		}
+			attestation, err := attestationKey.Attest(attestOpts)
+			if err != nil {
+				return fmt.Errorf("failed to collect attestation report : %v", err)
+			}
 
-		configfsClient, err := linuxtsm.MakeClient()
-		if err != nil {
-			return fmt.Errorf("failed to create linuxtsm configfs client: %w", err)
-		}
-		svsmAttestation, err := makeSEVSNPSVSMAttestation(attestation, &sevSNPSVSMAttestationOpts{
-			TEENonce:                   opts.teeNonce,
-			CongfigfsClient:            configfsClient,
-			VTPMServiceManifestVersion: manifestVersion,
-			ExtractOptions:             extract.DefaultOptions(),
-		})
-		if err != nil {
-			return fmt.Errorf("failed to create SEV SNP SVSM attestation: %w", err)
-		}
-		if err := writeProtoToOutput(svsmAttestation, cfg.format, cfg.outputPath); err != nil {
-			return fmt.Errorf("failed to write SEV SNP SVSM attestation report: %w", err)
-		}
+			configfsClient, err := linuxtsm.MakeClient()
+			if err != nil {
+				return fmt.Errorf("failed to create linuxtsm configfs client: %w", err)
+			}
+			svsmAttestation, err := makeSEVSNPSVSMAttestation(attestation, &sevSNPSVSMAttestationOpts{
+				TEENonce:                   opts.teeNonce,
+				CongfigfsClient:            configfsClient,
+				VTPMServiceManifestVersion: manifestVersion,
+				ExtractOptions:             extract.DefaultOptions(),
+			})
+			if err != nil {
+				return fmt.Errorf("failed to create SEV SNP SVSM attestation: %w", err)
+			}
+			if err := writeProtoToOutput(svsmAttestation, cfg.format, cfg.outputPath); err != nil {
+				return fmt.Errorf("failed to write SEV SNP SVSM attestation report: %w", err)
+			}
 
-		return nil
-	},
+			return nil
+		},
+	}
+	cmd.Flags().String("manifest-version", "0",
+		"manifest version (valid values: '', '0', '1'). "+
+			"Version 0 (challenge-based) embeds only the EK pub and requires --key=AK. "+
+			"Version 1 (manifest-based) embeds both EK and AK pubs derived under the Endorsement Hierarchy and requires --key=gceAK.")
+	return cmd
 }
 
 // sevSNPSVSMAttestationOpts customizes the behavior of makeSEVSNPSVSMAttestation.
@@ -201,11 +208,4 @@ func getSVSMBlobs(configfs configfsi.Client, reportData [sabi.ReportDataSize]byt
 		return nil, fmt.Errorf("could not get SVSM attestation report: %w", err)
 	}
 	return resp, nil
-}
-
-func init() {
-	attestSVSMCmd.Flags().String("manifest-version", "0",
-		"manifest version (valid values: '', '0', '1'). "+
-			"Version 0 (challenge-based) embeds only the EK pub and requires --key=AK. "+
-			"Version 1 (manifest-based) embeds both EK and AK pubs derived under the Endorsement Hierarchy and requires --key=gceAK.")
 }

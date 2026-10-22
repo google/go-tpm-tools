@@ -11,8 +11,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func init() {
-	RootCmd.PersistentFlags().String("tpm-path", "",
+// addTPMPathFlag lets cmd and its subcommands specify the TPM device path.
+func addTPMPathFlag(cmd *cobra.Command) {
+	cmd.PersistentFlags().String("tpm-path", "",
 		"path to TPM device (defaults to /dev/tpmrm0 then /dev/tpm0)")
 }
 

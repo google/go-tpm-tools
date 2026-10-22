@@ -16,10 +16,11 @@ var handleNames = map[string][]tpm2.HandleType{
 	"persistent": {tpm2.HandleTypePersistent},
 }
 
-var flushCmd = &cobra.Command{
-	Use:   "flush <all | loaded | saved | transient | persistent>",
-	Short: "Close active handles on the TPM",
-	Long: `Close some or all currently active handles on the TPM
+func newFlushCmd(e *env) *cobra.Command {
+	return &cobra.Command{
+		Use:   "flush <all | loaded | saved | transient | persistent>",
+		Short: "Close active handles on the TPM",
+		Long: `Close some or all currently active handles on the TPM
 
 Most TPM operations require an active handle, representing some object within
 the TPM. However, most TPMs also limit the number of simultaneous active handles
@@ -39,49 +40,46 @@ Which handles are flushed depends on the argument passed:
 	transient  - only flush the transient handles
 	all        - flush all loaded, saved, and transient handles
 	persistent - only evict the persistent handles`,
-	ValidArgs: func() []string {
-		// The keys from the handleNames map are our valid arguments
-		keys := make([]string, len(handleNames))
-		for k := range handleNames {
-			keys = append(keys, k)
-		}
-		return keys
-	}(),
-	Args: cobra.MatchAll(cobra.ExactArgs(1), cobra.OnlyValidArgs),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		rwc, err := openTpm(cmd)
-		if err != nil {
-			return err
-		}
-		defer rwc.Close()
-
-		totalHandles := 0
-		for _, handleType := range handleNames[args[0]] {
-			handles, err := client.Handles(rwc, handleType)
+		ValidArgs: func() []string {
+			// The keys from the handleNames map are our valid arguments
+			keys := make([]string, len(handleNames))
+			for k := range handleNames {
+				keys = append(keys, k)
+			}
+			return keys
+		}(),
+		Args: cobra.MatchAll(cobra.ExactArgs(1), cobra.OnlyValidArgs),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			rwc, err := e.openTpm(cmd)
 			if err != nil {
-				return fmt.Errorf("getting handles: %w", err)
+				return err
 			}
-			for _, handle := range handles {
-				if handleType == tpm2.HandleTypePersistent {
-					if err = tpm2.EvictControl(rwc, "", tpm2.HandleOwner, handle, handle); err != nil {
-						return fmt.Errorf("evicting handle 0x%x: %w", handle, err)
-					}
-					fmt.Fprintf(debugOutput(cmd), "Handle 0x%x evicted\n", handle)
-				} else {
-					if err = tpm2.FlushContext(rwc, handle); err != nil {
-						return fmt.Errorf("flushing handle 0x%x: %w", handle, err)
-					}
-					fmt.Fprintf(debugOutput(cmd), "Handle 0x%x flushed\n", handle)
+			defer rwc.Close()
+
+			totalHandles := 0
+			for _, handleType := range handleNames[args[0]] {
+				handles, err := client.Handles(rwc, handleType)
+				if err != nil {
+					return fmt.Errorf("getting handles: %w", err)
 				}
-				totalHandles++
+				for _, handle := range handles {
+					if handleType == tpm2.HandleTypePersistent {
+						if err = tpm2.EvictControl(rwc, "", tpm2.HandleOwner, handle, handle); err != nil {
+							return fmt.Errorf("evicting handle 0x%x: %w", handle, err)
+						}
+						fmt.Fprintf(debugOutput(cmd), "Handle 0x%x evicted\n", handle)
+					} else {
+						if err = tpm2.FlushContext(rwc, handle); err != nil {
+							return fmt.Errorf("flushing handle 0x%x: %w", handle, err)
+						}
+						fmt.Fprintf(debugOutput(cmd), "Handle 0x%x flushed\n", handle)
+					}
+					totalHandles++
+				}
 			}
-		}
 
-		fmt.Fprintf(messageOutput(cmd), "%d handles flushed\n", totalHandles)
-		return nil
-	},
-}
-
-func init() {
-	RootCmd.AddCommand(flushCmd)
+			fmt.Fprintf(messageOutput(cmd), "%d handles flushed\n", totalHandles)
+			return nil
+		},
+	}
 }

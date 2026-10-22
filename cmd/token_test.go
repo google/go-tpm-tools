@@ -16,8 +16,6 @@ import (
 	"github.com/google/go-tpm/legacy/tpm2"
 	"github.com/google/go-tpm/tpmutil"
 	"github.com/spf13/cobra"
-	"golang.org/x/oauth2"
-	"golang.org/x/oauth2/google"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -240,8 +238,7 @@ var getAttestationKey = map[string]func(rw io.ReadWriter) (*client.Key, error){
 }
 
 func TestTokenCmdInvalidAlgo(t *testing.T) {
-	RootCmd.SetArgs([]string{"token", "--algo", "invalid-algo"})
-	err := RootCmd.Execute()
+	err := execute(t, []string{"token", "--algo", "invalid-algo"})
 	if err == nil || !strings.Contains(err.Error(), "unknown algorithm") {
 		t.Errorf("expected unknown algorithm error, got: %v", err)
 	}
@@ -275,31 +272,16 @@ func TestTokenCmdOutputPath(t *testing.T) {
 	}
 	defer mockMdsServer.Stop()
 
-	mockOauth2Server, err := util.NewMockOauth2Server()
-	if err != nil {
-		t.Error(err)
-	}
-	defer mockOauth2Server.Stop()
-
-	google.Endpoint = oauth2.Endpoint{
-		AuthURL:   mockOauth2Server.Server.URL + "/o/oauth2/auth",
-		TokenURL:  mockOauth2Server.Server.URL + "/token",
-		AuthStyle: oauth2.AuthStyleInParams,
-	}
-
 	mockAttestationServer, err := util.NewMockAttestationServer()
 	if err != nil {
 		t.Error(err)
 	}
 	defer mockAttestationServer.Stop()
 
-	ExternalTPM = rwc
-	defer func() { ExternalTPM = nil }()
-
 	outPath := filepath.Join(t.TempDir(), "token.txt")
-	RootCmd.SetArgs([]string{"token", "--verifier-endpoint", mockAttestationServer.Server.URL, "--output", outPath})
-	if err := RootCmd.Execute(); err != nil {
-		t.Fatalf("RootCmd.Execute() failed: %v", err)
+	args := []string{"token", "--verifier-endpoint", mockAttestationServer.Server.URL, "--output", outPath}
+	if err := execute(t, args, withTPM(rwc), withHTTPClient(mockAttestationServer.Server.Client())); err != nil {
+		t.Fatalf("execute(%q) failed: %v", args, err)
 	}
 
 	data, err := os.ReadFile(outPath)
