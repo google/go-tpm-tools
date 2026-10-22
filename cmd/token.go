@@ -69,16 +69,10 @@ type tokenOptions struct {
 // addTokenFlags registers the token flags on cmd.
 // Callers read the flag values with parseTokenFlags.
 func addTokenFlags(cmd *cobra.Command) {
-	flags := cmd.PersistentFlags()
-	flags.String("output", "", "output file (defaults to stdout)")
-	keyAlgo := tpm2.AlgRSA
-	algo := algoFlag{
-		value:   &keyAlgo,
-		allowed: []tpm2.Algorithm{tpm2.AlgRSA, tpm2.AlgECC},
-	}
-	flags.Var(&algo, "algo", "public key algorithm: "+algo.Allowed())
-	flags.String("event-log", "/sys/kernel/security/tpm0/binary_bios_measurements", "specifies the event log file path.")
-	flags.String("tee-technology", "", "indicates the type of TEE hardware. Should be either empty or one of sev-snp or tdx")
+	addOutputFlag(cmd)
+	addPublicKeyAlgoFlag(cmd)
+	cmd.PersistentFlags().String("event-log", "/sys/kernel/security/tpm0/binary_bios_measurements", "specifies the event log file path.")
+	addTeeTechnology(cmd)
 	cmd.Flags().String("verifier-endpoint", "https://confidentialcomputing.googleapis.com",
 		"the attestation verifier endpoint used to retrieve an attestation claims token")
 	cmd.Flags().Bool("cloud-log", false,
@@ -131,19 +125,9 @@ func parseTokenFlags(cmd *cobra.Command) (tokenOptions, error) {
 		}
 	}
 
-	if flags.Changed("algo") {
-		if f := flags.Lookup("algo"); f != nil && f.Value.String() != "" {
-			switch val := f.Value.String(); val {
-			case "rsa":
-				opts.KeyAlgo = tpm2.AlgRSA
-			case "ecc":
-				opts.KeyAlgo = tpm2.AlgECC
-			default:
-				return tokenOptions{}, fmt.Errorf("unsupported key algorithm: %q", val)
-			}
-		}
-	} else {
-		opts.KeyAlgo = tpm2.AlgRSA
+	opts.KeyAlgo, err = getAlgo(cmd, "algo")
+	if err != nil {
+		return tokenOptions{}, err
 	}
 
 	if flags.Changed("event-log") {
@@ -177,20 +161,20 @@ The OIDC token includes claims regarding the GCE VM, which is verified by Attest
 			return err
 		}
 
-		rwc, err := openTpm()
+		rwc, err := openTpm(cmd)
 		if err != nil {
 			return err
 		}
 		defer rwc.Close()
 
-		opts.Debug = debugOutput()
+		opts.Debug = debugOutput(cmd)
 		token, err := runToken(cmd.Context(), rwc, opts)
 		if err != nil {
 			return err
 		}
 
 		if opts.OutputPath == "" {
-			fmt.Fprintf(messageOutput(), "%s\n", token)
+			fmt.Fprintf(messageOutput(cmd), "%s\n", token)
 			return nil
 		}
 		if err := os.WriteFile(opts.OutputPath, token, 0644); err != nil {

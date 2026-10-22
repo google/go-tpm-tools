@@ -14,18 +14,6 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-var (
-	output        string
-	input         string
-	nvIndex       uint32
-	nonce         []byte
-	teeNonce      []byte
-	teeTechnology string
-	keyAlgo       = tpm2.AlgRSA
-	pcrs          []int
-	format        string
-)
-
 // Add constants for other devices when required
 const (
 	// sevSNP is a constant denotes device name for teeTechnology
@@ -123,53 +111,87 @@ func hideHelp(cmd *cobra.Command) {
 
 // Lets this command specify an output file, for use with dataOutput().
 func addOutputFlag(cmd *cobra.Command) {
-	cmd.PersistentFlags().StringVar(&output, "output", "",
+	cmd.PersistentFlags().String("output", "",
 		"output file (defaults to stdout)")
 }
 
 // Lets this command specify an input file, for use with dataInput().
 func addInputFlag(cmd *cobra.Command) {
-	cmd.PersistentFlags().StringVar(&input, "input", "",
+	cmd.PersistentFlags().String("input", "",
 		"input file (defaults to stdin)")
 }
 
-// Lets this command specify an NVDATA index, for use with nvIndex.
+// Lets this command specify an NVDATA index. Read it with
+// cmd.Flags().GetUint32("index").
 func addIndexFlag(cmd *cobra.Command) {
-	cmd.PersistentFlags().Uint32Var(&nvIndex, "index", 0,
+	cmd.PersistentFlags().Uint32("index", 0,
 		"NVDATA index, cannot be 0")
 }
 
 // Lets this command specify some number of PCR arguments, check if in range.
+// Read them with getPCRs.
 func addPCRsFlag(cmd *cobra.Command) {
-	cmd.PersistentFlags().Var(&pcrsFlag{&pcrs}, "pcrs", "comma separated list of PCR numbers")
+	cmd.PersistentFlags().Var(&pcrsFlag{new([]int)}, "pcrs", "comma separated list of PCR numbers")
 }
 
-// Lets this command specify the public key algorithm.
+// getPCRs returns the PCRs set with the flag from addPCRsFlag.
+func getPCRs(cmd *cobra.Command) ([]int, error) {
+	f := cmd.Flags().Lookup("pcrs")
+	if f == nil {
+		return nil, errors.New("flag pcrs is not defined")
+	}
+	v, ok := f.Value.(*pcrsFlag)
+	if !ok {
+		return nil, fmt.Errorf("flag pcrs has type %T, want *pcrsFlag", f.Value)
+	}
+	return *v.value, nil
+}
+
+// Lets this command specify the public key algorithm. Read it with
+// getAlgo(cmd, "algo").
 func addPublicKeyAlgoFlag(cmd *cobra.Command) {
+	keyAlgo := tpm2.AlgRSA
 	f := algoFlag{&keyAlgo, []tpm2.Algorithm{tpm2.AlgRSA, tpm2.AlgECC}}
 	cmd.PersistentFlags().Var(&f, "algo", "public key algorithm: "+f.Allowed())
 }
 
-func addHashAlgoFlag(cmd *cobra.Command, hashAlgo *tpm2.Algorithm) {
-	f := algoFlag{hashAlgo, []tpm2.Algorithm{tpm2.AlgSHA1, tpm2.AlgSHA256, tpm2.AlgSHA384, tpm2.AlgSHA512}}
+// Lets this command specify the hash algorithm. Read it with
+// getAlgo(cmd, "hash-algo").
+func addHashAlgoFlag(cmd *cobra.Command, defaultAlgo tpm2.Algorithm) {
+	hashAlgo := defaultAlgo
+	f := algoFlag{&hashAlgo, []tpm2.Algorithm{tpm2.AlgSHA1, tpm2.AlgSHA256, tpm2.AlgSHA384, tpm2.AlgSHA512}}
 	cmd.PersistentFlags().Var(&f, "hash-algo", "hash algorithm: "+f.Allowed())
 }
 
+// getAlgo returns the algorithm set with a flag from addPublicKeyAlgoFlag or
+// addHashAlgoFlag.
+func getAlgo(cmd *cobra.Command, name string) (tpm2.Algorithm, error) {
+	f := cmd.Flags().Lookup(name)
+	if f == nil {
+		return tpm2.AlgUnknown, fmt.Errorf("flag %s is not defined", name)
+	}
+	v, ok := f.Value.(*algoFlag)
+	if !ok {
+		return tpm2.AlgUnknown, fmt.Errorf("flag %s has type %T, want *algoFlag", name, f.Value)
+	}
+	return *v.value, nil
+}
+
 func addNonceFlag(cmd *cobra.Command) {
-	cmd.PersistentFlags().BytesHexVar(&nonce, "nonce", []byte{}, "hex encoded nonce for vTPM attestation, cannot be empty")
+	cmd.PersistentFlags().BytesHex("nonce", []byte{}, "hex encoded nonce for vTPM attestation, cannot be empty")
 }
 
 // Lets this command specify the type of output file (binary or txt)
 func addFormatFlag(cmd *cobra.Command) {
-	cmd.PersistentFlags().StringVar(&format, "format", "binarypb", "type of output file where attestation report stored <binarypb|textproto>")
+	cmd.PersistentFlags().String("format", "binarypb", "type of output file where attestation report stored <binarypb|textproto>")
 }
 
 func addTeeNonceflag(cmd *cobra.Command) {
-	cmd.PersistentFlags().BytesHexVar(&teeNonce, "tee-nonce", []byte{}, "hex encoded teenonce for hardware attestation, can be empty")
+	cmd.PersistentFlags().BytesHex("tee-nonce", []byte{}, "hex encoded teenonce for hardware attestation, can be empty")
 }
 
 func addTeeTechnology(cmd *cobra.Command) {
-	cmd.PersistentFlags().StringVar(&teeTechnology, "tee-technology", "", "indicates the type of TEE hardware. Should be either empty or one of sev-snp or tdx")
+	cmd.PersistentFlags().String("tee-technology", "", "indicates the type of TEE hardware. Should be either empty or one of sev-snp or tdx")
 }
 
 // alwaysError implements io.ReadWriter by always returning an error
@@ -187,9 +209,13 @@ func (ae alwaysError) Read(_ []byte) (n int, err error) {
 
 // Handle to output data file. If there is an issue opening the file, the Writer
 // returned will return the error upon any call to Write()
-func dataOutput() io.Writer {
+func dataOutput(cmd *cobra.Command) io.Writer {
+	output, err := cmd.Flags().GetString("output")
+	if err != nil {
+		return alwaysError{err}
+	}
 	if output == "" {
-		return os.Stdout
+		return cmd.OutOrStdout()
 	}
 
 	file, err := os.Create(output)
@@ -233,9 +259,13 @@ func writeProtoToOutput(message proto.Message, outFormat, outputPath string) err
 
 // Handle to input data file. If there is an issue opening the file, the Reader
 // returned will return the error upon any call to Read()
-func dataInput() io.Reader {
+func dataInput(cmd *cobra.Command) io.Reader {
+	input, err := cmd.Flags().GetString("input")
+	if err != nil {
+		return alwaysError{err}
+	}
 	if input == "" {
-		return os.Stdin
+		return cmd.InOrStdin()
 	}
 
 	file, err := os.Open(input)
@@ -274,8 +304,8 @@ func readProtoFromPath(path string, message proto.Message) error {
 	return nil
 }
 
-// Load SRK based on tpm2.Algorithm set in the global flag vars.
-func getSRK(rwc io.ReadWriter) (*client.Key, error) {
+// Load SRK based on the given tpm2.Algorithm.
+func getSRK(rwc io.ReadWriter, keyAlgo tpm2.Algorithm) (*client.Key, error) {
 	switch keyAlgo {
 	case tpm2.AlgRSA:
 		return client.StorageRootKeyRSA(rwc)
@@ -286,8 +316,8 @@ func getSRK(rwc io.ReadWriter) (*client.Key, error) {
 	}
 }
 
-// Load EK based on tpm2.Algorithm set in the global flag vars.
-func getEK(rwc io.ReadWriter) (*client.Key, error) {
+// Load EK based on the given tpm2.Algorithm.
+func getEK(rwc io.ReadWriter, keyAlgo tpm2.Algorithm) (*client.Key, error) {
 	switch keyAlgo {
 	case tpm2.AlgRSA:
 		return client.EndorsementKeyRSA(rwc)

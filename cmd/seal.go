@@ -11,8 +11,6 @@ import (
 	"github.com/google/go-tpm/legacy/tpm2"
 )
 
-var sealHashAlgo = tpm2.AlgSHA256
-
 var sealCmd = &cobra.Command{
 	Use:   "seal",
 	Short: "Seal some data to the TPM",
@@ -27,27 +25,40 @@ only work if certain Platform Control Registers (PCRs) are in the correct state.
 This allows a key (i.e. a disk encryption key) to be bound to specific machine
 state (like Secure Boot).`,
 	Args: cobra.NoArgs,
-	RunE: func(*cobra.Command, []string) error {
-		rwc, err := openTpm()
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		keyAlgo, err := getAlgo(cmd, "algo")
+		if err != nil {
+			return err
+		}
+		sealHashAlgo, err := getAlgo(cmd, "hash-algo")
+		if err != nil {
+			return err
+		}
+		pcrs, err := getPCRs(cmd)
+		if err != nil {
+			return err
+		}
+
+		rwc, err := openTpm(cmd)
 		if err != nil {
 			return err
 		}
 		defer rwc.Close()
 
-		fmt.Fprintln(debugOutput(), "Loading SRK")
-		srk, err := getSRK(rwc)
+		fmt.Fprintln(debugOutput(cmd), "Loading SRK")
+		srk, err := getSRK(rwc, keyAlgo)
 		if err != nil {
 			return err
 		}
 		defer srk.Close()
 
-		fmt.Fprintln(debugOutput(), "Reading sealed data")
-		secret, err := io.ReadAll(dataInput())
+		fmt.Fprintln(debugOutput(cmd), "Reading sealed data")
+		secret, err := io.ReadAll(dataInput(cmd))
 		if err != nil {
 			return err
 		}
 
-		fmt.Fprintf(debugOutput(), "Sealing to PCRs: %v\n", pcrs)
+		fmt.Fprintf(debugOutput(cmd), "Sealing to PCRs: %v\n", pcrs)
 		opts := client.SealOpts{Current: tpm2.PCRSelection{
 			Hash: sealHashAlgo,
 			PCRs: pcrs}}
@@ -56,15 +67,15 @@ state (like Secure Boot).`,
 			return fmt.Errorf("sealing data: %w", err)
 		}
 
-		fmt.Fprintln(debugOutput(), "Writing sealed data")
+		fmt.Fprintln(debugOutput(cmd), "Writing sealed data")
 		var output []byte
 		if output, err = marshalOptions.Marshal(sealed); err != nil {
 			return err
 		}
-		if _, err = dataOutput().Write(output); err != nil {
+		if _, err = dataOutput(cmd).Write(output); err != nil {
 			return err
 		}
-		fmt.Fprintf(debugOutput(), "Sealed data to PCRs: %v\n", pcrs)
+		fmt.Fprintf(debugOutput(cmd), "Sealed data to PCRs: %v\n", pcrs)
 		return nil
 	},
 }
@@ -87,15 +98,20 @@ sealing differ from the current PCR values. This allows for verification of the
 machine state when sealing took place.
 `,
 	Args: cobra.NoArgs,
-	RunE: func(*cobra.Command, []string) error {
-		rwc, err := openTpm()
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		pcrs, err := getPCRs(cmd)
+		if err != nil {
+			return err
+		}
+
+		rwc, err := openTpm(cmd)
 		if err != nil {
 			return err
 		}
 		defer rwc.Close()
 
-		fmt.Fprintln(debugOutput(), "Reading sealed data")
-		data, err := io.ReadAll(dataInput())
+		fmt.Fprintln(debugOutput(cmd), "Reading sealed data")
+		data, err := io.ReadAll(dataInput(cmd))
 		if err != nil {
 			return err
 		}
@@ -104,15 +120,14 @@ machine state when sealing took place.
 			return err
 		}
 
-		fmt.Fprintln(debugOutput(), "Loading SRK")
-		keyAlgo = tpm2.Algorithm(sealed.GetSrk())
-		srk, err := getSRK(rwc)
+		fmt.Fprintln(debugOutput(cmd), "Loading SRK")
+		srk, err := getSRK(rwc, tpm2.Algorithm(sealed.GetSrk()))
 		if err != nil {
 			return err
 		}
 		defer srk.Close()
 
-		fmt.Fprintln(debugOutput(), "Unsealing data")
+		fmt.Fprintln(debugOutput(cmd), "Unsealing data")
 
 		opts := client.UnsealOpts{CertifyCurrent: tpm2.PCRSelection{
 			Hash: client.CertifyHashAlgTpm,
@@ -122,11 +137,11 @@ machine state when sealing took place.
 			return fmt.Errorf("unsealing data: %w", err)
 		}
 
-		fmt.Fprintln(debugOutput(), "Writing secret data")
-		if _, err := dataOutput().Write(secret); err != nil {
+		fmt.Fprintln(debugOutput(cmd), "Writing secret data")
+		if _, err := dataOutput(cmd).Write(secret); err != nil {
 			return fmt.Errorf("writing secret data: %w", err)
 		}
-		fmt.Fprintln(debugOutput(), "Unsealed data using TPM")
+		fmt.Fprintln(debugOutput(cmd), "Unsealed data using TPM")
 		return nil
 	},
 }
@@ -140,7 +155,7 @@ func init() {
 	addOutputFlag(unsealCmd)
 	// PCRs and hash algorithm only used for sealing
 	addPCRsFlag(sealCmd)
-	addHashAlgoFlag(sealCmd, &sealHashAlgo)
+	addHashAlgoFlag(sealCmd, tpm2.AlgSHA256)
 	addPCRsFlag(unsealCmd)
 	addPublicKeyAlgoFlag(sealCmd)
 }
