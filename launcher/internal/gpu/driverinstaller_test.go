@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"cos.googlesource.com/cos/tools.git/src/cmd/cos_gpu_installer/deviceinfo"
+	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
 )
 
 func TestVerifyDriverDigest(t *testing.T) {
@@ -118,5 +119,47 @@ func TestCheckGPUSupport(t *testing.T) {
 				t.Errorf("checkGPUSupport(%v) error = %v, expected to contain %q", tt.gpuType, err, tt.errSubstr)
 			}
 		})
+	}
+}
+
+// writeFakePCIDevice creates a sysfs-like PCI devices directory with one
+// device that has the given vendor and device IDs, and returns its path.
+func writeFakePCIDevice(t *testing.T, vendor, device string) string {
+	t.Helper()
+	pciDir := t.TempDir()
+	devDir := path.Join(pciDir, "0000:00:04.0")
+	if err := os.MkdirAll(devDir, 0755); err != nil {
+		t.Fatalf("failed to create fake PCI device: %v", err)
+	}
+	if err := os.WriteFile(path.Join(devDir, "vendor"), []byte(vendor+"\n"), 0644); err != nil {
+		t.Fatalf("failed to write vendor file: %v", err)
+	}
+	if err := os.WriteFile(path.Join(devDir, "device"), []byte(device+"\n"), 0644); err != nil {
+		t.Fatalf("failed to write device file: %v", err)
+	}
+	return pciDir
+}
+
+// TestRTXPro6000Detection uses the real PCI device lookup on a fake sysfs tree
+// to check that an RTX PRO 6000 is detected, supported, and attested with SPT.
+func TestRTXPro6000Detection(t *testing.T) {
+	// NVIDIA vendor ID and RTX PRO 6000 Blackwell Server Edition device ID.
+	pciDir := writeFakePCIDevice(t, "0x10de", "0x2bb5")
+
+	gpuType, err := deviceinfo.GetGPUTypeInfo(pciDir)
+	if err != nil {
+		t.Fatalf("GetGPUTypeInfo() error = %v", err)
+	}
+	if gpuType != deviceinfo.RTX_PRO_6000 {
+		t.Fatalf("GetGPUTypeInfo() = %v, want %v", gpuType, deviceinfo.RTX_PRO_6000)
+	}
+
+	if err := checkGPUSupport(gpuType); err != nil {
+		t.Errorf("checkGPUSupport(%v) error = %v, want nil", gpuType, err)
+	}
+
+	gpuInfos := []*attestationpb.GpuInfo{{Uuid: "gpu-0"}}
+	if got := determineAttestationType(gpuType, gpuInfos); got != SPT {
+		t.Errorf("determineAttestationType() = %v, want %v", got, SPT)
 	}
 }
