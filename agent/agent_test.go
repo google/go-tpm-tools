@@ -6,7 +6,6 @@ import (
 	"crypto"
 	"crypto/rand"
 	"crypto/sha256"
-	"crypto/sha512"
 	_ "embed"
 	"encoding/base64"
 	"errors"
@@ -709,14 +708,7 @@ func (f *fakeTdxAttestRoot) Attest(nonce []byte) (any, error) {
 }
 
 func (f *fakeTdxAttestRoot) ComputeNonce(challenge []byte, extraData []byte) []byte {
-	challengeData := challenge
-	if extraData != nil {
-		extraDataDigest := sha512.Sum512(extraData)
-		challengeData = append(challenge, extraDataDigest[:]...)
-	}
-	challengeDigest := sha512.Sum512(challengeData)
-	finalNonce := sha512.Sum512(append([]byte(labels.WorkloadAttestation), challengeDigest[:]...))
-	return finalNonce[:]
+	return computeNonce(crypto.SHA512, challenge, extraData)
 }
 
 //go:embed testdata/cel.b64
@@ -1191,6 +1183,65 @@ func TestTPMAttestRoot_ExtendLocksMutex(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("Extend timed out after mutex unlocked")
+	}
+}
+
+func TestComputeNonce(t *testing.T) {
+	// wantNonce is the reference construction:
+	// H(label || H(challenge || H(extraData))), with H(extraData) omitted when extraData is nil.
+	wantNonce := func(h crypto.Hash, challenge, extraData []byte) []byte {
+		data := append([]byte(nil), challenge...)
+		if extraData != nil {
+			d := h.New()
+			d.Write(extraData)
+			data = append(data, d.Sum(nil)...)
+		}
+		inner := h.New()
+		inner.Write(data)
+		outer := h.New()
+		outer.Write([]byte(labels.WorkloadAttestation))
+		outer.Write(inner.Sum(nil))
+		return outer.Sum(nil)
+	}
+
+	roots := []struct {
+		name string
+		root attestRoot
+		hash crypto.Hash
+	}{
+		{name: "TPM", root: &tpmAttestRoot{}, hash: crypto.SHA256},
+		{name: "TDX", root: &tdxAttestRoot{}, hash: crypto.SHA512},
+	}
+	extraDatas := []struct {
+		name      string
+		extraData []byte
+	}{
+		{name: "NilExtraData", extraData: nil},
+		{name: "EmptyExtraData", extraData: []byte{}},
+		{name: "WithExtraData", extraData: []byte("test-extra-data")},
+	}
+
+	for _, r := range roots {
+		for _, e := range extraDatas {
+			t.Run(r.name+"/"+e.name, func(t *testing.T) {
+				// The challenge is a sub-slice of a larger buffer, so it has
+				// enough spare capacity for append to write a SHA-512 digest
+				// in place instead of allocating.
+				buf := bytes.Repeat([]byte{0xAA}, 96)
+				copy(buf, "test-challenge")
+				challenge := buf[:len("test-challenge")]
+				orig := bytes.Clone(buf)
+
+				got := r.root.ComputeNonce(challenge, e.extraData)
+
+				if !bytes.Equal(buf, orig) {
+					t.Errorf("ComputeNonce() modified the buffer behind the challenge:\ngot  %x\nwant %x", buf, orig)
+				}
+				if want := wantNonce(r.hash, orig[:len(challenge)], e.extraData); !bytes.Equal(got, want) {
+					t.Errorf("ComputeNonce() = %x, want %x", got, want)
+				}
+			})
+		}
 	}
 }
 
