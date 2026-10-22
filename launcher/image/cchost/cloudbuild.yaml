@@ -1,0 +1,95 @@
+substitutions:
+  '_BASE_IMAGE': ''
+  '_BASE_IMAGE_PROJECT': ''
+  '_BUCKET_NAME': ''
+  '_IMAGE_ENV': ''
+  '_OUTPUT_IMAGE_NAME': ''
+  '_OUTPUT_IMAGE_FAMILY': ''
+  '_CS_LICENSE': ''
+  '_SHORT_SHA': ''
+
+steps:
+  - name: golang:1.23
+    entrypoint: /bin/bash
+    args:
+      - -c
+      - |
+        cd launcher/launcher
+        CGO_ENABLED=0 go build -o ../image/cchost/preload-dir/confidential_space/cs_container_launcher -ldflags="-X 'main.BuildCommit=${_SHORT_SHA}'"
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: 'DownloadExpBinary'
+    entrypoint: 'gcloud'
+    args: ['storage',
+           'cp',
+           'gs://confidential-space-images_third-party/confidential_space_experiments',
+           './launcher/image/cchost/preload-dir/confidential_space/confidential_space_experiments']
+  - name: 'alpine'
+    args: ['chmod', '+x', './launcher/image/cchost/preload-dir/confidential_space/confidential_space_experiments']
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'ExportBaseImage'
+    args:
+      - 'gcloud'
+      - 'compute'
+      - 'images'
+      - 'export'
+      - '--image=${_BASE_IMAGE}'
+      - '--image-project=${_BASE_IMAGE_PROJECT}'
+      - '--destination-uri=gs://${_BUCKET_NAME}/oem-preloader-${BUILD_ID}/${_BASE_IMAGE}.tar.gz'
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: 'DownloadImageFromGCS'
+    entrypoint: 'gcloud'
+    args: ['storage',
+           'cp',
+           'gs://${_BUCKET_NAME}/oem-preloader-${BUILD_ID}/${_BASE_IMAGE}.tar.gz',
+           './src_image.tar.gz']
+  - name: 'alpine'
+    id: 'ExtractRawImage'
+    args: ['tar', '-xf', './src_image.tar.gz']
+  - name: 'gcr.io/hegao-dev/oem-preloader:v3'
+    id: 'RunOEMPreloader'
+    env:
+      - 'IMAGE_ENV=${_IMAGE_ENV}'
+    args:
+      - '--src-image=./disk.raw'
+      - '--out-image=output.bin'
+      - '--oem-fs-size=500M'
+      - '--disk-size-gb=11'
+      - '--install-dir=./launcher/image/cchost/preload-dir'
+      - '--cmdline-script=./launcher/image/cchost/cmdline.sh'
+  - name: 'alpine'
+    id: 'RenameOutputImage'
+    args: ['mv', 'output.bin', 'disk.raw']
+  - name: 'alpine'
+    id: 'TarOutputImage'
+    args: ['tar', '-zcf', './out_image.tar.gz', 'disk.raw']
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: 'UploadToGCS'
+    entrypoint: 'gcloud'
+    args: ['storage',
+           'cp',
+           './out_image.tar.gz',
+           'gs://${_BUCKET_NAME}/oem-preloader-${BUILD_ID}/${_OUTPUT_IMAGE_NAME}.tar.gz']
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'CreateGCEImage'
+    args:
+      - 'gcloud'
+      - 'compute'
+      - 'images'
+      - 'create'
+      - '--family=${_OUTPUT_IMAGE_FAMILY}'
+      - '--source-uri=gs://${_BUCKET_NAME}/oem-preloader-${BUILD_ID}/${_OUTPUT_IMAGE_NAME}.tar.gz'
+      - '--guest-os-features=UEFI_COMPATIBLE'
+      - '-licenses=${_CS_LICENSE},projects/confidential-space-images/global/licenses/ek-certificate-license'
+      - '${_OUTPUT_IMAGE_NAME}'
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: 'RemoveGCSFiles'
+    entrypoint: 'gcloud'
+    args: ['storage',
+           'rm',
+           'gs://${_BUCKET_NAME}/oem-preloader-${BUILD_ID}/${_BASE_IMAGE}.tar.gz',
+           'gs://${_BUCKET_NAME}/oem-preloader-${BUILD_ID}/${_OUTPUT_IMAGE_NAME}.tar.gz']
+
+timeout: '3000s'
+
+options:
+  dynamic_substitutions: true
