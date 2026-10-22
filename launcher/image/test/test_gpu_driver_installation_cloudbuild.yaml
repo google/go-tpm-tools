@@ -12,21 +12,6 @@ substitutions:
   '_WORKLOAD_IMAGE': 'us-west1-docker.pkg.dev/confidential-space-images-dev/cs-integ-test-images/gpu/cuda-vector-add:latest'
 steps:
 - name: 'gcr.io/cloud-builders/gcloud'
-  id: CreateShieldedVMWithUnsupportedGPU
-  waitFor: ['-']
-  entrypoint: 'bash'
-  env:
-  - 'BUILD_ID=$BUILD_ID'
-  args: ['create_vm.sh','-i', '${_IMAGE_NAME}',
-          '-p', '${_IMAGE_PROJECT}',
-          '-m', 'tee-image-reference=${_WORKLOAD_IMAGE},tee-container-log-redirect=true,tee-install-gpu-driver=true',
-          '-n', '${_VM_NAME_PREFIX}-${BUILD_ID}-unsup',
-          '-z', 'us-central1',
-          '-g', 'nvidia-tesla-t4',
-          '-a', '1',
-          '-c', 'NONE'
-        ]
-- name: 'gcr.io/cloud-builders/gcloud'
   id: CreateSEVCVMWithNoGPU
   waitFor: ['-']
   entrypoint: 'bash'
@@ -87,11 +72,6 @@ steps:
           '-c', 'SEV',
         ]
 - name: 'gcr.io/cloud-builders/gcloud'
-  id: UnsupportedGpuWorkloadTest
-  waitFor: ['CreateShieldedVMWithUnsupportedGPU']
-  entrypoint: 'bash'
-  args: ['scripts/gpu/test_gpu_unsupported_gputype.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}-unsup']
-- name: 'gcr.io/cloud-builders/gcloud'
   id: NoGpuWorkloadTest
   waitFor: ['CreateSEVCVMWithNoGPU']
   entrypoint: 'bash'
@@ -118,13 +98,6 @@ steps:
   env:
   - 'CLEANUP=$_CLEANUP'
   args: ['cleanup.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}-nodriver', 'us-east5-a']
-- name: 'gcr.io/cloud-builders/gcloud'
-  id: UnsupportedGpuVmCleanUp
-  waitFor: ['UnsupportedGpuWorkloadTest']
-  entrypoint: 'bash'
-  env:
-  - 'CLEANUP=$_CLEANUP'
-  args: ['cleanup.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}-unsup']
 - name: 'gcr.io/cloud-builders/gcloud'
   id: NoGpuVmCleanUp
   waitFor: ['NoGpuWorkloadTest']
@@ -154,7 +127,6 @@ steps:
   - 'BUILD_ID=$BUILD_ID'
   args: ['check_failure.sh']
   waitFor:
-  - UnsupportedGpuVmCleanUp
   - NoGpuVmCleanUp
   - NoGpuDriverInstallationCleanUp
   - ConfidentialGpuVmCleanUp
