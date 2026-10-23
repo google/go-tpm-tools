@@ -291,6 +291,16 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 		}
 	}
 
+	if s.Experiments.GB300CCMode {
+		mounts, err := launchermount.CreateLSSDMounts(launchermount.DefaultLSSDHostPath, launchermount.DefaultLSSDContainerPath)
+		if err != nil {
+			return err
+		}
+		for _, m := range mounts {
+			s.Mounts = append(s.Mounts, m)
+		}
+	}
+
 	if s.Experiments.EnableItaVerifier {
 		itaRegionVal, itaRegionOK := unmarshaledMap[itaRegion]
 		itaKeyVal, itaKeyOK := unmarshaledMap[itaKey]
@@ -387,6 +397,7 @@ func GetLaunchSpec(ctx context.Context, logger logging.Logger, client *metadata.
 
 	var errs []error
 	for _, mnt := range spec.Mounts {
+		logger.Info("#### Mount", fmt.Sprintf("%+v", mnt))
 		if err := validateMount(mnt); err != nil {
 			errs = append(errs, err)
 		}
@@ -515,6 +526,8 @@ func validateMount(mnt launchermount.Mount) error {
 	switch v := mnt.(type) {
 	case launchermount.TmpfsMount:
 		return validateMemorySizeKb(v.Size / 1024)
+	case launchermount.LSSDMount:
+		return nil
 	default:
 		return fmt.Errorf("got unknown mount type: %T", v)
 	}

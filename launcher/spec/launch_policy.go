@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/google/go-tpm-tools/launcher/internal/launchermount"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 )
 
@@ -319,6 +320,12 @@ func (p LaunchPolicy) Verify(ls LaunchSpec) error {
 
 	var err error
 	for _, mnt := range ls.Mounts {
+		// Local SSD passthrough mounts are created by the launcher when GB300CCMode is enabled.
+		// The allow_mount_destinations policy does not apply to them because the operator cannot choose LSSD source or destination.
+		if _, ok := mnt.(launchermount.LSSDMount); ok && ls.Experiments.GB300CCMode {
+			continue
+		}
+
 		err = errors.Join(err, p.verifyMountDestination(mnt.Mountpoint()))
 	}
 	if err != nil {
@@ -346,6 +353,7 @@ func (p LaunchPolicy) verifyMountDestination(dstPath string) error {
 	if !filepath.IsAbs(dstPath) {
 		return fmt.Errorf("received a non-absolute destination path: %v", dstPath)
 	}
+
 	dstPath = filepath.Clean(dstPath)
 	for _, allowDst := range p.AllowedMountDestinations {
 		if !filepath.IsAbs(allowDst) {

@@ -13,6 +13,7 @@ const (
 	DestinationKey = "destination"
 	SizeKey        = "size"
 	TypeTmpfs      = "tmpfs"
+	TypeBind       = "bind"
 )
 
 var (
