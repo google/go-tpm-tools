@@ -13,9 +13,9 @@ const (
 	// InstallationContainerDir is the directory where gpu drivers will be available on the workload container.
 	InstallationContainerDir = "/usr/local/nvidia"
 	// InstallerImageRef is the hardcoded image reference for cos_gpu_installer
-	InstallerImageRef = "us.gcr.io/cos-cloud/cos-gpu-installer:v2.5.10"
-	// InstallerDigest is the expected digest for cos_gpu_installer:v2.5.10
-	InstallerDigest = "sha256:31f36d9ba262d7181c624fdeaab4b2148d6e0f8101671e583efe153792116b8d"
+	InstallerImageRef = "us.gcr.io/cos-cloud/cos-gpu-installer:v2.7.11"
+	// InstallerDigest is the expected digest for cos_gpu_installer:v2.7.11
+	InstallerDigest = "sha256:050c2a134eff464d17850474484372ee01b16a78936961fe5c07b1313bc04f3d"
 	// NvDriverVer595_58_03 is the version string for the driver
 	NvDriverVer595_58_03 = "595.58.03"
 	// NvDriverVer595_58_03Digest is driver run file digest downloaded from
