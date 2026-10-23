@@ -1,6 +1,7 @@
 package registryauth
 
 import (
+	"encoding/base64"
 	"io"
 	"net/http"
 	"strings"
@@ -9,10 +10,14 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
+const saToken = "sa-token"
+
 // fakeRegistry records the host of each request. It returns 401 until the
-// request has a bearer token from token.invalid.
+// request has a bearer token from token.invalid. It also records whether a
+// token request carried the service account token.
 type fakeRegistry struct {
-	hosts []string
+	hosts       []string
+	sentSAToken bool
 }
 
 func (f *fakeRegistry) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -20,6 +25,9 @@ func (f *fakeRegistry) RoundTrip(req *http.Request) (*http.Response, error) {
 	resp := &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: http.NoBody, Request: req}
 	switch {
 	case req.URL.Host == "token.invalid":
+		if containsSAToken(req) {
+			f.sentSAToken = true
+		}
 		resp.Body = io.NopCloser(strings.NewReader(`{"token":"t","access_token":"t"}`))
 	case req.Header.Get("Authorization") != "Bearer t":
 		resp.StatusCode = http.StatusUnauthorized
@@ -30,36 +38,79 @@ func (f *fakeRegistry) RoundTrip(req *http.Request) (*http.Response, error) {
 	return resp, nil
 }
 
-func TestResolverUsesCorrectClient(t *testing.T) {
-	tests := []struct {
-		name             string
-		ref              string
-		wantGoogleHosts  []string
-		wantDefaultHosts []string
-	}{
-		{
-			name:            "gcr",
-			ref:             "gcr.io/project/image:latest",
-			wantGoogleHosts: []string{"gcr.io", "token.invalid", "gcr.io"},
-		},
-		{
-			name:            "regional_gcr",
-			ref:             "us.gcr.io/project/image:latest",
-			wantGoogleHosts: []string{"us.gcr.io", "token.invalid", "us.gcr.io"},
-		},
-		{
-			name:            "artifact_registry",
-			ref:             "us-docker.pkg.dev/project/repo/image:latest",
-			wantGoogleHosts: []string{"us-docker.pkg.dev", "token.invalid", "us-docker.pkg.dev"},
-		},
-		{
-			name:             "non_google",
-			ref:              "registry.example.com/image:latest",
-			wantDefaultHosts: []string{"registry.example.com", "token.invalid", "registry.example.com"},
-		},
+// containsSAToken reports whether the token request sends the service account
+// token, either as basic auth or in the OAuth form body.
+func containsSAToken(req *http.Request) bool {
+	if auth, ok := strings.CutPrefix(req.Header.Get("Authorization"), "Basic "); ok {
+		if creds, err := base64.StdEncoding.DecodeString(auth); err == nil && strings.Contains(string(creds), saToken) {
+			return true
+		}
 	}
+	if req.Body == nil {
+		return false
+	}
+	body, err := io.ReadAll(req.Body)
+	return err == nil && strings.Contains(string(body), saToken)
+}
+
+// Hosts of the registries that Confidential Space supports for workload images.
+var googleRegistryHosts = []string{
+	// Container Registry.
+	"gcr.io",
+	"us.gcr.io",
+	"eu.gcr.io",
+	"asia.gcr.io",
+	// Artifact Registry multi-region locations.
+	"us-docker.pkg.dev",
+	"europe-docker.pkg.dev",
+	"asia-docker.pkg.dev",
+	// Artifact Registry regional locations.
+	"us-west1-docker.pkg.dev",
+	"europe-west4-docker.pkg.dev",
+	"asia-northeast1-docker.pkg.dev",
+}
+
+func TestIsGoogleRegistry(t *testing.T) {
+	for _, host := range googleRegistryHosts {
+		if !isGoogleRegistry(host) {
+			t.Errorf("isGoogleRegistry(%q) = false, want true", host)
+		}
+	}
+	for _, host := range []string{
+		"pkg.dev",
+		"notpkg.dev",
+		"notgcr.io",
+		"evilgcr.io",
+		"gcr.io.",
+		"gcr.io:443",
+		"us-docker.pkg.dev:443",
+		"gcr.io.example.com",
+		"docker.pkg.dev.example.com",
+		"registry.example.com",
+		"docker.io",
+		"ghcr.io",
+	} {
+		if isGoogleRegistry(host) {
+			t.Errorf("isGoogleRegistry(%q) = true, want false", host)
+		}
+	}
+}
+
+func TestResolverUsesCorrectClient(t *testing.T) {
+	type testCase struct {
+		ref    string
+		google bool
+	}
+	var tests []testCase
+	for _, host := range googleRegistryHosts {
+		tests = append(tests, testCase{ref: host + "/project/repo/image:latest", google: true})
+	}
+	tests = append(tests,
+		testCase{ref: "registry.example.com/image:latest"},
+		testCase{ref: "ghcr.io/owner/image:latest"},
+	)
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(tc.ref, func(t *testing.T) {
 			googleRegistry := &fakeRegistry{}
 			defaultRegistry := &fakeRegistry{}
 			// containerd uses http.DefaultClient when no client is set.
@@ -67,16 +118,28 @@ func TestResolverUsesCorrectClient(t *testing.T) {
 			http.DefaultClient.Transport = defaultRegistry
 			t.Cleanup(func() { http.DefaultClient.Transport = origTransport })
 
-			resolver := Resolver("sa-token", &http.Client{Transport: googleRegistry})
+			resolver := Resolver(saToken, &http.Client{Transport: googleRegistry})
 			if _, _, err := resolver.Resolve(t.Context(), tc.ref); err != nil {
 				t.Fatalf("Resolve(%q) failed: %v", tc.ref, err)
 			}
 
-			if diff := cmp.Diff(tc.wantGoogleHosts, googleRegistry.hosts); diff != "" {
-				t.Errorf("Resolve(%q) Google client hosts mismatch (-want +got):\n%s", tc.ref, diff)
+			host, _, _ := strings.Cut(tc.ref, "/")
+			wantHosts := []string{host, "token.invalid", host}
+			used, unused := googleRegistry, defaultRegistry
+			if !tc.google {
+				used, unused = defaultRegistry, googleRegistry
 			}
-			if diff := cmp.Diff(tc.wantDefaultHosts, defaultRegistry.hosts); diff != "" {
-				t.Errorf("Resolve(%q) default client hosts mismatch (-want +got):\n%s", tc.ref, diff)
+			if diff := cmp.Diff(wantHosts, used.hosts); diff != "" {
+				t.Errorf("Resolve(%q) hosts on expected client mismatch (-want +got):\n%s", tc.ref, diff)
+			}
+			if len(unused.hosts) != 0 {
+				t.Errorf("Resolve(%q) sent requests on the other client: %v", tc.ref, unused.hosts)
+			}
+			if googleRegistry.sentSAToken != tc.google {
+				t.Errorf("Resolve(%q) sent service account token on Google client = %v, want %v", tc.ref, googleRegistry.sentSAToken, tc.google)
+			}
+			if defaultRegistry.sentSAToken {
+				t.Errorf("Resolve(%q) sent service account token on default client", tc.ref)
 			}
 		})
 	}
