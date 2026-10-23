@@ -32,10 +32,10 @@ var isBlockDevice = func(path string) (bool, error) {
 
 // LSSDMount bind-mounts a Local SSD block device node into the container.
 type LSSDMount struct {
-	// source is the host block device path.
-	source string
-	// destination is the container path.
-	destination string
+	// Source is the host block device path.
+	Source string
+	// Destination is the container path.
+	Destination string
 }
 
 // CreateLSSDMounts enumerates all Local SSDs and returns mount configurations for paththrough.
@@ -82,8 +82,8 @@ func CreateLSSDMounts(hostPath, containerDestPath string) ([]LSSDMount, error) {
 		devSymlink[dev] = link
 
 		mounts = append(mounts, LSSDMount{
-			source:      dev,
-			destination: filepath.Join("/", containerDestPath, filepath.Base(link)),
+			Source:      dev,
+			Destination: filepath.Join("/", containerDestPath, filepath.Base(link)),
 		})
 	}
 	return mounts, nil
@@ -94,13 +94,13 @@ func CreateLSSDMounts(hostPath, containerDestPath string) ([]LSSDMount, error) {
 func (l LSSDMount) SpecsMount() specs.Mount {
 	return specs.Mount{
 		Type:        TypeBind,
-		Source:      l.source,
-		Destination: l.destination,
+		Source:      l.Source,
+		Destination: l.Destination,
 		Options:     []string{"bind", "rw"}, // Passthrough
 	}
 }
 
 // Mountpoint returns the path of the Local SSD device node in the container.
 func (l LSSDMount) Mountpoint() string {
-	return l.destination
+	return l.Destination
 }

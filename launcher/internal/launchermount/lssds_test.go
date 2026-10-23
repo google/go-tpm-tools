@@ -93,14 +93,14 @@ func TestCreateLSSDMounts(t *testing.T) {
 				t.Fatalf("CreateLSSDMounts(%q, %q) returned error: %v", byID, tc.containerDestPath, err)
 			}
 			slices.SortFunc(got, func(a, b LSSDMount) int {
-				return strings.Compare(a.source, b.source)
+				return strings.Compare(a.Source, b.Source)
 			})
 			want := []LSSDMount{
-				{source: filepath.Join(dev, "nvme0n1"), destination: filepath.Join(tc.wantDestDir, "google-local-nvme-ssd-1")},
-				{source: filepath.Join(dev, "nvme10n1"), destination: filepath.Join(tc.wantDestDir, "google-local-nvme-ssd-10")},
-				{source: filepath.Join(dev, "nvme1n1"), destination: filepath.Join(tc.wantDestDir, "google-local-nvme-ssd-2")},
-				{source: filepath.Join(dev, "nvme2n1"), destination: filepath.Join(tc.wantDestDir, "google-local-nvme-ssd-0")},
-				{source: filepath.Join(dev, "nvme4n1"), destination: filepath.Join(tc.wantDestDir, "google-local-nvme-ssd-3")},
+				{Source: filepath.Join(dev, "nvme0n1"), Destination: filepath.Join(tc.wantDestDir, "google-local-nvme-ssd-1")},
+				{Source: filepath.Join(dev, "nvme10n1"), Destination: filepath.Join(tc.wantDestDir, "google-local-nvme-ssd-10")},
+				{Source: filepath.Join(dev, "nvme1n1"), Destination: filepath.Join(tc.wantDestDir, "google-local-nvme-ssd-2")},
+				{Source: filepath.Join(dev, "nvme2n1"), Destination: filepath.Join(tc.wantDestDir, "google-local-nvme-ssd-0")},
+				{Source: filepath.Join(dev, "nvme4n1"), Destination: filepath.Join(tc.wantDestDir, "google-local-nvme-ssd-3")},
 			}
 			if diff := cmp.Diff(want, got, cmp.AllowUnexported(LSSDMount{})); diff != "" {
 				t.Errorf("CreateLSSDMounts(%q, %q) returned diff (-want +got):\n%s", byID, tc.containerDestPath, diff)
@@ -201,7 +201,7 @@ func TestIsBlockDevice(t *testing.T) {
 }
 
 func TestLSSDMountSpecsMount(t *testing.T) {
-	mnt := LSSDMount{source: "/dev/nvme2n1", destination: "/dev/disk/by-id/google-local-nvme-ssd-0"}
+	mnt := LSSDMount{Source: "/dev/nvme2n1", Destination: "/dev/disk/by-id/google-local-nvme-ssd-0"}
 	want := specs.Mount{
 		Type:        "bind",
 		Source:      "/dev/nvme2n1",

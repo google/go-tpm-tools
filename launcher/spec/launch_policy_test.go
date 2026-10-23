@@ -1,9 +1,11 @@
 package spec
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-tpm-tools/launcher/internal/experiments"
 	"github.com/google/go-tpm-tools/launcher/internal/launchermount"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 )
@@ -399,6 +401,35 @@ func TestVerify(t *testing.T) {
 				},
 			},
 			false,
+		},
+		{
+			"LSSD mount in GB300CCMode",
+			LaunchPolicy{},
+			LaunchSpec{
+				Mounts: []launchermount.Mount{
+					launchermount.LSSDMount{
+						Source:      filepath.Join(launchermount.DefaultLSSDHostPath, "lssd0"),
+						Destination: filepath.Join(launchermount.DefaultLSSDContainerPath, "lssd0"),
+					},
+				},
+				Experiments: experiments.Experiments{
+					GB300CCMode: true,
+				},
+			},
+			false,
+		},
+		{
+			"LSSD mount not in GB300CCMode",
+			LaunchPolicy{},
+			LaunchSpec{
+				Mounts: []launchermount.Mount{
+					launchermount.LSSDMount{
+						Source:      filepath.Join(launchermount.DefaultLSSDHostPath, "lssd0"),
+						Destination: filepath.Join(launchermount.DefaultLSSDContainerPath, "lssd0"),
+					},
+				},
+			},
+			true,
 		},
 		{
 			"allowed mount dest same dir",
