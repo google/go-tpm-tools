@@ -90,7 +90,7 @@ steps:
   waitFor: ['-']
   env:
   # To update: upload the binary as confidential_space_experiments_<sha256> and change this value.
-  - 'EXPERIMENTS_SHA256=2d36e5a85878e52a97140098e7be146f5703fbe1f1994dbfc5bf77746065a95e'
+  - 'EXPERIMENTS_SHA256=26762346ff62fbba886615995a07e5872062656e7d642ff1ad15a4fd5dc80546'
   script: |
     #!/usr/bin/env bash
     set -euo pipefail
