@@ -93,7 +93,7 @@ func CreateLSSDMounts(hostPath, containerDestPath string) ([]LSSDMount, error) {
 // block device node into the container.
 func (l LSSDMount) SpecsMount() specs.Mount {
 	return specs.Mount{
-		Type:        "bind",
+		Type:        TypeBind,
 		Source:      l.source,
 		Destination: l.destination,
 		Options:     []string{"bind", "rw"}, // Passthrough
