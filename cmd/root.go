@@ -4,51 +4,77 @@ package cmd
 import (
 	"fmt"
 	"io"
-	"os"
 
 	"github.com/spf13/cobra"
 	"google.golang.org/protobuf/encoding/prototext"
 )
 
-// RootCmd is the entrypoint for gotpm.
-var RootCmd = &cobra.Command{
-	Use: "gotpm",
-	Long: `Command line tool for the go-tpm TSS
+// NewRootCmd returns the gotpm command tree. Each call returns new commands
+// with their own flag values.
+func NewRootCmd() *cobra.Command {
+	return newRootCmd()
+}
+
+func newRootCmd(opts ...envOption) *cobra.Command {
+	e := &env{}
+	for _, opt := range opts {
+		opt(e)
+	}
+
+	root := &cobra.Command{
+		Use: "gotpm",
+		Long: `Command line tool for the go-tpm TSS
 
 This tool allows performing TPM2 operations from the command line.
 See the per-command documentation for more information.`,
-	PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
-		if quiet && verbose {
-			return fmt.Errorf("cannot specify both --quiet and --verbose")
-		}
-		cmd.SilenceUsage = true
-		return nil
-	},
-}
-
-var (
-	quiet   bool
-	verbose bool
-)
-
-func init() {
-	RootCmd.PersistentFlags().BoolVar(&quiet, "quiet", false,
+		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
+			quiet, err := cmd.Flags().GetBool("quiet")
+			if err != nil {
+				return err
+			}
+			verbose, err := cmd.Flags().GetBool("verbose")
+			if err != nil {
+				return err
+			}
+			if quiet && verbose {
+				return fmt.Errorf("cannot specify both --quiet and --verbose")
+			}
+			cmd.SilenceUsage = true
+			return nil
+		},
+	}
+	root.PersistentFlags().Bool("quiet", false,
 		"print nothing if command is successful")
-	RootCmd.PersistentFlags().BoolVar(&verbose, "verbose", false,
+	root.PersistentFlags().Bool("verbose", false,
 		"print additional info to stdout")
-	hideHelp(RootCmd)
+	addTPMPathFlag(root)
+	hideHelp(root)
+	root.AddCommand(
+		newAttestCmd(e),
+		newFlushCmd(e),
+		newPubkeyCmd(e),
+		newReadCmd(e),
+		newRegisterCmd(),
+		newSealCmd(e),
+		newUnsealCmd(e),
+		newTokenCmd(e),
+		newVerifyCmd(),
+	)
+	return root
 }
 
-func messageOutput() io.Writer {
-	if quiet {
+// messageOutput returns the writer for normal messages of cmd.
+func messageOutput(cmd *cobra.Command) io.Writer {
+	if quiet, err := cmd.Flags().GetBool("quiet"); err == nil && quiet {
 		return io.Discard
 	}
-	return os.Stdout
+	return cmd.OutOrStdout()
 }
 
-func debugOutput() io.Writer {
-	if verbose {
-		return os.Stdout
+// debugOutput returns the writer for debug messages of cmd.
+func debugOutput(cmd *cobra.Command) io.Writer {
+	if verbose, err := cmd.Flags().GetBool("verbose"); err == nil && verbose {
+		return cmd.OutOrStdout()
 	}
 	return io.Discard
 }

@@ -26,34 +26,68 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var (
-	certifiedAKBlobPath string
-	trustedEKPub        string
-	offline             bool
-)
-
 func addCertifiedAKBlobFlag(cmd *cobra.Command) {
-	cmd.PersistentFlags().StringVar(&certifiedAKBlobPath, "certified-ak-blob", "",
+	cmd.PersistentFlags().String("certified-ak-blob", "",
 		"Specify path to certified AK blob produced from TPM registration. "+
 			"Required for manifest version 0 and rejected for manifest version 1, where the "+
 			"AK is taken from --input.")
 }
 
 func addEKPubFlag(cmd *cobra.Command) {
-	cmd.PersistentFlags().StringVar(&trustedEKPub, "ek-pub", "",
+	cmd.PersistentFlags().String("ek-pub", "",
 		"Specify path to EK pub used in TPM registration. "+
 			"Required for manifest version 0 and optional for manifest version 1.")
 }
 
 func addOfflineFlag(cmd *cobra.Command) {
-	cmd.PersistentFlags().BoolVar(&offline, "offline", false,
+	cmd.PersistentFlags().Bool("offline", false,
 		"Offline mode for verifying SVSM attestation. Skips fetching root of trust for launch endorsement verification and allows debug policy.")
 }
 
-var verifySVSMCmd = &cobra.Command{
-	Use:   "svsm",
-	Short: `Debug the contents of an SevSnpSvsmAttestation. Currently only supported with sev-snp. For debugging purposes only.`,
-	Long: `Debug and verify an SVSM-based vTPM attestation report (SevSnpSvsmAttestation)
+// verifySVSMConfig holds the flag values of the verify debug svsm command.
+type verifySVSMConfig struct {
+	nonce               []byte
+	teeNonce            []byte
+	teeTechnology       string
+	inputPath           string
+	trustedEKPub        string
+	certifiedAKBlobPath string
+	offline             bool
+}
+
+func parseVerifySVSMFlags(cmd *cobra.Command) (verifySVSMConfig, error) {
+	flags := cmd.Flags()
+	var cfg verifySVSMConfig
+	var err error
+	if cfg.nonce, err = flags.GetBytesHex("nonce"); err != nil {
+		return verifySVSMConfig{}, err
+	}
+	if cfg.teeNonce, err = flags.GetBytesHex("tee-nonce"); err != nil {
+		return verifySVSMConfig{}, err
+	}
+	if cfg.teeTechnology, err = flags.GetString("tee-technology"); err != nil {
+		return verifySVSMConfig{}, err
+	}
+	if cfg.inputPath, err = flags.GetString("input"); err != nil {
+		return verifySVSMConfig{}, err
+	}
+	if cfg.trustedEKPub, err = flags.GetString("ek-pub"); err != nil {
+		return verifySVSMConfig{}, err
+	}
+	if cfg.certifiedAKBlobPath, err = flags.GetString("certified-ak-blob"); err != nil {
+		return verifySVSMConfig{}, err
+	}
+	if cfg.offline, err = flags.GetBool("offline"); err != nil {
+		return verifySVSMConfig{}, err
+	}
+	return cfg, nil
+}
+
+func newVerifySVSMCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "svsm",
+		Short: `Debug the contents of an SevSnpSvsmAttestation. Currently only supported with sev-snp. For debugging purposes only.`,
+		Long: `Debug and verify an SVSM-based vTPM attestation report (SevSnpSvsmAttestation)
 produced by "gotpm attest svsm". Currently only supported with
 sev-snp. For debugging purposes only.
 
@@ -78,125 +112,134 @@ It supports two manifest verification modes depending on the manifest version:
     verifying against the manifest.
   - The guest VM (VMPL2) also derives its AK (using --key=gceAK) by querying the same template
     SVSM saved to the Google NV index under the Endorsement Hierarchy.`,
-	RunE: func(*cobra.Command, []string) error {
-		if teeTechnology != sevSNP {
-			return errors.New("--svsm is only supported with --tee-technology=sev-snp")
-		}
-		if len(teeNonce) == 0 {
-			return errors.New("tee-nonce should be specified when using verify debug svsm")
-		}
-		svsmAttestation := &apb.SevSnpSvsmAttestation{}
-		err := readProtoFromPath(input, svsmAttestation)
-		if err != nil {
-			return fmt.Errorf("failed to read svsm attestation: %w", err)
-		}
-
-		version := svsmAttestation.GetVtpmServiceManifestVersion()
-		if version == "" {
-			version = defaultConfigfsTsmReportServiceManifestVersion
-		}
-
-		var certifiedAKPub, ekPub []byte
-		switch version {
-		case "0":
-			// The v0 manifest is just the EK pub, so the SNP report says nothing about
-			// the AK. Trust in the AK must come from out of band: the EK-based key
-			// attestation protocol run by "gotpm register". Reading the AK from --input
-			// here would be circular.
-			if trustedEKPub == "" {
-				return errors.New("ek-pub is required for manifest version 0")
-			}
-			if certifiedAKBlobPath == "" {
-				return errors.New("certified-ak-blob is required for manifest version 0")
-			}
-			certifiedAKPub, err = readCertifiedAKPub()
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfg, err := parseVerifySVSMFlags(cmd)
 			if err != nil {
 				return err
 			}
-			ekPub, err = readBytes(trustedEKPub)
+			if cfg.teeTechnology != sevSNP {
+				return errors.New("--svsm is only supported with --tee-technology=sev-snp")
+			}
+			if len(cfg.teeNonce) == 0 {
+				return errors.New("tee-nonce should be specified when using verify debug svsm")
+			}
+			svsmAttestation := &apb.SevSnpSvsmAttestation{}
+			err = readProtoFromPath(cfg.inputPath, svsmAttestation)
 			if err != nil {
-				return fmt.Errorf("failed to read ek-pub: %w", err)
+				return fmt.Errorf("failed to read svsm attestation: %w", err)
 			}
-		case "1":
-			// The v1 manifest embeds both the EK and AK public areas, and SVSM at VMPL0
-			// hashes it into the SNP report's REPORT_DATA. The AK carried in --input is
-			// therefore already bound to the vTPM by the AMD-signed report, so sourcing
-			// it from --input is not circular: verifyManifestAndKeys requires it to
-			// appear in the report-bound manifest.
-			// --certified-ak-blob is only needed for v0 key registration, so reject it here.
-			if certifiedAKBlobPath != "" {
-				return errors.New("certified-ak-blob is not supported with manifest version 1: the AK is taken from the attestation and checked against the manifest")
+
+			version := svsmAttestation.GetVtpmServiceManifestVersion()
+			if version == "" {
+				version = defaultConfigfsTsmReportServiceManifestVersion
 			}
-			if trustedEKPub != "" {
-				ekPub, err = readBytes(trustedEKPub)
+
+			var certifiedAKPub, ekPub []byte
+			switch version {
+			case "0":
+				// The v0 manifest is just the EK pub, so the SNP report says nothing about
+				// the AK. Trust in the AK must come from out of band: the EK-based key
+				// attestation protocol run by "gotpm register". Reading the AK from --input
+				// here would be circular.
+				if cfg.trustedEKPub == "" {
+					return errors.New("ek-pub is required for manifest version 0")
+				}
+				if cfg.certifiedAKBlobPath == "" {
+					return errors.New("certified-ak-blob is required for manifest version 0")
+				}
+				certifiedAKPub, err = readCertifiedAKPub(cfg.certifiedAKBlobPath)
+				if err != nil {
+					return err
+				}
+				ekPub, err = readBytes(cfg.trustedEKPub)
 				if err != nil {
 					return fmt.Errorf("failed to read ek-pub: %w", err)
 				}
+			case "1":
+				// The v1 manifest embeds both the EK and AK public areas, and SVSM at VMPL0
+				// hashes it into the SNP report's REPORT_DATA. The AK carried in --input is
+				// therefore already bound to the vTPM by the AMD-signed report, so sourcing
+				// it from --input is not circular: verifyManifestAndKeys requires it to
+				// appear in the report-bound manifest.
+				// --certified-ak-blob is only needed for v0 key registration, so reject it here.
+				if cfg.certifiedAKBlobPath != "" {
+					return errors.New("certified-ak-blob is not supported with manifest version 1: the AK is taken from the attestation and checked against the manifest")
+				}
+				if cfg.trustedEKPub != "" {
+					ekPub, err = readBytes(cfg.trustedEKPub)
+					if err != nil {
+						return fmt.Errorf("failed to read ek-pub: %w", err)
+					}
+				}
+				if len(svsmAttestation.GetAttestation().GetAkPub()) == 0 {
+					return errors.New("attestation does not contain an AK pub")
+				}
+			default:
+				return fmt.Errorf("only vtpm service manifest version 0 or 1 is supported, got %q", version)
 			}
-			if len(svsmAttestation.GetAttestation().GetAkPub()) == 0 {
-				return errors.New("attestation does not contain an AK pub")
-			}
-		default:
-			return fmt.Errorf("only vtpm service manifest version 0 or 1 is supported, got %q", version)
-		}
 
-		var endorsementOpts *tcbv.Options
-		if !offline {
-			rot, err := getRootOfTrust()
-			if err != nil {
-				return fmt.Errorf("failed to get root of trust: %w", err)
+			var endorsementOpts *tcbv.Options
+			if !cfg.offline {
+				rot, err := getRootOfTrust()
+				if err != nil {
+					return fmt.Errorf("failed to get root of trust: %w", err)
+				}
+				endorsementOpts = &tcbv.Options{
+					RootsOfTrust: rot,
+					Now:          time.Now(),
+				}
 			}
-			endorsementOpts = &tcbv.Options{
-				RootsOfTrust: rot,
-				Now:          time.Now(),
-			}
-		}
-		err = verifySEVSNPSVSMAttestation(verifySEVSNPSVSMOpts{
-			TEENonce:      teeNonce,
-			SevVerifyOpts: &verify.Options{},
-			SevValidateOpts: &validate.Options{
-				GuestPolicy: sabi.SnpPolicy{
-					SMT:   true,
-					Debug: offline,
+			err = verifySEVSNPSVSMAttestation(verifySEVSNPSVSMOpts{
+				TEENonce:      cfg.teeNonce,
+				SevVerifyOpts: &verify.Options{},
+				SevValidateOpts: &validate.Options{
+					GuestPolicy: sabi.SnpPolicy{
+						SMT:   true,
+						Debug: cfg.offline,
+					},
 				},
-			},
-			EndorsementOpts: endorsementOpts,
-			CertifiedAKPub:  certifiedAKPub,
-			EKPub:           ekPub,
-		}, svsmAttestation)
-		if err != nil {
-			return fmt.Errorf("failed to verify snp svsm attestation: %w", err)
-		}
+				EndorsementOpts: endorsementOpts,
+				CertifiedAKPub:  certifiedAKPub,
+				EKPub:           ekPub,
+			}, svsmAttestation)
+			if err != nil {
+				return fmt.Errorf("failed to verify snp svsm attestation: %w", err)
+			}
 
-		pub, err := tpm2.DecodePublic(svsmAttestation.GetAttestation().GetAkPub())
-		if err != nil {
-			return err
-		}
-		cryptoPub, err := pub.Key()
-		if err != nil {
-			return err
-		}
-		ms, err := server.VerifyAttestation(svsmAttestation.GetAttestation(), server.VerifyOpts{Nonce: nonce, TrustedAKs: []crypto.PublicKey{cryptoPub}})
-		if err != nil {
-			return fmt.Errorf("verifying TPM attestation: %w", err)
-		}
-		ms.TeeAttestation = &apb.MachineState_SevSnpAttestation{
-			SevSnpAttestation: svsmAttestation.SevSnpAttestation,
-		}
-		out, err := marshalOptions.Marshal(ms)
-		if err != nil {
-			return fmt.Errorf("failed to marshal machine state: %w", err)
-		}
-		if _, err := dataOutput().Write(out); err != nil {
-			return fmt.Errorf("failed to write verified attestation report: %v", err)
-		}
-		return nil
-	},
+			pub, err := tpm2.DecodePublic(svsmAttestation.GetAttestation().GetAkPub())
+			if err != nil {
+				return err
+			}
+			cryptoPub, err := pub.Key()
+			if err != nil {
+				return err
+			}
+			ms, err := server.VerifyAttestation(svsmAttestation.GetAttestation(), server.VerifyOpts{Nonce: cfg.nonce, TrustedAKs: []crypto.PublicKey{cryptoPub}})
+			if err != nil {
+				return fmt.Errorf("verifying TPM attestation: %w", err)
+			}
+			ms.TeeAttestation = &apb.MachineState_SevSnpAttestation{
+				SevSnpAttestation: svsmAttestation.SevSnpAttestation,
+			}
+			out, err := marshalOptions.Marshal(ms)
+			if err != nil {
+				return fmt.Errorf("failed to marshal machine state: %w", err)
+			}
+			if _, err := dataOutput(cmd).Write(out); err != nil {
+				return fmt.Errorf("failed to write verified attestation report: %v", err)
+			}
+			return nil
+		},
+	}
+	addEKPubFlag(cmd)
+	addTeeTechnology(cmd)
+	addOfflineFlag(cmd)
+	return cmd
 }
 
 // readCertifiedAKPub retrieves the trusted Attestation Key (AK) public area from a
 // certified AK blob file produced by "gotpm register solve-challenge".
-func readCertifiedAKPub() ([]byte, error) {
+func readCertifiedAKPub(certifiedAKBlobPath string) ([]byte, error) {
 	blob := &tpb.CertifiedBlob{}
 	if err := readProtoFromPath(certifiedAKBlobPath, blob); err != nil {
 		return nil, fmt.Errorf("failed to read certified ak blob: %w", err)

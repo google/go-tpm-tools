@@ -9,13 +9,13 @@ import (
 	"testing"
 
 	"cloud.google.com/go/logging"
+	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal/test"
 	"github.com/google/go-tpm-tools/verifier/util"
 	"github.com/google/go-tpm/legacy/tpm2"
 	"github.com/google/go-tpm/tpmutil"
-	"golang.org/x/oauth2"
-	"golang.org/x/oauth2/google"
+	"github.com/spf13/cobra"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -60,19 +60,6 @@ func TestTokenWithGCEAK(t *testing.T) {
 			}
 			defer mockMdsServer.Stop()
 
-			mockOauth2Server, err := util.NewMockOauth2Server()
-			if err != nil {
-				t.Error(err)
-			}
-			defer mockOauth2Server.Stop()
-
-			// Endpoint is Google's OAuth 2.0 default endpoint. Change to mock server.
-			google.Endpoint = oauth2.Endpoint{
-				AuthURL:   mockOauth2Server.Server.URL + "/o/oauth2/auth",
-				TokenURL:  mockOauth2Server.Server.URL + "/token",
-				AuthStyle: oauth2.AuthStyleInParams,
-			}
-
 			mockAttestationServer, err := util.NewMockAttestationServer()
 			if err != nil {
 				t.Error(err)
@@ -94,24 +81,25 @@ func TestTokenWithGCEAK(t *testing.T) {
 			}
 			defer cloudLogClient.Close()
 
-			opts := TokenOptions{
+			opts := tokenOptions{
 				KeyAlgo:          op.algo,
 				VerifierEndpoint: mockAttestationServer.Server.URL,
 				CloudLog:         true,
 				Audience:         util.FakeCustomAudience,
+				HTTPClient:       mockAttestationServer.Server.Client(),
 				CloudLogClient:   cloudLogClient,
 			}
 
 			if op.fail {
 				opts.CustomNonces = []string{"fail test"}
-				if _, err := RunToken(context.Background(), rwc, opts); err != nil && !strings.Contains(err.Error(), "googleapi: Error 400") {
-					t.Errorf("RunToken() returned unexpected error: %v", err)
+				if _, err := runToken(context.Background(), rwc, opts); err != nil && !strings.Contains(err.Error(), "googleapi: Error 400") {
+					t.Errorf("runToken() returned unexpected error: %v", err)
 				}
 			} else {
 				opts.CustomNonces = []string{util.FakeCustomNonce[0], util.FakeCustomNonce[1]}
-				token, err := RunToken(context.Background(), rwc, opts)
+				token, err := runToken(context.Background(), rwc, opts)
 				if err != nil {
-					t.Errorf("RunToken() failed: %v", err)
+					t.Errorf("runToken() failed: %v", err)
 				}
 				if len(token) == 0 {
 					t.Errorf("expected token output, got empty")
@@ -150,37 +138,45 @@ func TestCopiedCustomEventLogFile(t *testing.T) {
 	}
 	defer mockMdsServer.Stop()
 
-	mockOauth2Server, err := util.NewMockOauth2Server()
-	if err != nil {
-		t.Error(err)
-	}
-	defer mockOauth2Server.Stop()
-
-	// Endpoint is Google's OAuth 2.0 default endpoint. Change to mock server.
-	google.Endpoint = oauth2.Endpoint{
-		AuthURL:   mockOauth2Server.Server.URL + "/o/oauth2/auth",
-		TokenURL:  mockOauth2Server.Server.URL + "/token",
-		AuthStyle: oauth2.AuthStyleInParams,
-	}
-
 	mockAttestationServer, err := util.NewMockAttestationServer()
 	if err != nil {
 		t.Error(err)
 	}
 	defer mockAttestationServer.Stop()
 
-	opts := TokenOptions{
+	opts := tokenOptions{
 		KeyAlgo:          tpm2.AlgRSA,
 		VerifierEndpoint: mockAttestationServer.Server.URL,
 		EventLog:         test.Cos85AmdSevEventLog,
+		HTTPClient:       mockAttestationServer.Server.Client(),
 	}
 
-	token, err := RunToken(context.Background(), rwc, opts)
+	token, err := runToken(context.Background(), rwc, opts)
 	if err != nil {
-		t.Errorf("RunToken() failed with custom event log: %v", err)
+		t.Errorf("runToken() failed with custom event log: %v", err)
 	}
 	if len(token) == 0 {
 		t.Errorf("expected token output, got empty")
+	}
+}
+
+func TestParseTokenFlagsEventLog(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "binary_bios_measurements")
+	if err := os.WriteFile(path, test.Cos85AmdSevEventLog, 0644); err != nil {
+		t.Fatal(err)
+	}
+	cmd := &cobra.Command{}
+	addTokenFlags(cmd)
+	if err := cmd.ParseFlags([]string{"--event-log", path}); err != nil {
+		t.Fatalf("ParseFlags() failed: %v", err)
+	}
+
+	opts, err := parseTokenFlags(cmd)
+	if err != nil {
+		t.Fatalf("parseTokenFlags() failed: %v", err)
+	}
+	if diff := cmp.Diff(test.Cos85AmdSevEventLog, opts.EventLog); diff != "" {
+		t.Errorf("parseTokenFlags() EventLog mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -242,8 +238,7 @@ var getAttestationKey = map[string]func(rw io.ReadWriter) (*client.Key, error){
 }
 
 func TestTokenCmdInvalidAlgo(t *testing.T) {
-	RootCmd.SetArgs([]string{"token", "--algo", "invalid-algo"})
-	err := RootCmd.Execute()
+	err := execute(t, []string{"token", "--algo", "invalid-algo"})
 	if err == nil || !strings.Contains(err.Error(), "unknown algorithm") {
 		t.Errorf("expected unknown algorithm error, got: %v", err)
 	}
@@ -277,31 +272,16 @@ func TestTokenCmdOutputPath(t *testing.T) {
 	}
 	defer mockMdsServer.Stop()
 
-	mockOauth2Server, err := util.NewMockOauth2Server()
-	if err != nil {
-		t.Error(err)
-	}
-	defer mockOauth2Server.Stop()
-
-	google.Endpoint = oauth2.Endpoint{
-		AuthURL:   mockOauth2Server.Server.URL + "/o/oauth2/auth",
-		TokenURL:  mockOauth2Server.Server.URL + "/token",
-		AuthStyle: oauth2.AuthStyleInParams,
-	}
-
 	mockAttestationServer, err := util.NewMockAttestationServer()
 	if err != nil {
 		t.Error(err)
 	}
 	defer mockAttestationServer.Stop()
 
-	ExternalTPM = rwc
-	defer func() { ExternalTPM = nil }()
-
 	outPath := filepath.Join(t.TempDir(), "token.txt")
-	RootCmd.SetArgs([]string{"token", "--verifier-endpoint", mockAttestationServer.Server.URL, "--output", outPath})
-	if err := RootCmd.Execute(); err != nil {
-		t.Fatalf("RootCmd.Execute() failed: %v", err)
+	args := []string{"token", "--verifier-endpoint", mockAttestationServer.Server.URL, "--output", outPath}
+	if err := execute(t, args, withTPM(rwc), withHTTPClient(mockAttestationServer.Server.Client())); err != nil {
+		t.Fatalf("execute(%q) failed: %v", args, err)
 	}
 
 	data, err := os.ReadFile(outPath)

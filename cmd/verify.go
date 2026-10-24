@@ -17,49 +17,64 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-var verifyCmd = &cobra.Command{
-	Use:   "verify",
-	Short: "Verify a remote attestation report.",
-	Args:  cobra.NoArgs,
+func newVerifyCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "verify",
+		Short: "Verify a remote attestation report.",
+		Args:  cobra.NoArgs,
+	}
+	cmd.AddCommand(newDebugCmd())
+	return cmd
 }
-var debugCmd = &cobra.Command{
-	Use:   "debug",
-	Short: "Debug the contents of an attestation report without verifying its root-of-trust (e.g., attestation key certificate). For debugging purposes only",
-	RunE: func(cmd *cobra.Command, _ []string) error {
-		cfg, err := parseVerifyDebugFlags(cmd)
-		if err != nil {
-			return err
-		}
 
-		attestationBytes, err := readAttestationInput(cmd, cfg.inputPath)
-		if err != nil {
-			return err
-		}
-		attestation := &pb.Attestation{}
+func newDebugCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "debug",
+		Short: "Debug the contents of an attestation report without verifying its root-of-trust (e.g., attestation key certificate). For debugging purposes only",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfg, err := parseVerifyDebugFlags(cmd)
+			if err != nil {
+				return err
+			}
 
-		switch cfg.format {
-		case "binarypb":
-			err = proto.Unmarshal(attestationBytes, attestation)
-		case "textproto":
-			err = unmarshalOptions.Unmarshal(attestationBytes, attestation)
-		}
-		if err != nil {
-			return fmt.Errorf("fail to unmarshal attestation report: %v", err)
-		}
+			attestationBytes, err := readAttestationInput(cmd, cfg.inputPath)
+			if err != nil {
+				return err
+			}
+			attestation := &pb.Attestation{}
 
-		ms, err := runVerify(attestation, cfg.tpmNonce, cfg.teeNonce)
-		if err != nil {
-			return err
-		}
-		out, err := marshalOptions.Marshal(ms)
-		if err != nil {
-			return fmt.Errorf("failed to marshal machine state: %w", err)
-		}
-		if err := writeVerifyOutput(cmd, cfg.outputPath, out); err != nil {
-			return fmt.Errorf("failed to write verified attestation report: %v", err)
-		}
-		return nil
-	},
+			switch cfg.format {
+			case "binarypb":
+				err = proto.Unmarshal(attestationBytes, attestation)
+			case "textproto":
+				err = unmarshalOptions.Unmarshal(attestationBytes, attestation)
+			}
+			if err != nil {
+				return fmt.Errorf("fail to unmarshal attestation report: %v", err)
+			}
+
+			ms, err := runVerify(attestation, cfg.tpmNonce, cfg.teeNonce)
+			if err != nil {
+				return err
+			}
+			out, err := marshalOptions.Marshal(ms)
+			if err != nil {
+				return fmt.Errorf("failed to marshal machine state: %w", err)
+			}
+			if err := writeVerifyOutput(cmd, cfg.outputPath, out); err != nil {
+				return fmt.Errorf("failed to write verified attestation report: %v", err)
+			}
+			return nil
+		},
+	}
+	addNonceFlag(cmd)
+	addOutputFlag(cmd)
+	addInputFlag(cmd)
+	addFormatFlag(cmd)
+	addTeeNonceflag(cmd)
+	addCertifiedAKBlobFlag(cmd)
+	cmd.AddCommand(newVerifySVSMCmd())
+	return cmd
 }
 
 type verifyDebugConfig struct {
@@ -210,19 +225,4 @@ func verifyGceTechnology(attestation *pb.Attestation, teeNonce []byte) error {
 	default:
 		return fmt.Errorf("unknown attestation type: %T", attestation.GetTeeAttestation())
 	}
-}
-
-func init() {
-	RootCmd.AddCommand(verifyCmd)
-	verifyCmd.AddCommand(debugCmd)
-	addNonceFlag(debugCmd)
-	addOutputFlag(debugCmd)
-	addInputFlag(debugCmd)
-	addFormatFlag(debugCmd)
-	addTeeNonceflag(debugCmd)
-	addCertifiedAKBlobFlag(debugCmd)
-	debugCmd.AddCommand(verifySVSMCmd)
-	addEKPubFlag(verifySVSMCmd)
-	addTeeTechnology(verifySVSMCmd)
-	addOfflineFlag(verifySVSMCmd)
 }

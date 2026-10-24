@@ -16,127 +16,169 @@ import (
 // which we call as import certify.
 // ActivateCredential is not implemented yet.
 
-var registerCmd = &cobra.Command{
-	Use:   "register",
-	Short: "Register an SVSM TPM AK",
-	Long:  "Given an EK, we'll register a corresponding AK and prove that it's on the same TPM as the EK.",
-	Args:  cobra.NoArgs,
-}
-
-var (
-	secretOut string
-	secretIn  string
-)
-
-func addSecretInputFlag(cmd *cobra.Command) {
-	cmd.PersistentFlags().StringVar(&secretIn, "secret-input", "",
-		"specifies path to read the secret that was generated from create-challenge")
-}
-
-func addSecretOutputFlag(cmd *cobra.Command) {
-	cmd.PersistentFlags().StringVar(&secretOut, "secret-output", "",
-		"specifies path to write the secret to")
-}
-
-var createChallengeCmd = &cobra.Command{
-	Use:   "create-challenge",
-	Short: "Create a challenge for the client to register the EK",
-	Long: `Given an EK public key in TPM2 wire format, create a challenge for the client
-	to register the EK.  and save the ChallengeSecret but don't share it with the
-	client.`,
-	Args: cobra.NoArgs,
-	RunE: func(_ *cobra.Command, _ []string) error {
-		ekpub, err := readTPMTPublic(dataInput())
-		if err != nil {
-			return err
-		}
-
-		challenge, secret, err := server.CreateRestrictedHMACBlob(ekpub)
-		if err != nil {
-			return fmt.Errorf("could not create challenge: %s", err)
-		}
-		if err := writeProtoToOutput(challenge, format, output); err != nil {
-			return fmt.Errorf("could not write challenge: %w", err)
-		}
-		_, err = openForWrite(secretOut).Write(secret)
-		if err != nil {
-			return fmt.Errorf("could not write secret: %s", err)
-		}
-
-		return nil
-	},
-}
-
-var solveChallengeCmd = &cobra.Command{
-	Use:   "solve-challenge",
-	Short: "Solve a challenge from the TPM EK",
-	Args:  cobra.NoArgs,
-	RunE: func(_ *cobra.Command, _ []string) error {
-		challenge := &tpb.ImportBlob{}
-		err := readProtoFromPath(input, challenge)
-		if err != nil {
-			return fmt.Errorf("could not read challenge: %s", err)
-		}
-
-		rwc, err := openImpl()
-		if err != nil {
-			return fmt.Errorf("could not open TPM: %s", err)
-		}
-		defer rwc.Close()
-		tpm := transport.FromReadWriter(rwc)
-		solved, err := client.CreateCertifiedAKBlob(tpm, challenge, tpm2.TPMAlgID(keyAlgo))
-		if err != nil {
-			return fmt.Errorf("could not solve challenge: %s", err)
-		}
-		if err := writeProtoToOutput(solved, format, output); err != nil {
-			return fmt.Errorf("could not write solved challenge: %w", err)
-		}
-		return nil
-	},
-}
-
-var verifyChallengeCmd = &cobra.Command{
-	Use:   "verify-challenge",
-	Short: "Verify a challenge for the SVSM TPM's EK and its binding to the SNP attestation report",
-	Args:  cobra.NoArgs,
-	RunE: func(_ *cobra.Command, _ []string) error {
-		blob := &tpb.CertifiedBlob{}
-		err := readProtoFromPath(input, blob)
-		if err != nil {
-			return err
-		}
-
-		if secretIn == "" {
-			return fmt.Errorf("secret-input must be specified")
-		}
-		secret, err := readBytes(secretIn)
-		if err != nil {
-			return fmt.Errorf("could not read secret: %s", err)
-		}
-
-		err = server.VerifyCertifiedAKBlob(blob, secret)
-		if err != nil {
-			return fmt.Errorf("could not verify attestation: %s", err)
-		}
-		return nil
-	},
-}
-
-func init() {
-	RootCmd.AddCommand(registerCmd)
+func newRegisterCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "register",
+		Short: "Register an SVSM TPM AK",
+		Long:  "Given an EK, we'll register a corresponding AK and prove that it's on the same TPM as the EK.",
+		Args:  cobra.NoArgs,
+	}
+	createChallengeCmd := newCreateChallengeCmd()
+	solveChallengeCmd := newSolveChallengeCmd()
+	verifyChallengeCmd := newVerifyChallengeCmd()
 	challengeCommands := []*cobra.Command{
 		createChallengeCmd,
 		solveChallengeCmd,
 		verifyChallengeCmd,
 	}
-	for _, cmd := range challengeCommands {
-		registerCmd.AddCommand(cmd)
-		addOutputFlag(cmd)
-		addFormatFlag(cmd)
-		addInputFlag(cmd)
+	for _, c := range challengeCommands {
+		cmd.AddCommand(c)
+		addOutputFlag(c)
+		addFormatFlag(c)
+		addInputFlag(c)
 	}
 
 	addSecretOutputFlag(createChallengeCmd)
 	addSecretInputFlag(verifyChallengeCmd)
 	addPublicKeyAlgoFlag(solveChallengeCmd)
+	return cmd
+}
+
+func addSecretInputFlag(cmd *cobra.Command) {
+	cmd.PersistentFlags().String("secret-input", "",
+		"specifies path to read the secret that was generated from create-challenge")
+}
+
+func addSecretOutputFlag(cmd *cobra.Command) {
+	cmd.PersistentFlags().String("secret-output", "",
+		"specifies path to write the secret to")
+}
+
+func newCreateChallengeCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "create-challenge",
+		Short: "Create a challenge for the client to register the EK",
+		Long: `Given an EK public key in TPM2 wire format, create a challenge for the client
+	to register the EK.  and save the ChallengeSecret but don't share it with the
+	client.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			format, err := cmd.Flags().GetString("format")
+			if err != nil {
+				return err
+			}
+			output, err := cmd.Flags().GetString("output")
+			if err != nil {
+				return err
+			}
+			secretOut, err := cmd.Flags().GetString("secret-output")
+			if err != nil {
+				return err
+			}
+
+			ekpub, err := readTPMTPublic(dataInput(cmd))
+			if err != nil {
+				return err
+			}
+
+			challenge, secret, err := server.CreateRestrictedHMACBlob(ekpub)
+			if err != nil {
+				return fmt.Errorf("could not create challenge: %s", err)
+			}
+			if err := writeProtoToOutput(challenge, format, output); err != nil {
+				return fmt.Errorf("could not write challenge: %w", err)
+			}
+			_, err = openForWrite(secretOut).Write(secret)
+			if err != nil {
+				return fmt.Errorf("could not write secret: %s", err)
+			}
+
+			return nil
+		},
+	}
+}
+
+func newSolveChallengeCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "solve-challenge",
+		Short: "Solve a challenge from the TPM EK",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			input, err := cmd.Flags().GetString("input")
+			if err != nil {
+				return err
+			}
+			format, err := cmd.Flags().GetString("format")
+			if err != nil {
+				return err
+			}
+			output, err := cmd.Flags().GetString("output")
+			if err != nil {
+				return err
+			}
+			keyAlgo, err := getAlgo(cmd, "algo")
+			if err != nil {
+				return err
+			}
+
+			challenge := &tpb.ImportBlob{}
+			err = readProtoFromPath(input, challenge)
+			if err != nil {
+				return fmt.Errorf("could not read challenge: %s", err)
+			}
+
+			rwc, err := openImpl(cmd)
+			if err != nil {
+				return fmt.Errorf("could not open TPM: %s", err)
+			}
+			defer rwc.Close()
+			tpm := transport.FromReadWriter(rwc)
+			solved, err := client.CreateCertifiedAKBlob(tpm, challenge, tpm2.TPMAlgID(keyAlgo))
+			if err != nil {
+				return fmt.Errorf("could not solve challenge: %s", err)
+			}
+			if err := writeProtoToOutput(solved, format, output); err != nil {
+				return fmt.Errorf("could not write solved challenge: %w", err)
+			}
+			return nil
+		},
+	}
+}
+
+func newVerifyChallengeCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "verify-challenge",
+		Short: "Verify a challenge for the SVSM TPM's EK and its binding to the SNP attestation report",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			input, err := cmd.Flags().GetString("input")
+			if err != nil {
+				return err
+			}
+			secretIn, err := cmd.Flags().GetString("secret-input")
+			if err != nil {
+				return err
+			}
+
+			blob := &tpb.CertifiedBlob{}
+			err = readProtoFromPath(input, blob)
+			if err != nil {
+				return err
+			}
+
+			if secretIn == "" {
+				return fmt.Errorf("secret-input must be specified")
+			}
+			secret, err := readBytes(secretIn)
+			if err != nil {
+				return fmt.Errorf("could not read secret: %s", err)
+			}
+
+			err = server.VerifyCertifiedAKBlob(blob, secret)
+			if err != nil {
+				return fmt.Errorf("could not verify attestation: %s", err)
+			}
+			return nil
+		},
+	}
 }
