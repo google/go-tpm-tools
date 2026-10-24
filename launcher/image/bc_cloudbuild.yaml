@@ -2,6 +2,7 @@ substitutions:
   '_ACOS_BUCKET_NAME': ''
   '_BASE_IMAGE': ''
   '_BASE_IMAGE_PROJECT': ''
+  '_BASE_IMAGE_SHA256': ''
   '_BUCKET_NAME': ''
   '_IMAGE_ENV': ''
   '_OUTPUT_IMAGE_NAME': ''
@@ -9,25 +10,13 @@ substitutions:
   '_WSD_CONTAINER_IMAGE_REF': ''
 
 steps:
-  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-    id: 'ExportBaseImage'
-    waitFor: ['-']
-    args:
-      - 'gcloud'
-      - 'compute'
-      - 'images'
-      - 'export'
-      - '--image=${_BASE_IMAGE}'
-      - '--image-project=${_BASE_IMAGE_PROJECT}'
-      - '--destination-uri=gs://${_BUCKET_NAME}/oem-preloader-${BUILD_ID}/${_BASE_IMAGE}.tar.gz'
-      - '--zone=us-west1-a'
   - name: 'gcr.io/cloud-builders/gcloud'
     id: 'DownloadImageFromGCS'
-    waitFor: ['ExportBaseImage']
+    waitFor: ['-']
     entrypoint: 'gcloud'
     args: ['storage',
            'cp',
-           'gs://${_BUCKET_NAME}/oem-preloader-${BUILD_ID}/${_BASE_IMAGE}.tar.gz',
+           'gs://${_BASE_IMAGE_PROJECT}_raw-images/${_BASE_IMAGE}.tar.gz',
            './src_image.tar.gz']
   - name: 'gcr.io/cloud-builders/docker'
     id: 'SaveWSDContainerImage'
@@ -44,7 +33,12 @@ steps:
   - name: 'alpine'
     id: 'ExtractRawImage'
     waitFor: ['DownloadImageFromGCS']
-    args: ['tar', '-xf', './src_image.tar.gz']
+    automapSubstitutions: true
+    script: |
+      #!/bin/sh
+      set -eu
+      echo "$_BASE_IMAGE_SHA256  ./src_image.tar.gz" | sha256sum -c
+      tar -xf ./src_image.tar.gz
   - name: 'alpine'
     id: 'PrepareOEMInstallDir'
     waitFor: ['SaveWSDContainerImage']
@@ -321,4 +315,9 @@ options:
   dynamic_substitutions: true
   pool:
     name: 'projects/confidential-space-images-dev/locations/us-west1/workerPools/cs-image-build-vpc'
+  # Give each step its own gcloud config directory. Steps that run gcloud at
+  # the same time otherwise share one config database and can fail with
+  # "database is locked".
+  env:
+  - 'CLOUDSDK_CONFIG=/tmp/gcloud'
 
