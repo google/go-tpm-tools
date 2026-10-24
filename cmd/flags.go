@@ -24,7 +24,6 @@ var (
 	keyAlgo       = tpm2.AlgRSA
 	pcrs          []int
 	format        string
-	eventLog      string
 )
 
 // Add constants for other devices when required
@@ -132,11 +131,6 @@ func addOutputFlag(cmd *cobra.Command) {
 func addInputFlag(cmd *cobra.Command) {
 	cmd.PersistentFlags().StringVar(&input, "input", "",
 		"input file (defaults to stdin)")
-}
-
-// Lets this command specify event log path.
-func addEventLogFlag(cmd *cobra.Command) {
-	cmd.PersistentFlags().StringVar(&eventLog, "event-log", "/sys/kernel/security/tpm0/binary_bios_measurements", "specifies the event log file path.")
 }
 
 // Lets this command specify an NVDATA index, for use with nvIndex.
