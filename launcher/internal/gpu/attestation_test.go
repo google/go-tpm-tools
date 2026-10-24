@@ -314,14 +314,8 @@ func TestCollectAttestationEvidence(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			fn := &getGpuTypeInfo
-			getGpuTypeInfo = func(string) (deviceinfo.GPUType, error) {
-				return tc.gpuType, nil
-			}
-			t.Cleanup(func() { getGpuTypeInfo = *fn })
-
 			attester := &NvidiaAttester{}
-			attesation, err := attester.collectAttestationEvidence(tc.provider, tc.nonce)
+			attestation, err := attester.collectAttestationEvidence(tc.provider, tc.gpuType, tc.nonce)
 			if gotPass := (err == nil); gotPass != tc.wantPass {
 				t.Fatalf("CollectAttestationEvidence() error = %v, wantPass = %v", err, tc.wantPass)
 			}
@@ -334,15 +328,15 @@ func TestCollectAttestationEvidence(t *testing.T) {
 
 			// Validate SHA-256 hashed challenge nonce
 			expectedNonce := sha256.Sum256(tc.nonce)
-			if !bytes.Equal(attesation.GetNonce(), expectedNonce[:]) {
-				t.Errorf("attesation.GetNonce() = %x, want %x", attesation.GetNonce(), expectedNonce)
+			if !bytes.Equal(attestation.GetNonce(), expectedNonce[:]) {
+				t.Errorf("attestation.GetNonce() = %x, want %x", attestation.GetNonce(), expectedNonce)
 			}
 
 			// Validate SPT vs MPT feature structure and fields
 			if tc.wantSPT {
-				sptReport, ok := attesation.CcFeature.(*attestationpb.NvidiaAttestationReport_Spt)
+				sptReport, ok := attestation.CcFeature.(*attestationpb.NvidiaAttestationReport_Spt)
 				if !ok {
-					t.Fatalf("attesation.CcFeature is %T, want *attestationpb.NvidiaAttestationReport_Spt", attesation.CcFeature)
+					t.Fatalf("attestation.CcFeature is %T, want *attestationpb.NvidiaAttestationReport_Spt", attestation.CcFeature)
 				}
 				quote := sptReport.Spt.GetGpuQuote()
 				if quote == nil {
@@ -370,9 +364,9 @@ func TestCollectAttestationEvidence(t *testing.T) {
 			}
 
 			if tc.wantMPT {
-				mptReport, ok := attesation.CcFeature.(*attestationpb.NvidiaAttestationReport_Mpt)
+				mptReport, ok := attestation.CcFeature.(*attestationpb.NvidiaAttestationReport_Mpt)
 				if !ok {
-					t.Fatalf("attesation.CcFeature is %T, want *attestationpb.NvidiaAttestationReport_Mpt", attesation.CcFeature)
+					t.Fatalf("attestation.CcFeature is %T, want *attestationpb.NvidiaAttestationReport_Mpt", attestation.CcFeature)
 				}
 				quotes := mptReport.Mpt.GetGpuQuotes()
 				fakeDevs := tc.provider.(*fakeGpuQuoteProvider).quote.GpuInfos
@@ -400,15 +394,15 @@ func TestCollectAttestationEvidence(t *testing.T) {
 			}
 
 			// Wire format guardrail: verify protobuf serialization & deserialization round-trip
-			marshaled, err := proto.Marshal(attesation)
+			marshaled, err := proto.Marshal(attestation)
 			if err != nil {
-				t.Fatalf("proto.Marshal(attesation) failed: %v", err)
+				t.Fatalf("proto.Marshal(attestation) failed: %v", err)
 			}
 			unmarshaled := &attestationpb.NvidiaAttestationReport{}
 			if err := proto.Unmarshal(marshaled, unmarshaled); err != nil {
 				t.Fatalf("proto.Unmarshal(marshaled) failed: %v", err)
 			}
-			if diff := cmp.Diff(attesation, unmarshaled, protocmp.Transform()); diff != "" {
+			if diff := cmp.Diff(attestation, unmarshaled, protocmp.Transform()); diff != "" {
 				t.Errorf("proto round-trip mismatch (-want +got):\n%s", diff)
 			}
 		})
@@ -513,13 +507,7 @@ func TestDetermineAttestationType(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			fn := &getGpuTypeInfo
-			getGpuTypeInfo = func(string) (deviceinfo.GPUType, error) {
-				return tc.gpuType, nil
-			}
-			t.Cleanup(func() { getGpuTypeInfo = *fn })
-
-			if got := determineAttestationType(tc.gpuInfos); got != tc.want {
+			if got := determineAttestationType(tc.gpuType, tc.gpuInfos); got != tc.want {
 				t.Errorf("determineAttestationType() = %v, want %v", got, tc.want)
 			}
 		})
@@ -573,11 +561,8 @@ func TestNewNvidiaAttester(t *testing.T) {
 }
 
 func TestAttestWithQuoteProvider(t *testing.T) {
-	fn := &getGpuTypeInfo
-	getGpuTypeInfo = func(string) (deviceinfo.GPUType, error) {
-		return deviceinfo.H100, nil
-	}
-	t.Cleanup(func() { getGpuTypeInfo = *fn })
+	// H100 PCI device ID.
+	pciDir := writeFakePCIDevice(t, "0x10de", "0x2330")
 
 	fakeProvider := &fakeGpuQuoteProvider{
 		quote: &nvattestpb.GpuAttestationQuote{
@@ -589,6 +574,7 @@ func TestAttestWithQuoteProvider(t *testing.T) {
 
 	attester := &NvidiaAttester{
 		quoteProvider: fakeProvider,
+		pciDevicesDir: pciDir,
 	}
 
 	challengeNonce := []byte("challenge-nonce-12345")
