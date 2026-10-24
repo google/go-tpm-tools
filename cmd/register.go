@@ -23,18 +23,13 @@ var registerCmd = &cobra.Command{
 	Args:  cobra.NoArgs,
 }
 
-var (
-	secretOut string
-	secretIn  string
-)
-
 func addSecretInputFlag(cmd *cobra.Command) {
-	cmd.PersistentFlags().StringVar(&secretIn, "secret-input", "",
+	cmd.PersistentFlags().String("secret-input", "",
 		"specifies path to read the secret that was generated from create-challenge")
 }
 
 func addSecretOutputFlag(cmd *cobra.Command) {
-	cmd.PersistentFlags().StringVar(&secretOut, "secret-output", "",
+	cmd.PersistentFlags().String("secret-output", "",
 		"specifies path to write the secret to")
 }
 
@@ -45,8 +40,21 @@ var createChallengeCmd = &cobra.Command{
 	to register the EK.  and save the ChallengeSecret but don't share it with the
 	client.`,
 	Args: cobra.NoArgs,
-	RunE: func(_ *cobra.Command, _ []string) error {
-		ekpub, err := readTPMTPublic(dataInput())
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		format, err := cmd.Flags().GetString("format")
+		if err != nil {
+			return err
+		}
+		output, err := cmd.Flags().GetString("output")
+		if err != nil {
+			return err
+		}
+		secretOut, err := cmd.Flags().GetString("secret-output")
+		if err != nil {
+			return err
+		}
+
+		ekpub, err := readTPMTPublic(dataInput(cmd))
 		if err != nil {
 			return err
 		}
@@ -71,14 +79,31 @@ var solveChallengeCmd = &cobra.Command{
 	Use:   "solve-challenge",
 	Short: "Solve a challenge from the TPM EK",
 	Args:  cobra.NoArgs,
-	RunE: func(_ *cobra.Command, _ []string) error {
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		input, err := cmd.Flags().GetString("input")
+		if err != nil {
+			return err
+		}
+		format, err := cmd.Flags().GetString("format")
+		if err != nil {
+			return err
+		}
+		output, err := cmd.Flags().GetString("output")
+		if err != nil {
+			return err
+		}
+		keyAlgo, err := getAlgo(cmd, "algo")
+		if err != nil {
+			return err
+		}
+
 		challenge := &tpb.ImportBlob{}
-		err := readProtoFromPath(input, challenge)
+		err = readProtoFromPath(input, challenge)
 		if err != nil {
 			return fmt.Errorf("could not read challenge: %s", err)
 		}
 
-		rwc, err := openImpl()
+		rwc, err := openImpl(cmd)
 		if err != nil {
 			return fmt.Errorf("could not open TPM: %s", err)
 		}
@@ -99,9 +124,18 @@ var verifyChallengeCmd = &cobra.Command{
 	Use:   "verify-challenge",
 	Short: "Verify a challenge for the SVSM TPM's EK and its binding to the SNP attestation report",
 	Args:  cobra.NoArgs,
-	RunE: func(_ *cobra.Command, _ []string) error {
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		input, err := cmd.Flags().GetString("input")
+		if err != nil {
+			return err
+		}
+		secretIn, err := cmd.Flags().GetString("secret-input")
+		if err != nil {
+			return err
+		}
+
 		blob := &tpb.CertifiedBlob{}
-		err := readProtoFromPath(input, blob)
+		err = readProtoFromPath(input, blob)
 		if err != nil {
 			return err
 		}

@@ -5,6 +5,7 @@ import (
 	"io"
 
 	"github.com/google/go-tpm-tools/client"
+	"github.com/spf13/cobra"
 )
 
 // ExternalTPM can be set to run tests against an TPM initialized by an
@@ -32,11 +33,11 @@ func (et extTPMWrapper) EventLog() ([]byte, error) {
 	return client.GetEventLog(et.ReadWriter)
 }
 
-func openTpm() (io.ReadWriteCloser, error) {
+func openTpm(cmd *cobra.Command) (io.ReadWriteCloser, error) {
 	if ExternalTPM != nil {
 		return extTPMWrapper{ExternalTPM}, nil
 	}
-	rwc, err := openImpl()
+	rwc, err := openImpl(cmd)
 	if err != nil {
 		return nil, fmt.Errorf("connecting to TPM: %w", err)
 	}

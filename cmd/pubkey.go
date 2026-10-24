@@ -14,10 +14,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var keyFormat string
-
 func addKeyFormatFlag(cmd *cobra.Command) {
-	cmd.PersistentFlags().StringVar(&keyFormat, "key-format", "pem", "type of format for the outputted key, defaults to pem, but can also specify tpmt-public")
+	cmd.PersistentFlags().String("key-format", "pem", "type of format for the outputted key, defaults to pem, but can also specify tpmt-public")
 }
 
 var hierarchyNames = map[string]tpmutil.Handle{
@@ -51,28 +49,41 @@ NVDATA instead (and --algo is ignored).`,
 		return keys
 	}(),
 	Args: cobra.MatchAll(cobra.ExactArgs(1), cobra.OnlyValidArgs),
-	RunE: func(_ *cobra.Command, args []string) error {
-		rwc, err := openTpm()
+	RunE: func(cmd *cobra.Command, args []string) error {
+		keyAlgo, err := getAlgo(cmd, "algo")
+		if err != nil {
+			return err
+		}
+		nvIndex, err := cmd.Flags().GetUint32("index")
+		if err != nil {
+			return err
+		}
+		keyFormat, err := cmd.Flags().GetString("key-format")
+		if err != nil {
+			return err
+		}
+
+		rwc, err := openTpm(cmd)
 		if err != nil {
 			return err
 		}
 		defer rwc.Close()
 
-		key, err := getKey(rwc, hierarchyNames[args[0]], keyAlgo)
+		key, err := getKey(debugOutput(cmd), rwc, hierarchyNames[args[0]], keyAlgo, nvIndex)
 		if err != nil {
 			return err
 		}
 		defer key.Close()
 
 		if keyFormat == "pem" {
-			return writeKey(key.PublicKey())
+			return writeKey(debugOutput(cmd), dataOutput(cmd), key.PublicKey())
 		}
 		if keyFormat == "tpmt-public" {
 			encoded, err := key.PublicArea().Encode()
 			if err != nil {
 				return fmt.Errorf("failed to encode public area: %v", err)
 			}
-			_, err = dataOutput().Write(encoded)
+			_, err = dataOutput(cmd).Write(encoded)
 			if err != nil {
 				return fmt.Errorf("failed to write key: %v", err)
 			}
@@ -91,31 +102,31 @@ func init() {
 	addKeyFormatFlag(pubkeyCmd)
 }
 
-func getKey(rw io.ReadWriter, hierarchy tpmutil.Handle, _ tpm2.Algorithm) (*client.Key, error) {
-	fmt.Fprintf(debugOutput(), "Using hierarchy 0x%x\n", hierarchy)
+func getKey(debug io.Writer, rw io.ReadWriter, hierarchy tpmutil.Handle, keyAlgo tpm2.Algorithm, nvIndex uint32) (*client.Key, error) {
+	fmt.Fprintf(debug, "Using hierarchy 0x%x\n", hierarchy)
 	if nvIndex != 0 {
-		fmt.Fprintf(debugOutput(), "Reading from NVDATA index %d\n", nvIndex)
+		fmt.Fprintf(debug, "Reading from NVDATA index %d\n", nvIndex)
 		return client.KeyFromNvIndex(rw, hierarchy, nvIndex)
 	}
 
 	switch hierarchy {
 	case tpm2.HandleEndorsement:
-		return getEK(rw)
+		return getEK(rw, keyAlgo)
 	case tpm2.HandleOwner:
-		return getSRK(rw)
+		return getSRK(rw, keyAlgo)
 	default:
 		return nil, fmt.Errorf("there is no default key for the given hierarchy: 0x%x", hierarchy)
 	}
 }
 
-func writeKey(pubKey crypto.PublicKey) error {
-	fmt.Fprintf(debugOutput(), "Got key: %+v\n", pubKey)
+func writeKey(debug, out io.Writer, pubKey crypto.PublicKey) error {
+	fmt.Fprintf(debug, "Got key: %+v\n", pubKey)
 	asn1Bytes, err := x509.MarshalPKIXPublicKey(pubKey)
 	if err != nil {
 		return err
 	}
 
-	return pem.Encode(dataOutput(), &pem.Block{
+	return pem.Encode(out, &pem.Block{
 		Type:  "PUBLIC KEY",
 		Bytes: asn1Bytes,
 	})

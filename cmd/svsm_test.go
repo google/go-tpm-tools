@@ -971,15 +971,17 @@ func TestVerifySVSMFlags(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Cleanup(func() {
-				offline = false
+				if err := verifySVSMCmd.PersistentFlags().Set("offline", "false"); err != nil {
+					t.Error(err)
+				}
 			})
 			RootCmd.SetArgs([]string{
 				"verify", "debug", "svsm",
 				"--tee-technology", "sev-snp",
 				"--tee-nonce", strings.Repeat("00", sabi.ReportDataSize),
 				"--input", writeSVSMAttestation(t, tc.version, tc.akPub),
-				// Set the v0-only and offline flags explicitly: they are package-level
-				// globals that persist across command executions.
+				// Set the v0-only and offline flags explicitly: their values
+				// persist across command executions.
 				"--ek-pub", tc.ekPub,
 				"--certified-ak-blob", tc.certifiedAKBlob,
 				fmt.Sprintf("--offline=%t", tc.offline),

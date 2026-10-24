@@ -37,7 +37,7 @@ hardware and guarantees a fresh quote.
 			return err
 		}
 
-		rwc, err := openTpm()
+		rwc, err := openTpm(cmd)
 		if err != nil {
 			return err
 		}
@@ -78,19 +78,13 @@ type attestCmdConfig struct {
 // addAttestFlags registers persistent attestation flags on cmd.
 // Callers read the flag values with parseAttestFlags.
 func addAttestFlags(cmd *cobra.Command) {
-	flags := cmd.PersistentFlags()
-	flags.String("key", "AK", "indicates type of attestation key to use <gceAK|AK>")
-	keyAlgo := tpm2.AlgRSA
-	algo := algoFlag{
-		value:   &keyAlgo,
-		allowed: []tpm2.Algorithm{tpm2.AlgRSA, tpm2.AlgECC},
-	}
-	flags.Var(&algo, "algo", "public key algorithm: "+algo.Allowed())
-	flags.BytesHex("nonce", []byte{}, "hex encoded nonce for vTPM attestation, cannot be empty")
-	flags.BytesHex("tee-nonce", []byte{}, "hex encoded teenonce for hardware attestation, can be empty")
-	flags.String("tee-technology", "", "indicates the type of TEE hardware. Should be either empty or one of sev-snp or tdx")
-	flags.String("format", "binarypb", "type of output file where attestation report stored <binarypb|textproto>")
-	flags.String("output", "", "output file (defaults to stdout)")
+	cmd.PersistentFlags().String("key", "AK", "indicates type of attestation key to use <gceAK|AK>")
+	addPublicKeyAlgoFlag(cmd)
+	addNonceFlag(cmd)
+	addTeeNonceflag(cmd)
+	addTeeTechnology(cmd)
+	addFormatFlag(cmd)
+	addOutputFlag(cmd)
 }
 
 func parseAttestFlags(cmd *cobra.Command) (attestCmdConfig, error) {
@@ -106,19 +100,9 @@ func parseAttestFlags(cmd *cobra.Command) (attestCmdConfig, error) {
 		return attestCmdConfig{}, fmt.Errorf("key should be either AK or gceAK")
 	}
 
-	if flags.Changed("algo") {
-		if f := flags.Lookup("algo"); f != nil && f.Value.String() != "" {
-			switch val := f.Value.String(); val {
-			case "rsa":
-				cfg.opts.keyAlgo = tpm2.AlgRSA
-			case "ecc":
-				cfg.opts.keyAlgo = tpm2.AlgECC
-			default:
-				return attestCmdConfig{}, fmt.Errorf("unsupported key algorithm: %s", val)
-			}
-		}
-	} else {
-		cfg.opts.keyAlgo = tpm2.AlgRSA
+	cfg.opts.keyAlgo, err = getAlgo(cmd, "algo")
+	if err != nil {
+		return attestCmdConfig{}, err
 	}
 
 	cfg.opts.nonce, err = flags.GetBytesHex("nonce")

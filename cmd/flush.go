@@ -48,8 +48,8 @@ Which handles are flushed depends on the argument passed:
 		return keys
 	}(),
 	Args: cobra.MatchAll(cobra.ExactArgs(1), cobra.OnlyValidArgs),
-	RunE: func(_ *cobra.Command, args []string) error {
-		rwc, err := openTpm()
+	RunE: func(cmd *cobra.Command, args []string) error {
+		rwc, err := openTpm(cmd)
 		if err != nil {
 			return err
 		}
@@ -66,18 +66,18 @@ Which handles are flushed depends on the argument passed:
 					if err = tpm2.EvictControl(rwc, "", tpm2.HandleOwner, handle, handle); err != nil {
 						return fmt.Errorf("evicting handle 0x%x: %w", handle, err)
 					}
-					fmt.Fprintf(debugOutput(), "Handle 0x%x evicted\n", handle)
+					fmt.Fprintf(debugOutput(cmd), "Handle 0x%x evicted\n", handle)
 				} else {
 					if err = tpm2.FlushContext(rwc, handle); err != nil {
 						return fmt.Errorf("flushing handle 0x%x: %w", handle, err)
 					}
-					fmt.Fprintf(debugOutput(), "Handle 0x%x flushed\n", handle)
+					fmt.Fprintf(debugOutput(cmd), "Handle 0x%x flushed\n", handle)
 				}
 				totalHandles++
 			}
 		}
 
-		fmt.Fprintf(messageOutput(), "%d handles flushed\n", totalHandles)
+		fmt.Fprintf(messageOutput(cmd), "%d handles flushed\n", totalHandles)
 		return nil
 	},
 }

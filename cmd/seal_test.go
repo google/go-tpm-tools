@@ -11,7 +11,21 @@ import (
 	"github.com/google/go-tpm-tools/internal/test"
 	"github.com/google/go-tpm/legacy/tpm2"
 	"github.com/google/go-tpm/tpmutil"
+	"github.com/spf13/cobra"
 )
+
+// clearPCRs empties the pcrs flag of each command. The flag appends values and
+// keeps them across RootCmd.Execute calls.
+func clearPCRs(tb testing.TB, cmds ...*cobra.Command) {
+	tb.Helper()
+	for _, cmd := range cmds {
+		f, ok := cmd.PersistentFlags().Lookup("pcrs").Value.(*pcrsFlag)
+		if !ok {
+			tb.Fatalf("pcrs flag of %q has unexpected type", cmd.Name())
+		}
+		*f.value = nil
+	}
+}
 
 func makeTempFile(tb testing.TB, content []byte) string {
 	tb.Helper()
@@ -69,7 +83,7 @@ func TestSealPlain(t *testing.T) {
 			if err := RootCmd.Execute(); err != nil {
 				t.Error(err)
 			}
-			pcrs = []int{} // "flush" pcrs value in last Execute() cmd
+			clearPCRs(t, sealCmd, unsealCmd) // "flush" pcrs value in last Execute() cmd
 
 			unsealArgs := []string{"unseal", "--quiet", "--input", sealedFile, "--output", secretFile2}
 			if op.certifyPCRs != "" {
@@ -125,7 +139,7 @@ func TestUnsealFail(t *testing.T) {
 			if err := RootCmd.Execute(); err != nil {
 				t.Error(err)
 			}
-			pcrs = []int{} // "flush" pcrs value in last Execute() cmd
+			clearPCRs(t, sealCmd, unsealCmd) // "flush" pcrs value in last Execute() cmd
 
 			for _, pcr := range op.pcrToExtend {
 				pcrHandle := tpmutil.Handle(pcr)

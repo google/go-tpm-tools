@@ -18,8 +18,6 @@ var readCmd = &cobra.Command{
 	Args:  cobra.NoArgs,
 }
 
-var pcrHashAlgo = tpm2.AlgUnknown
-
 var pcrCmd = &cobra.Command{
 	Use:   "pcr",
 	Short: "Read PCRs from the TPM",
@@ -30,8 +28,17 @@ Based on --hash-algo and --pcrs flags, read the contents of the TPM's PCRs.
 If --hash-algo is not provided, all banks of PCRs will be read.
 If --pcrs is not provided, all PCRs are read for that hash algorithm.`,
 	Args: cobra.NoArgs,
-	RunE: func(*cobra.Command, []string) error {
-		rwc, err := openTpm()
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		pcrHashAlgo, err := getAlgo(cmd, "hash-algo")
+		if err != nil {
+			return err
+		}
+		pcrs, err := getPCRs(cmd)
+		if err != nil {
+			return err
+		}
+
+		rwc, err := openTpm(cmd)
 		if err != nil {
 			return err
 		}
@@ -43,25 +50,25 @@ If --pcrs is not provided, all PCRs are read for that hash algorithm.`,
 				sel = client.FullPcrSel(sel.Hash)
 			}
 
-			fmt.Fprintf(debugOutput(), "Reading %v PCRs (%v)\n", sel.Hash, sel.PCRs)
+			fmt.Fprintf(debugOutput(cmd), "Reading %v PCRs (%v)\n", sel.Hash, sel.PCRs)
 			pcrs, err := client.ReadPCRs(rwc, sel)
 			if err != nil {
 				return err
 			}
-			return internal.FormatPCRs(dataOutput(), pcrs)
+			return internal.FormatPCRs(dataOutput(cmd), pcrs)
 		}
 		if len(pcrs) != 0 {
 			return errors.New("--hash-algo must be used with --pcrs")
 		}
 
-		fmt.Fprintln(debugOutput(), "Reading all PCRs")
+		fmt.Fprintln(debugOutput(cmd), "Reading all PCRs")
 		banks, err := client.ReadAllPCRs(rwc)
 		if err != nil {
 			return err
 		}
 
 		for _, bank := range banks {
-			if err = internal.FormatPCRs(dataOutput(), bank); err != nil {
+			if err = internal.FormatPCRs(dataOutput(cmd), bank); err != nil {
 				return err
 			}
 		}
@@ -77,8 +84,13 @@ var nvReadCmd = &cobra.Command{
 Based on the --index flag, this reads all of the NVData present at that NVIndex.
 The read is authenticated with the owner hierarchy and an empty password.`,
 	Args: cobra.NoArgs,
-	RunE: func(*cobra.Command, []string) error {
-		rwc, err := openTpm()
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		nvIndex, err := cmd.Flags().GetUint32("index")
+		if err != nil {
+			return err
+		}
+
+		rwc, err := openTpm(cmd)
 		if err != nil {
 			return err
 		}
@@ -88,7 +100,7 @@ The read is authenticated with the owner hierarchy and an empty password.`,
 		if err != nil {
 			return err
 		}
-		if _, err := dataOutput().Write(data); err != nil {
+		if _, err := dataOutput(cmd).Write(data); err != nil {
 			return fmt.Errorf("cannot output NVData: %w", err)
 		}
 		return nil
@@ -101,7 +113,7 @@ func init() {
 	readCmd.AddCommand(nvReadCmd)
 	addOutputFlag(pcrCmd)
 	addPCRsFlag(pcrCmd)
-	addHashAlgoFlag(pcrCmd, &pcrHashAlgo)
+	addHashAlgoFlag(pcrCmd, tpm2.AlgUnknown)
 	addIndexFlag(nvReadCmd)
 	nvReadCmd.MarkPersistentFlagRequired("index")
 	addOutputFlag(nvReadCmd)
