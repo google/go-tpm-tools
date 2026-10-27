@@ -3,7 +3,7 @@ substitutions:
   '_IMAGE_PROJECT': ''
   # Add user-data in the metadata to test if it is disabled.
   '_METADATA_FILE': 'startup-script=data/echo_startupscript.sh,user-data=data/cloud-init-config.yaml'
-  '_CLEANUP': 'true'
+  '_CLEANUP': 'false'
   '_VM_NAME_PREFIX': 'cs-launchpolicy-test'
   '_ZONE': 'us-east4-a'
   '_WORKLOAD_IMAGE_LOG_NEVER': 'us-west1-docker.pkg.dev/confidential-space-images-dev/cs-integ-test-images/launchpolicylognever:latest'
