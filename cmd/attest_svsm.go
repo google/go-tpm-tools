@@ -63,9 +63,13 @@ var attestSVSMCmd = &cobra.Command{
 		// We instead separately attach a TEE attestation inside the SevSnpSvsmAttestation message
 		attestOpts.SkipTeeAttestation = true
 
-		attestOpts.TCGEventLog, err = client.GetEventLog(rwc)
-		if err != nil {
-			return fmt.Errorf("failed to retrieve TCG Event Log: %w", err)
+		if opts.eventLog != nil {
+			attestOpts.TCGEventLog = opts.eventLog
+		} else {
+			attestOpts.TCGEventLog, err = client.GetEventLog(rwc)
+			if err != nil {
+				return fmt.Errorf("failed to retrieve TCG Event Log: %w", err)
+			}
 		}
 
 		attestation, err := attestationKey.Attest(attestOpts)

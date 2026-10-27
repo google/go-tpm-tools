@@ -1,10 +1,12 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"io"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -559,6 +561,7 @@ func TestParseAttestFlagsRejectsInvalidValues(t *testing.T) {
 		{"NonHexNonce", []string{"--nonce", "zz"}},
 		{"OddLengthTEENonce", []string{"--tee-nonce", "123"}},
 		{"UnknownFormat", []string{"--format", "json"}},
+		{"MissingEventLog", []string{"--event-log", "/nonexistent/eventlog.bin"}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -567,5 +570,39 @@ func TestParseAttestFlagsRejectsInvalidValues(t *testing.T) {
 				t.Errorf("parseAttestArgs(%q) succeeded, want error", tc.args)
 			}
 		})
+	}
+}
+
+func TestParseAttestFlagsEventLog(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "eventlog.bin")
+	if err := os.WriteFile(path, test.Cos85AmdSevEventLog, 0600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := parseAttestArgs("--event-log", path)
+	if err != nil {
+		t.Fatalf("parseAttestArgs() failed: %v", err)
+	}
+	if !bytes.Equal(got.opts.eventLog, test.Cos85AmdSevEventLog) {
+		t.Errorf("parseAttestArgs() did not read the event log from %s", path)
+	}
+}
+
+func TestAttestCustomEventLog(t *testing.T) {
+	rwc := test.GetTPM(t)
+	defer client.CheckedClose(t, rwc)
+
+	opts := attestOptions{
+		key:      "AK",
+		keyAlgo:  tpm2.AlgRSA,
+		nonce:    []byte{0x12, 0x34},
+		eventLog: test.Cos85AmdSevEventLog,
+	}
+	attestation, err := runAttest(context.Background(), rwc, opts)
+	if err != nil {
+		t.Fatalf("runAttest() failed: %v", err)
+	}
+	if !bytes.Equal(attestation.GetEventLog(), test.Cos85AmdSevEventLog) {
+		t.Error("runAttest() did not use the custom event log")
 	}
 }

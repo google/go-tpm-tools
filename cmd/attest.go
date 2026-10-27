@@ -29,6 +29,7 @@ key or AK for a custom attestation key. By default it uses AK.
 by default rsa is used.
 --tee-nonce attaches a 64 bytes extra data to the attestation report of TDX and SEV-SNP 
 hardware and guarantees a fresh quote.
+--event-log reads the TCG Event Log from the given file instead of the default location.
 `,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, _ []string) error {
@@ -67,6 +68,7 @@ type attestOptions struct {
 	nonce         []byte
 	teeNonce      []byte
 	teeTechnology string
+	eventLog      []byte
 }
 
 type attestCmdConfig struct {
@@ -91,6 +93,7 @@ func addAttestFlags(cmd *cobra.Command) {
 	flags.String("tee-technology", "", "indicates the type of TEE hardware. Should be either empty or one of sev-snp or tdx")
 	flags.String("format", "binarypb", "type of output file where attestation report stored <binarypb|textproto>")
 	flags.String("output", "", "output file (defaults to stdout)")
+	flags.String("event-log", "/sys/kernel/security/tpm0/binary_bios_measurements", "specifies the event log file path.")
 }
 
 func parseAttestFlags(cmd *cobra.Command) (attestCmdConfig, error) {
@@ -149,6 +152,17 @@ func parseAttestFlags(cmd *cobra.Command) (attestCmdConfig, error) {
 		return attestCmdConfig{}, err
 	}
 
+	if flags.Changed("event-log") {
+		eventLogPath, err := flags.GetString("event-log")
+		if err != nil {
+			return attestCmdConfig{}, err
+		}
+		cfg.opts.eventLog, err = os.ReadFile(eventLogPath)
+		if err != nil {
+			return attestCmdConfig{}, fmt.Errorf("reading event log: %w", err)
+		}
+	}
+
 	return cfg, nil
 }
 
@@ -184,9 +198,13 @@ func runAttest(ctx context.Context, rwc io.ReadWriter, opts attestOptions) (*att
 		attestOpts.TEENonce = opts.teeNonce
 	}
 
-	attestOpts.TCGEventLog, err = client.GetEventLog(rwc)
-	if err != nil {
-		return nil, fmt.Errorf("failed to retrieve TCG Event Log: %w", err)
+	if opts.eventLog != nil {
+		attestOpts.TCGEventLog = opts.eventLog
+	} else {
+		attestOpts.TCGEventLog, err = client.GetEventLog(rwc)
+		if err != nil {
+			return nil, fmt.Errorf("failed to retrieve TCG Event Log: %w", err)
+		}
 	}
 
 	attestation, err := attestationKey.Attest(attestOpts)
