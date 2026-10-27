@@ -104,9 +104,9 @@ func validateCustomNonceAndAudienceFromRequest(r *http.Request) error {
 	}
 
 	if req.TokenOptions != nil {
-		if req.TokenOptions.Nonce != nil {
-			if req.TokenOptions.Nonce[0] != FakeCustomNonce[0] || req.TokenOptions.Nonce[1] != FakeCustomNonce[1] {
-				return fmt.Errorf("error comparing custom nonce: %v", err)
+		if len(req.TokenOptions.Nonce) > 0 {
+			if len(req.TokenOptions.Nonce) < 2 || req.TokenOptions.Nonce[0] != FakeCustomNonce[0] || req.TokenOptions.Nonce[1] != FakeCustomNonce[1] {
+				return fmt.Errorf("error comparing custom nonce")
 			}
 		}
 		if req.TokenOptions.Audience != "" {

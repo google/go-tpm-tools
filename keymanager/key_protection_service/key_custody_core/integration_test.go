@@ -111,3 +111,14 @@ func TestIntegrationGetKEMKeyNotFound(t *testing.T) {
 		t.Fatalf("expected error containing %q, got: %v", expectedErrMsg, err)
 	}
 }
+
+func TestIntegrationGenerateKEMKeypairEmptyAlgo(t *testing.T) {
+	bindingPK := make([]byte, 32)
+	_, _, err := GenerateKEMKeypair(&keymanager.HpkeAlgorithm{}, bindingPK, 3600)
+	if err == nil {
+		t.Fatal("expected error for empty HpkeAlgorithm")
+	}
+	if !strings.Contains(err.Error(), "no algorithm provided") {
+		t.Fatalf("expected 'no algorithm provided' error, got: %v", err)
+	}
+}

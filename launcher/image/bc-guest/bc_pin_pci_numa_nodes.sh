@@ -93,12 +93,10 @@ configure_devices() {
 main() {
   local gpu_pci_addrs=()
   local nic_pci_addrs=()
-  local bridge_pci_addrs=()
 
   # Find and categorize PCI devices.
   # GPUs: Vendor 0x10de, Device 0x2901
   # NICs: Vendor 0x8086, Device 0x1452
-  # Bridges: Vendor 0x15b3, Device 0x1021, Class starting with 0x0207
   for dev_path in /sys/bus/pci/devices/*; do
     if [[ -f "${dev_path}/vendor" && -f "${dev_path}/device" && -f "${dev_path}/class" ]]; then
       local vendor
@@ -114,15 +112,12 @@ main() {
         gpu_pci_addrs+=("$(basename "${dev_path}")")
       elif [[ "${vendor}" == "0x8086" && "${device}" == "0x1452" ]]; then
         nic_pci_addrs+=("$(basename "${dev_path}")")
-      elif [[ "${vendor}" == "0x15b3" && "${device}" == "0x1021" && "${class}" == 0x0207* ]]; then
-        bridge_pci_addrs+=("$(basename "${dev_path}")")
       fi
     fi
   done
 
   configure_devices "NIC" "0 1" "${nic_pci_addrs[@]}"
   configure_devices "GPU" "0 0 0 0 1 1 1 1" "${gpu_pci_addrs[@]}"
-  configure_devices "Bridge" "0 0 0 0" "${bridge_pci_addrs[@]}"
 }
 
 main "$@"

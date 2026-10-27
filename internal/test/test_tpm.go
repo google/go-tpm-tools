@@ -131,6 +131,7 @@ func simulateEventLogEvents(tb testing.TB, rw io.ReadWriter, eventLog []byte) {
 	hashAlgs := map[tpm2.Algorithm]attest.HashAlg{
 		tpm2.AlgSHA1:   attest.HashSHA1,
 		tpm2.AlgSHA256: attest.HashSHA256,
+		tpm2.AlgSHA384: attest.HashSHA384,
 	}
 
 	for tpm2Alg, attestAlg := range hashAlgs {
@@ -140,6 +141,11 @@ func simulateEventLogEvents(tb testing.TB, rw io.ReadWriter, eventLog []byte) {
 			if event.Type == 0x03 {
 				continue
 			}
+			// Skip algorithms not present in the event log (e.g. SHA-384-only event logs on GB300).
+			if len(event.Digest) == 0 {
+				continue
+			}
+
 			extendOnePcr(tb, rw, event.Index, tpm2Alg, event.Digest)
 		}
 	}

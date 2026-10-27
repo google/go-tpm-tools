@@ -1,6 +1,9 @@
 package util
 
 import (
+	"fmt"
+	"net/http"
+	"strings"
 	"testing"
 
 	"cloud.google.com/go/compute/metadata"
@@ -42,3 +45,46 @@ func TestGetRegion(t *testing.T) {
 		t.Error("Region Mismatch")
 	}
 }
+
+func TestValidateCustomNonceAndAudienceFromRequest(t *testing.T) {
+	testCases := []struct {
+		name    string
+		body    string
+		wantErr bool
+	}{
+		{
+			name:    "empty body",
+			body:    "{}",
+			wantErr: false,
+		},
+		{
+			name:    "single nonce - should not panic",
+			body:    `{"tokenOptions": {"nonce": ["single_nonce"]}}`,
+			wantErr: true,
+		},
+		{
+			name:    "empty nonce list - should not panic",
+			body:    `{"tokenOptions": {"nonce": []}}`,
+			wantErr: false,
+		},
+		{
+			name:    "valid nonce and audience",
+			body:    fmt.Sprintf(`{"tokenOptions": {"nonce": ["%s", "%s"], "audience": "%s"}}`, FakeCustomNonce[0], FakeCustomNonce[1], FakeCustomAudience),
+			wantErr: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			req, err := http.NewRequest(http.MethodPost, "/verify", strings.NewReader(tc.body))
+			if err != nil {
+				t.Fatalf("failed to create request: %v", err)
+			}
+			err = validateCustomNonceAndAudienceFromRequest(req)
+			if (err != nil) != tc.wantErr {
+				t.Errorf("validateCustomNonceAndAudienceFromRequest() error = %v, wantErr %v", err, tc.wantErr)
+			}
+		})
+	}
+}
+

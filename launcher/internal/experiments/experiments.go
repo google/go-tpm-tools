@@ -19,8 +19,10 @@ type Experiments struct {
 	EnableH100DriverInstallation bool
 	EnableKeyManager             bool
 	EnableGpuGcaSupport          bool
+	EnableGpuItaSupport          bool
 	EnableHostAttestation        bool
 	BcMode                       bool
+	GB300CCMode                  bool
 }
 
 // New takes a filepath, opens the file, and calls ReadJsonInput with the contents

@@ -7,8 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"path"
 	"strings"
 	"testing"
 
@@ -20,13 +22,13 @@ import (
 	"github.com/google/go-tpm-tools/agent"
 
 	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
-	"github.com/google/go-tpm-tools/launcher/internal/experiments"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
-	"github.com/google/go-tpm-tools/launcher/spec"
 
+	bmsaiagentpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/bmsaiagent"
 	tspb "github.com/google/go-tpm-tools/launcher/teeserver/proto/gen/teeserver"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/google/go-tpm-tools/verifier/models"
+	"github.com/google/go-tpm/legacy/tpm2"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -59,6 +61,15 @@ type fakeAttestationAgent struct {
 	attestationEvidenceFunc func(context.Context, []byte, []byte) (*attestationpb.VmAttestation, error)
 }
 
+type fakeGB300AttestationAgent struct {
+	fakeAttestationAgent
+	attestGB300Func func(context.Context, []byte) (*bmsaiagentpb.Gb300Evidence, error)
+}
+
+func (f fakeGB300AttestationAgent) AttestGB300(ctx context.Context, challenge []byte) (*bmsaiagentpb.Gb300Evidence, error) {
+	return f.attestGB300Func(ctx, challenge)
+}
+
 func (f fakeAttestationAgent) Attest(c context.Context, a agent.AttestAgentOpts) ([]byte, error) {
 	return f.attestFunc(c, a)
 }
@@ -72,14 +83,14 @@ func (f fakeAttestationAgent) AttestationEvidence(c context.Context, nonce []byt
 	if err != nil {
 		return nil, err
 	}
-	if opts.DeviceReportOpts != nil && opts.DeviceReportOpts.EnableRuntimeGPUAttestation {
+	if opts.DeviceReportOpts != nil && opts.EnableRuntimeGPUAttestation {
 		attestation.DeviceReports = append(attestation.DeviceReports, &attestationpb.DeviceAttestationReport{
 			Report: &attestationpb.DeviceAttestationReport_NvidiaReport{
 				NvidiaReport: &attestationpb.NvidiaAttestationReport{},
 			},
 		})
 	}
-	if opts.AcpiOpts != nil && opts.AcpiOpts.RetrieveAcpiData {
+	if opts.AcpiOpts != nil && opts.RetrieveAcpiData {
 		attestation.AcpiData = &attestationpb.AcpiData{}
 	}
 	return attestation, nil
@@ -1044,6 +1055,7 @@ func TestGetKeyEndorsement(t *testing.T) {
 		name             string
 		reqBody          interface{}
 		enableKM         bool
+		bcMode           bool
 		claimsErr        error
 		kemAttestErr     error
 		bindingAttestErr error
@@ -1079,10 +1091,28 @@ func TestGetKeyEndorsement(t *testing.T) {
 			wantStatus: http.StatusForbidden,
 		},
 		{
+			name: "bc mode without key manager",
+			reqBody: map[string]interface{}{
+				"challenge":  testChallenge,
+				"key_handle": map[string]string{"handle": testHandle},
+			},
+			enableKM:   false,
+			bcMode:     true,
+			wantStatus: http.StatusOK,
+		},
+		{
 			name: "missing key handle",
 			reqBody: map[string]interface{}{
 				"challenge":  testChallenge,
 				"key_handle": map[string]string{"handle": ""},
+			},
+			enableKM:   true,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name: "omitted key handle",
+			reqBody: map[string]interface{}{
+				"challenge": testChallenge,
 			},
 			enableKM:   true,
 			wantStatus: http.StatusBadRequest,
@@ -1111,12 +1141,15 @@ func TestGetKeyEndorsement(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mClaims := &mockClaimsProvider{
-				err: tt.claimsErr,
-				claims: map[keymanager.KeyType]*keymanager.KeyClaims{
-					keymanager.KeyType_KEY_TYPE_VM_PROTECTION_KEY:     {Claims: &keymanager.KeyClaims_VmKeyClaims{}},
-					keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING: {Claims: &keymanager.KeyClaims_VmBindingClaims{}},
-				},
+			var mClaims *mockClaimsProvider
+			if tt.enableKM {
+				mClaims = &mockClaimsProvider{
+					err: tt.claimsErr,
+					claims: map[keymanager.KeyType]*keymanager.KeyClaims{
+						keymanager.KeyType_KEY_TYPE_VM_PROTECTION_KEY:     {Claims: &keymanager.KeyClaims_VmKeyClaims{}},
+						keymanager.KeyType_KEY_TYPE_VM_PROTECTION_BINDING: {Claims: &keymanager.KeyClaims_VmBindingClaims{}},
+					},
+				}
 			}
 			mAgent := &fakeAttestationAgent{
 				attestationEvidenceFunc: func(_ context.Context, _, b2 []byte) (*attestationpb.VmAttestation, error) {
@@ -1132,7 +1165,7 @@ func TestGetKeyEndorsement(t *testing.T) {
 					}
 					// Assert option mapping parameters
 					expectedAcpi := req.GetRequestAcpiData()
-					if opts.AcpiOpts == nil || opts.AcpiOpts.RetrieveAcpiData != expectedAcpi {
+					if opts.AcpiOpts == nil || opts.RetrieveAcpiData != expectedAcpi {
 						t.Errorf("KEM Attester: expected Acpi option propagation to be %t", expectedAcpi)
 					}
 					return &attestationpb.VmAttestation{}, nil
@@ -1147,7 +1180,7 @@ func TestGetKeyEndorsement(t *testing.T) {
 					}
 					// Assert option mapping parameters
 					expectedAcpi := req.GetRequestAcpiData()
-					if opts.AcpiOpts == nil || opts.AcpiOpts.RetrieveAcpiData != expectedAcpi {
+					if opts.AcpiOpts == nil || opts.RetrieveAcpiData != expectedAcpi {
 						t.Errorf("Binding Attester: expected Acpi option propagation to be %t", expectedAcpi)
 					}
 					return &attestationpb.VmAttestation{}, nil
@@ -1155,15 +1188,15 @@ func TestGetKeyEndorsement(t *testing.T) {
 			}
 
 			handler := &attestHandler{
-				ctx:               context.Background(),
-				attestAgent:       mAgent,
-				keyClaimsProvider: mClaims,
-				logger:            logging.SimpleLogger(),
-				launchSpec: spec.LaunchSpec{
-					Experiments: experiments.Experiments{EnableKeyManager: tt.enableKM},
-				},
+				ctx:                context.Background(),
+				attestAgent:        mAgent,
+				logger:             logging.SimpleLogger(),
+				bcMode:             tt.bcMode,
 				kemAttester:        mKEM,
 				bindingKeyAttester: mBinding,
+			}
+			if tt.enableKM {
+				handler.keyClaimsProvider = mClaims
 			}
 			body, _ := json.Marshal(tt.reqBody)
 			req := httptest.NewRequest(http.MethodPost, endorsementEndpoint, bytes.NewBuffer(body))
@@ -1177,13 +1210,15 @@ func TestGetKeyEndorsement(t *testing.T) {
 				var endorsement attestationpb.KeyEndorsement
 				if err := protojson.Unmarshal(rr.Body.Bytes(), &endorsement); err != nil {
 					t.Fatalf("failed to unmarshal response: %v", err)
+					return
 				}
 				vmEndorsement := endorsement.GetVmProtectedKeyEndorsement()
 				if vmEndorsement == nil {
 					t.Fatal("response missing VmProtectedKeyEndorsement")
+					return
 				}
-				if vmEndorsement.BindingKeyAttestation.Attestation == nil ||
-					vmEndorsement.ProtectedKeyAttestation.Attestation == nil {
+				if vmEndorsement.GetBindingKeyAttestation().GetAttestation() == nil ||
+					vmEndorsement.GetProtectedKeyAttestation().GetAttestation() == nil {
 					t.Error("one or both attestations are nil")
 				}
 			}
@@ -1275,6 +1310,130 @@ func TestInitBindingKeyAttester(t *testing.T) {
 			}
 			defer attester.Close()
 			tc.verifyType(t, attester)
+		})
+	}
+}
+
+func TestTeeServer_Shutdown(t *testing.T) {
+	sockDir := t.TempDir()
+	sockPath := path.Join(sockDir, "test_shutdown.sock")
+	nl, err := net.Listen("unix", sockPath)
+	if err != nil {
+		t.Fatalf("net.Listen() err = %v, want nil", err)
+	}
+
+	server, err := New(
+		t.Context(),
+		nl,
+		&fakeAttestationAgent{},
+		logging.SimpleLogger(),
+		false,
+		false,
+		AttestClients{},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("New() err = %v, want nil", err)
+	}
+
+	go func() { _ = server.Serve() }()
+
+	if err := server.Shutdown(t.Context()); err != nil {
+		t.Errorf("server.Shutdown() err = %v, want nil", err)
+	}
+}
+
+func TestGetAttestationEvidence_GB300CCMode(t *testing.T) {
+	testEvidence := &bmsaiagentpb.Gb300Evidence{
+		BmsaiEvidence: &bmsaiagentpb.BmsaiEvidence{
+			BmCmwToken:        []byte("test-cmw-token"),
+			DrtmBootEventLog:  []byte("test-drtm-log"),
+			CelLaunchEventLog: []byte("test-cel-log"),
+		},
+		TpmQuote: &attestationpb.TpmQuote{
+			Quotes: []*attestationpb.TpmQuote_SignedQuote{
+				{
+					HashAlgorithm: uint32(tpm2.AlgSHA256),
+					TpmsAttest:    []byte("test-tpms-attest"),
+					TpmtSignature: []byte("test-tpmt-sig"),
+					PcrValues:     map[uint32][]byte{19: []byte("test-pcr-19")},
+				},
+			},
+			PcclientBootEventLog: []byte("test-pcclient-log"),
+			CelLaunchEventLog:    []byte("test-tpm-cel-log"),
+		},
+	}
+
+	testCases := []struct {
+		name             string
+		body             string
+		attestGB300Func  func(context.Context, []byte) (*bmsaiagentpb.Gb300Evidence, error)
+		wantStatusCode   int
+		wantEvidence     *bmsaiagentpb.Gb300Evidence
+		wantBodyContains string
+	}{
+		{
+			name: "success returns Gb300Evidence JSON",
+			body: `{"challenge": "dGVzdGNoYWxsZW5nZTEyMw=="}`,
+			attestGB300Func: func(_ context.Context, challenge []byte) (*bmsaiagentpb.Gb300Evidence, error) {
+				if string(challenge) != "testchallenge123" {
+					return nil, fmt.Errorf("unexpected challenge: %q", string(challenge))
+				}
+				return testEvidence, nil
+			},
+			wantStatusCode: http.StatusOK,
+			wantEvidence:   testEvidence,
+		},
+		{
+			name: "invalid argument from agent maps to 400 Bad Request",
+			body: `{"challenge": "c2hvcnQ="}`,
+			attestGB300Func: func(_ context.Context, _ []byte) (*bmsaiagentpb.Gb300Evidence, error) {
+				return nil, status.Error(codes.InvalidArgument, "challenge length must be between 8 and 64 bytes")
+			},
+			wantStatusCode:   http.StatusBadRequest,
+			wantBodyContains: "failed to fetch GB300 attestation evidence",
+		},
+		{
+			name: "internal agent error maps to 500 Internal Server Error",
+			body: `{"challenge": "dGVzdGNoYWxsZW5nZTEyMw=="}`,
+			attestGB300Func: func(_ context.Context, _ []byte) (*bmsaiagentpb.Gb300Evidence, error) {
+				return nil, status.Error(codes.Internal, "TPM quote failed")
+			},
+			wantStatusCode:   http.StatusInternalServerError,
+			wantBodyContains: "failed to fetch GB300 attestation evidence",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			ah := attestHandler{
+				ctx:    context.Background(),
+				logger: logging.SimpleLogger(),
+				attestAgent: fakeGB300AttestationAgent{
+					attestGB300Func: tc.attestGB300Func,
+				},
+			}
+
+			req := httptest.NewRequest(http.MethodPost, "/v1/evidence", strings.NewReader(tc.body))
+			w := httptest.NewRecorder()
+
+			ah.getAttestationEvidence(w, req)
+
+			if w.Code != tc.wantStatusCode {
+				t.Fatalf("getAttestationEvidence() status = %d, want %d; body = %s", w.Code, tc.wantStatusCode, w.Body.String())
+			}
+
+			if tc.wantStatusCode == http.StatusOK {
+				var got bmsaiagentpb.Gb300Evidence
+				if err := protojson.Unmarshal(w.Body.Bytes(), &got); err != nil {
+					t.Fatalf("protojson.Unmarshal() err = %v", err)
+				}
+				if diff := cmp.Diff(tc.wantEvidence, &got, protocmp.Transform()); diff != "" {
+					t.Errorf("getAttestationEvidence() mismatch (-want +got):\n%s", diff)
+				}
+			} else if !strings.Contains(w.Body.String(), tc.wantBodyContains) {
+				t.Errorf("getAttestationEvidence() body = %q, want substring %q", w.Body.String(), tc.wantBodyContains)
+			}
 		})
 	}
 }

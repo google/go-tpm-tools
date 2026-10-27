@@ -1,0 +1,133 @@
+substitutions:
+  '_IMAGE_NAME': ''
+  '_IMAGE_PROJECT': ''
+  '_CLEANUP': 'true'
+  '_VM_NAME_PREFIX': 'cs-gpu-test'
+  '_ZONE': 'us-west1-a'
+  # RTX PRO 6000 capacity often runs out in a single zone.
+  # These zones offer g4-standard-48 with confidential VMs and have quota.
+  # The create step uses the capacity advisor to select one of these zones.
+  # Later steps look up the chosen zone by VM name.
+  '_RTX_PRO_6000_ZONES': 'us-central1-b,us-central1-c,us-central1-f,us-east1-b,us-east1-d,us-east4-c,us-east5-a,us-east5-b,us-east5-c,us-south1-a,us-south1-b,us-west1-a,us-west1-b,us-west1-c,us-west3-a,us-west4-a,us-west4-c'
+  '_WORKLOAD_IMAGE': 'us-west1-docker.pkg.dev/confidential-space-images-dev/cs-integ-test-images/gpu/cuda-vector-add:latest'
+steps:
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CreateSEVCVMWithNoGPU
+  waitFor: ['-']
+  entrypoint: 'bash'
+  env:
+  - 'BUILD_ID=$BUILD_ID'
+  args: ['create_vm.sh','-i', '${_IMAGE_NAME}',
+          '-p', '${_IMAGE_PROJECT}',
+          '-m', 'tee-image-reference=${_WORKLOAD_IMAGE},tee-container-log-redirect=true,tee-install-gpu-driver=true',
+          '-n', '${_VM_NAME_PREFIX}-${BUILD_ID}-nogpu',
+          '-z', '${_ZONE}',
+        ]
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CreateTDXCVMWithCGPUNoDriverInstallationFlag
+  waitFor: ['-']
+  entrypoint: 'bash'
+  env:
+  - 'BUILD_ID=$BUILD_ID'
+  args: ['create_vm.sh','-i', '${_IMAGE_NAME}',
+          '-p', '${_IMAGE_PROJECT}',
+          '-m', 'tee-image-reference=${_WORKLOAD_IMAGE},tee-container-log-redirect=true',
+          '-n', '${_VM_NAME_PREFIX}-${BUILD_ID}-nodriver',
+          '-z', 'us-east5-a', # H100 GPU with Confidential Compute on are available only under us-central1 and us-east5 regions.  
+          '-t', 'a3-highgpu-1g',
+          '-g', 'nvidia-h100-80gb',
+          '-a', '1',
+          '-c', 'TDX',
+        ]
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CreateTDXCVMWithConfidentialGPU
+  waitFor: ['-']
+  entrypoint: 'bash'
+  env:
+  - 'BUILD_ID=$BUILD_ID'
+  args: ['create_vm.sh','-i', '${_IMAGE_NAME}',
+          '-p', '${_IMAGE_PROJECT}',
+          '-m', 'tee-image-reference=${_WORKLOAD_IMAGE},tee-container-log-redirect=true,tee-install-gpu-driver=true',
+          '-n', '${_VM_NAME_PREFIX}-${BUILD_ID}-tdxcvm-cgpu',
+          '-z', 'us-east5-a', # H100 GPU with Confidential Compute on are available only under us-central1 and us-east5 regions.  
+          '-t', 'a3-highgpu-1g',
+          '-g', 'nvidia-h100-80gb',
+          '-a', '1',
+          '-c', 'TDX',
+        ]
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CreateSEVCVMWithRTXPro6000
+  waitFor: ['-']
+  entrypoint: 'bash'
+  env:
+  - 'BUILD_ID=$BUILD_ID'
+  args: ['create_vm.sh','-i', '${_IMAGE_NAME}',
+          '-p', '${_IMAGE_PROJECT}',
+          '-m', 'tee-image-reference=${_WORKLOAD_IMAGE},tee-container-log-redirect=true,tee-install-gpu-driver=true',
+          '-n', '${_VM_NAME_PREFIX}-${BUILD_ID}-rtxpro6000',
+          '-z', '${_RTX_PRO_6000_ZONES}',
+          '-t', 'g4-standard-48',
+          '-g', 'nvidia-rtx-pro-6000',
+          '-a', '1',
+          '-c', 'SEV',
+        ]
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: NoGpuWorkloadTest
+  waitFor: ['CreateSEVCVMWithNoGPU']
+  entrypoint: 'bash'
+  args: ['scripts/gpu/test_gpu_nogpu.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}-nogpu', '${_ZONE}']
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: NoGpuDriverInstallationTest
+  waitFor: ['CreateTDXCVMWithCGPUNoDriverInstallationFlag']
+  entrypoint: 'bash'
+  args: ['scripts/gpu/test_gpu_nodriver.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}-nodriver', 'us-east5-a']
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: ConfidentialGpuWorkloadTest
+  waitFor: ['CreateTDXCVMWithConfidentialGPU']
+  entrypoint: 'bash'
+  args: ['scripts/gpu/test_gpu_workload.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}-tdxcvm-cgpu', 'us-east5-a']
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: RTXPro6000WorkloadTest
+  waitFor: ['CreateSEVCVMWithRTXPro6000']
+  entrypoint: 'bash'
+  args: ['scripts/gpu/test_gpu_workload.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}-rtxpro6000']
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: NoGpuDriverInstallationCleanUp
+  waitFor: ['NoGpuDriverInstallationTest']
+  entrypoint: 'bash'
+  env:
+  - 'CLEANUP=$_CLEANUP'
+  args: ['cleanup.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}-nodriver', 'us-east5-a']
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: NoGpuVmCleanUp
+  waitFor: ['NoGpuWorkloadTest']
+  entrypoint: 'bash'
+  env:
+  - 'CLEANUP=$_CLEANUP'
+  args: ['cleanup.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}-nogpu', '${_ZONE}']
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: ConfidentialGpuVmCleanUp
+  waitFor: ['ConfidentialGpuWorkloadTest']
+  entrypoint: 'bash'
+  env:
+  - 'CLEANUP=$_CLEANUP'
+  args: ['cleanup.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}-tdxcvm-cgpu', 'us-east5-a']
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: RTXPro6000VmCleanUp
+  waitFor: ['RTXPro6000WorkloadTest']
+  entrypoint: 'bash'
+  env:
+  - 'CLEANUP=$_CLEANUP'
+  args: ['cleanup.sh', '${_VM_NAME_PREFIX}-${BUILD_ID}-rtxpro6000']
+# Must come after cleanup.
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CheckFailure
+  entrypoint: 'bash'
+  env:
+  - 'BUILD_ID=$BUILD_ID'
+  args: ['check_failure.sh']
+  waitFor:
+  - NoGpuVmCleanUp
+  - NoGpuDriverInstallationCleanUp
+  - ConfidentialGpuVmCleanUp
+  - RTXPro6000VmCleanUp

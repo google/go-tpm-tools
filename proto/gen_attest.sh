@@ -1,5 +1,10 @@
 #!/bin/bash
 
+# Only download the specific modules we need include paths for
+go mod download github.com/google/go-sev-guest \
+                github.com/google/go-tdx-guest \
+                github.com/google/go-eventlog \
+                github.com/GoogleCloudPlatform/confidential-space/server
 protoc -I. \
   -I$(go list -m -f "{{.Dir}}" github.com/google/go-sev-guest) \
   -I$(go list -m -f "{{.Dir}}" github.com/google/go-tdx-guest) \

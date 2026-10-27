@@ -1,0 +1,4 @@
+# Keep in sync with the rustc in the keymanager-builder image
+# (launcher/image/keymanager-builder/Dockerfile).
+[toolchain]
+channel = "1.85.0"

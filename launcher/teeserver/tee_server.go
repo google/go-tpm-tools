@@ -10,14 +10,12 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"os"
 	"strings"
 
 	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
 	"github.com/google/go-tpm-tools/agent"
 	wsd "github.com/google/go-tpm-tools/keymanager/workload_service"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
-	"github.com/google/go-tpm-tools/launcher/spec"
 	tspb "github.com/google/go-tpm-tools/launcher/teeserver/proto/gen/teeserver"
 	"github.com/google/go-tpm-tools/verifier"
 	"github.com/google/go-tpm-tools/verifier/models"
@@ -59,15 +57,15 @@ type AttestClients struct {
 }
 
 type attestHandler struct {
-	ctx         context.Context
-	attestAgent agent.AttestationAgent
-	// defaultTokenFile string
-	logger             logging.Logger
-	launchSpec         spec.LaunchSpec
-	clients            AttestClients
-	keyClaimsProvider  wsd.KeyClaimsProvider
-	kemAttester        KeyEndorsementAttester
-	bindingKeyAttester KeyEndorsementAttester
+	ctx                   context.Context
+	attestAgent           agent.AttestationAgent
+	logger                logging.Logger
+	bcMode                bool
+	enableHostAttestation bool
+	clients               AttestClients
+	keyClaimsProvider     wsd.KeyClaimsProvider
+	kemAttester           KeyEndorsementAttester
+	bindingKeyAttester    KeyEndorsementAttester
 }
 
 // TeeServer is a server that can be called from a container through a unix
@@ -79,50 +77,46 @@ type TeeServer struct {
 	bindingKeyAttester KeyEndorsementAttester
 }
 
-// New takes in a socket and start to listen to it, and create a server
-func New(ctx context.Context, unixSock string, a agent.AttestationAgent, logger logging.Logger, launchSpec spec.LaunchSpec, clients AttestClients, keyClaimsProvider wsd.KeyClaimsProvider) (*TeeServer, error) {
-	var err error
-	nl, err := net.Listen("unix", unixSock)
-	if err != nil {
-		return nil, fmt.Errorf("cannot listen to the socket [%s]: %v", unixSock, err)
-	}
-	if err := os.Chmod(unixSock, 0777); err != nil {
-		nl.Close()
-		return nil, fmt.Errorf("failed to chmod unix socket %s: %v", unixSock, err)
-	}
-
-	if launchSpec.Experiments.EnableKeyManager && keyClaimsProvider == nil {
-		return nil, fmt.Errorf("key claims provider cannot be nil when key manager is enabled")
-	}
-
-	kemAttester, err := initKEMAttester(launchSpec.Experiments.BcMode, keyClaimsProvider, a)
+// New creates a TeeServer with the given listener and dependencies.
+func New(
+	ctx context.Context,
+	nl net.Listener,
+	a agent.AttestationAgent,
+	logger logging.Logger,
+	bcMode bool,
+	enableHostAttestation bool,
+	clients AttestClients,
+	keyClaimsProvider wsd.KeyClaimsProvider,
+) (*TeeServer, error) {
+	kemAttester, err := initKEMAttester(bcMode, keyClaimsProvider, a)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize KEM attester: %v", err)
 	}
 
-	bindingKeyAttester, err := initBindingKeyAttester(launchSpec.Experiments.BcMode, keyClaimsProvider, a)
+	bindingKeyAttester, err := initBindingKeyAttester(bcMode, keyClaimsProvider, a)
 	if err != nil {
+		_ = kemAttester.Close()
 		return nil, fmt.Errorf("failed to initialize binding key attester: %v", err)
 	}
 
-	teeServer := TeeServer{
+	return &TeeServer{
 		netListener:        nl,
 		kemAttester:        kemAttester,
 		bindingKeyAttester: bindingKeyAttester,
 		server: &http.Server{
 			Handler: (&attestHandler{
-				ctx:                ctx,
-				attestAgent:        a,
-				logger:             logger,
-				launchSpec:         launchSpec,
-				clients:            clients,
-				keyClaimsProvider:  keyClaimsProvider,
-				kemAttester:        kemAttester,
-				bindingKeyAttester: bindingKeyAttester,
+				ctx:                   ctx,
+				attestAgent:           a,
+				logger:                logger,
+				bcMode:                bcMode,
+				enableHostAttestation: enableHostAttestation,
+				clients:               clients,
+				keyClaimsProvider:     keyClaimsProvider,
+				kemAttester:           kemAttester,
+				bindingKeyAttester:    bindingKeyAttester,
 			}).Handler(),
 		},
-	}
-	return &teeServer, nil
+	}, nil
 }
 
 func initKEMAttester(bcMode bool, keyClaimsProvider wsd.KeyClaimsProvider, a agent.AttestationAgent) (KeyEndorsementAttester, error) {
@@ -235,6 +229,7 @@ func parseFieldMask(r *http.Request) *fieldmaskpb.FieldMask {
 // It currently supports "label", "challenge", "quote", "extraData", and "deviceReports" params.
 // The default response with no query parameter will return all fields except device reports.
 // If the fields param is "*", it will return all fields including device reports.
+// In GB300 CC mode, this endpoint returns Gb300Evidence and ignores the fields parameter.
 func (a *attestHandler) getAttestationEvidence(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		a.logAndWriteHTTPError(w, http.StatusMethodNotAllowed, fmt.Errorf("method not allowed"))
@@ -255,6 +250,22 @@ func (a *attestHandler) getAttestationEvidence(w http.ResponseWriter, r *http.Re
 	}
 	if len(req.Challenge) == 0 {
 		a.logAndWriteHTTPError(w, http.StatusBadRequest, fmt.Errorf("challenge is required"))
+		return
+	}
+
+	if gb300Provider, ok := a.attestAgent.(agent.GB300EvidenceProvider); ok {
+		evidence, err := gb300Provider.AttestGB300(a.ctx, req.Challenge)
+		if err != nil {
+			a.handleAttestError(w, err, "failed to fetch GB300 attestation evidence")
+			return
+		}
+		evidenceBytes, err := protojson.Marshal(evidence)
+		if err != nil {
+			a.logAndWriteHTTPError(w, http.StatusInternalServerError, fmt.Errorf("failed to marshal evidence: %v", err))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(evidenceBytes)
 		return
 	}
 
@@ -338,7 +349,7 @@ func filterVMAttestationFields(att *attestationpb.VmAttestation, mask *fieldmask
 
 // getKeyEndorsement retrieves the attestation evidence with KEM and binding key claims.
 func (a *attestHandler) getKeyEndorsement(w http.ResponseWriter, r *http.Request) {
-	if !a.launchSpec.Experiments.EnableKeyManager && !a.launchSpec.Experiments.BcMode {
+	if a.keyClaimsProvider == nil && !a.bcMode {
 		a.logAndWriteHTTPError(w, http.StatusForbidden, fmt.Errorf("keymanager not enabled"))
 		return
 	}
@@ -367,7 +378,7 @@ func (a *attestHandler) getKeyEndorsement(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if len(req.KeyHandle.Handle) == 0 {
+	if req.KeyHandle == nil || len(req.KeyHandle.Handle) == 0 {
 		a.logAndWriteHTTPError(w, http.StatusBadRequest, fmt.Errorf("key_handle is required"))
 		return
 	}
@@ -479,7 +490,7 @@ func (a *attestHandler) attest(w http.ResponseWriter, r *http.Request, client ve
 }
 
 func (a *attestHandler) getHostAttestation(w http.ResponseWriter, r *http.Request) {
-	if !a.launchSpec.Experiments.EnableHostAttestation {
+	if !a.enableHostAttestation {
 		a.logAndWriteHTTPError(w, http.StatusForbidden, fmt.Errorf("host attestation not enabled"))
 		return
 	}
@@ -507,7 +518,7 @@ func (a *attestHandler) getHostAttestation(w http.ResponseWriter, r *http.Reques
 	}
 
 	evidence := &attestationpb.HostAttestation{}
-	if !a.launchSpec.Experiments.BcMode {
+	if !a.bcMode {
 		// vg has host attestation enabled and should use dummy implementation
 		evidence = dummyHostAttestation(req.Challenge)
 	} else {
@@ -549,7 +560,7 @@ func (s *TeeServer) Shutdown(ctx context.Context) error {
 	if err := s.server.Shutdown(ctx); err != nil {
 		errs = append(errs, err)
 	}
-	if err := s.netListener.Close(); err != nil {
+	if err := s.netListener.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
 		errs = append(errs, err)
 	}
 	if s.kemAttester != nil {

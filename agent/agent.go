@@ -17,6 +17,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -33,7 +34,9 @@ import (
 
 	"github.com/GoogleCloudPlatform/confidential-space/server/labels"
 	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
+	bmsaiagentpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/bmsaiagent"
 	hostservicepb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/hostservice"
+	"github.com/google/go-tpm-tools/agent/device"
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal"
@@ -59,7 +62,11 @@ type SignatureFetcher interface {
 }
 
 const (
-	audienceSTS = "https://sts.googleapis.com"
+	audienceSTS     = "https://sts.googleapis.com"
+	hostServicePort = 600613
+	// bmsaiAgentSocket is a host path. In the workload container, /run/container_launcher/
+	// is the mount point for the host's /tmp/container_launcher (launcherfile.ContainerRuntimeMountPath).
+	bmsaiAgentSocket = "/run/container_launcher/bmsai_agent.sock"
 )
 
 type principalIDTokenFetcher func(audience string) ([][]byte, error)
@@ -77,6 +84,12 @@ type AttestationAgent interface {
 	AttestHost(ctx context.Context, challenge []byte) ([]byte, error)
 }
 
+// GB300EvidenceProvider is an optional interface implemented by agents that
+// provide GB300 platform attestation evidence.
+type GB300EvidenceProvider interface {
+	AttestGB300(ctx context.Context, challenge []byte) (*bmsaiagentpb.Gb300Evidence, error)
+}
+
 type attestRoot interface {
 	// Extend measures the cel content into a measurement register and appends to the CEL.
 	Extend(gecel.Content) error
@@ -87,16 +100,6 @@ type attestRoot interface {
 	Attest(nonce []byte) (any, error)
 	// ComputeNonce hashes the challenge and extraData using the algorithm preferred by the attestation root.
 	ComputeNonce(challenge []byte, extraData []byte) []byte
-	// AddDeviceROTs adds detected device RoTs(root of trust).
-	AddDeviceROTs([]DeviceROT)
-	// AttestDeviceROTs fetches a list of runtime device attestation report.
-	AttestDeviceROTs(nonce []byte) ([]any, error)
-}
-
-// DeviceROT defines an interface for all attached devices to collect attestation.
-type DeviceROT interface {
-	// Attest fetches an attestation from the attached device detected by launcher.
-	Attest(nonce []byte) (any, error)
 }
 
 // AttestAgentOpts contains user generated options when calling the
@@ -108,9 +111,7 @@ type AttestAgentOpts struct {
 }
 
 // DeviceReportOpts contains options for runtime device attestations.
-type DeviceReportOpts struct {
-	EnableRuntimeGPUAttestation bool
-}
+type DeviceReportOpts = device.ReportOpts
 
 // AcpiOpts contains options for platform ACPI data.
 type AcpiOpts struct {
@@ -121,10 +122,14 @@ type AcpiOpts struct {
 type Experiments struct {
 	// EnableGpuGcaSupport enables the GPU attestation.
 	EnableGpuGcaSupport bool
+	// EnableGpuItaSupport enables the GPU attestation with ITA.
+	EnableGpuItaSupport bool
 	// EnableAttestationEvidence enables the attestation evidence endpoint.
 	EnableAttestationEvidence bool
 	// BcMode enables baremetal execution mode.
 	BcMode bool
+	// GB300CCMode enables the GB300 Confidential Computing mode.
+	GB300CCMode bool
 }
 
 type agent struct {
@@ -138,10 +143,17 @@ type agent struct {
 	logger           Logger
 	sigsCache        *sigsCache
 	signedImageRepos []string
+	deviceROTManager *device.ROTManager
 }
 
 type bcAgent struct {
 	*agent
+	hostRoT *hostServiceRoT
+}
+
+type gb300ccAgent struct {
+	*agent
+	bmsaiRoT *bmsaiAgentRoT
 }
 
 // CreateAttestationAgent returns an agent capable of performing remote
@@ -151,9 +163,12 @@ type bcAgent struct {
 // - principalFetcher is a func to fetch GCE principal tokens for a given audience.
 // - signaturesFetcher is a func to fetch container image signatures associated with the running workload.
 // - logger will log any partial errors returned by VerifyAttestation.
-func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher util.TpmKeyFetcher, verifierClient verifier.Client, principalFetcher principalIDTokenFetcher, sigsFetcher SignatureFetcher, exps Experiments, logger Logger, deviceROTs []DeviceROT, signedImageRepos []string) (AttestationAgent, error) {
+func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher util.TpmKeyFetcher, verifierClient verifier.Client, principalFetcher principalIDTokenFetcher, sigsFetcher SignatureFetcher, exps Experiments, logger Logger, deviceROTManager *device.ROTManager, signedImageRepos []string) (AttestationAgent, error) {
 	if exps.BcMode {
-		return createBCAgent(principalFetcher, sigsFetcher, exps, logger, deviceROTs, signedImageRepos)
+		return createBCAgent(principalFetcher, sigsFetcher, exps, logger, deviceROTManager, signedImageRepos)
+	}
+	if exps.GB300CCMode {
+		return createGB300CCAgent(principalFetcher, sigsFetcher, exps, logger, deviceROTManager, signedImageRepos)
 	}
 
 	// Fetched the AK and save it, so the agent doesn't need to create a new key everytime
@@ -208,12 +223,15 @@ func CreateAttestationAgent(tpm io.ReadWriteCloser, akFetcher util.TpmKeyFetcher
 		logger.Info("Using TPM PCR as attestation root.")
 	}
 
-	// Add deviceRoTs to the CPU attestation root.
-	attestAgent.avRot.AddDeviceROTs(deviceROTs)
+	if deviceROTManager == nil {
+		deviceROTManager = device.NewROTManager(nil)
+	}
+	attestAgent.deviceROTManager = deviceROTManager
+
 	return attestAgent, nil
 }
 
-func createBCAgent(principalFetcher principalIDTokenFetcher, sigsFetcher SignatureFetcher, exps Experiments, logger Logger, deviceROTs []DeviceROT, signedImageRepos []string) (AttestationAgent, error) {
+func createBCAgent(principalFetcher principalIDTokenFetcher, sigsFetcher SignatureFetcher, exps Experiments, logger Logger, deviceROTManager *device.ROTManager, signedImageRepos []string) (AttestationAgent, error) {
 	logger.Info("Running in BC mode, skipping Attestation Key fetching.")
 
 	baseAgent := &agent{
@@ -233,8 +251,39 @@ func createBCAgent(principalFetcher principalIDTokenFetcher, sigsFetcher Signatu
 		return nil, fmt.Errorf("running in BC mode but TDX not supported")
 	}
 
-	baseAgent.avRot.AddDeviceROTs(deviceROTs)
-	return &bcAgent{agent: baseAgent}, nil
+	hostRoT, err := newHostServiceRoT()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create host service RoT: %w", err)
+	}
+	baseAgent.measuredRots = append(baseAgent.measuredRots, hostRoT)
+
+	baseAgent.deviceROTManager = deviceROTManager
+	return &bcAgent{agent: baseAgent, hostRoT: hostRoT}, nil
+}
+
+func createGB300CCAgent(principalFetcher principalIDTokenFetcher, sigsFetcher SignatureFetcher, exps Experiments, logger Logger, deviceROTManager *device.ROTManager, signedImageRepos []string) (AttestationAgent, error) {
+	logger.Info("Initializing GB300 CC agent.")
+
+	baseAgent := &agent{
+		principalFetcher: principalFetcher,
+		sigsFetcher:      sigsFetcher,
+		experiments:      exps,
+		logger:           logger,
+		sigsCache:        &sigsCache{},
+		signedImageRepos: signedImageRepos,
+		deviceROTManager: deviceROTManager,
+	}
+
+	bmsaiRoT, err := newBmsaiAgentRoT()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create BMSAI agent RoT: %w", err)
+	}
+	baseAgent.measuredRots = append(baseAgent.measuredRots, bmsaiRoT)
+
+	return &gb300ccAgent{
+		agent:    baseAgent,
+		bmsaiRoT: bmsaiRoT,
+	}, nil
 }
 
 func (a *agent) addTDXAttestRoot() (bool, error) {
@@ -261,6 +310,11 @@ func (a *agent) addTDXAttestRoot() (bool, error) {
 func (a *agent) Close() error {
 	if a.fetchedAK != nil {
 		a.fetchedAK.Close()
+	}
+	for _, root := range a.measuredRots {
+		if closer, ok := root.(io.Closer); ok {
+			closer.Close()
+		}
 	}
 	return nil
 }
@@ -303,6 +357,7 @@ func (a *agent) AttestWithClient(ctx context.Context, opts AttestAgentOpts, clie
 	if err != nil {
 		return nil, err
 	}
+	a.logger.Info("Successfully created challenge", "challenge_name", challenge.Name)
 
 	tokenOpts := opts.TokenOptions
 	if tokenOpts == nil {
@@ -347,7 +402,7 @@ func (a *agent) AttestWithClient(ctx context.Context, opts AttestAgentOpts, clie
 
 		v.CanonicalEventLog = cosCel.Bytes()
 
-		certChain, err := internal.GetCertificateChain(a.fetchedAK.Cert(), http.DefaultClient)
+		certChain, err := internal.GetAKIntermediateCerts(a.fetchedAK.Cert(), http.DefaultClient)
 		if err != nil {
 			return nil, fmt.Errorf("failed when fetching certificate chain: %w", err)
 		}
@@ -359,7 +414,8 @@ func (a *agent) AttestWithClient(ctx context.Context, opts AttestAgentOpts, clie
 		return nil, fmt.Errorf("received an unsupported attestation type! %v", v)
 	}
 
-	if a.experiments.EnableGpuGcaSupport {
+	isIta := strings.HasPrefix(challenge.Name, "ita://")
+	if (!isIta && a.experiments.EnableGpuGcaSupport) || (isIta && a.experiments.EnableGpuItaSupport) {
 		deviceReports, err := a.attestDeviceROTs(challenge.Nonce, opts)
 		if err != nil {
 			return nil, fmt.Errorf("failed to attest device RoTs: %v", err)
@@ -403,18 +459,11 @@ func (a *agent) AttestHost(_ context.Context, _ []byte) ([]byte, error) {
 
 // AttestHost fetches the host attestation from the host service via VSOCK.
 func (a *bcAgent) AttestHost(ctx context.Context, challenge []byte) ([]byte, error) {
-	const hostServicePort = 600613
-	// Connect to host service using gRPC over VSOCK
-	grpcConn, err := grpc.NewClient("passthrough:///", grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithContextDialer(func(_ context.Context, _ string) (net.Conn, error) {
-		return vsock.Dial(2, hostServicePort, nil)
-	}))
-	if err != nil {
-		return nil, fmt.Errorf("failed to dial host service: %w", err)
+	if a.hostRoT == nil {
+		return nil, fmt.Errorf("host service RoT not initialized")
 	}
-	defer grpcConn.Close()
 
-	client := hostservicepb.NewHostServiceClient(grpcConn)
-	resp, err := client.GetHostAttestation(ctx, &hostservicepb.GetHostAttestationRequest{
+	resp, err := a.hostRoT.client.GetHostAttestation(ctx, &hostservicepb.GetHostAttestationRequest{
 		Challenge: challenge,
 	})
 	if err != nil {
@@ -487,7 +536,7 @@ func (a *agent) AttestationEvidence(_ context.Context, challenge []byte, extraDa
 	attestation.DeviceReports = deviceReports
 
 	// ACPI data is currently only available in BcMode and only if requested.
-	if a.experiments.BcMode && opts.AcpiOpts != nil && opts.AcpiOpts.RetrieveAcpiData {
+	if a.experiments.BcMode && opts.AcpiOpts != nil && opts.RetrieveAcpiData {
 		acpi, err := getAcpiData()
 		if err != nil {
 			return nil, err
@@ -519,10 +568,10 @@ func getAcpiData() (*attestationpb.AcpiData, error) {
 }
 
 func (a *agent) attestDeviceROTs(nonce []byte, opts AttestAgentOpts) ([]*attestationpb.DeviceAttestationReport, error) {
-	if opts.DeviceReportOpts == nil {
+	if opts.DeviceReportOpts == nil || a.deviceROTManager == nil {
 		return nil, nil
 	}
-	deviceROTs, err := a.avRot.AttestDeviceROTs(nonce)
+	deviceROTs, err := a.deviceROTManager.AttestDeviceROTs(nonce, *opts.DeviceReportOpts)
 	if err != nil {
 		return nil, err
 	}
@@ -531,13 +580,11 @@ func (a *agent) attestDeviceROTs(nonce []byte, opts AttestAgentOpts) ([]*attesta
 	for _, dr := range deviceROTs {
 		switch v := dr.(type) {
 		case *attestationpb.NvidiaAttestationReport:
-			if opts.DeviceReportOpts.EnableRuntimeGPUAttestation {
-				deviceReports = append(deviceReports, &attestationpb.DeviceAttestationReport{
-					Report: &attestationpb.DeviceAttestationReport_NvidiaReport{
-						NvidiaReport: v,
-					},
-				})
-			}
+			deviceReports = append(deviceReports, &attestationpb.DeviceAttestationReport{
+				Report: &attestationpb.DeviceAttestationReport_NvidiaReport{
+					NvidiaReport: v,
+				},
+			})
 		}
 	}
 	return deviceReports, nil
@@ -570,12 +617,11 @@ func convertOCIToContainerSignature(ociSig oci.Signature) (*verifier.ContainerSi
 }
 
 type tpmAttestRoot struct {
-	tpmMu      sync.Mutex
-	fetchedAK  *client.Key
-	tpm        io.ReadWriteCloser
-	cosCel     gecel.CEL
-	hashAlgos  []crypto.Hash
-	deviceROTs []DeviceROT
+	tpmMu     sync.Mutex
+	fetchedAK *client.Key
+	tpm       io.ReadWriteCloser
+	cosCel    gecel.CEL
+	hashAlgos []crypto.Hash
 }
 
 func (t *tpmAttestRoot) GetCEL() gecel.CEL {
@@ -583,6 +629,9 @@ func (t *tpmAttestRoot) GetCEL() gecel.CEL {
 }
 
 func (t *tpmAttestRoot) Extend(c gecel.Content) error {
+	t.tpmMu.Lock()
+	defer t.tpmMu.Unlock()
+
 	return t.cosCel.AppendEvent(c, t.hashAlgos, cel.CosEventPCR, func(hs crypto.Hash, pcr int, digest []byte) error {
 		tpm2Alg, err := tpm2.HashToAlgorithm(hs)
 		if err != nil {
@@ -616,22 +665,10 @@ func (t *tpmAttestRoot) ComputeNonce(challenge []byte, extraData []byte) []byte 
 	return finalNonce[:]
 }
 
-func (t *tpmAttestRoot) AddDeviceROTs(deviceROTs []DeviceROT) {
-	t.deviceROTs = append(t.deviceROTs, deviceROTs...)
-}
-
-func (t *tpmAttestRoot) AttestDeviceROTs(nonce []byte) ([]any, error) {
-	t.tpmMu.Lock()
-	defer t.tpmMu.Unlock()
-
-	return doAttestDeviceROTs(t.deviceROTs, nonce)
-}
-
 type tdxAttestRoot struct {
-	tdxMu      sync.Mutex
-	qp         *tg.LinuxConfigFsQuoteProvider
-	cosCel     gecel.CEL
-	deviceROTs []DeviceROT
+	tdxMu  sync.Mutex
+	qp     *tg.LinuxConfigFsQuoteProvider
+	cosCel gecel.CEL
 }
 
 func (t *tdxAttestRoot) GetCEL() gecel.CEL {
@@ -682,13 +719,6 @@ func (t *tdxAttestRoot) Attest(nonce []byte) (any, error) {
 	}, nil
 }
 
-func (t *tdxAttestRoot) AttestDeviceROTs(nonce []byte) ([]any, error) {
-	t.tdxMu.Lock()
-	defer t.tdxMu.Unlock()
-
-	return doAttestDeviceROTs(t.deviceROTs, nonce)
-}
-
 func (t *tdxAttestRoot) ComputeNonce(challenge []byte, extraData []byte) []byte {
 	challengeData := challenge
 	if extraData != nil {
@@ -700,8 +730,111 @@ func (t *tdxAttestRoot) ComputeNonce(challenge []byte, extraData []byte) []byte 
 	return finalNonce[:]
 }
 
-func (t *tdxAttestRoot) AddDeviceROTs(deviceROTs []DeviceROT) {
-	t.deviceROTs = append(t.deviceROTs, deviceROTs...)
+type hostServiceRoT struct {
+	client hostservicepb.HostServiceClient
+	conn   *grpc.ClientConn
+}
+
+func newHostServiceRoT() (*hostServiceRoT, error) {
+	conn, err := grpc.NewClient("passthrough:///",
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithContextDialer(func(_ context.Context, _ string) (net.Conn, error) {
+			return vsock.Dial(vsock.Host, hostServicePort, nil)
+		}),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to dial hostservice over vsock: %w", err)
+	}
+	return &hostServiceRoT{
+		conn:   conn,
+		client: hostservicepb.NewHostServiceClient(conn),
+	}, nil
+}
+
+func (h *hostServiceRoT) Extend(event gecel.Content) error {
+	tlv, err := event.TLV()
+	if err != nil {
+		return fmt.Errorf("failed to format TLV: %w", err)
+	}
+	tlvBytes, err := tlv.MarshalBinary()
+	if err != nil {
+		return fmt.Errorf("failed to marshal TLV binary: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	_, err = h.client.RecordWorkloadEvent(ctx, &hostservicepb.RecordWorkloadEventRequest{
+		CosEvent: tlvBytes,
+	})
+	if err != nil {
+		return fmt.Errorf("hostservice RecordWorkloadEvent failed: %w", err)
+	}
+	return nil
+}
+
+func (h *hostServiceRoT) GetCEL() gecel.CEL               { return nil }
+func (h *hostServiceRoT) ComputeNonce(_, _ []byte) []byte { return nil }
+func (h *hostServiceRoT) Attest(_ []byte) (any, error) {
+	return nil, fmt.Errorf("hostServiceRoT does not support direct attestation")
+}
+func (h *hostServiceRoT) Close() error {
+	if h.conn == nil {
+		return nil
+	}
+	return h.conn.Close()
+}
+
+type bmsaiAgentRoT struct {
+	client bmsaiagentpb.BmsaiAttestationServiceClient
+	conn   *grpc.ClientConn
+}
+
+func newBmsaiAgentRoT() (*bmsaiAgentRoT, error) {
+	conn, err := grpc.NewClient(
+		"unix://"+bmsaiAgentSocket,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create BMSAI attestation agent client: %w", err)
+	}
+	return &bmsaiAgentRoT{
+		conn:   conn,
+		client: bmsaiagentpb.NewBmsaiAttestationServiceClient(conn),
+	}, nil
+}
+
+func (b *bmsaiAgentRoT) Extend(event gecel.Content) error {
+	tlv, err := event.TLV()
+	if err != nil {
+		return fmt.Errorf("failed to format TLV: %w", err)
+	}
+	tlvBytes, err := tlv.MarshalBinary()
+	if err != nil {
+		return fmt.Errorf("failed to marshal TLV binary: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if _, err := b.client.MeasureEvent(ctx, &bmsaiagentpb.MeasureEventRequest{
+		CosEvent: tlvBytes,
+	}); err != nil {
+		return fmt.Errorf("BMSAI MeasureEvent failed: %w", err)
+	}
+	return nil
+}
+
+func (b *bmsaiAgentRoT) GetCEL() gecel.CEL               { return nil }
+func (b *bmsaiAgentRoT) ComputeNonce(_, _ []byte) []byte { return nil }
+func (b *bmsaiAgentRoT) Attest(_ []byte) (any, error) {
+	return nil, fmt.Errorf("bmsaiAgentRoT does not support direct attestation")
+}
+func (b *bmsaiAgentRoT) Close() error {
+	if b.conn == nil {
+		return nil
+	}
+	return b.conn.Close()
 }
 
 // Refresh refreshes the internal state of the attestation agent.
@@ -803,14 +936,40 @@ func convertToTPMQuote(v *pb.Attestation) *attestationpb.TpmQuote {
 	}
 }
 
-func doAttestDeviceROTs(deviceROTs []DeviceROT, nonce []byte) ([]any, error) {
-	var deviceReports []any
-	for _, deviceROT := range deviceROTs {
-		deviceReport, err := deviceROT.Attest(nonce)
-		if err != nil {
-			return nil, err
-		}
-		deviceReports = append(deviceReports, deviceReport)
+func (a *gb300ccAgent) Attest(_ context.Context, _ AttestAgentOpts) ([]byte, error) {
+	return nil, fmt.Errorf("attestation token is not supported in GB300 CC mode")
+}
+
+func (a *gb300ccAgent) Refresh(_ context.Context) error {
+	a.logger.Info("GB300 CC mode: Skipping Refresh")
+	return nil
+}
+
+func (a *gb300ccAgent) AttestWithClient(_ context.Context, _ AttestAgentOpts, _ verifier.Client) ([]byte, error) {
+	return nil, fmt.Errorf("attestation token is not supported in GB300 CC mode")
+}
+
+func (a *gb300ccAgent) AttestationEvidence(_ context.Context, _ []byte, _ []byte, _ AttestAgentOpts) (*attestationpb.VmAttestation, error) {
+	if !a.experiments.EnableAttestationEvidence {
+		return nil, fmt.Errorf("attestation evidence is disabled")
 	}
-	return deviceReports, nil
+
+	return nil, fmt.Errorf("AttestationEvidence is not yet implemented for GB300 CC mode")
+}
+
+// AttestGB300 fetches GB300 attestation evidence from the BMSAI attestation agent.
+func (a *gb300ccAgent) AttestGB300(ctx context.Context, challenge []byte) (*bmsaiagentpb.Gb300Evidence, error) {
+	if !a.experiments.EnableAttestationEvidence {
+		return nil, fmt.Errorf("attestation evidence is disabled")
+	}
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	evidence, err := a.bmsaiRoT.client.GetEvidence(ctx, &bmsaiagentpb.GetEvidenceRequest{
+		Challenge: challenge,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get GB300 evidence: %w", err)
+	}
+	return evidence, nil
 }

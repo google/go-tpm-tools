@@ -22,12 +22,18 @@ setup_launcher_systemd_unit() {
   cp exit_script.sh "${CS_PATH}/exit_script.sh"
 }
 
+copy_cni_config() {
+  cp 10-workload.conf "${CS_PATH}/10-workload.conf"
+}
+
 append_cmdline() {
   local arg="$1"
   if [[ ! -d /mnt/disks/efi ]]; then
     mkdir /mnt/disks/efi
   fi
-  mount /dev/sda12 /mnt/disks/efi
+  # ChromiumOS / COS GPT disk layout uses partition 12 for the EFI System
+  # Partition (https://chromium.googlesource.com/chromiumos/docs/+/HEAD/disk_format.md).
+  mount "$(rootdev -s -d)12" /mnt/disks/efi
   sed -i -e "s|cros_efi|cros_efi ${arg}|g" /mnt/disks/efi/efi/boot/grub.cfg
   umount /mnt/disks/efi
 }
@@ -67,6 +73,7 @@ configure_necessary_systemd_units() {
 configure_cloud_logging() {
   # Copy CS-specific fluent-bit config to OEM partition.
   cp fluent-bit-cs.conf "${CS_PATH}"
+  cp parsers-cs.conf "${CS_PATH}"
 }
 
 configure_node_problem_detector() {
@@ -103,7 +110,6 @@ configure_systemd_units_for_hardened() {
   disable_unit "konlet-startup.service"
   disable_unit "crash-reporter.service"
   disable_unit "device_policy_manager.service"
-  disable_unit "docker-events-collector-fluent-bit.service"
   disable_unit "sshd.service"
   disable_unit "var-lib-toolbox.mount"
 }
@@ -121,6 +127,7 @@ main() {
   # Copy Google Root bundle.
   copy_google_roots
   setup_launcher_systemd_unit
+  copy_cni_config
   # Minimum required COS version for 'e': cos-dev-105-17222-0-0.
   # Minimum required COS version for 'm': cos-dev-113-18203-0-0.
   append_cmdline "cos.protected_stateful_partition=m"

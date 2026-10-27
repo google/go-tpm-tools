@@ -6,5 +6,5 @@
 read_cloud_logging() {
   gcloud logging read "resource.type=\"gce_instance\" jsonPayload._HOSTNAME=\"$1\"
 log_name=\"projects/$PROJECT_ID/logs/confidential-space-launcher\"" \
---format="value(jsonPayload.MESSAGE)" --order asc
+--format="value(severity, jsonPayload.message, jsonPayload.MESSAGE)" --order asc
 }

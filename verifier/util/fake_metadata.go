@@ -49,7 +49,7 @@ func NewMetadataServer(data Instance) (*MetadataServer, error) {
 				return
 			}
 		}
-		http.Error(w, http.StatusText(http.StatusNotImplemented), http.StatusNotImplemented)
+		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 	})
 	httpServer := httptest.NewServer(handler)
 

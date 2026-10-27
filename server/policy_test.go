@@ -144,3 +144,19 @@ func TestEvaluatePolicyFailure(t *testing.T) {
 		})
 	}
 }
+
+func TestEvaluatePolicyUnsupportedSevSnp(t *testing.T) {
+	policy := &pb.Policy{
+		SevSnp: &pb.SevSnpPolicy{
+			Uefi: &pb.RIMPolicy{
+				RequireSigned: true,
+			},
+		},
+	}
+	state := &pb.MachineState{}
+	err := EvaluatePolicy(state, policy)
+	if err == nil {
+		t.Fatal("expected error for unsupported SevSnp policy, got nil")
+	}
+}
+

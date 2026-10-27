@@ -2,6 +2,8 @@ package server
 
 import (
 	"crypto"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
@@ -13,12 +15,17 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/google/go-eventlog/register"
+	"github.com/google/go-eventlog/tcg"
 	"github.com/google/go-tpm-tools/client"
+	"github.com/google/go-tpm-tools/internal"
 	"github.com/google/go-tpm-tools/internal/test"
 	attestpb "github.com/google/go-tpm-tools/proto/attest"
+	tpmpb "github.com/google/go-tpm-tools/proto/tpm"
 	tpmquote "github.com/google/go-tpm-tools/quote"
 	"github.com/google/go-tpm/legacy/tpm2"
 	"github.com/google/go-tpm/tpmutil"
@@ -34,9 +41,10 @@ func getDigestHash(input string) []byte {
 
 func extendPCRsRandomly(rwc io.ReadWriteCloser, selpcr tpm2.PCRSelection) error {
 	var pcrExtendValue []byte
-	if selpcr.Hash == tpm2.AlgSHA256 {
+	switch selpcr.Hash {
+	case tpm2.AlgSHA256:
 		pcrExtendValue = make([]byte, 32)
-	} else if selpcr.Hash == tpm2.AlgSHA1 {
+	case tpm2.AlgSHA1:
 		pcrExtendValue = make([]byte, 20)
 	}
 
@@ -66,48 +74,54 @@ func TestVerifyHappyCases(t *testing.T) {
 	twoPCR := append(onePCR, test.ApplicationPCR)
 	dupePCR := append(twoPCR, twoPCR...)
 
+	rsaAK, err := client.AttestationKeyRSA(rwc)
+	if err != nil {
+		t.Fatalf("failed to generate RSA AK: %v", err)
+	}
+	defer rsaAK.Close()
+
+	eccAK, err := client.AttestationKeyECC(rwc)
+	if err != nil {
+		t.Fatalf("failed to generate ECC AK: %v", err)
+	}
+	defer eccAK.Close()
+
 	subtests := []struct {
 		name         string
-		getKey       func(io.ReadWriter) (*client.Key, error)
+		ak           *client.Key
 		pcrHashAlgo  tpm2.Algorithm
 		quotePCRList []int
 		extraData    []byte
 	}{
-		{"AK-RSA_SHA1_2PCRs_nonce", client.AttestationKeyRSA, tpm2.AlgSHA1, twoPCR, getDigestHash("test")},
-		{"AK-RSA_SHA1_1PCR_nonce", client.AttestationKeyRSA, tpm2.AlgSHA1, onePCR, getDigestHash("t")},
-		{"AK-RSA_SHA1_1PCR_no-nonce", client.AttestationKeyRSA, tpm2.AlgSHA1, onePCR, nil},
-		{"AK-RSA_SHA256_2PCRs_nonce", client.AttestationKeyRSA, tpm2.AlgSHA256, twoPCR, getDigestHash("test")},
-		{"AK-RSA_SHA256_2PCR_empty-nonce", client.AttestationKeyRSA, tpm2.AlgSHA256, twoPCR, []byte{}},
-		{"AK-RSA_SHA256_dupePCrSel_nonce", client.AttestationKeyRSA, tpm2.AlgSHA256, dupePCR, getDigestHash("")},
+		{"AK-RSA_SHA1_2PCRs_nonce", rsaAK, tpm2.AlgSHA1, twoPCR, getDigestHash("test")},
+		{"AK-RSA_SHA1_1PCR_nonce", rsaAK, tpm2.AlgSHA1, onePCR, getDigestHash("t")},
+		{"AK-RSA_SHA1_1PCR_no-nonce", rsaAK, tpm2.AlgSHA1, onePCR, nil},
+		{"AK-RSA_SHA256_2PCRs_nonce", rsaAK, tpm2.AlgSHA256, twoPCR, getDigestHash("test")},
+		{"AK-RSA_SHA256_2PCR_empty-nonce", rsaAK, tpm2.AlgSHA256, twoPCR, []byte{}},
+		{"AK-RSA_SHA256_dupePCrSel_nonce", rsaAK, tpm2.AlgSHA256, dupePCR, getDigestHash("")},
 
-		{"AK-ECC_SHA1_2PCRs_nonce", client.AttestationKeyECC, tpm2.AlgSHA1, twoPCR, getDigestHash("test")},
-		{"AK-ECC_SHA1_1PCR_nonce", client.AttestationKeyECC, tpm2.AlgSHA1, onePCR, getDigestHash("t")},
-		{"AK-ECC_SHA1_1PCR_no-nonce", client.AttestationKeyECC, tpm2.AlgSHA1, onePCR, nil},
-		{"AK-ECC_SHA256_2PCRs_nonce", client.AttestationKeyECC, tpm2.AlgSHA256, twoPCR, getDigestHash("test")},
-		{"AK-ECC_SHA256_2PCR_empty-nonce", client.AttestationKeyECC, tpm2.AlgSHA256, twoPCR, []byte{}},
-		{"AK-ECC_SHA256_dupePCrSel_nonce", client.AttestationKeyECC, tpm2.AlgSHA256, dupePCR, getDigestHash("")},
+		{"AK-ECC_SHA1_2PCRs_nonce", eccAK, tpm2.AlgSHA1, twoPCR, getDigestHash("test")},
+		{"AK-ECC_SHA1_1PCR_nonce", eccAK, tpm2.AlgSHA1, onePCR, getDigestHash("t")},
+		{"AK-ECC_SHA1_1PCR_no-nonce", eccAK, tpm2.AlgSHA1, onePCR, nil},
+		{"AK-ECC_SHA256_2PCRs_nonce", eccAK, tpm2.AlgSHA256, twoPCR, getDigestHash("test")},
+		{"AK-ECC_SHA256_2PCR_empty-nonce", eccAK, tpm2.AlgSHA256, twoPCR, []byte{}},
+		{"AK-ECC_SHA256_dupePCrSel_nonce", eccAK, tpm2.AlgSHA256, dupePCR, getDigestHash("")},
 	}
 	for _, subtest := range subtests {
 		t.Run(subtest.name, func(t *testing.T) {
-			ak, err := subtest.getKey(rwc)
-			if err != nil {
-				t.Errorf("failed to generate AK: %v", err)
-			}
-			defer ak.Close()
-
 			selpcr := tpm2.PCRSelection{
 				Hash: subtest.pcrHashAlgo,
 				PCRs: subtest.quotePCRList,
 			}
-			err = extendPCRsRandomly(rwc, selpcr)
+			err := extendPCRsRandomly(rwc, selpcr)
 			if err != nil {
 				t.Fatalf("failed to extend test PCRs: %v", err)
 			}
-			quote, err := ak.Quote(selpcr, subtest.extraData)
+			quote, err := subtest.ak.Quote(selpcr, subtest.extraData)
 			if err != nil {
 				t.Fatalf("failed to quote: %v", err)
 			}
-			err = tpmquote.Verify(quote, ak.PublicKey(), subtest.extraData)
+			err = tpmquote.Verify(quote, subtest.ak.PublicKey(), subtest.extraData)
 			if err != nil {
 				t.Fatalf("failed to verify: %v", err)
 			}
@@ -347,15 +361,11 @@ func TestVerifySucceedsWithOverlappingIntermediatesInOptionsAndAttestation(t *te
 }
 
 func TestValidateOptsFailWithCertsAndPubkey(t *testing.T) {
-	priv, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		t.Fatal(err)
-	}
 	opts := VerifyOpts{
 		Nonce:             nil,
 		TrustedRootCerts:  GceEKRoots,
 		IntermediateCerts: GceEKIntermediates,
-		TrustedAKs:        []crypto.PublicKey{priv.Public()},
+		TrustedAKs:        []crypto.PublicKey{&rsa.PublicKey{}},
 	}
 	if err := validateOpts(opts); err == nil {
 		t.Error("Verified attestation even with multiple trust methods")
@@ -878,4 +888,267 @@ func TestVerifyAttestationHashAlgo(t *testing.T) {
 			}
 		})
 	}
+}
+
+// FuzzVerifyAttestation uses the Confidential Space verifier options.
+func FuzzVerifyAttestation(f *testing.F) {
+	fuzzVerifyAttestationFromLog(f, VerifyOpts{
+		Loader:          GRUB,
+		AllowEmptySBVar: true,
+	})
+}
+
+// FuzzVerifyAttestationNoLoader uses no loader and allows SHA-1 and early EFI apps.
+func FuzzVerifyAttestationNoLoader(f *testing.F) {
+	fuzzVerifyAttestationFromLog(f, VerifyOpts{
+		Loader:                        UnsupportedLoader,
+		AllowSHA1:                     true,
+		AllowEFIAppBeforeCallingEvent: true,
+	})
+}
+
+// fuzzVerifyAttestationFromLog signs quotes over replayed PCRs to reach event log parsing.
+func fuzzVerifyAttestationFromLog(f *testing.F, opts VerifyOpts) {
+	ak, akPub := fuzzAK(f)
+	opts.TrustedAKs = []crypto.PublicKey{&ak.PublicKey}
+
+	cos85 := unmarshalAttestation(f, test.COS85Nonce9009)
+	f.Add(cos85.GetEventLog(), []byte{0x90, 0x09})
+	for _, log := range [][]byte{
+		test.ArchLinuxWorkstationEventLog,
+		test.Debian10EventLog,
+		test.GlinuxAlexEventLog,
+		test.Rhel8EventLog,
+		test.Ubuntu1804AmdSevEventLog,
+		test.Ubuntu2104NoDbxEventLog,
+		test.Ubuntu2104NoSecureBootEventLog,
+		test.Ubuntu2404AmdSevSnpEventLog,
+		test.Cos85AmdSevEventLog,
+		test.Cos93AmdSevEventLog,
+		test.Cos101AmdSevEventLog,
+		test.GdcHost,
+		test.SP800155EventLog,
+		test.CGKE251000,
+	} {
+		f.Add(log, []byte(nil))
+	}
+
+	f.Fuzz(func(t *testing.T, eventLog, nonce []byte) {
+		att := fuzzAttestation(t, ak, akPub, eventLog, nonce)
+		o := opts
+		o.Nonce = nonce
+		_, _ = VerifyAttestation(att, o)
+	})
+}
+
+// FuzzVerifyQuote re-signs fuzzed quotes to reach quote content checks.
+func FuzzVerifyQuote(f *testing.F) {
+	ak, akPub := fuzzAK(f)
+	cos85 := unmarshalAttestation(f, test.COS85Nonce9009)
+	if len(cos85.GetQuotes()) == 0 {
+		f.Fatal("COS85Nonce9009 has no quotes")
+	}
+	seed := cos85.GetQuotes()[0]
+	f.Add(seed.GetQuote(), []byte{0x90, 0x09})
+
+	f.Fuzz(func(t *testing.T, rawQuote, nonce []byte) {
+		rawSig, err := signQuote(ak, rawQuote)
+		if err != nil {
+			t.Fatalf("signQuote() failed: %v", err)
+		}
+		att := &attestpb.Attestation{
+			AkPub: akPub,
+			Quotes: []*tpmpb.Quote{
+				{
+					Quote:  rawQuote,
+					RawSig: rawSig,
+					Pcrs:   seed.GetPcrs(),
+				},
+			},
+			EventLog: cos85.GetEventLog(),
+		}
+		_, _ = VerifyAttestation(att, VerifyOpts{
+			Nonce:      nonce,
+			TrustedAKs: []crypto.PublicKey{&ak.PublicKey},
+			AllowSHA1:  true,
+			Loader:     GRUB,
+		})
+	})
+}
+
+// FuzzVerifyAttestationBytes verifies real GCE attestations without harness signing.
+func FuzzVerifyAttestationBytes(f *testing.F) {
+	f.Add(test.COS85Nonce9009, []byte{0x90, 0x09})
+	f.Add(test.COS85NoNonce, []byte(nil))
+
+	f.Fuzz(func(_ *testing.T, data, nonce []byte) {
+		att := &attestpb.Attestation{}
+		// VerifyAttestation must reject partly decoded messages too.
+		_ = proto.Unmarshal(data, att)
+		_, _ = VerifyAttestation(att, VerifyOpts{
+			Nonce:             nonce,
+			TrustedRootCerts:  GceEKRoots,
+			IntermediateCerts: GceEKIntermediates,
+			Loader:            GRUB,
+		})
+	})
+}
+
+func TestFuzzAttestationVerifies(t *testing.T) {
+	ak, akPub := fuzzAK(t)
+	nonce := []byte("fuzz nonce")
+	att := fuzzAttestation(t, ak, akPub, test.Cos101AmdSevEventLog, nonce)
+	for name, alg := range map[string]tpm2.Algorithm{"SHA1": tpm2.AlgSHA1, "SHA256": tpm2.AlgSHA256} {
+		t.Run(name, func(t *testing.T) {
+			ms, err := VerifyAttestation(att, VerifyOpts{
+				Nonce:      nonce,
+				TrustedAKs: []crypto.PublicKey{&ak.PublicKey},
+				AllowSHA1:  true,
+				Loader:     GRUB,
+				HashAlgo:   alg,
+			})
+			if err != nil {
+				t.Fatalf("VerifyAttestation() failed: %v", err)
+			}
+			if got, want := ms.GetLinuxKernel().GetCommandLine(), test.Cos101AmdSevCmdline; got != want {
+				t.Errorf("VerifyAttestation() kernel command line = %q, want %q", got, want)
+			}
+		})
+	}
+}
+
+// fuzzAK returns a P-256 AK and its encoded TPMT_PUBLIC.
+func fuzzAK(tb testing.TB) (*ecdsa.PrivateKey, []byte) {
+	tb.Helper()
+	ak, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	pub, err := ak.PublicKey.ECDH()
+	if err != nil {
+		tb.Fatal(err)
+	}
+	// Uncompressed points are 0x04 || X || Y.
+	b := pub.Bytes()
+	n := (len(b) - 1) / 2
+	tmpl := client.AKTemplateECC()
+	tmpl.ECCParameters.Point = tpm2.ECPoint{XRaw: b[1 : 1+n], YRaw: b[1+n:]}
+	akPub, err := tmpl.Encode()
+	if err != nil {
+		tb.Fatal(err)
+	}
+	return ak, akPub
+}
+
+func unmarshalAttestation(tb testing.TB, data []byte) *attestpb.Attestation {
+	tb.Helper()
+	att := &attestpb.Attestation{}
+	if err := proto.Unmarshal(data, att); err != nil {
+		tb.Fatal(err)
+	}
+	return att
+}
+
+// fuzzAttestation quotes every PCR bank that eventLog extends, as client.Attest does.
+func fuzzAttestation(tb testing.TB, ak *ecdsa.PrivateKey, akPub, eventLog, nonce []byte) *attestpb.Attestation {
+	tb.Helper()
+	att := &attestpb.Attestation{AkPub: akPub, EventLog: eventLog}
+	for _, alg := range []tpm2.Algorithm{tpm2.AlgSHA1, tpm2.AlgSHA256} {
+		pcrs := replayEventLog(eventLog, alg)
+		quote, err := encodeQuote(pcrs, nonce)
+		if err != nil {
+			// A TPM refuses to quote extra data it cannot encode.
+			continue
+		}
+		rawSig, err := signQuote(ak, quote)
+		if err != nil {
+			tb.Fatalf("signQuote() failed: %v", err)
+		}
+		att.Quotes = append(att.Quotes, &tpmpb.Quote{Quote: quote, RawSig: rawSig, Pcrs: pcrs})
+	}
+	return att
+}
+
+// replayEventLog computes the PCRs a TPM holds after extending rawLog.
+func replayEventLog(rawLog []byte, hashAlg tpm2.Algorithm) *tpmpb.PCRs {
+	pcrs := &tpmpb.PCRs{
+		Hash: tpmpb.HashAlgo(hashAlg),
+		Pcrs: map[uint32][]byte{},
+	}
+	el, err := tcg.ParseEventLog(rawLog, tcg.ParseOpts{})
+	if err != nil {
+		return pcrs
+	}
+	h, err := hashAlg.Hash()
+	if err != nil {
+		return pcrs
+	}
+	var locality0 byte
+	for _, ev := range el.Events(register.HashAlg(hashAlg)) {
+		// A TPM rejects invalid PCR indices and digest sizes.
+		if ev.Index < 0 || ev.Index >= 24 || len(ev.Digest) != h.Size() {
+			continue
+		}
+		idx := uint32(ev.Index)
+		if ev.Type == tcg.NoAction {
+			// The StartupLocality event records the PCR0 start value.
+			if idx == 0 && len(ev.Data) == 17 && strings.HasPrefix(string(ev.Data), "StartupLocality") {
+				locality0 = ev.Data[16]
+			}
+			continue
+		}
+		cur, ok := pcrs.Pcrs[idx]
+		if !ok {
+			cur = make([]byte, h.Size())
+			if idx == 0 {
+				cur[h.Size()-1] = locality0
+			}
+		}
+		// An H-CRTM event resets its PCR to locality 4 before the extend.
+		if ev.Type == tcg.EFIHCRTMEvent {
+			cur = make([]byte, h.Size())
+			cur[h.Size()-1] = 4
+		}
+		hasher := h.New()
+		hasher.Write(cur)
+		hasher.Write(ev.Digest)
+		pcrs.Pcrs[idx] = hasher.Sum(nil)
+	}
+	return pcrs
+}
+
+// encodeQuote returns a TPMS_ATTEST quote over pcrs with nonce as extra data.
+func encodeQuote(pcrs *tpmpb.PCRs, nonce []byte) ([]byte, error) {
+	sel := tpm2.PCRSelection{Hash: tpm2.Algorithm(pcrs.GetHash())}
+	for idx := range pcrs.GetPcrs() {
+		sel.PCRs = append(sel.PCRs, int(idx))
+	}
+	slices.Sort(sel.PCRs)
+	return tpm2.AttestationData{
+		Magic:     0xff544347,
+		Type:      tpm2.TagAttestQuote,
+		ExtraData: nonce,
+		AttestedQuoteInfo: &tpm2.QuoteInfo{
+			PCRSelection: sel,
+			// The TPM hashes PCRs with the signing scheme hash used in signQuote.
+			PCRDigest: internal.PCRDigest(pcrs, crypto.SHA256),
+		},
+	}.Encode()
+}
+
+// signQuote produces a TPMT_SIGNATURE over quote using ak.
+func signQuote(ak *ecdsa.PrivateKey, quote []byte) ([]byte, error) {
+	digest := sha256.Sum256(quote)
+	r, s, err := ecdsa.Sign(rand.Reader, ak, digest[:])
+	if err != nil {
+		return nil, err
+	}
+	return tpm2.Signature{
+		Alg: tpm2.AlgECDSA,
+		ECC: &tpm2.SignatureECC{
+			HashAlg: tpm2.AlgSHA256,
+			R:       r,
+			S:       s,
+		},
+	}.Encode()
 }

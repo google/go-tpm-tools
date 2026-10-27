@@ -30,6 +30,13 @@ func RetrieveAuthToken(ctx context.Context, client *metadata.Client) (oauth2.Tok
 	return token, nil
 }
 
+// isGoogleRegistry reports whether host is a Google Artifact Registry or
+// Container Registry host. Only these hosts get the service account token, and
+// only through the client with pinned roots.
+func isGoogleRegistry(host string) bool {
+	return strings.HasSuffix(host, ".pkg.dev") || host == "gcr.io" || strings.HasSuffix(host, ".gcr.io")
+}
+
 // Resolver returns a custom resolver that can use the token to authenticate with
 // the repo, and forces Google Artifact/Container registry to use the custom Google
 // HTTP client with pinned roots.
@@ -38,27 +45,30 @@ func Resolver(token string, googleClient *http.Client) remotes.Resolver {
 
 	credentials := func(host string) (string, string, error) {
 		// append the token if is talking to Artifact Registry or GCR Registry
-		if strings.HasSuffix(host, "docker.pkg.dev") || host == "gcr.io" || strings.HasSuffix(host, ".gcr.io") {
+		if isGoogleRegistry(host) {
 			return "_token", token, nil
 		}
 		return "", "", nil
 	}
-	authOpts := []docker.AuthorizerOpt{docker.WithAuthCreds(credentials)}
-	//nolint:staticcheck
-	authorizer := docker.NewDockerAuthorizer(authOpts...)
+	// Non-Google registries get no credentials.
+	authorizer := docker.NewDockerAuthorizer()
+	googleAuthorizer := docker.NewDockerAuthorizer(
+		docker.WithAuthCreds(credentials),
+		docker.WithAuthClient(googleClient),
+	)
 
 	// Construct the handlers once upfront
 	defaultHosts := docker.ConfigureDefaultRegistries(
 		docker.WithAuthorizer(authorizer),
 	)
 	googleHosts := docker.ConfigureDefaultRegistries(
-		docker.WithAuthorizer(authorizer),
+		docker.WithAuthorizer(googleAuthorizer),
 		docker.WithClient(googleClient),
 	)
 
 	options.Hosts = func(host string) ([]docker.RegistryHost, error) {
 		// Delegate to the pinned Google client handler for Google artifact registries
-		if strings.HasSuffix(host, "docker.pkg.dev") || host == "pkg.dev" || host == "gcr.io" || strings.HasSuffix(host, ".gcr.io") {
+		if isGoogleRegistry(host) {
 			return googleHosts(host)
 		}
 		// Fallback to the default OS trust store handler for all other registries

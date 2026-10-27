@@ -6,10 +6,12 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
+	"strings"
 
 	"cloud.google.com/go/compute/metadata"
 	clogging "cloud.google.com/go/logging"
@@ -302,37 +304,45 @@ func (n *nullLogger) Warn(_ string, _ ...any)                     {}
 func (n *nullLogger) Error(_ string, _ ...any)                    {}
 func (n *nullLogger) Close()                                      {}
 
-// SeverityWriter wraps a Logger and implements io.Writer to write to the Logger at a specific severity level.
-type SeverityWriter struct {
-	l        Logger
-	severity clogging.Severity
+// JSONSeverityWriter wraps an io.Writer (such as os.Stdout or os.Stderr) and formats log lines as structured JSON.
+type JSONSeverityWriter struct {
+	Target   io.Writer
+	Severity string // "INFO" or "ERROR"
 }
 
-// NewSeverityWriter returns an io.Writer that writes to the provided Logger with a specific severity.
-func NewSeverityWriter(l Logger, severity clogging.Severity) io.Writer {
-	return &SeverityWriter{l: l, severity: severity}
-}
-
-// NewInfoWriter returns an io.Writer that writes logs to the provided Logger with Info severity.
-func NewInfoWriter(l Logger) io.Writer {
-	return NewSeverityWriter(l, clogging.Info)
-}
-
-// NewErrorWriter returns an io.Writer that writes logs to the provided Logger with Error severity.
-func NewErrorWriter(l Logger) io.Writer {
-	return NewSeverityWriter(l, clogging.Error)
-}
-
-// Write implements the io.Writer interface, redirecting logs to the Logger with the configured severity.
-func (w *SeverityWriter) Write(p []byte) (n int, err error) {
-	// Trim any trailing newline.
-	end := len(p)
-	for end > 0 && p[end-1] == '\n' {
-		end--
+// Write formats p as JSON {"severity": "...", "message": "..."} and writes it to the underlying Target.
+func (w *JSONSeverityWriter) Write(p []byte) (n int, err error) {
+	text := strings.TrimRight(string(p), "\r\n")
+	if text == "" {
+		return len(p), nil
 	}
-	msg := string(p[:end])
 
-	w.l.Log(w.severity, msg)
-
+	for _, line := range strings.Split(text, "\n") {
+		line = strings.TrimRight(line, "\r")
+		if line == "" {
+			continue
+		}
+		record, marshalErr := json.Marshal(map[string]string{
+			"severity": w.Severity,
+			"message":  line,
+		})
+		if marshalErr != nil {
+			return 0, marshalErr
+		}
+		record = append(record, '\n')
+		if _, err = w.Target.Write(record); err != nil {
+			return 0, err
+		}
+	}
 	return len(p), nil
+}
+
+// NewJSONInfoWriter returns an io.Writer that formats lines as JSON with INFO severity to os.Stdout.
+func NewJSONInfoWriter() io.Writer {
+	return &JSONSeverityWriter{Target: os.Stdout, Severity: "INFO"}
+}
+
+// NewJSONErrorWriter returns an io.Writer that formats lines as JSON with ERROR severity to os.Stderr.
+func NewJSONErrorWriter() io.Writer {
+	return &JSONSeverityWriter{Target: os.Stderr, Severity: "ERROR"}
 }

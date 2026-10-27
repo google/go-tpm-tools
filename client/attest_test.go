@@ -21,7 +21,7 @@ import (
 var localClient = http.DefaultClient
 
 func TestKeyAttestSucceedsWithCertChainRetrieval(t *testing.T) {
-	testCA, caKey := test.GetTestCert(t, nil, nil, nil)
+	testCA := test.GetTestCert(t, test.RootCAKey, nil, nil, nil)
 
 	caServer := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, _ *http.Request) {
 		rw.WriteHeader(http.StatusOK)
@@ -30,7 +30,7 @@ func TestKeyAttestSucceedsWithCertChainRetrieval(t *testing.T) {
 
 	defer caServer.Close()
 
-	leafCert, _ := test.GetTestCert(t, []string{caServer.URL}, testCA, caKey)
+	leafCert := test.GetTestCert(t, test.LeafKey, []string{caServer.URL}, testCA, test.RootCAKey)
 
 	rwc := test.GetTPM(t)
 	defer CheckedClose(t, rwc)
@@ -66,7 +66,7 @@ func TestKeyAttestGetCertificateChainConditions(t *testing.T) {
 		t.Fatalf("Failed to generate test AK: %v", err)
 	}
 
-	akCert, _ := test.GetTestCert(t, nil, nil, nil)
+	akCert := test.GetTestCert(t, test.LeafKey, nil, nil, nil)
 
 	testcases := []struct {
 		name                 string

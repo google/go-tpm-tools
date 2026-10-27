@@ -2,44 +2,72 @@ package launcher
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
-	"time"
+	"path"
 
 	"cloud.google.com/go/compute/metadata"
 	"cos.googlesource.com/cos/tools.git/src/cmd/cos_gpu_installer/deviceinfo"
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/defaults"
 	"github.com/containerd/containerd/namespaces"
+	"github.com/google/go-tpm-tools/agent"
+	"github.com/google/go-tpm-tools/agent/device"
+	"github.com/google/go-tpm-tools/client"
+	kmcommonpb "github.com/google/go-tpm-tools/keymanager/km_common/proto"
+	workloadservice "github.com/google/go-tpm-tools/keymanager/workload_service"
 	"github.com/google/go-tpm-tools/launcher/internal/gpu"
+	"github.com/google/go-tpm-tools/launcher/internal/gpumanager"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
+	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/registryauth"
 	"github.com/google/go-tpm-tools/launcher/spec"
+	"github.com/google/go-tpm-tools/launcher/teeserver"
+	"github.com/google/go-tpm-tools/verifier"
+	"github.com/google/go-tpm-tools/verifier/fake"
+	"github.com/google/go-tpm-tools/verifier/ita"
+	"github.com/google/go-tpm-tools/verifier/util"
+	"github.com/google/go-tpm/legacy/tpm2"
 	"google.golang.org/api/option"
 )
 
-// StartLauncher orchestrates the container creation and runs the ContainerRunner.
-func StartLauncher(
-	ctx context.Context,
-	launchSpec spec.LaunchSpec,
-	tpm io.ReadWriteCloser,
-	logger logging.Logger,
-	workloadLogger logging.Logger,
-	mdsClient *metadata.Client,
-	start time.Time,
-	serialConsole *os.File,
-	googleClient *http.Client,
-	clientOpts ...option.ClientOption,
-) error {
-	logger.Info(fmt.Sprintf("Launch Spec: %+v", launchSpec.LogFriendly()))
+const (
+	teeServerSocket  = "teeserver.sock"
+	keyManagerSocket = "kmaserver.sock"
+)
+
+var expectedTPMDAParams = TPMDAParams{
+	MaxTries:        0x20,    // 32 tries
+	RecoveryTime:    0x1C20,  // 120 mins
+	LockoutRecovery: 0x15180, // 24 hrs
+}
+
+// StartLauncher orchestrates the client creation, image pulling, attestation agent setup,
+// and runs the ContainerRunner.
+func StartLauncher(ctx context.Context, launchSpec spec.LaunchSpec, logger logging.Logger, serialConsole *os.File, pinnedClient *http.Client, googleClient *http.Client) error {
+	if pinnedClient == nil {
+		return errors.New("pinnedClient must be non-nil")
+	}
+
 	containerdClient, err := containerd.New(defaults.DefaultAddress)
 	if err != nil {
 		return &RetryableError{Err: err}
 	}
 	defer containerdClient.Close()
 
+	tpm, err := initTPM(launchSpec, logger)
+	if err != nil {
+		return err
+	}
+	if tpm != nil {
+		defer tpm.Close()
+	}
+
+	mdsClient := metadata.NewClient(nil)
 	token, err := registryauth.RetrieveAuthToken(ctx, mdsClient)
 	if err != nil {
 		logger.Info(fmt.Sprintf("failed to retrieve auth token: %v, using empty auth for image pulling", err))
@@ -47,8 +75,8 @@ func StartLauncher(
 	ctx = namespaces.WithNamespace(ctx, namespaces.Default)
 
 	if launchSpec.InstallGpuDriver {
-		if launchSpec.Experiments.BcMode {
-			logger.Info("gpu driver is pre-installed in BC mode")
+		if launchSpec.Experiments.BcMode || launchSpec.Experiments.GB300CCMode {
+			logger.Info("GPU driver is pre-installed in BC and GB300 CC mode")
 		} else {
 			installer := gpu.NewDriverInstaller(containerdClient, launchSpec, logger)
 			err = installer.InstallGPUDrivers(ctx)
@@ -57,31 +85,128 @@ func StartLauncher(
 			}
 		}
 	} else {
-		deviceInfo, _ := deviceinfo.GetGPUTypeInfo()
+		deviceInfo, _ := deviceinfo.GetGPUTypeInfo(gpu.PciDevicesDir)
 		if deviceInfo != deviceinfo.NO_GPU {
 			logger.Error("GPU is attached, tee-install-gpu-driver is not set")
 			return fmt.Errorf("failed to install GPU drivers: tee-install-gpu-driver must be set to true")
 		}
 	}
 
-	logger.Info("Launch started", "duration_sec", time.Since(start).Seconds())
-
-	image, err := initImage(ctx, containerdClient, launchSpec, token, googleClient)
+	image, err := initImage(ctx, containerdClient, launchSpec, token, pinnedClient)
 	if err != nil {
 		return err
 	}
 
+	// googleClient is an authenticated HTTP client (OAuth2 ADC credentials) built on top
+	// of the pinned transport. Used for GCA verifier client creation and SA impersonation.
+	attestClients, err := createAttestClients(ctx, launchSpec, logger, googleClient)
+	if err != nil {
+		return err
+	}
+	var verifierClient verifier.Client
+	if launchSpec.ITAConfig.ITARegion != "" && !launchSpec.FakeVerifierEnabled {
+		verifierClient = attestClients.ITA
+	} else {
+		verifierClient = attestClients.GCA
+	}
+
+	// Create principal fetcher.
+	principalFetcherWithImpersonate := func(audience string) ([][]byte, error) {
+		tokens, err := util.PrincipalFetcher(audience, mdsClient)
+		if err != nil {
+			return nil, err
+		}
+		for _, sa := range launchSpec.ImpersonateServiceAccounts {
+			idToken, err := FetchImpersonatedToken(ctx, sa, audience, option.WithHTTPClient(googleClient))
+			if err != nil {
+				return nil, fmt.Errorf("failed to get impersonated token for %v: %w", sa, err)
+			}
+			tokens = append(tokens, idToken)
+		}
+		return tokens, nil
+	}
+
+	// Create signature discovery client.
+	sdClient := getSignatureDiscoveryClient(containerdClient, mdsClient, image.Target(), pinnedClient)
+
+	// Create device ROTs and ROTManager.
+	var deviceROTs []device.ROT
+	if launchSpec.Experiments.GB300CCMode && launchSpec.InstallGpuDriver {
+		// gpu-manager unloads the driver, switches the GPUs' BMSAI mode and
+		// resets them, so nothing may touch the GPUs (the attester or the
+		// container's /dev/nvidia* devices) until it reports
+		// HEALTH_STATE_READY. Fail closed on HEALTH_STATE_BMSAI_FAILED or a
+		// timeout.
+		logger.Info("GB300 CC mode: waiting for gpu-manager to prepare the GPUs")
+		if err := gpumanager.WaitForReady(ctx, gpumanager.DefaultSocketPath, gpumanager.DefaultTimeout, gpumanager.DefaultPollInterval, logger); err != nil {
+			return fmt.Errorf("GB300 CC mode: GPUs are not ready: %w", err)
+		}
+	}
+	if nvidiaAttester := gpu.NewNvidiaAttester(launchSpec.InstallGpuDriver); nvidiaAttester != nil {
+		deviceROTs = append(deviceROTs, nvidiaAttester)
+	}
+	deviceROTManager := device.NewROTManager(deviceROTs)
+
+	// Create AttestationAgent.
+	exps := agent.Experiments{
+		EnableAttestationEvidence: launchSpec.Experiments.EnableAttestationEvidence,
+		EnableGpuGcaSupport:       launchSpec.Experiments.EnableGpuGcaSupport,
+		EnableGpuItaSupport:       launchSpec.Experiments.EnableGpuItaSupport,
+		BcMode:                    launchSpec.Experiments.BcMode,
+		GB300CCMode:               launchSpec.Experiments.GB300CCMode,
+	}
+	attestAgent, err := agent.CreateAttestationAgent(tpm, client.GceAttestationKeyECC, verifierClient, principalFetcherWithImpersonate, sdClient, exps, logger, deviceROTManager, launchSpec.SignedImageRepos)
+	if err != nil {
+		return err
+	}
+
+	var keyClaimsProvider workloadservice.KeyClaimsProvider
+	if launchSpec.Experiments.EnableKeyManager {
+		logger.Info("EnableKeyManager experiment is enabled: initializing KeyManager server.")
+		kmServer, err := workloadservice.New(
+			ctx,
+			path.Join(launcherfile.HostTmpPath, keyManagerSocket),
+			kmcommonpb.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to create KeyManager server: %w", err)
+		}
+		go func() { _ = kmServer.Serve() }()
+		defer kmServer.Shutdown(ctx)
+		keyClaimsProvider = kmServer
+	}
+
+	logger.Info("Initializing TEE server.")
+	teeSocket, err := listenUnixSocket(path.Join(launcherfile.HostTmpPath, teeServerSocket))
+	if err != nil {
+		return err
+	}
+	teeServer, err := teeserver.New(
+		ctx,
+		teeSocket,
+		attestAgent,
+		logger,
+		launchSpec.Experiments.BcMode,
+		launchSpec.Experiments.EnableHostAttestation,
+		attestClients,
+		keyClaimsProvider,
+	)
+	if err != nil {
+		teeSocket.Close()
+		return fmt.Errorf("failed to create TEE server: %w", err)
+	}
+
+	go func() { _ = teeServer.Serve() }()
+	defer teeServer.Shutdown(ctx)
+
 	r, err := NewRunner(ctx, &RunnerConfig{
 		ContainerdClient: containerdClient,
-		LaunchSpec:       launchSpec,
-		MetadataClient:   mdsClient,
-		TPM:              tpm,
-		Logger:           logger,
-		WorkloadLogger:   workloadLogger,
-		SerialConsole:    serialConsole,
-		GoogleClient:     googleClient,
-		ClientOpts:       clientOpts,
 		Image:            image,
+		AttestAgent:      attestAgent,
+		DeviceROTManager: deviceROTManager,
+		LaunchSpec:       launchSpec,
+		Logger:           logger,
+		SerialConsole:    serialConsole,
 	})
 	if err != nil {
 		return err
@@ -90,3 +215,103 @@ func StartLauncher(
 
 	return r.Run(ctx)
 }
+
+func initTPM(launchSpec spec.LaunchSpec, logger logging.Logger) (io.ReadWriteCloser, error) {
+	if launchSpec.Experiments.BcMode || launchSpec.Experiments.GB300CCMode {
+		logger.Info("Running in BC or GB300 CC mode, bypassing TPM initialization and checks.")
+		return nil, nil
+	}
+
+	tpm, err := tpm2.OpenTPM("/dev/tpmrm0")
+	if err != nil {
+		return nil, &TPMOpenError{Err: err}
+	}
+
+	// check DA info, don't crash if failed
+	daInfo, err := GetTPMDAInfo(tpm)
+	if err != nil {
+		logger.Error(fmt.Sprintf("Failed to get DA Info: %v", err))
+	} else {
+		if !daInfo.StartupClearOrderly {
+			logger.Warn(fmt.Sprintf("Failed orderly startup. Avoid using instance reset. Instead, use instance stop/start. DA lockout counter incremented: LockoutCounter: %d / MaxAuthFail: %d", daInfo.LockoutCounter, daInfo.MaxTries))
+		}
+
+		if err := SetTPMDAParams(tpm, expectedTPMDAParams); err != nil {
+			logger.Error(fmt.Sprintf("Failed to set DA params: %v", err))
+		}
+
+		daInfo, err := GetTPMDAInfo(tpm)
+		if err != nil {
+			logger.Error(fmt.Sprintf("Failed to get DA Info: %v", err))
+		} else {
+			logger.Info(fmt.Sprintf("Updated TPM DA params: %+v", daInfo))
+		}
+	}
+
+	// check AK (EK signing) cert
+	gceAk, err := client.GceAttestationKeyECC(tpm)
+	if err != nil {
+		tpm.Close()
+		return nil, &TPMInitError{Err: err}
+	}
+	defer gceAk.Close()
+
+	if gceAk.Cert() == nil {
+		tpm.Close()
+		return nil, &TPMInitError{Err: errors.New("failed to find AKCert on this VM: try creating a new VM or contacting support")}
+	}
+
+	return tpm, nil
+}
+
+// createAttestClients initializes verifier clients (GCA/ITA).
+// When DisableGcaRefresh is false, googleClient must be configured with both OAuth2 token credentials
+// and Google Root CA certificate pinning.
+func createAttestClients(ctx context.Context, launchSpec spec.LaunchSpec, logger logging.Logger, googleClient *http.Client) (teeserver.AttestClients, error) {
+	attestClients := teeserver.AttestClients{}
+
+	if !launchSpec.DisableGcaRefresh {
+		if googleClient == nil || googleClient.Transport == nil {
+			return attestClients, fmt.Errorf("failed to create REST verifier client: googleClient must be non-nil with a valid transport")
+		}
+	}
+
+	if launchSpec.FakeVerifierEnabled {
+		fakeClient := fake.NewClient(nil)
+		attestClients.GCA = fakeClient
+		attestClients.ITA = fakeClient
+		return attestClients, nil
+	}
+	if launchSpec.ITAConfig.ITARegion != "" {
+		itaClient, err := ita.NewClient(launchSpec.ITAConfig)
+		if err != nil {
+			return attestClients, fmt.Errorf("failed to create ITA client: %v", err)
+		}
+		attestClients.ITA = itaClient
+		return attestClients, nil
+	}
+
+	gcaClient, err := util.NewRESTClient(ctx, launchSpec.GcaAddress, launchSpec.ProjectID, launchSpec.Region, option.WithHTTPClient(googleClient))
+	if err != nil {
+		if !launchSpec.DisableGcaRefresh {
+			return attestClients, fmt.Errorf("failed to create REST verifier client: %v", err)
+		}
+		logger.Info("Failed to create the GCA client, but GCA refresh is disabled so the launch will continue: %v", err)
+		gcaClient = nil
+	}
+	attestClients.GCA = gcaClient
+	return attestClients, nil
+}
+
+func listenUnixSocket(socketPath string) (net.Listener, error) {
+	nl, err := net.Listen("unix", socketPath)
+	if err != nil {
+		return nil, fmt.Errorf("cannot listen to socket [%s]: %w", socketPath, err)
+	}
+	if err := os.Chmod(socketPath, 0777); err != nil {
+		nl.Close()
+		return nil, fmt.Errorf("failed to chmod unix socket %s: %w", socketPath, err)
+	}
+	return nl, nil
+}
+

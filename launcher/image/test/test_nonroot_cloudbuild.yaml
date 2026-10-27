@@ -1,0 +1,74 @@
+# Test non-root container
+# 1. Launch a test workload
+# 2. For both debug and hardened image, verify the following via Cloud Logging:
+#    - user namespace UID mapping
+#    - IPv4/IPv6 egress reachability
+substitutions:
+  '_IMAGE_NAME': ''
+  '_IMAGE_PROJECT': ''
+  '_CLEANUP': 'true'
+  '_IMAGE_REPO': 'us-west1-docker.pkg.dev/confidential-space-images-dev/cs-integ-test-images'
+  '_WORKLOAD_IMAGE': '${_IMAGE_REPO}/nonroot-container:latest'
+  '_ZONE': 'us-west1-a'
+
+steps:
+# Launch Workload VM on the dual-stack `testipv6` subnet so the workload can test IPv6 egress.
+# This relies on the following setup in the CI project:
+# - `testipv6` subnet in us-west1 of `testipv6network`: dual-stack, Private Google Access enabled.
+# - `testipv6network`: an IPv6 default route (::/0) to the default internet gateway.
+# These let the VM's internal IPv6 address reach Google services through Private Google Access.
+# Despite its name, the default internet gateway keeps this traffic within Google's network.
+# See https://cloud.google.com/vpc/docs/configure-private-google-access.
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CreateWorkloadVM
+  env:
+  - 'BUILD_ID=$BUILD_ID'
+  - 'IMAGE_NAME=$_IMAGE_NAME'
+  - 'IMAGE_PROJECT=$_IMAGE_PROJECT'
+  - 'WORKLOAD_IMAGE=$_WORKLOAD_IMAGE'
+  - 'ZONE=$_ZONE'
+  script: |
+    #!/usr/bin/env bash
+    set -euo pipefail
+    bash create_vm.sh -i $IMAGE_NAME \
+      -p $IMAGE_PROJECT \
+      -m "tee-image-reference=$WORKLOAD_IMAGE,tee-nonroot-container=true,tee-container-log-redirect=true" \
+      -n nonroot-workload-$BUILD_ID \
+      -z $ZONE \
+      -s testipv6 \
+      -6
+
+# Verify user namespace UID mapping and IPv4/IPv6 egress reachability via Cloud Logging
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: TestNonRootContainer
+  entrypoint: 'bash'
+  env:
+  - 'PROJECT_ID=$PROJECT_ID'
+  args: ['scripts/test_nonroot_container.sh',
+          'nonroot-workload-${BUILD_ID}',
+          '${_ZONE}',
+        ]
+
+# Clean up resources
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CleanUp
+  env:
+  - 'CLEANUP=$_CLEANUP'
+  - 'BUILD_ID=$BUILD_ID'
+  - 'ZONE=$_ZONE'
+  script: |
+    #!/usr/bin/env bash
+    bash cleanup.sh nonroot-workload-$BUILD_ID $ZONE || true
+
+# Check for failure message
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: CheckFailure
+  env:
+  - 'BUILD_ID=$BUILD_ID'
+  entrypoint: 'bash'
+  args: ['check_failure.sh']
+
+options:
+  dynamic_substitutions: true
+  pool:
+    name: 'projects/confidential-space-images-dev/locations/us-west1/workerPools/cs-image-build-vpc'

@@ -99,6 +99,9 @@ func getCapabilityProperty(tpm io.ReadWriter, property tpm2.TPMProp) (*tpm2.Tagg
 	if err != nil {
 		return nil, err
 	}
+	if len(vals) == 0 {
+		return nil, fmt.Errorf("no capability property returned for property: %v", property)
+	}
 	val, ok := vals[0].(tpm2.TaggedProperty)
 	if !ok {
 		return nil, fmt.Errorf("failed to cast returned value to tpm2.TaggedProperty: %v", val)

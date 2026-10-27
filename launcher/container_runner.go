@@ -9,7 +9,9 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
+	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -20,57 +22,43 @@ import (
 	"time"
 
 	"cloud.google.com/go/compute/metadata"
-	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/cio"
-	"github.com/containerd/containerd/containers"
 	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/images"
-	"github.com/containerd/containerd/oci"
 	"github.com/containerd/containerd/remotes"
+	gocni "github.com/containerd/go-cni"
+	types100 "github.com/containernetworking/cni/pkg/types/100"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/go-tpm-tools/agent"
+	"github.com/google/go-tpm-tools/agent/device"
 	"github.com/google/go-tpm-tools/cel"
-	"github.com/google/go-tpm-tools/client"
-	keymanager "github.com/google/go-tpm-tools/keymanager/km_common/proto"
-	workloadservice "github.com/google/go-tpm-tools/keymanager/workload_service"
-	"github.com/google/go-tpm-tools/launcher/internal/gpu"
 	"github.com/google/go-tpm-tools/launcher/internal/healthmonitoring/nodeproblemdetector"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/internal/signaturediscovery"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/registryauth"
 	"github.com/google/go-tpm-tools/launcher/spec"
-	"github.com/google/go-tpm-tools/launcher/teeserver"
-	"github.com/google/go-tpm-tools/verifier"
-	"github.com/google/go-tpm-tools/verifier/fake"
-	"github.com/google/go-tpm-tools/verifier/ita"
-	"github.com/google/go-tpm-tools/verifier/util"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
-	specs "github.com/opencontainers/runtime-spec/specs-go"
-	"google.golang.org/api/option"
 	"google.golang.org/protobuf/proto"
+
+	attestationpb "github.com/GoogleCloudPlatform/confidential-space/server/proto/gen/attestation"
 )
 
 // ContainerRunner contains information about the container settings
 type ContainerRunner struct {
-	container      containerd.Container
-	launchSpec     spec.LaunchSpec
-	attestAgent    agent.AttestationAgent
-	logger         logging.Logger
-	workloadLogger logging.Logger
-	gpuAttester    gpu.Attester
-	serialConsole  *os.File
-	powerButton    *powerButtonListener // Populated only for a hardened image
-	clientOpts     []option.ClientOption
+	container        containerd.Container
+	launchSpec       spec.LaunchSpec
+	attestAgent      agent.AttestationAgent
+	logger           logging.Logger
+	deviceROTManager *device.ROTManager
+	serialConsole    *os.File
+	powerButton      *powerButtonListener // Populated only for a hardened image
+	cni              gocni.CNI
 }
 
 const tokenFileTmp = ".token.tmp"
-
-const teeServerSocket = "teeserver.sock"
-const keyManagerSocket = "kmaserver.sock"
-const keyManagerGrpcSocket = "kmaserver-grpc.sock"
 
 // Since we only allow one container on a VM, using a deterministic id is probably fine
 const (
@@ -96,6 +84,18 @@ const (
 // Default OOM score for a CS container.
 const defaultOOMScore = 1000
 
+// Constants for a non-root container.
+const (
+	hostUIDBegin = 100000 // Starting (outside container) uid for the root user inside the container
+	hostGIDBegin = 100000 // Starting (outside container) gid for the root group inside the container
+	userNSSize   = 65536  // 16-bit range of uid/gid inside the container
+
+	// The container network is defined by image/10-workload.conf (bridge br0, host-local IPAM):
+	cniConfigDir = "/etc/cni/net.d"
+	cniBinDir    = "/opt/cni/bin"
+	netnsPathFmt = "/proc/%d/ns/net"
+)
+
 // ContainerdClient abstracts the subset of containerd.Client methods used by the
 // runner. This enables unit testing by allowing a mock client to be injected.
 type ContainerdClient interface {
@@ -107,44 +107,22 @@ type ContainerdClient interface {
 // RunnerConfig contains the configuration for creating a ContainerRunner.
 type RunnerConfig struct {
 	ContainerdClient ContainerdClient
-	LaunchSpec       spec.LaunchSpec
-	MetadataClient   *metadata.Client
-	TPM              io.ReadWriteCloser
-	Logger           logging.Logger
-	WorkloadLogger   logging.Logger
-	SerialConsole    *os.File
-	GoogleClient     *http.Client
-	ClientOpts       []option.ClientOption
-	AKFetcher        util.TpmKeyFetcher
 	Image            containerd.Image
+	AttestAgent      agent.AttestationAgent
+	DeviceROTManager *device.ROTManager
+	LaunchSpec       spec.LaunchSpec
+	Logger           logging.Logger
+	SerialConsole    *os.File
 }
 
 // NewRunner returns a runner.
 func NewRunner(ctx context.Context, cfg *RunnerConfig) (*ContainerRunner, error) {
 	cdClient := cfg.ContainerdClient
 	launchSpec := cfg.LaunchSpec
-	mdsClient := cfg.MetadataClient
-	tpm := cfg.TPM
 	logger := cfg.Logger
-	workloadLogger := cfg.WorkloadLogger
 	serialConsole := cfg.SerialConsole
-	googleClient := cfg.GoogleClient
-	opts := cfg.ClientOpts
 	image := cfg.Image
-
-	var mounts []specs.Mount
-	for _, lsMnt := range launchSpec.Mounts {
-		mounts = append(mounts, lsMnt.SpecsMount())
-	}
-	mounts = appendTokenMounts(mounts)
-	var cgroupOpts []oci.SpecOpts
-	if launchSpec.CgroupNamespace {
-		mounts = appendCgroupRw(mounts)
-		cgroupOpts = []oci.SpecOpts{
-			oci.WithNamespacedCgroup(),
-			oci.WithLinuxNamespace(specs.LinuxNamespace{Type: specs.CgroupNamespace}),
-		}
-	}
+	attestAgent := cfg.AttestAgent
 
 	envs, err := formatEnvVars(launchSpec.Envs)
 	if err != nil {
@@ -154,7 +132,8 @@ func NewRunner(ctx context.Context, cfg *RunnerConfig) (*ContainerRunner, error)
 	container, err := cdClient.LoadContainer(ctx, containerID)
 	if err == nil {
 		// container exists, delete it first
-		container.Delete(ctx, containerd.WithSnapshotCleanup)
+		// TODO: consider handling or logging cleanup error.
+		_ = container.Delete(ctx, containerd.WithSnapshotCleanup)
 	}
 
 	var loggedEnvs []string
@@ -180,10 +159,6 @@ func NewRunner(ctx context.Context, cfg *RunnerConfig) (*ContainerRunner, error)
 	}
 
 	logger.Info(fmt.Sprintf("Exposed Ports:             : %v\n", imageConfig.ExposedPorts))
-	if err := openPorts(imageConfig.ExposedPorts); err != nil {
-		return nil, err
-	}
-
 	logger.Info(fmt.Sprintf("Image Labels               : %v\n", imageConfig.Labels))
 	launchPolicy, err := spec.GetLaunchPolicy(imageConfig.Labels, logger)
 	if err != nil {
@@ -215,101 +190,24 @@ func NewRunner(ctx context.Context, cfg *RunnerConfig) (*ContainerRunner, error)
 		)
 	}
 
-	hostname, err := os.Hostname()
+	specOpts, err := createOCISpecOpts(image, launchSpec, envs, listFilesWithPrefix, logger)
 	if err != nil {
-		return nil, &RetryableError{fmt.Errorf("cannot get hostname: [%w]", err)}
+		return nil, err
 	}
 
-	rlimits := []specs.POSIXRlimit{{
-		Type: "RLIMIT_NOFILE",
-		Hard: nofile,
-		Soft: nofile,
-	}}
-
-	specOpts := []oci.SpecOpts{
-		oci.WithImageConfigArgs(image, launchSpec.Cmd),
-		oci.WithEnv(envs),
-		oci.WithMounts(mounts),
-		// following 4 options are here to allow the container to have
-		// the host network (same effect as --net-host in ctr command)
-		oci.WithHostHostsFile,
-		oci.WithHostResolvconf,
-		oci.WithHostNamespace(specs.NetworkNamespace),
-		oci.WithEnv([]string{fmt.Sprintf("HOSTNAME=%s", hostname)}),
-		oci.WithAddedCapabilities(launchSpec.AddedCapabilities),
-		withRlimits(rlimits),
-		withOOMScoreAdj(defaultOOMScore),
+	conOpts := []containerd.NewContainerOpts{containerd.WithImage(image)}
+	if launchSpec.NonrootContainer { // When a non-root container is used, we remap the snapshop with the non-root user.
+		conOpts = append(conOpts, containerd.WithRemappedSnapshot(snapshotID, image, hostUIDBegin, hostGIDBegin))
+	} else {
+		conOpts = append(conOpts, containerd.WithNewSnapshot(snapshotID, image))
 	}
-	if launchSpec.DevShmSize != 0 {
-		specOpts = append(specOpts, oci.WithDevShmSize(launchSpec.DevShmSize))
-	}
-	specOpts = append(specOpts, cgroupOpts...)
+	conOpts = append(conOpts, containerd.WithNewSpec(specOpts...))
 
-	var deviceROTs []agent.DeviceROT
-	nvidiaAttester := gpu.NewNvidiaAttester(launchSpec.InstallGpuDriver)
-	if launchSpec.InstallGpuDriver {
-		gpuMounts := []specs.Mount{
-			{
-				Type:        "volume",
-				Source:      fmt.Sprintf("%s/lib64", gpu.InstallationHostDir),
-				Destination: fmt.Sprintf("%s/lib64", gpu.InstallationContainerDir),
-				Options:     []string{"rbind", "rw"},
-			}, {
-				Type:        "volume",
-				Source:      fmt.Sprintf("%s/bin", gpu.InstallationHostDir),
-				Destination: fmt.Sprintf("%s/bin", gpu.InstallationContainerDir),
-				Options:     []string{"rbind", "rw"},
-			},
-		}
-		if launchSpec.Experiments.BcMode {
-			gpuMounts = []specs.Mount{
-				{
-					Type:        "volume",
-					Source:      fmt.Sprintf("%s/lib64", gpu.BuiltInInstallation595_58_03HostDir),
-					Destination: fmt.Sprintf("%s/lib64", gpu.InstallationContainerDir),
-					Options:     []string{"rbind", "rw"},
-				}, {
-					Type:        "volume",
-					Source:      fmt.Sprintf("%s/bin", gpu.BuiltInInstallation595_58_03HostDir),
-					Destination: fmt.Sprintf("%s/bin", gpu.InstallationContainerDir),
-					Options:     []string{"rbind", "rw"},
-				},
-			}
-		}
-
-		specOpts = append(specOpts, oci.WithMounts(gpuMounts))
-
-		// /dev/nvidia-caps/* will not be listed here and will not be passed to
-		// the container workload
-		//
-		// following devices should be listed:
-		// /dev/nvidiactl
-		// /dev/nvidia-uvm
-		// /dev/nvidia-uvm-tools
-		// /dev/nvidia{0,1,2,...}
-		// /dev/nvidia-modeset
-		gpuDeviceFiles, err := listFilesWithPrefix("/dev", "nvidia")
-		if err != nil {
-			return nil, fmt.Errorf("failed to list nvidia devices: [%w]", err)
-		}
-
-		for _, deviceFile := range gpuDeviceFiles {
-			logger.Info(fmt.Sprintf("Detected nvidia device : %s", deviceFile))
-			specOpts = append(specOpts, oci.WithDevices(deviceFile, deviceFile, "crw-rw-rw-"))
-		}
-		deviceROTs = append(deviceROTs, nvidiaAttester)
-	}
-
-	container, err = cdClient.NewContainer(
-		ctx,
-		containerID,
-		containerd.WithImage(image),
-		containerd.WithNewSnapshot(snapshotID, image),
-		containerd.WithNewSpec(specOpts...),
-	)
+	container, err = cdClient.NewContainer(ctx, containerID, conOpts...)
 	if err != nil {
 		if container != nil {
-			container.Delete(ctx, containerd.WithSnapshotCleanup)
+			// TODO: consider handling or logging cleanup error.
+			_ = container.Delete(ctx, containerd.WithSnapshotCleanup)
 		}
 		return nil, &RetryableError{fmt.Errorf("failed to create a container: [%w]", err)}
 	}
@@ -329,60 +227,6 @@ func NewRunner(ctx context.Context, cfg *RunnerConfig) (*ContainerRunner, error)
 				len(containerSpec.Process.Args), len(launchSpec.Cmd))
 	}
 
-	principalFetcherWithImpersonate := func(audience string) ([][]byte, error) {
-		tokens, err := util.PrincipalFetcher(audience, mdsClient)
-		if err != nil {
-			return nil, err
-		}
-
-		// Fetch impersonated ID tokens.
-		for _, sa := range launchSpec.ImpersonateServiceAccounts {
-			idToken, err := FetchImpersonatedToken(ctx, sa, audience, opts...)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get impersonated token for %v: %w", sa, err)
-			}
-
-			tokens = append(tokens, idToken)
-		}
-		return tokens, nil
-	}
-
-	asAddr := launchSpec.GcaAddress
-
-	var verifierClient verifier.Client
-	if launchSpec.FakeVerifierEnabled {
-		verifierClient = fake.NewClient(nil)
-	} else if launchSpec.ITAConfig.ITARegion == "" {
-		gcaClient, err := util.NewRESTClient(ctx, asAddr, launchSpec.ProjectID, launchSpec.Region, opts...)
-		if err != nil {
-			if !launchSpec.DisableGcaRefresh {
-				return nil, fmt.Errorf("failed to create REST verifier client: %v", err)
-			}
-			// If GCA refresh is disabled, swallow the error and continue.
-			logger.Info("Failed to create the GCA client for attestation agent, this is not necessarily blocking because GCA refresh is disabled so the launch will continue: %v", err)
-			gcaClient = nil
-		}
-
-		verifierClient = gcaClient
-	}
-
-	// Create a new signaturediscovery client to fetch signatures.
-	sdClient := getSignatureDiscoveryClient(cdClient, mdsClient, image.Target(), googleClient)
-
-	exps := agent.Experiments{
-		EnableAttestationEvidence: launchSpec.Experiments.EnableAttestationEvidence,
-		EnableGpuGcaSupport:       launchSpec.Experiments.EnableGpuGcaSupport,
-		BcMode:                    launchSpec.Experiments.BcMode,
-	}
-	akFetcher := cfg.AKFetcher
-	if akFetcher == nil {
-		akFetcher = client.GceAttestationKeyECC
-	}
-	attestAgent, err := agent.CreateAttestationAgent(tpm, akFetcher, verifierClient, principalFetcherWithImpersonate, sdClient, exps, logger, deviceROTs, launchSpec.SignedImageRepos)
-	if err != nil {
-		return nil, err
-	}
-
 	var powerButton *powerButtonListener
 	if launchSpec.Hardened {
 		powerButton, err = newPowerButtonListener(logger)
@@ -391,16 +235,22 @@ func NewRunner(ctx context.Context, cfg *RunnerConfig) (*ContainerRunner, error)
 		}
 	}
 
+	var cni gocni.CNI
+	if launchSpec.NonrootContainer {
+		if cni, err = newCNI(); err != nil {
+			return nil, err
+		}
+	}
+
 	return &ContainerRunner{
-		container,
-		launchSpec,
-		attestAgent,
-		logger,
-		workloadLogger,
-		nvidiaAttester,
-		serialConsole,
-		powerButton,
-		opts,
+		container:        container,
+		launchSpec:       launchSpec,
+		attestAgent:      attestAgent,
+		logger:           logger,
+		deviceROTManager: cfg.DeviceROTManager,
+		serialConsole:    serialConsole,
+		powerButton:      powerButton,
+		cni:              cni,
 	}, nil
 }
 
@@ -408,13 +258,14 @@ func enableMonitoring(enabled spec.MonitoringType, logger logging.Logger) error 
 	if enabled != spec.None {
 		logger.Info("Health Monitoring is enabled by the VM operator")
 
-		if enabled == spec.All {
+		switch enabled {
+		case spec.All:
 			logger.Info("All health monitoring metrics enabled")
 			if err := nodeproblemdetector.EnableAllConfig(); err != nil {
 				logger.Error("Failed to enable full monitoring config: %v", err)
 				return err
 			}
-		} else if enabled == spec.MemoryOnly {
+		case spec.MemoryOnly:
 			logger.Info("memory/bytes_used enabled")
 		}
 
@@ -448,37 +299,13 @@ func getSignatureDiscoveryClient(cdClient ContainerdClient, mdsClient *metadata.
 	return signaturediscovery.New(imageDesc, resolverFetcher, imageFetcher)
 }
 
-// formatEnvVars formats the environment variables to the oci format
-func formatEnvVars(envVars []spec.EnvVar) ([]string, error) {
-	var result []string
-	for _, envVar := range envVars {
-		ociFormat, err := cel.FormatEnvVar(envVar.Name, envVar.Value)
-		if err != nil {
-			return nil, fmt.Errorf("failed to format env var: %v", err)
-		}
-		result = append(result, ociFormat)
-	}
-	return result, nil
-}
-
-// appendTokenMounts appends the default mount specs for the OIDC token
-func appendTokenMounts(mounts []specs.Mount) []specs.Mount {
-	m := specs.Mount{}
-	m.Destination = launcherfile.ContainerRuntimeMountPath
-	m.Type = "bind"
-	m.Source = launcherfile.HostTmpPath
-	m.Options = []string{"rbind", "ro"}
-
-	return append(mounts, m)
-}
-
 func (r *ContainerRunner) measureCELEvents(ctx context.Context) error {
 	if err := r.measureContainerClaims(ctx); err != nil {
 		return fmt.Errorf("failed to measure container claims: %v", err)
 	}
 
 	if err := r.measureGPUAttestationEvidence(); err != nil {
-		return fmt.Errorf("failed to measure GPU claims: %v", err)
+		return fmt.Errorf("failed to measure device attestation claims: %v", err)
 	}
 
 	if err := r.measureMemoryMonitor(); err != nil {
@@ -550,43 +377,75 @@ func (r *ContainerRunner) measureContainerClaims(ctx context.Context) error {
 
 // measureGPUAttestationEvidence will measure GPU attestation claims into the COS
 // eventlog in the AttestationAgent.
+//
+// In GB300 CC mode, the attestation agent forwards each event to the BMSAI
+// attestation agent, which extends it into Grace PSC TEM slot 1 and dTPM
+// PCR 19 and records it in the cel_launch_event_log returned by /v1/evidence.
 func (r *ContainerRunner) measureGPUAttestationEvidence() error {
-	if r.gpuAttester == nil {
+	if r.deviceROTManager == nil {
 		return nil
 	}
 
+	if err := r.deviceROTManager.ValidateROTs(); err != nil {
+		return err
+	}
+
 	nonce := make([]byte, 32)
-	if _, err := cryt.Read(nonce); err != nil {
-		return fmt.Errorf("failed to generate random nonce: %v", err)
+	cryt.Read(nonce)
+
+	for _, rot := range r.deviceROTManager.Lookup(device.NvidiaGPU) {
+		evidence, err := rot.Attest(nonce)
+		if err != nil {
+			return fmt.Errorf("failed to collect evidence for device %v: %w", rot.Vendor(), err)
+		}
+
+		pbEvidence, ok := evidence.(proto.Message)
+		if !ok {
+			return fmt.Errorf("unexpected evidence type %T from device %v", evidence, rot.Vendor())
+		}
+
+		evidenceBytes, err := proto.Marshal(pbEvidence)
+		if err != nil {
+			return fmt.Errorf("failed to marshal evidence from device %v: %w", rot.Vendor(), err)
+		}
+
+		var eventType cel.CosType
+		switch rot.Vendor() {
+		case device.NvidiaGPU:
+			if _, ok := evidence.(*attestationpb.NvidiaAttestationReport); !ok {
+				return fmt.Errorf("unexpected evidence type %T for Nvidia GPU", evidence)
+			}
+			eventType = cel.GPUDeviceAttestationBindingType
+		default:
+			return fmt.Errorf("unsupported vendor %v for event log measurement", rot.Vendor())
+		}
+
+		event := cel.CosTlv{
+			EventType:    eventType,
+			EventContent: evidenceBytes,
+		}
+		if err := r.attestAgent.MeasureEvent(event); err != nil {
+			return fmt.Errorf("failed to measure attestation event for device %v: %w", rot.Vendor(), err)
+		}
+
+		// On GB300, gpu-manager sets the CC ready state itself, after
+		// nvidia-mnccd has set up NVLink encryption and before it reports
+		// HEALTH_STATE_READY, so the launcher must not set it again.
+		if r.launchSpec.Experiments.GB300CCMode {
+			continue
+		}
+		if enabler, ok := rot.(device.ReadyStateEnabler); ok {
+			if err := enabler.EnableReadyState(); err != nil {
+				return fmt.Errorf("failed to enable ready state for device %v: %w", rot.Vendor(), err)
+			}
+		}
 	}
 
-	evidence, err := r.gpuAttester.Attest(nonce)
-	if err != nil {
-		return fmt.Errorf("failed to collect GPU evidence: %w", err)
+	if r.launchSpec.Experiments.GB300CCMode {
+		r.logger.Info("GB300 CC mode: successfully measured device attestation binding events; gpu-manager sets the GPU CC ready state")
+	} else {
+		r.logger.Info("Successfully measured device attestation binding events and enabled ready states")
 	}
-
-	gpuEvidence, ok := evidence.(*attestationpb.NvidiaAttestationReport)
-	if !ok {
-		return fmt.Errorf("unexpected evidence type: %T", evidence)
-	}
-
-	evidenceBytes, err := proto.Marshal(gpuEvidence)
-	if err != nil {
-		return fmt.Errorf("failed to marshal GPU evidence: %w", err)
-	}
-
-	event := cel.CosTlv{
-		EventType:    cel.GPUDeviceAttestationBindingType,
-		EventContent: evidenceBytes,
-	}
-	if err := r.attestAgent.MeasureEvent(event); err != nil {
-		return fmt.Errorf("failed to measure GPU attestation: %w", err)
-	}
-
-	if err := r.gpuAttester.EnableReadyState(); err != nil {
-		return fmt.Errorf("failed to set GPU ready state: %w", err)
-	}
-	r.logger.Info("Successfully measured GPU device attestation binding event and set GPU state to ready")
 	return nil
 }
 
@@ -594,7 +453,7 @@ func (r *ContainerRunner) measureGPUAttestationEvidence() error {
 // eventlog in the AttestationAgent.
 func (r *ContainerRunner) measureMemoryMonitor() error {
 	var enabled uint8
-	if r.launchSpec.MonitoringEnabled == spec.MemoryOnly {
+	if r.launchSpec.MonitoringEnabled == spec.MemoryOnly || r.launchSpec.MonitoringEnabled == spec.All {
 		enabled = 1
 	}
 	if err := r.attestAgent.MeasureEvent(cel.CosTlv{EventType: cel.MemoryMonitorType, EventContent: []byte{enabled}}); err != nil {
@@ -688,7 +547,7 @@ func (r *ContainerRunner) fetchAndWriteTokenWithRetry(ctx context.Context,
 						duration, err = r.refreshToken(ctx)
 						return err
 					},
-					retry(),
+					backoff.WithContext(retry(), ctx),
 					func(err error, t time.Duration) {
 						r.logger.Error(fmt.Sprintf("failed to refresh attestation service token at time %v: %v", t, err))
 					})
@@ -770,65 +629,6 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		}
 	}
 
-	// create and start the TEE server
-	r.logger.Info("EnableOnDemandAttestation is enabled: initializing TEE server.")
-
-	attestClients := teeserver.AttestClients{}
-
-	if r.launchSpec.FakeVerifierEnabled {
-		fakeClient := fake.NewClient(nil)
-		attestClients.GCA = fakeClient
-		attestClients.ITA = fakeClient
-	} else if r.launchSpec.ITAConfig.ITARegion != "" {
-		itaClient, err := ita.NewClient(r.launchSpec.ITAConfig)
-		if err != nil {
-			return fmt.Errorf("failed to create ITA client: %v", err)
-		}
-
-		attestClients.ITA = itaClient
-	} else {
-		gcaClient, err := util.NewRESTClient(ctx, r.launchSpec.GcaAddress, r.launchSpec.ProjectID, r.launchSpec.Region, r.clientOpts...)
-		if err != nil {
-			if !r.launchSpec.DisableGcaRefresh {
-				return fmt.Errorf("failed to create REST verifier client: %v", err)
-			}
-			// If GCA refresh is disabled, swallow the error and continue.
-			r.logger.Info("Failed to create the GCA client, but GCA refresh is disabled so the launch will continue: %v", err)
-			gcaClient = nil
-		}
-		attestClients.GCA = gcaClient
-	}
-
-	var workloadService *workloadservice.Server
-	// create and start the key manager server
-	if r.launchSpec.Experiments.EnableKeyManager {
-		r.logger.Info("EnableKeyManager experiment is enabled: initializing KeyManager server.")
-		keyManagerSocketPath := path.Join(launcherfile.HostTmpPath, keyManagerSocket)
-		keyManagerServer, err := workloadservice.New(ctx, keyManagerSocketPath, keymanager.KeyProtectionMechanism_KEY_PROTECTION_VM_EMULATED)
-
-		if err != nil {
-			return fmt.Errorf("failed to create the KeyManager server: %v", err)
-		}
-		if err := verifySocketPermissions(keyManagerSocketPath); err != nil {
-			return fmt.Errorf("failed to verify KeyManager socket permissions: %w", err)
-		}
-		workloadService = keyManagerServer
-		go keyManagerServer.Serve()
-		defer keyManagerServer.Shutdown(ctx)
-	}
-
-	teeServerSocketPath := path.Join(launcherfile.HostTmpPath, teeServerSocket)
-	teeServer, err := teeserver.New(ctx, teeServerSocketPath, r.attestAgent, r.logger, r.launchSpec, attestClients, workloadService)
-	if err != nil {
-		return fmt.Errorf("failed to create the TEE server: %v", err)
-	}
-	if err := verifySocketPermissions(teeServerSocketPath); err != nil {
-		return fmt.Errorf("failed to verify TEE server socket permissions: %w", err)
-	}
-
-	go teeServer.Serve()
-	defer teeServer.Shutdown(ctx)
-
 	// Avoids breaking existing memory monitoring tests that depend on this log.
 	if r.launchSpec.MonitoringEnabled == spec.None {
 		r.logger.Info("MemoryMonitoring is disabled by the VM operator")
@@ -840,14 +640,11 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		streamOpt = cio.WithStreams(nil, nil, nil)
 		r.logger.Info("Container stdout/stderr will not be redirected.")
 	case spec.Everywhere:
-		w := io.MultiWriter(os.Stdout, r.serialConsole)
-		streamOpt = cio.WithStreams(nil, w, w)
+		streamOpt = cio.WithStreams(nil, io.MultiWriter(logging.NewJSONInfoWriter(), r.serialConsole), io.MultiWriter(logging.NewJSONErrorWriter(), r.serialConsole))
 		r.logger.Info("Container stdout/stderr will be redirected to serial and Cloud Logging. This may result in performance issues due to slow serial console writes.")
 	case spec.CloudLogging:
-		stdoutWriter := logging.NewInfoWriter(r.workloadLogger)
-		stderrWriter := logging.NewErrorWriter(r.workloadLogger)
-		streamOpt = cio.WithStreams(nil, stdoutWriter, stderrWriter)
-		r.logger.Info("Container stdout/stderr will be redirected to Cloud Logging with INFO and ERROR severities respectively.")
+		streamOpt = cio.WithStreams(nil, logging.NewJSONInfoWriter(), logging.NewJSONErrorWriter())
+		r.logger.Info("Container stdout/stderr will be redirected to journald (JSON) for FluentBit scraping.")
 	case spec.Serial:
 		streamOpt = cio.WithStreams(nil, r.serialConsole, r.serialConsole)
 		r.logger.Info("Container stdout/stderr will be redirected to serial logging. This may result in performance issues due to slow serial console writes.")
@@ -855,13 +652,44 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		return fmt.Errorf("unknown logging redirect location: %v", r.launchSpec.LogRedirect)
 	}
 
-	task, err := r.container.NewTask(ctx, cio.NewCreator(streamOpt))
+	var taskOpts []containerd.NewTaskOpts
+	if r.launchSpec.NonrootContainer {
+		taskOpts = append(taskOpts, containerd.WithUIDOwner(hostUIDBegin), containerd.WithGIDOwner(hostGIDBegin))
+	}
+
+	task, err := r.container.NewTask(ctx, cio.NewCreator(streamOpt), taskOpts...)
 	if err != nil {
 		return &RetryableError{err}
 	}
 	defer task.Delete(ctx)
+	defer func() {
+		if task.IO() != nil {
+			task.IO().Wait()
+		}
+	}()
 
 	r.enableGracefulShutdown(ctx, task)
+
+	// Opening ports.
+	// Workload-requested ports are in the image config, and the container IP address can be obtained after the CNI setup.
+	image, err := r.container.Image(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get image from container: %w", err)
+	}
+	imageConfig, err := getImageConfig(ctx, image)
+	if err != nil {
+		return fmt.Errorf("failed to get image config: %w", err)
+	}
+	var containerIPs []netip.Addr // Stays nil for a root container, which shares the host network namespace.
+	if r.launchSpec.NonrootContainer {
+		containerIPs, err = r.setupCNI(ctx, fmt.Sprintf(netnsPathFmt, task.Pid()))
+		if err != nil {
+			return err
+		}
+	}
+	if err := openPorts(ctx, imageConfig.ExposedPorts, containerIPs); err != nil {
+		return fmt.Errorf("failed to open and forward ports: %w", err)
+	}
 
 	setupDuration := time.Since(start)
 	r.logger.Info("Workload setup completed",
@@ -871,28 +699,6 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	exitStatusC, err := task.Wait(ctx)
 	if err != nil {
 		r.logger.Error(err.Error())
-	}
-
-	// Update and verify socket permissions if in bc mode.
-	if r.launchSpec.Experiments.BcMode {
-		kmaServerSocketPath := path.Join(launcherfile.HostTmpPath, keyManagerSocket)
-		kmaServerGrpcSocketPath := path.Join(launcherfile.HostTmpPath, keyManagerGrpcSocket)
-
-		err := os.Chmod(kmaServerSocketPath, 0777)
-		if err != nil {
-			r.logger.Error("failed to chmod file %s: %v\n", kmaServerSocketPath, err)
-		}
-		err = os.Chmod(kmaServerGrpcSocketPath, 0777)
-		if err != nil {
-			r.logger.Error("failed to chmod file %s: %v\n", kmaServerGrpcSocketPath, err)
-		}
-
-		if err := verifySocketPermissions(kmaServerSocketPath); err != nil {
-			r.logger.Error("failed to verify kmaserver socket permissions: %v", err)
-		}
-		if err := verifySocketPermissions(kmaServerGrpcSocketPath); err != nil {
-			r.logger.Error("failed to verify kmaserver-grpc socket permissions: %v", err)
-		}
 	}
 
 	// Start timer for workload execution.
@@ -922,7 +728,11 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	return nil
 }
 
-func (r *ContainerRunner) enableGracefulShutdown(ctx context.Context, task containerd.Task) {
+type taskSignaler interface {
+	Kill(ctx context.Context, sig syscall.Signal, opts ...containerd.KillOpts) error
+}
+
+func (r *ContainerRunner) enableGracefulShutdown(ctx context.Context, task taskSignaler) {
 	// In a hardened image, the launcher monitors the power button to signal a shutdown.
 	if r.launchSpec.Hardened {
 		// May be nil if listener initialization failed, which is not critical and is logged at that time.
@@ -962,50 +772,116 @@ func (r *ContainerRunner) enableGracefulShutdown(ctx context.Context, task conta
 	}()
 }
 
-// openPorts writes firewall rules to accept all traffic into that port and protocol using iptables.
-func openPorts(ports map[string]struct{}) error {
+// portProtocol parses an exposed-port key from the image config, e.g. "80/tcp".
+func portProtocol(exposed string) (port, protocol string, err error) {
+	port, protocol, ok := strings.Cut(exposed, "/")
+	if !ok {
+		return "", "", fmt.Errorf("failed to parse port and protocol: got %q, expected [port]/[protocol] e.g. 80/tcp", exposed)
+	}
+
+	if _, err := strconv.ParseUint(port, 10, 16); err != nil {
+		return "", "", fmt.Errorf("received invalid port number: %v, %w", port, err)
+	}
+
+	if protocol != "tcp" && protocol != "udp" {
+		return "", "", fmt.Errorf("received unknown protocol: got %s, expected tcp or udp", protocol)
+	}
+	return port, protocol, nil
+}
+
+// iptablesBin returns the netfilter command for the IP family of `addr`.
+func iptablesBin(addr netip.Addr) (string, error) {
+	if addr.Is4() {
+		return "iptables", nil
+	}
+	if addr.Is6() {
+		return "ip6tables", nil
+	}
+	return "", fmt.Errorf("invalid or uninitialized IP: %v", addr)
+}
+
+// buildPortRules returns the iptables/ip6tables command lines (binary first) needed to open `ports`.
+// When `containerIPs` is not empty, it implies that the namespace and CNI are used for the container.
+// In that case, per IP family, it also adds rules to DNAT ingress traffic to the container and to
+// allow the forwarded traffic in both directions.
+func buildPortRules(ports map[string]struct{}, containerIPs []netip.Addr) ([][]string, error) {
+	// Per port: 2 INPUT rules plus 2 forwarding rules per container IP; then 2 egress rules per container IP.
+	rules := make([][]string, 0, len(ports)*(2+2*len(containerIPs))+2*len(containerIPs))
 	for k := range ports {
-		portAndProtocol := strings.Split(k, "/")
-		if len(portAndProtocol) != 2 {
-			return fmt.Errorf("failed to parse port and protocol: got %s, expected [port]/[protocol] 80/tcp", portAndProtocol)
+		port, protocol, err := portProtocol(k)
+		if err != nil {
+			return nil, err
 		}
 
-		port := portAndProtocol[0]
-		_, err := strconv.ParseUint(port, 10, 16)
-		if err != nil {
-			return fmt.Errorf("received invalid port number: %v, %w", port, err)
-		}
+		// Firewall rules to accept all INPUT packets for the given port/protocol for IPv4 and IPv6 traffic.
+		// Note that it is harmless to have IPv6 rules on the IPv4 only network, or vice versa.
+		rules = append(rules,
+			[]string{"iptables", "-A", "INPUT", "-p", protocol, "--dport", port, "-j", "ACCEPT"},
+			[]string{"ip6tables", "-A", "INPUT", "-p", protocol, "--dport", port, "-j", "ACCEPT"},
+		)
 
-		protocol := portAndProtocol[1]
-		if protocol != "tcp" && protocol != "udp" {
-			return fmt.Errorf("received unknown protocol: got %s, expected tcp or udp", protocol)
-		}
-
-		// These 2 commands will write firewall rules to accept all INPUT packets for the given port/protocol
-		// for IPv4 and IPv6 traffic.
-		cmd := exec.Command("iptables", "-A", "INPUT", "-p", protocol, "--dport", port, "-j", "ACCEPT")
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			return fmt.Errorf("failed to open port on IPv4 %s %s: %v %s", port, protocol, err, out)
-		}
-		v6cmd := exec.Command("ip6tables", "-A", "INPUT", "-p", protocol, "--dport", port, "-j", "ACCEPT")
-		out, err = v6cmd.CombinedOutput()
-		if err != nil {
-			return fmt.Errorf("failed to open port on IPv6 %s %s: %v %s", port, protocol, err, out)
+		for _, ip := range containerIPs {
+			bin, err := iptablesBin(ip)
+			if err != nil {
+				return nil, err
+			}
+			rules = append(rules,
+				// Forward traffic addressed to the host port to the container port with the same number.
+				// `--dst-type LOCAL` keeps the container's own outgoing traffic to this port (e.g., to a remote server) from being DNATed back to the container.
+				[]string{bin, "-t", "nat", "-A", "PREROUTING", "-m", "addrtype", "--dst-type", "LOCAL",
+					"-p", protocol, "--dport", port, "-j", "DNAT", "--to-destination", net.JoinHostPort(ip.String(), port)},
+				// Allow traffic in FORWARD chain to the container IP on this port.
+				[]string{bin, "-A", "FORWARD", "-d", ip.String(), "-p", protocol, "--dport", port, "-j", "ACCEPT"},
+			)
 		}
 	}
 
+	// Allow container egress traffic and return replies (the host's FORWARD chain policy is DROP).
+	for _, ip := range containerIPs {
+		bin, err := iptablesBin(ip)
+		if err != nil {
+			return nil, err
+		}
+		rules = append(rules,
+			[]string{bin, "-A", "FORWARD", "-s", ip.String(), "-j", "ACCEPT"},
+			[]string{bin, "-A", "FORWARD", "-d", ip.String(), "-m", "conntrack", "--ctstate", "RELATED,ESTABLISHED", "-j", "ACCEPT"},
+		)
+	}
+	return rules, nil
+}
+
+// openPorts writes firewall rules to accept all traffic into that port and protocol using iptables.
+// When `containerIPs` is not empty, it implies that the namespace and CNI are used for the container.
+// In that case, it also forwards traffic to the container via DNAT and allows container egress traffic,
+// for both IPv4 and IPv6.
+func openPorts(ctx context.Context, ports map[string]struct{}, containerIPs []netip.Addr) error {
+	rules, err := buildPortRules(ports, containerIPs)
+	if err != nil {
+		return err
+	}
+	for _, rule := range rules {
+		if out, err := exec.CommandContext(ctx, rule[0], rule[1:]...).CombinedOutput(); err != nil {
+			return fmt.Errorf("failed to run %q: %v %s", strings.Join(rule, " "), err, out)
+		}
+	}
 	return nil
 }
 
 func getImageConfig(ctx context.Context, image containerd.Image) (v1.ImageConfig, error) {
+	if image == nil {
+		return v1.ImageConfig{}, errors.New("image cannot be nil")
+	}
+	cs := image.ContentStore()
+	if cs == nil {
+		return v1.ImageConfig{}, errors.New("image content store cannot be nil")
+	}
 	ic, err := image.Config(ctx)
 	if err != nil {
 		return v1.ImageConfig{}, err
 	}
 	switch ic.MediaType {
 	case v1.MediaTypeImageConfig, images.MediaTypeDockerSchema2Config:
-		p, err := content.ReadBlob(ctx, image.ContentStore(), ic)
+		p, err := content.ReadBlob(ctx, cs, ic)
 		if err != nil {
 			return v1.ImageConfig{}, err
 		}
@@ -1029,46 +905,72 @@ func (r *ContainerRunner) Close(ctx context.Context) {
 	// close the agent
 	r.attestAgent.Close()
 
+	// Cleanup network using go-cni
+	if r.cni != nil {
+		task, err := r.container.Task(ctx, nil)
+		if err == nil {
+			if err := r.cni.Remove(ctx, containerID, fmt.Sprintf(netnsPathFmt, task.Pid())); err != nil {
+				r.logger.Error("failed to cleanup network via CNI", "error", err)
+			}
+		}
+	}
+
 	// Exit gracefully:
 	// Delete container and close connection to attestation service.
-	r.container.Delete(ctx, containerd.WithSnapshotCleanup)
+	// TODO: consider handling or logging cleanup error.
+	_ = r.container.Delete(ctx, containerd.WithSnapshotCleanup)
 }
 
-// withRlimits sets the rlimit (like the max file descriptor) for the container process
-func withRlimits(rlimits []specs.POSIXRlimit) oci.SpecOpts {
-	return func(_ context.Context, _ oci.Client, _ *containers.Container, s *oci.Spec) error {
-		s.Process.Rlimits = rlimits
-		return nil
-	}
-}
-
-// Set the container process's OOM score.
-func withOOMScoreAdj(oomScore int) oci.SpecOpts {
-	return func(_ context.Context, _ oci.Client, _ *containers.Container, s *oci.Spec) error {
-		s.Process.OOMScoreAdj = &oomScore
-		return nil
-	}
-}
-
-// appendCgroupRw mount maps a cgroup as read-write.
-func appendCgroupRw(mounts []specs.Mount) []specs.Mount {
-	m := specs.Mount{
-		Destination: "/sys/fs/cgroup",
-		Type:        "cgroup",
-		Source:      "cgroup",
-		Options:     []string{"rw", "nosuid", "noexec", "nodev"},
-	}
-
-	return append(mounts, m)
-}
-
-func verifySocketPermissions(socketPath string) error {
-	info, err := os.Stat(socketPath)
+func newCNI() (gocni.CNI, error) {
+	cni, err := gocni.New(
+		gocni.WithPluginConfDir(cniConfigDir),
+		gocni.WithPluginDir([]string{cniBinDir}),
+	)
 	if err != nil {
-		return fmt.Errorf("failed to stat socket: %w", err)
+		return nil, fmt.Errorf("failed to initialize CNI: %w", err)
 	}
-	if perm := info.Mode().Perm(); perm != 0777 {
-		return fmt.Errorf("socket %s has permissions %04o, want 0777", socketPath, perm)
+	if err := cni.Load(gocni.WithDefaultConf); err != nil {
+		return nil, fmt.Errorf("failed to load CNI configurations: %w", err)
 	}
-	return nil
+	return cni, nil
+}
+
+// ipsFromCNI extracts the addresses CNI assigned to the workload interface
+// (one IPv4 and one IPv6 with the dual-stack `10-workload.conf`).
+func ipsFromCNI(raw []*types100.Result) ([]netip.Addr, error) {
+	if len(raw) == 0 || raw[0] == nil || len(raw[0].IPs) == 0 {
+		return nil, errors.New("failed to get container IP address")
+	}
+	ips := make([]netip.Addr, 0, len(raw[0].IPs))
+
+	// With the bridge plugin, `ipc.Address` holds only the container interface's address;
+	// the bridge's own (gateway) address is in `ipc.Gateway`, not as an `IPs` entry.
+	for _, ipc := range raw[0].IPs {
+		addr, ok := netip.AddrFromSlice(ipc.Address.IP)
+		if !ok {
+			return nil, fmt.Errorf("invalid container IP address: %v", ipc.Address.IP)
+		}
+		// `addr` may hold IPv4 in 16-byte form (::ffff:a.b.c.d); Unmap() so that Is4() reports it as IPv4.
+		ips = append(ips, addr.Unmap())
+	}
+	return ips, nil
+}
+
+func (r *ContainerRunner) setupCNI(ctx context.Context, netnsPath string) ([]netip.Addr, error) {
+	if r.cni == nil {
+		return nil, errors.New("CNI is not initialized")
+	}
+	cniResult, err := r.cni.Setup(ctx, containerID, netnsPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to setup network via CNI: %w", err)
+	}
+	r.logger.Info(fmt.Sprintf("CNI network setup completed: %v", cniResult))
+
+	// Currently, we have only a single network interface defined by `10-workload.conf`, carrying one address per IP family.
+	ips, err := ipsFromCNI(cniResult.Raw())
+	if err != nil {
+		return nil, err
+	}
+	r.logger.Info("container network configured", "container_ips", ips)
+	return ips, nil
 }

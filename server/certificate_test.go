@@ -44,16 +44,20 @@ func parseCertificatePEM(t *testing.T, certPEM []byte) *x509.Certificate {
 	block, rest := pem.Decode(certPEM)
 	if block == nil {
 		t.Fatalf("pem.Decode not able to decode cert: %s", certPEM)
+		return nil
 	}
 	if block.Type != "CERTIFICATE" {
 		t.Fatalf("pem.Decode found unexpected PEM type: %s", block.Type)
+		return nil
 	}
 	if len(rest) > 0 {
 		t.Fatalf("pem.Decode found unexpected trailing data in certificate file: %s", certPEM)
+		return nil
 	}
 	cert, err := x509.ParseCertificate(block.Bytes)
 	if err != nil {
 		t.Fatalf("x509.ParseCertificate failed: %v", err)
+		return nil
 	}
 	return cert
 }

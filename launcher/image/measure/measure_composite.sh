@@ -69,8 +69,8 @@ extract_and_measure_ovmf() {
     if [[ -f "$out_fd_file" && -s "$out_fd_file" ]]; then
         echo "Calculating OVMF MRTD (using $out_fd_file)..."
         local extract_cmd="/usr/local/bin/extract_image_ovmf"
-        if [[ ! -x "$extract_cmd" && -f "$(dirname "$0")/extract_image_ovmf" ]]; then
-            extract_cmd="$(dirname "$0")/extract_image_ovmf"
+        if [[ ! -x "$extract_cmd" && -x "$(dirname "$0")/extract_image_ovmf/extract_image_ovmf" ]]; then
+            extract_cmd="$(dirname "$0")/extract_image_ovmf/extract_image_ovmf"
         fi
         local mrtd_hex
         mrtd_hex=$("$extract_cmd" "$out_fd_file" | sed -n 's/^MRTD: //p')
@@ -83,6 +83,55 @@ extract_and_measure_ovmf() {
         rm -f "$out_fd_file"
         exit 1
     fi
+}
+
+# Helper to extract an Intel SGX signed enclave binary from ext4 partition layers
+extract_enclave() {
+    local part_ext4="$1"
+    local output_base="$2"
+    local enclave_name="$3"
+
+    local enclave_tmp="$TMP_DIR/${enclave_name}"
+    mkdir -p "$enclave_tmp"
+
+    local out_so_file="$enclave_tmp/${enclave_name}.signed.so"
+    local enclave_dir="/pcs-client-tool-go/usr/lib/x86_64-linux-gnu"
+
+    local real_file
+    real_file=$(debugfs -R "ls -l $enclave_dir" "$part_ext4" 2>/dev/null | awk -v pat="${enclave_name}\\.signed\\.so" '$2 ~ /^100/ && $NF ~ pat {print $NF; exit}')
+    if [[ -n "$real_file" ]]; then
+        debugfs -R "dump $enclave_dir/$real_file $out_so_file" "$part_ext4" 2>/dev/null || true
+    fi
+
+    if [[ -f "$out_so_file" && -s "$out_so_file" ]]; then
+        echo "Extracting Intel SGX SIGSTRUCT from ${enclave_name} ($out_so_file)..."
+        local extract_cmd="/usr/local/bin/extract_sigstruct"
+        if [[ ! -x "$extract_cmd" && -x "$(dirname "$0")/extract_sigstruct/extract_sigstruct" ]]; then
+            extract_cmd="$(dirname "$0")/extract_sigstruct/extract_sigstruct"
+        fi
+
+        local out_dir
+        out_dir="$(dirname "$output_base")"
+        local sig_out="${out_dir}/${enclave_name}.sigstruct"
+        local json_out="${output_base}_${enclave_name}_sigstruct.json"
+
+        "$extract_cmd" "$out_so_file" "$sig_out" "$json_out"
+        if [[ "${out_dir}/${enclave_name}.sigstruct" != "${output_base}_${enclave_name}.sigstruct" ]]; then
+            cp "$sig_out" "${output_base}_${enclave_name}.sigstruct"
+        fi
+    else
+        echo "Error: Expected signed enclave ($enclave_dir/${enclave_name}.signed.so*) not found in partition." >&2
+        rm -f "$out_so_file"
+        exit 1
+    fi
+}
+
+extract_sgx_enclaves() {
+    local part_ext4="$1"
+    local output_base="$2"
+
+    extract_enclave "$part_ext4" "$output_base" "libsgx_tdqe"
+    extract_enclave "$part_ext4" "$output_base" "libsgx_pce"
 }
 
 if ! check_dependencies; then
@@ -131,6 +180,11 @@ if [[ -n "${NESTED_IMAGES:-}" ]]; then
         # Extract OVMF and measure MRTD once from partition layer if not already measured
         if [[ ! -f "${BASE_OUT}_mrtd.json" ]]; then
             extract_and_measure_ovmf "$PART_EXT4" "${BASE_OUT}"
+        fi
+
+        # Extract SGX signed enclaves (TDQE and PCE) once from partition layer if not already extracted
+        if [[ ! -f "${BASE_OUT}_libsgx_tdqe.sigstruct" && ! -f "$(dirname "${BASE_OUT}")/libsgx_tdqe.sigstruct" ]]; then
+            extract_sgx_enclaves "$PART_EXT4" "${BASE_OUT}"
         fi
 
         # Extract the nested image from the ext4 partition, capture debugfs errors

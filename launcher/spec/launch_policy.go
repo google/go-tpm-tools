@@ -13,14 +13,17 @@ import (
 // LaunchPolicy contains policies on starting the container.
 // The policy comes from the labels of the image.
 type LaunchPolicy struct {
-	AllowedEnvOverride       []string
+	// keep-sorted start
+	AllowCgroups             bool
 	AllowedCmdOverride       bool
+	AllowedEnvOverride       []string
 	AllowedLogRedirect       policy
 	AllowedMountDestinations []string
-	HardenedImageMonitoring  MonitoringType
 	DebugImageMonitoring     MonitoringType
+	HardenedImageMonitoring  MonitoringType
+	NonRootPolicy            NonRootPolicy
 	PrivilegedCaps           bool
-	AllowCgroups             bool
+	// keep-sorted end
 }
 
 type policy int
@@ -30,6 +33,27 @@ const (
 	always
 	never
 )
+
+// NonRootPolicy specifies the author's policy for running as non-root.
+type NonRootPolicy int
+
+const (
+	// Unrestricted specifies that a container may run as root or non-root.
+	Unrestricted NonRootPolicy = iota
+	// NonRootOnly specifies that a container must run as non-root (unprivileged user namespace).
+	NonRootOnly
+)
+
+func toNonRootPolicy(s string) (NonRootPolicy, error) {
+	switch strings.ToLower(s) {
+	case "unrestricted":
+		return Unrestricted, nil
+	case "nonrootonly":
+		return NonRootOnly, nil
+	default:
+		return 0, fmt.Errorf("invalid non-root policy %v", s)
+	}
+}
 
 // MonitoringType represents the possible health monitoring presets for the client.
 type MonitoringType int
@@ -100,19 +124,22 @@ func toPolicy(policy, s string) (policy, error) {
 }
 
 const (
-	envOverride        = "tee.launch_policy.allow_env_override"
-	cmdOverride        = "tee.launch_policy.allow_cmd_override"
-	logRedirect        = "tee.launch_policy.log_redirect"
-	memoryMonitoring   = "tee.launch_policy.monitoring_memory_allow"
-	hardenedMonitoring = "tee.launch_policy.hardened_monitoring"
-	debugMonitoring    = "tee.launch_policy.debug_monitoring"
+	// keep-sorted start by_regex="([^"]+)"
+	privilegedCaps = "tee.launch_policy.allow_capabilities"
+	allowCgroups   = "tee.launch_policy.allow_cgroups"
+	cmdOverride    = "tee.launch_policy.allow_cmd_override"
+	envOverride    = "tee.launch_policy.allow_env_override"
 	// Values look like a PATH list, with ':' as a separator.
 	// Empty paths will be ignored and relative paths will be interpreted as
 	// relative to "/".
 	// Paths will be cleaned using filepath.Clean.
-	mountDestinations = "tee.launch_policy.allow_mount_destinations"
-	privilegedCaps    = "tee.launch_policy.allow_capabilities"
-	allowCgroups      = "tee.launch_policy.allow_cgroups"
+	mountDestinations  = "tee.launch_policy.allow_mount_destinations"
+	debugMonitoring    = "tee.launch_policy.debug_monitoring"
+	hardenedMonitoring = "tee.launch_policy.hardened_monitoring"
+	logRedirect        = "tee.launch_policy.log_redirect"
+	memoryMonitoring   = "tee.launch_policy.monitoring_memory_allow"
+	nonRootPolicy      = "tee.launch_policy.nonroot_container"
+	// keep-sorted end
 )
 
 func configureMonitoringPolicy(imageLabels map[string]string, launchPolicy *LaunchPolicy, logger logging.Logger) error {
@@ -233,6 +260,11 @@ func GetLaunchPolicy(imageLabels map[string]string, logger logging.Logger) (Laun
 		}
 	}
 
+	if v, ok := imageLabels[nonRootPolicy]; ok {
+		if launchPolicy.NonRootPolicy, err = toNonRootPolicy(v); err != nil {
+			return LaunchPolicy{}, fmt.Errorf("invalid image LABEL '%s'", nonRootPolicy)
+		}
+	}
 	return launchPolicy, nil
 }
 
@@ -261,7 +293,7 @@ func verifyMonitoringConfig(policy MonitoringType, spec MonitoringType) error {
 func (p LaunchPolicy) Verify(ls LaunchSpec) error {
 	for _, e := range ls.Envs {
 		if !contains(p.AllowedEnvOverride, e.Name) {
-			return fmt.Errorf("env var %s is not allowed to be overridden on this image; allowed envs to be overridden: %v", e, p.AllowedEnvOverride)
+			return fmt.Errorf("env var %s is not allowed to be overridden on this image; allowed envs to be overridden: %v", e.Name, p.AllowedEnvOverride)
 		}
 	}
 	if !p.AllowedCmdOverride && len(ls.Cmd) > 0 {
@@ -299,6 +331,10 @@ func (p LaunchPolicy) Verify(ls LaunchSpec) error {
 
 	if ls.CgroupNamespace && !p.AllowCgroups {
 		return errors.New("cgroups usage is not allowed")
+	}
+
+	if p.NonRootPolicy == NonRootOnly && !ls.NonrootContainer {
+		return fmt.Errorf("non-root container mode must be enabled by setting launch spec %q to true", nonrootContainerKey)
 	}
 
 	return nil

@@ -4,10 +4,11 @@ import (
 	"crypto"
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/google/go-sev-guest/proto/sevsnp"
 	sv "github.com/google/go-sev-guest/verify"
-	"github.com/google/go-tdx-guest/proto/tdx"
+	tdxpb "github.com/google/go-tdx-guest/proto/tdx"
 	tv "github.com/google/go-tdx-guest/verify"
 	pb "github.com/google/go-tpm-tools/proto/attest"
 	"github.com/google/go-tpm-tools/server"
@@ -24,56 +25,133 @@ var verifyCmd = &cobra.Command{
 var debugCmd = &cobra.Command{
 	Use:   "debug",
 	Short: "Debug the contents of an attestation report without verifying its root-of-trust (e.g., attestation key certificate). For debugging purposes only",
-	RunE: func(*cobra.Command, []string) error {
-		attestationBytes, err := io.ReadAll(dataInput())
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		cfg, err := parseVerifyDebugFlags(cmd)
+		if err != nil {
+			return err
+		}
+
+		attestationBytes, err := readAttestationInput(cmd, cfg.inputPath)
 		if err != nil {
 			return err
 		}
 		attestation := &pb.Attestation{}
 
-		if format == "binarypb" {
+		switch cfg.format {
+		case "binarypb":
 			err = proto.Unmarshal(attestationBytes, attestation)
-		} else if format == "textproto" {
+		case "textproto":
 			err = unmarshalOptions.Unmarshal(attestationBytes, attestation)
-		} else {
-			return fmt.Errorf("format should be either binarypb or textproto")
 		}
 		if err != nil {
 			return fmt.Errorf("fail to unmarshal attestation report: %v", err)
 		}
 
-		pub, err := tpm2.DecodePublic(attestation.GetAkPub())
+		ms, err := runVerify(attestation, cfg.tpmNonce, cfg.teeNonce)
 		if err != nil {
 			return err
 		}
-		cryptoPub, err := pub.Key()
-		if err != nil {
-			return err
-		}
-
-		// TODO(#524): create separate, discrete subcommands that verifies SNP and TDX attestation.
-		ms, err := server.VerifyAttestation(attestation, server.VerifyOpts{Nonce: nonce, TrustedAKs: []crypto.PublicKey{cryptoPub}})
-		if err != nil {
-			return fmt.Errorf("verifying TPM attestation: %w", err)
-		}
-		err = verifyGceTechnology(attestation)
-		if err != nil {
-			return fmt.Errorf("verifying TEE attestation: %w", err)
-		}
-		teeMS, err := parseTEEAttestation(attestation, ms.GetPlatform().Technology)
-		if err != nil {
-			return fmt.Errorf("failed to parse machineState from TEE attestation: %w", err)
-		}
-		ms.TeeAttestation = teeMS.TeeAttestation
 		out, err := marshalOptions.Marshal(ms)
 		if err != nil {
-			return nil
+			return fmt.Errorf("failed to marshal machine state: %w", err)
 		}
-		if _, err := dataOutput().Write(out); err != nil {
+		if err := writeVerifyOutput(cmd, cfg.outputPath, out); err != nil {
 			return fmt.Errorf("failed to write verified attestation report: %v", err)
 		}
 		return nil
 	},
+}
+
+type verifyDebugConfig struct {
+	tpmNonce   []byte
+	teeNonce   []byte
+	format     string
+	inputPath  string
+	outputPath string
+}
+
+func parseVerifyDebugFlags(cmd *cobra.Command) (verifyDebugConfig, error) {
+	flags := cmd.Flags()
+	var cfg verifyDebugConfig
+
+	var err error
+	cfg.tpmNonce, err = flags.GetBytesHex("nonce")
+	if err != nil {
+		return verifyDebugConfig{}, err
+	}
+
+	cfg.teeNonce, err = flags.GetBytesHex("tee-nonce")
+	if err != nil {
+		return verifyDebugConfig{}, err
+	}
+	if len(cfg.teeNonce) == 0 {
+		cfg.teeNonce = cfg.tpmNonce
+	}
+
+	cfg.format, err = flags.GetString("format")
+	if err != nil {
+		return verifyDebugConfig{}, err
+	}
+	if cfg.format != "binarypb" && cfg.format != "textproto" {
+		return verifyDebugConfig{}, fmt.Errorf("format should be either binarypb or textproto")
+	}
+
+	cfg.inputPath, err = flags.GetString("input")
+	if err != nil {
+		return verifyDebugConfig{}, err
+	}
+
+	cfg.outputPath, err = flags.GetString("output")
+	if err != nil {
+		return verifyDebugConfig{}, err
+	}
+
+	return cfg, nil
+}
+
+func readAttestationInput(cmd *cobra.Command, path string) ([]byte, error) {
+	if path == "" {
+		return io.ReadAll(cmd.InOrStdin())
+	}
+	return os.ReadFile(path)
+}
+
+func writeVerifyOutput(cmd *cobra.Command, path string, out []byte) error {
+	if path == "" {
+		_, err := cmd.OutOrStdout().Write(out)
+		return err
+	}
+	return os.WriteFile(path, out, 0644)
+}
+
+// Callers must pass the resolved teeNonce.
+func runVerify(attestation *pb.Attestation, tpmNonce, teeNonce []byte) (*pb.MachineState, error) {
+	pub, err := tpm2.DecodePublic(attestation.GetAkPub())
+	if err != nil {
+		return nil, err
+	}
+	cryptoPub, err := pub.Key()
+	if err != nil {
+		return nil, err
+	}
+
+	// TODO(#524): create separate, discrete subcommands that verifies SNP and TDX attestation.
+	ms, err := server.VerifyAttestation(attestation, server.VerifyOpts{
+		Nonce:      tpmNonce,
+		TrustedAKs: []crypto.PublicKey{cryptoPub},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("verifying TPM attestation: %w", err)
+	}
+	if err := verifyGceTechnology(attestation, teeNonce); err != nil {
+		return nil, fmt.Errorf("verifying TEE attestation: %w", err)
+	}
+	teeMS, err := parseTEEAttestation(attestation, ms.GetPlatform().Technology)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse machineState from TEE attestation: %w", err)
+	}
+	ms.TeeAttestation = teeMS.TeeAttestation
+	return ms, nil
 }
 
 // parseTEEAttestation parses a machineState from TeeAttestation.
@@ -97,30 +175,22 @@ func parseTEEAttestation(attestation *pb.Attestation, tech pb.GCEConfidentialTec
 		}
 		return &pb.MachineState{
 			TeeAttestation: &pb.MachineState_TdxAttestation{
-				TdxAttestation: proto.Clone(tee.TdxAttestation).(*tdx.QuoteV4),
+				TdxAttestation: proto.Clone(tee.TdxAttestation).(*tdxpb.QuoteV4),
 			}}, nil
 	default:
 		return &pb.MachineState{}, nil
 	}
 }
 
-func verifyGceTechnology(attestation *pb.Attestation) error {
+func verifyGceTechnology(attestation *pb.Attestation, teeNonce []byte) error {
 	if attestation.GetTeeAttestation() == nil {
 		return nil
 	}
 	switch attestation.GetTeeAttestation().(type) {
 	case *pb.Attestation_TdxAttestation:
-		var tdxOpts *verifyTdxOpts
-		if len(teeNonce) != 0 {
-			tdxOpts = &verifyTdxOpts{
-				Validation:   tdxDefaultValidateOpts(teeNonce),
-				Verification: tv.DefaultOptions(),
-			}
-		} else {
-			tdxOpts = &verifyTdxOpts{
-				Validation:   tdxDefaultValidateOpts(nonce),
-				Verification: tv.DefaultOptions(),
-			}
+		tdxOpts := &verifyTdxOpts{
+			Validation:   tdxDefaultValidateOpts(teeNonce),
+			Verification: tv.DefaultOptions(),
 		}
 		tee, ok := attestation.TeeAttestation.(*pb.Attestation_TdxAttestation)
 		if !ok {
@@ -128,17 +198,9 @@ func verifyGceTechnology(attestation *pb.Attestation) error {
 		}
 		return verifyTdxAttestation(tee.TdxAttestation, tdxOpts)
 	case *pb.Attestation_SevSnpAttestation:
-		var snpOpts *verifySnpOpts
-		if len(teeNonce) != 0 {
-			snpOpts = &verifySnpOpts{
-				Validation:   sevSnpDefaultValidateOpts(teeNonce),
-				Verification: &sv.Options{},
-			}
-		} else {
-			snpOpts = &verifySnpOpts{
-				Validation:   sevSnpDefaultValidateOpts(nonce),
-				Verification: &sv.Options{},
-			}
+		snpOpts := &verifySnpOpts{
+			Validation:   sevSnpDefaultValidateOpts(teeNonce),
+			Verification: &sv.Options{},
 		}
 		tee, ok := attestation.TeeAttestation.(*pb.Attestation_SevSnpAttestation)
 		if !ok {
@@ -162,4 +224,5 @@ func init() {
 	debugCmd.AddCommand(verifySVSMCmd)
 	addEKPubFlag(verifySVSMCmd)
 	addTeeTechnology(verifySVSMCmd)
+	addOfflineFlag(verifySVSMCmd)
 }
