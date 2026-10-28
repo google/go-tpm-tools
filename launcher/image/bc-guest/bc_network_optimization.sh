@@ -42,6 +42,10 @@ wait_stable eth0 5
 ethtool -G eth0 rx 2048 tx 2048
 wait_stable eth0 5
 
+# Enabling hardware GRO resets the interface
+ethtool -K eth0 rx-gro-hw on
+wait_stable eth0 5
+
 # Configure queue coalescing
 ethtool -C eth0 adaptive-rx off adaptive-tx off rx-usecs 20 tx-usecs 64
 
@@ -53,6 +57,10 @@ wait_stable eth1 5
 
 # Changing ring size resets the interface
 ethtool -G eth1 rx 2048 tx 2048
+wait_stable eth1 5
+
+# Enabling hardware GRO resets the interface
+ethtool -K eth1 rx-gro-hw on
 wait_stable eth1 5
 
 # Configure queue coalescing
