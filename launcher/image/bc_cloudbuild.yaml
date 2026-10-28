@@ -168,6 +168,7 @@ steps:
           "s|cros_efi|cros_efi initcall_blacklist=nvme_init,nvme_core_init|g"
           "s|cros_efi|cros_efi systemd.mask=bpf-lsm-policy-loader.service|g"
           "s|cros_efi|cros_efi cgroup_favordynmods=1|g"
+          "s|cros_efi|cros_efi cpuidle_haltpoll.force=1 nopvspin|g"
         )
 
         DEBUG_COMMANDS=(
