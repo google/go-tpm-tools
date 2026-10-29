@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"reflect"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -729,6 +730,66 @@ func TestCreateOCISpecOpts_DevShmSize(t *testing.T) {
 	}
 	if !foundShmMount {
 		t.Errorf("Expected custom size /dev/shm mount not found in spec: %v", gotSpec.Mounts)
+	}
+}
+
+func TestCreateOCISpecOpts_Resolvconf(t *testing.T) {
+	ctx := namespaces.WithNamespace(context.Background(), "default")
+	logger := &fakeLogger{}
+	img := createFakeImage(nil, nil, nil)
+
+	specOpts, err := createOCISpecOpts(img, spec.LaunchSpec{}, nil, dummyListFiles, logger)
+	if err != nil {
+		t.Fatalf("createOCISpecOpts failed: %v", err)
+	}
+
+	gotSpec, err := applySpecOptsToSpec(ctx, specOpts)
+	if err != nil {
+		t.Fatalf("failed to apply spec option: %v", err)
+	}
+
+	foundResolveDirMount, foundResolvconfFileMount := false, false
+	wantOpts := []string{"rbind", "ro", "nosuid", "nodev", "noexec"}
+	for _, mnt := range gotSpec.Mounts {
+		if mnt.Source == "/run/systemd/resolve" && mnt.Destination == "/run/systemd/resolve" &&
+			mnt.Type == "bind" && reflect.DeepEqual(mnt.Options, wantOpts) {
+			foundResolveDirMount = true
+		}
+		if mnt.Destination == "/etc/resolv.conf" {
+			foundResolvconfFileMount = true
+		}
+	}
+	if !foundResolveDirMount {
+		t.Errorf("Read-only /run/systemd/resolve mount (%v) not found in spec: %v", wantOpts, gotSpec.Mounts)
+	}
+	if foundResolvconfFileMount {
+		t.Errorf("/etc/resolv.conf should be a symlink, not a bind mount: %v", gotSpec.Mounts)
+	}
+	for _, wantMasked := range []string{
+		"/run/systemd/resolve/io.systemd.Resolve",
+		"/run/systemd/resolve/io.systemd.Resolve.Monitor",
+		"/run/systemd/resolve/netif",
+	} {
+		if gotSpec.Linux == nil || !slices.Contains(gotSpec.Linux.MaskedPaths, wantMasked) {
+			t.Errorf("expected %q in Linux.MaskedPaths, got %v", wantMasked, gotSpec.Linux)
+		}
+	}
+
+	wantHook := specs.Hook{
+		Path: "/bin/ln",
+		Args: []string{"ln", "-sfn", "/run/systemd/resolve/resolv.conf", "etc/resolv.conf"},
+		Env:  []string{"PATH=/usr/bin:/bin"},
+	}
+	foundHook := false
+	if gotSpec.Hooks != nil {
+		for _, hook := range gotSpec.Hooks.CreateContainer {
+			if reflect.DeepEqual(hook, wantHook) {
+				foundHook = true
+			}
+		}
+	}
+	if !foundHook {
+		t.Errorf("resolv.conf symlink createContainer hook not found in spec: %v", gotSpec.Hooks)
 	}
 }
 

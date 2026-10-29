@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"slices"
 
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/containers"
@@ -67,7 +68,7 @@ func createOCISpecOpts(image containerd.Image, launchSpec spec.LaunchSpec, envs 
 		// following 4 options are here to allow the container to have
 		// the host network (same effect as --net-host in ctr command)
 		oci.WithHostHostsFile,
-		oci.WithHostResolvconf,
+		withHostResolvconf,
 		oci.WithEnv([]string{fmt.Sprintf("HOSTNAME=%s", hostname)}),
 		oci.WithAddedCapabilities(launchSpec.AddedCapabilities),
 		withRlimits(rlimits),
@@ -188,6 +189,42 @@ func formatEnvVars(envVars []spec.EnvVar) ([]string, error) {
 		result = append(result, ociFormat)
 	}
 	return result, nil
+}
+
+// withHostResolvconf bind-mounts the host's /run/systemd/resolve directory as
+// read-only and symlinks /etc/resolv.conf in the container to
+// /run/systemd/resolve/resolv.conf so atomic rewrites by systemd-resolved
+// (which replace the file inode) remain visible inside the container.
+func withHostResolvconf(_ context.Context, _ oci.Client, _ *containers.Container, s *oci.Spec) error {
+	s.Mounts = append(s.Mounts, specs.Mount{
+		Destination: "/run/systemd/resolve",
+		Type:        "bind",
+		Source:      "/run/systemd/resolve",
+		Options:     []string{"rbind", "ro", "nosuid", "nodev", "noexec"},
+	})
+	if s.Linux == nil {
+		s.Linux = &specs.Linux{}
+	}
+	// Mask systemd-resolved's Varlink UNIX sockets (connect(2) ignores
+	// MNT_READONLY on AF_UNIX sockets) and per-interface state directory.
+	for _, p := range []string{
+		"/run/systemd/resolve/io.systemd.Resolve",
+		"/run/systemd/resolve/io.systemd.Resolve.Monitor",
+		"/run/systemd/resolve/netif",
+	} {
+		if !slices.Contains(s.Linux.MaskedPaths, p) {
+			s.Linux.MaskedPaths = append(s.Linux.MaskedPaths, p)
+		}
+	}
+	if s.Hooks == nil {
+		s.Hooks = &specs.Hooks{}
+	}
+	s.Hooks.CreateContainer = append(s.Hooks.CreateContainer, specs.Hook{
+		Path: "/bin/ln",
+		Args: []string{"ln", "-sfn", "/run/systemd/resolve/resolv.conf", "etc/resolv.conf"},
+		Env:  []string{"PATH=/usr/bin:/bin"},
+	})
+	return nil
 }
 
 // appendTokenMounts appends the default mount specs for the OIDC token
