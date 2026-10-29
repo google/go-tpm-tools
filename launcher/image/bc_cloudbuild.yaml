@@ -154,6 +154,7 @@ steps:
           "s|cros_efi|cros_efi swiotlb=16777216,force,any|g"
           "s|cros_efi|cros_efi hugepages=65536|g"
           "s|cros_efi|cros_efi systemd.mask=cloud-audit-setup.service|g"
+          "s|cros_efi|cros_efi systemd.mask=systemd-networkd-wait-online.service|g"
           "s|systemd.mask=usr-share-oem.mount||g"
           "s|dm-m2d|dm-mod|g"
           "s|,oemroot|;oemroot|g"
@@ -163,6 +164,7 @@ steps:
           "s|cros_efi|cros_efi systemd.mask=bpf-lsm-policy-loader.service|g"
           "s|cros_efi|cros_efi cgroup_favordynmods=1|g"
           "s|cros_efi|cros_efi cpuidle_haltpoll.force=1 nopvspin|g"
+          -kernel-cmdline=cros_efi systemd.mask=systemd-networkd-wait-online.service
         )
 
         DEBUG_COMMANDS=(
