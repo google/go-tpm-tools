@@ -60,10 +60,24 @@ jobs:
         uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # master
         with:
           toolchain: stable
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: keymanager
       - name: Install Build Dependencies (Linux)
-        run: sudo DEBIAN_FRONTEND=noninteractive apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout="30" && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -o Acquire::Retries=3 -o Acquire::http::Timeout="30" cmake clang pkg-config libssl-dev
+        timeout-minutes: 6
+        run: |
+          for attempt in 1 2 3; do
+            sudo DEBIAN_FRONTEND=noninteractive timeout 90 apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout="30" &&
+              sudo DEBIAN_FRONTEND=noninteractive timeout 90 apt-get install -y -o Acquire::Retries=3 -o Acquire::http::Timeout="30" cmake clang pkg-config libssl-dev &&
+              break
+            [ "${attempt}" -lt 3 ] || exit 1
+            sleep 10
+          done
       - name: Install bindgen-cli
-        run: cargo install bindgen-cli
+        uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2.88.0
+        with:
+          tool: bindgen-cli
       - name: Build KeyManager Rust library
         run: |
           cd keymanager
@@ -100,7 +114,16 @@ jobs:
           architecture: x32
           cache: false
       - name: Install Linux 32-bit packages
-        run: sudo dpkg --add-architecture i386; sudo DEBIAN_FRONTEND=noninteractive apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout="30"; sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -o Acquire::Retries=3 -o Acquire::http::Timeout="30" libssl-dev:i386 libgcc-s1:i386 gcc-multilib
+        timeout-minutes: 6
+        run: |
+          sudo dpkg --add-architecture i386
+          for attempt in 1 2 3; do
+            sudo DEBIAN_FRONTEND=noninteractive timeout 90 apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout="30" &&
+              sudo DEBIAN_FRONTEND=noninteractive timeout 90 apt-get install -y -o Acquire::Retries=3 -o Acquire::http::Timeout="30" libssl-dev:i386 libgcc-s1:i386 gcc-multilib &&
+              break
+            [ "${attempt}" -lt 3 ] || exit 1
+            sleep 10
+          done
       - name: Build modules
         run: go build -v ./... ./agent/... ./cmd/... ./verifier/...
       - name: Build launcher module
@@ -176,10 +199,24 @@ jobs:
         uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # master
         with:
           toolchain: stable
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: keymanager
       - name: Install Build Dependencies (Linux)
-        run: sudo DEBIAN_FRONTEND=noninteractive apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout="30" && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -o Acquire::Retries=3 -o Acquire::http::Timeout="30" cmake clang pkg-config libssl-dev
+        timeout-minutes: 6
+        run: |
+          for attempt in 1 2 3; do
+            sudo DEBIAN_FRONTEND=noninteractive timeout 90 apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout="30" &&
+              sudo DEBIAN_FRONTEND=noninteractive timeout 90 apt-get install -y -o Acquire::Retries=3 -o Acquire::http::Timeout="30" cmake clang pkg-config libssl-dev &&
+              break
+            [ "${attempt}" -lt 3 ] || exit 1
+            sleep 10
+          done
       - name: Install bindgen-cli
-        run: cargo install bindgen-cli
+        uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2.88.0
+        with:
+          tool: bindgen-cli
       - name: Build KeyManager Rust library
         run: |
           cd keymanager
@@ -216,10 +253,24 @@ jobs:
         uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # master
         with:
           toolchain: stable
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: keymanager
       - name: Install Build Dependencies (Linux)
-        run: sudo DEBIAN_FRONTEND=noninteractive apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout="30" && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -o Acquire::Retries=3 -o Acquire::http::Timeout="30" cmake clang pkg-config libssl-dev
+        timeout-minutes: 6
+        run: |
+          for attempt in 1 2 3; do
+            sudo DEBIAN_FRONTEND=noninteractive timeout 90 apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout="30" &&
+              sudo DEBIAN_FRONTEND=noninteractive timeout 90 apt-get install -y -o Acquire::Retries=3 -o Acquire::http::Timeout="30" cmake clang pkg-config libssl-dev &&
+              break
+            [ "${attempt}" -lt 3 ] || exit 1
+            sleep 10
+          done
       - name: Install bindgen-cli
-        run: cargo install bindgen-cli
+        uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2.88.0
+        with:
+          tool: bindgen-cli
       - name: Build KeyManager Rust library
         run: |
           cd keymanager
