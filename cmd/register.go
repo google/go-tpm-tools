@@ -78,7 +78,7 @@ var solveChallengeCmd = &cobra.Command{
 			return fmt.Errorf("could not read challenge: %s", err)
 		}
 
-		rwc, err := openImpl()
+		rwc, err := openImpl(tpmPath)
 		if err != nil {
 			return fmt.Errorf("could not open TPM: %s", err)
 		}
@@ -123,7 +123,6 @@ var verifyChallengeCmd = &cobra.Command{
 }
 
 func init() {
-	RootCmd.AddCommand(registerCmd)
 	challengeCommands := []*cobra.Command{
 		createChallengeCmd,
 		solveChallengeCmd,

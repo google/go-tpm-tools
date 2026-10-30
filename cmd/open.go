@@ -15,6 +15,12 @@ import (
 // ExternalTPM can have a TPM simulator or a real TPM.
 var ExternalTPM io.ReadWriter
 
+var tpmPath string
+
+type deps struct {
+	openTPM func(tpmPath string) (io.ReadWriteCloser, error)
+}
+
 // extTPMWrapper is designed to wrap the ExternalTPM to provide some overriding
 // functions.
 type extTPMWrapper struct {
@@ -36,7 +42,15 @@ func openTpm() (io.ReadWriteCloser, error) {
 	if ExternalTPM != nil {
 		return extTPMWrapper{ExternalTPM}, nil
 	}
-	rwc, err := openImpl()
+	rwc, err := openImpl(tpmPath)
+	if err != nil {
+		return nil, fmt.Errorf("connecting to TPM: %w", err)
+	}
+	return rwc, nil
+}
+
+func (d *deps) openTpm() (io.ReadWriteCloser, error) {
+	rwc, err := d.openTPM(tpmPath)
 	if err != nil {
 		return nil, fmt.Errorf("connecting to TPM: %w", err)
 	}
