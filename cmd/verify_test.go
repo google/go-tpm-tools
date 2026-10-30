@@ -233,16 +233,15 @@ func createAttestationWithFakeTdx(tpmNonce []byte, teeNonce []byte, tb *testing.
 
 func parseVerifyDebugArgs(args ...string) (verifyDebugConfig, error) {
 	cmd := &cobra.Command{}
-	flags := cmd.PersistentFlags()
-	flags.BytesHex("nonce", []byte{}, "")
-	flags.BytesHex("tee-nonce", []byte{}, "")
-	flags.String("format", "binarypb", "")
-	flags.String("input", "", "")
-	flags.String("output", "", "")
+	var cfg verifyDebugConfig
+	addVerifyDebugFlags(cmd, &cfg)
 	if err := cmd.ParseFlags(args); err != nil {
 		return verifyDebugConfig{}, err
 	}
-	return parseVerifyDebugFlags(cmd)
+	if err := cfg.validate(); err != nil {
+		return verifyDebugConfig{}, err
+	}
+	return cfg, nil
 }
 
 func TestParseVerifyDebugFlagsDefaults(t *testing.T) {

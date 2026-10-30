@@ -50,7 +50,7 @@ See the per-command documentation for more information.`,
 		newSealCmd(e),
 		newUnsealCmd(e),
 		tokenCmd,
-		verifyCmd,
+		newVerifyCmd(),
 	)
 	return root
 }

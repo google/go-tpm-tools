@@ -14,15 +14,6 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-var (
-	output        string
-	input         string
-	nonce         []byte
-	teeNonce      []byte
-	teeTechnology string
-	format        string
-)
-
 // Add constants for other devices when required
 const (
 	// sevSNP is a constant denotes device name for teeTechnology
@@ -118,7 +109,7 @@ func hideHelp(cmd *cobra.Command) {
 	cmd.SetHelpCommand(&cobra.Command{Hidden: true})
 }
 
-// Lets this command specify an output file, for use with dataOutput().
+// Lets this command specify an output file, for use with openForWrite().
 func addOutputFlag(cmd *cobra.Command, output *string) {
 	cmd.PersistentFlags().StringVar(output, "output", "",
 		"output file (defaults to stdout)")
@@ -181,20 +172,6 @@ func (ae alwaysError) Write([]byte) (int, error) {
 
 func (ae alwaysError) Read(_ []byte) (n int, err error) {
 	return 0, ae.error
-}
-
-// Handle to output data file. If there is an issue opening the file, the Writer
-// returned will return the error upon any call to Write()
-func dataOutput() io.Writer {
-	if output == "" {
-		return os.Stdout
-	}
-
-	file, err := os.Create(output)
-	if err != nil {
-		return alwaysError{err}
-	}
-	return file
 }
 
 func openForWrite(path string) io.Writer {
