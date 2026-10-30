@@ -1,8 +1,12 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,8 +20,6 @@ import (
 	"github.com/google/go-tpm/legacy/tpm2"
 	"github.com/google/go-tpm/tpmutil"
 	"github.com/spf13/cobra"
-	"golang.org/x/oauth2"
-	"golang.org/x/oauth2/google"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -163,23 +165,162 @@ func TestCopiedCustomEventLogFile(t *testing.T) {
 	}
 }
 
-func TestParseTokenFlagsReadsEventLogFile(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "binary_bios_measurements")
-	if err := os.WriteFile(path, test.Cos85AmdSevEventLog, 0644); err != nil {
-		t.Fatal(err)
-	}
+func parseTokenFlags(args []string) (tokenOptions, error) {
+	var flags tokenFlags
 	cmd := &cobra.Command{}
-	addTokenFlags(cmd)
-	if err := cmd.ParseFlags([]string{"--event-log", path}); err != nil {
-		t.Fatalf("ParseFlags() failed: %v", err)
+	addTokenFlags(cmd, &flags)
+	if err := cmd.ParseFlags(args); err != nil {
+		return tokenOptions{}, err
 	}
+	return flags.parse(cmd.Flags().Changed("event-log"))
+}
 
-	opts, err := parseTokenFlags(cmd)
+func TestParseTokenFlagsDefaults(t *testing.T) {
+	got, err := parseTokenFlags(nil)
 	if err != nil {
-		t.Fatalf("parseTokenFlags() failed: %v", err)
+		t.Fatalf("parseTokenFlags(nil) = %v, want nil", err)
 	}
-	if diff := cmp.Diff(test.Cos85AmdSevEventLog, opts.EventLog); diff != "" {
-		t.Errorf("parseTokenFlags() EventLog mismatch (-want +got):\n%s", diff)
+	want := tokenOptions{
+		KeyAlgo:          tpm2.AlgRSA,
+		VerifierEndpoint: "https://confidentialcomputing.googleapis.com",
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("parseTokenFlags(nil) returned unexpected diff (-want +got):\n%s", diff)
+	}
+}
+
+func TestParseTokenFlagsAlgoECC(t *testing.T) {
+	args := []string{"--algo", "ecc"}
+	got, err := parseTokenFlags(args)
+	if err != nil {
+		t.Fatalf("parseTokenFlags(%q) = %v, want nil", args, err)
+	}
+	if got.KeyAlgo != tpm2.AlgECC {
+		t.Errorf("parseTokenFlags(%q).KeyAlgo = %v, want %v", args, got.KeyAlgo, tpm2.AlgECC)
+	}
+}
+
+func TestParseTokenFlagsAudience(t *testing.T) {
+	args := []string{"--audience", "https://example.com"}
+	got, err := parseTokenFlags(args)
+	if err != nil {
+		t.Fatalf("parseTokenFlags(%q) = %v, want nil", args, err)
+	}
+	if got.Audience != "https://example.com" {
+		t.Errorf("parseTokenFlags(%q).Audience = %q, want %q", args, got.Audience, "https://example.com")
+	}
+}
+
+func TestParseTokenFlagsCustomNonces(t *testing.T) {
+	args := []string{"--custom-nonce", "nonce-1", "--custom-nonce", "nonce-2"}
+	got, err := parseTokenFlags(args)
+	if err != nil {
+		t.Fatalf("parseTokenFlags(%q) = %v, want nil", args, err)
+	}
+	want := []string{"nonce-1", "nonce-2"}
+	if diff := cmp.Diff(want, got.CustomNonces); diff != "" {
+		t.Errorf("parseTokenFlags(%q).CustomNonces returned unexpected diff (-want +got):\n%s", args, diff)
+	}
+}
+
+func TestParseTokenFlagsCloudLog(t *testing.T) {
+	args := []string{"--audience", "https://example.com", "--cloud-log"}
+	got, err := parseTokenFlags(args)
+	if err != nil {
+		t.Fatalf("parseTokenFlags(%q) = %v, want nil", args, err)
+	}
+	if !got.CloudLog {
+		t.Errorf("parseTokenFlags(%q).CloudLog = false, want true", args)
+	}
+}
+
+func TestParseTokenFlagsRejectsCloudLogWithoutAudience(t *testing.T) {
+	args := []string{"--cloud-log"}
+	if _, err := parseTokenFlags(args); !errors.Is(err, errCloudLogRequiresAudience) {
+		t.Errorf("parseTokenFlags(%q) = %v, want %v", args, err, errCloudLogRequiresAudience)
+	}
+}
+
+func TestParseTokenFlagsTEETechnologySEVSNP(t *testing.T) {
+	args := []string{"--tee-technology", "sev-snp"}
+	got, err := parseTokenFlags(args)
+	if err != nil {
+		t.Fatalf("parseTokenFlags(%q) = %v, want nil", args, err)
+	}
+	if got.TEETechnology != "sev-snp" {
+		t.Errorf("parseTokenFlags(%q).TEETechnology = %q, want %q", args, got.TEETechnology, "sev-snp")
+	}
+}
+
+func TestParseTokenFlagsTEETechnologyTDX(t *testing.T) {
+	args := []string{"--tee-technology", "tdx"}
+	got, err := parseTokenFlags(args)
+	if err != nil {
+		t.Fatalf("parseTokenFlags(%q) = %v, want nil", args, err)
+	}
+	if got.TEETechnology != "tdx" {
+		t.Errorf("parseTokenFlags(%q).TEETechnology = %q, want %q", args, got.TEETechnology, "tdx")
+	}
+}
+
+func TestParseTokenFlagsRejectsUnknownTEETechnology(t *testing.T) {
+	args := []string{"--tee-technology", "sev"}
+	if _, err := parseTokenFlags(args); !errors.Is(err, errUnknownTEETech) {
+		t.Errorf("parseTokenFlags(%q) = %v, want %v", args, err, errUnknownTEETech)
+	}
+}
+
+func TestParseTokenFlagsOutput(t *testing.T) {
+	args := []string{"--output", "token.jwt"}
+	got, err := parseTokenFlags(args)
+	if err != nil {
+		t.Fatalf("parseTokenFlags(%q) = %v, want nil", args, err)
+	}
+	if got.OutputPath != "token.jwt" {
+		t.Errorf("parseTokenFlags(%q).OutputPath = %q, want %q", args, got.OutputPath, "token.jwt")
+	}
+}
+
+func TestParseTokenFlagsVerifierEndpoint(t *testing.T) {
+	args := []string{"--verifier-endpoint", "https://verifier.example.com"}
+	got, err := parseTokenFlags(args)
+	if err != nil {
+		t.Fatalf("parseTokenFlags(%q) = %v, want nil", args, err)
+	}
+	if got.VerifierEndpoint != "https://verifier.example.com" {
+		t.Errorf("parseTokenFlags(%q).VerifierEndpoint = %q, want %q", args, got.VerifierEndpoint, "https://verifier.example.com")
+	}
+}
+
+func TestParseTokenFlagsEventLogPath(t *testing.T) {
+	args := []string{"--event-log", "/tmp/custom_event_log"}
+	opts, err := parseTokenFlags(args)
+	if err != nil {
+		t.Fatalf("parseTokenFlags(%q) = %v, want nil", args, err)
+	}
+	if opts.EventLogPath != "/tmp/custom_event_log" {
+		t.Errorf("parseTokenFlags(%q).EventLogPath = %q, want %q", args, opts.EventLogPath, "/tmp/custom_event_log")
+	}
+}
+
+func TestParseTokenFlagsRejectsEmptyEventLogPath(t *testing.T) {
+	args := []string{"--event-log", ""}
+	if _, err := parseTokenFlags(args); !errors.Is(err, errEmptyEventLogPath) {
+		t.Errorf("parseTokenFlags(%q) = %v, want %v", args, err, errEmptyEventLogPath)
+	}
+}
+
+func TestTokenCmdRejectsInvalidFlags(t *testing.T) {
+	args := []string{"token", "--cloud-log"}
+	if err := execute(args, nil); !errors.Is(err, errCloudLogRequiresAudience) {
+		t.Errorf("execute(%q) = %v, want %v", args, err, errCloudLogRequiresAudience)
+	}
+}
+
+func TestTokenCmdMissingEventLog(t *testing.T) {
+	args := []string{"token", "--event-log", filepath.Join(t.TempDir(), "missing")}
+	if err := execute(args, nil); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("execute(%q) = %v, want %v", args, err, os.ErrNotExist)
 	}
 }
 
@@ -275,30 +416,17 @@ func TestTokenCmdOutputPath(t *testing.T) {
 	}
 	defer mockMdsServer.Stop()
 
-	mockOauth2Server, err := util.NewMockOauth2Server()
-	if err != nil {
-		t.Error(err)
-	}
-	defer mockOauth2Server.Stop()
-
-	google.Endpoint = oauth2.Endpoint{
-		AuthURL:   mockOauth2Server.Server.URL + "/o/oauth2/auth",
-		TokenURL:  mockOauth2Server.Server.URL + "/token",
-		AuthStyle: oauth2.AuthStyleInParams,
-	}
-
 	mockAttestationServer, err := util.NewMockAttestationServer()
 	if err != nil {
 		t.Error(err)
 	}
 	defer mockAttestationServer.Stop()
 
-	ExternalTPM = rwc
-	defer func() { ExternalTPM = nil }()
-
 	outPath := filepath.Join(t.TempDir(), "token.txt")
-	if err := execute([]string{"token", "--verifier-endpoint", mockAttestationServer.Server.URL, "--output", outPath}, nil); err != nil {
-		t.Fatalf("execute() failed: %v", err)
+	root := newGotpmCmd(testTPM(rwc), testHTTPClient(mockAttestationServer.Server.Client()))
+	root.SetArgs([]string{"token", "--verifier-endpoint", mockAttestationServer.Server.URL, "--output", outPath})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute() failed: %v", err)
 	}
 
 	data, err := os.ReadFile(outPath)
@@ -307,5 +435,117 @@ func TestTokenCmdOutputPath(t *testing.T) {
 	}
 	if len(data) == 0 {
 		t.Error("expected non-empty output file")
+	}
+}
+
+func TestTokenCmdWritesToStdoutByDefault(t *testing.T) {
+	rwc := test.GetTPM(t)
+	defer client.CheckedClose(t, rwc)
+	test.SkipForRealTPM(t)
+
+	gceAkTemplate, err := GCEAKTemplateRSA().Encode()
+	if err != nil {
+		t.Fatalf("failed to encode GCEAKTemplateRSA: %v", err)
+	}
+	if err := setGCEAKCertTemplate(t, rwc, "rsa", gceAkTemplate); err != nil {
+		t.Fatalf("setGCEAKCertTemplate() failed: %v", err)
+	}
+	defer tpm2.NVUndefineSpace(rwc, "", tpm2.HandlePlatform, tpmutil.Handle(getIndex["rsa"]))
+	defer tpm2.NVUndefineSpace(rwc, "", tpm2.HandlePlatform, tpmutil.Handle(getCertIndex["rsa"]))
+
+	dummyMetaInstance := util.Instance{ProjectID: "test-project", ProjectNumber: "1922337278274", Zone: "us-central-1a", InstanceID: "12345678", InstanceName: "default"}
+	mockMdsServer, err := util.NewMetadataServer(dummyMetaInstance)
+	if err != nil {
+		t.Fatalf("NewMetadataServer() failed: %v", err)
+	}
+	defer mockMdsServer.Stop()
+
+	mockAttestationServer, err := util.NewMockAttestationServer()
+	if err != nil {
+		t.Fatalf("NewMockAttestationServer() failed: %v", err)
+	}
+	defer mockAttestationServer.Stop()
+
+	var out bytes.Buffer
+	root := newGotpmCmd(testTPM(rwc), testHTTPClient(mockAttestationServer.Server.Client()))
+	root.SetOut(&out)
+	args := []string{"token", "--verifier-endpoint", mockAttestationServer.Server.URL}
+	root.SetArgs(args)
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute(%q) = %v, want nil", args, err)
+	}
+	if !strings.HasSuffix(out.String(), "\n") || len(strings.TrimSpace(out.String())) == 0 {
+		t.Errorf("Execute(%q) wrote %q, want non-empty token line", args, out.String())
+	}
+}
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestTokenCmdEventLog(t *testing.T) {
+	rwc := test.GetTPM(t)
+	defer client.CheckedClose(t, rwc)
+	test.SkipForRealTPM(t)
+
+	gceAkTemplate, err := GCEAKTemplateRSA().Encode()
+	if err != nil {
+		t.Fatalf("failed to encode GCEAKTemplateRSA: %v", err)
+	}
+	if err := setGCEAKCertTemplate(t, rwc, "rsa", gceAkTemplate); err != nil {
+		t.Fatalf("setGCEAKCertTemplate() failed: %v", err)
+	}
+	defer tpm2.NVUndefineSpace(rwc, "", tpm2.HandlePlatform, tpmutil.Handle(getIndex["rsa"]))
+	defer tpm2.NVUndefineSpace(rwc, "", tpm2.HandlePlatform, tpmutil.Handle(getCertIndex["rsa"]))
+
+	dummyMetaInstance := util.Instance{ProjectID: "test-project", ProjectNumber: "1922337278274", Zone: "us-central-1a", InstanceID: "12345678", InstanceName: "default"}
+	mockMdsServer, err := util.NewMetadataServer(dummyMetaInstance)
+	if err != nil {
+		t.Fatalf("NewMetadataServer() failed: %v", err)
+	}
+	defer mockMdsServer.Stop()
+
+	mockAttestationServer, err := util.NewMockAttestationServer()
+	if err != nil {
+		t.Fatalf("NewMockAttestationServer() failed: %v", err)
+	}
+	defer mockAttestationServer.Stop()
+
+	httpClient := mockAttestationServer.Server.Client()
+	baseTransport := httpClient.Transport
+	var gotEventLog []byte
+	httpClient.Transport = roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+		if strings.HasSuffix(r.URL.Path, ":verifyAttestation") {
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				return nil, err
+			}
+			r.Body = io.NopCloser(bytes.NewReader(body))
+			var req struct {
+				TpmAttestation struct {
+					TcgEventLog []byte `json:"tcgEventLog"`
+				} `json:"tpmAttestation"`
+			}
+			if err := json.Unmarshal(body, &req); err != nil {
+				return nil, err
+			}
+			gotEventLog = req.TpmAttestation.TcgEventLog
+		}
+		return baseTransport.RoundTrip(r)
+	})
+
+	eventLogPath := filepath.Join(t.TempDir(), "binary_bios_measurements")
+	if err := os.WriteFile(eventLogPath, test.Cos85AmdSevEventLog, 0644); err != nil {
+		t.Fatalf("os.WriteFile() = %v, want nil", err)
+	}
+
+	root := newGotpmCmd(testTPM(rwc), testHTTPClient(httpClient))
+	args := []string{"token", "--quiet", "--verifier-endpoint", mockAttestationServer.Server.URL, "--event-log", eventLogPath}
+	root.SetArgs(args)
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute(%q) = %v, want nil", args, err)
+	}
+	if diff := cmp.Diff(test.Cos85AmdSevEventLog, gotEventLog); diff != "" {
+		t.Errorf("VerifyAttestation TcgEventLog mismatch (-want +got):\n%s", diff)
 	}
 }
