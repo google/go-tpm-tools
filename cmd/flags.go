@@ -20,7 +20,6 @@ var (
 	nonce         []byte
 	teeNonce      []byte
 	teeTechnology string
-	keyAlgo       = tpm2.AlgRSA
 	format        string
 )
 
