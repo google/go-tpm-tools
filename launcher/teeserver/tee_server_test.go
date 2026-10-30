@@ -56,6 +56,7 @@ type fakeAttestationAgent struct {
 	attestFunc              func(context.Context, agent.AttestAgentOpts) ([]byte, error)
 	attestWithClientFunc    func(context.Context, agent.AttestAgentOpts, verifier.Client) ([]byte, error)
 	attestationEvidenceFunc func(context.Context, []byte, []byte) (*attestationpb.VmAttestation, error)
+	attestHostFunc          func(context.Context, []byte) ([]byte, error)
 }
 
 type fakeGB300AttestationAgent struct {
@@ -105,8 +106,11 @@ func (f fakeAttestationAgent) Close() error {
 	return nil
 }
 
-func (f fakeAttestationAgent) AttestHost(_ context.Context, _ []byte) ([]byte, error) {
-	return nil, fmt.Errorf("AttestHost unimplemented")
+func (f fakeAttestationAgent) AttestHost(c context.Context, challenge []byte) ([]byte, error) {
+	if f.attestHostFunc == nil {
+		return nil, errors.New("AttestHost unimplemented")
+	}
+	return f.attestHostFunc(c, challenge)
 }
 
 type fakeKEMAttester struct {
@@ -1185,6 +1189,63 @@ func TestGetKeyEndorsement(t *testing.T) {
 	}
 }
 
+func newHostAttestationRequest(t *testing.T, challenge []byte) *http.Request {
+	t.Helper()
+	body, err := protojson.Marshal(&tspb.GetHostAttestationRequest{Challenge: challenge})
+	if err != nil {
+		t.Fatalf("protojson.Marshal() err = %v, want nil", err)
+	}
+	return httptest.NewRequest(http.MethodPost, hostAttestationEndpoint, bytes.NewBuffer(body))
+}
+
+func TestGetHostAttestation_NotBCModeForbidden(t *testing.T) {
+	handler := &attestHandler{
+		ctx:         t.Context(),
+		attestAgent: &fakeAttestationAgent{},
+		logger:      logging.SimpleLogger(),
+		bcMode:      false,
+	}
+	rr := httptest.NewRecorder()
+
+	handler.getHostAttestation(rr, newHostAttestationRequest(t, []byte("test-challenge")))
+
+	if rr.Code != http.StatusForbidden {
+		t.Errorf("getHostAttestation() status = %v, want %v", rr.Code, http.StatusForbidden)
+	}
+}
+
+func TestGetHostAttestation_BCModeReturnsAgentEvidence(t *testing.T) {
+	challenge := []byte("test-challenge")
+	want := &attestationpb.HostAttestation{
+		Label:     []byte("HOST_ATTESTATION"),
+		Challenge: challenge,
+	}
+	handler := &attestHandler{
+		ctx: t.Context(),
+		attestAgent: &fakeAttestationAgent{
+			attestHostFunc: func(_ context.Context, c []byte) ([]byte, error) {
+				return proto.Marshal(&attestationpb.HostAttestation{Label: want.Label, Challenge: c})
+			},
+		},
+		logger: logging.SimpleLogger(),
+		bcMode: true,
+	}
+	rr := httptest.NewRecorder()
+
+	handler.getHostAttestation(rr, newHostAttestationRequest(t, challenge))
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("getHostAttestation() status = %v, want %v. Body: %s", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	got := &attestationpb.HostAttestation{}
+	if err := protojson.Unmarshal(rr.Body.Bytes(), got); err != nil {
+		t.Fatalf("protojson.Unmarshal() err = %v, want nil", err)
+	}
+	if diff := cmp.Diff(want, got, protocmp.Transform()); diff != "" {
+		t.Errorf("getHostAttestation() mismatch (-want +got):\n%s", diff)
+	}
+}
+
 func TestNewKPSKEMAttester(t *testing.T) {
 	attester, err := newKPSKEMAttester()
 	if err != nil {
@@ -1220,7 +1281,6 @@ func TestTeeServer_Shutdown(t *testing.T) {
 		nl,
 		&fakeAttestationAgent{},
 		logging.SimpleLogger(),
-		false,
 		false,
 		AttestClients{},
 	)
