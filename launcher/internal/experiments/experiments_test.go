@@ -12,13 +12,12 @@ func TestExperiments(t *testing.T) {
 		expectedExps Experiments
 	}{
 		{
-			input: "{\"EnableH100DriverInstallation\":true,\"EnableB200DriverInstallation\":true,\"EnableTestFeatureForImage\":true,\"EnableItaVerifier\":true,\"EnableKeyManager\":false}",
+			input: "{\"EnableH100DriverInstallation\":true,\"EnableB200DriverInstallation\":true,\"EnableTestFeatureForImage\":true,\"EnableItaVerifier\":true}",
 			expectedExps: Experiments{
 				EnableTestFeatureForImage:    true,
 				EnableItaVerifier:            true,
 				EnableB200DriverInstallation: true,
 				EnableH100DriverInstallation: true,
-				EnableKeyManager:             false,
 				EnableGpuGcaSupport:          false,
 			},
 		},
@@ -26,7 +25,6 @@ func TestExperiments(t *testing.T) {
 			input: "{\"EnableB200DriverInstallation\":true}",
 			expectedExps: Experiments{
 				EnableB200DriverInstallation: true,
-				EnableKeyManager:             false,
 				EnableGpuGcaSupport:          false,
 				EnableHostAttestation:        false,
 			},
@@ -41,21 +39,12 @@ func TestExperiments(t *testing.T) {
 			},
 		},
 		{
-			input: "{\"EnableB200DriverInstallation\":true,\"EnableKeyManager\":true}",
-			expectedExps: Experiments{
-				EnableB200DriverInstallation: true,
-				EnableKeyManager:             true,
-				EnableGpuGcaSupport:          false,
-			},
-		},
-		{
-			input: "{\"EnableGpuGcaSupport\":true,\"EnableH100DriverInstallation\":true,\"EnableB200DriverInstallation\":false,\"EnableTestFeatureForImage\":true,\"EnableItaVerifier\":true,\"EnableKeyManager\":false}",
+			input: "{\"EnableGpuGcaSupport\":true,\"EnableH100DriverInstallation\":true,\"EnableB200DriverInstallation\":false,\"EnableTestFeatureForImage\":true,\"EnableItaVerifier\":true}",
 			expectedExps: Experiments{
 				EnableTestFeatureForImage:    true,
 				EnableItaVerifier:            true,
 				EnableB200DriverInstallation: false,
 				EnableH100DriverInstallation: true,
-				EnableKeyManager:             false,
 				EnableGpuGcaSupport:          true,
 			},
 		},
