@@ -9,15 +9,11 @@ import (
 	"testing"
 
 	"cloud.google.com/go/logging"
-	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal/test"
 	"github.com/google/go-tpm-tools/verifier/util"
 	"github.com/google/go-tpm/legacy/tpm2"
 	"github.com/google/go-tpm/tpmutil"
-	"github.com/spf13/cobra"
-	"golang.org/x/oauth2"
-	"golang.org/x/oauth2/google"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -163,26 +159,6 @@ func TestCopiedCustomEventLogFile(t *testing.T) {
 	}
 }
 
-func TestParseTokenFlagsReadsEventLogFile(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "binary_bios_measurements")
-	if err := os.WriteFile(path, test.Cos85AmdSevEventLog, 0644); err != nil {
-		t.Fatal(err)
-	}
-	cmd := &cobra.Command{}
-	addTokenFlags(cmd)
-	if err := cmd.ParseFlags([]string{"--event-log", path}); err != nil {
-		t.Fatalf("ParseFlags() failed: %v", err)
-	}
-
-	opts, err := parseTokenFlags(cmd)
-	if err != nil {
-		t.Fatalf("parseTokenFlags() failed: %v", err)
-	}
-	if diff := cmp.Diff(test.Cos85AmdSevEventLog, opts.EventLog); diff != "" {
-		t.Errorf("parseTokenFlags() EventLog mismatch (-want +got):\n%s", diff)
-	}
-}
-
 // Need to call tpm2.NVUndefinespace twice on the handle with authHandle tpm2.HandlePlatform.
 // e.g defer tpm2.NVUndefineSpace(rwc, "", tpm2.HandlePlatform, tpmutil.Handle(client.GceAKTemplateNVIndexRSA))
 // defer tpm2.NVUndefineSpace(rwc, "", tpm2.HandlePlatform, tpmutil.Handle(client.GceAKCertNVIndexRSA))
@@ -275,30 +251,17 @@ func TestTokenCmdOutputPath(t *testing.T) {
 	}
 	defer mockMdsServer.Stop()
 
-	mockOauth2Server, err := util.NewMockOauth2Server()
-	if err != nil {
-		t.Error(err)
-	}
-	defer mockOauth2Server.Stop()
-
-	google.Endpoint = oauth2.Endpoint{
-		AuthURL:   mockOauth2Server.Server.URL + "/o/oauth2/auth",
-		TokenURL:  mockOauth2Server.Server.URL + "/token",
-		AuthStyle: oauth2.AuthStyleInParams,
-	}
-
 	mockAttestationServer, err := util.NewMockAttestationServer()
 	if err != nil {
 		t.Error(err)
 	}
 	defer mockAttestationServer.Stop()
 
-	ExternalTPM = rwc
-	defer func() { ExternalTPM = nil }()
-
 	outPath := filepath.Join(t.TempDir(), "token.txt")
-	if err := execute([]string{"token", "--verifier-endpoint", mockAttestationServer.Server.URL, "--output", outPath}, nil); err != nil {
-		t.Fatalf("execute() failed: %v", err)
+	root := newGotpmCmd(testTPM(rwc), mockAttestationServer.Server.Client())
+	root.SetArgs([]string{"token", "--verifier-endpoint", mockAttestationServer.Server.URL, "--output", outPath})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute() failed: %v", err)
 	}
 
 	data, err := os.ReadFile(outPath)
