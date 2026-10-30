@@ -32,13 +32,11 @@ func TestVerifyNoncePass(t *testing.T) {
 	defer os.RemoveAll(file1)
 	defer os.RemoveAll(file2)
 
-	RootCmd.SetArgs([]string{"attest", "--nonce", "1234", "--key", "AK", "--tee-nonce", "", "--output", file1, "--tee-technology", ""})
-	if err := RootCmd.Execute(); err != nil {
+	if err := execute(t, []string{"attest", "--nonce", "1234", "--key", "AK", "--tee-nonce", "", "--output", file1, "--tee-technology", ""}); err != nil {
 		t.Error(err)
 	}
 
-	RootCmd.SetArgs([]string{"verify", "debug", "--nonce", "1234", "--input", file1, "--output", file2})
-	if err := RootCmd.Execute(); err != nil {
+	if err := execute(t, []string{"verify", "debug", "--nonce", "1234", "--input", file1, "--output", file2}); err != nil {
 		t.Error(err)
 	}
 }
@@ -53,13 +51,11 @@ func TestVerifyNonceFail(t *testing.T) {
 	defer os.RemoveAll(file1)
 	defer os.RemoveAll(file2)
 
-	RootCmd.SetArgs([]string{"attest", "--nonce", "1234", "--output", file1})
-	if err := RootCmd.Execute(); err != nil {
+	if err := execute(t, []string{"attest", "--nonce", "1234", "--output", file1}); err != nil {
 		t.Error(err)
 	}
 
-	RootCmd.SetArgs([]string{"verify", "debug", "--nonce", "4321", "--input", file1, "--output", file2})
-	if err := RootCmd.Execute(); err == nil {
+	if err := execute(t, []string{"verify", "debug", "--nonce", "4321", "--input", file1, "--output", file2}); err == nil {
 		t.Error("expected non-nil error")
 	}
 }
@@ -105,13 +101,11 @@ func TestVerifyWithGCEAK(t *testing.T) {
 			}
 			defer mock.Stop()
 
-			RootCmd.SetArgs([]string{"attest", "--nonce", op.nonce, "--key", "gceAK", "--algo", op.keyAlgo, "--output", file1, "--format", "binarypb", "--tee-technology", ""})
-			if err := RootCmd.Execute(); err != nil {
+			if err := execute(t, []string{"attest", "--nonce", op.nonce, "--key", "gceAK", "--algo", op.keyAlgo, "--output", file1, "--format", "binarypb", "--tee-technology", ""}); err != nil {
 				t.Error(err)
 			}
 
-			RootCmd.SetArgs([]string{"verify", "debug", "--nonce", op.nonce, "--input", file1, "--output", file2})
-			if err := RootCmd.Execute(); err != nil {
+			if err := execute(t, []string{"verify", "debug", "--nonce", op.nonce, "--input", file1, "--output", file2}); err != nil {
 				t.Error(err)
 			}
 		})
@@ -199,8 +193,7 @@ func TestTdxAttestation(t *testing.T) {
 
 	for _, op := range tests {
 		t.Run(op.name, func(t *testing.T) {
-			RootCmd.SetArgs([]string{"verify", "debug", "--nonce", hexTpmNonce, "--input", file1.Name(), "--output", file2, "--tee-nonce", op.tdxNonce, "--format", "textproto"})
-			if err := RootCmd.Execute(); (err == nil && op.wantErr != "") ||
+			if err := execute(t, []string{"verify", "debug", "--nonce", hexTpmNonce, "--input", file1.Name(), "--output", file2, "--tee-nonce", op.tdxNonce, "--format", "textproto"}); (err == nil && op.wantErr != "") ||
 				(err != nil && !strings.Contains(err.Error(), op.wantErr)) {
 				t.Errorf("Expected error: %v, got: %v", op.wantErr, err)
 			}

@@ -96,7 +96,6 @@ The read is authenticated with the owner hierarchy and an empty password.`,
 }
 
 func init() {
-	RootCmd.AddCommand(readCmd)
 	readCmd.AddCommand(pcrCmd)
 	readCmd.AddCommand(nvReadCmd)
 	addOutputFlag(pcrCmd)

@@ -213,7 +213,6 @@ func verifyGceTechnology(attestation *pb.Attestation, teeNonce []byte) error {
 }
 
 func init() {
-	RootCmd.AddCommand(verifyCmd)
 	verifyCmd.AddCommand(debugCmd)
 	addNonceFlag(debugCmd)
 	addOutputFlag(debugCmd)

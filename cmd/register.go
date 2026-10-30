@@ -123,7 +123,6 @@ var verifyChallengeCmd = &cobra.Command{
 }
 
 func init() {
-	RootCmd.AddCommand(registerCmd)
 	challengeCommands := []*cobra.Command{
 		createChallengeCmd,
 		solveChallengeCmd,
