@@ -13,6 +13,7 @@ import (
 	"crypto/sha512"
 	"encoding/base64"
 	"fmt"
+	"hash"
 	"io"
 	"net"
 	"net/http"
@@ -655,14 +656,7 @@ func (t *tpmAttestRoot) Attest(nonce []byte) (any, error) {
 }
 
 func (t *tpmAttestRoot) ComputeNonce(challenge []byte, extraData []byte) []byte {
-	challengeData := challenge
-	if extraData != nil {
-		extraDataDigest := sha256.Sum256(extraData)
-		challengeData = append(challenge, extraDataDigest[:]...)
-	}
-	challengeDigest := sha256.Sum256(challengeData)
-	finalNonce := sha256.Sum256(append([]byte(labels.WorkloadAttestation), challengeDigest[:]...))
-	return finalNonce[:]
+	return computeNonce(sha256.New, challenge, extraData)
 }
 
 type tdxAttestRoot struct {
@@ -720,14 +714,29 @@ func (t *tdxAttestRoot) Attest(nonce []byte) (any, error) {
 }
 
 func (t *tdxAttestRoot) ComputeNonce(challenge []byte, extraData []byte) []byte {
-	challengeData := challenge
+	return computeNonce(sha512.New, challenge, extraData)
+}
+
+// computeNonce returns H(label || H(challenge || H(extraData))), where H is
+// the hash from newHash and label is labels.WorkloadAttestation. H(extraData)
+// is omitted when extraData is nil.
+//
+// The parts are written to the hash one at a time instead of concatenated with
+// append. This prevents writes into the caller's challenge buffer when the
+// challenge slice has spare capacity.
+func computeNonce(newHash func() hash.Hash, challenge []byte, extraData []byte) []byte {
+	challengeHash := newHash()
+	challengeHash.Write(challenge)
 	if extraData != nil {
-		extraDataDigest := sha512.Sum512(extraData)
-		challengeData = append(challenge, extraDataDigest[:]...)
+		extraDataHash := newHash()
+		extraDataHash.Write(extraData)
+		challengeHash.Write(extraDataHash.Sum(nil))
 	}
-	challengeDigest := sha512.Sum512(challengeData)
-	finalNonce := sha512.Sum512(append([]byte(labels.WorkloadAttestation), challengeDigest[:]...))
-	return finalNonce[:]
+
+	nonceHash := newHash()
+	nonceHash.Write([]byte(labels.WorkloadAttestation))
+	nonceHash.Write(challengeHash.Sum(nil))
+	return nonceHash.Sum(nil)
 }
 
 type hostServiceRoT struct {

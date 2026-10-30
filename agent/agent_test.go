@@ -11,6 +11,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"hash"
 	"math"
 	"runtime"
 	"sync"
@@ -709,14 +710,7 @@ func (f *fakeTdxAttestRoot) Attest(nonce []byte) (any, error) {
 }
 
 func (f *fakeTdxAttestRoot) ComputeNonce(challenge []byte, extraData []byte) []byte {
-	challengeData := challenge
-	if extraData != nil {
-		extraDataDigest := sha512.Sum512(extraData)
-		challengeData = append(challenge, extraDataDigest[:]...)
-	}
-	challengeDigest := sha512.Sum512(challengeData)
-	finalNonce := sha512.Sum512(append([]byte(labels.WorkloadAttestation), challengeDigest[:]...))
-	return finalNonce[:]
+	return computeNonce(sha512.New, challenge, extraData)
 }
 
 //go:embed testdata/cel.b64
@@ -834,6 +828,11 @@ func TestAttestationEvidence_TDX_Success(t *testing.T) {
 	challenge := []byte("test-challenge")
 	extraData := []byte("test-extra-data")
 
+	// Build the expected nonce independently of the code under test.
+	extraDataDigest := sha512.Sum512(extraData)
+	challengeDigest := sha512.Sum512(append(bytes.Clone(challenge), extraDataDigest[:]...))
+	wantNonce := sha512.Sum512(append([]byte(labels.WorkloadAttestation), challengeDigest[:]...))
+
 	testCases := []struct {
 		name          string
 		opts          AttestAgentOpts
@@ -868,9 +867,8 @@ func TestAttestationEvidence_TDX_Success(t *testing.T) {
 			}
 
 			// Verify the nonce passed to Attest was derived from challenge+extraData.
-			expectedNonce := fakeRoot.ComputeNonce(challenge, extraData)
-			if !bytes.Equal(fakeRoot.receivedNonce, expectedNonce) {
-				t.Errorf("got nonce %x, want %x", fakeRoot.receivedNonce, expectedNonce)
+			if !bytes.Equal(fakeRoot.receivedNonce, wantNonce[:]) {
+				t.Errorf("Attest() got nonce %x, want %x", fakeRoot.receivedNonce, wantNonce)
 			}
 
 			if att.GetQuote().GetTdxCcelQuote() == nil {
@@ -1191,6 +1189,60 @@ func TestTPMAttestRoot_ExtendLocksMutex(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("Extend timed out after mutex unlocked")
+	}
+}
+
+// referenceNonce builds H(label || H(challenge || H(extraData))) by
+// concatenation into a new slice. H(extraData) is omitted when extraData is nil.
+func referenceNonce(newHash func() hash.Hash, challenge, extraData []byte) []byte {
+	data := bytes.Clone(challenge)
+	if extraData != nil {
+		d := newHash()
+		d.Write(extraData)
+		data = append(data, d.Sum(nil)...)
+	}
+	inner := newHash()
+	inner.Write(data)
+	outer := newHash()
+	outer.Write([]byte(labels.WorkloadAttestation))
+	outer.Write(inner.Sum(nil))
+	return outer.Sum(nil)
+}
+
+func TestComputeNonce(t *testing.T) {
+	testCases := []struct {
+		name      string
+		root      attestRoot
+		newHash   func() hash.Hash
+		extraData []byte
+	}{
+		{name: "TPM nil extra data", root: &tpmAttestRoot{}, newHash: sha256.New, extraData: nil},
+		{name: "TPM empty extra data", root: &tpmAttestRoot{}, newHash: sha256.New, extraData: []byte{}},
+		{name: "TPM with extra data", root: &tpmAttestRoot{}, newHash: sha256.New, extraData: []byte("test-extra-data")},
+		{name: "TDX nil extra data", root: &tdxAttestRoot{}, newHash: sha512.New, extraData: nil},
+		{name: "TDX empty extra data", root: &tdxAttestRoot{}, newHash: sha512.New, extraData: []byte{}},
+		{name: "TDX with extra data", root: &tdxAttestRoot{}, newHash: sha512.New, extraData: []byte("test-extra-data")},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// The challenge is a sub-slice of a larger buffer, so it has
+			// enough spare capacity for append to write a SHA-512 digest
+			// in place instead of allocating.
+			buf := bytes.Repeat([]byte{0xAA}, 96)
+			copy(buf, "test-challenge")
+			challenge := buf[:len("test-challenge")]
+			orig := bytes.Clone(buf)
+
+			got := tc.root.ComputeNonce(challenge, tc.extraData)
+
+			if !bytes.Equal(buf, orig) {
+				t.Errorf("ComputeNonce() modified the buffer behind the challenge:\ngot  %x\nwant %x", buf, orig)
+			}
+			if want := referenceNonce(tc.newHash, orig[:len(challenge)], tc.extraData); !bytes.Equal(got, want) {
+				t.Errorf("ComputeNonce() = %x, want %x", got, want)
+			}
+		})
 	}
 }
 
