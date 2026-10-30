@@ -395,7 +395,6 @@ func runToken(ctx context.Context, rwc io.ReadWriter, opts tokenOptions) ([]byte
 }
 
 func init() {
-	RootCmd.AddCommand(tokenCmd)
 	addTokenFlags(tokenCmd)
 	// TODO: Add TEE hardware OIDC token generation
 	// addTeeNonceflag(tokenCmd)

@@ -65,8 +65,7 @@ func TestSealPlain(t *testing.T) {
 			if op.algo != "" {
 				sealArgs = append(sealArgs, "--algo", op.algo)
 			}
-			RootCmd.SetArgs(sealArgs)
-			if err := RootCmd.Execute(); err != nil {
+			if err := execute(sealArgs, nil); err != nil {
 				t.Error(err)
 			}
 			pcrs = []int{} // "flush" pcrs value in last Execute() cmd
@@ -75,8 +74,7 @@ func TestSealPlain(t *testing.T) {
 			if op.certifyPCRs != "" {
 				unsealArgs = append(unsealArgs, "--pcrs", op.certifyPCRs)
 			}
-			RootCmd.SetArgs(unsealArgs)
-			if err := RootCmd.Execute(); err != nil {
+			if err := execute(unsealArgs, nil); err != nil {
 				t.Error(err)
 			}
 			secretOut, err := os.ReadFile(secretFile2)
@@ -121,8 +119,7 @@ func TestUnsealFail(t *testing.T) {
 			if op.sealPCRs != "" {
 				sealArgs = append(sealArgs, "--pcrs", op.sealPCRs)
 			}
-			RootCmd.SetArgs(sealArgs)
-			if err := RootCmd.Execute(); err != nil {
+			if err := execute(sealArgs, nil); err != nil {
 				t.Error(err)
 			}
 			pcrs = []int{} // "flush" pcrs value in last Execute() cmd
@@ -138,8 +135,7 @@ func TestUnsealFail(t *testing.T) {
 			if op.certifyPCRs != "" {
 				unsealArgs = append(unsealArgs, "--pcrs", op.certifyPCRs)
 			}
-			RootCmd.SetArgs(unsealArgs)
-			if RootCmd.Execute() == nil {
+			if execute(unsealArgs, nil) == nil {
 				t.Error("Unsealing should have failed")
 			}
 		})

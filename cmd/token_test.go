@@ -241,8 +241,7 @@ var getAttestationKey = map[string]func(rw io.ReadWriter) (*client.Key, error){
 }
 
 func TestTokenCmdInvalidAlgo(t *testing.T) {
-	RootCmd.SetArgs([]string{"token", "--algo", "invalid-algo"})
-	err := RootCmd.Execute()
+	err := execute([]string{"token", "--algo", "invalid-algo"}, nil)
 	if err == nil || !strings.Contains(err.Error(), "unknown algorithm") {
 		t.Errorf("expected unknown algorithm error, got: %v", err)
 	}
@@ -298,9 +297,8 @@ func TestTokenCmdOutputPath(t *testing.T) {
 	defer func() { ExternalTPM = nil }()
 
 	outPath := filepath.Join(t.TempDir(), "token.txt")
-	RootCmd.SetArgs([]string{"token", "--verifier-endpoint", mockAttestationServer.Server.URL, "--output", outPath})
-	if err := RootCmd.Execute(); err != nil {
-		t.Fatalf("RootCmd.Execute() failed: %v", err)
+	if err := execute([]string{"token", "--verifier-endpoint", mockAttestationServer.Server.URL, "--output", outPath}, nil); err != nil {
+		t.Fatalf("execute() failed: %v", err)
 	}
 
 	data, err := os.ReadFile(outPath)
