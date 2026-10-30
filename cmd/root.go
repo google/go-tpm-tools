@@ -42,7 +42,7 @@ See the per-command documentation for more information.`,
 	addTPMPathFlag(root)
 	hideHelp(root)
 	root.AddCommand(
-		attestCmd,
+		newAttestCmd(o),
 		newFlushCmd(o),
 		newPubkeyCmd(o),
 		newReadCmd(o),
