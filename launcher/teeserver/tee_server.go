@@ -56,14 +56,13 @@ type AttestClients struct {
 }
 
 type attestHandler struct {
-	ctx                   context.Context
-	attestAgent           agent.AttestationAgent
-	logger                logging.Logger
-	bcMode                bool
-	enableHostAttestation bool
-	clients               AttestClients
-	kemAttester           KeyEndorsementAttester
-	bindingKeyAttester    KeyEndorsementAttester
+	ctx                context.Context
+	attestAgent        agent.AttestationAgent
+	logger             logging.Logger
+	bcMode             bool
+	clients            AttestClients
+	kemAttester        KeyEndorsementAttester
+	bindingKeyAttester KeyEndorsementAttester
 }
 
 // TeeServer is a server that can be called from a container through a unix
@@ -82,7 +81,6 @@ func New(
 	a agent.AttestationAgent,
 	logger logging.Logger,
 	bcMode bool,
-	enableHostAttestation bool,
 	clients AttestClients,
 ) (*TeeServer, error) {
 	server := &TeeServer{netListener: nl}
@@ -103,14 +101,13 @@ func New(
 
 	server.server = &http.Server{
 		Handler: (&attestHandler{
-			ctx:                   ctx,
-			attestAgent:           a,
-			logger:                logger,
-			bcMode:                bcMode,
-			enableHostAttestation: enableHostAttestation,
-			clients:               clients,
-			kemAttester:           server.kemAttester,
-			bindingKeyAttester:    server.bindingKeyAttester,
+			ctx:                ctx,
+			attestAgent:        a,
+			logger:             logger,
+			bcMode:             bcMode,
+			clients:            clients,
+			kemAttester:        server.kemAttester,
+			bindingKeyAttester: server.bindingKeyAttester,
 		}).Handler(),
 	}
 	return server, nil
@@ -484,8 +481,8 @@ func (a *attestHandler) attest(w http.ResponseWriter, r *http.Request, client ve
 }
 
 func (a *attestHandler) getHostAttestation(w http.ResponseWriter, r *http.Request) {
-	if !a.enableHostAttestation {
-		a.logAndWriteHTTPError(w, http.StatusForbidden, fmt.Errorf("host attestation not enabled"))
+	if !a.bcMode {
+		a.logAndWriteHTTPError(w, http.StatusForbidden, errors.New("host attestation is only supported in BC mode"))
 		return
 	}
 
@@ -511,20 +508,15 @@ func (a *attestHandler) getHostAttestation(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	hostAttBytes, err := a.attestAgent.AttestHost(a.ctx, req.Challenge)
+	if err != nil {
+		a.logAndWriteHTTPError(w, http.StatusInternalServerError, fmt.Errorf("failed to fetch host attestation: %v", err))
+		return
+	}
 	evidence := &attestationpb.HostAttestation{}
-	if !a.bcMode {
-		// vg has host attestation enabled and should use dummy implementation
-		evidence = dummyHostAttestation(req.Challenge)
-	} else {
-		hostAttBytes, err := a.attestAgent.AttestHost(a.ctx, req.Challenge)
-		if err != nil {
-			a.logAndWriteHTTPError(w, http.StatusInternalServerError, fmt.Errorf("failed to fetch host attestation: %v", err))
-			return
-		}
-		if err := proto.Unmarshal(hostAttBytes, evidence); err != nil {
-			a.logAndWriteHTTPError(w, http.StatusInternalServerError, fmt.Errorf("failed to unmarshal host attestation: %v", err))
-			return
-		}
+	if err := proto.Unmarshal(hostAttBytes, evidence); err != nil {
+		a.logAndWriteHTTPError(w, http.StatusInternalServerError, fmt.Errorf("failed to unmarshal host attestation: %v", err))
+		return
 	}
 
 	evidenceBytes, err := protojson.Marshal(evidence)

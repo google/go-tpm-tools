@@ -19,7 +19,6 @@ type Experiments struct {
 	EnableH100DriverInstallation bool
 	EnableGpuGcaSupport          bool
 	EnableGpuItaSupport          bool
-	EnableHostAttestation        bool
 	BcMode                       bool
 	GB300CCMode                  bool
 }
