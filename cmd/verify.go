@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"crypto"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -17,96 +18,97 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-var verifyCmd = &cobra.Command{
-	Use:   "verify",
-	Short: "Verify a remote attestation report.",
-	Args:  cobra.NoArgs,
+func newVerifyCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "verify",
+		Short: "Verify a remote attestation report.",
+		Args:  cobra.NoArgs,
+	}
+	cmd.AddCommand(newDebugCmd())
+	return cmd
 }
-var debugCmd = &cobra.Command{
-	Use:   "debug",
-	Short: "Debug the contents of an attestation report without verifying its root-of-trust (e.g., attestation key certificate). For debugging purposes only",
-	RunE: func(cmd *cobra.Command, _ []string) error {
-		cfg, err := parseVerifyDebugFlags(cmd)
-		if err != nil {
-			return err
-		}
 
-		attestationBytes, err := readAttestationInput(cmd, cfg.inputPath)
-		if err != nil {
-			return err
-		}
-		attestation := &pb.Attestation{}
+func newDebugCmd() *cobra.Command {
+	var cfg verifyDebugConfig
+	cmd := &cobra.Command{
+		Use:   "debug",
+		Short: "Debug the contents of an attestation report without verifying its root-of-trust (e.g., attestation key certificate). For debugging purposes only",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if err := checkFormat(cfg.format); err != nil {
+				return err
+			}
 
-		switch cfg.format {
-		case "binarypb":
-			err = proto.Unmarshal(attestationBytes, attestation)
-		case "textproto":
-			err = unmarshalOptions.Unmarshal(attestationBytes, attestation)
-		}
-		if err != nil {
-			return fmt.Errorf("fail to unmarshal attestation report: %v", err)
-		}
+			attestationBytes, err := readAttestationInput(cmd, cfg.inputPath)
+			if err != nil {
+				return err
+			}
+			attestation := &pb.Attestation{}
 
-		ms, err := runVerify(attestation, cfg.tpmNonce, cfg.teeNonce)
-		if err != nil {
-			return err
-		}
-		out, err := marshalOptions.Marshal(ms)
-		if err != nil {
-			return fmt.Errorf("failed to marshal machine state: %w", err)
-		}
-		if err := writeVerifyOutput(cmd, cfg.outputPath, out); err != nil {
-			return fmt.Errorf("failed to write verified attestation report: %v", err)
-		}
-		return nil
-	},
+			switch cfg.format {
+			case "binarypb":
+				err = proto.Unmarshal(attestationBytes, attestation)
+			case "textproto":
+				err = unmarshalOptions.Unmarshal(attestationBytes, attestation)
+			}
+			if err != nil {
+				return fmt.Errorf("fail to unmarshal attestation report: %w", err)
+			}
+
+			ms, err := runVerify(attestation, cfg.tpmNonce, teeNonceOrDefault(cfg.teeNonce, cfg.tpmNonce))
+			if err != nil {
+				return err
+			}
+			out, err := marshalOptions.Marshal(ms)
+			if err != nil {
+				return fmt.Errorf("failed to marshal machine state: %w", err)
+			}
+			if err := writeVerifyOutput(cmd, cfg.outputPath, out); err != nil {
+				return fmt.Errorf("failed to write verified attestation report: %w", err)
+			}
+			return nil
+		},
+	}
+	addVerifyDebugFlags(cmd, &cfg)
+	cmd.AddCommand(newVerifySVSMCmd(&cfg))
+	return cmd
 }
 
 type verifyDebugConfig struct {
-	tpmNonce   []byte
-	teeNonce   []byte
-	format     string
-	inputPath  string
-	outputPath string
+	tpmNonce            []byte
+	teeNonce            []byte
+	format              string
+	inputPath           string
+	outputPath          string
+	certifiedAKBlobPath string
 }
 
-func parseVerifyDebugFlags(cmd *cobra.Command) (verifyDebugConfig, error) {
-	flags := cmd.Flags()
-	var cfg verifyDebugConfig
+func addVerifyDebugFlags(cmd *cobra.Command, cfg *verifyDebugConfig) {
+	flags := cmd.PersistentFlags()
+	flags.BytesHexVar(&cfg.tpmNonce, "nonce", []byte{}, "hex encoded nonce for vTPM attestation, cannot be empty")
+	flags.StringVar(&cfg.outputPath, "output", "", "output file (defaults to stdout)")
+	flags.StringVar(&cfg.inputPath, "input", "", "input file (defaults to stdin)")
+	flags.StringVar(&cfg.format, "format", "binarypb", "type of output file where attestation report stored <binarypb|textproto>")
+	flags.BytesHexVar(&cfg.teeNonce, "tee-nonce", []byte{}, "hex encoded teenonce for hardware attestation, can be empty")
+	flags.StringVar(&cfg.certifiedAKBlobPath, "certified-ak-blob", "",
+		"Specify path to certified AK blob produced from TPM registration. "+
+			"Required for manifest version 0 and rejected for manifest version 1, where the "+
+			"AK is taken from --input.")
+}
 
-	var err error
-	cfg.tpmNonce, err = flags.GetBytesHex("nonce")
-	if err != nil {
-		return verifyDebugConfig{}, err
+func teeNonceOrDefault(teeNonce, nonce []byte) []byte {
+	if len(teeNonce) == 0 {
+		return nonce
 	}
+	return teeNonce
+}
 
-	cfg.teeNonce, err = flags.GetBytesHex("tee-nonce")
-	if err != nil {
-		return verifyDebugConfig{}, err
-	}
-	if len(cfg.teeNonce) == 0 {
-		cfg.teeNonce = cfg.tpmNonce
-	}
+var errUnknownFormat = errors.New("format should be either binarypb or textproto")
 
-	cfg.format, err = flags.GetString("format")
-	if err != nil {
-		return verifyDebugConfig{}, err
+func checkFormat(format string) error {
+	if format != "binarypb" && format != "textproto" {
+		return errUnknownFormat
 	}
-	if cfg.format != "binarypb" && cfg.format != "textproto" {
-		return verifyDebugConfig{}, fmt.Errorf("format should be either binarypb or textproto")
-	}
-
-	cfg.inputPath, err = flags.GetString("input")
-	if err != nil {
-		return verifyDebugConfig{}, err
-	}
-
-	cfg.outputPath, err = flags.GetString("output")
-	if err != nil {
-		return verifyDebugConfig{}, err
-	}
-
-	return cfg, nil
+	return nil
 }
 
 func readAttestationInput(cmd *cobra.Command, path string) ([]byte, error) {
@@ -210,18 +212,4 @@ func verifyGceTechnology(attestation *pb.Attestation, teeNonce []byte) error {
 	default:
 		return fmt.Errorf("unknown attestation type: %T", attestation.GetTeeAttestation())
 	}
-}
-
-func init() {
-	verifyCmd.AddCommand(debugCmd)
-	addNonceFlag(debugCmd)
-	addOutputFlag(debugCmd)
-	addInputFlag(debugCmd)
-	addFormatFlag(debugCmd)
-	addTeeNonceflag(debugCmd)
-	addCertifiedAKBlobFlag(debugCmd)
-	debugCmd.AddCommand(verifySVSMCmd)
-	addEKPubFlag(verifySVSMCmd)
-	addTeeTechnology(verifySVSMCmd)
-	addOfflineFlag(verifySVSMCmd)
 }
