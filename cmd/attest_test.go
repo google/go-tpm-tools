@@ -3,24 +3,27 @@ package cmd
 import (
 	"context"
 	"encoding/hex"
+	"errors"
+	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/google/go-cmp/cmp"
 	sgtest "github.com/google/go-sev-guest/testing"
 	sgtestclient "github.com/google/go-sev-guest/testing/client"
 	tgtest "github.com/google/go-tdx-guest/testing"
 	tgtestclient "github.com/google/go-tdx-guest/testing/client"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/internal/test"
+	attestpb "github.com/google/go-tpm-tools/proto/attest"
 	"github.com/google/go-tpm-tools/verifier/util"
 	"github.com/google/go-tpm/legacy/tpm2"
 	"github.com/google/go-tpm/tpmutil"
-	"github.com/spf13/cobra"
+	"google.golang.org/protobuf/proto"
 )
 
 var getIndex = map[string]uint32{
@@ -460,108 +463,170 @@ func TestHardwareAttestationPass(t *testing.T) {
 	}
 }
 
-func TestAttestCLI(t *testing.T) {
+func TestAttestDefaultsProduceVerifiableBinaryAttestation(t *testing.T) {
 	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
-	ExternalTPM = rwc
-	t.Cleanup(func() { ExternalTPM = nil })
+	output := filepath.Join(t.TempDir(), "attestation.binarypb")
 
-	outputFile := makeOutputFile(t, "attestcli")
-	defer os.RemoveAll(outputFile)
-
-	if err := execute([]string{"attest", "--nonce", "1234", "--key", "AK", "--output", outputFile, "--format", "binarypb"}, nil); err != nil {
-		t.Fatalf("attest CLI failed: %v", err)
+	attestArgs := []string{"attest", "--nonce", "1234", "--output", output}
+	if err := execute(attestArgs, rwc); err != nil {
+		t.Fatalf("execute(%q) = %v, want nil", attestArgs, err)
 	}
+	verifyArgs := []string{"verify", "debug", "--nonce", "1234", "--input", output, "--output", os.DevNull}
+	if err := execute(verifyArgs, nil); err != nil {
+		t.Errorf("execute(%q) = %v, want nil", verifyArgs, err)
+	}
+}
 
-	info, err := os.Stat(outputFile)
+func TestAttestDefaultsToRSAKey(t *testing.T) {
+	rwc := test.GetTPM(t)
+	defer client.CheckedClose(t, rwc)
+	output := filepath.Join(t.TempDir(), "attestation.binarypb")
+
+	args := []string{"attest", "--nonce", "1234", "--output", output}
+	if err := execute(args, rwc); err != nil {
+		t.Fatalf("execute(%q) = %v, want nil", args, err)
+	}
+	out, err := os.ReadFile(output)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Size() == 0 {
-		t.Error("expected non-empty output file from attest CLI")
+	attestation := &attestpb.Attestation{}
+	if err := proto.Unmarshal(out, attestation); err != nil {
+		t.Fatal(err)
 	}
-}
-
-// parseAttestArgs parses args into an attestCmdConfig.
-// It creates an isolated command for each call so parallel tests do not share flag state.
-func parseAttestArgs(args ...string) (attestCmdConfig, error) {
-	cmd := &cobra.Command{}
-	addAttestFlags(cmd)
-	if err := cmd.ParseFlags(args); err != nil {
-		return attestCmdConfig{}, err
-	}
-	return parseAttestFlags(cmd)
-}
-
-func TestParseAttestFlagsDefaults(t *testing.T) {
-	t.Parallel()
-	got, err := parseAttestArgs()
+	akPub, err := tpm2.DecodePublic(attestation.GetAkPub())
 	if err != nil {
-		t.Fatalf("parseAttestArgs() failed: %v", err)
+		t.Fatal(err)
 	}
-	want := attestCmdConfig{
-		opts: attestOptions{
-			key:      "AK",
-			keyAlgo:  tpm2.AlgRSA,
-			nonce:    []byte{},
-			teeNonce: []byte{},
-		},
-		format: "binarypb",
-	}
-	if diff := cmp.Diff(want, got, cmp.AllowUnexported(attestCmdConfig{}, attestOptions{})); diff != "" {
-		t.Errorf("parseAttestArgs() returned unexpected diff (-want +got):\n%s", diff)
+	if akPub.Type != tpm2.AlgRSA {
+		t.Errorf("execute(%q) wrote an AK of type %v, want %v", args, akPub.Type, tpm2.AlgRSA)
 	}
 }
 
-func TestParseAttestFlagsAllFlags(t *testing.T) {
-	t.Parallel()
-	got, err := parseAttestArgs(
-		"--key", "gceAK",
-		"--algo", "ecc",
-		"--nonce", "1234",
-		"--tee-nonce", "abcd",
-		"--tee-technology", "tdx",
-		"--format", "textproto",
-		"--output", "out.textproto",
-	)
+func TestAttestUsesECCKeyForECCAlgo(t *testing.T) {
+	rwc := test.GetTPM(t)
+	defer client.CheckedClose(t, rwc)
+	output := filepath.Join(t.TempDir(), "attestation.binarypb")
+
+	args := []string{"attest", "--nonce", "1234", "--algo", "ecc", "--output", output}
+	if err := execute(args, rwc); err != nil {
+		t.Fatalf("execute(%q) = %v, want nil", args, err)
+	}
+	out, err := os.ReadFile(output)
 	if err != nil {
-		t.Fatalf("parseAttestArgs() failed: %v", err)
+		t.Fatal(err)
 	}
-	want := attestCmdConfig{
-		opts: attestOptions{
-			key:           "gceAK",
-			keyAlgo:       tpm2.AlgECC,
-			nonce:         []byte{0x12, 0x34},
-			teeNonce:      []byte{0xab, 0xcd},
-			teeTechnology: "tdx",
-		},
-		format:     "textproto",
-		outputPath: "out.textproto",
+	attestation := &attestpb.Attestation{}
+	if err := proto.Unmarshal(out, attestation); err != nil {
+		t.Fatal(err)
 	}
-	if diff := cmp.Diff(want, got, cmp.AllowUnexported(attestCmdConfig{}, attestOptions{})); diff != "" {
-		t.Errorf("parseAttestArgs() returned unexpected diff (-want +got):\n%s", diff)
+	akPub, err := tpm2.DecodePublic(attestation.GetAkPub())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if akPub.Type != tpm2.AlgECC {
+		t.Errorf("execute(%q) wrote an AK of type %v, want %v", args, akPub.Type, tpm2.AlgECC)
 	}
 }
 
-func TestParseAttestFlagsRejectsInvalidValues(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		name string
-		args []string
-	}{
-		{"UnknownKey", []string{"--key", "EK"}},
-		{"UnknownAlgo", []string{"--algo", "sha256"}},
-		{"OddLengthNonce", []string{"--nonce", "123"}},
-		{"NonHexNonce", []string{"--nonce", "zz"}},
-		{"OddLengthTEENonce", []string{"--tee-nonce", "123"}},
-		{"UnknownFormat", []string{"--format", "json"}},
+func TestAttestWritesTextproto(t *testing.T) {
+	rwc := test.GetTPM(t)
+	defer client.CheckedClose(t, rwc)
+	output := filepath.Join(t.TempDir(), "attestation.textproto")
+
+	attestArgs := []string{"attest", "--nonce", "1234", "--format", "textproto", "--output", output}
+	if err := execute(attestArgs, rwc); err != nil {
+		t.Fatalf("execute(%q) = %v, want nil", attestArgs, err)
 	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			if _, err := parseAttestArgs(tc.args...); err == nil {
-				t.Errorf("parseAttestArgs(%q) succeeded, want error", tc.args)
-			}
-		})
+	verifyArgs := []string{"verify", "debug", "--nonce", "1234", "--format", "textproto", "--input", output, "--output", os.DevNull}
+	if err := execute(verifyArgs, nil); err != nil {
+		t.Errorf("execute(%q) = %v, want nil", verifyArgs, err)
+	}
+}
+
+func TestAttestWritesToStdoutByDefault(t *testing.T) {
+	rwc := test.GetTPM(t)
+	defer client.CheckedClose(t, rwc)
+
+	args := []string{"attest", "--nonce", "1234"}
+	out, err := executeOutput(args, rwc)
+	if err != nil {
+		t.Fatalf("executeOutput(%q) = %v, want nil", args, err)
+	}
+	attestation := &attestpb.Attestation{}
+	if err := proto.Unmarshal(out, attestation); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tpm2.DecodePublic(attestation.GetAkPub()); err != nil {
+		t.Errorf("executeOutput(%q) wrote no AK public key: %v", args, err)
+	}
+}
+
+func TestAttestRejectsTEENonceWithoutTEETechnology(t *testing.T) {
+	rwc := test.GetTPM(t)
+	defer client.CheckedClose(t, rwc)
+
+	args := []string{"attest", "--nonce", "1234", "--tee-nonce", "abcd", "--output", os.DevNull}
+	want := "use of --tee-nonce requires specifying TEE hardware type with --tee-technology"
+	if got := fmt.Sprint(execute(args, rwc)); !strings.Contains(got, want) {
+		t.Errorf("execute(%q) = %q, want error containing %q", args, got, want)
+	}
+}
+
+func TestAttestRejectsUnknownTEETechnology(t *testing.T) {
+	rwc := test.GetTPM(t)
+	defer client.CheckedClose(t, rwc)
+
+	args := []string{"attest", "--nonce", "1234", "--tee-technology", "sev", "--output", os.DevNull}
+	want := "tee-technology should be either empty or should have values sev-snp or tdx"
+	if got := fmt.Sprint(execute(args, rwc)); !strings.Contains(got, want) {
+		t.Errorf("execute(%q) = %q, want error containing %q", args, got, want)
+	}
+}
+
+func TestAttestRejectsUnknownKey(t *testing.T) {
+	args := []string{"attest", "--key", "EK"}
+	if err := execute(args, nil); !errors.Is(err, errUnknownKey) {
+		t.Errorf("execute(%q) = %v, want %v", args, err, errUnknownKey)
+	}
+}
+
+func TestAttestRejectsUnknownFormat(t *testing.T) {
+	args := []string{"attest", "--format", "json"}
+	if err := execute(args, nil); !errors.Is(err, errUnknownFormat) {
+		t.Errorf("execute(%q) = %v, want %v", args, err, errUnknownFormat)
+	}
+}
+
+func TestAttestRejectsUnknownAlgo(t *testing.T) {
+	args := []string{"attest", "--algo", "sha256"}
+	want := `invalid argument "sha256" for "--algo" flag`
+	if got := fmt.Sprint(execute(args, nil)); !strings.Contains(got, want) {
+		t.Errorf("execute(%q) = %q, want error containing %q", args, got, want)
+	}
+}
+
+func TestAttestRejectsOddLengthNonce(t *testing.T) {
+	args := []string{"attest", "--nonce", "123"}
+	want := `invalid argument "123" for "--nonce" flag`
+	if got := fmt.Sprint(execute(args, nil)); !strings.Contains(got, want) {
+		t.Errorf("execute(%q) = %q, want error containing %q", args, got, want)
+	}
+}
+
+func TestAttestRejectsNonHexNonce(t *testing.T) {
+	args := []string{"attest", "--nonce", "zz"}
+	want := `invalid argument "zz" for "--nonce" flag`
+	if got := fmt.Sprint(execute(args, nil)); !strings.Contains(got, want) {
+		t.Errorf("execute(%q) = %q, want error containing %q", args, got, want)
+	}
+}
+
+func TestAttestRejectsOddLengthTEENonce(t *testing.T) {
+	args := []string{"attest", "--tee-nonce", "123"}
+	want := `invalid argument "123" for "--tee-nonce" flag`
+	if got := fmt.Sprint(execute(args, nil)); !strings.Contains(got, want) {
+		t.Errorf("execute(%q) = %q, want error containing %q", args, got, want)
 	}
 }

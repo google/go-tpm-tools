@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"errors"
 	"io"
 )
@@ -22,4 +23,15 @@ func execute(args []string, tpm io.ReadWriter) error {
 	root := newGotpmCmd(testTPM(tpm))
 	root.SetArgs(args)
 	return root.Execute()
+}
+
+// executeOutput runs gotpm with args and returns what the command wrote to its
+// standard output.
+func executeOutput(args []string, tpm io.ReadWriter) ([]byte, error) {
+	var out bytes.Buffer
+	root := newGotpmCmd(testTPM(tpm))
+	root.SetArgs(args)
+	root.SetOut(&out)
+	err := root.Execute()
+	return out.Bytes(), err
 }
