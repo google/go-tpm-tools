@@ -16,8 +16,6 @@ import (
 	"github.com/google/go-tpm/legacy/tpm2"
 	"github.com/google/go-tpm/tpmutil"
 	"github.com/spf13/cobra"
-	"golang.org/x/oauth2"
-	"golang.org/x/oauth2/google"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -163,23 +161,42 @@ func TestCopiedCustomEventLogFile(t *testing.T) {
 	}
 }
 
-func TestParseTokenFlagsReadsEventLogFile(t *testing.T) {
+func TestTokenFlagsReadsEventLogFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "binary_bios_measurements")
 	if err := os.WriteFile(path, test.Cos85AmdSevEventLog, 0644); err != nil {
 		t.Fatal(err)
 	}
 	cmd := &cobra.Command{}
-	addTokenFlags(cmd)
+	var flags tokenFlags
+	addTokenFlags(cmd, &flags)
 	if err := cmd.ParseFlags([]string{"--event-log", path}); err != nil {
 		t.Fatalf("ParseFlags() failed: %v", err)
 	}
 
-	opts, err := parseTokenFlags(cmd)
+	opts, err := flags.options(cmd.Flags().Changed("event-log"))
 	if err != nil {
-		t.Fatalf("parseTokenFlags() failed: %v", err)
+		t.Fatalf("options() failed: %v", err)
 	}
 	if diff := cmp.Diff(test.Cos85AmdSevEventLog, opts.EventLog); diff != "" {
-		t.Errorf("parseTokenFlags() EventLog mismatch (-want +got):\n%s", diff)
+		t.Errorf("options() EventLog mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestTokenFlagsSkipsEventLogWhenUnset(t *testing.T) {
+	flags := tokenFlags{eventLogPath: filepath.Join(t.TempDir(), "missing")}
+	opts, err := flags.options(false)
+	if err != nil {
+		t.Fatalf("options(false) failed: %v", err)
+	}
+	if opts.EventLog != nil {
+		t.Errorf("options(false) EventLog = %v, want nil", opts.EventLog)
+	}
+}
+
+func TestTokenFlagsRejectsMissingEventLogFile(t *testing.T) {
+	flags := tokenFlags{eventLogPath: filepath.Join(t.TempDir(), "missing")}
+	if _, err := flags.options(true); err == nil {
+		t.Error("options(true) succeeded, want error")
 	}
 }
 
@@ -275,29 +292,14 @@ func TestTokenCmdOutputPath(t *testing.T) {
 	}
 	defer mockMdsServer.Stop()
 
-	mockOauth2Server, err := util.NewMockOauth2Server()
-	if err != nil {
-		t.Error(err)
-	}
-	defer mockOauth2Server.Stop()
-
-	google.Endpoint = oauth2.Endpoint{
-		AuthURL:   mockOauth2Server.Server.URL + "/o/oauth2/auth",
-		TokenURL:  mockOauth2Server.Server.URL + "/token",
-		AuthStyle: oauth2.AuthStyleInParams,
-	}
-
 	mockAttestationServer, err := util.NewMockAttestationServer()
 	if err != nil {
 		t.Error(err)
 	}
 	defer mockAttestationServer.Stop()
 
-	ExternalTPM = rwc
-	defer func() { ExternalTPM = nil }()
-
 	outPath := filepath.Join(t.TempDir(), "token.txt")
-	if err := execute(t, []string{"token", "--verifier-endpoint", mockAttestationServer.Server.URL, "--output", outPath}); err != nil {
+	if err := execute(t, []string{"token", "--verifier-endpoint", mockAttestationServer.Server.URL, "--output", outPath}, withTPM(rwc), withHTTPClient(mockAttestationServer.Server.Client())); err != nil {
 		t.Fatalf("execute() failed: %v", err)
 	}
 

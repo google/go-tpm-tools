@@ -28,18 +28,18 @@ func newRootCmd(opts ...envOption) *cobra.Command {
 This tool allows performing TPM2 operations from the command line.
 See the per-command documentation for more information.`,
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
-			if quiet && verbose {
+			if e.quiet && e.verbose {
 				return fmt.Errorf("cannot specify both --quiet and --verbose")
 			}
 			cmd.SilenceUsage = true
 			return nil
 		},
 	}
-	root.PersistentFlags().BoolVar(&quiet, "quiet", false,
+	root.PersistentFlags().BoolVar(&e.quiet, "quiet", false,
 		"print nothing if command is successful")
-	root.PersistentFlags().BoolVar(&verbose, "verbose", false,
+	root.PersistentFlags().BoolVar(&e.verbose, "verbose", false,
 		"print additional info to stdout")
-	addTPMPathFlag(root)
+	addTPMPathFlag(root, &e.tpmPath)
 	hideHelp(root)
 	root.AddCommand(
 		newAttestCmd(e),
@@ -49,37 +49,24 @@ See the per-command documentation for more information.`,
 		newRegisterCmd(e),
 		newSealCmd(e),
 		newUnsealCmd(e),
-		tokenCmd,
+		newTokenCmd(e),
 		newVerifyCmd(),
 	)
 	return root
 }
 
-var (
-	quiet   bool
-	verbose bool
-)
-
-func messageOutput() io.Writer {
-	if quiet {
+func (e *env) messageOutput() io.Writer {
+	if e.quiet {
 		return io.Discard
 	}
 	return os.Stdout
 }
 
-func debugOutput() io.Writer {
-	if verbose {
+func (e *env) debugOutput() io.Writer {
+	if e.verbose {
 		return os.Stdout
 	}
 	return io.Discard
-}
-
-func (e *env) messageOutput() io.Writer {
-	return messageOutput()
-}
-
-func (e *env) debugOutput() io.Writer {
-	return debugOutput()
 }
 
 // Default Text Marshalling options
