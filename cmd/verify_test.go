@@ -25,14 +25,13 @@ import (
 func TestVerifyNoncePass(t *testing.T) {
 	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
-	ExternalTPM = rwc
 
 	file1 := makeOutputFile(t, "attest")
 	file2 := makeOutputFile(t, "verify")
 	defer os.RemoveAll(file1)
 	defer os.RemoveAll(file2)
 
-	if err := execute(t, []string{"attest", "--nonce", "1234", "--key", "AK", "--tee-nonce", "", "--output", file1, "--tee-technology", ""}); err != nil {
+	if err := execute(t, []string{"attest", "--nonce", "1234", "--key", "AK", "--tee-nonce", "", "--output", file1, "--tee-technology", ""}, withTPM(rwc)); err != nil {
 		t.Error(err)
 	}
 
@@ -44,14 +43,13 @@ func TestVerifyNoncePass(t *testing.T) {
 func TestVerifyNonceFail(t *testing.T) {
 	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
-	ExternalTPM = rwc
 
 	file1 := makeOutputFile(t, "attest")
 	file2 := makeOutputFile(t, "verify")
 	defer os.RemoveAll(file1)
 	defer os.RemoveAll(file2)
 
-	if err := execute(t, []string{"attest", "--nonce", "1234", "--output", file1}); err != nil {
+	if err := execute(t, []string{"attest", "--nonce", "1234", "--output", file1}, withTPM(rwc)); err != nil {
 		t.Error(err)
 	}
 
@@ -63,7 +61,6 @@ func TestVerifyNonceFail(t *testing.T) {
 func TestVerifyWithGCEAK(t *testing.T) {
 	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
-	ExternalTPM = rwc
 
 	file1 := makeOutputFile(t, "attest")
 	file2 := makeOutputFile(t, "verify")
@@ -101,7 +98,7 @@ func TestVerifyWithGCEAK(t *testing.T) {
 			}
 			defer mock.Stop()
 
-			if err := execute(t, []string{"attest", "--nonce", op.nonce, "--key", "gceAK", "--algo", op.keyAlgo, "--output", file1, "--format", "binarypb", "--tee-technology", ""}); err != nil {
+			if err := execute(t, []string{"attest", "--nonce", op.nonce, "--key", "gceAK", "--algo", op.keyAlgo, "--output", file1, "--format", "binarypb", "--tee-technology", ""}, withTPM(rwc)); err != nil {
 				t.Error(err)
 			}
 
