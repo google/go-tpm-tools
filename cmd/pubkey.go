@@ -84,7 +84,6 @@ NVDATA instead (and --algo is ignored).`,
 }
 
 func init() {
-	RootCmd.AddCommand(pubkeyCmd)
 	addIndexFlag(pubkeyCmd)
 	addOutputFlag(pubkeyCmd)
 	addPublicKeyAlgoFlag(pubkeyCmd)
