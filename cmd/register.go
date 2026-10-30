@@ -46,7 +46,7 @@ var createChallengeCmd = &cobra.Command{
 	client.`,
 	Args: cobra.NoArgs,
 	RunE: func(_ *cobra.Command, _ []string) error {
-		ekpub, err := readTPMTPublic(dataInput())
+		ekpub, err := readTPMTPublic(dataInput(input))
 		if err != nil {
 			return err
 		}
@@ -130,12 +130,12 @@ func init() {
 	}
 	for _, cmd := range challengeCommands {
 		registerCmd.AddCommand(cmd)
-		addOutputFlag(cmd)
-		addFormatFlag(cmd)
-		addInputFlag(cmd)
+		addOutputFlag(cmd, &output)
+		addFormatFlag(cmd, &format)
+		addInputFlag(cmd, &input)
 	}
 
 	addSecretOutputFlag(createChallengeCmd)
 	addSecretInputFlag(verifyChallengeCmd)
-	addPublicKeyAlgoFlag(solveChallengeCmd)
+	addPublicKeyAlgoFlag(solveChallengeCmd, &keyAlgo)
 }

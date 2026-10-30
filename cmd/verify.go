@@ -214,14 +214,14 @@ func verifyGceTechnology(attestation *pb.Attestation, teeNonce []byte) error {
 
 func init() {
 	verifyCmd.AddCommand(debugCmd)
-	addNonceFlag(debugCmd)
-	addOutputFlag(debugCmd)
-	addInputFlag(debugCmd)
-	addFormatFlag(debugCmd)
-	addTeeNonceflag(debugCmd)
+	addNonceFlag(debugCmd, &nonce)
+	addOutputFlag(debugCmd, &output)
+	addInputFlag(debugCmd, &input)
+	addFormatFlag(debugCmd, &format)
+	addTeeNonceflag(debugCmd, &teeNonce)
 	addCertifiedAKBlobFlag(debugCmd)
 	debugCmd.AddCommand(verifySVSMCmd)
 	addEKPubFlag(verifySVSMCmd)
-	addTeeTechnology(verifySVSMCmd)
+	addTeeTechnology(verifySVSMCmd, &teeTechnology)
 	addOfflineFlag(verifySVSMCmd)
 }
