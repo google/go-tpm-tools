@@ -172,8 +172,7 @@ func TestFormatFlagPass(t *testing.T) {
 				t.Fatal(err)
 			}
 			debugArgs := []string{"verify", "debug", "--nonce", op.nonce, "--input", op.report, "--output", op.verifiedReport, "--format", op.format}
-			RootCmd.SetArgs(debugArgs)
-			if err := RootCmd.Execute(); err != nil {
+			if err := execute(t, debugArgs); err != nil {
 				t.Error(err)
 			}
 		})
@@ -188,7 +187,6 @@ func TestFormatFlagFail(t *testing.T) {
 	outputFile := makeOutputFile(t, "attestout")
 	defer os.RemoveAll(inputFile)
 	defer os.RemoveAll(outputFile)
-	t.Cleanup(func() { format = "binarypb" })
 	tests := []struct {
 		name           string
 		nonce          string
@@ -224,8 +222,7 @@ func TestFormatFlagFail(t *testing.T) {
 				t.Fatal(err)
 			}
 			debugArgs := []string{"verify", "debug", "--nonce", op.nonce, "--input", op.report, "--output", op.verifiedReport, "--format", op.formatDebug}
-			RootCmd.SetArgs(debugArgs)
-			if err := RootCmd.Execute(); err == nil {
+			if err := execute(t, debugArgs); err == nil {
 				t.Error("expected non-nil error")
 			}
 		})
@@ -472,8 +469,7 @@ func TestAttestCLI(t *testing.T) {
 	outputFile := makeOutputFile(t, "attestcli")
 	defer os.RemoveAll(outputFile)
 
-	RootCmd.SetArgs([]string{"attest", "--nonce", "1234", "--key", "AK", "--output", outputFile, "--format", "binarypb"})
-	if err := RootCmd.Execute(); err != nil {
+	if err := execute(t, []string{"attest", "--nonce", "1234", "--key", "AK", "--output", outputFile, "--format", "binarypb"}); err != nil {
 		t.Fatalf("attest CLI failed: %v", err)
 	}
 

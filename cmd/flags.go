@@ -14,18 +14,6 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-var (
-	output        string
-	input         string
-	nvIndex       uint32
-	nonce         []byte
-	teeNonce      []byte
-	teeTechnology string
-	keyAlgo       = tpm2.AlgRSA
-	pcrs          []int
-	format        string
-)
-
 // Add constants for other devices when required
 const (
 	// sevSNP is a constant denotes device name for teeTechnology
@@ -121,32 +109,33 @@ func hideHelp(cmd *cobra.Command) {
 	cmd.SetHelpCommand(&cobra.Command{Hidden: true})
 }
 
-// Lets this command specify an output file, for use with dataOutput().
-func addOutputFlag(cmd *cobra.Command) {
-	cmd.PersistentFlags().StringVar(&output, "output", "",
+// Lets this command specify an output file, for use with openForWrite().
+func addOutputFlag(cmd *cobra.Command, output *string) {
+	cmd.PersistentFlags().StringVar(output, "output", "",
 		"output file (defaults to stdout)")
 }
 
 // Lets this command specify an input file, for use with dataInput().
-func addInputFlag(cmd *cobra.Command) {
-	cmd.PersistentFlags().StringVar(&input, "input", "",
+func addInputFlag(cmd *cobra.Command, input *string) {
+	cmd.PersistentFlags().StringVar(input, "input", "",
 		"input file (defaults to stdin)")
 }
 
 // Lets this command specify an NVDATA index, for use with nvIndex.
-func addIndexFlag(cmd *cobra.Command) {
-	cmd.PersistentFlags().Uint32Var(&nvIndex, "index", 0,
+func addIndexFlag(cmd *cobra.Command, nvIndex *uint32) {
+	cmd.PersistentFlags().Uint32Var(nvIndex, "index", 0,
 		"NVDATA index, cannot be 0")
 }
 
 // Lets this command specify some number of PCR arguments, check if in range.
-func addPCRsFlag(cmd *cobra.Command) {
-	cmd.PersistentFlags().Var(&pcrsFlag{&pcrs}, "pcrs", "comma separated list of PCR numbers")
+func addPCRsFlag(cmd *cobra.Command, pcrs *[]int) {
+	cmd.PersistentFlags().Var(&pcrsFlag{pcrs}, "pcrs", "comma separated list of PCR numbers")
 }
 
 // Lets this command specify the public key algorithm.
-func addPublicKeyAlgoFlag(cmd *cobra.Command) {
-	f := algoFlag{&keyAlgo, []tpm2.Algorithm{tpm2.AlgRSA, tpm2.AlgECC}}
+func addPublicKeyAlgoFlag(cmd *cobra.Command, keyAlgo *tpm2.Algorithm) {
+	*keyAlgo = tpm2.AlgRSA
+	f := algoFlag{keyAlgo, []tpm2.Algorithm{tpm2.AlgRSA, tpm2.AlgECC}}
 	cmd.PersistentFlags().Var(&f, "algo", "public key algorithm: "+f.Allowed())
 }
 
@@ -155,21 +144,21 @@ func addHashAlgoFlag(cmd *cobra.Command, hashAlgo *tpm2.Algorithm) {
 	cmd.PersistentFlags().Var(&f, "hash-algo", "hash algorithm: "+f.Allowed())
 }
 
-func addNonceFlag(cmd *cobra.Command) {
-	cmd.PersistentFlags().BytesHexVar(&nonce, "nonce", []byte{}, "hex encoded nonce for vTPM attestation, cannot be empty")
+func addNonceFlag(cmd *cobra.Command, nonce *[]byte) {
+	cmd.PersistentFlags().BytesHexVar(nonce, "nonce", []byte{}, "hex encoded nonce for vTPM attestation, cannot be empty")
 }
 
 // Lets this command specify the type of output file (binary or txt)
-func addFormatFlag(cmd *cobra.Command) {
-	cmd.PersistentFlags().StringVar(&format, "format", "binarypb", "type of output file where attestation report stored <binarypb|textproto>")
+func addFormatFlag(cmd *cobra.Command, format *string) {
+	cmd.PersistentFlags().StringVar(format, "format", "binarypb", "type of output file where attestation report stored <binarypb|textproto>")
 }
 
-func addTeeNonceflag(cmd *cobra.Command) {
-	cmd.PersistentFlags().BytesHexVar(&teeNonce, "tee-nonce", []byte{}, "hex encoded teenonce for hardware attestation, can be empty")
+func addTeeNonceflag(cmd *cobra.Command, teeNonce *[]byte) {
+	cmd.PersistentFlags().BytesHexVar(teeNonce, "tee-nonce", []byte{}, "hex encoded teenonce for hardware attestation, can be empty")
 }
 
-func addTeeTechnology(cmd *cobra.Command) {
-	cmd.PersistentFlags().StringVar(&teeTechnology, "tee-technology", "", "indicates the type of TEE hardware. Should be either empty or one of sev-snp or tdx")
+func addTeeTechnology(cmd *cobra.Command, teeTechnology *string) {
+	cmd.PersistentFlags().StringVar(teeTechnology, "tee-technology", "", "indicates the type of TEE hardware. Should be either empty or one of sev-snp or tdx")
 }
 
 // alwaysError implements io.ReadWriter by always returning an error
@@ -183,20 +172,6 @@ func (ae alwaysError) Write([]byte) (int, error) {
 
 func (ae alwaysError) Read(_ []byte) (n int, err error) {
 	return 0, ae.error
-}
-
-// Handle to output data file. If there is an issue opening the file, the Writer
-// returned will return the error upon any call to Write()
-func dataOutput() io.Writer {
-	if output == "" {
-		return os.Stdout
-	}
-
-	file, err := os.Create(output)
-	if err != nil {
-		return alwaysError{err}
-	}
-	return file
 }
 
 func openForWrite(path string) io.Writer {
@@ -233,7 +208,7 @@ func writeProtoToOutput(message proto.Message, outFormat, outputPath string) err
 
 // Handle to input data file. If there is an issue opening the file, the Reader
 // returned will return the error upon any call to Read()
-func dataInput() io.Reader {
+func dataInput(input string) io.Reader {
 	if input == "" {
 		return os.Stdin
 	}
@@ -274,8 +249,8 @@ func readProtoFromPath(path string, message proto.Message) error {
 	return nil
 }
 
-// Load SRK based on tpm2.Algorithm set in the global flag vars.
-func getSRK(rwc io.ReadWriter) (*client.Key, error) {
+// Load SRK based on tpm2.Algorithm.
+func getSRK(rwc io.ReadWriter, keyAlgo tpm2.Algorithm) (*client.Key, error) {
 	switch keyAlgo {
 	case tpm2.AlgRSA:
 		return client.StorageRootKeyRSA(rwc)
@@ -286,8 +261,8 @@ func getSRK(rwc io.ReadWriter) (*client.Key, error) {
 	}
 }
 
-// Load EK based on tpm2.Algorithm set in the global flag vars.
-func getEK(rwc io.ReadWriter) (*client.Key, error) {
+// Load EK based on tpm2.Algorithm.
+func getEK(rwc io.ReadWriter, keyAlgo tpm2.Algorithm) (*client.Key, error) {
 	switch keyAlgo {
 	case tpm2.AlgRSA:
 		return client.EndorsementKeyRSA(rwc)

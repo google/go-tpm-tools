@@ -8,12 +8,13 @@ import (
 	"os"
 
 	"github.com/google/go-tpm/legacy/tpm2"
+	"github.com/spf13/cobra"
 )
 
 var tpmPath string
 
-func init() {
-	RootCmd.PersistentFlags().StringVar(&tpmPath, "tpm-path", "",
+func addTPMPathFlag(cmd *cobra.Command) {
+	cmd.PersistentFlags().StringVar(&tpmPath, "tpm-path", "",
 		"path to TPM device (defaults to /dev/tpmrm0 then /dev/tpm0)")
 }
 
