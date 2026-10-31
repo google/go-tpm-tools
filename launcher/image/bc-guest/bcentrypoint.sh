@@ -63,6 +63,18 @@ EOF
   # Allow incoming Fluent Bit logs from KPS VM
   iptables -A INPUT -p tcp -s 192.168.100.3 --dport 24224 -j ACCEPT
 
+  echo "Waiting for metadata server to become reachable..." > /dev/console
+  MAX_RETRIES=30
+  RETRY_COUNT=0
+  until curl -s -f -m 1 http://169.254.169.254/computeMetadata/v1/ -H "Metadata-Flavor: Google" >/dev/null 2>&1; do
+    ((++RETRY_COUNT))
+    if [ "$RETRY_COUNT" -ge "$MAX_RETRIES" ]; then
+      echo "ERROR: Timed out waiting for metadata server after ${MAX_RETRIES}s" > /dev/console
+      break
+    fi
+    sleep 1
+  done
+
   systemctl enable container-runner.service
   systemctl enable wsd.service
   systemctl start container-runner.service

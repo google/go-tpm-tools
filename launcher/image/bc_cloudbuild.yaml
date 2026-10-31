@@ -163,6 +163,7 @@ steps:
           "s|cros_efi|cros_efi systemd.mask=bpf-lsm-policy-loader.service|g"
           "s|cros_efi|cros_efi cgroup_favordynmods=1|g"
           "s|cros_efi|cros_efi cpuidle_haltpoll.force=1 nopvspin|g"
+          "s|cros_efi|cros_efi systemd.mask=systemd-networkd-wait-online.service|g"
         )
 
         DEBUG_COMMANDS=(
