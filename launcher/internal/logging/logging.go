@@ -3,6 +3,7 @@
 package logging
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -27,6 +28,8 @@ const (
 
 	payloadMessageKey      = "MESSAGE"
 	payloadInstanceNameKey = "_HOSTNAME"
+
+	gcpSeverityKey = "logging.googleapis.com/severity"
 )
 
 // Logger defines the interface for the CS image logger.
@@ -304,14 +307,19 @@ func (n *nullLogger) Warn(_ string, _ ...any)                     {}
 func (n *nullLogger) Error(_ string, _ ...any)                    {}
 func (n *nullLogger) Close()                                      {}
 
-// JSONSeverityWriter wraps an io.Writer (such as os.Stdout or os.Stderr) and formats log lines as structured JSON.
+// JSONSeverityWriter wraps an io.Writer (such as os.Stdout or os.Stderr) and
+// formats log lines as structured JSON.
 type JSONSeverityWriter struct {
-	Target   io.Writer
-	Severity string // "INFO" or "ERROR"
+	Target     io.Writer
+	Severity   string // "INFO" or "ERROR"
+	Structured bool   // pass through valid JSON object lines instead of wrapping in "message"
 }
 
-// Write formats p as JSON {"severity": "...", "message": "..."} and writes it to the underlying Target.
-func (w *JSONSeverityWriter) Write(p []byte) (n int, err error) {
+// Write formats each line in p as JSON and writes it to the underlying Target.
+// When Structured is true, valid JSON object lines are passed through directly
+// (with default Severity injected if absent); all other lines are wrapped in
+// {"severity": w.Severity, "message": line}.
+func (w *JSONSeverityWriter) Write(p []byte) (int, error) {
 	text := strings.TrimRight(string(p), "\r\n")
 	if text == "" {
 		return len(p), nil
@@ -322,27 +330,59 @@ func (w *JSONSeverityWriter) Write(p []byte) (n int, err error) {
 		if line == "" {
 			continue
 		}
-		record, marshalErr := json.Marshal(map[string]string{
-			"severity": w.Severity,
-			"message":  line,
-		})
-		if marshalErr != nil {
-			return 0, marshalErr
+		record, err := w.formatLine(line)
+		if err != nil {
+			return 0, err
 		}
 		record = append(record, '\n')
-		if _, err = w.Target.Write(record); err != nil {
+		if _, err := w.Target.Write(record); err != nil {
 			return 0, err
 		}
 	}
 	return len(p), nil
 }
 
-// NewJSONInfoWriter returns an io.Writer that formats lines as JSON with INFO severity to os.Stdout.
-func NewJSONInfoWriter() io.Writer {
-	return &JSONSeverityWriter{Target: os.Stdout, Severity: "INFO"}
+// NewJSONInfoWriter returns an io.Writer that formats lines as JSON with INFO
+// severity to os.Stdout.
+func NewJSONInfoWriter(structured bool) io.Writer {
+	return &JSONSeverityWriter{Target: os.Stdout, Severity: "INFO", Structured: structured}
 }
 
-// NewJSONErrorWriter returns an io.Writer that formats lines as JSON with ERROR severity to os.Stderr.
-func NewJSONErrorWriter() io.Writer {
-	return &JSONSeverityWriter{Target: os.Stderr, Severity: "ERROR"}
+// NewJSONErrorWriter returns an io.Writer that formats lines as JSON with ERROR
+// severity to os.Stderr.
+func NewJSONErrorWriter(structured bool) io.Writer {
+	return &JSONSeverityWriter{Target: os.Stderr, Severity: "ERROR", Structured: structured}
+}
+
+func (w *JSONSeverityWriter) formatLine(line string) ([]byte, error) {
+	if w.Structured {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "{") && strings.HasSuffix(trimmed, "}") {
+			var obj map[string]json.RawMessage
+			if err := json.Unmarshal([]byte(trimmed), &obj); err == nil && obj != nil { // if NO error
+				if !isNonEmptyJSONValue(obj["severity"]) {
+					if gcpSev, ok := obj[gcpSeverityKey]; ok && isNonEmptyJSONValue(gcpSev) {
+						obj["severity"] = gcpSev
+						delete(obj, gcpSeverityKey)
+					} else {
+						sev, err := json.Marshal(w.Severity)
+						if err != nil {
+							return nil, err
+						}
+						obj["severity"] = sev
+					}
+				}
+				return json.Marshal(obj)
+			}
+		}
+	}
+	return json.Marshal(map[string]string{
+		"severity": w.Severity,
+		"message":  line,
+	})
+}
+
+func isNonEmptyJSONValue(raw json.RawMessage) bool {
+	trimmed := bytes.TrimSpace(raw)
+	return len(trimmed) > 0 && !bytes.Equal(trimmed, []byte("null")) && !bytes.Equal(trimmed, []byte(`""`))
 }
