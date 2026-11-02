@@ -6,7 +6,6 @@ use (
 	.
 	./agent
 	./cmd
-	./keymanager
 	./launcher
 	./launcher/image/measure
 	./verifier

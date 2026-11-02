@@ -1,3 +1,0 @@
-[submodule "keymanager/boringssl"]
-	path = keymanager/boringssl
-	url = https://boringssl.googlesource.com/boringssl
