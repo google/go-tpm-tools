@@ -137,6 +137,20 @@ func createOCISpecOpts(image containerd.Image, launchSpec spec.LaunchSpec, envs 
 		}
 	}
 
+	// GB300 CC mode: Pass the Local SSDs through as block devices.
+	if launchSpec.Experiments.GB300CCMode {
+		devs, err := discoverLSSDDevs(defaultLSSDHostDir, defaultLSSDContainerDir, isBlockDevice)
+		if err != nil {
+			return nil, fmt.Errorf("failed to discover Local SSDs: %w", err)
+		}
+		logger.Info(fmt.Sprintf("GB300 CC mode: found %d Local SSD(s)", len(devs)))
+		for _, dev := range devs {
+			logger.Info(fmt.Sprintf("GB300 CC mode: passing Local SSD %s through as %s", dev.hostPath, dev.containerPath))
+			// Last argument is the device-cgroup access (r/w/m), not a file mode.
+			specOpts = append(specOpts, oci.WithDevices(dev.hostPath, dev.containerPath, "rw"))
+		}
+	}
+
 	return specOpts, nil
 }
 
