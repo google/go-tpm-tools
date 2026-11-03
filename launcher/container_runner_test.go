@@ -34,6 +34,7 @@ import (
 	"github.com/google/go-tpm-tools/agent/device"
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/internal/test"
+	"github.com/google/go-tpm-tools/launcher/internal/experiments"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/spec"
@@ -1504,6 +1505,32 @@ func TestRun_TokenFetchErrorPropagates(t *testing.T) {
 	err := runner.Run(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "failed to fetch and write OIDC token") {
 		t.Errorf("runner.Run() error = %v, want error containing %q", err, "failed to fetch and write OIDC token")
+	}
+}
+
+func TestRun_GB300CCModeSkipsTokenFetch(t *testing.T) {
+	attestCalls := 0
+	runner := &ContainerRunner{
+		container: &fakeContainer{},
+		attestAgent: &fakeAttestationAgent{
+			attestFunc: func(context.Context, agent.AttestAgentOpts) ([]byte, error) {
+				attestCalls++
+				return nil, errors.New("attestation token is not supported in GB300 CC mode")
+			},
+		},
+		launchSpec: spec.LaunchSpec{
+			DisableGcaRefresh: false,
+			LogRedirect:       spec.Nowhere,
+			Experiments:       experiments.Experiments{GB300CCMode: true},
+		},
+		logger: logging.SimpleLogger(),
+	}
+
+	if err := runner.Run(context.Background()); err != nil {
+		t.Errorf("runner.Run() error = %v, want nil", err)
+	}
+	if attestCalls != 0 {
+		t.Errorf("Attest() called %d times, want 0", attestCalls)
 	}
 }
 
