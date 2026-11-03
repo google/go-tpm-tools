@@ -58,11 +58,7 @@ func (a *NvidiaAttester) Attest(nonce []byte) (any, error) {
 	if a == nil {
 		return nil, fmt.Errorf("nil Nvidia attester")
 	}
-	pciDevicesDir := a.pciDevicesDir
-	if pciDevicesDir == "" {
-		pciDevicesDir = PciDevicesDir
-	}
-	gpuType, err := deviceinfo.GetGPUTypeInfo(pciDevicesDir)
+	gpuType, err := deviceinfo.GetGPUTypeInfo(a.pciDevicesDir)
 	if err != nil {
 		return nil, fmt.Errorf("detecting GPU type: %w", err)
 	}
@@ -175,7 +171,7 @@ func (a *NvidiaAttester) collectAttestationEvidence(provider client.GpuQuoteProv
 			Nonce: nvNonce[:],
 		}, nil
 	default:
-		return nil, fmt.Errorf("unsupported GPU attestation for %v with %d GPUs", gpuType, len(gpuInfos))
+		return nil, fmt.Errorf("unsupported GPU attestation for %v, GPU count: %d", gpuType, len(gpuInfos))
 	}
 }
 

@@ -4,8 +4,9 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"errors"
+	"fmt"
 	"os"
-	"path"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -623,19 +624,25 @@ func TestNewNvidiaAttester(t *testing.T) {
 	var _ Attester = got
 }
 
+const (
+	h100DeviceID       uint16 = 0x2330
+	rtxPro6000DeviceID uint16 = 0x2bb5
+	l4DeviceID         uint16 = 0x27b8
+)
+
 // writeFakePCIDevice creates a sysfs-like PCI devices directory with one
 // device that has the given vendor and device IDs, and returns its path.
-func writeFakePCIDevice(t *testing.T, vendor, device string) string {
+func writeFakePCIDevice(t *testing.T, vendorID, deviceID uint16) string {
 	t.Helper()
 	pciDir := t.TempDir()
-	devDir := path.Join(pciDir, "0000:00:04.0")
+	devDir := filepath.Join(pciDir, "0000:00:04.0")
 	if err := os.MkdirAll(devDir, 0755); err != nil {
 		t.Fatalf("failed to create fake PCI device: %v", err)
 	}
-	if err := os.WriteFile(path.Join(devDir, "vendor"), []byte(vendor+"\n"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(devDir, "vendor"), []byte(fmt.Sprintf("0x%04x\n", vendorID)), 0644); err != nil {
 		t.Fatalf("failed to write vendor file: %v", err)
 	}
-	if err := os.WriteFile(path.Join(devDir, "device"), []byte(device+"\n"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(devDir, "device"), []byte(fmt.Sprintf("0x%04x\n", deviceID)), 0644); err != nil {
 		t.Fatalf("failed to write device file: %v", err)
 	}
 	return pciDir
@@ -643,28 +650,28 @@ func writeFakePCIDevice(t *testing.T, vendor, device string) string {
 
 func TestAttestWithQuoteProvider(t *testing.T) {
 	testCases := []struct {
-		name   string
-		vendor string
-		device string
-		arch   nvattestpb.GpuArchitectureType
+		name     string
+		vendorID uint16
+		deviceID uint16
+		arch     nvattestpb.GpuArchitectureType
 	}{
 		{
-			name:   "H100 Hopper",
-			vendor: "0x10de",
-			device: "0x2330",
-			arch:   nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_HOPPER,
+			name:     "H100 Hopper",
+			vendorID: deviceinfo.NvidiaVendorID,
+			deviceID: h100DeviceID,
+			arch:     nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_HOPPER,
 		},
 		{
-			name:   "RTX PRO 6000 Blackwell",
-			vendor: "0x10de",
-			device: "0x2bb5",
-			arch:   nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_BLACKWELL,
+			name:     "RTX PRO 6000 Blackwell",
+			vendorID: deviceinfo.NvidiaVendorID,
+			deviceID: rtxPro6000DeviceID,
+			arch:     nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_BLACKWELL,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			pciDir := writeFakePCIDevice(t, tc.vendor, tc.device)
+			pciDir := writeFakePCIDevice(t, tc.vendorID, tc.deviceID)
 
 			fakeProvider := &fakeGpuQuoteProvider{
 				quote: &nvattestpb.GpuAttestationQuote{
@@ -703,6 +710,22 @@ func TestAttestWithQuoteProvider(t *testing.T) {
 				t.Errorf("quote.GetUuid() = %v, want %v", quote.GetUuid(), "gpu-provider-test-0")
 			}
 		})
+	}
+}
+
+func TestAttestUnsupportedGPU(t *testing.T) {
+	attester := &NvidiaAttester{
+		quoteProvider: &fakeGpuQuoteProvider{
+			quote: &nvattestpb.GpuAttestationQuote{
+				GpuInfos: []*nvattestpb.GpuInfo{
+					validDevInfo(nil),
+				},
+			},
+		},
+		pciDevicesDir: writeFakePCIDevice(t, deviceinfo.NvidiaVendorID, l4DeviceID),
+	}
+	if _, err := attester.Attest(nil); err == nil || !strings.Contains(err.Error(), "unsupported GPU attestation") {
+		t.Errorf("Attest() error = %v, want error containing %q", err, "unsupported GPU attestation")
 	}
 }
 
