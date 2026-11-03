@@ -116,6 +116,13 @@ main() {
     fi
   done
 
+  # Move virtio_net off eth0 so the primary idpf NIC can claim eth0 on rebind
+  if [[ "$(basename "$(readlink /sys/class/net/eth0/device/driver 2>/dev/null)")" == "virtio_net" ]]; then
+    ip link set eth0 down
+    ip link set eth0 name eth0tmp
+    ip link set eth0tmp up
+  fi
+
   configure_devices "NIC" "0 1" "${nic_pci_addrs[@]}"
   configure_devices "GPU" "0 0 0 0 1 1 1 1" "${gpu_pci_addrs[@]}"
 }
