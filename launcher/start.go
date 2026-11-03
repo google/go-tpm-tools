@@ -140,6 +140,14 @@ func StartLauncher(ctx context.Context, launchSpec spec.LaunchSpec, logger loggi
 			return fmt.Errorf("GB300 CC mode: GPUs are not ready: %w", err)
 		}
 	}
+	if launchSpec.Experiments.GB300CCMode {
+		// Wait until the udev Local SSD link count matches the metadata server, failing closed otherwise.
+		// Link validation happens later when passing the devices to the workload.
+		logger.Info("GB300 CC mode: waiting for the Local SSDs")
+		if err := waitForLSSDs(ctx, mdsClient, defaultLSSDHostDir, lssdWaitTimeout, lssdPollInterval, logger); err != nil {
+			return fmt.Errorf("GB300 CC mode: Local SSDs are not ready: %w", err)
+		}
+	}
 	if nvidiaAttester := gpu.NewNvidiaAttester(launchSpec.InstallGpuDriver); nvidiaAttester != nil {
 		deviceROTs = append(deviceROTs, nvidiaAttester)
 	}
@@ -295,4 +303,3 @@ func listenUnixSocket(socketPath string) (net.Listener, error) {
 	}
 	return nl, nil
 }
-

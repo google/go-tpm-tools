@@ -1,12 +1,17 @@
 package launcher
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-tpm-tools/launcher/internal/logging"
 )
 
 // fakeBlockDevChecker treats regular files as block devices for testing,
@@ -226,6 +231,280 @@ func TestIsBlockDevice(t *testing.T) {
 			}
 			if got {
 				t.Errorf("isBlockDevice(%q) = true, want false", tc.path)
+			}
+		})
+	}
+}
+
+type fakeMDS struct {
+	data string
+	err  error
+}
+
+func (f fakeMDS) GetWithContext(_ context.Context, suffix string) (string, error) {
+	if suffix != instanceDisksQuery {
+		return "", fmt.Errorf("unexpected metadata query %q, want %q", suffix, instanceDisksQuery)
+	}
+	return f.data, f.err
+}
+
+func TestAttachedLSSDCount(t *testing.T) {
+	tests := []struct {
+		name    string
+		mds     fakeMDS
+		want    int
+		wantErr string
+	}{
+		{
+			name: "gb300_disks",
+			// The data below resembles a real-world example.
+			mds: fakeMDS{data: `[
+				{"deviceName":"persistent-disk-0","index":0,"interface":"NVME","mode":"READ_WRITE","nvmeNamespaceIdentifier":3557249916533568973,"type":"HYPERDISK-BALANCED"},
+				{"deviceName":"local-ssd-0","index":1,"interface":"NVME","mode":"READ_WRITE","type":"LOCAL-SSD"},
+				{"deviceName":"local-ssd-1","index":2,"interface":"NVME","mode":"READ_WRITE","type":"LOCAL-SSD"},
+				{"deviceName":"local-ssd-2","index":3,"interface":"NVME","mode":"READ_WRITE","type":"LOCAL-SSD"},
+				{"deviceName":"local-ssd-3","index":4,"interface":"NVME","mode":"READ_WRITE","type":"LOCAL-SSD"}
+			]`},
+			want: 4,
+		},
+		{
+			name: "only_boot_disk",
+			mds:  fakeMDS{data: `[{"deviceName":"persistent-disk-0","interface":"NVME","type":"HYPERDISK-BALANCED"}]`},
+			want: 0,
+		},
+		{
+			name: "empty_list",
+			mds:  fakeMDS{data: `[]`},
+			want: 0,
+		},
+		{
+			name:    "mds_error",
+			mds:     fakeMDS{err: errors.New("mds unreachable")},
+			wantErr: "mds unreachable",
+		},
+		{
+			name:    "invalid_json",
+			mds:     fakeMDS{data: "not-json"},
+			wantErr: "failed to parse",
+		},
+		{
+			name:    "non_nvme_interface",
+			mds:     fakeMDS{data: `[{"deviceName":"local-ssd-0","interface":"SCSI","type":"LOCAL-SSD"}]`},
+			wantErr: "unsupported Local SSD interface",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := attachedLSSDCount(t.Context(), tc.mds)
+			if tc.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Errorf("attachedLSSDCount() error = %v, want error containing %q", err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("attachedLSSDCount() returned unexpected error: %v", err)
+			} else if got != tc.want {
+				t.Errorf("attachedLSSDCount() = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestPresentLSSDCount(t *testing.T) {
+	_, byIDDir := newFakeByID(t, devSymlinks{
+		{dev: "nvme0n1", link: "google-local-nvme-ssd-2"},   // Valid
+		{dev: "nvme0n1", link: "google-local-nvme-ssd-0"},   // Valid (duplicate device name)
+		{dev: "nvme10n1", link: "google-local-nvme-ssd-10"}, // Valid
+		{dev: "", link: "google-local-nvme-ssd-3"},          // Valid (dangling symlink)
+		{dev: "nvme0n1p1", link: "google-local-nvme-ssd-0-part1"},
+		{dev: "nvme2n1", link: "nvme-nvme_card_SN0"},
+	})
+	_, emptyDir := newFakeByID(t, nil)
+
+	tests := []struct {
+		name    string
+		hostDir string
+		want    int
+	}{
+		{
+			name:    "matching_links_only",
+			hostDir: byIDDir,
+			want:    4,
+		},
+		{
+			name:    "empty_dir",
+			hostDir: emptyDir,
+			want:    0,
+		},
+		{
+			name:    "missing_dir",
+			hostDir: filepath.Join(t.TempDir(), "does-not-exist"),
+			want:    0,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := presentLSSDCount(tc.hostDir)
+			if err != nil {
+				t.Errorf("presentLSSDCount(%q) returned unexpected error: %v", tc.hostDir, err)
+			} else if got != tc.want {
+				t.Errorf("presentLSSDCount(%q) = %d, want %d", tc.hostDir, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestWaitForLSSDs(t *testing.T) {
+	tests := []struct {
+		name    string
+		mds     fakeMDS
+		initial []string
+		delayed []string
+		timeout time.Duration
+	}{
+		{
+			name:    "no_lssds",
+			mds:     fakeMDS{data: `[{"deviceName":"persistent-disk-0","interface":"NVME","type":"HYPERDISK-BALANCED"}]`},
+			timeout: 0,
+		},
+		{
+			name: "already_present",
+			mds: fakeMDS{data: `[
+				{"deviceName":"local-ssd-0","interface":"NVME","type":"LOCAL-SSD"},
+				{"deviceName":"local-ssd-1","interface":"NVME","type":"LOCAL-SSD"},
+				{"deviceName":"local-ssd-2","interface":"NVME","type":"LOCAL-SSD"}
+			]`},
+			initial: []string{
+				"google-local-nvme-ssd-0",
+				"google-local-nvme-ssd-0-part1",
+				"google-local-nvme-ssd-2",
+				"google-local-nvme-ssd-10", // Non-matching ID still passes because only the count is checked.
+			},
+			timeout: time.Second,
+		},
+		{
+			name: "appears_after_polling",
+			// Leaving initial empty starts without by-id to cover early boot.
+			mds: fakeMDS{data: `[
+				{"deviceName":"local-ssd-0","interface":"NVME","type":"LOCAL-SSD"},
+				{"deviceName":"local-ssd-1","interface":"NVME","type":"LOCAL-SSD"}
+			]`},
+			delayed: []string{
+				"google-local-nvme-ssd-0",
+				"google-local-nvme-ssd-1",
+			},
+			timeout: 5 * time.Second,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			byIDDir := filepath.Join(t.TempDir(), "by-id")
+			if len(tc.initial) > 0 {
+				if err := os.MkdirAll(byIDDir, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				for _, link := range tc.initial {
+					if err := os.WriteFile(filepath.Join(byIDDir, link), nil, 0o600); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+
+			if len(tc.delayed) > 0 {
+				done := make(chan struct{})
+				defer func() { <-done }()
+				go func() {
+					defer close(done)
+					for _, link := range tc.delayed {
+						time.Sleep(10 * time.Millisecond)
+						if err := os.MkdirAll(byIDDir, 0o755); err != nil {
+							return
+						}
+						_ = os.WriteFile(filepath.Join(byIDDir, link), nil, 0o600)
+					}
+				}()
+			}
+
+			if err := waitForLSSDs(t.Context(), tc.mds, byIDDir, tc.timeout, 5*time.Millisecond, logging.NullLogger()); err != nil {
+				t.Errorf("waitForLSSDs() returned unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestWaitForLSSDs_Errors(t *testing.T) {
+	tests := []struct {
+		name           string
+		useCanceledCtx bool
+		mds            fakeMDS
+		links          devSymlinks
+		timeout        time.Duration
+		wantErr        string
+		wantErrIs      error
+	}{
+		{
+			name:    "mds_error",
+			mds:     fakeMDS{err: errors.New("mds unreachable")},
+			timeout: time.Second,
+			wantErr: "failed to count",
+		},
+		{
+			name:    "non_nvme_interface",
+			mds:     fakeMDS{data: `[{"deviceName":"local-ssd-0","interface":"SCSI","type":"LOCAL-SSD"}]`},
+			timeout: time.Second,
+			wantErr: "unsupported Local SSD interface",
+		},
+		{
+			name: "extra_link",
+			mds:  fakeMDS{data: `[{"deviceName":"local-ssd-0","interface":"NVME","type":"LOCAL-SSD"}]`},
+			links: devSymlinks{
+				{dev: "nvme0n1", link: "google-local-nvme-ssd-0"},
+				{dev: "nvme1n1", link: "google-local-nvme-ssd-1"},
+			},
+			timeout: time.Second,
+			wantErr: "unexpected Local SSD links",
+		},
+		{
+			name: "timeout",
+			mds: fakeMDS{data: `[
+				{"deviceName":"local-ssd-0","interface":"NVME","type":"LOCAL-SSD"},
+				{"deviceName":"local-ssd-1","interface":"NVME","type":"LOCAL-SSD"}
+			]`},
+			links:   devSymlinks{{dev: "nvme0n1", link: "google-local-nvme-ssd-0"}},
+			timeout: 20 * time.Millisecond,
+			wantErr: "not all Local SSD links appeared",
+		},
+		{
+			name:           "context_canceled",
+			useCanceledCtx: true,
+			mds:            fakeMDS{data: `[{"deviceName":"local-ssd-0","interface":"NVME","type":"LOCAL-SSD"}]`},
+			timeout:        5 * time.Second,
+			wantErrIs:      context.Canceled,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			if tc.useCanceledCtx {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithCancel(ctx)
+				cancel()
+			}
+			_, byIDDir := newFakeByID(t, tc.links)
+			err := waitForLSSDs(ctx, tc.mds, byIDDir, tc.timeout, 5*time.Millisecond, logging.NullLogger())
+			if tc.wantErrIs != nil {
+				if !errors.Is(err, tc.wantErrIs) {
+					t.Errorf("waitForLSSDs() error = %v, want %v", err, tc.wantErrIs)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Errorf("waitForLSSDs() error = %v, want error containing %q", err, tc.wantErr)
 			}
 		})
 	}
