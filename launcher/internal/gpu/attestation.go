@@ -24,9 +24,6 @@ const (
 	MPT
 )
 
-// Stub this func for testing purpose.
-var getGpuTypeInfo = deviceinfo.GetGPUTypeInfo
-
 // Attester defines the interface for GPU attestation.
 type Attester interface {
 	device.ROT
@@ -36,6 +33,8 @@ type Attester interface {
 // NvidiaAttester is responsible for collecting GPU attestation.
 type NvidiaAttester struct {
 	quoteProvider client.GpuQuoteProvider
+	// pciDevicesDir is the sysfs directory used to detect the GPU type.
+	pciDevicesDir string
 }
 
 // NewNvidiaAttester returns a new NvidiaAttester if installGpuDriver is true, otherwise nil.
@@ -45,6 +44,7 @@ func NewNvidiaAttester(installGpuDriver bool) *NvidiaAttester {
 	}
 	return &NvidiaAttester{
 		quoteProvider: &client.LinuxGpuQuoteProvider{},
+		pciDevicesDir: PciDevicesDir,
 	}
 }
 
@@ -58,11 +58,15 @@ func (a *NvidiaAttester) Attest(nonce []byte) (any, error) {
 	if a == nil {
 		return nil, fmt.Errorf("nil Nvidia attester")
 	}
-	provider := a.quoteProvider
-	if provider == nil {
-		provider = &client.LinuxGpuQuoteProvider{}
+	pciDevicesDir := a.pciDevicesDir
+	if pciDevicesDir == "" {
+		pciDevicesDir = PciDevicesDir
 	}
-	gpuAttestation, err := a.collectAttestationEvidence(provider, nonce)
+	gpuType, err := deviceinfo.GetGPUTypeInfo(pciDevicesDir)
+	if err != nil {
+		return nil, fmt.Errorf("detecting GPU type: %w", err)
+	}
+	gpuAttestation, err := a.collectAttestationEvidence(a.quoteProvider, gpuType, nonce)
 	if err != nil {
 		return nil, err
 	}
@@ -96,7 +100,7 @@ func (a *NvidiaAttester) EnableReadyState() error {
 
 // collectAttestationEvidence assumes CC GPU devices are in place w/ driver support
 // and will try to collect raw attestation evidence and convert it to known data models.
-func (a *NvidiaAttester) collectAttestationEvidence(provider client.GpuQuoteProvider, nonce []byte) (*attestationpb.NvidiaAttestationReport, error) {
+func (a *NvidiaAttester) collectAttestationEvidence(provider client.GpuQuoteProvider, gpuType deviceinfo.GPUType, nonce []byte) (*attestationpb.NvidiaAttestationReport, error) {
 	nvNonce := sha256.Sum256(nonce)
 	quote, err := provider.CollectGpuEvidence(nvNonce)
 	if err != nil {
@@ -151,7 +155,7 @@ func (a *NvidiaAttester) collectAttestationEvidence(provider client.GpuQuoteProv
 		gpuInfos = append(gpuInfos, gpuInfo)
 	}
 
-	switch determineAttestationType(gpuInfos) {
+	switch determineAttestationType(gpuType, gpuInfos) {
 	case SPT:
 		return &attestationpb.NvidiaAttestationReport{
 			CcFeature: &attestationpb.NvidiaAttestationReport_Spt{
@@ -171,15 +175,14 @@ func (a *NvidiaAttester) collectAttestationEvidence(provider client.GpuQuoteProv
 			Nonce: nvNonce[:],
 		}, nil
 	default:
-		return nil, fmt.Errorf("unsupported GPU attestation")
+		return nil, fmt.Errorf("unsupported GPU attestation for %v with %d GPUs", gpuType, len(gpuInfos))
 	}
 }
 
 // determineAttestationType auto-detects the GPU attestation type.
 // The current implementations "guess" the attestation type.
 // Further improvement should be made to parse GPU attestation report to get the actual attestation type.
-func determineAttestationType(gpuInfos []*attestationpb.GpuInfo) attestationType {
-	gpuType, _ := getGpuTypeInfo(PciDevicesDir)
+func determineAttestationType(gpuType deviceinfo.GPUType, gpuInfos []*attestationpb.GpuInfo) attestationType {
 	if gpuType != deviceinfo.H100 && gpuType != deviceinfo.B200 && gpuType != deviceinfo.RTX_PRO_6000 && gpuType != deviceinfo.GB300 {
 		return UNSUPPORTED
 	}
