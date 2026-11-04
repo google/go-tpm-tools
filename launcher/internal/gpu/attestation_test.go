@@ -29,15 +29,19 @@ func (f *fakeGpuQuoteProvider) CollectGpuEvidence(_ [32]byte) (*nvattestpb.GpuAt
 	return f.quote, nil
 }
 
-func validDevInfo(uuid, vbios, driver string, arch nvattestpb.GpuArchitectureType) *nvattestpb.GpuInfo {
-	return &nvattestpb.GpuInfo{
-		Uuid:                        uuid,
-		VbiosVersion:                vbios,
-		DriverVersion:               driver,
-		GpuArchitecture:             arch,
+func validDevInfo(overrides *nvattestpb.GpuInfo) *nvattestpb.GpuInfo {
+	info := &nvattestpb.GpuInfo{
+		Uuid:                        "gpu-0",
+		VbiosVersion:                "vbios-0",
+		DriverVersion:               NvDriverVer595_58_03,
+		GpuArchitecture:             nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_HOPPER,
 		AttestationReport:           []byte("fake-report-bytes"),
 		AttestationCertificateChain: []byte("fake-cert-chain-bytes"),
 	}
+	if overrides != nil {
+		proto.Merge(info, overrides)
+	}
+	return info
 }
 
 func TestCollectAttestationEvidence(t *testing.T) {
@@ -59,7 +63,7 @@ func TestCollectAttestationEvidence(t *testing.T) {
 			provider: &fakeGpuQuoteProvider{
 				quote: &nvattestpb.GpuAttestationQuote{
 					GpuInfos: []*nvattestpb.GpuInfo{
-						validDevInfo("gpu-h100-0", "vbios-h100", "550.54.14", nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_HOPPER),
+						validDevInfo(nil),
 					},
 				},
 			},
@@ -74,7 +78,9 @@ func TestCollectAttestationEvidence(t *testing.T) {
 			provider: &fakeGpuQuoteProvider{
 				quote: &nvattestpb.GpuAttestationQuote{
 					GpuInfos: []*nvattestpb.GpuInfo{
-						validDevInfo("gpu-rtx-0", "vbios-rtx", "550.54.14", nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_BLACKWELL),
+						validDevInfo(&nvattestpb.GpuInfo{
+							GpuArchitecture: nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_BLACKWELL,
+						}),
 					},
 				},
 			},
@@ -89,7 +95,9 @@ func TestCollectAttestationEvidence(t *testing.T) {
 			provider: &fakeGpuQuoteProvider{
 				quote: &nvattestpb.GpuAttestationQuote{
 					GpuInfos: []*nvattestpb.GpuInfo{
-						validDevInfo("gpu-b200-0", "vbios-b200", "550.54.14", nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_BLACKWELL),
+						validDevInfo(&nvattestpb.GpuInfo{
+							GpuArchitecture: nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_BLACKWELL,
+						}),
 					},
 				},
 			},
@@ -104,8 +112,16 @@ func TestCollectAttestationEvidence(t *testing.T) {
 			provider: &fakeGpuQuoteProvider{
 				quote: &nvattestpb.GpuAttestationQuote{
 					GpuInfos: []*nvattestpb.GpuInfo{
-						validDevInfo("gpu-b200-0", "vbios-b200-0", "550.54.14", nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_BLACKWELL),
-						validDevInfo("gpu-b200-1", "vbios-b200-1", "550.54.14", nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_BLACKWELL),
+						validDevInfo(&nvattestpb.GpuInfo{
+							Uuid:            "gpu-b200-0",
+							VbiosVersion:    "vbios-b200-0",
+							GpuArchitecture: nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_BLACKWELL,
+						}),
+						validDevInfo(&nvattestpb.GpuInfo{
+							Uuid:            "gpu-b200-1",
+							VbiosVersion:    "vbios-b200-1",
+							GpuArchitecture: nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_BLACKWELL,
+						}),
 					},
 				},
 			},
@@ -120,8 +136,8 @@ func TestCollectAttestationEvidence(t *testing.T) {
 			provider: &fakeGpuQuoteProvider{
 				quote: &nvattestpb.GpuAttestationQuote{
 					GpuInfos: []*nvattestpb.GpuInfo{
-						validDevInfo("gpu-0", "vbios-0", "550.54.14", nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_HOPPER),
-						validDevInfo("gpu-1", "vbios-1", "550.54.14", nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_HOPPER),
+						validDevInfo(nil),
+						validDevInfo(&nvattestpb.GpuInfo{Uuid: "gpu-1"}),
 					},
 				},
 			},
@@ -135,8 +151,13 @@ func TestCollectAttestationEvidence(t *testing.T) {
 			provider: &fakeGpuQuoteProvider{
 				quote: &nvattestpb.GpuAttestationQuote{
 					GpuInfos: []*nvattestpb.GpuInfo{
-						validDevInfo("gpu-0", "vbios-0", "550.54.14", nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_BLACKWELL),
-						validDevInfo("gpu-1", "vbios-1", "550.54.14", nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_BLACKWELL),
+						validDevInfo(&nvattestpb.GpuInfo{
+							GpuArchitecture: nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_BLACKWELL,
+						}),
+						validDevInfo(&nvattestpb.GpuInfo{
+							Uuid:            "gpu-1",
+							GpuArchitecture: nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_BLACKWELL,
+						}),
 					},
 				},
 			},
@@ -150,7 +171,7 @@ func TestCollectAttestationEvidence(t *testing.T) {
 			provider: &fakeGpuQuoteProvider{
 				quote: &nvattestpb.GpuAttestationQuote{
 					GpuInfos: []*nvattestpb.GpuInfo{
-						validDevInfo("gpu-0", "vbios-0", "550.54.14", nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_HOPPER),
+						validDevInfo(nil),
 					},
 				},
 			},
@@ -164,7 +185,7 @@ func TestCollectAttestationEvidence(t *testing.T) {
 			provider: &fakeGpuQuoteProvider{
 				quote: &nvattestpb.GpuAttestationQuote{
 					GpuInfos: []*nvattestpb.GpuInfo{
-						validDevInfo("gpu-0", "vbios-0", "550.54.14", nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_HOPPER),
+						validDevInfo(nil),
 					},
 				},
 			},
@@ -188,10 +209,22 @@ func TestCollectAttestationEvidence(t *testing.T) {
 			provider: &fakeGpuQuoteProvider{
 				quote: &nvattestpb.GpuAttestationQuote{
 					GpuInfos: []*nvattestpb.GpuInfo{
-						validDevInfo("gpu-gb300-0", "97.10.89.00.02", "620.06", nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_BLACKWELL),
-						validDevInfo("gpu-gb300-1", "97.10.89.00.02", "620.06", nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_BLACKWELL),
-						validDevInfo("gpu-gb300-2", "97.10.89.00.02", "620.06", nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_BLACKWELL),
-						validDevInfo("gpu-gb300-3", "97.10.89.00.02", "620.06", nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_BLACKWELL),
+						validDevInfo(&nvattestpb.GpuInfo{
+							Uuid:            "gpu-gb300-0",
+							GpuArchitecture: nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_BLACKWELL,
+						}),
+						validDevInfo(&nvattestpb.GpuInfo{
+							Uuid:            "gpu-gb300-1",
+							GpuArchitecture: nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_BLACKWELL,
+						}),
+						validDevInfo(&nvattestpb.GpuInfo{
+							Uuid:            "gpu-gb300-2",
+							GpuArchitecture: nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_BLACKWELL,
+						}),
+						validDevInfo(&nvattestpb.GpuInfo{
+							Uuid:            "gpu-gb300-3",
+							GpuArchitecture: nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_BLACKWELL,
+						}),
 					},
 				},
 			},
@@ -219,7 +252,14 @@ func TestCollectAttestationEvidence(t *testing.T) {
 			provider: &fakeGpuQuoteProvider{
 				quote: &nvattestpb.GpuAttestationQuote{
 					GpuInfos: []*nvattestpb.GpuInfo{
-						validDevInfo("", "vbios-0", "550.54.14", nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_HOPPER),
+						{
+							Uuid:                        "",
+							VbiosVersion:                "vbios-0",
+							DriverVersion:               NvDriverVer595_58_03,
+							GpuArchitecture:             nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_HOPPER,
+							AttestationReport:           []byte("fake-report-bytes"),
+							AttestationCertificateChain: []byte("fake-cert-chain-bytes"),
+						},
 					},
 				},
 			},
@@ -233,7 +273,14 @@ func TestCollectAttestationEvidence(t *testing.T) {
 			provider: &fakeGpuQuoteProvider{
 				quote: &nvattestpb.GpuAttestationQuote{
 					GpuInfos: []*nvattestpb.GpuInfo{
-						validDevInfo("gpu-test-0", "vbios-0", "", nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_HOPPER),
+						{
+							Uuid:                        "gpu-test-0",
+							VbiosVersion:                "vbios-0",
+							DriverVersion:               "",
+							GpuArchitecture:             nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_HOPPER,
+							AttestationReport:           []byte("fake-report-bytes"),
+							AttestationCertificateChain: []byte("fake-cert-chain-bytes"),
+						},
 					},
 				},
 			},
@@ -247,7 +294,14 @@ func TestCollectAttestationEvidence(t *testing.T) {
 			provider: &fakeGpuQuoteProvider{
 				quote: &nvattestpb.GpuAttestationQuote{
 					GpuInfos: []*nvattestpb.GpuInfo{
-						validDevInfo("gpu-test-0", "", "550.54.14", nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_HOPPER),
+						{
+							Uuid:                        "gpu-test-0",
+							VbiosVersion:                "",
+							DriverVersion:               NvDriverVer595_58_03,
+							GpuArchitecture:             nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_HOPPER,
+							AttestationReport:           []byte("fake-report-bytes"),
+							AttestationCertificateChain: []byte("fake-cert-chain-bytes"),
+						},
 					},
 				},
 			},
@@ -261,7 +315,14 @@ func TestCollectAttestationEvidence(t *testing.T) {
 			provider: &fakeGpuQuoteProvider{
 				quote: &nvattestpb.GpuAttestationQuote{
 					GpuInfos: []*nvattestpb.GpuInfo{
-						validDevInfo("gpu-test-0", "vbios-0", "550.54.14", nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_UNSPECIFIED),
+						{
+							Uuid:                        "gpu-test-0",
+							VbiosVersion:                "vbios-0",
+							DriverVersion:               NvDriverVer595_58_03,
+							GpuArchitecture:             nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_UNSPECIFIED,
+							AttestationReport:           []byte("fake-report-bytes"),
+							AttestationCertificateChain: []byte("fake-cert-chain-bytes"),
+						},
 					},
 				},
 			},
@@ -278,7 +339,7 @@ func TestCollectAttestationEvidence(t *testing.T) {
 						{
 							Uuid:                        "gpu-test-0",
 							VbiosVersion:                "vbios-0",
-							DriverVersion:               "550.54.14",
+							DriverVersion:               NvDriverVer595_58_03,
 							GpuArchitecture:             nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_HOPPER,
 							AttestationReport:           nil,
 							AttestationCertificateChain: []byte("fake-cert-chain"),
@@ -299,7 +360,7 @@ func TestCollectAttestationEvidence(t *testing.T) {
 						{
 							Uuid:                        "gpu-test-0",
 							VbiosVersion:                "vbios-0",
-							DriverVersion:               "550.54.14",
+							DriverVersion:               NvDriverVer595_58_03,
 							GpuArchitecture:             nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_HOPPER,
 							AttestationReport:           []byte("fake-report"),
 							AttestationCertificateChain: nil,
@@ -582,7 +643,7 @@ func TestAttestWithQuoteProvider(t *testing.T) {
 	fakeProvider := &fakeGpuQuoteProvider{
 		quote: &nvattestpb.GpuAttestationQuote{
 			GpuInfos: []*nvattestpb.GpuInfo{
-				validDevInfo("gpu-provider-test-0", "vbios-test", "550.54.14", nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_HOPPER),
+				validDevInfo(&nvattestpb.GpuInfo{Uuid: "gpu-provider-test-0"}),
 			},
 		},
 	}
