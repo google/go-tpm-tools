@@ -140,6 +140,11 @@ func StartLauncher(ctx context.Context, launchSpec spec.LaunchSpec, logger loggi
 			return fmt.Errorf("GB300 CC mode: GPUs are not ready: %w", err)
 		}
 	}
+	if nvidiaAttester := gpu.NewNvidiaAttester(launchSpec.InstallGpuDriver); nvidiaAttester != nil {
+		deviceROTs = append(deviceROTs, nvidiaAttester)
+	}
+	deviceROTManager := device.NewROTManager(deviceROTs)
+
 	if launchSpec.Experiments.GB300CCMode {
 		// Wait until the udev Local SSD link count matches the metadata server, failing closed otherwise.
 		// Link validation happens later when passing the devices to the workload.
@@ -148,10 +153,6 @@ func StartLauncher(ctx context.Context, launchSpec spec.LaunchSpec, logger loggi
 			return fmt.Errorf("GB300 CC mode: Local SSDs are not ready: %w", err)
 		}
 	}
-	if nvidiaAttester := gpu.NewNvidiaAttester(launchSpec.InstallGpuDriver); nvidiaAttester != nil {
-		deviceROTs = append(deviceROTs, nvidiaAttester)
-	}
-	deviceROTManager := device.NewROTManager(deviceROTs)
 
 	// Create AttestationAgent.
 	exps := agent.Experiments{
