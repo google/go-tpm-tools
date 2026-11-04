@@ -3,13 +3,11 @@ package gpu
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
-	"path"
 	"strings"
 
 	"cos.googlesource.com/cos/tools.git/src/cmd/cos_gpu_installer/deviceinfo"
@@ -35,25 +33,25 @@ type NvidiaSmiCmdOutput func() ([]byte, error)
 
 // DriverInstaller contains information about the GPU driver installer settings
 type DriverInstaller struct {
-	cdClient       *containerd.Client
-	launchSpec     spec.LaunchSpec
-	logger         logging.Logger
-	registryClient *http.Client
+	cdClient   *containerd.Client
+	launchSpec spec.LaunchSpec
+	logger     logging.Logger
+	httpClient *http.Client
 }
 
-// NewDriverInstaller returns a DriverInstaller that uses registryClient to pull the installer image.
-func NewDriverInstaller(cdClient *containerd.Client, launchSpec spec.LaunchSpec, logger logging.Logger, registryClient *http.Client) *DriverInstaller {
+// NewDriverInstaller returns a DriverInstaller that uses httpClient to pull the installer image and download the driver artifacts.
+func NewDriverInstaller(cdClient *containerd.Client, launchSpec spec.LaunchSpec, logger logging.Logger, httpClient *http.Client) *DriverInstaller {
 	return &DriverInstaller{
-		cdClient:       cdClient,
-		launchSpec:     launchSpec,
-		logger:         logger,
-		registryClient: registryClient,
+		cdClient:   cdClient,
+		launchSpec: launchSpec,
+		logger:     logger,
+		httpClient: httpClient,
 	}
 }
 
 // installerPullOpts passes no token because the registry allows anonymous pulls of the installer image.
-func installerPullOpts(registryClient *http.Client) []containerd.RemoteOpt {
-	return []containerd.RemoteOpt{containerd.WithPullUnpack, containerd.WithResolver(registryauth.Resolver("", registryClient))}
+func installerPullOpts(httpClient *http.Client) []containerd.RemoteOpt {
+	return []containerd.RemoteOpt{containerd.WithPullUnpack, containerd.WithResolver(registryauth.Resolver("", httpClient))}
 }
 
 // InstallGPUDrivers installs the GPU driver on host machine using the cos-gpu-installer container.
@@ -75,9 +73,20 @@ func (di *DriverInstaller) InstallGPUDrivers(ctx context.Context) error {
 		return err
 	}
 
+	if PrebuiltModulesDigest == "" {
+		return errors.New("PrebuiltModulesDigest is not set; build the launcher with -ldflags -X")
+	}
+	buildID, err := readBuildID(osReleasePath)
+	if err != nil {
+		return err
+	}
+	if err := stageArtifacts(ctx, di.httpClient, artifactsHostDir, installerArtifacts(artifactsBaseURL, buildID, PrebuiltModulesDigest)); err != nil {
+		return fmt.Errorf("failed to stage GPU driver artifacts: %w", err)
+	}
+
 	ctx = namespaces.WithNamespace(ctx, namespaces.Default)
 	di.logger.Info(fmt.Sprintf("COS GPU installer version : %s", InstallerImageRef))
-	image, err := di.cdClient.Pull(ctx, InstallerImageRef, installerPullOpts(di.registryClient)...)
+	image, err := di.cdClient.Pull(ctx, InstallerImageRef, installerPullOpts(di.httpClient)...)
 	if err != nil {
 		return fmt.Errorf("failed to pull installer image: %v", err)
 	}
@@ -104,16 +113,7 @@ func (di *DriverInstaller) InstallGPUDrivers(ctx context.Context) error {
 		di.logger.Error(fmt.Sprintf("cannot get hostname: %v", err))
 	}
 
-	processArgs := []string{
-		"/cos-gpu-installer",
-		"install",
-		fmt.Sprintf("-version=%s", NvDriverVer595_58_03),
-		fmt.Sprintf("-host-dir=%s", InstallationHostDir),
-		"--no-verify",
-	}
-	if _, err := os.Stat("/usr/share/oem/gpu_driver"); err == nil {
-		processArgs = append(processArgs, fmt.Sprintf("-local-artifacts-dir=%s", "/root/usr/share/oem/gpu_driver/"))
-	}
+	processArgs := installerArgs()
 
 	container, err := di.cdClient.NewContainer(
 		ctx,
@@ -162,10 +162,6 @@ func (di *DriverInstaller) InstallGPUDrivers(ctx context.Context) error {
 		return fmt.Errorf("GPU driver installation task ended with non-zero status code %d", code)
 	}
 
-	if err = verifyDriverDigest(path.Join(InstallationHostDir, NvDriverVer595_58_03Runfile), NvDriverVer595_58_03Digest); err != nil {
-		return fmt.Errorf("failed to verify GPU driver digest: %v", err)
-	}
-
 	cmds := [][]string{
 		{"/sbin/modprobe", "drm_kms_helper"},
 		{"/sbin/insmod", "/var/lib/nvidia/drivers/nvidia.ko"},
@@ -205,19 +201,6 @@ func verifyInstallerImageDigest(image containerd.Image, referenceDigest string) 
 	installerDigest := image.Target().Digest.String()
 	if installerDigest != referenceDigest {
 		return fmt.Errorf("cos_gpu_installer image digest verification failed - expected : %s, actual : %s", referenceDigest, installerDigest)
-	}
-	return nil
-}
-
-func verifyDriverDigest(driverFilePath, referenceDigest string) error {
-	contentBytes, err := os.ReadFile(driverFilePath)
-	if err != nil {
-		return fmt.Errorf("failed to read the file %s, got error %v", driverFilePath, err)
-	}
-	checksum := sha256.Sum256(contentBytes)
-	checksumHex := hex.EncodeToString(checksum[:])
-	if checksumHex != referenceDigest {
-		return fmt.Errorf("GPU driver digest verification failed - expected : %s, got : %s", referenceDigest, checksumHex)
 	}
 	return nil
 }
