@@ -1,6 +1,6 @@
 module github.com/google/go-tpm-tools/launcher
 
-go 1.26.6
+go 1.26.8
 
 toolchain go1.26.10
 
@@ -13,10 +13,10 @@ require (
 	github.com/GoogleCloudPlatform/key-protection-module v0.0.0-20260930181234-48d5ea8e3558
 	github.com/GoogleCloudPlatform/key-protection-module/keymanager/attestation_service v0.0.0-20260930181234-48d5ea8e3558
 	github.com/cenkalti/backoff/v4 v4.3.0
-	github.com/containerd/containerd v1.7.23
-	github.com/containerd/containerd/v2 v2.3.2
+	github.com/containerd/containerd v1.7.36
+	github.com/containerd/containerd/v2 v2.3.7
 	github.com/containerd/go-cni v1.1.13
-	github.com/containerd/platforms v1.0.0-rc.4
+	github.com/containerd/platforms v1.0.0-rc.5
 	github.com/containernetworking/cni v1.3.0
 	github.com/coreos/go-systemd/v22 v22.7.0
 	github.com/golang-jwt/jwt/v4 v4.5.2
@@ -31,10 +31,10 @@ require (
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/opencontainers/runtime-spec v1.3.0
 	golang.org/x/oauth2 v0.36.0
-	golang.org/x/sys v0.46.0
+	golang.org/x/sys v0.48.0
 	google.golang.org/api v0.283.0
 	google.golang.org/genproto/googleapis/api v0.0.0-20260526163538-3dc84a4a5aaa
-	google.golang.org/grpc v1.83.0
+	google.golang.org/grpc v1.83.2
 	google.golang.org/protobuf v1.36.12
 )
 
@@ -84,7 +84,7 @@ require (
 	github.com/moby/sys/mountinfo v0.7.2 // indirect
 	github.com/moby/sys/sequential v0.6.0 // indirect
 	github.com/moby/sys/signal v0.7.1 // indirect
-	github.com/moby/sys/user v0.4.0 // indirect
+	github.com/moby/sys/user v0.4.1 // indirect
 	github.com/moby/sys/userns v0.1.0 // indirect
 	github.com/opencontainers/selinux v1.13.1 // indirect
 	github.com/petermattis/goid v0.0.0-20240813172612-4fcff4a6cae7 // indirect
@@ -99,10 +99,10 @@ require (
 	go.opentelemetry.io/otel/metric v1.44.0 // indirect
 	go.opentelemetry.io/otel/trace v1.44.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.org/x/crypto v0.53.0 // indirect
-	golang.org/x/net v0.55.0 // indirect
-	golang.org/x/sync v0.21.0 // indirect
-	golang.org/x/text v0.38.0 // indirect
+	golang.org/x/crypto v0.57.0 // indirect
+	golang.org/x/net v0.60.0 // indirect
+	golang.org/x/sync v0.23.0 // indirect
+	golang.org/x/text v0.42.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 	google.golang.org/genproto v0.0.0-20260319201613-d00831a3d3e7 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect
@@ -114,7 +114,8 @@ replace (
 	github.com/google/go-tpm-tools/verifier v0.4.4 => ../verifier
 )
 
-// cos-tools upgrades containerd/v2 to v2.3.2 which requires runtime-spec v1.3.0,
-// but containerd v1.7.23 (used by launcher) is incompatible with runtime-spec v1.3.0
-// due to LinuxPids.Limit changing from int64 to *int64.
+// containerd/v2 (required by cos-tools and launcher/spec) requires runtime-spec v1.3.0,
+// but containerd v1.7.x (used by launcher) is incompatible with runtime-spec v1.3.0
+// due to LinuxPids.Limit changing from int64 to *int64. Remove this once the launcher
+// uses the containerd v2 client.
 replace github.com/opencontainers/runtime-spec => github.com/opencontainers/runtime-spec v1.2.0
