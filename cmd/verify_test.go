@@ -25,20 +25,17 @@ import (
 func TestVerifyNoncePass(t *testing.T) {
 	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
-	ExternalTPM = rwc
 
 	file1 := makeOutputFile(t, "attest")
 	file2 := makeOutputFile(t, "verify")
 	defer os.RemoveAll(file1)
 	defer os.RemoveAll(file2)
 
-	RootCmd.SetArgs([]string{"attest", "--nonce", "1234", "--key", "AK", "--tee-nonce", "", "--output", file1, "--tee-technology", ""})
-	if err := RootCmd.Execute(); err != nil {
+	if err := execute(t, []string{"attest", "--nonce", "1234", "--key", "AK", "--tee-nonce", "", "--output", file1, "--tee-technology", ""}, withTPM(rwc)); err != nil {
 		t.Error(err)
 	}
 
-	RootCmd.SetArgs([]string{"verify", "debug", "--nonce", "1234", "--input", file1, "--output", file2})
-	if err := RootCmd.Execute(); err != nil {
+	if err := execute(t, []string{"verify", "debug", "--nonce", "1234", "--input", file1, "--output", file2}); err != nil {
 		t.Error(err)
 	}
 }
@@ -46,20 +43,17 @@ func TestVerifyNoncePass(t *testing.T) {
 func TestVerifyNonceFail(t *testing.T) {
 	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
-	ExternalTPM = rwc
 
 	file1 := makeOutputFile(t, "attest")
 	file2 := makeOutputFile(t, "verify")
 	defer os.RemoveAll(file1)
 	defer os.RemoveAll(file2)
 
-	RootCmd.SetArgs([]string{"attest", "--nonce", "1234", "--output", file1})
-	if err := RootCmd.Execute(); err != nil {
+	if err := execute(t, []string{"attest", "--nonce", "1234", "--output", file1}, withTPM(rwc)); err != nil {
 		t.Error(err)
 	}
 
-	RootCmd.SetArgs([]string{"verify", "debug", "--nonce", "4321", "--input", file1, "--output", file2})
-	if err := RootCmd.Execute(); err == nil {
+	if err := execute(t, []string{"verify", "debug", "--nonce", "4321", "--input", file1, "--output", file2}); err == nil {
 		t.Error("expected non-nil error")
 	}
 }
@@ -67,7 +61,6 @@ func TestVerifyNonceFail(t *testing.T) {
 func TestVerifyWithGCEAK(t *testing.T) {
 	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
-	ExternalTPM = rwc
 
 	file1 := makeOutputFile(t, "attest")
 	file2 := makeOutputFile(t, "verify")
@@ -105,13 +98,11 @@ func TestVerifyWithGCEAK(t *testing.T) {
 			}
 			defer mock.Stop()
 
-			RootCmd.SetArgs([]string{"attest", "--nonce", op.nonce, "--key", "gceAK", "--algo", op.keyAlgo, "--output", file1, "--format", "binarypb", "--tee-technology", ""})
-			if err := RootCmd.Execute(); err != nil {
+			if err := execute(t, []string{"attest", "--nonce", op.nonce, "--key", "gceAK", "--algo", op.keyAlgo, "--output", file1, "--format", "binarypb", "--tee-technology", ""}, withTPM(rwc)); err != nil {
 				t.Error(err)
 			}
 
-			RootCmd.SetArgs([]string{"verify", "debug", "--nonce", op.nonce, "--input", file1, "--output", file2})
-			if err := RootCmd.Execute(); err != nil {
+			if err := execute(t, []string{"verify", "debug", "--nonce", op.nonce, "--input", file1, "--output", file2}); err != nil {
 				t.Error(err)
 			}
 		})
@@ -199,8 +190,7 @@ func TestTdxAttestation(t *testing.T) {
 
 	for _, op := range tests {
 		t.Run(op.name, func(t *testing.T) {
-			RootCmd.SetArgs([]string{"verify", "debug", "--nonce", hexTpmNonce, "--input", file1.Name(), "--output", file2, "--tee-nonce", op.tdxNonce, "--format", "textproto"})
-			if err := RootCmd.Execute(); (err == nil && op.wantErr != "") ||
+			if err := execute(t, []string{"verify", "debug", "--nonce", hexTpmNonce, "--input", file1.Name(), "--output", file2, "--tee-nonce", op.tdxNonce, "--format", "textproto"}); (err == nil && op.wantErr != "") ||
 				(err != nil && !strings.Contains(err.Error(), op.wantErr)) {
 				t.Errorf("Expected error: %v, got: %v", op.wantErr, err)
 			}
@@ -240,16 +230,15 @@ func createAttestationWithFakeTdx(tpmNonce []byte, teeNonce []byte, tb *testing.
 
 func parseVerifyDebugArgs(args ...string) (verifyDebugConfig, error) {
 	cmd := &cobra.Command{}
-	flags := cmd.PersistentFlags()
-	flags.BytesHex("nonce", []byte{}, "")
-	flags.BytesHex("tee-nonce", []byte{}, "")
-	flags.String("format", "binarypb", "")
-	flags.String("input", "", "")
-	flags.String("output", "", "")
+	var cfg verifyDebugConfig
+	addVerifyDebugFlags(cmd, &cfg)
 	if err := cmd.ParseFlags(args); err != nil {
 		return verifyDebugConfig{}, err
 	}
-	return parseVerifyDebugFlags(cmd)
+	if err := cfg.validate(); err != nil {
+		return verifyDebugConfig{}, err
+	}
+	return cfg, nil
 }
 
 func TestParseVerifyDebugFlagsDefaults(t *testing.T) {

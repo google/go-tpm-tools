@@ -8,17 +8,16 @@ import (
 	"os"
 
 	"github.com/google/go-tpm/legacy/tpm2"
+	"github.com/spf13/cobra"
 )
 
-var tpmPath string
-
-func init() {
-	RootCmd.PersistentFlags().StringVar(&tpmPath, "tpm-path", "",
+func addTPMPathFlag(cmd *cobra.Command, tpmPath *string) {
+	cmd.PersistentFlags().StringVar(tpmPath, "tpm-path", "",
 		"path to TPM device (defaults to /dev/tpmrm0 then /dev/tpm0)")
 }
 
 // On Linux, we have to pass in the TPM path though a flag
-func openImpl() (io.ReadWriteCloser, error) {
+func openImpl(tpmPath string) (io.ReadWriteCloser, error) {
 	if tpmPath != "" {
 		return tpm2.OpenTPM(tpmPath)
 	}

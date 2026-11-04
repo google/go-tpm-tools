@@ -65,138 +65,83 @@ type tokenOptions struct {
 	Debug            io.Writer
 }
 
-// addTokenFlags registers the token flags on cmd.
-// Callers read the flag values with parseTokenFlags.
-func addTokenFlags(cmd *cobra.Command) {
-	flags := cmd.PersistentFlags()
-	flags.String("output", "", "output file (defaults to stdout)")
-	keyAlgo := tpm2.AlgRSA
-	algo := algoFlag{
-		value:   &keyAlgo,
-		allowed: []tpm2.Algorithm{tpm2.AlgRSA, tpm2.AlgECC},
-	}
-	flags.Var(&algo, "algo", "public key algorithm: "+algo.Allowed())
-	flags.String("event-log", "/sys/kernel/security/tpm0/binary_bios_measurements", "specifies the event log file path.")
-	flags.String("tee-technology", "", "indicates the type of TEE hardware. Should be either empty or one of sev-snp or tdx")
-	cmd.Flags().String("verifier-endpoint", "https://confidentialcomputing.googleapis.com",
+type tokenFlags struct {
+	opts         tokenOptions
+	eventLogPath string
+}
+
+func addTokenFlags(cmd *cobra.Command, f *tokenFlags) {
+	addOutputFlag(cmd, &f.opts.OutputPath)
+	addPublicKeyAlgoFlag(cmd, &f.opts.KeyAlgo)
+	cmd.PersistentFlags().StringVar(&f.eventLogPath, "event-log", "/sys/kernel/security/tpm0/binary_bios_measurements", "specifies the event log file path.")
+	addTeeTechnology(cmd, &f.opts.TEETechnology)
+	cmd.Flags().StringVar(&f.opts.VerifierEndpoint, "verifier-endpoint", "https://confidentialcomputing.googleapis.com",
 		"the attestation verifier endpoint used to retrieve an attestation claims token")
-	cmd.Flags().Bool("cloud-log", false,
+	cmd.Flags().BoolVar(&f.opts.CloudLog, "cloud-log", false,
 		"logs the attestation and token to Cloud Logging for auditing purposes. Requires the audience flag.")
-	cmd.Flags().String("audience", "",
+	cmd.Flags().StringVar(&f.opts.Audience, "audience", "",
 		"the audience field in the claims token. Cannot be sts.googleapis.com.")
-	cmd.Flags().StringArray("custom-nonce", nil,
+	cmd.Flags().StringArrayVar(&f.opts.CustomNonces, "custom-nonce", nil,
 		"the custom nonce field in the claims token. use this flag multiple times to add multiple custom nonces.")
 }
 
-func parseTokenFlags(cmd *cobra.Command) (tokenOptions, error) {
-	flags := cmd.Flags()
-	opts := tokenOptions{}
-
-	var err error
-	if flags.Changed("verifier-endpoint") {
-		opts.VerifierEndpoint, err = flags.GetString("verifier-endpoint")
-		if err != nil {
-			return tokenOptions{}, err
-		}
-	}
-	if flags.Changed("audience") {
-		opts.Audience, err = flags.GetString("audience")
-		if err != nil {
-			return tokenOptions{}, err
-		}
-	}
-	if flags.Changed("custom-nonce") {
-		opts.CustomNonces, err = flags.GetStringArray("custom-nonce")
-		if err != nil {
-			return tokenOptions{}, err
-		}
-	}
-	if flags.Changed("cloud-log") {
-		opts.CloudLog, err = flags.GetBool("cloud-log")
-		if err != nil {
-			return tokenOptions{}, err
-		}
-	}
-	if flags.Changed("tee-technology") {
-		opts.TEETechnology, err = flags.GetString("tee-technology")
-		if err != nil {
-			return tokenOptions{}, err
-		}
-	}
-	if flags.Changed("output") {
-		opts.OutputPath, err = flags.GetString("output")
-		if err != nil {
-			return tokenOptions{}, err
-		}
-	}
-
-	if flags.Changed("algo") {
-		if f := flags.Lookup("algo"); f != nil && f.Value.String() != "" {
-			switch val := f.Value.String(); val {
-			case "rsa":
-				opts.KeyAlgo = tpm2.AlgRSA
-			case "ecc":
-				opts.KeyAlgo = tpm2.AlgECC
-			default:
-				return tokenOptions{}, fmt.Errorf("unsupported key algorithm: %q", val)
-			}
-		}
-	} else {
-		opts.KeyAlgo = tpm2.AlgRSA
-	}
-
-	if flags.Changed("event-log") {
-		eventLogPath, err := flags.GetString("event-log")
-		if err != nil {
-			return tokenOptions{}, err
-		}
-		data, err := os.ReadFile(eventLogPath)
+func (f *tokenFlags) options(readEventLog bool) (tokenOptions, error) {
+	opts := f.opts
+	if readEventLog {
+		data, err := os.ReadFile(f.eventLogPath)
 		if err != nil {
 			return tokenOptions{}, fmt.Errorf("reading event log: %w", err)
 		}
 		opts.EventLog = data
 	}
-
 	return opts, nil
 }
 
 // If hardware technology needs a variable length teenonce then please modify the flags description
-var tokenCmd = &cobra.Command{
-	Use:   "token",
-	Short: "Attest and fetch an OIDC token from Google Attestation Verification Service.",
-	Long: `Gather attestation report and send it to Google Attestation Verification Service for an OIDC token.
+func newTokenCmd(e *env) *cobra.Command {
+	var flags tokenFlags
+	cmd := &cobra.Command{
+		Use:   "token",
+		Short: "Attest and fetch an OIDC token from Google Attestation Verification Service.",
+		Long: `Gather attestation report and send it to Google Attestation Verification Service for an OIDC token.
 The OIDC token includes claims regarding the GCE VM, which is verified by Attestation Verification Service. Note that Confidential Computing API needs to be enabled for your account to access Google Attestation Verification Service https://console.cloud.google.com/apis/api/confidentialcomputing.googleapis.com.
 --algo flag overrides the public key algorithm for the GCE TPM attestation key. If not provided then by default rsa is used.
 `,
-	Args: cobra.NoArgs,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		_ = args
-		opts, err := parseTokenFlags(cmd)
-		if err != nil {
-			return err
-		}
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			_ = args
+			opts, err := flags.options(cmd.Flags().Changed("event-log"))
+			if err != nil {
+				return err
+			}
 
-		rwc, err := openTpm()
-		if err != nil {
-			return err
-		}
-		defer rwc.Close()
+			rwc, err := e.openTpm()
+			if err != nil {
+				return err
+			}
+			defer rwc.Close()
 
-		opts.Debug = debugOutput()
-		token, err := runToken(cmd.Context(), rwc, opts)
-		if err != nil {
-			return err
-		}
+			opts.Debug = e.debugOutput()
+			opts.HTTPClient = e.httpClient
+			token, err := runToken(cmd.Context(), rwc, opts)
+			if err != nil {
+				return err
+			}
 
-		if opts.OutputPath == "" {
-			fmt.Fprintf(messageOutput(), "%s\n", token)
+			if opts.OutputPath == "" {
+				fmt.Fprintf(e.messageOutput(), "%s\n", token)
+				return nil
+			}
+			if err := os.WriteFile(opts.OutputPath, token, 0644); err != nil {
+				return fmt.Errorf("failed to write token: %w", err)
+			}
 			return nil
-		}
-		if err := os.WriteFile(opts.OutputPath, token, 0644); err != nil {
-			return fmt.Errorf("failed to write token: %w", err)
-		}
-		return nil
-	},
+		},
+	}
+	addTokenFlags(cmd, &flags)
+	// TODO: Add TEE hardware OIDC token generation
+	// addTeeNonceflag(cmd)
+	return cmd
 }
 
 // runToken retrieves an OIDC claims token from the verification service using the provided TPM.
@@ -392,11 +337,4 @@ func runToken(ctx context.Context, rwc io.ReadWriter, opts tokenOptions) ([]byte
 
 	fmt.Fprintf(debug, "%s\nNote: these Claims are for debugging purpose and not verified\n", claimsString)
 	return token, nil
-}
-
-func init() {
-	RootCmd.AddCommand(tokenCmd)
-	addTokenFlags(tokenCmd)
-	// TODO: Add TEE hardware OIDC token generation
-	// addTeeNonceflag(tokenCmd)
 }
