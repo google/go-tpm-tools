@@ -11,10 +11,8 @@ import (
 func TestFlushNothing(t *testing.T) {
 	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
-	ExternalTPM = rwc
 
-	RootCmd.SetArgs([]string{"flush", "all", "--quiet"})
-	if err := RootCmd.Execute(); err != nil {
+	if err := execute(t, []string{"flush", "all", "--quiet"}, withTPM(rwc)); err != nil {
 		t.Error(err)
 	}
 }
@@ -22,9 +20,6 @@ func TestFlushNothing(t *testing.T) {
 func TestFlush(t *testing.T) {
 	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
-	ExternalTPM = rwc
-
-	RootCmd.SetArgs([]string{"flush", "transient", "--quiet"})
 
 	// Loads then flushes 1, 2, 3 transient handles.
 	for numHandles := 1; numHandles <= 3; numHandles++ {
@@ -32,7 +27,7 @@ func TestFlush(t *testing.T) {
 			test.LoadExternalKey(t, rwc)
 		}
 
-		if err := RootCmd.Execute(); err != nil {
+		if err := execute(t, []string{"flush", "transient", "--quiet"}, withTPM(rwc)); err != nil {
 			t.Error(err)
 		}
 

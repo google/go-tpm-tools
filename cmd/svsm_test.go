@@ -378,8 +378,7 @@ func TestAttestSVSMFlags(t *testing.T) {
 				"--nonce", "1234",
 				"--tee-nonce", "",
 			}
-			RootCmd.SetArgs(args)
-			err := RootCmd.Execute()
+			err := execute(t, args)
 
 			if err == nil {
 				t.Fatal("expected error, got nil")
@@ -970,21 +969,15 @@ func TestVerifySVSMFlags(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Cleanup(func() {
-				offline = false
-			})
-			RootCmd.SetArgs([]string{
+			err := execute(t, []string{
 				"verify", "debug", "svsm",
 				"--tee-technology", "sev-snp",
 				"--tee-nonce", strings.Repeat("00", sabi.ReportDataSize),
 				"--input", writeSVSMAttestation(t, tc.version, tc.akPub),
-				// Set the v0-only and offline flags explicitly: they are package-level
-				// globals that persist across command executions.
 				"--ek-pub", tc.ekPub,
 				"--certified-ak-blob", tc.certifiedAKBlob,
 				fmt.Sprintf("--offline=%t", tc.offline),
 			})
-			err := RootCmd.Execute()
 			if err == nil || !strings.Contains(err.Error(), tc.wantErrorMsg) {
 				t.Errorf("got err: %v, want err containing: %q", err, tc.wantErrorMsg)
 			}
