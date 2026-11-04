@@ -283,7 +283,6 @@ func getInstanceInfoFromMetadata(ctx context.Context) (*attest.GCEInstanceInfo, 
 }
 
 func init() {
-	RootCmd.AddCommand(attestCmd)
 	addAttestFlags(attestCmd)
 	attestCmd.AddCommand(attestSVSMCmd)
 }
