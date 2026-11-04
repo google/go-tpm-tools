@@ -1,6 +1,6 @@
 module github.com/google/go-tpm-tools/launcher
 
-go 1.26.6
+go 1.26.8
 
 toolchain go1.26.10
 
@@ -13,10 +13,10 @@ require (
 	github.com/GoogleCloudPlatform/key-protection-module v0.0.0-20260930181234-48d5ea8e3558
 	github.com/GoogleCloudPlatform/key-protection-module/keymanager/attestation_service v0.0.0-20260930181234-48d5ea8e3558
 	github.com/cenkalti/backoff/v4 v4.3.0
-	github.com/containerd/containerd v1.7.23
-	github.com/containerd/containerd/v2 v2.3.2
+	github.com/containerd/containerd v1.7.36
+	github.com/containerd/containerd/v2 v2.3.7
 	github.com/containerd/go-cni v1.1.13
-	github.com/containerd/platforms v1.0.0-rc.4
+	github.com/containerd/platforms v1.0.0-rc.5
 	github.com/containernetworking/cni v1.3.0
 	github.com/coreos/go-systemd/v22 v22.7.0
 	github.com/golang-jwt/jwt/v4 v4.5.2
@@ -34,7 +34,7 @@ require (
 	golang.org/x/sys v0.48.0
 	google.golang.org/api v0.283.0
 	google.golang.org/genproto/googleapis/api v0.0.0-20260526163538-3dc84a4a5aaa
-	google.golang.org/grpc v1.83.1
+	google.golang.org/grpc v1.83.2
 	google.golang.org/protobuf v1.36.12
 )
 
@@ -114,7 +114,8 @@ replace (
 	github.com/google/go-tpm-tools/verifier v0.4.4 => ../verifier
 )
 
-// cos-tools upgrades containerd/v2 to v2.3.2 which requires runtime-spec v1.3.0,
-// but containerd v1.7.23 (used by launcher) is incompatible with runtime-spec v1.3.0
-// due to LinuxPids.Limit changing from int64 to *int64.
+// containerd/v2 (required by cos-tools and launcher/spec) requires runtime-spec v1.3.0,
+// but containerd v1.7.x (used by launcher) is incompatible with runtime-spec v1.3.0
+// due to LinuxPids.Limit changing from int64 to *int64. Remove this once the launcher
+// uses the containerd v2 client.
 replace github.com/opencontainers/runtime-spec => github.com/opencontainers/runtime-spec v1.2.0
