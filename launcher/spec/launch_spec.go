@@ -86,7 +86,6 @@ const (
 	cgroupNS                   = "tee-cgroup-ns"
 	cmdKey                     = "tee-cmd"
 	logRedirectKey             = "tee-container-log-redirect"
-	structuredLogKey           = "tee-container-log-structured"
 	devShmSizeKey              = "tee-dev-shm-size-kb"
 	disableGcaRefreshKey       = "tee-disable-gca-refresh"
 	envKeyPrefix               = "tee-env-"
@@ -159,7 +158,6 @@ type LaunchSpec struct {
 	Region                     string
 	RestartPolicy              RestartPolicy
 	SignedImageRepos           []string
-	StructuredLog              bool
 	// keep-sorted end
 }
 
@@ -264,13 +262,6 @@ func (s *LaunchSpec) UnmarshalJSON(b []byte) error {
 	}
 	if err := s.LogRedirect.isValid(); err != nil {
 		return err
-	}
-
-	if val, ok := unmarshaledMap[structuredLogKey]; ok && val != "" {
-		var err error
-		if s.StructuredLog, err = strconv.ParseBool(val); err != nil {
-			return fmt.Errorf("invalid value for %v (not a boolean): %w", structuredLogKey, err)
-		}
 	}
 
 	if err := s.setAttestationServiceVars(unmarshaledMap); err != nil {

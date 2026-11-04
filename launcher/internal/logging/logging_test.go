@@ -384,18 +384,16 @@ func TestJSONSeverityWriter(t *testing.T) {
 	})
 
 	t.Run("constructor helpers", func(t *testing.T) {
-		for _, structured := range []bool{false, true} {
-			infoW := NewJSONInfoWriter(structured)
-			jsonInfo, ok := infoW.(*JSONSeverityWriter)
-			if !ok || jsonInfo.Target != os.Stdout || jsonInfo.Severity != "INFO" || jsonInfo.Structured != structured {
-				t.Errorf("NewJSONInfoWriter(%t) = %+v, want Target:os.Stdout, Severity:INFO, Structured:%t", structured, infoW, structured)
-			}
+		infoW := NewJSONInfoWriter()
+		jsonInfo, ok := infoW.(*JSONSeverityWriter)
+		if !ok || jsonInfo.Target != os.Stdout || jsonInfo.Severity != "INFO" {
+			t.Errorf("NewJSONInfoWriter() = %+v, want Target:os.Stdout, Severity:INFO", infoW)
+		}
 
-			errW := NewJSONErrorWriter(structured)
-			jsonErr, ok := errW.(*JSONSeverityWriter)
-			if !ok || jsonErr.Target != os.Stderr || jsonErr.Severity != "ERROR" || jsonErr.Structured != structured {
-				t.Errorf("NewJSONErrorWriter(%t) = %+v, want Target:os.Stderr, Severity:ERROR, Structured:%t", structured, errW, structured)
-			}
+		errW := NewJSONErrorWriter()
+		jsonErr, ok := errW.(*JSONSeverityWriter)
+		if !ok || jsonErr.Target != os.Stderr || jsonErr.Severity != "ERROR" {
+			t.Errorf("NewJSONErrorWriter() = %+v, want Target:os.Stderr, Severity:ERROR", errW)
 		}
 	})
 
@@ -451,99 +449,86 @@ func TestJSONSeverityWriter(t *testing.T) {
 	})
 }
 
-func TestJSONSeverityWriter_Structured(t *testing.T) {
+func TestJSONSeverityWriter_JSONPassThrough(t *testing.T) {
 	tests := []struct {
-		name       string
-		severity   string
-		structured bool
-		input      string
-		want       string
+		name     string
+		severity string
+		input    string
+		want     string
 	}{
 		{
-			name:       "unstructured_wraps_json_object",
-			severity:   "INFO",
-			structured: false,
-			input:      `{"severity":"ERROR","message":"boom"}` + "\n",
-			want:       `{"message":"{\"severity\":\"ERROR\",\"message\":\"boom\"}","severity":"INFO"}` + "\n",
+			name:     "renames_journald_fields",
+			severity: "INFO",
+			input:    `{"message":"spoof","_HOSTNAME":"other-vm","MESSAGE":"x","SYSLOG_IDENTIFIER":"y","_id":7}` + "\n",
+			want:     `{"_id":7,"message":"spoof","severity":"INFO","workload_MESSAGE":"x","workload_SYSLOG_IDENTIFIER":"y","workload__HOSTNAME":"other-vm"}` + "\n",
 		},
 		{
-			name:       "preserves_workload_severity_and_fields",
-			severity:   "INFO",
-			structured: true,
-			input:      `{"severity":"ERROR","message":"db failed","timestamp":{"seconds":1793310933,"nanos":765186000},"component":"auth"}` + "\n",
-			want:       `{"component":"auth","message":"db failed","severity":"ERROR","timestamp":{"seconds":1793310933,"nanos":765186000}}` + "\n",
+			name:     "preserves_workload_severity_and_fields",
+			severity: "INFO",
+			input:    `{"severity":"ERROR","message":"db failed","timestamp":{"seconds":1793310933,"nanos":765186000},"component":"auth"}` + "\n",
+			want:     `{"component":"auth","message":"db failed","severity":"ERROR","timestamp":{"seconds":1793310933,"nanos":765186000}}` + "\n",
 		},
 		{
-			name:       "promotes_gcp_severity_key",
-			severity:   "INFO",
-			structured: true,
-			input:      `{"logging.googleapis.com/severity":"WARNING","message":"retrying","attempt":2}` + "\n",
-			want:       `{"attempt":2,"message":"retrying","severity":"WARNING"}` + "\n",
+			name:     "promotes_gcp_severity_key",
+			severity: "INFO",
+			input:    `{"logging.googleapis.com/severity":"WARNING","message":"retrying","attempt":2}` + "\n",
+			want:     `{"attempt":2,"message":"retrying","severity":"WARNING"}` + "\n",
 		},
 		{
-			name:       "injects_info_severity_when_omitted",
-			severity:   "INFO",
-			structured: true,
-			input:      `{"message":"started","port":8080}` + "\n",
-			want:       `{"message":"started","port":8080,"severity":"INFO"}` + "\n",
+			name:     "injects_info_severity_when_omitted",
+			severity: "INFO",
+			input:    `{"message":"started","port":8080}` + "\n",
+			want:     `{"message":"started","port":8080,"severity":"INFO"}` + "\n",
 		},
 		{
-			name:       "injects_error_severity_when_omitted",
-			severity:   "ERROR",
-			structured: true,
-			input:      `{"error":"connection refused"}` + "\n",
-			want:       `{"error":"connection refused","severity":"ERROR"}` + "\n",
+			name:     "injects_error_severity_when_omitted",
+			severity: "ERROR",
+			input:    `{"error":"connection refused"}` + "\n",
+			want:     `{"error":"connection refused","severity":"ERROR"}` + "\n",
 		},
 		{
-			name:       "replaces_null_or_empty_severity",
-			severity:   "ERROR",
-			structured: true,
-			input:      `{"severity":null,"message":"null sev"}` + "\n" + `{"severity":"","message":"empty sev"}` + "\n",
-			want:       `{"message":"null sev","severity":"ERROR"}` + "\n" + `{"message":"empty sev","severity":"ERROR"}` + "\n",
+			name:     "replaces_null_or_empty_severity",
+			severity: "ERROR",
+			input:    `{"severity":null,"message":"null sev"}` + "\n" + `{"severity":"","message":"empty sev"}` + "\n",
+			want:     `{"message":"null sev","severity":"ERROR"}` + "\n" + `{"message":"empty sev","severity":"ERROR"}` + "\n",
 		},
 		{
-			name:       "trims_surrounding_whitespace",
-			severity:   "INFO",
-			structured: true,
-			input:      "  {\"severity\":\"WARNING\",\"message\":\"padded\"}  \r\n",
-			want:       `{"message":"padded","severity":"WARNING"}` + "\n",
+			name:     "trims_surrounding_whitespace",
+			severity: "INFO",
+			input:    "  {\"severity\":\"WARNING\",\"message\":\"padded\"}  \r\n",
+			want:     `{"message":"padded","severity":"WARNING"}` + "\n",
 		},
 		{
-			name:       "fallback_plain_text",
-			severity:   "INFO",
-			structured: true,
-			input:      "plain startup banner\n",
-			want:       `{"message":"plain startup banner","severity":"INFO"}` + "\n",
+			name:     "fallback_plain_text",
+			severity: "INFO",
+			input:    "plain startup banner\n",
+			want:     `{"message":"plain startup banner","severity":"INFO"}` + "\n",
 		},
 		{
-			name:       "fallback_json_array",
-			severity:   "INFO",
-			structured: true,
-			input:      "[1,2,3]\n",
-			want:       `{"message":"[1,2,3]","severity":"INFO"}` + "\n",
+			name:     "fallback_json_array",
+			severity: "INFO",
+			input:    "[1,2,3]\n",
+			want:     `{"message":"[1,2,3]","severity":"INFO"}` + "\n",
 		},
 		{
-			name:       "fallback_json_primitives",
-			severity:   "INFO",
-			structured: true,
-			input:      "\"quoted\"\ntrue\n42\n",
+			name:     "fallback_json_primitives",
+			severity: "INFO",
+			input:    "\"quoted\"\ntrue\n42\n",
 			want: `{"message":"\"quoted\"","severity":"INFO"}` + "\n" +
 				`{"message":"true","severity":"INFO"}` + "\n" +
 				`{"message":"42","severity":"INFO"}` + "\n",
 		},
 		{
-			name:       "fallback_invalid_or_concatenated_json",
-			severity:   "ERROR",
-			structured: true,
-			input:      "{not valid json}\n{\"a\":1}{\"b\":2}\n",
+			name:     "fallback_invalid_or_concatenated_json",
+			severity: "ERROR",
+			input:    "{not valid json}\n{\"a\":1}{\"b\":2}\n",
 			want: `{"message":"{not valid json}","severity":"ERROR"}` + "\n" +
 				`{"message":"{\"a\":1}{\"b\":2}","severity":"ERROR"}` + "\n",
 		},
 		{
-			name:       "mixed_multiline_chunk",
-			severity:   "INFO",
-			structured: true,
-			input:      "Starting server...\n{\"severity\":\"WARNING\",\"message\":\"slow query\",\"ms\":250}\nReady.\n",
+			name:     "mixed_multiline_chunk",
+			severity: "INFO",
+			input:    "Starting server...\n{\"severity\":\"WARNING\",\"message\":\"slow query\",\"ms\":250}\nReady.\n",
 			want: `{"message":"Starting server...","severity":"INFO"}` + "\n" +
 				`{"message":"slow query","ms":250,"severity":"WARNING"}` + "\n" +
 				`{"message":"Ready.","severity":"INFO"}` + "\n",
@@ -554,9 +539,8 @@ func TestJSONSeverityWriter_Structured(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var buf bytes.Buffer
 			writer := &JSONSeverityWriter{
-				Target:     &buf,
-				Severity:   tc.severity,
-				Structured: tc.structured,
+				Target:   &buf,
+				Severity: tc.severity,
 			}
 
 			n, err := writer.Write([]byte(tc.input))
@@ -564,16 +548,16 @@ func TestJSONSeverityWriter_Structured(t *testing.T) {
 				t.Fatalf("JSONSeverityWriter.Write(%q) = (%d, %v), want (%d, nil)", tc.input, n, err, len(tc.input))
 			}
 			if got := buf.String(); got != tc.want {
-				t.Errorf("JSONSeverityWriter{Severity: %q, Structured: %t}.Write(%q) wrote %q, want %q",
-					tc.severity, tc.structured, tc.input, got, tc.want)
+				t.Errorf("JSONSeverityWriter{Severity: %q}.Write(%q) wrote %q, want %q",
+					tc.severity, tc.input, got, tc.want)
 			}
 		})
 	}
 }
 
-func TestJSONSeverityWriter_StructuredHighThroughputBurst(t *testing.T) {
+func TestJSONSeverityWriter_JSONPassThroughBurst(t *testing.T) {
 	var buf bytes.Buffer
-	writer := &JSONSeverityWriter{Target: &buf, Severity: "INFO", Structured: true}
+	writer := &JSONSeverityWriter{Target: &buf, Severity: "INFO"}
 
 	const lineCount = 50000
 	start := time.Now()

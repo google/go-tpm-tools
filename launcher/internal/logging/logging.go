@@ -30,6 +30,9 @@ const (
 	payloadInstanceNameKey = "_HOSTNAME"
 
 	gcpSeverityKey = "logging.googleapis.com/severity"
+	// workloadKeyPrefix is prepended to workload JSON keys that collide with
+	// journald fields.
+	workloadKeyPrefix = "workload_"
 )
 
 // Logger defines the interface for the CS image logger.
@@ -310,14 +313,13 @@ func (n *nullLogger) Close()                                      {}
 // JSONSeverityWriter wraps an io.Writer (such as os.Stdout or os.Stderr) and
 // formats log lines as structured JSON.
 type JSONSeverityWriter struct {
-	Target     io.Writer
-	Severity   string // "INFO" or "ERROR"
-	Structured bool   // pass through valid JSON object lines instead of wrapping in "message"
+	Target   io.Writer
+	Severity string // "INFO" or "ERROR"
 }
 
 // Write formats each line in p as JSON and writes it to the underlying Target.
-// When Structured is true, valid JSON object lines are passed through directly
-// (with default Severity injected if absent); all other lines are wrapped in
+// Valid single-line JSON objects are passed through as structured logs (with
+// the default Severity injected if absent); all other lines are wrapped in
 // {"severity": w.Severity, "message": line}.
 func (w *JSONSeverityWriter) Write(p []byte) (int, error) {
 	text := strings.TrimRight(string(p), "\r\n")
@@ -344,42 +346,70 @@ func (w *JSONSeverityWriter) Write(p []byte) (int, error) {
 
 // NewJSONInfoWriter returns an io.Writer that formats lines as JSON with INFO
 // severity to os.Stdout.
-func NewJSONInfoWriter(structured bool) io.Writer {
-	return &JSONSeverityWriter{Target: os.Stdout, Severity: "INFO", Structured: structured}
+func NewJSONInfoWriter() io.Writer {
+	return &JSONSeverityWriter{Target: os.Stdout, Severity: "INFO"}
 }
 
 // NewJSONErrorWriter returns an io.Writer that formats lines as JSON with ERROR
 // severity to os.Stderr.
-func NewJSONErrorWriter(structured bool) io.Writer {
-	return &JSONSeverityWriter{Target: os.Stderr, Severity: "ERROR", Structured: structured}
+func NewJSONErrorWriter() io.Writer {
+	return &JSONSeverityWriter{Target: os.Stderr, Severity: "ERROR"}
 }
 
 func (w *JSONSeverityWriter) formatLine(line string) ([]byte, error) {
-	if w.Structured {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "{") && strings.HasSuffix(trimmed, "}") {
-			var obj map[string]json.RawMessage
-			if err := json.Unmarshal([]byte(trimmed), &obj); err == nil && obj != nil { // if NO error
-				if !isNonEmptyJSONValue(obj["severity"]) {
-					if gcpSev, ok := obj[gcpSeverityKey]; ok && isNonEmptyJSONValue(gcpSev) {
-						obj["severity"] = gcpSev
-						delete(obj, gcpSeverityKey)
-					} else {
-						sev, err := json.Marshal(w.Severity)
-						if err != nil {
-							return nil, err
-						}
-						obj["severity"] = sev
-					}
-				}
-				return json.Marshal(obj)
-			}
+	trimmed := strings.TrimSpace(line)
+	if strings.HasPrefix(trimmed, "{") && strings.HasSuffix(trimmed, "}") {
+		var obj map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(trimmed), &obj); err == nil && obj != nil {
+			return w.formatObject(obj)
 		}
 	}
 	return json.Marshal(map[string]string{
 		"severity": w.Severity,
 		"message":  line,
 	})
+}
+
+// formatObject passes a workload JSON object through, renaming keys that would
+// collide with journald fields and filling in severity when it is missing.
+func (w *JSONSeverityWriter) formatObject(obj map[string]json.RawMessage) ([]byte, error) {
+	for key, val := range obj {
+		if isJournaldField(key) {
+			delete(obj, key)
+			obj[workloadKeyPrefix+key] = val
+		}
+	}
+	if !isNonEmptyJSONValue(obj["severity"]) {
+		if gcpSev, ok := obj[gcpSeverityKey]; ok && isNonEmptyJSONValue(gcpSev) {
+			obj["severity"] = gcpSev
+			delete(obj, gcpSeverityKey)
+		} else {
+			sev, err := json.Marshal(w.Severity)
+			if err != nil {
+				return nil, err
+			}
+			obj["severity"] = sev
+		}
+	}
+	return json.Marshal(obj)
+}
+
+// isJournaldField reports whether key would collide with a field that journald
+// attaches to each entry (such as _HOSTNAME or MESSAGE), which Cloud Logging
+// queries rely on and workloads must not be able to overwrite. journald field
+// names are uppercase, so keys such as "_id" are left alone.
+func isJournaldField(key string) bool {
+	if key == "" || strings.ToUpper(key) != key {
+		return false
+	}
+	if strings.HasPrefix(key, "_") || strings.HasPrefix(key, "SYSLOG_") {
+		return true
+	}
+	switch key {
+	case "MESSAGE", "PRIORITY", "CODE_FILE", "CODE_LINE", "CODE_FUNC", "ERRNO":
+		return true
+	}
+	return false
 }
 
 func isNonEmptyJSONValue(raw json.RawMessage) bool {

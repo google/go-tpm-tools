@@ -640,14 +640,10 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		streamOpt = cio.WithStreams(nil, nil, nil)
 		r.logger.Info("Container stdout/stderr will not be redirected.")
 	case spec.Everywhere:
-		stdout := io.MultiWriter(logging.NewJSONInfoWriter(r.launchSpec.StructuredLog), r.serialConsole)
-		stderr := io.MultiWriter(logging.NewJSONErrorWriter(r.launchSpec.StructuredLog), r.serialConsole)
-		streamOpt = cio.WithStreams(nil, stdout, stderr)
+		streamOpt = cio.WithStreams(nil, io.MultiWriter(logging.NewJSONInfoWriter(), r.serialConsole), io.MultiWriter(logging.NewJSONErrorWriter(), r.serialConsole))
 		r.logger.Info("Container stdout/stderr will be redirected to serial and Cloud Logging. This may result in performance issues due to slow serial console writes.")
 	case spec.CloudLogging:
-		stdout := logging.NewJSONInfoWriter(r.launchSpec.StructuredLog)
-		stderr := logging.NewJSONErrorWriter(r.launchSpec.StructuredLog)
-		streamOpt = cio.WithStreams(nil, stdout, stderr)
+		streamOpt = cio.WithStreams(nil, logging.NewJSONInfoWriter(), logging.NewJSONErrorWriter())
 		r.logger.Info("Container stdout/stderr will be redirected to journald (JSON) for FluentBit scraping.")
 	case spec.Serial:
 		streamOpt = cio.WithStreams(nil, r.serialConsole, r.serialConsole)
