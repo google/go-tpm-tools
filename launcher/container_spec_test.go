@@ -592,6 +592,47 @@ func TestCreateOCISpecOpts_GB300CCMode_FTPMDevices(t *testing.T) {
 	})
 }
 
+func TestCreateOCISpecOpts_GB300CCMode_NonrootContainerSkipsFTPM(t *testing.T) {
+	ctx := namespaces.WithNamespace(context.Background(), "default")
+	logger := &fakeLogger{}
+	img := createFakeImage(nil, nil, nil)
+
+	// Valid fTPM symlinks exist on the host, but must not be passed through to a
+	// non-root (user namespace) container. A dangling symlink would also fail
+	// discovery, so this additionally verifies that discovery is not attempted.
+	fakeDevDir := t.TempDir()
+	if err := os.Symlink("/dev/null", filepath.Join(fakeDevDir, "ftpm")); err != nil {
+		t.Fatalf("failed to create ftpm symlink: %v", err)
+	}
+	if err := os.Symlink(filepath.Join(fakeDevDir, "missing-tpmrm1"), filepath.Join(fakeDevDir, "ftpmrm")); err != nil {
+		t.Fatalf("failed to create dangling ftpmrm symlink: %v", err)
+	}
+
+	origHostDir := ftpmHostDir
+	t.Cleanup(func() { ftpmHostDir = origHostDir })
+	ftpmHostDir = fakeDevDir
+
+	ls := spec.LaunchSpec{
+		NonrootContainer: true,
+		Experiments: experiments.Experiments{
+			GB300CCMode: true,
+		},
+	}
+	specOpts, err := createOCISpecOpts(img, ls, nil, dummyListFiles, logger)
+	if err != nil {
+		t.Fatalf("createOCISpecOpts() failed for non-root container: %v", err)
+	}
+	gotSpec, err := applySpecOptsToSpec(ctx, specOpts)
+	if err != nil {
+		t.Fatalf("applySpecOptsToSpec failed: %v", err)
+	}
+	for _, dev := range gotSpec.Linux.Devices {
+		if dev.Path == "/dev/ftpm" || dev.Path == "/dev/ftpmrm" {
+			t.Errorf("unexpected fTPM device %s mounted for non-root container", dev.Path)
+		}
+	}
+}
+
 func TestCreateOCISpecOpts_GB300CCMode_NoFTPMDevicesSkipped(t *testing.T) {
 	logger := &fakeLogger{}
 	img := createFakeImage(nil, nil, nil)

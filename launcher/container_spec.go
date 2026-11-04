@@ -151,16 +151,26 @@ func createOCISpecOpts(image containerd.Image, launchSpec spec.LaunchSpec, envs 
 			specOpts = append(specOpts, oci.WithDevices(dev.hostPath, dev.containerPath, "rw"))
 		}
 
-		ftpmDevs, err := discoverFTPMDevs(ftpmHostDir, defaultFTPMContainerDir, isCharDevice)
-		if err != nil {
-			return nil, fmt.Errorf("failed to discover GB300 fTPM devices: %w", err)
-		}
-		if len(ftpmDevs) == 0 {
-			logger.Info("GB300 CC mode: no fTPM device symlinks found on host; skipping fTPM passthrough")
-		}
-		for _, dev := range ftpmDevs {
-			logger.Info(fmt.Sprintf("GB300 CC mode: passing fTPM device %s through as %s", dev.hostPath, dev.containerPath))
-			specOpts = append(specOpts, withFTPMDevice(dev.hostPath, dev.containerPath))
+		if launchSpec.NonrootContainer {
+			// fTPM passthrough is not supported for non-root containers yet. In a user
+			// namespace, runc bind-mounts the host device node (0600, root-owned) instead
+			// of creating a new node, so the 0666 FileMode override is ignored and the
+			// workload's remapped root user cannot open the fTPM.
+			// Not fatal: continue launching the workload without the fTPM.
+			logger.Error("GB300 CC mode: fTPM passthrough is not supported for non-root containers; skipping fTPM passthrough")
+		} else {
+			ftpmDevs, err := discoverFTPMDevs(ftpmHostDir, defaultFTPMContainerDir, isCharDevice)
+			if err != nil {
+				return nil, fmt.Errorf("failed to discover GB300 fTPM devices: %w", err)
+			}
+			if len(ftpmDevs) == 0 {
+				// Not fatal: continue launching the workload without the fTPM.
+				logger.Error("GB300 CC mode: no fTPM device symlinks (/dev/ftpm, /dev/ftpmrm) found on host; skipping fTPM passthrough")
+			}
+			for _, dev := range ftpmDevs {
+				logger.Info(fmt.Sprintf("GB300 CC mode: passing fTPM device %s through as %s", dev.hostPath, dev.containerPath))
+				specOpts = append(specOpts, withFTPMDevice(dev.hostPath, dev.containerPath))
+			}
 		}
 	}
 
