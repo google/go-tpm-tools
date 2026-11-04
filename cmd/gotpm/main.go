@@ -36,10 +36,11 @@ func main() {
 		}
 	}
 
-	cmd.RootCmd.Version = fmt.Sprintf("%s, commit %s, built at %s\n- go-sev-guest version %s\n- go-tdx-guest version %s",
+	root := cmd.NewRootCmd()
+	root.Version = fmt.Sprintf("%s, commit %s, built at %s\n- go-sev-guest version %s\n- go-tdx-guest version %s",
 		version, commit, date, tdxGuestVersion, sevGuestVersion)
 
-	if cmd.RootCmd.Execute() != nil {
+	if root.Execute() != nil {
 		os.Exit(1)
 	}
 }

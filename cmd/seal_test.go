@@ -31,7 +31,6 @@ func makeTempFile(tb testing.TB, content []byte) string {
 func TestSealPlain(t *testing.T) {
 	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
-	ExternalTPM = rwc
 
 	operations := []struct {
 		name        string
@@ -65,18 +64,15 @@ func TestSealPlain(t *testing.T) {
 			if op.algo != "" {
 				sealArgs = append(sealArgs, "--algo", op.algo)
 			}
-			RootCmd.SetArgs(sealArgs)
-			if err := RootCmd.Execute(); err != nil {
+			if err := execute(t, sealArgs, withTPM(rwc)); err != nil {
 				t.Error(err)
 			}
-			pcrs = []int{} // "flush" pcrs value in last Execute() cmd
 
 			unsealArgs := []string{"unseal", "--quiet", "--input", sealedFile, "--output", secretFile2}
 			if op.certifyPCRs != "" {
 				unsealArgs = append(unsealArgs, "--pcrs", op.certifyPCRs)
 			}
-			RootCmd.SetArgs(unsealArgs)
-			if err := RootCmd.Execute(); err != nil {
+			if err := execute(t, unsealArgs, withTPM(rwc)); err != nil {
 				t.Error(err)
 			}
 			secretOut, err := os.ReadFile(secretFile2)
@@ -93,7 +89,6 @@ func TestSealPlain(t *testing.T) {
 func TestUnsealFail(t *testing.T) {
 	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
-	ExternalTPM = rwc
 	extension := bytes.Repeat([]byte{0xAA}, sha256.Size)
 
 	sealPCR := test.DebugPCR
@@ -121,11 +116,9 @@ func TestUnsealFail(t *testing.T) {
 			if op.sealPCRs != "" {
 				sealArgs = append(sealArgs, "--pcrs", op.sealPCRs)
 			}
-			RootCmd.SetArgs(sealArgs)
-			if err := RootCmd.Execute(); err != nil {
+			if err := execute(t, sealArgs, withTPM(rwc)); err != nil {
 				t.Error(err)
 			}
-			pcrs = []int{} // "flush" pcrs value in last Execute() cmd
 
 			for _, pcr := range op.pcrToExtend {
 				pcrHandle := tpmutil.Handle(pcr)
@@ -138,8 +131,7 @@ func TestUnsealFail(t *testing.T) {
 			if op.certifyPCRs != "" {
 				unsealArgs = append(unsealArgs, "--pcrs", op.certifyPCRs)
 			}
-			RootCmd.SetArgs(unsealArgs)
-			if RootCmd.Execute() == nil {
+			if execute(t, unsealArgs, withTPM(rwc)) == nil {
 				t.Error("Unsealing should have failed")
 			}
 		})

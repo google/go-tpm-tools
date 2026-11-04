@@ -15,6 +15,16 @@ import (
 // ExternalTPM can have a TPM simulator or a real TPM.
 var ExternalTPM io.ReadWriter
 
+type env struct {
+	tpm io.ReadWriter
+}
+
+type envOption func(*env)
+
+func withTPM(rw io.ReadWriter) envOption {
+	return func(e *env) { e.tpm = rw }
+}
+
 // extTPMWrapper is designed to wrap the ExternalTPM to provide some overriding
 // functions.
 type extTPMWrapper struct {
@@ -41,4 +51,11 @@ func openTpm() (io.ReadWriteCloser, error) {
 		return nil, fmt.Errorf("connecting to TPM: %w", err)
 	}
 	return rwc, nil
+}
+
+func (e *env) openTpm() (io.ReadWriteCloser, error) {
+	if e.tpm != nil {
+		return extTPMWrapper{e.tpm}, nil
+	}
+	return openTpm()
 }
