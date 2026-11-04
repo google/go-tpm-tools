@@ -3,9 +3,8 @@ package launcher
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"reflect"
 	"runtime"
 	"strings"
@@ -433,6 +432,7 @@ func TestCreateOCISpecOpts_GPU_GB300CCMode(t *testing.T) {
 	origFind := findGB300DriverDir
 	t.Cleanup(func() { findGB300DriverDir = origFind })
 	findGB300DriverDir = func() (string, error) { return "/opt/nvidia/620.06", nil }
+	stubFindGB300FTPMDevs(t, nil, nil) // Do not scan the host's /dev for fTPM symlinks.
 
 	mockListFiles := func(dir, prefix string) ([]string, error) {
 		if dir == "/dev" && prefix == "nvidia" {
@@ -505,24 +505,32 @@ func TestCreateOCISpecOpts_GPU_GB300CCModeNoDriver(t *testing.T) {
 	}
 }
 
+// stubFindGB300FTPMDevs replaces fTPM discovery for the duration of the test so that
+// createOCISpecOpts does not scan the host's /dev. It returns a pointer to a call counter.
+func stubFindGB300FTPMDevs(t *testing.T, devs []ftpmDevice, err error) *int {
+	t.Helper()
+	calls := 0
+	orig := findGB300FTPMDevs
+	t.Cleanup(func() { findGB300FTPMDevs = orig })
+	findGB300FTPMDevs = func() ([]ftpmDevice, error) {
+		calls++
+		return devs, err
+	}
+	return &calls
+}
+
 func TestCreateOCISpecOpts_GB300CCMode_FTPMDevices(t *testing.T) {
 	ctx := namespaces.WithNamespace(context.Background(), "default")
 	logger := &fakeLogger{}
 	img := createFakeImage(nil, nil, nil)
 
-	// Point /dev/ftpm -> /dev/null and /dev/ftpmrm -> /dev/zero inside a temp directory
-	// so filepath.EvalSymlinks and containerd's oci.WithDevices stat real character devices.
-	fakeDevDir := t.TempDir()
-	if err := os.Symlink("/dev/null", filepath.Join(fakeDevDir, "ftpm")); err != nil {
-		t.Fatalf("failed to create ftpm symlink: %v", err)
-	}
-	if err := os.Symlink("/dev/zero", filepath.Join(fakeDevDir, "ftpmrm")); err != nil {
-		t.Fatalf("failed to create ftpmrm symlink: %v", err)
-	}
-
-	origHostDir := ftpmHostDir
-	t.Cleanup(func() { ftpmHostDir = origHostDir })
-	ftpmHostDir = fakeDevDir
+	// Use distinct real character devices as stand-ins for the resolved fTPM nodes
+	// (/dev/tpm1, /dev/tpmrm1), since containerd's oci.WithDevices stats hostPath.
+	// discoverFTPMDevs itself is covered by the tests in ftpm_test.go.
+	stubFindGB300FTPMDevs(t, []ftpmDevice{
+		{hostPath: "/dev/null", containerPath: "/dev/ftpm"},
+		{hostPath: "/dev/zero", containerPath: "/dev/ftpmrm"},
+	}, nil)
 
 	t.Run("mounted_in_gb300_cc_mode", func(t *testing.T) {
 		ls := spec.LaunchSpec{
@@ -534,42 +542,51 @@ func TestCreateOCISpecOpts_GB300CCMode_FTPMDevices(t *testing.T) {
 		if err != nil {
 			t.Fatalf("createOCISpecOpts failed: %v", err)
 		}
-
-		gotSpec := oci.Spec{
-			Linux: &specs.Linux{
-				Namespaces: createDefaultLinuxNamespaces(),
-				Resources:  &specs.LinuxResources{},
-			},
-			Process: &specs.Process{},
+		gotSpec, err := applySpecOptsToSpec(ctx, specOpts)
+		if err != nil {
+			t.Fatalf("applySpecOptsToSpec failed: %v", err)
 		}
-		dummyContainer := containers.Container{ID: "dummy"}
-		for _, opt := range specOpts[1:] { // Skip WithImageConfigArgs
-			if err := opt(ctx, nil, &dummyContainer, &gotSpec); err != nil {
-				t.Fatalf("failed to apply spec option: %v", err)
+
+		// Map each container path to the expected host device so that a swapped or
+		// duplicated hostPath -> containerPath mapping is caught.
+		for containerPath, hostPath := range map[string]string{
+			"/dev/ftpm":   "/dev/null",
+			"/dev/ftpmrm": "/dev/zero",
+		} {
+			wantDev, err := oci.DeviceFromPath(hostPath)
+			if err != nil {
+				t.Fatalf("oci.DeviceFromPath(%q) failed: %v", hostPath, err)
 			}
-		}
 
-		wantDevices := map[string]bool{
-			"/dev/ftpm":   true,
-			"/dev/ftpmrm": true,
-		}
-		for _, dev := range gotSpec.Linux.Devices {
-			if wantDevices[dev.Path] && dev.Type == "c" {
-				if dev.FileMode == nil || *dev.FileMode != ftpmContainerFileMode {
-					t.Errorf("device %s FileMode = %v, want %#o", dev.Path, dev.FileMode, ftpmContainerFileMode)
+			var found []specs.LinuxDevice
+			for _, dev := range gotSpec.Linux.Devices {
+				if dev.Path == containerPath {
+					found = append(found, dev)
 				}
-				delete(wantDevices, dev.Path)
 			}
-		}
-		if len(wantDevices) != 0 {
-			t.Errorf("missing expected fTPM character devices: %v; got: %+v", wantDevices, gotSpec.Linux.Devices)
-		}
-		if len(gotSpec.Linux.Resources.Devices) < 2 {
-			t.Fatalf("got %d device cgroup rules, want >= 2: %+v", len(gotSpec.Linux.Resources.Devices), gotSpec.Linux.Resources.Devices)
-		}
-		for _, cg := range gotSpec.Linux.Resources.Devices {
-			if !cg.Allow || cg.Type != "c" || cg.Access != "rw" {
-				t.Errorf("unexpected fTPM device cgroup rule: %+v", cg)
+			if len(found) != 1 {
+				t.Fatalf("got %d devices at %s, want 1: %+v", len(found), containerPath, gotSpec.Linux.Devices)
+			}
+			dev := found[0]
+			if dev.Type != "c" || dev.Major != wantDev.Major || dev.Minor != wantDev.Minor {
+				t.Errorf("device %s = type %q %d:%d, want type \"c\" %d:%d (%s)", containerPath, dev.Type, dev.Major, dev.Minor, wantDev.Major, wantDev.Minor, hostPath)
+			}
+			if dev.FileMode == nil || *dev.FileMode != ftpmContainerFileMode {
+				t.Errorf("device %s FileMode = %v, want %#o", containerPath, dev.FileMode, ftpmContainerFileMode)
+			}
+
+			// Match the device cgroup rule by major:minor; other GB300 devices (e.g. Local SSDs) may add rules.
+			foundRule := false
+			for _, cg := range gotSpec.Linux.Resources.Devices {
+				if cg.Major != nil && cg.Minor != nil && *cg.Major == wantDev.Major && *cg.Minor == wantDev.Minor {
+					foundRule = true
+					if !cg.Allow || cg.Type != "c" || cg.Access != "rw" {
+						t.Errorf("device cgroup rule for %s = %+v, want Allow=true Type=c Access=rw", containerPath, cg)
+					}
+				}
+			}
+			if !foundRule {
+				t.Errorf("no device cgroup rule for %s (%d:%d): %+v", containerPath, wantDev.Major, wantDev.Minor, gotSpec.Linux.Resources.Devices)
 			}
 		}
 	})
@@ -597,20 +614,8 @@ func TestCreateOCISpecOpts_GB300CCMode_NonrootContainerSkipsFTPM(t *testing.T) {
 	logger := &fakeLogger{}
 	img := createFakeImage(nil, nil, nil)
 
-	// Valid fTPM symlinks exist on the host, but must not be passed through to a
-	// non-root (user namespace) container. A dangling symlink would also fail
-	// discovery, so this additionally verifies that discovery is not attempted.
-	fakeDevDir := t.TempDir()
-	if err := os.Symlink("/dev/null", filepath.Join(fakeDevDir, "ftpm")); err != nil {
-		t.Fatalf("failed to create ftpm symlink: %v", err)
-	}
-	if err := os.Symlink(filepath.Join(fakeDevDir, "missing-tpmrm1"), filepath.Join(fakeDevDir, "ftpmrm")); err != nil {
-		t.Fatalf("failed to create dangling ftpmrm symlink: %v", err)
-	}
-
-	origHostDir := ftpmHostDir
-	t.Cleanup(func() { ftpmHostDir = origHostDir })
-	ftpmHostDir = fakeDevDir
+	// Discovery would fail if it ran, so success also shows that it is not attempted.
+	calls := stubFindGB300FTPMDevs(t, nil, errors.New("fTPM discovery must not run for non-root containers"))
 
 	ls := spec.LaunchSpec{
 		NonrootContainer: true,
@@ -621,6 +626,9 @@ func TestCreateOCISpecOpts_GB300CCMode_NonrootContainerSkipsFTPM(t *testing.T) {
 	specOpts, err := createOCISpecOpts(img, ls, nil, dummyListFiles, logger)
 	if err != nil {
 		t.Fatalf("createOCISpecOpts() failed for non-root container: %v", err)
+	}
+	if *calls != 0 {
+		t.Errorf("fTPM discovery ran %d time(s) for a non-root container, want 0", *calls)
 	}
 	gotSpec, err := applySpecOptsToSpec(ctx, specOpts)
 	if err != nil {
@@ -637,9 +645,7 @@ func TestCreateOCISpecOpts_GB300CCMode_NoFTPMDevicesSkipped(t *testing.T) {
 	logger := &fakeLogger{}
 	img := createFakeImage(nil, nil, nil)
 
-	origHostDir := ftpmHostDir
-	t.Cleanup(func() { ftpmHostDir = origHostDir })
-	ftpmHostDir = t.TempDir()
+	stubFindGB300FTPMDevs(t, nil, nil)
 
 	ls := spec.LaunchSpec{
 		Experiments: experiments.Experiments{
@@ -655,18 +661,8 @@ func TestCreateOCISpecOpts_GB300CCMode_InvalidFTPMFailsClosed(t *testing.T) {
 	logger := &fakeLogger{}
 	img := createFakeImage(nil, nil, nil)
 
-	fakeDevDir := t.TempDir()
-	// Dangling ftpm symlink while ftpmrm points to /dev/zero.
-	if err := os.Symlink(filepath.Join(fakeDevDir, "missing-tpm1"), filepath.Join(fakeDevDir, "ftpm")); err != nil {
-		t.Fatalf("failed to create dangling ftpm symlink: %v", err)
-	}
-	if err := os.Symlink("/dev/zero", filepath.Join(fakeDevDir, "ftpmrm")); err != nil {
-		t.Fatalf("failed to create ftpmrm symlink: %v", err)
-	}
-
-	origHostDir := ftpmHostDir
-	t.Cleanup(func() { ftpmHostDir = origHostDir })
-	ftpmHostDir = fakeDevDir
+	errDiscovery := errors.New("incomplete GB300 fTPM device symlinks")
+	stubFindGB300FTPMDevs(t, nil, errDiscovery)
 
 	ls := spec.LaunchSpec{
 		Experiments: experiments.Experiments{
@@ -674,8 +670,8 @@ func TestCreateOCISpecOpts_GB300CCMode_InvalidFTPMFailsClosed(t *testing.T) {
 		},
 	}
 	_, err := createOCISpecOpts(img, ls, nil, dummyListFiles, logger)
-	if err == nil || !strings.Contains(err.Error(), "failed to discover GB300 fTPM devices") {
-		t.Fatalf("createOCISpecOpts() error = %v, want error containing 'failed to discover GB300 fTPM devices'", err)
+	if !errors.Is(err, errDiscovery) || !strings.Contains(err.Error(), "failed to discover GB300 fTPM devices") {
+		t.Fatalf("createOCISpecOpts() error = %v, want error wrapping %v with 'failed to discover GB300 fTPM devices'", err, errDiscovery)
 	}
 }
 

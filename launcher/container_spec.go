@@ -159,7 +159,7 @@ func createOCISpecOpts(image containerd.Image, launchSpec spec.LaunchSpec, envs 
 			// Not fatal: continue launching the workload without the fTPM.
 			logger.Error("GB300 CC mode: fTPM passthrough is not supported for non-root containers; skipping fTPM passthrough")
 		} else {
-			ftpmDevs, err := discoverFTPMDevs(ftpmHostDir, defaultFTPMContainerDir, isCharDevice)
+			ftpmDevs, err := findGB300FTPMDevs()
 			if err != nil {
 				return nil, fmt.Errorf("failed to discover GB300 fTPM devices: %w", err)
 			}
