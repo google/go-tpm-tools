@@ -132,8 +132,6 @@ machine state when sealing took place.
 }
 
 func init() {
-	RootCmd.AddCommand(sealCmd)
-	RootCmd.AddCommand(unsealCmd)
 	addInputFlag(sealCmd)
 	addInputFlag(unsealCmd)
 	addOutputFlag(sealCmd)

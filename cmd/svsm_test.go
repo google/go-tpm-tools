@@ -378,8 +378,7 @@ func TestAttestSVSMFlags(t *testing.T) {
 				"--nonce", "1234",
 				"--tee-nonce", "",
 			}
-			RootCmd.SetArgs(args)
-			err := RootCmd.Execute()
+			err := execute(args, nil)
 
 			if err == nil {
 				t.Fatal("expected error, got nil")
@@ -973,7 +972,7 @@ func TestVerifySVSMFlags(t *testing.T) {
 			t.Cleanup(func() {
 				offline = false
 			})
-			RootCmd.SetArgs([]string{
+			err := execute([]string{
 				"verify", "debug", "svsm",
 				"--tee-technology", "sev-snp",
 				"--tee-nonce", strings.Repeat("00", sabi.ReportDataSize),
@@ -983,8 +982,7 @@ func TestVerifySVSMFlags(t *testing.T) {
 				"--ek-pub", tc.ekPub,
 				"--certified-ak-blob", tc.certifiedAKBlob,
 				fmt.Sprintf("--offline=%t", tc.offline),
-			})
-			err := RootCmd.Execute()
+			}, nil)
 			if err == nil || !strings.Contains(err.Error(), tc.wantErrorMsg) {
 				t.Errorf("got err: %v, want err containing: %q", err, tc.wantErrorMsg)
 			}

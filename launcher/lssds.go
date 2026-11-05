@@ -1,11 +1,16 @@
 package launcher
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
+	"time"
+
+	"github.com/google/go-tpm-tools/launcher/internal/logging"
 )
 
 const (
@@ -13,9 +18,31 @@ const (
 	defaultLSSDHostDir = "/dev/disk/by-id"
 	// defaultLSSDContainerDir is the default container directory where the LSSDs will be exposed.
 	defaultLSSDContainerDir = defaultLSSDHostDir
+
+	// instanceDisksQuery is the metadata server path listing the disks attached to the instance.
+	instanceDisksQuery = "instance/disks/?recursive=true"
+	// lssdDiskType is the disk type value for Local SSDs in the metadata server.
+	lssdDiskType = "LOCAL-SSD"
+	// lssdInterface is the disk interface value for NVMe Local SSDs in the metadata server.
+	lssdInterface = "NVME"
+	// lssdWaitTimeout is the maximum time waitForLSSDs waits for all Local SSD links.
+	lssdWaitTimeout = 30 * time.Second
+	// lssdPollInterval is the interval between checks in waitForLSSDs.
+	lssdPollInterval = time.Second
 )
 
 var lssdNameRegexp = regexp.MustCompile(`^google-local-nvme-ssd-\d+$`)
+
+// metadataGetter is the subset of *metadata.Client used by waitForLSSDs.
+type metadataGetter interface {
+	GetWithContext(ctx context.Context, suffix string) (string, error)
+}
+
+// instanceDisk is one entry of the metadata server's instance/disks list.
+type instanceDisk struct {
+	Interface string `json:"interface"`
+	Type      string `json:"type"`
+}
 
 // isBlockDevice checks if a given path is a block device.
 func isBlockDevice(path string) (bool, error) {
@@ -88,4 +115,84 @@ func discoverLSSDDevs(hostDir, containerDir string, blockDevChecker func(string)
 		})
 	}
 	return devs, nil
+}
+
+// waitForLSSDs waits up to timeout until hostDir has links for all Local SSDs reported by the metadata server.
+// It fails on timeout or if more Local SSD links exist than reported.
+// If the metadata server lists no Local SSDs, it returns nil immediately.
+func waitForLSSDs(ctx context.Context, mds metadataGetter, hostDir string, timeout, poll time.Duration, logger logging.Logger) error {
+	want, err := attachedLSSDCount(ctx, mds)
+	if err != nil {
+		return fmt.Errorf("failed to count the attached Local SSDs: %w", err)
+	}
+	if want == 0 {
+		logger.Info("the metadata server lists no Local SSDs")
+		return nil
+	}
+	logger.Info(fmt.Sprintf("waiting for %d Local SSD links", want))
+
+	deadline := time.Now().Add(timeout)
+	for {
+		got, err := presentLSSDCount(hostDir)
+		if err != nil {
+			return err
+		}
+		if got == want {
+			return nil
+		}
+		if got > want {
+			return fmt.Errorf("unexpected Local SSD links: got %d, want %d", got, want)
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("not all Local SSD links appeared within %v: got %d, want %d", timeout, got, want)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(poll):
+		}
+	}
+}
+
+// attachedLSSDCount returns the number of NVMe Local SSDs reported by the metadata server.
+func attachedLSSDCount(ctx context.Context, mds metadataGetter) (int, error) {
+	data, err := mds.GetWithContext(ctx, instanceDisksQuery)
+	if err != nil {
+		return 0, err
+	}
+	var disks []instanceDisk
+	if err := json.Unmarshal([]byte(data), &disks); err != nil {
+		return 0, fmt.Errorf("failed to parse %q: %w", instanceDisksQuery, err)
+	}
+
+	count := 0
+	for _, d := range disks {
+		if d.Type != lssdDiskType {
+			continue
+		}
+		if d.Interface != lssdInterface {
+			// Fail closed: discoverLSSDDevs only exposes NVMe Local SSD links.
+			return 0, fmt.Errorf("unsupported Local SSD interface %q, want %q", d.Interface, lssdInterface)
+		}
+		count++
+	}
+	return count, nil
+}
+
+// presentLSSDCount returns the number of Local SSD links in hostDir.
+func presentLSSDCount(hostDir string) (int, error) {
+	entries, err := os.ReadDir(hostDir)
+	if errors.Is(err, os.ErrNotExist) {
+		return 0, nil // udev creates /dev/disk/by-id with the first disk link.
+	}
+	if err != nil {
+		return 0, fmt.Errorf("failed to read %q: %w", hostDir, err)
+	}
+	count := 0
+	for _, e := range entries {
+		if lssdNameRegexp.MatchString(e.Name()) {
+			count++
+		}
+	}
+	return count, nil
 }
