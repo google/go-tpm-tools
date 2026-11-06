@@ -52,7 +52,7 @@ NVDATA instead (and --algo is ignored).`,
 	}(),
 	Args: cobra.MatchAll(cobra.ExactArgs(1), cobra.OnlyValidArgs),
 	RunE: func(_ *cobra.Command, args []string) error {
-		rwc, err := openTpm()
+		rwc, err := openTPM()
 		if err != nil {
 			return err
 		}

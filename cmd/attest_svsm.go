@@ -45,7 +45,7 @@ var attestSVSMCmd = &cobra.Command{
 			return fmt.Errorf("the teeNonce size is %d. SEV-SNP device requires 64", len(opts.teeNonce))
 		}
 
-		rwc, err := openTpm()
+		rwc, err := openTPM()
 		if err != nil {
 			return err
 		}

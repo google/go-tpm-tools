@@ -11,7 +11,7 @@ import (
 )
 
 type gotpmOptions struct {
-	openTPM func(tpmPath string) (io.ReadWriteCloser, error)
+	tpmOpener func(tpmPath string) (io.ReadWriteCloser, error)
 }
 
 // NewGotpmCmd returns the entrypoint for gotpm.
@@ -19,8 +19,8 @@ func NewGotpmCmd() *cobra.Command {
 	return newGotpmCmd(openImpl)
 }
 
-func newGotpmCmd(openTPM func(tpmPath string) (io.ReadWriteCloser, error)) *cobra.Command {
-	o := &gotpmOptions{openTPM: openTPM}
+func newGotpmCmd(tpmOpener func(tpmPath string) (io.ReadWriteCloser, error)) *cobra.Command {
+	o := &gotpmOptions{tpmOpener: tpmOpener}
 	root := &cobra.Command{
 		Use: "gotpm",
 		Long: `Command line tool for the go-tpm TSS

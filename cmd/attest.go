@@ -37,7 +37,7 @@ hardware and guarantees a fresh quote.
 			return err
 		}
 
-		rwc, err := openTpm()
+		rwc, err := openTPM()
 		if err != nil {
 			return err
 		}
