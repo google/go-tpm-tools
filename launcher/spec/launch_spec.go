@@ -439,7 +439,7 @@ func fetchExperiments(logger logging.Logger) experiments.Experiments {
 	experimentsFile := path.Join(launcherfile.HostTmpPath, experimentDataFile)
 
 	var e experiments.Experiments
-	// If a pre-loaded experiments file already exists (e.g. for VG/BC modes),
+	// If a pre-loaded experiments file already exists (e.g. for BC mode),
 	// skip the sync phase and load it directly.
 	if _, err := os.Stat(experimentsFile); err == nil {
 		logger.Info("Pre-loaded experiments file found; skipping sync.")

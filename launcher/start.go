@@ -33,10 +33,7 @@ import (
 	"google.golang.org/api/option"
 )
 
-const (
-	teeServerSocket  = "teeserver.sock"
-	keyManagerSocket = "kmaserver.sock"
-)
+const teeServerSocket = "teeserver.sock"
 
 var expectedTPMDAParams = TPMDAParams{
 	MaxTries:        0x20,    // 32 tries
