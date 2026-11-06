@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"path"
@@ -17,6 +18,7 @@ import (
 	"github.com/containerd/containerd/namespaces"
 	"github.com/containerd/containerd/oci"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
+	"github.com/google/go-tpm-tools/launcher/registryauth"
 	"github.com/google/go-tpm-tools/launcher/spec"
 	"github.com/google/go-tpm-tools/proto/attest"
 	"github.com/opencontainers/runtime-spec/specs-go"
@@ -33,18 +35,25 @@ type NvidiaSmiCmdOutput func() ([]byte, error)
 
 // DriverInstaller contains information about the GPU driver installer settings
 type DriverInstaller struct {
-	cdClient   *containerd.Client
-	launchSpec spec.LaunchSpec
-	logger     logging.Logger
+	cdClient       *containerd.Client
+	launchSpec     spec.LaunchSpec
+	logger         logging.Logger
+	registryClient *http.Client
 }
 
-// NewDriverInstaller instantiates an object of driver installer
-func NewDriverInstaller(cdClient *containerd.Client, launchSpec spec.LaunchSpec, logger logging.Logger) *DriverInstaller {
+// NewDriverInstaller returns a DriverInstaller that uses registryClient to pull the installer image.
+func NewDriverInstaller(cdClient *containerd.Client, launchSpec spec.LaunchSpec, logger logging.Logger, registryClient *http.Client) *DriverInstaller {
 	return &DriverInstaller{
-		cdClient:   cdClient,
-		launchSpec: launchSpec,
-		logger:     logger,
+		cdClient:       cdClient,
+		launchSpec:     launchSpec,
+		logger:         logger,
+		registryClient: registryClient,
 	}
+}
+
+// installerPullOpts passes no token because the registry allows anonymous pulls of the installer image.
+func installerPullOpts(registryClient *http.Client) []containerd.RemoteOpt {
+	return []containerd.RemoteOpt{containerd.WithPullUnpack, containerd.WithResolver(registryauth.Resolver("", registryClient))}
 }
 
 // InstallGPUDrivers installs the GPU driver on host machine using the cos-gpu-installer container.
@@ -68,7 +77,7 @@ func (di *DriverInstaller) InstallGPUDrivers(ctx context.Context) error {
 
 	ctx = namespaces.WithNamespace(ctx, namespaces.Default)
 	di.logger.Info(fmt.Sprintf("COS GPU installer version : %s", InstallerImageRef))
-	image, err := di.cdClient.Pull(ctx, InstallerImageRef, containerd.WithPullUnpack)
+	image, err := di.cdClient.Pull(ctx, InstallerImageRef, installerPullOpts(di.registryClient)...)
 	if err != nil {
 		return fmt.Errorf("failed to pull installer image: %v", err)
 	}
