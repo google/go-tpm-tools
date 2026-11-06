@@ -76,7 +76,7 @@ func StartLauncher(ctx context.Context, launchSpec spec.LaunchSpec, logger loggi
 		if launchSpec.Experiments.BcMode || launchSpec.Experiments.GB300CCMode {
 			logger.Info("GPU driver is pre-installed in BC and GB300 CC mode")
 		} else {
-			installer := gpu.NewDriverInstaller(containerdClient, launchSpec, logger)
+			installer := gpu.NewDriverInstaller(containerdClient, launchSpec, logger, pinnedClient)
 			err = installer.InstallGPUDrivers(ctx)
 			if err != nil {
 				return fmt.Errorf("failed to install gpu drivers: %v", err)

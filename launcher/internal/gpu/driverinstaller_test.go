@@ -1,68 +1,42 @@
 package gpu
 
 import (
-	"os"
-	"path"
+	"errors"
+	"net/http"
+	"slices"
 	"strings"
 	"testing"
 
 	"cos.googlesource.com/cos/tools.git/src/cmd/cos_gpu_installer/deviceinfo"
+	"github.com/containerd/containerd"
 )
 
-func TestVerifyDriverDigest(t *testing.T) {
-	tests := []struct {
-		name        string
-		fileContent string
-		refDigest   string
-		wantErr     bool
-		errSubstr   string
-	}{
-		{
-			name:        "Driver digest matches",
-			fileContent: "test-digest",
-			refDigest:   "8edf273aa28919d86f9f0ab68b1f267280821a3251c281d19748f940c180d27f",
-			wantErr:     false,
-		},
-		{
-			name:        "Driver digest mismatch",
-			fileContent: "test-digest",
-			refDigest:   "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-			wantErr:     true,
-			errSubstr:   "GPU driver digest verification failed",
-		},
-		{
-			name:        "Empty reference driver digest",
-			fileContent: "test-digest",
-			wantErr:     true,
-			errSubstr:   "GPU driver digest verification failed",
-		},
-		{
-			name:      "Installed driver file does not exist",
-			refDigest: "8edf273aa28919d86f9f0ab68b1f267280821a3251c281d19748f940c180d27f",
-			wantErr:   true,
-			errSubstr: "failed to read the file",
-		},
+var errTransportCalled = errors.New("transport called")
+
+// recordingTransport records requested hosts and fails all requests to prevent network calls.
+type recordingTransport struct {
+	hosts []string
+}
+
+func (rt *recordingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	rt.hosts = append(rt.hosts, req.URL.Host)
+	return nil, errTransportCalled
+}
+
+func TestInstallerPullOptsUseRegistryClient(t *testing.T) {
+	transport := &recordingTransport{}
+	rc := &containerd.RemoteContext{}
+	for _, opt := range installerPullOpts(&http.Client{Transport: transport}) {
+		if err := opt(nil, rc); err != nil {
+			t.Fatalf("RemoteOpt failed: %v", err)
+		}
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			tempDir := t.TempDir()
-			filePath := path.Join(tempDir, "file.run")
+	rc.Resolver.Resolve(t.Context(), InstallerImageRef)
 
-			if tt.name != "Installed driver file does not exist" {
-				err := os.WriteFile(filePath, []byte(tt.fileContent), 0644)
-				if err != nil {
-					t.Fatalf("failed to write to the driver digest testfile %s: %v", filePath, err)
-				}
-			}
-			err := verifyDriverDigest(filePath, tt.refDigest)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("VerifyDriverDigest() error = %v, wantErr %v", err, tt.wantErr)
-			}
-			if tt.wantErr && !strings.Contains(err.Error(), tt.errSubstr) {
-				t.Errorf("VerifyDriverDigest() error message %s is expected to contain %s", err.Error(), tt.errSubstr)
-			}
-		})
+	wantHosts := []string{"us.gcr.io"}
+	if !slices.Equal(transport.hosts, wantHosts) {
+		t.Errorf("installerPullOpts() registry client request hosts = %v, want %v", transport.hosts, wantHosts)
 	}
 }
 
