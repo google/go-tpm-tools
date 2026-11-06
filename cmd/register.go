@@ -78,7 +78,7 @@ var solveChallengeCmd = &cobra.Command{
 			return fmt.Errorf("could not read challenge: %s", err)
 		}
 
-		rwc, err := openImpl(tpmPath)
+		rwc, err := openTPM()
 		if err != nil {
 			return fmt.Errorf("could not open TPM: %s", err)
 		}

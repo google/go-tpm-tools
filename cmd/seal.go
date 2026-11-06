@@ -28,7 +28,7 @@ This allows a key (i.e. a disk encryption key) to be bound to specific machine
 state (like Secure Boot).`,
 	Args: cobra.NoArgs,
 	RunE: func(*cobra.Command, []string) error {
-		rwc, err := openTpm()
+		rwc, err := openTPM()
 		if err != nil {
 			return err
 		}
@@ -88,7 +88,7 @@ machine state when sealing took place.
 `,
 	Args: cobra.NoArgs,
 	RunE: func(*cobra.Command, []string) error {
-		rwc, err := openTpm()
+		rwc, err := openTPM()
 		if err != nil {
 			return err
 		}

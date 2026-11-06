@@ -50,7 +50,7 @@ Which handles are flushed depends on the argument passed:
 		}(),
 		Args: cobra.MatchAll(cobra.ExactArgs(1), cobra.OnlyValidArgs),
 		RunE: func(_ *cobra.Command, args []string) error {
-			rwc, err := o.openTpm()
+			rwc, err := o.openTPM()
 			if err != nil {
 				return err
 			}

@@ -176,7 +176,7 @@ The OIDC token includes claims regarding the GCE VM, which is verified by Attest
 			return err
 		}
 
-		rwc, err := openTpm()
+		rwc, err := openTPM()
 		if err != nil {
 			return err
 		}

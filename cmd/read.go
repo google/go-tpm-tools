@@ -31,7 +31,7 @@ If --hash-algo is not provided, all banks of PCRs will be read.
 If --pcrs is not provided, all PCRs are read for that hash algorithm.`,
 	Args: cobra.NoArgs,
 	RunE: func(*cobra.Command, []string) error {
-		rwc, err := openTpm()
+		rwc, err := openTPM()
 		if err != nil {
 			return err
 		}
@@ -78,7 +78,7 @@ Based on the --index flag, this reads all of the NVData present at that NVIndex.
 The read is authenticated with the owner hierarchy and an empty password.`,
 	Args: cobra.NoArgs,
 	RunE: func(*cobra.Command, []string) error {
-		rwc, err := openTpm()
+		rwc, err := openTPM()
 		if err != nil {
 			return err
 		}
