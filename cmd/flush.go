@@ -42,7 +42,7 @@ Which handles are flushed depends on the argument passed:
 	persistent - only evict the persistent handles`,
 		ValidArgs: func() []string {
 			// The keys from the handleNames map are our valid arguments
-			keys := make([]string, len(handleNames))
+			keys := make([]string, 0, len(handleNames))
 			for k := range handleNames {
 				keys = append(keys, k)
 			}

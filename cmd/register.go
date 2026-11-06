@@ -46,7 +46,7 @@ var createChallengeCmd = &cobra.Command{
 	client.`,
 	Args: cobra.NoArgs,
 	RunE: func(_ *cobra.Command, _ []string) error {
-		ekpub, err := readTPMTPublic(dataInput())
+		ekpub, err := readTPMTPublic(dataInput(input))
 		if err != nil {
 			return err
 		}
