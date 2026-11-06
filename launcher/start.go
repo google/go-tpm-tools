@@ -38,6 +38,10 @@ const (
 	keyManagerSocket = "kmaserver.sock"
 )
 
+// openTPM opens the launcher's TPM. Tests replace it so they never touch a real
+// TPM on the test machine.
+var openTPM = tpm2.OpenTPM
+
 var expectedTPMDAParams = TPMDAParams{
 	MaxTries:        0x20,    // 32 tries
 	RecoveryTime:    0x1C20,  // 120 mins
@@ -211,7 +215,7 @@ func initTPM(launchSpec spec.LaunchSpec, logger logging.Logger) (io.ReadWriteClo
 		return nil, nil
 	}
 
-	tpm, err := tpm2.OpenTPM("/dev/tpmrm0")
+	tpm, err := openTPM("/dev/tpmrm0")
 	if err != nil {
 		return nil, &TPMOpenError{Err: err}
 	}
