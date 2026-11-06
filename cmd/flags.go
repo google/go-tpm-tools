@@ -215,12 +215,12 @@ func writeProtoToOutput(message proto.Message, outFormat, outputPath string) err
 
 // Handle to input data file. If there is an issue opening the file, the Reader
 // returned will return the error upon any call to Read()
-func dataInput(input string) io.Reader {
-	if input == "" {
+func dataInput(path string) io.Reader {
+	if path == "" {
 		return os.Stdin
 	}
 
-	file, err := os.Open(input)
+	file, err := os.Open(path)
 	if err != nil {
 		return alwaysError{err}
 	}
@@ -264,7 +264,7 @@ func getSRK(rwc io.ReadWriter, keyAlgo tpm2.Algorithm) (*client.Key, error) {
 	case tpm2.AlgECC:
 		return client.StorageRootKeyECC(rwc)
 	default:
-		panic("unexpected keyAlgo")
+		return nil, fmt.Errorf("unsupported SRK algorithm: %v", keyAlgo)
 	}
 }
 
@@ -276,6 +276,6 @@ func getEK(rwc io.ReadWriter, keyAlgo tpm2.Algorithm) (*client.Key, error) {
 	case tpm2.AlgECC:
 		return client.EndorsementKeyECC(rwc)
 	default:
-		panic("unexpected keyAlgo")
+		return nil, fmt.Errorf("unsupported EK algorithm: %v", keyAlgo)
 	}
 }

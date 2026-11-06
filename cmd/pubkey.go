@@ -49,7 +49,7 @@ defined in the TPM2 spec. If --index is provided, the template is read from
 NVDATA instead (and --algo is ignored).`,
 		ValidArgs: func() []string {
 			// The keys from the hierarchyNames map are our valid arguments
-			keys := make([]string, len(hierarchyNames))
+			keys := make([]string, 0, len(hierarchyNames))
 			for k := range hierarchyNames {
 				keys = append(keys, k)
 			}
