@@ -254,10 +254,17 @@ func initTPM(launchSpec spec.LaunchSpec, logger logging.Logger) (io.ReadWriteClo
 }
 
 // createAttestClients initializes verifier clients (GCA/ITA).
-// When DisableGcaRefresh is false, googleClient must be configured with both OAuth2 token credentials
-// and Google Root CA certificate pinning.
+// When DisableGcaRefresh is false and GB300CCMode is not enabled, googleClient must be configured
+// with both OAuth2 token credentials and Google Root CA certificate pinning.
 func createAttestClients(ctx context.Context, launchSpec spec.LaunchSpec, logger logging.Logger, googleClient *http.Client) (teeserver.AttestClients, error) {
 	attestClients := teeserver.AttestClients{}
+
+	// The GB300 CC agent cannot mint verifier tokens; its evidence comes from
+	// the BMSAI attestation agent instead.
+	if launchSpec.Experiments.GB300CCMode {
+		logger.Info("GB300 CC mode: skipping verifier client setup")
+		return attestClients, nil
+	}
 
 	if !launchSpec.DisableGcaRefresh {
 		if googleClient == nil || googleClient.Transport == nil {

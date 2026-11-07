@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-tpm-tools/launcher/internal/experiments"
 	"github.com/google/go-tpm-tools/launcher/spec"
 	"github.com/google/go-tpm-tools/verifier"
 	"golang.org/x/oauth2"
@@ -128,6 +129,16 @@ func TestCreateAttestClients_Behaviors(t *testing.T) {
 			wantErr:      true,
 			errContains:  "googleClient must be non-nil with a valid transport",
 		},
+		{
+			name: "GB300 CC mode skips verifier client setup",
+			launchSpec: spec.LaunchSpec{
+				GcaAddress:  failingGcaServer.URL,
+				ProjectID:   "test-project",
+				Region:      "us-central1",
+				Experiments: experiments.Experiments{GB300CCMode: true},
+			},
+			googleClient: nil, // nil proves early return before googleClient check
+		},
 	}
 
 	for _, tc := range tests {
@@ -151,6 +162,9 @@ func TestCreateAttestClients_Behaviors(t *testing.T) {
 			}
 			if tc.wantITANotNil && clients.ITA == nil {
 				t.Error("expected ITA client to be non-nil")
+			}
+			if !tc.wantITANotNil && clients.ITA != nil {
+				t.Error("expected ITA client to be nil")
 			}
 		})
 	}
