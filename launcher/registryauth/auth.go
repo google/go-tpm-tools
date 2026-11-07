@@ -9,8 +9,8 @@ import (
 	"strings"
 
 	"cloud.google.com/go/compute/metadata"
-	"github.com/containerd/containerd/remotes"
-	"github.com/containerd/containerd/remotes/docker"
+	"github.com/containerd/containerd/v2/core/remotes"
+	"github.com/containerd/containerd/v2/core/remotes/docker"
 	"golang.org/x/oauth2"
 )
 
@@ -57,9 +57,12 @@ func Resolver(token string, googleClient *http.Client) remotes.Resolver {
 		docker.WithAuthClient(googleClient),
 	)
 
-	// Construct the handlers once upfront
+	// Construct the handlers once upfront. Without WithClient, containerd v2 uses
+	// its own HTTP transport for registry requests instead of http.DefaultClient,
+	// which containerd 1.7 used, so keep using http.DefaultClient explicitly.
 	defaultHosts := docker.ConfigureDefaultRegistries(
 		docker.WithAuthorizer(authorizer),
+		docker.WithClient(http.DefaultClient),
 	)
 	googleHosts := docker.ConfigureDefaultRegistries(
 		docker.WithAuthorizer(googleAuthorizer),
