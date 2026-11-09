@@ -46,7 +46,7 @@ var createChallengeCmd = &cobra.Command{
 	client.`,
 	Args: cobra.NoArgs,
 	RunE: func(_ *cobra.Command, _ []string) error {
-		ekpub, err := readTPMTPublic(dataInput())
+		ekpub, err := readTPMTPublic(dataInput(input))
 		if err != nil {
 			return err
 		}
@@ -78,7 +78,7 @@ var solveChallengeCmd = &cobra.Command{
 			return fmt.Errorf("could not read challenge: %s", err)
 		}
 
-		rwc, err := openImpl()
+		rwc, err := openTPM()
 		if err != nil {
 			return fmt.Errorf("could not open TPM: %s", err)
 		}
@@ -123,7 +123,6 @@ var verifyChallengeCmd = &cobra.Command{
 }
 
 func init() {
-	RootCmd.AddCommand(registerCmd)
 	challengeCommands := []*cobra.Command{
 		createChallengeCmd,
 		solveChallengeCmd,

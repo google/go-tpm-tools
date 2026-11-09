@@ -26,7 +26,6 @@ func TestExperiments(t *testing.T) {
 			expectedExps: Experiments{
 				EnableB200DriverInstallation: true,
 				EnableGpuGcaSupport:          false,
-				EnableHostAttestation:        false,
 			},
 		},
 		{
@@ -35,7 +34,6 @@ func TestExperiments(t *testing.T) {
 				EnableTestFeatureForImage: true,
 				EnableItaVerifier:         true,
 				EnableGpuGcaSupport:       false,
-				EnableHostAttestation:     true,
 			},
 		},
 		{

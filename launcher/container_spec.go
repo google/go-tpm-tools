@@ -137,7 +137,8 @@ func createOCISpecOpts(image containerd.Image, launchSpec spec.LaunchSpec, envs 
 		}
 	}
 
-	// GB300 CC mode: Pass the Local SSDs through as block devices.
+	// GB300 CC mode: Pass the Local SSDs through as block devices and the
+	// TrustZone fTPM character devices (/dev/ftpm, /dev/ftpmrm) when present.
 	if launchSpec.Experiments.GB300CCMode {
 		devs, err := discoverLSSDDevs(defaultLSSDHostDir, defaultLSSDContainerDir, isBlockDevice)
 		if err != nil {
@@ -148,6 +149,28 @@ func createOCISpecOpts(image containerd.Image, launchSpec spec.LaunchSpec, envs 
 			logger.Info(fmt.Sprintf("GB300 CC mode: passing Local SSD %s through as %s", dev.hostPath, dev.containerPath))
 			// Last argument is the device-cgroup access (r/w/m), not a file mode.
 			specOpts = append(specOpts, oci.WithDevices(dev.hostPath, dev.containerPath, "rw"))
+		}
+
+		if launchSpec.NonrootContainer {
+			// fTPM passthrough is not supported for non-root containers yet. In a user
+			// namespace, runc bind-mounts the host device node (0600, root-owned) instead
+			// of creating a new node, so the 0666 FileMode override is ignored and the
+			// workload's remapped root user cannot open the fTPM.
+			// Not fatal: continue launching the workload without the fTPM.
+			logger.Error("GB300 CC mode: fTPM passthrough is not supported for non-root containers; skipping fTPM passthrough")
+		} else {
+			ftpmDevs, err := findGB300FTPMDevs()
+			if err != nil {
+				return nil, fmt.Errorf("failed to discover GB300 fTPM devices: %w", err)
+			}
+			if len(ftpmDevs) == 0 {
+				// Not fatal: continue launching the workload without the fTPM.
+				logger.Error("GB300 CC mode: no fTPM device symlinks (/dev/ftpm, /dev/ftpmrm) found on host; skipping fTPM passthrough")
+			}
+			for _, dev := range ftpmDevs {
+				logger.Info(fmt.Sprintf("GB300 CC mode: passing fTPM device %s through as %s", dev.hostPath, dev.containerPath))
+				specOpts = append(specOpts, withFTPMDevice(dev.hostPath, dev.containerPath))
+			}
 		}
 	}
 

@@ -176,7 +176,7 @@ The OIDC token includes claims regarding the GCE VM, which is verified by Attest
 			return err
 		}
 
-		rwc, err := openTpm()
+		rwc, err := openTPM()
 		if err != nil {
 			return err
 		}
@@ -395,7 +395,6 @@ func runToken(ctx context.Context, rwc io.ReadWriter, opts tokenOptions) ([]byte
 }
 
 func init() {
-	RootCmd.AddCommand(tokenCmd)
 	addTokenFlags(tokenCmd)
 	// TODO: Add TEE hardware OIDC token generation
 	// addTeeNonceflag(tokenCmd)

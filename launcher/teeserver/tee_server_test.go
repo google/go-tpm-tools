@@ -1185,6 +1185,26 @@ func TestGetKeyEndorsement(t *testing.T) {
 	}
 }
 
+func TestGetHostAttestation_NotBCModeForbidden(t *testing.T) {
+	body, err := protojson.Marshal(&tspb.GetHostAttestationRequest{Challenge: []byte("test-challenge")})
+	if err != nil {
+		t.Fatalf("protojson.Marshal() err = %v, want nil", err)
+	}
+	handler := &attestHandler{
+		ctx:         t.Context(),
+		attestAgent: &fakeAttestationAgent{},
+		logger:      logging.SimpleLogger(),
+		bcMode:      false,
+	}
+	rr := httptest.NewRecorder()
+
+	handler.getHostAttestation(rr, httptest.NewRequest(http.MethodPost, hostAttestationEndpoint, bytes.NewBuffer(body)))
+
+	if rr.Code != http.StatusForbidden {
+		t.Errorf("getHostAttestation() status = %v, want %v", rr.Code, http.StatusForbidden)
+	}
+}
+
 func TestNewKPSKEMAttester(t *testing.T) {
 	attester, err := newKPSKEMAttester()
 	if err != nil {
@@ -1220,7 +1240,6 @@ func TestTeeServer_Shutdown(t *testing.T) {
 		nl,
 		&fakeAttestationAgent{},
 		logging.SimpleLogger(),
-		false,
 		false,
 		AttestClients{},
 	)

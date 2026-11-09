@@ -37,7 +37,7 @@ hardware and guarantees a fresh quote.
 			return err
 		}
 
-		rwc, err := openTpm()
+		rwc, err := openTPM()
 		if err != nil {
 			return err
 		}
@@ -283,7 +283,6 @@ func getInstanceInfoFromMetadata(ctx context.Context) (*attest.GCEInstanceInfo, 
 }
 
 func init() {
-	RootCmd.AddCommand(attestCmd)
 	addAttestFlags(attestCmd)
 	attestCmd.AddCommand(attestSVSMCmd)
 }

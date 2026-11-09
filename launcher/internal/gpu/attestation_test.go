@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -29,15 +32,19 @@ func (f *fakeGpuQuoteProvider) CollectGpuEvidence(_ [32]byte) (*nvattestpb.GpuAt
 	return f.quote, nil
 }
 
-func validDevInfo(uuid, vbios, driver string, arch nvattestpb.GpuArchitectureType) *nvattestpb.GpuInfo {
-	return &nvattestpb.GpuInfo{
-		Uuid:                        uuid,
-		VbiosVersion:                vbios,
-		DriverVersion:               driver,
-		GpuArchitecture:             arch,
+func validDevInfo(overrides *nvattestpb.GpuInfo) *nvattestpb.GpuInfo {
+	info := &nvattestpb.GpuInfo{
+		Uuid:                        "gpu-0",
+		VbiosVersion:                "vbios-0",
+		DriverVersion:               NvDriverVer595_58_03,
+		GpuArchitecture:             nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_HOPPER,
 		AttestationReport:           []byte("fake-report-bytes"),
 		AttestationCertificateChain: []byte("fake-cert-chain-bytes"),
 	}
+	if overrides != nil {
+		proto.Merge(info, overrides)
+	}
+	return info
 }
 
 func TestCollectAttestationEvidence(t *testing.T) {
@@ -59,7 +66,7 @@ func TestCollectAttestationEvidence(t *testing.T) {
 			provider: &fakeGpuQuoteProvider{
 				quote: &nvattestpb.GpuAttestationQuote{
 					GpuInfos: []*nvattestpb.GpuInfo{
-						validDevInfo("gpu-h100-0", "vbios-h100", "550.54.14", nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_HOPPER),
+						validDevInfo(nil),
 					},
 				},
 			},
@@ -74,7 +81,9 @@ func TestCollectAttestationEvidence(t *testing.T) {
 			provider: &fakeGpuQuoteProvider{
 				quote: &nvattestpb.GpuAttestationQuote{
 					GpuInfos: []*nvattestpb.GpuInfo{
-						validDevInfo("gpu-rtx-0", "vbios-rtx", "550.54.14", nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_BLACKWELL),
+						validDevInfo(&nvattestpb.GpuInfo{
+							GpuArchitecture: nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_BLACKWELL,
+						}),
 					},
 				},
 			},
@@ -89,7 +98,9 @@ func TestCollectAttestationEvidence(t *testing.T) {
 			provider: &fakeGpuQuoteProvider{
 				quote: &nvattestpb.GpuAttestationQuote{
 					GpuInfos: []*nvattestpb.GpuInfo{
-						validDevInfo("gpu-b200-0", "vbios-b200", "550.54.14", nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_BLACKWELL),
+						validDevInfo(&nvattestpb.GpuInfo{
+							GpuArchitecture: nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_BLACKWELL,
+						}),
 					},
 				},
 			},
@@ -104,8 +115,16 @@ func TestCollectAttestationEvidence(t *testing.T) {
 			provider: &fakeGpuQuoteProvider{
 				quote: &nvattestpb.GpuAttestationQuote{
 					GpuInfos: []*nvattestpb.GpuInfo{
-						validDevInfo("gpu-b200-0", "vbios-b200-0", "550.54.14", nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_BLACKWELL),
-						validDevInfo("gpu-b200-1", "vbios-b200-1", "550.54.14", nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_BLACKWELL),
+						validDevInfo(&nvattestpb.GpuInfo{
+							Uuid:            "gpu-b200-0",
+							VbiosVersion:    "vbios-b200-0",
+							GpuArchitecture: nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_BLACKWELL,
+						}),
+						validDevInfo(&nvattestpb.GpuInfo{
+							Uuid:            "gpu-b200-1",
+							VbiosVersion:    "vbios-b200-1",
+							GpuArchitecture: nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_BLACKWELL,
+						}),
 					},
 				},
 			},
@@ -120,8 +139,8 @@ func TestCollectAttestationEvidence(t *testing.T) {
 			provider: &fakeGpuQuoteProvider{
 				quote: &nvattestpb.GpuAttestationQuote{
 					GpuInfos: []*nvattestpb.GpuInfo{
-						validDevInfo("gpu-0", "vbios-0", "550.54.14", nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_HOPPER),
-						validDevInfo("gpu-1", "vbios-1", "550.54.14", nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_HOPPER),
+						validDevInfo(nil),
+						validDevInfo(&nvattestpb.GpuInfo{Uuid: "gpu-1"}),
 					},
 				},
 			},
@@ -135,8 +154,13 @@ func TestCollectAttestationEvidence(t *testing.T) {
 			provider: &fakeGpuQuoteProvider{
 				quote: &nvattestpb.GpuAttestationQuote{
 					GpuInfos: []*nvattestpb.GpuInfo{
-						validDevInfo("gpu-0", "vbios-0", "550.54.14", nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_BLACKWELL),
-						validDevInfo("gpu-1", "vbios-1", "550.54.14", nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_BLACKWELL),
+						validDevInfo(&nvattestpb.GpuInfo{
+							GpuArchitecture: nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_BLACKWELL,
+						}),
+						validDevInfo(&nvattestpb.GpuInfo{
+							Uuid:            "gpu-1",
+							GpuArchitecture: nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_BLACKWELL,
+						}),
 					},
 				},
 			},
@@ -150,7 +174,7 @@ func TestCollectAttestationEvidence(t *testing.T) {
 			provider: &fakeGpuQuoteProvider{
 				quote: &nvattestpb.GpuAttestationQuote{
 					GpuInfos: []*nvattestpb.GpuInfo{
-						validDevInfo("gpu-0", "vbios-0", "550.54.14", nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_HOPPER),
+						validDevInfo(nil),
 					},
 				},
 			},
@@ -164,7 +188,7 @@ func TestCollectAttestationEvidence(t *testing.T) {
 			provider: &fakeGpuQuoteProvider{
 				quote: &nvattestpb.GpuAttestationQuote{
 					GpuInfos: []*nvattestpb.GpuInfo{
-						validDevInfo("gpu-0", "vbios-0", "550.54.14", nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_HOPPER),
+						validDevInfo(nil),
 					},
 				},
 			},
@@ -188,10 +212,22 @@ func TestCollectAttestationEvidence(t *testing.T) {
 			provider: &fakeGpuQuoteProvider{
 				quote: &nvattestpb.GpuAttestationQuote{
 					GpuInfos: []*nvattestpb.GpuInfo{
-						validDevInfo("gpu-gb300-0", "97.10.89.00.02", "620.06", nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_BLACKWELL),
-						validDevInfo("gpu-gb300-1", "97.10.89.00.02", "620.06", nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_BLACKWELL),
-						validDevInfo("gpu-gb300-2", "97.10.89.00.02", "620.06", nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_BLACKWELL),
-						validDevInfo("gpu-gb300-3", "97.10.89.00.02", "620.06", nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_BLACKWELL),
+						validDevInfo(&nvattestpb.GpuInfo{
+							Uuid:            "gpu-gb300-0",
+							GpuArchitecture: nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_BLACKWELL,
+						}),
+						validDevInfo(&nvattestpb.GpuInfo{
+							Uuid:            "gpu-gb300-1",
+							GpuArchitecture: nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_BLACKWELL,
+						}),
+						validDevInfo(&nvattestpb.GpuInfo{
+							Uuid:            "gpu-gb300-2",
+							GpuArchitecture: nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_BLACKWELL,
+						}),
+						validDevInfo(&nvattestpb.GpuInfo{
+							Uuid:            "gpu-gb300-3",
+							GpuArchitecture: nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_BLACKWELL,
+						}),
 					},
 				},
 			},
@@ -219,7 +255,14 @@ func TestCollectAttestationEvidence(t *testing.T) {
 			provider: &fakeGpuQuoteProvider{
 				quote: &nvattestpb.GpuAttestationQuote{
 					GpuInfos: []*nvattestpb.GpuInfo{
-						validDevInfo("", "vbios-0", "550.54.14", nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_HOPPER),
+						{
+							Uuid:                        "",
+							VbiosVersion:                "vbios-0",
+							DriverVersion:               NvDriverVer595_58_03,
+							GpuArchitecture:             nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_HOPPER,
+							AttestationReport:           []byte("fake-report-bytes"),
+							AttestationCertificateChain: []byte("fake-cert-chain-bytes"),
+						},
 					},
 				},
 			},
@@ -233,7 +276,14 @@ func TestCollectAttestationEvidence(t *testing.T) {
 			provider: &fakeGpuQuoteProvider{
 				quote: &nvattestpb.GpuAttestationQuote{
 					GpuInfos: []*nvattestpb.GpuInfo{
-						validDevInfo("gpu-test-0", "vbios-0", "", nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_HOPPER),
+						{
+							Uuid:                        "gpu-test-0",
+							VbiosVersion:                "vbios-0",
+							DriverVersion:               "",
+							GpuArchitecture:             nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_HOPPER,
+							AttestationReport:           []byte("fake-report-bytes"),
+							AttestationCertificateChain: []byte("fake-cert-chain-bytes"),
+						},
 					},
 				},
 			},
@@ -247,7 +297,14 @@ func TestCollectAttestationEvidence(t *testing.T) {
 			provider: &fakeGpuQuoteProvider{
 				quote: &nvattestpb.GpuAttestationQuote{
 					GpuInfos: []*nvattestpb.GpuInfo{
-						validDevInfo("gpu-test-0", "", "550.54.14", nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_HOPPER),
+						{
+							Uuid:                        "gpu-test-0",
+							VbiosVersion:                "",
+							DriverVersion:               NvDriverVer595_58_03,
+							GpuArchitecture:             nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_HOPPER,
+							AttestationReport:           []byte("fake-report-bytes"),
+							AttestationCertificateChain: []byte("fake-cert-chain-bytes"),
+						},
 					},
 				},
 			},
@@ -261,7 +318,14 @@ func TestCollectAttestationEvidence(t *testing.T) {
 			provider: &fakeGpuQuoteProvider{
 				quote: &nvattestpb.GpuAttestationQuote{
 					GpuInfos: []*nvattestpb.GpuInfo{
-						validDevInfo("gpu-test-0", "vbios-0", "550.54.14", nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_UNSPECIFIED),
+						{
+							Uuid:                        "gpu-test-0",
+							VbiosVersion:                "vbios-0",
+							DriverVersion:               NvDriverVer595_58_03,
+							GpuArchitecture:             nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_UNSPECIFIED,
+							AttestationReport:           []byte("fake-report-bytes"),
+							AttestationCertificateChain: []byte("fake-cert-chain-bytes"),
+						},
 					},
 				},
 			},
@@ -278,7 +342,7 @@ func TestCollectAttestationEvidence(t *testing.T) {
 						{
 							Uuid:                        "gpu-test-0",
 							VbiosVersion:                "vbios-0",
-							DriverVersion:               "550.54.14",
+							DriverVersion:               NvDriverVer595_58_03,
 							GpuArchitecture:             nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_HOPPER,
 							AttestationReport:           nil,
 							AttestationCertificateChain: []byte("fake-cert-chain"),
@@ -299,7 +363,7 @@ func TestCollectAttestationEvidence(t *testing.T) {
 						{
 							Uuid:                        "gpu-test-0",
 							VbiosVersion:                "vbios-0",
-							DriverVersion:               "550.54.14",
+							DriverVersion:               NvDriverVer595_58_03,
 							GpuArchitecture:             nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_HOPPER,
 							AttestationReport:           []byte("fake-report"),
 							AttestationCertificateChain: nil,
@@ -314,14 +378,8 @@ func TestCollectAttestationEvidence(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			fn := &getGpuTypeInfo
-			getGpuTypeInfo = func(string) (deviceinfo.GPUType, error) {
-				return tc.gpuType, nil
-			}
-			t.Cleanup(func() { getGpuTypeInfo = *fn })
-
 			attester := &NvidiaAttester{}
-			attesation, err := attester.collectAttestationEvidence(tc.provider, tc.nonce)
+			attestation, err := attester.collectAttestationEvidence(tc.provider, tc.gpuType, tc.nonce)
 			if gotPass := (err == nil); gotPass != tc.wantPass {
 				t.Fatalf("CollectAttestationEvidence() error = %v, wantPass = %v", err, tc.wantPass)
 			}
@@ -334,15 +392,15 @@ func TestCollectAttestationEvidence(t *testing.T) {
 
 			// Validate SHA-256 hashed challenge nonce
 			expectedNonce := sha256.Sum256(tc.nonce)
-			if !bytes.Equal(attesation.GetNonce(), expectedNonce[:]) {
-				t.Errorf("attesation.GetNonce() = %x, want %x", attesation.GetNonce(), expectedNonce)
+			if !bytes.Equal(attestation.GetNonce(), expectedNonce[:]) {
+				t.Errorf("attestation.GetNonce() = %x, want %x", attestation.GetNonce(), expectedNonce)
 			}
 
 			// Validate SPT vs MPT feature structure and fields
 			if tc.wantSPT {
-				sptReport, ok := attesation.CcFeature.(*attestationpb.NvidiaAttestationReport_Spt)
+				sptReport, ok := attestation.CcFeature.(*attestationpb.NvidiaAttestationReport_Spt)
 				if !ok {
-					t.Fatalf("attesation.CcFeature is %T, want *attestationpb.NvidiaAttestationReport_Spt", attesation.CcFeature)
+					t.Fatalf("attestation.CcFeature is %T, want *attestationpb.NvidiaAttestationReport_Spt", attestation.CcFeature)
 				}
 				quote := sptReport.Spt.GetGpuQuote()
 				if quote == nil {
@@ -370,9 +428,9 @@ func TestCollectAttestationEvidence(t *testing.T) {
 			}
 
 			if tc.wantMPT {
-				mptReport, ok := attesation.CcFeature.(*attestationpb.NvidiaAttestationReport_Mpt)
+				mptReport, ok := attestation.CcFeature.(*attestationpb.NvidiaAttestationReport_Mpt)
 				if !ok {
-					t.Fatalf("attesation.CcFeature is %T, want *attestationpb.NvidiaAttestationReport_Mpt", attesation.CcFeature)
+					t.Fatalf("attestation.CcFeature is %T, want *attestationpb.NvidiaAttestationReport_Mpt", attestation.CcFeature)
 				}
 				quotes := mptReport.Mpt.GetGpuQuotes()
 				fakeDevs := tc.provider.(*fakeGpuQuoteProvider).quote.GpuInfos
@@ -400,15 +458,15 @@ func TestCollectAttestationEvidence(t *testing.T) {
 			}
 
 			// Wire format guardrail: verify protobuf serialization & deserialization round-trip
-			marshaled, err := proto.Marshal(attesation)
+			marshaled, err := proto.Marshal(attestation)
 			if err != nil {
-				t.Fatalf("proto.Marshal(attesation) failed: %v", err)
+				t.Fatalf("proto.Marshal(attestation) failed: %v", err)
 			}
 			unmarshaled := &attestationpb.NvidiaAttestationReport{}
 			if err := proto.Unmarshal(marshaled, unmarshaled); err != nil {
 				t.Fatalf("proto.Unmarshal(marshaled) failed: %v", err)
 			}
-			if diff := cmp.Diff(attesation, unmarshaled, protocmp.Transform()); diff != "" {
+			if diff := cmp.Diff(attestation, unmarshaled, protocmp.Transform()); diff != "" {
 				t.Errorf("proto round-trip mismatch (-want +got):\n%s", diff)
 			}
 		})
@@ -513,13 +571,7 @@ func TestDetermineAttestationType(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			fn := &getGpuTypeInfo
-			getGpuTypeInfo = func(string) (deviceinfo.GPUType, error) {
-				return tc.gpuType, nil
-			}
-			t.Cleanup(func() { getGpuTypeInfo = *fn })
-
-			if got := determineAttestationType(tc.gpuInfos); got != tc.want {
+			if got := determineAttestationType(tc.gpuType, tc.gpuInfos); got != tc.want {
 				t.Errorf("determineAttestationType() = %v, want %v", got, tc.want)
 			}
 		})
@@ -572,51 +624,114 @@ func TestNewNvidiaAttester(t *testing.T) {
 	var _ Attester = got
 }
 
-func TestAttestWithQuoteProvider(t *testing.T) {
-	fn := &getGpuTypeInfo
-	getGpuTypeInfo = func(string) (deviceinfo.GPUType, error) {
-		return deviceinfo.H100, nil
-	}
-	t.Cleanup(func() { getGpuTypeInfo = *fn })
+const (
+	h100DeviceID       uint16 = 0x2330
+	rtxPro6000DeviceID uint16 = 0x2bb5
+	l4DeviceID         uint16 = 0x27b8
+)
 
-	fakeProvider := &fakeGpuQuoteProvider{
-		quote: &nvattestpb.GpuAttestationQuote{
-			GpuInfos: []*nvattestpb.GpuInfo{
-				validDevInfo("gpu-provider-test-0", "vbios-test", "550.54.14", nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_HOPPER),
-			},
+// writeFakePCIDevice creates a sysfs-like PCI devices directory with one
+// device that has the given vendor and device IDs, and returns its path.
+func writeFakePCIDevice(t *testing.T, vendorID, deviceID uint16) string {
+	t.Helper()
+	pciDir := t.TempDir()
+	devDir := filepath.Join(pciDir, "0000:00:04.0")
+	if err := os.MkdirAll(devDir, 0755); err != nil {
+		t.Fatalf("failed to create fake PCI device: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(devDir, "vendor"), []byte(fmt.Sprintf("0x%04x\n", vendorID)), 0644); err != nil {
+		t.Fatalf("failed to write vendor file: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(devDir, "device"), []byte(fmt.Sprintf("0x%04x\n", deviceID)), 0644); err != nil {
+		t.Fatalf("failed to write device file: %v", err)
+	}
+	return pciDir
+}
+
+func TestAttestWithQuoteProvider(t *testing.T) {
+	testCases := []struct {
+		name     string
+		vendorID uint16
+		deviceID uint16
+		arch     nvattestpb.GpuArchitectureType
+	}{
+		{
+			name:     "H100 Hopper",
+			vendorID: deviceinfo.NvidiaVendorID,
+			deviceID: h100DeviceID,
+			arch:     nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_HOPPER,
+		},
+		{
+			name:     "RTX PRO 6000 Blackwell",
+			vendorID: deviceinfo.NvidiaVendorID,
+			deviceID: rtxPro6000DeviceID,
+			arch:     nvattestpb.GpuArchitectureType_GPU_ARCHITECTURE_BLACKWELL,
 		},
 	}
 
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			pciDir := writeFakePCIDevice(t, tc.vendorID, tc.deviceID)
+
+			fakeProvider := &fakeGpuQuoteProvider{
+				quote: &nvattestpb.GpuAttestationQuote{
+					GpuInfos: []*nvattestpb.GpuInfo{
+						validDevInfo(&nvattestpb.GpuInfo{Uuid: "gpu-provider-test-0", GpuArchitecture: tc.arch}),
+					},
+				},
+			}
+
+			attester := &NvidiaAttester{
+				quoteProvider: fakeProvider,
+				pciDevicesDir: pciDir,
+			}
+
+			challengeNonce := []byte("challenge-nonce-12345")
+			evidence, err := attester.Attest(challengeNonce)
+			if err != nil {
+				t.Fatalf("Attest() failed: %v", err)
+			}
+
+			report, ok := evidence.(*attestationpb.NvidiaAttestationReport)
+			if !ok {
+				t.Fatalf("Attest() returned %T, want *attestationpb.NvidiaAttestationReport", evidence)
+			}
+
+			expectedNonce := sha256.Sum256(challengeNonce)
+			if !bytes.Equal(report.GetNonce(), expectedNonce[:]) {
+				t.Errorf("report.GetNonce() = %x, want %x", report.GetNonce(), expectedNonce)
+			}
+
+			quote := report.GetSpt().GetGpuQuote()
+			if quote == nil {
+				t.Fatal("report.GetSpt().GetGpuQuote() is nil")
+			}
+			if quote.GetUuid() != "gpu-provider-test-0" {
+				t.Errorf("quote.GetUuid() = %v, want %v", quote.GetUuid(), "gpu-provider-test-0")
+			}
+		})
+	}
+}
+
+func TestAttestUnsupportedGPU(t *testing.T) {
 	attester := &NvidiaAttester{
-		quoteProvider: fakeProvider,
+		quoteProvider: &fakeGpuQuoteProvider{
+			quote: &nvattestpb.GpuAttestationQuote{
+				GpuInfos: []*nvattestpb.GpuInfo{
+					validDevInfo(nil),
+				},
+			},
+		},
+		pciDevicesDir: writeFakePCIDevice(t, deviceinfo.NvidiaVendorID, l4DeviceID),
 	}
+	if _, err := attester.Attest(nil); err == nil || !strings.Contains(err.Error(), "unsupported GPU attestation") {
+		t.Errorf("Attest() error = %v, want error containing %q", err, "unsupported GPU attestation")
+	}
+}
 
-	challengeNonce := []byte("challenge-nonce-12345")
-	evidence, err := attester.Attest(challengeNonce)
-	if err != nil {
-		t.Fatalf("Attest() failed: %v", err)
-	}
-
-	report, ok := evidence.(*attestationpb.NvidiaAttestationReport)
-	if !ok {
-		t.Fatalf("Attest() returned %T, want *attestationpb.NvidiaAttestationReport", evidence)
-	}
-
-	expectedNonce := sha256.Sum256(challengeNonce)
-	if !bytes.Equal(report.GetNonce(), expectedNonce[:]) {
-		t.Errorf("report.GetNonce() = %x, want %x", report.GetNonce(), expectedNonce)
-	}
-
-	quote := report.GetSpt().GetGpuQuote()
-	if quote == nil {
-		t.Fatal("report.GetSpt().GetGpuQuote() is nil")
-	}
-	if quote.GetUuid() != "gpu-provider-test-0" {
-		t.Errorf("quote.GetUuid() = %v, want %v", quote.GetUuid(), "gpu-provider-test-0")
-	}
-
-	// Verify nil attester error handling
+func TestNilNvidiaAttester(t *testing.T) {
 	var nilAttester *NvidiaAttester
+	challengeNonce := []byte("challenge-nonce-12345")
 	if _, err := nilAttester.Attest(challengeNonce); err == nil {
 		t.Error("nilAttester.Attest() expected error, got nil")
 	}

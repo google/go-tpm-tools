@@ -57,7 +57,7 @@ func (di *DriverInstaller) InstallGPUDrivers(ctx context.Context) error {
 		return fmt.Errorf("failed to remount the installation directory: %v", err)
 	}
 
-	gpuType, err := getGpuTypeInfo(PciDevicesDir)
+	gpuType, err := deviceinfo.GetGPUTypeInfo(PciDevicesDir)
 	if err != nil {
 		return fmt.Errorf("failed to get the GPU type info: %v", err)
 	}
