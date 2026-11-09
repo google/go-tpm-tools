@@ -395,9 +395,11 @@ func (w *JSONSeverityWriter) formatObject(obj map[string]json.RawMessage) ([]byt
 }
 
 // isJournaldField reports whether key would collide with a field that journald
-// attaches to each entry (such as _HOSTNAME or MESSAGE), which Cloud Logging
-// queries rely on and workloads must not be able to overwrite. journald field
-// names are uppercase, so keys such as "_id" are left alone.
+// attaches to every entry, such as the VM name (_HOSTNAME), _SYSTEMD_UNIT or the
+// launcher's MESSAGE. Without renaming, a workload could print
+// {"_HOSTNAME":"other-vm"} and make its logs look like they came from another
+// VM or from the launcher. journald field names are uppercase, so keys such as
+// "_id" are left alone.
 func isJournaldField(key string) bool {
 	if key == "" || strings.ToUpper(key) != key {
 		return false

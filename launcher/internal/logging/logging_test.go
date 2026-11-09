@@ -459,8 +459,8 @@ func TestJSONSeverityWriter_JSONPassThrough(t *testing.T) {
 		{
 			name:     "renames_journald_fields",
 			severity: "INFO",
-			input:    `{"message":"spoof","_HOSTNAME":"other-vm","MESSAGE":"x","SYSLOG_IDENTIFIER":"y","_id":7}` + "\n",
-			want:     `{"_id":7,"message":"spoof","severity":"INFO","workload_MESSAGE":"x","workload_SYSLOG_IDENTIFIER":"y","workload__HOSTNAME":"other-vm"}` + "\n",
+			input:    `{"message":"spoof","_HOSTNAME":"other-vm","_SYSTEMD_UNIT":"u","MESSAGE":"x","PRIORITY":"0","SYSLOG_IDENTIFIER":"y","_id":7,"Priority":"p"}` + "\n",
+			want:     `{"Priority":"p","_id":7,"message":"spoof","severity":"INFO","workload_MESSAGE":"x","workload_PRIORITY":"0","workload_SYSLOG_IDENTIFIER":"y","workload__HOSTNAME":"other-vm","workload__SYSTEMD_UNIT":"u"}` + "\n",
 		},
 		{
 			name:     "preserves_workload_severity_and_fields",
