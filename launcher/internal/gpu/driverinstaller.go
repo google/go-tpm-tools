@@ -27,6 +27,9 @@ import (
 const (
 	installerContainerID = "tee-gpu-driver-installer-container"
 	installerSnapshotID  = "tee-gpu-driver-installer-snapshot"
+	// installerImageDigestRef includes InstallerDigest so that containerd
+	// rejects a different manifest before it downloads any layers.
+	installerImageDigestRef = InstallerImageRef + "@" + InstallerDigest
 )
 
 // NvidiaSmiCmdOutput defines a function type for executing an NVIDIA SMI command
@@ -77,7 +80,7 @@ func (di *DriverInstaller) InstallGPUDrivers(ctx context.Context) error {
 
 	ctx = namespaces.WithNamespace(ctx, namespaces.Default)
 	di.logger.Info(fmt.Sprintf("COS GPU installer version : %s", InstallerImageRef))
-	image, err := di.cdClient.Pull(ctx, InstallerImageRef, installerPullOpts(di.registryClient)...)
+	image, err := di.cdClient.Pull(ctx, installerImageDigestRef, installerPullOpts(di.registryClient)...)
 	if err != nil {
 		return fmt.Errorf("failed to pull installer image: %v", err)
 	}
