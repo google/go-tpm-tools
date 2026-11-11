@@ -1,6 +1,8 @@
 package client
 
 import (
+	"crypto"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -45,6 +47,41 @@ const (
 func isHierarchy(h tpmutil.Handle) bool {
 	return h == tpm2.HandleOwner || h == tpm2.HandleEndorsement ||
 		h == tpm2.HandlePlatform || h == tpm2.HandleNull
+}
+
+// ErrNoKeyFound is returned by FindHandle when no persistent key in the TPM
+// matches the given public key.
+var ErrNoKeyFound = errors.New("no persistent key matches the public key")
+
+// FindHandle returns the handle of the persistent key whose public key is pub,
+// or ErrNoKeyFound if no persistent key matches. The result can be passed to
+// LoadCachedKey to use the key.
+func FindHandle(rw io.ReadWriter, pub crypto.PublicKey) (tpmutil.Handle, error) {
+	want, ok := pub.(interface{ Equal(crypto.PublicKey) bool })
+	if !ok {
+		return 0, fmt.Errorf("public key of type %T cannot be compared", pub)
+	}
+
+	handles, err := Handles(rw, tpm2.HandleTypePersistent)
+	if err != nil {
+		return 0, err
+	}
+	for _, h := range handles {
+		pubArea, _, _, err := tpm2.ReadPublic(rw, h)
+		if err != nil {
+			// Not readable by us, skip it
+			continue
+		}
+		key, err := pubArea.Key()
+		if err != nil {
+			// A persistent object with no crypto.PublicKey form.
+			continue
+		}
+		if want.Equal(key) {
+			return h, nil
+		}
+	}
+	return 0, ErrNoKeyFound
 }
 
 // Handles returns a slice of tpmutil.Handle objects of all handles within
