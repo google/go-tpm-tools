@@ -9,12 +9,13 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"time"
 
 	"cloud.google.com/go/compute/metadata"
 	"cos.googlesource.com/cos/tools.git/src/cmd/cos_gpu_installer/deviceinfo"
-	"github.com/containerd/containerd"
-	"github.com/containerd/containerd/defaults"
-	"github.com/containerd/containerd/namespaces"
+	containerd "github.com/containerd/containerd/v2/client"
+	"github.com/containerd/containerd/v2/defaults"
+	"github.com/containerd/containerd/v2/pkg/namespaces"
 	"github.com/google/go-tpm-tools/agent"
 	"github.com/google/go-tpm-tools/agent/device"
 	"github.com/google/go-tpm-tools/client"
@@ -56,6 +57,15 @@ func StartLauncher(ctx context.Context, launchSpec spec.LaunchSpec, logger loggi
 		return &RetryableError{Err: err}
 	}
 	defer containerdClient.Close()
+
+	// containerd v2's New does not connect to the daemon. Check that it is
+	// reachable so that an unreachable daemon is still reported as retryable.
+	versionCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	_, err = containerdClient.Version(versionCtx)
+	cancel()
+	if err != nil {
+		return &RetryableError{Err: fmt.Errorf("failed to reach containerd: %w", err)}
+	}
 
 	tpm, err := initTPM(launchSpec, logger)
 	if err != nil {
