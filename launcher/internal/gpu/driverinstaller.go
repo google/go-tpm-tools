@@ -79,7 +79,7 @@ func (di *DriverInstaller) InstallGPUDrivers(ctx context.Context) error {
 	}
 
 	ctx = namespaces.WithNamespace(ctx, namespaces.Default)
-	di.logger.Info(fmt.Sprintf("COS GPU installer version : %s", InstallerImageRef))
+	di.logger.Info(fmt.Sprintf("COS GPU installer version : %s", installerImageDigestRef))
 	image, err := di.cdClient.Pull(ctx, installerImageDigestRef, installerPullOpts(di.registryClient)...)
 	if err != nil {
 		return fmt.Errorf("failed to pull installer image: %v", err)
