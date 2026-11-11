@@ -24,6 +24,12 @@ func fakeBlockDevChecker(path string) (bool, error) {
 	return fi.Mode().IsRegular(), nil
 }
 
+// fakeInUseChecker reports every device as free.
+// Tests cannot mount a device to make the real check fail.
+func fakeInUseChecker(string) (bool, error) {
+	return false, nil
+}
+
 type devSymlinks []struct {
 	dev, link string
 }
@@ -98,7 +104,7 @@ func TestDiscoverLSSDDevs(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := discoverLSSDDevs(byIDDir, tc.containerDir, fakeBlockDevChecker)
+			got, err := discoverLSSDDevs(byIDDir, tc.containerDir, fakeBlockDevChecker, fakeInUseChecker)
 			if err != nil {
 				t.Fatalf("discoverLSSDDevs(%q, %q) returned error: %v", byIDDir, tc.containerDir, err)
 			}
@@ -135,7 +141,7 @@ func TestDiscoverLSSDDevs_NoLSSDs(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := discoverLSSDDevs(tc.hostDir, defaultLSSDContainerDir, fakeBlockDevChecker)
+			got, err := discoverLSSDDevs(tc.hostDir, defaultLSSDContainerDir, fakeBlockDevChecker, fakeInUseChecker)
 			if err != nil {
 				t.Fatalf("discoverLSSDDevs(%q, %q) returned error: %v", tc.hostDir, defaultLSSDContainerDir, err)
 			}
@@ -151,6 +157,7 @@ func TestDiscoverLSSDDevs_Errors(t *testing.T) {
 		name         string
 		links        devSymlinks
 		containerDir string
+		inUse        func(string) (bool, error) // nil uses fakeInUseChecker.
 		wantErr      string
 	}{
 		{
@@ -181,12 +188,30 @@ func TestDiscoverLSSDDevs_Errors(t *testing.T) {
 			containerDir: defaultLSSDContainerDir,
 			wantErr:      "same device",
 		},
+		{
+			name:         "device_in_use",
+			links:        devSymlinks{{dev: "nvme0n1", link: "google-local-nvme-ssd-0"}},
+			containerDir: defaultLSSDContainerDir,
+			inUse:        func(string) (bool, error) { return true, nil },
+			wantErr:      "in use",
+		},
+		{
+			name:         "in_use_check_fails",
+			links:        devSymlinks{{dev: "nvme0n1", link: "google-local-nvme-ssd-0"}},
+			containerDir: defaultLSSDContainerDir,
+			inUse:        func(string) (bool, error) { return false, errors.New("in_use_check_failure") },
+			wantErr:      "in_use_check_failure",
+		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			_, byID := newFakeByID(t, tc.links)
-			_, err := discoverLSSDDevs(byID, tc.containerDir, fakeBlockDevChecker)
+			inUse := tc.inUse
+			if inUse == nil {
+				inUse = fakeInUseChecker
+			}
+			_, err := discoverLSSDDevs(byID, tc.containerDir, fakeBlockDevChecker, inUse)
 			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
 				t.Errorf("discoverLSSDDevs(%q, %q) returned error %v, want error containing %q", byID, tc.containerDir, err, tc.wantErr)
 			}
@@ -231,6 +256,43 @@ func TestIsBlockDevice(t *testing.T) {
 			}
 			if got {
 				t.Errorf("isBlockDevice(%q) = true, want false", tc.path)
+			}
+		})
+	}
+}
+
+func TestIsInUse(t *testing.T) {
+	regularFile := filepath.Join(t.TempDir(), "regular")
+	if err := os.WriteFile(regularFile, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name    string
+		path    string
+		wantErr bool
+	}{
+		{
+			name:    "regular_file",
+			path:    regularFile,
+			wantErr: false,
+		},
+		{
+			name:    "not_existing",
+			path:    filepath.Join(t.TempDir(), "missing"),
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// Only negative cases: a busy block device needs a mount, which tests cannot set up.
+			got, err := isInUse(tc.path)
+			if gotErr := err != nil; gotErr != tc.wantErr {
+				t.Errorf("isInUse(%q) returned error (%v), want error (%v)", tc.path, err, tc.wantErr)
+			}
+			if got {
+				t.Errorf("isInUse(%q) = true, want false", tc.path)
 			}
 		})
 	}
