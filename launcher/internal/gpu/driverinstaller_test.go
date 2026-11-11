@@ -1,13 +1,65 @@
 package gpu
 
 import (
+	"errors"
+	"net/http"
 	"os"
 	"path"
+	"slices"
 	"strings"
 	"testing"
 
 	"cos.googlesource.com/cos/tools.git/src/cmd/cos_gpu_installer/deviceinfo"
+	"github.com/containerd/containerd"
 )
+
+var errTransportCalled = errors.New("transport called")
+
+// recordingTransport records requested hosts and paths and fails all requests to prevent network calls.
+type recordingTransport struct {
+	hosts []string
+	paths []string
+}
+
+func (rt *recordingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	rt.hosts = append(rt.hosts, req.URL.Host)
+	rt.paths = append(rt.paths, req.URL.Path)
+	return nil, errTransportCalled
+}
+
+func setupInstallerPullOpts(t *testing.T) (*containerd.RemoteContext, *recordingTransport) {
+	t.Helper()
+	transport := &recordingTransport{}
+	rc := &containerd.RemoteContext{}
+	for _, opt := range installerPullOpts(&http.Client{Transport: transport}) {
+		if err := opt(nil, rc); err != nil {
+			t.Fatalf("RemoteOpt failed: %v", err)
+		}
+	}
+	return rc, transport
+}
+
+func TestInstallerPullOptsUseRegistryClient(t *testing.T) {
+	rc, transport := setupInstallerPullOpts(t)
+
+	rc.Resolver.Resolve(t.Context(), InstallerImageRef)
+
+	wantHosts := []string{"us.gcr.io"}
+	if !slices.Equal(transport.hosts, wantHosts) {
+		t.Errorf("installerPullOpts() registry client request hosts = %v, want %v", transport.hosts, wantHosts)
+	}
+}
+
+func TestInstallerImageDigestRefRequestsManifestByDigest(t *testing.T) {
+	rc, transport := setupInstallerPullOpts(t)
+
+	rc.Resolver.Resolve(t.Context(), installerImageDigestRef)
+
+	wantPath := "/v2/cos-cloud/cos-gpu-installer/manifests/" + InstallerDigest
+	if len(transport.paths) == 0 || transport.paths[0] != wantPath {
+		t.Errorf("Resolver.Resolve(ctx, %q) requested paths %v, want first path %q", installerImageDigestRef, transport.paths, wantPath)
+	}
+}
 
 func TestVerifyDriverDigest(t *testing.T) {
 	tests := []struct {
