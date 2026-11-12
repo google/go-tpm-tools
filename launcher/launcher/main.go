@@ -40,6 +40,9 @@ var rcMessage = map[int]string{
 // BuildCommit shows the commit when building the binary, set by -ldflags when building
 var BuildCommit = "dev"
 
+// prebuiltModulesDigest is the SHA-256 digest of the prebuilt GPU kernel modules archive for the base COS image, set by -ldflags when building.
+var prebuiltModulesDigest string
+
 const serialConsoleFile = "/dev/console"
 
 const welcomeMessage = "TEE container launcher initiating"
@@ -158,7 +161,7 @@ func main() {
 			logger.Info(exitMessage, "exit_code", exitCode)
 		}
 	}()
-	if err = launcher.StartLauncher(ctx, launchSpec, logger, serialConsole, pinnedClient, googleClient); err != nil {
+	if err = launcher.StartLauncher(ctx, launchSpec, logger, serialConsole, pinnedClient, googleClient, prebuiltModulesDigest); err != nil {
 		logger.Error(err.Error())
 		var tpmOpenErr *launcher.TPMOpenError
 		if errors.As(err, &tpmOpenErr) {

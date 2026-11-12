@@ -1,5 +1,7 @@
 substitutions:
   '_BASE_IMAGE': 'cos-125-19216-760-32' # If left empty, will use the latest image in _BASE_IMAGE_FAMILY of _BASE_IMAGE_PROJECT
+  # _BASE_IMAGE_GPU_MODULES_SHA256 is the SHA-256 digest of cos-tools/<BUILD_ID>/lakitu/nvidia-drivers-<version>.tgz for _BASE_IMAGE and must be updated with _BASE_IMAGE.
+  '_BASE_IMAGE_GPU_MODULES_SHA256': '07afcf766dc98d68dc8c87be7d93a65cee4ca67f0aff6ddab838babad2b65d5e'
   '_BASE_IMAGE_FAMILY': 'cos-125-lts'
   '_BASE_IMAGE_PROJECT': 'cos-cloud'
   '_OUTPUT_IMAGE_PREFIX': 'confidential-space'
@@ -65,7 +67,7 @@ steps:
       export GOTOOLCHAIN=auto
       # Record the toolchain actually used (after any GOTOOLCHAIN switch).
       go version
-      go build -o ../image/launcher -ldflags="-extldflags '-Wl,-z,lazy -static-libstdc++ -static-libgcc' -X 'main.BuildCommit=${SHORT_SHA}'"
+      go build -o ../image/launcher -ldflags="-extldflags '-Wl,-z,lazy -static-libstdc++ -static-libgcc' -X 'main.BuildCommit=${SHORT_SHA}' -X 'main.prebuiltModulesDigest=${_BASE_IMAGE_GPU_MODULES_SHA256}'"
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: DownloadExpBinary

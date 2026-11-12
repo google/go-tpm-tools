@@ -43,7 +43,7 @@ var expectedTPMDAParams = TPMDAParams{
 
 // StartLauncher orchestrates the client creation, image pulling, attestation agent setup,
 // and runs the ContainerRunner.
-func StartLauncher(ctx context.Context, launchSpec spec.LaunchSpec, logger logging.Logger, serialConsole *os.File, pinnedClient *http.Client, googleClient *http.Client) error {
+func StartLauncher(ctx context.Context, launchSpec spec.LaunchSpec, logger logging.Logger, serialConsole *os.File, pinnedClient *http.Client, googleClient *http.Client, prebuiltModulesDigest string) error {
 	if pinnedClient == nil {
 		return errors.New("pinnedClient must be non-nil")
 	}
@@ -73,7 +73,7 @@ func StartLauncher(ctx context.Context, launchSpec spec.LaunchSpec, logger loggi
 		if launchSpec.Experiments.BcMode || launchSpec.Experiments.GB300CCMode {
 			logger.Info("GPU driver is pre-installed in BC and GB300 CC mode")
 		} else {
-			installer := gpu.NewDriverInstaller(containerdClient, launchSpec, logger, pinnedClient)
+			installer := gpu.NewDriverInstaller(containerdClient, launchSpec, logger, pinnedClient, prebuiltModulesDigest)
 			err = installer.InstallGPUDrivers(ctx)
 			if err != nil {
 				return fmt.Errorf("failed to install gpu drivers: %v", err)
