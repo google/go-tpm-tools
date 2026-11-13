@@ -14,15 +14,6 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-var (
-	output        string
-	input         string
-	nonce         []byte
-	teeNonce      []byte
-	teeTechnology string
-	format        string
-)
-
 // Add constants for other devices when required
 const (
 	// sevSNP is a constant denotes device name for teeTechnology
@@ -118,35 +109,6 @@ func hideHelp(cmd *cobra.Command) {
 	cmd.SetHelpCommand(&cobra.Command{Hidden: true})
 }
 
-// Lets this command specify an output file, for use with dataOutput().
-func addOutputFlag(cmd *cobra.Command) {
-	cmd.PersistentFlags().StringVar(&output, "output", "",
-		"output file (defaults to stdout)")
-}
-
-// Lets this command specify an input file, for use with dataInput().
-func addInputFlag(cmd *cobra.Command) {
-	cmd.PersistentFlags().StringVar(&input, "input", "",
-		"input file (defaults to stdin)")
-}
-
-func addNonceFlag(cmd *cobra.Command) {
-	cmd.PersistentFlags().BytesHexVar(&nonce, "nonce", []byte{}, "hex encoded nonce for vTPM attestation, cannot be empty")
-}
-
-// Lets this command specify the type of output file (binary or txt)
-func addFormatFlag(cmd *cobra.Command) {
-	cmd.PersistentFlags().StringVar(&format, "format", "binarypb", "type of output file where attestation report stored <binarypb|textproto>")
-}
-
-func addTeeNonceflag(cmd *cobra.Command) {
-	cmd.PersistentFlags().BytesHexVar(&teeNonce, "tee-nonce", []byte{}, "hex encoded teenonce for hardware attestation, can be empty")
-}
-
-func addTeeTechnology(cmd *cobra.Command) {
-	cmd.PersistentFlags().StringVar(&teeTechnology, "tee-technology", "", "indicates the type of TEE hardware. Should be either empty or one of sev-snp or tdx")
-}
-
 // alwaysError implements io.ReadWriter by always returning an error
 type alwaysError struct {
 	error
@@ -158,20 +120,6 @@ func (ae alwaysError) Write([]byte) (int, error) {
 
 func (ae alwaysError) Read(_ []byte) (n int, err error) {
 	return 0, ae.error
-}
-
-// Handle to output data file. If there is an issue opening the file, the Writer
-// returned will return the error upon any call to Write()
-func dataOutput() io.Writer {
-	if output == "" {
-		return os.Stdout
-	}
-
-	file, err := os.Create(output)
-	if err != nil {
-		return alwaysError{err}
-	}
-	return file
 }
 
 func openForWrite(path string) io.Writer {

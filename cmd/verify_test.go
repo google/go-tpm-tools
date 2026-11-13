@@ -3,13 +3,12 @@ package cmd
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/google/go-cmp/cmp"
-	"github.com/spf13/cobra"
 
 	tgtest "github.com/google/go-tdx-guest/testing"
 	tgtestclient "github.com/google/go-tdx-guest/testing/client"
@@ -25,14 +24,13 @@ import (
 func TestVerifyNoncePass(t *testing.T) {
 	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
-	ExternalTPM = rwc
 
 	file1 := makeOutputFile(t, "attest")
 	file2 := makeOutputFile(t, "verify")
 	defer os.RemoveAll(file1)
 	defer os.RemoveAll(file2)
 
-	if err := execute([]string{"attest", "--nonce", "1234", "--key", "AK", "--tee-nonce", "", "--output", file1, "--tee-technology", ""}, nil); err != nil {
+	if err := execute([]string{"attest", "--nonce", "1234", "--key", "AK", "--tee-nonce", "", "--output", file1, "--tee-technology", ""}, rwc); err != nil {
 		t.Error(err)
 	}
 
@@ -44,14 +42,13 @@ func TestVerifyNoncePass(t *testing.T) {
 func TestVerifyNonceFail(t *testing.T) {
 	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
-	ExternalTPM = rwc
 
 	file1 := makeOutputFile(t, "attest")
 	file2 := makeOutputFile(t, "verify")
 	defer os.RemoveAll(file1)
 	defer os.RemoveAll(file2)
 
-	if err := execute([]string{"attest", "--nonce", "1234", "--output", file1}, nil); err != nil {
+	if err := execute([]string{"attest", "--nonce", "1234", "--output", file1}, rwc); err != nil {
 		t.Error(err)
 	}
 
@@ -63,7 +60,6 @@ func TestVerifyNonceFail(t *testing.T) {
 func TestVerifyWithGCEAK(t *testing.T) {
 	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
-	ExternalTPM = rwc
 
 	file1 := makeOutputFile(t, "attest")
 	file2 := makeOutputFile(t, "verify")
@@ -101,7 +97,7 @@ func TestVerifyWithGCEAK(t *testing.T) {
 			}
 			defer mock.Stop()
 
-			if err := execute([]string{"attest", "--nonce", op.nonce, "--key", "gceAK", "--algo", op.keyAlgo, "--output", file1, "--format", "binarypb", "--tee-technology", ""}, nil); err != nil {
+			if err := execute([]string{"attest", "--nonce", op.nonce, "--key", "gceAK", "--algo", op.keyAlgo, "--output", file1, "--format", "binarypb", "--tee-technology", ""}, rwc); err != nil {
 				t.Error(err)
 			}
 
@@ -231,74 +227,56 @@ func createAttestationWithFakeTdx(tpmNonce []byte, teeNonce []byte, tb *testing.
 	return attestation, nil
 }
 
-func parseVerifyDebugArgs(args ...string) (verifyDebugConfig, error) {
-	cmd := &cobra.Command{}
-	flags := cmd.PersistentFlags()
-	flags.BytesHex("nonce", []byte{}, "")
-	flags.BytesHex("tee-nonce", []byte{}, "")
-	flags.String("format", "binarypb", "")
-	flags.String("input", "", "")
-	flags.String("output", "", "")
-	if err := cmd.ParseFlags(args); err != nil {
-		return verifyDebugConfig{}, err
-	}
-	return parseVerifyDebugFlags(cmd)
-}
-
-func TestParseVerifyDebugFlagsDefaults(t *testing.T) {
-	got, err := parseVerifyDebugArgs("--nonce", "1234")
+func TestVerifyDebugUsesNonceAsTEENonceWhenEmpty(t *testing.T) {
+	attestation, err := createAttestationWithFakeTdx(test.TdxReportData, test.TdxReportData, t)
 	if err != nil {
-		t.Fatalf("parseVerifyDebugArgs() failed: %v", err)
+		t.Fatal(err)
 	}
-	want := verifyDebugConfig{
-		tpmNonce: []byte{0x12, 0x34},
-		teeNonce: []byte{0x12, 0x34},
-		format:   "binarypb",
+	input := filepath.Join(t.TempDir(), "attestation.textproto")
+	if err := os.WriteFile(input, []byte(marshalOptions.Format(attestation)), 0644); err != nil {
+		t.Fatal(err)
 	}
-	if diff := cmp.Diff(want, got, cmp.AllowUnexported(verifyDebugConfig{})); diff != "" {
-		t.Errorf("parseVerifyDebugArgs() returned unexpected diff (-want +got):\n%s", diff)
-	}
-}
-
-func TestParseVerifyDebugFlagsExplicitTEENonce(t *testing.T) {
-	got, err := parseVerifyDebugArgs(
-		"--nonce", "1234",
-		"--tee-nonce", "abcd",
-		"--format", "textproto",
-		"--input", "in.pb",
-		"--output", "out.pb",
-	)
-	if err != nil {
-		t.Fatalf("parseVerifyDebugArgs() failed: %v", err)
-	}
-	want := verifyDebugConfig{
-		tpmNonce:   []byte{0x12, 0x34},
-		teeNonce:   []byte{0xab, 0xcd},
-		format:     "textproto",
-		inputPath:  "in.pb",
-		outputPath: "out.pb",
-	}
-	if diff := cmp.Diff(want, got, cmp.AllowUnexported(verifyDebugConfig{})); diff != "" {
-		t.Errorf("parseVerifyDebugArgs() returned unexpected diff (-want +got):\n%s", diff)
+	args := []string{"verify", "debug", "--nonce", hex.EncodeToString(test.TdxReportData), "--input", input, "--output", os.DevNull, "--format", "textproto"}
+	if err := execute(args, nil); err != nil {
+		t.Errorf("execute(%q) = %v, want nil", args, err)
 	}
 }
 
-func TestParseVerifyDebugFlagsRejectsInvalidValues(t *testing.T) {
-	tests := []struct {
-		name string
-		args []string
-	}{
-		{"OddLengthNonce", []string{"--nonce", "123"}},
-		{"NonHexNonce", []string{"--nonce", "zz"}},
-		{"OddLengthTEENonce", []string{"--nonce", "1234", "--tee-nonce", "123"}},
-		{"NonHexTEENonce", []string{"--nonce", "1234", "--tee-nonce", "zz"}},
-		{"UnknownFormat", []string{"--nonce", "1234", "--format", "json"}},
+func TestVerifyDebugRejectsOddLengthNonce(t *testing.T) {
+	args := []string{"verify", "debug", "--nonce", "123"}
+	want := `invalid argument "123" for "--nonce" flag`
+	if got := fmt.Sprint(execute(args, nil)); !strings.Contains(got, want) {
+		t.Errorf("execute(%q) = %q, want error containing %q", args, got, want)
 	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			if _, err := parseVerifyDebugArgs(tc.args...); err == nil {
-				t.Errorf("parseVerifyDebugArgs(%q) succeeded, want error", tc.args)
-			}
-		})
+}
+
+func TestVerifyDebugRejectsNonHexNonce(t *testing.T) {
+	args := []string{"verify", "debug", "--nonce", "zz"}
+	want := `invalid argument "zz" for "--nonce" flag`
+	if got := fmt.Sprint(execute(args, nil)); !strings.Contains(got, want) {
+		t.Errorf("execute(%q) = %q, want error containing %q", args, got, want)
+	}
+}
+
+func TestVerifyDebugRejectsOddLengthTEENonce(t *testing.T) {
+	args := []string{"verify", "debug", "--nonce", "1234", "--tee-nonce", "123"}
+	want := `invalid argument "123" for "--tee-nonce" flag`
+	if got := fmt.Sprint(execute(args, nil)); !strings.Contains(got, want) {
+		t.Errorf("execute(%q) = %q, want error containing %q", args, got, want)
+	}
+}
+
+func TestVerifyDebugRejectsNonHexTEENonce(t *testing.T) {
+	args := []string{"verify", "debug", "--nonce", "1234", "--tee-nonce", "zz"}
+	want := `invalid argument "zz" for "--tee-nonce" flag`
+	if got := fmt.Sprint(execute(args, nil)); !strings.Contains(got, want) {
+		t.Errorf("execute(%q) = %q, want error containing %q", args, got, want)
+	}
+}
+
+func TestVerifyDebugRejectsUnknownFormat(t *testing.T) {
+	args := []string{"verify", "debug", "--nonce", "1234", "--format", "json"}
+	if err := execute(args, nil); !errors.Is(err, errUnknownFormat) {
+		t.Errorf("execute(%q) = %v, want %v", args, err, errUnknownFormat)
 	}
 }

@@ -187,7 +187,6 @@ func TestFormatFlagFail(t *testing.T) {
 	outputFile := makeOutputFile(t, "attestout")
 	defer os.RemoveAll(inputFile)
 	defer os.RemoveAll(outputFile)
-	t.Cleanup(func() { format = "binarypb" })
 	tests := []struct {
 		name           string
 		nonce          string
@@ -464,13 +463,11 @@ func TestHardwareAttestationPass(t *testing.T) {
 func TestAttestCLI(t *testing.T) {
 	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
-	ExternalTPM = rwc
-	t.Cleanup(func() { ExternalTPM = nil })
 
 	outputFile := makeOutputFile(t, "attestcli")
 	defer os.RemoveAll(outputFile)
 
-	if err := execute([]string{"attest", "--nonce", "1234", "--key", "AK", "--output", outputFile, "--format", "binarypb"}, nil); err != nil {
+	if err := execute([]string{"attest", "--nonce", "1234", "--key", "AK", "--output", outputFile, "--format", "binarypb"}, rwc); err != nil {
 		t.Fatalf("attest CLI failed: %v", err)
 	}
 
@@ -487,11 +484,15 @@ func TestAttestCLI(t *testing.T) {
 // It creates an isolated command for each call so parallel tests do not share flag state.
 func parseAttestArgs(args ...string) (attestCmdConfig, error) {
 	cmd := &cobra.Command{}
-	addAttestFlags(cmd)
+	var cfg attestCmdConfig
+	addAttestFlags(cmd, &cfg)
 	if err := cmd.ParseFlags(args); err != nil {
 		return attestCmdConfig{}, err
 	}
-	return parseAttestFlags(cmd)
+	if err := checkAttestFlags(cfg.opts.key, cfg.format); err != nil {
+		return attestCmdConfig{}, err
+	}
+	return cfg, nil
 }
 
 func TestParseAttestFlagsDefaults(t *testing.T) {
