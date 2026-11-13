@@ -11,8 +11,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func addTPMPathFlag(cmd *cobra.Command) {
-	cmd.PersistentFlags().StringVar(&tpmPath, "tpm-path", "",
+func addTPMPathFlag(cmd *cobra.Command, tpmPath *string) {
+	cmd.PersistentFlags().StringVar(tpmPath, "tpm-path", "",
 		"path to TPM device (defaults to /dev/tpmrm0 then /dev/tpm0)")
 }
 

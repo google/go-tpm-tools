@@ -4,6 +4,7 @@ package cmd
 import (
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -12,14 +13,18 @@ import (
 
 type gotpmOptions struct {
 	tpmOpener func(tpmPath string) (io.ReadWriteCloser, error)
+
+	quiet   bool
+	verbose bool
+	tpmPath string
 }
 
 // NewGotpmCmd returns the entrypoint for gotpm.
 func NewGotpmCmd() *cobra.Command {
-	return newGotpmCmd(openImpl)
+	return newGotpmCmd(openImpl, nil)
 }
 
-func newGotpmCmd(tpmOpener func(tpmPath string) (io.ReadWriteCloser, error)) *cobra.Command {
+func newGotpmCmd(tpmOpener func(tpmPath string) (io.ReadWriteCloser, error), httpClient *http.Client) *cobra.Command {
 	o := &gotpmOptions{tpmOpener: tpmOpener}
 	root := &cobra.Command{
 		Use: "gotpm",
@@ -28,58 +33,45 @@ func newGotpmCmd(tpmOpener func(tpmPath string) (io.ReadWriteCloser, error)) *co
 This tool allows performing TPM2 operations from the command line.
 See the per-command documentation for more information.`,
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
-			if quiet && verbose {
+			if o.quiet && o.verbose {
 				return fmt.Errorf("cannot specify both --quiet and --verbose")
 			}
 			cmd.SilenceUsage = true
 			return nil
 		},
 	}
-	root.PersistentFlags().BoolVar(&quiet, "quiet", false,
+	root.PersistentFlags().BoolVar(&o.quiet, "quiet", false,
 		"print nothing if command is successful")
-	root.PersistentFlags().BoolVar(&verbose, "verbose", false,
+	root.PersistentFlags().BoolVar(&o.verbose, "verbose", false,
 		"print additional info to stdout")
-	addTPMPathFlag(root)
+	addTPMPathFlag(root, &o.tpmPath)
 	hideHelp(root)
 	root.AddCommand(
-		attestCmd,
+		newAttestCmd(o),
 		newFlushCmd(o),
 		newPubkeyCmd(o),
 		newReadCmd(o),
 		newRegisterCmd(o),
 		newSealCmd(o),
 		newUnsealCmd(o),
-		tokenCmd,
-		verifyCmd,
+		newTokenCmd(o, httpClient),
+		newVerifyCmd(),
 	)
 	return root
 }
 
-var (
-	quiet   bool
-	verbose bool
-)
-
-func messageOutput() io.Writer {
-	if quiet {
+func (o *gotpmOptions) messageOutput() io.Writer {
+	if o.quiet {
 		return io.Discard
 	}
 	return os.Stdout
 }
 
-func debugOutput() io.Writer {
-	if verbose {
+func (o *gotpmOptions) debugOutput() io.Writer {
+	if o.verbose {
 		return os.Stdout
 	}
 	return io.Discard
-}
-
-func (o *gotpmOptions) messageOutput() io.Writer {
-	return messageOutput()
-}
-
-func (o *gotpmOptions) debugOutput() io.Writer {
-	return debugOutput()
 }
 
 // Default Text Marshalling options
