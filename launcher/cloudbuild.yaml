@@ -1,5 +1,5 @@
 substitutions:
-  '_BASE_IMAGE': 'cos-125-19216-760-32' # If left empty, will use the latest image in _BASE_IMAGE_FAMILY of _BASE_IMAGE_PROJECT
+  '_BASE_IMAGE': 'cos-133-19999-44-193' # If left empty, will use the latest image in _BASE_IMAGE_FAMILY of _BASE_IMAGE_PROJECT
   '_BASE_IMAGE_FAMILY': 'cos-125-lts'
   '_BASE_IMAGE_PROJECT': 'cos-cloud'
   '_OUTPUT_IMAGE_PREFIX': 'confidential-space'
