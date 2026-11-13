@@ -187,7 +187,6 @@ func TestFormatFlagFail(t *testing.T) {
 	outputFile := makeOutputFile(t, "attestout")
 	defer os.RemoveAll(inputFile)
 	defer os.RemoveAll(outputFile)
-	t.Cleanup(func() { format = "binarypb" })
 	tests := []struct {
 		name           string
 		nonce          string
