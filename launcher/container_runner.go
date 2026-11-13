@@ -622,8 +622,9 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 	}
 
 	// Only refresh token if agent has a default GCA client (not ITA use case)
-	// AND GcaRefresh is not disabled
-	if r.launchSpec.ITAConfig.ITARegion == "" && !r.launchSpec.DisableGcaRefresh {
+	// AND GcaRefresh is not disabled AND not in GB300 CC mode, which does not
+	// use GCA.
+	if r.launchSpec.ITAConfig.ITARegion == "" && !r.launchSpec.DisableGcaRefresh && !r.launchSpec.Experiments.GB300CCMode {
 		if err := r.fetchAndWriteToken(ctx); err != nil {
 			return fmt.Errorf("failed to fetch and write OIDC token: %v", err)
 		}
