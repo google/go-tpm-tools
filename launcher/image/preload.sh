@@ -82,6 +82,7 @@ configure_node_problem_detector() {
   cp nodeproblemdetector/boot-disk-size-consistency-monitor-cs.json "${CS_PATH}"
   cp nodeproblemdetector/docker-monitor-cs.json "${CS_PATH}"
   cp nodeproblemdetector/kernel-monitor-cs.json "${CS_PATH}"
+  cp nodeproblemdetector/node-problem-detector-roots.conf "${CS_PATH}"
 }
 
 configure_systemd_units_for_debug() {

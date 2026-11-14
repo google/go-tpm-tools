@@ -1,5 +1,5 @@
 substitutions:
-  '_BASE_IMAGE': 'cos-125-19216-760-8' # If left empty, will use the latest image in _BASE_IMAGE_FAMILY of _BASE_IMAGE_PROJECT
+  '_BASE_IMAGE': 'cos-133-19999-44-193' # If left empty, will use the latest image in _BASE_IMAGE_FAMILY of _BASE_IMAGE_PROJECT
   '_BASE_IMAGE_FAMILY': 'cos-125-lts'
   '_BASE_IMAGE_PROJECT': 'cos-cloud'
   '_OUTPUT_IMAGE_PREFIX': 'confidential-space'
@@ -104,10 +104,7 @@ steps:
     _OUTPUT_IMAGE_NAME=${OUTPUT_IMAGE_NAME},\
     _IMAGE_ENV=debug,\
     _CS_LICENSE=projects/confidential-space-images/global/licenses/confidential-space-debug,\
-    _BUCKET_NAME=${BUCKET_NAME},\
-    _PRELOAD_SCRIPT=preload.sh,\
-    _OEM_SIZE=500M,\
-    _DISK_SIZE_GB=11
+    _BUCKET_NAME=${BUCKET_NAME}
     exit
 
 - name: 'gcr.io/cloud-builders/gcloud'
@@ -134,10 +131,7 @@ steps:
     _OUTPUT_IMAGE_NAME=${OUTPUT_IMAGE_NAME},\
     _IMAGE_ENV=hardened,\
     _CS_LICENSE=projects/confidential-space-images/global/licenses/confidential-space,\
-    _BUCKET_NAME=${BUCKET_NAME},\
-    _PRELOAD_SCRIPT=preload.sh,\
-    _OEM_SIZE=500M,\
-    _DISK_SIZE_GB=11
+    _BUCKET_NAME=${BUCKET_NAME}
     exit
 
 - name: 'gcr.io/cloud-builders/gcloud'

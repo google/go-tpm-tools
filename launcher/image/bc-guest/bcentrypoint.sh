@@ -36,6 +36,9 @@ EOF
   cp /usr/share/oem/confidential_space/nodeproblemdetector/docker-monitor-cs.json /etc/node_problem_detector/docker-monitor.json
   # Override default kernel-monitor.json for node-problem-detector.
   cp /usr/share/oem/confidential_space/nodeproblemdetector/kernel-monitor-cs.json /etc/node_problem_detector/kernel-monitor.json
+  # Make node-problem-detector trust only the pinned Google root bundle.
+  mkdir -p /etc/systemd/system/node-problem-detector.service.d
+  cp /usr/share/oem/confidential_space/nodeproblemdetector/node-problem-detector-roots.conf /etc/systemd/system/node-problem-detector.service.d/roots.conf
 
   # Bind-mount /bin/true over the google_set_multiqueue to disable it and prevent random resets to the network configuration.
   if [[ -f /usr/bin/google_set_multiqueue ]]; then

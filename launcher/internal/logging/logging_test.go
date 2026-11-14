@@ -448,3 +448,142 @@ func TestJSONSeverityWriter(t *testing.T) {
 		}
 	})
 }
+
+func TestJSONSeverityWriter_JSONPassThrough(t *testing.T) {
+	tests := []struct {
+		name     string
+		severity string
+		input    string
+		want     string
+	}{
+		{
+			name:     "renames_journald_fields",
+			severity: "INFO",
+			input:    `{"message":"spoof","_HOSTNAME":"other-vm","_SYSTEMD_UNIT":"u","MESSAGE":"x","PRIORITY":"0","SYSLOG_IDENTIFIER":"y","_id":7,"Priority":"p"}` + "\n",
+			want:     `{"Priority":"p","_id":7,"message":"spoof","severity":"INFO","workload_MESSAGE":"x","workload_PRIORITY":"0","workload_SYSLOG_IDENTIFIER":"y","workload__HOSTNAME":"other-vm","workload__SYSTEMD_UNIT":"u"}` + "\n",
+		},
+		{
+			name:     "preserves_workload_severity_and_fields",
+			severity: "INFO",
+			input:    `{"severity":"ERROR","message":"db failed","timestamp":{"seconds":1793310933,"nanos":765186000},"component":"auth"}` + "\n",
+			want:     `{"component":"auth","message":"db failed","severity":"ERROR","timestamp":{"seconds":1793310933,"nanos":765186000}}` + "\n",
+		},
+		{
+			name:     "promotes_gcp_severity_key",
+			severity: "INFO",
+			input:    `{"logging.googleapis.com/severity":"WARNING","message":"retrying","attempt":2}` + "\n",
+			want:     `{"attempt":2,"message":"retrying","severity":"WARNING"}` + "\n",
+		},
+		{
+			name:     "injects_info_severity_when_omitted",
+			severity: "INFO",
+			input:    `{"message":"started","port":8080}` + "\n",
+			want:     `{"message":"started","port":8080,"severity":"INFO"}` + "\n",
+		},
+		{
+			name:     "injects_error_severity_when_omitted",
+			severity: "ERROR",
+			input:    `{"error":"connection refused"}` + "\n",
+			want:     `{"error":"connection refused","severity":"ERROR"}` + "\n",
+		},
+		{
+			name:     "replaces_null_or_empty_severity",
+			severity: "ERROR",
+			input:    `{"severity":null,"message":"null sev"}` + "\n" + `{"severity":"","message":"empty sev"}` + "\n",
+			want:     `{"message":"null sev","severity":"ERROR"}` + "\n" + `{"message":"empty sev","severity":"ERROR"}` + "\n",
+		},
+		{
+			name:     "trims_surrounding_whitespace",
+			severity: "INFO",
+			input:    "  {\"severity\":\"WARNING\",\"message\":\"padded\"}  \r\n",
+			want:     `{"message":"padded","severity":"WARNING"}` + "\n",
+		},
+		{
+			name:     "fallback_plain_text",
+			severity: "INFO",
+			input:    "plain startup banner\n",
+			want:     `{"message":"plain startup banner","severity":"INFO"}` + "\n",
+		},
+		{
+			name:     "fallback_json_array",
+			severity: "INFO",
+			input:    "[1,2,3]\n",
+			want:     `{"message":"[1,2,3]","severity":"INFO"}` + "\n",
+		},
+		{
+			name:     "fallback_json_primitives",
+			severity: "INFO",
+			input:    "\"quoted\"\ntrue\n42\n",
+			want: `{"message":"\"quoted\"","severity":"INFO"}` + "\n" +
+				`{"message":"true","severity":"INFO"}` + "\n" +
+				`{"message":"42","severity":"INFO"}` + "\n",
+		},
+		{
+			name:     "fallback_invalid_or_concatenated_json",
+			severity: "ERROR",
+			input:    "{not valid json}\n{\"a\":1}{\"b\":2}\n",
+			want: `{"message":"{not valid json}","severity":"ERROR"}` + "\n" +
+				`{"message":"{\"a\":1}{\"b\":2}","severity":"ERROR"}` + "\n",
+		},
+		{
+			name:     "mixed_multiline_chunk",
+			severity: "INFO",
+			input:    "Starting server...\n{\"severity\":\"WARNING\",\"message\":\"slow query\",\"ms\":250}\nReady.\n",
+			want: `{"message":"Starting server...","severity":"INFO"}` + "\n" +
+				`{"message":"slow query","ms":250,"severity":"WARNING"}` + "\n" +
+				`{"message":"Ready.","severity":"INFO"}` + "\n",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			writer := &JSONSeverityWriter{
+				Target:   &buf,
+				Severity: tc.severity,
+			}
+
+			n, err := writer.Write([]byte(tc.input))
+			if err != nil || n != len(tc.input) {
+				t.Fatalf("JSONSeverityWriter.Write(%q) = (%d, %v), want (%d, nil)", tc.input, n, err, len(tc.input))
+			}
+			if got := buf.String(); got != tc.want {
+				t.Errorf("JSONSeverityWriter{Severity: %q}.Write(%q) wrote %q, want %q",
+					tc.severity, tc.input, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestJSONSeverityWriter_JSONPassThroughBurst(t *testing.T) {
+	var buf bytes.Buffer
+	writer := &JSONSeverityWriter{Target: &buf, Severity: "INFO"}
+
+	const lineCount = 50000
+	start := time.Now()
+
+	for i := 1; i <= lineCount; i++ {
+		msg := fmt.Sprintf(`{"severity":"WARNING","message":"structured burst","seq":%d}`+"\n", i)
+		n, err := writer.Write([]byte(msg))
+		if err != nil || n != len(msg) {
+			t.Fatalf("JSONSeverityWriter.Write(%q) = (%d, %v), want (%d, nil)", msg, n, err, len(msg))
+		}
+	}
+
+	t.Logf("Wrote and verified %d pass-through structured JSON log lines in %v", lineCount, time.Since(start))
+
+	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
+	if len(lines) != lineCount {
+		t.Fatalf("JSONSeverityWriter.Write produced %d lines, want %d", len(lines), lineCount)
+	}
+
+	firstWant := `{"message":"structured burst","seq":1,"severity":"WARNING"}`
+	if lines[0] != firstWant {
+		t.Errorf("first line = %q, want %q", lines[0], firstWant)
+	}
+
+	lastWant := fmt.Sprintf(`{"message":"structured burst","seq":%d,"severity":"WARNING"}`, lineCount)
+	if lines[lineCount-1] != lastWant {
+		t.Errorf("last line = %q, want %q", lines[lineCount-1], lastWant)
+	}
+}

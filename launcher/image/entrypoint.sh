@@ -18,6 +18,9 @@ main() {
   cp /usr/share/oem/confidential_space/docker-monitor-cs.json /etc/node_problem_detector/docker-monitor.json
   # Override default kernel-monitor.json for node-problem-detector.
   cp /usr/share/oem/confidential_space/kernel-monitor-cs.json /etc/node_problem_detector/kernel-monitor.json
+  # Make node-problem-detector trust only the pinned Google root bundle.
+  mkdir -p /etc/systemd/system/node-problem-detector.service.d
+  cp /usr/share/oem/confidential_space/node-problem-detector-roots.conf /etc/systemd/system/node-problem-detector.service.d/roots.conf
   systemctl daemon-reload
   systemctl enable container-runner.service
   systemctl restart fluent-bit.service
