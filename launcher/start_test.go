@@ -179,7 +179,7 @@ func TestListenUnixSocket(t *testing.T) {
 	}
 }
 
-func TestInitTPMSkipsTPMInGB300CCMode(t *testing.T) {
+func TestInitTPMSkipsTPMInBCAndGB300CCMode(t *testing.T) {
 	origOpenTPM := openTPM
 	t.Cleanup(func() { openTPM = origOpenTPM })
 	errNoTPM := errors.New("fake: no TPM")
@@ -195,6 +195,11 @@ func TestInitTPMSkipsTPMInGB300CCMode(t *testing.T) {
 			// launcher must not open /dev/tpmrm0 or change its DA parameters.
 			name:        "GB300 CC mode",
 			experiments: experiments.Experiments{GB300CCMode: true},
+		},
+		{
+			// BC mode also bypasses TPM initialization.
+			name:        "BC mode",
+			experiments: experiments.Experiments{BcMode: true},
 		},
 		{
 			// Control case: shows the openTPM hook is on the default path.
