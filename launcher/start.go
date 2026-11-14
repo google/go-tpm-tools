@@ -33,10 +33,11 @@ import (
 	"google.golang.org/api/option"
 )
 
-const (
-	teeServerSocket  = "teeserver.sock"
-	keyManagerSocket = "kmaserver.sock"
-)
+const teeServerSocket = "teeserver.sock"
+
+// openTPM opens the launcher's TPM. Tests replace it so they never touch a real
+// TPM on the test machine.
+var openTPM = tpm2.OpenTPM
 
 var expectedTPMDAParams = TPMDAParams{
 	MaxTries:        0x20,    // 32 tries
@@ -76,7 +77,7 @@ func StartLauncher(ctx context.Context, launchSpec spec.LaunchSpec, logger loggi
 		if launchSpec.Experiments.BcMode || launchSpec.Experiments.GB300CCMode {
 			logger.Info("GPU driver is pre-installed in BC and GB300 CC mode")
 		} else {
-			installer := gpu.NewDriverInstaller(containerdClient, launchSpec, logger)
+			installer := gpu.NewDriverInstaller(containerdClient, launchSpec, logger, pinnedClient)
 			err = installer.InstallGPUDrivers(ctx)
 			if err != nil {
 				return fmt.Errorf("failed to install gpu drivers: %v", err)
@@ -211,7 +212,7 @@ func initTPM(launchSpec spec.LaunchSpec, logger logging.Logger) (io.ReadWriteClo
 		return nil, nil
 	}
 
-	tpm, err := tpm2.OpenTPM("/dev/tpmrm0")
+	tpm, err := openTPM("/dev/tpmrm0")
 	if err != nil {
 		return nil, &TPMOpenError{Err: err}
 	}

@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"path"
@@ -17,6 +18,7 @@ import (
 	"github.com/containerd/containerd/namespaces"
 	"github.com/containerd/containerd/oci"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
+	"github.com/google/go-tpm-tools/launcher/registryauth"
 	"github.com/google/go-tpm-tools/launcher/spec"
 	"github.com/google/go-tpm-tools/proto/attest"
 	"github.com/opencontainers/runtime-spec/specs-go"
@@ -25,6 +27,9 @@ import (
 const (
 	installerContainerID = "tee-gpu-driver-installer-container"
 	installerSnapshotID  = "tee-gpu-driver-installer-snapshot"
+	// installerImageDigestRef includes InstallerDigest so that containerd
+	// rejects a different manifest before it downloads any layers.
+	installerImageDigestRef = InstallerImageRef + "@" + InstallerDigest
 )
 
 // NvidiaSmiCmdOutput defines a function type for executing an NVIDIA SMI command
@@ -33,18 +38,25 @@ type NvidiaSmiCmdOutput func() ([]byte, error)
 
 // DriverInstaller contains information about the GPU driver installer settings
 type DriverInstaller struct {
-	cdClient   *containerd.Client
-	launchSpec spec.LaunchSpec
-	logger     logging.Logger
+	cdClient       *containerd.Client
+	launchSpec     spec.LaunchSpec
+	logger         logging.Logger
+	registryClient *http.Client
 }
 
-// NewDriverInstaller instantiates an object of driver installer
-func NewDriverInstaller(cdClient *containerd.Client, launchSpec spec.LaunchSpec, logger logging.Logger) *DriverInstaller {
+// NewDriverInstaller returns a DriverInstaller that uses registryClient to pull the installer image.
+func NewDriverInstaller(cdClient *containerd.Client, launchSpec spec.LaunchSpec, logger logging.Logger, registryClient *http.Client) *DriverInstaller {
 	return &DriverInstaller{
-		cdClient:   cdClient,
-		launchSpec: launchSpec,
-		logger:     logger,
+		cdClient:       cdClient,
+		launchSpec:     launchSpec,
+		logger:         logger,
+		registryClient: registryClient,
 	}
+}
+
+// installerPullOpts passes no token because the registry allows anonymous pulls of the installer image.
+func installerPullOpts(registryClient *http.Client) []containerd.RemoteOpt {
+	return []containerd.RemoteOpt{containerd.WithPullUnpack, containerd.WithResolver(registryauth.Resolver("", registryClient))}
 }
 
 // InstallGPUDrivers installs the GPU driver on host machine using the cos-gpu-installer container.
@@ -57,7 +69,7 @@ func (di *DriverInstaller) InstallGPUDrivers(ctx context.Context) error {
 		return fmt.Errorf("failed to remount the installation directory: %v", err)
 	}
 
-	gpuType, err := getGpuTypeInfo(PciDevicesDir)
+	gpuType, err := deviceinfo.GetGPUTypeInfo(PciDevicesDir)
 	if err != nil {
 		return fmt.Errorf("failed to get the GPU type info: %v", err)
 	}
@@ -67,8 +79,8 @@ func (di *DriverInstaller) InstallGPUDrivers(ctx context.Context) error {
 	}
 
 	ctx = namespaces.WithNamespace(ctx, namespaces.Default)
-	di.logger.Info(fmt.Sprintf("COS GPU installer version : %s", InstallerImageRef))
-	image, err := di.cdClient.Pull(ctx, InstallerImageRef, containerd.WithPullUnpack)
+	di.logger.Info(fmt.Sprintf("COS GPU installer version : %s", installerImageDigestRef))
+	image, err := di.cdClient.Pull(ctx, installerImageDigestRef, installerPullOpts(di.registryClient)...)
 	if err != nil {
 		return fmt.Errorf("failed to pull installer image: %v", err)
 	}
@@ -95,17 +107,6 @@ func (di *DriverInstaller) InstallGPUDrivers(ctx context.Context) error {
 		di.logger.Error(fmt.Sprintf("cannot get hostname: %v", err))
 	}
 
-	processArgs := []string{
-		"/cos-gpu-installer",
-		"install",
-		fmt.Sprintf("-version=%s", NvDriverVer595_58_03),
-		fmt.Sprintf("-host-dir=%s", InstallationHostDir),
-		"--no-verify",
-	}
-	if _, err := os.Stat("/usr/share/oem/gpu_driver"); err == nil {
-		processArgs = append(processArgs, fmt.Sprintf("-local-artifacts-dir=%s", "/root/usr/share/oem/gpu_driver/"))
-	}
-
 	container, err := di.cdClient.NewContainer(
 		ctx,
 		installerContainerID,
@@ -116,7 +117,13 @@ func (di *DriverInstaller) InstallGPUDrivers(ctx context.Context) error {
 			// To support confidential GPUs, the nvidia-persistenced process should be started before the GPU driver verification step.
 			// It would not be possible to start the nvidia-persistenced process amidst GPU driver installation flow via cos_gpu_installer.
 			// For this reason, the GPU driver installation need to be triggered with --skip-nvidia-smi flag to skip the GPU driver verification step.
-			oci.WithProcessArgs(processArgs...),
+			oci.WithProcessArgs(
+				"/cos-gpu-installer",
+				"install",
+				fmt.Sprintf("-version=%s", NvDriverVer595_58_03),
+				fmt.Sprintf("-host-dir=%s", InstallationHostDir),
+				"--no-verify",
+			),
 			oci.WithAllDevicesAllowed,
 			oci.WithHostDevices,
 			oci.WithMounts(mounts),

@@ -3,7 +3,9 @@ package launcher
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -11,6 +13,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-tpm-tools/launcher/internal/experiments"
+	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/spec"
 	"github.com/google/go-tpm-tools/verifier"
 	"golang.org/x/oauth2"
@@ -175,3 +179,58 @@ func TestListenUnixSocket(t *testing.T) {
 	}
 }
 
+func TestInitTPMSkipsTPMInBCAndGB300CCMode(t *testing.T) {
+	origOpenTPM := openTPM
+	t.Cleanup(func() { openTPM = origOpenTPM })
+	errNoTPM := errors.New("fake: no TPM")
+
+	tests := []struct {
+		name        string
+		experiments experiments.Experiments
+		wantOpened  bool
+		wantOpenErr bool
+	}{
+		{
+			// GB300 CC mode measures through bmsai-attestation-agent, so the
+			// launcher must not open /dev/tpmrm0 or change its DA parameters.
+			name:        "GB300 CC mode",
+			experiments: experiments.Experiments{GB300CCMode: true},
+		},
+		{
+			// BC mode also bypasses TPM initialization.
+			name:        "BC mode",
+			experiments: experiments.Experiments{BcMode: true},
+		},
+		{
+			// Control case: shows the openTPM hook is on the default path.
+			name:        "default mode",
+			wantOpened:  true,
+			wantOpenErr: true,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			opened := false
+			openTPM = func(...string) (io.ReadWriteCloser, error) {
+				opened = true
+				return nil, errNoTPM
+			}
+
+			tpm, err := initTPM(spec.LaunchSpec{Experiments: tc.experiments}, logging.SimpleLogger())
+			if tpm != nil {
+				t.Errorf("initTPM() returned a TPM, want nil")
+			}
+			if opened != tc.wantOpened {
+				t.Errorf("initTPM() opened TPM = %v, want %v", opened, tc.wantOpened)
+			}
+			var openErr *TPMOpenError
+			if tc.wantOpenErr {
+				if !errors.As(err, &openErr) {
+					t.Errorf("initTPM() error = %v, want a TPMOpenError", err)
+				}
+			} else if err != nil {
+				t.Errorf("initTPM() error = %v, want nil", err)
+			}
+		})
+	}
+}
