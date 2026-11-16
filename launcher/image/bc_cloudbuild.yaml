@@ -293,7 +293,7 @@ steps:
           --guest-os-features="$$FEATURES"
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     id: 'CopyImageToACOSBucket'
-    waitFor: ['TarOutputImage']
+    waitFor: ['TarOutputImage', 'ExtractWorkloadLicenses']
     entrypoint: 'sh'
     args:
       - '-c'
@@ -311,6 +311,13 @@ steps:
 
         echo "Copying local archive directly to ACOS bucket $${ACOS_TARGET_URL}"
         gcloud storage cp ./out_image.tar.gz "$${ACOS_TARGET_URL}"
+
+        # The BC host image build resolves the companion license archive as
+        # <image>_licenses.tar.gz next to the image it was given, so keep the
+        # two together in the ACOS bucket as well.
+        ACOS_LICENSES_URL="gs://${_ACOS_BUCKET_NAME}/${_OUTPUT_IMAGE_NAME}_licenses.tar.gz"
+        echo "Copying workload license archive to ACOS bucket $${ACOS_LICENSES_URL}"
+        gcloud storage cp /workspace/workload-licenses.tar.gz "$${ACOS_LICENSES_URL}"
 timeout: '3000s'
 
 options:
