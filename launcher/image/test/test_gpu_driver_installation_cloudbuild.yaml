@@ -131,3 +131,8 @@ steps:
   - NoGpuDriverInstallationCleanUp
   - ConfidentialGpuVmCleanUp
   - RTXPro6000VmCleanUp
+
+options:
+  # Require the project's regional log bucket. Fail the build instead of
+  # falling back to the legacy bucket outside the project.
+  defaultLogsBucketBehavior: REGIONAL_USER_OWNED_BUCKET
