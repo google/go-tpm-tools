@@ -240,6 +240,10 @@ compute_cmdline() {
 
     local cmdline_string result=()
     cmdline_string=$(grep "verified image $image_id" -A 1 "$grub_cfg" | tail -n 1)
+    # GRUB expands $cmdline_extra (from /efi/boot/cmdline_extra.bin) before
+    # measuring kernel_cmdline; standard Confidential Space images leave it empty.
+    cmdline_string="${cmdline_string//\$\{cmdline_extra\}/}"
+    cmdline_string="${cmdline_string//\$cmdline_extra/}"
 
     local args=()
 
