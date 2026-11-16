@@ -217,7 +217,7 @@ steps:
     id: 'RenameOutputImage'
     waitFor: ['RunOEMPreloader']
     args: ['mv', 'output.bin', 'disk.raw']
-  - name: 'us-docker.pkg.dev/confidential-space-images-dev/cs-tools/measure@sha256:dae4766caef4a93c52736feb829bf2c505b7d48ce44d0ecb33e77d61bb4be888'
+  - name: 'us-docker.pkg.dev/confidential-space-images-dev/cs-tools/measure@sha256:ba4e2443c47f1913abed7c38b8894d9e153cbbf79b8b6fc8f967cf4507c4f21a'
     id: 'MeasureImage'
     waitFor: ['RenameOutputImage']
     entrypoint: 'bash'
