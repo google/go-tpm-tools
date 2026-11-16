@@ -140,7 +140,7 @@ func createOCISpecOpts(image containerd.Image, launchSpec spec.LaunchSpec, envs 
 	// GB300 CC mode: Pass the Local SSDs through as block devices and the
 	// TrustZone fTPM character devices (/dev/ftpm, /dev/ftpmrm) when present.
 	if launchSpec.Experiments.GB300CCMode {
-		devs, err := discoverLSSDDevs(defaultLSSDHostDir, defaultLSSDContainerDir, isBlockDevice)
+		devs, err := discoverLSSDDevs(defaultLSSDHostDir, defaultLSSDContainerDir, isBlockDevice, isInUse)
 		if err != nil {
 			return nil, fmt.Errorf("failed to discover Local SSDs: %w", err)
 		}

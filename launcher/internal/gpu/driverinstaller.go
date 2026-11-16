@@ -107,17 +107,6 @@ func (di *DriverInstaller) InstallGPUDrivers(ctx context.Context) error {
 		di.logger.Error(fmt.Sprintf("cannot get hostname: %v", err))
 	}
 
-	processArgs := []string{
-		"/cos-gpu-installer",
-		"install",
-		fmt.Sprintf("-version=%s", NvDriverVer595_58_03),
-		fmt.Sprintf("-host-dir=%s", InstallationHostDir),
-		"--no-verify",
-	}
-	if _, err := os.Stat("/usr/share/oem/gpu_driver"); err == nil {
-		processArgs = append(processArgs, fmt.Sprintf("-local-artifacts-dir=%s", "/root/usr/share/oem/gpu_driver/"))
-	}
-
 	container, err := di.cdClient.NewContainer(
 		ctx,
 		installerContainerID,
@@ -128,7 +117,13 @@ func (di *DriverInstaller) InstallGPUDrivers(ctx context.Context) error {
 			// To support confidential GPUs, the nvidia-persistenced process should be started before the GPU driver verification step.
 			// It would not be possible to start the nvidia-persistenced process amidst GPU driver installation flow via cos_gpu_installer.
 			// For this reason, the GPU driver installation need to be triggered with --skip-nvidia-smi flag to skip the GPU driver verification step.
-			oci.WithProcessArgs(processArgs...),
+			oci.WithProcessArgs(
+				"/cos-gpu-installer",
+				"install",
+				fmt.Sprintf("-version=%s", NvDriverVer595_58_03),
+				fmt.Sprintf("-host-dir=%s", InstallationHostDir),
+				"--no-verify",
+			),
 			oci.WithAllDevicesAllowed,
 			oci.WithHostDevices,
 			oci.WithMounts(mounts),

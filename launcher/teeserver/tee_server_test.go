@@ -1348,3 +1348,75 @@ func TestGetAttestationEvidence_GB300CCMode(t *testing.T) {
 		})
 	}
 }
+
+// TestHandlerGB300CCModeRoutes checks each teeserver route through the real
+// mux with the handler set up the way GB300 CC mode builds it: a GB300 agent,
+// no BC mode, and no GCA or ITA verifier clients.
+func TestHandlerGB300CCModeRoutes(t *testing.T) {
+	evidence := &bmsaiagentpb.Gb300Evidence{
+		BmsaiEvidence: &bmsaiagentpb.BmsaiEvidence{BmCmwToken: []byte("test-cmw-token")},
+	}
+	const validBody = `{"challenge": "dGVzdGNoYWxsZW5nZTEyMw=="}`
+
+	testCases := []struct {
+		name           string
+		method         string
+		target         string
+		body           string
+		wantStatusCode int
+		wantAgentCalls int
+	}{
+		{"evidence returns Gb300Evidence", http.MethodPost, "/v1/evidence", validBody, http.StatusOK, 1},
+		{"evidence ignores field mask", http.MethodPost, "/v1/evidence?fields=label", validBody, http.StatusOK, 1},
+		{"evidence rejects GET", http.MethodGet, "/v1/evidence", "", http.StatusMethodNotAllowed, 0},
+		{"evidence rejects empty challenge", http.MethodPost, "/v1/evidence", `{}`, http.StatusBadRequest, 0},
+		{"evidence rejects bad JSON", http.MethodPost, "/v1/evidence", `not json`, http.StatusBadRequest, 0},
+		{"GET token without GCA client", http.MethodGet, "/v1/token", "", http.StatusInternalServerError, 0},
+		{"POST token without GCA client", http.MethodPost, "/v1/token", `{}`, http.StatusInternalServerError, 0},
+		{"ITA token without ITA client", http.MethodPost, "/v1/intel/token", `{}`, http.StatusInternalServerError, 0},
+		{"key endorsement is BC only", http.MethodPost, "/v1/keys:getEndorsement", `{}`, http.StatusForbidden, 0},
+		{"host attestation is BC only", http.MethodPost, "/v1/hostAttestation", `{}`, http.StatusForbidden, 0},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			agentCalls := 0
+			ah := &attestHandler{
+				ctx:    context.Background(),
+				logger: logging.SimpleLogger(),
+				attestAgent: fakeGB300AttestationAgent{
+					fakeAttestationAgent: fakeAttestationAgent{
+						attestationEvidenceFunc: func(context.Context, []byte, []byte) (*attestationpb.VmAttestation, error) {
+							t.Error("GB300 CC mode called the VM attestation evidence path")
+							return nil, errors.New("unexpected call")
+						},
+					},
+					attestGB300Func: func(context.Context, []byte) (*bmsaiagentpb.Gb300Evidence, error) {
+						agentCalls++
+						return evidence, nil
+					},
+				},
+			}
+
+			req := httptest.NewRequest(tc.method, tc.target, strings.NewReader(tc.body))
+			w := httptest.NewRecorder()
+			ah.Handler().ServeHTTP(w, req)
+
+			if w.Code != tc.wantStatusCode {
+				t.Errorf("%s %s status = %d, want %d; body = %s", tc.method, tc.target, w.Code, tc.wantStatusCode, w.Body.String())
+			}
+			if agentCalls != tc.wantAgentCalls {
+				t.Errorf("%s %s made %d AttestGB300 calls, want %d", tc.method, tc.target, agentCalls, tc.wantAgentCalls)
+			}
+			if tc.wantStatusCode == http.StatusOK {
+				var got bmsaiagentpb.Gb300Evidence
+				if err := protojson.Unmarshal(w.Body.Bytes(), &got); err != nil {
+					t.Fatalf("protojson.Unmarshal() err = %v", err)
+				}
+				if diff := cmp.Diff(evidence, &got, protocmp.Transform()); diff != "" {
+					t.Errorf("evidence mismatch (-want +got):\n%s", diff)
+				}
+			}
+		})
+	}
+}

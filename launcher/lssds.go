@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"syscall"
 	"time"
 
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
@@ -55,6 +56,22 @@ func isBlockDevice(path string) (bool, error) {
 	return fi.Mode().Type() == os.ModeDevice, nil
 }
 
+// isInUse reports whether the block device is held by the kernel, e.g. mounted, used as swap or claimed by md/dm.
+// An exclusive open fails with EBUSY in that case, which is what mkfs and wipefs rely on as well.
+// The claim is released right away, holding it would make the workload's own mount fail.
+func isInUse(path string) (bool, error) {
+	// O_EXCL without O_CREATE: Linux fails the open of a busy block device with EBUSY.
+	// O_RDONLY: closing a device opened for writing triggers a udev "change" event.
+	f, err := os.OpenFile(path, os.O_RDONLY|os.O_EXCL, 0)
+	if errors.Is(err, syscall.EBUSY) {
+		return true, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return false, f.Close()
+}
+
 // lssdDevice represents a Local SSD device node.
 type lssdDevice struct {
 	// hostPath is the resolved host device node, e.g. /dev/nvme0n1, not the by-id symlink.
@@ -65,14 +82,17 @@ type lssdDevice struct {
 
 // discoverLSSDDevs returns the Local SSD block devices.
 // It resolves Local SSD symlinks in hostDir and maps each device to the container.
-// It returns an error if a link is dangling, does not resolve to a block device, or if two links resolve to the same device.
-// When blockDevChecker is nil, a default block device checker is used.
-func discoverLSSDDevs(hostDir, containerDir string, blockDevChecker func(string) (bool, error)) ([]lssdDevice, error) {
+// It returns an error if a link is dangling, does not resolve to a block device, resolves to a device in use, or if two links resolve to the same device.
+// When blockDevChecker or inUseChecker is nil, the default checker is used.
+func discoverLSSDDevs(hostDir, containerDir string, blockDevChecker, inUseChecker func(string) (bool, error)) ([]lssdDevice, error) {
 	if containerDir == "" {
 		return nil, errors.New("container directory for Local SSDs is unspecified")
 	}
 	if blockDevChecker == nil {
 		blockDevChecker = isBlockDevice
+	}
+	if inUseChecker == nil {
+		inUseChecker = isInUse
 	}
 
 	entries, err := os.ReadDir(hostDir)
@@ -102,6 +122,14 @@ func discoverLSSDDevs(hostDir, containerDir string, blockDevChecker func(string)
 		}
 		if !isBlock {
 			return nil, fmt.Errorf("symlink %q for a Local SSD resolves to %q, which is not a block device", link, dev)
+		}
+		// A device the host still uses, e.g. a mounted one, must not be handed to the workload.
+		inUse, err := inUseChecker(dev)
+		if err != nil {
+			return nil, fmt.Errorf("failed to check whether Local SSD device %q is in use: %w", dev, err)
+		}
+		if inUse {
+			return nil, fmt.Errorf("symlink %q for a Local SSD resolves to %q, which is in use by the host", link, dev)
 		}
 		// Exposing one device under two names could corrupt data, e.g., when the workload stripes a RAID 0 array across them.
 		if prev, ok := devSymlink[dev]; ok {

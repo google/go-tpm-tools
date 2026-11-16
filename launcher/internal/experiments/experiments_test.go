@@ -29,7 +29,7 @@ func TestExperiments(t *testing.T) {
 			},
 		},
 		{
-			input: "{\"EnableTestFeatureForImage\":true,\"EnableSignedContainerImage\":true,\"EnableItaVerifier\":true,\"FloatFeature\":-5.6,\"OtherTestFeatureForImage\":false,\"EnableHostAttestation\":true}",
+			input: "{\"EnableTestFeatureForImage\":true,\"EnableSignedContainerImage\":true,\"EnableItaVerifier\":true,\"FloatFeature\":-5.6,\"OtherTestFeatureForImage\":false}",
 			expectedExps: Experiments{
 				EnableTestFeatureForImage: true,
 				EnableItaVerifier:         true,

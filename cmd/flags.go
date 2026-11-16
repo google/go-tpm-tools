@@ -20,7 +20,6 @@ var (
 	nonce         []byte
 	teeNonce      []byte
 	teeTechnology string
-	keyAlgo       = tpm2.AlgRSA
 	format        string
 )
 
@@ -129,12 +128,6 @@ func addOutputFlag(cmd *cobra.Command) {
 func addInputFlag(cmd *cobra.Command) {
 	cmd.PersistentFlags().StringVar(&input, "input", "",
 		"input file (defaults to stdin)")
-}
-
-// Lets this command specify the public key algorithm.
-func addPublicKeyAlgoFlag(cmd *cobra.Command) {
-	f := algoFlag{&keyAlgo, []tpm2.Algorithm{tpm2.AlgRSA, tpm2.AlgECC}}
-	cmd.PersistentFlags().Var(&f, "algo", "public key algorithm: "+f.Allowed())
 }
 
 func addNonceFlag(cmd *cobra.Command) {
