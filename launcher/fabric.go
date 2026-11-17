@@ -38,11 +38,21 @@ type gb300FabricPath struct {
 	isDir bool
 }
 
+// gb300FabricDevice is a host character device node to pass into the workload
+// container for NVIDIA IMEX or MNCCD.
+type gb300FabricDevice struct {
+	// hostPath is the symlink-resolved host character device node passed to
+	// oci.WithDevices, which lstats the source path.
+	hostPath string
+	// containerPath is where the device node appears inside the container.
+	containerPath string
+}
+
 var (
 	// gb300FabricPaths are the IMEX and MNCCD binaries and configs on GB300
 	// images. The image starts and owns both daemons. These mounts let the
 	// workload see how the daemons are configured and talk to them, for example
-	// with `nvidia-imex-ctl -c /usr/local/nvidia/fabric/etc/nvidia-imex/config.cfg -N`.
+	// with `nvidia-imex-ctl -c /usr/local/nvidia/fabric/etc/nvidia-imex/config.cfg -q`.
 	gb300FabricPaths = []gb300FabricPath{
 		{hostPath: "/usr/bin/nvidia-imex", containerPath: path.Join(gb300FabricContainerBinDir, "nvidia-imex")},
 		{hostPath: "/usr/bin/nvidia-imex-ctl", containerPath: path.Join(gb300FabricContainerBinDir, "nvidia-imex-ctl")},
@@ -70,19 +80,15 @@ var (
 	// findGB300FabricDevs returns the IMEX channel and fabric capability device
 	// nodes for the workload container. It is overridden in unit tests to keep
 	// createOCISpecOpts hermetic.
-	findGB300FabricDevs = func() ([]string, []error) {
+	findGB300FabricDevs = func() ([]gb300FabricDevice, []error) {
 		return gb300FabricDevs(defaultDevRoot, defaultProcRoot, charDevStat)
 	}
 )
 
 // gb300FabricMounts returns a read-only bind mount for each path that exists on
-// the host with the expected type, using stat to follow symlinks. When stat is
-// nil, os.Stat is used. For each skipped path, it returns an error describing
-// why the path was skipped.
+// the host with the expected type, using stat to follow symlinks. For each
+// skipped path, it returns an error describing why the path was skipped.
 func gb300FabricMounts(paths []gb300FabricPath, stat func(string) (os.FileInfo, error)) ([]specs.Mount, []error) {
-	if stat == nil {
-		stat = os.Stat
-	}
 	var mounts []specs.Mount
 	var skipped []error
 	for _, p := range paths {
@@ -117,48 +123,61 @@ func gb300FabricMounts(paths []gb300FabricPath, stat func(string) (os.FileInfo, 
 // devices for fabric-imex-mgmt and mncc-mgmt under <devRoot>/nvidia-caps/ using
 // minors from <procRoot>/driver/nvidia/capabilities/<name>.
 //
-// devStat follows symlinks and reports whether a path is a character device and
-// its device number. When devStat is nil, charDevStat is used. For each missing
-// or invalid channel directory, proc file, or device node, it returns an error
-// describing why it was skipped.
-func gb300FabricDevs(devRoot, procRoot string, devStat func(string) (bool, uint64, error)) ([]string, []error) {
-	if devStat == nil {
-		devStat = charDevStat
-	}
+// Symlinks are resolved so hostPath holds the real character device node (for
+// containerd's oci.WithDevices, which lstats the source path) while
+// containerPath keeps the discovered path. devStat reports whether a resolved
+// path is a character device and its device number. For each missing or invalid
+// channel directory, proc file, or device node, it returns an error describing
+// why it was skipped.
+func gb300FabricDevs(devRoot, procRoot string, devStat func(string) (bool, uint64, error)) ([]gb300FabricDevice, []error) {
 	devs, skipped := gb300IMEXChannelDevs(devRoot, devStat)
 	capDevs, capSkipped := gb300CapDevs(devRoot, procRoot, devStat)
 	return append(devs, capDevs...), append(skipped, capSkipped...)
 }
 
-func gb300IMEXChannelDevs(devRoot string, devStat func(string) (bool, uint64, error)) ([]string, []error) {
+func resolveGB300CharDevice(devPath string, devStat func(string) (bool, uint64, error)) (gb300FabricDevice, error) {
+	resolved, err := filepath.EvalSymlinks(devPath)
+	if err != nil {
+		return gb300FabricDevice{}, fmt.Errorf("cannot resolve %q: %w", devPath, err)
+	}
+	isChar, _, err := devStat(resolved)
+	if err != nil {
+		return gb300FabricDevice{}, fmt.Errorf("cannot stat %q: %w", resolved, err)
+	}
+	if !isChar {
+		return gb300FabricDevice{}, fmt.Errorf("%q is not a character device", resolved)
+	}
+	return gb300FabricDevice{
+		hostPath:      resolved,
+		containerPath: devPath,
+	}, nil
+}
+
+func gb300IMEXChannelDevs(devRoot string, devStat func(string) (bool, uint64, error)) ([]gb300FabricDevice, []error) {
 	chanDir := filepath.Join(devRoot, "nvidia-caps-imex-channels")
 	entries, err := os.ReadDir(chanDir)
 	if err != nil {
 		return nil, []error{fmt.Errorf("cannot read %q: %w", chanDir, err)}
 	}
-	var devs []string
+	var devs []gb300FabricDevice
 	var skipped []error
 	for _, entry := range entries {
 		if !imexChannelNameRegexp.MatchString(entry.Name()) {
 			continue
 		}
 		devPath := filepath.Join(chanDir, entry.Name())
-		isChar, _, err := devStat(devPath)
+		dev, err := resolveGB300CharDevice(devPath, devStat)
 		if err != nil {
-			skipped = append(skipped, fmt.Errorf("cannot stat %q: %w", devPath, err))
+			skipped = append(skipped, err)
 			continue
 		}
-		if !isChar {
-			skipped = append(skipped, fmt.Errorf("%q is not a character device", devPath))
-			continue
-		}
-		devs = append(devs, devPath)
+		devs = append(devs, dev)
 	}
 	return devs, skipped
 }
 
-func gb300CapDevs(devRoot, procRoot string, devStat func(string) (bool, uint64, error)) ([]string, []error) {
-	var devs []string
+func gb300CapDevs(devRoot, procRoot string, devStat func(string) (bool, uint64, error)) ([]gb300FabricDevice, []error) {
+	var devs []gb300FabricDevice
 	var skipped []error
 	for _, capName := range gb300FabricCapNames {
 		procPath := filepath.Join(procRoot, "driver", "nvidia", "capabilities", capName)
@@ -173,16 +192,12 @@ func gb300CapDevs(devRoot, procRoot string, devStat func(string) (bool, uint64, 
 			continue
 		}
 		devPath := filepath.Join(devRoot, "nvidia-caps", fmt.Sprintf("nvidia-cap%d", minor))
-		isChar, _, err := devStat(devPath)
+		dev, err := resolveGB300CharDevice(devPath, devStat)
 		if err != nil {
-			skipped = append(skipped, fmt.Errorf("cannot stat %q (from %q): %w", devPath, procPath, err))
+			skipped = append(skipped, fmt.Errorf("capability %q: %w", procPath, err))
 			continue
 		}
-		if !isChar {
-			skipped = append(skipped, fmt.Errorf("%q is not a character device (from %q)", devPath, procPath))
-			continue
-		}
-		devs = append(devs, devPath)
+		devs = append(devs, dev)
 	}
 	return devs, skipped
 }

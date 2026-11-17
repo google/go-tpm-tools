@@ -117,8 +117,8 @@ func createOCISpecOpts(image containerd.Image, launchSpec spec.LaunchSpec, envs 
 
 		specOpts = append(specOpts, oci.WithMounts(gpuMounts))
 
-		// /dev/nvidia-caps/* will not be listed here and will not be passed to
-		// the container workload
+		// /dev/nvidia-caps/* are not listed here; in GB300 CC mode only the
+		// IMEX and MNCCD capability nodes are passed separately below.
 		//
 		// following devices should be listed:
 		// /dev/nvidiactl
@@ -174,29 +174,31 @@ func createOCISpecOpts(image containerd.Image, launchSpec spec.LaunchSpec, envs 
 			}
 		}
 
-		// The image runs the NVIDIA IMEX and MNCCD daemons. Mount their
-		// binaries and configs read-only so the workload can also interact with
-		// them. A missing path is not fatal.
-		fabricMounts, skipped := findGB300FabricMounts()
-		for _, err := range skipped {
-			logger.Error(fmt.Sprintf("GB300 CC mode: skipping IMEX/MNCCD mount: %v", err))
-		}
-		for _, m := range fabricMounts {
-			logger.Info(fmt.Sprintf("GB300 CC mode: mounting %s at %s", m.Source, m.Destination))
-		}
-		if len(fabricMounts) > 0 {
-			specOpts = append(specOpts, oci.WithMounts(fabricMounts))
-		}
+		if launchSpec.InstallGpuDriver {
+			// The image runs the NVIDIA IMEX and MNCCD daemons. Mount their
+			// binaries and configs read-only so the workload can also interact with
+			// them. A missing path is not fatal.
+			fabricMounts, skipped := findGB300FabricMounts()
+			for _, err := range skipped {
+				logger.Error(fmt.Sprintf("GB300 CC mode: skipping IMEX/MNCCD mount: %v", err))
+			}
+			for _, m := range fabricMounts {
+				logger.Info(fmt.Sprintf("GB300 CC mode: mounting %s at %s", m.Source, m.Destination))
+			}
+			if len(fabricMounts) > 0 {
+				specOpts = append(specOpts, oci.WithMounts(fabricMounts))
+			}
 
-		// Pass through IMEX channels and driver capability nodes for IMEX/MNCCD.
-		// Missing or invalid paths are logged and skipped.
-		fabricDevs, skippedDevs := findGB300FabricDevs()
-		for _, err := range skippedDevs {
-			logger.Error(fmt.Sprintf("GB300 CC mode: skipping IMEX/MNCCD device: %v", err))
-		}
-		for _, dev := range fabricDevs {
-			logger.Info(fmt.Sprintf("GB300 CC mode: passing IMEX/MNCCD device %s", dev))
-			specOpts = append(specOpts, oci.WithDevices(dev, dev, "rwm"))
+			// Pass through IMEX channels and driver capability nodes for IMEX/MNCCD.
+			// Missing or invalid paths are logged and skipped.
+			fabricDevs, skippedDevs := findGB300FabricDevs()
+			for _, err := range skippedDevs {
+				logger.Error(fmt.Sprintf("GB300 CC mode: skipping IMEX/MNCCD device: %v", err))
+			}
+			for _, dev := range fabricDevs {
+				logger.Info(fmt.Sprintf("GB300 CC mode: passing IMEX/MNCCD device %s as %s", dev.hostPath, dev.containerPath))
+				specOpts = append(specOpts, oci.WithDevices(dev.hostPath, dev.containerPath, "rwm"))
+			}
 		}
 	}
 

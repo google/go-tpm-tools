@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"reflect"
 	"runtime"
 	"strings"
@@ -562,40 +564,9 @@ func TestCreateOCISpecOpts_GB300CCMode_FTPMDevices(t *testing.T) {
 			"/dev/ftpm":   "/dev/null",
 			"/dev/ftpmrm": "/dev/zero",
 		} {
-			wantDev, err := oci.DeviceFromPath(hostPath)
-			if err != nil {
-				t.Fatalf("oci.DeviceFromPath(%q) failed: %v", hostPath, err)
-			}
-
-			var found []specs.LinuxDevice
-			for _, dev := range gotSpec.Linux.Devices {
-				if dev.Path == containerPath {
-					found = append(found, dev)
-				}
-			}
-			if len(found) != 1 {
-				t.Fatalf("got %d devices at %s, want 1: %+v", len(found), containerPath, gotSpec.Linux.Devices)
-			}
-			dev := found[0]
-			if dev.Type != "c" || dev.Major != wantDev.Major || dev.Minor != wantDev.Minor {
-				t.Errorf("device %s = type %q %d:%d, want type \"c\" %d:%d (%s)", containerPath, dev.Type, dev.Major, dev.Minor, wantDev.Major, wantDev.Minor, hostPath)
-			}
+			dev := assertCharDeviceInSpec(t, gotSpec, hostPath, containerPath, "rw")
 			if dev.FileMode == nil || *dev.FileMode != ftpmContainerFileMode {
 				t.Errorf("device %s FileMode = %v, want %#o", containerPath, dev.FileMode, ftpmContainerFileMode)
-			}
-
-			// Match the device cgroup rule by major:minor; other GB300 devices (e.g. Local SSDs) may add rules.
-			foundRule := false
-			for _, cg := range gotSpec.Linux.Resources.Devices {
-				if cg.Major != nil && cg.Minor != nil && *cg.Major == wantDev.Major && *cg.Minor == wantDev.Minor {
-					foundRule = true
-					if !cg.Allow || cg.Type != "c" || cg.Access != "rw" {
-						t.Errorf("device cgroup rule for %s = %+v, want Allow=true Type=c Access=rw", containerPath, cg)
-					}
-				}
-			}
-			if !foundRule {
-				t.Errorf("no device cgroup rule for %s (%d:%d): %+v", containerPath, wantDev.Major, wantDev.Minor, gotSpec.Linux.Resources.Devices)
 			}
 		}
 	})
@@ -618,6 +589,67 @@ func TestCreateOCISpecOpts_GB300CCMode_FTPMDevices(t *testing.T) {
 	})
 }
 
+// stubFindGB300DriverDir replaces GB300 GPU driver directory lookup for one test.
+func stubFindGB300DriverDir(t *testing.T, dir string) {
+	t.Helper()
+	orig := findGB300DriverDir
+	t.Cleanup(func() { findGB300DriverDir = orig })
+	findGB300DriverDir = func() (string, error) { return dir, nil }
+}
+
+func assertCharDeviceInSpec(t *testing.T, gotSpec specs.Spec, hostPath, containerPath, wantAccess string) specs.LinuxDevice {
+	t.Helper()
+	wantDev, err := oci.DeviceFromPath(hostPath)
+	if err != nil {
+		t.Fatalf("oci.DeviceFromPath(%q) failed: %v", hostPath, err)
+	}
+	var found []specs.LinuxDevice
+	for _, dev := range gotSpec.Linux.Devices {
+		if dev.Path == containerPath {
+			found = append(found, dev)
+		}
+	}
+	if len(found) != 1 {
+		t.Fatalf("got %d devices at %s, want 1: %+v", len(found), containerPath, gotSpec.Linux.Devices)
+	}
+	dev := found[0]
+	if dev.Type != "c" || dev.Major != wantDev.Major || dev.Minor != wantDev.Minor {
+		t.Errorf("device %s = type %q %d:%d, want type \"c\" %d:%d (%s)", containerPath, dev.Type, dev.Major, dev.Minor, wantDev.Major, wantDev.Minor, hostPath)
+	}
+	foundRule := false
+	for _, cg := range gotSpec.Linux.Resources.Devices {
+		if cg.Major != nil && cg.Minor != nil && *cg.Major == wantDev.Major && *cg.Minor == wantDev.Minor {
+			foundRule = true
+			if !cg.Allow || cg.Type != "c" || cg.Access != wantAccess {
+				t.Errorf("device cgroup rule for %s = %+v, want Allow=true Type=c Access=%s", containerPath, cg, wantAccess)
+			}
+		}
+	}
+	if !foundRule {
+		t.Errorf("no device cgroup rule for %s (%d:%d): %+v", containerPath, wantDev.Major, wantDev.Minor, gotSpec.Linux.Resources.Devices)
+	}
+	return dev
+}
+
+func assertDeviceAbsentInSpec(t *testing.T, gotSpec specs.Spec, containerPath string) {
+	t.Helper()
+	for _, dev := range gotSpec.Linux.Devices {
+		if dev.Path == containerPath {
+			t.Errorf("unexpected device %s added: %+v", containerPath, dev)
+		}
+	}
+}
+
+func assertLogContains(t *testing.T, entries []string, substr string) {
+	t.Helper()
+	for _, entry := range entries {
+		if strings.Contains(entry, substr) {
+			return
+		}
+	}
+	t.Errorf("logs %q missing substring %q", entries, substr)
+}
+
 // stubFindGB300FabricMounts replaces IMEX/MNCCD mount discovery for one test and
 // returns a pointer to the number of times it ran.
 func stubFindGB300FabricMounts(t *testing.T, mounts []specs.Mount, skipped []error) *int {
@@ -635,6 +667,7 @@ func stubFindGB300FabricMounts(t *testing.T, mounts []specs.Mount, skipped []err
 func TestCreateOCISpecOpts_GB300CCMode_FabricMounts(t *testing.T) {
 	ctx := namespaces.WithNamespace(context.Background(), "default")
 	img := createFakeImage(nil, nil, nil)
+	stubFindGB300DriverDir(t, "/opt/nvidia/620.06")
 	stubFindGB300FTPMDevs(t, nil, nil)
 	stubFindGB300FabricDevs(t, nil, nil)
 
@@ -644,22 +677,28 @@ func TestCreateOCISpecOpts_GB300CCMode_FabricMounts(t *testing.T) {
 	tests := []struct {
 		name        string
 		gb300       bool
+		gpuDriver   bool
 		nonroot     bool
 		mounts      []specs.Mount
 		skipped     []error
 		wantMounts  []specs.Mount
 		wantLookups int
+		wantInfo    string
+		wantErrLog  string
 	}{
 		{
 			name:        "mounted_in_gb300_cc_mode",
 			gb300:       true,
+			gpuDriver:   true,
 			mounts:      []specs.Mount{imex, imexEtc},
 			wantMounts:  []specs.Mount{imex, imexEtc},
 			wantLookups: 1,
+			wantInfo:    "GB300 CC mode: mounting /usr/bin/nvidia-imex at /usr/local/nvidia/fabric/bin/nvidia-imex",
 		},
 		{
 			name:        "mounted_for_nonroot_container",
 			gb300:       true,
+			gpuDriver:   true,
 			nonroot:     true,
 			mounts:      []specs.Mount{imex, imexEtc},
 			wantMounts:  []specs.Mount{imex, imexEtc},
@@ -668,20 +707,32 @@ func TestCreateOCISpecOpts_GB300CCMode_FabricMounts(t *testing.T) {
 		{
 			name:        "missing_binary_is_not_fatal",
 			gb300:       true,
+			gpuDriver:   true,
 			mounts:      []specs.Mount{imex, imexEtc},
 			skipped:     []error{errors.New("nvidia-imex-ctl missing")},
 			wantMounts:  []specs.Mount{imex, imexEtc},
 			wantLookups: 1,
+			wantErrLog:  "GB300 CC mode: skipping IMEX/MNCCD mount: nvidia-imex-ctl missing",
 		},
 		{
 			name:        "all_paths_missing_is_not_fatal",
 			gb300:       true,
+			gpuDriver:   true,
 			skipped:     []error{errors.New("nvidia-imex missing")},
 			wantLookups: 1,
+			wantErrLog:  "GB300 CC mode: skipping IMEX/MNCCD mount: nvidia-imex missing",
+		},
+		{
+			name:        "not_mounted_when_gpu_driver_disabled",
+			gb300:       true,
+			gpuDriver:   false,
+			mounts:      []specs.Mount{imex, imexEtc},
+			wantLookups: 0,
 		},
 		{
 			name:        "not_mounted_when_gb300_disabled",
 			gb300:       false,
+			gpuDriver:   true,
 			mounts:      []specs.Mount{imex, imexEtc},
 			wantLookups: 0,
 		},
@@ -689,16 +740,24 @@ func TestCreateOCISpecOpts_GB300CCMode_FabricMounts(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			calls := stubFindGB300FabricMounts(t, tc.mounts, tc.skipped)
+			logger := &fakeLogger{}
 			ls := spec.LaunchSpec{
+				InstallGpuDriver: tc.gpuDriver,
 				NonrootContainer: tc.nonroot,
 				Experiments:      experiments.Experiments{GB300CCMode: tc.gb300},
 			}
-			specOpts, err := createOCISpecOpts(img, ls, nil, dummyListFiles, &fakeLogger{})
+			specOpts, err := createOCISpecOpts(img, ls, nil, dummyListFiles, logger)
 			if err != nil {
 				t.Fatalf("createOCISpecOpts() failed: %v", err)
 			}
 			if *calls != tc.wantLookups {
 				t.Errorf("IMEX/MNCCD mount discovery ran %d time(s), want %d", *calls, tc.wantLookups)
+			}
+			if tc.wantInfo != "" {
+				assertLogContains(t, logger.logs, tc.wantInfo)
+			}
+			if tc.wantErrLog != "" {
+				assertLogContains(t, logger.errors, tc.wantErrLog)
 			}
 			gotSpec, err := applySpecOptsToSpec(ctx, specOpts)
 			if err != nil {
@@ -719,12 +778,12 @@ func TestCreateOCISpecOpts_GB300CCMode_FabricMounts(t *testing.T) {
 
 // stubFindGB300FabricDevs replaces IMEX/MNCCD device discovery for one test and
 // returns a pointer to the number of times it ran.
-func stubFindGB300FabricDevs(t *testing.T, devs []string, skipped []error) *int {
+func stubFindGB300FabricDevs(t *testing.T, devs []gb300FabricDevice, skipped []error) *int {
 	t.Helper()
 	calls := 0
 	orig := findGB300FabricDevs
 	t.Cleanup(func() { findGB300FabricDevs = orig })
-	findGB300FabricDevs = func() ([]string, []error) {
+	findGB300FabricDevs = func() ([]gb300FabricDevice, []error) {
 		calls++
 		return devs, skipped
 	}
@@ -734,52 +793,73 @@ func stubFindGB300FabricDevs(t *testing.T, devs []string, skipped []error) *int 
 func TestCreateOCISpecOpts_GB300CCMode_FabricDevs(t *testing.T) {
 	ctx := namespaces.WithNamespace(context.Background(), "default")
 	img := createFakeImage(nil, nil, nil)
+	stubFindGB300DriverDir(t, "/opt/nvidia/620.06")
 	stubFindGB300FTPMDevs(t, nil, nil)
 	stubFindGB300FabricMounts(t, nil, nil)
 
-	// Use real host char devices because oci.WithDevices stats the host path.
+	devNull := gb300FabricDevice{hostPath: "/dev/null", containerPath: "/dev/nvidia-caps-imex-channels/channel0"}
+	devZero := gb300FabricDevice{hostPath: "/dev/zero", containerPath: "/dev/nvidia-caps/nvidia-cap15"}
+
 	tests := []struct {
 		name        string
 		gb300       bool
+		gpuDriver   bool
 		nonroot     bool
-		devs        []string
+		devs        []gb300FabricDevice
 		skipped     []error
-		wantDevs    []string
+		wantDevs    []gb300FabricDevice
 		wantLookups int
+		wantInfo    string
+		wantErrLog  string
 	}{
 		{
 			name:        "added_in_gb300_cc_mode",
 			gb300:       true,
-			devs:        []string{"/dev/null", "/dev/zero"},
-			wantDevs:    []string{"/dev/null", "/dev/zero"},
+			gpuDriver:   true,
+			devs:        []gb300FabricDevice{devNull, devZero},
+			wantDevs:    []gb300FabricDevice{devNull, devZero},
 			wantLookups: 1,
+			wantInfo:    "GB300 CC mode: passing IMEX/MNCCD device /dev/null as /dev/nvidia-caps-imex-channels/channel0",
 		},
 		{
 			name:        "added_for_nonroot_container",
 			gb300:       true,
+			gpuDriver:   true,
 			nonroot:     true,
-			devs:        []string{"/dev/null", "/dev/zero"},
-			wantDevs:    []string{"/dev/null", "/dev/zero"},
+			devs:        []gb300FabricDevice{devNull, devZero},
+			wantDevs:    []gb300FabricDevice{devNull, devZero},
 			wantLookups: 1,
 		},
 		{
 			name:        "missing_device_is_not_fatal",
 			gb300:       true,
-			devs:        []string{"/dev/null"},
+			gpuDriver:   true,
+			devs:        []gb300FabricDevice{devNull},
 			skipped:     []error{errors.New("mncc-mgmt missing")},
-			wantDevs:    []string{"/dev/null"},
+			wantDevs:    []gb300FabricDevice{devNull},
 			wantLookups: 1,
+			wantErrLog:  "GB300 CC mode: skipping IMEX/MNCCD device: mncc-mgmt missing",
 		},
 		{
 			name:        "all_devices_missing_is_not_fatal",
 			gb300:       true,
+			gpuDriver:   true,
 			skipped:     []error{errors.New("nvidia-caps-imex-channels missing")},
 			wantLookups: 1,
+			wantErrLog:  "GB300 CC mode: skipping IMEX/MNCCD device: nvidia-caps-imex-channels missing",
+		},
+		{
+			name:        "not_added_when_gpu_driver_disabled",
+			gb300:       true,
+			gpuDriver:   false,
+			devs:        []gb300FabricDevice{devNull, devZero},
+			wantLookups: 0,
 		},
 		{
 			name:        "not_added_when_gb300_disabled",
 			gb300:       false,
-			devs:        []string{"/dev/null", "/dev/zero"},
+			gpuDriver:   true,
+			devs:        []gb300FabricDevice{devNull, devZero},
 			wantLookups: 0,
 		},
 	}
@@ -787,75 +867,70 @@ func TestCreateOCISpecOpts_GB300CCMode_FabricDevs(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			calls := stubFindGB300FabricDevs(t, tc.devs, tc.skipped)
+			logger := &fakeLogger{}
 			ls := spec.LaunchSpec{
+				InstallGpuDriver: tc.gpuDriver,
 				NonrootContainer: tc.nonroot,
 				Experiments:      experiments.Experiments{GB300CCMode: tc.gb300},
 			}
-			specOpts, err := createOCISpecOpts(img, ls, nil, dummyListFiles, &fakeLogger{})
+			specOpts, err := createOCISpecOpts(img, ls, nil, dummyListFiles, logger)
 			if err != nil {
 				t.Fatalf("createOCISpecOpts() failed: %v", err)
 			}
 			if *calls != tc.wantLookups {
 				t.Errorf("IMEX/MNCCD device discovery ran %d time(s), want %d", *calls, tc.wantLookups)
 			}
+			if tc.wantInfo != "" {
+				assertLogContains(t, logger.logs, tc.wantInfo)
+			}
+			if tc.wantErrLog != "" {
+				assertLogContains(t, logger.errors, tc.wantErrLog)
+			}
 			gotSpec, err := applySpecOptsToSpec(ctx, specOpts)
 			if err != nil {
 				t.Fatalf("applySpecOptsToSpec() failed: %v", err)
 			}
-			assertFabricDeviceSpec(t, gotSpec, tc.wantDevs)
-		})
-	}
-}
-
-func assertFabricDeviceSpec(t *testing.T, gotSpec specs.Spec, wantDevs []string) {
-	t.Helper()
-	for _, path := range []string{"/dev/null", "/dev/zero"} {
-		wantAdded := false
-		for _, w := range wantDevs {
-			if w == path {
-				wantAdded = true
-				break
-			}
-		}
-
-		wantDev, err := oci.DeviceFromPath(path)
-		if err != nil {
-			t.Fatalf("oci.DeviceFromPath(%q) failed: %v", path, err)
-		}
-
-		var found []specs.LinuxDevice
-		for _, dev := range gotSpec.Linux.Devices {
-			if dev.Path == path {
-				found = append(found, dev)
-			}
-		}
-		if !wantAdded {
-			if len(found) != 0 {
-				t.Errorf("unexpected device %s added: %+v", path, found)
-			}
-			continue
-		}
-		if len(found) != 1 {
-			t.Fatalf("got %d devices at %s, want 1: %+v", len(found), path, gotSpec.Linux.Devices)
-		}
-		dev := found[0]
-		if dev.Type != "c" || dev.Major != wantDev.Major || dev.Minor != wantDev.Minor {
-			t.Errorf("device %s = type %q %d:%d, want type \"c\" %d:%d", path, dev.Type, dev.Major, dev.Minor, wantDev.Major, wantDev.Minor)
-		}
-
-		foundRule := false
-		for _, cg := range gotSpec.Linux.Resources.Devices {
-			if cg.Major != nil && cg.Minor != nil && *cg.Major == wantDev.Major && *cg.Minor == wantDev.Minor {
-				foundRule = true
-				if !cg.Allow || cg.Type != "c" || cg.Access != "rwm" {
-					t.Errorf("device cgroup rule for %s = %+v, want Allow=true Type=c Access=rwm", path, cg)
+			for _, candidate := range []gb300FabricDevice{devNull, devZero} {
+				wantAdded := false
+				for _, w := range tc.wantDevs {
+					if w == candidate {
+						wantAdded = true
+						break
+					}
+				}
+				if wantAdded {
+					assertCharDeviceInSpec(t, gotSpec, candidate.hostPath, candidate.containerPath, "rwm")
+				} else {
+					assertDeviceAbsentInSpec(t, gotSpec, candidate.containerPath)
 				}
 			}
-		}
-		if !foundRule {
-			t.Errorf("no device cgroup rule for %s (%d:%d): %+v", path, wantDev.Major, wantDev.Minor, gotSpec.Linux.Resources.Devices)
-		}
+		})
 	}
+
+	t.Run("symlink_to_char_device_passes_through_spec", func(t *testing.T) {
+		linkPath := filepath.Join(t.TempDir(), "nvidia-cap15")
+		if err := os.Symlink("/dev/null", linkPath); err != nil {
+			t.Fatal(err)
+		}
+		resolved, err := resolveGB300CharDevice(linkPath, charDevStat)
+		if err != nil {
+			t.Fatalf("resolveGB300CharDevice(%q) failed: %v", linkPath, err)
+		}
+		stubFindGB300FabricDevs(t, []gb300FabricDevice{resolved}, nil)
+		ls := spec.LaunchSpec{
+			InstallGpuDriver: true,
+			Experiments:      experiments.Experiments{GB300CCMode: true},
+		}
+		specOpts, err := createOCISpecOpts(img, ls, nil, dummyListFiles, &fakeLogger{})
+		if err != nil {
+			t.Fatalf("createOCISpecOpts() failed: %v", err)
+		}
+		gotSpec, err := applySpecOptsToSpec(ctx, specOpts)
+		if err != nil {
+			t.Fatalf("applySpecOptsToSpec() failed: %v", err)
+		}
+		assertCharDeviceInSpec(t, gotSpec, "/dev/null", linkPath, "rwm")
+	})
 }
 
 func TestCreateOCISpecOpts_GB300CCMode_NonrootContainerSkipsFTPM(t *testing.T) {
