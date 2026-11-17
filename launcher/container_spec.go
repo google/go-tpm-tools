@@ -137,8 +137,9 @@ func createOCISpecOpts(image containerd.Image, launchSpec spec.LaunchSpec, envs 
 		}
 	}
 
-	// GB300 CC mode: Pass the Local SSDs through as block devices and the
-	// TrustZone fTPM character devices (/dev/ftpm, /dev/ftpmrm) when present.
+	// GB300 CC mode: Pass the Local SSDs through as block devices, the
+	// TrustZone fTPM character devices (/dev/ftpm, /dev/ftpmrm) when present,
+	// and read-only IMEX and MNCCD binaries and configs.
 	if launchSpec.Experiments.GB300CCMode {
 		devs, err := discoverLSSDDevs(defaultLSSDHostDir, defaultLSSDContainerDir, isBlockDevice, isInUse)
 		if err != nil {
@@ -171,6 +172,20 @@ func createOCISpecOpts(image containerd.Image, launchSpec spec.LaunchSpec, envs 
 				logger.Info(fmt.Sprintf("GB300 CC mode: passing fTPM device %s through as %s", dev.hostPath, dev.containerPath))
 				specOpts = append(specOpts, withFTPMDevice(dev.hostPath, dev.containerPath))
 			}
+		}
+
+		// The image runs the NVIDIA IMEX and MNCCD daemons. Mount their
+		// binaries and configs read-only so the workload can also interact with
+		// them. A missing path is not fatal.
+		fabricMounts, skipped := findGB300FabricMounts()
+		for _, err := range skipped {
+			logger.Error(fmt.Sprintf("GB300 CC mode: skipping IMEX/MNCCD mount: %v", err))
+		}
+		for _, m := range fabricMounts {
+			logger.Info(fmt.Sprintf("GB300 CC mode: mounting %s at %s", m.Source, m.Destination))
+		}
+		if len(fabricMounts) > 0 {
+			specOpts = append(specOpts, oci.WithMounts(fabricMounts))
 		}
 	}
 

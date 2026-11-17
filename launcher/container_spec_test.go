@@ -13,6 +13,7 @@ import (
 	"github.com/containerd/containerd/containers"
 	"github.com/containerd/containerd/namespaces"
 	"github.com/containerd/containerd/oci"
+	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-tpm-tools/launcher/internal/experiments"
 	"github.com/google/go-tpm-tools/launcher/internal/launchermount"
 	"github.com/google/go-tpm-tools/launcher/spec"
@@ -432,7 +433,8 @@ func TestCreateOCISpecOpts_GPU_GB300CCMode(t *testing.T) {
 	origFind := findGB300DriverDir
 	t.Cleanup(func() { findGB300DriverDir = origFind })
 	findGB300DriverDir = func() (string, error) { return "/opt/nvidia/620.06", nil }
-	stubFindGB300FTPMDevs(t, nil, nil) // Do not scan the host's /dev for fTPM symlinks.
+	stubFindGB300FTPMDevs(t, nil, nil)     // Do not scan the host's /dev for fTPM symlinks.
+	stubFindGB300FabricMounts(t, nil, nil) // Do not stat host IMEX/MNCCD paths.
 
 	mockListFiles := func(dir, prefix string) ([]string, error) {
 		if dir == "/dev" && prefix == "nvidia" {
@@ -531,6 +533,7 @@ func TestCreateOCISpecOpts_GB300CCMode_FTPMDevices(t *testing.T) {
 		{hostPath: "/dev/null", containerPath: "/dev/ftpm"},
 		{hostPath: "/dev/zero", containerPath: "/dev/ftpmrm"},
 	}, nil)
+	stubFindGB300FabricMounts(t, nil, nil)
 
 	t.Run("mounted_in_gb300_cc_mode", func(t *testing.T) {
 		ls := spec.LaunchSpec{
@@ -609,6 +612,104 @@ func TestCreateOCISpecOpts_GB300CCMode_FTPMDevices(t *testing.T) {
 	})
 }
 
+// stubFindGB300FabricMounts replaces IMEX/MNCCD mount discovery for one test and
+// returns a pointer to the number of times it ran.
+func stubFindGB300FabricMounts(t *testing.T, mounts []specs.Mount, skipped []error) *int {
+	t.Helper()
+	calls := 0
+	orig := findGB300FabricMounts
+	t.Cleanup(func() { findGB300FabricMounts = orig })
+	findGB300FabricMounts = func() ([]specs.Mount, []error) {
+		calls++
+		return mounts, skipped
+	}
+	return &calls
+}
+
+func TestCreateOCISpecOpts_GB300CCMode_FabricMounts(t *testing.T) {
+	ctx := namespaces.WithNamespace(context.Background(), "default")
+	img := createFakeImage(nil, nil, nil)
+	stubFindGB300FTPMDevs(t, nil, nil)
+
+	imex := specs.Mount{Type: "bind", Source: "/usr/bin/nvidia-imex", Destination: "/usr/local/nvidia/fabric/bin/nvidia-imex", Options: []string{"bind", "ro"}}
+	imexEtc := specs.Mount{Type: "bind", Source: "/usr/share/oem/nvidia-imex/etc", Destination: "/usr/local/nvidia/fabric/etc/nvidia-imex", Options: []string{"rbind", "ro"}}
+
+	tests := []struct {
+		name        string
+		gb300       bool
+		nonroot     bool
+		mounts      []specs.Mount
+		skipped     []error
+		wantMounts  []specs.Mount
+		wantLookups int
+	}{
+		{
+			name:        "mounted_in_gb300_cc_mode",
+			gb300:       true,
+			mounts:      []specs.Mount{imex, imexEtc},
+			wantMounts:  []specs.Mount{imex, imexEtc},
+			wantLookups: 1,
+		},
+		{
+			name:        "mounted_for_nonroot_container",
+			gb300:       true,
+			nonroot:     true,
+			mounts:      []specs.Mount{imex, imexEtc},
+			wantMounts:  []specs.Mount{imex, imexEtc},
+			wantLookups: 1,
+		},
+		{
+			name:        "missing_binary_is_not_fatal",
+			gb300:       true,
+			mounts:      []specs.Mount{imex, imexEtc},
+			skipped:     []error{errors.New("nvidia-imex-ctl missing")},
+			wantMounts:  []specs.Mount{imex, imexEtc},
+			wantLookups: 1,
+		},
+		{
+			name:        "all_paths_missing_is_not_fatal",
+			gb300:       true,
+			skipped:     []error{errors.New("nvidia-imex missing")},
+			wantLookups: 1,
+		},
+		{
+			name:        "not_mounted_when_gb300_disabled",
+			gb300:       false,
+			mounts:      []specs.Mount{imex, imexEtc},
+			wantLookups: 0,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := stubFindGB300FabricMounts(t, tc.mounts, tc.skipped)
+			ls := spec.LaunchSpec{
+				NonrootContainer: tc.nonroot,
+				Experiments:      experiments.Experiments{GB300CCMode: tc.gb300},
+			}
+			specOpts, err := createOCISpecOpts(img, ls, nil, dummyListFiles, &fakeLogger{})
+			if err != nil {
+				t.Fatalf("createOCISpecOpts() failed: %v", err)
+			}
+			if *calls != tc.wantLookups {
+				t.Errorf("IMEX/MNCCD mount discovery ran %d time(s), want %d", *calls, tc.wantLookups)
+			}
+			gotSpec, err := applySpecOptsToSpec(ctx, specOpts)
+			if err != nil {
+				t.Fatalf("applySpecOptsToSpec() failed: %v", err)
+			}
+			var gotMounts []specs.Mount
+			for _, m := range gotSpec.Mounts {
+				if strings.HasPrefix(m.Destination, gb300FabricContainerDir+"/") {
+					gotMounts = append(gotMounts, m)
+				}
+			}
+			if diff := cmp.Diff(tc.wantMounts, gotMounts); diff != "" {
+				t.Errorf("IMEX/MNCCD mounts mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
 func TestCreateOCISpecOpts_GB300CCMode_NonrootContainerSkipsFTPM(t *testing.T) {
 	ctx := namespaces.WithNamespace(context.Background(), "default")
 	logger := &fakeLogger{}
@@ -616,6 +717,7 @@ func TestCreateOCISpecOpts_GB300CCMode_NonrootContainerSkipsFTPM(t *testing.T) {
 
 	// Discovery would fail if it ran, so success also shows that it is not attempted.
 	calls := stubFindGB300FTPMDevs(t, nil, errors.New("fTPM discovery must not run for non-root containers"))
+	stubFindGB300FabricMounts(t, nil, nil)
 
 	ls := spec.LaunchSpec{
 		NonrootContainer: true,
@@ -646,6 +748,7 @@ func TestCreateOCISpecOpts_GB300CCMode_NoFTPMDevicesSkipped(t *testing.T) {
 	img := createFakeImage(nil, nil, nil)
 
 	stubFindGB300FTPMDevs(t, nil, nil)
+	stubFindGB300FabricMounts(t, nil, nil)
 
 	ls := spec.LaunchSpec{
 		Experiments: experiments.Experiments{
