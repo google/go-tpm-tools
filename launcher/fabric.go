@@ -125,33 +125,41 @@ func gb300FabricDevs(devRoot, procRoot string, devStat func(string) (bool, uint6
 	if devStat == nil {
 		devStat = charDevStat
 	}
+	devs, skipped := gb300IMEXChannelDevs(devRoot, devStat)
+	capDevs, capSkipped := gb300CapDevs(devRoot, procRoot, devStat)
+	return append(devs, capDevs...), append(skipped, capSkipped...)
+}
 
-	var devs []string
-	var skipped []error
-
+func gb300IMEXChannelDevs(devRoot string, devStat func(string) (bool, uint64, error)) ([]string, []error) {
 	chanDir := filepath.Join(devRoot, "nvidia-caps-imex-channels")
 	entries, err := os.ReadDir(chanDir)
 	if err != nil {
-		skipped = append(skipped, fmt.Errorf("cannot read %q: %w", chanDir, err))
-	} else {
-		for _, entry := range entries {
-			if !imexChannelNameRegexp.MatchString(entry.Name()) {
-				continue
-			}
-			devPath := filepath.Join(chanDir, entry.Name())
-			isChar, _, err := devStat(devPath)
-			if err != nil {
-				skipped = append(skipped, fmt.Errorf("cannot stat %q: %w", devPath, err))
-				continue
-			}
-			if !isChar {
-				skipped = append(skipped, fmt.Errorf("%q is not a character device", devPath))
-				continue
-			}
-			devs = append(devs, devPath)
-		}
+		return nil, []error{fmt.Errorf("cannot read %q: %w", chanDir, err)}
 	}
+	var devs []string
+	var skipped []error
+	for _, entry := range entries {
+		if !imexChannelNameRegexp.MatchString(entry.Name()) {
+			continue
+		}
+		devPath := filepath.Join(chanDir, entry.Name())
+		isChar, _, err := devStat(devPath)
+		if err != nil {
+			skipped = append(skipped, fmt.Errorf("cannot stat %q: %w", devPath, err))
+			continue
+		}
+		if !isChar {
+			skipped = append(skipped, fmt.Errorf("%q is not a character device", devPath))
+			continue
+		}
+		devs = append(devs, devPath)
+	}
+	return devs, skipped
+}
 
+func gb300CapDevs(devRoot, procRoot string, devStat func(string) (bool, uint64, error)) ([]string, []error) {
+	var devs []string
+	var skipped []error
 	for _, capName := range gb300FabricCapNames {
 		procPath := filepath.Join(procRoot, "driver", "nvidia", "capabilities", capName)
 		data, err := os.ReadFile(procPath)
@@ -176,24 +184,35 @@ func gb300FabricDevs(devRoot, procRoot string, devStat func(string) (bool, uint6
 		}
 		devs = append(devs, devPath)
 	}
-
 	return devs, skipped
 }
 
 // parseNvidiaCapMinor parses the "DeviceFileMinor: <N>" line from an NVIDIA
 // driver /proc/driver/nvidia/capabilities/<name> file.
 func parseNvidiaCapMinor(data []byte) (int, error) {
+	found := false
+	minor := 0
 	for _, line := range strings.Split(string(data), "\n") {
 		val, ok := strings.CutPrefix(strings.TrimSpace(line), "DeviceFileMinor:")
 		if !ok {
 			continue
 		}
+		if found {
+			return 0, errors.New("duplicate DeviceFileMinor")
+		}
+		found = true
 		val = strings.TrimSpace(val)
-		minor, err := strconv.Atoi(val)
-		if err != nil || minor < 0 {
+		if val == "" || strings.ContainsFunc(val, func(r rune) bool { return r < '0' || r > '9' }) {
 			return 0, fmt.Errorf("invalid DeviceFileMinor %q", val)
 		}
-		return minor, nil
+		n, err := strconv.Atoi(val)
+		if err != nil {
+			return 0, fmt.Errorf("invalid DeviceFileMinor %q: %w", val, err)
+		}
+		minor = n
 	}
-	return 0, errors.New("missing DeviceFileMinor")
+	if !found {
+		return 0, errors.New("missing DeviceFileMinor")
+	}
+	return minor, nil
 }

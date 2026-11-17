@@ -802,55 +802,59 @@ func TestCreateOCISpecOpts_GB300CCMode_FabricDevs(t *testing.T) {
 			if err != nil {
 				t.Fatalf("applySpecOptsToSpec() failed: %v", err)
 			}
+			assertFabricDeviceSpec(t, gotSpec, tc.wantDevs)
+		})
+	}
+}
 
-			for _, path := range []string{"/dev/null", "/dev/zero"} {
-				wantAdded := false
-				for _, w := range tc.wantDevs {
-					if w == path {
-						wantAdded = true
-						break
-					}
-				}
+func assertFabricDeviceSpec(t *testing.T, gotSpec specs.Spec, wantDevs []string) {
+	t.Helper()
+	for _, path := range []string{"/dev/null", "/dev/zero"} {
+		wantAdded := false
+		for _, w := range wantDevs {
+			if w == path {
+				wantAdded = true
+				break
+			}
+		}
 
-				wantDev, err := oci.DeviceFromPath(path)
-				if err != nil {
-					t.Fatalf("oci.DeviceFromPath(%q) failed: %v", path, err)
-				}
+		wantDev, err := oci.DeviceFromPath(path)
+		if err != nil {
+			t.Fatalf("oci.DeviceFromPath(%q) failed: %v", path, err)
+		}
 
-				var found []specs.LinuxDevice
-				for _, dev := range gotSpec.Linux.Devices {
-					if dev.Path == path {
-						found = append(found, dev)
-					}
-				}
-				if !wantAdded {
-					if len(found) != 0 {
-						t.Errorf("unexpected device %s added: %+v", path, found)
-					}
-					continue
-				}
-				if len(found) != 1 {
-					t.Fatalf("got %d devices at %s, want 1: %+v", len(found), path, gotSpec.Linux.Devices)
-				}
-				dev := found[0]
-				if dev.Type != "c" || dev.Major != wantDev.Major || dev.Minor != wantDev.Minor {
-					t.Errorf("device %s = type %q %d:%d, want type \"c\" %d:%d", path, dev.Type, dev.Major, dev.Minor, wantDev.Major, wantDev.Minor)
-				}
+		var found []specs.LinuxDevice
+		for _, dev := range gotSpec.Linux.Devices {
+			if dev.Path == path {
+				found = append(found, dev)
+			}
+		}
+		if !wantAdded {
+			if len(found) != 0 {
+				t.Errorf("unexpected device %s added: %+v", path, found)
+			}
+			continue
+		}
+		if len(found) != 1 {
+			t.Fatalf("got %d devices at %s, want 1: %+v", len(found), path, gotSpec.Linux.Devices)
+		}
+		dev := found[0]
+		if dev.Type != "c" || dev.Major != wantDev.Major || dev.Minor != wantDev.Minor {
+			t.Errorf("device %s = type %q %d:%d, want type \"c\" %d:%d", path, dev.Type, dev.Major, dev.Minor, wantDev.Major, wantDev.Minor)
+		}
 
-				foundRule := false
-				for _, cg := range gotSpec.Linux.Resources.Devices {
-					if cg.Major != nil && cg.Minor != nil && *cg.Major == wantDev.Major && *cg.Minor == wantDev.Minor {
-						foundRule = true
-						if !cg.Allow || cg.Type != "c" || cg.Access != "rwm" {
-							t.Errorf("device cgroup rule for %s = %+v, want Allow=true Type=c Access=rwm", path, cg)
-						}
-					}
-				}
-				if !foundRule {
-					t.Errorf("no device cgroup rule for %s (%d:%d): %+v", path, wantDev.Major, wantDev.Minor, gotSpec.Linux.Resources.Devices)
+		foundRule := false
+		for _, cg := range gotSpec.Linux.Resources.Devices {
+			if cg.Major != nil && cg.Minor != nil && *cg.Major == wantDev.Major && *cg.Minor == wantDev.Minor {
+				foundRule = true
+				if !cg.Allow || cg.Type != "c" || cg.Access != "rwm" {
+					t.Errorf("device cgroup rule for %s = %+v, want Allow=true Type=c Access=rwm", path, cg)
 				}
 			}
-		})
+		}
+		if !foundRule {
+			t.Errorf("no device cgroup rule for %s (%d:%d): %+v", path, wantDev.Major, wantDev.Minor, gotSpec.Linux.Resources.Devices)
+		}
 	}
 }
 
