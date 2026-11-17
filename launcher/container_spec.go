@@ -139,7 +139,7 @@ func createOCISpecOpts(image containerd.Image, launchSpec spec.LaunchSpec, envs 
 
 	// GB300 CC mode: Pass the Local SSDs through as block devices, the
 	// TrustZone fTPM character devices (/dev/ftpm, /dev/ftpmrm) when present,
-	// and read-only IMEX and MNCCD binaries and configs.
+	// and read-only IMEX and MNCCD binaries, configs, and devices.
 	if launchSpec.Experiments.GB300CCMode {
 		devs, err := discoverLSSDDevs(defaultLSSDHostDir, defaultLSSDContainerDir, isBlockDevice, isInUse)
 		if err != nil {
@@ -186,6 +186,17 @@ func createOCISpecOpts(image containerd.Image, launchSpec spec.LaunchSpec, envs 
 		}
 		if len(fabricMounts) > 0 {
 			specOpts = append(specOpts, oci.WithMounts(fabricMounts))
+		}
+
+		// Pass through IMEX channels and driver capability nodes for IMEX/MNCCD.
+		// Missing or invalid paths are logged and skipped.
+		fabricDevs, skippedDevs := findGB300FabricDevs()
+		for _, err := range skippedDevs {
+			logger.Error(fmt.Sprintf("GB300 CC mode: skipping IMEX/MNCCD device: %v", err))
+		}
+		for _, dev := range fabricDevs {
+			logger.Info(fmt.Sprintf("GB300 CC mode: passing IMEX/MNCCD device %s", dev))
+			specOpts = append(specOpts, oci.WithDevices(dev, dev, "rwm"))
 		}
 	}
 

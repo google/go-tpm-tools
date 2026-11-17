@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -135,6 +136,261 @@ func TestGB300FabricMounts(t *testing.T) {
 			}
 			if tc.wantErrSubstr != "" && !strings.Contains(gotSkipped[0].Error(), tc.wantErrSubstr) {
 				t.Errorf("gb300FabricMounts() skip error = %v, want substring %q", gotSkipped[0], tc.wantErrSubstr)
+			}
+		})
+	}
+}
+
+func TestGB300FabricDevs(t *testing.T) {
+	type capFixture struct {
+		procContent string
+		createNode  bool
+		nodeIsDir   bool
+	}
+
+	tests := []struct {
+		name           string
+		missingChanDir bool
+		channels       []string
+		nonCharChans   []string
+		extraChanFiles []string
+		caps           map[string]capFixture
+		extraCapNodes  []string
+		wantDevs       func(devRoot string) []string
+		wantSkipped    int
+		wantErrIs      error
+		wantErrSubstrs []string
+	}{
+		{
+			name:     "0 channels and both capabilities ok",
+			channels: nil,
+			caps: map[string]capFixture{
+				"fabric-imex-mgmt": {procContent: "DeviceFileMinor: 15\nDeviceFileMode: 292\n", createNode: true},
+				"mncc-mgmt":        {procContent: "DeviceFileMinor: 21\nDeviceFileMode: 292\n", createNode: true},
+			},
+			extraCapNodes: []string{"nvidia-cap99"},
+			wantDevs: func(devRoot string) []string {
+				return []string{
+					filepath.Join(devRoot, "nvidia-caps", "nvidia-cap15"),
+					filepath.Join(devRoot, "nvidia-caps", "nvidia-cap21"),
+				}
+			},
+		},
+		{
+			name:           "1 channel and extra non-matching file ignored",
+			channels:       []string{"channel0"},
+			extraChanFiles: []string{"readme"},
+			caps: map[string]capFixture{
+				"fabric-imex-mgmt": {procContent: "DeviceFileMinor: 15\n", createNode: true},
+				"mncc-mgmt":        {procContent: "DeviceFileMinor: 21\n", createNode: true},
+			},
+			wantDevs: func(devRoot string) []string {
+				return []string{
+					filepath.Join(devRoot, "nvidia-caps-imex-channels", "channel0"),
+					filepath.Join(devRoot, "nvidia-caps", "nvidia-cap15"),
+					filepath.Join(devRoot, "nvidia-caps", "nvidia-cap21"),
+				}
+			},
+		},
+		{
+			name:     "2 channels ok",
+			channels: []string{"channel0", "channel1"},
+			caps: map[string]capFixture{
+				"fabric-imex-mgmt": {procContent: "DeviceFileMinor: 0\n", createNode: true},
+				"mncc-mgmt":        {procContent: "DeviceFileMinor: 1\n", createNode: true},
+			},
+			wantDevs: func(devRoot string) []string {
+				return []string{
+					filepath.Join(devRoot, "nvidia-caps-imex-channels", "channel0"),
+					filepath.Join(devRoot, "nvidia-caps-imex-channels", "channel1"),
+					filepath.Join(devRoot, "nvidia-caps", "nvidia-cap0"),
+					filepath.Join(devRoot, "nvidia-caps", "nvidia-cap1"),
+				}
+			},
+		},
+		{
+			name:         "non-char channel entry is skipped without dropping valid channel",
+			channels:     []string{"channel1"},
+			nonCharChans: []string{"channel0"},
+			caps: map[string]capFixture{
+				"fabric-imex-mgmt": {procContent: "DeviceFileMinor: 15\n", createNode: true},
+				"mncc-mgmt":        {procContent: "DeviceFileMinor: 21\n", createNode: true},
+			},
+			wantDevs: func(devRoot string) []string {
+				return []string{
+					filepath.Join(devRoot, "nvidia-caps-imex-channels", "channel1"),
+					filepath.Join(devRoot, "nvidia-caps", "nvidia-cap15"),
+					filepath.Join(devRoot, "nvidia-caps", "nvidia-cap21"),
+				}
+			},
+			wantSkipped:    1,
+			wantErrSubstrs: []string{"not a character device"},
+		},
+		{
+			name:           "missing channels dir is skipped",
+			missingChanDir: true,
+			caps: map[string]capFixture{
+				"fabric-imex-mgmt": {procContent: "DeviceFileMinor: 15\n", createNode: true},
+				"mncc-mgmt":        {procContent: "DeviceFileMinor: 21\n", createNode: true},
+			},
+			wantDevs: func(devRoot string) []string {
+				return []string{
+					filepath.Join(devRoot, "nvidia-caps", "nvidia-cap15"),
+					filepath.Join(devRoot, "nvidia-caps", "nvidia-cap21"),
+				}
+			},
+			wantSkipped: 1,
+			wantErrIs:   fs.ErrNotExist,
+		},
+		{
+			name:     "missing proc file is skipped",
+			channels: []string{"channel0"},
+			caps: map[string]capFixture{
+				"fabric-imex-mgmt": {procContent: "DeviceFileMinor: 15\n", createNode: true},
+				// mncc-mgmt proc file omitted (e.g. driver < 620.51)
+			},
+			wantDevs: func(devRoot string) []string {
+				return []string{
+					filepath.Join(devRoot, "nvidia-caps-imex-channels", "channel0"),
+					filepath.Join(devRoot, "nvidia-caps", "nvidia-cap15"),
+				}
+			},
+			wantSkipped: 1,
+			wantErrIs:   fs.ErrNotExist,
+		},
+		{
+			name: "missing DeviceFileMinor line is skipped",
+			caps: map[string]capFixture{
+				"fabric-imex-mgmt": {procContent: "DeviceFileMode: 292\n"},
+				"mncc-mgmt":        {procContent: "DeviceFileMinor: 21\n", createNode: true},
+			},
+			wantDevs: func(devRoot string) []string {
+				return []string{filepath.Join(devRoot, "nvidia-caps", "nvidia-cap21")}
+			},
+			wantSkipped:    1,
+			wantErrSubstrs: []string{"missing DeviceFileMinor"},
+		},
+		{
+			name: "malformed DeviceFileMinor is skipped",
+			caps: map[string]capFixture{
+				"fabric-imex-mgmt": {procContent: "DeviceFileMinor: not-a-number\n"},
+				"mncc-mgmt":        {procContent: "DeviceFileMinor: -1\n"},
+			},
+			wantSkipped:    2,
+			wantErrSubstrs: []string{"invalid DeviceFileMinor"},
+		},
+		{
+			name: "missing cap device node is skipped",
+			caps: map[string]capFixture{
+				"fabric-imex-mgmt": {procContent: "DeviceFileMinor: 15\n", createNode: false},
+				"mncc-mgmt":        {procContent: "DeviceFileMinor: 21\n", createNode: true},
+			},
+			wantDevs: func(devRoot string) []string {
+				return []string{filepath.Join(devRoot, "nvidia-caps", "nvidia-cap21")}
+			},
+			wantSkipped: 1,
+			wantErrIs:   fs.ErrNotExist,
+		},
+		{
+			name: "non-char cap device node is skipped",
+			caps: map[string]capFixture{
+				"fabric-imex-mgmt": {procContent: "DeviceFileMinor: 15\n", createNode: true, nodeIsDir: true},
+				"mncc-mgmt":        {procContent: "DeviceFileMinor: 21\n", createNode: true},
+			},
+			wantDevs: func(devRoot string) []string {
+				return []string{filepath.Join(devRoot, "nvidia-caps", "nvidia-cap21")}
+			},
+			wantSkipped:    1,
+			wantErrSubstrs: []string{"not a character device"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			devRoot := filepath.Join(root, "dev")
+			procRoot := filepath.Join(root, "proc")
+			capsDevDir := filepath.Join(devRoot, "nvidia-caps")
+			capsProcDir := filepath.Join(procRoot, "driver", "nvidia", "capabilities")
+			if err := os.MkdirAll(capsDevDir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.MkdirAll(capsProcDir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+
+			if !tc.missingChanDir {
+				chanDir := filepath.Join(devRoot, "nvidia-caps-imex-channels")
+				if err := os.MkdirAll(chanDir, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				for _, ch := range tc.channels {
+					if err := os.WriteFile(filepath.Join(chanDir, ch), nil, 0o666); err != nil {
+						t.Fatal(err)
+					}
+				}
+				for _, ch := range tc.nonCharChans {
+					if err := os.Mkdir(filepath.Join(chanDir, ch), 0o755); err != nil {
+						t.Fatal(err)
+					}
+				}
+				for _, extra := range tc.extraChanFiles {
+					if err := os.WriteFile(filepath.Join(chanDir, extra), nil, 0o666); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+
+			for capName, fx := range tc.caps {
+				if err := os.WriteFile(filepath.Join(capsProcDir, capName), []byte(fx.procContent), 0o444); err != nil {
+					t.Fatal(err)
+				}
+				if fx.createNode {
+					minor, err := parseNvidiaCapMinor([]byte(fx.procContent))
+					if err != nil {
+						t.Fatalf("test fixture %s has invalid procContent: %v", capName, err)
+					}
+					nodePath := filepath.Join(capsDevDir, "nvidia-cap"+strconv.Itoa(minor))
+					if fx.nodeIsDir {
+						if err := os.Mkdir(nodePath, 0o755); err != nil {
+							t.Fatal(err)
+						}
+					} else if err := os.WriteFile(nodePath, nil, 0o666); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			for _, extra := range tc.extraCapNodes {
+				if err := os.WriteFile(filepath.Join(capsDevDir, extra), nil, 0o666); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			gotDevs, gotSkipped := gb300FabricDevs(devRoot, procRoot, fakeDevStat)
+			var wantDevs []string
+			if tc.wantDevs != nil {
+				wantDevs = tc.wantDevs(devRoot)
+			}
+			if diff := cmp.Diff(wantDevs, gotDevs); diff != "" {
+				t.Errorf("gb300FabricDevs() devs mismatch (-want +got):\n%s", diff)
+			}
+			if len(gotSkipped) != tc.wantSkipped {
+				t.Fatalf("gb300FabricDevs() skipped %d (%v), want %d", len(gotSkipped), gotSkipped, tc.wantSkipped)
+			}
+			if tc.wantErrIs != nil && !errors.Is(gotSkipped[0], tc.wantErrIs) {
+				t.Errorf("gb300FabricDevs() skip error = %v, want error wrapping %v", gotSkipped[0], tc.wantErrIs)
+			}
+			for _, substr := range tc.wantErrSubstrs {
+				matched := false
+				for _, err := range gotSkipped {
+					if strings.Contains(err.Error(), substr) {
+						matched = true
+						break
+					}
+				}
+				if !matched {
+					t.Errorf("gb300FabricDevs() skip errors %v missing substring %q", gotSkipped, substr)
+				}
 			}
 		})
 	}
