@@ -113,7 +113,7 @@ func TestResolverUsesCorrectClient(t *testing.T) {
 		t.Run(tc.ref, func(t *testing.T) {
 			googleRegistry := &fakeRegistry{}
 			defaultRegistry := &fakeRegistry{}
-			// containerd uses http.DefaultClient when no client is set.
+			// Resolver uses http.DefaultClient for non-Google registries.
 			origTransport := http.DefaultClient.Transport
 			http.DefaultClient.Transport = defaultRegistry
 			t.Cleanup(func() { http.DefaultClient.Transport = origTransport })
