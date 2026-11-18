@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha512"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -295,98 +296,73 @@ func readFS(reportData []byte, ekPub []byte, vmpl int, measurement []byte, certs
 	}
 }
 
-func TestAttestSVSMFlags(t *testing.T) {
-	tests := []struct {
-		name            string
-		teeTech         string
-		manifestVersion string
-		key             string
-		wantErrorMsg    string
-	}{
-		{
-			name:            "InvalidTeeTech",
-			teeTech:         "bad",
-			manifestVersion: "0",
-			wantErrorMsg:    "attest svsm is only supported with --tee-technology=sev-snp",
-		},
-		{
-			name:            "InvalidManifestVersion",
-			teeTech:         "sev-snp",
-			manifestVersion: "2",
-			wantErrorMsg:    "invalid manifest version",
-		},
-		{
-			name:            "InvalidKey",
-			teeTech:         "sev-snp",
-			manifestVersion: "0",
-			key:             "invalid",
-			wantErrorMsg:    "key should be either AK or gceAK",
-		},
-		{
-			name:            "MismatchedKeyManifestVersion0",
-			teeTech:         "sev-snp",
-			manifestVersion: "0",
-			key:             "gceAK",
-			wantErrorMsg:    "manifest version 0 requires --key=AK",
-		},
-		{
-			name:            "MismatchedKeyManifestVersionEmpty",
-			teeTech:         "sev-snp",
-			manifestVersion: "",
-			key:             "gceAK",
-			wantErrorMsg:    "manifest version 0 requires --key=AK",
-		},
-		{
-			name:            "MismatchedKeyManifestVersion1",
-			teeTech:         "sev-snp",
-			manifestVersion: "1",
-			key:             "AK",
-			wantErrorMsg:    "manifest version 1 requires --key=gceAK",
-		},
-		{
-			name:            "ValidManifestVersionEmpty",
-			teeTech:         "sev-snp",
-			manifestVersion: "",
-			wantErrorMsg:    "the teeNonce size is 0. SEV-SNP device requires 64",
-		},
-		{
-			name:            "ValidManifestVersionZero",
-			teeTech:         "sev-snp",
-			manifestVersion: "0",
-			wantErrorMsg:    "the teeNonce size is 0. SEV-SNP device requires 64",
-		},
-		{
-			name:            "ValidManifestVersionOne",
-			teeTech:         "sev-snp",
-			manifestVersion: "1",
-			key:             "gceAK",
-			wantErrorMsg:    "the teeNonce size is 0. SEV-SNP device requires 64",
-		},
+func TestAttestSVSMRejectsNonSEVSNPTEETechnology(t *testing.T) {
+	args := []string{"attest", "svsm", "--tee-technology", "bad", "--manifest-version", "0", "--key", "AK", "--nonce", "1234", "--tee-nonce", strings.Repeat("00", sabi.ReportDataSize)}
+	if err := execute(args, nil); !errors.Is(err, errSVSMRequiresSEVSNP) {
+		t.Errorf("execute(%q) = %v, want %v", args, err, errSVSMRequiresSEVSNP)
 	}
+}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			keyArg := tc.key
-			if keyArg == "" {
-				keyArg = "AK"
-			}
-			args := []string{
-				"attest", "svsm",
-				"--tee-technology", tc.teeTech,
-				"--manifest-version", tc.manifestVersion,
-				"--key", keyArg,
-				"--nonce", "1234",
-				"--tee-nonce", "",
-			}
-			err := execute(args, nil)
+func TestAttestSVSMRejectsInvalidManifestVersion(t *testing.T) {
+	args := []string{"attest", "svsm", "--tee-technology", "sev-snp", "--manifest-version", "2", "--key", "AK", "--nonce", "1234", "--tee-nonce", strings.Repeat("00", sabi.ReportDataSize)}
+	if err := execute(args, nil); !errors.Is(err, errInvalidManifestVersion) {
+		t.Errorf("execute(%q) = %v, want %v", args, err, errInvalidManifestVersion)
+	}
+}
 
-			if err == nil {
-				t.Fatal("expected error, got nil")
-			}
-			if !strings.Contains(err.Error(), tc.wantErrorMsg) {
-				t.Errorf("expected error containing %q, got: %v", tc.wantErrorMsg, err)
-			}
-		})
+func TestAttestSVSMRejectsUnknownKey(t *testing.T) {
+	args := []string{"attest", "svsm", "--tee-technology", "sev-snp", "--manifest-version", "0", "--key", "invalid", "--nonce", "1234", "--tee-nonce", strings.Repeat("00", sabi.ReportDataSize)}
+	if err := execute(args, nil); !errors.Is(err, errUnknownKey) {
+		t.Errorf("execute(%q) = %v, want %v", args, err, errUnknownKey)
+	}
+}
+
+func TestAttestSVSMManifestVersion0RequiresAK(t *testing.T) {
+	args := []string{"attest", "svsm", "--tee-technology", "sev-snp", "--manifest-version", "0", "--key", "gceAK", "--nonce", "1234", "--tee-nonce", strings.Repeat("00", sabi.ReportDataSize)}
+	if err := execute(args, nil); !errors.Is(err, errManifestV0RequiresAK) {
+		t.Errorf("execute(%q) = %v, want %v", args, err, errManifestV0RequiresAK)
+	}
+}
+
+func TestAttestSVSMEmptyManifestVersionRequiresAK(t *testing.T) {
+	args := []string{"attest", "svsm", "--tee-technology", "sev-snp", "--manifest-version", "", "--key", "gceAK", "--nonce", "1234", "--tee-nonce", strings.Repeat("00", sabi.ReportDataSize)}
+	if err := execute(args, nil); !errors.Is(err, errManifestV0RequiresAK) {
+		t.Errorf("execute(%q) = %v, want %v", args, err, errManifestV0RequiresAK)
+	}
+}
+
+func TestAttestSVSMManifestVersion1RequiresGCEAK(t *testing.T) {
+	args := []string{"attest", "svsm", "--tee-technology", "sev-snp", "--manifest-version", "1", "--key", "AK", "--nonce", "1234", "--tee-nonce", strings.Repeat("00", sabi.ReportDataSize)}
+	if err := execute(args, nil); !errors.Is(err, errManifestV1RequiresGCEAK) {
+		t.Errorf("execute(%q) = %v, want %v", args, err, errManifestV1RequiresGCEAK)
+	}
+}
+
+func TestAttestSVSMAcceptsEmptyManifestVersionWithAK(t *testing.T) {
+	args := []string{"attest", "svsm", "--tee-technology", "sev-snp", "--manifest-version", "", "--key", "AK", "--nonce", "1234", "--tee-nonce", ""}
+	if err := execute(args, nil); !errors.Is(err, errSEVSNPTEENonceSize) {
+		t.Errorf("execute(%q) = %v, want %v", args, err, errSEVSNPTEENonceSize)
+	}
+}
+
+func TestAttestSVSMRejectsWrongTEENonceSize(t *testing.T) {
+	args := []string{"attest", "svsm", "--tee-technology", "sev-snp", "--manifest-version", "0", "--key", "AK", "--nonce", "1234", "--tee-nonce", "1234"}
+	if err := execute(args, nil); !errors.Is(err, errSEVSNPTEENonceSize) {
+		t.Errorf("execute(%q) = %v, want %v", args, err, errSEVSNPTEENonceSize)
+	}
+}
+
+func TestAttestSVSMAcceptsManifestVersion1WithGCEAK(t *testing.T) {
+	args := []string{"attest", "svsm", "--tee-technology", "sev-snp", "--manifest-version", "1", "--key", "gceAK", "--nonce", "1234", "--tee-nonce", ""}
+	if err := execute(args, nil); !errors.Is(err, errSEVSNPTEENonceSize) {
+		t.Errorf("execute(%q) = %v, want %v", args, err, errSEVSNPTEENonceSize)
+	}
+}
+
+func TestAttestSVSMDefaultsToManifestVersion0(t *testing.T) {
+	args := []string{"attest", "svsm", "--tee-technology", "sev-snp", "--key", "gceAK", "--nonce", "1234", "--tee-nonce", strings.Repeat("00", sabi.ReportDataSize)}
+	if err := execute(args, nil); !errors.Is(err, errManifestV0RequiresAK) {
+		t.Errorf("execute(%q) = %v, want %v", args, err, errManifestV0RequiresAK)
 	}
 }
 
