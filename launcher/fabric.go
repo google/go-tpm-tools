@@ -15,27 +15,22 @@ import (
 
 const (
 	// gb300FabricContainerDir is the workload container directory that holds the
-	// NVIDIA IMEX and MNCCD binaries and configs. It is separate from
-	// /usr/local/nvidia/bin because that directory is a bind mount of the
-	// read-only host driver bin directory, where runc cannot create mount points.
+	// NVIDIA IMEX and MNCCD binaries. It is separate from /usr/local/nvidia/bin
+	// because that directory is a bind mount of the read-only host driver bin
+	// directory, where runc cannot create mount points.
 	gb300FabricContainerDir = "/usr/local/nvidia/fabric"
 	// gb300FabricContainerBinDir holds the IMEX and MNCCD binaries.
 	gb300FabricContainerBinDir = gb300FabricContainerDir + "/bin"
-	// gb300FabricContainerEtcDir holds the IMEX and MNCCD config directories.
-	gb300FabricContainerEtcDir = gb300FabricContainerDir + "/etc"
 
 	defaultDevRoot  = "/dev"
 	defaultProcRoot = "/proc"
 )
 
-// gb300FabricPath describes a host file or directory of the NVIDIA IMEX or
-// MNCCD daemon to bind-mount read-only into the workload container.
+// gb300FabricPath describes a host binary of the NVIDIA IMEX or MNCCD daemon
+// to bind-mount read-only into the workload container.
 type gb300FabricPath struct {
 	hostPath      string
 	containerPath string
-	// isDir is true if hostPath must be a directory and false if it must be a
-	// regular file.
-	isDir bool
 }
 
 // gb300FabricDevice is a host character device node to pass into the workload
@@ -49,16 +44,13 @@ type gb300FabricDevice struct {
 }
 
 var (
-	// gb300FabricPaths are the IMEX and MNCCD binaries and configs on GB300
-	// images. The image starts and owns both daemons. These mounts let the
-	// workload see how the daemons are configured and talk to them, for example
-	// with `nvidia-imex-ctl -c /usr/local/nvidia/fabric/etc/nvidia-imex/config.cfg -q`.
+	// gb300FabricPaths are the IMEX and MNCCD binaries on GB300 images. They
+	// are mounted read-only so the workload can run or query IMEX/MNCCD with
+	// its own configs.
 	gb300FabricPaths = []gb300FabricPath{
 		{hostPath: "/usr/bin/nvidia-imex", containerPath: path.Join(gb300FabricContainerBinDir, "nvidia-imex")},
 		{hostPath: "/usr/bin/nvidia-imex-ctl", containerPath: path.Join(gb300FabricContainerBinDir, "nvidia-imex-ctl")},
 		{hostPath: "/usr/share/oem/nvidia-mnccd/rootfs/usr/bin/nvidia-mnccd", containerPath: path.Join(gb300FabricContainerBinDir, "nvidia-mnccd")},
-		{hostPath: "/usr/share/oem/nvidia-imex/etc", containerPath: path.Join(gb300FabricContainerEtcDir, "nvidia-imex"), isDir: true},
-		{hostPath: "/usr/share/oem/nvidia-mnccd/etc", containerPath: path.Join(gb300FabricContainerEtcDir, "nvidia-mnccd"), isDir: true},
 	}
 
 	// gb300FabricCapNames are the NVIDIA driver capability entries in
@@ -85,9 +77,9 @@ var (
 	}
 )
 
-// gb300FabricMounts returns a read-only bind mount for each path that exists on
-// the host with the expected type, using stat to follow symlinks. For each
-// skipped path, it returns an error describing why the path was skipped.
+// gb300FabricMounts returns a read-only bind mount for each regular file that
+// exists on the host, using stat to follow symlinks. For each skipped path, it
+// returns an error describing why the path was skipped.
 func gb300FabricMounts(paths []gb300FabricPath, stat func(string) (os.FileInfo, error)) ([]specs.Mount, []error) {
 	var mounts []specs.Mount
 	var skipped []error
@@ -97,14 +89,7 @@ func gb300FabricMounts(paths []gb300FabricPath, stat func(string) (os.FileInfo, 
 			skipped = append(skipped, fmt.Errorf("cannot stat %q: %w", p.hostPath, err))
 			continue
 		}
-		bindOpt := "bind"
-		if p.isDir {
-			if !fi.IsDir() {
-				skipped = append(skipped, fmt.Errorf("%q is not a directory (mode %v)", p.hostPath, fi.Mode()))
-				continue
-			}
-			bindOpt = "rbind"
-		} else if !fi.Mode().IsRegular() {
+		if !fi.Mode().IsRegular() {
 			skipped = append(skipped, fmt.Errorf("%q is not a regular file (mode %v)", p.hostPath, fi.Mode()))
 			continue
 		}
@@ -112,7 +97,7 @@ func gb300FabricMounts(paths []gb300FabricPath, stat func(string) (os.FileInfo, 
 			Type:        "bind",
 			Source:      p.hostPath,
 			Destination: p.containerPath,
-			Options:     []string{bindOpt, "ro"},
+			Options:     []string{"bind", "ro"},
 		})
 	}
 	return mounts, skipped

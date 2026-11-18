@@ -139,7 +139,7 @@ func createOCISpecOpts(image containerd.Image, launchSpec spec.LaunchSpec, envs 
 
 	// GB300 CC mode: Pass the Local SSDs through as block devices, the
 	// TrustZone fTPM character devices (/dev/ftpm, /dev/ftpmrm) when present,
-	// and read-only IMEX and MNCCD binaries, configs, and devices.
+	// and read-only IMEX and MNCCD binaries and devices.
 	if launchSpec.Experiments.GB300CCMode {
 		devs, err := discoverLSSDDevs(defaultLSSDHostDir, defaultLSSDContainerDir, isBlockDevice, isInUse)
 		if err != nil {
@@ -175,9 +175,9 @@ func createOCISpecOpts(image containerd.Image, launchSpec spec.LaunchSpec, envs 
 		}
 
 		if launchSpec.InstallGpuDriver {
-			// The image runs the NVIDIA IMEX and MNCCD daemons. Mount their
-			// binaries and configs read-only so the workload can also interact with
-			// them. A missing path is not fatal.
+			// Mount the NVIDIA IMEX and MNCCD binaries read-only so the
+			// workload can run or query IMEX/MNCCD with its own configs. A
+			// missing path is not fatal.
 			fabricMounts, skipped := findGB300FabricMounts()
 			for _, err := range skipped {
 				logger.Error(fmt.Sprintf("GB300 CC mode: skipping IMEX/MNCCD mount: %v", err))

@@ -672,7 +672,8 @@ func TestCreateOCISpecOpts_GB300CCMode_FabricMounts(t *testing.T) {
 	stubFindGB300FabricDevs(t, nil, nil)
 
 	imex := specs.Mount{Type: "bind", Source: "/usr/bin/nvidia-imex", Destination: "/usr/local/nvidia/fabric/bin/nvidia-imex", Options: []string{"bind", "ro"}}
-	imexEtc := specs.Mount{Type: "bind", Source: "/usr/share/oem/nvidia-imex/etc", Destination: "/usr/local/nvidia/fabric/etc/nvidia-imex", Options: []string{"rbind", "ro"}}
+	imexCtl := specs.Mount{Type: "bind", Source: "/usr/bin/nvidia-imex-ctl", Destination: "/usr/local/nvidia/fabric/bin/nvidia-imex-ctl", Options: []string{"bind", "ro"}}
+	mnccd := specs.Mount{Type: "bind", Source: "/usr/share/oem/nvidia-mnccd/rootfs/usr/bin/nvidia-mnccd", Destination: "/usr/local/nvidia/fabric/bin/nvidia-mnccd", Options: []string{"bind", "ro"}}
 
 	tests := []struct {
 		name        string
@@ -690,8 +691,8 @@ func TestCreateOCISpecOpts_GB300CCMode_FabricMounts(t *testing.T) {
 			name:        "mounted_in_gb300_cc_mode",
 			gb300:       true,
 			gpuDriver:   true,
-			mounts:      []specs.Mount{imex, imexEtc},
-			wantMounts:  []specs.Mount{imex, imexEtc},
+			mounts:      []specs.Mount{imex, imexCtl, mnccd},
+			wantMounts:  []specs.Mount{imex, imexCtl, mnccd},
 			wantLookups: 1,
 			wantInfo:    "GB300 CC mode: mounting /usr/bin/nvidia-imex at /usr/local/nvidia/fabric/bin/nvidia-imex",
 		},
@@ -700,17 +701,17 @@ func TestCreateOCISpecOpts_GB300CCMode_FabricMounts(t *testing.T) {
 			gb300:       true,
 			gpuDriver:   true,
 			nonroot:     true,
-			mounts:      []specs.Mount{imex, imexEtc},
-			wantMounts:  []specs.Mount{imex, imexEtc},
+			mounts:      []specs.Mount{imex, imexCtl, mnccd},
+			wantMounts:  []specs.Mount{imex, imexCtl, mnccd},
 			wantLookups: 1,
 		},
 		{
 			name:        "missing_binary_is_not_fatal",
 			gb300:       true,
 			gpuDriver:   true,
-			mounts:      []specs.Mount{imex, imexEtc},
+			mounts:      []specs.Mount{imex, mnccd},
 			skipped:     []error{errors.New("nvidia-imex-ctl missing")},
-			wantMounts:  []specs.Mount{imex, imexEtc},
+			wantMounts:  []specs.Mount{imex, mnccd},
 			wantLookups: 1,
 			wantErrLog:  "GB300 CC mode: skipping IMEX/MNCCD mount: nvidia-imex-ctl missing",
 		},
@@ -726,14 +727,14 @@ func TestCreateOCISpecOpts_GB300CCMode_FabricMounts(t *testing.T) {
 			name:        "not_mounted_when_gpu_driver_disabled",
 			gb300:       true,
 			gpuDriver:   false,
-			mounts:      []specs.Mount{imex, imexEtc},
+			mounts:      []specs.Mount{imex, imexCtl, mnccd},
 			wantLookups: 0,
 		},
 		{
 			name:        "not_mounted_when_gb300_disabled",
 			gb300:       false,
 			gpuDriver:   true,
-			mounts:      []specs.Mount{imex, imexEtc},
+			mounts:      []specs.Mount{imex, imexCtl, mnccd},
 			wantLookups: 0,
 		},
 	}
