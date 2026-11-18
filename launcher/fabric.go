@@ -69,11 +69,18 @@ var (
 		return gb300FabricMounts(gb300FabricPaths, os.Stat)
 	}
 
-	// findGB300FabricDevs returns the IMEX channel and fabric capability device
+	// findGB300IMEXChannelDevs returns the IMEX channel device nodes for the
+	// workload container. It is overridden in unit tests to keep
+	// createOCISpecOpts hermetic.
+	findGB300IMEXChannelDevs = func() ([]gb300FabricDevice, []error) {
+		return gb300IMEXChannelDevs(defaultDevRoot, charDevStat)
+	}
+
+	// findGB300FabricCapDevs returns the IMEX and MNCCD driver capability device
 	// nodes for the workload container. It is overridden in unit tests to keep
 	// createOCISpecOpts hermetic.
-	findGB300FabricDevs = func() ([]gb300FabricDevice, []error) {
-		return gb300FabricDevs(defaultDevRoot, defaultProcRoot, charDevStat)
+	findGB300FabricCapDevs = func() ([]gb300FabricDevice, []error) {
+		return gb300CapDevs(defaultDevRoot, defaultProcRoot, charDevStat)
 	}
 )
 
@@ -103,23 +110,6 @@ func gb300FabricMounts(paths []gb300FabricPath, stat func(string) (os.FileInfo, 
 	return mounts, skipped
 }
 
-// gb300FabricDevs discovers the host IMEX channel devices under
-// <devRoot>/nvidia-caps-imex-channels/channel<N> and the NVIDIA capability
-// devices for fabric-imex-mgmt and mncc-mgmt under <devRoot>/nvidia-caps/ using
-// minors from <procRoot>/driver/nvidia/capabilities/<name>.
-//
-// Symlinks are resolved so hostPath holds the real character device node (for
-// containerd's oci.WithDevices, which lstats the source path) while
-// containerPath keeps the discovered path. devStat reports whether a resolved
-// path is a character device and its device number. For each missing or invalid
-// channel directory, proc file, or device node, it returns an error describing
-// why it was skipped.
-func gb300FabricDevs(devRoot, procRoot string, devStat func(string) (bool, uint64, error)) ([]gb300FabricDevice, []error) {
-	devs, skipped := gb300IMEXChannelDevs(devRoot, devStat)
-	capDevs, capSkipped := gb300CapDevs(devRoot, procRoot, devStat)
-	return append(devs, capDevs...), append(skipped, capSkipped...)
-}
-
 func resolveGB300CharDevice(devPath string, devStat func(string) (bool, uint64, error)) (gb300FabricDevice, error) {
 	resolved, err := filepath.EvalSymlinks(devPath)
 	if err != nil {
@@ -138,6 +128,11 @@ func resolveGB300CharDevice(devPath string, devStat func(string) (bool, uint64, 
 	}, nil
 }
 
+// gb300IMEXChannelDevs discovers the host IMEX channel character devices under
+// <devRoot>/nvidia-caps-imex-channels/channel<N>. Symlinks are resolved so
+// hostPath holds the real device node for oci.WithDevices while containerPath
+// keeps the discovered path. For each missing or invalid directory or node, it
+// returns an error describing why it was skipped.
 func gb300IMEXChannelDevs(devRoot string, devStat func(string) (bool, uint64, error)) ([]gb300FabricDevice, []error) {
 	chanDir := filepath.Join(devRoot, "nvidia-caps-imex-channels")
 	entries, err := os.ReadDir(chanDir)
@@ -161,6 +156,12 @@ func gb300IMEXChannelDevs(devRoot string, devStat func(string) (bool, uint64, er
 	return devs, skipped
 }
 
+// gb300CapDevs discovers the NVIDIA capability character devices for
+// fabric-imex-mgmt and mncc-mgmt under <devRoot>/nvidia-caps/ using minors
+// from <procRoot>/driver/nvidia/capabilities/<name>. Symlinks are resolved so
+// hostPath holds the real device node for oci.WithDevices while containerPath
+// keeps the discovered path. For each missing or invalid proc file or node, it
+// returns an error describing why it was skipped.
 func gb300CapDevs(devRoot, procRoot string, devStat func(string) (bool, uint64, error)) ([]gb300FabricDevice, []error) {
 	var devs []gb300FabricDevice
 	var skipped []error

@@ -189,9 +189,20 @@ func createOCISpecOpts(image containerd.Image, launchSpec spec.LaunchSpec, envs 
 				specOpts = append(specOpts, oci.WithMounts(fabricMounts))
 			}
 
-			// Pass through IMEX channels and driver capability nodes for IMEX/MNCCD.
-			// Missing or invalid paths are logged and skipped.
-			fabricDevs, skippedDevs := findGB300FabricDevs()
+			// Pass through IMEX channels and (for root containers) driver capability
+			// nodes for IMEX/MNCCD. Missing or invalid paths are logged and skipped.
+			fabricDevs, skippedDevs := findGB300IMEXChannelDevs()
+			if launchSpec.NonrootContainer {
+				// Capability device nodes are created 0400 root:root (driver DeviceFileMode 256).
+				// In a user namespace, runc bind-mounts the host node, so open() fails with
+				// EACCES for every container user. Keep passing the 0666 IMEX channels and
+				// binary mounts.
+				logger.Error("GB300 CC mode: IMEX/MNCCD capability device passthrough is not supported for non-root containers; skipping /dev/nvidia-caps nodes")
+			} else {
+				capDevs, skippedCaps := findGB300FabricCapDevs()
+				fabricDevs = append(fabricDevs, capDevs...)
+				skippedDevs = append(skippedDevs, skippedCaps...)
+			}
 			for _, err := range skippedDevs {
 				logger.Error(fmt.Sprintf("GB300 CC mode: skipping IMEX/MNCCD device: %v", err))
 			}

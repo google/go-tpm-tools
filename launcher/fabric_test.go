@@ -459,7 +459,10 @@ func TestGB300FabricDevs(t *testing.T) {
 			setupChannelFixture(t, devRoot, tc.fixture.channels)
 			setupCapFixture(t, devRoot, procRoot, tc.fixture.caps, tc.fixture.extraCapNodes)
 
-			gotDevs, gotSkipped := gb300FabricDevs(devRoot, procRoot, tc.devStat)
+			gotDevs, gotSkipped := gb300IMEXChannelDevs(devRoot, tc.devStat)
+			capDevs, capSkipped := gb300CapDevs(devRoot, procRoot, tc.devStat)
+			gotDevs = append(gotDevs, capDevs...)
+			gotSkipped = append(gotSkipped, capSkipped...)
 			var wantDevs []gb300FabricDevice
 			if tc.wantDevs != nil {
 				wantDevs = tc.wantDevs(devRoot)

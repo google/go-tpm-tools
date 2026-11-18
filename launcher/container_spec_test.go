@@ -438,9 +438,10 @@ func TestCreateOCISpecOpts_GPU_GB300CCMode(t *testing.T) {
 	origFind := findGB300DriverDir
 	t.Cleanup(func() { findGB300DriverDir = origFind })
 	findGB300DriverDir = func() (string, error) { return "/opt/nvidia/620.06", nil }
-	stubFindGB300FTPMDevs(t, nil, nil)     // Do not scan the host's /dev for fTPM symlinks.
-	stubFindGB300FabricMounts(t, nil, nil) // Do not stat host IMEX/MNCCD paths.
-	stubFindGB300FabricDevs(t, nil, nil)   // Do not scan host IMEX/MNCCD devices.
+	stubFindGB300FTPMDevs(t, nil, nil)        // Do not scan the host's /dev for fTPM symlinks.
+	stubFindGB300FabricMounts(t, nil, nil)    // Do not stat host IMEX/MNCCD paths.
+	stubFindGB300IMEXChannelDevs(t, nil, nil) // Do not scan host IMEX channel devices.
+	stubFindGB300FabricCapDevs(t, nil, nil)   // Do not scan host IMEX/MNCCD cap devices.
 
 	mockListFiles := func(dir, prefix string) ([]string, error) {
 		if dir == "/dev" && prefix == "nvidia" {
@@ -541,7 +542,8 @@ func TestCreateOCISpecOpts_GB300CCMode_FTPMDevices(t *testing.T) {
 		{hostPath: "/dev/zero", containerPath: "/dev/ftpmrm"},
 	}, nil)
 	stubFindGB300FabricMounts(t, nil, nil)
-	stubFindGB300FabricDevs(t, nil, nil)
+	stubFindGB300IMEXChannelDevs(t, nil, nil)
+	stubFindGB300FabricCapDevs(t, nil, nil)
 
 	t.Run("mounted_in_gb300_cc_mode", func(t *testing.T) {
 		ls := spec.LaunchSpec{
@@ -669,7 +671,8 @@ func TestCreateOCISpecOpts_GB300CCMode_FabricMounts(t *testing.T) {
 	img := createFakeImage(nil, nil, nil)
 	stubFindGB300DriverDir(t, "/opt/nvidia/620.06")
 	stubFindGB300FTPMDevs(t, nil, nil)
-	stubFindGB300FabricDevs(t, nil, nil)
+	stubFindGB300IMEXChannelDevs(t, nil, nil)
+	stubFindGB300FabricCapDevs(t, nil, nil)
 
 	imex := specs.Mount{Type: "bind", Source: "/usr/bin/nvidia-imex", Destination: "/usr/local/nvidia/fabric/bin/nvidia-imex", Options: []string{"bind", "ro"}}
 	imexCtl := specs.Mount{Type: "bind", Source: "/usr/bin/nvidia-imex-ctl", Destination: "/usr/local/nvidia/fabric/bin/nvidia-imex-ctl", Options: []string{"bind", "ro"}}
@@ -777,14 +780,28 @@ func TestCreateOCISpecOpts_GB300CCMode_FabricMounts(t *testing.T) {
 	}
 }
 
-// stubFindGB300FabricDevs replaces IMEX/MNCCD device discovery for one test and
-// returns a pointer to the number of times it ran.
-func stubFindGB300FabricDevs(t *testing.T, devs []gb300FabricDevice, skipped []error) *int {
+// stubFindGB300IMEXChannelDevs replaces IMEX channel device discovery for one
+// test and returns a pointer to the number of times it ran.
+func stubFindGB300IMEXChannelDevs(t *testing.T, devs []gb300FabricDevice, skipped []error) *int {
 	t.Helper()
 	calls := 0
-	orig := findGB300FabricDevs
-	t.Cleanup(func() { findGB300FabricDevs = orig })
-	findGB300FabricDevs = func() ([]gb300FabricDevice, []error) {
+	orig := findGB300IMEXChannelDevs
+	t.Cleanup(func() { findGB300IMEXChannelDevs = orig })
+	findGB300IMEXChannelDevs = func() ([]gb300FabricDevice, []error) {
+		calls++
+		return devs, skipped
+	}
+	return &calls
+}
+
+// stubFindGB300FabricCapDevs replaces IMEX/MNCCD driver capability device
+// discovery for one test and returns a pointer to the number of times it ran.
+func stubFindGB300FabricCapDevs(t *testing.T, devs []gb300FabricDevice, skipped []error) *int {
+	t.Helper()
+	calls := 0
+	orig := findGB300FabricCapDevs
+	t.Cleanup(func() { findGB300FabricCapDevs = orig })
+	findGB300FabricCapDevs = func() ([]gb300FabricDevice, []error) {
 		calls++
 		return devs, skipped
 	}
@@ -802,72 +819,85 @@ func TestCreateOCISpecOpts_GB300CCMode_FabricDevs(t *testing.T) {
 	devZero := gb300FabricDevice{hostPath: "/dev/zero", containerPath: "/dev/nvidia-caps/nvidia-cap15"}
 
 	tests := []struct {
-		name        string
-		gb300       bool
-		gpuDriver   bool
-		nonroot     bool
-		devs        []gb300FabricDevice
-		skipped     []error
-		wantDevs    []gb300FabricDevice
-		wantLookups int
-		wantInfo    string
-		wantErrLog  string
+		name           string
+		gb300          bool
+		gpuDriver      bool
+		nonroot        bool
+		chanDevs       []gb300FabricDevice
+		chanSkipped    []error
+		capDevs        []gb300FabricDevice
+		capSkipped     []error
+		wantDevs       []gb300FabricDevice
+		wantChanLookup int
+		wantCapLookup  int
+		wantInfo       string
+		wantErrLog     string
 	}{
 		{
-			name:        "added_in_gb300_cc_mode",
-			gb300:       true,
-			gpuDriver:   true,
-			devs:        []gb300FabricDevice{devNull, devZero},
-			wantDevs:    []gb300FabricDevice{devNull, devZero},
-			wantLookups: 1,
-			wantInfo:    "GB300 CC mode: passing IMEX/MNCCD device /dev/null as /dev/nvidia-caps-imex-channels/channel0",
+			name:           "added_in_gb300_cc_mode",
+			gb300:          true,
+			gpuDriver:      true,
+			chanDevs:       []gb300FabricDevice{devNull},
+			capDevs:        []gb300FabricDevice{devZero},
+			wantDevs:       []gb300FabricDevice{devNull, devZero},
+			wantChanLookup: 1,
+			wantCapLookup:  1,
+			wantInfo:       "GB300 CC mode: passing IMEX/MNCCD device /dev/null as /dev/nvidia-caps-imex-channels/channel0",
 		},
 		{
-			name:        "added_for_nonroot_container",
-			gb300:       true,
-			gpuDriver:   true,
-			nonroot:     true,
-			devs:        []gb300FabricDevice{devNull, devZero},
-			wantDevs:    []gb300FabricDevice{devNull, devZero},
-			wantLookups: 1,
+			name:           "nonroot_container_passes_channels_and_skips_caps",
+			gb300:          true,
+			gpuDriver:      true,
+			nonroot:        true,
+			chanDevs:       []gb300FabricDevice{devNull},
+			capDevs:        []gb300FabricDevice{devZero},
+			wantDevs:       []gb300FabricDevice{devNull},
+			wantChanLookup: 1,
+			wantCapLookup:  0,
+			wantInfo:       "GB300 CC mode: passing IMEX/MNCCD device /dev/null as /dev/nvidia-caps-imex-channels/channel0",
+			wantErrLog:     "GB300 CC mode: IMEX/MNCCD capability device passthrough is not supported for non-root containers; skipping /dev/nvidia-caps nodes",
 		},
 		{
-			name:        "missing_device_is_not_fatal",
-			gb300:       true,
-			gpuDriver:   true,
-			devs:        []gb300FabricDevice{devNull},
-			skipped:     []error{errors.New("mncc-mgmt missing")},
-			wantDevs:    []gb300FabricDevice{devNull},
-			wantLookups: 1,
-			wantErrLog:  "GB300 CC mode: skipping IMEX/MNCCD device: mncc-mgmt missing",
+			name:           "missing_device_is_not_fatal",
+			gb300:          true,
+			gpuDriver:      true,
+			chanDevs:       []gb300FabricDevice{devNull},
+			capSkipped:     []error{errors.New("mncc-mgmt missing")},
+			wantDevs:       []gb300FabricDevice{devNull},
+			wantChanLookup: 1,
+			wantCapLookup:  1,
+			wantErrLog:     "GB300 CC mode: skipping IMEX/MNCCD device: mncc-mgmt missing",
 		},
 		{
-			name:        "all_devices_missing_is_not_fatal",
-			gb300:       true,
-			gpuDriver:   true,
-			skipped:     []error{errors.New("nvidia-caps-imex-channels missing")},
-			wantLookups: 1,
-			wantErrLog:  "GB300 CC mode: skipping IMEX/MNCCD device: nvidia-caps-imex-channels missing",
+			name:           "all_devices_missing_is_not_fatal",
+			gb300:          true,
+			gpuDriver:      true,
+			chanSkipped:    []error{errors.New("nvidia-caps-imex-channels missing")},
+			capSkipped:     []error{errors.New("fabric-imex-mgmt missing")},
+			wantChanLookup: 1,
+			wantCapLookup:  1,
+			wantErrLog:     "GB300 CC mode: skipping IMEX/MNCCD device: fabric-imex-mgmt missing",
 		},
 		{
-			name:        "not_added_when_gpu_driver_disabled",
-			gb300:       true,
-			gpuDriver:   false,
-			devs:        []gb300FabricDevice{devNull, devZero},
-			wantLookups: 0,
+			name:      "not_added_when_gpu_driver_disabled",
+			gb300:     true,
+			gpuDriver: false,
+			chanDevs:  []gb300FabricDevice{devNull},
+			capDevs:   []gb300FabricDevice{devZero},
 		},
 		{
-			name:        "not_added_when_gb300_disabled",
-			gb300:       false,
-			gpuDriver:   true,
-			devs:        []gb300FabricDevice{devNull, devZero},
-			wantLookups: 0,
+			name:      "not_added_when_gb300_disabled",
+			gb300:     false,
+			gpuDriver: true,
+			chanDevs:  []gb300FabricDevice{devNull},
+			capDevs:   []gb300FabricDevice{devZero},
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			calls := stubFindGB300FabricDevs(t, tc.devs, tc.skipped)
+			chanCalls := stubFindGB300IMEXChannelDevs(t, tc.chanDevs, tc.chanSkipped)
+			capCalls := stubFindGB300FabricCapDevs(t, tc.capDevs, tc.capSkipped)
 			logger := &fakeLogger{}
 			ls := spec.LaunchSpec{
 				InstallGpuDriver: tc.gpuDriver,
@@ -878,8 +908,11 @@ func TestCreateOCISpecOpts_GB300CCMode_FabricDevs(t *testing.T) {
 			if err != nil {
 				t.Fatalf("createOCISpecOpts() failed: %v", err)
 			}
-			if *calls != tc.wantLookups {
-				t.Errorf("IMEX/MNCCD device discovery ran %d time(s), want %d", *calls, tc.wantLookups)
+			if *chanCalls != tc.wantChanLookup {
+				t.Errorf("IMEX channel discovery ran %d time(s), want %d", *chanCalls, tc.wantChanLookup)
+			}
+			if *capCalls != tc.wantCapLookup {
+				t.Errorf("IMEX/MNCCD cap discovery ran %d time(s), want %d", *capCalls, tc.wantCapLookup)
 			}
 			if tc.wantInfo != "" {
 				assertLogContains(t, logger.logs, tc.wantInfo)
@@ -917,7 +950,8 @@ func TestCreateOCISpecOpts_GB300CCMode_FabricDevs(t *testing.T) {
 		if err != nil {
 			t.Fatalf("resolveGB300CharDevice(%q) failed: %v", linkPath, err)
 		}
-		stubFindGB300FabricDevs(t, []gb300FabricDevice{resolved}, nil)
+		stubFindGB300IMEXChannelDevs(t, nil, nil)
+		stubFindGB300FabricCapDevs(t, []gb300FabricDevice{resolved}, nil)
 		ls := spec.LaunchSpec{
 			InstallGpuDriver: true,
 			Experiments:      experiments.Experiments{GB300CCMode: true},
@@ -942,7 +976,8 @@ func TestCreateOCISpecOpts_GB300CCMode_NonrootContainerSkipsFTPM(t *testing.T) {
 	// Discovery would fail if it ran, so success also shows that it is not attempted.
 	calls := stubFindGB300FTPMDevs(t, nil, errors.New("fTPM discovery must not run for non-root containers"))
 	stubFindGB300FabricMounts(t, nil, nil)
-	stubFindGB300FabricDevs(t, nil, nil)
+	stubFindGB300IMEXChannelDevs(t, nil, nil)
+	stubFindGB300FabricCapDevs(t, nil, nil)
 
 	ls := spec.LaunchSpec{
 		NonrootContainer: true,
@@ -974,7 +1009,8 @@ func TestCreateOCISpecOpts_GB300CCMode_NoFTPMDevicesSkipped(t *testing.T) {
 
 	stubFindGB300FTPMDevs(t, nil, nil)
 	stubFindGB300FabricMounts(t, nil, nil)
-	stubFindGB300FabricDevs(t, nil, nil)
+	stubFindGB300IMEXChannelDevs(t, nil, nil)
+	stubFindGB300FabricCapDevs(t, nil, nil)
 
 	ls := spec.LaunchSpec{
 		Experiments: experiments.Experiments{
