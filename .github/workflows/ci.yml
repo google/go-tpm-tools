@@ -48,6 +48,50 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: false
+      - name: Install Build Dependencies (Linux)
+        run: sudo DEBIAN_FRONTEND=noninteractive apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout="30" && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -o Acquire::Retries=3 -o Acquire::http::Timeout="30" libssl-dev
+      - name: Build all modules
+        run: go build -v ./... ./agent/... ./cmd/... ./launcher/image/measure/... ./verifier/...
+      - name: Build launcher module
+        run: go build -v -ldflags="-extldflags=-Wl,-z,lazy" ./launcher/...
+      - name: Run launcher network namespace test as root
+        run: |
+          go test -c -ldflags="-extldflags=-Wl,-z,lazy" -o /tmp/launcher.test ./launcher/
+          sudo CS_NETNS_TEST_REQUIRED=1 /tmp/launcher.test -test.run '^TestOpenPortsNetns$' -test.v -test.timeout 5m
+      - name: Test all modules
+        run: go test -v ./... ./agent/... ./cmd/... ./launcher/image/measure/... ./verifier/...
+
+  test-linux-amd64-race:
+    timeout-minutes: 10
+    name: Test Linux Race (amd64)
+    runs-on: ubuntu-latest
+    steps:
+      # Pinned to commit SHA to satisfy blanket security policy (zizmor)
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+      - name: Install Build Dependencies (Linux)
+        run: sudo DEBIAN_FRONTEND=noninteractive apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout="30" && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -o Acquire::Retries=3 -o Acquire::http::Timeout="30" libssl-dev
+      - name: Run all tests in launcher and agent to capture potential data race
+        run: go test -v -ldflags="-extldflags=-Wl,-z,lazy" -race ./launcher/... ./agent/...
+
+  check-protobuf:
+    timeout-minutes: 5
+    name: Check Protobuf Generation
+    runs-on: ubuntu-latest
+    steps:
+      # Pinned to commit SHA to satisfy blanket security policy (zizmor)
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
       - name: Install Protoc
         uses: arduino/setup-protoc@149f6c87b92550901b26acd1632e11c3662e381f # v1.3.0
         with:
@@ -55,24 +99,10 @@ jobs:
           version: ${{ env.PROTOC_VERSION }}
       - name: Install protoc-gen-go
         run: go install google.golang.org/protobuf/cmd/protoc-gen-go@${{ env.PROTOC_GEN_GO_VERSION }}
-      - name: Install Build Dependencies (Linux)
-        run: sudo DEBIAN_FRONTEND=noninteractive apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout="30" && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -o Acquire::Retries=3 -o Acquire::http::Timeout="30" libssl-dev
       - name: Check Protobuf Generation
         run: |
           go generate ./... ./agent/... ./cmd/... ./launcher/... ./verifier/...
           git diff -G'^[^/]' --exit-code
-      - name: Build all modules
-        run: go build -v ./... ./agent/... ./cmd/... ./launcher/image/measure/... ./verifier/...
-      - name: Build launcher module
-        run: go build -v -ldflags="-extldflags=-Wl,-z,lazy" ./launcher/...
-      - name: Run all tests in launcher and agent to capture potential data race
-        run: go test -v -ldflags="-extldflags=-Wl,-z,lazy" -race ./launcher/... ./agent/...
-      - name: Run launcher network namespace test as root
-        run: |
-          go test -c -ldflags="-extldflags=-Wl,-z,lazy" -o /tmp/launcher.test ./launcher/
-          sudo CS_NETNS_TEST_REQUIRED=1 /tmp/launcher.test -test.run '^TestOpenPortsNetns$' -test.v -test.timeout 5m
-      - name: Test all modules
-        run: go test -v ./... ./agent/... ./cmd/... ./launcher/image/measure/... ./verifier/...
 
   test-linux-386:
     timeout-minutes: 12
@@ -200,14 +230,16 @@ jobs:
   ci-status:
     name: CI Status
     runs-on: ubuntu-latest
-    needs: [test-linux-amd64, test-linux-386, test-macos, lint, lintc, keep-sorted]
+    needs: [test-linux-amd64, test-linux-amd64-race, test-linux-386, test-macos, check-protobuf, lint, lintc, keep-sorted]
     if: always()
     steps:
       - name: Check Status
         run: |
           if [[ "${{ needs.test-linux-amd64.result }}" != "success" || \
+                "${{ needs.test-linux-amd64-race.result }}" != "success" || \
                 "${{ needs.test-linux-386.result }}" != "success" || \
                 "${{ needs.test-macos.result }}" != "success" || \
+                "${{ needs.check-protobuf.result }}" != "success" || \
                 "${{ needs.lint.result }}" != "success" || \
                 "${{ needs.lintc.result }}" != "success" || \
                 "${{ needs.keep-sorted.result }}" != "success" ]]; then
