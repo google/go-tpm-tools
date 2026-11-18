@@ -390,6 +390,14 @@ func TestAttestSVSMFlags(t *testing.T) {
 	}
 }
 
+func TestAttestSVSMDefaultsToManifestVersion0(t *testing.T) {
+	args := []string{"attest", "svsm", "--tee-technology", "sev-snp", "--key", "gceAK", "--nonce", "1234"}
+	want := "manifest version 0 requires --key=AK"
+	if got := fmt.Sprint(execute(args, nil)); !strings.Contains(got, want) {
+		t.Errorf("execute(%q) = %q, want error containing %q", args, got, want)
+	}
+}
+
 func TestMakeSVSNPSVSMAttestationManifestVersion(t *testing.T) {
 	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
