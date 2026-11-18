@@ -99,7 +99,10 @@ func addAttestFlags(cmd *cobra.Command, cfg *attestCmdConfig) {
 	flags.StringVar(&cfg.outputPath, "output", "", "output file (defaults to stdout)")
 }
 
-var errUnknownKey = errors.New("key should be either AK or gceAK")
+var (
+	errUnknownKey                   = errors.New("key should be either AK or gceAK")
+	errTEENonceWithoutTEETechnology = errors.New("use of --tee-nonce requires specifying TEE hardware type with --tee-technology")
+)
 
 func checkAttestFlags(key, format string) error {
 	if key != "AK" && key != "gceAK" {
@@ -128,7 +131,7 @@ func runAttest(ctx context.Context, rwc io.ReadWriter, opts attestOptions) (*att
 	}
 
 	if len(opts.teeNonce) != 0 && opts.teeTechnology == "" {
-		return nil, fmt.Errorf("use of --tee-nonce requires specifying TEE hardware type with --tee-technology")
+		return nil, errTEENonceWithoutTEETechnology
 	}
 
 	attestOpts.TEEDevice, err = getTEEDeviceFromTech(opts.teeTechnology)
@@ -172,7 +175,7 @@ func formatAttestation(attestation *attest.Attestation, outFormat string) ([]byt
 	case "textproto":
 		return []byte(marshalOptions.Format(attestation)), nil
 	default:
-		return nil, fmt.Errorf("format should be either binarypb or textproto")
+		return nil, fmt.Errorf("%w: %q", errUnknownFormat, outFormat)
 	}
 }
 
@@ -193,7 +196,7 @@ func createAttestationKey(rw io.ReadWriter, keyType string, algo tpm2.Algorithm)
 			return client.GceAttestationKeyECC(rw)
 		}
 	default:
-		return nil, fmt.Errorf("key should be either AK or gceAK")
+		return nil, fmt.Errorf("%w: %q", errUnknownKey, keyType)
 	}
 	return nil, fmt.Errorf("unsupported key algorithm: %v", algo)
 }

@@ -16,6 +16,14 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+var (
+	errSVSMRequiresSEVSNP      = errors.New("attest svsm is only supported with --tee-technology=sev-snp")
+	errInvalidManifestVersion  = errors.New(`invalid manifest version, must be one of "", "0", "1"`)
+	errManifestV0RequiresAK    = errors.New("manifest version 0 requires --key=AK")
+	errManifestV1RequiresGCEAK = errors.New("manifest version 1 requires --key=gceAK")
+	errSEVSNPTEENonceSize      = fmt.Errorf("tee-nonce size must be %d bytes for SEV-SNP", sabi.ReportDataSize)
+)
+
 func newAttestSVSMCmd(o *gotpmOptions, cfg *attestCmdConfig) *cobra.Command {
 	var manifestVersion string
 	cmd := &cobra.Command{
@@ -27,19 +35,19 @@ func newAttestSVSMCmd(o *gotpmOptions, cfg *attestCmdConfig) *cobra.Command {
 			}
 			opts := cfg.opts
 			if opts.teeTechnology != sevSNP {
-				return errors.New("attest svsm is only supported with --tee-technology=sev-snp")
+				return fmt.Errorf("%w: %q", errSVSMRequiresSEVSNP, opts.teeTechnology)
 			}
 			if manifestVersion != "" && manifestVersion != "0" && manifestVersion != "1" {
-				return fmt.Errorf("invalid manifest version %q, must be one of \"\", \"0\", \"1\"", manifestVersion)
+				return fmt.Errorf("%w: %q", errInvalidManifestVersion, manifestVersion)
 			}
 			if (manifestVersion == "" || manifestVersion == "0") && opts.key != "AK" {
-				return errors.New("manifest version 0 requires --key=AK")
+				return errManifestV0RequiresAK
 			}
 			if manifestVersion == "1" && opts.key != "gceAK" {
-				return errors.New("manifest version 1 requires --key=gceAK")
+				return errManifestV1RequiresGCEAK
 			}
 			if len(opts.teeNonce) != sabi.ReportDataSize {
-				return fmt.Errorf("the teeNonce size is %d. SEV-SNP device requires 64", len(opts.teeNonce))
+				return fmt.Errorf("%w: got %d", errSEVSNPTEENonceSize, len(opts.teeNonce))
 			}
 
 			rwc, err := o.openTPM()

@@ -28,6 +28,8 @@ import (
 
 const toolName = "gotpm"
 
+var errUnknownTEETechnology = errors.New("tee-technology should be either empty or should have values " + sevSNP + " or " + tdx)
+
 func getTEEDeviceFromTech(tech string) (client.TEEDevice, error) {
 	switch tech {
 	case sevSNP:
@@ -45,7 +47,7 @@ func getTEEDeviceFromTech(tech string) (client.TEEDevice, error) {
 	case "":
 		return nil, nil
 	default:
-		return nil, fmt.Errorf("tee-technology should be either empty or should have values %s or %s", sevSNP, tdx)
+		return nil, fmt.Errorf("%w: %q", errUnknownTEETechnology, tech)
 	}
 }
 
