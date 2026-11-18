@@ -28,25 +28,34 @@ import (
 
 const toolName = "gotpm"
 
-func getTEEDeviceFromTech(tech string) (client.TEEDevice, error) {
+func createTEEDevice(tech teeTech) (client.TEEDevice, error) {
 	switch tech {
-	case sevSNP:
+	case teeTechSEVSNP:
 		device, err := client.CreateSevSnpQuoteProvider()
 		if err != nil {
 			return nil, fmt.Errorf("failed to create %s quote provider: %w", sevSNP, err)
 		}
 		return device, nil
-	case tdx:
+	case teeTechTDX:
 		device, err := client.CreateTdxQuoteProvider()
 		if err != nil {
 			return nil, fmt.Errorf("failed to create %s quote provider: %w", tdx, err)
 		}
 		return device, nil
-	case "":
-		return nil, nil
 	default:
-		return nil, fmt.Errorf("tee-technology should be either empty or should have values %s or %s", sevSNP, tdx)
+		return nil, fmt.Errorf("%w: %v", errUnknownTEETechnology, tech)
 	}
+}
+
+func getTEEDeviceFromTech(tech string) (client.TEEDevice, error) {
+	if tech == "" {
+		return nil, nil
+	}
+	parsed, err := parseTEETech(tech)
+	if err != nil {
+		return nil, err
+	}
+	return createTEEDevice(parsed)
 }
 
 // tokenOptions contains the parameters for generating an attestation claims token.
@@ -239,7 +248,11 @@ func runToken(ctx context.Context, rwc io.ReadWriter, opts tokenOptions) ([]byte
 		return nil, fmt.Errorf("failed to create REST verifier client: %w", err)
 	}
 
-	ak, err := createAttestationKey(rwc, "gceAK", opts.KeyAlgo)
+	keyAlgo, err := attestKeyAlgoFromTPM2(opts.KeyAlgo)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get an AK: %w", err)
+	}
+	ak, err := createAttestationKey(rwc, attestKeyGCE, keyAlgo)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get an AK: %w", err)
 	}

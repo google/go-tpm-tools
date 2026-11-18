@@ -94,8 +94,9 @@ func TestNonce(t *testing.T) {
 	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
 
-	if _, err := runAttest(context.Background(), rwc, attestOptions{key: "AK"}); err == nil {
-		t.Error("expected not-nil error")
+	opts := attestOptions{key: attestKeyAK}
+	if _, err := runAttest(context.Background(), rwc, opts); !errors.Is(err, errEmptyNonce) {
+		t.Errorf("runAttest(%+v) = %v, want %v", opts, err, errEmptyNonce)
 	}
 }
 
@@ -105,13 +106,13 @@ func TestAttestPass(t *testing.T) {
 
 	tests := []struct {
 		name  string
-		key   string
-		algo  tpm2.Algorithm
+		key   attestKeyType
+		algo  attestKeyAlgo
 		nonce string
 	}{
-		{"defaultKey", "", tpm2.AlgRSA, "1234"},
-		{"AKWithRSA", "AK", tpm2.AlgRSA, "2222"},
-		{"AKWithECC", "AK", tpm2.AlgECC, "2222"},
+		{"defaultKey", attestKeyAK, attestKeyAlgoRSA, "1234"},
+		{"AKWithRSA", attestKeyAK, attestKeyAlgoRSA, "2222"},
+		{"AKWithECC", attestKeyAK, attestKeyAlgoECC, "2222"},
 	}
 	for _, op := range tests {
 		t.Run(op.name, func(t *testing.T) {
@@ -148,10 +149,10 @@ func TestFormatFlagPass(t *testing.T) {
 		nonce          string
 		report         string
 		verifiedReport string
-		format         string
+		format         outputFormat
 	}{
-		{"Format:binary", "abcd", inputFile, outputFile, "binarypb"},
-		{"Format:textproto", "abcd", inputFile, outputFile, "textproto"},
+		{"Format:binary", "abcd", inputFile, outputFile, outputFormatBinaryPB},
+		{"Format:textproto", "abcd", inputFile, outputFile, outputFormatTextproto},
 	}
 	for _, op := range tests {
 		t.Run(op.name, func(t *testing.T) {
@@ -160,21 +161,21 @@ func TestFormatFlagPass(t *testing.T) {
 				t.Fatal(err)
 			}
 			opts := attestOptions{
-				key:   "AK",
+				key:   attestKeyAK,
 				nonce: nonceBytes,
 			}
 			attestation, err := runAttest(context.Background(), rwc, opts)
 			if err != nil {
 				t.Fatal(err)
 			}
-			out, err := formatAttestation(attestation, op.format)
+			out, err := formatProto(attestation, op.format)
 			if err != nil {
 				t.Fatal(err)
 			}
 			if err := os.WriteFile(op.report, out, 0644); err != nil {
 				t.Fatal(err)
 			}
-			debugArgs := []string{"verify", "debug", "--nonce", op.nonce, "--input", op.report, "--output", op.verifiedReport, "--format", op.format}
+			debugArgs := []string{"verify", "debug", "--nonce", op.nonce, "--input", op.report, "--output", op.verifiedReport, "--format", op.format.String()}
 			if err := execute(debugArgs, nil); err != nil {
 				t.Error(err)
 			}
@@ -195,12 +196,12 @@ func TestFormatFlagFail(t *testing.T) {
 		nonce          string
 		report         string
 		verifiedReport string
-		formatAttest   string
+		formatAttest   outputFormat
 		formatDebug    string
 	}{
-		{"Format:binary", "abcd", inputFile, outputFile, "binarypb", "textproto"},
-		{"Format:textproto", "abcd", inputFile, outputFile, "textproto", "binarypb"},
-		{"Format:textproto", "abcd", inputFile, outputFile, "textproto", "xyz"},
+		{"Format:binary", "abcd", inputFile, outputFile, outputFormatBinaryPB, "textproto"},
+		{"Format:textproto", "abcd", inputFile, outputFile, outputFormatTextproto, "binarypb"},
+		{"Format:textproto", "abcd", inputFile, outputFile, outputFormatTextproto, "xyz"},
 	}
 	for _, op := range tests {
 		t.Run(op.name, func(t *testing.T) {
@@ -210,14 +211,14 @@ func TestFormatFlagFail(t *testing.T) {
 				t.Fatal(err)
 			}
 			opts := attestOptions{
-				key:   "AK",
+				key:   attestKeyAK,
 				nonce: nonceBytes,
 			}
 			attestation, err := runAttest(context.Background(), rwc, opts)
 			if err != nil {
 				t.Fatal(err)
 			}
-			out, err := formatAttestation(attestation, op.formatAttest)
+			out, err := formatProto(attestation, op.formatAttest)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -280,10 +281,10 @@ func TestAttestWithGCEAK(t *testing.T) {
 		name    string
 		nonce   string
 		keyAlgo string
-		algo    tpm2.Algorithm
+		algo    attestKeyAlgo
 	}{
-		{"gceAK:RSA", "1234", "rsa", tpm2.AlgRSA},
-		{"gceAK:ECC", "1234", "ecc", tpm2.AlgECC},
+		{"gceAK:RSA", "1234", "rsa", attestKeyAlgoRSA},
+		{"gceAK:ECC", "1234", "ecc", attestKeyAlgoECC},
 	}
 	for _, op := range tests {
 		t.Run(op.name, func(t *testing.T) {
@@ -309,7 +310,7 @@ func TestAttestWithGCEAK(t *testing.T) {
 				t.Fatal(err)
 			}
 			opts := attestOptions{
-				key:     "gceAK",
+				key:     attestKeyGCE,
 				keyAlgo: op.algo,
 				nonce:   nonceBytes,
 			}
@@ -333,35 +334,9 @@ func TestAttestWithGCEAK(t *testing.T) {
 	}
 }
 
-func TestTeeTechnologyFail(t *testing.T) {
-	rwc := test.GetTPM(t)
-	defer client.CheckedClose(t, rwc)
-
-	opts := attestOptions{
-		key:           "AK",
-		nonce:         []byte{0x12, 0x34},
-		teeNonce:      []byte{0x12, 0x34, 0x56, 0x78},
-		teeTechnology: "sev",
-	}
-	if _, err := runAttest(context.Background(), rwc, opts); err == nil {
-		t.Error("expected not-nil error")
-	}
-}
-
 func TestSevAttestTeeNonceFail(t *testing.T) {
 	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
-
-	// non-nil TEENonce when TEEDevice is nil
-	opts := attestOptions{
-		key:           "AK",
-		nonce:         []byte{0x12, 0x34},
-		teeNonce:      []byte{0x12, 0x34, 0x56, 0x78},
-		teeTechnology: "",
-	}
-	if _, err := runAttest(context.Background(), rwc, opts); err == nil {
-		t.Error("expected not-nil error")
-	}
 
 	// TEENonce with length less than 64 bytes.
 	sevTestQp, _, _, _ := sgtestclient.GetSevQuoteProvider([]sgtest.TestCase{
@@ -389,17 +364,6 @@ func TestSevAttestTeeNonceFail(t *testing.T) {
 func TestTdxAttestTeeNonceFail(t *testing.T) {
 	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
-
-	// non-nil TEENonce when TEEDevice is nil
-	opts := attestOptions{
-		key:           "AK",
-		nonce:         []byte{0x12, 0x34},
-		teeNonce:      []byte{0x12, 0x34, 0x56, 0x78},
-		teeTechnology: "",
-	}
-	if _, err := runAttest(context.Background(), rwc, opts); err == nil {
-		t.Error("expected not-nil error")
-	}
 
 	// TEENonce with length less than 64 bytes.
 	mockTdxQuoteProvider := tgtestclient.GetMockTdxQuoteProvider([]tgtest.TestCase{
@@ -435,11 +399,11 @@ func TestHardwareAttestationPass(t *testing.T) {
 	tests := []struct {
 		name    string
 		nonce   string
-		teetech string
+		teetech teeTech
 		wanterr string
 	}{
-		{"TdxPass", "1234", "tdx", "failed to create tdx quote provider"},
-		{"SevSnpPass", "1234", "sev-snp", "failed to create sev-snp quote provider"},
+		{"TdxPass", "1234", teeTechTDX, "failed to create tdx quote provider"},
+		{"SevSnpPass", "1234", teeTechSEVSNP, "failed to create sev-snp quote provider"},
 	}
 	for _, op := range tests {
 		t.Run(op.name, func(t *testing.T) {
@@ -448,10 +412,12 @@ func TestHardwareAttestationPass(t *testing.T) {
 				t.Fatal(err)
 			}
 			opts := attestOptions{
-				key:           "AK",
-				nonce:         nonceBytes,
-				teeNonce:      teenonce,
-				teeTechnology: op.teetech,
+				key:   attestKeyAK,
+				nonce: nonceBytes,
+				tee: &teeOptions{
+					technology: op.teetech,
+					nonce:      teenonce,
+				},
 			}
 			_, err = runAttest(context.Background(), rwc, opts)
 			if err == nil {
@@ -601,32 +567,29 @@ func TestAttestRejectsUnknownFormat(t *testing.T) {
 
 func TestAttestRejectsUnknownAlgo(t *testing.T) {
 	args := []string{"attest", "--algo", "sha256"}
-	want := `invalid argument "sha256" for "--algo" flag`
-	if got := fmt.Sprint(execute(args, nil)); !strings.Contains(got, want) {
-		t.Errorf("execute(%q) = %q, want error containing %q", args, got, want)
+	if err := execute(args, nil); !errors.Is(err, errUnsupportedKeyAlgo) {
+		t.Errorf("execute(%q) = %v, want %v", args, err, errUnsupportedKeyAlgo)
 	}
 }
 
 func TestAttestRejectsOddLengthNonce(t *testing.T) {
 	args := []string{"attest", "--nonce", "123"}
-	want := `invalid argument "123" for "--nonce" flag`
-	if got := fmt.Sprint(execute(args, nil)); !strings.Contains(got, want) {
-		t.Errorf("execute(%q) = %q, want error containing %q", args, got, want)
+	if err := execute(args, nil); !errors.Is(err, hex.ErrLength) {
+		t.Errorf("execute(%q) = %v, want %v", args, err, hex.ErrLength)
 	}
 }
 
 func TestAttestRejectsNonHexNonce(t *testing.T) {
 	args := []string{"attest", "--nonce", "zz"}
-	want := `invalid argument "zz" for "--nonce" flag`
-	if got := fmt.Sprint(execute(args, nil)); !strings.Contains(got, want) {
-		t.Errorf("execute(%q) = %q, want error containing %q", args, got, want)
+	var inv hex.InvalidByteError
+	if err := execute(args, nil); !errors.As(err, &inv) {
+		t.Errorf("execute(%q) = %v, want hex.InvalidByteError", args, err)
 	}
 }
 
 func TestAttestRejectsOddLengthTEENonce(t *testing.T) {
-	args := []string{"attest", "--tee-nonce", "123"}
-	want := `invalid argument "123" for "--tee-nonce" flag`
-	if got := fmt.Sprint(execute(args, nil)); !strings.Contains(got, want) {
-		t.Errorf("execute(%q) = %q, want error containing %q", args, got, want)
+	args := []string{"attest", "--nonce", "1234", "--tee-nonce", "123"}
+	if err := execute(args, nil); !errors.Is(err, hex.ErrLength) {
+		t.Errorf("execute(%q) = %v, want %v", args, err, hex.ErrLength)
 	}
 }
