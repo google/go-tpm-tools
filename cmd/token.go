@@ -239,7 +239,7 @@ func runToken(ctx context.Context, rwc io.ReadWriter, opts tokenOptions) ([]byte
 		return nil, fmt.Errorf("failed to create REST verifier client: %w", err)
 	}
 
-	ak, err := createAttestationKey(rwc, "gceAK", opts.KeyAlgo)
+	ak, err := createAttestationKey(rwc, attestKeyGCE, opts.KeyAlgo)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get an AK: %w", err)
 	}

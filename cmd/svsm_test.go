@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha512"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -304,8 +305,8 @@ func TestAttestSVSMFlags(t *testing.T) {
 		wantErrorMsg    string
 	}{
 		{
-			name:            "InvalidTeeTech",
-			teeTech:         "bad",
+			name:            "UnsupportedTeeTech",
+			teeTech:         "tdx",
 			manifestVersion: "0",
 			wantErrorMsg:    "attest svsm is only supported with --tee-technology=sev-snp",
 		},
@@ -387,6 +388,21 @@ func TestAttestSVSMFlags(t *testing.T) {
 				t.Errorf("expected error containing %q, got: %v", tc.wantErrorMsg, err)
 			}
 		})
+	}
+}
+
+func TestAttestSVSMRejectsUnknownTEETechnology(t *testing.T) {
+	args := []string{"attest", "svsm", "--tee-technology", "bad"}
+	if err := execute(args, nil); !errors.Is(err, errUnknownTEETechnology) {
+		t.Errorf("execute(%q) = %v, want %v", args, err, errUnknownTEETechnology)
+	}
+}
+
+func TestAttestSVSMRejectsMissingTEETechnology(t *testing.T) {
+	args := []string{"attest", "svsm"}
+	want := "attest svsm is only supported with --tee-technology=sev-snp"
+	if err := execute(args, nil); err == nil || !strings.Contains(err.Error(), want) {
+		t.Errorf("execute(%q) = %v, want error containing %q", args, err, want)
 	}
 }
 

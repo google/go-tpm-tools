@@ -18,7 +18,7 @@ import (
 )
 
 func newAttestCmd(o *gotpmOptions) *cobra.Command {
-	var cfg attestCmdConfig
+	var flags attestFlags
 	cmd := &cobra.Command{
 		Use:   "attest",
 		Short: "Create a remote attestation report",
@@ -34,7 +34,8 @@ hardware and guarantees a fresh quote.
 `,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if err := checkAttestFlags(cfg.opts.key, cfg.format); err != nil {
+			opts, err := flags.parse()
+			if err != nil {
 				return err
 			}
 
@@ -44,77 +45,173 @@ hardware and guarantees a fresh quote.
 			}
 			defer rwc.Close()
 
-			attestation, err := runAttest(cmd.Context(), rwc, cfg.opts)
+			attestation, err := runAttest(cmd.Context(), rwc, opts)
 			if err != nil {
 				return err
 			}
 
-			out, err := formatAttestation(attestation, cfg.format)
+			out, err := formatAttestation(attestation, opts.format)
 			if err != nil {
 				return err
 			}
-			if cfg.outputPath != "" {
-				return os.WriteFile(cfg.outputPath, out, 0644)
+			if opts.outputPath != "" {
+				return os.WriteFile(opts.outputPath, out, 0644)
 			}
 			_, err = cmd.OutOrStdout().Write(out)
 			return err
 		},
 	}
-	addAttestFlags(cmd, &cfg)
-	cmd.AddCommand(newAttestSVSMCmd(o, &cfg))
+	addAttestFlags(cmd, &flags)
+	cmd.AddCommand(newAttestSVSMCmd(o, &flags))
 	return cmd
 }
 
-// attestOptions configures the attestation report generation.
-type attestOptions struct {
+type attestKeyType string
+
+const (
+	attestKeyAK  attestKeyType = "AK"
+	attestKeyGCE attestKeyType = "gceAK"
+)
+
+type outputFormat string
+
+const (
+	outputFormatBinaryPB  outputFormat = "binarypb"
+	outputFormatTextproto outputFormat = "textproto"
+)
+
+type teeTech string
+
+const (
+	teeTechSEVSNP teeTech = sevSNP
+	teeTechTDX    teeTech = tdx
+)
+
+func (t teeTech) createDevice() (client.TEEDevice, error) {
+	switch t {
+	case teeTechSEVSNP:
+		device, err := client.CreateSevSnpQuoteProvider()
+		if err != nil {
+			return nil, fmt.Errorf("failed to create %s quote provider: %w", sevSNP, err)
+		}
+		return device, nil
+	case teeTechTDX:
+		device, err := client.CreateTdxQuoteProvider()
+		if err != nil {
+			return nil, fmt.Errorf("failed to create %s quote provider: %w", tdx, err)
+		}
+		return device, nil
+	default:
+		return nil, fmt.Errorf("%w: %q", errUnknownTEETechnology, t)
+	}
+}
+
+type teeOptions struct {
+	technology teeTech
+	nonce      []byte
+}
+
+var (
+	errUnknownKey           = errors.New("key should be either AK or gceAK")
+	errUnsupportedKeyAlgo   = errors.New("unsupported key algorithm")
+	errUnknownTEETechnology = errors.New("tee-technology should be either empty or should have values sev-snp or tdx")
+	errTEENonceWithoutTech  = errors.New("use of --tee-nonce requires specifying TEE hardware type with --tee-technology")
+)
+
+type attestFlags struct {
 	key           string
 	keyAlgo       tpm2.Algorithm
 	nonce         []byte
 	teeNonce      []byte
 	teeTechnology string
+	format        string
+	outputPath    string
 }
 
-type attestCmdConfig struct {
-	opts       attestOptions
-	format     string
+// attestOptions configures remote attestation report generation and output.
+type attestOptions struct {
+	key        attestKeyType
+	keyAlgo    tpm2.Algorithm
+	nonce      []byte
+	tee        *teeOptions
+	format     outputFormat
 	outputPath string
 }
 
-// addAttestFlags registers the flags as persistent flags, so the svsm
-// subcommand reads the same cfg.
-func addAttestFlags(cmd *cobra.Command, cfg *attestCmdConfig) {
+// addAttestFlags registers persistent flags shared by attest and attest svsm.
+func addAttestFlags(cmd *cobra.Command, f *attestFlags) {
 	flags := cmd.PersistentFlags()
-	flags.StringVar(&cfg.opts.key, "key", "AK", "indicates type of attestation key to use <gceAK|AK>")
-	cfg.opts.keyAlgo = tpm2.AlgRSA
+	flags.StringVar(&f.key, "key", string(attestKeyAK), "indicates type of attestation key to use <gceAK|AK>")
+	f.keyAlgo = tpm2.AlgRSA
 	algo := algoFlag{
-		value:   &cfg.opts.keyAlgo,
+		value:   &f.keyAlgo,
 		allowed: []tpm2.Algorithm{tpm2.AlgRSA, tpm2.AlgECC},
 	}
 	flags.Var(&algo, "algo", "public key algorithm: "+algo.Allowed())
-	flags.BytesHexVar(&cfg.opts.nonce, "nonce", []byte{}, "hex encoded nonce for vTPM attestation, cannot be empty")
+	flags.BytesHexVar(&f.nonce, "nonce", nil, "hex encoded nonce for vTPM attestation, cannot be empty")
 	// Update this description if a TEE needs a variable-length tee-nonce.
-	flags.BytesHexVar(&cfg.opts.teeNonce, "tee-nonce", []byte{}, "hex encoded teenonce for hardware attestation, can be empty")
-	flags.StringVar(&cfg.opts.teeTechnology, "tee-technology", "", "indicates the type of TEE hardware. Should be either empty or one of sev-snp or tdx")
-	flags.StringVar(&cfg.format, "format", "binarypb", "type of output file where attestation report stored <binarypb|textproto>")
-	flags.StringVar(&cfg.outputPath, "output", "", "output file (defaults to stdout)")
+	flags.BytesHexVar(&f.teeNonce, "tee-nonce", nil, "hex encoded teenonce for hardware attestation, can be empty")
+	flags.StringVar(&f.teeTechnology, "tee-technology", "", "indicates the type of TEE hardware. Should be either empty or one of sev-snp or tdx")
+	flags.StringVar(&f.format, "format", string(outputFormatBinaryPB), "type of output file where attestation report stored <binarypb|textproto>")
+	flags.StringVar(&f.outputPath, "output", "", "output file (defaults to stdout)")
 }
 
-var errUnknownKey = errors.New("key should be either AK or gceAK")
-
-func checkAttestFlags(key, format string) error {
-	if key != "AK" && key != "gceAK" {
-		return fmt.Errorf("%w: %q", errUnknownKey, key)
+func (f attestFlags) parse() (attestOptions, error) {
+	key := attestKeyType(f.key)
+	if key != attestKeyAK && key != attestKeyGCE {
+		return attestOptions{}, fmt.Errorf("%w: %q", errUnknownKey, f.key)
 	}
-	return checkFormat(format)
+	if f.keyAlgo != tpm2.AlgRSA && f.keyAlgo != tpm2.AlgECC {
+		return attestOptions{}, fmt.Errorf("%w: %v", errUnsupportedKeyAlgo, f.keyAlgo)
+	}
+	format := outputFormat(f.format)
+	if format != outputFormatBinaryPB && format != outputFormatTextproto {
+		return attestOptions{}, fmt.Errorf("%w: %q", errUnknownFormat, f.format)
+	}
+	if f.teeTechnology == "" && len(f.teeNonce) != 0 {
+		return attestOptions{}, errTEENonceWithoutTech
+	}
+	var tee *teeOptions
+	if f.teeTechnology != "" {
+		tech := teeTech(f.teeTechnology)
+		if tech != teeTechSEVSNP && tech != teeTechTDX {
+			return attestOptions{}, fmt.Errorf("%w: %q", errUnknownTEETechnology, f.teeTechnology)
+		}
+		tee = &teeOptions{
+			technology: tech,
+			nonce:      f.teeNonce,
+		}
+	}
+	return attestOptions{
+		key:        key,
+		keyAlgo:    f.keyAlgo,
+		nonce:      f.nonce,
+		tee:        tee,
+		format:     format,
+		outputPath: f.outputPath,
+	}, nil
 }
 
 // runAttest generates an attestation report using the provided TPM.
 func runAttest(ctx context.Context, rwc io.ReadWriter, opts attestOptions) (*attest.Attestation, error) {
 	if opts.key == "" {
-		opts.key = "AK"
+		opts.key = attestKeyAK
 	}
 	if opts.keyAlgo == tpm2.AlgUnknown {
 		opts.keyAlgo = tpm2.AlgRSA
+	}
+
+	attestOpts := client.AttestOpts{
+		Nonce: opts.nonce,
+	}
+	if opts.tee != nil {
+		teeDevice, err := opts.tee.technology.createDevice()
+		if err != nil {
+			return nil, err
+		}
+		defer teeDevice.Close()
+		attestOpts.TEEDevice = teeDevice
+		attestOpts.TEENonce = opts.tee.nonce
 	}
 
 	attestationKey, err := createAttestationKey(rwc, opts.key, opts.keyAlgo)
@@ -122,23 +219,6 @@ func runAttest(ctx context.Context, rwc io.ReadWriter, opts attestOptions) (*att
 		return nil, fmt.Errorf("failed to create attestation key: %w", err)
 	}
 	defer attestationKey.Close()
-
-	attestOpts := client.AttestOpts{
-		Nonce: opts.nonce,
-	}
-
-	if len(opts.teeNonce) != 0 && opts.teeTechnology == "" {
-		return nil, fmt.Errorf("use of --tee-nonce requires specifying TEE hardware type with --tee-technology")
-	}
-
-	attestOpts.TEEDevice, err = getTEEDeviceFromTech(opts.teeTechnology)
-	if err != nil {
-		return nil, err
-	}
-	if attestOpts.TEEDevice != nil {
-		defer attestOpts.TEEDevice.Close()
-		attestOpts.TEENonce = opts.teeNonce
-	}
 
 	attestOpts.TCGEventLog, err = client.GetEventLog(rwc)
 	if err != nil {
@@ -150,7 +230,7 @@ func runAttest(ctx context.Context, rwc io.ReadWriter, opts attestOptions) (*att
 		return nil, fmt.Errorf("failed to collect attestation report: %w", err)
 	}
 
-	if opts.key == "gceAK" {
+	if opts.key == attestKeyGCE {
 		instanceInfo, err := getInstanceInfoFromMetadata(ctx)
 		if err != nil {
 			log.Printf("Could not get GCE instance info, continuing without it: %v", err)
@@ -161,41 +241,44 @@ func runAttest(ctx context.Context, rwc io.ReadWriter, opts attestOptions) (*att
 	return attestation, nil
 }
 
-func formatAttestation(attestation *attest.Attestation, outFormat string) ([]byte, error) {
+func formatAttestation(attestation *attest.Attestation, outFormat outputFormat) ([]byte, error) {
 	switch outFormat {
-	case "binarypb":
+	case outputFormatBinaryPB:
 		out, err := proto.Marshal(attestation)
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal attestation proto: %w", err)
 		}
 		return out, nil
-	case "textproto":
+	case outputFormatTextproto:
 		return []byte(marshalOptions.Format(attestation)), nil
 	default:
-		return nil, fmt.Errorf("format should be either binarypb or textproto")
+		return nil, fmt.Errorf("%w: %q", errUnknownFormat, outFormat)
 	}
 }
 
-func createAttestationKey(rw io.ReadWriter, keyType string, algo tpm2.Algorithm) (*client.Key, error) {
+func createAttestationKey(rw io.ReadWriter, keyType attestKeyType, algo tpm2.Algorithm) (*client.Key, error) {
 	switch keyType {
-	case "AK":
+	case attestKeyAK:
 		switch algo {
 		case tpm2.AlgRSA:
 			return client.AttestationKeyRSA(rw)
 		case tpm2.AlgECC:
 			return client.AttestationKeyECC(rw)
+		default:
+			return nil, fmt.Errorf("%w: %v", errUnsupportedKeyAlgo, algo)
 		}
-	case "gceAK":
+	case attestKeyGCE:
 		switch algo {
 		case tpm2.AlgRSA:
 			return client.GceAttestationKeyRSA(rw)
 		case tpm2.AlgECC:
 			return client.GceAttestationKeyECC(rw)
+		default:
+			return nil, fmt.Errorf("%w: %v", errUnsupportedKeyAlgo, algo)
 		}
 	default:
-		return nil, fmt.Errorf("key should be either AK or gceAK")
+		return nil, fmt.Errorf("%w: %q", errUnknownKey, keyType)
 	}
-	return nil, fmt.Errorf("unsupported key algorithm: %v", algo)
 }
 
 func getInstanceInfoFromMetadata(ctx context.Context) (*attest.GCEInstanceInfo, error) {
