@@ -24,15 +24,15 @@ import (
 func TestVerifyNoncePass(t *testing.T) {
 	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
-	ExternalTPM = rwc
 
 	file1 := makeOutputFile(t, "attest")
 	file2 := makeOutputFile(t, "verify")
 	defer os.RemoveAll(file1)
 	defer os.RemoveAll(file2)
 
-	if err := execute([]string{"attest", "--nonce", "1234", "--key", "AK", "--tee-nonce", "", "--output", file1, "--tee-technology", ""}, nil); err != nil {
-		t.Error(err)
+	attestArgs := []string{"attest", "--nonce", "1234", "--key", "AK", "--tee-nonce", "", "--output", file1, "--tee-technology", ""}
+	if err := execute(attestArgs, rwc); err != nil {
+		t.Fatalf("execute(%q) = %v, want nil", attestArgs, err)
 	}
 
 	if err := execute([]string{"verify", "debug", "--nonce", "1234", "--input", file1, "--output", file2}, nil); err != nil {
@@ -43,15 +43,15 @@ func TestVerifyNoncePass(t *testing.T) {
 func TestVerifyNonceFail(t *testing.T) {
 	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
-	ExternalTPM = rwc
 
 	file1 := makeOutputFile(t, "attest")
 	file2 := makeOutputFile(t, "verify")
 	defer os.RemoveAll(file1)
 	defer os.RemoveAll(file2)
 
-	if err := execute([]string{"attest", "--nonce", "1234", "--output", file1}, nil); err != nil {
-		t.Error(err)
+	attestArgs := []string{"attest", "--nonce", "1234", "--output", file1}
+	if err := execute(attestArgs, rwc); err != nil {
+		t.Fatalf("execute(%q) = %v, want nil", attestArgs, err)
 	}
 
 	if err := execute([]string{"verify", "debug", "--nonce", "4321", "--input", file1, "--output", file2}, nil); err == nil {
@@ -62,7 +62,6 @@ func TestVerifyNonceFail(t *testing.T) {
 func TestVerifyWithGCEAK(t *testing.T) {
 	rwc := test.GetTPM(t)
 	defer client.CheckedClose(t, rwc)
-	ExternalTPM = rwc
 
 	file1 := makeOutputFile(t, "attest")
 	file2 := makeOutputFile(t, "verify")
@@ -100,8 +99,9 @@ func TestVerifyWithGCEAK(t *testing.T) {
 			}
 			defer mock.Stop()
 
-			if err := execute([]string{"attest", "--nonce", op.nonce, "--key", "gceAK", "--algo", op.keyAlgo, "--output", file1, "--format", "binarypb", "--tee-technology", ""}, nil); err != nil {
-				t.Error(err)
+			attestArgs := []string{"attest", "--nonce", op.nonce, "--key", "gceAK", "--algo", op.keyAlgo, "--output", file1, "--format", "binarypb", "--tee-technology", ""}
+			if err := execute(attestArgs, rwc); err != nil {
+				t.Fatalf("execute(%q) = %v, want nil", attestArgs, err)
 			}
 
 			if err := execute([]string{"verify", "debug", "--nonce", op.nonce, "--input", file1, "--output", file2}, nil); err != nil {
