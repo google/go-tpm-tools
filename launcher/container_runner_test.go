@@ -1013,16 +1013,19 @@ func (f *fakeReaderAt) Close() error { return nil }
 func (f *fakeReaderAt) Size() int64  { return int64(len(f.blob)) }
 
 type fakeLogger struct {
-	logs []string
+	logs   []string
+	errors []string
 }
 
 func (f *fakeLogger) Log(clogging.Severity, string, ...any) {}
 func (f *fakeLogger) Info(msg string, args ...any) {
 	f.logs = append(f.logs, formatLog(msg, args...))
 }
-func (f *fakeLogger) Warn(string, ...any)  {}
-func (f *fakeLogger) Error(string, ...any) {}
-func (f *fakeLogger) Close()               {}
+func (f *fakeLogger) Warn(string, ...any) {}
+func (f *fakeLogger) Error(msg string, args ...any) {
+	f.errors = append(f.errors, formatLog(msg, args...))
+}
+func (f *fakeLogger) Close() {}
 
 func formatLog(msg string, args ...any) string {
 	if len(args) == 0 {
