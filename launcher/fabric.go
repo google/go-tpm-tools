@@ -10,28 +10,21 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/containerd/containerd/oci"
+	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 )
 
 const (
-	// gb300FabricContainerDir is the workload container directory that holds the
-	// NVIDIA IMEX and MNCCD binaries. It is separate from /usr/local/nvidia/bin
-	// because that directory is a bind mount of the read-only host driver bin
+	// gb300FabricContainerBinDir holds the IMEX and MNCCD binaries inside the
+	// workload container. It is separate from /usr/local/nvidia/bin because
+	// that directory is a bind mount of the read-only host driver bin
 	// directory, where runc cannot create mount points.
-	gb300FabricContainerDir = "/usr/local/nvidia/fabric"
-	// gb300FabricContainerBinDir holds the IMEX and MNCCD binaries.
-	gb300FabricContainerBinDir = gb300FabricContainerDir + "/bin"
+	gb300FabricContainerBinDir = "/usr/local/nvidia/fabric/bin"
 
 	defaultDevRoot  = "/dev"
 	defaultProcRoot = "/proc"
 )
-
-// gb300FabricPath describes a host binary of the NVIDIA IMEX or MNCCD daemon
-// to bind-mount read-only into the workload container.
-type gb300FabricPath struct {
-	hostPath      string
-	containerPath string
-}
 
 // gb300FabricDevice is a host character device node to pass into the workload
 // container for NVIDIA IMEX or MNCCD.
@@ -43,14 +36,22 @@ type gb300FabricDevice struct {
 	containerPath string
 }
 
+type gb300FabricConfig struct {
+	binaries []string
+	devRoot  string
+	procRoot string
+	stat     func(string) (os.FileInfo, error)
+	devStat  func(string) (bool, uint64, error)
+}
+
 var (
-	// gb300FabricPaths are the IMEX and MNCCD binaries on GB300 images. They
+	// gb300FabricBinaries are the IMEX and MNCCD binaries on GB300 images. They
 	// are mounted read-only so the workload can run or query IMEX/MNCCD with
 	// its own configs.
-	gb300FabricPaths = []gb300FabricPath{
-		{hostPath: "/usr/bin/nvidia-imex", containerPath: path.Join(gb300FabricContainerBinDir, "nvidia-imex")},
-		{hostPath: "/usr/bin/nvidia-imex-ctl", containerPath: path.Join(gb300FabricContainerBinDir, "nvidia-imex-ctl")},
-		{hostPath: "/usr/share/oem/nvidia-mnccd/rootfs/usr/bin/nvidia-mnccd", containerPath: path.Join(gb300FabricContainerBinDir, "nvidia-mnccd")},
+	gb300FabricBinaries = []string{
+		"/usr/bin/nvidia-imex",
+		"/usr/bin/nvidia-imex-ctl",
+		"/usr/share/oem/nvidia-mnccd/rootfs/usr/bin/nvidia-mnccd",
 	}
 
 	// gb300FabricCapNames are the NVIDIA driver capability entries in
@@ -62,48 +63,85 @@ var (
 
 	imexChannelNameRegexp = regexp.MustCompile(`^channel\d+$`)
 
-	// findGB300FabricMounts returns the IMEX and MNCCD mounts for the workload
-	// container. It is overridden in unit tests to keep createOCISpecOpts
-	// hermetic.
-	findGB300FabricMounts = func() ([]specs.Mount, []error) {
-		return gb300FabricMounts(gb300FabricPaths, os.Stat)
+	defaultGB300FabricConfig = gb300FabricConfig{
+		binaries: gb300FabricBinaries,
+		devRoot:  defaultDevRoot,
+		procRoot: defaultProcRoot,
+		stat:     os.Stat,
+		devStat:  charDevStat,
 	}
 
-	// findGB300IMEXChannelDevs returns the IMEX channel device nodes for the
-	// workload container. It is overridden in unit tests to keep
+	// findGB300FabricSpecOpts returns the OCI spec options for GB300 IMEX/MNCCD
+	// mounts and devices. It is overridden in unit tests to keep
 	// createOCISpecOpts hermetic.
-	findGB300IMEXChannelDevs = func() ([]gb300FabricDevice, []error) {
-		return gb300IMEXChannelDevs(defaultDevRoot, charDevStat)
-	}
-
-	// findGB300FabricCapDevs returns the IMEX and MNCCD driver capability device
-	// nodes for the workload container. It is overridden in unit tests to keep
-	// createOCISpecOpts hermetic.
-	findGB300FabricCapDevs = func() ([]gb300FabricDevice, []error) {
-		return gb300CapDevs(defaultDevRoot, defaultProcRoot, charDevStat)
+	findGB300FabricSpecOpts = func(nonroot bool, logger logging.Logger) []oci.SpecOpts {
+		return gb300FabricSpecOpts(defaultGB300FabricConfig, nonroot, logger)
 	}
 )
 
-// gb300FabricMounts returns a read-only bind mount for each regular file that
-// exists on the host, using stat to follow symlinks. For each skipped path, it
-// returns an error describing why the path was skipped.
-func gb300FabricMounts(paths []gb300FabricPath, stat func(string) (os.FileInfo, error)) ([]specs.Mount, []error) {
+// gb300FabricSpecOpts builds OCI spec options for the GB300 IMEX and MNCCD
+// binary mounts and device nodes. Missing or invalid paths are logged and
+// skipped without failing the launch. For non-root containers, /dev/nvidia-caps
+// capability nodes are skipped because bind-mounting 0400 root:root nodes in a
+// user namespace yields EACCES.
+func gb300FabricSpecOpts(cfg gb300FabricConfig, nonroot bool, logger logging.Logger) []oci.SpecOpts {
+	var opts []oci.SpecOpts
+
+	fabricMounts, skippedMounts := gb300FabricMounts(cfg.binaries, cfg.stat)
+	for _, err := range skippedMounts {
+		logger.Error(fmt.Sprintf("GB300 CC mode: skipping IMEX/MNCCD mount: %v", err))
+	}
+	for _, m := range fabricMounts {
+		logger.Info(fmt.Sprintf("GB300 CC mode: mounting %s at %s", m.Source, m.Destination))
+	}
+	if len(fabricMounts) > 0 {
+		opts = append(opts, oci.WithMounts(fabricMounts))
+	}
+
+	fabricDevs, skippedDevs := gb300IMEXChannelDevs(cfg.devRoot, cfg.devStat)
+	if nonroot {
+		// Capability device nodes are created 0400 root:root (driver DeviceFileMode 256).
+		// In a user namespace, runc bind-mounts the host node, so open() fails with
+		// EACCES for every container user. Keep passing the 0666 IMEX channels and
+		// binary mounts.
+		logger.Error("GB300 CC mode: IMEX/MNCCD capability device passthrough is not supported for non-root containers; skipping /dev/nvidia-caps nodes")
+	} else {
+		capDevs, skippedCaps := gb300CapDevs(cfg.devRoot, cfg.procRoot, cfg.devStat)
+		fabricDevs = append(fabricDevs, capDevs...)
+		skippedDevs = append(skippedDevs, skippedCaps...)
+	}
+	for _, err := range skippedDevs {
+		logger.Error(fmt.Sprintf("GB300 CC mode: skipping IMEX/MNCCD device: %v", err))
+	}
+	for _, dev := range fabricDevs {
+		logger.Info(fmt.Sprintf("GB300 CC mode: passing IMEX/MNCCD device %s as %s", dev.hostPath, dev.containerPath))
+		opts = append(opts, oci.WithDevices(dev.hostPath, dev.containerPath, "rwm"))
+	}
+
+	return opts
+}
+
+// gb300FabricMounts returns a read-only bind mount into
+// gb300FabricContainerBinDir for each regular file in binaries that exists on
+// the host, using stat to follow symlinks. For each skipped path, it returns an
+// error describing why the path was skipped.
+func gb300FabricMounts(binaries []string, stat func(string) (os.FileInfo, error)) ([]specs.Mount, []error) {
 	var mounts []specs.Mount
 	var skipped []error
-	for _, p := range paths {
-		fi, err := stat(p.hostPath)
+	for _, hostPath := range binaries {
+		fi, err := stat(hostPath)
 		if err != nil {
-			skipped = append(skipped, fmt.Errorf("cannot stat %q: %w", p.hostPath, err))
+			skipped = append(skipped, fmt.Errorf("cannot stat %q: %w", hostPath, err))
 			continue
 		}
 		if !fi.Mode().IsRegular() {
-			skipped = append(skipped, fmt.Errorf("%q is not a regular file (mode %v)", p.hostPath, fi.Mode()))
+			skipped = append(skipped, fmt.Errorf("%q is not a regular file (mode %v)", hostPath, fi.Mode()))
 			continue
 		}
 		mounts = append(mounts, specs.Mount{
 			Type:        "bind",
-			Source:      p.hostPath,
-			Destination: p.containerPath,
+			Source:      hostPath,
+			Destination: path.Join(gb300FabricContainerBinDir, path.Base(hostPath)),
 			Options:     []string{"bind", "ro"},
 		})
 	}
@@ -203,14 +241,11 @@ func parseNvidiaCapMinor(data []byte) (int, error) {
 		}
 		found = true
 		val = strings.TrimSpace(val)
-		if val == "" || strings.ContainsFunc(val, func(r rune) bool { return r < '0' || r > '9' }) {
-			return 0, fmt.Errorf("invalid DeviceFileMinor %q", val)
-		}
-		n, err := strconv.Atoi(val)
+		n, err := strconv.ParseUint(val, 10, strconv.IntSize-1)
 		if err != nil {
 			return 0, fmt.Errorf("invalid DeviceFileMinor %q: %w", val, err)
 		}
-		minor = n
+		minor = int(n)
 	}
 	if !found {
 		return 0, errors.New("missing DeviceFileMinor")

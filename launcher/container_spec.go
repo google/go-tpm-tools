@@ -175,41 +175,7 @@ func createOCISpecOpts(image containerd.Image, launchSpec spec.LaunchSpec, envs 
 		}
 
 		if launchSpec.InstallGpuDriver {
-			// Mount the NVIDIA IMEX and MNCCD binaries read-only so the
-			// workload can run or query IMEX/MNCCD with its own configs. A
-			// missing path is not fatal.
-			fabricMounts, skipped := findGB300FabricMounts()
-			for _, err := range skipped {
-				logger.Error(fmt.Sprintf("GB300 CC mode: skipping IMEX/MNCCD mount: %v", err))
-			}
-			for _, m := range fabricMounts {
-				logger.Info(fmt.Sprintf("GB300 CC mode: mounting %s at %s", m.Source, m.Destination))
-			}
-			if len(fabricMounts) > 0 {
-				specOpts = append(specOpts, oci.WithMounts(fabricMounts))
-			}
-
-			// Pass through IMEX channels and (for root containers) driver capability
-			// nodes for IMEX/MNCCD. Missing or invalid paths are logged and skipped.
-			fabricDevs, skippedDevs := findGB300IMEXChannelDevs()
-			if launchSpec.NonrootContainer {
-				// Capability device nodes are created 0400 root:root (driver DeviceFileMode 256).
-				// In a user namespace, runc bind-mounts the host node, so open() fails with
-				// EACCES for every container user. Keep passing the 0666 IMEX channels and
-				// binary mounts.
-				logger.Error("GB300 CC mode: IMEX/MNCCD capability device passthrough is not supported for non-root containers; skipping /dev/nvidia-caps nodes")
-			} else {
-				capDevs, skippedCaps := findGB300FabricCapDevs()
-				fabricDevs = append(fabricDevs, capDevs...)
-				skippedDevs = append(skippedDevs, skippedCaps...)
-			}
-			for _, err := range skippedDevs {
-				logger.Error(fmt.Sprintf("GB300 CC mode: skipping IMEX/MNCCD device: %v", err))
-			}
-			for _, dev := range fabricDevs {
-				logger.Info(fmt.Sprintf("GB300 CC mode: passing IMEX/MNCCD device %s as %s", dev.hostPath, dev.containerPath))
-				specOpts = append(specOpts, oci.WithDevices(dev.hostPath, dev.containerPath, "rwm"))
-			}
+			specOpts = append(specOpts, findGB300FabricSpecOpts(launchSpec.NonrootContainer, logger)...)
 		}
 	}
 
