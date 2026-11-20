@@ -3,6 +3,7 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"os"
 
 	"github.com/google/gce-tcb-verifier/extract"
 	"github.com/google/go-configfs-tsm/configfs/configfsi"
@@ -16,30 +17,30 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func newAttestSVSMCmd(o *gotpmOptions, cfg *attestCmdConfig) *cobra.Command {
+func newAttestSVSMCmd(o *gotpmOptions, flags *attestFlags) *cobra.Command {
 	var manifestVersion string
 	cmd := &cobra.Command{
 		Use:   "svsm",
 		Short: `Produce a SevSnpSvsmAttestation that wraps the PCR attestation message.`,
-		RunE: func(*cobra.Command, []string) error {
-			if err := checkAttestFlags(cfg.opts.key, cfg.format); err != nil {
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			opts, err := flags.parse()
+			if err != nil {
 				return err
 			}
-			opts := cfg.opts
-			if opts.teeTechnology != sevSNP {
+			if opts.tee == nil || opts.tee.technology != teeTechSEVSNP {
 				return errors.New("attest svsm is only supported with --tee-technology=sev-snp")
 			}
 			if manifestVersion != "" && manifestVersion != "0" && manifestVersion != "1" {
 				return fmt.Errorf("invalid manifest version %q, must be one of \"\", \"0\", \"1\"", manifestVersion)
 			}
-			if (manifestVersion == "" || manifestVersion == "0") && opts.key != "AK" {
+			if (manifestVersion == "" || manifestVersion == "0") && opts.key != attestKeyAK {
 				return errors.New("manifest version 0 requires --key=AK")
 			}
-			if manifestVersion == "1" && opts.key != "gceAK" {
+			if manifestVersion == "1" && opts.key != attestKeyGCE {
 				return errors.New("manifest version 1 requires --key=gceAK")
 			}
-			if len(opts.teeNonce) != sabi.ReportDataSize {
-				return fmt.Errorf("the teeNonce size is %d. SEV-SNP device requires 64", len(opts.teeNonce))
+			if len(opts.tee.nonce) != sabi.ReportDataSize {
+				return fmt.Errorf("the teeNonce size is %d. SEV-SNP device requires 64", len(opts.tee.nonce))
 			}
 
 			rwc, err := o.openTPM()
@@ -75,7 +76,7 @@ func newAttestSVSMCmd(o *gotpmOptions, cfg *attestCmdConfig) *cobra.Command {
 				return fmt.Errorf("failed to create linuxtsm configfs client: %w", err)
 			}
 			svsmAttestation, err := makeSEVSNPSVSMAttestation(attestation, &sevSNPSVSMAttestationOpts{
-				TEENonce:                   opts.teeNonce,
+				TEENonce:                   opts.tee.nonce,
 				CongfigfsClient:            configfsClient,
 				VTPMServiceManifestVersion: manifestVersion,
 				ExtractOptions:             extract.DefaultOptions(),
@@ -83,7 +84,17 @@ func newAttestSVSMCmd(o *gotpmOptions, cfg *attestCmdConfig) *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("failed to create SEV SNP SVSM attestation: %w", err)
 			}
-			if err := writeProtoToOutput(svsmAttestation, cfg.format, cfg.outputPath); err != nil {
+			out, err := formatProto(svsmAttestation, opts.format)
+			if err != nil {
+				return fmt.Errorf("failed to format SEV SNP SVSM attestation report: %w", err)
+			}
+			if opts.outputPath != "" {
+				if err := os.WriteFile(opts.outputPath, out, 0644); err != nil {
+					return fmt.Errorf("failed to write SEV SNP SVSM attestation report: %w", err)
+				}
+				return nil
+			}
+			if _, err := cmd.OutOrStdout().Write(out); err != nil {
 				return fmt.Errorf("failed to write SEV SNP SVSM attestation report: %w", err)
 			}
 

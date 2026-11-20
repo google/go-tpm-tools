@@ -122,27 +122,29 @@ func TestHwAttestationPass(t *testing.T) {
 	nonceBytes := []byte{0x12, 0x34}
 	tests := []struct {
 		name        string
-		teeTech     string
+		teeTech     teeTech
 		noDeviceErr string
 	}{
 		{
 			name:        "TdxPass",
-			teeTech:     "tdx",
+			teeTech:     teeTechTDX,
 			noDeviceErr: "failed to create tdx quote provider",
 		},
 		{
 			name:        "SevSnpPass",
-			teeTech:     "sev-snp",
+			teeTech:     teeTechSEVSNP,
 			noDeviceErr: "failed to create sev-snp quote provider",
 		},
 	}
 	for _, op := range tests {
 		t.Run(op.name, func(t *testing.T) {
 			opts := attestOptions{
-				key:           "AK",
-				nonce:         nonceBytes,
-				teeNonce:      teeNonceBytes,
-				teeTechnology: op.teeTech,
+				key:   attestKeyAK,
+				nonce: nonceBytes,
+				tee: &teeOptions{
+					technology: op.teeTech,
+					nonce:      teeNonceBytes,
+				},
 			}
 			attestation, err := runAttest(context.Background(), rwc, opts)
 			if err != nil {
