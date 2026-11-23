@@ -158,7 +158,8 @@ func main() {
 			logger.Info(exitMessage, "exit_code", exitCode)
 		}
 	}()
-	if err = launcher.StartLauncher(ctx, launchSpec, logger, serialConsole, pinnedClient, googleClient); err != nil {
+	result, err := launcher.StartLauncher(ctx, launchSpec, logger, serialConsole, pinnedClient, googleClient)
+	if err != nil {
 		logger.Error(err.Error())
 		var tpmOpenErr *launcher.TPMOpenError
 		if errors.As(err, &tpmOpenErr) {
@@ -167,7 +168,7 @@ func main() {
 		}
 		var tpmInitErr *launcher.TPMInitError
 		if errors.As(err, &tpmInitErr) {
-			exitCode = getExitCode(launchSpec.Hardened, launchSpec.RestartPolicy, err)
+			exitCode = getExitCode(launchSpec.Hardened, launchSpec.RestartPolicy, result, err)
 			return
 		}
 	}
@@ -178,39 +179,37 @@ func main() {
 		"workload_execution_sec", workloadDuration.Seconds(),
 	)
 
-	exitCode = getExitCode(launchSpec.Hardened, launchSpec.RestartPolicy, err)
+	exitCode = getExitCode(launchSpec.Hardened, launchSpec.RestartPolicy, result, err)
 }
 
-func getExitCode(isHardened bool, restartPolicy spec.RestartPolicy, err error) int {
-	exitCode := 0
-
+func getExitCode(isHardened bool, restartPolicy spec.RestartPolicy, result launcher.RunResult, err error) int {
 	// if in a debug image, will always hold
 	if !isHardened {
 		return holdRC
 	}
 
-	if err != nil {
-		switch err.(type) {
-		default:
-			// non-retryable error
-			exitCode = failRC
-		case *launcher.RetryableError, *launcher.WorkloadError:
-			if restartPolicy == spec.Always || restartPolicy == spec.OnFailure {
-				exitCode = rebootRC
-			} else {
-				exitCode = failRC
-			}
-		}
-	} else {
-		// if no error
-		if restartPolicy == spec.Always {
-			exitCode = rebootRC
-		} else {
-			exitCode = successRC
-		}
+	if result == launcher.HostShutdown {
+		return successRC
 	}
 
-	return exitCode
+	if err != nil {
+		switch err.(type) {
+		case *launcher.RetryableError, *launcher.WorkloadError:
+			if restartPolicy == spec.Always || restartPolicy == spec.OnFailure {
+				return rebootRC
+			}
+		}
+		return failRC
+	}
+
+	// Fail closed if a nil error is returned without a recognized run result.
+	if result != launcher.WorkloadExited {
+		return failRC
+	}
+	if restartPolicy == spec.Always {
+		return rebootRC
+	}
+	return successRC
 }
 
 func getUptime() (string, error) {
