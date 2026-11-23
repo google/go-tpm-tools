@@ -1,14 +1,22 @@
 package gpu
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"slices"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
+
+	"github.com/cenkalti/backoff/v4"
+	"github.com/google/go-tpm-tools/launcher/internal/logging"
 )
 
 const testContent = "artifact content"
@@ -28,16 +36,20 @@ func newArtifactServer(t *testing.T, status int) *httptest.Server {
 	return srv
 }
 
-func TestDownloadArtifactMatchingDigestWritesFile(t *testing.T) {
-	srv := newArtifactServer(t, http.StatusOK)
-	dir := t.TempDir()
+func testBackoffPolicy() backoff.BackOff {
+	return backoff.WithMaxRetries(&backoff.ZeroBackOff{}, 3)
+}
 
-	err := downloadArtifact(t.Context(), srv.Client(), dir, artifact{url: srv.URL, name: "a.run", digest: testDigest()})
+func TestDownloadVerifyMatchingDigestWritesFile(t *testing.T) {
+	srv := newArtifactServer(t, http.StatusOK)
+	dst := filepath.Join(t.TempDir(), "a.run")
+
+	err := downloadVerify(t.Context(), srv.Client(), srv.URL, dst, testDigest())
 
 	if err != nil {
-		t.Fatalf("downloadArtifact() error = %v, want nil", err)
+		t.Fatalf("downloadVerify() error = %v, want nil", err)
 	}
-	got, err := os.ReadFile(filepath.Join(dir, "a.run"))
+	got, err := os.ReadFile(dst)
 	if err != nil {
 		t.Fatalf("os.ReadFile() error = %v", err)
 	}
@@ -46,38 +58,126 @@ func TestDownloadArtifactMatchingDigestWritesFile(t *testing.T) {
 	}
 }
 
-func TestDownloadArtifactDigestMismatchFails(t *testing.T) {
+func TestDownloadVerifyDigestMismatchFails(t *testing.T) {
 	srv := newArtifactServer(t, http.StatusOK)
 	wrongDigest := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
-	err := downloadArtifact(t.Context(), srv.Client(), t.TempDir(), artifact{url: srv.URL, name: "a.run", digest: wrongDigest})
+	err := downloadVerify(t.Context(), srv.Client(), srv.URL, filepath.Join(t.TempDir(), "a.run"), wrongDigest)
 
 	if err == nil {
-		t.Error("downloadArtifact() error = nil, want digest mismatch")
+		t.Error("downloadVerify() error = nil, want digest mismatch")
 	}
 }
 
-func TestDownloadArtifactEmptyDigestSkipsCheck(t *testing.T) {
+func TestDownloadVerifyEmptyDigestFails(t *testing.T) {
 	srv := newArtifactServer(t, http.StatusOK)
-	dir := t.TempDir()
+	dst := filepath.Join(t.TempDir(), "a.run")
 
-	err := downloadArtifact(t.Context(), srv.Client(), dir, artifact{url: srv.URL, name: "a.bin"})
+	err := downloadVerify(t.Context(), srv.Client(), srv.URL, dst, "")
+
+	if err == nil {
+		t.Error("downloadVerify() error = nil, want error for missing digest")
+	}
+	if _, statErr := os.Stat(dst); !errors.Is(statErr, os.ErrNotExist) {
+		t.Errorf("os.Stat() error = %v, want os.ErrNotExist", statErr)
+	}
+}
+
+func TestDownloadWritesFile(t *testing.T) {
+	srv := newArtifactServer(t, http.StatusOK)
+	dst := filepath.Join(t.TempDir(), "a.bin")
+
+	gotDigest, err := download(t.Context(), srv.Client(), srv.URL, dst)
 
 	if err != nil {
-		t.Fatalf("downloadArtifact() error = %v, want nil", err)
+		t.Fatalf("download() error = %v, want nil", err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "a.bin")); err != nil {
+	if gotDigest != testDigest() {
+		t.Errorf("download() digest = %q, want %q", gotDigest, testDigest())
+	}
+	if _, err := os.Stat(dst); err != nil {
 		t.Errorf("os.Stat() error = %v, want nil", err)
 	}
 }
 
-func TestDownloadArtifactNonOKStatusFails(t *testing.T) {
+func TestDownloadNonOKStatusFails(t *testing.T) {
 	srv := newArtifactServer(t, http.StatusNotFound)
 
-	err := downloadArtifact(t.Context(), srv.Client(), t.TempDir(), artifact{url: srv.URL, name: "a.bin"})
+	_, err := download(t.Context(), srv.Client(), srv.URL, filepath.Join(t.TempDir(), "a.bin"))
 
 	if err == nil {
-		t.Error("downloadArtifact() error = nil, want error for status 404")
+		t.Error("download() error = nil, want error for status 404")
+	}
+}
+
+func TestRetryDownloadRetriesTransientErrors(t *testing.T) {
+	var attempts atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if attempts.Add(1) == 1 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(testContent))
+	}))
+	t.Cleanup(srv.Close)
+	dst := filepath.Join(t.TempDir(), "a.run")
+
+	err := retryDownload(t.Context(), logging.NullLogger(), "a.run", time.Second, testBackoffPolicy, func(ctx context.Context) error {
+		return downloadVerify(ctx, srv.Client(), srv.URL, dst, testDigest())
+	})
+
+	if err != nil {
+		t.Fatalf("retryDownload() error = %v, want nil", err)
+	}
+	if got := attempts.Load(); got != 2 {
+		t.Errorf("attempts = %d, want 2", got)
+	}
+}
+
+func TestRetryDownloadDoesNotRetryPermanentErrors(t *testing.T) {
+	var attempts atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		attempts.Add(1)
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	t.Cleanup(srv.Close)
+	dst := filepath.Join(t.TempDir(), "a.run")
+
+	err := retryDownload(t.Context(), logging.NullLogger(), "a.run", time.Second, testBackoffPolicy, func(ctx context.Context) error {
+		return downloadVerify(ctx, srv.Client(), srv.URL, dst, testDigest())
+	})
+
+	if err == nil {
+		t.Error("retryDownload() error = nil, want error for status 404")
+	}
+	if got := attempts.Load(); got != 1 {
+		t.Errorf("attempts = %d, want 1", got)
+	}
+}
+
+func TestRetryDownloadPerAttemptTimeoutRetries(t *testing.T) {
+	var attempts atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if attempts.Add(1) == 1 {
+			<-r.Context().Done()
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(testContent))
+	}))
+	t.Cleanup(srv.Close)
+	dst := filepath.Join(t.TempDir(), "a.run")
+
+	err := retryDownload(t.Context(), logging.NullLogger(), "a.run", 50*time.Millisecond, testBackoffPolicy, func(ctx context.Context) error {
+		return downloadVerify(ctx, srv.Client(), srv.URL, dst, testDigest())
+	})
+
+	if err != nil {
+		t.Fatalf("retryDownload() error = %v, want nil", err)
+	}
+	if got := attempts.Load(); got != 2 {
+		t.Errorf("attempts = %d, want 2", got)
 	}
 }
 
@@ -115,31 +215,35 @@ func TestReadBuildIDMissingFileFails(t *testing.T) {
 }
 
 func TestStageArtifactsCreatesDirAndDownloadsAll(t *testing.T) {
-	srv := newArtifactServer(t, http.StatusOK)
+	var mu sync.Mutex
+	var gotPaths []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		gotPaths = append(gotPaths, r.URL.Path)
+		mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(testContent))
+	}))
+	t.Cleanup(srv.Close)
 	dir := filepath.Join(t.TempDir(), "staging")
 
-	err := stageArtifacts(t.Context(), srv.Client(), dir, []artifact{{url: srv.URL, name: "a.run"}, {url: srv.URL, name: "b.bin"}})
+	err := stageArtifacts(t.Context(), srv.Client(), logging.NullLogger(), dir, srv.URL, "19216.760.8", testDigest(), testDigest(), time.Second, testBackoffPolicy)
 
 	if err != nil {
 		t.Fatalf("stageArtifacts() error = %v, want nil", err)
 	}
-	for _, name := range []string{"a.run", "b.bin"} {
+	wantPaths := []string{
+		"/cos-nvidia-gpu-drivers/NVIDIA-Linux-x86_64-595.58.03.run",
+		"/cos-tools/19216.760.8/lakitu/nvidia-drivers-595.58.03.tgz",
+		"/cos-tools/19216.760.8/lakitu/gpu_driver_versions.bin",
+	}
+	if !slices.Equal(gotPaths, wantPaths) {
+		t.Errorf("requested paths = %v, want %v", gotPaths, wantPaths)
+	}
+	for _, name := range []string{NvDriverVer595_58_03Runfile, prebuiltModulesFile, driverVersionsFile} {
 		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
 			t.Errorf("os.Stat(%s) error = %v, want nil", name, err)
 		}
-	}
-}
-
-func TestInstallerArtifacts(t *testing.T) {
-	got := installerArtifacts("https://example.com", "19216.760.8", "module-digest")
-
-	want := []artifact{
-		{url: "https://example.com/cos-nvidia-gpu-drivers/NVIDIA-Linux-x86_64-595.58.03.run", name: "NVIDIA-Linux-x86_64-595.58.03.run", digest: NvDriverVer595_58_03Digest},
-		{url: "https://example.com/cos-tools/19216.760.8/lakitu/nvidia-drivers-595.58.03.tgz", name: "nvidia-drivers-595.58.03.tgz", digest: "module-digest"},
-		{url: "https://example.com/cos-tools/19216.760.8/lakitu/gpu_driver_versions.bin", name: "gpu_driver_versions.bin"},
-	}
-	if !slices.Equal(got, want) {
-		t.Errorf("installerArtifacts() = %v, want %v", got, want)
 	}
 }
 
@@ -151,6 +255,7 @@ func TestInstallerArgs(t *testing.T) {
 		"-host-dir=/var/lib/nvidia",
 		"--no-verify",
 		"-local-artifacts-dir=/root/var/lib/nvidia-artifacts",
+		"-use-regional-bucket=false",
 	}
 
 	if got := installerArgs(); !slices.Equal(got, want) {

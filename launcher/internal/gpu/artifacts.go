@@ -12,32 +12,21 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
+
+	"github.com/cenkalti/backoff/v4"
+	"github.com/google/go-tpm-tools/launcher/internal/logging"
 )
 
 const (
-	artifactsHostDir    = "/var/lib/nvidia-artifacts"
-	artifactsBaseURL    = "https://storage.googleapis.com"
-	osReleasePath       = "/etc/os-release"
-	prebuiltModulesFile = "nvidia-drivers-" + NvDriverVer595_58_03 + ".tgz"
-	driverVersionsFile  = "gpu_driver_versions.bin"
+	artifactsHostDir       = "/var/lib/nvidia-artifacts"
+	artifactsBaseURL       = "https://storage.googleapis.com"
+	osReleasePath          = "/etc/os-release"
+	prebuiltModulesFile    = "nvidia-drivers-" + NvDriverVer595_58_03 + ".tgz"
+	driverVersionsFile     = "gpu_driver_versions.bin"
+	downloadAttemptTimeout = 5 * time.Minute
+	downloadMaxRetries     = 3
 )
-
-// artifact defines a file to stage; an empty digest skips verification.
-type artifact struct {
-	url    string
-	name   string
-	digest string
-}
-
-// installerArtifacts leaves the driver versions file unchecked because an unexpected GPU version mapping causes the installer to request unstaged files and fail.
-func installerArtifacts(baseURL, buildID, prebuiltModulesDigest string) []artifact {
-	cosTools := fmt.Sprintf("%s/cos-tools/%s/lakitu", baseURL, buildID)
-	return []artifact{
-		{url: fmt.Sprintf("%s/cos-nvidia-gpu-drivers/%s", baseURL, NvDriverVer595_58_03Runfile), name: NvDriverVer595_58_03Runfile, digest: NvDriverVer595_58_03Digest},
-		{url: fmt.Sprintf("%s/%s", cosTools, prebuiltModulesFile), name: prebuiltModulesFile, digest: prebuiltModulesDigest},
-		{url: fmt.Sprintf("%s/%s", cosTools, driverVersionsFile), name: driverVersionsFile},
-	}
-}
 
 func installerArgs() []string {
 	return []string{
@@ -47,6 +36,7 @@ func installerArgs() []string {
 		fmt.Sprintf("-host-dir=%s", InstallationHostDir),
 		"--no-verify",
 		fmt.Sprintf("-local-artifacts-dir=%s", path.Join("/root", artifactsHostDir)),
+		"-use-regional-bucket=false",
 	}
 }
 
@@ -63,49 +53,92 @@ func readBuildID(osRelease string) (string, error) {
 	return "", fmt.Errorf("BUILD_ID not found in %s", osRelease)
 }
 
-func stageArtifacts(ctx context.Context, client *http.Client, dir string, artifacts []artifact) error {
+func downloadBackoffPolicy() backoff.BackOff {
+	b := backoff.NewExponentialBackOff()
+	b.InitialInterval = time.Second
+	return backoff.WithMaxRetries(b, downloadMaxRetries)
+}
+
+func isRetryableStatus(code int) bool {
+	return code == http.StatusRequestTimeout || code == http.StatusTooManyRequests || code >= http.StatusInternalServerError
+}
+
+func retryDownload(ctx context.Context, logger logging.Logger, name string, attemptTimeout time.Duration, newBackoff func() backoff.BackOff, fn func(context.Context) error) error {
+	logger.Info(fmt.Sprintf("Downloading GPU driver artifact %s", name))
+	op := func() error {
+		attemptCtx, cancel := context.WithTimeout(ctx, attemptTimeout)
+		defer cancel()
+		return fn(attemptCtx)
+	}
+	notify := func(err error, d time.Duration) {
+		logger.Warn(fmt.Sprintf("Retrying GPU driver artifact %s after %s: %v", name, d, err))
+	}
+	return backoff.RetryNotify(op, backoff.WithContext(newBackoff(), ctx), notify)
+}
+
+func stageArtifacts(ctx context.Context, client *http.Client, logger logging.Logger, dir, baseURL, buildID, runfileDigest, prebuiltModulesDigest string, attemptTimeout time.Duration, newBackoff func() backoff.BackOff) error {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("failed to create %s: %w", dir, err)
 	}
-	for _, a := range artifacts {
-		if err := downloadArtifact(ctx, client, dir, a); err != nil {
-			return err
-		}
+	cosTools := fmt.Sprintf("%s/cos-tools/%s/lakitu", baseURL, buildID)
+	if err := retryDownload(ctx, logger, NvDriverVer595_58_03Runfile, attemptTimeout, newBackoff, func(ctx context.Context) error {
+		return downloadVerify(ctx, client, fmt.Sprintf("%s/cos-nvidia-gpu-drivers/%s", baseURL, NvDriverVer595_58_03Runfile), filepath.Join(dir, NvDriverVer595_58_03Runfile), runfileDigest)
+	}); err != nil {
+		return err
 	}
-	return nil
+	if err := retryDownload(ctx, logger, prebuiltModulesFile, attemptTimeout, newBackoff, func(ctx context.Context) error {
+		return downloadVerify(ctx, client, fmt.Sprintf("%s/%s", cosTools, prebuiltModulesFile), filepath.Join(dir, prebuiltModulesFile), prebuiltModulesDigest)
+	}); err != nil {
+		return err
+	}
+	// gpu_driver_versions.bin is unchecked because an unexpected GPU version mapping causes the installer to request unstaged files and fail.
+	return retryDownload(ctx, logger, driverVersionsFile, attemptTimeout, newBackoff, func(ctx context.Context) error {
+		_, err := download(ctx, client, fmt.Sprintf("%s/%s", cosTools, driverVersionsFile), filepath.Join(dir, driverVersionsFile))
+		return err
+	})
 }
 
-func downloadArtifact(ctx context.Context, client *http.Client, dir string, a artifact) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, a.url, nil)
+func download(ctx context.Context, client *http.Client, url, dst string) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return fmt.Errorf("failed to create request for %s: %w", a.url, err)
+		return "", backoff.Permanent(fmt.Errorf("failed to create request for %s: %w", url, err))
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("failed to download %s: %w", a.url, err)
+		return "", fmt.Errorf("failed to download %s: %w", url, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to download %s: status %s", a.url, resp.Status)
+		err := fmt.Errorf("failed to download %s: status %s", url, resp.Status)
+		if !isRetryableStatus(resp.StatusCode) {
+			return "", backoff.Permanent(err)
+		}
+		return "", err
 	}
 
-	dst := filepath.Join(dir, a.name)
 	f, err := os.Create(dst)
 	if err != nil {
-		return fmt.Errorf("failed to create %s: %w", dst, err)
+		return "", fmt.Errorf("failed to create %s: %w", dst, err)
 	}
 	h := sha256.New()
 	_, copyErr := io.Copy(io.MultiWriter(f, h), resp.Body)
 	closeErr := f.Close()
 	if err := errors.Join(copyErr, closeErr); err != nil {
-		return fmt.Errorf("failed to write %s: %w", dst, err)
+		return "", fmt.Errorf("failed to write %s: %w", dst, err)
 	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
 
-	if a.digest == "" {
-		return nil
+func downloadVerify(ctx context.Context, client *http.Client, url, dst, wantDigest string) error {
+	if wantDigest == "" {
+		return backoff.Permanent(fmt.Errorf("%s digest is required", filepath.Base(dst)))
 	}
-	if got := hex.EncodeToString(h.Sum(nil)); got != a.digest {
-		return fmt.Errorf("%s digest mismatch: got %s, want %s", a.name, got, a.digest)
+	got, err := download(ctx, client, url, dst)
+	if err != nil {
+		return err
+	}
+	if got != wantDigest {
+		return backoff.Permanent(fmt.Errorf("%s digest mismatch: got %s, want %s", filepath.Base(dst), got, wantDigest))
 	}
 	return nil
 }

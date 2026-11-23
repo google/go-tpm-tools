@@ -85,7 +85,12 @@ func (di *DriverInstaller) InstallGPUDrivers(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := stageArtifacts(ctx, di.httpClient, artifactsHostDir, installerArtifacts(artifactsBaseURL, buildID, di.prebuiltModulesDigest)); err != nil {
+	defer func() {
+		if err := os.RemoveAll(artifactsHostDir); err != nil {
+			di.logger.Warn(fmt.Sprintf("failed to remove %s: %v", artifactsHostDir, err))
+		}
+	}()
+	if err := stageArtifacts(ctx, di.httpClient, di.logger, artifactsHostDir, artifactsBaseURL, buildID, NvDriverVer595_58_03Digest, di.prebuiltModulesDigest, downloadAttemptTimeout, downloadBackoffPolicy); err != nil {
 		return fmt.Errorf("failed to stage GPU driver artifacts: %w", err)
 	}
 
@@ -127,7 +132,8 @@ func (di *DriverInstaller) InstallGPUDrivers(ctx context.Context) error {
 			oci.WithPrivileged,
 			// To support confidential GPUs, the nvidia-persistenced process should be started before the GPU driver verification step.
 			// It would not be possible to start the nvidia-persistenced process amidst GPU driver installation flow via cos_gpu_installer.
-			// For this reason, the GPU driver installation need to be triggered with --skip-nvidia-smi flag to skip the GPU driver verification step.
+			// For this reason, the installer runs with --no-verify, which skips loading the kernel modules and verifying the driver.
+			// The launcher does both after the container exits, starting nvidia-persistenced in between.
 			oci.WithProcessArgs(installerArgs()...),
 			oci.WithAllDevicesAllowed,
 			oci.WithHostDevices,
