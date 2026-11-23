@@ -30,12 +30,12 @@ func gpuDriverMounts(hostDir string) []specs.Mount {
 			Type:        "volume",
 			Source:      fmt.Sprintf("%s/lib64", hostDir),
 			Destination: fmt.Sprintf("%s/lib64", gpu.InstallationContainerDir),
-			Options:     []string{"rbind", "rw"},
+			Options:     []string{"rbind", "ro"},
 		}, {
 			Type:        "volume",
 			Source:      fmt.Sprintf("%s/bin", hostDir),
 			Destination: fmt.Sprintf("%s/bin", gpu.InstallationContainerDir),
-			Options:     []string{"rbind", "rw"},
+			Options:     []string{"rbind", "ro"},
 		},
 	}
 }
