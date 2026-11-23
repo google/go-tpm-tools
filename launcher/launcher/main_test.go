@@ -236,21 +236,21 @@ func TestGetExitCode(t *testing.T) {
 			isHardened:         true,
 			restartPolicy:      spec.Always,
 			result:             launcher.HostShutdown,
-			expectedReturnCode: successRC,
+			expectedReturnCode: poweroffNowRC,
 		},
 		{
 			name:               "hardened_never_restart_host_shutdown",
 			isHardened:         true,
 			restartPolicy:      spec.Never,
 			result:             launcher.HostShutdown,
-			expectedReturnCode: successRC,
+			expectedReturnCode: poweroffNowRC,
 		},
 		{
 			name:               "hardened_onfailure_restart_host_shutdown",
 			isHardened:         true,
 			restartPolicy:      spec.OnFailure,
 			result:             launcher.HostShutdown,
-			expectedReturnCode: successRC,
+			expectedReturnCode: poweroffNowRC,
 		},
 	}
 

@@ -26,15 +26,17 @@ const (
 	successRC = 0 // workload successful (no reboot)
 	failRC    = 1 // workload or launcher internal failed (no reboot)
 	// panic() returns 2
-	rebootRC = 3 // reboot
-	holdRC   = 4 // hold
+	rebootRC      = 3 // reboot
+	holdRC        = 4 // hold
+	poweroffNowRC = 5 // immediate poweroff after host shutdown
 )
 
 var rcMessage = map[int]string{
-	successRC: "workload finished successfully, shutting down the VM",
-	failRC:    "workload or launcher error, shutting down the VM",
-	rebootRC:  "rebooting VM",
-	holdRC:    "VM remains running",
+	successRC:     "workload finished successfully, shutting down the VM",
+	failRC:        "workload or launcher error, shutting down the VM",
+	rebootRC:      "rebooting VM",
+	holdRC:        "VM remains running",
+	poweroffNowRC: "host shutdown requested, powering off the VM immediately",
 }
 
 // BuildCommit shows the commit when building the binary, set by -ldflags when building
@@ -189,7 +191,7 @@ func getExitCode(isHardened bool, restartPolicy spec.RestartPolicy, result launc
 	}
 
 	if result == launcher.HostShutdown {
-		return successRC
+		return poweroffNowRC
 	}
 
 	if err != nil {
