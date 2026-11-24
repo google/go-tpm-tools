@@ -1,6 +1,6 @@
 substitutions:
-  '_BASE_IMAGE': 'cos-133-19999-44-193' # If left empty, will use the latest image in _BASE_IMAGE_FAMILY of _BASE_IMAGE_PROJECT
-  '_BASE_IMAGE_FAMILY': 'cos-125-lts'
+  '_BASE_IMAGE': 'cos-133-19999-44-250' # If left empty, will use the latest image in _BASE_IMAGE_FAMILY of _BASE_IMAGE_PROJECT
+  '_BASE_IMAGE_FAMILY': 'cos-133-lts'
   '_BASE_IMAGE_PROJECT': 'cos-cloud'
   '_OUTPUT_IMAGE_PREFIX': 'confidential-space'
   '_OUTPUT_IMAGE_SUFFIX': ''
@@ -545,6 +545,9 @@ steps:
 
 options:
   automapSubstitutions: true
+  # Require the project's regional log bucket. Fail the build instead of
+  # falling back to the legacy bucket outside the project.
+  defaultLogsBucketBehavior: REGIONAL_USER_OWNED_BUCKET
   pool:
     name: 'projects/confidential-space-images-dev/locations/us-west1/workerPools/cs-image-build-vpc'
   env:

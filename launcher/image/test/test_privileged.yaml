@@ -156,6 +156,9 @@ steps:
   - CleanupCapsDenied
 
 options:
+  # Require the project's regional log bucket. Fail the build instead of
+  # falling back to the legacy bucket outside the project.
+  defaultLogsBucketBehavior: REGIONAL_USER_OWNED_BUCKET
   pool:
     name: 'projects/confidential-space-images-dev/locations/us-west1/workerPools/cs-image-test-vpc'
 

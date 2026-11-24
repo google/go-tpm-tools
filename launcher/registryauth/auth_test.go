@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 
@@ -71,22 +72,31 @@ var googleRegistryHosts = []string{
 }
 
 func TestIsGoogleRegistry(t *testing.T) {
-	for _, host := range googleRegistryHosts {
+	googleHosts := slices.Concat(googleRegistryHosts, []string{
+		"GCR.IO",
+		"Us.Gcr.Io",
+		"US-DOCKER.PKG.DEV",
+		"Us-West1-Docker.Pkg.Dev",
+	})
+	for _, host := range googleHosts {
 		if !isGoogleRegistry(host) {
 			t.Errorf("isGoogleRegistry(%q) = false, want true", host)
 		}
 	}
 	for _, host := range []string{
 		"pkg.dev",
+		"PKG.DEV",
 		"notpkg.dev",
 		"notgcr.io",
 		"evilgcr.io",
+		"EVILGCR.IO",
 		"gcr.io.",
 		"gcr.io:443",
 		"us-docker.pkg.dev:443",
 		"gcr.io.example.com",
 		"docker.pkg.dev.example.com",
 		"registry.example.com",
+		"REGISTRY.EXAMPLE.COM",
 		"docker.io",
 		"ghcr.io",
 	} {
@@ -106,7 +116,11 @@ func TestResolverUsesCorrectClient(t *testing.T) {
 		tests = append(tests, testCase{ref: host + "/project/repo/image:latest", google: true})
 	}
 	tests = append(tests,
+		testCase{ref: "GCR.IO/project/repo/image:latest", google: true},
+		testCase{ref: "Us.Gcr.Io/project/repo/image:latest", google: true},
+		testCase{ref: "US-DOCKER.PKG.DEV/project/repo/image:latest", google: true},
 		testCase{ref: "registry.example.com/image:latest"},
+		testCase{ref: "REGISTRY.EXAMPLE.COM/image:latest"},
 		testCase{ref: "ghcr.io/owner/image:latest"},
 	)
 	for _, tc := range tests {

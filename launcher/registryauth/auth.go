@@ -11,6 +11,7 @@ import (
 	"cloud.google.com/go/compute/metadata"
 	"github.com/containerd/containerd/remotes"
 	"github.com/containerd/containerd/remotes/docker"
+	"golang.org/x/net/idna"
 	"golang.org/x/oauth2"
 )
 
@@ -34,6 +35,10 @@ func RetrieveAuthToken(ctx context.Context, client *metadata.Client) (oauth2.Tok
 // Container Registry host. Only these hosts get the service account token, and
 // only through the client with pinned roots.
 func isGoogleRegistry(host string) bool {
+	host, err := idna.Lookup.ToASCII(host)
+	if err != nil {
+		return false
+	}
 	return strings.HasSuffix(host, ".pkg.dev") || host == "gcr.io" || strings.HasSuffix(host, ".gcr.io")
 }
 
