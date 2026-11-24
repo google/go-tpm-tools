@@ -104,11 +104,12 @@ func ConvertToMachineState(tpmfirmwarestate *gepb.FirmwareLogState) (*pb.Machine
 	var secureBootState *pb.SecureBootState
 	if tpmfirmwarestate.GetSecureBoot() != nil {
 		secureBootState = &pb.SecureBootState{
-			Enabled: tpmfirmwarestate.GetSecureBoot().GetEnabled(),
-			Db:      convertToPbDatabase(tpmfirmwarestate.GetSecureBoot().GetDb()),
-			Dbx:     convertToPbDatabase(tpmfirmwarestate.GetSecureBoot().GetDbx()),
-			Pk:      convertToPbDatabase(tpmfirmwarestate.GetSecureBoot().GetPk()),
-			Kek:     convertToPbDatabase(tpmfirmwarestate.GetSecureBoot().GetKek()),
+			Enabled:   tpmfirmwarestate.GetSecureBoot().GetEnabled(),
+			Db:        convertToPbDatabase(tpmfirmwarestate.GetSecureBoot().GetDb()),
+			Dbx:       convertToPbDatabase(tpmfirmwarestate.GetSecureBoot().GetDbx()),
+			Pk:        convertToPbDatabase(tpmfirmwarestate.GetSecureBoot().GetPk()),
+			Kek:       convertToPbDatabase(tpmfirmwarestate.GetSecureBoot().GetKek()),
+			Authority: convertToPbDatabase(tpmfirmwarestate.GetSecureBoot().GetAuthority()),
 		}
 	}
 
@@ -209,11 +210,12 @@ func ConvertToFirmwareState(ms *pb.MachineState) (*gepb.FirmwareLogState, error)
 	var secureBootState *gepb.SecureBootState
 	if ms.GetSecureBoot() != nil {
 		secureBootState = &gepb.SecureBootState{
-			Enabled: ms.GetSecureBoot().GetEnabled(),
-			Db:      convertFromPbDatabase(ms.GetSecureBoot().GetDb()),
-			Dbx:     convertFromPbDatabase(ms.GetSecureBoot().GetDbx()),
-			Pk:      convertFromPbDatabase(ms.GetSecureBoot().GetPk()),
-			Kek:     convertFromPbDatabase(ms.GetSecureBoot().GetKek()),
+			Enabled:   ms.GetSecureBoot().GetEnabled(),
+			Db:        convertFromPbDatabase(ms.GetSecureBoot().GetDb()),
+			Dbx:       convertFromPbDatabase(ms.GetSecureBoot().GetDbx()),
+			Pk:        convertFromPbDatabase(ms.GetSecureBoot().GetPk()),
+			Kek:       convertFromPbDatabase(ms.GetSecureBoot().GetKek()),
+			Authority: convertFromPbDatabase(ms.GetSecureBoot().GetAuthority()),
 		}
 	}
 

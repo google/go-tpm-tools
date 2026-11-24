@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"crypto"
+	"crypto/x509"
 	"encoding/hex"
 	"fmt"
 	"strings"
@@ -790,6 +791,30 @@ func TestParseSecureBootState(t *testing.T) {
 	}
 }
 
+func TestParseSecureBootAuthority(t *testing.T) {
+	for _, bank := range Rhel8GCE.Banks {
+		t.Run(bank.GetHash().String(), func(t *testing.T) {
+			msState, err := parsePCClientEventLog(Rhel8GCE.RawLog, bank, VerifyOpts{Loader: UnsupportedLoader})
+			if err != nil {
+				t.Fatalf("failed to parse and replay log: %v", err)
+			}
+			// The RHEL 8 log has two post-separator EV_EFI_VARIABLE_AUTHORITY
+			// events: the db entry that verified shim and the shim vendor cert
+			// that verified grub.
+			authCerts := msState.GetSecureBoot().GetAuthority().GetCerts()
+			if len(authCerts) != 2 {
+				t.Fatalf("expected to see exactly two certs in authority, but found %d", len(authCerts))
+			}
+			if got := authCerts[0].GetWellKnown(); got != attestpb.WellKnownCertificate_MS_THIRD_PARTY_UEFI_CA_2011 {
+				t.Errorf("authority[0] got %v, want MS_THIRD_PARTY_UEFI_CA_2011", got)
+			}
+			if _, err := x509.ParseCertificate(authCerts[1].GetDer()); err != nil {
+				t.Errorf("authority[1] is not a DER certificate: %v", err)
+			}
+		})
+	}
+}
+
 func TestMatchWellKnownCert(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -939,6 +964,12 @@ func TestConvertToMachineState(t *testing.T) {
 							{Representation: &gepb.Certificate_WellKnown{WellKnown: gepb.WellKnownCertificate_MS_THIRD_PARTY_KEK_CA_2011}},
 						},
 					},
+					Authority: &gepb.Database{
+						Certs: []*gepb.Certificate{
+							{Representation: &gepb.Certificate_WellKnown{WellKnown: gepb.WellKnownCertificate_MS_THIRD_PARTY_UEFI_CA_2011}},
+							{Representation: &gepb.Certificate_Der{Der: []byte("authority_cert_der")}},
+						},
+					},
 				},
 				RawEvents: []*gepb.Event{{
 					PcrIndex:      0,
@@ -980,6 +1011,12 @@ func TestConvertToMachineState(t *testing.T) {
 					Kek: &attestpb.Database{
 						Certs: []*attestpb.Certificate{
 							{Representation: &attestpb.Certificate_WellKnown{WellKnown: attestpb.WellKnownCertificate_MS_THIRD_PARTY_KEK_CA_2011}},
+						},
+					},
+					Authority: &attestpb.Database{
+						Certs: []*attestpb.Certificate{
+							{Representation: &attestpb.Certificate_WellKnown{WellKnown: attestpb.WellKnownCertificate_MS_THIRD_PARTY_UEFI_CA_2011}},
+							{Representation: &attestpb.Certificate_Der{Der: []byte("authority_cert_der")}},
 						},
 					},
 				},
