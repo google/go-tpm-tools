@@ -23,9 +23,6 @@ jobs:
             target: FuzzVerifyAttestationBytes
           - pkg: ./server
             target: FuzzVerifyQuote
-          - pkg: ./launcher
-            target: FuzzParseNvidiaCapMinor
-            flags: '-ldflags="-extldflags=-Wl,-z,lazy"'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -35,5 +32,5 @@ jobs:
           go-version: '1.26.10'
           cache: false
       - name: Run Go Fuzz (${{ matrix.target }})
-        run: go test ${{ matrix.pkg }} ${{ matrix.flags }} -run=^$ -fuzz=^${{ matrix.target }}$ -fuzztime=30s -fuzzminimizetime=0
+        run: go test ${{ matrix.pkg }} -run=^$ -fuzz=^${{ matrix.target }}$ -fuzztime=30s -fuzzminimizetime=0
 

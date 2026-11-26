@@ -3,6 +3,7 @@ package launcher
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 	"github.com/containerd/containerd/oci"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"golang.org/x/sys/unix"
 )
 
 const (
@@ -24,6 +26,9 @@ const (
 
 	defaultDevRoot  = "/dev"
 	defaultProcRoot = "/proc"
+
+	imexChannelDriverName = "nvidia-caps-imex-channels"
+	nvidiaCapsDriverName  = "nvidia-caps"
 )
 
 // gb300FabricDevice is a host character device node to pass into the workload
@@ -40,7 +45,6 @@ type gb300FabricConfig struct {
 	binaries []string
 	devRoot  string
 	procRoot string
-	stat     func(string) (os.FileInfo, error)
 	devStat  func(string) (bool, uint64, error)
 }
 
@@ -61,33 +65,36 @@ var (
 		"mncc-mgmt",
 	}
 
-	imexChannelNameRegexp = regexp.MustCompile(`^channel\d+$`)
+	imexChannelNameRegexp = regexp.MustCompile(`^channel(\d+)$`)
 
 	defaultGB300FabricConfig = gb300FabricConfig{
 		binaries: gb300FabricBinaries,
 		devRoot:  defaultDevRoot,
 		procRoot: defaultProcRoot,
-		stat:     os.Stat,
 		devStat:  charDevStat,
 	}
 
 	// findGB300FabricSpecOpts returns the OCI spec options for GB300 IMEX/MNCCD
 	// mounts and devices. It is overridden in unit tests to keep
 	// createOCISpecOpts hermetic.
-	findGB300FabricSpecOpts = func(nonroot bool, logger logging.Logger) []oci.SpecOpts {
+	findGB300FabricSpecOpts = func(nonroot bool, logger logging.Logger) ([]oci.SpecOpts, error) {
 		return gb300FabricSpecOpts(defaultGB300FabricConfig, nonroot, logger)
 	}
 )
 
 // gb300FabricSpecOpts builds OCI spec options for the GB300 IMEX and MNCCD
-// binary mounts and device nodes. Missing or invalid paths are logged and
-// skipped without failing the launch. For non-root containers, /dev/nvidia-caps
-// capability nodes are skipped because bind-mounting 0400 root:root nodes in a
-// user namespace yields EACCES.
-func gb300FabricSpecOpts(cfg gb300FabricConfig, nonroot bool, logger logging.Logger) []oci.SpecOpts {
+// binary mounts and device nodes. Absent paths (fs.ErrNotExist) are logged and
+// skipped; unexpected filesystem, parsing, device-type, or major/minor errors
+// fail closed. For non-root containers, /dev/nvidia-caps capability nodes are
+// skipped because bind-mounting 0400 root:root nodes in a user namespace yields
+// EACCES.
+func gb300FabricSpecOpts(cfg gb300FabricConfig, nonroot bool, logger logging.Logger) ([]oci.SpecOpts, error) {
 	var opts []oci.SpecOpts
 
-	fabricMounts, skippedMounts := gb300FabricMounts(cfg.binaries, cfg.stat)
+	fabricMounts, skippedMounts, err := gb300FabricMounts(cfg.binaries)
+	if err != nil {
+		return nil, err
+	}
 	for _, err := range skippedMounts {
 		logger.Error(fmt.Sprintf("GB300 CC mode: skipping IMEX/MNCCD mount: %v", err))
 	}
@@ -98,7 +105,10 @@ func gb300FabricSpecOpts(cfg gb300FabricConfig, nonroot bool, logger logging.Log
 		opts = append(opts, oci.WithMounts(fabricMounts))
 	}
 
-	fabricDevs, skippedDevs := gb300IMEXChannelDevs(cfg.devRoot, cfg.devStat)
+	fabricDevs, skippedDevs, err := gb300IMEXChannelDevs(cfg.devRoot, cfg.procRoot, cfg.devStat)
+	if err != nil {
+		return nil, err
+	}
 	if nonroot {
 		// Capability device nodes are created 0400 root:root (driver DeviceFileMode 256).
 		// In a user namespace, runc bind-mounts the host node, so open() fails with
@@ -106,7 +116,10 @@ func gb300FabricSpecOpts(cfg gb300FabricConfig, nonroot bool, logger logging.Log
 		// binary mounts.
 		logger.Error("GB300 CC mode: IMEX/MNCCD capability device passthrough is not supported for non-root containers; skipping /dev/nvidia-caps nodes")
 	} else {
-		capDevs, skippedCaps := gb300CapDevs(cfg.devRoot, cfg.procRoot, cfg.devStat)
+		capDevs, skippedCaps, err := gb300CapDevs(cfg.devRoot, cfg.procRoot, cfg.devStat)
+		if err != nil {
+			return nil, err
+		}
 		fabricDevs = append(fabricDevs, capDevs...)
 		skippedDevs = append(skippedDevs, skippedCaps...)
 	}
@@ -115,28 +128,34 @@ func gb300FabricSpecOpts(cfg gb300FabricConfig, nonroot bool, logger logging.Log
 	}
 	for _, dev := range fabricDevs {
 		logger.Info(fmt.Sprintf("GB300 CC mode: passing IMEX/MNCCD device %s as %s", dev.hostPath, dev.containerPath))
-		opts = append(opts, oci.WithDevices(dev.hostPath, dev.containerPath, "rwm"))
+		opts = append(opts, oci.WithDevices(dev.hostPath, dev.containerPath, "rw"))
 	}
 
-	return opts
+	return opts, nil
 }
 
 // gb300FabricMounts returns a read-only bind mount into
 // gb300FabricContainerBinDir for each regular file in binaries that exists on
-// the host, using stat to follow symlinks. For each skipped path, it returns an
-// error describing why the path was skipped.
-func gb300FabricMounts(binaries []string, stat func(string) (os.FileInfo, error)) ([]specs.Mount, []error) {
+// the host, following symlinks. Missing paths (fs.ErrNotExist on lstat) are
+// returned as skipped errors; dangling symlinks, non-regular files, and other
+// stat errors fail closed.
+func gb300FabricMounts(binaries []string) ([]specs.Mount, []error, error) {
 	var mounts []specs.Mount
 	var skipped []error
 	for _, hostPath := range binaries {
-		fi, err := stat(hostPath)
+		if _, err := os.Lstat(hostPath); err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				skipped = append(skipped, fmt.Errorf("cannot stat %q: %w", hostPath, err))
+				continue
+			}
+			return nil, nil, fmt.Errorf("cannot lstat %q: %w", hostPath, err)
+		}
+		fi, err := os.Stat(hostPath)
 		if err != nil {
-			skipped = append(skipped, fmt.Errorf("cannot stat %q: %w", hostPath, err))
-			continue
+			return nil, nil, fmt.Errorf("cannot stat %q: %w", hostPath, err)
 		}
 		if !fi.Mode().IsRegular() {
-			skipped = append(skipped, fmt.Errorf("%q is not a regular file (mode %v)", hostPath, fi.Mode()))
-			continue
+			return nil, nil, fmt.Errorf("%q is not a regular file (mode %v)", hostPath, fi.Mode())
 		}
 		mounts = append(mounts, specs.Mount{
 			Type:        "bind",
@@ -145,20 +164,24 @@ func gb300FabricMounts(binaries []string, stat func(string) (os.FileInfo, error)
 			Options:     []string{"bind", "ro"},
 		})
 	}
-	return mounts, skipped
+	return mounts, skipped, nil
 }
 
-func resolveGB300CharDevice(devPath string, devStat func(string) (bool, uint64, error)) (gb300FabricDevice, error) {
+func resolveGB300CharDevice(devPath string, wantMajor, wantMinor uint32, devStat func(string) (bool, uint64, error)) (gb300FabricDevice, error) {
 	resolved, err := filepath.EvalSymlinks(devPath)
 	if err != nil {
 		return gb300FabricDevice{}, fmt.Errorf("cannot resolve %q: %w", devPath, err)
 	}
-	isChar, _, err := devStat(resolved)
+	isChar, rdev, err := devStat(resolved)
 	if err != nil {
 		return gb300FabricDevice{}, fmt.Errorf("cannot stat %q: %w", resolved, err)
 	}
 	if !isChar {
 		return gb300FabricDevice{}, fmt.Errorf("%q is not a character device", resolved)
+	}
+	gotMajor, gotMinor := unix.Major(rdev), unix.Minor(rdev)
+	if gotMajor != wantMajor || gotMinor != wantMinor {
+		return gb300FabricDevice{}, fmt.Errorf("%q has device number %d:%d, want %d:%d", resolved, gotMajor, gotMinor, wantMajor, wantMinor)
 	}
 	return gb300FabricDevice{
 		hostPath:      resolved,
@@ -167,70 +190,169 @@ func resolveGB300CharDevice(devPath string, devStat func(string) (bool, uint64, 
 }
 
 // gb300IMEXChannelDevs discovers the host IMEX channel character devices under
-// <devRoot>/nvidia-caps-imex-channels/channel<N>. Symlinks are resolved so
-// hostPath holds the real device node for oci.WithDevices while containerPath
-// keeps the discovered path. For each missing or invalid directory or node, it
-// returns an error describing why it was skipped.
-func gb300IMEXChannelDevs(devRoot string, devStat func(string) (bool, uint64, error)) ([]gb300FabricDevice, []error) {
+// <devRoot>/nvidia-caps-imex-channels/channel<N> and validates each resolved
+// node against the "nvidia-caps-imex-channels" major in <procRoot>/devices and
+// minor N. Symlinks are resolved so hostPath holds the real device node for
+// oci.WithDevices while containerPath keeps the discovered path. An absent
+// channel directory (fs.ErrNotExist) is returned as a skipped error; all other
+// errors fail closed.
+func gb300IMEXChannelDevs(devRoot, procRoot string, devStat func(string) (bool, uint64, error)) ([]gb300FabricDevice, []error, error) {
 	chanDir := filepath.Join(devRoot, "nvidia-caps-imex-channels")
 	entries, err := os.ReadDir(chanDir)
 	if err != nil {
-		return nil, []error{fmt.Errorf("cannot read %q: %w", chanDir, err)}
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, []error{fmt.Errorf("cannot read %q: %w", chanDir, err)}, nil
+		}
+		return nil, nil, fmt.Errorf("cannot read %q: %w", chanDir, err)
 	}
 	var devs []gb300FabricDevice
-	var skipped []error
+	hasMajor := false
+	var wantMajor uint32
 	for _, entry := range entries {
-		if !imexChannelNameRegexp.MatchString(entry.Name()) {
+		m := imexChannelNameRegexp.FindStringSubmatch(entry.Name())
+		if m == nil {
 			continue
 		}
-		devPath := filepath.Join(chanDir, entry.Name())
-		dev, err := resolveGB300CharDevice(devPath, devStat)
+		minor64, err := strconv.ParseUint(m[1], 10, 32)
 		if err != nil {
-			skipped = append(skipped, err)
-			continue
+			return nil, nil, fmt.Errorf("invalid IMEX channel number in %q: %w", entry.Name(), err)
+		}
+		if !hasMajor {
+			wantMajor, err = readCharDeviceMajor(procRoot, imexChannelDriverName)
+			if err != nil {
+				return nil, nil, err
+			}
+			hasMajor = true
+		}
+		devPath := filepath.Join(chanDir, entry.Name())
+		dev, err := resolveGB300CharDevice(devPath, wantMajor, uint32(minor64), devStat)
+		if err != nil {
+			return nil, nil, err
 		}
 		devs = append(devs, dev)
 	}
-	return devs, skipped
+	return devs, nil, nil
 }
 
 // gb300CapDevs discovers the NVIDIA capability character devices for
 // fabric-imex-mgmt and mncc-mgmt under <devRoot>/nvidia-caps/ using minors
-// from <procRoot>/driver/nvidia/capabilities/<name>. Symlinks are resolved so
-// hostPath holds the real device node for oci.WithDevices while containerPath
-// keeps the discovered path. For each missing or invalid proc file or node, it
-// returns an error describing why it was skipped.
-func gb300CapDevs(devRoot, procRoot string, devStat func(string) (bool, uint64, error)) ([]gb300FabricDevice, []error) {
+// from <procRoot>/driver/nvidia/capabilities/<name> and the "nvidia-caps" major
+// from <procRoot>/devices. Absent proc files or capability nodes
+// (fs.ErrNotExist) are returned as skipped errors; all other errors fail closed.
+func gb300CapDevs(devRoot, procRoot string, devStat func(string) (bool, uint64, error)) ([]gb300FabricDevice, []error, error) {
 	var devs []gb300FabricDevice
 	var skipped []error
+	hasMajor := false
+	var capMajor uint32
 	for _, capName := range gb300FabricCapNames {
 		procPath := filepath.Join(procRoot, "driver", "nvidia", "capabilities", capName)
-		data, err := os.ReadFile(procPath)
+		devPath, minor, skipErr, err := lookupGB300CapNode(devRoot, procPath)
 		if err != nil {
-			skipped = append(skipped, fmt.Errorf("cannot read %q: %w", procPath, err))
+			return nil, nil, err
+		}
+		if skipErr != nil {
+			skipped = append(skipped, skipErr)
 			continue
 		}
-		minor, err := parseNvidiaCapMinor(data)
-		if err != nil {
-			skipped = append(skipped, fmt.Errorf("cannot parse %q: %w", procPath, err))
-			continue
+		if !hasMajor {
+			capMajor, err = readCharDeviceMajor(procRoot, nvidiaCapsDriverName)
+			if err != nil {
+				return nil, nil, err
+			}
+			hasMajor = true
 		}
-		devPath := filepath.Join(devRoot, "nvidia-caps", fmt.Sprintf("nvidia-cap%d", minor))
-		dev, err := resolveGB300CharDevice(devPath, devStat)
+		dev, err := resolveGB300CharDevice(devPath, capMajor, minor, devStat)
 		if err != nil {
-			skipped = append(skipped, fmt.Errorf("capability %q: %w", procPath, err))
-			continue
+			return nil, nil, fmt.Errorf("capability %q: %w", procPath, err)
 		}
 		devs = append(devs, dev)
 	}
-	return devs, skipped
+	return devs, skipped, nil
+}
+
+func lookupGB300CapNode(devRoot, procPath string) (string, uint32, error, error) {
+	data, err := os.ReadFile(procPath)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return "", 0, fmt.Errorf("cannot read %q: %w", procPath, err), nil
+		}
+		return "", 0, nil, fmt.Errorf("cannot read %q: %w", procPath, err)
+	}
+	minor, err := parseNvidiaCapMinor(data)
+	if err != nil {
+		return "", 0, nil, fmt.Errorf("cannot parse %q: %w", procPath, err)
+	}
+	devPath := filepath.Join(devRoot, "nvidia-caps", fmt.Sprintf("nvidia-cap%d", minor))
+	if _, err := os.Lstat(devPath); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return "", 0, fmt.Errorf("capability %q: cannot stat %q: %w", procPath, devPath, err), nil
+		}
+		return "", 0, nil, fmt.Errorf("capability %q: cannot lstat %q: %w", procPath, devPath, err)
+	}
+	return devPath, minor, nil, nil
+}
+
+func readCharDeviceMajor(procRoot, driverName string) (uint32, error) {
+	procDevicesPath := filepath.Join(procRoot, "devices")
+	data, err := os.ReadFile(procDevicesPath)
+	if err != nil {
+		return 0, fmt.Errorf("cannot read %q: %w", procDevicesPath, err)
+	}
+	major, err := parseCharDeviceMajor(data, driverName)
+	if err != nil {
+		return 0, fmt.Errorf("cannot parse %q: %w", procDevicesPath, err)
+	}
+	return major, nil
+}
+
+// parseCharDeviceMajor parses the major number for driverName from the
+// "Character devices:" section of /proc/devices.
+func parseCharDeviceMajor(data []byte, driverName string) (uint32, error) {
+	inCharSection := false
+	found := false
+	var major uint32
+	for _, line := range strings.Split(string(data), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		if !inCharSection {
+			if trimmed == "Character devices:" {
+				inCharSection = true
+			}
+			continue
+		}
+		if strings.HasSuffix(trimmed, ":") {
+			break
+		}
+		fields := strings.Fields(trimmed)
+		if len(fields) != 2 || fields[1] != driverName {
+			continue
+		}
+		if found {
+			return 0, fmt.Errorf("duplicate character device driver %q", driverName)
+		}
+		found = true
+		n, err := strconv.ParseUint(fields[0], 10, 32)
+		if err != nil {
+			return 0, fmt.Errorf("invalid major %q for character device driver %q: %w", fields[0], driverName, err)
+		}
+		major = uint32(n)
+	}
+	if !inCharSection {
+		return 0, errors.New(`missing "Character devices:" section`)
+	}
+	if !found {
+		return 0, fmt.Errorf("missing character device driver %q", driverName)
+	}
+	return major, nil
 }
 
 // parseNvidiaCapMinor parses the "DeviceFileMinor: <N>" line from an NVIDIA
 // driver /proc/driver/nvidia/capabilities/<name> file.
-func parseNvidiaCapMinor(data []byte) (int, error) {
+func parseNvidiaCapMinor(data []byte) (uint32, error) {
 	found := false
-	minor := 0
+	var minor uint32
 	for _, line := range strings.Split(string(data), "\n") {
 		val, ok := strings.CutPrefix(strings.TrimSpace(line), "DeviceFileMinor:")
 		if !ok {
@@ -241,11 +363,11 @@ func parseNvidiaCapMinor(data []byte) (int, error) {
 		}
 		found = true
 		val = strings.TrimSpace(val)
-		n, err := strconv.ParseUint(val, 10, strconv.IntSize-1)
+		n, err := strconv.ParseUint(val, 10, 32)
 		if err != nil {
 			return 0, fmt.Errorf("invalid DeviceFileMinor %q: %w", val, err)
 		}
-		minor = int(n)
+		minor = uint32(n)
 	}
 	if !found {
 		return 0, errors.New("missing DeviceFileMinor")

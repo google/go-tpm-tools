@@ -175,7 +175,11 @@ func createOCISpecOpts(image containerd.Image, launchSpec spec.LaunchSpec, envs 
 		}
 
 		if launchSpec.InstallGpuDriver {
-			specOpts = append(specOpts, findGB300FabricSpecOpts(launchSpec.NonrootContainer, logger)...)
+			fabricOpts, err := findGB300FabricSpecOpts(launchSpec.NonrootContainer, logger)
+			if err != nil {
+				return nil, fmt.Errorf("failed to discover GB300 IMEX/MNCCD mounts and devices: %w", err)
+			}
+			specOpts = append(specOpts, fabricOpts...)
 		}
 	}
 
