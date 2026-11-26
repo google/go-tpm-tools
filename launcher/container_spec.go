@@ -117,8 +117,8 @@ func createOCISpecOpts(image containerd.Image, launchSpec spec.LaunchSpec, envs 
 
 		specOpts = append(specOpts, oci.WithMounts(gpuMounts))
 
-		// /dev/nvidia-caps/* will not be listed here and will not be passed to
-		// the container workload
+		// /dev/nvidia-caps/* are not listed here; in GB300 CC mode only the
+		// IMEX and MNCCD capability nodes are passed separately below.
 		//
 		// following devices should be listed:
 		// /dev/nvidiactl
@@ -137,8 +137,9 @@ func createOCISpecOpts(image containerd.Image, launchSpec spec.LaunchSpec, envs 
 		}
 	}
 
-	// GB300 CC mode: Pass the Local SSDs through as block devices and the
-	// TrustZone fTPM character devices (/dev/ftpm, /dev/ftpmrm) when present.
+	// GB300 CC mode: Pass the Local SSDs through as block devices, the
+	// TrustZone fTPM character devices (/dev/ftpm, /dev/ftpmrm) when present,
+	// and read-only IMEX and MNCCD binaries and devices.
 	if launchSpec.Experiments.GB300CCMode {
 		devs, err := discoverLSSDDevs(defaultLSSDHostDir, defaultLSSDContainerDir, isBlockDevice, isInUse)
 		if err != nil {
@@ -171,6 +172,14 @@ func createOCISpecOpts(image containerd.Image, launchSpec spec.LaunchSpec, envs 
 				logger.Info(fmt.Sprintf("GB300 CC mode: passing fTPM device %s through as %s", dev.hostPath, dev.containerPath))
 				specOpts = append(specOpts, withFTPMDevice(dev.hostPath, dev.containerPath))
 			}
+		}
+
+		if launchSpec.InstallGpuDriver {
+			fabricOpts, err := findGB300FabricSpecOpts(launchSpec.NonrootContainer, logger)
+			if err != nil {
+				return nil, fmt.Errorf("failed to discover GB300 IMEX/MNCCD mounts and devices: %w", err)
+			}
+			specOpts = append(specOpts, fabricOpts...)
 		}
 	}
 
