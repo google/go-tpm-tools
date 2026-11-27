@@ -1,0 +1,12 @@
+{
+    "plugin": "custom",
+    "pluginConfig": {
+      "invoke_interval": "30m",
+      "timeout": "7s",
+      "max_output_length": 80,
+      "enable_message_change_based_condition_update": false
+    },
+    "source": "boot-disk-size-consistency-monitor",
+    "metricsReporting": false,
+    "rules": []
+  }
