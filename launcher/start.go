@@ -47,20 +47,20 @@ var expectedTPMDAParams = TPMDAParams{
 
 // StartLauncher orchestrates the client creation, image pulling, attestation agent setup,
 // and runs the ContainerRunner.
-func StartLauncher(ctx context.Context, launchSpec spec.LaunchSpec, logger logging.Logger, serialConsole *os.File, pinnedClient *http.Client, googleClient *http.Client) error {
+func StartLauncher(ctx context.Context, launchSpec spec.LaunchSpec, logger logging.Logger, serialConsole *os.File, pinnedClient *http.Client, googleClient *http.Client) (RunResult, error) {
 	if pinnedClient == nil {
-		return errors.New("pinnedClient must be non-nil")
+		return RunUnspecified, errors.New("pinnedClient must be non-nil")
 	}
 
 	containerdClient, err := containerd.New(defaults.DefaultAddress)
 	if err != nil {
-		return &RetryableError{Err: err}
+		return RunUnspecified, &RetryableError{Err: err}
 	}
 	defer containerdClient.Close()
 
 	tpm, err := initTPM(launchSpec, logger)
 	if err != nil {
-		return err
+		return RunUnspecified, err
 	}
 	if tpm != nil {
 		defer tpm.Close()
@@ -80,27 +80,27 @@ func StartLauncher(ctx context.Context, launchSpec spec.LaunchSpec, logger loggi
 			installer := gpu.NewDriverInstaller(containerdClient, launchSpec, logger, pinnedClient)
 			err = installer.InstallGPUDrivers(ctx)
 			if err != nil {
-				return fmt.Errorf("failed to install gpu drivers: %v", err)
+				return RunUnspecified, fmt.Errorf("failed to install gpu drivers: %v", err)
 			}
 		}
 	} else {
 		deviceInfo, _ := deviceinfo.GetGPUTypeInfo(gpu.PciDevicesDir)
 		if deviceInfo != deviceinfo.NO_GPU {
 			logger.Error("GPU is attached, tee-install-gpu-driver is not set")
-			return fmt.Errorf("failed to install GPU drivers: tee-install-gpu-driver must be set to true")
+			return RunUnspecified, fmt.Errorf("failed to install GPU drivers: tee-install-gpu-driver must be set to true")
 		}
 	}
 
 	image, err := initImage(ctx, containerdClient, launchSpec, token, pinnedClient)
 	if err != nil {
-		return err
+		return RunUnspecified, err
 	}
 
 	// googleClient is an authenticated HTTP client (OAuth2 ADC credentials) built on top
 	// of the pinned transport. Used for GCA verifier client creation and SA impersonation.
 	attestClients, err := createAttestClients(ctx, launchSpec, logger, googleClient)
 	if err != nil {
-		return err
+		return RunUnspecified, err
 	}
 	var verifierClient verifier.Client
 	if launchSpec.ITAConfig.ITARegion != "" && !launchSpec.FakeVerifierEnabled {
@@ -138,7 +138,7 @@ func StartLauncher(ctx context.Context, launchSpec spec.LaunchSpec, logger loggi
 		// timeout.
 		logger.Info("GB300 CC mode: waiting for gpu-manager to prepare the GPUs")
 		if err := gpumanager.WaitForReady(ctx, gpumanager.DefaultSocketPath, gpumanager.DefaultTimeout, gpumanager.DefaultPollInterval, logger); err != nil {
-			return fmt.Errorf("GB300 CC mode: GPUs are not ready: %w", err)
+			return RunUnspecified, fmt.Errorf("GB300 CC mode: GPUs are not ready: %w", err)
 		}
 	}
 	if nvidiaAttester := gpu.NewNvidiaAttester(launchSpec.InstallGpuDriver); nvidiaAttester != nil {
@@ -151,7 +151,7 @@ func StartLauncher(ctx context.Context, launchSpec spec.LaunchSpec, logger loggi
 		// Link validation happens later when passing the devices to the workload.
 		logger.Info("GB300 CC mode: waiting for the Local SSDs")
 		if err := waitForLSSDs(ctx, mdsClient, defaultLSSDHostDir, lssdWaitTimeout, lssdPollInterval, logger); err != nil {
-			return fmt.Errorf("GB300 CC mode: Local SSDs are not ready: %w", err)
+			return RunUnspecified, fmt.Errorf("GB300 CC mode: Local SSDs are not ready: %w", err)
 		}
 	}
 
@@ -165,13 +165,13 @@ func StartLauncher(ctx context.Context, launchSpec spec.LaunchSpec, logger loggi
 	}
 	attestAgent, err := agent.CreateAttestationAgent(tpm, client.GceAttestationKeyECC, verifierClient, principalFetcherWithImpersonate, sdClient, exps, logger, deviceROTManager, launchSpec.SignedImageRepos)
 	if err != nil {
-		return err
+		return RunUnspecified, err
 	}
 
 	logger.Info("Initializing TEE server.")
 	teeSocket, err := listenUnixSocket(path.Join(launcherfile.HostTmpPath, teeServerSocket))
 	if err != nil {
-		return err
+		return RunUnspecified, err
 	}
 	teeServer, err := teeserver.New(
 		ctx,
@@ -183,7 +183,7 @@ func StartLauncher(ctx context.Context, launchSpec spec.LaunchSpec, logger loggi
 	)
 	if err != nil {
 		teeSocket.Close()
-		return fmt.Errorf("failed to create TEE server: %w", err)
+		return RunUnspecified, fmt.Errorf("failed to create TEE server: %w", err)
 	}
 
 	go func() { _ = teeServer.Serve() }()
@@ -199,7 +199,7 @@ func StartLauncher(ctx context.Context, launchSpec spec.LaunchSpec, logger loggi
 		SerialConsole:    serialConsole,
 	})
 	if err != nil {
-		return err
+		return RunUnspecified, err
 	}
 	defer r.Close(ctx)
 

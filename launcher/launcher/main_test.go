@@ -15,119 +15,249 @@ func TestGetExitCode(t *testing.T) {
 		name               string
 		isHardened         bool
 		restartPolicy      spec.RestartPolicy
+		result             launcher.RunResult
 		err                error
 		expectedReturnCode int
 	}{
 		// no error, debug image
 		{
-			"debug, always restart, nil error",
-			false, spec.Always, nil, holdRC,
+			name:               "debug_always_restart_nil_error",
+			isHardened:         false,
+			restartPolicy:      spec.Always,
+			result:             launcher.WorkloadExited,
+			expectedReturnCode: holdRC,
 		},
 		{
-			"debug, never restart, nil error",
-			false, spec.Never, nil, holdRC,
+			name:               "debug_never_restart_nil_error",
+			isHardened:         false,
+			restartPolicy:      spec.Never,
+			result:             launcher.WorkloadExited,
+			expectedReturnCode: holdRC,
 		},
 		{
-			"debug, onfailure restart, nil error",
-			false, spec.OnFailure, nil, holdRC,
+			name:               "debug_onfailure_restart_nil_error",
+			isHardened:         false,
+			restartPolicy:      spec.OnFailure,
+			result:             launcher.WorkloadExited,
+			expectedReturnCode: holdRC,
 		},
 		// no error, hardened image
 		{
-			"hardened, always restart, nil error",
-			true, spec.Always, nil, rebootRC,
+			name:               "hardened_always_restart_nil_error",
+			isHardened:         true,
+			restartPolicy:      spec.Always,
+			result:             launcher.WorkloadExited,
+			expectedReturnCode: rebootRC,
 		},
 		{
-			"hardened, never restart, nil error",
-			true, spec.Never, nil, successRC,
+			name:               "hardened_never_restart_nil_error",
+			isHardened:         true,
+			restartPolicy:      spec.Never,
+			result:             launcher.WorkloadExited,
+			expectedReturnCode: successRC,
 		},
 		{
-			"hardened, onfailure restart, nil error",
-			true, spec.OnFailure, nil, successRC,
+			name:               "hardened_onfailure_restart_nil_error",
+			isHardened:         true,
+			restartPolicy:      spec.OnFailure,
+			result:             launcher.WorkloadExited,
+			expectedReturnCode: successRC,
+		},
+		{
+			name:               "hardened_always_restart_unspecified_result_nil_error",
+			isHardened:         true,
+			restartPolicy:      spec.Always,
+			result:             launcher.RunUnspecified,
+			expectedReturnCode: failRC,
 		},
 		// retryable error, debug image
 		{
-			"debug, always restart, retryable error",
-			false, spec.Always, &launcher.RetryableError{}, holdRC,
+			name:               "debug_always_restart_retryable_error",
+			isHardened:         false,
+			restartPolicy:      spec.Always,
+			err:                &launcher.RetryableError{},
+			expectedReturnCode: holdRC,
 		},
 		{
-			"debug, never restart, retryable error",
-			false, spec.Never, &launcher.RetryableError{}, holdRC,
+			name:               "debug_never_restart_retryable_error",
+			isHardened:         false,
+			restartPolicy:      spec.Never,
+			err:                &launcher.RetryableError{},
+			expectedReturnCode: holdRC,
 		},
 		{
-			"debug, onfailure restart, retryable error",
-			false, spec.OnFailure, &launcher.RetryableError{}, holdRC,
+			name:               "debug_onfailure_restart_retryable_error",
+			isHardened:         false,
+			restartPolicy:      spec.OnFailure,
+			err:                &launcher.RetryableError{},
+			expectedReturnCode: holdRC,
 		},
 		// workload error, debug image (same as retryable error)
 		{
-			"debug, always restart, workload error",
-			false, spec.Always, &launcher.WorkloadError{}, holdRC,
+			name:               "debug_always_restart_workload_error",
+			isHardened:         false,
+			restartPolicy:      spec.Always,
+			result:             launcher.WorkloadExited,
+			err:                &launcher.WorkloadError{},
+			expectedReturnCode: holdRC,
 		},
 		{
-			"debug, never restart, workload error",
-			false, spec.Never, &launcher.WorkloadError{}, holdRC,
+			name:               "debug_never_restart_workload_error",
+			isHardened:         false,
+			restartPolicy:      spec.Never,
+			result:             launcher.WorkloadExited,
+			err:                &launcher.WorkloadError{},
+			expectedReturnCode: holdRC,
 		},
 		{
-			"debug, onfailure restart, workload error",
-			false, spec.OnFailure, &launcher.WorkloadError{}, holdRC,
+			name:               "debug_onfailure_restart_workload_error",
+			isHardened:         false,
+			restartPolicy:      spec.OnFailure,
+			result:             launcher.WorkloadExited,
+			err:                &launcher.WorkloadError{},
+			expectedReturnCode: holdRC,
 		},
 		// retryable error, hardened image
 		{
-			"hardened, always restart, retryable error",
-			true, spec.Always, &launcher.RetryableError{}, rebootRC,
+			name:               "hardened_always_restart_retryable_error",
+			isHardened:         true,
+			restartPolicy:      spec.Always,
+			err:                &launcher.RetryableError{},
+			expectedReturnCode: rebootRC,
 		},
 		{
-			"hardened, never restart, retryable error",
-			true, spec.Never, &launcher.RetryableError{}, failRC,
+			name:               "hardened_never_restart_retryable_error",
+			isHardened:         true,
+			restartPolicy:      spec.Never,
+			err:                &launcher.RetryableError{},
+			expectedReturnCode: failRC,
 		},
 		{
-			"hardened, onfailure restart, retryable error",
-			true, spec.OnFailure, &launcher.RetryableError{}, rebootRC,
+			name:               "hardened_onfailure_restart_retryable_error",
+			isHardened:         true,
+			restartPolicy:      spec.OnFailure,
+			err:                &launcher.RetryableError{},
+			expectedReturnCode: rebootRC,
 		},
 		// workload error, hardened image (same as retryable error)
 		{
-			"hardened, always restart, workload error",
-			true, spec.Always, &launcher.WorkloadError{}, rebootRC,
+			name:               "hardened_always_restart_workload_error",
+			isHardened:         true,
+			restartPolicy:      spec.Always,
+			result:             launcher.WorkloadExited,
+			err:                &launcher.WorkloadError{},
+			expectedReturnCode: rebootRC,
 		},
 		{
-			"hardened, never restart, workload error",
-			true, spec.Never, &launcher.WorkloadError{}, failRC,
+			name:               "hardened_never_restart_workload_error",
+			isHardened:         true,
+			restartPolicy:      spec.Never,
+			result:             launcher.WorkloadExited,
+			err:                &launcher.WorkloadError{},
+			expectedReturnCode: failRC,
 		},
 		{
-			"hardened, onfailure restart, workload error",
-			true, spec.OnFailure, &launcher.WorkloadError{}, rebootRC,
+			name:               "hardened_onfailure_restart_workload_error",
+			isHardened:         true,
+			restartPolicy:      spec.OnFailure,
+			result:             launcher.WorkloadExited,
+			err:                &launcher.WorkloadError{},
+			expectedReturnCode: rebootRC,
 		},
 		// non-retryable error, debug image
 		{
-			"debug, always restart, non-retryable error",
-			false, spec.Always, errors.New(""), holdRC,
+			name:               "debug_always_restart_non_retryable_error",
+			isHardened:         false,
+			restartPolicy:      spec.Always,
+			err:                errors.New(""),
+			expectedReturnCode: holdRC,
 		},
 		{
-			"debug, never restart, non-retryable error",
-			false, spec.Never, errors.New(""), holdRC,
+			name:               "debug_never_restart_non_retryable_error",
+			isHardened:         false,
+			restartPolicy:      spec.Never,
+			err:                errors.New(""),
+			expectedReturnCode: holdRC,
 		},
 		{
-			"debug, onfailure restart, non-retryable error",
-			false, spec.OnFailure, errors.New(""), holdRC,
+			name:               "debug_onfailure_restart_non_retryable_error",
+			isHardened:         false,
+			restartPolicy:      spec.OnFailure,
+			err:                errors.New(""),
+			expectedReturnCode: holdRC,
 		},
 		// non-retryable error, hardened image
 		{
-			"hardened, always restart, non-retryable error",
-			true, spec.Always, errors.New(""), failRC,
+			name:               "hardened_always_restart_non_retryable_error",
+			isHardened:         true,
+			restartPolicy:      spec.Always,
+			err:                errors.New(""),
+			expectedReturnCode: failRC,
 		},
 		{
-			"hardened, never restart, non-retryable error",
-			true, spec.Never, errors.New(""), failRC,
+			name:               "hardened_never_restart_non_retryable_error",
+			isHardened:         true,
+			restartPolicy:      spec.Never,
+			err:                errors.New(""),
+			expectedReturnCode: failRC,
 		},
 		{
-			"hardened, onfailure restart, non-retryable error",
-			true, spec.OnFailure, errors.New(""), failRC,
+			name:               "hardened_onfailure_restart_non_retryable_error",
+			isHardened:         true,
+			restartPolicy:      spec.OnFailure,
+			err:                errors.New(""),
+			expectedReturnCode: failRC,
+		},
+		// host shutdown, debug image
+		{
+			name:               "debug_always_restart_host_shutdown",
+			isHardened:         false,
+			restartPolicy:      spec.Always,
+			result:             launcher.HostShutdown,
+			expectedReturnCode: holdRC,
+		},
+		{
+			name:               "debug_never_restart_host_shutdown",
+			isHardened:         false,
+			restartPolicy:      spec.Never,
+			result:             launcher.HostShutdown,
+			expectedReturnCode: holdRC,
+		},
+		{
+			name:               "debug_onfailure_restart_host_shutdown",
+			isHardened:         false,
+			restartPolicy:      spec.OnFailure,
+			result:             launcher.HostShutdown,
+			expectedReturnCode: holdRC,
+		},
+		// host shutdown, hardened image
+		{
+			name:               "hardened_always_restart_host_shutdown",
+			isHardened:         true,
+			restartPolicy:      spec.Always,
+			result:             launcher.HostShutdown,
+			expectedReturnCode: poweroffNowRC,
+		},
+		{
+			name:               "hardened_never_restart_host_shutdown",
+			isHardened:         true,
+			restartPolicy:      spec.Never,
+			result:             launcher.HostShutdown,
+			expectedReturnCode: poweroffNowRC,
+		},
+		{
+			name:               "hardened_onfailure_restart_host_shutdown",
+			isHardened:         true,
+			restartPolicy:      spec.OnFailure,
+			result:             launcher.HostShutdown,
+			expectedReturnCode: poweroffNowRC,
 		},
 	}
 
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
-			if rc := getExitCode(tc.isHardened, tc.restartPolicy, tc.err); rc != tc.expectedReturnCode {
-				t.Errorf("got %d, wanted %d", rc, tc.expectedReturnCode)
+			if got := getExitCode(tc.isHardened, tc.restartPolicy, tc.result, tc.err); got != tc.expectedReturnCode {
+				t.Errorf("getExitCode(%t, %q, %v, %v) = %d, want %d", tc.isHardened, tc.restartPolicy, tc.result, tc.err, got, tc.expectedReturnCode)
 			}
 		})
 	}

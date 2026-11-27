@@ -18,6 +18,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -608,24 +609,76 @@ func defaultRetryPolicy() *backoff.ExponentialBackOff {
 	return expBack
 }
 
-// Run the container
-// Container output will always be redirected to logger writer for now
-func (r *ContainerRunner) Run(ctx context.Context) error {
+// RunResult reports how StartLauncher or ContainerRunner.Run ended.
+type RunResult int
+
+const (
+	// RunUnspecified is the zero value returned when setup or execution fails
+	// before a terminal run outcome.
+	RunUnspecified RunResult = iota
+	// WorkloadExited indicates the workload container finished on its own.
+	WorkloadExited
+	// HostShutdown indicates a host power-button event stopped execution.
+	HostShutdown
+)
+
+func (r RunResult) String() string {
+	switch r {
+	case RunUnspecified:
+		return "RunUnspecified"
+	case WorkloadExited:
+		return "WorkloadExited"
+	case HostShutdown:
+		return "HostShutdown"
+	default:
+		return fmt.Sprintf("RunResult(%d)", int(r))
+	}
+}
+
+// Run executes the workload container and redirects its output according to
+// the launch spec. If a host power-button shutdown occurs during setup or
+// execution, Run returns (HostShutdown, nil).
+func (r *ContainerRunner) Run(ctx context.Context) (result RunResult, retErr error) {
 	// Note start time for workload setup.
 	start := time.Now()
 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
+	var activeTaskMu sync.Mutex
+	var activeTask taskSignaler
+	hostShutdown := r.startPowerButtonWatcher(func() {
+		activeTaskMu.Lock()
+		t := activeTask
+		activeTaskMu.Unlock()
+		if t != nil {
+			r.terminateTask(ctx, t)
+			return
+		}
+		// Cancel in-flight setup calls before a task exists.
+		cancel()
+	})
+	defer func() {
+		select {
+		case <-hostShutdown:
+			if retErr != nil {
+				r.logger.Error("workload setup or start failed during host shutdown", "err", retErr.Error())
+			}
+			result = HostShutdown
+			retErr = nil
+		default:
+		}
+	}()
+
 	if err := r.measureCELEvents(ctx); err != nil {
-		return fmt.Errorf("failed to measure CEL events: %v", err)
+		return RunUnspecified, fmt.Errorf("failed to measure CEL events: %v", err)
 	}
 
 	// Only refresh token if agent has a default GCA client (not ITA use case)
 	// AND GcaRefresh is not disabled
 	if r.launchSpec.ITAConfig.ITARegion == "" && !r.launchSpec.DisableGcaRefresh {
 		if err := r.fetchAndWriteToken(ctx); err != nil {
-			return fmt.Errorf("failed to fetch and write OIDC token: %v", err)
+			return RunUnspecified, fmt.Errorf("failed to fetch and write OIDC token: %v", err)
 		}
 	}
 
@@ -649,7 +702,7 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		streamOpt = cio.WithStreams(nil, r.serialConsole, r.serialConsole)
 		r.logger.Info("Container stdout/stderr will be redirected to serial logging. This may result in performance issues due to slow serial console writes.")
 	default:
-		return fmt.Errorf("unknown logging redirect location: %v", r.launchSpec.LogRedirect)
+		return RunUnspecified, fmt.Errorf("unknown logging redirect location: %v", r.launchSpec.LogRedirect)
 	}
 
 	var taskOpts []containerd.NewTaskOpts
@@ -659,36 +712,67 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 
 	task, err := r.container.NewTask(ctx, cio.NewCreator(streamOpt), taskOpts...)
 	if err != nil {
-		return &RetryableError{err}
+		return RunUnspecified, &RetryableError{err}
 	}
-	defer task.Delete(ctx)
+	taskExited := false
 	defer func() {
+		cleanupCtx := context.WithoutCancel(ctx)
+		if taskExited {
+			if task.IO() != nil {
+				task.IO().Wait()
+			}
+			if _, err := task.Delete(cleanupCtx); err != nil {
+				r.logger.Error("failed to delete workload task", "err", err.Error())
+			}
+			return
+		}
+		// Force-kill an unstarted or still-running task before waiting on IO so
+		// open FIFOs cannot deadlock.
+		if _, err := task.Delete(cleanupCtx, containerd.WithProcessKill); err != nil {
+			r.logger.Error("failed to force-delete workload task", "err", err.Error())
+		}
 		if task.IO() != nil {
 			task.IO().Wait()
 		}
 	}()
 
-	r.enableGracefulShutdown(ctx, task)
+	activeTaskMu.Lock()
+	activeTask = task
+	activeTaskMu.Unlock()
+	defer func() {
+		activeTaskMu.Lock()
+		activeTask = nil
+		activeTaskMu.Unlock()
+	}()
+	if !r.launchSpec.Hardened {
+		r.enableGracefulShutdown(ctx, task)
+	}
+	select {
+	case <-hostShutdown:
+		r.logger.Info("host shutdown requested before workload task started")
+		return HostShutdown, nil
+	default:
+	}
 
 	// Opening ports.
 	// Workload-requested ports are in the image config, and the container IP address can be obtained after the CNI setup.
 	image, err := r.container.Image(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get image from container: %w", err)
+		return RunUnspecified, fmt.Errorf("failed to get image from container: %w", err)
 	}
 	imageConfig, err := getImageConfig(ctx, image)
 	if err != nil {
-		return fmt.Errorf("failed to get image config: %w", err)
+		return RunUnspecified, fmt.Errorf("failed to get image config: %w", err)
 	}
 	var containerIPs []netip.Addr // Stays nil for a root container, which shares the host network namespace.
 	if r.launchSpec.NonrootContainer {
 		containerIPs, err = r.setupCNI(ctx, fmt.Sprintf(netnsPathFmt, task.Pid()))
 		if err != nil {
-			return err
+			return RunUnspecified, err
 		}
 	}
 	if err := openPorts(ctx, imageConfig.ExposedPorts, containerIPs); err != nil {
-		return fmt.Errorf("failed to open and forward ports: %w", err)
+		return RunUnspecified, fmt.Errorf("failed to open and forward ports: %w", err)
 	}
 
 	setupDuration := time.Since(start)
@@ -701,56 +785,92 @@ func (r *ContainerRunner) Run(ctx context.Context) error {
 		r.logger.Error(err.Error())
 	}
 
+	select {
+	case <-hostShutdown:
+		r.logger.Info("host shutdown requested before workload task started")
+		return HostShutdown, nil
+	default:
+	}
+
 	// Start timer for workload execution.
 	start = time.Now()
 	r.logger.Info("workload task started")
 
 	if err := task.Start(ctx); err != nil {
-		return &RetryableError{err}
+		return RunUnspecified, &RetryableError{err}
 	}
 	status := <-exitStatusC
 	workloadDuration := time.Since(start)
 
 	code, _, err := status.Result()
+	taskExited = err == nil
+	select {
+	case <-hostShutdown:
+		if err != nil {
+			r.logger.Error("failed to get workload exit status during host shutdown", "err", err.Error())
+		} else {
+			r.logger.Info("workload task stopped due to host shutdown",
+				"exit_code", code,
+				"workload_execution_sec", workloadDuration.Seconds(),
+			)
+		}
+		return HostShutdown, nil
+	default:
+	}
 	if err != nil {
-		return err
+		return RunUnspecified, err
 	}
 
 	if code != 0 {
 		r.logger.Error("workload task ended and returned non-zero",
 			"workload_execution_sec", workloadDuration.Seconds(),
 		)
-		return &WorkloadError{code}
+		return WorkloadExited, &WorkloadError{code}
 	}
 	r.logger.Info("workload task ended and returned 0",
 		"workload_execution_sec", workloadDuration.Seconds(),
 	)
-	return nil
+	return WorkloadExited, nil
 }
 
 type taskSignaler interface {
 	Kill(ctx context.Context, sig syscall.Signal, opts ...containerd.KillOpts) error
 }
 
-func (r *ContainerRunner) enableGracefulShutdown(ctx context.Context, task taskSignaler) {
-	// In a hardened image, the launcher monitors the power button to signal a shutdown.
-	if r.launchSpec.Hardened {
-		// May be nil if listener initialization failed, which is not critical and is logged at that time.
-		if r.powerButton != nil {
-			go func() {
-				err := r.powerButton.waitForShutdown()
-				// Upon an error, we do not send SIGTERM to the task.
-				if err != nil {
-					if !errors.Is(err, os.ErrClosed) {
-						r.logger.Error(err.Error())
-					}
-					return
-				}
-				if err = task.Kill(ctx, syscall.SIGTERM); err != nil {
-					r.logger.Error(err.Error())
-				}
-			}()
+const taskKillTimeout = 10 * time.Second
+
+func (r *ContainerRunner) terminateTask(ctx context.Context, task taskSignaler) {
+	killCtx, killCancel := context.WithTimeout(context.WithoutCancel(ctx), taskKillTimeout)
+	defer killCancel()
+	if err := task.Kill(killCtx, syscall.SIGTERM); err != nil {
+		r.logger.Error(err.Error())
+	}
+}
+
+func (r *ContainerRunner) startPowerButtonWatcher(onShutdown func()) <-chan struct{} {
+	shutdownCh := make(chan struct{})
+	if !r.launchSpec.Hardened || r.powerButton == nil {
+		return shutdownCh
+	}
+	go func() {
+		err := r.powerButton.waitForShutdown()
+		// Upon an error, we do not signal shutdown or send SIGTERM.
+		if err != nil {
+			if !errors.Is(err, os.ErrClosed) {
+				r.logger.Error(err.Error())
+			}
+			return
 		}
+		// Close shutdownCh before invoking callbacks so Run observes it if the
+		// task exits immediately.
+		close(shutdownCh)
+		onShutdown()
+	}()
+	return shutdownCh
+}
+
+func (r *ContainerRunner) enableGracefulShutdown(ctx context.Context, task taskSignaler) {
+	if r.launchSpec.Hardened {
 		return
 	}
 
@@ -765,9 +885,7 @@ func (r *ContainerRunner) enableGracefulShutdown(ctx context.Context, task taskS
 			return
 		case s := <-sig:
 			r.logger.Info("received a signal", "sig", s)
-			if err := task.Kill(ctx, syscall.SIGTERM); err != nil {
-				r.logger.Error(err.Error())
-			}
+			r.terminateTask(ctx, task)
 		}
 	}()
 }

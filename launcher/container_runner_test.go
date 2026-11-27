@@ -838,13 +838,17 @@ func TestMeasureCELEvents(t *testing.T) {
 type fakeContainer struct {
 	containerd.Container
 	image        containerd.Image
+	imageFunc    func(context.Context) (containerd.Image, error)
 	args         []string
 	env          []string
 	newTaskFunc  func(context.Context, cio.Creator, ...containerd.NewTaskOpts) (containerd.Task, error)
 	deleteCalled bool
 }
 
-func (c *fakeContainer) Image(context.Context) (containerd.Image, error) {
+func (c *fakeContainer) Image(ctx context.Context) (containerd.Image, error) {
+	if c.imageFunc != nil {
+		return c.imageFunc(ctx)
+	}
 	if c.image != nil {
 		return c.image, nil
 	}
@@ -879,6 +883,8 @@ type fakeTask struct {
 	containerd.Task
 	startFunc    func(ctx context.Context) error
 	waitFunc     func(ctx context.Context) (<-chan containerd.ExitStatus, error)
+	deleteFunc   func(ctx context.Context, opts ...containerd.ProcessDeleteOpts)
+	killFunc     func(ctx context.Context, sig syscall.Signal) error
 	ioFunc       func() cio.IO
 	startCalled  bool
 	deleteCalled bool
@@ -902,13 +908,19 @@ func (f *fakeTask) Wait(ctx context.Context) (<-chan containerd.ExitStatus, erro
 	return ch, nil
 }
 
-func (f *fakeTask) Delete(_ context.Context, _ ...containerd.ProcessDeleteOpts) (*containerd.ExitStatus, error) {
+func (f *fakeTask) Delete(ctx context.Context, opts ...containerd.ProcessDeleteOpts) (*containerd.ExitStatus, error) {
 	f.deleteCalled = true
 	f.callLog = append(f.callLog, "delete")
+	if f.deleteFunc != nil {
+		f.deleteFunc(ctx, opts...)
+	}
 	return containerd.NewExitStatus(0, time.Now(), nil), nil
 }
 
-func (f *fakeTask) Kill(_ context.Context, _ syscall.Signal, _ ...containerd.KillOpts) error {
+func (f *fakeTask) Kill(ctx context.Context, sig syscall.Signal, _ ...containerd.KillOpts) error {
+	if f.killFunc != nil {
+		return f.killFunc(ctx, sig)
+	}
 	return nil
 }
 
@@ -1238,8 +1250,12 @@ func TestRun_WorkloadSuccessCleansUpTask(t *testing.T) {
 		logger: logging.SimpleLogger(),
 	}
 
-	if err := runner.Run(context.Background()); err != nil {
-		t.Fatalf("runner.Run() = %v, want nil", err)
+	result, err := runner.Run(context.Background())
+	if err != nil {
+		t.Fatalf("runner.Run() error = %v, want nil", err)
+	}
+	if result != WorkloadExited {
+		t.Errorf("runner.Run() result = %v, want %v", result, WorkloadExited)
 	}
 	if !task.startCalled {
 		t.Errorf("task.Start() was not called")
@@ -1274,7 +1290,10 @@ func TestRun_NonZeroExitCodeReturnsWorkloadError(t *testing.T) {
 		logger: logging.SimpleLogger(),
 	}
 
-	err := runner.Run(context.Background())
+	result, err := runner.Run(context.Background())
+	if result != WorkloadExited {
+		t.Errorf("runner.Run() result = %v, want %v", result, WorkloadExited)
+	}
 	var workloadErr *WorkloadError
 	if !errors.As(err, &workloadErr) {
 		t.Fatalf("runner.Run() error = %v (%T), want *WorkloadError", err, err)
@@ -1284,6 +1303,472 @@ func TestRun_NonZeroExitCodeReturnsWorkloadError(t *testing.T) {
 	}
 	if !task.deleteCalled {
 		t.Errorf("task.Delete() was not called on error")
+	}
+}
+
+type runOutcome struct {
+	result RunResult
+	err    error
+}
+
+func TestRun_HostShutdownReturnsHostShutdown(t *testing.T) {
+	testCases := []struct {
+		name     string
+		exitCode uint32
+	}{
+		{name: "zero_exit_after_sigterm", exitCode: 0},
+		{name: "non_zero_exit_after_sigterm", exitCode: 143},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			pr, pw := io.Pipe()
+			defer pr.Close()
+			defer pw.Close()
+
+			exitCh := make(chan containerd.ExitStatus, 1)
+			started := make(chan struct{})
+			sigCh := make(chan syscall.Signal, 1)
+			ioInst := &fakeIO{}
+			task := &fakeTask{
+				waitFunc: func(_ context.Context) (<-chan containerd.ExitStatus, error) {
+					return exitCh, nil
+				},
+				startFunc: func(_ context.Context) error {
+					close(started)
+					return nil
+				},
+				killFunc: func(_ context.Context, sig syscall.Signal) error {
+					sigCh <- sig
+					exitCh <- *containerd.NewExitStatus(tc.exitCode, time.Now(), nil)
+					return nil
+				},
+				ioFunc: func() cio.IO {
+					return ioInst
+				},
+			}
+
+			runner := &ContainerRunner{
+				container: &fakeContainer{
+					newTaskFunc: func(context.Context, cio.Creator, ...containerd.NewTaskOpts) (containerd.Task, error) {
+						return task, nil
+					},
+				},
+				attestAgent: &fakeAttestationAgent{},
+				launchSpec: spec.LaunchSpec{
+					Hardened:          true,
+					DisableGcaRefresh: true,
+					LogRedirect:       spec.Nowhere,
+				},
+				powerButton: &powerButtonListener{
+					file:   pr,
+					logger: logging.SimpleLogger(),
+				},
+				logger: logging.SimpleLogger(),
+			}
+
+			outcomeCh := make(chan runOutcome, 1)
+			go func() {
+				result, err := runner.Run(ctx)
+				outcomeCh <- runOutcome{result: result, err: err}
+			}()
+
+			<-started
+			if _, err := pw.Write(encodeEvent64(evKey, keyPower, 1)); err != nil {
+				t.Fatalf("failed to write power event: %v", err)
+			}
+
+			select {
+			case got := <-outcomeCh:
+				if got.err != nil {
+					t.Errorf("runner.Run() with exitCode=%d error = %v, want nil", tc.exitCode, got.err)
+				}
+				if got.result != HostShutdown {
+					t.Errorf("runner.Run() with exitCode=%d result = %v, want %v", tc.exitCode, got.result, HostShutdown)
+				}
+				if gotSig := <-sigCh; gotSig != syscall.SIGTERM {
+					t.Errorf("task.Kill() signal = %v, want %v", gotSig, syscall.SIGTERM)
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatal("timed out waiting for runner.Run() to return after host shutdown")
+			}
+		})
+	}
+}
+
+func TestRun_HostShutdownKillUsesUncanceledContext(t *testing.T) {
+	ctx := t.Context()
+	pr, pw := io.Pipe()
+	defer pr.Close()
+	defer pw.Close()
+
+	exitCh := make(chan containerd.ExitStatus, 1)
+	started := make(chan struct{})
+	runDone := make(chan struct{})
+	killErrCh := make(chan error, 1)
+	task := &fakeTask{
+		waitFunc: func(_ context.Context) (<-chan containerd.ExitStatus, error) {
+			return exitCh, nil
+		},
+		startFunc: func(_ context.Context) error {
+			close(started)
+			return nil
+		},
+		killFunc: func(killCtx context.Context, _ syscall.Signal) error {
+			exitCh <- *containerd.NewExitStatus(0, time.Now(), nil)
+			select {
+			case <-runDone:
+			case <-ctx.Done():
+			}
+			killErrCh <- killCtx.Err()
+			return nil
+		},
+	}
+
+	runner := &ContainerRunner{
+		container: &fakeContainer{
+			newTaskFunc: func(context.Context, cio.Creator, ...containerd.NewTaskOpts) (containerd.Task, error) {
+				return task, nil
+			},
+		},
+		attestAgent: &fakeAttestationAgent{},
+		launchSpec: spec.LaunchSpec{
+			Hardened:          true,
+			DisableGcaRefresh: true,
+			LogRedirect:       spec.Nowhere,
+		},
+		powerButton: &powerButtonListener{
+			file:   pr,
+			logger: logging.SimpleLogger(),
+		},
+		logger: logging.SimpleLogger(),
+	}
+
+	go func() {
+		_, _ = runner.Run(ctx)
+		close(runDone)
+	}()
+
+	<-started
+	if _, err := pw.Write(encodeEvent64(evKey, keyPower, 1)); err != nil {
+		t.Fatalf("failed to write power event: %v", err)
+	}
+
+	select {
+	case err := <-killErrCh:
+		if err != nil {
+			t.Errorf("task.Kill() context error after Run returned = %v, want nil", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for task.Kill() to finish")
+	}
+}
+
+func TestRun_HostShutdownWaitErrorForceDeletesBeforeIOWait(t *testing.T) {
+	ctx := t.Context()
+	pr, pw := io.Pipe()
+	defer pr.Close()
+	defer pw.Close()
+
+	exitCh := make(chan containerd.ExitStatus, 1)
+	started := make(chan struct{})
+	deleted := make(chan struct{})
+	ioInst := &fakeIO{
+		onWait: func() {
+			// Simulate open FIFOs of a still-running container whose Wait RPC failed.
+			select {
+			case <-deleted:
+			case <-ctx.Done():
+			}
+		},
+	}
+	task := &fakeTask{
+		waitFunc: func(_ context.Context) (<-chan containerd.ExitStatus, error) {
+			return exitCh, nil
+		},
+		startFunc: func(_ context.Context) error {
+			close(started)
+			return nil
+		},
+		killFunc: func(_ context.Context, _ syscall.Signal) error {
+			exitCh <- *containerd.NewExitStatus(containerd.UnknownExitStatus, time.Now(), errors.New("wait RPC failed"))
+			return nil
+		},
+		deleteFunc: func(_ context.Context, _ ...containerd.ProcessDeleteOpts) {
+			close(deleted)
+		},
+		ioFunc: func() cio.IO {
+			return ioInst
+		},
+	}
+
+	runner := &ContainerRunner{
+		container: &fakeContainer{
+			newTaskFunc: func(context.Context, cio.Creator, ...containerd.NewTaskOpts) (containerd.Task, error) {
+				return task, nil
+			},
+		},
+		attestAgent: &fakeAttestationAgent{},
+		launchSpec: spec.LaunchSpec{
+			Hardened:          true,
+			DisableGcaRefresh: true,
+			LogRedirect:       spec.Nowhere,
+		},
+		powerButton: &powerButtonListener{
+			file:   pr,
+			logger: logging.SimpleLogger(),
+		},
+		logger: logging.SimpleLogger(),
+	}
+
+	outcomeCh := make(chan runOutcome, 1)
+	go func() {
+		result, err := runner.Run(ctx)
+		outcomeCh <- runOutcome{result: result, err: err}
+	}()
+
+	<-started
+	if _, err := pw.Write(encodeEvent64(evKey, keyPower, 1)); err != nil {
+		t.Fatalf("failed to write power event: %v", err)
+	}
+
+	select {
+	case got := <-outcomeCh:
+		if got.err != nil {
+			t.Errorf("runner.Run() error = %v, want nil", got.err)
+		}
+		if got.result != HostShutdown {
+			t.Errorf("runner.Run() result = %v, want %v", got.result, HostShutdown)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for runner.Run() to return after wait error during host shutdown")
+	}
+}
+
+func TestRun_HostShutdownBeforeNewTaskReturnsHostShutdown(t *testing.T) {
+	ctx := t.Context()
+	pr, pw := io.Pipe()
+	defer pr.Close()
+	defer pw.Close()
+
+	inNewTask := make(chan struct{})
+	runner := &ContainerRunner{
+		container: &fakeContainer{
+			newTaskFunc: func(taskCtx context.Context, _ cio.Creator, _ ...containerd.NewTaskOpts) (containerd.Task, error) {
+				close(inNewTask)
+				<-taskCtx.Done()
+				return nil, taskCtx.Err()
+			},
+		},
+		attestAgent: &fakeAttestationAgent{},
+		launchSpec: spec.LaunchSpec{
+			Hardened:          true,
+			DisableGcaRefresh: true,
+			LogRedirect:       spec.Nowhere,
+		},
+		powerButton: &powerButtonListener{
+			file:   pr,
+			logger: logging.SimpleLogger(),
+		},
+		logger: logging.SimpleLogger(),
+	}
+
+	outcomeCh := make(chan runOutcome, 1)
+	go func() {
+		result, err := runner.Run(ctx)
+		outcomeCh <- runOutcome{result: result, err: err}
+	}()
+
+	<-inNewTask
+	if _, err := pw.Write(encodeEvent64(evKey, keyPower, 1)); err != nil {
+		t.Fatalf("failed to write power event: %v", err)
+	}
+
+	select {
+	case got := <-outcomeCh:
+		if got.err != nil {
+			t.Errorf("runner.Run() error = %v, want nil", got.err)
+		}
+		if got.result != HostShutdown {
+			t.Errorf("runner.Run() result = %v, want %v", got.result, HostShutdown)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for runner.Run() to return after host shutdown")
+	}
+}
+
+func TestRun_HostShutdownBeforeTaskStartReturnsHostShutdown(t *testing.T) {
+	ctx := t.Context()
+	pr, pw := io.Pipe()
+	defer pr.Close()
+	defer pw.Close()
+
+	taskCreated := false
+	inPostTaskImage := make(chan struct{})
+	killed := make(chan struct{})
+	deleted := make(chan struct{})
+	ioInst := &fakeIO{
+		onWait: func() {
+			// Simulate open container FIFOs that only close once task.Delete kills the created process.
+			select {
+			case <-deleted:
+			case <-ctx.Done():
+			}
+		},
+	}
+	task := &fakeTask{
+		waitFunc: func(_ context.Context) (<-chan containerd.ExitStatus, error) {
+			return make(chan containerd.ExitStatus, 1), nil
+		},
+		killFunc: func(_ context.Context, _ syscall.Signal) error {
+			close(killed)
+			return nil
+		},
+		deleteFunc: func(_ context.Context, _ ...containerd.ProcessDeleteOpts) {
+			close(deleted)
+		},
+		ioFunc: func() cio.IO {
+			return ioInst
+		},
+	}
+
+	runner := &ContainerRunner{
+		container: &fakeContainer{
+			newTaskFunc: func(context.Context, cio.Creator, ...containerd.NewTaskOpts) (containerd.Task, error) {
+				taskCreated = true
+				return task, nil
+			},
+			imageFunc: func(_ context.Context) (containerd.Image, error) {
+				if taskCreated {
+					close(inPostTaskImage)
+					select {
+					case <-killed:
+					case <-ctx.Done():
+					}
+				}
+				return &fakeImage{
+					name:   "test-image",
+					digest: "sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+					id:     "sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+				}, nil
+			},
+		},
+		attestAgent: &fakeAttestationAgent{},
+		launchSpec: spec.LaunchSpec{
+			Hardened:          true,
+			DisableGcaRefresh: true,
+			LogRedirect:       spec.Nowhere,
+		},
+		powerButton: &powerButtonListener{
+			file:   pr,
+			logger: logging.SimpleLogger(),
+		},
+		logger: logging.SimpleLogger(),
+	}
+
+	outcomeCh := make(chan runOutcome, 1)
+	go func() {
+		result, err := runner.Run(ctx)
+		outcomeCh <- runOutcome{result: result, err: err}
+	}()
+
+	<-inPostTaskImage
+	if _, err := pw.Write(encodeEvent64(evKey, keyPower, 1)); err != nil {
+		t.Fatalf("failed to write power event: %v", err)
+	}
+
+	select {
+	case got := <-outcomeCh:
+		if got.err != nil {
+			t.Errorf("runner.Run() error = %v, want nil", got.err)
+		}
+		if got.result != HostShutdown {
+			t.Errorf("runner.Run() result = %v, want %v", got.result, HostShutdown)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for runner.Run() to return after host shutdown")
+	}
+}
+
+func TestRun_HostShutdownDuringTaskStartFailureReturnsHostShutdown(t *testing.T) {
+	ctx := t.Context()
+	pr, pw := io.Pipe()
+	defer pr.Close()
+	defer pw.Close()
+
+	startEntered := make(chan struct{})
+	killed := make(chan struct{})
+	deleted := make(chan struct{})
+	ioInst := &fakeIO{
+		onWait: func() {
+			select {
+			case <-deleted:
+			case <-ctx.Done():
+			}
+		},
+	}
+	task := &fakeTask{
+		startFunc: func(_ context.Context) error {
+			close(startEntered)
+			select {
+			case <-killed:
+			case <-ctx.Done():
+			}
+			return errors.New("cannot start a stopped process")
+		},
+		killFunc: func(_ context.Context, _ syscall.Signal) error {
+			close(killed)
+			return nil
+		},
+		deleteFunc: func(_ context.Context, _ ...containerd.ProcessDeleteOpts) {
+			close(deleted)
+		},
+		ioFunc: func() cio.IO {
+			return ioInst
+		},
+	}
+
+	runner := &ContainerRunner{
+		container: &fakeContainer{
+			newTaskFunc: func(context.Context, cio.Creator, ...containerd.NewTaskOpts) (containerd.Task, error) {
+				return task, nil
+			},
+		},
+		attestAgent: &fakeAttestationAgent{},
+		launchSpec: spec.LaunchSpec{
+			Hardened:          true,
+			DisableGcaRefresh: true,
+			LogRedirect:       spec.Nowhere,
+		},
+		powerButton: &powerButtonListener{
+			file:   pr,
+			logger: logging.SimpleLogger(),
+		},
+		logger: logging.SimpleLogger(),
+	}
+
+	outcomeCh := make(chan runOutcome, 1)
+	go func() {
+		result, err := runner.Run(ctx)
+		outcomeCh <- runOutcome{result: result, err: err}
+	}()
+
+	<-startEntered
+	if _, err := pw.Write(encodeEvent64(evKey, keyPower, 1)); err != nil {
+		t.Fatalf("failed to write power event: %v", err)
+	}
+
+	select {
+	case got := <-outcomeCh:
+		if got.err != nil {
+			t.Errorf("runner.Run() error = %v, want nil", got.err)
+		}
+		if got.result != HostShutdown {
+			t.Errorf("runner.Run() result = %v, want %v", got.result, HostShutdown)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for runner.Run() to return after host shutdown")
 	}
 }
 
@@ -1302,7 +1787,10 @@ func TestRun_TaskCreationFailureReturnsRetryableError(t *testing.T) {
 		logger: logging.SimpleLogger(),
 	}
 
-	err := runner.Run(context.Background())
+	result, err := runner.Run(context.Background())
+	if result != RunUnspecified {
+		t.Errorf("runner.Run() result = %v, want %v", result, RunUnspecified)
+	}
 	var retryErr *RetryableError
 	if !errors.As(err, &retryErr) {
 		t.Fatalf("runner.Run() error = %v (%T), want *RetryableError", err, err)
@@ -1332,7 +1820,10 @@ func TestRun_TaskStartFailureDeletesTaskAndReturnsRetryableError(t *testing.T) {
 		logger: logging.SimpleLogger(),
 	}
 
-	err := runner.Run(context.Background())
+	result, err := runner.Run(context.Background())
+	if result != RunUnspecified {
+		t.Errorf("runner.Run() result = %v, want %v", result, RunUnspecified)
+	}
 	var retryErr *RetryableError
 	if !errors.As(err, &retryErr) {
 		t.Fatalf("runner.Run() error = %v (%T), want *RetryableError", err, err)
@@ -1367,7 +1858,10 @@ func TestRun_ExitStatusErrorPropagates(t *testing.T) {
 		logger: logging.SimpleLogger(),
 	}
 
-	err := runner.Run(context.Background())
+	result, err := runner.Run(context.Background())
+	if result != RunUnspecified {
+		t.Errorf("runner.Run() result = %v, want %v", result, RunUnspecified)
+	}
 	if err == nil || !strings.Contains(err.Error(), "container killed by OOM killer") {
 		t.Errorf("runner.Run() error = %v, want containing %q", err, "container killed by OOM killer")
 	}
@@ -1391,7 +1885,7 @@ func TestRun_LogRedirectEverywhere(t *testing.T) {
 		logger: logging.SimpleLogger(),
 	}
 
-	if err := runner.Run(context.Background()); err != nil {
+	if _, err := runner.Run(context.Background()); err != nil {
 		t.Errorf("runner.Run() error = %v, want nil", err)
 	}
 }
@@ -1414,7 +1908,7 @@ func TestRun_LogRedirectSerial(t *testing.T) {
 		logger: logging.SimpleLogger(),
 	}
 
-	if err := runner.Run(context.Background()); err != nil {
+	if _, err := runner.Run(context.Background()); err != nil {
 		t.Errorf("runner.Run() error = %v, want nil", err)
 	}
 }
@@ -1430,7 +1924,7 @@ func TestRun_LogRedirectCloudLogging(t *testing.T) {
 		logger: logging.SimpleLogger(),
 	}
 
-	if err := runner.Run(context.Background()); err != nil {
+	if _, err := runner.Run(context.Background()); err != nil {
 		t.Errorf("runner.Run() error = %v, want nil", err)
 	}
 }
@@ -1446,7 +1940,7 @@ func TestRun_LogRedirectNowhere(t *testing.T) {
 		logger: logging.SimpleLogger(),
 	}
 
-	if err := runner.Run(context.Background()); err != nil {
+	if _, err := runner.Run(context.Background()); err != nil {
 		t.Errorf("runner.Run() error = %v, want nil", err)
 	}
 }
@@ -1462,7 +1956,7 @@ func TestRun_LogRedirectUnknownLocationReturnsError(t *testing.T) {
 		logger: logging.SimpleLogger(),
 	}
 
-	err := runner.Run(context.Background())
+	_, err := runner.Run(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "unknown logging redirect location") {
 		t.Errorf("runner.Run() error = %v, want error containing %q", err, "unknown logging redirect location")
 	}
@@ -1483,7 +1977,7 @@ func TestRun_EventLogMeasurementErrorPropagates(t *testing.T) {
 		logger: logging.SimpleLogger(),
 	}
 
-	err := runner.Run(context.Background())
+	_, err := runner.Run(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "TPM eventlog measurement failed") {
 		t.Errorf("runner.Run() error = %v, want error containing %q", err, "TPM eventlog measurement failed")
 	}
@@ -1504,7 +1998,7 @@ func TestRun_TokenFetchErrorPropagates(t *testing.T) {
 		logger: logging.SimpleLogger(),
 	}
 
-	err := runner.Run(context.Background())
+	_, err := runner.Run(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "failed to fetch and write OIDC token") {
 		t.Errorf("runner.Run() error = %v, want error containing %q", err, "failed to fetch and write OIDC token")
 	}
@@ -1534,7 +2028,7 @@ func TestRun_TeardownOrder(t *testing.T) {
 		logger: logging.SimpleLogger(),
 	}
 
-	if err := runner.Run(context.Background()); err != nil {
+	if _, err := runner.Run(context.Background()); err != nil {
 		t.Fatalf("runner.Run() unexpected error = %v", err)
 	}
 
@@ -1559,7 +2053,7 @@ func TestRun_HardenedModeNilPowerButton(t *testing.T) {
 		logger: logging.SimpleLogger(),
 	}
 
-	if err := runner.Run(context.Background()); err != nil {
+	if _, err := runner.Run(context.Background()); err != nil {
 		t.Fatalf("runner.Run() unexpected error = %v", err)
 	}
 }
@@ -1641,41 +2135,6 @@ func (f *fakeSignaler) Kill(_ context.Context, sig syscall.Signal, _ ...containe
 	return nil
 }
 
-func TestEnableGracefulShutdown_DispatchesSigtermOnPowerEvent(t *testing.T) {
-	pr, pw := io.Pipe()
-	defer pr.Close()
-	defer pw.Close()
-
-	signaler := &fakeSignaler{
-		sig: make(chan syscall.Signal, 1),
-	}
-
-	runner := &ContainerRunner{
-		launchSpec: spec.LaunchSpec{Hardened: true},
-		powerButton: &powerButtonListener{
-			file:   pr,
-			logger: logging.SimpleLogger(),
-		},
-		logger: logging.SimpleLogger(),
-	}
-
-	runner.enableGracefulShutdown(t.Context(), signaler)
-
-	// Send power button press event (64-bit EV_KEY, KEY_POWER, value=1)
-	if _, err := pw.Write(encodeEvent64(evKey, keyPower, 1)); err != nil {
-		t.Fatalf("failed to write power event: %v", err)
-	}
-
-	select {
-	case sig := <-signaler.sig:
-		if sig != syscall.SIGTERM {
-			t.Errorf("signaler.Kill() received signal = %v, want %v", sig, syscall.SIGTERM)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for signaler.Kill(SIGTERM) to be called")
-	}
-}
-
 func TestEnableGracefulShutdown_DebugModeContextCancelExits(t *testing.T) {
 	signaler := &fakeSignaler{
 		sig: make(chan syscall.Signal, 1),
@@ -1697,20 +2156,6 @@ func TestEnableGracefulShutdown_DebugModeContextCancelExits(t *testing.T) {
 		t.Fatalf("signaler.Kill() called unexpectedly on cancel with signal = %v", sig)
 	default:
 	}
-}
-
-func TestEnableGracefulShutdown_NilPowerButtonDoesNotPanic(t *testing.T) {
-	signaler := &fakeSignaler{
-		sig: make(chan syscall.Signal, 1),
-	}
-	runner := &ContainerRunner{
-		launchSpec:  spec.LaunchSpec{Hardened: true},
-		powerButton: nil,
-		logger:      logging.SimpleLogger(),
-	}
-
-	// Should safely no-op without panicking
-	runner.enableGracefulShutdown(t.Context(), signaler)
 }
 
 func TestBuildPortRules(t *testing.T) {
