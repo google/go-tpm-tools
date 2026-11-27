@@ -22,11 +22,16 @@ import (
 	"github.com/google/go-tpm-tools/verifier/util"
 	"github.com/google/go-tpm/legacy/tpm2"
 	"github.com/spf13/cobra"
-	"golang.org/x/oauth2/google"
 	"google.golang.org/api/option"
 )
 
 const toolName = "gotpm"
+
+var (
+	errCloudLogRequiresAudience = errors.New("cloud logging requires the --audience flag")
+	errEmptyEventLogPath        = errors.New("event-log path cannot be empty")
+	errUnknownTEETech           = errors.New("tee-technology should be either empty or should have values sev-snp or tdx")
+)
 
 func getTEEDeviceFromTech(tech string) (client.TEEDevice, error) {
 	switch tech {
@@ -45,7 +50,7 @@ func getTEEDeviceFromTech(tech string) (client.TEEDevice, error) {
 	case "":
 		return nil, nil
 	default:
-		return nil, fmt.Errorf("tee-technology should be either empty or should have values %s or %s", sevSNP, tdx)
+		return nil, fmt.Errorf("%w: %q", errUnknownTEETech, tech)
 	}
 }
 
@@ -55,6 +60,7 @@ type tokenOptions struct {
 	CustomNonces     []string
 	KeyAlgo          tpm2.Algorithm
 	VerifierEndpoint string
+	EventLogPath     string
 	EventLog         []byte
 	OutputPath       string
 	CloudLog         bool
@@ -65,138 +71,117 @@ type tokenOptions struct {
 	Debug            io.Writer
 }
 
-// addTokenFlags registers the token flags on cmd.
-// Callers read the flag values with parseTokenFlags.
-func addTokenFlags(cmd *cobra.Command) {
+type tokenFlags struct {
+	audience         string
+	customNonces     []string
+	keyAlgo          tpm2.Algorithm
+	verifierEndpoint string
+	eventLogPath     string
+	outputPath       string
+	cloudLog         bool
+	teeTechnology    string
+}
+
+func addTokenFlags(cmd *cobra.Command, f *tokenFlags) {
 	flags := cmd.PersistentFlags()
-	flags.String("output", "", "output file (defaults to stdout)")
-	keyAlgo := tpm2.AlgRSA
+	flags.StringVar(&f.outputPath, "output", "", "output file (defaults to stdout)")
+	f.keyAlgo = tpm2.AlgRSA
 	algo := algoFlag{
-		value:   &keyAlgo,
+		value:   &f.keyAlgo,
 		allowed: []tpm2.Algorithm{tpm2.AlgRSA, tpm2.AlgECC},
 	}
 	flags.Var(&algo, "algo", "public key algorithm: "+algo.Allowed())
-	flags.String("event-log", "/sys/kernel/security/tpm0/binary_bios_measurements", "specifies the event log file path.")
-	flags.String("tee-technology", "", "indicates the type of TEE hardware. Should be either empty or one of sev-snp or tdx")
-	cmd.Flags().String("verifier-endpoint", "https://confidentialcomputing.googleapis.com",
+	flags.StringVar(&f.eventLogPath, "event-log", "/sys/kernel/security/tpm0/binary_bios_measurements", "specifies the event log file path.")
+	flags.StringVar(&f.teeTechnology, "tee-technology", "", "indicates the type of TEE hardware. Should be either empty or one of sev-snp or tdx")
+	cmd.Flags().StringVar(&f.verifierEndpoint, "verifier-endpoint", "https://confidentialcomputing.googleapis.com",
 		"the attestation verifier endpoint used to retrieve an attestation claims token")
-	cmd.Flags().Bool("cloud-log", false,
+	cmd.Flags().BoolVar(&f.cloudLog, "cloud-log", false,
 		"logs the attestation and token to Cloud Logging for auditing purposes. Requires the audience flag.")
-	cmd.Flags().String("audience", "",
+	cmd.Flags().StringVar(&f.audience, "audience", "",
 		"the audience field in the claims token. Cannot be sts.googleapis.com.")
-	cmd.Flags().StringArray("custom-nonce", nil,
+	cmd.Flags().StringArrayVar(&f.customNonces, "custom-nonce", nil,
 		"the custom nonce field in the claims token. use this flag multiple times to add multiple custom nonces.")
 }
 
-func parseTokenFlags(cmd *cobra.Command) (tokenOptions, error) {
-	flags := cmd.Flags()
-	opts := tokenOptions{}
-
-	var err error
-	if flags.Changed("verifier-endpoint") {
-		opts.VerifierEndpoint, err = flags.GetString("verifier-endpoint")
-		if err != nil {
-			return tokenOptions{}, err
-		}
+func (f tokenFlags) parse(eventLogSet bool) (tokenOptions, error) {
+	if f.cloudLog && f.audience == "" {
+		return tokenOptions{}, errCloudLogRequiresAudience
 	}
-	if flags.Changed("audience") {
-		opts.Audience, err = flags.GetString("audience")
-		if err != nil {
-			return tokenOptions{}, err
-		}
+	if f.teeTechnology != "" && f.teeTechnology != sevSNP && f.teeTechnology != tdx {
+		return tokenOptions{}, fmt.Errorf("%w: %q", errUnknownTEETech, f.teeTechnology)
 	}
-	if flags.Changed("custom-nonce") {
-		opts.CustomNonces, err = flags.GetStringArray("custom-nonce")
-		if err != nil {
-			return tokenOptions{}, err
-		}
+	if eventLogSet && f.eventLogPath == "" {
+		return tokenOptions{}, errEmptyEventLogPath
 	}
-	if flags.Changed("cloud-log") {
-		opts.CloudLog, err = flags.GetBool("cloud-log")
-		if err != nil {
-			return tokenOptions{}, err
-		}
+	opts := tokenOptions{
+		Audience:         f.audience,
+		CustomNonces:     f.customNonces,
+		KeyAlgo:          f.keyAlgo,
+		VerifierEndpoint: f.verifierEndpoint,
+		OutputPath:       f.outputPath,
+		CloudLog:         f.cloudLog,
+		TEETechnology:    f.teeTechnology,
 	}
-	if flags.Changed("tee-technology") {
-		opts.TEETechnology, err = flags.GetString("tee-technology")
-		if err != nil {
-			return tokenOptions{}, err
-		}
+	if eventLogSet {
+		opts.EventLogPath = f.eventLogPath
 	}
-	if flags.Changed("output") {
-		opts.OutputPath, err = flags.GetString("output")
-		if err != nil {
-			return tokenOptions{}, err
-		}
-	}
-
-	if flags.Changed("algo") {
-		if f := flags.Lookup("algo"); f != nil && f.Value.String() != "" {
-			switch val := f.Value.String(); val {
-			case "rsa":
-				opts.KeyAlgo = tpm2.AlgRSA
-			case "ecc":
-				opts.KeyAlgo = tpm2.AlgECC
-			default:
-				return tokenOptions{}, fmt.Errorf("unsupported key algorithm: %q", val)
-			}
-		}
-	} else {
-		opts.KeyAlgo = tpm2.AlgRSA
-	}
-
-	if flags.Changed("event-log") {
-		eventLogPath, err := flags.GetString("event-log")
-		if err != nil {
-			return tokenOptions{}, err
-		}
-		data, err := os.ReadFile(eventLogPath)
-		if err != nil {
-			return tokenOptions{}, fmt.Errorf("reading event log: %w", err)
-		}
-		opts.EventLog = data
-	}
-
 	return opts, nil
 }
 
-// If hardware technology needs a variable length teenonce then please modify the flags description
-var tokenCmd = &cobra.Command{
-	Use:   "token",
-	Short: "Attest and fetch an OIDC token from Google Attestation Verification Service.",
-	Long: `Gather attestation report and send it to Google Attestation Verification Service for an OIDC token.
+func newTokenCmd(o *gotpmOptions) *cobra.Command {
+	var flags tokenFlags
+	cmd := &cobra.Command{
+		Use:   "token",
+		Short: "Attest and fetch an OIDC token from Google Attestation Verification Service.",
+		Long: `Gather attestation report and send it to Google Attestation Verification Service for an OIDC token.
 The OIDC token includes claims regarding the GCE VM, which is verified by Attestation Verification Service. Note that Confidential Computing API needs to be enabled for your account to access Google Attestation Verification Service https://console.cloud.google.com/apis/api/confidentialcomputing.googleapis.com.
 --algo flag overrides the public key algorithm for the GCE TPM attestation key. If not provided then by default rsa is used.
 `,
-	Args: cobra.NoArgs,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		_ = args
-		opts, err := parseTokenFlags(cmd)
-		if err != nil {
-			return err
-		}
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			opts, err := flags.parse(cmd.Flags().Changed("event-log"))
+			if err != nil {
+				return err
+			}
+			if opts.EventLogPath != "" {
+				opts.EventLog, err = os.ReadFile(opts.EventLogPath)
+				if err != nil {
+					return fmt.Errorf("reading event log: %w", err)
+				}
+			}
 
-		rwc, err := openTPM()
-		if err != nil {
-			return err
-		}
-		defer rwc.Close()
+			rwc, err := o.openTPM()
+			if err != nil {
+				return err
+			}
+			defer rwc.Close()
 
-		opts.Debug = debugOutput()
-		token, err := runToken(cmd.Context(), rwc, opts)
-		if err != nil {
-			return err
-		}
+			httpClient, err := o.httpClient(cmd.Context())
+			if err != nil {
+				return fmt.Errorf("creating HTTP client: %w", err)
+			}
+			opts.Debug = o.debugOutput()
+			opts.HTTPClient = httpClient
+			token, err := runToken(cmd.Context(), rwc, opts)
+			if err != nil {
+				return err
+			}
 
-		if opts.OutputPath == "" {
-			fmt.Fprintf(messageOutput(), "%s\n", token)
+			if opts.OutputPath == "" {
+				fmt.Fprintf(o.messageOutput(), "%s\n", token)
+				return nil
+			}
+			if err := os.WriteFile(opts.OutputPath, token, 0644); err != nil {
+				return fmt.Errorf("writing token: %w", err)
+			}
 			return nil
-		}
-		if err := os.WriteFile(opts.OutputPath, token, 0644); err != nil {
-			return fmt.Errorf("failed to write token: %w", err)
-		}
-		return nil
-	},
+		},
+	}
+	addTokenFlags(cmd, &flags)
+	// TODO: Add TEE hardware OIDC token generation. If hardware technology needs
+	// a variable-length tee-nonce, update the flag description.
+	// addTeeNonceflag(cmd)
+	return cmd
 }
 
 // runToken retrieves an OIDC claims token from the verification service using the provided TPM.
@@ -215,11 +200,7 @@ func runToken(ctx context.Context, rwc io.ReadWriter, opts tokenOptions) ([]byte
 		opts.MDSClient = metadata.NewClient(nil)
 	}
 	if opts.HTTPClient == nil {
-		var err error
-		opts.HTTPClient, err = google.DefaultClient(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create HTTP client: %w", err)
-		}
+		return nil, errors.New("missing HTTP client")
 	}
 
 	fmt.Fprintf(debug, "Attestation Address is set to %s\n", opts.VerifierEndpoint)
@@ -251,7 +232,7 @@ func runToken(ctx context.Context, rwc io.ReadWriter, opts tokenOptions) ([]byte
 	var cloudLogger *logging.Logger
 	if opts.CloudLog {
 		if opts.Audience == "" {
-			return nil, errors.New("cloud logging requires the --audience flag")
+			return nil, errCloudLogRequiresAudience
 		}
 		if opts.CloudLogClient != nil {
 			cloudLogger = opts.CloudLogClient.Logger(toolName)
@@ -392,10 +373,4 @@ func runToken(ctx context.Context, rwc io.ReadWriter, opts tokenOptions) ([]byte
 
 	fmt.Fprintf(debug, "%s\nNote: these Claims are for debugging purpose and not verified\n", claimsString)
 	return token, nil
-}
-
-func init() {
-	addTokenFlags(tokenCmd)
-	// TODO: Add TEE hardware OIDC token generation
-	// addTeeNonceflag(tokenCmd)
 }

@@ -2,25 +2,81 @@
 package cmd
 
 import (
-	"fmt"
+	"context"
+	"errors"
 	"io"
-	"os"
+	"net/http"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/oauth2/google"
 	"google.golang.org/protobuf/encoding/prototext"
 )
 
+var errQuietAndVerbose = errors.New("cannot specify both --quiet and --verbose")
+
+type outputMode int
+
+const (
+	outputNormal outputMode = iota
+	outputQuiet
+	outputVerbose
+)
+
+type rootFlags struct {
+	quiet   bool
+	verbose bool
+	tpmPath string
+}
+
+type rootOptions struct {
+	output  outputMode
+	tpmPath string
+}
+
+func addRootFlags(cmd *cobra.Command, f *rootFlags) {
+	cmd.PersistentFlags().BoolVar(&f.quiet, "quiet", false,
+		"print nothing if command is successful")
+	cmd.PersistentFlags().BoolVar(&f.verbose, "verbose", false,
+		"print additional info to stdout")
+	addTPMPathFlag(cmd, &f.tpmPath)
+}
+
+func (f rootFlags) parse() (rootOptions, error) {
+	if f.quiet && f.verbose {
+		return rootOptions{}, errQuietAndVerbose
+	}
+	mode := outputNormal
+	if f.quiet {
+		mode = outputQuiet
+	} else if f.verbose {
+		mode = outputVerbose
+	}
+	return rootOptions{
+		output:  mode,
+		tpmPath: f.tpmPath,
+	}, nil
+}
+
 type gotpmOptions struct {
-	tpmOpener func(tpmPath string) (io.ReadWriteCloser, error)
+	tpmOpener  func(tpmPath string) (io.ReadWriteCloser, error)
+	httpClient func(context.Context) (*http.Client, error)
+	out        func() io.Writer
+	root       rootOptions
 }
 
 // NewGotpmCmd returns the entrypoint for gotpm.
 func NewGotpmCmd() *cobra.Command {
-	return newGotpmCmd(openImpl)
+	return newGotpmCmd(openImpl, func(ctx context.Context) (*http.Client, error) {
+		return google.DefaultClient(ctx)
+	})
 }
 
-func newGotpmCmd(tpmOpener func(tpmPath string) (io.ReadWriteCloser, error)) *cobra.Command {
-	o := &gotpmOptions{tpmOpener: tpmOpener}
+func newGotpmCmd(tpmOpener func(tpmPath string) (io.ReadWriteCloser, error), httpClient func(context.Context) (*http.Client, error)) *cobra.Command {
+	var flags rootFlags
+	o := &gotpmOptions{
+		tpmOpener:  tpmOpener,
+		httpClient: httpClient,
+	}
 	root := &cobra.Command{
 		Use: "gotpm",
 		Long: `Command line tool for the go-tpm TSS
@@ -28,18 +84,17 @@ func newGotpmCmd(tpmOpener func(tpmPath string) (io.ReadWriteCloser, error)) *co
 This tool allows performing TPM2 operations from the command line.
 See the per-command documentation for more information.`,
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
-			if quiet && verbose {
-				return fmt.Errorf("cannot specify both --quiet and --verbose")
+			opts, err := flags.parse()
+			if err != nil {
+				return err
 			}
+			o.root = opts
 			cmd.SilenceUsage = true
 			return nil
 		},
 	}
-	root.PersistentFlags().BoolVar(&quiet, "quiet", false,
-		"print nothing if command is successful")
-	root.PersistentFlags().BoolVar(&verbose, "verbose", false,
-		"print additional info to stdout")
-	addTPMPathFlag(root)
+	o.out = root.OutOrStdout
+	addRootFlags(root, &flags)
 	hideHelp(root)
 	root.AddCommand(
 		newAttestCmd(o),
@@ -49,37 +104,24 @@ See the per-command documentation for more information.`,
 		newRegisterCmd(o),
 		newSealCmd(o),
 		newUnsealCmd(o),
-		tokenCmd,
+		newTokenCmd(o),
 		newVerifyCmd(),
 	)
 	return root
 }
 
-var (
-	quiet   bool
-	verbose bool
-)
-
-func messageOutput() io.Writer {
-	if quiet {
+func (o *gotpmOptions) messageOutput() io.Writer {
+	if o.root.output == outputQuiet {
 		return io.Discard
 	}
-	return os.Stdout
-}
-
-func debugOutput() io.Writer {
-	if verbose {
-		return os.Stdout
-	}
-	return io.Discard
-}
-
-func (o *gotpmOptions) messageOutput() io.Writer {
-	return messageOutput()
+	return o.out()
 }
 
 func (o *gotpmOptions) debugOutput() io.Writer {
-	return debugOutput()
+	if o.root.output == outputVerbose {
+		return o.out()
+	}
+	return io.Discard
 }
 
 // Default Text Marshalling options
