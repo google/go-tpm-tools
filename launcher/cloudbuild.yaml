@@ -1,5 +1,7 @@
 substitutions:
   '_BASE_IMAGE': 'cos-133-19999-44-250' # If left empty, will use the latest image in _BASE_IMAGE_FAMILY of _BASE_IMAGE_PROJECT
+  # _BASE_IMAGE_GPU_MODULES_SHA256 is the SHA-256 digest of cos-tools/<BUILD_ID>/lakitu/nvidia-drivers-<version>.tgz for _BASE_IMAGE and must be updated with _BASE_IMAGE.
+  '_BASE_IMAGE_GPU_MODULES_SHA256': 'a3142251ae58031ae51d1df02e5cf71363533a146272e58bbfa9382d3151a256'
   '_BASE_IMAGE_FAMILY': 'cos-133-lts'
   '_BASE_IMAGE_PROJECT': 'cos-cloud'
   '_OUTPUT_IMAGE_PREFIX': 'confidential-space'
@@ -65,7 +67,7 @@ steps:
       export GOTOOLCHAIN=auto
       # Record the toolchain actually used (after any GOTOOLCHAIN switch).
       go version
-      go build -o ../image/launcher -ldflags="-extldflags '-Wl,-z,lazy -static-libstdc++ -static-libgcc' -X 'main.BuildCommit=${SHORT_SHA}'"
+      go build -o ../image/launcher -ldflags="-extldflags '-Wl,-z,lazy -static-libstdc++ -static-libgcc' -X 'main.BuildCommit=${SHORT_SHA}' -X 'main.prebuiltModulesDigest=${_BASE_IMAGE_GPU_MODULES_SHA256}'"
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: DownloadExpBinary
@@ -82,8 +84,26 @@ steps:
     echo "${EXPERIMENTS_SHA256}  launcher/image/confidential_space_experiments" | sha256sum -c -
 
 - name: 'gcr.io/cloud-builders/gcloud'
+  id: VerifyGpuModulesDigest
+  waitFor: ['BaseImageIdent']
+  env:
+  - 'GPU_MODULES_SHA256=$_BASE_IMAGE_GPU_MODULES_SHA256'
+  script: |
+    #!/usr/bin/env bash
+    set -euo pipefail
+    base_image=$(cat /workspace/base_image.txt)
+    build_id=$(echo "${base_image}" | sed -E 's/^cos-([a-z]+-)?[0-9]+-//' | tr '-' '.')
+    driver_ver=$(sed -n 's/.*NvDriverVer595_58_03 = "\([^"]*\)".*/\1/p' launcher/internal/gpu/config.go)
+    test -n "${driver_ver}"
+    got=$(gcloud storage cat "gs://cos-tools/${build_id}/lakitu/nvidia-drivers-${driver_ver}.tgz" | sha256sum | cut -d ' ' -f 1)
+    if [ "${got}" != "${GPU_MODULES_SHA256}" ]; then
+      echo "GPU modules digest mismatch for ${base_image}: got ${got}, want ${GPU_MODULES_SHA256}" >&2
+      exit 1
+    fi
+
+- name: 'gcr.io/cloud-builders/gcloud'
   id: DebugImageBuild
-  waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary', 'DownloadGoogleRoots']
+  waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary', 'DownloadGoogleRoots', 'VerifyGpuModulesDigest']
   env:
   - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-debug-${_OUTPUT_IMAGE_SUFFIX}'
   - 'OUTPUT_IMAGE_FAMILY=${_OUTPUT_IMAGE_FAMILY}'
@@ -109,7 +129,7 @@ steps:
 
 - name: 'gcr.io/cloud-builders/gcloud'
   id: HardenedImageBuild
-  waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary', 'DownloadGoogleRoots']
+  waitFor: ['BaseImageIdent', 'LauncherCompile', 'DownloadExpBinary', 'DownloadGoogleRoots', 'VerifyGpuModulesDigest']
   env:
   - 'OUTPUT_IMAGE_NAME=${_OUTPUT_IMAGE_PREFIX}-hardened-${_OUTPUT_IMAGE_SUFFIX}'
   - 'OUTPUT_IMAGE_FAMILY=${_OUTPUT_IMAGE_FAMILY}'
