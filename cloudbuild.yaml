@@ -1,0 +1,33 @@
+steps:
+  # Step 1: Compile the gotpm binary for linux/amd64
+  - name: "golang:1.26"
+    entrypoint: "bash"
+    args:
+      - "-c"
+      - |
+        set -ex
+        if [ ! -f go.work ]; then
+          echo "Initializing Go workspace for local multi-module build..."
+          go work init . ./cmd ./verifier ./agent
+        fi
+        echo "Building gotpm..."
+        cd cmd/gotpm
+        go build -trimpath -ldflags="-s -w" -o /workspace/gotpm-premerge .
+        chmod +x /workspace/gotpm-premerge
+
+  # Step 2: Upload the binary to GCS
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+    entrypoint: "bash"
+    args:
+      - "-c"
+      - |
+        set -ex
+        echo "Uploading gotpm-premerge to ${_DESTINATION_GCS_URI}..."
+        gcloud storage cp /workspace/gotpm-premerge "${_DESTINATION_GCS_URI}"
+        echo "Upload complete."
+
+substitutions:
+  _DESTINATION_GCS_URI: "gs://go-tpm-tools-e2e/gotpm-premerge"
+
+options:
+  logging: CLOUD_LOGGING_ONLY
